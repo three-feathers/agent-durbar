@@ -432,6 +432,13 @@ async function main(): Promise<void> {
     assert.deepStrictEqual(eventProblems({ ...base, phase: 'start', tool: 'a'.repeat(257) }), ['toolCall.tool too long'], '#1593 toolCall.tool: a name of 257 characters is refused');
     assert.deepStrictEqual(eventProblems({ ...base, phase: 'start', tool: '[redacted:'.repeat(100_000) }), ['toolCall.tool too long'], '#1593 toolCall.tool: a long dense name is refused');
     assert.strictEqual(problemWords('toolCall.tool too long'), 'toolCall.tool: too long', '#1593 toolCall.tool: the drop line names the field and the kind only');
+    // spec 012 FR-183 (review of PR 1816): an MCP call's server and tool names have the same cap, and a value that is no string is refused
+    for (const k of ['mcpServer', 'mcpTool'] as const) {
+      assert.deepStrictEqual(eventProblems({ ...base, phase: 'start', mcpServer: 'notes', mcpTool: 'read', [k]: 'a'.repeat(256) }), [], `#1593 toolCall.${k}: a name of 256 characters passes`);
+      assert.deepStrictEqual(eventProblems({ ...base, phase: 'start', mcpServer: 'notes', mcpTool: 'read', [k]: 'a'.repeat(257) }), [`toolCall.${k} too long`], `#1593 toolCall.${k}: a name of 257 characters is refused`);
+      assert.deepStrictEqual(eventProblems({ ...base, phase: 'start', [k]: 7 }), [`toolCall.${k} is not a string`], `#1593 toolCall.${k}: a value that is no string is refused`);
+      assert.strictEqual(problemWords(`toolCall.${k} too long`), `toolCall.${k}: too long`, `#1593 toolCall.${k}: the drop line names the field and the kind only`);
+    }
     // spec 058 FR-180 (T151): signInEnd is one of two values, or missing
     const mev = (x: Record<string, unknown>) => eventProblems({ type: 'mcp', sessionId: 's', timestamp: 1, servers: [{ name: 'notes', status: 'needs-auth', ...x }] });
     assert.deepStrictEqual([mev({}), mev({ signInEnd: 'next-message' }), mev({ signInEnd: 'failed' })], [[], [], []], 'signInEnd next-message, failed or missing pass');

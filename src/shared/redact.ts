@@ -711,28 +711,41 @@ export function redact(text: unknown, env?: Env): string {
   }
 }
 
+/** Spec 012 FR-183: the work budget of `redactMarkdown`'s second pass (runs the mask changes x output length, a proxy for the scan work), equal to the window's `BOTH_WORK`. */
+export const MARKDOWN_WORK = 1 << 26;
+
 /**
  * `k` is `u` with its Markdown marks removed. Masks `k`, and also every token-like run of `u` that `redact` changes on its own, together
  * with the token characters glued after it (spec 073 FR-014, review of PR #614): removing `**` can glue a token to the word before it
  * (`x**ghp_...**` -> `xghp_...`, which no shape matches) or join a late-split token's tail (`ghp_<20>**K1l2...`). Anything either pass
  * finds is masked; neither pass's output simply wins. The window's DurbarSafeText (`src/renderer/safetext.js`, `both`) does the same.
  */
-/** Spec 012 FR-183: the work budget of `redactMarkdown`'s second pass (runs the mask changes x output length, a proxy for the scan work), equal to the window's `BOTH_WORK`. */
-export const MARKDOWN_WORK = 1 << 26;
 export function redactMarkdown(u: string, k: string, env?: Env): string {
-  let m = redact(k, env);
+  return markdownPass(u, k, (x) => redact(x, env));
+}
+
+/** `redactMarkdown` with the mask given (spec 012 FR-183: the tests pin the budget's boundary with an injected mask, as `safetext.js`'s). */
+function markdownPass(u: string, k: string, mask: (x: string) => string): string {
+  let m = mask(k);
   const seen = new Set<string>();
   const found: string[] = [];
   for (const r of u.match(/[A-Za-z0-9_\-.+/=:@%]{12,}/g) ?? []) {
     if (seen.has(r)) continue;
     seen.add(r);
-    if (redact(r, env) !== r) found.push(r);
+    if (mask(r) !== r) found.push(r);
   }
   found.sort((a, b) => b.length - a.length);
   if (found.length * m.length > MARKDOWN_WORK) return MASK; // spec 012 FR-183: over the budget, fail closed (the whole text is one mask)
-  for (const r of found) m = m.replace(new RegExp(r.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&') + '[A-Za-z0-9_-]*', 'g'), () => MASK);
+  try {
+    for (const r of found) m = m.replace(new RegExp(r.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&') + '[A-Za-z0-9_-]*', 'g'), () => MASK);
+  } catch {
+    return MASK; // spec 012 FR-183 (review of PR 1816): a run too long for a RegExp (about 32,000 characters) fails closed, never a throw that loses the list
+  }
   return m;
 }
+
+/** Test only (spec 012 FR-183): `redactMarkdown`'s pass with an injected mask, to pin the budget's exact boundary. */
+export const _markdownPassForTest = markdownPass;
 
 /**
  * Spec 106 FR-021 (review of PR 1226, F1): token characters glued to a mask are the tail of a secret whose head was already masked (a

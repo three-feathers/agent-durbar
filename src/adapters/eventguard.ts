@@ -23,7 +23,7 @@ export const validSignInEnd = (v: unknown): v is (typeof SIGN_IN_ENDS)[number] =
 
 /** Spec 003 FR-110: longest permission `requestId` (a tool call id); the window keeps it as a map key. */
 export const REQUEST_ID_MAX = 256;
-/** Spec 012 FR-183: longest toolCall `tool` (a tool name, `TOOL_NAME_MAX` of history.ts); a longer one is refused here, before main's stores or the window read it (the window shows `tool` above it too). */
+/** Spec 012 FR-183: longest toolCall `tool`, `mcpServer` and `mcpTool` (a tool name, `TOOL_NAME_MAX` of history.ts); a longer one is refused here, before main's stores or the window read it (the window shows `tool` above it too). */
 export { TOOL_NAME_MAX };
 
 /** Spec 003 FR-102: the optional `allowedBy` of a permission (display only): a known kind and string fields, else the event is refused. */
@@ -129,6 +129,12 @@ export function eventProblems(e: unknown): string[] {
       if (!str(e.callId) || !e.callId) out.push('toolCall.callId missing');
       if (!str(e.tool)) out.push('toolCall.tool missing');
       else if ((e.tool as string).length > TOOL_NAME_MAX) out.push('toolCall.tool too long');
+      // spec 012 FR-183 (review of PR 1816): an MCP call's server and tool names are capped the same way (the tool stats key reads them uncapped)
+      for (const k of ['mcpServer', 'mcpTool'] as const) {
+        const v = e[k];
+        if (!optStr(v)) out.push(`toolCall.${k} is not a string`);
+        else if (typeof v === 'string' && v.length > TOOL_NAME_MAX) out.push(`toolCall.${k} too long`);
+      }
       if (!oneOf(e.phase, ['start', 'update', 'complete', 'failed'])) out.push(`toolCall.phase ${String(e.phase)}`);
       if (!optStr(e.output)) out.push('toolCall.output is not a string');
       if (e.edit !== undefined) out.push(...editProblems(e.edit));
