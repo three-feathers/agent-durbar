@@ -773,6 +773,10 @@ Agent decisions stand until the owner changes them.
 
 ## Changes
 
+### 2026-11-15: the moments driver's steps are independent of each other (T351; issue #1777, no new FR)
+
+`MOMENTS_ONLY=cells,empty-office` (arcade world) failed: the cells step could not find Jonas's plate. Cause (read in the driver and reproduced in the simulator): the empty-office step shows the empty floor, which the app stores as `durbar.floor` in the page's storage; the next step's `H.load` keeps that storage, so the cells step opened on the empty floor. The empty-office step now puts the storage back (`durbar.floor`, `durbar.floorView`) in a `finally`; what the cells step checks is unchanged. `test:momentsregistry` fails on a driver whose empty-office step does not restore it.
+
 ### 2026-11-14: the Retro pixel theme stays; no migration, no removal (owner decision; T347, T348; issue #1400, no new FR)
 
 **Owner decision (Vikram, Telegram DM, 2026-11-14 07:25 and 07:27 UTC, his words):** "Let's keep both new retro pixel and also old one as it is significantly different and ok to keep both - I know I said something else earlier I changed my mind looking at these 2 worlds how different they are". To the numbered question he answered "1" (07:27): the old *Retro pixel* THEME stays selectable in Settings > Theme as today, next to the new Retro arcade WORLD; no migration of old-theme users into the world; the Characters list keeps *Retro pixel people* (stored value `pixel`). Second answer (07:29 UTC, "1" to "when the Retro arcade world is finished and opens, who gets it?"): it is **only an option** in Settings > World; nobody's world changes by itself, no default changes for anyone. This reverses the owner's earlier "Automatic, no need to support old and new when we have new world" (2026-11-01) and OP-12 (2026-10-31).
