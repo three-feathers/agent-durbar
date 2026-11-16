@@ -206,7 +206,7 @@ async function run(ctx) {
   /* the header's child boxes are the same on two reads in a row (polled every 50 ms): laid out at this window size */
   const HEAD_STILL = `(()=>{const h=document.querySelector('#screen:not([hidden]) .scr-head');if(!h)return false;const s=h.getBoundingClientRect().width+'|'+[...h.children].map(e=>{const r=e.getBoundingClientRect();return [r.left,r.top,r.right,r.bottom].map(Math.round).join(',')}).join(';');const same=window.__fr138Head===s;window.__fr138Head=s;return same})()`;
   const closeIn = async (name, size, W, ready) => {
-    await need(`!document.getElementById('screen').hidden&&document.body.classList.contains('screen-open')&&!!document.getElementById('scrClose')&&(${ready})`, `${size} ${name}: the screen is open on its view`);
+    await need(`!document.getElementById('screen').hidden&&document.body.classList.contains('screen-open')&&!!document.getElementById('scrClose')&&(${ready.toString()})()`, `${size} ${name}: the screen is open on its view`);
     await js(`delete window.__fr138Head`);
     await need(HEAD_STILL, `${size} ${name}: the header is laid out`);
     const m = await js(`(${measureHead.toString()})()`);
@@ -236,10 +236,10 @@ async function run(ctx) {
     if (W > w + 1 || W < w - 1) throw new Error(`the window is ${W}px wide, not ${w}`);
     await openChat();
     for (const [name, open, ready] of [
-      ['chat-tools', `window.DurbarScreens.openTools(null)`, `!!document.querySelector('#tabTools[aria-selected="true"]')`],
-      ['chat-tools-cost', `window.DurbarScreens.openTools(null,'cost')`, `!!document.querySelector('#tabCost[aria-selected="true"]')`],
-      ['chat-tools-activity', `window.DurbarScreens.openTools(null,'activity')`, `!!document.querySelector('#tabActivity[aria-selected="true"]')&&!!document.querySelector('.scr-head.scr-wide')`],
-      ['chat-settings', `window.DurbarScreens.openSettings()`, `!!document.querySelector('#screen:not([hidden]) .scr-nav')`]]) {
+      ['chat-tools', `window.DurbarScreens.openTools(null)`, () => !!document.querySelector('#tabTools[aria-selected="true"]')],
+      ['chat-tools-cost', `window.DurbarScreens.openTools(null,'cost')`, () => !!document.querySelector('#tabCost[aria-selected="true"]')],
+      ['chat-tools-activity', `window.DurbarScreens.openTools(null,'activity')`, () => !!document.querySelector('#tabActivity[aria-selected="true"]')&&!!document.querySelector('.scr-head.scr-wide')],
+      ['chat-settings', `window.DurbarScreens.openSettings()`, () => !!document.querySelector('#screen:not([hidden]) .scr-nav')]]) {
       await js(open); await closeIn(name, size, W, ready);
       await js(`window.DurbarScreens.close()`);
       await need(`document.getElementById('screen').hidden&&!document.body.classList.contains('screen-open')&&document.body.classList.contains('panel-open')`, `${size} ${name}: the screen closed, the chat is still open`);
