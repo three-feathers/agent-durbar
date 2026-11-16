@@ -108,9 +108,10 @@
   /* spec 012 FR-184 (issue #1543): a line continuation (a backslash, or cmd's caret, before a line break) inside a token is joined by the shell, but plainKeep makes the break a blank
      (`\ `, a literal blank to the shell), and PowerShell's `u{…} escape, whose backtick plainKeep removes as Markdown; a text with one is masked as written first
      (redact reads them), as maskRaw0 does for a backslash */
-  const LINE_CONT=/[\\^]\r?\n|[\\^]\r|`u\{[0-9A-Fa-f]{1,6}\}/;
+  /* review of PR 1824 (F3): the shared definition (hasShellJoin), never a copy; throws without it (callers fail closed) */
+  const lineCont=t=>{if(!SH||typeof SH.hasShellJoin!=='function')throw new Error('no hasShellJoin');return SH.hasShellJoin(String(t==null?'':t))===true;};
   const maskPlain0=(raw,redact,codeWord)=>{try{
-    let r0=raw;if(!asBefore&&LINE_CONT.test(raw)){r0=redact(raw);if(typeof r0!=='string')throw new Error('mask');}
+    let r0=raw;if(!asBefore&&lineCont(raw)){r0=redact(raw);if(typeof r0!=='string')throw new Error('mask');}
     const u=unesc(r0),m=both(u,plainKeep(u,codeWord),redact);
     return m.replace(/_/g,'');}catch(e){if(e===OVER)throw e;return null;}}; /* OVER is final: unhid's catch gives null, never the text as written */
   const maskPlain1=(raw,redact,codeWord)=>{if(typeof redact!=='function')return null;
@@ -125,7 +126,8 @@
     let w;try{w=splitFirst(s0);}catch(e){return '';}try{const m=both2(raw,w,go);return m==null?'':m;}catch(e){return '';}};
   /* spec 012 FR-181 (review of PR 1585, round 6): a text with a backslash is masked as written first, then unescaped and masked again, so the tail glued to an escaped head
      (`ghp\_<body>@<rest>`) goes with it as in redact; a text without one is masked as before (byte for byte) */
-  const maskRaw0=(raw,redact)=>{try{const r0=raw.indexOf('\\')<0?raw:redact(raw);if(typeof r0!=='string')return '';const u=unesc(r0),m1=redact(u);if(typeof m1!=='string')return '';
+  /* spec 012 FR-184 (review of PR 1824, F3): and a text with a line continuation or `u{…} (no backslash in cmd's caret form), as the excerpt does (lineCont) */
+  const maskRaw0=(raw,redact)=>{try{const r0=raw.indexOf('\\')<0&&(asBefore||!lineCont(raw))?raw:redact(raw);if(typeof r0!=='string')return '';const u=unesc(r0),m1=redact(u);if(typeof m1!=='string')return '';
     if(!SPLIT.test(u))return m1; /* no Markdown that can split a token: one pass is enough (and keeps the live readout cheap) */
     const k=plainKeep(u),m2=both(u,k,redact);return m2!==k?m2:m1;}catch(e){return '';}}; /* m2 holds what either pass found (both) */
   /* spec 012 FR-184 (issue #1543): the shared masks read a shell's escapes (a backslash, a backtick or a caret between token characters: `$'ghp\x5f…'`, `gh`p_…`, `g^hp_…`)
@@ -136,8 +138,14 @@
   const noShell=fn=>{if(!SH||typeof SH.withoutShell!=='function')throw new Error('no withoutShell');return SH.withoutShell(fn);};
   /* true while the reference reading runs: the desk's own FR-184 step (maskPlain0's continuation pass) is off in it too, so it reads as before */
   let asBefore=false;
-  const shellBoth=(raw,fn)=>{if(asBefore)return fn();const h=fn();if(h==null||h===''||!SHELL_GATE.test(String(raw==null?'':raw)))return h;
-    let r;asBefore=true;try{r=noShell(fn);}finally{asBefore=false;}if(r==null||r==='')return r;return h===r?h:keep(h,r);};
+  /* review of PR 1824 (F2): when no shared redact call inside fn read a text differently with the shell readings (the shared shellReadCount did not move) and the
+     text has no line continuation (the desk's own step), the reading without them is this one: not read again */
+  const shellCount=()=>{if(!SH||typeof SH.shellReadCount!=='function')throw new Error('no shellReadCount');const n=SH.shellReadCount();if(typeof n!=='number')throw new Error('count');return n;};
+  /* both readings of fn: {v: the result, r: the reading without the shell readings (v itself when it was not read again)}; null or '' in v when either fails */
+  const shellPair=(raw,fn)=>{if(asBefore){const v=fn();return {v,r:v};}const s=String(raw==null?'':raw),n0=shellCount(),d0=deskShell,h=fn();
+    if(h==null||h===''||!SHELL_GATE.test(s)||(shellCount()===n0&&deskShell===d0&&!lineCont(s)))return {v:h,r:h};
+    let r;asBefore=true;try{r=noShell(fn);}finally{asBefore=false;}if(r==null||r==='')return {v:r,r};return {v:h===r?h:keep(h,r),r};};
+  const shellBoth=(raw,fn)=>shellPair(raw,fn).v;
   const maskPlain=(raw,redact,codeWord)=>{try{return shellBoth(raw,()=>maskPlain1(raw,redact,codeWord));}catch(e){return null;}};
   const maskRaw=(raw,redact)=>{try{const m=shellBoth(raw,()=>maskRaw1(raw,redact));return m==null?'':m;}catch(e){return '';}};
   /* raw agent text -> masked, plain, at most n characters (no n: not cut). '' when masking is not possible. */
@@ -155,13 +163,20 @@
      ESC_RUNS distinct escaped runs are looked at (one mask call each), more: '' (`phrase` and the desk tool labels pass it uncut); a shorter
      label, so every permission card, has every run checked. A label without an escape is masked as before. */
   const ERUN=/(?:[A-Za-z0-9_\-.+\/=:@%]|\\[\\`*_{}\[\]()#+\-.!~|<>A-Za-z0-9=:@%\/])+/g; /* spec 012 FR-181 (review of PR 1585, round 4): a backslash before a token character joins a run too (`\n` of a JSON line break, `\h` of a shell escape), as in the shared step, so a run is judged whole by the mask */
+  /* spec 012 FR-184 (review of PR 1824, F3): with the shell readings on, the shared step's run (ESC_RUN_SHELL_SOURCE: also `\ `, a line continuation, `\u{…}`, a backtick or caret
+     between token characters), so the label judges the same runs as redact; while the reading without them runs (asBefore), ERUN as before. Throws without it */
+  let ERUN_SH=null;
+  const erun=()=>{if(asBefore)return ERUN;if(ERUN_SH)return ERUN_SH;if(!SH||typeof SH.ESC_RUN_SHELL_SOURCE!=='string')throw new Error('no ESC_RUN_SHELL_SOURCE');return (ERUN_SH=new RegExp(SH.ESC_RUN_SHELL_SOURCE,'g'));};
   const ESC_RUNS=64,ESC_FULL=10000;
-  const escMask=(s,mk)=>{if(unesc(s)===s)return mk(s);const capped=s.length>ESC_FULL;
+  /* review of PR 1824 (F2/F3): how many labels the shell-mode runs cut differently from ERUN; a reading during which it moved is read again without the shell readings (shellPair) */
+  let deskShell=0;
+  const escMask=(s,mk)=>{const RX=erun();
+    if(RX!==ERUN){const a=s.match(RX)||[],b=s.match(ERUN)||[];if(a.length!==b.length||a.some((x,i)=>x!==b[i]))deskShell++;}if(unesc(s)===s)return mk(s);const capped=s.length>ESC_FULL;
     const got=t=>{const r=mk(t);if(typeof r!=='string'||!r||/\[redaction failed\]/.test(r))throw new Error('mask');return r;};
     const hit=new Set(),seen=new Set();
-    for(const m of s.matchAll(ERUN)){const r=m[0];if(r.indexOf('\\')<0||seen.has(r))continue;
+    for(const m of s.matchAll(RX)){const r=m[0];if(r.indexOf('\\')<0||seen.has(r))continue;
       seen.add(r);if(capped&&seen.size>ESC_RUNS)return '';const u=unesc(r);if(got(u)!==u)hit.add(r);}
-    const o=got(hit.size?s.replace(ERUN,r=>hit.has(r)?'[redacted]':r):s); /* one pass: each run is replaced where it stands, so no order is needed */
+    const o=got(hit.size?s.replace(RX,r=>hit.has(r)?'[redacted]':r):s); /* one pass: each run is replaced where it stands, so no order is needed */
     const u=unesc(o);return got(u)===u?o:'';};
   const maskLabel1=(raw,kind,mask)=>{const s=String(raw==null?'':raw).trim();if(!s)return '';const m=mask||{};
     const f=kind==='run'?m.cmd:isUrl(s)?m.url:m.redact;if(typeof f!=='function')return '';
@@ -175,6 +190,9 @@
       const h=escMask(s,t=>{const go=(x,u)=>u(x,one,c=>c,'');if(t.length>DESK_SPLIT_MAX){const r=old(()=>go(t,unhid));return r==null?'':r;}const m=both2(t,t===s?sf:splitFirst(t),go);return m==null?'':m;});
       return h?keep(h,ref):'';}catch(e){return '';}};
   const maskLabel=(raw,kind,mask)=>{try{return shellBoth(raw,()=>maskLabel1(raw,kind,mask));}catch(e){return '';}};
+  /* spec 012 FR-184 (review of PR 1824, F1): the label and its reading without the shell readings ({text, ref}; ref is text when it was not read again; '' for
+     both on a failure). The permission card checks both: a command the reading as before cannot match back to what runs stays lost (as on main) */
+  const maskLabelPair=(raw,kind,mask)=>{try{const p=shellPair(raw,()=>maskLabel1(raw,kind,mask));const t=p.v||'';return t?{text:t,ref:p.r||''}:{text:'',ref:''};}catch(e){return {text:'',ref:''};}};
   /* the wrapper the page uses: fallback words and the "is masking possible" flag */
   function create(o){
     const red=o&&typeof o.redact==='function'?o.redact:null, cut=o&&typeof o.cut==='function'?o.cut:cutter;
@@ -195,5 +213,7 @@
   /* test only: the window the desk's split-aware reading takes of a long text (round 7) */
   const _deskWindowForTest=t=>windowOf(shownSource(t));
   const _deskWindowStepsForTest=()=>{const n=winSteps;winSteps=0;return n;};
-  return {create,plain,plainKeep,plainMarks,unesc,unhide,maskRaw,excerpt,maskLabel,useShared,splitHides,_deskWindowForTest,_deskWindowStepsForTest,DESK_SPLIT_MAX,BOTH_WORK};
+  /* test only (review of PR 1824, F3): the run the desk label step reads with the shell readings on */
+  const _deskEscRunForTest=()=>erun().source;
+  return {create,plain,plainKeep,plainMarks,unesc,unhide,maskRaw,excerpt,maskLabel,maskLabelPair,useShared,splitHides,_deskWindowForTest,_deskWindowStepsForTest,_deskEscRunForTest,DESK_SPLIT_MAX,BOTH_WORK};
 });

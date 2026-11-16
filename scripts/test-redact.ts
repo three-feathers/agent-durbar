@@ -3,9 +3,9 @@ import * as assert from 'assert';
 import * as fs from 'fs';
 import * as path from 'path';
 import { Worker } from 'worker_threads';
-import { MASK_INPUT_MAX, REDACT_MAX_CHARS, createDebugSink, _uncappedForTest, cut, maskSchemeSecrets, maskTokenShapes, maskTokenShapesUnguarded, maskSecretArgs, maskSecretCommand, maskHomePaths, maskSecretUrl, maskNoteText, maskOutgoing, maskSplitTokens, _breakCallsForTest, keepShownBy, _unionMasksForTest, withoutSplit, withoutShell, _splitWorkForTest, redact, redactMarkdown, MARKDOWN_WORK, _markdownPassForTest, shQuote, splitCommand } from '../src/shared/redact';
+import { MASK_INPUT_MAX, REDACT_MAX_CHARS, createDebugSink, _uncappedForTest, cut, maskSchemeSecrets, maskTokenShapes, maskTokenShapesUnguarded, maskSecretArgs, maskSecretCommand, maskHomePaths, maskSecretUrl, maskNoteText, maskOutgoing, maskSplitTokens, _breakCallsForTest, keepShownBy, _unionMasksForTest, withoutSplit, withoutShell, _shellRefsForTest, ESC_RUN_SHELL_SOURCE, _splitWorkForTest, redact, redactMarkdown, MARKDOWN_WORK, _markdownPassForTest, shQuote, splitCommand } from '../src/shared/redact';
 
-import { assertLinearShape, cpuMs } from './redact-growth-lib';
+import { assertLinearShape, assertWithinYardstick, cpuMs } from './redact-growth-lib';
 import './safetext-shared'; // the desk's maskRaw (src/renderer/safetext.js) reads the compiled redact.ts, for the FR-181 differential below
 // Growth and adversarial runs: `test-redact-growth.ts` (split by spec 012 T137, issue #1009; the helpers are in `redact-growth-lib.ts`).
 const GH = 'ghp_' + 'A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8';
@@ -2461,13 +2461,75 @@ assert.strictEqual(redact('{"a":"https://u:p@h/x","b":"y"}', {}), '{"a":"https:/
     require.cache[file] = saved;
     const shared = require(path.join(__dirname, '..', 'src', 'shared', 'redact')) as Record<string, unknown> & { withoutShell<T>(fn: () => T): T };
     let inRef = false;
-    assert.ok(ST2.useShared({ ...shared, withoutShell: <T>(fn: () => T): T => shared.withoutShell(() => { inRef = true; try { return fn(); } finally { inRef = false; } }) }), '#1543 desk fail closed: the fresh copy takes the shared module');
+    let refs = 0;
+    assert.ok(ST2.useShared({ ...shared, withoutShell: <T>(fn: () => T): T => shared.withoutShell(() => { inRef = true; refs++; try { return fn(); } finally { inRef = false; } }) }), '#1543 desk fail closed: the fresh copy takes the shared module');
     const red = (x: string): string => { if (inRef) throw new Error('reference reading fails'); return redact(x, {}); };
-    const t = `echo g${BS}hp_${B36} and more`;
+    // review of PR 1824 (F2): a text the shell readings do not change (FR-181 hides this one alone) is not read again without them
+    const t0 = `echo g${BS}hp_${B36} and more`;
+    const m0 = ST2.maskRaw(t0, red);
+    assert.ok(m0.includes('[redacted]') && refs === 0, `#1543 F2 desk: a text the shell readings leave as FR-181 reads it is read once (${refs} reference readings): ${JSON.stringify(m0)}`);
+    // a text only the shell readings hide is read both ways, and fails closed when the reference reading fails
+    const t = `echo $'ghp${BS}x5f${B36}' and more`;
     assert.ok(ST2.maskRaw(t, (x) => redact(x, {})).includes('[redacted]'), '#1543 desk fail closed: with a working mask the text is masked (baseline)');
     assert.strictEqual(ST2.maskRaw(t, red), '', '#1543 desk fail closed: maskRaw gives nothing when the reference reading fails');
     assert.strictEqual(ST2.excerpt(t, red), '', '#1543 desk fail closed: the excerpt gives nothing when the reference reading fails');
     assert.strictEqual(ST2.maskLabel(t, 'other', { redact: red }), '', '#1543 desk fail closed: maskLabel gives nothing when the reference reading fails');
+  }
+  // review of PR 1824 (F1): the card falls back as on main when the label read without the shell readings cannot be matched back to the command (a glued mask and a
+  // `\u` escape: main hid the whole command, so the card showed no text); the shell readings alone match it
+  {
+    const PL = LA as unknown as { permText(t: string, k: string, m: Record<string, (s: string) => string>): { text: string; hidden: boolean; why?: string } };
+    const t = `run [redacted]${BS}u0067hp_${B36}=`;
+    const card = PL.permText(t, 'shell', mk({}));
+    assert.strictEqual(card.why, 'concealed', `#1543 F1 card: a command the reading without the shell readings cannot match back stays concealed, as on main: ${JSON.stringify(card)}`);
+    // a command both readings match back is shown masked as before
+    const ok = PL.permText(`run echo $'ghp${BS}x5f${B36}' && ls`, 'shell', mk({}));
+    assert.ok(ok.why === 'secret' && ok.text.includes('&& ls') && shows(ok.text, [B36]) === undefined, `#1543 F1 card: a command both readings match is shown masked: ${JSON.stringify(ok)}`);
+  }
+  // review of PR 1824 (F2): the command and argument masks read a text again without the shell readings only when they changed something in it
+  {
+    const before = _shellRefsForTest();
+    maskSecretCommand(`type C:${BS}Users${BS}me${BS}notes.txt && echo g${BS}hp_${B36}`, {});
+    maskSecretArgs(['cmd', `/c type C:${BS}Users${BS}me${BS}a.txt`, `{${BS}"a${BS}":1}`], {});
+    assert.strictEqual(_shellRefsForTest(), before, '#1543 F2: a command and arguments the shell readings leave as FR-181 reads them get no reference reading');
+    maskSecretCommand(`echo $'ghp${BS}x5f${B36}'`, {});
+    assert.ok(_shellRefsForTest() > before, '#1543 F2: a command the shell readings change gets its reference reading');
+    // and redact's cost on escape-heavy text stays near its cost without the shell readings (it was 1.8 to 2.9 times; FR-183's budgets and the growth suites are unchanged)
+    for (const [k, u] of Object.entries({ jsonTabs: `${BS}teyJaaaaa.`, jsonBreaks: `${BS}n`, jsonGh: `${BS}nghp_`, jsonCode: `${BS}u003d`, hexSk: `${BS}x3dsk-` })) {
+      const x = u.repeat(Math.ceil(131_072 / u.length));
+      assertWithinYardstick(`#1543 F2 redact ${k} with the shell readings against without them`, () => { redact(x, {}); }, () => { withoutShell(() => redact(x, {})); }, 2);
+    }
+  }
+  // review of PR 1824 (F3): the desk reads the same escaped runs and line continuations as redact (one shared definition each)
+  {
+    const t1 = `[redacted]glpat-${B36.slice(0, 6)}^\n${B36.slice(6, 20)}=`;
+    assert.strictEqual(shows(redact(t1, {}), [B36.slice(0, 20)]), undefined, '#1543 F3: redact hides a token with a caret continuation after a glued mask (baseline)');
+    assert.strictEqual(shows(ST.maskRaw(t1, (x) => redact(x, {})), [B36.slice(0, 20)]), undefined, `#1543 F3 maskRaw: a caret continuation (no backslash) is masked as written first, as the excerpt does: ${JSON.stringify(ST.maskRaw(t1, (x) => redact(x, {})))}`);
+    const t2 = `password=ghs_${B36.slice(0, 3)}${BS}u{6d}${B36.slice(3, 20)}${BS}${BS}${B36.slice(20)}${BS}\njhh\``;
+    assert.strictEqual(shows(redact(t2, {}), [B36]), undefined, '#1543 F3: redact hides a token with a \\u{…} escape and a continuation (baseline)');
+    const lab = ST.maskLabel(t2, 'other', { redact: (x: string) => redact(x, {}) });
+    assert.strictEqual(shows(lab, [B36]), undefined, `#1543 F3 maskLabel: the label step judges the shared step's runs (a \\u{…} escape is one run with its token): ${JSON.stringify(lab)}`);
+    // the shell-mode run can take a keyword after a backtick with the token (`<run>`token: <password>`); the label is then read again without the shell readings, so the
+    // value main hides stays hidden (the differential fuzz of the review round found it)
+    for (const t3 of [`> sk-proj-${B36.slice(0, 4)}${BS}${BS}${B36.slice(4)}${BS}tb\`token: ${PW}`, `a${BS}${BS}github_pat_${B36.slice(0, 20)}${BS}${BS}${B36}\`mysql -p${PW}\` x`]) {
+      for (const [k, m] of [['other', { redact: (x: string) => redact(x, {}) }], ['run', { cmd: (x: string) => maskSecretCommand(x, {}) }]] as Array<[string, Record<string, (s: string) => string>]>) {
+        const o = ST.maskLabel(t3, k, m);
+        assert.strictEqual(shows(o, [PW, B36]), undefined, `#1543 F3 maskLabel ${k}: a keyword the shell-mode run takes with the token keeps its value hidden: ${JSON.stringify(o)}`);
+      }
+    }
+    const STF = ST as unknown as { _deskEscRunForTest(): string };
+    assert.strictEqual(STF._deskEscRunForTest(), ESC_RUN_SHELL_SOURCE, '#1543 F3: the desk label step reads the shared run definition, not a copy');
+  }
+  // review of PR 1824 (F4): a mask per short continuation line made the output 3.7 times the text; it is at most three times (plus one mask), failing closed over it
+  {
+    for (const [k, x] of Object.entries({ lf: 'ghp_' + `${BS}\na`.repeat(4000), crlf: 'ghp_' + `${BS}\r\na`.repeat(3000), caret: 'ghp_' + '^\nab'.repeat(3000) })) {
+      for (const [name, out] of Object.entries({ redact: redact(x, {}), command: maskSecretCommand(x, {}), args: maskSecretArgs([x], {})[0], maskRaw: ST.maskRaw(x, (y) => redact(y, {})) })) {
+        assert.ok(out.length <= 3 * x.length + 10, `#1543 F4 ${name} ${k}: output ${out.length} characters for ${x.length} (at most three times)`);
+        assert.ok(!/a|ab/.test(out.replace(/\[redacted\]/g, '')), `#1543 F4 ${name} ${k}: nothing of the hidden lines shows`);
+      }
+    }
+    // under the bound nothing changes: a text with a few masks per line keeps them in place
+    assert.strictEqual(redact(`a ghp_${B36}\nb ghp_${B36}`, {}), 'a [redacted]\nb [redacted]', '#1543 F4: under the bound the masks stay where they are');
   }
   // odd input stays a string
   for (const t of ['`', '^', '`'.repeat(1000), '^a'.repeat(1000), `${BS}\n`.repeat(500), `${BS}u{110000}`, `${BS}U0011FFFF`, `$'${BS}x`, '`u{110000}', '^\n'.repeat(500), '`u{5f}'.repeat(500)]) {
