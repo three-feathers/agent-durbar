@@ -249,12 +249,12 @@ for (const wid of worldIds) {
 }
 /* spec 097 Changes 2026-11-08 (T240..T244): a set that is no world's default is a crew set; it is drawn only because crew.js has a `REAL_SETS` row for it
    (wired). It still passes every picture and text check and has its approval on record. A set with no row is refused, except a set named in SETS_PACK_ONLY
-   (T245 art part: the art lands before its wiring PR); that allowance fails as soon as crew.js gives the set a row, so it cannot go stale. */
+   (an art-only set whose wiring PR is to come; empty since T245); that allowance fails as soon as crew.js gives the set a row, so it cannot go stale. */
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const REAL_SETS = (require(path.join(__dirname, '..', '..', 'src', 'renderer', 'crew.js')) as { REAL_SETS: { id: string }[] }).REAL_SETS;
 const wiredIds = REAL_SETS.map((r) => r.id);
 for (const id of wiredIds) assert.ok(setIds.includes(id), `${id}: a REAL_SETS row has its set folder`);
-const SETS_PACK_ONLY = ['minimalist']; // art landed, wiring PR to come (T245); remove the name when crew.js has its REAL_SETS row
+const SETS_PACK_ONLY: string[] = []; // empty since T245 (Minimalist wired, #1154); a name here is an art-only set whose wiring PR is to come
 for (const id of SETS_PACK_ONLY) assert.ok(!wiredIds.includes(id), `${id} is wired: remove it from SETS_PACK_ONLY`);
 /* each crew set's owner approval (date, time and quote of every frame line) and likeness check, one explicit entry per set: a set missing here fails */
 const QUOTE_1143 = 'Vikram Gorla (owner), 2026-11-08 11:43 UTC, Telegram DM: "Yes, I looked at every art carefully and it does not resemble any person I know"';

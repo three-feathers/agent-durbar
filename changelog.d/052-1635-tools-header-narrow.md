@@ -1,0 +1,1 @@
+- Fixed: a screen header (Tools, Settings) wraps instead of running past a narrow window: at 640 to 760 px the Tools tab strip moves to a second row and the Close button stays inside the window (spec 052 FR-138, issue #1635).

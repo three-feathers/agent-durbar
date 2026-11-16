@@ -68,6 +68,10 @@ function check({ reg, main, driver, css }) {
   }
   if (world && world.shippable !== false && Object.values(cells).some((s) => s === 'missing' || s === 'designed')) bad.push('retro is shippable while a cell is missing or only designed');
   if (world && typeof world.shippable !== 'boolean') bad.push('retro `shippable` is not a boolean');
+  /* issue #1777: the empty-office step goes to the empty floor, which the app stores (durbar.floor); the next step of the same run (cells) then starts on that floor and finds no Jonas. The step must put the storage back in a finally. */
+  { const d = driver.replace(/\r\n/g, '\n'), a = d.indexOf("run('empty-office')) {"), e = d.indexOf('// ---- FR-120', a), step = a < 0 || e < 0 ? '' : d.slice(a, e);
+    if (!step) bad.push('the empty-office step is not found in shots-097-moments (the step-order check cannot read it)');
+    else if (!/\} finally \{[^]*localStorage\.removeItem\('durbar\.floor'\)/.test(step)) bad.push('the empty-office step leaves durbar.floor stored (restore it in a finally): the next step of the same run starts on the empty floor'); }
   // scoped to the arcade
   if (main) {
     if (retroPart(reg) !== retroPart(main)) {
@@ -132,6 +136,7 @@ if (require.main === module) {
   fails('building-preview built with no evidence', (i) => { i.reg.moments.find((m) => m.id === 'building-preview').worlds.retro = 'built'; }, /building-preview is built and names no evidence/);
   fails('building-preview fallback-flat naming evidence', (i) => { i.reg.moments.find((m) => m.id === 'building-preview').evidence = { retro: { steps: ['cells'], pictures: ['cell-preview'] } }; }, /building-preview is fallback-flat but names evidence/);
   fails('empty-office built with no evidence', (i) => { delete i.reg.moments.find((m) => m.id === 'empty-office').evidence; }, /empty-office is built and names no evidence/);
+  fails('the empty-office step does not restore the stored floor (issue 1777)', (i) => { const d0 = i.driver.replace(/\r\n/g, '\n'); /* a Windows checkout has CRLF: the check normalises, so the mutant does too */ i.driver = d0.replace("localStorage.removeItem('durbar.floor');localStorage.removeItem('durbar.floorView')`).catch(() => undefined);\n      }\n    }\n    // ---- FR-120", "`).catch(() => undefined);\n      }\n    }\n    // ---- FR-120"); assert.notStrictEqual(i.driver, d0, 'the mutation applied'); }, /empty-office step leaves durbar\.floor stored/);
   fails('a missing cell without a reason', (i) => { const m = i.reg.moments.find((x) => x.id === 'all-floors'); m.worlds.retro = 'missing'; delete m.evidence; delete m.gap; }, /all-floors is missing and says nothing why/); /* all-floors may already be built (the All floors PR): the mutant makes it missing first */
   fails('shippable while a cell is missing', (i) => { const m = i.reg.moments.find((x) => x.id === 'all-floors'); m.worlds.retro = 'missing'; delete m.evidence; m.gap = 'x'; i.reg.worlds.retro.shippable = true; }, /shippable while a cell is missing/); /* all-floors built on this branch: the mutant makes one cell missing first */
   fails('the first-run rule unscoped', (i) => { i.css = i.css.replace('html[data-world="retro"] body:has(#stage > .welcome) #stats', 'body:has(#stage > .welcome) #stats'); }, /not scoped to html\[data-world="retro"\]/);

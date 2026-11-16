@@ -349,9 +349,9 @@
   /* Characters, separate from themes (spec 077 FR-064, FR-065): who sits at the desks. 'theme' is the theme's own kit (the default);
      the others name a kit that is drawn on top of any theme. The same list and rule as src/shared/characters.ts (test:characters). */
   const PIXEL_CHARACTERS='pixel'; /* spec 102 FR-266, FR-320: the stored value of the Retro pixel people (the set is `retro`); the copy of PIXEL_CHARACTERS in src/shared/characters.ts, compared by test:characters */
-  const CHARACTERS=['theme','office','minimalist','cheeky','prehistoric','pirate','monster','royal','rebels',PIXEL_CHARACTERS];
+  const CHARACTERS=['theme','office','minimalist','cheeky','prehistoric','pirate','monster','royal','rebels',PIXEL_CHARACTERS,'mine'];
   const SET_CHOICES=['office',PIXEL_CHARACTERS]; /* spec 102 FR-320, FR-321: Real office people sets; Flat draws the theme's own figures until T294 */
-  const CHARACTER_KITS={minimalist:'office',cheeky:'crew',prehistoric:'crew',pirate:'crew',monster:'crew',royal:'crew',rebels:'crew'};
+  const CHARACTER_KITS={minimalist:'office',cheeky:'crew',prehistoric:'crew',pirate:'crew',monster:'crew',royal:'crew',rebels:'crew',mine:'crew'};
   const REMOVED_THEMES=['corporate','durbar-indian','durbar-european','durbar-japanese']; /* spec 035 FR-017: removed built-ins; FR-018 maps them to Clean Office, same list as src/shared/themes.ts (test:theme) */
   const LEGACY_CREW_THEME='cheeky-crew'; /* FR-066: no longer a theme; FR-067 maps it to Clean Office with Characters = Cheeky */
   function parseCharacters(v){return typeof v==='string'&&CHARACTERS.includes(v)?v:undefined;}

@@ -44,8 +44,12 @@
      Only needed when a mark that can split or glue is present. Throws when redact gives no string (the callers fail closed). */
   const RUN=/[A-Za-z0-9_\-.+\/=:@%]{12,}/g; /* no Markdown mark (`~` either): a run is what stands between them */
   const reEsc=t=>t.replace(/[.*+?^${}()|[\]\\\/]/g,'\\$&');
+  /* spec 012 FR-183: the second pass reads the whole output once per run found, so its work is (runs x length, a proxy for the scan work); over BOTH_WORK (equal to MARKDOWN_WORK of src/shared/redact.ts) it fails closed (OVER: maskRaw
+     gives '', the excerpt nothing, and the copy with hidden characters is not read in its place). Under it, nothing changes. A text of 16,384 characters (the
+     split-aware window) holds at most 1,260 runs of 12 or more, so it stays under unless the mask's output is over three times its length. */
+  const BOTH_WORK=1<<26,OVER=new Error('mask budget');
   const both=(u,k,redact)=>{let m=redact(k);if(typeof m!=='string')throw new Error('mask');if(!SPLIT.test(u))return m;
-    const seen=new Set(),found=[];for(const r of u.match(RUN)||[]){if(seen.has(r))continue;seen.add(r);const x=redact(r);if(typeof x!=='string')throw new Error('mask');if(x!==r)found.push(r);}
+    const seen=new Set(),found=[];for(const r of u.match(RUN)||[]){if(seen.has(r))continue;seen.add(r);const x=redact(r);if(typeof x!=='string')throw new Error('mask');if(x!==r){found.push(r);if(found.length*m.length>BOTH_WORK)throw OVER;}} /* checked as each run is found (round 2 of the review of PR 1816) */
     found.sort((a,b)=>b.length-a.length);
     for(const r of found)m=m.replace(new RegExp(reEsc(r)+'[A-Za-z0-9_-]*','g'),()=>'[redacted]');
     return m;};
@@ -103,7 +107,7 @@
   const splitFirst=raw=>{if(!SH||typeof SH.maskSplitTokens!=='function')throw new Error('no maskSplitTokens');const r=SH.maskSplitTokens(String(raw==null?'':raw));if(typeof r!=='string')throw new Error('mask');return r;};
   const maskPlain0=(raw,redact,codeWord)=>{try{
     const u=unesc(raw),m=both(u,plainKeep(u,codeWord),redact);
-    return m.replace(/_/g,'');}catch(e){return null;}};
+    return m.replace(/_/g,'');}catch(e){if(e===OVER)throw e;return null;}}; /* OVER is final: unhid's catch gives null, never the text as written */
   const maskPlain=(raw,redact,codeWord)=>{if(typeof redact!=='function')return null;
     const s0=String(raw==null?'':raw);let w;try{w=splitFirst(s0.length>DESK_SPLIT_MAX?windowOf(shownSource(s0)):s0);}catch(e){return null;}
     const go=(x,u)=>u(x,t=>maskPlain0(t,redact,codeWord),c=>plainKeep(unesc(c),codeWord).replace(/_/g,''),null);
@@ -173,5 +177,5 @@
   /* test only: the window the desk's split-aware reading takes of a long text (round 7) */
   const _deskWindowForTest=t=>windowOf(shownSource(t));
   const _deskWindowStepsForTest=()=>{const n=winSteps;winSteps=0;return n;};
-  return {create,plain,plainKeep,plainMarks,unesc,unhide,maskRaw,excerpt,maskLabel,useShared,splitHides,_deskWindowForTest,_deskWindowStepsForTest,DESK_SPLIT_MAX};
+  return {create,plain,plainKeep,plainMarks,unesc,unhide,maskRaw,excerpt,maskLabel,useShared,splitHides,_deskWindowForTest,_deskWindowStepsForTest,DESK_SPLIT_MAX,BOTH_WORK};
 });

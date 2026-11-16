@@ -194,35 +194,40 @@ module.exports = async (ctx) => {
     }
     // ---- FR-119 empty office ----
     if (run('empty-office')) {
-      await H.load({ w, h, query: q(world, { simfloors: 'ground' }), ready: REAL, settle: false });
-      await must(PICS, 'the pictures');
-      /* the order is fixed, not left to the simulator's clock: the limit slip is on the first floor (placed under that floor's lobby) before the empty floor is shown, so the slip that crosses is always checked (its kept spot must be placed again under the empty floor's taller lobby) */
-      if (world === 'retro') await must(`!!document.querySelector('#stage .ro-slip.ro-limit:not([hidden])')`, 'the limit slip on the first floor');
-      await H.goToFloor((await H.floors())[1].id);
-      await must(`!!document.querySelector('#stage .ro-eplate')&&!document.querySelector('#stage .ro-ride')`, 'the empty plate, the ride over');
-      await must(PICS, 'the pictures');
-      const em = await js(`(()=>{const p=document.querySelector('#stage .ro-eplate');return {text:p.textContent,desks:document.querySelectorAll('#stage .ro-edesk').length,screens:document.querySelectorAll('#stage .ro-escreen.off').length,lobby:!!document.querySelector('#stage .ro-lobby'),
-        lift:!!document.querySelector('#lift:not([hidden])'),amb:document.querySelector('#stage .ro').dataset.ambient,small:parseFloat(getComputedStyle(p).fontSize)}})()`);
-      assert.ok(/^Nothing on .+ yet\. Move a folder here from its ⋯ menu \(Move to floor\)\.$/.test(em.text), `${tag}: the flat sentence: ${em.text}`);
-      assert.strictEqual(em.desks, 3, `${tag}: three empty desks`);
-      assert.strictEqual(em.screens, 3, `${tag}: screens off`);
-      assert.ok(em.lobby && em.lift, `${tag}: the lobby and the lift stay`);
-      assert.strictEqual(em.amb, '0.7', `${tag}: room at 70 %`);
-      assert.ok(em.small >= 10.5, `${tag}: plate text >= 10.5px`);
-      assert.deepStrictEqual(await slipOverlaps(), [], `${tag}: no slip covers the empty floor's plate`);
-      if (world === 'retro') { /* spec 102 delta 2026-11-14 (T223): the arcade's empty office is a hall: the stage takes the floor like the 15-agent hall, the plate is over its floor and readable, nothing scrolls */
-        const hall = await js(`(()=>{const R=e=>e.getBoundingClientRect(),f=document.getElementById('floor'),s=document.getElementById('stage'),p=document.querySelector('#stage .ro-eplate'),cs=getComputedStyle(f),pc=getComputedStyle(p),fr=R(f),sr=R(s),pr=R(p);
-          return {stageH:Math.round(sr.height),floorBottom:Math.round(fr.bottom-parseFloat(cs.paddingBottom)),stageBottom:Math.round(sr.bottom),gap:Math.round(fr.bottom-parseFloat(cs.paddingBottom)-sr.bottom),scrolls:f.scrollHeight>f.clientHeight+1,fit:s.dataset.fit,
-          plateIn:pr.left>=sr.left&&pr.right<=sr.right&&pr.top>=sr.top&&pr.bottom<=sr.bottom,plateH:Math.round(pr.height),ink:pc.color,bg:pc.backgroundColor,cabs:document.querySelectorAll('#stage .ro-edesk').length}})()`);
-        console.log(`[moments] ${tag}: empty office stage height ${hall.stageH}, floor bottom ${hall.floorBottom}, stage bottom ${hall.stageBottom}`);
-        assert.ok(Math.abs(hall.gap) <= 8, `${tag}: the arcade's empty stage fills the office area: its bottom edge is ${hall.gap}px from the floor's bottom (stage ${hall.stageH}px)`);
-        assert.ok(!hall.scrolls && hall.fit === 'ok', `${tag}: the empty arcade office does not scroll`);
-        const lum = (c) => { const v = (c.match(/[\d.]+/g) || []).slice(0, 3).map(Number).map((x) => { x /= 255; return x <= 0.03928 ? x / 12.92 : ((x + 0.055) / 1.055) ** 2.4; }); return 0.2126 * v[0] + 0.7152 * v[1] + 0.0722 * v[2]; };
-        const ratio = (lum(hall.ink) + 0.05 > lum(hall.bg) + 0.05 ? (lum(hall.ink) + 0.05) / (lum(hall.bg) + 0.05) : (lum(hall.bg) + 0.05) / (lum(hall.ink) + 0.05));
-        assert.ok(ratio >= 4.5, `${tag}: the empty arcade office's words read at 4.5:1 or better (${ratio.toFixed(2)}: ${hall.ink} on ${hall.bg})`);
-        assert.ok(hall.plateIn && hall.plateH > 0, `${tag}: the words card is drawn on the hall's floor`);
+      try {
+        await H.load({ w, h, query: q(world, { simfloors: 'ground' }), ready: REAL, settle: false });
+        await must(PICS, 'the pictures');
+        /* the order is fixed, not left to the simulator's clock: the limit slip is on the first floor (placed under that floor's lobby) before the empty floor is shown, so the slip that crosses is always checked (its kept spot must be placed again under the empty floor's taller lobby) */
+        if (world === 'retro') await must(`!!document.querySelector('#stage .ro-slip.ro-limit:not([hidden])')`, 'the limit slip on the first floor');
+        await H.goToFloor((await H.floors())[1].id);
+        await must(`!!document.querySelector('#stage .ro-eplate')&&!document.querySelector('#stage .ro-ride')`, 'the empty plate, the ride over');
+        await must(PICS, 'the pictures');
+        const em = await js(`(()=>{const p=document.querySelector('#stage .ro-eplate');return {text:p.textContent,desks:document.querySelectorAll('#stage .ro-edesk').length,screens:document.querySelectorAll('#stage .ro-escreen.off').length,lobby:!!document.querySelector('#stage .ro-lobby'),
+          lift:!!document.querySelector('#lift:not([hidden])'),amb:document.querySelector('#stage .ro').dataset.ambient,small:parseFloat(getComputedStyle(p).fontSize)}})()`);
+        assert.ok(/^Nothing on .+ yet\. Move a folder here from its ⋯ menu \(Move to floor\)\.$/.test(em.text), `${tag}: the flat sentence: ${em.text}`);
+        assert.strictEqual(em.desks, 3, `${tag}: three empty desks`);
+        assert.strictEqual(em.screens, 3, `${tag}: screens off`);
+        assert.ok(em.lobby && em.lift, `${tag}: the lobby and the lift stay`);
+        assert.strictEqual(em.amb, '0.7', `${tag}: room at 70 %`);
+        assert.ok(em.small >= 10.5, `${tag}: plate text >= 10.5px`);
+        assert.deepStrictEqual(await slipOverlaps(), [], `${tag}: no slip covers the empty floor's plate`);
+        if (world === 'retro') { /* spec 102 delta 2026-11-14 (T223): the arcade's empty office is a hall: the stage takes the floor like the 15-agent hall, the plate is over its floor and readable, nothing scrolls */
+          const hall = await js(`(()=>{const R=e=>e.getBoundingClientRect(),f=document.getElementById('floor'),s=document.getElementById('stage'),p=document.querySelector('#stage .ro-eplate'),cs=getComputedStyle(f),pc=getComputedStyle(p),fr=R(f),sr=R(s),pr=R(p);
+            return {stageH:Math.round(sr.height),floorBottom:Math.round(fr.bottom-parseFloat(cs.paddingBottom)),stageBottom:Math.round(sr.bottom),gap:Math.round(fr.bottom-parseFloat(cs.paddingBottom)-sr.bottom),scrolls:f.scrollHeight>f.clientHeight+1,fit:s.dataset.fit,
+            plateIn:pr.left>=sr.left&&pr.right<=sr.right&&pr.top>=sr.top&&pr.bottom<=sr.bottom,plateH:Math.round(pr.height),ink:pc.color,bg:pc.backgroundColor,cabs:document.querySelectorAll('#stage .ro-edesk').length}})()`);
+          console.log(`[moments] ${tag}: empty office stage height ${hall.stageH}, floor bottom ${hall.floorBottom}, stage bottom ${hall.stageBottom}`);
+          assert.ok(Math.abs(hall.gap) <= 8, `${tag}: the arcade's empty stage fills the office area: its bottom edge is ${hall.gap}px from the floor's bottom (stage ${hall.stageH}px)`);
+          assert.ok(!hall.scrolls && hall.fit === 'ok', `${tag}: the empty arcade office does not scroll`);
+          const lum = (c) => { const v = (c.match(/[\d.]+/g) || []).slice(0, 3).map(Number).map((x) => { x /= 255; return x <= 0.03928 ? x / 12.92 : ((x + 0.055) / 1.055) ** 2.4; }); return 0.2126 * v[0] + 0.7152 * v[1] + 0.0722 * v[2]; };
+          const ratio = (lum(hall.ink) + 0.05 > lum(hall.bg) + 0.05 ? (lum(hall.ink) + 0.05) / (lum(hall.bg) + 0.05) : (lum(hall.bg) + 0.05) / (lum(hall.ink) + 0.05));
+          assert.ok(ratio >= 4.5, `${tag}: the empty arcade office's words read at 4.5:1 or better (${ratio.toFixed(2)}: ${hall.ink} on ${hall.bg})`);
+          assert.ok(hall.plateIn && hall.plateH > 0, `${tag}: the words card is drawn on the hall's floor`);
+        }
+        await shot(world, 'empty', w, h);
+      } finally {
+        /* issue #1777: going to the empty floor stores it (durbar.floor); a step that runs later in the same run must not start on it (the cells step looks for Jonas's plate on the first floor), so the step leaves the storage as it found it: the first floor */
+        await js(`localStorage.removeItem('durbar.floor');localStorage.removeItem('durbar.floorView')`).catch(() => undefined);
       }
-      await shot(world, 'empty', w, h);
     }
     // ---- FR-120 asleep ----
     if (run('asleep')) {
@@ -653,15 +658,7 @@ module.exports = async (ctx) => {
       await must(`document.querySelector('#lift [data-lift="*all"]').getAttribute('aria-current')==='true'`, 'the All floors view (the lift says All)');
       await must(PICS, 'the pictures');
       /* 102 T223 (#1268, spec 097 FR-104): the All floors view is the building: a tag with the floor's name for every floor that has a folder, at least two floors, each name at 10.5 px or more and 4.5:1, no tag over a sign, a cabinet or another tag, nothing scrolls */
-      /* review round 4: a sign keeps its flat width and a tag its whole name, so the cave's simulator split at 1280x800 (no room for sign and tag in any zone) is the hall without floors: no tag, no rule, nothing else changed. Every other world and size must draw its storeys. */
-      const flatHall = world === 'cave' && w === 1280;
-      if (flatHall) {
-        await must(`!document.querySelector('#stage .ro-stag')&&!document.querySelector('#stage .ro-slab')&&!window.__durbarSimUi.realLayout().storeys`, 'the hall without floors (no tag, no rule)');
-        assert.strictEqual(await js(`document.getElementById('stage').dataset.fit==='scroll'`), false, `${tag}: the hall without floors does not scroll`);
-        await shot(world, 'cell-allfloors', w, h);
-        await js(`localStorage.removeItem('durbar.floor');localStorage.removeItem('durbar.floorView')`);
-        continue;
-      }
+      /* spec 097 (#1763, review of #1802): the cave draws its All floors view as storeys at both sizes, as Photo does (the dots fix frees the room the flat hall was taking), so every world and size meets the storey checks below; a cave that fell back to the flat hall now fails them. */
       await must(`document.querySelectorAll('#stage .ro-stag').length>=2`, 'the storey tags of the All floors view');
       const sto = await js(`(()=>{const P=(s)=>{const m=/rgba?\\(([^)]+)\\)/.exec(s);return m?m[1].split(/[ ,\\/]+/).filter(Boolean).slice(0,3).map(Number):[0,0,0]},Lm=(a)=>{const f=(x)=>{x/=255;return x<=0.03928?x/12.92:Math.pow((x+0.055)/1.055,2.4)};return 0.2126*f(a[0])+0.7152*f(a[1])+0.0722*f(a[2])};
         const R=e=>e.getBoundingClientRect(),hit=(a,b)=>a.left<b.right-0.5&&b.left<a.right-0.5&&a.top<b.bottom-0.5&&b.top<a.bottom-0.5;
