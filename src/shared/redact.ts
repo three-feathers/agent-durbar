@@ -732,10 +732,14 @@ function markdownPass(u: string, k: string, mask: (x: string) => string): string
   for (const r of u.match(/[A-Za-z0-9_\-.+/=:@%]{12,}/g) ?? []) {
     if (seen.has(r)) continue;
     seen.add(r);
-    if (mask(r) !== r) found.push(r);
+    if (mask(r) !== r) {
+      found.push(r);
+      // spec 012 FR-183: over the budget, fail closed (the whole text is one mask); checked as each run is found (round 2 of the review of PR 1816),
+      // so an over-budget text costs about MARKDOWN_WORK / m.length mask calls, not one per distinct run
+      if (found.length * m.length > MARKDOWN_WORK) return MASK;
+    }
   }
   found.sort((a, b) => b.length - a.length);
-  if (found.length * m.length > MARKDOWN_WORK) return MASK; // spec 012 FR-183: over the budget, fail closed (the whole text is one mask)
   try {
     for (const r of found) m = m.replace(new RegExp(r.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&') + '[A-Za-z0-9_-]*', 'g'), () => MASK);
   } catch {

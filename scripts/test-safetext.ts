@@ -245,6 +245,11 @@ eq(T.ready, true, 'redact: ready');
     eq((S as unknown as { BOTH_WORK: number }).BOTH_WORK, 8192 * 8192, '#1593 the budget is 8,192 x 8,192');
     eq(S.maskRaw(text, inj(8192)), 'a'.repeat(8192), '#1593 exactly at the budget: the pass runs');
     eq(S.maskRaw(text, inj(8193)), '', '#1593 one output character over the budget: nothing');
+    // round 2 of the review of PR 1816: over the budget the pass stops at the first run that crosses it (2^26 / 65,536 = 1,024 runs fit), not after all 8,192
+    let calls = 0;
+    const counted = (t: string): string => { if (/^q\d{11}$/.test(t)) calls++; return inj(65_536)(t); };
+    eq(S.maskRaw(text, counted), '', '#1593 far over the budget: nothing');
+    eq(calls, 1025, '#1593 over the budget: the pass stops at the run that crosses it (1,025 run masks, not 8,192)');
   }
 
   // the differential: byte-identical output to main's copy under the budget

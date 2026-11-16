@@ -2301,6 +2301,11 @@ assert.strictEqual(redact('{"a":"https://u:p@h/x","b":"y"}', {}), '{"a":"https:/
     const inj = (len: number) => (t: string): string => (/^q\d{11}$/.test(t) ? '[x]' : t.length > 1000 ? 'a'.repeat(len) : t);
     assert.strictEqual(_markdownPassForTest(u, marks(u), inj(8192)), 'a'.repeat(8192), '#1593 redactMarkdown exactly at the budget: the pass runs');
     assert.strictEqual(_markdownPassForTest(u, marks(u), inj(8193)), MK, '#1593 redactMarkdown one output character over the budget: one mask');
+    // round 2 of the review of PR 1816: over the budget the pass stops at the first run that crosses it (2^26 / 65,536 = 1,024 runs fit), not after all 8,192
+    let calls = 0;
+    const counted = (t: string): string => { if (/^q\d{11}$/.test(t)) calls++; return inj(65_536)(t); };
+    assert.strictEqual(_markdownPassForTest(u, marks(u), counted), MK, '#1593 redactMarkdown far over the budget: one mask');
+    assert.strictEqual(calls, 1025, '#1593 redactMarkdown over the budget: it stops at the run that crosses it (1,025 run masks, not 8,192)');
   }
   // about 2,800 distinct runs that the mask leaves alone and a secret every 500th: runs x length is over the budget, changed runs x length is not
   const manyPlain = pwRun(40_000, (i) => (i % 500 === 7 ? 'password=Hx9Kq2Lm7Np4Rs' + i + ' ' : 'plainword' + String(i).padStart(5, '0') + ' '));
