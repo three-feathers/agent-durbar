@@ -470,6 +470,17 @@ async function cloneCases(): Promise<void> {
     assert.deepStrictEqual(t.of('rm').map((c) => path.basename(String(c[1]))), ['durbar-hooks-abc', 'shop'], `${kind}: hooks folder and folder removed`);
     assert.strictEqual(t.op.busy(), false);
   }
+  // ---- spec 033 FR-090 (review of #1713): main found the new folder already in the office: say so, never remove what was just made ----
+  {
+    const t = rig({ add: () => ({ ok: true, agents: [], existing: [{ id: 'old', name: 'notes', floor: 'ground' }] }) });
+    const pk = await t.op.pickParent(pickAt(P));
+    const r = await t.op.create({ kind: 'empty', token: pk.ok ? pk.token : '', name: 'notes' }, 'ask', OPTS);
+    assert.strictEqual(r.ok, false);
+    assert.match(String(r.error), /notes is already in the office/);
+    assert.ok(!/unknown error/.test(String(r.error)), 'not the unknown-error text');
+    assert.deepStrictEqual(t.of('rm'), [], 'nothing is removed for this case');
+    assert.strictEqual(t.saved(), undefined, 'the parent is not remembered');
+  }
   // ---- FR-043: quit ends a running clone and waits for its cleanup, at most 5 s ----
   {
     const g = held();
