@@ -3,7 +3,7 @@ import * as assert from 'assert';
 import * as fs from 'fs';
 import * as path from 'path';
 import { Worker } from 'worker_threads';
-import { MASK_INPUT_MAX, REDACT_MAX_CHARS, createDebugSink, _uncappedForTest, cut, maskSchemeSecrets, maskTokenShapes, maskTokenShapesUnguarded, maskSecretArgs, maskSecretCommand, maskHomePaths, maskSecretUrl, maskNoteText, maskOutgoing, maskSplitTokens, _breakCallsForTest, keepShownBy, _unionMasksForTest, withoutSplit, withoutShell, _shellRefsForTest, ESC_RUN_SHELL_SOURCE, _splitWorkForTest, redact, redactMarkdown, MARKDOWN_WORK, _markdownPassForTest, shQuote, splitCommand } from '../src/shared/redact';
+import { MASK_INPUT_MAX, REDACT_MAX_CHARS, createDebugSink, _uncappedForTest, cut, maskSchemeSecrets, maskTokenShapes, maskTokenShapesUnguarded, maskSecretArgs, maskSecretCommand, maskHomePaths, maskSecretUrl, maskNoteText, maskOutgoing, maskSplitTokens, _breakCallsForTest, keepShownBy, _unionMasksForTest, withoutSplit, withoutShell, _shellRefsForTest, _shellPassesForTest, _shapePassesForTest, _runReadsForTest, ESC_RUN_SHELL_SOURCE, _splitWorkForTest, redact, redactMarkdown, MARKDOWN_WORK, _markdownPassForTest, shQuote, splitCommand } from '../src/shared/redact';
 
 import { assertLinearShape, assertWithinYardstick, cpuMs } from './redact-growth-lib';
 import './safetext-shared'; // the desk's maskRaw (src/renderer/safetext.js) reads the compiled redact.ts, for the FR-181 differential below
@@ -2507,10 +2507,26 @@ assert.strictEqual(redact('{"a":"https://u:p@h/x","b":"y"}', {}), '{"a":"https:/
     assert.strictEqual(_shellRefsForTest(), before, '#1543 F2: a command and arguments the shell readings leave as FR-181 reads them get no reference reading');
     maskSecretCommand(`echo $'ghp${BS}x5f${B36}'`, {});
     assert.ok(_shellRefsForTest() > before, '#1543 F2: a command the shell readings change gets its reference reading');
-    // and redact's cost on escape-heavy text stays near its cost without the shell readings (it was 1.8 to 2.9 times; FR-183's budgets and the growth suites are unchanged)
-    for (const [k, u] of Object.entries({ jsonTabs: `${BS}teyJaaaaa.`, jsonBreaks: `${BS}n`, jsonGh: `${BS}nghp_`, jsonCode: `${BS}u003d`, hexSk: `${BS}x3dsk-`, lineContinuations: `pa${BS}\n` })) {
+    // and redact's work on escape-heavy text (review of PR 1824, round 3): counted, not timed: the shell readings of one run make at most this many rule passes (each distinct
+    // reading once; a JSON `\t` is no separator to read again), so the count, not a machine's speed, pins the step
+    // and `redact` runs every rule over each distinct text once per call (a run its continuations join is often the whole text)
+    const passes: Record<string, [string, number]> = { jsonTabs: [`${BS}teyJaaaaa.`, 1], jsonBreaks: [`${BS}n`, 1], jsonGh: [`${BS}nghp_`, 1], jsonCode: [`${BS}u003d`, 2], hexSk: [`${BS}x3dsk-`, 2], lineContinuations: [`pa${BS}\n`, 1] };
+    for (const [k, [u, most]] of Object.entries(passes)) {
+      const p0 = _shellPassesForTest();
+      const q0 = _shapePassesForTest();
+      const r0 = _runReadsForTest();
+      redact(u.repeat(2000), {});
+      const n = _shellPassesForTest() - p0;
+      const q = _shapePassesForTest() - q0;
+      const rr = _runReadsForTest() - r0;
+      assert.ok(n <= most, `#1543 F2 work ${k}: the shell readings make ${n} rule passes (at most ${most})`);
+      assert.ok(q <= 2, `#1543 F2 work ${k}: every rule ran ${q} times over the texts of one call (at most 2)`);
+      assert.ok(rr <= 1, `#1543 F2 work ${k}: FR-181's readings of the run were made ${rr} times in one call (shared by both passes: at most 1)`);
+    }
+    // a loose time check on top (catastrophic cost only, not the step: five runs on Linux measured 1.3 to 1.7 times the reading without the shell readings)
+    for (const [k, [u]] of Object.entries(passes)) {
       const x = u.repeat(Math.ceil(131_072 / u.length));
-      assertWithinYardstick(`#1543 F2 redact ${k} with the shell readings against without them`, () => { redact(x, {}); }, () => { withoutShell(() => redact(x, {})); }, 2);
+      assertWithinYardstick(`#1543 F2 redact ${k} with the shell readings against without them`, () => { redact(x, {}); }, () => { withoutShell(() => redact(x, {})); }, 3);
     }
   }
   // review of PR 1824 (F3): the desk reads the same escaped runs and line continuations as redact (one shared definition each)

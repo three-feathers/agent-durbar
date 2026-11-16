@@ -540,6 +540,7 @@ function maskGluedRest(s: string, mask: string): string {
 }
 
 function maskShapes(text: string, mask: string, guard: boolean): string {
+  shapePasses++;
   let out = text;
   // A function, so `$&` or `$1` in the mask stays literal; group 1, when a pattern has one, is what names the secret and stays.
   const replaced = (m: RegExp[]): void => { for (const p of m) out = out.replace(p, (_m: string, keep?: unknown) => (typeof keep === 'string' ? keep : '') + mask); };
@@ -670,6 +671,7 @@ function maskEscapedRuns(s: string, mask: string, shell?: { vals: readonly strin
       // spec 012 FR-184 (review of PR 1824, F2): FR-181's readings of a run are read once per `redact` call (`reads`), shared by its two passes
       let x = reads.get(r);
       if (x === undefined) {
+        runReads++;
         const w = shapes(r);
         const md = withoutMarks(w, true).k;
         const sh = TOKEN_ESC.test(w) ? withoutMarks(w, true, true).k : '';
@@ -746,13 +748,23 @@ const C_ESC = /\\(?:x([0-9A-Fa-f]{2})|u\{([0-9A-Fa-f]{1,6})\}|u([0-9A-Fa-f]{4})|
 /** `C_ESC` at one position (sticky): `cReading`'s scan, for an escape that starts with one of `C_ESC_CODE` (the others are one character). */
 const C_ESC_AT = new RegExp(C_ESC.source, 'y');
 const C_ESC_CODE = 'xuU01234567';
+/** What `cReading`'s native passes cannot read: a doubled backslash, a code escape, a backslash at the end. */
+const C_ESC_SLOW = /\\\\|\\[xuU0-7]|\\$/;
 /** Spec 012 FR-184: PowerShell's `` `u{…} `` escape, read like `\u{…}`. */
 const PS_U = /`u\{([0-9A-Fa-f]{1,6})\}/g;
 const C_NAMED: Record<string, string> = { a: '\x07', b: '\b', e: '\x1b', E: '\x1b', f: '\f', n: '\n', r: '\r', t: '\t', v: '\v' };
+const C_NAMED_LIST = Object.entries(C_NAMED);
 /** Spec 012 FR-184: a run's C reading (`ghp\x5f<body>`, `ghp\u005f<body>`, `gh\160_<body>`, PowerShell's `` ghp`u{5f}<body> ``), its line continuations removed. */
 function cReading(w: string): string {
   let ps = /[\r\n]/.test(w) ? w.replace(LINE_CONT, '') : w;
   if (ps.includes('`u{')) ps = ps.replace(PS_U, (m: string, h: string) => (parseInt(h, 16) <= 0x10ffff ? String.fromCodePoint(parseInt(h, 16)) : m));
+  // review of PR 1824 (round 3): with no doubled backslash, no code escape and no backslash at the end, every escape is one backslash and one character: the named ones
+  // become their control character and the rest lose the backslash, in native passes (a JSON text with an escape every few characters)
+  if (!C_ESC_SLOW.test(ps)) {
+    let q = ps;
+    for (const [k, v] of C_NAMED_LIST) if (q.includes('\\' + k)) q = q.split('\\' + k).join(v);
+    return q.replace(/\\/g, '');
+  }
   // review of PR 1824 (F2): one scan from backslash to backslash, no callback per escape (a JSON text has one every few characters); the same reading as `C_ESC`
   const out: string[] = [];
   let from = 0;
@@ -774,6 +786,12 @@ function cReading(w: string): string {
 }
 /** Spec 012 FR-184: the run with only the break escapes in `kinds` (`nr` or `t`) read as their line break or tab; an escaped backslash stays one. One scan, no callback (F2). */
 function breaksRead(w: string, kinds: string): string {
+  // review of PR 1824 (round 3): with no doubled backslash every `\n`, `\r` or `\t` in the text is one escape: native passes
+  if (!w.includes('\\\\')) {
+    let q = w;
+    for (const k of kinds) if (q.includes('\\' + k)) q = q.split('\\' + k).join(C_NAMED[k]);
+    return q;
+  }
   const out: string[] = [];
   let from = 0;
   for (let j = w.indexOf('\\'); j >= 0 && j + 1 < w.length; j = w.indexOf('\\', j + 2)) {
@@ -809,13 +827,15 @@ function shellReadingsHide(w: string, md: string, sh181: string, mask: string, v
   // (`md`, through every rule) found nothing there already, so a reading equal to one of them is not read again (its env check stays)
   const readBare = new Set<string>([w, sh181]);
   const readAll = new Set<string>([w, md]);
-  const bare = (x: string): boolean => x !== w && (env(x) || (!readBare.has(x) && (readBare.add(x), maskBareTokenShapes(x, mask) !== x)));
-  const all = (x: string): boolean => !readAll.has(x) && (readAll.add(x), maskTokenShapes(x, mask) !== x);
+  const bare = (x: string): boolean => x !== w && (env(x) || (!readBare.has(x) && (readBare.add(x), shellPasses++, maskBareTokenShapes(x, mask) !== x)));
+  const all = (x: string): boolean => !readAll.has(x) && (readAll.add(x), shellPasses++, maskTokenShapes(x, mask) !== x);
   const sh = shellReading(w);
   const c = cReading(w);
   if (env(md) || bare(sh) || bare(c) || bare(shellReading(c))) return true;
   if (/\\[nrt]/.test(w) && (bare(shellReading(breaksRead(w, 'nr'))) || bare(shellReading(breaksRead(w, 't'))))) return true;
-  const seps = (x: string): number => (x.match(/[:=\x20\t]/g) ?? []).length;
+  // review of PR 1824 (round 3): a `:`, `=` or blank the codes spell; a tab is no such separator here (a JSON `\t` became one per escape, and every rule already reads `\t` as a
+  // blank: a JSON-escaped text then took a whole extra pass of every rule for nothing)
+  const seps = (x: string): number => (x.match(/[:=\x20]/g) ?? []).length;
   return (/\\[:=\x20\t]/.test(w) && all(sh)) || (seps(c) > seps(w) && all(shellReading(c)));
 }
 
@@ -2569,6 +2589,15 @@ let shellOff = false;
  * then skip their reference reading (`withoutShell`).
  */
 let shellReads = 0;
+/** Test only (review of PR 1824, round 3): how many times FR-181's readings of a run were made (`redact`'s two passes share them). */
+let runReads = 0;
+export const _runReadsForTest = (): number => runReads;
+/** Test only (review of PR 1824, round 3): how many times every rule ran over a text (`maskShapes`); `redact` reads each distinct text once per call. */
+let shapePasses = 0;
+export const _shapePassesForTest = (): number => shapePasses;
+/** Test only (review of PR 1824, round 3): how many rule passes `shellReadingsHide` made (each distinct reading once). */
+let shellPasses = 0;
+export const _shellPassesForTest = (): number => shellPasses;
 /** Test only (review of PR 1824, F2): how many reference readings (`withoutShell`) ran. */
 let shellRefs = 0;
 export const _shellRefsForTest = (): number => shellRefs;
