@@ -10,12 +10,16 @@ import * as path from 'path';
 import { pathToFileURL } from 'url';
 import { FakeCodexServer } from './fakes/codex-app-server';
 import type { FakeChild, FakeImageMode } from './fakes/codex-app-server';
+import { hardLinkSkip } from './fakes/hardlinks';
 import * as ts from 'typescript';
 import { CHARACTERS_WARN_AT, cleanCharacterName, parseEncoderReply, pinDecision } from '../src/shared/charrules';
 import type { EncoderResult } from '../src/shared/charrules';
 import { MARK_CLOSE, MARK_OPEN, SHEET_NAME } from '../src/shared/chargen';
 import { PRODUCTION_DESCRIPTORS } from '../src/adapters/descriptors';
 import { offeredDescriptors } from '../src/adapters/experimental';
+import { CodexAdapter } from '../src/adapters/codex';
+import { ClaudeAdapter } from '../src/adapters/claude';
+import { CopilotAdapter } from '../src/adapters/copilot';
 
 type Handler = (e: unknown, ...a: unknown[]) => unknown;
 type Rec = Record<string, unknown>;
@@ -75,7 +79,65 @@ function imageAdapter(server: FakeCodexServer, log: string[]): Rec {
   };
 }
 
+/**
+ * Tripwire (review of #956, round 2; spec 096 FR-034, T030a, T030b): paid image generation never turns on before main's own login gate. While T030a is open in
+ * `tasks.md`, no real adapter reports `imageGen: true` or has a `generateImage` method: read from every registered descriptor (Copilot, Claude on both transports,
+ * Codex), from the adapter classes, from the instances those descriptors create, and from the adapters' source (a flag or method set another way, a field or a constructor
+ * assignment, is caught there); a set `imageGen` anywhere else in `src/` but the simulator's `sim.ts` fails too. Fail closed (third review of #956): `character:generate`
+ * refuses every try without T030a's `loginGate`, and `main.ts` must pass none while T030a is open; `main()` asserts the refusal with a full image adapter.
+ * T030a replaces this with its gate test: once T030a is ticked this fails until it is removed.
+ */
+function imageGenTripwire(): void {
+  const tasks = fs.readFileSync(path.join(ROOT, 'specs', '096-ai-character-maker', 'tasks.md'), 'utf8');
+  const t030a = /^- \[([ xX])\] T030a\b/m.exec(tasks);
+  assert.ok(t030a, 'T030a is in spec 096 tasks.md');
+  assert.strictEqual(t030a[1], ' ', 'T030a is ticked: replace this tripwire (T030b) with T030a\'s FR-034 gate test');
+  const descriptors = [...PRODUCTION_DESCRIPTORS, ...offeredDescriptors({}), ...offeredDescriptors({ DURBAR_CLAUDE_TRANSPORT: 'sdk' })];
+  assert.deepStrictEqual([...new Set(descriptors.map((d) => d.id))].sort(), ['claude', 'codex', 'copilot'], 'the tripwire sees every real adapter');
+  for (const d of descriptors) assert.notStrictEqual(d.capabilities.imageGen, true, `tripwire: ${d.id} reports imageGen before T030a's login gate (FR-034)`);
+  for (const [name, cls] of [['CodexAdapter', CodexAdapter], ['ClaudeAdapter', ClaudeAdapter], ['CopilotAdapter', CopilotAdapter]] as const) {
+    assert.ok(!('generateImage' in cls.prototype), `tripwire: ${name} has generateImage before T030a's login gate (FR-034)`);
+  }
+  const dir = path.join(ROOT, 'src', 'adapters');
+  const files = fs.readdirSync(dir).filter((f) => f.endsWith('.ts') && f !== 'types.ts' && f !== 'capabilities.ts');
+  assert.ok(files.includes('codex.ts') && files.length > 20, 'the tripwire reads the adapters\' source: ' + files.length);
+  for (const f of files) {
+    const code = fs.readFileSync(path.join(dir, f), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|\s)\/\/.*$/gm, '$1');
+    assert.ok(!/\b(imageGen|generateImage)\b/.test(code), `tripwire: src/adapters/${f} turns on image generation before T030a's login gate (FR-034)`);
+  }  // the instances main gets (third review of #956): a flag or method set in a constructor, by `Object.assign` or `Object.defineProperty`, a computed key or a helper
+  for (const d of descriptors) {
+    const inst = d.create() as unknown as { capabilities?: { imageGen?: unknown }; generateImage?: unknown };
+    assert.notStrictEqual(inst.capabilities?.imageGen, true, `tripwire: the ${d.id} adapter instance reports imageGen before T030a's login gate (FR-034)`);
+    assert.ok(!('generateImage' in (inst as object)), `tripwire: the ${d.id} adapter instance has generateImage before T030a's login gate (FR-034)`);
+  }
+  // a helper outside src/adapters that sets the flag (the simulator's own renderer list, `sim.ts`, never reaches main: its channels are closed to the simulator)
+  const srcRoot = path.join(ROOT, 'src');
+  const outside = (fs.readdirSync(srcRoot, { recursive: true, encoding: 'utf8' }) as string[]).map((f) => f.split(path.sep).join('/'))
+    .filter((f) => /\.(ts|js)$/.test(f) && !f.startsWith('adapters/') && f !== 'renderer/sim.ts');
+  assert.ok(outside.includes('main/main.ts') && outside.includes('main/ipc/characters.ts') && outside.length > 50, 'the tripwire reads the source outside src/adapters: ' + outside.length);
+  for (const f of outside) {
+    const code = fs.readFileSync(path.join(srcRoot, f), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|\s)\/\/.*$/gm, '$1');
+    assert.ok(!/\bimageGen['"`]?\s*(:\s*(?!false\b)|=(?!=))/.test(code), `tripwire: src/${f} sets imageGen outside src/adapters before T030a's login gate (FR-034)`);
+  }
+  // fail closed: main passes no login gate until T030a builds it, so character:generate refuses every try whatever an adapter reports
+  const mainSrc = ts.createSourceFile('main.ts', fs.readFileSync(path.join(srcRoot, 'main', 'main.ts'), 'utf8'), ts.ScriptTarget.Latest, true);
+  const calls: ts.CallExpression[] = [];
+  const visit = (n: ts.Node): void => { if (ts.isCallExpression(n) && ts.isIdentifier(n.expression) && n.expression.text === 'registerCharactersIpc') calls.push(n); ts.forEachChild(n, visit); };
+  visit(mainSrc);
+  assert.strictEqual(calls.length, 1, 'main.ts registers the characters IPC once');
+  const arg = calls[0].arguments[0];
+  assert.ok(calls[0].arguments.length === 1 && arg && ts.isObjectLiteralExpression(arg) && arg.properties.every((p) => (ts.isPropertyAssignment(p) || ts.isShorthandPropertyAssignment(p) || ts.isMethodDeclaration(p)) && p.name !== undefined && !ts.isComputedPropertyName(p.name)),
+    'tripwire: main.ts gives the characters IPC its deps as one plain object (no spread, no computed key) while T030a is open');
+  const names = (arg as ts.ObjectLiteralExpression).properties.map((p) => (p.name as ts.Identifier | ts.StringLiteral).text);
+  assert.ok(!names.includes('loginGate'), 'tripwire: main.ts gives the characters IPC a loginGate before T030a is ticked (FR-034)');
+  // round 4 of #956: a `__proto__` key would hand the IPC an inherited loginGate (the IPC reads only an own one, and the key set is exact)
+  assert.ok(!names.includes('__proto__'), 'tripwire: main.ts gives the characters IPC deps a __proto__ key (an inherited loginGate) while T030a is open');
+  assert.deepStrictEqual([...names].sort(), ['dev', 'getSettingsStore', 'openFolderKeys', 'registry', 'router'],
+    'tripwire: main.ts gives the characters IPC exactly dev, registry, router, getSettingsStore and openFolderKeys while T030a is open');
+}
+
 async function main(): Promise<void> {
+  imageGenTripwire();
   const base = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-charipc-'));
   // its own OS temp folder: this suite lists and removes `durbar-img-*` there, and other worktrees' runs share the real one
   const ownTemp = path.join(base, 'tmp');
@@ -103,7 +165,7 @@ async function main(): Promise<void> {
     /* eslint-disable @typescript-eslint/no-require-imports */
     (require('../src/main/ipcguard') as typeof import('../src/main/ipcguard')).initSimGuard(false);
     const { SettingsStore } = require('../src/main/settings') as typeof import('../src/main/settings');
-    const { register, sheetFolderOf, safeGenerateError } = require('../src/main/ipc/characters') as typeof import('../src/main/ipc/characters');
+    const { register, sheetFolderOf, safeGenerateError, NO_LOGIN_GATE } = require('../src/main/ipc/characters') as typeof import('../src/main/ipc/characters');
     const { register: registerSettings } = require('../src/main/ipc/settings') as typeof import('../src/main/ipc/settings');
     const { SIM_OPEN_CHANNELS } = require('../src/main/simguard') as typeof import('../src/main/simguard');
     /* eslint-enable @typescript-eslint/no-require-imports */
@@ -118,7 +180,39 @@ async function main(): Promise<void> {
     let encode: (b: Uint8Array, h: { width: number; height: number }, o: { signal?: AbortSignal }) => Promise<EncoderResult> = encodeOk;
     const devEnv: Rec = { DURBAR_PICK: path.join(base, 'export') };
     fs.mkdirSync(path.join(base, 'export'));
+    // T030b, fail closed (third review of #956): with no login gate, as main.ts registers it until T030a, a full image adapter is never called
+    register({
+      dev: devEnv as never,
+      registry: { has: (id: string) => id === 'codex' } as never,
+      router: { instance: () => adapter } as never,
+      getSettingsStore: () => settings,
+      openFolderKeys: () => openFolders,
+      encode: (b, h, o) => encode(b, h, o),
+    });
+    const ungated = handlers.get('character:generate')!;
+    // round 4 of #956: an inherited loginGate is no gate, from a prototype object or from a `__proto__` key in the deps literal
+    let inheritedCalls = 0;
+    const inheritedGate = async (): Promise<{ ok: true }> => { inheritedCalls++; return { ok: true }; };
+    const ownDeps = {
+      dev: devEnv as never,
+      registry: { has: (id: string) => id === 'codex' } as never,
+      router: { instance: () => adapter } as never,
+      getSettingsStore: () => settings,
+      openFolderKeys: () => openFolders,
+      encode: (b: Uint8Array, h: { width: number; height: number }, o: { signal?: AbortSignal }) => encode(b, h, o),
+    };
+    register(Object.assign(Object.create({ loginGate: inheritedGate }) as object, ownDeps) as Parameters<typeof register>[0]);
+    const inheritedProto = handlers.get('character:generate')!;
+    register({
+      // @ts-expect-error `__proto__` is not a deps key: this is the shape the main.ts tripwire refuses
+      __proto__: { loginGate: inheritedGate },
+      ...ownDeps,
+    });
+    const inheritedLiteral = handlers.get('character:generate')!;
+    let gate: (id: string) => Promise<{ ok: true } | { ok: false; error: string }> = async () => ({ ok: true });
+    const gateCalls: string[] = [];
     const ipc = register({
+      loginGate: (id) => { gateCalls.push(id); return gate(id); }, // a stand-in for T030a's gate
       dev: devEnv as never,
       registry: { has: (id: string) => id === 'codex' || id === 'claude' } as never,
       router: { instance: (k: string) => (k === 'codex' ? adapter : { id: 'claude', capabilities: {}, generateText: () => undefined }) } as never,
@@ -184,6 +278,22 @@ async function main(): Promise<void> {
       adapter = keep;
     }
     assert.strictEqual(prompts.length, 0, 'none of those reached the adapter');
+    assert.deepStrictEqual(gateCalls, [], 'the gate is asked only for an adapter that can make a picture');
+    {
+      const r = (await ungated(win, DESC, 'codex')) as Rec;
+      assert.ok(r.ok === false && r.error === NO_LOGIN_GATE && prompts.length === 0, 'tripwire: character:generate ran an image adapter with no login gate (FR-034): ' + JSON.stringify(r));
+      assert.deepStrictEqual(tempFolders().filter((f) => !startTemps.has(f)), [], 'no temp folder without a gate');
+      const p = (await inheritedProto(win, DESC, 'codex')) as Rec;
+      assert.ok(p.ok === false && p.error === NO_LOGIN_GATE && inheritedCalls === 0 && prompts.length === 0, 'an inherited loginGate (prototype object) is no gate (FR-034): ' + JSON.stringify({ ok: p.ok, error: p.error, inheritedCalls }));
+      const l = (await inheritedLiteral(win, DESC, 'codex')) as Rec;
+      assert.ok(l.ok === false && l.error === NO_LOGIN_GATE && inheritedCalls === 0 && prompts.length === 0, 'a { __proto__: { loginGate } } deps literal is no gate (FR-034): ' + JSON.stringify({ ok: l.ok, error: l.error, inheritedCalls }));
+      gate = async () => ({ ok: false, error: 'Codex is signed in with an API key, so each picture would be charged by OpenAI. Sign in to Codex with ChatGPT to make characters.' });
+      assert.deepStrictEqual(await call('character:generate', DESC, 'codex'), { ok: false, error: 'Codex is signed in with an API key, so each picture would be charged by OpenAI. Sign in to Codex with ChatGPT to make characters.' }, 'the gate\'s refusal is the reply');
+      assert.deepStrictEqual(gateCalls, ['codex'], 'the gate is asked with the adapter id');
+      assert.strictEqual(prompts.length, 0, 'a refused gate starts nothing');
+      gate = async () => ({ ok: true });
+      gateCalls.length = 0;
+    }
 
     // --- a whole try, on the fake app-server (US1) ---
     const first = await call('character:generate', DESC, 'codex');
@@ -259,6 +369,41 @@ async function main(): Promise<void> {
       }
       for (const f of server.current.imageOutside) fs.rmSync(f, { force: true });
       noTemps('symlink'); }
+    mode('hardlink');
+    { const r = await call('character:generate', DESC, 'codex');
+      const linkRefused = server.current.imageLinkRefused;
+      // a skip only for a refused link on Windows outside CI (third review of #956); any other write error of the fake fails
+      assert.strictEqual(server.current.imageError, linkRefused, `hardlink: the fake's own writes failed (${String(server.current.imageError)})`);
+      const why = linkRefused === undefined ? null : hardLinkSkip(linkRefused);
+      if (why !== null) assert.fail(`test-charipc: ${why}`);
+      if (linkRefused !== undefined) realConsole.log(`test-charipc: this file system refused a hard link (${linkRefused}), the hard-link case is skipped`);
+      else {
+        assert.ok(r.ok === false && r.error === 'No picture came back. Try again.', `a sheet with a second hard link is refused: ok ${String(r.ok)}, error ${String(r.error)}`);
+        assert.ok(fs.existsSync(server.current.imageOutside[server.current.imageOutside.length - 1]), 'its other name is untouched');
+      }
+      for (const f of server.current.imageOutside) fs.rmSync(f, { force: true });
+      noTemps('hardlink'); }
+    // the lstat before the open is the only link guard on Windows (no O_NOFOLLOW), and the opened file must be the one lstat saw: an lstat that says "link", or names
+    // another file, refuses the sheet even though the open would read it (review of #956)
+    mode('sheet');
+    { // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const realFs = require('fs') as { lstatSync: typeof fs.lstatSync };
+      const lstat = realFs.lstatSync;
+      const lie = (change: Record<string, unknown>): void => {
+        realFs.lstatSync = ((p: fs.PathLike, ...rest: unknown[]) => {
+          const st = (lstat as (...a: unknown[]) => fs.Stats)(p, ...rest);
+          return path.basename(String(p)) === SHEET_NAME ? Object.assign(Object.create(Object.getPrototypeOf(st)), st, change) : st;
+        }) as typeof fs.lstatSync;
+      };
+      for (const [why, change] of [['lstat reports a link', { isFile: () => false, isSymbolicLink: () => true }], ['lstat saw another file', { ino: 1n }]] as const) {
+        lie(change);
+        let r: Rec;
+        try { r = await call('character:generate', DESC, 'codex'); } finally { realFs.lstatSync = lstat; }
+        assert.ok(r.ok === false && r.error === 'No picture came back. Try again.', `${why}: the sheet is refused: ok ${String(r.ok)}, error ${String(r.error)}`);
+        noTemps(why);
+      }
+      assert.strictEqual((await call('character:generate', DESC, 'codex')).ok, true, 'and the same sheet is read when lstat tells the truth');
+    }
 
     // --- the encoder's refusals and failures ---
     mode('sheet');
@@ -485,7 +630,7 @@ async function main(): Promise<void> {
       const keepHandle = fake.ipcMain.handle;
       fake.ipcMain.handle = (ch: string, fn: Handler) => quick.set(ch, fn);
       const small = register({
-        dev: {} as never, registry: { has: () => true } as never, router: { instance: () => adapter } as never, getSettingsStore: () => settings, openFolderKeys: () => [], encode: encodeOk, limits: { generateMs: 1000, graceMs: 50, tryTtlMs: 20 },
+        dev: {} as never, registry: { has: () => true } as never, router: { instance: () => adapter } as never, getSettingsStore: () => settings, openFolderKeys: () => [], encode: encodeOk, loginGate: async () => ({ ok: true }), limits: { generateMs: 1000, graceMs: 50, tryTtlMs: 20 },
       });
       fake.ipcMain.handle = keepHandle;
       const q = async (ch: string, ...a: unknown[]): Promise<Rec> => (await quick.get(ch)!(win, ...a)) as Rec;

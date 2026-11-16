@@ -20,7 +20,7 @@
  */
 const assert = require('assert');
 const path = require('path');
-const { helpers, jsLiteral, INDEX } = require('./driver-helpers');
+const { helpers, jsLiteral, INDEX, CHECK_DARK } = require('./driver-helpers');
 const SECONDS = Number(process.env.PERF_SECONDS || 20);
 const SPEED = String(process.env.PERF_SPEED || 10);
 
@@ -66,7 +66,7 @@ module.exports = async (ctx) => {
     return {messages:1000,totalMs:Math.round(ms),perMessageMs:Math.round(ms/10)/100,domAdded:document.getElementsByTagName('*').length-n0};})()`);
 
   // a theme switch and back
-  const themeMs = await js(`(async()=>{if(!window.THEME||!window.THEME.setTheme)return null;const cur=window.THEME.current().id;const t=performance.now();window.THEME.setTheme('retro');
+  const themeMs = await js(`(async()=>{if(!window.THEME||!window.THEME.setTheme)return null;const cur=window.THEME.current().id;const t=performance.now();window.THEME.setTheme(${jsLiteral(CHECK_DARK)});
     await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(()=>r())));const ms=performance.now()-t;window.THEME.setTheme(cur);return Math.round(ms);})()`);
 
   const report = { office, openChatMs: openMs, switchAgent: switchMs, longChat: chat, themeSwitchMs: themeMs };
@@ -87,9 +87,10 @@ if (require.main === module) {
     return;
   }
   const fs = require('fs');
+  const { buildProblem } = require('./ensure-electron'); // spec 008 FR-211: one shared build check
   const os = require('os');
   const { spawnSync } = require('child_process');
-  if (!fs.existsSync(INDEX)) { console.error('dist/ missing: run npm run build first'); process.exit(2); }
+  { const noBuild = buildProblem(); if (noBuild) { console.error(noBuild); process.exit(2); } }
   const electron = require('electron');
   const env = { ...process.env, DURBAR_DRIVER: __filename, DURBAR_USER_DATA: fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-perf-')), DURBAR_SIM: '15' };
   const args = ['.', '--no-sandbox'];

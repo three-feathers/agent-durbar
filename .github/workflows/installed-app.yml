@@ -51,7 +51,7 @@ jobs:
           cache: npm
       - if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y xvfb libfuse2t64 || sudo apt-get install -y xvfb libfuse2
-      - run: npm ci
+      - uses: ./.github/actions/npm-ci
       - name: Build the release package (unsigned, not published)
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'

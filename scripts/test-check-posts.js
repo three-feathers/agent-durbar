@@ -330,7 +330,7 @@ const cliReady = (() => {
   return () => {
     if (done) return;
     fs.mkdirSync(path.join(T, 'scripts'), { recursive: true });
-    for (const f of ['check-posts.js', 'build-site.js', 'specs-index.js', 'release-notes.js']) fs.copyFileSync(path.join(__dirname, f), path.join(T, 'scripts', f));
+    for (const f of ['check-posts.js', 'build-site.js', 'specs-index.js', 'release-notes.js', 'trusted-authors.js']) fs.copyFileSync(path.join(__dirname, f), path.join(T, 'scripts', f));
     fs.symlinkSync(path.join(ROOT, 'node_modules'), path.join(T, 'node_modules'), process.platform === 'win32' ? 'junction' : 'dir');
     // a fake gh first on PATH that refuses everything: the CLI must never reach the network from a test
     fs.mkdirSync(path.join(T, 'fakebin'), { recursive: true });

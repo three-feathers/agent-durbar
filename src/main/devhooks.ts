@@ -26,3 +26,12 @@ export function devEnv(env: NodeJS.ProcessEnv, isPackaged: boolean): DevEnv {
 export function devWarning(env: NodeJS.ProcessEnv, isPackaged: boolean): string | undefined {
   return isPackaged && env[DEV_OPT_IN] === '1' ? 'Agent Durbar: developer hooks are ACTIVE in this packaged build (DURBAR_DEV=1).' : undefined;
 }
+
+/**
+ * Spec 099 (*Changes*, Phase 3 gate): the test-only switch for Autopilot while `AUTOPILOT_WIRED` is false: a simulator or driver run from source. Deliberately not `hooksEnabled`:
+ * `DURBAR_DEV=1` does not open it, and no other variable does, because `isPackaged` alone decides. A plain `npm start` does not open it either.
+ */
+export function autopilotTestGate(env: NodeJS.ProcessEnv, isPackaged: boolean): boolean {
+  if (isPackaged) return false;
+  return env.DURBAR_AUTOPILOT_TEST === '1' && (!!env.DURBAR_SIM || !!env.DURBAR_DRIVER);
+}

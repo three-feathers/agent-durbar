@@ -18,7 +18,7 @@ type Json = Record<string, unknown>;
  * 20 MB cap (sparse), and `hang` writes nothing and never ends the turn until `turn/interrupt` or the child is closed.
  * `[KNOWN GAP]` no image `item/*` notification is sent: its real shape is probe P1, not yet run, so nothing here claims to be recorded.
  */
-export type FakeImageMode = 'sheet' | 'none' | 'two-files' | 'other-name' | 'symlink' | 'text' | 'oversize' | 'hang';
+export type FakeImageMode = 'sheet' | 'none' | 'two-files' | 'other-name' | 'symlink' | 'hardlink' | 'text' | 'oversize' | 'hang';
 const IMAGE_OVER_CAP = 20 * 1024 * 1024 + 1;
 /** The fixture sheet (a plain-JS helper, shared with the encoder driver, which has no compiled scripts to load). */
 // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -506,10 +506,12 @@ export class FakeCodexServer {
     else if (!this.opts.holdTurn && this.opts.imageMode !== 'hang') this.completeTurn(child, tid, turnId, 'completed');
   }
 
-  /** Files outside a thread's folder that `symlink` mode made; a test removes them. */
+  /** Files outside a thread's folder that `symlink` and `hardlink` modes made; a test removes them. */
   imageOutside: string[] = [];
-  /** Spec 096 FR-070: write what `imageMode` asks into the thread's folder. A file system error (no link rights on Windows) ends in `imageError`. */
+  /** Spec 096 FR-070: write what `imageMode` asks into the thread's folder. A file system error (no link rights on Windows, a file system without hard links) ends in `imageError`. */
   imageError: string | undefined;
+  /** The code of a refused `linkSync` in `hardlink` mode, apart from any other write error, so a test can tell a refused link (a skip only where `hardLinkSkip` allows) from a broken fake. */
+  imageLinkRefused: string | undefined;
   private actAsImageTool(cwd: string): void {
     const sheet = (): Uint8Array => (typeof this.opts.imageSheet === 'object' ? this.opts.imageSheet : pngSheet(this.opts.imageSheet ?? 'transparent'));
     const file = (name: string): string => path.join(cwd, name);
@@ -523,6 +525,13 @@ export class FakeCodexServer {
           fs.writeFileSync(outside, sheet());
           this.imageOutside.push(outside);
           fs.symlinkSync(outside, file('sheet.png'));
+          break;
+        }
+        case 'hardlink': { // a second name of a file outside the folder (review of #956, round 2)
+          const outside = `${cwd}-outside.png`;
+          fs.writeFileSync(outside, sheet());
+          this.imageOutside.push(outside);
+          try { fs.linkSync(outside, file('sheet.png')); } catch (e) { this.imageLinkRefused = (e as NodeJS.ErrnoException).code ?? 'link failed'; throw e; }
           break;
         }
         case 'text': fs.writeFileSync(file('sheet.png'), 'I could not make a picture, sorry.\n'); break;

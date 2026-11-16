@@ -63,9 +63,9 @@ import type { SkipReason } from './questions';
 import { claudeSlashPlaces, cleanBuiltins, mergeSlash, SlashCache, vscodeUserPromptDirs } from './slashcommands';
 import type { SlashPlace } from './slashcommands';
 import { compareVersions } from './detect';
-import { agentsArg, listClaudeAgents } from './claudeAgents';
+import { agentsArg, claudeAgentDirs, claudeAgentOfBytes, listClaudeAgents } from './claudeAgents';
 import type { ClaudeAgentDef } from './claudeAgents';
-import type { AgentProfile, AskedQuestion, ElicitAnswer, SlashCommand, SlashExpansion } from './types';
+import type { AgentFileRead, AgentProfile, AskedQuestion, ElicitAnswer, SlashCommand, SlashExpansion } from './types';
 import { answerElicitation, cancelElicitations, declineElicitation, runElicitation, type ElicitWaiter } from './elicitation';
 import { AUTOPILOT_ANSWER, goalText, isClaudeContinuation } from './autopilot';
 import type { GoalTextResult } from './autopilot';
@@ -146,7 +146,9 @@ export const CLAUDE_PLAN_NOTE = '(Plan first: write the full plan in your reply,
  * as a prompt (`real:` 2026-10-22, spec 073), so Durbar neither starts a goal on it nor sends it a clear. A version it cannot read gets the clear.
  */
 export const CLAUDE_GOAL_MIN_VERSION = '2.1.309';
-const claudeOlderThanGoal = (version: string | undefined): boolean => typeof version === 'string' && /^\d+\.\d+\.\d+/.test(version) && compareVersions(version, CLAUDE_GOAL_MIN_VERSION) < 0;
+/** A readable `x.y.z` Claude Code version below `min`; an unknown or unreadable version is never older (spec 099, spec 012 FR-179). */
+export const claudeKnownOlderThan = (version: string | undefined, min: string): boolean => typeof version === 'string' && /^\d+\.\d+\.\d+/.test(version) && compareVersions(version, min) < 0;
+const claudeOlderThanGoal = (version: string | undefined): boolean => claudeKnownOlderThan(version, CLAUDE_GOAL_MIN_VERSION);
 /** FR-058. */
 export const CLAUDE_GOAL_TYPED = 'Autopilot sets the goal from your message.';
 
@@ -294,6 +296,28 @@ export interface ClaudeLaunch {
   disallowedMcpTools?: string[];
   /** Spec 015 FR-016: pass `--forward-subagent-text` (set only when the installed Claude Code is known to have it; see `claudeForwardsSubagentText`). */
   forwardSubagentText?: boolean;
+  /** Spec 012 FR-179: private file paths that replace `settingsJson`, `appendSystemPrompt` and `agent.json` on the argv (set only by `cliLaunchArgs`). */
+  settingsFile?: string;
+  appendSystemPromptFile?: string;
+  agentsFile?: string;
+}
+
+/**
+ * Spec 012 FR-179 (issue #1379): the first Claude Code known to take each launch content as a file (vendor CHANGELOG, `read:` 2026-11-11).
+ * `--append-system-prompt-file` is named in 2.1.69 (may be older); `--agents <file>` (with `-p`) came in 2.1.281. `--settings` took a file from
+ * the start (1.0.61), so it has no gate. An older version is refused when the launch carries that content (no fallback to the command line).
+ */
+export const CLAUDE_PROMPT_FILE_MIN_VERSION = '2.1.69';
+export const CLAUDE_AGENTS_FILE_MIN_VERSION = '2.1.281';
+/** Spec 012 FR-179: why this launch cannot start on `version` (older than a file flag its content needs), or undefined. An unknown version passes. */
+export function claudeLaunchFilesRefusal(version: string | undefined, launch: Pick<ClaudeLaunch, 'appendSystemPrompt' | 'agent'>): string | undefined {
+  if (launch.agent && claudeKnownOlderThan(version, CLAUDE_AGENTS_FILE_MIN_VERSION)) {
+    return `This session needs Claude Code ${CLAUDE_AGENTS_FILE_MIN_VERSION} or newer to use an agent profile. Update Claude Code in Settings > Agent apps.`;
+  }
+  if (launch.appendSystemPrompt && claudeKnownOlderThan(version, CLAUDE_PROMPT_FILE_MIN_VERSION)) {
+    return `This session needs Claude Code ${CLAUDE_PROMPT_FILE_MIN_VERSION} or newer to pass the folder's CLAUDE.md privately. Update Claude Code in Settings > Agent apps.`;
+  }
+  return undefined;
 }
 
 /** Spec 015 FR-016: the first Claude Code with `--forward-subagent-text` (its CHANGELOG, `read:` 2.1.211). An older or unreadable version never gets the flag (an unknown flag would stop the CLI). */
@@ -363,11 +387,13 @@ export function claudeArgs(i: ClaudeLaunch): string[] {
   a.push('--setting-sources', o.settingSources.join(','));
   if (o.strictMcpConfig) a.push('--strict-mcp-config');
   if (i.mcpConfig) a.push('--mcp-config', i.mcpConfig);
-  if (i.settingsJson) a.push('--settings', i.settingsJson);
+  if (i.settingsFile) a.push('--settings', i.settingsFile);
+  else if (i.settingsJson) a.push('--settings', i.settingsJson);
   if (claudeModelFlag(i.model)) a.push('--model', i.model as string);
   if (i.effort && CLAUDE_EFFORTS.has(i.effort)) a.push('--effort', i.effort);
-  if (i.appendSystemPrompt) a.push('--append-system-prompt', i.appendSystemPrompt);
-  if (i.agent && /^[A-Za-z0-9._-]{1,64}$/.test(i.agent.name)) a.push('--agents', i.agent.json, '--agent', i.agent.name);
+  if (i.appendSystemPromptFile) a.push('--append-system-prompt-file', i.appendSystemPromptFile);
+  else if (i.appendSystemPrompt) a.push('--append-system-prompt', i.appendSystemPrompt);
+  if (i.agent && /^[A-Za-z0-9._-]{1,64}$/.test(i.agent.name)) a.push('--agents', i.agentsFile ?? i.agent.json, '--agent', i.agent.name);
   for (const d of i.addDirs ?? []) a.push('--add-dir', d);
   if (i.maxBudgetUsd !== undefined && Number.isFinite(i.maxBudgetUsd)) a.push('--max-budget-usd', budgetText(i.maxBudgetUsd));
   if (claudeNameOk(i.name)) a.push('--name', i.name as string);
@@ -377,10 +403,15 @@ export function claudeArgs(i: ClaudeLaunch): string[] {
 
 export interface ClaudeMdIo {
   readFile(p: string): string | undefined;
-  realpath(p: string): string;
+  /** The resolved path, or undefined when it cannot be resolved (the file is then skipped). */
+  realpath(p: string): string | undefined;
+  /** The entry itself, links not followed; undefined when it is missing. */
+  lstat(p: string): { isSymbolicLink(): boolean } | undefined;
+  /** A link's target as written, or undefined. */
+  readlink(p: string): string | undefined;
 }
 
-const nodeIo: ClaudeMdIo = {
+export const claudeMdNodeIo: ClaudeMdIo = {
   readFile: (p) => {
     try {
       const st = fs.statSync(p);
@@ -389,31 +420,79 @@ const nodeIo: ClaudeMdIo = {
       return undefined;
     }
   },
+  // The JS `fs.realpathSync` resolves link targets by their text, as the link walk in `claudeMdPrompt` does. Do not switch to
+  // `fs.realpathSync.native`: it resolves a `..` after a link the way the system does, and the two would disagree (spec 012 FR-177).
   realpath: (p) => {
     try {
       return fs.realpathSync(p);
     } catch {
-      return p;
+      return undefined;
+    }
+  },
+  lstat: (p) => {
+    try {
+      return fs.lstatSync(p);
+    } catch {
+      return undefined;
+    }
+  },
+  readlink: (p) => {
+    try {
+      return fs.readlinkSync(p);
+    } catch {
+      return undefined;
     }
   },
 };
+
+/** At most this many links are followed for one `CLAUDE.md` import. */
+const CLAUDE_MD_MAX_LINKS = 40;
 
 /**
  * The folder's `CLAUDE.md` with its `@path` imports expanded (an import is a whitespace-separated `@relative/path` token
  * outside code spans). Only files inside the folder (symlinks resolved) are read; at most `CLAUDE_MD_MAX_CHARS` in total
  * and `CLAUDE_MD_MAX_DEPTH` levels; each file once. Returns undefined when there is no CLAUDE.md.
+ * Spec 012 FR-177: an import is checked against the folder by its text before any file access (`io` is asked about nothing
+ * outside it); links inside the folder are checked by their text before they are followed; then the resolved path is checked
+ * again. A path that cannot be resolved is skipped.
  */
-export function claudeMdPrompt(folder: string, io: ClaudeMdIo = nodeIo, flavor: Pick<typeof path, 'resolve' | 'relative' | 'isAbsolute' | 'dirname' | 'sep'> = path): string | undefined {
+export function claudeMdPrompt(folder: string, io: ClaudeMdIo = claudeMdNodeIo, flavor: Pick<typeof path, 'resolve' | 'relative' | 'isAbsolute' | 'dirname' | 'sep'> = path): string | undefined {
   const root = io.realpath(flavor.resolve(folder));
+  if (root === undefined) return undefined;
   const inside = (p: string): boolean => {
     const r = flavor.relative(root, p);
     return r === '' || (!r.startsWith('..') && !flavor.isAbsolute(r));
   };
+  const win = flavor.sep === '\\';
+  const notPath = (r: string): boolean => /^[\\/]{2}/.test(r) || (win && r.includes(':'));
+  // The file, and each link on the way from the folder to it, must be inside the folder by its text.
+  const linksInside = (file: string): boolean => {
+    let p = file;
+    for (let hops = 0; ; ) {
+      if (!inside(p)) return false;
+      const parts = flavor.relative(root, p).split(flavor.sep).filter(Boolean);
+      let cur = root;
+      let next: string | undefined;
+      for (let i = 0; i < parts.length && next === undefined; i++) {
+        cur = flavor.resolve(cur, parts[i]);
+        const st = io.lstat(cur);
+        if (!st) return false;
+        if (!st.isSymbolicLink()) continue;
+        if (++hops > CLAUDE_MD_MAX_LINKS) return false;
+        const t = io.readlink(cur);
+        if (t === undefined || notPath(win ? t.replace(/^[A-Za-z]:(?=[\\/])/, '') : t)) return false;
+        next = flavor.resolve(flavor.dirname(cur), t, ...parts.slice(i + 1));
+      }
+      if (next === undefined) return true;
+      p = next;
+    }
+  };
   const seen = new Set<string>();
   let budget = CLAUDE_MD_MAX_CHARS;
   const load = (file: string, depth: number): string | undefined => {
+    if (budget <= 0 || !linksInside(file)) return undefined; // by text, before any file access
     const real = io.realpath(file);
-    if (!inside(real) || seen.has(real) || budget <= 0) return undefined;
+    if (real === undefined || !inside(real) || seen.has(real)) return undefined;
     seen.add(real);
     const text = io.readFile(real);
     if (text === undefined) return undefined;
@@ -427,7 +506,7 @@ export function claudeMdPrompt(folder: string, io: ClaudeMdIo = nodeIo, flavor: 
         if (/^\s*(```|~~~)/.test(line)) inFence = !inFence;
         if (inFence) return line;
         return line.replace(/(^|\s)@([^\s`]+)/g, (whole, pre: string, ref: string) => {
-          if (/^[a-z][a-z0-9+.-]*:/i.test(ref) || ref.startsWith('~')) return whole; // URLs and home paths are not imported
+          if (/^[a-z][a-z0-9+.-]*:/i.test(ref) || ref.startsWith('~') || notPath(ref)) return whole; // URLs, home paths and other refs that are not folder paths are not imported
           const target = flavor.resolve(flavor.dirname(real), ref);
           const sub = load(target, depth + 1);
           return sub === undefined ? whole : `${pre}\n<!-- imported from ${ref} -->\n${sub}\n`;
@@ -500,11 +579,24 @@ export const CLAUDE_ENTRYPOINT = 'agent-durbar';
  * new private temp folder (`mkdtemp`, 0700); `--mcp-config` gets the path; `cleanup` deletes the folder (on the CLI's exit).
  */
 export function privateMcpConfig(json: string, tmpRoot: string = os.tmpdir()): { file: string; cleanup: () => void } {
+  const p = privateLaunchFiles({ 'mcp-config.json': json }, tmpRoot);
+  return { file: p.files['mcp-config.json'], cleanup: p.cleanup };
+}
+
+/**
+ * Spec 012 FR-179 (issue #1379): several launch files in ONE new private folder (the `privateMcpConfig` folder: `makePrivateDir`, 0700),
+ * each 0600, flag `wx`. A failed write removes the folder before the error is raised. Names are fixed by the caller, never from content.
+ */
+export function privateLaunchFiles(contents: Readonly<Record<string, string>>, tmpRoot: string = os.tmpdir()): { files: Record<string, string>; cleanup: () => void } {
   const { dir, cleanup } = makePrivateDir('durbar-mcp-', tmpRoot); // spec 012 FR-165: tracked and swept on exit (privatedirs.ts)
   try {
-    const file = path.join(dir, 'mcp-config.json');
-    fs.writeFileSync(file, json, { mode: 0o600, flag: 'wx' });
-    return { file, cleanup };
+    const files: Record<string, string> = {};
+    for (const [name, text] of Object.entries(contents)) {
+      const file = path.join(dir, name);
+      fs.writeFileSync(file, text, { mode: 0o600, flag: 'wx' });
+      files[name] = file;
+    }
+    return { files, cleanup };
   } catch (e) {
     cleanup();
     throw e;
@@ -520,11 +612,34 @@ export function liveMcpConfigCount(): number {
   return livePrivateDirs('durbar-mcp-');
 }
 
-/** The CLI argv for a launch, with the MCP JSON moved to a private file (`privateMcpConfig`). */
+/**
+ * The CLI argv for a launch, with the MCP JSON (spec 069 FR-009), the `--settings` JSON, the folder's `CLAUDE.md` text and the agent JSON
+ * (spec 012 FR-179) moved to private files in one folder; the argv holds only their paths.
+ */
 export function cliLaunchArgs(launch: ClaudeLaunch, tmpRoot?: string): { args: string[]; cleanup: () => void } {
-  if (!launch.mcpConfig) return { args: claudeArgs(launch), cleanup: () => undefined };
-  const p = privateMcpConfig(launch.mcpConfig, tmpRoot);
-  return { args: claudeArgs({ ...launch, mcpConfig: p.file }), cleanup: p.cleanup };
+  const contents: Record<string, string> = {};
+  if (launch.mcpConfig) contents['mcp-config.json'] = launch.mcpConfig;
+  if (launch.settingsJson) contents['settings.json'] = launch.settingsJson;
+  if (launch.appendSystemPrompt) contents['instructions.md'] = launch.appendSystemPrompt;
+  if (launch.agent) contents['agents.json'] = launch.agent.json;
+  if (!Object.keys(contents).length) return { args: claudeArgs(launch), cleanup: () => undefined };
+  const p = privateLaunchFiles(contents, tmpRoot);
+  const f = p.files;
+  const moved: ClaudeLaunch = {
+    ...launch,
+    mcpConfig: f['mcp-config.json'],
+    settingsJson: undefined,
+    settingsFile: f['settings.json'],
+    appendSystemPrompt: undefined,
+    appendSystemPromptFile: f['instructions.md'],
+    ...(launch.agent ? { agent: { name: launch.agent.name, json: '' }, agentsFile: f['agents.json'] } : {}),
+  };
+  try {
+    return { args: claudeArgs(moved), cleanup: p.cleanup };
+  } catch (e) {
+    p.cleanup();
+    throw e;
+  }
 }
 
 /** The CLI transport factory; `spawn` and `tmpRoot` are for the tests (a fake child, a counted temp folder). */
@@ -896,15 +1011,33 @@ export class ClaudeAdapter implements AgentAdapter {
     return listClaudeAgents(s.roots, this.deps.configDir).map((d) => d.profile);
   }
 
+  /** Spec 043 FR-044: the profile these bytes of the listed agent's file define (what the confirmation shows). */
+  agentProfileOfFile(sessionId: string, id: string, file: AgentFileRead): AgentProfile | undefined {
+    const s = this.sessions.get(sessionId);
+    return s ? this.agentOfFile(s, id, file)?.profile : undefined;
+  }
+
+  /**
+   * FR-044: agent `id` parsed from `file.bytes`, only when the file sits directly in one of the session's agent folders (its source
+   * is that folder's) and the bytes define `id`. No new read and no new list: the bytes main read are the ones launched.
+   */
+  private agentOfFile(s: { roots: string[] }, id: string, file: AgentFileRead): ClaudeAgentDef | undefined {
+    const place = claudeAgentDirs(s.roots, this.deps.configDir).find((d) => path.dirname(file.path) === d.dir);
+    const def = place ? claudeAgentOfBytes(file.bytes, file.path, place.source) : undefined;
+    return def && def.profile.id === id ? def : undefined;
+  }
+
   /**
    * spec 043 FR-008: the agent the session starts with (`--agents`/`--agent` on its first launch); null = without. Claude fixes the
    * agent when a session is created and ignores `--agent` on `--resume` (real, 2026-10-19), so a session that already exists refuses.
    */
-  async selectAgentProfile(sessionId: string, id: string | null): Promise<AgentProfile | null> {
+  async selectAgentProfile(sessionId: string, id: string | null, file?: AgentFileRead): Promise<AgentProfile | null> {
     const s = this.sessions.get(sessionId);
     if (!s) throw new Error('Unknown Claude session.');
     if (s.resumable) throw new Error('Claude Code sets the agent when a session starts. Start a new session with this agent (+ New session).');
-    const def = id === null ? undefined : listClaudeAgents(s.roots, this.deps.configDir).find((d) => d.profile.id === id);
+    // FR-044: with the confirmed bytes, the session starts with exactly them (no second read of the file)
+    // without them, never a folder's agent: it needs main's read and confirmation (a folder file could win a name clash after the list)
+    const def = id === null ? undefined : file ? this.agentOfFile(s, id, file) : listClaudeAgents(s.roots, this.deps.configDir).find((d) => d.profile.id === id && d.profile.source !== 'repo');
     if (id !== null && !def) throw new Error('That agent is not available in this session.');
     s.agent = def;
     this.emit(s.id, { type: 'agentProfile', profile: def ? def.profile : null });
@@ -918,7 +1051,7 @@ export class ClaudeAdapter implements AgentAdapter {
 
   /** FR-126: a session's chat for the replay after a resume. */
   async history(sessionId: string): Promise<HistoryResult> {
-    return readClaudeHistory(sessionId, this.sessions.get(sessionId)?.cwd, this.deps.configDir);
+    return readClaudeHistory(sessionId, this.sessions.get(sessionId)?.cwd, this.deps.configDir, this.goalsWired());
   }
 
   /**
@@ -1487,6 +1620,10 @@ export class ClaudeAdapter implements AgentAdapter {
       ...(claudeNameOk(s.pendingName) ? { name: s.pendingName } : {}),
       ...(claudeForwardsSubagentText((await this.sandboxFactsNow()).version) ? { forwardSubagentText: true } : {}), // spec 015 FR-016
     };
+    // spec 012 FR-179: content that needs a file flag this Claude Code lacks is never sent on the command line instead (CLI transport
+    // only: the SDK transport does not use these files)
+    const refusal = this.deps.sdkTransport ? undefined : claudeLaunchFilesRefusal((await this.sandboxFactsNow()).version, launch);
+    if (refusal) throw new Error(refusal);
     const handlers: TransportHandlers = {
       message: (m) => this.onMessage(s, m),
       control: (req) => this.onControl(s, req),

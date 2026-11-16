@@ -215,3 +215,5 @@ owner's OK.
 Phase 7: T066 is owner-approved and ran 2026-10-28 (verdict A); T067-T071 did not wait for it; T072 is built after it; T073 is not needed.
 
 - [x] T074 Raise `CLAUDE_SANDBOX_MIN_VERSION` to 2.1.309 (FR-003a): constant, README, spec, plan; boundary test 2.1.308 below, 2.1.309 at, 2.1.312 above, `2.1.309 (Claude Code)` parsed, pre-release below.
+- [x] T075 The Copilot runtime's private `TMPDIR` is made under the short root (`/tmp`, resolved) on macOS and Linux when the OS temp root leaves no room for a Unix socket; Windows unchanged (issue #1173). [FR-024]
+  - AC1: `scripts/test-copilot-tmpdir.ts` covers long, short and Windows roots, 0700 and the sweep; a mutant that keeps the OS root fails.

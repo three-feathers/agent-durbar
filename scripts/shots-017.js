@@ -31,7 +31,8 @@ module.exports = async (ctx) => {
   const { until, js } = H;
   const key = (keyCode, modifiers) => H.key(keyCode, modifiers, { pause: 120 });
   const shot = (name, w, h) => H.shot(path.join(OUT, `${name}-${w}x${h}.png`), { prep: 'toasts', tag: '017', what: `${name} ${w} ${h}` });
-  const load = (w, h, extra) => H.load({ w, h, query: extra, focus: true });
+  /* `ready`: the default (15 desks) never holds when the chat is open from the start (`open`), and the load waited its whole 15 s for it: pass what the step needs (spec 008 FR-190) */
+  const load = (w, h, extra, ready) => H.load({ w, h, query: extra, focus: true, ...(ready ? { ready } : {}) });
   const vis = (id) => `(()=>{const e=document.getElementById(${jsLiteral(`${id}`)});return !!e&&!e.hidden&&e.getClientRects().length>0})()`;
   /* spec 052 FR-105 (round 11): the defaults selects (ids kept) live in the popover of the top bar's Defaults chip; open it first */
   const openDefaults = async () => { await js(`(()=>{const p=document.getElementById('defaultsPop');if(p.hidden)document.getElementById('defaultsBtn').click();return !p.hidden})()`); await until(`!document.getElementById('defaultsPop').hidden`); };
@@ -127,7 +128,7 @@ module.exports = async (ctx) => {
     assert.strictEqual(await js(vis('modelSel')), true, 'back to Copilot: the model select is back');
 
     // new-session dialog: the kind select, disabled kinds, blocked start; the model field follows the kind
-    await load(w, h, { simkinds: '1', open: 'sim-1' });
+    await load(w, h, { simkinds: '1', open: 'sim-1' }, `!!document.getElementById('newSessBtn')`);
     await ctx.waitFor(`document.getElementById('newSessBtn')`, 5000);
     await js(`document.getElementById('newSessBtn').click()`);
     await until(`!!document.getElementById('sdKind')`);
@@ -157,7 +158,7 @@ module.exports = async (ctx) => {
     assert.ok(await ctx.waitFor(`!document.getElementById('sessDlg')`, 4000), 'Copilot starts a session');
 
     // one adapter: the new-session dialog has no kind select
-    await load(w, h, { open: 'sim-1' });
+    await load(w, h, { open: 'sim-1' }, `!!document.getElementById('newSessBtn')`);
     await ctx.waitFor(`document.getElementById('newSessBtn')`, 5000);
     // Copilot keeps every control the capability gates could hide (FR-061): Stop, cap chip, mode menu with 3 modes, history box
     assert.ok(await js(`(()=>{const e=document.getElementById('stopBtn');return !!e&&!!e.closest('#runSlot')})()`), `${w}: Copilot keeps the Stop button (in the message box, shown while a turn runs: spec 005 FR-038)`);

@@ -1,6 +1,7 @@
 # The suites `npm test` runs (scripts/run-tests.js), one `npm run` script name per line, in the order `npm run test:serial` runs them.
 # Add a new suite on its own line in the middle of the list, not at the end (two PRs appending at the end conflict). Blank lines and # comments are ignored.
 test:safetext
+test:settingsnav
 test:rendersyntax
 test:perfrecord
 test:permissions
@@ -8,6 +9,9 @@ test:attachments
 test:vscode
 test:runtime-core
 test:runtime-redact
+test:redact-monotone
+test:redact-monotone-b
+test:redact-monotone-c
 test:livehead
 test:maskoutgoing-fuzz
 test:maskoutgoing-fuzz-b
@@ -28,6 +32,8 @@ test:markdown
 test:sessionsearch
 test:convsearch
 test:convmask
+test:convsearchipc
+test:convsearchui
 test:url
 test:mcp
 test:toolstats
@@ -64,12 +70,16 @@ test:copilotoneshot
 test:copilotcap
 test:copilot-tmpdir
 test:mcpsession
+test:mcpswitchpersist
 test:mcpcall
 test:mcpsignin
 test:mcpsigninrefresh
 test:places
 test:floornav
 test:cuttext
+test:questionparts
+test:chattrim
+test:subretire
 test:grantlabel
 test:floors
 test:mood
@@ -86,6 +96,7 @@ test:claudetransport
 test:claudeadapter
 test:claudesdk
 test:agentprofiles
+test:agentconfirm
 test:claudehistory
 test:broadfolder
 test:remote
@@ -99,6 +110,8 @@ test:autopilot-copilot
 test:autopilot-claude
 test:autopilot-codex
 test:autopilot-reach
+test:autopilot-ipc
+test:autopilot-window
 test:elicit
 test:macos
 test:profiledir
@@ -110,6 +123,7 @@ test:copilotshared
 test:gitstatus
 test:officeops
 test:uisuite
+test:cichanges
 test:pathdirs
 test:officialinstall
 test:checknames
@@ -120,8 +134,18 @@ test:planmode
 test:probe
 test:logo-assets
 test:autofollow
+test:announcemask
 test:openwith
 test:liveact
+test:lookalike
+test:skeleton
+test:teamtemplate
+test:teamstore
+test:teamstore-fs
+test:teams-editor
+test:teams-ui
+test:teamsipc
+test:teamops
 test:names
 test:renameadapters
 test:sessionname
@@ -172,9 +196,11 @@ test:shutters
 test:unread
 test:tooltip
 test:simclock
+test:pointer-log
 test:labelsbackfill
 test:claim
 test:prgatenotes
+test:prgatecodeql
 test:trustedcontent
 test:checkparallel
 test:cappedread
@@ -193,17 +219,25 @@ test:helpercard
 test:weeklyaudit
 test:newfolder
 test:newfolderop
+test:addkey
 test:newfolderipc
 test:newfoldergit
 test:supplychain
+test:electroncache
 test:claudecliunit
 test:rules
 test:weeklyretro
 test:docsscripts
+test:citypecheck
 test:worldmatrix
+test:world-catalogue
+test:world-distinct
+test:world-contact-sheet
 test:worldzip
 test:worldpack
 test:world-packs
+test:worldstore
+test:worldipc
 test:consolemask
 test:redact-growth-tokens
 test:redact-growth-adversarial
@@ -216,6 +250,7 @@ test:redact-growth-hashtable
 test:redact-growth-hashtablegrowth
 test:redact-growth-shapes
 test:redact-growth-shapes2
+test:redact-growth-masks
 test:redact-images-whole
 test:redact-images-forms
 test:doormigrate
@@ -227,5 +262,10 @@ test:mcpcontextipc
 test:quota
 test:featureinventory
 test:simversion
+test:momentsregistry
+test:paritytick
 test:picturebudget
+test:chargroups
+test:dangersites
 test:specnumbers
+test:pencilpark

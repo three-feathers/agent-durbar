@@ -162,7 +162,7 @@ module.exports = async (ctx) => {
     await H.clearToasts();
     assert.strictEqual(await js(`window.DurbarScreens&&window.THEME.characters()`), 'theme', `${tag}: the button changed nothing`);
     assert.strictEqual(await js(`window.__durbarSimUi.bridge().getSettings().then(s=>s.characters)`), 'theme', `${tag}: nothing was saved`);
-    assert.strictEqual(await js(`document.querySelector('#chList [data-characters="mine"]').getAttribute('aria-pressed')`), 'false', `${tag}: not pressed`);
+    assert.strictEqual(await js(`document.querySelector('#chList [data-characters="mine"]').getAttribute('aria-checked')`), 'false', `${tag}: not pressed`);
     // Save with a name, then with none
     await js(`document.getElementById('chMake').click();0`);
     await need(`!!document.getElementById('cmDesc')`, `${tag}: the maker again`);
@@ -607,7 +607,7 @@ module.exports = async (ctx) => {
   await toastSeen(/no characters left, so the desks show the theme/);
   assert.strictEqual(await js(`window.THEME.characters()`), 'theme', 'draws the theme\'s own');
   assert.strictEqual(await js(`window.__durbarSimUi.bridge().getSettings().then(s=>s.characters)`), 'mine', 'the stored value stays mine');
-  assert.strictEqual(await js(`document.querySelector('#chList [data-characters="mine"]').getAttribute('aria-pressed')`), 'true', 'My characters stays pressed');
+  assert.strictEqual(await js(`document.querySelector('#chList [data-characters="mine"]').getAttribute('aria-checked')`), 'true', 'My characters stays pressed');
   assert.ok((await js(`document.querySelector('#chList [data-characters="mine"]').textContent`)).includes('Make one first'), 'and says Make one first');
   await closeSettings();
   await need(`document.querySelectorAll('#stage image.crew-pic').length===0`, 'no portrait is left', 4000);

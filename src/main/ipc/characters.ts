@@ -3,7 +3,9 @@
  * `tryId`, an id main listed, a name, or a folder key; no text from the window becomes a path. Every channel is owner-only (`fromApp`) and none is open to the simulator.
  * The description goes to the adapter once, inside the prompt, and is never stored, logged or kept in an error (D3, FR-032, SC-004). A try is held only in memory.
  * `[KNOWN GAP]` a partial echo of the description in an error is not recognised: only the whole text (raw or cleaned, plain or JSON-escaped) is removed.
- * `[KNOWN GAP]` FR-034's login gate is not enforced here yet: no adapter reports `imageGen`, so nothing can run. T030a must add it here before Codex's `imageGen` turns on.
+ * FR-034 fails closed (T030b; third review of #956): `character:generate` refuses every try unless main's own login gate (`loginGate`, T030a) is passed in, so no
+ * adapter change, on the class, the instance or from a helper, can start a paid picture. `main.ts` passes none until T030a builds it; `test:charipc`'s tripwire checks both.
+ * Only an own `loginGate` property counts (round 4): an inherited one, as `{ __proto__: { loginGate } }` gives, is refused like a missing one.
  */
 import { app } from 'electron';
 import { randomBytes } from 'crypto';
@@ -22,6 +24,7 @@ import { maskHomePaths, redact, redactMarkdown } from '../../shared/redact';
 import { encodeSheet } from '../charencoder';
 import type { EncodeOptions } from '../charencoder';
 import { CharacterStore } from '../charstore';
+import { readSameFile } from '../samefileread';
 import type { DevEnv } from '../devhooks';
 import { pickFolder } from '../pickfolder';
 import type { SettingsStore } from '../settings';
@@ -37,6 +40,8 @@ const NEEDS_CODEX = 'This needs OpenAI Codex, installed and signed in with ChatG
 const NO_PICTURE = 'No picture came back. Try again.';
 const COULD_NOT = 'Codex could not make the picture. Try again.';
 const REFUSED = { ok: false, error: 'Agent Durbar refused a call that did not come from its own window.' };
+/** FR-034, T030b: what a try gets while main has no login gate (T030a). */
+export const NO_LOGIN_GATE = 'Making characters with AI is not turned on in this version yet.';
 
 export interface CharactersIpcDeps {
   dev: DevEnv;
@@ -50,6 +55,11 @@ export interface CharactersIpcDeps {
   encode?: (bytes: Uint8Array, header: { width: number; height: number }, opts: EncodeOptions) => Promise<EncoderResult>;
   /** Tests: the platform whose folder keys are normalised (default this one's). */
   platform?: string;
+  /**
+   * FR-034 (T030a): main's own login gate, asked before every `generateImage` (a refusal starts no process). Undefined until T030a builds it: then every try is
+   * refused with `NO_LOGIN_GATE` (fail closed, T030b). Only `test:charipc` passes a stand-in.
+   */
+  loginGate?: (adapterId: string) => Promise<{ ok: true } | { ok: false; error: string }>;
   /** Tests: shorter limits. */
   limits?: { generateMs?: number; graceMs?: number; tryTtlMs?: number };
 }
@@ -80,30 +90,11 @@ export function sheetFolderOf(file: unknown, tmpRoot: string = os.tmpdir()): str
 }
 
 type SheetRead = { ok: true; bytes: Uint8Array } | { ok: false; error: string };
-/** FR-020: the expected file only: `lstat` of a regular file (no link), at most 20 MB, read once into memory. */
+/** FR-020: the expected file only, at most 20 MB, read once into memory by the shared identity-checked read (`readSameFile`, FR-031). */
 function readSheet(file: string): SheetRead {
-  let fd: number | undefined;
-  try {
-    const st = fs.lstatSync(file);
-    if (!st.isFile()) return { ok: false, error: NO_PICTURE };
-    if (st.size > MAX_IMAGE_BYTES) return { ok: false, error: 'The picture is too big.' };
-    const { O_RDONLY, O_NOFOLLOW, O_NONBLOCK } = fs.constants;
-    fd = fs.openSync(file, O_RDONLY | (O_NOFOLLOW ?? 0) | (O_NONBLOCK ?? 0));
-    const now = fs.fstatSync(fd);
-    if (!now.isFile() || now.ino !== st.ino || now.size > MAX_IMAGE_BYTES) return { ok: false, error: NO_PICTURE };
-    const bytes = Buffer.alloc(now.size);
-    let got = 0;
-    while (got < bytes.length) {
-      const n = fs.readSync(fd, bytes, got, bytes.length - got, got);
-      if (n <= 0) return { ok: false, error: NO_PICTURE };
-      got += n;
-    }
-    return { ok: true, bytes };
-  } catch {
-    return { ok: false, error: NO_PICTURE };
-  } finally {
-    if (fd !== undefined) try { fs.closeSync(fd); } catch { /* closed */ }
-  }
+  const r = readSameFile(file, MAX_IMAGE_BYTES);
+  if (r.ok) return { ok: true, bytes: r.buf };
+  return r.code === 'too-big' ? { ok: false, error: 'The picture is too big.' } : { ok: false, error: NO_PICTURE };
 }
 
 /** The forms an echo of the text can take: as it is, and JSON-escaped once or twice (as a log or an error wrapping another error carries it; the same idea as `maskHomePaths`). */
@@ -122,6 +113,8 @@ class Cancelled extends Error {}
 
 export function register(deps: CharactersIpcDeps): CharactersIpc {
   const { dev, registry, router, getSettingsStore, openFolderKeys } = deps;
+  // FR-034 (T030b, round 4 of #956): the gate is read as an own property only, so a `{ __proto__: { loginGate } }` deps object (or any inherited one) is no gate
+  const loginGate = Object.prototype.hasOwnProperty.call(deps, 'loginGate') && typeof deps.loginGate === 'function' ? deps.loginGate : undefined;
   const store = new CharacterStore(path.join(app.getPath('userData'), 'characters'), (m) => console.warn(redact(`[characters] ${m}`)));
   const encode = deps.encode ?? encodeSheet;
   const generateMs = deps.limits?.generateMs ?? GENERATE_TIMEOUT_MS;
@@ -147,13 +140,17 @@ export function register(deps: CharactersIpcDeps): CharactersIpc {
     const kind = typeof adapterId === 'string' && registry.has(adapterId) ? adapterId : undefined;
     const ad = kind ? router.instance(kind) : undefined;
     if (!ad || ad.capabilities?.imageGen !== true || typeof ad.generateImage !== 'function') return { ok: false, error: NEEDS_CODEX };
-    drop();
+    if (!loginGate) return { ok: false, error: NO_LOGIN_GATE }; // FR-034 fails closed until T030a (T030b)
     const ctl = new AbortController();
     running = ctl;
     const started = Date.now();
     let timedOut = false;
     const guard = setTimeout(() => { timedOut = true; ctl.abort(); }, generateMs + graceMs);
     try {
+      const gate = await loginGate(kind as string);
+      if (!gate.ok) return { ok: false, error: gate.error };
+      if (ctl.signal.aborted) throw new Cancelled();
+      drop();
       const result = await new Promise<{ file: string }>((resolve, reject) => {
         let over = false;
         ctl.signal.addEventListener('abort', () => { if (!over) { over = true; reject(new Cancelled()); } }, { once: true });

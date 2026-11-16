@@ -24,7 +24,7 @@ const LOOPBACK = '127.0.0.1';
 function defaultDir() { return path.join(os.homedir(), '.durbar-usage'); }
 
 function parseArgs(argv, env = process.env) {
-  const o = { port: env.DURBAR_USAGE_PORT !== undefined ? env.DURBAR_USAGE_PORT : DEFAULT_PORT, dir: env.DURBAR_USAGE_DIR || defaultDir(), machine: env.DURBAR_USAGE_MACHINE };
+  const o = { port: env.DURBAR_USAGE_PORT !== undefined ? env.DURBAR_USAGE_PORT : DEFAULT_PORT, dir: env.DURBAR_USAGE_DIR || defaultDir(), machine: env.DURBAR_USAGE_MACHINE, repos: env.DURBAR_USAGE_REPOS };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === '--port' || a === '--dir') {
@@ -36,6 +36,7 @@ function parseArgs(argv, env = process.env) {
   if (!/^\d{1,5}$/.test(String(o.port)) || port > 65535) throw new Error('--port must be 0..65535');
   o.port = port;
   o.machine = lib.checkMachine(o.machine);
+  o.repos = lib.parseRepos(o.repos);
   return o;
 }
 
@@ -121,6 +122,7 @@ function createService(opts) {
   let state;
   try { state = loadState(file, opts.machine); } catch (e) { release(); throw e; }
   const now = opts.now || Date.now;
+  const repos = opts.repos === undefined ? lib.DEFAULT_REPOS : opts.repos; // null = no filter (tests only)
   const write = opts.write || atomicWrite;
   const maxFile = opts.maxFileBytes || lib.MAX_FILE_BYTES;
   function handle(buf, encoding) {
@@ -135,7 +137,7 @@ function createService(opts) {
     // ingest into a copy, so a body that throws, or a write that fails, changes nothing (a retry is then counted once)
     const trial = JSON.parse(JSON.stringify(state));
     let res;
-    try { res = lib.ingest(trial, parsed, now()); } catch { return { status: 400, body: { error: 'not an OTLP metrics body' } }; }
+    try { res = lib.ingest(trial, parsed, now(), repos); } catch { return { status: 400, body: { error: 'not an OTLP metrics body' } }; }
     if (res.tokens + res.costs + res.skipped > 0) {
       const text = JSON.stringify(trial) + '\n';
       // a write that would pass the file cap is refused, and the file and the sums in memory stay as they were

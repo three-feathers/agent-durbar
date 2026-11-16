@@ -29,12 +29,13 @@ const errCode = (e: unknown): string => {
  * Read at most `cap` bytes, never blocking and never following a final link: open `O_RDONLY | O_NOFOLLOW | O_NONBLOCK` (each where
  * defined; a FIFO opens at once and fails the regular-file check), `fstat` the descriptor: a regular file with one link and a size
  * within `cap`, then at most `size + 1` bytes are read (a file that grows meanwhile is `changing`). The bytes are returned undecoded, so
- * the cap is checked before any decoding. `vet` (optional) sees the `fstat` after the file and link checks and before the size check;
- * a string it returns refuses the file (`vetoed`). Never throws.
+ * the cap is checked before any decoding. `vet` (optional) sees the `fstat` after the file and link checks and before the size check,
+ * with the open descriptor, so a caller that compares file identities can `fstat` it again with `{ bigint: true }` (issue #1491: a
+ * 64-bit NTFS file ID loses its low bit as a plain number); a string it returns refuses the file (`vetoed`). Never throws.
  */
 export function readCapped(fs: CappedFs, k: CappedFlags, file: string, cap: number): CappedRead;
-export function readCapped<S extends { isFile(): boolean; size: number; nlink: number }>(fs: CappedFs, k: CappedFlags, file: string, cap: number, vet: (st: S) => string | undefined): CappedRead | CappedVetoed;
-export function readCapped(fs: CappedFs, k: CappedFlags, file: string, cap: number, vet?: (st: never) => string | undefined): CappedRead | CappedVetoed {
+export function readCapped<S extends { isFile(): boolean; size: number; nlink: number }>(fs: CappedFs, k: CappedFlags, file: string, cap: number, vet: (st: S, fd: number) => string | undefined): CappedRead | CappedVetoed;
+export function readCapped(fs: CappedFs, k: CappedFlags, file: string, cap: number, vet?: (st: never, fd: number) => string | undefined): CappedRead | CappedVetoed {
   let fd: number;
   try {
     fd = fs.openSync(file, k.O_RDONLY | (k.O_NOFOLLOW ?? 0) | (k.O_NONBLOCK ?? 0));
@@ -46,7 +47,7 @@ export function readCapped(fs: CappedFs, k: CappedFlags, file: string, cap: numb
     const st = fs.fstatSync(fd);
     if (!st.isFile()) return { ok: false, code: 'not-file' };
     if (st.nlink > 1) return { ok: false, code: 'links' };
-    const why = vet?.(st as never);
+    const why = vet?.(st as never, fd);
     if (why !== undefined) return { ok: false, code: 'vetoed', why };
     if (st.size > cap) return { ok: false, code: 'too-big' };
     const buf = Buffer.alloc(st.size + 1);

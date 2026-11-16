@@ -9,6 +9,8 @@ import * as path from 'path';
 import { CharacterStore, nameSlug } from '../src/main/charstore';
 import type { NewCharacter } from '../src/main/charstore';
 import { CHARACTER_ID_RE, CHARACTERS_WARN_AT } from '../src/shared/charrules';
+import { readSameFile } from '../src/main/samefileread';
+import { HARD_LINK_REFUSALS, hardLinkOrSkip, hardLinkSkip } from './fakes/hardlinks';
 
 const ROOT = path.join(__dirname, '..', '..');
 const artDir = path.join(ROOT, 'src', 'renderer', 'crew', 'art');
@@ -30,7 +32,11 @@ function setup(warn?: (m: string) => void): { root: string; store: CharacterStor
 function linkOk(target: string, at: string): boolean {
   try { fs.symlinkSync(target, at); return true; } catch { console.log('test-charstore: no link rights here, a link case is skipped'); return false; }
 }
-const saved = (r: ReturnType<CharacterStore['save']>): { id: string; name: string } => { assert.ok(r.ok, 'saved: ' + JSON.stringify(r)); return r as { ok: true; id: string; name: string }; };
+/** A hard link needs no special rights, but a Windows file system can refuse one (FAT, some network shares): only there, outside CI, is the case skipped (`hardLinkSkip`). */
+function hardLinkOk(target: string, at: string): boolean {
+  return hardLinkOrSkip('test-charstore', target, at, (t, a) => fs.linkSync(t, a), console.log);
+}
+const saved = (r:ReturnType<CharacterStore['save']>): { id: string; name: string } => { assert.ok(r.ok, 'saved: ' + JSON.stringify(r)); return r as { ok: true; id: string; name: string }; };
 const tree = (d: string): string[] => fs.readdirSync(d, { recursive: true, encoding: 'utf8' }).sort();
 
 try {
@@ -144,14 +150,22 @@ try {
     assert.ok(warns.every((w) => !/[\\/]|my-/.test(w)), 'no path or id in a warning: ' + warns[0]);
     for (const b of bads) assert.ok(!store.frames(b).ok && !store.has(b), `${b}: not served`);
     // links
+    // the link points at an outside copy of a GOOD character folder (its record names this id), so only the folder check can refuse it (review of #956)
     const linkId = 'my-0000000000aa';
-    if (linkOk(outside, path.join(root, linkId))) {
+    const outsideChar = path.join(outside, 'char');
+    fs.cpSync(path.join(root, good.id), outsideChar, { recursive: true });
+    fs.writeFileSync(path.join(outsideChar, 'character.json'), JSON.stringify({ ...JSON.parse(fs.readFileSync(path.join(root, good.id, 'character.json'), 'utf8')), id: linkId }));
+    const outsideBefore = tree(outsideChar).map((f) => [f, fs.statSync(path.join(outsideChar, f)).isFile() ? fs.readFileSync(path.join(outsideChar, f)).toString('hex') : 'dir']);
+    if (linkOk(outsideChar, path.join(root, linkId))) {
       assert.ok(!store.has(linkId), 'a link named like an id is not a character');
+      assert.ok(!store.frames(linkId).ok, 'its frames are not read through it');
+      assert.ok(!store.rename(linkId, 'x').ok, 'it cannot be renamed through');
       assert.ok(!store.delete(linkId).ok, 'and cannot be deleted through');
-      assert.ok(!store.rename(linkId, 'x').ok);
-      assert.ok(fs.existsSync(path.join(outside, 'keep.txt')), 'what it points at is untouched');
+      assert.ok(!store.list().some((e) => e.id === linkId), 'and is not listed');
+      assert.deepStrictEqual(tree(outsideChar).map((f) => [f, fs.statSync(path.join(outsideChar, f)).isFile() ? fs.readFileSync(path.join(outsideChar, f)).toString('hex') : 'dir']), outsideBefore, 'what it points at is untouched');
       fs.rmSync(path.join(root, linkId));
     }
+    fs.rmSync(outsideChar, { recursive: true, force: true });
     const fileLink = copyOf('my-0000000000ab', (d) => { fs.rmSync(path.join(d, 'working.webp')); });
     if (linkOk(path.join(root, good.id, 'working.webp'), path.join(root, fileLink, 'working.webp'))) assert.ok(!store.has(fileLink) && !store.frames(fileLink).ok, 'a frame that is a link is refused');
     fs.rmSync(path.join(root, fileLink), { recursive: true, force: true });
@@ -160,9 +174,74 @@ try {
     const rightRecord = path.join(outside, 'record.json');
     fs.writeFileSync(rightRecord, JSON.stringify({ ...JSON.parse(fs.readFileSync(path.join(root, good.id, 'character.json'), 'utf8')), id: jsonLink }));
     if (linkOk(rightRecord, path.join(root, jsonLink, 'character.json'))) assert.ok(!store.has(jsonLink), 'a record that is a link is refused');
+    // hard links (review of #956, round 2): the second name of a file outside is refused by the one-link rule of the shared read, the only check that can refuse
+    // it: the record is right in every field and the frame is a copy of a good one (`has` reads frames by lstat only, so it stays true there)
+    const hardRecordId = copyOf('my-0000000000ae', (d) => { fs.rmSync(path.join(d, 'character.json')); });
+    const hardRecord = path.join(outside, 'hard-record.json');
+    fs.writeFileSync(hardRecord, JSON.stringify({ ...JSON.parse(fs.readFileSync(path.join(root, good.id, 'character.json'), 'utf8')), id: hardRecordId }));
+    if (hardLinkOk(hardRecord, path.join(root, hardRecordId, 'character.json'))) assert.strictEqual(store.has(hardRecordId), false, 'a record with a second hard link is refused');
+    const hardFrameId = copyOf('my-0000000000af', (d) => { fs.rmSync(path.join(d, 'working.webp')); });
+    const hardFrame = path.join(outside, 'hard-frame.webp');
+    fs.copyFileSync(path.join(root, good.id, 'working.webp'), hardFrame);
+    if (hardLinkOk(hardFrame, path.join(root, hardFrameId, 'working.webp'))) {
+      assert.ok(store.has(hardFrameId), 'the hard-linked frame passes the lstat checks of the record');
+      assert.strictEqual(store.frames(hardFrameId).ok, false, 'a frame with a second hard link is not read');
+    }
+    // a refused hard link is a skip only on Windows outside CI, and only for a refused link's codes (third review of #956): anywhere else it fails the suite
+    for (const c of HARD_LINK_REFUSALS) assert.strictEqual(hardLinkSkip(c, 'win32', {}), null, `hard-link skip: ${c} on Windows may skip`);
+    for (const [c, plat, env] of [['EPERM', 'linux', {}], ['EPERM', 'darwin', {}], ['EXDEV', 'linux', {}], ['EPERM', 'win32', { CI: 'true' }], ['EIO', 'win32', {}], ['EACCES', 'win32', {}], [undefined, 'win32', {}]] as const) {
+      assert.notStrictEqual(hardLinkSkip(c, plat, env), null, `hard-link skip: ${String(c)} on ${plat} ${JSON.stringify(env)} fails the case`);
+    }
+    {
+      const refuse = (): void => { throw Object.assign(new Error('refused'), { code: 'EPERM' }); };
+      if (process.platform === 'win32' && !process.env.CI) assert.strictEqual(hardLinkOrSkip('probe', 'a', 'b', refuse, () => undefined), false, 'a refused link on Windows outside CI is a skip');
+      else assert.throws(() => hardLinkOrSkip('probe', 'a', 'b', refuse, () => undefined), /probe: a hard link was refused \(EPERM\)/, 'a refused link here fails the case');
+    }
     // a good record over a broken picture is refused at the read, not handed to the window
     const broken = copyOf('my-0000000000ad', (d) => { fs.writeFileSync(path.join(d, 'waiting.webp'), 'not a picture'); });
     assert.ok(store.has(broken) && !store.frames(broken).ok, 'the bytes are checked again');
+    // the lstat check before the open is the only guard on Windows (no O_NOFOLLOW): an lstat that reports a link must refuse the file even when the open would succeed (review of #956)
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const realFs = require('fs') as { lstatSync: typeof fs.lstatSync };
+    const lstat = realFs.lstatSync;
+    const linkJson = path.join(root, good.id, 'character.json');
+    realFs.lstatSync = ((p: fs.PathLike, ...rest: unknown[]) => {
+      const st = (lstat as (...a: unknown[]) => fs.Stats)(p, ...rest);
+      if (path.resolve(String(p)) !== path.resolve(linkJson)) return st;
+      return Object.assign(Object.create(Object.getPrototypeOf(st)), st, { isFile: () => false, isSymbolicLink: () => true });
+    }) as typeof fs.lstatSync;
+    let seenAsLink: boolean;
+    try { seenAsLink = store.has(good.id); } finally { realFs.lstatSync = lstat; }
+    assert.strictEqual(seenAsLink, false, 'a record lstat reports as a link is refused before it is opened');
+    realFs.lstatSync = ((p: fs.PathLike, ...rest: unknown[]) => {
+      const st = (lstat as (...a: unknown[]) => fs.Stats)(p, ...rest);
+      return path.resolve(String(p)) === path.resolve(linkJson) ? Object.assign(Object.create(Object.getPrototypeOf(st)), st, { ino: 1n }) : st;
+    }) as typeof fs.lstatSync;
+    let otherFile: boolean;
+    try { otherFile = store.has(good.id); } finally { realFs.lstatSync = lstat; }
+    assert.strictEqual(otherFile, false, 'the opened record must be the one lstat saw (device and inode)');
+    assert.ok(store.has(good.id), 'and the same record is read when lstat says it is a file');
+    // readSameFile (third review of #956): only ENOENT is `missing`; any other lstat error is an `error` with its code, never `missing`
+    const sameCode = (r: ReturnType<typeof readSameFile>): string => (r.ok ? 'ok' : r.code === 'error' ? `error ${String(r.errno)}` : r.code);
+    assert.strictEqual(sameCode(readSameFile(path.join(root, good.id, 'nope.json'), 4096)), 'missing', 'readSameFile: a missing file is missing');
+    // on the real file system too (Windows answers ENOENT for a path through a file, so only Linux and macOS check it)
+    if (process.platform !== 'win32') assert.strictEqual(sameCode(readSameFile(path.join(linkJson, 'below'), 4096)), 'error ENOTDIR', 'readSameFile: a path through a file is an error, not missing');
+    for (const code of ['EACCES', 'ELOOP', 'ENOTDIR', 'EIO', 'EPERM']) {
+      realFs.lstatSync = ((p: fs.PathLike, ...rest: unknown[]) => {
+        if (path.resolve(String(p)) === path.resolve(linkJson)) throw Object.assign(new Error(`${code}: no`), { code });
+        return (lstat as (...a: unknown[]) => fs.Stats)(p, ...rest);
+      }) as typeof fs.lstatSync;
+      let got: string;
+      try { got = sameCode(readSameFile(linkJson, 4096)); } finally { realFs.lstatSync = lstat; }
+      assert.strictEqual(got, `error ${code}`, `readSameFile: lstat ${code} is an error, not missing`);
+    }
+    realFs.lstatSync = ((p: fs.PathLike, ...rest: unknown[]) => {
+      if (path.resolve(String(p)) === path.resolve(linkJson)) throw Object.assign(new Error('gone'), { code: 'ENOENT' });
+      return (lstat as (...a: unknown[]) => fs.Stats)(p, ...rest);
+    }) as typeof fs.lstatSync;
+    let gone: string;
+    try { gone = sameCode(readSameFile(linkJson, 4096)); } finally { realFs.lstatSync = lstat; }
+    assert.strictEqual(gone, 'missing', 'readSameFile: lstat ENOENT is missing');
   }
   // --- a root that is a link is not used ---
   {
@@ -274,6 +353,11 @@ try {
     assert.ok(/const tmp = path\.join\(this\.root, TMP_PREFIX/.test(src) && /const tmp = path\.join\(dir, /.test(src), 'temp names are under the root');
     assert.ok(/CHARACTER_ID_RE\.test\(id\) \? path\.join\(this\.root, id\) : null/.test(src), 'an id is checked before it becomes a path');
     assert.ok((src.match(/recursive: true, force: true/g) ?? []).length <= 4, 'few recursive removes');
+    // FR-031 (review of #956, round 2): the store and the sheet read share one identity-checked read; neither keeps its own copy of it
+    for (const f of [path.join('src', 'main', 'charstore.ts'), path.join('src', 'main', 'ipc', 'characters.ts')]) {
+      const code = fs.readFileSync(path.join(ROOT, f), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|\s)\/\/.*$/gm, '$1');
+      assert.ok(/\breadSameFile\(/.test(code) && !/\breadCapped\b|bigint: true/.test(code), `${f}: reads through readSameFile only, no copy of it`);
+    }
   }
   console.log('test-charstore: ok');
 } finally {

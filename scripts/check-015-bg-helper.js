@@ -12,6 +12,8 @@
  *   3. driver-made helpers on another agent: a background one whose call returns stays Running, and the session stopping ends it as
  *      Failed ("Stopped with its session"); a foreground one (no `background`) still ends when its call returns (the existing rule);
  *      a failed launch call ends a background one as Failed.
+ *   4. spec 015 FR-021 (issue 1330): a driver-made helper with a hostile name and task (fake token, homes, UNC) shows none of it in the
+ *      flat tile (name, tooltip, aria-label), its chat block, the Sub-agent activity panel (title, task line, error line) or anywhere else.
  * A miss prints DRIVER FAILED (Electron still exits 0), so the npm script exits non-zero unless "all checks passed" is printed.
  */
 const assert = require('assert');
@@ -81,5 +83,37 @@ module.exports = async (ctx) => {
   assert.ok(v6.status === 'failed' && v6.error === 'Stopped with its session' && v6.block === 'failed' && v6.cardState === 'error', `background helper: the session stopped and it still runs ${JSON.stringify(v6)}`);
   const v7 = await view(P + ':fg');
   assert.ok(v7.status === 'done', `the session stop changed a finished helper ${JSON.stringify(v7)}`);
+  /* 4. spec 015 FR-021 (issue 1330): a hostile helper name and task (fake token, macOS, Windows and UNC homes) show nowhere: the flat
+     tile (name, tooltip, aria-label), the chat block, the Sub-agent activity panel (title, task line, error line) and the chat header */
+  const P3 = await js(`(window.__durbarSimUi.agents().filter(a=>!a.parent&&a.live)[2]||{}).id||''`);
+  assert.ok(P3, 'a third agent');
+  const TOK = 'ghp_' + 'Zq9Xw8Vu7Ts6Rq5Po4Nm3Lk2Ji1Hg0Fe9Dc8';
+  const HNAME = 'Scan \\\\fs01\\homes\\zedq\\notes and /Users/zedq/proj';
+  const HTASK = 'Use ' + TOK + ' in \\\\fs01\\homes\\zedq\\notes, C:\\Users\\Jürgen Smith\\proj, \\\\fs01\\homes\\Ölçü\\notes, ' + JSON.stringify('C:\\Users\\Jürgen\\proj') + ', C:\\Users\\zedq\\proj and /Users/zoë/a.txt';
+  const LEAKS = [TOK.slice(4), 'zedq', 'fs01', 'Jürgen', 'Smith', 'Ölçü', 'zoë'];
+  await emit({ sessionId: P3, type: 'toolCall', callId: 'leak', tool: 'task', phase: 'start', args: { description: HTASK, prompt: 'Look around and report' } });
+  await emit({ sessionId: P3, type: 'subagent', subagentId: 'leak', phase: 'started', name: HNAME, task: HTASK });
+  const hid = P3 + ':leak', tile = `#stage .helper[data-id="${hid}"]`;
+  /* every text and attribute of the page and of the helper's chat block (its parent's chat may be off the page) */
+  const seen = () => js(`(()=>{const out=[];const walk=r=>{if(!r)return;out.push(r.textContent||'');r.querySelectorAll('*').forEach(el=>{for(const at of el.attributes)out.push(at.value);});};
+    walk(document.body);const h=window.__durbarSimUi.agents().find(x=>x.id===${q(hid)}),s=h&&h.sub;walk(s&&s.block&&s.block.el);
+    out.push(h?String(h.name)+' '+String(h.task||''):'');return out.join('\\n');})()`);
+  const leaks = async (where) => { const t = await seen(); const f = LEAKS.filter((w) => t.includes(w)); assert.deepStrictEqual(f, [], `${where}: a helper's name or task shows unmasked (${f.join(', ')})`); };
+  if (!(await until(`!!document.querySelector(${q(tile)})`, 4000))) await js(`(document.querySelector('[data-more="'+CSS.escape(${q(P3)})+'"]')||{click(){}}).click()`);
+  assert.ok(await until(`!!document.querySelector(${q(tile)})`, 8000), `hostile helper: no helper card in the office (${hid})`);
+  assert.ok(await until(`/\\[redacted\\]/.test(document.querySelector(${q(tile)}).getAttribute('aria-label')||'')`, 6000), 'hostile helper: the tile aria-label does not show the masked task');
+  await leaks('office');
+  await js(`document.querySelector(${q(tile)}).click()`);
+  assert.ok(await until(`/^Use /.test((document.querySelector('.sub-full-task')||{}).textContent||'')`, 8000), 'hostile helper: the Sub-agent activity panel did not open with its task');
+  await leaks('Sub-agent activity panel');
+  const pv = await js(`({h3:document.querySelector('.sub-full-head h3').textContent,task:document.querySelector('.sub-full-task').textContent})`);
+  /* the rest of the words stay (a `~` can go with the desk mask's Markdown pass when a token is there too: no leak) */
+  assert.ok(/^Scan .*notes and .*proj$/.test(pv.h3) && /^Use \[redacted\] in .*notes, .*proj and .*a\.txt$/.test(pv.task), `hostile helper: the panel lost the rest of the words ${JSON.stringify(pv)}`);
+  await emit({ sessionId: P3, type: 'subagent', subagentId: 'leak', phase: 'failed', task: HTASK }); /* no error text: the task becomes the error line */
+  assert.ok(await until(`/Failed: /.test((document.querySelector('.sub-full .sub-err')||{}).textContent||'')`, 6000), 'hostile helper: the panel error line did not show');
+  await leaks('Sub-agent activity panel, failed');
+  await H.key('Escape');
+  await until(`!document.body.classList.contains('panel-open')`, 6000);
+  await leaks('office, failed');
   console.log('[015-bg-helper] all checks passed');
 };

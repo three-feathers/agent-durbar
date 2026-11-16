@@ -100,6 +100,11 @@ const code = (r: ReturnType<typeof readCapped>): string => (r.ok ? 'ok' : r.code
     assert.deepStrictEqual(seen, [50], 'vet ran although the size is over the cap: it comes first');
     assert.strictEqual(code(readCapped(fs, fs.constants, f('v'), 10, () => undefined)), 'too-big');
     assert.strictEqual(code(readCapped(fs, { O_RDONLY: fs.constants.O_RDONLY }, f('v'), 100)), 'ok');
+    // issue #1491: the vet gets the open descriptor, so a caller can fstat it with { bigint: true } and compare 64-bit ids
+    let ids: [bigint, bigint] | undefined;
+    const withFd = readCapped(fs, fs.constants, f('v'), 100, (_st, fd) => { const b = fs.fstatSync(fd, { bigint: true }); ids = [b.dev, b.ino]; return undefined; });
+    const want = fs.statSync(f('v'), { bigint: true });
+    assert.ok(withFd.ok && ids !== undefined && ids[0] === want.dev && ids[1] === want.ino, 'the vet\'s descriptor is the opened file');
   });
   await test('an unexpected error gives code "error" with the errno, never a throw; the descriptor is closed', () => {
     let closed = 0;

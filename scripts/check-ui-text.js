@@ -15,7 +15,7 @@
  *
  * Simulator only: no real agent, no AI credits. Linux with xvfb-run (the npm script). All violations are listed, then the driver
  * fails (DRIVER FAILED, Electron itself exits 0), so the npm script exits non-zero unless "all checks passed" is printed.
- * UITEXT_ONLY=a,b limits the surfaces; UITEXT_THEMES=light,dark; UITEXT_SIZES=1440x900,1280x800 (for a quick run).
+ * UITEXT_MUTANT=hover leaves the pointer on a control of the surface (must fail with 'is hovered at the read'); UITEXT_ONLY=a,b limits the surfaces; UITEXT_THEMES=light,dark; UITEXT_SIZES=1440x900,1280x800 (for a quick run).
  */
 const fs = require('fs');
 const path = require('path');
@@ -412,6 +412,16 @@ module.exports = async (ctx) => {
     opened.add(s.name);
     await settle(3000);
     await until(`[...document.querySelectorAll('.dlg,.dlg-ov,.toast')].every(e=>e.getAnimations().every(a=>a.playState!=='running'))`, 2000); // the open animation (dlgin scales the box)
+    /* spec 008 FR-214: the real pointer rests where the window sits on the screen (the helpers click by script and never move it), so a control under it reads in its :hover colours. Move it off the page before the read,
+     * wait until no control of the surface matches :hover, and report one that still does. UITEXT_MUTANT=hover leaves the pointer on the first control instead (it must fail with "is hovered at the read"). */
+    const CTRL = 'button,a,input,select,textarea,[role=button],[role=menuitem]', scope = s.roots.join(',');
+    const mut = process.env.UITEXT_MUTANT === 'hover';
+    if (mut) {
+      const at = await js(`(()=>{for(const r of ${jsLiteral(s.roots)})for(const root of document.querySelectorAll(r))for(const e of root.querySelectorAll('button,a,[role=button]')){const b=e.getBoundingClientRect();if(b.width>4&&b.height>4&&e.getClientRects().length)return {x:Math.round(b.left+b.width/2),y:Math.round(b.top+b.height/2)}}return null})()`);
+      if (at) { H.wc().sendInputEvent({ type: 'mouseMove', x: at.x, y: at.y }); await until(`!!document.querySelector(':hover:is(button,a,[role=button])')`, 2000); }
+    }
+    const hot = await H.pointerOff(scope, CTRL, { stay: mut });
+    for (const el of hot) found.push({ ...tag, rule: 'hovered', el: s.name, detail: `${el} is hovered at the read (the pointer is on the surface: its colours are the :hover ones)` });
     const dark = theme === 'dark' || !!s.contrast;
     const darkAll = theme === 'dark' && !s.contrast; // the dark fixture: every text element, not only the FR-169 controls
     const call = () => js(`window.__uitext.check(${jsLiteral(s.kind)},${jsLiteral(s.roots)},{dark:${jsLiteral(dark)},darkAll:${jsLiteral(darkAll)}})`);

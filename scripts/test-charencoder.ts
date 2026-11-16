@@ -8,7 +8,7 @@ import * as assert from 'assert';
 import * as fs from 'fs';
 import * as path from 'path';
 import { ENCODER_FAILED, ENCODER_REFUSALS, cleanCharacterName, clampFace, isStoredFace, parseEncoderReply } from '../src/shared/charrules';
-import { webpInfo } from '../src/shared/webpcheck';
+import { MAX_FRAME_BYTES, webpInfo } from '../src/shared/webpcheck';
 
 const ROOT = path.join(__dirname, '..', '..');
 const read = (...p: string[]): string => fs.readFileSync(path.join(ROOT, ...p), 'utf8');
@@ -146,7 +146,8 @@ if (good.ok) {
   const r = parseEncoderReply({ ok: true, frames: [exif, art[1], art[2], art[3]], face: FACE });
   assert.ok(r.ok && !webpInfo(r.frames.working)!.chunks.includes('EXIF'), 'an EXIF chunk is stripped');
 }
-const failed = (m: unknown, why: string): void => assert.deepStrictEqual(parseEncoderReply(m), { ok: false, error: ENCODER_FAILED }, why);
+// only `ok` and `error` are compared: a whole result holds the frame bytes, and a failing deepStrictEqual on it can build a diff of gigabytes (review of #956)
+const failed = (m: unknown, why: string): void => { const r = parseEncoderReply(m) as { ok: boolean; error?: string }; assert.ok(r.ok === false && r.error === ENCODER_FAILED, `${why}: ok ${String(r.ok)}, error ${String(r.error)}`); };
 for (const junk of [null, undefined, 1, 'x', [], {}]) failed(junk, 'junk: ' + JSON.stringify(junk));
 failed({ ok: 'true', frames: art, face: FACE }, 'ok must be true itself');
 failed({ ok: true, frames: art.slice(0, 3), face: FACE }, 'three frames');
@@ -154,6 +155,22 @@ failed({ ok: true, frames: art, face: FACE.slice(0, 3) }, 'three points');
 failed({ ok: true, frames: ['a', 'b', 'c', 'd'], face: FACE }, 'not bytes');
 failed({ ok: true, frames: [Array.from(art[0]), art[1], art[2], art[3]], face: FACE }, 'a plain array is not bytes');
 failed({ ok: true, frames: [new Uint8Array(1024 * 1024), art[1], art[2], art[3]], face: FACE }, 'oversize');
+{
+  // the raw cap (4 x MAX_FRAME_BYTES) on its own: a real frame padded with an EXIF chunk that stripChunks would remove, so only the cap refuses it (review of #956)
+  const padded = (extra: number): Uint8Array => {
+    const out = new Uint8Array(art[0].length + 8 + extra);
+    out.set(art[0], 0);
+    out.set([0x45, 0x58, 0x49, 0x46, extra & 255, (extra >> 8) & 255, (extra >> 16) & 255, extra >>> 24], art[0].length);
+    const size = out.length - 8;
+    out[4] = size & 255; out[5] = (size >> 8) & 255; out[6] = (size >> 16) & 255; out[7] = size >>> 24;
+    return out;
+  };
+  const under = padded(2 * MAX_FRAME_BYTES), over = padded(4 * MAX_FRAME_BYTES + 2);
+  assert.ok(over.length > 4 * MAX_FRAME_BYTES && under.length <= 4 * MAX_FRAME_BYTES);
+  const fine = parseEncoderReply({ ok: true, frames: [under, art[1], art[2], art[3]], face: FACE });
+  assert.ok(fine.ok && fine.frames.working.length === art[0].length, 'under the raw cap, the EXIF chunk is stripped and the frame is kept');
+  failed({ ok: true, frames: [over, art[1], art[2], art[3]], face: FACE }, 'a frame over the raw cap is refused unread, even when stripping would make it fit');
+}
 failed({ ok: true, frames: [new Uint8Array(100), art[1], art[2], art[3]], face: FACE }, 'not a WebP');
 {
   const unknown = new Uint8Array(art[0].length + 12);

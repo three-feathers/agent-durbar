@@ -3,7 +3,7 @@ import * as assert from 'assert';
 import { MAX_LINE_BYTES, createCliTransport } from '../src/adapters/claudeTransport';
 import type { ChildLike, ControlAnswer, IncomingControl, TransportHandlers } from '../src/adapters/claudeTransport';
 import { fakeSpawn } from './fakes/claude-cli';
-import { liveMcpConfigCount, makeCliTransportFactory, privateMcpConfig, sweepMcpConfigs } from '../src/adapters/claude';
+import { liveMcpConfigCount, makeCliTransportFactory, privateLaunchFiles, privateMcpConfig, sweepMcpConfigs } from '../src/adapters/claude';
 import type { SpawnFn } from '../src/adapters/claudeTransport';
 import { execFileSync } from 'child_process';
 import * as fs from 'fs';
@@ -242,6 +242,69 @@ async function main(): Promise<void> {
       execFileSync(process.execPath, ['-e', `require(${JSON.stringify(mod)}).privateMcpConfig('{}', ${JSON.stringify(root)}); process.exit(0);`], { stdio: 'ignore' });
       assert.deepStrictEqual(left(), [], 'process.exit: nothing left');
     }
+    rmTmp(root);
+  }
+
+  // spec 012 FR-179 (issue #1379): the folder's CLAUDE.md text, the agent JSON and the --settings JSON go through private files, never argv
+  {
+    const root = tmpDir('durbar-fr179-');
+    const left = (): string[] => fs.readdirSync(root).filter((n) => n.startsWith('durbar-mcp-'));
+    const MD = 'Project rules. SENTINEL-MD-7f3a9c token=ghp_FR179_not_real';
+    const AGENTS = '{"reviewer":{"description":"d","prompt":"SENTINEL-AGENT-2b81e4"}}';
+    const SETTINGS = '{"hooks":{},"env":{"X":"SENTINEL-SETTINGS-c0d5aa"}}';
+    const MCP = '{"mcpServers":{"x":{"env":{"TOKEN":"SENTINEL-MCP-91fe02"}}}}';
+    const launch = { mode: 'ask' as const, sessionId: 's', resume: false, appendSystemPrompt: MD, agent: { name: 'reviewer', json: AGENTS }, settingsJson: SETTINGS, mcpConfig: MCP };
+    const start = (spawn: SpawnFn, exits: unknown[] = []) =>
+      makeCliTransportFactory({ spawn, tmpRoot: root })({ file: '/opt/claude/bin/claude', launch, cwd: '/work/repo', env: {}, handlers: { message: () => undefined, control: async () => ({ response: {} }), exit: (e) => exits.push(e) } });
+    const at = (a: string[], f: string): string => a[a.indexOf(f) + 1];
+    // while the CLI runs: only paths on argv, every file 0600 in one 0700 folder, each holding exactly its content
+    {
+      const f = fakeSpawn();
+      await start(f.spawn);
+      const args = f.calls[0].args;
+      for (const sentinel of ['SENTINEL-MD-7f3a9c', 'ghp_FR179_not_real', 'SENTINEL-AGENT-2b81e4', 'SENTINEL-SETTINGS-c0d5aa', 'SENTINEL-MCP-91fe02']) {
+        assert.ok(!args.some((x) => x.includes(sentinel)), `FR-179: no argv item holds ${sentinel}`);
+      }
+      assert.ok(!args.includes('--append-system-prompt'), 'FR-179: no inline --append-system-prompt');
+      assert.strictEqual(left().length, 1, 'FR-179: one private folder while the CLI runs');
+      const dir = path.join(root, left()[0]);
+      const want: Array<[string, string, string]> = [['--append-system-prompt-file', 'instructions.md', MD], ['--agents', 'agents.json', AGENTS], ['--settings', 'settings.json', SETTINGS], ['--mcp-config', 'mcp-config.json', MCP]];
+      for (const [flag, name, content] of want) {
+        const file = at(args, flag);
+        assert.strictEqual(file, path.join(dir, name), `FR-179: ${flag} gets the private file's path`);
+        assert.strictEqual(fs.readFileSync(file, 'utf8'), content, `FR-179: ${name} holds its content`);
+        if (process.platform !== 'win32') assert.strictEqual(fs.statSync(file).mode & 0o777, 0o600, `FR-179: ${name} is 0600`);
+      }
+      if (process.platform !== 'win32') assert.strictEqual(fs.statSync(dir).mode & 0o777, 0o700, 'FR-179: the folder is 0700');
+      assert.strictEqual(at(args, '--agent'), 'reviewer', 'FR-179: --agent still names the profile');
+      f.children[0].exit(0, null);
+      assert.deepStrictEqual(left(), [], 'FR-179: removed when the CLI exits');
+    }
+    // the CLI ends at once (before any message)
+    {
+      const f = fakeSpawn();
+      await start(f.spawn);
+      f.children[0].exit(1, null);
+      assert.deepStrictEqual(left(), [], 'FR-179: early exit: nothing left');
+    }
+    // spawn throws
+    {
+      assert.throws(() => start(() => { throw new Error('spawn ENOENT'); }), /ENOENT/);
+      assert.deepStrictEqual(left(), [], 'FR-179: spawn threw: nothing left');
+    }
+    // asynchronous spawn error
+    {
+      const f = fakeSpawn();
+      await start(f.spawn);
+      f.children[0].fail('spawn EACCES');
+      assert.deepStrictEqual(left(), [], 'FR-179: error event: nothing left');
+    }
+    // wx: a file already at a path is refused, never written through or replaced (two names for one path); the folder is removed
+    {
+      assert.throws(() => privateLaunchFiles({ 'x.json': 'first', './x.json': 'second' }, root), /EEXIST/, 'FR-179: wx refuses a file already at the path (a plain write would replace it)');
+      assert.deepStrictEqual(left(), [], 'FR-179: wx refuses: nothing left');
+    }
+    assert.strictEqual(liveMcpConfigCount(), 0, 'FR-179: nothing live');
     rmTmp(root);
   }
 

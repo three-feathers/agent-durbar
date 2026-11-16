@@ -6,6 +6,9 @@
  *  - The store reads only folders whose name is an id and files from its own list, never a link. A bad folder is skipped with a warning that names no path.
  *  - Every write is under the root, except `export`, which writes one new folder inside the folder the user picked, overwriting nothing.
  * No error text here carries a path: the sentences are the store's own.
+ * `[KNOWN GAP]` a parent-folder swap race: `readEntry` checks the `my-...` folder with `lstat`, then opens files inside it; `O_NOFOLLOW` and the inode compare
+ * guard only the last part of the path, so a folder swapped for a link in between is followed, and `rename()` writes `character.json` through it. It needs write
+ * access to userData as the same user (no one gains rights) and Node has no portable `openat` (spec 096 *Changes 2026-11-15, round 2*).
  */
 import { randomBytes } from 'crypto';
 import * as fs from 'fs';
@@ -13,6 +16,7 @@ import * as path from 'path';
 import { CHARACTER_ID_RE, cleanCharacterName, isStoredFace } from '../shared/charrules';
 import type { FaceSet, FrameSet } from '../shared/charrules';
 import { MAX_FRAME_BYTES, checkFrames } from '../shared/webpcheck';
+import { readSameFile } from './samefileread';
 
 export interface CharacterEntry {
   id: string;
@@ -46,29 +50,10 @@ const MAX_SUFFIX = 99;
 const hex = (n: number): string => randomBytes(n).toString('hex');
 const lstatOf = (p: string): fs.Stats | null => { try { return fs.lstatSync(p); } catch { return null; } };
 
-/** FR-030: a regular file, never a link, up to `cap` bytes. Checked before and after the open, so a link or a FIFO is not followed or waited on. */
+/** FR-030: a regular file, never a link or a hard-linked file, up to `cap` bytes: the shared identity-checked read (`readSameFile`, FR-031). */
 function readRegular(file: string, cap: number): Buffer | null {
-  const st = lstatOf(file);
-  if (!st || !st.isFile() || st.size > cap) return null;
-  const { O_RDONLY, O_NOFOLLOW, O_NONBLOCK } = fs.constants;
-  let fd: number | undefined;
-  try {
-    fd = fs.openSync(file, O_RDONLY | (O_NOFOLLOW ?? 0) | (O_NONBLOCK ?? 0));
-    const now = fs.fstatSync(fd);
-    if (!now.isFile() || now.size > cap || now.ino !== st.ino) return null;
-    const buf = Buffer.alloc(now.size);
-    let got = 0;
-    while (got < buf.length) {
-      const n = fs.readSync(fd, buf, got, buf.length - got, got);
-      if (n <= 0) return null;
-      got += n;
-    }
-    return buf;
-  } catch {
-    return null;
-  } finally {
-    if (fd !== undefined) try { fs.closeSync(fd); } catch { /* closed */ }
-  }
+  const r = readSameFile(file, cap);
+  return r.ok ? r.buf : null;
 }
 
 /** A folder name from a character name: lower-case letters, digits and dashes; never empty, a Windows device name, or a path. */

@@ -44,7 +44,7 @@ if (part === 'tokens') {
 }
 }
 
-if (part === 'adversarial' || part === 'adversarial2') {
+if (part === 'adversarial' || part === 'adversarial2' || part === 'masks') {
 // 9. adversarial 1 MB inputs: every pattern stays linear (growth against a same-shape quarter-size input, no fixed time limit)
 {
   const MB = 1_000_000;
@@ -152,7 +152,38 @@ if (part === 'adversarial' || part === 'adversarial2') {
     `try{const {redact}=require(w.mod);const tc=typeof process.threadCpuUsage==='function';const w0=process.hrtime.bigint(),c0=tc?process.threadCpuUsage():null;redact(w.input,{});const wall=Number(process.hrtime.bigint()-w0)/1e6;let cpu=wall;if(tc){const d=process.threadCpuUsage(c0);cpu=(d.user+d.system)/1000}out[0]=cpu;out[1]=wall;Atomics.store(flag,0,1)}` +
     `catch(e){Atomics.store(flag,0,2)}Atomics.notify(flag,0)`;
   // two suites, each case in one (over 30 s on Windows as one)
-  for (const [k, v] of Object.entries(adversarial).filter((_e, i) => i % 2 === (part === 'adversarial' ? 0 : 1))) assertLinearGrowth(`adversarial ${k}`, (input) => workerRun(`adversarial ${k}`, code, { mod, input }, 30000), v);
+  // the cases of the masking batch of 2026-11-08 (spec 012 FR-173/FR-174, PR 1317) are their own suite, so the two above stay under 30 s
+  const maskCases: Record<string, string> = {
+    // spec 012 FR-173/FR-174 (pre-review of PR 1317): the glued-rest scan (a literal mask in the text is enough to start it) and the quote runs inside a secret name
+    glueMasks: '[redacted]a-'.repeat(MB / 12),
+    glueRun: '[redacted]' + 'a'.repeat(MB),
+    glueDots: '[redacted]' + '.'.repeat(MB),
+    glueSlash: '[redacted]/'.repeat(MB / 11),
+    quotesRun: 'pa' + '"'.repeat(MB) + 'ssword=Hunter2Secret99',
+    quotesPairs: 'pa"'.repeat(MB / 3),
+    quotesNames: 'p"a"s"s"w"o"r"'.repeat(MB / 14),
+    quotesMixed: 'to' + "'\\".repeat(MB / 6) + 'ken=Hunter2Secret99',
+    // review of PR 1317 (Ruben): quote runs, empty backtick pairs and `$()` between a name and its separator or its value, and a glued rest before a secret name
+    quotesEnd: 'password' + '"'.repeat(MB) + '=Hunter2Secret99',
+    quotesEndPairs: 'password"'.repeat(MB / 9),
+    quotesValue: 'password=' + "'".repeat(MB),
+    quotesValuePairs: "password=''".repeat(MB / 11),
+    emptySubst: 'pa$()'.repeat(MB / 5),
+    emptyBackticks: 'pa``'.repeat(MB / 4),
+    glueNames: '[redacted]-dbpassword: "'.repeat(MB / 24),
+    // review of PR 1317, round 2: a bare run with no name (a lookbehind over it was retried at every position), with a separator in it, and line continuations
+    bareQuotes: "'".repeat(MB),
+    bareBackslashes: '\\'.repeat(MB),
+    bareBackticks: '`'.repeat(MB),
+    bareMixedSep: '"\'`\\='.repeat(MB / 5),
+    bareQuotesColon: "':".repeat(MB / 2),
+    lineContinuations: 'pa\\\n'.repeat(MB / 4),
+    spacedSubst: 'pa$(  )'.repeat(MB / 7),
+    // round 3: line continuations before a value
+    valueContinuations: 'password=\\\n'.repeat(MB / 11),
+    valueContinuationRun: 'password=' + '\\\n'.repeat(MB / 2),
+  };
+  for (const [k, v] of part === 'masks' ? Object.entries(maskCases) : Object.entries(adversarial).filter((_e, i) => i % 2 === (part === 'adversarial' ? 0 : 1))) assertLinearGrowth(`adversarial ${k}`, (input) => workerRun(`adversarial ${k}`, code, { mod, input }, 30000), v);
 }
 
 }
@@ -255,10 +286,21 @@ if (part === 'shapes' || part === 'shapes2') {
 // Linear, part 2: adversarial runs, in a child with a hard stop, so a stall fails instead of hanging. CPU time on 1/16 of the input and on all of it
 // (the same method as `assertLinearGrowth` in test-redact.ts, limit 40 for 16x; never a wall-clock ratio), then one whole REDACT_MAX_CHARS run.
 {
+  // issue #1227 (spec 012 FR-170): the rules of the gap fix, each with the shape that makes it try the most; also `password=` repeated (a required tail after the value was quadratic: 22 s at 256 KB)
+  const gapUnits: Record<string, string> = {
+    mysqlContinued: 'mysql \\\n', mysqlContinuedCrlf: 'mysql a \\\r\n', mysqlBackslashes: 'mysql ' + '\\'.repeat(150) + ' ', bearerColon: 'Bearer: ', bearerColonLong: 'Bearer: ' + 'a1'.repeat(40) + ' ', spacedName: 'secret access key: ', spacedNameLong: 'aws secret access key = ' + 'aB3/'.repeat(10) + ' ', spacedNameRun: 'secret   access   ',
+    maskedPhrase: 'pwd=[redacted] a1 ', maskedPhraseRun: 'password: [redacted]' + ' ab12'.repeat(20) + ' ', maskedPhraseNo: 'pwd=[redacted] x ', mysqlSeps: 'mysql a;b&c|d ', mysqlTick: 'mysql `\n', mysqlCaret: 'mysql ^\r\n', mysqlUpper: 'MySQL8 ' + 'a '.repeat(90), bearerStops: 'Bearer a) ', bearerQuote: 'Bearer ab! "', bearerNoSpace: 'BEARER ab12:', shortVersion: 'token: v1.2.3.4.5.6.7 ', shortHex: 'token: 0x1f ', shortAlgo: 'token: PKCS#1 ', shortHash: 'token: #ff00 ',
+    passwordRun: 'password=', pwdRun: 'pwd:', mysql: 'mysql ', mysqlFlag: 'mysql -p ', mysqlLong: 'mysql ' + 'a'.repeat(195) + ' ', mysqlGlued: 'mysql -pa mysql -pb ', awsName: 'aws_secret_access_key ', awsLong: 'aws_secret_access_key ' + 'aB3/'.repeat(10) + ' ', awsRun: 'secret_access_key ' + 'aB3'.repeat(2000) + '#',
+    schemeToken: 'token ', schemeTokenWord: 'token ab12cd34. ', schemeTokenLong: 'token ' + 'a1'.repeat(40) + ' ', apiKeySpace: 'api_key   ', bearerShort: 'Bearer x. ', bearerShortRun: 'Bearer a, ', bearerWordRun: 'Bearer ab. ' + 'a'.repeat(11) + ' ',
+    shortName: 'token:ab12 ', shortNames: 'secret=a1,pwd=b2;', phrase: 'password: ab12 ', phraseLong: 'password: ab12' + ' cd34'.repeat(9) + ' ', phraseWords: 'pwd=a1 b2 c3 d4 e5 f6 g7 h8 i9 ', keyStart: 'api_key=sk-a ', keyStartLong: 'api_key=ghp_' + 'a'.repeat(30) + ' ',
+    cookieShort: 'cookie: a=ab12 x ', cookieShortRun: 'cookie:a=a1 ',
+  };
+  if (part === 'shapes') for (const [k, u] of Object.entries(gapUnits)) assertLinearShape(`issue 1227 gap rule ${k}`, (x) => { redact(x, {}); }, (n) => u.repeat(Math.ceil(n / u.length)).slice(0, n));
   const allUnits: Record<string, string> = {
     sep: ':=', named: 'password=', namedSpace: 'password= ', namedQuote: '"token": "', namedNoDigit: 'secret:abc ', namedPath: 'token=a/', namedCallOpen: 'token=a(', namedDigits: 'token=1.', namedDollar: 'token=$a', namedLong: 'token=' + 'a'.repeat(127) + ' ',  namedCall: 'token=a.b', spaces: 'token        ',
     begin: '-----BEGIN ', beginLong: '-----BEGIN ' + 'A'.repeat(90) + ' ', beginName: '-----BEGIN RSA ', endNoBegin: '-----END PRIVATE KEY-----', endAfterBegin: '-----END ',
     cookie: 'cookie: ', cookieEq: 'cookie: a=', cookieJson: '"cookie":"a=', cookieNoEq: 'cookie: ' + 'a'.repeat(120) + ' ', netrc: 'machine a ', netrcFull: 'machine a login b password ', curl: 'curl ', curlU: 'curl -u a:',  jwtOne: 'eyJabcde.', jwtTwo: 'eyJabcde.abcde.', jwtRun: 'a_' + 'eyJ', jwtRuns: ('25AA' + 'eyJ').repeat(570) + ' ', jwtRunsOne: ('25AA' + 'eyJ').repeat(570) + '.abcde ', jwtRunsTwo: ('25AA' + 'eyJ').repeat(570) + '.abcde.a ', entra: 'abc1Q', entraRun: '1Q~', prefix: 'np' + 'm_', under: '_', pct: '%25', digits: '1234567890123456', hexRun: 'abcdef0123456789', hexUs: 'abcdef0123456789abcdef0123456789-u', sg: 'SG' + '.', dots: 'aaaaaaaaaaaaaa.', atlas: 'aaaaaaaaaaaaaa.at' + 'lasv1.', a22: 'A', fbId: '1234567890123456|', authress: 'sc' + '_abcde.abcd.acc_', teams: '.webhook.office.com/webhookb2/', query: '?sig=', jwt25: '25AAeyJ', jwt25Body: '25AAeyJabcdefgh', r25: '25', jwtDash: '-eyJ', jwtPct: '%41eyJ', b64Eaaa: 'EAAA-', b64Pct: '%41AAAAAAAAAAAAAAAAAAAAAAAB' + 'a'.repeat(90) + '+', b64Line: 'EAAA' + 'a'.repeat(70) + '\n', b64Wrap: 'a'.repeat(76) + '\n', cookieQuote: 'cookie: a="x" ', cookieQuoteLine: 'cookie: a="x\n', cookiePairs: 'cookie: a=1;', machineRun: 'machine h password x;', curlParen: 'curl -u a:b(', cookieWord: 'cookie: a=1 x ', closers: 'token=abc12345) ', cookieHead: 'cookie:', namedDotted: 'token=a.b.', namedWords: 'token=ab-c-',  b64EaaaEnd: 'EAAA' + 'a'.repeat(70) + '/',  text: 'the quick brown fox: reads src/a.ts = done, foo_bar-baz. ',
+    ...gapUnits,
   };
   // A bare cookie token run that is not one (spec 012 FR-168, issue #1159): `cookie:` heads with nothing between them that stops a token, ending in a word. Each head once scanned the whole rest of the text (18 s at 100 KB). Counted, not timed: `bareStepsForTest` is how many characters the bare-token scans looked at, at most 4 per input character at 16 KB and at 1 MB, whatever the machine. Then 1 MB in a child with a hard stop as the coarse backstop.
   if (part === 'shapes2') {

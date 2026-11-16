@@ -39,7 +39,7 @@
 const assert = require('assert');
 const path = require('path');
 const { pageCheck } = require('./check-office-overlap.js');
-const { helpers, jsLiteral } = require('./driver-helpers');
+const { helpers, jsLiteral, CHECK_DARK } = require('./driver-helpers');
 const q = jsLiteral; /* every value put into page code goes through jsLiteral (CodeQL js/bad-code-sanitization) */
 const OUT = process.env.OUT || '';
 const SECRET = 'sk-Fill0Secret0Value0123456789';
@@ -116,14 +116,13 @@ module.exports = async (ctx) => {
   const js = (c) => H.js(c);
   const emit = (e) => js(`window.__durbarSimEmit(Object.assign({timestamp:Date.now()},${q(e)}))`);
   const load = async (n, w, h, query) => {
-    await H.load({ w, h, query: { sim: String(n), ...(process.env.FILL_THEME ? { theme: process.env.FILL_THEME } : {}), ...(query || {}) }, ready: `document.querySelectorAll('#stage .desk[data-id]').length>=${q(n)}&&document.getElementById('stage').dataset.fit` });
-    /* lobby visits walk for about a second: measure where the figures stand, as check:office does (a visit may start a moment
-       after the load, so wait for one briefly first; none is fine) */
-    await H.until(`!!document.querySelector('.place.busy')`, 800);
+    await H.load({ w, h, query: { sim: String(n), simvisits: 'fast' /* spec 008 FR-190: the lobby's own timers 10x shorter (simulator only): these cases measure where things stand, not how a visit starts or a figure walks; the visit cases pass simvisits: undefined */, ...(process.env.FILL_THEME ? { theme: process.env.FILL_THEME } : {}), ...(query || {}) }, ready: `document.querySelectorAll('#stage .desk[data-id]').length>=${q(n)}&&document.getElementById('stage').dataset.fit` });
+    /* lobby visits walk for about a second: measure where the figures stand, as check:office does. Spec 008 (fast drivers): instead of an
+       800 ms guess for "a visit may start a moment after the load" and two fixed gaps, wait for the simulator's own word that every script has
+       replayed, no visit is waiting to start or end (places.js settled()), the frame is drawn, and no figure is mid-walk; then two painted frames. */
+    assert.ok(await H.until(`!!window.__durbarSimReplayed&&window.__durbarSimUi.visitsSettled()&&window.__durbarSimUi.settleNow()&&!document.querySelector('.walker.walking')`, 8000), 'the lobby settles and the walking figures stop');
+    await js(`new Promise((r)=>requestAnimationFrame(()=>requestAnimationFrame(()=>r(true))))`);
     assert.ok(await H.until(`!document.querySelector('.walker.walking')`, 6000), 'the walking figures stop');
-    await ctx.sleep(250);
-    assert.ok(await H.until(`!document.querySelector('.walker.walking')`, 6000), 'the walking figures stop');
-    await ctx.sleep(150);
   };
   const state = () => js(`(()=>{const s=document.getElementById('stage'),f=document.getElementById('floor'),de=document.documentElement;
     const ds=[...s.querySelectorAll('.desk[data-id]')].map(e=>e.getBoundingClientRect());
@@ -139,7 +138,8 @@ module.exports = async (ctx) => {
   const rows = [];
 
   /* the lounge setting, as a person turns it (Settings) */
-  const toggle = async () => { await js(`window.DurbarScreens.openSettings()`); await H.until(`!!document.getElementById('shutSw')`, 4000); await js(`document.getElementById('shutSw').click()`); await H.key('Escape'); await ctx.sleep(500); };
+  /* waits on the setting's own effect (the stored value flips, then the screen closes and two frames are drawn), not on the screen closing alone: the render that follows the flip is what the callers read */
+  const toggle = async () => { await js(`window.DurbarScreens.openSettings()`); await H.until(`!!document.getElementById('shutSw')`, 4000); const was = await js(`localStorage.getItem('durbar.shutters')!=='off'`); await js(`document.getElementById('shutSw').click()`); check(await H.until(`(localStorage.getItem('durbar.shutters')!=='off')===${q(!was)}`, 4000), `the Settings switch did not change the stored lounge setting (it stayed ${was ? 'on' : 'off'})`); await H.key('Escape'); await H.until(`!document.body.classList.contains('screen-open')&&window.__durbarSimUi.settleNow()`, 4000); await js(`new Promise((r)=>requestAnimationFrame(()=>requestAnimationFrame(()=>r(true))))`); };
   /* how sharp a scene is drawn: the share (%) of its pixels that are exactly one of its flat colours (+-2 per channel); a blurred drawing
      loses most of them. Under load a capture can show an older frame: read again (up to 3 times) and keep the best */
   const sharp = async (sc) => {
@@ -377,7 +377,8 @@ module.exports = async (ctx) => {
     /* (4) a theme switch through the real Settings path, and back */
     {
       const tag = 'theme switch, 2 parents, 3 helpers, 1440x900';
-      check(await hxLoad(2, 3, 1440, 900), `${tag}: no cards`);
+      /* spec 102 T226: the dark fixture user theme (saved in this run, so Settings lists it) took Retro Pixel's place */
+      check(await hxLoad(2, 3, 1440, 900, { usertheme: JSON.stringify(CHECK_DARK) }), `${tag}: no cards`);
       const base = await js(`window.THEME.current().id`);
       const pick = async (id) => {
         await js(`window.DurbarScreens.openSettings()`);
@@ -388,14 +389,14 @@ module.exports = async (ctx) => {
         check(await H.until(`!document.body.classList.contains('screen-open')&&document.querySelectorAll('#stage .helper.hx').length===6`, 8000), `${tag}: the office did not come back with its cards in ${id}`);
         await H.settle();
       };
-      await pick('retro');
+      await pick(CHECK_DARK.id);
       const r = await hxPage(); const pr = await page();
-      check(r.strips.length === 2 && r.strips.every((x) => x.hx === '1' || x.hx === '2'), `${tag}: Retro Pixel strips ${JSON.stringify(r.strips.map((x) => x.hx))}`);
-      check(!pr.length, `${tag}, Retro Pixel: ${pr.slice(0, 4).join('; ')}`);
+      check(r.strips.length === 2 && r.strips.every((x) => x.hx === '1' || x.hx === '2'), `${tag}: dark fixture strips ${JSON.stringify(r.strips.map((x) => x.hx))}`);
+      check(!pr.length, `${tag}, dark fixture: ${pr.slice(0, 4).join('; ')}`);
       await pick(base);
       const b = await hxPage(); const pr2 = await page();
       check(b.strips.every((x) => x.hx === '1' || x.hx === '2') && !pr2.length, `${tag}, back in ${base}: ${pr2.slice(0, 4).join('; ')}`);
-      rows.push(`${tag}: ${base} -> retro -> ${base}, rules hold`);
+      rows.push(`${tag}: ${base} -> ${CHECK_DARK.id} -> ${base}, rules hold`);
     }
     /* (5) a helper added after the first layout */
     {
@@ -724,7 +725,7 @@ module.exports = async (ctx) => {
      helper stays drawn (the lounge draws no helpers); an agent away at a lobby place is never in the lounge, even when its turn has a reply */
   {
     const tag = 'lounge rules 1440x900';
-    await load(14, 1440, 900, { simrooms: '2', simhelpers: '0' });
+    await load(14, 1440, 900, { simrooms: '2', simhelpers: '0', simvisits: undefined });
     await finish('sim-2', 'The edge cases for the canton lookup are listed and tested.');
     await finish('sim-3', 'Renamed the tool and kept the old name as an alias for one release.');
     await finish('sim-4', 'The README tool table is updated and linked from the docs index.');
@@ -757,7 +758,7 @@ module.exports = async (ctx) => {
     if (!dbg.isAttached()) dbg.attach('1.3');
     await dbg.sendCommand('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'reduce' }] });
     try {
-      await load(14, 1440, 900, { simrooms: '2', simhelpers: '0' });
+      await load(14, 1440, 900, { simrooms: '2', simhelpers: '0', simvisits: undefined });
       const pre = await js(`({reduced:matchMedia('(prefers-reduced-motion: reduce)').matches,away:!!document.querySelector('#stage .desk.is-away[data-id="sim-3"]'),boss:!!document.querySelector('.walker')})`);
       check(pre.reduced && pre.away, `${tag}: the case did not start with reduced motion and Jonas at the Boss ${JSON.stringify(pre)}`);
       await js(`(()=>{const E=(e)=>window.__durbarSimEmit(Object.assign({timestamp:Date.now()},e));E({type:'status',sessionId:'sim-3',status:'working',intent:'Working'});E({type:'output',sessionId:'sim-3',final:true,text:'Renamed the tool and kept the old name as an alias for one release.'});E({type:'status',sessionId:'sim-3',status:'idle'});return true})()`);

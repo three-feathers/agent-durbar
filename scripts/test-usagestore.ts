@@ -76,5 +76,65 @@ blocked.flush();
 assert.ok(blocked.lastError, 'write error is reported, not thrown');
 assert.strictEqual(blocked.view().tools['builtin:bash'].calls, 1);
 
+// spec 020 FR-033 (issue #1291): the file never holds a secret-shaped name; an old file that does is cleaned on load, on disk at once
+{
+  const TK = 'ghp_' + 'A1b2C3d4E5f6G7h8I9j0K1l2M3n4', AW = 'AKIA' + 'Z7Q2W9X4C6V8B1N3';
+  const PARTS = /ghp_|A1b2C3d4|E5f6G7h8|K1l2M3n4|AKIAZ7|Z7Q2W9|X4C6V8/;
+  const f = path.join(dir, 'masked', 'usage.json');
+  const live = new UsageStore(f, opts);
+  live.load();
+  live.record('Ada · app', start(TK));
+  live.record('Ada · app', start(TK.slice(0, 12) + '\u001b[0m' + TK.slice(12)));
+  live.record('Ada · app', start('t', { mcpServer: 'srv', mcpTool: AW }));
+  live.flush();
+  assert.ok(!PARTS.test(fs.readFileSync(f, 'utf8')), 'a recorded secret-shaped name never reaches the disk');
+  assert.strictEqual(live.view().tools['builtin:[hidden tool]'].calls, 2, 'counted under the placeholder');
+  // a file from before the mask
+  const oldDoc = { version: 1, since: '2026-10-01T00:00:00.000Z', tools: { ['builtin:' + TK]: { source: 'builtin', server: '', name: TK, calls: 7, failed: 0 } }, servers: {}, agents: { 'Ada · app': { calls: 7, failed: 0, tools: { ['builtin:' + TK]: { calls: 7, failed: 0 } } } } };
+  fs.writeFileSync(f, JSON.stringify(oldDoc));
+  assert.ok(PARTS.test(fs.readFileSync(f, 'utf8')), 'the old file holds the name (the premise)');
+  const mig = new UsageStore(f, opts);
+  mig.load();
+  assert.ok(!PARTS.test(fs.readFileSync(f, 'utf8')), 'load rewrote the file without the name');
+  assert.ok(!fs.existsSync(f + '.tmp'), 'no tmp file left');
+  assert.strictEqual(mig.view().tools['builtin:[hidden tool]'].calls, 7, 'the count survives');
+  assert.strictEqual(mig.view().agents['Ada · app'].tools['builtin:[hidden tool]'].calls, 7, 'and the agent count');
+  assert.ok(!PARTS.test(JSON.stringify(mig.view())), 'and the view');
+  // a clean file is not rewritten by load
+  const before = fs.statSync(f).mtimeMs, text0 = fs.readFileSync(f, 'utf8');
+  new UsageStore(f, opts).load();
+  assert.strictEqual(fs.readFileSync(f, 'utf8'), text0, 'a clean file is left as it is');
+  assert.strictEqual(fs.statSync(f).mtimeMs, before, 'and not touched');
+}
+
+// review of #1294: a leftover .tmp can hold a pre-mask name; it is removed on load and after a failed rename
+{
+  const TK = 'ghp_' + 'A1b2C3d4E5f6G7h8I9j0K1l2M3n4';
+  const PARTS = /ghp_|A1b2C3d4|E5f6G7h8|K1l2M3n4/;
+  const f = path.join(dir, 'tmp-case', 'usage.json');
+  fs.mkdirSync(path.dirname(f), { recursive: true });
+  const dirty = JSON.stringify({ version: 1, tools: { ['builtin:' + TK]: { source: 'builtin', server: '', name: TK, calls: 1, failed: 0 } } });
+  fs.writeFileSync(f, JSON.stringify({ version: 1, since: '2026-10-01T00:00:00.000Z', tools: { 'builtin:bash': { source: 'builtin', server: '', name: 'bash', calls: 2, failed: 0 } } }));
+  fs.writeFileSync(f + '.tmp', dirty);
+  const ld = new UsageStore(f, opts);
+  ld.load();
+  assert.ok(!fs.existsSync(f + '.tmp'), 'tmp-load: a stale .tmp is removed on load although the main file is clean');
+  assert.strictEqual(ld.view().tools['builtin:bash'].calls, 2, 'tmp-load: the clean file still loads');
+  // an oversized main file: the tmp goes too
+  fs.writeFileSync(f, ' '.repeat(2 * 1024 * 1024 + 1));
+  fs.writeFileSync(f + '.tmp', dirty);
+  new UsageStore(f, opts).load();
+  assert.ok(!fs.existsSync(f + '.tmp'), 'tmp-load: removed even when the main file is refused');
+  // a rename that fails (a directory sits where the file should go; fails on Linux, macOS and Windows alike)
+  const g = path.join(dir, 'tmp-case', 'dir-target.json');
+  fs.mkdirSync(g);
+  const bad = new UsageStore(g, opts);
+  bad.record('Ada · app', start(TK));
+  bad.flush();
+  assert.ok(bad.lastError, 'tmp-rename: the failed rename is reported');
+  assert.ok(!fs.existsSync(g + '.tmp'), 'tmp-rename: no .tmp is left after a failed rename');
+  assert.ok(!PARTS.test(JSON.stringify(bad.view())), 'tmp-rename: the in-memory document holds no part of the name');
+}
+
 fs.rmSync(dir, { recursive: true, force: true });
 console.log('usagestore: all checks passed');

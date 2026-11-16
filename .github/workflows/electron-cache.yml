@@ -1,0 +1,71 @@
+name: Electron cache warmer
+
+# Spec 008 FR-195 (owner request, Vikram, 2026-11-09: "a local copy of electron to avoid those outage issues"). On 2026-11-09
+# github.com/electron/electron/releases answered 504 for about 50 minutes and every job failed: the cache of the new Electron
+# version had never been saved (actions/cache saves only at the end of a successful job, so during an outage nobody fills it),
+# and a pull request can read only its own caches and those of main. This job fills main's entry, under the exact key
+# .github/actions/npm-ci uses, for every runner OS the workflows use, as soon as the lockfile changes on main and every night.
+# It does nothing when the entry exists. No pull request trigger (no PR code ever runs here), no secrets, contents: read only:
+# saving a cache needs no token permission (the runner's own cache token does it).
+on:
+  push:
+    branches: [main]
+    paths:
+      - package-lock.json
+      - .github/actions/npm-ci/**
+      - .github/workflows/electron-cache.yml
+      - scripts/electron-cache.js
+  schedule:
+    - cron: '7 2 * * *' # before the nightly runs (CI at 02:41)
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
+jobs:
+  warm:
+    name: Warm the Electron cache (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+      - id: plan
+        shell: bash
+        run: node scripts/electron-cache.js plan
+      # lookup only: says whether main already has the entry, downloads nothing
+      - id: lookup
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ steps.plan.outputs.paths }}
+          key: ${{ steps.plan.outputs.key }}
+          lookup-only: true
+      - if: steps.lookup.outputs.cache-hit == 'true'
+        shell: bash
+        run: echo "The Electron cache entry exists on main; nothing to do." | tee -a "$GITHUB_STEP_SUMMARY"
+      # only @electron/get is needed, from the npm registry: no install scripts, so no Electron download here
+      - if: steps.lookup.outputs.cache-hit != 'true'
+        shell: bash
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      # every Electron zip this OS needs (macOS: arm64 and x64), checksum-verified against electron's own checksums.json, with
+      # 4 tries 30 s, 120 s and 300 s apart; then the checksum file electron-builder reads offline
+      - if: steps.lookup.outputs.cache-hit != 'true'
+        shell: bash
+        run: node scripts/electron-cache.js warm
+      - if: steps.lookup.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ steps.plan.outputs.paths }}
+          key: ${{ steps.plan.outputs.key }}
