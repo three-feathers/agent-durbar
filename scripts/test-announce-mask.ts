@@ -109,6 +109,11 @@ const LINES: [string, (x: string) => string][] = [
   ['could not answer', (x) => 'Could not answer. ' + x + '.'],
   ['chat palette', (x) => 'Chat 3, ' + x + '. Type a message and press Enter to send.'],
   ['MCP sign-in', (x) => 'Signed in to ' + x + '.'],
+  // spec 005 T226 (issue #1582): the limit and plan announcements, own-chat and other-chat wording (app.js showLimit, showPlan)
+  ['limit, own chat', (x) => x + ' reached its spending limit: $5 used. Choose in its card.'],
+  ['limit, other chat', (x) => x + ' reached its spending limit. Open its chat to choose.'],
+  ['plan, own chat', (x) => x + ' proposes a plan. Approve, revise or reject it in its card.'],
+  ['plan, other chat', (x) => x + ' proposes a plan. Open its chat to review it.'],
 ];
 const P = page(true);
 for (const [nm, name] of NAMES) for (const [ln, mk] of LINES) clean(P.say(mk(name)), `${ln} with ${nm}`);
@@ -116,6 +121,10 @@ for (const [nm, name] of NAMES) for (const [ln, mk] of LINES) clean(P.say(mk(nam
 for (const [nm, name] of NAMES) {
   clean(P.say([name, ' needs your OK: ', 'run tests']), `parts: needs your OK with ${nm}`);
   clean(P.say([name, ' asks: ', 'a question'], 1), `parts: asks with ${nm}`);
+  clean(P.say([name, ' reached its spending limit: ', '$5 used.', ' Choose in its card.'], 1), `parts: limit with ${nm}`);
+  clean(P.say([name, ' reached its spending limit. Open its chat to choose.'], 1), `parts: limit, other chat with ${nm}`);
+  clean(P.say([name, ' proposes a plan. Approve, revise or reject it in its card.'], 1), `parts: plan with ${nm}`);
+  clean(P.say([name, ' proposes a plan. Open its chat to review it.'], 1), `parts: plan, other chat with ${nm}`);
   clean(P.say(['Ada', ' needs your OK: ', 'cat ' + name]), `parts: a request naming ${nm}`);
 }
 // Durbar's own words stay as they are
@@ -236,6 +245,9 @@ ok(/announce\(\[a\.name,c\.classList\.contains\('question'\)\?' asks: ':' needs 
 ok(/announce\(\[a\.name,' asks: ',String\(\(qs\[0\]&&qs\[0\]\.question\)\|\|''\)\|\|'a question'\],ANN_REQUEST\)/.test(app), 'the question line: the raw question, fixed words their own part');
 ok(/announce\(\[word,': ',what\]\)/.test(app) && (app.match(/answerPress\(src,requestRaw\((card|c)\)\)/g) || []).length === 2 && !/answerPress\(src,(text|textOf)/.test(app), 'the answer-bar line: the card\'s own words, as parts');
 ok(/\{text:R\.message\|\|'',max:160\}\],ANN_REQUEST\)/.test(app), 'the MCP request line: the raw message as a {text,max} part');
+// spec 005 T226 (issue #1582): the limit and plan lines say the agent's name and fixed words only (the limit summary is Durbar's own card text); never the plan's text
+ok(/announce\(chatShownNow\(a\.id\)\?\[a\.name,' reached its spending limit: ',n\.querySelector\('\.psum'\)\.textContent,' Choose in its card\.'\]:\[a\.name,' reached its spending limit\. Open its chat to choose\.'\],ANN_REQUEST\)/.test(app), 'the limit line: the name and fixed words, own chat and other chat');
+ok(/announce\(chatShownNow\(a\.id\)\?\[a\.name,' proposes a plan\. Approve, revise or reject it in its card\.'\]:\[a\.name,' proposes a plan\. Open its chat to review it\.'\],ANN_REQUEST\)/.test(app), 'the plan line: the name and fixed words, own chat and other chat');
 // no announcement reads a desk-masked copy of a request or a question (that copy has its escapes undone)
 // the whole argument of each announce( call in app.js, by matching brackets (string contents kept, so a call is read as written)
 const argAt = (i: number): string => { let d = 0; for (let j = i; j < app.length; j++) { const c = app[j];
