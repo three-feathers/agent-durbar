@@ -362,7 +362,7 @@ assert.ok(Object.values(META.stand).some((s) => Object.values(s.foot as Record<s
   assert.deepStrictEqual(C.WORLD_FLAGS, { cave: false, retro: false }, 'the cave is behind an off-by-default flag until the owner opens it (spec 097 phase 4 gate)');
   assert.deepStrictEqual(C.offeredWorlds().map((w) => w.id), ['photo'], 'flag off: only Photo office is offered');
   assert.deepStrictEqual(C.offeredWorlds({ cave: true }).map((w) => w.id), ['photo', 'cave'], 'flag on: Photo office first, then the cave');
-  assert.deepStrictEqual(C.REAL_SETS.map((s) => s.id), ['office', 'prehistoric', 'pirate', 'royal', 'rebels', 'monster', 'cheeky', 'retro'], 'the sets with Real office poses (T240..T244: the five crews are wired; Minimalist is not)');
+  assert.deepStrictEqual(C.REAL_SETS.map((s) => s.id), ['office', 'prehistoric', 'pirate', 'royal', 'rebels', 'monster', 'cheeky', 'minimalist', 'retro'], 'the sets with Real office poses (T240..T245: the five crews and Minimalist are wired)');
   assert.deepStrictEqual(C.peopleFor('cave', 'theme', { cave: true }), { world: 'cave', set: 'prehistoric', setName: 'Prehistoric', note: '' }, "the cave's default set is Prehistoric");
   assert.deepStrictEqual(C.peopleFor('cave', 'theme', { cave: false }), { world: 'photo', set: 'office', setName: 'Office people', note: '' }, 'flag off: the cave is not drawn');
   assert.strictEqual(C.peopleFor('photo', 'prehistoric', { cave: true }).set, 'prehistoric', 'any set in any world: Prehistoric in the Photo office');
@@ -402,24 +402,28 @@ assert.ok(Object.values(META.stand).some((s) => Object.values(s.foot as Record<s
     assert.strictEqual(C.peopleFor('photo', 'pirates', ON).set, 'pirates', 'any set in any world');
     assert.strictEqual(C.peopleFor('photo', 'pirates', OFF).set, 'office', 'flag off: the set is not drawn');
   } finally { C.WORLDS.pop(); C.REAL_SETS.pop(); delete (C.WORLD_FLAGS as Record<string, boolean>).pirate; }
-  // FR-083 / FR-202 / FR-336: the note (peopleFor's): a crew with a row says it draws its people, one without (Minimalist) has the `heads` line; the names come from CREWS, so every crew has one by construction
+  // FR-083 / FR-202 / FR-336: the note (peopleFor's): a crew with a row says it draws its people, Minimalist (a row, no CREWS entry) says it draws the Minimalist people; the names come from CREWS, so every crew has one by construction
   const note = (c: string): string => C.peopleFor('photo', c).note;
   for (const c of ['theme', 'mine', '', '__proto__', 'constructor', 'office']) assert.strictEqual(note(c), '', `${c || '(none)'}: no note (Office people is a value now, FR-321, and says nothing)`);
   for (const c of Object.keys(C.CREWS)) assert.strictEqual(note(c), `Real office draws the ${c[0].toUpperCase() + c.slice(1)} people.`, `${c}: draws its own people, and Settings says so (Q12, T240..T244: the "until <Crew> has Real office poses" line is gone for every wired crew)`);
-  assert.strictEqual(note('minimalist'), 'Real office shows Office people until Minimalist has Real office poses.', 'Minimalist has no set yet (#1331): the true, temporary line stays');
-  { // FR-336 `closed` stays for any set row whose flag is off (here Minimalist's, temporarily)
-    C.REAL_SETS.push({ id: 'minimals', name: 'Minimals', choice: 'minimalist', flag: 'cave' });
+  assert.strictEqual(note('minimalist'), 'Real office draws the Minimalist people.', 'T245: Minimalist has its own set; the "until Minimalist has Real office poses" line is gone');
+  assert.strictEqual(C.peopleFor('photo', 'minimalist').set, 'minimalist', 'T245: Minimalist draws its own set, not the Office people');
+  assert.strictEqual(C.levelFor('minimalist'), 'full', 'T245: levelFor(minimalist) is full, no heads value is left for it');
+  assert.ok(!('minimalist' in C.CREWS), 'Minimalist is a Real-office-only set: no CREWS entry (the flat office keeps its drawn kit)');
+  { // FR-336 `closed` stays for any set row whose flag is off (here Minimalist's row, temporarily swapped for a flagged one)
+    const real = C.REAL_SETS.findIndex((x) => x.id === 'minimalist'), saved = C.REAL_SETS[real];
+    C.REAL_SETS[real] = { id: 'minimalist', name: 'Minimalist', choice: 'minimalist', flag: 'cave' };
     try {
       assert.strictEqual(C.levelFor('minimalist', { cave: false }), 'closed'); assert.strictEqual(C.levelFor('minimalist', { cave: true }), 'full');
       assert.strictEqual(note('minimalist'), 'Real office shows Office people until Minimalist is open in Real office.', 'FR-336: a set with poses behind a closed flag says it is not open');
-    } finally { C.REAL_SETS.pop(); }
+    } finally { C.REAL_SETS[real] = saved; }
   }
   // spec 097 FR-335, FR-336: every Characters value resolves to one set, with a level and a true note (issue #1154)
   {
     const CLOSED = { cave: false, retro: false }, OPEN = { cave: true, retro: false };
     const want: Record<string, [string, string, string, string]> = { // choice: [level closed, level open, set closed, set open]
       theme: ['default', 'default', 'office', 'office'], '': ['default', 'default', 'office', 'office'], mine: ['default', 'default', 'office', 'office'],
-      minimalist: ['heads', 'heads', 'office', 'office'], cheeky: ['full', 'full', 'cheeky', 'cheeky'], pirate: ['full', 'full', 'pirate', 'pirate'],
+      minimalist: ['full', 'full', 'minimalist', 'minimalist'], cheeky: ['full', 'full', 'cheeky', 'cheeky'], pirate: ['full', 'full', 'pirate', 'pirate'],
       monster: ['full', 'full', 'monster', 'monster'], royal: ['full', 'full', 'royal', 'royal'], rebels: ['full', 'full', 'rebels', 'rebels'],
       prehistoric: ['full', 'full', 'prehistoric', 'prehistoric'],
       office: ['full', 'full', 'office', 'office'], /* spec 102 FR-321 (T292): Office people by choice, in every flag state */
@@ -503,9 +507,9 @@ assert.ok(Object.values(META.stand).some((s) => Object.values(s.foot as Record<s
     const choices = [...CHARACTER_CHOICES] as string[];
     const ALL = Object.fromEntries(Object.keys(C.WORLD_FLAGS).map((k) => [k, true]));
     const defaultOf: Record<string, string> = { photo: 'office', cave: 'prehistoric', retro: 'retro' };
-    const own: Record<string, string> = { office: 'office', pixel: 'retro', cheeky: 'cheeky', prehistoric: 'prehistoric', pirate: 'pirate', monster: 'monster', royal: 'royal', rebels: 'rebels' }; // a crew with a row: its own people in every world
+    const own: Record<string, string> = { office: 'office', pixel: 'retro', cheeky: 'cheeky', prehistoric: 'prehistoric', pirate: 'pirate', monster: 'monster', royal: 'royal', rebels: 'rebels', minimalist: 'minimalist' }; // a crew with a row: its own people in every world
     for (const w of C.WORLDS) assert.ok(w.id in defaultOf, `world ${w.id} has no column in the matrix (T249): add one here and a row in the spec's table`);
-    for (const c of choices) assert.ok(c === 'theme' || c === 'minimalist' || c === 'mine' || c in own, `Characters value ${c} has no cell in the matrix (T249): add it here and to the spec's table`);
+    for (const c of choices) assert.ok(c === 'theme' || c === 'mine' || c in own, `Characters value ${c} has no cell in the matrix (T249): add it here and to the spec's table`);
     // My characters (spec 096 FR-040) is a value since #956, not offered by Settings. INTERIM cell (spec 097 Changes 2026-11-15): the world's default in every world, with no
     // note, until #1807's T353 (FR-379) makes `mine` a `heads` value with the FR-336 note (same set); then this asserts that note instead
     assert.ok(choices.includes('mine') && !('mine' in own), 'mine has the interim cell (the world\'s default) until T246');
@@ -515,7 +519,7 @@ assert.ok(Object.values(META.stand).some((s) => Object.values(s.foot as Record<s
       assert.strictEqual(C.peopleFor(w.id, c, ALL).set, want, `${w.id} x ${c}: the cell of the matrix`);
       assert.strictEqual(C.peopleFor(w.id, c, ALL).world, w.id, `${w.id} x ${c}: the world is kept when open`);
     }
-    for (const c of Object.keys(C.CREWS)) assert.ok(c in own || c === 'minimalist', `crew ${c} has no cell in the matrix (T249)`);
+    for (const c of Object.keys(C.CREWS)) assert.ok(c in own, `crew ${c} has no cell in the matrix (T249)`);
   }
   C.CREWS.futurecrew = []; // a future crew (mutant check: a hand list of names would miss it)
   try { assert.strictEqual(note('futurecrew'), 'Real office shows Office people until Futurecrew has Real office poses.', 'a new crew gets its note by construction'); } finally { delete C.CREWS.futurecrew; }
