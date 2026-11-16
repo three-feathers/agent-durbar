@@ -60,6 +60,11 @@
 .ro[data-world="retro"].still .ro-person.bob{animation:none}
 /* a helper at the door keeps still here: the room's sway rotates, and that is off the grid */
 .ro[data-world="retro"] .ro-visitor{animation:none}
+/* spec 102 T350: a runner on two pictures swaps them by opacity, a hard swap in one step each half period (1 s, the bob's period, FR-260), from `data-go` like the other loops; never the Photo office's cross-fade or bob. Before it, and when nothing runs, runA shows */
+.ro[data-world="retro"][data-go] .ro-visitor.m-a.m-run{animation:ro-arc-run-a 1s steps(1) infinite}
+.ro[data-world="retro"][data-go] .ro-visitor2.m-b.m-run{animation:ro-arc-run-b 1s steps(1) infinite}
+@keyframes ro-arc-run-a{0%{opacity:1}50%{opacity:0}}
+@keyframes ro-arc-run-b{0%{opacity:0}50%{opacity:1}}
 @keyframes ro-arc-bob{0%{transform:translateY(0)}50%{transform:translateY(calc(-1px*var(--ro-g)))}}
 /* the dissolve (FR-262): the masks never change, only opacity moves; none under reduced motion, because nothing starts one */
 .ro[data-world="retro"] .ro-dis{position:absolute;z-index:3;pointer-events:none;opacity:0;image-rendering:pixelated}
@@ -86,12 +91,24 @@
 .ro[data-world="retro"] .ro-plate.has-help:not(.lounge) .ro-l2>.ro-tk{display:inline;flex:1 1 auto;width:0;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .ro[data-world="retro"] .ro-plate.has-help:not(.lounge) .ro-l2>.ro-tk:empty{display:none}
 .ro[data-world="retro"] .ro-plate.has-help:not(.lounge) .ro-l1>:not(.ro-help){display:none}
+/* issue 1574 (spec 102 FR-312): on the narrow cabinet's plate with its pencil (content 99 px after round 5: 92 to 96 px before) the word, the +N and one dot do not fit: the plate's own status dot is not drawn (the word and the plate's border carry the state) and the +N is marked "+3!" when a helper failed or waits; the helpers' dots stay in the plate's markup, in the heads' order, and show whenever the line has room */
+.ro[data-world="retro"] .ro-plate.cab-narrow.has-help:not(.lounge) .ro-hm{display:inline;color:var(--c-waiting)}
+.ro[data-world="retro"] .ro-plate.cab-narrow:is(.has-ren,.has-help):not(.lounge) .ro-l2>.dot{display:none}
+.ro[data-world="retro"] .ro-plate.cab-narrow.has-ren.has-help:not(.lounge) .ro-l2{gap:0} /* the task run (width 0 here) must not take the 4 px gap from the word; its text starts with the " · " */
+/* margin (spec 102 FR-312): 3 px less padding at the left and no 1 px gap between the count and the word win 4 px of the first versions' 93 px; the pencil is not moved (its reserve is 18 px, below) */
+.ro[data-world="retro"] .ro-plate.cab-narrow.has-ren:not(.lounge){padding-left:calc(var(--s-1)*.75);padding-right:calc(var(--s-4)*1.125)}
+/* fonts (spec 102 FR-312, round 5): the word is regular weight on this plate (the 600 of a needs-you or limit plate is 10 px wider in a bold-wide font such as DejaVu Sans or Verdana; the amber border and fill carry the emphasis), the left padding 3 px, the pencil's reserve 18 px (its icon starts 17.5 px from the plate's edge and the content box ends 19 px from it, 1 px border + 18: 1.5 px clear, asserted; 097 FR-357 said 20): the word keeps its room in a font up to 12 px wider than macOS's */
+.ro[data-world="retro"] .ro-plate.cab-narrow:is(.has-ren,.has-help):not(.lounge) .ro-l2{font-weight:inherit}
+/* spec 102 FR-313 (round 4 of #1574): a helper mark must never read as the plate's own state, so the last mark SHOWN has 4 px of margin after it, before the word: on the margin of each mark (a mark that wraps out of sight takes its margin with it, so a plate that shows no mark, as "Limit reached" does, keeps its room), with the marks 2 px apart as before */
+.ro[data-world="retro"] .ro-plate.cab-narrow.has-help:not(.lounge) .ro-help .dot{margin-right:var(--s-1)}
+.ro[data-world="retro"] .ro-plate.cab-narrow.has-help:not(.lounge) .ro-help .dot+.dot{margin-left:calc(-1*var(--s-1))}
+.ro[data-world="retro"] .ro-plate.cab-narrow.has-ren.has-help:not(.lounge){gap:0}
 /* spec 097 FR-357 (bug #1427): a cabinet's plate does not draw the name (it is on the marquee), so the rename pencil is anchored to the plate: at its right end,
-   inside it (the 11 px icon ends 6.5 px before the edge); 20 px of padding there end the status and the dots (ellipsis) before the icon. A lounge seat's plate draws the name: FR-170's place */
+   inside it (the 11 px icon ends 6.5 px before the edge); 20 px of padding there end the status and the dots (ellipsis) before the icon (18 px on the arcade's narrow cabinet plate: spec 102 FR-312). A lounge seat's plate draws the name: FR-170's place */
 .ro[data-world="retro"] .ro-plate.has-ren:not(.lounge){padding-right:calc(var(--s-4) + var(--s-1))}
 .ro[data-world="retro"] .ro-chrome>.ro-plate:not(.lounge)+.ren.ro-ren{position-anchor:var(--ro-ren-pl);left:calc(anchor(right) - 24px);top:calc(anchor(center) - 12px)}
 /* a one-line pill is as tall as a sign, so it fits the free part of a sign row: in the arcade it never covers a screen or a person (owner, 2026-11-03) */
-.ro[data-world="retro"] .ro-slip[data-variant="pill"]{padding:0 10px;line-height:14px;border-radius:4px}
+.ro[data-world="retro"] .ro-slip[data-variant="pill"]{padding:0 10px;line-height:14px;border-radius:4px;max-width:30%} /* spec 097 FR-359: the lane holds the queue pill and the limit pill side by side, so neither may be wider than 30% of the floor (the text ends in an ellipsis): a long name made the limit pill 615 px, too wide for either side of the queue pill, and it docked over it */
 /* the away note as an arcade ticket (owner, 2026-11-03): a dark card with a neon edge in the place's colour, the words in that colour, mono, no tilt */
 .ro[data-world="retro"] .ro-away{background:var(--surface);color:var(--ro-note);border:2px solid var(--ro-note);border-radius:2px;transform:translateX(-50%);font:max(11px,calc(11px*var(--ro-g)/3))/max(13px,calc(13px*var(--ro-g)/3)) ui-monospace,Menlo,Consolas,monospace;padding:3px;overflow-wrap:normal;word-break:normal;hyphens:none;box-shadow:3px 3px 0 rgba(0,0,0,.6)}
 /* spec 097 FR-248: a lounge seat: the console desk small and whole, a small CRT on it in a pixel frame (3 grid px at the seat's scale, 2), and a one-line plate with the name and the status (no marquee carries it) */
@@ -106,5 +123,10 @@
 .ro[data-world="retro"] .ro-ctx rect{x:calc(1.5px*var(--ro-g));y:calc(1.5px*var(--ro-g));width:calc(var(--ro-cw,0px) - 3px*var(--ro-g));height:calc(var(--ro-ch,0px) - 3px*var(--ro-g));stroke-width:max(4px,calc(2px*var(--ro-g)))}
 .ro[data-world="retro"] .ro-ctx .ro-ck{stroke-width:calc(max(4px,2px*var(--ro-g)) + 2px)}
 
+/* spec 102 FR-352, 097 FR-118 first run: the hall is the page behind the card (welcome.webp, drawn in code), nearest pixel; the card keeps the app's own opaque surface, so its text is read against the app's token, never against the picture */
+html[data-world="retro"] #floor:has(> #stage > .welcome){background:radial-gradient(ellipse 52% 60% at 50% 46%,color-mix(in srgb,var(--bg) 92%,transparent) 0,color-mix(in srgb,var(--bg) 70%,transparent) 55%,transparent 100%),#0c0816 url(welcome.webp) center/cover no-repeat;image-rendering:pixelated}
+/* the card is the first thing seen: the lighter raised surface, a neon frame in the arcade's own tokens (pink border, yellow outer ring) on the dimmed hall; opaque, nothing moves */
+html[data-world="retro"] #stage > .welcome{background:var(--raised);border:3px solid var(--sage-ink);outline:2px solid var(--focus);outline-offset:0;box-shadow:var(--shadow-pop)}
+@media (forced-colors:active){html[data-world="retro"] #floor:has(> #stage > .welcome){background:Canvas}}
 /* spec 102 FR-264, 097 FR-118 first run: no counts in the top bar (all zero); the space stays, so the bar does not move */
 html[data-world="retro"] body:has(#stage > .welcome) #stats{visibility:hidden}

@@ -96,7 +96,7 @@ async function main(): Promise<void> {
     assert.strictEqual(again.noPrompt(), true);
     assert.deepStrictEqual(again.knownSecretValues(K).sort(), [header, vault].sort(), 'unlocked: every value of the folder, also the disabled server');
     assert.ok(/^\s*knownSecretValues\(/m.test(fs.readFileSync(path.join(ROOT, 'src/main/mcpstore.ts'), 'utf8')) && !/knownSecretValues[\s\S]{0,400}this\.unlock\(/.test(fs.readFileSync(path.join(ROOT, 'src/main/mcpstore.ts'), 'utf8')), 'knownSecretValues never calls unlock');
-    assert.ok(/folderValues: \(key\) => mcpStore\?\.knownSecretValues\(key\)/.test(src('src/main/main.ts')) && /mcpStore\?\.noPrompt\(\) \? mcp\.secretValuesFor\(id\)/.test(src('src/main/main.ts')), 'main uses the no-prompt readers');
+    assert.ok(/folderValues: \(key\) => mcpStore\?\.knownSecretValues\(key\)/.test(src('src/main/main.ts')) && /sessionValues: \(id\) => sessionMaskValues\(\{ noPrompt: \(\) => mcpStore\?\.noPrompt\(\) === true, secretValuesFor: \(x\) => mcp\.secretValuesFor\(x\), copilotValuesFor: \(x\) => mcp\.copilotValuesFor\(x\) \}, id\)/.test(src('src/main/main.ts')), 'main uses the no-prompt readers (spec 069 FR-070: sessionMaskValues, the Copilot list values alone while the vault would prompt)');
   }
 
   // list, update, delete by agent id; two chats of one folder see the same notes
