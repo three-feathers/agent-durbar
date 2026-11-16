@@ -2485,10 +2485,6 @@ function pieceSpans(s: string, mask: string, written: () => ReadonlyArray<[numbe
  */
 let splitOff = false;
 /**
- * Runs `fn` with the split step off (spec 012 FR-182, round 4 of PR 1721): every mask inside reads the text as it did before PR 1721. The reference reading of
- * the union (`keepShownBy`, `unionMasks`) on surfaces that are more than `redact`: the window's desk masks and the command, argument and URL masks.
- */
-/**
  * Runs `fn` with FR-184's shell readings off (spec 012 FR-184, issue #1543): every mask inside reads escaped runs as FR-181 did. The reference reading of the command
  * and argument masks' union: a run the shell readings hide whole can take a word one of their rules needed (`<token>`curl -u bob:<password>`: a flag, a keyword).
  */
@@ -2498,6 +2494,10 @@ export function withoutShell<T>(fn: () => T): T {
   try { return fn(); } finally { shellOff = false; }
 }
 let shellOff = false;
+/**
+ * Runs `fn` with the split step off (spec 012 FR-182, round 4 of PR 1721): every mask inside reads the text as it did before PR 1721. The reference reading of
+ * the union (`keepShownBy`, `unionMasks`) on surfaces that are more than `redact`: the window's desk masks and the command, argument and URL masks.
+ */
 export function withoutSplit<T>(fn: () => T): T {
   if (splitOff) return fn();
   splitOff = true;
