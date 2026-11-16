@@ -3,7 +3,7 @@
 <!-- specs-index (the row of the generated specs index; npm run specs:index shows it)
 group: 046
 title: AI character maker (owner request, Vikram 2026-10-30): make realistic crew characters with Codex image generation (3 poses + blink), My characters, folder pins, light portrait motion
-note: Q1-Q5 and Q1b answered; probes P1-P8 run on Linux 2026-11-02 (see Changes); phases 2, 3 (not T030, T030a, T031), 4 built; no adapter makes pictures, the dialog says so; no motion yet
+note: Q1-Q5, Q1b answered; probes P1-P8 run on Linux (see Changes); phases 2, 3 (not T030, T030a, T031), 4 built; no adapter makes pictures; no motion yet
 status: draft
 -->
 
@@ -551,6 +551,7 @@ These close gaps the spec's wording left while building phase 3. They are the **
 - **Source**: `main` (which now holds #956 as 145e9bf0d) merged into this branch with one plain merge, no rebase. Where #956 reworked a file after this branch was stacked on it (`readSameFile`, `loginGate`, the hard-link skips, the fail-closed `NO_LOGIN_GATE`), main's version is kept. The retired-theme names in the drivers follow main (`dark` fixture user theme in CI and `check:office`).
 - **Settings list**: main's ten choices (`office` after the default, `pixel` last, spec 102 FR-320, FR-321) with `mine` appended after them when the app can list characters (T044), as radios (`role=radio`, `aria-checked`, a closed entry is `aria-disabled`; `mine` with none saved is closed and says *Make one first*). This replaces #956's check that Settings does not offer `mine`: `check-characters` expects the eleven choices, and `test:characters` expects the `mine` push beside the always-offered list line.
 - **No cap**: main's `character:generate` still carried the 24-character refusal that this branch removed (the owner's principle, 2026-10-31: warn, do not limit); it stays removed, `CHARACTERS_WARN_AT` is the warning.
+- **Two checks of main met**: `test:dangersites` counts 23 sites (the maker's Delete confirm is the new one, now named in the test); the site was at 8.0 MB on main, so `docs/features.md` links none of the character pictures (they stay in `docs/screenshots/`, spec 050 FR-012).
 - `[KNOWN GAP]` Not verified here: `check:ui` drivers (`check-characters`, `check-charmaker`, `check-crew`, `check-office-overlap`) were not run on this merge; CI is the check. Windows, macOS and real Codex are as before.
 
 ## Changes 2026-11-08: phase 4 merged with the updated phase 3 and main (no FR or task number added)

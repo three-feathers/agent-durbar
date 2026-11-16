@@ -3426,8 +3426,6 @@ const planMcpSignInRefresh = (i: SignInPlanInput): SignInPlan => {
     const simExpired = new Set<string>(simAuthMode === 'expired' ? ['copilot', 'claude'] : []);
     const SIM_AUTH_ERROR = 'Failed to authenticate. API Error: 401 OAuth access token is invalid.';
     const signInState = (a: AdapterInfo): AdapterInfo => (a.state === 'ready' && simSignedOut.has(a.id) ? { ...a, state: 'not-signed-in', hint: 'Sign in first: open Settings > Agent apps and choose Sign in….' } : a);
-    /* spec 096: `simimagegen=0`: Codex ready but with no `imageGen`, which is every real app today */
-    const simAdapters = (): AdapterInfo[] => simAdapterList().map(signInState).map((a) => (a.id === 'codex' && simQuery.get('simimagegen') === '0' ? { ...a, capabilities: { ...a.capabilities, imageGen: false } } : a));
     /* spec 011 FR-092: the account-limit fixtures; raw reads, sanitised and stepped by shared/quota.ts as main does it */
     const simQuotaEntries = new Map<string, import('../shared/quota').QuotaEntry>();
     const simQuotaCount = new Map<string, number>();
@@ -3473,7 +3471,8 @@ const planMcpSignInRefresh = (i: SignInPlanInput): SignInPlan => {
         default: return ok(copilot ? [reqs(506, 1500, 66.3), chat] : wins(12, 41));
       }
     };
-    const simAdapters = (): AdapterInfo[] => simAdapterList().map(signInState).map((k) => (SIM_AUTOPILOT && simApCap(k.id) ? { ...k, capabilities: { ...k.capabilities, autopilot: simApCap(k.id) } } : k));
+    /* spec 096: `simimagegen=0`: Codex ready but with no `imageGen`, which is every real app today */
+    const simAdapters = (): AdapterInfo[] => simAdapterList().map(signInState).map((k) => (SIM_AUTOPILOT && simApCap(k.id) ? { ...k, capabilities: { ...k.capabilities, autopilot: simApCap(k.id) } } : k)).map((a) => (a.id === 'codex' && simQuery.get('simimagegen') === '0' ? { ...a, capabilities: { ...a.capabilities, imageGen: false } } : a));
     const simAdapterList = (): AdapterInfo[] => [
       { id: 'copilot', displayName: 'Copilot', state: 'ready', version: 'sim', capabilities: { ...copilotCaps } },
       ...(simKinds ? [
