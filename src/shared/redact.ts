@@ -217,8 +217,26 @@ function maskPrefixedGlued(s: string, mask: string): string {
   }
   return copied === 0 ? s : out + s.slice(copied);
 }
+/**
+ * Spec 012 FR-185 (issue #1329): a GitHub token in a form the held shape above leaves: its prefix glued to a word before it, a body
+ * cut short, or letters from another script in its prefix or body. `GH_LOOK` is the prefix with lookalike letters (full-width,
+ * Cyrillic, Greek); the body takes a letter, digit or mark of any script, so such a letter no longer ends it. At a token start any
+ * body of one or more characters with a capital or digit is hidden (a known prefix plus any run); glued to a word the body must be a
+ * whole one (20 or more), so a snake_case word ending in the prefix letters stays. One literal-class prefix, then one open class: linear.
+ */
+const GH_LOOK = '[g\uff47\u0261][h\uff48\u04bb][pousr\uff50\uff4f\uff55\uff53\uff52\u0440\u043e\u03bf\u03c1\u0455][_\uff3f]';
+const GH_BODY = String.raw`[\p{L}\p{N}\p{M}]`;
+const GH_PAT_BODY = String.raw`[\p{L}\p{N}\p{M}_]`;
+/** The body holds a capital or a digit (of any script) within its first 129 characters: `ghp_short`, `ghs_count` and a snake_case word stay words. */
+const GH_CAP = (body: string): string => String.raw`(?=${body}{0,128}?[\p{Lu}\p{Nd}])`;
+const GH_MARKER = /[g\uff47\u0261][h\uff48\u04bb][pousr\uff50\uff4f\uff55\uff53\uff52\u0440\u043e\u03bf\u03c1\u0455][_\uff3f]|github_pat_/iu;
+const GH_LOOSE = [
+  guarded(new RegExp(START + `(?:${GH_LOOK}${GH_CAP(GH_BODY)}${GH_BODY}+|github_pat_${GH_CAP(GH_PAT_BODY)}${GH_PAT_BODY}+)`, 'gu'), GH_MARKER),
+  guarded(new RegExp(`(?:${GH_LOOK}${GH_CAP(GH_BODY)}${GH_BODY}{20,}|github_pat_${GH_CAP(GH_PAT_BODY)}${GH_PAT_BODY}{20,})`, 'gu'), GH_MARKER),
+];
 const TOKEN_SHAPES: Array<RegExp | Guarded | ((s: string, mask: string) => string)> = [
   maskPrefixedGlued,
+  ...GH_LOOSE,
   new RegExp(`(?=[A-Za-z0-9])${B64_START}(?:${B64_PREFIXED})${NOT_B64_AFTER}`, 'g'),
   // Google storage HMAC: its body is upper case and digits only, so it ends at any other character, a letter included (a second token glued to it starts in lower case: issue #1237)
   new RegExp(`(?=[A-Za-z0-9])${B64_START}GOOG1[A-Z0-9]{40,}(?![A-Z0-9+/=])(?!${LINE_BREAK}[A-Za-z0-9+/=]{40})`, 'g'),
@@ -2031,6 +2049,12 @@ const UNC_HOME = new RegExp(String.raw`(?<![A-Za-z0-9_.~:\\/-])\\{2,}${UNC_SEG}$
 // cannot be told from a NetBIOS server by its shape, so `//cdn/profile/pic.png` or `//HOME/users` outside those attributes is masked: over-masking, the safe side.
 const FWD_SEG = String.raw`[^\\/\s"'<>|:;,*?()]{1,128}`;
 const UNC_FWD_HOME = new RegExp(String.raw`(?<![A-Za-z0-9_.~:\\/-])(?<!(?:src|href|srcset)\s*=\s*["']?|url\(\s*["']?)\/\/(?!localhost(?![^\\/\s"'<>|:;,*?().]))[^\\/\s"'<>|:;,*?().]{1,128}\/(?:homes?|users?|profiles?)\$?(?![^\\/\s"'<>|:;,*?()])(?:\/(?:[^\\/\r\n"'<>|:;,*?()]{1,128}(?=\\|\/(?!\/))|${FWD_SEG}))?`, 'gi');
+/** `~name/` or `~name\`: the home folder of the user `name` (POSIX shells); only before a separator, so `~5/10` and Markdown `~text~` stay. */
+const HOME_TILDE = /(?<![A-Za-z0-9_.~-])~[A-Za-z_][A-Za-z0-9_.-]{0,31}(?=\\|\/)/g;
+/** A `/` or `\` percent-encoded, re-encoded up to 8 times (`%2F`, `%5C`, `%252F`). */
+const PCT_SEP = String.raw`%(?:25){0,8}(?:2[Ff]|5[Cc])`;
+/** A home folder percent-encoded (`%2Fhome%2F<user>`, `%2FUsers%2F<user>`, `C%3A%5CUsers%5C<user>`, any case): the user name, up to the next separator in any spelling, becomes `~`. */
+const HOME_PCT = new RegExp(String.raw`(?<![A-Za-z0-9_.~-])(?:${PCT_SEP}(?:[Hh][Oo][Mm][Ee]|[Uu][Ss][Ee][Rr][Ss])|[A-Za-z](?::|%(?:25){0,8}3[Aa])(?:${PCT_SEP}|\\{1,2}|\/)[Uu][Ss][Ee][Rr][Ss])${PCT_SEP}(?:[^%\\/\s"'<>|:;,*?&#=]|%(?!(?:25){0,8}(?:2[Ff]|5[Cc]))[0-9A-Fa-f]{2}){1,128}`, 'g');
 /**
  * Home folders in free text become `~` (review on PR #630: a copied error must not carry the user name): `/home/<user>`,
  * `/Users/<user>`, `<drive>:\Users\<user>` (also with `/` or doubled `\\` as in JSON), and the given home folders themselves
@@ -2047,7 +2071,9 @@ export function maskHomePaths(text: unknown, homes?: readonly (string | undefine
       // only a whole folder: `/home/vik` is not the start of `/home/vikram`
       for (const v of new Set([h, JSON.stringify(h).slice(1, -1)])) s = s.replace(new RegExp(v.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + String.raw`(?![^\\/\s"'<>|:;,*?])`, 'g'), '~');
     }
-    s = s.replace(/(?<![A-Za-z0-9_.~-])(?:\/(?:home|Users)\/|[A-Za-z]:(?:\\{1,2}|\/)Users(?:\\{1,2}|\/))(?:[^\\/\r\n"'<>|:;,*?]{1,128}(?=[\\/])|[^\\/\s"'<>|:;,*?]{1,128})/g, '~');
+    s = s.replace(/(?<![A-Za-z0-9_.~-])(?:\/(?:home|Users)\/|[A-Za-z]:(?:\\{1,2}|\/)[Uu][Ss][Ee][Rr][Ss](?:\\{1,2}|\/))(?:[^\\/\r\n"'<>|:;,*?]{1,128}(?=[\\/])|[^\\/\s"'<>|:;,*?]{1,128})/g, '~');
+    // spec 012 FR-185 (issue #1329): another user's home written `~name/`, and a home folder percent-encoded in a URL or query
+    s = s.replace(HOME_TILDE, '~').replace(HOME_PCT, '~');
     // a UNC path (`\\server\share\user\...`, or doubled as in JSON): where the user name sits is not known, so host, share and the next folder become `~`
     return s.replace(UNC_HOME, '~').replace(UNC_FWD_HOME, '~');
   } catch {
