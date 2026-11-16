@@ -335,6 +335,18 @@ Each has a recommendation (Q6 is for Paco, the crew owner). The build waits for 
 
 ## Changes
 
+### 2026-11-13: T156 by site: the lobby figures read the floor's scroll once (issue #1401; FR-184, T156 stays open)
+
+**Owner reading** (issue #1401, comment 6845758119, 2026-11-13): the target is layout reads under 40 **per status update**; build T156 to T158. This change is the first step and does not tick T156.
+
+**Sites named** (`sim:` stack of every read in one status update of one agent, 15 agents, desks as scenes, median sample, the driver's own counter; main at `24a5f087e`): 97 reads at 1440x900 and 89 at 1280x800, 1 render, 0 searches. By site: the two rewritten room heads' fit (`fitHead`, `headHolds`, `nameCut`, `nameSqueezed`) 31 and 31; the lobby figures (`syncWalkers`, `center`) 27 and 21; the pencils (`placePencils`) 17 and 15; the spare-height spread 13 and 13; `sceneSwap` 6 and 6; the floor's size 2 and 2; the floor's rect 1 and 1.
+
+**The change**: `center` read `floor.scrollLeft` and `floor.scrollTop` again for each lobby slot (2 of its 3 reads), with nothing written between the slots. The scroll is now read once for the slots' loop; the figures' desk lookups, which run after style writes, read their own. Nothing is stored, so there is no key and no stale answer; the figure's position still includes the floor's scroll. Look unchanged, no search or render change.
+
+**Measured after** (same method): 81 reads at 1440x900 (was 97) and 77 at 1280x800 (was 89). `readsPerStatus` is asserted at both sizes and at 15 and 40 agents in `check-office-ops` at the measured number plus a stated margin; a mutant that reads the scroll per slot fails its row. With the floor scrolled 120 px (40 agents, 1280x800) every lobby figure's target must still be a slot's centre in the floor's content coordinates (`walkersOffSlot`, limit 0); a mutant that drops the scroll puts all 7 figures off their slot. The limits are the measured median plus 2: 83 and 75 at 1440x900, 79 and 62 at 1280x800 (15 and 40 agents), measured 81, 73, 77, 60 (all 8 samples equal). A scroll read after a clean layout does not force one: this lowers the counted reads, not milliseconds.
+
+**Next sites** (plan in the PR, each its own spec delta and PR): the head fit memo (about 29 fewer), the pencils (about 14), then the spread and `sceneSwap` if needed: under 40 at both sizes is expected after the first two. The memo keys and their stale-layout mutants are written there.
+
 ### 2026-11-09: a folder sign in a narrow room keeps its + and menu whole (bug #1392; FR-356, T292..T294; extends FR-018 and FR-256)
 
 **Report** (issue #1392, opened by the owner's account from the Mac session, 2026-11-09, main at `82da90970`, simulator): in the Prehistoric cave at 1280x800, in the release clip's lounge scene (two agents moved to the lounge row), the fourth folder's sign ("blog", a room of one desk) reads "bl…  1 1 <$0.01" and its **+** and **⋯** buttons are cut off by the room's edge. The other signs are whole. `check-097-helper-row` passed: it checked strips against signs, not the signs themselves.
@@ -1936,6 +1948,16 @@ Issue #1605 was split from #1154 on 2026-11-12 (owner decision, Vikram): the arc
 Spec 096's phase 3 (#956), brought up to date with `main`, adds `mine` to `CHARACTER_CHOICES` (last, after `pixel`; Settings does not offer it until spec 096 T044). T249's matrix needs a cell for every value, so the My characters row now reads what the code draws: **the world's default in every world** (Flat: the theme's own figures, because the renderer draws a stored `mine` as `theme` until spec 096 T044; the arcade: Retro pixel people; the Photo office: Office people; the cave: Prehistoric), with no note (`peopleFor` has no set or crew name for it). `test:realoffice-layout` checks these cells and that `mine` has no own row yet. T246 (its own cell, FR-080, FR-081) stays open; nothing here decides how My characters look in a world.
 
 **Interim cell** (second review of #956, 2026-11-15): this `mine` row is interim. PR #1807 proposes FR-379 and T353, which make `mine` a `heads` value: the same set (the world's default) with the FR-336 line "Real office shows <set> until <name> has Real office poses." When T353 lands, the cell gets that note and `test:realoffice-layout` asserts it; until then the code draws the default set with no note, and the test checks that.
+
+## Changes 2026-11-13: `check-office-ops` asserts the per-animation change rate of every infinite animation (issue #1401, T158; no new FR, no behaviour change)
+
+- **Reading (owner, 2026-11-13 06:17 UTC, https://github.com/three-feathers/agent-durbar/issues/1401#issuecomment-6845758119):** T158's "under 10 changes a second" is read PER ANIMATION, as measured, not as a total for the office.
+- **What the check pins:** at 15 and 40 agents, at 1440x900 and 1280x800 (flat, desks as scenes, simulator), every running infinite animation steps at most 10 changes a second. The rate is computed from the animation's own timing, with no clock and no sampling: the steps of each keyframe interval (`steps(n)` is n, `step-start` and `step-end` 1, any other easing is continuous) over the iteration's duration, from `getAnimations()`. This is a conservative count (a `jump-none` step is counted as a step), so it reads higher than the first spike's figures. The driver prints the fastest animation and the count. Only `wkbob` and `dizzyspin` may be continuous; a third unstepped infinite animation fails at its own label.
+- **Measured (3 runs of the check's numbers were identical):** 15 agents: 61 stepped infinite animations (all in SVG), fastest `dotp` 6.25 changes a second, at both sizes; 40 agents: 211, fastest `dotp` 6.25, at both sizes. Over the 10 limit: none. Not counted, continuous: `dizzyspin` 1 and `wkbob` 3 (walkers walking at that moment; the count varies).
+- **Mutants (`OPS_ANIM_MUTANT`):** an `ease` infinite animation, `steps(60,end)` over 1 s, and a third continuous `linear` one each fail at "every infinite animation steps at most 10 changes a second" with the animation named.
+- `[KNOWN GAP]` The sum over the office (about 172 changes a second at 15 agents in the first spike) is NOT asserted. By the owner's reading it is not the rule; stepping cannot meet a total of 10 with this many animations.
+- `[KNOWN GAP]` `wkbob` (the walkers' bob while a visitor walks, `styles.css`, 0.3 s `ease-in-out`) and `dizzyspin` (2.4 s `linear`, one element) are continuous and are allowed by name. The owner has not been asked whether they count against FR-180 or the per-animation rate (both animate `transform` only): issue #1679. No look changed. Linux, Windows and a real GPU were not run.
+- T158 is ticked on `main` (owner, 2026-11-14, the time criterion); this change only adds the per-animation check row that its text names. The idle-CPU row and the `check-crew` and reduced-motion checks are not part of this change.
 
 ## Changes 2026-11-16: the Minimalist people are drawn in Real office (issue #1154, part of #1147; amends FR-335, FR-336; T245, T238; no new numbers)
 
