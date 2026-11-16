@@ -835,7 +835,11 @@ function shellReadingsHide(w: string, md: string, sh181: string, mask: string, v
   if (/\\[nrt]/.test(w) && (bare(shellReading(breaksRead(w, 'nr'))) || bare(shellReading(breaksRead(w, 't'))))) return true;
   // review of PR 1824 (round 3): a `:`, `=` or blank the codes spell; a tab is no such separator here (a JSON `\t` became one per escape, and every rule already reads `\t` as a
   // blank: a JSON-escaped text then took a whole extra pass of every rule for nothing)
-  const seps = (x: string): number => (x.match(/[:=\x20]/g) ?? []).length;
+  // review of PR 1824 (round 4): a tab counts only right after a name-like word, a `:` or a `=` (`NAME<coded tab><value>`, `API_KEY<tab>=<tab><value>`), not a
+  // JSON `\t` between other words: the JSON-escaped text keeps its one pass; any tab when the run also holds a code escape (`\x`, `\u`, octal, `` `u{…} ``): a JSON tab
+  // before a token whose body holds a code is read through every rule, as before round 3
+  const anyTab = /[\\`]u\{|\\[xuU0-7]/.test(w);
+  const seps = (x: string): number => (x.match(anyTab ? /[:=\x20\t]/g : /[:=\x20]|(?<=[A-Za-z0-9_\-:=])\t/g) ?? []).length;
   return (/\\[:=\x20\t]/.test(w) && all(sh)) || (seps(c) > seps(w) && all(shellReading(c)));
 }
 
@@ -2829,6 +2833,17 @@ function maskCore(s: string, vals: readonly string[], env: Env): string {
  */
 function maskKeepingMarkdown(text: unknown, values: readonly string[], alwaysCopy = false): { text: string; changed: boolean } {
   const original = typeof text === 'string' ? text : text == null ? '' : String(text);
+  // spec 012 FR-184 (review of PR 1824, round 4): the shell readings can hide a run whole that took a keyword a rule needed (as in the command mask); when they changed
+  // anything during the reading, the reading without them is made too and the span-level union kept, so nothing that reading hides shows
+  const n0 = shellReads;
+  const head = maskKeepingMarkdownOnce(original, values, alwaysCopy);
+  if (shellOff || shellReads === n0) return head;
+  const ref = withoutShell(() => maskKeepingMarkdownOnce(original, values, alwaysCopy));
+  if (ref.text === head.text) return head;
+  const out = unionMasks(original, head.text, ref.text);
+  return { text: out, changed: out !== original };
+}
+function maskKeepingMarkdownOnce(original: string, values: readonly string[], alwaysCopy: boolean): { text: string; changed: boolean } {
   // longest first only for a stable order: the values are spans of one union, so a shorter value inside a longer one cannot leave a piece
   const vals = [...new Set(values.filter((v) => typeof v === 'string' && v.length >= 4))].sort((a, b) => b.length - a.length);
   const env = snapshot(); // the environment's secrets read once for every pass of this call, not once per pass

@@ -2523,6 +2523,42 @@ assert.strictEqual(redact('{"a":"https://u:p@h/x","b":"y"}', {}), '{"a":"https:/
       assert.ok(q <= 2, `#1543 F2 work ${k}: every rule ran ${q} times over the texts of one call (at most 2)`);
       assert.ok(rr <= 1, `#1543 F2 work ${k}: FR-181's readings of the run were made ${rr} times in one call (shared by both passes: at most 1)`);
     }
+    // review of PR 1824 (round 4): a coded tab right after a secret name (or a `=` after it) is still read as a separator, so the value after it stays hidden, while the
+    // JSON-escaped text above keeps its one pass; and the tail of a token after a PowerShell `u{…} code in a run that also holds a JSON tab
+    const TV = 'Q1w2E3r4T5y6' + 'U7i8O9p0A1s2';
+    const PLS = mk({});
+    for (const n of ['to' + 'ken', 'X-Api' + '-Key', 'API' + '_KEY', 'GH' + '_TOKEN']) {
+      for (const tb of [`${BS}t`, `${BS}x09`, `${BS}u0009`, `${BS}011`, `${BS}u{9}`]) {
+        for (const t of [n + tb + TV, n + tb + '=' + tb + TV]) {
+          const outs: Record<string, string> = { redact: redact(t, {}), command: maskSecretCommand(t, {}), args: maskSecretArgs([t], {})[0], maskRaw: ST.maskRaw(t, PLS.redact), labelRun: ST.maskLabel(t, 'run', PLS), card: (LA.permText('run ' + t, 'shell', PLS) as { text: string }).text };
+          for (const [k, o] of Object.entries(outs)) assert.strictEqual(shows(o, [TV]), undefined, `#1543 coded tab after a name: ${k} shows no part of the value`);
+        }
+      }
+    }
+    for (const pre of ['', 'echo ', `x${BS}t`, `a${BS}t`, `> ${BS}t`, `echo ${BS}t`]) {
+      for (const post of [`${BS}tb`, `${BS}t`]) {
+        for (const at of [20, 30]) {
+          const t = pre + 'gh' + 'p_' + B36.slice(0, at) + '`u{41}' + B36.slice(at) + post;
+          for (const [k, o] of Object.entries({ redact: redact(t, {}), command: maskSecretCommand(t, {}), args: maskSecretArgs([t], {})[0] })) assert.strictEqual(shows(o, [B36.slice(at)]), undefined, `#1543 a PowerShell code and a JSON tab in one run: ${k} shows no part of the tail`);
+        }
+      }
+    }
+    // a JSON tab right before such a token, with nothing or a word after it (the run starts at the tab)
+    for (const pre of [`> ${BS}t`, `echo ${BS}t`]) {
+      for (const post of ['', ' z', `${BS}\n`]) {
+        for (const at of [20, 26]) {
+          const t = pre + 'gh' + 'p_' + B36.slice(0, at) + '`u{75}' + B36.slice(at) + post;
+          for (const [k, o] of Object.entries({ redact: redact(t, {}), command: maskSecretCommand(t, {}), args: maskSecretArgs([t], {})[0] })) assert.strictEqual(shows(o, [B36.slice(at)]), undefined, `#1543 a JSON tab before a token with a PowerShell code: ${k} shows no part of the tail`);
+        }
+      }
+    }
+    // the note and message masks keep the union with the reading without the shell readings too: a run hidden whole that takes a keyword leaves no tail of the
+    // value that rule hid (the differential fuzz of round 4 found it on both)
+    {
+      const tail = B36.slice(10, 16) + 'IdgFAOr';
+      const t = `printf "%s${BS}n" npm${BS}u005f${B36} to` + `ken: ${PW} T=xo` + `xb-${'1234' + '56789012'}-${B36.slice(0, 10)}\`u{43}` + tail + ' main';
+      for (const [k, o] of Object.entries({ note: maskNoteText(t, []).text, outgoing: maskOutgoing(t, []).text })) assert.strictEqual(shows(o, [PW, B36, tail]), undefined, `#1543 union: ${k} shows no part of a value the reading without the shell readings hides: ${JSON.stringify(o)}`);
+    }
     // a loose time check on top (catastrophic cost only, not the step: five runs on Linux measured 1.3 to 1.7 times the reading without the shell readings)
     for (const [k, [u]] of Object.entries(passes)) {
       const x = u.repeat(Math.ceil(131_072 / u.length));
