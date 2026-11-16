@@ -1,0 +1,1 @@
+- Test driver only: when `check-answer-safety`'s limit step reads a wrong button list in the answer bar, its failure message now also shows the bar's markup and the pending request cards, masked and bounded, so the next occurrence can be explained (spec 052 T346, #1770; not a fix).
