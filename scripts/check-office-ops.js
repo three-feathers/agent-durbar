@@ -107,6 +107,32 @@ module.exports = async (ctx) => {
   };
   for (const n of [15, 40]) {
     const load = (w = 1440, h = 900) => H.load({ w, h, index: process.env.OPS_INDEX || undefined, query: { sim: String(n) }, ready: FLAT, readyMs: 30000 });
+    /* the start with the first states late (spec 097 FR-363, issue #1238): `simlate=50` makes the replay start 50 ms after the agents are listed, so a render that comes first (the race) is
+       forced in every load; 3 loads, the most searches counted. The page's own record of the delay proves the option was honoured (an ignored one reads 0 and the loads would test nothing). */
+    {
+      const late = { searches: 0, probes: 0, delay: Infinity };
+      for (let i = 0; i < 3; i++) {
+        await H.load({ w: 1440, h: 900, index: process.env.OPS_INDEX || undefined, query: { sim: String(n), simlate: '50' }, ready: FLAT, readyMs: 30000 });
+        const o = await js(`({...window.__durbarSimUi.ops(), delay: window.__durbarSimReplayDelay||0})`);
+        late.searches = Math.max(late.searches, o.searches); late.probes = Math.max(late.probes, o.probes); late.delay = Math.min(late.delay, o.delay);
+      }
+      rows[`searchesAtStart@late${n}`] = late.searches; rows[`lateReplayDelay@late${n}`] = late.delay;
+      console.log('[ops]', n, 'agents, first states 50 ms late (3 loads): most layout searches', late.searches, 'most probes', late.probes, 'least replay delay', late.delay, 'ms');
+    }
+    /* the real app's start (spec 097 FR-378, issue #1575): the real app has no first-state batch, so the gate of FR-363 does not apply; `simreal=idle` opens it from the first frame and plays no script, so the
+       agents stay as listed (a restored folder's agents, not started); 3 loads, the most searches counted after 1.5 s. The page's own record `__durbarSimReal` must read -1 (an ignored `simreal` reads 0 and the row would
+       test nothing). `simreal=100` (the scripts start 100 ms apart) is printed, not judged: its searches are layout changes the scripts make (helpers, new desks), not the start. */
+    for (const mode of ['idle', '100']) {
+      const real = { searches: 0, probes: 0, renders: 0, gap: Infinity };
+      for (let i = 0; i < 3; i++) {
+        await H.load({ w: 1440, h: 900, index: process.env.OPS_INDEX || undefined, query: { sim: String(n), simreal: mode }, ready: FLAT, readyMs: 30000 });
+        await js(`new Promise(r=>setTimeout(r,${mode === 'idle' ? 1500 : n * 100 + 1500}))`);
+        const o = await js(`({...window.__durbarSimUi.ops(), gap: window.__durbarSimReal===undefined?0:window.__durbarSimReal})`);
+        real.gap = Math.min(real.gap, o.gap); real.searches = Math.max(real.searches, o.searches); real.probes = Math.max(real.probes, o.probes); real.renders = Math.max(real.renders, o.renders);
+      }
+      if (mode === 'idle') { rows[`searchesAtRealStart@${n}`] = real.searches; rows[`probesAtRealStart@${n}`] = real.probes; rows[`realStartIdle@${n}`] = real.gap === -1 ? 1 : 0; }
+      console.log('[ops]', n, 'agents, the real start,', mode === 'idle' ? 'agents idle as listed' : 'scripts 100 ms apart (not judged)', '(3 loads): most layout searches', real.searches, 'most probes', real.probes, 'most renders', real.renders);
+    }
     await load();
     await js(`localStorage.setItem('durbar.doorsigns','off')`); // desks as scenes, not doors: every working desk animates (the doors and signs are going)
     await load();
@@ -356,6 +382,7 @@ module.exports = async (ctx) => {
     rows[`tintNodesPerStatus@${n}`] = await js(`(window.__tO.disconnect(),window.__tN)`);
     console.log('[ops]', n, 'agents, Real office: screen and tag nodes added or removed over 8 tint changes', rows[`tintNodesPerStatus@${n}`]);
   }
+  console.log('[ops] rows', JSON.stringify(rows));
   const { failed, notes } = judge(rows);
   for (const l of notes) console.log('[ops]', l);
   assert.deepStrictEqual(failed, [], `op rows over their limits:\n  ${failed.join('\n  ')}`);

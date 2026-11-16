@@ -56,6 +56,10 @@ function main(): void {
     'tool:Bash|npm test|1 failing|true',
     'output:Done: the login bug is fixed.',
   ]);
+  // spec 012 FR-183: a tool name over 256 characters is left out, as the event gate refuses it
+  const named = (n: string): string[] => claudeHistoryFromText([user('go'), asst([{ type: 'tool_use', id: 'tn', name: n, input: {} }])].join('\n') + '\n').items.map((i) => i.type);
+  assert.deepStrictEqual(named('a'.repeat(256)), ['user', 'tool'], '#1593 history (Claude): a tool name of 256 characters is kept');
+  assert.deepStrictEqual(named('a'.repeat(257)), ['user'], '#1593 history (Claude): a tool name of 257 characters is left out');
   const capped = claudeHistoryFromText(session, { maxItems: 2, maxTextChars: 5, maxToolOutputChars: 3 });
   assert.strictEqual(capped.total, 5);
   assert.ok(capped.truncated && capped.items.length === 2);
