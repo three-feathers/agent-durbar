@@ -61,6 +61,9 @@ module.exports = async (ctx) => {
       if (process.env.FOCUS_MUTANT) console.log(`[focus] mutant ${process.env.FOCUS_MUTANT}: changed ${await mutate(process.env.FOCUS_MUTANT)} rule(s)`);
       const dpr = await js(`window.devicePixelRatio`);
       // the page needs the OS focus or :focus-visible never matches (#1658: a Mac with no key window failed below as "is focus-visible"). FOCUS_NO_WINDOW_FOCUS=1 (mutant) makes the reading false.
+      // #1820: on Windows CI the OS takes the focus from the hidden runner window between two controls (document.hasFocus() false with the right activeElement), so the real focus cannot be kept: run the look under the shared focus emulation (H.focusPage emulate:'first', as check-auto-follow, check-edit-popups and check-needs-panel do; capturePage pixels are not affected), re-enabled per look in case the load reset it. The driver tests no OS blur; released after the loop.
+      await H.releaseFocus();
+      await H.focusPage({ emulate: 'first' });
       await H.needFocus(tag, process.env.FOCUS_NO_WINDOW_FOCUS ? { expr: 'false' } : {});
       // keyboard modality: :focus-visible matches on a script focus() only after a key press. sendInputEvent returns before the page handles the key, so wait until the Tab has moved focus: a late Tab would move focus off control 0 after the first focus() below (#1651). FOCUS_NO_TAB=1 (mutant) sends none.
       if (!process.env.FOCUS_NO_TAB) await H.key('Tab');
@@ -115,6 +118,7 @@ module.exports = async (ctx) => {
       }
     }
   }
+  await H.releaseFocus();
   fs.writeFileSync(path.join(OUT, 'focus-report.txt'), lines.join('\n') + '\n');
   if (process.env.FOCUS_REPORT) { console.log(`[focus] ${lines.length} lines, ${fails.length} below 3:1 (report only)`); throw new Error('FOCUS_REPORT: failing on purpose; lines in focus-report.txt'); }
   for (const l of lines) console.log('[focus] ' + l);
