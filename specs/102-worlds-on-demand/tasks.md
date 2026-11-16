@@ -340,6 +340,10 @@ Spec only; nothing built. C2..C7 answered by the owner 2026-11-11, C1 is answere
 - [x] T319 `ui-suite` entry `check-unread retro`: the still highlights in the arcade (endless animations, since it draws no glow). Test: passes; `UNREAD_MUTANT=still` fails at "no glow breathes". `[KNOWN GAP]` macOS only.
 - [x] T320 `ui-suite` entry `check-auto-follow retro`: auto-follow's return and the plate's mark in the arcade. Test: passes; `AFOLLOW_MUTANT=mark` fails at "FR-183: its plate is marked". `[KNOWN GAP]` macOS only; the entry repeats the driver's flat part (about 215 s).
 
+## 2026-11-12: the logo's tile and the folder menu in the arcade (issue #1399)
+
+- [x] T316 `check-logo-family` asserts the arcade's own pair (spec 101 FR-034) at its Real office seam under `DRIVER_WORLD=retro`; `ui-suite` entry `check-logo-family retro`. Test: it passes at both sizes; `LOGO_MUTANT=arcade|ink|tokens|size` each fail at their own assert.
+- [x] T317 `check-102-arcade-menu` (new driver, `ui-suite` entry): the folder menu on an arcade sign lists Move earlier / later, either says the room keeps its place (spec 097 FR-354), signs and saved order unchanged. Test: passes at both sizes; `ARCMENU_MUTANT=swallow|move|save` each fail at their own assert. `[KNOWN GAP]` macOS only.
 
 ## 2026-11-11: the arcade plate's status word and helper dots (issue #1558)
 
