@@ -2479,6 +2479,19 @@ assert.strictEqual(redact('{"a":"https://u:p@h/x","b":"y"}', {}), '{"a":"https:/
   // `\u` escape: main hid the whole command, so the card showed no text); the shell readings alone match it
   {
     const PL = LA as unknown as { permText(t: string, k: string, m: Record<string, (s: string) => string>): { text: string; hidden: boolean; why?: string } };
+    // the reviewer's forms (built from pieces): a caret inside a token, then a JSON line break escape and a keyword with its value, in a `sh -c` script; main's card hid the value
+    const PV = '8DVZ' + 'E1FAQKVKqc';
+    const PAT = 'github' + '_pat_' + B36.slice(0, 22) + '_' + (B36 + B36).slice(3, 62);
+    const reviewForms: Array<[string, string]> = [
+      ['ghp_ then token', 'gh' + 'p_' + B36.slice(0, 20) + '^' + B36.slice(20) + BS + 'n' + 'token: ' + PV],
+      ['ghp_ then maintoken', 'gh' + 'p_' + B36.slice(0, 20) + '^' + B36.slice(20) + BS + 'n' + 'main' + 'token: ' + PV],
+      ['github_pat_ then token', PAT.slice(0, 40) + '^' + PAT.slice(40) + BS + 'n' + 'token: ' + PV],
+      ['github_pat_ then maintoken', PAT.slice(0, 40) + '^' + PAT.slice(40) + BS + 'n' + 'main' + 'token: ' + PV],
+    ];
+    for (const [k, f] of reviewForms) {
+      const c = PL.permText('run sh -c ' + f, 'shell', mk({}));
+      assert.ok(!c.text.includes(PV), `#1543 F1 card, review form ${k}: the card does not show the value: ${JSON.stringify(c)}`);
+    }
     const t = `run [redacted]${BS}u0067hp_${B36}=`;
     const card = PL.permText(t, 'shell', mk({}));
     assert.strictEqual(card.why, 'concealed', `#1543 F1 card: a command the reading without the shell readings cannot match back stays concealed, as on main: ${JSON.stringify(card)}`);
