@@ -293,6 +293,11 @@ In the drawer I choose **Open source** on a note: the chat it came from opens an
 
 ## Changes
 
+### 2026-11-16: the hard-link case of `test:cappedread` is not skipped on a refused link (issue #1808, no FR or task number added)
+
+`test:cappedread` skipped its hard-link case on any `linkSync` error, so a refused link on Linux or macOS, or under CI, passed with the one-link refusal untested. It now uses `scripts/fakes/hardlinks.ts` (`hardLinkOrSkip`, spec 096 FR-030): a skip only on Windows outside CI and only for EPERM, EXDEV, ENOTSUP, EMLINK; elsewhere a refused link fails the case. A mutant check in the suite fails at its own assert text for (a) `linkSync` throwing EPERM and (b) the compiled `readCapped` with its `nlink > 1` refusal removed. This extends T062.
+
+
 ### 2026-11-13: `check-notes-source` no longer races Noor's last reply (test only; CI run 43387311919 on PR #1561, issue #1697; a fix to the driver of FR-046, T050)
 
 *Found*: `UI shard (ubuntu-latest 2/4)` failed at 1440x900 with `Message shown. is announced`, on a PR that changes no notes code. **Cause: a race in the driver.** The per-turn wait (no caret, Send visible) can pass before Noor's reply has started, because the chat is idle before the turn and again after it. The last reply then still runs during *Open source*; when it ends, the chat announces *Reply finished*, which replaces *Message shown.* in `#srAnnounce` (`announce()` keeps only the last text, FR-172), and the exact-text poll fails. `Open source` itself is not at fault.
