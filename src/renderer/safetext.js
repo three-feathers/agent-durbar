@@ -105,9 +105,10 @@
   /* the reading as before PR 1721: the shared masks with their split step off (withoutSplit); throws without it */
   const old=fn=>{if(!SH||typeof SH.withoutSplit!=='function')throw new Error('no withoutSplit');return SH.withoutSplit(fn);};
   const splitFirst=raw=>{if(!SH||typeof SH.maskSplitTokens!=='function')throw new Error('no maskSplitTokens');const r=SH.maskSplitTokens(String(raw==null?'':raw));if(typeof r!=='string')throw new Error('mask');return r;};
-  /* spec 012 FR-184 (issue #1543): a line continuation (a backslash before a line break) inside a token is joined by the shell, but plainKeep makes the break a blank
-     (`\ `, a literal blank to the shell); a text with one is masked as written first (redact reads the continuation), as maskRaw0 does for a backslash */
-  const LINE_CONT=/\\\r?\n|\\\r/;
+  /* spec 012 FR-184 (issue #1543): a line continuation (a backslash, or cmd's caret, before a line break) inside a token is joined by the shell, but plainKeep makes the break a blank
+     (`\ `, a literal blank to the shell), and PowerShell's `u{…} escape, whose backtick plainKeep removes as Markdown; a text with one is masked as written first
+     (redact reads them), as maskRaw0 does for a backslash */
+  const LINE_CONT=/[\\^]\r?\n|[\\^]\r|`u\{[0-9A-Fa-f]{1,6}\}/;
   const maskPlain0=(raw,redact,codeWord)=>{try{
     let r0=raw;if(!asBefore&&LINE_CONT.test(raw)){r0=redact(raw);if(typeof r0!=='string')throw new Error('mask');}
     const u=unesc(r0),m=both(u,plainKeep(u,codeWord),redact);

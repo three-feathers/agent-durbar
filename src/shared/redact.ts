@@ -617,18 +617,18 @@ function snapshot(env?: Env): Env {
 
 /**
  * Spec 012 FR-184 (issue #1543): a run also takes a backslash before a line break (a shell line continuation inside a token), a backslash before a blank (`\ `,
- * shell-quoted: `-H X-Api-Key\:\ <value>`), a `\u{…}` escape whole, and a PowerShell backtick or a cmd caret before a token character (`` gh`p_ ``, `gh^p_`), so the shell's readings of
- * the run are judged whole. Read only by the step's shell mode (`redact` unions it with FR-181's step as before).
+ * shell-quoted: `-H X-Api-Key\:\ <value>`), a `\u{…}` escape and PowerShell's `` `u{…} `` whole, a cmd caret before a line break (cmd's line continuation), and a PowerShell backtick or a cmd caret
+ * before a token character (`` gh`p_ ``, `gh^p_`), so the shell's readings of the run are judged whole. Read only by the step's shell mode (`redact` unions it with FR-181's step as before).
  */
-const ESC_RUN_SHELL = /(?:[A-Za-z0-9_\-.~+/=:@%]|\\u\{[0-9A-Fa-f]{1,6}\}|\\[A-Za-z0-9_\-.~+/=:@%\\`*{}[\]()#!|<>\x20\t]|\\(?:\r\n|[\r\n])|[`^][A-Za-z0-9_\-.~+/=:@%])+/g;
+const ESC_RUN_SHELL = /(?:[A-Za-z0-9_\-.~+/=:@%]|[\\`]u\{[0-9A-Fa-f]{1,6}\}|\\[A-Za-z0-9_\-.~+/=:@%\\`*{}[\]()#!|<>\x20\t]|[\\^](?:\r\n|[\r\n])|[`^][A-Za-z0-9_\-.~+/=:@%])+/g;
 /** A run of token characters and backslash escapes (spec 012 FR-181): an escape of a token character or of a Markdown-escapable one. */
 const ESC_RUN = /(?:[A-Za-z0-9_\-.~+/=:@%]|\\[A-Za-z0-9_\-.~+/=:@%\\`*{}[\]()#!|<>])+/g;
 /** Spec 012 FR-184: what makes a run worth reading (a backslash, a backtick or a caret). */
 const ESC_ANY = /[\\`^]/;
 /** FR-181's: a backslash. */
 const ESC_FR181 = /\\/;
-/** Spec 012 FR-184: a shell line continuation (a backslash before a line break), which the shell removes with the break. */
-const LINE_CONT = /\\(?:\r\n|[\r\n])/g;
+/** Spec 012 FR-184: a shell line continuation (a backslash, or cmd's caret, before a line break), which the shell removes with the break. */
+const LINE_CONT = /[\\^](?:\r\n|[\r\n])/g;
 const ESC_BREAK = /\\[nrt]/;
 const ESC_BREAK_KEEP = /(\\[nrt])/;
 const ESC_BREAK_START = /^\\[nrt]/;
@@ -728,10 +728,13 @@ function keepBreaks(r: string, out: string): string {
  * near miss FR-080 keeps (the token is written whole there, glued to a digit, as `3ghp_…`).
  */
 const C_ESC = /\\(?:x([0-9A-Fa-f]{2})|u\{([0-9A-Fa-f]{1,6})\}|u([0-9A-Fa-f]{4})|U([0-9A-Fa-f]{8})|([0-7]{1,3})|([abefnrtvE])|([\s\S]))/g;
+/** Spec 012 FR-184: PowerShell's `` `u{…} `` escape, read like `\u{…}`. */
+const PS_U = /`u\{([0-9A-Fa-f]{1,6})\}/g;
 const C_NAMED: Record<string, string> = { a: '\x07', b: '\b', e: '\x1b', E: '\x1b', f: '\f', n: '\n', r: '\r', t: '\t', v: '\v' };
-/** Spec 012 FR-184: a run's C reading (`ghp\x5f<body>`, `ghp\u005f<body>`, `gh\160_<body>`), its line continuations removed. */
+/** Spec 012 FR-184: a run's C reading (`ghp\x5f<body>`, `ghp\u005f<body>`, `gh\160_<body>`, PowerShell's `` ghp`u{5f}<body> ``), its line continuations removed. */
 function cReading(w: string): string {
-  return w.replace(LINE_CONT, '').replace(C_ESC, (m: string, x?: string, ub?: string, u?: string, U?: string, o?: string, named?: string, other?: string) => {
+  const ps = w.replace(LINE_CONT, '').replace(PS_U, (m: string, h: string) => (parseInt(h, 16) <= 0x10ffff ? String.fromCodePoint(parseInt(h, 16)) : m));
+  return ps.replace(C_ESC, (m: string, x?: string, ub?: string, u?: string, U?: string, o?: string, named?: string, other?: string) => {
     const hex = x ?? ub ?? u ?? U;
     const cp = hex !== undefined ? parseInt(hex, 16) : o !== undefined ? parseInt(o, 8) : -1;
     if (cp >= 0) return cp <= 0x10ffff ? String.fromCodePoint(cp) : m;
@@ -751,13 +754,14 @@ function shellReading(w: string): string {
  * its backslashes gone is no path, and a named rule would hide it), and each checked for an env value (`vals`, the values `redact` replaced as written: one written with a backslash
  * inside, `<first half>\<second half>`): the shell reading; the C reading, alone and then read by the shell (a backtick and a `\x` escape in one run); the shell reading with `\n` and `\r` read as breaks and with `\t` read as a break (a JSON line
  * break before a token with a shell escape inside it); and, when the run holds an escaped `:`, `=` or blank (shell quoting, never a Windows path), the shell reading
- * through every rule (`-H X-Api-Key\:\ <value>`).
+ * through every rule (`-H X-Api-Key\:\ <value>`), and so the C reading when it spells more of them than the run (`$'X-Api-Key\x3a\x20<value>'`).
  */
 function shellReadingsHide(w: string, md: string, mask: string, vals: readonly string[]): boolean {
   // spec 012 FR-184: the rest of a token whose head the rules hid whole as written, after a line continuation, a backtick or a caret (`ghp_<36>\<line break><rest>`): the
-  // masks kept, those removed, FR-173's glued rest (its counts) decides
+  // masks kept, those removed, FR-173's glued rest (its counts) decides; and so after its C reading (`ghp_<20>\u{41}<rest>`: a code for a letter in the body)
   const glued = w.replace(LINE_CONT, '').replace(/[`^](?=[A-Za-z0-9_\-.~+/=:@%])/g, '');
-  if (glued !== w && w.includes('[redacted') && maskGluedRest(glued, mask) !== glued) return true;
+  const gluedHides = (x: string): boolean => x !== w && w.includes('[redacted') && maskGluedRest(x, mask) !== x;
+  if (gluedHides(glued) || gluedHides(cReading(glued))) return true;
   const env = (x: string): boolean => vals.some((v) => x.includes(v));
   // the bare shapes alone, not the glued rest: a reading that removes a backtick or a backslash after a mask the rules made glues the next word to it (`password=[redacted]`<word>`),
   // which is no token; FR-181's own reading keeps the glued rest for an escaped rest (`[redacted:NAME]\_<rest>`)
@@ -767,7 +771,8 @@ function shellReadingsHide(w: string, md: string, mask: string, vals: readonly s
   const c = cReading(w);
   if (env(md) || bare(sh) || bare(c) || bare(shellReading(c))) return true;
   if (/\\[nrt]/.test(w) && (bare(shellReading(breaksRead(w, 'nr'))) || bare(shellReading(breaksRead(w, 't'))))) return true;
-  return /\\[:=\x20\t]/.test(w) && all(sh);
+  const seps = (x: string): number => (x.match(/[:=\x20\t]/g) ?? []).length;
+  return (/\\[:=\x20\t]/.test(w) && all(sh)) || (seps(c) > seps(w) && all(shellReading(c)));
 }
 
 /** Replace secret environment values and key-like strings. Never throws; keeps line structure. */

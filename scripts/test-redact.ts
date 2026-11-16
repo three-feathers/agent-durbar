@@ -3,7 +3,7 @@ import * as assert from 'assert';
 import * as fs from 'fs';
 import * as path from 'path';
 import { Worker } from 'worker_threads';
-import { MASK_INPUT_MAX, REDACT_MAX_CHARS, createDebugSink, _uncappedForTest, cut, maskSchemeSecrets, maskTokenShapes, maskTokenShapesUnguarded, maskSecretArgs, maskSecretCommand, maskHomePaths, maskSecretUrl, maskNoteText, maskOutgoing, maskSplitTokens, _breakCallsForTest, keepShownBy, _unionMasksForTest, withoutSplit, _splitWorkForTest, redact, redactMarkdown, MARKDOWN_WORK, _markdownPassForTest, shQuote, splitCommand } from '../src/shared/redact';
+import { MASK_INPUT_MAX, REDACT_MAX_CHARS, createDebugSink, _uncappedForTest, cut, maskSchemeSecrets, maskTokenShapes, maskTokenShapesUnguarded, maskSecretArgs, maskSecretCommand, maskHomePaths, maskSecretUrl, maskNoteText, maskOutgoing, maskSplitTokens, _breakCallsForTest, keepShownBy, _unionMasksForTest, withoutSplit, withoutShell, _splitWorkForTest, redact, redactMarkdown, MARKDOWN_WORK, _markdownPassForTest, shQuote, splitCommand } from '../src/shared/redact';
 
 import { assertLinearShape, cpuMs } from './redact-growth-lib';
 import './safetext-shared'; // the desk's maskRaw (src/renderer/safetext.js) reads the compiled redact.ts, for the FR-181 differential below
@@ -2361,6 +2361,26 @@ assert.strictEqual(redact('{"a":"https://u:p@h/x","b":"y"}', {}), '{"a":"https:/
     ['an escaped colon and blank in a header', `curl -H X-Api-Key${BS}:${BS} ${PW} https://h.example/x`, [PW]],
     ['a JSON line break and a shell break escape in the token', `line one${BS}nghp_${B36.slice(0, 15)}${BS}t${B36.slice(15)}${BS}nline three`, [B36.slice(15)]],
     ['a second token glued by a full stop', `echo ghp_${B36.slice(0, 10)}${BS}n${B36.slice(10)}.g${BS}hp_${B36}`, [B36.slice(0, 10), B36]],
+    // pre-review of PR 1824 (Codex): a `\u{…}` code in the body after a head the rules hide whole, PowerShell's `u{…}, cmd's caret line continuation, and a header's
+    // colon and blank spelled as ANSI-C codes
+    ['\\u{…} in the body', `echo ghp_${B36.slice(0, 20)}${BS}u{${B36.charCodeAt(20).toString(16)}}${B36.slice(21)}`, [B36.slice(21)]],
+    ['the PowerShell `u{…}', `echo "ghp\`u{5f}${B36}"`, [B36]],
+    ['a cmd caret line continuation', `echo ghp_${B36.slice(0, 10)}^\r\n${B36.slice(10)}`, [B36.slice(10)]],
+    ['a cmd caret line continuation with LF', `echo ghp_${B36.slice(0, 10)}^\n${B36.slice(10)}`, [B36.slice(10)]],
+    ['an ANSI-C colon and blank in a header', `curl -H $'X-Api-Key${BS}x3a${BS}x20${PW}' https://h.example/x`, [PW]],
+    // pre-review of PR 1824 (the spec 103 bot): forms that pinned no reading of their own: a backtick or caret with a `\x` code in one run (the C reading read by the
+    // shell), an escaped `=` and an escaped tab (the escaped-separator reading), a `\t` break around a token, FR-181's round-5 cases, a doubled backslash
+    ['a backtick and a \\x code in one run', `echo gh\`p${BS}x5f${B36}`, [B36]],
+    ['a caret and a \\x code in one run', `echo $'g^h${BS}x70_${B36}'`, [B36]],
+    ['an escaped equals sign after a name', `export API_KEY${BS}=${PW}`, [PW]],
+    ['an escaped colon and tab in a header', `curl -H X-Api-Key${BS}:${BS}\t${PW} https://h.example/x`, [PW]],
+    ['an escaped tab after a name', `echo API_KEY${BS}\t${PW}`, [PW]],
+    ['a JSON tab around a token with a line break escape inside', `a${BS}tghp_${B36.slice(0, 15)}${BS}n${B36.slice(15)}${BS}tb`, [B36.slice(15)]],
+    ['round 5: a second token glued by a slash', `echo sk-proj-A1b2C3d4E5${BS}tF6G7h8I9j0_${B36}_x4Y5z6/g${BS}hp_${B36}`, ['A1b2C3d4E5', B36]],
+    ['round 5: a second token glued by an equals sign', `echo ghp_A1b2C3d4E5${BS}nF6G7h8I9j0K1l2M3n4O5p6Q7r8=g${BS}hp_${B36}`, ['A1b2C3d4E5', B36]],
+    ['round 5: the fuzz case', `echo ghp_sw${BS}clsF2vxJw4VKO${BS}rN${BS}x${BS}xanF2VVqd6xsUJASOD=AK${'IA'}QWERTYUIOPASDFGH`, ['clsF2vxJw4VKO', 'anF2VVqd6xsUJASOD', 'QWERTYUIOPASDFGH']],
+    ['round 5: an escaped full stop before a second token', `echo ghs${BS}_${B36.slice(0, 10)}${BS}t${B36.slice(10, 24)}${BS}j${B36.slice(24, 33)}${BS}.ghs_${B36}`, [B36.slice(0, 10), B36]],
+    ['a doubled backslash before the underscore', `echo ghp${BS}${BS}_${B36}`, [B36]],
     ['a second token glued by a colon in a JSON command', `{"cmd":"export T=ghp_${B36.slice(0, 10)}${BS}n${B36.slice(10)}:g${BS}hp_${B36}"}`, [B36.slice(0, 10), B36]],
   ];
   const surfaces = (t: string, e: Record<string, string>): Array<[string, string]> => {
@@ -2382,6 +2402,8 @@ assert.strictEqual(redact('{"a":"https://u:p@h/x","b":"y"}', {}), '{"a":"https:/
   assert.strictEqual(redact(`echo $'ghp${BS}x5f${B36}' | wc`, {}), `echo $'[redacted]' | wc`, '#1543 exact: ANSI-C quoting keeps its quotes');
   assert.strictEqual(maskSecretCommand(`curl -H X-Api-Key${BS}:${BS} ${PW} https://h.example/x`, {}), 'curl -H [redacted] https://h.example/x', '#1543 exact: the escaped header is one masked word');
   assert.strictEqual(LA.permText(`run echo g^hp_${B36} && ls`, 'shell', mk({})).text, 'run echo [redacted] && ls', '#1543 exact: the card hides the caret form');
+  // pre-review of PR 1824: the stretch before a hidden piece stays when the head of that piece hides alone (the head reading's `!hides(head)`)
+  assert.strictEqual(redact(`echo X-Api-Key${BS}tg${BS}hp_${B36}=AK${'IA'}QWERTYUIOPASDFGH`, {}), `echo X-Api-Key${BS}t[redacted]`, '#1543 head reading: the stretch before stays when the head hides alone');
   // a line continuation stays in the text after the mask: redact keeps the line structure
   for (const t of [`echo ghp_${B36.slice(0, 10)}${BS}\n${B36.slice(10)}\nnext line`, `a ghp_${B36.slice(0, 6)}${BS}\r\n${B36.slice(6, 20)}${BS}\n${B36.slice(20)} b`]) {
     const out = redact(t, {});
@@ -2391,9 +2413,9 @@ assert.strictEqual(redact('{"a":"https://u:p@h/x","b":"y"}', {}), '{"a":"https:/
   assert.ok(redact(`echo ghp_${B36.slice(0, 10)}${BS}\n${B36.slice(10)}\nnext line`, {}).endsWith('\nnext line'), '#1543 line structure: the next line stays');
   // what stays as written: no token in any reading
   for (const t of [`C:${BS}Users${BS}me${BS}x5fdir${BS}u0041pp`, `make all${BS}\ninstall`, 'use `code` and `more` here', 'a^b^c and 2^32', `printf '%s${BS}n' hello${BS}x20world`, `grep -E '^ghp_[A-Za-z0-9]{36}$' f`,
-    `echo $'line${BS}tone${BS}x41'`, `cd C:${BS} && dir`, `x${BS}x3ghp_${B36}`, `x${BS}u003ghp_${B36}`]) {
+    `echo $'line${BS}tone${BS}x41'`, `cd C:${BS} && dir`, `x${BS}x3ghp_${B36}`, `x${BS}u003ghp_${B36}`, 'echo 2^\n32 and 2^\r\n64', 'Write-Host "`u{2764} ok"', `printf 'a${BS}x3d${BS}x20b'`]) {
     assert.strictEqual(redact(t, {}), t, `#1543 no token: redact unchanged: ${JSON.stringify(t)}`);
-    assert.strictEqual(maskSecretCommand(t, {}), maskSecretCommand(t, {}), `#1543 no token: stable: ${JSON.stringify(t)}`);
+    assert.strictEqual(maskSecretCommand(t, {}), withoutShell(() => maskSecretCommand(t, {})), `#1543 no token: maskSecretCommand as with the shell mode off: ${JSON.stringify(t)}`);
   }
   // a run the shell readings hide can take a word another rule needs (`curl`): both readings count (redact's union, maskLabel's keep)
   {
@@ -2414,12 +2436,48 @@ assert.strictEqual(redact('{"a":"https://u:p@h/x","b":"y"}', {}), '{"a":"https:/
     // the excerpt removes the backtick and glues `mysql` to `main` (the password shows there on main too: FR-184's gap line), so it is checked for the token only
     for (const [surface, out] of surfaces(t2, {})) assert.strictEqual(shows(out, surface === 'excerpt' ? [B36.slice(20, 35)] : [B36.slice(20, 35), PW]), undefined, `#1543 caret and a backtick before mysql: ${surface} shows no secret: ${JSON.stringify(out)}`);
   }
+  // pre-review of PR 1824 (the spec 103 bot): the command mask keeps a piece that stands inside one of the reference's shown pieces (`$'` and `'` around the mask), at
+  // most WITHIN_MAX (64) such searches, the rest masked (fail closed)
+  {
+    assert.strictEqual(maskSecretCommand(`echo $'ghp${BS}x5f${B36}' | wc`, {}), `echo $'[redacted]' | wc`, '#1543 exact: maskSecretCommand keeps the ANSI-C quotes');
+    const many = Array.from({ length: 40 }, (_, i) => `$'ghp${BS}x5f${String(i).padStart(36, 'Q')}'`).join(' ');
+    const out = maskSecretCommand(`echo ${many}`, {}).split(' ');
+    assert.strictEqual(out[1], `$'[redacted]'`, `#1543 keepShownWithin: the first word keeps its quotes: ${out[1]}`);
+    assert.strictEqual(out[out.length - 1], '[redacted][redacted][redacted]', `#1543 keepShownWithin: over 64 searches the rest is masked: ${out[out.length - 1]}`);
+  }
+  // pre-review of PR 1824 (the spec 103 bot): the argument mask's per-argument union with the reading with the shell mode off: in a `sh -c` script the shell readings
+  // join `token:` to the token run, and only the reference reading keeps the keyword the name rule needs (`main` showed the token's rest there)
+  {
+    const out = maskSecretArgs(['sh', '-c', `ghp_${B36.slice(0, 2)}${BS}x6a${B36.slice(3, 20)}^${B36.slice(20)}token: ${PW}`], {}).join(' ');
+    assert.strictEqual(shows(out, [B36.slice(20), PW]), undefined, `#1543 union: maskSecretArgs in a sh -c script shows neither the token nor the password: ${JSON.stringify(out)}`);
+  }
+  // pre-review of PR 1824 (the spec 103 bot): the desk's reference reading (shell mode off) fails closed, so the result does too; a fresh copy of the desk module is
+  // handed a shared module whose withoutShell marks the reference reading, and a mask that throws only there
+  {
+    const file = require.resolve(path.join(__dirname, '..', '..', 'src', 'renderer', 'safetext.js'));
+    const saved = require.cache[file];
+    delete require.cache[file];
+    const ST2 = require(file) as typeof ST & { useShared(m: unknown): boolean };
+    require.cache[file] = saved;
+    const shared = require(path.join(__dirname, '..', 'src', 'shared', 'redact')) as Record<string, unknown> & { withoutShell<T>(fn: () => T): T };
+    let inRef = false;
+    assert.ok(ST2.useShared({ ...shared, withoutShell: <T>(fn: () => T): T => shared.withoutShell(() => { inRef = true; try { return fn(); } finally { inRef = false; } }) }), '#1543 desk fail closed: the fresh copy takes the shared module');
+    const red = (x: string): string => { if (inRef) throw new Error('reference reading fails'); return redact(x, {}); };
+    const t = `echo g${BS}hp_${B36} and more`;
+    assert.ok(ST2.maskRaw(t, (x) => redact(x, {})).includes('[redacted]'), '#1543 desk fail closed: with a working mask the text is masked (baseline)');
+    assert.strictEqual(ST2.maskRaw(t, red), '', '#1543 desk fail closed: maskRaw gives nothing when the reference reading fails');
+    assert.strictEqual(ST2.excerpt(t, red), '', '#1543 desk fail closed: the excerpt gives nothing when the reference reading fails');
+    assert.strictEqual(ST2.maskLabel(t, 'other', { redact: red }), '', '#1543 desk fail closed: maskLabel gives nothing when the reference reading fails');
+  }
   // odd input stays a string
-  for (const t of ['`', '^', '`'.repeat(1000), '^a'.repeat(1000), `${BS}\n`.repeat(500), `${BS}u{110000}`, `${BS}U0011FFFF`, `$'${BS}x`]) assert.strictEqual(typeof redact(t, {}), 'string', `#1543 odd input is a string: ${JSON.stringify(t.slice(0, 12))}`);
+  for (const t of ['`', '^', '`'.repeat(1000), '^a'.repeat(1000), `${BS}\n`.repeat(500), `${BS}u{110000}`, `${BS}U0011FFFF`, `$'${BS}x`, '`u{110000}', '^\n'.repeat(500), '`u{5f}'.repeat(500)]) {
+    for (const out of [redact(t, {}), maskSecretCommand(t, {}), maskSecretArgs([t], {})[0]]) assert.ok(typeof out === 'string' && out !== '[redaction failed]', `#1543 odd input is masked, not failed: ${JSON.stringify(t.slice(0, 12))} gave ${JSON.stringify(out.slice(0, 40))}`);
+  }
   // growth: linear in the text
   assertLinearShape('#1543 redact many ANSI-C tokens', (x) => { redact(x, env); }, (k) => Array.from({ length: Math.ceil(k / 50) }, (_, i) => `$'ghp${BS}x5f${String(i).padStart(36, 'Q')}'`).join(' ').slice(0, k), 400_000);
   assertLinearShape('#1543 redact many backtick and caret words', (x) => { redact(x, env); }, (k) => 'a`bc^de `f g^h '.repeat(Math.ceil(k / 15)).slice(0, k), 400_000);
   assertLinearShape('#1543 redact one long run of escapes', (x) => { redact(x, env); }, (k) => `a${BS}x41\`b^c${BS}u0041${BS}\n`.repeat(Math.ceil(k / 20)).slice(0, k), 400_000);
+  assertLinearShape('#1543 redact many caret continuations and PowerShell codes', (x) => { redact(x, env); }, (k) => `ab^\ncd\`u{5f}ef `.repeat(Math.ceil(k / 15)).slice(0, k), 400_000);
   assertLinearShape('#1543 maskSecretCommand many escaped headers', (x) => { _uncappedForTest.maskSecretCommand(x, env); }, (k) => `-H X-Api-Key${BS}:${BS} v `.repeat(Math.ceil(k / 20)).slice(0, k), 400_000);
 }
 
