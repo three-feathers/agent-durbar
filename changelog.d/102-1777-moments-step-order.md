@@ -1,0 +1,1 @@
+- **Moments driver steps independent** (spec 102, issue 1777): the empty-office step puts the stored floor back, so `MOMENTS_ONLY=cells,empty-office` no longer fails in the cells step; `test:momentsregistry` guards it. Simulator only.
