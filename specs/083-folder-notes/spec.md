@@ -293,7 +293,7 @@ In the drawer I choose **Open source** on a note: the chat it came from opens an
 
 ## Changes
 
-### 2026-11-16: the hard-link case of `test:cappedread` is not skipped on a refused link (issue #1808, no FR or task number added)
+### 2026-11-16: the hard-link case of `test:cappedread` is not skipped on a refused link (issue #1808, no FR added; task T062a added)
 
 `test:cappedread` skipped its hard-link case on any `linkSync` error, so a refused link on Linux or macOS, or under CI, passed with the one-link refusal untested. It now uses `scripts/fakes/hardlinks.ts` (`hardLinkOrSkip`, spec 096 FR-030): a skip only on Windows outside CI and only for EPERM, EXDEV, ENOTSUP, EMLINK; elsewhere a refused link fails the case. A mutant check in the suite fails at its own assert text for (a) `linkSync` throwing EPERM and (b) the compiled `readCapped` with its `nlink > 1` refusal removed. This extends T062.
 
