@@ -103,7 +103,7 @@ module.exports = async (ctx) => {
   assert.strictEqual(await js(`[...document.querySelectorAll('#wrGroup [data-world]')].map(b=>b.dataset.world).join()`), 'plain,photo', 'only Plain and the Photo office are offered');
   assert.ok(/World\u2019s default \(Office people\)/.test(await js(`document.querySelector('#chList [data-characters="theme"]').getAttribute('aria-label')`)), 'Characters starts with the world\u2019s default set');
   await js(`document.querySelector('#chList [data-characters="minimalist"]').click()`);
-  await must(`document.getElementById('dsR').textContent==='Real office shows Office people until Minimalist has Real office poses.'`, 'Minimalist has no Real office poses: Settings says so under Office layout (Cheeky has its own since T244)');
+  await must(`document.getElementById('dsR').textContent==='Real office draws the Minimalist people.'`, 'Minimalist has its own Real office set since T245: Settings says so under Office layout');
   await js(`document.querySelector('#chList [data-characters="theme"]').click()`);
   await must(`document.getElementById('dsR').textContent===''`, 'the line goes with the default');
   await js(`document.getElementById('scrClose').click()`);
