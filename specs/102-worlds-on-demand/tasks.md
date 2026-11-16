@@ -392,4 +392,4 @@ Fix round 2026-11-14 (review of #1740, T223 stays unticked): the contrast check 
 
 ## 2026-11-11: the Auto-follow desk mark in the arcade (issue #1399)
 
-- [x] T284 The Auto-follow desk mark (`.ro-plate.is-followed`) checked in the arcade at both sizes: `check-auto-follow` with `AF_WORLD=retro`, one `ui-suite` entry. Test: passes at both sizes; mutants (no `is-followed`, the Photo office drawn) each fail their own labelled assert. `[KNOWN GAP]`: see the 2026-11-11 delta.
+- [x] T284 The Auto-follow desk mark (`.ro-plate.is-followed`) checked in the arcade at both sizes: folded into T320's `DRIVER_WORLD=retro` run of `check-auto-follow` (its Real office step; one `ui-suite` row, `check-auto-follow retro`; no `AF_WORLD`), 2026-11-16. Test: passes at both sizes; mutants (no `is-followed`, the Photo office drawn, `.ro-l2` overflow visible) each fail their own labelled assert. `[KNOWN GAP]`: see the 2026-11-11 delta.
