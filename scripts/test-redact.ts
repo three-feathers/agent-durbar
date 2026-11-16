@@ -2523,6 +2523,17 @@ assert.strictEqual(redact('{"a":"https://u:p@h/x","b":"y"}', {}), '{"a":"https:/
       assert.ok(q <= 2, `#1543 F2 work ${k}: every rule ran ${q} times over the texts of one call (at most 2)`);
       assert.ok(rr <= 1, `#1543 F2 work ${k}: FR-181's readings of the run were made ${rr} times in one call (shared by both passes: at most 1)`);
     }
+    // review of PR 1824 (round 5): a JSON-escaped tab-separated table (a tab after each word) takes the separator reading on purpose (a coded tab after a name-like word
+    // can stand before a value): exactly four shell-reading passes (the C reading, the two break readings, the separator reading), two rule passes, one reading of the run
+    {
+      const row = 'col' + '_a' + `${BS}t` + 'col' + '_b' + `${BS}t` + 'col' + '_c' + `${BS}n`;
+      const p0 = _shellPassesForTest();
+      const q0 = _shapePassesForTest();
+      const r0 = _runReadsForTest();
+      redact(row.repeat(2000), {});
+      const got = [_shellPassesForTest() - p0, _shapePassesForTest() - q0, _runReadsForTest() - r0].join(' ');
+      assert.strictEqual(got, '4 2 1', '#1543 F2 work tabTable: shell-reading passes, rule passes and run readings');
+    }
     // review of PR 1824 (round 4): a coded tab right after a secret name (or a `=` after it) is still read as a separator, so the value after it stays hidden, while the
     // JSON-escaped text above keeps its one pass; and the tail of a token after a PowerShell `u{…} code in a run that also holds a JSON tab
     const TV = 'Q1w2E3r4T5y6' + 'U7i8O9p0A1s2';
