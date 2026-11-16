@@ -2508,7 +2508,7 @@ assert.strictEqual(redact('{"a":"https://u:p@h/x","b":"y"}', {}), '{"a":"https:/
     maskSecretCommand(`echo $'ghp${BS}x5f${B36}'`, {});
     assert.ok(_shellRefsForTest() > before, '#1543 F2: a command the shell readings change gets its reference reading');
     // and redact's cost on escape-heavy text stays near its cost without the shell readings (it was 1.8 to 2.9 times; FR-183's budgets and the growth suites are unchanged)
-    for (const [k, u] of Object.entries({ jsonTabs: `${BS}teyJaaaaa.`, jsonBreaks: `${BS}n`, jsonGh: `${BS}nghp_`, jsonCode: `${BS}u003d`, hexSk: `${BS}x3dsk-` })) {
+    for (const [k, u] of Object.entries({ jsonTabs: `${BS}teyJaaaaa.`, jsonBreaks: `${BS}n`, jsonGh: `${BS}nghp_`, jsonCode: `${BS}u003d`, hexSk: `${BS}x3dsk-`, lineContinuations: `pa${BS}\n` })) {
       const x = u.repeat(Math.ceil(131_072 / u.length));
       assertWithinYardstick(`#1543 F2 redact ${k} with the shell readings against without them`, () => { redact(x, {}); }, () => { withoutShell(() => redact(x, {})); }, 2);
     }

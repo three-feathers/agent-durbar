@@ -661,7 +661,7 @@ const TOKEN_ESC = /\\[A-Za-z0-9=:@%/]/;
  * glued rest (FR-173 counts). A fixed number of calls per distinct run, so linear; a
  * text without a backslash is returned as it is.
  */
-function maskEscapedRuns(s: string, mask: string, shell?: { vals: readonly string[] }, reads: Map<string, RunRead> = new Map()): string {
+function maskEscapedRuns(s: string, mask: string, shell?: { vals: readonly string[] }, reads: Map<string, RunRead> = new Map(), shapes: (x: string) => string = (x) => maskTokenShapes(x, mask)): string {
   if (!(shell ? ESC_ANY : ESC_FR181).test(s)) return s;
   const seen = new Map<string, boolean>();
   const hides = (r: string): boolean => {
@@ -670,10 +670,10 @@ function maskEscapedRuns(s: string, mask: string, shell?: { vals: readonly strin
       // spec 012 FR-184 (review of PR 1824, F2): FR-181's readings of a run are read once per `redact` call (`reads`), shared by its two passes
       let x = reads.get(r);
       if (x === undefined) {
-        const w = maskTokenShapes(r, mask);
+        const w = shapes(r);
         const md = withoutMarks(w, true).k;
         const sh = TOKEN_ESC.test(w) ? withoutMarks(w, true, true).k : '';
-        x = { hit: maskTokenShapes(md, mask) !== md || (sh !== '' && maskGluedRest(maskBareTokenShapes(sh, mask), mask) !== sh), w, md, sh };
+        x = { hit: shapes(md) !== md || (sh !== '' && maskGluedRest(maskBareTokenShapes(sh, mask), mask) !== sh), w, md, sh };
         reads.set(r, x);
       }
       hit = x.hit || (shell !== undefined && shellReadingsHide(x.w, x.md, x.sh, mask, shell.vals));
@@ -835,13 +835,17 @@ export function redact(text: unknown, env?: Env): string {
     // each (`unionMasks`): a run the shell readings join and hide whole can take a word another rule needed (`<token>`curl -u bob:<password>`), so neither simply wins
     const rules = (x: string): string => {
       const reads = new Map<string, RunRead>();
-      const e0 = maskEscapedRuns(x, MASK, undefined, reads);
-      const r0 = maskTokenShapes(e0, MASK);
+      // review of PR 1824 (round 2): the rules' result per distinct text, once per call: a run the shell mode joins by its line continuations can be the whole text, which
+      // the rules otherwise read again as the run (`w`), as its Markdown reading (`md`, the same text when it has no Markdown escape) and as the text itself (`r0`)
+      const memo = new Map<string, string>();
+      const shapes = (y: string): string => { let o = memo.get(y); if (o === undefined) { o = maskTokenShapes(y, MASK); memo.set(y, o); } return o; };
+      const e0 = maskEscapedRuns(x, MASK, undefined, reads, shapes);
+      const r0 = shapes(e0);
       if (shellOff || !ESC_ANY.test(x)) return r0;
-      const e1 = maskEscapedRuns(x, MASK, { vals }, reads);
+      const e1 = maskEscapedRuns(x, MASK, { vals }, reads, shapes);
       if (e1 === e0) return r0;
       shellReads++; // review of PR 1824 (F2): the shell readings changed this text, so the callers' reference reading without them is needed
-      return unionMasks(x, maskTokenShapes(e1, MASK), r0);
+      return unionMasks(x, shapes(e1), r0);
     };
     // spec 012 FR-184 (review of PR 1824, F4): the rules' output is at most REDACT_GROWTH times the text (plus one mask); over it (a mask per line of a few characters,
     // `<token head>\<line break>a\<line break>a…`) the text fails closed: one mask and the text's line breaks (the line count kept, nothing of it shown)
