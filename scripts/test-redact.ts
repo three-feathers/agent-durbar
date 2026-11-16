@@ -3,7 +3,7 @@ import * as assert from 'assert';
 import * as fs from 'fs';
 import * as path from 'path';
 import { Worker } from 'worker_threads';
-import { MASK_INPUT_MAX, REDACT_MAX_CHARS, createDebugSink, _uncappedForTest, cut, maskSchemeSecrets, maskTokenShapes, maskTokenShapesUnguarded, maskSecretArgs, maskSecretCommand, maskHomePaths, maskSecretUrl, maskNoteText, maskOutgoing, maskSplitTokens, _breakCallsForTest, keepShownBy, _unionMasksForTest, withoutSplit, _splitWorkForTest, redact, shQuote, splitCommand } from '../src/shared/redact';
+import { MASK_INPUT_MAX, REDACT_MAX_CHARS, createDebugSink, _uncappedForTest, cut, maskSchemeSecrets, maskTokenShapes, maskTokenShapesUnguarded, maskSecretArgs, maskSecretCommand, maskHomePaths, maskSecretUrl, maskNoteText, maskOutgoing, maskSplitTokens, _breakCallsForTest, keepShownBy, _unionMasksForTest, withoutSplit, _splitWorkForTest, redact, redactMarkdown, MARKDOWN_WORK, _markdownPassForTest, shQuote, splitCommand } from '../src/shared/redact';
 
 import { assertLinearShape, cpuMs } from './redact-growth-lib';
 import './safetext-shared'; // the desk's maskRaw (src/renderer/safetext.js) reads the compiled redact.ts, for the FR-181 differential below
@@ -2267,6 +2267,62 @@ assert.strictEqual(redact('{"a":"https://u:p@h/x","b":"y"}', {}), '{"a":"https:/
   assertLinearShape('#1725 the desk excerpt of many [x](', (x) => { ST.excerpt(x, red); }, (k) => '[x]('.repeat(Math.ceil(k / 4)).slice(0, k), 320_000);
   assertLinearShape('#1725 the desk mask of many [', (x) => { ST.maskRaw(x, red); }, (k) => '['.repeat(k), 80_000);
   assertLinearShape('#1613 redact many entities and marks', (x) => { redact(x, {}); }, (k) => 'a&#8203;b\u0301c&zwj;'.repeat(Math.ceil(k / 15)).slice(0, k), 400_000);
+}
+
+// spec 012 FR-183 (issue 1593): the shared redactMarkdown (maskSlashText's second pass) has the window's work budget; under it, exactly main's output
+{
+  // main's body at 7ce319809, unchanged (redact itself is not changed by FR-183)
+  const MK = '[redacted]';
+  const mainMarkdown = (u: string, k: string): string => {
+    let m = redact(k);
+    const seen = new Set<string>();
+    const found: string[] = [];
+    for (const r of u.match(/[A-Za-z0-9_\-.+/=:@%]{12,}/g) ?? []) { if (seen.has(r)) continue; seen.add(r); if (redact(r) !== r) found.push(r); }
+    found.sort((a, b) => b.length - a.length);
+    for (const r of found) m = m.replace(new RegExp(r.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&') + '[A-Za-z0-9_-]*', 'g'), () => MK);
+    return m;
+  };
+  const marks = (u: string): string => u.replace(/[*`~[\]]/g, '');
+  const pwRun = (k: number, f: (i: number) => string = (i) => 'password=' + String(i).padStart(14, 'K') + ' '): string => { let t = '*'; for (let i = 0; t.length < k; i++) t += f(i); return t.slice(0, k); };
+  assert.strictEqual(MARKDOWN_WORK, 2 ** 26, '#1593 redactMarkdown: the budget is 2^26');
+  assert.strictEqual((require(path.join(__dirname, '..', '..', 'src', 'renderer', 'safetext.js')) as { BOTH_WORK: number }).BOTH_WORK, MARKDOWN_WORK, '#1593 redactMarkdown: the same budget as the window');
+  assertLinearShape('#1593 redactMarkdown of many distinct secrets after a mark', (x) => void redactMarkdown(x, marks(x)), (k) => pwRun(k), 400_000);
+  const over = pwRun(200_000);
+  assert.strictEqual(redactMarkdown(over, marks(over)), MK, '#1593 redactMarkdown over the budget: the whole text is one mask');
+  const G = 'gh' + 'p_' + 'A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8';
+  let seed = 1593;
+  const rnd = (): number => { seed = (seed + 0x6d2b79f5) | 0; let t = Math.imul(seed ^ (seed >>> 15), 1 | seed); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+  const parts = [G, 'x**' + G + '**', G.slice(0, 20) + '*' + G.slice(20), 'password=Hx9Kq2Lm7Np4Rs', '*', '`', '~~', '[', ']', ' ', 'word', 'snake_case_name_here', '\n'];
+  // review of PR 1816, finding 1: the boundary, with an injected mask (as test-safetext's): 8,192 runs it changes x an output of 8,192 characters is exactly
+  // the budget and the pass runs; one more output character is over it (one mask). The budget counts the output (not the text) and only the changed runs.
+  {
+    const runs = Array.from({ length: 8192 }, (_, i) => 'q' + String(i).padStart(11, '0'));
+    const u = '*' + runs.join(' ');
+    const inj = (len: number) => (t: string): string => (/^q\d{11}$/.test(t) ? '[x]' : t.length > 1000 ? 'a'.repeat(len) : t);
+    assert.strictEqual(_markdownPassForTest(u, marks(u), inj(8192)), 'a'.repeat(8192), '#1593 redactMarkdown exactly at the budget: the pass runs');
+    assert.strictEqual(_markdownPassForTest(u, marks(u), inj(8193)), MK, '#1593 redactMarkdown one output character over the budget: one mask');
+    // round 2 of the review of PR 1816: over the budget the pass stops at the first run that crosses it (2^26 / 65,536 = 1,024 runs fit), not after all 8,192
+    let calls = 0;
+    const counted = (t: string): string => { if (/^q\d{11}$/.test(t)) calls++; return inj(65_536)(t); };
+    assert.strictEqual(_markdownPassForTest(u, marks(u), counted), MK, '#1593 redactMarkdown far over the budget: one mask');
+    assert.strictEqual(calls, 1025, '#1593 redactMarkdown over the budget: it stops at the run that crosses it (1,025 run masks, not 8,192)');
+  }
+  // about 2,800 distinct runs that the mask leaves alone and a secret every 500th: runs x length is over the budget, changed runs x length is not
+  const manyPlain = pwRun(40_000, (i) => (i % 500 === 7 ? 'password=Hx9Kq2Lm7Np4Rs' + i + ' ' : 'plainword' + String(i).padStart(5, '0') + ' '));
+  {
+    const r = redactMarkdown(manyPlain, marks(manyPlain));
+    assert.ok(r !== MK && r.length > 30_000 && !r.includes('Hx9Kq2Lm7Np4Rs'), '#1593 redactMarkdown of many runs the mask leaves alone: masked, not one mask');
+  }
+  // review of PR 1816, finding 2: a changed run too long for a RegExp (about 32,000 characters; main threw "Invalid regular expression") is one mask, not a throw
+  {
+    const long = '*' + G.slice(0, 4) + 'A1b2'.repeat(10_000) + ' ' + 'word '.repeat(10_000);
+    let r: string;
+    try { r = redactMarkdown(long, marks(long)); } catch { r = 'threw'; }
+    assert.strictEqual(r, MK, '#1593 redactMarkdown of a changed run of 40,000 characters: one mask, not a throw');
+  }
+  const texts: string[] = [pwRun(16_000), pwRun(40_000), manyPlain];
+  for (let i = 0; i < 1500; i++) { let t = ''; const n = 1 + Math.floor(rnd() * 16); for (let j = 0; j < n; j++) t += parts[Math.floor(rnd() * parts.length)]; texts.push(t); }
+  for (const t of texts) assert.strictEqual(redactMarkdown(t, marks(t)), mainMarkdown(t, marks(t)), `#1593 redactMarkdown as on main under the budget: ${JSON.stringify(t.slice(0, 50))}`);
 }
 
 console.log('redact: all checks passed');
