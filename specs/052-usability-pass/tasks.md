@@ -459,3 +459,6 @@
 
 ## 2026-11-14: warn, plain danger hover and plain red confirms in the themed looks (FR-053, FR-076, issue #1570)
 - [x] T345 `themes.css`: warn rest and hover, plain `.btn.danger:hover` restored after the themed `.btn` rule; `screens.js` Remove theme and `harnesses.js` End N sessions and update are `primary danger`; `danger-sites.js` ALLOW `harnesses.js`, 21 sites; new driver `scripts/check-052-warn-danger-btn.js` (in `ui-suite.js`) with mutants `WARN_MUTANT=old|warn|dangerhover|sites` [FR-053, FR-076, issue #1570, no new FR]
+
+## 2026-11-13: a screen header fits a narrow window (FR-138, issue #1635)
+- [x] T320 `screens.css`: `.scr-head` wraps (`flex-wrap:wrap`, `gap:calc(var(--s-1)*1.5) 12px`) and `#scrClose` keeps `margin-left:auto`, so Close ends the last row inside the window at 640 to 760 px; `check-mac-titlebar` adds 760x800, 700x800 and 640x800 over a chat (Tools tool usage, Cost, Activity, Settings): Close's right edge in the window, header not wider than its box, title not under the traffic lights (not Settings); mutant `MAC_TITLEBAR_MUTANT=nowrap` [FR-138, no new FR, issue #1635]
