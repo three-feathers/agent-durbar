@@ -529,6 +529,10 @@ export function checkDriverSource(f: string, t: string): string[] {
 }
 const allBad = drivers.flatMap((f) => checkDriverSource(f, fs.readFileSync(path.join(ROOT, 'scripts', f), 'utf8')));
 assert.deepStrictEqual(allBad, [], '\n' + allBad.join('\n'));
+// CodeQL js/bad-code-sanitization (alert 108): check-office-ops builds page code over several lines, which the per-line scan above does not see; a value spliced there goes through jsLiteral, never a bare JSON.stringify
+export const bareStringify = (t: string): boolean => /\$\{\s*JSON\.stringify\(/.test(t);
+assert.ok(!bareStringify(fs.readFileSync(path.join(ROOT, 'scripts', 'check-office-ops.js'), 'utf8')), 'check-office-ops.js splices values into page code with jsLiteral, not ${JSON.stringify(...)}');
+assert.ok(bareStringify('js(`new Set(${JSON.stringify(X)})`)') && !bareStringify('js(`new Set(${jsLiteral(X)})`)'), 'the check-office-ops splice guard catches the old form');
 // the guard itself catches what it is for (a mutation of a clean driver must fail)
 const clean = "const { helpers, jsLiteral } = require('./driver-helpers');\nmodule.exports = async (ctx) => { await ctx.js(`document.title=${jsLiteral(1)}`); };\n";
 assert.deepStrictEqual(checkDriverSource('x.js', clean), []);

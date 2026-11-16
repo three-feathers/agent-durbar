@@ -16,7 +16,9 @@
  *   - the top bar's rows (one row at wide sizes, two when it wraps): the first row's items start at x>=78, a wrapped row at the normal padding (the room is for the first row only);
  *   - a clickable element over an effective drag region (it could not be clicked on a Mac).
  * It exits non-zero on a failure and also when the driver itself throws or does not finish (a marker file decides, Electron exits 0 after
- * a driver error). The real traffic-light position, SF fonts, double-click zoom and real full screen are not covered (see the spec).
+ * a driver error). It also double-clicks the open screen's title (Settings, Tools, alone and over a chat) with real input: the page must
+ * take it as a title-bar double-click (and, on a Mac, send window:titleDoubleClick once). The real traffic-light position, SF fonts, the
+ * window's actual zoom and real full screen are not covered (see the spec).
  */
 'use strict';
 const fs = require('fs');
@@ -168,6 +170,45 @@ async function run(ctx) {
     if (SHOTS) { ctx.win.webContents.sendInputEvent({ type: 'mouseMove', x: 700, y: 500 }); await ctx.sleep(150); await ctx.shot(path.join(SHOTS, `052-mac-${name}-${size}.png`)); }
   };
 
+  /* spec 052 FR-085 (2026-11-15 delta): a real double-click (sendInputEvent, clickCount 1 then 2) on the open screen's title must be a
+     title-bar double-click: the page's filter says yes for the element the dblclick hit, and on a Mac the page sends window:titleDoubleClick
+     once. Main's own handler is swapped for a counter during the gesture, so the simulator window is not zoomed under the measurements. */
+  const titleDbl = async (name, size) => {
+    const label = `${name}-title-dblclick`;
+    const why = [];
+    await js(`(()=>{window.__titleDbl=null;if(!window.__titleDblArmed){window.__titleDblArmed=true;document.addEventListener('dblclick',e=>{window.__titleDbl={t:e.target,trusted:e.isTrusted}},true)}})()`);
+    const c = await js(`(()=>{const h=document.querySelector('#screen:not([hidden]) .scr-head h2');if(!h)return null;const r=h.getBoundingClientRect();const x=Math.round(r.left+Math.min(r.width/2,24)),y=Math.round(r.top+r.height/2);const e=document.elementFromPoint(x,y);return {x,y,tab:h.getAttribute('tabindex'),hit:!!e&&(e===h||h.contains(e))}})()`);
+    if (!c) why.push('no screen title found');
+    else if (!c.hit) why.push(`the point ${c.x},${c.y} is not on the title`);
+    let sent = 0;
+    if (!why.length) {
+      const { ipcMain } = require('electron');
+      const CH = 'window:titleDoubleClick';
+      const saved = ipcMain.listeners(CH);
+      const count = () => { sent++; };
+      ipcMain.removeAllListeners(CH); ipcMain.on(CH, count);
+      try {
+        const wc = ctx.win.webContents;
+        const m = (type, extra) => wc.sendInputEvent({ type, x: c.x, y: c.y, button: 'left', ...extra });
+        m('mouseMove'); m('mouseDown', { clickCount: 1 }); m('mouseUp', { clickCount: 1 }); m('mouseDown', { clickCount: 2 }); m('mouseUp', { clickCount: 2 });
+        const mac = process.platform === 'darwin';
+        let seen = null;
+        for (const end = Date.now() + 3000; Date.now() < end;) {
+          seen = await js(`(()=>{const d=window.__titleDbl;if(!d)return null;return {trusted:d.trusted,tag:d.t.tagName,send:window.DurbarKeys.shouldSendTitleDoubleClick(d.t)}})()`);
+          if (seen && (!mac || !seen.send || sent > 0)) break;
+          await ctx.sleep(50);
+        }
+        if (!seen) why.push('the page saw no dblclick');
+        else {
+          if (!seen.send) why.push(`the filter refuses the title (${seen.tag}, tabindex=${c.tab}): no zoom`);
+          if (mac && seen.send && sent !== 1) why.push(`window:titleDoubleClick sent ${sent} times (1 wanted)`);
+        }
+      } finally { ipcMain.removeListener(CH, count); for (const l of saved) ipcMain.on(CH, l); }
+    }
+    results.push({ name: label, size, ok: !why.length });
+    console.log(`[mac-titlebar] ${why.length ? 'FAIL' : 'ok  '} ${size} ${label} tabindex=${c ? c.tab : '-'} sent=${sent}${why.length ? '\n    ' + why.join('\n    ') : ''}`);
+  };
+
   for (const [w, h] of SIZES) {
     const size = `${w}x${h}`;
     await H.load({ w, h, ready: 'fit' }); // was a fixed 1500 ms; now waits for the page to stop changing (FR-096)
@@ -180,15 +221,15 @@ async function run(ctx) {
     await must('#foldersBtn'); await rec('folders-popover', size, 'plain'); await reset();
     await must('#defaultsBtn'); await rec('defaults-popover', size, 'plain'); await reset();
     /* spec 052 FR-164: + Folder and + Workspace are plain buttons (no menu); the office state above covers them */
-    await must('#settingsBtn'); await rec('settings', size, 'plain'); await reset();
-    await must('#toolsBtn'); await rec('tools', size, 'plain'); await reset();
+    await must('#settingsBtn'); await rec('settings', size, 'plain'); await titleDbl('settings', size); await reset();
+    await must('#toolsBtn'); await rec('tools', size, 'plain'); await titleDbl('tools', size); await reset();
     await openChat(); await rec('chat', size, 'chat');
     await showRestore(); await rec('chat-restoreStrip', size, 'chat'); await reset(); await openChat();
     await showAway(); await rec('chat-awayStrip', size, 'chat'); await reset(); await openChat();
     await showRestore(); await showAway(); await rec('chat-both-strips', size, 'chat'); await reset(); await openChat();
-    await js(`window.DurbarScreens.openSettings()`); await rec('chat-settings', size, 'chat');
+    await js(`window.DurbarScreens.openSettings()`); await rec('chat-settings', size, 'chat'); await titleDbl('chat-settings', size);
     await js(`window.DurbarScreens.close()`); await ctx.sleep(300);
-    await js(`window.DurbarScreens.openTools(null)`); await rec('chat-tools', size, 'chat');
+    await js(`window.DurbarScreens.openTools(null)`); await rec('chat-tools', size, 'chat'); await titleDbl('chat-tools', size);
     await js(`window.DurbarScreens.close()`); await ctx.sleep(300);
     await showRestore(); await js(`window.DurbarScreens.openSettings()`); await rec('chat-strip-settings', size, 'chat'); await js(`window.DurbarScreens.close()`); await reset(); await openChat();
     key('K', [process.platform === 'darwin' ? 'meta' : 'control']); await rec('chat-palette', size, 'modal'); await reset(); await openChat();
