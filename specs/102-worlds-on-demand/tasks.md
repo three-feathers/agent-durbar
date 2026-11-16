@@ -113,7 +113,7 @@ Needs spec 096's adapter capability and probes.
 - [ ] T107 [US8] Office people as a set pack, checked. Test: `test:world-packs`, `test:realoffice-assets` [FR-206].
 - [ ] T108 Cheeky frames to full, per picture by Paco (cost on his or the owner's plan, on their OK). Test: `test:world-packs`; `read:` approvals in `ASSETS.md` [FR-206].
 - [ ] T109 Prehistoric frames to full, per picture by Paco. Test: `test:world-packs`; `read:` approvals in `ASSETS.md` [FR-206].
-- [ ] T110 Minimalist to full poses, art in progress; until then `sim:` the Flat-only note. Test: `test:world-packs`; `read:` provenance and the owner's look [FR-206].
+- [x] T110 Minimalist to full poses, art in progress; until then `sim:` the Flat-only note. Test: `test:world-packs`; `read:` provenance and the owner's look [FR-206].
 - [ ] T111 Retro pixel people, new, 15 people approved by the owner; delivered by T201 and T207, with provenance and likeness fields. Test: `test:world-packs`, asset test; `read:` the owner's look [FR-200, FR-209].
 - [ ] T122 Retro pixel people as the `pixel` Characters value in Flat (T344 renames it `retro` if the owner confirms C1, a proposal), built with T290..T296 as T294 (C4), with a dated delta in spec 077 (its FR number taken at build): the Settings pick, heads by FR-203, built in RA8 behind the closed flag, opened by T230's one PR with spec 035 T089. Needs T111. Test: `test:characters`, `test:crew`, `test:crew-assets`, `check-characters`; a mutant that drops the value fails [FR-214] **Amended 2026-11-14:** the value stays `pixel` (T344 cancelled); opened by T230 without T089.
 - [ ] T112 My characters: level per character, 096's Real office frames. Test: `test:world-packs` on 096's fixture; `test:charstore` [FR-206].
@@ -333,6 +333,23 @@ Spec only; nothing built. C2..C7 answered by the owner 2026-11-11, C1 is answere
 - [x] T304 `shots-102-arcade`: the painted-pixel check treats a person whose box rounds to 0 px as BUSY (bounded 5 s re-read) and, if it stays so, fails naming `data-for`, size and style (spec Changes 2026-11-11; issue #1517). Test: `ARCADE_MUTANT=zero` passes, `ARCADE_MUTANT=zero-stuck` fails with the named person, the old code plus the same injected style died with IndexSizeError on the author's Mac (declared by the author, not reproduced by the reviewer; the old code has no mutant). The fix is not yet seen on Linux CI (spec Changes 2026-11-11 `[KNOWN GAP]`).
 - [x] T306 `check-status-filter`: the suite entry `check-status-filter retro` (arcade, 1440x900 and 1280x800) measures the office notice, the List notice and the List empty line at 4.5:1 or better; `themes.css` gives the arcade notice `--ink-2` and `--ink` (spec Changes 2026-11-11; issue #1559). Test: `FILTER_MUTANT=old|list|empty` each fail by their own label (`#filterNote 1.09:1`, `#list .filter-note 1:1`, `#list .list-wrap>.empty 1:1`). The same entry pins the Show all keyboard focus ring on the arcade floor (outline drawn, at least 2 px, at least 3:1; issue #1646): `FILTER_RING_MUTANT=none|thin|floor` each fail by `arcade Show all focus ring`.
 
+
+## 2026-11-12: the Postbox, the still highlights and auto-follow in the arcade (issue #1399)
+
+- [x] T318 `check-102-arcade-postbox` (new driver, `ui-suite` entry): the arcade's Postbox plate and its click. Test: passes at both sizes; `POSTBOX_MUTANT=click` fails at "a click on the Postbox opens Settings". `[KNOWN GAP]` macOS only.
+- [x] T319 `ui-suite` entry `check-unread retro`: the still highlights in the arcade (endless animations, since it draws no glow). Test: passes; `UNREAD_MUTANT=still` fails at "no glow breathes". `[KNOWN GAP]` macOS only.
+- [x] T320 `ui-suite` entry `check-auto-follow retro`: auto-follow's return and the plate's mark in the arcade. Test: passes; `AFOLLOW_MUTANT=mark` fails at "FR-183: its plate is marked". `[KNOWN GAP]` macOS only; the entry repeats the driver's flat part (about 215 s).
+
+## 2026-11-12: the logo's tile and the folder menu in the arcade (issue #1399)
+
+- [x] T316 `check-logo-family` asserts the arcade's own pair (spec 101 FR-034) at its Real office seam under `DRIVER_WORLD=retro`; `ui-suite` entry `check-logo-family retro`. Test: it passes at both sizes; `LOGO_MUTANT=arcade|ink|tokens|size` each fail at their own assert.
+- [x] T317 `check-102-arcade-menu` (new driver, `ui-suite` entry): the folder menu on an arcade sign lists Move earlier / later, either says the room keeps its place (spec 097 FR-354), signs and saved order unchanged. Test: passes at both sizes; `ARCMENU_MUTANT=swallow|move|save` each fail at their own assert. `[KNOWN GAP]` macOS only.
+
+## 2026-11-12: the Settings section list in the arcade (issue #1399)
+
+- [x] T321 `ui-suite` entry `check-settings-nav retro`: the section list over the arcade (the driver's Real office row only under `DRIVER_WORLD=retro`). Test: passes at both sizes; `NAV_MUTANT=entry` fails at "one entry per heading on the page". `[KNOWN GAP]` macOS only.
+
+
 ## 2026-11-11: the arcade plate's status word and helper dots (issue #1558)
 
 - [x] T307 The arcade plate with helpers: +N whole, then the status word whole, then dots that drop out whole in the heads' order (`.ro-wd`/`.ro-tk`/`.ro-hc`, `world.css`, `orderedHelpers` for the plate); `shots-102-arcade` marks case at both sizes and on the 122 px plate; mutants `cutword`, `cutplate`, `nodots`, `sliver`, `clipstate` each fail at their label (spec Changes 2026-11-11, 102 FR-311). **Round 3, 2026-11-12:** `.ro-wd`/`.ro-tk` are `display:contents` on the clamped (lounge, waiting, limit, asleep) plates, so the World matrix's `lounge` cells pass again; the narrow plate's ellipsis exemption in the driver tests the clipping box, and the case *narrow squeezed* (1.4 px of letter spacing on the word, so it must be cut) exercises that ellipsis path on any machine: mutants `noell`, `spill` fail at its label (`issue 1558: ... narrow squeezed: ...`), and a mutant `squeezefit` (the word made to fit) fails at its "actually cut" label; `ARCADE_FONT=wide` (the `shots-102-arcade wide font` entry) now runs the narrow cases alone in Verdana, else DejaVu Sans (spec Changes 2026-11-12, 102 FR-312, FR-311 after the merge).
@@ -381,3 +398,4 @@ Fix round 2026-11-14 (review of #1740, T223 stays unticked): the contrast check 
 
 - [x] T347 Remove the inert Retro theme migration: `migrateRetroTheme`, `RETRO_MIGRATION_OPEN`, the `retroOpen` argument, `retroMovePending`, `ackRetroMove`, the settings field; `test:characters` asserts an old-theme user keeps theme and Characters, no write, no marker; mutants: an export back, a rewrite on load. Test: `test:characters`; `npm test` [owner decision 2026-11-14, supersedes FR-266, T227].
 - [x] T348 Docs read 2026-11-14: README, `docs/features.md`, `docs/themes.md`, `docs/world-design.md` and `docs/limits.md` never said the Retro Pixel theme retires or its users migrate, so no doc line changes (`Docs: n/a`); the spec lines are the only place. Test: `npm test` (docs checks).
+- [x] T351 The moments driver's empty-office step restores the stored floor in a `finally`, so a step that runs after it (cells) starts on the first floor (issue #1777). Test first: `test:momentsregistry` fails on the driver without the restore (mutant), and `MOMENTS_ONLY=cells,empty-office MOMENTS_WORLDS=retro` failed before and passes after, in both orders.

@@ -1,0 +1,1 @@
+- Changed: the office-operations UI check now asserts that every running infinite animation steps at most 10 changes a second, per animation, at 15 and 40 agents (spec 097 T158, issue #1401); only the walker bob and the dizzy spin may be continuous (issue #1679). No visible change.
