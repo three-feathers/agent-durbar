@@ -1,1 +1,0 @@
-- Test driver only: `check-097-kids` asks for the window's focus before it measures the "+K" keyboard ring and prints the measured outline and focus state when the ring is missing (spec 097 T349, #1723).
