@@ -465,3 +465,6 @@
 
 ## 2026-11-16: check-052-focus-ring modality per control (FR-052, issue #1820)
 - [x] T348 `check-052-focus-ring`: per control, `H.needFocus` again and one real F13 key counted by a capture-phase keydown listener before `focus()`; each look runs under `H.focusPage({ emulate: 'first' })` (released after the loop; PR #1823's Windows run showed hasFocus=false at the assert); the `:focus-visible` timeout prints hasFocus, activeElement, visibilityState [FR-052, FR-087]
+
+## 2026-11-15: a double-click on a screen title zooms the window on a Mac (FR-085, issue #1659)
+- [x] T347 `keys.js` `TITLE_CONTROLS`: `[tabindex]:not([tabindex="-1"])` (the screen title `h2` focus target is no control); `test-macos` selector case; `check-mac-titlebar` double-clicks the screen title with real input in `settings`, `tools`, `chat-settings`, `chat-tools` at both sizes (filter yes, one `window:titleDoubleClick` on a Mac, main's handler swapped for a counter); mutant: the old selector fails at the 8 `*-title-dblclick` labels [FR-085, no new FR, issue #1659]
