@@ -105,16 +105,20 @@
   /* the reading as before PR 1721: the shared masks with their split step off (withoutSplit); throws without it */
   const old=fn=>{if(!SH||typeof SH.withoutSplit!=='function')throw new Error('no withoutSplit');return SH.withoutSplit(fn);};
   const splitFirst=raw=>{if(!SH||typeof SH.maskSplitTokens!=='function')throw new Error('no maskSplitTokens');const r=SH.maskSplitTokens(String(raw==null?'':raw));if(typeof r!=='string')throw new Error('mask');return r;};
+  /* spec 012 FR-184 (issue #1543): a line continuation (a backslash before a line break) inside a token is joined by the shell, but plainKeep makes the break a blank
+     (`\ `, a literal blank to the shell); a text with one is masked as written first (redact reads the continuation), as maskRaw0 does for a backslash */
+  const LINE_CONT=/\\\r?\n|\\\r/;
   const maskPlain0=(raw,redact,codeWord)=>{try{
-    const u=unesc(raw),m=both(u,plainKeep(u,codeWord),redact);
+    let r0=raw;if(!asBefore&&LINE_CONT.test(raw)){r0=redact(raw);if(typeof r0!=='string')throw new Error('mask');}
+    const u=unesc(r0),m=both(u,plainKeep(u,codeWord),redact);
     return m.replace(/_/g,'');}catch(e){if(e===OVER)throw e;return null;}}; /* OVER is final: unhid's catch gives null, never the text as written */
-  const maskPlain=(raw,redact,codeWord)=>{if(typeof redact!=='function')return null;
+  const maskPlain1=(raw,redact,codeWord)=>{if(typeof redact!=='function')return null;
     const s0=String(raw==null?'':raw);let w;try{w=splitFirst(s0.length>DESK_SPLIT_MAX?windowOf(shownSource(s0)):s0);}catch(e){return null;}
     const go=(x,u)=>u(x,t=>maskPlain0(t,redact,codeWord),c=>plainKeep(unesc(c),codeWord).replace(/_/g,''),null);
     try{return both2(raw,w,go);}catch(e){return null;}};
   /* the masked text, not made plain or cut: masked as it is, and again on the plain-kept text when Markdown that can split a token is
      present (otherwise the text is shown as it is). '' when masking is not possible. */
-  const maskRaw=(raw,redact)=>{if(typeof redact!=='function')return '';const s0=String(raw==null?'':raw);
+  const maskRaw1=(raw,redact)=>{if(typeof redact!=='function')return '';const s0=String(raw==null?'':raw);
     const go=(x,u)=>u(x,t=>maskRaw0(t,redact),c=>unesc(c),'');
     if(s0.length>DESK_SPLIT_MAX){try{const r=old(()=>go(s0,unhid));return r==null?'':r;}catch(e){return '';}} /* round 6: a long text, the reading as before alone */
     let w;try{w=splitFirst(s0);}catch(e){return '';}try{const m=both2(raw,w,go);return m==null?'':m;}catch(e){return '';}};
@@ -123,6 +127,18 @@
   const maskRaw0=(raw,redact)=>{try{const r0=raw.indexOf('\\')<0?raw:redact(raw);if(typeof r0!=='string')return '';const u=unesc(r0),m1=redact(u);if(typeof m1!=='string')return '';
     if(!SPLIT.test(u))return m1; /* no Markdown that can split a token: one pass is enough (and keeps the live readout cheap) */
     const k=plainKeep(u),m2=both(u,k,redact);return m2!==k?m2:m1;}catch(e){return '';}}; /* m2 holds what either pass found (both) */
+  /* spec 012 FR-184 (issue #1543): the shared masks read a shell's escapes (a backslash, a backtick or a caret between token characters: `$'ghp\x5f…'`, `gh`p_…`, `g^hp_…`)
+     and hide such a run whole, which can take a word or a value another step of the desk needed. So a text that holds one is read twice, with those readings
+     (the head) and without them (the shared withoutShell: escaped runs as FR-181 read them), and nothing the second hides shows (keep); when the second
+     fails closed (null or ''), so does the result. A text without one is read once, as before. Without the shared module: throws (callers fail closed). */
+  const SHELL_GATE=/\\|[A-Za-z0-9_\-.~+\/=:@%][`^][A-Za-z0-9_\-.~+\/=:@%]/;
+  const noShell=fn=>{if(!SH||typeof SH.withoutShell!=='function')throw new Error('no withoutShell');return SH.withoutShell(fn);};
+  /* true while the reference reading runs: the desk's own FR-184 step (maskPlain0's continuation pass) is off in it too, so it reads as before */
+  let asBefore=false;
+  const shellBoth=(raw,fn)=>{if(asBefore)return fn();const h=fn();if(h==null||h===''||!SHELL_GATE.test(String(raw==null?'':raw)))return h;
+    let r;asBefore=true;try{r=noShell(fn);}finally{asBefore=false;}if(r==null||r==='')return r;return h===r?h:keep(h,r);};
+  const maskPlain=(raw,redact,codeWord)=>{try{return shellBoth(raw,()=>maskPlain1(raw,redact,codeWord));}catch(e){return null;}};
+  const maskRaw=(raw,redact)=>{try{const m=shellBoth(raw,()=>maskRaw1(raw,redact));return m==null?'':m;}catch(e){return '';}};
   /* raw agent text -> masked, plain, at most n characters (no n: not cut). '' when masking is not possible. */
   const excerpt=(raw,redact,n,codeWord)=>{const p=maskPlain(String(raw==null?'':raw),redact,codeWord);if(p===null)return '';return n==null?p:cutter(p,n);};
   /* a tool label masked the way the live readout (LIVEACT) masks it: a command by maskSecretCommand, a URL by maskSecretUrl, anything else by redact.
@@ -146,7 +162,7 @@
       seen.add(r);if(capped&&seen.size>ESC_RUNS)return '';const u=unesc(r);if(got(u)!==u)hit.add(r);}
     const o=got(hit.size?s.replace(ERUN,r=>hit.has(r)?'[redacted]':r):s); /* one pass: each run is replaced where it stands, so no order is needed */
     const u=unesc(o);return got(u)===u?o:'';};
-  const maskLabel=(raw,kind,mask)=>{const s=String(raw==null?'':raw).trim();if(!s)return '';const m=mask||{};
+  const maskLabel1=(raw,kind,mask)=>{const s=String(raw==null?'':raw).trim();if(!s)return '';const m=mask||{};
     const f=kind==='run'?m.cmd:isUrl(s)?m.url:m.redact;if(typeof f!=='function')return '';
     /* spec 012 FR-182 (review of PR 1721, round 4): each mask call masks the split tokens first, then reads as before (escMask's escaped runs are replaced
        before, so a token glued to an escaped one is still hidden in place, FR-180) */
@@ -157,6 +173,7 @@
       const sf=splitFirst(s);if(sf===s&&unhide(s)===s)return ref; /* round 9: the split step on the label once, shared with the reading below */
       const h=escMask(s,t=>{const go=(x,u)=>u(x,one,c=>c,'');if(t.length>DESK_SPLIT_MAX){const r=old(()=>go(t,unhid));return r==null?'':r;}const m=both2(t,t===s?sf:splitFirst(t),go);return m==null?'':m;});
       return h?keep(h,ref):'';}catch(e){return '';}};
+  const maskLabel=(raw,kind,mask)=>{try{return shellBoth(raw,()=>maskLabel1(raw,kind,mask));}catch(e){return '';}};
   /* the wrapper the page uses: fallback words and the "is masking possible" flag */
   function create(o){
     const red=o&&typeof o.redact==='function'?o.redact:null, cut=o&&typeof o.cut==='function'?o.cut:cutter;

@@ -2325,4 +2325,102 @@ assert.strictEqual(redact('{"a":"https://u:p@h/x","b":"y"}', {}), '{"a":"https:/
   for (const t of texts) assert.strictEqual(redactMarkdown(t, marks(t)), mainMarkdown(t, marks(t)), `#1593 redactMarkdown as on main under the budget: ${JSON.stringify(t.slice(0, 50))}`);
 }
 
+// spec 012 FR-184 (issue #1543, T166): a token behind a shell's backslash forms (ANSI-C `$'…'` escapes, JSON `\u` escapes, a line continuation inside it, the PowerShell
+// backtick, the cmd caret, an escaped colon and blank in a header, an env value written with a backslash inside it) is hidden on every surface the approval card and the
+// desk are built from. Every token and value here is invented and built in code from pieces.
+{
+  const BS = '\\';
+  const B36 = 'Q1w2E3r4T5y6U7i8O9p0A1s2D3f4G5h6J7k8';
+  const VAL = 'Vq7v0TzR8pLw3QaZ'; // an invented env value, under a secret-looking name
+  const PW = 'Hx9Kq2Lm7Np4Rs';
+  const env = { MY_API_KEY: VAL };
+  const ST = require(path.join(__dirname, '..', '..', 'src', 'renderer', 'safetext.js')) as { maskRaw(t: string, r: (s: string) => string): string; excerpt(t: string, r: (s: string) => string): string; maskLabel(t: string, k: string, m: Record<string, (s: string) => string>): string };
+  const LA = require(path.join(__dirname, '..', '..', 'src', 'renderer', 'liveact.js')) as { permText(t: string, k: string, m: Record<string, (s: string) => string>): { text: string; hidden: boolean }; phrase(o: { kind: string; tool: string; label: string }, m: Record<string, (s: string) => string>): string };
+  const mk = (e: Record<string, string>) => ({ redact: (t: string) => redact(t, e), cmd: (t: string) => maskSecretCommand(t, e), url: (t: string) => maskSecretUrl(t, e) });
+  /** Any 8 characters of a secret in `out`. */
+  const shows = (out: string, secrets: string[]): string | undefined => {
+    for (const b of secrets) for (let i = 0; i + 8 <= b.length; i++) if (out.includes(b.slice(i, i + 8))) return b.slice(i, i + 8);
+    return undefined;
+  };
+  // [form, text, the secrets that must not show]; every one of these is shown in clear on main at 4056ec33b
+  const FORMS: Array<[string, string, string[]]> = [
+    ['ANSI-C \\x5f', `echo $'ghp${BS}x5f${B36}'`, [B36]],
+    ['ANSI-C \\x70', `echo $'gh${BS}x70_${B36}'`, [B36]],
+    ['ANSI-C octal', `echo $'gh${BS}160_${B36}'`, [B36]],
+    ['ANSI-C letters', `echo $'${BS}x67${BS}x68p_${B36}'`, [B36]],
+    ['ANSI-C escape in the body', `echo $'ghp_${B36.slice(0, 12)}${BS}x${B36.charCodeAt(12).toString(16)}${B36.slice(13)}'`, [B36.slice(13)]],
+    ['JSON \\u005f', `echo ghp${BS}u005f${B36}`, [B36]],
+    ['JSON \\u in a JSON command', `{"command":"echo ghp${BS}u005f${B36}"}`, [B36]],
+    ['\\u{5f}', `echo ghp${BS}u{5f}${B36}`, [B36]],
+    ['a line continuation in the body', `echo ghp_${B36.slice(0, 10)}${BS}\n${B36.slice(10)}`, [B36.slice(10)]],
+    ['a line continuation with CRLF', `echo ghp_${B36.slice(0, 10)}${BS}\r\n${B36.slice(10)}`, [B36.slice(10)]],
+    ['the PowerShell backtick', `echo gh\`p_${B36}`, [B36]],
+    ['the PowerShell backtick in the body', `Write-Output ghp_${B36.slice(0, 20)}\`${B36.slice(20)}`, [B36.slice(20)]],
+    ['the cmd caret', `echo g^hp_${B36}`, [B36]],
+    ['the cmd caret in the body', `echo ghp_${B36.slice(0, 20)}^${B36.slice(20)}`, [B36.slice(20)]],
+    ['an escaped colon and blank in a header', `curl -H X-Api-Key${BS}:${BS} ${PW} https://h.example/x`, [PW]],
+    ['a JSON line break and a shell break escape in the token', `line one${BS}nghp_${B36.slice(0, 15)}${BS}t${B36.slice(15)}${BS}nline three`, [B36.slice(15)]],
+    ['a second token glued by a full stop', `echo ghp_${B36.slice(0, 10)}${BS}n${B36.slice(10)}.g${BS}hp_${B36}`, [B36.slice(0, 10), B36]],
+    ['a second token glued by a colon in a JSON command', `{"cmd":"export T=ghp_${B36.slice(0, 10)}${BS}n${B36.slice(10)}:g${BS}hp_${B36}"}`, [B36.slice(0, 10), B36]],
+  ];
+  const surfaces = (t: string, e: Record<string, string>): Array<[string, string]> => {
+    const m = mk(e);
+    return [['redact', redact(t, e)], ['maskSecretCommand', maskSecretCommand(t, e)], ['maskSecretArgs', maskSecretArgs(['run', t], e).join(' ')],
+      ['maskRaw', ST.maskRaw(t, m.redact)], ['excerpt', ST.excerpt(t, m.redact)], ['maskLabel run', ST.maskLabel(t, 'run', m)], ['maskLabel other', ST.maskLabel(t, 'other', m)],
+      ['permText shell', LA.permText('run ' + t, 'shell', m).text], ['permText other', LA.permText(t, 'other', m).text], ['phrase', LA.phrase({ kind: 'run', tool: 'Bash', label: t }, m)]];
+  };
+  for (const [what, t, secrets] of FORMS) {
+    for (const [surface, out] of surfaces(t, {})) assert.strictEqual(shows(out, secrets), undefined, `#1543 ${what}: ${surface} shows no part: ${JSON.stringify(t)} gave ${JSON.stringify(out)}`);
+    assert.ok(redact(t, {}).includes('[redacted]') && maskSecretCommand(t, {}).includes('[redacted]'), `#1543 ${what}: a mask is shown`);
+  }
+  // the env value written with a backslash inside it (the shell drops it), and with the backslash doubled
+  assert.ok(redact('echo ' + VAL, {}).includes(VAL), '#1543 env: the value alone is no token shape (baseline)');
+  for (const t of [`echo ${VAL.slice(0, 3)}${BS}${VAL.slice(3)}`, `echo "${VAL.slice(0, 3)}${BS}${BS}${VAL.slice(3)}"`, `echo $'${VAL.slice(0, 5)}${BS}x${VAL.charCodeAt(5).toString(16)}${VAL.slice(6)}'`]) {
+    for (const [surface, out] of surfaces(t, env)) assert.strictEqual(shows(out, [VAL]), undefined, `#1543 env value with a backslash inside: ${surface} shows no part: ${JSON.stringify(t)} gave ${JSON.stringify(out)}`);
+  }
+  // exact outputs: the command keeps its shape around the mask
+  assert.strictEqual(redact(`echo $'ghp${BS}x5f${B36}' | wc`, {}), `echo $'[redacted]' | wc`, '#1543 exact: ANSI-C quoting keeps its quotes');
+  assert.strictEqual(maskSecretCommand(`curl -H X-Api-Key${BS}:${BS} ${PW} https://h.example/x`, {}), 'curl -H [redacted] https://h.example/x', '#1543 exact: the escaped header is one masked word');
+  assert.strictEqual(LA.permText(`run echo g^hp_${B36} && ls`, 'shell', mk({})).text, 'run echo [redacted] && ls', '#1543 exact: the card hides the caret form');
+  // a line continuation stays in the text after the mask: redact keeps the line structure
+  for (const t of [`echo ghp_${B36.slice(0, 10)}${BS}\n${B36.slice(10)}\nnext line`, `a ghp_${B36.slice(0, 6)}${BS}\r\n${B36.slice(6, 20)}${BS}\n${B36.slice(20)} b`]) {
+    const out = redact(t, {});
+    assert.strictEqual(out.split('\n').length, t.split('\n').length, `#1543 line structure: the line breaks are kept: ${JSON.stringify(out)}`);
+    assert.ok(shows(out, [B36.slice(6)]) === undefined && out.includes('[redacted]'), `#1543 line structure: the token is hidden: ${JSON.stringify(out)}`);
+  }
+  assert.ok(redact(`echo ghp_${B36.slice(0, 10)}${BS}\n${B36.slice(10)}\nnext line`, {}).endsWith('\nnext line'), '#1543 line structure: the next line stays');
+  // what stays as written: no token in any reading
+  for (const t of [`C:${BS}Users${BS}me${BS}x5fdir${BS}u0041pp`, `make all${BS}\ninstall`, 'use `code` and `more` here', 'a^b^c and 2^32', `printf '%s${BS}n' hello${BS}x20world`, `grep -E '^ghp_[A-Za-z0-9]{36}$' f`,
+    `echo $'line${BS}tone${BS}x41'`, `cd C:${BS} && dir`, `x${BS}x3ghp_${B36}`, `x${BS}u003ghp_${B36}`]) {
+    assert.strictEqual(redact(t, {}), t, `#1543 no token: redact unchanged: ${JSON.stringify(t)}`);
+    assert.strictEqual(maskSecretCommand(t, {}), maskSecretCommand(t, {}), `#1543 no token: stable: ${JSON.stringify(t)}`);
+  }
+  // a run the shell readings hide can take a word another rule needs (`curl`): both readings count (redact's union, maskLabel's keep)
+  {
+    const t = `${VAL.slice(0, 7)}${BS}122${VAL.slice(8)}${BS}curl -u bob:${PW} h ${BS}> x`;
+    assert.strictEqual(VAL[7], 'R', '#1543 union: the fixture spells R as \\122');
+    for (const [surface, out] of surfaces(t, env)) assert.strictEqual(shows(out, [VAL, PW]), undefined, `#1543 union: ${surface} shows neither the value nor the password: ${JSON.stringify(out)}`);
+    const t2 = `${BS}sk-proj-${B36}${BS}n8ck${B36}\`curl -u bob:${PW} h`;
+    // not the excerpt: it removes the backtick, which glues `curl` to the token on main too (the password shows there as on main; written in FR-184's gap line)
+    for (const [surface, out] of surfaces(t2, {}).filter(([n]) => n !== 'excerpt')) assert.strictEqual(shows(out, [B36, PW]), undefined, `#1543 union (backtick): ${surface} shows no secret: ${JSON.stringify(out)}`);
+  }
+  // a line continuation joins `--password` to a token: the command mask still reads the flag (its union with the reading without the shell mode), and the desk shows
+  // no password either; a word after a whole token stays (the rules' masks stand as a blank in the shell readings)
+  {
+    const t = `echo "ghs_${B36}${BS}\n--password ${PW}`;
+    for (const [surface, out] of surfaces(t, {})) assert.strictEqual(shows(out, [B36, PW].filter((x) => surface === 'maskSecretCommand' || surface.startsWith('maskLabel run') || surface === 'permText shell' || surface === 'phrase' || x === B36)), undefined, `#1543 continuation before a flag: ${surface} shows no secret: ${JSON.stringify(out)}`);
+    assert.strictEqual(redact(`echo ghs_${B36}${BS}\n--verbose /x`, {}), `echo [redacted]${BS}\n--verbose /x`, '#1543 continuation after a whole token: the next word stays');
+    const t2 = `"AIza${B36.slice(0, 20)}^${B36.slice(20, 35)} main\`mysql -p${PW}`;
+    // the excerpt removes the backtick and glues `mysql` to `main` (the password shows there on main too: FR-184's gap line), so it is checked for the token only
+    for (const [surface, out] of surfaces(t2, {})) assert.strictEqual(shows(out, surface === 'excerpt' ? [B36.slice(20, 35)] : [B36.slice(20, 35), PW]), undefined, `#1543 caret and a backtick before mysql: ${surface} shows no secret: ${JSON.stringify(out)}`);
+  }
+  // odd input stays a string
+  for (const t of ['`', '^', '`'.repeat(1000), '^a'.repeat(1000), `${BS}\n`.repeat(500), `${BS}u{110000}`, `${BS}U0011FFFF`, `$'${BS}x`]) assert.strictEqual(typeof redact(t, {}), 'string', `#1543 odd input is a string: ${JSON.stringify(t.slice(0, 12))}`);
+  // growth: linear in the text
+  assertLinearShape('#1543 redact many ANSI-C tokens', (x) => { redact(x, env); }, (k) => Array.from({ length: Math.ceil(k / 50) }, (_, i) => `$'ghp${BS}x5f${String(i).padStart(36, 'Q')}'`).join(' ').slice(0, k), 400_000);
+  assertLinearShape('#1543 redact many backtick and caret words', (x) => { redact(x, env); }, (k) => 'a`bc^de `f g^h '.repeat(Math.ceil(k / 15)).slice(0, k), 400_000);
+  assertLinearShape('#1543 redact one long run of escapes', (x) => { redact(x, env); }, (k) => `a${BS}x41\`b^c${BS}u0041${BS}\n`.repeat(Math.ceil(k / 20)).slice(0, k), 400_000);
+  assertLinearShape('#1543 maskSecretCommand many escaped headers', (x) => { _uncappedForTest.maskSecretCommand(x, env); }, (k) => `-H X-Api-Key${BS}:${BS} v `.repeat(Math.ceil(k / 20)).slice(0, k), 400_000);
+}
+
 console.log('redact: all checks passed');

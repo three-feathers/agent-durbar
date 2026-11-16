@@ -5,7 +5,7 @@ import { assertLinearShape } from './redact-growth-lib';
 import fs from 'fs';
 import crypto from 'crypto';
 import path from 'path';
-import { redact, maskSecretCommand, maskSecretUrl } from '../src/shared/redact';
+import { redact, maskSecretCommand, maskSecretUrl, withoutShell } from '../src/shared/redact';
 
 const ROOT = path.join(__dirname, '..', '..');
 const R = path.join(ROOT, 'src', 'renderer');
@@ -285,16 +285,31 @@ eq(T.ready, true, 'redact: ready');
     pwRun(20_000, (i) => 'x*gh' + 'p_' + String(i).padStart(36, 'Q') + '*.'), pwRun(40_000, (i) => 'gh' + 'p_' + String(i).padStart(36, 'Q') + ' '), pwRun(16_000, (i) => 'pass\u200bword=' + String(i).padStart(14, 'K') + ' '),
     pwRun(40_000), manyPlain]; // near the budget (about 5.5e7); many runs the mask leaves alone and a few secrets
   let same = 0;
+  let cont = 0;
   for (const t of [...cases, ...shapes]) {
     const where = JSON.stringify(t.slice(0, 60));
-    assert.strictEqual(S.maskRaw(t, red), R0.maskRaw(t, red), `#1593 differential: maskRaw as on main: ${where}`);
-    assert.strictEqual(S.excerpt(t, red, 140), R0.excerpt(t, red, 140), `#1593 differential: excerpt as on main: ${where}`);
-    assert.strictEqual(S.excerpt(t, red, undefined, true), R0.excerpt(t, red, undefined, true), `#1593 differential: excerpt with the code word as on main: ${where}`);
-    assert.strictEqual(T.mask(t), RT.mask(t), `#1593 differential: the wrapper mask as on main: ${where}`);
-    assert.strictEqual(T.excerpt(t, 140), RT.excerpt(t, 140), `#1593 differential: the wrapper excerpt as on main: ${where}`);
+    // spec 012 FR-184 (issue #1543): a text with a backslash, or a backtick or caret between token characters, is also read with the shell readings off and shows
+    // nothing that reading hides, so it may hide more than main (and the excerpt masks a line continuation as written first); it never shows a piece main's output does not show
+    const shell = /\\|[A-Za-z0-9_\-.~+/=:@%][`^][A-Za-z0-9_\-.~+/=:@%]/.test(t);
+    let differs = false;
+    const sameOrMore = (h: string, r: string, what: string): void => {
+      if (h === r) return;
+      assert.ok(shell, `#1593 differential: ${what} as on main: ${where}`);
+      differs = true;
+      const cutAt = /\s+|\[redacted(?::[^\]\r\n]{1,128})?\]/;
+      const shown = r.split(cutAt).join('\u0000');
+      for (const p of h.split(cutAt)) assert.ok(p === '' || shown.includes(p), `#1593 differential (FR-184): ${what} shows nothing main hides: ${where}: ${JSON.stringify(p)}`);
+    };
+    // main's reading: the frozen window with the shared masks' shell readings off (with them off the shared masks are byte for byte main's)
+    sameOrMore(S.maskRaw(t, red), withoutShell(() => R0.maskRaw(t, red)), 'maskRaw');
+    sameOrMore(T.mask(t), withoutShell(() => RT.mask(t)), 'the wrapper mask');
+    sameOrMore(S.excerpt(t, red, 140), withoutShell(() => R0.excerpt(t, red, 140)), 'excerpt');
+    sameOrMore(S.excerpt(t, red, undefined, true), withoutShell(() => R0.excerpt(t, red, undefined, true)), 'excerpt with the code word');
+    sameOrMore(T.excerpt(t, 140), withoutShell(() => RT.excerpt(t, 140)), 'the wrapper excerpt');
+    if (differs) { cont++; continue; }
     same++;
   }
-  ok(same >= 2000 + shapes.length, `#1593 differential: ${same} texts, byte-identical`);
+  ok(same >= 1500 && same + cont >= 2000 + shapes.length, `#1593 differential: ${same} texts byte-identical, ${cont} more changed by FR-184 that show nothing main hides`);
   // over the budget the head shows nothing where main showed a masked text (the intended change)
   ok(R0.maskRaw(over, red).length > 0 && S.maskRaw(over, red) === '', '#1593 over the budget: main showed a masked text, the head shows nothing');
 }
