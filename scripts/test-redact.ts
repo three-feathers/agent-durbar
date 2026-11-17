@@ -30,6 +30,13 @@ for (const keep of ['ghp_short', 'see ghs_count', 'wei' + 'ghs_' + 'TotalWeightK
   maskHomePaths('plain text with /home/alicez/x and C:\\Users\\bob\\y', []);
   assert.strictEqual(_homeGuardReadsForTest() - r0, 0, '#1329 F1 work (early): a text with no new home spelling is not read by redact');
 }
+// the last pass on the Markdown and desk masks, checked first (a cut GitHub token; invented pieces)
+{
+  const cutTok = 'gh' + 'p_' + 'R1t2Y3u4I5o6P7a8S9';
+  const STe = require(path.join(__dirname, '..', '..', 'src', 'renderer', 'safetext.js')) as { maskRaw(t: string, r: (s: string) => string): string };
+  assert.ok(!redactMarkdown('see ' + cutTok, 'see ' + cutTok).includes('R1t2Y3u4'), '#1329 early: redactMarkdown hides a cut token');
+  assert.ok(!STe.maskRaw('see ' + cutTok, (x) => redact(x, {})).includes('R1t2Y3u4'), '#1329 early: the desk maskRaw hides a cut token');
+}
 
 // spec 012 FR-181 (issue #1541, T162): a token written with a backslash escape inside (`ghp\_<body>`, `g\hp_<body>`) is hidden by
 // redact, maskSecretCommand and maskSecretArgs, in the text as written. Every token here is invented and built in code from pieces.
