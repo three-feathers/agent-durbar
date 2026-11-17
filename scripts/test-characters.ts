@@ -30,13 +30,13 @@ assert.deepStrictEqual(parseSettings('{"characters":"retro"}'), {}, 'main: a set
 assert.strictEqual(CHARACTER_KITS.mine, 'crew', 'spec 096 FR-040: My characters draw the crew kit');
 // spec 096 T044: Settings offers the first eight and `mine` only behind the character list; a stored `mine` with no character draws the theme's own (check-characters runs it)
 {
-  const screens = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'screens.js'), 'utf8');
+  const screens = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'screens.js'), 'utf8').replace(/\r\n/g, '\n');
   const list = /const charItems=\(\)=>\{[\s\S]*?const list=\[([^\n]*)\];/.exec(screens)?.[1] ?? '';
   const offered = [...new Set([...list.matchAll(/\bid:'([a-z]+)'/g)].map((m) => m[1]))];
   assert.ok(offered.length > 0 && !offered.includes('mine'), "the list line holds the choices that are always offered, not 'mine'");
   assert.ok(/if\(mineN>=0\)list\.push\(\{id:'mine'/.test(screens), 'and mine, when the app can list characters (spec 096 T044)');
   assert.ok(!/T\.CHARACTERS|THEME\.CHARACTERS/.test(screens), 'and does not list from theme.js');
-  const appJs = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'app.js'), 'utf8');
+  const appJs = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'app.js'), 'utf8').replace(/\r\n/g, '\n');
   assert.ok(/THEME\.setCharacters\(drawableCharacters\(CHARS_CHOSEN\)\)/.test(appJs) && /const drawableCharacters=c=>c==='mine'&&!\(CREW&&CREW\.idsFor\('mine'\)\.length\)\?'theme':c;/.test(appJs), "a stored mine with no character draws the theme's own");
 }
 assert.deepStrictEqual(T.CHARACTER_KITS, { ...CHARACTER_KITS }, 'theme.js maps each choice to the same kit');

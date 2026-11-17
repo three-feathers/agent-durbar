@@ -88,7 +88,7 @@ function imageAdapter(server: FakeCodexServer, log: string[]): Rec {
  * T030a replaces this with its gate test: once T030a is ticked this fails until it is removed.
  */
 function imageGenTripwire(): void {
-  const tasks = fs.readFileSync(path.join(ROOT, 'specs', '096-ai-character-maker', 'tasks.md'), 'utf8');
+  const tasks = fs.readFileSync(path.join(ROOT, 'specs', '096-ai-character-maker', 'tasks.md'), 'utf8').replace(/\r\n/g, '\n');
   const t030a = /^- \[([ xX])\] T030a\b/m.exec(tasks);
   assert.ok(t030a, 'T030a is in spec 096 tasks.md');
   assert.strictEqual(t030a[1], ' ', 'T030a is ticked: replace this tripwire (T030b) with T030a\'s FR-034 gate test');
@@ -102,7 +102,7 @@ function imageGenTripwire(): void {
   const files = fs.readdirSync(dir).filter((f) => f.endsWith('.ts') && f !== 'types.ts' && f !== 'capabilities.ts');
   assert.ok(files.includes('codex.ts') && files.length > 20, 'the tripwire reads the adapters\' source: ' + files.length);
   for (const f of files) {
-    const code = fs.readFileSync(path.join(dir, f), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|\s)\/\/.*$/gm, '$1');
+    const code = fs.readFileSync(path.join(dir, f), 'utf8').replace(/\r\n/g, '\n').replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|\s)\/\/.*$/gm, '$1');
     assert.ok(!/\b(imageGen|generateImage)\b/.test(code), `tripwire: src/adapters/${f} turns on image generation before T030a's login gate (FR-034)`);
   }  // the instances main gets (third review of #956): a flag or method set in a constructor, by `Object.assign` or `Object.defineProperty`, a computed key or a helper
   for (const d of descriptors) {
@@ -116,11 +116,11 @@ function imageGenTripwire(): void {
     .filter((f) => /\.(ts|js)$/.test(f) && !f.startsWith('adapters/') && f !== 'renderer/sim.ts');
   assert.ok(outside.includes('main/main.ts') && outside.includes('main/ipc/characters.ts') && outside.length > 50, 'the tripwire reads the source outside src/adapters: ' + outside.length);
   for (const f of outside) {
-    const code = fs.readFileSync(path.join(srcRoot, f), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|\s)\/\/.*$/gm, '$1');
+    const code = fs.readFileSync(path.join(srcRoot, f), 'utf8').replace(/\r\n/g, '\n').replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|\s)\/\/.*$/gm, '$1');
     assert.ok(!/\bimageGen['"`]?\s*(:\s*(?!false\b)|=(?!=))/.test(code), `tripwire: src/${f} sets imageGen outside src/adapters before T030a's login gate (FR-034)`);
   }
   // fail closed: main passes no login gate until T030a builds it, so character:generate refuses every try whatever an adapter reports
-  const mainSrc = ts.createSourceFile('main.ts', fs.readFileSync(path.join(srcRoot, 'main', 'main.ts'), 'utf8'), ts.ScriptTarget.Latest, true);
+  const mainSrc = ts.createSourceFile('main.ts', fs.readFileSync(path.join(srcRoot, 'main', 'main.ts'), 'utf8').replace(/\r\n/g, '\n'), ts.ScriptTarget.Latest, true);
   const calls: ts.CallExpression[] = [];
   const visit = (n: ts.Node): void => { if (ts.isCallExpression(n) && ts.isIdentifier(n.expression) && n.expression.text === 'registerCharactersIpc') calls.push(n); ts.forEachChild(n, visit); };
   visit(mainSrc);
@@ -691,17 +691,17 @@ async function main(): Promise<void> {
 
     // --- the source (FR-032, SC-003) ---
     {
-      const src = fs.readFileSync(path.join(ROOT, 'src', 'main', 'ipc', 'characters.ts'), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
+      const src = fs.readFileSync(path.join(ROOT, 'src', 'main', 'ipc', 'characters.ts'), 'utf8').replace(/\r\n/g, '\n').replace(/\/\*[\s\S]*?\*\//g, '');
       const logs = [...src.matchAll(/console\.\w+\(([^\n]*?)\)\)?;?\s*$/gm)].map((m) => m[1]);
       assert.deepStrictEqual(logs, ['redact(`[characters] ${m}`)'], 'the one log line is the store\'s own, masked (test:consolemask)');
       assert.ok(!/\bshell\b|child_process|nativeImage/.test(src), 'no shell, no process, no decoder here');
       assert.ok(/fromApp\(e\)/.test(src));
-      const preload = fs.readFileSync(path.join(ROOT, 'src', 'preload', 'preload.ts'), 'utf8');
+      const preload = fs.readFileSync(path.join(ROOT, 'src', 'preload', 'preload.ts'), 'utf8').replace(/\r\n/g, '\n');
       for (const c of CHANNELS) assert.ok(preload.includes(`'${c}'`), `the preload calls ${c}`);
     }
     // the simulator's copy of the name rule answers like main's (agent notes: rules the simulator copies; T038)
     {
-      const sim = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'sim.ts'), 'utf8');
+      const sim = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'sim.ts'), 'utf8').replace(/\r\n/g, '\n');
       const block = /\/\* simcharname:begin[\s\S]*?\*\/([\s\S]*?)\/\* simcharname:end \*\//.exec(sim)?.[1];
       assert.ok(block, 'the marked block is there');
       const js = ts.transpileModule(block as string, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText;
@@ -712,7 +712,7 @@ async function main(): Promise<void> {
     }
     // and its copy of the pin rule (finding of the review: closed folders, UNC paths)
     {
-      const sim = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'sim.ts'), 'utf8');
+      const sim = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'sim.ts'), 'utf8').replace(/\r\n/g, '\n');
       const block = /\/\* simcharpin:begin[\s\S]*?\*\/([\s\S]*?)\/\* simcharpin:end \*\//.exec(sim)?.[1];
       assert.ok(block, 'the marked pin block is there');
       const js = ts.transpileModule(block as string, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText;
@@ -808,13 +808,18 @@ async function loginGateTests(): Promise<void> {
   assert.ok(!/sign|install/i.test(CM.NOT_YET), 'the words for "cannot yet" suggest no step that would not help');
   // the renderer has one way to the generate call: inside the gate
   const rendererDir = path.join(ROOT, 'src', 'renderer');
-  const callers = fs.readdirSync(rendererDir).filter((f) => f.endsWith('.js')).filter((f) => /characterGenerate/.test(fs.readFileSync(path.join(rendererDir, f), 'utf8')));
+  const callers = fs.readdirSync(rendererDir).filter((f) => f.endsWith('.js')).filter((f) => /characterGenerate/.test(fs.readFileSync(path.join(rendererDir, f), 'utf8').replace(/\r\n/g, '\n')));
   assert.deepStrictEqual(callers, ['charmaker.js'], 'only charmaker.js names the call');
-  const cmSrc = fs.readFileSync(path.join(rendererDir, 'charmaker.js'), 'utf8');
+  const cmSrc = fs.readFileSync(path.join(rendererDir, 'charmaker.js'), 'utf8').replace(/\r\n/g, '\n');
   assert.strictEqual((cmSrc.match(/\.characterGenerate\(/g) ?? []).length, 1, 'once');
-  assert.ok(/async function gatedGenerate[\s\S]*?\.characterGenerate\(description, adapterId, \{ confirmed \}\)[\s\S]*?\n  \}\n/.test(cmSrc), 'in gatedGenerate');
+  const GATED = /async function gatedGenerate[\s\S]*?\.characterGenerate\(description, adapterId, \{ confirmed \}\)[\s\S]*?\n  \}\n/;
+  assert.ok(GATED.test(cmSrc), 'in gatedGenerate');
+  // a Windows checkout has CRLF line endings (T047 review, 2026-11-17): every source read a multi-line regex depends on is normalised; the same source with CRLF must still match once read the same way, and does not without it
+  const crlfSrc = cmSrc.replace(/\n/g, '\r\n');
+  assert.ok(!GATED.test(crlfSrc), 'CRLF mutant: the multi-line regex fails on raw CRLF text, so the reads must normalise');
+  assert.ok(GATED.test(crlfSrc.replace(/\r\n/g, '\n')), 'in gatedGenerate (CRLF source, normalised)');
   // outside the simulator main refuses whatever the window sends, until T030a gates it: no real adapter may switch imageGen on before that (the descriptors' and instances' real values, not their source text)
-  const charIpc = fs.readFileSync(path.join(ROOT, 'src', 'main', 'ipc', 'characters.ts'), 'utf8');
+  const charIpc = fs.readFileSync(path.join(ROOT, 'src', 'main', 'ipc', 'characters.ts'), 'utf8').replace(/\r\n/g, '\n');
   if (!/FR-034 gate in main/.test(charIpc)) {
     for (const d of ALL_DESCRIPTORS) {
       assert.notStrictEqual(d.capabilities.imageGen, true, `${d.id}: T030a before T030: no adapter sets imageGen until main enforces FR-034`);
@@ -825,7 +830,7 @@ async function loginGateTests(): Promise<void> {
   }
   // the real preload hands main every argument: `{ confirmed }` is T030a's input, and the simulator's fake alone would never show it was dropped
   {
-    const src = ts.transpileModule(fs.readFileSync(path.join(ROOT, 'src', 'preload', 'preload.ts'), 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 } }).outputText;
+    const src = ts.transpileModule(fs.readFileSync(path.join(ROOT, 'src', 'preload', 'preload.ts'), 'utf8').replace(/\r\n/g, '\n'), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 } }).outputText;
     const invoked: unknown[][] = [];
     let api: Rec = {};
     const fake = { contextBridge: { exposeInMainWorld: (_n: string, a: Rec) => { api = a; } }, ipcRenderer: { invoke: (...a: unknown[]) => { invoked.push(a); return Promise.resolve(); }, on: () => undefined, removeListener: () => undefined, send: () => undefined }, webFrame: {}, webUtils: {} };

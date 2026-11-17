@@ -340,7 +340,7 @@ try {
   }
   // --- the source (SC-003, T034) ---
   {
-    const src = fs.readFileSync(path.join(ROOT, 'src', 'main', 'charstore.ts'), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|\s)\/\/.*$/gm, '$1');
+    const src = fs.readFileSync(path.join(ROOT, 'src', 'main', 'charstore.ts'), 'utf8').replace(/\r\n/g, '\n').replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|\s)\/\/.*$/gm, '$1');
     assert.ok(!/from 'electron'|require\('electron'\)/.test(src), 'no Electron import');
     assert.ok(!/nativeImage/.test(src), 'no decoder (SC-003)');
     assert.ok(!/\b(writeFile|copyFile|cp|appendFile|symlink|link|chmod|chown)(Sync)?\(/.test(src.replace(/fs\.writeFileSync\(/g, 'W(')), 'only writeFileSync writes');
@@ -355,7 +355,7 @@ try {
     assert.ok((src.match(/recursive: true, force: true/g) ?? []).length <= 4, 'few recursive removes');
     // FR-031 (review of #956, round 2): the store and the sheet read share one identity-checked read; neither keeps its own copy of it
     for (const f of [path.join('src', 'main', 'charstore.ts'), path.join('src', 'main', 'ipc', 'characters.ts')]) {
-      const code = fs.readFileSync(path.join(ROOT, f), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|\s)\/\/.*$/gm, '$1');
+      const code = fs.readFileSync(path.join(ROOT, f), 'utf8').replace(/\r\n/g, '\n').replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|\s)\/\/.*$/gm, '$1');
       assert.ok(/\breadSameFile\(/.test(code) && !/\breadCapped\b|bigint: true/.test(code), `${f}: reads through readSameFile only, no copy of it`);
     }
   }
