@@ -1,1 +1,0 @@
-- **Pictures of the Retro arcade at 12 and 15 agents, in rooms and with one room each, at both window sizes** (spec 102 T281, issue #1428): looked at on macOS in the simulator; the layout check's picture option no longer leaves a tooltip over the cabinets. At 12 and 15 agents at 1280x800 the plate keeps its helper count and dots, as the spec says.

@@ -641,4 +641,15 @@ assert.strictEqual(sentenceOf(s), s.sentence);
   assert.deepStrictEqual(leaks(['password: ab12 cd34 e', 'f56 done'], ['ab12', 'cd34', 'ef56']), [], 'the issue pair with a cut inside a word');
 }
 
+// spec 012 FR-181 (issue #1541): an escaped token (`ghp\_<body>`) in a shell step's command, as a string and as an argument list, is hidden in the step target
+{
+  const esc = 'ghp' + '\\_' + 'A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8';
+  for (const [what, args] of [['string', { command: 'echo ' + esc }], ['argument list', { command: ['echo', esc] }]] as const) {
+    const st = start('bash', args);
+    const s = feed(fresh(), [st]);
+    const t = currentStep(s)!.target;
+    assert.strictEqual(t, 'echo [redacted]', `#1541 brainstate ${what}: the step target hides an escaped token: ${t}`);
+  }
+}
+
 console.log('brainstate: all checks passed');
