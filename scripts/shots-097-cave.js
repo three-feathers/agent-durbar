@@ -116,8 +116,8 @@ module.exports = async (ctx) => {
   await js(`window.DurbarScreens.openSettings()`);
   await must(`!!document.querySelector('#wrGroup')`, 'the World row');
   await js(`document.querySelector('#chList [data-characters="minimalist"]').click()`);
-  await must(`/until Minimalist has Real office poses/.test(document.getElementById('dsR').textContent)`, 'Minimalist has no Real office poses: one line saying so (Cheeky has its own set since T244)');
-  await room(RO('photo', 'office'), 'Minimalist: the world\u2019s default set');
+  await must(`document.getElementById('dsR').textContent==='Real office draws the Minimalist people.'`, 'Minimalist has its own Real office set since T245: Settings says it draws those people');
+  await room(RO('photo', 'minimalist'), 'Minimalist: its own set (T245)');
   await js(`document.querySelector('#chList [data-characters="theme"]').click();document.querySelector('#wrGroup [data-world="photo"]').focus()`);
   await H.key('Right');
   await H.key('Return');

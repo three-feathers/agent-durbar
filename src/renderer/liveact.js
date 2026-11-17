@@ -85,7 +85,10 @@
   function permCore(raw,k,m){ /* {s, out} (out null: the mask gave nothing) for a text without control characters */
     const s=String(raw).replace(/\s+/g,' ').trim();if(!s)return {s:'',out:''};
     if(k==='shell'){const mm=/^(run )([\s\S]*)$/.exec(s),pre=mm?mm[1]:'',cmd=mm?mm[2]:s;if(!cmd)return {s,out:s};
-      const x=ST.maskLabel(cmd,'run',m);return {s,out:x?pre+x:null,lost:x?shellLost(cmd,x):false};}
+      /* spec 012 FR-184 (review of PR 1824, F1): the label read without the shell readings is checked too; a command that reading cannot match back (main's
+         card fell back there) stays lost, though the shell readings hide a run whole and so match */
+      if(typeof ST.maskLabelPair!=='function')return {s,out:null};
+      const p=ST.maskLabelPair(cmd,'run',m),x=p.text;return {s,out:x?pre+x:null,lost:x?shellLost(cmd,x)||(p.ref!==x&&(!p.ref||shellLost(cmd,p.ref))):false};}
     if(k==='tool'){const j=s.split(/( › |\s+)/).map((w,i)=>i%2||!w?w:toolName(w,m)).join('');const x=ST.maskLabel(j,'other',m);return {s,out:x||null};}
     const x=ST.maskLabel(s,'other',m);return {s,out:x||null};
   }

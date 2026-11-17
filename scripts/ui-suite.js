@@ -49,6 +49,7 @@ const DRIVERS = [
   { name: 'check-serious-motion' }, // spec 052 FR-069 (issue #1182): Serious mode hides only the moods; Motion is its own switch; reduced motion still stops it; Flat and Real office, both sizes
   { name: 'check-settings-worlds' }, // spec 102 FR-301 (T266): Settings > World: picture cards in one radio group, a closed flag unlisted, keys, focus against choice, the zoom, reduced motion, forced colours
   { name: 'check-settings-nav' }, // spec 052 FR-226 (T219): the Settings section list: built from the headings, jump, aria-current follows the scroll, keys, every world, reduced motion, narrow row
+  { name: 'check-settings-nav', label: 'check-settings-nav retro', env: { DRIVER_WORLD: 'retro' } }, // spec 102 T321 (issue #1399): the Settings section list over the arcade (its Real office row only)
   { name: 'check-069-toggle-scroll' }, // spec 069 FR-069 (issue #1624): a Settings switch that repaints the page keeps the scroll, the focus and the open Advanced block
   { name: 'check-settings-save' }, // spec 011 FR-012 (issue #1023): a Settings row whose save fails returns to the value in force and says so
   { name: 'check-rail' }, // spec 005 FR-190, FR-194, FR-216 and 052 FR-215: the agent rail's List view: fit, order, two heights, folders that collapse, Your door, Mac drag areas
@@ -141,6 +142,7 @@ const DRIVERS = [
   { name: 'check-chat-title' }, // spec 052 FR-180 (#789): the chat header's title uses the free room up to the buttons
   { name: 'check-no-demo-badge' }, // spec 052 FR-181: no Demo / Live badge in the top bar; the demo cues remain
   { name: 'check-logo-family' }, // spec 101 FR-072: Settings > Logo, the top-bar icon on every theme, world and forced colours, tile and name unchanged
+  { name: 'check-logo-family', label: 'check-logo-family retro', env: { DRIVER_WORLD: 'retro' } }, // spec 102 (issue #1399): the Real office seam in the arcade: the tile wears the arcade's own pair (yellow, dark ink), not Photo's plate
   { name: 'check-sim-guard' }, // spec 010 FR-026: the real preload API is refused by main under DURBAR_SIM
   { name: 'shots-069-mcp-global' }, // spec 069: add to the agent apps' own lists, review, remove, source chips
   { name: 'shots-069-harmonize' }, // spec 069 part 2: copy servers between the agent apps' lists
@@ -214,6 +216,7 @@ const DRIVERS = [
   { name: 'check-097-letter', label: 'check-097-letter retro', env: { DRIVER_WORLD: 'retro' } }, // the same in the Retro arcade
   { name: 'check-097-letter', label: 'check-097-letter cave', env: { DRIVER_WORLD: 'cave' } }, // the same in the Prehistoric cave (spec 097 FR-377: one of the three Real office worlds)
   { name: 'check-097-order' }, // spec 097 FR-345..FR-348 (#1152): rooms, desks and places rearranged in Real office by key and folder menu on spec 033's one order; the flat order shows, both sizes
+  { name: 'check-102-arcade-menu' }, // spec 102 T317 (issue #1399): the folder menu on an arcade sign: Move earlier / later say the room keeps its place (spec 097 FR-354); the signs do not move and nothing is saved
   { name: 'check-097-drag' }, // spec 097 FR-352..FR-355 (#1152, Q30..Q33): drag a plate or folder sign in Real office (Photo, cave, arcade), the lobby by chip button and the +N menu, on the one saved order; both sizes
   { name: 'check-097-slip-plates' }, // spec 097 (bug 1434): no request slip covers a plate, sign, chair label, chip, cue or face; 15 agents, both sizes, three worlds
   { name: 'check-097-plate-pencil' }, // spec 059 FR-170 (#1155): the rename pencil beside a Real office plate's name, F2 on a plate, both sizes
