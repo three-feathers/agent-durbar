@@ -8,6 +8,9 @@ import { TRAIL_MAX } from '../src/shared/brainstate';
 const DIR = path.join(__dirname, '..', '..', 'src', 'renderer', 'brainview');
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const load = require as (f: string) => any;
+/** a source read as text: a Windows checkout may hold CRLF, and an indexOf or regex with a newline in it must see LF (as check-inbox-text.js does) */
+const lf = (t: string): string => t.replace(/\r\n/g, '\n');
+const readSrc = (f: string): string => lf(fs.readFileSync(f, 'utf8'));
 const D = load(path.join(DIR, 'draw.js'));
 const P = load(path.join(DIR, 'points.js'));
 
@@ -69,7 +72,7 @@ assert.ok(D.BLOOM_ALPHA_MAX <= 0.35, 'FR-051: the bloom brightness is capped');
 
 // ---- FR-100: no filter, shadow or blend mode, in the code and at run time
 {
-  const src = fs.readFileSync(path.join(DIR, 'draw.js'), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
+  const src = readSrc(path.join(DIR, 'draw.js')).replace(/\/\*[\s\S]*?\*\//g, '');
   assert.ok(!/shadowBlur|shadowColor|globalCompositeOperation|\.filter\s*=|backdrop-filter|mix-blend-mode|ctx\.filter/.test(src), 'FR-100: draw.js never names a filter, shadow or blend mode');
   const r = rig();
   r.d.set(view('frontal', 'running', 1, { trail: [{ lobe: 'read' }, { lobe: 'frontal' }], bloom: ['frontal', 'parietal'] }));
@@ -300,9 +303,14 @@ for (const [name, mk] of [['Still', () => rig({ motion: 'still' })], ['forced co
   assert.deepStrictEqual(Object.keys(a).sort(), ['baseAlpha', 'colors', 'id', 'marker', 'shape', 'trail'], 'a skin has colours, a shape and inks, no size or position');
   assert.strictEqual(K.forWorld('retro', () => { throw new Error('x'); }).colors.frontal, '#ffc35c', 'a failing read falls back');
   // the arcade's fallback colours are theme.js's own retro values (a drift would go unseen: the page reads tokens, a test page does not)
-  const themeSrc = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'renderer', 'theme.js'), 'utf8');
-  const retro = themeSrc.slice(themeSrc.indexOf("retro:{\n      name:'Retro arcade'"), themeSrc.indexOf("shadow:{'--shadow-card':'0 2px 0 rgba(0,0,0,.5)'"));
+  const themeSrc = readSrc(path.join(__dirname, '..', '..', 'src', 'renderer', 'theme.js'));
+  const retroOf = (src: string): string => { const t = lf(src); return t.slice(t.indexOf("retro:{\n      name:'Retro arcade'"), t.indexOf("shadow:{'--shadow-card':'0 2px 0 rgba(0,0,0,.5)'")); };
+  const retro = retroOf(themeSrc);
   assert.ok(retro.length > 500, 'the retro world block of theme.js was found');
+  // a Windows checkout may hold CRLF: the same source converted to CRLF finds the same block (raw indexOf with a newline gives -1 there)
+  const crlf = themeSrc.replace(/\n/g, '\r\n');
+  assert.strictEqual(crlf.indexOf("retro:{\n      name:'Retro arcade'"), -1, 'CRLF mutant: the raw CRLF text really cannot be searched with a newline');
+  assert.strictEqual(retroOf(crlf), retro, 'CRLF: the retro world block of a CRLF theme.js is found and equals the LF one');
   for (const [lobe, [tok]] of Object.entries(K.ARCADE_TOKENS as Record<string, [string, string]>)) {
     const m = retro.match(new RegExp("'" + tok + "':'(#[0-9a-fA-F]+)'"));
     assert.ok(m, `theme.js retro sets ${tok}`);
@@ -338,7 +346,7 @@ console.log('braindraw: ok');
 {
   const vm = require('vm') as typeof import('vm');
   const root = path.join(__dirname, '..', '..');
-  const html = fs.readFileSync(path.join(root, 'src', 'renderer', 'index.html'), 'utf8');
+  const html = readSrc(path.join(root, 'src', 'renderer', 'index.html'));
   const shared = [...html.matchAll(/<script src="(\.\.\/shared\/[a-z-]+\.js)"/g)].map((m) => m[1]);
   assert.ok(shared.includes('../shared/redact.js') && shared.length >= 4, 'the page scripts of src/shared are found in index.html: ' + shared.join(','));
   const win = vm.createContext({}) as Record<string, unknown>; win.self = win;
@@ -350,7 +358,7 @@ console.log('braindraw: ok');
   const before = names();
   const exportsBefore = new Map(Object.entries(win.exports as Record<string, unknown>));
   const files = ['brainstate.js', 'brainsurface.js'].map((f) => path.join(root, 'dist', 'shared', f));
-  const declared = files.flatMap((f) => lexical(fs.readFileSync(f, 'utf8')));
+  const declared = files.flatMap((f) => lexical(readSrc(f)));
   assert.ok(declared.length > 20);
   // a global `function name` replaces a former one silently; a `const` over a former one throws: both are forbidden, so no declared name was there before
   for (const n of declared) assert.ok(!before.has(n), `brainstate.js and brainsurface.js declare a global "${n}" that an earlier page script already has (it would be overwritten or the load would throw)`);
@@ -363,7 +371,7 @@ console.log('braindraw: ok');
   for (const [k, v] of exportsBefore) assert.strictEqual(rd[k], v, `loading the brain files left window.exports.${k} (a function or constant of another shared module) as it was`);
   assert.ok(exportsBefore.size > 20 && Object.keys(rd).length > exportsBefore.size, 'the guard compared a real set of exports, and the brain files did add theirs');
   // the plain page scripts that are not in the load above (sim.js, demo.js, dialog.js) share the global scope too: no top-level name of the brain files is theirs
-  const others = ['sim.js', 'demo.js', 'dialog.js'].flatMap((f) => lexical(fs.readFileSync(path.join(root, 'dist', 'renderer', f), 'utf8')));
+  const others = ['sim.js', 'demo.js', 'dialog.js'].flatMap((f) => lexical(readSrc(path.join(root, 'dist', 'renderer', f))));
   assert.ok(others.length > 50, 'the other page scripts were read');
   for (const n of declared) assert.ok(!others.includes(n), `brainstate.js or brainsurface.js declares the global "${n}", which sim.js, demo.js or dialog.js also declares`);
 }
@@ -461,7 +469,7 @@ console.log('braindraw: page load ok');
     p.doc.body.classes.delete(cls); p.host.feed('a', 'Ada', p.ev(2, 'view')); p.flush();
     assert.ok(p.host.draw.stats.frames > f, `without body.${cls}: it draws again`);
   }
-  const css = fs.readFileSync(path.join(DIR, 'brain.css'), 'utf8');
+  const css = readSrc(path.join(DIR, 'brain.css'));
   assert.ok(/body\.panel-open \.bv,body\.screen-open \.bv,body\.list-mode \.bv\{display:none\}/.test(css), 'brain.css hides the floating box over a chat, Settings and List view');
   // a removed agent's brain is forgotten; the box is empty if it was the one shown
   {
