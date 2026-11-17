@@ -245,3 +245,4 @@
 - [x] T185 (FR-271, delta 2026-11-15) the previous-release refusal names the "not released" section fix; `changelog.d/README.md`; `scripts/test-changelog.js` (a not-released section passes, an unfolded real release is refused with the hint)
 - [x] T186 (FR-272, delta 2026-11-17) `scripts/build-site.js` exports `bulletSiteProblems`/`landingBullet`/`LANDING_REF_RE`; `scripts/changelog.js` `check()` runs them on each fragment bullet; `scripts/test-changelog.js` with four mutants; `changelog.d/README.md`; `changelog.d/008-1834-fragment-site-check.md` (issue #1834)
 
+- [x] T187 (FR-211, delta 2026-11-17, issue #1850) `scripts/test-ui-suite.ts`: the five `Date.now() - t < 5000` halves are gone (missing-build `main`, `runOne`, `check-parallel`, the five launchers, `--only`); the property is asserted by the calls made (`calls.join(",") === ""`); mutant: `main` calls `ensure` before the build check.
