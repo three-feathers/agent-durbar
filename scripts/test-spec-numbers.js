@@ -47,8 +47,13 @@ Prose that says FR-016 and **FR-017** in a sentence.
   - Q5 nested
 Q6 prose at line start
 - see Q7 for details
+- \`[IMPLEMENTED]\` **FR-031 Tagged title.** an evidence tag before the id (issue #1768)
+- \`[KNOWN GAP]\` **FR-032** tagged, bare
+- \`[IMPLEMENTED]\` **FR-033, FR-034** a tagged list: mentions
+- \`[IMPLEMENTED]\` plain words, **FR-035** later in the line: not a definition
+1. \`[IMPLEMENTED]\` Q8 tagged question
 `;
-assert.deepStrictEqual(ids(spec, 'spec'), ['FR-001', 'FR-002', 'FR-003', 'FR-004a', 'FR-005', 'FR-006', 'FR-015', 'FR-021', 'FR-022', 'FR-023', 'FR-024', 'Q1', 'Q2', 'Q3', 'Q4'].sort());
+assert.deepStrictEqual(ids(spec, 'spec'), ['FR-001', 'FR-002', 'FR-003', 'FR-004a', 'FR-005', 'FR-006', 'FR-015', 'FR-021', 'FR-022', 'FR-023', 'FR-024', 'FR-031', 'FR-032', 'Q1', 'Q2', 'Q3', 'Q4', 'Q8'].sort(), 'a definition after an evidence tag (issue #1768) is read like one without it');
 
 // ---- parser: tasks.md (T)
 const tasks = `- [ ] T001 open
@@ -341,6 +346,16 @@ try {
     rr = await viaMain(viaRest(restRows('fork/r')), '8'); assert.strictEqual(rr.code, 1, 'REST: a fork PR never joins the stack: ' + rr.out);
     rr = await viaMain(viaGh(ghRows(false, 'unrelated')), '8'); assert.strictEqual(rr.code, 1, 'gh: base ref not this head: a separate PR clashes: ' + rr.out);
   }
+
+  // issue #1768: two open PR heads hold FR-243, one as a tagged definition (`- `[IMPLEMENTED]` **FR-243 ...**`, #1487) and one as a bold bullet (#1766);
+  // the tagged one used to be no definition, so the clash was never seen. Same for a Q.
+  { const x = repo(); const F = 'specs/003-c/spec.md';
+    write(x, F, '- **FR-001** a\n- **Q1** a\n'); commit(x, 'spec c'); G(x, 'update-ref', 'refs/remotes/origin/main', 'HEAD');
+    G(x, 'checkout', '-q', '-b', 'tagged'); write(x, F, '- **FR-001** a\n- **Q1** a\n### 2026-11-11: x (FR-243, bug)\n- \`[IMPLEMENTED]\` **FR-243 The office is laid out.** text\n- \`[KNOWN GAP]\` Q9 tagged\n'); const tagged = commit(x, 'tagged');
+    G(x, 'checkout', '-q', 'main'); G(x, 'checkout', '-q', '-b', 'bold'); write(x, F, '- **FR-001** a\n- **Q1** a\n- **FR-243** **A question card.** text\n- **Q9** bold\n'); commit(x, 'bold');
+    G(x, 'update-ref', 'refs/remotes/pr/1487', tagged);
+    r = cli(x); assert.strictEqual(r.status, 1, 'a tagged FR on another open head is a clash: ' + r.stdout + r.stderr);
+    assert.match(r.stdout, /specs\/003-c\/spec\.md: FR-243 is also in PR #1487/); assert.match(r.stdout, /specs\/003-c\/spec\.md: Q9 is also in PR #1487/); }
 
   // the workflow keeps the token away from PR code (mutant: remove any of these and this fails)
   // a Windows checkout has CRLF line ends (core.autocrlf): the shape checks read the workflow with LF only, and a CRLF copy must give the same jobs

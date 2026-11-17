@@ -100,6 +100,7 @@
 ## 2026-11-12: a stacked PR is not a second claim (FR-094)
 
 - [x] T081 (FR-094) `scripts/spec-numbers.js`: `stackRelated` (base chain both ways; `main`, a cross-repository PR, a cross-repository checked branch and an unknown repository never join a stack), `collect` measures a stack-related PR's additions from `merge-base(its head, this head)` instead of skipping it, `openPrs` also reads `headRefName`, `baseRefName` and `isCrossRepository` (REST: head and base repository names), `main` finds the branch's own PR (`PR_NUMBER`) or the checked-out branch. Test `test:specnumbers` gains: separate PR same number clashes, a stacked PR and a PR containing the head do not, a double-take inside one stack clashes (both directions), siblings on a shared non-main base, fork PRs in and as the chain, and `main()` through the gh and REST fallback paths with faked `runCmd`/`getJson` on diverged histories. 15 mutants, each dying at its own assert (ancestor check, base-ref check, everything stacked, skip-whole, three fork gates, own refs ignored in `main`, gh and REST ref and repository mapping dropped, the `refOf` repository, shared base, `main` exclusion). Not in this task: the `/` parser false positive.
+- [x] T083 (FR-096) `scripts/spec-numbers.js`: `TAG_PREFIX` strips a leading `` `[TAG]` `` before the FR and Q patterns; `scripts/test-spec-numbers.js`: parser forms and a two-head fixture (tagged vs bold bullet), issue #1768.
 
 ## 2026-11-13: test-helper git timeout (FR-095)
 

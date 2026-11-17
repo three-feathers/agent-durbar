@@ -721,6 +721,13 @@ PR #1232 (spec 095) was red with `FR-026, T026 and T027 are also in PR #1240`, b
   - What this clears and what it does not: #1232 against #1240 (the numbers already exist at their shared history). It does not clear #1240's own run: its CI runs the base copy of the script from its base branch `095-search-window`, which has no FR-094 until it takes main, and `- **FR-001 / Q1**:` style lines in its spec count as "defined twice" (a parser false positive on `/`, older than this change; its own task, and that PR's lines get fixed on its side). Not verified on the real PRs until this is merged; check afterwards by re-running the job on #1232.
   - Numbers checked 2026-11-12 with `npm run specs:numbers` and the open PR heads: FR-093 and T080 are #1579's; this takes FR-094 and T081.
 
+## Changes 2026-11-15
+
+### 2026-11-15: an FR written after an evidence tag is a definition for `specs:numbers` (FR-096, issue #1768)
+
+- **FR-096** `[IMPLEMENTED]` `test:` `scripts/spec-numbers.js` reads a definition that starts with an evidence tag (`` - `[IMPLEMENTED]` **FR-243 Title.** ``, `` - `[KNOWN GAP]` **FR-n** ``; 20 such lines in the specs on 2026-11-15) the same as one without it, for FR and for Q: one `TAG_PREFIX` strip in `definitionCounts`. Cause: the FR pattern needed `**` at the line start (after an optional bullet), so the tagged form was never a definition, and PR #1487's FR-243 (spec 052) did not clash with #1766's `- **FR-243**`; the check printed "ok, no clash". `test:` `scripts/test-spec-numbers.js` has a fixture of two PR heads holding one number in the tagged and the bold form (exit 1 and the clash line), plus the parser forms. Checked on the real heads (#1487 at 644c7b925, #1766 at 34844b432): both define FR-243 in `specs/052-usability-pass/spec.md`. Not checked: a tag form other than `` `[UPPER CASE]` `` before the id; a bullet in tasks.md with a tag before `T`.
+  - Numbers checked 2026-11-15 with `npm run specs:numbers`: this takes FR-096 and T083.
+
 ## Changes 2026-11-13
 
 ### 2026-11-13: test-helper git children get a timeout (FR-095, issue #1631)

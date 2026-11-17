@@ -3,7 +3,7 @@
  * DURBAR_SIM_FREEZE=1), no AI credits, no timing assert: every wait is an until(), every row a count, judged by `office-ops-rules.js` (its unit test shows the
  * judge can fail). At 15 and 40 agents, desks as scenes:
  *   - at start: renders, layout searches and probes (a probe is one trial office laid out into the hidden #probe, a forced layout) the page made by the time the office is drawn;
- *   - animations: the infinite ones running, how many animate a property other than transform and opacity (FR-180), and the positions a compact desk's tapping hand shows;
+ *   - animations: every infinite one running steps at most 10 changes a second (computed from its steps and duration; the max and the count are printed), the infinite ones running, how many animate a property other than transform and opacity (FR-180), and the positions a compact desk's tapping hand shows;
  *   - elements recalculated by one replaced text node (the `elementCount` of every UpdateLayoutTree on the main thread in a short contentTracing, animations
  *     off; a calibration (a new element in a desk) must show at least one event, so a renamed thread or category cannot read as 0 and pass; the text change itself may recalculate 0);
  *   - one status event of one agent, 8 times, each a real change (every sample must draw, none may search; renders, style reads of the floor and layout reads are the median): renders and searches are the app's own counters (`__durbarSimUi.ops()`), reads are offset*, client*, scroll*, getBoundingClientRect and
@@ -27,6 +27,11 @@ const { contentTracing } = require('electron');
 const { helpers, waits, jsLiteral } = require('./driver-helpers');
 const { judge } = require('./office-ops-rules');
 
+const MAX_CHANGES = 10; // spec 097 T158: SVG animations step at under 10 changes a second (per animation)
+const ANIM_MUTANT = process.env.OPS_ANIM_MUTANT || '';
+/* the two infinite animations that are continuous today (a KNOWN GAP of spec 097 T158, issue to be cited in the spec): the walkers' bob while a visitor walks, and the dizzy spin.
+   Every other infinite animation must be stepped; a third unstepped one fails at its own label. */
+const UNSTEPPED_KNOWN = ['wkbob', 'dizzyspin'];
 const FLAT = `document.querySelectorAll('#stage .desk[data-id]').length>=1&&!document.querySelector('#stage .ro')`;
 
 async function trace(fn) {
@@ -114,6 +119,20 @@ module.exports = async (ctx) => {
       rows[`searchesAtStart@late${n}`] = late.searches; rows[`lateReplayDelay@late${n}`] = late.delay;
       console.log('[ops]', n, 'agents, first states 50 ms late (3 loads): most layout searches', late.searches, 'most probes', late.probes, 'least replay delay', late.delay, 'ms');
     }
+    /* the real app's start (spec 097 FR-378, issue #1575): the real app has no first-state batch, so the gate of FR-363 does not apply; `simreal=idle` opens it from the first frame and plays no script, so the
+       agents stay as listed (a restored folder's agents, not started); 3 loads, the most searches counted after 1.5 s. The page's own record `__durbarSimReal` must read -1 (an ignored `simreal` reads 0 and the row would
+       test nothing). `simreal=100` (the scripts start 100 ms apart) is printed, not judged: its searches are layout changes the scripts make (helpers, new desks), not the start. */
+    for (const mode of ['idle', '100']) {
+      const real = { searches: 0, probes: 0, renders: 0, gap: Infinity };
+      for (let i = 0; i < 3; i++) {
+        await H.load({ w: 1440, h: 900, index: process.env.OPS_INDEX || undefined, query: { sim: String(n), simreal: mode }, ready: FLAT, readyMs: 30000 });
+        await js(`new Promise(r=>setTimeout(r,${mode === 'idle' ? 1500 : n * 100 + 1500}))`);
+        const o = await js(`({...window.__durbarSimUi.ops(), gap: window.__durbarSimReal===undefined?0:window.__durbarSimReal})`);
+        real.gap = Math.min(real.gap, o.gap); real.searches = Math.max(real.searches, o.searches); real.probes = Math.max(real.probes, o.probes); real.renders = Math.max(real.renders, o.renders);
+      }
+      if (mode === 'idle') { rows[`searchesAtRealStart@${n}`] = real.searches; rows[`probesAtRealStart@${n}`] = real.probes; rows[`realStartIdle@${n}`] = real.gap === -1 ? 1 : 0; }
+      console.log('[ops]', n, 'agents, the real start,', mode === 'idle' ? 'agents idle as listed' : 'scripts 100 ms apart (not judged)', '(3 loads): most layout searches', real.searches, 'most probes', real.probes, 'most renders', real.renders);
+    }
     await load();
     await js(`localStorage.setItem('durbar.doorsigns','off')`); // desks as scenes, not doors: every working desk animates (the doors and signs are going)
     await load();
@@ -132,6 +151,31 @@ module.exports = async (ctx) => {
     rows[`animatedOtherProperties@${n}`] = anim.other;
     rows[`animationsRunning@${n}`] = anim.running;
     console.log('[ops]', n, 'agents:', anim.running, 'infinite animations running,', anim.other, 'animate a property other than transform and opacity', JSON.stringify(anim.names));
+    /* every infinite animation steps at most MAX_CHANGES changes a second (spec 097 T158, FR-178; owner reading 2026-11-13, issue 1401: per animation, not a total). The rate is read from the
+       animation's own timing, with no clock: a CSS animation-timing-function applies between each pair of keyframes, so changes per iteration = the sum over the intervals of the steps of
+       each (steps(n) gives n; step-start and step-end 1), divided by the iteration's duration. Any other easing (ease, linear, a cubic-bezier) changes on every frame: Infinity. The sum over
+       the office (about 172 a second at 15 agents) is NOT asserted, by the owner's reading. OPS_ANIM_MUTANT=ease|steps60|third adds one such animation (ease, steps(60) over 1 s, a third continuous linear one: each must fail at its own label below). */
+    const stepRates = async (size) => {
+    if (ANIM_MUTANT) {
+      const fn = ANIM_MUTANT === 'ease' ? 'ease' : ANIM_MUTANT === 'third' ? 'linear' : 'steps(60,end)';
+      const css = `@keyframes ops-mutant{from{transform:translateX(0)}to{transform:translateX(9px)}}.ops-mutant{position:fixed;left:0;top:0;width:4px;height:4px;animation:ops-mutant 1s ${fn} infinite}`;
+      await js(`(()=>{const s=document.createElement('style');s.textContent=${jsLiteral(css)};document.head.append(s);const d=document.createElement('div');d.className='ops-mutant';document.body.append(d);})()`);
+    }
+    const rate = await js(`(()=>{const known=new Set(${jsLiteral(UNSTEPPED_KNOWN)});const per=(e)=>{const m=/^steps\\(\\s*(\\d+)\\s*(?:,\\s*([a-z-]+)\\s*)?\\)$/.exec(e);if(m)return Number(m[1]);if(e==='step-start'||e==='step-end')return 1;return Infinity;};
+      const list=[],skipped={};for(const a of document.getAnimations()){if(a.playState!=='running'||!a.effect||a.effect.getComputedTiming().iterations!==Infinity)continue;
+        const kf=a.effect.getKeyframes(),dur=a.effect.getComputedTiming().duration;let steps=0;
+        for(let i=0;i<kf.length-1;i++)steps+=per(kf[i].easing);
+        const name=a.animationName||'unnamed';if(known.has(name)){skipped[name]=(skipped[name]||0)+1;continue;}
+        const t=a.effect.target;list.push({name,svg:!!(t&&t.closest&&t.closest('svg')),rate:steps/(dur/1000)});}
+      list.sort((x,y)=>y.rate-x.rate);const fin=list.filter(x=>Number.isFinite(x.rate));
+      return {count:list.length,svg:list.filter(x=>x.svg).length,max:fin.length?fin[0].rate:0,maxName:fin.length?fin[0].name:'',skipped,over:list.filter(x=>!(x.rate<=${jsLiteral(MAX_CHANGES)})).slice(0,5)};})()`);
+    console.log('[ops]', n, 'agents', size + ':', rate.count, 'stepped infinite animations (', rate.svg, 'in SVG ), the fastest', rate.maxName, rate.max.toFixed(2), 'changes a second (limit', MAX_CHANGES + '); known continuous, not counted:', JSON.stringify(rate.skipped));
+    assert.ok(rate.count > 0 && rate.over.length === 0, `${n} agents ${size}: every infinite animation steps at most ${MAX_CHANGES} changes a second (only ${UNSTEPPED_KNOWN.join(' and ')} may be continuous); over: ${rate.over.map((x) => `${x.name} ${x.rate}`).join(', ') || 'none (no animation was running)'}`);
+    };
+    await stepRates('1440x900');
+    await load(1280, 800); // the smaller size lays out other rooms and may start other walkers: the same rule
+    await stepRates('1280x800');
+    await load();
     /* a tapping hand of a compact desk: the positions it shows, sampled by setting the animation's time (two cycles, forward and back), so no clock is involved */
     const hand = await js(`(()=>{for(const h of document.querySelectorAll('#stage svg.sc-c .hand-l')){const a=h.getAnimations()[0];if(!a)continue;
       const d=a.effect.getComputedTiming().duration;a.pause();const seen=new Set();
@@ -226,6 +270,40 @@ module.exports = async (ctx) => {
     const quiet = live.reads.filter((_, i) => live.renders[i] === 0); // a sample with a render in it (a timer's) measures the render
     assert.ok(quiet.length >= 4, `${n} agents: at least 4 live paints without a render (${live.renders})`);
     rows[`readsPerLivePaint@${n}`] = med(quiet);
+
+    /* the same status update at 1280x800 (T156, issue 1401): the reads differ with the width, so the limit is held at both sizes */
+    await load(1280, 800);
+    await js(INSTRUMENT);
+    const ids80 = await js(`window.__durbarSimUi.agents().filter(a=>!a.parent).map(a=>a.id)`);
+    const emit80 = (st) => `window.__durbarSimEmit({type:'status',sessionId:${jsLiteral(ids80[3])},timestamp:Date.now(),status:${jsLiteral(st)}})`;
+    await drawn(emit80('working'));
+    const per80 = { renders: [], searches: [], reads: [] };
+    for (let i = 0; i < 8; i++) {
+      assert.ok(await until(`window.__durbarSimUi.visitsSettled()&&window.__durbarSimUi.settleNow()`, 15000), `${n} agents at 1280x800: the office settled before update ${i}`);
+      await js(TWO_FRAMES);
+      await js(`window.__ops.start()`);
+      await drawn(emit80(i % 2 ? 'working' : 'idle'));
+      const o = await js(`window.__ops.stop()`);
+      for (const k of Object.keys(per80)) per80[k].push(o[k]);
+    }
+    console.log('[ops]', n, 'agents at 1280x800, per status update (8): renders', per80.renders.join(','), 'searches', per80.searches.join(','), 'reads', per80.reads.join(','));
+    assert.ok(per80.renders.every((r) => r >= 1 && r <= 2), `${n} agents at 1280x800: every status update is one render, two at most with a timer's (${per80.renders})`);
+    rows[`readsPerStatus1280@${n}`] = med(per80.reads);
+    /* the figures' places stay right (the scroll is read once for all slots, not once per slot): with the floor scrolled, a status update draws, and every walker's target is the centre of a lobby slot in
+       the floor's content coordinates (the rect less the floor's rect plus its scroll). A mutant that drops the scroll moves every figure by it. At 40 agents the floor does scroll at this size. */
+    const room = await js(`(()=>{const f=document.getElementById('floor');return f.scrollHeight-f.clientHeight;})()`);
+    if (n === 40) assert.ok(room > 40, `${n} agents at 1280x800: the floor scrolls (${room} px), so the scroll case is real`);
+    await js(`document.getElementById('floor').scrollTop=${jsLiteral(Math.min(room, 120))}`);
+    await drawn(emit80('idle')); await drawn(emit80('working'));
+    const SLOTS = `(()=>{const f=document.getElementById('floor'),fr=f.getBoundingClientRect(),c=e=>{const r=e.getBoundingClientRect();return Math.round(r.left-fr.left+f.scrollLeft+r.width/2)+','+Math.round(r.top-fr.top+f.scrollTop+r.height/2);};
+      const slots=new Set([...document.querySelectorAll('#stage .place .slot.on')].map(c));
+      const ws=[...document.querySelectorAll('.walker')].map(w=>(/translate\\(([-\\d.]+)px,\\s*([-\\d.]+)px\\)/.exec(w.style.transform)||[]).slice(1,3).map(Math.round).join(','));
+      return {scrolled:f.scrollTop,walkers:ws.length,off:ws.filter(x=>!slots.has(x)).length};})()`;
+    const fig = await js(SLOTS);
+    console.log('[ops]', n, 'agents at 1280x800, floor scrolled', fig.scrolled, 'px:', fig.walkers, 'walkers,', fig.off, 'off their slot');
+    assert.ok(fig.walkers > 0, `${n} agents: the lobby has figures to place`);
+    if (n === 40) assert.ok(fig.scrolled > 0, `${n} agents: the floor stayed scrolled (${fig.scrolled} px)`);
+    rows[`walkersOffSlot@${n}`] = fig.off;
 
     if (n === 15) {
       /* stale fits (T156): what an incremental fit leaves must equal a full fit, after a status filter and its clearing, at 1280x800 */
@@ -338,6 +416,7 @@ module.exports = async (ctx) => {
     rows[`tintNodesPerStatus@${n}`] = await js(`(window.__tO.disconnect(),window.__tN)`);
     console.log('[ops]', n, 'agents, Real office: screen and tag nodes added or removed over 8 tint changes', rows[`tintNodesPerStatus@${n}`]);
   }
+  console.log('[ops] rows', JSON.stringify(rows));
   const { failed, notes } = judge(rows);
   for (const l of notes) console.log('[ops]', l);
   assert.deepStrictEqual(failed, [], `op rows over their limits:\n  ${failed.join('\n  ')}`);

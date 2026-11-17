@@ -374,6 +374,14 @@ assert.ok(cl.parseFragment('- x <!-- hidden -->\n').errors.some((e) => /HTML com
     assert.strictEqual(rn.previousRelease(d, g(d, 'rev-parse', 'v0.1.0-alpha.12^{commit}'), 'v0.1.0-alpha.12'), 'v0.1.0-alpha.11');
     g(d, 'checkout', '-q', 'v0.1.0-alpha.12');
     assert.throws(() => rn.releaseNotes(d, { ...opts, tag: 'v0.1.0-alpha.12' }), /no section for the previous release v0\.1\.0-alpha\.11: merge its fold PR/);
+    // FR-271: the refusal names the fix for a tag that never got a release, and such a section satisfies the check
+    assert.throws(() => rn.releaseNotes(d, { ...opts, tag: 'v0.1.0-alpha.12' }), /never released, add a "## v0\.1\.0-alpha\.11 \(not released, YYYY-MM-DD\)" section/);
+    {
+      const text = fs.readFileSync(path.join(d, 'CHANGELOG.md'), 'utf8');
+      const mark = '## v0.1.0-alpha.11 (not released, 2026-10-23)\n\nTagged but never released.\n\n';
+      const i = text.search(/^## v/m);
+      cl.requirePrevious({ rest: (text.slice(0, i) + mark + text.slice(i)).split('\n') }, 'v0.1.0-alpha.11');
+    }
     // after the fold of alpha.11 (done from its tag, then main merged) the alpha.12 notes list only C
     g(d, 'checkout', '-q', '-b', 'fold', 'v0.1.0-alpha.11');
     cl.build(d, { release: 'v0.1.0-alpha.11 ([pre-release](https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.0-alpha.11), 2026-10-23)' });
@@ -586,7 +594,7 @@ assert.ok(cl.parseFragment('- x <!-- hidden -->\n').errors.some((e) => /HTML com
     }
     {
       // subjects are untrusted Markdown: each one is a single code span, so no mention, link, image or HTML renders, and Markdown or
-      // HTML that would rebuild a token redact() cannot see (bold, an empty tag, a comment, an entity) shows literally (review on #665)
+      // HTML that would rebuild a token redact() cannot see (bold, an entity of a visible character) shows literally (review on #665)
       const T36 = 'Ab1'.repeat(12);
       const hostile = [
         'Ping @octocat about `code` and **bold** <b>tag</b> ![x](https://example.invalid/i.png) [a](http://x)',
@@ -608,7 +616,8 @@ assert.ok(cl.parseFragment('- x <!-- hidden -->\n').errors.some((e) => /HTML com
       }
       const spans = items.map((l) => /^- `[0-9a-f]{12}` `([^`]*)`$/.exec(l)[1]).reverse(); // newest first in the notes
       assert.strictEqual(spans[0], "Ping @octocat about 'code' and **bold** <b>tag</b> ![x](https://example.invalid/i.png) [a](http://x)", 'a backtick becomes a quote, the rest stays literal inside the span');
-      assert.deepStrictEqual(spans.slice(1), hostile.slice(1), 'the four masking-bypass forms are inside a code span, so they render literally, never as a ghp_ token');
+      // spec 012 FR-182 (issue #1613): redact() now reads a token split by an empty tag or a comment, so those two subjects are masked before they reach the notes
+      assert.deepStrictEqual(spans.slice(1), [hostile[1], '[redacted]', '[redacted]', hostile[4]], 'the four masking-bypass forms are inside a code span, so they render literally, never as a ghp_ token (the tag and comment forms masked)');
     }
     {
       // at most TEST_COMMITS_MAX commits are listed, then a count of the rest
