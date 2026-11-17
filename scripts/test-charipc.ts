@@ -12,7 +12,7 @@ import { FakeCodexServer } from './fakes/codex-app-server';
 import type { FakeChild, FakeImageMode } from './fakes/codex-app-server';
 import { hardLinkSkip } from './fakes/hardlinks';
 import * as ts from 'typescript';
-import { cleanCharacterName, parseEncoderReply, pinDecision } from '../src/shared/charrules';
+import { CHARACTERS_WARN_AT, cleanCharacterName, parseEncoderReply, pinDecision } from '../src/shared/charrules';
 import type { EncoderResult } from '../src/shared/charrules';
 import { MARK_CLOSE, MARK_OPEN, SHEET_NAME } from '../src/shared/chargen';
 import { PRODUCTION_DESCRIPTORS } from '../src/adapters/descriptors';
@@ -88,7 +88,7 @@ function imageAdapter(server: FakeCodexServer, log: string[]): Rec {
  * T030a replaces this with its gate test: once T030a is ticked this fails until it is removed.
  */
 function imageGenTripwire(): void {
-  const tasks = fs.readFileSync(path.join(ROOT, 'specs', '096-ai-character-maker', 'tasks.md'), 'utf8');
+  const tasks = fs.readFileSync(path.join(ROOT, 'specs', '096-ai-character-maker', 'tasks.md'), 'utf8').replace(/\r\n/g, '\n');
   const t030a = /^- \[([ xX])\] T030a\b/m.exec(tasks);
   assert.ok(t030a, 'T030a is in spec 096 tasks.md');
   assert.strictEqual(t030a[1], ' ', 'T030a is ticked: replace this tripwire (T030b) with T030a\'s FR-034 gate test');
@@ -102,7 +102,7 @@ function imageGenTripwire(): void {
   const files = fs.readdirSync(dir).filter((f) => f.endsWith('.ts') && f !== 'types.ts' && f !== 'capabilities.ts');
   assert.ok(files.includes('codex.ts') && files.length > 20, 'the tripwire reads the adapters\' source: ' + files.length);
   for (const f of files) {
-    const code = fs.readFileSync(path.join(dir, f), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|\s)\/\/.*$/gm, '$1');
+    const code = fs.readFileSync(path.join(dir, f), 'utf8').replace(/\r\n/g, '\n').replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|\s)\/\/.*$/gm, '$1');
     assert.ok(!/\b(imageGen|generateImage)\b/.test(code), `tripwire: src/adapters/${f} turns on image generation before T030a's login gate (FR-034)`);
   }  // the instances main gets (third review of #956): a flag or method set in a constructor, by `Object.assign` or `Object.defineProperty`, a computed key or a helper
   for (const d of descriptors) {
@@ -116,11 +116,11 @@ function imageGenTripwire(): void {
     .filter((f) => /\.(ts|js)$/.test(f) && !f.startsWith('adapters/') && f !== 'renderer/sim.ts');
   assert.ok(outside.includes('main/main.ts') && outside.includes('main/ipc/characters.ts') && outside.length > 50, 'the tripwire reads the source outside src/adapters: ' + outside.length);
   for (const f of outside) {
-    const code = fs.readFileSync(path.join(srcRoot, f), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|\s)\/\/.*$/gm, '$1');
+    const code = fs.readFileSync(path.join(srcRoot, f), 'utf8').replace(/\r\n/g, '\n').replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|\s)\/\/.*$/gm, '$1');
     assert.ok(!/\bimageGen['"`]?\s*(:\s*(?!false\b)|=(?!=))/.test(code), `tripwire: src/${f} sets imageGen outside src/adapters before T030a's login gate (FR-034)`);
   }
   // fail closed: main passes no login gate until T030a builds it, so character:generate refuses every try whatever an adapter reports
-  const mainSrc = ts.createSourceFile('main.ts', fs.readFileSync(path.join(srcRoot, 'main', 'main.ts'), 'utf8'), ts.ScriptTarget.Latest, true);
+  const mainSrc = ts.createSourceFile('main.ts', fs.readFileSync(path.join(srcRoot, 'main', 'main.ts'), 'utf8').replace(/\r\n/g, '\n'), ts.ScriptTarget.Latest, true);
   const calls: ts.CallExpression[] = [];
   const visit = (n: ts.Node): void => { if (ts.isCallExpression(n) && ts.isIdentifier(n.expression) && n.expression.text === 'registerCharactersIpc') calls.push(n); ts.forEachChild(n, visit); };
   visit(mainSrc);
@@ -614,13 +614,13 @@ async function main(): Promise<void> {
     // --- Motion: no characterMotion setting; the global Motion decides (spec 096 Changes 2026-11-05) ---
     assert.ok(!handlers.has('settings:setCharacterMotion'), 'no separate character Motion channel');
 
-    // --- the cap: no call is made (Q5) ---
+    // --- many characters: no limit in main (owner's principle of 2026-10-31; the window warns) ---
     {
       for (let i = 0; i < 24; i++) { const t = await call('character:generate', DESC, 'codex'); assert.strictEqual((await call('character:save', t.tryId, `C${i}`)).ok, true); }
-      const n = prompts.length;
       const r = await call('character:generate', DESC, 'codex');
-      assert.ok(r.ok === false && r.full === true && /24/.test(r.error as string), JSON.stringify(r));
-      assert.strictEqual(prompts.length, n, 'the 25th makes no call');
+      assert.ok(r.ok === true && r.full === undefined, `the 25th is made: ${r.ok}`);
+      assert.strictEqual((await call('character:save', r.tryId, 'one more')).ok, true, 'and kept');
+      assert.strictEqual(((await call('character:list')) as unknown as Rec[]).length, 25);
       for (const c of (await call('character:list')) as unknown as Rec[]) await call('character:delete', c.id);
     }
 
@@ -691,17 +691,17 @@ async function main(): Promise<void> {
 
     // --- the source (FR-032, SC-003) ---
     {
-      const src = fs.readFileSync(path.join(ROOT, 'src', 'main', 'ipc', 'characters.ts'), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
+      const src = fs.readFileSync(path.join(ROOT, 'src', 'main', 'ipc', 'characters.ts'), 'utf8').replace(/\r\n/g, '\n').replace(/\/\*[\s\S]*?\*\//g, '');
       const logs = [...src.matchAll(/console\.\w+\(([^\n]*?)\)\)?;?\s*$/gm)].map((m) => m[1]);
       assert.deepStrictEqual(logs, ['redact(`[characters] ${m}`)'], 'the one log line is the store\'s own, masked (test:consolemask)');
       assert.ok(!/\bshell\b|child_process|nativeImage/.test(src), 'no shell, no process, no decoder here');
       assert.ok(/fromApp\(e\)/.test(src));
-      const preload = fs.readFileSync(path.join(ROOT, 'src', 'preload', 'preload.ts'), 'utf8');
+      const preload = fs.readFileSync(path.join(ROOT, 'src', 'preload', 'preload.ts'), 'utf8').replace(/\r\n/g, '\n');
       for (const c of CHANNELS) assert.ok(preload.includes(`'${c}'`), `the preload calls ${c}`);
     }
     // the simulator's copy of the name rule answers like main's (agent notes: rules the simulator copies; T038)
     {
-      const sim = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'sim.ts'), 'utf8');
+      const sim = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'sim.ts'), 'utf8').replace(/\r\n/g, '\n');
       const block = /\/\* simcharname:begin[\s\S]*?\*\/([\s\S]*?)\/\* simcharname:end \*\//.exec(sim)?.[1];
       assert.ok(block, 'the marked block is there');
       const js = ts.transpileModule(block as string, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText;
@@ -712,7 +712,7 @@ async function main(): Promise<void> {
     }
     // and its copy of the pin rule (finding of the review: closed folders, UNC paths)
     {
-      const sim = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'sim.ts'), 'utf8');
+      const sim = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'sim.ts'), 'utf8').replace(/\r\n/g, '\n');
       const block = /\/\* simcharpin:begin[\s\S]*?\*\/([\s\S]*?)\/\* simcharpin:end \*\//.exec(sim)?.[1];
       assert.ok(block, 'the marked pin block is there');
       const js = ts.transpileModule(block as string, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText;
@@ -737,6 +737,109 @@ async function main(): Promise<void> {
   }
 }
 process.exitCode = 1;
+/* ---- T041a, FR-034: the window's login gate. It fails closed; `check-charmaker` runs it in the page. ---- */
+async function loginGateTests(): Promise<void> {
+  /* what main registers: the same lists, with every optional app on */
+  const ALL_DESCRIPTORS = [...PRODUCTION_DESCRIPTORS, ...offeredDescriptors({}), ...offeredDescriptors({ DURBAR_CLAUDE_TRANSPORT: 'sdk' })];
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const CM = require(path.join(ROOT, 'src', 'renderer', 'charmaker.js')) as {
+    loginGate(k: unknown): string; readLoginKind(b: unknown, id: string): Promise<string>; availability(k: unknown): { state: string; kinds: unknown[] };
+    gatedGenerate(o: { bridge: unknown; description: string; adapterId: string; confirm: () => unknown }): Promise<{ state: string; error?: string; reply?: Promise<unknown> }>;
+    API_KEY_REFUSED: string; NEEDS_CODEX: string; NOT_YET: string; MANY_AT: number;
+  };
+  assert.strictEqual(CM.MANY_AT, CHARACTERS_WARN_AT, 'the window warns at the shared number');
+  assert.strictEqual(CM.loginGate('chatgpt'), 'go');
+  assert.strictEqual(CM.loginGate('apikey'), 'refuse');
+  for (const k of ['unknown', 'ChatGPT', 'chatgpt ', 'api', '', null, undefined, 0, true, {}, ['chatgpt'], '__proto__']) assert.strictEqual(CM.loginGate(k), 'ask', `anything else asks: ${JSON.stringify(k)}`);
+  const bridgeOf = (kind: unknown, opts: { throws?: boolean; none?: boolean } = {}) => {
+    const calls: unknown[][] = [];
+    const b: Rec = { characterGenerate: async (...a: unknown[]) => { calls.push(a); return { ok: true }; } };
+    if (!opts.none) b.characterLoginKind = async () => { if (opts.throws) throw new Error('no'); return kind; };
+    return { b, calls };
+  };
+  assert.strictEqual(await CM.readLoginKind(bridgeOf('x', { none: true }).b, 'codex'), 'unknown', 'no answer: unknown, as the real app today');
+  assert.strictEqual(await CM.readLoginKind(bridgeOf('x', { throws: true }).b, 'codex'), 'unknown', 'an error: unknown');
+  assert.strictEqual(await CM.readLoginKind(bridgeOf({ kind: 'chatgpt' }).b, 'codex'), 'unknown', 'a strange answer: unknown');
+  assert.strictEqual(await CM.readLoginKind(null, 'codex'), 'unknown');
+  const go = (b: unknown, confirm: () => unknown) => CM.gatedGenerate({ bridge: b, description: 'a person', adapterId: 'codex', confirm });
+  // a refusal and a Cancel make no generate call, whatever the question would say
+  for (const [kind, opts] of [['apikey', {}]] as [unknown, Rec][]) {
+    const { b, calls } = bridgeOf(kind, opts);
+    let asked = 0;
+    const r = await go(b, () => { asked++; return true; });
+    assert.deepStrictEqual([r.state, r.error, asked, calls.length], ['refused', CM.API_KEY_REFUSED, 0, 0], 'apikey: refused, not even asked, no call');
+  }
+  for (const [kind, opts] of [['unknown', {}], ['nonsense', {}], [null, { none: true }], [null, { throws: true }]] as [unknown, Rec][]) {
+    for (const answer of [false, null, undefined, 'go', 1, {}, () => { throw new Error('dialog failed'); }]) {
+      const { b, calls } = bridgeOf(kind, opts);
+      const r = await go(b, typeof answer === 'function' ? answer as () => unknown : () => answer);
+      assert.deepStrictEqual([r.state, calls.length], ['declined', 0], `${String(kind)}: only an exact true goes on (${String(answer)})`);
+    }
+    const { b, calls } = bridgeOf(kind, opts);
+    let asked = 0;
+    const r = await go(b, () => { asked++; return true; });
+    await r.reply;
+    assert.deepStrictEqual([r.state, asked], ['started', 1], `${String(kind)}: Make it goes on`);
+    assert.deepStrictEqual(calls, [['a person', 'codex', { confirmed: true }]], 'with this try\'s own answer');
+  }
+  {
+    const { b, calls } = bridgeOf('chatgpt');
+    let asked = 0;
+    const r = await go(b, () => { asked++; return false; });
+    await r.reply;
+    assert.deepStrictEqual([r.state, asked, calls], ['started', 0, [['a person', 'codex', { confirmed: false }]]], 'chatgpt: no question');
+  }
+  // the kind is read on every try: a login that changes between tries is not remembered
+  {
+    let kind = 'chatgpt';
+    const seen: number[] = [];
+    const b = { characterLoginKind: async () => kind, characterGenerate: async () => { seen.push(1); return {}; } };
+    await (await go(b, () => false)).reply;
+    kind = 'apikey';
+    assert.strictEqual((await go(b, () => true)).state, 'refused');
+    assert.strictEqual(seen.length, 1, 'no second call');
+  }
+  // what the dialog can say
+  assert.strictEqual(CM.availability([]).state, 'off');
+  assert.strictEqual(CM.availability(null).state, 'off');
+  assert.strictEqual(CM.availability([{ id: 'codex', state: 'ready', capabilities: {} }, { id: 'claude', state: 'ready', capabilities: { imageGen: false } }, { id: 'x', state: 'ready', capabilities: { imageGen: 'yes' } }, null]).state, 'off', 'ready apps without imageGen: it cannot make one, and says so');
+  assert.strictEqual(CM.availability([{ id: 'codex', state: 'too-old', capabilities: { imageGen: true } }]).state, 'needs');
+  assert.deepStrictEqual(CM.availability([{ id: 'codex', state: 'ready', capabilities: { imageGen: true } }, { id: 'c', state: 'ready', capabilities: {} }]).kinds, [{ id: 'codex', state: 'ready', capabilities: { imageGen: true } }], 'Made by: only imageGen');
+  assert.ok(!/sign|install/i.test(CM.NOT_YET), 'the words for "cannot yet" suggest no step that would not help');
+  // the renderer has one way to the generate call: inside the gate
+  const rendererDir = path.join(ROOT, 'src', 'renderer');
+  const callers = fs.readdirSync(rendererDir).filter((f) => f.endsWith('.js')).filter((f) => /characterGenerate/.test(fs.readFileSync(path.join(rendererDir, f), 'utf8').replace(/\r\n/g, '\n')));
+  assert.deepStrictEqual(callers, ['charmaker.js'], 'only charmaker.js names the call');
+  const cmSrc = fs.readFileSync(path.join(rendererDir, 'charmaker.js'), 'utf8').replace(/\r\n/g, '\n');
+  assert.strictEqual((cmSrc.match(/\.characterGenerate\(/g) ?? []).length, 1, 'once');
+  const GATED = /async function gatedGenerate[\s\S]*?\.characterGenerate\(description, adapterId, \{ confirmed \}\)[\s\S]*?\n  \}\n/;
+  assert.ok(GATED.test(cmSrc), 'in gatedGenerate');
+  // a Windows checkout has CRLF line endings (T047 review, 2026-11-17): every source read a multi-line regex depends on is normalised; the same source with CRLF must still match once read the same way, and does not without it
+  const crlfSrc = cmSrc.replace(/\n/g, '\r\n');
+  assert.ok(!GATED.test(crlfSrc), 'CRLF mutant: the multi-line regex fails on raw CRLF text, so the reads must normalise');
+  assert.ok(GATED.test(crlfSrc.replace(/\r\n/g, '\n')), 'in gatedGenerate (CRLF source, normalised)');
+  // outside the simulator main refuses whatever the window sends, until T030a gates it: no real adapter may switch imageGen on before that (the descriptors' and instances' real values, not their source text)
+  const charIpc = fs.readFileSync(path.join(ROOT, 'src', 'main', 'ipc', 'characters.ts'), 'utf8').replace(/\r\n/g, '\n');
+  if (!/FR-034 gate in main/.test(charIpc)) {
+    for (const d of ALL_DESCRIPTORS) {
+      assert.notStrictEqual(d.capabilities.imageGen, true, `${d.id}: T030a before T030: no adapter sets imageGen until main enforces FR-034`);
+      const ad = d.create();
+      assert.notStrictEqual(ad.capabilities?.imageGen, true, `${d.id}: and no instance does`);
+      assert.notStrictEqual(typeof ad.generateImage, 'function', `${d.id}: no real generateImage until T030a`);
+    }
+  }
+  // the real preload hands main every argument: `{ confirmed }` is T030a's input, and the simulator's fake alone would never show it was dropped
+  {
+    const src = ts.transpileModule(fs.readFileSync(path.join(ROOT, 'src', 'preload', 'preload.ts'), 'utf8').replace(/\r\n/g, '\n'), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 } }).outputText;
+    const invoked: unknown[][] = [];
+    let api: Rec = {};
+    const fake = { contextBridge: { exposeInMainWorld: (_n: string, a: Rec) => { api = a; } }, ipcRenderer: { invoke: (...a: unknown[]) => { invoked.push(a); return Promise.resolve(); }, on: () => undefined, removeListener: () => undefined, send: () => undefined }, webFrame: {}, webUtils: {} };
+    new Function('require', 'exports', 'module', 'process', src)((m: string) => { if (m === 'electron') return fake; throw new Error(`the preload requires ${m}`); }, {}, { exports: {} }, { platform: 'darwin', argv: [], env: {}, versions: {} });
+    await (api.characterGenerate as (...a: unknown[]) => Promise<unknown>)('a person', 'codex', { confirmed: true });
+    assert.deepStrictEqual(invoked, [['character:generate', 'a person', 'codex', { confirmed: true }]], 'the real preload passes { confirmed } to main');
+  }
+}
+
 // a generation that never ends would keep the polls above alive for ever: the suite fails instead of hanging `npm test`
 setTimeout(() => { console.error('test-charipc: timed out'); process.exit(1); }, 120_000).unref();
-main().then(() => { process.exitCode = 0; process.exit(0); }, (e) => { console.error(e); process.exit(1); });
+main().then(loginGateTests).then(() => { process.exitCode = 0; process.exit(0); }, (e) => { console.error(e); process.exit(1); });

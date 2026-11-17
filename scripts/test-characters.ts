@@ -28,15 +28,16 @@ assert.strictEqual(parseCharacters('retro'), undefined, 'main: a stored retro is
 assert.strictEqual(T.parseCharacters('retro'), undefined, 'renderer: a stored retro is dropped (the value is pixel; retro is the set)');
 assert.deepStrictEqual(parseSettings('{"characters":"retro"}'), {}, 'main: a settings file holding characters retro reads back with no characters');
 assert.strictEqual(CHARACTER_KITS.mine, 'crew', 'spec 096 FR-040: My characters draw the crew kit');
-// spec 096, coordinator's choice of 2026-10-31: `mine` is valid, but no window control may choose it before T042 and T044 can draw it. Settings' list is its own, and has no `mine`
+// spec 096 T044: Settings offers the first eight and `mine` only behind the character list; a stored `mine` with no character draws the theme's own (check-characters runs it)
 {
-  const screens = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'screens.js'), 'utf8');
+  const screens = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'screens.js'), 'utf8').replace(/\r\n/g, '\n');
   const list = /const charItems=\(\)=>\{[\s\S]*?const list=\[([^\n]*)\];/.exec(screens)?.[1] ?? '';
   const offered = [...new Set([...list.matchAll(/\bid:'([a-z]+)'/g)].map((m) => m[1]))];
-  assert.ok(offered.length > 0 && !offered.includes('mine'), "Settings does not offer 'mine'; T044 adds it and changes this line");
+  assert.ok(offered.length > 0 && !offered.includes('mine'), "the list line holds the choices that are always offered, not 'mine'");
+  assert.ok(/if\(mineN>=0\)list\.push\(\{id:'mine'/.test(screens), 'and mine, when the app can list characters (spec 096 T044)');
   assert.ok(!/T\.CHARACTERS|THEME\.CHARACTERS/.test(screens), 'and does not list from theme.js');
-  const appJs = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'app.js'), 'utf8');
-  assert.ok(/THEME\.setCharacters\(drawableCharacters\(v&&v\.characters\)\)/.test(appJs) && /const drawableCharacters=c=>c==='mine'\?'theme':c;/.test(appJs), 'a stored mine draws the theme\'s own until T044 (check-characters runs it)');
+  const appJs = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'app.js'), 'utf8').replace(/\r\n/g, '\n');
+  assert.ok(/THEME\.setCharacters\(drawableCharacters\(CHARS_CHOSEN\)\)/.test(appJs) && /const drawableCharacters=c=>c==='mine'&&!\(CREW&&CREW\.idsFor\('mine'\)\.length\)\?'theme':c;/.test(appJs), "a stored mine with no character draws the theme's own");
 }
 assert.deepStrictEqual(T.CHARACTER_KITS, { ...CHARACTER_KITS }, 'theme.js maps each choice to the same kit');
 assert.strictEqual(T.LEGACY_CREW_THEME, LEGACY_CREW_THEME);

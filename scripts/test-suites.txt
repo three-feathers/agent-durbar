@@ -189,6 +189,7 @@ test:browserurl
 test:browserviews
 test:browsertabs
 test:browseripc
+test:paneltabs
 test:browserpane
 test:chatlinks
 test:simguard
@@ -196,6 +197,7 @@ test:shutters
 test:unread
 test:tooltip
 test:simclock
+test:crew-diag
 test:pointer-log
 test:labelsbackfill
 test:claim
@@ -262,6 +264,8 @@ test:mcpcontextipc
 test:quota
 test:featureinventory
 test:simversion
+test:brainpoints
+test:braindraw
 test:momentsregistry
 test:paritytick
 test:picturebudget
