@@ -27,6 +27,7 @@
  *   source mutant (run by hand): the key path's away test back to `pl.classList.contains('narrow')` only: the arcade step fails
  *   ORDER_MUTANT=keys   Alt+arrows on a plate are swallowed before the app sees them (must fail)
  *   ORDER_MUTANT=menu   the menu's Move earlier / later is swallowed (must fail)
+ *   ORDER_MUTANT=unpin6   step 6 leaves the pair as the simulator made it (must fail at "the two desks are free")
  *   ORDER_MUTANT=pinnoop   the simulator's pinAt does nothing but return true (must fail: the pinned desks never go away)
  */
 const assert = require('assert');
@@ -318,6 +319,24 @@ module.exports = async (ctx) => {
       await js(`try{sessionStorage.removeItem('durbar.simorder')}catch(e){}`);
       await H.load({ w, h, query: q, ...(loadReal ? { ready: `document.querySelectorAll('#stage .ro-plate').length>=10`, readyMs: 30000, settle: false } : {}), focus: true });
       if (loadReal) assert.strictEqual(await js(`document.querySelector('#stage .ro').dataset.world||'photo'`), world === 'arcade' ? 'retro' : 'photo', `${t}: the world is shown`);
+      /* pin the state, as steps 2 and 5 do (FR-031: they wait for `visitsSettled`, then fix who is away with `pinAt`): which desks work, wait or stand away is the simulator's mix, and a pair of free desks is
+         not always there (in the Photo office most working desks stand away at a place: 3 of 4 runs on a loaded machine had no pair). So the pair is made, not hoped for: once no visit is about to start or end,
+         two desks of one room that stand next to each other, the later in the session list shown after the earlier, are told their turn ended (status idle), and the step waits until both are at their desks
+         and done. ORDER_MUTANT=unpin6 does not tell them: they stay as the simulator made them and the step fails at "the two desks are free". */
+      if (loadReal) {
+        await must(`window.__durbarSimUi.visitsSettled()`, `${t}: no visit is about to start or end`, 30000);
+        const f6 = await js(`(()=>{const ag=window.__durbarSimUi.agents().filter(a=>!a.parent);return {list:ag.map(a=>a.id),room:Object.fromEntries(ag.map(a=>[a.id,a.room])),busy:ag.filter(a=>a.state==='waiting'||a.state==='error'||a.limit).map(a=>a.id),shown:window.__durbarSimUi.realLayout().zones.flatMap(z=>z.desks).filter(d=>!d.lounge).map(d=>d.id).filter((x,i,l)=>l.indexOf(x)===i)}})()`);
+        let pair = null;
+        for (let i = 0; i + 1 < f6.shown.length && !pair; i++) {
+          const [x, y] = [f6.shown[i], f6.shown[i + 1]];
+          if (f6.room[x] === f6.room[y] && !f6.busy.includes(x) && !f6.busy.includes(y) && f6.list.indexOf(x) < f6.list.indexOf(y)) pair = [x, y];
+        }
+        assert.ok(pair, `${t}: two desks of one room next to each other, neither waiting nor in error nor at its limit, the later in the list (${f6.shown}; busy ${f6.busy})`);
+        if (MUTANT !== 'unpin6') for (const id of pair) await js(`window.__durbarSimEmit({type:'status',status:'idle',sessionId:${jsLiteral(id)}});1`);
+        const freeNow = `${jsLiteral(pair)}.every(id=>{const a=window.__durbarSimUi.agents().find(x=>x.id===id);return a&&(a.state==='idle'||a.state==='done')})&&!${jsLiteral(pair)}.some(id=>window.__durbarSimUi.awayIds().includes(id))&&!window.__durbarSimUi.realLayout().zones.flatMap(z=>z.desks).some(d=>d.away&&${jsLiteral(pair)}.includes(d.id))&&window.__durbarSimUi.visitsSettled()`;
+        const freeSeen = () => js(`({state:${jsLiteral(pair)}.map(id=>window.__durbarSimUi.agents().find(x=>x.id===id).state),away:window.__durbarSimUi.awayIds()})`);
+        await must(freeNow, async () => t + ': the two desks are free (idle or done, at their desks): ' + pair + '; seen ' + JSON.stringify(await freeSeen()), 30000);
+      }
       if (switched) {
         await js(`window.DurbarScreens.openSettings();true`);
         await must(`!!document.querySelector('#wrGroup [data-world="plain"]')`, `${t}: Settings shows the Plain world card (the Office layout row is gone)`);
@@ -342,7 +361,7 @@ module.exports = async (ctx) => {
       assert.ok(await focus(`#stage ${card}[data-id="${a}"]`), `${t}: ${a}'s card takes the focus`);
       for (let step = m - 1; step >= k; step--) {
         await key('Left', ['alt'], { char: 'never' });
-        await must(`(${ORDER_NOW}).indexOf(${jsLiteral(a)})===${step}`, `${t}: Alt+Left moved ${a} to place ${step} (before ${b}); shown ${await shown()}`);
+        await must(`(${ORDER_NOW}).indexOf(${jsLiteral(a)})===${step}`, async () => `${t}: Alt+Left moved ${a} to place ${step} (before ${b}); shown ${await shown()}`, 30000);
       }
       await must(`(${ORDER_NOW}).indexOf(${jsLiteral(a)})>=0&&(${ORDER_NOW}).indexOf(${jsLiteral(a)})<(${ORDER_NOW}).indexOf(${jsLiteral(b)})`, `${t}: Alt+Left put ${a} before ${b}`);
       if (real) { /* and on the picture: the moved desk's plate is now before the other's (left of it on its row, or a row higher) */
