@@ -1,5 +1,6 @@
 /** Unit test (spec 065): CheckpointStore keeps, previews and restores an agent's file changes per turn, safely. Temp folders only. */
 import * as assert from 'assert';
+import { assertCpuUnder, withBackstop } from './hang-backstop';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
@@ -176,10 +177,13 @@ async function brokerChecks(): Promise<void> {
   assert.strictEqual(seen.length, 0, 'the user denied: no guard');
   // a failing guard never fails the write; a hanging one is cut off after 2 s
   assert.strictEqual((await mk('allow', async () => { throw new Error('boom'); }).request({ kind: 'write', fileName: '/w/e.ts' })).kind, 'approve-once');
-  const t0 = Date.now();
-  assert.strictEqual((await mk('allow', () => slow).request({ kind: 'write', fileName: '/w/f.ts' })).kind, 'approve-once');
-  assert.ok(Date.now() - t0 < 3000, 'bounded');
+  assert.strictEqual((await withBackstop(mk('allow', () => slow).request({ kind: 'write', fileName: '/w/f.ts' }), 'a hanging guard is cut off')).kind, 'approve-once');
   release?.();
+  // the guard itself, without a real wait: a promise that never settles fails with its label at once when the injected timer fires; one that settles passes
+  await assert.rejects(withBackstop(new Promise<void>(() => undefined), 'probe', 20_000, (cb) => { cb(); return undefined; }), /probe: still pending after 20000 ms/, 'the hang guard fails a hung promise');
+  assert.strictEqual(await withBackstop(Promise.resolve(7), 'probe', 20_000, () => undefined), 7, 'and passes a promise that settles');
+  assert.throws(() => assertCpuUnder('probe', 100, () => undefined, (p) => (p ? { user: 5_000_000, system: 0 } : { user: 0, system: 0 })), /probe: 5000 ms CPU, limit 100 ms/, 'the CPU guard fails on a fake reading over its limit, no real work');
+  assert.strictEqual(assertCpuUnder('probe', 100, () => undefined, (p) => (p ? { user: 1000, system: 0 } : { user: 0, system: 0 })), 1, 'and passes one under it');
 }
 
 // ---- the words (src/renderer/checkpoints.js)

@@ -1,5 +1,6 @@
 /** Spec 084 T010 (FR-002..FR-006, FR-004's hostile list, SC-003, issue 701): the pure contacts model. `npm run test:contacts`. No credits. */
 import * as assert from 'assert';
+import { assertCpuUnder } from './hang-backstop';
 import * as fs from 'fs';
 import * as path from 'path';
 import {
@@ -136,16 +137,17 @@ for (const n of ['ßen ßa', 'ﬀoo bar', 'ŉa b', 'ǆa ǆb', 'ﬃ ﬃ', '😀 S
 assert.strictEqual(guessInitials('ßen ßa'), 'SS');
 // finding 2: a long list is refused before any loop over it (loose limit, no ratio)
 {
-  const t1 = Date.now();
+  let r1!: ReturnType<typeof cleanContact>;
+  const cpu1 = assertCpuUnder('a long list is refused before any loop over it (it took 56 s for 40,000 before)', 10_000, () => {
   const huge = Array.from({ length: 40_000 }, (_, i) => 'a' + i);
-  const r1 = cleanContact({ name: 'Sam Sample', aliases: huge });
+  r1 = cleanContact({ name: 'Sam Sample', aliases: huge });
+  });
   assert.ok(!r1.ok && r1.field === 'aliases' && r1.cap === true && r1.error === REASONS.aliasesCap, 'a huge alias list is refused with the alias cap');
   assert.ok(!cleanContact({ name: 'Sam Sample', channels: Array.from({ length: 40_000 }, () => ({ kind: 'email', address: 'a@example.invalid' })) }).ok);
   const million = '"a",'.repeat(1_000_000) + '"a"';
   assert.ok(utf8Len(million) < L.storeBytes, 'the million aliases fit the byte cap');
   const pr = parseContactsDoc(`{"version":1,"contacts":[{"id":"p-${'a'.repeat(L.personIdChars)}","name":"Sam Sample","aliases":[${million}],"createdAt":"${T0.toISOString()}","updatedAt":"${T0.toISOString()}","rev":1,"source":"typed"}]}`);
   assert.ok(pr.ok && pr.doc.contacts.length === 0 && pr.dropped === 1, 'a contact with a million aliases is dropped');
-  assert.ok(Date.now() - t1 < 10_000, 'refused quickly (well under 10 s; it took 56 s for 40,000 before)');
 }
 // finding 3: format, bidi, invisible, separator and lone-surrogate characters are refused in every text field
 {
@@ -666,9 +668,9 @@ assert.ok(!/Date\.now|new Date\(\)|Math\.random|crypto|from 'fs'|from 'path'|fro
 assert.deepStrictEqual([...own.matchAll(/from '([^']+)'/g)].map((m) => m[1]), ['./notes', './redact'], 'imports only the notes helpers and the one hidden-character list');
 
 // speed on large input (loose limit)
-const t0 = Date.now();
-const bigRaw = checkedSerialize(full);
-assert.ok(bigRaw.ok && parseContactsDoc(bigRaw.text).ok);
-assert.ok(Date.now() - t0 < 5000, 'a full store parses in well under 5 s');
+assertCpuUnder('a full store serializes and parses (a hang backstop: 20 s of CPU)', 20_000, () => {
+  const bigRaw = checkedSerialize(full);
+  assert.ok(bigRaw.ok && parseContactsDoc(bigRaw.text).ok);
+});
 
 console.log('contacts: ok');

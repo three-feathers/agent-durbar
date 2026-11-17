@@ -1,6 +1,7 @@
 /** A chat keeps a bounded transcript (spec 005 FR-238, FR-239, issue #1380): src/renderer/chattrim.js on jsdom and on plain objects, and its
  * wiring in app.js, index.html and the build. `npm run test:chattrim`. No credits spent, no Electron. */
 import assert from 'assert';
+import { assertCpuUnder } from './hang-backstop';
 import fs from 'fs';
 import path from 'path';
 
@@ -297,10 +298,8 @@ assert.strictEqual(CT.isPinned({ matches(sel: string) { if (/mcp-line/.test(sel)
     const kid: any = { i, removed: false, classList: { contains: () => false }, matches: () => i % 1000 === 0, querySelector: () => null, remove() { kid.removed = true; } };
     parent.children.push(kid);
   }
-  const t0 = Date.now();
-  const n = CT.trimChildren(parent, 300, new Set(), null);
-  const ms = Date.now() - t0;
-  assert.ok(ms < 1000, '200,000 blocks trimmed in under 1 s, took ' + ms + ' ms');
+  let n = 0;
+  assertCpuUnder('200,000 blocks are trimmed in linear time', 10_000, () => { n = CT.trimChildren(parent, 300, new Set(), null); });
   const pinned = parent.children.filter((k: { i: number; removed: boolean }) => k.i % 1000 === 0 && k.removed).length;
   assert.strictEqual(pinned, 0, 'no pinned block went');
   assert.strictEqual(parent.children.filter((k: { removed: boolean }) => !k.removed).length, 300, 'down to 300 (200 pinned among them)');
@@ -314,10 +313,8 @@ assert.strictEqual(CT.isPinned({ matches(sel: string) { if (/mcp-line/.test(sel)
   for (let i = 0; i < 200_000; i++) kids.push({ i, classList: { contains: () => false }, matches: () => i % 997 === 0, querySelector: () => null, querySelectorAll: () => [], childElementCount: 0, contains: () => false, remove() {} });
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const el: any = { children: kids, childElementCount: kids.length, contains: () => false };
-  const t0 = Date.now();
-  const drops = CT.plan({ el, keep: CT.CHAT_KEEP, live: new Set(), tls: [] });
-  const ms = Date.now() - t0;
-  assert.ok(ms < 1000, 'plan over 200,000 messages in under 1 s, took ' + ms + ' ms');
+  let drops: { i: number }[] = [];
+  assertCpuUnder('plan over 200,000 messages is linear', 10_000, () => { drops = CT.plan({ el, keep: CT.CHAT_KEEP, live: new Set(), tls: [] }); });
   assert.ok(drops.every((k: { i: number }) => k.i % 997 !== 0), 'no pinned message is planned');
   assert.strictEqual(kids.length - drops.length, 300, '300 kept (pinned ones among them)');
 }

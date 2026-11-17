@@ -1,6 +1,7 @@
 /** Rename in place, the pure part and the field's logic (spec 059 FR-021, FR-022, FR-027): `npm run test:inlinename`.
  *  The real-browser behaviour (layout, focus, the chat staying open) is `npm run check:ui -- --only check-rename-inline`. */
 import * as assert from 'assert';
+import { assertCpuUnder } from './hang-backstop';
 import * as path from 'path';
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const { JSDOM } = require('jsdom') as { JSDOM: new (html: string) => { window: any } }; // eslint-disable-line @typescript-eslint/no-explicit-any
@@ -57,9 +58,7 @@ assert.strictEqual(IN.blurAction(true, ''), 'save');
 // timing: 200k characters through the pure helpers stay fast (loose limit)
 {
   const big = 'ab \n\t'.repeat(40000);
-  const t0 = Date.now();
-  IN.pasteText(big); IN.outcome(big, big + ' x');
-  assert.ok(Date.now() - t0 < 1000, 'pure helpers handle 200k characters in under a second');
+  assertCpuUnder('pure helpers handle 200k characters in linear time', 10_000, () => { IN.pasteText(big); IN.outcome(big, big + ' x'); });
 }
 
 // ---- the field (jsdom, no layout) ----

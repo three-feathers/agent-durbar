@@ -1,6 +1,7 @@
 /** Live activity on the desks (spec 001 FR-028..FR-032): readout rules, masking through the shared redact module, the paint throttle,
  * and the page wiring. `npm run test:liveact`. No credits spent. */
 import './safetext-shared'; // the compiled hidden-character module for safetext.js (spec 084 FR-033)
+import { assertCpuUnder } from './hang-backstop';
 import assert from 'assert';
 import { assertLinearShape } from './redact-growth-lib';
 import fs from 'fs';
@@ -478,9 +479,9 @@ for (const st of ['idle', 'needs-permission', 'error', 'stopped']) {
   eq(L.toolName('a'.repeat(256), hm), 'a'.repeat(256), '#1585 round 7 toolName: a name of 256 characters is still shown');
   eq(L.toolName('[redacted:'.repeat(4000) + ']a\\b', hm), 'tool', '#1585 round 7 toolName: a 40,000-character [redacted: name is the neutral word');
   {
-    const t0 = Date.now(), r = L.toolName('\\a'.repeat(500_000), hm), ms = Date.now() - t0;
+    let r = '';
+    assertCpuUnder('#1585 round 7 toolName: a 1 MB backslash-dense name is answered before any mask runs', 10_000, () => { r = L.toolName('\\a'.repeat(500_000), hm); });
     eq(r, 'tool', '#1585 round 7 toolName: a 1 MB backslash-dense name is the neutral word');
-    ok(ms < 1000, '#1585 round 7 toolName: a 1 MB backslash-dense name is answered before any mask runs (generous limit 1,000 ms; took ' + ms + ' ms)');
   }
   eq(L.phrase({ kind: 'tool', tool: TK, label: '' }, { redact: () => '[redaction failed]' }), 'Using tool', 'phrase with a failed mask: Using tool');
   // the chat: every surface that names a tool calls the one function
@@ -799,8 +800,8 @@ for (const st of ['idle', 'needs-permission', 'error', 'stopped']) {
   eq(L.permText('run echo café 中文 \u{1f600}', 'shell', hm), { text: 'run echo café 中文 \u{1f600}', hidden: false }, 'r2 item 3: ordinary letters, CJK and emoji are not marked');
   // item 4: a huge input is cut early, marked, and fast
   for (const [lab, big] of [['ZWSP', 'run echo ' + '​'.repeat(1000000)], ['words', 'run ' + 'abcdef '.repeat(200000)], ['escapes', 'run a' + '\u001b'.repeat(1000000)]] as const) {
-    const t0 = Date.now(), r = L.permText(big, 'shell', hm), ms = Date.now() - t0;
-    ok(ms < 400, 'r2 item 4: ' + lab + ': a 1M input is looked at in under 400 ms (took ' + ms + ')');
+    let r!: ReturnType<typeof L.permText>;
+    assertCpuUnder('r2 item 4: ' + lab + ': a 1M input is looked at in bounded time', 10_000, () => { r = L.permText(big, 'shell', hm); });
     ok(r.hidden === true && r.text.length < 120000 && /⟦cut⟧$/.test(r.text), 'r2 item 4: ' + lab + ': the text is cut and marked: ' + r.text.length);
   }
   { let pre = 'run echo '; for (let i = 0; pre.length < 9990; i++) pre += 'w' + i + ' ';

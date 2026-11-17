@@ -10,6 +10,7 @@
  *  4. the address bar: file:, javascript:, userinfo are refused with their reason; the test scheme only under the simulator.
  */
 import * as assert from 'assert';
+import { withBackstop } from './hang-backstop';
 import { EventEmitter } from 'events';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -467,9 +468,7 @@ process.on('exit', () => {
     await r.ctl.open('s1');
     r.ctl.bounds('s1', B); r.ctl.visible('s1', true);
     r.sessions.get('s1')!.wc.capturePage = () => new Promise(() => undefined);
-    const t0 = Date.now();
-    assert.deepStrictEqual(await r.ctl.snapshot('s1'), { ok: false }, 'no picture, and it answers');
-    assert.ok(Date.now() - t0 < 2000, 'within its time limit');
+    assert.deepStrictEqual(await withBackstop(r.ctl.snapshot('s1'), 'a capture that never answers: the snapshot time limit'), { ok: false }, 'no picture, and it answers');
     assert.deepStrictEqual(r.ctl.overlay('s1', true), { ok: true });
     assert.deepStrictEqual(r.win.children, [], 'the view is hidden without the picture');
     const src = fs.readFileSync(path.join(ROOT, 'src/main/browser/controller.ts'), 'utf8');

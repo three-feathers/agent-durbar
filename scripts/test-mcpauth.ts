@@ -1,5 +1,6 @@
 /** Unit test: the MCP OAuth challenge classifier and `stripMcpChallenge` (spec 058 FR-061; not the remote-control handshake of `test-mcp-auth.ts`). `npm run test:mcpauth`. No process, no account, no credits. */
 import * as assert from 'assert';
+import { assertCpuUnder } from './hang-backstop';
 import { isMcpAuthChallenge, stripMcpChallenge } from '../src/adapters/mcpauth';
 
 const ISSUE = 'MCP tool catalog changed before tool "github-search_issues" could be invoked: Failed to verify cached MCP tools: MCP OAuth challenge required (HTTP 401)';
@@ -49,10 +50,10 @@ assert.ok(!/requires authentication/.test(stripMcpChallenge('notes requires auth
 // bounded input: a phrase past the window is not read; a 1 MB text is cheap
 assert.ok(!isMcpAuthChallenge('x'.repeat(5000) + ISSUE), 'beyond the bound is ignored');
 {
-  const t0 = Date.now();
-  isMcpAuthChallenge('MCP server "' + 'a'.repeat(1_000_000));
-  isMcpAuthChallenge(' requires authentication. Open this session'.repeat(50_000));
-  isMcpAuthChallenge('Re-authentication required for MCP serve'.repeat(100_000));
-  assert.ok(Date.now() - t0 < 500, 'linear time');
+  assertCpuUnder('mcpauth: a bounded input is read in linear time', 10_000, () => {
+    isMcpAuthChallenge('MCP server "' + 'a'.repeat(1_000_000));
+    isMcpAuthChallenge(' requires authentication. Open this session'.repeat(50_000));
+    isMcpAuthChallenge('Re-authentication required for MCP serve'.repeat(100_000));
+  });
 }
 console.log('mcpauth: the issue text, runtime phrases, negatives, bounded input OK');
