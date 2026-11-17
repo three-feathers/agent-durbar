@@ -21,6 +21,7 @@ const { helpers, waits, jsLiteral } = require('./driver-helpers');
 
 const SIZES = [[1440, 900], [1280, 800]];
 const WORLDS = ['photo', 'retro'];
+const MUTANT = process.env.DRAG_CANCEL_MUTANT || ''; /* 'unpin' skips the pin: the driver must fail at 'the agent put away by the pin stands away' */
 
 module.exports = async (ctx) => {
   const H = helpers(ctx);
@@ -33,6 +34,20 @@ module.exports = async (ctx) => {
   const settled = async () => {
     await must(`window.__durbarSimUi.visitsSettled()`, 'no visit about to start or end', 20000);
     await must(`(()=>{const U=window.__durbarSimUi,v=new Set(U.awayIds());return U.realLayout().zones.flatMap(z=>z.desks).filter(d=>!d.lounge).every(d=>!!d.away===v.has(d.id))})()`, 'the drawn desks match the visit record', 20000);
+    /* pin the state, as check-097-order does (FR-031: it waits for `visitsSettled`, then fixes who is away with `pinAt` and `crowd`): the simulator sends agents away on its own clock, and a visit that starts or
+       ends mid-drag redraws the plates (pointerout, then no more events: 1 of 6 runs at "d real Escape" on Paco's machine). So once nothing is about to start or end, one agent at its desk is put away on purpose to prove the pin works (the
+       Library, as check-097-order step 5 does) and released, then everybody away is pinned, so no tick or tool event changes who is away during the case. Pins are dropped by a reload. */
+    {
+      /* proof that the pin works (a pin that does nothing must fail the step): an agent at its desk is put away, shown away, and released again; then the agents away are pinned where they are */
+      const free = await js(`(()=>{const U=window.__durbarSimUi,v=new Set(U.awayIds());return U.agents().filter(a=>!a.parent).map(a=>a.id).find(id=>!v.has(id))})()`);
+      assert.ok(free, 'an agent that is not away, to be put away by the pin');
+      if (MUTANT !== 'unpin') assert.ok(await js(`window.__durbarSimUi.pinAt(${jsLiteral(free)},'library')`), `${free} is pinned`);
+      await must(`window.__durbarSimUi.awayIds().includes(${jsLiteral(free)})&&window.__durbarSimUi.realLayout().zones.flatMap(z=>z.desks).some(d=>d.id===${jsLiteral(free)}&&d.away)`, 'the agent put away by the pin stands away (the state is pinned)');
+      await js(`window.__durbarSimUi.uncrowd()`);
+      await must(`window.__durbarSimUi.visitsSettled()&&!window.__durbarSimUi.awayIds().includes(${jsLiteral(free)})`, 'the proof agent is released');
+      for (const id of await js(`window.__durbarSimUi.awayIds()`)) assert.ok(await js(`window.__durbarSimUi.pinAt(${jsLiteral(id)},'library')`), `${id} is pinned`);
+    }
+    await must(`(()=>{const U=window.__durbarSimUi,v=new Set(U.awayIds());return U.visitsSettled()&&U.realLayout().zones.flatMap(z=>z.desks).filter(d=>!d.lounge).every(d=>!!d.away===v.has(d.id))})()`, 'the drawn desks match the visit record (pinned)', 20000);
   };
   const load = async (w, h, world) => {
     await js(`try{sessionStorage.removeItem('durbar.simorder')}catch(e){}`);
