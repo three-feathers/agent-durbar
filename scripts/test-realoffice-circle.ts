@@ -213,6 +213,18 @@ const movedBy = (meta: RealMeta, W: number, H: number, agents: number, f: number
   const sim = (): RealModel => { let i = 0; const fo = [[4, [0]], [4, []], [3, []], [2, []], [2, [1]]].map(([c, lg], k) => ({ id: 'f' + k, agents: Array.from({ length: c as number }, (_, j) => { const lounge = (lg as number[]).includes(j), a: RealAgent = { id: 'a' + i, state: lounge ? 'idle' : STATES[i % STATES.length], person: PEOPLE[i % 15], away: null, ...(lounge ? { lounge: true } : {}) }; i++; return a; }) })); return { folders: fo, places: model(15, 5).places }; };
   for (const [W, H, want] of [[1440, 797, 'circle'], [1280, 697, 'rows']] as Array<[number, number, string]>) for (const counts of [1, 2, 5]) assert.strictEqual(layoutWithFallback('circle', sim(), { w: W, h: H }, META_CAVE, signsOf(5, counts)).ran, want, `the simulator's 15-agent frame in the Cave at ${W}x${H}, ${counts} counts: ${want}`);
 }
+// ---- the All floors view stays rows (FR-230, 097 FR-104; main's storeys on the Cave): a model of two floors draws rows with its storeys, never the circle; one floor, or a world with no storeys, keeps the circle ----
+{
+  const fl = (id: string, n: number) => ({ id, name: id, n });
+  const m = model(8, 4), two = { ...m, folders: m.folders.map((f, i) => ({ ...f, floor: i < 2 ? fl('f2', 2) : fl('f1', 1) })) } as RealModel, one = { ...m, folders: m.folders.map((f) => ({ ...f, floor: fl('f1', 1) })) } as RealModel;
+  for (const [W, H] of [[1440, 797], [1280, 697]]) {
+    const v = { w: W, h: H }, r = layoutWithFallback('circle', two, v, META_CAVE, SIGNS(4));
+    assert.strictEqual(r.ran, 'rows', `the building view of two floors draws rows at ${W}x${H} (all-floors-rows)`);
+    assert.ok((r.lay.storeys || []).length === 2, `rows with the Cave's two storeys at ${W}x${H} (all-floors-rows: storeys drawn)`);
+    assert.strictEqual(layoutWithFallback('circle', one, v, META_CAVE, SIGNS(4)).ran, arrangementFits('circle', one, v, META_CAVE) ? 'circle' : 'rows', 'a single floor follows the fit rule');
+    assert.strictEqual(layoutWithFallback('circle', two, v, { ...META_CAVE, storeys: false }, SIGNS(4)).ran, arrangementFits('circle', two, v, { ...META_CAVE, storeys: false }) ? 'circle' : 'rows', 'a world with no storeys keeps the circle (all-floors-rows: only storeys worlds)');
+  }
+}
 // ---- the ladder circle -> rows (FR-230, owner 2026-11-14 13:10 UTC): 15 agents in 14 and in 15 one-agent folders fall back to rows, no scroll, nothing off the stage ----
 {
   const META_CAVE = { ...readJson('worlds', 'cave', 'world.json'), ...readJson('sets', 'prehistoric', 'set.json') } as unknown as RealMeta;

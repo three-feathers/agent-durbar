@@ -557,6 +557,8 @@ export function layoutFor(arrangement: Arrangement, model: RealModel, view: { w:
 /** FR-230 (owner, 2026-11-14 13:10 UTC): the ladder `circle` to `rows`. A `circle` that does not fit this floor at the face floor (`arrangementFits`; `leftAt` holds it off until two agents fewer) draws `rows`, so no floor scrolls
  *  with 15 agents because of the arrangement; every other id runs as `layoutFor` says. `ran` is the arrangement that drew. Pure. */
 export function layoutWithFallback(arrangement: Arrangement, model: RealModel, view: { w: number; h: number }, meta: RealMeta, signs?: Record<string, { name: string; path: string; counts: number }>, leftAt?: number): { lay: Layout; ran: Arrangement } {
+  /* the All floors view stays rows (spec 102 FR-230, 097 FR-104): a world that draws storeys (`meta.storeys`) with a building of two floors or more is `rows` with its tags and rules, the circle having none; it is not a "does not fit", so no hold is set */
+  if (arrangement === 'circle' && meta.storeys && storeyRuns(model.folders)) return { lay: realLayout(model, view, meta, signs), ran: 'rows' };
   if (arrangement === 'circle' && !arrangementFits('circle', model, view, meta, leftAt)) return { lay: realLayout(model, view, meta, signs), ran: 'rows' };
   return { lay: layoutFor(arrangement, model, view, meta, signs), ran: arrangement };
 }
