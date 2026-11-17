@@ -3,7 +3,7 @@ import * as assert from 'assert';
 import * as fs from 'fs';
 import * as path from 'path';
 import { Worker } from 'worker_threads';
-import { MASK_INPUT_MAX, REDACT_MAX_CHARS, createDebugSink, _uncappedForTest, cut, maskSchemeSecrets, maskTokenShapes, maskTokenShapesUnguarded, maskSecretArgs, maskSecretCommand, maskHomePaths, maskSecretUrl, maskNoteText, maskOutgoing, maskSplitTokens, _breakCallsForTest, keepShownBy, _unionMasksForTest, withoutSplit, withoutShell, _shellRefsForTest, _shellPassesForTest, _shapePassesForTest, _runReadsForTest, ESC_RUN_SHELL_SOURCE, withoutLoose, maskLoose, _homeGuardReadsForTest, _splitWorkForTest, redact, redactMarkdown, MARKDOWN_WORK, _markdownPassForTest, shQuote, splitCommand } from '../src/shared/redact';
+import { MASK_INPUT_MAX, REDACT_MAX_CHARS, createDebugSink, _uncappedForTest, cut, maskSchemeSecrets, maskTokenShapes, maskTokenShapesUnguarded, maskSecretArgs, maskSecretCommand, maskHomePaths, maskSecretUrl, maskNoteText, maskOutgoing, maskSplitTokens, _breakCallsForTest, keepShownBy, _unionMasksForTest, withoutSplit, withoutShell, _shellRefsForTest, _shellPassesForTest, _shapePassesForTest, _runReadsForTest, ESC_RUN_SHELL_SOURCE, withoutLoose, maskLoose, _homeGuardReadsForTest, _homeGuardCharsForTest, HOME_GUARD_WINDOW_FOR_TEST, _splitWorkForTest, redact, redactMarkdown, MARKDOWN_WORK, _markdownPassForTest, shQuote, splitCommand } from '../src/shared/redact';
 
 import { assertLinearShape, assertWithinYardstick, cpuMs } from './redact-growth-lib';
 import './safetext-shared'; // the desk's maskRaw (src/renderer/safetext.js) reads the compiled redact.ts, for the FR-181 differential below
@@ -2739,6 +2739,32 @@ assert.strictEqual(redact('{"a":"https://u:p@h/x","b":"y"}', {}), '{"a":"https:/
       const t = K + KB.slice(0, cut) + sep + KB.slice(cut) + tail;
       const out = redact(maskHomePaths(t, []), {});
       assert.ok(!out.includes(K) && shows(out, [KB]) === undefined, `#1329 F1 home first: the split key stays hidden: ${JSON.stringify(t)} gave ${JSON.stringify(out)}`);
+    }
+    // round 2 of the review: F1's neighbours. Invariant: the home-first order shows no piece of the key that `redact` hides in the raw text
+    const hiddenRaw = (t: string, parts: string[]): string[] => parts.filter((p) => shows(redact(t, {}), [p]) === undefined);
+    const neighbour = (what: string, t: string, parts: string[]): void => {
+      const out = redact(maskHomePaths(t, []), {});
+      const must = hiddenRaw(t, parts);
+      assert.ok(must.length > 0, `#1329 F1 neighbours (${what}): redact hides the key in the raw text (baseline): ${JSON.stringify(t)}`);
+      assert.strictEqual(shows(out, must), undefined, `#1329 F1 neighbours (${what}): the home-first order shows nothing redact hides: ${JSON.stringify(t)} gave ${JSON.stringify(out)}`);
+    };
+    for (const [what, sep] of [['CRLF', '\r\n~'], ['lone CR', '\r~'], ['a tab before ~', '\n\t~'], ['spaces before ~', '\n  ~']] as const)
+      for (const tail of ['/x/y', '\\x\\y', '/.ssh']) neighbour(what, K + KB.slice(0, 8) + sep + KB.slice(8) + tail, [KB]);
+    neighbour('several ~ lines', K + KB.slice(0, 5) + '\n~' + KB.slice(5, 10) + '\n~' + KB.slice(10) + '/x/y', [KB.slice(0, 10), KB.slice(5)]);
+    neighbour('split inside the prefix', K.slice(0, 2) + '\n~' + K.slice(2) + KB + '/x/y', [KB]);
+    neighbour('split inside the tail', K + KB.slice(0, 14) + '\n~' + KB.slice(14) + '/x/y', [KB]);
+    neighbour('~ then a backslash', K + KB.slice(0, 8) + '\n~' + KB.slice(8) + '\\src\\x', [KB]);
+    // a home spelling that overlaps a hidden span in part: a token inside the name (from the right) and a key piece ending at it (from the left)
+    neighbour('a token inside the name', 'cd ~' + gh('p') + B36 + '/src/x', [B36]);
+    neighbour('a key piece ending inside the name', K + KB.slice(0, 12) + '\n~' + KB.slice(12) + '_alicez/src/x', [KB]);
+    // round 2 (cost): the guard reads a window around each new spelling, not the whole text
+    {
+      const pad = 'word '.repeat(200_000);
+      const c0 = _homeGuardCharsForTest();
+      assert.strictEqual(maskHomePaths(pad + 'see ~alicez/src/x ' + pad, []), pad + 'see ~/src/x ' + pad, '#1329 guard window: one spelling in a long text is rewritten');
+      const read = _homeGuardCharsForTest() - c0;
+      assert.ok(read <= 2 * HOME_GUARD_WINDOW_FOR_TEST + 64, `#1329 guard window: a long text with one spelling reads one window (${read} characters)`);
+      neighbour('a long text around it', pad.slice(0, 50_000) + K + KB.slice(0, 8) + '\n~' + KB.slice(8) + '/x/y ' + pad.slice(0, 50_000), [KB]);
     }
     const r0 = _homeGuardReadsForTest();
     maskHomePaths('plain text with /home/alicez/x and C:\\Users\\bob\\y', []);
