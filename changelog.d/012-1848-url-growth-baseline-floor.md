@@ -1,0 +1,1 @@
+- Internal: the adversarial redaction growth checks time their 1/16 baseline up to the same floor as the yardstick checks and keep the lowest of 4 readings, so one noisy baseline reading weighs less (spec 012, issue #1848, which stays open: the cause of the near-limit reading is not proven); the redactor is unchanged.

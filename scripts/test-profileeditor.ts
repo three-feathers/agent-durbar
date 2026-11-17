@@ -4,6 +4,7 @@
  * `onerror`, `javascript:` links or images, and front matter values are text. `npm run test:profileeditor`. No Electron, no credits.
  */
 import * as assert from 'assert';
+import { cpuMs } from './redact-growth-lib';
 import * as fs from 'fs';
 import * as path from 'path';
 // eslint-disable-next-line @typescript-eslint/no-var-requires
@@ -72,9 +73,8 @@ const PE = require(R('profileeditor.js')) as {
   }
   const many = PE.parseFrontmatter('---\n' + 'bad line\n'.repeat(100) + '---\n');
   assert.strictEqual(many.errors.length, 20, 'at most 20 errors');
-  const t0 = Date.now();
-  PE.parseFrontmatter('---\n' + 'k: "' + 'a'.repeat(200000) + '\n---\n' + 'x'.repeat(200000));
-  assert.ok(Date.now() - t0 < 1000, 'a long line is parsed quickly');
+  const cpu = cpuMs(() => { PE.parseFrontmatter('---\n' + 'k: "' + 'a'.repeat(200000) + '\n---\n' + 'x'.repeat(200000)); }, 1000);
+  assert.ok(cpu < 1000, `a long line is parsed quickly (${cpu.toFixed(0)} ms of CPU time)`);
 }
 
 // ---- names, file names, mode memory ----

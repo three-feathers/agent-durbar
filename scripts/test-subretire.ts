@@ -98,18 +98,55 @@ assert.deepStrictEqual(SR.plan({ subs: mk(3, 'done'), keep: { done: -4, failed: 
   assert.deepStrictEqual([...small], ['2', '3'], 'a custom size');
 }
 
-// ---- time: 200,000 helpers planned well under a second (the page plans at most ~71 per end) ----
-{
+// ---- work: 200,000 helpers planned in n log n reads, not in milliseconds (issue #1846: a fixed 1000 ms limit failed on a loaded machine) ----
+// The planner reads each helper's fields through counting getters; a pass over the list reads a field a fixed number of times, and the sort
+// reads `t1` twice per comparison, so reads per helper grow like log n. A quadratic plan reads about n times per helper and fails at its own assert.
+type Work = { n: number; status: number; id: number; t1: number };
+/** The checks on the counts (taken out so the self-test below can feed it fake counts, with no real timing). */
+const assertPlanWork = (runs: Work[]): void => {
+  for (const w of runs) {
+    const log = Math.ceil(Math.log2(w.n));
+    assert.ok(w.status <= 2, `plan reads each helper's status ${w.status.toFixed(2)} times at ${w.n} helpers (limit 2): a pass per helper?`);
+    assert.ok(w.id <= 4, `plan reads each helper's id ${w.id.toFixed(2)} times at ${w.n} helpers (limit 4): a lookup that scans?`);
+    assert.ok(w.t1 <= 2 * log + 2, `plan reads each helper's end time ${w.t1.toFixed(1)} times at ${w.n} helpers (limit ${2 * log + 2}, 2 per sort comparison): worse than n log n?`);
+  }
+  const [lo, hi] = [runs[0], runs[runs.length - 1]];
+  assert.ok(hi.t1 <= lo.t1 * 1.6 + 1, `reads per helper grew ${(hi.t1 / Math.max(lo.t1, 1e-9)).toFixed(2)}x from ${lo.n} to ${hi.n} helpers (limit 1.6x: log growth is 1.3x)`);
+};
+const counted = (n: number): Work => {
+  const c = { status: 0, id: 0, t1: 0 };
   const subs: Sub[] = [];
-  for (let i = 0; i < 200000; i++) subs.push({ id: 'p' + i, status: i % 3 === 0 ? 'failed' : i % 7 === 0 ? 'running' : 'done', t1: 1e6 - (i % 1000) });
-  const held = new Set(subs.filter((_, i) => i % 11 === 0).map((s) => s.id));
-  const t0 = process.hrtime.bigint();
-  const out = SR.plan({ subs, held });
-  const ms = Number(process.hrtime.bigint() - t0) / 1e6;
+  const held = new Set<string>();
+  for (let i = 0; i < n; i++) {
+    const st = i % 3 === 0 ? 'failed' : i % 7 === 0 ? 'running' : 'done';
+    const id = 'p' + i, t1 = 1e6 - (i % 1000);
+    if (i % 11 === 0) held.add(id);
+    subs.push({ get id() { c.id++; return id; }, get status() { c.status++; return st; }, get t1() { c.t1++; return t1; } } as Sub);
+  }
+  const out: string[] = SR.plan({ subs, held });
+  const work = { n, status: c.status / n, id: c.id / n, t1: c.t1 / n };
   const fin = subs.filter((s) => s.status !== 'running');
   assert.ok(out.length > 0 && out.length <= fin.length - 70, 'the plan leaves at least the limits');
   assert.ok(!out.some((id: string) => held.has(id)), 'nothing held is retired');
-  assert.ok(ms < 1000, `200,000 helpers planned in ${ms.toFixed(1)} ms (limit 1000)`);
+  return work;
+};
+{
+  const cpu = () => { const t = (process as unknown as { threadCpuUsage?: () => NodeJS.CpuUsage }).threadCpuUsage; const u = typeof t === 'function' ? t.call(process) : process.cpuUsage(); return (u.user + u.system) / 1000; };
+  const c0 = cpu();
+  const runs: Work[] = [];
+  for (const n of [12500, 50000, 200000]) { runs.push(counted(n)); assertPlanWork(runs.slice(-1)); } // each size alone first: a quadratic plan fails at 12,500, not after minutes at 200,000
+  assertPlanWork(runs);
+  // a backstop for a hang only (the counts above are the proof): 20 s of this thread's CPU, 20x what an idle machine takes
+  assert.ok(cpu() - c0 < 20000, `planning 200,000 helpers took ${(cpu() - c0).toFixed(0)} ms CPU (backstop 20000)`);
+}
+{ // self-test with fake counts: the bound fires on a quadratic plan and passes an n log n one, with no timer
+  const nlogn = (n: number): Work => ({ n, status: 1.5, id: 1.2, t1: Math.log2(n) });
+  assertPlanWork([12500, 200000].map(nlogn));
+  const quad = (n: number): Work => ({ n, status: 1.5, id: 1.2, t1: n / 4 });
+  assert.throws(() => assertPlanWork([12500, 200000].map(quad)), /end time .* times at 12500 helpers .* worse than n log n/, 'a quadratic sort is caught by the end-time count');
+  assert.throws(() => assertPlanWork([{ n: 200000, status: 3, id: 1, t1: 5 }]), /status 3\.00 times/, 'an extra pass is caught');
+  assert.throws(() => assertPlanWork([{ n: 200000, status: 1, id: 50000, t1: 5 }]), /id 50000\.00 times/, 'a scanning lookup is caught');
+  assert.throws(() => assertPlanWork([{ n: 12500, status: 1, id: 1, t1: 2 }, { n: 200000, status: 1, id: 1, t1: 30 }]), /grew/, 'growth between sizes is caught');
 }
 
 // ---- the wiring: app.js, index.html, the build ----

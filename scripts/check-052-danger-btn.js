@@ -55,7 +55,7 @@ module.exports = async (ctx) => {
       await H.settle();
       await js(INSTALL_PX);
       if (process.env.DANGER_MUTANT) console.log(`[danger] mutant ${process.env.DANGER_MUTANT}: changed ${await mutate(process.env.DANGER_MUTANT)} themed danger rule(s)`);
-      await js(`document.getElementById('topMoreBtn').focus()`); H.key('Down');
+      await js(`document.getElementById('topMoreBtn').focus()`); await H.key('Down');
       assert.ok(await until(`!document.getElementById('topMoreMenu').hidden&&!document.getElementById('endAllBtn').hidden`, 5000), `${tag}: the ⋯ menu opened with its End all sessions item`);
       await js(`document.getElementById('endAllBtn').click()`);
       assert.ok(await until(`!!document.querySelector(${jsLiteral(SEL)})`, 8000), `${tag}: the End all sessions dialog opened`);
@@ -112,7 +112,7 @@ module.exports = async (ctx) => {
       assert.strictEqual(dis.border, 'dashed', `${tag}: a disabled danger button has a ${dis.border} border, not the dashed disabled look`);
       await H.shot(path.join(OUT, `052-danger-btn-${look.replace(/\W+/g, '-')}-${w}x${h}.png`), { prep: 'none', settle: false, tag: 'danger' });
       await js(`document.querySelector(${jsLiteral(PROBE)}).remove()`);
-      H.key('Escape');
+      await H.key('Escape');
       assert.ok(await until(`!document.querySelector('.dlg')`, 5000), `${tag}: Escape closes the dialog`);
     }
   }
