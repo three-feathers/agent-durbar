@@ -255,8 +255,8 @@ const STAYS = [
   'nfc_normalize_unicode_string_with_long_name', 'sgp_' + 'cross_validation_results_for_the_final_model_fit', 'sbp_' + 'cross_validation_results_for_the_final_model_fit', 'glc_' + 'cross_validation_results_for_the_final_model', 'figd_' + 'cross_validation_results_for_the_final', 'cfk_' + 'cross_validation_results_for_the_final_model', 'tskey-auth-kube-config-documentation-page', 'cfut_' + 'cross_validation_results_for_model_fitting_v2', 'gldt-' + 'cross-validation-results-v2-final', 'sgp_' + 'CrossValidation_ResultsForThe_FinalModelFitting_LongName', 'sbp_' + 'cross_validation_results_for_the_final_model_v2', 'ACCAGTTGCATGCATGCATG', 'ABIAGATTACAGATTACAGA', 'ico-' + hex(32) + '.css',
   // second review of #1015: lower-case words, timestamps, lower-case paths, dotted names, prose
   'token: gpt-4o-mini', 'token: cl100k_base', 'auth: oauth2-proxy', 'auth: fix-login-42', 'password: reset-flow-v2', 'token: rework-2026', 'secret: my-secret-1', 'password: must-include-1-digit', 'Token: 2026-11-01T10:00:00Z', 'secret: src/foo1', 'cookie: a=b is the format', 'token = config.token2;',
-  // a token shape glued to a word is not one (except `sk-ant-`, on purpose)
-  'x' + 'np' + 'm_' + an(36), 'my' + 'sk' + '_live_' + an(24), 'a' + 'gh' + 'p_' + an(36),
+  // a token shape glued to a word is not one (except `sk-ant-` and, since spec 012 FR-185, the GitHub prefixes, on purpose)
+  'x' + 'np' + 'm_' + an(36), 'my' + 'sk' + '_live_' + an(24),
   // `-u` away from curl, and curl with no password
   'git push -u origin:main', 'docker run -u 1000:1000 img', 'curl -u me https://h', 'curl -H "Accept: text/plain" https://h:8080/x',
   // prose
