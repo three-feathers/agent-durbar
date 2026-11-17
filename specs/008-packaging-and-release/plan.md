@@ -112,4 +112,4 @@ One rounding rule for both: whole cents per machine/day/model. `cumulative` (usa
 
 ## 2026-11-10: the Mac title bar check on CSS pull requests (T156, FR-200, issue #1469)
 
-A separate workflow, `.github/workflows/mac-titlebar-pr.yml`, because `paths:` filters a whole workflow and a second job in `macos-pr.yml` would either start `npm test` on every CSS PR or start a macOS runner to skip. Same pins, `npm-ci` Electron cache, concurrency group and `contents: read` as `macos-pr.yml`; one job runs `npm run build` and `node scripts/check-mac-titlebar.js`. Not required. #1458 is merged on `main` (PR #1537), so it no longer waits on it.
+A separate workflow, `.github/workflows/mac-titlebar-pr.yml`, because `paths:` filters a whole workflow and a second job in `macos-pr.yml` would either start `npm test` on every CSS PR or start a macOS runner to skip. Same pins, `npm-ci` Electron cache, concurrency group and `contents: read` as `macos-pr.yml`; one job runs `npm run build` and `node scripts/check-mac-titlebar.js`. Not required. #1458's failure is fixed on `main` by PR #1537, so it no longer waits on it.

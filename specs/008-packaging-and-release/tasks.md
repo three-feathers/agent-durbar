@@ -215,7 +215,7 @@
 
 ## 2026-11-10: the Mac title bar check on CSS pull requests (FR-200, issue #1469)
 
-- [ ] T156 (FR-200) `.github/workflows/mac-titlebar-pr.yml` (own file: `paths:` is workflow-level); `scripts/test-ui-suite.ts` (filter, wiring, path matcher, mutants), `scripts/test-electron-cache.ts` (`TYPICAL_MIN`). Not blocked: #1458 is merged on `main` (PR #1537) and the PR's own `Mac title bar (path-filtered)` job passed at its head, so no `[KNOWN GAP]` marking was needed.
+- [x] T156 (FR-200) `.github/workflows/mac-titlebar-pr.yml` (own file: `paths:` is workflow-level); `scripts/test-ui-suite.ts` (filter, wiring, path matcher, mutants), `scripts/test-electron-cache.ts` (`TYPICAL_MIN`). Not blocked: #1458's failure is fixed on `main` by PR #1537 and the PR's own `Mac title bar (path-filtered)` job passed at its head, so no `[KNOWN GAP]` marking was needed.
 
 ## 2026-11-11: a driver that waits on the OS window focus never runs next to another window (FR-210)
 
