@@ -70,7 +70,8 @@ for (const id of C.PIRATE_IDS) for (const pose of C.POSES) assert.ok(files.has(`
 for (const id of C.MONSTER_IDS) for (const pose of C.POSES) assert.ok(files.has(`monster-${id}-${pose}.webp`), `monster-${id}-${pose}.webp exists (FR-075)`);
 for (const id of C.ROYAL_IDS) for (const pose of C.POSES) assert.ok(files.has(`royal-${id}-${pose}.webp`), `royal-${id}-${pose}.webp exists (FR-076)`);
 for (const id of C.REBELS_IDS) for (const pose of C.POSES) assert.ok(files.has(`rebels-${id}-${pose}.webp`), `rebels-${id}-${pose}.webp exists (FR-077)`);
-// a crew whose art is approved but not wired yet (no CREWS entry): its 3 portraits per person are allowed here, each with its row in ASSETS.md; remove the entry when crew.js names it (spec 097, Mac wiring PR)
+// a crew whose portraits are approved but not in the flat office (no CREWS entry): its 3 portraits per person are allowed here, each with its row in ASSETS.md; remove the entry when crew.js CREWS names it.
+// Minimalist's Real office set is wired (T245, #1154) but it is a Real-office-only set: the flat office keeps its drawn kit, so these 18 portraits stay unused ([KNOWN GAP], spec 097 Changes 2026-11-16)
 const PENDING_CREWS = ['minimalist'];
 for (const c of PENDING_CREWS) assert.ok(!(c in C.CREWS), c + ' is wired: remove it from PENDING_CREWS');
 const pendingFiles = [...files.keys()].filter((f) => PENDING_CREWS.some((c) => f.startsWith(c + '-')));

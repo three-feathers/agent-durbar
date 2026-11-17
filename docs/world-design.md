@@ -43,6 +43,7 @@ Be specific without being a cliche: no tourist symbols, stereotypes, or copied l
 
 - **Standing means standing on the floor.** Feet on the floor plane, with a real contact shadow. Check it at every size.
 - **Visitors face what they are using** and are drawn at a readable size. They may stand in front of windows and walls.
+- **A set says which way its standing pictures are drawn** (`facing` in `set.json`, absent means left, spec 097 FR-191, 2026-11-14, #1743): the lobby works out the side a visitor must face from where it stands against its fixture and mirrors the picture (and its foot centre) when the set was drawn the other way. Look at the real pixels of a new set, not at the meta: the Retro pixel people face right and said left, so the arcade's visitors turned their backs on the fixtures until a driver read the pictures' side (`check-097-lobby-facing`).
 - **Backs are welcome.** A person seen from behind shows their screen best. Faces matter, but not always.
 - **Seats are for sitting.** A body sits in its seat, with no furniture across a torso, no cut hips between table legs, no chair cut off at the edge. Check every person and every pose: one good crop proves nothing about the others.
 - **The seat can follow the state:** working at a table, relaxing on a lounger.
@@ -115,6 +116,10 @@ Spec 097 FR-178 and after hold the budgets. In short:
 - **Endless loops change 12 times a second, on one clock** (spec 097 FR-229). Each keeps its own path and timing, so nobody moves in sync; only how often it is drawn changes. The owner saw no difference in a side-by-side recording, and it uses about a third of the CPU. A pixel world keeps its own stepped timing.
 - Only the shown pictures load, at a size close to what is shown, without softening faces.
 - Measure on a real GPU as well as without one: they disagree a lot.
+
+## Its preview card
+
+- **A world's picture in Settings is the app drawing the world,** not art: `simscene=preview` seats three idle people with nothing over them, `scripts/shots-102-previews.js` takes one 640 px WebP of 1440x900 (at most 48 KB), and `npm run shots:docs` retakes it, so the preview stays true as the world changes (spec 102 FR-302). A new world adds a row to that driver and a size under 48 KB; the zoom origin (the middle of the three people) is stored with the picture. Look at it at both sizes: an idle person in the arcade stands beside the cabinet, and a screen whose text falls outside its frame shows in the card too.
 
 ## Review a world like this
 

@@ -15,7 +15,7 @@
  *
  * Reused, not rebuilt (FR-031): `TeamTemplateStore` (T006: validation at level `own`, the 50 cap, the save), `checkTeamTemplate` inside it, `LIMITS`.
  */
-import { LIMITS } from '../shared/teamtemplate';
+import { CHANGED_TEXT, LIMITS, MEMBER_ID_RE } from '../shared/teamtemplate';
 import type { TeamMember } from '../shared/teamtemplate';
 import type { TeamsList, TeamsOne, TeamsRemoved, TeamTemplateInfo } from '../shared/api';
 import { CHANGED, SAVE_FAILED, newMemberId, type StoredTemplate, type TeamTemplateStore } from './teamstore';
@@ -26,20 +26,18 @@ export interface TeamsIpcOpsDeps {
   newMemberId?: () => string;
 }
 
-const MEMBER_ID_RE = /^[0-9a-f]{32}$/;
 /** the longest template id the validator accepts (`TEMPLATE_ID_RE`: 1..64); a longer string is refused before any lookup */
 const ID_MAX = 64;
-const CHANGED_TEXT = 'The team templates file changed while you were editing. It was read again; save once more.';
 
 type Bad = { ok: false; code: 'invalid'; errors: string[]; blocked: boolean };
 
-const isPlain = (v: unknown): v is Record<string, unknown> => {
+export const isPlain = (v: unknown): v is Record<string, unknown> => {
   if (typeof v !== 'object' || v === null || Array.isArray(v)) return false;
   const p = Object.getPrototypeOf(v) as unknown;
   return p === Object.prototype || p === null;
 };
 /** an own data property only: `__proto__`, `constructor`, inherited and accessor properties never count */
-const own = (o: Record<string, unknown>, k: string): unknown => {
+export const own = (o: Record<string, unknown>, k: string): unknown => {
   const d = Object.getOwnPropertyDescriptor(o, k);
   return d && 'value' in d ? d.value : undefined;
 };
@@ -63,7 +61,7 @@ class TooLarge extends Error {}
  * listing short. What it saves: no array of keys is built and no copy of the object is kept, and the loop stops at the limit. Only own keys count
  * (`for...in` also visits inherited enumerable ones).
  */
-function moreKeysThan(o: object, max: number): boolean {
+export function moreKeysThan(o: object, max: number): boolean {
   let n = 0;
   for (const k in o) if (Object.prototype.hasOwnProperty.call(o, k) && ++n > max) return true;
   return false;

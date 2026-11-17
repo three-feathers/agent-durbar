@@ -283,7 +283,10 @@ async function applyTheme(idOrManifest,instant){
   else toast('Theme: <b>'+esc(THEME.list().find(t=>t.id===applied)?.name||applied)+'</b>.',2600);
 }
 /* Characters (spec 077 FR-064, FR-068): who sits at the desks, on top of any theme; the same cross-fade, cache clear and save as a theme */
-async function applyCharacters(v){
+/* spec 096 (coordinator's choice of 2026-10-31): `mine` draws the theme's own figures until T042 and T044 can show My characters; a stored value stays stored */
+const drawableCharacters=c=>c==='mine'?'theme':c;
+async function applyCharacters(chosen){
+  const v=drawableCharacters(chosen);
   let applied=null;
   await swapView(()=>{applied=THEME.setCharacters(v);SC_CACHE.clear();renderAll();});
   if(applied==null){applied=THEME.setCharacters(v);SC_CACHE.clear();renderAll();}
@@ -293,7 +296,7 @@ async function applyCharacters(v){
   else toast('Characters: <b>'+esc(CHARACTER_NAMES[applied]||applied)+'</b>.',2600);
   return applied;
 }
-const CHARACTER_NAMES={theme:'The theme\u2019s own',minimalist:'Minimalist',cheeky:'Cheeky',prehistoric:'Prehistoric',pirate:'Pirate',monster:'Monster',royal:'Royal',rebels:'Animal Rebels'};
+const CHARACTER_NAMES={theme:'The theme\u2019s own',office:'Office people',pixel:'Retro pixel',minimalist:'Minimalist',cheeky:'Cheeky',prehistoric:'Prehistoric',pirate:'Pirate',monster:'Monster',royal:'Royal',rebels:'Animal Rebels'};
 /* FR-068: one figure per choice for its pick button: the kit that choice draws on the current theme, one Cheeky portrait for the crew */
 function charPreview(choice){
   const kit=THEME.kitFor(THEME.themeKit(),choice), a={id:'characters-preview',look:lookFor('characters-preview')};
@@ -480,12 +483,17 @@ function syncDesks(){
    end is not on screen). One element in the walkers layer, removed when it lands. */
 function flyLetter(agentId){
   if(REDUCED||reducedMotion()||ui.view!=='office')return;
-  const layer=$('walkers'), floor=$('floor'), pb=document.querySelector('#stage .place.postbox'), d=document.querySelector(`#stage .desk[data-id="${CSS.escape(String(agentId))}"]`);
+  /* spec 097 FR-377: the Real office draws the Postbox as a lobby plate and the desk as a name plate (the pair the focus and follow flows look for) */
+  const layer=$('walkers'), floor=$('floor'), pb=document.querySelector('#stage .place.postbox, #stage .ro-lplate[data-post]'), d=document.querySelector(`#stage .desk[data-id="${CSS.escape(String(agentId))}"], #stage .ro-plate[data-id="${CSS.escape(String(agentId))}"]`);
   if(!layer||!floor||!pb||!d)return;
   const fr=floor.getBoundingClientRect(); if(!fr.width)return;
-  const c=el=>{const r=el.getBoundingClientRect();return {x:Math.round(r.left-fr.left+floor.scrollLeft+r.width/2),y:Math.round(r.top-fr.top+floor.scrollTop+r.height/2)};};
-  const from=c(pb.querySelector('.pic')||pb), to=c(d.querySelector('.scene')||d);
-  const el=document.createElement('span');el.className='letter';el.setAttribute('aria-hidden','true');
+  const real=pb.classList.contains('ro-lplate')||d.classList.contains('ro-plate');
+  const rb=pb.querySelector('.pic')||pb, rd=d.querySelector('.scene')||d, a=rb.getBoundingClientRect(), b=rd.getBoundingClientRect();
+  const seen=r=>r.width>0&&r.height>0&&r.right>fr.left&&r.left<fr.right&&r.bottom>fr.top&&r.top<fr.bottom; /* FR-377: skipped only when an end is off screen */
+  if(!seen(a)||!seen(b))return;
+  const c=r=>({x:Math.round(r.left-fr.left+floor.scrollLeft+r.width/2),y:Math.round(r.top-fr.top+floor.scrollTop+r.height/2)});
+  const from=c(a), to=c(b);
+  const el=document.createElement('span');el.className='letter'+(real?' real':'');el.dataset.for=String(agentId);el.setAttribute('aria-hidden','true');
   el.innerHTML='<svg viewBox="0 0 16 12" width="16" height="12" aria-hidden="true" focusable="false"><rect x=".75" y=".75" width="14.5" height="10.5" rx="1.5" fill="var(--surface)" stroke="currentColor" stroke-width="1.3"/><path d="M1.5 1.8L8 6.6l6.5-4.8" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></svg>';
   el.style.transform=`translate(${from.x}px,${from.y}px)`;layer.appendChild(el);void el.offsetWidth;
   let done=false;const end=()=>{if(done)return;done=true;el.remove();};
@@ -530,7 +538,7 @@ function openCoffeeMenu(id,anchor){
   m.style.left=Math.max(8,Math.min(ab.left,innerWidth-b.width-8))+'px';
   m.style.top=(ab.bottom+6+b.height<=innerHeight-8?ab.bottom+6:Math.max(8,ab.top-6-b.height))+'px';
   /* focus back to the entry; after Retry now the agent has left the corner, so to its desk (never lost to the page) */
-  const back=()=>{const f=document.querySelector('#stage [data-coffeeid="'+CSS.escape(id)+'"]')||(document.contains(anchor)?anchor:null)||document.querySelector('#stage .desk[data-id="'+CSS.escape(id)+'"]');if(f)focusIn(f);};
+  const back=()=>{const f=document.querySelector('#stage [data-coffeeid="'+CSS.escape(id)+'"]')||(document.contains(anchor)?anchor:null)||cardOf(id);if(f)focusIn(f);};
   m.addEventListener('click',e=>{const t=e.target.closest('[data-cact]');if(!t)return;if(t.getAttribute('aria-disabled')==='true'){e.preventDefault();announce(coffeeNoRetry(a)||'Not available now');return;}closeModeMenu();
     if(t.dataset.cact==='retry'){announce(retryCoffee(a)?'Retry now: '+a.name:(coffeeNoRetry(a)||'Nothing was sent'));scheduleRender();requestAnimationFrame(()=>requestAnimationFrame(back));}else openAtRequest(id);});
   m.addEventListener('keydown',e=>{const its=[...m.querySelectorAll('[data-cact]')],i=its.indexOf(document.activeElement);
@@ -561,12 +569,13 @@ function syncWalkers(){
   if(ui.view!=='office'||!lobbyOn()){[...walkers.keys()].forEach(dropBack);return;}
   const fr=floor.getBoundingClientRect();
   if(!fr.width||!fr.height)return; /* office hidden (full-screen chat open): leave the figures as they are until it is shown again */
-  const center=el=>{const r=el.getBoundingClientRect();return {x:Math.round(r.left-fr.left+floor.scrollLeft+r.width/2),y:Math.round(r.top-fr.top+floor.scrollTop+r.height/2)};};
+  let sc0=null; /* spec 097 T156 (2026-11-13): the floor's scroll is read once for the slots below, which are measured one after another with nothing written between */
+  const center=(el,same)=>{const r=el.getBoundingClientRect(),sc=same?(sc0||(sc0={x:floor.scrollLeft,y:floor.scrollTop})):{x:floor.scrollLeft,y:floor.scrollTop};return {x:Math.round(r.left-fr.left+sc.x+r.width/2),y:Math.round(r.top-fr.top+sc.y+r.height/2)};};
   const want=new Map(); /* agent id -> slot centre of the place it is visiting (only those that fit; the rest are the "+N") */
   lobbyPlaces().forEach(p=>{
     const tile=document.querySelector(`#stage .place[data-place="${p.id}"]`); if(!tile)return;
     const ids=placeVisitors(p.id), shown=tile.querySelectorAll('.slot.on').length; /* the entries drawn (the "+N" circle is not one) */
-    ids.slice(0,shown).forEach((id,i)=>{const sl=tile.querySelector(`.slot[data-slot="${i}"]`);if(sl)want.set(id,center(sl));});
+    ids.slice(0,shown).forEach((id,i)=>{const sl=tile.querySelector(`.slot[data-slot="${i}"]`);if(sl)want.set(id,center(sl,true));});
   });
   const deskPos=id=>{const d=document.querySelector(`#stage [data-id="${CSS.escape(id)}"]`);const sc=d&&(d.querySelector('.scene')||d);return sc?center(sc):null;};
   const move=(w,pos,after,instant)=>{ /* instant: a layout change moved the slot under a resting figure: put it back, no walk */
@@ -1670,7 +1679,7 @@ const roPeople=()=>{
   }
   return r;
 };
-const roWorlds=()=>CREW&&CREW.offeredWorlds?CREW.offeredWorlds().map(w=>({id:w.id,name:w.name})):[];
+const roWorlds=()=>CREW&&CREW.offeredWorlds?CREW.offeredWorlds().map(w=>({id:w.id,name:w.name,line:w.line||''})):[];
 function setRoWorld(id){
   id=CREW&&CREW.parseWorld?CREW.parseWorld(id):'photo';
   RO_WORLD=id;try{localStorage.setItem('durbar.world',id);}catch(e){}
@@ -1679,18 +1688,28 @@ function setRoWorld(id){
 /* a loaded pack's numbers (the pack script assigns DurbarRealOfficeWorlds / DurbarRealOfficeSets), or null */
 const packMeta=(kind,id)=>{const g=window[kind==='worlds'?'DurbarRealOfficeWorlds':'DurbarRealOfficeSets'];return g&&Object.prototype.hasOwnProperty.call(g,id)?g[id]:null;};
 /* loads one pack's script (and its stylesheet when world.json names one) the first time it is shown */
+const RO_SHEET_WAIT_MS=4000;
+let roSheetGen=0; /* counts the world stylesheets that finished loading: realoffice.js measures again after one (html[data-ro-sheets]) */
 function ensurePack(kind,id){
   const key=kind+'/'+id;
   if(PACKS[key])return PACKS[key]==='ready';
   PACKS[key]='loading';
   const sc=document.createElement('script');sc.src='realoffice/'+kind+'/'+id+'/'+(kind==='worlds'?'world':'set')+'.js';
+  const done=()=>{syncWorld();layoutKey='';scheduleRender();};
   sc.onload=()=>{
     const m=packMeta(kind,id);
-    if(!m){PACKS[key]='failed';}else{
-      PACKS[key]='ready';
-      if(kind==='worlds'&&typeof m.css==='string'&&/^[\w.-]+\.css$/.test(m.css)&&!document.getElementById('roWorldCss-'+id)){const l=document.createElement('link');l.id='roWorldCss-'+id;l.rel='stylesheet';l.href='realoffice/worlds/'+id+'/'+m.css;document.head.appendChild(l);}
+    if(!m){PACKS[key]='failed';return done();}
+    if(kind==='worlds'&&typeof m.css==='string'&&/^[\w.-]+\.css$/.test(m.css)&&!document.getElementById('roWorldCss-'+id)){
+      /* spec 097 (2026-11-14): a world is drawn only once its stylesheet has loaded (or failed): a first draw before it measured the roles and plates with the base CSS alone, and nothing measured again */
+      const l=document.createElement('link');l.id='roWorldCss-'+id;l.rel='stylesheet';l.href='realoffice/worlds/'+id+'/'+m.css;
+      /* settles once: the sheet's load, its error, or a 4 s timer (a sheet that never answers draws with the base CSS, as before) */
+      let settled=false,timer=0;
+      const settle=()=>{if(settled)return;settled=true;clearTimeout(timer);document.documentElement.dataset.roSheets=String(++roSheetGen);PACKS[key]='ready';done();};
+      l.onload=settle;l.onerror=settle;timer=setTimeout(settle,RO_SHEET_WAIT_MS);
+      document.head.appendChild(l);
+      return;
     }
-    syncWorld();layoutKey='';scheduleRender();};
+    PACKS[key]='ready';done();};
   sc.onerror=()=>{PACKS[key]='failed';syncWorld();layoutKey='';scheduleRender();};
   document.body.appendChild(sc);
   return false;
@@ -1730,11 +1749,19 @@ function realCtxPush(a){
    user name would show. No redact module: homeMask keeps the text and deskMask gives '' (fail closed). */
 const homeMask=t=>{const R=window.DurbarRedact;if(!R||typeof R.maskHomePaths!=='function')return t;const h=R.maskHomePaths(t);return typeof h==='string'?h:'';};
 const helperMask=t=>deskMask(homeMask(t));
-/* spec 097 FR-311 (review of PR 1322): the head figures use the one helper mask above (home folders first, on the raw text) */
-const roHelperMask=helperMask;
+/* spec 097 FR-311 (review of PR 1322): the head figures use the one helper mask above (home folders first, on the raw text), then the Markdown marks are made plain
+   (`plainMarks`: links to their text, emphasis, code and strike marks out; the `_`, a leading `#`, `-`, `+` or `>` and the blanks kept): a link planted in a helper's name never reaches the accessible name or the +K tooltip. The desk mask keeps Markdown as written, and
+   before spec 012 FR-182 the link went only because the escaped token in the check's name sent the mask down its plain pass (review of PR 1721) */
+const roHelperMask=t=>{const m=helperMask(t);const S=window.DurbarSafeText;return m&&S&&typeof S.plainMarks==='function'?S.plainMarks(m):m;};
 function realSubs(a,stOf){
   return orderedHelpers(a).map(h=>{const w=helperWords(h,roHelperMask);
     return {id:h.id,name:w.name||'Helper',state:stOf(h,false),label:w.aria,title:w.tip,selected:ui.selected===h.id};});
+}
+/* spec 102 delta 2026-11-14 (spec 097 FR-104): in the All floors view each folder of the Real office says which floor it stands on (id, name, number from the bottom), so a world that draws storeys can mark them; one floor shown: none */
+function roFloor(r){
+  if(!allFloorsView())return undefined;
+  const f=floorById(r.floor),p=f&&window.DurbarFloorNav.place(FLOORS.floors,f.id);
+  return f&&p?{id:f.id,name:f.name,n:p.n}:undefined;
 }
 function realModel(model){
   const D=window.DurbarPlaces, E=window.exports;
@@ -1745,7 +1772,7 @@ function realModel(model){
     const list=m.mains.concat((m.rolled||[]).map(x=>x.a));
     const counts=['waiting','error','working','done','idle'].map(k=>{const n=m.all.filter(a=>!a.parent&&(k==='working'?(vis(a)==='working'||vis(a)==='thinking'):vis(a)===k)).length;return {state:k,n,word:LABELS[k].toLowerCase()};}).filter(c=>c.n);
     const u=SIM_QUIET_HEADS.has('aiu')?null:roomAiu(r);
-    return {id:r.id,keep:!!(ORDER.desks[r.path]&&ORDER.desks[r.path].length),name:r.name,path:deskMask(showPath(r.path)),cost:u?u.long:'',counts,newSess:!!(bridge&&bridge.newSession&&anyKindReady()&&!demoOn),menu:!!(bridge&&bridge.removeFolder&&!demoOn),
+    return {id:r.id,floor:roFloor(r),keep:!!(ORDER.desks[r.path]&&ORDER.desks[r.path].length),name:r.name,path:deskMask(showPath(r.path)),cost:u?u.long:'',counts,newSess:!!(bridge&&bridge.newSession&&anyKindReady()&&!demoOn),menu:!!(bridge&&bridge.removeFolder&&!demoOn),
       agents:list.map(a=>{const v=VISITS.at(a.id),st=stOf(a,old.has(a.id)),task=deskMask(taskOf(a)),place=v?placeLabel(v.place):'',needs=st==='waiting'||st==='limit';
         if(rolled.has(a.id)&&!v){ /* spec 097 FR-246, FR-120: in the lounge row, resting or asleep; the words of the flat lounge's peek card and label, the same masked reply (shutReply) */
           const asleep=old.has(a.id), ago=ACT.agoLong(sinceLast(a)), said=SHUT.spoken(ago), line=shutReply(a,140), who=a.profile?a.profile.name+' · '+a.role:a.role, word=asleep?'Asleep':stWord(a);
@@ -1866,11 +1893,74 @@ function renderReal(stage,floor,aw,ah,model,empty){
   stage.dataset.fit=RO_LAST.scroll?'scroll':'ok';floor.classList.toggle('scrolls',!!RO_LAST.scroll);
   return true;
 }
+/* spec 102 T340 (issue 1589, owner decision 8 on 1400): in the arcade the notice strips yield before the office scrolls. When the hall still scrolls with the strips in the flow,
+   they leave it: one bar (#stripBar, one line) counts them and Show/Hide opens them as an overlay that takes no office height. Measured with the strips in the flow first (as ro-tight),
+   kept only if it removes the scroll. */
+const STRIP_IDS=['restoreStrip','awayStrip','crashStrip','followStrip','mcpStrip'];
+const STRIP_NAME={restoreStrip:'Allow all restored',awayStrip:'Since you were away',crashStrip:'Interrupted sessions',followStrip:'Auto-follow',mcpStrip:'MCP servers'};
+let stripsOpen=false;
+const stripsShown=()=>STRIP_IDS.map($).filter(e=>e&&!e.hidden);
+const roomOf2=floor=>{const c=getComputedStyle(floor);return floor.clientHeight-parseFloat(c.paddingTop)-parseFloat(c.paddingBottom);};
+function stripsYield(on){
+  const was=document.body.classList.contains('strips-yield');
+  document.body.classList.toggle('strips-yield',!!on);
+  if(!on){const bar=$('stripBar');if(bar&&!bar.hidden)bar.hidden=true;document.body.classList.remove('strips-open');STRIP_IDS.forEach(i=>{const e=$(i);if(e)e.style.top='';});}
+  return was;
+}
+/* the yield ends with the Office view: switching to List puts the strips back in the flow and forgets the open overlay (setView); renderOffice returns early off the Office view, so it cannot do it */
+function stripsReset(){stripsOpen=false;stripsYield(false);stripsAlertClear();}
+/* The restored-Allow-all strip is role=alert; folded into the bar it is display:none and never read. An always-present, visually hidden role=alert region (#stripAlert; the existing announce() region is polite, so it cannot do this) is written once when that strip JOINS the folded set and emptied when it leaves or the yield ends; the bar stays role=status. */
+let stripsAlerted=false;
+function stripsAlertClear(){stripsAlerted=false;const r=$('stripAlert');if(r&&r.textContent)r.textContent='';}
+function stripsPaint(fresh){
+  const bar=$('stripBar'),sh=stripsShown(),n=sh.length;if(!bar)return;
+  const ae=document.activeElement,inStrip=!!(ae&&sh.some(e=>e.contains(ae)));
+  if(fresh)stripsOpen=sh.some(e=>e.querySelector('[aria-expanded="true"]')); /* a list the person just opened stays in view */
+  if(!bar.dataset.built){
+    bar.dataset.built='1';
+    bar.innerHTML='<span class="ns-ic" aria-hidden="true">i</span><span class="ns-t" id="sbText"></span><span class="ns-act"><button class="btn" type="button" id="sbBtn"></button></span>';
+    $('sbBtn').onclick=()=>{stripsOpen=!stripsOpen;stripsPaint(false);if(stripsOpen){const b=stripsShown().map(e=>e.querySelector('button')).find(Boolean);if(b)focusIn(b,{reveal:false});}};
+  }
+  const t=$('sbText'),b=$('sbBtn'),txt=n+(n===1?' notice':' notices')+': '+sh.map(e=>STRIP_NAME[e.id]).join(', ')+'.';
+  if(t.textContent!==txt)t.textContent=txt;
+  const w=stripsOpen?'Hide':'Show';
+  if(b.textContent!==w)b.textContent=w;
+  b.setAttribute('aria-label',w+(n===1?' the notice':' '+n+' notices'));b.setAttribute('aria-expanded',stripsOpen?'true':'false');
+  const al=sh.some(e=>e.id==='restoreStrip');
+  if(al&&!stripsAlerted){const r=$('stripAlert');if(r)r.textContent='Allow all restored';}
+  if(!al)stripsAlertClear();else stripsAlerted=true;
+  bar.hidden=false;
+  stripsPlace();
+  if(inStrip&&!stripsOpen)b.focus({preventScroll:true}); /* the strip the focus was in is out of sight: it goes to the bar's button */
+}
+function stripsPlace(){
+  const bar=$('stripBar');if(!bar||bar.hidden)return;
+  document.body.classList.toggle('strips-open',stripsOpen);
+  let y=Math.round(bar.getBoundingClientRect().bottom);
+  for(const e of stripsShown()){if(stripsOpen){e.style.top=y+'px';y+=Math.round(e.getBoundingClientRect().height);}else e.style.top='';}
+}
+document.addEventListener('keydown',e=>{
+  if(e.key!=='Escape'||!stripsOpen||!document.body.classList.contains('strips-yield'))return;
+  const t=e.target;if(!(t&&t.closest&&t.closest('#stripBar,.notice-strip')))return;
+  e.preventDefault();e.stopPropagation();stripsOpen=false;stripsPaint(false);const b=$('sbBtn');if(b)b.focus({preventScroll:true});
+},true);
+function renderRealYield(stage,floor,model,aw,ah,yieldWas){
+  if(!renderReal(stage,floor,aw,ah,model))return false;
+  if(!(RO_LAST&&RO_LAST.aisles&&RO_LAST.scroll&&stripsShown().length)){stripsAlertClear();return true;}
+  stripsYield(true);stripsPaint(!yieldWas);
+  floor.classList.remove('ro-tight');
+  renderReal(stage,floor,aw,roomOf2(floor),model);
+  if(RO_LAST&&RO_LAST.scroll){ /* it did not help (more agents than fit): the strips stay as they were, the office scrolls as before */
+    stripsYield(false);stripsAlertClear();floor.classList.remove('ro-tight');renderReal(stage,floor,aw,roomOf2(floor),model);
+  }
+  return true;
+}
 function renderOffice(){
   PLACE_ONLY=null; PLACE_DIRTY=null;
   if(ui.view!=='office')return;
   const floor=$('floor'), stage=$('stage');
   renderFilterNote(); /* before the padding is read below */
+  const yieldWas=stripsYield(false); /* spec 102 T340: strips that gave way go back in the flow, so the room is measured with them, as ro-tight below */
   floor.classList.remove('ro-tight'); /* the padding lent to the arcade hall is asked for again on every draw (renderReal), so the room below is always measured with the padding the page gives */
   const cs=getComputedStyle(floor);
   const aw=floor.clientWidth-parseFloat(cs.paddingLeft)-parseFloat(cs.paddingRight);
@@ -1901,7 +1991,8 @@ function renderOffice(){
     stage.innerHTML='<div class="empty">'+EMPTY_DESK+(!agents.length&&!demoOn?'No agents yet. Use "+ Folder" at the top left to add a folder'+' (or "+ Workspace" for a VS Code .code-workspace file).':(agents.length&&ROOMS.every(r=>r.hidden)?'All folders are hidden. Open Manage folders (next to the folder filter) to show them again.':agents.length&&floorsLive()&&!floorsOnList().length?(FLOORS.floors.length>1?'All floors are off. Open "Floors" above or Settings > Floors to switch one on.':'Your only floor is off. Switch it on in Settings > Floors.'):agents.length&&ROOMS.every(r=>!roomShown(r))?('Nothing to show: every folder is hidden or on a floor that is off. Open '+(floorsLive()&&FLOORS.floors.length>1?'"Floors" or "Folders" above, or ':'"Folders" above, or ')+'Settings > Floors.'):'No agents match these filters.'))+'</div>';
     floor.classList.remove('scrolls'); return;
   }
-  if(officeView()==='real'&&renderReal(stage,floor,aw,ah,model))return; /* spec 097: Real office draws the same model; flat below is unchanged */
+  if(officeView()==='real'&&renderRealYield(stage,floor,model,aw,ah,yieldWas))return;
+  stripsAlertClear(); /* spec 097: Real office draws the same model; flat below is unchanged */
   /* Density is chosen from the unfiltered set so cards do not change shape when a status pill filters. */
   OPS.renders++;
   const sizing=lastSizing=sizingModel(model); /* what chooseLayout is given (the hook below reads it) */
@@ -2695,7 +2786,9 @@ function wireMenu(btnId,menuId){
    of view, a bar above the composer shows it with the same choices; its buttons press the card's own buttons, so there is one code
    path. A question is answered in its card (options and text): the bar takes you there. */
 /* the words of a request card (permission, question, limit), in full: the answer bar and the inbox show exactly this (FR-016, FR-027) */
-function requestRaw(n){const c=n.cloneNode(true);c.querySelectorAll('.note-actions,.q-opts,.q-form,.q-urlbox,.pstate,.pdiff').forEach(x=>x.remove()); /* spec 052 FR-080: the command never (notifications use this text) */c.querySelectorAll('p,div,pre,ul,ol,li,details,h1,h2,h3,h4,h5,h6').forEach(x=>x.before(' ')); /* FR-214: a space between blocks, textContent joins them ("(search_companies)Allow"); inline code gets none */const qs=[...c.querySelectorAll('.q-text')]; /* a card with 2-4 questions has one .q-text each: read them all */return (qs.length?qs.map(x=>x.textContent).join(' '):c.textContent).replace(/\s+/g,' ').trim().replace(/^(Needs your OK|Permission|Question from the agent|Questions from the agent):?\s*/,'');} /* spec 012 FR-178: the card's own words, unmasked: announce() masks them itself, so a command is said as the card shows it */
+/* spec 005 FR-339 (issue 1754): the parts of a question card as one line: "Heading: question / Heading: question". Pure. A part with no heading is its question alone; a blank part is left out; a heading that already ends in : ? . ! gets no second colon. */
+function joinQuestionParts(parts){return (parts||[]).map(p=>{const h=String(p&&p.head||'').replace(/\s+/g,' ').trim(),t=String(p&&p.text||'').replace(/\s+/g,' ').trim();return h&&t?h+(/[:?.!]$/.test(h)?' ':': ')+t:(t||h);}).filter(Boolean).join(' / ');}
+function requestRaw(n){const c=n.cloneNode(true);c.querySelectorAll('.note-actions,.q-opts,.q-form,.q-urlbox,.pstate,.pdiff').forEach(x=>x.remove()); /* spec 052 FR-080: the command never (notifications use this text) */c.querySelectorAll('p,div,pre,ul,ol,li,details,h1,h2,h3,h4,h5,h6').forEach(x=>x.before(' ')); /* FR-214: a space between blocks, textContent joins them ("(search_companies)Allow"); inline code gets none */const qs=[...c.querySelectorAll('.q-text')]; /* a card with 2-4 questions has one .q-text each: read them all; spec 005 FR-339: each with its heading, the parts apart */return (qs.length?joinQuestionParts(qs.map(x=>{const t=x.querySelector('.tag');const h=t?t.textContent:'';if(t){const y=x.cloneNode(true);y.querySelector('.tag').remove();return {head:h,text:y.textContent};}return {head:'',text:x.textContent};})):c.textContent).replace(/\s+/g,' ').trim().replace(/^(Needs your OK|Permission|Question from the agent|Questions from the agent):?\s*/,'');} /* spec 012 FR-178: the card's own words, unmasked: announce() masks them itself, so a command is said as the card shows it */
 function requestText(n){return safeMask(requestRaw(n));} /* spec 041 FR-065: the question is agent text; the answer bar and the inbox read it from here (announcements read requestRaw, FR-178) */let answerObs=null;
 /* spec 052 FR-060: the key of a permission card's button, and the one click path the bar and the keys share */
 const answerKeyOf=b=>b.dataset.act==='session'?'S':/\bdanger\b/.test(b.className)?'D':/\bprimary\b/.test(b.className)?'A':'';
@@ -2898,6 +2991,7 @@ let cvRz=0; const cvSoon=()=>{if(cvRz)return; cvRz=requestAnimationFrame(()=>{cv
   const cr=c.getBoundingClientRect(), pinned=c.dataset.pin!=='0', a=[...el.children].find(e=>{const r=e.getBoundingClientRect();return r.bottom>cr.top+1;}), top=a?a.getBoundingClientRect().top:0;
   cvDrop(el); if(pinned)c.scrollTop=c.scrollHeight; else if(a)c.scrollTop+=a.getBoundingClientRect().top-top;});};
 addEventListener('resize',cvSoon); new MutationObserver(cvSoon).observe(document.documentElement,{attributes:true});
+let chatBoxRO=null; /* spec 005 FR-243: watches the open #chat's own size */
 function openPanel(id,focus){
   const a=byId(id); if(!a)return; if(DOOR_ON)doorStepAside(); /* FR-199: a chat fills the window; the door returns on Back to the office unless dismissed */ if(ui.selected!==id||!document.body.classList.contains('panel-open'))cvMark(); /* after the check: an unknown id leaves the chat on screen unmarked */ if(!pulling)PULLED.delete(id); /* the user came back: this session may bring its chat forward again */
   {const seen=byId(id);if(seen&&seen.apEnded){seen.apEnded=false;scheduleRender();}} /* spec 099 FR-056: an ended run needs you until it is seen */
@@ -2941,6 +3035,7 @@ function openPanel(id,focus){
   const chatEl=$('chat'); chatEl.dataset.pin='1'; chatEl._lastTop=undefined; chatEl.scrollTop=1e6;
   let rs=0; const restick=()=>{if(ui.selected!==a.id){chatEl._rsBusy=0;return;} const un=rs===0&&cvUnmarkIfResized(chat.el); /* marks dropped at this frame (another width or layout): the end moved by what that laid out, not by the person */ if(!un&&chatEl.scrollHeight-chatEl.scrollTop-chatEl.clientHeight>400){chatEl._rsBusy=0;return;} chatEl.scrollTop=chatEl.scrollHeight; if(++rs<4)requestAnimationFrame(restick); else{chatEl._rsBusy=0;chatEl.onscroll();}}; chatEl._rsBusy=0; if(chat.el.childElementCount>4){chatEl._rsBusy=1;requestAnimationFrame(restick);} /* spec 083 FR-046: _rsBusy is on while the re-stick runs, so Open source reveals after it */ /* spec 005 FR-210: the messages at the end get their real height a frame after the first layout, so the end moves; follow it for 4 frames, then read the pin again; a chat of 4 or fewer messages has no skipped one and is left alone */
   chatEl.onscroll=()=>{const t=chatEl.scrollTop; if(chatEl.scrollHeight-t-chatEl.clientHeight<80){chatEl.dataset.pin='1';if(trimDeferred&&!stickyRaf)stickyRaf=requestAnimationFrame(stickyFlush);} else if(chatEl._lastTop===undefined||t<chatEl._lastTop-1)chatEl.dataset.pin='0'; chatEl._lastTop=t;}; /* spec 005 FR-214: the scroll event of the app's own stick-to-bottom write arrives a frame later, when a new block may already have grown the page; that is not the person leaving the end. Only a move up from the position of the last scroll event is (whoever wrote the last position, so no writer has to record it) */
+  if(window.ResizeObserver){if(chatBoxRO)chatBoxRO.disconnect();let h0=-1;chatBoxRO=new ResizeObserver(()=>{const h=chatEl.clientHeight;if(h0>=0&&h!==h0&&chatEl.isConnected&&chatEl.dataset.pin!=='0')chatEl.scrollTop=chatEl.scrollHeight;h0=h;});chatBoxRO.observe(chatEl);} /* spec 005 FR-243: the box got shorter (an answer bar, the coffee bar, the message box) or taller: a chat at the end stays there; only down, only with the pin on (FR-214); the content's growth is stickyFlush's */
   $('panel').querySelector('.panel-in').classList.toggle('helper-ro',!!(a.live&&a.parent)); /* spec 097 Changes 2026-11-04 (issue 1140): not 'ro', the Real office root's class, whose floor picture and corners it took */
   $('backBtn').onclick=closePanel;
   refreshFolderStatus(a); /* spec 063: branch and changed files on the folder chip */
@@ -4110,6 +4205,7 @@ function wireToolbar(){
 function closePanel(){closeSlash();keepDraft();
   BP.hide(); hideSelButton(); cvMark(); /* spec 080 FR-009: the browser view comes off the window; the page stays loaded */
   if(ctObs){ctObs.res.disconnect();ctObs.mut.disconnect();ctObs=null;} closeCtMore(false); closeCtxMenu();
+  if(chatBoxRO){chatBoxRO.disconnect();chatBoxRO=null;} /* spec 005 FR-243: the box observer ends with its chat */
   const id=ui.selected; ui.selected=null; document.body.classList.remove('panel-open'); $('panel').innerHTML='';
   renderAll(); placeToasts();
   const n=id&&document.querySelector(`[data-id="${CSS.escape(id)}"]`); if(n)focusIn(n);
@@ -5484,22 +5580,24 @@ async function endAllSessions(anchor){
 }
 /* spec 006 FR-038..FR-046 (issue 606): the last run ended abnormally with sessions mid-turn. One calm card; resuming is the same wake as
    opening a restored chat (own mode and caps, no prompt), one after another. */
-const crashSt={loaded:false,items:[],first:null,missing:0,pick:false,done:new Set(),busy:false};
+const crashSt={loaded:false,items:[],ids:[],first:null,missing:0,pick:false,done:new Set(),busy:false};
 const crashLeft=()=>crashSt.items.filter(i=>!crashSt.done.has(i.id)&&liveById(i.id)&&liveById(i.id).info&&liveById(i.id).info.resumeLast);
 async function renderCrashStrip(){
   const el=$('crashStrip'); if(!el||!bridge||!bridge.interrupted||demoOn)return;
   if(!crashSt.loaded){let s=null; try{s=await bridge.interrupted();}catch(e){s=null;}
-    crashSt.loaded=true; crashSt.items=(s&&Array.isArray(s.items))?s.items.filter(i=>i&&liveById(i.id)):[]; crashSt.missing=(s&&s.missing>0)?s.missing:0;crashSt.first=crashSt.items.length?crashSt.items[0].id:null;}
+    crashSt.loaded=true; crashSt.items=(s&&Array.isArray(s.items))?s.items.filter(i=>i&&liveById(i.id)):[]; crashSt.missing=(s&&s.missing>0)?s.missing:0;crashSt.ids=crashSt.items.map(i=>i.id);crashSt.first=crashSt.ids.length?crashSt.ids[0]:null;}
   paintCrashStrip();
 }
+const shownEl=e=>!!e&&e.getClientRects().length>0&&!e.closest('[inert],[hidden]'); /* drawn and shown: focus() on a display:none element does nothing and leaves the page on <body> */
+const cardOf=id=>document.querySelector('#stage .desk[data-id="'+CSS.escape(id)+'"],#stage .ro-plate[data-id="'+CSS.escape(id)+'"]'); /* a session's card in the flat office (desk) or the Real office (plate) */
 function paintCrashStrip(focusSel){
   const el=$('crashStrip'); if(!el)return;
   const left=crashLeft();
   if(!left.length){const was=!el.hidden,had=el.contains(document.activeElement);el.hidden=true;el.innerHTML='';crashSt.pick=false;
     if(was){if(bridge.dismissInterrupted)bridge.dismissInterrupted().catch(()=>{});scheduleRender();
-      /* review of PR 720: focus does not fall to <body>: it goes to the desk of the card's first session (after the office redraws), else the office */
+      /* review of PR 720: focus does not fall to <body>: it goes to the desk (Real office: the plate) of the card's first session that is drawn and shown (after the office redraws), else the office */
       if(had||document.activeElement===document.body)requestAnimationFrame(()=>{const ae=document.activeElement;if(ae&&ae!==document.body&&document.contains(ae))return;
-        const d=crashSt.first&&document.querySelector('#stage .desk[data-id="'+CSS.escape(crashSt.first)+'"]');if(d)focusIn(d);else focusAfterGone('gone');});}
+        const d=crashSt.ids.map(cardOf).find(shownEl);if(d)focusIn(d);else focusAfterGone('gone');});}
     return;}
   const n=left.length, ex=crashSt.missing>0?' ('+crashSt.missing+(crashSt.missing===1?' more':' others')+' could not be reopened.)':'';
   el.innerHTML='<span class="ns-ic" aria-hidden="true">i</span><span class="ns-t"><b>'+(n===1?'1 session was interrupted':n+' sessions were interrupted')+'</b> when Durbar stopped unexpectedly. The reply '+(n===1?'it was':'each was')+' writing is lost, and nothing is sent again.'+ex+'</span>'+
@@ -5596,13 +5694,15 @@ if($('sendSeveralBtn'))$('sendSeveralBtn').onclick=()=>sendToSeveral($('topMoreB
 const DESK_NAV='#stage .desk, #stage .helper, #stage .plate, #stage .ro-plate'; /* spec 097 FR-090: the Real office plates are the focusable cards there */
 $('wsFilter').addEventListener('change',e=>{ui.ws=e.target.value;renderAll();});
 function setView(v){if(v!=='list'&&CS.active&&!CS.ending){const s=$('convSearch');if(s)s.value='';csEnd({restore:false,keepFocus:true});} /* spec 095 FR-023: leaving the List view ends the search */
+  if(v!=='office')stripsReset(); /* spec 102 T340 */
   ui.view=v;document.body.classList.toggle('list-mode',v==='list');
   $('vOffice').setAttribute('aria-pressed',String(v==='office'));$('vList').setAttribute('aria-pressed',String(v==='list'));renderAll();}
 $('vOffice').onclick=()=>setView('office');
 $('vList').onclick=()=>setView('list');
 let resizeQueued=false;
-const relayout=()=>{if(resizeQueued)return;resizeQueued=true;requestAnimationFrame(()=>{resizeQueued=false;if(ui.view==='office'){renderOffice();syncWalkers();afTick();}placePencils();INL().follow();});}; /* spec 024: figures follow a resize */
-new ResizeObserver(relayout).observe($('floor'));
+const relayoutNow=()=>{resizeQueued=false;if(ui.view==='office'){renderOffice();syncWalkers();afTick();}placePencils();INL().follow();};
+const relayout=()=>{if(resizeQueued)return;resizeQueued=true;requestAnimationFrame(relayoutNow);}; /* spec 024: figures follow a resize */
+new ResizeObserver(relayoutNow).observe($('floor')); /* spec 052 FR-243: the floor changed size (the Auto-follow strip came, a bar wrapped): lay out before the next paint, not a frame later; the stage keeps its old height until then and would overflow the shorter floor */
 window.addEventListener('resize',relayout);
 document.addEventListener('scroll',()=>INL().follow(),{capture:true,passive:true}); /* spec 059 FR-023 item 5: the floor, the list or the chat scrolled: the open field follows its name */
 
@@ -6161,7 +6261,7 @@ function chatTrimPending(hidden){const c=$('chat');let n=0;stickyChats.forEach(c
 document.addEventListener('visibilitychange',()=>{if(!document.hidden&&hiddenTrimT){clearInterval(hiddenTrimT);hiddenTrimT=0;}});
 function stickyScroll(chat){stickyChats.add(chat);if(!stickyRaf)stickyRaf=requestAnimationFrame(stickyFlush);if(document.hidden){hiddenDirty=true;if(!hiddenTrimT)hiddenTrimT=setInterval(hiddenTrimTick,TRIM_HIDDEN_MS);}}
 let trimDeferred=null; /* FR-238: the open chat whose trim waits while the person reads its older messages */
-function stickyFlush(){stickyRaf=0;const c=$('chat');const l=[...stickyChats];stickyChats.clear();
+function stickyFlush(){stickyRaf=0;mdFlush();const c=$('chat'); /* spec 005 FR-243: the text queued this frame is painted before the follow reads the height (a turn's first text asked for the follow before its paint) */const l=[...stickyChats];stickyChats.clear();
   if(trimDeferred&&!(c&&trimDeferred.el.parentNode===c&&c.dataset.pin==='0')){if(!l.includes(trimDeferred))l.push(trimDeferred);trimDeferred=null;} /* back at the end, or another chat is open */
   let openTrimmed=false; l.forEach(chat=>{if(chatTrim(chat,c)>0&&c&&chat.el.parentNode===c)openTrimmed=true;}); /* spec 005 FR-238: before the scroll, so a chat at its end stays there */
   if(c&&c.dataset.pin!=='0'&&l.some(chat=>chat.el.parentNode===c)){c.scrollTop=c.scrollHeight;if(openTrimmed)c._lastTop=c.scrollTop;} /* FR-238: after a trim removed blocks above, the end is lower than before; this write is not the person scrolling up (FR-214). Only then: otherwise the first scroll after opening a chat keeps FR-214's own rule */
@@ -6768,7 +6868,7 @@ function ensureTurn(a){
   chat.el.appendChild(m);
   const T=makeT(m.querySelector('.tl'),chat);T.folder=a.info&&a.info.cwd; /* spec 005 FR-020: edit paths relative to it */
   const ty=document.createElement('div');ty.className='typing';ty.dataset.t0=String(Date.now());ty.innerHTML='<i></i><i></i><i></i><span class="t-l"></span>';
-  T.tl.appendChild(ty);T.typing=ty;
+  T.tl.appendChild(ty);T.typing=ty;typingPaint(ty); /* spec 005 FR-243: labelled now, so the 1 s timer changes its text, not its height (an empty label grew the row by 9 px after the follow) */
   const t=a.turn={m,T};chat.turn=t;chat.agent=a; /* spec 005 FR-238: the open turn's blocks are trimmed, its live ones never */
   stickyScroll(chat);return t;
 }
@@ -6892,6 +6992,7 @@ function showLimit(a,e){
   n.appendChild(row);
   a.limit={requestId:e.requestId,n,row,st:n.querySelector('.pstate')};
   tChips(t.T).appendChild(n);stickyScroll(liveChat(a));
+  const op=afPanelId();if(op)announce(chatShownNow(a.id)?[a.name,' reached its spending limit: ',n.querySelector('.psum').textContent,' Choose in its card.']:[a.name,' reached its spending limit. Open its chat to choose.'],ANN_REQUEST); /* spec 005 FR-237: whenever a chat is open, like the question card; the card is named only where it is shown; none open: the open-chat line or the auto-follow notice says it later */
 }
 /* ---------- questions from the agent (spec 012 FR-130): options as buttons, "Other" text, Answer / Skip; text only, never HTML ---------- */
 /* ---------------- plan first (spec 066): the agent's proposed plan, with Approve / Revise… / Reject ---------------- */
@@ -6913,6 +7014,7 @@ function showPlan(a,e){
   n.appendChild(row);
   tChips(t.T).appendChild(n);stickyScroll(liveChat(a));
   a.plan={requestId:e.requestId,n,st,row};
+  const op=afPanelId();if(op)announce(chatShownNow(a.id)?[a.name,' proposes a plan. Approve, revise or reject it in its card.']:[a.name,' proposes a plan. Open its chat to review it.'],ANN_REQUEST); /* spec 005 FR-237: as the limit card; the plan's text is not read out */
   /* spec 066 (2026-11-01 delta): the plan never takes focus from typing: with text in the message box, or focus in any text field, Approve is left alone */
   const ae=document.activeElement, mb=$('msgInput');
   if(ui.selected===a.id&&!modalOpen()&&!(mb&&mb.value)&&(!ae||ae===document.body||ae===mb))focusIn(ok);
@@ -6977,7 +7079,7 @@ function showQuestion(a,e){
   row.appendChild(ok);row.appendChild(skip);n.appendChild(row);
   a.question={requestId:e.requestId,n,row,st};(a.qs||(a.qs=new Map())).set(e.requestId,a.question); /* spec 052 FR-178: every open question by request id (two can be open at once) */
   tChips(t.T).appendChild(n);stickyScroll(liveChat(a));
-  announce([a.name,' asks: ',String((qs[0]&&qs[0].question)||'')||'a question']); /* spec 012 FR-178: the question as the card shows it; announce masks it */renderInboxBtn();
+  announce([a.name,' asks: ',String((qs[0]&&qs[0].question)||'')||'a question'],ANN_REQUEST); /* spec 012 FR-178: the question as the card shows it; announce masks it */renderInboxBtn();
 }
 /* ---------- MCP elicitation (spec 012 FR-151): a form in the question card, or an https page opened only after a click.
    Text only, never HTML; values are never logged or shown afterwards. Main checks the answer again before the agent gets it. ---------- */
@@ -7081,7 +7183,7 @@ function showElicitation(a,e){
   n.appendChild(row);
   a.question={requestId:e.requestId,n,row,st,elicit:isUrl?'url':'form'};(a.qs||(a.qs=new Map())).set(e.requestId,a.question);
   tChips(t.T).appendChild(n);stickyScroll(liveChat(a));
-  announce([a.name,': ',R.source?R.source+' ':'an MCP server ',isUrl?'asks you to open a page on ':'asks for input',isUrl?(R.host||'the web'):'','. ',{text:R.message||'',max:160}]); /* spec 012 FR-178: the message as the card shows it, masked by announce before its 160-character cut */renderInboxBtn();
+  announce([a.name,': ',R.source?R.source+' ':'an MCP server ',isUrl?'asks you to open a page on ':'asks for input',isUrl?(R.host||'the web'):'','. ',{text:R.message||'',max:160}],ANN_REQUEST); /* spec 012 FR-178: the message as the card shows it, masked by announce before its 160-character cut */renderInboxBtn();
 }
 /* spec 052 FR-178: why a question ended unanswered, in words for the card's tooltip (codes only, from the adapter's event or this window; never text of the question) */
 const SKIP_WHY={user:'you pressed Skip',stop:'the turn was stopped',interrupt:'the turn was stopped',reconnect:'the agent app was reconnected',exit:'the agent app ended',unreadable:'the agent app ended the question without an answer',aborted:'the agent app reported the turn as aborted'};
@@ -7292,7 +7394,7 @@ function showPerm(a,p){
   }
   tChips(t.T).appendChild(n);stickyScroll(liveChat(a));
   if(t.T.typing)typingPaint(t.T.typing);
-  if(p.state==='pending')announce([a.name,' needs your OK: ',look,look?' The request: ':'',sumS.text,hwhy?'. '+PERM_WHY[hwhy]+hgrant:'']); /* spec 003 FR-118: the lookalike line first, so the 300-character announcement keeps it; spec 012 FR-178: the name, the fixed words and the request are masked apart, so the request is said as the card shows it and the fixed words are always said */
+  if(p.state==='pending')announce([a.name,' needs your OK: ',look,look?' The request: ':'',sumS.text,hwhy?'. '+PERM_WHY[hwhy]+hgrant:''],ANN_REQUEST); /* spec 003 FR-118: the lookalike line first, so the 300-character announcement keeps it; spec 012 FR-178: the name, the fixed words and the request are masked apart, so the request is said as the card shows it and the fixed words are always said */
   renderInboxBtn();
 }
 /* spec 003 FR-094..FR-096 (owner 2026-10-23, supersedes spec 052 FR-074's button): under a request denied by Read-only, one button
@@ -8068,6 +8170,12 @@ async function cardOp(a,op,anchor){
 const askDialog=DurbarDialog(document);
 /* spec 043 FR-014: the profile file editor (profileeditor.js) uses the same bridge, dialog, toast and escaping */
 if(window.DurbarProfileEditor)window.DurbarProfileEditor.init({bridge,askDialog,toast:(...x)=>toast(...x),esc:s=>esc(s)});
+/* spec 111 T008: Settings > Team templates (teams.js) uses the same bridge, dialog, toast and announcer */
+/* spec 111 T009: the member editor reads the page's own app, model, permission and character helpers, at the time it opens (KINDS and the model lists load later than this line) */
+if(window.DurbarTeams)window.DurbarTeams.init({bridge,sim:!!SIM,askDialog,toast:(...x)=>toast(...x),esc:s=>esc(s),announce:(t)=>announce(t),
+  editorEnv:()=>({kinds:()=>KINDS?DMK().kindChoices(KINDS):[],kindCaps:id=>kindCaps(id),shows:(c,f)=>DMK().shows(c,f),ensureModels:k=>ensureModels(k),modelsFor:k=>modelsFor(k),
+    fillModelSelect:(sel,cur,k)=>fillModelSelect(sel,cur,k),fillEffortSelect:(sel,m,cur,off,k)=>fillEffortSelect(sel,m,cur,off,k),fillPerm:(sel,c,k)=>fillPermSelect(sel,c,k),
+    limits:{minAiu:MIN_CAP,minUsd:MIN_USD_CAP},characters:()=>CREW?crewIds():[]})});
 /* ---------------- spec 059: rename a session ---------------- */
 /* Main sessions only (never helpers); a started or not started, live or ended card. */
 const canRenameSession=a=>!!(a&&a.live&&!a.parent&&a.info&&bridge.renameSession);
@@ -8931,15 +9039,19 @@ function newSession(a0,o){
   d.innerHTML=`<div class="dlg m" role="dialog" aria-modal="true" aria-labelledby="sdT"><h3 id="sdT">${ho?'Continue in another agent app':'New session in '+esc(roomOf(a).name)}</h3>
    <p class="dsub">${ho?'A new session in <code>'+esc(roomOf(a).path)+'</code>, in the agent app you pick, starting from a summary of this conversation (you review it first). '+esc(a.name)+' keeps its history.':'Another agent with its own chat in <code>'+esc(roomOf(a).path)+'</code>.'}</p>
    ${DMK().showsKindPicker(KINDS)?`<label>Agent app<select id="sdKind">${kindOptions()}</select></label>`:''}
-   <label>Permissions<select id="sdPerm"><option value="read-only">Read-only</option><option value="ask">Ask first</option><option value="allow">Allow all (no prompts)</option></select></label>
+   <span id="sdPermSlot"></span>
    <label id="sdModelL">Model<select id="sdModel"></select></label>
    <label id="sdEffL">Reasoning effort<select id="sdEff"></select></label>
    ${bridge.listProfiles&&a.info&&a.info.profiles?`<div id="sdAgentL" class="sd-agent" hidden><label>Profile<select id="sdAgent"><option value="">Default</option></select></label>${bridge.setFolderDefaultAgent?'<label class="chk"><input type="checkbox" id="sdAgentDef"> Default for new sessions here</label>':''}</div>`:''}
    ${canHandoff(a)?`<label class="chk" id="sdSumL"><input type="checkbox" id="sdSum"${o.summary?' checked':''}> Start with a summary of this conversation (you review it before it is sent)</label>`:''}
    ${bridge.harnessQuota?'<small class="dhint" id="sdQuota" role="status" hidden></small>':''}
-   ${bridge.setCap?'<label id="sdCapL"><span id="sdCapT">Spending limit</span><input id="sdCap" type="number" min="0.001" step="0.01" placeholder="No limit" aria-describedby="sdCapH"></label><small class="dhint" id="sdCapH">In AI credits. Empty means no limit.</small>':''}
+   ${bridge.setCap?'<span id="sdCapSlot"></span>':''}
    <div class="dbtn"><button class="btn" id="sdCancel" type="button">Cancel</button><button class="btn primary" id="sdGo" type="button">Start session</button></div></div>`;
   document.body.appendChild(d);
+  /* spec 111 T009 (FR-031): the permissions row and the limit row come from memberrows.js, the same builders as the team member editor */
+  const MR=window.DurbarMemberRows;
+  $('sdPermSlot').replaceWith(...MR.permRow(document,{id:'sdPerm'}).nodes);
+  if($('sdCapSlot'))$('sdCapSlot').replaceWith(...MR.capRow(document,{ids:{row:'sdCapL',title:'sdCapT',input:'sdCap',hint:'sdCapH'}}).nodes);
   $('sdPerm').value=a.info.permMode||'read-only';
   let capUsd=null; /* the unit the cap field shows; the AIU default is never put in a dollar field (FR-150) */
   /* the chosen kind decides which fields exist: its own model list (spec 012 FR-120; none yet = hidden, FR-062); no credit cap field without the capability (FR-061) */
@@ -8956,7 +9068,7 @@ function newSession(a0,o){
     if($('sdCapL')){
       $('sdCapL').hidden=!!c&&!DMK().shows(c,'cap');$('sdCapH').hidden=$('sdCapL').hidden;
       const cc=c||capsFor(a),usd=!!cc&&cc.capUnit==='usd';
-      if(usd!==capUsd){capUsd=usd;$('sdCapH').textContent=usd?'Claude\'s estimate, in dollars. Empty means no limit.':'In AI credits. Empty means no limit.';$('sdCap').min=usd?String(MIN_USD_CAP):'0.001';$('sdCap').value=usd?'':(APP_SETTINGS.defaultMaxAiCredits||'');}
+      if(usd!==capUsd){capUsd=usd;const sp=MR.capSpec(usd,{minUsd:MIN_USD_CAP});$('sdCapH').textContent=sp.hint;$('sdCap').min=sp.min;$('sdCap').value=usd?'':(APP_SETTINGS.defaultMaxAiCredits||'');}
     }
     if(c)fillPermSelect($('sdPerm'),c,k);else markOrgModes($('sdPerm'),a.info.adapterId);
   };
@@ -8994,7 +9106,7 @@ function newSession(a0,o){
     if($('sdKind')&&(!kind||(DMK().kindChoices(KINDS).find(k=>k.id===kind)||{disabled:true}).disabled)){notReadyToast(DMK().kindChoices(KINDS).find(k=>k.id===kind));return;}
     const opts={permMode:$('sdPerm').value,model:$('sdModelL').hidden?undefined:$('sdModel').value,effort:$('sdEff').hidden?undefined:($('sdEff').value||undefined)};
     if(kind)opts.adapterId=kind;
-    if($('sdCap')&&!$('sdCapL').hidden){const cv=parseFloat($('sdCap').value);opts.maxAiCredits=capUsd?(cv>=MIN_USD_CAP&&cv<=1e4?Math.round(cv*100)/100:null):(cv>=MIN_CAP&&cv<=1e6?Math.round(cv*100)/100:null);}
+    if($('sdCap')&&!$('sdCapL').hidden){const cp=MR.capParse(capUsd,$('sdCap').value,{minAiu:MIN_CAP,minUsd:MIN_USD_CAP});opts.maxAiCredits=cp.amount!==undefined?cp.amount:null;}
     const profId=$('sdAgentL')&&!$('sdAgentL').hidden?$('sdAgent').value:'';
     if($('sdAgentDef')&&!$('sdAgentL').hidden){
       const want=$('sdAgentDef').checked&&profId?profId:(profId===a.info.defaultAgent?null:undefined);
@@ -9533,7 +9645,7 @@ function startSessionEdit(a0,surface,from,pid){
 function focusAfterGone(how){
   if(how!=='gone')return;
   const ae=document.activeElement; if(ae&&ae!==document.body&&document.contains(ae))return;
-  const t=document.querySelector('#stage .room-head [data-foldermenu]')||document.querySelector('#stage .desk[data-id]')||document.querySelector('#list button.lrow')||$('vOffice');
+  const t=[document.querySelector('#stage .room-head [data-foldermenu]'),document.querySelector('#stage .desk[data-id],#stage .ro-plate[data-id]'),document.querySelector('#list button.lrow')].find(shownEl)||$('vOffice'); /* the first one drawn and shown (a Real office draws plates; a hidden list's rows take no focus), else the Office button */
   if(t)focusIn(t);
 }
 /* A folder's display name edited in place ('room' = the room header, 'fp' = the Folders panel row). Same submit part as the dialog. */
@@ -10015,12 +10127,43 @@ function applyAddResult(r,okText){
   r.agents.forEach(addLiveAgent);
   r.agents.forEach(x=>{const ag=liveById(x.id);if(ag)announcePrevious(ag);});
   INTO=null; if(bridge.floorsState)bridge.floorsState().then(applyFloors).catch(()=>{});
+  addFloorNote(r).catch(()=>{});
+}
+/* spec 033 FR-089..FR-091 (issue 1709, owner report 2026-11-13): after an add, say where the folder is. A floor that is off is switched on (its room was
+   hidden, so the person added it again); a floor that is not the one shown gets a toast naming it with Show; a folder that was already there says so
+   and on which floor (main started nothing for it). Reuses toastAction, goToFloor, announce and the floors calls. */
+async function addFloorNote(r){
+  let state=null;
+  try{state=bridge.floorsState?await bridge.floorsState():null;}catch(e){state=null;}
+  if(state)applyFloors(state);
+  const items=[...(r.agents||[]).filter(a=>!a.parent).map(a=>({name:a.name,floor:(state&&state.byAgent&&state.byAgent[a.id])||a.floor,dup:false})),
+    ...(r.existing||[]).map(x=>({name:x.name,floor:x.floor,dup:true}))];
+  for(const it of items){
+    if(!floorsLive()||FLOORS.floors.length<2){if(it.dup){const t=it.name+' is already added.';toast(esc(t),5000);announce(t);}continue;}
+    const f=floorById(it.floor); if(!f)continue;
+    let switched=false, failed=false;
+    if(!f.on){
+      const res=await floorCall(bridge.setFloorOn(f.id,true));
+      if(res&&res.ok)switched=true; else failed=true; /* still say where it is: it is on a floor that stays off */
+    }
+    const nm=floorById(f.id).name, shown=failed?false:(!oneFloorView()||f.id===curFloorId());
+    if(shown&&!switched&&!it.dup)continue; /* it is on the floor the person is looking at: the room is there */
+    const text=(it.dup?it.name+' is already added on the floor "'+nm+'".':'Added '+it.name+' on the floor "'+nm+'".')+(switched?' The floor was off, so it is switched on.':'')+(failed?' The floor is off and could not be switched on.':'');
+    const html=esc(text);
+    if(shown){toast(html,6000);}
+    else if(failed)toastAction(html,'Show',async()=>{const r=await floorCall(bridge.setFloorOn(f.id,true));if(r&&r.ok)goToFloor(f.id);else{const t2='The floor "'+nm+'" still could not be switched on.';toast(esc(t2),8000);announce(t2);}},12000); /* Show tries the switch again, then goes there */
+    else toastAction(html,'Show',()=>goToFloor(f.id),12000);
+    announce(text+(shown?'':' Press Show to '+(failed?'try again.':'go there.')));
+  }
 }
 /* spec 093 FR-001, Q1 = a: Ctrl+O, File > Add Folder… and the palette's Add folder keep opening the system picker (Add existing) */
 function addExisting(){if(!$('addFolder').disabled&&bridge)addVia(bridge.addFolder);}
 const NEWFOLDER=window.DurbarNewFolder.create({bridge,askDialog:o=>askDialog(o),toast,esc,announce,doc:document,
   mode:()=>{const s=$('permMode'),op=s.options[s.selectedIndex];return {value:s.value,label:op?op.textContent:'Read-only'};},
-  confirmAllow,addOptions,addExisting,applyResult:(r,text)=>applyAddResult(r,text)});
+  confirmAllow,addOptions,addExisting,applyResult:(r,text)=>applyAddResult(r,text),
+  /* spec 033 FR-092 (owner request): the Add a folder dialog names the floor and lets the person pick another; the choice is the same INTO the Floors panel sets */
+  floorPick:()=>{const id=intoFloor();return id?{value:id,options:FLOORS.floors.map(f=>({id:f.id,name:f.name,on:f.on}))}:null;},
+  setFloor:id=>{INTO=id;renderIntoFloor();renderFloorsPanel();renderFloorsSettings();}});
 let pendingOpen=qs.get('open');
 if(bridge){
   document.body.classList.add('has-bridge');
@@ -10101,7 +10244,7 @@ if(bridge){
   /* User themes (spec 040): register imported packs, then apply the saved theme id */
   THEME.setTheme.resolveUser=bridge.getUserTheme?(id)=>bridge.getUserTheme(id):null;
   const themeBoot=(v)=>{
-    THEME.setCharacters(v&&v.characters); /* spec 077 FR-064: the saved choice (an unknown value is the default) */
+    THEME.setCharacters(drawableCharacters(v&&v.characters)); /* spec 077 FR-064: the saved choice (an unknown value is the default) */
     let tid=(v&&v.theme)||'clean-office';
     /* FR-067: the old Cheeky Crew id from a run theme or the simulator's query: Clean Office with Cheeky, for this run (nothing saved) */
     if(tid===THEME.LEGACY_CREW_THEME){if(THEME.characters()==='theme')THEME.setCharacters('cheeky');tid='clean-office';}
@@ -10129,7 +10272,7 @@ if(pendingOpen&&demoOn){openPanel(pendingOpen,false);pendingOpen=null;}
 const settleNow=()=>{if(!agentsListed||!window.__durbarSimReplayed||baselineQueued||baselineAsking)return false;if(renderQueued){renderQueued=false;renderAll();}return true;};
 /* simulator drivers load with simfreeze=1: the desk glow then holds still (FR-178: the geometry and screenshot checks measure boxes, so no zoom may be mid-way); the unread driver opts back in with hlmotion=1 to test the motion itself */
 if(SIM&&qs.get('simfreeze')==='1'&&qs.get('hlmotion')!=='1')document.documentElement.classList.add('hl-still');
-if(SIM)window.__durbarSimUi={announce,afArrivalPrio,afNotice:{ms:v=>{AF_NOTICE_MS=Math.max(100,Number(v)||3000);return AF_NOTICE_MS;},on:v=>{setAutoFollowOn(!!v);return AF_ON;},shown:()=>!!AF_NOTICE}, /* spec 052 FR-239: drivers only: the notice's length, Auto-follow without Settings */swapCardOptions:id=>{const c=byId(id)&&pendingCardOf(byId(id));if(!c)return 0;const os=[...c.querySelectorAll('.q-opt')];os.forEach(b=>b.replaceWith(b.cloneNode(true)));return os.length;}, /* spec 052 FR-197: the live card rebuilds its options (the card stays, the old buttons are gone); a driver checks that a row's old option answers nothing */
+if(SIM)window.__durbarSimUi={announce,renderRestoreStrip,afArrivalPrio,afTracker:{ids:()=>AFT.ids(),pending:()=>AFT.pendingList().map(v=>v.id+'|'+v.kind),quiet:()=>AFT.isQuiet,follow:id=>AFT.follow(id)}, /* spec 005 FR-237: drivers only: what Auto-follow follows, holds and whether it is quiet; follow() makes an agent followed without a hand open (which would drop the others, spec 052 FR-185) */ afNotice:{ms:v=>{AF_NOTICE_MS=Math.max(100,Number(v)||3000);return AF_NOTICE_MS;},on:v=>{setAutoFollowOn(!!v);return AF_ON;},shown:()=>!!AF_NOTICE}, /* spec 052 FR-239: drivers only: the notice's length, Auto-follow without Settings */swapCardOptions:id=>{const c=byId(id)&&pendingCardOf(byId(id));if(!c)return 0;const os=[...c.querySelectorAll('.q-opt')];os.forEach(b=>b.replaceWith(b.cloneNode(true)));return os.length;}, /* spec 052 FR-197: the live card rebuilds its options (the card stays, the old buttons are gone); a driver checks that a row's old option answers nothing */
   chatTrimNow:()=>chatTrimPending(false), /* spec 005 FR-238: trim the chats waiting for a frame now (a burst with no frame between) */
   hiddenTrimTimer:()=>({on:!!hiddenTrimT,ms:TRIM_HIDDEN_MS}),
   helperState:(id,st)=>{const h=agents.find(x=>x.id===id&&x.parent);if(!h||!['working','thinking','waiting','error','limit','done','idle'].includes(st))return false;h.state=st==='limit'?'waiting':st;h.limit=st==='limit';h.paused=false;layoutKey='';renderAll();return true;}, /* spec 097 T335 (issue 1642): drivers only: a helper's state the simulator never sends (waiting, limit), for the kids on the desk */

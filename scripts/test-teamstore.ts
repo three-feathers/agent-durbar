@@ -24,6 +24,8 @@ import assert from 'assert';
 import fs from 'fs';
 import path from 'path';
 import * as real from '../src/main/teamstore';
+import { copyName } from '../src/shared/teamtemplate';
+import { nameKey } from '../src/shared/skeleton';
 
 type Api = typeof real;
 let n = 0;
@@ -240,6 +242,12 @@ const sections: Record<string, Section> = {
     }
     const zj = s2.put(tpl('C'.repeat(34) + '\u200D' + 'yyy')); if (zj.ok) { const dz = s2.duplicate(zj.template.id); ok(dz.ok && dz.template.name === 'C'.repeat(34) + ' copy', 'a trailing ZWJ is dropped before the suffix'); }
     const dl2 = s2.duplicate(long.template.id); ok(dl2.ok && dl2.template.name.length <= 40 && dl2.template.name.endsWith(' copy 2') && dl2.template.name !== (dl.ok ? dl.template.name : ''), 'and again');
+    // the simulator's fake names a copy with the shared `copyName` (src/shared/teamtemplate.ts): it must give what the store gives, for every name stored above
+    for (const t of s2.list().slice()) {
+      const want = copyName(t.name, new Set(s2.list().map((x) => nameKey(x.name))));
+      const got = s2.duplicate(t.id);
+      ok(got.ok && got.template.name === want, 'the store names a copy as the shared copyName does: ' + JSON.stringify(t.name).slice(0, 30));
+    }
   },
   putInvalid(api) {
     const m = new MemFs(); const s = make(m, api);
@@ -478,21 +486,23 @@ const checks = n;
 // ---- mutants ----
 const dir = path.join(__dirname, '..', 'src', 'main');
 const compiled = fs.readFileSync(path.join(dir, 'teamstore.js'), 'utf8');
-const mutants: { name: string; from: string; to: string; breaks: string }[] = [
+const sharedCompiled = fs.readFileSync(path.join(dir, '..', 'shared', 'teamtemplate.js'), 'utf8');
+// `shared: true`: the anchor is in the compiled shared module (`copyName`, the one naming rule the store calls); the store's mutant file then requires the mutated copy
+const mutants: { name: string; from: string; to: string; breaks: string; shared?: true }[] = [
   { name: 'write straight to the file, no temp and no rename', from: 'const tmp = `${this.file}.${this.pid}.tmp`;', to: 'const tmp = this.file;', breaks: 'crashBetweenWriteAndRename' },
   { name: 'file mode 0644', from: '{ mode: 0o600, flag: \'wx\' }', to: '{ mode: 0o644, flag: \'wx\' }', breaks: 'fileMode' },
   { name: 'bad file set aside without the toast flag', from: 'this.toast = true;', to: '', breaks: 'brokenSetAside' },
   { name: 'the cap of 50 off by one', from: '!cur && this.items.length >= teamtemplate_1.LIMITS.templates)', to: '!cur && this.items.length > teamtemplate_1.LIMITS.templates)', breaks: 'cap' },
   { name: 'duplicate name compared without nameKey', from: 'new Set(this.items.map((x) => (0, skeleton_1.nameKey)(x.name)))', to: 'new Set(this.items.map((x) => x.name))', breaks: 'duplicateNames' },
-  { name: 'duplicate name tested without nameKey (candidate)', from: 'if (!taken.has((0, skeleton_1.nameKey)(name)))', to: 'if (!taken.has(name))', breaks: 'duplicateNames' },
+  { name: 'duplicate name tested without nameKey (candidate)', from: 'if (!takenKeys.has((0, skeleton_1.nameKey)(out)))', to: 'if (!takenKeys.has(out))', breaks: 'duplicateNames', shared: true },
   { name: 'put without validation', from: 'const r = (0, teamtemplate_1.checkTeamTemplate)(value, \'own\');', to: 'const r = { ok: true, template: value, ignored: 0 };', breaks: 'putInvalid' },
   { name: 'put takes the origin of the value', from: "origin: cur ? cur.origin : imported ? 'imported' : 'own'", to: "origin: cur ? cur.origin : (t.origin ?? (imported ? 'imported' : 'own'))", breaks: 'basics' },
   { name: 'no fsync before the rename', from: 'this.fs.fsyncFile(tmp);', to: '', breaks: 'fsyncBeforeRename' },
   { name: 'blocked check removed', from: 'if (!this.setAside())\n                return \'failed\';', to: '', breaks: 'brokenSetAside' },
   { name: 'old version key accepted (format not checked)', from: 'doc.format === FORMAT && ', to: '', breaks: 'brokenSetAside' },
   { name: 'a newer schemaVersion accepted', from: 'v <= exports.SCHEMA_VERSION', to: 'v <= 99', breaks: 'brokenSetAside' },
-  { name: 'duplicate cut by code point, not grapheme', from: 'const base = graphemes(src.name);', to: 'const base = Array.from(src.name);', breaks: 'duplicateNames' },
-  { name: 'trailing joiners kept before the suffix', from: ".replace(TRAILING_JOINERS, '')", to: '', breaks: 'duplicateNames' },
+  { name: 'duplicate cut by code point, not grapheme', from: 'const base = graphemes(name);', to: 'const base = Array.from(name);', breaks: 'duplicateNames', shared: true },
+  { name: 'trailing joiners kept before the suffix', from: ".replace(TRAILING_JOINERS, '')", to: '', breaks: 'duplicateNames', shared: true },
   { name: 'a read error sets the file aside at once (no second read)', from: "if (!r.ok && (r.code === 'error' || r.code === 'changing'))", to: 'if (false)', breaks: 'readRetry' },
   { name: 'decoder not fatal (U+FFFD written in)', from: "{ fatal: true }", to: '{ fatal: false }', breaks: 'badUtf8' },
   { name: 'no Windows rename retry', from: "this.platform === 'win32' && ", to: 'false && ', breaks: 'winRename' },
@@ -517,16 +527,21 @@ const mutants: { name: string; from: string; to: string; breaks: string }[] = [
   { name: 'a busy read at a save answers changed', from: "if (now.kind === 'busy')\n            return 'failed';", to: "if (now.kind === 'busy')\n            return 'changed';", breaks: 'unreadableSave' },
   { name: 'a busy read in a blocked save answers changed', from: "if (!r.ok && this.seen(r).kind === 'busy')\n                return 'failed';", to: "if (!r.ok && this.seen(r).kind === 'busy')\n                return 'changed';", breaks: 'blockedReread' },
   { name: 'a missing file (what Windows reads for a dangling link) is treated as a bad file', from: "r.code === 'missing'", to: "(r.code === 'missing' && !this.fs.lstatSync)", breaks: 'danglingLinkWindows' },
-  { name: 'one huge grapheme leaves only the suffix', from: 'head.length === 0)', to: 'false)', breaks: 'longGrapheme' },
+  { name: 'one huge grapheme leaves only the suffix', from: 'if (head.length === 0) {\n            head = Array.from(name);', to: 'if (false) {\n            head = Array.from(name);', breaks: 'longGrapheme', shared: true },
   { name: 'isBlocked always false', from: 'isBlocked() { return this.blocked; }', to: 'isBlocked() { return false; }', breaks: 'blockedFlag' },
   { name: 'stale temps not removed', from: '(0, schedules_1.removeStaleTemps)(this.file,', to: '(() => undefined)(this.file,', breaks: 'staleTemps' },
   { name: 'load at level imported', from: '(0, teamtemplate_1.checkTeamTemplate)(raw, \'own\')', to: '(0, teamtemplate_1.checkTeamTemplate)(raw, \'imported\')', breaks: 'importedFileLoads' },
 ];
 let killed = 0;
 for (const m of mutants) {
-  assert.ok(compiled.includes(m.from), 'mutant anchor not found: ' + m.name);
+  assert.ok((m.shared ? sharedCompiled : compiled).includes(m.from), 'mutant anchor not found: ' + m.name);
   const file = path.join(dir, 'teamstore.mutant.js');
-  fs.writeFileSync(file, compiled.split(m.from).join(m.to));
+  const sharedFile = path.join(dir, '..', 'shared', 'teamtemplate.teamstore-mutant.js');
+  if (m.shared) {
+    fs.writeFileSync(sharedFile, sharedCompiled.split(m.from).join(m.to));
+    delete require.cache[sharedFile];
+    fs.writeFileSync(file, compiled.split('require("../shared/teamtemplate")').join('require("../shared/teamtemplate.teamstore-mutant")'));
+  } else fs.writeFileSync(file, compiled.split(m.from).join(m.to));
   try {
     delete require.cache[file];
     const api = require(file) as Api;
@@ -535,6 +550,7 @@ for (const m of mutants) {
     killed++;
   } finally {
     fs.rmSync(file, { force: true });
+    fs.rmSync(sharedFile, { force: true });
   }
 }
 assert.strictEqual(killed, mutants.length);
