@@ -422,6 +422,17 @@ assert.ok(dh.darkProblem({ id: 'check-user', bg: 'rgb(20, 18, 43)' }).includes('
   codes.length = 0; await H.calm(); assert.ok(codes[0].includes('shotCalm') && codes.slice(1).some((c) => c.includes('.walker.walking')), 'calm hides the toasts, then waits until no figure walks');
   events.length = 0; await H.shot('/tmp/t.png', { prep: 'mouse', delay: 0 }); assert.strictEqual(events[0].type, 'mouseMove', "prep 'mouse' moves the pointer");
   codes.length = 0; sleeps.length = 0; await H.shot('/tmp/t.png', { settle: true, delay: 0 }); assert.ok(codes.some((c) => c.includes("querySelectorAll('*').length")), 'shot settles when asked');
+  // spec 052 (#1658): needFocus asks for the focus through the helper's focus step and fails with the label when the page never has it; focus that arrives late passes
+  {
+    let reads = 0; const evs: string[] = [];
+    const fctx = { ...ctx, win: { ...ctx.win, show: () => evs.push('show'), focus: () => evs.push('win.focus'), webContents: { focus: () => evs.push('wc.focus') } }, js: async (c: string) => { if (c.includes('document.hasFocus()')) { reads++; return reads > 3; } return true; } };
+    await dh.helpers(fctx).needFocus('t 1440x900', { ms: 3000 });
+    assert.ok(reads >= 4 && evs.includes('show') && evs.includes('win.focus') && evs.includes('wc.focus'), `needFocus: focus that comes after 3 reads passes, through the focus step (${reads} reads, ${evs.join(',')})`);
+    const never = { ...fctx, js: async (c: string) => !c.includes('document.hasFocus()') };
+    await assert.rejects(() => dh.helpers(never).needFocus('t 1440x900', { ms: 300 }), /t 1440x900: the window does not have focus \(document\.hasFocus\(\) is false\): bring the app to the front; the machine may have no key window/, 'needFocus: a page without focus fails with the label');
+    const mut = { ...fctx, js: async (c: string) => !c.includes('!!(false)') };
+    await assert.rejects(() => dh.helpers(mut).needFocus('t', { ms: 300, expr: 'false' }), /does not have focus/, 'needFocus: a false reading (the mutant) fails with the label');
+  }
   // values spliced into page code are escaped, whatever they hold
   const evil = `x');alert(1);//</script>\u2028`;
   codes.length = 0; await H.click(evil); await H.clickText(evil, evil); await H.exists(evil); await H.text(evil); await H.idOf(evil);
@@ -518,6 +529,10 @@ export function checkDriverSource(f: string, t: string): string[] {
 }
 const allBad = drivers.flatMap((f) => checkDriverSource(f, fs.readFileSync(path.join(ROOT, 'scripts', f), 'utf8')));
 assert.deepStrictEqual(allBad, [], '\n' + allBad.join('\n'));
+// CodeQL js/bad-code-sanitization (alert 108): check-office-ops builds page code over several lines, which the per-line scan above does not see; a value spliced there goes through jsLiteral, never a bare JSON.stringify
+export const bareStringify = (t: string): boolean => /\$\{\s*JSON\.stringify\(/.test(t);
+assert.ok(!bareStringify(fs.readFileSync(path.join(ROOT, 'scripts', 'check-office-ops.js'), 'utf8')), 'check-office-ops.js splices values into page code with jsLiteral, not ${JSON.stringify(...)}');
+assert.ok(bareStringify('js(`new Set(${JSON.stringify(X)})`)') && !bareStringify('js(`new Set(${jsLiteral(X)})`)'), 'the check-office-ops splice guard catches the old form');
 // the guard itself catches what it is for (a mutation of a clean driver must fail)
 const clean = "const { helpers, jsLiteral } = require('./driver-helpers');\nmodule.exports = async (ctx) => { await ctx.js(`document.title=${jsLiteral(1)}`); };\n";
 assert.deepStrictEqual(checkDriverSource('x.js', clean), []);

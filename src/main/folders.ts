@@ -51,6 +51,8 @@ export interface SavedFolder {
   prevHidden?: PrevMark[];
   /** Spec 003 (2026-10-21 delta): the permission mode last chosen for each session of this folder (newest 50), so a session comes back in its own mode, not the folder's last one. Ids and modes only. */
   sessionModes?: SessionMode[];
+  /** Spec 058 (2026-11-14 delta): the MCP servers switched off for each session of this folder (newest 50 sessions, at most 50 names each), so a switch outlives closing the chat and an app restart. Session ids and server NAMES only, never a URL, command, header or value. */
+  sessionMcpOff?: SessionMcpOff[];
   /** Spec 083 FR-050 (T042): the folder's notes are mirrored to `.durbar/notes/notes.md` in the project; `'git'`: the person chose to keep them in git (no `.gitignore`). Absent = off (the default). */
   notesProject?: true | 'git';
   /** Spec 083 Changes 2026-11-01: identity (`dev:ino[:birth]`) of the `.durbar/notes/.gitignore` Durbar itself made (only that very file is ever deleted by Durbar). */
@@ -60,6 +62,11 @@ export interface SavedFolder {
 export interface SessionMode {
   id: string;
   mode: SavedPermMode;
+}
+
+export interface SessionMcpOff {
+  id: string;
+  off: string[];
 }
 
 export interface PrevMark {
@@ -95,6 +102,30 @@ const SESSION_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,99}$/;
 
 /** Spec 003 (2026-10-21): how many per-session modes a folder remembers; the oldest are dropped. */
 export const MAX_SESSION_MODES = 50;
+
+/** Spec 058 (2026-11-14 delta): how many sessions of a folder remember their MCP switches, and how many server names each. */
+export const MAX_SESSION_MCP_OFF = 50;
+export const MAX_MCP_OFF_NAMES = 50;
+
+/** A server name worth keeping: a short plain string (the dialog's own limit is 64), no control characters, never `__proto__`. */
+const mcpOffNameOk = (n: unknown): n is string => typeof n === 'string' && n.length > 0 && n.length <= 64 && n !== '__proto__' && !/[\u0000-\u001f\u007f]/.test(n);
+
+/** A saved per-session MCP switch list: well-formed `{id, off}` entries only, one per id (the later wins), names checked and deduplicated, the newest 50 sessions kept; empty or malformed is `undefined`. */
+export function parseSessionMcpOff(v: unknown): SessionMcpOff[] | undefined {
+  if (!Array.isArray(v)) return undefined;
+  const out: SessionMcpOff[] = [];
+  for (const e of v.slice(-1000)) {
+    if (!e || typeof e !== 'object') continue;
+    const o = e as Record<string, unknown>;
+    if (typeof o.id !== 'string' || !SESSION_ID.test(o.id) || !Array.isArray(o.off)) continue;
+    const off = [...new Set(o.off.slice(0, 500).filter(mcpOffNameOk))].slice(0, MAX_MCP_OFF_NAMES);
+    const at = out.findIndex((x) => x.id === o.id);
+    if (at >= 0) out.splice(at, 1);
+    if (off.length) out.push({ id: o.id, off });
+  }
+  const kept = out.slice(-MAX_SESSION_MCP_OFF);
+  return kept.length ? kept : undefined;
+}
 
 const parseMode = (v: unknown): SavedPermMode | undefined => (v === 'read-only' || v === 'ask' || v === 'allow' ? v : undefined);
 
@@ -285,6 +316,7 @@ export function parseSavedFolders(text: string): SavedFolder[] {
       ...(parsePrevMarks(o.prevPinned) ? { prevPinned: parsePrevMarks(o.prevPinned) } : {}),
       ...(parsePrevMarks(o.prevHidden) ? { prevHidden: parsePrevMarks(o.prevHidden) } : {}),
       ...(parseSessionModes(o.sessionModes) ? { sessionModes: parseSessionModes(o.sessionModes) } : {}),
+      ...(parseSessionMcpOff(o.sessionMcpOff) ? { sessionMcpOff: parseSessionMcpOff(o.sessionMcpOff) } : {}),
       ...(typeof o.notesIgnoreOwn === 'string' && /^[0-9]{1,24}:[0-9]{1,24}(?::[0-9]{1,24})?$/.test(o.notesIgnoreOwn) ? { notesIgnoreOwn: o.notesIgnoreOwn } : {}),
       ...(o.notesProject === true || o.notesProject === 'git' ? { notesProject: o.notesProject } : {}), // spec 083 FR-050: only `true` or `'git'` turns it on; anything else is off (the old `notesFile` is dropped: Changes 2026-11-01)
     });
@@ -672,6 +704,26 @@ export class FolderStore {
     const out = list.filter((x) => x.id !== id);
     out.push({ id, mode: permMode });
     cur.sessionModes = out.slice(-MAX_SESSION_MODES);
+    this.save();
+    return true;
+  }
+
+  /** Spec 058 (2026-11-14 delta): the servers switched off for one session of this folder (names only); empty when none or when nothing is saved. */
+  sessionMcpOff(workspace: string, id: string): string[] {
+    return [...(this.get(workspace)?.sessionMcpOff?.find((x) => x.id === id)?.off ?? [])];
+  }
+
+  /** Spec 058 (2026-11-14 delta): remember the servers switched off for one session (written only when the list changes; an empty list forgets the entry; newest 50 sessions kept). */
+  setSessionMcpOff(workspace: string, id: string, names: Iterable<string>): boolean {
+    const cur = this.get(workspace);
+    if (!cur || !SESSION_ID.test(id)) return false;
+    const off = [...new Set([...names].filter(mcpOffNameOk))].slice(0, MAX_MCP_OFF_NAMES);
+    const list = cur.sessionMcpOff ?? [];
+    const was = list.find((x) => x.id === id)?.off ?? [];
+    if (was.length === off.length && was.every((n, i) => n === off[i])) return true; // unchanged: no write (it is called on every message)
+    const out = list.filter((x) => x.id !== id);
+    if (off.length) out.push({ id, off });
+    cur.sessionMcpOff = out.length ? out.slice(-MAX_SESSION_MCP_OFF) : undefined;
     this.save();
     return true;
   }

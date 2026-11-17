@@ -1477,6 +1477,8 @@
     const stepsCmds=t=>stepParts(t).filter((p,i)=>i%2).join('\n');
     /* spec 058 FR-164: Sign in again on a row Copilot can redo (connected or failed, not waiting for a first sign-in) */
     const againB=x=>!x.canSignInAgain||x.signIn||!X.bridge.agentMcpSignIn?'':signBusy.has(x.name)?`<button class="btn sm" type="button" disabled aria-label="${esc('Signing in again to '+x.name)}">Signing in…</button>`:`<button class="btn sm" type="button" data-signagain="${esc(x.name)}" aria-label="${esc('Sign in again to '+x.name+'…')}" title="Forget the saved sign-in and sign in again (for keychain prompts that keep coming back)">Sign in again…</button>`;
+    /* FR-246: the steps block exists only for steps with a command, or where Sign in is not offered (a command-less note is the only text there) */
+    const stepsShown=x=>!!x&&!!x.signInSteps&&(!x.canSignIn||x.signInHasCommand===true);
     const signHTML=(x,s)=>{
       const n=x.name,app=s.app||(o&&o.appName)||'Your agent app',si=x.signIn,en=esc(n);
       let line='',acts='';
@@ -1492,7 +1494,8 @@
         if(x.defaultOn&&!x.off)acts+=`<button class="btn sm" type="button" data-swoff="${en}" aria-label="${esc('Switch off '+n+' for this session')}" title="Stop using this server in this session; switch it back on any time">Switch off for this session</button>`;
       }
       let steps='';
-      if(x.signInSteps){
+      /* spec 058 FR-246: steps with no command in them are a plain note for a row that cannot start a sign-in; where Sign in works they add nothing */
+      if(stepsShown(x)){
         const open=!x.canSignIn||openSteps.has(n);
         acts+=x.canSignIn?`<button class="btn sm" type="button" data-steps="${en}" aria-expanded="${open?'true':'false'}" aria-label="${esc((open?'Hide':'Show')+' how to sign in to '+n+' from a terminal')}">How to sign in from a terminal</button>`:'';
         if(open)steps=`<div class="srv-det"><p class="srv-steps" tabindex="0" aria-label="${esc('How to sign in to '+n+' from a terminal')}">${stepsHTML(x.signInSteps)}</p>${stepsCmds(x.signInSteps)?`<button class="btn sm" type="button" data-copysteps="${en}" aria-label="${esc('Copy the commands to sign in to '+n)}">Copy</button>`:''}</div>`;
@@ -1565,7 +1568,7 @@
       /* spec 058 FR-164 (owner 2026-10-23): sign in again to every server Copilot can redo, so the signed runtime writes each sign-in anew */
       const againN=(s.servers||[]).filter(x=>x.canSignInAgain&&!x.signIn).length;
       const againAll=againN>1&&X.bridge.agentMcpSignIn?`<div class="mcp-rsess"><button class="btn sm" type="button" id="mcpSignAgainAll"${againBusy?' disabled':''}>${againBusy?'Starting sign-ins…':'Sign in again to all ('+againN+')…'}</button><span class="dsub small">For keychain prompts that come back on every launch (sign-ins saved by an older Agent Durbar): ${esc(s.app||'the agent app')} forgets each saved sign-in and you sign in again in your browser, one page per server.</span></div>`:'';
-      return `<p class="dsub">${s.live?(fixed?'This agent is running.':s.toggleApplies==='next-message'?'This agent is running: a switch applies from your next message.':'This agent is running: a switch applies right away.'):'This agent has no running session: your choices apply when it starts.'} Servers from your agent apps' own lists apply to every folder (see <b>Settings</b>); <i>Durbar folder</i> servers belong to this agent's folder only. Here you can only switch one off for <b>${esc(a.name)}</b>.</p>${fixed?'<p class="dsub" role="note"><b>The switches are off for this agent app:</b> it cannot change its MCP servers while it runs. They are set when the session starts.</p>':''}${refreshRow(s)}<ul class="srvs" id="agMcp">${rows||'<li class="scr-empty">No MCP servers.</li>'}</ul>${mcRep&&s.live?`<p class="dsub small mcp-total" id="mcpTotal">${mc.totalLine(mcRep,mcC.window)?`<b>${esc(mc.totalLine(mcRep,mcC.window))}.</b> `:''}${esc(mc.footnoteOf(mcRep,mcC.app))}${mcRep.servers.some(y=>y.deferredTokens)?' Tools loaded on demand are not in the window until they are used, so they are not in this total.':''}</p>`:''}${rsess}${againAll}<p class="dsub small">A switch stays for this agent, also in its next sessions, until the app is closed.</p>`;
+      return `<p class="dsub">${s.live?(fixed?'This agent is running.':s.toggleApplies==='next-message'?'This agent is running: a switch applies from your next message.':'This agent is running: a switch applies right away.'):'This agent has no running session: your choices apply when it starts.'} Servers from your agent apps' own lists apply to every folder (see <b>Settings</b>); <i>Durbar folder</i> servers belong to this agent's folder only. Here you can only switch one off for <b>${esc(a.name)}</b>.</p>${fixed?'<p class="dsub" role="note"><b>The switches are off for this agent app:</b> it cannot change its MCP servers while it runs. They are set when the session starts.</p>':''}${refreshRow(s)}<ul class="srvs" id="agMcp">${rows||'<li class="scr-empty">No MCP servers.</li>'}</ul>${mcRep&&s.live?`<p class="dsub small mcp-total" id="mcpTotal">${mc.totalLine(mcRep,mcC.window)?`<b>${esc(mc.totalLine(mcRep,mcC.window))}.</b> `:''}${esc(mc.footnoteOf(mcRep,mcC.app))}${mcRep.servers.some(y=>y.deferredTokens)?' Tools loaded on demand are not in the window until they are used, so they are not in this total.':''}</p>`:''}${rsess}${againAll}<p class="dsub small">A switch stays off for this agent until you switch it on, also in its next sessions and after the app is restarted.</p>`;
     };
     let dlg=null;
     /* spec 069 FR-032/FR-033: expanded rows and their tools, loaded once per open dialog (again after a Restart) */
@@ -1693,8 +1696,9 @@
       if(r&&r.ok&&r.kind==='connected'){X.toast('Signed in to '+esc(n)+'.',3600).classList.add('ok');X.announce('Signed in to '+n+'.');}
       else if(r&&r.ok){waited.add(n);if(again===true)againWait.add(n);wantFocus=['signopen',n];X.announce('Sign-in page on '+r.host+'. Press Open sign-in page to continue.');}
       else{
-        if(r&&r.manual)openSteps.add(n);
-        signNote.set(n,'Could not start the sign-in: '+((r&&r.error)||'unknown error')+(r&&r.manual?' Use the steps below.':''));
+        const sv=(st.servers||[]).find(y=>y.name===n), below=!!(r&&r.manual)&&stepsShown(sv);
+        if(below)openSteps.add(n);
+        signNote.set(n,'Could not start the sign-in: '+((r&&r.error)||'unknown error')+(below?' Use the steps below.':''));
         X.toast('Could not start the sign-in for '+esc(n)+'.',5200).classList.add('err');X.announce('Could not start the sign-in for '+n+'.');
       }
       await repaint();
@@ -1718,7 +1722,7 @@
       if(r&&r.ok){wantFocus=['signcancel',n];X.toast('Opened the sign-in page in your browser.',3600);X.announce('Opened the sign-in page. Finish signing in in your browser.');}
       else{
         if(r&&r.gone){waited.delete(n);signNote.set(n,notFinished((st.servers||[]).find(y=>y.name===n)));}
-        else if(r&&r.manual){waited.delete(n);openSteps.add(n);signNote.set(n,(r.error||'The sign-in page was refused.')+' Use the steps below.');}
+        else if(r&&r.manual){waited.delete(n);const below=stepsShown((st.servers||[]).find(y=>y.name===n));if(below)openSteps.add(n);signNote.set(n,(r.error||'The sign-in page was refused.')+(below?' Use the steps below.':''));}
         X.toast(esc((r&&r.error)||'Could not open the sign-in page.'),5200).classList.add('err');
       }
       await repaint();

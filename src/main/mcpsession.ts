@@ -14,7 +14,7 @@ import type { AgentInfo, AgentMcpEntry, AgentMcpReply, GlobalApp, McpRefreshResu
 import { maskMcpError } from './mcpmask';
 import { sourcesFor } from './mcpglobal';
 import { BUILTIN_SERVERS } from './mcpfiles';
-import { isRemoteTransport } from '../shared/mcp';
+import { isRemoteTransport, stepsHaveCommand } from '../shared/mcp';
 import type { McpHealthMark } from '../shared/mcphealth';
 import type { McpCallClass } from '../shared/mcpcall';
 import { isTokenRefusal, isTokenServer, unsetVars } from './mcptoken';
@@ -144,7 +144,7 @@ export function agentMcpReply(i: McpReplyInput): AgentMcpReply {
     const signRestart = needs && canRestart && !!ad?.capabilities.mcpSignInRestart && !!steps;
     // FR-188: only a Running (connected) row, on, in a running session says its last call failed; a word only, never the text
     const lastCall = isLive && on && st?.status === 'connected' ? i.lastCall?.(name) : undefined;
-    entries.push({ name, origin, status: st?.status, error, ...(st?.errorClass ? { errorClass: st.errorClass } : {}), ...(lastCall ? { lastCall } : {}), ...(mark ? { since: mark.since } : {}), ...(st?.status === 'connected' && typeof renewed === 'number' ? { renewedAt: renewed } : {}), ...(st?.status === 'connected' && isLive && on && i.checkUnknown?.(name) === true ? { checkUnknown: true as const } : {}), ...(mark?.afterRunning ? { afterRunning: true } : {}), ...(st?.transport ? { transport: st.transport } : {}), defaultOn, off: off.has(name), ...(canRestart ? { canRestart: true } : {}), ...(canSignIn ? { canSignIn: true } : {}), ...wantSignIn, ...(canSignInAgain ? { canSignInAgain: true } : {}), ...(tokenRefused ? { tokenRefused: true as const, ...(tokenVars.length ? { tokenVars } : {}) } : {}), ...(open ? { signIn: open } : {}), ...(steps ? { signInSteps: steps } : {}), ...(end ? { signInEnd: end } : {}), ...(note ? { signInNote: note } : {}), ...(signRestart ? { signInRestart: true } : {}), ...(i.launchedOff?.has(name) ? { launchedOff: true } : {}), ...(i.switchedHere?.has(name) ? { switchedHere: true } : {}) });
+    entries.push({ name, origin, status: st?.status, error, ...(st?.errorClass ? { errorClass: st.errorClass } : {}), ...(lastCall ? { lastCall } : {}), ...(mark ? { since: mark.since } : {}), ...(st?.status === 'connected' && typeof renewed === 'number' ? { renewedAt: renewed } : {}), ...(st?.status === 'connected' && isLive && on && i.checkUnknown?.(name) === true ? { checkUnknown: true as const } : {}), ...(mark?.afterRunning ? { afterRunning: true } : {}), ...(st?.transport ? { transport: st.transport } : {}), defaultOn, off: off.has(name), ...(canRestart ? { canRestart: true } : {}), ...(canSignIn ? { canSignIn: true } : {}), ...wantSignIn, ...(canSignInAgain ? { canSignInAgain: true } : {}), ...(tokenRefused ? { tokenRefused: true as const, ...(tokenVars.length ? { tokenVars } : {}) } : {}), ...(open ? { signIn: open } : {}), ...(steps ? { signInSteps: steps, ...(stepsHaveCommand(steps) ? { signInHasCommand: true } : {}) } : {}), ...(end ? { signInEnd: end } : {}), ...(note ? { signInNote: note } : {}), ...(signRestart ? { signInRestart: true } : {}), ...(i.launchedOff?.has(name) ? { launchedOff: true } : {}), ...(i.switchedHere?.has(name) ? { switchedHere: true } : {}) });
   };
   const cli = i.app === 'claude' || i.app === 'codex' ? [] : i.cli;
   const own = i.app === 'claude' ? (i.claudeList ?? []) : [];

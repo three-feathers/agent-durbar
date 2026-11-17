@@ -14,9 +14,10 @@ import type { McpWarnLevels } from '../shared/mcpcost';
 import { MCP_SIGNIN_REFRESH_DEFAULT } from './mcpsigninrefresh';
 import { addCustomPlace, removeCustomPlace, setPlaceEntry, updateCustomPlace } from '../shared/places';
 import type { CustomPlace, PlaceError, PlaceMap } from '../shared/places';
-import { RETRO_MIGRATION_OPEN, migrateLegacyTheme, migrateRetroTheme, parseCharacters } from '../shared/characters';
+import { migrateLegacyTheme, parseCharacters } from '../shared/characters';
 import { migrateRemovedTheme } from '../shared/themes';
 import type { CharacterChoice } from '../shared/characters';
+import { MAX_CHARACTER_PINS } from '../shared/charrules';
 
 /** Result of a custom-place call (spec 024 FR-020): the list and the map as they are now, whether the call worked or not. */
 export interface PlaceCallResult {
@@ -42,7 +43,7 @@ export interface Saved<T> { ok: boolean; value: T }
 export class SettingsStore {
   private s: AppSettings = {};
   /** `newPlaceId` makes candidate ids for new custom places; tests inject their own. */
-  constructor(private readonly file: string, private readonly newPlaceId: () => string = randomPlaceId, private readonly retroOpen: boolean = RETRO_MIGRATION_OPEN) {}
+  constructor(private readonly file: string, private readonly newPlaceId: () => string = randomPlaceId) {}
 
   load(): AppSettings {
     try {
@@ -54,10 +55,9 @@ export class SettingsStore {
     const m = migrateLegacyTheme(this.s);
     // spec 035 FR-018: a removed built-in theme (Corporate, the courts) becomes Clean Office the same way; Characters is untouched
     const r = migrateRemovedTheme(m.settings);
-    // spec 102 FR-266 (T227): a stored Retro Pixel theme moves to Characters `pixel`, once; inert while the flag is closed
-    const p = migrateRetroTheme(r.settings, this.retroOpen);
-    if (m.changed || r.changed || p.changed) {
-      this.s = p.settings;
+    // spec 102 Changes 2026-11-14 (T347): the Retro Pixel theme is kept (owner decision); nothing here moves its users
+    if (m.changed || r.changed) {
+      this.s = r.settings;
       this.save();
     }
     return { ...this.s };
@@ -88,19 +88,6 @@ export class SettingsStore {
     const p = parseNewFolderParent(v);
     if (!p || p === this.s.newFolderParent) return;
     this.commit({ ...this.s, newFolderParent: p }, 'newFolderParent');
-  }
-
-  /** Spec 102 FR-266 (T227): true from the save that moved a Retro Pixel theme until `ackRetroMove`; T230's renderer half reads it, also after a crash. */
-  get retroMovePending(): boolean {
-    return this.s.retroMovePending === true;
-  }
-
-  /** The renderer half has applied the move: clears the marker (it stays when the file cannot be written, so the next run asks again). */
-  ackRetroMove(): void {
-    if (this.s.retroMovePending !== true) return;
-    const next: AppSettings = { ...this.s };
-    delete next.retroMovePending;
-    this.commit(next);
   }
 
   /** Spec 080 FR-025d (Q2): the session browser's one-time note was accepted. */
@@ -368,6 +355,41 @@ export class SettingsStore {
     if (c === 'theme') delete next.characters;
     else next.characters = c;
     return this.commit(next) ? { ok: true, characters: c } : { ok: false, characters: this.characters };
+  }
+
+  /** Spec 096 FR-033: the pins to characters that still exist (`ids`, main's list); a pin to anything else is dropped on read. A copy. */
+  characterPinsOf(ids: readonly string[]): Record<string, string> {
+    return Object.fromEntries(Object.entries(this.s.characterPins ?? {}).filter(([, id]) => ids.includes(id)));
+  }
+
+  /** Spec 096 FR-033: set or (with `null`) clear one pin, at most 500. The caller checked the key and the id. False when it could not be kept. */
+  setCharacterPin(key: string, id: string | null): boolean {
+    const pins: Record<string, string> = Object.fromEntries(Object.entries(this.s.characterPins ?? {}));
+    if (id === null) delete pins[key];
+    else {
+      if (!Object.prototype.hasOwnProperty.call(pins, key) && Object.keys(pins).length >= MAX_CHARACTER_PINS) return false;
+      Object.defineProperty(pins, key, { value: id, enumerable: true, writable: true, configurable: true });
+    }
+    return this.commitPins(pins);
+  }
+
+  /** Spec 096 FR-033: deleting a character removes its pins. Returns how many went. */
+  removeCharacterPins(id: string): number {
+    const all = Object.entries(this.s.characterPins ?? {});
+    const keep = all.filter(([, v]) => v !== id);
+    if (keep.length === all.length) return 0;
+    return this.commitPins(Object.fromEntries(keep)) ? all.length - keep.length : 0;
+  }
+
+  private commitPins(pins: Record<string, string>): boolean {
+    const before = this.s;
+    const next: AppSettings = { ...this.s };
+    if (Object.keys(pins).length) next.characterPins = pins;
+    else delete next.characterPins;
+    this.s = next;
+    if (this.save()) return true;
+    this.s = before;
+    return false;
   }
 
   /** Place mapping (spec 024): MCP server name -> place id or `desk`. A copy, never the stored object. */
