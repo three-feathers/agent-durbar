@@ -96,6 +96,7 @@ const variants = themes
       // spec 077 FR-070: Cheeky is a Characters choice, not a theme: measured on top of the dark theme
       .concat([{ name: 'dark theme', env: { OFFICE_USER_THEME: DARK_THEME, CHECK_EXPECT_DARK: '1' } }])
       .concat([{ name: 'dark theme + cheeky', env: { OFFICE_USER_THEME: DARK_THEME, CHECK_EXPECT_DARK: '1', OFFICE_CHARACTERS: 'cheeky' } }])
+      .concat([{ name: 'clean-office + mine', env: { OFFICE_CHARACTERS: 'mine' } }]) // spec 096 T046
       .concat([{ name: 'user theme', env: { OFFICE_USER_THEME: 'scripts/fixtures/themes/check-user.json' } }])
   : [{ name: 'default', env: {} }, { name: 'real office', env: { OFFICE_VIEW: 'real' } }, { name: 'real office wide font', env: { OFFICE_VIEW: 'real', OFFICE_FONT: 'DejaVu Sans' } }, { name: 'arcade', env: { OFFICE_VIEW: 'real', OFFICE_WORLD: 'retro' } }, { name: 'cave', env: { OFFICE_VIEW: 'real', OFFICE_WORLD: 'cave' } }]; // spec 097 FR-091: the Real office variant of check-office-overlap.js
 const jobs = [];

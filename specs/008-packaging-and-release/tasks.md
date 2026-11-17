@@ -213,6 +213,10 @@
 
 - [x] T155 (FR-199) `scripts/ui-suite.js` `runOne`: `detached` (POSIX), `guardTree` and `killTree` at the limit for every driver, `launch` option for tests; `scripts/test-ui-suite.ts` two cases (time limit leaves no grandchild; SIGINT/SIGTERM end the tree and remove the user-data folder); `d.killTree` removed from `scripts/release-video.js`; `scripts/test-release-video.js` source check follows; `changelog.d/008-uisuite-kill-tree.md`.
 
+## 2026-11-10: the Mac title bar check on CSS pull requests (FR-200, issue #1469)
+
+- [x] T156 (FR-200) `.github/workflows/mac-titlebar-pr.yml` (own file: `paths:` is workflow-level); `scripts/test-ui-suite.ts` (filter, wiring, path matcher, mutants), `scripts/test-electron-cache.ts` (`TYPICAL_MIN`). Not blocked: #1458's failure is fixed on `main` by PR #1537 and the PR's own `Mac title bar (path-filtered)` job passed at its head, so no `[KNOWN GAP]` marking was needed.
+
 ## 2026-11-11: a driver that waits on the OS window focus never runs next to another window (FR-210)
 
 - [x] T170 (FR-210) `scripts/ui-suite.js`: `focus: true` on `shots-097-screens` (both entries) and `check-097-hover-card`; `main` runs the other entries at the job count and then the `focus` entries alone when drivers share a desktop; `scripts/test-ui-suite.ts` overlap test and a mutant; `changelog.d/008-uisuite-focus-serial.md`. Issue #1498.
@@ -238,3 +242,4 @@
 - [x] T183 (FR-218) `scripts/release-video.js` `FILL_SCENES` and `chooseScenes` fill to three scenes; `scripts/test-release-video.js` updated; `changelog.d/008-1789-release-video-scenes.md`; README step 4.1 says so (issue #1790)
 - [x] T184 (FR-270, delta 2026-11-15) `scripts/release-video.js` `lounge` scene presses the limit slip's Remove limit before filming; `scripts/test-release-video.js` source check with two mutants; `changelog.d/008-1792-lounge-popover.md`
 - [x] T185 (FR-271, delta 2026-11-15) the previous-release refusal names the "not released" section fix; `changelog.d/README.md`; `scripts/test-changelog.js` (a not-released section passes, an unfolded real release is refused with the hint)
+- [x] T186 (FR-272, delta 2026-11-17) `scripts/build-site.js` exports `bulletSiteProblems`/`landingBullet`/`LANDING_REF_RE`; `scripts/changelog.js` `check()` runs them on each fragment bullet; `scripts/test-changelog.js` with four mutants; `changelog.d/README.md`; `changelog.d/008-1834-fragment-site-check.md` (issue #1834)
