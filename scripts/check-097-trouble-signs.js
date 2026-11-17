@@ -16,7 +16,8 @@
  *   - the office scrolls;
  *   - (Photo office) a seat in the lounge row draws a sign, or its name takes mood words from a context event (the cheap path, read before any draw) or a draw, though
  *     Open office gives that agent a monster body (95 %);
- *   - (Retro arcade) a cabinet draws a sign, though a monster sits at it (its plate name keeps the words).
+ *   - (Retro arcade) a cabinet draws a sign, though a monster sits at it (its plate name keeps the words);
+ *   - (Photo office, 1 to 4 agents, FR-368) a sweat drop, horns, ring or siren lies over a clay-toy kid or the "+K" block on a desk top (SIGNS_SMALL=1,3 limits the counts).
  * Mutants (edit src/renderer/realoffice.js, `npm run build`, run, `git checkout -- <file>`; each must fail its assert):
  *   cabinet     drop `!lay.cabinet` from the signs' guard                       -> "no trouble sign at an arcade cabinet"
  *   loungectx   in ctx() use `mood` for a lounge seat (drop `d.lounge ? null :`)  -> "gives ...'s lounge seat no mood words by the cheap path"
@@ -146,7 +147,7 @@ module.exports = async (ctx) => {
     S.signs.forEach((s, i) => {
       const d = bySign.get(s.id), f = d.face, fr = { x: f.x, y: f.y, r: f.x + f.w, b: f.y + f.h };
       assert.ok(s.shown && s.hidden && s.pe === 'none' && s.text === '', `${tag}: ${s.kind} on ${s.id} is drawn, aria-hidden, takes no click, has no text`);
-      assert.ok(s.r.x >= d.slot.x - 0.5 && s.r.r <= d.slot.x + d.slot.w + 0.5 && s.r.y >= d.slot.y - 0.5 && s.r.r <= S.w + 0.5 && s.r.b <= S.h + 0.5, `${tag}: ${s.kind} on ${s.id} stays inside its slot: ${JSON.stringify(s.r)} in ${JSON.stringify(d.slot)}`);
+      assert.ok(s.r.x >= d.slot.x - 0.5 && s.r.r <= d.slot.x + d.slot.w + 0.5 && s.r.y >= d.slot.y - 0.5 && s.r.b <= d.slot.y + d.slot.h + 0.5 && s.r.r <= S.w + 0.5 && s.r.b <= S.h + 0.5, `${tag}: ${s.kind} on ${s.id} stays inside its slot: ${JSON.stringify(s.r)} in ${JSON.stringify(d.slot)}`);
       if (s.kind !== 'ring') assert.ok(!hit(s.r, fr), `${tag}: ${s.kind} on ${s.id} does not cover the face`);
       for (const [n, r] of [['plate', d.plate], ['monitor', d.screen], ['note', d.note]]) if (r) assert.ok(!hit(s.r, r), `${tag}: ${s.kind} on ${s.id} does not cover the ${n}`);
       for (const r of S.slips) assert.ok(!hit(s.r, r), `${tag}: ${s.kind} on ${s.id} and a slip or pill (${r.cls}) do not overlap: ${JSON.stringify(s.r)} vs ${JSON.stringify(r)}`);
@@ -176,6 +177,37 @@ module.exports = async (ctx) => {
     if (world === 'photo') await loungeStep(tag);
     console.log(`[097-signs] ${tag}: ${[...Object.keys(kinds)].map((k) => k + ' ' + kinds[k].size).join(', ')}; ${S.signs.length} signs, none over a face, plate, monitor or note`);
     }
+  }
+  /* FR-368 (review of #1546, question): at 1 to 4 agents the desk's helpers are clay-toy kids on the desk top; no sign may lie over a kid or the "+K" block, with the heavy look,
+     the monster's horns and ring and the siren each on show (the moods come from the real context and status events; no state is set by hand) */
+  const SMALL = (process.env.SIGNS_SMALL || '1,2,3,4').split(',').map(Number);
+  for (const [w, h] of SIZES) for (const n of SMALL) {
+    const tag = `${n} agents ${w}x${h}`;
+    await H.load({ w, h, query: { officeview: 'real', sim: String(n), simhelpers: '6' }, ready: `${REAL}&&document.querySelectorAll('#stage .ro .ro-plate').length>=${n}`, readyMs: 30000, settle: false });
+    await must(PICS, `${tag}: the pictures`);
+    await must(`window.__durbarSimUi.visitsSettled()`, `${tag}: no visit about to start or end`);
+    await countDraws();
+    const ids = await js(`window.__durbarSimUi.agents().filter(a=>!a.parent).map(a=>a.id)`);
+    const emitAll = (ev) => js(`(()=>{for(const id of ${jsLiteral(ids)})window.__durbarSimEmit(Object.assign({sessionId:id,timestamp:Date.now()},${jsLiteral(ev)}));window.__durbarSimUi.render();return 1})()`);
+    const geo = () => js(`(()=>{const ro=document.querySelector('#stage .ro'),o=ro.getBoundingClientRect(),R=e=>{const b=e.getBoundingClientRect();return {x:b.left-o.left,y:b.top-o.top,r:b.right-o.left,b:b.bottom-o.top}};
+      return {kids:[...document.querySelectorAll('#stage .ro-kid, #stage .ro-kmore')].filter(e=>e.getClientRects().length).map(e=>Object.assign(R(e),{id:e.dataset.id||e.dataset.kmore})),
+        signs:[...document.querySelectorAll('#stage .ro-mood')].filter(e=>e.getClientRects().length).map(e=>Object.assign(R(e),{kind:/ro-sweat/.test(e.className)?'sweat':/ro-horns/.test(e.className)?'horns':/ro-ring/.test(e.className)?'ring':'siren',id:e.dataset.for}))}})()`);
+    const hit = (a, b) => a.x + 0.5 < b.r && b.x + 0.5 < a.r && a.y + 0.5 < b.b && b.y + 0.5 < a.b;
+    const steps = [
+      ['sweat', async () => { await emitAll({ type: 'status', status: 'idle' }); await emitAll({ type: 'context', tokens: 80000, limit: 100000 }); }],
+      ['horns', async () => { await emitAll({ type: 'context', tokens: 95000, limit: 100000 }); }],
+      ['siren', async () => { await emitAll({ type: 'context', tokens: 10000, limit: 100000 }); await emitAll({ type: 'status', status: 'error', intent: 'x' }); }],
+    ];
+    for (const [kind, set] of steps) {
+      await set();
+      await must(`document.querySelectorAll('#stage .ro-mood.ro-${kind}').length>=1`, `${tag}: a ${kind} sign on show`);
+      await drawNow(`${tag}: a draw with the ${kind} on show`);
+      const G = await geo();
+      assert.ok(G.kids.length >= 1, `${tag}: the helpers are kids on the desk top (else this check is empty)`);
+      assert.ok(G.signs.some((x) => x.kind === kind), `${tag}: a ${kind} sign is drawn`);
+      for (const sg of G.signs) for (const k of G.kids) assert.ok(!hit(sg, k), `${tag}: the ${sg.kind} on ${sg.id} does not lie over a kid or the "+K" block of ${k.id}: ${JSON.stringify(sg)} vs ${JSON.stringify(k)}`);
+    }
+    console.log(`[097-signs] ${tag}: sweat, horns, ring and siren clear of the desk-top kids`);
   }
   console.log('[097-signs] pictures in ' + OUT);
 };

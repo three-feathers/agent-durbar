@@ -410,3 +410,7 @@ Order: T327 (the owner's picture gate) before any code PR; T328, T329 (art, #164
 ## 2026-11-11: the drag cancel paths (issue 1550)
 
 - [x] T311 [US2] Spec delta 2026-11-11: `scripts/check-097-drag-cancel.js`: a drag in Real office (Photo office and arcade, both sizes) is ended by a window blur, a wheel, a scroll, Escape and a pointercancel, a scroll elsewhere does not end it, nothing is left lifted or saved and a later drag still saves; a `focus: true` entry [FR-352]. Test: `sim:` `check-097-drag-cancel`; hand-run mutants: each cancel listener in `reorder.js` deleted, the wheel and Escape ones without capture and the scroll one without its target filter fail their own case
+
+## 2026-11-17: review of #1546 on the trouble-sign drivers (issue #1171)
+
+- [x] T359 [US2] Spec delta 2026-11-17: `check-097-ctx-frame` FR-074 step counts only the draws the context event's handler asked for (`__roEv`, rAF callbacks queued during the event), not every draw in the window; `check-097-trouble-signs` checks the sign's bottom against its slot's bottom (the duplicated right-edge test) and, at 1 to 4 agents (`simhelpers=6`), that no sweat, horns, ring or siren lies over a desk-top kid or the "+K" block (FR-368; `SIGNS_SMALL=1,3` limits the counts). Mutants: a sweat drop pushed below its slot fails "stays inside its slot"; a sweat drop placed on the first kid place fails "does not lie over a kid". `[KNOWN GAP]` the hidden step's pass under load is shown by repeated runs (see the PR's checks comment), not by a deterministic mutant.

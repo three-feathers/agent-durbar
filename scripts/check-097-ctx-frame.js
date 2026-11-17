@@ -70,7 +70,7 @@ module.exports = async (ctx) => {
     if (MUTANT === 'node') await js(`(()=>{const o=window.DurbarRealOffice.ctx;window.DurbarRealOffice.ctx=(id,c)=>{const r=o(id,c);const p=document.querySelector('#stage .ro-plate[data-id='+JSON.stringify(id)+']');if(p)p.appendChild(document.createElement('i'));return r};return 1})()`);
     if (MUTANT === 'rebuild') await js(`(()=>{const o=window.DurbarRealOffice.ctx;window.DurbarRealOffice.ctx=(id,c)=>{const r=o(id,c);const s=document.querySelector('#stage .ro-screen[data-for='+JSON.stringify(id)+'] > .ro-ctx');if(s)s.replaceWith(s.cloneNode(true));return r};return 1})()`);
     /* every draw of the office is counted; while __roHold is set a draw is skipped (the last layout is handed back), so only DurbarRealOffice.ctx can write (FR-326) */
-    await js(`(()=>{const R=window.DurbarRealOffice;if(!R.__render){R.__render=R.render;R.render=function(){window.__roDraws=(window.__roDraws||0)+1;if(window.__roHold&&window.__roRet){window.__roHeld=(window.__roHeld||0)+1;return window.__roRet;}return window.__roRet=R.__render.apply(this,arguments);};}window.__roDraws=0;window.__roHold=false;return 1})()`);
+    await js(`(()=>{const R=window.DurbarRealOffice;if(!R.__render){R.__render=R.render;R.render=function(){window.__roDraws=(window.__roDraws||0)+1;if(window.__roIn)window.__roEv=(window.__roEv||0)+1;if((window.__roHold||(window.__roOnly&&!window.__roIn))&&window.__roRet){window.__roHeld=(window.__roHeld||0)+1;return window.__roRet;}return window.__roRet=R.__render.apply(this,arguments);};}window.__roDraws=0;window.__roHold=false;return 1})()`);
     /* what DurbarRealOffice.ctx answers, per agent, in order: 'mood' is its request for one draw (the look changed), true a plain update (FR-326, FR-362) */
     await js(`(()=>{const R=window.DurbarRealOffice;if(!R.__ctx){R.__ctx=R.ctx;R.ctx=function(id){const r=R.__ctx.apply(this,arguments);(window.__ctxRet=window.__ctxRet||[]).push([id,r]);return r;};}window.__ctxRet=[];return 1})()`);
 
@@ -202,12 +202,16 @@ module.exports = async (ctx) => {
       let hid = null, back3 = false;
       try {
         await must(`(()=>{const n=window.__roDraws;if(window.__roLast!==n){window.__roLast=n;window.__roAt=Date.now();}return Date.now()-window.__roAt>600})()`, `${tag}: no draw running (hidden step)`);
-        await js(`window.__ctxRet=[];window.__roDrawsH=window.__roDraws;1`);
-        /* the event, then three frames and a bound (longer than a frame of a scheduled draw, which runs on the next frame): no draw may run */
-        hid = await js(`(()=>{window.__durbarSimEmit({type:'context',sessionId:${jsLiteral(hp)},timestamp:Date.now(),tokens:930,limit:1000});return new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(()=>requestAnimationFrame(()=>setTimeout(()=>r({draws:window.__roDraws-window.__roDrawsH,signs:document.querySelectorAll('#stage :is(.ro-horns,.ro-ring)[data-for='+JSON.stringify(${jsLiteral(hp)})+']').length,name:window.__cl(${jsLiteral(hp)}),back:(window.__ctxRet.filter(x=>x[0]===${jsLiteral(hp)}).pop()||[])[1]}),400)))))})()`);
+        await js(`window.__ctxRet=[];window.__roOnly=true;1`); /* from here a draw not asked for by the event's handler is held (skipped, as __roHold does), so only the event can draw the signs */
+        /* the event, then three frames and a bound (longer than a frame of a scheduled draw, which runs on the next frame): no draw the EVENT asked for may run. Only the draws
+           the event's own handler asked for are counted (review of #1546, Ruben): every requestAnimationFrame callback queued while the event is handled is marked, and a draw
+           inside one of them counts (__roEv); a draw other code asks for (the simulator's own events, a visit, a chip) is held, not this event's, and can neither fail the step under load nor draw the signs */
+        hid = await js(`(()=>{const raf=window.requestAnimationFrame;window.__roEv=0;window.__roIn=false;window.requestAnimationFrame=function(cb){return raf.call(window,function(t){window.__roIn=true;try{return cb(t)}finally{window.__roIn=false}})};
+          try{window.__durbarSimEmit({type:'context',sessionId:${jsLiteral(hp)},timestamp:Date.now(),tokens:930,limit:1000})}finally{window.requestAnimationFrame=raf}
+          return new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(()=>requestAnimationFrame(()=>setTimeout(()=>r({draws:window.__roEv,signs:document.querySelectorAll('#stage :is(.ro-horns,.ro-ring)[data-for='+JSON.stringify(${jsLiteral(hp)})+']').length,name:window.__cl(${jsLiteral(hp)}),back:(window.__ctxRet.filter(x=>x[0]===${jsLiteral(hp)}).pop()||[])[1]}),400)))))})()`);
       } finally {
         /* back: the draw asked for while hidden runs on the next frame, so the signs are there within three frames (the app's 5 s mood tick cannot stand in for it) */
-        back3 = await js(`(()=>{delete document.hidden;document.dispatchEvent(new Event('visibilitychange'));return new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(()=>requestAnimationFrame(()=>r(!!document.querySelector('#stage .ro-horns[data-for='+JSON.stringify(${jsLiteral(hp)})+']')&&!!document.querySelector('#stage .ro-ring[data-for='+JSON.stringify(${jsLiteral(hp)})+']'))))))})()`);
+        back3 = await js(`(()=>{window.__roOnly=false;delete document.hidden;document.dispatchEvent(new Event('visibilitychange'));return new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(()=>requestAnimationFrame(()=>r(!!document.querySelector('#stage .ro-horns[data-for='+JSON.stringify(${jsLiteral(hp)})+']')&&!!document.querySelector('#stage .ro-ring[data-for='+JSON.stringify(${jsLiteral(hp)})+']'))))))})()`);
       }
       assert.strictEqual(hid.back, 'mood', `${tag}: ctx answers 'mood' for the hidden event that makes ${hp} a monster`);
       assert.strictEqual(hid.draws, 0, `${tag}: FR-074: a context event that changes ${hp}'s look while the document is hidden runs no draw`);
