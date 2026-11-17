@@ -2764,6 +2764,10 @@ assert.strictEqual(redact('{"a":"https://u:p@h/x","b":"y"}', {}), '{"a":"https:/
       assert.strictEqual(maskHomePaths(pad + 'see ~alicez/src/x ' + pad, []), pad + 'see ~/src/x ' + pad, '#1329 guard window: one spelling in a long text is rewritten');
       const read = _homeGuardCharsForTest() - c0;
       assert.ok(read <= 2 * HOME_GUARD_WINDOW_FOR_TEST + 64, `#1329 guard window: a long text with one spelling reads one window (${read} characters)`);
+      const dense = 'see ~alicez/src/x and '.repeat(200);
+      const c1 = _homeGuardCharsForTest();
+      maskHomePaths(dense, []);
+      assert.ok(_homeGuardCharsForTest() - c1 <= dense.length, `#1329 guard window: overlapping windows are merged, the text is read at most once (${_homeGuardCharsForTest() - c1} of ${dense.length})`);
       neighbour('a long text around it', pad.slice(0, 50_000) + K + KB.slice(0, 8) + '\n~' + KB.slice(8) + '/x/y ' + pad.slice(0, 50_000), [KB]);
     }
     const r0 = _homeGuardReadsForTest();
