@@ -38,7 +38,7 @@ function fakeCtx(rec: Rec) {
 }
 const newRec = (): Rec => ({ ops: {}, log: [], forbidden: [], fillStyles: [], strokeStyles: [] });
 
-function rig(over: { size?: string; motion?: string; forced?: boolean; visible?: boolean; focused?: boolean } = {}) {
+function rig(over: { size?: string; motion?: string; forced?: boolean; visible?: boolean; focused?: boolean; skin?: unknown } = {}) {
   const main = newRec(), offs: Rec[] = [], sprites: unknown[] = [];
   let clock = 1000, nextId = 1, makeCalls = 0; const queue = new Map<number, () => void>(); let rafCalls = 0;
   const mkCanvas = (rec: Rec, isMain: boolean) => {
@@ -52,7 +52,7 @@ function rig(over: { size?: string; motion?: string; forced?: boolean; visible?:
     caf: (id: number) => { queue.delete(id); },
     makeCanvas: (w: number, h: number) => { makeCalls++; const r = newRec(); offs.push(r); const c = mkCanvas(r, false); c.width = w; c.height = h; sprites.push(c); return c; },
   };
-  const d = D.create({ canvas, host, size: over.size || 'dock', motion: over.motion || 'full', forced: over.forced, visible: over.visible, focused: over.focused });
+  const d = D.create({ canvas, host, size: over.size || 'dock', motion: over.motion || 'full', forced: over.forced, visible: over.visible, focused: over.focused, skin: over.skin });
   const tick = (ms: number): number => { clock += ms; const fns = [...queue.entries()]; queue.clear(); fns.forEach(([, f]) => f()); return fns.length; };
   const settle = (): number => { let n = 0; for (let i = 0; i < 200 && queue.size; i++) { tick(17); n++; } return n; };
   return { d, main, offs, sprites, host, tick, settle, pending: () => queue.size, rafCalls: () => rafCalls, makeCalls: () => makeCalls, advance: (ms: number) => { clock += ms; } };
@@ -299,6 +299,37 @@ for (const [name, mk] of [['Still', () => rig({ motion: 'still' })], ['forced co
   assert.deepStrictEqual(Object.keys(a.colors).sort(), [...P.LOBES].sort(), 'one colour per lobe');
   assert.deepStrictEqual(Object.keys(a).sort(), ['baseAlpha', 'colors', 'id', 'marker', 'shape', 'trail'], 'a skin has colours, a shape and inks, no size or position');
   assert.strictEqual(K.forWorld('retro', () => { throw new Error('x'); }).colors.frontal, '#ffc35c', 'a failing read falls back');
+  // the arcade's fallback colours are theme.js's own retro values (a drift would go unseen: the page reads tokens, a test page does not)
+  const themeSrc = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'renderer', 'theme.js'), 'utf8');
+  const retro = themeSrc.slice(themeSrc.indexOf("retro:{\n      name:'Retro arcade'"), themeSrc.indexOf("shadow:{'--shadow-card':'0 2px 0 rgba(0,0,0,.5)'"));
+  assert.ok(retro.length > 500, 'the retro world block of theme.js was found');
+  for (const [lobe, [tok]] of Object.entries(K.ARCADE_TOKENS as Record<string, [string, string]>)) {
+    const m = retro.match(new RegExp("'" + tok + "':'(#[0-9a-fA-F]+)'"));
+    assert.ok(m, `theme.js retro sets ${tok}`);
+    assert.strictEqual(K.forWorld('retro', null).colors[lobe], m![1], `skin fallback for ${lobe} equals theme.js retro ${tok}`);
+  }
+  for (const [tok, got] of [['--ink', K.forWorld('retro', null).marker], ['--ink-2', K.forWorld('retro', null).trail]]) {
+    assert.strictEqual(got, (retro.match(new RegExp("'" + tok + "':'(#[0-9a-fA-F]+)'")) || [])[1], `skin fallback for ${tok} equals theme.js retro`);
+  }
+  // squares, never discs (FR-110): counted on the drawing context itself, not on the renderer's own counters (G2): an arc on the base layer fails here
+  const baseOf = (r: ReturnType<typeof rig>) => [...r.offs].reverse().sort((a, b) => total(b) - total(a))[0] as Rec; // the base layer: the offscreen canvas with the most calls (a glow sprite has a handful)
+  for (const [name, skin] of [['neutral', K.NEUTRAL], ['arcade', K.forWorld('retro', null)]] as const) {
+    const r = rig({ skin }); const b = baseOf(r);
+    assert.ok(b, `${name}: the base layer was drawn`);
+    assert.strictEqual(b.ops.arc || 0, 0, `${name} skin: no point is drawn as a disc (arc calls on the base layer)`);
+    assert.strictEqual(b.ops.fillRect, r.d.stats.basePoints, `${name} skin: one filled square per point on the base layer`);
+    assert.strictEqual(r.d.stats.pointRects, b.ops.fillRect, `${name} skin: the renderer's own square count matches the drawing calls`);
+  }
+  // a world switch repaints with the new colours (G1): setSkin rebuilds the base layer in the new lobe colours and drops the old ones
+  {
+    const r = rig(); const A = K.forWorld('retro', null);
+    assert.ok(baseOf(r).fillStyles.includes(D.LOBE_COLORS ? D.LOBE_COLORS.frontal : '#e0a458'), 'neutral base uses the neutral frontal colour');
+    r.d.setSkin(A); const b = baseOf(r);
+    assert.ok(b.fillStyles.includes(A.colors.frontal), 'setSkin: the rebuilt base layer is drawn in the arcade colours');
+    assert.ok(!b.fillStyles.includes('#e0a458'), 'setSkin: the rebuilt base layer keeps none of the old colours');
+    assert.strictEqual(r.d.skin(), 'arcade'); assert.strictEqual(r.d.colors().frontal, A.colors.frontal, 'setSkin: the colours() are the arcade ones');
+    r.d.setSkin(K.NEUTRAL); assert.ok(baseOf(r).fillStyles.includes('#e0a458') && !baseOf(r).fillStyles.includes(A.colors.frontal), 'setSkin back: neutral colours again');
+  }
 }
 console.log('braindraw: ok');
 
@@ -367,7 +398,12 @@ console.log('braindraw: page load ok');
     const mqReduce = { matches: false, listeners: [] as Fn[], addEventListener: (_: string, f: Fn) => { mqReduce.listeners.push(f); } };
     const mqForced = { matches: false, listeners: [] as Fn[], addEventListener: (_: string, f: Fn) => { mqForced.listeners.push(f); } };
     const doc: { hidden: boolean; body: { classes: Set<string>; [k: string]: unknown }; [k: string]: unknown } = { hidden: false, hasFocus: () => true, body: { appendChild: () => undefined, classes: new Set<string>(), classList: { contains(c: string) { return (doc.body.classes as Set<string>).has(c); } } }, createElement: () => fakeEl(), addEventListener: (k: string, f: Fn) => { (docL[k] = docL[k] || []).push(f); } };
+    const observers: { cb: Fn; target: unknown }[] = [];
+    const rootEl = { nodeType: 1, dataset: {} as Record<string, string> };
+    doc.documentElement = rootEl;
     const win = {
+      DurbarBrainSkins: load(path.join(DIR, 'skins.js')), getComputedStyle: () => ({ getPropertyValue: () => '' }),
+      MutationObserver: class { constructor(public cb: Fn) { /* nothing */ } observe(target: unknown): void { observers.push({ cb: this.cb, target }); } },
       exports: { ...BS, ...SF }, DurbarBrainDraw: D, performance: { now: () => clock }, devicePixelRatio: 1,
       matchMedia: (q: string) => (q.includes('reduced') ? mqReduce : q.includes('forced') ? mqForced : { matches: false, addEventListener: () => undefined }),
       requestAnimationFrame: (f: Fn) => rafs.push(f), cancelAnimationFrame: () => undefined,
@@ -376,7 +412,7 @@ console.log('braindraw: page load ok');
     const host = H.start({ doc, win, mask, now: () => clock, name: nameOf });
     const flush = (): void => { for (let i = 0; i < 50 && timers.length; i++) timers.splice(0).forEach((f) => f()); };
     const ev = (n: number, tool = 'bash'): unknown => ({ type: 'toolCall', sessionId: 'x', callId: 'c' + n, tool, phase: 'start', args: { command: 'ls' }, timestamp: clock });
-    return { host, doc, win, docL, winL, mqReduce, mqForced, flush, ev, tick: (ms: number) => { clock += ms; }, rafs };
+    return { host, doc, win, docL, winL, rootEl, observers, mqReduce, mqForced, flush, ev, tick: (ms: number) => { clock += ms; }, rafs };
   }
   const q = (h: { el: Record<string, unknown> }, s: string): { attrs: Record<string, string>; listeners: Record<string, Fn[]> } => (h.el.querySelector as (s: string) => never)(s);
 
@@ -465,6 +501,20 @@ console.log('braindraw: page load ok');
     b.listeners.click[0](); assert.strictEqual(el('[data-bv=motion]').textContent, text, 'forced colours F1: a click does nothing while the system decides');
     p.mqForced.matches = false; p.mqForced.listeners.forEach((f) => f());
     assert.ok(/Full/.test(String(el('[data-bv=motion]').textContent)) && b.attrs['aria-disabled'] === 'false', 'forced colours F1: back to the chosen motion when forced colours end');
+  }
+  // the live world switch (G1): flipping html[data-world] repaints the brain with no reload; the data-world observer is what does it
+  {
+    const p = page(() => 'Ada'); const attr = (): string => String(p.host.el.attrs ? (p.host.el.attrs as Record<string, string>)['data-skin'] : '');
+    assert.strictEqual(p.host.draw.skin(), 'neutral', 'live world: neutral at start');
+    const mine = p.observers.filter((o) => o.target === p.rootEl);
+    assert.strictEqual(mine.length, 1, 'live world: the host observes html for a data-world change (no observer, no live switch)');
+    p.rootEl.dataset.world = 'retro'; mine.forEach((o) => o.cb());
+    assert.strictEqual(p.host.draw.skin(), 'arcade', 'live world: switching to the arcade repaints in the arcade skin without a reload');
+    assert.strictEqual(p.host.draw.colors().frontal, '#ffc35c', 'live world: the colours are the arcade ones after the switch');
+    assert.strictEqual(attr(), 'arcade', 'live world: the box says which skin it wears');
+    p.rootEl.dataset.world = 'photo'; mine.forEach((o) => o.cb());
+    assert.strictEqual(p.host.draw.skin(), 'neutral', 'live world: leaving the arcade goes back to neutral');
+    assert.strictEqual(p.host.draw.colors().frontal, '#e0a458', 'live world: the neutral colours are back');
   }
 }
 console.log('braindraw: host ok');

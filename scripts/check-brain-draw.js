@@ -182,7 +182,11 @@ module.exports = async (ctx) => {
       await emit({ type: 'toolCall', sessionId: id, callId: 'sk-1', tool: 'bash', phase: 'start', args: { command: cmd } });
       await must(`!!document.querySelector('.bv .bv-c1')&&/running/.test(document.querySelector('.bv .bv-c1').textContent)`, 'the card of a running command (' + label + ')');
       await calmDown();
-      return js(`(()=>{const b=document.querySelector('.bv'),cv=b.querySelector('canvas'),r=b.getBoundingClientRect(),cr=cv.getBoundingClientRect(),host=window.__durbarSimUi.brain.host(),st=host.stats(),
+      // the real draw calls of the base layer (G2): rebuild it with the context's own fillRect and arc counted (offscreen canvases only: the visible one also draws the state marker)
+      const real = await js(`(()=>{const P=CanvasRenderingContext2D.prototype,fr=P.fillRect,ar=P.arc;let rects=0,arcs=0;
+        P.fillRect=function(...a){if(!this.canvas.isConnected)rects++;return fr.apply(this,a);};P.arc=function(...a){if(!this.canvas.isConnected)arcs++;return ar.apply(this,a);};
+        try{window.__durbarSimUi.brain.host().draw.setForced(false);}finally{P.fillRect=fr;P.arc=ar;}return {rects,arcs,basePoints:window.__durbarSimUi.brain.host().stats().basePoints};})()`);
+      const m = await js(`(()=>{const b=document.querySelector('.bv'),cv=b.querySelector('canvas'),r=b.getBoundingClientRect(),cr=cv.getBoundingClientRect(),host=window.__durbarSimUi.brain.host(),st=host.stats(),
         pr=document.createElement('span');pr.style.fontFamily='var(--ui-display)';document.body.appendChild(pr);const disp=getComputedStyle(pr).fontFamily;pr.remove();
         const inh=getComputedStyle(document.body).fontFamily,cs=getComputedStyle(b);
         return {world:document.documentElement.dataset.world||'',ui:document.documentElement.dataset.ui||'',skin:st.skin,shape:st.shape,rects:st.pointRects,arcs:st.pointArcs,dom:b.getAttribute('data-skin'),geo:host.draw.geometry(),
@@ -191,6 +195,7 @@ module.exports = async (ctx) => {
           texts:['.bv-title','.bv-lobe','.bv-sentence','.bv-c2'].map(q=>b.querySelector(q).textContent).join('|')+'|'+b.getAttribute('aria-label'),
           colors:JSON.stringify(host.draw.colors?host.draw.colors():null),border:cs.borderTopWidth,
           tok:['--tone-warn-ink','--tone-info-ink','--tone-ok-ink','--tone-bad-ink','--tone-idea-ink','--focus','--sel-border'].map(n=>getComputedStyle(document.documentElement).getPropertyValue(n).trim())};})()`);
+      return { ...m, real };
     };
     const flat = await measure({}, 'Flat');
     const photo = await measure({ officeview: 'real' }, 'Photo office');
@@ -204,7 +209,9 @@ module.exports = async (ctx) => {
     assert.strictEqual(photo.skin, 'neutral', 'arcade skin: not applied in the Photo office (world ' + photo.world + ')');
     assert.notStrictEqual(photo.world, 'retro', 'arcade skin: the Photo load is not the arcade');
     assert.strictEqual(arc.shape, 'square', 'arcade skin: point shape is square');
-    assert.ok(arc.rects > 0 && arc.arcs === 0, 'arcade skin: points are drawn as squares, never discs (' + arc.rects + ' squares, ' + arc.arcs + ' discs)');
+    assert.ok(arc.real.rects >= arc.real.basePoints && arc.real.basePoints > 1000, 'arcade skin: the base layer is drawn as filled squares by the context itself (' + arc.real.rects + ' fillRect calls for ' + arc.real.basePoints + ' points)');
+    assert.strictEqual(arc.real.arcs, 0, 'arcade skin: points are drawn as squares, never discs (' + arc.real.arcs + ' arc calls on the base layer at ' + tag + ')');
+    assert.strictEqual(flat.real.arcs, 0, 'neutral skin: no point is a disc either');
     assert.ok(arc.disp && arc.font === arc.disp, 'arcade skin: the font is the arcade world display font: ' + arc.font + ' vs ' + arc.disp);
     assert.notStrictEqual(flat.font, arc.font, 'arcade skin: the arcade font is not the neutral one');
     assert.notStrictEqual(arc.colors, flat.colors, 'arcade skin: the palette differs from the neutral one');
