@@ -12,7 +12,8 @@ Rules (checked by `npm run changelog:check`, part of `npm test`):
 - one or more Markdown bullets (`- ...`), written like a CHANGELOG line: what changed for the user, the spec, how it was checked;
   an indented line under a bullet continues it; no headings, no HTML comments;
 - the file name is lower case: letters, digits, `.`, `_`, `-`, ending in `.md` (use your branch name);
-- the same entry may not be in another fragment or already in `CHANGELOG.md`.
+- the same entry may not be in another fragment or already in `CHANGELOG.md`;
+- the site's rules, checked here so a fragment fails in its own PR and not at the fold (spec 008 FR-272): no phrase of `docs/site/unreleased.json` (spec 104 FR-008) anywhere in a bullet, and no spec number or `FR-` id in its bold lead or first sentence (put them in a `(spec NNN)` group after the lead: `**Lead** (spec 063): ...`, not `**Spec 063: lead**`).
 - optional, at the end of the fragment (spec 008 FR-173): `  Highlight: <one line>` puts the change in the release's
   five-line *Highlights* block (its bold name and one short clause, at most 100 characters, no spec numbers; plain text only:
   letters, digits, spaces, `. , ; : ' - / + % ?` and `**bold**`, so no link, mention, `#` reference, code or HTML), and

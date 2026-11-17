@@ -8,7 +8,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { CharacterStore, nameSlug } from '../src/main/charstore';
 import type { NewCharacter } from '../src/main/charstore';
-import { CHARACTER_ID_RE, MAX_CHARACTERS } from '../src/shared/charrules';
+import { CHARACTER_ID_RE, CHARACTERS_WARN_AT } from '../src/shared/charrules';
 import { readSameFile } from '../src/main/samefileread';
 import { HARD_LINK_REFUSALS, hardLinkOrSkip, hardLinkSkip } from './fakes/hardlinks';
 
@@ -77,14 +77,14 @@ try {
     assert.ok(!store.save(NEW, 'bad\u0007name').ok, 'a control character');
     assert.ok(!fs.existsSync(root) || tree(root).length === 0, 'nothing was written');
   }
-  // --- the cap (Q5) ---
+  // --- many characters are the person's call (owner's principle of 2026-10-31): the store keeps past the number the maker warns at ---
   {
     const { store } = setup();
-    for (let i = 0; i < MAX_CHARACTERS; i++) saved(store.save(NEW, `C${i}`));
+    assert.strictEqual(CHARACTERS_WARN_AT, 24);
+    for (let i = 0; i < CHARACTERS_WARN_AT; i++) saved(store.save(NEW, `C${i}`));
     assert.strictEqual(store.list().length, 24);
-    const r = store.save(NEW, 'one more');
-    assert.ok(!r.ok && /24/.test(r.error), 'the 25th is refused');
-    assert.strictEqual(store.list().length, 24);
+    saved(store.save(NEW, 'one more'));
+    assert.strictEqual(store.list().length, 25, 'the 25th is kept');
   }
   // --- a write that fails leaves nothing (Edge cases: disk full) ---
   {
@@ -340,7 +340,7 @@ try {
   }
   // --- the source (SC-003, T034) ---
   {
-    const src = fs.readFileSync(path.join(ROOT, 'src', 'main', 'charstore.ts'), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|\s)\/\/.*$/gm, '$1');
+    const src = fs.readFileSync(path.join(ROOT, 'src', 'main', 'charstore.ts'), 'utf8').replace(/\r\n/g, '\n').replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|\s)\/\/.*$/gm, '$1');
     assert.ok(!/from 'electron'|require\('electron'\)/.test(src), 'no Electron import');
     assert.ok(!/nativeImage/.test(src), 'no decoder (SC-003)');
     assert.ok(!/\b(writeFile|copyFile|cp|appendFile|symlink|link|chmod|chown)(Sync)?\(/.test(src.replace(/fs\.writeFileSync\(/g, 'W(')), 'only writeFileSync writes');
@@ -355,7 +355,7 @@ try {
     assert.ok((src.match(/recursive: true, force: true/g) ?? []).length <= 4, 'few recursive removes');
     // FR-031 (review of #956, round 2): the store and the sheet read share one identity-checked read; neither keeps its own copy of it
     for (const f of [path.join('src', 'main', 'charstore.ts'), path.join('src', 'main', 'ipc', 'characters.ts')]) {
-      const code = fs.readFileSync(path.join(ROOT, f), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|\s)\/\/.*$/gm, '$1');
+      const code = fs.readFileSync(path.join(ROOT, f), 'utf8').replace(/\r\n/g, '\n').replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|\s)\/\/.*$/gm, '$1');
       assert.ok(/\breadSameFile\(/.test(code) && !/\breadCapped\b|bigint: true/.test(code), `${f}: reads through readSameFile only, no copy of it`);
     }
   }
