@@ -839,3 +839,10 @@ The merge queue for the v0.1.15 version PR (#1440, version files only) failed on
 
 - **Changes:** nothing in FR-023's behaviour. `until` in `test-autopilot-ipc.ts` waits by wall clock (5 s by default; a passing wait returns at once), and the real-repository wait gets 3 x 3 x `GIT_TIMEOUT_MS`, so it cannot give up before the app's own git bound would. **Replaces:** the tick-count budget.
 - **[KNOWN GAP]** Not run on a Windows runner before the PR's own CI; other test files' tick-count waits were not reviewed.
+
+### 2026-11-16: probe L's late answer comes in the tick the plain send settles (issue #1827, T143)
+
+`test:autopilot-copilot` failed on Windows at `FR-059 probe L: the late answer of Durbar's own turn-on is not FR-006` (main run 43876238253, job 133329923490; PR run 43787793702 had the same line). FR-059 keeps Durbar's own turn-on in mind for one bound (`ownTurnOn`, 20 ms in the probe) after it timed out. The probe polled with a 1 ms timer between the timeout and the late answer; a Windows timer wakes about every 15.6 ms, so the bound could pass first and the late mode change was FR-006.
+
+- **Changes:** nothing in FR-059's behaviour. The probe sends the late answer from a promise continuation of the plain send, in the same tick it settles, with no timer between the timeout and the answer; no bound is raised and nothing is retried.
+- **[KNOWN GAP]** Not run on a Windows runner before the PR's own CI; reproduced on Linux only by a 40 ms sleep before the answer (fails at this assert text before the change).

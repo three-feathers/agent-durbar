@@ -14,6 +14,7 @@ import { register as registerAgentsIpc } from './ipc/agents';
 import { register as registerAppIpc } from './ipc/app';
 import { register as registerBrowserIpc } from './ipc/browser';
 import { noteWindowZoom } from './titledblclick';
+import { register as registerCharactersIpc } from './ipc/characters';
 import { register as registerAttachmentsIpc } from './ipc/attachments';
 import { register as registerCheckpointsIpc } from './ipc/checkpoints';
 import { register as registerWorldsIpc } from './ipc/worlds';
@@ -41,6 +42,7 @@ import { nativeConfirm } from './nativeconfirm';
 import { register as registerNotesIpc } from './ipc/notes';
 import { register as registerTeamsIpc } from './ipc/teams';
 import { TeamsIpcOps } from './teamsipc';
+import { TeamOps, resolveTargetFrom } from './teamops';
 import { TeamTemplateStore } from './teamstore';
 import { NotesOps, notesConfirmText } from './notesops';
 import { NotesStore } from './notesstore';
@@ -863,7 +865,8 @@ const worldsIpc = registerWorldsIpc({ simulator: SIMULATOR }); // spec 102 T022:
 registerSchedulesIpc({ getScheduler: () => scheduler, getFolderStore: () => folderStore });
 registerUsageIpc({ agents, getUsageStore: () => usageStore, getUsageTotalsStore: () => usageTotalsStore, usageLabel });
 const newFolderIpc = registerNewFolderIpc({ addMany, getSettingsStore: () => settingsStore, asEffort, toRenderer }); // spec 093: create a folder from + Folder (clone, new repository, empty folder)
-registerSettingsIpc({ getSettingsStore: () => settingsStore, getRunTheme: () => runTheme, clearRunTheme: () => { runTheme = undefined; } });
+const charactersIpc = registerCharactersIpc({ dev, registry, router, getSettingsStore: () => settingsStore, openFolderKeys: () => [...agents.values()].map((a) => folderKeyOf(a)) }); // spec 096: the AI character maker and My characters
+registerSettingsIpc({ getSettingsStore: () => settingsStore, getRunTheme: () => runTheme, clearRunTheme: () => { runTheme = undefined; }, characterIds: () => charactersIpc.ids() });
 registerThemesIpc({ dev });
 const harnessIpc = registerHarnessIpc({
   dev, registry, router, remoteOps, toRenderer, getWin: () => win, adaptersList,
@@ -911,8 +914,28 @@ registerNotesIpc({ getOps: () => notesOps }); // spec 083
 // spec 111 T007: the team templates; the store is opened when first asked (never under the simulator: its channels are refused before this runs)
 let teamsOps: TeamsIpcOps | undefined;
 let teamStore: TeamTemplateStore | undefined;
-registerTeamsIpc({ getOps: () => (SIMULATOR ? undefined : (teamsOps ??= new TeamsIpcOps({ store: () => (teamStore ??= new TeamTemplateStore(path.join(app.getPath('userData'), 'team-templates.json'))) }))) });
-registerModelIpc({ agents, router, registry, getFolderStore: () => folderStore, wsKey, orgModel: (adapterId, model) => orgPolicies.model(adapterId, model) });
+const getTeamStore = (): TeamTemplateStore => (teamStore ??= new TeamTemplateStore(path.join(app.getPath('userData'), 'team-templates.json')));
+// spec 111 T010: the create preview. The room key stays in main (never a path for the window); the team record that counts a room's members comes with T011 (0 until then)
+let teamOps: TeamOps | undefined;
+const modelIpc = registerModelIpc({ agents, router, registry, getFolderStore: () => folderStore, wsKey, orgModel: (adapterId, model) => orgPolicies.model(adapterId, model) });
+registerTeamsIpc({
+  getOps: () => (SIMULATOR ? undefined : (teamsOps ??= new TeamsIpcOps({ store: getTeamStore }))),
+  getTeamOps: () => (SIMULATOR ? undefined : (teamOps ??= new TeamOps({
+    store: getTeamStore,
+    adapters: () => adaptersList(false),
+    models: (id) => modelIpc.modelsOf(id),
+    defaultCapAiu: () => settingsStore?.defaultMaxAiCredits,
+    // the key is the add flows' key (`resolveWorkspaceCwd`, `findAdded`); the saved limit is the folder store's, as the normal add path reads it
+    resolveTarget: (t) => resolveTargetFrom(t, {
+      agents: () => agents.values(), wsKey, resolveCwd: resolveWorkspaceCwd, savedCap: (key) => folderStore?.get(key)?.maxAiCredits,
+      pick: async () => {
+        if (dev.DURBAR_PICK) { const first = dev.DURBAR_PICK.split(path.delimiter)[0]; return first || null; } // the dev hook of ipc/themes.ts: path.delimiter keeps C:\ paths whole
+        const r = await dialog.showOpenDialog({ title: 'Choose the folder for the team', properties: ['openDirectory'] });
+        return r.canceled || r.filePaths.length !== 1 ? null : r.filePaths[0];
+      },
+    }),
+  }))),
+});
 registerOrgPolicyIpc({ view: () => orgPolicies.view() });
 registerAdaptersIpc({ adaptersList });
 const sandboxOps = registerSandboxIpc({ agents, router, getSettingsStore: () => settingsStore, readyAdapterIds }); // spec 087
@@ -1304,6 +1327,7 @@ app.on('before-quit', (ev) => {
     .finally(() => app.quit());
 });
 app.on('will-quit', () => {
+  charactersIpc.shutdown(); // spec 096 *Edge cases*: a generation in progress is cancelled; nothing is saved
   worldsIpc.shutdown(); // spec 102: no read starts after quit
   scheduler?.flush(); // spec 044 FR-037: a fold counted during the 3 s dispose window of before-quit
   void destroyAllViews(); // spec 080 FR-023: the session browsers (none exist until the browser pane lands)

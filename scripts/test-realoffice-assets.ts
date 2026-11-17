@@ -249,12 +249,12 @@ for (const wid of worldIds) {
 }
 /* spec 097 Changes 2026-11-08 (T240..T244): a set that is no world's default is a crew set; it is drawn only because crew.js has a `REAL_SETS` row for it
    (wired). It still passes every picture and text check and has its approval on record. A set with no row is refused, except a set named in SETS_PACK_ONLY
-   (T245 art part: the art lands before its wiring PR); that allowance fails as soon as crew.js gives the set a row, so it cannot go stale. */
+   (an art-only set whose wiring PR is to come; empty since T245); that allowance fails as soon as crew.js gives the set a row, so it cannot go stale. */
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const REAL_SETS = (require(path.join(__dirname, '..', '..', 'src', 'renderer', 'crew.js')) as { REAL_SETS: { id: string }[] }).REAL_SETS;
 const wiredIds = REAL_SETS.map((r) => r.id);
 for (const id of wiredIds) assert.ok(setIds.includes(id), `${id}: a REAL_SETS row has its set folder`);
-const SETS_PACK_ONLY = ['minimalist']; // art landed, wiring PR to come (T245); remove the name when crew.js has its REAL_SETS row
+const SETS_PACK_ONLY: string[] = []; // empty since T245 (Minimalist wired, #1154); a name here is an art-only set whose wiring PR is to come
 for (const id of SETS_PACK_ONLY) assert.ok(!wiredIds.includes(id), `${id} is wired: remove it from SETS_PACK_ONLY`);
 /* each crew set's owner approval (date, time and quote of every frame line) and likeness check, one explicit entry per set: a set missing here fails */
 const QUOTE_1143 = 'Vikram Gorla (owner), 2026-11-08 11:43 UTC, Telegram DM: "Yes, I looked at every art carefully and it does not resemble any person I know"';
@@ -539,5 +539,23 @@ const index = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'index.html'), 
 const csp = /Content-Security-Policy" content="([^"]*)"/.exec(index);
 assert.strictEqual(csp && csp[1], "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:;", 'the CSP is unchanged (FR-060)');
 assert.ok(!/realoffice/.test(index), 'index.html does not load Real office (FR-061: only on first use)');
+// spec 097 Changes 2026-11-14 (#1751): the cave draws its monitor frame round the engine's glass (3 px in); the CSS numbers come from the slate opening measured on the picture (Pillow, by hand: no WebP decoder here),
+// and the picture is pinned by hash so a new picture must be measured again
+{
+  const OPEN = { x0: 0.0964, x1: 0.9107, y0: 0.1227, y1: 0.8712 }, fw = OPEN.x1 - OPEN.x0, fh = OPEN.y1 - OPEN.y0;
+  const css = fs.readFileSync(path.join(RO, 'worlds', 'cave', 'world.css'), 'utf8').replace(/\r\n/g, '\n');
+  const pic = require('crypto').createHash('sha256').update(fs.readFileSync(path.join(RO, 'worlds', 'cave', 'monitor.webp'))).digest('hex');
+  assert.strictEqual(pic, 'b31356faa0a595ba6cd0a364e42653aced1df19ab626dd13e1cddc9f59460e14', 'the cave monitor picture changed: measure its slate opening again and update OPEN here and the calc() numbers in world.css (spec 097, #1751)');
+  const want: Record<string, [number, number]> = { left: [3 + (OPEN.x0 / fw) * 6, -(OPEN.x0 / fw) * 100], top: [3 + (OPEN.y0 / fh) * 6, -(OPEN.y0 / fh) * 100], width: [-6 / fw, 100 / fw], height: [-6 / fh, 100 / fh] };
+  const rule = /\.ro\[data-world="cave"\] \.ro-bezel::before\{([^}]*)\}/.exec(css);
+  assert.ok(rule, 'the cave bezel frame rule exists');
+  for (const k of Object.keys(want)) {
+    const m = new RegExp('(?:^|;)' + k + ':calc\\((-?[\\d.]+)px ([-+]) ([\\d.]+)%\\)').exec(rule![1]) || new RegExp('(?:^|;)' + k + ':calc\\(([\\d.]+)% ([-+]) ([\\d.]+)px\\)').exec(rule![1]);
+    assert.ok(m, `the cave frame's ${k} is a calc() of a pixel part and a percentage`);
+    const px = k === 'left' || k === 'top' ? Number(m![1]) : (m![2] === '-' ? -1 : 1) * Number(m![3]), pct = k === 'left' || k === 'top' ? (m![2] === '-' ? -1 : 1) * Number(m![3]) : Number(m![1]);
+    assert.ok(Math.abs(px - want[k][0]) < 0.01 && Math.abs(pct - want[k][1]) < 0.01, `the cave frame's ${k} follows the measured slate opening (css ${px}px ${pct}%, want ${want[k][0].toFixed(3)}px ${want[k][1].toFixed(3)}%)`);
+  }
+  assert.ok(!/\.ro\[data-world="cave"\] \.ro-bezel\{[^}]*padding/.test(css), 'the cave bezel keeps the engine\'s 3 px padding: the glass is the engine\'s');
+}
 console.log(`realoffice assets tests passed (${packs} world packs with their default sets, largest ${(biggest / 1024 / 1024).toFixed(2)} MB; the Photo office ${files.size} pictures, ${(total / 1024 / 1024).toFixed(2)} MB)`);
 process.exitCode = 0;
