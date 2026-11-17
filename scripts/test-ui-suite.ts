@@ -2,7 +2,7 @@
 import * as assert from 'assert';
 import * as fs from 'fs';
 import * as path from 'path';
-import { execFileSync } from 'child_process';
+import { execFileSync, spawnSync } from 'child_process';
 
 const ROOT = path.join(__dirname, '..', '..');
 const SUITE = path.join(ROOT, 'scripts', 'ui-suite.js');
@@ -37,6 +37,131 @@ assert.ok(/require\('electron'\)/.test(src), 'it starts the Electron binary dire
   assert.ok(src.indexOf('syntaxErrors([...new Set(') > 0 && src.indexOf('syntaxErrors([...new Set(') < src.indexOf('await Promise.all(Array.from({ length: jobs }, worker))'), 'the syntax pass runs before the first driver starts');
   // the real runner: a broken driver named with --only stops before Electron, at once, with the file and exit 1
 }
+// spec 008 FR-211 (issue #1557): a missing build fails in seconds with its path, before any Electron starts
+(async () => {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { buildProblem } = require(path.join(ROOT, 'scripts', 'ensure-electron.js')) as { buildProblem: (root: string) => string };
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const suite = require(SUITE) as { main: (o: object) => Promise<void>; runOne: (d: object, out: string, o: object) => Promise<{ ok: boolean; why: string }> };
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const par = require(path.join(ROOT, 'scripts', 'check-parallel.js')) as { main: (o: object) => Promise<number> };
+  const tmp = fs.mkdtempSync(path.join(require('os').tmpdir(), 'ui-suite-nobuild-'));
+  const file = path.join(tmp, 'dist', 'main', 'main.js');
+  const rel = path.join('dist', 'main', 'main.js'); // as the platform prints it, relative to the repo folder
+  const want = `the build is missing: ${rel} does not exist; run \`npm run build\` first`;
+  const msg = buildProblem(tmp);
+  assert.ok(msg.startsWith(want) && !msg.includes(tmp), `the problem is the plain line with the relative path and no absolute one: ${msg}`);
+  fs.mkdirSync(path.join(tmp, 'dist', 'main'), { recursive: true });
+  fs.writeFileSync(file, '');
+  assert.ok(buildProblem(tmp).startsWith(`the build is missing: ${path.join('dist', 'renderer', 'index.html')} does not exist`), 'a missing renderer page is named too');
+  fs.mkdirSync(path.join(tmp, 'dist', 'renderer'), { recursive: true });
+  fs.writeFileSync(path.join(tmp, 'dist', 'renderer', 'index.html'), '');
+  assert.strictEqual(buildProblem(tmp), '', 'with both files there is no problem');
+  fs.rmSync(path.join(tmp, 'dist'), { recursive: true, force: true });
+  const missing = () => buildProblem(tmp);
+  const quiet = () => undefined;
+  const calls: string[] = [];
+  const realLog = console.log;
+  console.log = quiet;
+  const outDir = fs.mkdtempSync(path.join(require('os').tmpdir(), 'ui-suite-nobuild-out-'));
+  const prevOut = process.env.UI_SUITE_OUT;
+  process.env.UI_SUITE_OUT = outDir;
+  try {
+    let t = Date.now();
+    await assert.rejects(suite.main({ build: missing, argv: ['--only', names[1].split(' ')[0]], ensure: () => { calls.push('ensure'); return true; }, run: async () => { calls.push('run'); return { ok: true, secs: 0, why: '', log: '' }; } }), (e: Error) => e.message.includes(want) && !e.message.includes(tmp) && /npm run build` first/.test(e.message) && /no driver was started/.test(e.message), 'ui-suite: a missing build stops the runner with its path and "no driver was started"');
+    assert.ok(Date.now() - t < 5000 && calls.length === 0, 'ui-suite: a missing build stops the runner at once, before Electron is fetched or a driver started');
+    t = Date.now();
+    const r = await suite.runOne({ name: names[1].split(' ')[0], sim: false }, outDir, { build: missing, launch: [process.execPath, ['-e', 'process.exit(0)']] }); // the launch is a harmless stand-in: with the check gone it would pass, and no Electron starts
+    assert.ok(!r.ok && r.why.includes(want) && Date.now() - t < 5000, 'ui-suite: runOne returns the missing build as a failed run without spawning');
+    t = Date.now();
+    const lines: string[] = [];
+    const failed = await par.main({ build: missing, ensure: () => { calls.push('ensure'); return true; }, runJob: async () => { calls.push('job'); return 'ok'; }, available: () => Infinity, jobs: [{ label: 'a' }, { label: 'b' }], workers: 2, log: (l: string) => lines.push(l) });
+    assert.ok(failed === 2 && calls.length === 0 && lines.some((l) => l.includes(want)) && Date.now() - t < 5000, 'check-parallel: a missing build starts no part and says which file');
+  } finally {
+    console.log = realLog;
+    if (prevOut === undefined) delete process.env.UI_SUITE_OUT; else process.env.UI_SUITE_OUT = prevOut;
+    fs.rmSync(outDir, { recursive: true, force: true });
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+  // every other launcher that starts the dev Electron on the repo folder calls the same buildProblem(): a copy of scripts/ in a folder with no build
+  // (spec 008 FR-211). The plain-Node launchers are run as they are started by hand: exit 2 and the message, nothing started.
+  const copy = fs.mkdtempSync(path.join(require('os').tmpdir(), 'ui-suite-nobuild-copy-'));
+  try {
+    fs.cpSync(path.join(ROOT, 'scripts'), path.join(copy, 'scripts'), { recursive: true });
+    fs.copyFileSync(path.join(ROOT, 'package.json'), path.join(copy, 'package.json'));
+    // a stand-in for the electron package: the path it exports is node itself, so a launcher whose guard is gone runs `node .` (no dist: exits 1 at once) and never starts a real Electron
+    fs.mkdirSync(path.join(copy, 'node_modules', 'electron'), { recursive: true });
+    fs.writeFileSync(path.join(copy, 'node_modules', 'electron', 'index.js'), 'module.exports = process.execPath;\n');
+    fs.writeFileSync(path.join(copy, 'node_modules', 'electron', 'package.json'), '{"name":"electron","version":"0.0.0","main":"index.js"}\n');
+    const wantCopy = want; // the same relative text; the folder's own path must not appear
+    for (const f of ['check-mac-titlebar', 'check-office-overlap', 'check-theme-geometry', 'check-perf', 'world-matrix']) {
+      const t0 = Date.now();
+      const r = spawnSync(process.execPath, [path.join(copy, 'scripts', f + '.js')], { encoding: 'utf8', shell: false, windowsHide: true, timeout: 20000 });
+      assert.ok(r.status === 2 && String(r.stderr).includes(wantCopy) && !String(r.stderr).includes(copy) && /npm run build` first/.test(String(r.stderr)) && Date.now() - t0 < 5000, `${f}: a missing build exits 2 with the path and \`npm run build\` first (got ${r.status}: ${String(r.stderr).slice(0, 200)})`);
+    }
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const rec = require(path.join(copy, 'scripts', 'perf-record.js')) as { recordAll: (o: object) => Promise<number> };
+    const errs: string[] = [];
+    const realErr = console.error;
+    console.error = (m: string) => { errs.push(String(m)); };
+    let code: number;
+    try { code = await rec.recordAll({ quick: true, runs: 1 }); } finally { console.error = realErr; }
+    assert.ok(code === 2 && errs.some((m) => m.includes(wantCopy)), 'perf-record: a missing build returns 2 with the path before any Electron starts');
+  } finally {
+    fs.rmSync(copy, { recursive: true, force: true });
+  }
+  // release-video asks the same helper (deps.buildProblem is the test's way in), before it checks Electron or starts a recording
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const rv = require(path.join(ROOT, 'scripts', 'release-video.js')) as { main: (a: string[], d: object) => Promise<unknown> };
+  const rvOut = fs.mkdtempSync(path.join(require('os').tmpdir(), 'ui-suite-nobuild-rv-'));
+  try {
+    const rvCalls: string[] = [];
+    await assert.rejects(rv.main(['--version', 'v0.0.1', '--out', rvOut, '--scenes', 'office'], { hasFfmpeg: () => true, chooseScenes: () => ['office'], releaseSources: () => [], buildProblem: () => msg, ensure: () => { rvCalls.push('ensure'); return true; }, runOne: async () => { rvCalls.push('run'); return { ok: true }; } }), (e: Error) => e.message === msg, 'release-video: a missing build stops it with the shared message');
+    assert.strictEqual(rvCalls.length, 0, 'release-video: nothing started');
+  } finally {
+    fs.rmSync(rvOut, { recursive: true, force: true });
+  }
+  for (const f of ['check-mac-titlebar', 'check-office-overlap', 'check-theme-geometry', 'check-perf', 'world-matrix', 'perf-record', 'release-video']) {
+    assert.ok(/buildProblem/.test(fs.readFileSync(path.join(ROOT, 'scripts', f + '.js'), 'utf8')), `${f} calls the shared buildProblem`);
+  }
+  // installed-app-check.js and pack-esm-check.js run inside the PACKAGED app (a different build, resources/app.asar): they must not look for dist/
+  for (const f of ['installed-app-check', 'pack-esm-check']) assert.ok(!/buildProblem/.test(fs.readFileSync(path.join(ROOT, 'scripts', f + '.js'), 'utf8')), `${f} starts or runs in the packaged app and gets no dist guard`);
+  assert.ok(src.indexOf('const noBuild = build()') > src.indexOf('syntaxErrors([...new Set(') && src.indexOf('const noBuild = build()') < src.indexOf('if (!ensure())'), 'the build check sits after the syntax pass and before the Electron install');
+  process.stdout.write('ui-suite missing build: ok\n');
+})().catch((e) => { console.error(e); process.exitCode = 1; });
+// spec 008 FR-212 (issue #1572): a name in --only that matches no driver fails the run, even when another name matches
+(async () => {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const suite = require(SUITE) as { main: (o: object) => Promise<void>; DRIVERS: { name: string; label?: string }[]; NOT_IN_SUITE: Record<string, string> };
+  const labelled = suite.DRIVERS.find((d) => d.label && d.label !== d.name && d.label.includes(' '));
+  assert.ok(labelled, 'the suite has an entry with its own label (for the label case)');
+  const good = suite.DRIVERS[0].name;
+  const [notIn] = Object.keys(suite.NOT_IN_SUITE);
+  const ran: string[] = [];
+  const opts = (only: string[]) => ({ build: () => '', argv: ['--only', only.join(',')], ensure: () => true, run: async (d: { name: string; label?: string }) => { ran.push(d.label || d.name); return { ok: true, secs: 0, why: '', log: '' }; } });
+  const outDir = fs.mkdtempSync(path.join(require('os').tmpdir(), 'ui-suite-only-'));
+  const prevOut = process.env.UI_SUITE_OUT;
+  process.env.UI_SUITE_OUT = outDir;
+  const realLog = console.log;
+  console.log = () => undefined;
+  try {
+    const t0 = Date.now();
+    await assert.rejects(suite.main(opts([good, 'no-such-driver-zz'])), (e: Error) => /no-such-driver-zz matches no driver/.test(e.message) && /no driver was started/.test(e.message), 'ui-suite --only: an unknown name beside a valid one fails and is named');
+    assert.ok(ran.length === 0 && Date.now() - t0 < 5000, 'ui-suite --only: nothing ran, and it failed at once');
+    await assert.rejects(suite.main(opts([good, notIn])), (e: Error) => e.message.includes(`${notIn} is not a ui-suite driver: ${suite.NOT_IN_SUITE[notIn]}`), 'ui-suite --only: a name that is deliberately not in the suite gets its written reason');
+    await assert.rejects(suite.main(opts([good.slice(0, -1) + 'x', 'qqqq-nothing-like-it'])), (e: Error) => e.message.includes(`${good.slice(0, -1)}x matches no driver; did you mean ${good}`) && /qqqq-nothing-like-it matches no driver\n/.test(e.message + '\n'), 'ui-suite --only: a near name gets "did you mean", a far one none');
+    assert.strictEqual(ran.length, 0, 'ui-suite --only: no driver ran in the failing cases');
+    await suite.main(opts([labelled.label as string]));
+    await suite.main(opts([good, labelled.name]));
+    assert.ok(ran.includes(labelled.label as string) && ran.includes(good), 'ui-suite --only: a label and a driver name still select their entries');
+  } finally {
+    console.log = realLog;
+    if (prevOut === undefined) delete process.env.UI_SUITE_OUT; else process.env.UI_SUITE_OUT = prevOut;
+    fs.rmSync(outDir, { recursive: true, force: true });
+  }
+  assert.ok(src.indexOf('unknownOnly(a.only)') > 0 && src.indexOf('unknownOnly(a.only)') < src.indexOf('const todo = shard('), 'the name check comes before the shard split');
+  process.stdout.write('ui-suite --only unknown names: ok\n');
+})().catch((e) => { console.error(e); process.exitCode = 1; });
 // spec 008 FR-213 (issue #1591): under xvfb-run the screen is as big as the window at the requested density (Xvfb's default 1280x1024 left a DPR 2 window mostly off screen)
 {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -297,6 +422,17 @@ assert.ok(dh.darkProblem({ id: 'check-user', bg: 'rgb(20, 18, 43)' }).includes('
   codes.length = 0; await H.calm(); assert.ok(codes[0].includes('shotCalm') && codes.slice(1).some((c) => c.includes('.walker.walking')), 'calm hides the toasts, then waits until no figure walks');
   events.length = 0; await H.shot('/tmp/t.png', { prep: 'mouse', delay: 0 }); assert.strictEqual(events[0].type, 'mouseMove', "prep 'mouse' moves the pointer");
   codes.length = 0; sleeps.length = 0; await H.shot('/tmp/t.png', { settle: true, delay: 0 }); assert.ok(codes.some((c) => c.includes("querySelectorAll('*').length")), 'shot settles when asked');
+  // spec 052 (#1658): needFocus asks for the focus through the helper's focus step and fails with the label when the page never has it; focus that arrives late passes
+  {
+    let reads = 0; const evs: string[] = [];
+    const fctx = { ...ctx, win: { ...ctx.win, show: () => evs.push('show'), focus: () => evs.push('win.focus'), webContents: { focus: () => evs.push('wc.focus') } }, js: async (c: string) => { if (c.includes('document.hasFocus()')) { reads++; return reads > 3; } return true; } };
+    await dh.helpers(fctx).needFocus('t 1440x900', { ms: 3000 });
+    assert.ok(reads >= 4 && evs.includes('show') && evs.includes('win.focus') && evs.includes('wc.focus'), `needFocus: focus that comes after 3 reads passes, through the focus step (${reads} reads, ${evs.join(',')})`);
+    const never = { ...fctx, js: async (c: string) => !c.includes('document.hasFocus()') };
+    await assert.rejects(() => dh.helpers(never).needFocus('t 1440x900', { ms: 300 }), /t 1440x900: the window does not have focus \(document\.hasFocus\(\) is false\): bring the app to the front; the machine may have no key window/, 'needFocus: a page without focus fails with the label');
+    const mut = { ...fctx, js: async (c: string) => !c.includes('!!(false)') };
+    await assert.rejects(() => dh.helpers(mut).needFocus('t', { ms: 300, expr: 'false' }), /does not have focus/, 'needFocus: a false reading (the mutant) fails with the label');
+  }
   // values spliced into page code are escaped, whatever they hold
   const evil = `x');alert(1);//</script>\u2028`;
   codes.length = 0; await H.click(evil); await H.clickText(evil, evil); await H.exists(evil); await H.text(evil); await H.idOf(evil);
@@ -321,18 +457,33 @@ assert.ok(dh.darkProblem({ id: 'check-user', bg: 'rgb(20, 18, 43)' }).includes('
   const po = (clearsAfter: number) => {
     const moves: any[] = []; const pctx: any = { ...ctx, win: { ...ctx.win, webContents: { ...ctx.win.webContents, sendInputEvent: (e: any) => moves.push(e) } }, sleep: (ms: number) => new Promise<void>((r) => setTimeout(r, Math.min(ms, 5))) };
     const hovered = () => moves.length < clearsAfter;
-    pctx.js = async (c: string) => (c.includes('.map(') ? (hovered() ? ['button.x "Go"'] : []) : !hovered());
+    // the page: the install call (addEventListener) answers true, the list (.map) the hovered controls, a sample "no :hover and the page saw a move at 0,0"
+    pctx.js = async (c: string) => (c.includes('addEventListener') ? true : c.includes('.map(') ? (hovered() ? ['button.x "Go"'] : []) : (!hovered() && moves.length > 0));
     return { moves, P: dh.helpers(pctx) };
   };
   { const { moves, P } = po(4); assert.deepStrictEqual(await P.pointerOff('#panel', 'button', { ms: 2000, retry: 20 }).catch((e: Error) => assert.fail('pointerOff: a hover that clears after 3 moves passes: ' + e.message)), [], 'pointerOff: a hover that clears after 3 moves passes'); assert.ok(moves.length >= 4 && moves.every((e) => e.type === 'mouseMove' && e.x === 0 && e.y === 0), 'pointerOff: the move is re-sent to 0,0 until the hover clears'); }
   { const { moves, P } = po(1e9); await assert.rejects(() => P.pointerOff('#panel', 'button', { ms: 150, retry: 20 }), /pointerOff: the pointer did not leave #panel after 150 ms and \d+ move\(s\): \["button\.x \\"Go\\""\]/, 'pointerOff: a hover that never clears fails with its label'); assert.ok(moves.length > 1, 'the failing wait kept re-sending the move'); }
+  // spec 008 FR-216: the real cursor hovers the control again after the first empty sample; a second sample finds it and the move is re-sent
+  // the page code of the helper (the listener and the sample) runs for real in a vm with a stub page: a :hover that is empty at the first querySelector call and set at the next one (the real cursor), until a move arrives
+  const rehover = (o: { unseen?: boolean } = {}) => {
+    const moves: any[] = []; const listeners: any[] = []; let hot = false, calls = 0, dropped = false;
+    const sandbox: any = { window: {}, addEventListener: (_t: string, f: any) => listeners.push(f), requestAnimationFrame: (f: () => void) => setTimeout(f, 1), setTimeout, clearTimeout, document: { querySelector: () => { const r = hot ? {} : null; if (++calls === 1) hot = true; return r; } } };
+    const sendInputEvent = (e: any) => { moves.push(e); hot = false; if (!o.unseen && !dropped) for (const f of listeners) f({ clientX: e.x, clientY: e.y }); };
+    const pctx: any = { ...ctx, win: { ...ctx.win, webContents: { ...ctx.win.webContents, sendInputEvent } }, sleep: (ms: number) => new Promise<void>((r) => setTimeout(r, Math.min(ms, 5))) };
+    pctx.js = async (c: string) => (c.includes('.map(') ? (hot ? ['button.x "Go"'] : []) : require('vm').runInNewContext(c, sandbox));
+    return { moves, listeners, drop: () => { dropped = true; calls = 99; hot = false; }, P: dh.helpers(pctx) };
+  };
+  { const { moves, P } = rehover(); assert.deepStrictEqual(await P.pointerOff('#panel', 'button', { ms: 3000, retry: 1e9 }).catch((e: Error) => assert.fail('pointerOff: a re-hover after the first empty sample is re-sent and passes: ' + e.message)), [], 'pointerOff: a re-hover after the first empty sample is waited out (re-sent at once, retry is huge)'); assert.ok(moves.length >= 2, 'pointerOff: a re-hover after the first empty sample re-sends the move (two samples)'); }
+  { const { moves, P } = rehover({ unseen: true }); await assert.rejects(() => P.pointerOff('#panel', 'button', { ms: 250, retry: 20 }), /pointerOff: the page never saw the move to 0,0/, 'pointerOff: no :hover but no move seen at 0,0 fails with its label'); assert.ok(moves.length > 3, 'pointerOff: a move the page never saw at 0,0 is re-sent, not counted as clear'); }
+  // two calls on one page: one listener, and the second call does not trust what the first recorded
+  { const r = rehover(); await r.P.pointerOff('#panel', 'button', { ms: 3000, retry: 1e9 }); assert.strictEqual(r.listeners.length, 1, 'pointerOff: one listener per page'); r.drop(); await assert.rejects(() => r.P.pointerOff('#panel', 'button', { ms: 250, retry: 20 }), /pointerOff: the page never saw the move to 0,0/, 'pointerOff: a second call does not trust the first call\'s record'); assert.strictEqual(r.listeners.length, 1, 'pointerOff: still one listener after two calls'); }
   { const { moves, P } = po(1e9); assert.deepStrictEqual(await P.pointerOff('#panel', 'button', { stay: true }), ['button.x "Go"'], 'pointerOff stay: lists what is hovered'); assert.strictEqual(moves.length, 0, 'pointerOff stay: never moves the pointer'); }
   console.log('driver-helpers: key, load, escaping and shot behave');
 })().catch((e) => { console.error(e); process.exit(1); });
 
 // ---- no driver keeps its own copy of what the shared module does, and no string is spliced raw into page code ----
 // Not page drivers: they never touch a window (or drive a real session / the packaged app).
-const SKIP = new Set(['driver-helpers.js', 'ui-suite.js', 'check-names.js', 'check-fuses.js', 'check-fuses-launch.js', 'check-parallel.js', 'e2e-driver.js', 'installed-app-check.js', 'installed-app-ci.js']);
+const SKIP = new Set(['driver-helpers.js', 'ui-suite.js', 'check-names.js', 'check-fuses.js', 'check-fuses-launch.js', 'check-parallel.js', 'check-world-distinct.js', 'e2e-driver.js', 'installed-app-check.js', 'installed-app-ci.js']);
 /** The template literals of one line (top level only): their text and their `${...}` expressions (a nested template is part of its expression). */
 function templates(line: string): { text: string; exprs: string[] }[] {
   const out: { text: string; exprs: string[] }[] = [];
@@ -378,6 +529,10 @@ export function checkDriverSource(f: string, t: string): string[] {
 }
 const allBad = drivers.flatMap((f) => checkDriverSource(f, fs.readFileSync(path.join(ROOT, 'scripts', f), 'utf8')));
 assert.deepStrictEqual(allBad, [], '\n' + allBad.join('\n'));
+// CodeQL js/bad-code-sanitization (alert 108): check-office-ops builds page code over several lines, which the per-line scan above does not see; a value spliced there goes through jsLiteral, never a bare JSON.stringify
+export const bareStringify = (t: string): boolean => /\$\{\s*JSON\.stringify\(/.test(t);
+assert.ok(!bareStringify(fs.readFileSync(path.join(ROOT, 'scripts', 'check-office-ops.js'), 'utf8')), 'check-office-ops.js splices values into page code with jsLiteral, not ${JSON.stringify(...)}');
+assert.ok(bareStringify('js(`new Set(${JSON.stringify(X)})`)') && !bareStringify('js(`new Set(${jsLiteral(X)})`)'), 'the check-office-ops splice guard catches the old form');
 // ---- spec 008 FR-268: H.key only queues the key (sendInputEvent), so a call nobody awaits can land after the next step ----
 /** Calls of `H.key` and of a wrapper of it (a name whose definition line holds `H.key(`) that start a statement and are not awaited, returned or passed on. */
 export function checkKeyAwait(f: string, t: string): string[] {
@@ -459,12 +614,12 @@ process.on('exit', () => { if (!fr114Done) { console.error('FR-114 checks did no
   const fakeJobs = [{ label: 'a' }, { label: 'b' }, { label: 'c' }];
   let order: Step[] = [];
   const quiet = () => undefined;
-  let failed = await par.main({ ensure: () => { order.push('ensure'); return true; }, runJob: async (j: { label: string }) => { order.push('run ' + j.label); return 'ok'; }, available: () => Infinity, jobs: fakeJobs, workers: 3, log: quiet });
+  let failed = await par.main({ build: () => '', ensure: () => { order.push('ensure'); return true; }, runJob: async (j: { label: string }) => { order.push('run ' + j.label); return 'ok'; }, available: () => Infinity, jobs: fakeJobs, workers: 3, log: quiet });
   assert.strictEqual(failed, 0);
   assert.deepStrictEqual(order.filter((x) => x === 'ensure'), ['ensure'], 'check-parallel: Electron installed exactly once');
   assert.ok(order[0] === 'ensure' && order.length === 4, `check-parallel: the install comes before every part (${order.join(', ')})`);
   order = [];
-  failed = await par.main({ ensure: () => { order.push('ensure'); return false; }, runJob: async (j: { label: string }) => { order.push('run ' + j.label); return 'ok'; }, available: () => Infinity, jobs: fakeJobs, workers: 3, log: quiet });
+  failed = await par.main({ build: () => '', ensure: () => { order.push('ensure'); return false; }, runJob: async (j: { label: string }) => { order.push('run ' + j.label); return 'ok'; }, available: () => Infinity, jobs: fakeJobs, workers: 3, log: quiet });
   assert.ok(failed === 3 && order.join() === 'ensure', 'check-parallel: no Electron, no part started, every part counts as failed');
   assert.ok(par.jobs.length >= 2, 'check-parallel still splits the office check into parts');
   // ui-suite.js: the same, after the syntax pass and before the first driver
@@ -476,10 +631,10 @@ process.on('exit', () => { if (!fr114Done) { console.error('FR-114 checks did no
   console.log = quiet;
   try {
     order = [];
-    await suite.main({ argv: ['--only', `${names[1].split(' ')[0]},${names[2].split(' ')[0]}`], ensure: () => { order.push('ensure'); return true; }, run: async (d: { name: string }) => { order.push('run ' + d.name); return { ok: true, secs: 0, why: '', log: '' }; } });
+    await suite.main({ build: () => '', argv: ['--only', `${names[1].split(' ')[0]},${names[2].split(' ')[0]}`], ensure: () => { order.push('ensure'); return true; }, run: async (d: { name: string }) => { order.push('run ' + d.name); return { ok: true, secs: 0, why: '', log: '' }; } });
     assert.ok(order[0] === 'ensure' && order.length === 3 && order.filter((x) => x === 'ensure').length === 1, `ui-suite: Electron installed once, before the drivers (${order.join(', ')})`);
     order = [];
-    await assert.rejects(suite.main({ argv: ['--only', names[1].split(' ')[0]], ensure: () => { order.push('ensure'); return false; }, run: async () => { order.push('run'); return { ok: true, secs: 0, why: '', log: '' }; } }), /no driver was started/);
+    await assert.rejects(suite.main({ build: () => '', argv: ['--only', names[1].split(' ')[0]], ensure: () => { order.push('ensure'); return false; }, run: async () => { order.push('run'); return { ok: true, secs: 0, why: '', log: '' }; } }), /no driver was started/);
     assert.strictEqual(order.join(), 'ensure', 'ui-suite: no Electron, no driver started');
   } finally {
     console.log = realLog;
@@ -742,7 +897,7 @@ console.log('ui-suite: check-parallel and ui-suite install Electron once before 
       };
       process.env.UI_SUITE_JOBS = '3'; process.env.UI_SUITE_OUT = tmp;
       console.log = (): void => undefined;
-      try { await suite.main({ ensure: () => true, run: fake, argv: ['--only', only], shared }); } finally { console.log = was.log; }
+      try { await suite.main({ build: () => '', ensure: () => true, run: fake, argv: ['--only', only], shared }); } finally { console.log = was.log; }
       return { ran, peak, focusNextToOther: clash, peakOthers };
     };
     try {
