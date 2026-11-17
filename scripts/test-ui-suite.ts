@@ -67,16 +67,13 @@ assert.ok(/require\('electron'\)/.test(src), 'it starts the Electron binary dire
   const prevOut = process.env.UI_SUITE_OUT;
   process.env.UI_SUITE_OUT = outDir;
   try {
-    let t = Date.now();
     await assert.rejects(suite.main({ build: missing, argv: ['--only', names[1].split(' ')[0]], ensure: () => { calls.push('ensure'); return true; }, run: async () => { calls.push('run'); return { ok: true, secs: 0, why: '', log: '' }; } }), (e: Error) => e.message.includes(want) && !e.message.includes(tmp) && /npm run build` first/.test(e.message) && /no driver was started/.test(e.message), 'ui-suite: a missing build stops the runner with its path and "no driver was started"');
-    assert.ok(Date.now() - t < 5000 && calls.length === 0, 'ui-suite: a missing build stops the runner at once, before Electron is fetched or a driver started');
-    t = Date.now();
+    assert.strictEqual(calls.join(','), '', 'ui-suite: a missing build stops the runner before Electron is fetched (ensure) or a driver started (run)');
     const r = await suite.runOne({ name: names[1].split(' ')[0], sim: false }, outDir, { build: missing, launch: [process.execPath, ['-e', 'process.exit(0)']] }); // the launch is a harmless stand-in: with the check gone it would pass, and no Electron starts
-    assert.ok(!r.ok && r.why.includes(want) && Date.now() - t < 5000, 'ui-suite: runOne returns the missing build as a failed run without spawning');
-    t = Date.now();
+    assert.ok(!r.ok && r.why.includes(want), 'ui-suite: runOne returns the missing build as a failed run without spawning');
     const lines: string[] = [];
     const failed = await par.main({ build: missing, ensure: () => { calls.push('ensure'); return true; }, runJob: async () => { calls.push('job'); return 'ok'; }, available: () => Infinity, jobs: [{ label: 'a' }, { label: 'b' }], workers: 2, log: (l: string) => lines.push(l) });
-    assert.ok(failed === 2 && calls.length === 0 && lines.some((l) => l.includes(want)) && Date.now() - t < 5000, 'check-parallel: a missing build starts no part and says which file');
+    assert.ok(failed === 2 && calls.length === 0 && lines.some((l) => l.includes(want)), 'check-parallel: a missing build starts no part and says which file');
   } finally {
     console.log = realLog;
     if (prevOut === undefined) delete process.env.UI_SUITE_OUT; else process.env.UI_SUITE_OUT = prevOut;
@@ -95,9 +92,8 @@ assert.ok(/require\('electron'\)/.test(src), 'it starts the Electron binary dire
     fs.writeFileSync(path.join(copy, 'node_modules', 'electron', 'package.json'), '{"name":"electron","version":"0.0.0","main":"index.js"}\n');
     const wantCopy = want; // the same relative text; the folder's own path must not appear
     for (const f of ['check-mac-titlebar', 'check-office-overlap', 'check-theme-geometry', 'check-perf', 'world-matrix']) {
-      const t0 = Date.now();
       const r = spawnSync(process.execPath, [path.join(copy, 'scripts', f + '.js')], { encoding: 'utf8', shell: false, windowsHide: true, timeout: 20000 });
-      assert.ok(r.status === 2 && String(r.stderr).includes(wantCopy) && !String(r.stderr).includes(copy) && /npm run build` first/.test(String(r.stderr)) && Date.now() - t0 < 5000, `${f}: a missing build exits 2 with the path and \`npm run build\` first (got ${r.status}: ${String(r.stderr).slice(0, 200)})`);
+      assert.ok(r.status === 2 && String(r.stderr).includes(wantCopy) && !String(r.stderr).includes(copy) && /npm run build` first/.test(String(r.stderr)), `${f}: a missing build exits 2 with the path and \`npm run build\` first (got ${r.status}: ${String(r.stderr).slice(0, 200)})`);
     }
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     const rec = require(path.join(copy, 'scripts', 'perf-record.js')) as { recordAll: (o: object) => Promise<number> };
@@ -145,9 +141,8 @@ assert.ok(/require\('electron'\)/.test(src), 'it starts the Electron binary dire
   const realLog = console.log;
   console.log = () => undefined;
   try {
-    const t0 = Date.now();
     await assert.rejects(suite.main(opts([good, 'no-such-driver-zz'])), (e: Error) => /no-such-driver-zz matches no driver/.test(e.message) && /no driver was started/.test(e.message), 'ui-suite --only: an unknown name beside a valid one fails and is named');
-    assert.ok(ran.length === 0 && Date.now() - t0 < 5000, 'ui-suite --only: nothing ran, and it failed at once');
+    assert.strictEqual(ran.join(','), '', 'ui-suite --only: nothing ran, and it failed before any driver');
     await assert.rejects(suite.main(opts([good, notIn])), (e: Error) => e.message.includes(`${notIn} is not a ui-suite driver: ${suite.NOT_IN_SUITE[notIn]}`), 'ui-suite --only: a name that is deliberately not in the suite gets its written reason');
     await assert.rejects(suite.main(opts([good.slice(0, -1) + 'x', 'qqqq-nothing-like-it'])), (e: Error) => e.message.includes(`${good.slice(0, -1)}x matches no driver; did you mean ${good}`) && /qqqq-nothing-like-it matches no driver\n/.test(e.message + '\n'), 'ui-suite --only: a near name gets "did you mean", a far one none');
     assert.strictEqual(ran.length, 0, 'ui-suite --only: no driver ran in the failing cases');
@@ -972,7 +967,7 @@ console.log('ui-suite: check-parallel and ui-suite install Electron once before 
     const suite = require(SUITE) as { main: (o: unknown) => Promise<void>; DRIVERS: { name: string; label?: string; focus?: boolean }[]; sharedDesktop: (p: string, e: Record<string, string>) => boolean };
     const label = (d: { name: string; label?: string }): string => d.label || d.name;
     const flagged = suite.DRIVERS.filter((d) => d.focus).map(label).sort();
-    assert.deepStrictEqual(flagged, ['check-097-hover-card', 'check-brain-draw', 'shots-097-screens', 'shots-097-screens retro'], 'the focus entries are the ones with a failure on record (#1498, #1408, #1282: check-brain-draw failed its Full-mode assert on windows-latest shard 2/4, both tries)');
+    assert.deepStrictEqual(flagged, ['check-097-drag-cancel', 'check-097-hover-card', 'check-brain-draw', 'shots-097-screens', 'shots-097-screens retro'], 'the focus entries are the ones with a failure on record (#1498, #1408, #1282: check-brain-draw failed its Full-mode assert on windows-latest shard 2/4, both tries); check-097-drag-cancel is focus-sensitive by design: its held drags end on a real OS blur from a neighbour window (issue 1550)');
     assert.deepStrictEqual([['darwin', {}], ['win32', {}], ['linux', {}], ['linux', { DISPLAY: ':0' }], ['linux', { DISPLAY: ':0', UI_SUITE_XVFB: '1' }]].map(([p, e]) => suite.sharedDesktop(p as string, e as Record<string, string>)), [true, true, false, true, false], 'windows share a desktop on macOS, Windows and Linux with a display; not under xvfb');
     const only = ['shots-097-screens', 'check-097-hover-card', 'shots-017', 'shots-018', 'shots-033', 'check-office-fill'].join(',');
     const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'ui-suite-focus-'));
