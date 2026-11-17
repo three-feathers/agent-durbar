@@ -15,6 +15,7 @@
  * the skeleton mutant needs the same words without brackets.
  */
 import assert from 'assert';
+import { cpuMs } from './redact-growth-lib';
 import fs from 'fs';
 import path from 'path';
 import * as real from '../src/shared/teamtemplate';
@@ -422,20 +423,16 @@ const sections: Record<string, (a: Api) => void> = {
       ['unclosed', '(x '.repeat(big / 3)], ['unclosedangle', '<a '.repeat(big / 3)], ['marks', 'e\u0301'.repeat(big / 2)], ['bullets', '\u2022 _ | '.repeat(big / 6)], ['unclosedframe', '(' + 'user '.repeat(big / 5)],
     ];
     for (const [label, text] of cases) {
-      const t0 = Date.now();
-      a.frameCheck(text);
-      assert.ok(Date.now() - t0 < 3000, `frameCheck ${label} on ${big} characters under 3 s`); tick();
+      const cpu = cpuMs(() => { a.frameCheck(text); }, 3000);
+      assert.ok(cpu < 3000, `frameCheck ${label} on ${big} characters under 3 s of CPU time (${cpu.toFixed(0)} ms)`); tick();
     }
-    const t1 = Date.now();
-    for (const text of ['a'.repeat(2_000_000), 'a\n'.repeat(1_000_000), '\u{1F600}'.repeat(500_000)]) assert.ok(!a.checkMember(base({ brief: text }), 'own').ok);
-    assert.ok(Date.now() - t1 < 3000, 'huge briefs refused fast'); tick();
-    const t2 = Date.now();
-    assert.ok(!a.checkMember(base({ name: 'a'.repeat(1_000_000), role: 'b'.repeat(1_000_000) }), 'imported').ok);
-    assert.ok(Date.now() - t2 < 3000, 'huge names refused fast'); tick();
+    const c1 = cpuMs(() => { for (const text of ['a'.repeat(2_000_000), 'a\n'.repeat(1_000_000), '\u{1F600}'.repeat(500_000)]) assert.ok(!a.checkMember(base({ brief: text }), 'own').ok); }, 3000);
+    assert.ok(c1 < 3000, `huge briefs refused fast (${c1.toFixed(0)} ms of CPU time)`); tick();
+    const c2 = cpuMs(() => { assert.ok(!a.checkMember(base({ name: 'a'.repeat(1_000_000), role: 'b'.repeat(1_000_000) }), 'imported').ok); }, 3000);
+    assert.ok(c2 < 3000, `huge names refused fast (${c2.toFixed(0)} ms of CPU time)`); tick();
     // the length of a name is judged before nameKey runs (a 5 MB name in a template)
-    const t3 = Date.now();
-    assert.ok(!a.checkTeamTemplate(tpl([base({ name: 'a'.repeat(5_000_000) }), base({ name: 'b'.repeat(5_000_000) })]), 'own').ok);
-    assert.ok(Date.now() - t3 < 3000, '5 MB names refused before nameKey'); tick();
+    const c3 = cpuMs(() => { assert.ok(!a.checkTeamTemplate(tpl([base({ name: 'a'.repeat(5_000_000) }), base({ name: 'b'.repeat(5_000_000) })]), 'own').ok); }, 3000);
+    assert.ok(c3 < 3000, `5 MB names refused before nameKey (${c3.toFixed(0)} ms of CPU time)`); tick();
   },
 };
 

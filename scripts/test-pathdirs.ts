@@ -1,5 +1,6 @@
 /** Unit test for the shared PATH-directory helper (spec 060 FR-094): `npm run test:pathdirs`. */
 import * as assert from 'assert';
+import { cpuMs } from './redact-growth-lib';
 import { pathDirs } from '../src/shared/pathdirs';
 
 // Windows: PATH, quotes, empty and relative entries, case-insensitive dedupe (first wins)
@@ -19,8 +20,9 @@ assert.deepStrictEqual(pathDirs({ PATH: '/opt/a b /bin: /lead:/trail /:/ok' }, '
 // large input stays fast
 {
   const big = Array.from({ length: 200000 }, (_, i) => '/d' + (i % 5000)).join(':');
-  const t = Date.now();
-  assert.strictEqual(pathDirs({ PATH: big }, 'linux').length, 5000);
-  assert.ok(Date.now() - t < 2000, 'large PATH handled quickly');
+  let n = 0;
+  const cpu = cpuMs(() => { n = pathDirs({ PATH: big }, 'linux').length; }, 2000);
+  assert.strictEqual(n, 5000);
+  assert.ok(cpu < 2000, `large PATH handled quickly (${cpu.toFixed(0)} ms of CPU time)`);
 }
 console.log('pathdirs: all checks passed');
