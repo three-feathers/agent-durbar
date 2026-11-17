@@ -170,7 +170,8 @@ const signsOf = (f: number, counts: number, chips?: number): Record<string, { na
     if (f > agents) continue;
     const m = model(agents, f), r = layoutWithFallback('circle', m, { w: W, h: H }, meta, signsOf(f, counts));
     if (r.ran === 'circle') { assert.deepStrictEqual(signProblems(r.lay, m, counts), [], `${wn} ${agents} agents in ${f} folders, ${counts} counts at ${W}x${H}: every sign holds its short form and lies in a room made for it`); n++; }
-    assert.strictEqual(r.ran === 'circle', !circleLayout(m, { w: W, h: H }, meta, signsOf(f, counts)).scroll, `${wn} ${agents} in ${f}, ${counts} counts at ${W}x${H}: the ladder keeps the circle exactly where it does not scroll`);
+    const cl = circleLayout(m, { w: W, h: H }, meta, signsOf(f, counts));
+    assert.strictEqual(r.ran === 'circle', !cl.scroll && cl.faceH >= Math.max(FACE_FLOOR, meta.minFace || 0) - 1e-6, `${wn} ${agents} in ${f}, ${counts} counts at ${W}x${H}: the ladder keeps the circle exactly where it does not scroll and the face holds the larger of 24 px and minFace`);
   }
   assert.ok(n > 50, `the sign check ran on ${n} circle layouts`);
   const m = model(15, 9), L = circleLayout(m, { w: 1440, h: 797 }, META_CAVE, signsOf(9, 3));
@@ -208,10 +209,10 @@ const movedBy = (meta: RealMeta, W: number, H: number, agents: number, f: number
   assert.ok(mutantMoved > 0, `mutant (rooms from the live chips) is caught by the moved label in ${mutantMoved} of ${n} cases`);
   console.log(`status changes: no seat moves in ${n} cases; the live-chips mutant moves seats in ${mutantMoved}`);
 }
-// ---- the simulator's 15-agent frame (4, 4, 3, 2 and 2 agents in five folders, two of them in the lounge row): the Cave draws the circle at 1440x900 and ROWS at 1280x800, with every sign at one chip too: the folders' rooms (4, 4, 3, 2 and 2 chips at most) leave the ring no room at the 24 px face floor there (reviewer, #1764) ----
+// ---- the simulator's 15-agent frame (4, 4, 3, 2 and 2 agents in five folders, two of them in the lounge row): the Cave draws ROWS at both sizes (the circle's 27.5 px face is under the Cave's minFace 30.5 at 1440x900, label minface; the rooms leave the ring no room at 1280x800), with every sign at one chip too: the folders' rooms (4, 4, 3, 2 and 2 chips at most) leave the ring no room at the 24 px face floor there (reviewer, #1764) ----
 {
   const sim = (): RealModel => { let i = 0; const fo = [[4, [0]], [4, []], [3, []], [2, []], [2, [1]]].map(([c, lg], k) => ({ id: 'f' + k, agents: Array.from({ length: c as number }, (_, j) => { const lounge = (lg as number[]).includes(j), a: RealAgent = { id: 'a' + i, state: lounge ? 'idle' : STATES[i % STATES.length], person: PEOPLE[i % 15], away: null, ...(lounge ? { lounge: true } : {}) }; i++; return a; }) })); return { folders: fo, places: model(15, 5).places }; };
-  for (const [W, H, want] of [[1440, 797, 'circle'], [1280, 697, 'rows']] as Array<[number, number, string]>) for (const counts of [1, 2, 5]) assert.strictEqual(layoutWithFallback('circle', sim(), { w: W, h: H }, META_CAVE, signsOf(5, counts)).ran, want, `the simulator's 15-agent frame in the Cave at ${W}x${H}, ${counts} counts: ${want}`);
+  for (const [W, H, want] of [[1440, 797, 'rows'], [1280, 697, 'rows']] as Array<[number, number, string]>) for (const counts of [1, 2, 5]) assert.strictEqual(layoutWithFallback('circle', sim(), { w: W, h: H }, META_CAVE, signsOf(5, counts)).ran, want, `the simulator's 15-agent frame in the Cave at ${W}x${H}, ${counts} counts: ${want}`);
 }
 // ---- the All floors view stays rows (FR-230, 097 FR-104; main's storeys on the Cave): a model of two floors draws rows with its storeys, never the circle; one floor, or a world with no storeys, keeps the circle ----
 {
@@ -224,6 +225,22 @@ const movedBy = (meta: RealMeta, W: number, H: number, agents: number, f: number
     assert.strictEqual(layoutWithFallback('circle', one, v, META_CAVE, SIGNS(4)).ran, arrangementFits('circle', one, v, META_CAVE) ? 'circle' : 'rows', 'a single floor follows the fit rule');
     assert.strictEqual(layoutWithFallback('circle', two, v, { ...META_CAVE, storeys: false }, SIGNS(4)).ran, arrangementFits('circle', two, v, { ...META_CAVE, storeys: false }) ? 'circle' : 'rows', 'a world with no storeys keeps the circle (all-floors-rows: only storeys worlds)');
   }
+}
+// ---- the circle's face floor is the larger of 24 px and the world's minFace (review of #1764, 097 FR-308), and the hold follows a failed fit only (labels minface, floors-no-hold) ----
+{
+  const sim = (): RealModel => { let i = 0; const fo = [[4, [0]], [4, []], [3, []], [2, []], [2, [1]]].map(([c, lg], k) => ({ id: 'f' + k, agents: Array.from({ length: c as number }, (_, j) => { const lounge = (lg as number[]).includes(j), a: RealAgent = { id: 'a' + i, state: lounge ? 'idle' : STATES[i % STATES.length], person: 'p' + (i % 4) } as RealAgent; i++; return lounge ? { ...a, lounge: true } : a; }) })); return { ...model(15, 5), folders: fo } as unknown as RealModel; };
+  const v = { w: 1440, h: 797 }, m = sim(), c = circleLayout(m, v, META_CAVE, signsOf(5, 1));
+  assert.ok(!c.scroll && c.faceH < 30.5 && c.faceH >= FACE_FLOOR, `the Cave's circle at 1440x900 with 15 agents has a face of ${c.faceH} px: under 30.5, over 24 (minface)`);
+  assert.strictEqual(arrangementFits('circle', m, v, META_CAVE), false, 'the circle does not fit under the Cave\'s minFace (minface)');
+  assert.strictEqual(arrangementFits('circle', m, v, { ...META_CAVE, minFace: undefined } as unknown as RealMeta), true, 'with no minFace the same circle fits at the 24 px floor (minface: the floor is the larger of the two)');
+  // the mutant, floor 24 only, would fit: it is the line above; the assert text of the first line is what it dies at
+  const fl = (id: string, n: number) => ({ id, name: id, n }), mm = model(8, 4), two = { ...mm, folders: mm.folders.map((f, i) => ({ ...f, floor: i < 2 ? fl('f2', 2) : fl('f1', 1) })) } as RealModel, one = { ...mm, folders: mm.folders.map((f) => ({ ...f, floor: fl('f1', 1) })) } as RealModel;
+  const rf = layoutWithFallback('circle', two, v, META_CAVE, SIGNS(4)), ro = layoutWithFallback('circle', one, v, META_CAVE, SIGNS(4), undefined);
+  assert.strictEqual((rf as { why?: string }).why, 'floors', 'the All floors rows say why: floors, not fit (floors-no-hold)');
+  assert.strictEqual(ro.ran, 'circle', 'all floors, then one floor: the circle returns at once, nothing held (floors-no-hold)');
+  assert.strictEqual((layoutWithFallback('circle', m, v, META_CAVE, signsOf(5, 1)) as { why?: string }).why, 'fit', 'a failed fit says fit (floors-no-hold)');
+  const page = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'realoffice.js'), 'utf8');
+  assert.ok(/r\.why === 'fit'[^\n]*CIRCLE_HOLD = \{/.test(page), 'the page sets the circle hold only where why is fit (floors-no-hold: the page wiring)');
 }
 // ---- the ladder circle -> rows (FR-230, owner 2026-11-14 13:10 UTC): 15 agents in 14 and in 15 one-agent folders fall back to rows, no scroll, nothing off the stage ----
 {
@@ -244,21 +261,21 @@ const movedBy = (meta: RealMeta, W: number, H: number, agents: number, f: number
       const m = model(15, f), v = { w: W, h: H }, fits = arrangementFits('circle', m, v, meta);
       const r = layoutWithFallback('circle', m, v, meta, SIGNS(f));
       assert.deepStrictEqual(ladder(r, W, fits), [], `${name} ${NAMES[s]}, 15 agents in ${f} folders: ladder ${fits ? 'keeps circle' : 'falls back to rows'}, no scroll, nothing off the stage`);
-      assert.strictEqual(fits, !circleLayout(m, v, meta, SIGNS(f)).scroll, `${name} ${NAMES[s]} ${f} folders: fits means the circle does not scroll`);
+      { const cl = circleLayout(m, v, meta, SIGNS(f)); assert.strictEqual(fits, !cl.scroll && cl.faceH >= Math.max(FACE_FLOOR, meta.minFace || 0) - 1e-6, `${name} ${NAMES[s]} ${f} folders: fits means the circle does not scroll and holds the face floor`); }
       if (f >= 14) seen.push(`${name} ${NAMES[s]} ${f}: ${r.ran}`);
       if (!fits) {
-        assert.ok(ladder({ lay: circleLayout(m, v, meta, SIGNS(f)), ran: 'circle' }, W, fits).includes('scroll'), `mutant (ladder removed): the circle's scroll is caught at ${name} ${NAMES[s]} ${f} folders`);
+        { const cl = circleLayout(m, v, meta, SIGNS(f)); assert.ok(ladder({ lay: cl, ran: 'circle' }, W, fits).includes('scroll') || cl.faceH < Math.max(FACE_FLOOR, meta.minFace || 0) - 1e-6, `mutant (ladder removed): the circle's scroll or its face under the floor is caught at ${name} ${NAMES[s]} ${f} folders`); }
         assert.ok(ladder({ lay: realLayout(m, v, meta, SIGNS(f)), ran: 'circle' }, W, fits).includes('ran'), `mutant (circle forced): caught by its ran label at ${name} ${NAMES[s]} ${f} folders`);
       } else assert.ok(ladder({ lay: realLayout(m, v, meta, SIGNS(f)), ran: 'rows' }, W, fits).includes('ran'), `mutant (rows always): caught by its ran label at ${name} ${NAMES[s]} ${f} folders`);
     }
   });
-  for (const want of ['Photo meta 1440x900 15: rows', 'Photo meta 1440x900 14: circle', 'Cave meta 1280x800 14: rows', 'Cave meta 1280x800 15: rows', 'Cave meta 1440x900 14: circle', 'Cave meta 1440x900 15: circle']) assert.ok(seen.includes(want), `the measured edge: ${want}`); /* Photo's meta scrolls at 15 folders at 1440x900, the Cave's does not (its desk is smaller); both fall back at 14 and 15 at 1280x800 */
+  for (const want of ['Photo meta 1440x900 15: rows', 'Photo meta 1440x900 14: circle', 'Cave meta 1280x800 14: rows', 'Cave meta 1280x800 15: rows', 'Cave meta 1440x900 14: rows', 'Cave meta 1440x900 15: rows']) assert.ok(seen.includes(want), `the measured edge: ${want}`); /* Photo's meta scrolls at 15 folders at 1440x900, the Cave's does not (its desk is smaller); both fall back at 14 and 15 at 1280x800 */
   console.log('ladder at 14 and 15 folders: ' + seen.join('; '));
   // the hold: back only with two agents fewer than it left at
-  const m15 = model(15, 14), m14 = model(14, 14), m13 = model(13, 13), v = { w: 1280, h: 697 };
-  assert.strictEqual(layoutWithFallback('circle', m13, v, META_CAVE, SIGNS(13), 15).ran, 'circle', 'left at 15, back at 13: two fewer');
-  assert.strictEqual(layoutWithFallback('circle', m14, v, META_CAVE, SIGNS(14), 15).ran, 'rows', 'left at 15, still rows at 14: one fewer is not enough');
-  assert.strictEqual(layoutWithFallback('circle', m15, v, META_CAVE, SIGNS(15), undefined).ran, 'rows', 'no hold: 15 agents in 14 folders is rows');
+  const m15 = model(15, 14), m14 = model(14, 14), m13 = model(13, 13), v = { w: 1280, h: 697 }; /* Photo's numbers: the hold is the same for every world; the Cave's minFace floor is the minface test above */
+  assert.strictEqual(layoutWithFallback('circle', m13, v, META, SIGNS(13), 15).ran, 'circle', 'left at 15, back at 13: two fewer');
+  assert.strictEqual(layoutWithFallback('circle', m14, v, META, SIGNS(14), 15).ran, 'rows', 'left at 15, still rows at 14: one fewer is not enough');
+  assert.strictEqual(layoutWithFallback('circle', m15, v, META, SIGNS(15), undefined).ran, 'rows', 'no hold: 15 agents in 14 folders is rows');
   assert.strictEqual(JSON.stringify(layoutWithFallback('rows', m15, v, META_CAVE, SIGNS(14)).lay), JSON.stringify(realLayout(m15, v, META_CAVE, SIGNS(14))), 'rows is untouched by the ladder');
 }
 // the engine's cost at 40 agents in 8 folders (FR-019: under 5 ms), the best of 20: printed, the op-count row is for the wiring PR

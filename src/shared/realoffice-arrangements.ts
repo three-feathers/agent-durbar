@@ -546,7 +546,9 @@ export function arrangementFits(id: Arrangement, model: RealModel, view: { w: nu
   if (id === 'rows') return true;
   const n = model.folders.reduce((s, f) => s + f.agents.length, 0);
   if (leftAt !== undefined && n > leftAt - 2) return false;
-  return !layoutFor(id, model, view, meta).scroll;
+  const lay = layoutFor(id, model, view, meta);
+  /* review of #1764 (097 FR-308): the face floor of the circle is the larger of FR-229's 24 px and the world's `minFace` (the Cave's 30.5) */
+  return !lay.scroll && (id !== 'circle' || lay.faceH >= Math.max(FACE_FLOOR, meta.minFace || 0) - 1e-6);
 }
 
 /** FR-228's one seam: the arrangement a world names picks the function. `rows` is `realLayout` and nothing else (T167: byte-identical). */
@@ -556,10 +558,10 @@ export function layoutFor(arrangement: Arrangement, model: RealModel, view: { w:
 
 /** FR-230 (owner, 2026-11-14 13:10 UTC): the ladder `circle` to `rows`. A `circle` that does not fit this floor at the face floor (`arrangementFits`; `leftAt` holds it off until two agents fewer) draws `rows`, so no floor scrolls
  *  with 15 agents because of the arrangement; every other id runs as `layoutFor` says. `ran` is the arrangement that drew. Pure. */
-export function layoutWithFallback(arrangement: Arrangement, model: RealModel, view: { w: number; h: number }, meta: RealMeta, signs?: Record<string, { name: string; path: string; counts: number }>, leftAt?: number): { lay: Layout; ran: Arrangement } {
+export function layoutWithFallback(arrangement: Arrangement, model: RealModel, view: { w: number; h: number }, meta: RealMeta, signs?: Record<string, { name: string; path: string; counts: number }>, leftAt?: number): { lay: Layout; ran: Arrangement; why?: 'fit' | 'floors' } {
   /* the All floors view stays rows (spec 102 FR-230, 097 FR-104): a world that draws storeys (`meta.storeys`) with a building of two floors or more is `rows` with its tags and rules, the circle having none; it is not a "does not fit", so no hold is set */
-  if (arrangement === 'circle' && meta.storeys && storeyRuns(model.folders)) return { lay: realLayout(model, view, meta, signs), ran: 'rows' };
-  if (arrangement === 'circle' && !arrangementFits('circle', model, view, meta, leftAt)) return { lay: realLayout(model, view, meta, signs), ran: 'rows' };
+  if (arrangement === 'circle' && meta.storeys && storeyRuns(model.folders)) return { lay: realLayout(model, view, meta, signs), ran: 'rows', why: 'floors' };
+  if (arrangement === 'circle' && !arrangementFits('circle', model, view, meta, leftAt)) return { lay: realLayout(model, view, meta, signs), ran: 'rows', why: 'fit' };
   return { lay: layoutFor(arrangement, model, view, meta, signs), ran: arrangement };
 }
 
