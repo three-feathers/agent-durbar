@@ -91,7 +91,7 @@ module.exports = async (ctx) => {
         if (kind === 'warn' && w === 1440) await H.shot(path.join(OUT, `052-warn-btn-${look.replace(/\W+/g, '-')}-${w}x${h}-hover.png`), { prep: 'none', settle: false, tag: 'warn-btn' });
         if (w === 1280 || kind !== 'warn') await H.shot(path.join(OUT, `052-warn-btn-${look.replace(/\W+/g, '-')}-${kind}-${w}x${h}.png`), { prep: 'none', settle: false, tag: 'warn-btn' });
         H.wc().sendInputEvent({ type: 'mouseMove', x: 1, y: 1 });
-        H.key('Escape');
+        await H.key('Escape');
         if (!(await until(`!document.querySelector('.dlg')`, 3000))) await js(`document.querySelectorAll('.dlg-ov,#scrDlg').forEach(n=>n.remove());0`);
       }
     }

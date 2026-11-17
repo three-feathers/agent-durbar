@@ -555,6 +555,121 @@ assert.deepStrictEqual(allBad, [], '\n' + allBad.join('\n'));
 export const bareStringify = (t: string): boolean => /\$\{\s*JSON\.stringify\(/.test(t);
 assert.ok(!bareStringify(fs.readFileSync(path.join(ROOT, 'scripts', 'check-office-ops.js'), 'utf8')), 'check-office-ops.js splices values into page code with jsLiteral, not ${JSON.stringify(...)}');
 assert.ok(bareStringify('js(`new Set(${JSON.stringify(X)})`)') && !bareStringify('js(`new Set(${jsLiteral(X)})`)'), 'the check-office-ops splice guard catches the old form');
+// ---- spec 008 FR-268: H.key only queues the key (sendInputEvent), so a call nobody awaits can land after the next step ----
+/**
+ * Calls of `H.key` and of any name that is it (`const k = H.key`, `const { key } = H`, `const { key: k } = H`), a wrapper around it (an arrow or function whose body calls it, one line or many, declaration or expression) or a
+ * copy of one of those, that are left as a statement: not awaited, returned, passed on, assigned or followed by `.then`/`.catch`. Parsed with the TypeScript compiler (already a devDependency, as in test-autopilot), so strings,
+ * comments, line breaks, `case`, ternary and comma forms need no special handling.
+ */
+export function checkKeyAwait(f: string, t: string): string[] {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const ts = require('typescript') as typeof import('typescript');
+  const sf = ts.createSourceFile(f, t, ts.ScriptTarget.Latest, true, ts.ScriptKind.JS);
+  // a parse error could hide a bare call in the broken region: fail loudly (parseDiagnostics is not in the public typings)
+  const parseErrors = (sf as unknown as { parseDiagnostics: import('typescript').Diagnostic[] }).parseDiagnostics;
+  if (parseErrors.length > 0) return [`${f}: does not parse, so the key check cannot read it: ${ts.flattenDiagnosticMessageText(parseErrors[0].messageText, ' ')} (line ${sf.getLineAndCharacterOfPosition(parseErrors[0].start ?? 0).line + 1})`];
+  const names = new Set<string>();
+  const strip = (e: import('typescript').Expression): import('typescript').Expression => (ts.isParenthesizedExpression(e) || ts.isAsExpression(e) ? strip(e.expression) : e);
+  const isH = (e: import('typescript').Expression): boolean => { const x = strip(e); return (ts.isIdentifier(x) && /^(H|HP)$/.test(x.text)) || (ts.isCallExpression(x) && ts.isIdentifier(x.expression) && x.expression.text === 'helpers'); };
+  const isKeyFn = (e: import('typescript').Expression): boolean => {
+    const x = strip(e);
+    if (ts.isPropertyAccessExpression(x)) return x.name.text === 'key' && isH(x.expression);
+    if (ts.isIdentifier(x)) return names.has(x.text);
+    if (ts.isCallExpression(x) && ts.isPropertyAccessExpression(x.expression) && x.expression.name.text === 'bind') return isKeyFn(x.expression.expression);
+    return false;
+  };
+  const callsKey = (n: import('typescript').Node): boolean => { let hit = false; const walk = (c: import('typescript').Node): void => { if (hit) return; if (ts.isCallExpression(c) && isKeyFn(c.expression)) { hit = true; return; } ts.forEachChild(c, walk); }; walk(n); return hit; };
+  for (let changed = true; changed;) {
+    changed = false;
+    const add = (n: string): void => { if (!names.has(n)) { names.add(n); changed = true; } };
+    const visit = (n: import('typescript').Node): void => {
+      if (ts.isFunctionDeclaration(n) && n.name && n.body && callsKey(n.body)) add(n.name.text);
+      if (ts.isVariableDeclaration(n) && n.initializer) {
+        if (ts.isIdentifier(n.name)) {
+          const i = strip(n.initializer);
+          if (isKeyFn(i) || ((ts.isArrowFunction(i) || ts.isFunctionExpression(i)) && callsKey(i.body))) add(n.name.text);
+        } else if (ts.isObjectBindingPattern(n.name) && isH(n.initializer)) {
+          for (const el of n.name.elements) if (ts.isIdentifier(el.name) && (el.propertyName ? ts.isIdentifier(el.propertyName) && el.propertyName.text === 'key' : el.name.text === 'key')) add(el.name.text);
+        }
+      }
+      ts.forEachChild(n, visit);
+    };
+    visit(sf);
+  }
+  const bad: string[] = [];
+  const discarded = (c: import('typescript').Node): boolean => {
+    for (let n: import('typescript').Node = c; ; n = n.parent) {
+      const p = n.parent;
+      if (ts.isExpressionStatement(p) || ts.isVoidExpression(p)) return true;
+      if (ts.isParenthesizedExpression(p)) continue;
+      if (ts.isConditionalExpression(p) && p.condition !== n) continue; // `a ? key(1) : key(2)` as a statement
+      if (ts.isBinaryExpression(p) && (p.operatorToken.kind === ts.SyntaxKind.CommaToken ? true : [ts.SyntaxKind.AmpersandAmpersandToken, ts.SyntaxKind.BarBarToken, ts.SyntaxKind.QuestionQuestionToken].includes(p.operatorToken.kind) && p.right === n)) continue;
+      return false; // awaited, returned, an argument, `=>` body, assigned, `.then(...)`
+    }
+  };
+  const visit = (n: import('typescript').Node): void => {
+    if (ts.isCallExpression(n) && isKeyFn(n.expression) && discarded(n)) {
+      const nm = ts.isIdentifier(strip(n.expression)) ? (strip(n.expression) as import('typescript').Identifier).text : 'H.key';
+      bad.push(`${f}:${sf.getLineAndCharacterOfPosition(n.getStart(sf)).line + 1}: ${nm}(...) is not awaited: its key can land after the next step (await it, then wait for its effect)`);
+    }
+    ts.forEachChild(n, visit);
+  };
+  visit(sf);
+  return bad;
+}
+const keyFiles = fs.readdirSync(path.join(ROOT, 'scripts')).filter((x) => /\.js$/.test(x) && x !== 'driver-helpers.js');
+const keyBad = keyFiles.flatMap((f) => checkKeyAwait(f, fs.readFileSync(path.join(ROOT, 'scripts', f), 'utf8')));
+assert.deepStrictEqual(keyBad, [], '\n' + keyBad.join('\n'));
+const keyDef = "const key = (k) => H.key(k, [], { char: 'always' });\n";
+assert.deepStrictEqual(checkKeyAwait('x.js', keyDef + "await key('A'); await H.key('B'); return key('C'); H.key('D').then(() => 1);\nawait x(() => H.key('E'));\nawait Promise.all([key('F')]);\n// H.key('G');\n"), [], 'the key check passes awaited, returned, passed-on and .then forms');
+// each form the check closes: a sample that must be flagged (the lines of one file) and the assert text it dies at
+for (const [what, src] of [
+  ['a bare H.key call', "H.key('Escape');"],
+  ['a bare H.key call after a statement', "await js('x'); H.key('Escape', [], { pause: 0 });"],
+  ['a bare wrapper call', keyDef + "await js('x'); key('Down');"],
+  ['a bare wrapper call after an if', keyDef + "if (a) key('Down');"],
+  ['a key destructured from H', "const H = helpers(ctx);\nconst { js, key } = H;\nkey('Down');"],
+  ['a key renamed in a destructure', "const { key: press } = H;\npress('Down');"],
+  ['a key destructured from helpers(ctx)', "const { key } = helpers(ctx);\nkey('Down');"],
+  ['a function-declaration wrapper', "function key(k) { return H.key(k); }\nkey('Down');"],
+  ['a multi-line wrapper', "const nkey = async (c, o = {}) => {\n  const x = 1;\n  await H.key(c, [], o);\n};\nnkey('Return');"],
+  ['an alias of H.key', "const k = H.key;\nk('A');"],
+  ['an alias of a wrapper', keyDef + "const k2 = key;\nk2('A');"],
+  ['a bound H.key', "const k = H.key.bind(H);\nk('A');"],
+  ['a bare call after a // inside a string', "const u = 'http://x'; H.key('A');"],
+  ['a bare call in a case clause', "switch (n) { case 1: H.key('A'); break; }"],
+  ['a bare call in a ternary', "ok ? H.key('A') : H.key('B');"],
+  ['a bare call after a comma', "x = 1, H.key('A');"],
+  ['a bare call after &&', "ok && H.key('A');"],
+  ['a bare call in parentheses', "(H.key('A'));"],
+  ['a void call', "void H.key('A');"],
+  ['a bare call on its own line after a line that ends in a call', "await js('x')\nH.key('A')"],
+  ['a bare call inside a multi-line argument list', "await js('x',\n  1);\nH.key(\n  'A',\n  [],\n);"],
+] as [string, string][]) assert.ok(checkKeyAwait('x.js', src + '\n').length > 0, `the key check catches ${what}`);
+assert.deepStrictEqual(checkKeyAwait('x.js', "const { js, key } = H;\nawait key('A'); const p = key('B'); await p;\nconst k = H.key;\nawait k('C');\nfunction kk(k) { return H.key(k); }\nawait kk('D');\nconst s = 'H.key(x); // key(y)';\nconst { key: other } = notH;\nother('E');\nconst key2 = 5; key2();\nok ? await H.key('F') : await H.key('G');\n"), [], 'the key check passes awaited forms, strings, a key from another object and the lookalike names');
+// a file that does not parse is an error, never a pass
+for (const [what, src] of [['an unclosed paren', "await H.key('A'\n"], ['an unterminated template', "const a = `x;\nawait H.key('A');\n"]] as [string, string][]) {
+  const r = checkKeyAwait('x.js', src);
+  assert.ok(r.length === 1 && /x\.js: does not parse/.test(r[0]), `the key check fails loudly on ${what}`);
+}
+// a mutant per closed form: the await dropped in a copy of a real driver dies at that form's own assert
+const plant = (file: string, from: RegExp, to: string, label: string): void => {
+  const real = fs.readFileSync(path.join(ROOT, 'scripts', file), 'utf8');
+  const planted = real.replace(from, to);
+  assert.notStrictEqual(planted, real, `the key-check mutant for ${label} found its call to change`);
+  assert.deepStrictEqual(checkKeyAwait(file, real), [], `${file} is clean before the mutant for ${label}`);
+  assert.ok(checkKeyAwait(file, planted).length > 0, `the key check catches ${label} planted in a real driver`);
+};
+plant('check-052-primary-btn.js', /await H\.key\('Escape'\)/, "H.key('Escape')", 'a bare H.key call');
+plant('check-097-order.js', /await key\(/, 'key(', 'a bare call of a key destructured from H');
+{
+  // mutant: a driver broken by a cut-off line must fail the check, not pass
+  const real = fs.readFileSync(path.join(ROOT, 'scripts', 'check-052-primary-btn.js'), 'utf8');
+  const broken = real.replace(/await H\.key\('Escape'\)/, "await H.key('Escape'");
+  assert.notStrictEqual(broken, real, 'the parse-error mutant found its call to change');
+  assert.ok(/does not parse/.test(checkKeyAwait('check-052-primary-btn.js', broken).join('\n')), 'the key check fails loudly on a real driver that does not parse');
+}
+plant('check-080-browser-expand.js', /await typeAddress\(url\)/, 'typeAddress(url)', 'a bare call of a multi-line wrapper');
 // the guard itself catches what it is for (a mutation of a clean driver must fail)
 const clean = "const { helpers, jsLiteral } = require('./driver-helpers');\nmodule.exports = async (ctx) => { await ctx.js(`document.title=${jsLiteral(1)}`); };\n";
 assert.deepStrictEqual(checkDriverSource('x.js', clean), []);
