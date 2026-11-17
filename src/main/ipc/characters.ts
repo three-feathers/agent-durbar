@@ -17,7 +17,7 @@ import type { AdapterRegistry } from '../../adapters/registry';
 import type { AdapterRouter } from '../../adapters/router';
 import { CHARACTER_IDEAS, SHEET_NAME, buildCharacterPrompt, cleanDescription } from '../../shared/chargen';
 import { DEFAULT_STYLE_ID } from '../../shared/charstyle';
-import { MAX_CHARACTERS, cleanCharacterName, pinDecision } from '../../shared/charrules';
+import { cleanCharacterName, pinDecision } from '../../shared/charrules';
 import type { EncoderResult, FaceSet, FrameSet } from '../../shared/charrules';
 import { MAX_IMAGE_BYTES, checkImage } from '../../shared/imagecheck';
 import { maskHomePaths, redact, redactMarkdown } from '../../shared/redact';
@@ -141,7 +141,6 @@ export function register(deps: CharactersIpcDeps): CharactersIpc {
     const ad = kind ? router.instance(kind) : undefined;
     if (!ad || ad.capabilities?.imageGen !== true || typeof ad.generateImage !== 'function') return { ok: false, error: NEEDS_CODEX };
     if (!loginGate) return { ok: false, error: NO_LOGIN_GATE }; // FR-034 fails closed until T030a (T030b)
-    if (store.list().length >= MAX_CHARACTERS) return { ok: false, error: `You have ${MAX_CHARACTERS} characters, the most Durbar keeps. Delete one first.`, full: true };
     const ctl = new AbortController();
     running = ctl;
     const started = Date.now();
