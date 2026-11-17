@@ -90,7 +90,7 @@ const run = async (ctx, reqs) => {
   const NARROW_PLATE = 122; /* the narrow plate's border box, CSS px */
   const NARROW_ROOM = 3; /* spec 102 FR-312: the written margin, in px, between the status word's right end and the narrow plate's content box (measured on macOS/Electron in the spec delta); a font 3 px wider than this one still shows the word whole */
   /* ARCADE_MUTANT (test only), each must fail at its own label: cutword = the line as it was (the helpers' mark a fixed width, the line free to shrink below its word); cutplate = a plate narrower than its line
-     (the word runs under the pencil); nodots = the mark's line has no room but the +N (no dot shown); plate121 = the narrow plate 121 px wide (T204, PR 1530); border2 = its border 2 px; pad19 = its right padding 19 px; sliver = the dots do not wrap, so one is cut in part; clipstate = the dots in creation order (an error dot last) */
+     (the word runs under the pencil); nodots = the mark's line has no room but the +N (no dot shown); plate121 = the narrow plate 121 px wide (T204, PR 1530); border2 = its border 2 px; pad19 = its right padding 19 px; idle15 = a plate not waiting or at its limit with a 1.5 px border (it must draw 1 px); sliver = the dots do not wrap, so one is cut in part; clipstate = the dots in creation order (an error dot last) */
   const MUTS = {
     cutword: `.ro[data-world="retro"] .ro-plate.has-help:not(.lounge) .ro-l1{flex:none!important;min-width:0!important}.ro[data-world="retro"] .ro-plate.has-help:not(.lounge) .ro-l2{display:block!important;flex:1 1 auto!important;min-width:0!important}.ro[data-world="retro"] .ro-plate.has-help:not(.lounge) .ro-help{flex:none!important;flex-wrap:nowrap!important;height:auto!important}`,
     cutplate: `.ro[data-world="retro"] .ro-plate.has-help:not(.lounge){width:90px!important}`,
@@ -112,7 +112,14 @@ const run = async (ctx, reqs) => {
     plate121: `.ro[data-world="retro"] .ro-plate.cab-narrow:not(.lounge){width:121px!important;min-width:121px!important;max-width:121px!important}`,
     border2: `.ro[data-world="retro"] .ro-plate.cab-narrow:not(.lounge){border-width:2px!important}`,
     pad19: `.ro[data-world="retro"] .ro-plate.cab-narrow:not(.lounge){padding-right:19px!important}`,
+    idle15: `.ro[data-world="retro"] .ro-plate.cab-narrow:not(.lounge):not(.st-waiting):not(.st-limit){border-width:1.5px!important}`,
     sliver: `.ro[data-world="retro"] .ro-plate.has-help:not(.lounge) .ro-help{flex-wrap:nowrap!important}.ro[data-world="retro"] .ro-plate.has-help:not(.lounge) .ro-l1{min-width:0!important}`,
+  };
+  /* T204 (PR 1530, round 2): each narrow plate's border by its state: 1.5 px (floored to a whole device px) only on a waiting or limit plate (realoffice.css, the `.st-waiting,.st-limit` rule), 1 px on every other (the error plate's left border is 3 px, `.st-error`), so an idle or working plate drawing 1.5 px fails here at every ratio, 1 and 2 included (ARCADE_MUTANT=idle15). Read in the limit scenes (markCheck) and in the Working scene, which has plates in another state. */
+  const borderByState = (tag, seen) => {
+    const bord = seen.filter((x) => x.narrow && !/\blounge\b/.test(x.pc));
+    const dev = (css, d) => Math.max(1, Math.floor(css * d + 1e-9)) / d; /* a device pixel step */
+    assert.ok(bord.every((x) => { const wl = /\bst-(waiting|limit)\b/.test(x.pc), left = /\bst-error\b/.test(x.pc) ? 3 : wl ? 1.5 : 1, right = wl ? 1.5 : 1; return Math.abs(x.bb[0] - dev(left, x.dpr)) <= 0.01 && Math.abs(x.bb[1] - dev(right, x.dpr)) <= 0.01; }), 'issue 1574: ' + tag + ': a narrow plate draws a 1.5 px border (floored to a whole device px) only in the waiting and limit states and a 1 px border in every other state (an error plate: 3 px on the left) (measured [state classes, [left, right] border, ratio]): ' + JSON.stringify(bord.map((x) => [x.pc, x.bb, x.dpr])));
   };
   const markCheck = async (tag, scene, { want, states, urgent, nohelp, nopencil, helper } = {}) => { /* urgent (the narrow plates): true = a helper failed (a mark "+N!" is due), false = none did (no mark) */
     if (states) await js(`(()=>{const U=window.__durbarSimUi;U.agents().filter(a=>!a.parent).forEach((a)=>{a.state=${jsLiteral(states)};delete a.label;});U.render();})();0`);
@@ -138,6 +145,7 @@ const run = async (ctx, reqs) => {
     const r = await js(PLATES(nopencil));
     console.log('[102-arcade] plate marks', tag, JSON.stringify(scene), JSON.stringify(r.seen.filter((x) => x.helped)));
     const helped = r.seen.filter((x) => x.helped);
+    borderByState(tag, r.seen);
     if (urgent !== undefined) { /* spec 102 FR-312: the narrow cabinet's plate with a pencil (122 px, content box 99 px since round 5) */
       const nm = helped.filter((x) => x.narrow && !!x.ren === !nopencil && x.word === 'Limit reached');
       assert.ok(nm.length >= 1, 'issue 1574: ' + tag + ': a narrow plate with ' + (nopencil ? 'NO pencil' : 'a pencil') + ', helpers and the word "Limit reached" is drawn (the case under test), saw ' + JSON.stringify(helped.map((x) => x.word + ' ' + x.pc + ' ' + x.plateW + ' ' + x.ren)));
@@ -145,7 +153,7 @@ const run = async (ctx, reqs) => {
       assert.deepStrictEqual(r.out.filter((o) => o.includes('the +N is cut') && nm.some((x) => o.startsWith(x.id + ' '))), [], 'issue 1574: ' + tag + ': on the narrow plate the "+N" is whole');
       assert.ok(nm.every((x) => x.room >= NARROW_ROOM), 'issue 1574: ' + tag + ': on the narrow plate the word keeps at least ' + NARROW_ROOM + ' px of room to the content box (a wider font must not eat the margin; the spec records the measured room): ' + JSON.stringify(nm.map((x) => x.room)));
       if (!nopencil) { /* the geometry of FR-312 round 5 is layout, not font: the border box is 122 px (+-0.5), with 3 px left and 18 px right padding, so a revert to 4 and 20 px or a 1 px change of the plate fails here whatever the font and the ratio (round 8 of #1599: the 3 px floor of the room alone let it pass). The content box is the border box less the border (as Chromium floors it to device pixels: the measured one; the limit plate's border is 1.5 px, so the box is 98 px at ratio 2 and 98.33 at 1.5, not 99) and the padding, within 0.05 px, so it is exact at every ratio (T204, PR 1530) */
-        assert.ok(nm.every((x) => Math.abs(x.bw - NARROW_PLATE) <= 0.5 && Math.abs(x.cbox - (x.bw - x.bb[0] - x.bb[1] - x.pad[0] - x.pad[1])) <= 0.05 && Math.abs(x.pad[0] - 3) <= 0.05 && Math.abs(x.pad[1] - 18) <= 0.05 && x.bb.every((w) => [1, 1.5].some((css) => Math.abs(w - Math.max(1, Math.floor(css * x.dpr + 1e-9)) / x.dpr) <= 0.01))), 'issue 1574: ' + tag + ': the narrow plate with a pencil is ' + NARROW_PLATE + ' px wide (+-0.5, border box) with a content box of that less its border (1 or 1.5 px as the state draws it, floored to a whole device px) and the padding (within 0.05 px), 3 px of left padding and an 18 px right reserve for the pencil (measured [border box, content box, [left, right] padding, [left, right] border, ratio]): ' + JSON.stringify(nm.map((x) => [x.bw, x.cbox, x.pad, x.bb, x.dpr])));
+        assert.ok(nm.every((x) => Math.abs(x.bw - NARROW_PLATE) <= 0.5 && Math.abs(x.cbox - (x.bw - x.bb[0] - x.bb[1] - x.pad[0] - x.pad[1])) <= 0.05 && Math.abs(x.pad[0] - 3) <= 0.05 && Math.abs(x.pad[1] - 18) <= 0.05 && x.bb.every((w) => Math.abs(w - Math.max(1, Math.floor(1.5 * x.dpr + 1e-9)) / x.dpr) <= 0.01)), 'issue 1574: ' + tag + ': the narrow plate with a pencil is ' + NARROW_PLATE + ' px wide (+-0.5, border box) with a content box of that less its border (1.5 px on the limit plate, floored to a whole device px) and the padding (within 0.05 px), 3 px of left padding and an 18 px right reserve for the pencil (measured [border box, content box, [left, right] padding, [left, right] border, ratio]): ' + JSON.stringify(nm.map((x) => [x.bw, x.cbox, x.pad, x.bb, x.dpr])));
         assert.ok(nm.every((x) => x.penClear !== null && x.penClear >= -0.01 && x.penGap >= -0.01), 'issue 1574: ' + tag + ': the word (and its ellipsis) ends before the pencil icon\'s left edge: the content box ends at least 0 px before the icon (measured clear, then the word\'s end to the icon): ' + JSON.stringify(nm.map((x) => [x.penClear, x.penGap])));
       }
       assert.ok(nm.every((x) => !x.ownDot), 'issue 1574: ' + tag + ': on the narrow plate with helpers the plate\'s own status dot is not drawn (the word, border and marquee say the state): ' + JSON.stringify(nm.map((x) => x.ownDot)));
@@ -216,6 +224,8 @@ const run = async (ctx, reqs) => {
     if (WIDE) await wideFont();
     if (WIDE) await js(`(()=>{const s=document.createElement('style');s.textContent=${jsLiteral(WIDE_CSS)};document.head.appendChild(s);})();0`);
     const wk = await js(PLATES());
+    assert.ok(wk.seen.some((x) => x.narrow && x.pc.includes('st-working')), 'issue 1574: ' + w + 'x' + h + ' narrow working: a narrow plate not waiting or at its limit is drawn (the case for the 1 px border)');
+    borderByState(w + 'x' + h + ' narrow working', wk.seen);
     const wp = wk.seen.filter((x) => x.narrow && x.helped && x.word === 'Working' && x.shown >= 1);
     assert.ok(wp.length >= 1, 'issue 1574: ' + w + 'x' + h + ' narrow working: a narrow plate with helpers, the word "Working" and at least one helper mark shown is drawn (the case for the gap), saw ' + JSON.stringify(wk.seen.filter((x) => x.narrow && x.helped).slice(0, 3).map((x) => [x.word, x.shown, x.gap])));
     assert.ok(wp.every((x) => x.gap !== null && x.gap >= MARK_GAP - 0.02), 'issue 1574: ' + w + 'x' + h + ' narrow working: the last helper mark shown is at least ' + MARK_GAP + ' px from the word (measured between the mark\'s right edge and the word\'s left edge), so it cannot read as the plate\'s own state: ' + JSON.stringify(wp.map((x) => [x.shown, x.gap])));
