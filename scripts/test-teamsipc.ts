@@ -43,6 +43,7 @@
  *  (format, id length, 10,000, members count, nesting) were rebuilt from the code's own limits.
  */
 import assert from 'assert';
+import { cpuMs } from './redact-growth-lib';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
@@ -330,9 +331,9 @@ section('listDeleteAndLimits', () => {
   eq(ops.list().templates.length, 0, 'gone');
   for (let i = 0; i < 50; i++) ok(ops.put({ name: 'T' + i, members: [mem('A')] }).ok, 'fill');
   ok(refused(ops.put({ name: 'One more', members: [mem('A')] })), 'the 50-template cap');
-  const t0 = Date.now();
-  const huge = ops.put({ name: 'x'.repeat(200000), description: 'y'.repeat(200000), members: [mem('A', { brief: 'z'.repeat(1000000) })] });
-  ok(refused(huge) && Date.now() - t0 < 2000, 'a huge value is refused quickly');
+  let huge!: ReturnType<typeof ops.put>;
+  const c0 = cpuMs(() => { huge = ops.put({ name: 'x'.repeat(200000), description: 'y'.repeat(200000), members: [mem('A', { brief: 'z'.repeat(1000000) })] }); }, 2000);
+  ok(refused(huge) && c0 < 2000, `a huge value is refused quickly (${c0.toFixed(0)} ms of CPU time)`);
   ok(refused(ops.put({ name: 'T', members: [mem('A', { brief: 'a\n'.repeat(500000) })] })), 'a million-line brief is refused');
   ok(store.list().length === 50, 'nothing extra stored');
 });
@@ -422,9 +423,10 @@ section('bounds', () => {
     eq(errOf(ops.put({ name: 'T', members: [mem('A')], junk: Array.from({ length: 90 }, () => Object.fromEntries(Array.from({ length: 60 }, (_, i) => ['k' + i, fillv]))) })), 'Template: too large.', `90 objects of 60 ${label} fields: over the total`);
   }
   const nulls = new Array(4000).fill(null);
-  const t1 = Date.now();
-  eq(errOf(ops.put({ name: 'T', members: [mem('A')], extra: Array.from({ length: 4000 }, () => nulls) })), 'Template: too large.', '4,000 arrays of 4,000 nulls: refused by the total');
-  ok(Date.now() - t1 < 1500, 'and quickly');
+  let err4000 = '';
+  const c1 = cpuMs(() => { err4000 = errOf(ops.put({ name: 'T', members: [mem('A')], extra: Array.from({ length: 4000 }, () => nulls) })); }, 1500);
+  eq(err4000, 'Template: too large.', '4,000 arrays of 4,000 nulls: refused by the total');
+  ok(c1 < 1500, `and quickly (${c1.toFixed(0)} ms of CPU time)`);
   // a sparse array is judged by its length first (the budget), not by its first hole
   eq(errOf(ops.put({ name: 'T', members: [mem('A')], junk: new Array(6000) })), 'Template: too large.', 'a sparse array of 6,000 is "too large"');
   // the budget is ONE for the whole copy, not one per array

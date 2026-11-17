@@ -6,20 +6,18 @@
 
    Compares every pair of worlds under src/renderer/realoffice/worlds (or DIR): exact copies of a fixture file, near copies (mask hash
    and difference hash, recoloured or re-encoded) and the average colour of wall, floor and desk (scripts/world-distinct.js holds the
-   method and the limits). worlds/known-clashes.json is read: a listed pair is a card clash, reported in one line, never a picture
-   waiver; a listed pair that no longer clashes fails. --measure prints the nearest distances of every pair and fails nothing. */
+   method and the limits). Card clashes are `test:world-catalogue`'s job (every one fails there; the known-clash list was removed with
+   T174). --measure prints the nearest distances of every pair and fails nothing. */
 'use strict';
 const fs = require('fs');
 const path = require('path');
 const D = require('./world-distinct');
-const cards = require('./world-cards');
 
 const ROOT = path.join(__dirname, '..');
 const argv = process.argv.slice(2);
 const argOf = (n) => { const i = argv.indexOf(n); return i >= 0 ? argv[i + 1] : undefined; };
 const MEASURE = argv.includes('--measure');
 const DIR = argOf('--worlds-dir') || path.join(ROOT, 'src', 'renderer', 'realoffice', 'worlds');
-const CARDS = path.join(ROOT, 'worlds');
 
 /* Runs in the hidden window: decodes one picture to RGBA, base64. The argument is a JSON literal of a data URL. */
 const PAGE = `window.__dec = async (url) => {
@@ -84,12 +82,6 @@ async function main(app, BrowserWindow) {
   }
 
   const fails = D.compareAll(worlds).map((c) => `${c.kind}: ${c.msg}`);
-  const cardsById = cards.readCards(CARDS).cards;
-  const { known, problems } = cards.loadKnown(CARDS);
-  fails.push(...problems);
-  const { reported } = cards.judge(cardsById, known);
-  for (const r of reported) console.log(`[KNOWN GAP] ${r} (a card clash listed in worlds/known-clashes.json; pictures are still compared and not waived)`);
-  fails.push(...cards.staleKnown(cardsById, known));
   for (const f of fails) console.error('FAIL ' + f);
   console.log(fails.length ? `check-world-distinct: ${fails.length} problem(s)` : `check-world-distinct OK (${worlds.length} worlds: ${worlds.map((w) => w.id).join(', ')}; ${D.LIMITS.dhash}/64 difference-hash bits, ${D.LIMITS.mask}/256 silhouette bits, delta E ${D.LIMITS.deltaE})`);
   return fails.length ? 1 : 0;

@@ -811,4 +811,25 @@ assert.ok(cl.parseFragment('- x <!-- hidden -->\n').errors.some((e) => /HTML com
   }
 }
 
+// spec 008 FR-272 (#1834): a fragment fails in its own PR when it would fail the site's rules at the fold (build-site.js, the same functions)
+{
+  const site = require('./build-site.js');
+  const siteRepo = (frag) => {
+    const dir = repo('', { 'x.md': frag });
+    fs.mkdirSync(path.join(dir, 'docs', 'site'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'docs', 'site', 'unreleased.json'), JSON.stringify({ phrases: ['Cheeky loft', 'Arcade world'] }));
+    return cl.check(dir).errors;
+  };
+  assert.deepStrictEqual(siteRepo('- **Fine lead** (spec 077 FR-075, issue #1): the loft is open.\n'), [], 'a clean fragment passes');
+  assert.deepStrictEqual(siteRepo('- **Fine lead** (spec 077): the cheeky world is not a listed phrase.\n'), [], 'one word of a phrase is not a hit');
+  assert.ok(siteRepo('- **The Cheeky  Loft opens**: text.\n').some((e) => /changelog\.d\/x\.md: .*names "Cheeky loft", which is not in a release/.test(e)), 'FAIL unreleased-phrase: a listed name (case, spaces) in a fragment must fail');
+  assert.ok(siteRepo('- **Fine lead**: text.\n  Continued line about the Arcade world.\n').some((e) => /names "Arcade world"/.test(e)), 'FAIL unreleased-phrase: a name on a continuation line must fail');
+  assert.ok(siteRepo('- **Spec 001 T167, a first slice**: text.\n').some((e) => /landing-page line keeps "Spec 001"/.test(e)), 'FAIL spec-number: a bold lead that starts with a spec number must fail');
+  assert.ok(siteRepo('- **A lead**: first sentence FR-12 stays. Second.\n').some((e) => /keeps "FR-1"/.test(e)), 'FAIL spec-number: an FR id outside a group must fail');
+  assert.deepStrictEqual(siteRepo('- **A lead**: first sentence. Second sentence names spec 077.\n'), [], 'a number after the first sentence never reaches the landing page');
+  assert.deepStrictEqual(site.bulletSiteProblems('- **Lead** (spec 001 T167): text.', ['Cheeky loft']), [], 'bulletSiteProblems: a (spec NNN) group is stripped');
+  // the real fragments and unreleased list pass or fail the same way as the build: nothing here is copied from build-site.js
+  assert.strictEqual(typeof site.landingBullet, 'function');
+}
+
 console.log('test-changelog: ok');

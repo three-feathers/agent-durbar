@@ -61,6 +61,18 @@
   const hasShared=()=>!!SH;
   /* the compiled shared module, once, only when none was found at load (tests of the source tree; in the page and the built tree it is
      always found, so nothing can replace it). True when it is used. */
+  /* spec 012 FR-185 (issue #1329): the shared GitHub last pass (`maskLoose`) runs once, over a finished desk output, never inside its readings (`withoutLoose`):
+     a head it hides inside a reading can leave a later reading without the token it needed. Without the shared module both are no-ops. */
+  const noLoose=f=>SH&&typeof SH.withoutLoose==='function'?SH.withoutLoose(f):f();
+  const looseText=t=>SH&&typeof SH.maskLoose==='function'&&typeof t==='string'?SH.maskLoose(t):t;
+  const lz=f=>looseText(noLoose(f));
+  let looseHits=0;
+  const looseNow=t=>{const x=SH&&typeof SH.maskLoose==='function'&&typeof t==='string'?SH.maskLoose(t,undefined,true,true):t;if(x!==t)looseHits++;return x;};
+  /* the excerpt runs the pass inside its readings, before it drops `_` (which the pass needs), so it is not monotone by construction: when the pass changed
+     anything, the reading with it fully off is made too and every piece it does not show is masked (`keep`, FR-182's rule), so nothing it hides shows */
+  const plainLz=f=>{const n0=looseHits,h=lz(f);if(looseHits===n0||h===null||h===''||!SH||typeof SH.withoutLooseAll!=='function')return h;
+    /* a `[redacted:` the text itself holds reads as a mask to `keep` (its pieces are cut at masks), so that text fails closed */
+    try{const r=SH.withoutLooseAll(f);return r===null||r===''?r:h===r?h:h.includes('[redacted:')?null:keep(h,r);}catch(e){return null;}};
   const useShared=m=>{if(SH||!m||typeof m.unhide!=='function')return false;SH=m;return true;};
   const unhide=t=>{if(!SH)throw new Error('no unhide');const c=SH.unhide(t);if(typeof c!=='string')throw new Error('no unhide');return c;};
   const unhid=(raw,run,bare,fail)=>{try{const s=String(raw==null?'':raw),c=unhide(s);if(c===s)return run(s);const m=run(c);return m===null||m===bare(c)?run(s):m;}catch(e){return fail;}};
@@ -113,7 +125,7 @@
   const maskPlain0=(raw,redact,codeWord)=>{try{
     let r0=raw;if(!asBefore&&lineCont(raw)){r0=redact(raw);if(typeof r0!=='string')throw new Error('mask');}
     const u=unesc(r0),m=both(u,plainKeep(u,codeWord),redact);
-    return m.replace(/_/g,'');}catch(e){if(e===OVER)throw e;return null;}}; /* OVER is final: unhid's catch gives null, never the text as written */
+    return looseNow(m).replace(/_/g,'');}catch(e){if(e===OVER)throw e;return null;}}; /* spec 012 FR-185: the GitHub last pass before `_` goes, which it needs */ /* OVER is final: unhid's catch gives null, never the text as written */
   const maskPlain1=(raw,redact,codeWord)=>{if(typeof redact!=='function')return null;
     const s0=String(raw==null?'':raw);let w;try{w=splitFirst(s0.length>DESK_SPLIT_MAX?windowOf(shownSource(s0)):s0);}catch(e){return null;}
     const go=(x,u)=>u(x,t=>maskPlain0(t,redact,codeWord),c=>plainKeep(unesc(c),codeWord).replace(/_/g,''),null);
@@ -147,9 +159,9 @@
     let r;asBefore=true;try{r=noShell(fn);}finally{asBefore=false;}if(r==null||r==='')return {v:r,r};return {v:h===r?h:keep(h,r),r};};
   const shellBoth=(raw,fn)=>shellPair(raw,fn).v;
   const maskPlain=(raw,redact,codeWord)=>{try{return shellBoth(raw,()=>maskPlain1(raw,redact,codeWord));}catch(e){return null;}};
-  const maskRaw=(raw,redact)=>{try{const m=shellBoth(raw,()=>maskRaw1(raw,redact));return m==null?'':m;}catch(e){return '';}};
+  const maskRaw=(raw,redact)=>{try{const m=lz(()=>shellBoth(raw,()=>maskRaw1(raw,redact)));return m==null?'':m;}catch(e){return '';}};
   /* raw agent text -> masked, plain, at most n characters (no n: not cut). '' when masking is not possible. */
-  const excerpt=(raw,redact,n,codeWord)=>{const p=maskPlain(String(raw==null?'':raw),redact,codeWord);if(p===null)return '';return n==null?p:cutter(p,n);};
+  const excerpt=(raw,redact,n,codeWord)=>{const p=plainLz(()=>maskPlain(String(raw==null?'':raw),redact,codeWord));if(p===null)return '';return n==null?p:cutter(p,n);};
   /* a tool label masked the way the live readout (LIVEACT) masks it: a command by maskSecretCommand, a URL by maskSecretUrl, anything else by redact.
      mask = {redact, cmd, url}. A missing function for the kind that is needed gives '' (fail closed). */
   const isUrl=s=>/^[a-z][a-z0-9+.-]{1,20}:\/\//i.test(s);
@@ -189,10 +201,10 @@
       const sf=splitFirst(s);if(sf===s&&unhide(s)===s)return ref; /* round 9: the split step on the label once, shared with the reading below */
       const h=escMask(s,t=>{const go=(x,u)=>u(x,one,c=>c,'');if(t.length>DESK_SPLIT_MAX){const r=old(()=>go(t,unhid));return r==null?'':r;}const m=both2(t,t===s?sf:splitFirst(t),go);return m==null?'':m;});
       return h?keep(h,ref):'';}catch(e){return '';}};
-  const maskLabel=(raw,kind,mask)=>{try{return shellBoth(raw,()=>maskLabel1(raw,kind,mask));}catch(e){return '';}};
+  const maskLabel=(raw,kind,mask)=>{try{return lz(()=>shellBoth(raw,()=>maskLabel1(raw,kind,mask)));}catch(e){return '';}};
   /* spec 012 FR-184 (review of PR 1824, F1): the label and its reading without the shell readings ({text, ref}; ref is text when it was not read again; '' for
      both on a failure). The permission card checks both: a command the reading as before cannot match back to what runs stays lost (as on main) */
-  const maskLabelPair=(raw,kind,mask)=>{try{const p=shellPair(raw,()=>maskLabel1(raw,kind,mask));const t=p.v||'';return t?{text:t,ref:p.r||''}:{text:'',ref:''};}catch(e){return {text:'',ref:''};}};
+  const maskLabelPair=(raw,kind,mask)=>{try{const p=noLoose(()=>shellPair(raw,()=>maskLabel1(raw,kind,mask)));const t=p.v||'';return t?{text:looseText(t),ref:looseText(p.r||'')}:{text:'',ref:''};}catch(e){return {text:'',ref:''};}};
   /* the wrapper the page uses: fallback words and the "is masking possible" flag */
   function create(o){
     const red=o&&typeof o.redact==='function'?o.redact:null, cut=o&&typeof o.cut==='function'?o.cut:cutter;
@@ -201,7 +213,7 @@
     const mask=t=>t==null?'':maskRaw(String(t),red);
     /* masked, plain, at most n characters (no n: not cut); `fallback` (default 'Finished.') when there is text but masking is not possible */
     const ex=(t,n,fallback)=>{if(t==null||t==='')return '';const fb=fallback==null?'Finished.':fallback;if(!red)return fb;
-      const p=maskPlain(String(t),red,true);if(p===null)return fb;return n==null?p:cut(p,n);};
+      const p=plainLz(()=>maskPlain(String(t),red,true));if(p===null)return fb;return n==null?p:cut(p,n);};
     return {mask,excerpt:ex,plain,get ready(){return !!red&&hasShared();}};
   }
   /* spec 012 FR-182 (review of PR 1721): whether the shared step finds a token split by a line break, a mark, a tag, a comment or a hidden character; throws without
@@ -215,5 +227,5 @@
   const _deskWindowStepsForTest=()=>{const n=winSteps;winSteps=0;return n;};
   /* test only (review of PR 1824, F3): the run the desk label step reads with the shell readings on */
   const _deskEscRunForTest=()=>erun().source;
-  return {create,plain,plainKeep,plainMarks,unesc,unhide,maskRaw,excerpt,maskLabel,maskLabelPair,useShared,splitHides,_deskWindowForTest,_deskWindowStepsForTest,_deskEscRunForTest,DESK_SPLIT_MAX,BOTH_WORK};
+  return {create,plain,plainKeep,plainMarks,unesc,unhide,maskRaw,excerpt,maskLabel,maskLabelPair,noLoose,looseText,useShared,splitHides,_deskWindowForTest,_deskWindowStepsForTest,_deskEscRunForTest,DESK_SPLIT_MAX,BOTH_WORK};
 });

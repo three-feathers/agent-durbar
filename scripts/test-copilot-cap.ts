@@ -3,6 +3,7 @@
  * no runtime, no account, no credits.
  */
 import * as assert from 'assert';
+import { loggingTimers, withBackstop } from './hang-backstop';
 import { randomUUID } from 'crypto';
 import * as fs from 'fs';
 import * as os from 'os';
@@ -138,14 +139,12 @@ async function main(): Promise<void> {
   (s3 as unknown as { disconnect: () => Promise<void> }).disconnect = () => new Promise(() => undefined);
   (s3.rpc as Record<string, unknown>).ui = { handlePendingSessionLimitsExhausted: () => { hung++; return new Promise(() => undefined); } } as never; // hangs for ever
   s3.fire('session_limits_exhausted.requested', { requestId: 'rt-hang', maxAiCredits: 30, usedAiCredits: 35 }); // the runtime's own pending limit, which Stop must cancel
-  const t0 = Date.now();
-  await ad.interrupt(sid3); // Interrupt goes on too
-  assert.ok(Date.now() - t0 < 3000, 'interrupt() finished with cancel and abort hanging');
-  s3.fire('session_limits_exhausted.requested', { requestId: 'rt-hang2', maxAiCredits: 30, usedAiCredits: 35 });
-  await ad.stop(sid3);
-  assert.ok(Date.now() - t0 < 3000, 'stop() finished although the runtime never answered the limit');
+  await loggingTimers(async () => {
+    await withBackstop(ad.interrupt(sid3), 'interrupt() with cancel and abort hanging'); // Interrupt goes on too: it finished
+    s3.fire('session_limits_exhausted.requested', { requestId: 'rt-hang2', maxAiCredits: 30, usedAiCredits: 35 });
+    await withBackstop(ad.stop(sid3), 'stop() although the runtime never answered the limit'); // Stop finished
+  }, (d) => assert.ok(d.includes(80), `each hung step is given up on after stopStepMs (80 ms), by a timer; timers: ${d.join(',')}`));
   assert.strictEqual(hung, 2, 'the hung pending-limit call was made twice (interrupt, stop) and given up on');
-  assert.ok(Date.now() - t0 < 6000, '... with cancel, abort and disconnect all hanging');
   assert.strictEqual((ad as unknown as { sessions: Map<string, unknown> }).sessions.has(sid3), false, '... and the session is gone from the adapter');
 
   // spec 052 FR-229 (real 2026-11-02): a message sent before a late abort lands is cleared by it, so it waits; the row says what is true

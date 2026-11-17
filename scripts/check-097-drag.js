@@ -96,9 +96,21 @@ module.exports = async (ctx) => {
     return best;
   };
 
-  for (const world of WORLDS) for (const [w, h] of SIZES) {
-    const tag = `${world} ${w}x${h}`;
+  /* spec 102 T174 (review of #1764): the Cave names `circle`, whose rooms sit on the ring: they follow the saved room order in the ring's own sequence, but not in reading order, which is what Q31 measures (T175's drag preview on ring rectangles is unbuilt, a KNOWN GAP in spec 102 Changes 2026-11-17 (third entry)). Where the page says `circle` the room drag asserts what the circle really does; where it says `rows` the Q31 asserts stay. The Cave runs a second time as a page-only rows fixture so Q31 is still exercised there at both sizes */
+  const arrOf = () => js(`document.querySelector('#stage .ro').dataset.arrangement`);
+  const toRows = async (tag) => {
+    await js(`window.DurbarRealOfficeWorlds.cave.arrangement='rows';0`);
+    const id = await js(`window.__durbarSimUi.realLayout().zones[0].desks[0].id`);
+    for (const st of ['error', 'idle']) await js(`window.__durbarSimEmit({type:'status',sessionId:${jsLiteral(id)},timestamp:Date.now(),status:${jsLiteral(st)},intent:'x'});0`);
+    await must(`document.querySelector('#stage .ro').dataset.arrangement==='rows'`, `${tag}: the rows fixture draws rows`);
+    await settled();
+  };
+  for (const world of WORLDS) for (const asRows of world === 'cave' ? [false, true] : [false]) for (const [w, h] of SIZES) {
+    const tag = `${world}${asRows ? ' (rows fixture)' : ''} ${w}x${h}`;
     await load(w, h, world);
+    if (asRows) await toRows(tag);
+    const circ = (await arrOf()) === 'circle';
+    if (world === 'cave') assert.ok(asRows ? !circ : true, `${tag}: the fixture is rows`);
     if (world !== 'photo') assert.strictEqual(await js(`document.querySelector('#stage .ro').dataset.world`), world, `${tag}: the world is shown`);
     const { r: A, o: O, k } = await bigRoom();
     const pa = await pathOf(A);
@@ -210,7 +222,8 @@ module.exports = async (ctx) => {
     } else {
       await drag(await grab(signSel(signs[0])), await center(signSel(signs[signs.length - 1])));
       await must(`window.__durbarSimUi.order.get().rooms.length>=3`, `${tag}: a sign drag saved a room order`);
-      await must(`(()=>{const U=window.__durbarSimUi,ps=[...document.querySelectorAll('#stage .ro-sign')].filter(s=>s.querySelector('.ro-sc')).map(s=>({p:U.order.path('room:'+s.dataset.folder),x:s.offsetLeft,y:s.offsetTop})).sort((a,b)=>Math.abs(a.y-b.y)>4?a.y-b.y:a.x-b.x).map(s=>s.p);return ps.join()===U.order.get().rooms.filter(r=>ps.includes(r)).join()})()`, `${tag}: the rows draw the saved room order after the first drag (Q31)`);
+      if (circ) await must(`(()=>{const U=window.__durbarSimUi,z=[...new Set(U.realLayout().zones.map(z=>z.id))].map(id=>U.order.path('room:'+id));return z.length>=3&&z.join()===U.order.get().rooms.filter(r=>z.includes(r)).join()})()`, `${tag}: the ring seats the rooms in the saved order, in its own sequence (reading order is the ring's, so Q31's reading-order assert is rows only; circle-ring-order)`);
+      else await must(`(()=>{const U=window.__durbarSimUi,ps=[...document.querySelectorAll('#stage .ro-sign')].filter(s=>s.querySelector('.ro-sc')).map(s=>({p:U.order.path('room:'+s.dataset.folder),x:s.offsetLeft,y:s.offsetTop})).sort((a,b)=>Math.abs(a.y-b.y)>4?a.y-b.y:a.x-b.x).map(s=>s.p);return ps.join()===U.order.get().rooms.filter(r=>ps.includes(r)).join()})()`, `${tag}: the rows draw the saved room order after the first drag (Q31)`);
       const s1 = await signsInOrder(), pathA = await pathOf(s1[0]);
       await js(`document.getElementById('srAnnounce').textContent=''`);
       await drag(await grab(signSel(s1[0])), await center(signSel(s1[1])));
@@ -218,7 +231,8 @@ module.exports = async (ctx) => {
       await must(`window.__durbarSimUi.order.get().rooms.indexOf(${jsLiteral(pathA)})>window.__durbarSimUi.order.get().rooms.indexOf(${jsLiteral(await pathOf(s1[1]))})`, `${tag}: the sign moved its room one place later in the saved order`);
       await must(`/moved to position 2 of \\d+\\./.test(document.getElementById('srAnnounce').textContent)`, `${tag}: the room's move is spoken (heard: ${await said()})`);
       assert.deepStrictEqual(await js(`window.__durbarSimUi.order.get().rooms`), (await saved()).rooms, `${tag}: and is the saved document`);
-      await must(`(()=>{const s=[...document.querySelectorAll('#stage .ro-sign')].filter(s=>s.querySelector('.ro-sc')).map(s=>({id:s.dataset.folder,x:s.getBoundingClientRect().left,y:s.getBoundingClientRect().top})).sort((a,b)=>Math.abs(a.y-b.y)>4?a.y-b.y:a.x-b.x).map(s=>s.id);return s.join()===${jsLiteral(want.join())}})()`, `${tag}: the rows keep the saved order (Q31): ${want}, drawn ${await signsInOrder()}`);
+      if (circ) await must(`(()=>{const U=window.__durbarSimUi,z=[...new Set(U.realLayout().zones.map(z=>z.id))].map(id=>U.order.path('room:'+id));return z.length>=3&&z.join()===U.order.get().rooms.filter(r=>z.includes(r)).join()})()`, `${tag}: after the second drag the ring's sequence follows the saved order (circle-ring-order)`);
+      else await must(`(()=>{const s=[...document.querySelectorAll('#stage .ro-sign')].filter(s=>s.querySelector('.ro-sc')).map(s=>({id:s.dataset.folder,x:s.getBoundingClientRect().left,y:s.getBoundingClientRect().top})).sort((a,b)=>Math.abs(a.y-b.y)>4?a.y-b.y:a.x-b.x).map(s=>s.id);return s.join()===${jsLiteral(want.join())}})()`, `${tag}: the rows keep the saved order (Q31): ${want}, drawn ${await signsInOrder()}`);
       assert.strictEqual(await panelOpen(), false, `${tag}: no chat opened`);
     }
     await checks(`${tag} after the room moves`);

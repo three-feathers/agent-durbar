@@ -1,0 +1,1 @@
+- Internal: 17 test suites (names n to z) no longer fail on a busy machine: fixed time limits became a check of the calls made, or a limit on CPU time, or a long hang guard (issue #1853).
