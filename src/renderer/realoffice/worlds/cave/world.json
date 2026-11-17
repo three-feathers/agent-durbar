@@ -3,6 +3,8 @@
  "id": "cave",
  "name": "Prehistoric cave",
  "defaultSet": "prehistoric",
+ "storeys": true,
+ "minFace": 30.5,
  "css": "world.css",
  "wall": "wall.webp",
  "monitor": "monitor.webp",

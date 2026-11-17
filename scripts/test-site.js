@@ -91,7 +91,7 @@ for (const t of landing.themes) assert.ok(index.includes(`screenshots/${t.screen
 assert.strictEqual(landing.themes.length, 2, 'two themes (spec 035 FR-017)');
 for (const h of landing.harnesses) assert.ok(index.includes(`<h3>${h.name}</h3>`), `agent app ${h.name}`);
 for (const id of ['features', 'how', 'themes', 'apps', 'safety', 'download']) assert.ok(index.includes(`id="${id}"`), `landing section ${id}`);
-assert.ok(!/FR-\d|spec 0\d\d|spec \d{3}/i.test(index), 'no FR or spec numbers on the landing page');
+assert.ok(!site.LANDING_REF_RE.test(index), 'no FR or spec numbers on the landing page');
 assert.ok((index.match(/<section class="sec" id="new">[\s\S]*?<\/section>/) || [''])[0].split('<li>').length - 1 <= 5, "at most 5 bullets in What's new");
 
 // the docs page: the README sections, the feature grid, the gallery, the full release notes
