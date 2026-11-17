@@ -49,13 +49,16 @@ const DRIVERS = [
   { name: 'check-serious-motion' }, // spec 052 FR-069 (issue #1182): Serious mode hides only the moods; Motion is its own switch; reduced motion still stops it; Flat and Real office, both sizes
   { name: 'check-settings-worlds' }, // spec 102 FR-301 (T266): Settings > World: picture cards in one radio group, a closed flag unlisted, keys, focus against choice, the zoom, reduced motion, forced colours
   { name: 'check-settings-nav' }, // spec 052 FR-226 (T219): the Settings section list: built from the headings, jump, aria-current follows the scroll, keys, every world, reduced motion, narrow row
+  { name: 'check-settings-nav', label: 'check-settings-nav retro', env: { DRIVER_WORLD: 'retro' } }, // spec 102 T321 (issue #1399): the Settings section list over the arcade (its Real office row only)
   { name: 'check-069-toggle-scroll' }, // spec 069 FR-069 (issue #1624): a Settings switch that repaints the page keeps the scroll, the focus and the open Advanced block
   { name: 'check-settings-save' }, // spec 011 FR-012 (issue #1023): a Settings row whose save fails returns to the value in force and says so
   { name: 'check-rail' }, // spec 005 FR-190, FR-194, FR-216 and 052 FR-215: the agent rail's List view: fit, order, two heights, folders that collapse, Your door, Mac drag areas
   { name: 'check-rail-resize' }, // spec 005 FR-236 (issue #1223): the agent rail's width: drag, keys, double-click reset, remembered, clamped when the window shrinks, both sizes
   { name: 'check-unread' }, // spec 001 FR-170..FR-177, spec 005 FR-176/FR-177 (issue #691): a finished agent's reply stays marked New until its chat is shown
+  { name: 'check-unread', label: 'check-unread retro', env: { DRIVER_WORLD: 'retro' } }, // spec 102 T319 (issue #1399): the New mark and the still highlights in the arcade (its Real office step)
   { name: 'check-001-lights' }, // spec 001 FR-230, FR-231: Open office's screens tinted by status as Real office's, no card glow or waiting halo, every kit, both sizes
   { name: 'check-auto-follow' }, // spec 052 FR-182..FR-190 (issue #686): opt-in Auto-follow and the attention queue: off by default, send, arrivals, guards, Previous/Next, pause, empty queue, fit
+  { name: 'check-auto-follow', label: 'check-auto-follow retro', env: { DRIVER_WORLD: 'retro' } }, // spec 102 T320 (issue #1399): auto-follow's return and the desk mark in the arcade (about 215 s on macOS; the suite's limit is 600 s per driver)
   { name: 'check-052-follow-notice' }, // spec 052 FR-238..FR-241 (owner, 2026-11-09): the Auto-follow notice: both notices, countdown, Stay and Escape, background pause, announcement priority, reduced motion, four looks at two sizes
   { name: 'check-helper-bar' }, // spec 015 FR-020 (issue #1142): the Sub-agent activity / Back to parent chat bar stays at the top of a helper's chat while it scrolls, opaque, both sizes
   { name: 'check-helper-more' }, // spec 005 FR-234 (issue #1145): a helper's chat has no empty More menu (the button is hidden), a main agent's chat keeps it, both sizes
@@ -85,6 +88,7 @@ const DRIVERS = [
   { name: 'shots-003-mode-back' },
   { name: 'check-sandbox-floor' }, // spec 087: the OS sandbox chip, tooltips, note (Continue / Always / Change mode…), Codex card line, Settings line
   { name: 'shots-012-signin-chat' },
+  { name: 'check-058-mcp-switch-persist' }, // spec 058 (2026-11-14 delta): a switch stays off after closing the chat, a reload and Restart session
   { name: 'shots-058-mcp-restart' }, // spec 058: per-server Restart and Restart session with these servers
   { name: 'shots-058-mcp-signin' }, // spec 058 T102/T104: Sign in for a Copilot server that needs it (simmcpauth), the two-step open, the steps
   { name: 'shots-058-mcp-words' }, // spec 058 T113-T115: state words, hints, Details and live refresh in the MCP dialog
@@ -95,7 +99,10 @@ const DRIVERS = [
   { name: 'shots-058-mcp-launch', label: 'shots-058-mcp-launch retro', env: { DRIVER_WORLD: 'retro' } }, // spec 102 (issue #1566): the strip over the arcade at 15 agents, 1280x800 and 1440x900: no office scroll while shown and after Dismiss
   { name: 'shots-058-mcp-launch', label: 'shots-058-mcp-launch retro 16', env: { DRIVER_WORLD: 'retro', DRIVER_CASE: '16', DRIVER_AGENTS: '16' } }, // spec 102 T308: 16 agents under the strip: the lent layout still scrolls, so it is refused (ro-tight off)
   { name: 'shots-058-mcp-launch', label: 'shots-058-mcp-launch retro filter', env: { DRIVER_WORLD: 'retro', DRIVER_CASE: 'filter', DRIVER_AGENTS: '24' } }, // spec 102 T308: a status filter under the strip: ro-tight never set while the floor scrolls, the note keeps its top padding
+  { name: 'shots-058-mcp-launch', label: 'shots-058-mcp-launch retro strips', env: { DRIVER_WORLD: 'retro', DRIVER_CASE: 'strips' } }, // spec 102 T346 (issue #1625): 15 agents under each restore, away, crash and follow strip alone and the pairs away+follow, restore+away: no office scroll, both sizes; the still-scrolling 1589 scenes (3 strips, MCP list open) are deliberately not asserted until 1685 lands
   { name: 'shots-058-mcp-launch', label: 'shots-058-mcp-launch photo 18', env: { DRIVER_CASE: 'photo', DRIVER_AGENTS: '18', DRIVER_H: '760' } }, // spec 102 T308: a world that is not aisles is never lent the padding
+  { name: 'check-102-focus' }, // spec 102 T166: the circle layout's focus box is one hidden, still, textless box inside the room and clear of the zones; a picture that fails moves no desk (page-only fixture, 1440x900 and 1280x800)
+  { name: 'check-102-cabinet-guard' }, // spec 102 T171: the arcade cabinet's monitor guard fails closed and a refused entry clears the reused cabinet; hostile entries move nothing (page-only fixture, 1440x900 and 1280x800)
   { name: 'check-102-arcade-filter-note', env: { DRIVER_WORLD: 'retro' } }, // spec 102 (issue #1588, T310): the arcade at 14, 13 and 11 agents with a status filter set (15 cannot be driven: the simulator's basic agent never works), 1280x800 and 1440x900: no office scroll, the note stays clear
   { name: 'shots-058-mcp-signin-refresh' }, // spec 058 FR-208..FR-216: the sign-in refresh lines, Stop during the wait, the Settings switch
   { name: 'shots-076-orgpolicy' }, // spec 076 FR-202..FR-205 (#602): what the agent app's own organization policy blocks, greyed with the reason
@@ -135,6 +142,7 @@ const DRIVERS = [
   { name: 'check-chat-title' }, // spec 052 FR-180 (#789): the chat header's title uses the free room up to the buttons
   { name: 'check-no-demo-badge' }, // spec 052 FR-181: no Demo / Live badge in the top bar; the demo cues remain
   { name: 'check-logo-family' }, // spec 101 FR-072: Settings > Logo, the top-bar icon on every theme, world and forced colours, tile and name unchanged
+  { name: 'check-logo-family', label: 'check-logo-family retro', env: { DRIVER_WORLD: 'retro' } }, // spec 102 (issue #1399): the Real office seam in the arcade: the tile wears the arcade's own pair (yellow, dark ink), not Photo's plate
   { name: 'check-sim-guard' }, // spec 010 FR-026: the real preload API is refused by main under DURBAR_SIM
   { name: 'shots-069-mcp-global' }, // spec 069: add to the agent apps' own lists, review, remove, source chips
   { name: 'shots-069-harmonize' }, // spec 069 part 2: copy servers between the agent apps' lists
@@ -152,8 +160,10 @@ const DRIVERS = [
   { name: 'check-characters' }, // spec 077 FR-064..FR-069: Settings > Characters on Retro Pixel (Cheeky, Minimalist, the theme's own)
   { name: 'check-removed-themes' }, // spec 035 FR-017, FR-018: a stored id of a removed theme shows Clean Office, in both sizes; Retro stays
   { name: 'shots-040-picker' }, // spec 040 FR-031, FR-032: no AI maker or Import; Remove a saved theme asks first, Clean Office after
+  { name: 'check-charencoder' }, // spec 096 FR-022..FR-026: the sandboxed encoder window on fixture sheets, its refusals, its session; the simulator's fake generator (FR-070)
   { name: 'check-permission-scope' }, // spec 003 FR-108: the approval card says how far "for this session" reaches
   { name: 'check-permission-lookalike' }, // spec 003 FR-117..FR-119 (#1300): lookalike letters marked on the approval card, its line, the session button from the key, chips, why-allowed; all buttons stay
+  { name: 'check-005-announce-request' }, // spec 005 FR-237 (#1488): the first permission request or question after a chat opens is what #srAnnounce ends on, not "Working…"
   { name: 'check-answer-safety' }, // spec 052 FR-209..FR-212: the answer bar, a held Enter, a limit in flight, a plan while typing
   { name: 'check-inbox-safety' }, // spec 052 FR-206..FR-208: Needs you: a stale button, a held key and a limit row answer nothing they should not
   { name: 'check-needs-panel' }, // spec 052 FR-191..FR-195 (T196, T197): Your door, the Needs you panel behind its flag: non-modal, no focus change on opening, app start with Later, no shift, Esc and the amber toggle, All clear, Real office slips
@@ -185,6 +195,7 @@ const DRIVERS = [
   { name: 'check-office-ops-real' }, // spec 097 FR-186: operation counts of Real office, never times (renders, layout reads, nodes, attribute writes, elements recalculated, animations, picture area)
   { name: 'shots-097-realoffice' }, // spec 097 P1: Real office mode (the switch, the scene, the lights, flat loads none of it)
   { name: 'check-097-crews' }, // spec 097 FR-335, FR-336 (issue #1154): Real office with each Characters value draws its set or the Office people, no crew picture, the true note
+  { name: 'check-097-lobby-facing' }, // spec 097 FR-191, FR-194 (#1743): every lobby visitor faces the fixture it stands at (the picture's drawn side, mirrored or not, against the fixture's side) in the Photo office, the arcade and the cave, both sizes
   { name: 'shots-readme-real' }, // spec 008 delta 2026-11-08 (issue #1256): the README's lead pictures, Real office and its Needs you inbox
   { name: 'shots-070-flat-look' }, // spec 070 A14: Flat's modern look behind html[data-flat-look] (24 px controls on, today's off; Retro and Real office equal with it on)
   { name: 'check-102-welcome' }, // spec 102 FR-352 (T206): the arcade's first-run card stands in the drawn hall: the picture loads, shows beside the card, the card is opaque and its text is 4.5:1, both sizes; four mutants (WELCOME_MUTANT)
@@ -204,6 +215,7 @@ const DRIVERS = [
   { name: 'check-097-letter', label: 'check-097-letter retro', env: { DRIVER_WORLD: 'retro' } }, // the same in the Retro arcade
   { name: 'check-097-letter', label: 'check-097-letter cave', env: { DRIVER_WORLD: 'cave' } }, // the same in the Prehistoric cave (spec 097 FR-377: one of the three Real office worlds)
   { name: 'check-097-order' }, // spec 097 FR-345..FR-348 (#1152): rooms, desks and places rearranged in Real office by key and folder menu on spec 033's one order; the flat order shows, both sizes
+  { name: 'check-102-arcade-menu' }, // spec 102 T317 (issue #1399): the folder menu on an arcade sign: Move earlier / later say the room keeps its place (spec 097 FR-354); the signs do not move and nothing is saved
   { name: 'check-097-drag' }, // spec 097 FR-352..FR-355 (#1152, Q30..Q33): drag a plate or folder sign in Real office (Photo, cave, arcade), the lobby by chip button and the +N menu, on the one saved order; both sizes
   { name: 'check-097-slip-plates' }, // spec 097 (bug 1434): no request slip covers a plate, sign, chair label, chip, cue or face; 15 agents, both sizes, three worlds
   { name: 'check-097-plate-pencil' }, // spec 059 FR-170 (#1155): the rename pencil beside a Real office plate's name, F2 on a plate, both sizes
@@ -220,12 +232,15 @@ const DRIVERS = [
   { name: 'check-097-world-look' }, // spec 097 FR-350, FR-351 (#1153): a world keeps its own colours whatever theme is picked, and the arcade's drop overlay reads
   { name: 'shots-097-cave' }, // spec 097 phase 4: the Prehistoric cave behind its flag (World row, its set, any set in any world, no blend)
   { name: 'shots-001-lobby' }, // spec 001 FR-034..FR-040: Boss queue, Bank, Postbox and its letter, who is at a place (simsched in its own query)
+  { name: 'check-102-arcade-postbox' }, // spec 102 T318 (issue #1399): the Postbox in the arcade: a lobby plate with the arcade's word, the missed runs, a click opens Settings > Schedules
   { name: 'check-done-desk-mask' }, // spec 041 FR-065: no token of a done reply on the office floor
   // spec 052 FR-171: wrapping, sizes, box widths, field weight, dark contrast. Two drivers that run at once (issue #738: one took ~650 s
   // against the 600 s limit); the light part also has the built-in themes' contrast, the dark part the tones and the stylesheet check
   { name: 'check-ui-text', label: 'check-ui-text light', env: { UITEXT_PART: 'light' } },
   { name: 'check-ui-text', label: 'check-ui-text dark', env: { UITEXT_PART: 'dark' } },
-  { name: 'shots-006-crash' }, // spec 006 FR-038..FR-046 (#606): the crash card (Resume all, Pick…, Dismiss), per-row resume, the lost-turn note
+  // spec 006 FR-038..FR-046 (#606): the crash card (Resume all, Pick…, Dismiss), per-row resume, the lost-turn note
+  { name: 'shots-006-crash' },
+  { name: 'shots-006-crash', label: 'shots-006-crash retro', env: { DRIVER_WORLD: 'retro' } }, // spec 097 (issue #1567): the Real office passes in the arcade
   { name: 'shots-074-navigator', env: { DURBAR_SIM_FLOORS: '1' } }, // spec 074: Go to (keyboard navigator), chat numbers, the shortcut in Settings
   { name: 'shots-095' }, // spec 095 phase 3: search conversations: the box, the results in the List view, open and jump, keyboard, live region, end-state notes, the shortcut in Settings
   { name: 'check-browser-scenarios' }, // spec 080 T018 AC2/AC4: US1 scenarios 1-5 and US2 scenarios 1-3 incl. SC-002 and SC-004; confirm, prompt, sensitive fields, sliding element, redirect, basic-auth pages
@@ -270,6 +285,7 @@ const NOT_IN_SUITE = {
   'shots-034': 'passes alone but takes about 124 s (fixed settles at both sizes, Serious mode, reduced motion, mini); CI is near its limit (#738). Needs its sleeps turned into until() waits before it joins the suite. Since spec 068 FR-005 it checks that the credit limit is a break, not a faint',
   'shots-024-custom': 'passes alone with DURBAR_SIM_PLACES=3 but takes about 89 s (custom places: seeding, Add / Edit dialog, Settings, rename, delete at both sizes); too long for the suite today. Run it by hand: DURBAR_SIM_PLACES=3 as its header says',
   'check-rename': 'npm run check:rename, about 140 s (spec 059, issue #372: rename a session, every kind and level, both sizes); check-rename-inline in DRIVERS covers the in-place rename on every surface',
+  'check-office-overlap': 'run by `npm run check:office` and by check-parallel.js (the Office layout job and its Real office and arcade variants, OFFICE_VIEW/OFFICE_WORLD): it needs those environment variables and measures every layout, so it is not a one-driver suite entry (spec 102 issue #1632 added a tooltip assert)',
   'check-perf': 'npm run check:perf measures frame times and DOM growth under load; its limits depend on the machine, so it is a local check, not a gate on shared runners',
 };
 
