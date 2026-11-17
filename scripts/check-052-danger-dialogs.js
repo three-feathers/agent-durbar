@@ -36,7 +36,7 @@ const LOOKS = [
   ['photo', { officeview: 'real' }, null], // control: ui is clean
   ['dark fixture', {}, CHECK_DARK], // control: ui is clean
 ];
-const KNOWN_SITES = 22; // End all sessions, the 18 others of issue #1647, the Teams Delete confirm (spec 111 T008, teams.js), Remove theme (issue #1570, screens.js) and the member editor's Discard confirm (spec 111 T009, teameditor.js); each is built here through DurbarDialog(document) from the label read in the source, and measured at rest, focused and hovered
+const KNOWN_SITES = 23; // End all sessions, the 18 others of issue #1647, the Teams Delete confirm (spec 111 T008, teams.js), Remove theme (issue #1570, screens.js) and the member editor's Discard confirm (spec 111 T009, teameditor.js) and the character maker's Delete this character? confirm (spec 096 T043); each is built here through DurbarDialog(document) from the label read in the source, and measured at rest, focused and hovered
 
 /* the call sites, read from the source (danger-sites.js: every src/renderer/*.js, any spelling; test-danger-sites.js proves the reader) */
 function sites() {
@@ -115,7 +115,7 @@ module.exports = async (ctx) => {
         assert.notStrictEqual(hov.bg, rest.bg, `${tag}: danger button hover looks the same as rest (rgb(${hov.bg})): no hover state`);
         if (!shot && site.label === 'Revoke all') { shot = true; await H.shot(path.join(OUT, `052-danger-dialogs-${look.replace(/\W+/g, '-')}-${w}x${h}.png`), { prep: 'none', settle: false, tag: 'danger-dlgs' }); }
         H.wc().sendInputEvent({ type: 'mouseMove', x: 1, y: 1 });
-        H.key('Escape');
+        await H.key('Escape');
         if (!(await until(`!document.querySelector('.dlg')`, 3000))) await js(`document.querySelectorAll('.dlg-ov').forEach(n=>n.remove());0`);
         await js(`document.getElementById('mut')&&document.getElementById('mut').remove();0`);
       }

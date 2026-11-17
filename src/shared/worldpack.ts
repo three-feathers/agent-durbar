@@ -25,9 +25,8 @@ export const MIN_SCREEN_H = 20;
 /** FR-226: the closed list of arrangement ids a world may name (one constant; the engine builds a subset, `realoffice-arrangements.ts`, and a test pins that subset). A plain string tested with `includes`, never an object lookup. */
 export const ARRANGEMENTS: readonly string[] = ['rows', 'circle', 'facing-view', 'aisles', 'flanking'];
 export const MAX_ARRANGEMENT_CHARS = 20;
-/** FR-230 (Changes 2026-11-14): arrangements on the list that no pack may turn on yet. `circle` stays off for every world, downloaded, installed or
- *  built in, until the owner picks the many-folder fix (FR-229's gap); lifting it is taking the id out of this list (T174). */
-export const ARRANGEMENT_OFF: readonly string[] = ['circle'];
+/** FR-230 (Changes 2026-11-14, fourth entry): arrangements on the list that no pack may turn on yet. Empty since T174: the owner chose the ladder, `circle` to `rows` where it does not fit (2026-11-14 13:10 UTC), and the Cave names `circle`. The mechanism stays for the next arrangement that is not ready. */
+export const ARRANGEMENT_OFF: readonly string[] = [];
 
 /** FR-227: `focus.webp` is required with these arrangements and refused with the others. */
 export const FOCUS_ARRANGEMENTS: readonly string[] = ['circle', 'facing-view'];
@@ -323,7 +322,7 @@ function readManifestInner(data: Uint8Array, present: readonly string[], opts: P
   if (own(doc, 'arrangement') !== undefined) {
     const ar = own(doc, 'arrangement');
     if (typeof ar !== 'string' || ar.length > MAX_ARRANGEMENT_CHARS || !ARRANGEMENTS.includes(ar)) return bad('This world asks for a room layout this Agent Durbar does not know; it may need a newer Agent Durbar.');
-    if (ARRANGEMENT_OFF.includes(ar)) return bad('This world asks for the circle room layout, which stays off until the owner picks its many-folder fix (FR-230).');
+    if (ARRANGEMENT_OFF.includes(ar)) return bad('This world asks for a room layout that is not on in this Agent Durbar yet (FR-230).');
     arrangement = ar;
   }
   let rideStyle: string | null = null;

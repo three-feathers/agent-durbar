@@ -61,7 +61,7 @@ export function problems(files: Map<string, Buffer>, md: string, header = md): s
 // ---- the real folder ----
 const files = new Map<string, Buffer>();
 for (const f of fs.readdirSync(DIR)) if (f.endsWith('.webp')) files.set(f, fs.readFileSync(path.join(DIR, f)));
-const md = fs.readFileSync(path.join(DIR, 'ASSETS.md'), 'utf8');
+const md = fs.readFileSync(path.join(DIR, 'ASSETS.md'), 'utf8').replace(/\r\n/g, '\n');
 const real = problems(files, md);
 assert.deepStrictEqual(real, [], 'the shipped pictures pass: ' + real.join('; '));
 for (const id of C.IDS) for (const pose of C.POSES) assert.ok(files.has(`${id}-${pose}.webp`), `${id}-${pose}.webp exists (every character, every pose)`);
@@ -107,7 +107,7 @@ assert.deepStrictEqual([...files.keys()].sort(), C.files(C.IDS.concat(C.PREHISTO
 // ---- packaging: the build copies the folder and electron-builder packs dist (FR-050, T040) ----
 const pkg = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8')) as { build: { files: string[] } };
 assert.ok(pkg.build.files.includes('dist/**/*'), 'electron-builder packs everything under dist/, so dist/renderer/crew/ ships');
-const copy = fs.readFileSync(path.join(ROOT, 'scripts', 'copy-assets.js'), 'utf8');
+const copy = fs.readFileSync(path.join(ROOT, 'scripts', 'copy-assets.js'), 'utf8').replace(/\r\n/g, '\n');
 assert.ok(/'crew', 'art'/.test(copy) && /\.webp/.test(copy), 'copy-assets.js copies the .webp files of crew/art');
 assert.ok(!/ASSETS|PROMPTS/.test(copy.replace(/\/\/.*$/gm, '')), 'copy-assets.js does not ship ASSETS.md or the prompt files');
 // the build output holds the pictures when dist/ exists (npm run build first; the full run builds before the tests)
@@ -115,6 +115,6 @@ const OUT = path.join(ROOT, 'dist', 'renderer', 'crew', 'art');
 if (fs.existsSync(path.join(ROOT, 'dist', 'renderer', 'index.html'))) {
   assert.deepStrictEqual(fs.readdirSync(OUT).sort(), [...files.keys(), ...pendingFiles].sort(), 'dist/renderer/crew/art holds exactly the pictures: no ASSETS.md, no prompts');
 }
-const csp = /Content-Security-Policy" content="([^"]*)"/.exec(fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'index.html'), 'utf8'));
-assert.strictEqual(csp && csp[1], "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:;", 'the CSP is unchanged (FR-057)');
+const csp = /Content-Security-Policy" content="([^"]*)"/.exec(fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'index.html'), 'utf8').replace(/\r\n/g, '\n'));
+assert.strictEqual(csp && csp[1], "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:;", 'the CSP: spec 096 FR-043, FR-061 add blob: for images, for My characters; nothing else changed (FR-057)');
 console.log('crew assets tests passed (' + (files.size + pendingFiles.length) + ' pictures)');
