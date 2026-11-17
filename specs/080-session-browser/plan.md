@@ -144,6 +144,20 @@ Owner decisions (Vikram, 2026-10-31 05:17 UTC): the toggle *Open chat links in a
 
 **Risks.** Memory with many tabs: dropped background tabs close their `webContents` (no process), and the 4-page soft cap is unchanged; T013 AC5 measures it. Key handling on macOS (T025 AC3). `controller.ts` grows: the per-tab split is done by keying, not by a second controller. Conflicts with Phase 2 work in `controller.ts` and `views.ts`: Phase 1b lands first or rebases often.
 
+### Expand the browser (spec delta 2026-11-13, issue #1691; Phase 1c)
+
+Owner request (Vikram, 2026-11-13): a way to see the session browser big and make it small again before going back to the chat. FR-134..FR-139.
+
+**Reuse (FR-031 review rule), named:** no expand mechanism exists to reuse (spec 005's full-screen chat is `body.panel-open`, the rail collapse is not built). Reused: `browserpane.js` `watchSize`/`queueBounds` (the `ResizeObserver` on `#bView` already sends the new rectangle through `browser:bounds`, checked by `checkBounds` in `controller.ts`, unchanged); FR-008's `coversBrowser`/`overlaySync` in `app.js` (an overlay over the big page takes the view off, unchanged); the bar's `.bbtn` style and `SVG` table; `announce()` and `#bLive`; the window's one Escape chain in `app.js` (`document` `keydown`). **No main-process change, no IPC channel, no setting.**
+
+**Design.**
+- `browserpane.js`: `cur.big` (memory only); a pure `bigModel(on)` (name, tooltip, icon, announcement; tested); `setBig(on, o)` toggles `body.browser-big`, renders `#bBig`, announces, queues the bounds and re-checks overlays; `expanded()` and `restore()` exported for `app.js`. `select('chat')`, `hide()` and a mount of another session end it; a rebuild of the same chat keeps it (`setSelected` re-applies the class from `cur`).
+- `styles.css`: `body.browser-big` hides `#panel > .rail`, `.ph`, `#panelTabs`, `#prev`, `#notesDrawer`, `.composer` (display none; the elements and their state stay); `.bpane` keeps `flex:1`, so it takes the whole column; the answer bars stay. macOS: the strip gets the 78 px clearance and the drag region while no notice strip shows (`:has()`), not in native full screen.
+- `app.js`: one line in the Escape chain, after the window-level pops and before the Notes drawer and `closePanel`: `if(BP.expanded()){BP.restore({focus:true});return;}`. Durbar's dialogs and menus stop their own Escape first, as today.
+- PR #1274 (open, `094-panel-tabs`: the Chat | Browser tablist moves into `paneltabs.js`) changes `tabsHTML`, `setSelected`'s tab lines, the `render` tab label, `select`'s focus line and `mount`'s tab wiring. This change touches `paneHTML`, new functions, `select`'s Chat branch, `hide`, `mount`'s bar wiring and `setSelected`'s body-class line, so it does not stack on #1274; whichever merges second resolves small textual conflicts.
+
+**Checks.** `test:browserpane` (the pure model, the button in `paneHTML`); `scripts/check-080-browser-expand.js` in `scripts/ui-suite.js` (Flat, Real office and the Retro arcade; 1440x900 and 1280x800) with the five named mutants of the delta.
+
 ### Phases
 
 | Phase | Stories | What ships | Gate |
@@ -153,6 +167,7 @@ Owner decisions (Vikram, 2026-10-31 05:17 UTC): the toggle *Open chat links in a
 | 2 Agent control | US3, US4 | `durbar-browser` server, tokens, tools, broker kinds and host-side enforcement, POST/download/upload gates, driver state, takeover, highlight, log, untrusted-content label | Phase 1 merged; 041 T018 `bridgecore.ts` merged |
 | 3 Folder logins | US5 | Per-folder persistent partition with confirm, chip, clear, turn off; refused without a keyring | Phase 2 merged; T005 (fuse) merged |
 | 4 Headless (later) | — | FR-110..FR-113: a view in a hidden helper window (`show: false`, `fromSurface: false` screenshots) that the agent drives, still shown in the tab and on the desk, *Show* to move it into the panel (T070-T072) | Phase 2 merged; T070 measurement |
+| 1c Expand | US1 | FR-134..FR-139: the Expand / Back to small browser button, Escape, not remembered; T080-T083 | Phase 1 merged |
 | 1b Page tabs | US6 | Tabs per session (FR-120..FR-130, FR-132, FR-133): strip, +, close, keys, the *Open chat links in a new tab* toggle, `target=_blank` in a tab, the cap across tabs; T020-T027 (T028, the agent's own tab FR-131, is Phase 2) | Phase 1 merged (T012-T017) |
 | Later | — | FR-103 per-folder allowed hosts, FR-100 CDP endpoint (Q3; needs FR-029 and spec 008 FR-037/FR-038 amended), FR-101 `BROWSER` helper, FR-102 the chat-and-browser split (#452; tabs moved to Phase 1b) | A new spec |
 

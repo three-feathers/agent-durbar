@@ -4,6 +4,8 @@
  *
  *   npm run check:ui -- --only check-unread
  *   OUT=docs/screenshots  (optional) also saves 001-unread-{1440x900,1280x800}.png
+ *   DRIVER_WORLD=retro (ui-suite entry `check-unread retro`, spec 102 T319): the Real office step in the arcade (no glow is drawn there: it reads the endless animations, with romotion=1)
+ *   UNREAD_MUTANT=still   the still switch stops nothing (an endless animation on every Real office node): must fail at "no glow breathes"
  *
  * At 1440x900 and 1280x800 it checks: a completion while the office is shown marks the desk (badge with the word New, outline, accessible
  * name, tooltip) and keeps it off the couch while the shown state stays Done and the Done count rises by one; a repeated idle or a streaming
@@ -427,9 +429,13 @@ module.exports = async (ctx) => {
     if (!dbg.isAttached()) dbg.attach('1.3');
     try {
       await dbg.sendCommand('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'no-preference' }] });
-      await H.load({ w: 1440, h: 900, query: { officeview: 'real' }, ready: `!!document.querySelector('#stage .ro .ro-plate')&&document.getElementById('stage').dataset.d==='real'`, settle: false });
-      const endless = () => js(`(()=>{const ro=document.querySelector('#stage .ro');if(!ro)return -1;return ro.getAnimations({subtree:true}).filter(a=>{const t=a.effect&&a.effect.getComputedTiming();return t&&t.iterations===Infinity&&a.playState==='running';}).length;})()`);
-      await ok(`document.querySelectorAll('#stage .ro-glow.breathe').length>0`, 'Real office: a breathing screen glow with motion allowed', 60000); /* spec 097 FR-236: no call light any more */
+      /* spec 102 T319: the arcade draws no glow (world.css hides .ro-glow), so its endless motion is the people's: the page opts back in to them (romotion=1) and the glow tests read the endless animations instead */
+      const ARCADE = process.env.DRIVER_WORLD === 'retro';
+      await H.load({ w: 1440, h: 900, query: { officeview: 'real', ...(ARCADE ? { romotion: '1' } : {}) }, ready: `!!document.querySelector('#stage .ro .ro-plate')&&document.getElementById('stage').dataset.d==='real'`, settle: false });
+      const ENDLESS = `(()=>{const ro=document.querySelector('#stage .ro');if(!ro)return -1;return ro.getAnimations({subtree:true}).filter(a=>{const t=a.effect&&a.effect.getComputedTiming();return t&&t.iterations===Infinity&&a.playState==='running';}).length;})()`;
+      const endless = () => js(ENDLESS);
+      const BREATHING = ARCADE ? `${ENDLESS}>0` : `document.querySelectorAll('#stage .ro-glow.breathe').length>0`, NOT_BREATHING = ARCADE ? `${ENDLESS}===0` : `document.querySelectorAll('#stage .ro-glow.breathe').length===0`;
+      await ok(BREATHING, 'Real office: a breathing screen glow with motion allowed', 60000); /* spec 097 FR-236: no call light any more */
       assert.strictEqual(await js(`document.querySelector('#stage .ro').classList.contains('still')`), false, 'Real office: the room is not still');
       assert.ok((await endless()) > 0, 'Real office: something endless runs while the switch is off');
       await H.click('#settingsBtn');
@@ -438,14 +444,15 @@ module.exports = async (ctx) => {
       await ok(`document.getElementById('stillSw').getAttribute('aria-checked')==='true'`, 'Real office: the switch is on');
       await H.click('#scrClose');
       await ok(`document.querySelector('#stage .ro').classList.contains('still')`, 'Real office: the room is still with the switch on', 30000);
-      await ok(`document.querySelectorAll('#stage .ro-glow.breathe').length===0`, 'Real office: no glow breathes');
+      if (process.env.UNREAD_MUTANT === 'still') await js(`(()=>{const e=document.createElement('style');e.textContent='@keyframes mutkeep{50%{opacity:.5}} #stage .ro *{animation:mutkeep 1s infinite!important}';document.head.appendChild(e);return 1})()`); // the still switch stops nothing (must fail at "no glow breathes")
+      await ok(NOT_BREATHING, 'Real office: no glow breathes');
       assert.strictEqual(await endless(), 0, 'Real office: nothing endless runs with the switch on');
       await H.click('#settingsBtn');
       await ok(`!!document.getElementById('stillSw')`, 'Real office: Settings again');
       await H.click('#stillSw');
       await ok(`document.getElementById('stillSw').getAttribute('aria-checked')==='false'`, 'Real office: the switch is off again');
       await H.click('#scrClose');
-      await ok(`!document.querySelector('#stage .ro').classList.contains('still')&&document.querySelectorAll('#stage .ro-glow.breathe').length>0`, 'Real office: the motion is back with the switch off', 30000);
+      await ok("!document.querySelector('#stage .ro').classList.contains('still')&&(" + BREATHING + ')', 'Real office: the motion is back with the switch off', 30000);
       console.log('[unread] real office ok');
     } finally {
       await dbg.sendCommand('Emulation.setEmulatedMedia', { features: [] });
