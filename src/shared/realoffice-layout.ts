@@ -435,7 +435,7 @@ export function devStep(dpr = 1): number {
   return !(dpr > 0) || Math.abs(dpr - Math.round(dpr)) < 1e-9 ? 1 : 1 / dpr;
 }
 /** Spec 102 FR-255 (T204): `v` (CSS px) rounded to a whole device pixel (to a whole CSS px at a whole ratio); the result times `dpr` is whole. */
-export const snapDevice = (v: number, dpr = 1): number => { const st = devStep(dpr); return Math.round(v / st + 1e-9) * st; };
+export const snapDevice = (v: number, dpr = 1): number => { const st = devStep(dpr); return st === 1 ? Math.round(v) : Math.round(v / st + 1e-9) * st; };
 /** Spec 102 FR-255 (#1104): a lobby visitor's whole scale: the one below its own (a larger one could cover its name chip), at least 1 (a device pixel at a fractional ratio). */
 export const visitorScale = (k: number, dpr = 1): number => { const st = devStep(dpr); return Math.max(1, Math.floor(k / st + 1e-6)) * st; };
 
