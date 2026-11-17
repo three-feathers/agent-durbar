@@ -148,7 +148,7 @@ try {
   fs.mkdirSync(tdir);
   for (const f of ['pr-gate.sh', 'trusted-lib.sh', 'pr-status-note.re']) fs.copyFileSync(path.join(ROOT, 'scripts', f), path.join(tdir, f));
   fs.writeFileSync(path.join(tdir, 'trusted-authors.txt'), fs.readFileSync(path.join(ROOT, 'scripts', 'trusted-authors.txt'), 'utf8') + `${BOT}\n`);
-  const threadBy = (login: string, type: string): object => ({ data: { repository: { pullRequest: { reviewThreads: { nodes: [{ isResolved: false, isOutdated: false, comments: { nodes: [{ author: { __typename: type, login } }] } }] } } } } });
+  const threadBy = (login: string, type: string, isResolved = false, isOutdated = false): object => ({ data: { repository: { pullRequest: { reviewThreads: { nodes: [{ isResolved, isOutdated, comments: { nodes: [{ author: { __typename: type, login } }] } }] } } } } });
   put('comments', [c('vikramgorla', 'done', '2026-10-27T10:00:00Z', 'issuecomment-1'), c('dependabot[bot]', 'bumps x', '2026-10-27T11:00:00Z', 'issuecomment-2')]);
   put('lines', [{ ...c('dependabot[bot]', 'line', '2026-10-27T11:01:00Z', 'discussion_r2'), path: 'a.ts' }]);
   put('threads', { data: { repository: { pullRequest: { reviewThreads: { nodes: [] } } } } });
@@ -168,6 +168,15 @@ try {
     put('threads', threadBy(login, type));
     r = gateRun();
     assert.ok(r.code === 1 && r.out.includes('open_threads=1'), `BOT-THREAD: an unresolved thread by ${type} ${login} blocks:\n${r.out}`);
+  }
+  // the filter itself, for every author: a resolved thread and an outdated thread do not block
+  for (const [login, type] of [['durbar-samikshak', 'Bot'], ['durbar-samikshak', 'User'], ['github-advanced-security', 'Bot'], ['mallory', 'User']]) {
+    put('threads', threadBy(login, type, true, false));
+    r = gateRun();
+    assert.ok(r.code === 0 && r.out.includes('ready to merge'), `THREAD-RESOLVED: a resolved thread by ${type} ${login} does not block:\n${r.out}`);
+    put('threads', threadBy(login, type, false, true));
+    r = gateRun();
+    assert.ok(r.code === 0 && r.out.includes('ready to merge'), `THREAD-OUTDATED: an outdated thread by ${type} ${login} does not block:\n${r.out}`);
   }
   put('threads', { data: { repository: { pullRequest: { reviewThreads: { nodes: [] } } } } });
   put('reviews', [rv(BOT, 'CHANGES_REQUESTED', '', '2026-10-27T11:00:00Z', 'pullrequestreview-5')]);
