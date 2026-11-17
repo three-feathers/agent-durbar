@@ -650,8 +650,44 @@ export function cut(s: string, max: number): string {
   while (end > 0 && TOKEN_CHAR.test(s[end - 1])) end--;
   // a loop, not `/[ \t]+$/`: that regex retries at every blank of a long run (quadratic on a 1 MB run of spaces)
   while (end > 0 && (s[end - 1] === ' ' || s[end - 1] === '\t')) end--;
-  return s.slice(0, end) + TRUNCATED;
+  return s.slice(0, cutEnd(s, end)) + TRUNCATED;
 }
+
+/**
+ * Spec 012 FR-184 (issue #1841): a cut text that ends with a lone backslash makes the marker's blank an escaped blank, which the shell readings read through every rule
+ * (one more pass over the run that ends there). When that run is long (at least `CUT_RUN_LONG` characters) and holds no `:` or `=`, the lone backslash is left out, so
+ * the run is read as the uncut text reads it; otherwise the cut is as before, so a short run, or one with a separator, is read as on main.
+ */
+const CUT_RUN_LONG = 4096;
+function cutEnd(s: string, end: number): number {
+  let k = end;
+  while (k > 0 && s[k - 1] === '\\') k--;
+  if ((end - k) % 2 === 0) return end; // no lone backslash (an even count is escaped backslashes; the run check below would refuse it too, this is the short way)
+  const stop = end - 1;
+  // the shell run (`ESC_RUN_SHELL`) that ends at the lone backslash, scanned from a start that is no part of an escape: after a character that opens none and
+  // is no part of a `\u{…}` code or a CR LF line continuation (the scan from the text's start is there at a run boundary or at the start of a run element)
+  let q = stop - CUT_RUN_LONG;
+  if (q <= 0) return end;
+  const low = Math.max(0, q - 64);
+  while (q > low && !CUT_SAFE.test(s[q - 1])) q--;
+  if (q > 0 && !CUT_SAFE.test(s[q - 1])) return end;
+  let last: RegExpMatchArray | undefined;
+  for (const m of s.slice(q, stop).matchAll(ESC_RUN_SHELL)) last = m;
+  if (!last || last[0].length !== stop - q) return end; // no run spans the whole window: the run is shorter than CUT_RUN_LONG
+  // a `:` or `=` anywhere in the run (read over a wider set of characters, so never less than the run): the cut is as before
+  for (let i = q; i > 0; i--) {
+    const c = s[i - 1];
+    if (c === ':' || c === '=') return end;
+    if (CUT_RUN_CHAR.test(c) || (i > 1 && /[ \t\r\n]/.test(c) && /[\\^\r]/.test(s[i - 2]))) continue;
+    break;
+  }
+  for (let i = q; i < stop; i++) if (s[i] === ':' || s[i] === '=') return end;
+  return stop;
+}
+/** A character after which a scan of `ESC_RUN_SHELL` is at a boundary of the run's elements. */
+const CUT_SAFE = /[^\\`^\r{}0-9A-Fa-fu]/;
+/** The characters a shell run can hold outside a blank, a tab or a line break. */
+const CUT_RUN_CHAR = /[A-Za-z0-9_\-.~+/=:@%\\`^*{}[\]()#!|<>]/;
 
 /** Env snapshots made by the masking helpers: their secret list is computed once, so a 100 000-token command does not rescan the env per token. */
 const SNAPSHOTS = new WeakMap<Env, Array<[string, string]>>();

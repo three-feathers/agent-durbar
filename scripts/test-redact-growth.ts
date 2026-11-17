@@ -248,6 +248,10 @@ if (part === 'adversarial2') {
   assert.strictEqual(cut(nearSep + 'bc', nearSep.length + 1), nearSep.slice(0, -1) + M, '#1841 cut: a long run with a separator near the cut keeps its lone backslash');
   const even = long + '\\\\';
   assert.strictEqual(cut(even + 'bc', even.length + 1), even + M, '#1841 cut: escaped backslashes before the cut stay');
+  // the bound: a run of exactly 4,096 characters before the lone backslash is long, 4,095 is not
+  const atBound = (n: number): string => 'x ' + 'c'.repeat(n) + '\\';
+  assert.strictEqual(cut(atBound(4096) + '/bc', atBound(4096).length + 2), atBound(4096).slice(0, -1) + M, '#1841 cut: a run of 4,096 characters is long');
+  assert.strictEqual(cut(atBound(4095) + '/bc', atBound(4095).length + 2), atBound(4095) + M, '#1841 cut: a run of 4,095 characters is short');
 }
 
 }
