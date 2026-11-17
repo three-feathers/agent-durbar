@@ -1,1 +1,0 @@
-- **Arcade driver case for the Settings section list** (spec 102 T321, part of the arcade driver coverage): `check-settings-nav retro` in the UI suite runs the section list over the arcade. Tests only; a mutant fails at its own label.
