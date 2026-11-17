@@ -15,6 +15,7 @@
  */
 import assert from 'assert';
 import { cpuMs } from './redact-growth-lib';
+import { assertCpuUnderAsync } from './hang-backstop';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
@@ -36,8 +37,6 @@ const { TeamOps, TOKEN_MS, resolveTargetFrom } = require('../src/main/' + MODNAM
 
 let n = 0;
 const ok = (c: unknown, m: string): void => { n++; assert.ok(c, m); };
-// CPU time of an async step (user + system of this process): a loaded machine does not raise it, a super-linear loop does (issue #1853)
-const cpuAsync = async (f: () => Promise<unknown>, capMs: number): Promise<number> => { const w = process.hrtime.bigint(); const c = process.cpuUsage(); await f(); const d = process.cpuUsage(c); const wall = Number(process.hrtime.bigint() - w) / 1e6; assert.ok(wall < 10 * capMs, `wall-time backstop: ${wall.toFixed(0)} ms wall, limit ${10 * capMs} ms (a blocking wait in the timed step?)`); return (d.user + d.system) / 1000; };
 const eq = <T>(a: T, b: T, m: string): void => { n++; assert.deepStrictEqual(a, b, m); };
 let failed = 0;
 const sections: [string, () => Promise<void> | void][] = [];
@@ -550,8 +549,7 @@ section('arguments', async () => {
   // size: a huge object is judged by its key count, quickly
   const huge: Record<string, number> = {};
   for (let i = 0; i < 200_000; i++) huge['k' + i] = i;
-  const c0 = await cpuAsync(() => bad(huge, 'tmpl1', 'a huge target'), 1500);
-  ok(c0 < 1500, `a huge target is refused in well under a second of CPU time (${c0.toFixed(0)} ms)`);
+  await assertCpuUnderAsync('a huge target is refused in well under a second of CPU time', 1500, () => bad(huge, 'tmpl1', 'a huge target'));
   eq(F(await r.ops.createPreview(TGT, 'empty1')).code, 'empty', 'a template with no members');
   eq(F(await r.ops.createPreview(TGT, 'zzz')).code, 'notfound', 'an unknown template');
   eq(F(await r.ops.createPreview(TGT, '../../etc')).code, 'notfound', 'an id that looks like a path is only an unknown id');
@@ -604,8 +602,7 @@ section('rowArguments', async () => {
   ok(!ran, 'the getter never ran');
   const huge: Record<string, number> = {};
   for (let i = 0; i < 200_000; i++) huge['k' + i] = i;
-  const c0 = await cpuAsync(() => bad(hexId(1), huge, 'a huge change'), 1500);
-  ok(c0 < 1500, `a huge change is refused in well under a second of CPU time (${c0.toFixed(0)} ms)`);
+  await assertCpuUnderAsync('a huge change is refused in well under a second of CPU time', 1500, () => bad(hexId(1), huge, 'a huge change'));
   eq(F(await r.ops.previewRow(p.token, hexId(9), { effort: 'low' })).code, 'notfound', 'a row that is not in the preview');
   // a bad change leaves the row as it was
   const after = await r.ops.previewRow(p.token, hexId(1), { effort: 'low' }) as RowOk;
@@ -635,8 +632,7 @@ section('nothingElse', async () => {
   ok(!/listAgentProfiles|listProfiles|ensureLive|spawn|exec|autopilot\s*[:=]/i.test(src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '')), 'the source never lists profiles, starts a session or sets Autopilot');
   ok(!/\bimport\b[^;]*electron|from '\.\.\/adapters/.test(src), 'no Electron and no adapter import');
   // a deadline: eight members over three apps, quickly
-  const c0 = await cpuAsync(async () => { for (let i = 0; i < 200; i++) await r.ops.createPreview(TGT, 'tmpl1'); }, 5000);
-  ok(c0 < 5000, `200 previews in well under five seconds of CPU time (${c0.toFixed(0)} ms)`);
+  await assertCpuUnderAsync('200 previews in well under five seconds of CPU time', 5000, async () => { for (let i = 0; i < 200; i++) await r.ops.createPreview(TGT, 'tmpl1'); });
 });
 
 // ---------------------------------------------------------------------------------------------------------------- 12. the handlers
