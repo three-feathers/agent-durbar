@@ -311,7 +311,7 @@ module.exports = async (ctx) => {
     await js(`window.__durbarSimUi.uncrowd()`);
 
     /* ---- 6. spec 097 FR-366 (#1571): sessions that start needing you at one moment (a tie, oldest first) keep the office order on screen, in every world ---- */
-    /* 'photo, then flat': the Photo office switched to Open office in the same page (Settings, Office layout; no reload), where Real office's last layout is still held: the flat desks' order must win */
+    /* 'photo, then flat': the Photo office switched to Open office in the same page (Settings, World, the Plain card; no reload), where Real office's last layout is still held: the flat desks' order must win */
     for (const [world, q] of [['flat', { simrooms: '3' }], ['photo', { officeview: 'real', simrooms: '3', sim: '15' }], ['arcade', { officeview: 'real', simrooms: '3', sim: '15', worldflags: 'retro', world: 'retro' }], ['photo, then flat', { officeview: 'real', simrooms: '3', sim: '15' }]]) {
       const switched = world === 'photo, then flat', loadReal = world !== 'flat', real = loadReal && !switched;
       const t = `${tag} ${world}`, card = real ? '.ro-plate' : '.desk';
@@ -320,8 +320,8 @@ module.exports = async (ctx) => {
       if (loadReal) assert.strictEqual(await js(`document.querySelector('#stage .ro').dataset.world||'photo'`), world === 'arcade' ? 'retro' : 'photo', `${t}: the world is shown`);
       if (switched) {
         await js(`window.DurbarScreens.openSettings();true`);
-        await must(`!!document.querySelector('[data-officelayout="open"]')`, `${t}: Settings shows the office layout choice`);
-        await js(`(()=>{document.querySelector('[data-officelayout="open"]').click();const c=document.getElementById('scrClose');if(c)c.click();return 1})()`);
+        await must(`!!document.querySelector('#wrGroup [data-world="plain"]')`, `${t}: Settings shows the Plain world card (the Office layout row is gone)`);
+        await js(`(()=>{document.querySelector('#wrGroup [data-world="plain"]').click();const c=document.getElementById('scrClose');if(c)c.click();return 1})()`);
         await must(`!document.querySelector('#stage .ro')&&document.querySelectorAll('#stage .desk[data-id]').length>=10&&!!window.__durbarSimUi.realLayout()`, `${t}: the flat office is drawn in the same page, Real office's last layout still held`);
       }
       /* the office order on screen, read apart from the code under test: Real office's own layout (rooms as drawn, desks left to right, lounge seats out), or the flat rooms' desks */
