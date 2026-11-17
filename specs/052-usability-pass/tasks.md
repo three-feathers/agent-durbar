@@ -434,6 +434,9 @@
 ## 2026-11-11: the office lays out in the frame its floor changes size (FR-243, issue #1362)
 - [x] T281 `app.js`: the `ResizeObserver` on `#floor` calls `relayoutNow()` (the redraw, `syncWalkers`, `afTick`, pencils) in its own callback; `relayout()` (window resize) keeps the frame-later call; `check-auto-follow` asserts the floor never overflows at an observer call after Settings closes with the strip and after a 31 px change, both sizes, with the mutant
 
+## 2026-11-11: the Settings title keeps the traffic-light room in narrow windows (FR-138, issues #1538 and #1539)
+- [x] T282 `screens.css`: Mac rules for a screen with a section list over a chat (`max(78px, --sn-pad)`, 78px under 760 px; a notice strip above keeps `--sn-pad`); `check-mac-titlebar` runs Settings at 1208, 1100, 991, 900, 760, 759 and 700 wide and fails a title at x < 78 in the traffic-light box, and expects `max(78, W/2 - 526)`; mutant (rule removed) fails 6 states with "screen title at x=24 is under the traffic lights" [FR-138, FR-097]
+
 ## 2026-11-10: Tools > Activity uses the window width (FR-071, FR-097, issue #1466)
 - [x] T280 `scr-wide` on `.scr-head`/`.scr-body` for the Activity tab (`screens.js`, `screens.css`, `--scr-col` in `screens.css`, read by the darwin rules in `styles.css`); `.act-s` no-wrap cells in `activitytable.js`; `check-activity-table` asserts the full width, no clipped Decision, no short-column wrap, and the Cost tab keeps 880px. A 900x800 narrow case asserts Action keeps `min-width:24ch` (rendered width >= 24 x the width of `0` in its font) and no page scroll; mutant: without `.act-a{min-width:24ch}` it fails at `900x800 narrow: Action keeps its 24ch minimum`.
 
