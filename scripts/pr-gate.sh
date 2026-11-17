@@ -15,7 +15,8 @@
 #   - a reviewer whose latest review is CHANGES_REQUESTED;
 #   - an unresolved, non-outdated review thread;
 #     durbar-samikshak[bot] (spec 103 FR-071, #1706) is read like a teammate: its issue comments, line comments, review bodies and unresolved threads are asks and its
-#     CHANGES_REQUESTED blocks; its APPROVED review is never an approval (never printed as "approved by"). Every other [bot]'s comments and threads are skipped.
+#     CHANGES_REQUESTED blocks; its APPROVED review is never an approval (never printed as "approved by"). Every other [bot]'s issue and line comments are skipped.
+#     Every unresolved thread blocks whoever opened it, bots included (GraphQL gives a Bot actor's login without "[bot]", so no login test could skip one).
 #   - a comment by someone else (PR comment, review body or line comment) newer than my own latest comment on the PR: read and answer it first.
 #     Exact status notes (a whole comment that is only `reviewing at <sha>` or `checks run at <sha>: ...` on one line, pattern in
 #     scripts/pr-status-note.re) are not counted as asks; they are printed apart under "status notes, not counted as asks:".
@@ -154,7 +155,7 @@ a_merge=$(gh api "repos/$R/code-scanning/alerts?ref=refs/pull/$p/merge&state=ope
 # --paginate everywhere below: the REST lists return 30 items a page, and a long PR has more (spec 021 FR-055). --jq runs per page,
 # so the latest review per person is picked in the shell, across pages, not with jq's group_by
 changes=$(gh api --paginate repos/$R/pulls/$p/reviews --jq '.[]|select(.state!="COMMENTED" and .state!="PENDING")|"\(.user.login)\t\(.submitted_at)\t\(.state)"' | sort -k1,1 -k2,2 | awk -F'\t' -v me="$ME" '{last[$1]=$3} END{for(u in last) if(last[u]=="CHANGES_REQUESTED" && u!=me) printf "%s%s", (n++?",":""), u}')
-threads=$(gh api graphql -f query="query{repository(owner:\"$OWNER\",name:\"$NAME\"){pullRequest(number:$p){reviewThreads(first:100){nodes{isResolved isOutdated comments(first:1){nodes{author{login}}}}}}}}" --jq '[.data.repository.pullRequest.reviewThreads.nodes[]|select(.isResolved==false and .isOutdated==false and ((.comments.nodes[0].author.login|test("\\[bot\\]$")|not) or (.comments.nodes[0].author.login|sub("\\[bot\\]$";"")) == "durbar-samikshak"))]|length')
+threads=$(gh api graphql -f query="query{repository(owner:\"$OWNER\",name:\"$NAME\"){pullRequest(number:$p){reviewThreads(first:100){nodes{isResolved isOutdated comments(first:1){nodes{author{__typename login}}}}}}}}" --jq '[.data.repository.pullRequest.reviewThreads.nodes[]|select(.isResolved==false and .isOutdated==false)]|length')
 # comments whose latest edit was by an outside account: their text is hidden below and they block (a human checks the edit)
 outside_edits=$(gh api graphql -f query="query{repository(owner:\"$OWNER\",name:\"$NAME\"){pullRequest(number:$p){comments(last:100){nodes{url editor{__typename login}}} reviews(last:100){nodes{url editor{__typename login}}} reviewThreads(last:100){nodes{comments(last:100){nodes{url editor{__typename login}}}}}}}}" --jq "$JQ_TRUST .data.repository.pullRequest|(.comments.nodes[], .reviews.nodes[], .reviewThreads.nodes[].comments.nodes[])|select(.editor != null and (.editor|who|trusted|not))|\"\(.url) edited by \(.editor|who)\"")
 EDITED_URLS=$(printf '%s\n' "$outside_edits" | awk '{print $1}'); trust_defs
@@ -175,7 +176,7 @@ head_now=$(gh api repos/$R/pulls/$p --jq .head.sha 2>/dev/null) || head_now=; ca
 [ -n "$head_sha" ] && [ "$head_now" = "$head_sha" ] || bad="$bad head-changed(read ${head_sha:-unread} first, ${head_now:-unread} at the end: a push during the gate, run it again)"
 if [ -n "$bad" ] || [ -z "$codeql_ok" ] || [ "$alerts" != "0" ] || [ -n "$changes" ] || [ "$threads" != "0" ] || [ -n "$newer" ] || [ -n "$outside_edits" ]; then
   echo "#$p not ready: checks=[$bad] codeql=$codeql alerts=$alerts changes_requested=[$changes] open_threads=$threads"
-  [ -n "$newer" ] && { echo "unanswered human comments (read, answer or fix, then rerun; an outside one goes to your human as its link):"; echo "$newer"; }
+  [ -n "$newer" ] && { echo "unanswered comments (read, answer or fix, then rerun; an outside one goes to your human as its link):"; echo "$newer"; }
   [ -n "$outside_edits" ] && { echo "comments last edited by an outside account (not shown, for a human):"; echo "$outside_edits"; }
   exit 1
 fi

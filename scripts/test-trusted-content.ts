@@ -148,12 +148,12 @@ try {
   fs.mkdirSync(tdir);
   for (const f of ['pr-gate.sh', 'trusted-lib.sh', 'pr-status-note.re']) fs.copyFileSync(path.join(ROOT, 'scripts', f), path.join(tdir, f));
   fs.writeFileSync(path.join(tdir, 'trusted-authors.txt'), fs.readFileSync(path.join(ROOT, 'scripts', 'trusted-authors.txt'), 'utf8') + `${BOT}\n`);
-  const threadBy = (login: string): object => ({ data: { repository: { pullRequest: { reviewThreads: { nodes: [{ isResolved: false, isOutdated: false, comments: { nodes: [{ author: { login } }] } }] } } } } });
+  const threadBy = (login: string, type: string): object => ({ data: { repository: { pullRequest: { reviewThreads: { nodes: [{ isResolved: false, isOutdated: false, comments: { nodes: [{ author: { __typename: type, login } }] } }] } } } } });
   put('comments', [c('vikramgorla', 'done', '2026-10-27T10:00:00Z', 'issuecomment-1'), c('dependabot[bot]', 'bumps x', '2026-10-27T11:00:00Z', 'issuecomment-2')]);
   put('lines', [{ ...c('dependabot[bot]', 'line', '2026-10-27T11:01:00Z', 'discussion_r2'), path: 'a.ts' }]);
-  put('threads', threadBy('dependabot[bot]'));
+  put('threads', { data: { repository: { pullRequest: { reviewThreads: { nodes: [] } } } } });
   r = gateRun();
-  assert.strictEqual(r.code, 0, `another bot's comment, line comment and thread stay skipped:\n${r.out}`);
+  assert.strictEqual(r.code, 0, `another bot's comment and line comment stay skipped:\n${r.out}`);
   put('comments', [c('vikramgorla', 'done', '2026-10-27T10:00:00Z', 'issuecomment-1'), c(BOT, 'bot issue comment asks for a change', '2026-10-27T11:00:00Z', 'issuecomment-3')]);
   put('lines', []); put('threads', { data: { repository: { pullRequest: { reviewThreads: { nodes: [] } } } } });
   r = gateRun();
@@ -163,10 +163,11 @@ try {
   r = gateRun();
   assert.ok(r.code === 1 && r.out.includes(url('discussion_r4')), `BOT-LINE-COMMENT: a Samikshak line comment blocks:\n${r.out}`);
   put('lines', []);
-  for (const login of [BOT, 'durbar-samikshak']) {
-    put('threads', threadBy(login));
+  // GraphQL gives a Bot actor's login without "[bot]": a real Bot and a real User, either named durbar-samikshak, and another App's Bot, all block
+  for (const [login, type] of [['durbar-samikshak', 'Bot'], ['durbar-samikshak', 'User'], ['github-advanced-security', 'Bot'], ['mallory', 'User']]) {
+    put('threads', threadBy(login, type));
     r = gateRun();
-    assert.ok(r.code === 1 && r.out.includes('open_threads=1'), `BOT-THREAD: a Samikshak unresolved thread (${login}) blocks:\n${r.out}`);
+    assert.ok(r.code === 1 && r.out.includes('open_threads=1'), `BOT-THREAD: an unresolved thread by ${type} ${login} blocks:\n${r.out}`);
   }
   put('threads', { data: { repository: { pullRequest: { reviewThreads: { nodes: [] } } } } });
   put('reviews', [rv(BOT, 'CHANGES_REQUESTED', '', '2026-10-27T11:00:00Z', 'pullrequestreview-5')]);
