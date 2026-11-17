@@ -394,3 +394,5 @@ Order: T327 (the owner's picture gate) before any code PR; T328, T329 (art, #164
 ## 2026-11-11: readable check-crew timeout diagnostics (issue #1460)
 
 - [x] T305 [US2] Spec delta 2026-11-11: `H.crewTimeout` prints the crew wait's timeout in short lines under 240 characters (fields, render counters before and after one probe render, last 3 renderer errors, 4 signatures, bad marks) and fails the driver; `shots-097-screens` prints `#roZoom` and the last pointer position when the Now fact wait times out. No longer wait, no forced pass. Test: `test:crew-diag` (5 mutants killed). Forced-failure output and 3 plain check-crew dark-fixture runs under xvfb on Linux in the PR; Windows and macOS not run.
+
+- [x] T312 [US2] Spec delta 2026-11-11 (issue #1560): the folder menu opens on Shift+F10 / the Menu key on a Real office sign's ⋯ and on a right-click on its name (`src/renderer/app.js`: the contextmenu handler also matches `.ro-sign`; a keydown handler on the ⋯). Test: `check-097-order` (Photo office and arcade, both sizes; mutants `signmenu`, `signctx`).
