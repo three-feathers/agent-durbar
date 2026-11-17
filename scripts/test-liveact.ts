@@ -5,7 +5,7 @@ import assert from 'assert';
 import { assertLinearShape } from './redact-growth-lib';
 import fs from 'fs';
 import path from 'path';
-import { redact, maskSecretCommand, maskSecretUrl, maskHomePaths } from '../src/shared/redact';
+import { redact, maskSecretCommand, maskSecretUrl, maskHomePaths, maskBareTokenShapes } from '../src/shared/redact';
 import { grantScope } from '../src/adapters/permissions';
 
 const ROOT = path.join(__dirname, '..', '..');
@@ -473,6 +473,15 @@ for (const st of ['idle', 'needs-permission', 'error', 'stopped']) {
   eq(L.toolName(TK, { redact: () => TK + ' ' }), 'tool', 'any change at all: tool');
   eq(L.toolName(TK, { redact: () => undefined as unknown as string }), 'tool', 'a mask answering no string: tool');
   eq(L.toolName('x'.repeat(1000001) + TK, hm), 'tool', 'over the 1,000,000-character cut of redact: tool, never the raw token');
+  // spec 012 FR-181 (review of PR 1585, round 7): a name over 256 characters is the neutral word before any mask runs (fail closed; real names are under 30 characters)
+  eq(L.toolName('\\a'.repeat(150), hm), 'tool', '#1585 round 7 toolName: a name over 256 characters is the neutral word');
+  eq(L.toolName('a'.repeat(256), hm), 'a'.repeat(256), '#1585 round 7 toolName: a name of 256 characters is still shown');
+  eq(L.toolName('[redacted:'.repeat(4000) + ']a\\b', hm), 'tool', '#1585 round 7 toolName: a 40,000-character [redacted: name is the neutral word');
+  {
+    const t0 = Date.now(), r = L.toolName('\\a'.repeat(500_000), hm), ms = Date.now() - t0;
+    eq(r, 'tool', '#1585 round 7 toolName: a 1 MB backslash-dense name is the neutral word');
+    ok(ms < 1000, '#1585 round 7 toolName: a 1 MB backslash-dense name is answered before any mask runs (generous limit 1,000 ms; took ' + ms + ' ms)');
+  }
   eq(L.phrase({ kind: 'tool', tool: TK, label: '' }, { redact: () => '[redaction failed]' }), 'Using tool', 'phrase with a failed mask: Using tool');
   // the chat: every surface that names a tool calls the one function
   const app = fs.readFileSync(path.join(R, 'app.js'), 'utf8').replace(/\r\n/g, '\n');
@@ -530,6 +539,29 @@ for (const st of ['idle', 'needs-permission', 'error', 'stopped']) {
     eq(L.permText('mcp ' + TK, k, { redact: () => { throw new Error('x'); }, cmd: () => { throw new Error('x'); }, url: () => { throw new Error('x'); } }), { text: w, hidden: true, why: 'unchecked' }, k + ': a throwing mask: neutral words, unchecked');
     eq(L.permText('mcp ' + TK, k, { redact: () => 5 as unknown as string, cmd: () => 5 as unknown as string, url: () => 5 as unknown as string }), { text: w, hidden: true, why: 'unchecked' }, k + ': a mask that gives no string: neutral words, unchecked');
   }
+  // spec 012 FR-181 (T163): the desk's maskRaw (redact underneath) hides the rest glued to a named marker `[redacted:NAME]`, as it does after a plain `[redacted]`
+  {
+    const ST = require(path.join(R, 'safetext.js')) as { maskRaw(t: string, r: (s: string) => string): string };
+    const V = 'Vq7Wx8Ec9Rv0Tb1Yn2Um3Ik4', REST = 'abcdefghij0123456789xy';
+    const red = (t: string) => redact(t, { FOO_TOKEN: V });
+    for (const sep of ['_', '-', '']) eq(ST.maskRaw('secret=' + V + sep + REST, red), 'secret=[redacted:FOO_TOKEN]', '#1544 named marker: maskRaw hides the rest glued to a named marker (' + (sep || 'no separator') + ')');
+    eq(ST.maskRaw('cp ' + V + '_backup', red), 'cp [redacted:FOO_TOKEN]_backup', '#1544 named marker: maskRaw keeps a short suffix');
+  }
+  // spec 012 FR-181 (review of PR 1585): a shell escape of a letter (`g\hp_`, `ghp_\A…`) is hidden on the card too, because the shell kind's mask is maskSecretCommand
+  {
+    const B = 'A1b2C3d4E5f6' + 'G7h8I9j0K1l2M3n4O5p6Q7r8';
+    for (const [what, tok] of [['g\\hp_', 'g\\hp_' + B], ['ghp_\\A', 'ghp_\\' + B]] as const) {
+      eq(L.permText('run echo ' + tok, 'shell', mask), { text: 'run echo [redacted]', hidden: true, why: 'secret' }, '#1585 permText shell: ' + what + ' is hidden, the command kept as written');
+    }
+  }
+  // spec 012 FR-180, kept alive after FR-181 (review of PR 1585, round 4): the shared masks now hide an escaped run themselves, so the window's order (runs BEFORE the mask) is
+  // pinned with a mask that reads text only as written (`maskBareTokenShapes`): a token glued to an escaped one is hidden in place, not blinded by the final check
+  {
+    const ST = require(path.join(R, 'safetext.js')) as { maskLabel(t: string, k: string, m: Record<string, (s: string) => string>): string };
+    const B = 'A1b2C3d4E5f6' + 'G7h8I9j0K1l2M3n4O5p6Q7r8';
+    const asWritten = { cmd: (s: string) => maskBareTokenShapes(s, '[redacted]'), redact: (s: string) => maskBareTokenShapes(s, '[redacted]') }; // the bare shapes: no escaped-run step and no glued rest
+    eq(ST.maskLabel('run echo ghp_' + B + 'ghp\\_' + B, 'run', asWritten), 'run echo [redacted]', 'FR-180 order: a token glued to an escaped one is hidden in place by a mask that reads text as written');
+  }
   // spec 012 FR-180: a Markdown-escaped token (`ghp\_...`) is hidden on the card as the desk mask hides it, and the command is shown as written
   {
     const ST = require(path.join(R, 'safetext.js')) as { maskRaw(t: string, r: (s: string) => string): string; maskLabel(t: string, k: string, m: Record<string, (s: string) => string>): string };
@@ -553,7 +585,10 @@ for (const st of ['idle', 'needs-permission', 'error', 'stopped']) {
     eq(L.permText('run echo ' + TK + E, 'shell', hm), { text: 'run echo [redacted]', hidden: true, why: 'secret' }, 'a token glued to an escaped one: no part shown, the command kept (not a blind card)');
     eq(ST.maskLabel('echo ' + E, 'run', { ...mask, cmd: (s: string) => s.replace(/ghp_\w+/, '[redacted]') }), 'echo [redacted]', 'the run pass hides the escaped run');
     // a mask that hides a token only after `echo ` (context, as a secret name does): no run alone is hidden, the unescaped copy is
-    eq(ST.maskLabel('echo ' + E, 'run', { ...mask, cmd: (s: string) => s.replace(/echo ghp_\w+/, 'echo [redacted]') }), '', 'the unescaped copy still holding a secret gives an empty label (fail closed)');
+    // spec 012 FR-182 (round 4 of PR 1721): the shared split step reads `ghp\_…` itself now, so the fail-closed path is shown with a made-up secret no token shape knows
+    eq(ST.maskLabel('echo ' + escUnderscore('zzq_A1b2C3d4E5f6G7h8'), 'run', { ...mask, cmd: (s: string) => s.replace(/echo zzq_\w+/, 'echo [redacted]') }), '', 'the unescaped copy still holding a secret gives an empty label (fail closed)');
+    // round 7 of PR 1721: when the label as before PR 1721 is '' (this context-only mask leaves the unescaped copy holding the token), the label is '' here too
+    eq(ST.maskLabel('echo ' + E, 'run', { ...mask, cmd: (s: string) => s.replace(/echo ghp_\w+/, 'echo [redacted]') }), '', 'an escaped token a context-only mask hides gives an empty label, as before PR 1721');
     eq(ST.maskLabel('echo ' + E, 'run', { ...mask, cmd: () => '' }), '', 'a mask that gives nothing: empty label');
     // an environment secret is hidden as `[redacted:NAME]` (the activity log's redact): the marker count must read that form too (invented value)
     const ENV = { MY_API_KEY: 'zq7_Fake_Value_9x8w7v6u5' }, EV = escUnderscore(ENV.MY_API_KEY);
@@ -572,7 +607,9 @@ for (const st of ['idle', 'needs-permission', 'error', 'stopped']) {
       ok(!sh.text.includes('Zq9x') && sh.hidden, 'stretch ' + v.slice(0, 5) + ': shell kind hides the rest: ' + sh.text);
       const p = L.phrase({ kind: 'run', tool: 'Bash', label: 'echo ' + v }, hm), pr = L.phrase({ kind: 'read', tool: 'Read', label: 'notes ' + v }, hm);
       ok(!p.includes('Zq9x') && !pr.includes('Zq9x'), 'stretch ' + v.slice(0, 5) + ': phrase hides the rest: ' + p + ' / ' + pr);
-      eq(ST.maskLabel('send ' + v, 'other', mask), '', 'stretch ' + v.slice(0, 5) + ': a mask that changes only the unescaped copy gives an empty label');
+      // the shared mask now hides the escaped rest as written (spec 012 FR-181, review of PR 1585), so the label keeps its text; a mask that reads only text without a backslash still fails closed
+      eq(ST.maskLabel('send ' + v, 'other', mask), 'send ' + v.slice(0, v.indexOf(']') + 1), 'stretch ' + v.slice(0, 5) + ': the shared mask hides the escaped rest in place');
+      eq(ST.maskLabel('send ' + v, 'other', { ...mask, redact: (x: string) => (x.includes('\\') ? x : redact(x, {})) }), '', 'stretch ' + v.slice(0, 5) + ': a mask that changes only the unescaped copy gives an empty label');
     }
     // round 3: the stretch hidden in place, not by blanking the label (escaped brackets make the whole value one run)
     for (const v of ['password=\\[redacted\\]\\_Zq9xW8vU7tS6rQ5p', 'x\\[redacted\\]\\_Zq9xW8vU7tS6rQ5p', 'token=\\[redacted\\]\\-Zq9xW8vU7tS6rQ5p']) {
@@ -727,7 +764,7 @@ for (const st of ['idle', 'needs-permission', 'error', 'stopped']) {
   { const c = 'run tool --password abcdefgh12345678'; ok(L.permText(c, 'shell', hm).hidden === true && !/abcdefgh/.test(L.permText(c, 'shell', hm).text) && L.permText(c, 'other', hm).hidden === false && /abcdefgh/.test(L.permText(c, 'other', hm).text), 'N15: the shell kind uses the command mask (redact alone leaves --password K)'); }
   { const c = 'run tool --api-key abcdefgh12345678'; ok(['shell', 'other'].every((k) => L.permText(c, k, hm).hidden === true && !/abcdefgh/.test(L.permText(c, k, hm).text)), 'N15: --api-key K is hidden by both kinds (spec 012 FR-170)'); }
   // item 4: the announcement and a card with no scope
-  ok(/announce\(\[a\.name,' needs your OK: ',look,look\?' The request: ':'',sumS\.text,hwhy\?'\. '\+PERM_WHY\[hwhy\]\+hgrant:''\]\)/.test(card), 'item 4: the announcement carries the hidden-part warning');
+  ok(/announce\(\[a\.name,' needs your OK: ',look,look\?' The request: ':'',sumS\.text,hwhy\?'\. '\+PERM_WHY\[hwhy\]\+hgrant:''\],ANN_REQUEST\)/.test(card), 'item 4: the announcement carries the hidden-part warning');
   // item 5: a request whose text could not be checked: truthful copy, no Allow
   const pw = /const PERM_WHY=\{([^\n]*)\};/.exec(app);
   ok(!!pw && !/unchecked:'[^']*secret/.test(pw![1]) && /unchecked:'Durbar could not check this request/.test(pw![1]), 'item 5: the unchecked copy does not claim a secret');

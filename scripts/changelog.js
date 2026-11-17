@@ -161,10 +161,16 @@ function check(root = ROOT, { strict = false } = {}) {
   const seen = new Map();
   // every bullet already released (or under Unreleased) counts for the duplicate check
   for (const b of bulletBlocks([...parts.body, ...parts.rest]).bullets) seen.set(key(b), 'CHANGELOG.md');
+  // spec 008 FR-272 (#1834): the site's own rules (build-site.js), so a fragment fails in its own PR, not at the fold. A root without
+  // docs/site/unreleased.json (a throwaway test folder) has no list to check against.
+  const unreleasedFile = path.join(root, 'docs', 'site', 'unreleased.json');
+  const site = fs.existsSync(unreleasedFile) ? require('./build-site.js') : null;
+  const phrases = site ? site.loadUnreleased(unreleasedFile) : [];
   for (const fr of readFragments(root)) {
     for (const e of fr.errors) errors.push(`changelog.d/${fr.file}: ${e}`);
     for (const b of fr.bullets) {
       const k = key(b);
+      if (site) for (const e of site.bulletSiteProblems(b, phrases)) errors.push(`changelog.d/${fr.file}: the entry "${k.slice(0, 50)}…" ${e}`);
       if (seen.has(k)) errors.push(`changelog.d/${fr.file}: the entry "${k.slice(0, 70)}…" is already in ${seen.get(k)}`);
       else seen.set(k, `changelog.d/${fr.file}`);
     }
@@ -203,7 +209,7 @@ const ver = (h) => (/^##\s+(v\S+)/.exec(h) || [])[1];
 function requirePrevious(parts, previous) {
   if (!previous) return;
   if (!parts.rest.some((l) => ver(l) === previous)) {
-    throw new Error(`CHANGELOG.md has no section for the previous release ${previous}: merge its fold PR (changelog.d/README.md) before tagging the next release`);
+    throw new Error(`CHANGELOG.md has no section for the previous release ${previous}: merge its fold PR (changelog.d/README.md) before tagging the next release; if it was tagged but never released, add a "## ${previous} (not released, YYYY-MM-DD)" section instead (spec 008 FR-271)`);
   }
 }
 
@@ -261,7 +267,7 @@ function notes(root = ROOT, { release, previous } = {}) {
   return { section: r.section, source: 'fragments' };
 }
 
-module.exports = { highlightProblem, MARKER, INTRO, splitChangelog, bulletBlocks, parseFragment, readFragments, check, pending, build, notes, highlights, highlightsBlock, sceneIds, HIGHLIGHT_MAX };
+module.exports = { requirePrevious, highlightProblem, MARKER, INTRO, splitChangelog, bulletBlocks, parseFragment, readFragments, check, pending, build, notes, highlights, highlightsBlock, sceneIds, HIGHLIGHT_MAX };
 
 if (require.main === module) {
   const [cmd, ...args] = process.argv.slice(2);

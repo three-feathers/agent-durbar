@@ -14,7 +14,7 @@ import { redact } from '../shared/redact';
 import type { AdapterDescriptor, DetectResult } from './capabilities';
 import { MAX_VERSION_LENGTH, VERSION_TOKEN_SOURCE } from '../shared/versionfield';
 import { pathDirs } from '../shared/pathdirs';
-import { CMD_UNSAFE, windowsCmd } from '../shared/wincmd';
+import { CMD_UNSAFE, cmdShimArgs, windowsCmd } from '../shared/wincmd';
 
 export interface DetectEnv {
   platform: NodeJS.Platform;
@@ -260,12 +260,14 @@ export async function detectBinary(spec: BinarySpec, env: DetectEnv, exec: Exec,
   return { state: 'ready', version, hint: READY_HINT, path: found };
 }
 
-/** Runs a found binary with fixed arguments: argv only; a Windows `.cmd` shim goes through `cmd /d /s /c` with its own quotes (the caller checked CMD_UNSAFE). */
+/** Runs a found binary with fixed arguments: argv only; a Windows `.cmd` shim goes through `cmd /d /s /c` with its own quotes (`cmdShimArgs`; a CMD_UNSAFE character is not run). */
 export function execFound(found: string, args: readonly string[], env: DetectEnv, exec: Exec, extra: { timeoutMs?: number; env?: Readonly<Record<string, string>> } = {}): Promise<ExecResult> {
   if (env.platform === 'win32' && found.toLowerCase().endsWith('.cmd')) {
     const file = windowsCmd(env.env); // spec 045 FR-003: never a command taken from the environment as is
-    // the /c argument carries its own quotes; Node must not re-quote them
-    return exec(file, ['/d', '/s', '/c', `"${found}" ${args.join(' ')}`], { timeoutMs: extra.timeoutMs ?? TIMEOUT_MS, verbatim: true, ...(extra.env ? { env: extra.env } : {}) });
+    // spec 009 FR-029: the /c argument carries its own quotes (an outer pair for /s); Node must not re-quote them. Fails closed.
+    const cmdArgs = cmdShimArgs(found, args);
+    if (!cmdArgs) return Promise.resolve({ code: null, stdout: '', stderr: '', errorCode: 'EUNSAFE' });
+    return exec(file, cmdArgs, { timeoutMs: extra.timeoutMs ?? TIMEOUT_MS, verbatim: true, ...(extra.env ? { env: extra.env } : {}) });
   }
   return exec(found, args, { timeoutMs: extra.timeoutMs ?? TIMEOUT_MS, ...(extra.env ? { env: extra.env } : {}) });
 }
