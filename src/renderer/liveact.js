@@ -40,7 +40,11 @@
   const openStr=raw=>{const t=String(raw==null?'':raw),i=Math.max(t.lastIndexOf('\x1b]'),t.lastIndexOf('\x1bP'),t.lastIndexOf('\x1b^'),t.lastIndexOf('\x1b_'),t.lastIndexOf('\x1bX'),t.lastIndexOf('\x90'),t.lastIndexOf('\x98'),t.lastIndexOf('\x9d'),t.lastIndexOf('\x9e'),t.lastIndexOf('\x9f'));return i>=0&&!/[\x07\x9c]|\x1b\\/.test(t.slice(i+1));};
   /* spec 097 FR-317 (issue #1284): a tool NAME is shown through the same mask as a label (MCP servers choose names). Control codes out first, then the mask;
      a name the mask changed in ANY way is shown as the generic word `tool`, never half hidden. No mask or a failing one: `tool` too. Every surface that shows a name calls this. */
+  /* spec 012 FR-181 (review of PR 1585, round 7): a tool name longer than this is the neutral word before any mask runs (fail closed); the longest real names are under 30 characters, and an
+     uncapped name was the one input that let a backslash-dense or `[redacted:`-dense text reach maskRaw at up to 1,000,000 characters (issue #1593) */
+  const TOOL_CAP=256;
   const toolName=(raw,mask)=>{const m=mask||{};try{if(typeof m.redact!=='function')return 'tool'; /* no mask: fail closed, as a label */
+    if(String(raw==null?'':raw).length>TOOL_CAP)return 'tool';
     if(openStr(raw))return 'tool'; /* an escape string left open at the end swallows what follows it, and what is shown would be the start of a token (ghp_ and four characters): fail closed (review of PR 1292) */
     const t=String(clearIn(raw==null?'':raw,m.redact)).trim();if(!t)return 'tool';
     const x=ST.maskRaw(t,m.redact);return x===t?t:'tool';}catch(e){return 'tool';}}; /* shown only when the mask left it exactly as it was: any change, a failed or cut mask ("[redaction failed]", the 1,000,000-character cut), a throw: `tool` */
@@ -81,7 +85,10 @@
   function permCore(raw,k,m){ /* {s, out} (out null: the mask gave nothing) for a text without control characters */
     const s=String(raw).replace(/\s+/g,' ').trim();if(!s)return {s:'',out:''};
     if(k==='shell'){const mm=/^(run )([\s\S]*)$/.exec(s),pre=mm?mm[1]:'',cmd=mm?mm[2]:s;if(!cmd)return {s,out:s};
-      const x=ST.maskLabel(cmd,'run',m);return {s,out:x?pre+x:null,lost:x?shellLost(cmd,x):false};}
+      /* spec 012 FR-184 (review of PR 1824, F1): the label read without the shell readings is checked too; a command that reading cannot match back (main's
+         card fell back there) stays lost, though the shell readings hide a run whole and so match */
+      if(typeof ST.maskLabelPair!=='function')return {s,out:null};
+      const p=ST.maskLabelPair(cmd,'run',m),x=p.text;return {s,out:x?pre+x:null,lost:x?shellLost(cmd,x)||(p.ref!==x&&(!p.ref||shellLost(cmd,p.ref))):false};}
     if(k==='tool'){const j=s.split(/( › |\s+)/).map((w,i)=>i%2||!w?w:toolName(w,m)).join('');const x=ST.maskLabel(j,'other',m);return {s,out:x||null};}
     const x=ST.maskLabel(s,'other',m);return {s,out:x||null};
   }
@@ -95,6 +102,7 @@
       const tail=t=>cut?{text:t.text,hidden:true,why:'cut'}:t, suf=cut?' ⟦cut⟧':'';
       if(!PCTRL_T.test(r0)){
         const c=permCore(r0,k,m);if(c.out===null)return fb('unchecked');if(c.lost)return fb('concealed');return tail(c.out===c.s?{text:c.out+suf,hidden:false}:{text:c.out+suf,hidden:true,why:'secret'});}
+      if(typeof ST.splitHides!=='function')return fb('unchecked');if(ST.splitHides(r0))return fb('concealed'); /* spec 012 FR-182: a token split by a line break with blanks around it, read on the text as written */
       for(const v of [stripAnsi(r0),introOut(r0),r0.replace(PCTRL,'')]){ /* a token the controls split: the mask must find nothing in any reading */
         const c=permCore(v,k,m);if(c.out===null)return fb('unchecked');if(c.out!==c.s)return fb('concealed');} /* a secret behind controls: no text, and the card offers no Allow */
       let mk=r0.replace(PCTRL,pmark),mcut=false;

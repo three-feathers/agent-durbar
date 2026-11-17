@@ -12,7 +12,7 @@ import type { AdapterRouter } from '../adapters/router';
 import type { McpServerStatus } from '../adapters/types';
 import type { AgentInfo, McpOpenSignInResult, McpSignInStartResult } from '../shared/api';
 import { validSignInEnd } from '../adapters/eventguard';
-import { SIGN_IN_MIN_TTL_MS } from '../shared/mcp';
+import { SIGN_IN_MIN_TTL_MS, stepsHaveCommand } from '../shared/mcp';
 import { maskMcpError } from './mcpmask';
 import { BLOCK_STATES, canSignInAgainStatus, needsSignIn, validServerName } from './mcpsession';
 
@@ -367,7 +367,7 @@ export async function mcpSignInOp(d: SignInDeps, store: McpSignInStore, id: unkn
     if (r.kind === 'connected') {
       // FR-229 [KNOWN GAP: no real Claude Code or no-address Copilot run]: "connected" for a server Durbar knows needs a sign-in (the runtime read it
       // connected) means the app kept its old sign-in: not fixed, so the block stays and the person gets the steps
-      if (runtimeSaysFine) return { ok: false, manual: true, error: `${ad.displayName} says it is signed in. If calls still fail, use the terminal steps below.` };
+      if (runtimeSaysFine) return { ok: false, manual: true, error: `${ad.displayName} says it is signed in. If calls still fail, ${stepsHaveCommand(ad.capabilities.mcpSignInSteps) ? 'use the terminal steps below' : 'switch the server off for this session'}.` };
       return { ok: true, kind: 'connected' };
     }
     // the session may have ended while the runtime was working: nothing is held for a session that is gone
