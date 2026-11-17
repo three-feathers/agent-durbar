@@ -14,6 +14,8 @@
  * `rowArguments` (200,000 keys, well under 1.5 s) are the cost check there is. Run with `TEAMOPS_LABELS=1` to print where each one died.
  */
 import assert from 'assert';
+import { cpuMs } from './redact-growth-lib';
+import { assertCpuUnderAsync } from './hang-backstop';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
@@ -547,9 +549,7 @@ section('arguments', async () => {
   // size: a huge object is judged by its key count, quickly
   const huge: Record<string, number> = {};
   for (let i = 0; i < 200_000; i++) huge['k' + i] = i;
-  const t0 = Date.now();
-  await bad(huge, 'tmpl1', 'a huge target');
-  ok(Date.now() - t0 < 1500, 'a huge target is refused in well under a second');
+  await assertCpuUnderAsync('a huge target is refused in well under a second of CPU time', 1500, () => bad(huge, 'tmpl1', 'a huge target'));
   eq(F(await r.ops.createPreview(TGT, 'empty1')).code, 'empty', 'a template with no members');
   eq(F(await r.ops.createPreview(TGT, 'zzz')).code, 'notfound', 'an unknown template');
   eq(F(await r.ops.createPreview(TGT, '../../etc')).code, 'notfound', 'an id that looks like a path is only an unknown id');
@@ -602,9 +602,7 @@ section('rowArguments', async () => {
   ok(!ran, 'the getter never ran');
   const huge: Record<string, number> = {};
   for (let i = 0; i < 200_000; i++) huge['k' + i] = i;
-  const t0 = Date.now();
-  await bad(hexId(1), huge, 'a huge change');
-  ok(Date.now() - t0 < 1500, 'a huge change is refused in well under a second');
+  await assertCpuUnderAsync('a huge change is refused in well under a second of CPU time', 1500, () => bad(hexId(1), huge, 'a huge change'));
   eq(F(await r.ops.previewRow(p.token, hexId(9), { effort: 'low' })).code, 'notfound', 'a row that is not in the preview');
   // a bad change leaves the row as it was
   const after = await r.ops.previewRow(p.token, hexId(1), { effort: 'low' }) as RowOk;
@@ -634,9 +632,7 @@ section('nothingElse', async () => {
   ok(!/listAgentProfiles|listProfiles|ensureLive|spawn|exec|autopilot\s*[:=]/i.test(src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '')), 'the source never lists profiles, starts a session or sets Autopilot');
   ok(!/\bimport\b[^;]*electron|from '\.\.\/adapters/.test(src), 'no Electron and no adapter import');
   // a deadline: eight members over three apps, quickly
-  const t0 = Date.now();
-  for (let i = 0; i < 200; i++) await r.ops.createPreview(TGT, 'tmpl1');
-  ok(Date.now() - t0 < 5000, '200 previews in well under five seconds');
+  await assertCpuUnderAsync('200 previews in well under five seconds of CPU time', 5000, async () => { for (let i = 0; i < 200; i++) await r.ops.createPreview(TGT, 'tmpl1'); });
 });
 
 // ---------------------------------------------------------------------------------------------------------------- 12. the handlers

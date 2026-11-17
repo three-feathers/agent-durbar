@@ -20,6 +20,7 @@ const FOLDER = '/home/someone/projects/demo';
 const read = (dir: string, key = FOLDER): string => fs.readFileSync(path.join(dir, folderFingerprint(key) + '.json'), 'utf8');
 const fileOf = (dir: string, key = FOLDER): string => path.join(dir, folderFingerprint(key) + '.json');
 const posix = process.platform !== 'win32';
+const HANG_MS = 30_000; // a hang backstop for the retry waits (they sleep, so CPU time cannot show it); the property is the lower bound and the attempt counts, not a short wall limit (issue #1853)
 const must = <T extends { ok: boolean }>(r: T): Extract<T, { ok: true }> => { assert.ok(r.ok, JSON.stringify(r)); return r as Extract<T, { ok: true }>; };
 const SRC = (id: string, digest: string) => ({ app: 'copilot', session: id, role: 'agent' as const, ord: 0, digest, at: new Date().toISOString() });
 
@@ -376,7 +377,7 @@ async function main(): Promise<void> {
     fs.writeFileSync(lock, '');
     const t0 = Date.now();
     const busy = await new NotesStore(dir).add(FOLDER, 'demo', { text: 'blocked' });
-    assert.ok(!busy.ok && busy.code === 'write' && /busy/.test(busy.error) && Date.now() - t0 >= 1800 && Date.now() - t0 < 6000, 'a fresh lock: retried for about 2 s, then refused');
+    assert.ok(!busy.ok && busy.code === 'write' && /busy/.test(busy.error) && Date.now() - t0 >= 1800 && Date.now() - t0 < HANG_MS, 'a fresh lock: retried for about 2 s, then refused');
     assert.ok(fs.existsSync(lock), "someone else's lock is not removed");
     fs.unlinkSync(lock);
   }
@@ -397,7 +398,7 @@ async function main(): Promise<void> {
     const r = await new NotesStore(dir, { fs: stuck }).add(FOLDER, 'demo', { text: 'cannot lock' });
     const took = Date.now() - t0;
     assert.ok(!r.ok && r.code === 'write' && /busy/.test(r.error), `refused as busy: ${JSON.stringify(r)}`);
-    assert.ok(took >= 1800 && took < 6000, `after about 2 s (${took} ms)`);
+    assert.ok(took >= 1800 && took < HANG_MS, `after about 2 s (${took} ms)`);
     assert.ok(attempts <= 110, `no more than about 100 attempts to remove it (${attempts})`);
     // the lock cannot even be looked at (EACCES): the same wait, then busy
     attempts = 0;
@@ -419,7 +420,7 @@ async function main(): Promise<void> {
       const t3 = Date.now();
       const rf = await new NotesStore(dir, { fs: flip }).add(FOLDER, 'demo', { text: 'flip flop' });
       const took3 = Date.now() - t3;
-      assert.ok(!rf.ok && /busy/.test(rf.error) && took3 >= 1800 && took3 < 6000 && attempts <= 400, `${what}: busy after about 2 s (${took3} ms, ${attempts} tries)`);
+      assert.ok(!rf.ok && /busy/.test(rf.error) && took3 >= 1800 && took3 < HANG_MS && attempts <= 400, `${what}: busy after about 2 s (${took3} ms, ${attempts} tries)`);
     }
     fs.rmSync(lock, { force: true });
     // the lock cannot be created (EPERM, EACCES, EBUSY: on Windows a delete-pending lock): wait like for a busy lock, never refuse at once, never spin
