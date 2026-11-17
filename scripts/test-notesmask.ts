@@ -52,11 +52,12 @@ assert.strictEqual(maskNoteText('C:\\Users\\me\\notes.md and \\\\server\\share')
 // AC3: mask, then cut. A bare token across the 16,000 cut leaves no piece of it
 const room = NOTES_LIMITS.textChars - CUT_LINE.length - 2; // where fitText cuts a text with no line end
 const filler = 'word '.repeat(Math.floor((room - 10) / 5)) + 'w'.repeat((room - 10) % 5); // the token starts 10 characters before the cut
-const across = filler + GH + ' tail'.repeat(60); // over the cap, so it is cut
+// an Anthropic key, not a GitHub token: since spec 012 FR-185 a cut GitHub head is hidden on its own, so it could not tell the orders apart
+const across = filler + SK + ' tail'.repeat(60); // over the cap, so it is cut
 const maskedThenCut = fitText(M(across)).text;
-assert.ok(!maskedThenCut.includes('ghp_'), 'mask then cut: no head of the token is left');
+assert.ok(!maskedThenCut.includes('sk-ant'), 'mask then cut: no head of the token is left');
 const cutThenMasked = M(fitText(across).text);
-assert.ok(cutThenMasked.includes('ghp_') || cutThenMasked.includes(GH.slice(4, 10)), 'cutting first leaves a piece of the token (so this test tells the orders apart)');
+assert.ok(cutThenMasked.includes(SK.slice(0, 10)), 'cutting first leaves a piece of the token (so this test tells the orders apart)');
 
 // AC6: known values first, also when they have no token shape
 const PLAIN = 'hunter2-' + 'plain-value';

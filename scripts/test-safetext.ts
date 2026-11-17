@@ -5,7 +5,7 @@ import { assertLinearShape } from './redact-growth-lib';
 import fs from 'fs';
 import crypto from 'crypto';
 import path from 'path';
-import { redact, maskSecretCommand, maskSecretUrl, withoutShell } from '../src/shared/redact';
+import { redact, maskSecretCommand, maskSecretUrl, withoutShell, withoutLoose, maskLoose, withoutLooseAll } from '../src/shared/redact';
 
 const ROOT = path.join(__dirname, '..', '..');
 const R = path.join(ROOT, 'src', 'renderer');
@@ -286,12 +286,15 @@ eq(T.ready, true, 'redact: ready');
     pwRun(40_000), manyPlain]; // near the budget (about 5.5e7); many runs the mask leaves alone and a few secrets
   let same = 0;
   let cont = 0;
+  let l185 = 0;
+  const SECRETS = [ghp.slice(4), pat.slice(11), sk.slice(3), z.slice(4), 'Hx9Kq2Lm7Np4Rs'];
   for (const t of [...cases, ...shapes]) {
     const where = JSON.stringify(t.slice(0, 60));
     // spec 012 FR-184 (issue #1543): a text with a backslash, or a backtick or caret between token characters, is also read with the shell readings off and shows
     // nothing that reading hides, so it may hide more than main (and the excerpt masks a line continuation as written first); it never shows a piece main's output does not show
     const shell = /\\|[A-Za-z0-9_\-.~+/=:@%][`^][A-Za-z0-9_\-.~+/=:@%]/.test(t);
     let differs = false;
+    let loose = false;
     const sameOrMore = (h: string, r: string, what: string): void => {
       if (h === r) return;
       assert.ok(shell, `#1593 differential: ${what} as on main: ${where}`);
@@ -300,16 +303,30 @@ eq(T.ready, true, 'redact: ready');
       const shown = r.split(cutAt).join('\u0000');
       for (const p of h.split(cutAt)) assert.ok(p === '' || shown.includes(p), `#1593 differential (FR-184): ${what} shows nothing main hides: ${where}: ${JSON.stringify(p)}`);
     };
-    // main's reading: the frozen window with the shared masks' shell readings off (with them off the shared masks are byte for byte main's)
-    sameOrMore(S.maskRaw(t, red), withoutShell(() => R0.maskRaw(t, red)), 'maskRaw');
-    sameOrMore(T.mask(t), withoutShell(() => RT.mask(t)), 'the wrapper mask');
-    sameOrMore(S.excerpt(t, red, 140), withoutShell(() => R0.excerpt(t, red, 140)), 'excerpt');
-    sameOrMore(S.excerpt(t, red, undefined, true), withoutShell(() => R0.excerpt(t, red, undefined, true)), 'excerpt with the code word');
-    sameOrMore(T.excerpt(t, 140), withoutShell(() => RT.excerpt(t, 140)), 'the wrapper excerpt');
+    // main's reading: the frozen window with the shared masks' shell readings off (with them off the shared masks are byte for byte main's); spec 012 FR-185: also with
+    // the GitHub last pass off inside, then that pass once over the result, as the window does it (`maskLoose` only adds masks)
+    const ref = (f: () => string): string => maskLoose(withoutLoose(() => withoutShell(f)));
+    sameOrMore(S.maskRaw(t, red), ref(() => R0.maskRaw(t, red)), 'maskRaw');
+    sameOrMore(T.mask(t), ref(() => RT.mask(t)), 'the wrapper mask');
+    // the excerpt runs FR-185's pass before it drops `_` (the frozen copy cannot): with that pass fully off it is main's; with it on, more is hidden, so the cut can
+    // fall later and a mask can take other neighbouring marks: no 8 characters of a secret it shows that main's uncut excerpt hides
+    const exc = (what: string, head: () => string, main: () => string, mainAll: () => string): void => {
+      const h = head(), h0 = withoutLooseAll(head);
+      sameOrMore(h0, ref(main), what);
+      if (h === h0) return;
+      loose = true;
+      const shown = ref(mainAll).replace(/\s+/g, '');
+      const hs = h.replace(/\s+/g, '');
+      for (const b of SECRETS) for (let i = 0; i + 8 <= b.length; i++) if (hs.includes(b.slice(i, i + 8))) assert.ok(shown.includes(b.slice(i, i + 8)), `#1329 differential: ${what} shows no secret main hides: ${where}: ${b.slice(i, i + 8)}`);
+    };
+    exc('excerpt', () => S.excerpt(t, red, 140), () => R0.excerpt(t, red, 140), () => R0.excerpt(t, red));
+    exc('excerpt with the code word', () => S.excerpt(t, red, undefined, true), () => R0.excerpt(t, red, undefined, true), () => R0.excerpt(t, red, undefined, true));
+    exc('the wrapper excerpt', () => T.excerpt(t, 140), () => RT.excerpt(t, 140), () => R0.excerpt(t, red, undefined, true));
     if (differs) { cont++; continue; }
+    if (loose) { l185++; continue; }
     same++;
   }
-  ok(same >= 1500 && same + cont >= 2000 + shapes.length, `#1593 differential: ${same} texts byte-identical, ${cont} more changed by FR-184 that show nothing main hides`);
+  ok(same + l185 >= 1500 && same + cont + l185 >= 2000 + shapes.length, `#1593 differential: ${same} texts byte-identical, ${l185} more whose excerpt FR-185 changed (byte-identical with its pass off), ${cont} more changed by FR-184 that show nothing main hides`);
   // over the budget the head shows nothing where main showed a masked text (the intended change)
   ok(R0.maskRaw(over, red).length > 0 && S.maskRaw(over, red) === '', '#1593 over the budget: main showed a masked text, the head shows nothing');
 }
