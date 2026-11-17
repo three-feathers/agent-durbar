@@ -6,7 +6,7 @@
 import * as assert from 'assert';
 import { REDACT_MAX_CHARS, _uncappedForTest, bareStepsForTest, redact } from '../src/shared/redact';
 import { spawnSync } from 'child_process';
-import { assertLinearGrowth, assertLinearShape, assertWithinYardstick, cpuMs, worstGrowth, workerRun } from './redact-growth-lib';
+import { YARD_MIN_MS, assertLinearGrowth, assertLinearShape, assertWithinYardstick, cpuMs, worstGrowth, workerRun } from './redact-growth-lib';
 
 const part = process.argv[2];
 const BT = '`';
@@ -279,6 +279,16 @@ if (part === 'hashtablegrowth') {
   // (they cost 25 times `redact` on this path before; about 1 time now), against `redact` on the same text in the same run (spec 012 T138)
   for (const [k, v] of [['unclosed double quote', '@{token="' + 'a'.repeat(MB)], ['unclosed single quote', "@{'api_key'='" + 'a'.repeat(MB)], ['long bare value', '@{ token = ' + 'a'.repeat(MB)]] as const) {
     assertWithinYardstick(`R12: ${k} on 1 MB, command and args paths`, () => { _uncappedForTest.maskSecretCommand(v); _uncappedForTest.maskSecretArgs([v]); }, () => void redact(v, {}), 6);
+  }
+  // issue #1836: the yardstick helper itself, with a job far under one Windows CPU tick (about 15.6 ms): both sides are repeated inside one timing until the
+  // yardstick reads several ticks, so equal work passes and 5 times the work still fails the 3x bound, on every OS
+  {
+    const text = 'word '.repeat(400);
+    const job = (): void => void redact(text, {});
+    for (let i = 0; i < 20; i++) job(); // warm, so the first timing is not the compile
+    const same = assertWithinYardstick('#1836 yardstick: the same job', job, job, 3);
+    assert.ok(same.reps > 1 && same.yard >= YARD_MIN_MS / 2, `#1836 yardstick: a short job is repeated until it reads several ticks (${same.reps} runs, ${same.yard.toFixed(1)} ms)`);
+    assert.throws(() => assertWithinYardstick('#1836 yardstick: 5 times the job', () => { for (let i = 0; i < 5; i++) job(); }, job, 3), (e: Error) => /^#1836 yardstick: 5 times the job: [\d.]+ ms CPU, [\d.]+x the yardstick .*\(limit 3x\)$/.test(e.message), '#1836 yardstick: 5 times the work fails the 3x bound at its own assert');
   }
 }
 
