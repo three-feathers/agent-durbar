@@ -19,6 +19,18 @@ const env = {
   SPACED: 'this value is long but has spaces in it',
 };
 
+// spec 012 FR-185 (issue #1329; review of PR 1832, F2): words a GitHub shape must leave alone, checked first so a looser shape fails here, at its own label:
+// a lower-case body at a token start, identifiers that end in a prefix's letters (glued, under the token's length, or of its length with no digit)
+for (const keep of ['ghp_short', 'see ghs_count', 'wei' + 'ghs_' + 'TotalWeightKilograms', 'my' + 'ghs_' + 'ProcessingTimeForEachRequestInMillis', '%ZZ' + 'gh' + 'p_' + 'x'.repeat(36)]) {
+  assert.strictEqual(redact(keep, {}), keep, `#1329 early near miss stays: ${keep}`);
+}
+
+{
+  const r0 = _homeGuardReadsForTest();
+  maskHomePaths('plain text with /home/alicez/x and C:\\Users\\bob\\y', []);
+  assert.strictEqual(_homeGuardReadsForTest() - r0, 0, '#1329 F1 work (early): a text with no new home spelling is not read by redact');
+}
+
 // spec 012 FR-181 (issue #1541, T162): a token written with a backslash escape inside (`ghp\_<body>`, `g\hp_<body>`) is hidden by
 // redact, maskSecretCommand and maskSecretArgs, in the text as written. Every token here is invented and built in code from pieces.
 {
@@ -2696,6 +2708,12 @@ assert.strictEqual(redact('{"a":"https://u:p@h/x","b":"y"}', {}), '{"a":"https:/
     assert.strictEqual(shows(maskSecretCommand(t1, {}), ['77SXlwH0wpntqfUKpP']), undefined, `#1329 last pass: maskSecretCommand reads without it first: ${maskSecretCommand(t1, {})}`);
     const t2 = 'ax\\n' + gh('r') + 'SDKYjWh^XHL25Wmr5o0Yr5uKnU3FKWPcC2oVU password=.' + gh('u') + '44OozxSib7X1hEAo\u2026 done.=' + gh('o') + 'jqmTvca45pZDpaKlg7aCMSyL\u4e00' + 'pvonYqxhEZT8\t\t';
     for (const [what, out] of [['maskNoteText', maskNoteText(t2).text], ['maskOutgoing', maskOutgoing(t2).text]] as const) assert.strictEqual(shows(out, ['pvonYqxhEZT8']), undefined, `#1329 last pass: ${what} reads without it first: ${out}`);
+  }
+  // the excerpt's union with the reading without the pass cannot be trusted when the text holds words that look like a mask: it fails closed there (invented pieces)
+  {
+    const SKP = 's' + 'k-' + 'proj-';
+    const t = gh('p') + 'FNUNrx1cySIjmuYb2eZMEThaFe[redacted:Zcpeeujppb' + SKP + 'Cgl1ORAfbjvl[redacted:hsa4Q4i' + SKP + 'z3MfR1xn\\hQLHi1vrTcBuGGZooLgiWkFigj' + gh('s') + 'dDPObRiEbVd0pJt9rAHOWw0xGQVlg2m5P8Yv\u200b' + gh('s') + 'RNV9SzyW5VEdCg# pqrJuvSaHyS3mKtQxa54yp[my_branch';
+    for (const n of [undefined, 140]) assert.strictEqual(shows(ST.excerpt(t, m.redact, n), ['Cgl1ORAfbjvl', 'z3MfR1xnhQLHi1vrTcBuGGZooLgiWkFigj']), undefined, `#1329 excerpt with mask-like words fails closed: ${ST.excerpt(t, m.redact, n)}`);
   }
   // the card judges what it shows: a command that is only a cut token is masked whole by the pass, so the card treats it as lost (its fallback words)
   assert.strictEqual(LA.permText('run ' + gh('p') + B36.slice(0, 10), 'shell', m).text, LA.permText('run ' + gh('p') + B36, 'shell', m).text, '#1329 card: a command that is only a cut token falls back as a whole one does');
