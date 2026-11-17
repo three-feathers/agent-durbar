@@ -69,9 +69,11 @@ export const repsToFloor = (timing: (reps: number) => number, minMs: number, max
 // `baseMinOf` (issue #1848, review of PR 1856: on a slower host the 1/16 baseline read 26-42 ms, so the floor never engaged and one reading varied 1.6x): `run` times
 // the baseline that many times in one worker and gives the lowest reading, before and inside the floor loop and on the retries (`BASE_MIN_OF`). A lower baseline reads a higher
 // ratio, so the check is never looser; the full input is timed as before. `run` gets it as its third argument.
+// `minBaseMs` (default `MIN_BASE_MS`, the real platform's): the base floor a baseline is never read under; a fake-timer self-test passes it, so it reads no real platform.
 // Returns the figures of the deciding try: `baseReps` is the runs in the last baseline timing.
-export const assertLinearGrowth = (label: string, run: (input: string, reps?: number, minOf?: number) => { cpu: number; wall: number }, input: string, floorMs = 100, reps = 1, baseline?: string, retryReps = reps, opts: { baseFloorMs?: number; baseMinOf?: number } = {}): { full: number; base: number; ratio: number; baseReps: number } => {
+export const assertLinearGrowth = (label: string, run: (input: string, reps?: number, minOf?: number) => { cpu: number; wall: number }, input: string, floorMs = 100, reps = 1, baseline?: string, retryReps = reps, opts: { baseFloorMs?: number; baseMinOf?: number; minBaseMs?: number } = {}): { full: number; base: number; ratio: number; baseReps: number } => {
   const small = baseline ?? input.slice(0, Math.ceil(input.length / FACTOR));
+  const minBase = opts.minBaseMs ?? MIN_BASE_MS; // the self-test pins it (review of PR 1856, as of PR 1844): no fake case reads the real platform
   let full = Infinity;
   let base = Infinity;
   let wall = 0;
@@ -89,13 +91,13 @@ export const assertLinearGrowth = (label: string, run: (input: string, reps?: nu
     const b = floor === undefined ? { reps: r, ms: run(small, r, minOf).cpu * r } : repsToFloor((n) => run(small, n, minOf).cpu * n, floor, Math.max(r, FACTOR), guess, true);
     baseReps = b.reps;
     base = Math.min(base, b.ms / b.reps);
-    if (full < Math.max(floorMs, Math.max(base, MIN_BASE_MS) * MAX_RATIO)) break;
+    if (full < Math.max(floorMs, Math.max(base, minBase) * MAX_RATIO)) break;
   }
-  if (full / Math.max(base, MIN_BASE_MS) > worstGrowth.ratio && full >= floorMs) Object.assign(worstGrowth, { ratio: full / Math.max(base, MIN_BASE_MS), label });
+  if (full / Math.max(base, minBase) > worstGrowth.ratio && full >= floorMs) Object.assign(worstGrowth, { ratio: full / Math.max(base, minBase), label });
   assert.ok(full < 10_000, `${label}: ${full.toFixed(1)} ms CPU, backstop 10000 ms (catastrophic)`);
   assert.ok(wall < 10_000, `${label}: wall-time backstop: ${wall.toFixed(1)} ms wall for ${full.toFixed(1)} ms CPU, limit 10000 ms (a blocking wait?)`);
-  assert.ok(full < Math.max(floorMs, Math.max(base, MIN_BASE_MS) * MAX_RATIO), `${label}: ${full.toFixed(1)} ms CPU for ${input.length} chars, ${base.toFixed(1)} ms for ${small.length} chars (ratio ${(full / Math.max(base, MIN_BASE_MS)).toFixed(1)}, limit ${MAX_RATIO} for ${FACTOR}x input: linear is about ${FACTOR}, n log n about 30, quadratic over 65; floor ${floorMs} ms)`);
-  return { full, base, ratio: full / Math.max(base, MIN_BASE_MS), baseReps };
+  assert.ok(full < Math.max(floorMs, Math.max(base, minBase) * MAX_RATIO), `${label}: ${full.toFixed(1)} ms CPU for ${input.length} chars, ${base.toFixed(1)} ms for ${small.length} chars (ratio ${(full / Math.max(base, minBase)).toFixed(1)}, limit ${MAX_RATIO} for ${FACTOR}x input: linear is about ${FACTOR}, n log n about 30, quadratic over 65; floor ${floorMs} ms)`);
+  return { full, base, ratio: full / Math.max(base, minBase), baseReps };
 };
 // One worker run of `code` (a worker script that writes CPU and wall ms into shared memory like the ones below): a worker that does not answer
 // in `waitMs` is stopped and the case retried once. The test stays synchronous (Atomics).

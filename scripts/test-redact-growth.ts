@@ -276,16 +276,6 @@ if (part === 'adversarial') {
   const worst = { ...worstGrowth };
   const big = 'x'.repeat(1_000_000);
   const fake = (full: number, base = 7) => (x: string, reps = 1): { cpu: number; wall: number } => ({ cpu: x.length < 100_000 ? (reps === 1 ? 3 : base) : full, wall: 0 });
-  const off = assertLinearGrowth('#1848 floor off', fake(117), big, 100, 1, undefined, 16);
-  assert.strictEqual(off.ratio, 39, '#1848 floor off: a one-run baseline reads the low reading (the issue: 39 for linear work)');
-  const on = assertLinearGrowth('#1848 floor on', fake(117), big, 100, 1, undefined, 16, { baseFloorMs: yardMinMs('linux') });
-  assert.deepStrictEqual([on.baseReps, on.ratio.toFixed(1)], [4, '16.7'], '#1848 floor: the baseline is timed at the runs that read the 20 ms floor (4 runs, 28 ms), not one low reading, and the ratio is the true 16.7');
-  // the first runs are guessed from the whole input's reading (117 / 16 per run: 4 runs); a baseline cheaper than the guess (4 ms a run: 16 ms) takes more runs (8: 32 ms)
-  const short = assertLinearGrowth('#1848 floor short guess', fake(117, 4), big, 100, 1, undefined, 16, { baseFloorMs: yardMinMs('linux') });
-  assert.deepStrictEqual([short.baseReps, short.ratio.toFixed(2)], [8, '29.25'], '#1848 floor: a baseline still under the floor at the guessed runs takes more runs until it reads the floor');
-  const floorMin = { baseFloorMs: yardMinMs('linux'), baseMinOf: BASE_MIN_OF };
-  const both = assertLinearGrowth('#1848 floor and min', fake(117), big, 100, 1, undefined, 16, floorMin);
-  assert.deepStrictEqual([both.baseReps, both.ratio.toFixed(1)], [4, '16.7'], '#1848 min: with the lowest of 4 readings the floor case still reads the true 16.7');
   // a slower host (review of PR 1856): one run of the 1/16 input reads 26 to 42 ms, over the floor, so the floor never engages; the readings of one worker, in turn, are
   // 42, 26, 38 and 30 ms (1.6 times apart) and the whole input reads 520 ms. One reading is whichever comes first; the lowest of 4 is the same every time.
   const slow = (): ((x: string, reps?: number, minOf?: number) => { cpu: number; wall: number }) => {
@@ -298,16 +288,36 @@ if (part === 'adversarial') {
       return { cpu: m, wall: 0 };
     };
   };
-  const one = assertLinearGrowth('#1848 slow host, one reading', slow(), big, 100, 1, undefined, 16, { baseFloorMs: yardMinMs('linux') });
-  assert.deepStrictEqual([one.baseReps, one.base], [1, 42], '#1848 slow host: the floor never engages (one run reads 42 ms, over 20)');
-  const low = assertLinearGrowth('#1848 slow host, lowest of 4', slow(), big, 100, 1, undefined, 16, floorMin);
-  assert.deepStrictEqual([low.baseReps, low.base, low.ratio.toFixed(1)], [1, 26, '20.0'], '#1848 min: on a slow host the baseline is the lowest of 4 readings in one worker (26 ms), not the first (42 ms)');
-  // a Windows tick: each timing reads whole 15.625 ms steps of the true 7 ms a run; the 8-tick floor stops at 16 runs (109.4 ms, 6.84 a run)
+  // a Windows tick: each timing reads whole 15.625 ms steps of the true 7 ms a run
   const tick = 15.625;
-  const win = assertLinearGrowth('#1848 floor win32', (x, reps = 1) => ({ cpu: x.length < 100_000 ? (Math.floor((7 * reps) / tick) * tick) / reps : 117, wall: 0 }), big, 100, 1, undefined, 16, { baseFloorMs: yardMinMs('win32'), baseMinOf: BASE_MIN_OF });
-  assert.deepStrictEqual([win.baseReps, win.ratio.toFixed(1)], [16, '17.1'], '#1848 floor: on a Windows tick the runs stop at 16, the characters of the whole input, and the ratio reads 17.1');
-  assert.throws(() => assertLinearGrowth('#1848 floor quadratic', fake(117 * 16), big, 100, 1, undefined, 16, floorMin), /#1848 floor quadratic: .*\(ratio 267\.4/);
-  assert.throws(() => assertLinearGrowth('#1848 slow host quadratic', (x, reps, minOf) => (x.length < 100_000 ? slow()(x, reps, minOf) : { cpu: 26 * 256, wall: 0 }), big, 100, 1, undefined, 16, floorMin), /#1848 slow host quadratic: .*\(ratio 256\.0/);
+  const ticked = (x: string, reps = 1): { cpu: number; wall: number } => ({ cpu: x.length < 100_000 ? (Math.floor((7 * reps) / tick) * tick) / reps : 117, wall: 0 });
+  // review of PR 1856 (Windows run, as PR 1844's round 1): every case pins the base floor (`minBaseMs`) and the yardstick floor (`baseFloorMs`), and the block runs once with
+  // each platform's values, so no case reads the real platform; the expected figures are pinned per round ([Linux, Windows])
+  const ix = { linux: 0, win32: 1 } as const;
+  for (const os of ['linux', 'win32'] as const) {
+    const at = <T>(pair: [T, T]): T => pair[ix[os]];
+    const B = minBaseMsFor(os);
+    const F = yardMinMs(os);
+    const pin = (o: { baseFloorMs?: number; baseMinOf?: number } = {}): { baseFloorMs?: number; baseMinOf?: number; minBaseMs: number } => ({ ...o, minBaseMs: B });
+    const tag = `#1848 ${os}`;
+    const off = assertLinearGrowth(`${tag} floor off`, fake(117), big, 100, 1, undefined, 16, pin());
+    assert.strictEqual(off.ratio.toFixed(1), at(['39.0', '7.3']), `${tag} floor off: a one-run baseline reads the low reading (39 for linear work over a 2 ms base floor, 117 / 16 over Windows' 16)`);
+    const on = assertLinearGrowth(`${tag} floor on`, fake(117), big, 100, 1, undefined, 16, pin({ baseFloorMs: F }));
+    assert.deepStrictEqual([on.baseReps, on.ratio.toFixed(1)], at([[4, '16.7'], [16, '7.3']]), `${tag} floor: the baseline is timed at the runs that read the floor (4 runs, 28 ms; on Windows 16, the most), not one low reading`);
+    // the first runs are guessed from the whole input's reading (117 / 16 per run); a baseline cheaper than the guess (4 ms a run) takes more runs (8: 32 ms)
+    const short = assertLinearGrowth(`${tag} floor short guess`, fake(117, 4), big, 100, 1, undefined, 16, pin({ baseFloorMs: F }));
+    assert.deepStrictEqual([short.baseReps, short.ratio.toFixed(2)], at([[8, '29.25'], [16, '7.31']]), `${tag} floor: a baseline still under the floor at the guessed runs takes more runs until it reads the floor`);
+    const both = assertLinearGrowth(`${tag} floor and min`, fake(117), big, 100, 1, undefined, 16, pin({ baseFloorMs: F, baseMinOf: BASE_MIN_OF }));
+    assert.deepStrictEqual([both.baseReps, both.ratio.toFixed(1)], at([[4, '16.7'], [16, '7.3']]), `${tag} min: with the lowest of 4 readings the floor case reads as without it`);
+    const one = assertLinearGrowth(`${tag} slow host, one reading`, slow(), big, 100, 1, undefined, 16, pin({ baseFloorMs: F }));
+    assert.deepStrictEqual([one.baseReps, one.base, one.ratio.toFixed(1)], at([[1, 42, '12.4'], [4, 42, '12.4']]), `${tag} slow host: one reading is the first (42 ms); the floor never engages on Linux`);
+    const low = assertLinearGrowth(`${tag} slow host, lowest of 4`, slow(), big, 100, 1, undefined, 16, pin({ baseFloorMs: F, baseMinOf: BASE_MIN_OF }));
+    assert.deepStrictEqual([low.baseReps, low.base, low.ratio.toFixed(1)], at([[1, 26, '20.0'], [8, 26, '20.0']]), `${tag} min: on a slow host the baseline is the lowest of 4 readings in one worker (26 ms), not the first (42 ms)`);
+    const win = assertLinearGrowth(`${tag} tick`, ticked, big, 100, 1, undefined, 16, pin({ baseFloorMs: F, baseMinOf: BASE_MIN_OF }));
+    assert.deepStrictEqual([win.baseReps, win.base.toFixed(2), win.ratio.toFixed(1)], at([[8, '5.86', '20.0'], [16, '6.84', '7.3']]), `${tag} tick: readings in whole 15.625 ms steps take the runs that read the floor (Windows: 16, the characters of the whole input)`);
+    assert.throws(() => assertLinearGrowth(`${tag} floor quadratic`, fake(117 * 16), big, 100, 1, undefined, 16, pin({ baseFloorMs: F, baseMinOf: BASE_MIN_OF })), new RegExp(`${tag} floor quadratic: .*\\(ratio ${at(['267.4', '117.0'])}`));
+    assert.throws(() => assertLinearGrowth(`${tag} slow host quadratic`, (x, reps, minOf) => (x.length < 100_000 ? slow()(x, reps, minOf) : { cpu: 26 * 256, wall: 0 }), big, 100, 1, undefined, 16, pin({ baseFloorMs: F, baseMinOf: BASE_MIN_OF })), new RegExp(`${tag} slow host quadratic: .*\\(ratio 256\\.0`));
+  }
   Object.assign(worstGrowth, worst);
 }
 
