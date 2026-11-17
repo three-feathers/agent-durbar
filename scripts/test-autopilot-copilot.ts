@@ -698,10 +698,13 @@ async function main(): Promise<void> {
     const on = r.ad.setAutopilot(r.sid, { limit: 5 }).then(() => 'ok', (e: Error) => e.message);
     await until(() => asked, 'probe L: mode.set autopilot is in flight');
     const goal = r.ad.send(r.sid, { text: 'the goal' });
+    // the late answer comes the moment the plain send has settled, in the same tick, not after a poll: Durbar's own turn-on is only
+    // remembered for one bound after it timed out (`ownTurnOn`), and a poll's wake-up (about 16 ms a tick on Windows) can pass that bound
+    let from = -1;
+    void goal.then(() => undefined, () => undefined).then(() => { from = r.order().length; late(); }); // the late answer, and its session.mode_changed to autopilot
     assert.match(await settles(on, 'probe L: the turn-on times out'), /did not answer in time/);
     await settles(goal, 'probe L: the send settles');
-    const from = r.order().length;
-    late(); // the late answer, and its session.mode_changed to autopilot
+    await until(() => from >= 0, 'probe L: the late answer arrived');
     await until(() => r.order().slice(from).includes('mode:interactive'), 'FR-059 probe L: the late turn-on is undone (back to interactive)');
     assert.ok(!r.lines().includes(LINE_SELF_STARTED), 'FR-059 probe L: the late answer of Durbar\'s own turn-on is not FR-006');
     assert.ok(!r.order().includes('abort'), 'FR-059 probe L: no abort lands on the person\'s plain turn');

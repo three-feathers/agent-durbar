@@ -10,6 +10,7 @@
  *   removed fails "Escape closes an open menu while a card is open"; the capture `pointermove` listener in wireZoom deleted fails "a real move to empty floor inside the office closes the held card"; the coordinate comparison dropped
  *   (`ZOOM.held !== PT` turned into `true`) fails "a pointermove at the same place does not close the held asleep card"; the `pointerleave` listener in wireZoom deleted ("noleave") fails "a jump straight off the
  *   office closes the held card"; the window's `focus` listener (`addEventListener('focus', replaceZoom)` in openZoom, turned into `0`) removed ("no window focus") fails "the card closes on the window's focus event".
+ *   #1536 (by hand, the dist copy, never `check:ui`, which builds first): `npm run build`, in dist/renderer/realoffice.js delete the `if (ZOOM && ZOOM.held && ZOOM.held === e.clientX + ',' + e.clientY) return;` line and `if (ZOOM && ZOOM.held) return; ` in `arm`'s timer, run `UI_SUITE_XVFB=1 node scripts/ui-suite.js --only check-097-hover-card`, build again: it fails "is still open 400 ms after the desk of".
  *   The focus listeners removed (placeZoom's `document.addEventListener('focusin', replaceZoom, true)` and the focusout one turned into `0`) must fail at "the card is placed again off the slip that took the focus".
  *   The page focus (#1408): the shared focus emulation holds it for the steps that test no blur (a neighbour driver takes the OS focus on Windows CI);
  *   CHECK_097_STEAL_FOCUS=plate|refill|all blurs the window just before the plate's focus() and/or the 700 ms rest. Mutant: `focusPage({ emulate: 'first' })` in
@@ -242,6 +243,18 @@ module.exports = async (ctx) => {
     await js(`(()=>{const [x,y]=${jsLiteral(held)}.split(',').map(Number),e=document.elementFromPoint(x,y)||document.body;e.dispatchEvent(new PointerEvent('pointermove',{bubbles:true,cancelable:true,clientX:x,clientY:y,pointerType:'mouse'}));return 1})()`);
     await js(`new Promise(r=>setTimeout(r,400))`);
     assert.ok(await js(ZOOM_FOR(wk2)), `${tag}: a pointermove at the same place does not close the held asleep card (FR-328)`);
+    /* #1536: the layout slides another agent's desk under the held point (no pointer move) and the browser sends an over: it arms nothing, the held card stays (FR-328) */
+    const intruder = await js(`(()=>{const [x,y]=${jsLiteral(held)}.split(',').map(Number),ro=document.querySelector('#stage .ro'),o=ro.getBoundingClientRect();
+      const other=[...document.querySelectorAll('#stage .ro-plate')].map(p=>p.dataset.id).find(id=>id&&id!==${jsLiteral(wk2)});if(!other)return null;
+      const d=document.createElement('div');d.className='ro-desk';d.id='hoverIntruder';d.dataset.for=other;d.style.cssText='position:absolute;z-index:99999;width:40px;height:40px;pointer-events:auto;left:'+(x-o.left-20)+'px;top:'+(y-o.top-20)+'px';ro.appendChild(d);
+      const at=document.elementFromPoint(x,y);if(at!==d)return {other,under:false};
+      d.dispatchEvent(new PointerEvent('pointerover',{bubbles:true,cancelable:true,clientX:x,clientY:y,pointerType:'mouse'}));
+      return {other,under:true}})()`);
+    assert.ok(intruder && intruder.under, `${tag}: another agent's desk element is under the held point for the layout-over step: ${JSON.stringify(intruder)}`);
+    await js(`new Promise(r=>setTimeout(r,400))`); /* longer than the 120 ms hover timer, the pointer has not moved */
+    const kept = await js(ZOOM_FOR(wk2));
+    await js(`(()=>{const d=document.getElementById('hoverIntruder');if(d)d.remove();return 1})()`);
+    assert.ok(kept, `${tag}: the held card of ${wk2} is still open 400 ms after the desk of ${intruder.other} came under the held point with an over and no move (an over made by the layout arms nothing, FR-328, #1536)`);
     const EMPTY = `(()=>{const ro=document.querySelector('#stage .ro'),o=ro.getBoundingClientRect(),held=${jsLiteral(held)};
       for(let y=o.top+8;y<o.bottom-8;y+=23)for(let x=o.left+8;x<o.right-8;x+=29){if(Math.round(x)+','+Math.round(y)===held)continue;const e=document.elementFromPoint(x,y);if(e&&ro.contains(e)&&!e.closest('.ro-screen, .ro-person, .ro-person2, .ro-rig, .ro-initials, .ro-marquee, .ro-desk, .ro-ltable, .ro-plate, .ro-zoom, .ro-slip, .ro-chip, .ro-lplate, .ro-visitor'))return {x:Math.round(x),y:Math.round(y)};}
       return null})()`;
