@@ -1,0 +1,1 @@
+- **Masking hides more spellings of a home folder and more written forms of a GitHub token** (spec 012 FR-185, issue #1329): on every surface built on the shared masks (logs, the desk, the approval card, notes and messages). Some forms stay a known gap under the issue.

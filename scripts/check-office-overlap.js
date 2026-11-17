@@ -411,15 +411,15 @@ async function driver(ctx) {
      screen must be the one asked for, or the run fails (it once measured Clean Office for every theme). */
   const userTheme = process.env.OFFICE_USER_THEME ? JSON.parse(fs.readFileSync(process.env.OFFICE_USER_THEME, 'utf8')) : null;
   const wantTheme = userTheme ? userTheme.id : (process.env.OFFICE_THEME || '');
-  /* spec 077 FR-070: OFFICE_CHARACTERS=<value> (theme, minimalist, cheeky, prehistoric, pirate, monster, royal, rebels) puts who sits at the desks in the address too; checked like the theme */
-  const wantChars = /^(theme|minimalist|cheeky|prehistoric|pirate|monster|royal|rebels)$/.test(process.env.OFFICE_CHARACTERS || '') ? process.env.OFFICE_CHARACTERS : '';
-  if (process.env.OFFICE_CHARACTERS && !wantChars) throw new Error('OFFICE_CHARACTERS must be theme, minimalist, cheeky, prehistoric, pirate, monster, royal or rebels');
+  /* spec 077 FR-070: OFFICE_CHARACTERS=<value> (theme, minimalist, cheeky, prehistoric, pirate, monster, royal, rebels, mine) puts who sits at the desks in the address too; checked like the theme */
+  const wantChars = /^(theme|minimalist|cheeky|prehistoric|pirate|monster|royal|rebels|mine)$/.test(process.env.OFFICE_CHARACTERS || '') ? process.env.OFFICE_CHARACTERS : '';
+  if (process.env.OFFICE_CHARACTERS && !wantChars) throw new Error('OFFICE_CHARACTERS must be theme, minimalist, cheeky, prehistoric, pirate, monster, royal, rebels or mine');
   /* spec 102 T226 (FR-267): OFFICE_WORLD=retro or cave (with OFFICE_VIEW=real) draws the arcade or the cave, the worlds behind a flag, in the address like the theme; only a listed value (spec 097 Changes 2026-11-14) */
   const wantWorld = process.env.OFFICE_WORLD === 'retro' || process.env.OFFICE_WORLD === 'cave' ? process.env.OFFICE_WORLD : '';
   if (process.env.OFFICE_WORLD && !wantWorld) throw new Error('OFFICE_WORLD must be retro or cave');
   const expectDark = process.env.CHECK_EXPECT_DARK === '1';
   if (expectDark && !userTheme) throw new Error('CHECK_EXPECT_DARK=1 needs OFFICE_USER_THEME: the dark fixture is a user theme');
-  const themeQuery = (wantWorld ? '&worldflags=' + wantWorld + '&world=' + wantWorld : '') + (wantTheme ? '&theme=' + encodeURIComponent(wantTheme) : '') + (userTheme ? '&usertheme=' + encodeURIComponent(JSON.stringify(userTheme)) : '') + (wantChars ? '&characters=' + wantChars : '');
+  const themeQuery = (wantWorld ? '&worldflags=' + wantWorld + '&world=' + wantWorld : '') + (wantTheme ? '&theme=' + encodeURIComponent(wantTheme) : '') + (userTheme ? '&usertheme=' + encodeURIComponent(JSON.stringify(userTheme)) : '') + (wantChars ? '&characters=' + wantChars : '') + (wantChars === 'mine' ? '&simmine=3' : ''); /* spec 096 FR-072: the simulator's three saved characters */
   if (wantChars) console.log('check:office: characters ' + wantChars);
   let motionShown = false;
   if (wantTheme) console.log('check:office: theme ' + wantTheme + (userTheme ? ' (user theme from ' + path.basename(process.env.OFFICE_USER_THEME) + ')' : ''));
@@ -440,11 +440,11 @@ async function driver(ctx) {
       try { await ctx.waitFor(`window.THEME.characters()===${jsLiteral(wantChars)}`, 5000); } catch (e) { /* reported below */ }
       const ch = await ctx.js(`window.THEME.characters()`);
       if (ch !== wantChars) throw new Error(`characters ${wantChars} were not applied (on screen: ${ch})`);
-      /* Cheeky: the kit drawn must be the crew, and the desk scenes on screen must show it, or the run would measure the theme's own figures */
-      if (wantChars === 'cheeky') {
+      /* Cheeky: the kit drawn must be the crew, and the desk scenes on screen (none when every room is closed) must show it, or the run would measure the theme's own figures */
+      if (wantChars === 'cheeky' || wantChars === 'mine') {
         const crewOn = `window.THEME.sceneKit()==='crew'&&(()=>{const sc=[...document.querySelectorAll('#stage svg.scene')].filter(s=>s.getClientRects().length);return !sc.length||sc.some(s=>/\\|crew(\\||$)/.test(s.dataset.sig||''));})()`;
         try { await ctx.waitFor(crewOn, 8000); } catch (e) { /* reported below */ }
-        if (!(await ctx.js(crewOn))) throw new Error('characters cheeky: the desks on screen do not draw the crew kit');
+        if (!(await ctx.js(crewOn))) throw new Error(`characters ${wantChars}: the desks on screen do not draw the crew kit`);
       }
     }
     if (!motionShown) { motionShown = true; console.log('check:office: motion ' + ((await ctx.js(`matchMedia('(prefers-reduced-motion: reduce)').matches`)) ? 'reduced' : 'on')); }
@@ -1290,7 +1290,7 @@ async function driver(ctx) {
       await type('explicacion');
       if (shotsDir) await ctx.shot(path.join(shotsDir, `${prefix}-prevsearch-${w}x${h}.png`));
       await ctx.js(`document.getElementById('prevQ').focus()`);
-      H.key('Escape', [], { pause: 0 });
+      await H.key('Escape', [], { pause: 0 });
       await must(`(document.getElementById('prevQ')||{value:'x'}).value===''`, 'Escape to clear the search box');
       await stable('after Escape');
       const cleared = await ctx.js(`({v:document.getElementById('prevQ')&&document.getElementById('prevQ').value,rows:document.querySelectorAll('#prevLists .prev-row').length})`);

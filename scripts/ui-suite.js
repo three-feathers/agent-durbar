@@ -160,6 +160,8 @@ const DRIVERS = [
   { name: 'check-characters' }, // spec 077 FR-064..FR-069: Settings > Characters on Retro Pixel (Cheeky, Minimalist, the theme's own)
   { name: 'check-removed-themes' }, // spec 035 FR-017, FR-018: a stored id of a removed theme shows Clean Office, in both sizes; Retro stays
   { name: 'shots-040-picker' }, // spec 040 FR-031, FR-032: no AI maker or Import; Remove a saved theme asks first, Clean Office after
+  { name: 'check-crew', label: 'check-crew mine', env: { CREW_CHARS: 'mine' } }, // spec 096 T042, T046: the same with My characters (the simulator's three saved ones)
+  { name: 'check-charmaker' }, // spec 096 T041..T045: the maker, its login gate, honest limits, My characters at the desks, pins, manage rows, a hostile name
   { name: 'check-charencoder' }, // spec 096 FR-022..FR-026: the sandboxed encoder window on fixture sheets, its refusals, its session; the simulator's fake generator (FR-070)
   { name: 'check-permission-scope' }, // spec 003 FR-108: the approval card says how far "for this session" reaches
   { name: 'check-permission-lookalike' }, // spec 003 FR-117..FR-119 (#1300): lookalike letters marked on the approval card, its line, the session button from the key, chips, why-allowed; all buttons stay
@@ -188,6 +190,7 @@ const DRIVERS = [
   { name: 'shots-068-coffee' }, // spec 068: coffee break (simbreak=8 in its own query)
   { name: 'shots-097-screens', focus: true }, // spec 097 P2: live screens and the hover zoom
   { name: 'shots-097-screens', label: 'shots-097-screens retro', focus: true, env: { SCREENS_WORLD: 'retro' } }, // spec 102 FR-310 (issue #1428): the arcade's screens, helper heads and big screens
+  { name: 'check-brain-draw', focus: true }, // spec 106 T005 (its Full checks need the OS window focus, FR-210): the brain on its floating host behind an off flag: masking, text floor, no loop at rest, Still, hidden, reduced motion, forced colours
   { name: 'check-097-motion' }, // spec 097 P2: the people's motion and what stops it
   { name: 'check-097-motion', label: 'check-097-motion retro', env: { MOTION_WORLD: 'retro' } }, // spec 102 FR-309, FR-310 (issue #1428): the arcade's loops start after the calm, on the grid, stepped; its pause, still and scrolled-away rules
   { name: 'check-001-halo' }, // spec 001 FR-210: the waiting halo is a still glow, nothing animates it
@@ -213,11 +216,12 @@ const DRIVERS = [
   { name: 'check-097-letter' }, // spec 097 FR-377 (#1587): the schedule letter flies from the Postbox plate to the target's plate in the Photo office, both sizes, reduced motion, off-screen plate, 3:1 on the picture
   { name: 'check-097-letter', label: 'check-097-letter retro', env: { DRIVER_WORLD: 'retro' } }, // the same in the Retro arcade
   { name: 'check-097-letter', label: 'check-097-letter cave', env: { DRIVER_WORLD: 'cave' } }, // the same in the Prehistoric cave (spec 097 FR-377: one of the three Real office worlds)
-  { name: 'check-097-order' }, // spec 097 FR-345..FR-348 (#1152): rooms, desks and places rearranged in Real office by key and folder menu on spec 033's one order; the flat order shows, both sizes
+  { name: 'check-097-order' }, // spec 097 FR-345..FR-348 (#1152): rooms, desks and places rearranged in Real office by key and folder menu on spec 033's one order; the flat order shows, both sizes; FR-366 (#1571): a tie among those that need you keeps the office order (flat, Photo, arcade)
   { name: 'check-102-arcade-menu' }, // spec 102 T317 (issue #1399): the folder menu on an arcade sign: Move earlier / later say the room keeps its place (spec 097 FR-354); the signs do not move and nothing is saved
   { name: 'check-097-drag' }, // spec 097 FR-352..FR-355 (#1152, Q30..Q33): drag a plate or folder sign in Real office (Photo, cave, arcade), the lobby by chip button and the +N menu, on the one saved order; both sizes
+  { name: 'check-097-drag-cancel', focus: true }, // spec 097 FR-352 (issue 1550): focus: true because its held drags end on a real OS blur from a neighbour window, which is what it tests. A drag in Real office ends on a window blur, a wheel, a scroll, Escape and pointercancel: nothing lifted, nothing saved; a later drag works; Photo office and arcade, both sizes
   { name: 'check-097-slip-plates' }, // spec 097 (bug 1434): no request slip covers a plate, sign, chair label, chip, cue or face; 15 agents, both sizes, three worlds
-  { name: 'check-097-plate-pencil' }, // spec 059 FR-170 (#1155): the rename pencil beside a Real office plate's name, F2 on a plate, both sizes
+  { name: 'check-097-plate-pencil' }, // spec 059 FR-170 (#1155): the rename pencil beside a Real office plate's name, F2 on a plate, both sizes; spec 097 FR-367 (#1571): F2 on a folder sign's ⋯ renames in place
   { name: 'check-097-pencil-ease' }, // spec 097 FR-365 (bug 1513): no rename pencil painted over its plate's name or status while plates ease to the lounge (capturePage frames), Photo office and arcade, both sizes; PENCIL_EASE_MUTANT=nohide
   { name: 'check-097-ctx-frame' }, // spec 097 FR-322..FR-326 (Q8, owner 2026-11-07): the context line round each monitor frame in the Photo office, the cave and the arcade; bands, share, outside the glass, none for unknown, no node per update; CTX_MUTANT=colour|glass|node|unknown
   { name: 'check-097-desk-marks' }, // spec 097 FR-316 (#1149): the Draft tag above a Real office plate for an unsent draft, its words in the plate's name, shown by class, both sizes

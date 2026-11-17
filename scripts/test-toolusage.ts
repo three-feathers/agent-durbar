@@ -1,5 +1,6 @@
 /** All-time tool usage document (spec 020 FR-004..FR-006): `npm run test:toolusage`. */
 import * as assert from 'assert';
+import { cpuMs } from './redact-growth-lib';
 import * as path from 'path';
 import { HIDDEN_SERVER, HIDDEN_TOOL, MAX_AGENTS, MAX_TOOLS, agentLabel, emptyDoc, nameCacheStats, recordEvent, sanitizeDoc, toolKey } from '../src/shared/toolusage';
 // eslint-disable-next-line @typescript-eslint/no-var-requires
@@ -187,9 +188,9 @@ assert.ok(!agentLabel('Ada', '/home/v/secret-dir/app').includes('secret-dir'), '
   // 4 (M9): only the first 4096 characters are judged; a long name is cheap and a token past the cap is not in the 120 stored
   {
     const long = 'x'.repeat(1_000_000) + ' ' + TK;
-    const t0 = Date.now();
-    const k = toolKey(start(long));
-    assert.ok(Date.now() - t0 < 5000, 'M9: a 1M-character name is judged quickly');
+    let k!: ReturnType<typeof toolKey>;
+    const cpu = cpuMs(() => { k = toolKey(start(long)); }, 5000);
+    assert.ok(cpu < 5000, `M9: a 1M-character name is judged quickly (${cpu.toFixed(0)} ms of CPU time)`);
     assert.strictEqual(k.name, 'x'.repeat(120), 'M9: past the 4096 cap nothing is judged, and only 120 x are stored');
     assert.strictEqual(toolKey(start('y'.repeat(4000) + ' ' + TK)).name, HIDDEN_TOOL, 'M9: a token inside the first 4096 characters hides the name');
     assert.strictEqual(toolKey(start('z'.repeat(4096) + ' ' + TK)).name, 'z'.repeat(120), 'M9: the cap is exactly 4096');

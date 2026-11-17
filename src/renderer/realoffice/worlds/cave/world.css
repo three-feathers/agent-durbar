@@ -21,6 +21,8 @@
 .ro[data-world="cave"] .ro-screen.off .ro-glass{background:#110e0b}
 .ro[data-world="cave"] :is(.ro-neck,.ro-foot){display:none}
 .ro[data-world="cave"] .ro-screen:hover .ro-bezel::before{outline:2px solid var(--focus,#f2b46e)}
+/* the circle's one picture (spec 102 FR-227, FR-234, T242): the painted still flame the folders' desks stand round; aria-hidden, no text, no pointer events (realoffice.css), and a picture that does not load leaves a plain floor and moves no seat */
+.ro[data-world="cave"] .ro-focus{background-image:url(focus.webp)}
 /* forced colours: the system colours; the pictures stay, the lights are already off */
 @media (forced-colors:active){
   .ro[data-world="cave"]{background-image:none;background-color:Canvas}

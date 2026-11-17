@@ -81,6 +81,7 @@
       <p class="scr-note small">Changes apply from the agent's next start in this folder. A file that changes later is shown again before it is used.</p>`;
   }
 
+  /* spec 096 review: this prompt comes from the background and is a security prompt: it waits until no dialog or flow is open, and comes back if another dialog replaced it, since `seen` will not ask again */
   async function open(v,info){
     const S=window.DurbarScreens;
     if(!S||!S.dialog||!v.items.length&&!v.problems.length){
@@ -88,11 +89,14 @@
       return;
     }
     /* the dialog is removed when it closes: read the ticks on the button click (validate runs before the close) */
-    let picked={accepted:[],hooksConfirmed:false};
-    const r=await S.dialog({title:'This folder brings its own agent setup',wide:true,cls:'imp fs',html:bodyHTML(v,info),
+    let picked={accepted:[],hooksConfirmed:false},replaced=false,r=null;
+    do{replaced=false;
+    if(S.dialogsFree)await S.dialogsFree();
+    r=await S.dialog({title:'This folder brings its own agent setup',wide:true,cls:'imp fs',html:bodyHTML(v,info),
       buttons:[{label:'Turn all off',value:'off'},{label:'Use these',value:'use',cls:'primary'}],
       validate:d=>{picked={accepted:[...d.querySelectorAll('[data-fs]')].filter(c=>c.checked&&!c.disabled).map(c=>c.dataset.fs),hooksConfirmed:!!(d.querySelector('#fsHooksOk')||{}).checked};return '';},
       onOpen:d=>{
+        d._onReplaced=()=>{replaced=true;};
         requestAnimationFrame(()=>markLong(d));
         d.addEventListener('click',async e=>{
           const b=e.target.closest('[data-explain]');if(!b)return;
@@ -105,6 +109,7 @@
           box.innerHTML=`<b>${X.esc(word)}</b> <span class="fs-ai-src">AI explanation by ${X.esc(x.by||'an agent app')}; it can be wrong. The command above is what runs.${x.cost?' Cost: '+X.esc(x.cost)+'.':''}</span><div>${X.esc(x.text||'')}</div>`;
         });
       }});
+    }while(replaced);
     if(!r)return; /* dismissed: nothing recorded, so nothing applies (pending stays pending) */
     const off=(r&&r.value)==='off'; /* the dialog resolves {value, root} */
     const accepted=off?[]:picked.accepted;

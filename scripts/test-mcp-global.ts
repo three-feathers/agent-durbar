@@ -4,6 +4,7 @@
  * no network, no credits; every file lives in a temp folder.
  */
 import * as assert from 'assert';
+import { assertCpuUnder } from './hang-backstop';
 import { mcpConfigOf } from '../src/adapters/claude';
 import * as fs from 'fs';
 import * as os from 'os';
@@ -255,10 +256,7 @@ ok('Codex: a file that does not parse is refused, valid shapes still read (chang
 });
 ok('Codex: a hostile long line is linear', () => {
   const big = '[mcp_servers.a]\nargs = [' + '"x",'.repeat(60000) + ']\n' + ';'.repeat(200000) + ' x y\n';
-  const t = Date.now();
-  readGlobal('codex', big);
-  addToText('codex', big, stdio, 'ref');
-  assert.ok(Date.now() - t < 2000, `took ${Date.now() - t} ms`);
+  assertCpuUnder('Codex: a hostile long line is read in linear time (94 ms measured under load)', 1900, () => { readGlobal('codex', big); addToText('codex', big, stdio, 'ref'); });
 });
 
 ok('views mask secret-shaped arguments and URL keys from the files', () => {

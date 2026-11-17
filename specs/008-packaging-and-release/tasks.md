@@ -213,6 +213,10 @@
 
 - [x] T155 (FR-199) `scripts/ui-suite.js` `runOne`: `detached` (POSIX), `guardTree` and `killTree` at the limit for every driver, `launch` option for tests; `scripts/test-ui-suite.ts` two cases (time limit leaves no grandchild; SIGINT/SIGTERM end the tree and remove the user-data folder); `d.killTree` removed from `scripts/release-video.js`; `scripts/test-release-video.js` source check follows; `changelog.d/008-uisuite-kill-tree.md`.
 
+## 2026-11-10: the Mac title bar check on CSS pull requests (FR-200, issue #1469)
+
+- [x] T156 (FR-200) `.github/workflows/mac-titlebar-pr.yml` (own file: `paths:` is workflow-level); `scripts/test-ui-suite.ts` (filter, wiring, path matcher, mutants), `scripts/test-electron-cache.ts` (`TYPICAL_MIN`). Not blocked: #1458's failure is fixed on `main` by PR #1537 and the PR's own `Mac title bar (path-filtered)` job passed at its head, so no `[KNOWN GAP]` marking was needed.
+
 ## 2026-11-11: a driver that waits on the OS window focus never runs next to another window (FR-210)
 
 - [x] T170 (FR-210) `scripts/ui-suite.js`: `focus: true` on `shots-097-screens` (both entries) and `check-097-hover-card`; `main` runs the other entries at the job count and then the `focus` entries alone when drivers share a desktop; `scripts/test-ui-suite.ts` overlap test and a mutant; `changelog.d/008-uisuite-focus-serial.md`. Issue #1498.
@@ -231,6 +235,7 @@
 - [x] T174 (FR-214) `scripts/check-ui-text.js` `run()`: pointer to 0,0, wait for no `:hover` under the roots, `hovered` finding, `UITEXT_MUTANT=hover`; `changelog.d/008-1591-xvfb-screen.md`. Linux/Xvfb run by the coordinator, see the PR.
 - [x] T175 (FR-214, round 2) `scripts/driver-helpers.js` `pointerOff`; `scripts/check-097-chat-contrast.js` and `scripts/shots-102-arcade.js` reset the pointer and assert no `:hover` at the colour read, mutants `CONTRAST_MUTANT=hover`, `ARCADE_MUTANT=hover`.
 - [x] T176 (FR-215) `scripts/driver-helpers.js` `pointerOff` (re-sent move, labelled failure); `scripts/test-ui-suite.ts` fake-page test with two mutants; `changelog.d/008-1648-pointeroff-wait.md`.
+- [x] T177 (FR-268) await every `H.key` call and wrapper call in `scripts/*.js`; `checkKeyAwait` in `scripts/test-ui-suite.ts` parsed with the TypeScript compiler (aliases, destructures, wrappers, `case`, ternary and comma forms), a fixture per closed form and a mutant per real-driver form; `changelog.d/008-1653-await-key.md`.
 - [x] T179 (FR-216) `scripts/driver-helpers.js` `pointerOff` (capture listener for the 0,0 move, two clear samples a frame and 100 ms apart, re-send on a re-hover); `scripts/test-ui-suite.ts` vm stub-page test with two mutants; `changelog.d/008-1719-pointeroff-two-samples.md`.
 - [x] T180 (FR-193 amended) `release.yml` runs `npm run build` instead of `npm run typecheck` before `npm test`; `scripts/test-ci-typecheck.js` also reads `release.yml`, with a mutant that restores the typecheck step (v0.1.20 release run 43685791437)
 - [x] T181 (FR-118, delta 2026-11-15) `CHANGELOG.md` `## v0.1.20 (not released, 2026-11-15)` section so `v0.1.21` can be tagged; fragments left unfolded; follow-up issue #1784 (`previousRelease()` counts a tag with no published release)
@@ -238,6 +243,11 @@
 - [x] T183 (FR-218) `scripts/release-video.js` `FILL_SCENES` and `chooseScenes` fill to three scenes; `scripts/test-release-video.js` updated; `changelog.d/008-1789-release-video-scenes.md`; README step 4.1 says so (issue #1790)
 - [x] T184 (FR-270, delta 2026-11-15) `scripts/release-video.js` `lounge` scene presses the limit slip's Remove limit before filming; `scripts/test-release-video.js` source check with two mutants; `changelog.d/008-1792-lounge-popover.md`
 - [x] T185 (FR-271, delta 2026-11-15) the previous-release refusal names the "not released" section fix; `changelog.d/README.md`; `scripts/test-changelog.js` (a not-released section passes, an unfolded real release is refused with the hint)
+- [x] T186 (FR-272, delta 2026-11-17) `scripts/build-site.js` exports `bulletSiteProblems`/`landingBullet`/`LANDING_REF_RE`; `scripts/changelog.js` `check()` runs them on each fragment bullet; `scripts/test-changelog.js` with four mutants; `changelog.d/README.md`; `changelog.d/008-1834-fragment-site-check.md` (issue #1834)
+
+- [x] T187 (FR-211, delta 2026-11-17, issue #1850) `scripts/test-ui-suite.ts`: the five `Date.now() - t < 5000` halves are gone (missing-build `main`, `runOne`, `check-parallel`, the five launchers, `--only`); the property is asserted by the calls made (`calls.join(",") === ""`); mutant: `main` calls `ensure` before the build check.
+- [x] T189 (delta 2026-11-17, issue #1853, part 1: tests n to z) the fixed wall-clock `<` limits in 17 `scripts/test-[n-z]*.ts` suites are replaced: wall halves deleted where the assert already names the cause, `cpuMs` (CPU time) for linear-time guards, 30 s hang backstops for sleeping waits; mutants per site; `changelog.d/008-1853-n-z-wallclock.md`
+- [x] T190 (delta 2026-11-17, issue #1853 part 1) `scripts/hang-backstop.ts` (`withBackstop`, `assertCpuUnder`, self-tested in `test-checkpoints.ts`); no fixed wall-clock limit left in the asserts of `test-a*` to `test-m*`: property asserted (`cleanQuery` cut before split, bomb reason), hang backstop, or CPU time with a generous cap; `logTimerDelays`, `assertCutFirst`, `assertCpuUnder` (on `cpuMs`, wall backstop, async refused); caps sized to measured CPU; mutants as the spec delta lists; `test-teamops.ts` uses `assertCpuUnderAsync` (its local `cpuAsync` dropped)
 
 ## 2026-11-13: the launchers with a window wider than 1280 get the sized Xvfb screen (FR-269)
 
