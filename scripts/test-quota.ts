@@ -94,10 +94,10 @@ const facts = (v: QuotaView, now = NOW, i = 0): Record<string, string> => Object
   // review (Paco's side): hostile `resetDate`s are read in linear time (`T.*` was quadratic on a long string)
   for (const hostile of ['T'.repeat(200_000) + '+1', '2026-11-01T' + '0'.repeat(200_000), 'T'.repeat(60_000) + '!', '9'.repeat(200_000)]) {
     let z: string | undefined = 'unset', t: number | undefined = -1;
-    const cpu = cpuMs(() => { z = quotaZoneOf(hostile); t = quotaTimeMs(hostile); }, 1000);
+    const cpu = cpuMs(() => { z = quotaZoneOf(hostile); t = quotaTimeMs(hostile); }, 500);
     assert.strictEqual(z, undefined);
     assert.strictEqual(t, undefined);
-    assert.ok(cpu < 1000, `a hostile time string is cut before any matching (${cpu.toFixed(0)} ms of CPU time; a quadratic match took seconds)`);
+    assert.ok(cpu < 500, `a hostile time string is cut before any matching (${cpu.toFixed(0)} ms of CPU time; a quadratic match took seconds)`);
   }
   assert.strictEqual(quotaZoneOf('2026-11-01'), undefined);
 }
