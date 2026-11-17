@@ -8,14 +8,17 @@ const { execFileSync } = require('child_process');
 /** Spec 021 FR-095: no test-helper git child may hang for ever (issue #1631: a `git hash-object` held the heavy test lock for 37 minutes). */
 const GIT_TIMEOUT_MS = 60000;
 
-/** `git <args>` in `dir`, killed after `timeoutMs` (SIGKILL). On a timeout it throws an Error naming the git subcommand and the timeout (never the
+/** `git <args>` in `dir`, killed after `timeoutMs` (SIGKILL; on POSIX the child leads its own process group and the whole group is killed, so a grandchild dies too: FR-095). On a timeout it throws an Error naming the git subcommand and the timeout (never the
  * arguments or the input). `gitCmd` is the binary and its leading arguments (default `['git']`): a test passes a sleeping stand-in
  * (`[process.execPath, script]`), which runs the same on Windows. Returns stdout (a string, or a Buffer when `encoding` is null). */
 function gitRun(dir, args, { input, env, encoding = 'utf8', gitCmd = ['git'], timeoutMs = GIT_TIMEOUT_MS } = {}) {
   try {
-    return execFileSync(gitCmd[0], [...gitCmd.slice(1), ...args], { cwd: dir, env, input, encoding, stdio: ['pipe', 'pipe', 'pipe'], timeout: timeoutMs, killSignal: 'SIGKILL', windowsHide: true });
+    return execFileSync(gitCmd[0], [...gitCmd.slice(1), ...args], { cwd: dir, env, input, encoding, stdio: ['pipe', 'pipe', 'pipe'], timeout: timeoutMs, killSignal: 'SIGKILL', windowsHide: true, detached: process.platform !== 'win32' });
   } catch (e) {
     if (e && e.code === 'ETIMEDOUT') {
+      // `timeout` kills only the direct child; its group (pgid = its pid, it was started detached) still holds any grandchild: kill it too. No shell, no user string: a number.
+      // Windows: `taskkill /T` walks the parent links of a LIVE parent and `timeout` has already killed it, so there is no tree kill there (spec 021 FR-095 [KNOWN GAP]).
+      if (process.platform !== 'win32' && Number.isInteger(e.pid) && e.pid > 1) { try { process.kill(-e.pid, 'SIGKILL'); } catch (_) { /* group already empty */ } }
       let i = 0;
       while (i < args.length && (args[i] === '-c' || args[i - 1] === '-c')) i++;
       const t = new Error(`git ${args[i] || ''} timed out after ${timeoutMs} ms (killed)`.replace('git  ', 'git '));
