@@ -5,7 +5,7 @@
  * deleted and its temp folder removed on success, on an error and on a timeout. What a real runtime does is NOT tested here.
  */
 import * as assert from 'assert';
-import { logTimerDelays, withBackstop } from './hang-backstop';
+import { loggingTimers, withBackstop } from './hang-backstop';
 import * as fs from 'fs';
 import { COPILOT_CAPABILITIES, ONE_SHOT_TIMEOUT_MS, oneShotConfig } from '../src/adapters/copilot';
 import { FakeClient, FakeSession, TestAdapter } from './fakes/copilot-sdk';
@@ -118,10 +118,7 @@ async function main(): Promise<void> {
   {
     const fake = new FakeClient();
     fake.sendHangs = true;
-    const tm = logTimerDelays();
-    await assert.rejects(withBackstop(new TestAdapter(fake, 50).generateText('p'), 'a hung send: the time limit applies'), /in time/);
-    tm.stop();
-    assert.ok(tm.delays.includes(50), `the one-shot turn waits on a timer of its time limit (50 ms); timers: ${tm.delays.join(',')}`);
+    await loggingTimers(() => assert.rejects(withBackstop(new TestAdapter(fake, 50).generateText('p'), 'a hung send: the time limit applies'), /in time/), (d) => assert.ok(d.includes(50), `the one-shot turn waits on a timer of its time limit (50 ms); timers: ${d.join(',')}`));
     const s = fake.last;
     assert.ok(names(s).indexOf('abort') >= 0 && names(s).indexOf('abort') < names(s).indexOf('disconnect'), 'aborted before disconnect');
     cleanedUp(fake, s, 'timeout');

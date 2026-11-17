@@ -1,5 +1,5 @@
 import * as assert from 'assert';
-import { cpuMs } from './redact-growth-lib';
+import { type CpuProbe, cpuMs, judgeCpu } from './redact-growth-lib';
 
 /**
  * Spec 008 FR-087 delta 2026-11-17 (issue #1853): a test whose property is "this call ends although something it waits on never answers" asserts the result (the answer that
@@ -19,14 +19,24 @@ export const withBackstop = <T>(p: Promise<T>, label: string, ms = 20_000, sched
  * machine does not move it (agent-notes: timing checks measure CPU). It is `cpuMs` (scripts/redact-growth-lib.ts), so a wall backstop of at least 20 s also stays and a blocking wait
  * (a sync sleep) fails it; `capMs` is about 20 times the cost measured at the site, never a round 10 s. An async `fn` is refused: only its synchronous part would be measured. `probe` is for the self-test (fake reading and clock).
  */
-export const assertCpuUnder = (label: string, capMs: number, fn: () => unknown, probe?: Parameters<typeof cpuMs>[2]): number => {
-  const backstopCap = Math.max(capMs, 2000); // cpuMs fails at 10 x this in wall time: 20 s at least, so load alone never reaches it
-  const ms = cpuMs(() => {
+export const assertCpuUnder = (label: string, capMs: number, fn: () => unknown, probe: CpuProbe = {}): number => {
+  const backstopCap = Math.max(capMs, 2000); // the wall backstop fails at 10 x this: 20 s at least, so load alone never reaches it
+  return cpuMs(() => {
     const r = fn();
-    if (r && typeof (r as { then?: unknown }).then === 'function') throw new TypeError(`${label}: assertCpuUnder takes a synchronous function (a promise was returned: only its synchronous part would be measured)`);
-  }, backstopCap, probe);
-  assert.ok(ms < capMs, `${label}: ${ms.toFixed(0)} ms CPU, limit ${capMs} ms`);
-  return ms;
+    if (r && typeof (r as { then?: unknown }).then === 'function') throw new TypeError(`${label}: assertCpuUnder takes a synchronous function (a promise was returned: use assertCpuUnderAsync)`);
+  }, backstopCap, { ...probe, cpuCap: { limit: capMs, label } }); // CPU compared first, the wall backstop second (judgeCpu)
+};
+
+/** The same for an async step: the CPU time of this process from before the call to after its promise settles (all of it, not only the synchronous part), CPU cap first, wall backstop second, same `probe`. */
+export const assertCpuUnderAsync = async (label: string, capMs: number, fn: () => Promise<unknown>, probe: CpuProbe = {}): Promise<number> => {
+  const usage = probe.usage ?? process.cpuUsage, hr = probe.hr ?? process.hrtime.bigint;
+  const w = hr();
+  const c = usage();
+  await fn();
+  const d = usage(c);
+  const cpu = (d.user + d.system) / 1000;
+  judgeCpu(cpu, Number(hr() - w) / 1e6, Math.max(capMs, 2000), { limit: capMs, label });
+  return cpu;
 };
 
 const SPIED = ['replace', 'replaceAll', 'split', 'trim', 'trimStart', 'trimEnd', 'normalize', 'match', 'matchAll', 'search', 'indexOf', 'lastIndexOf', 'includes', 'startsWith', 'endsWith', 'toLowerCase', 'toUpperCase', 'padStart', 'localeCompare'] as const;
@@ -49,14 +59,18 @@ export const longestStringSeen = <T>(fn: () => T): { longest: number; result: T 
 };
 
 /**
- * The delays given to `setTimeout` between this call and `stop()`: what a "cut off after N ms" test pins instead of how long the cut took. Assert the production delay is among them
- * (`delays.includes(30)`), so a timeout changed to 15 s fails with its own text, and keep `withBackstop` as the hang guard only (its own 20 s timer is in the list too).
+ * The delays given to `setTimeout` while `fn` runs: what a "cut off after N ms" test pins instead of how long the cut took. Assert the production delay is in the list or, for a
+ * constant exported from production, that the list holds it. `check` runs on the delays after `fn` ends, also when it throws. `setTimeout` is put back in a `finally`, so a failing or throwing `fn` never leaves the wrapper installed. `withBackstop`'s own 20 s timer is in the list too.
  */
-export const logTimerDelays = (): { delays: number[]; stop: () => void } => {
+export const loggingTimers = async <T>(fn: () => Promise<T>, check: (delays: number[]) => void): Promise<T> => {
   const real = globalThis.setTimeout;
   const delays: number[] = [];
-  (globalThis as { setTimeout: unknown }).setTimeout = ((fn: (...a: unknown[]) => void, ms?: number, ...rest: unknown[]) => { delays.push(Number(ms ?? 0)); return real(fn, ms, ...rest); }) as typeof setTimeout;
-  return { delays, stop: () => { (globalThis as { setTimeout: unknown }).setTimeout = real; } };
+  const restore = (): void => { (globalThis as { setTimeout: unknown }).setTimeout = real; };
+  (globalThis as { setTimeout: unknown }).setTimeout = ((cb: (...a: unknown[]) => void, ms?: number, ...rest: unknown[]) => { delays.push(Number(ms ?? 0)); return real(cb, ms, ...rest); }) as typeof setTimeout;
+  let result: T;
+  try { result = await fn(); } catch (e) { restore(); check(delays); throw e; } finally { restore(); } // a hang that the backstop ends still gets its timers checked first: the cause, not only the symptom
+  check(delays);
+  return result;
 };
 
 /** "The cut comes first": no scanning string method or regexp saw a string longer than `limit` (the cut size) while `fn` ran. Counted, not timed; `label` names what was cut. */

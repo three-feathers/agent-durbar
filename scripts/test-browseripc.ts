@@ -10,7 +10,7 @@
  *  4. the address bar: file:, javascript:, userinfo are refused with their reason; the test scheme only under the simulator.
  */
 import * as assert from 'assert';
-import { logTimerDelays, withBackstop } from './hang-backstop';
+import { loggingTimers, withBackstop } from './hang-backstop';
 import { EventEmitter } from 'events';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -468,10 +468,7 @@ process.on('exit', () => {
     await r.ctl.open('s1');
     r.ctl.bounds('s1', B); r.ctl.visible('s1', true);
     r.sessions.get('s1')!.wc.capturePage = () => new Promise(() => undefined);
-    const tm = logTimerDelays();
-    const snap = await withBackstop(r.ctl.snapshot('s1'), 'a capture that never answers: the snapshot time limit');
-    tm.stop();
-    assert.ok(tm.delays.includes(30), `the capture waits on a timer of snapshotMs (30 ms); timers: ${tm.delays.join(',')}`);
+    const snap = await loggingTimers(() => withBackstop(r.ctl.snapshot('s1'), 'a capture that never answers: the snapshot time limit'), (d) => assert.ok(d.includes(30), `the capture waits on a timer of snapshotMs (30 ms); timers: ${d.join(',')}`));
     assert.deepStrictEqual(snap, { ok: false }, 'no picture, and it answers');
     assert.deepStrictEqual(r.ctl.overlay('s1', true), { ok: true });
     assert.deepStrictEqual(r.win.children, [], 'the view is hidden without the picture');
