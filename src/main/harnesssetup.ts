@@ -8,7 +8,7 @@ import * as os from 'os';
 import { StringDecoder } from 'string_decoder';
 import { candidates, execFound, isAppAlias } from '../adapters/detect';
 import type { DetectEnv, Exec } from '../adapters/detect';
-import { CMD_UNSAFE, windowsCmd } from '../shared/wincmd';
+import { CMD_REFUSED, cmdShimArgs, windowsCmd } from '../shared/wincmd';
 import { redact } from '../shared/redact';
 import { SIGN_IN, installPlans, integrityLine, lastLines, managersFor, manualCommands, parseSignIn, stripAnsi, updatePlans, validPaste, OFFICIAL_PAGES, SETUP_NAMES } from '../shared/harnesssetup';
 import type { ManualCommand, OfficialScript, PackageManager, SetupKind, SetupPlan, SignInView, UpdatePlanOpts } from '../shared/harnesssetup';
@@ -292,9 +292,11 @@ export class HarnessSetup {
     let spawnArgs: string[] = args;
     let verbatim = false;
     if (env.platform === 'win32' && /\.cmd$/i.test(file)) {
-      if (CMD_UNSAFE.test(file) || args.some((a) => CMD_UNSAFE.test(a) || /\s/.test(a))) return { ok: false, error: 'This command cannot be run safely on this computer.' };
+      // spec 009 FR-029: the one quoting helper (outer pair for /s); undefined for a CMD_UNSAFE character. White space in an argument stays refused here.
+      const cmdArgs = args.some((a) => /\s/.test(a)) ? undefined : cmdShimArgs(file, args);
+      if (!cmdArgs) return { ok: false, error: CMD_REFUSED };
       spawnFile = windowsCmd(env.env);
-      spawnArgs = ['/d', '/s', '/c', `"${file}" ${args.join(' ')}`];
+      spawnArgs = cmdArgs;
       verbatim = true;
     }
     return { ok: true, job: { kind, op, file, args, spawnFile, spawnArgs, verbatim, paste: op === 'signin' && SIGN_IN[kind].mode === 'paste', ...(script ? { script } : {}), ...(own ? { own } : {}), ...(codexUpdate ? { codexUpdate } : {}), ...(pinned ? { pinned } : {}), ...(op === 'update' && this.deps.checked?.(kind) ? { checked: this.deps.checked(kind) } : {}), ...(integrity ? { integrity } : {}), ...(sourceKind ? { sourceKind } : {}), ...(toolFile ? { toolFile } : {}) } };

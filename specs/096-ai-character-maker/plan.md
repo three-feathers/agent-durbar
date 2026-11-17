@@ -39,7 +39,7 @@ main  src/main/ipc/characters.ts ──► AdapterRouter.instance('codex').gener
    │          ▼
    │   src/shared/imagecheck.ts (magic, header dimensions)
    │          ▼
-   │   src/main/charencoder.ts ──► hidden sandboxed BrowserWindow (src/renderer/charencoder.html + .js, no preload Node)
+   │   src/main/charencoder.ts ──► hidden sandboxed BrowserWindow (about:blank + fixed charencoder.html, .js; no preload Node)
    │          ◄── 4 x WebP bytes + face points
    │   src/shared/webpcheck.ts (RIFF/WEBP, 352x352, ≤ 40 KB, chunk allow-list, strip)
    │          ▼
@@ -92,12 +92,12 @@ Results go to `docs/agent-apps.md` (Codex) and this spec's `## Changes`, with `r
 ## Data flow of one try
 
 1. The renderer calls `character:generate(desc, 'codex')`.
-2. Main validates the description (FR-011), builds the prompt (`chargen.ts`) and makes `temp = mkdtemp('durbar-img-')`.
-3. Main calls `generateImage(prompt, {outName: 'sheet.png', timeoutMs: 300000, signal})`, which returns `<temp>/sheet.png`.
-4. Main checks the file: `lstat`, regular file, at most 20 MB. It reads the bytes, then runs `imagecheck` (magic, header width and height).
-5. `charencoder.encode(bytes)`: a new hidden window gets the bytes over a `MessagePort`, then sends back `{frames[4], face[4], notes}` or an error. The window is destroyed.
-6. `webpcheck` runs on each frame.
-7. The try is held under a new `tryId`. The temp folder is removed in `finally`.
+2. Main validates the description (FR-011) and builds the prompt (`chargen.ts`).
+3. Main calls `generateImage(prompt, {outName: 'sheet.png', timeoutMs: 300000, signal})`. The **adapter** makes `temp = mkdtemp('durbar-img-')` in the OS temp folder and returns `<temp>/sheet.png`; if it throws or is cancelled, the adapter removes `temp` itself.
+4. Main checks the returned path (`sheet.png` directly in a real `durbar-img-*` folder of the OS temp folder; otherwise it refuses and removes nothing), then the file: `lstat`, regular file, at most 20 MB. It reads the bytes, **removes `temp`**, then runs `imagecheck` (magic, header width and height).
+5. `encodeSheet(bytes, header)`: a new hidden window gets the bytes over a `MessagePort`, then sends back `{frames[4], face[4]}` or a refusal code. The window is destroyed. No text from the window is kept: `parseEncoderReply` takes these fields only, and main's `notes` is empty.
+6. `parseEncoderReply` strips and checks each frame (`webpcheck`).
+7. The try is held under a new `tryId`.
 8. The reply to the window is `{ok, tryId, frames, face, notes, tookMs}`. The renderer shows the frames through `blob:` URLs.
 9. On Save, `charstore.save(try, name)` writes the files to `<userData>/characters/.tmp-<rand>/`, renames the folder to `<id>/` and returns `{id, name}`.
 

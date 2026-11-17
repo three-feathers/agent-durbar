@@ -17,7 +17,7 @@
  *   - a header line ends past the window's right edge (the stats line of #1146 was clipped there);
  *   - a kind of text the check exists for is missing (no line measured, no link, no code chip), so it cannot pass by measuring nothing.
  * Prints each chat's worst lines. Screenshots: <SHOTS_OUT>/chatcontrast-<main|helper>-<w>x<h>.png and the glyph-free captures (-bg).
- * CONTRAST_MUTANT=ro (the helper panel gets the Real office root's class again, #1164's bug) or =clear (the chat's surfaces transparent):
+ * CONTRAST_MUTANT=hover (the pointer left on the first link: must fail with 'is hovered at the read') or =ro (the helper panel gets the Real office root's class again, #1164's bug) or =clear (the chat's surfaces transparent):
  * both must fail on the 4.5:1 assert; =nohide (the rule that makes the glyphs transparent never applies: the text stays in the frame, as in a capture from before the rule)
  * must fail on it too (about 1:1); used to show the check can fail. A stale frame itself cannot be made on demand: the marker wait has no mutant of its own.
  *
@@ -98,6 +98,10 @@ module.exports = async (ctx) => {
 
   /** every line of text in the open chat, with its contrast against the pixels behind it */
   const measure = async (file) => {
+    /* spec 008 FR-214: the pointer off the chat before the colours are read (a link in its :hover colour is not the resting one); CONTRAST_MUTANT=hover leaves it on the first link */
+    if (MUTANT === 'hover') { const at = await js(`(()=>{const b=document.querySelector('#panel a[href]').getBoundingClientRect();return {x:Math.round(b.left+b.width/2),y:Math.round(b.top+b.height/2)}})()`); H.wc().sendInputEvent({ type: 'mouseMove', x: at.x, y: at.y }); await H.until(`!!document.querySelector('#panel a:hover')`, 2000); }
+    const hot = MUTANT === 'hover' ? await js(`[...document.querySelectorAll('#panel :hover')].map(e=>e.tagName.toLowerCase())`) : await H.pointerOff('#panel');
+    assert.deepStrictEqual(hot, [], `the chat's ${JSON.stringify(hot)} is hovered at the read (the pointer is on the chat: its colours are the :hover ones)`);
     const lines = await js(LINES);
     await js(HIDE_ON);
     const vw = await js('innerWidth');
