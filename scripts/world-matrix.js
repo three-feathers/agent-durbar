@@ -25,6 +25,7 @@
  */
 'use strict';
 const fs = require('fs');
+const { buildProblem } = require('./ensure-electron'); // spec 008 FR-211: one shared build check
 const os = require('os');
 const path = require('path');
 
@@ -246,7 +247,7 @@ if (require.main === module) {
   const known = new Set(['--size', '--worlds', '--forced-colors', '--out', '--selftest']);
   const bad = argv.filter((a, i) => a.startsWith('-') && !known.has(a));
   if (bad.length) { console.error(`unknown option: ${bad[0]}`); process.exit(2); }
-  if (!fs.existsSync(INDEX) && !argv.includes('--selftest')) { console.error('dist/ missing: run npm run build first'); process.exit(2); }
+  { const noBuild = argv.includes('--selftest') ? '' : buildProblem(); if (noBuild) { console.error(noBuild); process.exit(2); } }
   const userData = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-matrix-'));
   const marker = path.join(userData, 'matrix.fail');
   const env = { ...process.env, DURBAR_DRIVER: __filename, DURBAR_USER_DATA: userData, OFFICE_FAIL_MARKER: marker, DURBAR_SIM: '15', DURBAR_SIM_FREEZE: '1' };
