@@ -27,6 +27,8 @@ export interface RealMeta {
   pixelArt?: boolean;
   /** spec 102 delta 2026-11-14 (spec 097 FR-104): this world draws the All floors view as storeys (a band and a tag per floor); off in a world that has not built it (Photo, cave: T113) */
   storeys?: boolean;
+  /** spec 097 FR-308 (delta 2026-11-15, issue 1814): the smallest desk face, in px, that the helper strip may cost; the strip is taken only while FACE_U * u keeps the face at or over it. Unset (Photo, the arcade): the strip is taken whenever it fits, as before. */
+  minFace?: number;
   /** spec 097 FR-335 (T247): the people's own art is not pixel art (false); a hi-res crew in a pixel world is scaled to the world's people, not drawn at whole multiples of its pixels */
   pixelPeople?: boolean;
   seat: Record<string, SeatMeta>; stand: Record<string, StandMeta>;
@@ -84,6 +86,10 @@ export interface Layout {
 
 /* FR-010 constants (b2.js) */
 export const PW = 0.80, SR = 0.66, STRIP = 22, PAD = 8, ZGAP = 8, DESK_AT = 0.76;
+/** FR-038 (delta 2026-11-15): the thinking dots start at least this far below the sign strip, and end this far before the screen's glass (px); a sign's lower edge is 1 px above the strip's, so 3 px clear of it */
+export const DOTS_CLEAR = 2;
+/** FR-038: the drawn box of the three thinking dots (6, 8 and 10 px with 3 px gaps, `realoffice.css` `.ro-dots`), px */
+export const DOTS_BOX = { w: 30, h: 10 } as const;
 /** A desk face's height (crown to chin) as a share of the body height `u`: measured on 6 of the 15 people with a grid over the art
  *  (p01 0.30, p02 0.41, p04 0.27, p08 0.33, p11 0.33, p13 0.30), rounded down to 0.30; per person it varies (spec 097 delta 2026-10-31). */
 export const FACE_U = 0.30;
@@ -527,7 +533,9 @@ function roStation(meta: RealMeta, a: RealAgent, sx: number, y: number, Sw: numb
     lamp: { x: sx + 0.02 * slotW, y: Math.max(y + STRIP, headY - 0.35 * u), w: 0.96 * slotW, h: deskY + dh * 0.5 - Math.max(y + STRIP, headY - 0.35 * u) },
     bubble: person && roNeedsYou(a.state) ? { x: px + 0.2 * u - 6, y: headY - 0.04 * u } : null,
     bang: a.state === 'error' ? { x: sr - 10, y: screen.y - 8 } : null,
-    dots: person && a.state === 'thinking' ? { x: px + (big ? 0.2 : 0.1) * u, y: headY + (big ? 0.12 : -0.13) * u } : null,
+    /* FR-038 (spec 097 delta 2026-11-15, T350): the dots never rise into the row's sign strip (the folder sign stands at y + 1, 20 px tall), in every world and arrangement: a tall person (the cave's seat, hand 0.88) put them under the sign.
+       Below the big level they also end before the screen's glass (its text): moved down, they would have reached its corner. At the big level the person sits in front of the big screen by design. */
+    dots: person && a.state === 'thinking' ? { x: big ? px + 0.2 * u : Math.min(px + 0.1 * u, glass.x - DOTS_BOX.w - DOTS_CLEAR), y: Math.max(headY + (big ? 0.12 : -0.13) * u, y + STRIP + DOTS_CLEAR) } : null,
     call: { x: sx + slotW - 16, y: deskY + 0.05 * dh },
   };
 }
@@ -588,11 +596,11 @@ export function realLayout(model: RealModel, viewport: { w: number; h: number },
     };
     /* FR-308, FR-338: with helpers, one row of head figures is kept while the desks still fit and a slot holds a figure; else none: the plate's +N and dots (FR-016). Never two rows (FR-338).
        `floor` (FR-246, FR-247, delta 2026-11-08, review of PR 1322): the row is taken only while its u is at least `floor`; else no strip (the plate keeps its +N and dots). */
-    const choose = (fs: typeof folders, ho: number, floor: number, bf: 0 | 1 | 2 = 0): { p: ReturnType<typeof roPack>; hr: number } => {
+    const choose = (fs: typeof folders, ho: number, floor: number, bf: 0 | 1 | 2 = 0, nm = false): { p: ReturnType<typeof roPack>; hr: number } => {
       const p0 = pack(fs, ho, 0, bf);
       if (!fs.some((f) => f.agents.some((a) => (a.helpers || 0) > 0))) return { p: p0, hr: 0 };
       const room = (q: ReturnType<typeof roPack>): boolean => q.rows.every((r) => !r.strip || r.Sw - 16 >= HEAD);
-      const ok = (q: ReturnType<typeof roPack>): boolean => q.fits && room(q) && q.u >= floor - 1e-6;
+      const ok = (q: ReturnType<typeof roPack>): boolean => q.fits && room(q) && q.u >= floor - 1e-6 && !(!nm && meta.minFace && FACE_U * q.u < meta.minFace - 1e-6 && p0.u > q.u + 1e-6); /* FR-308 (2026-11-15): a world with `minFace` does not pay its face for the strip: refused where it takes the face under and the hall without it is bigger */
       const p1 = pack(fs, ho, helpH(1), bf);
       return ok(p1) ? { p: p1, hr: 1 } : { p: p0, hr: 0 };
     };
@@ -601,7 +609,7 @@ export function realLayout(model: RealModel, viewport: { w: number; h: number },
        took its share, and the desks shrank when an agent fell asleep (u 103.4 -> 99.4, cave 1280x800, shots-097-moments). */
     const helpersAny = (fs: typeof folders): boolean => fs.some((f) => f.agents.some((a) => (a.helpers || 0) > 0));
     const back = lounge.length && helpersAny(folders) ? model.folders.filter((f) => f.agents.length).map((f) => ({ id: f.id, floor: f.floor, agents: sortDesks(f.agents) })) : null;
-    const floor = back ? choose(back, H0, 0).p.u : 0;
+    const floor = back ? choose(back, H0, 0, 0, true).p.u /* review of PR 1815 (F1): the lounge floor is worked out without the minFace refusal, so a strip that costs the face nothing is not lost to it */ : 0;
     let c = choose(folders, Ho, floor);
     /* spec 097 FR-104, FR-116 (T113, review of PR 1746): the floors are drawn only when that costs nothing, measured against the same hall without floors (`c`): the floors in reading order, floor 1 at the bottom
        (the search keeps that order), no row more, the helper strip kept, no scroll, and the unit u at most STOREY_U_LOSS (2 %) smaller, the 4 px rules between the storeys counted. If no split does that,

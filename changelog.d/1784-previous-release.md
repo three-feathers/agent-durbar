@@ -1,1 +1,0 @@
-- **Team tools: a tag that was never released** (spec 008 FR-271, issue #1784): the release check's refusal for a missing previous-release section now says to add a "not released" section when that tag never shipped, and `changelog.d/README.md` explains it.

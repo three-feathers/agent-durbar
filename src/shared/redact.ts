@@ -540,6 +540,7 @@ function maskGluedRest(s: string, mask: string): string {
 }
 
 function maskShapes(text: string, mask: string, guard: boolean): string {
+  shapePasses++;
   let out = text;
   // A function, so `$&` or `$1` in the mask stays literal; group 1, when a pattern has one, is what names the secret and stays.
   const replaced = (m: RegExp[]): void => { for (const p of m) out = out.replace(p, (_m: string, keep?: unknown) => (typeof keep === 'string' ? keep : '') + mask); };
@@ -615,8 +616,26 @@ function snapshot(env?: Env): Env {
   return e;
 }
 
+/**
+ * Spec 012 FR-184 (issue #1543): a run also takes a backslash before a line break (a shell line continuation inside a token), a backslash before a blank (`\ `,
+ * shell-quoted: `-H X-Api-Key\:\ <value>`), a `\u{…}` escape and PowerShell's `` `u{…} `` whole, a cmd caret before a line break (cmd's line continuation), and a PowerShell backtick or a cmd caret
+ * before a token character (`` gh`p_ ``, `gh^p_`), so the shell's readings of the run are judged whole. Read only by the step's shell mode (`redact` unions it with FR-181's step as before).
+ */
+const ESC_RUN_SHELL = /(?:[A-Za-z0-9_\-.~+/=:@%]|[\\`]u\{[0-9A-Fa-f]{1,6}\}|\\[A-Za-z0-9_\-.~+/=:@%\\`*{}[\]()#!|<>\x20\t]|[\\^](?:\r\n|[\r\n])|[`^][A-Za-z0-9_\-.~+/=:@%])+/g;
+/** Spec 012 FR-184 (review of PR 1824, F3): the shell mode's run, for the desk's label step (`src/renderer/safetext.js` reads this, never a copy). */
+export const ESC_RUN_SHELL_SOURCE = ESC_RUN_SHELL.source;
+/** Spec 012 FR-184: a line continuation (a backslash or cmd's caret before a line break) or PowerShell's `` `u{…} `` escape: the forms the shell readings join that the desk's Markdown reading breaks. */
+const SHELL_JOIN = /[\\^](?:\r\n|[\r\n])|`u\{[0-9A-Fa-f]{1,6}\}/;
+/** Spec 012 FR-184 (review of PR 1824, F3): whether `s` holds a `SHELL_JOIN` form (the desk masks such a text as written first; one definition for both). */
+export function hasShellJoin(s: string): boolean { return typeof s === 'string' && SHELL_JOIN.test(s); }
 /** A run of token characters and backslash escapes (spec 012 FR-181): an escape of a token character or of a Markdown-escapable one. */
 const ESC_RUN = /(?:[A-Za-z0-9_\-.~+/=:@%]|\\[A-Za-z0-9_\-.~+/=:@%\\`*{}[\]()#!|<>])+/g;
+/** Spec 012 FR-184: what makes a run worth reading (a backslash, a backtick or a caret). */
+const ESC_ANY = /[\\`^]/;
+/** FR-181's: a backslash. */
+const ESC_FR181 = /\\/;
+/** Spec 012 FR-184: a shell line continuation (a backslash, or cmd's caret, before a line break), which the shell removes with the break. */
+const LINE_CONT = /[\\^](?:\r\n|[\r\n])/g;
 const ESC_BREAK = /\\[nrt]/;
 const ESC_BREAK_KEEP = /(\\[nrt])/;
 const ESC_BREAK_START = /^\\[nrt]/;
@@ -643,49 +662,185 @@ const TOKEN_ESC = /\\[A-Za-z0-9=:@%/]/;
  * glued rest (FR-173 counts). A fixed number of calls per distinct run, so linear; a
  * text without a backslash is returned as it is.
  */
-function maskEscapedRuns(s: string, mask: string): string {
-  if (!s.includes('\\')) return s;
+function maskEscapedRuns(s: string, mask: string, shell?: { vals: readonly string[] }, reads: Map<string, RunRead> = new Map(), shapes: (x: string) => string = (x) => maskTokenShapes(x, mask)): string {
+  if (!(shell ? ESC_ANY : ESC_FR181).test(s)) return s;
   const seen = new Map<string, boolean>();
   const hides = (r: string): boolean => {
     let hit = seen.get(r);
     if (hit === undefined) {
-      const w = maskTokenShapes(r, mask);
-      const md = withoutMarks(w, true).k;
-      const sh = TOKEN_ESC.test(w) ? withoutMarks(w, true, true).k : '';
-      hit = maskTokenShapes(md, mask) !== md || (sh !== '' && maskGluedRest(maskBareTokenShapes(sh, mask), mask) !== sh);
+      // spec 012 FR-184 (review of PR 1824, F2): FR-181's readings of a run are read once per `redact` call (`reads`), shared by its two passes
+      let x = reads.get(r);
+      if (x === undefined) {
+        runReads++;
+        const w = shapes(r);
+        const md = withoutMarks(w, true).k;
+        const sh = TOKEN_ESC.test(w) ? withoutMarks(w, true, true).k : '';
+        x = { hit: shapes(md) !== md || (sh !== '' && maskGluedRest(maskBareTokenShapes(sh, mask), mask) !== sh), w, md, sh };
+        reads.set(r, x);
+      }
+      hit = x.hit || (shell !== undefined && shellReadingsHide(x.w, x.md, x.sh, mask, shell.vals));
       seen.set(r, hit);
     }
     return hit;
   };
-  return s.replace(ESC_RUN, (r: string, at: number) => {
-    if (!r.includes('\\')) return r;
-    // a run glued straight after a mask (plain, or the named marker of an env value written before this step) is read as that mask's rest (review of PR 1585): `[redacted:NAME]_ab\<rest>`;
-    // not when it starts with a line break escape, which ends the rest (`[redacted]\nNext line`)
-    if (at > 0 && s[at - 1] === ']' && !ESC_BREAK_START.test(r) && MASK_BEFORE.test(s.slice(Math.max(0, at - 140), at)) && hides(mask + r)) return mask;
-    if (ESC_BREAK.test(r)) {
-      // the pieces between breaks first, so `a\n<escaped token>\tb` keeps `a\n` and `\tb`; when no piece hides, the whole run is read (a `\n` that is a shell escape inside a token)
-      let any = false;
-      let out = '';
-      const parts = r.split(ESC_BREAK_KEEP);
-      for (let i = 0; i < parts.length; i += 2) {
-        const p = parts[i];
-        const br = i > 0 ? parts[i - 1] : '';
-        const h = p.includes('\\') && hides(p);
-        if (!h) { out += br + p; continue; }
-        any = true;
-        // review of PR 1585 (round 3): a break escape inside a body (`ghp\_<20>\n<16>`) is a shell escape of a letter there; once a piece with an escape hides, the rest of the run after it
-        // is its tail when it holds FR-173's count (8 letters and digits, the letters of the breaks included): hidden with it. Fail closed: a long word on the next line glued to it is hidden too.
-        // review of PR 1585 (round 4): the pieces before it (no piece of them hid alone) are read as one stretch with the whole-run check (`ghp_<20>\n<16>\tg\hp_<36>`), without the start of
-        // this piece: a second token glued inside it by `.`, `=`, `/` or `:` is a known gap (spec 012 FR-181, round 5); one check per run: after the first hidden piece the rest is its tail or holds fewer than 8 letters and digits
-        const lead = out !== '' && hides(out) ? '' : out + br;
-        const rest = parts.slice(i + 1).join('');
-        if (glueCount(rest)) return lead + mask;
-        out = lead + mask;
-      }
-      if (any) return out;
+  if (!shell) return s.replace(ESC_RUN, (r: string, at: number) => (r.includes('\\') ? runMasked(s, r, at, mask, hides, ESC_FR181) : r));
+  return s.replace(ESC_RUN_SHELL, (r: string, at: number) => (ESC_ANY.test(r) ? keepBreaks(r, runMasked(s, r, at, mask, hides, ESC_ANY)) : r));
+}
+
+/** Spec 012 FR-184: FR-181's readings of one run: whether they hide it, the run as the rules read it (`w`), its Markdown reading (`md`) and its token-escape reading (`sh`, '' when none). */
+type RunRead = { hit: boolean; w: string; md: string; sh: string };
+
+/** Spec 012 FR-184: what one escaped run becomes (FR-181's piece and glue logic). */
+function runMasked(s: string, r: string, at: number, mask: string, hides: (x: string) => boolean, esc: RegExp): string {
+  // a run glued straight after a mask (plain, or the named marker of an env value written before this step) is read as that mask's rest (review of PR 1585): `[redacted:NAME]_ab\<rest>`;
+  // not when it starts with a line break escape, which ends the rest (`[redacted]\nNext line`)
+  if (at > 0 && s[at - 1] === ']' && !ESC_BREAK_START.test(r) && MASK_BEFORE.test(s.slice(Math.max(0, at - 140), at)) && hides(mask + r)) return mask;
+  if (ESC_BREAK.test(r)) {
+    // the pieces between breaks first, so `a\n<escaped token>\tb` keeps `a\n` and `\tb`; when no piece hides, the whole run is read (a `\n` that is a shell escape inside a token)
+    let any = false;
+    let out = '';
+    const parts = r.split(ESC_BREAK_KEEP);
+    for (let i = 0; i < parts.length; i += 2) {
+      const p = parts[i];
+      const br = i > 0 ? parts[i - 1] : '';
+      const h = esc.test(p) && hides(p);
+      if (!h) { out += br + p; continue; }
+      any = true;
+      // review of PR 1585 (round 3): a break escape inside a body (`ghp\_<20>\n<16>`) is a shell escape of a letter there; once a piece with an escape hides, the rest of the run after it
+      // is its tail when it holds FR-173's count (8 letters and digits, the letters of the breaks included): hidden with it. Fail closed: a long word on the next line glued to it is hidden too.
+      // review of PR 1585 (round 4): the pieces before it (no piece of them hid alone) are read as one stretch with the whole-run check (`ghp_<20>\n<16>\tg\hp_<36>`); one check per run: after
+      // the first hidden piece the rest is its tail or holds fewer than 8 letters and digits. Spec 012 FR-184 (issue #1543, the gap of FR-181 round 5): when that stretch does not hide alone,
+      // it is read again with the head of this piece (up to its first `.`, `:`, `=`, `/`, `+`, `@` or `%`), which a second token glued inside the piece by one of them no longer takes
+      // with it; counted only when that head does not hide alone (`a\n<escaped token>.x` keeps `a\n`), and only in the shell mode (FR-181's step reads as before)
+      const head = headOf(p);
+      const lead = out !== '' && (hides(out) || (esc === ESC_ANY && head !== '' && head !== p && hides(out + br + head) && !hides(head))) ? '' : out + br;
+      const rest = parts.slice(i + 1).join('');
+      if (glueCount(rest)) return lead + mask;
+      out = lead + mask;
     }
-    return hides(r) ? mask : r;
-  });
+    if (any) return out;
+  }
+  return hides(r) ? mask : r;
+}
+
+/** Spec 012 FR-184: a piece up to its first `.`, `:`, `=`, `/`, `+`, `@` or `%` (and without the backslash that escapes it). */
+function headOf(p: string): string {
+  const m = /[.:=/+@%]/.exec(p);
+  if (!m) return p;
+  const h = p.slice(0, m.index);
+  return h.endsWith('\\') ? h.slice(0, -1) : h;
+}
+
+/** Spec 012 FR-184: a run's real line breaks (its line continuations) are kept after what replaced it, so `redact` keeps the line structure. */
+function keepBreaks(r: string, out: string): string {
+  if (out === r || !r.includes('\n') && !r.includes('\r')) return out;
+  const want = r.match(LINE_CONT) ?? [];
+  const have = out.match(LINE_CONT) ?? [];
+  return have.length >= want.length ? out : out + want.slice(have.length).join('');
+}
+
+/**
+ * Spec 012 FR-184: an escape as a C string, ANSI-C quoting (`$'…'`), JSON or a script reads it: `\x` with two hex digits, `\u` with four, `\u{…}`, `\U` with eight, octal with
+ * one to three digits, the named ones as their control character, any other escaped character as itself. Exact digit counts: a shorter `\x3` or `\u003` before a token is the
+ * near miss FR-080 keeps (the token is written whole there, glued to a digit, as `3ghp_…`).
+ */
+const C_ESC = /\\(?:x([0-9A-Fa-f]{2})|u\{([0-9A-Fa-f]{1,6})\}|u([0-9A-Fa-f]{4})|U([0-9A-Fa-f]{8})|([0-7]{1,3})|([abefnrtvE])|([\s\S]))/g;
+/** `C_ESC` at one position (sticky): `cReading`'s scan, for an escape that starts with one of `C_ESC_CODE` (the others are one character). */
+const C_ESC_AT = new RegExp(C_ESC.source, 'y');
+const C_ESC_CODE = 'xuU01234567';
+/** What `cReading`'s native passes cannot read: a doubled backslash, a code escape, a backslash at the end. */
+const C_ESC_SLOW = /\\\\|\\[xuU0-7]|\\$/;
+/** Spec 012 FR-184: PowerShell's `` `u{…} `` escape, read like `\u{…}`. */
+const PS_U = /`u\{([0-9A-Fa-f]{1,6})\}/g;
+const C_NAMED: Record<string, string> = { a: '\x07', b: '\b', e: '\x1b', E: '\x1b', f: '\f', n: '\n', r: '\r', t: '\t', v: '\v' };
+const C_NAMED_LIST = Object.entries(C_NAMED);
+/** Spec 012 FR-184: a run's C reading (`ghp\x5f<body>`, `ghp\u005f<body>`, `gh\160_<body>`, PowerShell's `` ghp`u{5f}<body> ``), its line continuations removed. */
+function cReading(w: string): string {
+  let ps = /[\r\n]/.test(w) ? w.replace(LINE_CONT, '') : w;
+  if (ps.includes('`u{')) ps = ps.replace(PS_U, (m: string, h: string) => (parseInt(h, 16) <= 0x10ffff ? String.fromCodePoint(parseInt(h, 16)) : m));
+  // review of PR 1824 (round 3): with no doubled backslash, no code escape and no backslash at the end, every escape is one backslash and one character: the named ones
+  // become their control character and the rest lose the backslash, in native passes (a JSON text with an escape every few characters)
+  if (!C_ESC_SLOW.test(ps)) {
+    let q = ps;
+    for (const [k, v] of C_NAMED_LIST) if (q.includes('\\' + k)) q = q.split('\\' + k).join(v);
+    return q.replace(/\\/g, '');
+  }
+  // review of PR 1824 (F2): one scan from backslash to backslash, no callback per escape (a JSON text has one every few characters); the same reading as `C_ESC`
+  const out: string[] = [];
+  let from = 0;
+  for (let j = ps.indexOf('\\'); j >= 0 && j + 1 < ps.length; j = ps.indexOf('\\', from)) {
+    out.push(ps.slice(from, j));
+    const c = ps[j + 1];
+    if (!C_ESC_CODE.includes(c)) { out.push(C_NAMED[c] ?? c); from = j + 2; continue; } // a named escape or any other character: as `C_ESC` reads it, without the regex
+    C_ESC_AT.lastIndex = j;
+    const m = C_ESC_AT.exec(ps) as RegExpExecArray; // always matches at j: a backslash with a character after it
+    const [all, x, ub, u, U, o, named, other] = m;
+    const hex = x ?? ub ?? u ?? U;
+    const cp = hex !== undefined ? parseInt(hex, 16) : o !== undefined ? parseInt(o, 8) : -1;
+    out.push(cp >= 0 ? (cp <= 0x10ffff ? String.fromCodePoint(cp) : all) : named !== undefined ? C_NAMED[named] : (other ?? all));
+    from = j + all.length;
+  }
+  if (from === 0) return ps;
+  out.push(ps.slice(from));
+  return out.join('');
+}
+/** Spec 012 FR-184: the run with only the break escapes in `kinds` (`nr` or `t`) read as their line break or tab; an escaped backslash stays one. One scan, no callback (F2). */
+function breaksRead(w: string, kinds: string): string {
+  // review of PR 1824 (round 3): with no doubled backslash every `\n`, `\r` or `\t` in the text is one escape: native passes
+  if (!w.includes('\\\\')) {
+    let q = w;
+    for (const k of kinds) if (q.includes('\\' + k)) q = q.split('\\' + k).join(C_NAMED[k]);
+    return q;
+  }
+  const out: string[] = [];
+  let from = 0;
+  for (let j = w.indexOf('\\'); j >= 0 && j + 1 < w.length; j = w.indexOf('\\', j + 2)) {
+    if (!kinds.includes(w[j + 1])) continue;
+    out.push(w.slice(from, j), C_NAMED[w[j + 1]]);
+    from = j + 2;
+  }
+  if (from === 0) return w;
+  out.push(w.slice(from));
+  return out.join('');
+}
+/** Spec 012 FR-184: a run as a POSIX shell, PowerShell or cmd reads it, at any depth of escaping: line continuations, every backslash, and a backtick or caret before a token character removed. */
+function shellReading(w: string): string {
+  return w.replace(LINE_CONT, '').replace(/\\+|[`^](?=[A-Za-z0-9_\-.~+/=:@%])/g, '');
+}
+/**
+ * Spec 012 FR-184 (issue #1543): the shell readings of a run the FR-181 readings did not hide, each through the bare token shapes (FR-181's reason: a path read with
+ * its backslashes gone is no path, and a named rule would hide it), and each checked for an env value (`vals`, the values `redact` replaced as written: one written with a backslash
+ * inside, `<first half>\<second half>`): the shell reading; the C reading, alone and then read by the shell (a backtick and a `\x` escape in one run); the shell reading with `\n` and `\r` read as breaks and with `\t` read as a break (a JSON line
+ * break before a token with a shell escape inside it); and, when the run holds an escaped `:`, `=` or blank (shell quoting, never a Windows path), the shell reading
+ * through every rule (`-H X-Api-Key\:\ <value>`), and so the C reading when it spells more of them than the run (`$'X-Api-Key\x3a\x20<value>'`).
+ */
+function shellReadingsHide(w: string, md: string, sh181: string, mask: string, vals: readonly string[]): boolean {
+  // spec 012 FR-184: the rest of a token whose head the rules hid whole as written, after a line continuation, a backtick or a caret (`ghp_<36>\<line break><rest>`): the
+  // masks kept, those removed, FR-173's glued rest (its counts) decides; and so after its C reading (`ghp_<20>\u{41}<rest>`: a code for a letter in the body)
+  const glued = w.replace(LINE_CONT, '').replace(/[`^](?=[A-Za-z0-9_\-.~+/=:@%])/g, '');
+  const gluedHides = (x: string): boolean => x !== w && w.includes('[redacted') && maskGluedRest(x, mask) !== x;
+  if (gluedHides(glued) || gluedHides(cReading(glued))) return true;
+  const env = (x: string): boolean => vals.some((v) => x.includes(v));
+  // the bare shapes alone, not the glued rest: a reading that removes a backtick or a backslash after a mask the rules made glues the next word to it (`password=[redacted]`<word>`),
+  // which is no token; FR-181's own reading keeps the glued rest for an escaped rest (`[redacted:NAME]\_<rest>`)
+  // review of PR 1824 (F2): each distinct reading is read once; FR-181's own token-escape reading (`sh181`, read through the bare shapes and more) and its Markdown reading
+  // (`md`, through every rule) found nothing there already, so a reading equal to one of them is not read again (its env check stays)
+  const readBare = new Set<string>([w, sh181]);
+  const readAll = new Set<string>([w, md]);
+  const bare = (x: string): boolean => x !== w && (env(x) || (!readBare.has(x) && (readBare.add(x), shellPasses++, maskBareTokenShapes(x, mask) !== x)));
+  const all = (x: string): boolean => !readAll.has(x) && (readAll.add(x), shellPasses++, maskTokenShapes(x, mask) !== x);
+  const sh = shellReading(w);
+  const c = cReading(w);
+  if (env(md) || bare(sh) || bare(c) || bare(shellReading(c))) return true;
+  if (/\\[nrt]/.test(w) && (bare(shellReading(breaksRead(w, 'nr'))) || bare(shellReading(breaksRead(w, 't'))))) return true;
+  // review of PR 1824 (round 3): a `:`, `=` or blank the codes spell; a tab is no such separator here (a JSON `\t` became one per escape, and every rule already reads `\t` as a
+  // blank: a JSON-escaped text then took a whole extra pass of every rule for nothing)
+  // review of PR 1824 (round 4): a tab counts only right after a name-like word, a `:` or a `=` (`NAME<coded tab><value>`, `API_KEY<tab>=<tab><value>`), not a
+  // JSON `\t` between other words: the JSON-escaped text keeps its one pass; any tab when the run also holds a code escape (`\x`, `\u`, octal, `` `u{…} ``): a JSON tab
+  // before a token whose body holds a code is read through every rule, as before round 3
+  const anyTab = /[\\`]u\{|\\[xuU0-7]/.test(w);
+  const seps = (x: string): number => (x.match(anyTab ? /[:=\x20\t]/g : /[:=\x20]|(?<=[A-Za-z0-9_\-:=])\t/g) ?? []).length;
+  return (/\\[:=\x20\t]/.test(w) && all(sh)) || (seps(c) > seps(w) && all(shellReading(c)));
 }
 
 /** Replace secret environment values and key-like strings. Never throws; keeps line structure. */
@@ -694,22 +849,50 @@ export function redact(text: unknown, env?: Env): string {
     let s = typeof text === 'string' ? text : text == null ? '' : String(text);
     const e: Env = env ?? (globalThis as { process?: { env?: Env } }).process?.env ?? {};
     // Replace first, then cut: a secret straddling the cut is already gone.
-    for (const [name, value] of SNAPSHOTS.get(e) ?? envSecrets(e)) {
+    const secrets = SNAPSHOTS.get(e) ?? envSecrets(e);
+    for (const [name, value] of secrets) {
       if (s.includes(value)) s = s.split(value).join(`[redacted:${name}]`);
     }
     s = cut(s, REDACT_MAX_CHARS);
-    const rules = (x: string): string => maskTokenShapes(maskEscapedRuns(x, '[redacted]'), '[redacted]');
-    if (splitOff) return rules(s);
+    const vals = secrets.map(([, v]) => v); // spec 012 FR-184: an env value written with a backslash inside is read by the escaped-run step
+    // spec 012 FR-184 (issue #1543): FR-181's escaped-run step as before, and the step with the shell readings; when they differ, the union of what the rules hide after
+    // each (`unionMasks`): a run the shell readings join and hide whole can take a word another rule needed (`<token>`curl -u bob:<password>`), so neither simply wins
+    const rules = (x: string): string => {
+      const reads = new Map<string, RunRead>();
+      // review of PR 1824 (round 2): the rules' result per distinct text, once per call: a run the shell mode joins by its line continuations can be the whole text, which
+      // the rules otherwise read again as the run (`w`), as its Markdown reading (`md`, the same text when it has no Markdown escape) and as the text itself (`r0`)
+      const memo = new Map<string, string>();
+      const shapes = (y: string): string => { let o = memo.get(y); if (o === undefined) { o = maskTokenShapes(y, MASK); memo.set(y, o); } return o; };
+      const e0 = maskEscapedRuns(x, MASK, undefined, reads, shapes);
+      const r0 = shapes(e0);
+      if (shellOff || !ESC_ANY.test(x)) return r0;
+      const e1 = maskEscapedRuns(x, MASK, { vals }, reads, shapes);
+      if (e1 === e0) return r0;
+      shellReads++; // review of PR 1824 (F2): the shell readings changed this text, so the callers' reference reading without them is needed
+      return unionMasks(x, shapes(e1), r0);
+    };
+    // spec 012 FR-184 (review of PR 1824, F4): the rules' output is at most REDACT_GROWTH times the text (plus one mask); over it (a mask per line of a few characters,
+    // `<token head>\<line break>a\<line break>a…`) the text fails closed: one mask and the text's line breaks (the line count kept, nothing of it shown)
+    const bounded = (out: string): string => (out.length <= REDACT_GROWTH * s.length + MASK.length ? out : MASK + (s.match(LINE_ENDS) ?? []).join(''));
+    if (splitOff) return bounded(rules(s));
     const s1 = maskSplitFirst(s);
-    if (s1 === s) return rules(s);
+    if (s1 === s) return bounded(rules(s));
     // spec 012 FR-182 (review of PR 1721, round 4): what the rules hide after the split step AND what they hide as written, neither reading simply winning
     // (`maskCore`'s rule): a split step that joins a stretch the rules hide as written can take a keyword with it (`password=<token>…<soft hyphen>mysql -p<value>`)
     const f = rules(s1);
-    return unionMasks(s, f, rules(s));
+    return bounded(unionMasks(s, f, rules(s)));
   } catch {
     return '[redaction failed]';
   }
 }
+
+/** Spec 012 FR-184 (review of PR 1824, F4): `redact`'s output is at most this many times its text (after the env values) plus one mask (FR-183's "under three times"). */
+const REDACT_GROWTH = 3;
+/** The line breaks `redact` keeps when it fails closed over `REDACT_GROWTH`. */
+const LINE_ENDS = /\r\n|[\r\n\u2028\u2029]/g;
+
+/** Spec 012 FR-183: the work budget of `redactMarkdown`'s second pass (runs the mask changes x output length, a proxy for the scan work), equal to the window's `BOTH_WORK`. */
+export const MARKDOWN_WORK = 1 << 26;
 
 /**
  * `k` is `u` with its Markdown marks removed. Masks `k`, and also every token-like run of `u` that `redact` changes on its own, together
@@ -718,18 +901,35 @@ export function redact(text: unknown, env?: Env): string {
  * finds is masked; neither pass's output simply wins. The window's DurbarSafeText (`src/renderer/safetext.js`, `both`) does the same.
  */
 export function redactMarkdown(u: string, k: string, env?: Env): string {
-  let m = redact(k, env);
+  return markdownPass(u, k, (x) => redact(x, env));
+}
+
+/** `redactMarkdown` with the mask given (spec 012 FR-183: the tests pin the budget's boundary with an injected mask, as `safetext.js`'s). */
+function markdownPass(u: string, k: string, mask: (x: string) => string): string {
+  let m = mask(k);
   const seen = new Set<string>();
   const found: string[] = [];
   for (const r of u.match(/[A-Za-z0-9_\-.+/=:@%]{12,}/g) ?? []) {
     if (seen.has(r)) continue;
     seen.add(r);
-    if (redact(r, env) !== r) found.push(r);
+    if (mask(r) !== r) {
+      found.push(r);
+      // spec 012 FR-183: over the budget, fail closed (the whole text is one mask); checked as each run is found (round 2 of the review of PR 1816),
+      // so an over-budget text costs about MARKDOWN_WORK / m.length mask calls, not one per distinct run
+      if (found.length * m.length > MARKDOWN_WORK) return MASK;
+    }
   }
   found.sort((a, b) => b.length - a.length);
-  for (const r of found) m = m.replace(new RegExp(r.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&') + '[A-Za-z0-9_-]*', 'g'), () => MASK);
+  try {
+    for (const r of found) m = m.replace(new RegExp(r.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&') + '[A-Za-z0-9_-]*', 'g'), () => MASK);
+  } catch {
+    return MASK; // spec 012 FR-183 (review of PR 1816): a run too long for a RegExp (about 32,000 characters) fails closed, never a throw that loses the list
+  }
   return m;
 }
+
+/** Test only (spec 012 FR-183): `redactMarkdown`'s pass with an injected mask, to pin the budget's exact boundary. */
+export const _markdownPassForTest = markdownPass;
 
 /**
  * Spec 106 FR-021 (review of PR 1226, F1): token characters glued to a mask are the tail of a secret whose head was already masked (a
@@ -1605,9 +1805,20 @@ export function maskSecretArgs(args: readonly string[], envIn?: Env): string[] {
   return maskArgsImpl(args, envIn, true);
 }
 function maskArgsImpl(args: readonly string[], envIn: Env | undefined, cap: boolean): string[] {
-  // spec 012 FR-182: a split token is masked before the flag, URL and name rules can hide its head alone
   const a0 = (cap && Array.isArray(args) ? args.map(capped) : args) as string[];
   const env = snapshot(envIn);
+  const n0 = shellReads;
+  const head = argsSplitAware(a0, env);
+  // review of PR 1824 (F2): when no `redact` call inside read a text differently with the shell readings, the reading without them is this one (not read again)
+  if (shellOff || shellReads === n0 || !Array.isArray(a0) || !a0.some((x) => typeof x === 'string' && ESC_ANY.test(x))) return head;
+  // spec 012 FR-184: per argument the span-level union with the reading without the shell readings (as FR-182 does for the split step)
+  const ref = withoutShell(() => argsSplitAware(a0, env));
+  return head.length === ref.length && head.length === a0.length
+    ? head.map((x, i) => (typeof a0[i] === 'string' && x !== ref[i] ? unionMasks(a0[i], x, ref[i]) : x))
+    : keepShownWithin(head.join('\u0000'), ref.join('\u0000')).split('\u0000');
+}
+function argsSplitAware(a0: string[], env: Env): string[] {
+  // spec 012 FR-182: a split token is masked before the flag, URL and name rules can hide its head alone
   if (splitOff || !Array.isArray(a0) || !a0.some((x) => typeof x === 'string' && SPLIT_GATE.test(x))) return maskArgs(a0, env, MAX_DEPTH, true);
   const written = withoutSplit(() => maskArgs(a0, env, MAX_DEPTH, true));
   const first = maskArgs(a0.map((x) => (typeof x === 'string' ? maskSplitFirst(x) : x)), env, MAX_DEPTH, true);
@@ -1766,11 +1977,19 @@ function maskCommandImpl(command: unknown, envIn: Env | undefined, cap: boolean,
     };
     const c0 = typeof command === 'string' ? command : '';
     const run = (c: string): string => maskScriptText(c, MAX_DEPTH, env, plain) ?? plain(c);
-    if (splitOff || !SPLIT_GATE.test(c0)) return run(c0);
-    const written = withoutSplit(() => run(c0));
-    const c = maskSplitFirst(c0); // spec 012 FR-182: before a header or name rule hides a split token's head alone
-    // both readings (round 4 of PR 1721): the split step can take a keyword (`--password`) the flag rule needed; nothing the reading as written hides shows
-    return c === c0 ? written : keepShownBy(run(c), written);
+    const read = (): string => {
+      if (splitOff || !SPLIT_GATE.test(c0)) return run(c0);
+      const written = withoutSplit(() => run(c0));
+      const c = maskSplitFirst(c0); // spec 012 FR-182: before a header or name rule hides a split token's head alone
+      // both readings (round 4 of PR 1721): the split step can take a keyword (`--password`) the flag rule needed; nothing the reading as written hides shows
+      return c === c0 ? written : keepShownBy(run(c), written);
+    };
+    const n0 = shellReads;
+    const head = read();
+    // review of PR 1824 (F2): no `redact` call inside read a text differently with the shell readings: the reading without them is this one
+    if (shellOff || shellReads === n0 || !ESC_ANY.test(c0)) return head;
+    // spec 012 FR-184: the same with the shell readings off; nothing that reading hides shows (a run the shell readings hide can take a keyword or flag a rule needed)
+    return keepShownWithin(head, withoutShell(read));
   } catch { return '[redaction failed]'; }
 }
 
@@ -2358,6 +2577,37 @@ function pieceSpans(s: string, mask: string, written: () => ReadonlyArray<[numbe
  */
 let splitOff = false;
 /**
+ * Runs `fn` with FR-184's shell readings off (spec 012 FR-184, issue #1543): every mask inside reads escaped runs as FR-181 did. The reference reading of the command
+ * and argument masks' union: a run the shell readings hide whole can take a word one of their rules needed (`<token>`curl -u bob:<password>`: a flag, a keyword).
+ */
+export function withoutShell<T>(fn: () => T): T {
+  if (shellOff) return fn();
+  shellRefs++;
+  shellOff = true;
+  try { return fn(); } finally { shellOff = false; }
+}
+let shellOff = false;
+/**
+ * Spec 012 FR-184 (review of PR 1824, F2): how many times `redact`'s shell readings changed what its rules read (its two passes differed). Only `redact`'s rules
+ * read with the shell mode, so a reading during which this count did not move reads the same with the shell readings off: the command, argument and desk masks
+ * then skip their reference reading (`withoutShell`).
+ */
+let shellReads = 0;
+/** Test only (review of PR 1824, round 3): how many times FR-181's readings of a run were made (`redact`'s two passes share them). */
+let runReads = 0;
+export const _runReadsForTest = (): number => runReads;
+/** Test only (review of PR 1824, round 3): how many times every rule ran over a text (`maskShapes`); `redact` reads each distinct text once per call. */
+let shapePasses = 0;
+export const _shapePassesForTest = (): number => shapePasses;
+/** Test only (review of PR 1824, round 3): how many rule passes `shellReadingsHide` made (each distinct reading once). */
+let shellPasses = 0;
+export const _shellPassesForTest = (): number => shellPasses;
+/** Test only (review of PR 1824, F2): how many reference readings (`withoutShell`) ran. */
+let shellRefs = 0;
+export const _shellRefsForTest = (): number => shellRefs;
+/** Spec 012 FR-184: `shellReads`, for the desk's own reference reading (`src/renderer/safetext.js`). */
+export function shellReadCount(): number { return shellReads; }
+/**
  * Runs `fn` with the split step off (spec 012 FR-182, round 4 of PR 1721): every mask inside reads the text as it did before PR 1721. The reference reading of
  * the union (`keepShownBy`, `unionMasks`) on surfaces that are more than `redact`: the window's desk masks and the command, argument and URL masks.
  */
@@ -2402,6 +2652,21 @@ export function keepShownBy(head: string, ref: string): string {
   const rs = ref.split(PIECE_CUT);
   for (let k = 0; k < rs.length; k += 2) pieces.add(rs[k]);
   return head.split(PIECE_CUT).map((p, k) => (k % 2 || p === '' || pieces.has(p) ? p : MASK)).join('');
+}
+/** Spec 012 FR-184: at most this many pieces of `keepShownWithin` are looked for inside `ref`'s shown text; more are masked (fail closed, bounded work). */
+const WITHIN_MAX = 64;
+/**
+ * Spec 012 FR-184: `keepShownBy`, but a piece of `head` that is no piece of `ref` stays when it stands inside one of `ref`'s shown pieces (`$'` and `'` around a mask
+ * where `ref` showed `$'<escaped run>'`), so the command keeps its shape; nothing `ref` hides shows. At most `WITHIN_MAX` such searches, the rest masked.
+ */
+function keepShownWithin(head: string, ref: string): string {
+  if (head === ref) return head;
+  const pieces = new Set<string>();
+  const rs = ref.split(PIECE_CUT);
+  for (let k = 0; k < rs.length; k += 2) pieces.add(rs[k]);
+  const shown = rs.filter((_p, k) => k % 2 === 0).join('\u0000');
+  let looked = 0;
+  return head.split(PIECE_CUT).map((p, k) => (k % 2 || p === '' || pieces.has(p) || (++looked <= WITHIN_MAX && shown.includes(p)) ? p : MASK)).join('');
 }
 /** Test only: the span-level union of two readings (`unionMasks`). */
 export const _unionMasksForTest = (s: string, first: string, written: string): string => unionMasks(s, first, written);
@@ -2568,6 +2833,17 @@ function maskCore(s: string, vals: readonly string[], env: Env): string {
  */
 function maskKeepingMarkdown(text: unknown, values: readonly string[], alwaysCopy = false): { text: string; changed: boolean } {
   const original = typeof text === 'string' ? text : text == null ? '' : String(text);
+  // spec 012 FR-184 (review of PR 1824, round 4): the shell readings can hide a run whole that took a keyword a rule needed (as in the command mask); when they changed
+  // anything during the reading, the reading without them is made too and the span-level union kept, so nothing that reading hides shows
+  const n0 = shellReads;
+  const head = maskKeepingMarkdownOnce(original, values, alwaysCopy);
+  if (shellOff || shellReads === n0) return head;
+  const ref = withoutShell(() => maskKeepingMarkdownOnce(original, values, alwaysCopy));
+  if (ref.text === head.text) return head;
+  const out = unionMasks(original, head.text, ref.text);
+  return { text: out, changed: out !== original };
+}
+function maskKeepingMarkdownOnce(original: string, values: readonly string[], alwaysCopy: boolean): { text: string; changed: boolean } {
   // longest first only for a stable order: the values are spans of one union, so a shorter value inside a longer one cannot leave a piece
   const vals = [...new Set(values.filter((v) => typeof v === 'string' && v.length >= 4))].sort((a, b) => b.length - a.length);
   const env = snapshot(); // the environment's secrets read once for every pass of this call, not once per pass

@@ -1,6 +1,6 @@
 {
   "name": "agent-durbar",
-  "version": "0.1.21",
+  "version": "0.1.23",
   "description": "Office-style command center to see, chat with and coordinate AI agents across harnesses (GitHub Copilot, Claude Code, OpenAI Codex), for anyone who works with agents.",
   "private": true,
   "desktopName": "agent-durbar.desktop",
@@ -272,6 +272,9 @@
     "test:crew": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-crew.js",
     "test:chargen": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-chargen.js",
     "test:imagecheck": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-imagecheck.js",
+    "test:charencoder": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-charencoder.js",
+    "test:charstore": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-charstore.js",
+    "test:charipc": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-charipc.js",
     "test:logo-assets": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-logo-assets.js",
     "test:crew-assets": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-crew-assets.js",
     "test:realoffice-layout": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-realoffice-layout.js && node dist-scripts/scripts/test-realoffice-aisles.js && node dist-scripts/scripts/test-realoffice-circle.js && node dist-scripts/scripts/test-realoffice-slipspot.js && node dist-scripts/scripts/test-realoffice-ctx.js",

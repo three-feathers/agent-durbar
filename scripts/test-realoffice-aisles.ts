@@ -1007,7 +1007,8 @@ for (const world of ['photo', 'cave']) {
     assert.ok(L.storeys && L.storeys.every((b) => b.tag.x + b.tag.w <= 1408), `${world}: 10/5 with waiting people at 1440x900: no tag runs past the hall`); }
   // the helper strip: 4/4/4 with helpers at 1440x900 keeps its strip with the floors drawn, and no row is added (a forced break that costs the strip is refused)
   { const m = fm([4, 4, 4], [2, 1, 0], { helpers: true }), L = realLayout(m, { w: 1408, h: ROOM.h900 }, ON, sg(3)), F = realLayout(flat(m), { w: 1408, h: ROOM.h900 }, ON, sg(3));
-    assert.strictEqual(F.helpRows, 1, `${world}: 4/4/4 with helpers at 1440x900 shows the strip without floors`);
+    /* FR-308 (2026-11-15, issue 1814): the cave's strip would take its face to 29.6 px (u 98.6 against 128.6 without it), under its 30.5 px minimum: its hall has no strip here; Photo's rule is untouched */
+    assert.strictEqual(F.helpRows, world === 'photo' ? 1 : 0, `${world}: 4/4/4 with helpers at 1440x900 ${world === 'photo' ? 'shows the strip' : 'has no strip (it would take the face under 30.5 px)'} without floors`);
     assert.strictEqual(L.helpRows, F.helpRows, `${world}: 4/4/4 with helpers at 1440x900 keeps the helper strip with floors (the strip is not given up for a floor's own row)`);
     assert.strictEqual(ROWS(L), ROWS(F), `${world}: 4/4/4 with helpers: rows unchanged`);
     cases++; }
