@@ -83,5 +83,6 @@ One row per thing a user can do or see. [features.md](features.md) stays the use
 | Tools > Activity: local log of permission answers, automatic approvals, mode and limit changes, MCP restarts, CSV or JSON export | works | works, window chrome, the same in every world (read from the code) | none | 052 | test:activity driver:check-activity-table read:src/renderer/app.js |
 | Terminal tab in a chat | planned | planned | none | 094 | read:specs/094-terminal-tab/spec.md |
 | Next built-in world: aisle layout | missing | works, built behind the closed `retro` flag (PR 1006 was closed; code is on main) | planned | 102 | read:specs/102-worlds-on-demand/spec.md |
+| Brain view in the Retro arcade (a point-cloud brain with a lit lobe, trail and card, in the arcade's voxel look and display font; off by default, a temporary floating box until the dock) | planned, Brain view is not in Flat yet | planned, the Retro arcade skin is built behind the off `durbar.brainPreview` flag on a floating box (spec 106 T020, #1275); the Photo skin, the cave (#1219) and the dock (T006) remain | planned | 106 | driver:check-brain-draw test:braindraw |
 
 Exempt: 002 008 010 013 025 045 050 062 (not user features: adapters, packaging, simulator, live checks, docs rule, security sweep, website, real-account CI checks). Any other spec with `status: built` must be in a row.

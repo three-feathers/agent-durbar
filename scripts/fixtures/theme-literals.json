@@ -36,11 +36,15 @@
     "fonts": 0
   },
   "brainview/draw.js": {
-    "colors": 10,
+    "colors": 8,
     "fonts": 0
   },
   "brainview/host.js": {
     "colors": 0,
+    "fonts": 0
+  },
+  "brainview/skins.js": {
+    "colors": 11,
     "fonts": 0
   }
 }
