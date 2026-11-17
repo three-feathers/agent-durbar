@@ -293,6 +293,10 @@ In the drawer I choose **Open source** on a note: the chat it came from opens an
 
 ## Changes
 
+### 2026-11-16: the hard-link case of `test:cappedread` is not skipped on a refused link (issue #1808, no FR added; task T062a added)
+
+`test:cappedread` skipped its hard-link case on any `linkSync` error, so a refused link on Linux or macOS, or under CI, passed with the one-link refusal untested. It now uses `scripts/fakes/hardlinks.ts` (`hardLinkOrSkip`, spec 096 FR-030): a skip only on Windows outside CI and only for EPERM, EXDEV, ENOTSUP, EMLINK; elsewhere a refused link fails the case. A mutant check in the suite fails at its own assert text for (a) `linkSync` throwing EPERM and (b) the compiled `readCapped` with its `nlink > 1` refusal removed. This extends T062.
+
 ### 2026-11-17: the notes delete dialogs stop saying "cannot be undone" while an import backup holds a copy (spec 109 FR-078; a fix to FR-014 and FR-048, no code yet; the build is spec 109 T021)
 
 *Found*: round-3 review of PR #1374. Spec 109 keeps import backups of the notes for 7 days after an import (the next time Durbar runs), so *Undo import* can bring deleted notes back (owner Q9 B, 2026-11-09). FR-014 and FR-048 say deleting "cannot be undone", which would then be false.
