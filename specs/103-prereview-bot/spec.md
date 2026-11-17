@@ -415,3 +415,12 @@ The ruleset `main protection` (id 25258904, read-only 2026-11-12): 1 required ap
 - **SC-005** The gate's ledger holds every shadow run with cost and the matched later findings.
 - **SC-006** FR-067's three parts are met and recorded in a dated delta before switch 3.
 - **SC-007** No bot APPROVE on a path outside FR-060's list, shown by a scan of GitHub's reviews and the classifier's tests.
+
+### 2026-11-17: `pr-gate.sh` reads `durbar-samikshak[bot]` as a commenter, never an approver (narrows FR-071; issue #1706)
+
+`[IMPLEMENTED]` `test:` (`test:trustedcontent`, fake `gh`; a mutant per line below dies at its own assert text). Narrows FR-071's gate proposal to what the owners decided (Paco, #1604 Q6 and the 2026-11-13 delta, condition 2 choice b): the bot's approval never counts, so FR-071's "counts its APPROVE only with switch 3 on" is replaced by "never counts". Adds no gate; fixes the three `[bot]` skips that hid a request for change.
+
+- The exact login `durbar-samikshak[bot]` (GraphQL: `durbar-samikshak`) is read like a teammate's: its issue comments, line comments, review bodies and unresolved non-outdated review threads are unanswered asks until a plain answer, and its CHANGES_REQUESTED blocks. Text is shown only once the login is in `scripts/trusted-authors.txt` (PR #1707); before that it is a link for a human, and it blocks all the same.
+- Every other `[bot]` login keeps its skips (comments, line comments, threads).
+- A `[bot]` account's APPROVED review is never listed as "approved by" (so nothing reading that line counts it); with a body it is an ask like any comment, without one it is neither.
+- `[KNOWN GAP]` FR-071's rest (exact App id, `--json`, answered-by-later-head, never printing the body) is not built; T037 stays open. Posting stays off (FR-042). Not run on macOS or Windows.
