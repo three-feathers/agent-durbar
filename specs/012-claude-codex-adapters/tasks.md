@@ -262,5 +262,5 @@ T133 verification (2026-10-25, review on #698): typecheck, build and the offline
 
 ## Changes 2026-11-17 (more home folder spellings and GitHub token forms: issue #1329)
 
-- [ ] T167 (2026-11-17, issue #1329) FR-185: `HOME_TILDE`, `HOME_PCT` and the drive form in any case in `maskHomePaths`; `GH_LOOSE` in the bare token shapes (`src/shared/redact.ts`); the `#1329` block in `scripts/test-redact.ts`; the glued GitHub near miss removed from `scripts/test-redact-shapes.ts`; mutants and a differential fuzz against `main` in the PR.
+- [x] T167 (2026-11-17, issue #1329) FR-185: `HOME_TILDE`, `HOME_PCT` and the drive form in `maskHomePaths`; `GH_LOOSE` as a last pass (`maskLoose`, `withoutLoose`, `withoutLooseAll`) in `src/shared/redact.ts`; the desk's `lz`/`plainLz` in `src/renderer/safetext.js` and the card's `permLoose` in `src/renderer/liveact.js`; the `#1329` blocks in `scripts/test-redact.ts` and `scripts/test-safetext.ts`; one GitHub near miss removed from `scripts/test-redact-shapes.ts`; mutants and a differential fuzz against `main` in the PR.
 
