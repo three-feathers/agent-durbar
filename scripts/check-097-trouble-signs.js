@@ -183,7 +183,7 @@ module.exports = async (ctx) => {
   const SMALL = (process.env.SIGNS_SMALL || '1,2,3,4').split(',').map(Number);
   for (const [w, h] of SIZES) for (const n of SMALL) {
     const tag = `${n} agents ${w}x${h}`;
-    await H.load({ w, h, query: { officeview: 'real', sim: String(n), simhelpers: '6' }, ready: `${REAL}&&document.querySelectorAll('#stage .ro .ro-plate').length>=${n}`, readyMs: 30000, settle: false });
+    await H.load({ w, h, query: { officeview: 'real', sim: String(n), simhelpers: '6' }, ready: REAL + `&&document.querySelectorAll('#stage .ro .ro-plate').length>=${jsLiteral(n)}`, readyMs: 30000, settle: false });
     await must(PICS, `${tag}: the pictures`);
     await must(`window.__durbarSimUi.visitsSettled()`, `${tag}: no visit about to start or end`);
     await countDraws();
@@ -200,7 +200,7 @@ module.exports = async (ctx) => {
     ];
     for (const [kind, set] of steps) {
       await set();
-      await must(`document.querySelectorAll('#stage .ro-mood.ro-${kind}').length>=1`, `${tag}: a ${kind} sign on show`);
+      await must(`document.querySelectorAll('#stage .ro-mood.ro-'+${jsLiteral(kind)}).length>=1`, `${tag}: a ${kind} sign on show`);
       await drawNow(`${tag}: a draw with the ${kind} on show`);
       const G = await geo();
       assert.ok(G.kids.length >= 1, `${tag}: the helpers are kids on the desk top (else this check is empty)`);
