@@ -83,8 +83,10 @@ specs/041-durbar-mcp/spec.md Q10 2
 specs/041-durbar-mcp/spec.md Q11 2
 specs/041-durbar-mcp/spec.md Q12 2
 specs/043-custom-agents/spec.md FR-028 2
+specs/052-usability-pass/spec.md FR-069 2
 specs/052-usability-pass/spec.md FR-071 2
 specs/052-usability-pass/spec.md FR-085 3
+specs/052-usability-pass/spec.md FR-097 2
 specs/052-usability-pass/spec.md FR-237 2
 specs/052-usability-pass/tasks.md T036 2
 specs/052-usability-pass/tasks.md T037 2
