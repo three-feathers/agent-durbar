@@ -34,9 +34,10 @@ module.exports = async (ctx) => {
   const settled = async () => {
     await must(`window.__durbarSimUi.visitsSettled()`, 'no visit about to start or end', 20000);
     await must(`(()=>{const U=window.__durbarSimUi,v=new Set(U.awayIds());return U.realLayout().zones.flatMap(z=>z.desks).filter(d=>!d.lounge).every(d=>!!d.away===v.has(d.id))})()`, 'the drawn desks match the visit record', 20000);
-    /* pin the state, as check-097-order does (FR-031: it waits for `visitsSettled`, then fixes who is away with `pinAt` and `crowd`): the simulator sends agents away on its own clock, and a visit that starts or
-       ends mid-drag redraws the plates (pointerout, then no more events: 1 of 6 runs at "d real Escape" on Paco's machine). So once nothing is about to start or end, one agent at its desk is put away on purpose to prove the pin works (the
-       Library, as check-097-order step 5 does) and released, then everybody away is pinned, so no tick or tool event changes who is away during the case. Pins are dropped by a reload. */
+    /* pin the state, as check-097-order does (FR-031: it waits for `visitsSettled`, then fixes who is away with `pinAt`): so who is away cannot change during a case and every case starts from the same desks. This is
+       hygiene, not the cure for the failure seen on Paco's machine under load (case n, "the plate is lifted and the others slide": the sim was frozen and the state pinned there, so it was not a re-render): that was a
+       one-shot read of the slide transforms straight after the press, before they were applied; every read of a drag that must be on after press() now waits (must()). One agent at its desk is put away to prove the pin
+       works (the Library, as check-097-order step 5 does) and released, then everybody away is pinned. Pins are dropped by a reload. */
     {
       /* proof that the pin works (a pin that does nothing must fail the step): an agent at its desk is put away, shown away, and released again; then the agents away are pinned where they are */
       const free = await js(`(()=>{const U=window.__durbarSimUi,v=new Set(U.awayIds());return U.agents().filter(a=>!a.parent).map(a=>a.id).find(id=>!v.has(id))})()`);
@@ -105,13 +106,13 @@ module.exports = async (ctx) => {
       await js(T_INIT);
       await H.pointerStep('check-097-drag-cancel', label, async () => {
         await press(a, b);
-        assert.strictEqual(await lifted(), true, `${label}: the drag is on before the cancel`);
-        assert.ok(await classes() >= 3 && await loose() >= 2, `${label}: the plate is lifted and the others slide before the cancel`);
+        await must(`document.body.classList.contains('reo-dragging')`, `${label}: the drag is on before the cancel`);
+        await must(`document.querySelectorAll('.reo-lift,.reo-slot,.reo-dragging').length>=3&&[...document.querySelectorAll('#stage .ro-plate,#stage .ro-sign')].filter(e=>e.style.transform).length>=2`, `${label}: the plate is lifted and the others slide before the cancel`);
         const r = await c.act(b);
         if (r) { const x = await js(r); assert.strictEqual(x.pre, true, `${label}: the drag was on at the moment of the dispatch`); if (!c.stay) assert.strictEqual(x.post, false, `${label}: the cancel ends the drag (no reo-dragging, same evaluation)`); }
         await ctx.sleep(60);
         if (c.stay) {
-          assert.strictEqual(await lifted(), true, `${label}: the drag is still on`);
+          await must(`document.body.classList.contains('reo-dragging')`, `${label}: the drag is still on`);
           await key('Escape', [], { char: 'never' }); await ctx.sleep(60);
         }
         assert.strictEqual(await lifted(), false, `${label}: ${c.stay ? 'Escape then ends the drag' : 'the cancel ends the drag'} (no reo-dragging)`);
@@ -134,7 +135,7 @@ module.exports = async (ctx) => {
     const pa = await js(`window.__durbarSimUi.order.path('room:'+${jsLiteral(A)})`);
     await H.pointerStep('check-097-drag-cancel', `${tag} drag after the cancels`, async () => {
       await press(a, b);
-      assert.strictEqual(await lifted(), true, `${tag}: the drag after the cancels starts`);
+      await must(`document.body.classList.contains('reo-dragging')`, `${tag}: the drag after the cancels starts`);
       mouse('mouseUp', b); await ctx.sleep(80);
     });
     await must(`(window.__durbarSimUi.order.get().desks[${jsLiteral(pa)}]||[]).filter(i=>${jsLiteral(O)}.includes(i)).join()===${jsLiteral(swapAt(O, k).join())}`, `${tag}: the drag after the cancels saved the swap`);
