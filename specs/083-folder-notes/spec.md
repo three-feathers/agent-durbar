@@ -293,6 +293,12 @@ In the drawer I choose **Open source** on a note: the chat it came from opens an
 
 ## Changes
 
+### 2026-11-17: the notes delete dialogs stop saying "cannot be undone" while an import backup holds a copy (spec 109 FR-078; a fix to FR-014 and FR-048, no code yet; the build is spec 109 T021)
+
+*Found*: round-3 review of PR #1374. Spec 109 keeps import backups of the notes for 7 days after an import (the next time Durbar runs), so *Undo import* can bring deleted notes back (owner Q9 B, 2026-11-09). FR-014 and FR-048 say deleting "cannot be undone", which would then be false.
+
+*Change*: **only while a spec 109 import backup exists**, the *Delete…* and *Delete all…* dialogs drop "This cannot be undone." and instead say "A copy stays in your import backups, removed 7 days after the import, the next time Durbar runs. Settings > Setup file > Delete backups removes it now." With no backup the dialogs are unchanged. The local store still loses the notes (US 3 holds). Test: the driver of spec 109 T021 asserts the old sentence is gone while a backup exists and present when none exists.
+
 ### 2026-11-13: `check-notes-source` no longer races Noor's last reply (test only; CI run 43387311919 on PR #1561, issue #1697; a fix to the driver of FR-046, T050)
 
 *Found*: `UI shard (ubuntu-latest 2/4)` failed at 1440x900 with `Message shown. is announced`, on a PR that changes no notes code. **Cause: a race in the driver.** The per-turn wait (no caret, Send visible) can pass before Noor's reply has started, because the chat is idle before the turn and again after it. The last reply then still runs during *Open source*; when it ends, the chat announces *Reply finished*, which replaces *Message shown.* in `#srAnnounce` (`announce()` keeps only the last text, FR-172), and the exact-text poll fails. `Open source` itself is not at fault.
