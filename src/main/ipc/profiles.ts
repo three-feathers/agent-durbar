@@ -4,12 +4,14 @@ import type { AdapterRouter } from '../../adapters/router';
 import type { AgentInfo } from '../../shared/api';
 import { errText } from '../agentops';
 import type { AgentTrustStore } from '../agenttrust';
-import { hashAgentFile } from '../agenttrust';
+import { hashAgentFile, readAgentFile, shownSha } from '../agenttrust';
+import type { AgentFileRead } from '../../adapters/types';
 import { PROFILE_ID } from '../folders';
 import type { ProfileFreshness } from '../profilefiles';
-import { createProfileFile, createProfileFreshness, deleteProfileFile, listAgentProfilesFresh, listProfileFiles, pathOfProfile, profileDirs, profileFolders, readProfileFile, saveProfileFile, userAgentDirs } from '../profilefiles';
+import { createProfileFile, createProfileFreshness, deleteProfileFile, isInside, listAgentProfilesFresh, listProfileFiles, pathOfProfile, profileDirs, profileFolders, readProfileFile, saveProfileFile, userAgentDirs } from '../profilefiles';
 import { openInVSCode } from '../vscode';
 import * as path from 'path';
+import { linkedBelow } from '../../shared/linkedfolders';
 import type { FrontmatterParse } from '../../shared/profiletemplates';
 import { generateProfile } from '../profilegen';
 import type { OneShot } from '../profilegen';
@@ -26,6 +28,16 @@ export interface ProfilesIpcDeps {
   oneShot(id: string): OneShot | undefined;
   /** Spec 043 FR-041: shared with ipc/agents.ts, which forgets a session when it ends or is removed. */
   profileFreshness?: ProfileFreshness;
+}
+
+/**
+ * Spec 043 FR-044: true when a folder between the nearest session folder holding `file` and the file is a link (`linkedBelow`). A
+ * file in no session folder (a Copilot agent the runtime reports as the project's from elsewhere) has no project folder to check.
+ */
+export function linkedInProject(folders: readonly string[], file: string): boolean {
+  const dir = path.dirname(file);
+  const nearest = folders.filter((f) => !!f && isInside(f, dir)).sort((x, y) => y.length - x.length)[0]; // the longest holding folder
+  return nearest !== undefined && linkedBelow(nearest, dir);
 }
 
 export function register(deps: ProfilesIpcDeps): void {
@@ -58,19 +70,30 @@ export function register(deps: ProfilesIpcDeps): void {
     if (profileId !== null && (typeof profileId !== 'string' || !PROFILE_ID.test(profileId))) return { ok: false, error: 'Unknown agent.' };
     try {
       await ensureLive(a);
+      let file: AgentFileRead | undefined;
       if (profileId !== null) {
         const p = (await ad.listAgentProfiles?.(a.id))?.find((x) => x.id === profileId);
         if (!p) return { ok: false, error: 'That agent is not available in this session.' };
+        // FR-044: one read gives the hash, the profile the dialog shows and the bytes the session uses, whatever the source (the
+        // adapter launches exactly the listed file's bytes, never a file that won a name clash afterwards)
+        // FR-044: no link between the session folder that holds a repository file (the nearest) and the file; the list readers agree
+        const linked = p.source === 'repo' && !!p.path && linkedInProject(a.folders && a.folders.length ? a.folders : [a.cwd], p.path);
+        const got = p.path && !linked ? readAgentFile(p.path) : undefined;
+        file = got && p.path ? { path: p.path, bytes: got.bytes } : undefined;
         if (p.source === 'repo') {
-          const sha = p.path ? hashAgentFile(p.path) : undefined;
-          if (!sha) return { ok: false, error: 'The agent file could not be read.' };
-          if (!agentTrust()?.isTrusted(wsKey(a), p.id, sha)) {
-            if (confirm !== true) return { ok: false, needsConfirm: true, profile: p };
-            agentTrust()?.trust(wsKey(a), p.id, sha);
+          const shown = file ? (ad.agentProfileOfFile ? ad.agentProfileOfFile(a.id, p.id, file) : p) : undefined;
+          if (!got || !shown) return { ok: false, error: 'The agent file could not be read.' };
+          if (!agentTrust()?.isTrusted(wsKey(a), p.id, got.sha256)) {
+            if (confirm === undefined || confirm === null) return { ok: false, needsConfirm: true, profile: shown, sha256: got.sha256 };
+            const sha = shownSha(confirm);
+            if (!sha) return { ok: false, error: 'invalid request' };
+            // the file is not the text the dialog showed: show the new text and ask again
+            if (sha !== got.sha256) return { ok: false, needsConfirm: true, profile: shown, sha256: got.sha256 };
+            agentTrust()?.trust(wsKey(a), p.id, got.sha256);
           }
         }
       }
-      const profile = await ad.selectAgentProfile(a.id, profileId as string | null);
+      const profile = await ad.selectAgentProfile(a.id, profileId as string | null, file);
       return { ok: true, profile };
     } catch (err) {
       return { ok: false, error: errText(err) };

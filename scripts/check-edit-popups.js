@@ -9,9 +9,10 @@
  * on a desk card and in the Folders panel, the command palette, Schedules, the spending limit, New session and New profile dialogs).
  * Popups are opened and put away with synthetic clicks and page calls; the numbered steps use real input (webContents.sendInputEvent
  * and insertText):
- *   1. a click in the field, Ctrl/Cmd+A and typed text;
+ *   1. a click in the field, Ctrl/Cmd+A and, once the page saw that key, typed text;
  *   2. a mouse drag that starts in the field and ends outside the popup (on the backdrop, or beside the popover), each event sent once the
- *      page saw the one before (a queue flushed by the release made it flaky on CI): the popup stays open,
+ *      page saw the one before (a queue flushed by the release made it flaky on CI), measured once the popup's opening animation ended,
+ *      the field already selected when the page gets the release (spec 052, 2026-11-09 second delta): the popup stays open,
  *      the text is unchanged and the drag's selection is there (the bug: the browser sends that click to the backdrop);
  *   3. Ctrl/Cmd+A selects the whole text and nothing else happens;
  *   4. live events while typing (status ticks on every desk, permission requests, a toast, a full render): open, text, selection and
@@ -52,16 +53,40 @@ module.exports = async (ctx) => {
   const pageSel = (sel, a, b) => js(`(()=>{const i=document.querySelector(${jsLiteral(sel)}),a=${jsLiteral(a)},b=${jsLiteral(b)};i.setSelectionRange(a===null?i.value.length:a,b===null?i.value.length:b);return true})()`); /* null: the end of the text */
   /* a drag with real input, one event at a time: each event is sent once the page has seen the one before (a wait, never a sleep). Sent back
      to back, the moves wait in the renderer's queue and only the release flushes them, so under load what reached the page was left to that
-     queue: on ubuntu CI (9 runs, 2026-11-08/09) the palette drag selected nothing ({s:13,e:13}). Returns ok and the events the page saw. */
+     queue: on ubuntu CI (9 runs, 2026-11-08/09) the palette drag selected nothing ({s:13,e:13}). Returns ok, the events the page saw (each
+     with its target, the focused element and its selection then; `selectionchange` too) and `atUp`: the field's selection when the page
+     got the release, so a drag that never selected is told apart from a selection lost after the release (spec 052, 2026-11-09 second delta). */
   const drag = async (sx, sy, ex, ey) => {
-    await js(`(()=>{if(window.__epOff)window.__epOff();const L=window.__epSeen=[],N=['mousedown','mousemove','mouseup'],on=e=>{L.push([e.type,e.clientX,e.clientY,e.buttons])};N.forEach(n=>document.addEventListener(n,on,true));window.__epOff=()=>N.forEach(n=>document.removeEventListener(n,on,true));return true})()`);
+    await js(`(()=>{if(window.__epOff)window.__epOff();const L=window.__epSeen=[],N=['mousedown','mousemove','mouseup','selectionchange','focusin','focusout'],
+      tg=n=>!n||!n.tagName?(n&&n.nodeName||'-'):n.tagName.toLowerCase()+(n.id?'#'+n.id:''),
+      on=e=>{const a=document.activeElement,s=a&&typeof a.selectionStart==='number'?a.selectionStart+'-'+a.selectionEnd:'';L.push([e.type,e.clientX,e.clientY,e.buttons,tg(e.target),tg(a),s])};
+      N.forEach(n=>document.addEventListener(n,on,true));window.__epOff=()=>N.forEach(n=>document.removeEventListener(n,on,true));return true})()`);
     const seen = (type, x, y, b) => until(`(window.__epSeen||[]).some(e=>e[0]===${jsLiteral(type)}&&Math.abs(e[1]-${jsLiteral(Math.round(x))})<=1&&Math.abs(e[2]-${jsLiteral(Math.round(y))})<=1&&(e[3]&1)===${jsLiteral(b)})`, 3000);
     mouse('mouseDown', sx, sy);
     let ok = await seen('mousedown', sx, sy, 1);
     for (let s = 1; s <= 8 && ok; s++) { const x = sx + (ex - sx) * s / 8, y = sy + (ey - sy) * s / 8; mouse('mouseMove', x, y, { modifiers: ['leftButtonDown'] }); ok = await seen('mousemove', x, y, 1); }
     if (ok) { mouse('mouseUp', ex, ey); ok = await seen('mouseup', ex, ey, 0); }
-    const trace = await js(`(()=>{const L=window.__epSeen||[];if(window.__epOff)window.__epOff();window.__epOff=null;window.__epSeen=null;return L.map(e=>e.join(' ')).join(', ')})()`);
-    return { ok, trace };
+    const got = await js(`(()=>{const L=window.__epSeen||[];if(window.__epOff)window.__epOff();window.__epOff=null;window.__epSeen=null;const u=L.find(e=>e[0]==='mouseup');
+      const short={mousedown:'down',mousemove:'move',mouseup:'up',selectionchange:'sel',focusin:'fin',focusout:'fout'};
+      return {atUp:u?u[6]:'',trace:L.map(e=>[short[e[0]]||e[0],e[0].startsWith('mouse')?e[1]+','+e[2]+' b'+e[3]:'',e[4],e[5]===e[4]?'':'focus '+e[5],e[6]].filter(Boolean).join(' ')).join('; ')}})()`);
+    return { ok, trace: got.trace, atUp: got.atUp };
+  };
+  /* a failing step's trace as log lines short enough for the suite's failure tail (it keeps 25 lines of 240 characters): the trace in the
+     assertion message alone was cut after the fifth event on CI (run 42580052193) */
+  const dumpTrace = (t, trace) => { const parts = trace.split('; '); let line = ''; for (const p of parts) { if (line && line.length + p.length > 180) { log(`${t} trace: ${line}`); line = ''; } line += (line ? '; ' : '') + p; } if (line) log(`${t} trace: ${line}`); };
+  /* the popup's opening animation (styles.css dlgin: 160 ms of translateY(6px) scale(.985)) has run: a rect read before that is off by up to
+     10 px (the palette's field read 134.5..166 while opening, 125..157 after), so the field's line and the drag's points were taken from a
+     moving box and changed from run to run (y 145 or 149 at 1440x900) */
+  const settled = (sel) => until(`(()=>{const b=document.querySelector(${jsLiteral(sel)});if(!b)return false;const a=typeof b.getAnimations==='function'?b.getAnimations({subtree:true}):[];return a.every(x=>x.playState!=='running'&&x.playState!=='pending')})()`, 3000);
+  /* a key press the page has seen: Ctrl/Cmd+A goes through the browser's input queue (a key waits for the page to answer the one before),
+     insertText does not, so typed text could reach the field before the select-all did; wait until the page saw the key (its default
+     action, the select-all, runs in the same task as the listeners, so it is done by the next look) */
+  const keySeen = async (k, mods) => {
+    await js(`(()=>{if(window.__epKeyOff)window.__epKeyOff();const L=window.__epKeys=[],on=e=>L.push(e.type+' '+e.key);window.addEventListener('keydown',on,true);window.__epKeyOff=()=>window.removeEventListener('keydown',on,true);return true})()`);
+    await H.key(k, mods, { char: 'never' });
+    const ok = await until(`(window.__epKeys||[]).some(x=>x.toLowerCase()===${jsLiteral('keydown ' + k.toLowerCase())})`, 3000);
+    await js(`(()=>{if(window.__epKeyOff)window.__epKeyOff();window.__epKeyOff=null;window.__epKeys=null;return true})()`);
+    return ok;
   };
   /* the point just outside the popup's box: to its left on the field's line when there is room, else above it */
   const outside = (box, fy) => (box.l > 40 ? { x: box.l - 24, y: fy } : { x: (box.l + box.r) / 2, y: box.t > 40 ? box.t - 20 : box.b + 20 });
@@ -92,6 +117,7 @@ module.exports = async (ctx) => {
     assert.ok(await k.open(), `${t}: the popup opens`);
     assert.ok(await until(`(()=>{const i=document.querySelector(${jsLiteral(k.input)});return !!i&&i.getClientRects().length>0})()`, 4000), `${t}: the field is shown`);
     const isOpen = () => js(`(()=>{const b=document.querySelector(${jsLiteral(k.box)});return !!b&&b.getClientRects().length>0})()`);
+    assert.ok(await settled(k.box), `${t}: the popup's opening animation ends`);
     let ri = await rect(k.input), box = await rect(k.box), r;
     const fy = Math.min((ri.t + ri.b) / 2, ri.t + 14); /* the first text line (a textarea's middle is under its text) */
     // 1. click in the field, select all, type
@@ -101,7 +127,7 @@ module.exports = async (ctx) => {
     }
     clickAt(ri.l + 8, fy); await ctx.sleep(SETTLE);
     assert.ok(await isOpen(), `${t}: a click in the field keeps the popup open`);
-    await H.key('A', [MOD], { char: 'never' });
+    assert.ok(await keySeen('A', [MOD]), `${t}: the page saw Ctrl/Cmd+A before the typing`);
     if (MAC && !num) await pageSel(k.input, 0, null); /* #683: a synthetic Cmd+A does not select on macOS; the page does, so typing replaces */
     if (MAC && num) await js(`document.querySelector(${jsLiteral(k.input)}).select()`); /* #1103: a number field has no setSelectionRange, but select() selects its value, so typing replaces it */
     wc().insertText(TEXT);
@@ -111,10 +137,17 @@ module.exports = async (ctx) => {
     ri = await rect(k.input); box = await rect(k.box);
     const o = outside(box, fy), sx = Math.min(ri.r - 6, ri.l + 200);
     const dr = await drag(sx, fy, o.x, o.y);
+    if (!dr.ok) dumpTrace(t, dr.trace);
     assert.ok(dr.ok, `${t}: the page saw the drag's press, each move with the button down and the release: ${dr.trace}`);
+    /* the moves themselves select: when the page gets the release, the field already holds a selection (a selection made later, or lost
+       later, is a different bug, told apart by the next check) */
+    const atUp = /^(\d+)-(\d+)$/.exec(dr.atUp || '');
+    if (!num && !MAC && !(atUp && +atUp[1] < +atUp[2])) dumpTrace(t, dr.trace);
+    assert.ok(num || MAC || (atUp && +atUp[1] < +atUp[2]), `${t}: the drag's moves select text before the release (the focused field's selection at the release: ${jsLiteral(dr.atUp)}): ${dr.trace}`);
     await ctx.sleep(SETTLE);
     assert.ok(await isOpen(), `${t}: a drag from the field that ends outside the popup keeps it open`);
     r = await fieldUntil(k.input, `i.value===${jsLiteral(TEXT)}&&f${num || MAC ? '' : '&&i.selectionStart<i.selectionEnd'}`);
+    if (!r.ok) dumpTrace(t, dr.trace);
     assert.ok(r.ok, `${t}: after the drag the text is intact${num || MAC ? '' : ', selected'} and focused: ${jsLiteral(r.f)}; the page saw: ${dr.trace}`);
     // 3. Ctrl/Cmd+A
     await H.key('A', [MOD], { char: 'never' });
@@ -163,9 +196,11 @@ module.exports = async (ctx) => {
   async function dragOnly(tag, k) {
     const t = `${tag} ${k.name}`;
     assert.ok(await k.open(), `${t}: the popup opens`);
+    assert.ok(await settled(k.box), `${t}: the popup's opening animation ends`);
     const box = await rect(k.box);
     const sx = box.l + 30, sy = box.t + 14, o = outside(box, sy);
     const dr = await drag(sx, sy, o.x, o.y);
+    if (!dr.ok) dumpTrace(t, dr.trace);
     assert.ok(dr.ok, `${t}: the page saw the drag's press, each move with the button down and the release: ${dr.trace}`);
     await ctx.sleep(SETTLE); /* nothing to wait for when it stays */
     assert.ok(await js(`(()=>{const b=document.querySelector(${jsLiteral(k.box)});return !!b&&b.getClientRects().length>0})()`), `${t}: a drag from inside that ends on the backdrop keeps it open`);

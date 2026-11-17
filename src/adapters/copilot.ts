@@ -1,5 +1,5 @@
 import { copilotHooksJson } from '../shared/foldersetup';
-import { makePrivateDir } from './privatedirs';
+import { makeSocketSafePrivateDir } from './privatedirs';
 import { readCopilotOrgPolicy, resolveCopilotManaged } from './copilotOrgPolicy';
 import type { CopilotManagedClient } from './copilotOrgPolicy';
 import type { OrgPolicy } from '../shared/orgpolicy';
@@ -56,7 +56,7 @@ import type { SlashPlace } from './slashcommands';
 import { cleanPlanText } from './plan';
 import { copilotQuotaReset } from './usagelimit';
 import { cleanSessionTitle, eventsToHistory, previousSessionsFor } from './history';
-import type { HistoryResult, PreviousSession } from './history';
+import type { HistoryLimits, HistoryResult, PreviousSession } from './history';
 import { unpackedRuntimePath } from './runtime';
 import * as os from 'os';
 import * as fs from 'fs';
@@ -308,7 +308,7 @@ export const COPILOT_CAPABILITIES: AdapterCapabilities = Object.freeze({
   mcpSignInReconnect: true, // spec 058 FR-207: the automatic reconnect calls rpc.mcp.restartServer only and re-reads `list` 1.5 s later (real: T176/T177, runtime 1.0.103)
   mcpSignInAgain: true, // spec 058 FR-164: oauth.login forceReauth ("clears any cached OAuth token for the server and runs a full new authorization", read: SDK 1.0.22-1.0.26 rpc.d.ts; not run on a real account)
   mcpSignIn: true, // spec 058 FR-064: rpc.mcp.oauth.login (@experimental; read: SDK 1.0.22-1.0.26 rpc.d.ts; real: worked once, macOS 2026-10-23, one server; the rest in T105)
-  mcpSignInSteps: 'If Sign in is not available, sign in from the Copilot CLI: run `copilot`, type `/mcp auth {name}` and finish in your browser. Then use Restart session with these servers. This may not carry over to this session (seen on 2026-10-23).', // FR-068
+  mcpSignInSteps: "Sign in is not available for this server from Agent Durbar. Switch it off for this session if you do not need it.", // FR-068, FR-246: no CLI command (a CLI sign-in did not carry over)
   mcpSignInNote: 'Checked once on a real account; other servers and systems not yet.', // FR-074/FR-180: the row's honest note
   sessionStats: true, // spec 085 FR-012: rpc.usage.getMetrics (@experimental; read: SDK 1.0.24; not run on a real session)
   handoff: true, // spec 030 FR-034: rpc.history.summarizeForHandoff (cost unverified)
@@ -523,7 +523,7 @@ export class CopilotAdapter implements AgentAdapter {
    * that client is stopped (`releaseRuntimeTmp`), when its start fails, or by the quit sweep.
    */
   protected async createClient(): Promise<CopilotClient> {
-    const tmp = makePrivateDir('durbar-cprt-');
+    const tmp = makeSocketSafePrivateDir('durbar-cprt-'); // FR-024: room for Unix sockets under it (macOS's temp root is long)
     try {
       // Packaged app: run the runtime from app.asar.unpacked. Dev: the SDK's own runtime, still as a child process: the connection is
       // passed explicitly so an env such as COPILOT_SDK_DEFAULT_CONNECTION=inprocess cannot pick the in-process transport, which takes no env
@@ -884,8 +884,8 @@ export class CopilotAdapter implements AgentAdapter {
   }
 
   /** Persisted messages and tool calls of a live (e.g. just resumed) session, capped, for replay in the chat panel. */
-  async history(sessionId: string): Promise<HistoryResult> {
-    return eventsToHistory(await this.mustGet(sessionId).session.getEvents());
+  async history(sessionId: string, limits?: Partial<HistoryLimits>): Promise<HistoryResult> {
+    return eventsToHistory(await this.mustGet(sessionId).session.getEvents(), limits); // spec 095 FR-024: `limits` only from the search
   }
 
   async start(options: StartOptions): Promise<string> {
@@ -1645,7 +1645,10 @@ export class CopilotAdapter implements AgentAdapter {
     return live ? reloadAgentsRpc(live.session.rpc.agent as unknown as AgentRpc) : false;
   }
 
-  /** spec 043 FR-002: select a custom agent for the next turns, or the default agent (null). The runtime confirms with an event. */
+  /**
+   * spec 043 FR-002: select a custom agent for the next turns, or the default agent (null). The runtime confirms with an event. The
+   * runtime reads the agent file itself, so main's confirmed bytes (FR-044) are not passed on (a `[KNOWN GAP]` in the spec).
+   */
   async selectAgentProfile(sessionId: string, id: string | null): Promise<AgentProfile | null> {
     const live = this.sessions.get(sessionId);
     if (!live) throw new Error('The session is not running.');

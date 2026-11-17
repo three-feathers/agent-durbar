@@ -259,6 +259,11 @@ const SCENES = {
         for(const a of cand){if(out.length===2)break;const next=out.concat(a.id);if(next.every(id=>{const r=A.find(x=>x.id===id).room;return M.some(o=>o.room===r&&!next.includes(o.id)&&!fin(o))}))out.push(a.id);}
         return out})()`);
       if (pick.length !== 2) throw new Error('lounge: two agents to finish were not found');
+      // FR-270 (issue #1792): Omar's simulated spending limit puts a limit slip at the right edge of the room, and it covered the lounge row's zoom; the scene answers it as a user would (Remove limit), then waits for the slip to go
+      if (await H.until(`!!document.querySelector('#stage .ro-limit:not([hidden]) .ro-sbtn')`, 6000)) {
+        await H.js(`(()=>{const b=[...document.querySelectorAll('#stage .ro-limit .ro-sbtn')].find(x=>x.textContent==='Remove limit');if(b)b.click();return !!b})()`);
+        if (!(await H.until(`!document.querySelector('#stage .ro-limit:not([hidden])')`, 8000))) throw new Error('lounge: the limit slip did not go');
+      }
       await H.js(`(()=>{for(const id of [${pick.map(idLit).join(',')}]){const a=${SIM}.agents().find(x=>x.id===id);a.state='done';a.lastOutput=a.lastOutput||'Finished the change and ran the tests.';a.lastEventAt=Date.now();${SIM}.unread.mark(id);}${SIM}.crew.renderAll();return 1})()`);
       if (!(await H.until(`document.querySelectorAll('#stage .ro-plate.st-done').length>=2`, 8000))) throw new Error('lounge: no finished desks');
       await H.settle();
@@ -404,6 +409,83 @@ const SCENES = {
       await H.js(`clearInterval(window.__ntKeep);0`);
     },
   },
+  /* spec 008 FR-197 (v0.1.15): the five crews' own people in Real office (spec 097 FR-335..FR-337, PR #1396); the Settings path is the `crews` scene's */
+  'real-crews': {
+    title: 'Real office draws every crew', sub: 'Pirate, Royal, Rebels, Monster and Cheeky: Settings > Characters',
+    refs: [{ spec: '097', fr: [335, 337] }],
+    async play(S) {
+      const H = S.H;
+      const REAL = `!!document.querySelector('#stage .ro .ro-plate')&&document.getElementById('stage').dataset.d==='real'&&[...document.querySelectorAll('#stage .ro img')].every(i=>i.complete)`;
+      // a crew is drawn when a person picture of its set is on the stage and every picture has loaded (the set name is a fixed id of this list)
+      const drawn = (set) => `[...document.querySelectorAll('#stage .ro img')].some(i=>i.src.includes('/sets/${set}/'))&&[...document.querySelectorAll('#stage .ro img')].every(i=>i.complete)`;
+      await S.reset({ officeview: 'real', simfreeze: '1', romotion: '1' }, { ready: REAL });
+      await S.openSettings();
+      await S.scrollTo('chH');
+      await S.pickCharacters('pirate');
+      await S.caption('{step}. Settings > Characters: pick a crew', 'Real office now draws that crew\'s own people');
+      await S.zoomTo(await S.rectOf(['#chList'], { pad: 20 }));
+      await S.film(2.2);
+      await S.zoomOut();
+      await S.closeSettings();
+      for (const [id, name] of [['pirate', 'Pirate'], ['royal', 'Royal'], ['rebels', 'Rebels'], ['monster', 'Monster'], ['cheeky', 'Cheeky']]) {
+        if (id !== 'pirate') { await S.openSettings(); await S.pickCharacters(id); await S.closeSettings(); }
+        if (!(await H.until(drawn(id), 15000))) throw new Error(`real-crews: the ${name} people were not drawn`);
+        H.wc().sendInputEvent({ type: 'mouseMove', x: 1, y: 1 });
+        await H.settle();
+        await S.caption(`The ${name} crew at their desks`, `Real office, Settings > Characters > ${name}`);
+        await S.film(1.3);
+      }
+      await S.openSettings();
+      await S.pickCharacters('theme');
+      await S.closeSettings();
+    },
+  },
+  /* spec 008 FR-197 (v0.1.15): drag a desk and a room with the mouse in Real office (spec 097 FR-345..FR-355, PRs #1315 and #1394). Picked as
+     scripts/check-097-drag.js picks: visits settled and the drawn desks matching the visit record (#1426), a desk at its seat (not away) with a
+     neighbour after it; the ids stay in the page (window.__rvDrag), nothing from the page is spliced into code. */
+  'real-drag': {
+    title: 'Real office: drag desks and rooms', sub: 'Drag a desk by its name plate, a room by its folder sign',
+    refs: [{ spec: '097', fr: [345, 355] }],
+    async play(S) {
+      const H = S.H, SIM = 'window.__durbarSimUi';
+      const REAL = `!!document.querySelector('#stage .ro .ro-plate')&&document.getElementById('stage').dataset.d==='real'&&[...document.querySelectorAll('#stage .ro img')].every(i=>i.complete)`;
+      await S.reset({ officeview: 'real', simrooms: '3', simfreeze: '1', romotion: '1' }, { ready: REAL });
+      if (!(await H.until(`${SIM}.visitsSettled()`, 20000))) throw new Error('real-drag: a visit did not settle');
+      if (!(await H.until(`(()=>{const U=${SIM},v=new Set(U.awayIds());return U.realLayout().zones.flatMap(z=>z.desks).filter(d=>!d.lounge).every(d=>!!d.away===v.has(d.id))})()`, 20000))) throw new Error('real-drag: the drawn desks do not match the visit record');
+      const at = await H.js(`(()=>{const U=${SIM},L=U.realLayout(),away=new Set(L.zones.flatMap(z=>z.desks).filter(d=>d.away&&!d.lounge).map(d=>d.id));let best=null;
+        const by={};for(const z of L.zones)(by[z.id]=by[z.id]||[]).push(...z.desks.filter(d=>!d.lounge).map(d=>d.id));for(const [zid,o] of Object.entries(by)){const z={id:zid};const k=o.findIndex((id,i)=>i+1<o.length&&!away.has(id));if(k>=0&&o.length>=3&&!best)best={z:z.id,o,k};}
+        if(!best)return {none:Object.values(by).map(o=>o.length).join('/')+' away '+away.size};window.__rvDrag=best;const P=id=>document.querySelector('#stage .ro-plate[data-id="'+CSS.escape(id)+'"]');const a=P(best.o[best.k]),b=P(best.o[best.k+1]);if(!a||!b)return null;
+        const ra=a.getBoundingClientRect(),rb=b.getBoundingClientRect();return {a:{x:ra.left+Math.min(14,ra.width/2),y:ra.top+ra.height/2},b:{x:rb.left+rb.width/2,y:rb.top+rb.height/2}}})()`);
+      if (!at || at.none) throw new Error(`real-drag: no room with three desks and a desk at its seat with a neighbour (${at ? at.none : 'no plate'})`);
+      const mouse = (type, p, extra = {}) => H.wc().sendInputEvent({ type, x: Math.round(p.x), y: Math.round(p.y), button: 'left', clickCount: 1, ...extra });
+      const drag = async (a, b, steps) => {
+        mouse('mouseMove', a); await S.film(0.3); mouse('mouseDown', a);
+        for (let i = 1; i <= steps; i++) { mouse('mouseMove', { x: a.x + ((b.x - a.x) * i) / steps, y: a.y + ((b.y - a.y) * i) / steps }, { modifiers: ['leftButtonDown'] }); await S.film(0.25); }
+        mouse('mouseUp', b);
+      };
+      const park = async () => { H.wc().sendInputEvent({ type: 'mouseMove', x: 1, y: 1 }); await H.settle(); };
+      await S.caption('{step}. Drag a desk by its name plate', 'Its neighbours slide aside; a short press still opens the chat');
+      await S.zoomTo(await S.rectOfJs(`(()=>{const d=window.__rvDrag;return d.o.slice(d.k,d.k+2).map(id=>document.querySelector('#stage .ro-plate[data-id="'+CSS.escape(id)+'"]'))})()`, { pad: 60, above: 190 }));
+      await S.film(0.8);
+      await drag(at.a, at.b, 6);
+      if (!(await H.until(`(()=>{const d=window.__rvDrag,o=${SIM}.realLayout().zones.filter(x=>x.id===d.z).flatMap(x=>x.desks.filter(y=>!y.lounge).map(y=>y.id));return o[d.k]===d.o[d.k+1]&&o[d.k+1]===d.o[d.k]&&!document.body.classList.contains('reo-dragging')})()`, 8000))) throw new Error('real-drag: the desk drop did not reorder the room');
+      if (await H.js(`document.body.classList.contains('panel-open')`)) throw new Error('real-drag: the drop opened a chat');
+      await park();
+      await S.caption('{step}. Dropped: the new order is saved', 'The Open office shows the same order');
+      await S.film(1.6);
+      await S.zoomOut();
+      const signs = `[...document.querySelectorAll('#stage .ro-sign')].filter(s=>s.querySelector('.ro-sc')).map(s=>({s,b:s.getBoundingClientRect()})).sort((p,q)=>Math.abs(p.b.top-q.b.top)>4?p.b.top-q.b.top:p.b.left-q.b.left)`;
+      const sg = await H.js(`(()=>{const l=${signs};if(l.length<2)return null;window.__rvSigns=l.map(x=>x.s.dataset.folder);const a=l[0].b,b=l[1].b;return {a:{x:a.left+Math.min(14,a.width/2),y:a.top+a.height/2},b:{x:b.left+b.width/2,y:b.top+b.height/2}}})()`);
+      if (!sg) throw new Error('real-drag: fewer than two folder signs');
+      await S.caption('{step}. Drag a room by its folder sign', 'The whole room moves; Esc cancels a drag');
+      await S.film(0.6);
+      await drag(sg.a, sg.b, 6);
+      if (!(await H.until(`(()=>{const l=(${signs}).map(x=>x.s.dataset.folder);return l[0]!==window.__rvSigns[0]&&!document.body.classList.contains('reo-dragging')})()`, 8000))) throw new Error('real-drag: the room drop did not move the room');
+      await park();
+      await S.caption('{step}. The rooms keep the new order', 'Desks and rooms: one saved order for both offices');
+      await S.film(1.8);
+    },
+  },
   outro: {
     title: '{count} changes in {version}', sub: 'The full list is in the notes below', titleNoCount: 'All changes in {version}',
     async play(S) { await S.reset(); await S.card(true); await S.film(3); await S.card(false); },
@@ -414,6 +496,8 @@ const SCENES = {
  * A scene's `refs` say which spec and FR numbers it shows: `{ spec: '097', fr: [246, 249] }` (no `fr`: any change to that spec). Without
  * --scenes the clip gets the scenes named by a fragment's `Scene:` field and the scenes whose refs a bullet of the release names, between
  * the title and end cards; none found is an error that asks for --scenes (never a stale list). */
+const AUTO_MIN = 3;                  // feature scenes a default clip is filled up to (spec 008 FR-218, issue #1790: one scene gave 16.8 s, under LEN_MIN)
+const FILL_SCENES = ['needsyou', 'signin', 'lounge']; // the standing tour that fills a short default clip, in this order (12.6 s, 7 s, 10.5 s measured)
 const AUTO_MAX = 4;                  // feature scenes in a default clip, so its length stays inside LEN_MAX and its GIF inside GIF_MAX (issue #1305: Real office scenes are photos, about 1-2.4 MB each at 640 px and 128 colours; five of them did not fit)
 /** The (lo, hi) FR numbers a text names for `spec`: "(spec 097 FR-246..FR-249, FR-236)" gives [[246,249],[236,236]]; [] when the spec is named without FR numbers, null when it is not named. */
 function frsNamed(text, spec) {
@@ -444,6 +528,10 @@ function chooseScenes({ sceneFields = [], bullets = [] }, scenes = SCENES) {
   const byRef = sceneIdsFor(bullets, scenes).filter((id) => !named.includes(id));
   const feature = [...named, ...byRef].slice(0, AUTO_MAX);
   if (!feature.length) throw new Error('no scene shows this release (no fragment has a Scene: field and no bullet names a scene\'s spec and FR); pass --scenes <ids> (see --list)');
+  for (const id of FILL_SCENES) { // FR-218: the release's own scenes come first; a clip with one or two is filled up so it stays over the length floor
+    if (feature.length >= AUTO_MIN) break;
+    if (!feature.includes(id) && Object.prototype.hasOwnProperty.call(scenes, id)) feature.push(id);
+  }
   return ['intro', ...feature, 'outro'];
 }
 /** The bullets and Scene: fields of a release: the pending fragments of the checkout, and the version's section of CHANGELOG.md once folded. */
@@ -687,13 +775,17 @@ async function main(argv = process.argv.slice(2), deps = {}) {
   if (a.scenes === null) a.scenes = (deps.chooseScenes || ((v) => chooseScenes((deps.releaseSources || releaseSources)(v))))(a.version); // after the removal: no scene shows this release is a failure like any other, and it leaves no old clip
   fs.mkdirSync(out, { recursive: true });
   if (!(deps.hasFfmpeg || hasFfmpeg)()) throw new Error('ffmpeg was not found (install it, or set FFMPEG=<path>); no clip was made');
-  if (!fs.existsSync(path.join(ROOT, 'dist', 'renderer', 'index.html'))) throw new Error('no build: run `npm run build` first');
+  const noBuild = (deps.buildProblem || require('./ensure-electron').buildProblem)();
+  if (noBuild) throw new Error(noBuild);
   if (!(deps.ensure || require('./ensure-electron').ensureElectron)()) throw new Error('the Electron binary is not installed and could not be fetched');
   const frames = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-release-video-'));
   try {
     console.log(`release-video: ${a.version}, scenes ${a.scenes.join(', ')}, frames in ${frames}`);
     const runOne = deps.runOne || require('./ui-suite').runOne;
-    const r = await runOne({ name: 'release-video', baseEnv: childEnv(), timeoutMs: RECORD_MS, killTree: true, dpr: 2, env: { DURBAR_SIM_CLOCK: CLOCK, TZ: 'UTC', LANG: 'en_US.UTF-8', RV_VERSION: a.version, RV_SCENES: a.scenes.join(','), RV_COUNT: a.count === null ? '' : String(a.count) } }, frames);
+    const xvfbWas = process.env.UI_SUITE_XVFB;
+    if (process.platform === 'linux') process.env.UI_SUITE_XVFB = '1'; // FR-217: always a virtual screen, so the window is 1440x900 whatever the host's desktop (a clamped window filmed the wrong desks, #1789); `runOne` reads it
+    let r;
+    try { r = await runOne({ name: 'release-video', baseEnv: childEnv(), timeoutMs: RECORD_MS, dpr: 2, env: { DURBAR_SIM_CLOCK: CLOCK, TZ: 'UTC', LANG: 'en_US.UTF-8', RV_VERSION: a.version, RV_SCENES: a.scenes.join(','), RV_COUNT: a.count === null ? '' : String(a.count) } }, frames); } finally { if (xvfbWas === undefined) delete process.env.UI_SUITE_XVFB; else process.env.UI_SUITE_XVFB = xvfbWas; }
     if (!r.ok) throw new Error(`the recording failed (${r.why || 'exit ' + r.code}):\n${r.log.split(/\r?\n/).filter((l) => l.trim()).slice(-20).join('\n')}`);
     const shot = JSON.parse(fs.readFileSync(path.join(frames, 'frames.json'), 'utf8'));
     fs.writeFileSync(path.join(frames, 'list.ffconcat'), concatList(shot.frames));
@@ -735,7 +827,7 @@ async function main(argv = process.argv.slice(2), deps = {}) {
 /* ---------------------------------------------------------------- the driver (Electron main) ---------------------------------------------------------------- */
 
 async function driver(ctx) {
-  const { helpers, jsLiteral } = require('./driver-helpers');
+  const { helpers, jsLiteral, STILL_STAGE } = require('./driver-helpers');
   const { nativeImage } = require('electron');
   const H = helpers(ctx);
   const out = process.env.OUT;
@@ -807,6 +899,8 @@ async function driver(ctx) {
     async reset(query = {}, o = {}) {
       cam = FULL; zoomStill = false;
       await H.load({ w: W, h: H_, ready: o.ready || 'fit', query, settle: o.ready ? false : undefined }); // `ready`: a page expression for a world whose desks are not `.desk` cards (Real office)
+      const win = await H.js('[innerWidth,innerHeight]'); // FR-217: a window the screen clamped would be stretched into the frame and the camera would point at the wrong place
+      if (!Array.isArray(win) || Math.abs(win[0] - W) > 2 || Math.abs(win[1] - H_) > 2) throw new Error(`the app window is ${win && win[0]}x${win && win[1]} CSS px, not ${W}x${H_} (the screen is too small?); no clip is made`);
       if (!o.ready) await H.office(query.simfloors === '1' ? 1 : 12);
       else await H.settle();
       H.wc().sendInputEvent({ type: 'mouseMove', x: 1, y: 1 });
@@ -890,7 +984,8 @@ async function driver(ctx) {
     /** The camera move, drawn from one capture (the page is still while the camera moves) at ZOOM_FPS. */
     async glide(to, secs, img = null) {
       await this.check();
-      if (!img) img = await H.wc().capturePage();
+      /* spec 097 FR-365 (bug 1513): the one capture is taken once no plate, desk or person is still easing to a new layout (a WAAPI move in #stage; the CSS loops keep running), so no still holds a half-moved room */
+      if (!img) { await H.until(STILL_STAGE, 3000); img = await H.wc().capturePage(); }
       for (const c of zoomPath(cam, to, secs)) { cam = c; shoot(img, clipMs); clipMs += 1000 / ZOOM_FPS; }
       cam = to;
     },
@@ -954,5 +1049,5 @@ async function driver(ctx) {
 }
 
 module.exports = driver;
-Object.assign(module.exports, { sceneTitle, ZOOM_MAX, ZOOM_FPS, ZOOM_SECS, FULL, fitCamera, ease, zoomPath, cropRect, stillNames, HOME_PATH_RE, PLATFORM_ADDED, unexpectedEnvKeys, ENV_ALLOW, RECORD_MS, FFMPEG_MS, childEnv, gitEmail, run, W, H_, BAND, FRAME_H, composeFrame, SCENES, AUTO_MAX, frsNamed, refMatches, sceneIdsFor, chooseScenes, releaseSources, stepCounter, VERSION_RE, FPS, GIF_MAX, MP4_MAX, parseArgs, fill, forbiddenValues, privacyProblems, concatList, mp4Args, gifArgs, gifTries, lengthOk, main });
+Object.assign(module.exports, { sceneTitle, ZOOM_MAX, ZOOM_FPS, ZOOM_SECS, FULL, fitCamera, ease, zoomPath, cropRect, stillNames, HOME_PATH_RE, PLATFORM_ADDED, unexpectedEnvKeys, ENV_ALLOW, RECORD_MS, FFMPEG_MS, childEnv, gitEmail, run, W, H_, BAND, FRAME_H, composeFrame, SCENES, AUTO_MAX, AUTO_MIN, FILL_SCENES, frsNamed, refMatches, sceneIdsFor, chooseScenes, releaseSources, stepCounter, VERSION_RE, FPS, GIF_MAX, MP4_MAX, parseArgs, fill, forbiddenValues, privacyProblems, concatList, mp4Args, gifArgs, gifTries, lengthOk, main });
 if (require.main === module) main().catch((e) => { console.error('release-video:', e.message); process.exitCode = 1; });

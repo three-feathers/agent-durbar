@@ -401,7 +401,7 @@ async function main(): Promise<void> {
     assert.ok(attempts <= 110, `no more than about 100 attempts to remove it (${attempts})`);
     // the lock cannot even be looked at (EACCES): the same wait, then busy
     attempts = 0;
-    const blind = { ...fs, lstatSync: (f: string) => { if (f.includes('.lock')) { attempts++; spin(); throw Object.assign(new Error('denied'), { code: 'EACCES' }); } return fs.lstatSync(f); } } as unknown as NotesFs;
+    const blind = { ...fs, lstatSync: (f: string, o?: unknown) => { if (f.includes('.lock')) { attempts++; spin(); throw Object.assign(new Error('denied'), { code: 'EACCES' }); } return fs.lstatSync(f, o as never); } } as unknown as NotesFs;
     const t1 = Date.now();
     const rb = await new NotesStore(dir, { fs: blind }).add(FOLDER, 'demo', { text: 'cannot look' });
     assert.ok(!rb.ok && /busy/.test(rb.error) && Date.now() - t1 >= 1800 && attempts <= 110, `lstat denied: busy after about 2 s, ${attempts} looks`);
@@ -413,7 +413,7 @@ async function main(): Promise<void> {
       const enoent = (): never => { throw Object.assign(new Error('gone'), { code: 'ENOENT' }); };
       const flip = { ...fs,
         openSync: (f: string, fl: string, m: number) => { if (f.endsWith('.lock')) { attempts++; spin(); throw Object.assign(new Error('exists'), { code: 'EEXIST' }); } return fs.openSync(f, fl, m); },
-        lstatSync: (f: string) => (gone === 'lstat' && f.endsWith('.lock') ? enoent() : fs.lstatSync(f)),
+        lstatSync: (f: string, o?: unknown) => (gone === 'lstat' && f.endsWith('.lock') ? enoent() : fs.lstatSync(f, o as never)),
         renameSync: (a: string, b: string) => { if (a.endsWith('.lock') && b.includes('.stale-')) enoent(); fs.renameSync(a, b); },
       } as unknown as NotesFs;
       const t3 = Date.now();
@@ -652,6 +652,40 @@ async function main(): Promise<void> {
     const vanished = { ...fs, lstatSync: (f: string, o?: unknown) => { if (String(f).endsWith('.json')) fs.rmSync(lk, { force: true }); return (fs.lstatSync as (f: string, o?: unknown) => unknown)(f, o); } } as unknown as NotesFs;
     const r = await new NotesStore(dir, { fs: vanished }).add(FOLDER, 'demo', { text: 'lock vanished' });
     assert.ok(!r.ok && /busy/.test(r.error), 'a lock that is gone (ENOENT) is not ours: busy');
+  }
+
+  // issue #1491: the cache check compares the file's inode as a bigint. Another process's write that leaves size and time as they were
+  // but puts a file whose 64-bit id differs only in bit 0 (above 2^53) is seen. The stub answers like node: bigint fields only for
+  // { bigint: true }, else plain numbers (the id rounded), so a read that drops the option keeps the stale cache and fails this case.
+  {
+    const dir = fresh();
+    const A = 12947848929002476n;
+    const B = A + 1n;
+    assert.strictEqual(Number(A), Number(B), 'precondition: as plain numbers the two ids are equal');
+    let ino = A;
+    let ns = 1n;
+    const big = (o?: unknown): boolean => !!(o as { bigint?: boolean } | undefined)?.bigint;
+    const fixed = { ...fs, lstatSync: (f: string, o?: unknown) => {
+      const st = (fs.lstatSync as (f: string, o?: unknown) => object)(f, o);
+      if (f !== fileOf(dir)) return st;
+      const over: Record<string, unknown> = big(o) ? { ino, size: 4096n, mtimeNs: ns, mtimeMs: 0n } : { ino: Number(ino), size: 4096, mtimeMs: 0.000001 };
+      return new Proxy(st, { get: (t, k) => (typeof k === 'string' && k in over ? over[k] : typeof (t as never)[k] === 'function' ? ((t as never)[k] as () => unknown).bind(t) : (t as never)[k]) });
+    } } as unknown as NotesFs;
+    const mine = new NotesStore(dir, { fs: fixed });
+    must(await mine.add(FOLDER, 'demo', { text: 'one' }));
+    must(await new NotesStore(dir).add(FOLDER, 'demo', { text: 'two' })); // another process, same size and time as the stub reports them
+    const kept = await mine.list(FOLDER);
+    assert.ok(kept.ok && kept.notes.length === 1, 'control: with the same inode, size and time the cache is used (only the inode can tell)');
+    ino = B;
+    const seen = await mine.list(FOLDER);
+    assert.ok(seen.ok && seen.notes.length === 2, `issue 1491 notes store ino: a file whose inode differs only in bit 0 above 2^53 is read again (${seen.ok ? seen.notes.length : JSON.stringify(seen)})`);
+    // the time is compared in nanoseconds: a write within the same millisecond (same inode and size, mtimeMs still 0) is seen too
+    must(await new NotesStore(dir).add(FOLDER, 'demo', { text: 'tre' }));
+    const still = await mine.list(FOLDER);
+    assert.ok(still.ok && still.notes.length === 2, 'control: with the same inode, size and nanosecond time the cache is used');
+    ns = 2n;
+    const later = await mine.list(FOLDER);
+    assert.ok(later.ok && later.notes.length === 3, `issue 1491 notes store mtimeNs: a file whose time differs by 1 ns within the same millisecond is read again (${later.ok ? later.notes.length : JSON.stringify(later)})`);
   }
 
   console.log('notes store: modes 0700/0600, atomic writes, masked on disk, corrupt files never overwritten, two stores merge, mirror persisted, caps');

@@ -203,15 +203,25 @@ export interface McpValueSources {
   noPrompt(): boolean;
   /** An open agent's session values; can unlock the vault, so it is called only when `noPrompt()`. */
   secretValuesFor(agentId: string): readonly string[];
+  /** Spec 069 FR-070: a Copilot agent's Copilot CLI list values only; never reads the vault, so it is used while `noPrompt()` is false. */
+  copilotValuesFor?(agentId: string): readonly string[];
+}
+
+/**
+ * Spec 069 FR-070 (second review of #1650): an open agent's session values for notes and search: all of them (`secretValuesFor`) when the
+ * vault needs no prompt, otherwise only the Copilot CLI list's (`copilotValuesFor`), which never need the vault. Throws when a source throws.
+ */
+export function sessionMaskValues(src: Pick<McpValueSources, 'noPrompt' | 'secretValuesFor' | 'copilotValuesFor'>, agentId: string): string[] {
+  return cleanValues(src.noPrompt() ? [...(src.secretValuesFor(agentId) ?? [])] : [...(src.copilotValuesFor?.(agentId) ?? [])]);
 }
 
 /**
  * FR-030: the values one session is masked with, taken without any keychain prompt (as spec 083 Notes does): the folder's known values,
- * plus the open agent's session values only when `noPrompt()`. An earlier session gets its folder's values only. Fails closed: a throwing
+ * plus the open agent's session values only when `noPrompt()` (otherwise its Copilot CLI list values, spec 069 FR-070). An earlier session gets its folder's values only. Fails closed: a throwing
  * source throws (the caller then searches nothing of that session).
  */
 export function scanSecretValues(src: McpValueSources, s: { folderKey: string; agentId?: string; open: boolean }): string[] {
   const out = [...(src.knownSecretValues(s.folderKey) ?? [])];
-  if (s.open && s.agentId && src.noPrompt()) out.push(...(src.secretValuesFor(s.agentId) ?? []));
+  if (s.open && s.agentId) out.push(...sessionMaskValues(src, s.agentId)); // FR-070: the Copilot-list values also while the vault would prompt
   return cleanValues(out);
 }

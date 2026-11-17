@@ -143,6 +143,13 @@ Animations are subtle, CSS-only in compact densities and stop under reduced-moti
 
 ## Changes
 
+### 2026-11-11: `shots-001-live-activity` reads the lobby through the settled check (issue #1481, FR-191)
+
+`read:` CI run 42924505740, job 130207522830 failed `shots-001-live-activity: 1440 sparse: office page rules` with the only problem "a walking figure is not on a slot (566,329)". That driver is the only one in `ui-suite.js` with `freeze: false`: the live simulator keeps sending agents to the lobby, and its `page()` waited once for no figure walking and then made one `pageCheck`. A figure also jumps without walking when the lobby re-lays out (`move(w, pos, null, true)` in `app.js`) and the next frame repaints, so one read can land between the two. `check:office` already handles this (spec 024 T027, FR-191: re-read for up to 3 s, fail only when two reads two animation frames apart show the same figures and lit slots), but only inside its own `measure()`.
+
+- **Change:** that loop moves into an exported `settledPageCheck(ctx, expanded, expectPlaces, beforeRead)` in `scripts/check-office-overlap.js`; `measure()` keeps its `OFFICE_TEST_STUCK_WALKER` hooks (as `beforeRead`) and calls it, and `shots-001-live-activity.js` `page()` calls it too (FR-031: one copy). Scripts only; no change to `src/`.
+- **`[KNOWN GAP]`** The race is inferred from the code and that one CI log. It did not reproduce locally (5 of 5 passes), so it was not observed, and this change is not shown to remove the failure; it makes the driver tolerate the one cause found.
+
 ### 2026-11-09: `check-001-lights` picks its four desks from a settled office (issue #1342, FR-231)
 
 `sim:` The driver waited for 8 desks, then took four desks whose screen was off and whose person was at the desk. The frozen simulator's replay leaves some working agents' tool calls open; each shows as a visit to a place once the lobby's 600 ms debounce has passed, and stays. Read before the debounce, 7 desks qualified; read after it, 3 (sim-1, -5, -12 and -14 away), so the driver failed with `four desks with their light off (3)` whenever the read came late: under load, and on CI (15 of the last 100 failed `ui-platforms.yml` runs, Linux and Windows, every kit and both sizes). The tint rule and the app are not wrong. The driver now waits until the office has settled (`visitsSettled()`, `settleNow()`, no figure walking) and picks from every desk whose screen is off, wherever its person stands: its check reads an away desk's screen like any other (sim-3, amber and away, was already checked on every run). Nothing in the app changes.
@@ -403,6 +410,14 @@ Spec [024](../024-office-places/spec.md) adds a one-row **lobby** band between t
 - **FR-034** (amendment) **One helper shows a pending request.** `focusRequest(card)` (app.js) brings the card into view and focuses its first answer control (a question's option or field), else the card itself; the answer bar's `show` and the lobby's `openAtRequest` both call it.
 - Docs: `postNext` (not `postLines`) in the plan and tasks; `lobbyFit(aw, places, addButton, post)` in FR-039 and the plan.
 - *Result (2026-10-23, Linux, Xvfb, simulator only):* `sim:` `shots-001-lobby.js` hostile pass at 1440x900: four agents (the Boss's first entry, one inside "+N", Omar at the Bank, a coffee-corner visitor) get a title like `<img src=x onerror=…><b>Mal1</b>`, and a schedule prompt with the same markup is saved through the simulator bridge; no `img` and no injected `b` in `#stage`, `#walkers` or `#modeMenu`, `window.__pwn` stays unset, and the entries, tile labels and tooltips, the "+N" list and the Postbox line show the literal text. Mutation: `esc(a.name)` dropped from the lobby entry fails it. Token: a bare `ghp_` token placed across the desk title's 200th character leaves no `ghp_` and no piece of it in the title or the accessible name; mutation (cut, then mask) fails it with `ghp_Q7Q7Q7…` in the title. (A token after `Authorization: token` is masked even when cut, by the header rule, so the check uses a bare token.) `test:` `test:places` `every: null` cases; mutation back to `every==null` fails it.
+
+### 2026-11-13: the letter also flies in the Real office (issue #1587)
+
+*Found:* the Postbox's letter rule looked for the flat office's `.place.postbox` and `.desk[data-id]` only, so in the Real office (Photo office, Prehistoric cave, Retro arcade) it never flew.
+
+*Changed:*
+- Amendment to the Postbox's letter rule (FR-038): **the letter also flies in the Real office:** from the Postbox plate (`.ro-lplate[data-post]`) to the agent's name plate (`.ro-plate[data-id]`), skipped only when either end is off screen (in the flat office too: a desk scrolled out of view got a letter flying to nowhere). Rules, driver and mutants: [spec 097](../097-real-office/spec.md) FR-377.
+- *Result (2026-11-13, Linux, Xvfb, simulator only):* see spec 097 FR-377 (`sim:` `check-097-letter`).
 
 ### 2026-10-22: a long unbroken name on a full desk card (issue #536)
 
@@ -733,7 +748,7 @@ Spec, plan and tasks only: nothing here is built. Numbers taken: FR-193..FR-203,
 
 - **SC-005** Over at least 500 seeds at each of 1440x900 and 1280x800, chat closed and open, 0 differences in chosen layout, trial answers or boxes; every planted mutant of T178 is caught.
 - **SC-006** `partsMeasured` per search at most the limit T167 sets; search time at most 40 % of today's at 15 and 40 agents, same machine, alternating runs; `searchFellBack` 0 over the seeds.
-- **SC-007** Start at most 1500 ms and layout reads under 40 at 15 agents on the reference machine; the row for 40 agents as the owner decides; the Mac's numbers recorded beside them.
+- **SC-007** *(layout reads under 40 is no longer a gate: owner, 2026-11-14, spec 097 Changes 2026-11-14: status update under 30 ms at 15 agents)* Start at most 1500 ms and layout reads under 40 at 15 agents on the reference machine; the row for 40 agents as the owner decides; the Mac's numbers recorded beside them.
 
 **Open questions for the owner (not answered here; recommendations in the plan).** Q1: does 1500 ms bind at 40 agents too? Q2: which machine is the target measured on? Q3: if T167 shows a low gain, stop or build the cheaper parts? Q4: may the first paint wait (FR-201 d)?
 
@@ -793,3 +808,33 @@ The rule is spec 097 FR-236 (#1202); this delta is Open office's half, so world 
 - `check-unread`, `check-crew` and `test:unread` assert the tint where they asserted the glow.
 
 **Tasks:** T192..T196 in `tasks.md`. Numbers taken here: FR-230..FR-232 and T192..T196, checked on 2026-11-05 against `main` (FR-229, T191), the remote branches and the open PRs.
+
+### 2026-11-13: the search-time spike, protocol (T167, issue #1401; branch `001-167-search-time-spike`)
+
+Spec first; the measurement PR follows in the next commits. No FR or task number is taken: this fixes how part of T167 is measured.
+
+*Owner decisions (Vikram, 2026-11-13, [#1401 comment 6845758119](https://github.com/three-feathers/agent-durbar/issues/1401#issuecomment-6845758119); build T156..T158 first recorded on #1400):* (a) "under 10 changes a second" (097 T158) means per animation, and "under 40 reads" (FR-202) means per status update, as measured, not totals; (b) the 1500 ms start goal (FR-200, SC-007) binds at 15 agents, not 40; (c) if T167 projects under half of today's search time at 40 agents, the work stops and goes to the owner; (d) the first paint does not wait: FR-201 (d) is not taken, the look stays the same.
+
+*Protocol (what T167 records in this first slice).* Simulator only, 0 AI credits, flat office, desks as scenes, one Electron launch per run, nothing in `src/` changed: `scripts/spike-office-search.js` installs a timer in the page before its scripts run (the debugger of the driver's own window), so the shipped app has no hook for it.
+- **Search time:** wall ms of each layout search (`chooseLayout`), from its entry (it sets the width of `#probe`) to the last access of `#probe` or of a node in it (a trial written, a style set in place, a size read; the reads force the layout, so a trial's layout is inside it). The hooks add a small cost per access, so the times are upper bounds of today's search and are compared only with each other.
+- **Counts:** the app's own counters (`__durbarSimUi.ops()`): renders, searches and probes at the end of the start, and over each of 8 status updates of one agent (the median probes, every search count).
+- **Start:** page time (ms from the navigation) of the first desk in `#stage`, of the frame after it, and of the last change of `#stage` seen by then. Process start to first paint is not measured here (the window is loaded again at the cell's size): `check-perf --record` (FR-203) has it, at 1440x900 only.
+- **Cells:** 15 and 40 agents at 1440x900 and 1280x800, 3 runs each (12 launches), `uptime` load under 3 before each run, load and machine recorded beside each number; a run taken above 3 is invalid and is waited out, not kept.
+- **The rule applied:** T167's stop rule is judged on the 40-agent search time. The cheaper search (FR-193..FR-198) is not built, so its time is a projection, and the delta says from what.
+- **Not measured by this slice:** parts x trials by the FR-195 key, what FR-197 could skip, the split of a render into script, style, layout and paint, the read sites (the about 27 unnamed reads), T168. T167 stays open for them.
+- **Checks of the instrument:** the driver asserts only that the timer works (every counted search was timed, each took time and made a trial, the first frame was seen); `SPIKE_MUTANT=notimer` removes the timer and must fail the first of these by its label. No assert on any time.
+
+**Result (2026-11-13, `main` at `e45601acc`, this Mac: Apple M4, 10 cores, macOS, device pixel ratio 1, simulator, Electron 44.9.1; no #1515, so the start's second search is as `main` has it).** 12 launches, 3 per cell, one at a time under the Electron lock, `uptime` 1-minute load read right before each (2.1 to 2.5, all under 3; the driver's own load average is in the JSON line). Search ms is the sum of the start's searches; the per-search times are listed. Medians of 3 (the runs are in the PR description).
+
+| Cell | Load before | Searches at start | Probes | Search ms per search | Search ms at start (median) | Renders | First desk / first frame, page ms | Per status update (8 each, all 12 runs) |
+|---|---|---|---|---|---|---:|---|---|
+| 15 agents, 1440x900 | 2.3, 2.3, 2.2 | 1, 1, 1 | 18 | 47.9, 48.4, 47.5 | 47.9 | 5, 5, 5 | 147 / 166 | 1 render, 0 searches, 0 probes |
+| 40 agents, 1440x900 | 2.3, 2.3, 2.3 | 1, 2, 2 | 47, 85, 85 | 154.5; 74.2 + 155.6; 75.0 + 158.1 | 229.8 | 4, 6, 6 | 138 / 437 | 1 render, 0 searches, 0 probes |
+| 15 agents, 1280x800 | 2.4, 2.4, 2.5 | 1, 1, 1 | 26 | 67.2, 65.4, 65.1 | 65.4 | 5, 4, 4 | 171 / 189 | 1 render, 0 searches, 0 probes |
+| 40 agents, 1280x800 | 2.4, 2.2, 2.1 | 2, 2, 2 | 78 | 134.4 + 137.6; 136.9 + 139.1; 137.3 + 135.3 | 272.6 | 4, 4, 4 | 268 / 448 | 1 render, 0 searches, 0 probes |
+
+*What it shows.* (1) A search takes 48 to 66 ms at 15 agents and 75 to 158 ms at 40 (one search, one `chooseLayout`); a start at 40 agents makes 2 searches in 5 of 6 runs (the helpers' second shape), so today's search time at start is about 230 to 275 ms there. This is far under the 0.45 s and 1.2 s that 097 T157 measured on Xvfb: the numbers do not carry across machines (FR-203). (2) The search is about 6 to 8 % of the time until `#stage` stops changing at 15 agents (about 0.83 s of page time) and about 18 to 33 % at 40. So, on this Mac, a search that cost nothing would not by itself decide a 1500 ms start at 15 agents. `[KNOWN GAP]` the process start is not measured here: the earlier figures from `check-perf --record` (2465 ms at 15 agents) are not re-run. (3) A status update is one render, no search and no probe, at both sizes (the counts of `check-office-ops` hold). Layout reads per status update were not re-measured here (97, 89, 85 and 72 in the first spike). (4) The timer's own cost is an estimate: 0.7 to 1.5 ms per search (a `contains()` and a clock read per access, 0.1 to 0.2 us each, 4000 to 12000 accesses); the real wrappers cost somewhat more. The 4302 to 11982 accesses are mostly `headsFit`'s reads and the card widths, not trials (a trial is a probe: 18 to 85).
+
+*The owner's rule (c) applied.* The rule is: stop and ask if the cheaper search is projected under half of today's search time at 40 agents. **Not triggered by anything measured, and not cleared: it cannot be evaluated yet.** The cheaper search (FR-193..FR-198) is not built, and its time depends on how many parts x trials are distinct by the FR-195 key, which this slice does not measure (rooms share a line's spare width, so a change in one room can miss the memory: the gain is unknown, as FR-200 says). What can be said from these numbers: today's search at 40 agents is 154 ms (one search) or 230 to 275 ms (two); for the cheaper search to be "under half" it must come in under about 115 to 135 ms in total. The probes are 47 to 85 forced layouts of the whole office, about 1.5 to 3 ms each at 40 agents; a cheaper trial that lays out one room is plausibly several times cheaper per probe, but the number of trials is not reduced by FR-193 (same trials, same order), so the whole gain is the per-trial cost and the memory hits, neither measured. Recommendation: the remainder of T167 (parts x trials by key, per search, at 40 agents) is the next slice and decides the rule before any build; the owner is not asked now, since no projection exists yet. Owner decisions (a), (b) and (d) above hold: reads under 40 per status update and under 10 changes a second per animation, the 1500 ms start at 15 agents only, the first paint does not wait.
+
+**Not verified (this slice).** `[KNOWN GAP]` parts x trials, FR-197's skips, the render split, the read sites and T168 are not measured; the cheaper search is a projection only. Process start to first paint, the layout reads per status update, and the 1500 ms start are not measured by this driver. Times are of this Mac, simulator, 3 runs per cell, load 2.1 to 2.5; the Linux i5 and a Retina run (T181) are not covered. The timer ends a search at its last access of the probe, so a few microseconds of the search's own code after it are not counted.

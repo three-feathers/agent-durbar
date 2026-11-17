@@ -159,7 +159,7 @@ The `status:` of the specs-index block used to read (moved here unchanged; the b
 
 - **FR-015** (Copilot) `[IMPLEMENTED]` (fake SDK only) The Copilot adapter reports `oneShot`. `generateText(prompt, { disabledMcpServers })` uses the shared runtime (no second process) and creates one session with `oneShotConfig`:
   - **no tools:** `availableTools: []`, and `excludedTools: ['builtin:*', 'mcp:*', 'custom:*']` as a second lock;
-  - **no MCP:** `mcpServers: {}`, and `disabledMcpServers` naming every server the runtime would load by itself (the servers of `~/.copilot/mcp-config.json` and the built-in GitHub one; main reads the names, never the values);
+  - **no MCP:** `mcpServers: {}`, and `disabledMcpServers` naming every server the runtime would load by itself (the servers of `~/.copilot/mcp-config.json` and the built-in GitHub one; only the names are passed; main reads the values too, but only to mask a Copilot session's text, spec 069 FR-070);
   - **nothing else loaded:** `enableConfigDiscovery: false`, `enableSkills: false`, `customAgents: []`, `skipCustomInstructions: true`, `enableOnDemandInstructionDiscovery: false`, `enableFileHooks: false`, `enableHostGitOperations: false`, and an empty temporary folder as the working directory;
   - **nothing kept:** the SDK has no ephemeral session, so `infiniteSessions: { enabled: false }`, `memory: { enabled: false }`, `enableSessionStore: false`, `embeddingCacheStorage: 'in-memory'`, `remoteSession: 'off'`, no `name`; in a `finally` the session is disconnected and `client.deleteSession` removes it from disk (an error there is ignored), and the temp folder is removed;
   - **every permission request is denied** (`reject`); no question handler;

@@ -2,7 +2,7 @@
  * Check for spec 052 Changes 2026-11-04 (issue #1174): no avatar in the Needs you dialog grows past its box, so the rows and the first
  * Allow button are in view. Simulator only (no AI credits).   npm run check:ui -- --only check-inbox-avatar
  *
- * At 1440x900 and 1280x800, in the default and the Retro Pixel theme, in the flat office, in Real office, and in Real office
+ * At 1440x900 and 1280x800, in the default and the dark fixture theme (spec 102 T226), in the flat office, in Real office, and in Real office
  * before its own stylesheet (realoffice.css, loaded lazily) has arrived: opens the inbox and asserts
  *  - every avatar svg/img in the dialog (rows and the header's faces) is at most 40 px square;
  *  - the first request's Allow button is inside the dialog's box and inside the window, and elementFromPoint at its centre hits it.
@@ -11,7 +11,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const assert = require('assert');
-const { helpers, jsLiteral } = require('./driver-helpers');
+const { helpers, jsLiteral, CHECK_DARK, CHECK_DARK_QUERY } = require('./driver-helpers');
 const OUT = process.env.SHOTS_OUT || fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-inbox-avatar-'));
 const MAX = 40;
 module.exports = async (ctx) => {
@@ -26,10 +26,10 @@ module.exports = async (ctx) => {
     return {av,dlg:{t:Math.round(dr.top),b:Math.round(dr.bottom),h:Math.round(dr.height)},btn:{label:b.textContent,x:Math.round(x),y:Math.round(y),hit:!!hit&&(hit===b||b.contains(hit)),inDlg:y>dr.top&&y<dr.bottom&&x>dr.left&&x<dr.right,inWin:y>0&&y<innerHeight&&x>0&&x<innerWidth}};})()`);
   for (const [w, h] of [[1440, 900], [1280, 800]]) {
     for (const view of ['flat', 'real', 'real-nocss']) {
-      for (const theme of ['', 'retro']) {
+      for (const theme of ['', 'dark']) { // spec 102 T226: the dark fixture theme took Retro's place
         const at = `${w}x${h} ${view} ${theme || 'default'}`;
         await H.load({ w, h, query: view === 'flat' ? {} : { officeview: 'real' }, ready: READY[view === 'flat' ? 'flat' : 'real'] });
-        if (theme) { await js(`window.THEME.setTheme(${jsLiteral(theme)})`); await settle(); }
+        if (theme) { await js(`window.THEME.setTheme(${jsLiteral(CHECK_DARK)})`); await settle(); }
         if (view === 'real-nocss') await js(`document.querySelectorAll('link[href$="realoffice.css"]').forEach(l=>l.remove());0`);
         // a waiting agent with a pending permission
         await js(`window.__durbarSimUi.emit({type:'status',sessionId:'sim-2',timestamp:Date.now(),status:'needs-permission',intent:'Edit a file',permission:{requestId:'av-'+Date.now(),kind:'write',summary:'Write to /tmp/zzdemo/a.txt',scopeKey:'write:/tmp/zzdemo',scopeLabel:'write in /tmp/zzdemo',state:'pending'}})`);
@@ -47,7 +47,7 @@ module.exports = async (ctx) => {
         for (const a of p.av) assert.ok(a.w <= MAX && a.h <= MAX, `${at}: an avatar in the inbox is at most ${MAX}px square, not ${a.w}x${a.h}: ${JSON.stringify(p)}`);
         assert.ok(p.btn.inDlg && p.btn.inWin, `${at}: the first Allow button is inside the dialog and the window: ${JSON.stringify(p)}`);
         assert.ok(p.btn.hit, `${at}: elementFromPoint at the first Allow button hits it: ${JSON.stringify(p)}`);
-        if (theme === 'retro' && view !== 'flat') await H.shot(path.join(OUT, `inbox-avatar-${view}-${w}x${h}.png`), { prep: 'calm', settle: true, tag: 'inboxavatar', what: at });
+        if (theme === 'dark' && view !== 'flat') await H.shot(path.join(OUT, `inbox-avatar-${view}-${w}x${h}.png`), { prep: 'calm', settle: true, tag: 'inboxavatar', what: at });
         console.log('[inbox-avatar]', at, 'ok', JSON.stringify(p.av.map((a) => a.w)));
       }
     }

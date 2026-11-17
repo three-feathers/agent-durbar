@@ -19,8 +19,16 @@ const path = require('path');
 const { helpers, jsLiteral } = require('./driver-helpers');
 const OUT = process.env.OUT || require('os').tmpdir();
 
+/* Windows CI (issue #1668): three drivers share one desktop and a neighbour can take the OS focus mid-driver. A `focus()` on an element of an unfocused page fires no
+   `focusin`, so the panel never saw "the person moved" (DOOR_NOACT stayed set) and A answered nothing. The driver tests no OS blur, so it runs under the focus emulation
+   for its whole run (as check-auto-follow and check-edit-popups do), released in a finally. The app is as specified. */
 module.exports = async (ctx) => {
   const H = helpers(ctx);
+  await H.focusPage({ emulate: 'first' });
+  try { await run(ctx, H); } finally { await H.releaseFocus(); }
+};
+
+async function run(ctx, H) {
   const { js, until } = H;
   const emit = (e) => js(`window.__durbarSimUi.emit(${jsLiteral(Object.assign({ timestamp: Date.now() }, e))})`);
   const READY = { flat: 'fit', real: `!!document.querySelector('#stage .ro .ro-plate')&&document.getElementById('stage').dataset.d==='real'` };
@@ -38,6 +46,8 @@ module.exports = async (ctx) => {
     }
   };
   const key = (k, mods, o) => H.key(k, mods, o);
+  // spec 052 FR-084: the app's shortcuts use ⌘ on a Mac (KEYS.modDown needs Meta and no Control there), Ctrl elsewhere (issue #1377)
+  const MOD = process.platform === 'darwin' ? 'meta' : 'control', MOD_A = process.platform === 'darwin' ? '⇧⌘A' : 'Ctrl+Shift+A';
 
   // ---- T198, T199: stale and rise guards in rows, option buttons by request id, the limit row, the long request, the real outcome ----
   const door2 = async (at, tag, w, view, load) => {
@@ -375,8 +385,8 @@ module.exports = async (ctx) => {
       assert.ok(await until(`!document.getElementById('needsPanel')`, 3000), `${at}: Esc with focus inside closes it`);
       assert.ok(await until(`document.activeElement===document.getElementById('inboxBtn')`, 3000), `${at}: focus goes back (to the amber button when nothing had it)`);
       await js(`(()=>{const i=document.createElement('input');i.id='drvTxt';i.style.cssText='position:fixed;left:12px;bottom:12px;z-index:50;width:200px';document.body.appendChild(i);i.value='hello';i.focus();i.setSelectionRange(1,3);})()`);
-      await key('A', ['control', 'shift'], { char: 'never' });
-      assert.ok(await until(`!!document.getElementById('needsPanel')&&document.activeElement.classList.contains('ib-h')`, 3000), `${at}: Ctrl+Shift+A opens it from a text field, focus on a heading`);
+      await key('A', [MOD, 'shift'], { char: 'never' });
+      assert.ok(await until(`!!document.getElementById('needsPanel')&&document.activeElement.classList.contains('ib-h')`, 3000), `${at}: ${MOD_A} opens it from a text field, focus on a heading`);
       await key('Escape', [], { char: 'never' });
       assert.ok(await until(`!document.getElementById('needsPanel')&&document.activeElement===document.getElementById('drvTxt')`, 3000), `${at}: Esc returns focus to the text field it came from`);
       // Esc from a text field never closes the panel
@@ -535,7 +545,7 @@ module.exports = async (ctx) => {
           await key('a', [], { char: 'always' });
           const got = await until(`window.__perm.length===1`, 3000);
           const seen = JSON.stringify(await js('window.__perm.slice()'));
-          assert.ok(got, at + ': ' + what + ' ' + seen);
+          assert.ok(got, at + ': ' + what + ' ' + seen + ' ' + JSON.stringify(await js(`({focus:document.hasFocus(),ae:document.activeElement&&document.activeElement.className})`)));
           assert.deepStrictEqual(await js('window.__perm.slice()'), [`dm${n}y-` + w + ':true'], `${at}: and it is that row's own request (${n})`);
           await ctx.sleep(1000);
         };
@@ -710,4 +720,4 @@ module.exports = async (ctx) => {
     }
   }
   console.log('check-needs-panel passed');
-};
+}

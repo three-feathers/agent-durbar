@@ -1,1 +1,0 @@
-- **CI**: the required check *Office layout check (xvfb)* now also builds the unpacked Linux app (the separate job *Package smoke (unpacked Linux app)* is gone), so a pull request builds once on Linux; a failure of either part fails the job and the summary names it (spec 008 FR-194).

@@ -21,6 +21,11 @@ const { helpers, jsLiteral } = require('./driver-helpers');
 
 const OUT = process.env.SHOTS_OUT || fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-097-screens-'));
 const SIZES = [[1440, 900], [1280, 800]];
+/* SCREENS_WORLD=retro (spec 102 FR-310, issue #1428): the same driver in the Retro arcade; the page address forces the world. Where the arcade's hall holds no row of heads (FR-307: 12 or more at 1280x800) the plate keeps
+   its "+N" and dots, which is asserted instead; the font of a big screen follows the arcade's own rule (FR-308: at least 11 px, 8 lines), not the Photo office's 13 px over 200. */
+const RETRO = process.env.SCREENS_WORLD === 'retro';
+if (process.env.SCREENS_WORLD && !RETRO) throw new Error('SCREENS_WORLD must be retro');
+const WORLD_Q = RETRO ? { worldflags: 'retro', world: 'retro' } : {};
 const TOKEN = 'ghp_' + 'A1b2C3d4E5f6G7h8I9j0K1l2M3n4';
 /* what no screen, zoom or fact may show: the token whole or in its parts around an escape, a home folder, a link, a terminal or text-direction control */
 const BAD = ['ghp_', 'A1b2C3d4', 'E5f6G7h8', 'f6G7h8', 'alice', 'evil.example', '\u001b', '\u202e', 'Bearer ghp'];
@@ -56,7 +61,7 @@ module.exports = async (ctx) => {
   const PICS = `[...document.querySelectorAll('#stage .ro img')].every(i=>i.complete)`;
   /* a frozen simulator (nothing changes but what the driver emits); romotion=1: the people move, as outside a driver */
   const loadReal = async (w, h, query = {}) => {
-    await H.load({ w, h, query: { officeview: 'real', romotion: '1', ...query }, ready: REAL, settle: false });
+    await H.load({ w, h, query: { officeview: 'real', romotion: '1', ...WORLD_Q, ...query }, ready: REAL, settle: false });
     await must(PICS, 'the pictures');
     /* spec 097 FR-246: a done agent whose reply is read sits in the lounge row (a monitor without text); these checks read done screens at desks, so their replies stay unread */
     await js(`(()=>{const U=window.__durbarSimUi;U.agents().filter(a=>!a.parent&&a.state==='done').forEach(a=>{a.lastOutput=a.lastOutput||'Done.';U.unread.mark(a.id);});U.crew.renderAll();return 1})()`);
@@ -296,12 +301,20 @@ module.exports = async (ctx) => {
       const sub = 'drv-helper-1', base = { sessionId: desk };
       await emit({ ...base, type: 'subagent', subagentId: sub, name: 'Driver helper', phase: 'started', task: 'Check the driver', agentName: 'explore' });
       await emit({ ...base, type: 'status', status: 'working', agentId: sub, intent: 'Check the driver' });
-      await must(`(window.__st()||{querySelectorAll:()=>[]}).querySelectorAll('.ro-hd').length===${jsLiteral(h0.n + 1)}`, 'the desk\'s helper strip one head up (was ' + JSON.stringify(h0) + ')');
+      const heads = !RETRO || w >= 1440; /* FR-307: the arcade's recorded gap, 15 agents at 1280x800 */
+      if (!heads) {
+        await must(`!!window.__pl().querySelector('.ro-help')&&!window.__st()`, 'the arcade keeps the plate\'s "+1" and dots where no row of heads fits (FR-307)');
+        assert.ok(/^\+1\b/.test(await js(`window.__pl().querySelector('.ro-help').textContent.trim()`)), 'the plate says +1');
+      } else {
+        await must(`(window.__st()||{querySelectorAll:()=>[]}).querySelectorAll('.ro-hd').length===${jsLiteral(h0.n + 1)}`, 'the desk\'s helper strip one head up (was ' + JSON.stringify(h0) + ')');
+      }
+      if (heads) {
       const h1 = await help();
       assert.strictEqual(h1.n, h0.n + 1, 'a new helper adds one head: ' + JSON.stringify([h0, h1]));
       assert.ok(await js(`!window.__pl().querySelector('.ro-help')`), 'the plate shows no "+N" while its helpers are drawn');
       await emit({ ...base, type: 'subagent', subagentId: sub, name: 'Driver helper', phase: 'failed', task: 'Failed', error: 'Failed', agentName: 'explore' });
       await must(`(()=>{const s=window.__st();return !!s&&[...s.querySelectorAll('.ro-hd')].map(t=>t.className).join('|')!==${jsLiteral(h1.cls)};})()`, 'the helper head changed when the helper failed (was ' + h1.cls + ')');
+      }
       assert.ok(await js(`window.__pl().querySelector('b')===window.__nm`), 'FR-184: the plate kept its name node while its helper list changed');
     }
     // keyboard parity: real Tab presses reach a plate; the same zoom opens; Esc closes it and keeps the focus; the next Tab moves on and opens the next
@@ -423,7 +436,7 @@ module.exports = async (ctx) => {
       return {id,h:Math.round(b.height),lines:n,font:rows.length?parseFloat(getComputedStyle(rows[0]).fontSize):0,small:e.classList.contains('small')};})`);
     console.log('[097-screens] big', w, h, JSON.stringify(big));
     assert.strictEqual(await js(`document.querySelector('#stage .ro').dataset.big`), '1', 'big screens with 3 agents');
-    for (const s of big) { assert.ok(!s.small, 'not small'); assert.ok(s.lines >= 8, `SC-003: at least 8 lines: ${JSON.stringify(s)}`); assert.ok(s.font >= 11, 'at 11 px or more'); assert.strictEqual(s.font, s.h - 6 > 200 ? 13 : 11, 'FR-020: 13 px over 200 px tall: ' + JSON.stringify(s)); }
+    for (const s of big) { assert.ok(!s.small, 'not small'); assert.ok(s.lines >= (RETRO && w < 1440 ? 6 : 8), `SC-003: at least 8 lines (FR-308's recorded gap: 6 in the arcade at 1280x800 with 3 agents): ${JSON.stringify(s)}`); assert.ok(s.font >= 11, 'at 11 px or more'); if (RETRO) assert.ok(s.font <= 18.5, 'FR-308: the arcade\'s text is the art\'s, 18.5 px at most: ' + JSON.stringify(s)); else assert.strictEqual(s.font, s.h - 6 > 200 ? 13 : 11, 'FR-020: 13 px over 200 px tall: ' + JSON.stringify(s)); }
     await H.shot(path.join(OUT, `097-real-big-${w}x${h}.jpg`), { prep: 'calm' });
   }
 
@@ -442,22 +455,25 @@ module.exports = async (ctx) => {
     const pt = await js(`(()=>{const b=document.querySelector('#stage .ro-screen[data-for="'+CSS.escape(${jsLiteral(id)})+'"]').getBoundingClientRect();
       for(const fy of [.33,.2,.5,.65,.8,.12])for(const fx of [.5,.3,.7,.15,.85]){const x=b.left+b.width*fx,y=b.top+b.height*fy,e=document.elementFromPoint(x,y);if(e&&!e.closest('.ro-slip,.ro-lplate,.ro-chip,.ro-sign'))return {x,y};}return null;})()`);
     assert.ok(pt, 'a point of the working desk\'s screen that nothing covers');
-    await hover(id, pt);
-    const TOOL = `(()=>{const P=document.getElementById('roZoom');return !!P&&[...P.querySelectorAll('.ro-zk .ro-zi')].some(e=>/^(Now|Last tool) /.test(e.textContent));})()`;
-    const z0 = await js(ZS);
-    assert.ok(z0.facts.some((f) => /^(Now|Last tool) /.test(f)), 'the working desk has a tool fact to start from: ' + JSON.stringify(z0));
-    /* the turn ends: the tool fact goes, its line goes with it, and the panel is placed again, shorter */
-    await emit({ type: 'user', sessionId: id });
-    await must('!(' + TOOL + ")&&!!document.getElementById('roZoom')", 'the tool fact gone from the open zoom', 15000);
-    await js(`new Promise(r=>setTimeout(r,250))`); // the placement follows the fill in the same call; a bound on a negative
-    const z1 = await js(ZS);
-    assert.ok(z1.h <= z0.h - 16, 'FR-315: the panel is shorter by the fact line that went (it is placed again): ' + z0.h + ' to ' + z1.h + ' ' + JSON.stringify(z1.facts));
-    /* a tool starts under the pointer: the fact comes and the panel grows by its line */
-    await emit({ type: 'toolCall', sessionId: id, callId: 'drv-f', tool: 'read_file', phase: 'start', args: { path: 'src/facts/one.ts' } });
-    await must(`(()=>{const P=document.getElementById('roZoom');return !!P&&[...P.querySelectorAll('.ro-zk .ro-zi')].some(e=>/^Now /.test(e.textContent));})()`, 'the Now fact in the open zoom', 15000);
-    await js(`new Promise(r=>setTimeout(r,250))`);
-    const z2 = await js(ZS);
-    assert.ok(z2.h >= z1.h + 16, 'FR-315: the panel grew by the new fact line: ' + z1.h + ' to ' + z2.h);
+    let z0, z1, z2;
+    await H.pointerStep('shots-097-screens', 'facts change: hover and the Now fact', async () => {
+      await hover(id, pt);
+      const TOOL = `(()=>{const P=document.getElementById('roZoom');return !!P&&[...P.querySelectorAll('.ro-zk .ro-zi')].some(e=>/^(Now|Last tool) /.test(e.textContent));})()`;
+      z0 = await js(ZS);
+      assert.ok(z0.facts.some((f) => /^(Now|Last tool) /.test(f)), 'the working desk has a tool fact to start from: ' + JSON.stringify(z0));
+      /* the turn ends: the tool fact goes, its line goes with it, and the panel is placed again, shorter */
+      await emit({ type: 'user', sessionId: id });
+      await must('!(' + TOOL + ")&&!!document.getElementById('roZoom')", 'the tool fact gone from the open zoom', 15000);
+      await js(`new Promise(r=>setTimeout(r,250))`); // the placement follows the fill in the same call; a bound on a negative
+      z1 = await js(ZS);
+      assert.ok(z1.h <= z0.h - 16, 'FR-315: the panel is shorter by the fact line that went (it is placed again): ' + z0.h + ' to ' + z1.h + ' ' + JSON.stringify(z1.facts));
+      /* a tool starts under the pointer: the fact comes and the panel grows by its line */
+      await emit({ type: 'toolCall', sessionId: id, callId: 'drv-f', tool: 'read_file', phase: 'start', args: { path: 'src/facts/one.ts' } });
+      await must(`(()=>{const P=document.getElementById('roZoom');return !!P&&[...P.querySelectorAll('.ro-zk .ro-zi')].some(e=>/^Now /.test(e.textContent));})()`, 'the Now fact in the open zoom', 15000);
+      await js(`new Promise(r=>setTimeout(r,250))`);
+      z2 = await js(ZS);
+      assert.ok(z2.h >= z1.h + 16, 'FR-315: the panel grew by the new fact line: ' + z1.h + ' to ' + z2.h);
+    });
     assert.ok(z1.kin && z2.kin && z2.zb >= 4 * 17 - 0.5, 'the facts inside the panel and the 4 lines kept: ' + JSON.stringify(z2));
     await moveTo(1, 1);
     await must(`!document.getElementById('roZoom')`, 'the zoom closed');

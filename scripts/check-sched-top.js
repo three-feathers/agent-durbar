@@ -16,7 +16,7 @@
  */
 const assert = require('assert');
 const path = require('path');
-const { helpers, jsLiteral } = require('./driver-helpers');
+const { helpers, jsLiteral, CHECK_DARK, CHECK_DARK_QUERY } = require('./driver-helpers');
 const OUT = process.env.OUT || '/tmp';
 /* the page's mod key: Meta (⌘) on a Mac, Control elsewhere (the same inline pattern as scripts/check-ui-text.js); the texts the app shows follow it */
 const MAC = process.env.SCHED_TOP_FORCE_MAC === '1' /* mutation check only */ || process.platform === 'darwin';
@@ -302,10 +302,10 @@ module.exports = async (ctx) => {
     check(roErr.length === 0, 'ResizeObserver loop errors during resizes: ' + roErr.join(' | '));
   }
 
-  /* the badge disc holds 3:1 against the button in every built-in theme (WCAG 1.4.11) */
-  for (const theme of ['clean', 'retro']) {
+  /* the badge disc holds 3:1 against the button in Clean Office and the dark fixture theme (WCAG 1.4.11; spec 102 T226: the fixture took Retro's place) */
+  for (const [theme, themeQuery] of [['clean', { theme: 'clean' }], ['dark', CHECK_DARK_QUERY]]) {
     await js(`localStorage.removeItem('durbar.schedSeen');true`); /* into the loaded page, then one load (as in `load` above) */
-    await H.load({ fastVisits: true, w: 1440, h: 900, query: { simsched: '1', theme }, ready: 'fit', settle: false });
+    await H.load({ fastVisits: true, w: 1440, h: 900, query: { simsched: '1', ...themeQuery }, ready: 'fit', settle: false });
     await until(`document.getElementById('schedTopBtn').classList.contains('trouble')`);
     /* .btn fades its background for 120ms (styles.css): a read taken mid-fade sees the previous theme's white (CI: ratio 1 once on a themed style), so wait for the transitions to end and two frames to paint */
     await until(`document.getAnimations().every(a=>a.playState!=='running')`);

@@ -76,6 +76,8 @@ export const NOTES_REPLACED = 'This folder looks replaced, or its drive was remo
 /** Review of PR 931 (point 4): the switch is on and `notes.md` is not there (the folder was replaced, the file deleted, or never written). */
 export const NOTES_GONE = 'The project file is gone. Turn the switch off and on again to write .durbar/notes/notes.md.';
 const REMOVE_REFUSED = (why: string): string => `Durbar did not delete .durbar/notes/notes.md: ${why}.`;
+/** `link(2)` errors that mean the drive or the OS has no hard links here (FAT, exFAT, some SMB and NFS): the way back copies instead. */
+const NO_HARD_LINKS = new Set(['EPERM', 'ENOTSUP', 'EOPNOTSUPP', 'EXDEV', 'ENOSYS']);
 
 export class NotesFile {
   private readonly fs: NotesFileFs;
@@ -308,6 +310,8 @@ export class NotesFile {
       let off = 0;
       while (off < bytes.length) off += this.fs.writeSync(fd, bytes, off, bytes.length - off);
       try { this.fs.fsyncSync(fd); } catch { /* best effort */ }
+      // spec 083 Changes 2026-11-10: the inode Durbar wrote, from its own handle (no path lookup a swapped link could redirect)
+      const id = this.fdId(fd);
       this.fs.closeSync(fd);
       fd = undefined;
       const late = check();
@@ -323,7 +327,7 @@ export class NotesFile {
         this.fs.renameSync(tmp, p.notes);
       }
       made = false;
-      return { ok: true, mirror: { sha256: sha256(bytes), bytes: bytes.length, at: this.now().toISOString() } };
+      return { ok: true, mirror: { sha256: sha256(bytes), bytes: bytes.length, at: this.now().toISOString(), ...(id ? { id } : {}) } };
     } catch (e) {
       return { ok: false, code: 'write', error: WRITE_FAIL(errCode(e)) };
     } finally {
@@ -375,6 +379,45 @@ export class NotesFile {
     } catch { return undefined; }
   }
 
+  /** `<dev>:<ino>` of the file at `p` itself (no link followed); `undefined` when there is none, it is a folder, or the drive gives no inode number (0). */
+  private fileId(p: string): string | undefined { return this.fileStat(p).id; }
+  /** `fileId` and the link count from the same `lstat` (`links` is `undefined` where the drive gives no usable number). */
+  private fileStat(p: string): { id?: string; links?: number } {
+    try {
+      const st = this.fs.lstatSync(p, { bigint: true }) as unknown as { dev: bigint; ino: bigint; nlink?: bigint | number; isDirectory(): boolean };
+      if (st.isDirectory()) return {};
+      const links = Number(st.nlink);
+      return { ...(st.ino <= 0n ? {} : { id: `${st.dev}:${st.ino}` }), ...(Number.isFinite(links) ? { links } : {}) };
+    } catch { return {}; }
+  }
+  /** `<dev>:<ino>` of an open file (its handle, no path); `undefined` where the drive gives no inode number. */
+  private fdId(fd: number): string | undefined {
+    try {
+      const st = this.fs.fstatSync(fd, { bigint: true }) as unknown as { dev: bigint; ino: bigint };
+      return st.ino <= 0n ? undefined : `${st.dev}:${st.ino}`;
+    } catch { return undefined; }
+  }
+
+  /**
+   * The way back where hard links are not supported (spec 083 Changes 2026-11-10): `src`'s bytes into a NEW `dst`, opened `O_CREAT |
+   * O_EXCL | O_WRONLY` (and `O_NOFOLLOW`; `CREATE_NEW` on Windows), so an existing file is never replaced on any OS. Returns the new
+   * file's `<dev>:<ino>` from its handle, or whether a file was at `dst` (`exists`).
+   */
+  private copyBack(src: string, dst: string): { ok: true; id: string | undefined } | { ok: false; exists: boolean } {
+    const r = readCapped(this.fs, this.k, src, NOTES_LIMITS.mdBytes);
+    if (!r.ok) return { ok: false, exists: false };
+    let fd: number | undefined;
+    try {
+      fd = this.fs.openSync(dst, this.k.O_CREAT | this.k.O_EXCL | this.k.O_WRONLY | (this.k.O_NOFOLLOW ?? 0), 0o600);
+    } catch (e) { return { ok: false, exists: errCode(e) === 'EEXIST' }; }
+    try {
+      let off = 0;
+      while (off < r.buf.length) off += this.fs.writeSync(fd, r.buf, off, r.buf.length - off);
+      try { this.fs.fsyncSync(fd); } catch { /* best effort */ }
+      return { ok: true, id: this.fdId(fd) };
+    } catch { return { ok: false, exists: true }; } finally { try { this.fs.closeSync(fd); } catch { /* gone */ } }
+  }
+
   /** `p` (built from the real path of `.durbar`) still resolves to itself: no link on the way. */
   private isHere(p: string): boolean {
     try { return this.same(this.fs.realpathSync(p), p); } catch { return false; }
@@ -409,33 +452,64 @@ export class NotesFile {
       if (!cur.ok) return keep(cur.code === 'too-big' ? REMOVE_CHANGED : REMOVE_REFUSED(`it ${cur.why}`));
       if (!cur.buf) return keep(REMOVE_NONE);
       if (!mirror || sha256(cur.buf) !== mirror.sha256) return keep(REMOVE_CHANGED);
+      // spec 083 Changes 2026-11-10: the inode Durbar wrote (`mirror.id`). Same bytes in another inode (a `git checkout`, a restore) is
+      // left as changed. Only when the mirror has one: an older version's mirror has none, and on a drive that gave no inode number
+      // (some FAT and network drives) `syncOut` recorded none. Where it has one, it is required: a file seen here without an inode
+      // number (a swapped link to such a drive) is refused too.
+      const own = mirror.id;
+      if (own && this.fileId(pl.p.notes) !== own) return keep(REMOVE_CHANGED);
       const again = this.recheck(pl.p, mirror.sha256);
       if (again) return keep(again.code === 'changed' ? REMOVE_CHANGED : REMOVE_REFUSED(again.error.replace(/^Could not write \.durbar\/notes\/notes\.md: /, '').replace(/^notes\.md /, 'it ')));
       // Review of PR 931: never unlink by the name `notes.md`, which a swapped `.durbar` could point elsewhere. Rename the file to a random
       // name inside `.durbar`, check THAT name (its folder's real path, a regular file with one link, Durbar's hash), and unlink only it.
       // A swap before the rename moves the other file to the random name elsewhere, and the real-path check of that name (last, right
-      // before the unlink) fails; a swap after it finds no file with that random name elsewhere, so the unlink fails. This closes the race
-      // for a process that cannot read the other folder and narrows it otherwise: one that can read it learns the random name, can put a
-      // decoy under it here and swap again before the unlink (Node has no unlinkat). Under attack a file may be left under the random name.
+      // before the unlink) fails; a swap after it finds no file with that random name elsewhere, so the unlink fails.
+      // This narrows the race; it does NOT close it, not even for a process that cannot read the other folder (issue #1463, spec 083
+      // Changes 2026-11-10, [KNOWN GAP]): rename(2) and link(2) look up the old and the new path separately, so a `.durbar` swapped
+      // between the two lookups moves a file ACROSS folders. The other folder's `notes/notes.md` can land here under the random name
+      // (left in the project, or deleted when its bytes are Durbar's), or Durbar's file can land there. Closing it needs the folder
+      // pinned (an open handle), which Node has no portable call for (no renameat / unlinkat); the choice is with the owners (#1464).
+      // The inode check right before the unlink (spec 083 Changes 2026-11-10) closes the deletion of such a file where `mirror.id` exists:
+      // an outside file never has the inode Durbar wrote, so it is kept under the random name (moved, not deleted: still [KNOWN GAP]).
+      // The unlink itself is by path, and that is a [KNOWN GAP] (#1464): a racing process that can write the project can swap `.durbar`
+      // so this rename goes wholly through the link (the OUTSIDE file gets the random name), put Durbar's own notes.md at that name in the
+      // project (renamed; a hard link is refused by readCapped's one-link check and, made after the read, by the one-link check right
+      // before the unlink) before the checks read it, and swap `.durbar` once more before the unlink, which then removes
+      // the outside file. Portable Node has no unlinkat / renameat to pin the folder; see spec 083 Changes 2026-11-10.
       const name = `.notes.md.${this.pid}.${this.rand(36 ** 8).toString(36)}.del`;
       const doomed = path.join(pl.p.dir, name);
       try { this.fs.renameSync(pl.p.notes, doomed); } catch (e) { return keep(REMOVE_REFUSED(`it could not be deleted (${errCode(e)})`)); }
-      const left = (why: string, newer: boolean): RemoveResult => keep(REMOVE_REFUSED(`${why}; ${newer ? 'a newer notes.md is there, so the old one' : 'the file'} may be left as ${name}, in .durbar/notes or in another folder: renaming it back to notes.md restores it`));
-      // the rename back never replaces a notes.md that appeared meanwhile (a POSIX rename would): a hard link fails with EEXIST instead
+      const left = (why: string, exists: boolean): RemoveResult => {
+        const where = this.isHere(doomed) ? `the file is kept as ${name} in .durbar/notes` : `the file may be left as ${name}, in .durbar/notes or in another folder`;
+        return keep(REMOVE_REFUSED(`${why}; ${where}${exists ? '; another notes.md is there' : ': renaming it back to notes.md restores it'}`));
+      };
+      // the way back is a hard link, which never replaces a notes.md that appeared meanwhile (EEXIST). Never a rename (issue #1463):
+      // a rename replaces whatever is at the new name, and through a `.durbar` swapped between its two lookups that can be another
+      // folder's notes.md. Where the drive has no hard links (FAT, exFAT, some SMB and NFS) it is a copy into a NEW notes.md
+      // (`copyBack`, O_EXCL). When either fails otherwise, the file stays under its random name, its bytes kept, and the answer names it.
+      // The link or the copy can split too (review of PR 1465, M1): through a swapped `.durbar` it can make a notes.md in the other folder
+      // while the project has none. So the random name goes only when the project's notes.md has the inode Durbar just gave it.
       const putBack = (why: string): RemoveResult => {
+        let made: string | undefined, copied = false;
         try {
           this.fs.linkSync(doomed, pl.p.notes);
+          made = this.fileId(doomed);
         } catch (e) {
-          if (errCode(e) === 'EEXIST') return left(why, true);
-          // no hard links here (some file systems): rename only when nothing is at notes.md
-          try { this.fs.lstatSync(pl.p.notes); return left(why, true); } catch (e2) { if (errCode(e2) !== 'ENOENT') return left(why, false); }
-          try { this.fs.renameSync(doomed, pl.p.notes); return keep(REMOVE_REFUSED(why)); } catch { return left(why, false); }
+          if (!NO_HARD_LINKS.has(errCode(e))) return left(why, errCode(e) === 'EEXIST');
+          const cp = this.copyBack(doomed, pl.p.notes);
+          if (!cp.ok) return left(why, cp.exists);
+          made = cp.id;
+          copied = true;
         }
-        // two names for one file now: drop the random one, but only where it really is in this `.durbar` (review 3 of PR 931: an
-        // unchecked unlink here could remove a file a swapped link points to). Nothing on this path ever unlinks the name `notes.md`
-        // (re-check of review 3): when the random name cannot go, the answer says the file has two names and which one to delete.
-        if (this.isHere(doomed)) { try { this.fs.unlinkSync(doomed); return keep(REMOVE_REFUSED(why)); } catch { /* held open: below */ } }
-        return keep(REMOVE_REFUSED(`${why}; notes.md and ${name} are now two names of the same file: delete ${name} in .durbar/notes once nothing holds it`));
+        if (!made || this.fileId(pl.p.notes) !== made || !this.isHere(doomed)) {
+          return keep(REMOVE_REFUSED(`${why}; the file is kept as ${name} in .durbar/notes, and Durbar could not confirm that notes.md is the same file: if there is no notes.md, renaming ${name} back to notes.md restores it; if there is, compare them before deleting ${name}`));
+        }
+        // drop the random name, only where it really is in this `.durbar` (review 3 of PR 931). Nothing on this path ever unlinks the
+        // name `notes.md` (re-check of review 3): when the random name cannot go, the answer says which one to delete.
+        try { this.fs.unlinkSync(doomed); return keep(REMOVE_REFUSED(why)); } catch { /* held open: below */ }
+        return keep(REMOVE_REFUSED(copied
+          ? `${why}; notes.md was copied back and ${name} holds the same bytes: delete ${name} in .durbar/notes once nothing holds it`
+          : `${why}; notes.md and ${name} are now two names of the same file: delete ${name} in .durbar/notes once nothing holds it`));
       };
       const moved = this.checkPlace(pl.p);
       if (moved) return putBack('.durbar changed while it was being deleted');
@@ -446,6 +520,14 @@ export class NotesFile {
       let rp = '';
       try { rp = this.fs.realpathSync(doomed); } catch { return putBack('.durbar changed while it was being deleted'); }
       if (!this.same(rp, doomed)) return putBack('.durbar changed while it was being deleted');
+      // the inode Durbar wrote, right before the unlink (spec 083 Changes 2026-11-10): an outside file that came in through a split
+      // rename with Durbar's exact bytes is never it. Without `mirror.id` or an inode number this is the hash check only ([KNOWN GAP]).
+      // One `lstat` gives the inode and the link count: a hard link made to the random name after the read (which refused more than one
+      // link on its handle) and before this check is refused as changed (Paco's review of PR 1465); where the drive gives no usable
+      // count, only that comparison is skipped.
+      const last = this.fileStat(doomed);
+      if (own && last.id !== own) return putBack('the file under its random name is not the one Durbar wrote (.durbar changed while it was being deleted)');
+      if (last.links !== undefined && last.links > 1) return putBack('it changed while it was being deleted (it has another link)');
       try { this.fs.unlinkSync(doomed); } catch (e) { return putBack(`it could not be deleted (${errCode(e)})`); }
       let dirRemoved = false, ignoreDropped = false;
       if (!this.checkPlace(pl.p)) {

@@ -12,7 +12,7 @@ import { SettingsStore } from '../src/main/settings';
 import { parseSettings } from '../src/shared/credits';
 
 const R = path.join(__dirname, '..', '..', 'src', 'renderer');
-type Tracker = { follow(id: string): void; has(id: string): boolean; ids(): string[]; size: number; drop(id: string): void; clear(): void; manualOpen(id: string): void; lastDesk(): string | null; setLast(id: string): void; arrive(id: string, kind: string, key?: unknown): boolean; retract(id: string, kinds?: string[]): void; pendingList(): { id: string; kind: string }[]; due(reason: string, can?: (id: string) => boolean): { id: string; kind: string } | null; acted(): void; isQuiet: boolean };
+type Tracker = { follow(id: string): void; has(id: string): boolean; ids(): string[]; size: number; drop(id: string): void; clear(): void; manualOpen(id: string): void; lastDesk(): string | null; setLast(id: string): void; arrive(id: string, kind: string, key?: unknown): boolean; retract(id: string, kinds?: string[]): void; sent(id: string): void; seen(id: string, kind: string, key?: unknown): boolean; pendingList(): { id: string; kind: string }[]; due(reason: string, can?: (id: string) => boolean): { id: string; kind: string } | null; acted(): void; isQuiet: boolean };
 const AF = require(path.join(R, 'autofollow.js')) as {
   POINTER_MS: number; queue(n: unknown, u: unknown): string[]; withHeld(ids: string[], h: unknown): string[]; position(ids: string[], id: unknown): { index: number; count: number };
   positionText(p: unknown): string; step(ids: string[], cur: unknown, dir: number): string | null; holdReason(s: Record<string, unknown>, o?: Record<string, unknown>): string;
@@ -60,6 +60,26 @@ ok(AF.holdReason({ dialog: true }, { office: true }), 'a dialog holds the return
   t.follow('d'); t.arrive('d', 'ask', 1); t.arrive('d', 'error', 2); eq(t.pendingList().filter((p) => p.id === 'd').length, 1, 'a newer arrival replaces the older one');
   t.retract('d', ['ask']); eq(t.pendingList().filter((p) => p.id === 'd').length, 1, 'retract by kind keeps others'); t.retract('d'); eq(t.pendingList().length, 0, 'retract');
   t.clear(); eq(t.size, 0, 'clear');
+}
+// 5b. FR-242 (2026-11-10): a completion held while its chat was shown is never offered after a new send; one that comes while its chat is shown is seen there
+{
+  const t = AF.createTracker();
+  t.follow('a'); t.follow('b');
+  eq(t.arrive('a', 'done', 1), true, 'a completion while the box has the focus'); eq(t.due('you are typing'), null, 'held by the typing guard');
+  t.arrive('b', 'done', 1);
+  t.sent('a');
+  eq(t.has('a'), true, 'a send follows again'); eq(t.pendingList().map((p) => p.id), ['b'], 'the send drops its waiting completion, not another agent\'s');
+  eq(t.due(''), { id: 'b', kind: 'done' }, 'another agent\'s held arrival is still delivered when the guards clear (FR-185)');
+  ok(t.isQuiet, 'quiet after that switch'); t.follow('a'); t.sent('a'); eq(t.isQuiet, false, 'a send is the person acting');
+  t.follow('c'); t.arrive('c', 'ask', 9); t.arrive('c', 'done', 3); eq(t.pendingList().filter((p) => p.id === 'c').length, 1, 'c waits');
+  t.retract('c'); t.arrive('c', 'ask', 9); t.sent('c'); eq(t.pendingList().filter((p) => p.id === 'c').map((p) => p.kind), ['ask'], 'a send keeps a waiting request');
+  const u = AF.createTracker();
+  eq(u.seen('x', 'done', 1), false, 'not followed: nothing to see');
+  u.follow('x'); u.arrive('x', 'done', 1);
+  eq(u.seen('x', 'done', 2), true, 'seen in its shown chat'); eq(u.has('x'), false, 'seen: no longer followed (FR-184)');
+  eq(u.pendingList().length, 0, 'seen: its waiting arrival is gone'); eq(u.isQuiet, false, 'seen: nothing moved, so not quiet'); eq(u.lastDesk(), 'x', 'last desk');
+  u.follow('x'); eq(u.arrive('x', 'done', 2), false, 'a seen completion is never offered again'); eq(u.due(''), null, 'nothing to deliver');
+  eq(u.seen('x', 'weird', 3), false, 'unknown kind');
 }
 // 6. the strip's words: Durbar's own voice, no promise
 eq(AF.statusText({ paused: true }), 'Auto-follow is paused. Nothing moves by itself.', 'paused');

@@ -275,9 +275,20 @@
         "photo": "designed",
         "cave": "designed",
         "loft": "missing",
-        "retro": "designed"
+        "retro": "built"
       },
-      "nonNegotiables": "M"
+      "nonNegotiables": "M",
+      "evidence": {
+        "retro": {
+          "steps": [
+            "walk"
+          ],
+          "pictures": [
+            "walk-desk",
+            "walk-place"
+          ]
+        }
+      }
     },
     {
       "id": "empty-office",
@@ -292,11 +303,18 @@
         "photo": "built",
         "cave": "built",
         "loft": "missing",
-        "retro": "missing"
+        "retro": "built"
       },
       "nonNegotiables": "TK",
-      "gap": {
-        "retro": "the arcade stage ends about y=410 at 1280x800 and the window below it is blank dark page (retro-empty-1280x800 and 1440x900, looked at 2026-11-07); photo and cave fill the window. Words, three desks and lift are right; the layout is not built"
+      "evidence": {
+        "retro": {
+          "steps": [
+            "empty-office"
+          ],
+          "pictures": [
+            "empty"
+          ]
+        }
       }
     },
     {
@@ -313,9 +331,20 @@
         "photo": "built",
         "cave": "built",
         "loft": "missing",
-        "retro": "fallback-flat"
+        "retro": "built"
       },
       "nonNegotiables": "TKS"
+,
+      "evidence": {
+        "retro": {
+          "steps": [
+            "first-run"
+          ],
+          "pictures": [
+            "firstrun"
+          ]
+        }
+      }
     },
     {
       "id": "lift-panel",
@@ -394,11 +423,18 @@
         "photo": "designed",
         "cave": "designed",
         "loft": "designed",
-        "retro": "missing"
+        "retro": "built"
       },
       "nonNegotiables": "TFKM",
-      "gap": {
-        "retro": "looked at (retro-cell-allfloors, 2026-11-08): the window is full but every folder stands on one floor with no floor names or storeys, while the lift says All; the other worlds' All view shows three floor tags (shots-092-lift). Not the building view yet"
+      "evidence": {
+        "retro": {
+          "steps": [
+            "cells"
+          ],
+          "pictures": [
+            "cell-allfloors"
+          ]
+        }
       }
     },
     {
@@ -414,7 +450,7 @@
         "photo": "designed",
         "cave": "designed",
         "loft": "designed",
-        "retro": "designed"
+        "retro": "fallback-flat"
       },
       "nonNegotiables": "TK"
     },
@@ -576,11 +612,18 @@
         "photo": "designed",
         "cave": "designed",
         "loft": "designed",
-        "retro": "missing"
+        "retro": "built"
       },
       "nonNegotiables": "ASKTC",
-      "gap": {
-        "retro": "cream card with pale unreadable text in the arcade chat (retro-cell-chat); fix with T221's dark chat"
+      "evidence": {
+        "retro": {
+          "steps": [
+            "cells"
+          ],
+          "pictures": [
+            "cell-chat"
+          ]
+        }
       }
     },
     {
@@ -598,11 +641,20 @@
         "photo": "designed",
         "cave": "designed",
         "loft": "designed",
-        "retro": "missing"
+        "retro": "built"
       },
       "nonNegotiables": "AKT",
-      "gap": {
-        "retro": "same cream card as the permission card (retro-cell-chat); fix with T221's dark chat"
+      "evidence": {
+        "retro": {
+          "steps": [
+            "cells"
+          ],
+          "pictures": [
+            "cell-question",
+            "cell-focus-answer",
+            "cell-focus-skip"
+          ]
+        }
       }
     },
     {
@@ -638,9 +690,19 @@
         "photo": "designed",
         "cave": "designed",
         "loft": "designed",
-        "retro": "designed"
+        "retro": "built"
       },
-      "nonNegotiables": "AKT"
+      "nonNegotiables": "AKT",
+      "evidence": {
+        "retro": {
+          "steps": [
+            "cells"
+          ],
+          "pictures": [
+            "cell-answerbar"
+          ]
+        }
+      }
     },
     {
       "id": "coffee-bar",

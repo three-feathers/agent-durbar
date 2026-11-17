@@ -246,7 +246,7 @@ Numbers taken: T167..T183. Each phase one small PR, after #950 and #959 land (#9
 
 **Phase 0: measure, then decide (nothing in `src/` changes)**
 
-- [ ] T167 Spike on an instrumented copy: parts × trials distinct by the FR-195 key; parts FR-197 could skip; start split into renders (script, style, layout, paint) and the rest; the about 27 unnamed reads by call site. 15 and 40 agents, both sizes, 3 runs. Record in a dated delta; set the limits of FR-200; **stop and ask the owner if under half of today's search time at 40 agents is projected.** Test: `sim:` [FR-200, FR-201, FR-202]
+- [ ] T167 Spike on an instrumented copy: parts × trials distinct by the FR-195 key; parts FR-197 could skip; start split into renders (script, style, layout, paint) and the rest; the about 27 unnamed reads by call site. 15 and 40 agents, both sizes, 3 runs. Record in a dated delta; set the limits of FR-200; **stop and ask the owner if under half of today's search time at 40 agents is projected.** Test: `sim:` [FR-200, FR-201, FR-202] First slice (2026-11-13, issue #1401): search time, counts and first frame by `scripts/spike-office-search.js`, protocol in the dated delta; parts x trials, the render split and the read sites stay open
 - [ ] T168 On the same copy: does a class left by `fitHead` ever change a later trial's size answer, and does a giving chip ever lower a room? Record yes or no with the case. Test: `sim:` [FR-196, FR-197]
 
 **Phase 1: the proof, before the change**
@@ -268,7 +268,7 @@ Numbers taken: T167..T183. Each phase one small PR, after #950 and #959 land (#9
 **Phase 3: renders and reads**
 
 - [ ] T179 HTML per room and desk signature; a render reuses a search's header answers; a render whose parts did not change skips the fits and the spread, each by its T167 gain. Test: `sim:` `check-office-ops`, `staleFits` 0, `check-crew`; a status change still updates what it should [FR-201]
-- [ ] T180 Layout reads, by site as T167 names them, until under 40 or the proof it cannot be; then lower `readsPerStatus`. Test: `sim:` `check-office-ops`; `check:office`, `check-office-overlap` unchanged [FR-202]
+- [ ] T180 Layout reads, by site as T167 names them, until under 40 or the proof it cannot be; then lower `readsPerStatus`. **Changed 2026-11-14 (owner): the count is not a gate; T156 is judged by time (under 30 ms per status update at 15 agents), see spec 097 *Changes 2026-11-14*; the memos are not built.** Test: `sim:` `check-office-ops`; `check:office`, `check-office-overlap` unchanged [FR-202]
 
 **Phase 4: the numbers**
 
@@ -283,3 +283,4 @@ Numbers taken: T167..T183. Each phase one small PR, after #950 and #959 land (#9
 - [x] T194 (FR-230, FR-231): `scripts/check-001-lights.js` (in `ui-suite.js`): every kit at both sizes; tint by state, fill, glyph ink, no glow or halo, no motion. Mutants: the glow back, green over amber (page and code), the ink rules gone
 - [x] T195 (FR-230): `check-unread`, `check-crew`, `test:unread` and the feature-inventory self-test assert the tint where they asserted the glow
 - [x] T196 (FR-230, FR-231): docs: changelog fragment, `docs/features.md`, `docs/feature-inventory.md`, `docs/agent-notes.md`; the owner OK'd the pictures (2026-11-05 18:02 UTC); the 40 linked Open office pictures retaken on Linux through `shots-docs.js` (ade5aa4c)
+- [x] T197 (FR-191, issue #1481): `settledPageCheck` exported from `scripts/check-office-overlap.js` (the T027 re-check loop, `measure()` keeps the `OFFICE_TEST_STUCK_WALKER` hooks), used by `shots-001-live-activity.js` `page()`. Checked: `OFFICE_TEST_STUCK_WALKER=moved` passes through the helper; mutant (one read) fails `=moved`. Race inferred, not observed (KNOWN GAP)

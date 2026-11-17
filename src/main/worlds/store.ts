@@ -213,26 +213,29 @@ export class WorldStore {
   }
 
   private lstatOf(p: string): fs.Stats | null { try { return this.fsx.lstatSync(p); } catch { return null; } }
+  /** The same with `{ bigint: true }`, for every inode and device comparison (issue #1491: a 64-bit NTFS file ID loses its low bit as a number). */
+  private lstatBig(p: string): fs.BigIntStats | null { try { return this.fsx.lstatSync(p, { bigint: true }) ?? null; } catch { return null; } }
 
-  /** A regular file, never a link, with one link only, up to `cap` bytes. Checked by `lstat` before and `fstat` after the open; at most cap + 1 bytes are asked for. `io`: the system failed (too many open files...), which says nothing about the file. */
+  /** A regular file, never a link, with one link only, up to `cap` bytes. Checked by `lstat` before and `fstat` after the open (the same device and inode, as `sameDir`); at most cap + 1 bytes are asked for. `io`: the system failed (too many open files...), which says nothing about the file. */
   private readFile(file: string, cap: number): { ok: true; buf: Buffer } | { ok: false; why: 'bad' | 'io' } {
     const BAD = { ok: false, why: 'bad' } as const;
-    const st = this.lstatOf(file);
-    if (!st || !st.isFile() || st.size > cap || st.nlink > 1) return BAD;
+    const st = this.lstatBig(file);
+    if (!st || !st.isFile() || Number(st.size) > cap || Number(st.nlink) > 1) return BAD;
     const { O_RDONLY, O_NOFOLLOW, O_NONBLOCK } = this.fsx.constants;
     let fd: number | undefined;
     try {
       fd = this.fsx.openSync(file, O_RDONLY | (O_NOFOLLOW ?? 0) | (O_NONBLOCK ?? 0));
-      const now = this.fsx.fstatSync(fd);
-      if (!now.isFile() || now.size > cap || now.ino !== st.ino || now.nlink > 1) return BAD;
-      const buf = Buffer.alloc(Math.min(now.size, cap) + 1);
+      const now = this.fsx.fstatSync(fd, { bigint: true });
+      const size = Number(now.size);
+      if (!now.isFile() || size > cap || now.ino !== st.ino || now.dev !== st.dev || Number(now.nlink) > 1) return BAD;
+      const buf = Buffer.alloc(Math.min(size, cap) + 1);
       let got = 0;
       while (got < buf.length) {
         const n = this.fsx.readSync(fd, buf, got, buf.length - got, got);
         if (n <= 0) break;
         got += n;
       }
-      return got === now.size && got <= cap ? { ok: true, buf: buf.subarray(0, got) } : BAD; // grown or shrunk while open: refused
+      return got === size && got <= cap ? { ok: true, buf: buf.subarray(0, got) } : BAD; // grown or shrunk while open: refused
     } catch (e) {
       return TRANSIENT.has((e as NodeJS.ErrnoException).code ?? '') ? { ok: false, why: 'io' } : BAD;
     } finally {
@@ -484,14 +487,14 @@ export class WorldStore {
   }
 
   /** The folder `p` is still the very folder `st` described (same device and inode, a real folder, not a link put in its place). */
-  private sameDir(p: string, st: fs.Stats): boolean {
-    const now = this.lstatOf(p);
+  private sameDir(p: string, st: fs.BigIntStats): boolean {
+    const now = this.lstatBig(p);
     return !!now && now.isDirectory() && now.ino === st.ino && now.dev === st.dev;
   }
 
   /** Read only: is anything under `p` deeper than a world folder can be? Run before any delete, so a folder that is not ours is refused whole rather than half removed. */
   private tooDeep(p: string, depth = 0): boolean {
-    const st = this.lstatOf(p);
+    const st = this.lstatBig(p);
     if (!st || !st.isDirectory()) return false;
     if (depth >= MAX_DEPTH) return true;
     const kids = this.fsx.readdirSync(p, { withFileTypes: true });
@@ -502,7 +505,7 @@ export class WorldStore {
   /** Removes `p`: `lstat` first, a link is unlinked as a link, and a folder is listed, then re-checked (same device and inode) before every delete in it. */
   private rmTree(p: string, depth = 0): void {
     if (depth === 0 && this.tooDeep(p)) throw new Stuck();
-    const st = this.lstatOf(p);
+    const st = this.lstatBig(p);
     if (!st) return;
     if (!st.isDirectory()) {
       try { this.fsx.unlinkSync(p); } catch (e) { if ((e as NodeJS.ErrnoException).code === 'ENOENT') return; this.fsx.rmdirSync(p); } // a directory link on Windows is removed as a link

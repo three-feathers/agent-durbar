@@ -14,7 +14,7 @@ import type { OrgPolicy } from '../shared/orgpolicy';
 import type { HandoffResult } from './handoff';
 import type { VendorStats } from './vendorstats';
 export type { VendorStats };
-import type { HistoryResult, PreviousSession } from './history';
+import type { HistoryLimits, HistoryResult, PreviousSession } from './history';
 import type { RemoteState } from '../shared/remote';
 import type { EditInfo } from '../shared/edits';
 import type { AccountIdentity, AccountInfoOptions } from '../shared/account';
@@ -36,6 +36,21 @@ export interface GenerateTextResult {
   text: string;
   costUsd?: number;
   nanoAiu?: number;
+}
+
+/** Spec 096 FR-001: options of `generateImage`. */
+export interface GenerateImageOptions {
+  /** A fixed file name chosen by main (`sheet.png`). */
+  outName: string;
+  /** Default 300,000. */
+  timeoutMs?: number;
+  /** Cancel: closes the child and removes the temp folder. */
+  signal?: AbortSignal;
+}
+
+/** Spec 096 FR-001: the picture's absolute path, directly inside a `durbar-img-*` temp folder; main reads it and removes that folder. On a throw the adapter removes it itself. */
+export interface GenerateImageResult {
+  file: string;
 }
 
 /** Spec 065 FR-001: the paths a file-edit tool is about to write (absolute, or relative to the session's folder). Never rejects. */
@@ -507,6 +522,12 @@ export interface AgentProfile {
   mcpServers?: string[];
 }
 
+/** Spec 043 FR-044: one read of a profile's definition file by main: its path and the bytes read. */
+export interface AgentFileRead {
+  path: string;
+  bytes: Buffer;
+}
+
 /**
  * Spec 073 FR-001: one entry of the "/" list in the composer: a skill, command or prompt file of the session's folder or of the user,
  * or a built-in of the agent app. Generic across adapters; `where` is a display path (folder-relative or `~/…`), never absolute.
@@ -703,8 +724,16 @@ export interface AgentAdapter {
    * gone) without a restart. Optional: an adapter that reads the files on every list needs none. Resolves false when it could not.
    */
   reloadAgentProfiles?(sessionId: string): Promise<boolean>;
-  /** Select a profile for the next turns, or null for the default agent (spec 043 FR-001). Emits `agentProfile`. */
-  selectAgentProfile?(sessionId: string, id: string | null): Promise<AgentProfile | null>;
+  /**
+   * Spec 043 FR-044: the profile as these exact bytes of its file define it (main read them once; the confirmation shows this profile
+   * and its hash). Undefined when the bytes do not define profile `id` of that file. Optional: without it the listed profile is shown.
+   */
+  agentProfileOfFile?(sessionId: string, id: string, file: AgentFileRead): AgentProfile | undefined;
+  /**
+   * Select a profile for the next turns, or null for the default agent (spec 043 FR-001). Emits `agentProfile`. `file` (FR-044): the
+   * bytes main hashed and the user confirmed; an adapter that passes the agent's text itself uses them, never a later read.
+   */
+  selectAgentProfile?(sessionId: string, id: string | null, file?: AgentFileRead): Promise<AgentProfile | null>;
   /** Spec 073 FR-001: the "/" entries this session's agent app offers (folder, then user, then app built-ins that run when typed). */
   listSlashCommands?(sessionId: string): Promise<SlashCommand[]>;
   /** Spec 073 FR-005: the text to send for a message that starts with a folder or user entry's `/name`, and where it came from; `note`
@@ -764,6 +793,8 @@ export interface AgentAdapter {
    * The reply carries the spend the harness reports: a dollar estimate (`costUsd`) or AI credits (`nanoAiu`, 1e9 = 1 credit).
    */
   generateText?(prompt: string, opts?: GenerateTextOptions): Promise<GenerateTextResult>;
+  /** Spec 096 FR-001: one prompt makes one picture, no MCP servers, no session kept, writes only to an empty temp folder. Optional (`capabilities.imageGen`). Throws a short user-facing sentence. */
+  generateImage?(prompt: string, opts: GenerateImageOptions): Promise<GenerateImageResult>;
   /** Spec 054 FR-001: turn remote control (follow and steer from the vendor's web or mobile app) on or off for a live session. Optional (`capabilities.remote`). Never on by default. */
   setRemote?(sessionId: string, on: boolean): Promise<RemoteState>;
   /**
@@ -813,8 +844,11 @@ export interface AgentAdapter {
   listModelOptions?(): Promise<ModelOption[]>;
   /** Earlier sessions of a folder, newest first; `excludeIds` are left out. Optional (`capabilities.history`). */
   listPreviousSessions?(cwd: string, excludeIds?: ReadonlySet<string>): Promise<PreviousSession[]>;
-  /** Persisted messages and tool calls of a live session, for replay. Optional (`capabilities.history`). */
-  history?(sessionId: string): Promise<HistoryResult>;
+  /**
+   * Persisted messages and tool calls of a live session, for replay. Optional (`capabilities.history`). `limits` (spec 095 FR-024, the
+   * conversation search only): text items only and no 300-item cap; the replay never passes it.
+   */
+  history?(sessionId: string, limits?: Partial<HistoryLimits>): Promise<HistoryResult>;
   /** Change the permission mode of a live session; returns how many requests stay pending. Optional (`capabilities.permModeSwitch` is not `none`). */
   setPermMode?(sessionId: string, mode: PermissionMode, opts?: { clearGrants?: boolean; approvePending?: boolean }): { pending: number };
   /**

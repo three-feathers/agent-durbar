@@ -1,1 +1,0 @@
-- **The arcade's drag-a-file overlay reads** (spec 097 FR-351, issue #1153): the overlay shown when a file is dragged onto the chat in the arcade had light text on a light fill (1.0:1); it now uses the page surface. A new check, `check-097-world-look`, guards that a world keeps its own colours whatever theme is picked.

@@ -37,10 +37,22 @@ export class UsageStore {
     this.doc = emptyDoc(this.now());
   }
 
+  /** A leftover `.tmp` (a crash, or a rename that failed) can hold a document from before the name mask: it is removed (review of #1294). */
+  private removeTmp(): void {
+    try { fs.rmSync(`${this.file}.tmp`, { force: true }); } catch { /* best effort */ }
+  }
+
   load(): void {
+    this.removeTmp();
     try {
       if (fs.statSync(this.file).size > MAX_FILE) return;
-      this.doc = sanitizeDoc(JSON.parse(fs.readFileSync(this.file, 'utf8')), this.now());
+      const report = { masked: 0 };
+      this.doc = sanitizeDoc(JSON.parse(fs.readFileSync(this.file, 'utf8')), this.now(), report);
+      // spec 020 FR-033 (#1291): a file written before the mask held a secret-shaped name; it is replaced on disk now, not at the next count
+      if (report.masked > 0) {
+        this.dirty = true;
+        this.flush();
+      }
     } catch {
       this.doc = emptyDoc(this.now());
     }
@@ -65,6 +77,7 @@ export class UsageStore {
       this.dirty = false;
       this.lastError = undefined;
     } catch (err) {
+      this.removeTmp();
       this.lastError = err instanceof Error ? err.message.slice(0, 160) : 'write failed';
     }
   }

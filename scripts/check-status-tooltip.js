@@ -16,7 +16,7 @@
  */
 const assert = require('assert');
 const path = require('path');
-const { helpers, jsLiteral } = require('./driver-helpers');
+const { helpers, jsLiteral, CHECK_DARK } = require('./driver-helpers');
 const OUT = process.env.OUT || require('os').tmpdir();
 const KEYS = ['working', 'waiting', 'idle', 'error', 'done'];
 const MEANING = { working: ['working or thinking', 'working or thinking'], waiting: ['waiting for you', 'waiting for you'], idle: ['idle or paused', 'idle or paused'], error: ['with an error', 'with errors'], done: ['done', 'done'] };
@@ -188,9 +188,10 @@ module.exports = async (ctx) => {
   // every built-in theme, a dark user theme and Serious mode: shown, inside, clear, contrast
   await H.load({ w: 1280, h: 800 });
   await H.calm({ blur: true });
-  const themes = ['clean-office', 'retro'];
-  for (const theme of themes) {
-    await js(`window.THEME.setTheme(${jsLiteral(theme)})`);
+  const themes = ['clean-office', CHECK_DARK]; // spec 102 T226: the dark fixture theme took Retro's place
+  for (const manifest of themes) {
+    const theme = typeof manifest === 'string' ? manifest : manifest.id;
+    await js(`window.THEME.setTheme(${jsLiteral(manifest)})`);
     await ok(`window.THEME.current().id===${jsLiteral(theme)}`, theme + ' applied');
     await H.settle();
     for (const k of ['idle', 'error']) {

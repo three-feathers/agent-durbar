@@ -33,3 +33,8 @@ Order: [spec 005's plan table](../005-chat-fullscreen-and-agent-strip/plan.md), 
 ## Flat's modern look (delta 2026-11-02; #524, FR-061..FR-067)
 
 One PR, row A14 of [spec 005's plan table](../005-chat-fullscreen-and-agent-strip/plan.md). Tokens first, then sizes, then T020 file by file, each its own commit, so a mistake bisects. Risk: it is large, against the small-PR habit, because the owner wants colours and T020 together; a snapshot rather than review protects the worlds. Constitution: V, text never under 10.5 px, targets never under 24 px; VIII, FR-061's values are calculated until T039.
+
+## Every colour form measured (delta 2026-11-08; #1259, FR-080)
+
+One PR (#1307), T047. `parseColor` lives twice, in `src/shared/themegen.ts` and plain-JS `src/renderer/theme.js`, like `CONTRAST_PAIRS`; `test:theme-tokens` keeps the two equal (forms, names, `TOKEN_VALUE_MAX`, the number and hue regexes). The grammar follows what Chromium paints (`CSS.supports` in Electron), and anything it cannot resolve is reported as unmeasured rather than measured. Input is capped at `TOKEN_VALUE_MAX` and the regexes are linear, since `parseColor` is exported from `src/shared` without the renderer's token check in front of it.
+

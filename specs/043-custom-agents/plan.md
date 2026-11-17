@@ -59,3 +59,7 @@ A generic "agent profile" in the adapter interface; Copilot maps it to the SDK's
 5. `src/shared/profiletemplates.ts`: the eight sections, `SAFETY_LINES`, the questionnaire and the prompt; the reply check warns without the safety lines.
 6. `sim.ts`: `deleteProfileFile` in memory; the Profile menu lists the FR-005 profiles while their file exists, plus Copilot files made in the run.
 7. Tests: `test:profilefiles`, `test:agentprofiles`, `test:profilegen`, `test:ipcchannels`; driver `shots-043-manage` (in `check:ui`).
+
+## 2026-11-09: a confirmation trusts the file text behind the profile it showed (FR-044, T021)
+
+**Design.** `src/main/agenttrust.ts`: `readAgentFile` (one `readCapped` open: bytes and SHA-256; without `O_NOFOLLOW` an `lstat` first and a `dev`/`ino` match) and `shownSha`. `src/shared/linkedfolders.ts`: `linkedBelow(root, dir)` (`lstat` of every folder between them), used by `claudeAgentDirs` (the Claude list and `agentOfFile`) and by main's `linkedInProject` (nearest holding session folder, `isInside`). `src/main/ipc/profiles.ts`: `needsConfirm` with `sha256`, `confirm: { sha256 }` checked against a fresh read, the read bytes passed to `selectAgentProfile`. `src/adapters/types.ts`: optional `agentProfileOfFile` and the `file` argument; `claude.ts` launches those bytes. `app.js` and `sim.ts`: send the hash back, show the dialog again for a changed file. Tests: `test:agentconfirm`.

@@ -1,0 +1,7 @@
+{
+ "formatVersion": 1,
+ "note": "Pairs of already-built worlds that share a card field. Reported, never failed, and only the pairs named here; a new world may not join this list. Provisional: an owner decision on spec 102 (Changes 2026-11-11, issue #1402) says whether this list stays or Cave gets its own arrangement.",
+ "clashes": [
+  { "pair": ["cave", "photo"], "field": "arrangement", "until": "owner decision: the closed list of arrangements has only rows and aisles (src/shared/realoffice-arrangements.ts)" }
+ ]
+}

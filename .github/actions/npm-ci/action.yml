@@ -1,44 +1,52 @@
 name: npm ci with an Electron download cache
 description: >-
-  Spec 008 (2026-11-08): restores the Electron and electron-builder downloads from the Actions cache, then runs npm ci
-  (3 tries, 15 s and 45 s apart) so a GitHub release-download outage (504) does not fail a run. No secrets, no inputs.
+  Spec 008 FR-188, FR-195: restores the Electron and electron-builder downloads from the Actions cache (exact key, else the same
+  Electron version with another electron-builder), runs npm ci (by default 4 tries, 30 s, 120 s and 300 s apart; input retry-waits) so a GitHub
+  release-download outage (504) does not fail a run, then seeds the checksum file electron-builder needs to work offline.
+  The cache is filled on main by electron-cache.yml. No secrets, no inputs from PR text.
 inputs:
   args:
     description: extra npm ci flags (a fixed string written in the workflow, never PR text)
     default: ''
+  retry-waits:
+    description: >-
+      seconds to wait before each retry of npm ci (a fixed string written in the workflow, never PR text); the default rides out
+      about 8 minutes of outage, a short job whose limit cannot hold that passes a shorter list (FR-195; test:electroncache checks
+      every job's timeout against its list)
+    default: '30 120 300'
 runs:
   using: composite
   steps:
-    - id: versions
+    # key, restore prefix and the two cache directories (scripts/electron-cache.js, shared with electron-cache.yml); writes
+    # ELECTRON_CACHE, electron_config_cache and ELECTRON_BUILDER_CACHE to the job's env
+    - id: plan
       shell: bash
-      run: |
-        echo "electron=$(node -p "require('./package-lock.json').packages['node_modules/electron'].version")" >> "$GITHUB_OUTPUT"
-        echo "builder=$(node -p "require('./package-lock.json').packages['node_modules/electron-builder'].version")" >> "$GITHUB_OUTPUT"
-    - shell: bash
-      env:
-        CACHE_ROOT: ${{ runner.temp }}/electron-downloads
-      run: |
-        mkdir -p "$CACHE_ROOT/electron" "$CACHE_ROOT/builder"
-        {
-          echo "ELECTRON_CACHE=$CACHE_ROOT/electron"
-          echo "electron_config_cache=$CACHE_ROOT/electron"
-          echo "ELECTRON_BUILDER_CACHE=$CACHE_ROOT/builder"
-        } >> "$GITHUB_ENV"
+      run: node scripts/electron-cache.js plan
     - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:
-        path: ${{ runner.temp }}/electron-downloads
-        key: electron-${{ runner.os }}-${{ runner.arch }}-${{ steps.versions.outputs.electron }}-builder-${{ steps.versions.outputs.builder }}
+        path: ${{ steps.plan.outputs.paths }}
+        key: ${{ steps.plan.outputs.key }}
+        # FR-195: a miss falls back to the same Electron version with any electron-builder version (the zip is the same, and
+        # checksum-verified on use); never another Electron version (its zip name differs, so it would only add weight)
+        restore-keys: ${{ steps.plan.outputs.restore-prefix }}
     - shell: bash
       env:
         NPM_CI_ARGS: ${{ inputs.args }}
+        RETRY_WAITS: ${{ inputs.retry-waits }}
       run: |
-        for try in 1 2 3; do
+        read -ra waits <<< "$RETRY_WAITS"
+        for w in "${waits[@]}"; do case "$w" in ''|*[!0-9]*) echo "::error::retry-waits must be whole seconds, got: $w"; exit 1;; esac; done
+        tries=$(( ${#waits[@]} + 1 ))
+        for try in $(seq 1 "$tries"); do
           # shellcheck disable=SC2086
           if npm ci $NPM_CI_ARGS; then exit 0; fi
-          [ "$try" = 3 ] && break
-          if [ "$try" = 1 ]; then wait=15; else wait=45; fi
-          echo "::warning::npm ci failed (try $try of 3), retrying in ${wait}s"
+          [ "$try" = "$tries" ] && break
+          wait=${waits[$((try - 1))]}
+          echo "::warning::npm ci failed (try $try of $tries), retrying in ${wait}s"
           sleep "$wait"
         done
-        echo "::error::npm ci failed 3 times"
+        echo "::error::npm ci failed $tries times (waits: ${waits[*]} s). The usual cause is the Electron download host (github.com/electron/electron/releases) answering 5xx: check https://www.githubstatus.com and re-run the job later."
         exit 1
+    # electron-builder fetches SHASUMS256.txt from github.com on every build unless this file is in the Electron cache (FR-195)
+    - shell: bash
+      run: node scripts/electron-cache.js seed
