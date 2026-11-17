@@ -301,7 +301,7 @@ export function cleanGrantKey(key: unknown): string | undefined {
   return typeof key === 'string' && key.length > 0 && key.length <= GRANT_KEY_MAX ? key : undefined;
 }
 
-const WRITE_GUARD_MS = 2000;
+export const WRITE_GUARD_MS = 2000;
 /** Spec 065: most files of one write the undo guard copies (a Codex change can name more; its card says so, spec 052 FR-172). */
 export const WRITE_GUARD_MAX_PATHS = 200;
 
