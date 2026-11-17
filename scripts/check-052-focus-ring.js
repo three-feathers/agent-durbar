@@ -7,7 +7,7 @@
  * Per look, at 1440x900 and 1280x800: a Tab key press puts the page in keyboard modality, then each visible focusable of the top bar (and, with the ⋯ menu open, each of its
  * items) is focused, the window is captured (`capturePage`, real pixels), and the ring is read from the picture: its own colour at the middle of its band on the element's
  * top edge, the pixel just outside the band and the first pixel past its inner edge. An outside ring (outline-offset > 0) is judged by the first only (its inner side is the control's own 1px border line), an inset ring (offset <= 0) by both: each must be >= 3:1 against the ring; the ring pixel must also be
- * the computed outline colour (a guard on the geometry). The halo box-shadow is not counted (the outline alone). FOCUS_NO_TAB=1 sends no Tab (dies at the Tab label). FOCUS_MUTANT=old puts main's rule back (yellow over the whole bar, the segment rules deleted); =menu gives the menu items the yellow back; =seg gives the segment buttons the yellow back. Each fails with its own element names. FOCUS_REPORT=1 does not assert and writes every line to
+ * the computed outline colour (a guard on the geometry). The halo box-shadow is not counted (the outline alone). FOCUS_NO_TAB=1 sends no Tab (dies at the Tab label). FOCUS_NO_WINDOW_FOCUS=1 makes the window-focus reading false (dies at "the window does not have focus", #1658). FOCUS_MUTANT=old puts main's rule back (yellow over the whole bar, the segment rules deleted); =menu gives the menu items the yellow back; =seg gives the segment buttons the yellow back; =chip puts back the inset --brand-mark ring on the pressed segment chip (T341: dies at 'pressed segment'). Each fails with its own element names. FOCUS_REPORT=1 does not assert and writes every line to
  * $OUT/focus-report.txt. OUT=dir (optional) also saves focus-<look>-<size>-<element>.png of the elements that fail or are named in FOCUS_SHOTS (comma list of ids).
  */
 const assert = require('assert');
@@ -21,7 +21,7 @@ const SHOTS = new Set((process.env.FOCUS_SHOTS || '').split(',').filter(Boolean)
 const LOOKS = [
   ['flat+pixel theme', {}, 'retro'],
   ['check-user (retro ui)', {}, CHECK_USER],
-  ['arcade', { officeview: 'real', world: 'retro', worldflags: 'retro' }, null, 'print'], // printed, not asserted: its pressed segment is a dark ring on yellow on a dark strip (issue #1615 files it apart)
+  ['arcade', { officeview: 'real', world: 'retro', worldflags: 'retro' }, null], // spec 102 T341 (issue #1666): asserted; its pressed segment chip has an outside ring (realoffice-world.css), labelled 'pressed segment' below
   ['photo', { officeview: 'real' }, null], // control: ui is clean
   ['dark fixture', {}, CHECK_DARK], // control: ui is clean
 ];
@@ -38,8 +38,9 @@ module.exports = async (ctx) => {
   /* FOCUS_MUTANT=old: main's rule (yellow over the whole bar, no segment rules); =menu: the menu items back to yellow; =seg: the segment buttons back to yellow */
   const mutate = (kind) => js(`(()=>{let n=0;const kind=${jsLiteral(kind)};for(const s of document.styleSheets){let rules;try{rules=s.cssRules}catch(e){continue}
     for(let i=rules.length-1;i>=0;i--){const t=rules[i].selectorText||'';
+      if(kind==='chip'&&/data-world.*\\.seg button\\[aria-pressed="true"\\]:focus-visible/.test(t)){s.deleteRule(i);n++;continue}
       if(/\\.topbar \\.seg button(\\[aria-pressed="true"\\])?:focus-visible/.test(t)){if(kind==='old'){s.deleteRule(i);n++}continue}
-      if(!/\\.topbar :focus-visible/.test(t))continue;const body=rules[i].style.cssText;s.deleteRule(i);
+      if(kind==='chip'||!/\\.topbar :focus-visible/.test(t))continue;const body=rules[i].style.cssText;s.deleteRule(i);
       s.insertRule('html[data-ui="retro"] .topbar :focus-visible'+(kind==='menu'?':not(.seg button)':kind==='seg'?':not(.more-menu *)':'')+'{'+body+'}',i);n++}
     if(kind==='seg'){s.insertRule('html[data-ui="retro"] .topbar .seg button:focus-visible{outline-color:#ffec27}',s.cssRules.length);n++}}return n})()`);
   const pixel = async (img, x, y) => { const { width, height } = img.getSize(); x = Math.max(0, Math.min(width - 1, x)); y = Math.max(0, Math.min(height - 1, y)); const b = img.toBitmap(); const o = (y * width + x) * 4; return [b[o + 2], b[o + 1], b[o]]; }; // BGRA
@@ -52,12 +53,18 @@ module.exports = async (ctx) => {
       if (theme) await js(`window.THEME.setTheme(${jsLiteral(theme)})`);
       await H.settle();
       await js(INSTALL_PX);
+      await js(`if(!window.__keysOn){window.__keysOn=1;window.__keys=0;addEventListener('keydown',()=>{window.__keys++},true)}0`);
       /* the focusables of the bar (menu = false) or of the open ⋯ menu (true), found again by position each time (a chip may be redrawn between two reads) */
       await js(`window.__list=()=>{const vis=e=>{const r=e.getBoundingClientRect();return r.width>0&&r.height>0&&getComputedStyle(e).visibility!=='hidden'};
         return window.__fm?[...document.querySelectorAll('#topMoreMenu button.more-it, #topMoreMenu input')].filter(vis)
           :[...document.querySelectorAll('.topbar button, .topbar select, .topbar a[href], .topbar input')].filter(e=>vis(e)&&!e.closest('#topMoreMenu'))};window.__pick=()=>window.__list()[window.__fn];0`);
       if (process.env.FOCUS_MUTANT) console.log(`[focus] mutant ${process.env.FOCUS_MUTANT}: changed ${await mutate(process.env.FOCUS_MUTANT)} rule(s)`);
       const dpr = await js(`window.devicePixelRatio`);
+      // the page needs the OS focus or :focus-visible never matches (#1658: a Mac with no key window failed below as "is focus-visible"). FOCUS_NO_WINDOW_FOCUS=1 (mutant) makes the reading false.
+      // #1820: on Windows CI the OS takes the focus from the hidden runner window between two controls (document.hasFocus() false with the right activeElement), so the real focus cannot be kept: run the look under the shared focus emulation (H.focusPage emulate:'first', as check-auto-follow, check-edit-popups and check-needs-panel do; capturePage pixels are not affected), re-enabled per look in case the load reset it. The driver tests no OS blur; released after the loop.
+      await H.releaseFocus();
+      await H.focusPage({ emulate: 'first' });
+      await H.needFocus(tag, process.env.FOCUS_NO_WINDOW_FOCUS ? { expr: 'false' } : {});
       // keyboard modality: :focus-visible matches on a script focus() only after a key press. sendInputEvent returns before the page handles the key, so wait until the Tab has moved focus: a late Tab would move focus off control 0 after the first focus() below (#1651). FOCUS_NO_TAB=1 (mutant) sends none.
       if (!process.env.FOCUS_NO_TAB) await H.key('Tab');
       assert.ok(await until(`!!document.activeElement&&document.activeElement!==document.body`, 3000), `${tag}: the Tab key press did not move focus off the body: the key event was not handled in 3000 ms`);
@@ -72,14 +79,24 @@ module.exports = async (ctx) => {
         for (let n = 0; n < count; n++) {
           await js(`window.__fn=${n};0`);
           const id = await js(`(()=>{const e=window.__pick();return (e.id||String(e.className)||e.tagName).replace(/\\W+/g,'-').slice(0,30)})()`);
+          // #1820: the modality is the page's last input, not a one-time fact: re-assert the OS focus and send one more real key (F13: no handler, no focus move) per control, and wait until the page has seen its keydown, so the script focus() below always follows a keyboard event (FOCUS_NO_TAB=1 sends none)
+          await H.needFocus(tag, process.env.FOCUS_NO_WINDOW_FOCUS ? { expr: 'false' } : {});
+          if (!process.env.FOCUS_NO_TAB) {
+            const seen = await js(`window.__keys||0`);
+            await H.key('F13');
+            assert.ok(await until(`(window.__keys||0)>${jsLiteral(seen)}`, 3000), `${tag}: ${id}: the page did not see the F13 key press in 3000 ms`);
+          }
           await js(`window.__pick().focus()`);
-          assert.ok(await until(`window.__pick().matches(':focus-visible')`, 2000), `${tag}: ${id} is focus-visible`);
+          if (!await until(`window.__pick().matches(':focus-visible')`, 2000)) {
+            const d = await js(`(()=>{const a=document.activeElement;return 'hasFocus='+document.hasFocus()+' activeElement='+(a?(a.id||a.tagName):'none')+' isPick='+(a===window.__pick())+' visibilityState='+document.visibilityState})()`);
+            assert.fail(`${tag}: ${id} is focus-visible (${d})`);
+          }
           // capturePage can return an older frame (the previous control's ring, a frame inside the 0.12s transition of .btn,.more-it): wait two animation frames and the transition, and retake while the ring pixel is not the computed outline colour, bounded (the ratio is never retried)
           let m, img, rp, po, pi, oc, geo = false;
           for (let attempt = 0; attempt <= 6 && !geo; attempt++) {
             await js(`new Promise((res) => requestAnimationFrame(() => requestAnimationFrame(res)))`);
             await new Promise((r) => setTimeout(r, attempt ? 200 : 150));
-            m = await js(`(()=>{const e=window.__pick(),s=getComputedStyle(e),r=e.getBoundingClientRect();return {x:r.left+r.width/2,top:r.top,left:r.left,oc:s.outlineColor,ow:parseFloat(s.outlineWidth),oo:parseFloat(s.outlineOffset),os:s.outlineStyle,txt:(e.textContent||e.getAttribute('aria-label')||'').trim().slice(0,18)}})()`);
+            m = await js(`(()=>{const e=window.__pick(),s=getComputedStyle(e),r=e.getBoundingClientRect();return {x:r.left+r.width/2,top:r.top,left:r.left,oc:s.outlineColor,ow:parseFloat(s.outlineWidth),oo:parseFloat(s.outlineOffset),os:s.outlineStyle,pr:e.getAttribute('aria-pressed')==='true'&&!!e.closest('.seg'),txt:(e.textContent||e.getAttribute('aria-label')||'').trim().slice(0,18)}})()`);
             img = await H.wc().capturePage();
             const k = dpr || 1, X = Math.round(m.x * k);
             const yRing = Math.round((m.top - m.oo - m.ow / 2) * k), yOut = Math.round((m.top - m.oo - m.ow) * k) - 2, yIn = Math.round((m.top - m.oo) * k);
@@ -89,16 +106,19 @@ module.exports = async (ctx) => {
           }
           // an outside ring (offset > 0) is read against what is behind it only: its inner side is the control's own 1px border or shadow line, never a surface; an inset ring has both neighbours
           const ro = ratio(rp, po), ri = ratio(rp, pi), min = m.oo > 0 ? ro : Math.min(ro, ri);
-          const line = `${tag} ${menu ? 'menu' : 'bar'} ${id} "${m.txt}": ring rgb(${rp}) (outline rgb(${oc}), ${m.ow}px at ${m.oo}), outside rgb(${po}) ${ro.toFixed(2)}:1, inside rgb(${pi}) ${ri.toFixed(2)}:1${geo ? '' : ' [ring pixel is not the outline colour: geometry guard]'}`;
+          const what = m.pr ? 'pressed segment ' : '';
+          const line = `${tag} ${menu ? 'menu' : 'bar'} ${what}${id} "${m.txt}": ring rgb(${rp}) (outline rgb(${oc}), ${m.ow}px at ${m.oo}), outside rgb(${po}) ${ro.toFixed(2)}:1, inside rgb(${pi}) ${ri.toFixed(2)}:1${geo ? '' : ' [ring pixel is not the outline colour: geometry guard]'}`;
           lines.push(line);
           const bad = m.os === 'none' || !geo || min < 3;
-          if (bad && mode !== 'print') fails.push(`${tag} ${id} "${m.txt}": min ${min.toFixed(2)}:1`);
+          if (bad && mode !== 'print') fails.push(`${tag} ${what}${id} "${m.txt}": min ${min.toFixed(2)}:1`);
           if ((bad && mode !== 'print') || SHOTS.has(id) || SHOTS.has(`${menu ? 'menu' : 'bar'}${n}`)) await H.shot(path.join(OUT, `focus-${look.replace(/\W+/g, '-')}-${w}x${h}-${menu ? 'menu' : 'bar'}${n}-${id}.png`), { prep: 'none', settle: false, tag: 'focus' });
         }
+        if (!menu) assert.ok(lines.some((l) => l.startsWith(`${tag} bar pressed segment `)), `${tag}: no pressed segment button (the Office/List chip) was read: the pressed-chip case is not covered`);
         if (menu) { await H.key('Escape'); await until(`document.getElementById('topMoreMenu').hidden`, 3000); }
       }
     }
   }
+  await H.releaseFocus();
   fs.writeFileSync(path.join(OUT, 'focus-report.txt'), lines.join('\n') + '\n');
   if (process.env.FOCUS_REPORT) { console.log(`[focus] ${lines.length} lines, ${fails.length} below 3:1 (report only)`); throw new Error('FOCUS_REPORT: failing on purpose; lines in focus-report.txt'); }
   for (const l of lines) console.log('[focus] ' + l);

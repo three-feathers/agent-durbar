@@ -43,6 +43,7 @@ function boldDefines(rest) {
   return /^\s/.test(rest);
 }
 
+const TAG_PREFIX = /^((?:[-*]|\d+\.) )`\[[A-Z][A-Z ]*\]` /;
 /** Definition lines of a file as Map(id -> count). spec.md: FR and Q; tasks.md: T. Not tables, code fences, prose mentions, nested FR/Q bullets. */
 function definitionCounts(text, kind) {
   const ids = new Map();
@@ -57,8 +58,10 @@ function definitionCounts(text, kind) {
       if ((m = line.match(/^\s*[-*] \[[ xX~-]\] (?:\*\*|~~)?(T\d+[a-z]?)(?![\w-])/))) add(m[1]);
     } else {
       // `- **FR-123**`, `- **FR-123.** text`, `- **FR-123 Read/write access.** text` and the column-0 paragraph `**FR-123** text` (specs 005, 012, 058)
-      if ((m = line.match(/^(?:[-*] )?\*\*(FR-\d+[a-z]?)((?:[^*]|\*(?!\*))*)\*\*/))) { if (boldDefines(m[2])) add(m[1]); }
-      else if ((m = line.match(/^(?:[-*]|\d+\.) (?:\*\*)?(Q\d+)(?![\w-])/))) add(m[1]);
+      // An evidence tag may stand before the id (`- \`[IMPLEMENTED]\` **FR-243 Title.** ...`, 18 lines in the specs; issue #1768): stripped here, one place for FR and Q
+      const body = line.replace(TAG_PREFIX, '$1');
+      if ((m = body.match(/^(?:[-*] )?\*\*(FR-\d+[a-z]?)((?:[^*]|\*(?!\*))*)\*\*/))) { if (boldDefines(m[2])) add(m[1]); }
+      else if ((m = body.match(/^(?:[-*]|\d+\.) (?:\*\*)?(Q\d+)(?![\w-])/))) add(m[1]);
     }
   }
   return ids;
