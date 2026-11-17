@@ -34,6 +34,8 @@ const MAX_RATIO = 40;
 export const minBaseMsFor = (platform: NodeJS.Platform): number => platform === 'win32' ? 16 : 2;
 const MIN_BASE_MS = minBaseMsFor(process.platform);
 export const worstGrowth = { ratio: 0, label: '' }; // the highest full/baseline ratio seen, printed at the end
+/** The readings of a one-run growth baseline whose lowest is kept (`assertLinearGrowth`'s `baseMinOf`, issue #1848). */
+export const BASE_MIN_OF = 4;
 /** The runs of `timing(reps)` (the CPU ms of `reps` runs in one timing), doubled from `start` until one timing reads at least `minMs` or the runs reach `maxReps` (issue #1836's
  * repetition floor; shared by `assertWithinYardstick` and, since issue #1848, the growth baselines of `assertLinearGrowth`). `leap` (the growth baselines, where each timing is
  * a new worker): the next runs are the power of two the last reading says reaches the floor, at least double, so most baselines take one more timing, not three or four. */
@@ -55,9 +57,12 @@ export const repsToFloor = (timing: (reps: number) => number, minMs: number, max
 // 16, so a try that failed on a one-step baseline (Windows: 15.0 ms for 62,500 characters, PR 1510) measures the baseline again well above the step; that mean replaces the first reading.
 // `baseFloorMs` (issue #1848; off by default, so the other callers are unchanged): the baseline's runs grow, up to `FACTOR` (the characters of the full input), until one
 // timing reads at least that floor, as `assertWithinYardstick` does for its yardstick (`repsToFloor`). A one-run baseline of a few ms reads a few timer steps
-// (1 ms on Linux), and on a loaded machine such a reading moved the adversarial `url` ratio from about 16 to 39.1 (limit 40) with linear code and the same work.
+// (1 ms on Linux); the adversarial `url` ratio read 39.1 (limit 40) once on a loaded machine with linear code and the same work, a cause not proven (not reproduced).
+// `baseMinOf` (issue #1848, review of PR 1856: on a slower host the 1/16 baseline read 26-42 ms, so the floor never engaged and one reading varied 1.6x): `run` times
+// the baseline that many times in one worker and gives the lowest reading, before and inside the floor loop and on the retries (`BASE_MIN_OF`). A lower baseline reads a higher
+// ratio, so the check is never looser; the full input is timed as before. `run` gets it as its third argument.
 // Returns the figures of the deciding try: `baseReps` is the runs in the last baseline timing.
-export const assertLinearGrowth = (label: string, run: (input: string, reps?: number) => { cpu: number; wall: number }, input: string, floorMs = 100, reps = 1, baseline?: string, retryReps = reps, opts: { baseFloorMs?: number } = {}): { full: number; base: number; ratio: number; baseReps: number } => {
+export const assertLinearGrowth = (label: string, run: (input: string, reps?: number, minOf?: number) => { cpu: number; wall: number }, input: string, floorMs = 100, reps = 1, baseline?: string, retryReps = reps, opts: { baseFloorMs?: number; baseMinOf?: number } = {}): { full: number; base: number; ratio: number; baseReps: number } => {
   const small = baseline ?? input.slice(0, Math.ceil(input.length / FACTOR));
   let full = Infinity;
   let base = Infinity;
@@ -72,7 +77,8 @@ export const assertLinearGrowth = (label: string, run: (input: string, reps?: nu
     const floor = opts.baseFloorMs;
     // the first runs are a guess from the full input's reading (a linear baseline costs about 1/16 of it), so a linear case takes one baseline timing; the floor loop corrects a wrong guess
     const guess = floor === undefined ? r : Math.min(Math.max(r, FACTOR), Math.max(r, 2 ** Math.ceil(Math.log2(Math.max(1, (floor * FACTOR) / Math.max(f.cpu, 1e-3))))));
-    const b = floor === undefined ? { reps: r, ms: run(small, r).cpu * r } : repsToFloor((n) => run(small, n).cpu * n, floor, Math.max(r, FACTOR), guess, true);
+    const minOf = opts.baseMinOf;
+    const b = floor === undefined ? { reps: r, ms: run(small, r, minOf).cpu * r } : repsToFloor((n) => run(small, n, minOf).cpu * n, floor, Math.max(r, FACTOR), guess, true);
     baseReps = b.reps;
     base = Math.min(base, b.ms / b.reps);
     if (full < Math.max(floorMs, Math.max(base, MIN_BASE_MS) * MAX_RATIO)) break;

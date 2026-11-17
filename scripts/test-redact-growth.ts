@@ -6,7 +6,7 @@
 import * as assert from 'assert';
 import { REDACT_MAX_CHARS, _runReadsForTest, _shapePassesForTest, _shellPassesForTest, _uncappedForTest, bareStepsForTest, cut, redact } from '../src/shared/redact';
 import { spawnSync } from 'child_process';
-import { YARD_MAX_REPS, YARD_MIN_MS, type YardTimer, assertLinearGrowth, assertLinearShape, assertWithinYardstick, cpuMs, minBaseMsFor, worstGrowth, workerRun, yardMinMs } from './redact-growth-lib';
+import { BASE_MIN_OF, YARD_MAX_REPS, YARD_MIN_MS, type YardTimer, assertLinearGrowth, assertLinearShape, assertWithinYardstick, cpuMs, minBaseMsFor, worstGrowth, workerRun, yardMinMs } from './redact-growth-lib';
 
 const part = process.argv[2];
 const BT = '`';
@@ -164,7 +164,7 @@ if (part === 'adversarial' || part === 'adversarial2' || part === 'masks') {
   // guard; a worker that does not answer in time is stopped and the case retried once.
   const mod = require.resolve('../src/shared/redact');
   const code = `const {workerData:w}=require('worker_threads');const flag=new Int32Array(w.sab,0,1),out=new Float64Array(w.sab,8,2);` +
-    `try{const {redact}=require(w.mod);const reps=w.reps||1;redact(w.input.slice(0,4096),{});const tc=typeof process.threadCpuUsage==='function';const w0=process.hrtime.bigint(),c0=tc?process.threadCpuUsage():null;for(let i=0;i<reps;i++)redact(w.input,{});const wall=Number(process.hrtime.bigint()-w0)/1e6/reps;let cpu=wall;if(tc){const d=process.threadCpuUsage(c0);cpu=(d.user+d.system)/1000/reps}out[0]=cpu;out[1]=wall;Atomics.store(flag,0,1)}` +
+    `try{const {redact}=require(w.mod);const reps=w.reps||1;redact(w.input.slice(0,4096),{});const tc=typeof process.threadCpuUsage==='function';let cpu=Infinity,wall=0;for(let k=0;k<(w.minOf||1);k++){const w0=process.hrtime.bigint(),c0=tc?process.threadCpuUsage():null;for(let i=0;i<reps;i++)redact(w.input,{});const wl=Number(process.hrtime.bigint()-w0)/1e6/reps;let c=wl;if(tc){const d=process.threadCpuUsage(c0);c=(d.user+d.system)/1000/reps}cpu=Math.min(cpu,c);wall=Math.max(wall,wl)}out[0]=cpu;out[1]=wall;Atomics.store(flag,0,1)}` +
     `catch(e){Atomics.store(flag,0,2)}Atomics.notify(flag,0)`;
   // two suites, each case in one (over 30 s on Windows as one)
   // the cases of the masking batch of 2026-11-08 (spec 012 FR-173/FR-174, PR 1317) are their own suite, so the two above stay under 30 s
@@ -202,7 +202,7 @@ if (part === 'adversarial' || part === 'adversarial2' || part === 'masks') {
   // and adds its cut marker, so the big side was another shape than its baseline: on `slackHookEsc` (one escaped run) the cut text's run no longer equals the text,
   // and the marker's blank after the cut's last backslash is an escaped blank, a run FR-184's shell readings read once more, while the uncut baseline is read once
   // (the run is the whole text): 3 rule passes over the whole text against 1, a ratio near 46 with linear code (the same shape, cut and 1/16 the size, reads 15.8)
-  for (const [k, v] of part === 'masks' ? Object.entries(maskCases) : Object.entries(adversarial).filter((_e, i) => i % 2 === (part === 'adversarial' ? 0 : 1))) assertLinearGrowth(`adversarial ${k}`, (input, reps) => workerRun(`adversarial ${k}`, code, { mod, input, reps }, 30000), v.slice(0, REDACT_MAX_CHARS), 100, 1, undefined, 16, { baseFloorMs: YARD_MIN_MS });
+  for (const [k, v] of part === 'masks' ? Object.entries(maskCases) : Object.entries(adversarial).filter((_e, i) => i % 2 === (part === 'adversarial' ? 0 : 1))) assertLinearGrowth(`adversarial ${k}`, (input, reps, minOf) => workerRun(`adversarial ${k}`, code, { mod, input, reps, minOf }, 30000), v.slice(0, REDACT_MAX_CHARS), 100, 1, undefined, 16, { baseFloorMs: YARD_MIN_MS, baseMinOf: BASE_MIN_OF });
   // spec 012 T138 delta 2026-11-11 (PR 1510's Windows run): (1) each worker first masks 4 KB of the same input untimed, so the compile costs of a fresh worker (about 20-30 ms on
   // Linux) no longer sit in the 1/16 baseline, where they hid a quadratic rule (ratio 29 instead of 65); (2) a try that fails times the baseline again as 16 runs in one worker and
   // takes the mean (`retryReps`): one run of 62,500 characters read 15.0 ms of thread CPU on Windows (one timer step, clamped to 16), so the check was a fixed 640 ms limit there,
@@ -257,9 +257,10 @@ if (part === 'adversarial2') {
 }
 
 // issue #1848: the adversarial `url` shape read 39.1 against its limit of 40 on a loaded machine, with linear code and the same work at both sizes: its 1/16 baseline was one run
-// of about 7 ms in a fresh worker, read in timer steps (1 ms on Linux), so one low reading of it nearly doubled the ratio. Measured (Linux, 4 cores, thread CPU, 10 runs each, idle
-// and beside busy `nice` processes): 11.9 to 21.4 in 50 runs with a one-run baseline (39.1 not reproduced), 13.5 to 16.9 in 20 with the floor. The adversarial cases now repeat
-// their baseline up to the floor of `assertWithinYardstick` (`baseFloorMs: YARD_MIN_MS`, `repsToFloor`), and the work on `url` is counted, not timed.
+// of about 7 ms in a fresh worker, read in timer steps (1 ms on Linux), and one reading of it is noisy (the suspected, unproven cause). Measured (Linux, 4 cores, thread CPU, 10 runs each, idle
+// and beside busy `nice` processes): 11.9 to 21.4 in 60 runs with a one-run baseline (39.1 not reproduced; the cause is unproven). The adversarial cases now repeat
+// their baseline up to the floor of `assertWithinYardstick` (`baseFloorMs: YARD_MIN_MS`, `repsToFloor`) and keep the lowest of 4 readings (`baseMinOf`, review of PR 1856:
+// a slower host read the baseline at 26-42 ms, where the floor never engages), and the work on `url` is counted, not timed.
 if (part === 'adversarial') {
   const url = 'a://x:'.repeat(1_000_000 / 6).slice(0, REDACT_MAX_CHARS);
   const work = (t: string): string => {
@@ -282,9 +283,31 @@ if (part === 'adversarial') {
   // the first runs are guessed from the whole input's reading (117 / 16 per run: 4 runs); a baseline cheaper than the guess (4 ms a run: 16 ms) takes more runs (8: 32 ms)
   const short = assertLinearGrowth('#1848 floor short guess', fake(117, 4), big, 100, 1, undefined, 16, { baseFloorMs: yardMinMs('linux') });
   assert.deepStrictEqual([short.baseReps, short.ratio.toFixed(2)], [8, '29.25'], '#1848 floor: a baseline still under the floor at the guessed runs takes more runs until it reads the floor');
-  const win = assertLinearGrowth('#1848 floor win32', fake(117), big, 100, 1, undefined, 16, { baseFloorMs: yardMinMs('win32') });
-  assert.strictEqual(win.baseReps, 16, '#1848 floor: on the Windows floor the runs stop at 16, the characters of the whole input');
-  assert.throws(() => assertLinearGrowth('#1848 floor quadratic', fake(117 * 16), big, 100, 1, undefined, 16, { baseFloorMs: yardMinMs('linux') }), /#1848 floor quadratic: .*\(ratio 267\.4/);
+  const floorMin = { baseFloorMs: yardMinMs('linux'), baseMinOf: BASE_MIN_OF };
+  const both = assertLinearGrowth('#1848 floor and min', fake(117), big, 100, 1, undefined, 16, floorMin);
+  assert.deepStrictEqual([both.baseReps, both.ratio.toFixed(1)], [4, '16.7'], '#1848 min: with the lowest of 4 readings the floor case still reads the true 16.7');
+  // a slower host (review of PR 1856): one run of the 1/16 input reads 26 to 42 ms, over the floor, so the floor never engages; the readings of one worker, in turn, are
+  // 42, 26, 38 and 30 ms (1.6 times apart) and the whole input reads 520 ms. One reading is whichever comes first; the lowest of 4 is the same every time.
+  const slow = (): ((x: string, reps?: number, minOf?: number) => { cpu: number; wall: number }) => {
+    const seq = [42, 26, 38, 30];
+    let k = 0;
+    return (x, _reps = 1, minOf = 1) => {
+      if (x.length >= 100_000) return { cpu: 520, wall: 0 };
+      let m = Infinity;
+      for (let i = 0; i < minOf; i++) m = Math.min(m, seq[k++ % seq.length]);
+      return { cpu: m, wall: 0 };
+    };
+  };
+  const one = assertLinearGrowth('#1848 slow host, one reading', slow(), big, 100, 1, undefined, 16, { baseFloorMs: yardMinMs('linux') });
+  assert.deepStrictEqual([one.baseReps, one.base], [1, 42], '#1848 slow host: the floor never engages (one run reads 42 ms, over 20)');
+  const low = assertLinearGrowth('#1848 slow host, lowest of 4', slow(), big, 100, 1, undefined, 16, floorMin);
+  assert.deepStrictEqual([low.baseReps, low.base, low.ratio.toFixed(1)], [1, 26, '20.0'], '#1848 min: on a slow host the baseline is the lowest of 4 readings in one worker (26 ms), not the first (42 ms)');
+  // a Windows tick: each timing reads whole 15.625 ms steps of the true 7 ms a run; the 8-tick floor stops at 16 runs (109.4 ms, 6.84 a run)
+  const tick = 15.625;
+  const win = assertLinearGrowth('#1848 floor win32', (x, reps = 1) => ({ cpu: x.length < 100_000 ? (Math.floor((7 * reps) / tick) * tick) / reps : 117, wall: 0 }), big, 100, 1, undefined, 16, { baseFloorMs: yardMinMs('win32'), baseMinOf: BASE_MIN_OF });
+  assert.deepStrictEqual([win.baseReps, win.ratio.toFixed(1)], [16, '17.1'], '#1848 floor: on a Windows tick the runs stop at 16, the characters of the whole input, and the ratio reads 17.1');
+  assert.throws(() => assertLinearGrowth('#1848 floor quadratic', fake(117 * 16), big, 100, 1, undefined, 16, floorMin), /#1848 floor quadratic: .*\(ratio 267\.4/);
+  assert.throws(() => assertLinearGrowth('#1848 slow host quadratic', (x, reps, minOf) => (x.length < 100_000 ? slow()(x, reps, minOf) : { cpu: 26 * 256, wall: 0 }), big, 100, 1, undefined, 16, floorMin), /#1848 slow host quadratic: .*\(ratio 256\.0/);
   Object.assign(worstGrowth, worst);
 }
 
