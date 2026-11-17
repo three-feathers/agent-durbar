@@ -28,7 +28,9 @@ const CLOCK = '2026-10-20T09:30:00Z';
 
 /** `f`: a file the driver writes under the same name; `{ to, from }`: the linked name and the name the driver writes. */
 const THEMES = [['clean-office', 'clean'], ['retro']];
+/** `ship: '<folder>'`: the files are shipped with the app, not linked from the docs, so they are written into that folder of the repository (or into `--out`) and are exempt from the linked-picture check (spec 102 FR-302: the world previews). */
 const DOC_SHOTS = [
+  { name: 'shots-102-previews', ship: 'src/renderer/realoffice/previews', files: ['plain.webp', 'photo.webp', 'cave.webp', 'retro.webp', 'previews.json'] }, // spec 102 T265a: one 640 px preview per built-in world, each under 48 KB, with its zoom origin
   { name: 'shots-hero', files: ['m6-fullchat-sim15-1280x800.png'] },
   { name: 'shots-003-011', files: ['m6-fullchat-sim15-1440x900.png', '003-allow-all-menu-1440x900.png'] },
   { name: 'check-office-fill', files: ['001-helpers-2-1440x900.png', '001-helpers-2-1280x800.png', '001-helpers-3-1440x900.png', '001-helpers-3-1280x800.png', '001-fill-1-1440x900.png', '001-fill-1-1920x1080.png', '001-fill-4-1440x900.png', '001-fill-6-1440x900.png', '001-shutters-1440x900.png'] },
@@ -132,7 +134,7 @@ function linkedImages(root = ROOT) {
 /** FR-083: `uncovered` = linked but neither retaken nor explained; `unlinked` = retaken but linked nowhere; `missingDrivers`. */
 function coverage(root = ROOT) {
   const linked = linkedImages(root);
-  const made = new Set(DOC_SHOTS.flatMap((d) => d.files.map(target)));
+  const made = new Set(DOC_SHOTS.filter((d) => !d.ship).flatMap((d) => d.files.map(target)));
   return {
     linked,
     uncovered: linked.filter((f) => !made.has(f) && !NO_DRIVER[f]),
@@ -211,6 +213,14 @@ async function main({ argv = process.argv.slice(2), run, ensure, clockQuery } = 
         if (!r.ok) console.log(r.log.split(/\r?\n/).filter((l) => l.trim()).slice(-20).map((l) => '      | ' + l.slice(0, 240)).join('\n'));
       } else {
         const names = d.files.map((f) => [source(f), target(f)]);
+        if (d.ship) { // shipped files: into their folder (or --out), as written (a WebP is not palette-compressed, and the driver keeps it under its cap)
+          const dest = a.out ? out : path.join(ROOT, d.ship);
+          fs.mkdirSync(dest, { recursive: true });
+          for (const [sf, t] of names) { fs.copyFileSync(path.join(tmp, sf), path.join(dest, t)); copied.push(t); }
+          console.log(`  ok   ${label.padEnd(30)} ${String(r.secs).padStart(4)} s  ${names.length} file(s) into ${path.relative(ROOT, dest) || '.'}`);
+          fs.rmSync(tmp, { recursive: true, force: true });
+          continue;
+        }
         if (!a.linkedOnly) {
           // the same driver's other pictures that docs/screenshots already has (a linked 1440x900's 1280x800 twin, other spec views)
           const mapped = new Set(names.map(([s]) => s));

@@ -12,7 +12,8 @@ Rules (checked by `npm run changelog:check`, part of `npm test`):
 - one or more Markdown bullets (`- ...`), written like a CHANGELOG line: what changed for the user, the spec, how it was checked;
   an indented line under a bullet continues it; no headings, no HTML comments;
 - the file name is lower case: letters, digits, `.`, `_`, `-`, ending in `.md` (use your branch name);
-- the same entry may not be in another fragment or already in `CHANGELOG.md`.
+- the same entry may not be in another fragment or already in `CHANGELOG.md`;
+- the site's rules, checked here so a fragment fails in its own PR and not at the fold (spec 008 FR-272): no phrase of `docs/site/unreleased.json` (spec 104 FR-008) anywhere in a bullet, and no spec number or `FR-` id in its bold lead or first sentence (put them in a `(spec NNN)` group after the lead: `**Lead** (spec 063): ...`, not `**Spec 063: lead**`).
 - optional, at the end of the fragment (spec 008 FR-173): `  Highlight: <one line>` puts the change in the release's
   five-line *Highlights* block (its bold name and one short clause, at most 100 characters, no spec numbers; plain text only:
   letters, digits, spaces, `. , ; : ' - / + % ?` and `**bold**`, so no link, mention, `#` reference, code or HTML), and
@@ -56,6 +57,9 @@ Branch names must match the Spec Kit gate (lowercase letters, digits and hyphens
    `changelog:build` writes a new section under *Unreleased* with every fragment (by file name), then any bullet still under
    *Unreleased*, and deletes the fragments. The PR goes through the queue like any other; the workflow never pushes to `main`
    or opens it. Merge it before the next tag: `verify` refuses a tag while the previous release has no section.
+   A tag that never got a release (its release run failed, nothing was published) has no fold PR: give it a section by hand,
+   `## vX.Y.Z (not released, YYYY-MM-DD)` with one plain paragraph and no bullets (spec 008 FR-271), and leave its fragments for the next
+   release. The check is offline and the tag still counts as the previous release; the refusal names this fix.
 
    A fragment edited on `main` after the tag gives a **modify/delete conflict** in `git merge origin/main`. Keep the deletion
    (`git rm changelog.d/<file>`): the tag's text is what was released. If the edit added something genuinely new, put that in
@@ -64,7 +68,7 @@ Branch names must match the Spec Kit gate (lowercase letters, digits and hyphens
 4. **The release clip** (spec 008 FR-174, FR-175; a stable or pre-release tag, never a `-test.M` build), after `release.yml` has made the draft and before you publish. It never holds a release.
    Not added to older releases.
    1. Record, on a checkout of the tag (needs ffmpeg; about 2 minutes; no AI credits): `npm run release:video -- --version <tag> --out <dir>`.
-      Without `--scenes` the clip shows the scenes the release's fragments name (`Scene:` fields, and the scenes whose `refs` a bullet's spec and FR numbers match; spec 008 FR-183). If it says no scene shows the release, pick with `--scenes <ids>` (`--list`), and add a scene or a `refs` entry afterwards.
+      Without `--scenes` the clip shows the scenes the release's fragments name (`Scene:` fields, and the scenes whose `refs` a bullet's spec and FR numbers match; spec 008 FR-183). A release with one or two scenes gets the first fill scenes (`needsyou`, `signin`, `lounge`) added so the clip clears the 25 s floor (FR-218). If it says no scene shows the release, pick with `--scenes <ids>` (`--list`), and add a scene or a `refs` entry afterwards. On Linux the recording always runs under `xvfb-run`, whatever `DISPLAY` is (FR-217); a window that is not 1440x900 fails the clip.
    2. Look at the stills in `<dir>` (FR-176: simulator data only, no path, name, token or chat text; captions in the band, nothing broken).
    3. Upload to the draft: `gh release upload <tag> <dir>/release-<tag>.mp4 <dir>/release-<tag>.gif`.
    4. Add the image line at the very top of the draft's notes (the Highlights block is already in them, built from the fragments' `Highlight:` fields by `scripts/release-notes.js`):

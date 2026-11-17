@@ -1,4 +1,5 @@
 import type { OrderDoc } from './roomorder';
+import type { CharacterChoice } from './characters';
 import type { FolderSetupDecision, FolderSetupView, HookExplanation } from './foldersetup';
 import type { BroadKind } from './broadfolder';
 import type { AgentEvent, McpServerStatus } from '../adapters/types';
@@ -221,7 +222,9 @@ export interface AppSettingsView {
   /** Active theme id (specs 035-040). Omitted = Clean Office. */
   theme?: string;
   /** Spec 077 FR-064: who sits at the desks (`theme`: the theme's own). */
-  characters?: 'theme' | 'minimalist' | 'cheeky' | 'prehistoric' | 'pirate' | 'monster' | 'royal' | 'rebels';
+  characters?: CharacterChoice;
+  /** Spec 096 FR-033: folder key to character id, only ids main lists. */
+  characterPins?: Record<string, string>;
   /** OS notifications when an agent needs you while the window is in the background (spec 052 FR-059). On unless turned off. */
   notifyNeedsMe?: boolean;
   /** Spec 099 S1: the turn limit last used for Autopilot; absent until then. */
@@ -236,6 +239,39 @@ export interface AppSettingsView {
   diagnostics?: boolean;
 }
 
+/** Spec 096 FR-030, FR-031: a character's frames as WebP bytes. */
+export interface CharacterFrames {
+  working: Uint8Array;
+  waiting: Uint8Array;
+  resting: Uint8Array;
+  blink?: Uint8Array;
+}
+/** Spec 096 FR-025: a face point `[x, y]` per pose, in picture pixels. */
+export interface CharacterFace {
+  working: [number, number];
+  waiting: [number, number];
+  resting: [number, number];
+}
+/** Spec 096 FR-031: what `character:list` gives per character. */
+export interface CharacterListItem {
+  id: string;
+  name: string;
+  face: CharacterFace;
+  blink: boolean;
+  style: string;
+  created: string;
+}
+/** Spec 096 FR-031: the reply of `character:generate`. `cancelled`: the user cancelled. */
+export interface CharacterTryResult {
+  ok: boolean;
+  tryId?: string;
+  frames?: CharacterFrames;
+  face?: CharacterFace;
+  notes?: string[];
+  tookMs?: number;
+  error?: string;
+  cancelled?: boolean;
+}
 /** Spec 058 FR-208, FR-211: main's sign-in refresh lines for one chat (names and fixed kinds only; no vendor text, no token). */
 export type McpSignInRefreshNote =
   | { id: string; kind: 'waiting'; count: number }
@@ -425,6 +461,8 @@ export interface AddResult {
   error?: string;
   /** Folders broader than a project (spec 006 FR-016): the renderer shows one calm line each. */
   warnings?: { name: string; kind: BroadKind }[];
+  /** Spec 033 FR-090: folders that were already in the office; nothing was started for them. `floor` is the floor id they are on. */
+  existing?: { id: string; name: string; floor: string }[];
 }
 
 /** Spec 093: what the window sends to create a folder: never a path, only the token of main's own pick; a clone adds its URL. */
@@ -736,6 +774,8 @@ export interface AgentMcpEntry {
   signIn?: { host: string; opened: boolean; expiresInMs: number; otherSite?: string };
   /** Spec 058 FR-068: the terminal steps for this needs-sign-in server, the agent app's plain text with the name filled in (commands in backticks). */
   signInSteps?: string;
+  /** Spec 058 FR-246: `signInSteps` carries a command (`stepsHaveCommand`); without one it is a plain note, shown only where Sign in is not offered. */
+  signInHasCommand?: boolean;
   /** Spec 058 FR-180: how the agent app said a sign-in Agent Durbar started ended (`next-message`: signed in, applies next message; `failed`). */
   signInEnd?: 'next-message' | 'failed';
   /** Spec 058 FR-180: the agent app's own sentence on how far its sign-in was checked, shown under a row that offers Sign in. */
@@ -1055,9 +1095,27 @@ export interface DurbarApi {
   /** Bring the window to the front (a click on a "needs you" notification, spec 052 FR-059). */
   focusWindow?(): Promise<{ ok: boolean }>;
   /** Set the theme (specs 037-040): a built-in id or an imported user theme id. */
-  setTheme?(id: string): Promise<{ ok: boolean; theme?: string; characters?: 'theme' | 'minimalist' | 'cheeky' | 'prehistoric' | 'pirate' | 'monster' | 'royal' | 'rebels' }>;
+  setTheme?(id: string): Promise<{ ok: boolean; theme?: string; characters?: CharacterChoice }>;
   /** Spec 077 FR-064: set who sits at the desks; main refuses anything not on the list (`ok: false`, the value in force). */
-  setCharacters?(v: string): Promise<{ ok: boolean; characters: 'theme' | 'minimalist' | 'cheeky' | 'prehistoric' | 'pirate' | 'monster' | 'royal' | 'rebels' }>;
+  setCharacters?(v: string): Promise<{ ok: boolean; characters: CharacterChoice }>;
+  /** Spec 096 FR-031: one try: frames as WebP bytes, held by main under `tryId` until saved or dropped. The description is never stored. */
+  /** `confirmed`: this try's own answer to FR-034's question. T030a makes main enforce it; until then no real adapter makes pictures (`test:charipc`), and the simulator's fake enforces it. */
+  characterGenerate?(description: string, adapterId: string, opts?: { confirmed: boolean }): Promise<CharacterTryResult>;
+  /** Spec 096 FR-034: how the app is signed in. Only the simulator answers: no real channel exists until probe P6 (T014) and T030a, and no answer means `unknown`. */
+  characterLoginKind?(adapterId: string): Promise<string>;
+  /** Spec 096 FR-031: no id cancels the running generation; a `tryId` drops that held try (Discard). */
+  characterCancel?(tryId?: string): Promise<{ ok: boolean }>;
+  /** Spec 096 FR-031: an empty name gets "My character N". */
+  characterSave?(tryId: string, name?: string): Promise<{ ok: boolean; id?: string; name?: string; error?: string }>;
+  characterList?(): Promise<CharacterListItem[]>;
+  characterFrames?(id: string): Promise<{ ok: boolean; frames?: CharacterFrames; error?: string }>;
+  characterRename?(id: string, name: string): Promise<{ ok: boolean; id?: string; name?: string; error?: string }>;
+  /** Spec 096 FR-033: `pinsRemoved` says how many folder pins went with it. */
+  characterDelete?(id: string): Promise<{ ok: boolean; pinsRemoved?: number; error?: string }>;
+  characterExport?(id: string): Promise<{ ok: boolean; to?: string; cancelled?: boolean; error?: string }>;
+  /** Spec 096 FR-033: `id` null clears the pin; `folderKey` is one main gave. */
+  characterPin?(folderKey: string, id: string | null): Promise<{ ok: boolean; pins?: Record<string, string>; error?: string }>;
+  characterIdeas?(): Promise<string[]>;
   /** Spec 102 FR-064: installed worlds as main lists them; `state` is *Damaged* when a re-check failed. No path, no description. */
   worldList?(): Promise<Array<{ key: string; name: string; origin: 'project' | 'source' | 'uploaded' | 'made' | 'imported' | null; version: number; size: number; state: 'ok' | 'unfinished' | 'damaged' | 'revoked'; unfinished: boolean; parts: string[]; date: string }>>;
   /** Spec 102 FR-062, FR-063: one part's bytes (PNG or WebP) for a key main listed, after the re-check; nothing for anything else. */

@@ -4,6 +4,7 @@
  * Numbers only: nothing here touches content, tokens or secrets.
  */
 import { parseCharacters } from './characters';
+import { parseCharacterPins } from './charrules';
 import type { CharacterChoice } from './characters';
 import { parseCustomPlaces, parsePlaceMap } from './places';
 import type { CustomPlace, PlaceMap } from './places';
@@ -89,6 +90,8 @@ export interface AppSettings {
   theme?: string;
   /** Spec 077 FR-064: who sits at the desks. Omitted = the theme's own (the default is not written). */
   characters?: Exclude<CharacterChoice, 'theme'>;
+  /** Spec 096 FR-033: folder key to character id. Omitted when empty. */
+  characterPins?: Record<string, string>;
   /** OS notifications when an agent needs you (spec 052 FR-059). On by default: only `false` is kept. */
   notifyNeedsMe?: false;
   /** Spec 099 S1: the Autopilot turn limit last used (a whole number, 1 to 1000). */
@@ -97,8 +100,6 @@ export interface AppSettings {
   breakResume?: 'ask';
   /** Spec 080 FR-025d (Q2): the user accepted the one-time note of the session browser. Asked once per app profile; only `true` is kept. */
   browserNoteAccepted?: true;
-  /** Spec 102 FR-266 (T227): written in the same save that moves a Retro Pixel theme; the flip's renderer half (T230) applies the move to world, layout and light, then clears it. Never written by the app while the flag is closed; a hand-written one is kept and moves that user at the flip (accepted). */
-  retroMovePending?: true;
   /** Spec 080 FR-031: where a click on a chat link opens. The default (the session browser) is not written; only `'system'` is kept. */
   chatLinksIn?: 'system';
   /** Spec 080 FR-123: *Open chat links in a new tab*; only `true` is kept (the default, off, is not written). */
@@ -151,9 +152,10 @@ export function parseSettings(text: string): AppSettings {
     const places = parsePlaceMap((obj as { placeMap?: unknown }).placeMap, custom.map((p) => p.id));
     const theme = parseThemeId((obj as { theme?: unknown }).theme);
     const chars = parseCharacters((obj as { characters?: unknown }).characters); // spec 077 FR-064: anything not on the list is dropped
+    const pins = parseCharacterPins((obj as { characterPins?: unknown }).characterPins); // spec 096 FR-033
     const announced = parseAnnounced((obj as { announcedVersions?: unknown }).announcedVersions);
     const apLimit = (obj as { autopilotLimit?: unknown }).autopilotLimit;
-    return { ...(typeof apLimit === 'number' && Number.isInteger(apLimit) && apLimit >= 1 && apLimit <= 1000 ? { autopilotLimit: apLimit } : {}), ...(cap === undefined ? {} : { defaultMaxAiCredits: cap }), ...(Object.keys(places).length ? { placeMap: places } : {}), ...(custom.length ? { customPlaces: custom } : {}), ...((obj as { seriousMode?: unknown }).seriousMode === true ? { seriousMode: true } : {}), ...((obj as { autoFollowWork?: unknown }).autoFollowWork === true ? { autoFollowWork: true } : {}), ...(theme === undefined ? {} : { theme }), ...(chars === undefined || chars === 'theme' ? {} : { characters: chars }), ...((obj as { notifyNeedsMe?: unknown }).notifyNeedsMe === false ? { notifyNeedsMe: false as const } : {}), ...((obj as { breakResume?: unknown }).breakResume === 'ask' ? { breakResume: 'ask' as const } : {}), ...(Object.keys(announced).length ? { announcedVersions: announced } : {}), ...((obj as { checkUpdatesAtStart?: unknown }).checkUpdatesAtStart === false ? { checkUpdatesAtStart: false as const } : {}), ...(Object.prototype.hasOwnProperty.call(obj, 'mcpSignInRefresh') ? { mcpSignInRefresh: (obj as { mcpSignInRefresh?: unknown }).mcpSignInRefresh === true } : {}), ...((obj as { diagnostics?: unknown }).diagnostics === true ? { diagnostics: true as const } : {}), ...((obj as { browserNoteAccepted?: unknown }).browserNoteAccepted === true ? { browserNoteAccepted: true as const } : {}), ...((obj as { retroMovePending?: unknown }).retroMovePending === true ? { retroMovePending: true as const } : {}), ...(parseSandboxAlways((obj as { sandboxAlwaysContinue?: unknown }).sandboxAlwaysContinue).length ? { sandboxAlwaysContinue: parseSandboxAlways((obj as { sandboxAlwaysContinue?: unknown }).sandboxAlwaysContinue) } : {}), ...(parseNewFolderParent((obj as { newFolderParent?: unknown }).newFolderParent) ? { newFolderParent: parseNewFolderParent((obj as { newFolderParent?: unknown }).newFolderParent) } : {}), ...((obj as { chatLinksIn?: unknown }).chatLinksIn === 'system' ? { chatLinksIn: 'system' as const } : {}), ...((obj as { chatLinksNewTab?: unknown }).chatLinksNewTab === true ? { chatLinksNewTab: true as const } : {}), ...((obj as { motion?: unknown }).motion === false ? { motion: false as const } : {}), ...((obj as { stillHighlights?: unknown }).stillHighlights === true ? { stillHighlights: true as const } : {}), ...(parseWarnLevels((obj as { mcpWarnLevels?: unknown }).mcpWarnLevels) ? { mcpWarnLevels: parseWarnLevels((obj as { mcpWarnLevels?: unknown }).mcpWarnLevels) } : {}) };
+    return { ...(typeof apLimit === 'number' && Number.isInteger(apLimit) && apLimit >= 1 && apLimit <= 1000 ? { autopilotLimit: apLimit } : {}), ...(cap === undefined ? {} : { defaultMaxAiCredits: cap }), ...(Object.keys(places).length ? { placeMap: places } : {}), ...(custom.length ? { customPlaces: custom } : {}), ...((obj as { seriousMode?: unknown }).seriousMode === true ? { seriousMode: true } : {}), ...((obj as { autoFollowWork?: unknown }).autoFollowWork === true ? { autoFollowWork: true } : {}), ...(theme === undefined ? {} : { theme }), ...(chars === undefined || chars === 'theme' ? {} : { characters: chars }), ...(pins && Object.keys(pins).length ? { characterPins: pins } : {}), ...((obj as { notifyNeedsMe?: unknown }).notifyNeedsMe === false ? { notifyNeedsMe: false as const } : {}), ...((obj as { breakResume?: unknown }).breakResume === 'ask' ? { breakResume: 'ask' as const } : {}), ...(Object.keys(announced).length ? { announcedVersions: announced } : {}), ...((obj as { checkUpdatesAtStart?: unknown }).checkUpdatesAtStart === false ? { checkUpdatesAtStart: false as const } : {}), ...(Object.prototype.hasOwnProperty.call(obj, 'mcpSignInRefresh') ? { mcpSignInRefresh: (obj as { mcpSignInRefresh?: unknown }).mcpSignInRefresh === true } : {}), ...((obj as { diagnostics?: unknown }).diagnostics === true ? { diagnostics: true as const } : {}), ...((obj as { browserNoteAccepted?: unknown }).browserNoteAccepted === true ? { browserNoteAccepted: true as const } : {}), ...(parseSandboxAlways((obj as { sandboxAlwaysContinue?: unknown }).sandboxAlwaysContinue).length ? { sandboxAlwaysContinue: parseSandboxAlways((obj as { sandboxAlwaysContinue?: unknown }).sandboxAlwaysContinue) } : {}), ...(parseNewFolderParent((obj as { newFolderParent?: unknown }).newFolderParent) ? { newFolderParent: parseNewFolderParent((obj as { newFolderParent?: unknown }).newFolderParent) } : {}), ...((obj as { chatLinksIn?: unknown }).chatLinksIn === 'system' ? { chatLinksIn: 'system' as const } : {}), ...((obj as { chatLinksNewTab?: unknown }).chatLinksNewTab === true ? { chatLinksNewTab: true as const } : {}), ...((obj as { motion?: unknown }).motion === false ? { motion: false as const } : {}), ...((obj as { stillHighlights?: unknown }).stillHighlights === true ? { stillHighlights: true as const } : {}), ...(parseWarnLevels((obj as { mcpWarnLevels?: unknown }).mcpWarnLevels) ? { mcpWarnLevels: parseWarnLevels((obj as { mcpWarnLevels?: unknown }).mcpWarnLevels) } : {}) };
   } catch {
     return {};
   }

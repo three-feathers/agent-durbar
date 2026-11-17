@@ -51,9 +51,10 @@
 
   /* spec 052 FR-085 (issue 591): should a double-click on this element act like a title-bar double-click? Yes on the bare drag areas of
      the top bar, a notice strip, a screen header and (FR-215) the agent rail's top row and the chat header; no on a control inside them,
-     nor on anything in the chat header with a tooltip (it is no-drag there, styles.css). A screen header's title (h2, tabindex -1, a focus target) is bare. */
+     nor on anything in the chat header with a tooltip (it is no-drag there, styles.css). A tabindex is a control only in the Tab order
+     (as dialog.js FOCUSABLE): a screen's title h2 gets tabindex -1 as a focus target and still zooms (issue 1659). */
   var TITLE_AREAS='.topbar,.rail-top,.ph,.notice-strip,.scr-head';
-  var TITLE_CONTROLS='button,a,input,select,textarea,label,summary,[role="button"],[role="menu"],[role="group"],[tabindex]:not(.scr-head>h2),.more-menu,.grants,.ph [title],[data-id]';
+  var TITLE_CONTROLS='button,a,input,select,textarea,label,summary,[role="button"],[role="menu"],[role="group"],[tabindex]:not([tabindex="-1"]),.more-menu,.grants,.ph [title],[data-id]';
   function shouldSendTitleDoubleClick(t){
     if(!t||typeof t.closest!=='function')return false;
     return !!t.closest(TITLE_AREAS)&&!t.closest(TITLE_CONTROLS);

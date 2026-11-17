@@ -175,17 +175,58 @@ function pointerLog(ctx, out = (l) => console.log(l)) {
 }
 
 /**
+ * Spec 097 delta 2026-11-11 (issue #1460): the timeout diagnostics of check-crew's `crewDrawn` wait. A diagnostic and a verdict, nothing else: the suite keeps the last 25
+ * lines of a failed driver, each cut at 240 characters (scripts/ui-suite.js), so `crewDiagLines` prints SHORT fields first on one line, the render counters on a second, the
+ * last renderer errors (at most 3, 120 characters each) on a third, then each scene signature (first 4, 200 characters) and the crew bad marks on their own lines, and
+ * CUTS every line itself. `crewTimeout` reads the page, prints, runs ONE probe (`__durbarSimUi.render()`, the counters read again 1 s later) and throws an AssertionError:
+ * the wait timed out, so the driver fails, whatever the probe's redraw then shows (the probe could otherwise turn the later asserts green). No wait is longer and no redraw
+ * makes a check pass. `window.__durbarErrLog` is armed by `load` (error and unhandledrejection, last 3, 120 characters each, the message only).
+ */
+const ERR_ARM = `(()=>{const w=window;if(w.__durbarErrOn)return 1;w.__durbarErrOn=1;w.__durbarErrLog=[];const add=(m)=>{w.__durbarErrLog.push(String(m).slice(0,120));if(w.__durbarErrLog.length>3)w.__durbarErrLog.shift();};
+  w.addEventListener('error',(e)=>add(e&&e.message));w.addEventListener('unhandledrejection',(e)=>add(e&&e.reason&&(e.reason.message||e.reason)));return 1})()`;
+const CREW_PROBE_READ = `(()=>{const w=window,U=w.__durbarSimUi,q=(x)=>[...document.querySelectorAll(x)],S=q('#stage svg.scene'),f=document.getElementById('floor'),RO=w.DurbarReorder;
+  const g=(fn)=>{try{return fn();}catch{return null;}};
+  return {chars:g(()=>w.THEME.characters()),kit:g(()=>w.THEME.sceneKit()),theme:g(()=>w.THEME.current().id),tk:g(()=>w.THEME.themeIdForCache&&w.THEME.themeIdForCache()),scenes:S.length,visible:S.filter((s)=>s.getClientRects().length).length,
+  crew:S.filter((s)=>/\\|crew\\|/.test(s.dataset.sig||'')).length,drag:document.body.classList.contains('reo-dragging'),busy:g(()=>RO&&RO.busy?!!RO.busy():null),view:g(()=>typeof ui!=='undefined'?ui.view:(()=>{const st=document.getElementById('stage');return st&&st.getClientRects().length?'stage':'nostage';})()),floorW:f?f.clientWidth:null,
+  hidden:document.hidden,vis:document.visibilityState,focus:g(()=>document.hasFocus()),renders:g(()=>U&&U.ops?U.ops().renders:null),errs:(w.__durbarErrLog||[]).slice(-3),sigs:S.slice(0,4).map((s)=>s.dataset.sig||''),bad:g(()=>U&&U.crew?U.crew.state().bad:null)};})()`;
+const CREW_LINE_MAX = 240;
+function crewDiagLines(tag, n, secs, d, after) {
+  const cut = (s, m) => String(s == null ? '' : s).replace(/[\r\n]+/g, ' ').slice(0, m);
+  const b = (v) => (v == null ? '?' : v ? 1 : 0);
+  const o = [];
+  o.push(cut(`[crew] ${cut(tag, 40)}: ${n} crew scenes not drawn after ${secs} s: chars=${cut(d.chars, 20)} kit=${cut(d.kit, 12)} theme=${cut(d.theme, 30)} tk=${cut(d.tk, 40)} scenes=${d.scenes} visible=${d.visible} crew=${d.crew} drag=${b(d.drag)} busy=${b(d.busy)} view=${cut(d.view, 12)} floorW=${d.floorW} hidden=${b(d.hidden)} vis=${cut(d.vis, 10)} focus=${b(d.focus)}`, CREW_LINE_MAX));
+  o.push(cut(`  [crew] renders=${d.renders == null ? '?' : d.renders} probe: after render() +1 s renders=${after && after.renders != null ? after.renders : '?'} crewScenes=${after ? after.crew : '?'} of ${after ? after.scenes : '?'}`, CREW_LINE_MAX));
+  const E = (d.errs || []).slice(-3);
+  o.push(cut(`  [crew] errs(${E.length}): ${E.map((e) => cut(e, 120)).join(' | ')}`, CREW_LINE_MAX));
+  (d.sigs || []).slice(0, 4).forEach((s, i) => o.push(cut(`  [crew] sig${i} ${cut(s, 200)}`, CREW_LINE_MAX)));
+  o.push(cut(`  [crew] bad ${d.bad == null ? '?' : JSON.stringify(d.bad)}`, CREW_LINE_MAX));
+  return o;
+}
+async function crewTimeout(ctx, tag, n, secs, out = (l) => console.log(l), sleep = (ms) => new Promise((r) => setTimeout(r, ms))) {
+  let d = {}, after = null;
+  try { d = (await ctx.js(CREW_PROBE_READ)) || {}; } catch { /* a diagnostic never replaces the failure */ }
+  try {
+    await ctx.js(`(()=>{const U=window.__durbarSimUi;if(U&&U.render)U.render();return 1})()`);
+    await sleep(1000);
+    after = await ctx.js(CREW_PROBE_READ);
+  } catch { after = null; }
+  for (const l of crewDiagLines(tag, n, secs, d, after)) out(l);
+  throw new (require('assert').AssertionError)({ message: `${tag}: ${n} crew scenes not drawn within ${secs} s (the driver fails here; the probe's redraw does not change that)` });
+}
+
+/**
  * The helpers every driver used to define for itself (FR-097). `H = helpers(ctx)`; it also carries `until`, `settle`, `office`, `chatOf`.
  * Values spliced into page code go through jsLiteral.
  */
-const DRIVER_WORLD = process.env.DRIVER_WORLD || ''; // spec 102 T283: `retro` runs a driver's Real office loads in the arcade
-if (DRIVER_WORLD && DRIVER_WORLD !== 'retro') throw new Error('DRIVER_WORLD must be retro');
+const DRIVER_WORLD = process.env.DRIVER_WORLD || ''; // spec 102 T283: `retro` runs a driver's Real office loads in the arcade; spec 097 FR-377: `cave` in the Prehistoric cave
+if (DRIVER_WORLD && DRIVER_WORLD !== 'retro' && DRIVER_WORLD !== 'cave') throw new Error('DRIVER_WORLD must be retro or cave');
 const assert = require('assert');
 function helpers(ctx) {
   const w = waits(ctx);
   const closeGuard = guardWindow(ctx.win);
   const ptr = pointerLog(ctx);
   const wc = () => ctx.win.webContents;
+  const crewTimeoutH = (tag, n, secs) => crewTimeout(ctx, tag, n, secs);
   /** Run code in the page. A failure names the code (first 90 chars) and is thrown again, so the driver fails as before. */
   const js = async (code) => { try { return await ctx.js(code); } catch (e) { console.log('JS ERR for', String(code).slice(0, 90)); throw e; } };
   /** Click the first element matching `sel`; false when there is none. */
@@ -229,7 +270,15 @@ function helpers(ctx) {
        #1179: a focus() behind a dialog fires no focusin in an unfocused page), and releaseFocus() ends it as before. emulate:true keeps the
        fallback only: a driver that tests a blur after releaseFocus() (check-list-columns) must not start with the emulation, because on Windows
        the blur it then makes does not reach a page that never owned the OS focus (#1179) */
-    if (o.emulate === 'first') { await emulateFocus(); if (emulating.has(wc())) return w.until('document.hasFocus()', 1500); }
+    if (o.emulate === 'first') {
+      await emulateFocus();
+      if (emulating.has(wc())) {
+        if (await w.until('document.hasFocus()', 1500)) return true;
+        /* the emulation is recorded but the page does not report focus: it was lost across a reload or a resize (the second size of a driver on the Windows runner, PR 1282): switch it off and on again, then wait */
+        await releaseFocus(); await emulateFocus();
+        if (emulating.has(wc())) return w.until('document.hasFocus()', 3000);
+      }
+    }
     for (;;) {
       try { if (ctx.win.show) ctx.win.show(); if (ctx.win.focus) ctx.win.focus(); wc().focus(); } catch { /* the window is going away: the guard reports it */ }
       if (await w.until('document.hasFocus()', 400)) return true;
@@ -238,6 +287,16 @@ function helpers(ctx) {
     if (!o.emulate) return false;
     await emulateFocus();
     return w.until('document.hasFocus()', 1500);
+  };
+  /**
+   * Spec 052 (issue #1658): a precheck for a driver that needs `:focus-visible`, which never matches in a page without the OS focus. Asks for the focus
+   * through `focusPage` (the one focus step, repeated up to `ms`, default 2000, as it can arrive late) and fails at once, with `tag`, when the page still
+   * reports none, instead of the first `:focus-visible` wait timing out as a product assertion. `expr` (default `document.hasFocus()`) is the reading; a mutant may pass `false`.
+   */
+  const needFocus = async (tag, o = {}) => {
+    const ms = o.ms || 2000;
+    const had = await focusPage({ ms });
+    if (!(had && (!o.expr || await w.until(o.expr, ms)))) require('assert').fail(`${tag}: the window does not have focus (document.hasFocus() is false): bring the app to the front; the machine may have no key window`);
   };
   const loseFocus = async () => { await releaseFocus(); try { ctx.win.blur(); } catch { /* gone */ } return w.until('!document.hasFocus()', 4000); };
   /** Give another web contents (a Browser tab's view) the real focus and wait until it reports it; false when it never does. */
@@ -268,6 +327,7 @@ function helpers(ctx) {
   /**
    * Spec 008 FR-214, FR-215: the real pointer rests where the window lies on the screen (script clicks never move it), so a control under it reads in its :hover colours.
    * Moves the pointer to 0,0 and re-sends the move every `retry` ms (250) until nothing under `scope` (a selector list) matches :hover, at most `ms` (3000; a slow first run drops or delays the first move).
+   * FR-216: the move counts only when the page saw a mousemove at 0,0 (a capture listener), and nothing may be :hover at two samples at least a frame and 100 ms apart (the Xvfb cursor rests mid-window and hovers a button again a moment after one empty sample); a re-hover re-sends the move.
    * Returns what still is hovered (descriptions; empty = fine); `controls` (a selector list) limits the list to those elements. When the bound ends with such an element still hovered it throws, labelled, so a real leak is told from a slow start.
    * `{ stay: true }` only lists (a mutant that put the pointer there itself): no move, no wait, no failure. A colour read goes after this and asserts the list is empty.
    */
@@ -276,14 +336,28 @@ function helpers(ctx) {
     const list = () => js(`[...document.querySelectorAll(${jsLiteral(sel)})].filter(e=>${controls ? 'e.matches(' + jsLiteral(controls) + ')&&e.getClientRects().length' : 'true'}).map(e=>(e.id?'#'+e.id:e.tagName.toLowerCase()+'.'+String(e.className).trim().replace(/ +/g,'.'))+' "'+(e.textContent||e.value||'').trim().slice(0,30)+'"')`);
     if (o.stay) return list();
     const ms = o.ms || 3000, retry = o.retry || 250, end = Date.now() + ms;
-    let moves = 0, last = 0, clear = false;
+    // FR-216: the page records the last point it saw (capture phase, so no handler hides it); the move counts as delivered only when that point is 0,0, and a later real-cursor move (the Xvfb cursor rests mid-window) makes it undelivered again
+    await ctx.js(`(()=>{let s=window.__pointerOffSeen;if(!s){s=window.__pointerOffSeen={x:null,y:null};addEventListener('mousemove',(e)=>{s.x=e.clientX;s.y=e.clientY},true)}s.x=null;s.y=null})()`); // one listener per page, the record is reset per call
+    // one sample: nothing under the scope is :hover and the last move the page saw was 0,0; `frame`: after a painted frame (or 250 ms when none is painted)
+    const sample = (frame) => ctx.js(`(async()=>{try{${frame ? 'await new Promise((r)=>{const t=setTimeout(r,250);requestAnimationFrame(()=>{clearTimeout(t);r()})});' : ''}const s=window.__pointerOffSeen||{};return !document.querySelector(${jsLiteral(sel)})&&s.x===0&&s.y===0}catch(e){return false}})()`);
+    let moves = 0, last = 0, clear = false, hot = [];
     for (;;) {
       if (Date.now() - last >= retry || moves === 0) { wc().sendInputEvent({ type: 'mouseMove', x: 0, y: 0 }); moves++; last = Date.now(); }
-      if (await ctx.js(`(()=>{try{return !document.querySelector(${jsLiteral(sel)})}catch(e){return false}})()`)) { clear = true; break; }
+      // two clear samples at least one frame and 100 ms apart: one empty :hover can come before the real cursor's hover is applied (FR-216)
+      if (await sample(false)) {
+        await ctx.sleep(100);
+        if (await sample(true)) {
+          hot = await list();
+          if (!hot.length) { clear = true; break; }
+        }
+        last = 0; // it was clear and is hovered again: send the move again at once
+      }
       if (Date.now() > end) break;
       await ctx.sleep(50);
     }
-    const hot = await list();
+    if (!clear) hot = await list();
+    // FR-216: no :hover and still no move seen at 0,0 is not a pass: the pointer may be anywhere
+    if (!clear && !hot.length && !(await ctx.js(`(()=>{const s=window.__pointerOffSeen;return !!s&&s.x===0&&s.y===0})()`))) throw new assert.AssertionError({ message: `pointerOff: the page never saw the move to 0,0 on ${scope} after ${ms} ms and ${moves} move(s)` });
     if (!clear && hot.length) throw new assert.AssertionError({ message: `pointerOff: the pointer did not leave ${scope} after ${ms} ms and ${moves} move(s): ${JSON.stringify(hot)}` });
     return hot;
   };
@@ -303,6 +377,8 @@ function helpers(ctx) {
     for (const k of Object.keys(query)) if (query[k] === undefined) delete query[k];
     const arcade = DRIVER_WORLD === 'retro' && query.officeview === 'real'; // spec 102 T283: the Real office loads draw the arcade
     if (arcade) Object.assign(query, { worldflags: 'retro', world: 'retro' });
+    const cave = DRIVER_WORLD === 'cave' && query.officeview === 'real'; // spec 097 FR-377: the Real office loads draw the Prehistoric cave
+    if (cave) Object.assign(query, { worldflags: 'cave', world: 'cave' });
     await ctx.win.loadFile(o.index || INDEX, { query });
     // spec 092: with `simfloors=1` (the 15 agents spread over three floors on) the office shows one floor, so the default "15 desks" would only be met by its timeout
     const ready = o.ready === 'fit' ? `document.getElementById('stage')&&document.getElementById('stage').dataset.fit` : o.ready || `document.querySelectorAll('#stage .desk[data-id]').length>=${query.simfloors === '1' ? 1 : 15}`;
@@ -312,6 +388,8 @@ function helpers(ctx) {
     if (query.simfreeze === '1' && !o.index && o.settle !== false) await w.until(w.SETTLED, 4000);
     if (o.settle !== false) await w.settle();
     if (arcade) assert.ok(await w.until(`!!document.querySelector('#stage .ro[data-world="retro"]')`, 5000), 'DRIVER_WORLD=retro: the arcade is not drawn (a pass here would be the Photo office)');
+    if (cave) assert.ok(await w.until(`!!document.querySelector('#stage .ro[data-world="cave"]')`, 5000), 'DRIVER_WORLD=cave: the cave is not drawn (a pass here would be the Photo office)');
+    try { await ctx.js(ERR_ARM); } catch { /* a diagnostic never changes the verdict */ }
     if (o.focus) wc().focus();
   };
   /**
@@ -384,7 +462,7 @@ function helpers(ctx) {
     await goToFloor(list[0].id);
     for (let i = 0; i < list.length; i++) { await goToFloor(list[i].id); await w.settle(); await fn(list[i], i); }
   };
-  return { ...w, pointerStep: ptr.step, allowWindowClose: closeGuard.allow, wc, js, click, clickText, exists, text, idOf, key, calm, pointerOff, clearToasts, focusPage, releaseFocus, loseFocus, focusWc, load, shot, openSimAgent, floors, shownFloor, goToFloor, eachFloor, INDEX };
+  return { ...w, crewTimeout: crewTimeoutH, pointerStep: ptr.step, allowWindowClose: closeGuard.allow, wc, js, click, clickText, exists, text, idOf, key, calm, pointerOff, clearToasts, focusPage, needFocus, releaseFocus, loseFocus, focusWc, load, shot, openSimAgent, floors, shownFloor, goToFloor, eachFloor, INDEX };
 }
 
 /**
@@ -415,4 +493,4 @@ async function shotWithView(win, view, file) {
    keep running and do not count). One text for the pencil-ease driver's waits and the release clip's one capture (scripts/release-video.js `glide`). */
 const STILL_STAGE = `!(document.getElementById('stage')||document.body).getAnimations({subtree:true}).some(a=>!a.animationName&&a.playState==='running')`;
 
-module.exports = { STILL_STAGE, waits, helpers, pointerLog, POINTER_LOG_MAX, DOM_LOG_MAX, guardWindow, jsLiteral, shotWithView, LIMIT, INDEX, CHECK_DARK, CHECK_DARK_QUERY, darkFixtureProblem, darkProblem };
+module.exports = { STILL_STAGE, waits, helpers, pointerLog, crewDiagLines, crewTimeout, CREW_PROBE_READ, ERR_ARM, CREW_LINE_MAX, POINTER_LOG_MAX, DOM_LOG_MAX, guardWindow, jsLiteral, shotWithView, LIMIT, INDEX, CHECK_DARK, CHECK_DARK_QUERY, darkFixtureProblem, darkProblem };

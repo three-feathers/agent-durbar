@@ -7,7 +7,7 @@
  * Per look, at 1440x900 and 1280x800: a Tab key press puts the page in keyboard modality, then each visible focusable of the top bar (and, with the ⋯ menu open, each of its
  * items) is focused, the window is captured (`capturePage`, real pixels), and the ring is read from the picture: its own colour at the middle of its band on the element's
  * top edge, the pixel just outside the band and the first pixel past its inner edge. An outside ring (outline-offset > 0) is judged by the first only (its inner side is the control's own 1px border line), an inset ring (offset <= 0) by both: each must be >= 3:1 against the ring; the ring pixel must also be
- * the computed outline colour (a guard on the geometry). The halo box-shadow is not counted (the outline alone). FOCUS_NO_TAB=1 sends no Tab (dies at the Tab label). FOCUS_MUTANT=old puts main's rule back (yellow over the whole bar, the segment rules deleted); =menu gives the menu items the yellow back; =seg gives the segment buttons the yellow back; =chip puts back the inset --brand-mark ring on the pressed segment chip (T341: dies at 'pressed segment'). Each fails with its own element names. FOCUS_REPORT=1 does not assert and writes every line to
+ * the computed outline colour (a guard on the geometry). The halo box-shadow is not counted (the outline alone). FOCUS_NO_TAB=1 sends no Tab (dies at the Tab label). FOCUS_NO_WINDOW_FOCUS=1 makes the window-focus reading false (dies at "the window does not have focus", #1658). FOCUS_MUTANT=old puts main's rule back (yellow over the whole bar, the segment rules deleted); =menu gives the menu items the yellow back; =seg gives the segment buttons the yellow back; =chip puts back the inset --brand-mark ring on the pressed segment chip (T341: dies at 'pressed segment'). Each fails with its own element names. FOCUS_REPORT=1 does not assert and writes every line to
  * $OUT/focus-report.txt. OUT=dir (optional) also saves focus-<look>-<size>-<element>.png of the elements that fail or are named in FOCUS_SHOTS (comma list of ids).
  */
 const assert = require('assert');
@@ -53,12 +53,18 @@ module.exports = async (ctx) => {
       if (theme) await js(`window.THEME.setTheme(${jsLiteral(theme)})`);
       await H.settle();
       await js(INSTALL_PX);
+      await js(`if(!window.__keysOn){window.__keysOn=1;window.__keys=0;addEventListener('keydown',()=>{window.__keys++},true)}0`);
       /* the focusables of the bar (menu = false) or of the open ⋯ menu (true), found again by position each time (a chip may be redrawn between two reads) */
       await js(`window.__list=()=>{const vis=e=>{const r=e.getBoundingClientRect();return r.width>0&&r.height>0&&getComputedStyle(e).visibility!=='hidden'};
         return window.__fm?[...document.querySelectorAll('#topMoreMenu button.more-it, #topMoreMenu input')].filter(vis)
           :[...document.querySelectorAll('.topbar button, .topbar select, .topbar a[href], .topbar input')].filter(e=>vis(e)&&!e.closest('#topMoreMenu'))};window.__pick=()=>window.__list()[window.__fn];0`);
       if (process.env.FOCUS_MUTANT) console.log(`[focus] mutant ${process.env.FOCUS_MUTANT}: changed ${await mutate(process.env.FOCUS_MUTANT)} rule(s)`);
       const dpr = await js(`window.devicePixelRatio`);
+      // the page needs the OS focus or :focus-visible never matches (#1658: a Mac with no key window failed below as "is focus-visible"). FOCUS_NO_WINDOW_FOCUS=1 (mutant) makes the reading false.
+      // #1820: on Windows CI the OS takes the focus from the hidden runner window between two controls (document.hasFocus() false with the right activeElement), so the real focus cannot be kept: run the look under the shared focus emulation (H.focusPage emulate:'first', as check-auto-follow, check-edit-popups and check-needs-panel do; capturePage pixels are not affected), re-enabled per look in case the load reset it. The driver tests no OS blur; released after the loop.
+      await H.releaseFocus();
+      await H.focusPage({ emulate: 'first' });
+      await H.needFocus(tag, process.env.FOCUS_NO_WINDOW_FOCUS ? { expr: 'false' } : {});
       // keyboard modality: :focus-visible matches on a script focus() only after a key press. sendInputEvent returns before the page handles the key, so wait until the Tab has moved focus: a late Tab would move focus off control 0 after the first focus() below (#1651). FOCUS_NO_TAB=1 (mutant) sends none.
       if (!process.env.FOCUS_NO_TAB) await H.key('Tab');
       assert.ok(await until(`!!document.activeElement&&document.activeElement!==document.body`, 3000), `${tag}: the Tab key press did not move focus off the body: the key event was not handled in 3000 ms`);
@@ -73,8 +79,18 @@ module.exports = async (ctx) => {
         for (let n = 0; n < count; n++) {
           await js(`window.__fn=${n};0`);
           const id = await js(`(()=>{const e=window.__pick();return (e.id||String(e.className)||e.tagName).replace(/\\W+/g,'-').slice(0,30)})()`);
+          // #1820: the modality is the page's last input, not a one-time fact: re-assert the OS focus and send one more real key (F13: no handler, no focus move) per control, and wait until the page has seen its keydown, so the script focus() below always follows a keyboard event (FOCUS_NO_TAB=1 sends none)
+          await H.needFocus(tag, process.env.FOCUS_NO_WINDOW_FOCUS ? { expr: 'false' } : {});
+          if (!process.env.FOCUS_NO_TAB) {
+            const seen = await js(`window.__keys||0`);
+            await H.key('F13');
+            assert.ok(await until(`(window.__keys||0)>${jsLiteral(seen)}`, 3000), `${tag}: ${id}: the page did not see the F13 key press in 3000 ms`);
+          }
           await js(`window.__pick().focus()`);
-          assert.ok(await until(`window.__pick().matches(':focus-visible')`, 2000), `${tag}: ${id} is focus-visible`);
+          if (!await until(`window.__pick().matches(':focus-visible')`, 2000)) {
+            const d = await js(`(()=>{const a=document.activeElement;return 'hasFocus='+document.hasFocus()+' activeElement='+(a?(a.id||a.tagName):'none')+' isPick='+(a===window.__pick())+' visibilityState='+document.visibilityState})()`);
+            assert.fail(`${tag}: ${id} is focus-visible (${d})`);
+          }
           // capturePage can return an older frame (the previous control's ring, a frame inside the 0.12s transition of .btn,.more-it): wait two animation frames and the transition, and retake while the ring pixel is not the computed outline colour, bounded (the ratio is never retried)
           let m, img, rp, po, pi, oc, geo = false;
           for (let attempt = 0; attempt <= 6 && !geo; attempt++) {
@@ -102,6 +118,7 @@ module.exports = async (ctx) => {
       }
     }
   }
+  await H.releaseFocus();
   fs.writeFileSync(path.join(OUT, 'focus-report.txt'), lines.join('\n') + '\n');
   if (process.env.FOCUS_REPORT) { console.log(`[focus] ${lines.length} lines, ${fails.length} below 3:1 (report only)`); throw new Error('FOCUS_REPORT: failing on purpose; lines in focus-report.txt'); }
   for (const l of lines) console.log('[focus] ' + l);

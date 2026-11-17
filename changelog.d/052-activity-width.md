@@ -1,1 +1,0 @@
-- **Activity tab uses the window width** (spec 052, issue #1466): Tools > Activity no longer sits in the 880px column, so Decision is no longer cut off and Action wraps less; Time, App, Mode and Decision stay on one line. Other Tools tabs and screens are unchanged. Checked in the simulator at 1440x900 and 1280x800 (`check-activity-table`).

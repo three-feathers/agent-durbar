@@ -27,8 +27,30 @@
   const CREW_OF = new Map(Object.entries(CREWS).flatMap(([c, ids]) => ids.map((id) => [id, c])));
   const LEGACY_CREW = 'cheeky';
   /* the characters of a Characters value (an unknown value or the theme's own: the Cheeky crew, as before) and the key the choice is stored under */
-  const idsFor = (choice) => has(CREWS, choice) ? CREWS[choice] : IDS;
-  const storeKey = (choice) => has(CREWS, choice) && choice !== LEGACY_CREW ? 'durbar.crew.' + choice : 'durbar.crew';
+  const idsFor = (choice) => choice === 'mine' ? [...OWN.keys()] : has(CREWS, choice) ? CREWS[choice] : IDS;
+  const storeKey = (choice) => choice === 'mine' ? 'durbar.crew.mine' : has(CREWS, choice) && choice !== LEGACY_CREW ? 'durbar.crew.' + choice : 'durbar.crew';
+  /* spec 096 FR-043: My characters, registered by app.js once main has listed them and their frames are URLs; newest first. A set belongs to no theme or world: the crew kit draws any registered id on any of them.
+     Everything is checked here, since these strings end up in scene markup: an id main makes, a blob: URL of this page and numeric face points; anything else is not registered. */
+  const OWN = new Map();
+  const OWN_ID = /^my-[0-9a-f]{12}$/, OWN_URL = /^blob:[A-Za-z0-9:/._-]+$/;
+  let ownRevN = 0;
+  const FACE_OK = (p) => Array.isArray(p) && p.length === 2 && p.every((n) => Number.isFinite(n) && n >= 0 && n <= PIC);
+  function registerOwn(list) {
+    const before = new Map(OWN);
+    OWN.clear();
+    for (const c of Array.isArray(list) ? list : []) {
+      if (!c || typeof c.id !== 'string' || !OWN_ID.test(c.id) || OWN.has(c.id) || !c.urls || !c.face) continue;
+      if (!POSES.every((p) => typeof c.urls[p] === 'string' && OWN_URL.test(c.urls[p]) && FACE_OK(c.face[p]))) continue;
+      const urls = { working: c.urls.working, waiting: c.urls.waiting, resting: c.urls.resting };
+      if (typeof c.urls.blink === 'string' && OWN_URL.test(c.urls.blink)) urls.blink = c.urls.blink;
+      const old = before.get(c.id);
+      OWN.set(c.id, { name: typeof c.name === 'string' ? c.name : '', face: { working: c.face.working, waiting: c.face.waiting, resting: c.face.resting }, urls, rev: old && POSES.every((p) => old.urls[p] === urls[p]) ? old.rev : ++ownRevN });
+    }
+    return [...OWN.keys()];
+  }
+  const ownName = (id) => OWN.has(id) ? OWN.get(id).name : '';
+  /* a registered character's pictures change when it is registered again with new URLs: in a scene's signature, so a scene is never kept with a dead URL; '' for the built-in crews, whose signatures do not change */
+  const ownRev = (id) => OWN.has(id) ? '@' + OWN.get(id).rev : '';
   const MAX_ENTRIES = 500, MAX_ID = 200;
   /* the portraits (spec 077 FR-050..FR-055, FR-059, FR-060): three poses per character, `crew/art/<id>-<pose>.webp`, 352x352 and square, drawn
      in a fixed square box of the 200x124 stage: 88x88 units at x 24, y 22 (twice the first build's, owner 2026-10-23). Its right edge is the
@@ -94,11 +116,15 @@
   };
   const k = BOX.w / PIC;
   /* a face box or the avatar's crop, in stage units: [x, y, w, h]; null for an unknown picture */
-  const facePoint = (id, pose) => (has(FACE, id) && has(FACE[id], pose)) ? FACE[id][pose] : null;
+  const facePoint = (id, pose) => OWN.has(id) ? (OWN.get(id).face[pose] || null) : (has(FACE, id) && has(FACE[id], pose)) ? FACE[id][pose] : null;
   function faceBox(id, pose) { const f = facePoint(id, pose); return f ? [BOX.x + (f[0] - FACE_W / 2) * k, BOX.y + (f[1] - FACE_H / 2) * k, FACE_W * k, FACE_H * k] : null; }
   /* the view box of a round avatar (chip, walker, chat header, inbox): the face fills the circle; of a seat on a couch: the bust from its top edge (FR-060) */
   function viewBox(id, pose, use) {
     const f = facePoint(id, pose); if (!f) return null;
+    return viewBoxAt(f, use);
+  }
+  /* the same for a face point of a character not registered yet (the maker's preview) */
+  function viewBoxAt(f, use) {
     if (use === 'seat') { // from the top of the picture (no hair or hood cut), 3/4 of its width, the face right of centre (the chat badge sits on the seat's top-left corner); the crop may start left of the picture (empty)
       const n = BOX.w * 0.75, x = Math.min(BOX.x + f[0] * k - n * 0.62, BOX.x + BOX.w - n);
       return [x, BOX.y, n, n].map((v) => Math.round(v * 100) / 100).join(' ');
@@ -108,10 +134,10 @@
   }
   /* the pose for a status: working and thinking type, waiting and error need the person, the rest rests */
   const poseFor = (st) => (st === 'working' || st === 'thinking' || st === 'avatar') ? 'working' : (st === 'waiting' || st === 'error') ? 'waiting' : 'resting';
-  const file = (id, pose) => { const c = CREW_OF.get(id); return 'crew/art/' + (c && c !== LEGACY_CREW ? c + '-' : '') + id + '-' + pose + '.webp'; };
+  const file = (id, pose) => { if (OWN.has(id)) return OWN.get(id).urls[pose]; const c = CREW_OF.get(id); return 'crew/art/' + (c && c !== LEGACY_CREW ? c + '-' : '') + id + '-' + pose + '.webp'; };
   const files = (ids) => (ids || IDS).reduce((a, id) => a.concat(POSES.map((p) => file(id, p))), []);
   /* FR-055: a character can be drawn when it is known and none of its pictures failed to load (`bad`: a Set of character ids) */
-  const usable = (id, bad) => typeof id === 'string' && ALL_IDS.includes(id) && !(bad && bad.has && bad.has(id));
+  const usable = (id, bad) => typeof id === 'string' && (ALL_IDS.includes(id) || OWN.has(id)) && !(bad && bad.has && bad.has(id));
 
   /* a small repeatable random source from a string (the session id): FNV-1a into mulberry32 */
   function seeded(str) {
@@ -160,6 +186,30 @@
     return out;
   }
 
+  /* spec 096 FR-033, FR-044: a folder key as main stores it (`normaliseFolderKey` in src/shared/usagedoc.ts; test:crew compares them) */
+  function folderKey(p, platform) {
+    let s = String(p == null ? '' : p).trim();
+    if (platform === 'win32') s = s.replace(/\\/g, '/').toLowerCase();
+    s = s.replace(/[\\/]+$/g, '');
+    return s || '/';
+  }
+  /* the key of a session's folder, or null when it has none (no `info`, no path): such a session is never dressed by a pin, a pin on `/` included */
+  function pinKey(info, platform) {
+    const p = info && (info.workspaceFile || info.cwd);
+    return typeof p === 'string' && p.trim() ? folderKey(p, platform) : null;
+  }
+  /* FR-044: before `assignCrew`: a session whose folder has a pin wears the pinned character (when it is usable), so it counts as in use for the others. A session keeping a character that is no longer
+     in the list (deleted, or a pin taken away under another crew) loses it, so `assignCrew` gives it a new one. sessions: [{id, key}]; key: folderKey. */
+  function pinCrew(map, sessions, pins, ids, bad) {
+    const out = Object.assign({}, map || {}), list = new Set(ids || []);
+    for (const s of sessions || []) {
+      const pin = pins && typeof s.key === 'string' && has(pins, s.key) ? pins[s.key] : null;
+      if (pin && usable(pin, bad)) out[s.id] = pin;
+      else if (has(out, s.id) && !list.has(out[s.id])) delete out[s.id];
+    }
+    return out;
+  }
+
   /* saved JSON -> a clean map: string ids up to 200 characters, known character ids only, at most 500 entries */
   function loadCrew(json, ids) {
     let o = null; try { o = typeof json === 'string' ? JSON.parse(json) : json; } catch (e) { o = null; }
@@ -177,15 +227,17 @@
      flat lists of DATA, any set in any world, each world names a default set. Add a row to add a world or a set (a Pirate crew and world
      later change nothing else). `flag` names a switch in WORLD_FLAGS: a row whose flag is off is not offered and never chosen (owner's
      gate, 2026-11-01: a world such as the cave stays closed until spec 097 T156..T159 and spec 001's search land). `choice` is the Characters value that
-     picks a set. A set listed here has the full Real office pose set (FR-204); Minimalist is not listed yet (#1331). */
+     picks a set. A set listed here has the full Real office pose set (FR-204); Minimalist is listed (spec 097 T245, #1154). */
   const WORLD_FLAGS = { cave: false, retro: false };
   const WORLDS = [
-    { id: 'photo', name: 'Photo office', defaultSet: 'office' },
-    { id: 'cave', name: 'Prehistoric cave', defaultSet: 'prehistoric', flag: 'cave' },
-    { id: 'retro', name: 'Retro arcade', defaultSet: 'retro', flag: 'retro' },
+    { id: 'photo', name: 'Photo office', defaultSet: 'office', line: 'A realistic open-plan office: a person at each desk, places along the back wall.' },
+    { id: 'cave', name: 'Prehistoric cave', defaultSet: 'prehistoric', flag: 'cave', line: 'A cave of stone desks, with prehistoric people.' },
+    { id: 'retro', name: 'Retro arcade', defaultSet: 'retro', flag: 'retro', line: 'An arcade hall: each person at their own cabinet, in pixels.' },
   ];
+  /* spec 102 FR-266, FR-320: the stored Characters value of the Retro pixel people; the copy of PIXEL_CHARACTERS in src/shared/characters.ts (test:characters compares them) */
+  const PIXEL_CHARACTERS = 'pixel';
   const REAL_SETS = [
-    { id: 'office', name: 'Office people', choice: '' },
+    { id: 'office', name: 'Office people', choice: 'office' }, /* spec 102 FR-321: an explicit value, so any world can draw them by choice */
     { id: 'prehistoric', name: 'Prehistoric', choice: 'prehistoric' }, /* owner 2026-11-08 (097 Q12): a set with full poses needs no flag; only the cave WORLD is gated */
     /* spec 097 FR-335/FR-336 (issue #1154; T240..T244): the five crews' own Real office people, full poses, no flag (Q12); a crew's note is the line "Real office draws the <Crew> people." */
     { id: 'pirate', name: 'Pirate', choice: 'pirate' },
@@ -193,9 +245,11 @@
     { id: 'rebels', name: 'Rebels', choice: 'rebels' },
     { id: 'monster', name: 'Monster', choice: 'monster' },
     { id: 'cheeky', name: 'Cheeky', choice: 'cheeky' },
-    { id: 'retro', name: 'Retro pixel', choice: 'retro', flag: 'retro' },
+    /* spec 097 FR-336 amended (T245, #1331 art): Minimalist's six drawn people, full poses; a Real-office-only set (no CREWS entry: the flat office keeps its drawn kit) */
+    { id: 'minimalist', name: 'Minimalist', choice: 'minimalist' },
+    { id: 'retro', name: 'Retro pixel', choice: PIXEL_CHARACTERS, flag: 'retro' }, /* the one mapping of the Characters value `pixel` to the set `retro` (T344 may rename the value, not the set) */
   ];
-  /* the Characters choices that name a crew (Minimalist has none), from CREWS: a new crew gets its note by construction */
+  /* the Characters choices whose note names them: each crew, from CREWS (a new crew gets its note by construction), and Minimalist (a REAL_SETS row, no CREWS entry) */
   const crewName = (c) => (c === 'minimalist' || has(CREWS, c)) ? c[0].toUpperCase() + c.slice(1) : '';
   const on = (row, flags) => !row.flag || !!(flags || WORLD_FLAGS)[row.flag];
   const rowOf = (list, id) => list.find((r) => r.id === id) || null;
@@ -211,16 +265,16 @@
     if (byChoice) return { world: w.id, set: byChoice.id, setName: byChoice.name, note: crewName(c) ? `Real office draws the ${crewName(c)} people.` : '' }; /* 097 Q12: say that the crew's own people are drawn */
     const d = rowOf(REAL_SETS, w.defaultSet);
     const def = d && on(d, flags) ? d : REAL_SETS[0];
-    const lv = levelFor(c, flags), n = crewName(c);
+    const lv = levelFor(c, flags), row = c && c !== 'theme' ? REAL_SETS.find((s) => s.choice === c) : null, n = crewName(c) || (row && row.flag ? row.name : ''); /* FR-322: a set behind a closed flag says so by its own name */
     /* FR-336: say the true reason: a set with poses behind a closed flag is "not open", a crew with only heads "has no poses" */
     return { world: w.id, set: def.id, setName: def.name, note: !n ? '' : lv === 'closed' ? `Real office shows ${def.name} until ${n} is open in Real office.` : `Real office shows ${def.name} until ${n} has Real office poses.` };
   }
   /* spec 097 FR-336: what a Characters value has for Real office: `default` (not a crew: nothing to report), `full` (its own set, open),
-     `closed` (its own set, its flag is off) or `heads` (a crew or Minimalist: only the flat kits' heads, no Real office poses) */
+     `closed` (its own set, its flag is off) or `heads` (a crew in CREWS with no row: only the flat kits' heads, no Real office poses) */
   function levelFor(choice, flags) {
     const c = String(choice || ''), row = c && c !== 'theme' ? REAL_SETS.find((s) => s.choice === c) : null;
     if (row) return on(row, flags) ? 'full' : 'closed';
     return crewName(c) ? 'heads' : 'default';
   }
-  return { WORLD_FLAGS, WORLDS, REAL_SETS, offeredWorlds, parseWorld, peopleFor, levelFor, CREWS, PREHISTORIC_IDS, PIRATE_IDS, MONSTER_IDS, ROYAL_IDS, REBELS_IDS, ALL_IDS, idsFor, storeKey, POSES, BOX, PX_PER_UNIT, FACE, FACE_W, FACE_H, FACE_CROP, faceBox, viewBox, poseFor, file, files, usable, IDS, MAX_ENTRIES, MAX_ID, seeded, seededRand, pickCharacter, assignCrew, pruneCrew, loadCrew };
+  return { registerOwn, ownName, ownRev, viewBoxAt, folderKey, pinKey, pinCrew, WORLD_FLAGS, WORLDS, REAL_SETS, PIXEL_CHARACTERS, offeredWorlds, parseWorld, peopleFor, levelFor, CREWS, PREHISTORIC_IDS, PIRATE_IDS, MONSTER_IDS, ROYAL_IDS, REBELS_IDS, ALL_IDS, idsFor, storeKey, POSES, BOX, PX_PER_UNIT, FACE, FACE_W, FACE_H, FACE_CROP, faceBox, viewBox, poseFor, file, files, usable, IDS, MAX_ENTRIES, MAX_ID, seeded, seededRand, pickCharacter, assignCrew, pruneCrew, loadCrew };
 })());

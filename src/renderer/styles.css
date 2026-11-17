@@ -156,6 +156,7 @@ body.has-bridge #liveBar{display:flex}
 .note.question .q-opt .q-desc{display:block;margin-top:2px;font-size:11px;font-weight:400;line-height:1.35;opacity:.85}
 .note.question .q-other{display:block;box-sizing:border-box;min-height:30px;height:30px;width:100%;flex:1 1 100%;max-width:100%;resize:none;overflow-y:auto;border:1px solid var(--line-ctl);border-radius:9px;padding:6px 9px;font:inherit;font-size:12px;line-height:1.35;white-space:pre-wrap;overflow-wrap:anywhere;background:var(--surface);color:var(--ink)}
 .note.question .q-other.chosen{box-shadow:inset 0 0 0 2px currentColor}
+.note.question .q-other::placeholder{color:var(--muted);opacity:1} /* spec 102 FR-264: the browser's own grey was 3.9:1 on the arcade's dark field; the muted ink reads at 4.5:1 or more on every surface */
 /* MCP elicitation (spec 012 FR-151): a small form, or an https page to open; labels tied to inputs, text 11.5px and up */
 .note.question .q-form{display:grid;gap:9px;margin-top:8px}
 .note.question .q-field{display:grid;gap:3px;max-width:420px}
@@ -1313,6 +1314,8 @@ body.browser-big #panel .bpane :is(.bstrip,.bbar,.bstat){padding-left:var(--s-4)
 .letter{position:absolute;left:0;top:0;width:16px;height:12px;margin:-6px 0 0 -8px;color:var(--ink-2);pointer-events:none;z-index:3}
 .letter svg{display:block}
 .letter.flying{transition:transform .9s cubic-bezier(.3,.1,.3,1)}
+.letter.real{color:var(--ink);background:var(--surface);box-shadow:var(--shadow-card)} /* spec 097 FR-377: a chip of the world's own surface and ink over a floor photo or the arcade's floor */
+html[data-world="retro"] .letter.real{box-shadow:none;outline:1px solid var(--ink)} /* the arcade: square, no blur, a 1 px ink outline, as its pixel art */
 @media (prefers-reduced-motion:reduce){.letter{display:none}}
 .place-add{flex:none;align-self:center;width:26px;height:26px;box-sizing:border-box;padding:0;border-radius:50%;border:1.5px dashed var(--line-2);background:color-mix(in srgb,var(--raised) 55%,transparent);color:var(--ink-2);font:inherit;font-size:16px;line-height:1;cursor:pointer}
 .place-add:hover{background:var(--raised);border-style:solid}
@@ -1402,7 +1405,7 @@ body.browser-big #panel .bpane :is(.bstrip,.bbar,.bstat){padding-left:var(--s-4)
 .btn.primary.warn:hover{background:var(--tone-warn-hover)}
 /* spec 052 FR-076: red means it deletes or ends (End session, Remove, Delete floor, Clear); amber .primary.warn only grants more power (Allow all, Turn on remote) */
 .btn.primary.danger{background:var(--red-ink);border-color:transparent;color:var(--surface)}
-.btn.primary.danger:hover{background:color-mix(in srgb,var(--red-ink) 86%,var(--ink));border-color:transparent} /* toward the page ink: darker on a dark fill (light themes), lighter on a light fill (dark themes), so the text keeps its contrast (issue 1565) */
+.btn.primary.danger:hover{background:color-mix(in srgb,var(--red-ink) 86%,var(--red-hover,var(--ink)));border-color:transparent} /* toward the page ink: darker on a dark fill (light themes), lighter on a light fill (dark themes), so the text keeps its contrast (issue 1565) */
 
 /* ---- switch model and context, compact (spec 030) ---- */
 .mchip-btn{cursor:pointer;font-family:inherit;gap:5px}
@@ -1796,7 +1799,7 @@ html[data-motion-off] .af-notice :is(.afn-dot,.afn-ring-fg,.dlg),html[data-motio
 @media (forced-colors:active){
   .pill,.stat,.chip,.btn,.room-new{border:1px solid CanvasText}
   [aria-pressed=true],[aria-current]:not([aria-current=false]){outline:2px solid Highlight;outline-offset:-2px}
-  .inbox:focus-within,.thpick[aria-pressed=true]{outline:2px solid Highlight}
+  .inbox:focus-within,.thpick[aria-pressed=true],.thpick[aria-checked=true]{outline:2px solid Highlight}
   .dot,.pill i{forced-color-adjust:none}
   .btn:disabled,.btn[aria-disabled=true]{color:GrayText;border-color:GrayText}
 }
@@ -2311,6 +2314,10 @@ body.has-csearch.cs-demo .cs-box{visibility:hidden} /* the demo office: kept in 
 /* ---- spec 070 A14 (FR-061..FR-066, FR-075, FR-076; T034..T036, T044): Flat's modern look, behind html[data-flat-look] (flatlook.js; off by default).
    Only Flat matches: Clean Office has no data-ui and no world is shown, so Real office, Retro, the cave and every other pack are untouched (FR-066).
    Colours are !important because theme.js writes the pack's values as inline style; sizes and radii are tokens the rules above read. ---- */
+/* spec 102 T340: strips that gave way in the arcade: hidden, or an overlay under #stripBar that takes no office height */
+body.strips-yield .notice-strip:not(#stripBar){display:none}
+body.strips-yield.strips-open .notice-strip:not(#stripBar):not([hidden]){display:flex;position:fixed;left:0;right:0;z-index:60;box-shadow:var(--shadow-pop)}
+
 html[data-flat-look]:not([data-ui]):not([data-world]){
   --bg:var(--flat-page)!important; --surface:var(--flat-page)!important; --raised:var(--flat-page)!important; --card:var(--flat-page)!important; --surface-2:var(--flat-page-2)!important; --note:var(--flat-page-2)!important;
   --line:var(--flat-line)!important; --line-2:var(--flat-line-2)!important; --line-ctl:var(--flat-line-ctl)!important; --sage-ink:var(--flat-accent)!important;
@@ -2320,3 +2327,4 @@ html[data-flat-look]:not([data-ui]):not([data-world]){
   --composer-pad:6px; --inbox-pad:4px;
 }
 html[data-flat-look]:not([data-ui]):not([data-world])[data-density="compact"] :is(#panel,#screen,.dlg,.dlg-ov,.more-menu,.mode-menu,#topMoreMenu){--h-ctl:24px; --h-chip:24px}
+

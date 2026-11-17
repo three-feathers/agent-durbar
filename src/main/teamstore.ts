@@ -16,7 +16,7 @@ import * as nodeFs from 'fs';
 import * as path from 'path';
 import * as crypto from 'crypto';
 import { readCapped, type CappedFs, type CappedFlags } from '../shared/cappedread';
-import { checkTeamTemplate, LIMITS, type TeamMember, type TeamTemplate } from '../shared/teamtemplate';
+import { checkTeamTemplate, copyName, LIMITS, type TeamMember, type TeamTemplate } from '../shared/teamtemplate';
 import { nameKey } from '../shared/skeleton';
 import { removeStaleTemps } from './schedules';
 import { pidAlive } from './crashmarker';
@@ -58,13 +58,11 @@ export const MIGRATIONS: Record<number, (doc: Record<string, unknown>) => Record
 const pauseSync = (ms: number): void => { Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms); };
 /** how many `team-templates.bad-<time>.json` files are kept (each may hold briefs) */
 export const KEEP_BAD = 5;
-const TRAILING_JOINERS = /[\u200C\u200D\u094D\u09CD\u0A4D\u0ACD\u0B4D\u0BCD\u0C4D\u0CCD\u0D4D\u0DCA\u1039\u17D2\u1B44\uA8C4\uA9C0]+$/u;
 /** the fixed texts of a refused save (T007 tells `changed` and `failed` from a validation error by these) */
 export const SAVE_FAILED = 'The team templates could not be saved.';
 export const CHANGED = 'changed';
 /** FR-002: a store-only member id, 128 random bits as hex (`MEMBER_ID_RE` of the validator) */
 export const newMemberId = (): string => crypto.randomBytes(16).toString('hex');
-const graphemes = (t: string): string[] => [...new Intl.Segmenter(undefined, { granularity: 'grapheme' }).segment(t)].map((x) => x.segment);
 const sha = (b: Buffer | string): string => crypto.createHash('sha256').update(b).digest('hex');
 type Seen = { kind: 'hash'; hash: string } | { kind: 'busy' } | { kind: 'bad' };
 const clone = <T>(v: T): T => JSON.parse(JSON.stringify(v)) as T;
@@ -174,18 +172,9 @@ export class TeamTemplateStore {
     delete copy.id; delete copy.createdAt; delete copy.updatedAt;
     copy.origin = 'own';
     for (const m of copy.members) m.memberId = this.newMember(); // new ids: a duplicate's members are not the source's (FR-021)
-    const taken = new Set(this.items.map((x) => nameKey(x.name)));
-    const base = graphemes(src.name);
-    for (let i = 1; ; i++) {
-      const suffix = i === 1 ? ' copy' : ` copy ${i}`;
-      let head = base.slice();
-      const len = (g: string[]): number => g.reduce((t, x) => t + Array.from(x).length, 0);
-      while (len(head) + Array.from(suffix).length > LIMITS.templateName && head.length > 0) head.pop(); // by grapheme: a conjunct or an emoji sequence is never split
-      if (head.length === 0) { head = Array.from(src.name); while (head.length + Array.from(suffix).length > LIMITS.templateName && head.length > 0) head.pop(); } // one grapheme too long to fit: by code point, the name is not lost
-      const name = head.join('').replace(TRAILING_JOINERS, '') + suffix;
-      if (!taken.has(nameKey(name))) { copy.name = name; break; }
-      if (i > LIMITS.templates + 2) return { ok: false, errors: ['Template: no free name.'] };
-    }
+    const name = copyName(src.name, new Set(this.items.map((x) => nameKey(x.name)))); // the one naming rule, shared with the simulator's fake
+    if (name === null) return { ok: false, errors: ['Template: no free name.'] };
+    copy.name = name;
     return this.put(copy);
   }
 

@@ -32,7 +32,8 @@
   function quietFocus(fn) { QUIET_FOCUS = true; QUIET_POINTER = true; QUIET_AT = ''; try { fn(); } finally { QUIET_FOCUS = false; } }
 
   const has = (o, k) => Object.prototype.hasOwnProperty.call(o, k);
-  const px = (n) => Math.round(n * 10) / 10 + 'px';
+  let FRAC = false; /* spec 102 FR-255 (T204): a pixel world at a fractional device pixel ratio keeps 3 decimals, so a lobby edge stays on its whole device pixel (0.1 px would move it by up to 0.075 device px) */
+  const px = (n) => FRAC ? Math.round(n * 1000) / 1000 + 'px' : Math.round(n * 10) / 10 + 'px';
   /* FR-184: nothing rewrites what did not change: a style or dataset value is written only when it differs */
   const sty = (e, k, v) => { if (e.style[k] !== v) e.style[k] = v; };
   const dset = (e, k, v) => { if (e.dataset[k] !== v) e.dataset[k] = v; };
@@ -243,6 +244,13 @@
   function cabinetOf(dc, meta, cab, k, state, body) {
     dc.classList.toggle('st-idle', state === 'idle'); /* FR-260: dim by opacity: a shade would darken the floor beside it too */
     const kind = cab.gw === meta.monitor.big.glass[2] ? 'big' : cab.gw === meta.monitor.small.glass[2] ? 'small' : 'narrow', m = meta.monitor[kind];
+    /* spec 102 T171: a file name or cell count that is not plain paints no picture, and neither does a missing validator (fail closed); the element is reused
+       across renders, so a picture an earlier, accepted entry painted is taken off first */
+    if (!X().monitorProblem || X().monitorProblem(m)) {
+      for (const p of ['backgroundImage', 'backgroundSize', 'backgroundPosition']) if (dc.style[p]) dc.style[p] = '';
+      delete dc.dataset.body;
+      return;
+    }
     let h = 0; for (const c of k) h = (h * 31 + c.charCodeAt(0)) >>> 0;
     const nb = m.bodies || 1, cell = ((body || 0) % nb) * (m.cells / nb) + (h % (m.cells / nb));
     const url = 'url("' + WD + m.file + '")', size = m.cells * 100 + '% 100%', pos = (cell / Math.max(1, m.cells - 1)) * 100 + '% 0';
@@ -306,37 +314,61 @@
     return PEOPLE;
   }
 
+  /* The numbers one scene is drawn with: the world's furniture numbers with the set's people numbers. Spec 102 FR-323: `pixelArt` is the WORLD's (grid snap, screen box,
+     smoothing of the room), whatever the set; the set's own `pixelArt` only says how its people are drawn (`pixelPeople`, spec 097 T247: a crew's hi-res people in a pixel world are scaled to its people). */
+  function metaOf(worldMeta, setMeta) {
+    const meta = Object.assign({}, worldMeta, setMeta);
+    meta.pixelArt = !!(worldMeta && worldMeta.pixelArt);
+    meta.pixelPeople = !!(setMeta && setMeta.pixelArt);
+    return meta;
+  }
   /**
    * Draw the office into `stage`. `model`: {folders:[{id,name,path,cost,counts:[{state,n,word}],newSess,menu,agents:[{id,name,role,
    * state,word,task,label,tip,selected,away,awayLabel,helpers:[state],helpWords}]}], places:[{id,label,custom,post,title,go,visitors:[{id,name,
    * needsYou,title}]}]}; `view`: {w,h}; `opts`: {still, world, set, rand, remember, onArt}. Returns the layout (for the app's checks).
    */
+  /* spec 102 delta 2026-11-14 (review of #1741): a storey tag's text width in the sign's own 12 px bold, in the font of this machine (a canvas measure; the layout adds the padding). Cached by font and text; null when it cannot be measured (the layout then takes 8 px a letter) */
+  let TAGCV = null;
+  function tagMeasure(stage) { /* one probe a render: the sign's bold font; returns text => px, or null (the layout then takes 8 px a letter) */
+    try {
+      const probe = document.createElement('div'); probe.className = 'ro-sign'; probe.style.cssText = 'position:absolute;visibility:hidden;left:0;top:0'; const pb = document.createElement('b'); probe.appendChild(pb); stage.appendChild(probe);
+      const cs = getComputedStyle(pb), font = cs.fontStyle + ' ' + cs.fontWeight + ' ' + cs.fontSize + ' ' + cs.fontFamily; probe.remove();
+      TAGCV = TAGCV || document.createElement('canvas').getContext('2d'); TAGCV.font = font;
+      return (text) => { const w = TAGCV.measureText(text).width; return w > 0 ? w : undefined; };
+    } catch (e) { return null; }
+  }
   function render(stage, model, view, opts) {
     const L = X();
     const world = has(root.DurbarRealOfficeWorlds || {}, opts.world || 'photo') ? opts.world || 'photo' : 'photo', set = has(root.DurbarRealOfficeSets || {}, opts.set || 'office') ? opts.set || 'office' : 'office';
     WD = 'realoffice/worlds/' + world + '/'; SD = 'realoffice/sets/' + set + '/';
     if (SET_SHOWN !== set) { SET_SHOWN = set; PEOPLE = null; SEEN.clear(); } /* the people belong to a set: switching sets draws its own, kept apart */
     WPX = root.DurbarRealOfficeWorlds[world].px || {}; SPX = root.DurbarRealOfficeSets[set].px || {};
-    const meta = Object.assign({}, root.DurbarRealOfficeWorlds[world], root.DurbarRealOfficeSets[set]); /* the world's furniture numbers with the set's people numbers */
+    const meta = metaOf(root.DurbarRealOfficeWorlds[world], root.DurbarRealOfficeSets[set]);
     onArt = opts.onArt || null;
-    meta.pixelPeople = !!root.DurbarRealOfficeSets[set].pixelArt; /* spec 097 T247: a crew's hi-res people in a pixel world are scaled to its people */
     PIXEL = !!meta.pixelArt;
+    meta.dpr = root.devicePixelRatio || 1; FRAC = PIXEL && Math.abs(meta.dpr - Math.round(meta.dpr)) > 1e-9; /* spec 102 FR-255 (T204): the lobby's pictures sit on whole device pixels at any ratio */
     const ids = Object.keys(meta.seat).sort();
     const who = people(model, ids, opts.rand, !!opts.remember);
     const seatOk = (p) => !!p && !['typeA', 'think', 'waveA', 'rest'].some((f) => BAD.has(SD + p + '-' + f + '.webp'));
+    const tagW = model.folders.some((f) => f.floor) ? tagMeasure(stage) : null; /* review of #1741: the storey tags are sized from the text as this machine draws it */
     const engine = {
       keepRooms: !!model.keepRooms, /* spec 097 FR-353: a saved room order is kept in the rows */
-      folders: model.folders.map((f) => ({ id: f.id, keep: !!f.keep, agents: f.agents.map((a) => ({ id: a.id, state: a.state, away: a.away || null, person: seatOk(who[a.id]) ? who[a.id] : null, lounge: !!a.lounge, helpers: a.lounge || !a.subs ? 0 : a.subs.length })) })), /* spec 097 FR-246: the app's room rule (shutPlan) seats it in the lounge row; FR-306: the strip's helpers (none in the lounge; none without their list: the plate keeps its +N) */
+      restW: tagW ? tagW('Resting') : undefined, /* review of #1741: the Resting tag */
+      folders: model.folders.map((f) => ({ id: f.id, floor: f.floor ? Object.assign({}, f.floor, { w: tagW ? tagW(f.floor.n + ' ' + f.floor.name) : undefined }) : undefined, keep: !!f.keep, agents: f.agents.map((a) => ({ id: a.id, state: a.state, away: a.away || null, person: seatOk(who[a.id]) ? who[a.id] : null, lounge: !!a.lounge, helpers: a.lounge || !a.subs ? 0 : a.subs.length })) })), /* spec 097 FR-246: the app's room rule (shutPlan) seats it in the lounge row; FR-306: the strip's helpers (none in the lounge; none without their list: the plate keeps its +N) */
       places: model.places.map((p) => ({ id: p.id, custom: !!p.custom, visitors: p.visitors.map((v) => ({ id: v.id, needsYou: !!v.needsYou, person: who[v.id] || null })) })),
     };
     const signs = {};
     for (const f of model.folders) signs[f.id] = { name: f.name, path: f.path, counts: f.counts.length + (f.cost ? 1 : 0) };
-    let lay = meta.arrangement && meta.arrangement !== 'rows' && L.layoutFor ? L.layoutFor(meta.arrangement, engine, view, meta, signs) : L.realLayout(engine, view, meta, signs); /* spec 102 FR-228: the one seam */
+    const layOut = (eng) => meta.arrangement && meta.arrangement !== 'rows' && L.layoutFor ? L.layoutFor(meta.arrangement, eng, view, meta, signs) : L.realLayout(eng, view, meta, signs); /* spec 102 FR-228: the one seam */
+    let lay = L.layoutOrFlat(layOut, engine); /* spec 097 review of #1746: a layout that throws is drawn again without floors (tested by test-realoffice-aisles) */
     /* spec 102 delta 2026-11-11 (issue 1566): an arcade hall that would scroll takes the floor's own padding (`opts.lend`, px) when that makes it fit, so a strip over the floor does not make 15 agents scroll at 1280x800; `lent` tells the host to drop that padding */
-    if (lay.scroll && opts.lend > 0 && meta.arrangement === 'aisles' && L.layoutFor) {
+    /* spec 102 delta 2026-11-13 (issue 1598): the same when the hall fits only by cutting a folder of 4 or fewer across rows (no scroll, so the test above never ran): the lent layout is used when it keeps them whole */
+    const cutSmall = (l) => { const parts = {}, size = {}; for (const z of l.zones || []) { parts[z.id] = (parts[z.id] || 0) + 1; size[z.id] = (size[z.id] || 0) + z.desks.length; } return Object.keys(parts).some((id) => parts[id] > 1 && size[id] <= 4); };
+    if ((lay.scroll || cutSmall(lay)) && opts.lend > 0 && meta.arrangement === 'aisles' && L.layoutFor) {
       const v2 = { w: view.w, h: view.h + opts.lend }, l2 = L.layoutFor(meta.arrangement, engine, v2, meta, signs);
-      if (!l2.scroll) { lay = l2; view = v2; lay.lent = true; }
+      if (!l2.scroll && (lay.scroll || !cutSmall(l2))) { lay = l2; view = v2; lay.lent = true; }
     }
+    lay.aisles = meta.arrangement === 'aisles'; /* spec 102 T340: the host yields its notice strips only for this arrangement */
 
     let ro = stage.querySelector(':scope > .ro');
     if (!ro) { stage.textContent = ''; ro = document.createElement('div'); ro.className = 'ro'; stage.appendChild(ro); ro.addEventListener('click', forward); wireZoom(ro); }
@@ -359,6 +391,7 @@
     const art = layerOf(ro, 'ro-art'), amb = layerOf(ro, 'ro-amb'), lights = layerOf(ro, 'ro-lights'), chrome = layerOf(ro, 'ro-chrome');
     const lobby = el(art, 'lobby', 'div', 'ro-lobby'); box(lobby, { x: 0, y: 0, w: lay.width, h: lay.lobbyH });
     const strip = el(art, 'strip', 'div', 'ro-strip'); box(strip, lay.floorStrip);
+    if (lay.focus) { const fc = el(art, 'focus', 'div', 'ro-focus'); box(fc, lay.focus); fc.setAttribute('aria-hidden', 'true'); } /* spec 102 FR-227, T166: the one still picture the ring stands round; the world's stylesheet paints it, a picture that fails to load moves nothing */
     /* FR-043: the room ambient: the share of active desks among the visible ones */
     const allDesks = lay.zones.flatMap((z) => z.desks).concat(lay.lounge ? lay.lounge.desks : []); /* spec 097 FR-247: the lounge's seats are desks to the room's light, the zoom and the slips */
     const states = model.empty ? ['idle'] : allDesks.map((d) => d.state); /* FR-119: an empty floor is lit at 70 % (FR-043) */
@@ -382,6 +415,13 @@
       dset(sg, 'folder', z.id);
       signFill(sg, f, z);
       for (const d of z.desks) deskOne(d);
+    }
+    /* spec 102 delta 2026-11-14 (spec 097 FR-104): the All floors view as storeys, when the layout has them: a rule (the world's, drawn under the signs) and a tag with the floor's name per storey */
+    for (const b of lay.storeys || []) {
+      if (b.slab) { const sl = el(art, 'storey-slab:' + b.id, 'div', 'ro-slab'); box(sl, b.slab); dset(sl, 'storey', b.id); }
+      const tg = el(chrome, 'storey-tag:' + b.id, 'div', 'ro-sign ro-stag'); box(tg, b.tag); dset(tg, 'storey', b.id); dset(tg, 'surface', 'storey');
+      if (tg._sig !== b.name + '\u0000' + b.n) { tg._sig = b.name + '\u0000' + b.n; tg.textContent = ''; const nb = document.createElement('b'); nb.textContent = (b.n ? b.n + ' ' : '') + b.name; tg.appendChild(nb); }
+      attr(tg, 'title', b.n ? 'Floor ' + b.n + ': ' + b.name : 'Resting: not on any floor'); attr(tg, 'role', 'note');
     }
     if (lay.lounge) {
       for (const d of lay.lounge.desks) deskOne(d); /* spec 097 FR-247: after the desks */
@@ -460,7 +500,7 @@
         /* FR-238: "New reply" above the plate's right end while the reply is unread (the flat desk's "New", the same isUnread); made once, shown by class */
         const nt = el(chrome, 'nr:' + k, 'span', 'ro-newtag' + (a.unread ? ' on' : '')); box(nt, { x: d.plate.x + d.plate.w, y: d.plate.y }); attr(nt, 'aria-hidden', 'true'); text(nt, 'New reply'); dset(nt, 'for', k);
         /* spec 097 FR-316: "Draft" above the plate's left end while the chat has an unsent draft (the flat desk's pencil, the same hasDraft); made once, shown by class; aria-hidden (the plate's name says it) */
-        const dt = el(chrome, 'dr:' + k, 'span', 'ro-drafttag' + (a.draft ? ' on' : '')); box(dt, d.away ? { x: d.away.x - d.away.s / 2, y: d.away.y } : { x: d.plate.x, y: d.plate.y }); /* an empty seat's post-it fills the place above the plate: the tag sits on top of the note's left corner */ attr(dt, 'aria-hidden', 'true'); dset(dt, 'for', k);
+        const dt = el(chrome, 'dr:' + k, 'span', 'ro-drafttag' + (a.draft ? ' on' : '')); box(dt, d.away ? { x: lay.cabinet && d.away.x > d.plate.x + d.plate.w / 2 ? Math.max(d.away.x - d.away.s / 2, d.plate.x + d.plate.w) : d.away.x - d.away.s / 2, y: d.away.y } : d.lounge ? { x: d.screen.x, y: d.screen.y } : { x: d.plate.x, y: d.plate.y }); /* spec 097 FR-316: a lounge seat's person sits over the plate's left end, so the tag stands on top of the seat's small screen instead */ /* an empty seat's post-it fills the place above the plate: the tag sits on top of the note's left corner; at a cabinet whose note stands on its right (the note overlaps the cabinet's edge by 4 px), from the cabinet's right edge on, so it reaches neither the cabinet nor its screen box (spec 102, issue #1632) */ attr(dt, 'aria-hidden', 'true'); dset(dt, 'for', k);
         if (!dt.firstChild) { if (model.draftIcon) dt.innerHTML = model.draftIcon; dt.appendChild(document.createTextNode('Draft')); } /* the icon is the app's own markup (trusted, as renIcon) */
         /* FR-038: cues, inside the slot */
         if (d.bubble) { const b = el(chrome, 'b:' + k, 'div', 'ro-bub'); box(b, d.bubble); attr(b, 'aria-hidden', 'true'); text(b, '?'); }
@@ -514,9 +554,9 @@
           const sh = el(art, 'vs:' + v.id, 'div', 'ro-shadow'); box(sh, v.shadow);
           /* FR-070: stride frames, a knock or a breath; FR-073: in at the fixture after the fade at the desk */
           const m = L.personMotion(v.id, v.fig.pose, null), fresh = !art._k.has('v:' + v.id), mov = moving() && !OFF.has(v.id);
-          const two = mov && m.kind === 'frames' && v.fig.fileB && !BAD.has(SD + v.fig.fileB) && !(GLIDING.has(v.id) || (fresh && CUR.drawn && WHERE.has(v.id))) ? second(art, 'vb:' + v.id, v.id, v.fig.b || v.fig, v.fig.fileB, 'ro-visitor2', m) : null;
+          const two = mov /* spec 102 T350: a pixel world draws the second picture too, but its loop is a hard swap (retro world.css), never the cross-fade */ && m.kind === 'frames' && v.fig.fileB && !BAD.has(SD + v.fig.fileB) && !(GLIDING.has(v.id) || (fresh && CUR.drawn && WHERE.has(v.id))) ? second(art, 'vb:' + v.id, v.id, v.fig.b || v.fig, v.fig.fileB, 'ro-visitor2' + (v.fig.mir ? ' mir' : ''), m) : null;
           const cl = two && two.on ? ' m-a m-' + m.style : mov ? ({ breathe: ' m-br', knock: ' m-knock' }[m.kind] || '') : '';
-          const im = el(art, 'v:' + v.id, 'img', 'ro-visitor' + cl); box(im, v.fig); dset(im, 'for', v.id); dset(im, 'place', fx.id); dset(im, 'pose', v.fig.pose); dset(im, 'faces', v.fig.faces); dset(im, 'feet', String(Math.round(v.fig.feetY * 10) / 10)); img(im, v.fig.file, true, v.fig.w);
+          const im = el(art, 'v:' + v.id, 'img', 'ro-visitor' + (v.fig.mir ? ' mir' : '') + cl); /* spec 097 FR-191 (#1743): a set drawn facing right is mirrored by the scale property, so a breath or a knock on transform keeps it */ box(im, v.fig); dset(im, 'for', v.id); dset(im, 'place', fx.id); dset(im, 'pose', v.fig.pose); dset(im, 'faces', v.fig.faces); dset(im, 'feet', String(Math.round(v.fig.feetY * 10) / 10)); img(im, v.fig.file, true, v.fig.w);
           if (cl) { setVar(im, '--ro-per', m.period + 's'); setVar(im, '--ro-sw', m.sway + 's'); setVar(im, '--ro-u', (v.fig.h / 100).toFixed(3) + 'px'); setVar(im, '--ro-org', '50% ' + px(v.fig.feetY - v.fig.y)); }
           if (fresh && CUR.drawn && moving() && !hiddenNow() && !glide(im, v.id, WHERE.get(v.id), v.fig)) fadeIn(im, 150, 150);
           WHERE.set(v.id, v.fig);
@@ -544,7 +584,7 @@
     watchBody(); wasHidden = hiddenNow();
     fitRoles(chrome); /* keeps its own record of what it measured */
     /* FR-184: a status update reads no layout here: chips and plates are measured and placed again only when one of them or the width changed */
-    const lobbySig = JSON.stringify([lay.width, [...chrome.querySelectorAll(':scope > .ro-chip')].map((c) => [c.dataset.name, c.dataset.x, c.dataset.y, !!c._ic]), [...chrome.querySelectorAll(':scope > .ro-lplate')].map((e) => [e.dataset.place, e.title, e.style.left, e.style.top])]);
+    const lobbySig = JSON.stringify([lay.width, document.documentElement.dataset.roSheets, [...chrome.querySelectorAll(':scope > .ro-chip')].map((c) => [c.dataset.name, c.dataset.x, c.dataset.y, !!c._ic]), [...chrome.querySelectorAll(':scope > .ro-lplate')].map((e) => [e.dataset.place, e.title, e.style.left, e.style.top])]);
     if (chrome._lobbySig !== lobbySig) { placeLobby(chrome, lay.width); chrome._lobbySig = document.hidden || document.body.classList.contains('panel-open') ? null : lobbySig; } /* under a chat nothing is laid out: what it measures there is not remembered */
     else for (const e of chrome.querySelectorAll(':scope > .ro-chip, :scope > .ro-lplate')) if (e._at) { sty(e, 'left', e._at[0]); sty(e, 'top', e._at[1]); if (e._at[2]) sty(e, 'maxWidth', e._at[2]); } /* the draw above wrote the unplaced box: back to where they were placed */
     /* a chip or plate does not travel: it fades in where it now is, so nothing passes over anything (owner 2026-11-01) */
@@ -766,6 +806,7 @@
      the flat office's own sentence (word for word, textContent). The shared lobby above is the real one (the caller passes the places). */
   function drawEmpty(art, chrome, lay, meta, empty) {
     const W = lay.width, top = lay.lobbyH, H = lay.height - top;
+    if (lay.cabinet) { drawEmptyCabinets(art, chrome, lay, meta, empty); return; }
     const dw = Math.max(120, Math.min(W * 0.26, 340, (H - 60) / 0.7)), dh = dw * (meta.desk[1] / meta.desk[0]);
     const gap = (W - 3 * dw) / 4, y0 = top + Math.max(70, H * 0.42);
     for (let i = 0; i < 3; i++) {
@@ -784,17 +825,38 @@
     EMPTY_BOX = { x: (W - pw) / 2 - 4, y: top + 10, w: pw + 8, h: 64 }; /* the plate (two lines at most) is on the avoid list of the slips */
   }
 
+  /* spec 102 delta 2026-11-14 (T223): the arcade's empty office: the hall's floor and wall fill the area (the layout is the hall's, `lay.height` is the floor), the words card under the lane,
+     and three cabinets of the world (the layout's own scale, its own pictures, screens off) in one row below it, centred in what is left of the floor */
+  function drawEmptyCabinets(art, chrome, lay, meta, empty) {
+    const W = lay.width, top = lay.lobbyH, g = lay.g, cw = lay.cabinet.w, ch = lay.cabinet.h;
+    const pw = Math.min(560, W - 40), plateB = top + 14 + 48, gap = Math.max(g * 4, (W - 3 * cw) / 4), x0 = (W - 3 * cw - 2 * gap) / 2, y0 = Math.max(plateB + 8, plateB + (lay.height - plateB - ch - 8) / 2);
+    for (let i = 0; i < 3; i++) {
+      const x = x0 + i * (cw + gap);
+      const dc = el(art, 'ed:' + i, 'div', 'ro-desk ro-edesk ro-cab' + (i === 2 ? ' mir' : '')); box(dc, { x, y: y0, w: cw, h: ch }); attr(dc, 'aria-hidden', 'true');
+      cabinetOf(dc, meta, lay.cabinet, 'empty' + i, 'idle', i);
+      const mirrored = i === 2, gl = { x: x + (mirrored ? lay.cabinet.w / g - 5 - lay.cabinet.gw : 5) * g, y: y0 + 18 * g, w: lay.cabinet.gw * g, h: lay.cabinet.gh * g };
+      const sc = el(art, 'em:' + i, 'div', 'ro-screen ro-escreen st-idle off'); box(sc, { x: gl.x - 4 * g, y: gl.y - 4 * g, w: gl.w + 8 * g, h: gl.h + 8 * g }); attr(sc, 'aria-hidden', 'true');
+      if (!sc.firstChild) sc.innerHTML = '<div class="ro-bezel"><div class="ro-glass"></div></div><div class="ro-neck"></div><div class="ro-foot"></div>';
+      sc.firstChild.style.height = px(gl.h + 6);
+    }
+    const pl = el(chrome, 'ep', 'div', 'ro-eplate'); box(pl, { x: (W - pw) / 2, y: top + 14, w: pw });
+    pl.dataset.surface = 'empty-office'; pl.dataset.floorEmpty = empty.id || '';
+    text(pl, empty.text);
+    EMPTY_BOX = { x: (W - pw) / 2 - 4, y: top + 10, w: pw + 8, h: 64 };
+  }
+
   /* spec 097 FR-121, FR-122, FR-124: slips and a bubble. The words, buttons and their order come from the app (the cards' own); this draws them on
      the free spot nearest their door or desk (placeBox: never on a plate, a sign, a chair label or a cue; always under the lobby band, FR-110).
      A queue slip that has no room for its words becomes a one-line pill; a limit slip or bubble with no room is not drawn (the Bank's chip, the
      desk's plate and the top bar's Inbox button say it too). The buttons carry data-slipact; app.js clicks the card's own button. */
   function drawSlips(chrome, lay, slips) {
     const P = root.exports && root.exports.placeBox, A = root.exports && root.exports.slipAvoid;
+    const K = root.exports && root.exports.keptSpotInside;
     const want = [];
     if (slips && slips.queue) want.push('queue');
     if (slips && slips.limit) want.push('limit');
     for (const e of (slips && slips.elicit) || []) want.push('elicit:' + e.id);
-    if (!want.length || !P || !A) return;
+    if (!want.length || !P || !A || !K) return;
     const avoid = A(lay);
     if (EMPTY_BOX) avoid.push(EMPTY_BOX);
     /* with more than four agents the monitors are read from afar: a slip takes a spot clear of them, else a smaller variant (the pill); with big screens (four or fewer) it may sit over one */
@@ -824,7 +886,7 @@
         const size = () => ({ w: Math.ceil(e.offsetWidth) + 2, h: Math.ceil(e.offsetHeight) + 2 });
         let r = size();
         const laneFree = () => lay.lane && v === 'pill' && !(e._at.y >= lay.lane.y && e._at.y + r.h <= lay.lane.y + lay.lane.h + 0.01) && P(r, avoid, lay.lane, anchor); /* a pill docked before its font loaded goes back to the lane */
-        if (e._at && e._v === v && e._at.w >= r.w && e._at.h >= r.h && !hits({ x: e._at.x, y: e._at.y, w: r.w, h: r.h }) && !laneFree() && e._at.x + r.w <= bounds.x + bounds.w && e._at.y + r.h <= bounds.y + bounds.h) { avoid.push({ x: e._at.x, y: e._at.y, w: r.w, h: r.h }); e.dataset.variant = v; return true; }
+        if (e._at && e._v === v && e._at.w >= r.w && e._at.h >= r.h && !hits({ x: e._at.x, y: e._at.y, w: r.w, h: r.h }) && !laneFree() && K(e._at, r, bounds)) { avoid.push({ x: e._at.x, y: e._at.y, w: r.w, h: r.h }); e.dataset.variant = v; return true; }
         for (let pass = 0; pass < 2; pass++) { /* the second pass re-places with the box it really has (a late font can widen the text) */
           const dock = () => P(r, avoid, { x: bounds.x, y: bounds.y + bounds.h - r.h, w: bounds.w, h: r.h }, anchor) || (lay.lane && P(r, HARD, lay.lane, anchor)) || P(r, HARD, bounds, anchor, 4) || { x: bounds.x + bounds.w - r.w, y: bounds.y + bounds.h - r.h, w: r.w, h: r.h }; /* last: over another slip or a sign, never a cabinet, screen or person while any such spot exists (pre-review of #1079) */
           const at = (lay.lane && v === 'pill' ? P(r, avoid, lay.lane, anchor) : null) || P(r, avoid.concat(softAvoid), bounds, anchor) || (lay.big || v === 'pill' ? P(r, avoid, bounds, anchor) : null) || (lay.cabinet && v === 'pill' ? dock() : null); /* a one-line pill may sit over a monitor when there is no other spot; in the arcade it docks at the floor's bottom edge, never hidden */
@@ -845,7 +907,7 @@
         sig: Q,
         fill: (e, v) => {
           e.setAttribute('role', 'group'); e.setAttribute('aria-label', Q.total + (Q.total === 1 ? ' request needs you' : ' requests need you'));
-          if (v === 'pill') { e.appendChild(btn(Q.total + (Q.total === 1 ? ' needs you' : ' need you') + ' \u00B7 Open the inbox', '', 'ro-pill', { slipact: 'inbox' })); return; }
+          if (v === 'pill') { const t = Q.total + (Q.total === 1 ? ' needs you' : ' need you') + ' \u00B7 Open the inbox'; e.appendChild(btn(t, t, 'ro-pill', { slipact: 'inbox' })); return; }
           const f = Q.first, h = document.createElement('p'); h.className = 'sl-h';
           const nm = document.createElement('b'); nm.textContent = f.name; h.appendChild(nm);
           const w = document.createElement('span'); w.textContent = ' ' + f.what + ' \u00B7 ' + f.folder; h.appendChild(w); e.appendChild(h);
@@ -866,7 +928,7 @@
         sig: [L.id, L.name, L.who, L.text, L.actions, L.input && [L.input.label, L.input.min, L.input.step, L.input.value]],
         fill: (e, v) => {
           e.setAttribute('role', 'group'); e.setAttribute('aria-label', 'Spending limit reached');
-          if (v === 'pill') { e.appendChild(btn(L.name + ': Spending limit reached \u00B7 Show in chat', 'Open the chat', 'ro-pill', { slipact: 'open', slipid: L.id, slipfocus: 'limit' })); return; }
+          if (v === 'pill') { const sfx = ': Spending limit reached \u00B7 Show in chat', t = L.name + sfx, b = btn(t, t, 'ro-pill', /* spec 097 FR-359: the title is the whole text, for what the ellipsis cuts (the accessible name is the button's text) */ { slipact: 'open', slipid: L.id, slipfocus: 'limit' }); b.textContent = ''; const n = document.createElement('span'); n.className = 'ro-pn'; n.textContent = L.name; const x = document.createElement('span'); x.className = 'ro-ps'; x.textContent = sfx; b.appendChild(n); b.appendChild(x); /* FR-359: only the name span is cut by the ellipsis, the suffix stays whole */ e.appendChild(b); return; }
           e.appendChild(p('sl-h', L.who)); e.appendChild(p('sl-t', L.text));
           const row = document.createElement('div'); row.className = 'sl-act';
           if (L.input) { const i = document.createElement('input'); i.type = 'number'; i.className = 'limit-amt'; i.min = L.input.min; i.step = L.input.step; i.value = L.input.value; i.setAttribute('aria-label', L.input.label); row.appendChild(i); }
@@ -1194,7 +1256,7 @@
     const todo = [];
     for (const p of chrome.querySelectorAll(':scope > .ro-plate')) {
       const r = p.querySelector('.ro-role'); if (!r) continue;
-      const key = p.style.width + '|' + p.style.height + '|' + p._sig;
+      const key = p.style.width + '|' + p.style.height + '|' + p._sig + '|' + document.documentElement.dataset.roSheets; /* a world stylesheet that arrived restyles the role */
       if (p._rk === key) continue;
       p._rk = key; r.hidden = false; todo.push(r);
     }
@@ -1357,5 +1419,5 @@
   }
   /* spec 097 FR-186: work the room has put off on a timer (a screen's throttled repaint, FR-033; a redraw when a done tick ends): check-office-ops-real starts a measured update only when there is none, so no earlier update's deferred work is counted in it. Read only */
   const pending = () => { let screens = 0; for (const s of SCR.values()) if (s.timer) screens++; return { screens }; }; /* FR-236: no done tick to wait for any more */
-  root.DurbarRealOffice = { hoverState: () => ({ still: QUIET_POINTER, armed: ARMED }), pending, render, reset, leave, feed, resume, quietFocus, ctx, whereSize: () => WHERE.size, bad: () => [...BAD], resolve, stagger, personOf: (id) => (PEOPLE && has(PEOPLE, id) ? PEOPLE[id] : null) /* the chat's header draws the same person (spec 097 FR-106) */ }; /* resolve: for the driver's deterministic check */
+  root.DurbarRealOffice = { metaOf, hoverState: () => ({ still: QUIET_POINTER, armed: ARMED }), pending, render, reset, leave, feed, resume, quietFocus, ctx, whereSize: () => WHERE.size, bad: () => [...BAD], resolve, stagger, personOf: (id) => (PEOPLE && has(PEOPLE, id) ? PEOPLE[id] : null) /* the chat's header draws the same person (spec 097 FR-106) */ }; /* resolve: for the driver's deterministic check */
 })(typeof self !== 'undefined' ? self : this);

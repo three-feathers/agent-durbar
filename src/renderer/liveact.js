@@ -85,7 +85,10 @@
   function permCore(raw,k,m){ /* {s, out} (out null: the mask gave nothing) for a text without control characters */
     const s=String(raw).replace(/\s+/g,' ').trim();if(!s)return {s:'',out:''};
     if(k==='shell'){const mm=/^(run )([\s\S]*)$/.exec(s),pre=mm?mm[1]:'',cmd=mm?mm[2]:s;if(!cmd)return {s,out:s};
-      const x=ST.maskLabel(cmd,'run',m);return {s,out:x?pre+x:null,lost:x?shellLost(cmd,x):false};}
+      /* spec 012 FR-184 (review of PR 1824, F1): the label read without the shell readings is checked too; a command that reading cannot match back (main's
+         card fell back there) stays lost, though the shell readings hide a run whole and so match */
+      if(typeof ST.maskLabelPair!=='function')return {s,out:null};
+      const p=ST.maskLabelPair(cmd,'run',m),x=p.text;return {s,out:x?pre+x:null,lost:x?shellLost(cmd,x)||(p.ref!==x&&(!p.ref||shellLost(cmd,p.ref))):false};}
     if(k==='tool'){const j=s.split(/( › |\s+)/).map((w,i)=>i%2||!w?w:toolName(w,m)).join('');const x=ST.maskLabel(j,'other',m);return {s,out:x||null};}
     const x=ST.maskLabel(s,'other',m);return {s,out:x||null};
   }
@@ -99,6 +102,7 @@
       const tail=t=>cut?{text:t.text,hidden:true,why:'cut'}:t, suf=cut?' ⟦cut⟧':'';
       if(!PCTRL_T.test(r0)){
         const c=permCore(r0,k,m);if(c.out===null)return fb('unchecked');if(c.lost)return fb('concealed');return tail(c.out===c.s?{text:c.out+suf,hidden:false}:{text:c.out+suf,hidden:true,why:'secret'});}
+      if(typeof ST.splitHides!=='function')return fb('unchecked');if(ST.splitHides(r0))return fb('concealed'); /* spec 012 FR-182: a token split by a line break with blanks around it, read on the text as written */
       for(const v of [stripAnsi(r0),introOut(r0),r0.replace(PCTRL,'')]){ /* a token the controls split: the mask must find nothing in any reading */
         const c=permCore(v,k,m);if(c.out===null)return fb('unchecked');if(c.out!==c.s)return fb('concealed');} /* a secret behind controls: no text, and the card offers no Allow */
       let mk=r0.replace(PCTRL,pmark),mcut=false;

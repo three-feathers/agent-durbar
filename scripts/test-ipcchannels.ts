@@ -114,6 +114,7 @@ const FROM_APP = [
   'adapters:sandboxAlwaysOff', 'adapters:sandboxHosts', 'agents:sandboxContinue', // spec 087: the OS sandbox choices and the Settings line
   'agents:checkpointPreview', 'agents:checkpointUndo', 'agents:gitStatus', 'agents:mcpCancelSignIn', 'agents:mcpOpenSignIn', 'agents:mcpRefresh', 'agents:mcpSignIn', 'agents:openInVSCode', 'agents:openRemote', 'agents:openWith', 'agents:openWithTargets', 'agents:resolvePlan', 'agents:send', 'agents:sessionSummary', 'agents:setMode', 'agents:setAutopilot', 'agents:setRemote',
   'app:dismissInterrupted', 'app:dismissSinceAway', 'app:interrupted', 'app:sinceAway', 'heldmig:discard', 'heldmig:discardBad', 'heldmig:list', 'heldmig:noticed', 'heldmig:send', // 'app:interrupted': spec 006 FR-041, ids and folder names of the sessions a crash left mid-turn
+  'character:cancel', 'character:delete', 'character:export', 'character:frames', 'character:generate', 'character:ideas', 'character:list', 'character:pin', 'character:rename', 'character:save', // spec 096 FR-031: the character maker and My characters
   'folders:create', 'folders:createCancel', 'folders:createCheck', 'folders:createPickParent', // spec 093 FR-080: create a folder (writes to the disk, runs git), and end its clone
   'folders:remove', // spec 083 FR-048 (T034b): with {deleteNotes} it deletes the folder's notes file
   'browser:back', 'browser:bounds', 'browser:openLink', 'browser:openMail', 'browser:consentAccept', 'browser:leaveAnswer', 'browser:snapshot', 'browser:forward', 'browser:mute', 'browser:navigate', 'browser:open', 'browser:openSystem', 'browser:overlay', 'browser:reload', 'browser:state', 'browser:stop', 'browser:visible', 'browser:newTab', 'browser:selectTab', 'browser:closeTab', 'browser:setLinksNewTab', // spec 080 T014 FR-003, T023 FR-127: the session browser answers the app's own page only
@@ -123,7 +124,7 @@ const FROM_APP = [
   'world:list', 'world:part', 'world:remove', // spec 102 FR-064: installed worlds, by key and part name; never open to the simulator
   'schedules:remove', 'schedules:runNow', 'schedules:runs', 'schedules:save',
   'search:cancel', 'search:clear', 'search:start', // spec 095 FR-033: the conversation search reads the text of every session
-  'teams:delete', 'teams:duplicate', 'teams:list', 'teams:markMine', 'teams:put', // spec 111 T007: the person's team templates (briefs), window only; never open to the simulator
+  'teams:createPreview', 'teams:delete', 'teams:duplicate', 'teams:list', 'teams:markMine', 'teams:previewRow', 'teams:put', // spec 111 T007, T010 (the create preview): the person's team templates (briefs), window only; never open to the simulator
   'schedules:restartLoop', 'schedules:stopLoop', // spec 072 FR-007, FR-008 (T007): Stop loop and Start again
 ];
 assert.strictEqual(new Set(FROM_APP).size, FROM_APP.length, 'no channel twice in the list');
