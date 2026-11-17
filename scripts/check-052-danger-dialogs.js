@@ -115,7 +115,7 @@ module.exports = async (ctx) => {
         assert.notStrictEqual(hov.bg, rest.bg, `${tag}: danger button hover looks the same as rest (rgb(${hov.bg})): no hover state`);
         if (!shot && site.label === 'Revoke all') { shot = true; await H.shot(path.join(OUT, `052-danger-dialogs-${look.replace(/\W+/g, '-')}-${w}x${h}.png`), { prep: 'none', settle: false, tag: 'danger-dlgs' }); }
         H.wc().sendInputEvent({ type: 'mouseMove', x: 1, y: 1 });
-        H.key('Escape');
+        await H.key('Escape');
         if (!(await until(`!document.querySelector('.dlg')`, 3000))) await js(`document.querySelectorAll('.dlg-ov').forEach(n=>n.remove());0`);
         await js(`document.getElementById('mut')&&document.getElementById('mut').remove();0`);
       }
