@@ -152,12 +152,12 @@ const rules = [
   `@media (max-width:1320px){${D}:not([data-fullscreen]) .topbar::before{width:64px;margin-right:-8px}}`,
   `${D} body.panel-open :is(#restoreStrip:not([hidden]),#restoreStrip[hidden]+#awayStrip:not([hidden]),#restoreStrip[hidden]+#awayStrip[hidden]+#crashStrip:not([hidden])){min-height:40px}`, // the first strip clears the 78x40 box
   `${D}:not([data-fullscreen]) body.panel-open .notice-strip{padding-left:78px}`,
-  `${D}:not([data-fullscreen]) body.panel-open.screen-open .scr-head{padding-left:max(78px,calc((100% - 880px)/2 + 24px))}`, // FR-097 alignment kept
+  `${D}:not([data-fullscreen]) body.panel-open.screen-open .scr-head{padding-left:max(78px,calc((100% - var(--scr-col))/2 + 24px))}`, // FR-097 alignment kept
   `${D} :is(.topbar,body.panel-open .notice-strip,body.panel-open.screen-open .scr-head) :is(button,a,input,select,textarea,label,summary,[role="button"],[role="menu"],[role="group"],[tabindex],.more-menu){-webkit-app-region:no-drag}`,
   `${D} :is(.rail-top,body.panel-open .ph) :is(button,a,input,select,textarea,label,summary,[role="button"],[role="menu"],[role="group"],[tabindex],[title],.more-menu,.grants){-webkit-app-region:no-drag}`,
   `${D} body.panel-open .notice-strip:not([hidden]) ~ .notice-strip{padding-left:20px}`,
   `${D} .notice-strip:not([hidden]) ~ .workspace .rail-top{padding-left:8px}`,
-  `${D} .notice-strip:not([hidden]) ~ #screen .scr-head{padding-left:max(24px,calc((100% - 880px)/2 + 24px))}`,
+  `${D} .notice-strip:not([hidden]) ~ #screen .scr-head{padding-left:max(24px,calc((100% - var(--scr-col))/2 + 24px))}`,
   `${D} :is(.dlg-ov,#foldersPop,#floorsPop,#defaultsPop,.mode-menu,.more-menu){-webkit-app-region:no-drag}`,
 ];
 for (const rule of rules) assert.ok(css.includes(rule), `Mac title bar rule (FR-085, FR-138): ${rule.slice(0, 90)}`);
@@ -225,10 +225,14 @@ assert.ok(preload.includes("ipcRenderer.send('window:titleDoubleClick')"), 'prel
   assert.ok(!should(node(['.ph [title]'], ph)) && !should(node(['span'], node(['.ph [title]'], ph))), 'a tooltip in the chat header is no-drag: nothing');
   assert.ok(!should(node(['.grants'], ph)), 'the session grants: nothing');
   assert.ok(should(node(['span'], topbar)) && should(node(['div'], node(['div'], head))), 'plain text inside a drag area sends');
-  for (const c of ['button', 'a', 'input', 'select', 'textarea', 'label', 'summary', '[role="button"]', '[role="menu"]', '[role="group"]', '[tabindex]', '.more-menu', '[data-id]']) {
+  for (const c of ['button', 'a', 'input', 'select', 'textarea', 'label', 'summary', '[role="button"]', '[role="menu"]', '[role="group"]', '[tabindex]:not([tabindex="-1"])', '.more-menu', '[data-id]']) {
     assert.ok(!should(node([c], topbar)), `a double-click on ${c} sends nothing`);
     assert.ok(!should(node(['svg'], node([c], topbar))), `a double-click inside ${c} sends nothing`);
   }
+  // spec 052 FR-085 (issue 1659): only a tabindex in the Tab order is a control; a screen title's tabindex -1 (a focus target) is not one
+  const keysSrc = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'keys.js'), 'utf8').replace(/\r\n/g, '\n');
+  const controls = (keysSrc.match(/var TITLE_CONTROLS='([^']*)'/) || [])[1] || '';
+  assert.ok(controls.split(',').includes('[tabindex]:not([tabindex="-1"])') && !controls.split(',').includes('[tabindex]'), 'the filter counts a tabindex as a control only in the Tab order (a screen title with tabindex -1 sends)');
   assert.ok(!should(node(['.rail-list'])) && !should(node(['button'], node(['.rail-list']))), 'the agent list (not a drag area) sends nothing');
   assert.ok(!should(node(['div'])), 'outside every drag area: nothing');
   assert.ok(!should(null) && !K.shouldSendTitleDoubleClick({}), 'no element: nothing');
