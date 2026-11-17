@@ -209,6 +209,7 @@ module.exports = async (ctx) => {
     assert.strictEqual(photo.skin, 'neutral', 'arcade skin: not applied in the Photo office (world ' + photo.world + ')');
     assert.notStrictEqual(photo.world, 'retro', 'arcade skin: the Photo load is not the arcade');
     assert.strictEqual(arc.shape, 'square', 'arcade skin: point shape is square');
+    // an arc-drawn point (a disc) dies at the next label first (no fillRect calls); the arc count after it is the second assert for the same fault
     assert.ok(arc.real.rects >= arc.real.basePoints && arc.real.basePoints > 1000, 'arcade skin: the base layer is drawn as filled squares by the context itself (' + arc.real.rects + ' fillRect calls for ' + arc.real.basePoints + ' points)');
     assert.strictEqual(arc.real.arcs, 0, 'arcade skin: points are drawn as squares, never discs (' + arc.real.arcs + ' arc calls on the base layer at ' + tag + ')');
     assert.strictEqual(flat.real.arcs, 0, 'neutral skin: no point is a disc either');
