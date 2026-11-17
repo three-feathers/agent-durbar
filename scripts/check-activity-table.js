@@ -44,7 +44,11 @@ module.exports = async (ctx) => {
         times:rows.every(r=>r.firstElementChild.textContent.trim().length>0),
         note:(tb.previousElementSibling||{}).textContent||'',
         btns:['actCsv','actJson','actClear'].map(i=>{const b=document.getElementById(i);return !!b&&!b.disabled}),
-        small, wide:s.scrollWidth-s.clientWidth, err:window.__actErr||[]};})()`);
+        small, wide:s.scrollWidth-s.clientWidth,
+        body:Math.round(s.querySelector('.scr-body').getBoundingClientRect().width), screenW:s.clientWidth,
+        headPad:parseFloat(getComputedStyle(s.querySelector('.scr-head')).paddingLeft),
+        clip:tb.getBoundingClientRect().right-s.querySelector('.scr-body').getBoundingClientRect().right,
+        wrapShort:rows.some(r=>[...r.querySelectorAll('.act-s,.act-t,td:last-child')].some(c=>getComputedStyle(c).whiteSpace!=='nowrap')), err:window.__actErr||[]};})()`);
     assert.strictEqual(t.sel, 'true', `${tag}: the Activity tab is selected`);
     assert.deepStrictEqual(t.head, ['Time', 'Agent', 'Folder', 'App', 'Mode', 'Action', 'Decision'], `${tag}: the table header`);
     assert.ok(t.n >= 7, `${tag}: the simulator's sample rows are shown (${t.n})`);
@@ -54,10 +58,49 @@ module.exports = async (ctx) => {
     assert.deepStrictEqual(t.btns, [true, true, true], `${tag}: Export CSV, Export JSON and Clear are enabled`);
     assert.deepStrictEqual(t.small, [], `${tag}: no text under 10.5px`);
     assert.ok(t.wide <= 1, `${tag}: the screen does not scroll sideways (${t.wide}px)`);
+    assert.ok(t.body >= t.screenW - 2, `${tag}: the Activity body uses the window width (${t.body} of ${t.screenW})`);
+    assert.ok(t.headPad <= 80, `${tag}: the header follows the wide body (${t.headPad}px)`);
+    assert.ok(t.clip <= 1, `${tag}: the Decision column is not cut at the right (${t.clip}px)`);
+    assert.ok(!t.wrapShort, `${tag}: Time, App, Mode and Decision do not wrap`);
+    /* a long unbroken Folder (114 characters) and a long Agent name must wrap in their cells, not push Action and Decision out of the window */
+    const lg = await js(`(()=>{const s=document.getElementById('screen'),A=window.DurbarActivityTable,e=x=>String(x).replace(/[&<>"']/g,c=>'&#'+c.charCodeAt(0)+';');
+      const row=(o)=>Object.assign({t:new Date().toISOString(),agent:'Ben',folder:'api',app:'GitHub Copilot',mode:'ask',action:'Run npm test',decision:'allowed-once'},o);
+      const tb=s.querySelector('table.act');
+      tb.outerHTML=A.tableHtml([row({folder:'/Users/someone/Projects/'+'x'.repeat(90),agent:'An-Agent-With-A-Very-Long-Name-That-Has-No-Spaces-At-All-0123456789',action:'git commit -m "a long message that wraps in the Action cell"'}),row({})],e);
+      const b=s.querySelector('.scr-body'),t=s.querySelector('table.act'),a=t.querySelector('.act-a');
+      const dc=[...t.querySelectorAll('tbody tr')[0].children].pop().getBoundingClientRect();
+      return {side:s.scrollWidth-s.clientWidth,bodySide:b.scrollWidth-b.clientWidth,right:t.getBoundingClientRect().right-b.getBoundingClientRect().right,decRight:dc.right,winW:document.documentElement.clientWidth,actW:Math.round(a.getBoundingClientRect().width),title:a.getAttribute('title')};})()`);
+    assert.ok(lg.side <= 1 && lg.bodySide <= 1, `${tag}: a long Folder does not scroll the page or the body sideways: ${jsLiteral(lg)}`);
+    assert.ok(lg.right <= 1 && lg.decRight <= lg.winW, `${tag}: Decision stays inside the window: ${jsLiteral(lg)}`);
+    assert.ok(lg.actW >= 150, `${tag}: Action is not collapsed (${lg.actW}px)`);
+    assert.ok(/commit/.test(lg.title), `${tag}: the Action cell has its text as title`);
+    assert.ok(await H.click('#tabCost'), `${tag}: the Cost tab opens`);
+    assert.ok(await H.until(`document.querySelector('#screen .scr-body:not(.scr-wide)')`), `${tag}: other Tools tabs keep the 880px column`);
+    assert.ok(await H.js(`document.querySelector('#screen .scr-body').getBoundingClientRect().width<=880`), `${tag}: the Cost body is at most 880px`);
+    assert.ok(await H.click('#tabActivity') && await H.until(`document.querySelector('#screen table.act tbody tr')`), `${tag}: back on Activity`);
     assert.deepStrictEqual(t.err, [], `${tag}: no page error`);
     assert.deepStrictEqual(errors.filter((m) => /DurbarActivity|tableHtml|NOTE/.test(m)), [], `${tag}: no console error from the table`);
     await H.shot(path.join(OUT, `052-activity-table-${tag}.png`), { prep: 'mouse', delay: 300, tag: 'activity-table' });
     console.log(`[activity-table] ${tag} ok (${t.n} rows)`);
+  }
+  /* narrow window (review of #1467): .act-a{min-width:24ch} keeps Action from collapsing; the table scrolls inside .scr-body, not the page. 900 is above the 700px KNOWN GAP of spec 052 */
+  {
+    const tag = '900x800 narrow';
+    await H.load({ w: 900, h: 800, ready: 'fit', settle: false });
+    assert.ok(await H.click('#toolsBtn'), `${tag}: the Tools button`);
+    assert.ok(await H.until(`document.getElementById('tabActivity')`), `${tag}: the Activity tab is there`);
+    assert.ok(await H.click('#tabActivity'), `${tag}: the Activity tab opens`);
+    assert.ok(await H.until(`document.querySelector('#screen table.act tbody tr')`), `${tag}: the activity table renders`);
+    const n = await js(`(()=>{const s=document.getElementById('screen'),A=window.DurbarActivityTable,e=x=>String(x).replace(/[&<>"']/g,c=>'&#'+c.charCodeAt(0)+';');
+      const row=(o)=>Object.assign({t:new Date().toISOString(),agent:'Ben',folder:'api',app:'GitHub Copilot',mode:'ask',action:'Run npm test',decision:'allowed-once'},o);
+      s.querySelector('table.act').outerHTML=A.tableHtml([row({folder:'/Users/someone/Projects/'+'x'.repeat(90),agent:'An-Agent-With-A-Very-Long-Name-That-Has-No-Spaces-At-All-0123456789',action:'git commit -m "a long message that wraps in the Action cell"'}),row({})],e);
+      const a=s.querySelector('table.act .act-a'),cs=getComputedStyle(a),c=document.createElement('canvas').getContext('2d');
+      c.font=cs.fontStyle+' '+cs.fontWeight+' '+cs.fontSize+' '+cs.fontFamily;
+      return {actW:a.getBoundingClientRect().width,ch:c.measureText('0').width,minW:cs.minWidth,bodyRight:Math.round(s.querySelector('.scr-body').getBoundingClientRect().right-s.clientWidth),side:s.scrollWidth-s.clientWidth,doc:document.documentElement.scrollWidth-document.documentElement.clientWidth};})()`);
+    assert.ok(n.ch > 0 && n.actW >= 24 * n.ch - 1, `${tag}: Action keeps its 24ch minimum: ${jsLiteral(n)}`);
+    assert.ok(n.minW !== 'auto' && n.minW !== '0px', `${tag}: Action has a min-width: ${jsLiteral(n)}`);
+    assert.ok(n.bodyRight <= 1 && n.doc <= 1, `${tag}: the page does not scroll sideways, the table scrolls inside the body: ${jsLiteral(n)}`);
+    console.log(`[activity-table] ${tag} ok (Action ${Math.round(n.actW)}px, 24ch = ${Math.round(24 * n.ch)}px)`);
   }
   console.log('[activity-table] all checks passed');
 };

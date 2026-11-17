@@ -89,6 +89,11 @@ const t2 = h.items[2];
 assert.ok(t2.type === 'tool' && t2.failed === true && t2.output === 'denied: read-only' && t2.label.startsWith('*** Begin Patch'));
 assert.ok(typeof h.items[0].ts === 'number');
 
+// spec 012 FR-183: a tool name over 256 characters is left out, as the event gate refuses it
+const toolNamed = (n: string): string[] => eventsToHistory([ev('user.message', { content: 'go' }), ev('tool.execution_start', { toolCallId: 'tn', toolName: n, arguments: {} })]).items.map((i) => i.type);
+assert.deepStrictEqual(toolNamed('a'.repeat(256)), ['user', 'tool'], '#1593 history (Copilot): a tool name of 256 characters is kept');
+assert.deepStrictEqual(toolNamed('a'.repeat(257)), ['user'], '#1593 history (Copilot): a tool name of 257 characters is left out');
+
 // caps
 const capped = eventsToHistory(Array.from({ length: 50 }, (_, i) => ev('user.message', { content: 'm' + i })), { maxItems: 10 });
 assert.strictEqual(capped.items.length, 10);

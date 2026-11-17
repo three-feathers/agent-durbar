@@ -39,9 +39,14 @@ export interface PreviousIpcDeps {
   addWorkspace: AddWorkspace;
   /** Per agent: the VS Code chat files last listed (shared with the handlers that remove an agent). */
   vsChatRefs: Map<string, Map<string, ChatFileRef>>;
+  /** Spec 095 FR-026 (review N-R1): the folder's earlier sessions changed (a delete succeeded): the search drops its kept Codex titles. */
+  sessionsChanged?(): void;
   /** Spec 058 FR-067: replayed history with failed tool output masked (session secret values from main). */
   maskHistory<H extends { items: { type: string; failed?: boolean; output?: string }[] }>(id: string, h: H): H;
 }
+
+/** The VS Code `User` folders to look in (a test folder under `DURBAR_VSCODE_USER_DIR`); the conversation search uses the same (spec 095). */
+export const vsUserDirsOf = (dev: DevEnv): UserDir[] => (dev.DURBAR_VSCODE_USER_DIR ? [{ product: 'Test', dir: dev.DURBAR_VSCODE_USER_DIR }] : vscodeUserDirs());
 
 export function register(deps: PreviousIpcDeps): void {
   const { renameSessionOpFor, dev, agents, router, registry, agentState, wsKey, resumeIdFor, forgetOpenSession, logActivity, addWorkspace, vsChatRefs, maskHistory } = deps;
@@ -49,12 +54,11 @@ export function register(deps: PreviousIpcDeps): void {
   const scheduler = deps.getScheduler;
   // ---- Previous sessions of a folder (Copilot CLI/SDK store, resumable) and VS Code chat history (read-only) ----
   // The renderer only ever names an agent and an opaque id; folders and file paths are resolved here.
-  const vsUserDirs = (): UserDir[] =>
-    dev.DURBAR_VSCODE_USER_DIR ? [{ product: 'Test', dir: dev.DURBAR_VSCODE_USER_DIR }] : vscodeUserDirs();
+  const vsUserDirs = (): UserDir[] => vsUserDirsOf(dev);
 
   // Spec 006 FR-024..FR-032: the list, pin/hide and delete bodies live in prevsessions.ts. `sessions:delete` exists only here, on the
   // window's own IPC (ipcHandle): the MCP tools, remote control, schedules and agents have no path to it (scripts/test-prevsessions.ts).
-  const prevDeps: PrevDeps = { agents, router, get store() { return folderStore(); }, wsKey, resumeIdFor: (id) => resumeIdFor(id), appName: (a) => registry.get(a.adapterId)?.displayName ?? a.adapterId, log: (a, decision, action) => logActivity(a, decision, action) };
+  const prevDeps: PrevDeps = { agents, router, get store() { return folderStore(); }, wsKey, resumeIdFor: (id) => resumeIdFor(id), appName: (a) => registry.get(a.adapterId)?.displayName ?? a.adapterId, log: (a, decision, action) => logActivity(a, decision, action), changed: () => deps.sessionsChanged?.() };
   const prevSessions = new PrevSessions(prevDeps);
   ipcHandle('sessions:listPrevious', (_e, id: unknown) => listPreviousOp(prevDeps, id));
   const renameSessionOp = renameSessionOpFor(() => openIdsOf(prevDeps));

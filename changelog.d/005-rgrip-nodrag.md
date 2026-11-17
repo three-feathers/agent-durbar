@@ -1,1 +1,0 @@
-- **On a Mac, the top of the rail's resize handle resizes the rail** (spec 005 FR-236, issue #1457): the handle's top 40 pixels lay in the window's drag area and moved the window instead. Checked with `check-mac-titlebar` on the simulator; not run on a real Mac.

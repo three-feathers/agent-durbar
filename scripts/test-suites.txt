@@ -9,6 +9,9 @@ test:attachments
 test:vscode
 test:runtime-core
 test:runtime-redact
+test:redact-monotone
+test:redact-monotone-b
+test:redact-monotone-c
 test:livehead
 test:maskoutgoing-fuzz
 test:maskoutgoing-fuzz-b
@@ -29,6 +32,8 @@ test:markdown
 test:sessionsearch
 test:convsearch
 test:convmask
+test:convsearchipc
+test:convsearchui
 test:url
 test:mcp
 test:toolstats
@@ -65,12 +70,14 @@ test:copilotoneshot
 test:copilotcap
 test:copilot-tmpdir
 test:mcpsession
+test:mcpswitchpersist
 test:mcpcall
 test:mcpsignin
 test:mcpsigninrefresh
 test:places
 test:floornav
 test:cuttext
+test:questionparts
 test:chattrim
 test:subretire
 test:grantlabel
@@ -131,6 +138,14 @@ test:announcemask
 test:openwith
 test:liveact
 test:lookalike
+test:skeleton
+test:teamtemplate
+test:teamstore
+test:teamstore-fs
+test:teams-editor
+test:teams-ui
+test:teamsipc
+test:teamops
 test:names
 test:renameadapters
 test:sessionname
@@ -159,6 +174,9 @@ test:crew
 test:characters
 test:chargen
 test:imagecheck
+test:charencoder
+test:charstore
+test:charipc
 test:crew-assets
 test:realoffice-layout
 test:realoffice-assets
@@ -178,6 +196,7 @@ test:shutters
 test:unread
 test:tooltip
 test:simclock
+test:pointer-log
 test:labelsbackfill
 test:claim
 test:prgatenotes
@@ -200,6 +219,7 @@ test:helpercard
 test:weeklyaudit
 test:newfolder
 test:newfolderop
+test:addkey
 test:newfolderipc
 test:newfoldergit
 test:supplychain
@@ -210,6 +230,9 @@ test:weeklyretro
 test:docsscripts
 test:citypecheck
 test:worldmatrix
+test:world-catalogue
+test:world-distinct
+test:world-contact-sheet
 test:worldzip
 test:worldpack
 test:world-packs
@@ -242,4 +265,7 @@ test:simversion
 test:momentsregistry
 test:paritytick
 test:picturebudget
+test:chargroups
+test:dangersites
 test:specnumbers
+test:pencilpark

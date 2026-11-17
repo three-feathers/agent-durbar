@@ -3,6 +3,8 @@
  *
  *   npm run check:ui -- --only check-auto-follow
  *   OUT=<folder>  (optional) saves the pictures (052-auto-follow-{1440x900,1280x800}.png and the steps)
+ *   DRIVER_WORLD=retro (ui-suite entry `check-auto-follow retro`, spec 102 T320): the Real office step in the arcade (about 215 s alone on macOS; 600 s is the suite's limit per driver)
+ *   AFOLLOW_MUTANT=mark   the followed plate loses its mark at once (Real office step; must fail at "FR-183: its plate is marked")
  *
  * At 1440x900 and 1280x800 (15 agents): off by default (no strip, `[` / `]` do nothing, a send leaves the chat open); Settings' switch turns it on
  * (a real click); a send returns to the office with the desk marked and the focus on it; a completion, a permission request, an error and a limit open
@@ -144,7 +146,19 @@ module.exports = async (ctx) => {
 
     // ---- on: the switch is a real click, the answer comes from main (the simulator's stand-in refuses a non-boolean like main)
     assert.deepStrictEqual(await js(`window.__durbarSimUi.bridge().setAutoFollowWork('yes').then(r=>({ok:r.ok,v:r.autoFollowWork}))`), { ok: false, v: false }, `${tag}: a non-boolean is refused with ok:false`);
+    /* Issue #1362 (spec 052 FR-243): the office lays out in the same frame as the floor changes size, before it is painted. This observer is made after the app's own
+       (the callbacks of one delivery run in the order the observers were made), so at each of its calls the app has had its turn: no floor with a height may still overflow. */
+    await js(`(()=>{window.__fitRO={n:0,bad:[]};const f=document.getElementById('floor');new ResizeObserver(()=>{if(!f.clientHeight)return;window.__fitRO.n++;if(f.scrollHeight>f.clientHeight+1)window.__fitRO.bad.push(f.scrollHeight+'/'+f.clientHeight);}).observe(f);})();0`);
     await setting(true);
+    {
+      const r = await js(`window.__fitRO`);
+      assert.ok(r.n >= 1, `${tag}: the floor changed size when Settings closed with the strip (calls: ${r.n})`);
+      assert.deepStrictEqual(r.bad, [], `${tag}: FR-243: the office fits its floor in the frame the floor changed size, not a frame later (scroll/client heights of each overflowing call)`);
+      /* the same on a shown floor that gets 31 px shorter (what the strip appearing does), then back */
+      const r2 = await js(`(()=>{const f=document.getElementById('floor'),R=window.__fitRO,two=()=>new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));R.n=0;R.bad=[];f.style.maxHeight=(f.clientHeight-31)+'px';return two().then(()=>{f.style.maxHeight='';return two();}).then(()=>({n:R.n,bad:R.bad}));})()`);
+      assert.ok(r2.n >= 2, `${tag}: the floor changed size twice (calls: ${r2.n})`);
+      assert.deepStrictEqual(r2.bad, [], `${tag}: FR-243: a floor 31 px shorter: the office fits at once (scroll/client heights of each overflowing call)`);
+    }
     let st = await strip();
     assert.ok(!st.hidden && st.h >= 28 && st.h <= 40, `${tag}: the strip shows, one row: ${st.h}px`);
     assert.strictEqual(st.text, 'Auto-follow on. It follows an agent after you send it a message.', `${tag}: idle words`);
@@ -251,6 +265,26 @@ module.exports = async (ctx) => {
     for (const k of ['Return', 'Space']) await H.key(k, [], { char: 'always' });
     await stays(`!!document.querySelector('#chat .q-opts')&&!document.querySelector('#chat .q-opts button[disabled]')`, `${tag}: Enter and Space on the title answered nothing`);
     await E(Q, { type: 'question', phase: 'cancelled', requestId: 'q-af', reason: 'stop' });
+    await mclick('#backBtn'); await ok(`!document.body.classList.contains('panel-open')`, `${tag}: the Office button closes the chat`);
+    // ---- a followed agent's limit while a chat that Auto-follow itself opened is open (spec 005 FR-237, spec 052 FR-184, FR-185). A hand open drops every other
+    // followed agent, so Rosa is followed through the tracker's sim hook after Priya's send; Priya finishing makes Auto-follow open her chat (the tracker goes quiet),
+    // and Rosa's limit then arrives: held (pending, no notice, no move), the card says its line once.
+    const trk = () => js(`({ids:window.__durbarSimUi.afTracker.ids(),pending:window.__durbarSimUi.afTracker.pending(),quiet:window.__durbarSimUi.afTracker.quiet()})`);
+    await sendQuiet(A, 'hello follow again');
+    await js(`window.__durbarSimUi.afTracker.follow(${jsLiteral(Q)})`);
+    await finish(A, 'All done.');
+    await okArrival(`document.body.classList.contains('panel-open')&&document.getElementById('panelTitle').textContent===${jsLiteral(nameA)}`, `${tag}: Auto-follow opens ${nameA}'s chat when it finishes`, 25000);
+    await ok(`window.__ann.includes(${jsLiteral(nameA + ' finished. Its chat is open.')})`, `${tag}: the arrival was the completion`);
+    const before = await trk();
+    assert.deepStrictEqual(before, { ids: [Q], pending: [], quiet: true }, `${tag}: before the limit the tracker follows ${nameQ}, holds nothing and is quiet: ${JSON.stringify(before)}`);
+    await E(Q, { type: 'limit', phase: 'exhausted', requestId: 'lim-af2', maxAiCredits: 30, usedAiCredits: 30 });
+    const cardLine = nameQ + ' reached its spending limit. Open its chat to choose.', noticeLine = nameQ + ' reached its limit. Its chat is open.';
+    await ok(`window.__durbarSimUi.afTracker.pending().includes(${jsLiteral(Q + '|limit')})`, `${tag}: the tracker holds ${nameQ}'s limit as an arrival`);
+    await ok(`window.__ann.includes(${jsLiteral(cardLine)})`, `${tag}: a limit in another chat is said, naming the chat to open`);
+    await stays(`document.getElementById('panelTitle').textContent===${jsLiteral(nameA)}&&!window.__durbarSimUi.afNotice.shown()&&!window.__ann.includes(${jsLiteral(noticeLine)})&&window.__durbarSimUi.afTracker.pending().includes(${jsLiteral(Q + '|limit')})`, `${tag}: held: the chat does not move, no notice is up and the arrival stays pending`, 1500);
+    assert.deepStrictEqual(await trk(), { ids: [Q], pending: [Q + '|limit'], quiet: true }, `${tag}: after the limit the tracker still follows ${nameQ}, holds its limit and is quiet`);
+    assert.strictEqual((await anns()).filter((t) => t === cardLine).length, 1, `${tag}: the card said its line once: ${JSON.stringify(await anns())}`);
+    // what a later delivery says (a second line) is argued from the code in the spec delta, not driven here
     await mclick('#backBtn'); await ok(`!document.body.classList.contains('panel-open')`, `${tag}: the Office button closes the chat`);
     console.log(`[follow] ${tag} on, send, arrivals, queue ok`);
   }
@@ -608,6 +642,7 @@ module.exports = async (ctx) => {
       const REAL = `!!document.querySelector('#stage .ro .ro-plate')&&document.getElementById('stage').dataset.d==='real'`;
       await H.load({ w: 1440, h: 900, query: { officeview: 'real' }, ready: REAL }); /* the Real office has plates, not desks: the default ready never held (spec 008 FR-190) */
       await ok(REAL, 'the Real office');
+      if (process.env.AFOLLOW_MUTANT === 'mark') await js(`(()=>{new MutationObserver(()=>document.querySelectorAll('#stage .ro-plate.is-followed').forEach(e=>e.classList.remove('is-followed'))).observe(document.getElementById('stage'),{attributes:true,subtree:true,attributeFilter:['class']});return 1})()`);
       await setting(true);
       await ok(REAL, 'the Real office after Settings');
       const plate = `#stage .ro-plate[data-id="${A}"]`;
