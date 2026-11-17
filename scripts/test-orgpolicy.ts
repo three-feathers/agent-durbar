@@ -169,9 +169,10 @@ async function main(): Promise<void> {
     assert.strictEqual(modes(await readCopilotOrgPolicy({ rpc: { managedSettings: { resolve: async () => { throw new Error('x'); } } } }, file)), '--B', 'b: a failing runtime: the file');
     assert.strictEqual(modes(await readCopilotOrgPolicy({ rpc: { managedSettings: { resolve: async () => ({ resolved: { bypassPermissionsDisabled: 'yes' } }) } } }, file)), '--B', 'b: an answer that is not a resolve answer: the file');
     assert.strictEqual(fileRead, 3, 'b: the file read only in those three cases');
-    const t0 = Date.now();
-    assert.strictEqual(await resolveCopilotManaged({ rpc: { managedSettings: { resolve: () => new Promise(() => undefined) } } }, 50), undefined, 'b: a runtime that never answers is cut at the time limit');
-    assert.ok(Date.now() - t0 < 5000, 'b: and does not hang');
+    let hangTimer: NodeJS.Timeout | undefined;
+    const hung = new Promise<string>((r) => { hangTimer = setTimeout(() => r('hung'), 20_000); }); // a hang backstop only: the 50 ms limit is what ends the wait
+    assert.strictEqual(await Promise.race([resolveCopilotManaged({ rpc: { managedSettings: { resolve: () => new Promise(() => undefined) } } }, 50), hung]), undefined, 'b: a runtime that never answers is cut at the time limit (it did not hang)');
+    clearTimeout(hangTimer);
     assert.strictEqual(copilotOrgPolicyFromResolve(Object.create({ resolved: { bypassPermissionsDisabled: true } })), undefined, 'b: own properties of the answer only');
     for (const v of ['disable', 'allow-auto-only']) assert.deepStrictEqual(modeVerdict(copilot({ permissions: { disableBypassPermissionsMode: v } }), 'allow'), B(P), `b: file ${v} blocks Allow all`);
     assert.deepStrictEqual(modeVerdict(copilot({ permissions: { disableBypassPermissionsMode: { overridable: 'disable' } } }), 'allow'), D(P), 'b: file `overridable`: a team file may set unmanaged: advice (probe g)');

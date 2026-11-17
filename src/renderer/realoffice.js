@@ -24,6 +24,7 @@
   let ARC = false; /* the arcade is drawn (the Retro world on a cabinet layout): the narrow cabinet's plate rules of spec 102 FR-312 apply to it alone */
   let LAY_G = 0; const CUR_G = () => LAY_G; /* the arcade's scale, for its screen text (0 in other worlds) */
   let CUR = null; /* {ro, screenOf, still, hold, desks: Map id -> desk, agents: Map id -> model agent, folders: Map, drawn} */
+  let CIRCLE_HOLD = null; /* FR-230: {key, at}: where the circle fell back to rows, and the count of agents it fell back at */
   let ZOOM = null; /* {id, hover, focus, panel, plate} */
   let IO = null, DISMISSED = '';
   /* spec 052 FR-183: focus the app moves by itself onto a plate is not the person asking to read that screen */
@@ -32,7 +33,8 @@
   function quietFocus(fn) { QUIET_FOCUS = true; QUIET_POINTER = true; QUIET_AT = ''; try { fn(); } finally { QUIET_FOCUS = false; } }
 
   const has = (o, k) => Object.prototype.hasOwnProperty.call(o, k);
-  const px = (n) => Math.round(n * 10) / 10 + 'px';
+  let FRAC = false; /* spec 102 FR-255 (T204): a pixel world at a fractional device pixel ratio keeps 3 decimals, so a lobby edge stays on its whole device pixel (0.1 px would move it by up to 0.075 device px) */
+  const px = (n) => FRAC ? Math.round(n * 1000) / 1000 + 'px' : Math.round(n * 10) / 10 + 'px';
   /* FR-184: nothing rewrites what did not change: a style or dataset value is written only when it differs */
   const sty = (e, k, v) => { if (e.style[k] !== v) e.style[k] = v; };
   const dset = (e, k, v) => { if (e.dataset[k] !== v) e.dataset[k] = v; };
@@ -345,6 +347,7 @@
     const meta = metaOf(root.DurbarRealOfficeWorlds[world], root.DurbarRealOfficeSets[set]);
     onArt = opts.onArt || null;
     PIXEL = !!meta.pixelArt;
+    meta.dpr = root.devicePixelRatio || 1; FRAC = PIXEL && Math.abs(meta.dpr - Math.round(meta.dpr)) > 1e-9; /* spec 102 FR-255 (T204): the lobby's pictures sit on whole device pixels at any ratio */
     const ids = Object.keys(meta.seat).sort();
     const who = people(model, ids, opts.rand, !!opts.remember);
     const seatOk = (p) => !!p && !['typeA', 'think', 'waveA', 'rest'].some((f) => BAD.has(SD + p + '-' + f + '.webp'));
@@ -357,7 +360,20 @@
     };
     const signs = {};
     for (const f of model.folders) signs[f.id] = { name: f.name, path: f.path, counts: f.counts.length + (f.cost ? 1 : 0) };
-    const layOut = (eng) => meta.arrangement && meta.arrangement !== 'rows' && L.layoutFor ? L.layoutFor(meta.arrangement, eng, view, meta, signs) : L.realLayout(eng, view, meta, signs); /* spec 102 FR-228: the one seam */
+    /* spec 102 FR-228: the one seam; FR-230 (owner, 2026-11-14 13:10 UTC): a circle that does not fit at the face floor draws rows, and comes back only with two agents fewer than it left at (kept per world, window size and folder list, so another floor does not inherit it) */
+    const arr = meta.arrangement && meta.arrangement !== 'rows' && L.layoutFor ? meta.arrangement : 'rows';
+    let ran = arr;
+    const layOut = (eng) => {
+      if (arr === 'circle' && L.layoutWithFallback) {
+        const n = eng.folders.reduce((c, f) => c + f.agents.length, 0), key = world + '|' + view.w + 'x' + view.h + '|' + eng.folders.map((f) => f.id).join(',');
+        const r = L.layoutWithFallback('circle', eng, view, meta, signs, CIRCLE_HOLD && CIRCLE_HOLD.key === key ? CIRCLE_HOLD.at : undefined);
+        ran = r.ran;
+        CIRCLE_HOLD = L.holdAfter(CIRCLE_HOLD, key, n, ran, r.why); /* the hold follows a failed fit only, never the All floors rows (review of #1764; pure, tested in test-realoffice-circle) */
+        return r.lay;
+      }
+      ran = arr;
+      return arr !== 'rows' ? L.layoutFor(arr, eng, view, meta, signs) : L.realLayout(eng, view, meta, signs);
+    };
     let lay = L.layoutOrFlat(layOut, engine); /* spec 097 review of #1746: a layout that throws is drawn again without floors (tested by test-realoffice-aisles) */
     /* spec 102 delta 2026-11-11 (issue 1566): an arcade hall that would scroll takes the floor's own padding (`opts.lend`, px) when that makes it fit, so a strip over the floor does not make 15 agents scroll at 1280x800; `lent` tells the host to drop that padding */
     /* spec 102 delta 2026-11-13 (issue 1598): the same when the hall fits only by cutting a folder of 4 or fewer across rows (no scroll, so the test above never ran): the lent layout is used when it keeps them whole */
@@ -373,7 +389,7 @@
     sty(ro, 'width', px(lay.width)); sty(ro, 'height', px(lay.height));
     LAY_G = lay.cabinet ? lay.g || 0 : 0; ARC = !!lay.cabinet && world === 'retro';
     if (lay.g) setVar(ro, '--ro-g', String(lay.g)); /* spec 102 FR-255: one integer scale for the world's art */
-    dset(ro, 'set', set); dset(ro, 'world', world); dset(ro, 'u', String(Math.round(lay.u))); dset(ro, 'face', String(Math.round(lay.faceH * 10) / 10)); dset(ro, 'big', lay.big ? '1' : '0');
+    dset(ro, 'set', set); dset(ro, 'world', world); dset(ro, 'arrangement', ran); dset(ro, 'u', String(Math.round(lay.u))); dset(ro, 'face', String(Math.round(lay.faceH * 10) / 10)); dset(ro, 'big', lay.big ? '1' : '0');
     ro.classList.toggle('still', !!opts.still);
     ro.classList.toggle('hold', !!opts.hold); /* the people stand still, the lights may not (FR-071) */
     const drawn = !!(CUR && CUR.ro === ro && CUR.drawn);

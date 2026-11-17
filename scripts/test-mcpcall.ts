@@ -5,6 +5,7 @@
  * (the strings below are made-up shapes).
  */
 import * as assert from 'assert';
+import { assertCutFirst } from './hang-backstop';
 import * as fs from 'fs';
 import * as path from 'path';
 import { FakeAdapter } from '../src/adapters/fake';
@@ -113,10 +114,10 @@ async function main(): Promise<void> {
     assert.ok(r === undefined || r === 'auth' || r === 'policy');
   }
   // linear time on hostile input (cut first)
-  const t0 = process.hrtime.bigint();
-  classifyMcpCall('a '.repeat(2_000_000) + 'AADSTS');
-  classifyMcpCall('AADSTS5300'.repeat(400_000));
-  assert.ok(Number(process.hrtime.bigint() - t0) / 1e6 < 500, 'a huge text is cut first');
+  assertCutFirst('classifyMcpCall reads only the first 4000 characters', 4000, () => {
+    classifyMcpCall('a '.repeat(2_000_000) + 'AADSTS');
+    classifyMcpCall('AADSTS5300'.repeat(400_000));
+  });
   assert.strictEqual(classifyMcpCall(' '.repeat(5000) + 'AADSTS530003'), undefined, 'text past the cut is not read');
 
   // ---- FR-193: maskMcpEvent sets the word from the masked text, and only the word ----

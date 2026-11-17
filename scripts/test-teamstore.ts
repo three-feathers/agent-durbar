@@ -21,6 +21,7 @@
  *   No `trimEnd` before the suffix: the validator already collapses a double space, so the name is the same (the test "no double space" shows it).
  */
 import assert from 'assert';
+import { cpuMs } from './redact-growth-lib';
 import fs from 'fs';
 import path from 'path';
 import * as real from '../src/main/teamstore';
@@ -468,8 +469,8 @@ const sections: Record<string, Section> = {
     const b = s.list()[0].members[0].brief; ok(b !== undefined && !b.includes('\r'), 'a CRLF inside a brief is read as LF'); eq(b, 'one\ntwo', 'brief lines');
   },
   speed(api) {
-    const m = new MemFs(); m.set(F, '{"version":1,"templates":[' + '[' .repeat(190000)); const t0 = Date.now(); make(m, api); ok(Date.now() - t0 < 2000, 'a deeply nested 190k file is refused in time');
-    const m2 = new MemFs(); m2.set(F, doc(stored('s1', 'N'.repeat(200000)))); const t1 = Date.now(); make(m2, api); ok(Date.now() - t1 < 2000, 'a 200k name is refused in time');
+    const m = new MemFs(); m.set(F, '{"version":1,"templates":[' + '[' .repeat(190000)); const c0 = cpuMs(() => { make(m, api); }, 2000); ok(c0 < 2000, `a deeply nested 190k file is refused in time (${c0.toFixed(0)} ms of CPU time)`);
+    const m2 = new MemFs(); m2.set(F, doc(stored('s1', 'N'.repeat(200000)))); const c1 = cpuMs(() => { make(m2, api); }, 2000); ok(c1 < 2000, `a 200k name is refused in time (${c1.toFixed(0)} ms of CPU time)`);
   },
 };
 

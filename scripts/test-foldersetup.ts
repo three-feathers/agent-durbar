@@ -1,5 +1,6 @@
 /** Unit tests, spec 061: a folder's own agent setup (scanner, decisions, what each app gets, window-only decide). No real agent app. */
 import * as assert from 'assert';
+import { assertCpuUnder } from './hang-backstop';
 import { assertLinearShape } from './redact-growth-lib';
 import * as fs from 'fs';
 import * as os from 'os';
@@ -261,11 +262,10 @@ assert.strictEqual(parseExplanation('I think it is fine', 'Copilot').ok, false, 
 }
 // required 3: the TOML reader is linear (a hostile 256 KiB value must not block main)
 {
-  const t0 = Date.now();
-  readCodexMcpToml('[mcp_servers.a]\ncommand = "x"' + ' '.repeat(80000) + 'y\nenv = { A = "1"' + ' '.repeat(80000) + ', B = "2" }\n');
-  readCodexMcpToml('[mcp_servers.a]\n' + ('k = "' + ' '.repeat(3000) + '"\n').repeat(80));
-  const ms = Date.now() - t0;
-  assert.ok(ms < 1000, `TOML with 80k spaces took ${ms} ms`);
+  assertCpuUnder('the TOML reader is linear (80k spaces; 4 ms measured under load)', 250, () => {
+    readCodexMcpToml('[mcp_servers.a]\ncommand = "x"' + ' '.repeat(80000) + 'y\nenv = { A = "1"' + ' '.repeat(80000) + ', B = "2" }\n');
+    readCodexMcpToml('[mcp_servers.a]\n' + ('k = "' + ' '.repeat(3000) + '"\n').repeat(80));
+  });
   assert.deepStrictEqual(readCodexMcpToml('[mcp_servers.a]\ncommand = "a#b" # comment\nargs = ["x # y"]\n'), [{ name: 'a', spec: { type: 'stdio', command: 'a#b', args: ['x # y'] } }], 'a # inside quotes is not a comment');
   assert.deepStrictEqual(readCodexMcpToml('[mcp_servers.a]\ncommand = "' + 'z'.repeat(5000) + '"\n'), [], 'a line over 4 KiB is skipped');
 }
