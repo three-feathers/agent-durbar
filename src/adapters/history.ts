@@ -7,6 +7,9 @@
 import * as path from 'path';
 import { isObj } from '../shared/guards';
 
+/** Spec 012 FR-183: longest tool name an agent event or a history tool item may carry; a longer one is left out (the event gate refuses it, `eventguard.ts`). */
+export const TOOL_NAME_MAX = 256;
+
 /** What the renderer shows in the "Previous sessions" list. */
 export interface PreviousSession {
   id: string;
@@ -185,7 +188,7 @@ export function eventsToHistory(events: readonly unknown[], limits: Partial<Hist
       }
       case 'tool.execution_start': {
         if (lim.textOnly) break; // spec 095 D2: tool output is never searched
-        if (d.parentToolCallId || typeof d.toolCallId !== 'string' || typeof d.toolName !== 'string') break;
+        if (d.parentToolCallId || typeof d.toolCallId !== 'string' || typeof d.toolName !== 'string' || d.toolName.length > TOOL_NAME_MAX) break; // spec 012 FR-183
         toolIdx.set(d.toolCallId, items.length);
         items.push({ type: 'tool', callId: d.toolCallId, tool: d.toolName, label: toolLabel(d.arguments), ts: tsOf(raw) });
         break;

@@ -459,3 +459,15 @@
 
 ## 2026-11-14: warn, plain danger hover and plain red confirms in the themed looks (FR-053, FR-076, issue #1570)
 - [x] T345 `themes.css`: warn rest and hover, plain `.btn.danger:hover` restored after the themed `.btn` rule; `screens.js` Remove theme and `harnesses.js` End N sessions and update are `primary danger`; `danger-sites.js` ALLOW `harnesses.js`, 21 sites; new driver `scripts/check-052-warn-danger-btn.js` (in `ui-suite.js`) with mutants `WARN_MUTANT=old|warn|dangerhover|sites` [FR-053, FR-076, issue #1570, no new FR]
+
+## 2026-11-13: a screen header fits a narrow window (FR-138, issue #1635)
+- [x] T320 `screens.css`: `.scr-head` wraps (`flex-wrap:wrap`, `gap:calc(var(--s-1)*1.5) 12px`) and `#scrClose` keeps `margin-left:auto`, so Close ends the last row inside the window at 640 to 760 px; `check-mac-titlebar` adds 760x800, 700x800 and 640x800 over a chat (Tools tool usage, Cost, Activity, Settings): Close's right edge in the window, header not wider than its box, title not under the traffic lights (not Settings); mutant `MAC_TITLEBAR_MUTANT=nowrap` [FR-138, no new FR, issue #1635]
+
+## 2026-11-16: check-052-focus-ring modality per control (FR-052, issue #1820)
+- [x] T348 `check-052-focus-ring`: per control, `H.needFocus` again and one real F13 key counted by a capture-phase keydown listener before `focus()`; each look runs under `H.focusPage({ emulate: 'first' })` (released after the loop; PR #1823's Windows run showed hasFocus=false at the assert); the `:focus-visible` timeout prints hasFocus, activeElement, visibilityState [FR-052, FR-087]
+
+## 2026-11-15: a double-click on a screen title zooms the window on a Mac (FR-085, issue #1659)
+- [x] T347 `keys.js` `TITLE_CONTROLS`: `[tabindex]:not([tabindex="-1"])` (the screen title `h2` focus target is no control); `test-macos` selector case; `check-mac-titlebar` double-clicks the screen title with real input in `settings`, `tools`, `chat-settings`, `chat-tools` at both sizes (filter yes, one `window:titleDoubleClick` on a Mac, main's handler swapped for a counter); mutant: the old selector fails at the 8 `*-title-dblclick` labels [FR-085, no new FR, issue #1659]
+
+## 2026-11-15: `check-answer-safety` diagnostic on the limit step (FR-210, issue #1770)
+- [x] T346 `scripts/check-answer-safety.js` FR-210 (B): on a wrong label list, the assertion message carries the bar's hidden flag, its labels a frame later, its `outerHTML` and the pending request cards, masked by `dist/shared/redact.js` and bounded (fail closed when it does not load); the asserted read is unchanged; mutant `ANSWER_SAFETY_MUTANT=emptybar` must fail at `only "Show in chat"` with the diagnostic printed and the planted token masked, and `ANSWER_SAFETY_MUTANT=noredact` (redact.js not loaded, HTML withheld) must fail at `the 1770 diagnostic did not print`; review of PR #1775: the card class masked too, the diagnostic in a `try` (fixed text ` [1770 diagnostic failed]`, the original label still fails), mutants `diagthrow` (fails at `only "Show in chat"` with that text) and `diagthrow-nocatch` (the guard removed: killed) [FR-210, issue #1770, no new FR, test driver only]
