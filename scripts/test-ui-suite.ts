@@ -543,6 +543,9 @@ export function checkKeyAwait(f: string, t: string): string[] {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const ts = require('typescript') as typeof import('typescript');
   const sf = ts.createSourceFile(f, t, ts.ScriptTarget.Latest, true, ts.ScriptKind.JS);
+  // a parse error could hide a bare call in the broken region: fail loudly (parseDiagnostics is not in the public typings)
+  const parseErrors = (sf as unknown as { parseDiagnostics: import('typescript').Diagnostic[] }).parseDiagnostics;
+  if (parseErrors.length > 0) return [`${f}: does not parse, so the key check cannot read it: ${ts.flattenDiagnosticMessageText(parseErrors[0].messageText, ' ')} (line ${sf.getLineAndCharacterOfPosition(parseErrors[0].start ?? 0).line + 1})`];
   const names = new Set<string>();
   const strip = (e: import('typescript').Expression): import('typescript').Expression => (ts.isParenthesizedExpression(e) || ts.isAsExpression(e) ? strip(e.expression) : e);
   const isH = (e: import('typescript').Expression): boolean => { const x = strip(e); return (ts.isIdentifier(x) && /^(H|HP)$/.test(x.text)) || (ts.isCallExpression(x) && ts.isIdentifier(x.expression) && x.expression.text === 'helpers'); };
@@ -622,6 +625,11 @@ for (const [what, src] of [
   ['a bare call inside a multi-line argument list', "await js('x',\n  1);\nH.key(\n  'A',\n  [],\n);"],
 ] as [string, string][]) assert.ok(checkKeyAwait('x.js', src + '\n').length > 0, `the key check catches ${what}`);
 assert.deepStrictEqual(checkKeyAwait('x.js', "const { js, key } = H;\nawait key('A'); const p = key('B'); await p;\nconst k = H.key;\nawait k('C');\nfunction kk(k) { return H.key(k); }\nawait kk('D');\nconst s = 'H.key(x); // key(y)';\nconst { key: other } = notH;\nother('E');\nconst key2 = 5; key2();\nok ? await H.key('F') : await H.key('G');\n"), [], 'the key check passes awaited forms, strings, a key from another object and the lookalike names');
+// a file that does not parse is an error, never a pass
+for (const [what, src] of [['an unclosed paren', "await H.key('A'\n"], ['an unterminated template', "const a = `x;\nawait H.key('A');\n"]] as [string, string][]) {
+  const r = checkKeyAwait('x.js', src);
+  assert.ok(r.length === 1 && /x\.js: does not parse/.test(r[0]), `the key check fails loudly on ${what}`);
+}
 // a mutant per closed form: the await dropped in a copy of a real driver dies at that form's own assert
 const plant = (file: string, from: RegExp, to: string, label: string): void => {
   const real = fs.readFileSync(path.join(ROOT, 'scripts', file), 'utf8');
@@ -632,6 +640,13 @@ const plant = (file: string, from: RegExp, to: string, label: string): void => {
 };
 plant('check-052-primary-btn.js', /await H\.key\('Escape'\)/, "H.key('Escape')", 'a bare H.key call');
 plant('check-097-order.js', /await key\(/, 'key(', 'a bare call of a key destructured from H');
+{
+  // mutant: a driver broken by a cut-off line must fail the check, not pass
+  const real = fs.readFileSync(path.join(ROOT, 'scripts', 'check-052-primary-btn.js'), 'utf8');
+  const broken = real.replace(/await H\.key\('Escape'\)/, "await H.key('Escape'");
+  assert.notStrictEqual(broken, real, 'the parse-error mutant found its call to change');
+  assert.ok(/does not parse/.test(checkKeyAwait('check-052-primary-btn.js', broken).join('\n')), 'the key check fails loudly on a real driver that does not parse');
+}
 plant('check-080-browser-expand.js', /await typeAddress\(url\)/, 'typeAddress(url)', 'a bare call of a multi-line wrapper');
 // the guard itself catches what it is for (a mutation of a clean driver must fail)
 const clean = "const { helpers, jsLiteral } = require('./driver-helpers');\nmodule.exports = async (ctx) => { await ctx.js(`document.title=${jsLiteral(1)}`); };\n";
