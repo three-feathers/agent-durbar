@@ -34,30 +34,54 @@ const MAX_RATIO = 40;
 export const minBaseMsFor = (platform: NodeJS.Platform): number => platform === 'win32' ? 16 : 2;
 const MIN_BASE_MS = minBaseMsFor(process.platform);
 export const worstGrowth = { ratio: 0, label: '' }; // the highest full/baseline ratio seen, printed at the end
+/** The runs of `timing(reps)` (the CPU ms of `reps` runs in one timing), doubled from `start` until one timing reads at least `minMs` or the runs reach `maxReps` (issue #1836's
+ * repetition floor; shared by `assertWithinYardstick` and, since issue #1848, the growth baselines of `assertLinearGrowth`). `leap` (the growth baselines, where each timing is
+ * a new worker): the next runs are the power of two the last reading says reaches the floor, at least double, so most baselines take one more timing, not three or four. */
+export const repsToFloor = (timing: (reps: number) => number, minMs: number, maxReps: number, start = 1, leap = false): { reps: number; ms: number } => {
+  let reps = start;
+  let ms = timing(reps);
+  while (ms < minMs && reps < maxReps) {
+    const want = leap && ms > 0 ? 2 ** Math.ceil(Math.log2((reps * minMs) / ms)) : 0;
+    reps = Math.min(Math.max(reps * 2, want), maxReps);
+    ms = timing(reps);
+  }
+  return { reps, ms };
+};
 // `reps` (default 1, so the other callers are unchanged): the baseline is timed as `run(small, reps)`, and `run` must then repeat the work `reps`
 // times inside one timing and give the mean per run, so a baseline of a few ms is read well above the Windows timer tick (a tick-sized baseline
 // caps the ratio near 15 and hides a quadratic rule that stays under the floor).
 // `baseline`: when a prefix is not the same shape (a run with a different tail), the caller builds the 1/16 input itself.
 // `retryReps` (default `reps`, so the other callers are unchanged): the baseline repeats of the second and third tries. A caller whose first try times one run (cheap) passes
 // 16, so a try that failed on a one-step baseline (Windows: 15.0 ms for 62,500 characters, PR 1510) measures the baseline again well above the step; that mean replaces the first reading.
-export const assertLinearGrowth = (label: string, run: (input: string, reps?: number) => { cpu: number; wall: number }, input: string, floorMs = 100, reps = 1, baseline?: string, retryReps = reps): void => {
+// `baseFloorMs` (issue #1848; off by default, so the other callers are unchanged): the baseline's runs grow, up to `FACTOR` (the characters of the full input), until one
+// timing reads at least that floor, as `assertWithinYardstick` does for its yardstick (`repsToFloor`). A one-run baseline of a few ms reads a few timer steps
+// (1 ms on Linux), and on a loaded machine such a reading moved the adversarial `url` ratio from about 16 to 39.1 (limit 40) with linear code and the same work.
+// Returns the figures of the deciding try: `baseReps` is the runs in the last baseline timing.
+export const assertLinearGrowth = (label: string, run: (input: string, reps?: number) => { cpu: number; wall: number }, input: string, floorMs = 100, reps = 1, baseline?: string, retryReps = reps, opts: { baseFloorMs?: number } = {}): { full: number; base: number; ratio: number; baseReps: number } => {
   const small = baseline ?? input.slice(0, Math.ceil(input.length / FACTOR));
   let full = Infinity;
   let base = Infinity;
   let wall = 0;
+  let baseReps = reps;
   for (let i = 0; i < 3; i++) {
     const r = i === 0 ? reps : retryReps;
     if (i === 1 && r !== reps) base = Infinity; // a mean of more runs replaces a reading that may be one timer step
     const f = run(input);
     wall = Math.max(wall, f.wall);
     full = Math.min(full, f.cpu);
-    base = Math.min(base, run(small, r).cpu);
+    const floor = opts.baseFloorMs;
+    // the first runs are a guess from the full input's reading (a linear baseline costs about 1/16 of it), so a linear case takes one baseline timing; the floor loop corrects a wrong guess
+    const guess = floor === undefined ? r : Math.min(Math.max(r, FACTOR), Math.max(r, 2 ** Math.ceil(Math.log2(Math.max(1, (floor * FACTOR) / Math.max(f.cpu, 1e-3))))));
+    const b = floor === undefined ? { reps: r, ms: run(small, r).cpu * r } : repsToFloor((n) => run(small, n).cpu * n, floor, Math.max(r, FACTOR), guess, true);
+    baseReps = b.reps;
+    base = Math.min(base, b.ms / b.reps);
     if (full < Math.max(floorMs, Math.max(base, MIN_BASE_MS) * MAX_RATIO)) break;
   }
   if (full / Math.max(base, MIN_BASE_MS) > worstGrowth.ratio && full >= floorMs) Object.assign(worstGrowth, { ratio: full / Math.max(base, MIN_BASE_MS), label });
   assert.ok(full < 10_000, `${label}: ${full.toFixed(1)} ms CPU, backstop 10000 ms (catastrophic)`);
   assert.ok(wall < 10_000, `${label}: wall-time backstop: ${wall.toFixed(1)} ms wall for ${full.toFixed(1)} ms CPU, limit 10000 ms (a blocking wait?)`);
   assert.ok(full < Math.max(floorMs, Math.max(base, MIN_BASE_MS) * MAX_RATIO), `${label}: ${full.toFixed(1)} ms CPU for ${input.length} chars, ${base.toFixed(1)} ms for ${small.length} chars (ratio ${(full / Math.max(base, MIN_BASE_MS)).toFixed(1)}, limit ${MAX_RATIO} for ${FACTOR}x input: linear is about ${FACTOR}, n log n about 30, quadratic over 65; floor ${floorMs} ms)`);
+  return { full, base, ratio: full / Math.max(base, MIN_BASE_MS), baseReps };
 };
 // One worker run of `code` (a worker script that writes CPU and wall ms into shared memory like the ones below): a worker that does not answer
 // in `waitMs` is stopped and the case retried once. The test stays synchronous (Atomics).
@@ -121,9 +145,9 @@ export const assertWithinYardstick = (label: string, work: () => void, yardstick
   const timed = opts.timed ?? realYardTimer;
   const minMs = opts.minMs ?? YARD_MIN_MS;
   const base = (y: number): number => Math.max(y, opts.minBaseMs ?? MIN_BASE_MS); // the self-test pins it too (review of PR 1844): no fake case reads the real platform
-  let reps = 1;
-  let yard = timed(yardstick, reps);
-  while (yard < minMs && reps < YARD_MAX_REPS) { reps *= 2; yard = timed(yardstick, reps); }
+  const first = repsToFloor((n) => timed(yardstick, n), minMs, YARD_MAX_REPS);
+  const reps = first.reps;
+  let yard = first.ms;
   let cost = Infinity;
   for (let i = 0; i < 3; i++) {
     cost = Math.min(cost, timed(work, reps));

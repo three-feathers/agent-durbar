@@ -1,0 +1,1 @@
+- Internal: the adversarial redaction growth checks time their 1/16 baseline up to the same floor as the yardstick checks, so one low timer reading on a loaded machine no longer nearly doubles a ratio (spec 012, issue #1848); the redactor is unchanged.
