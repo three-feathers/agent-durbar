@@ -2090,19 +2090,43 @@ const PCT_SEP = String.raw`%(?:25){0,8}(?:2[Ff]|5[Cc])`;
 const HOME_PCT = new RegExp(String.raw`(?<![A-Za-z0-9_.~-])(?:${PCT_SEP}(?:[Hh][Oo][Mm][Ee]|[Uu][Ss][Ee][Rr][Ss])|[A-Za-z](?::|%(?:25){0,8}3[Aa])(?:${PCT_SEP}|\\{1,2}|\/)[Uu][Ss][Ee][Rr][Ss])${PCT_SEP}(?:[^%\\/\s"'<>|:;,*?&#=]|%(?!(?:25){0,8}(?:2[Ff]|5[Cc]))[0-9A-Fa-f]{2}){1,128}`, 'g');
 const HOME_MORE = [HOME_TILDE, HOME_PCT, HOME_DRIVE_CASE];
 let homeGuardReads = 0;
-/** Test only: how many times `maskHomePaths` read a text with `redact` for FR-185's guard (only when a new spelling matched). */
+let homeGuardChars = 0;
+/** Test only: how many times `maskHomePaths` read a text with `redact` for FR-185's guard (only when a new spelling matched), and how many characters. */
 export const _homeGuardReadsForTest = (): number => homeGuardReads;
-/** `re`'s matches become `~`, except a match that overlaps a stretch `redact` hides in `s` (spec 012 FR-185, review of PR 1832 F1). `redact` reads `s` only when `re` matches. */
+export const _homeGuardCharsForTest = (): number => homeGuardChars;
+/** Characters `redact` reads on each side of a new home spelling (review of PR 1832, round 2: a long helper output with one spelling costs one window, not the whole text). */
+const HOME_GUARD_WINDOW = 2048;
+export const HOME_GUARD_WINDOW_FOR_TEST = HOME_GUARD_WINDOW;
+/**
+ * `re`'s matches become `~`, except a match that overlaps a stretch `redact` hides (spec 012 FR-185, review of PR 1832 F1). `redact` reads a window of
+ * `HOME_GUARD_WINDOW` characters on each side of the matches (overlapping windows merged, so the text is read at most about once), only when `re` matches.
+ */
 function homeGuarded(s: string, re: RegExp): string {
   re.lastIndex = 0;
   if (!re.test(s)) return s;
+  const ms: Array<[number, number]> = [];
   re.lastIndex = 0;
-  homeGuardReads++;
-  const spans = hiddenSpans(s, redact(s));
-  return s.replace(re, (m: string, ...rest: unknown[]) => {
-    const at = rest.find((x) => typeof x === 'number') as number;
-    return spans.some(([a, b]) => a < at + m.length && at < b) ? m : '~';
-  });
+  for (let m = re.exec(s); m; m = re.exec(s)) {
+    ms.push([m.index, m.index + m[0].length]);
+    if (m[0] === '') re.lastIndex++;
+  }
+  const kept = new Set<number>();
+  for (let i = 0; i < ms.length; ) {
+    const a = Math.max(0, ms[i][0] - HOME_GUARD_WINDOW);
+    let b = Math.min(s.length, ms[i][1] + HOME_GUARD_WINDOW);
+    let j = i;
+    while (j + 1 < ms.length && ms[j + 1][0] - HOME_GUARD_WINDOW <= b) { j++; b = Math.min(s.length, ms[j][1] + HOME_GUARD_WINDOW); }
+    homeGuardReads++;
+    homeGuardChars += b - a;
+    const w = s.slice(a, b);
+    const spans = hiddenSpans(w, redact(w));
+    for (let k = i; k <= j; k++) { const x = ms[k][0] - a, y = ms[k][1] - a; if (spans.some(([p, q]) => p < y && x < q)) kept.add(k); }
+    i = j + 1;
+  }
+  let out = '';
+  let at = 0;
+  ms.forEach(([x, y], k) => { out += s.slice(at, x) + (kept.has(k) ? s.slice(x, y) : '~'); at = y; });
+  return out + s.slice(at);
 }
 /**
  * Home folders in free text become `~` (review on PR #630: a copied error must not carry the user name): `/home/<user>`,
