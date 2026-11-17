@@ -161,10 +161,16 @@ function check(root = ROOT, { strict = false } = {}) {
   const seen = new Map();
   // every bullet already released (or under Unreleased) counts for the duplicate check
   for (const b of bulletBlocks([...parts.body, ...parts.rest]).bullets) seen.set(key(b), 'CHANGELOG.md');
+  // spec 008 FR-272 (#1834): the site's own rules (build-site.js), so a fragment fails in its own PR, not at the fold. A root without
+  // docs/site/unreleased.json (a throwaway test folder) has no list to check against.
+  const unreleasedFile = path.join(root, 'docs', 'site', 'unreleased.json');
+  const site = fs.existsSync(unreleasedFile) ? require('./build-site.js') : null;
+  const phrases = site ? site.loadUnreleased(unreleasedFile) : [];
   for (const fr of readFragments(root)) {
     for (const e of fr.errors) errors.push(`changelog.d/${fr.file}: ${e}`);
     for (const b of fr.bullets) {
       const k = key(b);
+      if (site) for (const e of site.bulletSiteProblems(b, phrases)) errors.push(`changelog.d/${fr.file}: the entry "${k.slice(0, 50)}…" ${e}`);
       if (seen.has(k)) errors.push(`changelog.d/${fr.file}: the entry "${k.slice(0, 70)}…" is already in ${seen.get(k)}`);
       else seen.set(k, `changelog.d/${fr.file}`);
     }
