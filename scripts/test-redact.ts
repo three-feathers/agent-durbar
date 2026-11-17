@@ -3,7 +3,7 @@ import * as assert from 'assert';
 import * as fs from 'fs';
 import * as path from 'path';
 import { Worker } from 'worker_threads';
-import { MASK_INPUT_MAX, REDACT_MAX_CHARS, createDebugSink, _uncappedForTest, cut, maskSchemeSecrets, maskTokenShapes, maskTokenShapesUnguarded, maskSecretArgs, maskSecretCommand, maskHomePaths, maskSecretUrl, maskNoteText, maskOutgoing, maskSplitTokens, _breakCallsForTest, keepShownBy, _unionMasksForTest, withoutSplit, withoutShell, _shellRefsForTest, _shellPassesForTest, _shapePassesForTest, _runReadsForTest, ESC_RUN_SHELL_SOURCE, withoutLoose, maskLoose, _homeGuardReadsForTest, _homeGuardCharsForTest, HOME_GUARD_WINDOW_FOR_TEST, _splitWorkForTest, redact, redactMarkdown, MARKDOWN_WORK, _markdownPassForTest, shQuote, splitCommand } from '../src/shared/redact';
+import { MASK_INPUT_MAX, REDACT_MAX_CHARS, createDebugSink, _uncappedForTest, cut, maskSchemeSecrets, maskTokenShapes, maskTokenShapesUnguarded, maskSecretArgs, maskSecretCommand, maskHomePaths, maskSecretUrl, maskNoteText, maskOutgoing, maskSplitTokens, _breakCallsForTest, keepShownBy, _unionMasksForTest, withoutSplit, withoutShell, _shellRefsForTest, _shellPassesForTest, _shapePassesForTest, _runReadsForTest, ESC_RUN_SHELL_SOURCE, withoutLoose, maskLoose, _homeGuardReadsForTest, _homeGuardCharsForTest, _guardEdgeScanForTest, HOME_GUARD_WINDOW_FOR_TEST, _splitWorkForTest, redact, redactMarkdown, MARKDOWN_WORK, _markdownPassForTest, shQuote, splitCommand } from '../src/shared/redact';
 
 import { assertLinearShape, assertWithinYardstick, cpuMs } from './redact-growth-lib';
 import './safetext-shared'; // the desk's maskRaw (src/renderer/safetext.js) reads the compiled redact.ts, for the FR-181 differential below
@@ -2787,6 +2787,15 @@ assert.strictEqual(redact('{"a":"https://u:p@h/x","b":"y"}', {}), '{"a":"https:/
       const long = 'x ' + fill(8 * W) + '/~alicez/src/' + fill(8 * W) + ' y';
       assert.strictEqual(readOf(long), 4 * W + '~alicez'.length, `#1845 guard window: the move is capped at one more window each side (${readOf(long)} characters)`);
       assert.strictEqual(maskHomePaths(long, []), long.replace('~alicez', '~'), '#1845 guard window: a spelling inside a run longer than the cap is rewritten as before');
+      // the edge scan is bounded: one spelling steps over at most one window on each side; spellings dense in one long run (no blank) are read once in all
+      // and their edges are moved only where the windows did not overlap already
+      const e0 = _guardEdgeScanForTest();
+      maskHomePaths(long, []);
+      assert.ok(_guardEdgeScanForTest() - e0 <= 2 * W, `#1845 guard edge work: one spelling steps over at most one window each side (${_guardEdgeScanForTest() - e0})`);
+      const denseRun = 'x ' + '/~alicez/src/q'.repeat(20_000) + ' y';
+      const e1 = _guardEdgeScanForTest();
+      const r1 = readOf(denseRun);
+      assert.ok(r1 <= denseRun.length && _guardEdgeScanForTest() - e1 <= 2 * W, `#1845 guard edge work: spellings dense in one run read it once and move two edges (${r1} of ${denseRun.length}, ${_guardEdgeScanForTest() - e1} steps)`);
     }
     const r0 = _homeGuardReadsForTest();
     maskHomePaths('plain text with /home/alicez/x and C:\\Users\\bob\\y', []);
