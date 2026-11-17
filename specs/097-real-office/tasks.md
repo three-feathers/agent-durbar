@@ -349,6 +349,11 @@ The dusk was dropped (owner, 2026-11-04 04:52 UTC): FR-239..FR-242 and T189 are 
 
 - [x] T326 [US2] Spec delta 2026-11-12 (decided by the coordinator under the owner's standing authority, the owner may overrule): the Draft tag of a lounge seat sits on top of the seat's small screen, not over the person's stool and foot (`realoffice.js`, the `dr:` tag's box); `check-office-overlap` fails a Draft tag that overlaps a lounge person's body box (`figure`), killed by a mutant that restores the old placement [FR-316] The desk-marks driver picks plain desks, not lounge seats, killed by mutant `lounge-pick` [FR-316]; the driver also waits for the settled page (visits done) before it picks, so a desk that goes away after the pick cannot move its tag, killed by mutant `unsettled` [FR-316]
 
+## 2026-11-12: flat-only selectors where a Real office is drawn (bug #1571)
+
+- [x] T314 [US2] FR-366: `needsMeOrder` reads the office order of a tie from Real office's last layout (`RO_LAST`) when a Real office is drawn, else `#stage .desk[data-id]`, each id once (`src/renderer/app.js`). Test: `sim:` `check-097-order`, three sessions start needing you at one moment where the office order differs from the session list's: the inbox and the N key go in the office order, in the flat office, the Photo office and the arcade, both sizes.
+- [x] T315 [US2] FR-367: `folderNameEl` finds a Real office folder sign's name, and the folder edit's clip takes `.ro-sign` (`src/renderer/app.js`). Test: `sim:` `check-097-plate-pencil`, F2 on a sign's ⋯ button opens the folder name field over the sign's name, inside the sign, Escape keeps the name and gives the focus back, in every world of the driver, both sizes.
+
 ## 2026-11-12: helpers as clay-toy kids playing on the desk (FR-368..FR-376, issues #1641, #1642; spec only, nothing built)
 
 Order: T327 (the owner's picture gate) before any code PR; T328, T329 (art, #1641) before T330..T336 (build, #1642). Sizes: S under a day, M one PR of about 300 to 800 lines, L more than one PR. Parity tasks for the other worlds are spec 102's T326, T327 (#1643); the world-moment record is 102 T235 (#1644).
