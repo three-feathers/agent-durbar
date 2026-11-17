@@ -141,6 +141,10 @@ assert.ok(/'keys\.js'/.test(fs.readFileSync(path.join(ROOT, 'scripts', 'copy-ass
 // the Mac title bar rules apply only under html[data-platform="darwin"], so the office geometry on Linux and Windows is unchanged
 const css = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'styles.css'), 'utf8');
 for (const line of css.split('\n').filter((l) => /app-region|padding-left:(max\()?78px/.test(l))) assert.ok(line.startsWith('html[data-platform="darwin"]'), `darwin-only: ${line.slice(0, 80)}`);
+// screens.css carries Mac rules too (the Settings title room, issue #1538): each line that names the room (--tl-room or a 78px) starts under the darwin prefix, and the rule itself exists with it
+const scss = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'screens.css'), 'utf8').replace(/\r\n/g, '\n');
+for (const line of scss.split('\n').filter((l) => /tl-room|78px|app-region/.test(l))) assert.ok(line.startsWith('html[data-platform="darwin"]'), `darwin-only (screens.css): ${line.slice(0, 80)}`);
+assert.ok(scss.includes('html[data-platform="darwin"]:not([data-fullscreen]) body.panel-open.screen-open #screen:has(.scr-nav) .scr-head{--tl-room:78px;padding-left:max(var(--tl-room),var(--sn-pad))}'), 'the Settings title keeps the traffic-light room on a Mac only, outside full screen');
 // an open chat hides the top bar (body.panel-open), so the agent rail's top row and the chat header are the drag areas then (spec 052 FR-215),
 // with the same room and no-drag controls (in the header also anything with a tooltip);
 // a screen opened over a chat (body.screen-open) also hides the rail, so then the screen's header is; a notice strip shown with a chat open is the first row (FR-138)

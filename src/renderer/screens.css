@@ -615,3 +615,6 @@ html[data-motion-off] .wpic img{transition:none;transform:none!important}
 .wuse{align-self:flex-start;color:var(--accent)}
 .wuse[data-off]{visibility:hidden}
 @media (forced-colors:active){.thpick[data-world][aria-checked=true]{border-color:Highlight}.thpick[data-world]:focus-visible{outline:2px solid CanvasText}.wuse{color:CanvasText}}
+/* spec 052 FR-138 (2026-11-11): on a Mac, outside full screen, a screen over a chat keeps the traffic-light room: the two rules above have an id in them and beat the Mac rule in styles.css, so the Mac rule is repeated here with the same weight and the room first. A notice strip above is the first row, so the head then keeps the plain value. Under 760px --sn-pad is already 24px, so the same two rules cover the row layout. */
+html[data-platform="darwin"]:not([data-fullscreen]) body.panel-open.screen-open #screen:has(.scr-nav) .scr-head{--tl-room:78px;padding-left:max(var(--tl-room),var(--sn-pad))}
+html[data-platform="darwin"]:not([data-fullscreen]) body.panel-open.screen-open .notice-strip:not([hidden]) ~ #screen:has(.scr-nav) .scr-head{padding-left:var(--sn-pad)}
