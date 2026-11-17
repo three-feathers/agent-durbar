@@ -163,7 +163,7 @@ for (const keep of ['ghp_short', 'see ghs_count', 'wei' + 'ghs_' + 'TotalWeightK
     assert.strictEqual(redact('x [redacted]\\nNextlinehere', {}), 'x [redacted]\\nNextlinehere', '#1585 a JSON line break after a mask ends the rest');
     assert.strictEqual(redact('see ' + V + '\\.', NE), 'see [redacted:FOO_TOKEN]\\.', '#1585 an escaped full stop after a mask stays');
     assert.strictEqual(redact('see ' + V + '_' + REST + '\\.', NE), 'see [redacted:FOO_TOKEN]\\.', '#1585 the rest is hidden, an escaped full stop stays with its backslash');
-    // the rule itself (FR-173's glued rest), as callers that run maskTokenShapes alone read it (the brain view's maskText)
+    // the rule itself (FR-173's glued rest), as callers that run maskTokenShapes alone read it (the brain view's brainMaskText)
     assert.strictEqual(maskTokenShapes('x[redacted]\\_' + REST, '[redacted]'), 'x[redacted]', '#1585 maskTokenShapes: an escaped rest after a plain mask is glued');
     assert.strictEqual(maskTokenShapes('x [redacted:FOO_TOKEN]_' + REST.slice(0, 4) + '\\' + REST.slice(4), '[redacted]'), 'x [redacted:FOO_TOKEN]', '#1585 maskTokenShapes: an escaped rest after a named marker is glued');
     // round 3: every escaped character counts toward the rest (16 after `_`, with two escaped characters)
