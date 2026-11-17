@@ -6,7 +6,7 @@
 import * as assert from 'assert';
 import { REDACT_MAX_CHARS, _runReadsForTest, _shapePassesForTest, _shellPassesForTest, _uncappedForTest, bareStepsForTest, cut, redact } from '../src/shared/redact';
 import { spawnSync } from 'child_process';
-import { YARD_MAX_REPS, YARD_MIN_MS, type YardTimer, assertLinearGrowth, assertLinearShape, assertWithinYardstick, cpuMs, minBaseMsFor, worstGrowth, workerRun, yardMinMs } from './redact-growth-lib';
+import { BASE_MIN_OF, YARD_MAX_REPS, YARD_MIN_MS, type YardTimer, assertLinearGrowth, assertLinearShape, assertWithinYardstick, cpuMs, minBaseMsFor, worstGrowth, workerRun, yardMinMs } from './redact-growth-lib';
 
 const part = process.argv[2];
 const BT = '`';
@@ -164,7 +164,7 @@ if (part === 'adversarial' || part === 'adversarial2' || part === 'masks') {
   // guard; a worker that does not answer in time is stopped and the case retried once.
   const mod = require.resolve('../src/shared/redact');
   const code = `const {workerData:w}=require('worker_threads');const flag=new Int32Array(w.sab,0,1),out=new Float64Array(w.sab,8,2);` +
-    `try{const {redact}=require(w.mod);const reps=w.reps||1;redact(w.input.slice(0,4096),{});const tc=typeof process.threadCpuUsage==='function';const w0=process.hrtime.bigint(),c0=tc?process.threadCpuUsage():null;for(let i=0;i<reps;i++)redact(w.input,{});const wall=Number(process.hrtime.bigint()-w0)/1e6/reps;let cpu=wall;if(tc){const d=process.threadCpuUsage(c0);cpu=(d.user+d.system)/1000/reps}out[0]=cpu;out[1]=wall;Atomics.store(flag,0,1)}` +
+    `try{const {redact}=require(w.mod);const reps=w.reps||1;redact(w.input.slice(0,4096),{});const tc=typeof process.threadCpuUsage==='function';let cpu=Infinity,wall=0;for(let k=0;k<(w.minOf||1);k++){const w0=process.hrtime.bigint(),c0=tc?process.threadCpuUsage():null;for(let i=0;i<reps;i++)redact(w.input,{});const wl=Number(process.hrtime.bigint()-w0)/1e6/reps;let c=wl;if(tc){const d=process.threadCpuUsage(c0);c=(d.user+d.system)/1000/reps}cpu=Math.min(cpu,c);wall=Math.max(wall,wl)}out[0]=cpu;out[1]=wall;Atomics.store(flag,0,1)}` +
     `catch(e){Atomics.store(flag,0,2)}Atomics.notify(flag,0)`;
   // two suites, each case in one (over 30 s on Windows as one)
   // the cases of the masking batch of 2026-11-08 (spec 012 FR-173/FR-174, PR 1317) are their own suite, so the two above stay under 30 s
@@ -202,7 +202,7 @@ if (part === 'adversarial' || part === 'adversarial2' || part === 'masks') {
   // and adds its cut marker, so the big side was another shape than its baseline: on `slackHookEsc` (one escaped run) the cut text's run no longer equals the text,
   // and the marker's blank after the cut's last backslash is an escaped blank, a run FR-184's shell readings read once more, while the uncut baseline is read once
   // (the run is the whole text): 3 rule passes over the whole text against 1, a ratio near 46 with linear code (the same shape, cut and 1/16 the size, reads 15.8)
-  for (const [k, v] of part === 'masks' ? Object.entries(maskCases) : Object.entries(adversarial).filter((_e, i) => i % 2 === (part === 'adversarial' ? 0 : 1))) assertLinearGrowth(`adversarial ${k}`, (input, reps) => workerRun(`adversarial ${k}`, code, { mod, input, reps }, 30000), v.slice(0, REDACT_MAX_CHARS), 100, 1, undefined, 16);
+  for (const [k, v] of part === 'masks' ? Object.entries(maskCases) : Object.entries(adversarial).filter((_e, i) => i % 2 === (part === 'adversarial' ? 0 : 1))) assertLinearGrowth(`adversarial ${k}`, (input, reps, minOf) => workerRun(`adversarial ${k}`, code, { mod, input, reps, minOf }, 30000), v.slice(0, REDACT_MAX_CHARS), 100, 1, undefined, 16, { baseFloorMs: YARD_MIN_MS, baseMinOf: BASE_MIN_OF });
   // spec 012 T138 delta 2026-11-11 (PR 1510's Windows run): (1) each worker first masks 4 KB of the same input untimed, so the compile costs of a fresh worker (about 20-30 ms on
   // Linux) no longer sit in the 1/16 baseline, where they hid a quadratic rule (ratio 29 instead of 65); (2) a try that fails times the baseline again as 16 runs in one worker and
   // takes the mean (`retryReps`): one run of 62,500 characters read 15.0 ms of thread CPU on Windows (one timer step, clamped to 16), so the check was a fixed 640 ms limit there,
@@ -254,6 +254,71 @@ if (part === 'adversarial2') {
   assert.strictEqual(cut(atBound(4095) + '/bc', atBound(4095).length + 2), atBound(4095) + M, '#1841 cut: a run of 4,095 characters is short');
 }
 
+}
+
+// issue #1848: the adversarial `url` shape read 39.1 against its limit of 40 on a loaded machine, with linear code and the same work at both sizes: its 1/16 baseline was one run
+// of about 7 ms in a fresh worker, read in timer steps (1 ms on Linux), and one reading of it is noisy (the suspected, unproven cause). Measured (Linux, 4 cores, thread CPU, 10 runs each, idle
+// and beside busy `nice` processes): 11.9 to 21.4 in 60 runs with a one-run baseline (39.1 not reproduced; the cause is unproven). The adversarial cases now repeat
+// their baseline up to the floor of `assertWithinYardstick` (`baseFloorMs: YARD_MIN_MS`, `repsToFloor`) and keep the lowest of 4 readings (`baseMinOf`, review of PR 1856:
+// a slower host read the baseline at 26-42 ms, where the floor never engages), and the work on `url` is counted, not timed.
+if (part === 'adversarial') {
+  const url = 'a://x:'.repeat(1_000_000 / 6).slice(0, REDACT_MAX_CHARS);
+  const work = (t: string): string => {
+    const q = _shapePassesForTest();
+    const r = _runReadsForTest();
+    const p = _shellPassesForTest();
+    redact(t, {});
+    return [_shapePassesForTest() - q, _runReadsForTest() - r, _shellPassesForTest() - p].join(' ');
+  };
+  assert.strictEqual(`${work(url.slice(0, Math.ceil(url.length / 16)))} / ${work(url)}`, '1 0 0 / 1 0 0', '#1848 work url: rule passes, run readings and shell-reading passes at 1/16 the size and whole');
+  // the baseline floor against a fake timer (no real timing): `run` gives the CPU ms per run; one run of the 1/16 input reads 3 ms (a low reading on a loaded machine),
+  // more runs in one timing read the true 7 ms; the whole input reads 117 ms (16.7 times the true baseline)
+  const worst = { ...worstGrowth };
+  const big = 'x'.repeat(1_000_000);
+  const fake = (full: number, base = 7) => (x: string, reps = 1): { cpu: number; wall: number } => ({ cpu: x.length < 100_000 ? (reps === 1 ? 3 : base) : full, wall: 0 });
+  // a slower host (review of PR 1856): one run of the 1/16 input reads 26 to 42 ms, over the floor, so the floor never engages; the readings of one worker, in turn, are
+  // 42, 26, 38 and 30 ms (1.6 times apart) and the whole input reads 520 ms. One reading is whichever comes first; the lowest of 4 is the same every time.
+  const slow = (): ((x: string, reps?: number, minOf?: number) => { cpu: number; wall: number }) => {
+    const seq = [42, 26, 38, 30];
+    let k = 0;
+    return (x, _reps = 1, minOf = 1) => {
+      if (x.length >= 100_000) return { cpu: 520, wall: 0 };
+      let m = Infinity;
+      for (let i = 0; i < minOf; i++) m = Math.min(m, seq[k++ % seq.length]);
+      return { cpu: m, wall: 0 };
+    };
+  };
+  // a Windows tick: each timing reads whole 15.625 ms steps of the true 7 ms a run
+  const tick = 15.625;
+  const ticked = (x: string, reps = 1): { cpu: number; wall: number } => ({ cpu: x.length < 100_000 ? (Math.floor((7 * reps) / tick) * tick) / reps : 117, wall: 0 });
+  // review of PR 1856 (Windows run, as PR 1844's round 1): every case pins the base floor (`minBaseMs`) and the yardstick floor (`baseFloorMs`), and the block runs once with
+  // each platform's values, so no case reads the real platform; the expected figures are pinned per round ([Linux, Windows])
+  const ix = { linux: 0, win32: 1 } as const;
+  for (const os of ['linux', 'win32'] as const) {
+    const at = <T>(pair: [T, T]): T => pair[ix[os]];
+    const B = minBaseMsFor(os);
+    const F = yardMinMs(os);
+    const pin = (o: { baseFloorMs?: number; baseMinOf?: number } = {}): { baseFloorMs?: number; baseMinOf?: number; minBaseMs: number } => ({ ...o, minBaseMs: B });
+    const tag = `#1848 ${os}`;
+    const off = assertLinearGrowth(`${tag} floor off`, fake(117), big, 100, 1, undefined, 16, pin());
+    assert.strictEqual(off.ratio.toFixed(1), at(['39.0', '7.3']), `${tag} floor off: a one-run baseline reads the low reading (39 for linear work over a 2 ms base floor, 117 / 16 over Windows' 16)`);
+    const on = assertLinearGrowth(`${tag} floor on`, fake(117), big, 100, 1, undefined, 16, pin({ baseFloorMs: F }));
+    assert.deepStrictEqual([on.baseReps, on.ratio.toFixed(1)], at([[4, '16.7'], [16, '7.3']]), `${tag} floor: the baseline is timed at the runs that read the floor (4 runs, 28 ms; on Windows 16, the most), not one low reading`);
+    // the first runs are guessed from the whole input's reading (117 / 16 per run); a baseline cheaper than the guess (4 ms a run) takes more runs (8: 32 ms)
+    const short = assertLinearGrowth(`${tag} floor short guess`, fake(117, 4), big, 100, 1, undefined, 16, pin({ baseFloorMs: F }));
+    assert.deepStrictEqual([short.baseReps, short.ratio.toFixed(2)], at([[8, '29.25'], [16, '7.31']]), `${tag} floor: a baseline still under the floor at the guessed runs takes more runs until it reads the floor`);
+    const both = assertLinearGrowth(`${tag} floor and min`, fake(117), big, 100, 1, undefined, 16, pin({ baseFloorMs: F, baseMinOf: BASE_MIN_OF }));
+    assert.deepStrictEqual([both.baseReps, both.ratio.toFixed(1)], at([[4, '16.7'], [16, '7.3']]), `${tag} min: with the lowest of 4 readings the floor case reads as without it`);
+    const one = assertLinearGrowth(`${tag} slow host, one reading`, slow(), big, 100, 1, undefined, 16, pin({ baseFloorMs: F }));
+    assert.deepStrictEqual([one.baseReps, one.base, one.ratio.toFixed(1)], at([[1, 42, '12.4'], [4, 42, '12.4']]), `${tag} slow host: one reading is the first (42 ms); the floor never engages on Linux`);
+    const low = assertLinearGrowth(`${tag} slow host, lowest of 4`, slow(), big, 100, 1, undefined, 16, pin({ baseFloorMs: F, baseMinOf: BASE_MIN_OF }));
+    assert.deepStrictEqual([low.baseReps, low.base, low.ratio.toFixed(1)], at([[1, 26, '20.0'], [8, 26, '20.0']]), `${tag} min: on a slow host the baseline is the lowest of 4 readings in one worker (26 ms), not the first (42 ms)`);
+    const win = assertLinearGrowth(`${tag} tick`, ticked, big, 100, 1, undefined, 16, pin({ baseFloorMs: F, baseMinOf: BASE_MIN_OF }));
+    assert.deepStrictEqual([win.baseReps, win.base.toFixed(2), win.ratio.toFixed(1)], at([[8, '5.86', '20.0'], [16, '6.84', '7.3']]), `${tag} tick: readings in whole 15.625 ms steps take the runs that read the floor (Windows: 16, the characters of the whole input)`);
+    assert.throws(() => assertLinearGrowth(`${tag} floor quadratic`, fake(117 * 16), big, 100, 1, undefined, 16, pin({ baseFloorMs: F, baseMinOf: BASE_MIN_OF })), new RegExp(`${tag} floor quadratic: .*\\(ratio ${at(['267.4', '117.0'])}`));
+    assert.throws(() => assertLinearGrowth(`${tag} slow host quadratic`, (x, reps, minOf) => (x.length < 100_000 ? slow()(x, reps, minOf) : { cpu: 26 * 256, wall: 0 }), big, 100, 1, undefined, 16, pin({ baseFloorMs: F, baseMinOf: BASE_MIN_OF })), new RegExp(`${tag} slow host quadratic: .*\\(ratio 256\\.0`));
+  }
+  Object.assign(worstGrowth, worst);
 }
 
 if (part === 'r11') {
@@ -335,7 +400,7 @@ if (part === 'hashtable') {
     `catch(e){Atomics.store(flag,0,2)}Atomics.notify(flag,0)`;
   const cases = Object.entries(adv).flatMap(([k2, v2]) => (/\s/.test(v2) ? [] : [[k2, v2, 0]]).concat([0, 1, 2, 3, 4].map((i) => [k2 + '-50k', v2.slice(0, 50_000), i])) as Array<[string, string, number]>);
   // a try that fails times the 1/16 baseline as 16 runs (T138 delta 2026-11-11)
-  const r12Grow = (k: string, src: string, v: string, pi: number): void => assertLinearGrowth(k, (input, reps) => workerRun(k, src, { mod, input, path: pi, reps }, 60000), v, 100, 1, undefined, 16);
+  const r12Grow = (k: string, src: string, v: string, pi: number): void => { assertLinearGrowth(k, (input, reps) => workerRun(k, src, { mod, input, path: pi, reps }, 60000), v, 100, 1, undefined, 16); };
   for (const [k0, v, pi] of cases) {
     const k = `R12 adversarial ${k0} (path ${pi})`;
     r12Grow(k, code, v, pi);
