@@ -17,7 +17,7 @@ The graphs, the split and the total are in **The numbers so far** below (generat
 <!-- build-cost-detail:begin (written by `npm run usage:readme`) -->
 ## The numbers so far
 
-**About US$6,161** (API list-price estimate, not billing), tracked since 2026-10-25, as of 2026-11-16 (release `v0.1.22`).
+**About US$6,299** (API list-price estimate, not billing), tracked since 2026-10-25, as of 2026-11-17 (release `v0.1.23`).
 
 ![Cumulative build cost by model over releases (API list-price estimate, not billing)](build-cost.svg)
 
@@ -25,9 +25,9 @@ The graphs, the split and the total are in **The numbers so far** below (generat
 
 Estimated, not measured: US$3,666 of the total, spent before telemetry could count it per day, is spread over 13 days (2026-10-25 to 2026-11-06) by 50% lines changed and 50% merged PRs of each day (git history); the faded, dashed bars are those estimates, the solid bars are measured. Per-model split of an estimated day: the same mix as the original lump (an assumption).
 
-- By model: Opus 5.5 71% (US$4,352), Sonnet 5.5 29% (US$1,805), Haiku 5.5 0% (US$4).
-- By machine or team: linux 88% (US$5,400), ruben-server 9% (US$525), mac 4% (US$236).
-- Not counted yet: work before 2026-10-25, Copilot and Codex, and machines that publish no usage file yet (Paco's server has none yet; the Mac's file ends 2026-11-09 for now; Ruben's server file ends on 2026-11-12, a day that was partial when it was written, and the Linux file ends on 2026-11-16, a partial day (data up to about 02:00 UTC), so those totals may be a little higher).
+- By model: Opus 5.5 71% (US$4,466), Sonnet 5.5 29% (US$1,828), Haiku 5.5 0% (US$5).
+- By machine or team: linux 88% (US$5,537), ruben-server 8% (US$525), mac 4% (US$236).
+- Not counted yet: work before 2026-10-25, Copilot and Codex, and machines that publish no usage file yet (Paco's server has none yet; the Mac's file ends 2026-11-09 for now; Ruben's server file ends on 2026-11-12, a day that was partial when it was written, and the Linux file ends on 2026-11-17, a partial day (data up to about 02:15 UTC), so those totals may be a little higher).
 <!-- build-cost-detail:end -->
 
 ## 1. Point Claude Code at the receiver
