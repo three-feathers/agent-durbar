@@ -4,9 +4,9 @@
  * `node dist-scripts/scripts/test-redact-growth.js <part>`.
  */
 import * as assert from 'assert';
-import { REDACT_MAX_CHARS, _uncappedForTest, bareStepsForTest, redact } from '../src/shared/redact';
+import { REDACT_MAX_CHARS, _runReadsForTest, _shapePassesForTest, _shellPassesForTest, _uncappedForTest, bareStepsForTest, cut, redact } from '../src/shared/redact';
 import { spawnSync } from 'child_process';
-import { assertLinearGrowth, assertLinearShape, assertWithinYardstick, cpuMs, worstGrowth, workerRun } from './redact-growth-lib';
+import { YARD_MIN_MS, assertLinearGrowth, assertLinearShape, assertWithinYardstick, cpuMs, worstGrowth, workerRun } from './redact-growth-lib';
 
 const part = process.argv[2];
 const BT = '`';
@@ -183,7 +183,25 @@ if (part === 'adversarial' || part === 'adversarial2' || part === 'masks') {
     valueContinuations: 'password=\\\n'.repeat(MB / 11),
     valueContinuationRun: 'password=' + '\\\n'.repeat(MB / 2),
   };
-  for (const [k, v] of part === 'masks' ? Object.entries(maskCases) : Object.entries(adversarial).filter((_e, i) => i % 2 === (part === 'adversarial' ? 0 : 1))) assertLinearGrowth(`adversarial ${k}`, (input) => workerRun(`adversarial ${k}`, code, { mod, input }, 30000), v);
+  // issue #1839: each input at most REDACT_MAX_CHARS, so `redact` reads the whole of it and its 1/16 baseline is the same shape. Over the cap, `redact` cuts the text
+  // and adds its cut marker, so the big side was another shape than its baseline: on `slackHookEsc` (one escaped run) the cut text's run no longer equals the text,
+  // and the marker's blank after the cut's last backslash is an escaped blank, a run FR-184's shell readings read once more, while the uncut baseline is read once
+  // (the run is the whole text): 3 rule passes over the whole text against 1, a ratio near 46 with linear code (the same shape, cut and 1/16 the size, reads 15.8)
+  for (const [k, v] of part === 'masks' ? Object.entries(maskCases) : Object.entries(adversarial).filter((_e, i) => i % 2 === (part === 'adversarial' ? 0 : 1))) assertLinearGrowth(`adversarial ${k}`, (input) => workerRun(`adversarial ${k}`, code, { mod, input }, 30000), v.slice(0, REDACT_MAX_CHARS));
+}
+// issue #1839: the work on one long escaped run, counted, not timed: rule passes (every rule over a text), FR-181's readings of the run, and the shell readings' rule passes,
+// for the run as a whole text and for it cut as `redact` cuts a text over REDACT_MAX_CHARS (`cut`: up to its last backslash, then the cut marker); each is read over the whole text
+if (part === 'adversarial2') {
+  const shape = 'hooks.slack.com\\/services\\/' + 'a\\/'.repeat(20_000);
+  const work = (t: string): string => {
+    const q = _shapePassesForTest();
+    const r = _runReadsForTest();
+    const p = _shellPassesForTest();
+    redact(t, {});
+    return [_shapePassesForTest() - q, _runReadsForTest() - r, _shellPassesForTest() - p].join(' ');
+  };
+  assert.strictEqual(work(shape), '2 1 0', '#1839 work slackHookEsc: rule passes, run readings and shell-reading passes on one escaped run');
+  assert.strictEqual(work(cut(shape, shape.length - 1)), '6 2 2', '#1839 work slackHookEsc cut: rule passes, run readings and shell-reading passes on the run cut as redact cuts it');
 }
 
 }
@@ -279,6 +297,16 @@ if (part === 'hashtablegrowth') {
   // (they cost 25 times `redact` on this path before; about 1 time now), against `redact` on the same text in the same run (spec 012 T138)
   for (const [k, v] of [['unclosed double quote', '@{token="' + 'a'.repeat(MB)], ['unclosed single quote', "@{'api_key'='" + 'a'.repeat(MB)], ['long bare value', '@{ token = ' + 'a'.repeat(MB)]] as const) {
     assertWithinYardstick(`R12: ${k} on 1 MB, command and args paths`, () => { _uncappedForTest.maskSecretCommand(v); _uncappedForTest.maskSecretArgs([v]); }, () => void redact(v, {}), 6);
+  }
+  // issue #1836: the yardstick helper itself, with a job far under one Windows CPU tick (about 15.6 ms): both sides are repeated inside one timing until the
+  // yardstick reads several ticks, so equal work passes and 5 times the work still fails the 3x bound, on every OS
+  {
+    const text = 'word '.repeat(400);
+    const job = (): void => void redact(text, {});
+    for (let i = 0; i < 20; i++) job(); // warm, so the first timing is not the compile
+    const same = assertWithinYardstick('#1836 yardstick: the same job', job, job, 3);
+    assert.ok(same.reps > 1 && same.yard >= YARD_MIN_MS / 2, `#1836 yardstick: a short job is repeated until it reads several ticks (${same.reps} runs, ${same.yard.toFixed(1)} ms)`);
+    assert.throws(() => assertWithinYardstick('#1836 yardstick: 5 times the job', () => { for (let i = 0; i < 5; i++) job(); }, job, 3), (e: Error) => /^#1836 yardstick: 5 times the job: [\d.]+ ms CPU, [\d.]+x the yardstick .*\(limit 3x\)$/.test(e.message), '#1836 yardstick: 5 times the work fails the 3x bound at its own assert');
   }
 }
 

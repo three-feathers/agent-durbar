@@ -1,0 +1,42 @@
+name: Mac title bar on pull requests
+
+# Spec 008 FR-200 (owner decision, Paco 2026-11-10, issue #1469; job shape confirmed by Vikram's side). #1457 (the rail's resize
+# handle dragged the window on macOS) reached main because the Mac title bar check ran only in the nightly macOS run
+# (ui-platforms.yml, FR-108). This runs that one check, on one macOS runner, on a pull request that changes the renderer's CSS
+# (or the check itself). `paths:` is workflow-level in GitHub Actions, so this is its own workflow file: a PR that does not match
+# starts nothing (no macOS minutes), as FR-135 (macos-pr.yml) does. It is not a required check (the ruleset is unchanged): read it in
+# `gh pr checks`. Simulator only: no account, no agent session, no credits. `pull_request`, never pull_request_target; no secrets.
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+    paths:
+      - 'src/renderer/**/*.css'
+      - 'scripts/check-mac-titlebar.js'
+      - 'scripts/driver-helpers.js'
+      - '.github/workflows/mac-titlebar-pr.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  mac-titlebar:
+    name: Mac title bar (path-filtered)
+    if: ${{ !github.event.pull_request.draft }}
+    runs-on: macos-latest
+    # spec 008 FR-195: about 6 min of work plus up to about 12 min of npm ci retries in an Electron download outage
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          cache: npm
+      - uses: ./.github/actions/npm-ci
+      - run: npm run build
+      # same command as the nightly (ui-platforms.yml): macOS has a display, so no xvfb
+      - name: Mac title bar
+        run: node scripts/check-mac-titlebar.js

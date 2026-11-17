@@ -36,6 +36,12 @@ module.exports = async (ctx) => {
   const T0 = Date.now(), mark = (m) => console.log(`[097-screens] ${Math.round((Date.now() - T0) / 1000)} s: ${m}`);
   const wc = () => ctx.win.webContents;
   const must = async (expr, what, ms = 15000) => assert.ok(await H.until(expr, ms), 'timed out waiting for ' + what);
+  /* issue #1460 (diagnostic only): when the Now fact wait times out, say whether #roZoom exists and the last pointer position the page got, so a closed zoom and a missing fact can be told apart; printed on a failure, the same assert follows, no verdict change */
+  const mustFact = async (expr, what, ms = 15000) => {
+    const ok = await H.until(expr, ms);
+    if (!ok) { try { console.log('[097-screens] ' + what + ': ' + JSON.stringify(await js(`({roZoom:!!document.getElementById('roZoom'),zoomFor:(document.getElementById('roZoom')||{dataset:{}}).dataset.for||null,lastMove:window.__mv||null,hasFocus:document.hasFocus(),hidden:document.hidden})`))); } catch { /* a diagnostic never replaces the failure */ } }
+    assert.ok(ok, 'timed out waiting for ' + what);
+  };
   /* FR-034 by real pointer moves. The zoom closes when the window loses the focus, and it does not open while the office is hidden; on CI drivers run side by side, so another window can take the focus or cover this one. That, and a move the page never got, are tried again: neither is the hover. A move it got that opens nothing is a failure, with what was under the pointer and the last move. A reload loses the listeners, so each use arms them */
   const arm = () => js(`(()=>{if(window.__blurs!==undefined)return;window.__blurs=0;window.__mv='';addEventListener('blur',()=>{window.__blurs++;});document.addEventListener('visibilitychange',()=>{if(document.hidden)window.__blurs++;});addEventListener('mousemove',(e)=>{window.__mv=e.clientX+','+e.clientY;},true);})();0`);
   const moveTo = async (x, y) => { await arm(); const X = Math.round(x), Y = Math.round(y); wc().sendInputEvent({ type: 'mouseMove', x: X, y: Y }); return H.until(`window.__mv===${jsLiteral(X + ',' + Y)}`, 3000); };
@@ -469,7 +475,7 @@ module.exports = async (ctx) => {
       assert.ok(z1.h <= z0.h - 16, 'FR-315: the panel is shorter by the fact line that went (it is placed again): ' + z0.h + ' to ' + z1.h + ' ' + JSON.stringify(z1.facts));
       /* a tool starts under the pointer: the fact comes and the panel grows by its line */
       await emit({ type: 'toolCall', sessionId: id, callId: 'drv-f', tool: 'read_file', phase: 'start', args: { path: 'src/facts/one.ts' } });
-      await must(`(()=>{const P=document.getElementById('roZoom');return !!P&&[...P.querySelectorAll('.ro-zk .ro-zi')].some(e=>/^Now /.test(e.textContent));})()`, 'the Now fact in the open zoom', 15000);
+      await mustFact(`(()=>{const P=document.getElementById('roZoom');return !!P&&[...P.querySelectorAll('.ro-zk .ro-zi')].some(e=>/^Now /.test(e.textContent));})()`, 'the Now fact in the open zoom', 15000);
       await js(`new Promise(r=>setTimeout(r,250))`);
       z2 = await js(ZS);
       assert.ok(z2.h >= z1.h + 16, 'FR-315: the panel grew by the new fact line: ' + z1.h + ' to ' + z2.h);

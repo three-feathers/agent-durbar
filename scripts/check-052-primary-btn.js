@@ -57,7 +57,7 @@ module.exports = async (ctx) => {
       await H.settle();
       await js(INSTALL_PX);
       if (process.env.PRIMARY_MUTANT) console.log(`[primary] mutant ${process.env.PRIMARY_MUTANT}: changed ${await mutate()} rule(s)`);
-      await js(`document.getElementById('topMoreBtn').focus()`); H.key('Down');
+      await js(`document.getElementById('topMoreBtn').focus()`); await H.key('Down');
       assert.ok(await until(`!document.getElementById('topMoreMenu').hidden&&!document.getElementById('endAllBtn').hidden`, 5000), `${tag}: the ⋯ menu opened`);
       await js(`document.getElementById('endAllBtn').click()`);
       assert.ok(await until(`!!document.querySelector('.dlg .btn.primary.danger')`, 8000), `${tag}: the dialog opened`);
@@ -100,7 +100,7 @@ module.exports = async (ctx) => {
       H.wc().sendInputEvent({ type: 'mouseUp', x: c.x, y: c.y, button: 'left', clickCount: 1 });
       await H.shot(path.join(OUT, `052-primary-btn-${look.replace(/\W+/g, '-')}-${w}x${h}.png`), { prep: 'none', settle: false, tag: 'primary' });
       await js(`document.querySelector(${jsLiteral(SEL)}).remove()`);
-      H.key('Escape');
+      await H.key('Escape');
       assert.ok(await until(`!document.querySelector('.dlg')`, 5000), `${tag}: Escape closes the dialog`);
     }
   }

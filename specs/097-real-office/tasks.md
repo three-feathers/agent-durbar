@@ -349,6 +349,11 @@ The dusk was dropped (owner, 2026-11-04 04:52 UTC): FR-239..FR-242 and T189 are 
 
 - [x] T326 [US2] Spec delta 2026-11-12 (decided by the coordinator under the owner's standing authority, the owner may overrule): the Draft tag of a lounge seat sits on top of the seat's small screen, not over the person's stool and foot (`realoffice.js`, the `dr:` tag's box); `check-office-overlap` fails a Draft tag that overlaps a lounge person's body box (`figure`), killed by a mutant that restores the old placement [FR-316] The desk-marks driver picks plain desks, not lounge seats, killed by mutant `lounge-pick` [FR-316]; the driver also waits for the settled page (visits done) before it picks, so a desk that goes away after the pick cannot move its tag, killed by mutant `unsettled` [FR-316]
 
+## 2026-11-12: flat-only selectors where a Real office is drawn (bug #1571)
+
+- [x] T314 [US2] FR-366: `needsMeOrder` reads the office order of a tie from Real office's last layout (`RO_LAST`) when a Real office is drawn, else `#stage .desk[data-id]`, each id once (`src/renderer/app.js`). Test: `sim:` `check-097-order`, three sessions start needing you at one moment where the office order differs from the session list's: the inbox and the N key go in the office order, in the flat office, the Photo office and the arcade, both sizes.
+- [x] T315 [US2] FR-367: `folderNameEl` finds a Real office folder sign's name, and the folder edit's clip takes `.ro-sign` (`src/renderer/app.js`). Test: `sim:` `check-097-plate-pencil`, F2 on a sign's ⋯ button opens the folder name field over the sign's name, inside the sign, Escape keeps the name and gives the focus back, in every world of the driver, both sizes.
+
 ## 2026-11-12: helpers as clay-toy kids playing on the desk (FR-368..FR-376, issues #1641, #1642; spec only, nothing built)
 
 Order: T327 (the owner's picture gate) before any code PR; T328, T329 (art, #1641) before T330..T336 (build, #1642). Sizes: S under a day, M one PR of about 300 to 800 lines, L more than one PR. Parity tasks for the other worlds are spec 102's T326, T327 (#1643); the world-moment record is 102 T235 (#1644).
@@ -384,3 +389,8 @@ Order: T327 (the owner's picture gate) before any code PR; T328, T329 (art, #164
 - Built 2026-11-16 (#1154): T245 is the `minimalist` `REAL_SETS` row, its note and `levelFor` `full`, with `SETS_PACK_ONLY` emptied and the `check-097-crews` case flipped; Minimalist is a Real-office-only set (no `CREWS` entry). T238's art list (five crews, Minimalist) is complete.
 - [x] T357 [US2] Issue #1810 (spec delta 2026-11-15; FR-104, amends review-of-#1746 round 5 item 2): `check-office-overlap` asserts storeys for the cave's `real sim15-allfloors` as Photo's (no flat branch); the 29.9 px face carve-out it first gave that case is removed by T358 (issue #1814); mutants `OFFICE_MUTANT=cave-tag|cave-flat`.
 - [x] T358 [US2] Issue #1814 (spec delta 2026-11-15; FR-308): a world's `minFace` (cave: 30.5) refuses the helper strip where it would take the desk face under it and the hall without it is bigger; the 29.9 px carve-out in `check-office-overlap` is removed. Test: `test:realoffice-layout` (Photo and arcade layouts pinned unchanged; cave sweep), `test-realoffice-aisles`, `check-office-overlap` (OFFICE_WORLD=cave 37/37). Mutants: rule ignored fails the sweep label "the strip would cost the face"; `minFace` removed from the cave's `world.json` fails "desk face 30.3px (ratchet 30.5px".
+
+
+## 2026-11-11: readable check-crew timeout diagnostics (issue #1460)
+
+- [x] T305 [US2] Spec delta 2026-11-11: `H.crewTimeout` prints the crew wait's timeout in short lines under 240 characters (fields, render counters before and after one probe render, last 3 renderer errors, 4 signatures, bad marks) and fails the driver; `shots-097-screens` prints `#roZoom` and the last pointer position when the Now fact wait times out. No longer wait, no forced pass. Test: `test:crew-diag` (5 mutants killed). Forced-failure output and 3 plain check-crew dark-fixture runs under xvfb on Linux in the PR; Windows and macOS not run.
