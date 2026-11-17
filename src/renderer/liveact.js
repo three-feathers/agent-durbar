@@ -169,13 +169,8 @@
       return Object.assign({},b,{text:out.join(''),look:{n:fs.length,findings:fs,hosts,inHidden}});
     }catch(e){return NONASCII_W.test(r0)?Object.assign({},b,{look:{unchecked:true}}):b;}
   }
-  /* spec 012 FR-185: the card's readings and its fallback decisions run without the shared GitHub last pass (as before it), which then runs once over the shown text */
-  function permLoose(b){
-    if(!b||!b.text||(b.hidden&&(b.why==='unchecked'||b.why==='concealed'))||typeof ST.looseText!=='function')return b;
-    const t=ST.looseText(b.text);return t===b.text?b:Object.assign({},b,{text:t,hidden:true,why:b.why==='cut'||b.why==='control'?b.why:'secret'});
-  }
   function permText(raw,kind,mask){
-    const b=permLoose(typeof ST.noLoose==='function'?ST.noLoose(()=>permBase(raw,kind,mask)):permBase(raw,kind,mask)), k=kind==='shell'||kind==='tool'?kind:'other';
+    const b=permBase(raw,kind,mask), k=kind==='shell'||kind==='tool'?kind:'other';
     if(!b||!b.text||raw==null||(b.hidden&&(b.why==='unchecked'||b.why==='concealed'||b.why==='cut')))return b; /* a blind card shows no text, so no lookalike line (FR-118) */
     return permLook(b,raw,k);
   }

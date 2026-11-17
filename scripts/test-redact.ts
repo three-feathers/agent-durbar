@@ -2687,6 +2687,8 @@ assert.strictEqual(redact('{"a":"https://u:p@h/x","b":"y"}', {}), '{"a":"https:/
     const t2 = 'ax\\n' + gh('r') + 'SDKYjWh^XHL25Wmr5o0Yr5uKnU3FKWPcC2oVU password=.' + gh('u') + '44OozxSib7X1hEAo\u2026 done.=' + gh('o') + 'jqmTvca45pZDpaKlg7aCMSyL\u4e00' + 'pvonYqxhEZT8\t\t';
     for (const [what, out] of [['maskNoteText', maskNoteText(t2).text], ['maskOutgoing', maskOutgoing(t2).text]] as const) assert.strictEqual(shows(out, ['pvonYqxhEZT8']), undefined, `#1329 last pass: ${what} reads without it first: ${out}`);
   }
+  // the card judges what it shows: a command that is only a cut token is masked whole by the pass, so the card treats it as lost (its fallback words)
+  assert.strictEqual(LA.permText('run ' + gh('p') + B36.slice(0, 10), 'shell', m).text, LA.permText('run ' + gh('p') + B36, 'shell', m).text, '#1329 card: a command that is only a cut token falls back as a whole one does');
   // cost: the new shapes add no rule pass (work counter): each form takes as many passes as the same text with a plain whole token
   for (const [what, t] of FORMS) {
     const plain = 'echo ' + gh('p') + B36;
