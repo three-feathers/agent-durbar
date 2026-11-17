@@ -7,6 +7,8 @@
  *   SHOTS_OUT=<dir>   where its pictures go (097-kids-<n>-<w>x<h>.jpg, JPEG quality 60; a temporary folder by default)
  *   KIDS_MUTANT=nokids|status|name|overlap|adulthead   no kid is drawn / a status change rebuilds a kid's node / a kid's name is drawn / a kid lies over its plate /
  *     the head row shows an adult at 15 agents (each must fail)
+ *   KIDS_MUTANT=nofocus|noring   the focus precheck reads false / the "+K" ring is removed by a style: must fail at `the window does not have focus` /
+ *     `"+K" shows a 2 px focus ring` (spec 097 T349: the ring is :focus-visible, which never matches in a page without the OS focus)
  *
  *   Three source mutants (edit, `npm run build`, run this driver, undo; each must fail at its own assertion; review of #1694):
  *     hashelp:    realoffice.js, the plate class `(!d.strip && !d.kids && a.helpers ...` -> `(!d.strip && a.helpers ...`   -> "its plate has no has-help class"
@@ -138,6 +140,9 @@ module.exports = async (ctx) => {
     const fd = s.desks.find((d) => d.id === first);
     /* Tab order (FR-309, FR-372): the plate, its pencil, the kids in order, "+K", then out of the group */
     if (process.env.KIDS_TRACE) await js(`(()=>{if(!window.__fT){window.__fT=[];const o=HTMLElement.prototype.focus;HTMLElement.prototype.focus=function(...a){window.__fT.push((this.className||this.tagName)+' '+String(new Error().stack).split('\\n').slice(2,6).join(' | '));return o.apply(this,a)};}return 1})()`);
+    /* T349: the "+K" ring is :focus-visible, which needs the OS focus; Tab moves activeElement without it, so ask first (as check-052-focus-ring) */
+    await H.needFocus(tag, MUTANT === 'nofocus' ? { expr: 'false' } : {});
+    if (MUTANT === 'noring') await js(`(()=>{const s=document.createElement('style');s.textContent='.ro-kmore:focus-visible{outline:none!important}';document.head.append(s);return 1})()`);
     await js(`(()=>{document.querySelector('#stage .ro-plate[data-id="'+CSS.escape(${jsLiteral(first)})+'"]').focus();return 1})()`);
     await H.key('Tab');
     if (await js(`document.activeElement.matches('.ren.ro-ren')`)) await H.key('Tab');
@@ -146,7 +151,9 @@ module.exports = async (ctx) => {
     const focusNow = onMore ? '' : await js(`(document.activeElement.className||document.activeElement.tagName)+' '+(document.activeElement.dataset.id||'')`);
     if (!onMore && process.env.KIDS_TRACE) console.log('[097-kids] focus calls', JSON.stringify(await js('window.__fT')));
     assert.ok(onMore, `${tag}: after the last kid, Tab reaches "+K" (focus on ` + focusNow + ')');
-    assert.ok(await js(`(()=>{const c=getComputedStyle(document.activeElement);return c.outlineStyle!=='none'&&parseFloat(c.outlineWidth)>=2})()`), `${tag}: "+K" shows a 2 px focus ring`);
+    const ringOk = await H.until(`(()=>{const e=document.activeElement,c=getComputedStyle(e);return e.matches('.ro-kmore')&&c.outlineStyle!=='none'&&parseFloat(c.outlineWidth)>=2})()`, 2000);
+    const ringNow = ringOk ? '' : await js(`(()=>{const e=document.activeElement,c=getComputedStyle(e);return 'outline '+c.outlineStyle+' '+c.outlineWidth+', focus-visible '+e.matches(':focus-visible')+', kmore '+e.matches('.ro-kmore')+', hasFocus '+document.hasFocus()})()`);
+    assert.ok(ringOk, `${tag}: "+K" shows a 2 px focus ring (` + ringNow + ')');
     /* review of #1694: a redraw that makes the focused "+K" anew (its node replaced) gives the focus to the new one by its own data-kmore (app.js renderAll), not to the plate */
     assert.ok(await js(`(()=>{const m=document.activeElement;if(!m.matches('.ro-kmore'))return false;const g=m.parentNode;g._more=null;window.__durbarSimUi.crew.renderAll();const now=document.activeElement;m.remove();return now===g._more&&g._more!==m&&document.activeElement===g._more})()`), `${tag}: after a redraw that makes "+K" anew, the new "+K" keeps the focus (data-kmore)`);
     await H.key('Tab');
