@@ -119,6 +119,7 @@ module.exports = async (ctx) => {
     await emit({ sessionId: id, type: 'status', status: 'error', intent: 'x' }); await emit({ sessionId: id, type: 'status', status: 'idle', intent: 'x' });
     await must(`document.querySelector('#stage .ro').dataset.arrangement==='rows'`, `${tag}: the rows fixture draws rows`);
   };
+  const CIRCLE_SIZES = new Set(); /* the sizes at which the Cave as shipped draws the circle: the linked picture 097-helpers-cave-<size>.jpg is then taken in the rows fixture (spec 097 FR-308, spec 102 Changes 2026-11-17 (fourth entry)) */
   const arrOf = () => js(`document.querySelector('#stage .ro').dataset.arrangement`);
   for (const world of WORLDS) for (const asRows of world === 'cave' ? [false, true] : [false]) for (const [w, h] of SIZES) {
     const tag = `${world}${asRows ? ' (rows fixture)' : ''} ${w}x${h}`;
@@ -128,6 +129,7 @@ module.exports = async (ctx) => {
     const ranArr = await arrOf();
     if (world === 'cave') assert.ok(asRows ? ranArr === 'rows' : ['circle', 'rows'].includes(ranArr), `${tag}: the arrangement drawn is ${ranArr}`);
     if (ranArr === 'circle') {
+      if (!asRows) CIRCLE_SIZES.add(w);
       /* what the circle really does (KNOWN GAP, T175): no helper strip, no helper row; the plates keep their "+N" and dots (FR-306's fallback) */
       assert.strictEqual(await js(`document.querySelectorAll('#stage .ro-hstrip').length`), 0, `${tag}: the circle draws no helper strips (circle-no-strips)`);
       assert.ok(await js(`document.querySelectorAll('#stage .ro-plate .ro-help').length>=10`), `${tag}: in the circle the plates keep their +N and dots (circle-no-strips)`);
@@ -274,7 +276,7 @@ module.exports = async (ctx) => {
     await js(`document.querySelector('#stage .ro-hmore[data-more="'+CSS.escape(${jsLiteral(mid)})+'"]').click()`);
     await must(`(()=>{const m=document.querySelector('#stage .ro-hmore[data-more="'+CSS.escape(${jsLiteral(mid)})+'"]');return m&&m.getAttribute('aria-expanded')==='false'&&!m.parentElement.classList.contains('open')&&m.parentElement.querySelectorAll('.ro-hd').length===${jsLiteral(firstD.heads.length)}})()`, `${tag}: "Fewer" folds them`);
     await js(`document.activeElement&&document.activeElement.blur();0`);
-    if (!asRows) { await H.shot(path.join(OUT, `097-helpers-${world}-${w}x${h}.jpg`), { prep: 'calm', tag: 'helpers', what: tag });
+    if (!asRows || CIRCLE_SIZES.has(w)) { await H.shot(path.join(OUT, `097-helpers-${world}-${w}x${h}.jpg`), { prep: 'calm', tag: 'helpers', what: tag });
     shots.push(`097-helpers-${world}-${w}x${h}.jpg`); }
     /* a picture that fails to load: the head keeps its button and its accessible name and shows a neutral silhouette, never a letter of the name */
     const gone = firstD.heads[0].id, nameBefore = await js(`document.querySelector('#stage .ro-hd[data-id="'+CSS.escape(${jsLiteral(gone)})+'"]').getAttribute('aria-label')`);

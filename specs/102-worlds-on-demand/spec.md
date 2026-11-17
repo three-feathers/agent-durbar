@@ -1700,6 +1700,10 @@ Main gave the Cave `storeys` and `minFace` (097 FR-104, T113, T358) while this P
 - **FR-229 and FR-230 name the face floor as the larger of 24 px and the world's `minFace`.**
 - **Honest limit: the circle at 15 agents is mostly rows in the Cave now.** With the Cave's 30.5 px the circle shows at 15 agents only with about 4 folders or fewer at 1440x900 and almost never at 1280x800; the simulator's 15-agent frame is rows at both sizes. The circle shows with fewer agents (the 8-agent pictures). Whether the Cave should keep its circle at all, or lower its `minFace`, is the owner's call; the Cave keeps `circle` as the owner decided (#1400).
 
+## Changes 2026-11-17 (fourth entry): the linked Cave helper picture is taken in the rows fixture (T174, T175, spec 097 FR-308; no new FR)
+
+`docs/screenshots/097-helpers-cave-1440x900.jpg` (linked from spec 097 FR-308) is written by `check-097-helpers`, which no longer reached it: the Cave as shipped draws the circle at 1440x900 in that scene. The driver now writes the file from its page-only rows fixture at every size where the shipped scene draws the circle (1440x900 today), under the same name, and spec 097 FR-308 says so beside the link. The other linked Cave pictures (`052-follow-notice-{office,chat}-cave-*`, `097-helper-row-cave-lounge-1280x800`, `097-context-frame-cave-crop-*`, `097-helpers-cave-1280x800`) were retaken to a temporary folder and looked at: they still draw rows (the follow-notice ones are pixel-identical), so nothing else is stale. `[KNOWN GAP]` until T175 builds strips in the circle, no linked picture shows the circle's helpers; they are the `+N` and dots on the plate.
+
 ### 2026-11-13: the arcade's first-run picture is built (T206, FR-352)
 
 **Owner decision (Vikram, relayed 2026-11-13, recorded at https://github.com/three-feathers/agent-durbar/issues/1400#issuecomment-6845205102): build it, drawn in code, 0 AI credits.** This closes the "build or drop" item of #1403 for `welcome`.
