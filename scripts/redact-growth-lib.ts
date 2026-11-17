@@ -106,20 +106,25 @@ export const assertLinearShape = (label: string, work: (x: string) => void, make
  * Both sides run `reps` times inside one timing, `reps` doubled until one timing of the yardstick reads at least `YARD_MIN_MS` (issue #1836): a yardstick of one Windows CPU tick
  * (about 15.6 ms) reads the work in whole ticks, so one tick more moved a 2-pass case from under 3x to 3.9x (62 ms against the 16 ms floor). The returned figures are per timing.
  */
-export const YARD_MIN_MS = process.platform === 'win32' ? 8 * 16 : 20;
-const YARD_MAX_REPS = 1 << 12;
-export const assertWithinYardstick = (label: string, work: () => void, yardstick: () => void, factor: number): { cost: number; yard: number; reps: number } => {
-  const timed = (f: () => void, reps: number): number => threadCpuMs(() => { for (let r = 0; r < reps; r++) f(); }, 20_000 * reps);
+export const yardMinMs = (platform: NodeJS.Platform): number => platform === 'win32' ? 8 * 16 : 20;
+export const YARD_MIN_MS = yardMinMs(process.platform);
+export const YARD_MAX_REPS = 1 << 12;
+/** The CPU ms of `reps` runs of `f` in one timing. Injected only by the helper's own self-test (issue #1843): a fake timer checks the decision logic without real timing. */
+export type YardTimer = (f: () => void, reps: number) => number;
+const realYardTimer: YardTimer = (f, reps) => threadCpuMs(() => { for (let r = 0; r < reps; r++) f(); }, 20_000 * reps);
+export const assertWithinYardstick = (label: string, work: () => void, yardstick: () => void, factor: number, opts: { timed?: YardTimer; minMs?: number } = {}): { cost: number; yard: number; reps: number } => {
+  const timed = opts.timed ?? realYardTimer;
+  const minMs = opts.minMs ?? YARD_MIN_MS;
   let reps = 1;
   let yard = timed(yardstick, reps);
-  while (yard < YARD_MIN_MS && reps < YARD_MAX_REPS) { reps *= 2; yard = timed(yardstick, reps); }
+  while (yard < minMs && reps < YARD_MAX_REPS) { reps *= 2; yard = timed(yardstick, reps); }
   let cost = Infinity;
   for (let i = 0; i < 3; i++) {
     cost = Math.min(cost, timed(work, reps));
     if (i > 0) yard = Math.min(yard, timed(yardstick, reps));
     if (cost < Math.max(yard, MIN_BASE_MS) * factor) break;
   }
-  assert.ok(yard >= YARD_MIN_MS / 2, `${label}: the yardstick read ${yard.toFixed(1)} ms CPU for ${reps} runs, under ${YARD_MIN_MS / 2} ms (a few timer ticks): the bound would read the work in whole ticks`);
+  assert.ok(yard >= minMs / 2, `${label}: the yardstick read ${yard.toFixed(1)} ms CPU for ${reps} runs, under ${minMs / 2} ms (a few timer ticks): the bound would read the work in whole ticks`);
   assert.ok(cost < Math.max(yard, MIN_BASE_MS) * factor, `${label}: ${cost.toFixed(1)} ms CPU, ${(cost / Math.max(yard, MIN_BASE_MS)).toFixed(1)}x the yardstick of ${yard.toFixed(1)} ms in the same run, ${reps} per timing (limit ${factor}x)`);
   return { cost, yard, reps };
 };
