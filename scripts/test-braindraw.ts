@@ -355,17 +355,18 @@ console.log('braindraw: page load ok');
     let clock = 5000; const timers: Fn[] = [], rafs: Fn[] = [];
     const docL: Record<string, Fn[]> = {}, winL: Record<string, Fn[]> = {};
     const mqReduce = { matches: false, listeners: [] as Fn[], addEventListener: (_: string, f: Fn) => { mqReduce.listeners.push(f); } };
+    const mqForced = { matches: false, listeners: [] as Fn[], addEventListener: (_: string, f: Fn) => { mqForced.listeners.push(f); } };
     const doc: { hidden: boolean; body: { classes: Set<string>; [k: string]: unknown }; [k: string]: unknown } = { hidden: false, hasFocus: () => true, body: { appendChild: () => undefined, classes: new Set<string>(), classList: { contains(c: string) { return (doc.body.classes as Set<string>).has(c); } } }, createElement: () => fakeEl(), addEventListener: (k: string, f: Fn) => { (docL[k] = docL[k] || []).push(f); } };
     const win = {
       exports: { ...BS, ...SF }, DurbarBrainDraw: D, performance: { now: () => clock }, devicePixelRatio: 1,
-      matchMedia: (q: string) => (q.includes('reduced') ? mqReduce : { matches: false, addEventListener: () => undefined }),
+      matchMedia: (q: string) => (q.includes('reduced') ? mqReduce : q.includes('forced') ? mqForced : { matches: false, addEventListener: () => undefined }),
       requestAnimationFrame: (f: Fn) => rafs.push(f), cancelAnimationFrame: () => undefined,
       setTimeout: (f: Fn) => timers.push(f), clearTimeout: () => undefined, addEventListener: (k: string, f: Fn) => { (winL[k] = winL[k] || []).push(f); },
     };
     const host = H.start({ doc, win, mask, now: () => clock, name: nameOf });
     const flush = (): void => { for (let i = 0; i < 50 && timers.length; i++) timers.splice(0).forEach((f) => f()); };
     const ev = (n: number, tool = 'bash'): unknown => ({ type: 'toolCall', sessionId: 'x', callId: 'c' + n, tool, phase: 'start', args: { command: 'ls' }, timestamp: clock });
-    return { host, doc, win, docL, winL, mqReduce, flush, ev, tick: (ms: number) => { clock += ms; }, rafs };
+    return { host, doc, win, docL, winL, mqReduce, mqForced, flush, ev, tick: (ms: number) => { clock += ms; }, rafs };
   }
   const q = (h: { el: Record<string, unknown> }, s: string): { attrs: Record<string, string>; listeners: Record<string, Fn[]> } => (h.el.querySelector as (s: string) => never)(s);
 
@@ -441,6 +442,19 @@ console.log('braindraw: page load ok');
     assert.strictEqual((b as unknown as { disabled?: boolean }).disabled, undefined, 'not the disabled attribute, which would drop the keyboard focus');
     const text = (p.host.el.querySelector as (s: string) => Record<string, unknown>)('[data-bv=motion]').textContent;
     b.listeners.click[0](); assert.strictEqual((p.host.el.querySelector as (s: string) => Record<string, unknown>)('[data-bv=motion]').textContent, text, 'a click does nothing while the system decides');
+  }
+  // forced colours decide like reduced motion (PR 1282 review F1): the button says Still, (system), aria-disabled; a click does nothing
+  {
+    const p = page(() => 'Ada'); const el = p.host.el.querySelector as (s: string) => Record<string, unknown>; const b = q(p.host, '[data-bv=motion]');
+    assert.strictEqual(b.attrs['aria-disabled'], 'false', 'forced colours F1: free before forced colours');
+    p.mqForced.matches = true; p.mqForced.listeners.forEach((f) => f());
+    assert.strictEqual(b.attrs['aria-disabled'], 'true', 'forced colours F1: the Motion button is aria-disabled');
+    const text = String(el('[data-bv=motion]').textContent);
+    assert.ok(/Still/.test(text) && /\(system\)/.test(text), `forced colours F1: the button says Still (system), not Full (${text})`);
+    assert.ok(/Still/.test(b.attrs['aria-label']) && /system/.test(b.attrs['aria-label']), 'forced colours F1: the spoken label says Still and the system');
+    b.listeners.click[0](); assert.strictEqual(el('[data-bv=motion]').textContent, text, 'forced colours F1: a click does nothing while the system decides');
+    p.mqForced.matches = false; p.mqForced.listeners.forEach((f) => f());
+    assert.ok(/Full/.test(String(el('[data-bv=motion]').textContent)) && b.attrs['aria-disabled'] === 'false', 'forced colours F1: back to the chosen motion when forced colours end');
   }
 }
 console.log('braindraw: host ok');

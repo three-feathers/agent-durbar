@@ -157,6 +157,8 @@ module.exports = async (ctx) => {
     await media([{ name: 'forced-colors', value: 'active' }]);
     await must(`window.__durbarSimUi.brain.host().draw.mode()==='still'`, 'forced colours draw Still');
     assert.ok((await lit()).n > 1000, 'forced colours: still drawn');
+    await must(`/Still/.test(document.querySelector('.bv [data-bv=motion]').textContent)&&/system/.test(document.querySelector('.bv [data-bv=motion]').textContent)`, 'forced colours: the Motion button says Still (system), not Full');
+    assert.strictEqual(await js(`document.querySelector('.bv [data-bv=motion]').getAttribute('aria-disabled')`), 'true', 'forced colours: the Motion button is aria-disabled');
     await H.shot(path.join(OUT, `106-brain-forced-${tag}.png`), { prep: 'calm' });
     await media([{ name: 'forced-colors', value: 'none' }]);
     // ---- no overlap with the chat: the floating box is for the office only; with a chat open it is hidden and the composer is not under it

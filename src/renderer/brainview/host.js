@@ -38,11 +38,12 @@
     /* and not while a chat, Settings or List view covers the office: the box is hidden by brain.css then (it would sit on their controls) */
     function covered(){const c=doc.body&&doc.body.classList;return !!c&&c.contains&&(c.contains('panel-open')||c.contains('screen-open')||c.contains('list-mode'));}
     function syncVisible(){draw.setVisible(!doc.hidden&&!collapsed&&!covered());}
-    const applyMotion=()=>{const m=mqReduce&&mqReduce.matches?'still':motion;draw.setMotion(m);const b=q('[data-bv=motion]');b.textContent='Motion: '+WORD[m]+(m!==motion?' (system)':'');b.setAttribute('aria-label','Brain motion '+WORD[m]+(m!==motion?', set by reduced motion':'')+'. Press to change');b.setAttribute('aria-disabled',String(m!==motion));};
-    q('[data-bv=motion]').addEventListener('click',()=>{if(mqReduce&&mqReduce.matches)return; /* set by the system: the button keeps focus and does nothing */motion=MOTIONS[(MOTIONS.indexOf(motion)+1)%3];store.set('durbar.brainMotion',motion);applyMotion();});
+    const bySystem=()=>!!((mqReduce&&mqReduce.matches)||(mqForced&&mqForced.matches)); /* reduced motion or forced colours: Still, the button says so */
+    const applyMotion=()=>{const m=bySystem()?'still':motion;draw.setMotion(m);const b=q('[data-bv=motion]');b.textContent='Motion: '+WORD[m]+(m!==motion?' (system)':'');b.setAttribute('aria-label','Brain motion '+WORD[m]+(m!==motion?', set by the system (reduced motion or forced colours)':'')+'. Press to change');b.setAttribute('aria-disabled',String(m!==motion));};
+    q('[data-bv=motion]').addEventListener('click',()=>{if(bySystem())return; /* set by the system: the button keeps focus and does nothing */motion=MOTIONS[(MOTIONS.indexOf(motion)+1)%3];store.set('durbar.brainMotion',motion);applyMotion();});
     q('[data-bv=fold]').addEventListener('click',(e)=>{collapsed=!collapsed;el.classList.toggle('is-folded',collapsed);syncVisible();e.currentTarget.textContent=collapsed?'Show':'Hide';e.currentTarget.setAttribute('aria-expanded',String(!collapsed));});
     if(mqReduce&&mqReduce.addEventListener)mqReduce.addEventListener('change',applyMotion);
-    if(mqForced&&mqForced.addEventListener)mqForced.addEventListener('change',()=>draw.setForced(mqForced.matches));
+    if(mqForced&&mqForced.addEventListener)mqForced.addEventListener('change',()=>{draw.setForced(mqForced.matches);applyMotion();});
     doc.addEventListener('visibilitychange',syncVisible);
     if(typeof win.MutationObserver==='function'&&doc.body&&doc.body.nodeType)new win.MutationObserver(syncVisible).observe(doc.body,{attributes:true,attributeFilter:['class']}); /* a chat or Settings opening or closing */
     win.addEventListener('focus',()=>{seenFocus=true;draw.setFocused(true);}); win.addEventListener('blur',()=>{seenFocus=false;draw.setFocused(false);});
