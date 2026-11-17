@@ -1,4 +1,5 @@
 import * as assert from 'assert';
+import { cpuMs } from './redact-growth-lib';
 
 /**
  * Spec 008 FR-087 delta 2026-11-17 (issue #1853): a test whose property is "this call ends although something it waits on never answers" asserts the result (the answer that
@@ -14,15 +15,53 @@ export const withBackstop = <T>(p: Promise<T>, label: string, ms = 20_000, sched
 });
 
 /**
- * For a guard that stands for "the work is bounded or linear" (a hostile 1 MB input, a cut that must come first): the CPU time of this process while `fn` runs, never wall time, so a loaded
- * machine does not move it (agent-notes: timing checks measure CPU, not wall). `capMs` is a generous backstop, tens to hundreds of times the measured cost: a quadratic or uncut pass
- * on these inputs costs minutes, so it fails here with `label`. What the guard stands for is also asserted directly where the code gives a property to assert (a result, a call count). `usage` is for the self-test (a fake reading, no real work or wait).
+ * For a guard that stands for "linear or bounded work" where the code gives no property to count: the CPU time of this process while the SYNCHRONOUS `fn` runs, never wall time, so a loaded
+ * machine does not move it (agent-notes: timing checks measure CPU). It is `cpuMs` (scripts/redact-growth-lib.ts), so a wall backstop of at least 20 s also stays and a blocking wait
+ * (a sync sleep) fails it; `capMs` is about 20 times the cost measured at the site, never a round 10 s. An async `fn` is refused: only its synchronous part would be measured. `probe` is for the self-test (fake reading and clock).
  */
-export const assertCpuUnder = (label: string, capMs: number, fn: () => void, usage: (prev?: NodeJS.CpuUsage) => NodeJS.CpuUsage = process.cpuUsage): number => {
-  const start = usage();
-  fn();
-  const d = usage(start);
-  const ms = (d.user + d.system) / 1000;
+export const assertCpuUnder = (label: string, capMs: number, fn: () => unknown, probe?: Parameters<typeof cpuMs>[2]): number => {
+  const backstopCap = Math.max(capMs, 2000); // cpuMs fails at 10 x this in wall time: 20 s at least, so load alone never reaches it
+  const ms = cpuMs(() => {
+    const r = fn();
+    if (r && typeof (r as { then?: unknown }).then === 'function') throw new TypeError(`${label}: assertCpuUnder takes a synchronous function (a promise was returned: only its synchronous part would be measured)`);
+  }, backstopCap, probe);
   assert.ok(ms < capMs, `${label}: ${ms.toFixed(0)} ms CPU, limit ${capMs} ms`);
   return ms;
+};
+
+const SPIED = ['replace', 'replaceAll', 'split', 'trim', 'trimStart', 'trimEnd', 'normalize', 'match', 'matchAll', 'search', 'indexOf', 'lastIndexOf', 'includes', 'startsWith', 'endsWith', 'toLowerCase', 'toUpperCase', 'padStart', 'localeCompare'] as const;
+
+/**
+ * The longest string any scanning String method (replace, split, trim, normalize, match, search, indexOf, ...) or RegExp `test`/`exec` saw while `fn` ran, counted, not timed: the property behind "the cut comes before the
+ * work" (a hostile 1 MB input is cut first, nothing scans it whole). `slice` is not counted: it is the cut. The hooks are restored before this returns, so assert on the result afterwards.
+ */
+export const longestStringSeen = <T>(fn: () => T): { longest: number; result: T } => {
+  let longest = 0;
+  const saved: Array<[object, string, unknown]> = [];
+  const hook = (proto: object, name: string, lenOf: (self: unknown, args: unknown[]) => number): void => {
+    const orig = (proto as Record<string, unknown>)[name] as (...a: unknown[]) => unknown;
+    saved.push([proto, name, orig]);
+    (proto as Record<string, unknown>)[name] = function (this: unknown, ...a: unknown[]) { const n = lenOf(this, a); if (n > longest) longest = n; return orig.apply(this, a); };
+  };
+  for (const n of SPIED) hook(String.prototype, n, (self) => (typeof self === 'string' ? self.length : String(self).length));
+  for (const n of ['test', 'exec']) hook(RegExp.prototype, n, (_self, a) => (typeof a[0] === 'string' ? a[0].length : 0));
+  try { const result = fn(); return { longest, result }; } finally { for (const [p, n, o] of saved) (p as Record<string, unknown>)[n] = o; }
+};
+
+/**
+ * The delays given to `setTimeout` between this call and `stop()`: what a "cut off after N ms" test pins instead of how long the cut took. Assert the production delay is among them
+ * (`delays.includes(30)`), so a timeout changed to 15 s fails with its own text, and keep `withBackstop` as the hang guard only (its own 20 s timer is in the list too).
+ */
+export const logTimerDelays = (): { delays: number[]; stop: () => void } => {
+  const real = globalThis.setTimeout;
+  const delays: number[] = [];
+  (globalThis as { setTimeout: unknown }).setTimeout = ((fn: (...a: unknown[]) => void, ms?: number, ...rest: unknown[]) => { delays.push(Number(ms ?? 0)); return real(fn, ms, ...rest); }) as typeof setTimeout;
+  return { delays, stop: () => { (globalThis as { setTimeout: unknown }).setTimeout = real; } };
+};
+
+/** "The cut comes first": no scanning string method or regexp saw a string longer than `limit` (the cut size) while `fn` ran. Counted, not timed; `label` names what was cut. */
+export const assertCutFirst = <T>(label: string, limit: number, fn: () => T): T => {
+  const { longest, result } = longestStringSeen(fn);
+  assert.ok(longest <= limit, `${label}: the longest string a scan saw was ${longest} characters, the cut is ${limit} (is the cut after the work?)`);
+  return result;
 };

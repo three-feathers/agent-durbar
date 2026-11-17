@@ -45,7 +45,7 @@ const TOKEN = 'ghp_abcdefghijklmnopqrstuvwxyz0123456789';
   assert.deepStrictEqual(partialJson(full), JSON.parse(full));
   // linear time on a large value
   const big = '{"file_path":"/w/a","content":"' + 'abc\\n'.repeat(250_000);
-  assertCpuUnder('a 1 MB prefix parses in linear time', 10_000, () => { partialJson(big); });
+  assertCpuUnder('a 1 MB prefix parses in linear time (54 ms measured under load)', 1100, () => { partialJson(big); });
 }
 
 // 2. diffs and counts

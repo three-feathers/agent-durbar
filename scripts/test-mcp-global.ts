@@ -256,7 +256,7 @@ ok('Codex: a file that does not parse is refused, valid shapes still read (chang
 });
 ok('Codex: a hostile long line is linear', () => {
   const big = '[mcp_servers.a]\nargs = [' + '"x",'.repeat(60000) + ']\n' + ';'.repeat(200000) + ' x y\n';
-  assertCpuUnder('Codex: a hostile long line is read in linear time', 10_000, () => { readGlobal('codex', big); addToText('codex', big, stdio, 'ref'); });
+  assertCpuUnder('Codex: a hostile long line is read in linear time (94 ms measured under load)', 1900, () => { readGlobal('codex', big); addToText('codex', big, stdio, 'ref'); });
 });
 
 ok('views mask secret-shaped arguments and URL keys from the files', () => {

@@ -5,7 +5,7 @@
  * (the strings below are made-up shapes).
  */
 import * as assert from 'assert';
-import { assertCpuUnder } from './hang-backstop';
+import { assertCutFirst } from './hang-backstop';
 import * as fs from 'fs';
 import * as path from 'path';
 import { FakeAdapter } from '../src/adapters/fake';
@@ -114,7 +114,7 @@ async function main(): Promise<void> {
     assert.ok(r === undefined || r === 'auth' || r === 'policy');
   }
   // linear time on hostile input (cut first)
-  assertCpuUnder('a huge text is cut first (the next assert: text past the cut is not read)', 10_000, () => {
+  assertCutFirst('classifyMcpCall reads only the first 4000 characters', 4000, () => {
     classifyMcpCall('a '.repeat(2_000_000) + 'AADSTS');
     classifyMcpCall('AADSTS5300'.repeat(400_000));
   });

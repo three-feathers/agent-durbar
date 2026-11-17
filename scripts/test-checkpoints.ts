@@ -1,6 +1,6 @@
 /** Unit test (spec 065): CheckpointStore keeps, previews and restores an agent's file changes per turn, safely. Temp folders only. */
 import * as assert from 'assert';
-import { assertCpuUnder, withBackstop } from './hang-backstop';
+import { assertCpuUnder, logTimerDelays, longestStringSeen, withBackstop } from './hang-backstop';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
@@ -177,13 +177,22 @@ async function brokerChecks(): Promise<void> {
   assert.strictEqual(seen.length, 0, 'the user denied: no guard');
   // a failing guard never fails the write; a hanging one is cut off after 2 s
   assert.strictEqual((await mk('allow', async () => { throw new Error('boom'); }).request({ kind: 'write', fileName: '/w/e.ts' })).kind, 'approve-once');
+  const tmg = logTimerDelays();
   assert.strictEqual((await withBackstop(mk('allow', () => slow).request({ kind: 'write', fileName: '/w/f.ts' }), 'a hanging guard is cut off')).kind, 'approve-once');
+  tmg.stop();
+  assert.ok(tmg.delays.includes(2000), `a hanging guard is cut off by a 2 s timer (WRITE_GUARD_MS, permissions.ts); timers: ${tmg.delays.join(',')}`);
   release?.();
   // the guard itself, without a real wait: a promise that never settles fails with its label at once when the injected timer fires; one that settles passes
   await assert.rejects(withBackstop(new Promise<void>(() => undefined), 'probe', 20_000, (cb) => { cb(); return undefined; }), /probe: still pending after 20000 ms/, 'the hang guard fails a hung promise');
   assert.strictEqual(await withBackstop(Promise.resolve(7), 'probe', 20_000, () => undefined), 7, 'and passes a promise that settles');
-  assert.throws(() => assertCpuUnder('probe', 100, () => undefined, (p) => (p ? { user: 5_000_000, system: 0 } : { user: 0, system: 0 })), /probe: 5000 ms CPU, limit 100 ms/, 'the CPU guard fails on a fake reading over its limit, no real work');
-  assert.strictEqual(assertCpuUnder('probe', 100, () => undefined, (p) => (p ? { user: 1000, system: 0 } : { user: 0, system: 0 })), 1, 'and passes one under it');
+  const fakeCpu = (us: number) => (p?: NodeJS.CpuUsage) => (p ? { user: us, system: 0 } : { user: 0, system: 0 });
+  let tick = 0n; const fakeClock = (stepNs: bigint) => () => (tick += stepNs); // the clock moves by the step at every reading: no real wait
+  assert.throws(() => assertCpuUnder('probe', 100, () => undefined, { usage: fakeCpu(5_000_000), hr: fakeClock(1n) }), /probe: 5000 ms CPU, limit 100 ms/, 'the CPU guard fails on a fake reading over its limit, no real work');
+  assert.strictEqual(assertCpuUnder('probe', 100, () => undefined, { usage: fakeCpu(1000), hr: fakeClock(1n) }), 1, 'and passes one under it');
+  assert.throws(() => assertCpuUnder('probe', 100, () => undefined, { usage: fakeCpu(1000), hr: fakeClock(30_000_000_000n) }), /wall-time backstop/, 'a blocking wait (little CPU, much wall time on the fake clock) fails the wall backstop');
+  assert.throws(() => assertCpuUnder('probe', 100, (() => Promise.resolve()) as () => void, { usage: fakeCpu(1000), hr: fakeClock(1n) }), /synchronous function/, 'an async function is refused');
+  const seenLong = longestStringSeen(() => 'x'.repeat(50_000).trim().length + 'abc'.split('b').length);
+  assert.ok(seenLong.longest === 50_000 && seenLong.result === 50_002 && String.prototype.trim.toString().includes('[native code]'), 'longestStringSeen reports the longest scanned string and restores the hooks');
 }
 
 // ---- the words (src/renderer/checkpoints.js)

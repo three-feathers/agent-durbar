@@ -262,7 +262,7 @@ assert.strictEqual(parseExplanation('I think it is fine', 'Copilot').ok, false, 
 }
 // required 3: the TOML reader is linear (a hostile 256 KiB value must not block main)
 {
-  assertCpuUnder('the TOML reader is linear (80k spaces)', 10_000, () => {
+  assertCpuUnder('the TOML reader is linear (80k spaces; 4 ms measured under load)', 250, () => {
     readCodexMcpToml('[mcp_servers.a]\ncommand = "x"' + ' '.repeat(80000) + 'y\nenv = { A = "1"' + ' '.repeat(80000) + ', B = "2" }\n');
     readCodexMcpToml('[mcp_servers.a]\n' + ('k = "' + ' '.repeat(3000) + '"\n').repeat(80));
   });

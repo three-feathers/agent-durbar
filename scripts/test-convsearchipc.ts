@@ -12,7 +12,7 @@ process.exitCode = 1;
 let stage = 'load';
 process.on('exit', (code) => { if (code) console.error(`convsearchipc: failed or never settled in: ${stage}`); });
 import * as assert from 'assert';
-import { withBackstop } from './hang-backstop';
+import { assertCutFirst, withBackstop } from './hang-backstop';
 import * as fs from 'fs';
 import * as path from 'path';
 import { pathToFileURL } from 'url';
@@ -80,15 +80,9 @@ async function main(): Promise<void> {
     assert.strictEqual([...astral.query].length, 200, 'cut in code points, never inside a surrogate pair');
     assert.ok(!/[\uD800-\uDBFF]$/.test(astral.query));
     const huge = 'word '.repeat(200_000);
-    // the property is the order: the input is cut to 4 x maxChars before any replace or split looks at it, so no string call sees the 1 MB (counted, not timed)
-    const seen: number[] = [];
-    const realReplace = String.prototype.replace; const realSplit = String.prototype.split;
-    String.prototype.replace = function (this: string, ...a: unknown[]) { seen.push(this.length); return (realReplace as (...x: unknown[]) => string).apply(this, a); } as typeof String.prototype.replace;
-    String.prototype.split = function (this: string, ...a: unknown[]) { seen.push(this.length); return (realSplit as (...x: unknown[]) => string[]).apply(this, a); } as typeof String.prototype.split;
-    let hugeCut: boolean;
-    try { hugeCut = ok(huge).cut; } finally { String.prototype.replace = realReplace; String.prototype.split = realSplit; }
+    // the property is the order: the input is cut to 4 x maxChars before any scan sees it (replace, split, trim, normalize, match, test, ...: the longest string seen, counted, not timed)
+    const hugeCut = assertCutFirst('cleanQuery: a 1 MB query is cut to 4 x maxChars', 4 * QUERY.maxChars, () => ok(huge).cut);
     assert.strictEqual(hugeCut, true);
-    assert.ok(seen.length > 0 && Math.max(...seen) <= 4 * QUERY.maxChars, `a huge query is bounded before it is split: the longest string a replace or split saw was ${Math.max(...seen)} characters, limit ${4 * QUERY.maxChars}`);
     // review of phase 2 (R4): the input is cut to 800 characters before it is split, so a word far behind is never reached
     assert.deepStrictEqual(ok('abc' + ' '.repeat(900) + 'def'), { ok: true, query: 'abc', cut: true });
     short('ab' + ' '.repeat(900) + 'cd');

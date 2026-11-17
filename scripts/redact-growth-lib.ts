@@ -7,13 +7,15 @@ import { Worker } from 'worker_threads';
 // masking takes, so super-linear (ReDoS-style) growth fails as before. CPU time does not see a blocking wait (Atomics.wait, a sync
 // sleep, execSync, sync I/O), so wall time gets a loose backstop of 10x the check's CPU limit `capMs`: load cannot reach it, a long
 // wait does. A wait shorter than that still passes (the accepted limit; spec 041 `## Changes` 2026-10-22, review of PR #527).
-export const cpuMs = (f: () => void, capMs: number): number => {
-  const w = process.hrtime.bigint();
-  const c = process.cpuUsage();
+// `probe` is for the self-test of the backstop (issue #1853): a fake CPU reading and a fake clock, so the test needs no real work or wait.
+export const cpuMs = (f: () => void, capMs: number, probe: { usage?: (prev?: NodeJS.CpuUsage) => NodeJS.CpuUsage; hr?: () => bigint } = {}): number => {
+  const usage = probe.usage ?? process.cpuUsage, hr = probe.hr ?? process.hrtime.bigint;
+  const w = hr();
+  const c = usage();
   f();
-  const d = process.cpuUsage(c);
+  const d = usage(c);
   const cpu = (d.user + d.system) / 1000;
-  const wall = Number(process.hrtime.bigint() - w) / 1e6;
+  const wall = Number(hr() - w) / 1e6;
   assert.ok(wall < 10 * capMs, `wall-time backstop: ${wall.toFixed(1)} ms wall for ${cpu.toFixed(1)} ms CPU, limit ${10 * capMs} ms (a blocking wait in the timed code?)`);
   return cpu;
 };

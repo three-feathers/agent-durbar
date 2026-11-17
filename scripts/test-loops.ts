@@ -1,6 +1,6 @@
 /** Self-paced loops (spec 072, Phase 1 core): the pace line parser and the scheduler's loop rules with a fake clock and sender. `npm run test:loops`. No session, no credits. */
 import * as assert from 'assert';
-import { assertCpuUnder } from './hang-backstop';
+import { assertCutFirst } from './hang-backstop';
 import { LOOP_DEFAULTS, clampPace, cleanReason, loopFooter, parsePace } from '../src/shared/looppace';
 import { Scheduler, loopSupport, parseSchedules, saveSchedules } from '../src/main/schedules';
 import type { LoopSpec, LoopWait, Schedule, SchedulesDoc } from '../src/main/schedules';
@@ -115,7 +115,7 @@ async function main(): Promise<void> {
   assert.strictEqual(cleanReason('​‮ '), undefined);
   assert.strictEqual(cleanReason(42), undefined);
   for (const text of ['LOOP: next ' + ' '.repeat(5_000_000) + '5 min', 'x'.repeat(5_000_000), ('LOOP: next 5 min -' + ' -'.repeat(100_000) + 'x\n').repeat(20), '\n'.repeat(1_000_000) + 'LOOP: stop']) {
-    assertCpuUnder('parsePace is linear', 10_000, () => { parsePace(text); });
+    assertCutFirst('parsePace reads only the last 4000 characters', 4000, () => parsePace(text));
   }
   const lim = { minDelay: 5, maxDelay: 60 };
   assert.deepStrictEqual(clampPace(25, lim), { minutes: 25, source: 'agent' });

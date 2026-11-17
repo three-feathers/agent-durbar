@@ -293,13 +293,15 @@ assert.strictEqual(CT.isPinned({ matches(sel: string) { if (/mcp-line/.test(sel)
 {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const parent: any = { children: [] as unknown[] };
+  let looks = 0; // the work count: how many times a block is looked at
   for (let i = 0; i < 200_000; i++) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const kid: any = { i, removed: false, classList: { contains: () => false }, matches: () => i % 1000 === 0, querySelector: () => null, remove() { kid.removed = true; } };
+    const kid: any = { i, removed: false, classList: { contains: () => { looks++; return false; } }, matches: () => { looks++; return i % 1000 === 0; }, querySelector: () => null, remove() { kid.removed = true; } };
     parent.children.push(kid);
   }
   let n = 0;
-  assertCpuUnder('200,000 blocks are trimmed in linear time', 10_000, () => { n = CT.trimChildren(parent, 300, new Set(), null); });
+  assertCpuUnder('200,000 blocks are trimmed in linear time (105 ms measured under load)', 2100, () => { n = CT.trimChildren(parent, 300, new Set(), null); });
+  assert.ok(looks <= 600_000, `trimChildren looked at a block ${looks} times for 200,000 blocks`);
   const pinned = parent.children.filter((k: { i: number; removed: boolean }) => k.i % 1000 === 0 && k.removed).length;
   assert.strictEqual(pinned, 0, 'no pinned block went');
   assert.strictEqual(parent.children.filter((k: { removed: boolean }) => !k.removed).length, 300, 'down to 300 (200 pinned among them)');
@@ -310,11 +312,13 @@ assert.strictEqual(CT.isPinned({ matches(sel: string) { if (/mcp-line/.test(sel)
 {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const kids: any[] = [];
-  for (let i = 0; i < 200_000; i++) kids.push({ i, classList: { contains: () => false }, matches: () => i % 997 === 0, querySelector: () => null, querySelectorAll: () => [], childElementCount: 0, contains: () => false, remove() {} });
+  let looks2 = 0;
+  for (let i = 0; i < 200_000; i++) kids.push({ i, classList: { contains: () => { looks2++; return false; } }, matches: () => { looks2++; return i % 997 === 0; }, querySelector: () => null, querySelectorAll: () => [], childElementCount: 0, contains: () => false, remove() {} });
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const el: any = { children: kids, childElementCount: kids.length, contains: () => false };
   let drops: { i: number }[] = [];
-  assertCpuUnder('plan over 200,000 messages is linear', 10_000, () => { drops = CT.plan({ el, keep: CT.CHAT_KEEP, live: new Set(), tls: [] }); });
+  assertCpuUnder('plan over 200,000 messages is linear (310 ms measured under load)', 6200, () => { drops = CT.plan({ el, keep: CT.CHAT_KEEP, live: new Set(), tls: [] }); });
+  assert.ok(looks2 <= 1_200_000, `plan looked at a message ${looks2} times for 200,000 messages`);
   assert.ok(drops.every((k: { i: number }) => k.i % 997 !== 0), 'no pinned message is planned');
   assert.strictEqual(kids.length - drops.length, 300, '300 kept (pinned ones among them)');
 }

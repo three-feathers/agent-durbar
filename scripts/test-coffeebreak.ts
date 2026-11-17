@@ -556,7 +556,7 @@ const valid = (b: EventBody): void => assert.deepStrictEqual(validateEvent({ ...
   // an ordinary assistant message that quotes the sentence mid-turn is not a limit (only Claude Code's own error message is)
   assert.ok(!run([{ type: 'assistant', message: { content: [{ type: 'text', text: SENT }] } }, { type: 'result', subtype: 'success', is_error: false, result: 'done' }]).some((b) => b.type === 'usageLimit'), 'a quoted limit sentence mid-turn');
   // the minute scan stays cheap (worst case: the whole 8-day scan, no match: about 6 ms idle; CPU time with a generous backstop, so a loaded machine does not flake)
-  assertCpuUnder('nextClockTime: the whole 8-day minute scan with no match (CPU time, about 6 ms idle)', 10_000, () => { nextClockTime(99, 0, 'Pacific/Chatham', T); });
+  assertCpuUnder('nextClockTime: the whole 8-day minute scan with no match (CPU time, about 6 ms idle)', 250, () => { nextClockTime(99, 0, 'Pacific/Chatham', T); });
   // no reset in the sentence: the last known one from a rate_limit_event of this session
   const reset = Date.now() + 3 * 3600_000;
   const o2 = run([{ type: 'rate_limit_event', rate_limit_info: { status: 'rejected', rateLimitType: 'seven_day', resetsAt: reset / 1000 } }, res, { type: 'assistant', error: 'rate_limit', message: { content: [{ type: 'text', text: "You've hit your weekly limit" }] } }, { ...res, result: "You've hit your weekly limit" }]);

@@ -1,6 +1,5 @@
 /** Spec 083 T012 (FR-002, FR-005..FR-008, issue 699): the notes store on disk. `npm run test:notes`. Real temp folders and a fake fs; no Electron, no credits. */
 import * as assert from 'assert';
-import { withBackstop } from './hang-backstop';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
@@ -376,8 +375,8 @@ async function main(): Promise<void> {
     assert.ok(!fs.existsSync(lock), 'the stale lock was taken over and released');
     fs.writeFileSync(lock, '');
     const t0 = Date.now();
-    const busy = await withBackstop(new NotesStore(dir).add(FOLDER, 'demo', { text: 'blocked' }), 'a fresh lock is refused after the retries');
-    assert.ok(!busy.ok && busy.code === 'write' && /busy/.test(busy.error) && Date.now() - t0 >= 1800, 'a fresh lock: retried for about 2 s, then refused');
+    const busy = await new NotesStore(dir).add(FOLDER, 'demo', { text: 'blocked' });
+    assert.ok(!busy.ok && busy.code === 'write' && /busy/.test(busy.error) && Date.now() - t0 >= 1800 && Date.now() - t0 < 6000, 'a fresh lock: retried for about 2 s, then refused');
     assert.ok(fs.existsSync(lock), "someone else's lock is not removed");
     fs.unlinkSync(lock);
   }
@@ -395,10 +394,10 @@ async function main(): Promise<void> {
     const spin = (): void => { if (attempts > 1000) { console.error('test-notesstore: the lock loop spins instead of waiting'); process.exit(1); } }; // a sync loop cannot be timed out, so the fake ends the run
     const stuck = { ...fs, unlinkSync: (f: string) => { if (f.includes('.lock')) { attempts++; spin(); eperm(); } fs.unlinkSync(f); }, renameSync: (a: string, b: string) => { if (a.includes('.lock')) { attempts++; spin(); eperm(); } fs.renameSync(a, b); } } as unknown as NotesFs;
     const t0 = Date.now();
-    const r = await withBackstop(new NotesStore(dir, { fs: stuck }).add(FOLDER, 'demo', { text: 'cannot lock' }), 'a lock that cannot be removed is refused as busy');
+    const r = await new NotesStore(dir, { fs: stuck }).add(FOLDER, 'demo', { text: 'cannot lock' });
     const took = Date.now() - t0;
     assert.ok(!r.ok && r.code === 'write' && /busy/.test(r.error), `refused as busy: ${JSON.stringify(r)}`);
-    assert.ok(took >= 1800, `after about 2 s (the retries really wait; ${took} ms)`);
+    assert.ok(took >= 1800 && took < 6000, `after about 2 s (${took} ms)`);
     assert.ok(attempts <= 110, `no more than about 100 attempts to remove it (${attempts})`);
     // the lock cannot even be looked at (EACCES): the same wait, then busy
     attempts = 0;
@@ -420,7 +419,7 @@ async function main(): Promise<void> {
       const t3 = Date.now();
       const rf = await new NotesStore(dir, { fs: flip }).add(FOLDER, 'demo', { text: 'flip flop' });
       const took3 = Date.now() - t3;
-      assert.ok(!rf.ok && /busy/.test(rf.error) && took3 >= 1800 && attempts <= 400, `${what}: busy after about 2 s (${took3} ms, ${attempts} tries)`);
+      assert.ok(!rf.ok && /busy/.test(rf.error) && took3 >= 1800 && took3 < 6000 && attempts <= 400, `${what}: busy after about 2 s (${took3} ms, ${attempts} tries)`);
     }
     fs.rmSync(lock, { force: true });
     // the lock cannot be created (EPERM, EACCES, EBUSY: on Windows a delete-pending lock): wait like for a busy lock, never refuse at once, never spin

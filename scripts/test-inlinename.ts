@@ -58,7 +58,7 @@ assert.strictEqual(IN.blurAction(true, ''), 'save');
 // timing: 200k characters through the pure helpers stay fast (loose limit)
 {
   const big = 'ab \n\t'.repeat(40000);
-  assertCpuUnder('pure helpers handle 200k characters in linear time', 10_000, () => { IN.pasteText(big); IN.outcome(big, big + ' x'); });
+  assertCpuUnder('pure helpers handle 200k characters in linear time (65 ms measured under load)', 1300, () => { IN.pasteText(big); IN.outcome(big, big + ' x'); });
 }
 
 // ---- the field (jsdom, no layout) ----

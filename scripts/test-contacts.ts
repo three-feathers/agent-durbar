@@ -138,7 +138,7 @@ assert.strictEqual(guessInitials('ßen ßa'), 'SS');
 // finding 2: a long list is refused before any loop over it (loose limit, no ratio)
 {
   let r1!: ReturnType<typeof cleanContact>;
-  const cpu1 = assertCpuUnder('a long list is refused before any loop over it (it took 56 s for 40,000 before)', 10_000, () => {
+  const cpu1 = assertCpuUnder('a long list is refused before any loop over it (it took 56 s for 40,000 before; 7 ms now)', 250, () => {
   const huge = Array.from({ length: 40_000 }, (_, i) => 'a' + i);
   r1 = cleanContact({ name: 'Sam Sample', aliases: huge });
   });
@@ -668,7 +668,7 @@ assert.ok(!/Date\.now|new Date\(\)|Math\.random|crypto|from 'fs'|from 'path'|fro
 assert.deepStrictEqual([...own.matchAll(/from '([^']+)'/g)].map((m) => m[1]), ['./notes', './redact'], 'imports only the notes helpers and the one hidden-character list');
 
 // speed on large input (loose limit)
-assertCpuUnder('a full store serializes and parses (a hang backstop: 20 s of CPU)', 20_000, () => {
+assertCpuUnder('a full store serializes and parses (13 ms measured under load)', 300, () => {
   const bigRaw = checkedSerialize(full);
   assert.ok(bigRaw.ok && parseContactsDoc(bigRaw.text).ok);
 });
