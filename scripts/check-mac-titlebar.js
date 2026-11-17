@@ -117,7 +117,7 @@ function measure(TLX, TLY) {
   }
   /* a screen title at any width: where it starts, and how high (it is under the traffic lights when it is in the 78x40 box) */
   const t2 = document.querySelector('#screen:not([hidden]) .scr-head h2');
-  const title = t2 && document.body.classList.contains('panel-open') ? { left: t2.getBoundingClientRect().left, top: t2.getBoundingClientRect().top } : null;
+  const title = t2 && document.body.classList.contains('panel-open') ? { left: t2.getBoundingClientRect().left, top: t2.getBoundingClientRect().top, drag: (() => { const r = t2.getBoundingClientRect(); return draggable(Math.round(r.left + r.width / 2), Math.round(r.top + r.height / 2)); })() } : null;
   return {
     full, bandDrag, grab, topbar, head, title,
     drags: drags.filter((d) => !(d.e.parentElement && reg(d.e.parentElement) === 'drag')).map((d) => nm(d.e) + ' ' + JSON.stringify(rr(d.r))),
@@ -172,6 +172,7 @@ async function run(ctx) {
     if (m.topbar && m.topbar.rows === 2 && m.topbar.restMin > 30) why.push(`top bar second row starts at x=${m.topbar.restMin} (the room is for the first row only)`);
     if (m.head && Math.abs(m.head.left - m.head.want) > 1) why.push(`screen title at x=${Math.round(m.head.left)}, ${m.head.nav ? 'the list-and-page block' : 'the centred column'} is at x=${Math.round(m.head.want)} (FR-097)`);
     if (m.title && !m.full && m.title.left < TL.x - 1 && m.title.top < TL.y) why.push(`screen title at x=${Math.round(m.title.left)} is under the traffic lights (< ${TL.x}) at ${size}`);
+    if (kind === 'chat' && m.title && !m.title.drag) why.push('the screen title is a no-drag hole (it is not a control and must drag with the header, issue 1548)');
     if (m.clickUnderTL.length) why.push('clickable under the traffic lights: ' + m.clickUnderTL.map((c) => c.el + JSON.stringify(c.rect)).join(', '));
     if (m.clickInDrag.length) why.push('clickable over a drag region: ' + m.clickInDrag.map((c) => c.el + JSON.stringify(c.rect)).join(', '));
     results.push({ name, size, ok: !why.length });
@@ -292,6 +293,7 @@ async function run(ctx) {
       ['chat-tools-activity', `window.DurbarScreens.openTools(null,'activity')`, () => !!document.querySelector('#tabActivity[aria-selected="true"]')&&!!document.querySelector('.scr-head.scr-wide')],
       ['chat-settings', `window.DurbarScreens.openSettings()`, () => !!document.querySelector('#screen:not([hidden]) .scr-nav')]]) {
       await js(open); await closeIn(name, size, W, ready);
+      if (name.startsWith('chat-tools')) await rec(name + '-grab', size, 'chat'); /* issue 1548: the Tools header keeps its 32 px grab block (the title drags) */
       await js(`window.DurbarScreens.close()`);
       await need(`document.getElementById('screen').hidden&&!document.body.classList.contains('screen-open')&&document.body.classList.contains('panel-open')`, `${size} ${name}: the screen closed, the chat is still open`);
     }
@@ -302,14 +304,12 @@ async function run(ctx) {
     await js(`window.DurbarScreens.openSettings()`); await rec('chat-settings', size, 'chat');
     await js(`window.DurbarScreens.close()`); await ctx.sleep(300);
     await showRestore(); await js(`window.DurbarScreens.openSettings()`); await rec('chat-strip-settings', size, 'chat'); await js(`window.DurbarScreens.close()`); await reset();
-    /* issue 1548: the Tools header over a chat (title, period, scope, tabs, Close) and the other screen headers at the narrow widths: the title is not a control, so it drags */
-    if (w <= 760) {
+    /* issue 1548: the two screen headers the loop above does not open (Tools > Models and context, the folder screen): the title is not a control, so it drags (the other Tools tabs record their grab block in that loop) */
+    if (w <= NARROW_FIT) {
       const head = async (what) => { await ctx.sleep(500); if (!(await js(`!!document.querySelector('#screen:not([hidden]) .scr-head h2')`))) throw new Error('no screen header for ' + what); };
       await openChat();
-      for (const [tab, name] of [[null, 'chat-tools'], ['agents', 'chat-tools-models'], ['cost', 'chat-tools-cost'], ['activity', 'chat-tools-activity']]) {
-        await js(`window.DurbarScreens.openTools(null, ${jsLiteral(tab)})`); await head(name); await rec(name, size, 'chat');
-        await js(`window.DurbarScreens.close()`); await ctx.sleep(300);
-      }
+      await js(`window.DurbarScreens.openTools(null, 'agents')`); await head('chat-tools-models'); await rec('chat-tools-models', size, 'chat');
+      await js(`window.DurbarScreens.close()`); await ctx.sleep(300);
       await js(`window.DurbarScreens.folderMcp('demo-folder', 'demo-folder')`); await head('folder'); await rec('chat-folder', size, 'chat');
       await js(`window.DurbarScreens.close()`); await reset();
     }
