@@ -2680,6 +2680,13 @@ assert.strictEqual(redact('{"a":"https://u:p@h/x","b":"y"}', {}), '{"a":"https:/
   ];
   for (const [what, t, want] of H) assert.strictEqual(maskHomePaths(t, []), want, `#1329 home ${what}`);
   for (const keep of ['~5/10', '~text~ and ~~gone~~', 'see ~/.bashrc', 'cd ~/x', 'a~b/c', 'GET /api/users/42', '%2Fusr%2Flocal%2Fbin', 'q=%2Fhomes%2Fx']) assert.strictEqual(maskHomePaths(keep, []), keep, `#1329 home near miss stays: ${keep}`);
+  // the last pass runs once, after the readings: inside them it left a later reading without the token it needed (differential fuzz cases; invented values)
+  {
+    const t1 = 'ssh)' + gh('r') + 'u6HdGGJbEoxDB6t6XOCmtm\u0301FL1vRxYlppa92B,echo)' + gh('s') + 'spoQP8Daz74IX21gwC&#95;' + '77SXlwH0wpntqfUKpP\\n-';
+    assert.strictEqual(shows(maskSecretCommand(t1, {}), ['77SXlwH0wpntqfUKpP']), undefined, `#1329 last pass: maskSecretCommand reads without it first: ${maskSecretCommand(t1, {})}`);
+    const t2 = 'ax\\n' + gh('r') + 'SDKYjWh^XHL25Wmr5o0Yr5uKnU3FKWPcC2oVU password=.' + gh('u') + '44OozxSib7X1hEAo\u2026 done.=' + gh('o') + 'jqmTvca45pZDpaKlg7aCMSyL\u4e00' + 'pvonYqxhEZT8\t\t';
+    for (const [what, out] of [['maskNoteText', maskNoteText(t2).text], ['maskOutgoing', maskOutgoing(t2).text]] as const) assert.strictEqual(shows(out, ['pvonYqxhEZT8']), undefined, `#1329 last pass: ${what} reads without it first: ${out}`);
+  }
   // cost: the new shapes add no rule pass (work counter): each form takes as many passes as the same text with a plain whole token
   for (const [what, t] of FORMS) {
     const plain = 'echo ' + gh('p') + B36;
