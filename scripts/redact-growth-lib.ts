@@ -103,14 +103,23 @@ export const assertLinearShape = (label: string, work: (x: string) => void, make
 /**
  * For what is not about growth (a cut that must come first, a budget, a pass that must not run again): how much the same machine takes, right now, for a known job. Spec 012 T138:
  * a fixed number of milliseconds fails on a slow runner whatever the code does. Best of up to 3 tries of the pair, CPU time, and a try that passes stops the loop.
+ * Both sides run `reps` times inside one timing, `reps` doubled until one timing of the yardstick reads at least `YARD_MIN_MS` (issue #1836): a yardstick of one Windows CPU tick
+ * (about 15.6 ms) reads the work in whole ticks, so one tick more moved a 2-pass case from under 3x to 3.9x (62 ms against the 16 ms floor). The returned figures are per timing.
  */
-export const assertWithinYardstick = (label: string, work: () => void, yardstick: () => void, factor: number): void => {
+export const YARD_MIN_MS = process.platform === 'win32' ? 8 * 16 : 20;
+const YARD_MAX_REPS = 1 << 12;
+export const assertWithinYardstick = (label: string, work: () => void, yardstick: () => void, factor: number): { cost: number; yard: number; reps: number } => {
+  const timed = (f: () => void, reps: number): number => threadCpuMs(() => { for (let r = 0; r < reps; r++) f(); }, 20_000 * reps);
+  let reps = 1;
+  let yard = timed(yardstick, reps);
+  while (yard < YARD_MIN_MS && reps < YARD_MAX_REPS) { reps *= 2; yard = timed(yardstick, reps); }
   let cost = Infinity;
-  let yard = Infinity;
   for (let i = 0; i < 3; i++) {
-    cost = Math.min(cost, threadCpuMs(() => work(), 20_000));
-    yard = Math.min(yard, threadCpuMs(() => yardstick(), 20_000));
+    cost = Math.min(cost, timed(work, reps));
+    if (i > 0) yard = Math.min(yard, timed(yardstick, reps));
     if (cost < Math.max(yard, MIN_BASE_MS) * factor) break;
   }
-  assert.ok(cost < Math.max(yard, MIN_BASE_MS) * factor, `${label}: ${cost.toFixed(1)} ms CPU, ${(cost / Math.max(yard, MIN_BASE_MS)).toFixed(1)}x the yardstick of ${yard.toFixed(1)} ms in the same run (limit ${factor}x)`);
+  assert.ok(yard >= YARD_MIN_MS / 2, `${label}: the yardstick read ${yard.toFixed(1)} ms CPU for ${reps} runs, under ${YARD_MIN_MS / 2} ms (a few timer ticks): the bound would read the work in whole ticks`);
+  assert.ok(cost < Math.max(yard, MIN_BASE_MS) * factor, `${label}: ${cost.toFixed(1)} ms CPU, ${(cost / Math.max(yard, MIN_BASE_MS)).toFixed(1)}x the yardstick of ${yard.toFixed(1)} ms in the same run, ${reps} per timing (limit ${factor}x)`);
+  return { cost, yard, reps };
 };

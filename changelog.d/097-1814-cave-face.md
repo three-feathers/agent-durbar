@@ -1,1 +1,0 @@
-- **Fixed: the cave's desks keep a face of 30.5 px at 1280x800 in the All floors view** (spec 097 FR-308, issue #1814): where the helper strip would take the face under 30.5 px, the cave's hall is drawn without it and the helper heads become the plate's +N and dots (desk face 30.3 to 33.8 px in that case). Photo and the arcade are unchanged.

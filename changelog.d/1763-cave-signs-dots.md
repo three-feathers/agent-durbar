@@ -1,1 +1,0 @@
-- **No folder sign over the thinking dots** (spec 097 FR-038, issues #1763 and #1759): in the Real office, mostly in the Prehistoric cave, a folder sign could cover a thinking person's three dots; the dots now always start below the sign. Checked in the simulator only, at 1440x900 and 1280x800.
