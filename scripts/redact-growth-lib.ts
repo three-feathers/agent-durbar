@@ -31,7 +31,8 @@ export const cpuMs = (f: () => void, capMs: number): number => {
 const FACTOR = 16;
 const MAX_RATIO = 40;
 // CPU timers tick in about 15.6 ms on Windows (as in test-browserurl), so a fast 1/16 baseline can read 0: never divide by less than one tick there
-const MIN_BASE_MS = process.platform === 'win32' ? 16 : 2;
+export const minBaseMsFor = (platform: NodeJS.Platform): number => platform === 'win32' ? 16 : 2;
+const MIN_BASE_MS = minBaseMsFor(process.platform);
 export const worstGrowth = { ratio: 0, label: '' }; // the highest full/baseline ratio seen, printed at the end
 // `reps` (default 1, so the other callers are unchanged): the baseline is timed as `run(small, reps)`, and `run` must then repeat the work `reps`
 // times inside one timing and give the mean per run, so a baseline of a few ms is read well above the Windows timer tick (a tick-sized baseline
@@ -109,12 +110,13 @@ export const assertLinearShape = (label: string, work: (x: string) => void, make
 export const yardMinMs = (platform: NodeJS.Platform): number => platform === 'win32' ? 8 * 16 : 20;
 export const YARD_MIN_MS = yardMinMs(process.platform);
 export const YARD_MAX_REPS = 1 << 12;
-/** The CPU ms of `reps` runs of `f` in one timing. Injected only by the helper's own self-test (issue #1843): a fake timer checks the decision logic without real timing. */
+/** The CPU ms of `reps` runs of `f` in one timing. Injected only by the helper's own self-test (issue #1843), with the floors `minMs` and `minBaseMs`: a fake timer checks the decision logic without real timing or the real platform. */
 export type YardTimer = (f: () => void, reps: number) => number;
 const realYardTimer: YardTimer = (f, reps) => threadCpuMs(() => { for (let r = 0; r < reps; r++) f(); }, 20_000 * reps);
-export const assertWithinYardstick = (label: string, work: () => void, yardstick: () => void, factor: number, opts: { timed?: YardTimer; minMs?: number } = {}): { cost: number; yard: number; reps: number } => {
+export const assertWithinYardstick = (label: string, work: () => void, yardstick: () => void, factor: number, opts: { timed?: YardTimer; minMs?: number; minBaseMs?: number } = {}): { cost: number; yard: number; reps: number } => {
   const timed = opts.timed ?? realYardTimer;
   const minMs = opts.minMs ?? YARD_MIN_MS;
+  const base = (y: number): number => Math.max(y, opts.minBaseMs ?? MIN_BASE_MS); // the self-test pins it too (review of PR 1844): no fake case reads the real platform
   let reps = 1;
   let yard = timed(yardstick, reps);
   while (yard < minMs && reps < YARD_MAX_REPS) { reps *= 2; yard = timed(yardstick, reps); }
@@ -122,9 +124,9 @@ export const assertWithinYardstick = (label: string, work: () => void, yardstick
   for (let i = 0; i < 3; i++) {
     cost = Math.min(cost, timed(work, reps));
     if (i > 0) yard = Math.min(yard, timed(yardstick, reps));
-    if (cost < Math.max(yard, MIN_BASE_MS) * factor) break;
+    if (cost < base(yard) * factor) break;
   }
   assert.ok(yard >= minMs / 2, `${label}: the yardstick read ${yard.toFixed(1)} ms CPU for ${reps} runs, under ${minMs / 2} ms (a few timer ticks): the bound would read the work in whole ticks`);
-  assert.ok(cost < Math.max(yard, MIN_BASE_MS) * factor, `${label}: ${cost.toFixed(1)} ms CPU, ${(cost / Math.max(yard, MIN_BASE_MS)).toFixed(1)}x the yardstick of ${yard.toFixed(1)} ms in the same run, ${reps} per timing (limit ${factor}x)`);
+  assert.ok(cost < base(yard) * factor, `${label}: ${cost.toFixed(1)} ms CPU, ${(cost / base(yard)).toFixed(1)}x the yardstick of ${yard.toFixed(1)} ms in the same run, ${reps} per timing (limit ${factor}x)`);
   return { cost, yard, reps };
 };

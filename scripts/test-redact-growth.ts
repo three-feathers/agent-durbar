@@ -6,7 +6,7 @@
 import * as assert from 'assert';
 import { REDACT_MAX_CHARS, _uncappedForTest, bareStepsForTest, redact } from '../src/shared/redact';
 import { spawnSync } from 'child_process';
-import { YARD_MAX_REPS, YARD_MIN_MS, type YardTimer, assertLinearGrowth, assertLinearShape, assertWithinYardstick, cpuMs, worstGrowth, workerRun, yardMinMs } from './redact-growth-lib';
+import { YARD_MAX_REPS, YARD_MIN_MS, type YardTimer, assertLinearGrowth, assertLinearShape, assertWithinYardstick, cpuMs, minBaseMsFor, worstGrowth, workerRun, yardMinMs } from './redact-growth-lib';
 
 const part = process.argv[2];
 const BT = '`';
@@ -298,36 +298,46 @@ if (part === 'hashtablegrowth') {
       return { timed, log };
     };
     const at = (label: string, re: RegExp) => (e: Error): boolean => re.test(e.message) || assert.fail(`${label}: wrong message: ${e.message}`);
-    // the bound: 1 ms per run, so the runs double to 32 (the yardstick reads 32 ms, at least the 20 ms floor); 2.9x passes, 3.1x and 5x fail at its own message
-    const ok = fake([2.9], 1);
-    const r = assertWithinYardstick('#1843 2.9x', W, Y, 3, { ...ok, minMs: 20 });
-    assert.deepStrictEqual(ok.log.filter((c) => c.side === 'yard').slice(0, 6).map((c) => c.reps), [1, 2, 4, 8, 16, 32], '#1843 yardstick: the runs double from 1 until the yardstick reads the floor');
-    assert.ok(r.reps === 32 && r.yard === 32 && Math.abs(r.cost - 92.8) < 1e-9, `#1843 yardstick: 2.9 times the yardstick passes the 3x bound at 32 runs (${r.reps} runs, ${r.yard} ms, ${r.cost} ms)`);
-    assert.strictEqual(ok.log.filter((c) => c.side === 'work').length, 1, '#1843 yardstick: a first try under the bound ends the loop');
-    for (const k of [3.1, 5]) {
-      const bad = fake([k], 1);
-      assert.throws(() => assertWithinYardstick(`#1843 ${k}x`, W, Y, 3, { ...bad, minMs: 20 }), at(`#1843 ${k}x`, new RegExp(`^#1843 ${k}x: ${(32 * k).toFixed(1)} ms CPU, ${k.toFixed(1)}x the yardstick of 32\\.0 ms in the same run, 32 per timing \\(limit 3x\\)$`)), `#1843 yardstick: ${k} times the work fails the 3x bound at its own assert`);
-      assert.strictEqual(bad.log.filter((c) => c.side === 'work').length, 3, `#1843 yardstick: ${k} times the work is tried 3 times before it fails`);
-    }
-    // best of 3: a first work reading over the bound (noise) is tried again, and the best reading is kept
-    const noisy = fake([5, 3.5, 2], 1);
-    const n = assertWithinYardstick('#1843 noisy', W, Y, 3, { ...noisy, minMs: 20 });
-    assert.ok(n.cost === 64 && noisy.log.filter((c) => c.side === 'work').length === 3, `#1843 yardstick: a noisy first try is retried, the best of 3 kept (${n.cost} ms)`);
-    // a short job: 0.3 ms per run reads 19.2 ms at 64 runs and 38.4 ms at 128, so 128 runs per timing
-    const short = fake([0.6], 0.3);
-    assert.strictEqual(assertWithinYardstick('#1843 short', W, Y, 3, { ...short, minMs: 20 }).reps, 128, '#1843 yardstick: a short job is repeated until the yardstick reads the floor (128 runs)');
-    // still under half the floor at the most runs: fails at its own message; between half the floor and the floor: passes
-    const tiny = fake([0.001], 0.001);
-    assert.throws(() => assertWithinYardstick('#1843 tiny', W, Y, 3, { ...tiny, minMs: 20 }), at('#1843 tiny', new RegExp(`^#1843 tiny: the yardstick read 4\\.1 ms CPU for ${YARD_MAX_REPS} runs, under 10 ms `)), '#1843 yardstick: a yardstick under half the floor at the most runs fails at its own assert');
-    assert.strictEqual(assertWithinYardstick('#1843 half', W, Y, 3, { ...fake([0.003], 0.003), minMs: 20 }).reps, YARD_MAX_REPS, '#1843 yardstick: a yardstick between half the floor and the floor at the most runs passes');
-    // the Windows tick (issue #1836): readings in whole 15.625 ms ticks, the Windows floor. A job 2.4 times the yardstick (20 ms per run) reads 3 ticks
-    // against 1 at one run, 3.0x, and fails the 3x bound (the #1836 failure, the helper without repetition); at 8 runs it reads 375 against 156.25, 2.4x
-    const TICK = 15.625;
+    // every fake case runs with each platform's base floor (`minBaseMsFor`), pinned, so none reads the real platform (review of PR 1844: on Windows the
+    // real 16 ms base floor let the one-tick case pass)
     assert.strictEqual(yardMinMs('win32'), 128, '#1843 yardstick: the Windows floor is 8 ticks');
     assert.strictEqual(yardMinMs('linux'), 20, '#1843 yardstick: the floor elsewhere is 20 ms');
-    assert.throws(() => assertWithinYardstick('#1843 one tick', W, Y, 3, { ...fake([48], 20, TICK), minMs: 0 }), at('#1843 one tick', /^#1843 one tick: 46\.9 ms CPU, 3\.0x the yardstick of 15\.6 ms in the same run, 1 per timing \(limit 3x\)$/), '#1843 yardstick: one run on a Windows tick reads 2.4 times the work as 3 times');
-    const win = assertWithinYardstick('#1843 win32', W, Y, 3, { ...fake([48], 20, TICK), minMs: yardMinMs('win32') });
-    assert.ok(win.reps === 8 && win.yard === 156.25 && win.cost === 375, `#1843 yardstick: on a Windows tick the runs reach the floor and 2.4 times the work passes (${win.reps} runs, ${win.yard} ms, ${win.cost} ms)`);
+    assert.ok(minBaseMsFor('win32') === 16 && minBaseMsFor('linux') === 2, '#1843 yardstick: the base floor is one Windows tick there, 2 ms elsewhere');
+    for (const plat of ['linux', 'win32'] as const) {
+      const minBaseMs = minBaseMsFor(plat);
+      // the bound: 1 ms per run, so the runs double to 32 (the yardstick reads 32 ms, at least the 20 ms floor); 2.9x passes, 3.1x and 5x fail at its own message
+      const ok = fake([2.9], 1);
+      const r = assertWithinYardstick('#1843 2.9x', W, Y, 3, { ...ok, minBaseMs, minMs: 20 });
+      assert.deepStrictEqual(ok.log.filter((c) => c.side === 'yard').slice(0, 6).map((c) => c.reps), [1, 2, 4, 8, 16, 32], '#1843 yardstick: the runs double from 1 until the yardstick reads the floor');
+      assert.ok(r.reps === 32 && r.yard === 32 && Math.abs(r.cost - 92.8) < 1e-9, `#1843 yardstick: 2.9 times the yardstick passes the 3x bound at 32 runs (${r.reps} runs, ${r.yard} ms, ${r.cost} ms)`);
+      assert.strictEqual(ok.log.filter((c) => c.side === 'work').length, 1, '#1843 yardstick: a first try under the bound ends the loop');
+      for (const k of [3.1, 5]) {
+        const bad = fake([k], 1);
+        assert.throws(() => assertWithinYardstick(`#1843 ${k}x`, W, Y, 3, { ...bad, minBaseMs, minMs: 20 }), at(`#1843 ${k}x`, new RegExp(`^#1843 ${k}x: ${(32 * k).toFixed(1)} ms CPU, ${k.toFixed(1)}x the yardstick of 32\\.0 ms in the same run, 32 per timing \\(limit 3x\\)$`)), `#1843 yardstick: ${k} times the work fails the 3x bound at its own assert`);
+        assert.strictEqual(bad.log.filter((c) => c.side === 'work').length, 3, `#1843 yardstick: ${k} times the work is tried 3 times before it fails`);
+      }
+      // best of 3: a first work reading over the bound (noise) is tried again, and the best reading is kept
+      const noisy = fake([5, 3.5, 2], 1);
+      const n = assertWithinYardstick('#1843 noisy', W, Y, 3, { ...noisy, minBaseMs, minMs: 20 });
+      assert.ok(n.cost === 64 && noisy.log.filter((c) => c.side === 'work').length === 3, `#1843 yardstick: a noisy first try is retried, the best of 3 kept (${n.cost} ms)`);
+      // a short job: 0.3 ms per run reads 19.2 ms at 64 runs and 38.4 ms at 128, so 128 runs per timing
+      const short = fake([0.6], 0.3);
+      assert.strictEqual(assertWithinYardstick('#1843 short', W, Y, 3, { ...short, minBaseMs, minMs: 20 }).reps, 128, '#1843 yardstick: a short job is repeated until the yardstick reads the floor (128 runs)');
+      // still under half the floor at the most runs: fails at its own message; between half the floor and the floor: passes
+      const tiny = fake([0.001], 0.001);
+      assert.throws(() => assertWithinYardstick('#1843 tiny', W, Y, 3, { ...tiny, minBaseMs, minMs: 20 }), at('#1843 tiny', new RegExp(`^#1843 tiny: the yardstick read 4\\.1 ms CPU for ${YARD_MAX_REPS} runs, under 10 ms `)), '#1843 yardstick: a yardstick under half the floor at the most runs fails at its own assert');
+      assert.strictEqual(assertWithinYardstick('#1843 half', W, Y, 3, { ...fake([0.003], 0.003), minBaseMs, minMs: 20 }).reps, YARD_MAX_REPS, '#1843 yardstick: a yardstick between half the floor and the floor at the most runs passes');
+      // the Windows tick (issue #1836): readings in whole 15.625 ms ticks, the Windows floor. A job 2.1 times the yardstick (63 against 30 ms per run) reads
+      // 4 ticks against 1 at one run (3.9x the Windows base floor of 16 ms, the #1836 failure: the helper without repetition); at 8 runs 500 against 234.375, 2.1x
+      const TICK = 15.625;
+      assert.throws(() => assertWithinYardstick('#1843 one tick', W, Y, 3, { ...fake([63], 30, TICK), minBaseMs, minMs: 0 }), at('#1843 one tick', new RegExp(`^#1843 one tick: 62\\.5 ms CPU, ${plat === 'win32' ? '3\\.9' : '4\\.0'}x the yardstick of 15\\.6 ms in the same run, 1 per timing \\(limit 3x\\)$`)), `#1843 yardstick: one run on a Windows tick reads 2.1 times the work as over 3 times (${plat} base floor)`);
+      const win = assertWithinYardstick('#1843 win32', W, Y, 3, { ...fake([63], 30, TICK), minBaseMs, minMs: yardMinMs('win32') });
+      assert.ok(win.reps === 8 && win.yard === 234.375 && win.cost === 500, `#1843 yardstick: on a Windows tick the runs reach the floor and 2.1 times the work passes (${plat} base floor; ${win.reps} runs, ${win.yard} ms, ${win.cost} ms)`);
+      // the base floor (review of PR 1844): a yardstick reading under it is read as the floor, so 40 ms against 10 ms fails at 2 ms and passes at 16 ms
+      const under = (): { cost: number; yard: number; reps: number } => assertWithinYardstick('#1843 base', W, Y, 3, { ...fake([40], 10), minBaseMs, minMs: 0 });
+      if (minBaseMs === 2) assert.throws(under, at('#1843 base', /^#1843 base: 40\.0 ms CPU, 4\.0x the yardstick of 10\.0 ms in the same run, 1 per timing \(limit 3x\)$/), '#1843 yardstick: the base floor of 2 ms keeps a 10 ms yardstick, 4 times fails');
+      else assert.strictEqual(under().cost, 40, '#1843 yardstick: the base floor of 16 ms reads a 10 ms yardstick as 16 ms, 40 ms passes');
+    }
   }
   // and once with real timing, the only way this part can fail on it is the repetition gone: a job far under one Windows CPU tick against itself
   {
