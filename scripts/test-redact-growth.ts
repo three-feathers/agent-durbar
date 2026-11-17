@@ -231,7 +231,23 @@ if (part === 'adversarial2') {
     return [_shapePassesForTest() - q, _runReadsForTest() - r, _shellPassesForTest() - p].join(' ');
   };
   assert.strictEqual(work(shape), '2 1 0', '#1839 work slackHookEsc: rule passes, run readings and shell-reading passes on one escaped run');
-  assert.strictEqual(work(cut(shape, shape.length - 1)), '6 2 2', '#1839 work slackHookEsc cut: rule passes, run readings and shell-reading passes on the run cut as redact cuts it');
+  // issue #1841: the cut leaves out the lone backslash before its marker on this long run with no separator, so the run is read as the uncut text reads it (one rule
+  // pass more, for the text with the marker); with the backslash the marker's blank was an escaped blank, read once more through every rule (`6 2 2`)
+  assert.strictEqual(work(cut(shape, shape.length - 1)), '3 1 0', '#1839 work slackHookEsc cut: rule passes, run readings and shell-reading passes on the run cut as redact cuts it');
+  // issue #1841: which cuts leave the lone backslash out: a run of at least 4,096 characters with no `:` or `=`; a shorter run, a separator anywhere in the run, or an
+  // escaped backslash keeps the cut as before
+  const M = ' [truncated]';
+  const long = 'x ' + 'a\\/'.repeat(2000);
+  assert.strictEqual(cut(long + 'bc', long.length + 1), long.slice(0, -2) + M, '#1841 cut: a long run without a separator ends before its lone backslash');
+  assert.strictEqual(cut('x ' + 'a\\/'.repeat(100) + 'bc', 303), 'x ' + 'a\\/'.repeat(100).slice(0, -1) + M, '#1841 cut: a short run keeps its lone backslash');
+  const broken = long + ' ' + 'a\\/'.repeat(30);
+  assert.strictEqual(cut(broken + 'bc', broken.length + 1), broken.slice(0, -1) + M, '#1841 cut: a long text whose last run is short keeps its lone backslash');
+  const farSep = 'x k=v' + 'a\\/'.repeat(2000);
+  assert.strictEqual(cut(farSep + 'bc', farSep.length + 1), farSep.slice(0, -1) + M, '#1841 cut: a long run with a separator far before the cut keeps its lone backslash');
+  const nearSep = long + 'k:v' + 'a\\/'.repeat(10);
+  assert.strictEqual(cut(nearSep + 'bc', nearSep.length + 1), nearSep.slice(0, -1) + M, '#1841 cut: a long run with a separator near the cut keeps its lone backslash');
+  const even = long + '\\\\';
+  assert.strictEqual(cut(even + 'bc', even.length + 1), even + M, '#1841 cut: escaped backslashes before the cut stay');
 }
 
 }
