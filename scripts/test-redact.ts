@@ -3,7 +3,7 @@ import * as assert from 'assert';
 import * as fs from 'fs';
 import * as path from 'path';
 import { Worker } from 'worker_threads';
-import { MASK_INPUT_MAX, REDACT_MAX_CHARS, createDebugSink, _uncappedForTest, cut, maskSchemeSecrets, maskTokenShapes, maskTokenShapesUnguarded, maskSecretArgs, maskSecretCommand, maskHomePaths, maskSecretUrl, maskNoteText, maskOutgoing, maskSplitTokens, _breakCallsForTest, keepShownBy, _unionMasksForTest, withoutSplit, withoutShell, _shellRefsForTest, _shellPassesForTest, _shapePassesForTest, _runReadsForTest, ESC_RUN_SHELL_SOURCE, _splitWorkForTest, redact, redactMarkdown, MARKDOWN_WORK, _markdownPassForTest, shQuote, splitCommand } from '../src/shared/redact';
+import { MASK_INPUT_MAX, REDACT_MAX_CHARS, createDebugSink, _uncappedForTest, cut, maskSchemeSecrets, maskTokenShapes, maskTokenShapesUnguarded, maskSecretArgs, maskSecretCommand, maskHomePaths, maskSecretUrl, maskNoteText, maskOutgoing, maskSplitTokens, _breakCallsForTest, keepShownBy, _unionMasksForTest, withoutSplit, withoutShell, _shellRefsForTest, _shellPassesForTest, _shapePassesForTest, _runReadsForTest, ESC_RUN_SHELL_SOURCE, withoutLoose, maskLoose, _splitWorkForTest, redact, redactMarkdown, MARKDOWN_WORK, _markdownPassForTest, shQuote, splitCommand } from '../src/shared/redact';
 
 import { assertLinearShape, assertWithinYardstick, cpuMs } from './redact-growth-lib';
 import './safetext-shared'; // the desk's maskRaw (src/renderer/safetext.js) reads the compiled redact.ts, for the FR-181 differential below
@@ -189,9 +189,10 @@ const env = {
             const head = pre + BODY.slice(0, l1), tl = BODY.slice(l1, l1 + l2);
             const text = 'echo ' + head + '\\' + br + tl + ' done';
             const hu = plain + BODY.slice(0, l1);
-            const firstHides = maskTokenShapes(hu, '[redacted]') !== hu;
+            // the shapes the escaped-run step reads (spec 012 FR-185's GitHub last pass runs on the output only, not on an escaped run)
+            const firstHides = withoutLoose(() => maskTokenShapes(hu, '[redacted]')) !== hu;
             const whole = hu + br + tl;
-            const wholeTok = maskTokenShapes(whole, '[redacted]') !== whole;
+            const wholeTok = withoutLoose(() => maskTokenShapes(whole, '[redacted]')) !== whole;
             // the first piece hides alone: its tail goes with it from 8 letters and digits on, the break's own letter counted (a tail of 6 stays, FR-173's count); else the whole run is read; no token: as written
             const want = firstHides ? (l2 + 1 >= 8 ? 'echo [redacted] done' : `echo [redacted]\\${br}${tl} done`) : wholeTok ? 'echo [redacted] done' : text;
             assert.strictEqual(redact(text, {}), want, `#1585 round 3 break tail (${what} \\${br}, ${l1} before, ${l2} after): ${redact(text, {})}`);
@@ -312,7 +313,7 @@ const env = {
         const t = parts.join([' ', '', '\n', ', '][rnd5(4)]);
         if (SPLIT5.test(t) && round5(t, red0) !== red0(t)) split++;
         // spec 012 FR-182 (review of PR 1721, round 4): the desk masks the split tokens first (`maskSplitTokens`), then runs the round-5 steps on that output
-        const want5 = round5(maskSplitTokens(t), red0);
+        const want5 = maskLoose(withoutLoose(() => round5(maskSplitTokens(t), red0))); // spec 012 FR-185: the desk adds the GitHub last pass once, at its end
         assert.strictEqual(ST.maskRaw(t, red0), want5, `#1585 round 7 gate: a backslash-free text is masked as in round 5 (fixture case ${i}: ${JSON.stringify(t).slice(0, 80)})`);
       }
       assert.ok(split > 300, `#1585 round 7 gate: the fixture reaches the plain-kept second pass (${split} cases)`);
@@ -2249,7 +2250,7 @@ assert.strictEqual(redact('{"a":"https://u:p@h/x","b":"y"}', {}), '{"a":"https:/
   // item 8: each guard pinned
   assert.strictEqual(red(GH.slice(0, 16) + '\u2028' + GH.slice(16)), '[redacted]\u2028[redacted]', '#1613 a line separator inside a token stays in the output');
   // spec 012 FR-185: the GitHub head before the entity is a cut token now and is hidden; the guard still keeps the entity and the rest as written
-  for (const ent of ['&#38;', '&amp;']) assert.strictEqual(red('ghp_' + B.slice(0, 12) + ent + B.slice(12, 36)), '[redacted]' + ent + B.slice(12, 36), `#1613 a guard keeps the entity and the rest as written: ${ent}`);
+  for (const ent of ['&#38;', '&amp;']) assert.strictEqual(red('ghp_' + B.slice(0, 12) + ent + B.slice(12, 36)), '[redacted]' + ent + B.slice(12, 36), `#1329 cut head before an entity: hidden, the #1613 guard keeps the entity and the rest: ${ent}`);
   for (const keep of ['sgp_CrossValidation_ResultsForThe_Model\nsbp_Final2']) assert.strictEqual(red(keep), keep, `#1613 a guard keeps it readable: ${JSON.stringify(keep)}`);
   _breakCallsForTest();
   red(Array.from({ length: 200 }, (_, i) => 'Some words on line ' + i + ' and more words\nanother line of words here').join('\n'));
@@ -2324,7 +2325,8 @@ assert.strictEqual(redact('{"a":"https://u:p@h/x","b":"y"}', {}), '{"a":"https:/
   }
   const texts: string[] = [pwRun(16_000), pwRun(40_000), manyPlain];
   for (let i = 0; i < 1500; i++) { let t = ''; const n = 1 + Math.floor(rnd() * 16); for (let j = 0; j < n; j++) t += parts[Math.floor(rnd() * parts.length)]; texts.push(t); }
-  for (const t of texts) assert.strictEqual(redactMarkdown(t, marks(t)), mainMarkdown(t, marks(t)), `#1593 redactMarkdown as on main under the budget: ${JSON.stringify(t.slice(0, 50))}`);
+  // spec 012 FR-185: main's reading with the GitHub last pass off inside, then that pass once over the result, as `redactMarkdown` does it
+  for (const t of texts) assert.strictEqual(redactMarkdown(t, marks(t)), maskLoose(withoutLoose(() => mainMarkdown(t, marks(t)))), `#1593 redactMarkdown as on main under the budget: ${JSON.stringify(t.slice(0, 50))}`);
 }
 
 // spec 012 FR-184 (issue #1543, T166): a token behind a shell's backslash forms (ANSI-C `$'…'` escapes, JSON `\u` escapes, a line continuation inside it, the PowerShell
@@ -2677,6 +2679,13 @@ assert.strictEqual(redact('{"a":"https://u:p@h/x","b":"y"}', {}), '{"a":"https:/
   ];
   for (const [what, t, want] of H) assert.strictEqual(maskHomePaths(t, []), want, `#1329 home ${what}`);
   for (const keep of ['~5/10', '~text~ and ~~gone~~', 'see ~/.bashrc', 'cd ~/x', 'a~b/c', 'GET /api/users/42', '%2Fusr%2Flocal%2Fbin', 'q=%2Fhomes%2Fx']) assert.strictEqual(maskHomePaths(keep, []), keep, `#1329 home near miss stays: ${keep}`);
+  // cost: the new shapes add no rule pass (work counter): each form takes as many passes as the same text with a plain whole token
+  for (const [what, t] of FORMS) {
+    const plain = 'echo ' + gh('p') + B36;
+    const q0 = _shapePassesForTest(); redact(plain, {}); const base = _shapePassesForTest() - q0;
+    const q1 = _shapePassesForTest(); redact(t, {}); const got = _shapePassesForTest() - q1;
+    assert.ok(got <= base, `#1329 work: ${what}: ${got} rule passes, a plain token takes ${base}`);
+  }
   // cost: linear on dense prefixes and dense encoded separators (FR-183's rule)
   assertLinearShape('#1329 redact many lookalike prefixes', (x) => { redact(x, {}); }, (k) => ('gh\u0440_a\uff47\uff48p_' + B36.slice(0, 3) + ' ').repeat(Math.ceil(k / 16)).slice(0, k), 400_000);
   assertLinearShape('#1329 maskHomePaths many encoded separators', (x) => { maskHomePaths(x, []); }, (k) => '%2Fhome%2Fa%25%2'.repeat(Math.ceil(k / 16)).slice(0, k), 400_000);
