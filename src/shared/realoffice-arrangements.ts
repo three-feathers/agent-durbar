@@ -565,6 +565,13 @@ export function layoutWithFallback(arrangement: Arrangement, model: RealModel, v
   return { lay: layoutFor(arrangement, model, view, meta, signs), ran: arrangement };
 }
 
+/** FR-230's hold, pure (review of #1764): what the page keeps after a layout. `hold` is where the circle fell back to rows and at how many agents (`at`, for the folder list `key`). The circle drawn clears it; rows drawn because the circle did not fit (`why` `fit`) set it once per key; rows drawn for any other reason (`floors`: the All floors view) leave it as it was, so a building that drops to one floor gets the circle back at once. */
+export function holdAfter(hold: { key: string; at: number } | null, key: string, agents: number, ran: Arrangement, why?: 'fit' | 'floors'): { key: string; at: number } | null {
+  if (ran === 'circle') return null;
+  if (why === 'fit' && (!hold || hold.key !== key)) return { key, at: agents };
+  return hold;
+}
+
 /** Spec 102 T171 (FR-220): what `cabinetOf` may paint from a world's `monitor` entry: a plain file name (lower-case letters, digits and single hyphens, `.webp`, no path, no quote, no `url()`) and a whole number of cells from 1 to 1024
  *  (`bodies`, when present, a whole number from 1 that divides the cells). '' when fine, else the reason; the renderer draws no cabinet picture for a reason. Pure. */
 export const MONITOR_FILE_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*\.webp$/;

@@ -366,7 +366,7 @@
         const n = eng.folders.reduce((c, f) => c + f.agents.length, 0), key = world + '|' + view.w + 'x' + view.h + '|' + eng.folders.map((f) => f.id).join(',');
         const r = L.layoutWithFallback('circle', eng, view, meta, signs, CIRCLE_HOLD && CIRCLE_HOLD.key === key ? CIRCLE_HOLD.at : undefined);
         ran = r.ran;
-        if (ran === 'circle') CIRCLE_HOLD = null; else if (r.why === 'fit' && (!CIRCLE_HOLD || CIRCLE_HOLD.key !== key)) CIRCLE_HOLD = { key, at: n }; /* the hold follows a failed fit only, never the All floors rows (review of #1764) */
+        CIRCLE_HOLD = L.holdAfter(CIRCLE_HOLD, key, n, ran, r.why); /* the hold follows a failed fit only, never the All floors rows (review of #1764; pure, tested in test-realoffice-circle) */
         return r.lay;
       }
       ran = arr;

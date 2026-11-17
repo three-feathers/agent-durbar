@@ -5,7 +5,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { realLayout, signMin, signShortMin, sortDesks, splitLounge, type RealMeta, type RealModel, type RealAgent, type RealState, type Rect, type Layout } from '../src/shared/realoffice-layout';
 import { CHIP_KINDS } from '../src/shared/realoffice-layout';
-import { ARRANGEMENTS, FACE_FLOOR, arrangementFits, circleLayout, circleWith, layoutFor, layoutWithFallback, isArrangement, monitorProblem, CIRCLE_FOCUS_MIN } from '../src/shared/realoffice-arrangements';
+import { ARRANGEMENTS, FACE_FLOOR, arrangementFits, circleLayout, circleWith, layoutFor, layoutWithFallback, holdAfter, isArrangement, monitorProblem, CIRCLE_FOCUS_MIN, type Arrangement } from '../src/shared/realoffice-arrangements';
 
 process.exitCode = 1;
 const ROOT = (() => { let d = __dirname; while (!fs.existsSync(path.join(d, 'package.json'))) d = path.dirname(d); return d; })();
@@ -239,8 +239,19 @@ const movedBy = (meta: RealMeta, W: number, H: number, agents: number, f: number
   assert.strictEqual((rf as { why?: string }).why, 'floors', 'the All floors rows say why: floors, not fit (floors-no-hold)');
   assert.strictEqual(ro.ran, 'circle', 'all floors, then one floor: the circle returns at once, nothing held (floors-no-hold)');
   assert.strictEqual((layoutWithFallback('circle', m, v, META_CAVE, signsOf(5, 1)) as { why?: string }).why, 'fit', 'a failed fit says fit (floors-no-hold)');
+  // the hold as the page keeps it: All floors rows then one floor; a failed fit then the same list (behaviour, label floors-no-hold)
+  const keyA = 'cave|1440x797|f0,f1,f2,f3', n8 = 8;
+  let hold = holdAfter(null, keyA, n8, rf.ran, (rf as { why?: 'fit' | 'floors' }).why);
+  assert.strictEqual(hold, null, 'All floors rows set no hold (floors-no-hold: behaviour)');
+  hold = holdAfter(hold, keyA, n8, ro.ran, (ro as { why?: 'fit' | 'floors' }).why);
+  assert.strictEqual(hold, null, 'then one floor: still no hold and the circle returns (floors-no-hold: behaviour)');
+  const rfit = layoutWithFallback('circle', m, v, META_CAVE, signsOf(5, 1)) as { ran: Arrangement; why?: 'fit' | 'floors' };
+  hold = holdAfter(hold, keyA, 15, rfit.ran, rfit.why);
+  assert.deepStrictEqual(hold, { key: keyA, at: 15 }, 'a failed fit sets the hold at its agent count (floors-no-hold: behaviour)');
+  assert.strictEqual(holdAfter(hold, keyA, 14, 'rows', 'floors'), hold, 'rows for floors leave a held fit alone (floors-no-hold: behaviour)');
+  assert.strictEqual(holdAfter(hold, keyA, 13, 'circle'), null, 'the circle drawn clears it (floors-no-hold: behaviour)');
   const page = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'realoffice.js'), 'utf8');
-  assert.ok(/r\.why === 'fit'[^\n]*CIRCLE_HOLD = \{/.test(page), 'the page sets the circle hold only where why is fit (floors-no-hold: the page wiring)');
+  assert.ok(/CIRCLE_HOLD = L\.holdAfter\(CIRCLE_HOLD, key, n, ran, r\.why\)/.test(page), 'the page keeps its hold through holdAfter (floors-no-hold: sanity line only; the behaviour above is the test)');
 }
 // ---- the ladder circle -> rows (FR-230, owner 2026-11-14 13:10 UTC): 15 agents in 14 and in 15 one-agent folders fall back to rows, no scroll, nothing off the stage ----
 {
