@@ -2630,7 +2630,7 @@ assert.strictEqual(redact('{"a":"https://u:p@h/x","b":"y"}', {}), '{"a":"https:/
 {
   const B36 = 'R1t2Y3u4I5o6P7a8S9d0F1g2H3j4K5l6Z7x8';
   const B82 = (B36 + B36 + B36).slice(0, 82);
-  const ST = require(path.join(__dirname, '..', '..', 'src', 'renderer', 'safetext.js')) as { maskRaw(t: string, r: (s: string) => string): string; excerpt(t: string, r: (s: string) => string): string; maskLabel(t: string, k: string, m: Record<string, (s: string) => string>): string };
+  const ST = require(path.join(__dirname, '..', '..', 'src', 'renderer', 'safetext.js')) as { maskRaw(t: string, r: (s: string) => string): string; excerpt(t: string, r: (s: string) => string, n?: number): string; maskLabel(t: string, k: string, m: Record<string, (s: string) => string>): string; create(o: { redact: (s: string) => string }): { mask(t: string): string; excerpt(t: string, n?: number): string } };
   const LA = require(path.join(__dirname, '..', '..', 'src', 'renderer', 'liveact.js')) as { permText(t: string, k: string, m: Record<string, (s: string) => string>): { text: string }; phrase(o: { kind: string; tool: string; label: string }, m: Record<string, (s: string) => string>): string };
   const m = { redact: (t: string) => redact(t, {}), cmd: (t: string) => maskSecretCommand(t, {}), url: (t: string) => maskSecretUrl(t, {}) };
   const shows = (out: string, secrets: string[]): string | undefined => {
@@ -2639,7 +2639,8 @@ assert.strictEqual(redact('{"a":"https://u:p@h/x","b":"y"}', {}), '{"a":"https:/
   };
   const surfaces = (t: string): Array<[string, string]> => [['redact', redact(t, {})], ['maskTokenShapes', maskTokenShapes(t, '[redacted]')], ['maskSecretCommand', maskSecretCommand(t, {})], ['maskSecretArgs', maskSecretArgs(['run', t], {}).join(' ')],
     ['maskRaw', ST.maskRaw(t, m.redact)], ['excerpt', ST.excerpt(t, m.redact)], ['maskLabel run', ST.maskLabel(t, 'run', m)], ['maskLabel other', ST.maskLabel(t, 'other', m)],
-    ['permText shell', LA.permText('run ' + t, 'shell', m).text], ['permText other', LA.permText(t, 'other', m).text], ['phrase', LA.phrase({ kind: 'run', tool: 'Bash', label: t }, m)]];
+    ['permText shell', LA.permText('run ' + t, 'shell', m).text], ['permText other', LA.permText(t, 'other', m).text], ['phrase', LA.phrase({ kind: 'run', tool: 'Bash', label: t }, m)],
+    ['maskNoteText', maskNoteText(t).text], ['maskOutgoing', maskOutgoing(t).text], ['redactMarkdown', redactMarkdown(t, t)], ['wrapper mask', ST.create({ redact: m.redact }).mask(t)], ['wrapper excerpt', ST.create({ redact: m.redact }).excerpt(t, 140)]];
   const gh = (p: string): string => 'gh' + p + '_';
   // [label, text, the secrets that must not show]; each is shown in clear on main at 7a5f9777e
   const FORMS: Array<[string, string, string[]]> = [
