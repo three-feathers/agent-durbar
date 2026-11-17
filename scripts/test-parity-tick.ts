@@ -1,5 +1,6 @@
 /** Parity checklists tick themselves (spec 021 FR-088, T075): `npm run test:paritytick`. Offline, no credits. PT_MODULE swaps the module (mutant runs). */
 import * as assert from 'assert';
+import { cpuMs } from './redact-growth-lib';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -86,11 +87,11 @@ const LIST = [
 {
   const filler = Array.from({ length: 40000 }, (_, i) => `- [ ] #${100000 + i} item ${i}`).join('\n');
   const big = filler + '\n- [ ] #7 the one\n' + filler;
-  const t0 = Date.now();
-  const r = tick(big, 7);
+  let r!: ReturnType<typeof tick>;
+  const cpu = cpuMs(() => { r = tick(big, 7); }, 2000);
   assert.strictEqual(r.changed, 1, 'huge: one line');
   assert.strictEqual(r.body.length, big.length, 'huge: same length');
-  assert.ok(Date.now() - t0 < 2000, 'huge: under 2 s');
+  assert.ok(cpu < 2000, `huge: under 2 s of CPU time (${cpu.toFixed(0)} ms)`);
 }
 // 9 code blocks: lines inside ``` or ~~~ fences are never touched; a line after the fence is
 {

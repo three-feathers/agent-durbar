@@ -8,6 +8,8 @@ import { shouldBounce, shouldFlash } from '../src/main/badge';
 import { NATIVE_ZOOM_WINDOW_MS, handleTitleDoubleClick, noteWindowZoom, resetWindowZoom, titleDoubleClickAction } from '../src/main/titledblclick';
 
 const ROOT = path.join(__dirname, '..', '..');
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const { JSDOM } = require('jsdom') as { JSDOM: new (html: string) => { window: { document: Document } } };
 type Ev = Partial<{ key: string; code: string; ctrlKey: boolean; metaKey: boolean; altKey: boolean; shiftKey: boolean; isComposing: boolean }>;
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const K = require(path.join(ROOT, 'src', 'renderer', 'keys.js')) as {
@@ -141,6 +143,10 @@ assert.ok(/'keys\.js'/.test(fs.readFileSync(path.join(ROOT, 'scripts', 'copy-ass
 // the Mac title bar rules apply only under html[data-platform="darwin"], so the office geometry on Linux and Windows is unchanged
 const css = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'styles.css'), 'utf8');
 for (const line of css.split('\n').filter((l) => /app-region|padding-left:(max\()?78px/.test(l))) assert.ok(line.startsWith('html[data-platform="darwin"]'), `darwin-only: ${line.slice(0, 80)}`);
+// screens.css carries Mac rules too (the Settings title room, issue #1538): each line that names the room (--tl-room or a 78px) starts under the darwin prefix, and the rule itself exists with it
+const scss = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'screens.css'), 'utf8').replace(/\r\n/g, '\n');
+for (const line of scss.split('\n').filter((l) => /tl-room|78px|app-region/.test(l))) assert.ok(line.startsWith('html[data-platform="darwin"]'), `darwin-only (screens.css): ${line.slice(0, 80)}`);
+assert.ok(scss.includes('html[data-platform="darwin"]:not([data-fullscreen]) body.panel-open.screen-open #screen:has(.scr-nav) .scr-head{--tl-room:78px;padding-left:max(var(--tl-room),var(--sn-pad))}'), 'the Settings title keeps the traffic-light room on a Mac only, outside full screen');
 // an open chat hides the top bar (body.panel-open), so the agent rail's top row and the chat header are the drag areas then (spec 052 FR-215),
 // with the same room and no-drag controls (in the header also anything with a tooltip);
 // a screen opened over a chat (body.screen-open) also hides the rail, so then the screen's header is; a notice strip shown with a chat open is the first row (FR-138)
@@ -153,7 +159,8 @@ const rules = [
   `${D} body.panel-open :is(#restoreStrip:not([hidden]),#restoreStrip[hidden]+#awayStrip:not([hidden]),#restoreStrip[hidden]+#awayStrip[hidden]+#crashStrip:not([hidden])){min-height:40px}`, // the first strip clears the 78x40 box
   `${D}:not([data-fullscreen]) body.panel-open .notice-strip{padding-left:78px}`,
   `${D}:not([data-fullscreen]) body.panel-open.screen-open .scr-head{padding-left:max(78px,calc((100% - var(--scr-col))/2 + 24px))}`, // FR-097 alignment kept
-  `${D} :is(.topbar,body.panel-open .notice-strip,body.panel-open.screen-open .scr-head) :is(button,a,input,select,textarea,label,summary,[role="button"],[role="menu"],[role="group"],[tabindex],.more-menu){-webkit-app-region:no-drag}`,
+  `${D} :is(.topbar,body.panel-open .notice-strip) :is(button,a,input,select,textarea,label,summary,[role="button"],[role="menu"],[role="group"],[tabindex],.more-menu){-webkit-app-region:no-drag}`,
+  `${D} :is(body.panel-open.screen-open .scr-head) :is(button,a,input,select,textarea,label,summary,[role="button"],[role="menu"],[role="group"],[tabindex]:not([tabindex="-1"]),.more-menu){-webkit-app-region:no-drag}`,
   `${D} :is(.rail-top,body.panel-open .ph) :is(button,a,input,select,textarea,label,summary,[role="button"],[role="menu"],[role="group"],[tabindex],[title],.more-menu,.grants){-webkit-app-region:no-drag}`,
   `${D} body.panel-open .notice-strip:not([hidden]) ~ .notice-strip{padding-left:20px}`,
   `${D} .notice-strip:not([hidden]) ~ .workspace .rail-top{padding-left:8px}`,
@@ -175,6 +182,15 @@ assert.ok(css.includes(':root{color-scheme:light}') && css.includes(':root[data-
 for (const v of ['Maximize', 'Fill', 'maximize', 'FILL', ' Maximize ', '', undefined, null, 42, 'Zoom', 'something else']) assert.strictEqual(titleDoubleClickAction(v), 'zoom', `double-click "${String(v)}" zooms`);
 for (const v of ['Minimize', 'minimize', 'MINIMIZE', ' Minimize\n']) assert.strictEqual(titleDoubleClickAction(v), 'minimize', `double-click "${v}" minimizes`);
 for (const v of ['None', 'none', 'NONE']) assert.strictEqual(titleDoubleClickAction(v), 'none', `double-click "${v}" does nothing`);
+// the same filter on a real DOM: a screen header's title (h2, tabindex -1) is a bare drag area; other tab stops still block
+{
+  const { window } = new JSDOM('<div class="scr-head"><h2 id="t" tabindex="-1">Tools</h2><span id="g">gap</span><button id="b">Close</button><span id="z" tabindex="0">x</span></div>');
+  const d = window.document, at = (id: string) => d.getElementById(id) as unknown as Element;
+  assert.ok(K.shouldSendTitleDoubleClick(at('t')), 'a double-click on a screen title zooms');
+  assert.ok(K.shouldSendTitleDoubleClick(at('g')), 'a double-click on a gap in a screen header zooms');
+  assert.ok(!K.shouldSendTitleDoubleClick(at('b')), 'a button in a screen header does not zoom');
+  assert.ok(!K.shouldSendTitleDoubleClick(at('z')), 'a tabindex=0 element in a screen header does not zoom');
+}
 assert.ok(preload.includes("ipcRenderer.send('window:titleDoubleClick')"), 'preload sends the title double-click');
 // the main handler, with a fake window and a fake system setting
 {

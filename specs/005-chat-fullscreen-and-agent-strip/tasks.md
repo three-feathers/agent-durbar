@@ -178,3 +178,6 @@ PRs, gates and line-count goals: `plan.md`. Each PR measures on `main` first and
 
 ## 2026-11-15: a multi-part question's headings and questions are apart (FR-339, issue #1754)
 - [x] T253 [US1] `joinQuestionParts()` in `app.js`, used by `requestRaw()`: `Heading: question / Heading: question`; pure test `scripts/test-question-parts.ts` (`test:questionparts`); `check-inbox-text` asserts the inbox row and the answer bar, mutants `QPARTS_MUTANT=inbox|src|bar` (driver), `glue` (pure test) [FR-339, issue #1754]
+
+## 2026-11-17: the planner's size check counts work (issue #1846)
+- [x] T254 [US1] `scripts/test-subretire.ts`: replace the fixed 1000 ms wall limit for 200,000 helpers with counted field reads (`assertPlanWork`, fake-count self-test) and a 20 s thread-CPU backstop; mutants: insertion sort (dies at "end time ... worse than n log n"), an extra status pass (dies at "status ... times").

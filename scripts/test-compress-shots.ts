@@ -3,6 +3,7 @@
  * Synthetic pictures only (flat UI colours, 1px text-like strokes, gradients, an "avatar"); no Electron, no real screenshot, no network.
  */
 import * as assert from 'assert';
+import { assertCpuUnder } from './hang-backstop';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
@@ -193,9 +194,8 @@ assert.strictEqual(cs.compressPng(trunc).status, 'kept');
   const ih = Buffer.alloc(13); ih.writeUInt32BE(50, 0); ih.writeUInt32BE(50, 4); ih[8] = 8; ih[9] = 2;
   const bomb = Buffer.concat([original.subarray(0, 8), ch('IHDR', ih), ch('IDAT', zlib.deflateSync(Buffer.alloc(40 * 1024 * 1024), { level: 9 })), ch('IEND', Buffer.alloc(0))]);
   assert.ok(bomb.length < 100000, `the bomb is small (${bomb.length} B)`);
-  const tb = Date.now(); const rb2 = cs.compressPng(bomb);
+  const rb2 = cs.compressPng(bomb); // refused by the size the header gives (inflate's maxOutputLength), so the reason below is the property; no time bound
   assert.strictEqual(rb2.status, 'kept'); assert.ok(/larger than its header says/.test(rb2.reason || ''), `bomb: ${rb2.reason}`);
-  assert.ok(Date.now() - tb < 5000, 'refused quickly');
 }
 
 // 5c. APNG: an acTL chunk means an animation; flattening it to a still would lose frames, so the original stays
@@ -303,10 +303,9 @@ function refDecodeIndices(png: Buffer): { w: number; h: number; idx: Buffer; pal
 {
   const big = uiPicture(1440, 900);
   const bigPng = writePng(1440, 900, big.px, false);
-  const t0 = Date.now();
-  const rb = cs.compressPng(bigPng);
+  let rb!: { status: string; reason?: string };
+  assertCpuUnder('1440x900 compresses (a backstop: 60 s of CPU)', 60_000, () => { rb = cs.compressPng(bigPng); });
   assert.strictEqual(rb.status, 'compressed', rb.reason);
-  assert.ok(Date.now() - t0 < 30000, `1440x900 compresses in under 30 s (${Date.now() - t0} ms)`);
 }
 
 async function cliAndHook(): Promise<void> {

@@ -112,10 +112,31 @@ module.exports = async (ctx) => {
   const hit = (a, b, t = 0.5) => a.x + t < b.x + b.w && b.x + t < a.x + a.w && a.y + t < b.y + b.h && b.y + t < a.y + a.h;
   const shots = [];
 
-  for (const world of WORLDS) for (const [w, h] of SIZES) {
-    const tag = `${world} ${w}x${h}`;
+  /* spec 102 T174 (review of #1764): the Cave names `circle`, which draws no helper strips (T175's gaps, spec 102 Changes 2026-11-17 (third entry)); where the page says `circle` this driver asserts what the circle really does, and where it says `rows` the strip asserts below stay. The Cave is also run a second time as a page-only rows fixture, so the strips are still exercised at both sizes there */
+  const toRows = async (tag) => {
+    await js(`window.DurbarRealOfficeWorlds.cave.arrangement='rows';0`);
+    const id = await js(`window.__durbarSimUi.realLayout().zones[0].desks[0].id`);
+    await emit({ sessionId: id, type: 'status', status: 'error', intent: 'x' }); await emit({ sessionId: id, type: 'status', status: 'idle', intent: 'x' });
+    await must(`document.querySelector('#stage .ro').dataset.arrangement==='rows'`, `${tag}: the rows fixture draws rows`);
+  };
+  const CIRCLE_SIZES = new Set(); /* the sizes at which the Cave as shipped draws the circle: the linked picture 097-helpers-cave-<size>.jpg is then taken in the rows fixture (spec 097 FR-308, spec 102 Changes 2026-11-17 (fourth entry)) */
+  const arrOf = () => js(`document.querySelector('#stage .ro').dataset.arrangement`);
+  for (const world of WORLDS) for (const asRows of world === 'cave' ? [false, true] : [false]) for (const [w, h] of SIZES) {
+    const tag = `${world}${asRows ? ' (rows fixture)' : ''} ${w}x${h}`;
     await H.load({ w, h, query: q(world, { sim: '15', simhelpers: '6' }), ready: REAL, readyMs: 30000, settle: false });
     await must(PICS, `${tag}: the pictures`);
+    if (asRows) await toRows(tag);
+    const ranArr = await arrOf();
+    if (world === 'cave') assert.ok(asRows ? ranArr === 'rows' : ['circle', 'rows'].includes(ranArr), `${tag}: the arrangement drawn is ${ranArr}`);
+    if (ranArr === 'circle') {
+      if (!asRows) CIRCLE_SIZES.add(w);
+      /* what the circle really does (KNOWN GAP, T175): no helper strip, no helper row; the plates keep their "+N" and dots (FR-306's fallback) */
+      assert.strictEqual(await js(`document.querySelectorAll('#stage .ro-hstrip').length`), 0, `${tag}: the circle draws no helper strips (circle-no-strips)`);
+      assert.ok(await js(`document.querySelectorAll('#stage .ro-plate .ro-help').length>=10`), `${tag}: in the circle the plates keep their +N and dots (circle-no-strips)`);
+      assert.strictEqual((await read()).rows, 0, `${tag}: the circle's helpRows is 0 (circle-no-strips)`);
+      console.log('[097-helpers]', tag, 'circle: no strips, plates keep +N and dots');
+      continue;
+    }
     if (world === 'retro' && w < 1440) { /* measured: one row of heads under every cabinet's plate fits the hall at 1440x900 but not at 1280x800 (spec 097 FR-308 as built): the plates keep "+N" and dots */
       assert.strictEqual(await js(`document.querySelectorAll('#stage .ro-hstrip').length`), 0, `${tag}: no strips in the arcade at this size`);
       assert.ok(await js(`document.querySelectorAll('#stage .ro-plate .ro-help').length>=10`), `${tag}: the plates keep their +N and dots`);
@@ -255,8 +276,8 @@ module.exports = async (ctx) => {
     await js(`document.querySelector('#stage .ro-hmore[data-more="'+CSS.escape(${jsLiteral(mid)})+'"]').click()`);
     await must(`(()=>{const m=document.querySelector('#stage .ro-hmore[data-more="'+CSS.escape(${jsLiteral(mid)})+'"]');return m&&m.getAttribute('aria-expanded')==='false'&&!m.parentElement.classList.contains('open')&&m.parentElement.querySelectorAll('.ro-hd').length===${jsLiteral(firstD.heads.length)}})()`, `${tag}: "Fewer" folds them`);
     await js(`document.activeElement&&document.activeElement.blur();0`);
-    await H.shot(path.join(OUT, `097-helpers-${world}-${w}x${h}.jpg`), { prep: 'calm', tag: 'helpers', what: tag });
-    shots.push(`097-helpers-${world}-${w}x${h}.jpg`);
+    if (!asRows || CIRCLE_SIZES.has(w)) { await H.shot(path.join(OUT, `097-helpers-${world}-${w}x${h}.jpg`), { prep: 'calm', tag: 'helpers', what: tag });
+    shots.push(`097-helpers-${world}-${w}x${h}.jpg`); }
     /* a picture that fails to load: the head keeps its button and its accessible name and shows a neutral silhouette, never a letter of the name */
     const gone = firstD.heads[0].id, nameBefore = await js(`document.querySelector('#stage .ro-hd[data-id="'+CSS.escape(${jsLiteral(gone)})+'"]').getAttribute('aria-label')`);
     await js(`(()=>{const im=document.querySelector('#stage .ro-hd[data-id="'+CSS.escape(${jsLiteral(gone)})+'"] img');im.dispatchEvent(new Event('error'));return 1})()`);

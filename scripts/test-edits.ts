@@ -4,6 +4,7 @@
  * `npm run test:edits`.
  */
 import * as assert from 'assert';
+import { assertCpuUnder } from './hang-backstop';
 import { assertLinearShape, assertWithinYardstick } from './redact-growth-lib';
 import { countDiff, editFile, finishEdit, maskedClip, partialJson, patchFiles, EDIT_FILES_MAX, MASK_MARGIN } from '../src/shared/edits';
 import { clipDiff } from '../src/shared/diff';
@@ -44,9 +45,7 @@ const TOKEN = 'ghp_abcdefghijklmnopqrstuvwxyz0123456789';
   assert.deepStrictEqual(partialJson(full), JSON.parse(full));
   // linear time on a large value
   const big = '{"file_path":"/w/a","content":"' + 'abc\\n'.repeat(250_000);
-  const t0 = Date.now();
-  partialJson(big);
-  assert.ok(Date.now() - t0 < 1500, 'a 1 MB prefix parses quickly');
+  assertCpuUnder('a 1 MB prefix parses in linear time (54 ms measured under load)', 1100, () => { partialJson(big); });
 }
 
 // 2. diffs and counts

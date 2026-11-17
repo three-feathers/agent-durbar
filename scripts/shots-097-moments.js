@@ -247,7 +247,10 @@ module.exports = async (ctx) => {
       const after = await widths();
       const sleepers = after.lounge.filter((x) => x[1] === 'asleep');
       assert.ok(sleepers.length >= 1 && !after.desks.some((x) => x[1] === 'asleep'), `${tag}: an asleep agent whose message is read sits in the lounge row, not at a desk: ${JSON.stringify(after.lounge)}`);
-      assert.ok(after.u >= before.u - 1e-6, `${tag}: the room it leaves goes to the desks: u ${before.u} -> ${after.u}`);
+      /* spec 102 T174: in the circle the lounge row takes its height from the ring, so the desks can come down (the Cave at 1440x900: u 129 -> 92); the claim "the desks take the freed room" is the rows' (097 FR-246), and the circle's is the face floor (FR-229) */
+      const ringed = (await js(`document.querySelector('#stage .ro').dataset.arrangement`)) === 'circle';
+      if (ringed) assert.ok(after.face >= 24, `${tag}: in the circle the desks keep the face floor after an agent goes to the lounge: ${after.face} px`);
+      else assert.ok(after.u >= before.u - 1e-6, `${tag}: the room it leaves goes to the desks: u ${before.u} -> ${after.u}`);
       console.log('[moments] when the message is read', `desk faces ${before.face} -> ${after.face} px; lounge`, JSON.stringify(after.lounge));
       const sl = await js(`(()=>{const P=[...document.querySelectorAll('#stage .ro-plate.asleep')];return P.map(p=>({id:p.dataset.id,l:p.getAttribute('aria-label'),t:p.getAttribute('title'),x:p.textContent,
         person:!!document.querySelector('#stage .ro-person.asleep[data-for="'+p.dataset.id+'"]'),zz:!!document.querySelector('#stage .ro-zz'),w:p.getBoundingClientRect().width,
@@ -362,6 +365,23 @@ module.exports = async (ctx) => {
       await must(`document.body.classList.contains('panel-open')`, 'the chat opened from the bubble');
       await must(`!!document.querySelector('#chat .note.elicit')`, 'the card in the chat');
       assert.ok(await js(`document.getElementById('chat').querySelector('.note.elicit').textContent`).then((t) => /An MCP server asks for input/.test(t)), `${tag}: the chat holds the flat card`);
+    }
+    // ---- spec 102 T174 (review finding on #1764, Changes 2026-11-15): every folder sign's + and folder-actions buttons are inside the sign and the topmost thing at their centre (not clipped by the circle's narrow rooms) ----
+    if (run('signreach') && (world === 'cave' || world === 'photo')) {
+      const READ = `(()=>{const R=e=>e.getBoundingClientRect(),out=[];for(const g of document.querySelectorAll('#stage .ro-sign:not(.ro-stag)')){const q=R(g);for(const b of g.querySelectorAll('[data-newsess],[data-foldermenu]')){const r=R(b),e=document.elementFromPoint(r.left+r.width/2,r.top+r.height/2);out.push({sign:g.textContent.trim().slice(0,14),w:Math.round(q.width),ok:r.width>0&&r.left>=q.left-0.5&&r.right<=q.right+0.5&&r.top>=q.top-0.5&&r.bottom<=q.bottom+0.5&&!!e&&(e===b||b.contains(e))})}}return out})()`;
+      for (const n of ['15', '8']) {
+        await H.load({ w, h, query: q(world, { sim: n }), ready: REAL, settle: true });
+        /* what is drawn matters: the Cave's 15-agent frame is rows at both sizes (the ring's face is under the Cave's minFace 30.5 at 1440x900, its folders' rooms leave it no room at 1280x800; spec 102 Changes 2026-11-17), so a check of its signs there is a check of rows; the Cave's 8-agent frame is the circle, the Photo office is rows */
+        const arr = await js(`document.querySelector('#stage .ro').dataset.arrangement`), want = world === 'cave' && n === '8' ? 'circle' : 'rows';
+        assert.strictEqual(arr, want, `${tag}: ${n} agents: the arrangement drawn is ${want}`);
+        const rd = await js(READ);
+        assert.ok(rd.length >= 2, `${tag}: ${n} agents: the signs' buttons were found (${rd.length})`);
+        assert.deepStrictEqual(rd.filter((b) => !b.ok), [], `${tag}: ${n} agents: every sign's + and folder-actions buttons are inside the sign and reachable (elementFromPoint), none clipped`);
+        if (world === 'cave') await shot(world, 'signreach-' + n, w, h); /* the Cave's circle (8 agents) and rows (15) as drawn, for docs/screenshots/102-174-cave-circle-* */
+        /* the mutant of this check: a sign cut to 60 px (what the circle's narrow room did) must fail it, so the check can fail */
+        await js(`(()=>{const g=document.querySelector('#stage .ro-sign:not(.ro-stag) [data-newsess]').closest('.ro-sign');g.classList.add('short');g.style.maxWidth='60px'})()`);
+        assert.ok((await js(READ)).some((b) => !b.ok), `${tag}: mutant (a sign cut to 60 px) is caught by the reachability check`);
+      }
     }
     // ---- T139: reduced motion and forced colours ----
     if (run('emulation')) {
