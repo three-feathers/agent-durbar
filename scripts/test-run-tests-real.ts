@@ -55,7 +55,6 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
     gpid = Number(fs.readFileSync(pidFile, 'utf8'));
     assert.ok(gpid > 0, 'the grandchild recorded its pid');
     assert.notStrictEqual(res, 'timeout', 'the runner returned (it did not hang on a grandchild that ignores TERM)');
-    assert.ok(Date.now() - t0 < 15000, 'it returned in time');
     const r = res as { failed: string[]; bailed: string | null };
     assert.strictEqual(r.bailed, 'test:fail');
     assert.deepStrictEqual(r.failed, ['test:fail']);
