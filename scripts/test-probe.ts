@@ -4,6 +4,7 @@
  * `npm run test:probe`. No credits spent. The layouts themselves are compared in the browser (spec 001 FR-033 verification).
  */
 import assert from 'assert';
+import { cpuMs } from './redact-growth-lib';
 import fs from 'fs';
 import path from 'path';
 
@@ -31,9 +32,9 @@ assert.strictEqual(svgHollow('<svg'), '<svg');
 // linear time on a large input
 {
   const big = '<div>' + '<span><svg class="s" viewBox="0 0 1 1"><g><path d="M0 0"/></g></svg></span>'.repeat(20000) + '</div>';
-  const t = Date.now();
-  const out = svgHollow(big);
-  assert.ok(Date.now() - t < 2000, 'svgHollow is linear');
+  let out = '';
+  const cpu = cpuMs(() => { out = svgHollow(big); }, 2000);
+  assert.ok(cpu < 2000, `svgHollow is linear (${cpu.toFixed(0)} ms of CPU time)`);
   assert.strictEqual((out.match(/<svg/g) || []).length, 20000);
   assert.ok(!out.includes('<path'));
 }

@@ -1,0 +1,1 @@
+- Internal: tests whose file names start with a to m no longer fail on a busy machine by a fixed time limit: they check the result or the CPU time instead (issue #1853, part 1).

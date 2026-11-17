@@ -189,7 +189,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        theme: [dark, user]
+        theme: [dark, user, mine] # mine: spec 096 SC-002, My characters on Clean Office
         shard: [1, 2]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -206,5 +206,5 @@ jobs:
           OFFICE_REDUCED_MOTION: 1
           THEME: ${{ matrix.theme }}
         run: |
-          if [ "$THEME" = user ]; then export OFFICE_USER_THEME=scripts/fixtures/themes/check-user.json; else export OFFICE_USER_THEME=scripts/fixtures/themes/check-dark.json CHECK_EXPECT_DARK=1; fi
+          if [ "$THEME" = mine ]; then export OFFICE_CHARACTERS=mine; elif [ "$THEME" = user ]; then export OFFICE_USER_THEME=scripts/fixtures/themes/check-user.json; else export OFFICE_USER_THEME=scripts/fixtures/themes/check-dark.json CHECK_EXPECT_DARK=1; fi
           npm run check:office

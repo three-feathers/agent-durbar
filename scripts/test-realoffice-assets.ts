@@ -15,13 +15,13 @@ const ROOT = (() => { let d = __dirname; while (!fs.existsSync(path.join(d, 'pac
 const RO = path.join(ROOT, 'src', 'renderer', 'realoffice');
 
 /** FR-062 caps, in bytes, by kind of picture */
-export const CAPS = { person: 80 * 1024, fixture: 120 * 1024, desk: 60 * 1024, floor: 40 * 1024, wall: 120 * 1024, monitor: 30 * 1024, glow: 20 * 1024, welcome: 150 * 1024, total: 10 * 1024 * 1024 };
+export const CAPS = { person: 80 * 1024, fixture: 120 * 1024, desk: 60 * 1024, floor: 40 * 1024, wall: 120 * 1024, monitor: 30 * 1024, glow: 20 * 1024, welcome: 150 * 1024, focus: 120 * 1024, total: 10 * 1024 * 1024 };
 /** spec 102 FR-213: all shipped art (every world and every set) at most this many bytes */
 export const SHIPPED_MAX = 30 * 1024 * 1024;
 export const PERSON_MAX_H = 640;
 const KEYS = ['files', 'source', 'tool', 'date', 'made by', 'approved by', 'reference', 'prompt', 'cut', 'licence'];
 const CLAUSE = /fictional and must not resemble any real or famous person; no real person, celebrity, brand, logo or franchise is named/;
-const kindOf = (f: string): keyof typeof CAPS | null => /^fx-[a-z]+\.webp$/.test(f) ? 'fixture' : /^p\d\d-[\w-]+(\.h)?\.webp$/.test(f) || /^[a-z][a-z0-9-]*-\w+\.webp$/.test(f) ? 'person' : f === 'desk.webp' || f === 'desk.h.webp' ? 'desk' : /^floor(-night)?\.webp$/.test(f) ? 'floor' : /^wall(-night)?\.webp$/.test(f) ? 'wall' : /^monitor(-[a-z]+)?\.webp$/.test(f) ? 'monitor' : f === 'glow.webp' ? 'glow' : f === 'welcome.webp' ? 'welcome' : null;
+const kindOf = (f: string): keyof typeof CAPS | null => /^fx-[a-z]+\.webp$/.test(f) ? 'fixture' : /^p\d\d-[\w-]+(\.h)?\.webp$/.test(f) || /^[a-z][a-z0-9-]*-\w+\.webp$/.test(f) ? 'person' : f === 'desk.webp' || f === 'desk.h.webp' ? 'desk' : /^floor(-night)?\.webp$/.test(f) ? 'floor' : /^wall(-night)?\.webp$/.test(f) ? 'wall' : /^monitor(-[a-z]+)?\.webp$/.test(f) ? 'monitor' : f === 'glow.webp' ? 'glow' : f === 'welcome.webp' ? 'welcome' : f === 'focus.webp' ? 'focus' : null;
 
 /** Spec 102 FR-302 (T265a): the world previews in `realoffice/previews/`: one WebP per built-in world and Plain, 640 px wide, each at most 48 KB with no metadata chunk,
  *  and `previews.json` naming exactly those, each with its own size and a zoom origin of 0..100 percent (FR-301). Sentences, empty = fine. */
@@ -176,6 +176,7 @@ export function problems(files: Map<string, Buffer>, peopleJson: string, md: str
   }
   if (objs.night) { want.add(objs.night.wall); want.add(objs.night.floor); }
   if (objs.glow) want.add(objs.glow.file);
+  if ((meta as { arrangement?: unknown }).arrangement === 'circle') { want.add('focus.webp'); if (!files.has('focus.webp')) out.push('arrangement circle needs focus.webp (spec 102 FR-227)'); } /* the one picture the circle stands round, named by the arrangement, not by a key */
   for (const f of want) if (!files.has(f)) out.push(`people.json names ${f}, which is not in the folder`);
   for (const f of files.keys()) if (!want.has(f.replace(/\.h\.webp$/, '.webp'))) out.push(`${f}: people.json does not name it`);
   return out;
@@ -223,7 +224,7 @@ for (const wid of worldIds) {
   const cssName = (w.json as { css?: string }).css;
   assert.strictEqual(fs.existsSync(path.join(RO, 'worlds', wid, 'world.css')), cssName === 'world.css', `${wid}: world.css exists exactly when world.json names it`);
   if (cssName) {
-    const css = fs.readFileSync(path.join(RO, 'worlds', wid, 'world.css'), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
+    const css = fs.readFileSync(path.join(RO, 'worlds', wid, 'world.css'), 'utf8').replace(/\r\n/g, '\n').replace(/\/\*[\s\S]*?\*\//g, '');
     assert.ok(!/mix-blend-mode\s*:\s*(?!normal)/.test(css) && !/backdrop-filter|[^-]filter\s*:/.test(css), `${wid}: world.css has no blend mode, blur or filter (FR-180)`);
     assert.ok(!/url\(\s*['"]?(?:https?:|\/|\.\.|data:)/i.test(css), `${wid}: world.css loads only files of its own folder`);
     /* spec 102 T214, FR-260: a world's own motion: keyframes move transform and opacity only, and a loop is stepped */
@@ -351,6 +352,14 @@ const total = [...files.values()].reduce((s, b) => s + b.length, 0);
   }
   const big = new Map(files); big.set('p01-typeA.webp', Buffer.concat([good, Buffer.alloc(CAPS.total)]));
   assert.ok(problems(big, pj, md).some((p) => /over 10485760/.test(p)), 'red: a pack over 10 MB');
+  /* spec 102 FR-227, T174, T242: focus.webp is named by the arrangement circle, listed in ASSETS.md and capped */
+  const pjc = JSON.stringify({ ...JSON.parse(pj1), arrangement: 'circle' }), mdf = okMd.replace('\n## Removed', '### focus\n- files: focus.webp\n- source: s\n- tool: t\n- date: 2026-11-14\n- made by: m\n- approved by: a\n- reference: r\n- prompt: p\n- cut: c\n- licence: MIT\n\n## Removed');
+  const withFocus = new Map(one('p01-book.webp', book)); withFocus.set('focus.webp', good);
+  assert.deepStrictEqual(only(problems(withFocus, pjc, mdf)), [], 'a circle world with focus.webp, listed, passes');
+  assert.ok(only(problems(one('p01-book.webp', book), pjc, okMd)).some((p) => /arrangement circle needs focus.webp/.test(p)), 'red: circle without focus.webp');
+  assert.ok(only(problems(withFocus, pj1, mdf)).some((p) => /focus.webp: people.json does not name it/.test(p)), 'red: focus.webp in a world that does not name circle');
+  const fat = new Map(withFocus); fat.set('focus.webp', Buffer.concat([good, Buffer.alloc(130 * 1024)]));
+  assert.ok(only(problems(fat, pjc, mdf)).some((p) => /over the focus cap/.test(p)), 'red: a 130 KB focus picture');
 }
 
 assert.deepStrictEqual(halfProblems(files, (META as unknown as { px: Record<string, number> }).px), [], 'every person and the desk has both sizes (FR-183)');
@@ -495,14 +504,14 @@ if (worldIds.includes('retro')) {
 }
 
 // ---- packaging (FR-060, FR-061, T012): the build ships each pack's pictures and its script, never ASSETS.md or the JSON; the CSP is unchanged ----
-const copy = fs.readFileSync(path.join(ROOT, 'scripts', 'copy-assets.js'), 'utf8');
+const copy = fs.readFileSync(path.join(ROOT, 'scripts', 'copy-assets.js'), 'utf8').replace(/\r\n/g, '\n');
 assert.ok(/'worlds', 'world', 'DurbarRealOfficeWorlds'/.test(copy) && /'sets', 'set', 'DurbarRealOfficeSets'/.test(copy), 'copy-assets.js copies realoffice/worlds and realoffice/sets');
 if (fs.existsSync(path.join(ROOT, 'dist', 'renderer', 'index.html'))) {
   for (const [kind, json, global] of [['worlds', 'world', 'DurbarRealOfficeWorlds'], ['sets', 'set', 'DurbarRealOfficeSets']]) for (const id of dirs(kind)) {
     const src = readPack(kind, id), out = path.join(ROOT, 'dist', 'renderer', 'realoffice', kind, id);
     const extra = kind === 'worlds' && fs.existsSync(path.join(RO, kind, id, 'world.css')) ? ['world.css'] : [];
     assert.deepStrictEqual(fs.readdirSync(out).sort(), [...src.files.keys(), json + '.js', ...extra].sort(), `dist ${kind}/${id} holds exactly the pictures and ${json}.js: no ASSETS.md, no ${json}.json`);
-    const m = new RegExp(`self\\.${global}\\[\"${id}\"\\]=(\\{.*\\});\\s*$`).exec(fs.readFileSync(path.join(out, json + '.js'), 'utf8'));
+    const m = new RegExp(`self\\.${global}\\[\"${id}\"\\]=(\\{.*\\});\\s*$`).exec(fs.readFileSync(path.join(out, json + '.js'), 'utf8').replace(/\r\n/g, '\n'));
     assert.ok(m, `${json}.js sets self.${global}[${id}]`);
     assert.deepStrictEqual(JSON.parse((m as RegExpExecArray)[1]), src.json, `${json}.js carries ${json}.json unchanged`);
   }
@@ -535,9 +544,9 @@ if (fs.existsSync(path.join(ROOT, 'dist', 'renderer', 'index.html'))) {
   if (fs.existsSync(path.join(ROOT, 'dist', 'renderer', 'index.html'))) assert.deepStrictEqual(fs.readdirSync(dist).sort(), [...pf.keys(), 'previews.js'].sort(), 'dist previews/ holds the pictures and previews.js, not previews.json');
   assert.ok(/previews/.test(copy) && /DurbarWorldPreviews/.test(copy), 'copy-assets.js copies realoffice/previews');
 }
-const index = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'index.html'), 'utf8');
+const index = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'index.html'), 'utf8').replace(/\r\n/g, '\n');
 const csp = /Content-Security-Policy" content="([^"]*)"/.exec(index);
-assert.strictEqual(csp && csp[1], "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:;", 'the CSP is unchanged (FR-060)');
+assert.strictEqual(csp && csp[1], "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:;", 'the CSP is unchanged by spec 097 (FR-060); spec 096 FR-043 added blob: to img-src only (test:crew-assets pins it)');
 assert.ok(!/realoffice/.test(index), 'index.html does not load Real office (FR-061: only on first use)');
 // spec 097 Changes 2026-11-14 (#1751): the cave draws its monitor frame round the engine's glass (3 px in); the CSS numbers come from the slate opening measured on the picture (Pillow, by hand: no WebP decoder here),
 // and the picture is pinned by hash so a new picture must be measured again
