@@ -257,6 +257,23 @@ it('gate provenance: no ASSETS.md, or a picture it does not list, refuses availa
   fs.unlinkSync(path.join(w.dir, 'ASSETS.md'));
   assert.deepStrictEqual(gates(availabilityGate(asked(w), ctxOf())), ['provenance']);
 });
+it('gate provenance: a picture counts as listed only by its whole name (a.png is not on banana.png)', () => {
+  const w = makeWorld();
+  const [a] = w.pics; // the one the others must not cover
+  const other = w.pics[1];
+  const set = (text) => fs.writeFileSync(path.join(w.dir, 'ASSETS.md'), text);
+  const rest = w.pics.filter((p) => p !== a).map((p) => `| ${p} | synthetic |`).join('\n');
+  set(`${rest}\n| banana-${a} | synthetic |\n`); // the name only as the tail of a longer name
+  assert.deepStrictEqual(gates(availabilityGate(asked(w), ctxOf())), ['provenance'], 'banana-<name> does not list <name>');
+  set(`${rest}\n| ${a}.bak | synthetic |\n`); // ... or as the head of one
+  assert.deepStrictEqual(gates(availabilityGate(asked(w), ctxOf())), ['provenance'], '<name>.bak does not list <name>');
+  set(`${rest}\n| x${a} | synthetic |\n`);
+  assert.deepStrictEqual(gates(availabilityGate(asked(w), ctxOf())), ['provenance'], 'a name glued to a longer one does not list it');
+  for (const ok of [`| ${a} | synthetic |`, `- \`${a}\`: made by hand.`, `See ${a}.`, `(${a}, ${other})`, `pics/${a}`]) {
+    set(`${rest}\n${ok}\n`);
+    assert.deepStrictEqual(gates(availabilityGate(asked(w), ctxOf())), [], `listed in the usual ways: ${ok}`);
+  }
+});
 it('gate pack-valid: a missing picture refuses available', () => {
   const w = makeWorld();
   const gone = w.pics.find((p) => p.startsWith('fx-coffee'));
@@ -312,7 +329,8 @@ if (!process.env.WORLD_PACK_MODULE) {
     ['registry gate removed', "if (!row || row.shippable !== true) fail(", "if (false) fail(", ['gate registry: a row that is not shippable, or absent, refuses available']],
     ['registry gate loosened to any row', 'row.shippable !== true', 'false', ['gate registry: a row that is not shippable, or absent, refuses available']],
     ['card gate removed', "fail('card', 'card.json is missing or unreadable (FR-014, FR-035 g)')", 'void 0', ['gate card: a missing card refuses available']],
-    ['provenance: pictures not listed pass', "!text.includes(f.name)", 'false', ['gate provenance: no ASSETS.md, or a picture it does not list, refuses available']],
+    ['provenance: pictures not listed pass', "!namesFile(text, f.name)", 'false', ['gate provenance: no ASSETS.md, or a picture it does not list, refuses available']],
+    ['provenance: a name inside a longer name counts (back to includes)', "!namesFile(text, f.name)", '!text.includes(f.name)', ['gate provenance: a picture counts as listed only by its whole name (a.png is not on banana.png)']],
     ['provenance: missing ASSETS.md passes', "if (!assets) fail('provenance'", "if (false) fail('provenance'", ['gate provenance: no ASSETS.md, or a picture it does not list, refuses available']],
     ['validator gate removed', 'else if (r.unfinished.length) fail(', 'else if (false) fail(', ['gate pack-valid: a pack with parts left out of both its folder and world.json (unfinished) refuses available']],
     ['validator result ignored', 'if (!r.ok) fail(', 'if (false) fail(', ['gate pack-valid: a pack the validator refuses (a file not on its list) refuses available']],

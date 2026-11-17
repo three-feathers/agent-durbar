@@ -118,6 +118,8 @@ function readTicks(tasksPath, ids = REQUIRED_TICKS) {
 }
 
 const PICTURE = /\.(webp|png)$/i;
+// A whole file name in free text: not the tail of a longer name (banana.png for a.png) and not the head of one (a.png.bak).
+const namesFile = (text, name) => new RegExp(`(?<![A-Za-z0-9_.-])${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![A-Za-z0-9_-]|\\.[A-Za-z0-9])`).test(text);
 
 /** FR-035's gates for one world that asks to be `available`. world: { id, dir, status, sha256 } (sha256 = what the catalogue says the pack is).
     ctx: { tasksPath, registry (docs/experience/world-moments.json, parsed), validateOpts (worldpack PackOptions), pack (default packWorld) }.
@@ -154,7 +156,7 @@ function availabilityGate(world, ctx) {
     if (!assets) fail('provenance', 'ASSETS.md is missing (FR-170, FR-035 e)');
     else {
       const text = assets.data.toString('utf8');
-      for (const f of files) if (PICTURE.test(f.name) && !text.includes(f.name)) fail('provenance', `ASSETS.md does not list ${f.name} (FR-170)`);
+      for (const f of files) if (PICTURE.test(f.name) && !namesFile(text, f.name)) fail('provenance', `ASSETS.md does not list ${f.name} (FR-170)`);
     }
 
     // (b) the pack validator, the one the app uses (FR-031): refused, unfinished or a missing part all fail
