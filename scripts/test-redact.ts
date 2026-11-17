@@ -3,7 +3,7 @@ import * as assert from 'assert';
 import * as fs from 'fs';
 import * as path from 'path';
 import { Worker } from 'worker_threads';
-import { MASK_INPUT_MAX, REDACT_MAX_CHARS, createDebugSink, _uncappedForTest, cut, maskSchemeSecrets, maskTokenShapes, maskTokenShapesUnguarded, maskSecretArgs, maskSecretCommand, maskHomePaths, maskSecretUrl, maskNoteText, maskOutgoing, maskSplitTokens, _breakCallsForTest, keepShownBy, _unionMasksForTest, withoutSplit, withoutShell, _shellRefsForTest, _shellPassesForTest, _shapePassesForTest, _runReadsForTest, ESC_RUN_SHELL_SOURCE, withoutLoose, maskLoose, _splitWorkForTest, redact, redactMarkdown, MARKDOWN_WORK, _markdownPassForTest, shQuote, splitCommand } from '../src/shared/redact';
+import { MASK_INPUT_MAX, REDACT_MAX_CHARS, createDebugSink, _uncappedForTest, cut, maskSchemeSecrets, maskTokenShapes, maskTokenShapesUnguarded, maskSecretArgs, maskSecretCommand, maskHomePaths, maskSecretUrl, maskNoteText, maskOutgoing, maskSplitTokens, _breakCallsForTest, keepShownBy, _unionMasksForTest, withoutSplit, withoutShell, _shellRefsForTest, _shellPassesForTest, _shapePassesForTest, _runReadsForTest, ESC_RUN_SHELL_SOURCE, withoutLoose, maskLoose, _homeGuardReadsForTest, _splitWorkForTest, redact, redactMarkdown, MARKDOWN_WORK, _markdownPassForTest, shQuote, splitCommand } from '../src/shared/redact';
 
 import { assertLinearShape, assertWithinYardstick, cpuMs } from './redact-growth-lib';
 import './safetext-shared'; // the desk's maskRaw (src/renderer/safetext.js) reads the compiled redact.ts, for the FR-181 differential below
@@ -2660,17 +2660,27 @@ assert.strictEqual(redact('{"a":"https://u:p@h/x","b":"y"}', {}), '{"a":"https:/
     for (const [surface, out] of surfaces(t)) assert.strictEqual(shows(out, secrets), undefined, `#1329 ${what}: ${surface} shows no part: ${JSON.stringify(t)} gave ${JSON.stringify(out)}`);
     assert.strictEqual(maskTokenShapesUnguarded(t, '[redacted]'), maskTokenShapes(t, '[redacted]'), `#1329 ${what}: the marker guard changes nothing`);
   }
+  // accepted over-masking, pinned (spec FR-185): a word at a token start with a GitHub prefix and a capital
+  assert.strictEqual(redact('see ' + 'ghs_' + 'TotalWeight now', {}), 'see [redacted] now', '#1329 accepted: a prefixed word at a token start is hidden');
   // exact outputs: the word before a glued token and the text after a cut one stay
   assert.strictEqual(redact('ssh ax' + gh('p') + B36 + ' now', {}), 'ssh ax[redacted] now', '#1329 glued: the word before stays');
   assert.strictEqual(redact('see ' + gh('p') + B36.slice(0, 18) + '\u2026 then', {}), 'see [redacted]\u2026 then', '#1329 cut: the ellipsis and the rest stay');
   // near misses that stay: a lower-case body (a word), a bare prefix, a snake_case word ending in the prefix letters, a glued body under 20
-  for (const keep of ['ghp_short', 'ghs_count', 'the ghp_ prefix', 'ghp_... and ghp_', 'weighs_V2 ok', 'the highs_andlowsofthemarketcycle', 'laughs_total_count']) {
+  // review of PR 1832 (F2): identifiers that end in a prefix's letters, and full-width prose after a look-alike prefix
+  for (const keep of ['ghp_short', 'ghs_count', 'the ghp_ prefix', 'ghp_... and ghp_', 'weighs_V2 ok', 'the highs_andlowsofthemarketcycle', 'laughs_total_count',
+    'wei' + 'ghs_' + 'TotalWeightKilograms', 'hi' + 'ghs_' + 'AndLowsOfTheMarket2026', 'cou' + 'ghs_' + 'PerDayAverage', 'lau' + 'ghs_' + 'PerMinuteAtTheShow', 'x' + gh('p') + B36.slice(0, 20) + ' y',
+    '\uff47\uff48\uff50\uff3f\uff54\uff45\uff53\uff54\uff12', '\uff47\uff48\uff53\uff3f\u30c6\u30b9\u30c8', '\uff47\uff48\uff53\uff3f' + '\u30c6\u30b9\u30c8'.repeat(12),
+    'my' + 'ghs_' + 'ProcessingTimeForEachRequestInMillis']) {
     assert.strictEqual(redact(keep, {}), keep, `#1329 near miss stays: ${keep}`);
   }
   // home folders: the user name becomes `~`, the rest stays
   const H: Array<[string, string, string]> = [
-    ['~name', '~alicez/x', '~/x'],
-    ['~name with a backslash', 'cd ~alicez\\proj', 'cd ~\\proj'],
+    ['~name', '~alicez/x/y', '~/x/y'],
+    ['~name and a dotfile', 'cat ~alicez/.ssh/config', 'cat ~/.ssh/config'],
+    ['~name and a file name', 'open ~alicez/notes.md', 'open ~/notes.md'],
+    ['~name with a backslash', 'cd ~alicez\\proj\\x', 'cd ~\\proj\\x'],
+    ['WSL', 'ls /mnt/c/Users/aliceq/x', 'ls ~/x'],
+    ['WSL lower case', 'ls /mnt/d/users/aliceq/x', 'ls ~/x'],
     ['drive lowercase', 'c:\\users\\aliceq\\x', '~\\x'],
     ['drive upper case', 'C:/USERS/aliceq/x', '~/x'],
     ['percent-encoded Users', 'open?p=%2FUsers%2Falicen%2Fx', 'open?p=~%2Fx'],
@@ -2679,7 +2689,7 @@ assert.strictEqual(redact('{"a":"https://u:p@h/x","b":"y"}', {}), '{"a":"https:/
     ['percent-encoded twice', '%252Fhome%252Falicen%252Fx', '~%252Fx'],
   ];
   for (const [what, t, want] of H) assert.strictEqual(maskHomePaths(t, []), want, `#1329 home ${what}`);
-  for (const keep of ['~5/10', '~text~ and ~~gone~~', 'see ~/.bashrc', 'cd ~/x', 'a~b/c', 'GET /api/users/42', '%2Fusr%2Flocal%2Fbin', 'q=%2Fhomes%2Fx']) assert.strictEqual(maskHomePaths(keep, []), keep, `#1329 home near miss stays: ${keep}`);
+  for (const keep of ['~5/10', '~text~ and ~~gone~~', 'the ~half/whole split', 'about ~ten/twenty.', '/mnt/c/Program Files/x', 'see ~/.bashrc', 'cd ~/x', 'a~b/c', 'GET /api/users/42', '%2Fusr%2Flocal%2Fbin', 'q=%2Fhomes%2Fx']) assert.strictEqual(maskHomePaths(keep, []), keep, `#1329 home near miss stays: ${keep}`);
   // the last pass runs once, after the readings: inside them it left a later reading without the token it needed (differential fuzz cases; invented values)
   {
     const t1 = 'ssh)' + gh('r') + 'u6HdGGJbEoxDB6t6XOCmtm\u0301FL1vRxYlppa92B,echo)' + gh('s') + 'spoQP8Daz74IX21gwC&#95;' + '77SXlwH0wpntqfUKpP\\n-';
@@ -2696,9 +2706,26 @@ assert.strictEqual(redact('{"a":"https://u:p@h/x","b":"y"}', {}), '{"a":"https:/
     const q1 = _shapePassesForTest(); redact(t, {}); const got = _shapePassesForTest() - q1;
     assert.ok(got <= base, `#1329 work: ${what}: ${got} rule passes, a plain token takes ${base}`);
   }
+  // review of PR 1832 (F1): a surface that masks the home folder first must not show what the secret masks hide in the raw text: a key split by a line break whose
+  // second piece reads like `~name/…` (invented pieces); main hides every one of these on that order, and so must this
+  {
+    const K = 'AK' + 'IA', KB = 'Q7W8E9R0T1Y2U3I4';
+    for (const cut of [4, 8, 12]) for (const sep of ['\n~', '\r\n~', '\n\n~']) for (const tail of ['/x', '\\x', '/x/y', '/.ssh', '/a.md']) {
+      const t = K + KB.slice(0, cut) + sep + KB.slice(cut) + tail;
+      const out = redact(maskHomePaths(t, []), {});
+      assert.ok(!out.includes(K) && shows(out, [KB]) === undefined, `#1329 F1 home first: the split key stays hidden: ${JSON.stringify(t)} gave ${JSON.stringify(out)}`);
+    }
+    const r0 = _homeGuardReadsForTest();
+    maskHomePaths('plain text with /home/alicez/x and C:\\Users\\bob\\y', []);
+    assert.strictEqual(_homeGuardReadsForTest() - r0, 0, '#1329 F1 work: a text with no new home spelling is not read by redact');
+    maskHomePaths('see ~alicez/src/x', []);
+    assert.strictEqual(_homeGuardReadsForTest() - r0, 1, '#1329 F1 work: one read when a new spelling matched');
+  }
   // cost: linear on dense prefixes and dense encoded separators (FR-183's rule)
   assertLinearShape('#1329 redact many lookalike prefixes', (x) => { redact(x, {}); }, (k) => ('gh\u0440_a\uff47\uff48p_' + B36.slice(0, 3) + ' ').repeat(Math.ceil(k / 16)).slice(0, k), 400_000);
   assertLinearShape('#1329 maskHomePaths many encoded separators', (x) => { maskHomePaths(x, []); }, (k) => '%2Fhome%2Fa%25%2'.repeat(Math.ceil(k / 16)).slice(0, k), 400_000);
+  assertLinearShape('#1329 maskHomePaths many tilde paths', (x) => { maskHomePaths(x, []); }, (k) => '~ab/cd/e '.repeat(Math.ceil(k / 9)).slice(0, k), 400_000);
+  assertLinearShape('#1329 maskHomePaths a long tilde word', (x) => { maskHomePaths(x, []); }, (k) => ('~a/' + 'b'.repeat(k)).slice(0, k), 400_000);
 }
 
 console.log('redact: all checks passed');
