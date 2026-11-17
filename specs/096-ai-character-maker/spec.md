@@ -562,3 +562,10 @@ These close gaps the spec's wording left while building phase 3. They are the **
 - **CSP pin**: `test:realoffice-assets` expects `blob:` in `img-src` (FR-043), as `test:crew-assets` does.
 - **Docs pictures**: only the dialog and Settings pictures at 1440x900 are linked (the site went over 8 MB with four); retaken after the merge. The preview, desks and all 1280x800 pictures in `docs/screenshots/` date from before it and are not linked.
 - **Driver**: `check-charmaker` waits up to 4 s for the office to repaint after Settings closes (the portraits were still there at the first look after the merge and gone a moment later; the cause was not traced); `check-characters` runs `mine` on Retro and Clean Office (Corporate is gone).
+
+## Changes 2026-11-17: review of #977 fixed (FR-030 of spec 021; no FR or task number added)
+
+- **Pictures dropped**: the eight `docs/screenshots/096-*.png` files are removed and `docs/features.md` no longer points to them, because they were stale (dated 2026-11-01, the dialog and Settings pictures 2026-11-08; Settings showed 5 Characters items against 11 now). This replaces the 2026-11-16 line that kept them in `docs/screenshots/`. `DOC_SHOTS` has no 096 entry. They are to be retaken later (`check-charmaker` writes them to `SHOTS_OUT`); T047 is ticked with that note.
+- **T030 waits for spec 097 T353 (FR-379)**: `peopleFor(<world>, 'mine')` returns the world's default people with no line saying why, so a real app must not make a character until T353 gives that line. T353 was not built here: it changes `peopleFor`/`levelFor`, needs matrix cells and a `check-097-crews` case, and the 097 interim cell asserts today's behaviour.
+- **`[KNOWN GAP]`** in `docs/features.md` and the README: in a Real office, choosing My characters shows the default people with no line saying why.
+- **Danger sites**: `KNOWN_SITES` is 23 in `check-052-danger-dialogs` (spec 052 delta 2026-11-17).
