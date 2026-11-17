@@ -48,6 +48,7 @@
     "test:browsertabs": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-browsertabs.js",
     "test:browseripc": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-browseripc.js",
     "test:chatlinks": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-chatlinks.js",
+    "test:paneltabs": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-paneltabs.js",
     "test:browserpane": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-browserpane.js",
     "test:simguard": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-simguard.js",
     "test:codexhistory": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-codex-history.js",
