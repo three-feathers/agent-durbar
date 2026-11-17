@@ -1447,4 +1447,9 @@ False or not fixed: Codex's `permText` and `liveact.js` questions (no text runs:
       - **Accepted behaviours** (named here as requested):
         - a word at a token start that begins with a GitHub prefix and holds no capital or digit (`ghs_count`) stays readable. When a line that starts with a capital or a digit follows it, the shell card can read the pair as a cut token and fall back to its neutral words (fails closed).
         - where a new home spelling overlaps a stretch the secret masks hide, it is left as written, so the user name there stays visible unless the secret mask hides it.
+      - *Mutants* (round 2, on the built `test-redact`):
+        - the guard off, or a window too small to hold the hidden piece: both die at `#1329 F1 home first`, the invariant every neighbour shares;
+        - a window as large as the text: dies at `#1329 guard window: one spelling in a long text is rewritten` (a read past `redact`'s length cut fails closed, so nothing is rewritten);
+        - windows not merged: dies at `#1329 guard window: overlapping windows are merged`.
+        - The neighbour asserts are pins with no mutant of their own: each one fails on the code before the guard, which leaked 14 of the 18 neighbour texts.
 
