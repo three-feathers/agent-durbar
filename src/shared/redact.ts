@@ -218,11 +218,13 @@ function maskPrefixedGlued(s: string, mask: string): string {
   return copied === 0 ? s : out + s.slice(copied);
 }
 /**
- * Spec 012 FR-185 (issue #1329): a GitHub token in a form the held shape above leaves: its prefix glued to a word before it, a body
- * cut short, or letters from another script in its prefix or body. `GH_LOOK` is the prefix with lookalike letters (full-width,
- * Cyrillic, Greek); the body takes a letter, digit or mark of any script, so such a letter no longer ends it. At a token start any
- * body of one or more characters with a capital or digit is hidden (a known prefix plus any run); glued to a word the body must be a
- * whole one (20 or more), so a snake_case word ending in the prefix letters stays. One literal-class prefix, then one open class: linear.
+ * Spec 012 FR-185 (issue #1329): a GitHub token in a form the held shape above leaves. Three shapes:
+ * - at a token start, `gh[pousr]_` or `github_pat_` plus any body with a capital or digit, however short (a token cut upstream); the body
+ *   takes a letter, digit or mark of any script, so such a letter inside no longer ends it;
+ * - at a token start, the prefix written with look-alike letters (`GH_LOOK`: full-width, Cyrillic, Greek) plus a whole body (30 or more, with a digit);
+ * - glued to a word or digit before it: only the token's own shape, a body of exactly 36 letters and digits with a digit (`github_pat_`: 22, `_`, 59),
+ *   so a snake_case identifier ending in the prefix letters (`weighs_TotalWeightKilograms`) stays (review of PR 1832, F2).
+ * One literal-class prefix, then one bounded or open class: linear.
  */
 const GH_LOOK = '[g\uff47\u0261][h\uff48\u04bb][pousr\uff50\uff4f\uff55\uff53\uff52\u0440\u043e\u03bf\u03c1\u0455][_\uff3f]';
 const GH_BODY = String.raw`[\p{L}\p{N}\p{M}]`;
@@ -233,8 +235,9 @@ const GH_MARKER = /[g\uff47\u0261][h\uff48\u04bb][pousr\uff50\uff4f\uff55\uff53\
 /* Applied as a last pass over what the masks give (`maskLoose`), never inside their readings: a shape that hides a head inside a reading can leave
    a later reading (the split, entity or escape steps) without the token it needed, so the rest of the token showed where `main` hid it (differential fuzz). */
 const GH_LOOSE = [
-  guarded(new RegExp(START + `(?:${GH_LOOK}${GH_CAP(GH_BODY)}${GH_BODY}+|github_pat_${GH_CAP(GH_PAT_BODY)}${GH_PAT_BODY}+)`, 'gu'), GH_MARKER),
-  guarded(new RegExp(`(?:${GH_LOOK}${GH_CAP(GH_BODY)}${GH_BODY}{20,}|github_pat_${GH_CAP(GH_PAT_BODY)}${GH_PAT_BODY}{20,})`, 'gu'), GH_MARKER),
+  guarded(new RegExp(START + `(?:gh[pousr]_${GH_CAP(GH_BODY)}${GH_BODY}+|github_pat_${GH_CAP(GH_PAT_BODY)}${GH_PAT_BODY}+)`, 'gu'), GH_MARKER),
+  guarded(new RegExp(START + String.raw`${GH_LOOK}(?=${GH_BODY}{0,128}?\p{Nd})${GH_BODY}{30,}`, 'gu'), GH_MARKER),
+  guarded(new RegExp(String.raw`(?:gh[pousr]_(?=[A-Za-z0-9]{0,35}[0-9])[A-Za-z0-9]{36}|github_pat_[A-Za-z0-9]{22}_[A-Za-z0-9]{59})(?![A-Za-z0-9])`, 'gu'), GH_MARKER),
 ];
 let looseOff = false;
 let looseAllOff = false;
@@ -2075,12 +2078,32 @@ const UNC_HOME = new RegExp(String.raw`(?<![A-Za-z0-9_.~:\\/-])\\{2,}${UNC_SEG}$
 // cannot be told from a NetBIOS server by its shape, so `//cdn/profile/pic.png` or `//HOME/users` outside those attributes is masked: over-masking, the safe side.
 const FWD_SEG = String.raw`[^\\/\s"'<>|:;,*?()]{1,128}`;
 const UNC_FWD_HOME = new RegExp(String.raw`(?<![A-Za-z0-9_.~:\\/-])(?<!(?:src|href|srcset)\s*=\s*["']?|url\(\s*["']?)\/\/(?!localhost(?![^\\/\s"'<>|:;,*?().]))[^\\/\s"'<>|:;,*?().]{1,128}\/(?:homes?|users?|profiles?)\$?(?![^\\/\s"'<>|:;,*?()])(?:\/(?:[^\\/\r\n"'<>|:;,*?()]{1,128}(?=\\|\/(?!\/))|${FWD_SEG}))?`, 'gi');
-/** `~name/` or `~name\`: the home folder of the user `name` (POSIX shells); only before a separator, so `~5/10` and Markdown `~text~` stay. */
-const HOME_TILDE = /(?<![A-Za-z0-9_.~-])~[A-Za-z_][A-Za-z0-9_.-]{0,31}(?=\\|\/)/g;
+/** `~name/` or `~name\`: the home folder of the user `name` (POSIX shells), only in a path: the rest of the word holds another separator or a file
+    name's dot (`~alice/src/x`, `~alice/.ssh`, `~alice/notes.md`), so `~5/10`, Markdown `~text~` and prose like `the ~half/whole split` stay (review of PR 1832, F2). */
+const HOME_TILDE = /(?<![A-Za-z0-9_.~-])~[A-Za-z_][A-Za-z0-9_.-]{0,31}(?=[\\/][^\s"'<>|\\/]{0,256}(?:[\\/]|\.[A-Za-z0-9]))/g;
+/** The drive form of a Windows home in a case `main`'s rule does not read (`c:\users\<user>`), and its WSL form (`/mnt/c/Users/<user>`, any case). */
+const HOME_SEG = String.raw`(?:[^\\/\r\n"'<>|:;,*?]{1,128}(?=[\\/])|[^\\/\s"'<>|:;,*?]{1,128})`;
+const HOME_DRIVE_CASE = new RegExp(String.raw`(?<![A-Za-z0-9_.~-])(?:[A-Za-z]:(?:\\{1,2}|\/)(?!Users)[Uu][Ss][Ee][Rr][Ss](?:\\{1,2}|\/)|\/mnt\/[A-Za-z]\/[Uu][Ss][Ee][Rr][Ss]\/)${HOME_SEG}`, 'g');
 /** A `/` or `\` percent-encoded, re-encoded up to 8 times (`%2F`, `%5C`, `%252F`). */
 const PCT_SEP = String.raw`%(?:25){0,8}(?:2[Ff]|5[Cc])`;
 /** A home folder percent-encoded (`%2Fhome%2F<user>`, `%2FUsers%2F<user>`, `C%3A%5CUsers%5C<user>`, any case): the user name, up to the next separator in any spelling, becomes `~`. */
 const HOME_PCT = new RegExp(String.raw`(?<![A-Za-z0-9_.~-])(?:${PCT_SEP}(?:[Hh][Oo][Mm][Ee]|[Uu][Ss][Ee][Rr][Ss])|[A-Za-z](?::|%(?:25){0,8}3[Aa])(?:${PCT_SEP}|\\{1,2}|\/)[Uu][Ss][Ee][Rr][Ss])${PCT_SEP}(?:[^%\\/\s"'<>|:;,*?&#=]|%(?!(?:25){0,8}(?:2[Ff]|5[Cc]))[0-9A-Fa-f]{2}){1,128}`, 'g');
+const HOME_MORE = [HOME_TILDE, HOME_PCT, HOME_DRIVE_CASE];
+let homeGuardReads = 0;
+/** Test only: how many times `maskHomePaths` read a text with `redact` for FR-185's guard (only when a new spelling matched). */
+export const _homeGuardReadsForTest = (): number => homeGuardReads;
+/** `re`'s matches become `~`, except a match that overlaps a stretch `redact` hides in `s` (spec 012 FR-185, review of PR 1832 F1). `redact` reads `s` only when `re` matches. */
+function homeGuarded(s: string, re: RegExp): string {
+  re.lastIndex = 0;
+  if (!re.test(s)) return s;
+  re.lastIndex = 0;
+  homeGuardReads++;
+  const spans = hiddenSpans(s, redact(s));
+  return s.replace(re, (m: string, ...rest: unknown[]) => {
+    const at = rest.find((x) => typeof x === 'number') as number;
+    return spans.some(([a, b]) => a < at + m.length && at < b) ? m : '~';
+  });
+}
 /**
  * Home folders in free text become `~` (review on PR #630: a copied error must not carry the user name): `/home/<user>`,
  * `/Users/<user>`, `<drive>:\Users\<user>` (also with `/` or doubled `\\` as in JSON), and the given home folders themselves
@@ -2097,11 +2120,13 @@ export function maskHomePaths(text: unknown, homes?: readonly (string | undefine
       // only a whole folder: `/home/vik` is not the start of `/home/vikram`
       for (const v of new Set([h, JSON.stringify(h).slice(1, -1)])) s = s.replace(new RegExp(v.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + String.raw`(?![^\\/\s"'<>|:;,*?])`, 'g'), '~');
     }
-    s = s.replace(/(?<![A-Za-z0-9_.~-])(?:\/(?:home|Users)\/|[A-Za-z]:(?:\\{1,2}|\/)[Uu][Ss][Ee][Rr][Ss](?:\\{1,2}|\/))(?:[^\\/\r\n"'<>|:;,*?]{1,128}(?=[\\/])|[^\\/\s"'<>|:;,*?]{1,128})/g, '~');
-    // spec 012 FR-185 (issue #1329): another user's home written `~name/`, and a home folder percent-encoded in a URL or query
-    s = s.replace(HOME_TILDE, '~').replace(HOME_PCT, '~');
+    s = s.replace(/(?<![A-Za-z0-9_.~-])(?:\/(?:home|Users)\/|[A-Za-z]:(?:\\{1,2}|\/)Users(?:\\{1,2}|\/))(?:[^\\/\r\n"'<>|:;,*?]{1,128}(?=[\\/])|[^\\/\s"'<>|:;,*?]{1,128})/g, '~');
     // a UNC path (`\\server\share\user\...`, or doubled as in JSON): where the user name sits is not known, so host, share and the next folder become `~`
-    return s.replace(UNC_HOME, '~').replace(UNC_FWD_HOME, '~');
+    s = s.replace(UNC_HOME, '~').replace(UNC_FWD_HOME, '~');
+    // spec 012 FR-185 (issue #1329): more spellings, each only where it removes nothing `redact` hides in the text (review of PR 1832, F1: a surface that masks
+    // the home first must not lose the characters a split token's reading needs, so its head would show)
+    for (const re of HOME_MORE) s = homeGuarded(s, re);
+    return s;
   } catch {
     return '[redaction failed]';
   }
