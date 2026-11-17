@@ -9,7 +9,7 @@
 Writes src/renderer/realoffice/worlds/cave/ and src/renderer/realoffice/sets/prehistoric/ (pictures, world.json / set.json, ASSETS.md).
 The sources stay out of the repo (art cache); the numbers in the JSON are measured from the shipped pictures. Needs Pillow."""
 import json, os, re, sys
-from PIL import Image
+from PIL import Image, ImageDraw
 
 CAVE = sys.argv[1].rstrip('/'); INTEROP = sys.argv[2].rstrip('/'); REPO = sys.argv[3] if len(sys.argv) > 3 else os.getcwd()
 CAVE_ROOT = os.path.dirname(CAVE)
@@ -37,7 +37,53 @@ for fid, src in FX.items():
     while save(canvas, f'{W}/fx-{fid}.webp', q) > 110 * 1024 and q > 40: q -= 8
     fixtures[fid] = [w, FL]; ftop[fid] = top
 
+def remove_lamp(im):
+    """Spec 097 FR-374, T337 (owner 2026-11-12 21:19:57 UTC): paint the small unlit clay oil lamp out of the 720x275 desk (Pillow only, no generation).
+    Columns 630..705, rows 0..49 are replaced by the columns 70 px to the left (clean stone top, same back outline), each column shifted down so the
+    back outline follows a new profile that bends into the visible right corner; feathered 14 px on the left and 4 px at the bottom; the steep corner
+    outline is re-stroked anti-aliased (4x supersampled)."""
+    im = im.copy(); W, H = im.size
+    orig = im.copy(); op = orig.load(); px = im.load()
+    X0, X1, Y1, DX, F, FB = 630, 705, 49, 70, 14, 4
+    def top(x):  # first opaque row of a column in the original
+        for y in range(H):
+            if op[x, y][3] > 128: return y
+    P = [(630, top(630)), (662, 13.0), (680, 15.5), (690, 20.5), (697, 26.5), (705, top(705))]
+    def prof(x):
+        for (xa, ya), (xb, yb) in zip(P, P[1:]):
+            if xa <= x <= xb: return ya + (yb - ya) * (x - xa) / (xb - xa)
+        return P[0][1] if x < P[0][0] else P[-1][1]
+    def bil(x, y):  # bilinear sample of the original at fractional y
+        y0 = int(y // 1); f = y - y0
+        a = op[x, max(0, min(H-1, y0))]; b = op[x, max(0, min(H-1, y0+1))]
+        if y0 < 0: a = (0, 0, 0, 0)
+        return tuple(round(a[i]*(1-f) + b[i]*f) for i in range(4))
+    for x in range(X0, X1 + 1):
+        xs = x - DX; d = prof(x) - top(xs)
+        for y in range(0, Y1 + 1):
+            dd = d * max(0.0, 1 - max(0, y - prof(x)) / (Y1 - prof(x) + 1e-6)) if y > prof(x) else d
+            s = bil(xs, y - dd)
+            w = min(1.0, (x - X0 + 1) / F, (Y1 - y) / FB)
+            if w < 1:
+                o = op[x, y]; s = tuple(round(o[i]*(1-w) + s[i]*w) for i in range(4))
+            px[x, y] = s
+    # re-stroke the steep corner outline, 4x supersampled
+    OUT = (58, 32, 16)
+    k = 4; L = Image.new('L', (W*k, H*k), 0); dr = ImageDraw.Draw(L)
+    pts = [(x*k, (prof(x)+0.6)*k) for x in range(684, 706)]
+    dr.line(pts, fill=255, width=int(1.6*k), joint='curve')
+    L = L.resize((W, H), Image.LANCZOS); lp = L.load()
+    for x in range(682, 706):
+        for y in range(0, Y1):
+            m = lp[x, y] / 255 * 0.85
+            if m > 0 and px[x, y][3] > 0:
+                r, g, b, a = px[x, y]
+                px[x, y] = (round(r*(1-m)+OUT[0]*m), round(g*(1-m)+OUT[1]*m), round(b*(1-m)+OUT[2]*m), a)
+    return im
+
+
 desk = Image.open(f'{CAVE}/desk.webp').convert('RGBA').resize((720, 275), Image.LANCZOS)  # the engine draws every desk at one shape
+desk = remove_lamp(desk)  # patched 2026-11-12: the art has a small unlit oil lamp on the desk, a purely decorative prop (spec 097 FR-374)
 q = 80
 while save(desk, f'{W}/desk.webp', q) > 56 * 1024 and q > 40: q -= 6
 Image.open(f'{CAVE}/floor.jpg').convert('RGB').resize((320, 320), Image.LANCZOS).save(f'{W}/floor.webp', 'WEBP', quality=62, method=6)
@@ -98,7 +144,7 @@ def sec(name, files, src, prompt, cut, extra=''):
 files_of = lambda pat: ' '.join(sorted(f for f in os.listdir(W) if re.match(pat, f)))
 wm.append(sec('lobby', files_of(r'fx-.*\.webp'), 'gen/lobby/lobby.png (not shipped)', cave_prompt('lobby'), 'each fixture cropped with feathered edges, scaled to one factor, bottoms on one floor line (the hanging globe from the top)'))
 wm.append(sec('wall', 'wall.webp', 'gen/wall/wall.png (not shipped)', cave_prompt('wall'), 'top 660 px, resized, WebP'))
-wm.append(sec('desk', 'desk.webp', 'gen/desk/desk.png (not shipped)', cave_prompt('desk'), 'cropped to its alpha box, resized to the engine\'s desk shape'))
+wm.append(sec('desk', 'desk.webp', 'gen/desk/desk.png (not shipped)', cave_prompt('desk'), 'cropped to its alpha box, resized to the engine\'s desk shape; patched 2026-11-12 with Pillow (no new generation): the small unlit oil lamp painted out (columns 630 to 705, rows 0 to 49 replaced by the columns 70 px to the left, the back outline re-shaped into the right corner, feathered, the steep corner outline re-stroked anti-aliased; `remove_lamp` in `scripts/build-cave-pack.py`; owner, Telegram DM, 2026-11-12 21:19:57 UTC, "Ok and remove useless props in all worlds and generate images you need", shown to him before it ships; spec 097 FR-374, T337)'))
 wm.append(sec('slate', 'monitor.webp', 'gen/slate/slate.png (not shipped)', cave_prompt('slate'), 'the frame, resized; CSS draws the screen text on the dark face'))
 wm.append(sec('floor', 'floor.webp', 'gen/floor/floor.png (not shipped)', cave_prompt('floor'), 'resized to a 320 px tile, desaturated and darkened for calm (the cave art step), WebP'))
 wm += ['## References (not shipped)', '', '- Paco\'s crew portraits, used for style only.', '', '## Removed', '', 'None.', '']
