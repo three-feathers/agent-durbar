@@ -2135,3 +2135,12 @@ Issue #1399's table lists the Auto-follow desk mark (`docs/features.md:39`, spec
 - **Pictures.** Retaken: `docs/screenshots/097-helpers-cave-1440x900.jpg`, `097-helpers-cave-1280x800.jpg`, `097-helper-row-cave-lounge-1280x800.jpg` (the head row's faces are now kids). Not retaken: `102-174-cave-circle-4-1440x900-rows.jpg`, the dated evidence of the 2026-11-15 sign finding, which no driver writes by that name; it still shows adult heads.
 - **Numbers** (checked 2026-11-18, `npm run specs:numbers`, `origin/main` `0302dc035`, 12 open PR heads): spec 102 reaches T359 on `main` and on open PRs; this entry takes **T360** and no FR or Q.
 - **Tasks:** T360 (this entry); T326 amended (its circle part stays open, with T175).
+
+## Changes 2026-11-18: reconcile T290..T296 with `main`; T294 is the one leftover (issue #1399, new issue #1873; no new FR)
+
+An audit of #1399 found every check it lists already running in the arcade on `main` (`check-097-hover-card`, `-desk-marks`, `-motion`, `-one-face`, `-chat-contrast`, `-chat-look` with `retro`, `shots-097-screens retro`, `check-auto-follow retro`, `check-097-plate-pencil` over the worlds, `check-office-overlap` with `OFFICE_WORLD=retro` in the `arcade` job; T261, T283, T279, T280, T320). Read from code, specs, drivers and the git log on 2026-11-18; no code was run. This delta changes ticks only.
+- **T293 is ticked:** `metaOf` keeps the world's `pixelArt` (`test-realoffice-layout`), `check-097-crews` draws Retro pixel in the Photo office, and the `letter` fallback went with T296.
+- **T290, T291, T292, T295 stay `[ ]`**, each with its exact condition in `tasks.md`: the Flat halves wait for T294, and T295 also lacks the 3-agent pictures at both sizes and spec 097's parity cells.
+- **T296 is not open.** It was built and ticked (PRs #1677, #1747; FR-326 on `main`). The part of #1399 that spoke of 30 pieces of art needs no work; any later image run still waits for the owner's written yes (FR-292).
+- **T294 is the named leftover**, issue #1873: a head crop per set must exist before Flat can draw the two values' heads (the `[KNOWN GAP]` of the 2026-11-13 entry stands).
+- **Numbers:** no new FR, T or Q. T223 is not touched (another PR edits it).
