@@ -1,1 +1,0 @@
-- **Masking a very long text costs less when its cut ends at a backslash** (spec 012 FR-184, issue #1841): a text over the masking size limit that is cut inside one long escaped run is read once less by every rule; what is hidden is unchanged.
