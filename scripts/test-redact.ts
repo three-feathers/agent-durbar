@@ -38,6 +38,56 @@ for (const keep of ['ghp_short', 'see ghs_count', 'wei' + 'ghs_' + 'TotalWeightK
   assert.ok(!STe.maskRaw('see ' + cutTok, (x) => redact(x, {})).includes('R1t2Y3u4'), '#1329 early: the desk maskRaw hides a cut token');
 }
 
+// spec 012 FR-187 (issue #1320): a secret name glued to the end of a token is taken into the token's mask, so the value after it was no value of any name.
+// A value after a mask and `=` is now read as a named value. Every value here is invented and built from pieces.
+{
+  const tok = 'gh' + 'p_' + 'Zq3' + 'x'.repeat(16) + 'K9m' + 'p'.repeat(14);
+  const val = 'Vq7' + 'v0T' + 'wQ4';
+  const shortVal = 'ab' + 'c12';
+  const pw = 'pass' + 'word';
+  const STe = require(path.join(__dirname, '..', '..', 'src', 'renderer', 'safetext.js')) as { maskRaw(t: string, r: (s: string) => string): string };
+  const surfaces: Array<[string, (t: string) => string]> = [
+    ['redact', (t) => redact(t, {})],
+    ['maskSecretCommand', (t) => maskSecretCommand(t, {})],
+    ['maskSecretArgs', (t) => maskSecretArgs([t], {}).join(' ')],
+    ['maskOutgoing', (t) => maskOutgoing(t).text],
+    ['maskNoteText', (t) => maskNoteText(t).text],
+    ['desk maskRaw', (t) => STe.maskRaw(t, (x) => redact(x, {}))],
+  ];
+  const hidden: Array<[string, string, string]> = [
+    ['glued =', tok + pw + '=' + val, val],
+    ['glued, blanks around =', 'x ' + tok + pw + ' = ' + val + ' y', val],
+    ['glued, quoted value', tok + 'tok' + 'en="' + val + '"', val],
+    ['glued, short value', tok + 'pw' + 'd=' + shortVal, shortVal],
+    ['glued =>', tok + 'sec' + 'ret=>' + val, val],
+    ['glued %3D', '?q=' + tok + 'tok' + 'en%3D' + val, val],
+  ];
+  for (const [label, input, secret] of hidden) for (const [name, f] of surfaces) {
+    const out = f(input);
+    assert.ok(!out.includes(secret), `#1320 glued name: ${name} hides the value (${label}): ${out}`);
+  }
+  // a closing bracket of one opened before stays
+  assert.strictEqual(redact('(' + tok + pw + '=' + val + ')', {}), '([redacted]=[redacted])', '#1320 glued name: the closing bracket stays');
+  // near misses: what follows a mask and `=` but is no value (each stays as written)
+  const kept: Array<[string, string]> = [
+    ['a version', tok + '=v1'],
+    ['padding', tok + '=='],
+    ['three letters', tok + '=abc'],
+    ['a mask in a query', 'x=' + tok + '&y=2'],
+    ['a variable', tok + '=$HOME'],
+    ['a dotted name', tok + '=config.value'],
+    ['a sentence', 'see ' + tok + '. ok'],
+    ['a lower-case word', tok + '=reset-flow'],
+    ['a dotted name with a digit', tok + '=config.token2'],
+    ['a lower-case path', tok + '=src/foo123'],
+    ['a variable of 8 or more', tok + '=$HOME_DIR1'],
+  ];
+  for (const [label, input] of kept) {
+    const want = input.replace(tok, '[redacted]');
+    assert.strictEqual(redact(input, {}), want, `#1320 glued name near miss stays: ${label}`);
+  }
+}
+
 // spec 012 FR-181 (issue #1541, T162): a token written with a backslash escape inside (`ghp\_<body>`, `g\hp_<body>`) is hidden by
 // redact, maskSecretCommand and maskSecretArgs, in the text as written. Every token here is invented and built in code from pieces.
 {

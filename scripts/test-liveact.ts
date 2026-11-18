@@ -958,4 +958,30 @@ for (const st of ['idle', 'needs-permission', 'error', 'stopped']) {
   ok(!e.look || (e.look.n === 0 && !e.look.inHidden), 'an argument after ESC is not a program name: ' + JSON.stringify(e));
   ok((L.permText('run x\n' + P, 'shell', mask) as { look?: Look }).look!.n === 6, 'a line break still starts a command');
 }
+// spec 012 FR-187 (issue #1320): the monitor's lines read the home folder on the text as written too; two readings that differ show nothing. Invented user names.
+{
+  const hm = { ...mask, home: (s: string) => maskHomePaths(s, []) };
+  const f = L.create({ mask: hm }) as unknown as { block(raw: string, k?: string): { k: string; t: string }[]; strict(raw: string, k?: string): { k: string; t: string }[] };
+  const user = 'zq' + 'mor' + 'vel';
+  const bs = '\\';
+  const all = (ls: { t: string }[]) => ls.map((l) => l.t).join('\n');
+  const cases: Array<[string, string]> = [
+    ['a UNC home written plainly', 'see ' + bs + bs + 'fs01' + bs + 'share' + bs + user + bs + 'notes done.'],
+    ['a UNC home with doubled escapes', 'see ' + bs.repeat(4) + 'fs01' + bs.repeat(2) + 'share' + bs.repeat(2) + user + bs.repeat(2) + 'notes done.'],
+    ['an escape inside the user name', 'see /home/zq' + bs + '_' + user.slice(2) + '/notes done.'],
+    ['a Windows home in Markdown', 'see C:' + bs + bs + 'Users' + bs + bs + user + bs + bs + 'notes done.'],
+  ];
+  for (const [label, t] of cases) {
+    ok(!all(f.block(t, 'reply')).includes(user.slice(2)), `#1320 monitor: block hides the user name (${label}): ${all(f.block(t, 'reply'))}`);
+    ok(!all(f.strict(t, 'err')).includes(user.slice(2)), `#1320 monitor: strict hides the user name (${label}): ${all(f.strict(t, 'err'))}`);
+  }
+  // a home folder both readings agree on is still shown (shortened), and a text with no home folder is read as before
+  const plainHome = 'see /home/' + user + '/notes done.';
+  ok(all(f.block(plainHome, 'reply')).includes('notes done.') && !all(f.block(plainHome, 'reply')).includes(user), '#1320 monitor: a plain home folder still shows its line, shortened');
+  ok(all(f.strict(plainHome, 'err')).includes('notes done.'), '#1320 monitor: strict shows a plain home folder line, shortened');
+  eq(all(f.block('all tests passed.', 'reply')), 'all tests passed.', '#1320 monitor: a text with no home folder is read once, as before');
+  // no home mask: as before (no home folder step at all)
+  const g = L.create({ mask }) as unknown as { block(raw: string, k?: string): { t: string }[] };
+  eq(all(g.block('see /x done.', 'reply')), 'see /x done.', '#1320 monitor: no home mask, the text as masked');
+}
 console.log(`liveact: ${n} checks passed`);

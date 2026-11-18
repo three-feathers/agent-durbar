@@ -504,7 +504,9 @@ for (const [start, more] of [['AK' + 'IA' + up(16), 'A'], ['AK' + 'IA' + up(16),
       assert.strictEqual(redact(gh2 + '_' + an(15), {}), '[redacted]_' + an(15), '#1237: 15 after a _ stay (GLUE_MIN_UNDERSCORE)');
       assert.strictEqual(redact(gh2 + '/repos/owner/project', {}), '[redacted]/repos/owner/project', '#1237: a repository path after a token stays (GLUE_START has no / below 32)');
       assert.strictEqual(redact(gh2 + '/' + an(32), {}), '[redacted]', '#1237: 32 letters and digits after a / are the rest of a token (GLUE_MIN_B64)');
-      assert.strictEqual(redact(gh2 + '=' + an(40), {}), '[redacted]=' + an(40), '#1237: `=` does not start a glued rest (GLUE_START)');
+      // spec 012 FR-187 (issue #1320): a value after a mask and `=` is read as a named value now (the glued-name leak), so the GLUE_START pin for `=` uses a value that rule keeps (a dotted name)
+      assert.strictEqual(redact(gh2 + '=' + an(40), {}), '[redacted]=[redacted]', '#1320: a value after a token and `=` is read as a named value (FR-187)');
+      assert.strictEqual(redact(gh2 + '=config.valuename', {}), '[redacted]=config.valuename', '#1237: `=` does not start a glued rest (GLUE_START)');
       assert.strictEqual(redact(gh2 + '?' + an(40), {}), '[redacted]?' + an(40), '#1237: `?` does not start a glued rest (GLUE_START)');
     }
     // pre-review of PR 1317: the GOOG1 rule has the base64 list's start and line-break rules (each asserted alone: remove one and its own line fails)
