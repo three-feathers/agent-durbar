@@ -37,6 +37,23 @@ assert.deepStrictEqual(p.rows[0].items.map((i) => i.name), ['wall.webp', 'floor.
 assert.ok(p.rows[1].items.some((i) => i.y > p.rows[1].items[0].y), 'a long row wraps onto another line');
 assert.ok(problems(S.plan(fake, { width: 1400 }), [...fake, { id: 'd', files: ['x.webp'] }]).some((m) => /d: no row/.test(m)), 'a world missing from the plan is named');
 
+/* FR-017's scene: a world with a scene gets a 320x200 box under its header, before its pictures; none for a world without one. */
+{
+  const withScene = [{ ...fake[0], scene: '/x/lobby-a-1280x800.png' }, fake[1]];
+  for (const width of [400, 700, 1400]) {
+    const p = S.plan(withScene, { width });
+    assert.deepStrictEqual(problems(p, withScene), [], `a sheet ${width} wide still holds every picture with a scene present`);
+    const sc = p.rows[0].scene;
+    assert.deepStrictEqual([sc.w, sc.h], [320, 200], 'SCENE: the scene box is 320x200');
+    assert.strictEqual(p.rows[1].scene, null, 'SCENE: a world without a scene has no box');
+    assert.ok(p.rows[0].items.every((i) => i.y >= sc.y + sc.h + p.labelH), 'SCENE: no picture sits in or on the label of the scene box');
+    assert.ok(sc.x >= 0 && sc.x + sc.w <= p.width && sc.y >= p.rows[0].y + p.rows[0].headerH, 'SCENE: inside the sheet and below the header');
+  }
+  const a = S.plan(fake, { width: 1400 }), b = S.plan(withScene, { width: 1400 });
+  assert.ok(b.height > a.height, 'SCENE: the scene makes its row taller');
+  assert.ok(S.textBoxes(b, { a: { title: 't', line: 'l' }, b: { title: 't', line: 'l' } }, (t) => t.length * 6).some((t) => t.what === 'label scene'), 'SCENE: the scene has a drawn label');
+}
+
 /* Text: a long picture name, heading and mood line are cut to their box (the stand-in measure is 0.6 em a character; the page measures with the canvas). */
 {
   const measure = (t, px, bold) => t.length * px * (bold ? 0.66 : 0.6);
