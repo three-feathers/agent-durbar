@@ -164,8 +164,50 @@ process.exitCode = 1; // a promise that never settles must not pass (checklist);
     assert.deepStrictEqual([r.ok, r.error, seen.length], [false, 'path must be absolute', 0]);
     r = await openInVSCode('/home/a/proj', env('linux', ['/usr/bin/code'], { PATH: '/usr/bin' }, '/home/a'), fake);
     assert.deepStrictEqual([r.ok, seen[0].args], [true, ['/home/a/proj']]);
+    // spec 045 FR-065 (issue #1868, code-scanning alert 107): the conditions under which no outside string reaches cmd.exe.
+    // (1) every cmd.exe metacharacter in a target: never on the cmd.exe route; with Code.exe it is one argv element, no shell
+    const META = ['"', '&', '|', '<', '>', '^', '%', '!', '`', '(', ')', ',', ';', '='];
+    for (const ch of META) {
+      const t = `C:\\a${ch}b ${ch}c`;
+      seen = [];
+      r = await openInVSCode(t, env('win32', [cmd], { LOCALAPPDATA: local, SystemRoot: 'C:\\Windows' }, 'C:\\Users\\a'), fake);
+      assert.deepStrictEqual([r.ok, seen.length], [false, 0], `FR-065: a target with ${ch} never reaches cmd.exe`);
+      seen = [];
+      r = await openInVSCode(t, env('win32', [exe, cmd], { LOCALAPPDATA: local }, 'C:\\Users\\a'), fake);
+      assert.deepStrictEqual([r.ok, seen.length, seen[0]?.cmd, seen[0]?.args, seen[0]?.opts.shell, seen[0]?.opts.windowsVerbatimArguments], [true, 1, exe, [t], false, false], `FR-065: a target with ${ch} is one argv element to Code.exe, no shell`);
+    }
+    // (2) the shim's own path comes from the environment (PATH, LOCALAPPDATA, ProgramFiles, the home folder): a metacharacter there
+    // refuses the cmd.exe route too
+    for (const ch of META) {
+      const hostile: Array<[string, NodeJS.ProcessEnv, string]> = [
+        [`C:\\t${ch}x\\bin\\code.cmd`, { PATH: `C:\\t${ch}x\\bin` }, 'C:\\Users\\a'],
+        [`C:\\L${ch}x\\Programs\\Microsoft VS Code\\bin\\code.cmd`, { LOCALAPPDATA: `C:\\L${ch}x` }, 'C:\\Users\\a'],
+        [`C:\\P${ch}x\\Microsoft VS Code\\bin\\code.cmd`, { ProgramFiles: `C:\\P${ch}x` }, 'C:\\Users\\a'],
+        [`C:\\Users\\h${ch}x\\AppData\\Local\\Programs\\Microsoft VS Code\\bin\\code.cmd`, {}, `C:\\Users\\h${ch}x`],
+      ];
+      for (const [shim, vars, home] of hostile) {
+        seen = [];
+        r = await openInVSCode('C:\\proj', env('win32', [shim], { SystemRoot: 'C:\\Windows', ...vars }, home), fake);
+        assert.deepStrictEqual([r.ok, seen.length], [false, 0], `FR-065: a shim path from the environment with ${ch} never reaches cmd.exe: ${shim}`);
+      }
+    }
+    // (3) a .cmd or .bat file is never the spawned command (Node refuses that without a shell); the only shell is cmd.exe with
+    // /d (no AutoRun) /s /c and ONE line, built by cmdShimArgs, and nothing else is passed verbatim
+    for (const files of [[cmd], [exe], [`${local}\\Programs\\VSCodium\\bin\\codium.cmd`], ['C:\\tools\\bin\\code.cmd']]) {
+      const plan = planVSCodeLaunch('C:\\my dir.', env('win32', files, { LOCALAPPDATA: local, PATH: 'C:\\tools\\bin', SystemRoot: 'C:\\Windows' }, 'C:\\Users\\a'));
+      assert.ok(plan && !/\.(?:cmd|bat)$/i.test(plan.command), `FR-065: no .cmd/.bat spawned directly: ${plan?.command}`);
+      if (plan.verbatim) {
+        assert.strictEqual(plan.command, 'C:\\Windows\\System32\\cmd.exe', 'FR-065: the system cmd.exe');
+        assert.deepStrictEqual([plan.args.length, ...plan.args.slice(0, 3)], [4, '/d', '/s', '/c'], 'FR-065: /d /s /c and one line');
+        assert.ok(plan.args[3].endsWith(' "C:\\my dir.""'), 'FR-065: a target with a space or trailing dot stays inside its own quotes');
+      } else assert.deepStrictEqual(plan.args, ['C:\\my dir.'], 'FR-065: an .exe gets the target as its only argument');
+    }
+    // static: one spawn site, no shell anywhere in the launcher
+    const launcher = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'main', 'vscode.ts'), 'utf8');
+    assert.strictEqual((launcher.match(/spawnFn\(/g) ?? []).length, 1, 'FR-065: one spawn call');
+    assert.ok(!/shell:\s*true|exec\(|execSync\(/.test(launcher), 'FR-065: no shell: true or exec in the launcher');
     // static: the verbatim switch is read from the plan's flag only
-    const src = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'main', 'vscode.ts'), 'utf8');
+    const src =fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'main', 'vscode.ts'), 'utf8');
     assert.ok(!/args\[0\]\s*===\s*'\/d'/.test(src), 'no guess from args[0]');
     assert.strictEqual((src.match(/windowsVerbatimArguments:/g) ?? []).length, 1);
     assert.ok(/windowsVerbatimArguments: platform === 'win32' && plan\.verbatim === true/.test(src));
