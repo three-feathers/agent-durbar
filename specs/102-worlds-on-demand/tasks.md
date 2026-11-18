@@ -404,6 +404,10 @@ Fix round 2026-11-14 (review of #1740, T223 stays unticked): the contrast check 
 
 - [x] T359 FR-312's room figures are labelled: 13.84 / 17.45 px is macOS with the system font from the `+N!` edge; 7.391 / 11.609 px (ratio 1) and 6.398 / 10.609 px (ratio 2) is Linux Noto from the word's end to the content box (the driver's `room`, floor 3 px). Ratio 1.25 / 1.5 and Segoe UI stay a `[KNOWN GAP]` (issue #1842 stays open). Spec only: no code, no picture.
 
+## 2026-11-11: the Auto-follow desk mark in the arcade (issue #1399)
+
+- [x] T284 The Auto-follow desk mark (`.ro-plate.is-followed`) checked in the arcade at both sizes: folded into T320's `DRIVER_WORLD=retro` run of `check-auto-follow` (its Real office step; one `ui-suite` row, `check-auto-follow retro`; no `AF_WORLD`), 2026-11-16. Test: passes at both sizes; mutants (no `is-followed`, `.ro-l2` overflow visible) each fail their own labelled assert; the Photo office drawn (forced load `world: 'photo'`) was re-run 2026-11-17 and dies at `driver-helpers`' "DRIVER_WORLD=retro: the arcade is not drawn (a pass here would be the Photo office)". `[KNOWN GAP]`: see the 2026-11-11 delta.
+
 ## 2026-11-18: the cave's helper kids, art and data (spec 102 Changes 2026-11-18; issue #1643)
 
 - [x] T360 [US2] The cave's six painted helper kids, seven states each (`kid1..kid6-<state>.webp`, `world.json` `kids` with `thinking` as the reference pose, `ASSETS.md` with every prompt and the owner's yes per run); `scripts/build-kid-pack.py --world=cave`; drawn where the cave draws rows (desk top at 1 to 4 agents, kid faces in the head row at 5 to 15), not in its circle (T326, T175). Test: `check-097-kids cave` (rows fixture, 1 to 4 and 15 agents, both sizes), `check-097-helpers` (cave kid faces), `test:realoffice-assets` (6 x 7 pictures); `read:` the contact sheet and every pose looked at [FR-271, FR-292]

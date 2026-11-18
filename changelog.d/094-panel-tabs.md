@@ -1,1 +1,0 @@
-- Internal: the chat panel's tab strip (Chat and Browser) moved out of `browserpane.js` into its own module, `paneltabs.js`, with unit tests; the tabs, keys and markup are unchanged.

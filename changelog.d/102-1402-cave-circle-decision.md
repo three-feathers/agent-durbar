@@ -1,1 +1,0 @@
-- **The Cave goes to the `circle` arrangement and there is no clash waiver** (spec 102, owner decision 2026-11-13, issue #1402): Photo stays `rows`; `worlds/known-clashes.json` stays until the Cave PR deletes it. Spec only; no change for users, the Cave is still off.
