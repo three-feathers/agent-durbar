@@ -1265,7 +1265,7 @@ Nothing draws these files; `WORLD_FLAGS.retro` stays closed. Written with the bu
 
 #### Art and fit
 
-- **FR-292** **Art: 12 to 18 images per pack, one at a time.** A generation runs only after the world's card passes (FR-017), the plan has passed in grey boxes (T246) and the owner has said yes in writing to that run (Q1). Check the plan's usage first. One `codex exec` at a time, machine-wide, one pack at a time. Each pack starts from these 10 images, and a fixture or part that reads badly gets its own image: **stop at 18 and ask**.
+- **FR-292** **Art: 12 to 18 images per pack, one at a time.** A generation runs only after the world's card passes (FR-017), the plan has passed in grey boxes (T246) and the owner has said yes in writing to that run (Q1). Check the plan's usage first. One `codex exec` at a time, machine-wide, one pack at a time. Each pack starts from these 10 images, and a fixture or part that reads badly gets its own image: **stop at 18 and ask**. (Owner decision of 2026-11-13 on issue #1400 and what is still open: see "Changes 2026-11-13 (restated 2026-11-17 against main)".)
 
   | # | Image | Pack files |
   |---|---|---|
@@ -1363,7 +1363,7 @@ Nothing draws these files; `WORLD_FLAGS.retro` stays closed. Written with the bu
 
 He answered "ok" to all ten, with the recommendations. These are decisions now, and FR-280..FR-299 read accordingly.
 
-- **Q1 Image runs: decided.** Art only after the grey-box plans pass (T246), one pack at a time, and **each image run on his written yes**. Before any run, check the plan's usage first.
+- **Q1 Image runs: decided.** Art only after the grey-box plans pass (T246), one pack at a time, and **each image run on his written yes**. Before any run, check the plan's usage first. (See "Changes 2026-11-13 (restated 2026-11-17 against main)" for the owner's 2026-11-13 standing yes and its limits.)
 - **Q2 Where the art sits: decided.** In this repository, flag closed, out of packaged builds, until the store lands. This is his exception to FR-240 for these three, and it ends at T257.
 - **Q3 Delivery: decided.** On demand once the store lands. They do not join OP-10's list.
 - **Q4 Order: decided.** After the next built-in world's stack; nothing else moves.
@@ -2062,6 +2062,22 @@ Linux asked what is really open before building. Nothing is. T275 and T276 were 
 - **`worlds/known-clashes.json` stays until the Cave PR.** The pair is red only if the file is removed early, and `circle` is not built yet (T165), so `main` would fail `test:world-catalogue` from the day the file goes until `cave` names `circle`. The file is therefore deleted, with its reader and fixtures, in the PR that makes `cave` name `circle` (T174), not before. Until then it stays reported-only and no other pair may join it. Open question for the owner: is a provisional file on `main` for that interval acceptable, or must the pair fail at once and `main` stay red until T174? Unless he says otherwise, the first reading stands.
 - **T093** gets the decision in its note. **T174** is ordered after T165 (`circle` and `arrangementFits`, measured at 15 agents against FR-229's 24 px floor; if it misses, redesign and tell the owner the numbers, A5), T171 and T242 (`worldpack.ts` list and the `focus` picture) and carries the deletion of the file; the fire `focus.webp` is new art and waits for the owner's and Paco's approval (FR-234, A4); this change asks for no picture.
 - **2026-11-13, owner answer on the desk-side column (issue #1280, T221):** Vikram, DM 2026-11-13 05:49:05 UTC: "A", keep the whole width, as decided on 2026-11-01; recorded on #1280 by the coordinator: https://github.com/three-feathers/agent-durbar/issues/1280#issuecomment-6845330016. T221 stays "no desk-side column" (097 FR-106): nothing to build. The Settings part of #1280 (T220) stays open on that issue.
+
+## Changes 2026-11-13 (restated 2026-11-17 against main): Codex image runs for world art, a standing yes until Codex's own limits (owner decision, issue #1400; FR-292 and Q1 keep their text; no new FR, T or Q)
+
+**Owner decision, sourced.** Vikram, in his comment on issue #1400, 2026-11-13 05:44:01 UTC (https://github.com/three-feathers/agent-durbar/issues/1400#issuecomment-6845249857), recording his Telegram DM of 05:43:25 UTC: "Ok to use codex until it's limits". The question was whether Codex image generation on his ChatGPT plan may also draw the arcade's default pixel character art, the welcome picture and the Cave fire `focus.webp`, under the same rules as the helper kids (small batches, every picture shown to him first); he chose that option. The fixed 8-image budget no longer applies. The relayed DM itself is not verifiable here; the comment is the record.
+
+**Status against main, checked 2026-11-17** (by reading `tasks.md`, `spec.md` and the world folders on `main`; no code was run):
+- The 30 running pictures `runA` and `runB` (T296, FR-326): built and ticked (`tasks.md` T296 `[x]`); FR-326 is on `main` since #1528.
+- The Cave fire `focus.webp` (T242): drawn and ticked; the file is in `src/renderer/realoffice/worlds/cave/`.
+- The welcome picture (T206, `welcome` part): built in code at 0 AI credits and ticked (owner decision, issue #1400 comment 6845205102; FR-352). No Codex run is needed for it.
+- So the standing yes has no open item of those three left to draw. Still open under it: T225 as T290..T295 (unticked), which are code, Settings and picture-taking tasks; they start no image run unless a later change adds one.
+
+**What is still open, and rule.** FR-292 and Q1 still say each image run waits for his written yes. That still holds for the pack runs T250..T253 and T259 (all unticked): each waits for his written yes per run, with FR-292's gates and the stop at 18 images a pack. The standing yes above is only a record of the owner's 2026-11-13 decision for the three items; it is not a general permission. On 2026-11-17 22:16 UTC (recorded on issue #1643) Vikram also said that each Codex image run for the Cave kids needs his yes, and gave it for the Cave; this delta does not change that. The rule stays: **every image run waits for the owner's written yes**, except where the 2026-11-13 comment above already gave it, and a run for any other art needs a new one.
+
+**Rules that stay:** one `codex exec` at a time from an EMPTY folder, machine-wide; invented fictional figures, no likeness to any real person (097 FR-067); provenance in the world's `ASSETS.md` (FR-170: tool and version, date, exact prompt, approver); every picture shown to Vikram before it ships; small batches; plan usage noted before and after each round in the round note of the world's `ASSETS.md`; if Codex reports a limit, stop and tell the coordinator. 0 AI credits in `npm test` and CI is unchanged (FR-154, SC-010).
+
+**Pointers.** FR-292 and Q1 each carry a one-line pointer to this entry. Specs 096 and 097 have their own Q1 (unrelated).
 
 ## Changes 2026-11-18: the two room figures of FR-312 are labelled with their metric; what stays unmeasured (T359, issue #1842, no new FR; wording only, no behaviour change)
 

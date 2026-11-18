@@ -352,7 +352,8 @@ if (require.main === module) {
   const args = ['.', '--no-sandbox'];
   const win = process.platform === 'win32';
   // its own process group (outside Windows), so a timeout stops xvfb-run, Electron and its helpers, and only those
-  const child = useXvfb ? spawn('xvfb-run', ['-a', electron, ...args], { cwd: ROOT, env, stdio: 'inherit', detached: !win }) : spawn(electron, args, { cwd: ROOT, env, stdio: 'inherit', detached: !win });
+  const [file, argv] = require('./ui-suite.js').launchCommand(useXvfb, electron, args, ''); // spec 008 FR-269: the sized Xvfb screen of the suite
+  const child = spawn(file, argv, { cwd: ROOT, env, stdio: 'inherit', detached: !win });
   const stop = (sig) => { try { win ? child.kill(sig) : process.kill(-child.pid, sig); } catch (e) { /* already gone */ } };
   let timedOut = false;
   /* 20 min (spec 052 FR-138, review of the narrow states): 57 states took 3m19s on a Mac at load 3 to 6 (about 3.5 s a state, start included)
