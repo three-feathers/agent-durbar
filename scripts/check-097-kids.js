@@ -69,7 +69,7 @@ module.exports = async (ctx) => {
     await js(`window.DurbarRealOfficeWorlds.cave.arrangement='rows';0`);
     const id = await js(`window.__durbarSimUi.realLayout().zones[0].desks[0].id`);
     await emit({ sessionId: id, type: 'status', status: 'error', intent: 'x' });
-    if (IDLE_DELAY) await js(`setTimeout(()=>window.__durbarSimEmit({timestamp:Date.now(),sessionId:${jsLiteral(id)},type:'status',status:'idle',intent:'x'}),${IDLE_DELAY});0`); /* the injected delay: the idle drawn late, as under load */
+    if (IDLE_DELAY) await js(`setTimeout(()=>window.__durbarSimEmit({timestamp:Date.now(),sessionId:${jsLiteral(id)},type:'status',status:'idle',intent:'x'}),${jsLiteral(IDLE_DELAY)});0`); /* the injected delay: the idle drawn late, as under load */
     else await emit({ sessionId: id, type: 'status', status: 'idle', intent: 'x' });
     await must(`document.querySelector('#stage .ro').dataset.arrangement==='rows'`, `${tag}: the rows fixture draws rows`);
     /* #1867 flake: the rows can be drawn while the desk is still in error (the idle not drawn yet); an error desk goes first, so the caller's `first` (zones[0].desks[0]) came from that
