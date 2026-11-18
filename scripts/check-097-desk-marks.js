@@ -3,6 +3,7 @@
  * ", unsent draft" (Open office's words). Simulator only (sim=15), no AI credits; every wait is an until().
  *
  *   npm run check:ui -- --only check-097-desk-marks      (builds first)
+ *   DESK_MARKS_MUTANT=cab-above   the arcade is judged by the old rule (above the plate's left end): must fail "the tag is above its plate's left end" at a cabinet (the tag is beside it)
  *   DESK_MARKS_MUTANT=lounge-pick   the picker takes lounge seats (must fail with "the picked desk is not a lounge seat")
  *   DESK_MARKS_MUTANT=unsettled   the page is not awaited before the picks (the old driver: a desk picked while its place visit is still pending goes away and its tag moves to the post-it; must fail with "is the tag above its plate's left end")
  *   DESK_MARKS_MUTANT=moving   a picked plate eases for a minute (must fail with "timed out waiting for the plates and Draft tags to stop moving (settled layout)")
@@ -81,12 +82,14 @@ module.exports = async (ctx) => {
       bgOf=e=>{for(let n=e;n;n=n.parentElement){const c=rgb(getComputedStyle(n).backgroundColor);if(c.length>=3&&(c.length<4||c[3]>0.95))return c}return [255,255,255]};
       const plates=[...document.querySelectorAll('#stage .ro-plate')],tags=[...document.querySelectorAll('#stage .ro-drafttag.on')];
       return tags.map(t=>{const r=R(t),p=R(document.querySelector('#stage .ro-plate[data-id="'+CSS.escape(t.dataset.for)+'"]')),a=lum(rgb(getComputedStyle(t).color)),b=lum(bgOf(t));
-        return {k:t.dataset.for,dx:+(r.x-p.x).toFixed(2),tr:[r.x,r.y,r.r,r.b].map(Math.round),pr:[p.x,p.y,p.r,p.b].map(Math.round),cls:document.querySelector('#stage .ro-plate[data-id="'+CSS.escape(t.dataset.for)+'"]').className,above:r.b<=p.y+0.5,left:Math.abs(r.x-p.x)<=1,outFloor:r.x<fl.x-0.5||r.r>fl.r+0.5||r.y<fl.y-0.5||r.b>fl.b+0.5,
+        return {k:t.dataset.for,dx:+(r.x-p.x).toFixed(2),tr:[r.x,r.y,r.r,r.b].map(Math.round),pr:[p.x,p.y,p.r,p.b].map(Math.round),cls:document.querySelector('#stage .ro-plate[data-id="'+CSS.escape(t.dataset.for)+'"]').className,above:r.b<=p.y+0.5,left:Math.abs(r.x-p.x)<=1,cab:!!document.querySelector('#stage .ro-desk.ro-cab[data-for="'+CSS.escape(t.dataset.for)+'"]'),row:r.y>=p.y-0.5&&r.b<=p.b+0.5,gapR:+(r.x-p.r).toFixed(2),gapL:+(p.x-r.r).toFixed(2),outFloor:r.x<fl.x-0.5||r.r>fl.r+0.5||r.y<fl.y-0.5||r.b>fl.b+0.5,
           touches:plates.filter(q=>hit(r,R(q))).map(q=>q.dataset.id),others:tags.filter(o=>o!==t&&hit(r,R(o))).map(o=>o.dataset.for),font:parseFloat(getComputedStyle(t).fontSize),ratio:(Math.max(a,b)+0.05)/(Math.min(a,b)+0.05),hid:t.getAttribute('aria-hidden'),text:t.textContent.trim(),svg:!!t.querySelector('svg')}})})()`);
     assert.strictEqual(geo.length, 2, `${tag}: both tags measured`);
     assert.deepStrictEqual((await loungeNow()).filter(k => picks.includes(k)), [], `${tag}: the drafted desks are still desks when measured (none moved into the lounge)`);
     for (const g of geo) {
-      assert.ok(g.above && g.left, `${tag}: ${g.k}: the tag is above its plate's left end (tag left ${g.tr[0]}, plate left ${g.pr[0]}, delta ${g.dx}px, font ${g.font}px, plate classes: ${g.cls}) ${JSON.stringify(g)}`);
+      /* spec 102 (issue #1632, owner decision 2026-11-18): at an arcade cabinet the tag stands beside the plate's end, on the person's side, in the plate's row, not above it. Mutant DESK_MARKS_MUTANT=cab-above (test only) reads the old rule at a cabinet: it must fail "beside its plate's end" */
+      if (g.cab && MUTANT !== 'cab-above') assert.ok(g.row && !g.above && ((g.gapR >= 0 && g.gapR <= 4) || (g.gapL >= 0 && g.gapL <= 4)), `${tag}: ${g.k}: the tag is beside its plate's end, off the cabinet's base (gap right ${g.gapR}px, left ${g.gapL}px, in the plate's row ${g.row}) ${JSON.stringify(g)}`);
+      else assert.ok(g.above && g.left, `${tag}: ${g.k}: the tag is above its plate's left end (tag left ${g.tr[0]}, plate left ${g.pr[0]}, delta ${g.dx}px, font ${g.font}px, plate classes: ${g.cls}) ${JSON.stringify(g)}`);
       assert.ok(!g.outFloor, `${tag}: ${g.k}: the tag is inside the floor`);
       assert.deepStrictEqual([g.touches, g.others], [[], []], `${tag}: ${g.k}: the tag touches no plate or tag`);
       assert.ok(g.font >= 10.5 && g.ratio >= 4.5, `${tag}: ${g.k}: ${g.font}px, ${g.ratio.toFixed(2)}:1`);

@@ -204,6 +204,31 @@ module.exports = async (ctx) => {
       }
     }
   }
+  /* issue #1625 (Linux, simulator): a strip whose text wraps to two lines (a long project or session name; the text takes the row at its 360px basis and wraps) is taller
+     than the 31px the rule was measured with; one such strip, alone or with a second, must not make the office scroll at either size (Windows not run) */
+  const LONG = 'A long notice text that wraps onto a second line because the sentence names several projects and sessions and keeps going well past the width of the strip, so the strip is at least two lines tall here.';
+  for (const [w, h] of [[1280, 800], [1440, 900]]) {
+    for (const [strips, lines] of [[['restore'], 2], [['away'], 2], [['crash'], 2], [['follow'], 2], [['mcp'], 2], [['restore', 'away'], 2], [['restore'], 4], [['away', 'follow'], 4]]) {
+      const tag = `${lines === 2 ? 'two' : 'four'}-line text, ${strips.join('+')} ${w}x${h}`;
+      const TEXT = process.env.TWOLINE_MUTANT === 'nogrow' ? '' : lines === 2 ? LONG : (LONG + ' ').repeat(3).trim();
+      await setup({ id: 'twoline', strips }, w, h);
+      const one = await js(`(()=>JSON.parse(JSON.stringify(${jsLiteral(strips)}.map(n=>document.getElementById(n+'Strip').getBoundingClientRect().height))))()`);
+      /* mutants (T365): each dies at its own assert; TWOLINE_MUTANT=nogrow leaves the text alone, =scroll makes the stage taller than the floor, =followwrap lets the follow text wrap */
+      const MU = process.env.TWOLINE_MUTANT || '';
+      if (MU === 'followwrap') await js(`(()=>{const e=document.createElement('style');e.textContent='.follow-strip .af-t{white-space:normal!important;overflow:visible!important}';document.head.appendChild(e);return 0})()`);
+      if (MU === 'scroll') await js(`(()=>{document.getElementById('stage').style.minHeight='3000px';return 0})()`);
+      await js(`(()=>{for(const n of ${jsLiteral(strips)}){if(n==='follow'){document.getElementById('followStrip').insertAdjacentHTML('afterbegin','<span class="af-t" id="afLong"></span>');document.getElementById('afLong').textContent=${jsLiteral(TEXT)};continue}const t=document.querySelector('#'+n+'Strip .ns-t');if(t)t.insertAdjacentText('afterbegin',${jsLiteral(TEXT)}+' ')}window.dispatchEvent(new Event('resize'));return 0})()`);
+      await settle();
+      await js(`window.dispatchEvent(new Event('resize'));0`);
+      await settle();
+      const T = await js(STATE);
+      const two = await js(`(()=>JSON.parse(JSON.stringify(${jsLiteral(strips)}.map(n=>{const e=document.getElementById(n+'Strip');return e.hidden?0:e.getBoundingClientRect().height}))))()`);
+      console.log(`[102] ${tag}: one-line heights ${one}, long-text heights ${two}, floor ${T.sh}/${T.ch}, bar ${T.bar}, yield ${T.yield}`);
+      assert.ok(T.yield || two.every((v, i) => (strips[i] === 'follow' ? v <= one[i] + 1 : v >= one[i] + 3)), `${tag}: the long text made every wrapping strip taller and left the follow strip (one line, ellipsis: its own long span, as a redraw rewrites #afText) alone (the case is not vacuous): one-line ${one}, long ${two}`);
+      assert.ok(fits(T), `${tag}: the office does not scroll (scrollHeight ${T.sh} against ${T.ch}): ${JSON.stringify(T)}`);
+      if (process.env.SHOTS) await H.shot(path.join(OUT, `102-1625-${lines}line-${strips.join('-')}-${w}x${h}.png`), { prep: 'mouse', tag: '102' });
+    }
+  }
   /* 16 agents with five strips: the bar would not make them fit, so the strips stay where they were (as the lend, T308) */
   await setup(ALL5, 1280, 800, 16);
   const S16 = await js(STATE);

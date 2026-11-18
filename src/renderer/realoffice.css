@@ -320,6 +320,8 @@ body.ro-chat .ph .avatar{display:none}
 /* spec 097 FR-316: "Draft" above the plate's left end (New reply is over the right end); chrome layer, made once per desk, shown by class, aria-hidden */
 .ro-drafttag{display:none;transform:translate(0,calc(-100% - 2px));align-items:center;gap:var(--s-1);padding:0 var(--s-1);border-radius:var(--r-md);font-size:var(--t5-size);font-weight:var(--t1-weight);line-height:var(--t5-lh);white-space:nowrap;color:var(--ink);background:var(--surface);border:1px solid var(--line);pointer-events:none}
 .ro-drafttag.on{display:inline-flex}
+.ro-drafttag.beside-r{transform:none} /* spec 102 (issue #1632): beside the plate's end, under the person's feet, off the cabinet's base */
+.ro-drafttag.beside-l{transform:translate(calc(-100%))}
 .ro-drafttag>svg{width:12px;height:12px;flex:none}
 @media (forced-colors:active){.ro-drafttag{color:CanvasText;background:Canvas;border-color:CanvasText}}
 /* spec 059 FR-170 (#1155): Open office's rename pencil (.ren, styles.css) beside a plate's name. It is the plate's next sibling, anchored by CSS to
