@@ -219,12 +219,13 @@
     const home=t=>{if(!mask.home)return t;const h=mask.home(t);return typeof h==='string'?h:'';};
     /* spec 012 FR-187 (issue #1320, review of PR 1872): maskRaw undoes Markdown escapes, so a home folder written with a doubled backslash (a UNC path) has no home folder
        form after it, and the home mask read only that output. When the text holds a home folder read in a normal form (escaped or entity slashes `\/`, `&#47;`, `&sol;` as
-       plain slashes, backslash runs before `_` or `*` and `*` left out: tool output, HTML and escapes inside a user name), the home mask also reads that form FIRST.
+       plain slashes, entity backslashes `&#92;`, `&#x5C;`, `&bsol;` as backslashes, backslash runs before `_` or `*` and `*` left out: tool output, HTML and escapes inside a user name), the home mask also reads that form FIRST.
        The line shows (as the first reading, its spelling kept) when every word of it (letters and digits of its plain text) is a word of the home-first reading:
        then it shows nothing that reading hides. The words, not the strings: maskRaw drops the home mask's `~` as a Markdown mark when it finds anything to mask, and
        its Markdown path changes line marks and blanks. Otherwise, or when a reading fails, nothing (fail closed). No home folder in the normal form: one reading, as before. */
     const SLASH_SPELL=/\\\/|&#0*47;|&#[xX]0*2[fF];|&sol;/g;
-    const norm=t=>t.replace(SLASH_SPELL,'/').replace(/\\+(?=[_*])/g,'').replace(/\*/g,''), words=t=>plain(norm(t)).match(/[\p{L}\p{N}]+/gu)||[];
+    const BSL_SPELL=/&#0*92;|&#[xX]0*5[cC];|&bsol;/g; /* review of PR 1872, round 2: a backslash written as an HTML entity (Windows and UNC home folders) */
+    const norm=t=>t.replace(BSL_SPELL,'\\').replace(SLASH_SPELL,'/').replace(/\\+(?=[_*])/g,'').replace(/\*/g,''), words=t=>plain(norm(t)).match(/[\p{L}\p{N}]+/gu)||[];
     const covered=(a,b)=>{const w=new Set(words(b));return words(a).every(x=>w.has(x));};
     const twoHomes=(t,f)=>{const a0=f(t),a=a0?home(a0):'';if(!a||!mask.home)return a;const n=norm(t),h=home(n);if(h===n)return a;if(!h)return '';const b0=f(h),b=b0?home(b0):'';return b&&covered(a,b)?a:'';};
     /* control codes out: as escapes, unless read the other way they leave a token, which must then be masked in that reading */
