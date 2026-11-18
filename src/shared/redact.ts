@@ -678,7 +678,7 @@ function cutEnd(s: string, end: number): number {
   for (let i = q; i > 0; i--) {
     const c = s[i - 1];
     if (c === ':' || c === '=') return end;
-    if (CUT_RUN_CHAR.test(c) || (i > 1 && /[ \t\r\n]/.test(c) && /[\\^\r]/.test(s[i - 2]))) continue;
+    if (shellRunChar(s, i - 1)) continue;
     break;
   }
   for (let i = q; i < stop; i++) if (s[i] === ':' || s[i] === '=') return end;
@@ -688,6 +688,15 @@ function cutEnd(s: string, end: number): number {
 const CUT_SAFE = /[^\\`^\r{}0-9A-Fa-fu]/;
 /** The characters a shell run can hold outside a blank, a tab or a line break. */
 const CUT_RUN_CHAR = /[A-Za-z0-9_\-.~+/=:@%\\`^*{}[\]()#!|<>]/;
+/**
+ * Whether `s[i]` can be part of a shell run (`ESC_RUN_SHELL`), read over a wider set of characters than the run, so never less: a character of
+ * `CUT_RUN_CHAR`, or a blank, a tab or a line break right after a backslash, a caret or a CR (an escaped blank, a line continuation). Shared by
+ * `cutEnd` and the home guard's window edges (`guardEdge`, spec 012 FR-185, issue #1845).
+ */
+function shellRunChar(s: string, i: number): boolean {
+  const c = s[i];
+  return CUT_RUN_CHAR.test(c) || (i > 0 && /[ \t\r\n]/.test(c) && /[\\^\r]/.test(s[i - 1]));
+}
 
 /** Env snapshots made by the masking helpers: their secret list is computed once, so a 100 000-token command does not rescan the env per token. */
 const SNAPSHOTS = new WeakMap<Env, Array<[string, string]>>();
@@ -2130,12 +2139,33 @@ let homeGuardChars = 0;
 /** Test only: how many times `maskHomePaths` read a text with `redact` for FR-185's guard (only when a new spelling matched), and how many characters. */
 export const _homeGuardReadsForTest = (): number => homeGuardReads;
 export const _homeGuardCharsForTest = (): number => homeGuardChars;
+let guardEdgeScan = 0;
+/** Test only: characters `guardEdge` stepped over moving the guard's window edges out of token runs (issue #1845). */
+export const _guardEdgeScanForTest = (): number => guardEdgeScan;
 /** Characters `redact` reads on each side of a new home spelling (review of PR 1832, round 2: a long helper output with one spelling costs one window, not the whole text). */
 const HOME_GUARD_WINDOW = 2048;
 export const HOME_GUARD_WINDOW_FOR_TEST = HOME_GUARD_WINDOW;
 /**
+ * Spec 012 FR-185 (issue #1845): a window edge at `e` that falls between two characters of one token run (`shellRunChar`) moves out to that run's end
+ * (`dir` -1: the run's start, 1: its end), so `redact` reads the run whole there and never hides less than in the whole text because a name or a
+ * token's head was cut off. Capped at one more `HOME_GUARD_WINDOW`: a token is far shorter, so a run that crosses the edge is read whole unless it is
+ * itself longer than that, and one spelling costs at most two windows on each side (a longer run is read up to the cap, as before the move).
+ */
+function guardEdge(s: string, e: number, dir: -1 | 1): number {
+  if (e <= 0 || e >= s.length || !shellRunChar(s, e - 1) || !shellRunChar(s, e)) return e;
+  if (dir < 0) {
+    const stop = Math.max(0, e - HOME_GUARD_WINDOW);
+    while (e > stop && shellRunChar(s, e - 1)) { e--; guardEdgeScan++; }
+  } else {
+    const stop = Math.min(s.length, e + HOME_GUARD_WINDOW);
+    while (e < stop && shellRunChar(s, e)) { e++; guardEdgeScan++; }
+  }
+  return e;
+}
+/**
  * `re`'s matches become `~`, except a match that overlaps a stretch `redact` hides (spec 012 FR-185, review of PR 1832 F1). `redact` reads a window of
- * `HOME_GUARD_WINDOW` characters on each side of the matches (overlapping windows merged, so the text is read at most about once), only when `re` matches.
+ * `HOME_GUARD_WINDOW` characters on each side of the matches, each edge moved out of a token run (`guardEdge`), overlapping windows merged (so the text is
+ * read at most about once), only when `re` matches.
  */
 function homeGuarded(s: string, re: RegExp): string {
   re.lastIndex = 0;
@@ -2147,11 +2177,26 @@ function homeGuarded(s: string, re: RegExp): string {
     if (m[0] === '') re.lastIndex++;
   }
   const kept = new Set<number>();
+  // issue #1845: each window's edges moved out of a token run (`guardEdge`, monotone in the edge, so merging after the move keeps the order). An edge is
+  // moved only where the windows before the move do not already overlap (their matches are more than two windows apart), so each character is scanned
+  // a bounded number of times and a text dense with spellings stays linear
+  const lo = (k: number): number => guardEdge(s, Math.max(0, ms[k][0] - HOME_GUARD_WINDOW), -1);
+  const rawHi = (k: number): number => Math.min(s.length, ms[k][1] + HOME_GUARD_WINDOW);
+  let nextLo: number | undefined;
   for (let i = 0; i < ms.length; ) {
-    const a = Math.max(0, ms[i][0] - HOME_GUARD_WINDOW);
-    let b = Math.min(s.length, ms[i][1] + HOME_GUARD_WINDOW);
+    const a = nextLo ?? lo(i);
+    nextLo = undefined;
     let j = i;
-    while (j + 1 < ms.length && ms[j + 1][0] - HOME_GUARD_WINDOW <= b) { j++; b = Math.min(s.length, ms[j][1] + HOME_GUARD_WINDOW); }
+    let b: number | undefined;
+    while (j + 1 < ms.length) {
+      if (ms[j + 1][0] - HOME_GUARD_WINDOW > rawHi(j)) {
+        const e = guardEdge(s, rawHi(j), 1);
+        const l = lo(j + 1);
+        if (l > e) { b = e; nextLo = l; break; }
+      }
+      j++;
+    }
+    b ??= guardEdge(s, rawHi(j), 1);
     homeGuardReads++;
     homeGuardChars += b - a;
     const w = s.slice(a, b);
