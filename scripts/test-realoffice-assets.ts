@@ -487,6 +487,22 @@ if (worldIds.includes('retro')) {
 }
 
 {
+  const kw = require(path.join(ROOT, 'scripts', 'kids-worlds.js')) as { kidsWorlds: () => string[]; pickKidsWorld: (v: string | undefined, m?: string) => string }; // eslint-disable-line @typescript-eslint/no-var-requires
+  const kidWorlds = kw.kidsWorlds();
+  assert.ok(kidWorlds.includes('photo') && kidWorlds.includes('cave'), 'the worlds with kids (world.json has `kids`) include photo and cave: ' + kidWorlds.join(', '));
+  /* check-097-kids.js KIDS_WORLD (outside the Pillow branch, #1867 review: the fail-loud validation needs no Pillow and runs on every machine): an unknown name fails loudly with the valid names; KIDS_MUTANT=worldfallback (the old silent fallback to photo) must be caught here */
+  const kidsWorldProbe = (value: string | undefined, mutant?: string): void => {
+    assert.strictEqual(kw.pickKidsWorld(undefined, mutant), 'photo', 'KIDS_WORLD unset checks photo');
+    for (const wid of kidWorlds) assert.strictEqual(kw.pickKidsWorld(wid, mutant), wid, `KIDS_WORLD=${wid} checks ${wid}`);
+    let msg = '';
+    try { kw.pickKidsWorld(value, mutant); } catch (e) { msg = (e as Error).message; }
+    assert.ok(msg.includes('is not a world with kids') && kidWorlds.every((w) => msg.includes(w)), `KIDS_WORLD=${value} must fail loudly naming the valid worlds, got: ${msg || 'no error (silent fallback)'}`);
+    const r = spawnSync(process.execPath, [path.join(ROOT, 'scripts', 'check-097-kids.js')], { encoding: 'utf8', env: { ...process.env, KIDS_WORLD: value, KIDS_MUTANT: mutant || '' } });
+    assert.strictEqual(r.status, 1, `check-097-kids.js with KIDS_WORLD=${value} must exit 1 (exit ${r.status})`);
+    assert.ok(/is not a world with kids/.test(r.stderr), 'check-097-kids.js prints the valid names on a wrong KIDS_WORLD');
+  };
+  for (const bad of ['Cave', 'arcade', 'caves', ' photo']) kidsWorldProbe(bad);
+  assert.throws(() => kidsWorldProbe('Cave', 'worldfallback'), /KIDS_WORLD=Cave must fail loudly naming the valid worlds, got: no error \(silent fallback\)/, 'red: the silent fallback to photo is caught at its own assert');
   /* spec 097 FR-371 (issue #1641 review): no kid picture is clipped by a side border. A tight crop of a whole cube or stool may rest on the
    * edge (the most in the shipped 42 is 47 rows of 220, a stool's flat side), a clipped figure runs far more: the count is of rows with
    * alpha > 128 in the first and the last column (scripts/kid-edge-rows.py decodes the WebP; plain Node cannot): needs python3 with Pillow. */
@@ -495,28 +511,12 @@ if (worldIds.includes('retro')) {
   if (have.error || have.status !== 0) console.log('kid edge check skipped: needs python3 with Pillow (not on this machine)');
   else {
     const run = (args: string[]) => { const r = spawnSync('python3', ['-I', path.join(ROOT, 'scripts', 'kid-edge-rows.py'), ...args], { encoding: 'utf8' }); assert.strictEqual(r.status, 0, 'kid-edge-rows.py: ' + r.stderr); return r.stdout.trim().split('\n').map((l) => l.split(' ')); };
-    const kw = require(path.join(ROOT, 'scripts', 'kids-worlds.js')) as { kidsWorlds: () => string[]; pickKidsWorld: (v: string | undefined, m?: string) => string }; // eslint-disable-line @typescript-eslint/no-var-requires
-    const kidWorlds = kw.kidsWorlds();
-    assert.ok(kidWorlds.includes('photo') && kidWorlds.includes('cave'), 'the worlds with kids (world.json has `kids`) include photo and cave: ' + kidWorlds.join(', '));
     for (const wid of kidWorlds) {
       const dir = path.join(RO, 'worlds', wid), names = fs.readdirSync(dir).filter((f) => /^kid\d-\w+\.webp$/.test(f)).sort();
       assert.strictEqual(names.length, 42, `the edge check sees all 42 kid pictures of ${wid}`);
       const bad = run(names.map((n) => path.join(dir, n))).filter(([, l, r]) => Number(l) > MAX_EDGE_ROWS || Number(r) > MAX_EDGE_ROWS).map(([n, l, r]) => `${n}: ${l} rows on the left edge, ${r} on the right`);
       assert.deepStrictEqual(bad, [], `${wid}: kid pictures clipped by a side border (more than ${MAX_EDGE_ROWS} opaque rows on an edge): re-cut with a margin`);
     }
-    /* check-097-kids.js KIDS_WORLD: an unknown name fails loudly with the valid names; KIDS_MUTANT=worldfallback (the old silent fallback to photo) must be caught here */
-    const kidsWorldProbe = (value: string | undefined, mutant?: string): void => {
-      assert.strictEqual(kw.pickKidsWorld(undefined, mutant), 'photo', 'KIDS_WORLD unset checks photo');
-      for (const wid of kidWorlds) assert.strictEqual(kw.pickKidsWorld(wid, mutant), wid, `KIDS_WORLD=${wid} checks ${wid}`);
-      let msg = '';
-      try { kw.pickKidsWorld(value, mutant); } catch (e) { msg = (e as Error).message; }
-      assert.ok(msg.includes('is not a world with kids') && kidWorlds.every((w) => msg.includes(w)), `KIDS_WORLD=${value} must fail loudly naming the valid worlds, got: ${msg || 'no error (silent fallback)'}`);
-      const r = spawnSync(process.execPath, [path.join(ROOT, 'scripts', 'check-097-kids.js')], { encoding: 'utf8', env: { ...process.env, KIDS_WORLD: value, KIDS_MUTANT: mutant || '' } });
-      assert.strictEqual(r.status, 1, `check-097-kids.js with KIDS_WORLD=${value} must exit 1 (exit ${r.status})`);
-      assert.ok(/is not a world with kids/.test(r.stderr), 'check-097-kids.js prints the valid names on a wrong KIDS_WORLD');
-    };
-    for (const bad of ['Cave', 'arcade', 'caves', ' photo']) kidsWorldProbe(bad);
-    assert.throws(() => kidsWorldProbe('Cave', 'worldfallback'), /KIDS_WORLD=Cave must fail loudly naming the valid worlds, got: no error \(silent fallback\)/, 'red: the silent fallback to photo is caught at its own assert');
     const red = run(['--red'])[0];
     assert.ok(Number(red[1]) > MAX_EDGE_ROWS && Number(red[2]) === 0, 'red: a picture cut flat on its left edge (90 opaque rows) is over the limit');
   }

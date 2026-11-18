@@ -10,6 +10,8 @@
  *     the head row shows an adult at 15 agents (each must fail)
  *   KIDS_MUTANT=nofocus|noring   the focus precheck reads false / the "+K" ring is removed by a style: must fail at `the window does not have focus` /
  *     `"+K" shows a 2 px focus ring` (spec 097 T349: the ring is :focus-visible, which never matches in a page without the OS focus)
+ *   KIDS_IDLE_DELAY=<ms>   test only (#1867 flake): the cave fixture's idle arrives that late, as under load; with KIDS_MUTANT=nowait (the wait for the drawn idle removed) KIDS_WORLD=cave
+ *     KIDS_COUNTS=4 must fail at `4 agents 1440x900: the first desk has kids`
  *
  *   Three source mutants (edit, `npm run build`, run this driver, undo; each must fail at its own assertion; review of #1694):
  *     hashelp:    realoffice.js, the plate class `(!d.strip && !d.kids && a.helpers ...` -> `(!d.strip && a.helpers ...`   -> "its plate has no has-help class"
@@ -37,6 +39,7 @@ const assert = require('assert');
 const { helpers, jsLiteral } = require('./driver-helpers');
 
 const MUTANT = process.env.KIDS_MUTANT || '';
+const IDLE_DELAY = Math.max(0, Math.min(5000, Number(process.env.KIDS_IDLE_DELAY) || 0)); /* test only: the cave fixture's idle arrives this many ms late (the #1867 flake made certain) */
 let WORLD;
 try { WORLD = require('./kids-worlds').pickKidsWorld(process.env.KIDS_WORLD, MUTANT); } catch (e) { console.error(e.message); process.exit(1); } /* a wrong name fails loudly, never the Photo office */
 const WQ = WORLD !== 'photo' ? { worldflags: WORLD, world: WORLD } : {}; /* the cave is behind its flag (spec 102 FR-205) */
@@ -65,8 +68,13 @@ module.exports = async (ctx) => {
     if (arr === 'circle') assert.strictEqual(await js(`document.querySelectorAll('#stage .ro-kids').length`), 0, `${tag}: the circle draws no kids (T175)`);
     await js(`window.DurbarRealOfficeWorlds.cave.arrangement='rows';0`);
     const id = await js(`window.__durbarSimUi.realLayout().zones[0].desks[0].id`);
-    await emit({ sessionId: id, type: 'status', status: 'error', intent: 'x' }); await emit({ sessionId: id, type: 'status', status: 'idle', intent: 'x' });
+    await emit({ sessionId: id, type: 'status', status: 'error', intent: 'x' });
+    if (IDLE_DELAY) await js(`setTimeout(()=>window.__durbarSimEmit({timestamp:Date.now(),sessionId:${jsLiteral(id)},type:'status',status:'idle',intent:'x'}),${IDLE_DELAY});0`); /* the injected delay: the idle drawn late, as under load */
+    else await emit({ sessionId: id, type: 'status', status: 'idle', intent: 'x' });
     await must(`document.querySelector('#stage .ro').dataset.arrangement==='rows'`, `${tag}: the rows fixture draws rows`);
+    /* #1867 flake: the rows can be drawn while the desk is still in error (the idle not drawn yet); an error desk goes first, so the caller's `first` (zones[0].desks[0]) came from that
+       stale layout: at 4 agents 1440x900 a desk with its person at the desk has no kid room. So wait (bounded, polled) until the drawn layout has the idle, not a longer sleep */
+    if (MUTANT !== 'nowait') await must(`${SIM}.settleNow()&&(()=>{const d=${SIM}.realLayout().zones.flatMap(z=>z.desks).find(x=>x.id===${jsLiteral(id)});return !!d&&d.state!=='error'})()`, `${tag}: the rows fixture drew the idle`);
     await must(PICS, `${tag}: the pictures in rows`);
   };
   const hit = (a, b, t = 0.5) => a.x + t < b.x + b.w && b.x + t < a.x + a.w && a.y + t < b.y + b.h && b.y + t < a.y + a.h;
