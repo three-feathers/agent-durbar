@@ -192,7 +192,7 @@ The new fields go into `worldpack.ts` (T171's list) when #955 lands; until then 
 
 - [x] T213 Marquee, glow, bubble and flourish per FR-260's table, from `lightFor`. Test: `test:realoffice-layout` for the pure table over every state and flag, with `lampWords` unchanged; `shots-102-arcade`: reduced motion, Serious mode and forced colours: `document.getAnimations()` empty, states still differ, words remain; error's glow inside its own slot [FR-260].
 - [x] T214 Shared beat and 4 people phases, `steps()`, `opacity` and `transform` only. Test: `test:realoffice-assets` on `@keyframes`; `shots-102-arcade`: all flashes report one phase from `getAnimations()`; flashes under 3 a second; hidden window: 0 frames; a mutant with its own delay per marquee fails [FR-260, FR-261, SC-024].
-- [ ] T263 What T215 leaves: `read:` a recording of the dissolve, judged as #979 was [FR-262].
+- [ ] T263 (needs the owner's look, issue #1878) What T215 leaves: `read:` a recording of the dissolve, judged as #979 was [FR-262].
 - [x] T215 (the rest is T263) **Measure first.** Pixel dissolve by static masks; a plain stepped fade beside it, frames and idle CPU, then the one that holds. Test: `shots-102-arcade`: only `opacity` and `transform` animate; no node added by a status update; no ghost, one body at a time; none under reduced motion; `read:` a recording, as #979 was judged [FR-262].
 - [ ] T264 What T216 leaves: the `real:` measure, by T231 [FR-261, SC-024].
 - [x] T216 (a scratch sampler, macOS only; the rest is T264) **Measure first.** `check-perf --record` for `retro`, 4 mixes, day and night, against Photo office on the same machine, plus chase on and off for Q2. Test: `sim:` the record (never an assert, 097 FR-187); `real:` by T231 [FR-261, SC-024].
@@ -223,7 +223,7 @@ The new fields go into `worldpack.ts` (T171's list) when #955 lands; until then 
 
 ### RA8: sets (one PR); needs T207
 
-- [ ] T224 FR-204 and `checkSet` follow 097 FR-191..FR-193; optional `face-*`; `-half` not needed with `pixelArt`. Written into 098 FR-030 by T232. Test: `test:world-packs` or, until #955, `test:realoffice-assets`: Office people and Prehistoric still `full`; a required frame missing refused [FR-259].
+- [ ] T224 (blocked on T100, issue #1877) FR-204 and `checkSet` follow 097 FR-191..FR-193; optional `face-*`; `-half` not needed with `pixelArt`. Written into 098 FR-030 by T232. Test: `test:world-packs` or, until #955, `test:realoffice-assets`: Office people and Prehistoric still `full`; a required frame missing refused [FR-259].
 - [ ] T225 (split 2026-11-11 into T290..T296, owner decision; done when they are) Interoperation: Office people and Prehistoric in the arcade (fallback, report line), Retro pixel people in Photo office. Test: `shots-102-arcade` at 15, both sizes; `test:characters` through `peopleFor`; no other pack fetched [FR-200, FR-259, SC-016].
 
 ### RA9: coverage (one PR, no behaviour change)
