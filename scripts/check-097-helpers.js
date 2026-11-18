@@ -183,7 +183,7 @@ module.exports = async (ctx) => {
         const pic = await picture(t.id, d.id);
         assert.ok(!pic.err, `${tag}: picture facts: ${pic.err}`);
         assert.ok(pic.got && pic.got === pic.want && pic.got !== pic.parent, `${tag}: ${t.id}'s picture is ${pic.got}, helperHead says ${pic.want}, the parent is ${pic.parent}`);
-        if (world === 'photo') assert.ok(pic.kid && /^kid\d-/.test(pic.got), `${tag}: ${t.id}'s head is a kid's face in the Photo office (FR-370), not an adult (${pic.got})`);
+        if (world === 'photo' || world === 'cave') assert.ok(pic.kid && /^kid\d-/.test(pic.got), `${tag}: ${t.id}'s head is a kid's face in the Photo office and the cave (FR-370; the cave's kids: spec 102 T326), not an adult (${pic.got})`);
         assert.ok(Math.abs(pic.w - pic.ew) < 0.2 && Math.abs(pic.left - pic.el) < 0.2 && Math.abs(pic.top - pic.et) < 0.2 && pic.nat > 0, `${tag}: ${t.id}'s crop ${JSON.stringify([pic.w, pic.left, pic.top])} is headCrop's ${JSON.stringify([pic.ew, pic.el, pic.et])}`);
         pictures++;
         assert.strictEqual(t.glyph, false, `${tag}: ${t.id} has its picture, no placeholder`);

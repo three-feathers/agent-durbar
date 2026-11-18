@@ -245,6 +245,7 @@ for (const wid of worldIds) {
   assert.deepStrictEqual(real, [], `${wid} + ${wj.defaultSet} pass: ` + real.slice(0, 10).join('; '));
   const pending = [...sections(mdAll)].filter(([, x]) => /^pending/.test(x['likeness-check'] || '')).map(([n]) => n);
   assert.deepStrictEqual(pending, [], `${wid}: every person has its likeness check on record (FR-068)`);
+  if (wid === 'cave') assert.strictEqual([...w.files.keys()].filter((n) => /^kid\d-/.test(n)).length, 42, 'the cave ships 6 kids x 7 states (spec 102 T326)');
   packs++; biggest = Math.max(biggest, [...all.values()].reduce((n, b) => n + b.length, 0));
   if (wid === 'photo') { for (const [k, v] of all) files.set(k, v); md = mdAll; pj = merged; META = JSON.parse(merged); }
 }
