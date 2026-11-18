@@ -1,1 +1,0 @@
-- Internal: the UI suite's "a missing build stops the runner" test no longer fails on a busy machine: it checks that nothing was fetched or started instead of timing it (issue #1850).

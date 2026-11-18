@@ -1,1 +1,0 @@
-- Internal: the redaction growth tests read a baseline above one Windows timer step (a failed try times it again as 16 runs and takes the mean), so a linear redactor no longer fails there on a baseline of one tick; the self-test of a quadratic worker uses a fake clock and needs no real timing. No change for users.

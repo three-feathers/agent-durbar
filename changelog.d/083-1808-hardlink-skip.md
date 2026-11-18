@@ -1,1 +1,0 @@
-- **Hard-link check no longer skips on a refused link** (spec 083, issue #1808): `test:cappedread` skips its hard-link case only on Windows outside CI, and a mutant check proves it; a check change only, no change for users.
