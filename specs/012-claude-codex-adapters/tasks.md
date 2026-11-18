@@ -268,7 +268,7 @@ T133 verification (2026-10-25, review on #698): typecheck, build and the offline
 
 ## Changes 2026-11-18 (masking batch: a secret name glued to a token's end, the monitor's home folder: issue #1320)
 
-- [ ] T175 (2026-11-18, issue #1320) FR-187: `MASK_THEN_VALUE` in `maskShapes` and `_maskSourcesForTest` (`src/shared/redact.ts`); `twoHomes` in `block` and `strict` (`src/renderer/liveact.js`); the `#1320` block in `scripts/test-redact.ts`, the `#1320 monitor` block in `scripts/test-liveact.ts`, the `maskEq*` growth cases in `scripts/test-redact-growth.ts`; `docs/secret-coverage` line in `specs/012-claude-codex-adapters/secret-coverage.md`; mutants in the spec line.
+- [x] T175 (2026-11-18, issue #1320) FR-187: `MASK_THEN_VALUE` in `maskShapes` and `_maskSourcesForTest` (`src/shared/redact.ts`); `twoHomes` in `block` and `strict` (`src/renderer/liveact.js`); the `#1320` block in `scripts/test-redact.ts`, the `#1320 monitor` block in `scripts/test-liveact.ts`, the `maskEq*` growth cases in `scripts/test-redact-growth.ts`; the line in `specs/012-claude-codex-adapters/secret-coverage.md`; mutants in the spec line.
 
 ## Changes 2026-11-17 (more home folder spellings and GitHub token forms: issue #1329)
 
