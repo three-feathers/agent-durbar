@@ -68,7 +68,7 @@ try {
   assert.ok(!check(copy({ md: (t) => t.replace('missing (owner decision, 2026-11-08): superseded by worlds', 'missing (owner decision, #1148)') })).some((m) => /marker|Real office cell/.test(m)), 'an issue marker is accepted');
   // a works note with a limiting word is not parity
   for (const w of ['works pose, dots and lights only', 'works, partly', 'works, partial', 'works, partially drawn', 'works, no pencil', 'works, not the lounge', 'works, missing drag', 'works without drag', 'works except drag'])
-    fails({ md: (t) => t.replace('works pose, dots and lights only; heavy, monster and siren missing (#1171)', w) }, new RegExp('Real office cell "' + reEsc(w) + '" is not plain works'));
+    fails({ md: (t) => t.replace('(not motion, spec 052 FR-069) | works | works |', '(not motion, spec 052 FR-069) | works | ' + w + ' |') }, new RegExp('Real office cell "' + reEsc(w) + '" is not plain works'));
   // the offered worlds cannot be read
   fails({ crew: () => 'throw new Error("no worlds here");' }, /cannot read the offered worlds from src\/renderer\/crew.js: no worlds here/);
   process.exitCode = 0;
