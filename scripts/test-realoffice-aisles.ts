@@ -1132,7 +1132,7 @@ for (const world of ['photo', 'cave']) {
       if (d === 1 || d === 2) assert.strictEqual(JSON.stringify(L), JSON.stringify(L1), `${label}: byte-identical to the layout without a ratio`);
       const p = problems(L, W, n, wholeDev(g, d) ? d : 1); assert.deepStrictEqual(p, [], `${label}: ${p.join('; ')}`);
       if (wholeDev(g, d) && d !== 1 && d !== 2) for (const dk of L.zones.flatMap((z) => z.desks)) { /* #1884 review: the person and the face are centred in whole device px too */
-        for (const [nm, v] of [['person x', dk.person?.x], ['face x', dk.face?.x]] as [string, number | undefined][]) if (v !== undefined) assert.ok(wholeDev(v, d), `${label}: ${nm} ${v} of ${dk.id} on a whole device px`);
+        for (const [nm, v] of [['person x', dk.person?.x], ['person vis x', dk.person?.vis?.x], ['face x', dk.face?.x]] as [string, number | undefined][]) if (v !== undefined) assert.ok(wholeDev(v, d), `${label}: ${nm} ${v} of ${dk.id} on a whole device px`);
       }
       cases++;
     }
@@ -1142,6 +1142,26 @@ for (const world of ['photo', 'cave']) {
   /* 4 or fewer agents: the low-lobby loop gives the plan the ratio (dropping it gives g 2 here); `pf` is the one place that does it for the first, the loop and the low plan */
   assert.ok(Math.abs((aislesLayout(model(4, 4), { w: 900, h: 580 }, { ...META, dpr: 1.25 }, SIGNS(4)).g as number) - 2.4) < 1e-9, 'ratio 1.25, 4 agents, 900x580: g 2.4 (3 device px)');
   console.log('arcade floor on whole device pixels at 1, 1.25, 1.5, 2 (the uneven counts are pinned as known gaps)');
+}
+
+/* spec 102 delta 2026-11-18 (second entry, T364, issue #1829; owner "1", 2026-11-18 19:13 UTC): the arcade's 1280x800 limits are designed, and their numbers are pinned here. The properties, not a run time:
+   a one-row helper strip (097 FR-338) needs a 1248 px floor at least 786 px high at 12 and 15 agents (the app's room is ROOM.h800 = 697; the 748 of the FR-308 FLOORS is the layout hash's own, same result), and the 128 px glass
+   (glass.h; glass.w is already 168) needs 1276 px across with 3 agents and 1696 with 4 (the app gives 1248). The strip is NOT monotonic in height (a layout quirk, by design: from 885 px the plan has 4 rows, the strip would split a folder of 4 or
+   fewer and is dropped, 097/102 delta 2026-11-12, issue 1590; it is back from 1036), so only the range up to 884 px is pinned, which holds every floor the app has (797 px at most). */
+{
+  const withHelp = (n: number): RealModel => { const m = model(n, 4); for (const f of m.folders) for (const a of f.agents) a.helpers = 2; return m; };
+  for (const n of [12, 15]) {
+    const at = (h: number): Layout => aislesLayout(withHelp(n), { w: 1248, h }, META, SIGNS(4));
+    for (const h of [ROOM.h800, 748, 785]) { assert.strictEqual(at(h).helpRows, 0, `${n} agents at 1248x${h}: no helper strip, the plate keeps +N and dots`); assert.ok(!at(h).scroll, `${n} agents at 1248x${h}: the hall does not scroll to give heads`); }
+    for (const h of [786, 800, 884]) assert.strictEqual(at(h).helpRows, 1, `${n} agents at 1248x${h}: a strip shows (from 786 px; the app's room is ${ROOM.h800}, 89 short)`);
+  }
+  const glass = (n: number, w: number, h: number): number => aislesLayout(model(n, 1), { w, h }, META, SIGNS(1)).zones[0].desks[0].glass.h;
+  for (const h of [ROOM.h800, 748]) {
+    for (const n of [3, 4]) assert.ok(glass(n, 1248, h) < 128, `${n} agents at 1248x${h}: no 128 px glass (a designed limit)`);
+    assert.ok(glass(3, 1275, h) < 128 && glass(3, 1276, h) >= 128, `3 agents (1248x${h} floor): the glass is 128 px or more from 1276 px across (28 short)`);
+    assert.ok(glass(4, 1695, h) < 128 && glass(4, 1696, h) >= 128, `4 agents (1248x${h} floor): the glass is 128 px or more from 1696 px across (448 short)`);
+  }
+  console.log('arcade 1280x800 limits pinned: strip from 786 px (697 given), glass.h from 1276 (3 agents) and 1696 (4) px across (1248 given)');
 }
 
 console.log(`aisles tests passed (${cases} layouts)`);
