@@ -6,7 +6,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { realLayout, layoutOrFlat, signMin, signWidth, sortDesks, storeyRuns, storeyTagW, STOREY_GAP, STOREY_U_LOSS, type RealFloor, type RealMeta, type RealModel, type RealAgent, type RealState, type Rect, type Layout, type DeskBox } from '../src/shared/realoffice-layout';
 import { screenFit } from '../src/shared/realoffice-layout';
-import { aisleStatus, aislesLayout, AISLES_DEPTH, placeResting, layoutFor, aisleTabOrder, aisleFace, FACE_FLOOR, AISLE_SIGN_MIN_W, AISLE_PLATE_H, ARRANGEMENTS } from '../src/shared/realoffice-arrangements';
+import { deviceScales, aisleStatus, aislesLayout, AISLES_DEPTH, placeResting, layoutFor, aisleTabOrder, aisleFace, FACE_FLOOR, AISLE_SIGN_MIN_W, AISLE_PLATE_H, ARRANGEMENTS } from '../src/shared/realoffice-arrangements';
 
 process.exitCode = 1;
 const ROOT = (() => { let d = __dirname; while (!fs.existsSync(path.join(d, 'package.json'))) d = path.dirname(d); return d; })();
@@ -99,12 +99,12 @@ function cuts(ds: DeskBox[]): string[] {
 }
 
 /** FR-229, FR-255, FR-256: every rule the renderer will rely on, as sentences */
-function problems(L: Layout, W: number, k: number): string[] {
+function problems(L: Layout, W: number, k: number, dpr = 1): string[] {
   const out: string[] = [], g = L.g as number;
   const floor: Rect = { x: 0, y: L.lobbyH, w: W, h: L.height - L.lobbyH };
   const ds = L.zones.flatMap((z) => z.desks);
   if (ds.length !== k) out.push(`${ds.length} desks for ${k} agents`);
-  if (!Number.isInteger(g) || g < 1) out.push(`g ${g} is not an integer`);
+  if (!(Math.abs(g * dpr - Math.round(g * dpr)) < 1e-6) || g < 1) out.push(`g ${g} is not a whole number of device px at ratio ${dpr}`); /* an integer at a whole ratio (FR-255); a whole device px at 1.25 and 1.5 (T204) */
   L.zones.forEach((z, i) => {
     if (!inside(z.box, floor)) out.push(`zone ${i} ${JSON.stringify(z.box)} leaves the floor ${JSON.stringify(floor)}`);
     if (!inside(z.sign, floor, 1)) out.push(`sign of ${z.id} leaves the floor`);
@@ -119,7 +119,7 @@ function problems(L: Layout, W: number, k: number): string[] {
       if (!r) { out.push(`${d.id} has no ${nm}`); continue; }
       if (!inside(r, floor, 1)) out.push(`${nm} of ${d.id} ${JSON.stringify(r)} leaves the floor`);
     }
-    for (const [nm, v] of [['cabinet x', d.desk.x], ['cabinet y', d.desk.y], ['cabinet w', d.desk.w], ['cabinet h', d.desk.h]] as [string, number][]) if (v % g) out.push(`${nm} ${v} of ${d.id} is off the grid g=${g}`);
+    for (const [nm, v] of [['cabinet x', d.desk.x], ['cabinet y', d.desk.y], ['cabinet w', d.desk.w], ['cabinet h', d.desk.h]] as [string, number][]) if (Math.abs(v / g - Math.round(v / g)) > 1e-6) out.push(`${nm} ${v} of ${d.id} is off the grid g=${g}`);
     if (!inside(d.face as Rect, d.stand as Rect, 0.5)) out.push(`face of ${d.id} leaves its person`);
     if ((d.face as Rect).w < FACE_FLOOR && k >= 9) out.push(`face of ${d.id} is ${(d.face as Rect).w}px`);
   }
@@ -1098,6 +1098,32 @@ for (const world of ['photo', 'cave']) {
     assert.ok(lounged.lounge && lounged.zones.length === 0, `${label}: a floor with only a lounge seat is not planned as the empty floor`);
   }
   console.log('arcade empty floor plan: three cabinets, both floors');
+}
+
+/* spec 102 FR-255 (T204, #1876): the floor's scale `g` on whole DEVICE pixels at the ratios 1, 1.25, 1.5 and 2, both sizes. Measured in the simulator
+   (scripts/measure-102-dpr.js, Linux xvfb): at 15 agents g = 2 CSS px is 2.5 device px per art pixel at 1.25 (13 of 26 pictures uneven, 2-3-2-3) and whole at 1, 1.5 (3) and 2 (4).
+   The rule never shrinks g: 2.4 (3 device px) does not fit at 15 agents and 1.6 would make the cabinets 20 % smaller, so 15 agents at 1.25 stay at g = 2 (`[KNOWN GAP]`, owner). */
+{
+  const wholeDev = (v: number, d: number): boolean => Math.abs(v * d - Math.round(v * d)) < 1e-6;
+  assert.deepStrictEqual(deviceScales([3, 2], 1), [3, 2], 'ratio 1: the list is unchanged');
+  assert.deepStrictEqual(deviceScales([3, 2], 2), [3, 2], 'ratio 2: the list is unchanged');
+  assert.deepStrictEqual(deviceScales([3, 2], 1.5).map((g) => +(g * 1.5).toFixed(6)), [5, 4.5, 3], 'ratio 1.5: 3 (4.5 device px) is tried at 5 first, then as it was; 2 (3 device px) stays');
+  assert.deepStrictEqual(deviceScales([2], 1.25).map((g) => +(g * 1.25).toFixed(6)), [3, 2.5], 'ratio 1.25: 2 (2.5 device px) is tried at 3 first, then as it was');
+  for (const d of [1, 1.25, 1.5, 2]) for (const [i, [W, H]] of SIZES.entries()) for (const n of [8, 15]) {
+    const mn = model(n, 4), L = aislesLayout(mn, { w: W, h: H }, { ...META, dpr: d }, SIGNS(4)), L1 = aislesLayout(mn, { w: W, h: H }, META, SIGNS(4));
+    const label = `ratio ${d}, ${n} agents, ${NAMES[i]}`, g = L.g as number;
+    assert.ok(!L.scroll, `${label}: no scroll`);
+    assert.ok((L.faceH as number) >= 24, `${label}: face ${L.faceH} px, at least 24`);
+    assert.ok(g >= (L1.g as number) - 1e-9, `${label}: g ${g} never below ${L1.g}, the layout without a ratio`);
+    if (n === 15 && d === 1.25) assert.strictEqual(g, 2, `${label}: [KNOWN GAP] g 2 stays (2.4 does not fit; 1.6 shrinks the cabinets 20 %)`);
+    else assert.ok(wholeDev(g, d) || (n !== 15 && g === L1.g), `${label}: g ${g} is a whole number of device px (below 15 agents: or what it was, when the next whole scale up does not fit)`);
+    if (d === 1 || d === 2) assert.strictEqual(JSON.stringify(L), JSON.stringify(L1), `${label}: byte-identical to the layout without a ratio`);
+    const p = problems(L, W, n, wholeDev(g, d) ? d : 1); assert.deepStrictEqual(p, [], `${label}: ${p.join('; ')}`);
+    cases++;
+  }
+  const g8 = (w: number, h: number): number => aislesLayout(model(8, 4), { w, h }, { ...META, dpr: 1.25 }, SIGNS(4)).g as number;
+  assert.ok(Math.abs(g8(1440, ROOM.h900) - 3.2) < 1e-9 && Math.abs(g8(1280, ROOM.h800) - 2.4) < 1e-9, 'ratio 1.25, 8 agents: g 3.2 and 2.4 (4 and 3 device px) where it was 3 and 2 (measured: both fit)');
+  console.log('arcade floor on whole device pixels at 1, 1.25, 1.5, 2 (15 agents at 1.25 stays g = 2, a known gap)');
 }
 
 console.log(`aisles tests passed (${cases} layouts)`);
