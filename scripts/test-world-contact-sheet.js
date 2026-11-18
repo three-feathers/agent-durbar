@@ -49,6 +49,20 @@ assert.ok(problems(S.plan(fake, { width: 1400 }), [...fake, { id: 'd', files: ['
     assert.ok(p.rows[0].items.every((i) => i.y >= sc.y + sc.h + p.labelH), 'SCENE: no picture sits in or on the label of the scene box');
     assert.ok(sc.x >= 0 && sc.x + sc.w <= p.width && sc.y >= p.rows[0].y + p.rows[0].headerH, 'SCENE: inside the sheet and below the header');
   }
+  /* NARROW: below sceneW + 2 * pad (352) the box is dropped, and the run line's list (rows with a box) leaves the world out */
+  const nar = S.plan(withScene, { width: 340 });
+  assert.strictEqual(nar.rows[0].scene, null, 'NARROW: a sheet under 352 px has no scene box');
+  assert.deepStrictEqual(problems(nar, withScene), [], 'NARROW: and still holds every picture');
+  assert.deepStrictEqual(nar.rows.filter((r) => r.scene).map((r) => r.id), [], 'NARROW: no world is listed as having a scene');
+  assert.deepStrictEqual(S.plan(withScene, { width: 352 }).rows.filter((r) => r.scene).map((r) => r.id), ['a'], 'NARROW: at 352 px the scene fits');
+  /* the label is the real one, cut to the box: a long label is measured at its fitted width */
+  {
+    const m = (t, px) => t.length * px * 0.6;
+    const p = S.plan(withScene, { width: 1400 });
+    const heads = { a: { title: 't', line: 'l', scene: 'simulator scene (' + 'x'.repeat(80) + ', 1280x800)' }, b: { title: 't', line: 'l' } };
+    const lab = S.textBoxes(p, heads, m).find((t) => t.id === 'a' && t.what === 'label scene');
+    assert.ok(lab.w <= p.rows[0].scene.w, 'SCENELABEL: the drawn scene label is cut to the scene box');
+  }
   const a = S.plan(fake, { width: 1400 }), b = S.plan(withScene, { width: 1400 });
   assert.ok(b.height > a.height, 'SCENE: the scene makes its row taller');
   assert.ok(S.textBoxes(b, { a: { title: 't', line: 'l' }, b: { title: 't', line: 'l' } }, (t) => t.length * 6).some((t) => t.what === 'label scene'), 'SCENE: the scene has a drawn label');

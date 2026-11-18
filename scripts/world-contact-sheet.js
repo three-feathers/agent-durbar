@@ -66,7 +66,7 @@ function textBoxes(p, heads, measure) {
     out.push({ id: row.id, what: 'heading', x: p.pad, y: row.y, w: measure(t, FONT_PX.title, true), h: FONT_PX.title + 4 });
     const l = fitText(heads[row.id].line, full, (x) => measure(x, FONT_PX.line, false));
     out.push({ id: row.id, what: 'line', x: p.pad, y: row.y + 26, w: measure(l, FONT_PX.line, false), h: FONT_PX.line + 3 });
-    if (row.scene) out.push({ id: row.id, what: 'label scene', x: row.scene.x, y: row.scene.y + row.scene.h + 2, w: measure(heads[row.id].scene || 'simulator scene', FONT_PX.label, false), h: FONT_PX.label + 2 });
+    if (row.scene) { const t = fitText(heads[row.id].scene || 'simulator scene', row.scene.w, (x) => measure(x, FONT_PX.label, false)); out.push({ id: row.id, what: 'label scene', x: row.scene.x, y: row.scene.y + row.scene.h + 2, w: measure(t, FONT_PX.label, false), h: FONT_PX.label + 2 }); }
     for (const it of row.items) {
       const n = fitText(it.name.replace('.webp', ''), it.w, (x) => measure(x, FONT_PX.label, false));
       out.push({ id: row.id, what: 'label ' + it.name, x: it.x, y: it.y + it.h + 2, w: measure(n, FONT_PX.label, false), h: FONT_PX.label + 2 });
@@ -93,7 +93,7 @@ const PAGE = 'const fitText = ' + fitText.toString() + ';\n' + `window.__sheet =
       const w = Math.round(img.naturalWidth * s), h = Math.round(img.naturalHeight * s);
       g.imageSmoothingEnabled = true; g.imageSmoothingQuality = 'high';
       g.drawImage(img, row.scene.x + Math.floor((row.scene.w - w) / 2), row.scene.y + Math.floor((row.scene.h - h) / 2), w, h);
-      g.fillStyle = '#c8c8c8'; g.font = '10px sans-serif'; g.fillText(spec.sceneLabels[row.id], row.scene.x, row.scene.y + row.scene.h + 2);
+      g.fillStyle = '#c8c8c8'; g.font = '10px sans-serif'; g.fillText(fitText(spec.heads[row.id].scene, row.scene.w, (t) => g.measureText(t).width), row.scene.x, row.scene.y + row.scene.h + 2);
     }
     for (const it of row.items) {
       const img = await load(spec.pics[row.id + '/' + it.name]);
@@ -132,18 +132,19 @@ async function main(app, BrowserWindow) {
     const c = w.card;
     heads[w.id] = { title: `${w.id}${c.arrangement ? '  /  ' + c.arrangement : '  /  (no card)'}`, line: [c.monitor, c.mood, c.light ? c.light.join(' and ') + ' K' : ''].filter(Boolean).join('  |  ') };
     if (w.scene) pics[w.id + '/scene'] = 'data:image/png;base64,' + fs.readFileSync(w.scene).toString('base64');
+    if (w.scene) heads[w.id].scene = sceneLabel(w.scene);
     for (const n of w.files) pics[w.id + '/' + n] = 'data:image/webp;base64,' + fs.readFileSync(path.join(w.dir, n)).toString('base64');
   }
   await app.whenReady();
   const win = new BrowserWindow({ show: false, webPreferences: { sandbox: true, contextIsolation: true, backgroundThrottling: false } });
   await win.loadURL('data:text/html;charset=utf-8,<title>sheet</title>');
   await win.webContents.executeJavaScript(PAGE);
-  const url = await win.webContents.executeJavaScript('window.__sheet(' + JSON.stringify({ plan: p, heads, pics, sceneLabels: Object.fromEntries(worlds.filter((w) => w.scene).map((w) => [w.id, sceneLabel(w.scene)])) }) + ')');
+  const url = await win.webContents.executeJavaScript('window.__sheet(' + JSON.stringify({ plan: p, heads, pics }) + ')');
   win.destroy();
   fs.mkdirSync(outDir, { recursive: true });
   const file = path.join(outDir, 'world-contact-sheet.jpg');
   fs.writeFileSync(file, Buffer.from(url.split(',')[1], 'base64'));
-  console.log(`world-contact-sheet: ${worlds.length} worlds (${worlds.map((w) => w.id).join(', ')}; scene for ${worlds.filter((w) => w.scene).map((w) => w.id).join(', ') || 'none'}), ${p.width}x${p.height}, ${fs.statSync(file).size} bytes: ${file}`);
+  console.log(`world-contact-sheet: ${worlds.length} worlds (${worlds.map((w) => w.id).join(', ')}; scene for ${p.rows.filter((r) => r.scene).map((r) => r.id).join(', ') || 'none'}), ${p.width}x${p.height}, ${fs.statSync(file).size} bytes: ${file}`);
   return 0;
 }
 
