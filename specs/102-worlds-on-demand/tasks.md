@@ -417,4 +417,4 @@ Fix round 2026-11-14 (review of #1740, T223 stays unticked): the contrast check 
 
 ## 2026-11-18: the filter note plus strips (spec 102 Changes 2026-11-18; issues #1589, #1597)
 
-- [x] T361 The arcade does not scroll with a status filter (14 or 11 cabinets) plus one to three notice strips, at both sizes (issue #1589; gap (b) of #1597 closed; Linux, Windows not run): a case in `shots-102-strips` (`ui-suite` entry `shots-102-strips`). Mutant killed: the note's lend removed fails "filter note (14 cabinets) + mcp 1280x800: the office does not scroll". Remaining gaps (Windows, a two-line strip text, a screen reader) stay with issue #1625.
+- [x] T362 The arcade does not scroll with a status filter (14 or 11 cabinets) plus one to three notice strips, at both sizes (issue #1589; gap (b) of #1597 closed; Linux, Windows not run): a case in `shots-102-strips` (`ui-suite` entry `shots-102-strips`). Mutant killed: the note's lend removed fails "filter note (14 cabinets) + mcp 1280x800: the office does not scroll". Remaining gaps (Windows, a two-line strip text, a screen reader) stay with issue #1625.
