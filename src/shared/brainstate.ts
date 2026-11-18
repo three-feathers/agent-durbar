@@ -295,8 +295,10 @@ function heldOk(mask: BrainMask, head: string): boolean {
   const words = head.split(/\s+/).filter(Boolean);
   // a name then its separator, with or without the scheme word glued on (`Authorization:Bearer`, `"Authorization":"Bea`)
   const named = (w: string): boolean => {
-    const m = /^["'(]?[A-Za-z][A-Za-z0-9_.-]{0,40}["']?[:=]["']?(.*)$/.exec(w);
-    return !!m && (m[1] === '' || mask.schemePrefix(m[1].replace(/^["']/, '')));
+    const m = /^["'(]?([A-Za-z][A-Za-z0-9_.-]{0,40})["']?[:=]["']?(.*)$/.exec(w);
+    // spec 012 FR-187 (review of PR 1872, round 4): the name itself must be no secret (a token glued to a separator reads as a name here, and the value pass after a mask
+    // made it look like a header that expects its value, so its raw head was held); a name the masks change is never held raw
+    return !!m && brainMaskText(mask, m[1]) === m[1] && (m[2] === '' || mask.schemePrefix(m[2].replace(/^["']/, '')));
   };
   // N1 (review of #1243): a word `SHORT_VALUE` takes after a secret name (4 to 7 characters with a letter and a digit: `abc123`, `Win2024`, `Zx9!`, `ab1.`) is a value, however short.
   // The raw word is tested: stripping its trailing punctuation first let `Zx9!` and `ab1...` through (fewer than 4 left), and a raw word longer than 7 already fails the length test below.
