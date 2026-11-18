@@ -2,6 +2,7 @@
 import * as assert from 'assert';
 import * as fs from 'fs';
 import * as path from 'path';
+import { pathToFileURL } from 'url';
 import { EDITIONS, EDITOR_NOT_FOUND, isWindowsTarget, openInVSCode, planVSCodeLaunch, spawnPlan } from '../src/main/vscode';
 import type { LaunchEnv } from '../src/main/vscode';
 
@@ -204,7 +205,9 @@ process.exitCode = 1; // a promise that never settles must not pass (checklist);
     }
     // (4) no absolute cmd.exe from SystemRoot/windir or ComSpec: the .cmd route is refused like a hostile path, never a bare
     // `cmd.exe` that Windows would look up (the current folder possibly first); the same result and text as a refused route
-    for (const vars of [{}, { SystemRoot: 'Windows' }, { windir: 'rel\\win' }, { ComSpec: 'cmd.exe' }, { ComSpec: 'C:\\x\\powershell.exe' }, { SystemRoot: 'C:\\Win"dows', ComSpec: 'C:\\x\\cmd.exe" & y' }] as NodeJS.ProcessEnv[]) {
+    // a root-relative `\Windows` or `\x\cmd.exe` would resolve on the current drive: refused too (drive or UNC only)
+    for (const vars of [{}, { SystemRoot: 'Windows' }, { windir: 'rel\\win' }, { ComSpec: 'cmd.exe' }, { ComSpec: 'C:\\x\\powershell.exe' }, { SystemRoot: 'C:\\Win"dows', ComSpec: 'C:\\x\\cmd.exe" & y' },
+      { SystemRoot: '\\Windows' }, { windir: '/Windows' }, { ComSpec: '\\x\\cmd.exe' }, { SystemRoot: 'C:Windows', ComSpec: '/x/cmd.exe' }] as NodeJS.ProcessEnv[]) {
       seen = [];
       r = await openInVSCode('C:\\proj', env('win32', [cmd], { LOCALAPPDATA: local, ...vars }, 'C:\\Users\\a'), fake);
       assert.deepStrictEqual([r.ok, r.error, seen.length], [false, EDITOR_NOT_FOUND, 0], `FR-065: no absolute cmd.exe, no .cmd route and no bare cmd.exe: ${JSON.stringify(vars)}`);
@@ -212,12 +215,33 @@ process.exitCode = 1; // a promise that never settles must not pass (checklist);
     seen = [];
     r = await openInVSCode('C:\\proj', env('win32', [cmd], { LOCALAPPDATA: local, windir: 'C:\\Windows' }, 'C:\\Users\\a'), fake);
     assert.deepStrictEqual([r.ok, seen[0]?.cmd], [true, 'C:\\Windows\\System32\\cmd.exe'], 'FR-065: windir alone still gives the system cmd.exe');
-    // static: one spawn site, no shell anywhere in the launcher
-    const launcher = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'main', 'vscode.ts'), 'utf8');
-    assert.strictEqual((launcher.match(/spawnFn\(/g) ?? []).length, 1, 'FR-065: one spawn call');
-    assert.ok(!/shell:\s*true|exec\(|execSync\(/.test(launcher), 'FR-065: no shell: true or exec in the launcher');
-    // static: the verbatim switch is read from the plan's flag only
-    const src =fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'main', 'vscode.ts'), 'utf8');
+    // (5) profiles:openInVSCode, a source in FR-065's trace, answers only the app's own window (its handler checks fromApp like its
+    // siblings; test:ipcchannels pins that line): registered on a stand-in electron, a foreign page is refused and opens nothing
+    {
+      const electronPath = require.resolve('electron');
+      const saved = require.cache[electronPath];
+      const handlers = new Map<string, (e: unknown, ...a: unknown[]) => unknown>();
+      require.cache[electronPath] = { id: electronPath, filename: electronPath, loaded: true, exports: { ipcMain: { handle: (ch: string, fn: (e: unknown, ...a: unknown[]) => unknown) => handlers.set(ch, fn), on: () => undefined } } } as unknown as NodeJS.Module;
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
+        (require('../src/main/ipcguard') as typeof import('../src/main/ipcguard')).initSimGuard(false);
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
+        (require('../src/main/ipc/profiles') as typeof import('../src/main/ipc/profiles')).register({ agents: new Map() } as never);
+        const h = handlers.get('profiles:openInVSCode');
+        assert.ok(h, 'profiles:openInVSCode is registered');
+        const frame = { url: pathToFileURL(path.join(__dirname, '..', 'src', 'renderer', 'index.html')).href };
+        const other = { senderFrame: { url: 'https://example.com/' }, sender: { mainFrame: {} } };
+        await assert.rejects(async () => h!(other, 'p-1'), /did not come from its own window/, 'FR-065: a foreign page is refused');
+        assert.deepStrictEqual(await h!({ senderFrame: frame, sender: { mainFrame: frame } }, 'p-1'), { ok: false, error: 'That profile file is not in the list any more.' }, 'FR-065: the own window gets past the check (an unknown id opens nothing)');
+      } finally {
+        if (saved) require.cache[electronPath] = saved;
+        else delete require.cache[electronPath];
+      }
+    }
+    // static (read once): one spawn site, no shell anywhere in the launcher; the verbatim switch is read from the plan's flag only
+    const src = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'main', 'vscode.ts'), 'utf8');
+    assert.strictEqual((src.match(/spawnFn\(/g) ?? []).length, 1, 'FR-065: one spawn call');
+    assert.ok(!/shell:\s*true|exec\(|execSync\(/.test(src), 'FR-065: no shell: true or exec in the launcher');
     assert.ok(!/args\[0\]\s*===\s*'\/d'/.test(src), 'no guess from args[0]');
     assert.strictEqual((src.match(/windowsVerbatimArguments:/g) ?? []).length, 1);
     assert.ok(/windowsVerbatimArguments: platform === 'win32' && plan\.verbatim === true/.test(src));

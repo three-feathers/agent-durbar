@@ -1,7 +1,7 @@
 /**
  * The `cmd.exe` that runs a Windows `.cmd` shim (spec 045 FR-003). The system's own copy under `%SystemRoot%\System32` comes
- * first; `ComSpec` is taken only when it is an absolute path to a file named `cmd.exe`; otherwise plain `cmd.exe` (found on
- * PATH by Windows). Environment text is never run as a command on its own. Windows path rules on every OS, so it can be tested.
+ * first; `ComSpec` is taken only when it is a drive or UNC path to a file named `cmd.exe`; otherwise none, and the `.cmd` route is
+ * refused (FR-065). Environment text is never run as a command on its own. Windows path rules on every OS, so it can be tested.
  */
 import * as path from 'path';
 
@@ -14,20 +14,25 @@ export const CMD_UNSAFE = /[\r\n\0"&|<>^%!`(),;=]/;
 /** What the user reads when a `.cmd` route is refused (spec 009 FR-029): harness setup and the update check. */
 export const CMD_REFUSED = 'This command cannot be run safely on this computer.';
 
-export function windowsCmd(env: Readonly<Record<string, string | undefined>>): string {
-  return windowsCmdPath(env) ?? 'cmd.exe';
+/**
+ * A drive path (`C:\x`) or a UNC path (`\\server\share`) (spec 045 FR-065). `path.win32.isAbsolute` also takes a root-relative
+ * `\Windows`, which Windows resolves on the process's current drive: not a fixed cmd.exe.
+ */
+function driveOrUnc(p: string): boolean {
+  return /^[A-Za-z]:[\\/]/.test(p) || /^\\\\[^\\/?.;*][^\\/?*]*\\[^\\/]/.test(p);
 }
 
 /**
- * The absolute `cmd.exe` path of `windowsCmd`, or undefined when neither `SystemRoot`/`windir` nor `ComSpec` gives one (spec 045
- * FR-065): the VS Code opener then refuses its `.cmd` route instead of letting Windows look up a bare `cmd.exe`.
+ * The absolute `cmd.exe` for a `.cmd` shim, or undefined (spec 045 FR-003, FR-065): `%SystemRoot%\System32\cmd.exe` (or `windir`)
+ * first, else `ComSpec` when it names a file called `cmd.exe`; each a drive or UNC path without a quote. Undefined means the caller
+ * refuses its `.cmd` route: never a bare `cmd.exe` that Windows would look up, the current folder possibly first.
  */
 export function windowsCmdPath(env: Readonly<Record<string, string | undefined>>): string | undefined {
   const w = path.win32;
   const root = env.SystemRoot ?? env.SYSTEMROOT ?? env.windir ?? env.WINDIR;
-  if (root && w.isAbsolute(root) && !root.includes('"')) return w.join(root, 'System32', 'cmd.exe');
+  if (root && driveOrUnc(root) && !root.includes('"')) return w.join(root, 'System32', 'cmd.exe');
   const spec = env.ComSpec ?? env.COMSPEC;
-  if (spec && w.isAbsolute(spec) && !spec.includes('"') && w.basename(spec).toLowerCase() === 'cmd.exe') return spec;
+  if (spec && driveOrUnc(spec) && !spec.includes('"') && w.basename(spec).toLowerCase() === 'cmd.exe') return spec;
   return undefined;
 }
 

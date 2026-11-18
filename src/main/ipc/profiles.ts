@@ -135,7 +135,8 @@ export function register(deps: ProfilesIpcDeps): void {
     const PE = require(path.join(__dirname, '..', '..', 'renderer', 'profileeditor.js')) as { parseFrontmatter(t: string): FrontmatterParse };
     return generateProfile(req, { oneShot: deps.oneShot, parse: (t) => PE.parseFrontmatter(t), errText });
   });
-  ipcHandle('profiles:openInVSCode', (_e, id: unknown) => {
+  ipcHandle('profiles:openInVSCode', (e, id: unknown) => {
+    if (!fromApp(e)) return { ok: false, error: 'invalid request' }; // spec 045 FR-065: like its siblings
     const file = pathOfProfile(dirs(), id);
     return file ? openInVSCode(file) : { ok: false, error: 'That profile file is not in the list any more.' };
   });

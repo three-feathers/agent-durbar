@@ -8,7 +8,7 @@ import * as os from 'os';
 import { StringDecoder } from 'string_decoder';
 import { candidates, execFound, isAppAlias } from '../adapters/detect';
 import type { DetectEnv, Exec } from '../adapters/detect';
-import { CMD_REFUSED, cmdShimArgs, windowsCmd } from '../shared/wincmd';
+import { CMD_REFUSED, cmdShimArgs, windowsCmdPath } from '../shared/wincmd';
 import { redact } from '../shared/redact';
 import { SIGN_IN, installPlans, integrityLine, lastLines, managersFor, manualCommands, parseSignIn, stripAnsi, updatePlans, validPaste, OFFICIAL_PAGES, SETUP_NAMES } from '../shared/harnesssetup';
 import type { ManualCommand, OfficialScript, PackageManager, SetupKind, SetupPlan, SignInView, UpdatePlanOpts } from '../shared/harnesssetup';
@@ -294,8 +294,9 @@ export class HarnessSetup {
     if (env.platform === 'win32' && /\.cmd$/i.test(file)) {
       // spec 009 FR-029: the one quoting helper (outer pair for /s); undefined for a CMD_UNSAFE character. White space in an argument stays refused here.
       const cmdArgs = args.some((a) => /\s/.test(a)) ? undefined : cmdShimArgs(file, args);
-      if (!cmdArgs) return { ok: false, error: CMD_REFUSED };
-      spawnFile = windowsCmd(env.env);
+      const shell = windowsCmdPath(env.env); // spec 045 FR-065: a drive or UNC cmd.exe, never a bare name Windows would look up
+      if (!cmdArgs || !shell) return { ok: false, error: CMD_REFUSED };
+      spawnFile = shell;
       spawnArgs = cmdArgs;
       verbatim = true;
     }
