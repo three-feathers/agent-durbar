@@ -151,8 +151,12 @@ function readFragments(root = ROOT) {
 
 const key = (b) => b.replace(/\s+/g, ' ').trim();
 
-/* check: { errors, warnings }. `strict` treats Unreleased bullets as errors even before the cut-over marker. */
-function check(root = ROOT, { strict = false } = {}) {
+/*
+ * check: { errors, warnings }. `strict` treats Unreleased bullets as errors even before the cut-over marker. `siteRules: false`
+ * (spec 008 FR-272, delta 2026-11-18, issue #1864) skips the site's rules and never loads build-site.js (which needs `marked`): only
+ * for release.yml's verify job, which runs with no dependency installed; the rules already ran in each fragment's own PR.
+ */
+function check(root = ROOT, { strict = false, siteRules = true } = {}) {
   const errors = [];
   const warnings = [];
   const file = path.join(root, 'CHANGELOG.md');
@@ -164,7 +168,7 @@ function check(root = ROOT, { strict = false } = {}) {
   // spec 008 FR-272 (#1834): the site's own rules (build-site.js), so a fragment fails in its own PR, not at the fold. A root without
   // docs/site/unreleased.json (a throwaway test folder) has no list to check against.
   const unreleasedFile = path.join(root, 'docs', 'site', 'unreleased.json');
-  const site = fs.existsSync(unreleasedFile) ? require('./build-site.js') : null;
+  const site = siteRules && fs.existsSync(unreleasedFile) ? require('./build-site.js') : null;
   const phrases = site ? site.loadUnreleased(unreleasedFile) : [];
   for (const fr of readFragments(root)) {
     for (const e of fr.errors) errors.push(`changelog.d/${fr.file}: ${e}`);
@@ -214,8 +218,8 @@ function requirePrevious(parts, previous) {
 }
 
 /* build: returns { changed, text, removed, section } and, unless dryRun, writes CHANGELOG.md and deletes the folded fragments. */
-function build(root = ROOT, { release, dryRun = false, previous } = {}) {
-  const { errors } = check(root);
+function build(root = ROOT, { release, dryRun = false, previous, siteRules = true } = {}) {
+  const { errors } = check(root, { siteRules });
   if (errors.length) throw new Error(`fix these first:\n  ${errors.join('\n  ')}`);
   const { parts, frs, bullets } = pending(root);
   requirePrevious(parts, previous);
@@ -248,8 +252,8 @@ function build(root = ROOT, { release, dryRun = false, previous } = {}) {
  * old way by a release PR; its section is used as it is). Refuses invalid fragments, a heading without a version, a previous
  * release that is not folded yet, and a release with nothing in it.
  */
-function notes(root = ROOT, { release, previous } = {}) {
-  const { errors } = check(root);
+function notes(root = ROOT, { release, previous, siteRules = true } = {}) {
+  const { errors } = check(root, { siteRules });
   if (errors.length) throw new Error(`fix these first:\n  ${errors.join('\n  ')}`);
   if (!release || !release.trim() || /\n/.test(release)) throw new Error('give the release heading: --release "v0.1.0-alpha.N ([pre-release](<url>), YYYY-MM-DD)" or, for a stable tag, "v0.1.0 ([release](<url>), YYYY-MM-DD)"');
   const v = ver(`## ${release.trim().replace(/^##\s*/, '')}`);
@@ -262,7 +266,7 @@ function notes(root = ROOT, { release, previous } = {}) {
     if (end < 0) end = parts.rest.length;
     return { section: squeeze(parts.rest.slice(at, end)).join('\n'), source: 'changelog' };
   }
-  const r = build(root, { release, dryRun: true });
+  const r = build(root, { release, dryRun: true, siteRules });
   if (!r.changed) throw new Error(`nothing to release for ${v}: no changelog.d/ fragments and no ${v} section in CHANGELOG.md`);
   return { section: r.section, source: 'fragments' };
 }
