@@ -5,7 +5,7 @@
  *
  *   npm run check:ui -- --only check-097-kids      (builds first)
  *   SHOTS_OUT=<dir>   where its pictures go (097-kids-<n>-<w>x<h>.jpg, in the cave 097-kids-cave-<n>-<w>x<h>.jpg, JPEG quality 60; a temporary folder by default)
- *   KIDS_WORLD=cave   the Prehistoric cave's painted kids (spec 102 T326, issue #1643; the suite's `check-097-kids cave` entry), behind its flag; default: the Photo office
+ *   KIDS_WORLD=<world>   unset = photo; a world whose world.json has `kids` (today photo, cave); any other value exits 1 naming the valid ones (KIDS_MUTANT=worldfallback restores the silent fallback: test-realoffice-assets must fail). KIDS_WORLD=cave: the Prehistoric cave's painted kids (spec 102 T326, issue #1643; the suite's `check-097-kids cave` entry), behind its flag; default: the Photo office
  *   KIDS_MUTANT=nokids|status|name|overlap|adulthead   no kid is drawn / a status change rebuilds a kid's node / a kid's name is drawn / a kid lies over its plate /
  *     the head row shows an adult at 15 agents (each must fail)
  *   KIDS_MUTANT=nofocus|noring   the focus precheck reads false / the "+K" ring is removed by a style: must fail at `the window does not have focus` /
@@ -37,8 +37,9 @@ const assert = require('assert');
 const { helpers, jsLiteral } = require('./driver-helpers');
 
 const MUTANT = process.env.KIDS_MUTANT || '';
-const WORLD = process.env.KIDS_WORLD === 'cave' ? 'cave' : 'photo';
-const WQ = WORLD === 'cave' ? { worldflags: 'cave', world: 'cave' } : {}; /* the cave is behind its flag (spec 102 FR-205) */
+let WORLD;
+try { WORLD = require('./kids-worlds').pickKidsWorld(process.env.KIDS_WORLD, MUTANT); } catch (e) { console.error(e.message); process.exit(1); } /* a wrong name fails loudly, never the Photo office */
+const WQ = WORLD !== 'photo' ? { worldflags: WORLD, world: WORLD } : {}; /* the cave is behind its flag (spec 102 FR-205) */
 const SHOT = WORLD === 'photo' ? '097-kids' : `097-kids-${WORLD}`;
 const SIZES = [[1440, 900], [1280, 800]];
 const COUNTS = (process.env.KIDS_COUNTS || '1,2,3,4').split(',').map(Number);
