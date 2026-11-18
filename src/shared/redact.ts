@@ -263,7 +263,7 @@ export function withoutAfterMask<T>(fn: () => T): T {
   afterMaskOff = true;
   try { return fn(); } finally { afterMaskOff = was; }
 }
-/** The value pass for another mask than `[redacted]` (`maskBareTokenShapes(…, '[secret hidden]')`): the same rule with that mask's literal, built once per mask (review of PR 1872, round 2). At most 8 kept: callers use a fixed few. */
+/** The value pass for another mask than `[redacted]` (`maskTokenShapes(text, mask)` with a caller's mask): the same rule with that mask's literal, built once per mask (review of PR 1872, round 2). At most 8 kept: callers use a fixed few. */
 const afterMaskRes = new Map<string, RegExp>();
 const afterMaskRe = (mask: string): RegExp => {
   if (mask === MASK) return MASK_THEN_VALUE;
@@ -381,8 +381,10 @@ const NAMED_PHRASE = named('', '', PASSWORD_NAMES, true, PHRASE_TAIL);
 const NAMED_SHORT = named('', '', SHORT_NAMES, true);
 /** `password: [redacted]!word12345`: the rest of a value glued to a mask after a secret name. A stream masks a short value (`SHORT_VALUE`, 4 to 7 characters) when a piece ends 4 to 7 characters into a longer one, and the next piece brings the rest (`Pa55` then `!word12345`), which no rule took when it starts with a symbol; on `main` the whole value arrived first and went as one. The rest goes up to the value's stop rule (`valueBody`), as the whole value would, never starts at a backslash (an escape that closes a quoted value) and holds a letter or a digit in its first 65 characters (a full stop, `!`, `)` or `...` after a mask is the sentence's; review of #1243 at bda3f0d33, O1). A glued `/path`, `:8080` or `[1]` still goes: it may be the rest of the secret. Anchored at the name and the literal mask, no tail, so linear. Re-review of #1243 at f8af91b1a (B2). */
 const NAMED_MASKED_REST = new RegExp(String.raw`(${SECRET_NAMES}${Q_END}\s{0,8}(?::=|=>|[:=]|%3[DdAa])\s{0,8}${Q_VALUE}\[redacted\])(?!\\)(?=${NV}{0,64}[A-Za-z0-9])${valueBody()}`, 'g'); // not from a backslash: `\"[redacted]\"}` is an escaped quote after a JSON value, not a rest; and only a rest with a letter or a digit, so a sentence keeps its punctuation (`[redacted].`, `[redacted]. Then`, `[redacted])`)
-/** Spec 012 FR-187 (issue #1320): a secret name glued to the end of a token (`<token><name>=<value>`) is read by the token's shape as part of its body, so the mask takes the name and the value after it was no value of any name (`[redacted]=<value>`). A value after a mask and a separator (`=`, `:=`, `=>`, a percent-encoded `=` or `:`, and `:` when a blank or a quote follows it, the forms of config files and JSON; quotes and blanks around it; review of PR 1872). A value glued straight to `:` is left to `maskGluedRest` (8 or more letters and digits), as on `main`: taking a short one there changed how a run split by a line break is read. The value is read as a named value of a `SHORT_NAMES` name: the name the mask took cannot be known, so the widest value rule. Anchored at the literal mask, no tail, so linear. */
+/** Spec 012 FR-187 (issue #1320; review of PR 1872, rounds 1 to 3): a secret name glued to the end of a token (`<token><name>=<value>`) is read by the token's shape as part of its body, so the mask takes the name and the value after it was no value of any name (`[redacted]=<value>`). A value after a mask and a separator (`=`, `:`, `:=`, `=>`, a percent-encoded `=` or `:`; quotes, escaped quotes and blanks around it, the forms of config files and JSON) is read as a named value of a `SHORT_NAMES` name: the name the mask took cannot be known, so the widest value rule (`NOT_A_VALUE` still keeps a path, a variable, a dotted name, a URL, lower-case words). Run as a last pass over a finished output (`maskLoose`, `maskAfterMask`), so it only adds masks. Anchored at the literal mask, no tail, so linear. */
 const MASK_THEN_VALUE = new RegExp(String.raw`(\[redacted\]${Q_END}\s{0,8}(?::=|=>|=|:|%3[DdAa])\s{0,8}${Q_VALUE})(?:${SLASH_B64}|(?!\/|${NOT_A_VALUE})(?:(?=${NV}{8})(?=${NV}{0,128}[0-9])|(?=${NV}{20})(?=[A-Za-z_.-]{0,128}[+=~@!#^*?])|${SHORT_VALUE})|(?=${KEY_START}))${valueBody()}`, 'g');
+/** The brain tail's form of `MASK_THEN_VALUE` (FR-187, review of PR 1872, round 3): no separator, an opening quote or backtick right after the mask (blanks allowed), or the `>` that the glued rest leaves of `=>`. Same value rule. */
+const MASK_THEN_QUOTED = new RegExp(MASK_THEN_VALUE.source.replace('(?::=|=>|=|:|%3[DdAa])', '(?:>|(?=\\s{0,8}["\'\\x60]))'), 'g');
 /** `pwd=[redacted] blue8 x`: a password of several words that arrived in pieces (the brain view masks the first word, the next delta brings the rest) keeps taking its words after the mask, also when a few characters of the next piece sit glued to it (`[redacted]4 ef56`, which `maskGluedTail` would take after this). At least one word, so it is anchored at a literal. It runs before `NAMED_PHRASE`, so one call takes at most 8 words after a mask or after a first word; masking the result again takes 8 more (a stream does). */
 const NAMED_PHRASE_MASKED = new RegExp(String.raw`(${PASSWORD_NAMES}${Q_END}\s{0,8}(?::=|=>|[:=]|%3[DdAa])\s{0,8}${Q_VALUE})\[redacted\][A-Za-z0-9]{0,32}(?:${PHRASE_WORD}){1,8}`, 'g');
 /** Where in a value the first closing bracket with no opener inside the value is, or -1: `(token=abc12345)` keeps its `)`, `Sup3r(S3cret)99` is one value. */
@@ -561,8 +563,6 @@ const GLUE_MIN_B64 = 32;
 const glueEsc = (s: string, i: number): boolean => s[i] === '\\' && i + 1 < s.length && GLUE_REST.test(s[i + 1]) && s[i + 1] !== 'n' && s[i + 1] !== 'r' && s[i + 1] !== 't';
 /** The named marker `redact` writes for an env value (`[redacted:NAME]`). */
 const NAMED_MARKER = /\[redacted:[^\]\r\n]{1,128}\]/g;
-/** Spec 012 FR-187 (review of PR 1872): a secret name at the end of a glued run (read on its last 64 characters, so bounded): its `=` stays out of the fold. */
-const GLUED_NAME_END = new RegExp(`(?:${SECRET_NAMES})$`);
 /**
  * Existing capability checked (FR-031, pre-review of PR 1317): `maskGluedTail` (spec 106 FR-021, the brain state's streamed pieces) also folds what is glued to a mask into it, but takes any one glued
  * character, because there the next piece of a secret arrives raw after a mask. In a whole text that would hide `.git`, `:8080` and `_backup`, so this rule needs the count below; the two are not one.
@@ -602,8 +602,6 @@ function maskGluedRest(s: string, mask: string): string {
     }
     // a full stop or a colon that ends the run is the sentence's (spec 106 FR-021: "[redacted]." keeps its full stop), with its escape (`[redacted]\.`)
     while (end > start && (s[end - 1] === '.' || s[end - 1] === ':')) { end--; if (end > start && s[end - 1] === '\\') end--; }
-    // spec 012 FR-187 (review of PR 1872): a `=` that ends the run after a secret name, before a quote, a blank, `>` or the end, is a separator (a secret name glued to a token, cut there: `<token>password="`); it stays, so the value after it is read as a named value (`MASK_THEN_VALUE`), also when it arrives in a later piece
-    if (end > start && s[end - 1] === '=' && (end === s.length || /[\s"'`>]/.test(s[end])) && GLUED_NAME_END.test(s.slice(Math.max(start, end - 65), end - 1))) end--;
     if (alnum >= (first === '_' ? GLUE_MIN_UNDERSCORE : first === '/' || first === '+' ? GLUE_MIN_B64 : GLUE_MIN)) { out += s.slice(from, start); from = end; }
     const after = Math.max(end, start);
     if (plainAt >= 0 && plainAt < after) plainAt = s.indexOf(mask, after);
@@ -1061,10 +1059,10 @@ export const _markdownPassForTest = markdownPass;
  */
 export function maskGluedTail(text: string): string {
   // a mask then `@host`: the host of a URL with credentials stays (H6)
-  // spec 012 FR-187 (review of PR 1872): a `=` (like `.` and `:`) is taken only when the run goes on after it, so a secret name glued to a token's tail and cut there
-  // (`[redacted]password="<value>"`, `[redacted]token = <value>`) leaves its separator, and the value after it is read as a named value (`MASK_THEN_VALUE`)
-  const folded = text.replace(/\[redacted(?::[A-Za-z0-9_.-]{1,64})?\](?!@(?:[A-Za-z0-9-]+\.)+[A-Za-z]{2,}(?::\d{1,5})?(?:[/?#\s]|$))(?:[A-Za-z0-9_\-~+/@%]|[.:=](?=[A-Za-z0-9_\-~+/=@%.:]))+/g, '[redacted]');
-  return maskAfterMask(folded);
+  const folded = text.replace(/\[redacted(?::[A-Za-z0-9_.-]{1,64})?\](?!@(?:[A-Za-z0-9-]+\.)+[A-Za-z]{2,}(?::\d{1,5})?(?:[/?#\s]|$))(?:[A-Za-z0-9_\-~+/=@%]|[.:](?=[A-Za-z0-9_\-~+/=@%.:]))+/g, '[redacted]');
+  // spec 012 FR-187 (review of PR 1872, round 3): a streamed piece can also bring the value right after a mask with no separator left (`[redacted]"<value>"`: the glued rest took the
+  // name and its separator in an earlier piece), so the brain's tail reads a quoted value after a mask too; with the fold above and the separator form, the stream never shows the value
+  return maskAfterMask(folded).replace(MASK_THEN_QUOTED, (m: string, keep: string) => { const v = m.slice(keep.length); const i = closerAt(v); return keep + MASK + (i < 0 ? '' : v.slice(i)); });
 }
 
 const MASK = '[redacted]';

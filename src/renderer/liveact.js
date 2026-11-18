@@ -223,9 +223,11 @@
        The line shows (as the first reading, its spelling kept) when every word of it (letters and digits of its plain text) is a word of the home-first reading:
        then it shows nothing that reading hides. The words, not the strings: maskRaw drops the home mask's `~` as a Markdown mark when it finds anything to mask, and
        its Markdown path changes line marks and blanks. Otherwise, or when a reading fails, nothing (fail closed). No home folder in the normal form: one reading, as before. */
-    const SLASH_SPELL=/\\\/|&#0*47;|&#[xX]0*2[fF];|&sol;/g;
-    const BSL_SPELL=/&#0*92;|&#[xX]0*5[cC];|&bsol;/g; /* review of PR 1872, round 2: a backslash written as an HTML entity (Windows and UNC home folders) */
-    const norm=t=>t.replace(BSL_SPELL,'\\').replace(SLASH_SPELL,'/').replace(/\\+(?=[_*])/g,'').replace(/\*/g,''), words=t=>plain(norm(t)).match(/[\p{L}\p{N}]+/gu)||[];
+    /* review of PR 1872, rounds 2 and 3: ONE pass over the text, so what one spelling turns into is never read again by another (`&#92;/` stays a backslash and a slash):
+       a backslash or a slash written as an HTML entity (with or without its `;`), an escaped slash, a backslash run before `_` or `*`, and `*` itself */
+    const NORM_SPELL=/&#0*92(?![0-9]);?|&#[xX]0*5[cC](?![0-9a-fA-F]);?|&bsol;|&#0*47(?![0-9]);?|&#[xX]0*2[fF](?![0-9a-fA-F]);?|&sol;|\\\/|\\+(?=[_*])|\*/g;
+    const normOne=m=>/^&#0*92|^&#[xX]0*5[cC]|^&bsol;/.test(m)?'\\':m[0]==='&'||m==='\\/'?'/':'';
+    const norm=t=>t.replace(NORM_SPELL,normOne), words=t=>plain(norm(t)).match(/[\p{L}\p{N}]+/gu)||[];
     const covered=(a,b)=>{const w=new Set(words(b));return words(a).every(x=>w.has(x));};
     const twoHomes=(t,f)=>{const a0=f(t),a=a0?home(a0):'';if(!a||!mask.home)return a;const n=norm(t),h=home(n);if(h===n)return a;if(!h)return '';const b0=f(h),b=b0?home(b0):'';return b&&covered(a,b)?a:'';};
     /* control codes out: as escapes, unless read the other way they leave a token, which must then be masked in that reading */
