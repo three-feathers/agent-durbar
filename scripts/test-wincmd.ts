@@ -1,12 +1,12 @@
 /**
- * Spec 045: the security sweep. FR-003 `windowsCmd` (which cmd.exe runs a `.cmd` shim), FR-001 uniform place ids,
+ * Spec 045: the security sweep. FR-003/FR-065 `windowsCmdPath` (which cmd.exe runs a `.cmd` shim), FR-001 uniform place ids,
  * FR-002 the renderer's one-pass unescape. `npm run test:security`. No network, no credits.
  */
 import * as assert from 'assert';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
-import { CMD_REFUSED, CMD_UNSAFE, cmdShimArgs, windowsCmd } from '../src/shared/wincmd';
+import { CMD_REFUSED, CMD_UNSAFE, cmdShimArgs, windowsCmdPath } from '../src/shared/wincmd';
 import { execFound, nodeDetectEnv, nodeExec } from '../src/adapters/detect';
 import type { DetectEnv, Exec } from '../src/adapters/detect';
 import { isObj, nonEmptyStr } from '../src/shared/guards';
@@ -14,15 +14,17 @@ import { randomPlaceId } from '../src/main/settings';
 import { navigationAllowed, permissionAllowed } from '../src/main/hardening';
 
 // FR-003
-assert.strictEqual(windowsCmd({ SystemRoot: 'C:\\Windows' }), 'C:\\Windows\\System32\\cmd.exe', 'the system copy first');
-assert.strictEqual(windowsCmd({ SystemRoot: 'C:\\Windows', ComSpec: 'D:\\evil\\cmd.exe' }), 'C:\\Windows\\System32\\cmd.exe', 'SystemRoot wins over ComSpec');
-assert.strictEqual(windowsCmd({ ComSpec: 'D:\\tools\\cmd.exe' }), 'D:\\tools\\cmd.exe', 'an absolute cmd.exe from ComSpec');
-assert.strictEqual(windowsCmd({ COMSPEC: 'C:\\Windows\\system32\\CMD.EXE' }), 'C:\\Windows\\system32\\CMD.EXE');
-assert.strictEqual(windowsCmd({ ComSpec: 'calc.exe' }), 'cmd.exe', 'a relative ComSpec is not run');
-assert.strictEqual(windowsCmd({ ComSpec: 'C:\\x\\powershell.exe' }), 'cmd.exe', 'only a file named cmd.exe');
-assert.strictEqual(windowsCmd({ ComSpec: 'C:\\x\\cmd.exe" & calc & "' }), 'cmd.exe', 'no quotes');
-assert.strictEqual(windowsCmd({ SystemRoot: 'Windows' }), 'cmd.exe', 'a relative SystemRoot is ignored');
-assert.strictEqual(windowsCmd({}), 'cmd.exe');
+assert.strictEqual(windowsCmdPath({ SystemRoot: 'C:\\Windows' }), 'C:\\Windows\\System32\\cmd.exe', 'the system copy first');
+assert.strictEqual(windowsCmdPath({ windir: 'C:\\Windows' }), 'C:\\Windows\\System32\\cmd.exe', 'windir too');
+assert.strictEqual(windowsCmdPath({ SystemRoot: '\\\\srv\\share\\Windows' }), '\\\\srv\\share\\Windows\\System32\\cmd.exe', 'a UNC root');
+assert.strictEqual(windowsCmdPath({ SystemRoot: 'C:\\Windows', ComSpec: 'D:\\evil\\cmd.exe' }), 'C:\\Windows\\System32\\cmd.exe', 'SystemRoot wins over ComSpec');
+assert.strictEqual(windowsCmdPath({ ComSpec: 'D:\\tools\\cmd.exe' }), 'D:\\tools\\cmd.exe', 'a drive cmd.exe from ComSpec');
+assert.strictEqual(windowsCmdPath({ COMSPEC: 'C:\\Windows\\system32\\CMD.EXE' }), 'C:\\Windows\\system32\\CMD.EXE');
+// FR-065: no drive or UNC cmd.exe -> undefined (the caller refuses its .cmd route), never a bare `cmd.exe` for Windows to look up
+for (const e of [{}, { ComSpec: 'calc.exe' }, { ComSpec: 'C:\\x\\powershell.exe' }, { ComSpec: 'C:\\x\\cmd.exe" & calc & "' }, { SystemRoot: 'Windows' },
+  { SystemRoot: '\\Windows' }, { windir: '/Windows' }, { ComSpec: '\\x\\cmd.exe' }, { ComSpec: '/x/cmd.exe' }, { SystemRoot: 'C:Windows' }, { SystemRoot: '\\\\.\\C:\\Windows' }, { SystemRoot: '\\\\?\\C:\\Windows' }]) {
+  assert.strictEqual(windowsCmdPath(e), undefined, 'FR-065: no drive or UNC cmd.exe: ' + JSON.stringify(e));
+}
 
 // FR-001: shape, alphabet, and every character appears over many draws (a uniform draw; the old modulo favoured a-d)
 const seen = new Map<string, number>();
@@ -136,7 +138,15 @@ let eunsafeRun: Promise<void> = Promise.resolve();
   }).then((r) => {
     assert.deepStrictEqual([r.errorCode, called], ['EUNSAFE', 0], 'an unsafe argument: EUNSAFE and no exec');
     return execFound('C:\\Program Files\\nodejs\\npm.cmd', ['view', 'x'], winEnv, async (file, args, opts) => { called++; assert.deepStrictEqual([file, args, opts.verbatim], ['C:\\Windows\\System32\\cmd.exe', ['/d', '/s', '/c', '""C:\\Program Files\\nodejs\\npm.cmd" view x"'], true]); return { code: 0, stdout: 'ok', stderr: '' }; });
-  }).then((r) => { assert.deepStrictEqual([r.stdout, called], ['ok', 1], 'a safe shim runs once'); });
+  }).then(async (r) => {
+    assert.deepStrictEqual([r.stdout, called], ['ok', 1], 'a safe shim runs once');
+    // spec 045 FR-065: no drive or UNC cmd.exe -> EUNSAFE and no exec, never a bare cmd.exe
+    for (const env of [{}, { SystemRoot: '\\Windows' }, { ComSpec: '\\x\\cmd.exe' }, { ComSpec: 'cmd.exe' }]) {
+      const e = { ...winEnv, env } as DetectEnv;
+      const r2 = await execFound('C:\\npm\\npm.cmd', ['--version'], e, fakeExec);
+      assert.deepStrictEqual([r2.errorCode, called], ['EUNSAFE', 1], 'FR-065: no drive or UNC cmd.exe, execFound refuses: ' + JSON.stringify(env));
+    }
+  });
 }
 
 // spec 009 FR-029, Windows only: a fake .cmd shim in a folder with spaces, run through the real route (execFound with the real exec),

@@ -2,7 +2,7 @@ import { spawn } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
 import { pathDirs } from '../shared/pathdirs';
-import { cmdShimArgs, windowsCmd } from '../shared/wincmd';
+import { cmdShimArgs, windowsCmdPath } from '../shared/wincmd';
 
 export interface LaunchPlan {
   command: string;
@@ -128,8 +128,10 @@ function planCmd(cmdFile: string, target: string, e: LaunchEnv): LaunchPlan | un
   // spec 009 FR-029: the one quoting helper (outer pair for /s); undefined for a CMD_UNSAFE character or a spaced target ending in \.
   // A target without white space (a drive root C:\) stays bare, so FR-028's doubling of a trailing backslash is not needed on this line.
   const args = cmdShimArgs(cmdFile, [target]);
-  if (!args) return undefined;
-  return { command: windowsCmd(e.env), args, via: cmdFile, verbatim: true }; // spec 045 FR-003; FR-028: passed verbatim
+  // spec 045 FR-065: only an absolute cmd.exe (FR-003); never a bare name Windows would look up, the current folder possibly first
+  const shell = windowsCmdPath(e.env);
+  if (!args || !shell) return undefined;
+  return { command: shell, args, via: cmdFile, verbatim: true }; // spec 045 FR-003; FR-028: passed verbatim
 }
 
 export type OpenResult = { ok: boolean; error?: string; edition?: string; note?: string };
