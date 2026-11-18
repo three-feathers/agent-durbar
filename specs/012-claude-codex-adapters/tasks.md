@@ -266,6 +266,10 @@ T133 verification (2026-10-25, review on #698): typecheck, build and the offline
 - [x] T172 (2026-11-17, issue #1848) FR-184 delta: `baseFloorMs`, `baseMinOf` (`BASE_MIN_OF`), `minBaseMs` and `repsToFloor` in `scripts/redact-growth-lib.ts` (the growth baseline repeated up to the yardstick floor, the loop shared with `assertWithinYardstick`, and the lowest of 4 readings in one worker); the adversarial, `adversarial2` and `masks` cases pass it; the `#1848 work url` counters and `#1848 floor` fake-timer cases in `scripts/test-redact-growth.ts`; mutants in the spec line.
 - [x] T174 (2026-11-17, issue #1826) the nested `bash -c "sh -c` case of `test:redact-growth-wrappers` read 3.0 to 3.7 s CPU at 400k (over 10 s on a slow VPS, on its 10 s backstop): it now grows to 100k (about 0.9 s) and `#1826 work nested wrapper` pins the shape passes (at most 18x for 16x the input); test-only, mutants in the PR.
 
+## Changes 2026-11-18 (masking batch: a secret name glued to a token's end, the monitor's home folder: issue #1320)
+
+- [ ] T175 (2026-11-18, issue #1320) FR-187: `MASK_THEN_VALUE` in `maskShapes` and `_maskSourcesForTest` (`src/shared/redact.ts`); `twoHomes` in `block` and `strict` (`src/renderer/liveact.js`); the `#1320` block in `scripts/test-redact.ts`, the `#1320 monitor` block in `scripts/test-liveact.ts`, the `maskEq*` growth cases in `scripts/test-redact-growth.ts`; `docs/secret-coverage` line in `specs/012-claude-codex-adapters/secret-coverage.md`; mutants in the spec line.
+
 ## Changes 2026-11-17 (more home folder spellings and GitHub token forms: issue #1329)
 
 - [x] T167 (2026-11-17, issue #1329) FR-185: `HOME_TILDE`, `HOME_PCT` and the drive form in `maskHomePaths`; `GH_LOOSE` as a last pass (`maskLoose`, `withoutLoose`, `withoutLooseAll`) in `src/shared/redact.ts`; the desk's `lz`/`plainLz` in `src/renderer/safetext.js`; the `#1329` blocks in `scripts/test-redact.ts` and `scripts/test-safetext.ts`; one GitHub near miss removed from `scripts/test-redact-shapes.ts`; mutants and a differential fuzz against `main` in the PR.
