@@ -233,12 +233,13 @@ export function aislesLayout(model: RealModel, view: { w: number; h: number }, m
   const covered = (p: Plan): number => p.fits ? p.g * p.g * (cabGrid(p.gw, p.gh).w * cabGrid(p.gw, p.gh).h + PW * AISLE_PERSON.h) : -1;
   /* spec 097 FR-306, FR-308 (issue #1139): with helpers, one row of head figures under every plate (a fixed height in every row); if the hall then no longer fits, no strip: the plate keeps +N and dots */
   const hasHelpers = folders.some((f) => f.agents.some((a) => (a.helpers || 0) > 0));
+  const pf = (F: number, nCells: number, sh: number, st?: ReadonlySet<number>, en?: ReadonlyMap<number, number>): Plan => planFor(planSizes, W, F, PW, nCells, sh, st, en, meta.dpr || 1); /* one place gives every plan the ratio (T204): the first, the low-lobby loop and the low plan cannot disagree */
   const planAt = (sh: number, st?: ReadonlySet<number>, en?: ReadonlyMap<number, number>): Plan => {
     const nCells = en ? nCellsS : nCells0;
-    let first = planFor(planSizes, W, Ho - lobbyT - AISLE_LANE - AISLE_PAD, PW, nCells, sh, st, en, meta.dpr || 1);
-    if (kc <= 4 && AISLE_LOW_LOBBY) for (let L = lobbyT - 4; L >= Math.min(lobbyMin + AISLE_LANE, AISLE_LOBBY_LOW); L -= 2) { const p = planFor(planSizes, W, Ho - L - AISLE_LANE - AISLE_PAD, PW, nCells, sh, st, en, meta.dpr || 1); if (covered(p) > covered(first)) first = p; }
+    let first = pf(Ho - lobbyT - AISLE_LANE - AISLE_PAD, nCells, sh, st, en);
+    if (kc <= 4 && AISLE_LOW_LOBBY) for (let L = lobbyT - 4; L >= Math.min(lobbyMin + AISLE_LANE, AISLE_LOBBY_LOW); L -= 2) { const p = pf(Ho - L - AISLE_LANE - AISLE_PAD, nCells, sh, st, en); if (covered(p) > covered(first)) first = p; }
     /* spec 102 delta 2026-11-12 (issue 1590): the lowest lobby is also tried when the plan at the set lobby fits only by cutting a folder of 4 or fewer across rows (keep: false) and the lowest lobby keeps them whole */
-    const low = planFor(planSizes, W, Ho - lobbyMin - AISLE_LANE - AISLE_PAD, PW, nCells, sh, st, en, meta.dpr || 1);
+    const low = pf(Ho - lobbyMin - AISLE_LANE - AISLE_PAD, nCells, sh, st, en);
     return first.fits && (first.keep || !low.keep) ? first : low;
   };
   const solve = (st?: ReadonlySet<number>, en?: ReadonlyMap<number, number>): { sh: number; plan: Plan } => {
@@ -276,7 +277,7 @@ export function aislesLayout(model: RealModel, view: { w: number; h: number }, m
   const spare = plan.fits ? Math.max(0, Ho - Lb - AISLE_LANE - used - AISLE_PAD) : 0, extra = spare / (rows + 1);
   /* rows stagger by 8 % of a column, less where the floor is narrow */
   /* columns no wider than 1.1 slots, the grid in the middle: a small group stands close together */
-  const cw = Math.min((W - 2 * AISLE_PAD) / cols, plan.slotW * AISLE_CLOSE), x0g = (W - cols * cw) / 2, snap = (v: number): number => Math.round(v / g) * g;
+  const cw = Math.min((W - 2 * AISLE_PAD) / cols, plan.slotW * AISLE_CLOSE), x0g = (W - cols * cw) / 2, dFloor = (v: number): number => { const st = devStep(meta.dpr || 1); return st === 1 ? Math.floor(v) : Math.floor(v / st + 1e-9) * st; } /* FR-255 (T204): centring in whole device px at 1.25 and 1.5, in whole CSS px as before at a whole ratio */, snap = (v: number): number => Math.round(v / g) * g;
   const shift = rows < 2 ? 0 : Math.max(0, /* one row has nothing to stagger against: it stands in the middle */ Math.min(cw * AISLE_STAGGER, (cw - plan.slotW - g) / 2));
   const inRow = pk.inRow;
   const cxOf = (i: number): number => {
@@ -310,8 +311,8 @@ export function aislesLayout(model: RealModel, view: { w: number; h: number }, m
         const d: DeskBox = {
           id: a.id, state: a.state as RealState, narrow: false, slot: b.slot, desk: { ...b.cab, full: cabH },
           plate: { x: b.cab.x, y: plateY, w: cabW, h: AISLE_PLATE_H }, screen: { x: gl.x - 4 * g, y: gl.y - 4 * g, w: gl.w + 8 * g, h: gl.h + 8 * g }, glass: gl,
-          person: fr ? { x: px + Math.floor((pw - fr.w * g) / 2), y: plateY - fr.h * g, w: fr.w * g, h: fr.h * g, file: `${a.person}-${fr.pose}.webp`, fileB: null, pose: fr.pose, pid: String(a.person), vis: { x: px + Math.floor((pw - faceS) / 2), y: py, w: faceS, h: faceS } } : null,
-          face: { x: px + Math.floor((pw - faceS) / 2), y: py + 4 * g, w: faceS, h: faceS },
+          person: fr ? { x: px + dFloor((pw - fr.w * g) / 2), y: plateY - fr.h * g, w: fr.w * g, h: fr.h * g, file: `${a.person}-${fr.pose}.webp`, fileB: null, pose: fr.pose, pid: String(a.person), vis: { x: px + dFloor((pw - faceS) / 2), y: py, w: faceS, h: faceS } } : null,
+          face: { x: px + dFloor((pw - faceS) / 2), y: py + 4 * g, w: faceS, h: faceS },
           away: a.away ? aisleNote(gl, b.face, g) : null,
           lamp: { x: b.cab.x - 4 * g, y: b.cab.y - 4 * g, w: cabW + 8 * g, h: cabH + 8 * g },
           cue: a.away || a.state === 'error' ? { x: gl.x + gl.w - 4 * g, y: gl.y - 4 * g } : { x: px + pw / 2, y: Math.max(py + 2 * g, b.cab.y + 12 * g) }, bubble: null, bang: null, /* inside the cabinet's height: a sign may lie above it */

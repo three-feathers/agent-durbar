@@ -5788,6 +5788,8 @@ const relayoutNow=()=>{resizeQueued=false;if(ui.view==='office'){renderOffice();
 const relayout=()=>{if(resizeQueued)return;resizeQueued=true;requestAnimationFrame(relayoutNow);}; /* spec 024: figures follow a resize */
 new ResizeObserver(relayoutNow).observe($('floor')); /* spec 052 FR-243: the floor changed size (the Auto-follow strip came, a bar wrapped): lay out before the next paint, not a frame later; the stage keeps its old height until then and would overflow the shorter floor */
 window.addEventListener('resize',relayout);
+/* spec 102 FR-255 (T204, #1884 review): the window moved to a screen with another scale keeps its CSS size, so no resize comes and the floor's scale `g` (chosen for the ratio) would stay stale until the next update; a resolution query per ratio fires once on the change and is set again for the new one */
+let dprMQ=null;const watchDpr=()=>{try{if(dprMQ)dprMQ.onchange=null;dprMQ=matchMedia('(resolution: '+(window.devicePixelRatio||1)+'dppx)');document.documentElement.dataset.dprq=dprMQ.media;dprMQ.onchange=()=>{watchDpr();relayout();};}catch(e){}};watchDpr();
 document.addEventListener('scroll',()=>INL().follow(),{capture:true,passive:true}); /* spec 059 FR-023 item 5: the floor, the list or the chat scrolled: the open field follows its name */
 
 
