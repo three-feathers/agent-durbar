@@ -7,7 +7,7 @@
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { DEFAULT_HISTORY_LIMITS, cleanSessionTitle, cut, sameDir, toolLabel } from './history';
+import { DEFAULT_HISTORY_LIMITS, TOOL_NAME_MAX, cleanSessionTitle, cut, sameDir, toolLabel } from './history';
 import type { HistoryItem, HistoryLimits, HistoryResult, PreviousSession } from './history';
 import { isObj } from '../shared/guards';
 import { isClaudeContinuation } from './autopilot';
@@ -117,7 +117,7 @@ export function claudeHistoryBuilder(limits: Partial<HistoryLimits> = {}, dropGo
       for (const b of content) {
         if (!isObj(b)) continue;
         if (b.type === 'text' && typeof b.text === 'string' && b.text.trim()) items.push({ type: 'output', text: cut(b.text.trim(), lim.maxTextChars), ts: tsOf(o) });
-        else if (!lim.textOnly && b.type === 'tool_use' && typeof b.id === 'string' && typeof b.name === 'string') {
+        else if (!lim.textOnly && b.type === 'tool_use' && typeof b.id === 'string' && typeof b.name === 'string' && b.name.length <= TOOL_NAME_MAX) { // spec 012 FR-183
           toolIdx.set(b.id, items.length);
           items.push({ type: 'tool', callId: b.id, tool: b.name, label: toolLabel(b.input), ts: tsOf(o) });
         }

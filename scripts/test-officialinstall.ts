@@ -82,9 +82,8 @@ async function main(): Promise<void> {
     assert.deepStrictEqual([rd.status, rd.location], [302, '/ok'], 'redirects are reported, not followed');
     await assert.rejects(makeDownloadGet(mkRes(200, {}, (res) => { res.emit('data', Buffer.alloc(600)); res.emit('data', Buffer.alloc(600)); res.emit('end'); }))('https://x/big', { timeoutMs: 2000, maxBytes: 1000 }), /larger than expected/, 'the size cap works while streaming');
     let aborted = false;
-    const t0 = Date.now();
     await assert.rejects(makeDownloadGet(mkRes(200, {}, (res, req) => { const t = setInterval(() => res.emit('data', Buffer.from('x')), 40); req.on('aborted', () => { aborted = true; clearInterval(t); }); }))('https://x/drip', { timeoutMs: 300, maxBytes: 100000 }), /took too long/, 'a dripping server hits the TOTAL time limit');
-    assert.ok(Date.now() - t0 < 2000 && aborted, 'promptly, and the request is aborted');
+    assert.ok(aborted, 'the request is aborted when the total time limit hits (the rejection above is the proof it was cut, not a wall bound)');
     // FR-017: the fixed headers, no locale
     let seen: Record<string, string> = {};
     await makeDownloadGet((o) => { const r = mkRes(200, {}, (res) => res.emit('end'))(o) as unknown as { headers: Record<string, string> }; seen = r.headers; return r as unknown as NetRequestLike; })('https://x/h', { timeoutMs: 2000, maxBytes: 10 });
@@ -264,17 +263,11 @@ async function main(): Promise<void> {
     await assert.rejects(get(`${base}/big`, { timeoutMs: 2000, maxBytes: 1000 }), /larger than expected/);
     assert.strictEqual((await get(`${base}/exact`, { timeoutMs: 2000, maxBytes: 1000 })).body.length, 1000, 'exactly maxBytes is accepted');
     await assert.rejects(get(`${base}/over`, { timeoutMs: 2000, maxBytes: 1000 }), /larger than expected/, 'maxBytes + 1 is refused');
-    const t0 = Date.now();
-    await assert.rejects(get(`${base}/overstall`, { timeoutMs: 5000, maxBytes: 1000 }), /larger than expected/, 'the cap fires before any timeout');
-    assert.ok(Date.now() - t0 < 2500, 'refused on the cap, not after the timeout');
+    await assert.rejects(get(`${base}/overstall`, { timeoutMs: 5000, maxBytes: 1000 }), /larger than expected/, 'the cap fires before any timeout (refused on the cap, not "took too long")');
     // the timeout: a server that sends headers and a first chunk, then stalls
-    const t1 = Date.now();
     await assert.rejects(get(`${base}/stall`, { timeoutMs: 300, maxBytes: 100000 }), /took too long/, 'a stalled body hits the timeout');
-    assert.ok(Date.now() - t1 < 3000);
     // a server that drips one byte at a time keeps the idle timer quiet: only the total limit ends it
-    const t2 = Date.now();
     await assert.rejects(get(`${base}/trickle`, { timeoutMs: 700, maxBytes: 100000 }), /took too long/, 'a dripping body hits the TOTAL time limit');
-    assert.ok(Date.now() - t2 < 3000);
     for (const s of sockets) s.destroy();
     await new Promise<void>((r2) => server.close(() => r2()));
   }

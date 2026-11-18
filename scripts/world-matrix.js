@@ -25,6 +25,7 @@
  */
 'use strict';
 const fs = require('fs');
+const { buildProblem } = require('./ensure-electron'); // spec 008 FR-211: one shared build check
 const os = require('os');
 const path = require('path');
 
@@ -246,7 +247,7 @@ if (require.main === module) {
   const known = new Set(['--size', '--worlds', '--forced-colors', '--out', '--selftest']);
   const bad = argv.filter((a, i) => a.startsWith('-') && !known.has(a));
   if (bad.length) { console.error(`unknown option: ${bad[0]}`); process.exit(2); }
-  if (!fs.existsSync(INDEX) && !argv.includes('--selftest')) { console.error('dist/ missing: run npm run build first'); process.exit(2); }
+  { const noBuild = argv.includes('--selftest') ? '' : buildProblem(); if (noBuild) { console.error(noBuild); process.exit(2); } }
   const userData = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-matrix-'));
   const marker = path.join(userData, 'matrix.fail');
   const env = { ...process.env, DURBAR_DRIVER: __filename, DURBAR_USER_DATA: userData, OFFICE_FAIL_MARKER: marker, DURBAR_SIM: '15', DURBAR_SIM_FREEZE: '1' };
@@ -258,7 +259,8 @@ if (require.main === module) {
   const electron = require('electron');
   const args = ['.', '--no-sandbox', '--force-prefers-reduced-motion'];
   const useXvfb = process.platform === 'linux' && !process.env.DISPLAY;
-  const r = useXvfb ? spawnSync('xvfb-run', ['-a', electron, ...args], { cwd: ROOT, env, stdio: 'inherit' }) : spawnSync(electron, args, { cwd: ROOT, env, stdio: 'inherit' });
+  const [file, runArgs] = require('./ui-suite.js').launchCommand(useXvfb, electron, args, ''); // spec 008 FR-269: the sized Xvfb screen of the suite, no screen change elsewhere
+  const r = spawnSync(file, runArgs, { cwd: ROOT, env, stdio: 'inherit' });
   if (r.error) { console.error(r.error.message); process.exit(2); }
   process.exit(fs.existsSync(marker) ? 1 : r.status === 0 ? 0 : r.status || 1);
 }

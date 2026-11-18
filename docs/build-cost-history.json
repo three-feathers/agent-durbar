@@ -79,6 +79,76 @@
         "mac": 236.4,
         "ruben-server": 524.93
       }
+    },
+    {
+      "date": "2026-11-13",
+      "version": "v0.1.18",
+      "models": {
+        "claude-opus-5-5": 4043.51,
+        "claude-sonnet-5-5": 1587.47,
+        "claude-haiku-5-5": 3.37
+      },
+      "machines": {
+        "linux": 4873.02,
+        "mac": 236.4,
+        "ruben-server": 524.93
+      }
+    },
+    {
+      "date": "2026-11-14",
+      "version": "v0.1.19",
+      "models": {
+        "claude-opus-5-5": 4186.31,
+        "claude-sonnet-5-5": 1667.9,
+        "claude-haiku-5-5": 3.79
+      },
+      "machines": {
+        "linux": 5096.67,
+        "mac": 236.4,
+        "ruben-server": 524.93
+      }
+    },
+    {
+      "date": "2026-11-15",
+      "version": "v0.1.21",
+      "models": {
+        "claude-opus-5-5": 4318.74,
+        "claude-sonnet-5-5": 1773.45,
+        "claude-haiku-5-5": 4.11
+      },
+      "machines": {
+        "linux": 5334.97,
+        "mac": 236.4,
+        "ruben-server": 524.93
+      }
+    },
+    {
+      "date": "2026-11-16",
+      "version": "v0.1.22",
+      "models": {
+        "claude-opus-5-5": 4351.99,
+        "claude-sonnet-5-5": 1805.1,
+        "claude-haiku-5-5": 4.23
+      },
+      "machines": {
+        "linux": 5399.99,
+        "mac": 236.4,
+        "ruben-server": 524.93
+      }
+    },
+    {
+      "date": "2026-11-17",
+      "version": "v0.1.23",
+      "models": {
+        "claude-opus-5-5": 4466.08,
+        "claude-sonnet-5-5": 1828.01,
+        "claude-haiku-5-5": 4.61
+      },
+      "machines": {
+        "linux": 5537.37,
+        "mac": 236.4,
+        "ruben-server": 524.93
+      }
     }
   ]
 }

@@ -10,15 +10,10 @@
   'use strict';
 
   /* ---- pure ---- */
-  /* The roving tabindex of a tablist (WAI-ARIA): the next tab for an arrow key, -1 for any other key. */
-  function tabKey(key,index,count){
-    if(!(count>0))return -1;
-    if(key==='ArrowRight')return (index+1)%count;
-    if(key==='ArrowLeft')return (index-1+count)%count;
-    if(key==='Home')return 0;
-    if(key==='End')return count-1;
-    return -1;
-  }
+  /* Spec 094 T040: the tablist (Chat | Browser) is src/renderer/paneltabs.js; Browser is one tab owner of it. */
+  const PT=typeof module==='object'&&module.exports?require('./paneltabs.js'):self.DurbarPanelTabs;
+  const tabKey=PT.tabKey;
+  const PANEL_TABS=PT.tabsFor({browser:true}), BROWSER_LABEL=PT.byId(PANEL_TABS,'browser').label;
   /* What the bar shows for a state: every word and flag in one place, so the DOM code only copies it. */
   function barModel(s){
     const open=!!(s&&s.open), loading=open&&!!s.loading, err=open&&!loading&&typeof s.error==='string'&&s.error?s.error:'';
@@ -89,6 +84,12 @@
     const i=Math.max(0,ids.indexOf(id));
     return ids[(i+step+ids.length)%ids.length];
   }
+  /* Spec 080 FR-134 (issue 1691): what the Expand button says and shows in each state, and what is announced on entering it. One button whose
+     name changes (never aria-pressed as well). */
+  function bigModel(on){
+    return on?{icon:'shrink',label:'Back to small browser',title:'Back to small browser (Esc)',said:'Browser expanded. Press Escape to make it small.'}
+      :{icon:'expand',label:'Expand browser',title:'Expand browser: fill the window',said:'Browser small again.'};
+  }
   /* The page area's rectangle for main, in CSS pixels; null when it has no size to give. */
   function boundsOf(r){
     if(!r)return null;
@@ -113,6 +114,8 @@
     page:'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 2.5h5l3 3v8H4z"/><path d="M9 2.5v3h3"/></svg>',
     plus:'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><path d="M8 3.5v9M3.5 8h9"/></svg>',
     more:'<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><circle cx="3.5" cy="8" r="1.4"/><circle cx="8" cy="8" r="1.4"/><circle cx="12.5" cy="8" r="1.4"/></svg>',
+    expand:'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9.5 2.5h4v4M13.5 2.5L9.2 6.8M6.5 13.5h-4v-4M2.5 13.5l4.3-4.3"/></svg>',
+    shrink:'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13.5 2.5L9.5 6.5M9.5 3v3.5H13M2.5 13.5l4-4M6.5 13V9.5H3"/></svg>',
     limit:'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><circle cx="8" cy="8" r="5.8"/><path d="M8 4.8v3.8M8 11.1v.1"/></svg>'
   };
 
@@ -161,11 +164,7 @@
   /* The tabs exist for a live top-level session, and only in the app (the page without the bridge has no browser). */
   function available(a){return !!(bridge&&bridge.browserOpen&&a&&a.live&&!a.parent);}
 
-  function tabsHTML(){
-    return '<div class="ptabs" id="panelTabs" role="tablist" aria-label="Chat or browser">'
-      +'<button class="ptab" id="tabChat" role="tab" type="button" aria-selected="true" aria-controls="chat" tabindex="0">Chat</button>'
-      +'<button class="ptab" id="tabBrowser" role="tab" type="button" aria-selected="false" aria-controls="browserPane" tabindex="-1">Browser</button></div>';
-  }
+  function tabsHTML(){return PT.tabsHTML(PANEL_TABS,'chat');}
   function paneHTML(){
     return '<div class="bpane" id="browserPane" role="tabpanel" aria-labelledby="tabBrowser" hidden>'
       /* spec 080 FR-122, FR-133: the page tabs, above the bar */
@@ -178,6 +177,7 @@
       +'<button class="bbtn" id="bReload" type="button" aria-label="Reload" title="Reload">'+SVG.reload+'</button>'
       +'<input class="baddr" id="bAddr" type="text" aria-label="Address" placeholder="Type a web address, for example localhost:3000" spellcheck="false" autocomplete="off" autocapitalize="off" maxlength="2100">'
       +'<button class="bbtn" id="bMore" type="button" aria-label="More browser actions" title="More browser actions" aria-haspopup="menu" aria-expanded="false">'+SVG.more+'</button>'
+      +'<button class="bbtn" id="bBig" type="button" aria-label="'+bigModel(false).label+'" title="'+bigModel(false).title+'">'+SVG.expand+'</button>' /* FR-134 */
       +'</div>'
       +'<div class="bstat"><span class="bnote" id="bNote" role="status" aria-live="polite"></span><span class="btitle" id="bTitle"></span>'
       +'<span class="bacts"><button class="bchip" id="bSound" type="button"></button><button class="bchip" id="bSys" type="button" title="Open this page in your system browser">'+SVG.system+'<span>Open in system browser</span></button></span></div>'
@@ -187,13 +187,15 @@
   /* Which tab a rebuilt panel starts on: the same session keeps its tab (the panel is rebuilt on a rename), any other starts on Chat. */
   function startTab(id){if(want&&want.id===id){const t=want.tab;want=null;return t;}return cur&&cur.id===id?cur.tab:'chat';}
 
+  /* FR-135: the one class that makes the pane fill the chat panel (styles.css) */
+  function markBig(on){if(document.body)document.body.classList.toggle('browser-big',!!on);}
   function setSelected(tab){
     const chat=tab==='chat';
     const pin=document.querySelector('#panel .panel-in');
     if(pin)pin.classList.toggle('on-browser',!chat);
-    const tc=$('tabChat'),tb=$('tabBrowser'),pane=$('browserPane');
-    if(tc){tc.setAttribute('aria-selected',String(chat));tc.tabIndex=chat?0:-1;}
-    if(tb){tb.setAttribute('aria-selected',String(!chat));tb.tabIndex=chat?-1:0;}
+    markBig(!chat&&!!(cur&&cur.big)); /* FR-135: a rebuilt panel of the same chat keeps it */
+    const pane=$('browserPane');
+    PT.setSelected(PANEL_TABS,tab);
     if(pane)pane.hidden=chat;
   }
 
@@ -213,7 +215,8 @@
     set('bTitle',e=>{e.textContent=m.title;e.title=m.title;});
     set('bSound',e=>{e.disabled=!m.open;e.innerHTML=(m.sound.on?SVG.soundOn:SVG.soundOff)+'<span></span>';e.querySelector('span').textContent=m.sound.word;e.title=m.sound.hint;e.dataset.on=String(m.sound.on);});
     set('bSys',e=>{e.disabled=!m.system;});
-    set('tabBrowser',e=>{e.textContent=m.dialogOpen?'Browser · Dialog open':'Browser';});
+    set('bBig',e=>{const b=bigModel(!!cur.big);e.innerHTML=SVG[b.icon];e.setAttribute('aria-label',b.label);e.title=b.title;});
+    set('tabBrowser',e=>{e.textContent=m.dialogOpen?BROWSER_LABEL+' · Dialog open':BROWSER_LABEL;}); /* the word is the tablist module's */
   }
 
   /* FR-122: the strip of the mounted session; focus stays on the same tab button when the list is redrawn */
@@ -328,6 +331,22 @@
     });
   }
 
+  /* Spec 080 FR-134..FR-138 (issue 1691): the big browser. Memory only (FR-137): `cur.big`, gone with `cur`. Only the pane's box changes; the
+     view gets its new bounds through the same checked path (the size watcher, and one send queued here for a move without a resize), and the
+     overlay rule (FR-008) is checked again for the new rectangle. Returns whether it changed. */
+  function setBig(on,o){
+    if(!cur)return false;
+    on=!!on&&cur.tab==='browser';
+    const changed=!!cur.big!==on;
+    cur.big=on;
+    markBig(on);
+    if(changed){render();announce(bigModel(on).said);queueBounds();if(host.recheck)requestAnimationFrame(()=>{if(host.recheck)host.recheck();});}
+    if(o&&o.focus){const b=$('bBig');if(b)b.focus({preventScroll:true});} /* FR-136: the focus is on the button after either change */
+    return changed;
+  }
+  const expanded=()=>!!(cur&&cur.big);
+  function restore(o){return setBig(false,o);}
+
   /* The page area's rectangle goes to main when it changes (one send per frame). */
   function sendBounds(){
     if(!cur||cur.tab!=='browser')return Promise.resolve(false);
@@ -353,8 +372,9 @@
     if(!cur)return;
     const id=cur.id;
     cur.tab=tab;
+    if(tab==='chat'&&cur.big){cur.big=false;render();} /* FR-137: the Chat tab ends the big browser */
     setSelected(tab);
-    if(o&&o.focus){const t=$(tab==='chat'?'tabChat':'tabBrowser');if(t)t.focus({preventScroll:true});}
+    if(o&&o.focus)PT.focusTab(PT.byId(PANEL_TABS,tab));
     if(tab==='chat'){
       unwatchSize();
       clearCover(cur);
@@ -498,17 +518,7 @@
     else cur={id:a.id,tab:'chat',shown:false,state:states.get(a.id)||{id:a.id,open:false,connecting:true},typing:false,ro:null,sizeQueued:false};
     const tab=startTab(a.id);
     cur.tab='chat'; /* the new template starts on Chat; select() below puts it back */
-    const tabs=[$('tabChat'),$('tabBrowser')];
-    tabs.forEach((t,i)=>{
-      t.onclick=()=>select(i?'browser':'chat');
-      t.onkeydown=e=>{
-        if(e.altKey||e.ctrlKey||e.metaKey||e.shiftKey)return;
-        const n=tabKey(e.key,i,tabs.length);
-        if(n<0)return;
-        e.preventDefault();e.stopPropagation();
-        select(n?'browser':'chat',{focus:true});
-      };
-    });
+    PT.wire(PANEL_TABS,(t,o)=>select(t.id,o));
     $('bBack').onclick=()=>bridge.browserBack(a.id);
     $('bFwd').onclick=()=>bridge.browserForward(a.id);
     $('bReload').onclick=e=>(e.currentTarget.dataset.mode==='stop'?bridge.browserStop(a.id):bridge.browserReload(a.id));
@@ -526,6 +536,7 @@
     strip.onkeydown=stripKey;
     $('bNewTab').onclick=()=>tabAction('new');
     $('bMore').onclick=()=>openMore();
+    $('bBig').onclick=()=>setBig(!(cur&&cur.big),{focus:true}); /* FR-134, FR-136 */
     $('browserPane').onkeydown=paneKey;
     const addr=$('bAddr');
     addr.oninput=()=>{cur.typing=true;};
@@ -546,6 +557,7 @@
     unwatchSize();
     clearCover(cur);
     if(cur.shown&&bridge)bridge.browserVisible(cur.id,false);
+    markBig(false); /* FR-137: closing the chat or opening another ends the big browser */
     cur=null;
   }
   const current=()=>cur?{id:cur.id,tab:cur.tab,shown:cur.shown}:null;
@@ -553,6 +565,6 @@
   /* The page area while the Browser tab is selected, shown or still attaching (the overlay test must see an overlay that is open during the attach) */
   function paneRect(){const v=$('bView');return cur&&cur.tab==='browser'&&v?v.getBoundingClientRect():null;}
   const covered=()=>!!(cur&&cur.covered);
-  return {tabKey,barModel,boundsOf,init,available,tabsHTML,paneHTML,mount,hide,select,current,overlay,areaRect,wantTab,dialogOpen,covered,paneRect,openLink,openMail,linkRoute,
+  return {tabKey,barModel,bigModel,setBig,expanded,restore,boundsOf,init,available,tabsHTML,paneHTML,mount,hide,select,current,overlay,areaRect,wantTab,dialogOpen,covered,paneRect,openLink,openMail,linkRoute,
     tabShortcut,stripHTML,tabName,tabState,tabStep,selectPageTab,TAB_LIMIT,linksNewTab:()=>linksNewTab};
 })());

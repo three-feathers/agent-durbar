@@ -1,0 +1,1 @@
+- Internal: `test:subretire` no longer fails on a loaded machine: it counts the planner's field reads for 200,000 helpers instead of timing it against a fixed 1000 ms limit (spec 005 FR-240, issue #1846); the planner is unchanged.

@@ -9,7 +9,7 @@ const path = require('path');
 const { execFileSync, spawnSync } = require('child_process');
 const modPath = process.env.SN_MODULE ? path.resolve(process.env.SN_MODULE) : path.join(__dirname, 'spec-numbers.js');
 const sn = require(modPath);
-const { plumbCommit } = require('./git-index-helper.js');
+const { plumbCommit, gitRun } = require('./git-index-helper.js');
 const { printable } = require('./safe-print.js');
 const ids = (t, k) => [...sn.parseDefinitions(t, k)].sort();
 
@@ -47,8 +47,13 @@ Prose that says FR-016 and **FR-017** in a sentence.
   - Q5 nested
 Q6 prose at line start
 - see Q7 for details
+- \`[IMPLEMENTED]\` **FR-031 Tagged title.** an evidence tag before the id (issue #1768)
+- \`[KNOWN GAP]\` **FR-032** tagged, bare
+- \`[IMPLEMENTED]\` **FR-033, FR-034** a tagged list: mentions
+- \`[IMPLEMENTED]\` plain words, **FR-035** later in the line: not a definition
+1. \`[IMPLEMENTED]\` Q8 tagged question
 `;
-assert.deepStrictEqual(ids(spec, 'spec'), ['FR-001', 'FR-002', 'FR-003', 'FR-004a', 'FR-005', 'FR-006', 'FR-015', 'FR-021', 'FR-022', 'FR-023', 'FR-024', 'Q1', 'Q2', 'Q3', 'Q4'].sort());
+assert.deepStrictEqual(ids(spec, 'spec'), ['FR-001', 'FR-002', 'FR-003', 'FR-004a', 'FR-005', 'FR-006', 'FR-015', 'FR-021', 'FR-022', 'FR-023', 'FR-024', 'FR-031', 'FR-032', 'Q1', 'Q2', 'Q3', 'Q4', 'Q8'].sort(), 'a definition after an evidence tag (issue #1768) is read like one without it');
 
 // ---- parser: tasks.md (T)
 const tasks = `- [ ] T001 open
@@ -105,7 +110,7 @@ assert.strictEqual(sn.scrub('has MyValue99 inside', { MY_API_KEY: 'MyValue99', P
 
 // ---- git repos, --no-fetch
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-sn-'));
-const G = (cwd, ...a) => execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@example.com', '-c', 'commit.gpgsign=false', ...a], { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
+const G = (cwd, ...a) => gitRun(cwd, ['-c', 'user.name=t', '-c', 'user.email=t@example.com', '-c', 'commit.gpgsign=false', ...a]).trim();
 const write = (d, f, t) => { fs.mkdirSync(path.dirname(path.join(d, f)), { recursive: true }); fs.writeFileSync(path.join(d, f), t); };
 const commit = (d, m) => { G(d, 'add', '--all'); G(d, 'commit', '-q', '-m', m); return G(d, 'rev-parse', 'HEAD'); }; // throwaway repo
 const cli = (d, args = ['--no-fetch'], env = {}) => spawnSync(process.execPath, [modPath, '--root', d, ...args], { encoding: 'utf8', env: { ...process.env, ...env } });
@@ -342,6 +347,16 @@ try {
     rr = await viaMain(viaGh(ghRows(false, 'unrelated')), '8'); assert.strictEqual(rr.code, 1, 'gh: base ref not this head: a separate PR clashes: ' + rr.out);
   }
 
+  // issue #1768: two open PR heads hold FR-243, one as a tagged definition (`- `[IMPLEMENTED]` **FR-243 ...**`, #1487) and one as a bold bullet (#1766);
+  // the tagged one used to be no definition, so the clash was never seen. Same for a Q.
+  { const x = repo(); const F = 'specs/003-c/spec.md';
+    write(x, F, '- **FR-001** a\n- **Q1** a\n'); commit(x, 'spec c'); G(x, 'update-ref', 'refs/remotes/origin/main', 'HEAD');
+    G(x, 'checkout', '-q', '-b', 'tagged'); write(x, F, '- **FR-001** a\n- **Q1** a\n### 2026-11-11: x (FR-243, bug)\n- \`[IMPLEMENTED]\` **FR-243 The office is laid out.** text\n- \`[KNOWN GAP]\` Q9 tagged\n'); const tagged = commit(x, 'tagged');
+    G(x, 'checkout', '-q', 'main'); G(x, 'checkout', '-q', '-b', 'bold'); write(x, F, '- **FR-001** a\n- **Q1** a\n- **FR-243** **A question card.** text\n- **Q9** bold\n'); commit(x, 'bold');
+    G(x, 'update-ref', 'refs/remotes/pr/1487', tagged);
+    r = cli(x); assert.strictEqual(r.status, 1, 'a tagged FR on another open head is a clash: ' + r.stdout + r.stderr);
+    assert.match(r.stdout, /specs\/003-c\/spec\.md: FR-243 is also in PR #1487/); assert.match(r.stdout, /specs\/003-c\/spec\.md: Q9 is also in PR #1487/); }
+
   // the workflow keeps the token away from PR code (mutant: remove any of these and this fails)
   // a Windows checkout has CRLF line ends (core.autocrlf): the shape checks read the workflow with LF only, and a CRLF copy must give the same jobs
   const wfRaw = fs.readFileSync(path.join(__dirname, '..', '.github', 'workflows', 'spec-kit.yml'), 'utf8');
@@ -383,6 +398,42 @@ try {
   assert.match(nums, /PR_HEAD_SHA: \$\{\{ github\.event\.pull_request\.head\.sha \}\}/);
   assert.strictEqual((nums.match(/GH_TOKEN/g) || []).length, 1, 'the token is in the environment of one step only');
   assert.doesNotMatch(nums, /\$\{\{ github\.event\.pull_request\.(body|title|head\.ref)/);
+
+  // ---- one number defined twice inside one file (issue #1553), whole tree, offline, temp folders
+  assert.strictEqual(sn.checkDuplicates([{ file: 'specs/001-a/spec.md', id: 'FR-001', lines: [1, 3] }], '').length, 1, 'MUTANT-A a number defined twice in one file is a problem');
+  assert.deepStrictEqual(sn.checkDuplicates([{ file: 'specs/001-a/spec.md', id: 'FR-001', lines: [1, 3] }], 'specs/001-a/spec.md FR-001 2'), []);
+  { const dd = path.join(tmp, 'dups'); fs.mkdirSync(dd);
+    const spec = (...ls) => ls.join('\n') + '\n';
+    write(dd, 'specs/001-a/spec.md', spec('# A', '- **FR-001** one', '- **FR-002** two', 'A reference to **FR-001** in prose and "FR-002" in a table:', '| FR-002 | row |', '- see **FR-002, FR-003** (a list)'));
+    write(dd, 'specs/001-a/tasks.md', T('001', '002'));
+    write(dd, 'specs/002-b/spec.md', spec('- **FR-001** one', '- **FR-002** two', '- **FR-001** again'));
+    let r = cli(dd, ['--dups']);
+    assert.strictEqual(r.status, 1, 'MUTANT-C a duplicate in the second spec folder must fail --dups (every folder is read): ' + r.stdout + r.stderr);
+    assert.match(r.stdout, /specs\/002-b\/spec\.md: FR-001 is defined 2 times \(lines 1, 3\)/, 'duplicate named with both lines (second spec folder)');
+    assert.doesNotMatch(r.stdout, /001-a/, 'MUTANT-B references and a list in the first folder are not definitions');
+    // the first folder alone is also checked
+    write(dd, 'specs/002-b/spec.md', spec('- **FR-001** ok'));
+    r = cli(dd, ['--dups']); assert.strictEqual(r.status, 0, r.stdout + r.stderr);
+    write(dd, 'specs/001-a/tasks.md', T('001', '002', '002'));
+    r = cli(dd, ['--dups']); assert.strictEqual(r.status, 1, 'duplicate T in the first spec folder must fail --dups: ' + r.stdout); assert.match(r.stdout, /specs\/001-a\/tasks\.md: T002 is defined 2 times \(lines 2, 3\)/, 'duplicate in the first spec folder');
+    // a baseline allows what was there, never more; a stale line fails
+    r = cli(dd, ['--write-baseline']); assert.strictEqual(r.status, 0, r.stdout);
+    r = cli(dd, ['--dups']); assert.strictEqual(r.status, 0, 'baselined duplicate passes: ' + r.stdout);
+    write(dd, 'specs/001-a/tasks.md', T('001', '002', '002', '002'));
+    r = cli(dd, ['--dups']); assert.strictEqual(r.status, 1); assert.match(r.stdout, /T002 is defined 3 times \(lines 2, 3, 4\); the baseline allows 2/, 'a baselined duplicate may not grow');
+    write(dd, 'specs/001-a/tasks.md', T('001', '002'));
+    r = cli(dd, ['--dups']); assert.strictEqual(r.status, 1); assert.match(r.stdout, /T002 is no longer duplicated/, 'a stale baseline line fails');
+  }
+  // a branch that adds a second definition: the clash names both lines
+  { const d2 = repo();
+    G(d2, 'update-ref', 'refs/remotes/origin/main', 'HEAD');
+    G(d2, 'checkout', '-q', '-b', 'mine');
+    write(d2, 'specs/001-a/spec.md', S('001', '002') + '- **FR-001** again\n'); commit(d2, 'dup');
+    const r = cli(d2); assert.strictEqual(r.status, 1, r.stdout);
+    assert.match(r.stdout, /specs\/001-a\/spec\.md: FR-001 is also in this branch itself \(defined twice in the file, lines 1 and 3;/, 'both lines named');
+  }
+  // the repository's own specs: no duplicate beyond the baseline (mutant: references counted as definitions fails here)
+  { const r = cli(path.join(__dirname, '..'), ['--dups']); assert.strictEqual(r.status, 0, 'MUTANT-B the repository specs have no duplicate beyond the baseline: ' + r.stdout + r.stderr); }
 
   // the real repository's own files parse to something sane (the patterns still match the specs)
   const root = path.join(__dirname, '..');

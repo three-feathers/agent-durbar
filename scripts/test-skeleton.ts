@@ -21,6 +21,7 @@
  * Combining marks are NOT removed by skeleton(), only composed.
  */
 import assert from 'assert';
+import { cpuMs } from './redact-growth-lib';
 import fs from 'fs';
 import path from 'path';
 import { SKELETON_MAP, nameKey, skeleton } from '../src/shared/skeleton';
@@ -192,29 +193,30 @@ eq(nameKey('\u2460'), nameKey('1'), 'circled digit one');
 
 // every code point up to U+2FFFF, alone and between `1` and `rn`: nameKey and skeleton are idempotent (fixed, no randomness)
 {
-  const t = Date.now();
   const around = (c: string) => [c, '1' + c + 'rn'];
-  for (let cp = 0; cp <= 0x2ffff; cp++) {
-    for (const x of around(String.fromCodePoint(cp))) {
-      const k = nameKey(x), s1 = skeleton(x, { digits: true }), s0 = skeleton(x);
-      if (nameKey(k) !== k || skeleton(s1, { digits: true }) !== s1 || skeleton(s0) !== s0) assert.fail('not idempotent: U+' + cp.toString(16) + ' in ' + JSON.stringify(x));
+  const cpu = cpuMs(() => {
+    for (let cp = 0; cp <= 0x2ffff; cp++) {
+      for (const x of around(String.fromCodePoint(cp))) {
+        const k = nameKey(x), s1 = skeleton(x, { digits: true }), s0 = skeleton(x);
+        if (nameKey(k) !== k || skeleton(s1, { digits: true }) !== s1 || skeleton(s0) !== s0) assert.fail('not idempotent: U+' + cp.toString(16) + ' in ' + JSON.stringify(x));
+      }
     }
-  }
+  }, 120000);
   n++;
-  // the bound is a safety net for slow CI machines (Windows), not a performance claim
-  ok(Date.now() - t < 120000, 'the whole sweep of U+0000..U+2FFFF ran in ' + (Date.now() - t) + ' ms');
+  // the bound is a hang backstop in CPU time (a loaded machine does not raise it), not a performance claim
+  ok(cpu < 120000, 'the whole sweep of U+0000..U+2FFFF took ' + cpu.toFixed(0) + ' ms of CPU time');
 }
 
 // big input stays fast (loose bound)
 {
   const big = '\u0430b1rn '.repeat(40000);
-  const t = Date.now();
-  const out = skeleton(big, { digits: true });
+  let out = '', key = '';
+  const cpu = cpuMs(() => { out = skeleton(big, { digits: true }); }, 2000);
   eq(out, 'ablm '.repeat(40000), 'the 200,000 character name is folded exactly');
-  ok(Date.now() - t < 2000, 'a 200,000 character name is folded in under 2 s');
-  const t2 = Date.now();
-  eq(nameKey(big), 'ablm '.repeat(39999) + 'ablm', 'nameKey of the big name is exact');
-  ok(Date.now() - t2 < 2000, 'nameKey on 200,000 characters under 2 s');
+  ok(cpu < 2000, 'a 200,000 character name is folded in under 2 s of CPU time (' + cpu.toFixed(0) + ' ms)');
+  const cpu2 = cpuMs(() => { key = nameKey(big); }, 2000);
+  eq(key, 'ablm '.repeat(39999) + 'ablm', 'nameKey of the big name is exact');
+  ok(cpu2 < 2000, 'nameKey on 200,000 characters under 2 s of CPU time (' + cpu2.toFixed(0) + ' ms)');
 }
 
 console.log('test-skeleton: ' + n + ' checks passed');
