@@ -525,9 +525,14 @@ async function driver(ctx) {
       document.querySelectorAll('#stage .ro-chip').forEach((e) => add('chip', e));
       document.querySelectorAll('#stage .ro-drafttag.on').forEach((e) => add('drafttag', e)); /* spec 097 FR-316 */
       /* spec 102 (issue #1632): in the arcade a Draft tag stays off its cabinet's whole screen box (the glass and the bezel round it), and an empty seat's tag, on the post-it beside the cabinet, off the cabinet too: both boxes are measured against the Draft tag only. Mutant (a source edit): in src/renderer/realoffice.js the `dr:` tag's box, drop the `lay.cabinet && ...` clamp (use `d.away.x - d.away.s / 2` alone), build, run: it must fail "drafttag <id> overlaps cabinet <id>" (and screenbox) on every post-it that stands right of its cabinet */
+      let cabs = 0;
       if (want === 'retro') { /* the arcade's cabinets only: the cave has none (`want` is `cave` there, and the cabinet lookup threw on null: spec 097 delta 2026-11-15) */
         document.querySelectorAll('#stage .ro-screen:not(.ro-lmon)').forEach((e) => add('screenbox', e));
-        for (const z of L.zones) for (const d of z.desks) if (d.away) add('cabinet', document.querySelector('#stage .ro-desk.ro-cab[data-for="' + d.id + '"]'));
+        for (const z of L.zones) for (const d of z.desks) { /* every cabinet, not only an empty seat's: a Draft tag of a desk with its person must stay off the cabinet's base too (owner decision 2026-11-18, issue #1632; the person's stand box is measured with it). Mutant (a source edit): in src/renderer/realoffice.js the `dr:` tag, make `side` always null, build, run: it must fail "drafttag <id> overlaps cabinet <id>" on every desk that has a person */
+          add('cabinet', document.querySelector('#stage .ro-desk.ro-cab[data-for="' + d.id + '"]'));
+          if (!d.away && d.stand) { cabs++; add('figure', null, { x: o.left + d.stand.x, y: o.top + d.stand.y, r: o.left + d.stand.x + d.stand.w, b: o.top + d.stand.y + d.stand.h }, d.id); }
+        }
+        if (!cabs) P.push('no cabinet with a person was in the checked layout');
       }
       document.querySelectorAll('#stage .ro-away').forEach((e) => add('away', e));
       document.querySelectorAll('#stage .ro-screen .ro-bezel').forEach((e) => add('screen', e));
