@@ -1,0 +1,1 @@
+- Internal: `scripts/pr-gate.sh` reads `durbar-samikshak[bot]` comments, line comments, threads and change requests like a teammate's (they block the merge), and never lists a bot's approval as "approved by" (spec 103, issue #1706); nothing changes for users.

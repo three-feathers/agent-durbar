@@ -349,7 +349,16 @@ if (part === 'runs') {
 if (part === 'wrappers') {
   // (i) cost: wrapper shapes stay linear
   const run = (x: string): void => { _uncappedForTest.maskSecretArgs(['sh', '-c', x]); _uncappedForTest.maskSecretArgs(['powershell', '-Command', x]); _uncappedForTest.maskSecretCommand(x); };
-  for (const unit of ['sh -c "x \\"y\\"" ', `powershell -Command "a ${BT}" `, 'cmd /c a ^" ', 'bash -c "sh -c \\"a ', "pwsh -c 'a '' ", '"--token ']) assertLinearShape(`14d linearity ${JSON.stringify(unit)}`, run, (n) => unit.repeat(Math.ceil(n / unit.length)).slice(0, n));
+  // issue #1826: the nested `bash -c "sh -c` unit read 3.0 to 3.7 s CPU at 400k here (over 10 s on a slow VPS, on its backstop), so it grows to 100k (about 0.9 s) and the work is pinned by a counter below
+  const NESTED = 'bash -c "sh -c \\"a ';
+  for (const unit of ['sh -c "x \\"y\\"" ', `powershell -Command "a ${BT}" `, 'cmd /c a ^" ', NESTED, "pwsh -c 'a '' ", '"--token ']) assertLinearShape(`14d linearity ${JSON.stringify(unit)}`, run, (n) => unit.repeat(Math.ceil(n / unit.length)).slice(0, n), unit === NESTED ? 100_000 : undefined);
+  {
+    const passes = (n: number): number => { const before = _shapePassesForTest(); run(NESTED.repeat(Math.ceil(n / NESTED.length)).slice(0, n)); return _shapePassesForTest() - before; };
+    const small = passes(6_250);
+    const big = passes(100_000);
+    assert.ok(small > 1000, `#1826 work nested wrapper: ${small} shape passes at 6250 characters (the counter reads nothing)`);
+    assert.ok(big <= small * 18, `#1826 work nested wrapper: ${big} shape passes at 100000 characters against ${small} at 6250 (16x the input, limit 18x the passes: quadratic?)`);
+  }
   // review of #455 item 1: one long backslash run after a cmd wrapper (no quote after it) is not retried from each position
   for (const head of ['cmd /c ^x ', 'cmd /c \\"x ']) assertLinearShape(`14d linearity ${JSON.stringify(head)} + backslash run`, (x) => { _uncappedForTest.maskSecretCommand(x); }, (n) => head + '\\'.repeat(n));
 }
