@@ -680,6 +680,31 @@ assert.strictEqual(sentenceOf(s), s.sentence);
   }
   assert.strictEqual(runs, forms.length * 750, '#1320 brain: every random cut was fed');
   assert.deepStrictEqual(leaked.slice(0, 3), [], `#1320 brain: no random cut inside the token shows the value (${leaked.length} of ${runs} did)`);
+  // round 4: the same random cuts, always with a cut right after the token, for values the named rules leave alone when written whole (a dotted value, a value on the
+  // next line after a line continuation) and the backtick separator. Some of these show on main too ([KNOWN GAP], FR-187 round 4: a quoted or backtick value that reads
+  // as a dotted name, a value after a line continuation), so the check is a ratchet: per form, how many of the cuts show a piece of the value may only go down. The
+  // counts are main's (checked against a frozen main in the review); the round-2 fold showed more (46, 20 and 51 where these read 5, 12 and 14).
+  const hard = ['cfg.' + val, 'cfg.x\\\n' + val];
+  const hardForms = (v: string): Array<[string, string]> => [['=V', '=' + v], ['=`V`', '=`' + v + '`'], [':=V', ':=' + v], ['="V"', '="' + v + '"']];
+  const hardCount: Record<string, number> = {};
+  seed = 18724; // its own seed, so the counts do not move when the loop above changes
+  for (const [hi, v] of hard.entries()) for (const [fk, form] of hardForms(v)) {
+    const key = (hi ? 'next line ' : 'dotted ') + fk;
+    hardCount[key] = 0;
+    const text = 'x ' + tok + pw + form + ' done';
+    for (let k = 0; k < 60; k++) {
+      const n = 1 + Math.floor(rnd() * 4);
+      const cuts = new Set<number>([2 + tok.length]);
+      while (cuts.size < n + 1) cuts.add(2 + tok.length + 1 + Math.floor(rnd() * (text.length - tok.length - 3)));
+      const pts = [0, ...[...cuts].sort((x, y) => x - y), text.length];
+      if (shows(pts.slice(1).map((q, i) => text.slice(pts[i], q)))) hardCount[key]++;
+    }
+  }
+  const HARD_RATCHET: Record<string, number> = { 'dotted =V': 0, 'dotted =`V`': 5, 'dotted :=V': 0, 'dotted ="V"': 60, 'next line =V': 12, 'next line =`V`': 14, 'next line :=V': 13, 'next line ="V"': 60 };
+  assert.deepStrictEqual(Object.keys(hardCount).sort(), Object.keys(HARD_RATCHET).sort(), '#1320 brain round 4: every hard form is counted');
+  // round 4: a token glued to a separator at the end of a piece is no header name: its raw head is never held while the value is awaited
+  for (const second of ['cfg.' + 'Vq7Ab1Cd2 done', '`cfg', 'Vq7' + 'v0TwQ4 done']) assert.ok(!showsAny(['x ' + tok + '=', second], tok.slice(4)), `#1320 brain round 4: a token before a separator is not held raw (${second.slice(0, 4)})`);
+  for (const key of Object.keys(HARD_RATCHET)) assert.ok(hardCount[key] <= HARD_RATCHET[key], `#1320 brain round 4: cuts after the token that show a ${key} value may only go down (${hardCount[key]} > ${HARD_RATCHET[key]})`);
   // round 3: a stream cut right after the token, the name and its separator in the next piece, then a value the named rules leave alone (a dotted name; a quoted
   // one with a line continuation and a long value on the next line): hidden as on main, no piece of it shows
   const dotted = 'cfg.' + 'Vq7' + 'Ab1' + 'Cd2';

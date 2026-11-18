@@ -111,6 +111,14 @@ for (const keep of ['ghp_short', 'see ghs_count', 'wei' + 'ghs_' + 'TotalWeightK
   assert.strictEqual(maskGluedTail('x [redacted]' + pw + '="' + val + '"'), 'x [redacted]"[redacted]"', '#1320 glued name: maskGluedTail reads a quoted value glued to a mask');
   assert.strictEqual(maskGluedTail('x [redacted]>' + val), 'x [redacted]>[redacted]', '#1320 glued name: maskGluedTail reads a value after the rest of `=>`');
   assert.strictEqual(maskGluedTail('x [redacted] ' + val), 'x [redacted] ' + val, '#1320 glued name: maskGluedTail leaves a word after a mask and a blank');
+  // review of PR 1872, round 4: `>` counts only glued to the mask (the rest of `=>`); a quoted word after a mask and a blank is hidden on purpose (the folded `<name>= "<value>"`)
+  assert.strictEqual(maskGluedTail('echo [redacted] > backup' + '2024 done'), 'echo [redacted] > backup' + '2024 done', '#1320 glued name: maskGluedTail leaves a word after a mask, a blank and >');
+  assert.strictEqual(maskGluedTail('see [redacted] "Release' + '2024"'), 'see [redacted] "[redacted]"', '#1320 glued name: maskGluedTail hides a quoted word after a mask and a blank (accepted)');
+  // round 4: linear on a long run of quotes after a mask (two quote runs side by side were quadratic)
+  for (const q of ["'", '"', '`']) {
+    const label = `#1320 maskGluedTail quote run ${q}`;
+    try { assertLinearShape(label, (x) => { maskGluedTail(x); }, (k) => 'note [redacted]' + q.repeat(k), 64_000); } catch (e) { throw new assert.AssertionError({ message: `${label}: ${(e as Error).message}` }); } // the helper's backstop names no case: it is named here
+  }
 }
 
 // spec 012 FR-181 (issue #1541, T162): a token written with a backslash escape inside (`ghp\_<body>`, `g\hp_<body>`) is hidden by

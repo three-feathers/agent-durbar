@@ -1002,6 +1002,9 @@ for (const st of ['idle', 'needs-permission', 'error', 'stopped']) {
     // round 3: the same entities without their closing semicolon
     ['entity backslashes without a semicolon, Windows', 'see C:&#92Users&#92' + user + '&#92notes done.'],
     ['hex entity backslashes without a semicolon, UNC', 'see &#x5C&#x5Cnas&#x5Cshare&#x5C' + user + '&#x5Cnotes done.'],
+    // round 4: entity slashes without their semicolon
+    ['entity slashes without a semicolon', 'see &#47home&#47' + user + '&#47notes done.'],
+    ['hex entity slashes without a semicolon', 'see &#x2fhome&#x2f' + user + '&#x2fnotes done.'],
     ['emphasis inside the name', 'see /home/*zq*' + user.slice(2) + '/notes done.'],
     ['strong emphasis inside the name', 'see /home/zq**' + user.slice(2) + '**/notes done.'],
     ['a nested escape inside the name', 'see /home/zq' + bs.repeat(3) + '_' + user.slice(2) + '/notes done.'],
@@ -1013,6 +1016,13 @@ for (const st of ['idle', 'needs-permission', 'error', 'stopped']) {
   }
   // round 3, near misses: an entity whose number goes on is another character (as HTML reads it), not a backslash, so the line is not blanked
   for (const t of ['see C:&#x5CUsers&#x5C' + 'ab12 done.', 'see C:&#92Users&#92' + '12ab done.']) eq(all(f.block(t, 'reply')), t, `#1320 monitor: an entity whose number goes on is no backslash: ${t}`);
+  eq(all(f.block('see &#470;home&#470;' + user + ' done.', 'reply')), 'see &#470;home&#470;' + user + ' done.', '#1320 monitor: an entity whose number goes on is no slash');
+  eq(all(f.block('see /home&#47' + '12ab/notes done.', 'reply')), 'see /home&#47' + '12ab/notes done.', '#1320 monitor: an entity whose number goes on is no slash (before a digit)');
+  // round 4: the normal form is ONE pass (code scanning js/double-escaping): a backslash written as an entity is not read again as an escape of what follows it.
+  // So an entity backslash before a slash stays a backslash: no home folder in the normal form, the line shows as written ([KNOWN GAP], as on main: `/home\/<user>`),
+  // and before `_` it stays too: the readings differ and the line shows nothing (fail closed). A second pass would change both.
+  eq(all(f.block('see /home&#92;/' + user + '/notes done.', 'reply')), 'see /home&#92;/' + user + '/notes done.', '#1320 monitor: an entity backslash before a slash is kept (one pass)');
+  eq(f.block('see /home/' + user + '/a&#92;_b done.', 'reply'), [], '#1320 monitor: an entity backslash before an underscore is kept (one pass)');
   // a home mask that fails on the reading of the text as written only (here: on a doubled backslash, which maskRaw halves): nothing shows
   const failRaw = { ...mask, home: (s: string) => (s.includes(bs + bs) ? (null as unknown as string) : maskHomePaths(s, [])) };
   const fr = L.create({ mask: failRaw }) as unknown as { block(raw: string, k?: string): { t: string }[]; strict(raw: string, k?: string): { t: string }[] };
