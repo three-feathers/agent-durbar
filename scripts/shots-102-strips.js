@@ -16,6 +16,7 @@
  *   List... opens the overlay by itself and the list is in view; Escape hides it and focus is on the bar's button; Dismiss on the last strip
  *   takes the bar away;
  * - restore+away+MCP (three strips) and crash Pick open with restore: the same rule at both sizes (issue #1589, Linux; Windows not run);
+ * - a status filter (Working pill, 14 or 11 cabinets) plus the MCP strip, restore+away, or restore+away+MCP: the office does not scroll and the filter note is not covered (gap (b) of #1597);
  * - 16 agents with five strips at 1280x800: the yield does not help, so the strips stay in the flow and the office scrolls as before;
  * - Photo: no yield whatever the strips.
  */
@@ -178,6 +179,31 @@ module.exports = async (ctx) => {
   assert.strictEqual(await js(`document.getElementById('stripAlert').textContent`), '', 'view switch: in List the alert region is empty');
   await js(`document.getElementById('vOffice').click();0`);
   assert.ok(await until(`document.body.classList.contains('strips-yield')&&!document.getElementById('stripBar').hidden&&!document.body.classList.contains('strips-open')`, 4000), 'view switch: back in the Office the strips yield again, folded');
+  /* gap (b) of #1597: a status filter (the Working pill) showing 14 or 11 cabinets, plus one, two or three strips: the filter note stands in the floor's top padding
+     and the strips yield / the lend take it back, so the office does not scroll; the note stays visible and is not covered by the hall (Linux, simulator; Windows not run) */
+  for (const [w, h] of [[1280, 800], [1440, 900]]) {
+    for (const strips of [['mcp'], ['restore', 'away'], ['restore', 'away', 'mcp']]) {
+      for (const n of [14, 11]) {
+        const tag = `filter note (${n} cabinets) + ${strips.join('+')} ${w}x${h}`;
+        await setup({ id: 'fnote', strips }, w, h);
+        const ids = await js(`window.__durbarSimUi.agents().filter(a=>!a.parent).map(a=>a.id)`);
+        for (const id of ids) await js(`window.__durbarSimEmit({type:'output',sessionId:${jsLiteral(id)},timestamp:Date.now(),text:'x',final:false});0`);
+        await settle();
+        const working = await js(`window.__durbarSimUi.agents().filter(a=>!a.parent&&a.state==='working').map(a=>a.id)`);
+        for (const id of working.slice(n)) await js(`window.__durbarSimEmit({type:'status',sessionId:${jsLiteral(id)},timestamp:Date.now(),status:'error',intent:'stopped'});0`);
+        await settle();
+        await js(`document.querySelector('.stat[data-k="working"]').click();0`);
+        assert.ok(await until(`(()=>{const n=document.getElementById('filterNote');return !!n&&!n.hidden&&document.getElementById('floor').classList.contains('has-fnote')})()`, 6000), `${tag}: the filter note shows`);
+        await settle();
+        const F = await js(`(()=>{const n=document.getElementById('filterNote').getBoundingClientRect(),r=document.querySelector('#stage .ro').getBoundingClientRect();return {cabs:document.querySelectorAll('#stage .ro .ro-plate[data-id]').length,noteBottom:Math.round(n.bottom),roTop:Math.round(r.top)}})()`);
+        const T = await js(STATE);
+        assert.strictEqual(F.cabs, n, `${tag}: ${n} cabinets are drawn: ${JSON.stringify(F)}`);
+        assert.ok(fits(T), `${tag}: the office does not scroll (scrollHeight ${T.sh} against ${T.ch}): ${JSON.stringify(T)}`);
+        assert.ok(F.roTop >= F.noteBottom, `${tag}: the filter note is not covered by the hall (note ends ${F.noteBottom}, hall starts ${F.roTop})`);
+        if (process.env.SHOTS && n === 14) await H.shot(path.join(OUT, `102-1589-fnote-${strips.join('-')}-${w}x${h}.png`), { prep: 'mouse', tag: '102' });
+      }
+    }
+  }
   /* 16 agents with five strips: the bar would not make them fit, so the strips stay where they were (as the lend, T308) */
   await setup(ALL5, 1280, 800, 16);
   const S16 = await js(STATE);
