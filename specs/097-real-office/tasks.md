@@ -264,6 +264,16 @@ The dusk was dropped (owner, 2026-11-04 04:52 UTC): FR-239..FR-242 and T189 are 
 - [x] T273 [US1] Pictures at both sizes (Photo, cave) and a 2x crop to the owner before merge, compressed under 300 KB; the owner looked (2026-11-08 09:30 UTC) and chose "fine as is" [FR-307]
 - [x] T274 [US1] Docs: changelog fragment, `docs/features.md`, `docs/feature-inventory.md`, the spec's tags [FR-306..FR-311]
 
+## 2026-11-08: trouble signs on a Real office desk (issue #1171, FR-360..FR-362)
+
+- [x] T280 [US2] Real office trouble signs, spec delta 2026-11-08 [FR-360..FR-362, #1171]: spec, tasks and changelog fragment
+- [x] T281 [US2] `realModel` passes `mood` (from `moodFor`) and `sirenIcon`; `realoffice.js` draws the sweat drop, horns, ring and siren in the chrome layer; the plate name carries the words; `realoffice.css` [FR-360, FR-361, FR-362]
+- [x] T282 [US2] `scripts/check-097-trouble-signs.js`: the same desks as Open office, geometry, Serious mode, words, both sizes; in `ui-suite` [FR-360, FR-361]
+- [x] T283 [US2] Mutation checks (no sweat, no horns, no ring, no siren, a sign on every desk) and pictures at both sizes [FR-361]
+- [x] T284 [US2] After the merge with main: the mood's words live in `a.moodWords` and are joined by `labelOf` (mood, context, helpers, Open chat panel); the cheap context path carries the mood and schedules a draw when the look changes; `check-097-ctx-frame` passes again [FR-326, FR-362]
+- [x] T285 [US2] Review of PR #1321 (2026-11-09, five findings) [FR-326, FR-361, FR-362]: `check-097-ctx-frame`'s mood step reads `ctx`'s answer and the cheap path's stored look and words while draws are held, then asks for one real draw (`__durbarSimUi.render`) instead of waiting for a natural one; `check-097-trouble-signs` runs in the Photo office, the cave (heavy, siren, monster, geometry, no overlap) and the Retro arcade (no sign at a cabinet), and checks a lounge seat at 95 % (no sign, no mood words by the cheap path or a draw); `ctx` gives a lounge seat no mood; slips and the inbox pill are placed clear of the signs (`MOOD_BOXES`); `shots-097-moments` asks for the coffee break's mood words in the plate name; mutants listed in each driver's header
+- [x] T295 [US2] FR-074 for the trouble signs (spec delta 2026-11-09 later): a sign's animation (the siren's breath) pauses with `.ro.paused` and stops with `.still`; a context event that changes the look while the document is hidden asks for its draw only once visible again; `check-097-ctx-frame` checks no draw and no sign while hidden, then the signs and the name on return; `check-097-motion` passes again; mutants in the driver's header [FR-074, FR-326, FR-361]
+
 ## 2026-11-09: a helper strip is one row, never a second line (bug #1384, FR-338; changes FR-308)
 
 - [x] T275 [US1] Spec delta 2026-11-09 (report, the measurement before the fix, the cause, FR-338), plan and tasks, before any src change [FR-338]
@@ -404,3 +414,11 @@ Order: T327 (the owner's picture gate) before any code PR; T328, T329 (art, #164
 ## 2026-11-11: name an OS focus loss in the drag status-change step (issue 1550)
 
 - [x] T309 [US2] Spec delta 2026-11-11: the status-change step of `check-097-drag` installs a window blur/focus recorder before the drag, reads `document.hasFocus()` around the 300 ms hold and, when "a status change does not end the drag" fails after a focus loss, the message names it (`scripts/drag-focus.js`, issue 1550, FR-352); verdict, waits and hold unchanged. Test: `test:pointer-log` static case plus unit cases and five source mutants of the helper; by hand a window blur injected during the hold turns the run red with the label (deleting the `reorder.js` blur listener does not fail this driver: no blur-cancel check here). Part of the issue, cause unproven.
+
+## 2026-11-11: the rename pencil stays inside a plate with a long name (issue #1549, part of #1513)
+
+- [x] T308 [US2] Spec delta 2026-11-11 (FR-364): a plate with a pencil caps its name at the line's width less 22 px (`realoffice.css`; the arcade's lounge seat, whose line is a block, gives the name its own `inline-block` box in `worlds/retro/world.css`), so the pencil stays inside the plate; `check-097-plate-pencil` runs every world with `simnames=long` and asserts the painted chip is inside its plate and over no status (mutants `longname`, `paint`); its picture step forces the pencils visible. #1513's symptom was not reproduced on the Mac. Follow-up (CI, Linux and Windows UI shards): the arcade lounge seat's line is `calc(55% + 22px)` with a pencil, so the capped name is not cut (`shots-097-moments` retro, mutant `lounge22`).
+
+## 2026-11-17: review of #1546 on the trouble-sign drivers (issue #1171)
+
+- [x] T361 [US2] Spec delta 2026-11-17: `check-097-ctx-frame` FR-074 step counts only the draws the context event's handler asked for (`__roEv`, rAF callbacks queued during the event), not every draw in the window; `check-097-trouble-signs` checks the sign's bottom against its slot's bottom (the duplicated right-edge test) and, at 1 to 4 agents (`simhelpers=6`), that no sweat, horns, ring or siren lies over a desk-top kid or the "+K" block (FR-368; `SIGNS_SMALL=1,3` limits the counts). Mutants: a sweat drop pushed below its slot fails "stays inside its slot"; a sweat drop placed on the first kid place fails "does not lie over a kid". `[KNOWN GAP]` the hidden step's pass under load is shown by repeated runs (see the PR's checks comment), not by a deterministic mutant; the open window is a draw queued by other code between the probe draw and the step's own callback (a microtask), not one queued after that callback.

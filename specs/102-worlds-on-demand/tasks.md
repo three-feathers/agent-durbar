@@ -400,6 +400,10 @@ Fix round 2026-11-14 (review of #1740, T223 stays unticked): the contrast check 
 - [x] T348 Docs read 2026-11-14: README, `docs/features.md`, `docs/themes.md`, `docs/world-design.md` and `docs/limits.md` never said the Retro Pixel theme retires or its users migrate, so no doc line changes (`Docs: n/a`); the spec lines are the only place. Test: `npm test` (docs checks).
 - [x] T351 The moments driver's empty-office step restores the stored floor in a `finally`, so a step that runs after it (cells) starts on the first floor (issue #1777). Test first: `test:momentsregistry` fails on the driver without the restore (mutant), and `MOMENTS_ONLY=cells,empty-office MOMENTS_WORLDS=retro` failed before and passes after, in both orders.
 
+## 2026-11-18: the two room figures of FR-312 carry their metric (spec 102 Changes 2026-11-18)
+
+- [x] T359 FR-312's room figures are labelled: 13.84 / 17.45 px is macOS with the system font from the `+N!` edge; 7.391 / 11.609 px (ratio 1) and 6.398 / 10.609 px (ratio 2) is Linux Noto from the word's end to the content box (the driver's `room`, floor 3 px). Ratio 1.25 / 1.5 and Segoe UI stay a `[KNOWN GAP]` (issue #1842 stays open). Spec only: no code, no picture.
+
 ## 2026-11-11: the Auto-follow desk mark in the arcade (issue #1399)
 
 - [x] T284 The Auto-follow desk mark (`.ro-plate.is-followed`) checked in the arcade at both sizes: folded into T320's `DRIVER_WORLD=retro` run of `check-auto-follow` (its Real office step; one `ui-suite` row, `check-auto-follow retro`; no `AF_WORLD`), 2026-11-16. Test: passes at both sizes; mutants (no `is-followed`, `.ro-l2` overflow visible) each fail their own labelled assert; the Photo office drawn (forced load `world: 'photo'`) was re-run 2026-11-17 and dies at `driver-helpers`' "DRIVER_WORLD=retro: the arcade is not drawn (a pass here would be the Photo office)". `[KNOWN GAP]`: see the 2026-11-11 delta.

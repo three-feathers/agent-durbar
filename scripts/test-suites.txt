@@ -43,6 +43,7 @@ test:site
 test:blogcheck
 test:compressshots
 test:changelog
+test:releasenodeps
 test:releasevideo
 test:usage
 test:specsindex
