@@ -649,7 +649,19 @@ assert.strictEqual(sentenceOf(s), s.sentence);
   const forms = ['=' + val, ' = ' + val, '="' + val + '"', ': ' + val, ': "' + val + '"', '":"' + val + '"', '=>' + val, ':=' + val, '\\":\\"' + val + '\\"', ':' + val];
   let seed = 1872;
   const rnd = (): number => { seed = (Math.imul(seed, 1103515245) + 12345) >>> 0; return seed / 2 ** 32; };
-  const shows = (chunks: string[]): boolean => JSON.stringify(feed(fresh(), [{ type: 'user' }, ...chunks.map((delta) => ({ type: 'thinking', delta })), start('bash', { command: 'ls' })], 1)).includes(val);
+  // review of PR 1872, round 3: every state after each delta (and after the turn's next step) is checked for any 4-character piece of the value, not only the final text
+  const pieces = (v: string): string[] => Array.from({ length: v.length - 3 }, (_x, i) => v.slice(i, i + 4));
+  const showsAny = (chunks: string[], v: string): boolean => {
+    let st = feed(fresh(), [{ type: 'user' }], 1);
+    const ps = pieces(v);
+    for (const delta of [...chunks.map((d) => ({ type: 'thinking', delta: d })), start('bash', { command: 'ls' })]) {
+      st = feed(st, [delta], 1);
+      const out = JSON.stringify(st);
+      if (ps.some((p) => out.includes(p))) return true;
+    }
+    return false;
+  };
+  const shows = (chunks: string[]): boolean => showsAny(chunks, val);
   let runs = 0;
   const leaked: string[][] = [];
   for (const form of forms) {
@@ -658,6 +670,7 @@ assert.strictEqual(sentenceOf(s), s.sentence);
     for (let k = 0; k < 750; k++) {
       const n = 1 + Math.floor(rnd() * 5);
       const cuts = new Set<number>();
+      if (k % 2 === 0) cuts.add(2 + tok.length); // half the runs are also cut right after the token (round 3)
       while (cuts.size < n) cuts.add(1 + Math.floor(rnd() * (text.length - 1)));
       const pts = [0, ...[...cuts].sort((x, y) => x - y), text.length];
       const chunks = pts.slice(1).map((q, i) => text.slice(pts[i], q));
@@ -667,6 +680,17 @@ assert.strictEqual(sentenceOf(s), s.sentence);
   }
   assert.strictEqual(runs, forms.length * 750, '#1320 brain: every random cut was fed');
   assert.deepStrictEqual(leaked.slice(0, 3), [], `#1320 brain: no random cut inside the token shows the value (${leaked.length} of ${runs} did)`);
+  // round 3: a stream cut right after the token, the name and its separator in the next piece, then a value the named rules leave alone (a dotted name; a quoted
+  // one with a line continuation and a long value on the next line): hidden as on main, no piece of it shows
+  const dotted = 'cfg.' + 'Vq7' + 'Ab1' + 'Cd2';
+  const long = 'Ab1Cd2' + 'Ef3Gh4' + 'Ij5Kl6Mn';
+  const regress: Array<[string, string[], string]> = [
+    ['a dotted value', ['x ' + tok, pw + '=' + dotted + ' done'], dotted.slice(4)],
+    ['a dotted value in a backtick, split', ['x ' + tok, pw + '=`' + dotted.slice(0, 9), dotted.slice(9) + ' done'], dotted.slice(4)],
+    ['a backtick value, a line continuation and a long value', ['x ' + tok, pw + '=`cfg.x\\\n' + long], long],
+    ['the separator alone, then the value', ['x ' + tok, 'api_' + 'key:=', 'cfg.x\\\n' + long + ' done'], long],
+  ];
+  for (const [label, chunks, v] of regress) assert.ok(!showsAny(chunks, v), `#1320 brain round 3: a cut right after the token hides the value (${label})`);
 }
 
 // spec 012 FR-181 (issue #1541): an escaped token (`ghp\_<body>`) in a shell step's command, as a string and as an argument list, is hidden in the step target

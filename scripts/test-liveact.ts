@@ -999,6 +999,9 @@ for (const st of ['idle', 'needs-permission', 'error', 'stopped']) {
     ['entity backslashes, Windows', 'see C:&#92;Users&#92;' + user + '&#92;notes done.'],
     ['hex entity backslashes, UNC', 'see &#x5C;&#x5C;fs01&#x5C;share&#x5C;' + user + '&#x5C;notes done.'],
     ['named entity backslashes, Windows', 'see C:&bsol;Users&bsol;' + user + '&bsol;notes done.'],
+    // round 3: the same entities without their closing semicolon
+    ['entity backslashes without a semicolon, Windows', 'see C:&#92Users&#92' + user + '&#92notes done.'],
+    ['hex entity backslashes without a semicolon, UNC', 'see &#x5C&#x5Cnas&#x5Cshare&#x5C' + user + '&#x5Cnotes done.'],
     ['emphasis inside the name', 'see /home/*zq*' + user.slice(2) + '/notes done.'],
     ['strong emphasis inside the name', 'see /home/zq**' + user.slice(2) + '**/notes done.'],
     ['a nested escape inside the name', 'see /home/zq' + bs.repeat(3) + '_' + user.slice(2) + '/notes done.'],
@@ -1008,6 +1011,8 @@ for (const st of ['idle', 'needs-permission', 'error', 'stopped']) {
     ok(!all(f.block(t, 'reply')).includes(user.slice(2)), `#1320 monitor: block hides the user name (${label}): ${all(f.block(t, 'reply'))}`);
     ok(!all(f.strict(t, 'err')).includes(user.slice(2)), `#1320 monitor: strict hides the user name (${label}): ${all(f.strict(t, 'err'))}`);
   }
+  // round 3, near misses: an entity whose number goes on is another character (as HTML reads it), not a backslash, so the line is not blanked
+  for (const t of ['see C:&#x5CUsers&#x5C' + 'ab12 done.', 'see C:&#92Users&#92' + '12ab done.']) eq(all(f.block(t, 'reply')), t, `#1320 monitor: an entity whose number goes on is no backslash: ${t}`);
   // a home mask that fails on the reading of the text as written only (here: on a doubled backslash, which maskRaw halves): nothing shows
   const failRaw = { ...mask, home: (s: string) => (s.includes(bs + bs) ? (null as unknown as string) : maskHomePaths(s, [])) };
   const fr = L.create({ mask: failRaw }) as unknown as { block(raw: string, k?: string): { t: string }[]; strict(raw: string, k?: string): { t: string }[] };

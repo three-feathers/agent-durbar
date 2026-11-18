@@ -105,13 +105,12 @@ for (const keep of ['ghp_short', 'see ghs_count', 'wei' + 'ghs_' + 'TotalWeightK
   assert.strictEqual(maskTokenShapes(tok + pw + '=' + val, '$&x'), '$&x=$&x', '#1320 glued name: a mask with replacement characters is written as it is');
   // a rest glued by a colon is folded first and keeps its host, as on main (the value rule runs after the glued rest)
   assert.strictEqual(redact(tok + ':x-oauth-' + 'basic@github.com', {}), '[redacted]@github.com', '#1320 glued name: a rest glued by a colon keeps its host');
-  // a name cut after its `=` (a stream piece that ends there) keeps the `=`, so the value of the next piece is read as a named value
-  // (a stream piece after an earlier mask: `[redacted]` then the rest of the token's tail and the name, read by the glued rest)
-  assert.strictEqual(redact('x [redacted]' + 'pp' + pw + '="', {}), 'x [redacted]="', '#1320 glued name: a separator that ends the glued rest stays');
-  assert.strictEqual(redact('x [redacted]' + 'pp' + pw + '=>', {}), 'x [redacted]=>', '#1320 glued name: a separator before `>` stays');
-  assert.strictEqual(redact('x [redacted]' + 'pp' + pw + '=', {}), 'x [redacted]=', '#1320 glued name: a separator at the end stays');
-  assert.strictEqual(redact('x [redacted]' + 'A1b2C3d4E5f6=', {}), 'x [redacted]', '#1320 glued name: a `=` after a rest that ends in no secret name is folded, as on main');
-  assert.strictEqual(maskGluedTail('x [redacted]' + pw + '="' + val + '"'), 'x [redacted]="[redacted]"', '#1320 glued name: maskGluedTail keeps the separator and reads the value');
+  // review of PR 1872, round 3: the glued rest folds a glued name and its separator as on main (keeping the `=` there made a value the value pass refuses show);
+  // the brain's tail reads a quoted value glued to a mask, so a stream cut after the separator still hides the value (`#1320 brain` in test-brainstate)
+  assert.strictEqual(redact('x [redacted]' + 'pp' + pw + '="', {}), 'x [redacted]"', '#1320 glued name: the glued rest folds a name and its separator, as on main');
+  assert.strictEqual(maskGluedTail('x [redacted]' + pw + '="' + val + '"'), 'x [redacted]"[redacted]"', '#1320 glued name: maskGluedTail reads a quoted value glued to a mask');
+  assert.strictEqual(maskGluedTail('x [redacted]>' + val), 'x [redacted]>[redacted]', '#1320 glued name: maskGluedTail reads a value after the rest of `=>`');
+  assert.strictEqual(maskGluedTail('x [redacted] ' + val), 'x [redacted] ' + val, '#1320 glued name: maskGluedTail leaves a word after a mask and a blank');
 }
 
 // spec 012 FR-181 (issue #1541, T162): a token written with a backslash escape inside (`ghp\_<body>`, `g\hp_<body>`) is hidden by

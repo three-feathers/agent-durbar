@@ -55,7 +55,7 @@ const FORMS = ['mysql -u root -p' + PW, 'mysql -p' + PW, 'password=' + PW, 'pass
   'export GH_TOKEN=' + PW, 'DB_PASSWORD=' + PW, 'Db_Password=' + PW, 'curl -u bob:' + PW + ' h', '--password ' + PW, 'Authorization: Bearer ' + PW, 'https://u:' + PW + '@h.example/x',
   'https://h.example/x?token=' + PW, '{"password":"' + PW + '"}', 'secret_key = "' + PW + '"', 'see the docs', 'Release2024', 'src/app/main', ':x-oauth-basic', 'Alternatively',
   'PGPASSWORD=' + PW2 + ' psql', 'password: ' + PW2, 'mysql -p' + PW2, '--password ' + PW2, 'export DB_PASSWORD="' + PW2 + '"'];
-const LEADS = ['', 'see ', 'password=', 'x', 'Token:<br/>', '`', '**', '- [ ] ', 'page2\u2028', 'note\u200b', '> ', 'export T=', '[gh](https://h.example/' + 'a'.repeat(300) + ')', '[x](u) '];
+const LEADS = ['', 'see ', 'password=', 'x', 'Token:<br/>', '`', '**', '- [ ] ', 'page2\u2028', 'note\u200b', '> ', 'export T=', '[gh](https://h.example/' + 'a'.repeat(300) + ')', '[x](u) ', '[redacted]' + 'pass' + 'word=' /* spec 012 FR-187, review of PR 1872 round 3: a mask with a glued name and its separator */];
 const JOIN = ['', ' ', '\n', '\r\n', '\n\n', ', ', '<br>', '\u200b', '\u2028'];
 
 const mh = { redact: (x: string) => HEAD.redact(x, {}), cmd: (x: string) => HEAD.maskSecretCommand(x, {}), url: (x: string) => HEAD.maskSecretUrl(x, {}) };
