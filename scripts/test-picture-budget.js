@@ -5,13 +5,13 @@ const assert = require('assert');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { execFileSync } = require('child_process');
-const { plumbCommit } = require('./git-index-helper.js');
+const helper = require(process.env.GIT_HELPER_MODULE ? path.resolve(process.env.GIT_HELPER_MODULE) : './git-index-helper.js'); // GIT_HELPER_MODULE swaps it (mutant runs)
+const { plumbCommit, gitRun, gitTry } = helper;
 const pb = require(process.env.PB_MODULE ? path.resolve(process.env.PB_MODULE) : './picture-budget.js');
 
 const KB = 1024;
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-pb-'));
-const G = (cwd, ...a) => execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@example.com', '-c', 'commit.gpgsign=false', ...a], { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
+const G = (cwd, ...a) => gitRun(cwd, ['-c', 'user.name=t', '-c', 'user.email=t@example.com', '-c', 'commit.gpgsign=false', ...a]).trim();
 let n = 0;
 function repo() {
   const dir = path.join(tmp, `r${n++}`);
@@ -177,6 +177,69 @@ try {
   d = repo(); markMain(d); put(d, 'docs/p.png', 50 * KB, 30); commit(d, 'f');
   const blob = G(d, 'rev-parse', 'HEAD:docs/p.png'); fs.rmSync(path.join(d, '.git/objects', blob.slice(0, 2), blob.slice(2)), { force: true });
   assert.strictEqual(require('child_process').spawnSync(process.execPath, [path.join(__dirname, 'picture-budget.js'), '--root', d], { encoding: 'utf8' }).status, 2);
+
+  // FR-095 (issue #1631): a hung git child fails with a message instead of holding the lock. The stand-in `git` is a node script (runs on
+  // Windows too) that sleeps 8 s and exits 0; the helper must kill it after 1 s. A helper with no timeout returns after 8 s: the label fails.
+  assert.strictEqual(helper.GIT_TIMEOUT_MS, 60000, 'FR-095 timeout: the default is 60 s');
+  // The properties asserted (never a duration, #1853): the helper killed the child, so the stand-in never reached the end of its 8 s sleep, where it writes `<script>.ran`. A helper
+  // that lost the timeout returns an answer (or throws nothing) and the label for that fails; one that lost SIGKILL lets the SIGTERM-ignoring stand-in finish and leave the marker.
+  // The helper call is synchronous, so there is no timer to race: a lost timeout costs the 8 s sleep, not a hang.
+  const standIn = (name, body) => { const f = path.join(tmp, name); fs.writeFileSync(f, `${body}\nsetTimeout(() => { require('fs').writeFileSync(__filename + '.ran', 'x'); process.exit(0); }, 8000);\n`); return f; };
+  const sleeper = standIn('sleeping-git.js', '');
+  const ran = (script) => fs.existsSync(`${script}.ran`);
+  const hangs = (fn) => { let err = null; try { fn(); } catch (e) { err = e; } return { err }; };
+  // the signal is pinned: this stand-in ignores SIGTERM, so only SIGKILL stops it before the marker (a helper that sends the default SIGTERM lets it finish).
+  // On Windows kill() is TerminateProcess and a SIGTERM handler is never run, so there the stand-in dies on either signal: the check holds on Linux and macOS only.
+  const stubborn = standIn('stubborn-git.js', "process.on('SIGTERM', () => {});");
+  const viaKill = hangs(() => gitRun(tmp, ['hash-object', '-w', '--stdin'], { input: 'x', gitCmd: [process.execPath, stubborn], timeoutMs: 1000 }));
+  assert.ok(viaKill.err && /timed out after 1000 ms/.test(viaKill.err.message), 'FR-095 sigkill: a child that ignores SIGTERM is still reported as timed out');
+  assert.ok(!ran(stubborn), 'FR-095 sigkill: a child that ignores SIGTERM ran to the end: the kill signal is not SIGKILL');
+  const viaRun = hangs(() => gitRun(tmp, ['hash-object', '-w', '--stdin'], { input: 'x', gitCmd: [process.execPath, sleeper], timeoutMs: 1000 }));
+  assert.ok(viaRun.err, 'FR-095 timeout: gitRun did not fail on a hung child');
+  assert.strictEqual(viaRun.err.message, 'git hash-object timed out after 1000 ms (killed)', 'FR-095 timeout: message names the command and the timeout');
+  assert.strictEqual(viaRun.err.code, 'ETIMEDOUT', 'FR-095 timeout: the error carries code ETIMEDOUT (callers that swallow ordinary git failures rely on it)');
+  assert.ok(!ran(sleeper), 'FR-095 timeout: the hung child ran to the end (it was not killed)');
+  d = repo(); markMain(d);
+  const viaPlumb = hangs(() => plumbCommit(d, 'HEAD', { 'a.txt': 'a' }, 'm', null, { gitCmd: [process.execPath, sleeper], timeoutMs: 1000 }));
+  assert.match(String(viaPlumb.err && viaPlumb.err.message), /^git read-tree timed out after 1000 ms/, 'FR-095 timeout: plumbCommit fails with the timeout message');
+  assert.ok(!ran(sleeper), 'FR-095 timeout: plumbCommit left the hung child running to the end');
+  assert.throws(() => gitRun(d, ['-c', 'a=b', 'rev-parse', '--verify', 'nope-not-a-ref'], {}), (e) => e.code !== 'ETIMEDOUT' && !/timed out/.test(e.message), 'FR-095 timeout: an ordinary git failure is not reported as a timeout');
+  assert.throws(() => gitRun(d, ['rev-parse', 'nope-not-a-ref']), (e) => e.status === 128 && /ambiguous argument 'nope-not-a-ref'/.test(String(e.stderr)), 'FR-095 failure: an ordinary git failure keeps its exit status (128) and stderr');
+
+  // the whole tree dies, not only the direct child (review of #1654): the stand-in starts a long-running grandchild and records its pid; after the timeout that pid must be dead
+  // (process.kill(pid, 0) throws), polled with a bounded count of 50 ms steps (at most 20 s of waiting; a backstop, not a latency requirement). POSIX only: on Windows the tree
+  // kill is a [KNOWN GAP] (spec 021 FR-095), so the label is skipped there and says so.
+  if (process.platform === 'win32') console.log('FR-095 tree: skipped on Windows (no tree kill there, [KNOWN GAP] in spec 021)');
+  else {
+    const alive = (pid) => { try { process.kill(pid, 0); return true; } catch (_) { return false; } };
+    const pause = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+    const parent = path.join(tmp, 'tree-git.js'), pidFile = `${parent}.gc`;
+    fs.writeFileSync(parent, `const { spawn } = require('child_process');\nconst g = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 60000)'], { stdio: 'ignore' });\nrequire('fs').writeFileSync(__filename + '.gc', String(g.pid));\nsetTimeout(() => {}, 60000);\n`);
+    let gc = 0, thrown = null;
+    for (let timeoutMs = 2000; !gc && timeoutMs <= 16000; timeoutMs *= 2) { // a loaded machine may start node slowly: retry with a longer timeout until the grandchild exists
+      fs.rmSync(pidFile, { force: true });
+      thrown = hangs(() => gitRun(tmp, ['hash-object'], { gitCmd: [process.execPath, parent], timeoutMs })).err;
+      gc = fs.existsSync(pidFile) ? Number(fs.readFileSync(pidFile, 'utf8')) : 0;
+    }
+    try {
+      assert.ok(gc > 1, 'FR-095 tree: the stand-in never started its grandchild (no pid file)');
+      assert.ok(thrown && thrown.code === 'ETIMEDOUT', 'FR-095 tree: the hung parent is reported as timed out');
+      for (let i = 0; i < 400 && alive(gc); i++) pause(50);
+      assert.ok(!alive(gc), `FR-095 tree: the grandchild (pid ${gc}) is still alive after the timeout: only the direct child was killed`);
+    } finally { if (gc > 1) { try { process.kill(gc, 'SIGKILL'); } catch (_) { /* already dead */ } } }
+  }
+
+  // gitTry (readMain in test-moments-registry, the pinned-commit probe in test-usage): an ordinary failure is "no answer" (null), a hang is NOT
+  assert.strictEqual(gitTry(d, ['rev-parse', 'nope-not-a-ref']), null, 'FR-095 gitTry: an ordinary git failure is null, not a throw');
+  assert.ok(/^[0-9a-f]{40}/.test(gitTry(d, ['rev-parse', 'HEAD'])), 'FR-095 gitTry: a success returns stdout');
+  const tryHang = hangs(() => gitTry(tmp, ['cat-file', '-e', 'HEAD'], { gitCmd: [process.execPath, sleeper], timeoutMs: 1000 }));
+  assert.ok(tryHang.err && tryHang.err.code === 'ETIMEDOUT', 'FR-095 gitTry: a hung child throws (ETIMEDOUT) instead of reporting "no answer"');
+  // the other test scripts' git children go through gitRun, the one place with the timeout (FR-031): none starts git by hand
+  for (const f of ['test-changelog.js', 'test-check-posts.js', 'test-moments-registry.js', 'test-spec-numbers.js', 'test-usage.js']) {
+    const src = fs.readFileSync(path.join(__dirname, f), 'utf8');
+    assert.ok(/\b(gitRun|gitTry)\(|\bplumbCommit\(/.test(src), `FR-095 routed: ${f} does not use gitRun`);
+    assert.ok(!/(execFileSync|spawnSync|execFile|spawn)\(\s*'git'/.test(src) && !/killSignal/.test(src), `FR-095 routed: ${f} starts git by hand instead of through gitRun`);
+  }
 
   // the real allow-list of this repository parses clean
   const real = pb.parseAllow(fs.readFileSync(path.join(__dirname, 'picture-budget-allow.txt'), 'utf8'));

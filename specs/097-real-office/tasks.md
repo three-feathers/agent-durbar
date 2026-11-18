@@ -400,3 +400,7 @@ Order: T327 (the owner's picture gate) before any code PR; T328, T329 (art, #164
 ## 2026-11-11: the drag cancel paths (issue 1550)
 
 - [x] T311 [US2] Spec delta 2026-11-11: `scripts/check-097-drag-cancel.js`: a drag in Real office (Photo office and arcade, both sizes) is ended by a window blur, a wheel, a scroll, Escape and a pointercancel, a scroll elsewhere does not end it, nothing is left lifted or saved and a later drag still saves; a `focus: true` entry [FR-352]. Test: `sim:` `check-097-drag-cancel`; hand-run mutants: each cancel listener in `reorder.js` deleted, the wheel and Escape ones without capture and the scroll one without its target filter fail their own case
+
+## 2026-11-11: name an OS focus loss in the drag status-change step (issue 1550)
+
+- [x] T309 [US2] Spec delta 2026-11-11: the status-change step of `check-097-drag` installs a window blur/focus recorder before the drag, reads `document.hasFocus()` around the 300 ms hold and, when "a status change does not end the drag" fails after a focus loss, the message names it (`scripts/drag-focus.js`, issue 1550, FR-352); verdict, waits and hold unchanged. Test: `test:pointer-log` static case plus unit cases and five source mutants of the helper; by hand a window blur injected during the hold turns the run red with the label (deleting the `reorder.js` blur listener does not fail this driver: no blur-cancel check here). Part of the issue, cause unproven.

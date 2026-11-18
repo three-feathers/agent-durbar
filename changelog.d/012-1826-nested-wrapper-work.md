@@ -1,0 +1,1 @@
+- Internal: the nested `bash -c "sh -c` growth case of `test:redact-growth-wrappers` no longer sits on its 10 s CPU limit on a slow Linux machine: its input is 4x smaller and the work is pinned by a counter (spec 012 T174, issue #1826); the masking code is unchanged.
