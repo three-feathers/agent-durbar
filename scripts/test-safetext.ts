@@ -5,7 +5,7 @@ import { assertLinearShape } from './redact-growth-lib';
 import fs from 'fs';
 import crypto from 'crypto';
 import path from 'path';
-import { redact, maskSecretCommand, maskSecretUrl, withoutShell, withoutLoose, maskLoose, withoutLooseAll } from '../src/shared/redact';
+import { redact, maskSecretCommand, maskSecretUrl, withoutShell, withoutLoose, maskLoose, withoutLooseAll, withoutAfterMask } from '../src/shared/redact';
 
 const ROOT = path.join(__dirname, '..', '..');
 const R = path.join(ROOT, 'src', 'renderer');
@@ -295,9 +295,11 @@ eq(T.ready, true, 'redact: ready');
     const shell = /\\|[A-Za-z0-9_\-.~+/=:@%][`^][A-Za-z0-9_\-.~+/=:@%]/.test(t);
     let differs = false;
     let loose = false;
-    const sameOrMore = (h: string, r: string, what: string): void => {
+    const sameOrMore = (h: string, r: string, what: string, off?: () => string): void => {
       if (h === r) return;
-      assert.ok(shell, `#1593 differential: ${what} as on main: ${where}`);
+      // spec 012 FR-187: a text that differs only by the value pass after a mask (as on main with that pass off) is checked the same way: it shows nothing main hides
+      const byAfter = !!off && off() === r;
+      assert.ok(shell || byAfter, `#1593 differential: ${what} as on main: ${where}`);
       differs = true;
       const cutAt = /\s+|\[redacted(?::[^\]\r\n]{1,128})?\]/;
       const shown = r.split(cutAt).join('\u0000');
@@ -305,9 +307,10 @@ eq(T.ready, true, 'redact: ready');
     };
     // main's reading: the frozen window with the shared masks' shell readings off (with them off the shared masks are byte for byte main's); spec 012 FR-185: also with
     // the GitHub last pass off inside, then that pass once over the result, as the window does it (`maskLoose` only adds masks)
-    const ref = (f: () => string): string => maskLoose(withoutLoose(() => withoutShell(f)));
-    sameOrMore(S.maskRaw(t, red), ref(() => R0.maskRaw(t, red)), 'maskRaw');
-    sameOrMore(T.mask(t), ref(() => RT.mask(t)), 'the wrapper mask');
+    // spec 012 FR-187 (review of PR 1872): the value pass after a mask runs with FR-185's pass in `maskLoose`; the reference is main plus FR-185's pass, so it is off here (`withoutAfterMask`)
+    const ref = (f: () => string): string => withoutAfterMask(() => maskLoose(withoutLoose(() => withoutShell(f))));
+    sameOrMore(S.maskRaw(t, red), ref(() => R0.maskRaw(t, red)), 'maskRaw', () => withoutAfterMask(() => S.maskRaw(t, red)));
+    sameOrMore(T.mask(t), ref(() => RT.mask(t)), 'the wrapper mask', () => withoutAfterMask(() => T.mask(t)));
     // the excerpt runs FR-185's pass before it drops `_` (the frozen copy cannot): with that pass fully off it is main's; with it on, more is hidden, so the cut can
     // fall later and a mask can take other neighbouring marks: no 8 characters of a secret it shows that main's uncut excerpt hides
     const exc = (what: string, head: () => string, main: () => string, mainAll: () => string): void => {

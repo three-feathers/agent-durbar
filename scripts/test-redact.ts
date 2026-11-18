@@ -3,7 +3,7 @@ import * as assert from 'assert';
 import * as fs from 'fs';
 import * as path from 'path';
 import { Worker } from 'worker_threads';
-import { MASK_INPUT_MAX, REDACT_MAX_CHARS, createDebugSink, _uncappedForTest, cut, maskSchemeSecrets, maskTokenShapes, maskTokenShapesUnguarded, maskSecretArgs, maskSecretCommand, maskHomePaths, maskSecretUrl, maskNoteText, maskOutgoing, maskSplitTokens, _breakCallsForTest, keepShownBy, _unionMasksForTest, withoutSplit, withoutShell, _shellRefsForTest, _shellPassesForTest, _shapePassesForTest, _runReadsForTest, ESC_RUN_SHELL_SOURCE, withoutLoose, maskLoose, _homeGuardReadsForTest, _homeGuardCharsForTest, _guardEdgeScanForTest, HOME_GUARD_WINDOW_FOR_TEST, _splitWorkForTest, redact, redactMarkdown, MARKDOWN_WORK, _markdownPassForTest, shQuote, splitCommand } from '../src/shared/redact';
+import { MASK_INPUT_MAX, REDACT_MAX_CHARS, createDebugSink, _uncappedForTest, cut, maskSchemeSecrets, maskTokenShapes, maskTokenShapesUnguarded, maskSecretArgs, maskSecretCommand, maskHomePaths, maskSecretUrl, maskNoteText, maskOutgoing, maskGluedTail, maskSplitTokens, _breakCallsForTest, keepShownBy, _unionMasksForTest, withoutSplit, withoutShell, _shellRefsForTest, _shellPassesForTest, _shapePassesForTest, _runReadsForTest, ESC_RUN_SHELL_SOURCE, withoutLoose, maskLoose, _homeGuardReadsForTest, _homeGuardCharsForTest, _guardEdgeScanForTest, HOME_GUARD_WINDOW_FOR_TEST, _splitWorkForTest, redact, redactMarkdown, MARKDOWN_WORK, _markdownPassForTest, shQuote, splitCommand } from '../src/shared/redact';
 
 import { assertLinearShape, assertWithinYardstick, cpuMs } from './redact-growth-lib';
 import './safetext-shared'; // the desk's maskRaw (src/renderer/safetext.js) reads the compiled redact.ts, for the FR-181 differential below
@@ -61,6 +61,13 @@ for (const keep of ['ghp_short', 'see ghs_count', 'wei' + 'ghs_' + 'TotalWeightK
     ['glued, short value', tok + 'pw' + 'd=' + shortVal, shortVal],
     ['glued =>', tok + 'sec' + 'ret=>' + val, val],
     ['glued %3D', '?q=' + tok + 'tok' + 'en%3D' + val, val],
+    // review of PR 1872: the colon forms of config files and JSON, and a short value after a percent-encoded separator
+    ['glued, colon and a blank', tok + pw + ': ' + val, val],
+    ['glued, colon and a quoted value', tok + pw + ': "' + val + '"', val],
+    ['glued, JSON key and value', '{"' + tok + pw + '": "' + val + '"}', val],
+    ['glued, colon, a blank and a short value', tok + 'pw' + 'd: ' + shortVal, shortVal],
+    ['glued %3D, short value', tok + 'pw' + 'd%3D' + shortVal, shortVal],
+    ['glued %3A, short value', tok + 'pw' + 'd%3A' + shortVal, shortVal],
   ];
   for (const [label, input, secret] of hidden) for (const [name, f] of surfaces) {
     const out = f(input);
@@ -78,6 +85,11 @@ for (const keep of ['ghp_short', 'see ghs_count', 'wei' + 'ghs_' + 'TotalWeightK
     ['a dotted name', tok + '=config.value'],
     ['a sentence', 'see ' + tok + '. ok'],
     ['a lower-case word', tok + '=reset-flow'],
+    ['a port after a colon', tok + ':8080'],
+    ['a short value glued to a colon (left to the glued rest, as on main)', tok + ':' + shortVal],
+    ['words after a colon', 'see ' + tok + ': none here'],
+    ['a version after a colon', tok + ': v2.1.0'],
+    ['a word after a colon', 'Token ' + tok + ': Expires soon'],
     ['a dotted name with a digit', tok + '=config.token2'],
     ['a lower-case path', tok + '=src/foo123'],
     ['a variable of 8 or more', tok + '=$HOME_DIR1'],
@@ -86,6 +98,15 @@ for (const keep of ['ghp_short', 'see ghs_count', 'wei' + 'ghs_' + 'TotalWeightK
     const want = input.replace(tok, '[redacted]');
     assert.strictEqual(redact(input, {}), want, `#1320 glued name near miss stays: ${label}`);
   }
+  // a rest glued by a colon is folded first and keeps its host, as on main (the value rule runs after the glued rest)
+  assert.strictEqual(redact(tok + ':x-oauth-' + 'basic@github.com', {}), '[redacted]@github.com', '#1320 glued name: a rest glued by a colon keeps its host');
+  // a name cut after its `=` (a stream piece that ends there) keeps the `=`, so the value of the next piece is read as a named value
+  // (a stream piece after an earlier mask: `[redacted]` then the rest of the token's tail and the name, read by the glued rest)
+  assert.strictEqual(redact('x [redacted]' + 'pp' + pw + '="', {}), 'x [redacted]="', '#1320 glued name: a separator that ends the glued rest stays');
+  assert.strictEqual(redact('x [redacted]' + 'pp' + pw + '=>', {}), 'x [redacted]=>', '#1320 glued name: a separator before `>` stays');
+  assert.strictEqual(redact('x [redacted]' + 'pp' + pw + '=', {}), 'x [redacted]=', '#1320 glued name: a separator at the end stays');
+  assert.strictEqual(redact('x [redacted]' + 'A1b2C3d4E5f6=', {}), 'x [redacted]', '#1320 glued name: a `=` after a rest that ends in no secret name is folded, as on main');
+  assert.strictEqual(maskGluedTail('x [redacted]' + pw + '="' + val + '"'), 'x [redacted]="[redacted]"', '#1320 glued name: maskGluedTail keeps the separator and reads the value');
 }
 
 // spec 012 FR-181 (issue #1541, T162): a token written with a backslash escape inside (`ghp\_<body>`, `g\hp_<body>`) is hidden by

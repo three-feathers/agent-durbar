@@ -641,6 +641,34 @@ assert.strictEqual(sentenceOf(s), s.sentence);
   assert.deepStrictEqual(leaks(['password: ab12 cd34 e', 'f56 done'], ['ab12', 'cd34', 'ef56']), [], 'the issue pair with a cut inside a word');
 }
 
+// spec 012 FR-187 (review of PR 1872): a secret name glued to a token's end, streamed in pieces: no cut shows the value, for each separator form
+{
+  const tok = 'gh' + 'p_' + 'Zq3' + 'x'.repeat(16) + 'K9m' + 'p'.repeat(14);
+  const val = 'Vq7' + 'v0T' + 'wQ4';
+  const pw = 'pass' + 'word';
+  const forms = ['=' + val, ' = ' + val, '="' + val + '"', ': ' + val, ': "' + val + '"', '":"' + val + '"', '=>' + val, ':=' + val];
+  let seed = 1872;
+  const rnd = (): number => { seed = (Math.imul(seed, 1103515245) + 12345) >>> 0; return seed / 2 ** 32; };
+  const shows = (chunks: string[]): boolean => JSON.stringify(feed(fresh(), [{ type: 'user' }, ...chunks.map((delta) => ({ type: 'thinking', delta })), start('bash', { command: 'ls' })], 1)).includes(val);
+  let runs = 0;
+  const leaked: string[][] = [];
+  for (const form of forms) {
+    const text = 'x ' + tok + pw + form + ' done';
+    assert.ok(!shows([text]), `#1320 brain: the whole text hides the value (${form.replace(val, 'V')})`);
+    for (let k = 0; k < 750; k++) {
+      const n = 1 + Math.floor(rnd() * 5);
+      const cuts = new Set<number>();
+      while (cuts.size < n) cuts.add(1 + Math.floor(rnd() * (text.length - 1)));
+      const pts = [0, ...[...cuts].sort((x, y) => x - y), text.length];
+      const chunks = pts.slice(1).map((q, i) => text.slice(pts[i], q));
+      runs++;
+      if (shows(chunks)) leaked.push(chunks.map((c) => c.replace(val, 'V')));
+    }
+  }
+  assert.strictEqual(runs, forms.length * 750, '#1320 brain: every random cut was fed');
+  assert.deepStrictEqual(leaked.slice(0, 3), [], `#1320 brain: no random cut inside the token shows the value (${leaked.length} of ${runs} did)`);
+}
+
 // spec 012 FR-181 (issue #1541): an escaped token (`ghp\_<body>`) in a shell step's command, as a string and as an argument list, is hidden in the step target
 {
   const esc = 'ghp' + '\\_' + 'A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8';
