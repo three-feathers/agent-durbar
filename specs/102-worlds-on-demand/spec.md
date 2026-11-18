@@ -2157,3 +2157,7 @@ An audit of #1399 found every check it lists already running in the arcade on `m
 - **Seen (Linux, Xvfb, simulator, 0 AI credits):** the sheet for cave, photo and retro, scene and pictures. The Cave's scene is `rows`, not `circle`: at 15 agents the circle falls back to rows (T174's ladder), so the sheet's heading (`circle`) and the scene differ for that frame; the circle shows with fewer agents.
 - **Test:** `test:world-contact-sheet` fixtures: the scene box is 320x200, inside the sheet, below the header, no picture on it or its label, none for a world without a scene, the row grows, the label is drawn.
 - **Still open (T094 stays unticked):** the owner's look, recorded by a person in each card's `distinct-check` (`read:`, never set by a script). T036 stays unticked: `test-world-catalogue.js` does not call `availabilityGate` until a catalogue (T035) exists to name a world's status and hash.
+
+## Changes 2026-11-18: the three open arcade leftovers get their own issues (T204, T224, T263; issue #1403; no new FR)
+
+Audit of #1403 on `main` at `8b7a84e47`: T206 and T218 are built and ticked; the lobby part of T204 is built. Three tasks remain and none can be closed by an agent alone: the floor's `g` at 1.25 (FR-255 `[KNOWN GAP]`, needs the owner's look) is issue #1876; T224 (`checkSet`) waits for T100 and is issue #1877; T263 (recording of the dissolve, judged by eye) is issue #1878. Tasks only; no code, no behaviour change. Not verified: no run of any check or driver.
