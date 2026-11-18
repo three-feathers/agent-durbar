@@ -995,6 +995,10 @@ for (const st of ['idle', 'needs-permission', 'error', 'stopped']) {
     ['entity slashes', 'see &#47;home&#47;' + user + '&#47;notes done.'],
     ['hex entity slashes', 'see &#x2F;Users&#x2F;' + user + '&#x2F;notes done.'],
     ['named entity slashes', 'see &sol;home&sol;' + user + '&sol;notes done.'],
+    // review of PR 1872, round 2: a backslash written as an HTML entity, in a Windows and a UNC home folder
+    ['entity backslashes, Windows', 'see C:&#92;Users&#92;' + user + '&#92;notes done.'],
+    ['hex entity backslashes, UNC', 'see &#x5C;&#x5C;fs01&#x5C;share&#x5C;' + user + '&#x5C;notes done.'],
+    ['named entity backslashes, Windows', 'see C:&bsol;Users&bsol;' + user + '&bsol;notes done.'],
     ['emphasis inside the name', 'see /home/*zq*' + user.slice(2) + '/notes done.'],
     ['strong emphasis inside the name', 'see /home/zq**' + user.slice(2) + '**/notes done.'],
     ['a nested escape inside the name', 'see /home/zq' + bs.repeat(3) + '_' + user.slice(2) + '/notes done.'],

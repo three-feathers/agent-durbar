@@ -646,7 +646,7 @@ assert.strictEqual(sentenceOf(s), s.sentence);
   const tok = 'gh' + 'p_' + 'Zq3' + 'x'.repeat(16) + 'K9m' + 'p'.repeat(14);
   const val = 'Vq7' + 'v0T' + 'wQ4';
   const pw = 'pass' + 'word';
-  const forms = ['=' + val, ' = ' + val, '="' + val + '"', ': ' + val, ': "' + val + '"', '":"' + val + '"', '=>' + val, ':=' + val];
+  const forms = ['=' + val, ' = ' + val, '="' + val + '"', ': ' + val, ': "' + val + '"', '":"' + val + '"', '=>' + val, ':=' + val, '\\":\\"' + val + '\\"', ':' + val];
   let seed = 1872;
   const rnd = (): number => { seed = (Math.imul(seed, 1103515245) + 12345) >>> 0; return seed / 2 ** 32; };
   const shows = (chunks: string[]): boolean => JSON.stringify(feed(fresh(), [{ type: 'user' }, ...chunks.map((delta) => ({ type: 'thinking', delta })), start('bash', { command: 'ls' })], 1)).includes(val);

@@ -68,6 +68,9 @@ for (const keep of ['ghp_short', 'see ghs_count', 'wei' + 'ghs_' + 'TotalWeightK
     ['glued, colon, a blank and a short value', tok + 'pw' + 'd: ' + shortVal, shortVal],
     ['glued %3D, short value', tok + 'pw' + 'd%3D' + shortVal, shortVal],
     ['glued %3A, short value', tok + 'pw' + 'd%3A' + shortVal, shortVal],
+    // review of PR 1872, round 2: a short value glued straight to a colon, and escaped JSON (a backslash and a quote after the colon)
+    ['glued, colon and a short value', tok + 'pw' + 'd:' + shortVal, shortVal],
+    ['glued, escaped JSON', '{\\"' + tok + pw + '\\":\\"' + val + '\\"}', val],
   ];
   for (const [label, input, secret] of hidden) for (const [name, f] of surfaces) {
     const out = f(input);
@@ -86,7 +89,6 @@ for (const keep of ['ghp_short', 'see ghs_count', 'wei' + 'ghs_' + 'TotalWeightK
     ['a sentence', 'see ' + tok + '. ok'],
     ['a lower-case word', tok + '=reset-flow'],
     ['a port after a colon', tok + ':8080'],
-    ['a short value glued to a colon (left to the glued rest, as on main)', tok + ':' + shortVal],
     ['words after a colon', 'see ' + tok + ': none here'],
     ['a version after a colon', tok + ': v2.1.0'],
     ['a word after a colon', 'Token ' + tok + ': Expires soon'],
@@ -98,6 +100,9 @@ for (const keep of ['ghp_short', 'see ghs_count', 'wei' + 'ghs_' + 'TotalWeightK
     const want = input.replace(tok, '[redacted]');
     assert.strictEqual(redact(input, {}), want, `#1320 glued name near miss stays: ${label}`);
   }
+  // review of PR 1872, round 2: the pass reads and writes the caller's mask
+  assert.strictEqual(maskTokenShapes(tok + pw + '=' + val, '[secret hidden]'), '[secret hidden]=[secret hidden]', '#1320 glued name: the value pass uses the caller\'s mask');
+  assert.strictEqual(maskTokenShapes(tok + pw + '=' + val, '$&x'), '$&x=$&x', '#1320 glued name: a mask with replacement characters is written as it is');
   // a rest glued by a colon is folded first and keeps its host, as on main (the value rule runs after the glued rest)
   assert.strictEqual(redact(tok + ':x-oauth-' + 'basic@github.com', {}), '[redacted]@github.com', '#1320 glued name: a rest glued by a colon keeps its host');
   // a name cut after its `=` (a stream piece that ends there) keeps the `=`, so the value of the next piece is read as a named value
