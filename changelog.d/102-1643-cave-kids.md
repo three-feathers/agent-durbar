@@ -1,0 +1,1 @@
+- Internal: painted helper kids for a world that is still behind its flag. Six kids with seven poses each stand on the desk top at 1 to 4 agents and show as faces in the head row at 5 to 15 where that world draws rows; checked by the kids driver at both sizes (spec 102 T360, issue #1643).
