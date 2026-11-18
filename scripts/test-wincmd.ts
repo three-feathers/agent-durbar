@@ -6,7 +6,7 @@ import * as assert from 'assert';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
-import { CMD_REFUSED, CMD_UNSAFE, cmdShimArgs, windowsCmd } from '../src/shared/wincmd';
+import { CMD_REFUSED, CMD_UNSAFE, cmdShimArgs, windowsCmd, windowsCmdPath } from '../src/shared/wincmd';
 import { execFound, nodeDetectEnv, nodeExec } from '../src/adapters/detect';
 import type { DetectEnv, Exec } from '../src/adapters/detect';
 import { isObj, nonEmptyStr } from '../src/shared/guards';
@@ -23,6 +23,9 @@ assert.strictEqual(windowsCmd({ ComSpec: 'C:\\x\\powershell.exe' }), 'cmd.exe', 
 assert.strictEqual(windowsCmd({ ComSpec: 'C:\\x\\cmd.exe" & calc & "' }), 'cmd.exe', 'no quotes');
 assert.strictEqual(windowsCmd({ SystemRoot: 'Windows' }), 'cmd.exe', 'a relative SystemRoot is ignored');
 assert.strictEqual(windowsCmd({}), 'cmd.exe');
+// FR-065: the absolute-only form the VS Code opener uses: undefined instead of a bare name; windowsCmd keeps its fallback
+assert.strictEqual(windowsCmdPath({ SystemRoot: 'C:\\Windows' }), 'C:\\Windows\\System32\\cmd.exe');
+for (const e of [{}, { SystemRoot: 'Windows' }, { ComSpec: 'calc.exe' }, { ComSpec: 'C:\\x\\powershell.exe' }]) assert.strictEqual(windowsCmdPath(e), undefined, 'FR-065: no absolute cmd.exe: ' + JSON.stringify(e));
 
 // FR-001: shape, alphabet, and every character appears over many draws (a uniform draw; the old modulo favoured a-d)
 const seen = new Map<string, number>();

@@ -15,12 +15,20 @@ export const CMD_UNSAFE = /[\r\n\0"&|<>^%!`(),;=]/;
 export const CMD_REFUSED = 'This command cannot be run safely on this computer.';
 
 export function windowsCmd(env: Readonly<Record<string, string | undefined>>): string {
+  return windowsCmdPath(env) ?? 'cmd.exe';
+}
+
+/**
+ * The absolute `cmd.exe` path of `windowsCmd`, or undefined when neither `SystemRoot`/`windir` nor `ComSpec` gives one (spec 045
+ * FR-065): the VS Code opener then refuses its `.cmd` route instead of letting Windows look up a bare `cmd.exe`.
+ */
+export function windowsCmdPath(env: Readonly<Record<string, string | undefined>>): string | undefined {
   const w = path.win32;
   const root = env.SystemRoot ?? env.SYSTEMROOT ?? env.windir ?? env.WINDIR;
   if (root && w.isAbsolute(root) && !root.includes('"')) return w.join(root, 'System32', 'cmd.exe');
   const spec = env.ComSpec ?? env.COMSPEC;
   if (spec && w.isAbsolute(spec) && !spec.includes('"') && w.basename(spec).toLowerCase() === 'cmd.exe') return spec;
-  return 'cmd.exe';
+  return undefined;
 }
 
 /**

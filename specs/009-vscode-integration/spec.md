@@ -87,7 +87,7 @@ In **Previous sessions**, "VS Code chat history" lists chats VS Code saved for t
 
 ### 2026-11-18: the `.cmd` route reviewed for code-scanning alert 107 (issue #1868)
 
-- No behaviour change. The security review of FR-022/FR-028/FR-029's `cmd.exe` route, its verdict (not reachable with untrusted input) and the conditions that must keep holding are spec 045 FR-065; its `FR-065` rows live in this spec's `test:vscode`.
+- One behaviour change: `planCmd` refuses the `.cmd` route when no absolute `cmd.exe` is known, instead of a bare `cmd.exe` (spec 045 FR-065). The security review of FR-022/FR-028/FR-029's `cmd.exe` route, its verdict (not reachable with untrusted input) and the conditions that must keep holding are spec 045 FR-065; its `FR-065` rows live in this spec's `test:vscode`.
 
 ### 2026-11-11: the `cmd.exe /d /s /c` line gets its outer pair of quotes; one helper for all three routes (issue #1525, FR-029, T031)
 

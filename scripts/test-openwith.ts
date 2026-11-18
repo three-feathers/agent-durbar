@@ -221,7 +221,7 @@ process.exitCode = 1; // a promise that never settles must not pass (checklist);
   // FR-022's guard on the route the PATH finds: a .cmd alone on PATH, no .exe beside it
   {
     const cmd = 'C:\\tools\\bin\\codium.cmd', ed = EDITIONS.find((e) => e.name === 'VSCodium')!;
-    const onPath = (dir: string, file: string): LaunchEnv => launchEnv('win32', [file], { PATH: dir }, 'C:\\Users\\a');
+    const onPath = (dir: string, file: string): LaunchEnv => launchEnv('win32', [file], { PATH: dir, SystemRoot: 'C:\\Windows' }, 'C:\\Users\\a');
     const le = onPath('C:\\tools\\bin', cmd);
     assert.deepStrictEqual(planEdition(ed, 'C:\\work\\proj', le)?.args.slice(-1), [`""${cmd}" C:\\work\\proj"`], 'a safe folder goes through the .cmd (spec 009 FR-029: one outer pair for /s)');
     for (const t of ['C:\\a & calc', 'C:\\%PATH%', 'C:\\a"b', 'C:\\a^b']) {
@@ -365,7 +365,7 @@ process.exitCode = 1; // a promise that never settles must not pass (checklist);
     const res2 = await spawnPlan({ command: '/nope', args: [dir], via: '/nope', edition: 'VSCodium' }, bad, 'linux');
     assert.deepStrictEqual([res2.ok, res2.error], [false, 'Could not start VSCodium (/nope)']);
     // spec 009 FR-029: on win32 the planCmd plan (/d /s /c, already quoted for cmd.exe) is spawned verbatim; a plain exe plan is not
-    const cmdPlan = planEdition(EDITIONS.find((e) => e.name === 'VSCodium')!, 'C:\\work\\proj', launchEnv('win32', ['C:\\tools\\bin\\codium.cmd'], { PATH: 'C:\\tools\\bin' }, 'C:\\Users\\a'))!;
+    const cmdPlan = planEdition(EDITIONS.find((e) => e.name === 'VSCodium')!, 'C:\\work\\proj', launchEnv('win32', ['C:\\tools\\bin\\codium.cmd'], { PATH: 'C:\\tools\\bin', SystemRoot: 'C:\\Windows' }, 'C:\\Users\\a'))!;
     assert.deepStrictEqual(cmdPlan.args, ['/d', '/s', '/c', '""C:\\tools\\bin\\codium.cmd" C:\\work\\proj"'], 'the planCmd route');
     assert.strictEqual((await spawnPlan(cmdPlan, fake, 'win32')).ok, true);
     assert.deepStrictEqual([seen!.cmd, seen!.args, seen!.opts.windowsVerbatimArguments, seen!.opts.shell], [cmdPlan.command, cmdPlan.args, true, false], 'the /s /c line is passed verbatim');

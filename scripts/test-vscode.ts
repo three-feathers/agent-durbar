@@ -2,7 +2,7 @@
 import * as assert from 'assert';
 import * as fs from 'fs';
 import * as path from 'path';
-import { EDITIONS, isWindowsTarget, openInVSCode, planVSCodeLaunch, spawnPlan } from '../src/main/vscode';
+import { EDITIONS, EDITOR_NOT_FOUND, isWindowsTarget, openInVSCode, planVSCodeLaunch, spawnPlan } from '../src/main/vscode';
 import type { LaunchEnv } from '../src/main/vscode';
 
 const env = (platform: NodeJS.Platform, files: string[], vars: NodeJS.ProcessEnv, homedir: string): LaunchEnv => ({
@@ -42,10 +42,10 @@ assert.strictEqual(p?.command, 'C:\\Windows\\System32\\cmd.exe');
 assert.deepStrictEqual(p?.args.slice(0, 3), ['/d', '/s', '/c']);
 // spec 009 FR-029: the /c line has one outer pair for /s, so the spaces in "Microsoft VS Code" and in the target survive
 assert.deepStrictEqual(p?.args, ['/d', '/s', '/c', `""${cmd}" C:\\ok\\proj"`]);
-p = planVSCodeLaunch('C:\\my work\\proj', env('win32', [cmd], { LOCALAPPDATA: local }, 'C:\\Users\\a'));
+p = planVSCodeLaunch('C:\\my work\\proj', env('win32', [cmd], { LOCALAPPDATA: local, SystemRoot: 'C:\\Windows' }, 'C:\\Users\\a'));
 assert.deepStrictEqual(p?.args, ['/d', '/s', '/c', `""${cmd}" "C:\\my work\\proj""`], 'a target with a space keeps its own quotes');
 for (const bad of ['C:\\a & calc', 'C:\\a"b', 'C:\\%PATH%', 'C:\\a|b', 'C:\\a^b']) {
-  assert.strictEqual(planVSCodeLaunch(bad, env('win32', [cmd], { LOCALAPPDATA: local }, 'C:\\Users\\a')), undefined, bad);
+  assert.strictEqual(planVSCodeLaunch(bad, env('win32', [cmd], { LOCALAPPDATA: local, SystemRoot: 'C:\\Windows' }, 'C:\\Users\\a')), undefined, bad);
 }
 assert.strictEqual(planVSCodeLaunch('C:\\p', env('win32', [], { LOCALAPPDATA: local }, 'C:\\Users\\a')), undefined);
 // spec 009 FR-015: VS Code, then Insiders, then VSCodium, each found the same way; the plan names the edition
@@ -104,18 +104,18 @@ process.exitCode = 1; // a promise that never settles must not pass (checklist);
   const exe = `${local}\\Programs\\Microsoft VS Code\\Code.exe`;
   const cmd = `${local}\\Programs\\Microsoft VS Code\\bin\\code.cmd`;
   assert.strictEqual(planVSCodeLaunch('C:\\p', env('win32', [exe], { LOCALAPPDATA: local }, 'C:\\Users\\a'))?.verbatim, undefined, 'Code.exe plan is not verbatim');
-  assert.strictEqual(planVSCodeLaunch('C:\\p', env('win32', [cmd], { LOCALAPPDATA: local }, 'C:\\Users\\a'))?.verbatim, true, 'the cmd.exe plan says verbatim');
+  assert.strictEqual(planVSCodeLaunch('C:\\p', env('win32', [cmd], { LOCALAPPDATA: local, SystemRoot: 'C:\\Windows' }, 'C:\\Users\\a'))?.verbatim, true, 'the cmd.exe plan says verbatim');
   assert.strictEqual(planVSCodeLaunch('/x', env('linux', ['/usr/bin/code'], { PATH: '/usr/bin' }, '/home/a'))?.verbatim, undefined);
   // spec 009 FR-029 (merge with FR-028): the cmd.exe route takes its line from cmdShimArgs. A target without white space stays bare, so a
   // trailing backslash (a drive root) is never before a quote and is not doubled; a target with white space that ends in \ is refused.
   for (const t of ['C:\\', '\\\\srv\\share\\p\\', 'C:\\p', 'C:\\p\\\\', 'C:\\p\\\\\\']) {
-    assert.strictEqual(planVSCodeLaunch(t, env('win32', [cmd], { LOCALAPPDATA: local }, 'C:\\Users\\a'))?.args[3], `""${cmd}" ${t}"`, 'bare on the cmd.exe route: ' + t);
+    assert.strictEqual(planVSCodeLaunch(t, env('win32', [cmd], { LOCALAPPDATA: local, SystemRoot: 'C:\\Windows' }, 'C:\\Users\\a'))?.args[3], `""${cmd}" ${t}"`, 'bare on the cmd.exe route: ' + t);
   }
-  assert.strictEqual(planVSCodeLaunch('C:\\', env('win32', [cmd], { LOCALAPPDATA: local }, 'C:\\Users\\a'))?.args[3], '""C:\\Users\\a\\AppData\\Local\\Programs\\Microsoft VS Code\\bin\\code.cmd" C:\\"', 'the drive root, exactly');
+  assert.strictEqual(planVSCodeLaunch('C:\\', env('win32', [cmd], { LOCALAPPDATA: local, SystemRoot: 'C:\\Windows' }, 'C:\\Users\\a'))?.args[3], '""C:\\Users\\a\\AppData\\Local\\Programs\\Microsoft VS Code\\bin\\code.cmd" C:\\"', 'the drive root, exactly');
   for (const t of ['\\\\srv\\my share\\', 'C:\\my dir\\', 'C:\\my dir\\\\']) {
-    assert.strictEqual(planVSCodeLaunch(t, env('win32', [cmd], { LOCALAPPDATA: local }, 'C:\\Users\\a')), undefined, 'a spaced target ending in \\ is refused: ' + t);
+    assert.strictEqual(planVSCodeLaunch(t, env('win32', [cmd], { LOCALAPPDATA: local, SystemRoot: 'C:\\Windows' }, 'C:\\Users\\a')), undefined, 'a spaced target ending in \\ is refused: ' + t);
   }
-  assert.strictEqual(planVSCodeLaunch('C:\\my dir', env('win32', [cmd], { LOCALAPPDATA: local }, 'C:\\Users\\a'))?.args[3], `""${cmd}" "C:\\my dir""`, 'a spaced target is quoted');
+  assert.strictEqual(planVSCodeLaunch('C:\\my dir', env('win32', [cmd], { LOCALAPPDATA: local, SystemRoot: 'C:\\Windows' }, 'C:\\Users\\a'))?.args[3], `""${cmd}" "C:\\my dir""`, 'a spaced target is quoted');
 
   type Seen = { cmd: string; args: readonly string[]; opts: Record<string, unknown> };
   let seen: Seen[] = [];
@@ -202,6 +202,16 @@ process.exitCode = 1; // a promise that never settles must not pass (checklist);
         assert.ok(plan.args[3].endsWith(' "C:\\my dir.""'), 'FR-065: a target with a space or trailing dot stays inside its own quotes');
       } else assert.deepStrictEqual(plan.args, ['C:\\my dir.'], 'FR-065: an .exe gets the target as its only argument');
     }
+    // (4) no absolute cmd.exe from SystemRoot/windir or ComSpec: the .cmd route is refused like a hostile path, never a bare
+    // `cmd.exe` that Windows would look up (the current folder possibly first); the same result and text as a refused route
+    for (const vars of [{}, { SystemRoot: 'Windows' }, { windir: 'rel\\win' }, { ComSpec: 'cmd.exe' }, { ComSpec: 'C:\\x\\powershell.exe' }, { SystemRoot: 'C:\\Win"dows', ComSpec: 'C:\\x\\cmd.exe" & y' }] as NodeJS.ProcessEnv[]) {
+      seen = [];
+      r = await openInVSCode('C:\\proj', env('win32', [cmd], { LOCALAPPDATA: local, ...vars }, 'C:\\Users\\a'), fake);
+      assert.deepStrictEqual([r.ok, r.error, seen.length], [false, EDITOR_NOT_FOUND, 0], `FR-065: no absolute cmd.exe, no .cmd route and no bare cmd.exe: ${JSON.stringify(vars)}`);
+    }
+    seen = [];
+    r = await openInVSCode('C:\\proj', env('win32', [cmd], { LOCALAPPDATA: local, windir: 'C:\\Windows' }, 'C:\\Users\\a'), fake);
+    assert.deepStrictEqual([r.ok, seen[0]?.cmd], [true, 'C:\\Windows\\System32\\cmd.exe'], 'FR-065: windir alone still gives the system cmd.exe');
     // static: one spawn site, no shell anywhere in the launcher
     const launcher = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'main', 'vscode.ts'), 'utf8');
     assert.strictEqual((launcher.match(/spawnFn\(/g) ?? []).length, 1, 'FR-065: one spawn call');
