@@ -268,6 +268,7 @@ test:simversion
 test:brainpoints
 test:braindraw
 test:momentsregistry
+test:world-pack
 test:paritytick
 test:picturebudget
 test:chargroups
