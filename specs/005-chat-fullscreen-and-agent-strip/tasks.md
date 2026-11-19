@@ -184,3 +184,6 @@ PRs, gates and line-count goals: `plan.md`. Each PR measures on `main` first and
 
 ## 2026-11-19 (second entry): the open chat says that the reply failed (issue #1917)
 - [x] T256 [US1] `failedTurn` flag on the agent (set by an `error` status, cleared by a `working` status) read by `syncRunState` in `app.js`: a turn that ends after an error says "Reply failed" (Stop still says "Stopped", else "Reply finished"); `scripts/check-005-announce-failed.js` (in `ui-suite.js`), mutants `ANNOUNCE_FAIL_MUTANT=finished|always|sticky` [FR-038]
+
+## 2026-11-19 (third entry): the agent rail says which folder (issue #1905)
+- [ ] T379 [US1] (FR-340): rail group heads and rows give the masked folder path through `DurbarTip` (native `title` removed); equal group names show their nearest differing parent (`DurbarRail.parentNames`, pure); `scripts/check-005-rail-folder.js` (in `ui-suite.js`) with its mutants; `check-rail` follows the tooltip. Test: `sim:` `check-005-rail-folder`, `check-rail`, `test:railorder`
