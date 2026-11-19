@@ -175,6 +175,7 @@ const DRIVERS = [
   { name: 'check-005-announce-error' }, // spec 005 FR-244 (#1908): an agent that enters the error state with its chat closed is said once through #srAnnounce
   { name: 'check-005-announce-failed' }, // spec 005 FR-038 (#1917): a turn that ends in an error says "Reply failed", not "Reply finished", through #srAnnounce
   { name: 'check-005-failed-state' }, // spec 005 FR-245 (#1919): a turn that failed stays in Error after its idle, not Done
+  { name: 'check-005-error-ends-turn' }, // spec 005 FR-246 (#1920): after an error the chat shows Send, not Stop and the spinner; an idle keeps Error; working resumes
   { name: 'check-answer-safety' }, // spec 052 FR-209..FR-212: the answer bar, a held Enter, a limit in flight, a plan while typing
   { name: 'check-inbox-safety' }, // spec 052 FR-206..FR-208: Needs you: a stale button, a held key and a limit row answer nothing they should not
   { name: 'check-needs-panel' }, // spec 052 FR-191..FR-195 (T196, T197): Your door, the Needs you panel behind its flag: non-modal, no focus change on opening, app start with Later, no shift, Esc and the amber toggle, All clear, Real office slips

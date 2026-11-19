@@ -195,4 +195,4 @@ PRs, gates and line-count goals: `plan.md`. Each PR measures on `main` first and
 - [x] T257 [US1] the `idle` that ends a turn with `failedTurn` set leaves the state Error (no Done, no unread mark, no finished announcement); `scripts/check-005-failed-state.js` (in `ui-suite.js`), mutants `FAILED_STATE_MUTANT=done|always` [FR-245]
 
 ## 2026-11-19 (fourth entry): an error ends the turn in the chat (issue #1920)
-- [ ] T258 [US1] the general `error` status clears `worked` (the sign-in one already did): Send, not Stop and the spinner; the `idle` that follows keeps Error while the agent is in the error state (FR-245 amended); `scripts/check-005-error-ends-turn.js` (in `ui-suite.js`), mutants `ERROR_TURN_MUTANT=busy|idle` [FR-246]
+- [x] T258 [US1] the general `error` status clears `worked` (the sign-in one already did): Send, not Stop and the spinner; the `idle` that follows keeps Error while the agent is in the error state (FR-245 amended); `scripts/check-005-error-ends-turn.js` (in `ui-suite.js`), mutants `ERROR_TURN_MUTANT=busy|idle` [FR-246]

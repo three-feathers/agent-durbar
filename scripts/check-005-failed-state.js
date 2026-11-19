@@ -18,7 +18,7 @@ const path = require('path');
 const { helpers, jsLiteral } = require('./driver-helpers');
 
 const MUT = process.env.FAILED_STATE_MUTANT || '';
-const LINE = "if(was&&a.failedTurn){";
+const LINE = "if(a.state==='error'){";
 const PATCH = {
   done: [LINE, "if(false){"],
   always: [LINE, "if(was){"],
