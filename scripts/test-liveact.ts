@@ -1018,6 +1018,7 @@ for (const st of ['idle', 'needs-permission', 'error', 'stopped']) {
   for (const t of ['see C:&#x5CUsers&#x5C' + 'ab12 done.', 'see C:&#92Users&#92' + '12ab done.']) eq(all(f.block(t, 'reply')), t, `#1320 monitor: an entity whose number goes on is no backslash: ${t}`);
   eq(all(f.block('see &#470;home&#470;' + user + ' done.', 'reply')), 'see &#470;home&#470;' + user + ' done.', '#1320 monitor: an entity whose number goes on is no slash');
   eq(all(f.block('see /home&#47' + '12ab/notes done.', 'reply')), 'see /home&#47' + '12ab/notes done.', '#1320 monitor: an entity whose number goes on is no slash (before a digit)');
+  eq(all(f.block('see /home&#x2f' + 'ab12/notes done.', 'reply')), 'see /home&#x2f' + 'ab12/notes done.', '#1320 monitor: a hex entity whose number goes on is no slash (before a hex digit)');
   // round 4: the normal form is ONE pass (code scanning js/double-escaping): a backslash written as an entity is not read again as an escape of what follows it.
   // So an entity backslash before a slash stays a backslash: no home folder in the normal form, the line shows as written ([KNOWN GAP], as on main: `/home\/<user>`),
   // and before `_` it stays too: the readings differ and the line shows nothing (fail closed). A second pass would change both.

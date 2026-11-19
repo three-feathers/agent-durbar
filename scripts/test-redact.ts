@@ -114,10 +114,11 @@ for (const keep of ['ghp_short', 'see ghs_count', 'wei' + 'ghs_' + 'TotalWeightK
   // review of PR 1872, round 4: `>` counts only glued to the mask (the rest of `=>`); a quoted word after a mask and a blank is hidden on purpose (the folded `<name>= "<value>"`)
   assert.strictEqual(maskGluedTail('echo [redacted] > backup' + '2024 done'), 'echo [redacted] > backup' + '2024 done', '#1320 glued name: maskGluedTail leaves a word after a mask, a blank and >');
   assert.strictEqual(maskGluedTail('see [redacted] "Release' + '2024"'), 'see [redacted] "[redacted]"', '#1320 glued name: maskGluedTail hides a quoted word after a mask and a blank (accepted)');
-  // round 4: linear on a long run of quotes after a mask (two quote runs side by side were quadratic)
+  // round 4: linear on a long run of quotes after a mask (two quote runs side by side were quadratic). Round 5: 4,000 against 16 runs of 250, so the quadratic rule
+  // (about 0.9 s at 4,000) fails the growth ratio within seconds, not at the helper's wall-time backstop
   for (const q of ["'", '"', '`']) {
     const label = `#1320 maskGluedTail quote run ${q}`;
-    try { assertLinearShape(label, (x) => { maskGluedTail(x); }, (k) => 'note [redacted]' + q.repeat(k), 64_000); } catch (e) { throw new assert.AssertionError({ message: `${label}: ${(e as Error).message}` }); } // the helper's backstop names no case: it is named here
+    try { assertLinearShape(label, (x) => { maskGluedTail(x); }, (k) => 'note [redacted]' + q.repeat(k), 4_000); } catch (e) { throw new assert.AssertionError({ message: `${label}: ${(e as Error).message}` }); } // the helper's backstop names no case: it is named here
   }
 }
 
