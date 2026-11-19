@@ -217,6 +217,19 @@
        characters. No working mask: nothing (fail closed). `done` false: the word still arriving is held back, since half a token matches no shape.
        A text cut at KEEP loses its first word for the same reason. */
     const home=t=>{if(!mask.home)return t;const h=mask.home(t);return typeof h==='string'?h:'';};
+    /* spec 012 FR-187 (issue #1320, review of PR 1872): maskRaw undoes Markdown escapes, so a home folder written with a doubled backslash (a UNC path) has no home folder
+       form after it, and the home mask read only that output. When the text holds a home folder read in a normal form (escaped or entity slashes `\/`, `&#47;`, `&sol;` as
+       plain slashes, entity backslashes `&#92;`, `&#x5C;`, `&bsol;` as backslashes, backslash runs before `_` or `*` and `*` left out: tool output, HTML and escapes inside a user name), the home mask also reads that form FIRST.
+       The line shows (as the first reading, its spelling kept) when every word of it (letters and digits of its plain text) is a word of the home-first reading:
+       then it shows nothing that reading hides. The words, not the strings: maskRaw drops the home mask's `~` as a Markdown mark when it finds anything to mask, and
+       its Markdown path changes line marks and blanks. Otherwise, or when a reading fails, nothing (fail closed). No home folder in the normal form: one reading, as before. */
+    /* review of PR 1872, rounds 2 and 3: ONE pass over the text, so what one spelling turns into is never read again by another (`&#92;/` stays a backslash and a slash):
+       a backslash or a slash written as an HTML entity (with or without its `;`), an escaped slash, a backslash run before `_` or `*`, and `*` itself */
+    const NORM_SPELL=/&#0*92(?![0-9]);?|&#[xX]0*5[cC](?![0-9a-fA-F]);?|&bsol;|&#0*47(?![0-9]);?|&#[xX]0*2[fF](?![0-9a-fA-F]);?|&sol;|\\\/|\\+(?=[_*])|\*/g;
+    const normOne=m=>/^&#0*92|^&#[xX]0*5[cC]|^&bsol;/.test(m)?'\\':m[0]==='&'||m==='\\/'?'/':'';
+    const norm=t=>t.replace(NORM_SPELL,normOne), words=t=>plain(norm(t)).match(/[\p{L}\p{N}]+/gu)||[];
+    const covered=(a,b)=>{const w=new Set(words(b));return words(a).every(x=>w.has(x));};
+    const twoHomes=(t,f)=>{const a0=f(t),a=a0?home(a0):'';if(!a||!mask.home)return a;const n=norm(t),h=home(n);if(h===n)return a;if(!h)return '';const b0=f(h),b=b0?home(b0):'';return b&&covered(a,b)?a:'';};
     /* control codes out: as escapes, unless read the other way they leave a token, which must then be masked in that reading */
     const clear=raw=>clearIn(raw,mask.redact);
     const block=(raw,k,done)=>{
@@ -225,7 +238,7 @@
       if(t.length>=KEEP){t=t.slice(-KEEP);const m=/\s/.exec(t);t=m?t.slice(m.index+1):'';}
       t=clear(t);
       if(!done){let e=t.length;while(e>0&&!/\s/.test(t[e-1]))e--;t=t.slice(0,e);}
-      const m=home(ST.maskRaw(t,mask.redact));
+      const m=twoHomes(t,x=>ST.maskRaw(x,mask.redact));
       if(!m)return [];
       const out=[];
       for(const para of m.replace(/```[\s\S]*?(```|$)/g,' ').replace(HEAD,'').split(/\n+/)){
@@ -240,10 +253,7 @@
       try{let t=String(raw==null?'':raw);
         if(t.length>KEEP){t=t.slice(0,KEEP);const m=/\s\S*$/.exec(t.slice(-200));t=m?t.slice(0,t.length-200+m.index):'';}
         t=clear(t);
-        const m0=ST.maskRaw(t,mask.redact);if(!m0)return [];
-        const m1=mask.cmd(m0);if(typeof m1!=='string')return [];
-        const m2=mask.url(m1);if(typeof m2!=='string')return [];
-        const m=home(m2);if(!m)return [];
+        const m=twoHomes(t,x=>{const m0=ST.maskRaw(x,mask.redact);if(!m0)return '';const m1=mask.cmd(m0);if(typeof m1!=='string')return '';const m2=mask.url(m1);return typeof m2==='string'?m2:'';});if(!m)return [];
         const l=cutOf(plain(m.replace(/```[\s\S]*?(```|$)/g,' ')),SCREEN_CHARS);
         return l?[{k:k||'plain',t:l}]:[];}catch(e){return [];}};
     const logPush=(s,k,t,cid)=>{s.log.push({n:s.seq++,k,t,cid});if(s.log.length>SCREEN_LINES)s.log.splice(0,s.log.length-SCREEN_LINES);};

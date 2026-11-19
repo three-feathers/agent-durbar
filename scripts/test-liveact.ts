@@ -958,4 +958,80 @@ for (const st of ['idle', 'needs-permission', 'error', 'stopped']) {
   ok(!e.look || (e.look.n === 0 && !e.look.inHidden), 'an argument after ESC is not a program name: ' + JSON.stringify(e));
   ok((L.permText('run x\n' + P, 'shell', mask) as { look?: Look }).look!.n === 6, 'a line break still starts a command');
 }
+// spec 012 FR-187 (issue #1320): the monitor's lines read the home folder on the text as written too; two readings that differ show nothing. Invented user names.
+{
+  const hm = { ...mask, home: (s: string) => maskHomePaths(s, []) };
+  const f = L.create({ mask: hm }) as unknown as { block(raw: string, k?: string): { k: string; t: string }[]; strict(raw: string, k?: string): { k: string; t: string }[] };
+  const user = 'zq' + 'mor' + 'vel';
+  const bs = '\\';
+  const all = (ls: { t: string }[]) => ls.map((l) => l.t).join('\n');
+  const cases: Array<[string, string]> = [
+    ['a UNC home written plainly', 'see ' + bs + bs + 'fs01' + bs + 'share' + bs + user + bs + 'notes done.'],
+    ['a UNC home with doubled escapes', 'see ' + bs.repeat(4) + 'fs01' + bs.repeat(2) + 'share' + bs.repeat(2) + user + bs.repeat(2) + 'notes done.'],
+    ['an escape inside the user name', 'see /home/zq' + bs + '_' + user.slice(2) + '/notes done.'],
+    ['a Windows home in Markdown', 'see C:' + bs + bs + 'Users' + bs + bs + user + bs + bs + 'notes done.'],
+  ];
+  for (const [label, t] of cases) {
+    ok(!all(f.block(t, 'reply')).includes(user.slice(2)), `#1320 monitor: block hides the user name (${label}): ${all(f.block(t, 'reply'))}`);
+    ok(!all(f.strict(t, 'err')).includes(user.slice(2)), `#1320 monitor: strict hides the user name (${label}): ${all(f.strict(t, 'err'))}`);
+  }
+  // a home folder both readings agree on is still shown (shortened), and a text with no home folder is read as before
+  const plainHome = 'see /home/' + user + '/notes done.';
+  ok(all(f.block(plainHome, 'reply')).includes('notes done.') && !all(f.block(plainHome, 'reply')).includes(user), '#1320 monitor: a plain home folder still shows its line, shortened');
+  ok(all(f.strict(plainHome, 'err')).includes('notes done.'), '#1320 monitor: strict shows a plain home folder line, shortened');
+  eq(all(f.block('all tests passed.', 'reply')), 'all tests passed.', '#1320 monitor: a text with no home folder is read once, as before');
+  // review of PR 1872: a line with a home folder and anything the mask hides (a token, a link) still shows, masked; the home mask's `~` is no difference
+  const tok = 'gh' + 'p_' + 'Zq3' + 'x'.repeat(16) + 'K9m' + 'p'.repeat(14);
+  const busy = 'see /home/' + user + '/notes and [docs](https://x.invalid/a) ' + tok + ' done.';
+  for (const [nm, g] of [['block', (t: string) => f.block(t, 'reply')], ['strict', (t: string) => f.strict(t, 'err')]] as const) {
+    const out = all(g(busy));
+    ok(out.includes('notes and docs [redacted] done.') && !out.includes(user) && !out.includes('Zq3'), `#1320 monitor: ${nm} shows a line with a home folder, a link and a token, masked: ${out}`);
+    const multi = all(g('# Done\nsee /Users/' + user + '/x and ' + tok + '.\n- next /home/' + user + '/y'));
+    ok(multi.includes('[redacted]') && multi.includes('next') && !multi.includes(user), `#1320 monitor: ${nm} shows Markdown lines with home folders and a token: ${multi}`);
+  }
+  // more home folder spellings (escaped and entity slashes, escapes and emphasis inside the name, the tilde form next to a token): nothing of the name shows
+  const more: Array<[string, string]> = [
+    ['escaped slashes', 'see ' + bs + '/home' + bs + '/' + user + bs + '/notes done.'],
+    ['entity slashes', 'see &#47;home&#47;' + user + '&#47;notes done.'],
+    ['hex entity slashes', 'see &#x2F;Users&#x2F;' + user + '&#x2F;notes done.'],
+    ['named entity slashes', 'see &sol;home&sol;' + user + '&sol;notes done.'],
+    // review of PR 1872, round 2: a backslash written as an HTML entity, in a Windows and a UNC home folder
+    ['entity backslashes, Windows', 'see C:&#92;Users&#92;' + user + '&#92;notes done.'],
+    ['hex entity backslashes, UNC', 'see &#x5C;&#x5C;fs01&#x5C;share&#x5C;' + user + '&#x5C;notes done.'],
+    ['named entity backslashes, Windows', 'see C:&bsol;Users&bsol;' + user + '&bsol;notes done.'],
+    // round 3: the same entities without their closing semicolon
+    ['entity backslashes without a semicolon, Windows', 'see C:&#92Users&#92' + user + '&#92notes done.'],
+    ['hex entity backslashes without a semicolon, UNC', 'see &#x5C&#x5Cnas&#x5Cshare&#x5C' + user + '&#x5Cnotes done.'],
+    // round 4: entity slashes without their semicolon
+    ['entity slashes without a semicolon', 'see &#47home&#47' + user + '&#47notes done.'],
+    ['hex entity slashes without a semicolon', 'see &#x2fhome&#x2f' + user + '&#x2fnotes done.'],
+    ['emphasis inside the name', 'see /home/*zq*' + user.slice(2) + '/notes done.'],
+    ['strong emphasis inside the name', 'see /home/zq**' + user.slice(2) + '**/notes done.'],
+    ['a nested escape inside the name', 'see /home/zq' + bs.repeat(3) + '_' + user.slice(2) + '/notes done.'],
+    ['the tilde form next to a token', 'see ~' + user + '/x.txt and ' + tok + ' done.'],
+  ];
+  for (const [label, t] of more) {
+    ok(!all(f.block(t, 'reply')).includes(user.slice(2)), `#1320 monitor: block hides the user name (${label}): ${all(f.block(t, 'reply'))}`);
+    ok(!all(f.strict(t, 'err')).includes(user.slice(2)), `#1320 monitor: strict hides the user name (${label}): ${all(f.strict(t, 'err'))}`);
+  }
+  // round 3, near misses: an entity whose number goes on is another character (as HTML reads it), not a backslash, so the line is not blanked
+  for (const t of ['see C:&#x5CUsers&#x5C' + 'ab12 done.', 'see C:&#92Users&#92' + '12ab done.']) eq(all(f.block(t, 'reply')), t, `#1320 monitor: an entity whose number goes on is no backslash: ${t}`);
+  eq(all(f.block('see &#470;home&#470;' + user + ' done.', 'reply')), 'see &#470;home&#470;' + user + ' done.', '#1320 monitor: an entity whose number goes on is no slash');
+  eq(all(f.block('see /home&#47' + '12ab/notes done.', 'reply')), 'see /home&#47' + '12ab/notes done.', '#1320 monitor: an entity whose number goes on is no slash (before a digit)');
+  eq(all(f.block('see /home&#x2f' + 'ab12/notes done.', 'reply')), 'see /home&#x2f' + 'ab12/notes done.', '#1320 monitor: a hex entity whose number goes on is no slash (before a hex digit)');
+  // round 4: the normal form is ONE pass (code scanning js/double-escaping): a backslash written as an entity is not read again as an escape of what follows it.
+  // So an entity backslash before a slash stays a backslash: no home folder in the normal form, the line shows as written ([KNOWN GAP], as on main: `/home\/<user>`),
+  // and before `_` it stays too: the readings differ and the line shows nothing (fail closed). A second pass would change both.
+  eq(all(f.block('see /home&#92;/' + user + '/notes done.', 'reply')), 'see /home&#92;/' + user + '/notes done.', '#1320 monitor: an entity backslash before a slash is kept (one pass)');
+  eq(f.block('see /home/' + user + '/a&#92;_b done.', 'reply'), [], '#1320 monitor: an entity backslash before an underscore is kept (one pass)');
+  // a home mask that fails on the reading of the text as written only (here: on a doubled backslash, which maskRaw halves): nothing shows
+  const failRaw = { ...mask, home: (s: string) => (s.includes(bs + bs) ? (null as unknown as string) : maskHomePaths(s, [])) };
+  const fr = L.create({ mask: failRaw }) as unknown as { block(raw: string, k?: string): { t: string }[]; strict(raw: string, k?: string): { t: string }[] };
+  const uncLine = 'see ' + bs + bs + 'fs01' + bs + 'share' + bs + user + bs + 'notes done.';
+  eq(fr.block(uncLine, 'reply'), [], '#1320 monitor: block shows nothing when the home mask fails on the text as written');
+  eq(fr.strict(uncLine, 'err'), [], '#1320 monitor: strict shows nothing when the home mask fails on the text as written');
+  // no home mask: as before (no home folder step at all)
+  const g = L.create({ mask }) as unknown as { block(raw: string, k?: string): { t: string }[] };
+  eq(all(g.block('see /x done.', 'reply')), 'see /x done.', '#1320 monitor: no home mask, the text as masked');
+}
 console.log(`liveact: ${n} checks passed`);
