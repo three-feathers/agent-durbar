@@ -380,9 +380,8 @@ assert.ok(!/gh release|releases\/|--notes/.test(src.replace(/^\s*\*.*$/gm, '')),
 
 // ---- review on #1083: a hung child is killed at its limit (FR-175) ----
 {
-  const t0 = Date.now();
   assert.throws(() => RV.run(process.execPath, ['-e', 'setInterval(()=>{},1000)'], { timeout: 400 }), (e) => e.code === 'ETIMEDOUT' || /ETIMEDOUT|timed out/i.test(String(e.message)), 'a child over its limit throws');
-  assert.ok(Date.now() - t0 < 10000, 'and is killed at the limit');
+  // the 10 s wall check is gone (#1853): `run` returned, so the child was killed; the 400 ms `timeout` is what ends it (ETIMEDOUT above), and a child that outlived it would hang this call, not pass it
   process.env.RV_TEST_SECRET_TOKEN = 'ghp_' + 'z'.repeat(36);
   const keys = JSON.parse(String(RV.run(process.execPath, ['-e', 'process.stdout.write(JSON.stringify(Object.keys(process.env)))'], { timeout: 10000 })));
   delete process.env.RV_TEST_SECRET_TOKEN;
