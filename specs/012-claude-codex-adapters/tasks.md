@@ -268,7 +268,7 @@ T133 verification (2026-10-25, review on #698): typecheck, build and the offline
 
 ## Changes 2026-11-19 (masking batch: a token character in an entity or escape form: issue #1320)
 
-- [ ] T176 (2026-11-19, issue #1320) FR-188: the piece reading of `splitSpans` (`pieceSpans`, `SPLIT_AT`, `SPLIT_GATE`, `entityPoint` in `src/shared/redact.ts`) reads an entity or percent-escape form of a token character as that character; the `#1320 decoded` block in `scripts/test-redact.ts`; mutants and a differential fuzz against a frozen `main` in the PR.
+- [x] T176 (2026-11-19, issue #1320) FR-188: the piece reading of `splitSpans` (`pieceSpans`, `SPLIT_AT`, `SPLIT_GATE`, `entityPoint` in `src/shared/redact.ts`) reads an entity or percent-escape form of a token character as that character; the `#1320 decoded` block in `scripts/test-redact.ts`; mutants and a differential fuzz against a frozen `main` in the PR.
 
 ## Changes 2026-11-18 (masking batch: a secret name glued to a token's end, the monitor's home folder: issue #1320)
 

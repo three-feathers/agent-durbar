@@ -2564,10 +2564,14 @@ const HIDDEN_ENTITY: Record<string, number> = { zerowidthspace: 0x200b, negative
  * reads it) or a named one (each kept only when it stands for a `HIDDEN_CHARS` character), a run of combining marks, a `HIDDEN_CHARS` character, the backslash of a
  * Markdown escape (`NOTE_ESCAPABLE`: `sk-proj-<20>\_<rest>` reads `sk-proj-<20>_<rest>`). Each alternative is bounded, so one scan is linear.
  */
+/** Named HTML entities of token characters (spec 012 FR-188): `pieceSpans` reads them as the character (looked up in lower case, as `HIDDEN_ENTITY`: fail closed). */
+const TOKEN_ENTITY: Record<string, number> = { lowbar: 0x5f, underbar: 0x5f, period: 0x2e, plus: 0x2b, sol: 0x2f, equals: 0x3d, colon: 0x3a };
+/** A token character that `pieceSpans` reads in an entity or percent-escape form as itself (spec 012 FR-188): the body characters and `:`. */
+const DECODE_CHAR = /^[A-Za-z0-9_.+/=:-]$/;
 const MD_ESC = String.raw`\\(?=[${NOTE_ESCAPABLE.replace(/[\\\]^-]/g, '\\$&')}])`;
-const SPLIT_AT = new RegExp(String.raw`<!--(?:>|->|[\s\S]{0,256}?-->)|<\?[^<>]{0,256}>|<![^<>-][^<>]{0,256}>|<\/?[A-Za-z][A-Za-z0-9:_.-]{0,63}(?:[\s/][^<>]{0,256})?>|&#(?:[0-9]{1,7}|[Xx][0-9A-Fa-f]{1,6});?|&[A-Za-z]{2,24};|\p{M}+|${MD_ESC}|${HIDDEN_CHARS.source}`, 'gu');
+const SPLIT_AT = new RegExp(String.raw`<!--(?:>|->|[\s\S]{0,256}?-->)|<\?[^<>]{0,256}>|<![^<>-][^<>]{0,256}>|<\/?[A-Za-z][A-Za-z0-9:_.-]{0,63}(?:[\s/][^<>]{0,256})?>|&#(?:[0-9]{1,7}|[Xx][0-9A-Fa-f]{1,6});?|&[A-Za-z]{2,24};|\p{M}+|${MD_ESC}|${HIDDEN_CHARS.source}|%(?:25){0,8}[0-9A-Fa-f]{2}`, 'gu');
 /** Whether a text can hold one of `SPLIT_AT` at all: the cheap test before the scan. */
-const SPLIT_GATE = new RegExp(String.raw`[<&\r\n\\]|\p{M}|${HIDDEN_CHARS.source}`, 'u');
+const SPLIT_GATE = new RegExp(String.raw`[<&%\r\n\\]|\p{M}|${HIDDEN_CHARS.source}`, 'u');
 /** A line break, kept in the output: `redact` keeps the line structure. */
 const LINE_END = /(\r\n|[\r\n\u2028\u2029])/;
 /** A mask (plain or named) at one place, and one that ends a stretch. */
@@ -2598,7 +2602,28 @@ function entityPoint(e: string): number {
     const n = e[2] === 'x' || e[2] === 'X' ? parseInt(body.slice(3), 16) : parseInt(body.slice(2), 10);
     return n >= 0 && n <= 0x10ffff ? n : -1;
   }
-  return HIDDEN_ENTITY[e.slice(1, -1).toLowerCase()] ?? -1;
+  const name = e.slice(1, -1).toLowerCase();
+  return HIDDEN_ENTITY[name] ?? TOKEN_ENTITY[name] ?? -1;
+}
+/**
+ * Spec 012 FR-188: the token character an entity or a percent escape `t` stands for and how many characters of `t` it was read from, or undefined when it
+ * stands for none. A numeric entity without its `;` (`&#74` before more digits): the scan takes every digit it can, as HTML does; when that number is no
+ * token character, the longest run of its first digits that is one is read, and the digits after it stay text (fail closed: the writer may have meant
+ * one character and then the rest of the token, as a reader of the raw text sees it).
+ */
+function decodedChar(t: string): [string, number] | undefined {
+  const tok = (cp: number): string => (cp >= 0 && cp < 0x80 && DECODE_CHAR.test(String.fromCharCode(cp)) ? String.fromCharCode(cp) : '');
+  if (t[0] === '%') { const c = tok(parseInt(t.slice(-2), 16)); return c ? [c, t.length] : undefined; }
+  const whole = tok(entityPoint(t));
+  if (whole) return [whole, t.length];
+  if (t[1] !== '#' || t.endsWith(';')) return undefined;
+  const hex = t[2] === 'x' || t[2] === 'X';
+  const lead = hex ? 3 : 2;
+  for (let k = t.length - 1; k >= lead + 2; k--) {
+    const c = tok(parseInt(t.slice(lead, k), hex ? 16 : 10));
+    if (c) return [c, k];
+  }
+  return undefined;
 }
 /**
  * The token runs on both sides of a line break at [a, b) of `s` when it can sit inside a token, as [l, r) (the break excluded), else undefined: at
@@ -2727,25 +2752,37 @@ const BLOCK_TAG = /^<\/?(?:br|p|div|li|ul|ol|dl|dd|dt|td|th|tr|table|thead|tbody
 function pieceSpans(s: string, mask: string, written: () => ReadonlyArray<[number, number]>, blockBlank: boolean, spans: Array<[number, number]>): boolean {
   const keep: string[] = [];
   const at: number[] = [];
+  const end: number[] = []; // per kept character: the index of `s` just past what it was read from (`at + 1`, or past a whole decoded form, FR-188)
+  const dec: boolean[] = []; // per kept character: read from an entity or a percent escape of a token character (FR-188)
   const ends: boolean[] = []; // per kept character: a piece that can end a word (a tag, a comment) was removed right before it
   let from = 0;
   let removed = false;
   let block = false;
   let endNext = false;
   const take = (to: number): void => {
-    for (let i = from; i < to; i++) { keep.push(s[i]); at.push(i); ends.push(endNext); endNext = false; }
+    for (let i = from; i < to; i++) { keep.push(s[i]); at.push(i); end.push(i + 1); dec.push(false); ends.push(endNext); endNext = false; }
   };
   SPLIT_AT.lastIndex = 0;
   for (let m = SPLIT_AT.exec(s); m; m = SPLIT_AT.exec(s)) {
     const t = m[0];
     const a = m.index;
-    if (t[0] === '&') { const cp = entityPoint(t); if (cp < 0 || !HIDDEN_CHARS.test(String.fromCodePoint(cp))) continue; }
+    // an entity of a hidden character is removed (FR-182); an entity or a percent escape of a token character is read as that character (FR-188); others stay
+    let put: [string, number] | undefined;
+    if (t[0] === '&' || t[0] === '%') {
+      const cp = t[0] === '&' ? entityPoint(t) : -1;
+      if (cp < 0 || !HIDDEN_CHARS.test(String.fromCodePoint(cp))) { put = decodedChar(t); if (!put) continue; }
+    }
     take(a);
     from = a + t.length;
     removed = true;
+    if (put) {
+      from = a + put[1];
+      keep.push(put[0]); at.push(a); end.push(from); dec.push(true); ends.push(endNext); endNext = false;
+      continue;
+    }
     const isBlock = t[0] === '<' && BLOCK_TAG.test(t);
     block = block || isBlock;
-    if (blockBlank && isBlock) { keep.push(' '); at.push(a); ends.push(false); }
+    if (blockBlank && isBlock) { keep.push(' '); at.push(a); end.push(a + 1); dec.push(false); ends.push(false); }
     endNext = endNext || t[0] === '<';
   }
   if (!removed) return false;
@@ -2766,10 +2803,12 @@ function pieceSpans(s: string, mask: string, written: () => ReadonlyArray<[numbe
     let b = b0;
     // a stretch that starts right after a removed piece counts too: a piece glued before a token takes its start boundary as written (`password=&#8203ghp_…`: the
     // entity's digits glue to it), so only the copy reads the token (review of PR 1721, round 4)
-    let crosses = a > 0 && at[a] !== at[a - 1] + 1;
+    // so does one that holds a decoded character or starts right after one (FR-188: `<name>&#61;<value>` reads as a name and its value)
+    let crosses = (a > 0 && (at[a] !== end[a - 1] || dec[a - 1])) || dec[a];
     let joined = false; // the stretch already joined two pieces of a token across an earlier piece
     for (let i = a + 1; i < b; i++) {
-      if (at[i] === at[i - 1] + 1) continue;
+      // a decoded character is token text, read as the character (FR-188): no piece, so no tail test; it only makes the stretch count
+      if (at[i] === end[i - 1]) { if (dec[i]) crosses = true; continue; }
       // after text the rules already hide as written (a whole token), the run after any piece is its rest only when it looks like a token's tail (`tailRun`), and,
       // after a piece that can end a word (a tag, a comment), with FR-173's 8 letters and digits: a hidden character before `mysql`, `password=` or `token:` leaves the
       // keyword for its own rule (review of PR 1721, round 3: the value after it showed when the split stretch took the keyword)
@@ -2778,14 +2817,14 @@ function pieceSpans(s: string, mask: string, written: () => ReadonlyArray<[numbe
         let e = i;
         // the run ends at the next removed piece too (round 4: `<34><!-- -->6K<wbr>--password` is `6K`, not `6K--password`)
         // and at the first character that is no body character (round 4: `<12>:x-oauth-basic` is `<12>`)
-        while (e < j.length && e - i < 4096 && BODY_CHAR.test(j[e]) && (e === i || at[e] === at[e - 1] + 1)) e++;
+        while (e < j.length && e - i < 4096 && BODY_CHAR.test(j[e]) && (e === i || at[e] === end[e - 1])) e++;
         // after a token the copy already joined across an earlier piece (`sk-proj-<a><!-- --><b><wbr>curl`), the next run needs the same look of a tail (round 4)
         if ((whole && ends[i] && alnum[e] - alnum[i] < GLUE_MIN) || !tailRun(j.slice(i, e))) { b = i; break; }
       }
       crosses = true;
       joined = true;
     }
-    if (crosses) spans.push([at[a], at[b - 1] + 1]);
+    if (crosses) spans.push([at[a], end[b - 1]]);
   }
   return block;
 }
