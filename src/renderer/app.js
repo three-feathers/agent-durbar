@@ -4198,10 +4198,10 @@ function syncRunState(){
   /* a live agent takes a message mid-turn (Enter sends, as before): then Send shows beside Stop; without Stop the slot keeps Send */
   set(send,run&&!!stop&&!(a.live&&has));
   if(slot.classList.contains('running')!==run)slot.classList.toggle('running',run);
-  /* spec 005 T074 (review on PR 498): the spinner is decorative; a screen reader hears the change once through the shared live region.
+  /* spec 005 T074 (review on PR 498; FR-038 amended for issue 1917: a turn that ends in the error state says "Reply failed"): the spinner is decorative; a screen reader hears the change once through the shared live region.
      Only a change in the same chat speaks: opening a chat (or redrawing it) is not a turn starting or ending */
   const was=RUN_SAID.id===a.id?RUN_SAID.run:null; RUN_SAID.id=a.id; RUN_SAID.run=run;
-  if(was!==null&&was!==run){const said=!run&&UNREAD_SAID.delete(a.id);if(run)UNREAD_SAID.delete(a.id);if(!said)announce(run?'Working…':RUN_SAID.stopped?'Stopped':'Reply finished');RUN_SAID.stopped=false;} /* a new turn forgets an earlier Stop */
+  if(was!==null&&was!==run){const said=!run&&UNREAD_SAID.delete(a.id);if(run)UNREAD_SAID.delete(a.id);if(!said)announce(run?'Working…':RUN_SAID.stopped?'Stopped':a.failedTurn?'Reply failed':'Reply finished');RUN_SAID.stopped=false;if(!run)a.failedTurn=false;} /* a new turn forgets an earlier Stop; the end of a turn forgets its failure */
 }
 /* the mode, model, profile and context menus: below their chip, or above it when the chip sits in the composer toolbar (FR-037); spec 073's "/" list too */
 function placeMenu(m,x,y,anchor){
@@ -7752,7 +7752,7 @@ function onLiveEvent(e){
       const wentOn=e.status==='idle'&&!e.intent&&!a.coffeeShut;a.coffeeShut=false;
       if(e.status==='working'||e.status==='stopped'||e.status==='idle'||e.status==='error'){endCoffee(a,e.status==='working'||wentOn?'the agent went on':e.status==='error'?'an error':'stopped');if(wentOn)a.worked=true;}
     }
-    if(e.status==='working'){a.worked=true; const tt=ensureTurn(a); if(e.intent){a.intent=e.intent;if(!/^(Thinking|Approved|Allowed|Denied|Waiting for permission)/.test(e.intent))tIntent(tt.T,e.intent);}
+    if(e.status==='working'){a.worked=true; a.failedTurn=false; /* the agent went on after an error (spec 005 FR-038, issue 1917) */ const tt=ensureTurn(a); if(e.intent){a.intent=e.intent;if(!/^(Thinking|Approved|Allowed|Denied|Waiting for permission)/.test(e.intent))tIntent(tt.T,e.intent);}
       if(a.state!=='working'&&a.state!=='thinking')setState(a,'working',null,intentText(e.intent)||a.task); else if(e.intent)setState(a,a.state,undefined,intentText(e.intent));}
     else if(e.status==='needs-permission'){
       ensureTurn(a); setState(a,'waiting',null,intentText(e.intent)||'Waiting for permission');
@@ -7769,8 +7769,8 @@ function onLiveEvent(e){
       updateCtxChip(a);maybeSuggestFresh(a);
       /* a queued switch applies when the turn ends (its model event follows at once); if none came, do not leave "Next: ..." standing */
       if(a.pendingModel){const p=a.pendingModel;setTimeout(()=>{if(a.pendingModel===p){a.pendingModel=undefined;updateModelChip(a);}},2000);}}
-    else if(e.status==='error'&&e.errorKind==='auth'){closeTurn(a);a.worked=false;markKindSignedOut(kindOf(a));showSignInCard(a,{detail:e.intent||''});setState(a,'error',null,kindWord(kindOf(a))+' needs you to sign in again.');} /* spec 012 FR-157 */
-    else if(e.status==='error'){closeTurn(a);addNote(chat,esc(e.intent||'Error'),true);setState(a,'error',null,gaveUp||safeExcerpt(e.intent||'Error',140,'Error'));}
+    else if(e.status==='error'&&e.errorKind==='auth'){closeTurn(a);a.worked=false;a.failedTurn=true;markKindSignedOut(kindOf(a));showSignInCard(a,{detail:e.intent||''});setState(a,'error',null,kindWord(kindOf(a))+' needs you to sign in again.');} /* spec 012 FR-157 */
+    else if(e.status==='error'){closeTurn(a);a.failedTurn=true;addNote(chat,esc(e.intent||'Error'),true);setState(a,'error',null,gaveUp||safeExcerpt(e.intent||'Error',140,'Error'));}
     else if(e.status==='stopped'){
       if(a.limit)settleLimit(a,'cancel');
       /* a permission still pending when the session stops is denied cleanly: no Approve/Deny left behind, grants gone */

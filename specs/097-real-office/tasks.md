@@ -427,3 +427,7 @@ Order: T327 (the owner's picture gate) before any code PR; T328, T329 (art, #164
 ## 2026-11-19: dots clear of the sign (issue #1759)
 
 - [x] T369 [US2] Bug #1759 (spec delta 2026-11-19; amends FR-038): `DOTS_CLEAR` 2 to 5 (dots 6 px under a sign or storey tag), `check-office-overlap` fails "less than the 6 px clear" (mutant `OFFICE_MUTANT=dots-close`), `test:realoffice-layout` asserts the literal 6 px and its Photo/arcade pins move. Docs pictures retaken. Numbers: `npm run specs:numbers` 2026-11-19, T369 new.
+
+## 2026-11-19: check-097-order step 6 pair from one read (issue #1922)
+
+- [ ] T376 [US2] Bug #1922 (spec delta 2026-11-19): `scripts/check-097-order.js` step 6 reads facts and shown order in one call, remakes the pair up to 3 times with the reason, and its failure prints every desk's state, room and away flag; asserts unchanged

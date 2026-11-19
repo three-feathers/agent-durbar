@@ -480,3 +480,9 @@
 
 ## 2026-11-18: the two `tabindex` rules of the Mac title bar are written down (issue #1847)
 - [x] T360 Spec 052 Changes 2026-11-18: Rule 1 (the darwin no-drag lists in `styles.css`: bare `[tabindex]` for the top bar, notice strip, `.rail-top` and `.ph`; `:not([tabindex="-1"])` for the screen header) and Rule 2 (`keys.js` `TITLE_CONTROLS`: `:not([tabindex="-1"])`) stated with their selectors, why both, and that a `tabindex="-1"` non-control is no-drag but zooms outside the screen header; the pins by name; the 2026-11-15 line about the screen-header arm marked out of date. Spec only: no code, no picture.
+
+## 2026-11-19: `check-status-tooltip` focus message (issue #1664)
+- [x] T371 `scripts/check-status-tooltip.js`: `focusWin` calls `H.needFocus(label)` (mutant `STATUSTIP_NO_WINDOW_FOCUS=1` fails with the focus message); the `hasFocus` assert removed. Spec 052 Changes 2026-11-19.
+
+## 2026-11-19: `check-answer-safety` limit step waits like the other steps (issue #1770)
+- [x] T377 `scripts/check-answer-safety.js` FR-210 (B): the step calls `barUp()` (card painted, two frames) before the filler and scroll, as every other step does (issue 839); mutant `ANSWER_SAFETY_MUTANT=follow` fails at `only "Show in chat"` with `bar hidden=true`. Spec 052 Changes 2026-11-19. Natural trigger not reproduced (0 of 165 loops): Refs only.

@@ -146,7 +146,7 @@ try {
   // a copy of the gate with the bot on the trusted list (spec 103 FR-060 (a), PR #1707), so its text is shown and the trusted-only paths run
   const tdir = path.join(dir, 'trusted-copy');
   fs.mkdirSync(tdir);
-  for (const f of ['pr-gate.sh', 'trusted-lib.sh', 'pr-status-note.re']) fs.copyFileSync(path.join(ROOT, 'scripts', f), path.join(tdir, f));
+  for (const f of ['pr-gate.sh', 'trusted-lib.sh', 'pr-status-note.re', 'pr-gate-answered.awk']) fs.copyFileSync(path.join(ROOT, 'scripts', f), path.join(tdir, f));
   fs.writeFileSync(path.join(tdir, 'trusted-authors.txt'), fs.readFileSync(path.join(ROOT, 'scripts', 'trusted-authors.txt'), 'utf8') + `${BOT}\n`);
   const threadBy = (login: string, type: string, isResolved = false, isOutdated = false): object => ({ data: { repository: { pullRequest: { reviewThreads: { nodes: [{ isResolved, isOutdated, comments: { nodes: [{ author: { __typename: type, login } }] } }] } } } } });
   put('comments', [c('vikramgorla', 'done', '2026-10-27T10:00:00Z', 'issuecomment-1'), c('dependabot[bot]', 'bumps x', '2026-10-27T11:00:00Z', 'issuecomment-2')]);
