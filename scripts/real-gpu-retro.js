@@ -1,7 +1,12 @@
 /*
  * Spec 102 T231 / spec 097 T162 (issues #1400, #1879): the real-GPU run of the Retro arcade on a real Mac. Simulator only, 0 AI credits, no real session.
- * Run by `scripts/real-gpu-retro-run.sh`-style launches: one Electron per size x device-pixel-ratio, DRIVER_WORLD=retro, window shown on the desktop.
- * Env: RGPU_W, RGPU_H, RGPU_OUT (a folder for the JSON, the picture and, when RGPU_REC=1, the dissolve frames).
+ * One Electron per size x device-pixel-ratio, DRIVER_WORLD=retro, window shown on the desktop (not Xvfb). From the repo root after `npm run build`, on macOS or Linux
+ * (a shell with no tokens in it: `env -i HOME="$HOME" PATH="$PATH" ...` keeps them out):
+ *   DURBAR_SIM=15 DURBAR_SIM_FREEZE=1 DURBAR_USER_DATA="$(mktemp -d)" DURBAR_DRIVER="$PWD/scripts/real-gpu-retro.js" DRIVER_WORLD=retro \
+ *   RGPU_W=1440 RGPU_H=900 RGPU_REC=1 UI_SUITE_DPR=2 RGPU_OUT="$(mktemp -d)" node_modules/.bin/electron . --force-device-scale-factor=2
+ * (add `--no-sandbox` on Linux; on Windows set the same variables in PowerShell and run `node_modules\.bin\electron.cmd .`). Run it for 1440x900 and 1280x800, each with
+ * ratio 1 and 2 (`UI_SUITE_DPR` only names the files; `--force-device-scale-factor` sets the ratio, drop both for the screen's own). Output: rgpu-<size>-dpr<n>.json, retro-<size>-dpr<n>.png
+ * and, with RGPU_REC=1, frames-<size>-dpr<n>/ (every painted frame of one move, named with its time). Env: RGPU_W, RGPU_H, RGPU_OUT, RGPU_REC.
  * Records, never asserts: frame times are requestAnimationFrame deltas (main thread + vsync), `presented` counts the frames the compositor really painted
  * (beginFrameSubscription), CPU is Electron's percentCPUUsage per process. Not seen: tearing, what the panel showed, power.
  */

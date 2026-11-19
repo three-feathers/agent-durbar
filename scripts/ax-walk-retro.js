@@ -1,7 +1,9 @@
 /*
  * Spec 102 T231 / issue #1625 (Mac line): what a screen reader is given by the Retro arcade, read from Chromium's accessibility tree (the tree VoiceOver reads through
  * NSAccessibility), in Tab order. Simulator only, 0 AI credits. NOT a VoiceOver run: it shows names, roles, states and order, not the spoken words, the VO cursor's
- * reading order, rotor lists or what a live region really announces. Env: AXW_OUT (a folder for the JSON).
+ * reading order, rotor lists or what a live region really announces. From the repo root after `npm run build` (macOS or Linux; `--no-sandbox` on Linux; PowerShell on Windows):
+ *   DURBAR_SIM=15 DURBAR_SIM_FREEZE=1 DURBAR_USER_DATA="$(mktemp -d)" DURBAR_DRIVER="$PWD/scripts/ax-walk-retro.js" DRIVER_WORLD=retro AXW_OUT="$(mktemp -d)" node_modules/.bin/electron .
+ * Output: ax-retro.json (the Tab walk, the plates' names, the live regions, the World radios). Env: AXW_OUT (a folder for the JSON).
  */
 'use strict';
 const fs = require('fs');
