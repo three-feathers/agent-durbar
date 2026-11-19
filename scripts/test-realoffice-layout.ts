@@ -178,8 +178,8 @@ for (const [k, v] of Object.entries(faces)) assert.ok(v >= FACE_FLOOR - 1e-9, `S
     const sign: string[] = [], glass: string[] = [], clear: string[] = [];
     const desks = L.zones.flatMap((z) => z.desks).filter((d) => d.dots);
     for (const z of L.zones) for (const d of desks) if (inter(z.sign, dotsBox(d))) sign.push(`the sign of ${z.id} (bottom ${(z.sign.y + z.sign.h).toFixed(1)}) over the dots of ${d.id} (top ${d.dots!.y.toFixed(1)})`);
-    /* the 3 px the spec promises (DOTS_CLEAR below the strip, whose bottom is 1 px under a sign's): dots under a sign start at least 3 px below its lower edge */
-    for (const z of L.zones) for (const d of desks) { const b = dotsBox(d); if (z.sign.x < b.x + b.w && b.x < z.sign.x + z.sign.w && z.sign.y <= b.y && b.y < z.sign.y + z.sign.h + 3 - 1e-6) clear.push(`the dots of ${d.id} start ${(b.y - z.sign.y - z.sign.h).toFixed(1)} px under the sign of ${z.id}`); }
+    /* the 6 px the spec promises (issue 1759, was 3) (DOTS_CLEAR below the strip, whose bottom is 1 px under a sign's): dots under a sign start at least 6 px below its lower edge */
+    for (const z of L.zones) for (const d of desks) { const b = dotsBox(d); if (z.sign.x < b.x + b.w && b.x < z.sign.x + z.sign.w && z.sign.y <= b.y && b.y < z.sign.y + z.sign.h + 6 - 1e-6) clear.push(`the dots of ${d.id} start ${(b.y - z.sign.y - z.sign.h).toFixed(1)} px under the sign of ${z.id}`); }
     if (!L.big) for (const d of desks) if (inter(d.glass, dotsBox(d))) glass.push(`the dots of ${d.id} over its screen's glass`);
     return { sign, glass, clear };
   };
@@ -192,7 +192,7 @@ for (const [k, v] of Object.entries(faces)) assert.ok(v >= FACE_FLOOR - 1e-9, `S
     const p = problems(L);
     assert.deepStrictEqual(p.sign, [], `cave, 15 folders of one at ${W}: no sign over the thinking dots (FR-038)`);
     assert.deepStrictEqual(p.glass, [], `cave, 15 folders of one at ${W}: the dots end before the screen's glass (FR-038)`);
-    assert.deepStrictEqual(p.clear, [], `cave, 15 folders of one at ${W}: the dots start 3 px clear of the sign's lower edge (FR-038, DOTS_CLEAR)`);
+    assert.deepStrictEqual(p.clear, [], `cave, 15 folders of one at ${W}: the dots start 6 px clear of the sign's lower edge (FR-038, DOTS_CLEAR)`);
   }
   /* the big level (BIG_MAX agents or fewer): the person sits in front of the big screen, the dots stay where they were, 0.2 u right of the head's centre and 0.12 u below its top; the strip clamp does not reach them and the glass bound does not apply */
   for (const [world, set] of [['photo', 'office'], ['cave', 'prehistoric']] as const) for (const [W, H] of ROOM) {
@@ -222,7 +222,7 @@ for (const [k, v] of Object.entries(faces)) assert.ok(v >= FACE_FLOOR - 1e-9, `S
     }
     assert.deepStrictEqual(sign.slice(0, 3), [], `${world} ${arr}: no sign over the thinking dots in 600 random halls (FR-038; ${sign.length} found)`);
     assert.deepStrictEqual(glass.slice(0, 3), [], `${world} ${arr}: no thinking dots over a screen's glass below the big level in 600 random halls (FR-038; ${glass.length} found)`);
-    assert.deepStrictEqual(clear.slice(0, 3), [], `${world} ${arr}: the dots start 3 px clear of a sign's lower edge in 600 random halls (FR-038, DOTS_CLEAR; ${clear.length} found)`);
+    assert.deepStrictEqual(clear.slice(0, 3), [], `${world} ${arr}: the dots start 6 px clear of a sign's lower edge in 600 random halls (FR-038, DOTS_CLEAR; ${clear.length} found)`);
   }
   assert.ok(thinking > laid / 2, `the random halls hold a thinking person in most layouts (${thinking} of ${laid})`);
   console.log(`FR-038: ${laid} random halls (Photo office and cave, rows and circle, both sizes; ${thinking} with a thinking person) and the cave's 15 folders of one: no sign over the dots, no dots over a screen's glass`);
@@ -903,7 +903,8 @@ for (const [W, H] of SIZES) for (const n of [2, 3, 4, 5, 8, 12, 15, 20, 30, 40])
   };
   /* Photo and the arcade: the sweep's layouts are the layouts of origin/main (sha256 over the JSON of every layout; computed with the same sweep on the code before the rule, 5c58d9122) */
   const digest = (M: RealMeta): string => createHash('sha256').update(JSON.stringify(sweep(M).map((x) => x.L))).digest('hex');
-  const PIN = { photo: 'f987e516c637124d1a81bfe8d4dfa0777459d6264027c767724082fe6ccefc5a', retro: '1e558d682a7b8ec803240e521775c852dad3716030f5f9eae2e398114df74519' };
+  /* the Photo pin moved once more with DOTS_CLEAR 2 to 5 (issue 1759, T369, 2026-11-19): only a thinking person's dots y can differ (those that stood within 5 px of the strip's clear line); the arcade layout carries the same dots y (it draws none) so its pin moved too */
+  const PIN = { photo: 'ee72a7672d4f58605fa0651c53ff3e10fc629bcba356135a04fa2171f3bae789', retro: '886f06deb0437597d1d9cf90b6596472eff6b4a9c37a4292f4d914ddda23ea02' };
   assert.strictEqual(digest(PH), PIN.photo, 'FR-308 (2026-11-15): the Photo layouts changed; a world without minFace must lay out as before the rule');
   assert.strictEqual(digest(RETRO), PIN.retro, 'FR-308 (2026-11-15): the arcade layouts changed; a world without minFace must lay out as before the rule');
   /* the cave: every case with the strip keeps its face at or over 30.5 px, and the rule fires (a case that the strip alone would take under it) */
