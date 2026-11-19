@@ -3,7 +3,7 @@
  * `node scripts/ui-suite.js --only shots-102-arcade`.
  *
  * It fails (exit 1) when:
- *   - the flag is closed and a stored choice draws the arcade, asks for one of its files or offers it (FR-254);
+ *   - (since the flip, spec 102 T230) a stored choice does not draw the arcade or it is not offered;
  *   - the flag is open and the night room's files (wall-night, floor-night) are not fetched, or the day room's (wall, floor, welcome) are, seen in a session request log (T218, SC-023);
  *   - the flag is open and a file of another world or set is asked for, a picture fails, or the art is not at one integer scale with the nearest pixel (FR-255);
  *   - at 3, 4, 8 and 15 agents, 1440x900 and 1280x800: plates, signs, marquees, cues, chips or fixtures overlap, text is under 10.5 px or a marquee under 12 px,
@@ -271,16 +271,16 @@ const run = async (ctx, reqs) => {
   }
 
 
-  // ---- the flag closed: a stored choice draws the Photo office, asks for nothing of the arcade, and it is not offered ----
+  // ---- no flag since the flip (spec 102 T230): a stored choice draws the arcade with its own people, and it is offered (restoring the flag fails here) ----
   await H.load({ w: 1440, h: 900, query: { officeview: 'real' }, ready: REAL, settle: false });
   await js(`localStorage.setItem('durbar.world','retro');0`);
   await H.load({ w: 1440, h: 900, query: { officeview: 'real' }, ready: REAL, settle: false });
   await must(PICS, 'the pictures');
-  assert.strictEqual(await js(`(()=>{const r=document.querySelector('#stage .ro');return r.dataset.world+' '+r.dataset.set})()`), 'photo office', 'flag closed: the Photo office');
-  assert.strictEqual(await packs(), 'sets/office worlds/photo', 'flag closed: no file of the arcade asked for: ' + await packs());
+  assert.strictEqual(await js(`(()=>{const r=document.querySelector('#stage .ro');return r.dataset.world+' '+r.dataset.set})()`), 'retro retro', 'no flag: a stored retro draws the arcade and its people');
+  assert.strictEqual(await packs(), 'sets/retro worlds/retro', 'no flag: only the arcade\'s files are asked for: ' + await packs());
   await js(`window.DurbarScreens.openSettings();0`);
   await must(`!!document.querySelector('#wrGroup [data-world="photo"]')`, 'Settings');
-  assert.strictEqual(await js(`!![...document.querySelectorAll('#wrGroup [data-world]')].find(b=>b.dataset.world==='retro')`), false, 'flag closed: not offered');
+  assert.strictEqual(await js(`!![...document.querySelectorAll('#wrGroup [data-world]')].find(b=>b.dataset.world==='retro')`), true, 'no flag: the arcade is offered');
   await js(`document.getElementById('scrClose').click();localStorage.removeItem('durbar.world');0`);
 
   /* what overlaps what, on the page's own boxes */
