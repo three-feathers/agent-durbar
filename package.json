@@ -233,6 +233,7 @@
     "test:copilotshared": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-copilot-shared.js",
     "test:macos": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-macos.js",
     "test:claim": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-claim.js",
+    "test:prgateanswered": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-pr-gate-answered.js",
     "test:prgatenotes": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-pr-gate-notes.js",
     "test:prgatecodeql": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-pr-gate-codeql.js",
     "test:trustedcontent": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-trusted-content.js",
