@@ -428,4 +428,4 @@ Fix round 2026-11-14 (review of #1740, T223 stays unticked): the contrast check 
 
 ## 2026-11-19: the Cave card's arrangement text (spec 102 Changes 2026-11-19; issue #1894)
 
-- [x] T367 The Cave's `card.json` `arrangement` reads "circle when it fits, rows otherwise" (owner decision 2026-11-19 07:30 UTC, answer 1; FR-014, FR-230); `test:world-catalogue` takes the card text as the world's arrangement id plus a fall-back clause that must name `rows` for `circle`, with a failing fixture each way. Test: `test:` `test:world-catalogue`.
+- [x] T368 The Cave's `card.json` `arrangement` reads "circle when it fits, rows otherwise" (owner decision 2026-11-19 07:30 UTC, answer 1; FR-014, FR-230); `test:world-catalogue` takes the card text as the world's arrangement id plus a fall-back clause that must name `rows` for `circle`, with a failing fixture each way. Test: `test:` `test:world-catalogue`.

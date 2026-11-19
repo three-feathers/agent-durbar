@@ -28,7 +28,7 @@ const mk = (id, over) => ({ formatVersion: 1, id, arrangement: `arr ${id}`, moni
   assert.strictEqual(judge({ a, b: mk('b', { light: [9000, a.light[0] - 199] }) }).length, 1, 'any of a world\'s lights counts');
   /* no list: the old Photo and Cave pair (both rows) would fail now, so a world that shares an arrangement can only fail */
   assert.deepStrictEqual(judge({ a, b: mk('b', { arrangement: a.arrangement }) }), ['a and b share the same arrangement'], 'a shared arrangement fails, with no list to name it');
-  /* T367: the card text is the arrangement id, and a circle's says it falls back to rows */
+  /* T368: the card text is the arrangement id, and a circle's says it falls back to rows */
   const atp = arrangementTextProblem;
   assert.strictEqual(atp('rows', 'photo', 'rows'), '', 'rows: the plain id passes');
   assert.strictEqual(atp('circle when it fits, rows otherwise', 'cave', 'circle'), '', 'circle with its fall-back passes');

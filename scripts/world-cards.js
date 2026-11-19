@@ -8,13 +8,13 @@ const TEXT_FIELDS = ['arrangement', 'monitor', 'mood', 'wall', 'floor', 'desk', 
 const MIN_GAP_K = 200;
 const norm = (s) => String(s).toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
 
-/** T367: the card's arrangement text against the id world.json names (rows when none): the text starts with the id, and a `circle` or
+/** T368: the card's arrangement text against the id world.json names (rows when none): the text starts with the id, and a `circle` or
  *  `facing-view` world, which the engine draws as `rows` where it does not fit (FR-230), says so with the word rows. Returns a problem string or ''. */
 function arrangementTextProblem(text, id, arr) {
   const t = norm(text);
-  if (t === arr) return arr === 'circle' || arr === 'facing-view' ? `${id}: card arrangement "${text}" must say it falls back to rows where it does not fit (T367)` : '';
+  if (t === arr) return arr === 'circle' || arr === 'facing-view' ? `${id}: card arrangement "${text}" must say it falls back to rows where it does not fit (T368)` : '';
   if (!t.startsWith(arr + ' ')) return `${id}: card arrangement "${text}" differs from world.json "${arr}"`;
-  return (arr === 'circle' || arr === 'facing-view') && /\brows\b/.test(t.slice(arr.length)) ? '' : `${id}: card arrangement "${text}" must name rows as the fall-back (T367)`;
+  return (arr === 'circle' || arr === 'facing-view') && /\brows\b/.test(t.slice(arr.length)) ? '' : `${id}: card arrangement "${text}" must name rows as the fall-back (T368)`;
 }
 
 /** Problems with one card's shape, as strings (empty = fine). */

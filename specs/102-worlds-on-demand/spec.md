@@ -773,7 +773,7 @@ Agent decisions stand until the owner changes them.
 
 ## Changes
 
-### 2026-11-19: the Cave's card says the circle falls back to rows (T367; issue #1894, no new FR)
+### 2026-11-19: the Cave's card says the circle falls back to rows (T368; issue #1894, no new FR)
 
 **Owner decision (Vikram, Telegram, 2026-11-19 07:30 UTC, answer "1"; the ladder itself is his 2026-11-14 13:10 UTC pick, "the circle falls back to rows when it does not fit"):** the Cave's card must not say the arrangement is a circle without condition. [FR-014](spec.md)'s arrangement item for the Cave now reads "circle when it fits, rows otherwise" (`worlds/cave/card.json`, `arrangement`), because at 15 agents in many folders the scene draws `rows` (FR-230). Behaviour is unchanged. `test:world-catalogue` compared the card's `arrangement` to `world.json`'s by equality; it now takes the card text to be the world's id, optionally followed by a fall-back clause, and for `circle` and `facing-view` the clause must name `rows`. A card that says only `circle` for a world that falls back, or a card naming another arrangement, fails by name. No other doc states the Cave's arrangement without condition (`docs/world-design.md` speaks of arrangements in general). `[KNOWN GAP]` Windows and macOS were not run (a JSON text and a script check).
 
