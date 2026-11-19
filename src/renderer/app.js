@@ -8835,7 +8835,7 @@ function openModelMenu(a0,x,y,anchor,again){
   if(none&&!again&&!busyList&&bridge.listModels)setTimeout(()=>{refreshModels(kk,true).then(okk=>{const mm=document.getElementById('modelMenu');if(mm&&mm.dataset.kind===kk&&a.live)openModelMenu(a,x,y,anchor,true);});},0);
   let h=on?'':`<p class="mm-why" role="note">${esc(NO_SWITCH_WHY)}</p>`;
   if(none){const u=DM.listUnavailable(MODELS_STATE[isDefaultKind(kk)?'':kk]),chk=!!busyList||!again;
-    h+=`<div class="mm-unavail" role="status"><p class="mm-why">${chk?'Checking the model list…':esc(u.text)}</p>${!chk&&u.hidden?`<p class="mm-info">${esc(u.hidden)}</p>`:''}${chk?'':'<button type="button" class="btn sm" data-retrylist="1">Retry</button>'}</div>`;}
+    h+=`<div class="mm-unavail" role="status" style="display:flex;flex-direction:column;align-items:flex-start"><p class="mm-why">${chk?'Checking the model list…':esc(u.text)}</p>${!chk&&u.hidden?`<p class="mm-info">${esc(u.hidden)}</p>`:''}${chk?'':'<button type="button" class="btn sm" data-retrylist="1">Retry</button>'}</div>`;}
   h+='<p class="mm-h">Model</p>'+list.map(m=>{const chk=m.id===curId,w=DM.windowOf(m);
     /* spec 076 FR-202: blocked by the app's organization policy: the reason (also on the current model), disabled unless it is the current
        one; advice (FR-201): the words, still selectable */
