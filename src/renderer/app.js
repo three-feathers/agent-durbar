@@ -7131,17 +7131,19 @@ function settlePlan(a,action){
    question (fail closed). The raw question is never shown. */
 const Q_UNSAFE='This question cannot be shown safely. Choose an option or write your answer.';
 function qDecodeRefs(t){const ta=document.createElement('textarea');let x=t;for(let i=0;i<8;i++){ta.innerHTML=x;const y=ta.value;if(y===x)return x;x=y;}return null;} /* a textarea parses text only: no element is made */
+const qRunsIn=(shown,m)=>(shown.match(/[A-Za-z0-9_-]{6,}/g)||[]).every(w=>m.includes(w)); /* a run the raw reading masked (a value the renderer split or wrapped) is missing from m */
 function qMdHTML(raw){
   const s=qDecodeRefs(String(raw==null?'':raw));
   if(s==null)return '<p>'+esc(Q_UNSAFE)+'</p>'; /* references nested past any sane depth: a fixed phrase */
-  const plain=()=>'<p>'+esc(safeMask(s))+'</p>';
+  const m=safeMask(s), plain=()=>'<p>'+esc(m)+'</p>';
   const r=RED?RED.redact(s):null;
-  if(typeof r!=='string'||!window.DurbarMD)return plain();
+  if(typeof r!=='string'||!window.DurbarMD||/!\[/.test(s))return plain(); /* an image: the card needs none, and the renderer's own stand-in words could sit inside a value */
   const tp=document.createElement('template');tp.innerHTML=window.DurbarMD.render(r); /* inert: nothing in a template loads or runs */
   const same=v=>safeMask(v)===v, els=[...tp.content.querySelectorAll('*')];
   els.forEach(e=>e.removeAttribute('title'));
   const shown=tp.content.textContent;
   if(!shown.trim()||!same(shown))return plain();
+  if(!qRunsIn(shown,m))return plain(); /* the cross-check with the raw reading: every word-like run the card shows must also be in the masked raw text */
   for(const e of els)for(const at of [...e.attributes]){
     if(!same(at.value))return plain();
     if(at.name==='href'){let d=null;try{d=decodeURIComponent(at.value);}catch(_){}if(d==null||!same(d))return plain();}
