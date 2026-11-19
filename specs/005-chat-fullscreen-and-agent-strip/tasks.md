@@ -183,4 +183,4 @@ PRs, gates and line-count goals: `plan.md`. Each PR measures on `main` first and
 - [x] T254 [US1] `scripts/test-subretire.ts`: replace the fixed 1000 ms wall limit for 200,000 helpers with counted field reads (`assertPlanWork`, fake-count self-test) and a 20 s thread-CPU backstop; mutants: insertion sort (dies at "end time ... worse than n log n"), an extra status pass (dies at "status ... times").
 
 ## 2026-11-19 (second entry): the open chat says that the reply failed (issue #1917)
-- [ ] T256 [US1] `syncRunState` in `app.js`: a turn that ends while `a.state === 'error'` says "Reply failed" (Stop still says "Stopped", else "Reply finished"); `scripts/check-005-announce-failed.js` (in `ui-suite.js`), mutants `ANNOUNCE_FAIL_MUTANT=finished|always` [FR-038]
+- [ ] T256 [US1] `failedTurn` flag on the agent (set by an `error` status, cleared by a `working` status) read by `syncRunState` in `app.js`: a turn that ends after an error says "Reply failed" (Stop still says "Stopped", else "Reply finished"); `scripts/check-005-announce-failed.js` (in `ui-suite.js`), mutants `ANNOUNCE_FAIL_MUTANT=finished|always` [FR-038]
