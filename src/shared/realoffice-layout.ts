@@ -88,8 +88,8 @@ export interface Layout {
 
 /* FR-010 constants (b2.js) */
 export const PW = 0.80, SR = 0.66, STRIP = 22, PAD = 8, ZGAP = 8, DESK_AT = 0.76;
-/** FR-038 (delta 2026-11-15): the thinking dots start at least this far below the sign strip, and end this far before the screen's glass (px); a sign's lower edge is 1 px above the strip's, so 3 px clear of it */
-export const DOTS_CLEAR = 2;
+/** FR-038 (delta 2026-11-15): the thinking dots start at least this far below the sign strip, and end this far before the screen's glass (px); a sign's lower edge is 1 px above the strip's, so 6 px clear of it (issue 1759: 3 px read as touching at 1280x800, the cave's All floors view) */
+export const DOTS_CLEAR = 5;
 /** FR-038: the drawn box of the three thinking dots (6, 8 and 10 px with 3 px gaps, `realoffice.css` `.ro-dots`), px */
 export const DOTS_BOX = { w: 30, h: 10 } as const;
 /** A desk face's height (crown to chin) as a share of the body height `u`: measured on 6 of the 15 people with a grid over the art
