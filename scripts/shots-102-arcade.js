@@ -49,6 +49,11 @@ const run = async (ctx, reqs) => {
   const loadArcade = async (w, h, n, query = {}) => {
     reqs.clear();
     await H.load({ w, h, query: { officeview: 'real', ...ARCADE, sim: String(n), ...query }, ready: REAL, settle: false });
+    /* spec 008 FR-273 (issue 1914): a window the screen clamped is not the size this case names (a display smaller than the window at the forced ratio: 830x584 CSS px at 2x on a 1660x1216 display, so 15 agents scroll and 3 overlap); fail with the cause, never as a layout failure.
+       ARCADE_MUTANT=smallwin (test only): the window is made 830x584 after the load, must fail here */
+    if (process.env.ARCADE_MUTANT === 'smallwin') { ctx.win.setContentSize(830, 584); await ctx.sleep(300); }
+    const [iw, ih] = await js('[innerWidth,innerHeight]');
+    assert.ok(Math.abs(iw - w) <= 2 && Math.abs(ih - h) <= 2, 'issue 1914: the window is ' + iw + 'x' + ih + ' CSS px, not the ' + w + 'x' + h + ' this case names (the display is too small for it at devicePixelRatio ' + await js('devicePixelRatio') + ': run under xvfb, UI_SUITE_XVFB=1, which ui-suite does itself when UI_SUITE_DPR is above 1)');
     await must(PICS, 'the pictures');
   };
 

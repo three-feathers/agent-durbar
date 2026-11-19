@@ -6,7 +6,7 @@
  *   node scripts/ui-suite.js --only shots-017,shots-033
  *   node scripts/ui-suite.js --shard 2/3                  shard 2 of 3, balanced by recorded duration (UI_SUITE_SHARD=2/3 too; spec 008 FR-182, FR-183)
  *   UI_SUITE_OUT=<folder>                 where every screenshot goes (default: a new temp folder, printed at the end)
- *   UI_SUITE_XVFB=1                       Linux: run under xvfb-run even when a display is set
+ *   UI_SUITE_XVFB=1                       Linux: run under xvfb-run even when a display is set (always so with UI_SUITE_DPR above 1: a desktop smaller than the window times the ratio clamps the window, FR-273)
  *   UI_SUITE_DPR=<1..4, or 1.25, 1.5>     force the device scale factor (2 = a Retina screen, 1.25 and 1.5 = a Windows laptop at 125 % and 150 %) for every driver
  *   UI_SUITE_XVFB_SCREEN=WxHxD            Linux/xvfb: replace the screen (default 1920x1100 times the density, depth 24; a malformed value is ignored; spec 008 FR-213)
  *   UI_SUITE_JOBS=<n>                     drivers at once (default 2; each has its own profile and, on Linux, its own xvfb display);
@@ -364,7 +364,9 @@ function shard(list, spec, times = timings()) {
 /** Spec 008 FR-210: do the drivers' windows share one desktop, and so one OS window focus? True on macOS, Windows and Linux with a display;
  *  false on Linux under xvfb (a display, and a focus, per driver: `runOne` uses xvfb-run exactly then). */
 function sharedDesktop(platform = process.platform, env = process.env) {
-  return platform !== 'linux' || (!!env.DISPLAY && env.UI_SUITE_XVFB !== '1');
+  /* FR-273 (issue 1914): a forced ratio above 1 needs a screen as big as the window times the ratio; a desktop smaller than that clamps the window (830x584 CSS px at 2x on a 1660x1216 display), so those runs use xvfb's own screen (FR-213) */
+  const forced = dprOk(env.UI_SUITE_DPR) && Number(env.UI_SUITE_DPR) > 1;
+  return platform !== 'linux' || (!!env.DISPLAY && env.UI_SUITE_XVFB !== '1' && !forced);
 }
 
 /** Spec 008 FR-112: syntax errors in the given files, from `node --check` (no shell, nothing run). [] when all parse. */
