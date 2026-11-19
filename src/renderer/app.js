@@ -7117,7 +7117,7 @@ function settlePlan(a,action){
   if(action==='reject'){closeTurn(a);a.worked=false;setState(a,'idle',null,'Plan rejected. Nothing was changed.');}
   else setState(a,'working',null,action==='approve'?'Carrying out the plan':'Revising the plan');
 }
-/* spec 052 (2026-11-19 delta, issue #1927, T378): a question's Markdown, masked first and then rendered by the chat's own renderer. The mask keeps the Markdown (RED.redact); when the
+/* spec 052 (2026-11-19 delta, issue 1927, T378): a question's Markdown, masked first and then rendered by the chat's own renderer. The mask keeps the Markdown (RED.redact); when the
    Markdown-aware mask (safeMask, which flattens the text) finds more than it did (a token split by a mark), or the redact module is missing, the card shows that masked plain text instead (fail closed). */
 function qMdHTML(raw){
   const s=String(raw==null?'':raw), plain=safeMask(s), n=t=>(t.match(/\[redacted\]/g)||[]).length;
@@ -7134,7 +7134,7 @@ function showQuestion(a,e){
   const picks=qs.map(()=>new Set()), others=[];
   qs.forEach((q,i)=>{
     const box=document.createElement('div');box.className='q-item';
-    /* spec 052 (2026-11-19 delta, issue #1927, T378): the question's Markdown is rendered by the chat's own safe renderer (DurbarMD: raw HTML is text, links keep the chat's click handling),
+    /* spec 052 (2026-11-19 delta, issue 1927, T378): the question's Markdown is rendered by the chat's own safe renderer (DurbarMD: raw HTML is text, links keep the chat's click handling),
        after the text is masked: the rendered output never holds an unmasked value. The answer is still keyed by the agent's own question text. */
     const qt=document.createElement('div');qt.className='q-text md';
     if(q.header){const h=document.createElement('span');h.className='tag';h.textContent=q.header;qt.appendChild(h);}

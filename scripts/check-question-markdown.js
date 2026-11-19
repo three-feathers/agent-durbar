@@ -18,7 +18,7 @@
  * A miss prints DRIVER FAILED (Electron still exits 0), so the npm script exits non-zero unless "all checks passed" is printed.
  */
 const path = require('path');
-const { helpers } = require('./driver-helpers');
+const { helpers, jsLiteral } = require('./driver-helpers');
 const assert = require('assert');
 const OUT = process.env.OUT || require('os').tmpdir();
 const WORLDS = (process.env.QMD_WORLDS || 'flat,real,retro').split(',');
@@ -33,7 +33,7 @@ module.exports = async (ctx) => {
     if (world === 'flat') o = await H.openSimAgent(`a=>!a.parent&&a.question`, '#chat .note.question .q-opt');
     else { // the Real office and the arcade have no desks: open the asking agent's chat as check-097-chat-contrast does
       const id = await H.until(`((window.__durbarSimUi&&window.__durbarSimUi.agents().find(a=>!a.parent&&a.question))||{}).id`, 20000) && await js(`window.__durbarSimUi.agents().find(a=>!a.parent&&a.question).id`);
-      await js(`window.__durbarSimUi.crew.openPanel(${JSON.stringify(id)})`);
+      await js(`window.__durbarSimUi.crew.openPanel(${jsLiteral(id)})`);
       o = { id, ok: await H.until(`document.body.classList.contains('panel-open')&&!!document.querySelector('#chat .note.question .q-opt')`, 15000), seen: {} };
     }
     assert.ok(o.ok, `${tag}: an agent has the question in its chat: ${JSON.stringify({ id: o.id, ...o.seen })}`);
