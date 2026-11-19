@@ -142,3 +142,8 @@ Q2-Q8 are answered; **Q1 (art format) is open again** (2026-10-23). Tasks are ma
 ## Office people and Retro pixel values (delta 2026-11-13, spec 102 T290..T293)
 
 - [x] T115 `src/shared/characters.ts`, `theme.js`, `app.js`, `sim.ts`, `api.ts` list `office` and `pixel` (Retro pixel), as a radio group (FR-078; the pattern of the World row, `radioNav`); Settings > Characters shows them (Retro pixel disabled and "Not open yet" while its flag is closed); `test:characters` and `check-characters` extended [FR-078]
+
+## A pick made under a screen is drawn when the screen closes (delta 2026-11-19, issue #1460)
+
+- [x] T378 Spec delta (spec 077, `## Changes 2026-11-19`: cause named, change, test) [spec]
+- [ ] T379 `app.js` (`OFFICE_OWED` set when `renderOffice` returns on a floor with no width; a `afterClose` hook of `DurbarScreens.init` draws the office with `relayoutNow` if it is set), `screens.js` `close()` calls the hook after the screen's class is off; `check-characters`: the reduced-motion step and its patched-`dist` mutant [FR-068]
