@@ -7848,7 +7848,8 @@ async function sendLive(text,forId,opts){
   if(fromComposer){attached=[];renderAttached();attNotice([]);
     const input=$('msgInput');if(input){input.value='';autoGrow();}}
   if(LIVEACT)LIVEACT.clear(a.id); /* spec 001 FR-028: a new message starts a fresh readout */
-  a.worked=true; a.failedTurn=false; /* the person's message starts a new turn: an earlier failure is over (spec 005 FR-245) */ a.intent=''; closeTurn(a); ensureTurn(a); setState(a,'thinking',null,'Thinking');
+  a.failedTurn=false; /* the person's message starts a new turn: an earlier failure is over (spec 005 FR-245) */
+  a.worked=true; a.intent=''; closeTurn(a); ensureTurn(a); setState(a,'thinking',null,'Thinking');
   const planFirst=!!a.planNext&&!!(capsFor(a)&&capsFor(a).planMode); /* spec 066: one message only */
   if(a.planNext){a.planNext=false;renderAttached();}
   if(planFirst)addNote(chat,'Asked for a plan first: nothing changes until you approve it.');
