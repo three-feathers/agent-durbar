@@ -3030,6 +3030,15 @@ function noteCompleted(a){
   if(r==='marked'){UNREAD_AT.set(a.id,Date.now());const rm=roomOf(a);if(rm&&roomShown(rm)){announce(a.name+' finished. New reply.');UNREAD_SAID.add(a.id);}} /* FR-174: nothing is announced for a hidden folder or floor */
   else if(r==='seen')UNREAD_AT.delete(a.id);
 }
+/* spec 005 FR-244 (issue 1908): an agent that ENTERS the error state while its chat is not shown is said once, "<name> has an error.", in every world (the office draws the state; a screen reader had only the plate's name changing).
+   Nothing for a helper, for a hidden folder or floor (FR-174's rule), for the simulator's start-up replay, nor while the agent stays in error. Normal priority: a request outranks it (FR-237). */
+function noteFailed(a){
+  if(a.parent)return;
+  if(SIM&&!window.__durbarSimReplayed)return;
+  if(chatShownNow(a.id))return;
+  const rm=roomOf(a);if(!rm||!roomShown(rm))return;
+  announce(a.name+' has an error.');
+}
 /* FR-176: the chat of the open panel is shown now (the panel opened, the window came back, the Chat tab or the Notes drawer closed) */
 function syncSeen(){const id=ui.selected;if(id&&UNREAD.has(id)&&chatShownNow(id)){UNREAD.read(id);UNREAD_AT.delete(id);scheduleRender();}}
 function markRead(a){if(!a||!UNREAD.read(a.id))return false;UNREAD_AT.delete(a.id);scheduleRender();announce(a.name+': marked as read.');return true;}
@@ -6974,7 +6983,9 @@ const TASK_LOG_KEEP=500; /* spec 005 FR-239: the simulator's task log keeps the 
 function setState(a,state,label,task){
   if(typeof task==='string')task=taskMask(task); /* spec 041 FR-065: backstop, whatever path built the line (the helper masks before cutting; this one cannot repair a cut token) */
   const ch=a.state!==state||(label!==undefined&&a.label!==label)||(task!==undefined&&a.task!==task);
+  const wasState=a.state;
   a.state=state; if(label!==undefined)a.label=label; if(task!==undefined)a.task=task;
+  if(state==='error'&&wasState!=='error')noteFailed(a); /* spec 005 FR-244 */
   if(SIM&&task!==undefined){const L=(window.__taskLog=window.__taskLog||[]);L.push(a.task);if(L.length>TASK_LOG_KEEP)L.splice(0,L.length-TASK_LOG_KEEP);} /* simulator only: the last task lines stored (FR-239), for the FR-065 driver (a line is often replaced at once) */
   if(state==='working'||state==='thinking'){if(!a.busySince)a.busySince=Date.now();}else if(state==='done'||state==='idle')a.busySince=null; /* spec 001 FR-047: time on task */
   if(ch&&a.live&&a.info&&a.info.modelControl&&a.info.modelControl.compact&&!a.parent)updateCtxChip(a); /* the Compact button is greyed while the agent works */
