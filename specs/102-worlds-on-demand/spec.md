@@ -2208,3 +2208,18 @@ Audit of #1403 on `main` at `8b7a84e47`: T206 and T218 are built and ticked; the
 `[KNOWN GAP]` (accepted, not planned): `g` is not a whole number of device px at those counts and ratios; reason: the only fix is a smaller `g`, which the owner declined. The rule already built (`deviceScales`, whole device px where the floor allows) stays. Unchanged and separate: the 1.5 `shots-102-arcade` failures are issue #1885; FR-324's helper pictures at the nearest pixel; a real 125 % or 150 % screen, macOS and Windows not run. Nothing in `src/` changes. T204 is ticked: the look was read by the owner and the gaps are accepted; #1876 closes with this entry.
 
 **Numbers** (`npm run specs:numbers`): no new FR, T or Q.
+
+## Changes 2026-11-19 (second entry): the flip, built as a draft (T230, T115, T122; FR-250, FR-301, FR-320; issue #1400; no new FR)
+
+**What it does** (as amended 2026-11-14): `WORLD_FLAGS.retro` is removed, so the Retro arcade is a third card in Settings > World (Plain, Photo office, Retro arcade; the cave keeps its flag) and Retro pixel is a normal Characters card with no "Not open yet" state; the registry row `retro` is `shippable: true` (all 26 cells `built` or `fallback-flat`, `test:momentsregistry`). Nobody is moved, no default changes, the Retro pixel theme, the Theme section and the mode button stay. Flat draws the theme's own figures for Retro pixel until T294 (issue #1873; owner, 2026-11-19: after the flip).
+
+**Held as a draft** until the owner says go: the real-GPU run (T231 with 097 T162) is the Mac session's (owner, 2026-11-19 06:52 UTC). The Windows hand check comes after the flip (owner, 2026-11-19).
+
+**Owner question, open:** spec 021 FR-078's check (`test:featureinventory`) fails once a world other than the Photo office is offered: every Flat `works` row needs its Worlds cell `built`, naming a registry moment with `code: present`, or a row-level `(owner decision, ...)`. The Worlds column was never filled for the arcade: 64 rows fail (53 `none`, the others `mock+planned`), and most moments the arcade has `built` are still `code: planned` (spec 098's `data-surface` roots are not built). Three rows are honestly `built` and are updated here (coffee break, needs-you inbox, credit caps). The rest needs the owner's choice: (1) a row-level owner decision naming #1404 (the arcade's parity board, every line closed but the flip's own) on each of the 64 rows, or (2) a spec 021 delta that a world drawn by the Real office engine takes the Real office cell, or (3) build 098's `data-surface` roots first. Not chosen here: no owner decision is written on his behalf.
+
+**Docs:** `docs/features.md`, `docs/themes.md`, `docs/limits.md`, README, the feature inventory's Characters row, a changelog fragment. `docs/site/unreleased.json` keeps its arcade phrases until the site names the release that holds the world (spec 104 FR-008).
+
+**Pictures:** `check-settings-worlds` and `check-characters` at 1440x900 and 1280x800, simulator, looked at (the PR lists them). `[KNOWN GAP]` Windows and macOS not run here; no real GPU.
+
+**Numbers** (`npm run specs:numbers`): no new FR, T or Q.
+

@@ -21,7 +21,7 @@ One row per thing a user can do or see. [features.md](features.md) stays the use
 | Rename a session (F2, pencil) | works | works, the pencil beside a plate's name and F2 on a plate (059 FR-170); an arcade cabinet's at its plate's right end, edited over the marquee (097 FR-357) | none | 059 | test:sessionname driver:check-097-plate-pencil |
 | Lobby places, visitors, away at a place | works | works | mock+planned (lobby) | 024 | test:places driver:shots-024 |
 | Boss queue, Bank, Postbox | works | works | mock+planned (boss-bank-post-coffee) | 001 024 | driver:shots-001-lobby driver:check-097-letter read:src/renderer/realoffice.js |
-| Coffee break at a usage limit | works | works | planned (coffee-bar) | 068 | test:coffeebreak driver:shots-068-coffee |
+| Coffee break at a usage limit | works | works | planned+built (coffee-bar) | 068 | test:coffeebreak driver:shots-068-coffee |
 | Finished agents rest in the lounge | works | works, a lounge row under the desks: done and read agents seated beside a small monitor, asleep after 10 minutes (097 FR-246..FR-249, owner decision 2026-11-06) | built (lounge) | 001 097 | test:realoffice-layout driver:check-097-lounge |
 | Floors, lift, All floors, Focus mode | works | works | mock+planned (lift-panel) | 033 092 | test:floors test:floornav driver:shots-092-lift driver:check-floor-add |
 | Status pills as filters | works | works | none | 001 | driver:shots-001-welcome read:src/renderer/app.js |
@@ -47,7 +47,7 @@ One row per thing a user can do or see. [features.md](features.md) stays the use
 | Expand the chat's browser to fill the window, and back (Esc) | works | works, Photo office and Retro arcade checked | none | 080 | test:browserpane driver:check-080-browser-expand |
 | Questions and permission cards | works | works | mock+planned (permission-card) | 003 012 | test:elicit test:permissions test:lookalike driver:shots-012-elicit driver:check-permission-lookalike |
 | Auto-follow work (Settings, off by default): back to the office after a send, the agent's chat when it finishes or needs you; a full-screen notice with a 3 s countdown and Stay before each automatic move; Previous and Next over the attention queue | works | works, the same notice in the Photo office, the cave and the arcade | none | 052 | driver:check-auto-follow driver:check-052-follow-notice |
-| Needs-you inbox | works | works | planned (inbox) | 052 | test:attention read:src/renderer/app.js |
+| Needs-you inbox | works | works | planned+built (inbox) | 052 | test:attention read:src/renderer/app.js |
 | Modes Read-only, Ask first, Allow all; switch any time | works | works | none | 003 018 | test:permissions driver:shots-018 |
 | Plan first | works | works | none | 066 | test:planmode |
 | Slash suggestions | works | works | none | 073 | test:slashcommands |
@@ -69,11 +69,11 @@ One row per thing a user can do or see. [features.md](features.md) stays the use
 | MCP problems strip at launch (reason, fix, Show, Dismiss) | works | works, the same strip above the office (driver); the closed strip was seen above the drawn Photo office at 1440x900 and 1280x800 on macOS, 2026-11-09; the list-open and Settings pictures are the flat office, so they are no evidence here, and dark theme and DPR 2 were not run (#1424) | none | 058 | driver:shots-058-mcp-launch test:mcpwords |
 | MCP sign-ins refreshed before a message after a quiet hour, checked in the background before every message, and renewed after a failed call (waiting line, Reconnecting line, sign-in line, Settings switches, Renewed note) | works | works, chat and Settings only (window chrome, no office drawing); run in the Photo office at 1440x900 and 1280x800 on macOS, 2026-11-09 (simulator, a throwaway driver wrapper); dark theme and DPR 2 were not run (#1424) | none | 058 | test:mcpsigninrefresh driver:shots-058-mcp-signin-refresh |
 | Tools and Cost tabs | works | works | none | 019 020 | test:toolstats test:usagetotals |
-| Credit caps and usage display | works | works | planned (limit-card) | 011 | test:credits test:usagestore driver:shots-012-cost-cap |
+| Credit caps and usage display | works | works | planned+built (limit-card) | 011 | test:credits test:usagestore driver:shots-012-cost-cap |
 | OS sandbox floor | works | works | none | 087 | test:runtime-sandbox |
 | Themes and user themes | works | missing (owner decision, 2026-11-08): superseded by worlds | none | 035 036 037 038 039 040 | test:theme test:userthemes |
 | One face per agent: rail row, chat header, inbox faces are the same picture | works | works (one picker, `roFace`) | none | 097 | driver:check-097-one-face |
-| Characters (crews): the Characters choice drawn in the office | works | missing, My characters has no Real office people yet (spec 096); Minimalist, Cheeky, Prehistoric, Pirate, Monster, Royal and Rebels are drawn in their own people in Real office (#1154; Minimalist T245); Office people and Retro pixel (behind the `retro` flag) are Characters values drawn in every world, and Flat draws the theme's own figures for them until its heads are built (spec 102 T290..T293, T294 open) | none | 077 096 102 | test:characters test:crew driver:check-097-crews |
+| Characters (crews): the Characters choice drawn in the office | works | missing, My characters has no Real office people yet (spec 096); Minimalist, Cheeky, Prehistoric, Pirate, Monster, Royal and Rebels are drawn in their own people in Real office (#1154; Minimalist T245); Office people and Retro pixel (open since the arcade's flip, spec 102 T230) are Characters values drawn in every world, and Flat draws the theme's own figures for them until its heads are built (spec 102 T290..T293, T294 open) | none | 077 096 102 | test:characters test:crew driver:check-097-crews |
 | Harness setup, agent-app updates | works | works | none | 051 081 | test:harnesssetup test:updatecheck |
 | Remote control | works | works | none | 054 | test:remote driver:shots-054-remote |
 | Auto-follow work (Settings, off by default): the window returns to the office with the agent's desk marked, then opens its chat when it finishes, asks, errors or reaches its limit; Previous/Next strip | works | works, the desk mark is the dashed `.ro-plate.is-followed` on the plate (read from the code) | none | 052 | test:autofollow driver:check-auto-follow read:src/renderer/styles.css |

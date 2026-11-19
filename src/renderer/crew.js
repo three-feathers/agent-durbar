@@ -228,11 +228,11 @@
      later change nothing else). `flag` names a switch in WORLD_FLAGS: a row whose flag is off is not offered and never chosen (owner's
      gate, 2026-11-01: a world such as the cave stays closed until spec 097 T156..T159 and spec 001's search land). `choice` is the Characters value that
      picks a set. A set listed here has the full Real office pose set (FR-204); Minimalist is listed (spec 097 T245, #1154). */
-  const WORLD_FLAGS = { cave: false, retro: false };
+  const WORLD_FLAGS = { cave: false }; /* spec 102 T230: the Retro arcade's flag is gone (the flip); the cave keeps its own */
   const WORLDS = [
     { id: 'photo', name: 'Photo office', defaultSet: 'office', line: 'A realistic open-plan office: a person at each desk, places along the back wall.' },
     { id: 'cave', name: 'Prehistoric cave', defaultSet: 'prehistoric', flag: 'cave', line: 'A cave of stone desks, with prehistoric people.' },
-    { id: 'retro', name: 'Retro arcade', defaultSet: 'retro', flag: 'retro', line: 'An arcade hall: each person at their own cabinet, in pixels.' },
+    { id: 'retro', name: 'Retro arcade', defaultSet: 'retro', line: 'An arcade hall: each person at their own cabinet, in pixels.' },
   ];
   /* spec 102 FR-266, FR-320: the stored Characters value of the Retro pixel people; the copy of PIXEL_CHARACTERS in src/shared/characters.ts (test:characters compares them) */
   const PIXEL_CHARACTERS = 'pixel';
@@ -247,7 +247,7 @@
     { id: 'cheeky', name: 'Cheeky', choice: 'cheeky' },
     /* spec 097 FR-336 amended (T245, #1331 art): Minimalist's six drawn people, full poses; a Real-office-only set (no CREWS entry: the flat office keeps its drawn kit) */
     { id: 'minimalist', name: 'Minimalist', choice: 'minimalist' },
-    { id: 'retro', name: 'Retro pixel', choice: PIXEL_CHARACTERS, flag: 'retro' }, /* the one mapping of the Characters value `pixel` to the set `retro` (T344 may rename the value, not the set) */
+    { id: 'retro', name: 'Retro pixel', choice: PIXEL_CHARACTERS }, /* no flag since the flip (T230); the one mapping of the Characters value `pixel` to the set `retro` (T344 may rename the value, not the set) */
   ];
   /* the Characters choices whose note names them: each crew, from CREWS (a new crew gets its note by construction), and Minimalist (a REAL_SETS row, no CREWS entry) */
   const crewName = (c) => (c === 'minimalist' || has(CREWS, c)) ? c[0].toUpperCase() + c.slice(1) : '';
