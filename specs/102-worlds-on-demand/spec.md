@@ -773,6 +773,10 @@ Agent decisions stand until the owner changes them.
 
 ## Changes
 
+### 2026-11-19: the Cave's card says the circle falls back to rows (T368; issue #1894, no new FR)
+
+**Owner decision (Vikram, Telegram, 2026-11-19 07:30 UTC, answer "1"; the ladder itself is his 2026-11-14 13:10 UTC pick, "the circle falls back to rows when it does not fit"):** the Cave's card must not say the arrangement is a circle without condition. [FR-014](spec.md)'s arrangement item for the Cave now reads "circle when it fits, rows otherwise" (`worlds/cave/card.json`, `arrangement`), because at 15 agents in many folders the scene draws `rows` (FR-230). Behaviour is unchanged. `test:world-catalogue` compared the card's `arrangement` to `world.json`'s by equality; it now takes the card text to be the world's id, optionally followed by a fall-back clause, and for `circle` and `facing-view` the clause must name `rows`. A card that says only `circle` for a world that falls back, or a card naming another arrangement, fails by name. No other doc states the Cave's arrangement without condition (`docs/world-design.md` speaks of arrangements in general). `[KNOWN GAP]` Windows and macOS were not run (a JSON text and a script check).
+
 ### 2026-11-15: the moments driver's steps are independent of each other (T351; issue #1777, no new FR)
 
 `MOMENTS_ONLY=cells,empty-office` (arcade world) failed: the cells step could not find Jonas's plate. Cause (read in the driver and reproduced in the simulator): the empty-office step shows the empty floor, which the app stores as `durbar.floor` in the page's storage; the next step's `H.load` keeps that storage, so the cells step opened on the empty floor. The empty-office step now puts the storage back (`durbar.floor`, `durbar.floorView`) in a `finally`; what the cells step checks is unchanged. `test:momentsregistry` fails on a driver whose empty-office step does not restore it.

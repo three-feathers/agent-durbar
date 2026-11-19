@@ -131,7 +131,8 @@ for (const s of ROOMS) assert.ok(mk(4, 2, SIZES[s][0], SIZES[s][1]).faceH > mk(1
 // ---- the manifests (FR-230, T174): the Cave may name circle; the scan stays for every OTHER world (the parsed `arrangement`, so spacing, line breaks and \u escapes cannot hide it) ----
 /** the parsed manifest's `arrangement` (a manifest that does not parse fails by its path, never passes); a world.json and a card.json are flat objects, so the key is at the top */
 const arrangementOf = (text: string, file: string): unknown => { try { return (JSON.parse(text) as { arrangement?: unknown }).arrangement; } catch (e) { throw new Error(`${file} is not valid JSON: ${(e as Error).message}`); } };
-const names = (text: string, file = 'manifest'): boolean => arrangementOf(text, file) === 'circle';
+/** a world.json says `circle`; a card says it plus its fall-back clause (T368: "circle when it fits, rows otherwise") */
+const names = (text: string, file = 'manifest'): boolean => { const a = arrangementOf(text, file); return typeof a === 'string' && (a === 'circle' || a.startsWith('circle ')); };
 /** the manifests that name arrangement circle and are not the Cave's own (a world folder called `cave`, in worlds/ or the app's worlds) */
 function circleOffenders(manifests: Array<{ file: string; text: string }>): string[] {
   return manifests.filter((m) => names(m.text, m.file) && path.basename(path.dirname(m.file)) !== 'cave').map((m) => m.file);
@@ -146,6 +147,7 @@ function circleOffenders(manifests: Array<{ file: string; text: string }>): stri
   const naming = { text: '{ "arrangement": "circle" }' };
   assert.deepStrictEqual(circleOffenders([{ file: 'worlds/photo/card.json', ...naming }, { file: 'src/renderer/realoffice/worlds/retro/world.json', ...naming }, { file: 'worlds/cave/card.json', ...naming }]), ['worlds/photo/card.json', 'src/renderer/realoffice/worlds/retro/world.json'], 'mutant: another world naming circle is caught, the Cave is not');
   for (const t of ['{"arrangement":"circle"}', '{ "arrangement" : "circle" }', '{\n  "arrangement":\n    "circle"\n}', '{"arrangement":"\\u0063ircle"}']) assert.ok(names(t), `mutant: ${JSON.stringify(t)} names circle and the parsed scan catches it`);
+  assert.ok(names('{"arrangement":"circle when it fits, rows otherwise"}'), 'a card text that starts with circle names circle (T368)');
   assert.ok(!names('{"arrangement":"rows"}') && !names('{}'), 'rows and no key are not circle');
   assert.throws(() => names('{"arrangement": circle}', 'worlds/x/world.json'), /worlds\/x\/world\.json is not valid JSON/, 'a manifest that does not parse fails by its path');
 }

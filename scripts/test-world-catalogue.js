@@ -11,7 +11,7 @@ const ROOT = path.join(__dirname, '..');
 const WORLDS = process.env.DURBAR_WORLDS_DIR || path.join(ROOT, 'worlds');
 const IN_REPO = path.join(ROOT, 'src', 'renderer', 'realoffice', 'worlds');
 
-const { TEXT_FIELDS, cardProblems, judge, readCards } = require('./world-cards');
+const { TEXT_FIELDS, cardProblems, arrangementTextProblem, judge, readCards } = require('./world-cards');
 
 const mk = (id, over) => ({ formatVersion: 1, id, arrangement: `arr ${id}`, monitor: `mon ${id}`, light: [3000 + (id.charCodeAt(0) % 10) * 1000], mood: `mood ${id}`, wall: `wall ${id}`, floor: `floor ${id}`, desk: `desk ${id}`, fixtureStyle: `fix ${id}`, plants: `plant ${id}`, motif: `motif ${id}`, 'distinct-check': { state: 'pending' }, ...over });
 
@@ -28,6 +28,16 @@ const mk = (id, over) => ({ formatVersion: 1, id, arrangement: `arr ${id}`, moni
   assert.strictEqual(judge({ a, b: mk('b', { light: [9000, a.light[0] - 199] }) }).length, 1, 'any of a world\'s lights counts');
   /* no list: the old Photo and Cave pair (both rows) would fail now, so a world that shares an arrangement can only fail */
   assert.deepStrictEqual(judge({ a, b: mk('b', { arrangement: a.arrangement }) }), ['a and b share the same arrangement'], 'a shared arrangement fails, with no list to name it');
+  /* T368: the card text is the arrangement id, and a circle's says it falls back to rows */
+  const atp = arrangementTextProblem;
+  assert.strictEqual(atp('rows', 'photo', 'rows'), '', 'rows: the plain id passes');
+  assert.strictEqual(atp('circle when it fits, rows otherwise', 'cave', 'circle'), '', 'circle with its fall-back passes');
+  assert.strictEqual(atp('facing-view when it fits, rows otherwise', 'x', 'facing-view'), '', 'facing-view with its fall-back passes');
+  assert.match(atp('facing-view', 'x', 'facing-view'), /must say it falls back to rows/, 'a bare facing-view fails');
+  assert.match(atp('facing-view with a sea view', 'x', 'facing-view'), /must name rows/, 'a facing-view clause without rows fails');
+  assert.match(atp('circle', 'cave', 'circle'), /must say it falls back to rows/, 'a bare circle fails');
+  assert.match(atp('circle with a fire', 'cave', 'circle'), /must name rows/, 'a circle clause without rows fails');
+  assert.match(atp('circle when it fits, rows otherwise', 'cave', 'rows'), /differs from world.json "rows"/, 'a card naming another arrangement fails');
   /* T094: the reviewer's look is a required field with two states, and a pending one names no reviewer (it is set by a person, never by a script). */
   const dcp = (dc) => cardProblems({ ...mk('a'), 'distinct-check': dc }, 'a');
   const noDc = mk('a'); delete noDc['distinct-check'];
@@ -60,7 +70,8 @@ if (!process.env.DURBAR_WORLDS_DIR) for (const id of fs.readdirSync(IN_REPO)) {
   if (!fs.existsSync(wj)) continue;
   if (!ids.includes(id)) { problems.push(`${id}: a built world with no card`); continue; }
   const arr = JSON.parse(fs.readFileSync(wj, 'utf8')).arrangement || 'rows';
-  if (cards[id] && cards[id].arrangement !== arr) problems.push(`${id}: card arrangement "${cards[id].arrangement}" differs from world.json "${arr}"`);
+  const ap = cards[id] && arrangementTextProblem(cards[id].arrangement, id, arr);
+  if (ap) problems.push(ap);
 }
 const fails = judge(cards);
 for (const f of [...problems, ...fails]) console.error(`FAIL ${f}`);

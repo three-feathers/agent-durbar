@@ -425,3 +425,7 @@ Fix round 2026-11-14 (review of #1740, T223 stays unticked): the contrast check 
 ## 2026-11-18: the arcade Draft tag off the cabinet's base (spec 102 Changes 2026-11-18; issue #1632)
 
 - [x] T366 The Draft tag of an arcade desk with its person stands beside the plate's end on the person's side, off the cabinet's base (owner decision 2026-11-18, option 2; FR-316 of spec 097): `realoffice.js` (`beside-r`, `beside-l`), `realoffice.css`; `check-office-overlap.js` measures every cabinet and the person's stand box against the tag. Test: arcade run 37 of 37 at 3, 12 and 15 agents, both sizes; mutant (`side` always null) fails "drafttag sim-N overlaps cabinet sim-N"; Photo office and cave unchanged (same driver). `[KNOWN GAP]`: Windows, macOS, DPR 2 not run [FR-316].
+
+## 2026-11-19: the Cave card's arrangement text (spec 102 Changes 2026-11-19; issue #1894)
+
+- [x] T368 The Cave's `card.json` `arrangement` reads "circle when it fits, rows otherwise" (owner decision 2026-11-19 07:30 UTC, answer 1; FR-014, FR-230); `test:world-catalogue` takes the card text as the world's arrangement id plus a fall-back clause that must name `rows` for `circle`, with a failing fixture each way. Test: `test:` `test:world-catalogue`.
