@@ -1,9 +1,10 @@
 # Real office world: Retro arcade (provenance, spec 097 FR-062..FR-069, spec 102 FR-250..FR-259, T206)
 
-A hall of arcade cabinets, drawn **in code** (`scripts/build-arcade-pack.py`, from the owner-approved mockup's drawing, redrawn with level glass), no image-generation run. One file pixel is one grid pixel, lossless WebP; two runs give the same bytes. Only the `.webp` files and `world.json` ship; this file stays in the repository. Nothing draws this world yet (`WORLD_FLAGS.retro` is closed, spec 102 RA3 draws it).
+A hall of arcade cabinets, drawn **in code** (`scripts/build-arcade-pack.py`, from the owner-approved mockup's drawing, redrawn with level glass), no image-generation run. One file pixel is one grid pixel, lossless WebP; two runs give the same bytes. Only the `.webp` files and `world.json` ship; this file stays in the repository. The Real office draws it behind the closed `WORLD_FLAGS.retro` until the flip (spec 102 T230).
 
 - **Licence:** MIT, like the code.
 - **Fictional:** no real brand, logo, franchise or character is drawn; the cabinets and fixtures are invented shapes.
+- **Owner's look before the flip (spec 102 T229, FR-035 (f)), 2026-11-19 07:06 UTC, Telegram:** Vikram viewed the contact sheet of the cave, photo and retro world pictures (`npm run world:contact-sheet`, each world's simulator scene included) and judged it good; the thin tiling strips were not flagged. He also watched the simulator recording of the pixel dissolve (five person moves, normal speed then 0.2x, about 12 fps) and judged it good (T263). Not in that look: the Settings picker cards and the Flat office; they are in the flip pull request's pictures.
 
 ### room-day
 
@@ -12,7 +13,7 @@ A hall of arcade cabinets, drawn **in code** (`scripts/build-arcade-pack.py`, fr
 - tool: `scripts/build-arcade-pack.py` (Pillow)
 - date: 2026-11-01
 - made by: Vikram's agent (Claude Code)
-- approved by: Vikram, 2026-11-01 (the mockup's look; the rebuilt pictures have not been looked at by him)
+- approved by: Vikram, 2026-11-01 (the mockup's look); the rebuilt pictures 2026-11-19 (the contact sheet, issue 1402)
 - reference: the mockup
 - prompt: none, drawn in code
 - cut: the wall is 720 x 118 grid pixels, its four neon signs in the middle so a crop at another scale keeps them
@@ -38,7 +39,7 @@ A hall of arcade cabinets, drawn **in code** (`scripts/build-arcade-pack.py`, fr
 - tool: `scripts/build-arcade-pack.py` (Pillow), `welcome()`
 - date: 2026-11-13
 - made by: Vikram's agent (Claude Code)
-- approved by: Vikram, owner decision 2026-11-13 to build it, drawn in code (comment on issue 1400); the picture itself waits for his look on the PR
+- approved by: Vikram, owner decision 2026-11-13 to build it, drawn in code (comment on issue 1400); the picture 2026-11-19 (the contact sheet, issue 1402)
 - reference: none
 - prompt: none, drawn in code (0 AI credits)
 - cut: 480 x 300 grid pixels, one file pixel per grid pixel, lossless (VP8L), no metadata chunk; shown with `background-size: cover`, nearest pixel
@@ -51,7 +52,7 @@ A hall of arcade cabinets, drawn **in code** (`scripts/build-arcade-pack.py`, fr
 - tool: `scripts/build-arcade-pack.py` (Pillow)
 - date: 2026-11-01
 - made by: Vikram's agent (Claude Code)
-- approved by: pending (the owner has not yet looked at the level cabinet, T200)
+- approved by: Vikram, 2026-11-19 (his look at the contact sheet of the world pictures, issue 1402)
 - reference: the mockup and `layouts/mock/arcade-level-compare.png` (art cache)
 - prompt: none, drawn in code
 - cut: `monitor.webp` is the big cabinet for 1 to 4 people (glass 75 x 50), `monitor-half.webp` the small one (56 x 32) and `monitor-narrow.webp` a narrower one (44 x 32) for a floor too narrow for the small one with the chat open
@@ -77,7 +78,7 @@ A hall of arcade cabinets, drawn **in code** (`scripts/build-arcade-pack.py`, fr
 - tool: `scripts/build-arcade-pack.py` (Pillow)
 - date: 2026-11-01
 - made by: Vikram's agent (Claude Code)
-- approved by: pending
+- approved by: Vikram, 2026-11-19 (his look at the contact sheet of the world pictures, issue 1402)
 - reference: the mockup
 - prompt: none, drawn in code
 - cut: seven cells: working, thinking, waiting, error, limit, done, idle
@@ -90,7 +91,7 @@ A hall of arcade cabinets, drawn **in code** (`scripts/build-arcade-pack.py`, fr
 - tool: `scripts/build-arcade-pack.py` (Pillow)
 - date: 2026-11-01
 - made by: Vikram's agent (Claude Code)
-- approved by: pending
+- approved by: Vikram, 2026-11-19 (his look at the contact sheet of the world pictures, issue 1402)
 - reference: none
 - prompt: none, drawn in code
 - cut: 40 x 22 grid pixels

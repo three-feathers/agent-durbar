@@ -153,7 +153,7 @@
       "name": "Desk (agent)",
       "spec": "001, 034, 097 FR-010..022",
       "where": ".desk (scenekits.js, mood.js); 097 station()",
-      "code": "planned",
+      "code": "present",
       "blocks": [
         "person",
         "desk-screen",

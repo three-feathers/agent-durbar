@@ -37,7 +37,7 @@ try {
   fails({ md: (t) => t.replace('| 001 034 097 |', '| 001 034 999 |') }, /spec 999 has no folder/);
   fails({ md: (t) => t.replace('test:mood driver:shots-097-realoffice', 'test:nonesuch') }, /no npm script test:nonesuch/);
   fails({ md: (t) => t.replace('mock+planned (desk-card)', 'mock+planned (no-such-moment)') }, /no moment/);
-  fails({ md: (t) => t.replace('mock+planned (desk-card)', 'built (desk-card)') }, /code: present/);
+  fails({ md: (t) => t.replace('mock+planned (live-screen)', 'built (live-screen)') }, /code: present/);
   fails({ md: (t) => t.replace(/\| OS sandbox[^\n]*\n/, '') }, /087-.* built but in no row/);
   fails({ md: (t) => t.replace('missing (owner decision, 2026-11-08): superseded by worlds', 'in PR') }, /must name the branch/);
   fails({ md: (t) => t.replace('Exempt: 002 ', 'Exempt: ') }, /002-.* built but in no row/);

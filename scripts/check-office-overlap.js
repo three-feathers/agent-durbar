@@ -512,6 +512,8 @@ async function driver(ctx) {
       document.querySelectorAll('#stage .ro-sign:not(.ro-stag)').forEach((e) => add('sign', e));
       /* spec 097 FR-038 (delta 2026-11-15, T350, issues 1763 and 1759) and FR-104 (T113, review of PR 1746): the storey tags of the All floors view and the thinking dots over a head are boxes too; a folder sign (every view) and a storey tag must keep clear of the dots, and the dots are measured against nothing else here (they stand over a person by design) */
       document.querySelectorAll('#stage .ro-stag').forEach((e) => add('stag', e));
+      /* spec 097 FR-038 (delta 2026-11-19, issue 1759, T369): the dots keep 6 px (DOTS_CLEAR + the sign's 1 px) clear below a sign or a storey tag, not only no overlap: at 3 px they read as touching. Mutant (a test-only edit of the page, OFFICE_MUTANT=dots-close): every dots box moves up 3 px, which still does not overlap but leaves 3 px. */
+      if (mut === 'dots-close') document.querySelectorAll('#stage .ro-dots').forEach((e) => { e.style.transform = 'translateY(-3px)'; });
       document.querySelectorAll('#stage .ro-dots').forEach((e) => add('dots', e));
       if (floors) {
         /* spec 097 (issue 1810, T357; review of PR 1811): the cave draws its All floors view as storeys, as Photo does (measured: macOS Apple M4 and Linux under xvfb with DejaVu Sans both draw 3 storeys, 3 tags; no machine has been shown drawing it flat), so the check asserts storeys in every world: a cave that fell back to the flat hall would be a regression, not an accepted outcome. Mutants (a test-only edit of the page, OFFICE_MUTANT): cave-tag drops one tag; cave-flat takes the storeys and tags away (a cave that fell back to flat). */
@@ -548,6 +550,10 @@ async function driver(ctx) {
         if (a.kind === 'face' && b.kind === 'face') continue;
         if ((a.kind === 'dots' || b.kind === 'dots') && ![a.kind, b.kind].some((k) => k === 'stag' || k === 'sign')) continue; /* FR-038: a sign never covers the dots, in any view (the dots meet only a sign or a storey tag here; the All floors view's tags: review round 2, issue #1759) */
         if (['figure', 'cabinet', 'screenbox'].some((k) => a.kind === k || b.kind === k) && a.kind !== 'drafttag' && b.kind !== 'drafttag') continue; /* a figure, a cabinet and a screen box are only measured against the Draft tag (the plate stands in front of the lap by design) */
+        if ((a.kind === 'dots' || b.kind === 'dots') && [a.kind, b.kind].some((k) => k === 'stag' || k === 'sign')) { /* the dots' clearance below a sign or tag that stands over them: at least 6 px (FR-038) */
+          const d = a.kind === 'dots' ? a : b, t = d === a ? b : a;
+          if (d.r.x < t.r.r && t.r.x < d.r.r && d.r.y >= t.r.y && d.r.y - t.r.b < 5.5) P.push(`dots ${d.id} are ${(d.r.y - t.r.b).toFixed(1)} px under ${t.kind} ${t.id}, less than the 6 px clear (FR-038)`);
+        }
         if (hit(a.r, b.r)) P.push(`${a.kind} ${a.id} overlaps ${b.kind} ${b.id}`);
       }
       for (const b of boxes) if (b.r.x < fl.left - 0.5 || b.r.r > fl.right + 0.5 || b.r.y < o.top - 0.5 || b.r.b > o.bottom + 0.5) P.push(`${b.kind} ${b.id} outside the office`);
