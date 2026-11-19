@@ -197,6 +197,11 @@ if (part === 'adversarial' || part === 'adversarial2' || part === 'masks') {
     // round 3: line continuations before a value
     valueContinuations: 'password=\\\n'.repeat(MB / 11),
     valueContinuationRun: 'password=' + '\\\n'.repeat(MB / 2),
+    // spec 012 FR-187 (issue #1320): a value after a mask and `=` (anchored at the literal mask), with quote runs and long values
+    maskEq: '[redacted]='.repeat(MB / 11),
+    maskEqRun: '[redacted]=' + 'a1'.repeat(MB / 2),
+    maskEqQuotes: '[redacted]' + '"'.repeat(MB),
+    maskEqPairs: '[redacted]"= a1b2c3d4 '.repeat(MB / 22),
   };
   // issue #1839: each input at most REDACT_MAX_CHARS, so `redact` reads the whole of it and its 1/16 baseline is the same shape. Over the cap, `redact` cuts the text
   // and adds its cut marker, so the big side was another shape than its baseline: on `slackHookEsc` (one escaped run) the cut text's run no longer equals the text,

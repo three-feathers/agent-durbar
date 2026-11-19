@@ -3,7 +3,7 @@ import * as assert from 'assert';
 import * as fs from 'fs';
 import * as path from 'path';
 import { Worker } from 'worker_threads';
-import { MASK_INPUT_MAX, REDACT_MAX_CHARS, createDebugSink, _uncappedForTest, cut, maskSchemeSecrets, maskTokenShapes, maskTokenShapesUnguarded, maskSecretArgs, maskSecretCommand, maskHomePaths, maskSecretUrl, maskNoteText, maskOutgoing, maskSplitTokens, _breakCallsForTest, keepShownBy, _unionMasksForTest, withoutSplit, withoutShell, _shellRefsForTest, _shellPassesForTest, _shapePassesForTest, _runReadsForTest, ESC_RUN_SHELL_SOURCE, withoutLoose, maskLoose, _homeGuardReadsForTest, _homeGuardCharsForTest, _guardEdgeScanForTest, HOME_GUARD_WINDOW_FOR_TEST, _splitWorkForTest, redact, redactMarkdown, MARKDOWN_WORK, _markdownPassForTest, shQuote, splitCommand } from '../src/shared/redact';
+import { MASK_INPUT_MAX, REDACT_MAX_CHARS, createDebugSink, _uncappedForTest, cut, maskSchemeSecrets, maskTokenShapes, maskTokenShapesUnguarded, maskSecretArgs, maskSecretCommand, maskHomePaths, maskSecretUrl, maskNoteText, maskOutgoing, maskGluedTail, maskSplitTokens, _breakCallsForTest, keepShownBy, _unionMasksForTest, withoutSplit, withoutShell, _shellRefsForTest, _shellPassesForTest, _shapePassesForTest, _runReadsForTest, ESC_RUN_SHELL_SOURCE, withoutLoose, maskLoose, _homeGuardReadsForTest, _homeGuardCharsForTest, _guardEdgeScanForTest, HOME_GUARD_WINDOW_FOR_TEST, _splitWorkForTest, redact, redactMarkdown, MARKDOWN_WORK, _markdownPassForTest, shQuote, splitCommand } from '../src/shared/redact';
 
 import { assertLinearShape, assertWithinYardstick, cpuMs } from './redact-growth-lib';
 import './safetext-shared'; // the desk's maskRaw (src/renderer/safetext.js) reads the compiled redact.ts, for the FR-181 differential below
@@ -36,6 +36,90 @@ for (const keep of ['ghp_short', 'see ghs_count', 'wei' + 'ghs_' + 'TotalWeightK
   const STe = require(path.join(__dirname, '..', '..', 'src', 'renderer', 'safetext.js')) as { maskRaw(t: string, r: (s: string) => string): string };
   assert.ok(!redactMarkdown('see ' + cutTok, 'see ' + cutTok).includes('R1t2Y3u4'), '#1329 early: redactMarkdown hides a cut token');
   assert.ok(!STe.maskRaw('see ' + cutTok, (x) => redact(x, {})).includes('R1t2Y3u4'), '#1329 early: the desk maskRaw hides a cut token');
+}
+
+// spec 012 FR-187 (issue #1320): a secret name glued to the end of a token is taken into the token's mask, so the value after it was no value of any name.
+// A value after a mask and `=` is now read as a named value. Every value here is invented and built from pieces.
+{
+  const tok = 'gh' + 'p_' + 'Zq3' + 'x'.repeat(16) + 'K9m' + 'p'.repeat(14);
+  const val = 'Vq7' + 'v0T' + 'wQ4';
+  const shortVal = 'ab' + 'c12';
+  const pw = 'pass' + 'word';
+  const STe = require(path.join(__dirname, '..', '..', 'src', 'renderer', 'safetext.js')) as { maskRaw(t: string, r: (s: string) => string): string };
+  const surfaces: Array<[string, (t: string) => string]> = [
+    ['redact', (t) => redact(t, {})],
+    ['maskSecretCommand', (t) => maskSecretCommand(t, {})],
+    ['maskSecretArgs', (t) => maskSecretArgs([t], {}).join(' ')],
+    ['maskOutgoing', (t) => maskOutgoing(t).text],
+    ['maskNoteText', (t) => maskNoteText(t).text],
+    ['desk maskRaw', (t) => STe.maskRaw(t, (x) => redact(x, {}))],
+  ];
+  const hidden: Array<[string, string, string]> = [
+    ['glued =', tok + pw + '=' + val, val],
+    ['glued, blanks around =', 'x ' + tok + pw + ' = ' + val + ' y', val],
+    ['glued, quoted value', tok + 'tok' + 'en="' + val + '"', val],
+    ['glued, short value', tok + 'pw' + 'd=' + shortVal, shortVal],
+    ['glued =>', tok + 'sec' + 'ret=>' + val, val],
+    ['glued %3D', '?q=' + tok + 'tok' + 'en%3D' + val, val],
+    // review of PR 1872: the colon forms of config files and JSON, and a short value after a percent-encoded separator
+    ['glued, colon and a blank', tok + pw + ': ' + val, val],
+    ['glued, colon and a quoted value', tok + pw + ': "' + val + '"', val],
+    ['glued, JSON key and value', '{"' + tok + pw + '": "' + val + '"}', val],
+    ['glued, colon, a blank and a short value', tok + 'pw' + 'd: ' + shortVal, shortVal],
+    ['glued %3D, short value', tok + 'pw' + 'd%3D' + shortVal, shortVal],
+    ['glued %3A, short value', tok + 'pw' + 'd%3A' + shortVal, shortVal],
+    // review of PR 1872, round 2: a short value glued straight to a colon, and escaped JSON (a backslash and a quote after the colon)
+    ['glued, colon and a short value', tok + 'pw' + 'd:' + shortVal, shortVal],
+    ['glued, escaped JSON', '{\\"' + tok + pw + '\\":\\"' + val + '\\"}', val],
+  ];
+  for (const [label, input, secret] of hidden) for (const [name, f] of surfaces) {
+    const out = f(input);
+    assert.ok(!out.includes(secret), `#1320 glued name: ${name} hides the value (${label}): ${out}`);
+  }
+  // a closing bracket of one opened before stays
+  assert.strictEqual(redact('(' + tok + pw + '=' + val + ')', {}), '([redacted]=[redacted])', '#1320 glued name: the closing bracket stays');
+  // near misses: what follows a mask and `=` but is no value (each stays as written)
+  const kept: Array<[string, string]> = [
+    ['a version', tok + '=v1'],
+    ['padding', tok + '=='],
+    ['three letters', tok + '=abc'],
+    ['a mask in a query', 'x=' + tok + '&y=2'],
+    ['a variable', tok + '=$HOME'],
+    ['a dotted name', tok + '=config.value'],
+    ['a sentence', 'see ' + tok + '. ok'],
+    ['a lower-case word', tok + '=reset-flow'],
+    ['a port after a colon', tok + ':8080'],
+    ['words after a colon', 'see ' + tok + ': none here'],
+    ['a version after a colon', tok + ': v2.1.0'],
+    ['a word after a colon', 'Token ' + tok + ': Expires soon'],
+    ['a dotted name with a digit', tok + '=config.token2'],
+    ['a lower-case path', tok + '=src/foo123'],
+    ['a variable of 8 or more', tok + '=$HOME_DIR1'],
+  ];
+  for (const [label, input] of kept) {
+    const want = input.replace(tok, '[redacted]');
+    assert.strictEqual(redact(input, {}), want, `#1320 glued name near miss stays: ${label}`);
+  }
+  // review of PR 1872, round 2: the pass reads and writes the caller's mask
+  assert.strictEqual(maskTokenShapes(tok + pw + '=' + val, '[secret hidden]'), '[secret hidden]=[secret hidden]', '#1320 glued name: the value pass uses the caller\'s mask');
+  assert.strictEqual(maskTokenShapes(tok + pw + '=' + val, '$&x'), '$&x=$&x', '#1320 glued name: a mask with replacement characters is written as it is');
+  // a rest glued by a colon is folded first and keeps its host, as on main (the value rule runs after the glued rest)
+  assert.strictEqual(redact(tok + ':x-oauth-' + 'basic@github.com', {}), '[redacted]@github.com', '#1320 glued name: a rest glued by a colon keeps its host');
+  // review of PR 1872, round 3: the glued rest folds a glued name and its separator as on main (keeping the `=` there made a value the value pass refuses show);
+  // the brain's tail reads a quoted value glued to a mask, so a stream cut after the separator still hides the value (`#1320 brain` in test-brainstate)
+  assert.strictEqual(redact('x [redacted]' + 'pp' + pw + '="', {}), 'x [redacted]"', '#1320 glued name: the glued rest folds a name and its separator, as on main');
+  assert.strictEqual(maskGluedTail('x [redacted]' + pw + '="' + val + '"'), 'x [redacted]"[redacted]"', '#1320 glued name: maskGluedTail reads a quoted value glued to a mask');
+  assert.strictEqual(maskGluedTail('x [redacted]>' + val), 'x [redacted]>[redacted]', '#1320 glued name: maskGluedTail reads a value after the rest of `=>`');
+  assert.strictEqual(maskGluedTail('x [redacted] ' + val), 'x [redacted] ' + val, '#1320 glued name: maskGluedTail leaves a word after a mask and a blank');
+  // review of PR 1872, round 4: `>` counts only glued to the mask (the rest of `=>`); a quoted word after a mask and a blank is hidden on purpose (the folded `<name>= "<value>"`)
+  assert.strictEqual(maskGluedTail('echo [redacted] > backup' + '2024 done'), 'echo [redacted] > backup' + '2024 done', '#1320 glued name: maskGluedTail leaves a word after a mask, a blank and >');
+  assert.strictEqual(maskGluedTail('see [redacted] "Release' + '2024"'), 'see [redacted] "[redacted]"', '#1320 glued name: maskGluedTail hides a quoted word after a mask and a blank (accepted)');
+  // round 4: linear on a long run of quotes after a mask (two quote runs side by side were quadratic). Round 5: 4,000 against 16 runs of 250, so the quadratic rule
+  // (about 0.9 s at 4,000) fails the growth ratio within seconds, not at the helper's wall-time backstop
+  for (const q of ["'", '"', '`']) {
+    const label = `#1320 maskGluedTail quote run ${q}`;
+    try { assertLinearShape(label, (x) => { maskGluedTail(x); }, (k) => 'note [redacted]' + q.repeat(k), 4_000); } catch (e) { throw new assert.AssertionError({ message: `${label}: ${(e as Error).message}` }); } // the helper's backstop names no case: it is named here
+  }
 }
 
 // spec 012 FR-181 (issue #1541, T162): a token written with a backslash escape inside (`ghp\_<body>`, `g\hp_<body>`) is hidden by
