@@ -2,11 +2,23 @@
 
 Agent Durbar `v0.1.0` is the first stable release. Builds are unsigned and not notarized (see "Honest limits" in the README for where each OS has been run). Each entry names the spec that describes the behavior and how it was checked.
 
-## Unreleased (on `main`, after the v0.1.24 tag)
+## Unreleased (on `main`, after the v0.1.25 tag)
 
 Not released yet: each change is a file in [`changelog.d/`](changelog.d/) until the next release folds them in (`npm run changelog:preview` lists them).
 
 <!-- changelog.d: fragments only; a bullet here fails npm run changelog:check -->
+
+## v0.1.25 ([release](https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.25), 2026-11-19)
+
+- **Windows never runs an unnamed command prompt** (spec 045 FR-065): when Windows' own folder settings name no full drive or network path to the command prompt, Open in VS Code, the agent app version checks and agent app setup refuse their command-shim route instead of letting Windows search for one, possibly in the current folder. A security review of that route found no way for folder or file names to reach the command prompt; unit-tested with hostile names on Linux, not run on Windows.
+- Test drivers only: the Auto-follow mark on a followed plate is also checked in the Retro arcade at 1440x900 and 1280x800 (spec 102, #1399).
+- **Retro arcade: a Draft tag no longer sits on a cabinet's base** (spec 102 T366, issue #1632): at a cabinet with its person beside it, the Draft tag now stands beside the plate's end under the person's feet, off the cabinet. The overlap check measures every cabinet and the person's box against the tag. Simulator only, Linux (Windows and macOS not run).
+- Internal: painted helper kids for a world that is still behind its flag. Six kids with seven poses each stand on the desk top at 1 to 4 agents and show as faces in the head row at 5 to 15 where that world draws rows; checked by the kids driver at both sizes (spec 102 T360, issue #1643).
+- **Retro arcade on 125 % and 150 % screens** (spec 102 FR-255, T204): the arcade's art scale now lands on whole screen pixels at 125 % and 150 % for more agent counts (for example 1, 2, 5 and 9 agents at 125 % on a 1440x900 window; 1, 2 and 5 at 150 % there, 1 to 3 on a 1280x800 window), the person and face stay centred on whole pixels, and the floor lays out again when the window moves to a screen with another scale. Known gaps: other counts, and 15 agents at 125 %, still draw some pixels uneven (2-3-2-3); measured in the simulator at 1, 1.25, 1.5 and 2, not looked at on a real screen.
+- **World packer and availability gates** (spec 102 T285, T286, issue #1402): `scripts/world-pack.js` packs a world folder into a byte-identical zip (sorted, fixed stamps, line endings normalised), reads which of 097 T156..T159 are ticked, and refuses `available` for a world with a missing tick, registry row, card, provenance, valid pack, reproducible pack or matching hash. Developer tooling only, nothing changes in the app. Checked by `test:world-pack` with one fixture and one mutant per gate; not run on Windows.
+- **World packer review fixes** (spec 102 T287): names sort by code unit, a lone CR is kept, a pinned golden pack checks the same bytes on every OS, links (also to files outside the folder), Windows device names, names differing only by case and non-ASCII names are refused naming the file, a file swapped for a link mid-read is refused, and the gate refuses a missing context instead of crashing. Developer tooling only; golden produced on macOS, other OSes checked by CI.
+- **World packer: size guard tested, Windows gap listed** (spec 102 T287): the size check on the open file is covered by a test and a mutant. `[KNOWN GAP]` the `ino`/`dev` equality and `O_NOFOLLOW` were not run on Windows (`ino` can be 0 or large there); only macOS and Linux ran them.
+- **World packer: provenance matches whole names** (spec 102 T287): the gate no longer lets `a.png` pass because `ASSETS.md` names `banana.png`; a picture counts as listed only by its whole file name.
 
 ## v0.1.24 ([release](https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.24), 2026-11-18)
 
