@@ -2047,7 +2047,7 @@ function renderOffice(){
   const cs=getComputedStyle(floor);
   const aw=floor.clientWidth-parseFloat(cs.paddingLeft)-parseFloat(cs.paddingRight);
   const ah=floor.clientHeight-parseFloat(cs.paddingTop)-parseFloat(cs.paddingBottom);
-  if(aw<=0||ah<=0){OFFICE_OWED=true;return;} /* spec 077 (2026-11-19, issue #1460): a screen covers the floor; the draw is owed and made when the screen closes (officeOwed), not left to the floor observer
+  if(aw<=0||ah<=0){OFFICE_OWED=true;return;} /* spec 077 (2026-11-19, issue 1460): a screen covers the floor; the draw is owed and made when the screen closes (officeOwed), not left to the floor observer
   if(SIM&&!window.__durbarSimReplayed)return; /* spec 097 FR-363: simulator only: while its start-up replay is pending the first states are not here, so no layout search and no desks for the early shape; the first render after the replay searches once (the replay sets the flag, then its states schedule that render). Before the render counter so ops() does not count it */
   OFFICE_OWED=false;
   const model=officeModel();
@@ -5786,11 +5786,11 @@ $('vOffice').onclick=()=>setView('office');
 $('vList').onclick=()=>setView('list');
 let resizeQueued=false;
 let dprPending=false; /* the ratio changed (see watchDpr): the next relayoutNow counts itself on <html data-dprn> */
-let OFFICE_OWED=false; /* spec 077 (2026-11-19, issue #1460): renderOffice found the floor covered by a screen (no width) and drew nothing; officeOwed makes the draw when the screen closes */
+let OFFICE_OWED=false; /* spec 077 (2026-11-19, issue 1460): renderOffice found the floor covered by a screen (no width) and drew nothing; officeOwed makes the draw when the screen closes */
 const relayoutNow=()=>{resizeQueued=false;if(dprPending){dprPending=false;document.documentElement.dataset.dprn=String((+document.documentElement.dataset.dprn||0)+1);}if(ui.view==='office'){renderOffice();syncWalkers();afTick();}placePencils();INL().follow();};
 const relayout=()=>{if(resizeQueued)return;resizeQueued=true;requestAnimationFrame(relayoutNow);}; /* spec 024: figures follow a resize */
 new ResizeObserver(relayoutNow).observe($('floor')); /* spec 052 FR-243: the floor changed size (the Auto-follow strip came, a bar wrapped): lay out before the next paint, not a frame later; the stage keeps its old height until then and would overflow the shorter floor */
-const officeOwed=()=>{if(OFFICE_OWED)relayoutNow();}; /* spec 077 (2026-11-19, issue #1460): a pick made under Settings is drawn when it closes, whether or not the floor observer saw the size change (none if no frame came between opening and closing) */
+const officeOwed=()=>{if(OFFICE_OWED)relayoutNow();}; /* spec 077 (2026-11-19, issue 1460): a pick made under Settings is drawn when it closes, whether or not the floor observer saw the size change (none if no frame came between opening and closing) */
 window.addEventListener('resize',relayout);
 /* spec 102 FR-255 (T204, review of PR 1884): the window moved to a screen with another scale keeps its CSS size, so no resize comes and the floor's scale `g` (chosen for the ratio) would stay stale until the next update; a resolution query per ratio fires once on the change and is set again for the new one */
 let dprMQ=null;const watchDpr=()=>{try{if(dprMQ)dprMQ.onchange=null;dprMQ=matchMedia('(resolution: '+(window.devicePixelRatio||1)+'dppx)');document.documentElement.dataset.dprq=dprMQ.media;dprMQ.onchange=()=>{dprPending=true;watchDpr();relayout();};}catch(e){}};watchDpr();
