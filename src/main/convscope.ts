@@ -70,6 +70,8 @@ export interface ScopeProgress {
 export interface Scope {
   plan: ScanPlan;
   read: ScanDeps['read'];
+  /** FR-058: `read` calls its `armed` argument when its work really begins (after the Codex gate), so the 10 s limit starts then. */
+  readArms?: true;
   values: ScanDeps['values'];
   /** What the end state adds to the scan's notes (owner answers C and D, FR-014). */
   notes: { floorOffFolders: number; mcpValuesLocked: boolean; lateLists: number; lateApps: string[] };
@@ -203,6 +205,8 @@ export async function buildScope(d: ScopeDeps, stop: () => boolean = () => false
   // one copy of the agents for the folder loop: the open ids and a folder's Codex ids (key of the kept list) must agree, whatever closes while a listing is awaited
   const snapshot = new Map(d.agents);
   const openIds = openIdsOf({ agents: snapshot, resumeIdFor: d.resumeIdFor });
+  // the kept list is valid while these stay open: the agents' ids and the session ids the listing leaves out (a Claude agent that starts a new session changes its resume id)
+  const idsOf = (key: string, adapter: string): string[] => [...snapshot.values()].filter((x) => d.wsKey(x) === key && adapterOf(x) === adapter).flatMap((x) => [x.id, d.resumeIdFor(x.id)]);
   // FR-054: progress in folders (a folder is listed when all its units are done, given up or failed); FR-057: a folder with no open agent keeps nothing
   const unitsLeft = new Map<string, number>();
   for (const a of firstOf.values()) unitsLeft.set(d.wsKey(a), (unitsLeft.get(d.wsKey(a)) ?? 0) + 1);
@@ -234,7 +238,7 @@ export async function buildScope(d: ScopeDeps, stop: () => boolean = () => false
             // owner answer C: a folder on a floor that is off starts no app-server; it is counted instead
             if (off) { floorOffFolders++; continue; }
             // FR-026: the box session's kept list, else `thread/list` through a short-lived app-server, behind the gate (one at a time)
-            const ids = [...snapshot.values()].filter((x) => d.wsKey(x) === key && adapterOf(x) === 'codex').map((x) => x.id);
+            const ids = idsOf(key, 'codex');
             const at = (d.now ?? Date.now)();
             const kept = d.codexLists?.get(key, ids, at);
             if (kept) list = kept.filter((s) => !openIds.has(s.id)); // a session resumed since: open now, not earlier
@@ -249,7 +253,7 @@ export async function buildScope(d: ScopeDeps, stop: () => boolean = () => false
           } else {
             // FR-057: the same kept list for the other apps (key: adapter + folder), the open ids of that app in the folder as for Codex
             const ckey = `${adapter}\0${key}`;
-            const ids = [...snapshot.values()].filter((x) => d.wsKey(x) === key && adapterOf(x) === adapter).map((x) => x.id);
+            const ids = idsOf(key, adapter);
             const at = clock();
             const kept = d.codexLists?.get<PreviousSession>(ckey, ids, at);
             if (kept) list = kept.filter((s) => !openIds.has(s.id));
@@ -310,8 +314,9 @@ export async function buildScope(d: ScopeDeps, stop: () => boolean = () => false
     }
   }
 
-  const read = async (s: PlanSession, halt: () => boolean): Promise<ReadOutcome> => {
+  const read = async (s: PlanSession, halt: () => boolean, armed?: () => void): Promise<ReadOutcome> => {
     const src = sources.get(s) ?? { kind: 'none' };
+    if (!(src.kind === 'live' && src.adapter === 'codex')) armed?.(); // a gated Codex read arms its limit when the gate runs it
     if (src.kind === 'claude') {
       const r = await (d.readClaude ?? readClaudeHistoryStream)(src.id, src.cwd, SEARCH_HISTORY_LIMITS, d.claudeDir, { stop: halt });
       return r.ok ? { ok: true, items: r.history.items } : { ok: false, reason: r.reason };
@@ -322,7 +327,8 @@ export async function buildScope(d: ScopeDeps, stop: () => boolean = () => false
       const once = (): Promise<HistoryResult> => historyOf(ad, src.agentId, SEARCH_HISTORY_LIMITS);
       // review of phase 2 (R1): checked again in the same tick as the call, after the wait at the gate; a Codex session that ended
       // meanwhile would otherwise be read through a new app-server (`history` takes the probe branch for a session that is not live)
-      const gated = (): Promise<HistoryResult | undefined> => (ad.isLive(src.agentId) ? once() : Promise.resolve(undefined));
+      // FR-058: the read's time limit starts here, when the gate lets it run, and a read the scan has given up on (limit, stop) never starts
+      const gated = (): Promise<HistoryResult | undefined> => { armed?.(); return ad.isLive(src.agentId) && !halt() ? once() : Promise.resolve(undefined); };
       const h = src.adapter === 'codex' ? ((await d.gate.run(`read\0${src.agentId}`, gated)) as HistoryResult | undefined) : await once();
       return h ? { ok: true, items: h.items } : { ok: false, reason: 'missing' };
     }
@@ -341,5 +347,5 @@ export async function buildScope(d: ScopeDeps, stop: () => boolean = () => false
   // owner answer D: the open agents' session values are left out of the mask while the vault would prompt (`scanSecretValues`): said
   let mcpValuesLocked = true;
   try { mcpValuesLocked = !d.values.noPrompt(); } catch { /* unknown: said as locked */ }
-  return { plan: { sessions, unavailable: [...unavailable] }, read, values, notes: { floorOffFolders, mcpValuesLocked, lateLists, lateApps: [...lateApps] } };
+  return { plan: { sessions, unavailable: [...unavailable] }, read, readArms: true, values, notes: { floorOffFolders, mcpValuesLocked, lateLists, lateApps: [...lateApps] } };
 }

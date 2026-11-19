@@ -608,6 +608,26 @@ async function main(): Promise<void> {
     assert.strictEqual(BUDGET.readMs, 10_000);
   }
 
+  // FR-058 (fix round 1): a read that arms its own limit (after a gate) is not timed while it waits
+  {
+    sid = 0;
+    const h = harness({ ok: [u('invoice')] });
+    const started: string[] = [];
+    let armIt: (() => void) | undefined;
+    const deps: ScanDeps = {
+      ...h.deps,
+      readArms: true,
+      read: (s, _stop, armed) => new Promise<ReadOutcome>((res) => { armIt = () => { armed?.(); setTimeout(() => res({ ok: true, items: [u('invoice')] }), 1); }; }),
+      timeout: (ms) => { started.push(String(ms)); return { wait: new Promise<void>(() => undefined), clear: () => undefined }; },
+    };
+    const p = startScan({ sessions: [sess({ sessionId: 'gated' })] }, 'invoice', deps).done;
+    await new Promise<void>((r) => setTimeout(r, 20));
+    assert.deepStrictEqual(started, [], 'waiting behind a gate: no limit running');
+    armIt!();
+    const end = await p;
+    assert.deepStrictEqual([started, end.notes.slow], [['10000'], 0], 'the limit starts when the read says its work began');
+  }
+
   console.log('convsearch tests passed');
   process.exitCode = 0;
 }

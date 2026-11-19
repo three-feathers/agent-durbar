@@ -167,7 +167,9 @@ export interface ScanDeps {
   /** Wait (setTimeout in main): only to keep 250 ms between the last batches. */
   sleep(ms: number): Promise<void>;
   /** The text history of one session, through the existing readers (text only). `stop` says the scan no longer wants it. */
-  read(s: PlanSession, stop: () => boolean): Promise<ReadOutcome>;
+  read(s: PlanSession, stop: () => boolean, armed?: () => void): Promise<ReadOutcome>;
+  /** FR-058: true when `read` calls `armed` itself when its work begins (behind a gate); else the limit starts at the call. */
+  readArms?: boolean;
   /** FR-030: the MCP secret values to mask this session with (`scanSecretValues`). */
   values(s: PlanSession): readonly string[];
   masker: Masker;
@@ -552,13 +554,21 @@ export function startScan(plan: ScanPlan, query: string, deps: ScanDeps): { canc
       // FR-058: one read has its own limit; a reader that throws costs this session only (counted as unreadable), not the scan
       let r: ReadOutcome | { ok: false; reason: 'timeout' };
       let late = false;
-      const lim = (deps.timeout ?? realTimeout)(BUDGET.readMs);
+      let lim: { wait: Promise<void>; clear(): void } | undefined;
+      let giveUp!: (v: { ok: false; reason: 'timeout' }) => void;
+      const limit = new Promise<{ ok: false; reason: 'timeout' }>((res) => { giveUp = res; });
+      const arm = (): void => { // idempotent: the limit runs from here
+        if (lim) return;
+        lim = (deps.timeout ?? realTimeout)(BUDGET.readMs);
+        void lim.wait.then(() => { late = true; giveUp({ ok: false, reason: 'timeout' }); });
+      };
+      if (!deps.readArms) arm();
       try {
-        r = await Promise.race([deps.read(s, () => late || halt()), lim.wait.then((): { ok: false; reason: 'timeout' } => { late = true; return { ok: false, reason: 'timeout' }; })]);
+        r = await Promise.race([deps.read(s, () => late || halt(), arm), limit]);
       } catch {
         r = { ok: false, reason: 'unreadable' };
       } finally {
-        lim.clear();
+        lim?.clear();
       }
       sliceStart = deps.now(); // the read awaited I/O: the loop had its turns
       if (cancelled) return undefined;

@@ -149,7 +149,7 @@ export function register(deps: ConvSearchIpcDeps): { cancelAll(): void; dropKept
           });
           if (cancelled) return;
           extra = { ...sc.notes };
-          scan = startScan(sc.plan, q.query, { now, yieldNow, sleep, read: sc.read, values: sc.values, masker: m.masker, search: m.search, emit, early });
+          scan = startScan(sc.plan, q.query, { now, yieldNow, sleep, read: sc.read, readArms: sc.readArms, values: sc.values, masker: m.masker, search: m.search, emit, early });
           const end = await scan.done;
           if (!end.cancelled) done(end.notes, end.progress, end.failed);
         } catch {

@@ -567,6 +567,25 @@ async function main(): Promise<void> {
       gateHold = undefined;
       live.add('x2');
     }
+    // FR-058 (fix round 1): the 10 s limit starts when the gate runs a Codex read, and a read given up while it waited never starts
+    {
+      let open!: () => void;
+      gateHold = new Promise<void>((r) => { open = r; });
+      const n = histories.length;
+      let armed = 0;
+      let giveUp = false;
+      const waiting = scope.read(by('x2'), () => giveUp, () => { armed++; });
+      await settle(5);
+      assert.strictEqual(armed, 0, 'waiting behind the gate: the limit has not started');
+      giveUp = true; // the scan stopped (or the limit ran out) while it waited
+      open();
+      assert.deepStrictEqual(await waiting, { ok: false, reason: 'missing' });
+      assert.deepStrictEqual([armed, histories.length], [1, n], 'it was armed when the gate ran it, and history was not called for a read given up');
+      gateHold = undefined;
+      let armedNow = 0;
+      await scope.read(by('c1'), stop, () => { armedNow++; });
+      assert.strictEqual(armedNow, 1, 'a read with no gate is armed at once');
+    }
     live.delete('c2');
     assert.deepStrictEqual(await scope.read(by('c2'), stop), { ok: false, reason: 'missing' }, 'a session that ended meanwhile is skipped');
     const rv = await scope.read(by('h/vs1'), stop);
@@ -730,11 +749,12 @@ async function main(): Promise<void> {
   {
     const ag = (id: string, adapterId: string, cwd: string): AgentInfo => ({ id, name: path.basename(cwd), cwd, folders: [cwd], permMode: 'read-only', adapterId } as AgentInfo);
     const agents = new Map<string, AgentInfo>([['k1', ag('k1', 'copilot', '/p/one')], ['k2', ag('k2', 'copilot', '/p/two')]]);
+    const resume = new Map<string, string>();
     const calls = { list: 0, chats: 0 };
     const copilot = { id: 'copilot', isLive: () => false, listPreviousSessions: async () => { calls.list++; return [{ id: 'old1', title: 'old one', startTime: 1, modifiedTime: 5 }]; } };
     const kept = createCodexListCache();
     const deps = {
-      agents, router: { forAgent: () => copilot as never, adapterIdOf: (id: string) => agents.get(id)?.adapterId }, wsKey: (a: AgentInfo) => a.cwd, resumeIdFor: (id: string) => id, appName: () => 'GitHub Copilot', vsUserDirs: () => [],
+      agents, router: { forAgent: () => copilot as never, adapterIdOf: (id: string) => agents.get(id)?.adapterId }, wsKey: (a: AgentInfo) => a.cwd, resumeIdFor: (id: string) => resume.get(id) ?? id, appName: () => 'GitHub Copilot', vsUserDirs: () => [],
       store: { get: () => undefined as never, sessionNames: () => [], floors: () => ({ floors: [{ id: 'ground', name: 'Ground floor', on: true }], lastFloor: 'ground' }) },
       values: { knownSecretValues: () => [], noPrompt: () => true, secretValuesFor: () => [] }, gate: { run: (_k: string, fn: () => Promise<unknown>) => fn() },
       listChats: (async () => { calls.chats++; return { sessions: [], storesFound: 0, unreadable: 0, tooLarge: 0 }; }) as never, codexLists: kept,
@@ -758,9 +778,20 @@ async function main(): Promise<void> {
     agents.delete('k1');
     await buildScope(deps);
     assert.deepStrictEqual(calls.list, 4, 'an open Copilot session of that folder left: its folder is listed again');
+    // fix round 1: a session that is open (its resume id) when listed and then changes it (/clear) is an earlier session now: the kept list is dropped
+    resume.set('k2', 'sess-a');
     kept.clear();
     await buildScope(deps);
-    assert.deepStrictEqual([calls.list, calls.chats], [6, 5], 'cleared with the box: listed again');
+    const before = calls.list;
+    await buildScope(deps);
+    assert.strictEqual(calls.list, before, 'kept again');
+    resume.set('k2', 'sess-b');
+    await buildScope(deps);
+    assert.strictEqual(calls.list, before + 1, 'the agent changed its resume id: that folder is listed again, so the old session is not missing');
+    resume.clear();
+    kept.clear();
+    await buildScope(deps);
+    assert.deepStrictEqual([calls.list, calls.chats], [9, 7], 'cleared with the box: listed again');
   }
 
 
@@ -940,6 +971,7 @@ async function main(): Promise<void> {
     const mainSrc = read('src/main/main.ts');
     assert.ok(/registerConvSearchIpc\(\{/.test(mainSrc) && /hasSessions: \(\) => agents\.size > 0/.test(mainSrc), 'main.ts registers the search with its own agents');
     assert.ok(/const convListings = new Map<string, Promise<unknown>>\(\)/.test(mainSrc) && /gate: convGate, codexLists, listings: convListings,/.test(mainSrc), 'main.ts passes its one map of running listings to every scan (FR-022)');
+    assert.ok(/scope: \(stop, codexLists, onProgress\) => buildScope\(\{[\s\S]*?\}, stop, onProgress\),/.test(mainSrc), 'main.ts hands the plan\'s progress callback to buildScope (FR-054, FR-055): without it no plan event and no early titles');
     assert.ok(/noPrompt: \(\) => !mcpStore \|\| mcpStore\.noPrompt\(\)/.test(mainSrc) && /knownSecretValues: \(key\) => mcpStore\?\.knownSecretValues\(key\) \?\? \[\]/.test(mainSrc), 'MCP values without a prompt, as NotesOps; no store yet means nothing is locked (review of PR 1232, Q1: as valuesPending, `!!mcpStore && ...`)');
     {
       // Q1: the wiring's own expression, run: no store yet is "nothing locked" (the note says nothing), a store that would prompt is locked

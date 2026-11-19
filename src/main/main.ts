@@ -852,12 +852,12 @@ const convListings = new Map<string, Promise<unknown>>(); // FR-022: the folder 
 let convMatcher: { masker: ReturnType<typeof createMasker>; search: SessionSearchApi } | undefined;
 const convSearch = registerConvSearchIpc({
   hasSessions: () => agents.size > 0,
-  scope: (stop, codexLists) => buildScope({
+  scope: (stop, codexLists, onProgress) => buildScope({
     agents, router, store: folderStore, wsKey, resumeIdFor, appName: (id) => registry.get(id)?.displayName ?? id, vsUserDirs: () => vsUserDirsOf(dev),
     rememberChat: (agentId, ref) => { const m = vsChatRefs.get(agentId) ?? new Map<string, ChatFileRef>(); m.set(ref.summary.key, ref); vsChatRefs.set(agentId, m); }, // FR-012: View opens it
     values: { knownSecretValues: (key) => mcpStore?.knownSecretValues(key) ?? [], noPrompt: () => !mcpStore || mcpStore.noPrompt(), secretValuesFor: (id) => mcp.secretValuesFor(id), copilotValuesFor: (id) => mcp.copilotValuesFor(id) },
     gate: convGate, codexLists, listings: convListings, // FR-026: the box session's Codex titles, memory only
-  }, stop),
+  }, stop, onProgress), // FR-054, FR-055: the plan's progress and early titles
   matcher: () => (convMatcher ??= { masker: createMasker({ unhide: (s) => rendererScript<{ unhide(s: string): string }>('safetext.js').unhide(s) }), search: rendererScript<SessionSearchApi>('sessionsearch.js') }),
 });
 registerCheckpointsIpc({ agents, getCheckpointStore: () => checkpointStore, busyStatus });
