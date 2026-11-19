@@ -121,6 +121,7 @@
     if(n.titleOnly&&n.titleOnly.count)not.push('earlier '+listWords(n.titleOnly.apps||[])+' sessions, by title only ('+n.titleOnly.count+')');
     if(n.tooLarge)not.push(plural(n.tooLarge,'session')+' too large to search');
     if(n.unreadable)not.push(plural(n.unreadable,'unreadable session'));
+    if(n.slow)not.push(plural(+n.slow|0,'session')+' that did not answer in time'); /* issue 1904 (FR-022): a read that ran out of its own limit */
     if(n.hidden)not.push(plural(n.hidden,'hidden earlier session'));
     if(n.floorsOff)not.push(plural(n.floorsOff,'session')+' on floors that are off');
     if(n.floorOffFolders)not.push('earlier Codex sessions of '+plural(n.floorOffFolders,'folder')+' on floors that are off');

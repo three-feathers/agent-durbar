@@ -187,5 +187,21 @@ assert.ok(C.announceDue(undefined, 0) && !C.announceDue(1000, 2500) && C.announc
   assert.deepStrictEqual(C.sorted(st, { key: 'ago', dir: 'asc' }, undefined, ACT.sortBy).earlier.map((h) => h.sessionId), ['odd', 'in-new', 'start', 'whole-new', 'whole-old', 'norank'], 'a sort chosen in a column header replaces the rank order');
 }
 
+// ---- issue 1904, part 2 (FR-022, FR-014): sessions whose read ran out of its limit are named in the end state
+{
+  const st = C.create();
+  C.finish(st, { notes: { searched: 5, folders: 2, slow: 2, unreadable: 1 } });
+  assert.strictEqual(C.notesText(st), 'Searched 5 sessions in 2 folders. Not searched: 1 unreadable session; 2 sessions that did not answer in time.', 'slow: the end state says how many sessions did not answer in time');
+  const one = C.create();
+  C.finish(one, { notes: { searched: 1, folders: 1, slow: 1 } });
+  assert.strictEqual(C.notesText(one), 'Searched 1 session in 1 folder. Not searched: 1 session that did not answer in time.', 'slow: singular');
+  const none = C.create();
+  C.finish(none, { notes: { searched: 1, folders: 1 } });
+  assert.strictEqual(C.notesText(none), 'Searched 1 session in 1 folder.', 'slow: an older end state without the count says nothing');
+  const odd = C.create();
+  C.finish(odd, { notes: { searched: 1, folders: 1, slow: '<b>9</b>' } });
+  assert.ok(!/<b>/.test(C.notesText(odd)), 'slow: markup is no count');
+}
+
 process.exitCode = 0;
 console.log('convsearchui: groups and order, marks and escaping, state and every end-state note, accessible names, announce pace, anchor pick OK');

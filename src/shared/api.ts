@@ -942,6 +942,8 @@ export interface ConvSearchNotes {
   notInstalled: string[];
   tooLarge: number;
   unreadable: number;
+  /** Issue 1904 (FR-022): sessions whose read did not answer within its own limit (skipped). */
+  slow?: number;
   titleOnly: { count: number; apps: string[] };
   hidden: number;
   floorsOff: number;

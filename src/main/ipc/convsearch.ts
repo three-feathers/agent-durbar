@@ -16,8 +16,8 @@ import type { ConvSearchEvent, ConvSearchHit, ConvSearchNotes, ConvSearchStart }
 import { startScan } from '../convsearch';
 import { unhide } from '../../shared/redact';
 import type { ScanDeps, ScanHit, ScanNotes } from '../convsearch';
-import { createCodexListCache } from '../convscope';
-import type { CodexListCache, Scope } from '../convscope';
+import { createListCache } from '../convscope';
+import type { ListCache, Scope } from '../convscope';
 
 /** FR-033: the query's bounds (Q3: 3 characters, spaces not counted, in code points before `fold`). */
 export const QUERY = { maxChars: 200, maxWords: 8, minChars: 3 } as const;
@@ -48,10 +48,10 @@ export function cleanQuery(q: unknown): { ok: true; query: string; cut: boolean 
 export interface ConvSearchIpcDeps {
   /** True when an agent is open (no agent: nothing to search, no scan starts). */
   hasSessions(): boolean;
-  /** The plan and its readers, from main's own state (`buildScope`); `stop` says this search is no longer wanted; `codexLists` is main's own box-session cache (FR-026). */
-  scope(stop: () => boolean, codexLists: CodexListCache, onListing?: (done: number, total: number) => void): Promise<Scope>;
+  /** The plan and its readers, from main's own state (`buildScope`); `stop` says this search is no longer wanted; `keptLists` is main's own box-session cache (FR-026). */
+  scope(stop: () => boolean, keptLists: ListCache, onListing?: (done: number, total: number) => void): Promise<Scope>;
   /** Tests: the cache (default: a new one). */
-  codexLists?: CodexListCache;
+  keptLists?: ListCache;
   /** The masker and the window's fold functions (loaded from the built tree when first needed). */
   matcher(): Pick<ScanDeps, 'masker' | 'search'>;
   /** Tests: the clock and the timers (main: `performance.now`, `setImmediate`, `setTimeout`). */
@@ -67,18 +67,18 @@ const toHit = (h: ScanHit): ConvSearchHit => ({
   adapter: h.adapter, sessionId: h.sessionId, ...(h.agentId ? { agentId: h.agentId } : {}), group: h.group, app: h.app, folderName: h.folderName,
   title: h.title, titleMarks: h.titleMarks, time: h.time, excerpts: h.excerpts.map((x) => ({ text: x.text, marks: x.marks, speaker: x.speaker, anchor: { n: x.anchor.n, head: x.anchor.head } })), more: h.more, rank: h.rank === 0 || h.rank === 1 ? h.rank : 2,
 });
-const noNotes = (): ScanNotes => ({ searched: 0, folders: 0, notInstalled: [], tooLarge: 0, unreadable: 0, titleOnly: { count: 0, apps: [] }, hidden: 0, floorsOff: 0, capped: { sessions: false, perFolder: false, results: false }, timedOut: false, cut: 0, bounded: 0, maskFailed: 0 });
+const noNotes = (): ScanNotes => ({ searched: 0, folders: 0, notInstalled: [], tooLarge: 0, unreadable: 0, slow: 0, titleOnly: { count: 0, apps: [] }, hidden: 0, floorsOff: 0, capped: { sessions: false, perFolder: false, results: false }, timedOut: false, cut: 0, bounded: 0, maskFailed: 0 });
 
-export function register(deps: ConvSearchIpcDeps): { cancelAll(): void; dropKept(): void; live(): string | undefined } {
+export function register(deps: ConvSearchIpcDeps): { cancelAll(): void; dropKept(folderKey?: string): void; live(): string | undefined } {
   const now = deps.now ?? (() => performance.now());
   const yieldNow = deps.yieldNow ?? (() => new Promise<void>((r) => setImmediate(r)));
   const sleep = deps.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
   const defer = deps.defer ?? ((fn: () => void) => void setImmediate(fn));
   let live: { id: string; sender: WebContents; cancel(): void; stopped(): void } | undefined;
   // FR-026 (owner answer C): the box session's earlier Codex titles, main's memory only, for the window that searched last
-  const codexLists = deps.codexLists ?? createCodexListCache();
+  const keptLists = deps.keptLists ?? createListCache();
   let cacheOwner: WebContents | undefined;
-  const dropCache = (): void => { codexLists.clear(); cacheOwner = undefined; };
+  const dropCache = (): void => { keptLists.clear(); cacheOwner = undefined; };
   const stopLive = (): void => {
     const l = live;
     live = undefined;
@@ -116,7 +116,7 @@ export function register(deps: ConvSearchIpcDeps): { cancelAll(): void; dropKept
     const id = randomBytes(16).toString('hex');
     const sender = e.sender;
     watch(sender);
-    if (cacheOwner !== sender) { codexLists.clear(); cacheOwner = sender; } // another window's box session is not this one's
+    if (cacheOwner !== sender) { keptLists.clear(); cacheOwner = sender; } // another window's box session is not this one's
     let cancelled = false;
     let scan: ReturnType<typeof startScan> | undefined;
     let last = { done: 0, total: 0 };
@@ -137,7 +137,7 @@ export function register(deps: ConvSearchIpcDeps): { cancelAll(): void; dropKept
       if (cancelled) return; // a newer start or a cancel came first: this one never builds a plan (two starts make one scan)
       void (async () => {
         try {
-          const sc = await deps.scope(() => cancelled, codexLists, (d, t) => send('search:batch', { kind: 'listing', searchId: id, done: d, total: t })); // issue 1904: progress while the plan is built
+          const sc = await deps.scope(() => cancelled, keptLists, (d, t) => send('search:batch', { kind: 'listing', searchId: id, done: d, total: t })); // issue 1904: progress while the plan is built
           if (cancelled) return;
           extra = { ...sc.notes };
           const m = deps.matcher();
@@ -174,5 +174,6 @@ export function register(deps: ConvSearchIpcDeps): { cancelAll(): void; dropKept
   });
 
   // FR-026 (review N-R1): an earlier session was deleted in Durbar: the kept titles go at once (a running scan goes on)
-  return { cancelAll: stopByMain, dropKept: () => codexLists.clear(), live: () => live?.id };
+  // issue 1904: `dropKept(folderKey)` drops one folder's lists (the Previous sessions panel listed it again), `dropKept()` all of them (a delete)
+  return { cancelAll: stopByMain, dropKept: (folderKey) => (folderKey === undefined ? keptLists.clear() : keptLists.dropFolder(folderKey)), live: () => live?.id };
 }
