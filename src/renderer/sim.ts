@@ -4022,6 +4022,8 @@ const planMcpSignInRefresh = (i: SignInPlanInput): SignInPlan => {
         const mode = typeof location !== 'undefined' ? new URLSearchParams(location.search).get('simmodelfail') : null;
         const w = window as unknown as { __simListCalls?: Array<{ kind?: string; fresh: boolean }> };
         (w.__simListCalls ??= []).push({ kind, fresh: !!opts?.fresh });
+        const delay = typeof location !== 'undefined' ? Number(new URLSearchParams(location.search).get('simmodeldelay')) || 0 : 0; // issue 1909: a slow list call
+        if (delay > 0) await new Promise((r) => setTimeout(r, Math.min(delay, 10000)));
         if ((mode === 'once' && w.__simListCalls.length === 1) || (mode === 'twice' && w.__simListCalls.length <= 2)) return { ok: false, error: 'the request timed out', reason: 'the request timed out', models: [] };
         if (mode === 'error') return { ok: false, error: 'the sign-in was not accepted', reason: 'the sign-in was not accepted', models: [] };
         if (mode === 'empty') return { ok: true, reason: 'the app returned no models', models: [] };

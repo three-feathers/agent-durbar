@@ -95,9 +95,10 @@ async function main(): Promise<void> {
       ids[k] = sid;
       agents.set(sid, { id: sid, name: k, cwd: ws, folders: [ws], permMode: 'ask', adapterId: k, model: 'auto' } as unknown as AgentInfo);
     }
+    const clock = { t: 1_000_000 };
     const saved: { key: string; c: Record<string, unknown> }[] = [];
     const router = { onEvent: () => () => undefined, forAgent: (id: string) => Object.values(ads).find((x) => x.isLive(id)) ?? ads.claude, instance: (k: string) => ads[k] };
-    register({ agents, router: router as never, registry: { defaultId: 'copilot', has: (k: string) => k in lists } as never, wsKey: (a) => a.adapterId ?? '', getFolderStore: () => ({ setModelChoice: (key: string, c: Record<string, unknown>) => void saved.push({ key, c }) }) as never });
+    register({ agents, router: router as never, registry: { defaultId: 'copilot', has: (k: string) => k in lists } as never, wsKey: (a) => a.adapterId ?? '', getFolderStore: () => ({ setModelChoice: (key: string, c: Record<string, unknown>) => void saved.push({ key, c }) }) as never, now: () => clock.t });
 
     // Claude Code's and Codex's own models and efforts are accepted (they were checked against Copilot's list and refused), Copilot's own too
     const setOk = async (k: string, req: unknown, what: string): Promise<void> => {
@@ -152,8 +153,29 @@ async function main(): Promise<void> {
         r = await lc({ fresh: true });
         assert.deepStrictEqual(r.models.map((m) => m.id), ['gpt-full'], 'fresh asks again past the cache: the full list without a restart');
         assert.deepStrictEqual(asked.slice(-2), [undefined, { fresh: true }], 'fresh reaches the adapter only when asked, as exactly true');
+        // review on PR 1923: a fresh ask costs a runtime call (Claude starts a probe): one per app per 5 s, the answer shared inside the window
+        const before = asked.length;
+        const [r1, r2, r3] = await Promise.all([lc({ fresh: true }), lc({ fresh: true }), lc({ fresh: true })]);
+        assert.strictEqual(asked.length, before, 'inside the floor no new ask reaches the adapter (the earlier fresh answer is reused): ' + (asked.length - before));
+        assert.deepStrictEqual([r1.models.length, r2.models.length, r3.models.length], [1, 1, 1], 'and every caller gets that answer');
+        clock.t += 6000;
+        await Promise.all([lc({ fresh: true }), lc({ fresh: true })]);
+        assert.strictEqual(asked.length, before + 1, 'after the floor one more ask, for two parallel fresh calls');
+        await lc({ fresh: true });
+        assert.strictEqual(asked.length, before + 1, 'and again only one');
         await lc({ fresh: 'yes' });
         assert.strictEqual(asked[asked.length - 1], undefined, 'only fresh:true counts');
+        {
+          const { listReason } = require('../src/main/ipc/model') as typeof import('../src/main/ipc/model');
+          const SI = 'the sign-in was not accepted', OT = 'the app could not list its models';
+          for (const m of ['max tokens exceeded for this request', 'rate limit reached (429), retry later', 'the author field is missing', 'authority mismatch', 'failed in 4010 ms', 'token budget']) assert.strictEqual(listReason(new Error(m)), OT, 'near miss: ' + m);
+          for (const m of ['HTTP 401', 'Unauthorized', 'request failed {"status":403}', 'You are not signed in', 'Authentication failed']) assert.strictEqual(listReason(new Error(m)), SI, 'sign-in: ' + m);
+          assert.strictEqual(listReason(Object.assign(new Error('x'), { status: 401 })), SI, 'a 401 status');
+          assert.strictEqual(listReason(Object.assign(new Error('x'), { statusCode: 429 })), OT, 'a 429 status is not a sign-in');
+          assert.strictEqual(listReason(new Error('request timed out')), 'the request timed out');
+          assert.strictEqual(listReason(new Error('connect ECONNREFUSED 127.0.0.1:1')), 'no connection');
+          assert.strictEqual(listReason(new Error('socket hang up')), OT, 'a word alone is no connection verdict');
+        }
         mode = 'hidden';
         r = await lc();
         assert.ok(r.ok && r.models.length === 0 && r.hidden === 2 && /policy/.test(r.reason ?? ''), 'policy-disabled models are counted: ' + JSON.stringify(r));

@@ -943,14 +943,15 @@ export class ClaudeAdapter implements AgentAdapter {
     return claudeAccount(await probe().catch(() => undefined));
   }
 
-  private initCache?: { at: number; reply: Promise<Record<string, unknown>> };
+  private initCache?: { at: number; reply: Promise<Record<string, unknown>>; settled: boolean };
 
   /**
    * FR-118: the models the user's `claude` offers, from its `initialize` reply. A short-lived CLI in Read-only in the temp
    * folder; no prompt is written, so no tokens are spent. Cached 10 minutes; any failure is an empty list.
+   * `fresh` (spec 030 FR-071): drops a SETTLED cache (a probe that answered with no models is cached too); a probe still running is shared, not doubled.
    */
   listModelOptions(opts?: { fresh?: boolean }): Promise<ModelOption[]> {
-    if (opts?.fresh) this.initCache = undefined; // spec 030 FR-071: a probe that answered with no models is cached too
+    if (opts?.fresh && this.initCache?.settled) this.initCache = undefined;
     return this.initReply().then((r) => claudeModelOptions(r.models));
   }
 
@@ -958,13 +959,18 @@ export class ClaudeAdapter implements AgentAdapter {
   private initReply(): Promise<Record<string, unknown>> {
     const now = Date.now();
     if (this.initCache && now - this.initCache.at < 10 * 60_000) return this.initCache.reply;
-    const reply = this.probeInit().catch((e) => {
-      this.debug?.(`claude: initialize probe failed: ${e instanceof Error ? e.message : String(e)}`);
-      this.initCache = undefined; // try again next time
-      return {} as Record<string, unknown>;
-    });
-    this.initCache = { at: now, reply };
-    return reply;
+    const entry: { at: number; reply: Promise<Record<string, unknown>>; settled: boolean } = { at: now, reply: undefined as never, settled: false };
+    entry.reply = this.probeInit().then(
+      (r) => { entry.settled = true; return r; },
+      (e) => {
+        entry.settled = true;
+        this.debug?.(`claude: initialize probe failed: ${e instanceof Error && /^\w{1,40}$/.test(e.name) ? e.name : 'Error'}`); // spec 030 FR-069: the type only
+        if (this.initCache === entry) this.initCache = undefined; // try again next time (an older probe never wipes a newer one)
+        return {} as Record<string, unknown>;
+      },
+    );
+    this.initCache = entry;
+    return entry.reply;
   }
 
   private async probeInit(): Promise<Record<string, unknown>> {

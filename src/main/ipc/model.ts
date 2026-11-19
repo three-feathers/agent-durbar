@@ -21,7 +21,12 @@ export interface ModelIpcDeps {
   wsKey(a: AgentInfo): string;
   /** Spec 076 FR-202/FR-203 (issue #602): why the agent app's own organization policy blocks this model, or undefined. */
   orgModel?(adapterId: string, model: string): Promise<OrgVerdict | undefined>;
+  /** The clock of the fresh-ask floor (tests only). */
+  now?(): number;
 }
+
+/** Spec 030 FR-068: the least time between two fresh model-list asks of one agent app. */
+export const FRESH_FLOOR_MS = 5000;
 
 const NO_SWITCH = 'This agent cannot change its model in place. Start a new session with the model you want.';
 
@@ -103,10 +108,12 @@ export interface ModelListReply { ok: boolean; error?: string; reason?: string; 
 
 /** A short fixed phrase for why a model list failed (spec 030 FR-068): the error's text may carry account data, so only its kind is read. */
 export function listReason(err: unknown): string {
+  const status = err && typeof err === 'object' ? Number((err as { status?: unknown; statusCode?: unknown }).status ?? (err as { statusCode?: unknown }).statusCode) : NaN;
   const t = `${err instanceof Error ? err.name : ''} ${err instanceof Error ? err.message : typeof err === 'string' ? err : ''}`;
-  if (/auth|sign.?in|log.?in|credential|token|\b40[13]\b|unauthor|forbidden/i.test(t)) return 'the sign-in was not accepted';
-  if (/time.?out|timed out|ETIMEDOUT/i.test(t)) return 'the request timed out';
-  if (/ENOTFOUND|ECONN|EAI_AGAIN|network|offline|fetch failed|socket/i.test(t)) return 'no connection';
+  // narrow on purpose: "max tokens", a rate limit (429) or "author" are not a sign-in failure
+  if (status === 401 || status === 403 || /\bunauthori[sz]ed\b|\bnot (signed|logged) ?in\b|\bnot authenticated\b|\bauthentication (failed|required)\b|\bsign-?in (required|expired)\b|\bHTTP 40[13]\b|"status":\s?40[13]\b/i.test(t)) return 'the sign-in was not accepted';
+  if (/\btime(d)? ?out\b|\bETIMEDOUT\b/i.test(t)) return 'the request timed out';
+  if (/\b(ENOTFOUND|ECONNREFUSED|ECONNRESET|EAI_AGAIN|ENETUNREACH)\b|fetch failed/i.test(t)) return 'no connection';
   return 'the app could not list its models';
 }
 
@@ -136,7 +143,17 @@ export function register(deps: ModelIpcDeps): ModelIpc {
   /** Policy-disabled models the last list of each app dropped (spec 030 FR-070). */
   const lastHidden = new Map<string, number>();
   /** `models:list`'s body (spec 076 FR-202), extracted unchanged for spec 111 T010: the list of one app with `orgBlocked`/`orgDoubt`, and remembered for a switch. `fresh`: past the app's own cache (spec 030 FR-071). */
-  const modelsOf = async (id: string, fresh = false): Promise<ModelChoice[]> => {
+  /** Spec 030 FR-068 (review on PR 1923): a fresh ask costs a runtime call (Claude Code starts a probe), so at most one per app per few seconds; inside the window the in-flight or last answer is returned. */
+  const freshRuns = new Map<string, { at: number; p: Promise<ModelChoice[]> }>();
+  const modelsOf = (id: string, fresh = false): Promise<ModelChoice[]> => {
+    if (!fresh) return loadList(id, false);
+    const now = (deps.now ?? Date.now)(), prev = freshRuns.get(id);
+    if (prev && now - prev.at < FRESH_FLOOR_MS) return prev.p;
+    const p = loadList(id, true);
+    freshRuns.set(id, { at: now, p });
+    return p;
+  };
+  const loadList = async (id: string, fresh: boolean): Promise<ModelChoice[]> => {
     const all = await modelOptionsOf(router.instance(id), fresh ? { fresh: true } : undefined);
     lastHidden.set(id, all.filter((m) => m.disabled).length);
     const models = await withOrgModels(all.filter((m) => !m.disabled).map(({ disabled: _d, ...m }) => m), deps.orgModel && ((m) => deps.orgModel!(id, m)));

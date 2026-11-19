@@ -13,6 +13,7 @@
  */
 const path = require('path');
 const { helpers, jsLiteral } = require('./driver-helpers');
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const OUT = process.env.OUT || process.env.SHOTS_OUT || require('os').tmpdir();
 
 module.exports = async (ctx) => {
@@ -23,6 +24,7 @@ module.exports = async (ctx) => {
   const calls = () => js(`JSON.stringify(window.__simListCalls||[])`).then((r) => JSON.parse(r || '[]'));
   const rows = () => js(`[...document.querySelectorAll('#modelMenu [data-pick]')].length`);
   const menuText = () => js(`(document.getElementById('modelMenu')||{textContent:''}).textContent`);
+  const focusInMenu = () => until(`!!document.activeElement&&!!document.activeElement.closest&&!!document.activeElement.closest('#modelMenu')`);
   const open = async () => {
     const id = await idOf('Hugo');
     await click(`#stage [data-id="${id}"]`);
@@ -42,6 +44,7 @@ module.exports = async (ctx) => {
     const c1 = await calls();
     check(c1.length === 2 && c1[1].fresh === true, 'once: exactly one more call, fresh: ' + JSON.stringify(c1));
     check(!/Model list unavailable/.test(await menuText()), 'once: no unavailable line once the list is back');
+    check(await focusInMenu(), 'once: keyboard focus is in the rebuilt menu, not lost');
     await closeMenu();
 
     // ---- resume: the list is empty at start, the machine wakes, one fresh ask fills it; a full list is not asked again ----
@@ -74,12 +77,54 @@ module.exports = async (ctx) => {
     await shot('unavailable');
     await click('#modelMenu [data-retrylist]');
     check(await until(`!!document.querySelector('#modelMenu [data-retrylist]')`), 'error: Retry answers again');
+    check(await focusInMenu(), 'error: focus stays in the menu after Retry');
     const n2 = (await calls()).length;
     check(n2 === n1 + 1, 'error: one press = one call (' + n1 + ' -> ' + n2 + ')');
     await settle();
     check((await calls()).length === n2, 'error: no loop');
     const fs = await js(`parseFloat(getComputedStyle(document.querySelector('#modelMenu .mm-unavail .mm-why')).fontSize)`);
     check(fs >= 10.5, 'error: text at least 10.5px: ' + fs);
+    await closeMenu();
+
+    // ---- the start-up retry is one call, not a timer that keeps going (review on PR 1923) ----
+    if (W === 1440) {
+      await H.load({ w: W, h: Hh, query: { simmodelfail: 'error' }, ready: 'fit' });
+      check(await until(`(window.__simListCalls||[]).length>=2`, 20000), 'timer: the start-up retry came');
+      await sleep(12000);
+      const tc = await calls();
+      check(tc.length === 2 && tc[1].fresh === true, 'timer: start-up + exactly one retry after 20 s: ' + JSON.stringify(tc));
+    }
+
+    // ---- two wakes while a list call runs make one call (one in flight per app) ----
+    await H.load({ w: W, h: Hh, query: { simmodelfail: 'error', simmodeldelay: '1500' }, ready: 'fit' });
+    check(await until(`(window.__simListCalls||[]).length>=2`, 20000), 'wake x2: the start-up retry came');
+    await sleep(2500);
+    const w0 = (await calls()).length;
+    await js(`window.__simResume&&window.__simResume();window.__simResume&&window.__simResume()`);
+    await sleep(3500);
+    check((await calls()).length === w0 + 1, 'wake x2: two wakes while a call runs make one call: ' + w0 + ' -> ' + (await calls()).length);
+
+    // ---- a menu opened while a list call runs is rebuilt when it ends (it never stays on "Checking") ----
+    await H.load({ w: W, h: Hh, query: { simmodelfail: 'error', simmodeldelay: '3000' }, ready: 'fit' });
+    await open();
+    check(await until(`(window.__simListCalls||[]).length>=2`, 20000), 'stuck: the start-up retry is running');
+    await click('#modelChip');
+    check(await until(`!!document.getElementById('modelMenu')`), 'stuck: the menu opens');
+    check(/Checking the model list/.test(await menuText()), 'stuck: it says Checking while the call runs');
+    check(await until(`!!document.querySelector('#modelMenu [data-retrylist]')`, 20000), 'stuck: when the call ends the menu shows Retry');
+    check(/Model list unavailable/.test(await menuText()), 'stuck: and the reason');
+    await closeMenu();
+
+    // ---- no list call at all (a bridge without listModels): no endless "Checking", no Retry that cannot work ----
+    await H.load({ w: W, h: Hh, query: { simmodelfail: 'error' }, ready: 'fit' });
+    await open();
+    await js(`window.__durbarSimUi.bridge().listModels=undefined`);
+    await click('#modelChip');
+    check(await until(`!!document.getElementById('modelMenu')`), 'nolist: the menu opens');
+    await settle();
+    t = await menuText();
+    check(/Model list unavailable/.test(t) && !/Checking the model list/.test(t), 'nolist: it says unavailable, not Checking: ' + t.slice(0, 100));
+    check(!(await exists('#modelMenu [data-retrylist]')), 'nolist: no Retry that cannot work');
     await closeMenu();
 
     // ---- hidden: the policy count ----

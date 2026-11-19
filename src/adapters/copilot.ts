@@ -823,7 +823,8 @@ export class CopilotAdapter implements AgentAdapter {
     const client = await this.getClient();
     if (fresh) {
       // spec 030 FR-071: the SDK's listModels() keeps its first successful answer, an empty one too, for the client's life; the runtime's own
-      // call (the one verifySignIn uses) asks again. A runtime without it falls back to the cached list.
+      // call (the one verifySignIn uses) asks again. It is the same JSON-RPC method `models.list` the SDK's listModels() sends (read: client.js); the SDK
+      // only fills default `capabilities` afterwards, which modelOptionFrom reads defensively. Not confirmed on a real account (KNOWN GAP). A runtime without it falls back to the cached list.
       const rpc = (client as unknown as { rpc?: { models?: { list?: (p: object) => Promise<{ models?: unknown }> } } }).rpc;
       if (typeof rpc?.models?.list === 'function') {
         const r = await rpc.models.list({});

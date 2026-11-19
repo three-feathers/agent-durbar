@@ -1125,7 +1125,8 @@ function createWindow(): void {
 }
 
 app.whenReady().then(() => {
-  powerMonitor.on('resume', () => { mcp.signInRefresh.resumed(); toRenderer('system:resumed', null); }); // spec 030 FR-072: an empty model list is asked once more after a wake; // spec 058 FR-205: a wake from sleep puts every chat past the quiet-hour gap
+  powerMonitor.on('resume', () => mcp.signInRefresh.resumed()); // spec 058 FR-205: a wake from sleep puts every chat past the quiet-hour gap
+  powerMonitor.on('resume', () => toRenderer('system:resumed', null)); // spec 030 FR-072: an empty model list is asked once more after a wake
   app.setAboutPanelOptions(aboutPanelOptions(app.getVersion())); // owner and contributors: src/shared/about.ts (spec 008 FR-018)
   // spec 052 FR-083, FR-164: a Mac menu from roles (Settings… ⌘,; File > Add Folder… ⌘O); no menu on Windows and Linux (no Reload or DevTools for users)
   const menu = appMenuTemplate(process.platform, {

@@ -643,7 +643,7 @@ async function main(): Promise<void> {
   const pins: Array<[RegExp, string]> = [
     [/mcpGate: \(id\) => mcp\.signInRefresh\.beforeSend\(id\), mcpStopWait: \(id\) => mcp\.signInRefresh\.stopWait\(id\), mcpBusy: \(id\) => chatBusy\(id\), mcpForget: \(id\) => mcp\.signInRefresh\.forget\(id\)/, 'the window send path gets the gate, Stop and forget'],
     [/return scheduledSendOp\(\{ agent: a, adapter: a \? router\.forAgent\(a\.id\) : undefined, agentState, gate: \(id\) => mcp\.signInRefresh\.beforeSend\(id\),/, 'the scheduler send goes through scheduledSendOp with the gate'],
-    [/powerMonitor\.on\('resume', \(\) => \{ mcp\.signInRefresh\.resumed\(\); toRenderer\('system:resumed', null\); \}\)/, 'a wake from sleep marks every chat'],
+    [/powerMonitor\.on\('resume', \(\) => mcp\.signInRefresh\.resumed\(\)\)/, 'a wake from sleep marks every chat'],
     [/now: \(\) => performance\.now\(\),\n\s+on: \(\) => !SIMULATOR && \(settingsStore\?\.mcpSignInRefresh \?\? MCP_SIGNIN_REFRESH_DEFAULT\),/, 'the monotonic clock and the switch (never under the simulator)'],
     [/push: \(p\) => toRenderer\('agents:mcpSignInRefresh', p\),/, 'the lines go to the window'],
     [/diagnostics: \(\) => settingsStore\?\.diagnostics === true,/, 'Diagnostics is the Settings switch, off unless stored on (spec 058 FR-227)'],
