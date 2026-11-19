@@ -1017,8 +1017,10 @@ async function main(): Promise<void> {
     slow.onConvSearch((e) => got.push(e));
     const rs = await slow.convSearchStart('invoice');
     if (!rs.ok) throw new Error('slow start');
-    for (let i = 0; i < 200 && !got.length; i++) await new Promise((res) => setTimeout(res, 10));
-    assert.ok(got[0].kind === 'batch' && got[0].progress.done === 1 && got[0].progress.total === 4, JSON.stringify(got[0]));
+    for (let i = 0; i < 400 && !got.some((e) => e.kind === 'batch'); i++) await new Promise((res) => setTimeout(res, 10));
+    assert.ok(got[0].kind === 'plan' && got[0].listed === 0 && got[0].folders >= 1, 'FR-054: the slow mode lists the folders first: ' + JSON.stringify(got[0]));
+    const gb = got.find((e) => e.kind === 'batch');
+    assert.ok(gb && gb.kind === 'batch' && gb.progress.done === 1 && gb.progress.total === 4, JSON.stringify(gb));
     assert.deepStrictEqual(await slow.convSearchCancel('f'.repeat(32)), { ok: false });
     assert.deepStrictEqual(await slow.convSearchCancel(rs.searchId), { ok: true });
     const n = got.length;
