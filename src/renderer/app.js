@@ -8541,13 +8541,36 @@ async function loadModels(){
   /* spec 012 FR-157: main changed the list itself (a session was refused because of the sign-in) */
   if(bridge.onAdaptersChanged)bridge.onAdaptersChanged(list=>{if(Array.isArray(list)&&list.length){KINDS=list;applyKinds();}});
   if(!bridge.listModels)return;
-  const r=await bridge.listModels().catch(()=>null);
-  if(!r||!r.ok||!r.models.length)return;
-  MODELS=r.models;
-  const ms=$('modelSel');
-  fillModelSelect(ms,'auto','');ms.dataset.kind='';
-  ms.title='Model for new sessions. This is what your Copilot account offers; × is the cost multiplier the API reports.';
-  syncKindModel();
+  /* spec 030 FR-072: a wake from sleep (main's powerMonitor 'resume'): a list that is empty is asked once more; one ask per app, none for a list we have */
+  if(bridge.onResume)bridge.onResume(()=>{if(!MODELS.length)void refreshModels('',true);for(const k of Object.keys(MODELS_BY))if(!MODELS_BY[k].length)void refreshModels(k,true);});
+  if(!(await refreshModels('',false))&&!MODELS_RETRY){
+    /* issue 1909: the start-up fetch can lose a race with the app's own start; one more try shortly after, then only when a menu opens (spec 030 FR-068) */
+    MODELS_RETRY=setTimeout(()=>{if(!MODELS.length)void refreshModels('',true);},8000);
+  }
+}
+let MODELS_RETRY=0;
+/* spec 030 FR-068: why each app's list is unavailable (kind -> {reason,hidden}); cleared once a list arrived */
+const MODELS_STATE={};
+const MODELS_INFLIGHT={};
+/* Asks main for one app's list (fresh = past the app's cache, FR-071); true when it brought models. One call at a time per app. */
+function refreshModels(k,fresh){
+  const key=isDefaultKind(k)?'':k;
+  if(MODELS_INFLIGHT[key])return MODELS_INFLIGHT[key];
+  const p=(async()=>{
+    /* spec 030 FR-073: main caps the call too; this cap is for a main that never answers, so the in-flight mark is always cleared and Retry, a wake and the next open really ask again */
+    let tm; const cap=new Promise(res=>{tm=setTimeout(()=>res({ok:false,reason:'the request timed out'}),window.__modelListMs||35000);});
+    const r=await Promise.race([bridge.listModels(key||undefined,fresh?{fresh:true}:undefined).catch(()=>null),cap]); clearTimeout(tm);
+    if(!r||!r.ok||!r.models.length){MODELS_STATE[key]={reason:r&&r.reason||'the app could not list its models',hidden:r&&r.hidden||0};return false;}
+    delete MODELS_STATE[key];
+    if(key){MODELS_BY[key]=r.models;return true;}
+    MODELS=r.models;
+    const ms=$('modelSel');
+    fillModelSelect(ms,'auto','');ms.dataset.kind='';
+    ms.title='Model for new sessions. This is what your Copilot account offers; × is the cost multiplier the API reports.';
+    syncKindModel();
+    return true;
+  })().finally(()=>{delete MODELS_INFLIGHT[key];});
+  MODELS_INFLIGHT[key]=p;return p;
 }
 
 /* ---------------- agent kinds: choose one, see which are ready, gate controls by capability (spec 012 T017) ---------------- */
@@ -8821,19 +8844,28 @@ async function applyProfile(a,p,anchor){
   addNote(liveChat(a),a.profile?'Profile: '+esc(a.profile.name)+' for the next replies.':'Back to the default profile.');
 }
 function closeModelMenu(){const m=document.getElementById('modelMenu');if(m){m.remove();const c=$('modelChip');if(c)c.setAttribute('aria-expanded','false');}}
-function openModelMenu(a0,x,y,anchor){
+function openModelMenu(a0,x,y,anchor,again){
   const a=liveRoot(a0); if(!a||!a.live||!a.info||!bridge.setModel)return;
   closeModelMenu();closeModeMenu();
   /* spec 030 FR-060: the menu shows what comes next: with a queued switch its model, effort and window are the ticked ones */
   const on=ctrlOf(a).switch!=='none'&&!!bridge.setModel, next=choiceOf(a), cur=modelOf(next.model,a.info.adapterId), curId=cur.id, tier=next.tier, pend=a.pendingModel;
   const dis=on?'':' aria-disabled="true"';
-  const kl=modelsFor(a.info.adapterId), list=kl.length?kl:[cur];
+  const kl=modelsFor(a.info.adapterId), none=!kl.length, list=none?[Object.assign({},cur,{noList:true})]:kl, kk=a.info.adapterId, busyList=!!MODELS_INFLIGHT[isDefaultKind(kk)?'':kk];
+  /* spec 030 FR-068 (issue 1909): an empty list is asked for again, once, when the menu opens (and by Retry), past the app's own cache */
+  if(none&&!again&&bridge.listModels){
+    const ik=isDefaultKind(kk)?'':kk, reopen=()=>{const mm=document.getElementById('modelMenu');if(mm&&mm.dataset.kind===kk&&a.live)openModelMenu(a,x,y,anchor,true);};
+    /* a call already running (start-up, a wake) is waited for, then the list is asked past the cache only if it is still empty; the menu is rebuilt when that ends */
+    if(busyList)MODELS_INFLIGHT[ik].then(()=>modelsFor(kk).length?0:refreshModels(kk,true)).then(reopen,reopen);
+    else setTimeout(()=>{refreshModels(kk,true).then(reopen,reopen);},0);
+  }
   let h=on?'':`<p class="mm-why" role="note">${esc(NO_SWITCH_WHY)}</p>`;
+  if(none){const u=DM.listUnavailable(MODELS_STATE[isDefaultKind(kk)?'':kk]),chk=!!busyList||(!again&&!!bridge.listModels);
+    h+=`<div class="mm-unavail" role="status" style="display:flex;flex-direction:column;align-items:flex-start"><p class="mm-why">${chk?'Checking the model list…':esc(u.text)}</p>${!chk&&u.hidden?`<p class="mm-info">${esc(u.hidden)}</p>`:''}${chk||!bridge.listModels?'':'<button type="button" class="btn sm" data-retrylist="1">Retry</button>'}</div>`;}
   h+='<p class="mm-h">Model</p>'+list.map(m=>{const chk=m.id===curId,w=DM.windowOf(m);
     /* spec 076 FR-202: blocked by the app's organization policy: the reason (also on the current model), disabled unless it is the current
        one; advice (FR-201): the words, still selectable */
     const ow=m.orgBlocked||m.orgDoubt||'', ob=m.orgBlocked&&!chk;
-    return `<button type="button" role="menuitemradio" aria-checked="${chk}" data-pick="${esc(m.id)}"${dis||(ob?' aria-disabled="true"':'')}${ow?` class="${m.orgBlocked?'mm-org':'mm-orgdoubt'}" title="${esc(ow)}"`:''}><span class="mt"><b>${esc(m.name)}${m.multiplier!=null?' ×'+esc(m.multiplier):''}</b><small>${ow?esc(ow):esc(DM.priceLine(m))+(w?' · '+esc(DM.fmtTokens(w))+' window':'')}</small></span><span class="ck">${chk?'✓':''}</span></button>`;}).join('');
+    return `<button type="button" role="menuitemradio" aria-checked="${chk}" data-pick="${esc(m.id)}"${dis||(ob?' aria-disabled="true"':'')}${ow?` class="${m.orgBlocked?'mm-org':'mm-orgdoubt'}" title="${esc(ow)}"`:''}><span class="mt"><b>${esc(m.name)}${m.multiplier!=null?' ×'+esc(m.multiplier):''}</b><small>${m.noList?'Current model':ow?esc(ow):esc(DM.priceLine(m))+(w?' · '+esc(DM.fmtTokens(w))+' window':'')}</small></span><span class="ck">${chk?'✓':''}</span></button>`;}).join('');
   /* spec 007 FR-013/FR-017: the Auto routing tier, a group like the effort (Copilot's Auto only); a locked organization tier shows disabled */
   const ats=curId==='auto'?DM.autoTiersOf(cur):[];
   if(ats.length){const atNow=DM.autoTierOf(cur,next.autoTier||a.info.autoTier),lock=DM.autoTierLocked(cur);
@@ -8846,12 +8878,13 @@ function openModelMenu(a0,x,y,anchor){
   if(DM.hasLong(cur))h+=`<button type="button" role="menuitemcheckbox" aria-checked="${tier==='long'}" data-tier="1"${dis} class="mm-tier"><span class="mt"><b>Long context</b><small>${esc(DM.fmtTokens(DM.windowOf(cur,'long')))} window · ${esc(DM.priceLine(cur,'long'))}</small></span><span class="ck">${tier==='long'?'✓':''}</span></button>`;
   if(pend)h+=`<div class="mm-pend" role="status"><span>Next: <b>${esc(pend.name)}</b>${DM.choiceWords(pend.req)?' ('+esc(DM.choiceWords(pend.req))+')':''}, when this reply ends.</span><button type="button" data-cancelq="1">Cancel</button></div>`;
   h+=on?'<p class="mm-note">'+(pend?'Applies when this reply ends':'Applies from the next message')+'; the conversation is kept. Costlier switches ask first, and your spending limit never changes.'+(ctrlOf(a).unverified?' '+esc(UNVERIFIED_WHY):'')+'</p>':'<div class="mm-foot"><button type="button" class="btn" data-newsess="1">New session…</button></div>';
-  const m=document.createElement('div');m.id='modelMenu';m.className='mode-menu model-menu';m.setAttribute('role','menu');m.setAttribute('aria-label','Model and context for '+a.name);
+  const m=document.createElement('div');m.id='modelMenu';m.dataset.kind=kk;m.className='mode-menu model-menu';m.setAttribute('role','menu');m.setAttribute('aria-label','Model and context for '+a.name);
   m.innerHTML=h;document.body.appendChild(m);
   const {px,py}=placeMenu(m,x,y,anchor); /* spec 005 FR-037: above a toolbar chip */
   m.addEventListener('click',e=>{
     const b=e.target.closest('button');if(!b)return;
     if(b.dataset.newsess){closeModelMenu();newSession(a);return;}
+    if(b.dataset.retrylist){refreshModels(kk,true).then(()=>{if(document.getElementById('modelMenu')&&a.live)openModelMenu(a,x,y,anchor,true);});openModelMenu(a,x,y,anchor,true);return;} /* spec 030 FR-068: one ask per press */
     if(b.dataset.cancelq){closeModelMenu();cancelPendingModel(a,anchor);return;}
     if(b.getAttribute('aria-disabled')==='true')return;
     closeModelMenu();

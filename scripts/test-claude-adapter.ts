@@ -642,6 +642,11 @@ async function main(): Promise<void> {
     await until('probe closed', () => (sp.children[0].ended || sp.children[0].killed.length ? true : undefined));
     await ad.listModelOptions();
     assert.strictEqual(probes, 1, 'cached');
+    // spec 030 FR-071 (issue #1909): `fresh` drops a settled cache (a probe that answered with no models is cached too), and two parallel fresh asks share one probe
+    await ad.listModelOptions({ fresh: true });
+    assert.strictEqual(probes, 2, 'fresh asks the CLI again');
+    await Promise.all([ad.listModelOptions({ fresh: true }), ad.listModelOptions({ fresh: true })]);
+    assert.strictEqual(probes, 3, 'two parallel fresh asks make one probe, not two');
     const none = new ClaudeAdapter({ autopilot: { wired: false }, sandboxFacts: SANDBOX_HOST_OK, claudePath: async () => undefined });
     assert.deepStrictEqual(await none.listModelOptions(), [], 'no claude: empty list');
     const sp2 = fakeSpawn();

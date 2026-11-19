@@ -112,6 +112,7 @@ const DRIVERS = [
   { name: 'shots-841-entra-explain' }, // spec 058 FR-193, FR-194 (#841): the fixed line and Sign in again... under a failed policy call
   { name: 'shots-model', label: 'shots-model 1440', env: { MODEL_W: '1440', MODEL_H: '900' } },
   { name: 'shots-model', label: 'shots-model 1280', env: { MODEL_W: '1280', MODEL_H: '800' } },
+  { name: 'check-model-list-unavailable' }, // spec 030 FR-068..FR-070 (#1909): a failed or empty model list is asked again on open, says why, Retry, the policy count
   { name: 'check-model-choice' }, // spec 030 FR-060..FR-066: model, effort and context chosen one after another stay together, each app, each order
   { name: 'shots-007-autotier' }, // spec 007 FR-013..FR-018 (#607): the Auto routing tier in the model menu, confirm, Undo, the organization lock
   { name: 'shots-111-templates' }, // spec 111 T008 (FR-020, FR-021, FR-131): Settings > Team templates: starter and own rows, keyboard only, Delete asks, Export disabled, blocked/changed/failed seeds

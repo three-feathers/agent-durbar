@@ -129,7 +129,7 @@ export const deleteSessionOf = async (ad: AgentAdapter, sessionId: string): Prom
   return true;
 };
 export const historyOf = async (ad: AgentAdapter, sessionId: string, limits?: Partial<HistoryLimits>): Promise<HistoryResult> => (ad.history ? (limits ? ad.history(sessionId, limits) : ad.history(sessionId)) : { items: [], total: 0, truncated: false });
-export const modelOptionsOf = async (ad: AgentAdapter): Promise<ModelOption[]> => (await ad.listModelOptions?.()) ?? [];
+export const modelOptionsOf = async (ad: AgentAdapter, opts?: { fresh?: boolean }): Promise<ModelOption[]> => (await ad.listModelOptions?.(opts)) ?? [];
 /** Reports whether the adapter has the member (`applied`); a live session whose adapter lacks it keeps its old setting, so callers must refuse instead of saving. */
 export const setPermModeOf = (ad: AgentAdapter, sessionId: string, mode: PermissionMode, opts?: { clearGrants?: boolean; approvePending?: boolean }): { applied: boolean; pending: number } =>
   ad.setPermMode ? { applied: true, pending: ad.setPermMode(sessionId, mode, opts).pending } : { applied: false, pending: 0 };
