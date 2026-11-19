@@ -28,7 +28,7 @@ module.exports = async (ctx) => {
   if (!dbg.isAttached()) dbg.attach('1.3');
   const motion = (v) => dbg.sendCommand('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: v }] });
   const prep = () => js(`(()=>{window.__ann=[];new MutationObserver(()=>{const t=document.getElementById('srAnnounce').textContent;if(t)window.__ann.push(t);}).observe(document.getElementById('srAnnounce'),{childList:true,characterData:true,subtree:true});
-    ${MUTANT === 'noscroll' ? 'Element.prototype.scrollIntoView=function(){};' : ''}
+    ${MUTANT === 'noscroll' ? 'window.DurbarScroll.reveal=function(){};' : ''}
     ${MUTANT === 'nomark' ? `(()=>{const st=document.createElement('style');st.textContent='[data-new]{outline:none!important;animation:none!important}';document.head.appendChild(st);})();` : ''}
     ${MUTANT === 'noshow' ? `new MutationObserver(()=>{for(const b of document.querySelectorAll('.toast .toast-act'))b.remove();}).observe(document.body,{childList:true,subtree:true});` : ''}
     return true})()`);
