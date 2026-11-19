@@ -178,7 +178,7 @@ assert.strictEqual(PIXEL_CHARACTERS, 'pixel'); assert.strictEqual(T.PIXEL_CHARAC
   assert.strictEqual(T.parseCharacters(loaded), PIXEL_CHARACTERS, 'T290: and the renderer list');
   for (const world of ['photo', 'retro']) assert.strictEqual(CREW.peopleFor(world, loaded, OPEN).set, 'retro', `T290: pixel draws the Retro pixel set (the set is retro) in ${world}`);
   assert.strictEqual(CREW.peopleFor('photo', loaded, OPEN).setName, 'Retro pixel', 'T290: the set keeps its name');
-  assert.strictEqual(CREW.peopleFor('photo', loaded, { cave: false, retro: false }).set, 'office', 'T290: flag closed: the world\'s default, the value kept');
+  assert.strictEqual(CREW.peopleFor('photo', loaded, { cave: false, retro: false }).set, 'retro', 'T230: no flag closes it since the flip: the Retro pixel set draws whatever the flags');
   T.setTheme('clean-office'); T.setCharacters(loaded as string);
   assert.strictEqual(T.characters(), PIXEL_CHARACTERS, 'T290: Flat keeps the value'); assert.strictEqual(T.sceneKit(), 'office', 'T290: and draws the theme\'s own figures until T294');
   T.setCharacters('theme');

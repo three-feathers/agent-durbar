@@ -48,7 +48,7 @@ module.exports = async (ctx) => {
   assert.strictEqual(await packs(), 'sets/office worlds/photo', 'flag off: no cave or Prehistoric file asked for: ' + await packs());
   await js(`window.DurbarScreens.openSettings()`);
   await must(`!!document.querySelector('#wrGroup [data-world="photo"]')`, 'Settings');
-  assert.strictEqual(await js(`[...document.querySelectorAll('#wrGroup [data-world]')].map(b=>b.dataset.world).join()`), 'plain,photo', 'flag off: the cave is not listed');
+  assert.strictEqual(await js(`[...document.querySelectorAll('#wrGroup [data-world]')].map(b=>b.dataset.world).join()`), 'plain,photo,retro', 'flag off: the cave is not listed (the arcade is, since spec 102 T230)');
   await js(`document.getElementById('scrClose').click();localStorage.removeItem('durbar.world')`);
 
   // ---- the flag on (simulator): the cave, its set, nothing else ----
@@ -87,7 +87,7 @@ module.exports = async (ctx) => {
   await must(`!!document.querySelector('#wrGroup')`, 'the World row');
   await must(`document.querySelectorAll('#wrGroup .wpic img').length>=2`, 'the cards show their previews (the page is painted again once the previews script has loaded)');
   const row = await js(`(()=>{const g=document.querySelector('#wrGroup');return {role:g.getAttribute('role'),radios:[...g.querySelectorAll('[role=radio]')].map(b=>b.dataset.world+':'+b.getAttribute('aria-checked')+':'+b.tabIndex).join(' '),label:document.getElementById('worldH').textContent}})()`);
-  assert.deepStrictEqual(row, { role: 'radiogroup', radios: 'plain:false:-1 photo:false:-1 cave:true:0', label: 'World' }, 'a radio group with the cave checked and one tab stop: ' + JSON.stringify(row));
+  assert.deepStrictEqual(row, { role: 'radiogroup', radios: 'plain:false:-1 photo:false:-1 cave:true:0 retro:false:-1', label: 'World' }, 'a radio group with the cave checked (the arcade listed since spec 102 T230) and one tab stop: ' + JSON.stringify(row));
   assert.ok(/World’s default \(Prehistoric\)/.test(await js(`document.querySelector('#chList [data-characters="theme"]').getAttribute('aria-label')`)), 'Characters names the cave’s default set');
   await js(`document.querySelector('#wrGroup [data-world="cave"]').focus()`);
   await H.shot(path.join(OUT, 'cave-settings-1440x900.png'), { prep: 'mouse' });

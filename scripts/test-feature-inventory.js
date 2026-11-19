@@ -42,23 +42,23 @@ try {
   fails({ md: (t) => t.replace('missing (owner decision, 2026-11-08): superseded by worlds', 'in PR') }, /must name the branch/);
   fails({ md: (t) => t.replace('Exempt: 002 ', 'Exempt: ') }, /002-.* built but in no row/);
   fails({ md: (t) => t.replace(/\| Helpers[^\n]*\n/, '') , reg: (t) => t.replace('"shippable": false', '"shippable": true') }, /shippable: true/);
-  fails({ reg: (t) => t.replace('"shippable": false', '"shippable": true') }, /shippable: true/);
+  fails({ md: (t) => t.replace('| built (desk-card) | 001 015 097 098 |', '| planned | 001 015 097 098 |') }, /shippable: true/); /* the arcade is shippable (spec 102 T230): a Helpers row that is not built fails */
   // parity (spec 021 FR-078). The fixtures edit the themes row's "missing (owner decision, 2026-11-08): superseded by worlds": #1152's row now says what Real office has (PR 1315)
   fails({ md: (t) => t.replace('missing (owner decision, 2026-11-08): superseded by worlds', 'missing') }, /Real office cell "missing" is not plain works/);
   fails({ md: (t) => t.replace(/(Helpers \(sub-agents\)[^|]*\| works \| )[^|]*\|/, '$1in PR 097-helpers |') }, /Real office cell "in PR 097-helpers" is not plain works/);
-  fails({ crew: (t) => t.replace('retro: false', 'retro: true') }, /world\(s\) retro offered, but Worlds "none" is not built and carries no owner decision of its own/);
+  fails({ md: (t) => t.replace('| none (owner decision, #1404) |', '| none |') }, /world\(s\) retro offered, but Worlds "none" is not built and carries no owner decision of its own/); /* the arcade is offered since T230: a row without its decision fails */
   assert.ok(!check(copy({ md: (t) => t.replace('missing (owner decision, 2026-11-08): superseded by worlds', 'missing (owner decision, 2026-11-04)') })).some((m) => /Real office cell/.test(m)), 'a marker accepts a Real office gap');
-  fails({ crew: (t) => t.replace('cave: false', 'cave: true') }, /world\(s\) cave offered, but Worlds "none" is not built/);
+  fails({ crew: (t) => t.replace('cave: false', 'cave: true'), md: (t) => t.replace('| none (owner decision, #1404) |', '| none |') }, /world\(s\) cave, retro offered, but Worlds "none" is not built/);
   // a decision waives only its own cell
   const HALO = 'row "Waiting desk halo (a still glow behind the screen)"';
   /* the fixture: the halo row with Flat `works` (Flat lost the halo too on 2026-11-05, spec 001 FR-230, so the real row no longer has the case) */
   const flatHalo = (t) => t.replace('| missing, the screen\'s tint replaces it (owner decision, 2026-11-05) | missing, the screen\'s tint', '| works | missing, the screen\'s tint');
-  const retro = { crew: (t) => t.replace('retro: false', 'retro: true'), md: flatHalo };
+  const retro = { crew: (t) => t, md: flatHalo }; /* the arcade is offered with no flag since spec 102 T230 */
   assert.ok(check(copy(retro)).some((m) => m.startsWith(HALO + ': world(s) retro offered')), 'a Real office decision does not waive the Worlds cell');
   const own = (md) => ({ crew: retro.crew, md: (t) => md(flatHalo(t)) });
   const haloWorld = (t) => t.replace('(owner decision, 2026-11-05) | none | 001 | driver:check-001-lights', '(owner decision, 2026-11-05) | none (owner decision, 2026-11-05) | 001 | driver:check-001-lights');
   assert.ok(!check(copy(own(haloWorld))).some((m) => m.startsWith(HALO) && !/: no scripts\//.test(m)), 'a decision in the Worlds cell waives the Worlds gap');
-  const deskWorld = (t) => t.replace('| missing (owner decision, 2026-11-08): superseded by worlds | none |', '| missing | none (owner decision, 2026-11-04) |');
+  const deskWorld = (t) => t.replace('| missing (owner decision, 2026-11-08): superseded by worlds | none (owner decision, #1404) |', '| missing | none (owner decision, 2026-11-04) |');
   assert.ok(check(copy({ md: deskWorld })).some((m) => /Real office cell "missing" is not plain works/.test(m)), 'a Worlds decision does not waive the Real office cell');
   // the marker's form (escape every regex metacharacter, backslash included; CodeQL js/incomplete-sanitization)
   const reEsc = (x) => x.replace(/[\\^$.*+?()[\]{}|]/g, '\\$&');

@@ -156,7 +156,7 @@ module.exports = async (ctx) => {
       return {shown:[...new Set([...document.querySelectorAll('#stage .ro img')].map(i=>decodeURIComponent(i.currentSrc||i.src)))],overlaps,unloaded:[...document.querySelectorAll('#stage .ro img')].filter(i=>!(i.complete&&i.naturalWidth>0)).map(i=>i.getAttribute('src')),set:ro.dataset.set,world:ro.dataset.world,n:pics.length,foreign:pics.filter(i=>!i.getAttribute('src').includes('sets/'+ro.dataset.set+'/')).map(i=>i.getAttribute('src')),
         crewInScene:document.querySelectorAll('#stage image[href*="crew/art/"],#stage img[src*="crew/art/"]').length,        worlds:window.DurbarCrew.offeredWorlds().map(x=>x.id),scroll:L.scroll,plates:document.querySelectorAll('#stage .ro-plate').length}})()`);
     const open = flagsOf(gate, world, value);
-    assert.deepStrictEqual(r.worlds, ['photo', ...['cave', 'retro'].filter((f) => open.includes(f))], `${tag}: a world other than the Photo office is offered only with its own flag: ${r.worlds}`);
+    assert.deepStrictEqual(r.worlds, ['photo', ...(open.includes('cave') ? ['cave'] : []), 'retro'], `${tag}: the cave is offered only with its own flag; the arcade has none since the flip (spec 102 T230): ${r.worlds}`);
     /* the picture first, so a failed case leaves what the room looked like */
     await H.shot(path.join(OUT, `097-crews-${world === 'photo' ? '' : world + '-'}${value}${gate ? '-open' : ''}-${w}x${h}.png`), { prep: 'calm' });
     const log = [...reqs.values()], urls = log.map((e) => e.url), webps = log.filter((e) => /\.webp(\?|$)/.test(e.url));

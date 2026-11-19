@@ -415,10 +415,11 @@ const simCleanQuery = (q: unknown): { ok: true; query: string; cut: boolean } | 
  * random `searchId`, one live search (a new start or a cancel ends the old one), events only for the live id. `simsearch=slow`: one
  * session every 400 ms, for the "Searching, N of M sessions" state; `simsearch=locked`: the end state says saved MCP values were locked;
  * `simsearch=older`: each open session also has a message its chat does not show, for "That message is older than the chat shows".
+ * `simsearch=listing` (issue 1904): the plan is built first, one folder every 400 ms (`listing` events), then the scan.
  * `simsearch=delayed`: the start answers after 700 ms, for a query that changes while it is pending.
  */
 function simConvSearchApi(qs: URLSearchParams, scope: () => SimConvSession[]): Pick<DurbarApi, 'convSearchStart' | 'convSearchCancel' | 'convSearchClear' | 'onConvSearch'> {
-  type Search = { fold(s: unknown): string; terms(q: string): string[]; locate(t: unknown, q: string): Array<{ start: number; end: number; term: number }>; anchorKey(t: unknown): string };
+  type Search = { fold(s: unknown): string; terms(q: string): string[]; locate(t: unknown, q: string): Array<{ start: number; end: number; term: number }>; bestTiers(t: unknown, q: string): number[]; anchorKey(t: unknown): string };
   const lib = (): Search | undefined => (window as unknown as { DurbarSessionSearch?: Search }).DurbarSessionSearch;
   const mask = (t: string): string | undefined => {
     const r = (window as unknown as { DurbarRedact?: { maskNoteText?: (t: string) => { text: string } } }).DurbarRedact;
@@ -437,7 +438,11 @@ function simConvSearchApi(qs: URLSearchParams, scope: () => SimConvSession[]): P
     if (title === undefined) { notes.maskFailed++; return undefined; }
     const found = new Set(S.locate(title, q).map((r) => r.term));
     const base = { adapter: s.adapter, sessionId: s.sessionId, agentId: s.agentId, group: s.group, app: s.app, folderName: s.folderName, title, titleMarks: marks(S, title, q), time: s.time };
-    if (found.size === words.length) return { ...base, excerpts: [], more: 0 };
+    const best = words.map(() => 3); // issue 1904: the best place of each word in its word (0 whole word, 1 word start, 2 inside)
+    const seen = (t: string): void => S.bestTiers(t, q).forEach((x, i) => { if (x < best[i]) best[i] = x; });
+    const rank = (): 0 | 1 | 2 => Math.min(2, Math.max(0, ...best)) as 0 | 1 | 2;
+    seen(title);
+    if (found.size === words.length) return { ...base, excerpts: [], more: 0, rank: rank() };
     if (s.content === 'title') return undefined;
     const excerpts: ConvSearchHit['excerpts'] = [];
     let total = 0;
@@ -450,11 +455,12 @@ function simConvSearchApi(qs: URLSearchParams, scope: () => SimConvSession[]): P
       const terms = new Set(S.locate(t, q).map((r) => r.term));
       if (!terms.size) continue;
       for (const x of terms) found.add(x);
+      seen(t);
       total++;
       const text = t.length > 178 ? t.slice(0, 178) + '…' : t;
       if (excerpts.length < 3) excerpts.push({ text, marks: marks(S, text, q), speaker: m.speaker, anchor: { n, head: [...S.anchorKey(t)].slice(0, 60).join('') } });
     }
-    return found.size === words.length ? { ...base, excerpts, more: total - excerpts.length } : undefined;
+    return found.size === words.length ? { ...base, excerpts, more: total - excerpts.length, rank: rank() } : undefined;
   };
   return {
     convSearchStart: async (query) => {
@@ -473,6 +479,7 @@ function simConvSearchApi(qs: URLSearchParams, scope: () => SimConvSession[]): P
       notes.folders = new Set(list.map((s) => s.folderName)).size;
       const groups = { office: 0, earlier: 0 };
       let i = 0;
+      let listed = 0;
       const step = (): void => {
         if (live !== me) return;
         const hits: ConvSearchHit[] = [];
@@ -489,7 +496,15 @@ function simConvSearchApi(qs: URLSearchParams, scope: () => SimConvSession[]): P
         live = undefined;
         emit({ kind: 'done', searchId: me.id, notes, progress, failed: false });
       };
-      me.timer = setTimeout(step, slow ? 400 : 30); // after the answer: the window knows the id before the first event
+      // `simsearch=listing` (issue 1904): main still builds the plan, one folder every 400 ms, before the scan's first batch
+      const folders = Math.max(3, notes.folders);
+      const listing = (): void => {
+        if (live !== me) return;
+        emit({ kind: 'listing', searchId: me.id, done: listed, total: folders });
+        if (listed < folders) { listed++; me.timer = setTimeout(listing, 400); return; }
+        me.timer = setTimeout(step, 30);
+      };
+      me.timer = setTimeout(qs.get('simsearch') === 'listing' ? listing : step, qs.get('simsearch') === 'listing' ? 30 : slow ? 400 : 30); // after the answer: the window knows the id before the first event
       return { ok: true, searchId: me.id, query: q.query, cut: q.cut };
     },
     convSearchCancel: async (searchId) => {

@@ -19,7 +19,8 @@
  *   FR-050  a mark has a non-colour cue and readable contrast in Clean Office and Retro; Real office: the same box and results;
  *           reduced motion: the jump's outline without its fade
  *   FR-052  rows never overlap, an excerpt is at most two lines, the list scrolls inside its area
- * Screenshots: 095-search-{results,jump,searching}-<w>x<h>.png
+ *   1904    `simsearch=listing`: "Listing sessions in N of M folders…" with Stop, never "0 of 0 sessions"; whole words first at the end
+ * Screenshots: 095-search-{results,jump,searching,listing}-<w>x<h>.png
  */
 const assert = require('assert');
 const path = require('path');
@@ -284,6 +285,24 @@ module.exports = async (ctx) => {
     for (let i = 0; i < 6; i++) await key('Backspace', [], { char: 'never', pause: 20 });
     await ok(`document.getElementById('convSearch').value==='re'`, `${w}: the query is "re"`);
     await ok(`(document.getElementById('convSearchHint').textContent||'')==='Type at least 3 characters'&&!/^Searching/.test((document.querySelector('#list .cs-st')||{}).textContent||'')&&(document.querySelector('#list .cs-notes')||{}).textContent==='Stopped.'&&!document.getElementById('csStop')`, `${w}: a short query ends the scan's state: "Stopped."`);
+
+    // ---- issue 1904 (FR-015, FR-040): while main lists sessions the line says so; whole words come first at the end ----
+    // CS_MUTANT (test only), each must fail at its own label: oldstate = the state line as it was (a plain "Searching, N of M sessions" from the start); norank = the results carry no rank
+    await H.load({ w, h, query: { simsearch: 'listing' }, focus: true });
+    await H.calm();
+    if (process.env.CS_MUTANT === 'oldstate') await js(`(()=>{const C=window.DurbarConvSearch;const o=C.stateText;C.stateText=st=>st.done?o(st):'Searching, '+st.progress.done+' of '+st.progress.total+' session'+(st.progress.total===1?'':'s');})()`);
+    await js(`(()=>{window.__stSeen=[];const L=document.getElementById('list');new MutationObserver(()=>{const e=L.querySelector('.cs-st');if(e)window.__stSeen.push([e.textContent,!!document.getElementById('csStop')]);}).observe(L,{childList:true,subtree:true,characterData:true});})()`);
+    await typeQuery('registry');
+    await ok(`/^Listing sessions in \\d+ of \\d+ folders\u2026$/.test((document.querySelector('#list .cs-st')||{}).textContent||'')&&!!document.getElementById('csStop')`, `${w}: while main lists, the line says "Listing sessions in N of M folders…" with Stop`);
+    await ok(`new Set(window.__stSeen.map(x=>x[0]).filter(t=>/^Listing sessions in/.test(t))).size>=2`, `${w}: the listing progress moves`);
+    await shot('listing', w, h, { prep: 'calm' });
+    const seen = await js(`window.__stSeen`);
+    assert.ok(!seen.some(([t]) => /0 of 0 sessions/.test(t)), `${w}: the state never says "0 of 0 sessions" while main lists: ${JSON.stringify(seen.map((x) => x[0]))}`);
+    await js(`(()=>{const U=window.__durbarSimUi,now=Date.now(),mut=${jsLiteral(process.env.CS_MUTANT || '')}==='norank',mk=(id,title,ago,rank)=>({adapter:'claude',sessionId:id,agentId:U.agents().filter(x=>!x.parent)[0].id,group:'earlier',app:'Claude Code',folderName:'demo',title,titleMarks:[[0,3]],time:now-ago,excerpts:[],more:0,...(mut?{}:{rank})});
+      U.cs.event({kind:'batch',searchId:U.cs.id(),hits:[mk('r-in','In word hit',1000,2),mk('r-old','Whole word old',90000,0),mk('r-start','Word start hit',50000,1),mk('r-new','Whole word new',5000,0)],progress:{done:4,total:4},groups:{office:0,earlier:4}});
+      U.cs.event({kind:'done',searchId:U.cs.id(),notes:{searched:4,folders:1},progress:{done:4,total:4},failed:false});})()`);
+    await ok(`document.querySelectorAll('#list .cs-hit').length===4&&!!document.querySelector('#list .cs-notes')`, `${w}: the four results are shown and the search is over`);
+    assert.deepStrictEqual(await js(`[...document.querySelectorAll('#list .cs-hit .lnm')].map(e=>e.textContent)`), ['Whole word new', 'Whole word old', 'Word start hit', 'In word hit'], `${w}: at the end whole words come first, then word starts, then in-word hits (newest first inside a rank), none hidden`);
 
     await H.load({ w, h, query: { simsearch: 'locked' }, focus: true });
     await H.calm();

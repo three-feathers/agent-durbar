@@ -125,12 +125,13 @@ async function main(): Promise<void> {
   const NOTES0 = { floorOffFolders: 0, mcpValuesLocked: false, lateLists: 0, lateApps: [] as string[] };
   let scopeOf: () => Scope = () => ({ plan: { sessions: [] }, read: async () => ({ ok: true, items: [] }), values: () => [], notes: NOTES0 });
   let hold: Promise<void> | undefined;
+  const listingSteps: Array<[number, number]> = []; // issue 1904: what the fake plan reports while it is built
   const deferred: Array<() => void> = [];
   const cache = createCodexListCache();
   const ipc = register({
     codexLists: cache,
     hasSessions: () => sessions > 0,
-    scope: async (...a: unknown[]) => { scopeCalls.push(a); stops.push(a[0] as () => boolean); if (hold) await hold; return scopeOf(); },
+    scope: async (...a: unknown[]) => { scopeCalls.push(a); stops.push(a[0] as () => boolean); for (const [d, t] of listingSteps) (a[2] as (d: number, t: number) => void)(d, t); if (hold) await hold; return scopeOf(); },
     matcher: () => ({ masker, search }),
     defer: (fn) => { deferred.push(fn); },
     sleep: () => tick(), // the 250 ms between batches, without waiting
@@ -175,7 +176,8 @@ async function main(): Promise<void> {
   runDeferred();
   await settle(400);
   assert.strictEqual(scopeCalls.length, 1);
-  assert.strictEqual(scopeCalls[0].length, 2, 'the scope gets a stop function and main\'s own cache: nothing the window sent (no folder, path or session)');
+  assert.strictEqual(scopeCalls[0].length, 3, 'the scope gets a stop function, main\'s own cache and the progress callback: nothing the window sent (no folder, path or session)');
+  assert.strictEqual(typeof scopeCalls[0][2], 'function', 'issue 1904: the plan reports its progress through the third');
   assert.strictEqual(typeof scopeCalls[0][0], 'function');
   assert.strictEqual(scopeCalls[0][1], cache, 'the second is main\'s box-session cache (FR-026)');
   const evs = win1.sent.map(([ch, p]) => [ch, p] as const);
@@ -186,11 +188,26 @@ async function main(): Promise<void> {
   const hits = evs.flatMap(([, p]) => (p.kind === 'batch' ? p.hits : []));
   assert.deepStrictEqual(hits.map((h) => h.sessionId).sort(), ['a1', 'p1'], 'the open session by content, the earlier one by its masked title');
   const a1 = hits.find((h) => h.sessionId === 'a1')!;
-  assert.deepStrictEqual(Object.keys(a1).sort(), ['adapter', 'agentId', 'app', 'excerpts', 'folderName', 'group', 'more', 'sessionId', 'time', 'title', 'titleMarks'], 'FR-031: only these fields');
+  assert.deepStrictEqual(Object.keys(a1).sort(), ['adapter', 'agentId', 'app', 'excerpts', 'folderName', 'group', 'more', 'rank', 'sessionId', 'time', 'title', 'titleMarks'], 'FR-031: only these fields');
   assert.ok(a1.excerpts.length >= 1 && a1.excerpts.every((x) => x.marks.length > 0));
   const all = JSON.stringify(win1.sent);
   for (const bad of [GH, GH.slice(6, 20), MCP_VALUE, HOME, 'alice', 'grep invoice']) assert.ok(!all.includes(bad), `no "${bad}" in any payload`);
   assert.strictEqual(win2.sent.length, 0, 'the other window gets nothing');
+
+  // issue 1904 (FR-015): the plan's progress reaches the window as `listing` events, before the scan's batches, for this search's id only
+  {
+    win1.sent.length = 0;
+    listingSteps.push([0, 3], [1, 3], [3, 3]);
+    const rl = await start(E1, 'invoice');
+    assert.ok(rl.ok);
+    runDeferred();
+    await settle(400);
+    listingSteps.length = 0;
+    const kinds = win1.sent.map(([ch, p]) => `${ch}:${p.kind}`);
+    assert.deepStrictEqual(kinds.slice(0, 3), ['search:batch:listing', 'search:batch:listing', 'search:batch:listing'], 'listing: one event per report, first');
+    assert.ok(kinds.indexOf('search:done:done') > 2 && !kinds.slice(3).includes('search:batch:listing'), 'listing: nothing after the plan is built');
+    assert.deepStrictEqual(win1.sent.slice(0, 3).map(([, p]) => p), [0, 1, 3].map((d) => ({ kind: 'listing', searchId: rl.ok ? rl.searchId : '', done: d, total: 3 })), 'listing: the id, the counts and nothing else');
+  }
 
   // review of the phase 2 code (FR-031): `toHit` is the only way a hit reaches the window; a hit object that carries more (a folder
   // key with a home path, an excerpt's file) loses it. The scan builds its hits by hand, so the test stands in for it (restored below).
@@ -210,7 +227,7 @@ async function main(): Promise<void> {
       await settle(100);
       const got = win1.sent.flatMap(([, p]) => (p.kind === 'batch' ? p.hits : []));
       assert.strictEqual(got.length, 1);
-      assert.deepStrictEqual(Object.keys(got[0]).sort(), ['adapter', 'agentId', 'app', 'excerpts', 'folderName', 'group', 'more', 'sessionId', 'time', 'title', 'titleMarks']);
+      assert.deepStrictEqual(Object.keys(got[0]).sort(), ['adapter', 'agentId', 'app', 'excerpts', 'folderName', 'group', 'more', 'rank', 'sessionId', 'time', 'title', 'titleMarks']);
       assert.deepStrictEqual(Object.keys(got[0].excerpts[0]).sort(), ['anchor', 'marks', 'speaker', 'text']);
       assert.deepStrictEqual(Object.keys(got[0].excerpts[0].anchor).sort(), ['head', 'n']);
       const wire = JSON.stringify(win1.sent);
@@ -696,6 +713,49 @@ async function main(): Promise<void> {
     assert.deepStrictEqual([ok.notes.lateLists, ok.notes.lateApps], [0, []]);
     assert.ok(ok.plan.sessions.some((x) => x.sessionId === 'kp') && listings.length === 3, 'listed in time: in the plan');
     timers.length = 0;
+  }
+
+  // issue 1904 (FR-015): the plan reports "N of M folders" while it is built, so the window never has to say "0 of 0 sessions"
+  stage = 'scope listing progress';
+  {
+    const ag = (id: string, adapterId: string, cwd: string): AgentInfo => ({ id, name: path.basename(cwd), cwd, folders: [cwd], permMode: 'read-only', adapterId } as AgentInfo);
+    // two folders; the first has two apps (two Copilot-style listings and its chats), the second one app
+    const agents = new Map<string, AgentInfo>([['k1', ag('k1', 'claude', '/p/one')], ['c1', ag('c1', 'copilot', '/p/one')], ['k2', ag('k2', 'claude', '/p/two')]]);
+    let release!: () => void;
+    const held = new Promise<void>((r) => { release = r; });
+    let holdFolder: string | undefined;
+    const lister = (kind: string) => ({ id: kind, isLive: () => false, listPreviousSessions: async (cwd: string) => { if (cwd === holdFolder) await held; return [] as PreviousSession[]; } });
+    const adapters: Record<string, unknown> = { claude: lister('claude'), copilot: lister('copilot') };
+    const seen: Array<[number, number]> = [];
+    const mk = (over: Partial<ScopeDeps> = {}): ScopeDeps => ({
+      agents, router: { forAgent: (id: string) => adapters[agents.get(id)!.adapterId] as never, adapterIdOf: (id: string) => agents.get(id)?.adapterId }, wsKey: (a: AgentInfo) => a.cwd, resumeIdFor: (id: string) => id, appName: (id: string) => id, vsUserDirs: () => [],
+      values: { knownSecretValues: () => [], noPrompt: () => true, secretValuesFor: () => [] }, gate: { run: (_k: string, fn: () => Promise<unknown>) => fn() },
+      listChats: (async () => ({ sessions: [], storesFound: 0, unreadable: 0, tooLarge: 0 })) as never,
+      onListing: (d, t) => seen.push([d, t]), ...over,
+    });
+    await buildScope(mk());
+    assert.deepStrictEqual(seen, [[0, 2], [1, 2], [2, 2]], 'listing: 0 of 2 at the start, then a folder counts when ALL its listings (each app and its chats) are over');
+    // a folder whose listing is still running is not counted: the report stays at what is over, the plan waits
+    seen.length = 0;
+    holdFolder = '/p/two';
+    const pending = buildScope(mk());
+    for (let i = 0; i < 50 && seen.length < 2; i++) await tick();
+    await settle(5);
+    assert.deepStrictEqual(seen, [[0, 2], [1, 2]], 'listing: the first folder is over, the second is still listing: 1 of 2 and no more');
+    release();
+    await pending;
+    assert.deepStrictEqual(seen[seen.length - 1], [2, 2], 'listing: all over when the plan is ready');
+    // a failing listing is over too; a throwing progress callback never stops the plan
+    seen.length = 0;
+    holdFolder = undefined;
+    adapters.copilot = { id: 'copilot', isLive: () => false, listPreviousSessions: async () => { throw new Error('not signed in'); } };
+    const sc = await buildScope(mk({ onListing: (d, t) => { seen.push([d, t]); throw new Error('callback'); } }));
+    assert.deepStrictEqual([seen[seen.length - 1], sc.plan.unavailable], [[2, 2], ['copilot']], 'listing: a failed listing counts as over; a throwing callback is ignored');
+    // a stopped search reports no more
+    seen.length = 0;
+    let n = 0;
+    await buildScope(mk(), () => n++ >= 1);
+    assert.ok(seen.every(([d, t]) => d < t), 'listing: a search that is stopped is never reported as complete');
   }
 
   // review of the phase 2 code (FR-022): quick new starts do not pile up listings of the same folder; the running one is shared

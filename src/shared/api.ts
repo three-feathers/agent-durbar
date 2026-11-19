@@ -933,6 +933,8 @@ export interface ConvSearchHit {
   excerpts: ConvSearchExcerpt[];
   /** Hits not shown ("+N more"). */
   more: number;
+  /** Issue 1904 (FR-040): 0 every query word occurs as a whole word, 1 as a word start at worst, 2 inside a word at worst; the window lists lower first. */
+  rank: 0 | 1 | 2;
 }
 export interface ConvSearchNotes {
   searched: number;
@@ -964,6 +966,8 @@ export interface ConvSearchNotes {
  */
 export type ConvSearchEvent =
   | { kind: 'batch'; searchId: string; hits: ConvSearchHit[]; progress: { done: number; total: number }; groups: { office: number; earlier: number } }
+  /** Issue 1904 (FR-015): while the plan is built: folders whose listings are over, of all the plan's folders. */
+  | { kind: 'listing'; searchId: string; done: number; total: number }
   | { kind: 'done'; searchId: string; notes: ConvSearchNotes; progress: { done: number; total: number }; failed: boolean; stopped?: true };
 /** `short`: under 3 characters (spaces not counted); `none`: no session is open, nothing to search yet; `invalid`: not a query. */
 export type ConvSearchStart = { ok: true; searchId: string; query: string; cut: boolean } | { ok: false; code: 'short' | 'none' | 'invalid'; error: string };

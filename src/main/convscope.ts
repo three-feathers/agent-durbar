@@ -54,6 +54,8 @@ export interface ScopeDeps {
   now?(): number;
   /** The plan's deadline timer (tests inject their own; main: an unref'd `setTimeout`). */
   wait?(ms: number): Promise<void>;
+  /** Issue 1904 (FR-015): folders whose listings are over, of all the plan's folders; called at the start (0) and after each folder. */
+  onListing?(done: number, total: number): void;
   readClaude?: typeof readClaudeHistoryStream;
   listChats?: typeof listChats;
   readChat?: typeof readChat;
@@ -185,8 +187,24 @@ export async function buildScope(d: ScopeDeps, stop: () => boolean = () => false
   // one copy of the agents for the folder loop: the open ids and a folder's Codex ids (key of the kept list) must agree, whatever closes while a listing is awaited
   const snapshot = new Map(d.agents);
   const openIds = openIdsOf({ agents: snapshot, resumeIdFor: d.resumeIdFor });
+  // issue 1904: a folder counts as done when all its listings (VS Code chats, and each app's earlier sessions) are over, whatever they gave
+  const left = new Map<string, number>();
+  for (const [k, a] of firstOf) left.set(d.wsKey(a), (left.get(d.wsKey(a)) ?? 0) + 1);
+  let foldersDone = 0;
+  const report = (): void => { try { d.onListing?.(foldersDone, left.size); } catch { /* a progress callback never stops the plan */ } };
+  report();
+  let previous: string | undefined;
+  const finished = (): void => {
+    if (previous === undefined) return;
+    const n = (left.get(previous) ?? 1) - 1;
+    left.set(previous, n);
+    if (n === 0) { foldersDone++; report(); }
+    previous = undefined;
+  };
   for (const [k, a] of firstOf) {
+    finished(); // the step before this one is over (every `continue` below ends a step)
     if (stop()) break;
+    previous = d.wsKey(a);
     const key = d.wsKey(a);
     const f = d.store?.get(key);
     const hidden = (src: string): Set<string> => new Set((f?.prevHidden ?? []).filter((m) => m.src === src).map((m) => m.id));
@@ -257,6 +275,7 @@ export async function buildScope(d: ScopeDeps, stop: () => boolean = () => false
       }
     }
   }
+  finished();
 
   const read = async (s: PlanSession, halt: () => boolean): Promise<ReadOutcome> => {
     const src = sources.get(s) ?? { kind: 'none' };
