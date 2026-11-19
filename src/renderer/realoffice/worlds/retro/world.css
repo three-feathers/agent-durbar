@@ -132,3 +132,27 @@ html[data-world="retro"] #stage > .welcome{background:var(--raised);border:3px s
 @media (forced-colors:active){html[data-world="retro"] #floor:has(> #stage > .welcome){background:Canvas}}
 /* spec 102 FR-264, 097 FR-118 first run: no counts in the top bar (all zero); the space stays, so the bar does not move */
 html[data-world="retro"] body:has(#stage > .welcome) #stats{visibility:hidden}
+
+/* spec 102 T223 (issue 1891, the five chrome cells of the arcade: lift-panel, chat-open, chat-shell, chat-header, elicitation): the arcade's own tokens, no new picture. Square pixel edges (2-3 px borders), hard 3 px shadows in the page's black, the mono display font, stepped motion; every colour a token, so a user's dark page still reads. */
+/* lift-panel: square keys with a hard shadow; the shown floor is a pressed yellow key (shape and weight stay: 092 FR-007's thick border, bold text, the bar) */
+html[data-world="retro"] .lift-b{border-radius:0;border-width:2px;border-color:var(--line);font-family:var(--ui-display);box-shadow:var(--shadow-pop)}
+html[data-world="retro"] .lift-b:hover{border-color:var(--sel-border)}
+html[data-world="retro"] .lift-b[aria-current="true"]{background:var(--brand-bg);color:var(--brand-mark);border-color:var(--ink);box-shadow:none;transform:translate(2px,2px)}
+html[data-world="retro"] .lift-b[aria-current="true"]::before{border-radius:0;background:var(--brand-bg)}
+html[data-world="retro"] .lift-badge{border-radius:0;font-family:var(--ui-display)}
+html[data-world="retro"] .lift-edge{border-radius:0;border-width:2px;font-family:var(--ui-display);box-shadow:var(--shadow-pop)}
+/* chat-shell: the open chat is a framed screen: a 3 px frame in the arcade's pink on the page's black, the rail a darker strip with a hard edge */
+html[data-world="retro"] body.panel-open #panel{outline:3px solid var(--sel-border);outline-offset:-3px}
+html[data-world="retro"] #panel>.rail{border-right:3px solid var(--sel-border);border-radius:0}
+/* chat-header: a thick pink rule under the header (the title's yellow and mono font are T221's), square chips and buttons */
+html[data-world="retro"] .ph{border-bottom:3px solid var(--sel-border)}
+html[data-world="retro"] .ph h2{text-transform:uppercase;letter-spacing:.06em}
+html[data-world="retro"] .ph :is(.btn,.chip,.pill){border-radius:0}
+/* chat-open: the chat switches on in four hard steps (opacity only, no slide, no blur); none under reduced motion */
+@keyframes arc-chat-on{from{opacity:0}to{opacity:1}}
+html[data-world="retro"] .panel-in{animation:arc-chat-on .2s steps(4) 1}
+@media (prefers-reduced-motion:reduce){html[data-world="retro"] .panel-in{animation:none}}
+/* elicitation: the MCP card is the question card's own dark card with an arcade edge: square, a 3 px pink border and a hard shadow, mono heading, square fields and options */
+html[data-world="retro"] .note.elicit{border:3px solid var(--sel-border);border-radius:0;box-shadow:var(--shadow-pop)}
+html[data-world="retro"] .note.elicit>b{font-family:var(--ui-display);text-transform:uppercase;letter-spacing:.04em}
+html[data-world="retro"] .note.elicit :is(.q-opt,.q-other,.q-field input,.q-field select,.q-field textarea,.btn){border-radius:0}

@@ -1,0 +1,1 @@
+- **The arcade's lift, chat and MCP card** (spec 102, T367): the Retro arcade, still behind its flag, draws the lift keys, the open chat with its header and the MCP input card in its own pixel style (square edges, hard shadows, mono capitals, a stepped switch-on). Checked in the simulator at 1440x900 and 1280x800; no AI credits.
