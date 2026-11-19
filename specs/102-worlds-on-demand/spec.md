@@ -2233,3 +2233,11 @@ Owner decision (Vikram, 2026-11-19, Telegram): before the Retro arcade is switch
 
 **Numbers** (`npm run specs:numbers`): no new FR, T or Q.
 
+## Changes 2026-11-19 (third entry): the parity rows of the feature inventory carry the owner's decision (spec 021 FR-078; T230; issues #1400, #1404; no new FR)
+
+**Owner decision** (Vikram, Telegram, 2026-11-19 13:54 UTC, relayed by the coordinator): option 1 of the question in the entry above. The 63 Flat `works` rows whose Worlds cell is not `built` carry `(owner decision, #1404)` in that cell; nothing else in a row changes, so each keeps what it says today about what the arcade has or lacks.
+
+**Still failing, left to the coordinator:** `test:featureinventory` also requires the Helpers row to say `built` for worlds once a world is `shippable: true`; an owner decision does not lift that rule, and `built` needs a registry moment with `code: present`, which no helpers moment has. The arcade draws helper heads (FR-306), but which moment the row should name, or whether the rule changes, is not decided here.
+
+**Numbers** (`npm run specs:numbers`): no new FR, T or Q.
+
