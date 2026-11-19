@@ -18,6 +18,7 @@
 #     CHANGES_REQUESTED blocks; its APPROVED review is never an approval (never printed as "approved by"). Every other [bot]'s issue and line comments are skipped.
 #     Every unresolved thread blocks whoever opened it, bots included (GraphQL gives a Bot actor's login without "[bot]", so no login test could skip one).
 #   - a comment by someone else (PR comment, review body or line comment) newer than my own latest comment on the PR: read and answer it first.
+#     Exception (FR-097, #1910): a trusted reviewer's ask counts as answered when that reviewer's latest review is an APPROVED one submitted later than it.
 #     Exact status notes (a whole comment that is only `reviewing at <sha>` or `checks run at <sha>: ...` on one line, pattern in
 #     scripts/pr-status-note.re) are not counted as asks; they are printed apart under "status notes, not counted as asks:".
 #   - an outside PR (from a fork, or opened by an account outside scripts/trusted-authors.txt other than dependabot[bot]): a human decides;
@@ -164,6 +165,9 @@ NOTE_RE=$(sed 's/\\/\\\\/g' "$(dirname "$0")/pr-status-note.re")
 NOTE="(.body|test(\"$NOTE_RE\"))"
 mine=$( { gh api --paginate repos/$R/issues/$p/comments --jq ".[]|select(.user.login==\"$ME\" and ($NOTE|not))|.created_at"; gh api --paginate repos/$R/pulls/$p/reviews --jq ".[]|select(.user.login==\"$ME\")|.submitted_at"; gh api --paginate repos/$R/pulls/$p/comments --jq ".[]|select(.user.login==\"$ME\")|.created_at"; } | sort | tail -1)
 newer=$( { gh api --paginate repos/$R/issues/$p/comments --jq "$JQ_TRUST .[]|select(.user.login!=\"$ME\" and ((.user.login|test(\"\\\\[bot\\\\]\$\")|not) or .user.login==\"durbar-samikshak[bot]\") and (((.user.login|trusted) and $NOTE)|not))|\"\(.created_at) comment \(.user.login): \(shown_body)\""; gh api --paginate repos/$R/pulls/$p/reviews --jq "$JQ_TRUST .[]|select(.user.login!=\"$ME\" and .body!=\"\" and (.state!=\"APPROVED\" or (.user.login|trusted|not) or (.user.login|test(\"\\\\[bot\\\\]\$\"))))|\"\(.submitted_at) review(\(.state)) \(.user.login): \(shown_body)\""; gh api --paginate repos/$R/pulls/$p/comments --jq "$JQ_TRUST .[]|select(.user.login!=\"$ME\" and ((.user.login|test(\"\\\\[bot\\\\]\$\")|not) or .user.login==\"durbar-samikshak[bot]\"))|\"\(.created_at) line \(.user.login) \(.path): \(shown_body)\""; } | sort | awk -v m="$mine" '$1>m')
+# FR-097 (#1910): an ask by a trusted reviewer R is answered when R's latest review is an APPROVED one later than the ask (scripts/pr-gate-answered.awk)
+rev_tsv=$(gh api --paginate repos/$R/pulls/$p/reviews --jq "$JQ_TRUST .[]|select(.state!=\"COMMENTED\" and .state!=\"PENDING\" and (.user.login|trusted) and (.user.login|test(\"\\\\[bot\\\\]\$\")|not))|\"\(.user.login)\t\(.submitted_at)\t\(.state)\"" | sort -k1,1 -k2,2)
+newer=$(printf '%s\n' "$newer" | awk -f "$(dirname "$0")/pr-gate-answered.awk" <(printf '%s\n' "$rev_tsv") -)
 notes=$( { gh api --paginate repos/$R/issues/$p/comments --jq "$JQ_TRUST .[]|select($NOTE and (.user.login|trusted))|\"\(.created_at) \(.user.login): \(.body|gsub(\"^\\\\s+\";\"\")|split(\"\\n\")[0])\""; } | sort)
 # approvals (spec 021, 2026-10-29 delta, issue #883): a trusted reviewer's latest review being APPROVED is printed on its own line and its
 # body is not an ask. A later comment or change request still counts (it is newer than my last answer, or it is the latest review state).
