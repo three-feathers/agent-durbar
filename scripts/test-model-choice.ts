@@ -98,7 +98,7 @@ async function main(): Promise<void> {
     const clock = { t: 1_000_000 };
     const saved: { key: string; c: Record<string, unknown> }[] = [];
     const router = { onEvent: () => () => undefined, forAgent: (id: string) => Object.values(ads).find((x) => x.isLive(id)) ?? ads.claude, instance: (k: string) => ads[k] };
-    register({ agents, router: router as never, registry: { defaultId: 'copilot', has: (k: string) => k in lists } as never, wsKey: (a) => a.adapterId ?? '', getFolderStore: () => ({ setModelChoice: (key: string, c: Record<string, unknown>) => void saved.push({ key, c }) }) as never, now: () => clock.t });
+    register({ agents, router: router as never, registry: { defaultId: 'copilot', has: (k: string) => k in lists } as never, wsKey: (a) => a.adapterId ?? '', getFolderStore: () => ({ setModelChoice: (key: string, c: Record<string, unknown>) => void saved.push({ key, c }) }) as never, now: () => clock.t, listTimeoutMs: 100 });
 
     // Claude Code's and Codex's own models and efforts are accepted (they were checked against Copilot's list and refused), Copilot's own too
     const setOk = async (k: string, req: unknown, what: string): Promise<void> => {
@@ -136,13 +136,28 @@ async function main(): Promise<void> {
       const warned: string[] = [];
       const warn = console.warn; console.warn = (m: unknown) => void warned.push(String(m));
       let mode: 'throw' | 'cached-empty' | 'hidden' = 'throw';
-      (ads.extra as unknown as { listModelOptions: unknown }).listModelOptions = async (o?: { fresh?: boolean }) => {
+      const asyncRestore = async (o?: { fresh?: boolean }): Promise<unknown[]> => {
         asked.push(o);
         if (mode === 'throw') throw Object.assign(new Error('boom ghp_SECRET123 /home/me/.copilot/x'), { name: 'RpcError' });
         if (mode === 'hidden') return [{ id: 'a', name: 'A', efforts: [], disabled: true }, { id: 'b', name: 'B', efforts: [], disabled: true }];
         return o?.fresh ? [{ id: 'gpt-full', name: 'Full', efforts: [], disabled: false }] : []; // the SDK keeps an empty answer for the client's life
       };
+      (ads.extra as unknown as { listModelOptions: unknown }).listModelOptions = asyncRestore;
       try {
+        // spec 030 FR-073: a call that never answers is cut off (TimeoutError, "the request timed out"), and the next fresh ask asks again
+        {
+          const hang: { on: boolean } = { on: true };
+          (ads.extra as unknown as { listModelOptions: unknown }).listModelOptions = async () => (hang.on ? new Promise<never>(() => undefined) : [{ id: 'gpt-late', name: 'Late', efforts: [], disabled: false }]);
+          const within = <T>(p: Promise<T>, what: string): Promise<T> => Promise.race([p, new Promise<never>((_, rej) => setTimeout(() => rej(new assert.AssertionError({ message: what })), 4000))]);
+          const hr = await within(lc({ fresh: true }), 'a list call that never answers is cut off (the reply came)') as Reply;
+          assert.ok(!hr.ok && hr.reason === 'the request timed out', 'the cut-off says timed out: ' + JSON.stringify(hr));
+          assert.deepStrictEqual(warned.slice(-1), ['[models] the list failed: TimeoutError'], 'and logs only the type: ' + JSON.stringify(warned));
+          hang.on = false; clock.t += 6000;
+          const ok = await within(lc({ fresh: true }), 'after the cut-off the next ask answers') as Reply;
+          assert.ok(ok.ok && ok.models.length === 1, 'the next fresh ask really asks again: ' + JSON.stringify(ok));
+          warned.length = 0; clock.t += 6000;
+          (ads.extra as unknown as { listModelOptions: unknown }).listModelOptions = asyncRestore;
+        }
         let r = await lc();
         assert.ok(!r.ok && r.reason === 'the app could not list its models' && r.error === r.reason && r.models.length === 0, 'a failed list: a fixed reason, no models: ' + JSON.stringify(r));
         assert.ok(!JSON.stringify(r).includes('SECRET') && !JSON.stringify(r).includes('.copilot'), 'the error text never reaches the window');

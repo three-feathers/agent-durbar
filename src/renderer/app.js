@@ -8541,7 +8541,9 @@ function refreshModels(k,fresh){
   const key=isDefaultKind(k)?'':k;
   if(MODELS_INFLIGHT[key])return MODELS_INFLIGHT[key];
   const p=(async()=>{
-    const r=await bridge.listModels(key||undefined,fresh?{fresh:true}:undefined).catch(()=>null);
+    /* spec 030 FR-073: main caps the call too; this cap is for a main that never answers, so the in-flight mark is always cleared and Retry, a wake and the next open really ask again */
+    let tm; const cap=new Promise(res=>{tm=setTimeout(()=>res({ok:false,reason:'the request timed out'}),window.__modelListMs||35000);});
+    const r=await Promise.race([bridge.listModels(key||undefined,fresh?{fresh:true}:undefined).catch(()=>null),cap]); clearTimeout(tm);
     if(!r||!r.ok||!r.models.length){MODELS_STATE[key]={reason:r&&r.reason||'the app could not list its models',hidden:r&&r.hidden||0};return false;}
     delete MODELS_STATE[key];
     if(key){MODELS_BY[key]=r.models;return true;}

@@ -3099,6 +3099,7 @@ const planMcpSignInRefresh = (i: SignInPlanInput): SignInPlan => {
     const tierQ = typeof location !== 'undefined' ? new URLSearchParams(location.search) : new URLSearchParams();
     const simTierLock = (() => { const v = tierQ.get('simtierlock'); return v === 'efficiency' || v === 'balance' || v === 'intelligence' || v === 'other' ? v : undefined; })();
     const simTierFail = tierQ.get('simtierfail') === '1';
+    { const ms = Number(tierQ.get('simmodelms')); if (ms > 0 && typeof window !== 'undefined') (window as unknown as { __modelListMs?: number }).__modelListMs = ms; } // issue 1909: a short cap for the model-list call (driver only)
     const simModelList = (): ModelChoice[] => [...SIM_MODELS, ...simRichModels('copilot')].map((m) => ({ ...m, ...(m.id === 'auto' && simTierLock ? { autoTierManaged: simTierLock === 'other' ? { locked: true } : { tier: simTierLock, locked: true } } : {}) }));
     /** Spec 030 FR-063, as main checks it: each agent app's own list; `auto` is that app's own default even when its list does not name it. */
     const simKindModels = (kind: string): ModelChoice[] => (kind === 'claude' ? [...SIM_CLAUDE_MODELS, ...simRichModels('claude')] : kind === 'copilot' ? simModelList() : simRichModels(kind));
@@ -4017,7 +4018,7 @@ const planMcpSignInRefresh = (i: SignInPlanInput): SignInPlan => {
         if (opts.grants !== 'stuck' && s && s.grants.delete(key)) grantsEvent(s);
       },
       // No disk, no account: canned answers so the new folder / session / history UI can be exercised without credits.
-      // spec 030 FR-068 (issue #1909): page address simmodelfail=once (the first call fails, the next succeeds: the owner's report), twice (the start-up call and its one retry fail), error (always fails), empty, hidden (empty, 3 policy-hidden)
+      // spec 030 FR-068 (issue #1909): page address simmodelfail=once (the first call fails, the next succeeds: the owner's report), twice (the start-up call and its one retry fail), hang (the first two calls never answer), error (always fails), empty, hidden (empty, 3 policy-hidden)
       listModels: async (kind, opts) => {
         const mode = typeof location !== 'undefined' ? new URLSearchParams(location.search).get('simmodelfail') : null;
         const w = window as unknown as { __simListCalls?: Array<{ kind?: string; fresh: boolean }> };
@@ -4025,6 +4026,7 @@ const planMcpSignInRefresh = (i: SignInPlanInput): SignInPlan => {
         const delay = typeof location !== 'undefined' ? Number(new URLSearchParams(location.search).get('simmodeldelay')) || 0 : 0; // issue 1909: a slow list call
         if (delay > 0) await new Promise((r) => setTimeout(r, Math.min(delay, 10000)));
         if ((mode === 'once' && w.__simListCalls.length === 1) || (mode === 'twice' && w.__simListCalls.length <= 2)) return { ok: false, error: 'the request timed out', reason: 'the request timed out', models: [] };
+        if (mode === 'hang' && w.__simListCalls.length <= 2) return new Promise(() => undefined); // issue 1909: a call that never answers; the third call answers (Retry works)
         if (mode === 'error') return { ok: false, error: 'the sign-in was not accepted', reason: 'the sign-in was not accepted', models: [] };
         if (mode === 'empty') return { ok: true, reason: 'the app returned no models', models: [] };
         if (mode === 'hidden') return { ok: true, hidden: 3, reason: "every model is turned off by your account's policy", models: [] };

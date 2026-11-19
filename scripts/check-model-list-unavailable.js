@@ -115,6 +115,17 @@ module.exports = async (ctx) => {
     check(/Model list unavailable/.test(await menuText()), 'stuck: and the reason');
     await closeMenu();
 
+    // ---- a list call that never answers is cut off: the menu says so, Retry works, nothing stays on "Checking" (spec 030 FR-073) ----
+    await H.load({ w: W, h: Hh, query: { simmodelfail: 'hang', simmodelms: '700' }, ready: 'fit' });
+    await open();
+    await click('#modelChip');
+    check(await until(`!!document.querySelector('#modelMenu [data-retrylist]')`, 20000), 'hang: Retry shows although the call never answered');
+    t = await menuText();
+    check(/Model list unavailable: the request timed out/.test(t), 'hang: the reason is the timeout: ' + t.slice(0, 100));
+    await click('#modelMenu [data-retrylist]');
+    check(await until(`document.querySelectorAll('#modelMenu [data-pick]').length>1`, 20000), 'hang: Retry asks again and the full list comes');
+    await closeMenu();
+
     // ---- no list call at all (a bridge without listModels): no endless "Checking", no Retry that cannot work ----
     await H.load({ w: W, h: Hh, query: { simmodelfail: 'error' }, ready: 'fit' });
     await open();

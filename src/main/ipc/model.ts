@@ -23,6 +23,18 @@ export interface ModelIpcDeps {
   orgModel?(adapterId: string, model: string): Promise<OrgVerdict | undefined>;
   /** The clock of the fresh-ask floor (tests only). */
   now?(): number;
+  /** How long one model-list call may take (tests only; default {@link LIST_TIMEOUT_MS}). */
+  listTimeoutMs?: number;
+}
+
+/** Spec 030 FR-073: how long one model-list call may take. The runtime calls (`models.list`, `listModels()`) have no limit of their own, and a call that never answers would hold the menu on "Checking" for good. Claude's probe has its own 20 s limit. */
+export const LIST_TIMEOUT_MS = 25_000;
+
+/** Rejects with a `TimeoutError` when `p` has not settled in `ms`; the timer never outlives the call. */
+export function capListCall<T>(p: Promise<T>, ms: number): Promise<T> {
+  let t: ReturnType<typeof setTimeout> | undefined;
+  const limit = new Promise<never>((_, rej) => { t = setTimeout(() => rej(Object.assign(new Error('the model list timed out'), { name: 'TimeoutError' })), ms); });
+  return Promise.race([p, limit]).finally(() => { if (t) clearTimeout(t); });
 }
 
 /** Spec 030 FR-068: the least time between two fresh model-list asks of one agent app. */
@@ -154,7 +166,7 @@ export function register(deps: ModelIpcDeps): ModelIpc {
     return p;
   };
   const loadList = async (id: string, fresh: boolean): Promise<ModelChoice[]> => {
-    const all = await modelOptionsOf(router.instance(id), fresh ? { fresh: true } : undefined);
+    const all = await capListCall(modelOptionsOf(router.instance(id), fresh ? { fresh: true } : undefined), deps.listTimeoutMs ?? LIST_TIMEOUT_MS);
     lastHidden.set(id, all.filter((m) => m.disabled).length);
     const models = await withOrgModels(all.filter((m) => !m.disabled).map(({ disabled: _d, ...m }) => m), deps.orgModel && ((m) => deps.orgModel!(id, m)));
     lastModels.set(id, models);
