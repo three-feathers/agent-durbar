@@ -43,7 +43,7 @@ const SCENES = {
   'office-floor': { query: { sim: '15' } },
   lobby: { query: { sim: '15' } },
   'boss-bank-post-coffee': { query: { sim: '15' } },
-  'desk-card': { query: { sim: '15' } },
+  'desk-card': { query: { sim: '15', officeview: 'real' } }, /* spec 098 T011 (issue #1901): the Real office desk's plate is the root (realoffice.js) */
   walk: { query: { sim: '15' } },
   'lift-panel': { query: { sim: '15', simfloors: '1' } },
   'all-floors': { query: { sim: '15', simfloors: '1' } },
