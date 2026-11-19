@@ -2274,3 +2274,42 @@ All cabinets idle: p95 18 ms, CPU 0.3 % + 0.15 %. A status change costs 17 to 18
 **The accessibility tree of the arcade** (Chromium's tree, which VoiceOver reads through NSAccessibility; **VoiceOver itself was not run**: the automation of System Events timed out on this Mac, most likely on a permission prompt only a person can answer): a plate's name says who, role, state word, task, context and "unsent draft" ("Noor, unsent draft, ..."); the "Draft" tag is `aria-hidden`, so the name carries it. The helper heads and "Show 3 more helpers" are named and have states. Marquees, cues and fixtures are hidden from the tree (13, 13 and 9 of them); signs read as nothing by themselves (6 with an empty name). Tab order is 75 stops in one cycle and **does not follow the rows**: for example the second cabinet of the first row is reached after the lounge. **FR-229's keyboard order (Tab follows the model's sequence, consecutive stops are neighbours on screen) is therefore NOT met in the arcade in the app until issue #1907 is fixed** (found by real Tab presses in the window, 1440x900, 15 agents, mixed states and one draft; the cause is not found; I did not run `shots-102-arcade`'s Tab check, which T211 ticked): T205 is ticked for its pure part only (`aisleTabOrder`), and T211's "Tab order" is annotated in `tasks.md` as contradicted. `[KNOWN GAP]` until #1907, with the reason "owner decision, flip first, 2026-11-19 15:24 UTC (Vikram, Telegram)". The "Draft" tag's `aria-hidden` is the third finding of that decision: the plate's name does say "unsent draft", so it is read; whether the tag itself must be reachable is part of #1907. The world picker is a radio group named "World" with one tab stop; the arrow keys move focus among Plain, Photo office and Retro arcade and wrap; the "In use" mark is in the card's description, not its name. Changing one agent's status by a status event changed that plate's name but left the page's polite live region (`#srAnnounce`) unchanged, so a status change in the arcade is not announced; only the existing "needs your OK" message uses it. No requirement covers an office status change: spec 005 FR-038 (the start and end of a turn in the open chat) and FR-237 (a request waiting for the user) are the only ones that use `#srAnnounce`; this is not an arcade regression, I did not run the other worlds. `[KNOWN GAP]`, issue #1908, with the reason "owner decision, flip first, 2026-11-19 15:24 UTC (Vikram, Telegram)" (then a spec delta, then the build). `[KNOWN GAP]` not heard with VoiceOver: the spoken words, the VO cursor's order, the rotor, and what the live region really says. A person with VoiceOver should walk it after the flip's first build.
 
 **Numbers** (`npm run specs:numbers`): no new FR, T or Q.
+
+## Changes 2026-11-19 (second entry): the flip, built as a draft (T230, T115, T122; FR-250, FR-301, FR-320; issue #1400; no new FR)
+
+**What it does** (as amended 2026-11-14): `WORLD_FLAGS.retro` is removed, so the Retro arcade is a third card in Settings > World (Plain, Photo office, Retro arcade; the cave keeps its flag) and Retro pixel is a normal Characters card with no "Not open yet" state; the registry row `retro` is `shippable: true` (all 26 cells `built` or `fallback-flat`, `test:momentsregistry`). Nobody is moved, no default changes, the Retro pixel theme, the Theme section and the mode button stay. Flat draws the theme's own figures for Retro pixel until T294 (issue #1873; owner, 2026-11-19: after the flip).
+
+**Held as a draft** until the owner says go (**answered:** Vikram, Telegram, 2026-11-19 17:44 UTC, option 1: go; see the fifth entry): the real-GPU run (T231 with 097 T162) is the Mac session's (owner, 2026-11-19 06:52 UTC). The Windows hand check comes after the flip (owner, 2026-11-19).
+
+**Owner question (answered:** Vikram, Telegram, 2026-11-19 13:54 UTC, option 1; see the third entry**):** spec 021 FR-078's check (`test:featureinventory`) fails once a world other than the Photo office is offered: every Flat `works` row needs its Worlds cell `built`, naming a registry moment with `code: present`, or a row-level `(owner decision, ...)`. The Worlds column was never filled for the arcade: 64 rows fail (53 `none`, the others `mock+planned`), and most moments the arcade has `built` are still `code: planned` (spec 098's `data-surface` roots are not built). Three rows are honestly `built` and are updated here (coffee break, needs-you inbox, credit caps). The rest needs the owner's choice: (1) a row-level owner decision naming #1404 (the arcade's parity board, every line closed but the flip's own) on each of the 64 rows, or (2) a spec 021 delta that a world drawn by the Real office engine takes the Real office cell, or (3) build 098's `data-surface` roots first. Not chosen here: no owner decision is written on his behalf.
+
+**Docs:** `docs/features.md`, `docs/themes.md`, `docs/limits.md`, README, the feature inventory's Characters row, a changelog fragment. `docs/site/unreleased.json` keeps its arcade phrases until the site names the release that holds the world (spec 104 FR-008).
+
+**Pictures:** `check-settings-worlds` and `check-characters` pass at 1440x900 and 1280x800 (simulator, Linux); retaken and looked at: `docs/screenshots/102-world-section-{1440x900,1280x800}.jpg` (three cards, Plain in use, the arcade with its preview) and `102-290-characters-list-{1440x900,1280x800}.jpg` (Retro pixel open, "15 pixel people"). `[KNOWN GAP]` Windows and macOS not run here; no real GPU.
+
+**Numbers** (`npm run specs:numbers`): no new FR, T or Q.
+
+## Changes 2026-11-19 (third entry): the parity rows of the feature inventory carry the owner's decision (spec 021 FR-078; T230; issues #1400, #1404; no new FR)
+
+**Owner decision** (Vikram, Telegram, 2026-11-19 13:54 UTC, relayed by the coordinator): option 1 of the question in the entry above. The 63 Flat `works` rows whose Worlds cell is not `built` carry `(owner decision, #1404)` in that cell; nothing else in a row changes, so each keeps what it says today about what the arcade has or lacks.
+
+**Still failing, left to the coordinator:** `test:featureinventory` also requires the Helpers row to say `built` for worlds once a world is `shippable: true`; an owner decision does not lift that rule, and `built` needs a registry moment with `code: present`, which no helpers moment has. The arcade draws helper heads (FR-306), but which moment the row should name, or whether the rule changes, is not decided here.
+
+**Numbers** (`npm run specs:numbers`): no new FR, T or Q.
+
+## Changes 2026-11-19 (fourth entry): the Helpers row says `built (desk-card)` for the arcade (spec 021 FR-078; T230; issues #1400, #1901; no new FR)
+
+The rule is unchanged. Spec 098 T011 in part (#1902, merged) put `data-surface="desk-card"` on every Real office desk plate and made `desk-card` `code: present`. A desk's helpers are drawn on its card (spec 097 FR-306: the strip under the plate, or the "+N and dots" inside it), so the Helpers row's Worlds cell names that moment instead of the owner's decision. Evidence: `check-097-helpers` (Photo office, cave, arcade, 15 agents, 1440x900 and 1280x800: heads, the "+N and dots" fallback, and the marker on every desk plate) and `check-097-helper-row` (one row of heads, all three worlds), both in the proof cell.
+
+**Numbers** (`npm run specs:numbers`): no new FR, T or Q.
+
+## Changes 2026-11-19 (fifth entry): the owner's go for the flip; a line in Flat for Retro pixel (T230, T115, T122; issue #1400; review of #1898; no new FR)
+
+**Owner decision** (Vikram, Telegram, 2026-11-19 17:44 UTC): option 1, the go for the flip. The pull request leaves draft for its review.
+
+**Flat (review of #1898):** while the Characters choice is Retro pixel and the office is the flat one, the line under the Characters list says "Flat draws the theme’s own figures until Retro pixel has its flat heads." (the FR-322 line, `charNote`), because the flat desks keep the theme's figures until T294 (issue #1873). In Real office there is no line. `check-characters` pins both; mutant: the line removed fails at "a Retro pixel pick in Flat shows the line at once".
+
+**Open after the flip:** the Windows hand check (owner, 2026-11-19); T294's flat heads (#1873); the VoiceOver walk by the owner; the accessibility bugs #1907 and #1908. T231 is done (#1906, merged).
+
+**Numbers** (`npm run specs:numbers`): no new FR, T or Q.
+

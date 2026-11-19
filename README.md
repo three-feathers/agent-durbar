@@ -28,6 +28,7 @@ When you run many agent sessions across several windows, you end up watching you
 - **Sessions that last:** resume after a restart, scheduled prompts, undo file changes, notes.
 - **MCP servers** shared across your agent apps, with health, sign-in and what each costs in context.
 - **Three looks:** the Real office (shown here), the flat Clean Office (the default) and Retro Pixel.
+- **Worlds** for the Real office in Settings > World: the Photo office and the Retro arcade, a hall of arcade cabinets with pixel people ([spec 102](specs/102-worlds-on-demand/spec.md)). `[KNOWN GAP]` the arcade is checked in the simulator on Linux only, not yet on a real graphics card or on Windows.
 - **My characters**, your own people at the desks, on any theme ([spec 096](specs/096-ai-character-maker/spec.md)). `[KNOWN GAP]` In the Real office, My characters still shows the world's default people with no line saying why (spec 097 T353 waits). Nothing can make one yet: Codex image generation stays off until it has been tested with a real Codex, so *Make a character with AI…* says so; everything else is checked on the simulator's fake generator only. When it is on, Codex keeps its own copy of each picture under `~/.codex/generated_images/`; Durbar neither reads nor deletes it, and keeps nothing from your description.
 
 ![The Needs you inbox over the Real office: permission requests and an error](docs/screenshots/readme-real-inbox-1440x900.jpg)
