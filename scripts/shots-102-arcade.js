@@ -308,7 +308,8 @@ const run = async (ctx, reqs) => {
       const px=getComputedStyle(document.querySelector('#stage .ro-person,#stage .ro-visitor')).imageRendering,cab=getComputedStyle(document.querySelector('#stage .ro-cab')).imageRendering;
       return {g,off,px,cab,scroll:!!L.scroll,fh:document.getElementById('floor').scrollHeight-document.getElementById('floor').clientHeight,scan:[...document.querySelectorAll('#stage *')].filter(e=>/skew/.test(e.style.transform||'')||/matrix\\([^)]*\\)/.test(getComputedStyle(e).transform)&&(()=>{const m=getComputedStyle(e).transform.match(/[-\\d.]+/g).map(Number);return Math.abs(m[0]*m[2]+m[1]*m[3])>1e-3;})()).length,mirrorText:[...document.querySelectorAll('#stage .mir')].filter(e=>e.textContent.trim()).length};})()`);
     console.log('[102-arcade]', tag, JSON.stringify({ g: art.g, scroll: art.scroll }));
-    assert.ok(Number.isInteger(art.g) && art.g >= 2, tag + ': an integer scale: ' + art.g);
+    const dprNow = await js('devicePixelRatio'); /* FR-255 (T204): an integer at a whole ratio; at 1.25 and 1.5, a whole number of device px (the next one up where it fits, else as it was) */
+    assert.ok(art.g >= 2 && (Number.isInteger(art.g) || (!Number.isInteger(dprNow) && Math.abs(art.g * dprNow - Math.round(art.g * dprNow)) < 1e-6)), tag + ': an integer scale (a whole number of device px at 1.25 and 1.5): ' + art.g);
     assert.deepStrictEqual(art.off, [], tag + ': the art on the grid');
     /* spec 102 FR-255 (owner 2026-11-04, #1104): the lobby too: every fixture and visitor at a whole scale, on a whole device pixel */
     const lobby = await js(`(()=>{const d=devicePixelRatio,off=[],tol=Number.isInteger(d)?0.01:Math.max(0.01,d/64+0.001);let n=0; /* tol: 0.01 at a whole ratio; at 1.25 and 1.5 the engine keeps a position in 1/64 CSS px, which is up to d/64 device px (T204) */
