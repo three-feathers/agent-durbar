@@ -1,0 +1,1 @@
+- **Retro arcade real-GPU run and accessibility read on a Mac** (spec 102): recorded in the spec; drivers `real-gpu-retro.js` and `ax-walk-retro.js`; the perf recorder takes `PERF_DPR`. No change in what users see.
