@@ -11,5 +11,5 @@
  "fixtureStyle": "Hand-drawn cartoon cave things: painted wall, stone shelf, mammoth-tusk door, fire pot, shell-money counter, axe rack",
  "plants": "No plants: a rope-net globe lamp and a pigeon on a hollow log",
  "motif": "Torch flames and carved glowing glyphs",
- "distinct-check": { "state": "pending" }
+ "distinct-check": { "state": "passed", "by": "Vikram (owner)", "date": "2026-11-19", "worlds": 3 }
 }

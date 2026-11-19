@@ -11,5 +11,5 @@
  "fixtureStyle": "Photographic office furniture: bookshelf, coffee station, door, counter",
  "plants": "Potted leafy plants on the bookshelves",
  "motif": "Morning window light across oak",
- "distinct-check": { "state": "pending" }
+ "distinct-check": { "state": "passed", "by": "Vikram (owner)", "date": "2026-11-19", "worlds": 3 }
 }
