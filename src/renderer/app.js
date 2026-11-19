@@ -1012,6 +1012,7 @@ function announceFilterNote(){ /* once per change of the pill, not on every coun
    is not drawn (roomHTML reads the filtered model), so it reserves no width either */
 let lastSizing=[];
 const OPS={renders:0,searches:0,probes:0}; /* spec 097 FR-186: counts of office renders and layout searches since the page started; the simulator's driver reads them (`__durbarSimUi.ops`), nothing else does */
+let OFFICE_OWED=false; /* spec 077 (2026-11-19, issue 1460): renderOffice found the floor covered by a screen (no width) and drew nothing; officeOwed makes the draw when the screen closes */
 const sizingModel=model=>ui.status?officeModel(true).map(m=>({...m,rolled:(m.rolled||[]).filter(x=>matchStatus(x.a))})):model;
 
 /* ---------------- office view ---------------- */
@@ -2047,9 +2048,9 @@ function renderOffice(){
   const cs=getComputedStyle(floor);
   const aw=floor.clientWidth-parseFloat(cs.paddingLeft)-parseFloat(cs.paddingRight);
   const ah=floor.clientHeight-parseFloat(cs.paddingTop)-parseFloat(cs.paddingBottom);
-  if(aw<=0||ah<=0){if(OFFICE_DRAWN)OFFICE_OWED=true;return;} /* only once the office has drawn: a floor with no width before its first draw is the start-up, which the first real render makes (one layout search), and a draw owed then made one more at the first screen close (office-ops: searchesAtStart 2, limit 1) */ /* spec 077 (2026-11-19, issue 1460): a screen covers the floor; the draw is owed and made when the screen closes (officeOwed), not left to the floor observer
+  if(aw<=0||ah<=0){OFFICE_OWED=true;return;} /* spec 077 (2026-11-19, issue 1460): a screen covers the floor; the draw is owed and made when the screen closes (officeOwed), not left to the floor observer */
   if(SIM&&!window.__durbarSimReplayed)return; /* spec 097 FR-363: simulator only: while its start-up replay is pending the first states are not here, so no layout search and no desks for the early shape; the first render after the replay searches once (the replay sets the flag, then its states schedule that render). Before the render counter so ops() does not count it */
-  OFFICE_OWED=false; OFFICE_DRAWN=true;
+  OFFICE_OWED=false;
   const model=officeModel();
   if(!model.length)$('probe').style.width=aw+'px'; /* spec 092 FR-008: the layout probe is only resized by a layout search; an empty screen has none, so a probe left at a wider width (the lift panel came or went) would overflow the floor */
   /* spec 092 FR-001, edge case "a floor with 0 agents": a floor screen with nothing to show says so and keeps the shared lobby (never a bare empty screen).
@@ -5800,8 +5801,6 @@ $('vOffice').onclick=()=>setView('office');
 $('vList').onclick=()=>setView('list');
 let resizeQueued=false;
 let dprPending=false; /* the ratio changed (see watchDpr): the next relayoutNow counts itself on <html data-dprn> */
-let OFFICE_DRAWN=false; /* the office has drawn at least once (a covered floor is owed a draw only after that) */
-let OFFICE_OWED=false; /* spec 077 (2026-11-19, issue 1460): renderOffice found the floor covered by a screen (no width) and drew nothing; officeOwed makes the draw when the screen closes */
 const relayoutNow=()=>{resizeQueued=false;if(dprPending){dprPending=false;document.documentElement.dataset.dprn=String((+document.documentElement.dataset.dprn||0)+1);}if(ui.view==='office'){renderOffice();syncWalkers();afTick();}placePencils();INL().follow();};
 const relayout=()=>{if(resizeQueued)return;resizeQueued=true;requestAnimationFrame(relayoutNow);}; /* spec 024: figures follow a resize */
 new ResizeObserver(relayoutNow).observe($('floor')); /* spec 052 FR-243: the floor changed size (the Auto-follow strip came, a bar wrapped): lay out before the next paint, not a frame later; the stage keeps its old height until then and would overflow the shorter floor */
