@@ -89,8 +89,10 @@ assert.strictEqual(makeAvailable({ ...base, platform: 'win32', readMeminfo: () =
   assert.ok(logs.some((l) => /warn .*100 MB/.test(l)), `a warning with the measured memory (${logs.join(' | ')})`);
   // worker 0 never waits for memory, however large the bound: one worker, low memory, a one-hour bound, the job runs at once
   stage = 'main, worker 0';
-  const t0 = Date.now(), ran0 = [];
-  const failed0 = await main({ ensure: () => true, runJob: async (j) => { ran0.push(j.label); return 'ok'; }, available: () => 1, jobs: [{ label: 'solo' }], workers: 1, log: () => {}, waitMaxMs: 3600 * 1000 });
-  assert.ok(failed0 === 0 && ran0.join() === 'solo' && Date.now() - t0 < 1000, `worker 0 ran at once (${Date.now() - t0} ms)`);
+  const ran0 = [];
+  let asked0 = 0; // worker 0 never looks at memory, so it never waits for it: counted by the memory reads, not by elapsed time (#1853)
+  // a hang is ended by this file's own 10 s watchdog (stage 'main, worker 0'); the property is `asked0 === 0`
+  const failed0 = await main({ ensure: () => true, runJob: async (j) => { ran0.push(j.label); return 'ok'; }, available: () => { asked0++; return 1; }, jobs: [{ label: 'solo' }], workers: 1, log: () => {}, waitMaxMs: 3600 * 1000 });
+  assert.ok(failed0 === 0 && ran0.join() === 'solo' && asked0 === 0, `worker 0 ran at once without reading the memory (${asked0} reads)`);
   console.log('check-parallel: vm_stat parse (4 KB and 16 KB pages, malformed, empty) and the bounded memory wait (spec 008 FR-125)');
 })().catch((e) => { console.error(e); process.exit(1); });

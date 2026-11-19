@@ -1,0 +1,1 @@
+- **pr-gate treats a later approval as the answer** (spec 021): a reviewer's earlier comment or requested-changes review no longer shows as unanswered once the same reviewer approved a later head; another reviewer's approval, a later change request or comment, holds, threads and red checks still block.

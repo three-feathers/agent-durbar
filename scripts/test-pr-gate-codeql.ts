@@ -290,7 +290,7 @@ try {
   // mutants: a copy of the gate next to copies of the files it sources; each must fail the case named
   const mdir = path.join(dir, 'mutant');
   fs.mkdirSync(mdir);
-  for (const f of ['trusted-lib.sh', 'trusted-authors.txt', 'pr-status-note.re']) fs.copyFileSync(path.join(SCRIPTS, f), path.join(mdir, f));
+  for (const f of ['trusted-lib.sh', 'trusted-authors.txt', 'pr-status-note.re', 'pr-gate-answered.awk']) fs.copyFileSync(path.join(SCRIPTS, f), path.join(mdir, f));
   const mutants: Array<[string, string, string, string]> = [
     ['a failing CodeQL treated as skipped', '[ "$codeql" = skipping ] &&', '{ [ "$codeql" = skipping ] || [ "$codeql" = fail ]; } &&', 'codeql-fail'],
     ['a missing CodeQL treated as skipped', '[ "$codeql" = skipping ] &&', '{ [ "$codeql" = skipping ] || [ "$codeql" = missing ]; } &&', 'no-codeql-check'],
