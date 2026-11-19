@@ -32,6 +32,9 @@ const mk = (id, over) => ({ formatVersion: 1, id, arrangement: `arr ${id}`, moni
   const atp = arrangementTextProblem;
   assert.strictEqual(atp('rows', 'photo', 'rows'), '', 'rows: the plain id passes');
   assert.strictEqual(atp('circle when it fits, rows otherwise', 'cave', 'circle'), '', 'circle with its fall-back passes');
+  assert.strictEqual(atp('facing-view when it fits, rows otherwise', 'x', 'facing-view'), '', 'facing-view with its fall-back passes');
+  assert.match(atp('facing-view', 'x', 'facing-view'), /must say it falls back to rows/, 'a bare facing-view fails');
+  assert.match(atp('facing-view with a sea view', 'x', 'facing-view'), /must name rows/, 'a facing-view clause without rows fails');
   assert.match(atp('circle', 'cave', 'circle'), /must say it falls back to rows/, 'a bare circle fails');
   assert.match(atp('circle with a fire', 'cave', 'circle'), /must name rows/, 'a circle clause without rows fails');
   assert.match(atp('circle when it fits, rows otherwise', 'cave', 'rows'), /differs from world.json "rows"/, 'a card naming another arrangement fails');
