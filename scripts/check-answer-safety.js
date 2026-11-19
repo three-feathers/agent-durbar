@@ -17,6 +17,8 @@
  * painted frame later, its outerHTML and the pending request cards, masked by dist/shared/redact.js and bounded (withheld when that file does not load).
  *   ANSWER_SAFETY_MUTANT=emptybar   the bar's buttons are replaced by a span holding a token-shaped string once the bar shows: must fail at
  *                                   `only "Show in chat"` with the diagnostic printed and the token masked (else: `the 1770 diagnostic did not print`)
+ *   ANSWER_SAFETY_MUTANT=follow     the chat follows its end after the bar showed (the race of issue 1770: card back in view, bar hidden and emptied): must fail at
+ *                                   `only "Show in chat"` with `bar hidden=true` in the diagnostic
  *   ANSWER_SAFETY_MUTANT=noredact   the same with redact.js not loaded: the HTML is withheld, so it must fail at `the 1770 diagnostic did not print`
  *   ANSWER_SAFETY_MUTANT=diagthrow  the bar emptied and the diagnostic's page read throws: must still fail at `only "Show in chat"`, ending ` [1770 diagnostic failed]`
  *   ANSWER_SAFETY_MUTANT=diagthrow-nocatch   the same with the catch rethrowing (the guard removed): fails with the thrown error, not that label (killed)
@@ -174,8 +176,8 @@ module.exports = async (ctx) => {
     // ---- FR-210 (B): a limit card out of view: the bar has no amount to send, only "Show in chat" ----
     await fresh();
     await limit('lb-' + w);
-    await js(`(()=>{const c=document.getElementById('chat');if(!document.getElementById('fillerX')){const f=document.createElement('div');f.id='fillerX';f.style.height='4000px';f.style.flex='none';c.prepend(f);}c.scrollTop=0;c.dispatchEvent(new Event('scroll'));})()`);
-    assert.ok(await until(`!document.getElementById('answerBar').hidden`, 5000), `${w}: the bar shows for the limit`);
+    await barUp(); /* issue 1770: the card painted and two frames settled before the chat is scrolled away (the chat's auto-follow hides the bar and empties it when it comes after) */
+    if (MUTANT === 'follow') await js(`(()=>{const c=document.getElementById('chat');c.scrollTop=c.scrollHeight;c.dispatchEvent(new Event('scroll'));return new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(()=>r(1))))})()`);
     if (EMPTY) await js(`(()=>{const b=document.getElementById('answerBar');b.querySelectorAll('button').forEach(x=>x.remove());const s=document.createElement('span');s.className='mut-1770';s.textContent=${jsLiteral(PLANTED)};b.append(s);return 1})()`);
     const limitLabels = await barLabels();
     let diag = '';

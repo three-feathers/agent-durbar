@@ -9,7 +9,7 @@
  *   - one status event of one agent, 8 times, each a real change (every sample must draw, none may search; renders, style reads of the floor and layout reads are the median): renders and searches are the app's own counters (`__durbarSimUi.ops()`), reads are offset*, client*, scroll*, getBoundingClientRect and
  *     getClientRects calls. The first proxy for renders, `getComputedStyle(#floor)`, was read twice per render and showed two where there was one;
  *   - one live paint (a thinking delta rewrites one desk's live line, no render; review of #1138), 8 times: the layout reads, the pencils' frame included (median of the samples without a render);
- *   - the arcade (spec 102 T262): over 8 status events on one desk, no element is added or removed anywhere under the office;
+ *   - the arcade (spec 102 T262): over 8 status events on one desk, no element is added or removed anywhere under the office (an element only MOVED, to keep the Tab order, T372, is neither: it is in both lists of one batch);
  *   - Real office (spec 097 FR-244, T190): over 8 status events that tint and clear one desk's screen (FR-236), no screen or New reply tag is added or removed;
  *   - after each of those status updates no `data-placed` mark sits on anything but a role or a pencil (a finished turn marks the desk unread and shifts keyless spans);
  *   - at 15 agents, 1280x800: after each status pill's filter and its clearing, after an agent starts or stops matching a status filter (a neighbour room's width changes while its HTML does not; its header is made tight by a spacer) and after a body class changes with no room changing (the fit key), the header and usage-line fit classes equal what a
@@ -29,6 +29,7 @@ const { judge } = require('./office-ops-rules');
 
 const MAX_CHANGES = 10; // spec 097 T158: SVG animations step at under 10 changes a second (per animation)
 const ANIM_MUTANT = process.env.OPS_ANIM_MUTANT || '';
+const NODE_MUTANT = process.env.OPS_NODE_MUTANT || '';
 /* the two infinite animations that are continuous today (a KNOWN GAP of spec 097 T158, issue to be cited in the spec): the walkers' bob while a visitor walks, and the dizzy spin.
    Every other infinite animation must be stepped; a third unstepped one fails at its own label. */
 const UNSTEPPED_KNOWN = ['wkbob', 'dizzyspin'];
@@ -387,11 +388,14 @@ module.exports = async (ctx) => {
     }
     /* no screen repaint put off either (DurbarRealOffice.pending(), FR-033, as check-office-ops-real waits) */
     assert.ok(await until(`window.DurbarRealOffice.pending().screens===0&&window.__durbarSimUi.visitsSettled()&&window.__durbarSimUi.settleNow()`, 15000), `${n} agents, arcade: the office settled before the status updates`);
-    await js(`(()=>{window.__aN=0;window.__aO=new MutationObserver(ms=>{for(const m of ms)for(const x of [...m.addedNodes,...m.removedNodes])if(x.nodeType===1)window.__aN++;});window.__aO.observe(document.querySelector('#stage .ro'),{childList:true,subtree:true});})()`);
+    await js(`(()=>{window.__aN=0;window.__aO=new MutationObserver(ms=>{const add=new Set(),rem=new Set();for(const m of ms){for(const x of m.addedNodes)if(x.nodeType===1)add.add(x);for(const x of m.removedNodes)if(x.nodeType===1)rem.add(x);}for(const x of add)if(!rem.has(x))window.__aN++;for(const x of rem)if(!add.has(x))window.__aN++;});window.__aO.observe(document.querySelector('#stage .ro'),{childList:true,subtree:true});})()`);
     const aseen = [];
     for (let i = 0; i < 8; i++) {
       const st = i % 2 ? 'working' : 'idle';
       await js(`window.__durbarSimEmit({type:'status',sessionId:${jsLiteral(aid)},timestamp:Date.now(),status:${jsLiteral(st)}})`);
+      /* spec 102 T372 (issue #1907): a node MOVED to keep the Tab order is not added or removed (it is in both lists of one batch); a new or a discarded one is. OPS_NODE_MUTANT=move moves a plate to the end of its layer (must pass), =add appends an element (must fail at the statusNodes row) */
+      if (NODE_MUTANT === 'move') await js(`(()=>{const p=document.querySelector('#stage .ro-plate');p.parentNode.appendChild(p);})()`);
+      if (NODE_MUTANT === 'add') await js(`document.querySelector('#stage .ro').appendChild(document.createElement('i'))`);
       aseen.push(await until(`(document.querySelector('#stage .ro-plate[data-id="'+CSS.escape(${jsLiteral(aid)})+'"]')||{classList:{contains:()=>false}}).classList.contains('st-working')===${jsLiteral(st === 'working')}`, 8000));
       /* and its screen's throttled repaint (2 s, FR-033) has landed inside the window, whatever the load: a repaint that removes the caret (a node) then always counts */
       aseen.push(await until(`window.DurbarRealOffice.pending().screens===0`, 8000));

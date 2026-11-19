@@ -486,3 +486,6 @@
 
 ## 2026-11-19: the question card renders the question's Markdown (FR-160, issue #1927)
 - [x] T378 `app.js` `showQuestion`: `safeMask` then `DurbarMD.render` into `.q-text.md > .q-md`; the options' group and the "Other answer" label read the plain rendered text; `styles.css` `.q-md` rules; `sim.ts` `simquestion=markdown`; `scripts/check-question-markdown.js` (in `ui-suite.js`) with three mutants in its header. Spec 052 Changes 2026-11-19.
+
+## 2026-11-19: `check-answer-safety` limit step waits like the other steps (issue #1770)
+- [x] T377 `scripts/check-answer-safety.js` FR-210 (B): the step calls `barUp()` (card painted, two frames) before the filler and scroll, as every other step does (issue 839); mutant `ANSWER_SAFETY_MUTANT=follow` fails at `only "Show in chat"` with `bar hidden=true`. Spec 052 Changes 2026-11-19. Natural trigger not reproduced (0 of 165 loops): Refs only.

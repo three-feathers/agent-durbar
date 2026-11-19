@@ -335,6 +335,10 @@ Each has a recommendation (Q6 is for Paco, the crew owner). The build waits for 
 
 ## Changes
 
+### 2026-11-19: check-097-order step 6 chooses its pair from one read (issue #1922, T376)
+
+**Flake** (run 44573877826, PR #1916 head `c05e9ebe8`, ubuntu UI shard 4/4, once): "two free desks of one room, the later in the list shown after the earlier, no away desk between" failed in the arcade. The step's facts (states, rooms, away) and the shown order were two separate page reads, so the simulator could send a desk away or re-sort between them. **Change (test only, no product behaviour)**: the facts and the shown order are read in one call (one moment); if no pair is left, the pair is made again (the same pin: two desks told idle, waited until at their desks) up to 3 times, printing why each time; the failure prints every desk's room, state, away flag, the shown order and the list. What the step asserts is unchanged: two free desks of one room, the later in the list shown after the earlier, no away desk between, then Alt+Left must put the later before the earlier. No wall-clock assert. Mutants: `ORDER_MUTANT=unpin6` still dies at "the two desks are free".
+
 ### 2026-11-13: T156 by site: the lobby figures read the floor's scroll once (issue #1401; FR-184, T156 stays open)
 
 **Owner reading** (issue #1401, comment 6845758119, 2026-11-13): the target is layout reads under 40 **per status update**; build T156 to T158. This change is the first step and does not tick T156.
