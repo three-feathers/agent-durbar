@@ -1761,6 +1761,7 @@ Owner report (Vikram, 2026-11-19): in the "Question from the agent" card the que
 - Kept: the card's group name and announcement words, the options' roles, the "Other answer (Enter to send)" box and its hint, every key.
 - Not changed: the adapters' bound on the question (2,000 characters, FR-160) still ends a longer text with an ellipsis; the MCP elicitation form's message (`showElicitation`) stays plain text.
 - Test: `simquestion=markdown` and `scripts/check-question-markdown.js` (flat, Real office and arcade at 1440x900 and 1280x800 with 15 agents; mutants in its header: unmasked text, no rendering, a cut box).
+- `check-question-options` (FR-160) trims the rendered question text before its two `endsWith` asserts (the rendered Markdown ends with a newline); nothing else of it changes.
 
 ## Changes 2026-11-19: `check-answer-safety` waits for the painted card before it scrolls the limit card away (FR-210, issue #1770, T377, no new FR, test driver only)
 
