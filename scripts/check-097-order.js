@@ -397,7 +397,7 @@ module.exports = async (ctx) => {
          not always there (in the Photo office most working desks stand away at a place: 3 of 4 runs on a loaded machine had no pair). So the pair is made, not hoped for: once no visit is about to start or end,
          two desks of one room that stand next to each other, the later in the session list shown after the earlier, are told their turn ended (status idle), and the step waits until both are at their desks
          and done. ORDER_MUTANT=unpin6 does not tell them: they stay as the simulator made them and the step fails at "the two desks are free". */
-      if (loadReal) {
+      const pinPair = async () => {
         await must(`window.__durbarSimUi.visitsSettled()`, `${t}: no visit is about to start or end`, 30000);
         const f6 = await js(`(()=>{const ag=window.__durbarSimUi.agents().filter(a=>!a.parent);return {list:ag.map(a=>a.id),room:Object.fromEntries(ag.map(a=>[a.id,a.room])),busy:ag.filter(a=>a.state==='waiting'||a.state==='error'||a.limit).map(a=>a.id),shown:window.__durbarSimUi.realLayout().zones.flatMap(z=>z.desks).filter(d=>!d.lounge).map(d=>d.id).filter((x,i,l)=>l.indexOf(x)===i)}})()`);
         let pair = null;
@@ -410,7 +410,8 @@ module.exports = async (ctx) => {
         const freeNow = `${jsLiteral(pair)}.every(id=>{const a=window.__durbarSimUi.agents().find(x=>x.id===id);return a&&(a.state==='idle'||a.state==='done')})&&!${jsLiteral(pair)}.some(id=>window.__durbarSimUi.awayIds().includes(id))&&!window.__durbarSimUi.realLayout().zones.flatMap(z=>z.desks).some(d=>d.away&&${jsLiteral(pair)}.includes(d.id))&&window.__durbarSimUi.visitsSettled()`;
         const freeSeen = () => js(`({state:${jsLiteral(pair)}.map(id=>window.__durbarSimUi.agents().find(x=>x.id===id).state),away:window.__durbarSimUi.awayIds()})`);
         await must(freeNow, async () => t + ': the two desks are free (idle or done, at their desks): ' + pair + '; seen ' + JSON.stringify(await freeSeen()), 30000);
-      }
+      };
+      if (loadReal) await pinPair();
       if (switched) {
         await js(`window.DurbarScreens.openSettings();true`);
         await must(`!!document.querySelector('#wrGroup [data-world="plain"]')`, `${t}: Settings shows the Plain world card (the Office layout row is gone)`);
@@ -421,16 +422,28 @@ module.exports = async (ctx) => {
       const ORDER_NOW = real ? `window.__durbarSimUi.realLayout().zones.flatMap(z=>z.desks).filter(d=>!d.lounge).map(d=>d.id).filter((x,i,l)=>l.indexOf(x)===i)` : `[...document.querySelectorAll('#stage .room .unit > .desk[data-id]')].map(d=>d.dataset.id)`;
       const shown = () => js(ORDER_NOW);
       /* the simulator's mix of states differs from run to run and under load, so no pair is assumed: a desk is free when it is not waiting, in error, at its limit or, in Real office, away (those need you already, so they would not tie with the others, or they do not move), and the pair is chosen from the desks that are really free */
-      const facts = await js(`(()=>{const ag=window.__durbarSimUi.agents().filter(a=>!a.parent);const away=${jsLiteral(real)}?window.__durbarSimUi.realLayout().zones.flatMap(z=>z.desks).filter(d=>d.away).map(d=>d.id):[];return {list:ag.map(a=>a.id),room:Object.fromEntries(ag.map(a=>[a.id,a.room])),state:Object.fromEntries(ag.map(a=>[a.id,a.state+(a.limit?'+limit':'')])),away,busy:ag.filter(a=>a.state==='waiting'||a.state==='error'||a.limit).map(a=>a.id).concat(away)}})()`);
-      const s0 = await shown(), free = (id) => !facts.busy.includes(id), li = (id) => facts.list.indexOf(id);
-      /* two free desks of one room, the later in the session list shown after the earlier one with no away desk between them: the later one moves left past the others (Alt+Left), so the office order and the list's differ. The nearest such pair is taken; the first one found among equals */
-      let k = -1, m = -1;
-      for (let i = 0; i < s0.length; i++) for (let j = i + 1; j < s0.length; j++) {
-        if (facts.room[s0[j]] !== facts.room[s0[i]]) break;
-        if (facts.away.includes(s0[j])) break;
-        if (free(s0[i]) && free(s0[j]) && li(s0[i]) < li(s0[j]) && (k < 0 || j - i < m - k)) { k = i; m = j; }
+      /* facts and the shown order are read in ONE call, so they are one moment of the simulator (#1922: read apart, a desk sent away or a re-sort between the two calls left no pair on CI). If no pair is left even so,
+         the pair is made again (pinPair) up to 3 times, each time printing why; the assert still names every desk's state, room, away flag and the shown order. Nothing is loosened: the pair must still be two free
+         desks of one room, the later in the list shown after the earlier, no away desk between. */
+      const READ_ALL = `(()=>{const ag=window.__durbarSimUi.agents().filter(a=>!a.parent);const away=${jsLiteral(real)}?window.__durbarSimUi.realLayout().zones.flatMap(z=>z.desks).filter(d=>d.away).map(d=>d.id):[];return {list:ag.map(a=>a.id),room:Object.fromEntries(ag.map(a=>[a.id,a.room])),state:Object.fromEntries(ag.map(a=>[a.id,a.state+(a.limit?'+limit':'')])),away,busy:ag.filter(a=>a.state==='waiting'||a.state==='error'||a.limit).map(a=>a.id).concat(away),s0:(` + ORDER_NOW + `)}})()`;
+      const readAll = () => js(READ_ALL);
+      const findPair = (f) => {
+        let k = -1, m = -1;
+        for (let i = 0; i < f.s0.length; i++) for (let j = i + 1; j < f.s0.length; j++) {
+          if (f.room[f.s0[j]] !== f.room[f.s0[i]]) break;
+          if (f.away.includes(f.s0[j])) break;
+          if (!f.busy.includes(f.s0[i]) && !f.busy.includes(f.s0[j]) && f.list.indexOf(f.s0[i]) < f.list.indexOf(f.s0[j]) && (k < 0 || j - i < m - k)) { k = i; m = j; }
+        }
+        return [k, m];
+      };
+      const dump = (f) => `shown ${f.s0}; list ${f.list}; per desk ${JSON.stringify(f.s0.map((id) => [id, f.room[id], f.state[id], f.away.includes(id) ? 'away' : 'at desk']))}; busy ${f.busy}`;
+      let facts = await readAll(), [k, m] = findPair(facts);
+      for (let tries = 1; k < 0 && tries < 3 && loadReal; tries++) {
+        console.log(`[097-order] ${t}: no free pair on read ${tries} of 3, making it again (${dump(facts)})`);
+        await pinPair(); facts = await readAll(); [k, m] = findPair(facts);
       }
-      assert.ok(k >= 0, `${t}: two free desks of one room, the later in the list shown after the earlier, no away desk between (${s0}; state ${JSON.stringify(facts.state)}; away ${facts.away})`);
+      const s0 = facts.s0, free = (id) => !facts.busy.includes(id), li = (id) => facts.list.indexOf(id);
+      assert.ok(k >= 0, `${t}: two free desks of one room, the later in the list shown after the earlier, no away desk between (${dump(facts)})`);
       const [b, a] = [s0[k], s0[m]];
       assert.ok(await focus(`#stage ${card}[data-id="${a}"]`), `${t}: ${a}'s card takes the focus`);
       for (let step = m - 1; step >= k; step--) {

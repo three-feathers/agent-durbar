@@ -1,0 +1,1 @@
+- **Flaky arcade order check fixed** (spec 097, issue #1922, T375): `check-097-order` step 6 reads the desks' states and the shown order in one call and remakes its pair up to 3 times with the reason; a failure prints every desk's room, state and away flag. Test only, asserts unchanged; checked by the driver in the simulator.
