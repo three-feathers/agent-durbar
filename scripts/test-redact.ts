@@ -108,6 +108,19 @@ for (const keep of ['ghp_short', 'see ghs_count', 'wei' + 'ghs_' + 'TotalWeightK
     const t = aiza.slice(0, 4) + piece + aiza.slice(4) + glued;
     for (const [name, mask] of surfaces) assert.ok(!mask(t).includes(body.slice(10, 22)), `#1320 decoded: ${name} hides a split fixed-length key with a glued form (${piece.length} ${glued.slice(0, 3)})`);
   }
+  // review of PR 1899, round 2: after a token with a decoded character, a keyword past a removed piece keeps its own rule (the stretch stops there), on the desk too
+  {
+    const ST2 = require(path.join(__dirname, '..', '..', 'src', 'renderer', 'safetext.js')) as { maskRaw(t: string, r: (s: string) => string): string; excerpt(t: string, r: (s: string) => string): string };
+    const kpw = 'Hx9' + 'Kq2' + 'Lm7' + 'Np4' + 'Rs';
+    for (const [label, t] of [
+      ['GitHub', 'gh' + 'p_' + ghBody.slice(0, 30) + '&#' + ghBody.charCodeAt(30) + ';' + ghBody.slice(31) + '\u200bmysql -p' + kpw],
+      ['Anthropic', 'sk-' + 'ant-api03-' + body.repeat(3) + '&#72' + 'Wx5Yz7' + '\u200bmysql -p' + kpw],
+    ] as Array<[string, string]>) {
+      for (const [name, mask] of [['redact', (x: string) => redact(x, {})], ['desk maskRaw', (x: string) => ST2.maskRaw(x, (y) => redact(y, {}))], ['desk excerpt', (x: string) => ST2.excerpt(x, (y) => redact(y, {}))]] as Array<[string, (x: string) => string]>) {
+        assert.ok(!mask(t).includes(kpw), `#1320 decoded: ${name} hides a password after a keyword that follows a decoded token and a piece (${label})`);
+      }
+    }
+  }
   // near misses: text with such forms and no token stays byte for byte
   const keep = [
     'R&amp;D &#169; 2024 &mdash; build_v1.2.3',

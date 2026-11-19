@@ -658,6 +658,34 @@ assert.strictEqual(sentenceOf(s), s.sentence);
   };
   // the review's case: the first piece ends inside an entity of a hidden character whose first digits read as a token character
   assert.ok(!showsAny(['x gh' + 'p_' + body.slice(0, 22) + '&#82', '03;' + body.slice(22) + ' done'], body.slice(12)), '#1320 decoded brain: an entity cut before its last digits is held');
+  // review of PR 1899, round 2: an entity whose first digits read as a token character and whose whole number is a hidden one, cut after 4 digits
+  for (const [cutAt, rest] of [['&#6527', '9;'], ['&#6158', ';']]) {
+    assert.ok(!showsAny(['x gh' + 'p_' + body.slice(0, 22) + cutAt, rest + body.slice(22) + ' done'], body.slice(22)), `#1320 decoded brain: a long entity cut inside is held (${cutAt.length})`);
+  }
+  // a stream that ends on a form: the views show the whole text read at once, so the form is read
+  assert.ok(!showsAny(['x AK' + 'IA' + 'Q3WD8KP2LM5RT7Y' + '&#88'], 'Q3WD8KP2LM5RT7Y'), '#1320 decoded brain: a stream that ends on a form shows the token read whole');
+  // a header name or its separator written in such a form, streamed with random cuts: the header is held raw as its plain form is, and the value never shows
+  {
+    const pw = 'Hx9' + 'Kq2' + 'Lm7' + 'Np4' + 'Rs';
+    let hs = 4242;
+    const hr = (): number => { hs = (Math.imul(hs, 1103515245) + 12345) >>> 0; return hs / 2 ** 32; };
+    const heads = ['Authorizatio' + '%6e: Bearer ', 'Au' + '&#116;horization: Bearer ', 'Authorization' + '&#58; Bearer ', 'Authorization' + '%3A Bearer '];
+    let hleak = 0;
+    for (const h of heads) {
+      const text = 'x ' + h + pw + ' done';
+      for (let k = 0; k < 150; k++) {
+        const cuts = new Set<number>();
+        const n = 1 + Math.floor(hr() * 4);
+        while (cuts.size < n) cuts.add(1 + Math.floor(hr() * (text.length - 1)));
+        const pts = [0, ...[...cuts].sort((x, y) => x - y), text.length];
+        if (showsAny(pts.slice(1).map((q, i) => text.slice(pts[i], q)), pw)) hleak++;
+      }
+      assert.ok(!showsAny(['x ' + h.slice(0, h.length - 6), h.slice(h.length - 6) + pw + ' done'], pw), `#1320 decoded brain: a header written in such a form, cut inside its scheme word, hides the value (${heads.indexOf(h)})`);
+    }
+    assert.strictEqual(hleak, 0, '#1320 decoded brain: random cuts over a header written in such a form never show the value');
+    // a whole scheme word glued to a separator in such a form, the value in the next piece (the word loop of the held-head check reads the decoded word)
+    assert.ok(!showsAny(['x Authorization' + '&#58;Bearer', ' ' + pw + ' done'], pw), '#1320 decoded brain: a scheme word glued to a separator in such a form hides the value');
+  }
   const forms = ['&#95;', '&#x5f;', '&#95', '&lowbar;', '%5F', '%255F', '&#000095;'];
   const tails = ['&#8203;', '&#8203', '%2D', '&#46;'];
   let seed = 1899;

@@ -2754,6 +2754,26 @@ function splitSpans(s: string, mask: string, written: () => ReadonlyArray<[numbe
 }
 /** A tag that renders a break or a block edge: read as a blank by the second reading of `splitSpans`. */
 const BLOCK_TAG = /^<\/?(?:br|p|div|li|ul|ol|dl|dd|dt|td|th|tr|table|thead|tbody|tfoot|hr|h[1-6]|pre|blockquote|section|article|header|footer|nav|aside|main|figure|figcaption|details|summary)(?![A-Za-z0-9:_.-])/i;
+/**
+ * Spec 012 FR-188 (review of PR 1899, round 2): `text` with every entity or percent escape of a token character read as that character (`decodedChar`), the
+ * rest as written. For short words only (a header name the brain view holds raw while its value is awaited); at most `DECODE_TEXT_MAX` characters are read.
+ */
+export function decodeTokenForms(text: string): string {
+  if (typeof text !== 'string' || !DECODE_GATE.test(text)) return typeof text === 'string' ? text : '';
+  const s = text.slice(0, DECODE_TEXT_MAX);
+  let out = '';
+  let from = 0;
+  SPLIT_AT.lastIndex = 0;
+  for (let m = SPLIT_AT.exec(s); m; m = SPLIT_AT.exec(s)) {
+    if (m[0][0] !== '&' && m[0][0] !== '%') continue;
+    const put = decodedChar(m[0]);
+    if (!put) continue;
+    out += s.slice(from, m.index) + put[0];
+    from = m.index + put[1];
+  }
+  return out + s.slice(from) + text.slice(DECODE_TEXT_MAX);
+}
+const DECODE_TEXT_MAX = 4096;
 /** Whether a text can hold an entity or a percent escape at all (spec 012 FR-188): the cheap test before the decoded reading. */
 const DECODE_GATE = /[&%]/;
 /** How far before a stretch a decoded character makes it count (spec 012 FR-188): a secret name with a character in such a form before its value. */
@@ -2822,10 +2842,12 @@ function pieceSpans(s: string, mask: string, written: () => ReadonlyArray<[numbe
     // form before a value; bounded, so linear)
     let crosses = (a > 0 && at[a] !== end[a - 1]) || dec[a];
     for (let k = a - 1; !crosses && k >= 0 && a - k <= DECODE_BACK && j[k] !== '\n' && j[k] !== '\r'; k--) crosses = dec[k];
-    let joined = false; // the stretch already joined two pieces of a token across an earlier piece
+    // the stretch already joined two pieces of a token across an earlier piece; a decoded character counts as one (FR-188, review of PR 1899, round 2: after it, a run
+    // past a removed piece needs the look of a tail, so a keyword after a hidden character stays for its own rule)
+    let joined = !!dec[a];
     for (let i = a + 1; i < b; i++) {
-      // a decoded character is token text, read as the character (FR-188): no piece, so no tail test; it only makes the stretch count
-      if (at[i] === end[i - 1]) { if (dec[i]) crosses = true; continue; }
+      // a decoded character is token text, read as the character (FR-188): no piece, so no tail test here; it makes the stretch count, and the next piece checks a tail
+      if (at[i] === end[i - 1]) { if (dec[i]) { crosses = true; joined = true; } continue; }
       // after text the rules already hide as written (a whole token), the run after any piece is its rest only when it looks like a token's tail (`tailRun`), and,
       // after a piece that can end a word (a tag, a comment), with FR-173's 8 letters and digits: a hidden character before `mysql`, `password=` or `token:` leaves the
       // keyword for its own rule (review of PR 1721, round 3: the value after it showed when the split stretch took the keyword)
