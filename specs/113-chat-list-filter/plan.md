@@ -72,6 +72,7 @@ input → 150 ms → `RF.q` → `renderStrip()` (filter rows, paint, highlight) 
 - **P3** Search conversations from a chat: search row, return to chat, shortcut (T016-T020); spec 095 pointer delta.
 - **P4** highlight (T021-T022).
 - **P5** driver completion, mutants, screenshots, docs, converge (T023-T030).
+- **P6 Recent order** (FR-040..FR-044, owner request 2026-11-19): `DurbarRail.recent` (pure, beside `group`), a `youAt` stamp on your own sends kept like the chat numbers (`CHATNO_KEY`, only with `rememberOn()`), a Folders | Recent control in the filter row, and a flat list in `renderStrip` with the folder per row. After P2 (the filter row exists); independent of P3..P5.
 
 ## Test plan (zero AI credits)
 
