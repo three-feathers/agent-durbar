@@ -78,6 +78,8 @@
   function refresh(){
     if(!cur)return;
     if(!cur.el.isConnected||(hov&&!hov.el.isConnected&&!foc)){hov=foc=null;hide();return;}
+    /* the same words on the same element: nothing to say and nothing to measure (placing the box reads the layout; a status update must add no layout reads, spec 097 FR-186; the box already stands where its element is, and a scroll or a resize hides it) */
+    if(tip&&!tip.hidden&&cur.get(cur.el)===tip.textContent)return;
     show(cur);
   }
   const focusVisible=el=>{try{return el.matches(':focus-visible');}catch(e){return true;}};
@@ -105,7 +107,8 @@
     document.addEventListener('click',e=>{const f=find(e.target); if(!f)return; dismissed=f.el; hide();},true);
     document.addEventListener('keydown',e=>{
       if(e.key!=='Escape'||!cur||!tip||tip.hidden)return;
-      dismissed=cur.el; hide(); e.stopPropagation(); /* WCAG 1.4.13: dismissible; this Escape is used up */
+      const byPointer=!!hov&&cur===hov; /* a tooltip the pointer is resting on (the pointer stays where a click left it) must not take the Escape that closes a chat or a menu: it goes hides here and goes on; a keyboard focus tooltip is dismissed and the key is used up (spec 001 FR-270, 2026-11-19) */
+      dismissed=cur.el; hide(); if(!byPointer)e.stopPropagation(); /* WCAG 1.4.13: dismissible */
     },true);
     window.addEventListener('scroll',()=>{if(cur)hide();},true);
     window.addEventListener('blur',()=>{hov=foc=dismissed=null;hide();});
