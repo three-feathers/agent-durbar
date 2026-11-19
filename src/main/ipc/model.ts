@@ -8,6 +8,7 @@ import type { AgentEvent } from '../../adapters/types';
 import { parseFocus, parseSwitchRequest } from '../../shared/modelswitch';
 import type { ModelSwitchRequest, ModelSwitchResult } from '../../shared/modelswitch';
 import { errText } from '../agentops';
+import { redact } from '../../shared/redact';
 import type { OrgVerdict } from '../../shared/orgpolicy';
 import type { FolderStore } from '../folders';
 
@@ -110,7 +111,7 @@ export function listReason(err: unknown): string {
 }
 
 /** Runs one listing: an error or an empty list becomes a reason, and only the error's type is logged (spec 030 FR-069). */
-export async function modelListReply(load: () => Promise<ModelChoice[]>, hidden: () => number, warn: (m: string) => void = (m) => console.warn(m)): Promise<ModelListReply> {
+export async function modelListReply(load: () => Promise<ModelChoice[]>, hidden: () => number, warn: (m: string) => void = (m) => console.warn(redact(m))): Promise<ModelListReply> {
   try {
     const models = await load();
     const h = hidden();
