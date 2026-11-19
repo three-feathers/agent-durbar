@@ -7117,13 +7117,31 @@ function settlePlan(a,action){
   if(action==='reject'){closeTurn(a);a.worked=false;setState(a,'idle',null,'Plan rejected. Nothing was changed.');}
   else setState(a,'working',null,action==='approve'?'Carrying out the plan':'Revising the plan');
 }
-/* spec 052 (2026-11-19 delta, issue 1927, T378): a question's Markdown, masked first and then rendered by the chat's own renderer. The mask keeps the Markdown (RED.redact); when the
-   Markdown-aware mask (safeMask, which flattens the text) finds more than it did (a token split by a mark), or the redact module is missing, the card shows that masked plain text instead (fail closed). */
+/* spec 052 (2026-11-19 delta, issue 1927, T378; review of PR 1933): a question's Markdown, masked first and then rendered by the chat's own renderer.
+   1. Character references are decoded first (until nothing changes), so both masks and the renderer read the same characters.
+   2. The Markdown-keeping mask (RED.redact) runs, then DurbarMD renders; links lose their `title`.
+   3. The rendered HTML is kept only when every text it shows and every attribute value it holds (a link's address also read percent-decoded) is
+      already fully masked: the Markdown-aware mask (safeMask) leaves it unchanged. Compared by value, never by a count of masks.
+   Otherwise, or when the redact module or the renderer is missing, or the render is empty, the card shows the masked plain text of the decoded
+   question (fail closed). The raw question is never shown. */
+const Q_UNSAFE='This question cannot be shown safely. Choose an option or write your answer.';
+function qDecodeRefs(t){const ta=document.createElement('textarea');let x=t;for(let i=0;i<8;i++){ta.innerHTML=x;const y=ta.value;if(y===x)return x;x=y;}return null;} /* a textarea parses text only: no element is made */
 function qMdHTML(raw){
-  const s=String(raw==null?'':raw), plain=safeMask(s), n=t=>(t.match(/\[redacted\]/g)||[]).length;
+  const s=qDecodeRefs(String(raw==null?'':raw));
+  if(s==null)return '<p>'+esc(Q_UNSAFE)+'</p>'; /* references nested past any sane depth: a fixed phrase */
+  const plain=()=>'<p>'+esc(safeMask(s))+'</p>';
   const r=RED?RED.redact(s):null;
-  if(r==null||!window.DurbarMD||n(plain)>n(r))return '<p>'+esc(plain)+'</p>';
-  return window.DurbarMD.render(r);
+  if(typeof r!=='string'||!window.DurbarMD)return plain();
+  const tp=document.createElement('template');tp.innerHTML=window.DurbarMD.render(r); /* inert: nothing in a template loads or runs */
+  const same=v=>safeMask(v)===v, els=[...tp.content.querySelectorAll('*')];
+  els.forEach(e=>e.removeAttribute('title'));
+  const shown=tp.content.textContent;
+  if(!shown.trim()||!same(shown))return plain();
+  for(const e of els)for(const at of [...e.attributes]){
+    if(!same(at.value))return plain();
+    if(at.name==='href'){let d=null;try{d=decodeURIComponent(at.value);}catch(_){}if(d==null||!same(d))return plain();}
+  }
+  const box=document.createElement('div');box.appendChild(tp.content);return box.innerHTML;
 }
 function showQuestion(a,e){
   if(e.elicitation&&typeof e.elicitation==='object'){showElicitation(a,e);return;}
@@ -7139,7 +7157,7 @@ function showQuestion(a,e){
     const qt=document.createElement('div');qt.className='q-text md';
     if(q.header){const h=document.createElement('span');h.className='tag';h.textContent=q.header;qt.appendChild(h);}
     const qb=document.createElement('div');qb.className='q-md';qb.innerHTML=qMdHTML(q.question);qt.appendChild(qb);box.appendChild(qt);
-    const qPlain=qb.textContent.replace(/\s+/g,' ').trim()||String(q.question); /* the words a screen reader says, without the Markdown marks */
+    const qPlain=qb.textContent.replace(/\s+/g,' ').trim(); /* the words a screen reader says, without the Markdown marks; masked like the card (never the raw question) */
     const opts=document.createElement('div');opts.className='q-opts';opts.setAttribute('role',q.multiSelect?'group':'radiogroup');opts.setAttribute('aria-label',qPlain);
     (q.options||[]).forEach(o=>{const b=document.createElement('button');b.type='button';b.className='btn q-opt';b.setAttribute(q.multiSelect?'aria-pressed':'aria-checked','false');if(!q.multiSelect)b.setAttribute('role','radio');
       const lb=document.createElement('span');lb.className='q-lbl';lb.textContent=o.label;b.appendChild(lb);b.title=DurbarCutText.cutText(o.description?o.label+' — '+o.description:o.label,300); /* FR-140: the title always has the label; FR-168: a data tooltip is at most 300 characters */
@@ -10411,7 +10429,7 @@ if(pendingOpen&&demoOn){openPanel(pendingOpen,false);pendingOpen=null;}
 const settleNow=()=>{if(!agentsListed||!window.__durbarSimReplayed||baselineQueued||baselineAsking)return false;if(renderQueued){renderQueued=false;renderAll();}return true;};
 /* simulator drivers load with simfreeze=1: the desk glow then holds still (FR-178: the geometry and screenshot checks measure boxes, so no zoom may be mid-way); the unread driver opts back in with hlmotion=1 to test the motion itself */
 if(SIM&&qs.get('simfreeze')==='1'&&qs.get('hlmotion')!=='1')document.documentElement.classList.add('hl-still');
-if(SIM)window.__durbarSimUi={brain:{host:()=>BRAIN_H,state:()=>BRAIN_STATE,why:()=>BRAIN_WHY,flag:BRAIN_PREVIEW,queued:()=>BRAIN_Q.length}, /* spec 106 T005: check-brain-draw reads the floating host's frame counts */announce,renderRestoreStrip,afArrivalPrio,afTracker:{ids:()=>AFT.ids(),pending:()=>AFT.pendingList().map(v=>v.id+'|'+v.kind),quiet:()=>AFT.isQuiet,follow:id=>AFT.follow(id)}, /* spec 005 FR-237: drivers only: what Auto-follow follows, holds and whether it is quiet; follow() makes an agent followed without a hand open (which would drop the others, spec 052 FR-185) */ afNotice:{ms:v=>{AF_NOTICE_MS=Math.max(100,Number(v)||3000);return AF_NOTICE_MS;},on:v=>{setAutoFollowOn(!!v);return AF_ON;},shown:()=>!!AF_NOTICE}, /* spec 052 FR-239: drivers only: the notice's length, Auto-follow without Settings */swapCardOptions:id=>{const c=byId(id)&&pendingCardOf(byId(id));if(!c)return 0;const os=[...c.querySelectorAll('.q-opt')];os.forEach(b=>b.replaceWith(b.cloneNode(true)));return os.length;}, /* spec 052 FR-197: the live card rebuilds its options (the card stays, the old buttons are gone); a driver checks that a row's old option answers nothing */
+if(SIM)window.__durbarSimUi={qMdHTML, /* spec 052 (issue 1927): check-question-markdown renders a question built from invented pieces through the card's own renderer */brain:{host:()=>BRAIN_H,state:()=>BRAIN_STATE,why:()=>BRAIN_WHY,flag:BRAIN_PREVIEW,queued:()=>BRAIN_Q.length}, /* spec 106 T005: check-brain-draw reads the floating host's frame counts */announce,renderRestoreStrip,afArrivalPrio,afTracker:{ids:()=>AFT.ids(),pending:()=>AFT.pendingList().map(v=>v.id+'|'+v.kind),quiet:()=>AFT.isQuiet,follow:id=>AFT.follow(id)}, /* spec 005 FR-237: drivers only: what Auto-follow follows, holds and whether it is quiet; follow() makes an agent followed without a hand open (which would drop the others, spec 052 FR-185) */ afNotice:{ms:v=>{AF_NOTICE_MS=Math.max(100,Number(v)||3000);return AF_NOTICE_MS;},on:v=>{setAutoFollowOn(!!v);return AF_ON;},shown:()=>!!AF_NOTICE}, /* spec 052 FR-239: drivers only: the notice's length, Auto-follow without Settings */swapCardOptions:id=>{const c=byId(id)&&pendingCardOf(byId(id));if(!c)return 0;const os=[...c.querySelectorAll('.q-opt')];os.forEach(b=>b.replaceWith(b.cloneNode(true)));return os.length;}, /* spec 052 FR-197: the live card rebuilds its options (the card stays, the old buttons are gone); a driver checks that a row's old option answers nothing */
   chatTrimNow:()=>chatTrimPending(false), /* spec 005 FR-238: trim the chats waiting for a frame now (a burst with no frame between) */
   hiddenTrimTimer:()=>({on:!!hiddenTrimT,ms:TRIM_HIDDEN_MS}),
   helperState:(id,st)=>{const h=agents.find(x=>x.id===id&&x.parent);if(!h||!['working','thinking','waiting','error','limit','done','idle'].includes(st))return false;h.state=st==='limit'?'waiting':st;h.limit=st==='limit';h.paused=false;layoutKey='';renderAll();return true;}, /* spec 097 T335 (issue 1642): drivers only: a helper's state the simulator never sends (waiting, limit), for the kids on the desk */
