@@ -382,6 +382,13 @@ function markerSuffix(text: string): string {
   return run;
 }
 
+/**
+ * Spec 012 FR-188 (review of PR 1899): the end of a piece that can still become another character once the next piece comes: a numeric entity without its `;`
+ * (at most 3 significant digits, the most a token character needs, after at most 4 zeros), a start of a known entity name, or a percent escape still missing
+ * a hex digit (re-encoded up to 8 times). It holds no letter or digit run a secret could be: digits of a character code, or a fixed entity name.
+ */
+const HELD_FORM = /(?:&(?:#(?:[Xx]0{0,4}[0-9A-Fa-f]{0,2}|0{0,4}[0-9]{0,3})?|(?:l(?:o(?:w(?:b(?:ar?)?)?)?)?|u(?:n(?:d(?:e(?:r(?:b(?:ar?)?)?)?)?)?)?|p(?:e(?:r(?:i(?:od?)?)?)?|l(?:us?)?)?|s(?:ol?)?|e(?:q(?:u(?:a(?:ls?)?)?)?)?|c(?:o(?:l(?:on?)?)?)?))|%(?:25){0,8}[0-9A-Fa-f]?)$/i;
+const HELD_MAX = 32;
 /** One piece of text into a stream's tail (F1, F1b, H1..H4): masks the masked tail plus the new text again, as a whole. */
 function streamText(tail: Tail, piece: string, whole: boolean, mask: BrainMask): Tail {
   let { buf, key, carry } = tail;
@@ -395,7 +402,11 @@ function streamText(tail: Tail, piece: string, whole: boolean, mask: BrainMask):
   if (!raw) return { buf, key, carry };
   // The masked tail plus the new text: a token split across deltas is whole again here. The head of a token that was already
   // masked leaves its tail glued to the mask in the next delta, which matches no shape: that tail goes into the mask (F1).
-  const joined = buf + raw;
+  const whole0 = buf + raw;
+  // spec 012 FR-188 (review of PR 1899): an entity or a percent escape that the next piece can still extend (`&#82` before `03;`) is held as written, out of
+  // this reading, so the masks never read it as a character it is not; it holds a few digits or a known entity name only, and joins the next piece
+  const held = (HELD_FORM.exec(whole0.slice(-HELD_MAX)) || [''])[0];
+  const joined = held ? whole0.slice(0, -held.length) : whole0;
   let open = -1;
   let failed = false;
   try { open = mask.openKeyBlockStart(joined); } catch { open = 0; failed = true; } // a failing check fails closed: treat as open, keep no text (H8)
@@ -411,6 +422,7 @@ function streamText(tail: Tail, piece: string, whole: boolean, mask: BrainMask):
     // space. The header words (no secret yet) stay raw until the value comes, so the whole line masks together.
     buf = (safe(() => mask.maskGluedTail(brainMaskText(mask, joined.slice(0, cut.at)))) + cut.head).slice(-BUF_MAX);
   } else buf = safe(() => mask.maskGluedTail(brainMaskText(mask, joined))).slice(-BUF_MAX);
+  if (held && !failed && nest.depth === 0 && open < 0) buf = (buf + held).slice(-BUF_MAX);
   return { buf, key, carry };
 }
 

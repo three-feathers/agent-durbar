@@ -641,6 +641,50 @@ assert.strictEqual(sentenceOf(s), s.sentence);
   assert.deepStrictEqual(leaks(['password: ab12 cd34 e', 'f56 done'], ['ab12', 'cd34', 'ef56']), [], 'the issue pair with a cut inside a word');
 }
 
+// spec 012 FR-188 (review of PR 1899): a token with a character in an entity or a percent-escape form, streamed in pieces cut inside the forms too: no state
+// shows a piece of its body. An entity the next piece extends into another character (`&#82` then `03;`) is held as written until it is complete.
+{
+  const body = 'Ab3' + 'Cd5' + 'Ef7' + 'Gh9' + 'Jk2' + 'Lm4' + 'Np6' + 'Qr8' + 'St1' + 'Uv3' + 'Wx5' + 'Yz7';
+  const pieces = (v: string): string[] => Array.from({ length: v.length - 5 }, (_x, i) => v.slice(i, i + 6));
+  const showsAny = (chunks: string[], v: string): boolean => {
+    let st = feed(fresh(), [{ type: 'user' }], 1);
+    const ps = pieces(v);
+    for (const delta of [...chunks.map((d) => ({ type: 'thinking', delta: d })), start('bash', { command: 'ls' })]) {
+      st = feed(st, [delta], 1);
+      const out = JSON.stringify(st);
+      if (ps.some((p) => out.includes(p))) return true;
+    }
+    return false;
+  };
+  // the review's case: the first piece ends inside an entity of a hidden character whose first digits read as a token character
+  assert.ok(!showsAny(['x gh' + 'p_' + body.slice(0, 22) + '&#82', '03;' + body.slice(22) + ' done'], body.slice(12)), '#1320 decoded brain: an entity cut before its last digits is held');
+  const forms = ['&#95;', '&#x5f;', '&#95', '&lowbar;', '%5F', '%255F', '&#000095;'];
+  const tails = ['&#8203;', '&#8203', '%2D', '&#46;'];
+  let seed = 1899;
+  const rnd = (): number => { seed = (Math.imul(seed, 1103515245) + 12345) >>> 0; return seed / 2 ** 32; };
+  let runs = 0;
+  const leaked: string[][] = [];
+  for (const form of forms) for (const mid of tails) {
+    const text = 'x gh' + 'p' + form + body.slice(0, 20) + mid + body.slice(20, 36) + ' done';
+    const formAt = [text.indexOf(form), text.indexOf(mid, 4 + form.length)];
+    for (let k = 0; k < 60; k++) {
+      const cuts = new Set<number>();
+      // one cut inside each form, then random ones
+      for (const [at, len] of [[formAt[0], form.length], [formAt[1], mid.length]]) cuts.add(at + 1 + Math.floor(rnd() * (len - 1)));
+      const n = Math.floor(rnd() * 3);
+      while (cuts.size < 2 + n) cuts.add(1 + Math.floor(rnd() * (text.length - 1)));
+      const pts = [0, ...[...cuts].sort((x, y) => x - y), text.length];
+      const chunks = pts.slice(1).map((q, i) => text.slice(pts[i], q));
+      runs++;
+      if (showsAny(chunks, body)) leaked.push(chunks);
+    }
+  }
+  assert.strictEqual(runs, forms.length * tails.length * 60, '#1320 decoded brain: every random cut was fed');
+  // a ratchet, not zero: a state that holds a mask, then a piece, then fewer than 8 letters and digits of the token's rest keeps them readable until the next piece
+  // (FR-182's [KNOWN GAP], the same with any piece); a frozen main shows a piece of the token in every one of these runs (1680), and in no state less than this branch
+  assert.ok(leaked.length <= 26, `#1320 decoded brain: cuts inside the forms that show a piece of the token may only go down (${leaked.length} > 26): ${JSON.stringify(leaked.slice(0, 2))}`);
+}
+
 // spec 012 FR-187 (review of PR 1872): a secret name glued to a token's end, streamed in pieces: no cut shows the value, for each separator form
 {
   const tok = 'gh' + 'p_' + 'Zq3' + 'x'.repeat(16) + 'K9m' + 'p'.repeat(14);

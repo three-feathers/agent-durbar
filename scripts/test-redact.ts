@@ -79,6 +79,10 @@ for (const keep of ['ghp_short', 'see ghs_count', 'wei' + 'ghs_' + 'TotalWeightK
     ['entity of a dot in a JWT', 'ey' + 'JhbGciOiJIUzI1NiJ9&#46;eyJzdWIiOiIxMjM0NTY3ODkwIn0&period;' + body + 'Xy7', body.slice(0, 12)],
     ['percent escape of a dot in a JWT', 'ey' + 'JhbGciOiJIUzI1NiJ9%2EeyJzdWIiOiIxMjM0NTY3ODkwIn0%2E' + body + 'Xy7', body.slice(0, 12)],
     ['an entity and a percent escape in one token', '1%3' + '23456789&#58;AA' + body.slice(0, 33), body.slice(21, 33)],
+    // review of PR 1899: any number of leading zeros, and a percent escape re-encoded more than 8 times
+    ['entity with many leading zeros', 'gh' + 'p&#' + '0'.repeat(12) + '95;' + ghBody, tail],
+    ['hex entity with many leading zeros', 'gh' + 'p&#x' + '0'.repeat(9) + '5f;' + ghBody, tail],
+    ['percent escape encoded ten times', 'gh' + 'p%' + '25'.repeat(9) + '5f' + ghBody, tail],
     ['inside an HTML code element', '<code>gh' + 'p&#95;' + ghBody + '</code>', tail],
     ['in a JSON string', '{"k":"gh' + 'p%5F' + ghBody + '"}', tail],
   ];
@@ -93,6 +97,17 @@ for (const keep of ['ghp_short', 'see ghs_count', 'wei' + 'ghs_' + 'TotalWeightK
   const pv = 'Hq7' + 'Ln2' + 'Xv9';
   assert.ok(!redact('pass' + 'word&#61;' + pv, {}).includes(pv), '#1320 decoded: a value after a separator written as an entity is hidden');
   assert.ok(!redact('pass' + 'word%3D' + pv, {}).includes(pv), '#1320 decoded: a value after a separator written as a percent escape is hidden');
+  // review of PR 1899: a letter of a secret name written in such a form (the value is read after the name)
+  for (const named of ['pass' + 'w&#111;rd=', 'pass' + '%77ord=', 'pass' + '&#119;ord = ', 'to' + 'k&#x65;n: ']) {
+    assert.ok(!redact(named + pv, {}).includes(pv), `#1320 decoded: a value after a secret name with a letter in such a form is hidden (${named.replace(/[a-z]+/g, 'n')})`);
+  }
+  // review of PR 1899: the decoded reading is a reading of its own, joined to the one before it: a fixed-length key split by a piece and followed by a glued form
+  // stays hidden as main hides it (the decoded character after its end made it no key in that reading)
+  const aiza = 'AI' + 'za' + 'Sy' + body.slice(0, 33);
+  for (const piece of ['<b></b>', '\u200b', '&#8203;']) for (const glued of ['%5Fword', '&#95;word', '%2Dab']) {
+    const t = aiza.slice(0, 4) + piece + aiza.slice(4) + glued;
+    for (const [name, mask] of surfaces) assert.ok(!mask(t).includes(body.slice(10, 22)), `#1320 decoded: ${name} hides a split fixed-length key with a glued form (${piece.length} ${glued.slice(0, 3)})`);
+  }
   // near misses: text with such forms and no token stays byte for byte
   const keep = [
     'R&amp;D &#169; 2024 &mdash; build_v1.2.3',
@@ -116,6 +131,7 @@ for (const keep of ['ghp_short', 'see ghs_count', 'wei' + 'ghs_' + 'TotalWeightK
   // linear: long runs of the forms, alone and inside tokens
   assertLinearShape('#1320 decoded: redact a run of percent escapes', (x) => { redact(x, {}); }, (k) => 'a%2F'.repeat(Math.ceil(k / 4)).slice(0, k), 200_000);
   assertLinearShape('#1320 decoded: redact a run of entities', (x) => { redact(x, {}); }, (k) => 'b&#95;'.repeat(Math.ceil(k / 6)).slice(0, k), 200_000);
+  assertLinearShape('#1320 decoded: redact an entity with a long run of leading zeros', (x) => { redact(x, {}); }, (k) => 'gh' + 'p&#' + '0'.repeat(Math.max(1, k - 8)) + '39', 200_000);
   const unit = 'x gh' + 'p%5F' + ghBody + ' ';
   assertLinearShape('#1320 decoded: redact many decoded tokens', (x) => { redact(x, {}); }, (k) => unit.repeat(Math.ceil(k / unit.length)).slice(0, k), 200_000);
 }

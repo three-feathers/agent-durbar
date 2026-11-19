@@ -50,13 +50,16 @@ function mulberry32(a: number): () => number {
 const AN = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
 const PW = 'Hx9Kq2Lm7Np4Rs';
 const PW2 = 'Ab3,Cd5#Ef7^Gh9'; // a punctuated password (round 5)
-const PIECES = ['​', '‍', ' ', '­', '́', '﻿', '&#8203;', '&#8203', '&#x200B', '<b></b>', '<!-- -->', '<wbr>', '<br>', '</p><p>', '\n', '\r\n', '\n\n', '\n> ', '\n- ', '\n- [ ] ', '**\n**', '`\n`', '  \n', '\n    ', ''];
+const PIECES = ['​', '‍', ' ', '­', '́', '﻿', '&#8203;', '&#8203', '&#x200B', '<b></b>', '<!-- -->', '<wbr>', '<br>', '</p><p>', '\n', '\r\n', '\n\n', '\n> ', '\n- ', '\n- [ ] ', '**\n**', '`\n`', '  \n', '\n    ', '',
+  /* spec 012 FR-188 (review of PR 1899): entity and percent-escape forms of token characters */ '%5F', '&#95;', '&#46;', '%3D', '&#x3a;'];
 const FORMS = ['mysql -u root -p' + PW, 'mysql -p' + PW, 'password=' + PW, 'password: ' + PW, 'token: ' + PW, 'TOKEN ' + PW, 'API_KEY=' + PW, 'PGPASSWORD="' + PW + '"',
   'export GH_TOKEN=' + PW, 'DB_PASSWORD=' + PW, 'Db_Password=' + PW, 'curl -u bob:' + PW + ' h', '--password ' + PW, 'Authorization: Bearer ' + PW, 'https://u:' + PW + '@h.example/x',
   'https://h.example/x?token=' + PW, '{"password":"' + PW + '"}', 'secret_key = "' + PW + '"', 'see the docs', 'Release2024', 'src/app/main', ':x-oauth-basic', 'Alternatively',
   'PGPASSWORD=' + PW2 + ' psql', 'password: ' + PW2, 'mysql -p' + PW2, '--password ' + PW2, 'export DB_PASSWORD="' + PW2 + '"'];
 const LEADS = ['', 'see ', 'password=', 'x', 'Token:<br/>', '`', '**', '- [ ] ', 'page2\u2028', 'note\u200b', '> ', 'export T=', '[gh](https://h.example/' + 'a'.repeat(300) + ')', '[x](u) ', '[redacted]' + 'pass' + 'word=' /* spec 012 FR-187, review of PR 1872 round 3: a mask with a glued name and its separator */];
-const JOIN = ['', ' ', '\n', '\r\n', '\n\n', ', ', '<br>', '\u200b', '\u2028'];
+const JOIN = ['', ' ', '\n', '\r\n', '\n\n', ', ', '<br>', '\u200b', '\u2028', '%5F', '&#95;', '&#46;', '%3D', '&#x3a;'];
+/** Spec 012 FR-188 (review of PR 1899): a form glued to a token's end, then a word or a name and value: a fixed-length shape must still end where it ended. */
+const GLUE = ['', '', '%5Fword', '&#95;word', '%2Dab', '&#46;pass' + 'word%3D' + PW, '&#x3a;' + PW];
 
 const mh = { redact: (x: string) => HEAD.redact(x, {}), cmd: (x: string) => HEAD.maskSecretCommand(x, {}), url: (x: string) => HEAD.maskSecretUrl(x, {}) };
 const mr = { redact: (x: string) => REF.redact(x, {}), cmd: (x: string) => REF.maskSecretCommand(x, {}), url: (x: string) => REF.maskSecretUrl(x, {}) };
@@ -73,7 +76,7 @@ const run = (seed: number, cases: number) => {
     const tok = toks[n(toks.length)]();
     const body = tok.length > 30 ? 6 : 4;
     const cut = body + n(tok.length - body);
-    const split = n(3) ? tok.slice(0, cut) + PIECES[n(PIECES.length)] + tok.slice(cut) : tok;
+    const split = (n(3) ? tok.slice(0, cut) + PIECES[n(PIECES.length)] + tok.slice(cut) : tok) + GLUE[n(GLUE.length)];
     const parts = [LEADS[n(LEADS.length)] + split, PIECES[n(PIECES.length)] + FORMS[n(FORMS.length)]];
     if (n(3) === 0) parts.push(FORMS[n(FORMS.length)]);
     for (let i = parts.length - 1; i > 0; i--) { const j = n(i + 1); [parts[i], parts[j]] = [parts[j], parts[i]]; } // every composition order

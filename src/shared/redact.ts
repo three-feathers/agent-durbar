@@ -2566,11 +2566,12 @@ const DECODE_CHAR = /^[A-Za-z0-9_.+/=:-]$/;
  * (`<?x?>`) or another bogus comment (`<!x>`, a CDATA section `<![CDATA[…]]>` too: outside SVG and MathML, HTML reads it as one and ends it at the first `>`), an HTML tag without `<` or `>` in it (`<b>`, `</b>`, `<span class="x">`, `<span/class="x">`, `<br/>`,
  * a custom `<my-el>` or `<svg:g>`, a name up to 64 characters, attributes up to 256), a numeric entity with or without its `;` (`&#8203`, as HTML
  * reads it) or a named one (each kept only when it stands for a `HIDDEN_CHARS` character), a run of combining marks, a `HIDDEN_CHARS` character, the backslash of a
- * Markdown escape (`NOTE_ESCAPABLE`: `sk-proj-<20>\_<rest>` reads `sk-proj-<20>_<rest>`); and (spec 012 FR-188) a percent escape, re-encoded up to 8 times. An
- * entity or a percent escape of a token character (`DECODE_CHAR`) is not removed but read as that character (`pieceSpans`). Each alternative is bounded, so one scan is linear.
+ * Markdown escape (`NOTE_ESCAPABLE`: `sk-proj-<20>\_<rest>` reads `sk-proj-<20>_<rest>`); and (spec 012 FR-188) a percent escape, re-encoded any number of times.
+ * A numeric entity may have any number of leading zeros, as HTML reads it. An entity or a percent escape of a token character (`DECODE_CHAR`) is not removed
+ * but read as that character, in a reading of its own (`pieceSpans` with `decode`). Each alternative takes what it reads, so one scan is linear.
  */
 const MD_ESC = String.raw`\\(?=[${NOTE_ESCAPABLE.replace(/[\\\]^-]/g, '\\$&')}])`;
-const SPLIT_AT = new RegExp(String.raw`<!--(?:>|->|[\s\S]{0,256}?-->)|<\?[^<>]{0,256}>|<![^<>-][^<>]{0,256}>|<\/?[A-Za-z][A-Za-z0-9:_.-]{0,63}(?:[\s/][^<>]{0,256})?>|&#(?:[0-9]{1,7}|[Xx][0-9A-Fa-f]{1,6});?|&[A-Za-z]{2,24};|\p{M}+|${MD_ESC}|${HIDDEN_CHARS.source}|%(?:25){0,8}[0-9A-Fa-f]{2}`, 'gu');
+const SPLIT_AT = new RegExp(String.raw`<!--(?:>|->|[\s\S]{0,256}?-->)|<\?[^<>]{0,256}>|<![^<>-][^<>]{0,256}>|<\/?[A-Za-z][A-Za-z0-9:_.-]{0,63}(?:[\s/][^<>]{0,256})?>|&#(?:0*[0-9]{1,7}|[Xx]0*[0-9A-Fa-f]{1,6});?|&[A-Za-z]{2,24};|\p{M}+|${MD_ESC}|${HIDDEN_CHARS.source}|%(?:25)*[0-9A-Fa-f]{2}`, 'gu');
 /** Whether a text can hold one of `SPLIT_AT` at all: the cheap test before the scan. */
 const SPLIT_GATE = new RegExp(String.raw`[<&%\r\n\\]|\p{M}|${HIDDEN_CHARS.source}`, 'u');
 /** A line break, kept in the output: `redact` keeps the line structure. */
@@ -2619,7 +2620,8 @@ function decodedChar(t: string): [string, number] | undefined {
   if (whole) return [whole, t.length];
   if (t[1] !== '#' || t.endsWith(';')) return undefined;
   const hex = t[2] === 'x' || t[2] === 'X';
-  const lead = hex ? 3 : 2;
+  let lead = hex ? 3 : 2;
+  while (lead < t.length - 1 && t[lead] === '0') lead++; // leading zeros (any number, as HTML reads them); at most 7 digits are left to try
   for (let k = t.length - 1; k >= lead + 2; k--) {
     const c = tok(parseInt(t.slice(lead, k), hex ? 16 : 10));
     if (c) return [c, k];
@@ -2744,13 +2746,23 @@ function splitSpans(s: string, mask: string, written: () => ReadonlyArray<[numbe
   if (/[\r\n]/.test(s)) breakSpans(s, mask, written, spans);
   // a tag that renders a break (`<br>`, `</p><p>`, `</td><td>`) also ends a word: read once with it removed (a token split by it) and, when there is one,
   // once with it as a blank (a word before it does not glue to the token after it: `Token</p><p>ghp_…<wbr>…`); both are taken (review of PR 1721, round 2)
-  if (pieceSpans(s, mask, written, false, spans)) pieceSpans(s, mask, written, true, spans);
+  if (pieceSpans(s, mask, written, false, false, spans)) pieceSpans(s, mask, written, true, false, spans);
+  // spec 012 FR-188: once more with an entity or a percent escape of a token character read as that character; a reading of its own, so the readings above
+  // (as before FR-188) still give every span they gave: a decoded character can end a fixed-length shape that the reading without it hid (review of PR 1899)
+  if (DECODE_GATE.test(s)) pieceSpans(s, mask, written, false, true, spans);
   return spans;
 }
 /** A tag that renders a break or a block edge: read as a blank by the second reading of `splitSpans`. */
 const BLOCK_TAG = /^<\/?(?:br|p|div|li|ul|ol|dl|dd|dt|td|th|tr|table|thead|tbody|tfoot|hr|h[1-6]|pre|blockquote|section|article|header|footer|nav|aside|main|figure|figcaption|details|summary)(?![A-Za-z0-9:_.-])/i;
-/** One reading of `splitSpans`' pieces: removed, or a block tag as a blank (`blockBlank`). Adds to `spans`; returns whether a block tag was removed. */
-function pieceSpans(s: string, mask: string, written: () => ReadonlyArray<[number, number]>, blockBlank: boolean, spans: Array<[number, number]>): boolean {
+/** Whether a text can hold an entity or a percent escape at all (spec 012 FR-188): the cheap test before the decoded reading. */
+const DECODE_GATE = /[&%]/;
+/** How far before a stretch a decoded character makes it count (spec 012 FR-188): a secret name with a character in such a form before its value. */
+const DECODE_BACK = 64;
+/**
+ * One reading of `splitSpans`' pieces: removed, or a block tag as a blank (`blockBlank`); with `decode` (spec 012 FR-188), an entity or a percent escape of a
+ * token character is read as that character too. Adds to `spans`; returns whether a block tag was removed.
+ */
+function pieceSpans(s: string, mask: string, written: () => ReadonlyArray<[number, number]>, blockBlank: boolean, decode: boolean, spans: Array<[number, number]>): boolean {
   const keep: string[] = [];
   const at: number[] = [];
   const end: number[] = []; // per kept character: the index of `s` just past what it was read from (`at + 1`, or past a whole decoded form, FR-188)
@@ -2771,7 +2783,7 @@ function pieceSpans(s: string, mask: string, written: () => ReadonlyArray<[numbe
     let put: [string, number] | undefined;
     if (t[0] === '&' || t[0] === '%') {
       const cp = t[0] === '&' ? entityPoint(t) : -1;
-      if (cp < 0 || !HIDDEN_CHARS.test(String.fromCodePoint(cp))) { put = decodedChar(t); if (!put) continue; }
+      if (cp < 0 || !HIDDEN_CHARS.test(String.fromCodePoint(cp))) { put = decode ? decodedChar(t) : undefined; if (!put) continue; }
     }
     take(a);
     from = a + t.length;
@@ -2791,7 +2803,9 @@ function pieceSpans(s: string, mask: string, written: () => ReadonlyArray<[numbe
   at.push(s.length);
   const j = keep.join('');
   // the blank reading reads token shapes and their glued rest only: a blank it adds must not make a name and value that the text does not hold (`Token:<br/>`, round 3)
-  const mj = blockBlank ? maskGluedRest(maskBareTokenShapes(maskEscapedRuns(j, mask), mask), mask) : maskShapesCore(maskEscapedRuns(j, mask), mask);
+  // the decoded reading (FR-188) also takes the last passes `redact` runs on the text as written (`maskLoose`: FR-185's GitHub forms, FR-187's value after a mask), so a
+  // token start in such a form is read as `redact` reads it written plainly (review of PR 1899: a streamed piece ending inside the token)
+  const mj = blockBlank ? maskGluedRest(maskBareTokenShapes(maskEscapedRuns(j, mask), mask), mask) : decode ? maskLoose(maskShapesCore(maskEscapedRuns(j, mask), mask), mask) : maskShapesCore(maskEscapedRuns(j, mask), mask);
   if (mj === j) return block;
   // letters and digits of `j` before each index, for FR-173's count of what follows a piece
   const alnum = new Int32Array(j.length + 1);
@@ -2804,8 +2818,10 @@ function pieceSpans(s: string, mask: string, written: () => ReadonlyArray<[numbe
     let b = b0;
     // a stretch that starts right after a removed piece counts too: a piece glued before a token takes its start boundary as written (`password=&#8203ghp_…`: the
     // entity's digits glue to it), so only the copy reads the token (review of PR 1721, round 4)
-    // so does one that holds a decoded character or starts right after one (FR-188: `<name>&#61;<value>` reads as a name and its value)
-    let crosses = (a > 0 && (at[a] !== end[a - 1] || dec[a - 1])) || dec[a];
+    // so does one that holds a decoded character, or has one within `DECODE_BACK` characters before it on its line (FR-188: a name or a separator written in such a
+    // form before a value; bounded, so linear)
+    let crosses = (a > 0 && at[a] !== end[a - 1]) || dec[a];
+    for (let k = a - 1; !crosses && k >= 0 && a - k <= DECODE_BACK && j[k] !== '\n' && j[k] !== '\r'; k--) crosses = dec[k];
     let joined = false; // the stretch already joined two pieces of a token across an earlier piece
     for (let i = a + 1; i < b; i++) {
       // a decoded character is token text, read as the character (FR-188): no piece, so no tail test; it only makes the stretch count
