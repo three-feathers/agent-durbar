@@ -704,7 +704,7 @@ interface SimOptions {
   /** Issue #126: some main agents receive a session title, as the runtime sends after the first prompt (page address `simtitles=1`; `simtitles=long`: the first one is 120 characters, the longest a session title can be, spec 052 FR-174). */
   titles?: boolean | 'long';
   /** Spec 059 FR-016: every main agent carries a 60-character user name, and (spec 052 FR-170) every folder a long name (page address `simnames=long`), to check that the office still fits; agent 3 has no alias and a long first-prompt title with one unbroken URL-like token (FR-019). */
-  names?: 'long';
+  names?: 'long' | 'alike';
   /** Spec 052 FR-170 (T155): long replies and long sub-agent prompts that run to the right edge of the chat, to check that the Copy button covers no text (page address `simreply=long`). */
   reply?: 'long' | 'secrets';
   /** Spec 012 FR-130: the first Claude agent (or the first agent) asks a question (page address `simquestion=1`). */
@@ -1019,6 +1019,13 @@ const planMcpSignInRefresh = (i: SignInPlanInput): SignInPlan => {
 /* mcpsigninrefresh:end */
 
 (function () {
+  /** spec 001 FR-270 (issue #1905): `simrooms=solo&simnames=alike`: [folder name, path]. Several start alike (iot-platform*, itdse-ism*, 2026-07-*, operations-*); two are both `iot-portal` under different parents; one lives under /Users/paco, which the window shows as ~. */
+  const SIM_ALIKE_FOLDERS: Array<[string, string]> = [
+    ['itdse-ism-portal', '~/work/itdse-ism-portal'], ['itdse-ism-reports', '~/work/itdse-ism-reports'], ['iot-platform-gateway', '~/work/iot-platform-gateway'], ['iot-platform-form-2', '~/work/iot-platform-form-2'],
+    ['iot-platform-form-3', '~/work/iot-platform-form-3'], ['iot-portal', '~/clients/acme/iot-portal'], ['iot-portal', '~/clients/globex/iot-portal'], ['2026-07-offsite', '/Users/paco/work/2026-07-offsite'],
+    ['2026-07-budget', '~/work/2026-07-budget'], ['2026-07-hiring', '~/work/2026-07-hiring'], ['operations-weekly', '~/work/operations-weekly'], ['operations-monthly', '~/work/operations-monthly'],
+    ['mcp-swiss', '~/work/mcp-swiss'], ['blog', '~/work/blog'], ['customer-reconciliation-batch-jobs', '~/work/customer-reconciliation-batch-jobs'], ['infra-notes', '~/work/infra-notes'],
+  ];
   const SIM_ROOM_ORDER = ['mcp-swiss', 'swisscontract-ai', 'command-center', 'blog', 'infra-notes'];
   const ROOM_DEFS: Record<string, string> = {
     'mcp-swiss': '~/work/mcp-swiss',
@@ -1182,8 +1189,9 @@ const planMcpSignInRefresh = (i: SignInPlanInput): SignInPlan => {
       const k = simRooms ? Math.max(1, Math.min(SIM_ROOM_ORDER.length, Math.floor(simRooms))) : 0;
       const room = k ? SIM_ROOM_ORDER[Math.min(k - 1, Math.floor((i * k) / rows.length))] : room0; // simrooms=<n>: in blocks, the first folders first
       const helpers = noHelpers ? 0 : simHelpers || helpers0;
-      const roomName = opts.solo ? name.toLowerCase() + '-app' : room + (opts.names === 'long' ? '-customer-reconciliation-batch-jobs-2026'.slice(0, 55 - room.length) : ''); // simnames=long: a folder name is long too (60 characters at most, spec 059)
-      const cwd = opts.solo ? '~/work/' + roomName : ROOM_DEFS[room] ?? '~/work/' + room;
+      const alike = opts.solo && opts.names === 'alike' ? SIM_ALIKE_FOLDERS[i % SIM_ALIKE_FOLDERS.length] : null; // spec 001 FR-270 (issue #1905): simrooms=solo&simnames=alike: sixteen folders whose names start alike, two with the same name under different parents
+      const roomName = alike ? alike[0] : opts.solo ? name.toLowerCase() + '-app' : room + (opts.names === 'long' ? '-customer-reconciliation-batch-jobs-2026'.slice(0, 55 - room.length) : ''); // simnames=long: a folder name is long too (60 characters at most, spec 059)
+      const cwd = alike ? alike[1] : opts.solo ? '~/work/' + roomName : ROOM_DEFS[room] ?? '~/work/' + room;
       const info: AgentInfo = { id: 'sim-' + (i + 1), name, cwd, folders: [cwd], adapterId: mixed ? SIM_KIND_BY_AGENT[i] ?? 'copilot' : 'copilot', permMode: i % 3 === 1 ? 'ask' : i % 3 === 2 ? 'allow' : 'read-only', model: SIM_MODEL_BY_AGENT[i] ?? 'auto', maxAiCredits: SIM_CAPS[name], permRestored: i % 3 === 2 && i < 6 ? true : undefined, modelControl: { switch: 'next-message', effort: true, contextTier: true, compact: true, windowKnown: true }, profiles: true, slash: !(simQs && simQs.get('simslash') === 'none' && mixed && SIM_KIND_BY_AGENT[i] === 'basic'), ...(opts.reply === 'secrets' && i === 7 ? { title: SECRETS_TEXT } : {}) } as AgentInfo; // FR-065: one agent starts with a runtime title that holds the planted secrets (it becomes its name)
       // Spec 052 FR-046: a pending permission card only happens in Ask first, so a waiting agent starts in Ask first (Jonas was Allow all
       // and restored, Lena Read-only); the restored Allow-all folder the restore strip names is then Tomas's (swisscontract-ai).

@@ -435,7 +435,7 @@
       if (b.slab) { const sl = el(art, 'storey-slab:' + b.id, 'div', 'ro-slab'); box(sl, b.slab); dset(sl, 'storey', b.id); }
       const tg = el(chrome, 'storey-tag:' + b.id, 'div', 'ro-sign ro-stag'); box(tg, b.tag); dset(tg, 'storey', b.id); dset(tg, 'surface', 'storey');
       if (tg._sig !== b.name + '\u0000' + b.n) { tg._sig = b.name + '\u0000' + b.n; tg.textContent = ''; const nb = document.createElement('b'); nb.textContent = (b.n ? b.n + ' ' : '') + b.name; tg.appendChild(nb); }
-      attr(tg, 'title', b.n ? 'Floor ' + b.n + ': ' + b.name : 'Resting: not on any floor'); attr(tg, 'role', 'note');
+      attr(tg, 'data-tip', b.n ? 'Floor ' + b.n + ': ' + b.name : 'Resting: not on any floor'); attr(tg, 'role', 'note'); /* spec 001 FR-270: the instant tooltip, the floor's whole name */
     }
     if (lay.lounge) {
       for (const d of lay.lounge.desks) deskOne(d); /* spec 097 FR-247: after the desks */
@@ -645,7 +645,10 @@
     const sig = JSON.stringify([f.name, f.path, !!f.cost, f.newSess, f.menu, z.part]);
     if (sg._sig !== sig) {
       sg._sig = sig; sg.textContent = ''; sg._cnt = null; sg._cost = null;
-      const b = document.createElement('b'); b.textContent = z.part > 1 ? f.name + ' (continued)' : f.name; b.title = f.name + '\n' + f.path; sg.appendChild(b); sg._b = b;
+      const b = document.createElement('b'); sg.appendChild(b); sg._b = b;
+      const tail = z.part > 1 || !root.DurbarCutText ? '' : root.DurbarCutText.nameTail(f.name); /* spec 001 FR-271: a long name keeps its end when it is cut */
+      if (tail) { const h = document.createElement('span'), t = document.createElement('span'); h.className = 'rn-h'; t.className = 'rn-t'; h.textContent = f.name.slice(0, f.name.length - tail.length); t.textContent = tail; b.appendChild(h); b.appendChild(t); }
+      else b.textContent = z.part > 1 ? f.name + ' (continued)' : f.name;
       if (z.part > 1) return;
       const p = document.createElement('span'); p.className = 'ro-path'; p.textContent = f.path; sg.appendChild(p);
       const sc = document.createElement('span'); sc.className = 'ro-sc'; sg._sc = sc; sg._cnt = new Map();
@@ -654,8 +657,10 @@
       if (f.menu) { const mb = document.createElement('button'); mb.type = 'button'; mb.className = 'ro-sb'; mb.dataset.foldermenu = z.id; mb.setAttribute('aria-haspopup', 'menu'); mb.setAttribute('aria-label', 'Folder actions for ' + f.name); mb.title = 'Folder actions'; mb.textContent = '⋯'; sc.appendChild(mb); }
       sg.appendChild(sc);
     }
+    attr(sg, 'data-new', f.fresh ? '1' : null); /* spec 001 FR-272: a folder just added is outlined for a moment */
+    attr(sg, 'data-tip', f.tip || f.name + '\n' + f.path); /* spec 001 FR-270: the whole sign says its folder on hover and on the focus of its buttons (the app binds DurbarTip); the short sign hides the cost, so the tip has it (FR-256, FR-356) */
     if (!sg._cnt) return;
-    if (sg._cost) { text(sg._cost, f.cost); attr(sg._b, 'title', f.name + '\n' + f.path + (z.signShort ? '\n' + f.cost : '')); } /* FR-256, FR-356: the short sign hides the cost, so its name's hover says it */
+    if (sg._cost) text(sg._cost, f.cost);
     /* one count per state, reused by state and kept in the model's order, in front of the cost and the buttons */
     const sc = sg._sc, live = new Set(f.counts.map((c) => c.state));
     for (const [st, e] of sg._cnt) if (!live.has(st)) { e.remove(); sg._cnt.delete(st); }

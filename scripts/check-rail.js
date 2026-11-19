@@ -137,7 +137,7 @@ module.exports = async (ctx) => {
       assert.ok(await js(`window.__durbarSimUi.renamedElsewhere(${jsLiteral(asker)},${jsLiteral(NAME)})`), `${tag}: ${asker} renamed`);
       await emit(asker, { type: 'status', status: 'needs-permission', intent: REQ });
       await ok(`(()=>{const r=__rail.row(${jsLiteral(asker)});return !!r&&r.classList.contains('tall')&&r.querySelector('.stop b').textContent.startsWith(${jsLiteral(NAME)})})()`, `${tag}: the renamed asker is a tall row`);
-      const e = await js(`(()=>{const r=__rail.row(${jsLiteral(asker)}),q=r.querySelector('.sreq'),b=r.querySelector('.stop b');return {img:!!r.querySelector('img,i'),nameKids:[...b.children].filter(c=>/^(B|IMG)$/.test(c.tagName)).length,req:q.textContent,reqKids:q.children.length,label:r.getAttribute('aria-label'),title:r.title}})()`);
+      const e = await js(`(()=>{const r=__rail.row(${jsLiteral(asker)}),q=r.querySelector('.sreq'),b=r.querySelector('.stop b');return {img:!!r.querySelector('img,i'),nameKids:[...b.children].filter(c=>/^(B|IMG)$/.test(c.tagName)).length,req:q.textContent,reqKids:q.children.length,label:r.getAttribute('aria-label'),title:r.dataset.tip||''}})()`); /* spec 005 FR-340: the row's tooltip (data-tip) replaced its native title */
       assert.ok(!e.img && e.nameKids === 0 && e.reqKids === 0, `${tag}: no markup became elements in the row: ${JSON.stringify(e)}`);
       assert.ok(e.req.includes(LIT), `${tag}: the request is shown as text: ${e.req}`);
       assert.ok(e.label.startsWith(NAME) && e.label.includes(LIT) && e.title.includes(NAME) && e.title.includes(LIT), `${tag}: the name and title carry the literal text: ${JSON.stringify(e)}`);
@@ -287,7 +287,7 @@ module.exports = async (ctx) => {
     // a long folder name: ellipsis, title, no overflow
     const long = '<i>x</i>&amp;' + 'a-very-long-folder-name-that-goes-on-and-on-'.repeat(3); // markup in a name stays text
     assert.ok(await js(`window.__durbarSimUi.renameRoomElsewhere(${jsLiteral(needG.key)},${jsLiteral(long)})`), `${tag}: the folder is renamed`);
-    await ok(`__rail.head(${jsLiteral(needG.key)}).title===${jsLiteral(long)}`, `${tag}: the long name is in the heading's title`);
+    await ok(`__rail.head(${jsLiteral(needG.key)}).dataset.tip.split('\\n')[0]===${jsLiteral(long)}`, `${tag}: the long name is in the heading's tooltip`);
     const ln = await js(`(()=>{const h=__rail.head(${jsLiteral(needG.key)}),n=h.querySelector('.rg-n');const cs=getComputedStyle(n);return {cut:n.scrollWidth>n.clientWidth,ell:cs.textOverflow,font:parseFloat(cs.fontSize),over:document.querySelector('.rail').scrollWidth>document.querySelector('.rail').clientWidth+1,text:n.textContent,markup:!!h.querySelector('i')}})()`);
     assert.ok(ln.cut && ln.ell === 'ellipsis' && ln.font >= 10.5 && !ln.over, `${tag}: a long name is cut with an ellipsis: ${JSON.stringify(ln)}`);
     assert.ok(ln.text === long && !ln.markup, `${tag}: a folder name with markup is shown as text: ${JSON.stringify(ln.text.slice(0, 30))}`);
@@ -328,7 +328,12 @@ module.exports = async (ctx) => {
     assert.ok(mac.top === 'drag' && mac.head === 'drag' && mac.office === 'no-drag' && mac.title === 'no-drag' && mac.more === 'no-drag' && mac.list !== 'drag' && mac.row !== 'drag' && mac.pad === '8px', `${tag}: Mac drag areas: ${JSON.stringify(mac)}`);
     const macNoNotice = await js(`(()=>{const root=document.documentElement,was=root.dataset.platform;root.dataset.platform='darwin';const ns=[...document.querySelectorAll('.notice-strip')].filter(n=>!n.hidden);ns.forEach(n=>n.hidden=true);const p=getComputedStyle(document.querySelector('.rail-top')).paddingLeft;ns.forEach(n=>n.hidden=false);if(was===undefined)delete root.dataset.platform;else root.dataset.platform=was;return p;})()`);
     assert.strictEqual(macNoNotice, '78px', `${tag}: Mac: with no notice bar the top row keeps 78px for the traffic lights`);
+    const tipUp = await js(`!!document.getElementById('appTip')&&!document.getElementById('appTip').hidden`);
     await H.key('Escape');
+    if (tipUp) { // spec 005 FR-340: a focused row's folder tooltip is shown; the first Escape hides it (WCAG 1.4.13, as for the status counts), the second closes the chat
+      await ok(`document.getElementById('appTip').hidden&&document.body.classList.contains('panel-open')`, `${tag}: the first Escape hides the rail's tooltip and keeps the chat`);
+      await H.key('Escape');
+    }
     await ok(`!document.body.classList.contains('panel-open')`, `${tag}: chat closed`);
   }
 
