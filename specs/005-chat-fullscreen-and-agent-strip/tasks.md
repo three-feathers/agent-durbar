@@ -182,6 +182,9 @@ PRs, gates and line-count goals: `plan.md`. Each PR measures on `main` first and
 ## 2026-11-17: the planner's size check counts work (issue #1846)
 - [x] T254 [US1] `scripts/test-subretire.ts`: replace the fixed 1000 ms wall limit for 200,000 helpers with counted field reads (`assertPlanWork`, fake-count self-test) and a 20 s thread-CPU backstop; mutants: insertion sort (dies at "end time ... worse than n log n"), an extra status pass (dies at "status ... times").
 
+## 2026-11-19: an agent that fails is announced when its chat is not open (issue #1908)
+- [x] T255 [US1] `noteFailed(a)` in `app.js`, called by `setState` on entering the error state: `announce("<name> has an error.")` unless the agent is a helper, its folder or floor is hidden, the simulator is still replaying, or its chat is shown; `scripts/check-005-announce-error.js` (in `ui-suite.js`), mutants `ANNOUNCE_ERR_MUTANT=silent|again|shown` each fail at their own label [FR-244]. `[KNOWN GAP]` a hidden folder or floor, the replay and a real screen reader are not driven; a failure in the open chat still says "Reply finished" (FR-038).
+
 ## 2026-11-19 (second entry): the open chat says that the reply failed (issue #1917)
 - [x] T256 [US1] `failedTurn` flag on the agent (set by an `error` status, cleared by a `working` status) read by `syncRunState` in `app.js`: a turn that ends after an error says "Reply failed" (Stop still says "Stopped", else "Reply finished"); `scripts/check-005-announce-failed.js` (in `ui-suite.js`), mutants `ANNOUNCE_FAIL_MUTANT=finished|always|sticky` [FR-038]
 

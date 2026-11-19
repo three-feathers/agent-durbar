@@ -984,6 +984,8 @@ console.log('ui-suite: check-parallel and ui-suite install Electron once before 
     const flagged = suite.DRIVERS.filter((d) => d.focus).map(label).sort();
     assert.deepStrictEqual(flagged, ['check-097-drag-cancel', 'check-097-hover-card', 'check-brain-draw', 'shots-097-screens', 'shots-097-screens retro'], 'the focus entries are the ones with a failure on record (#1498, #1408, #1282: check-brain-draw failed its Full-mode assert on windows-latest shard 2/4, both tries); check-097-drag-cancel is focus-sensitive by design: its held drags end on a real OS blur from a neighbour window (issue 1550)');
     assert.deepStrictEqual([['darwin', {}], ['win32', {}], ['linux', {}], ['linux', { DISPLAY: ':0' }], ['linux', { DISPLAY: ':0', UI_SUITE_XVFB: '1' }]].map(([p, e]) => suite.sharedDesktop(p as string, e as Record<string, string>)), [true, true, false, true, false], 'windows share a desktop on macOS, Windows and Linux with a display; not under xvfb');
+    assert.deepStrictEqual([['1'], ['1.25'], ['1.5'], ['2'], ['x'], ['']].map(([d]) => suite.sharedDesktop('linux', { DISPLAY: ':0', UI_SUITE_DPR: d })), [true, false, false, false, true, true], 'FR-273 (issue 1914): a forced ratio above 1 never runs on the desktop (a small display clamps the window); 1, none and a bad value keep it');
+    assert.strictEqual(suite.sharedDesktop('darwin', { UI_SUITE_DPR: '2' }), true, 'FR-273: macOS has no virtual display, the forced ratio runs there');
     const only = ['shots-097-screens', 'check-097-hover-card', 'shots-017', 'shots-018', 'shots-033', 'check-office-fill'].join(',');
     const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'ui-suite-focus-'));
     const was = { jobs: process.env.UI_SUITE_JOBS, out: process.env.UI_SUITE_OUT, log: console.log };
