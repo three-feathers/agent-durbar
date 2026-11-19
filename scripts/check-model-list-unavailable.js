@@ -12,7 +12,7 @@
  * A miss is listed and fails the run at the end (DRIVER FAILED).
  */
 const path = require('path');
-const { helpers } = require('./driver-helpers');
+const { helpers, jsLiteral } = require('./driver-helpers');
 const OUT = process.env.OUT || process.env.SHOTS_OUT || require('os').tmpdir();
 
 module.exports = async (ctx) => {
@@ -51,7 +51,7 @@ module.exports = async (ctx) => {
     await settle();
     const r0 = (await calls()).length;
     await js(`window.__simResume&&window.__simResume()`);
-    check(await until(`(window.__simListCalls||[]).length===${r0 + 1}`), 'resume: one ask after the wake');
+    check(await until(`(window.__simListCalls||[]).length===${jsLiteral(r0 + 1)}`), 'resume: one ask after the wake');
     check((await calls())[r0] && (await calls())[r0].fresh === true, 'resume: the ask is fresh');
     await settle();
     await js(`window.__simResume&&window.__simResume()`); await settle();
