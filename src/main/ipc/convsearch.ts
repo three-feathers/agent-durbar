@@ -49,7 +49,7 @@ export interface ConvSearchIpcDeps {
   /** True when an agent is open (no agent: nothing to search, no scan starts). */
   hasSessions(): boolean;
   /** The plan and its readers, from main's own state (`buildScope`); `stop` says this search is no longer wanted; `codexLists` is main's own box-session cache (FR-026). */
-  scope(stop: () => boolean, codexLists: CodexListCache): Promise<Scope>;
+  scope(stop: () => boolean, codexLists: CodexListCache, onListing?: (done: number, total: number) => void): Promise<Scope>;
   /** Tests: the cache (default: a new one). */
   codexLists?: CodexListCache;
   /** The masker and the window's fold functions (loaded from the built tree when first needed). */
@@ -65,7 +65,7 @@ export interface ConvSearchIpcDeps {
 /** FR-031: exactly the fields the window may get (no reliance on what else a hit object could carry). */
 const toHit = (h: ScanHit): ConvSearchHit => ({
   adapter: h.adapter, sessionId: h.sessionId, ...(h.agentId ? { agentId: h.agentId } : {}), group: h.group, app: h.app, folderName: h.folderName,
-  title: h.title, titleMarks: h.titleMarks, time: h.time, excerpts: h.excerpts.map((x) => ({ text: x.text, marks: x.marks, speaker: x.speaker, anchor: { n: x.anchor.n, head: x.anchor.head } })), more: h.more,
+  title: h.title, titleMarks: h.titleMarks, time: h.time, excerpts: h.excerpts.map((x) => ({ text: x.text, marks: x.marks, speaker: x.speaker, anchor: { n: x.anchor.n, head: x.anchor.head } })), more: h.more, rank: h.rank === 0 || h.rank === 1 ? h.rank : 2,
 });
 const noNotes = (): ScanNotes => ({ searched: 0, folders: 0, notInstalled: [], tooLarge: 0, unreadable: 0, titleOnly: { count: 0, apps: [] }, hidden: 0, floorsOff: 0, capped: { sessions: false, perFolder: false, results: false }, timedOut: false, cut: 0, bounded: 0, maskFailed: 0 });
 
@@ -137,7 +137,7 @@ export function register(deps: ConvSearchIpcDeps): { cancelAll(): void; dropKept
       if (cancelled) return; // a newer start or a cancel came first: this one never builds a plan (two starts make one scan)
       void (async () => {
         try {
-          const sc = await deps.scope(() => cancelled, codexLists);
+          const sc = await deps.scope(() => cancelled, codexLists, (d, t) => send('search:batch', { kind: 'listing', searchId: id, done: d, total: t })); // issue 1904: progress while the plan is built
           if (cancelled) return;
           extra = { ...sc.notes };
           const m = deps.matcher();
