@@ -2252,3 +2252,10 @@ Owner decision (Vikram, 2026-11-19, Telegram): before the Retro arcade is switch
 **Still failing, left to the coordinator:** `test:featureinventory` also requires the Helpers row to say `built` for worlds once a world is `shippable: true`; an owner decision does not lift that rule, and `built` needs a registry moment with `code: present`, which no helpers moment has. The arcade draws helper heads (FR-306), but which moment the row should name, or whether the rule changes, is not decided here.
 
 **Numbers** (`npm run specs:numbers`): no new FR, T or Q.
+
+## Changes 2026-11-19 (fourth entry): the Helpers row says `built (desk-card)` for the arcade (spec 021 FR-078; T230; issues #1400, #1901; no new FR)
+
+The rule is unchanged. Spec 098 T011 in part (#1902, merged) put `data-surface="desk-card"` on every Real office desk plate and made `desk-card` `code: present`. A desk's helpers are drawn on its card (spec 097 FR-306: the strip under the plate, or the "+N and dots" inside it), so the Helpers row's Worlds cell names that moment instead of the owner's decision. Evidence: `check-097-helpers` (Photo office, cave, arcade, 15 agents, 1440x900 and 1280x800: heads, the "+N and dots" fallback, and the marker on every desk plate) and `check-097-helper-row` (one row of heads, all three worlds), both in the proof cell.
+
+**Numbers** (`npm run specs:numbers`): no new FR, T or Q.
+
