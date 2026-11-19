@@ -253,3 +253,7 @@
 ## 2026-11-13: the launchers with a window wider than 1280 get the sized Xvfb screen (FR-269)
 
 - [x] T178 (FR-269) `launchCommand` of `scripts/ui-suite.js` in `check-office-overlap.js`, `check-theme-geometry.js`, `check-mac-titlebar.js`, `world-matrix.js`, `installed-app-ci.js`; `scripts/test-ui-suite.ts` source check with a mutant; `changelog.d/008-1628-xvfb-screen.md`. The decision table and the DPR 2 CI numbers are in the spec.
+
+## 2026-11-19: the last wall-clock limits in test asserts (issue #1853)
+
+- [x] T370 (delta 2026-11-19, issue #1853, part 3) `scripts/test-schedules.ts` (`assertCpuUnder`), `scripts/test-check-parallel.js` (worker 0 reads the memory 0 times), `scripts/test-release-video.js` (wall half dropped; `ETIMEDOUT` is the property): no fixed wall-clock `<` limit left in the asserts of `scripts/test-*`; two mutants die at their own text.

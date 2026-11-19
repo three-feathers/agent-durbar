@@ -1,0 +1,1 @@
+- **Three more tests no longer fail on a busy machine** (spec 008, #1853): the schedules size check measures CPU time, the check-parallel worker 0 check counts memory reads, and the release-video kill check drops its wall limit.
