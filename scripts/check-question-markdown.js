@@ -1,5 +1,5 @@
 /*
- * Check for spec 052 (2026-11-19 delta, issue #1927, T377): the agent's question card renders the question text's Markdown with the chat's own
+ * Check for spec 052 (2026-11-19 delta, issue #1927, T378): the agent's question card renders the question text's Markdown with the chat's own
  * safe renderer (DurbarMD), after the text is masked. Simulator only (no AI credits).
  *
  *   npm run check:ui -- --only check-question-markdown

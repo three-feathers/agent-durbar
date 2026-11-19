@@ -485,4 +485,4 @@
 - [x] T371 `scripts/check-status-tooltip.js`: `focusWin` calls `H.needFocus(label)` (mutant `STATUSTIP_NO_WINDOW_FOCUS=1` fails with the focus message); the `hasFocus` assert removed. Spec 052 Changes 2026-11-19.
 
 ## 2026-11-19: the question card renders the question's Markdown (FR-160, issue #1927)
-- [x] T377 `app.js` `showQuestion`: `safeMask` then `DurbarMD.render` into `.q-text.md > .q-md`; the options' group and the "Other answer" label read the plain rendered text; `styles.css` `.q-md` rules; `sim.ts` `simquestion=markdown`; `scripts/check-question-markdown.js` (in `ui-suite.js`) with three mutants in its header. Spec 052 Changes 2026-11-19.
+- [x] T378 `app.js` `showQuestion`: `safeMask` then `DurbarMD.render` into `.q-text.md > .q-md`; the options' group and the "Other answer" label read the plain rendered text; `styles.css` `.q-md` rules; `sim.ts` `simquestion=markdown`; `scripts/check-question-markdown.js` (in `ui-suite.js`) with three mutants in its header. Spec 052 Changes 2026-11-19.
