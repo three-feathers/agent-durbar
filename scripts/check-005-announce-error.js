@@ -47,7 +47,11 @@ module.exports = async (ctx) => {
     await js(`(()=>{window.__seq=[];const el=document.getElementById('srAnnounce');window.__last=0;window.__mark=0;new MutationObserver(()=>{window.__last=performance.now();if(el.textContent)window.__seq.push(el.textContent);}).observe(el,{childList:true,characterData:true,subtree:true});})();0`);
     const emit = (id, status, intent) => js(`window.__mark=performance.now();window.__durbarSimUi.emit(${jsLiteral({ type: 'status', sessionId: id, timestamp: Date.now(), status, intent })});0`);
     const said = (name) => js(`window.__seq.filter(x=>x===${jsLiteral(name + ' has an error.')}).length`);
-    const waitSaid = async (name, n, what) => { const ok = await until(`window.__seq.filter(x=>x===${jsLiteral(name + ' has an error.')}).length>=${n}`, 8000); assert.ok(ok, `${what}; #srAnnounce took ${JSON.stringify(await js('window.__seq'))}`); };
+    const waitSaid = async (name, n, what) => {
+      const ok = await until(`window.__seq.filter(x=>x===${jsLiteral(name + ' has an error.')}).length>=${n}`, 8000);
+      const seen = await js('window.__seq');
+      assert.ok(ok, what + '; #srAnnounce took ' + JSON.stringify(seen));
+    };
     /* announce() sets its text 60 ms after the call and a later call replaces an earlier one that has not landed: a case waits until nothing has changed in #srAnnounce for 150 ms after its last event (a condition, as check-005-announce-request's `settled`) */
     const idle = async (what) => assert.ok(await until('performance.now()-Math.max(window.__last,window.__mark)>150', 8000), 'the announcement settled after ' + what);
     /* 1 */

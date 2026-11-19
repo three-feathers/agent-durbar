@@ -3025,7 +3025,7 @@ function noteCompleted(a){
   if(r==='marked'){UNREAD_AT.set(a.id,Date.now());const rm=roomOf(a);if(rm&&roomShown(rm)){announce(a.name+' finished. New reply.');UNREAD_SAID.add(a.id);}} /* FR-174: nothing is announced for a hidden folder or floor */
   else if(r==='seen')UNREAD_AT.delete(a.id);
 }
-/* spec 005 FR-244 (issue #1908): an agent that ENTERS the error state while its chat is not shown is said once, "<name> has an error.", in every world (the office draws the state; a screen reader had only the plate's name changing).
+/* spec 005 FR-244 (issue 1908): an agent that ENTERS the error state while its chat is not shown is said once, "<name> has an error.", in every world (the office draws the state; a screen reader had only the plate's name changing).
    Nothing for a helper, for a hidden folder or floor (FR-174's rule), for the simulator's start-up replay, nor while the agent stays in error. Normal priority: a request outranks it (FR-237). */
 function noteFailed(a){
   if(a.parent)return;
