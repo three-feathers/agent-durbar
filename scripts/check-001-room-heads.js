@@ -10,6 +10,7 @@
  *     nofocus   the keyboard focus never reaches the tooltip                  -> "keyboard focus on a head's control shows its tooltip"
  *     raw       the tooltip's path is the raw one, not `~`                    -> "the path is masked, home as ~"
  *     sign      the Real office sign loses its `data-tip` (native title again) -> "the sign of <folder> says its folder, masked"
+ *     escape    a tooltip the pointer is on takes the Escape again (a patched copy of the built app) -> "Escape hides a tooltip the pointer is on, and the key goes on"
  *
  * 16 folders with one agent each (`simrooms=solo&simnames=alike`: names that start alike, two named iot-portal, one under /Users/paco, which must
  * read ~), at 1440x900 and 1280x800, Open office and Real office. It fails when:
@@ -21,6 +22,9 @@
  *   - the Real office sign (every folder) lacks the same, or its cut name hides its tail.
  */
 const assert = require('assert');
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
 const { helpers, jsLiteral } = require('./driver-helpers');
 
 const MUTANT = process.env.HEADS_MUTANT || '';
@@ -54,6 +58,17 @@ const READ_HEADS = () => {
 };
 
 module.exports = async (ctx) => {
+  let INDEX; let copy;
+  if (MUTANT === 'escape') { /* the old tooltip.js: Escape always used up (spec 001 FR-270, 2026-11-19) */
+    copy = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-heads-escape-'));
+    fs.cpSync(path.join(__dirname, '..', 'dist'), copy, { recursive: true }); // the page reads ../shared too
+    const f = path.join(copy, 'renderer', 'tooltip.js');
+    const src = fs.readFileSync(f, 'utf8'); const from = 'if(!byPointer)e.stopPropagation();';
+    assert.strictEqual(src.split(from).length - 1, 1, 'the escape mutant finds its line in tooltip.js once');
+    fs.writeFileSync(f, src.replace(from, () => 'e.stopPropagation();'));
+    INDEX = path.join(copy, 'renderer', 'index.html');
+  }
+  try {
   const H = helpers(ctx);
   const { js, until } = H;
   const ok = async (expr, what, ms) => assert.ok(await until(expr, ms || 6000), what);
@@ -82,7 +97,7 @@ module.exports = async (ctx) => {
   let sawCutWhole = false;
   for (const [w, h] of SIZES) {
     const tag = `${w}x${h}`;
-    await H.load({ w, h, query: Q, ready: `document.querySelectorAll('#stage .room-head .room-name').length>=16`, readyMs: 30000, focus: true });
+    await H.load({ w, h, index: INDEX, query: Q, ready: `document.querySelectorAll('#stage .room-head .room-name').length>=16`, readyMs: 30000, focus: true });
     await H.needFocus(tag);
     if (MUTANT === 'title') await js(`(()=>{for(const hd of document.querySelectorAll('#stage .room-head')){const n=hd.querySelector('.room-name');n.title=n.textContent+'\\n'+hd.dataset.tip.split('\\n')[1];hd.removeAttribute('data-tip');}})()`);
     if (MUTANT === 'onepiece') await js(`(()=>{for(const n of document.querySelectorAll('#stage .room-name'))n.textContent=n.textContent;})()`);
@@ -133,6 +148,11 @@ module.exports = async (ctx) => {
     await hoverAt(wide.room, wide.gap, `the empty part of ${wide.name}`);
     await ok(shown, `${tag}: hovering the empty part of a head shows its tooltip`, 2000);
     checkTip(await tipText(), wide.name, `${tag}: ${wide.name} (empty part)`);
+    await js(`window.__esc=0;if(!window.__escOn){window.__escOn=1;document.addEventListener('keydown',e=>{if(e.key==='Escape')window.__esc++;});}`);
+    await H.key('Escape', [], { pause: 60 });
+    await ok(hidden, `${tag}: Escape hides a tooltip the pointer is on, and the key goes on (so it still closes a menu or a chat)`);
+    assert.strictEqual(await js(`window.__esc`), 1, `${tag}: Escape hides a tooltip the pointer is on, and the key goes on (so it still closes a menu or a chat)`);
+    await away();
     const hov = points.find((p) => p.more);
     await hoverAt(hov.room, hov.more, `the ⋯ button of ${hov.name}`);
     await ok(hidden, `${tag}: on a button of the head (which has its own tooltip) the head's tooltip steps back`, 2000);
@@ -148,12 +168,13 @@ module.exports = async (ctx) => {
     checkTip(await tipText(), first.name, `${tag}: ${first.name} (focus)`);
     await H.key('Escape', [], { pause: 60 });
     await ok(hidden, `${tag}: Escape hides the head's tooltip`);
+    assert.strictEqual(await js(`window.__esc`), 1, `${tag}: a tooltip shown by keyboard focus uses the Escape up (WCAG 1.4.13): it did not reach the page`);
     await js(`document.activeElement.blur()`);
     await ok(hidden, `${tag}: focus away: no tooltip`);
     await H.shot(`${process.env.OUT || require('os').tmpdir()}/1905-heads-${tag}.png`, { prep: 'mouse', delay: 300 });
 
     /* ---- Real office: the sign says its folder and keeps its name's end ---- */
-    await H.load({ w, h, query: { ...Q, officeview: 'real' }, ready: `document.querySelectorAll('#stage .ro-sign .ro-sc').length>=16`, readyMs: 30000, focus: true });
+    await H.load({ w, h, index: INDEX, query: { ...Q, officeview: 'real' }, ready: `document.querySelectorAll('#stage .ro-sign .ro-sc').length>=16`, readyMs: 30000, focus: true });
     await H.needFocus(tag + ' real');
     if (MUTANT === 'sign') await js(`(()=>{for(const s of document.querySelectorAll('#stage .ro-sign')){const b=s.querySelector('b');if(b)b.title=s.dataset.tip;s.removeAttribute('data-tip');}})()`);
     const S = await js(`(()=>[...document.querySelectorAll('#stage .ro-sign')].filter(s=>s.querySelector('.ro-sc')).map(s=>{const b=s.querySelector(':scope>b'),h=b.querySelector(':scope>.rn-h'),t=b.querySelector(':scope>.rn-t'),bb=b.getBoundingClientRect(),tb=t&&t.getBoundingClientRect(),r=s.getBoundingClientRect();
@@ -178,4 +199,7 @@ module.exports = async (ctx) => {
   }
   assert.ok(sawCutWhole, 'Real office: at least one cut sign keeps its tail whole (at one of the two sizes)');
   console.log('check-001-room-heads: all checks passed');
+  } finally {
+    if (copy) fs.rmSync(copy, { recursive: true, force: true });
+  }
 };

@@ -328,12 +328,7 @@ module.exports = async (ctx) => {
     assert.ok(mac.top === 'drag' && mac.head === 'drag' && mac.office === 'no-drag' && mac.title === 'no-drag' && mac.more === 'no-drag' && mac.list !== 'drag' && mac.row !== 'drag' && mac.pad === '8px', `${tag}: Mac drag areas: ${JSON.stringify(mac)}`);
     const macNoNotice = await js(`(()=>{const root=document.documentElement,was=root.dataset.platform;root.dataset.platform='darwin';const ns=[...document.querySelectorAll('.notice-strip')].filter(n=>!n.hidden);ns.forEach(n=>n.hidden=true);const p=getComputedStyle(document.querySelector('.rail-top')).paddingLeft;ns.forEach(n=>n.hidden=false);if(was===undefined)delete root.dataset.platform;else root.dataset.platform=was;return p;})()`);
     assert.strictEqual(macNoNotice, '78px', `${tag}: Mac: with no notice bar the top row keeps 78px for the traffic lights`);
-    const tipUp = await js(`!!document.getElementById('appTip')&&!document.getElementById('appTip').hidden`);
     await H.key('Escape');
-    if (tipUp) { // spec 005 FR-340: a focused row's folder tooltip is shown; the first Escape hides it (WCAG 1.4.13, as for the status counts), the second closes the chat
-      await ok(`document.getElementById('appTip').hidden&&document.body.classList.contains('panel-open')`, `${tag}: the first Escape hides the rail's tooltip and keeps the chat`);
-      await H.key('Escape');
-    }
     await ok(`!document.body.classList.contains('panel-open')`, `${tag}: chat closed`);
   }
 
