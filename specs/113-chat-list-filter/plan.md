@@ -30,6 +30,8 @@ One pure module (`src/renderer/railfilter.js`, `window.DurbarRailFilter`) folds 
 
 ## Existing capability check (spec 021 FR-031)
 
+Line numbers below are at `e35ebf76a` (2026-11-18); each build phase re-checks them by the function or selector name in the middle column.
+
 | Need | Reused | Where |
 |---|---|---|
 | Fold, words, ranges | `DurbarSessionSearch.fold`, `terms`, `locate` | `src/renderer/sessionsearch.js:8-10`, `:36-41` |
