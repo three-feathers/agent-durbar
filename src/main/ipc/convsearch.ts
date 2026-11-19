@@ -13,11 +13,11 @@ import { randomBytes } from 'crypto';
 import type { WebContents } from 'electron';
 import { fromAppFrame as fromApp, ipcHandle } from '../ipcguard';
 import type { ConvSearchEvent, ConvSearchHit, ConvSearchNotes, ConvSearchStart } from '../../shared/api';
-import { startScan } from '../convsearch';
+import { createEarlyTitles, startScan } from '../convsearch';
 import { unhide } from '../../shared/redact';
-import type { ScanDeps, ScanHit, ScanNotes } from '../convsearch';
+import type { EarlyTitles, ScanBatch, ScanDeps, ScanHit, ScanNotes } from '../convsearch';
 import { createCodexListCache } from '../convscope';
-import type { CodexListCache, Scope } from '../convscope';
+import type { CodexListCache, Scope, ScopeProgress } from '../convscope';
 
 /** FR-033: the query's bounds (Q3: 3 characters, spaces not counted, in code points before `fold`). */
 export const QUERY = { maxChars: 200, maxWords: 8, minChars: 3 } as const;
@@ -49,7 +49,7 @@ export interface ConvSearchIpcDeps {
   /** True when an agent is open (no agent: nothing to search, no scan starts). */
   hasSessions(): boolean;
   /** The plan and its readers, from main's own state (`buildScope`); `stop` says this search is no longer wanted; `codexLists` is main's own box-session cache (FR-026). */
-  scope(stop: () => boolean, codexLists: CodexListCache): Promise<Scope>;
+  scope(stop: () => boolean, codexLists: CodexListCache, onProgress?: (p: ScopeProgress) => void): Promise<Scope>;
   /** Tests: the cache (default: a new one). */
   codexLists?: CodexListCache;
   /** The masker and the window's fold functions (loaded from the built tree when first needed). */
@@ -65,9 +65,9 @@ export interface ConvSearchIpcDeps {
 /** FR-031: exactly the fields the window may get (no reliance on what else a hit object could carry). */
 const toHit = (h: ScanHit): ConvSearchHit => ({
   adapter: h.adapter, sessionId: h.sessionId, ...(h.agentId ? { agentId: h.agentId } : {}), group: h.group, app: h.app, folderName: h.folderName,
-  title: h.title, titleMarks: h.titleMarks, time: h.time, excerpts: h.excerpts.map((x) => ({ text: x.text, marks: x.marks, speaker: x.speaker, anchor: { n: x.anchor.n, head: x.anchor.head } })), more: h.more,
+  title: h.title, titleMarks: h.titleMarks, time: h.time, excerpts: h.excerpts.map((x) => ({ text: x.text, marks: x.marks, speaker: x.speaker, anchor: { n: x.anchor.n, head: x.anchor.head } })), more: h.more, rank: h.rank === 'title' || h.rank === 'word' ? h.rank : 'part',
 });
-const noNotes = (): ScanNotes => ({ searched: 0, folders: 0, notInstalled: [], tooLarge: 0, unreadable: 0, titleOnly: { count: 0, apps: [] }, hidden: 0, floorsOff: 0, capped: { sessions: false, perFolder: false, results: false }, timedOut: false, cut: 0, bounded: 0, maskFailed: 0 });
+const noNotes = (): ScanNotes => ({ searched: 0, folders: 0, notInstalled: [], tooLarge: 0, unreadable: 0, titleOnly: { count: 0, apps: [] }, hidden: 0, floorsOff: 0, capped: { sessions: false, perFolder: false, results: false }, timedOut: false, cut: 0, bounded: 0, maskFailed: 0, slow: 0 });
 
 export function register(deps: ConvSearchIpcDeps): { cancelAll(): void; dropKept(): void; live(): string | undefined } {
   const now = deps.now ?? (() => performance.now());
@@ -137,14 +137,19 @@ export function register(deps: ConvSearchIpcDeps): { cancelAll(): void; dropKept
       if (cancelled) return; // a newer start or a cancel came first: this one never builds a plan (two starts make one scan)
       void (async () => {
         try {
-          const sc = await deps.scope(() => cancelled, codexLists);
+          const m = deps.matcher();
+          const emit = (b: ScanBatch): void => { if (b.progress.total) last = { ...b.progress }; send('search:batch', { kind: 'batch', searchId: id, hits: b.hits.map(toHit), progress: b.progress, groups: b.groups }); };
+          // FR-054, FR-055: the plan's progress goes out as it is built, and the titles of what it has so far are matched at once
+          let early: EarlyTitles | undefined;
+          const sc = await deps.scope(() => cancelled, codexLists, (p) => {
+            if (cancelled) return;
+            send('search:batch', { kind: 'plan', searchId: id, listed: p.listed, folders: p.folders });
+            early ??= createEarlyTitles(q.query, { masker: m.masker, search: m.search, values: p.values, emit });
+            early.add(p.sessions);
+          });
           if (cancelled) return;
           extra = { ...sc.notes };
-          const m = deps.matcher();
-          scan = startScan(sc.plan, q.query, {
-            now, yieldNow, sleep, read: sc.read, values: sc.values, masker: m.masker, search: m.search,
-            emit: (b) => { last = { ...b.progress }; send('search:batch', { kind: 'batch', searchId: id, hits: b.hits.map(toHit), progress: b.progress, groups: b.groups }); },
-          });
+          scan = startScan(sc.plan, q.query, { now, yieldNow, sleep, read: sc.read, values: sc.values, masker: m.masker, search: m.search, emit, early });
           const end = await scan.done;
           if (!end.cancelled) done(end.notes, end.progress, end.failed);
         } catch {

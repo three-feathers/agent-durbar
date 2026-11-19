@@ -59,6 +59,14 @@ export interface ScopeDeps {
   readChat?: typeof readChat;
 }
 
+/** FR-054: what `buildScope` tells while it lists: how many folders are done, and the sessions added since the last call (for the title pass, FR-055). */
+export interface ScopeProgress {
+  listed: number;
+  folders: number;
+  sessions: readonly PlanSession[];
+  values(s: PlanSession): readonly string[];
+}
+
 export interface Scope {
   plan: ScanPlan;
   read: ScanDeps['read'];
@@ -74,6 +82,9 @@ export const SCOPE_LIST_MS = 30_000;
 const LATE = Symbol('late');
 
 /**
+ * FR-057: the same cache keeps the other apps' earlier-session listings (key `adapter\0folder`) and a folder's VS Code chats (key
+ * `chats\0folder`), under the same rules (the open ids of the app in that folder, 5 minutes, the folders that still have an open agent).
+ *
  * FR-026 (owner answer C): a folder's earlier Codex sessions as `thread/list` gave them, kept in memory for the search box session, so
  * the searches typed one after another start no new app-server. Nothing is written. A folder's list is dropped when it is older than
  * `CODEX_LIST_TTL_MS`, or when an open Codex session of that folder has left the office since it was listed (it is an earlier session
@@ -81,14 +92,17 @@ const LATE = Symbol('late');
  * at each search. `clear()` drops everything (the box cleared or closed, the window gone, main's own stop).
  */
 export interface CodexListCache {
-  get(folderKey: string, openCodexIds: readonly string[], now: number): PreviousSession[] | undefined;
-  set(folderKey: string, openCodexIds: readonly string[], list: readonly PreviousSession[], now: number): void;
+  get<T = PreviousSession>(folderKey: string, openCodexIds: readonly string[], now: number): T[] | undefined;
+  set<T = PreviousSession>(folderKey: string, openCodexIds: readonly string[], list: readonly T[], now: number): void;
+  /** FR-057: drops every entry whose folder (the last `\0` part of its key) is not in `folderKeys`: a folder with no open agent keeps nothing. */
+  retain(folderKeys: ReadonlySet<string>): void;
   clear(): void;
   size(): number;
 }
 
 export function createCodexListCache(ttlMs: number = CODEX_LIST_TTL_MS): CodexListCache {
-  const m = new Map<string, { at: number; ids: Set<string>; list: PreviousSession[] }>();
+  const m = new Map<string, { at: number; ids: Set<string>; list: unknown[] }>();
+  const copy = (p: unknown): unknown => (p && typeof p === 'object' ? { ...(p as object) } : p);
   return {
     get(folderKey, openCodexIds, now) {
       const e = m.get(folderKey);
@@ -98,10 +112,13 @@ export function createCodexListCache(ttlMs: number = CODEX_LIST_TTL_MS): CodexLi
         m.delete(folderKey);
         return undefined;
       }
-      return e.list.map((p) => ({ ...p }));
+      return e.list.map(copy) as never;
     },
     set(folderKey, openCodexIds, list, now) {
-      m.set(folderKey, { at: now, ids: new Set(openCodexIds), list: list.map((p) => ({ ...p })) });
+      m.set(folderKey, { at: now, ids: new Set(openCodexIds), list: list.map(copy) });
+    },
+    retain(folderKeys) {
+      for (const k of [...m.keys()]) if (!folderKeys.has(k.slice(k.lastIndexOf('\0') + 1))) m.delete(k);
     },
     clear: () => m.clear(),
     size: () => m.size,
@@ -126,7 +143,8 @@ const UNTITLED = 'Untitled session';
 const text = (v: unknown): string => (typeof v === 'string' ? v : '');
 
 /** The plan and its readers. `stop` is asked between folders (a newer search makes this one moot). */
-export async function buildScope(d: ScopeDeps, stop: () => boolean = () => false): Promise<Scope> {
+export async function buildScope(d: ScopeDeps, stop: () => boolean = () => false, onProgress?: (p: ScopeProgress) => void): Promise<Scope> {
+  const values = (s: PlanSession): readonly string[] => scanSecretValues(d.values, { folderKey: s.folderKey, agentId: s.agentId, open: s.group === 'office' });
   const sources = new WeakMap<PlanSession, Source>();
   const sessions: PlanSession[] = [];
   const unavailable = new Set<string>();
@@ -185,76 +203,110 @@ export async function buildScope(d: ScopeDeps, stop: () => boolean = () => false
   // one copy of the agents for the folder loop: the open ids and a folder's Codex ids (key of the kept list) must agree, whatever closes while a listing is awaited
   const snapshot = new Map(d.agents);
   const openIds = openIdsOf({ agents: snapshot, resumeIdFor: d.resumeIdFor });
+  // FR-054: progress in folders (a folder is listed when all its units are done, given up or failed); FR-057: a folder with no open agent keeps nothing
+  const unitsLeft = new Map<string, number>();
+  for (const a of firstOf.values()) unitsLeft.set(d.wsKey(a), (unitsLeft.get(d.wsKey(a)) ?? 0) + 1);
+  d.codexLists?.retain(new Set(unitsLeft.keys()));
+  let listed = 0;
+  let told = 0;
+  const tell = (): void => {
+    try { onProgress?.({ listed, folders: unitsLeft.size, sessions: sessions.slice(told), values }); } catch { /* a bad listener never breaks the plan */ }
+    told = sessions.length;
+  };
+  tell();
   for (const [k, a] of firstOf) {
     if (stop()) break;
     const key = d.wsKey(a);
-    const f = d.store?.get(key);
-    const hidden = (src: string): Set<string> => new Set((f?.prevHidden ?? []).filter((m) => m.src === src).map((m) => m.id));
-    const names = (src: string): Map<string, string> => new Map((d.store?.sessionNames(key) ?? []).filter((e) => e.src === src).map((e) => [e.id, e.name]));
-    const off = floorOff(a);
-    if (k.includes('\0')) {
-      const adapter = adapterOf(a);
-      const ad = d.router.forAgent(a.id);
-      if (!ad?.listPreviousSessions) continue;
-      let list: PreviousSession[];
-      try {
-        let started = false; // this scan's call ran (it was not shared): only then is the list excluding this scan's open ids kept
-        const listing = (): Promise<PreviousSession[]> => { started = true; return previousSessionsOf(ad, a.cwd, openIds); };
-        if (adapter === 'codex') {
-          // owner answer C: a folder on a floor that is off starts no app-server; it is counted instead
-          if (off) { floorOffFolders++; continue; }
-          // FR-026: the box session's kept list, else `thread/list` through a short-lived app-server, behind the gate (one at a time)
-          const ids = [...snapshot.values()].filter((x) => d.wsKey(x) === key && adapterOf(x) === 'codex').map((x) => x.id);
-          const at = (d.now ?? Date.now)();
-          const kept = d.codexLists?.get(key, ids, at);
-          if (kept) list = kept.filter((s) => !openIds.has(s.id)); // a session resumed since: open now, not earlier
-          else {
-            if (clock() >= deadline) { late(d.appName(adapter)); continue; } // past the plan's deadline: not started
-            const r = await inTime(d.gate.run(`list\0${key}`, listing, CODEX_LIST_GATE_MS) as Promise<PreviousSession[]>);
-            if (r === LATE) { late(d.appName(adapter)); continue; } // given up: not kept
-            // a listing leaves out the open ids of the scan that started it, so only that scan keeps it, under its own ids (review of PR 1232, round 2)
-            if (started) d.codexLists?.set(key, ids, r, at);
-            list = r.filter((s) => !openIds.has(s.id)); // shared with an earlier scan's call: a session resumed since is open now
+    try {
+      const f = d.store?.get(key);
+      const hidden = (src: string): Set<string> => new Set((f?.prevHidden ?? []).filter((m) => m.src === src).map((m) => m.id));
+      const names = (src: string): Map<string, string> => new Map((d.store?.sessionNames(key) ?? []).filter((e) => e.src === src).map((e) => [e.id, e.name]));
+      const off = floorOff(a);
+      if (k.includes('\0')) {
+        const adapter = adapterOf(a);
+        const ad = d.router.forAgent(a.id);
+        if (!ad?.listPreviousSessions) continue;
+        let list: PreviousSession[];
+        try {
+          let started = false; // this scan's call ran (it was not shared): only then is the list excluding this scan's open ids kept
+          const listing = (): Promise<PreviousSession[]> => { started = true; return previousSessionsOf(ad, a.cwd, openIds); };
+          if (adapter === 'codex') {
+            // owner answer C: a folder on a floor that is off starts no app-server; it is counted instead
+            if (off) { floorOffFolders++; continue; }
+            // FR-026: the box session's kept list, else `thread/list` through a short-lived app-server, behind the gate (one at a time)
+            const ids = [...snapshot.values()].filter((x) => d.wsKey(x) === key && adapterOf(x) === 'codex').map((x) => x.id);
+            const at = (d.now ?? Date.now)();
+            const kept = d.codexLists?.get(key, ids, at);
+            if (kept) list = kept.filter((s) => !openIds.has(s.id)); // a session resumed since: open now, not earlier
+            else {
+              if (clock() >= deadline) { late(d.appName(adapter)); continue; } // past the plan's deadline: not started
+              const r = await inTime(d.gate.run(`list\0${key}`, listing, CODEX_LIST_GATE_MS) as Promise<PreviousSession[]>);
+              if (r === LATE) { late(d.appName(adapter)); continue; } // given up: not kept
+              // a listing leaves out the open ids of the scan that started it, so only that scan keeps it, under its own ids (review of PR 1232, round 2)
+              if (started) d.codexLists?.set(key, ids, r, at);
+              list = r.filter((s) => !openIds.has(s.id)); // shared with an earlier scan's call: a session resumed since is open now
+            }
+          } else {
+            // FR-057: the same kept list for the other apps (key: adapter + folder), the open ids of that app in the folder as for Codex
+            const ckey = `${adapter}\0${key}`;
+            const ids = [...snapshot.values()].filter((x) => d.wsKey(x) === key && adapterOf(x) === adapter).map((x) => x.id);
+            const at = clock();
+            const kept = d.codexLists?.get<PreviousSession>(ckey, ids, at);
+            if (kept) list = kept.filter((s) => !openIds.has(s.id));
+            else {
+              if (clock() >= deadline) { late(d.appName(adapter)); continue; }
+              const r = await inTime(shared(`list\0${k}`, listing));
+              if (r === LATE) { late(d.appName(adapter)); continue; }
+              if (started) d.codexLists?.set(ckey, ids, r, at); // only the scan that ran the call keeps it, under its own ids
+              list = r.filter((s) => !openIds.has(s.id)); // the running listing may be an earlier scan's, with its open ids
+            }
           }
-        } else {
-          if (clock() >= deadline) { late(d.appName(adapter)); continue; }
-          const r = await inTime(shared(`list\0${k}`, listing));
-          if (r === LATE) { late(d.appName(adapter)); continue; }
-          list = r.filter((s) => !openIds.has(s.id)); // the running listing may be an earlier scan's, with its open ids
+        } catch {
+          unavailable.add(d.appName(adapter)); // FR-014: "Not searched: Codex (not installed)", once
+          continue;
         }
-      } catch {
-        unavailable.add(d.appName(adapter)); // FR-014: "Not searched: Codex (not installed)", once
-        continue;
+        const hid = hidden(adapter);
+        const nm = names(adapter);
+        for (const p of list) {
+          const read = adapter === 'claude';
+          add({
+            adapter, app: d.appName(adapter), folderKey: key, folderName: folderName(a), sessionId: p.id, agentId: a.id, group: 'earlier',
+            title: nm.get(p.id) || text(p.title) || UNTITLED, time: Number(p.modifiedTime) || 0, content: read ? 'read' : 'title', floorOff: off, hidden: hid.has(p.id),
+          }, read ? { kind: 'claude', id: p.id, cwd: a.cwd } : { kind: 'none' });
+        }
+      } else {
+        let chats: { sessions: ChatFileRef[] };
+        try {
+          const ckey = `chats\0${key}`;
+          const at = clock();
+          const kept = d.codexLists?.get<ChatFileRef>(ckey, [], at); // FR-057
+          if (kept) chats = { sessions: kept };
+          else {
+            if (clock() >= deadline) { late('VS Code'); continue; }
+            const r = await inTime(shared(`chats\0${key}`, () => (d.listChats ?? listChats)(d.vsUserDirs(), { folders: a.folders, workspaceFile: a.workspaceFile })));
+            if (r === LATE) { late('VS Code'); continue; }
+            d.codexLists?.set(ckey, [], r.sessions, at);
+            chats = r;
+          }
+        } catch {
+          continue;
+        }
+        const hid = hidden(VSCODE);
+        const nm = names(VSCODE);
+        for (const ref of chats.sessions) {
+          const s = ref.summary;
+          d.rememberChat?.(a.id, ref);
+          add({
+            adapter: VSCODE, app: 'VS Code', folderKey: key, folderName: folderName(a), sessionId: s.key, agentId: a.id, group: 'earlier',
+            title: nm.get(s.key) || text(s.title) || UNTITLED, time: Number(s.updated) || 0, content: 'read', floorOff: off, hidden: hid.has(s.key),
+          }, { kind: 'vscode', ref });
+        }
       }
-      const hid = hidden(adapter);
-      const nm = names(adapter);
-      for (const p of list) {
-        const read = adapter === 'claude';
-        add({
-          adapter, app: d.appName(adapter), folderKey: key, folderName: folderName(a), sessionId: p.id, agentId: a.id, group: 'earlier',
-          title: nm.get(p.id) || text(p.title) || UNTITLED, time: Number(p.modifiedTime) || 0, content: read ? 'read' : 'title', floorOff: off, hidden: hid.has(p.id),
-        }, read ? { kind: 'claude', id: p.id, cwd: a.cwd } : { kind: 'none' });
-      }
-    } else {
-      let chats;
-      try {
-        if (clock() >= deadline) { late('VS Code'); continue; }
-        const r = await inTime(shared(`chats\0${key}`, () => (d.listChats ?? listChats)(d.vsUserDirs(), { folders: a.folders, workspaceFile: a.workspaceFile })));
-        if (r === LATE) { late('VS Code'); continue; }
-        chats = r;
-      } catch {
-        continue;
-      }
-      const hid = hidden(VSCODE);
-      const nm = names(VSCODE);
-      for (const ref of chats.sessions) {
-        const s = ref.summary;
-        d.rememberChat?.(a.id, ref);
-        add({
-          adapter: VSCODE, app: 'VS Code', folderKey: key, folderName: folderName(a), sessionId: s.key, agentId: a.id, group: 'earlier',
-          title: nm.get(s.key) || text(s.title) || UNTITLED, time: Number(s.updated) || 0, content: 'read', floorOff: off, hidden: hid.has(s.key),
-        }, { kind: 'vscode', ref });
-      }
+    } finally {
+      const left = (unitsLeft.get(key) ?? 1) - 1;
+      unitsLeft.set(key, left);
+      if (left <= 0) listed++;
+      tell();
     }
   }
 
@@ -286,7 +338,6 @@ export async function buildScope(d: ScopeDeps, stop: () => boolean = () => false
     }
     return { ok: false, reason: 'unreadable' };
   };
-  const values = (s: PlanSession): readonly string[] => scanSecretValues(d.values, { folderKey: s.folderKey, agentId: s.agentId, open: s.group === 'office' });
   // owner answer D: the open agents' session values are left out of the mask while the vault would prompt (`scanSecretValues`): said
   let mcpValuesLocked = true;
   try { mcpValuesLocked = !d.values.noPrompt(); } catch { /* unknown: said as locked */ }

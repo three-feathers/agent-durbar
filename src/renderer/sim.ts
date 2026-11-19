@@ -437,11 +437,13 @@ function simConvSearchApi(qs: URLSearchParams, scope: () => SimConvSession[]): P
     if (title === undefined) { notes.maskFailed++; return undefined; }
     const found = new Set(S.locate(title, q).map((r) => r.term));
     const base = { adapter: s.adapter, sessionId: s.sessionId, agentId: s.agentId, group: s.group, app: s.app, folderName: s.folderName, title, titleMarks: marks(S, title, q), time: s.time };
-    if (found.size === words.length) return { ...base, excerpts: [], more: 0 };
+    if (found.size === words.length) return { ...base, excerpts: [], more: 0, rank: 'title' };
     if (s.content === 'title') return undefined;
     const excerpts: ConvSearchHit['excerpts'] = [];
     let total = 0;
     let n = -1;
+    let whole = false; // FR-056: a match with no letter or digit right before or after it
+    const wordCh = /[\p{L}\p{N}\p{M}]/u;
     for (const m of s.messages) {
       if (m.speaker === 'tool') continue; // D2: tool output is never searched
       n++;
@@ -450,11 +452,12 @@ function simConvSearchApi(qs: URLSearchParams, scope: () => SimConvSession[]): P
       const terms = new Set(S.locate(t, q).map((r) => r.term));
       if (!terms.size) continue;
       for (const x of terms) found.add(x);
+      if (S.locate(t, q).some((r) => !wordCh.test(t[r.start - 1] ?? '') && !wordCh.test(t[r.end] ?? ''))) whole = true;
       total++;
       const text = t.length > 178 ? t.slice(0, 178) + '…' : t;
       if (excerpts.length < 3) excerpts.push({ text, marks: marks(S, text, q), speaker: m.speaker, anchor: { n, head: [...S.anchorKey(t)].slice(0, 60).join('') } });
     }
-    return found.size === words.length ? { ...base, excerpts, more: total - excerpts.length } : undefined;
+    return found.size === words.length ? { ...base, excerpts, more: total - excerpts.length, rank: whole ? 'word' : 'part' } : undefined;
   };
   return {
     convSearchStart: async (query) => {
@@ -468,7 +471,7 @@ function simConvSearchApi(qs: URLSearchParams, scope: () => SimConvSession[]): P
       if (!S) return { ok: false, code: 'invalid', error: 'That is not a search.' };
       const me: { id: string; timer?: ReturnType<typeof setTimeout> } = { id: newId() };
       live = me;
-      const notes: ConvSearchNotes = { searched: 0, folders: 0, notInstalled: [], tooLarge: 0, unreadable: 0, titleOnly: { count: 0, apps: [] }, hidden: 0, floorsOff: 0, capped: { sessions: false, perFolder: false, results: false }, timedOut: false, cut: 0, bounded: 0, maskFailed: 0, queryCut: q.cut, floorOffFolders: 0, mcpValuesLocked: qs.get('simsearch') === 'locked', lateLists: 0, lateApps: [] };
+      const notes: ConvSearchNotes = { searched: 0, folders: 0, notInstalled: [], tooLarge: 0, unreadable: 0, titleOnly: { count: 0, apps: [] }, hidden: 0, floorsOff: 0, capped: { sessions: false, perFolder: false, results: false }, timedOut: false, cut: 0, bounded: 0, maskFailed: 0, slow: 0, queryCut: q.cut, floorOffFolders: 0, mcpValuesLocked: qs.get('simsearch') === 'locked', lateLists: 0, lateApps: [] };
       const list = all.filter((s) => { if (s.hidden) notes.hidden++; return !s.hidden; });
       notes.folders = new Set(list.map((s) => s.folderName)).size;
       const groups = { office: 0, earlier: 0 };
@@ -489,7 +492,16 @@ function simConvSearchApi(qs: URLSearchParams, scope: () => SimConvSession[]): P
         live = undefined;
         emit({ kind: 'done', searchId: me.id, notes, progress, failed: false });
       };
-      me.timer = setTimeout(step, slow ? 400 : 30); // after the answer: the window knows the id before the first event
+      // FR-054: in the slow mode the plan is "listed" first, folder by folder, as main's progress events say
+      const folders = Math.max(1, notes.folders);
+      let listed = 0;
+      const plan = (): void => {
+        if (live !== me) return;
+        emit({ kind: 'plan', searchId: me.id, listed, folders });
+        if (listed < folders) { listed++; me.timer = setTimeout(plan, 400); return; }
+        me.timer = setTimeout(step, 400);
+      };
+      me.timer = setTimeout(slow ? plan : step, slow ? 400 : 30); // after the answer: the window knows the id before the first event
       return { ok: true, searchId: me.id, query: q.query, cut: q.cut };
     },
     convSearchCancel: async (searchId) => {

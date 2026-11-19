@@ -125,12 +125,13 @@ async function main(): Promise<void> {
   const NOTES0 = { floorOffFolders: 0, mcpValuesLocked: false, lateLists: 0, lateApps: [] as string[] };
   let scopeOf: () => Scope = () => ({ plan: { sessions: [] }, read: async () => ({ ok: true, items: [] }), values: () => [], notes: NOTES0 });
   let hold: Promise<void> | undefined;
+  let feed: ((cb: (p: unknown) => void) => void) | undefined;
   const deferred: Array<() => void> = [];
   const cache = createCodexListCache();
   const ipc = register({
     codexLists: cache,
     hasSessions: () => sessions > 0,
-    scope: async (...a: unknown[]) => { scopeCalls.push(a); stops.push(a[0] as () => boolean); if (hold) await hold; return scopeOf(); },
+    scope: async (...a: unknown[]) => { scopeCalls.push(a); stops.push(a[0] as () => boolean); feed?.(a[2] as (p: unknown) => void); if (hold) await hold; return scopeOf(); },
     matcher: () => ({ masker, search }),
     defer: (fn) => { deferred.push(fn); },
     sleep: () => tick(), // the 250 ms between batches, without waiting
@@ -175,7 +176,7 @@ async function main(): Promise<void> {
   runDeferred();
   await settle(400);
   assert.strictEqual(scopeCalls.length, 1);
-  assert.strictEqual(scopeCalls[0].length, 2, 'the scope gets a stop function and main\'s own cache: nothing the window sent (no folder, path or session)');
+  assert.strictEqual(scopeCalls[0].length, 3, 'the scope gets a stop function, main\'s own cache and its progress callback: nothing the window sent (no folder, path or session)');
   assert.strictEqual(typeof scopeCalls[0][0], 'function');
   assert.strictEqual(scopeCalls[0][1], cache, 'the second is main\'s box-session cache (FR-026)');
   const evs = win1.sent.map(([ch, p]) => [ch, p] as const);
@@ -186,7 +187,7 @@ async function main(): Promise<void> {
   const hits = evs.flatMap(([, p]) => (p.kind === 'batch' ? p.hits : []));
   assert.deepStrictEqual(hits.map((h) => h.sessionId).sort(), ['a1', 'p1'], 'the open session by content, the earlier one by its masked title');
   const a1 = hits.find((h) => h.sessionId === 'a1')!;
-  assert.deepStrictEqual(Object.keys(a1).sort(), ['adapter', 'agentId', 'app', 'excerpts', 'folderName', 'group', 'more', 'sessionId', 'time', 'title', 'titleMarks'], 'FR-031: only these fields');
+  assert.deepStrictEqual(Object.keys(a1).sort(), ['adapter', 'agentId', 'app', 'excerpts', 'folderName', 'group', 'more', 'rank', 'sessionId', 'time', 'title', 'titleMarks'], 'FR-031: only these fields');
   assert.ok(a1.excerpts.length >= 1 && a1.excerpts.every((x) => x.marks.length > 0));
   const all = JSON.stringify(win1.sent);
   for (const bad of [GH, GH.slice(6, 20), MCP_VALUE, HOME, 'alice', 'grep invoice']) assert.ok(!all.includes(bad), `no "${bad}" in any payload`);
@@ -210,7 +211,7 @@ async function main(): Promise<void> {
       await settle(100);
       const got = win1.sent.flatMap(([, p]) => (p.kind === 'batch' ? p.hits : []));
       assert.strictEqual(got.length, 1);
-      assert.deepStrictEqual(Object.keys(got[0]).sort(), ['adapter', 'agentId', 'app', 'excerpts', 'folderName', 'group', 'more', 'sessionId', 'time', 'title', 'titleMarks']);
+      assert.deepStrictEqual(Object.keys(got[0]).sort(), ['adapter', 'agentId', 'app', 'excerpts', 'folderName', 'group', 'more', 'rank', 'sessionId', 'time', 'title', 'titleMarks']);
       assert.deepStrictEqual(Object.keys(got[0].excerpts[0]).sort(), ['anchor', 'marks', 'speaker', 'text']);
       assert.deepStrictEqual(Object.keys(got[0].excerpts[0].anchor).sort(), ['head', 'n']);
       const wire = JSON.stringify(win1.sent);
@@ -312,7 +313,7 @@ async function main(): Promise<void> {
     const tail = win1.sent.slice(1);
     assert.strictEqual(tail.length, 1);
     const fin = tail[0][1];
-    assert.ok(fin.kind === 'done' && fin.stopped === true && fin.progress.done === 1 && fin.progress.total === 2, JSON.stringify(fin));
+    assert.ok(fin.kind === 'done' && fin.stopped === true && fin.progress.done === 0 && fin.progress.total === 2, JSON.stringify(fin));
     ipc.cancelAll();
     await settle(20);
     assert.strictEqual(win1.sent.length, 2, 'a second cancelAll with nothing live sends nothing');
@@ -326,6 +327,33 @@ async function main(): Promise<void> {
     win1.dead = false;
   }
   assert.ok(win1.listenerCount('destroyed') === 1 && win1.listenerCount('did-start-loading') === 1, 'one listener per window, not one per search');
+
+  // FR-054, FR-055: the plan's progress goes out on `search:batch` as `kind: 'plan'`, and the titles of what the plan has so far go out before the plan is done
+  {
+    win1.sent.length = 0;
+    const vals = (): string[] => [];
+    feed = (cb) => {
+      cb({ listed: 0, folders: 2, sessions: [sess({ sessionId: 'o1', title: 'invoice export open' }), sess({ sessionId: 'o2', title: 'other' })], values: vals });
+      cb({ listed: 1, folders: 2, sessions: [sess({ sessionId: 'e1', group: 'earlier', title: 'old invoice export' })], values: vals });
+    };
+    hold = new Promise<void>((r) => { release = r; });
+    scopeOf = () => ({ plan: { sessions: [sess({ sessionId: 'o1', title: 'invoice export open' }), sess({ sessionId: 'o2', title: 'other' }), sess({ sessionId: 'e1', group: 'earlier', title: 'old invoice export' })] }, read: async () => ({ ok: true, items: [] }), values: vals, notes: NOTES0 });
+    const rp = await start(E1, 'invoice export');
+    assert.ok(rp.ok);
+    runDeferred();
+    await settle(30);
+    const kinds = win1.sent.map(([ch, p]) => `${ch}:${p.kind}`);
+    assert.deepStrictEqual(kinds, ['search:batch:plan', 'search:batch:batch', 'search:batch:plan', 'search:batch:batch'], 'plan, its titles, plan, its titles: all while the plan is held');
+    assert.deepStrictEqual(win1.sent.filter(([, p]) => p.kind === 'plan').map(([, p]) => (p.kind === 'plan' ? [p.listed, p.folders] : [])), [[0, 2], [1, 2]]);
+    const early = win1.sent.filter(([, p]) => p.kind === 'batch').map(([, p]) => (p.kind === 'batch' ? p.hits.map((h) => [h.sessionId, h.rank, h.excerpts.length]) : []));
+    assert.deepStrictEqual(early, [[['o1', 'title', 0]], [['e1', 'title', 0]]]);
+    release!();
+    await settle(100);
+    const all = win1.sent.flatMap(([, p]) => (p.kind === 'batch' ? p.hits.map((h) => h.sessionId) : []));
+    assert.deepStrictEqual(all.sort(), ['e1', 'o1'], 'the scan does not send the early rows again (nothing to add: the read finds nothing)');
+    feed = undefined;
+    hold = undefined;
+  }
 
   // a scope that throws: said with a failed done, never silent
 
@@ -614,7 +642,7 @@ async function main(): Promise<void> {
     cache2.clear();
     fail = true;
     const s5 = await buildScope(deps);
-    assert.deepStrictEqual([s5.plan.unavailable, cache2.size()], [['Codex'], 0], 'a listing that fails is not kept');
+    assert.deepStrictEqual([s5.plan.unavailable, cache2.size()], [['Codex'], 2], 'a listing that fails is not kept (only the two folders\' VS Code chat lists, FR-057, are)');
     fail = false;
     noPrompt = false;
     assert.strictEqual((await buildScope(deps)).notes.mcpValuesLocked, true, 'owner answer D: values locked in the vault are said');
@@ -686,7 +714,7 @@ async function main(): Promise<void> {
     assert.deepStrictEqual(listings, [], 'nothing else listed after it');
     assert.deepStrictEqual([sc.notes.lateLists, sc.notes.lateApps.sort()], [5, ['Claude Code', 'Codex', 'VS Code']], 'every folder and app not listed in time is counted: Codex x2, Claude Code, VS Code x2 (the first VS Code list was in time)');
     assert.deepStrictEqual(sc.plan.sessions.map((x) => x.sessionId), ['x1', 'x2', 'k1'], 'the plan holds the open sessions');
-    assert.strictEqual(kept.size(), 0, 'a listing given up is not kept');
+    assert.strictEqual(kept.size(), 1, 'a listing given up is not kept (the one VS Code list that was in time is, FR-057)');
     rejectLate!(new Error('probe died')); // a listing given up that fails later is not an unhandled rejection
     await settle(5);
     assert.strictEqual(SCOPE_LIST_MS, 30_000);
@@ -697,6 +725,44 @@ async function main(): Promise<void> {
     assert.ok(ok.plan.sessions.some((x) => x.sessionId === 'kp') && listings.length === 3, 'listed in time: in the plan');
     timers.length = 0;
   }
+
+  // ---- FR-054, FR-057: buildScope tells its progress per folder; the other apps' listings and the VS Code chats are kept like Codex's
+  {
+    const ag = (id: string, adapterId: string, cwd: string): AgentInfo => ({ id, name: path.basename(cwd), cwd, folders: [cwd], permMode: 'read-only', adapterId } as AgentInfo);
+    const agents = new Map<string, AgentInfo>([['k1', ag('k1', 'copilot', '/p/one')], ['k2', ag('k2', 'copilot', '/p/two')]]);
+    const calls = { list: 0, chats: 0 };
+    const copilot = { id: 'copilot', isLive: () => false, listPreviousSessions: async () => { calls.list++; return [{ id: 'old1', title: 'old one', startTime: 1, modifiedTime: 5 }]; } };
+    const kept = createCodexListCache();
+    const deps = {
+      agents, router: { forAgent: () => copilot as never, adapterIdOf: (id: string) => agents.get(id)?.adapterId }, wsKey: (a: AgentInfo) => a.cwd, resumeIdFor: (id: string) => id, appName: () => 'GitHub Copilot', vsUserDirs: () => [],
+      store: { get: () => undefined as never, sessionNames: () => [], floors: () => ({ floors: [{ id: 'ground', name: 'Ground floor', on: true }], lastFloor: 'ground' }) },
+      values: { knownSecretValues: () => [], noPrompt: () => true, secretValuesFor: () => [] }, gate: { run: (_k: string, fn: () => Promise<unknown>) => fn() },
+      listChats: (async () => { calls.chats++; return { sessions: [], storesFound: 0, unreadable: 0, tooLarge: 0 }; }) as never, codexLists: kept,
+    };
+    const seen: Array<[number, number, string[]]> = [];
+    const s1 = await buildScope(deps, () => false, (p) => seen.push([p.listed, p.folders, p.sessions.map((x) => x.sessionId)]));
+    assert.deepStrictEqual(seen[0], [0, 2, ['k1', 'k2']], 'first: 0 of 2 folders, the open sessions (their titles are known before any listing)');
+    assert.deepStrictEqual(seen[seen.length - 1].slice(0, 2), [2, 2], 'at the end: 2 of 2 folders');
+    assert.ok(seen.every((x, i) => i === 0 || x[0] >= seen[i - 1][0] && x[0] <= 2), 'only forward');
+    assert.deepStrictEqual(s1.plan.sessions.map((x) => x.sessionId).sort(), ['k1', 'k2', 'old1', 'old1']);
+    assert.deepStrictEqual([calls.list, calls.chats], [2, 2]);
+    await buildScope(deps);
+    assert.deepStrictEqual([calls.list, calls.chats], [2, 2], 'FR-057: the next search lists nothing again (Copilot, VS Code chats)');
+    agents.delete('k2'); // that folder has no open agent now: its entries go; the other folder keeps its own
+    await buildScope(deps);
+    assert.deepStrictEqual([calls.list, calls.chats, kept.size()], [2, 2, 2], 'the folder left: its kept lists are dropped');
+    agents.set('k2', ag('k2', 'copilot', '/p/two'));
+    await buildScope(deps);
+    assert.deepStrictEqual([calls.list, calls.chats], [3, 3], 'it came back: listed again');
+    agents.set('k3', ag('k3', 'copilot', '/p/one')); // a new open session in the folder: no earlier session added, the kept list stays
+    agents.delete('k1');
+    await buildScope(deps);
+    assert.deepStrictEqual(calls.list, 4, 'an open Copilot session of that folder left: its folder is listed again');
+    kept.clear();
+    await buildScope(deps);
+    assert.deepStrictEqual([calls.list, calls.chats], [6, 5], 'cleared with the box: listed again');
+  }
+
 
   // review of the phase 2 code (FR-022): quick new starts do not pile up listings of the same folder; the running one is shared
   stage = 'scope shared listings';

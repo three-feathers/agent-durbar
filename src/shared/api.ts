@@ -933,6 +933,8 @@ export interface ConvSearchHit {
   excerpts: ConvSearchExcerpt[];
   /** Hits not shown ("+N more"). */
   more: number;
+  /** FR-056: `title` = the title matches every word; `word` = some content hit is a whole word; `part` = only in-word hits. */
+  rank: 'title' | 'word' | 'part';
 }
 export interface ConvSearchNotes {
   searched: number;
@@ -948,6 +950,8 @@ export interface ConvSearchNotes {
   cut: number;
   bounded: number;
   maskFailed: number;
+  /** FR-058: sessions whose read took longer than the per-read limit (10 s) and were skipped. */
+  slow: number;
   /** The query was longer than 200 characters or 8 words and was cut (FR-033). */
   queryCut: boolean;
   /** Folders whose earlier Codex sessions were not listed because their floor is off (owner answer C, FR-014). */
@@ -963,6 +967,8 @@ export interface ConvSearchNotes {
  * the notes are then empty and `progress` is the last one sent. A cancel from the window or a new start sends no `done`.
  */
 export type ConvSearchEvent =
+  /** FR-054: while the plan is built: `listed` of `folders` folders done. Sent on the `search:batch` channel. */
+  | { kind: 'plan'; searchId: string; listed: number; folders: number }
   | { kind: 'batch'; searchId: string; hits: ConvSearchHit[]; progress: { done: number; total: number }; groups: { office: number; earlier: number } }
   | { kind: 'done'; searchId: string; notes: ConvSearchNotes; progress: { done: number; total: number }; failed: boolean; stopped?: true };
 /** `short`: under 3 characters (spaces not counted); `none`: no session is open, nothing to search yet; `invalid`: not a query. */

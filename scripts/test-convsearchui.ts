@@ -18,7 +18,7 @@ type Hit = { adapter: string; sessionId: string; agentId?: string; group: 'offic
 type St = { hits: Map<string, Hit>; order: { office: string[]; earlier: string[] }; progress: { done: number; total: number }; done: boolean; notes: Record<string, unknown> | null; stopped: boolean; failed: boolean; userStop: boolean; queryCut: boolean };
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const C = require(path.join(ROOT, 'src', 'renderer', 'convsearch.js')) as {
-  keyOf(h: Hit): string; longEnough(q: string): boolean; create(): St; addBatch(st: St, b: unknown): St; finish(st: St, d: unknown, timeOf?: (h: Hit) => number): St;
+  keyOf(h: Hit): string; longEnough(q: string): boolean; create(): St; addBatch(st: St, b: unknown): St; addPlan(st: St, e: unknown): St; finish(st: St, d: unknown, timeOf?: (h: Hit) => number): St;
   sorted(st: St, sort: { key: string; dir: string } | null, timeOf?: (h: Hit) => number, sortBy?: unknown): { office: Hit[]; earlier: Hit[] }; count(st: St): number;
   moreOf(h: unknown): number; markedHTML(t: string, m: unknown, esc: (s: string) => string): string; excerptHTML(x: unknown, esc: (s: string) => string): string; accName(h: Hit): string;
   stateText(st: St): string; notesText(st: St): string; LOCKED: string; announceDue(last: number | undefined, now: number): boolean; pickAnchor(keys: string[], a: unknown): number;
@@ -26,7 +26,8 @@ const C = require(path.join(ROOT, 'src', 'renderer', 'convsearch.js')) as {
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const ACT = require(path.join(ROOT, 'src', 'renderer', 'activity.js')) as { sortBy: unknown };
 const esc = (s: string): string => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-const hit = (over: Partial<Hit>): Hit => ({ adapter: 'copilot', sessionId: 's', group: 'office', app: 'GitHub Copilot', folderName: 'demo', title: 'Untitled session', titleMarks: [], time: 0, excerpts: [], more: 0, ...over });
+type Rank = { rank?: string };
+const hit = (over: Partial<Hit> & Rank): Hit => ({ adapter: 'copilot', sessionId: 's', group: 'office', app: 'GitHub Copilot', folderName: 'demo', title: 'Untitled session', titleMarks: [], time: 0, excerpts: [], more: 0, ...over });
 
 // ---- a row key is safe in an HTML attribute (no NUL: the parser would turn it into U+FFFD and the key would no longer match)
 assert.strictEqual(C.keyOf(hit({ group: 'earlier', adapter: 'vscode', sessionId: 'h/abc:1' })), 'earlier:vscode:h%2Fabc%3A1');
@@ -162,6 +163,37 @@ assert.ok(C.announceDue(undefined, 0) && !C.announceDue(1000, 2500) && C.announc
   assert.ok(/html\[data-motion-off\] \.cs-state\.running \.cs-spin\{animation:none\}/.test(css), 'not with Settings > Motion off');
   assert.ok(/\.cs-spin\{[^}]*width:14px/.test(css));
 }
+
+// ---- FR-054: the plan's progress, never "0 of 0"
+{
+  const st = C.create();
+  assert.strictEqual(C.stateText(st), 'Starting the search…', 'before any event');
+  C.addPlan(st, { kind: 'plan', listed: 5, folders: 16 });
+  assert.strictEqual(C.stateText(st), 'Listing sessions, 5 of 16 folders…');
+  C.addPlan(st, { kind: 'plan', listed: 1, folders: 1 });
+  assert.strictEqual(C.stateText(st), 'Listing sessions, 1 of 1 folder…');
+  for (const bad of [{ listed: 'x', folders: 3 }, { listed: -1, folders: 3 }, { listed: 1, folders: 0 }, { listed: 1.5, folders: 3 }, null, {}]) C.addPlan(st, bad);
+  assert.strictEqual(C.stateText(st), 'Listing sessions, 1 of 1 folder…', 'a wrong shape is ignored');
+  C.addPlan(st, { listed: 9, folders: 3 });
+  assert.strictEqual(C.stateText(st), 'Listing sessions, 3 of 3 folders…', 'listed never passes the total');
+  C.addBatch(st, { hits: [hit({ sessionId: 'early', rank: 'title' })], progress: { done: 0, total: 0 } });
+  assert.ok(!/^Searching, 0 of 0/.test(C.stateText(st)), 'titles sent while planning carry no total: still the listing line');
+  C.addBatch(st, { hits: [], progress: { done: 0, total: 12 } });
+  assert.strictEqual(C.stateText(st), 'Searching, 0 of 12 sessions', 'the scan has its total');
+}
+
+// ---- FR-056: rows keep their arrival order while scanning; at the end: title, whole word, in word; newest first inside a rank
+{
+  const st = C.create();
+  C.addBatch(st, { hits: [hit({ sessionId: 'p-new', group: 'earlier', time: 90, rank: 'part' }), hit({ sessionId: 'w-old', group: 'earlier', time: 10, rank: 'word' }), hit({ sessionId: 't', group: 'earlier', time: 20, rank: 'title' }), hit({ sessionId: 'w-new', group: 'earlier', time: 50, rank: 'word' }), hit({ sessionId: 'x', group: 'earlier', time: 5 })] });
+  assert.deepStrictEqual(st.order.earlier.map((k) => k.split(':')[2]), ['p-new', 'w-old', 't', 'w-new', 'x'], 'while it scans: arrival order, nothing moves');
+  C.finish(st, { notes: null, progress: { done: 5, total: 5 } });
+  assert.deepStrictEqual(st.order.earlier.map((k) => k.split(':')[2]), ['t', 'w-new', 'w-old', 'p-new', 'x'], 'at the end: rank first, then newest; an unknown rank is last');
+  C.addBatch(st, { hits: [hit({ sessionId: 'w-old', group: 'earlier', time: 10, rank: 'title' })] });
+  assert.strictEqual(st.order.earlier.length, 5, 'a row seen again (its excerpts arrived) is updated in place, not added');
+}
+// FR-058: the slow reads are said
+assert.ok(/Not searched: [^.]*2 sessions too slow to read/.test(C.notesText({ ...C.create(), done: true, notes: { searched: 3, folders: 1, slow: 2 } } as St)));
 
 process.exitCode = 0;
 console.log('convsearchui: groups and order, marks and escaping, state and every end-state note, accessible names, announce pace, anchor pick OK');

@@ -252,6 +252,8 @@ module.exports = async (ctx) => {
     await H.calm();
     await spy();
     await typeQuery('registry');
+    // FR-053, FR-054: the running sign and "Listing sessions, N of M folders" come first, never "0 of 0"
+    await ok(`/^Listing sessions, \\d+ of \\d+ folders?…$/.test((document.querySelector('#list .cs-st')||{}).textContent||'')&&!!document.querySelector('#list .cs-state.running .cs-spin')&&document.querySelector('#list .cs-wrap').getAttribute('aria-busy')==='true'`, `${w}: "Listing sessions" with the running sign and aria-busy`);
     await ok(`/^Searching, \\d+ of \\d+ sessions$/.test((document.querySelector('#list .cs-st')||{}).textContent||'')&&!!document.getElementById('csStop')`, `${w}: "Searching, N of M sessions" with Stop`);
     await ok(`(window.__durbarSimUi?1:1)&&document.querySelector('#list .cs-st').textContent!=='Searching, 0 of 0 sessions'`, `${w}: the progress moves`);
     await shot('searching', w, h, { prep: 'calm' });
