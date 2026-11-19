@@ -696,6 +696,11 @@ module.exports = async (ctx) => {
       const lf = await js(`(()=>{const S=(e)=>getComputedStyle(e),ks=[...document.querySelectorAll('#lift .lift-b')],cur=ks.find(k=>k.getAttribute('aria-current')==='true'),oth=ks.find(k=>k!==cur);if(!cur||!oth)return null;
         return {n:ks.length,radius:ks.map(k=>S(k).borderTopLeftRadius),shadow:S(oth).boxShadow!=='none',mono:/mono|Menlo|Consolas/i.test(S(oth).fontFamily),curBg:S(cur).backgroundColor,othBg:S(oth).backgroundColor,small:ks.filter(k=>parseFloat(S(k).fontSize)<10.5).length}})()`);
       assert.ok(lf && lf.n >= 3 && lf.radius.every((r) => r === '0px') && lf.shadow && lf.mono && lf.curBg !== lf.othBg && lf.small === 0, `${tag}: lift-panel: square keys with a hard shadow in the mono font, the shown floor a pressed key of its own colour, 10.5px or more: ${JSON.stringify(lf)}`);
+      /* the lift's colour pairs: the shown key's ink on its yellow and another key's ink on its own surface read at 4.5:1 (MOMENTS_MUTANT=lift-ink sets the shown key's ink to its background: this assert must fail) */
+      await js('window.__cx=(()=>{' + CX + 'return {Pa,Lm,over,bgOf,rat,phc}})();0');
+      if (process.env.MOMENTS_MUTANT === 'lift-ink') await js(`(()=>{const c=document.querySelector('#lift .lift-b[aria-current="true"]');c.style.color=getComputedStyle(c).backgroundColor})()`);
+      const lc = await js(`(()=>{const {Pa,over,bgOf,rat}=window.__cx,ks=[...document.querySelectorAll('#lift .lift-b')],cur=ks.find(k=>k.getAttribute('aria-current')==='true'),oth=ks.find(k=>k!==cur),f=(k)=>{const b=bgOf(k,document.documentElement);return rat(over(Pa(getComputedStyle(k).color),b),b)};return {cur:f(cur),oth:f(oth)}})()`);
+      assert.ok(lc.cur >= 4.5 && lc.oth >= 4.5, `${tag}: lift-panel: the shown key and another key read at 4.5:1: ${JSON.stringify(lc)}`);
       await shot(world, 'cell-lift', w, h);
       await js(`window.__bpEnter=false;document.querySelector('#lift [data-lift="*all"]').addEventListener('mouseenter',()=>{window.__bpEnter=true});0`);
       const bp = await js(`(()=>{const r=document.querySelector('#lift [data-lift="*all"]').getBoundingClientRect();return {x:Math.round(r.left+r.width/2),y:Math.round(r.top+r.height/2)}})()`);
