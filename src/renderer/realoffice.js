@@ -97,6 +97,38 @@
   }
   /* FR-073: `fade`: a person or visitor who left fades where they stood (the fade itself is a picture nobody can click); an element that leaves is also unobserved (the resize observer of the chrome layer, settle), so the observed set cannot grow all day */
   /* spec 097 FR-249: a desk picture whose agent went to the lounge (or a lounge desk whose agent went back) fades out where it stood */
+  /* spec 102 FR-229, spec 097 FR-249 and FR-309 (issue #1907): the keyboard order is the model's. Every element is made once, by its key, and stays where it was made, so the order of the page is
+     the order of first drawing; when the layout's sequence changes (a resting agent comes to a desk, a seat moves to the lounge) it is stale. Here: for each folder its sign, then its desks' groups
+     (plate, pencil, helper strip or kids), then the lounge seats'. If the page already has them in that order (the common case, the first drawing too) nothing is touched. Otherwise only the elements
+     that are out of order are moved (the longest run already in order stays), each to just after the one before it in the model's order; the element that holds the focus is never moved (moving it drops
+     the focus), the others are moved round it. No element is made or removed, so a status update still adds no node (FR-261): a move is the only mutation. */
+  function keyOrder(chrome, lay) {
+    const D = [];
+    const grp = (d) => ['n:', 'rn:', 'h:', 'kz:'].map((p) => chrome._k.get(p + d.id)).filter(Boolean);
+    for (const z of lay.zones) { const sg = chrome._k.get('s:' + z.id + '\u0000' + z.part); if (sg) D.push(sg); for (const d of z.desks) D.push(...grp(d)); }
+    if (lay.lounge) for (const d of lay.lounge.desks) D.push(...grp(d));
+    let ordered = true;
+    for (let i = 1; i < D.length && ordered; i++) if (!(D[i - 1].compareDocumentPosition(D[i]) & Node.DOCUMENT_POSITION_FOLLOWING)) ordered = false;
+    if (ordered) return;
+    const at = new Map(); let n = 0; for (const e of chrome.children) at.set(e, n++); /* where each is now */
+    const P = D.map((e) => at.get(e));
+    /* the longest increasing run of P (patience sorting, with the predecessor links): those elements stay */
+    const tail = [], prev = new Array(P.length).fill(-1);
+    for (let i = 0; i < P.length; i++) {
+      let lo = 0, hi = tail.length;
+      while (lo < hi) { const mid = (lo + hi) >> 1; if (P[tail[mid]] < P[i]) lo = mid + 1; else hi = mid; }
+      if (lo) prev[i] = tail[lo - 1]; tail[lo] = i;
+    }
+    const keep = new Set(); for (let i = tail[tail.length - 1]; i !== undefined && i >= 0; i = prev[i]) keep.add(i);
+    /* the focused element stays too: the kept ones that disagree with it about before and after are moved instead */
+    const act = document.activeElement, fi = D.findIndex((e) => e.contains(act));
+    if (fi >= 0 && !keep.has(fi)) { for (const i of [...keep]) if ((i < fi) !== (P[i] < P[fi])) keep.delete(i); keep.add(fi); }
+    for (let i = 0; i < D.length; i++) {
+      if (keep.has(i)) continue;
+      if (i > 0) D[i - 1].after(D[i]);
+      else { let j = 1; while (j < D.length && !keep.has(j)) j++; if (j < D.length) D[j].before(D[0]); else chrome.prepend(D[0]); }
+    }
+  }
   function sweep(layer, fade) { for (const [k, e] of layer._k) if (!layer._seen.has(k)) { if (layer._obs && layer._obs.delete(e)) layer._ro.unobserve(e); if (fade && (k.startsWith('p:') || k.startsWith('v:'))) zoomOut(e); else if (fade && (k.startsWith('d:') || k.startsWith('ld:'))) fadeOut(e, 220); else e.remove(); layer._k.delete(k); } }
   function fadeOut(e, ms) { delete e.dataset.for; e.style.pointerEvents = 'none'; const a = e.animate([{ opacity: 1 }, { opacity: 0 }], { duration: ms, easing: 'ease-in-out', fill: 'forwards' }); a.onfinish = a.oncancel = () => e.remove(); }
   function text(e, t) { t = String(t == null ? '' : t); if (e.textContent !== t) e.textContent = t; }
@@ -437,19 +469,8 @@
       if (tg._sig !== b.name + '\u0000' + b.n) { tg._sig = b.name + '\u0000' + b.n; tg.textContent = ''; const nb = document.createElement('b'); nb.textContent = (b.n ? b.n + ' ' : '') + b.name; tg.appendChild(nb); }
       attr(tg, 'data-tip', b.n ? 'Floor ' + b.n + ': ' + b.name : 'Resting: not on any floor'); attr(tg, 'role', 'note'); /* spec 001 FR-270: the instant tooltip, the floor's whole name */
     }
-    if (lay.lounge) {
-      for (const d of lay.lounge.desks) deskOne(d); /* spec 097 FR-247: after the desks */
-      /* FR-249: keyboard order is the desks', then the seats': a plate that was a desk's keeps its element, so it is moved after the last desk's plate (and its pencil), unless it has the focus */
-      const last = lay.zones.length ? lay.zones[lay.zones.length - 1].desks.slice(-1)[0] : null;
-      let at = last ? chrome._k.get('h:' + last.id) || chrome._k.get('kz:' + last.id) || chrome._k.get('rn:' + last.id) || chrome._k.get('n:' + last.id) : null;
-      for (const d of lay.lounge.desks) {
-        const pl = chrome._k.get('n:' + d.id), rb = chrome._k.get('rn:' + d.id);
-        if (!pl || pl.contains(document.activeElement) || (rb && rb.contains(document.activeElement))) { at = rb || pl || at; continue; }
-        if (at && at.nextElementSibling !== pl) at.after(pl);
-        if (rb && pl.nextElementSibling !== rb) pl.after(rb);
-        at = rb || pl;
-      }
-    }
+    if (lay.lounge) for (const d of lay.lounge.desks) deskOne(d); /* spec 097 FR-247: after the desks */
+    keyOrder(chrome, lay);
     function deskOne(d) {
         const a = byAgent.get(d.id), k = d.id;
         const lt = L.lightFor(d.state, { still: !!opts.still, unread: !!a.unread }); /* FR-236: a done desk with an unread reply tints green */

@@ -54,7 +54,7 @@
       "crews": [
         "retro"
       ],
-      "shippable": false,
+      "shippable": true,
       "pack": "src/renderer/realoffice/worlds/retro"
     }
   },

@@ -84,7 +84,7 @@ module.exports = async (ctx) => {
   await js(`window.DurbarScreens.openSettings()`);
   await must(`!!document.querySelector('#wrGroup [data-world="photo"]')`, 'the Photo office card');
   const seg = await js(`[...document.querySelectorAll('#wrGroup [data-world]')].map(b=>b.dataset.world+':'+b.getAttribute('aria-checked')).join(' ')`);
-  assert.strictEqual(seg, 'plain:true photo:false', 'two cards, Plain chosen: ' + seg);
+  assert.strictEqual(seg, 'plain:true photo:false retro:false', 'three cards (the arcade since spec 102 T230), Plain chosen: ' + seg);
   await js(`document.querySelector('#wrGroup [data-world="photo"]').scrollIntoView({block:'center'})`);
   await H.shot(path.join(OUT, '097-office-layout-1440x900.png'), { prep: 'calm' });
   await js(`document.querySelector('#wrGroup [data-world="photo"]').focus();document.querySelector('#wrGroup [data-world="photo"]').click()`);
@@ -100,7 +100,7 @@ module.exports = async (ctx) => {
   assert.strictEqual(packFiles, 'sets/office worlds/photo', 'Real office asked for the Photo office and the Office people only: ' + packFiles);
   await js(`window.DurbarScreens.openSettings()`);
   await must(`!!document.querySelector('#wrGroup [data-world="photo"]')`, 'Settings');
-  assert.strictEqual(await js(`[...document.querySelectorAll('#wrGroup [data-world]')].map(b=>b.dataset.world).join()`), 'plain,photo', 'only Plain and the Photo office are offered');
+  assert.strictEqual(await js(`[...document.querySelectorAll('#wrGroup [data-world]')].map(b=>b.dataset.world).join()`), 'plain,photo,retro', 'Plain, the Photo office and the Retro arcade are offered (no cave: its flag is closed)');
   assert.ok(/World\u2019s default \(Office people\)/.test(await js(`document.querySelector('#chList [data-characters="theme"]').getAttribute('aria-label')`)), 'Characters starts with the world\u2019s default set');
   await js(`document.querySelector('#chList [data-characters="minimalist"]').click()`);
   await must(`document.getElementById('dsR').textContent==='Real office draws the Minimalist people.'`, 'Minimalist has its own Real office set since T245: Settings says so under Office layout');

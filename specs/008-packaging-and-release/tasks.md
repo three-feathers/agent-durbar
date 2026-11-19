@@ -257,3 +257,4 @@
 ## 2026-11-19: the last wall-clock limits in test asserts (issue #1853)
 
 - [x] T370 (delta 2026-11-19, issue #1853, part 3) `scripts/test-schedules.ts` (`assertCpuUnder`), `scripts/test-check-parallel.js` (worker 0 reads the memory 0 times), `scripts/test-release-video.js` (wall half dropped; `ETIMEDOUT` is the property): no fixed wall-clock `<` limit left in the asserts of `scripts/test-*`; two mutants die at their own text.
+- [x] T374 (delta 2026-11-19, issue #1914) `scripts/ui-suite.js` (`sharedDesktop`: Linux with a forced ratio above 1 runs under xvfb), `scripts/shots-102-arcade.js` (window size read after each load, `ARCADE_MUTANT=smallwin`), `scripts/test-ui-suite.ts`: the arcade driver at `UI_SUITE_DPR=2` and `1.5` is not run on a desktop that clamps the window; the mutant dies at its own text.

@@ -3,7 +3,7 @@
  * `node scripts/ui-suite.js --only shots-102-arcade`.
  *
  * It fails (exit 1) when:
- *   - the flag is closed and a stored choice draws the arcade, asks for one of its files or offers it (FR-254);
+ *   - (since the flip, spec 102 T230) a stored choice does not draw the arcade or it is not offered;
  *   - the flag is open and the night room's files (wall-night, floor-night) are not fetched, or the day room's (wall, floor, welcome) are, seen in a session request log (T218, SC-023);
  *   - the flag is open and a file of another world or set is asked for, a picture fails, or the art is not at one integer scale with the nearest pixel (FR-255);
  *   - at 3, 4, 8 and 15 agents, 1440x900 and 1280x800: plates, signs, marquees, cues, chips or fixtures overlap, text is under 10.5 px or a marquee under 12 px,
@@ -49,6 +49,11 @@ const run = async (ctx, reqs) => {
   const loadArcade = async (w, h, n, query = {}) => {
     reqs.clear();
     await H.load({ w, h, query: { officeview: 'real', ...ARCADE, sim: String(n), ...query }, ready: REAL, settle: false });
+    /* spec 008 FR-273 (issue 1914): a window the screen clamped is not the size this case names (a display smaller than the window at the forced ratio: 830x584 CSS px at 2x on a 1660x1216 display, so 15 agents scroll and 3 overlap); fail with the cause, never as a layout failure.
+       ARCADE_MUTANT=smallwin (test only): the window is made 830x584 after the load, must fail here */
+    if (process.env.ARCADE_MUTANT === 'smallwin') { ctx.win.setContentSize(830, 584); await ctx.sleep(300); }
+    const [iw, ih] = await js('[innerWidth,innerHeight]');
+    assert.ok(Math.abs(iw - w) <= 2 && Math.abs(ih - h) <= 2, 'issue 1914: the window is ' + iw + 'x' + ih + ' CSS px, not the ' + w + 'x' + h + ' this case names (the display is too small for it at devicePixelRatio ' + await js('devicePixelRatio') + ': run under xvfb, UI_SUITE_XVFB=1, which ui-suite does itself when UI_SUITE_DPR is above 1)');
     await must(PICS, 'the pictures');
   };
 
@@ -271,16 +276,16 @@ const run = async (ctx, reqs) => {
   }
 
 
-  // ---- the flag closed: a stored choice draws the Photo office, asks for nothing of the arcade, and it is not offered ----
+  // ---- no flag since the flip (spec 102 T230): a stored choice draws the arcade with its own people, and it is offered (restoring the flag fails here) ----
   await H.load({ w: 1440, h: 900, query: { officeview: 'real' }, ready: REAL, settle: false });
   await js(`localStorage.setItem('durbar.world','retro');0`);
   await H.load({ w: 1440, h: 900, query: { officeview: 'real' }, ready: REAL, settle: false });
   await must(PICS, 'the pictures');
-  assert.strictEqual(await js(`(()=>{const r=document.querySelector('#stage .ro');return r.dataset.world+' '+r.dataset.set})()`), 'photo office', 'flag closed: the Photo office');
-  assert.strictEqual(await packs(), 'sets/office worlds/photo', 'flag closed: no file of the arcade asked for: ' + await packs());
+  assert.strictEqual(await js(`(()=>{const r=document.querySelector('#stage .ro');return r.dataset.world+' '+r.dataset.set})()`), 'retro retro', 'no flag: a stored retro draws the arcade and its people');
+  assert.strictEqual(await packs(), 'sets/retro worlds/retro', 'no flag: only the arcade\'s files are asked for: ' + await packs());
   await js(`window.DurbarScreens.openSettings();0`);
   await must(`!!document.querySelector('#wrGroup [data-world="photo"]')`, 'Settings');
-  assert.strictEqual(await js(`!![...document.querySelectorAll('#wrGroup [data-world]')].find(b=>b.dataset.world==='retro')`), false, 'flag closed: not offered');
+  assert.strictEqual(await js(`!![...document.querySelectorAll('#wrGroup [data-world]')].find(b=>b.dataset.world==='retro')`), true, 'no flag: the arcade is offered');
   await js(`document.getElementById('scrClose').click();localStorage.removeItem('durbar.world');0`);
 
   /* what overlaps what, on the page's own boxes */
@@ -384,6 +389,51 @@ const run = async (ctx, reqs) => {
     const seats = await js(`(()=>{const L=window.__durbarSimUi.realLayout(),T=window.exports.aisleTabOrder(L),P=[...document.querySelectorAll('#stage .ro-plate')].map(p=>p.dataset.id);return {tab:T,dom:P};})()`);
     assert.deepStrictEqual(seats.dom, seats.tab, tag + ': Tab follows the seats');
     await H.shot(path.join(OUT, `102-arcade-${n}-${w}x${h}.png`), { prep: 'calm' });
+  }
+
+  // ---- T372, FR-229, spec 097 FR-309 (issue #1907): the keyboard order follows the seats AFTER the seats change, with real Tab presses ----
+  /* The check above compares the plates' order once, at load. The layout's sequence changes with the states (a resting agent comes to a desk), and a plate stays where it was first drawn
+     unless the order is kept (realoffice.js keyOrder). ARCADE_MUTANT=taborder: Element.after does nothing, so no element is ever moved (must fail at "Tab follows the seats after the states change"). */
+  {
+    await loadArcade(1440, 900, 15, { simfreeze: '1' });
+    if (MUT === 'taborder') await js(`Element.prototype.after=function(){};0`);
+    const SEQ = ['working', 'thinking', 'waiting', 'limit', 'error', 'done', 'idle', 'asleep'];
+    await js(`(()=>{const U=window.__durbarSimUi,S=${jsLiteral(SEQ)};U.agents().filter(a=>!a.parent).forEach((a,i)=>{a.state=S[i%S.length];delete a.label;});U.render();})();0`);
+    await H.until(`document.querySelectorAll('#stage .ro-plate').length===15&&!document.querySelector('#stage .ro-ghost')`, 8000);
+    await ctx.sleep(600);
+    const ids = await js(`window.__durbarSimUi.realLayout().zones.flatMap(z=>z.desks).filter(d=>d.person).map(d=>d.id).slice(0,2)`);
+    const plateClick = (id) => js(`(()=>{const p=document.querySelector('#stage .ro-plate[data-id="'+CSS.escape(${jsLiteral(id)})+'"]');if(!p)return false;p.click();return true})()`);
+    assert.ok(await plateClick(ids[0]), 'the first plate to give a draft');
+    await must(`document.body.classList.contains('panel-open')&&document.getElementById('msgInput')`, 'the chat for the draft');
+    await js(`(()=>{const m=document.getElementById('msgInput');m.value='a note not sent yet';m.dispatchEvent(new Event('input',{bubbles:true}));})()`);
+    assert.ok(await plateClick(ids[1]), 'the second plate, to leave the first chat');
+    await ctx.sleep(500);
+    await js(`(()=>{const b=document.getElementById('backBtn')||document.querySelector('[data-act=back]');if(b)b.click();})()`);
+    await must(`!document.body.classList.contains('panel-open')&&document.querySelectorAll('#stage .ro-plate').length===15`, 'the office back after the draft');
+    await ctx.sleep(500);
+    const after = await js(`(()=>{const T=window.exports.aisleTabOrder(window.__durbarSimUi.realLayout()),P=[...document.querySelectorAll('#stage .ro-plate')].map(p=>p.dataset.id);return {tab:T,dom:P};})()`);
+    assert.deepStrictEqual(after.dom, after.tab, 'T372: Tab follows the seats after the states change (the page order of the plates)');
+    /* real Tab presses, from the start of the page: the plates in the order they are visited, the pencil straight after its plate */
+    const wc = H.wc(); wc.focus();
+    /* the browser starts from where the last click was, so the walk starts on the first seat by focus() and presses Tab from there */
+    await js(`(()=>{const p=document.querySelector('#stage .ro-plate[data-id="'+CSS.escape(${jsLiteral(after.tab[0])})+'"]');p.focus();})()`);
+    const stop = () => js(`(()=>{const e=document.activeElement;if(!e)return null;return {plate:e.classList.contains('ro-plate')?e.dataset.id:null,ren:e.dataset&&e.dataset.ren||null}})()`);
+    const visited = [after.tab[0]], bad = [];
+    let prev = { plate: after.tab[0], ren: null };
+    for (let i = 0; i < 160; i++) {
+      wc.sendInputEvent({ type: 'keyDown', keyCode: 'Tab' }); wc.sendInputEvent({ type: 'keyUp', keyCode: 'Tab' }); await ctx.sleep(40);
+      const s = await stop(); if (!s) continue;
+      if (s.plate) { if (visited.includes(s.plate)) break; visited.push(s.plate); }
+      if (s.ren && prev && prev.plate !== s.ren && prev.ren !== s.ren) bad.push(s.ren);
+      prev = s;
+    }
+    assert.deepStrictEqual(visited, after.tab, 'T372: Tab follows the seats after the states change (real Tab presses, the plates in the order they are reached)');
+    assert.deepStrictEqual(bad, [], 'T372: each pencil comes straight after its own plate');
+    /* the Draft tag: the plate's name carries it, the tag is hidden from the tree (spec 097 FR-316) */
+    const dr = await js(`(()=>{const p=document.querySelector('#stage .ro-plate[data-id="'+CSS.escape(${jsLiteral(ids[0])})+'"]'),t=[...document.querySelectorAll('#stage .ro-drafttag.on')];return {label:p?p.getAttribute('aria-label'):'',tags:t.map(e=>e.getAttribute('aria-hidden'))}})()`);
+    assert.ok(/unsent draft/.test(dr.label), 'T372: a plate with a draft says "unsent draft" in its name: ' + dr.label);
+    assert.deepStrictEqual(dr.tags, ['true'], 'T372: one visible Draft tag, hidden from the tree');
+    console.log('[102-arcade] tab order after the states change:', visited.length, 'plates, in the order of the seats');
   }
 
   // ---- FR-259: the frame by state; FR-257: hostile text stays text ----

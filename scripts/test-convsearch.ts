@@ -102,6 +102,38 @@ function walk(h: Harness, what: string): number {
 const run = async (h: Harness, sessions: PlanSession[], q: string, extra: { unavailable?: string[]; platform?: NodeJS.Platform } = {}): Promise<ScanEnd> => startScan({ sessions, ...extra }, q, h.deps).done;
 
 async function main(): Promise<void> {
+  // ---- issue 1904, FR-040: whole words first, in-word hits below and not hidden; the excerpt is the best place, not the first
+  {
+    const hs = (h: Harness) => hitsOf(h).map((x) => [x.sessionId, x.rank] as const);
+    const t = (id: string, title: string, time: number): PlanSession => sess({ sessionId: id, title, time });
+    // by title: the acronym, a word start and a word that only holds it
+    const h1 = harness({});
+    await run(h1, [t('in', 'He ha cambiado la vista', 3), t('start', 'Biarritz trip', 2), t('whole', 'BIA report', 1)], 'BIA');
+    assert.deepStrictEqual(hs(h1).sort(), [['in', 2], ['start', 1], ['whole', 0]], 'rank by title: in a word 2, a word start 1, a whole word 0; all three are hits (nothing is hidden)');
+    // by message: the best place in the whole session counts, and the excerpt shown is that one
+    const filler = Array.from({ length: 6 }, (_, i) => u(`mensaje ${i}: se ha cambiado y había cambios`));
+    const h2 = harness({ late: [...filler, a('See the BIA acronym here'), u('more cambiado'), a('and había again')], inword: [...filler] });
+    await run(h2, [sess({ sessionId: 'late', title: 'one' }), sess({ sessionId: 'inword', title: 'two' })], 'bia');
+    const late = hitsOf(h2).find((x) => x.sessionId === 'late')!;
+    const inw = hitsOf(h2).find((x) => x.sessionId === 'inword')!;
+    assert.deepStrictEqual([late.rank, inw.rank], [0, 2], 'rank by message: one whole word anywhere in the session makes it 0; only in-word hits make it 2');
+    assert.ok(late.excerpts.some((x) => x.text.includes('BIA acronym')), 'excerpt: the whole-word message is shown even after six in-word messages, which would fill three lines');
+    assert.ok(late.excerpts.length <= BUDGET.maxExcerpts, 'excerpt: still at most three');
+    assert.strictEqual(late.more + late.excerpts.length, 9, 'excerpt: every message with a hit is counted (the "+N more" is unchanged)');
+    // inside one message: the excerpt is built around the whole word, not the first in-word hit
+    const msg = 'x '.repeat(200) + 'cambiado ' + 'y '.repeat(200) + 'and the BIA team ' + 'z '.repeat(100);
+    const r = messageExcerpts(msg, 'bia', { n: 0, speaker: 'you', values: [], masker: MASKER, search: S })!;
+    assert.ok(r.excerpts.length === 1 && r.excerpts[0].text.includes('BIA team') && !r.excerpts[0].text.includes('cambiado'), 'excerpt: built around the whole word of the message, not the first occurrence');
+    // two words: the hit is as good as its weakest word
+    const h3 = harness({});
+    await run(h3, [t('two', 'BIA cambiado', 1), t('both', 'BIA study', 2)], 'bia cambia');
+    assert.deepStrictEqual(hs(h3), [['two', 1]], 'rank: a hit is as good as its weakest word ("cambia" starts "cambiado": 1)');
+    // accents folded: an accented spelling of the word is still a whole word
+    const h4 = harness({});
+    await run(h4, [t('acc', 'La Bía del mar', 1)], 'bia');
+    assert.deepStrictEqual(hs(h4), [['acc', 0]], 'rank: accents are folded before the rank is read');
+  }
+
   // ---- T014: the excerpt builder
   {
     const o = { n: 4, speaker: 'agent' as const, values: [MCPV], masker: MASKER, search: S };
