@@ -1,0 +1,1 @@
+- **A rename-pencil check failure now says why** (spec 097): the hover-parking step of the plate-pencil check prints the full pointer and hover state in its assert (#1930).
