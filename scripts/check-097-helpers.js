@@ -119,12 +119,19 @@ module.exports = async (ctx) => {
     await emit({ sessionId: id, type: 'status', status: 'error', intent: 'x' }); await emit({ sessionId: id, type: 'status', status: 'idle', intent: 'x' });
     await must(`document.querySelector('#stage .ro').dataset.arrangement==='rows'`, `${tag}: the rows fixture draws rows`);
   };
+  /* spec 098 FR-010, T011 (issue #1901): the desk card's moment marker. Every desk's plate carries data-surface="desk-card" (a lounge seat "lounge"),
+     so the plate that holds a desk's "+N and dots" is the registry's desk-card root (code: present), in every world and size this driver runs */
+  const marker = async (tag) => {
+    const m = await js(`(()=>{const p=[...document.querySelectorAll('#stage .ro .ro-plate[data-id]')];return {n:p.length,card:p.filter(e=>e.dataset.surface==='desk-card').length,other:p.filter(e=>!['desk-card','lounge'].includes(e.dataset.surface)).map(e=>e.dataset.id),help:[...document.querySelectorAll('#stage .ro-plate .ro-help')].filter(e=>e.closest('.ro-plate').dataset.surface!=='desk-card').length}})()`);
+    assert.ok(m.card >= 10 && m.other.length === 0 && m.help === 0, `${tag}: every desk's plate is the desk card (data-surface="desk-card"; a lounge seat "lounge"), the helpers' fallback in it: ${JSON.stringify(m)}`);
+  };
   const CIRCLE_SIZES = new Set(); /* the sizes at which the Cave as shipped draws the circle: the linked picture 097-helpers-cave-<size>.jpg is then taken in the rows fixture (spec 097 FR-308, spec 102 Changes 2026-11-17 (fourth entry)) */
   const arrOf = () => js(`document.querySelector('#stage .ro').dataset.arrangement`);
   for (const world of WORLDS) for (const asRows of world === 'cave' ? [false, true] : [false]) for (const [w, h] of SIZES) {
     const tag = `${world}${asRows ? ' (rows fixture)' : ''} ${w}x${h}`;
     await H.load({ w, h, query: q(world, { sim: '15', simhelpers: '6' }), ready: REAL, readyMs: 30000, settle: false });
     await must(PICS, `${tag}: the pictures`);
+    await marker(tag);
     if (asRows) await toRows(tag);
     const ranArr = await arrOf();
     if (world === 'cave') assert.ok(asRows ? ranArr === 'rows' : ['circle', 'rows'].includes(ranArr), `${tag}: the arrangement drawn is ${ranArr}`);
@@ -291,6 +298,7 @@ module.exports = async (ctx) => {
     const tag = `default scene, ${world} ${w}x${h}`;
     await H.load({ w, h, query: q(world, { sim: '15' }), ready: REAL, readyMs: 30000, settle: false });
     await must(PICS, tag + ': the pictures');
+    await marker(tag);
     const nf = await fallback(tag);
     console.log('[097-helpers]', tag, 'fallback plates checked:', nf);
     if (world === 'photo' && w < 1440) assert.ok(nf >= 3, `${tag}: the fallback plates (${nf})`);
