@@ -184,3 +184,6 @@ PRs, gates and line-count goals: `plan.md`. Each PR measures on `main` first and
 
 ## 2026-11-19 (second entry): the open chat says that the reply failed (issue #1917)
 - [x] T256 [US1] `failedTurn` flag on the agent (set by an `error` status, cleared by a `working` status) read by `syncRunState` in `app.js`: a turn that ends after an error says "Reply failed" (Stop still says "Stopped", else "Reply finished"); `scripts/check-005-announce-failed.js` (in `ui-suite.js`), mutants `ANNOUNCE_FAIL_MUTANT=finished|always|sticky` [FR-038]
+
+## 2026-11-19 (third entry): a failed turn keeps showing the error (issue #1919)
+- [ ] T257 [US1] the `idle` that ends a turn with `failedTurn` set leaves the state Error (no Done, no unread mark, no finished announcement); `scripts/check-005-failed-state.js` (in `ui-suite.js`), mutants `FAILED_STATE_MUTANT=done|always` [FR-245]
