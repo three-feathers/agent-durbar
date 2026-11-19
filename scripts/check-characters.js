@@ -249,6 +249,10 @@ module.exports = async (ctx) => {
     assert.strictEqual(await H.js(`window.THEME.sceneKit()`), 'office', `${tag}: Office people in Flat draw the theme's own figures until Flat has their heads (T294)`);
     await pickChars('pixel');
     assert.strictEqual(await H.js(`window.THEME.characters()`), 'pixel', `${tag}: T230: a click on Retro pixel picks it`);
+    assert.ok(await H.until(`document.getElementById('chNote').textContent==='Flat draws the theme\u2019s own figures until Retro pixel has its flat heads.'`, 3000), `${tag}: a Retro pixel pick in Flat shows the line at once`);
+    await pickChars('theme');
+    assert.ok(await H.until(`document.getElementById('chNote').textContent===''`, 3000), `${tag}: another pick clears the line`);
+    await pickChars('pixel');
     await close();
     await H.load({ w, h, query: { characters: 'pixel' }, ready: 'fit', settle: false });
     await H.office(15);
@@ -258,8 +262,12 @@ module.exports = async (ctx) => {
     const dFlat = await desks();
     assert.ok(dFlat.n >= 12 && dFlat.by.office === dFlat.n && dFlat.anyPic === 0, `${tag}: a saved Retro pixel draws the theme's own figures on every desk in Flat (${JSON.stringify(dFlat)})`);
     await openSettings();
-    assert.strictEqual(await H.js(`document.getElementById('chNote').textContent`), '', `${tag}: T230: no line under the list (no set is behind a flag)`);
+    assert.strictEqual(await H.js(`document.getElementById('chNote').textContent`), 'Flat draws the theme\u2019s own figures until Retro pixel has its flat heads.', `${tag}: in Flat a saved Retro pixel says why the desks keep the theme's figures (T294, #1873; review of #1898)`);
     assert.strictEqual(await H.js(`document.querySelector('#chList [data-characters="pixel"]').getAttribute('aria-checked')`), 'true', `${tag}: the saved Retro pixel is the checked radio`);
+    await close();
+    await H.load({ w, h, query: { characters: 'pixel', officeview: 'real' }, ready: `!!document.querySelector('#stage .ro .ro-plate')`, settle: false });
+    await openSettings();
+    assert.strictEqual(await H.js(`document.getElementById('chNote').textContent`), '', `${tag}: in Real office Retro pixel draws its people, so no line`);
     await close();
     console.log(`[characters] ${tag} ok`, JSON.stringify(await desks()));
   }

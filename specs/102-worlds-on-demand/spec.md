@@ -2261,9 +2261,9 @@ All cabinets idle: p95 18 ms, CPU 0.3 % + 0.15 %. A status change costs 17 to 18
 
 **What it does** (as amended 2026-11-14): `WORLD_FLAGS.retro` is removed, so the Retro arcade is a third card in Settings > World (Plain, Photo office, Retro arcade; the cave keeps its flag) and Retro pixel is a normal Characters card with no "Not open yet" state; the registry row `retro` is `shippable: true` (all 26 cells `built` or `fallback-flat`, `test:momentsregistry`). Nobody is moved, no default changes, the Retro pixel theme, the Theme section and the mode button stay. Flat draws the theme's own figures for Retro pixel until T294 (issue #1873; owner, 2026-11-19: after the flip).
 
-**Held as a draft** until the owner says go: the real-GPU run (T231 with 097 T162) is the Mac session's (owner, 2026-11-19 06:52 UTC). The Windows hand check comes after the flip (owner, 2026-11-19).
+**Held as a draft** until the owner says go (**answered:** Vikram, Telegram, 2026-11-19 17:44 UTC, option 1: go; see the fifth entry): the real-GPU run (T231 with 097 T162) is the Mac session's (owner, 2026-11-19 06:52 UTC). The Windows hand check comes after the flip (owner, 2026-11-19).
 
-**Owner question, open:** spec 021 FR-078's check (`test:featureinventory`) fails once a world other than the Photo office is offered: every Flat `works` row needs its Worlds cell `built`, naming a registry moment with `code: present`, or a row-level `(owner decision, ...)`. The Worlds column was never filled for the arcade: 64 rows fail (53 `none`, the others `mock+planned`), and most moments the arcade has `built` are still `code: planned` (spec 098's `data-surface` roots are not built). Three rows are honestly `built` and are updated here (coffee break, needs-you inbox, credit caps). The rest needs the owner's choice: (1) a row-level owner decision naming #1404 (the arcade's parity board, every line closed but the flip's own) on each of the 64 rows, or (2) a spec 021 delta that a world drawn by the Real office engine takes the Real office cell, or (3) build 098's `data-surface` roots first. Not chosen here: no owner decision is written on his behalf.
+**Owner question (answered:** Vikram, Telegram, 2026-11-19 13:54 UTC, option 1; see the third entry**):** spec 021 FR-078's check (`test:featureinventory`) fails once a world other than the Photo office is offered: every Flat `works` row needs its Worlds cell `built`, naming a registry moment with `code: present`, or a row-level `(owner decision, ...)`. The Worlds column was never filled for the arcade: 64 rows fail (53 `none`, the others `mock+planned`), and most moments the arcade has `built` are still `code: planned` (spec 098's `data-surface` roots are not built). Three rows are honestly `built` and are updated here (coffee break, needs-you inbox, credit caps). The rest needs the owner's choice: (1) a row-level owner decision naming #1404 (the arcade's parity board, every line closed but the flip's own) on each of the 64 rows, or (2) a spec 021 delta that a world drawn by the Real office engine takes the Real office cell, or (3) build 098's `data-surface` roots first. Not chosen here: no owner decision is written on his behalf.
 
 **Docs:** `docs/features.md`, `docs/themes.md`, `docs/limits.md`, README, the feature inventory's Characters row, a changelog fragment. `docs/site/unreleased.json` keeps its arcade phrases until the site names the release that holds the world (spec 104 FR-008).
 
@@ -2284,3 +2284,14 @@ All cabinets idle: p95 18 ms, CPU 0.3 % + 0.15 %. A status change costs 17 to 18
 The rule is unchanged. Spec 098 T011 in part (#1902, merged) put `data-surface="desk-card"` on every Real office desk plate and made `desk-card` `code: present`. A desk's helpers are drawn on its card (spec 097 FR-306: the strip under the plate, or the "+N and dots" inside it), so the Helpers row's Worlds cell names that moment instead of the owner's decision. Evidence: `check-097-helpers` (Photo office, cave, arcade, 15 agents, 1440x900 and 1280x800: heads, the "+N and dots" fallback, and the marker on every desk plate) and `check-097-helper-row` (one row of heads, all three worlds), both in the proof cell.
 
 **Numbers** (`npm run specs:numbers`): no new FR, T or Q.
+
+## Changes 2026-11-19 (fifth entry): the owner's go for the flip; a line in Flat for Retro pixel (T230, T115, T122; issue #1400; review of #1898; no new FR)
+
+**Owner decision** (Vikram, Telegram, 2026-11-19 17:44 UTC): option 1, the go for the flip. The pull request leaves draft for its review.
+
+**Flat (review of #1898):** while the Characters choice is Retro pixel and the office is the flat one, the line under the Characters list says "Flat draws the theme’s own figures until Retro pixel has its flat heads." (the FR-322 line, `charNote`), because the flat desks keep the theme's figures until T294 (issue #1873). In Real office there is no line. `check-characters` pins both; mutant: the line removed fails at "a Retro pixel pick in Flat shows the line at once".
+
+**Open after the flip:** the Windows hand check (owner, 2026-11-19); T294's flat heads (#1873); the VoiceOver walk by the owner; the accessibility bugs #1907 and #1908. T231 is done (#1906, merged).
+
+**Numbers** (`npm run specs:numbers`): no new FR, T or Q.
+
