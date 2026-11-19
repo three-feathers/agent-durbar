@@ -2566,12 +2566,16 @@ const DECODE_CHAR = /^[A-Za-z0-9_.+/=:-]$/;
  * (`<?x?>`) or another bogus comment (`<!x>`, a CDATA section `<![CDATA[…]]>` too: outside SVG and MathML, HTML reads it as one and ends it at the first `>`), an HTML tag without `<` or `>` in it (`<b>`, `</b>`, `<span class="x">`, `<span/class="x">`, `<br/>`,
  * a custom `<my-el>` or `<svg:g>`, a name up to 64 characters, attributes up to 256), a numeric entity with or without its `;` (`&#8203`, as HTML
  * reads it) or a named one (each kept only when it stands for a `HIDDEN_CHARS` character), a run of combining marks, a `HIDDEN_CHARS` character, the backslash of a
- * Markdown escape (`NOTE_ESCAPABLE`: `sk-proj-<20>\_<rest>` reads `sk-proj-<20>_<rest>`); and (spec 012 FR-188) a percent escape, re-encoded any number of times.
- * A numeric entity may have any number of leading zeros, as HTML reads it. An entity or a percent escape of a token character (`DECODE_CHAR`) is not removed
- * but read as that character, in a reading of its own (`pieceSpans` with `decode`). Each alternative takes what it reads, so one scan is linear.
+ * Markdown escape (`NOTE_ESCAPABLE`: `sk-proj-<20>\_<rest>` reads `sk-proj-<20>_<rest>`). Each alternative is bounded, so one scan is linear. The decoded reading
+ * of FR-188 scans `SPLIT_AT_DEC` instead, where an entity or a percent escape of a token character (`DECODE_CHAR`) is read as that character.
  */
 const MD_ESC = String.raw`\\(?=[${NOTE_ESCAPABLE.replace(/[\\\]^-]/g, '\\$&')}])`;
-const SPLIT_AT = new RegExp(String.raw`<!--(?:>|->|[\s\S]{0,256}?-->)|<\?[^<>]{0,256}>|<![^<>-][^<>]{0,256}>|<\/?[A-Za-z][A-Za-z0-9:_.-]{0,63}(?:[\s/][^<>]{0,256})?>|&#(?:0*[0-9]{1,7}|[Xx]0*[0-9A-Fa-f]{1,6});?|&[A-Za-z]{2,24};|\p{M}+|${MD_ESC}|${HIDDEN_CHARS.source}|%(?:25)*[0-9A-Fa-f]{2}`, 'gu');
+const SPLIT_AT = new RegExp(String.raw`<!--(?:>|->|[\s\S]{0,256}?-->)|<\?[^<>]{0,256}>|<![^<>-][^<>]{0,256}>|<\/?[A-Za-z][A-Za-z0-9:_.-]{0,63}(?:[\s/][^<>]{0,256})?>|&#(?:[0-9]{1,7}|[Xx][0-9A-Fa-f]{1,6});?|&[A-Za-z]{2,24};|\p{M}+|${MD_ESC}|${HIDDEN_CHARS.source}`, 'gu');
+/**
+ * Spec 012 FR-188: `SPLIT_AT` for the decoded reading only: a numeric entity with any number of leading zeros, and a percent escape re-encoded any number of times.
+ * The readings as before FR-188 keep `SPLIT_AT` as it was (review of PR 1899, independent differential: a wider entity there changed what they read).
+ */
+const SPLIT_AT_DEC = new RegExp(String.raw`<!--(?:>|->|[\s\S]{0,256}?-->)|<\?[^<>]{0,256}>|<![^<>-][^<>]{0,256}>|<\/?[A-Za-z][A-Za-z0-9:_.-]{0,63}(?:[\s/][^<>]{0,256})?>|&#(?:0*[0-9]{1,7}|[Xx]0*[0-9A-Fa-f]{1,6});?|&[A-Za-z]{2,24};|\p{M}+|${MD_ESC}|${HIDDEN_CHARS.source}|%(?:25)*[0-9A-Fa-f]{2}`, 'gu');
 /** Whether a text can hold one of `SPLIT_AT` at all: the cheap test before the scan. */
 const SPLIT_GATE = new RegExp(String.raw`[<&%\r\n\\]|\p{M}|${HIDDEN_CHARS.source}`, 'u');
 /** A line break, kept in the output: `redact` keeps the line structure. */
@@ -2749,7 +2753,7 @@ function splitSpans(s: string, mask: string, written: () => ReadonlyArray<[numbe
   if (pieceSpans(s, mask, written, false, false, spans)) pieceSpans(s, mask, written, true, false, spans);
   // spec 012 FR-188: once more with an entity or a percent escape of a token character read as that character; a reading of its own, so the readings above
   // (as before FR-188) still give every span they gave: a decoded character can end a fixed-length shape that the reading without it hid (review of PR 1899)
-  if (DECODE_GATE.test(s)) pieceSpans(s, mask, written, false, true, spans);
+  if (!decodeOff && DECODE_GATE.test(s)) pieceSpans(s, mask, written, false, true, spans);
   return spans;
 }
 /** A tag that renders a break or a block edge: read as a blank by the second reading of `splitSpans`. */
@@ -2763,8 +2767,8 @@ export function decodeTokenForms(text: string): string {
   const s = text.slice(0, DECODE_TEXT_MAX);
   let out = '';
   let from = 0;
-  SPLIT_AT.lastIndex = 0;
-  for (let m = SPLIT_AT.exec(s); m; m = SPLIT_AT.exec(s)) {
+  SPLIT_AT_DEC.lastIndex = 0;
+  for (let m = SPLIT_AT_DEC.exec(s); m; m = SPLIT_AT_DEC.exec(s)) {
     if (m[0][0] !== '&' && m[0][0] !== '%') continue;
     const put = decodedChar(m[0]);
     if (!put) continue;
@@ -2774,6 +2778,16 @@ export function decodeTokenForms(text: string): string {
   return out + s.slice(from) + text.slice(DECODE_TEXT_MAX);
 }
 const DECODE_TEXT_MAX = 4096;
+let decodeOff = false;
+/**
+ * Runs `fn` with FR-188's decoded reading off: every mask inside reads as it did before FR-188. The desk's reference reading (review of PR 1899, independent
+ * differential): its own steps after the split step (a hidden character removed, a glued rest folded) can read a mask from the decoded reading differently.
+ */
+export function withoutDecode<T>(fn: () => T): T {
+  if (decodeOff) return fn();
+  decodeOff = true;
+  try { return fn(); } finally { decodeOff = false; }
+}
 /** Whether a text can hold an entity or a percent escape at all (spec 012 FR-188): the cheap test before the decoded reading. */
 const DECODE_GATE = /[&%]/;
 /** How far before a stretch a decoded character makes it count (spec 012 FR-188): a secret name with a character in such a form before its value. */
@@ -2795,8 +2809,9 @@ function pieceSpans(s: string, mask: string, written: () => ReadonlyArray<[numbe
   const take = (to: number): void => {
     for (let i = from; i < to; i++) { keep.push(s[i]); at.push(i); end.push(i + 1); dec.push(false); ends.push(endNext); endNext = false; }
   };
-  SPLIT_AT.lastIndex = 0;
-  for (let m = SPLIT_AT.exec(s); m; m = SPLIT_AT.exec(s)) {
+  const at_ = decode ? SPLIT_AT_DEC : SPLIT_AT;
+  at_.lastIndex = 0;
+  for (let m = at_.exec(s); m; m = at_.exec(s)) {
     const t = m[0];
     const a = m.index;
     // an entity of a hidden character is removed (FR-182); an entity or a percent escape of a token character is read as that character (FR-188); others stay

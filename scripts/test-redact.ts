@@ -126,6 +126,23 @@ for (const keep of ['ghp_short', 'see ghs_count', 'wei' + 'ghs_' + 'TotalWeightK
       if (label === 'first character') assert.ok(ST2.maskRaw(t, (y) => redact(y, {})).includes('] -p['), `#1320 decoded: desk maskRaw keeps the flag after a decoded token and a piece (${label})`);
     }
   }
+  // independent differential of PR 1899: the readings as before FR-188 keep their bounded entity, so a hidden-character entity with leading zeros inside a token reads as
+  // it did (the digits after the bound are token text there); and the desk's own steps after the split step read a decoded mask as before (a decoded reading is a reference)
+  {
+    const ST3 = require(path.join(__dirname, '..', '..', 'src', 'renderer', 'safetext.js')) as { maskRaw(t: string, r: (s: string) => string): string; excerpt(t: string, r: (s: string) => string): string };
+    const deskSurfaces: Array<[string, (t: string) => string]> = [['redact', (t) => redact(t, {})], ['desk maskRaw', (t) => ST3.maskRaw(t, (y) => redact(y, {}))], ['desk excerpt', (t) => ST3.excerpt(t, (y) => redact(y, {}))]];
+    for (const [label, t, piece] of [
+      ['decimal', 'gh' + 'p_' + ghBody.slice(0, 32) + '&#000' + '8203' + '1234', ghBody.slice(18, 30)],
+      ['hex', 'x gh' + 'p_' + ghBody.slice(0, 32) + '&#x00' + '200b' + '5678 y', ghBody.slice(18, 30)],
+      ['fixed-length key, hex', 'x AI' + 'za' + ghBody.slice(0, 31) + '&#x00' + '200b' + '5678 y', ghBody.slice(10, 22)],
+      ['fixed-length key, decimal', 'x AI' + 'za' + ghBody.slice(0, 31) + '&#000' + '8203' + '5678 y', ghBody.slice(10, 22)],
+    ] as Array<[string, string, string]>) {
+      for (const [name, mask] of deskSurfaces) assert.ok(!mask(t).includes(piece), `#1320 decoded: ${name} reads a hidden-character entity with leading zeros as before (${label})`);
+    }
+    const dpw = 'Hx9' + 'Kq2' + 'Lm7' + 'Np4' + 'Rs';
+    const t = 'Authorization: Bearer gh' + 'p_' + ghBody.slice(0, 10) + '&#' + ghBody.charCodeAt(10) + ';' + ghBody.slice(11) + '\u200bmysql -p' + dpw;
+    for (const [name, mask] of deskSurfaces) assert.ok(!mask(t).includes(dpw), `#1320 decoded: ${name} hides a password after a header, a decoded token, a hidden character and a keyword`);
+  }
   // near misses: text with such forms and no token stays byte for byte
   const keep = [
     'R&amp;D &#169; 2024 &mdash; build_v1.2.3',

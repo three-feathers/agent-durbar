@@ -27,6 +27,10 @@ export interface BrainMask {
   schemeWord(word: string): boolean;
   /** Spec 012 FR-188: a word with its entity and percent-escape forms of token characters read as the characters (a header name written that way). */
   decodeTokenForms?(text: string): string;
+  /** Spec 012 FR-188: runs `fn` with the decoded reading off (the reading as before FR-188). */
+  withoutDecode?<T>(fn: () => T): T;
+  /** Spec 012 FR-182/FR-188: `head` with every piece that `ref` (another masked reading of the same text) does not show masked. */
+  keepShownBy?(head: string, ref: string): string;
   /**
    * The app's usage units (spec 011 `usagetotals.js` `validNano`, spec 052 `costtable.js` `AIU_USD` and `money`): the page passes `DurbarUsage` and
    * `DurbarCost`. Without it a `nanoAiu` figure is "not reported" and only `costUsd` counts.
@@ -361,7 +365,7 @@ function valueExpected(mask: BrainMask, joined: string): { at: number; head: str
 /* ---------- streamed text: one masked tail per stream ---------- */
 
 /** One stream's masked tail; `key` is the depth of unclosed private key blocks (its pieces are dropped), `carry` a possible start of an END marker. */
-export interface Tail { buf: string; key: number; carry: string; shown?: string }
+export interface Tail { buf: string; key: number; carry: string; shown?: string; ref?: Tail }
 const freshTail = (): Tail => ({ buf: '', key: 0, carry: '', shown: '' });
 function clearStreams(s: BrainState): void { s.think = freshTail(); s.out = freshTail(); s.inKeyBlock = false; }
 
@@ -395,10 +399,10 @@ function markerSuffix(text: string): string {
 
 /**
  * Spec 012 FR-188 (review of PR 1899): the end of a piece that can still become another character once the next piece comes: a numeric entity without its `;`
- * (up to 7 decimal or 6 hex digits after at most 4 zeros: a number HTML may still read as another character, a hidden one included), a start of a known entity name, or a percent escape still missing
+ * (up to 7 decimal or 6 hex digits after at most 4 zeros: a number HTML may still read as another character, a hidden one included), a lone `&` (review of PR 1899, round 4: an entity that completes in the next piece, after a masked value too), a start of a known entity name, or a percent escape still missing
  * a hex digit (re-encoded up to 8 times). It holds digits of a character code or a fixed entity name only, and is never shown: the views show the whole text read at once.
  */
-const HELD_FORM = /(?:&(?:#(?:[Xx]0{0,4}[0-9A-Fa-f]{0,6}|0{0,4}[0-9]{0,7})?|(?:l(?:o(?:w(?:b(?:ar?)?)?)?)?|u(?:n(?:d(?:e(?:r(?:b(?:ar?)?)?)?)?)?)?|p(?:e(?:r(?:i(?:od?)?)?)?|l(?:us?)?)?|s(?:ol?)?|e(?:q(?:u(?:a(?:ls?)?)?)?)?|c(?:o(?:l(?:on?)?)?)?))|%(?:25){0,8}[0-9A-Fa-f]?)$/i;
+const HELD_FORM = /(?:&(?:#(?:[Xx]0{0,4}[0-9A-Fa-f]{0,6}|0{0,4}[0-9]{0,7})?|(?:l(?:o(?:w(?:b(?:ar?)?)?)?)?|u(?:n(?:d(?:e(?:r(?:b(?:ar?)?)?)?)?)?)?|p(?:e(?:r(?:i(?:od?)?)?)?|l(?:us?)?)?|s(?:ol?)?|e(?:q(?:u(?:a(?:ls?)?)?)?)?|c(?:o(?:l(?:on?)?)?)?))?|%(?:25){0,8}[0-9A-Fa-f]?)$/i;
 const HELD_MAX = 32;
 /** One piece of text into a stream's tail (F1, F1b, H1..H4): masks the masked tail plus the new text again, as a whole. */
 function streamText(tail: Tail, piece: string, whole: boolean, mask: BrainMask): Tail {
@@ -425,14 +429,19 @@ function streamText(tail: Tail, piece: string, whole: boolean, mask: BrainMask):
   const nest = openDepth(joined);
   if (open >= 0 || nest.depth > 0) { key = Math.max(1, nest.depth); carry = markerSuffix(joined); }
   let cut = open >= 0 || nest.depth > 0 ? null : valueExpected(mask, joined);
+  // spec 012 FR-188 (review of PR 1899, independent differential): a header found only through its decoded name that the held-head check refuses (a name glued after a
+  // mark) is read as before FR-188, as `main` reads it: the decoded reading would mask the partial scheme word, and the value after it would show in the next piece
+  const cut0 = cut;
   if (cut && !heldOk(mask, cut.head)) cut = null; // J1: a raw head is held only when it holds no secret; else the whole text is masked
+  const asBefore = !cut && !!cut0 && typeof mask.withoutDecode === 'function' && !!mask.decodeTokenForms && safe(() => mask.decodeTokenForms!(cut0.head)) !== cut0.head;
   if (failed) buf = '[redacted]';
   else if (nest.depth > 0 && open < 0) buf = (safe(() => mask.maskGluedTail(brainMaskText(mask, joined.slice(0, nest.at)))) + '[redacted]').slice(-BUF_MAX);
   else if (cut) {
     // F1b: a header or secret name that expects its value ("Authorization: Bearer") masks to a mark, and the value then arrives after a
     // space. The header words (no secret yet) stay raw until the value comes, so the whole line masks together.
     buf = (safe(() => mask.maskGluedTail(brainMaskText(mask, joined.slice(0, cut.at)))) + cut.head).slice(-BUF_MAX);
-  } else buf = safe(() => mask.maskGluedTail(brainMaskText(mask, joined))).slice(-BUF_MAX);
+  } else if (asBefore) buf = safe(() => mask.withoutDecode!(() => mask.maskGluedTail(brainMaskText(mask, joined)))).slice(-BUF_MAX);
+  else buf = safe(() => mask.maskGluedTail(brainMaskText(mask, joined))).slice(-BUF_MAX);
   // what the views show: with a held form, the whole text read at once (it may hide more than the next piece will), so a held form is never shown as written
   // and no state waits for a next piece (FR-188, review of PR 1899, round 2: a stream that ends on it); the held copy only joins the next piece
   let shown = buf;
@@ -639,7 +648,20 @@ export function brainState(prev: BrainState, ev: unknown, now: number, mask: Bra
         const t = ensureTurn(s, now);
         const whole = e.type === 'output' && e.final === true && typeof e.text === 'string';
         const key = e.type === 'thinking' ? 'think' : 'out';
-        s[key] = streamText(s[key], whole ? (e.text as string) : str(e.delta), whole, mask);
+        const piece = whole ? (e.text as string) : str(e.delta);
+        const prev = s[key];
+        let next = streamText(prev, piece, whole, mask);
+        // spec 012 FR-188 (review of PR 1899, independent differential): once a stream holds an entity or a percent escape, it is also read with the decoded reading off
+        // (as before FR-188; until then both readings are the same, so it starts from this tail), and the views show nothing that reading hides: a token the decoded
+        // reading masked early glues the next piece to its mask, and the rules after it can read that differently
+        if (typeof mask.withoutDecode === 'function' && typeof mask.keepShownBy === 'function' && (prev.ref || /[&%]/.test(piece))) {
+          const ref0: Tail = prev.ref ?? { buf: prev.buf, key: prev.key, carry: prev.carry, shown: prev.shown };
+          const ref = mask.withoutDecode(() => streamText(ref0, piece, whole, mask));
+          const shownNow = next.shown ?? next.buf;
+          const keptRaw = safe(() => mask.keepShownBy!(shownNow, ref.shown ?? ref.buf));
+          next = { ...next, shown: keptRaw.slice(-BUF_MAX), ref: { buf: ref.buf, key: ref.key, carry: ref.carry, shown: ref.shown } };
+        }
+        s[key] = next;
         s.inKeyBlock = s.think.key > 0 || s.out.key > 0;
         s.buf = s[key].shown ?? s[key].buf;
         const cur = currentStep(s);

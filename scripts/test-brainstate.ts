@@ -684,6 +684,36 @@ assert.strictEqual(sentenceOf(s), s.sentence);
       assert.ok(!showsAny(['x ' + h.slice(0, h.length - 6), h.slice(h.length - 6) + pw + ' done'], pw), `#1320 decoded brain: a header written in such a form, cut inside its scheme word, hides the value (${heads.indexOf(h)})`);
     }
     assert.strictEqual(hleak, 0, '#1320 decoded brain: random cuts over a header written in such a form never show the value');
+    // independent differential of PR 1899: a header name glued after a mark, with a letter in such a form, cut inside the scheme word: read as before FR-188 (as main)
+    for (const mark of ['(', '[']) for (const name of ['Au' + '&#116;horization', 'Authorizatio' + '%6e']) {
+      assert.ok(!showsAny(['x' + mark + name + ': Bea', 'rer ' + pw + ' done'], pw), `#1320 decoded brain: a header name in such a form glued after a mark hides the value (${mark}${name.length})`);
+    }
+    // independent differential of PR 1899: a token the decoded reading masks early, then a hidden character, a keyword and a password in a later piece: the views
+    // show nothing the reading with the decoded reading off hides
+    {
+      const t = 'Authorization: Bearer gh' + 'p_' + body.slice(0, 10) + '&#104;' + body.slice(11) + '\u200bmysql -p' + pw;
+      for (const at of [40, 50, 60]) assert.ok(!showsAny([t.slice(0, at), t.slice(at)], pw), `#1320 decoded brain: a token masked early keeps a later password hidden (${at})`);
+    }
+    // round 4: a short value after a header, then a hidden-character entity cut in pieces (a lone `&` at the end of a piece too), then the rest: never shown,
+    // after the header written plainly (a gap on main, the same code) and in such a form
+    {
+      const v = 'O4tb3ay' + 'bVwXpNvbq';
+      let qs = 18994;
+      const qr = (): number => { qs = (Math.imul(qs, 1103515245) + 12345) >>> 0; return qs / 2 ** 32; };
+      let qleak = 0;
+      for (const h of ['x Authorization: Bearer Ab3C', 'x Authorization' + '&#x3a;Bearer Ab3C']) for (const ent of ['&#8203;', '&#173;', '&#6158;', '&#65279;', '&#x200b;']) {
+        const t = h + ent + v + ' done';
+        assert.ok(!showsAny([h + '&', ent.slice(1) + v + ' done'], v), `#1320 decoded brain: a lone & at the end of a piece after a header value is held (${h.length} ${ent.length})`);
+        for (let k = 0; k < 20; k++) {
+          const cuts = new Set<number>([h.length + 1 + Math.floor(qr() * (ent.length - 1))]);
+          // a second cut inside the entity or before it; a cut right after a whole entity before the rest shows on main too ([KNOWN GAP], FR-188, listed on #1320)
+          if (qr() < 0.5) cuts.add(1 + Math.floor(qr() * (h.length + ent.length - 1)));
+          const pts = [0, ...[...cuts].sort((x, y) => x - y), t.length];
+          if (showsAny(pts.slice(1).map((q, i) => t.slice(pts[i], q)), v)) qleak++;
+        }
+      }
+      assert.strictEqual(qleak, 0, '#1320 decoded brain: random cuts inside an entity after a header value never show the rest');
+    }
     // round 3: a separator in such a form glued to a partial scheme word
     for (const sepForm of ['&#x3a;', '&#58;', '%3A', '&colon;']) {
       assert.ok(!showsAny(['x Authorization' + sepForm + 'Bea', 'rer ' + pw + ' done'], pw), `#1320 decoded brain: a separator in such a form glued to a partial scheme word hides the value (${sepForm.length})`);
