@@ -430,4 +430,4 @@ Order: T327 (the owner's picture gate) before any code PR; T328, T329 (art, #164
 
 ## 2026-11-19: check-097-order step 6 pair from one read (issue #1922)
 
-- [ ] T375 [US2] Bug #1922 (spec delta 2026-11-19): `scripts/check-097-order.js` step 6 reads facts and shown order in one call, remakes the pair up to 3 times with the reason, and its failure prints every desk's state, room and away flag; asserts unchanged
+- [ ] T376 [US2] Bug #1922 (spec delta 2026-11-19): `scripts/check-097-order.js` step 6 reads facts and shown order in one call, remakes the pair up to 3 times with the reason, and its failure prints every desk's state, room and away flag; asserts unchanged
