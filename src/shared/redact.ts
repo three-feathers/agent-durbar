@@ -2556,18 +2556,19 @@ function hiddenSpans(orig: string, masked: string): Array<[number, number]> {
 
 /** Named HTML entities of characters in `HIDDEN_CHARS` (spec 012 FR-182): `&ZeroWidthSpace;` reads as nothing, like `&#8203;`. */
 const HIDDEN_ENTITY: Record<string, number> = { zerowidthspace: 0x200b, negativeverythinspace: 0x200b, negativethinspace: 0x200b, negativemediumspace: 0x200b, negativethickspace: 0x200b, zwnj: 0x200c, zwj: 0x200d, lrm: 0x200e, rlm: 0x200f, shy: 0xad, nobreak: 0x2060, af: 0x2061, applyfunction: 0x2061, it: 0x2062, invisibletimes: 0x2062, ic: 0x2063, invisiblecomma: 0x2063 };
+/** Named HTML entities of token characters (spec 012 FR-188): `pieceSpans` reads them as the character (looked up in lower case, as `HIDDEN_ENTITY`: fail closed). */
+const TOKEN_ENTITY: Record<string, number> = { lowbar: 0x5f, underbar: 0x5f, period: 0x2e, plus: 0x2b, sol: 0x2f, equals: 0x3d, colon: 0x3a };
+/** A token character that `pieceSpans` reads in an entity or percent-escape form as itself (spec 012 FR-188): the body characters and `:`. */
+const DECODE_CHAR = /^[A-Za-z0-9_.+/=:-]$/;
 /**
  * What can sit inside a token without being part of it as a reader sees it (spec 012 FR-182, issue #1613), in the order tried at one place: an HTML
  * comment (at most 256 characters inside; also the empty `<!-->` and `<!--->` that HTML closes early), a processing instruction
  * (`<?x?>`) or another bogus comment (`<!x>`, a CDATA section `<![CDATA[…]]>` too: outside SVG and MathML, HTML reads it as one and ends it at the first `>`), an HTML tag without `<` or `>` in it (`<b>`, `</b>`, `<span class="x">`, `<span/class="x">`, `<br/>`,
  * a custom `<my-el>` or `<svg:g>`, a name up to 64 characters, attributes up to 256), a numeric entity with or without its `;` (`&#8203`, as HTML
  * reads it) or a named one (each kept only when it stands for a `HIDDEN_CHARS` character), a run of combining marks, a `HIDDEN_CHARS` character, the backslash of a
- * Markdown escape (`NOTE_ESCAPABLE`: `sk-proj-<20>\_<rest>` reads `sk-proj-<20>_<rest>`). Each alternative is bounded, so one scan is linear.
+ * Markdown escape (`NOTE_ESCAPABLE`: `sk-proj-<20>\_<rest>` reads `sk-proj-<20>_<rest>`); and (spec 012 FR-188) a percent escape, re-encoded up to 8 times. An
+ * entity or a percent escape of a token character (`DECODE_CHAR`) is not removed but read as that character (`pieceSpans`). Each alternative is bounded, so one scan is linear.
  */
-/** Named HTML entities of token characters (spec 012 FR-188): `pieceSpans` reads them as the character (looked up in lower case, as `HIDDEN_ENTITY`: fail closed). */
-const TOKEN_ENTITY: Record<string, number> = { lowbar: 0x5f, underbar: 0x5f, period: 0x2e, plus: 0x2b, sol: 0x2f, equals: 0x3d, colon: 0x3a };
-/** A token character that `pieceSpans` reads in an entity or percent-escape form as itself (spec 012 FR-188): the body characters and `:`. */
-const DECODE_CHAR = /^[A-Za-z0-9_.+/=:-]$/;
 const MD_ESC = String.raw`\\(?=[${NOTE_ESCAPABLE.replace(/[\\\]^-]/g, '\\$&')}])`;
 const SPLIT_AT = new RegExp(String.raw`<!--(?:>|->|[\s\S]{0,256}?-->)|<\?[^<>]{0,256}>|<![^<>-][^<>]{0,256}>|<\/?[A-Za-z][A-Za-z0-9:_.-]{0,63}(?:[\s/][^<>]{0,256})?>|&#(?:[0-9]{1,7}|[Xx][0-9A-Fa-f]{1,6});?|&[A-Za-z]{2,24};|\p{M}+|${MD_ESC}|${HIDDEN_CHARS.source}|%(?:25){0,8}[0-9A-Fa-f]{2}`, 'gu');
 /** Whether a text can hold one of `SPLIT_AT` at all: the cheap test before the scan. */
