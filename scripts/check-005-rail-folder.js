@@ -35,9 +35,19 @@ module.exports = async (ctx) => {
   const hoverEl = async (sel, what) => {
     for (let i = 0; i < 4; i++) {
       await away();
+      /* cause of the red seen on the 6th of 8 runs (the pointerover log held ONE event for four hovers and the tip's text was set but it was hidden): the tooltip hides on any scroll (tooltip.js, WCAG 1.4.13), and the rail was still scrolling (the page's own reveal of the selected row) after the pointer arrived; the tip then stays hidden while the pointer stays put, and a move to the same point raises no new pointerover. So: wait until the rail list has stopped scrolling, and make the pointer really leave (:hover false) before it comes back */
+      await ok(`(()=>{const l=document.getElementById('stripList');if(!l)return true;const t=l.scrollTop,now=performance.now();if(window.__sp!==t){window.__sp=t;window.__spAt=now;}return now-(window.__spAt||0)>250})()`, 'the rail list stopped scrolling', 4000);
+      await ok(`!document.querySelector(${jsLiteral(sel)}).matches(':hover')`, 'the pointer left the head', 3000);
       const p = await js(`(()=>{const r=document.querySelector(${jsLiteral(sel)}).getBoundingClientRect();return {x:Math.round(r.left+r.width/2),y:Math.round(r.top+r.height/2)}})()`);
       wc().sendInputEvent({ type: 'mouseMove', x: p.x - 1, y: p.y }); wc().sendInputEvent({ type: 'mouseMove', x: p.x, y: p.y });
-      if (await until(`document.querySelector(${jsLiteral(sel)}).matches(':hover')`, 1500)) return;
+      if (!(await until(`document.querySelector(${jsLiteral(sel)}).matches(':hover')`, 1500))) continue;
+      /* seen twice (the sub-agent's mutant run, my first run), cause not proven: the pointer reached the head (:hover) and the tooltip was not shown; a real person would move the mouse again, so the helper does too (a new real mouse move, never a loosened assert: the caller still asserts the tooltip) */
+      if (await until(shown, 1200)) return;
+    }
+    if (await until(`document.querySelector(${jsLiteral(sel)}).matches(':hover')`, 300)) {
+      const d = await js(`(()=>{const e=document.querySelector(${jsLiteral(sel)}),r=e.getBoundingClientRect(),t=document.getElementById('appTip');const at=document.elementFromPoint(Math.round(r.left+r.width/2),Math.round(r.top+r.height/2));return {log:(window.__pov||[]).slice(-12),at:at?at.tagName+'.'+String(at.className).slice(0,40):null,inHead:!!(at&&e.contains(at)),tip:t?{hidden:t.hidden,text:t.textContent.slice(0,40)}:null,focus:document.hasFocus(),hasTip:e.hasAttribute('data-tip'),active:document.activeElement&&document.activeElement.tagName}})()`);
+      console.log('[rail-folder] hovered but no tooltip after 4 real hovers: ' + JSON.stringify(d));
+      return; /* the caller's assert says so */
     }
     assert.fail(`the pointer never reached ${what}`);
   };
@@ -47,6 +57,7 @@ module.exports = async (ctx) => {
   for (const [w, h] of SIZES) {
     const tag = `${w}x${h}`;
     await H.load({ w, h, query: Q, ready: `document.querySelectorAll('#stage .desk[data-id]').length>=16`, readyMs: 30000, focus: true });
+    await js(`(()=>{window.__pov=[];window.addEventListener('scroll',e=>{window.__pov.push('SCROLL:'+((e.target&&e.target.id)||(e.target&&e.target.nodeName))+'@'+Math.round(performance.now()))},true);document.addEventListener('pointerover',e=>{window.__pov.push((e.target.className&&String(e.target.className).slice(0,30)||e.target.tagName)+'@'+Math.round(performance.now()))},true);})();0`);
     await H.needFocus(tag);
     await js(`document.querySelector('#stage .desk[data-id]').click()`);
     await ok(`document.body.classList.contains('panel-open')&&document.querySelectorAll('#stripList .rg-h').length>=16`, `${tag}: a chat is open and the rail lists 16 folders`, 15000);
