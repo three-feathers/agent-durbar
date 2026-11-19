@@ -692,6 +692,7 @@ module.exports = async (ctx) => {
       await must(PICS, 'the pictures');
       /* 102 T223 building-preview (097 FR-105): the real pointer rests on All, as a visitor's does; the page must have seen it enter the button */
       await must(`!!document.querySelector('#lift:not([hidden]) [data-lift="*all"]')`, 'the lift with its All button');
+      if (world === 'retro') { /* the lift asserts and the picture are the arcade's: Photo and the cave draw the flat lift */
       /* 102 T223 (issue 1891): lift-panel in the arcade's own tokens: square keys with a hard shadow in the mono font, the shown floor a pressed key in the mark's yellow (the flat lift's rounded 1px keys are the fallback this must not be) */
       const lf = await js(`(()=>{const S=(e)=>getComputedStyle(e),ks=[...document.querySelectorAll('#lift .lift-b')],cur=ks.find(k=>k.getAttribute('aria-current')==='true'),oth=ks.find(k=>k!==cur);if(!cur||!oth)return null;
         return {n:ks.length,radius:ks.map(k=>S(k).borderTopLeftRadius),shadow:S(oth).boxShadow!=='none',mono:/mono|Menlo|Consolas/i.test(S(oth).fontFamily),curBg:S(cur).backgroundColor,othBg:S(oth).backgroundColor,small:ks.filter(k=>parseFloat(S(k).fontSize)<10.5).length}})()`);
@@ -702,6 +703,7 @@ module.exports = async (ctx) => {
       const lc = await js(`(()=>{const {Pa,over,bgOf,rat}=window.__cx,ks=[...document.querySelectorAll('#lift .lift-b')],cur=ks.find(k=>k.getAttribute('aria-current')==='true'),oth=ks.find(k=>k!==cur),f=(k)=>{const b=bgOf(k,document.documentElement);return rat(over(Pa(getComputedStyle(k).color),b),b)};return {cur:f(cur),oth:f(oth)}})()`);
       assert.ok(lc.cur >= 4.5 && lc.oth >= 4.5, `${tag}: lift-panel: the shown key and another key read at 4.5:1: ${JSON.stringify(lc)}`);
       await shot(world, 'cell-lift', w, h);
+      }
       await js(`window.__bpEnter=false;document.querySelector('#lift [data-lift="*all"]').addEventListener('mouseenter',()=>{window.__bpEnter=true});0`);
       const bp = await js(`(()=>{const r=document.querySelector('#lift [data-lift="*all"]').getBoundingClientRect();return {x:Math.round(r.left+r.width/2),y:Math.round(r.top+r.height/2)}})()`);
       ctx.win.webContents.sendInputEvent({ type: 'mouseMove', x: bp.x, y: bp.y });
