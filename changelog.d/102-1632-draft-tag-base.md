@@ -1,1 +1,0 @@
-- **Retro arcade: a Draft tag no longer sits on a cabinet's base** (spec 102 T366, issue #1632): at a cabinet with its person beside it, the Draft tag now stands beside the plate's end under the person's feet, off the cabinet. The overlap check measures every cabinet and the person's box against the tag. Simulator only, Linux (Windows and macOS not run).
