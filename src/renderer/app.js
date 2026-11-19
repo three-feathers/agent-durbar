@@ -7123,21 +7123,35 @@ function settlePlan(a,action){
   else setState(a,'working',null,action==='approve'?'Carrying out the plan':'Revising the plan');
 }
 /* spec 052 (2026-11-19 delta, issue 1927, T378; review of PR 1933): a question's Markdown, masked first and then rendered by the chat's own renderer.
-   1. Character references are decoded first (until nothing changes), so both masks and the renderer read the same characters.
+   1. Character references are decoded first (until nothing changes, qDecodeRefs), so both masks and the renderer read the same characters; one left over: plain text.
    2. The Markdown-keeping mask (RED.redact) runs, then DurbarMD renders; links lose their `title`.
    3. The rendered HTML is kept only when every text it shows and every attribute value it holds (a link's address also read percent-decoded) is
       already fully masked: the Markdown-aware mask (safeMask) leaves it unchanged. Compared by value, never by a count of masks.
    Otherwise, or when the redact module or the renderer is missing, or the render is empty, the card shows the masked plain text of the decoded
    question (fail closed). The raw question is never shown. */
 const Q_UNSAFE='This question cannot be shown safely. Choose an option or write your answer.';
-function qDecodeRefs(t){const ta=document.createElement('textarea');let x=t;for(let i=0;i<8;i++){ta.innerHTML=x;const y=ta.value;if(y===x)return x;x=y;}return null;} /* a textarea parses text only: no element is made */
+/* character references, decoded without any HTML parser: numeric (decimal or hex, any case, leading zeros, with or without `;`) and a small table of names (the
+   five basic ones, no-break space and the hidden characters the masks know, src/shared/redact.ts HIDDEN_ENTITY); a code point out of range is U+FFFD as in HTML.
+   A reference left over (an unknown name, a name without `;`, a C1 number HTML maps elsewhere) makes qRefsLeft true and the card falls back (fail closed). */
+const Q_NAMED={amp:'&',AMP:'&',lt:'<',LT:'<',gt:'>',GT:'>',quot:'"',QUOT:'"',apos:"'",nbsp:'\u00a0',shy:'\u00ad',zwnj:'\u200c',zwj:'\u200d',lrm:'\u200e',rlm:'\u200f',
+  ZeroWidthSpace:'\u200b',NegativeVeryThinSpace:'\u200b',NegativeThinSpace:'\u200b',NegativeMediumSpace:'\u200b',NegativeThickSpace:'\u200b',NoBreak:'\u2060',
+  af:'\u2061',ApplyFunction:'\u2061',it:'\u2062',InvisibleTimes:'\u2062',ic:'\u2063',InvisibleComma:'\u2063'};
+const Q_REF=/&(?:#(?:[xX]([0-9A-Fa-f]+)|([0-9]+));?|([A-Za-z][A-Za-z0-9]{0,31});)/g;
+function qRef(all,hex,dec,name){
+  if(name!=null)return Object.prototype.hasOwnProperty.call(Q_NAMED,name)?Q_NAMED[name]:all;
+  const d=(hex!=null?hex:dec).replace(/^0+/,''), cp=d.length>8?Infinity:parseInt(d||'0',hex!=null?16:10);
+  if(cp>=0x80&&cp<=0x9f)return all; /* HTML reads these as other characters: left, so the card falls back */
+  return String.fromCodePoint(cp===0||cp>0x10ffff||(cp>=0xd800&&cp<=0xdfff)?0xfffd:cp);
+}
+function qDecodeRefs(t){let x=t;for(let i=0;i<8;i++){const y=x.replace(Q_REF,qRef);if(y===x)return x;x=y;}return null;}
+const qRefsLeft=t=>/&(?:[A-Za-z]|#[0-9]|#[xX][0-9A-Fa-f])/.test(t);
 const qRunsIn=(shown,m)=>(shown.match(/[A-Za-z0-9_-]{6,}/g)||[]).every(w=>m.includes(w)); /* a run the raw reading masked (a value the renderer split or wrapped) is missing from m */
 function qMdHTML(raw){
   const s=qDecodeRefs(String(raw==null?'':raw));
   if(s==null)return '<p>'+esc(Q_UNSAFE)+'</p>'; /* references nested past any sane depth: a fixed phrase */
   const m=safeMask(s), plain=()=>'<p>'+esc(m)+'</p>';
   const r=RED?RED.redact(s):null;
-  if(typeof r!=='string'||!window.DurbarMD||/!\[/.test(s))return plain(); /* an image: the card needs none, and the renderer's own stand-in words could sit inside a value */
+  if(typeof r!=='string'||!window.DurbarMD||/!\[/.test(s)||qRefsLeft(s))return plain(); /* an image: the card needs none, and the renderer's own stand-in words could sit inside a value */
   const tp=document.createElement('template');tp.innerHTML=window.DurbarMD.render(r); /* inert: nothing in a template loads or runs */
   const same=v=>safeMask(v)===v, els=[...tp.content.querySelectorAll('*')];
   els.forEach(e=>e.removeAttribute('title'));

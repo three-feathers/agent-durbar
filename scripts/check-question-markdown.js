@@ -18,10 +18,10 @@
  *   4. app.js qMdHTML: decide by a count of masks again (`const same=v=>safeMask(v)===v` -> `const same=()=>(c=>c(safeMask(s))<=c(r))(t=>(t.match(/\[redacted\]/g)||[]).length)`, and drop `if(!qRunsIn(shown,m))return plain();`)  => "split value"
  *   5. app.js qMdHTML: check only the shown text, not the attributes (`for(const e of els)for(const at` -> `for(const e of [])for(const at`)  => "link address"
  *   6. app.js qMdHTML: the fallback shows the raw question (`plain=()=>'<p>'+esc(m)+'</p>'` -> `plain=()=>'<p>'+esc(String(raw))+'</p>'`)  => "definition only"
- *   7. app.js qMdHTML: render images again (`||/!\[/.test(s))return plain();` -> `||false)return plain();`)  => "an image"
+ *   7. app.js qMdHTML: render images again (`||/!\[/.test(s)||qRefsLeft(s))` -> `||qRefsLeft(s))`)  => "an image"
  *   8. app.js qMdHTML: drop the cross-check with the raw reading (`if(!qRunsIn(shown,m))return plain();` -> ``)  => "short tail"
  * Edge questions (review of PR 1933), built from invented pieces and rendered through the card's own qMdHTML (the simulator's bridge): a question
- * made only of a definition, a value split late, a literal mask word as link text, character references, a link address, a link title, images
+ * made only of a definition, a value split late, a literal mask word as link text, character references, a link address, a link title, character references in every form (and ones nested past the limit or unknown), images
  * (a value's head as alt text with the rest after it, an image then a link, two images; a plain image), a value split late with a short tail. Each must
  * give no readable piece of the value in its text or attributes.
  * A miss prints DRIVER FAILED (Electron still exits 0), so the npm script exits non-zero unless "all checks passed" is printed.
@@ -71,16 +71,21 @@ module.exports = async (ctx) => {
     const edge = await js(`(()=>{const p='gh'+'p_',b='A1b2C3d4E5f6G7h8I9j0',t='K1l2M3n4O5p6Q7r8',v=p+b+t,ref=[...v].map(c=>'&#'+c.charCodeAt(0)+';').join(''),pct=[...v].map(c=>'%'+c.charCodeAt(0).toString(16)).join('');
       const qs={def:'[x]: https://example.com/'+v,split:'one '+v+' and '+p+b+'**'+t+'**',word:'[[redacted]](https://example.com/x) '+v+' and '+p+b+'*'+t+'*',
         refs:'see '+ref+' and '+ref.replace(/&/g,'&amp;'),
+        refs2:'**see** '+[...v].map(c=>'&#X'+c.charCodeAt(0).toString(16).toUpperCase()+';').join('')+' and '+[...v].map(c=>'&#0000'+c.charCodeAt(0)).join(' ').replace(/ /g,'')+' and '+v.slice(0,12)+'&ZeroWidthSpace;'+v.slice(12),
+        deep:'**see** '+v.slice(0,10)+'&'+'amp;'.repeat(8)+'#'+v.charCodeAt(10)+';'+v.slice(11),near:'**see** '+v.slice(0,12)+'&zerowidthspace;'+v.slice(12)+' and '+'&ZeroWidthSpac;'+' and R&D',
         img:'see !['+v.slice(0,12)+'](https://example.com/a.png)'+v.slice(12),imgLink:'see !['+v.slice(0,12)+'](https://example.com/a.png)['+v.slice(12)+'](https://example.com/b)',
         img2:'![x](https://example.com/a.png)!['+v.slice(0,25)+'](https://example.com/b.png)'+v.slice(25),pic:'Look at ![a picture](https://example.com/p.png) first.',tail:'one '+v.slice(0,34)+'*'+v.slice(34)+'*',href:'Read [the notes](https://example.com/'+pct+').',title:'Read [the notes](https://example.com/notes "'+ref+'").'};
       const out={};for(const k in qs){const d=document.createElement('template');d.innerHTML=window.__durbarSimUi.qMdHTML(qs[k]);const x=d.content.textContent,at=[...d.content.querySelectorAll('*')].flatMap(e=>[...e.attributes].map(a=>a.name+'='+a.value));
         out[k]={piece:/A1b2C3d4|E5f6G7h8|I9j0|K1l2M3n4|O5p6Q7r8|p6Q7r8/.test(x+at.join(' ')),masks:(x.match(/\\[redacted\\]/g)||[]).length,strong:!!d.content.querySelector('strong,em'),
-          href:at.some(a=>/^href=.*%41%31/i.test(a)),title:at.some(a=>a.startsWith('title=')),stand:x.includes('[image'),empty:!x.trim()};}return out;})()`);
+          href:at.some(a=>/^href=.*%41%31/i.test(a)),title:at.some(a=>a.startsWith('title=')),stand:x.includes('[image'),fixed:x.startsWith('This question cannot be shown safely.'),empty:!x.trim()};}return out;})()`);
     const E = (k) => JSON.stringify(edge[k]);
     assert.ok(!edge.def.piece && !edge.def.empty && edge.def.masks === 1, `${tag}: definition only: the card shows masked text, never the raw question: ${E('def')}`);
     assert.ok(!edge.split.piece && edge.split.masks === 2 && !edge.split.strong, `${tag}: split value: a value split late falls back to masked plain text: ${E('split')}`);
     assert.ok(!edge.word.piece && !edge.word.strong, `${tag}: a mask word written as link text does not let a value through: ${E('word')}`);
     assert.ok(!edge.refs.piece && edge.refs.masks === 2, `${tag}: character references are read before both masks: ${E('refs')}`);
+    assert.ok(!edge.refs2.piece && edge.refs2.masks === 3, `${tag}: character references in any form (hex in capitals, leading zeros, no semicolon, a hidden-character name) are read before both masks: ${E('refs2')}`);
+    assert.ok(!edge.deep.piece && !edge.deep.strong && edge.deep.fixed, `${tag}: references nested past the limit show the fixed sentence: ${E('deep')}`);
+    assert.ok(!edge.near.piece && !edge.near.strong && !edge.near.empty, `${tag}: a reference the card does not know falls back to masked plain text: ${E('near')}`);
     assert.ok(!edge.href.href, `${tag}: link address: a link whose address holds a value is not rendered: ${E('href')}`);
     assert.ok(!edge.title.piece && !edge.title.title, `${tag}: a link keeps no title: ${E('title')}`);
     for (const k of ['img', 'imgLink', 'img2']) assert.ok(!edge[k].piece && !edge[k].stand && !edge[k].empty, `${tag}: an image question (${k}) shows masked plain text with no piece of the value: ${E(k)}`);
