@@ -146,4 +146,4 @@ Q2-Q8 are answered; **Q1 (art format) is open again** (2026-10-23). Tasks are ma
 ## A pick made under a screen is drawn when the screen closes (delta 2026-11-19, issue #1460)
 
 - [x] T378 Spec delta (spec 077, `## Changes 2026-11-19`: cause named, change, test) [spec]
-- [ ] T379 `app.js` (`OFFICE_OWED` set when `renderOffice` returns on a floor with no width; a `afterClose` hook of `DurbarScreens.init` draws the office with `relayoutNow` if it is set), `screens.js` `close()` calls the hook after the screen's class is off; `check-characters`: the reduced-motion step and its patched-`dist` mutant [FR-068]
+- [x] T379 `app.js` (`OFFICE_OWED` set when `renderOffice` returns on a floor with no width; a `afterClose` hook of `DurbarScreens.init` draws the office with `relayoutNow` if it is set), `screens.js` `close()` calls the hook after the screen's class is off; `check-characters`: the reduced-motion step and its patched-`dist` mutant [FR-068]

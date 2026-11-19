@@ -8,6 +8,8 @@
  *   - a theme switch with Cheeky keeps the crew on the new theme;
  *   - The theme's own: Retro's pixel figures come back, no portrait is left;
  *   - Minimalist: the office figure on top of the theme.
+ *   - spec 077 (2026-11-19, issue #1460): Cheeky picked under Settings and Settings closed in the same task: the close draws the crew kit (CHARS_MUTANT=noclose: a copy of dist/ without
+ *     the close hook must fail at 'draws the crew kit').
  * Screenshots of the Settings section and of the office (SHOTS_OUT, default characters-shots in the OS temp folder).
  *
  *   DURBAR_SIM=15 DURBAR_SIM_FREEZE=1 DURBAR_DRIVER=$PWD/scripts/check-characters.js electron . --no-sandbox   (in check:ui)
@@ -307,6 +309,34 @@ module.exports = async (ctx) => {
     await close();
     assert.ok(await H.until(`document.querySelectorAll('#stage image[href^="blob:"]').length===0`, 8000), `${theme}: back to the theme's own, no saved picture is left`);
     assert.ok(await H.until(`window.__durbarSimUi.crew.own().urls.length===0`, 4000), `${theme}: and the URLs are given back`);
+  }
+  /* spec 077 (2026-11-19, issue #1460): a draw the office skipped while a screen covered it is made when the screen closes, also when no rendering update came between the two. A screen
+     (Settings) hides the office (`body.screen-open`), so a Characters pick made then draws nothing (the floor has no width) and the office was left to the floor's size observer, which
+     reports a change between two rendering updates: with open, pick and close inside 11 ms (one frame is 16.7 ms; reduced motion applies the pick at once, as on the CI runners) it saw the
+     same width twice and never called, and the crew was never drawn (check-crew, 'dark fixture': macOS nightlies, Windows). The step opens Settings, applies the pick, runs the draw the pick
+     runs and closes Settings in ONE task, so no frame can come in between: the draw must come from the screen's close.
+     CHARS_MUTANT=noclose runs the step on a copy of dist/ whose close hook is removed (the old behaviour): it must die at the label 'draws the crew kit'. */
+  {
+    const MUT = process.env.CHARS_MUTANT === 'noclose';
+    const tmp = MUT ? fs.mkdtempSync(path.join(os.tmpdir(), 'chars-noclose-')) : '';
+    try {
+      let index;
+      if (MUT) {
+        fs.cpSync(path.join(__dirname, '..', 'dist'), path.join(tmp, 'dist'), { recursive: true });
+        index = path.join(tmp, 'dist', 'renderer', 'index.html');
+        const appJs = path.join(tmp, 'dist', 'renderer', 'app.js'), src = fs.readFileSync(appJs, 'utf8');
+        assert.strictEqual(src.split('afterClose:officeOwed,').length - 1, 1, 'the mutant applies: one close hook in app.js to remove');
+        fs.writeFileSync(appJs, src.replace('afterClose:officeOwed,', ''));
+      }
+      await H.load({ w: 1920, h: 1080, ...(index ? { index } : {}), query: { sim: '2', simrooms: '1', simhelpers: '0' }, ready: `document.querySelectorAll('#stage .desk[data-id]').length>=2&&document.getElementById('stage').dataset.fit` });
+      assert.strictEqual(await H.js(`window.THEME.sceneKit()`), 'office', 'close draw: the office kit is on screen before the pick');
+      const drawn = `[...document.querySelectorAll('#stage .desk[data-id] svg.scene')].filter((s)=>s.getClientRects().length&&/\\|crew\\|/.test(s.dataset.sig||'')&&s.querySelector('image')).length`;
+      const r = await H.js(`(()=>{const S=window.DurbarScreens,U=window.__durbarSimUi;S.openSettings();window.THEME.setCharacters('cheeky');U.render();const drew=U.settleNow();const w=document.getElementById('floor').clientWidth;const before=${drawn};S.close();return {drew,coveredFloorWidth:w,kit:window.THEME.sceneKit(),crewScenesBeforeClose:before,crewScenesAtClose:${drawn}};})()`);
+      assert.deepStrictEqual({ ...r, crewScenesAtClose: r.crewScenesAtClose >= 2 }, { drew: true, coveredFloorWidth: 0, kit: 'crew', crewScenesBeforeClose: 0, crewScenesAtClose: true }, `close draw: the pick was applied and its draw run while Settings covered the floor (width 0, nothing drawn), and Settings closed in the same task; the close draws the crew kit (a portrait on each desk scene) at once (${JSON.stringify(r)})`);
+      console.log('[characters] close draw: the pick made under Settings is drawn when it closes');
+    } finally {
+      if (tmp) fs.rmSync(tmp, { recursive: true, force: true });
+    }
   }
   console.log('[characters] checks passed');
   process.exitCode = 0;
