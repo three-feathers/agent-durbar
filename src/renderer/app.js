@@ -8526,7 +8526,7 @@ async function loadModels(){
   if(bridge.onAdaptersChanged)bridge.onAdaptersChanged(list=>{if(Array.isArray(list)&&list.length){KINDS=list;applyKinds();}});
   if(!bridge.listModels)return;
   if(!(await refreshModels('',false))&&!MODELS_RETRY){
-    /* issue #1909: the start-up fetch can lose a race with the app's own start; one more try shortly after, then only when a menu opens (spec 030 FR-068) */
+    /* issue 1909: the start-up fetch can lose a race with the app's own start; one more try shortly after, then only when a menu opens (spec 030 FR-068) */
     MODELS_RETRY=setTimeout(()=>{void refreshModels('',false);},8000);
   }
 }
@@ -8831,7 +8831,7 @@ function openModelMenu(a0,x,y,anchor,again){
   const on=ctrlOf(a).switch!=='none'&&!!bridge.setModel, next=choiceOf(a), cur=modelOf(next.model,a.info.adapterId), curId=cur.id, tier=next.tier, pend=a.pendingModel;
   const dis=on?'':' aria-disabled="true"';
   const kl=modelsFor(a.info.adapterId), none=!kl.length, list=none?[Object.assign({},cur,{noList:true})]:kl, kk=a.info.adapterId, busyList=!!MODELS_INFLIGHT[isDefaultKind(kk)?'':kk];
-  /* spec 030 FR-068 (issue #1909): an empty list is asked for again, once, when the menu opens (and by Retry), past the app's own cache */
+  /* spec 030 FR-068 (issue 1909): an empty list is asked for again, once, when the menu opens (and by Retry), past the app's own cache */
   if(none&&!again&&!busyList&&bridge.listModels)setTimeout(()=>{refreshModels(kk,true).then(okk=>{const mm=document.getElementById('modelMenu');if(mm&&mm.dataset.kind===kk&&a.live)openModelMenu(a,x,y,anchor,true);});},0);
   let h=on?'':`<p class="mm-why" role="note">${esc(NO_SWITCH_WHY)}</p>`;
   if(none){const u=DM.listUnavailable(MODELS_STATE[isDefaultKind(kk)?'':kk]),chk=!!busyList||!again;
