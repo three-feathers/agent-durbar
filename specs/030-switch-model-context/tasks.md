@@ -93,5 +93,5 @@ One task = one issue = one pull request. Tick the task in the same pull request.
 
 ## 2026-11-19: the model list failed (issue #1909)
 
-- [ ] T372 Retry the list when the menu opens, "Model list unavailable: <reason>" with Retry, error type only in the log, hidden-by-policy count, `fresh` bypasses the SDK cache; `check-model-list-unavailable` at both sizes; mutation checks [FR-068..FR-071]
+- [x] T373 Retry the list when the menu opens, "Model list unavailable: <reason>" with Retry, error type only in the log, hidden-by-policy count, `fresh` bypasses the SDK cache; `check-model-list-unavailable` at both sizes; mutation checks [FR-068..FR-071]
 
