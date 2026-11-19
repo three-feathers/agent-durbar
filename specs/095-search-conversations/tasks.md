@@ -68,3 +68,13 @@
 
 - Phase 1 before Phase 2 before Phase 3. Inside Phase 1: T010 and T011 first; T012, T013 in parallel; T014 needs T011 and T013; T015 needs T012 and T014; T016-T018 after T015.
 - Inside Phase 3: T040 first (it can change FR-013); T030, T031 before T032; T041 and T042 need T040. The owner's answers (Q1-Q9, review questions A, B) are recorded in *Clarifications* and applied in T020, T021, T031, T033, T044.
+
+## Phase 4: Issue 1904 (2026-11-19 *Changes*)
+
+- [ ] T066 Running indicator for the whole scan: spinner or static ring, `aria-busy`, text "Searching"/"Listing sessions", reduced motion and Motion off (`app.js`, `styles.css`, `convsearch.js`) [FR-053]
+- [ ] T067 `plan` event on `search:batch`, "Listing sessions, N of M folders..." (`convscope.ts`, `ipc/convsearch.ts`, `api.ts`, `convsearch.js`, `sim.ts`) [FR-054]
+- [ ] T068 Titles first: early title rows from the plan, then content updates in place (`convsearch.ts`, `ipc/convsearch.ts`) [FR-055]
+- [ ] T069 Whole-word `rank`, preferred excerpts, the re-sort at the end (`convsearch.ts`, `convsearch.js`) [FR-056]
+- [ ] T070 Kept listings for non-Codex apps and VS Code chats, dropped with the box session and when a folder has no open agent (`convscope.ts`) [FR-057]
+- [ ] T071 `BUDGET.readMs`, `notes.slow`, the end-state text (`convsearch.ts`, `api.ts`, `convsearch.js`) [FR-058]
+- [ ] T072 Tests (`test-convsearch*.ts`), `changelog.d/095-search-progress.md`, README/features line if needed, mutation check [FR-059]
