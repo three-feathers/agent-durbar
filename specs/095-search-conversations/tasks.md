@@ -71,7 +71,7 @@
 
 ## Phase 4: Issue 1904 (2026-11-19 *Changes*)
 
-- [ ] T066 Running indicator for the whole scan: spinner or static ring, `aria-busy`, text "Searching"/"Listing sessions", reduced motion and Motion off (`app.js`, `styles.css`, `convsearch.js`) [FR-053]
+- [x] T066 Running indicator for the whole scan: spinner or static ring, `aria-busy`, text "Searching"/"Listing sessions", reduced motion and Motion off (`app.js`, `styles.css`, `convsearch.js`) [FR-053]
 - [ ] T067 `plan` event on `search:batch`, "Listing sessions, N of M folders..." (`convscope.ts`, `ipc/convsearch.ts`, `api.ts`, `convsearch.js`, `sim.ts`) [FR-054]
 - [ ] T068 Titles first: early title rows from the plan, then content updates in place (`convsearch.ts`, `ipc/convsearch.ts`) [FR-055]
 - [ ] T069 Whole-word `rank`, preferred excerpts, the re-sort at the end (`convsearch.ts`, `convsearch.js`) [FR-056]

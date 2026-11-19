@@ -151,5 +151,17 @@ assert.ok(C.announceDue(undefined, 0) && !C.announceDue(1000, 2500) && C.announc
   assert.strictEqual(C.pickAnchor([], { n: 0, head: 'x' }), -1);
 }
 
+// ---- FR-053: the running sign for the whole scan, read from the page's own text (the driver checks it in a window)
+{
+  const app = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'app.js'), 'utf8');
+  const css = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'styles.css'), 'utf8');
+  assert.ok(/class="cs-state\$\{scanning\?' running':''\}">\$\{scanning\?spin:''\}/.test(app), 'the state line carries the sign only while scanning');
+  assert.ok(/aria-label="Search results"\$\{scanning\?' aria-busy="true"':''\}/.test(app), 'the results group is aria-busy only while scanning');
+  assert.ok(/\.cs-state\.running \.cs-spin\{animation:bspin/.test(css), 'it turns');
+  assert.ok(/prefers-reduced-motion:reduce\)\{\.cs-state\.running \.cs-spin\{animation:none\}\}/.test(css), 'not under reduced motion');
+  assert.ok(/html\[data-motion-off\] \.cs-state\.running \.cs-spin\{animation:none\}/.test(css), 'not with Settings > Motion off');
+  assert.ok(/\.cs-spin\{[^}]*width:14px/.test(css));
+}
+
 process.exitCode = 0;
 console.log('convsearchui: groups and order, marks and escaping, state and every end-state note, accessible names, announce pace, anchor pick OK');
