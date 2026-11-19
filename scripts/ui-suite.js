@@ -131,6 +131,7 @@ const DRIVERS = [
   { name: 'check-sched-top' }, // spec 044 FR-027..FR-035: the top-bar Schedules button
   { name: 'check-sched-history' }, // spec 044 FR-040..FR-044: a schedule's run history and Schedules here (N)
   { name: 'check-question-options' },
+  { name: 'check-question-markdown' }, // spec 052 (2026-11-19, #1927): the question card renders the question's Markdown, masked first
   { name: 'check-inbox-text' }, // spec 052 FR-214: the text of a Needs you card never runs words together
   { name: 'check-inbox-avatar' }, // spec 052 (#1174): no avatar in the Needs you dialog outgrows its box; the first Allow button is in view
   { name: 'check-097-one-face' }, // spec 097 (#1193): the rail row, the chat header and the inbox show one picture per agent, in Real office and in the flat office with two crews

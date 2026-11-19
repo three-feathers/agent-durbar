@@ -1,0 +1,1 @@
+- **The agent's question card shows its Markdown** (spec 052 T377, issue #1927): bold, numbered points, code and links in a question now read as in the chat (the chat's own safe renderer; raw HTML stays text; text is masked first). A long question still grows the card and the chat scrolls. Simulator only, Linux (Windows and macOS not run).

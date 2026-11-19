@@ -5798,7 +5798,7 @@ document.addEventListener('scroll',()=>INL().follow(),{capture:true,passive:true
 /* DURBAR_SIM=N (Electron env, passed as ?sim=N) or ?sim=N in a plain browser feeds fake normalized
    events through exactly the same onLiveEvent path as the Copilot adapter. No AI credits are used. */
 const SIM = qs.has('sim') ? Math.max(1,Math.min(40,parseInt(qs.get('sim')||'12',10)||12)) : 0;
-const sim = SIM && window.__durbarSim ? window.__durbarSim.create({n:SIM, freeze:qs.get('simfreeze')==='1', titles:qs.get('simtitles')==='long'?'long':qs.get('simtitles')==='1', names:qs.get('simnames')==='long'?'long':undefined, reply:qs.get('simreply')==='long'?'long':qs.get('simreply')==='secrets'?'secrets':undefined, grants:qs.get('simgrants')==='many'?'many':qs.get('simgrants')==='stuck'?'stuck':undefined, question:qs.get('simquestion')==='long'?'long':qs.get('simquestion')==='compact'?'compact':qs.get('simquestion')==='1', elicit:qs.get('simelicit')||undefined, solo:qs.get('simrooms')==='solo', unreported:qs.get('simunreported')||undefined, waitOld:qs.get('simwaitold')==='1', sched:qs.get('simsched')==='1',ws:qs.get('simws')==='1', schedFire:Math.max(0,Math.min(600,parseInt(qs.get('simschedfire')||'0',10)||0)), seedTotals:qs.get('simtotals')==='1', seed:parseInt(qs.get('seed')||'7',10), edits:qs.get('simedits')==='1', floors:qs.get('simfloors')==='1'||qs.get('simfloors')==='ground', floorsGround:qs.get('simfloors')==='ground', floorsOff:(qs.get('floorsoff')||'').split(',').map(x=>x.trim()).filter(Boolean)}) : null;
+const sim = SIM && window.__durbarSim ? window.__durbarSim.create({n:SIM, freeze:qs.get('simfreeze')==='1', titles:qs.get('simtitles')==='long'?'long':qs.get('simtitles')==='1', names:qs.get('simnames')==='long'?'long':undefined, reply:qs.get('simreply')==='long'?'long':qs.get('simreply')==='secrets'?'secrets':undefined, grants:qs.get('simgrants')==='many'?'many':qs.get('simgrants')==='stuck'?'stuck':undefined, question:qs.get('simquestion')==='long'?'long':qs.get('simquestion')==='compact'?'compact':qs.get('simquestion')==='markdown'?'markdown':qs.get('simquestion')==='1', elicit:qs.get('simelicit')||undefined, solo:qs.get('simrooms')==='solo', unreported:qs.get('simunreported')||undefined, waitOld:qs.get('simwaitold')==='1', sched:qs.get('simsched')==='1',ws:qs.get('simws')==='1', schedFire:Math.max(0,Math.min(600,parseInt(qs.get('simschedfire')||'0',10)||0)), seedTotals:qs.get('simtotals')==='1', seed:parseInt(qs.get('seed')||'7',10), edits:qs.get('simedits')==='1', floors:qs.get('simfloors')==='1'||qs.get('simfloors')==='ground', floorsGround:qs.get('simfloors')==='ground', floorsOff:(qs.get('floorsoff')||'').split(',').map(x=>x.trim()).filter(Boolean)}) : null;
 const bridge = sim || window.agentDurbar;
 if(bridge&&typeof bridge.convSearchStart==='function')document.body.classList.add('has-csearch'); /* spec 095: the box is in the top bar from the first layout, so the office is not laid out again when it appears */
 try{localStorage.removeItem('durbar.doorsigns');}catch(e){} /* spec 017 FR-034: the preference of the removed Office layout row is deleted on the first start */
@@ -7117,6 +7117,14 @@ function settlePlan(a,action){
   if(action==='reject'){closeTurn(a);a.worked=false;setState(a,'idle',null,'Plan rejected. Nothing was changed.');}
   else setState(a,'working',null,action==='approve'?'Carrying out the plan':'Revising the plan');
 }
+/* spec 052 (2026-11-19 delta, issue #1927, T377): a question's Markdown, masked first and then rendered by the chat's own renderer. The mask keeps the Markdown (RED.redact); when the
+   Markdown-aware mask (safeMask, which flattens the text) finds more than it did (a token split by a mark), or the redact module is missing, the card shows that masked plain text instead (fail closed). */
+function qMdHTML(raw){
+  const s=String(raw==null?'':raw), plain=safeMask(s), n=t=>(t.match(/\[redacted\]/g)||[]).length;
+  const r=RED?RED.redact(s):null;
+  if(r==null||!window.DurbarMD||n(plain)>n(r))return '<p>'+esc(plain)+'</p>';
+  return window.DurbarMD.render(r);
+}
 function showQuestion(a,e){
   if(e.elicitation&&typeof e.elicitation==='object'){showElicitation(a,e);return;}
   const t=ensureTurn(a), qs=(e.questions||[]).slice(0,4);
@@ -7126,10 +7134,13 @@ function showQuestion(a,e){
   const picks=qs.map(()=>new Set()), others=[];
   qs.forEach((q,i)=>{
     const box=document.createElement('div');box.className='q-item';
-    const qt=document.createElement('p');qt.className='q-text';
-    if(q.header){const h=document.createElement('span');h.className='tag';h.textContent=q.header;qt.appendChild(h);qt.appendChild(document.createTextNode(' '));}
-    qt.appendChild(document.createTextNode(q.question));box.appendChild(qt);
-    const opts=document.createElement('div');opts.className='q-opts';opts.setAttribute('role',q.multiSelect?'group':'radiogroup');opts.setAttribute('aria-label',q.question);
+    /* spec 052 (2026-11-19 delta, issue #1927, T377): the question's Markdown is rendered by the chat's own safe renderer (DurbarMD: raw HTML is text, links keep the chat's click handling),
+       after the text is masked: the rendered output never holds an unmasked value. The answer is still keyed by the agent's own question text. */
+    const qt=document.createElement('div');qt.className='q-text md';
+    if(q.header){const h=document.createElement('span');h.className='tag';h.textContent=q.header;qt.appendChild(h);}
+    const qb=document.createElement('div');qb.className='q-md';qb.innerHTML=qMdHTML(q.question);qt.appendChild(qb);box.appendChild(qt);
+    const qPlain=qb.textContent.replace(/\s+/g,' ').trim()||String(q.question); /* the words a screen reader says, without the Markdown marks */
+    const opts=document.createElement('div');opts.className='q-opts';opts.setAttribute('role',q.multiSelect?'group':'radiogroup');opts.setAttribute('aria-label',qPlain);
     (q.options||[]).forEach(o=>{const b=document.createElement('button');b.type='button';b.className='btn q-opt';b.setAttribute(q.multiSelect?'aria-pressed':'aria-checked','false');if(!q.multiSelect)b.setAttribute('role','radio');
       const lb=document.createElement('span');lb.className='q-lbl';lb.textContent=o.label;b.appendChild(lb);b.title=DurbarCutText.cutText(o.description?o.label+' — '+o.description:o.label,300); /* FR-140: the title always has the label; FR-168: a data tooltip is at most 300 characters */
       if(o.description){const d=document.createElement('span');d.className='q-desc';d.textContent=o.description;b.appendChild(d);} /* spec 052 FR-160: the description is on screen, not only in the tooltip */
@@ -7137,7 +7148,7 @@ function showQuestion(a,e){
         else{s.clear();s.add(o.label);opts.querySelectorAll('.q-opt').forEach(x=>{x.setAttribute('aria-checked',String(x===b));x.classList.toggle('primary',x===b);});others[i].value='';others[i].classList.remove('chosen');others[i].style.height='';}};
       opts.appendChild(b);});
     /* spec 052 FR-160/FR-161: a box that grows with its text; typing chooses it; Enter sends the card (Answer's own handler), Shift+Enter adds a line */
-    const other=document.createElement('textarea');other.rows=1;other.maxLength=window.exports.MAX_ANSWER;other.className='q-other';other.placeholder='Other answer (Enter to send)';other.setAttribute('aria-label','Other answer: '+q.question);
+    const other=document.createElement('textarea');other.rows=1;other.maxLength=window.exports.MAX_ANSWER;other.className='q-other';other.placeholder='Other answer (Enter to send)';other.setAttribute('aria-label','Other answer: '+qPlain);
     const hint=document.createElement('span');hint.className='sr-only';hint.id='qh'+(++qFormSeq);hint.textContent='Enter sends this answer. Shift+Enter adds a line.';
     other.setAttribute('aria-describedby',hint.id);other.setAttribute('aria-keyshortcuts','Enter');
     const grow=()=>{other.style.height='auto';other.style.height=other.scrollHeight+2+'px';};
