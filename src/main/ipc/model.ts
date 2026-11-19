@@ -97,6 +97,30 @@ export function onAutoTierFailed(e: AgentEvent, agents: Map<string, AgentInfo>, 
   store?.setAutoTier(wsKey(a), e.effective ?? null);
 }
 
+/** `models:list`'s answer (spec 030 FR-069, FR-070): `reason` is a fixed phrase, never the error's own text; `hidden` counts policy-disabled models. */
+export interface ModelListReply { ok: boolean; error?: string; reason?: string; hidden?: number; models: ModelChoice[] }
+
+/** A short fixed phrase for why a model list failed (spec 030 FR-068): the error's text may carry account data, so only its kind is read. */
+export function listReason(err: unknown): string {
+  const t = `${err instanceof Error ? err.name : ''} ${err instanceof Error ? err.message : typeof err === 'string' ? err : ''}`;
+  if (/auth|sign.?in|log.?in|credential|token|\b40[13]\b|unauthor|forbidden/i.test(t)) return 'the sign-in was not accepted';
+  if (/time.?out|timed out|ETIMEDOUT/i.test(t)) return 'the request timed out';
+  if (/ENOTFOUND|ECONN|EAI_AGAIN|network|offline|fetch failed|socket/i.test(t)) return 'no connection';
+  return 'the app could not list its models';
+}
+
+/** Runs one listing: an error or an empty list becomes a reason, and only the error's type is logged (spec 030 FR-069). */
+export async function modelListReply(load: () => Promise<ModelChoice[]>, hidden: () => number, warn: (m: string) => void = (m) => console.warn(m)): Promise<ModelListReply> {
+  try {
+    const models = await load();
+    const h = hidden();
+    return { ok: true, models, ...(h > 0 ? { hidden: h } : {}), ...(models.length ? {} : { reason: h > 0 ? 'every model is turned off by your account\'s policy' : 'the app returned no models' }) };
+  } catch (err) {
+    warn(`[models] the list failed: ${err instanceof Error && /^\w{1,40}$/.test(err.name) ? err.name : 'Error'}`);
+    return { ok: false, error: listReason(err), reason: listReason(err), models: [] };
+  }
+}
+
 /** What `register` hands back: the models of an agent app as `models:list` answers them (spec 111 T010 reuses it, FR-031 of spec 021). */
 export interface ModelIpc {
   /** one list per agent app id (a known one), each model with the organization's verdict; throws when the app cannot list */
@@ -108,9 +132,13 @@ export function register(deps: ModelIpcDeps): ModelIpc {
   const folderStore = deps.getFolderStore;
   /** The last list of models each agent app offers; a switch request is checked against its session's own app (spec 030 FR-018, FR-063). */
   const lastModels = new Map<string, ModelChoice[]>();
-  /** `models:list`'s body (spec 076 FR-202), extracted unchanged for spec 111 T010: the list of one app with `orgBlocked`/`orgDoubt`, and remembered for a switch. */
-  const modelsOf = async (id: string): Promise<ModelChoice[]> => {
-    const models = await withOrgModels((await modelOptionsOf(router.instance(id))).filter((m) => !m.disabled).map(({ disabled: _d, ...m }) => m), deps.orgModel && ((m) => deps.orgModel!(id, m)));
+  /** Policy-disabled models the last list of each app dropped (spec 030 FR-070). */
+  const lastHidden = new Map<string, number>();
+  /** `models:list`'s body (spec 076 FR-202), extracted unchanged for spec 111 T010: the list of one app with `orgBlocked`/`orgDoubt`, and remembered for a switch. `fresh`: past the app's own cache (spec 030 FR-071). */
+  const modelsOf = async (id: string, fresh = false): Promise<ModelChoice[]> => {
+    const all = await modelOptionsOf(router.instance(id), fresh ? { fresh: true } : undefined);
+    lastHidden.set(id, all.filter((m) => m.disabled).length);
+    const models = await withOrgModels(all.filter((m) => !m.disabled).map(({ disabled: _d, ...m }) => m), deps.orgModel && ((m) => deps.orgModel!(id, m)));
     lastModels.set(id, models);
     return models;
   };
@@ -165,15 +193,12 @@ export function register(deps: ModelIpcDeps): ModelIpc {
     }
   });
 
-  ipcHandle('models:list', async (_e, kind: unknown): Promise<{ ok: boolean; error?: string; models: ModelChoice[] }> => {
+  ipcHandle('models:list', async (_e, kind: unknown, opts: unknown): Promise<ModelListReply> => {
     // spec 012 FR-120: one list per agent kind; no kind = the default kind (as before); an unknown kind is refused
     const id = kind === undefined || kind === null || kind === '' ? registry.defaultId : typeof kind === 'string' && registry.has(kind) ? kind : undefined;
     if (!id) return { ok: false, error: 'unknown agent app', models: [] };
-    try {
-      return { ok: true, models: await modelsOf(id) };
-    } catch (err) {
-      return { ok: false, error: errText(err), models: [] };
-    }
+    const fresh = !!opts && typeof opts === 'object' && (opts as { fresh?: unknown }).fresh === true;
+    return modelListReply(() => modelsOf(id, fresh), () => lastHidden.get(id) ?? 0);
   });
   return { modelsOf };
 }

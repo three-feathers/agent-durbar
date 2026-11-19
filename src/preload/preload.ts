@@ -21,7 +21,7 @@ const api: DurbarApi = {
   createCancel: () => ipcRenderer.invoke('folders:createCancel'),
   onCreateProgress: (cb) => sub('folders:createProgress', cb),
   newSession: (id, opts) => ipcRenderer.invoke('agents:newSession', id, opts),
-  listModels: (kind) => ipcRenderer.invoke('models:list', kind),
+  listModels: (kind, opts) => ipcRenderer.invoke('models:list', kind, opts),
   orgPolicyView: () => ipcRenderer.invoke('orgpolicy:view'),
   listAdapters: (refresh) => ipcRenderer.invoke('adapters:list', refresh === true),
   onAdaptersChanged: (cb) => sub('adapters:changed', cb),

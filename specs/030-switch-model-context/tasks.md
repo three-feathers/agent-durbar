@@ -90,3 +90,8 @@ One task = one issue = one pull request. Tick the task in the same pull request.
 - [x] T090 Merge on what comes next, one change at a time, replace the queued switch, say what a model cannot keep [FR-060..FR-062, FR-066]
 - [x] T091 `agents:setModel` checks the session's own app's list; an app's own default [FR-063, FR-065]
 - [x] T092 Simulator as main; `test-model-choice`, adapter tests, driver `check-model-choice` at both sizes; mutation checks [FR-064]
+
+## 2026-11-19: the model list failed (issue #1909)
+
+- [ ] T372 Retry the list when the menu opens, "Model list unavailable: <reason>" with Retry, error type only in the log, hidden-by-policy count, `fresh` bypasses the SDK cache; `check-model-list-unavailable` at both sizes; mutation checks [FR-068..FR-071]
+

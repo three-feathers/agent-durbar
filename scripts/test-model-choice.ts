@@ -127,6 +127,38 @@ async function main(): Promise<void> {
     await setOk('codex', { model: 'gpt-next' }, 'the newest list counts');
     assert.ok(!(await call('agents:setModel', ids.codex, { model: 'gpt-sol' })).ok, 'and the older one no longer');
     await setOk('copilot', { model: 'gpt-deep' }, "and Copilot's list is untouched");
+    // spec 030 FR-068..FR-071 (issue #1909): the owner's case, the first list fails or is empty and the second succeeds, with no restart
+    {
+      type Reply = { ok: boolean; error?: string; reason?: string; hidden?: number; models: { id: string }[] };
+      const lc = (opts?: unknown) => call('models:list', 'extra', opts) as unknown as Promise<Reply>;
+      const asked: Array<unknown> = [];
+      const warned: string[] = [];
+      const warn = console.warn; console.warn = (m: unknown) => void warned.push(String(m));
+      let mode: 'throw' | 'cached-empty' | 'hidden' = 'throw';
+      (ads.extra as unknown as { listModelOptions: unknown }).listModelOptions = async (o?: { fresh?: boolean }) => {
+        asked.push(o);
+        if (mode === 'throw') throw Object.assign(new Error('boom ghp_SECRET123 /home/me/.copilot/x'), { name: 'RpcError' });
+        if (mode === 'hidden') return [{ id: 'a', name: 'A', efforts: [], disabled: true }, { id: 'b', name: 'B', efforts: [], disabled: true }];
+        return o?.fresh ? [{ id: 'gpt-full', name: 'Full', efforts: [], disabled: false }] : []; // the SDK keeps an empty answer for the client's life
+      };
+      try {
+        let r = await lc();
+        assert.ok(!r.ok && r.reason === 'the app could not list its models' && r.error === r.reason && r.models.length === 0, 'a failed list: a fixed reason, no models: ' + JSON.stringify(r));
+        assert.ok(!JSON.stringify(r).includes('SECRET') && !JSON.stringify(r).includes('.copilot'), 'the error text never reaches the window');
+        assert.deepStrictEqual(warned, ['[models] the list failed: RpcError'], 'only the error type is logged: ' + JSON.stringify(warned));
+        mode = 'cached-empty';
+        r = await lc();
+        assert.ok(r.ok && r.models.length === 0 && r.reason === 'the app returned no models', 'an empty list says why: ' + JSON.stringify(r));
+        r = await lc({ fresh: true });
+        assert.deepStrictEqual(r.models.map((m) => m.id), ['gpt-full'], 'fresh asks again past the cache: the full list without a restart');
+        assert.deepStrictEqual(asked.slice(-2), [undefined, { fresh: true }], 'fresh reaches the adapter only when asked, as exactly true');
+        await lc({ fresh: 'yes' });
+        assert.strictEqual(asked[asked.length - 1], undefined, 'only fresh:true counts');
+        mode = 'hidden';
+        r = await lc();
+        assert.ok(r.ok && r.models.length === 0 && r.hidden === 2 && /policy/.test(r.reason ?? ''), 'policy-disabled models are counted: ' + JSON.stringify(r));
+      } finally { console.warn = warn; (ads.extra as unknown as { listModelOptions: unknown }).listModelOptions = async () => lists.extra; }
+    }
     // an app whose first list is empty is asked again at the next request, not cached empty (review on PR 935)
     assert.ok(!(await call('agents:setModel', ids.extra, { model: 'gpt-late' })).ok, 'an empty list offers nothing');
     lists.extra = [{ id: 'gpt-late', name: 'Late', efforts: [], disabled: false }];

@@ -4016,7 +4016,17 @@ const planMcpSignInRefresh = (i: SignInPlanInput): SignInPlan => {
         if (opts.grants !== 'stuck' && s && s.grants.delete(key)) grantsEvent(s);
       },
       // No disk, no account: canned answers so the new folder / session / history UI can be exercised without credits.
-      listModels: async (kind) => ({ ok: true, models: (simKindModels(kind || 'copilot')).map((m) => { const ob = simOrgModel(kind, m.id); return ob ? { ...m, orgBlocked: ob } : { ...m }; }) }),
+      // spec 030 FR-068 (issue #1909): page address simmodelfail=once (the first call fails, the next succeeds: the owner's report), error (always fails), empty, hidden (empty, 3 policy-hidden)
+      listModels: async (kind, opts) => {
+        const mode = typeof location !== 'undefined' ? new URLSearchParams(location.search).get('simmodelfail') : null;
+        const w = window as unknown as { __simListCalls?: Array<{ kind?: string; fresh: boolean }> };
+        (w.__simListCalls ??= []).push({ kind, fresh: !!opts?.fresh });
+        if (mode === 'once' && w.__simListCalls.length === 1) return { ok: false, error: 'the request timed out', reason: 'the request timed out', models: [] };
+        if (mode === 'error') return { ok: false, error: 'the sign-in was not accepted', reason: 'the sign-in was not accepted', models: [] };
+        if (mode === 'empty') return { ok: true, reason: 'the app returned no models', models: [] };
+        if (mode === 'hidden') return { ok: true, hidden: 3, reason: "every model is turned off by your account's policy", models: [] };
+        return { ok: true, models: (simKindModels(kind || 'copilot')).map((m) => { const ob = simOrgModel(kind, m.id); return ob ? { ...m, orgBlocked: ob } : { ...m }; }) };
+      },
       /* spec 076 FR-205/FR-207: main's view of the canned policy (no values) */
       orgPolicyView: async (): Promise<Record<string, import('../shared/orgpolicy').OrgPolicyAppView>> => {
         if (!SIM_ORG) return {};

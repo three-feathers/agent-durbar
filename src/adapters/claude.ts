@@ -949,7 +949,8 @@ export class ClaudeAdapter implements AgentAdapter {
    * FR-118: the models the user's `claude` offers, from its `initialize` reply. A short-lived CLI in Read-only in the temp
    * folder; no prompt is written, so no tokens are spent. Cached 10 minutes; any failure is an empty list.
    */
-  listModelOptions(): Promise<ModelOption[]> {
+  listModelOptions(opts?: { fresh?: boolean }): Promise<ModelOption[]> {
+    if (opts?.fresh) this.initCache = undefined; // spec 030 FR-071: a probe that answered with no models is cached too
     return this.initReply().then((r) => claudeModelOptions(r.models));
   }
 
