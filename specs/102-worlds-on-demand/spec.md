@@ -2219,7 +2219,7 @@ Audit of #1403 on `main` at `8b7a84e47`: T206 and T218 are built and ticked; the
 
 **Docs:** `docs/features.md`, `docs/themes.md`, `docs/limits.md`, README, the feature inventory's Characters row, a changelog fragment. `docs/site/unreleased.json` keeps its arcade phrases until the site names the release that holds the world (spec 104 FR-008).
 
-**Pictures:** `check-settings-worlds` and `check-characters` at 1440x900 and 1280x800, simulator, looked at (the PR lists them). `[KNOWN GAP]` Windows and macOS not run here; no real GPU.
+**Pictures:** `check-settings-worlds` and `check-characters` pass at 1440x900 and 1280x800 (simulator, Linux); retaken and looked at: `docs/screenshots/102-world-section-{1440x900,1280x800}.jpg` (three cards, Plain in use, the arcade with its preview) and `102-290-characters-list-{1440x900,1280x800}.jpg` (Retro pixel open, "15 pixel people"). `[KNOWN GAP]` Windows and macOS not run here; no real GPU.
 
 **Numbers** (`npm run specs:numbers`): no new FR, T or Q.
 

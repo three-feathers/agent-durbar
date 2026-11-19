@@ -103,7 +103,7 @@ module.exports = async (ctx) => {
       for (const [id, on, text] of desc) assert.strictEqual(/\bIn use\b/.test(text), on === 'true', `${tag}: ${id}: only the checked card's description says In use (announced): ${JSON.stringify(text)}`);
       assert.strictEqual(await js(`[...document.querySelectorAll(${jsLiteral(CARDS)})].map(b=>Math.round(b.getBoundingClientRect().height*10)).join()`), await js(`window.__h`), `${tag}: no card changes size when the choice moves (each keeps the room of its In use line)`);
       const view = await js(`localStorage.getItem('durbar.officeview')+' '+localStorage.getItem('durbar.world')`);
-      assert.ok(target === 'plain' ? /^flat /.test(view) : view === 'real ' + target, `${tag}: choosing applies at once, stored as it always was: ${view}`);
+      assert.ok(target === 'plain' ? /^flat /.test(view) : (wname === 'real' ? view.endsWith(' ' + target) : view === 'real ' + target), `${tag}: choosing applies at once, stored as it always was (in the real run the view comes from the query, so only the world is written): ${view}`);
       await ok(target === 'plain' ? `!document.documentElement.dataset.world` : `document.documentElement.dataset.world===${jsLiteral(target)}`, `${tag}: the app is in ${target} (the page's world mark)`);
       // the other card with Space
       await key('Left');
