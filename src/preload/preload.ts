@@ -25,6 +25,7 @@ const api: DurbarApi = {
   orgPolicyView: () => ipcRenderer.invoke('orgpolicy:view'),
   listAdapters: (refresh) => ipcRenderer.invoke('adapters:list', refresh === true),
   onAdaptersChanged: (cb) => sub('adapters:changed', cb),
+  onResume: (cb) => sub('system:resumed', cb),
   end: (id) => ipcRenderer.invoke('agents:end', id),
   openExternal: (url) => ipcRenderer.invoke('app:openExternal', url),
   setPermMode: (id, mode, opts) => ipcRenderer.invoke('agents:setMode', id, mode, opts),

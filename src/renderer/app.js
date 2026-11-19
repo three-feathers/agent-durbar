@@ -8525,9 +8525,11 @@ async function loadModels(){
   /* spec 012 FR-157: main changed the list itself (a session was refused because of the sign-in) */
   if(bridge.onAdaptersChanged)bridge.onAdaptersChanged(list=>{if(Array.isArray(list)&&list.length){KINDS=list;applyKinds();}});
   if(!bridge.listModels)return;
+  /* spec 030 FR-072: a wake from sleep (main's powerMonitor 'resume'): a list that is empty is asked once more; one ask per app, none for a list we have */
+  if(bridge.onResume)bridge.onResume(()=>{if(!MODELS.length)void refreshModels('',true);for(const k of Object.keys(MODELS_BY))if(!MODELS_BY[k].length)void refreshModels(k,true);});
   if(!(await refreshModels('',false))&&!MODELS_RETRY){
     /* issue 1909: the start-up fetch can lose a race with the app's own start; one more try shortly after, then only when a menu opens (spec 030 FR-068) */
-    MODELS_RETRY=setTimeout(()=>{void refreshModels('',false);},8000);
+    MODELS_RETRY=setTimeout(()=>{if(!MODELS.length)void refreshModels('',true);},8000);
   }
 }
 let MODELS_RETRY=0;

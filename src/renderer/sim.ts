@@ -3599,6 +3599,7 @@ const planMcpSignInRefresh = (i: SignInPlanInput): SignInPlan => {
       version: async () => 'sim',
       // Spec 012 T017 (FR-063): only Copilot by default; simkinds=1 adds a Claude Code that is not installed and a Codex that is too old.
       listAdapters: async () => simAdapters(),
+      onResume: (cb) => { (window as unknown as { __simResume?: () => void }).__simResume = cb; return () => undefined; }, // spec 030 FR-072: the driver wakes the page by hand
       onAdaptersChanged: () => () => undefined, // FR-157: the window marks the app itself from the auth error; nothing else pushes here
       // Spec 051 FR-009: harness setup in the simulator: canned plans and output (a fake link and code), nothing runs
       // spec 051 FR-014: a fake identity per ready app (never a real account, so screenshots show no personal data); `simacct=unknown`
@@ -4016,12 +4017,12 @@ const planMcpSignInRefresh = (i: SignInPlanInput): SignInPlan => {
         if (opts.grants !== 'stuck' && s && s.grants.delete(key)) grantsEvent(s);
       },
       // No disk, no account: canned answers so the new folder / session / history UI can be exercised without credits.
-      // spec 030 FR-068 (issue #1909): page address simmodelfail=once (the first call fails, the next succeeds: the owner's report), error (always fails), empty, hidden (empty, 3 policy-hidden)
+      // spec 030 FR-068 (issue #1909): page address simmodelfail=once (the first call fails, the next succeeds: the owner's report), twice (the start-up call and its one retry fail), error (always fails), empty, hidden (empty, 3 policy-hidden)
       listModels: async (kind, opts) => {
         const mode = typeof location !== 'undefined' ? new URLSearchParams(location.search).get('simmodelfail') : null;
         const w = window as unknown as { __simListCalls?: Array<{ kind?: string; fresh: boolean }> };
         (w.__simListCalls ??= []).push({ kind, fresh: !!opts?.fresh });
-        if (mode === 'once' && w.__simListCalls.length === 1) return { ok: false, error: 'the request timed out', reason: 'the request timed out', models: [] };
+        if ((mode === 'once' && w.__simListCalls.length === 1) || (mode === 'twice' && w.__simListCalls.length <= 2)) return { ok: false, error: 'the request timed out', reason: 'the request timed out', models: [] };
         if (mode === 'error') return { ok: false, error: 'the sign-in was not accepted', reason: 'the sign-in was not accepted', models: [] };
         if (mode === 'empty') return { ok: true, reason: 'the app returned no models', models: [] };
         if (mode === 'hidden') return { ok: true, hidden: 3, reason: "every model is turned off by your account's policy", models: [] };

@@ -44,6 +44,22 @@ module.exports = async (ctx) => {
     check(!/Model list unavailable/.test(await menuText()), 'once: no unavailable line once the list is back');
     await closeMenu();
 
+    // ---- resume: the list is empty at start, the machine wakes, one fresh ask fills it; a full list is not asked again ----
+    await H.load({ w: W, h: Hh, query: { simmodelfail: 'twice' }, ready: 'fit' });
+    await open();
+    check(await until(`(window.__simListCalls||[]).length>=2`, 20000), 'resume: the one start-up retry came (a failing second call)');
+    await settle();
+    const r0 = (await calls()).length;
+    await js(`window.__simResume&&window.__simResume()`);
+    check(await until(`(window.__simListCalls||[]).length===${r0 + 1}`), 'resume: one ask after the wake');
+    check((await calls())[r0] && (await calls())[r0].fresh === true, 'resume: the ask is fresh');
+    await settle();
+    await js(`window.__simResume&&window.__simResume()`); await settle();
+    check((await calls()).length === r0 + 1, 'resume: a list we have is not asked again');
+    await click('#modelChip');
+    check(await until(`document.querySelectorAll('#modelMenu [data-pick]').length>1`) && (await calls()).length === r0 + 1, 'resume: the menu shows the full list with no further ask');
+    await closeMenu();
+
     // ---- error: unavailable + Retry, one call per open and per press ----
     await H.load({ w: W, h: Hh, query: { simmodelfail: 'error' }, ready: 'fit' });
     await open();

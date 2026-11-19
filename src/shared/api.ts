@@ -1007,6 +1007,8 @@ export interface DurbarApi {
   listAdapters?(refresh?: boolean): Promise<AdapterInfo[]>;
   /** Spec 012 FR-157: main changed the cached list by itself (a session was refused because of the sign-in). */
   onAdaptersChanged?(cb: (list: AdapterInfo[]) => void): () => void;
+  /** The computer woke from sleep (Electron `powerMonitor` `resume`, main); spec 030 FR-072. */
+  onResume?(cb: () => void): () => void;
   /** End the session (frees it; sending again resumes it). `stop` only interrupts the current turn. */
   end?(id: string): Promise<void>;
   /** Open an http(s) link in the system browser (anything else is refused in the main process). */
