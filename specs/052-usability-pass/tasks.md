@@ -480,3 +480,6 @@
 
 ## 2026-11-18: the two `tabindex` rules of the Mac title bar are written down (issue #1847)
 - [x] T360 Spec 052 Changes 2026-11-18: Rule 1 (the darwin no-drag lists in `styles.css`: bare `[tabindex]` for the top bar, notice strip, `.rail-top` and `.ph`; `:not([tabindex="-1"])` for the screen header) and Rule 2 (`keys.js` `TITLE_CONTROLS`: `:not([tabindex="-1"])`) stated with their selectors, why both, and that a `tabindex="-1"` non-control is no-drag but zooms outside the screen header; the pins by name; the 2026-11-15 line about the screen-header arm marked out of date. Spec only: no code, no picture.
+
+## 2026-11-19: `check-status-tooltip` focus message (issue #1664)
+- [x] T371 `scripts/check-status-tooltip.js`: `focusWin` calls `H.needFocus(label)` (mutant `STATUSTIP_NO_WINDOW_FOCUS=1` fails with the focus message); the `hasFocus` assert removed. Spec 052 Changes 2026-11-19.
