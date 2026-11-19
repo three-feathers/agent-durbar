@@ -2341,6 +2341,11 @@ function onConvSearchEvent(e){
     const now=Date.now(); if(CSU.announceDue(CS.lastAnn,now)){CS.lastAnn=now;announce(CSU.stateText(st));} /* US3.4: at most every 2 s */
     return;
   }
+  if(e.kind==='listing'){ /* issue 1904: main lists the folders' sessions before the first batch */
+    CSU.addListing(st,e); csPaintSoon();
+    const now=Date.now(); if(CSU.announceDue(CS.lastAnn,now)){CS.lastAnn=now;announce(CSU.stateText(st));}
+    return;
+  }
   if(e.kind!=='done')return;
   CS.id=null;
   /* FR-015: the re-sort keeps the row under the pointer or with focus where it is on screen, and its focus */
