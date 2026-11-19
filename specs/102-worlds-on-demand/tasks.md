@@ -429,3 +429,7 @@ Fix round 2026-11-14 (review of #1740, T223 stays unticked): the contrast check 
 ## 2026-11-19: the Cave card's arrangement text (spec 102 Changes 2026-11-19; issue #1894)
 
 - [x] T368 The Cave's `card.json` `arrangement` reads "circle when it fits, rows otherwise" (owner decision 2026-11-19 07:30 UTC, answer 1; FR-014, FR-230); `test:world-catalogue` takes the card text as the world's arrangement id plus a fall-back clause that must name `rows` for `circle`, with a failing fixture each way. Test: `test:` `test:world-catalogue`.
+
+## 2026-11-19: the arcade's five chrome cells (spec 102 Changes 2026-11-19; issue #1891)
+
+- [x] T367 `lift-panel`, `chat-open`, `chat-shell`, `chat-header` and `elicitation` are drawn in the arcade's own tokens (no new picture, no new asset pipeline): rules in the arcade's `world.css` scoped `html[data-world="retro"]` (the Retro UI style in `themes.css` may not set sizes, borders or motion: spec 035 FR-015). Test: `scripts/shots-097-moments.js` step `cells` asserts each cell's computed look at both sizes and writes `cell-lift`, `cell-chatshell`, `cell-elicit` (looked at); `test:momentsregistry` fails a `fallback-flat` retro cell other than the two deferred ones, and fails when one of the five rules leaves the arcade's `world.css` (a mutant for each). `floor-indicator` and `building-preview` are not applicable to the flip, tracked in #1892 (owner decision, Vikram, 2026-11-19) [FR-264, T223]

@@ -333,8 +333,7 @@
         "loft": "missing",
         "retro": "built"
       },
-      "nonNegotiables": "TKS"
-,
+      "nonNegotiables": "TKS",
       "evidence": {
         "retro": {
           "steps": [
@@ -359,9 +358,19 @@
         "photo": "designed",
         "cave": "designed",
         "loft": "designed",
-        "retro": "fallback-flat"
+        "retro": "built"
       },
-      "nonNegotiables": "TKMCF"
+      "nonNegotiables": "TKMCF",
+      "evidence": {
+        "retro": {
+          "steps": [
+            "cells"
+          ],
+          "pictures": [
+            "cell-lift"
+          ]
+        }
+      }
     },
     {
       "id": "floor-change",
@@ -406,7 +415,10 @@
         "loft": "designed",
         "retro": "fallback-flat"
       },
-      "nonNegotiables": "TKC"
+      "nonNegotiables": "TKC",
+      "gap": {
+        "retro": "Not applicable to the flip: no world has this surface; a backlog feature for all worlds, tracked in #1892 (owner decision, Vikram, 2026-11-19)."
+      }
     },
     {
       "id": "all-floors",
@@ -452,7 +464,10 @@
         "loft": "designed",
         "retro": "fallback-flat"
       },
-      "nonNegotiables": "TK"
+      "nonNegotiables": "TK",
+      "gap": {
+        "retro": "Not applicable to the flip: no world has this surface; a backlog feature for all worlds, tracked in #1892 (owner decision, Vikram, 2026-11-19)."
+      }
     },
     {
       "id": "floor-jumps",
@@ -524,9 +539,19 @@
         "photo": "designed",
         "cave": "designed",
         "loft": "designed",
-        "retro": "fallback-flat"
+        "retro": "built"
       },
-      "nonNegotiables": "MK"
+      "nonNegotiables": "MK",
+      "evidence": {
+        "retro": {
+          "steps": [
+            "cells"
+          ],
+          "pictures": [
+            "cell-chatshell"
+          ]
+        }
+      }
     },
     {
       "id": "chat-shell",
@@ -544,9 +569,19 @@
         "photo": "designed",
         "cave": "designed",
         "loft": "designed",
-        "retro": "fallback-flat"
+        "retro": "built"
       },
-      "nonNegotiables": "TKF"
+      "nonNegotiables": "TKF",
+      "evidence": {
+        "retro": {
+          "steps": [
+            "cells"
+          ],
+          "pictures": [
+            "cell-chatshell"
+          ]
+        }
+      }
     },
     {
       "id": "chat-header",
@@ -563,9 +598,19 @@
         "photo": "designed",
         "cave": "designed",
         "loft": "designed",
-        "retro": "fallback-flat"
+        "retro": "built"
       },
-      "nonNegotiables": "TKSC"
+      "nonNegotiables": "TKSC",
+      "evidence": {
+        "retro": {
+          "steps": [
+            "cells"
+          ],
+          "pictures": [
+            "cell-chatshell"
+          ]
+        }
+      }
     },
     {
       "id": "limit-card",
@@ -672,9 +717,19 @@
         "photo": "designed",
         "cave": "designed",
         "loft": "missing",
-        "retro": "fallback-flat"
+        "retro": "built"
       },
-      "nonNegotiables": "AKS"
+      "nonNegotiables": "AKS",
+      "evidence": {
+        "retro": {
+          "steps": [
+            "cells"
+          ],
+          "pictures": [
+            "cell-elicit"
+          ]
+        }
+      }
     },
     {
       "id": "answer-bar",

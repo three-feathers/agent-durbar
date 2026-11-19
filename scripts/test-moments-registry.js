@@ -18,6 +18,10 @@ const ROOT = path.join(__dirname, '..');
 const STATES = ['built', 'designed', 'fallback-flat', 'missing'];
 const RETRO_CELLS = ['office-floor', 'lobby', 'boss-bank-post-coffee', 'desk-card', 'desk-lights', 'live-screen', 'lounge', 'walk', 'empty-office', 'first-run', 'lift-panel', 'floor-change', 'floor-indicator', 'all-floors', 'building-preview', 'floor-jumps', 'inbox', 'chat-open', 'chat-shell', 'chat-header', 'limit-card', 'permission-card', 'question-card', 'elicitation', 'answer-bar', 'coffee-bar'];
 const WORLDS = ['photo', 'cave', 'loft', 'retro'];
+/* issue 1891: the only cells that may stay `fallback-flat` in the arcade: no world has the surface, so they are not part of the flip (owner, Vikram, 2026-11-19; a backlog feature for all worlds, issue #1892); each says so in `gap.retro` */
+const DEFERRED = ['floor-indicator', 'building-preview'];
+/* issue 1891: the five chrome cells are drawn by rules in the arcade's world.css (its own tokens); a rule gone is a cell fallen back to the flat drawing, even if the registry still says `built` */
+const CHROME_RULES = { 'lift-panel': '.lift-b{border-radius:0', 'chat-shell': '#panel>.rail{border-right:3px', 'chat-header': '.ph{border-bottom:3px', 'chat-open': 'arc-chat-on .2s steps(4)', elicitation: '.note.elicit{border:3px' };
 
 const stripRetro = (reg) => {
   const c = JSON.parse(JSON.stringify(reg));
@@ -67,6 +71,15 @@ function check({ reg, main, driver, css }) {
     if (s === 'missing' && !(m.gap && typeof m.gap.retro === 'string' && m.gap.retro.length > 10)) bad.push(`retro cell ${m.id} is missing and says nothing why (gap.retro)`);
   }
   if (world && world.shippable !== false && Object.values(cells).some((s) => s === 'missing' || s === 'designed')) bad.push('retro is shippable while a cell is missing or only designed');
+  for (const m of reg.moments) {
+    const s = m.worlds && m.worlds.retro;
+    if (s === 'fallback-flat' && !DEFERRED.includes(m.id)) bad.push(`retro cell ${m.id} falls back to the flat drawing: draw it in the arcade (issue 1891), or the owner defers it`);
+    if (DEFERRED.includes(m.id) && !(s === 'fallback-flat' && m.gap && /#1892/.test(m.gap.retro || ''))) bad.push(`retro cell ${m.id} is deferred to #1892 (owner, 2026-11-19): fallback-flat with a gap.retro naming #1892`);
+  }
+  if (typeof css === 'string') {
+    const flat = css.replace(/\s+/g, '').replace(/html\[data-world="retro"\]\[data-ui="retro"\]/g, '');
+    for (const [id, frag] of Object.entries(CHROME_RULES)) if (!flat.includes(frag.replace(/\s+/g, ''))) bad.push(`retro cell ${id}: its arcade rule (${frag}) is not in the arcade's world.css: the cell fell back to the flat drawing`);
+  }
   if (world && typeof world.shippable !== 'boolean') bad.push('retro `shippable` is not a boolean');
   /* issue #1777: the empty-office step goes to the empty floor, which the app stores (durbar.floor); the next step of the same run (cells) then starts on that floor and finds no Jonas. The step must put the storage back in a finally. */
   { const d = driver.replace(/\r\n/g, '\n'), a = d.indexOf("run('empty-office')) {"), e = d.indexOf('// ---- FR-120', a), step = a < 0 || e < 0 ? '' : d.slice(a, e);
@@ -116,6 +129,14 @@ if (require.main === module) {
     assert.ok(got.some((g) => re.test(g)), `mutant "${what}" must fail with ${re}: ${JSON.stringify(got)}`);
     console.log(`[momentsregistry] mutant killed: ${what}`);
   };
+  /* issue 1891: a chrome cell falling back again fails at its own assert */
+  fails('lift-panel back to the flat drawing (rule gone)', (i) => { i.css = i.css.replace('.lift-b{border-radius:0', '.lift-b{border-radius:4px'); }, /lift-panel: its arcade rule/);
+  fails('chat-shell rule gone', (i) => { i.css = i.css.replace('#panel>.rail{border-right:3px', '#panel>.rail{border-right:1px'); }, /chat-shell: its arcade rule/);
+  fails('chat-header rule gone', (i) => { i.css = i.css.replace('.ph{border-bottom:3px', '.ph{border-bottom:1px'); }, /chat-header: its arcade rule/);
+  fails('chat-open rule gone', (i) => { i.css = i.css.replace('arc-chat-on .2s steps(4)', 'slide .28s ease-out'); }, /chat-open: its arcade rule/);
+  fails('elicitation rule gone', (i) => { i.css = i.css.replace('.note.elicit{border:3px', '.note.elicit{border:1px'); }, /elicitation: its arcade rule/);
+  fails('elicitation back to fallback-flat', (i) => { const m = i.reg.moments.find((x) => x.id === 'elicitation'); m.worlds.retro = 'fallback-flat'; delete m.evidence; }, /elicitation falls back to the flat drawing/);
+  fails('a deferred cell loses its #1892 note', (i) => { delete i.reg.moments.find((x) => x.id === 'floor-indicator').gap; }, /floor-indicator is deferred to #1892/);
   fails('a retro cell removed', (i) => { i.reg.moments.splice(i.reg.moments.findIndex((m) => m.id === 'walk'), 1); }, /not the 26/);
   fails('a retro cell is not a state', (i) => { i.reg.moments.find((m) => m.id === 'lobby').worlds.retro = 'bogus'; }, /lobby is "bogus"/);
   fails('a moment has no retro key', (i) => { delete i.reg.moments.find((m) => m.id === 'lobby').worlds.retro; }, /lobby is undefined/);
