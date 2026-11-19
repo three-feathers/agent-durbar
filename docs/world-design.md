@@ -121,6 +121,10 @@ Spec 097 FR-178 and after hold the budgets. In short:
 
 - **A world's picture in Settings is the app drawing the world,** not art: `simscene=preview` seats three idle people with nothing over them, `scripts/shots-102-previews.js` takes one 640 px WebP of 1440x900 (at most 48 KB), and `npm run shots:docs` retakes it, so the preview stays true as the world changes (spec 102 FR-302). A new world adds a row to that driver and a size under 48 KB; the zoom origin (the middle of the three people) is stored with the picture. Look at it at both sizes: an idle person in the arcade stands beside the cabinet, and a screen whose text falls outside its frame shows in the card too.
 
+## Chrome around the room
+
+A world's chat, lift and cards take the world's look in CSS tokens (the arcade: square corners, 2 to 3 px edges, hard shadows, mono capitals, stepped motion), not new pictures. `test:momentsregistry` fails when one of the arcade's rules leaves the arcade's `world.css`. A surface no world has (a floor display on a ride, a building preview) is not a gap of one world (spec 102, 2026-11-19, #1892).
+
 ## Review a world like this
 
 1. The side-by-side test against every other world.

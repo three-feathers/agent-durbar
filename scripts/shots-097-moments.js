@@ -632,6 +632,15 @@ module.exports = async (ctx) => {
       const perm = await js(`(()=>{const c=document.querySelector('#chat .note.perm:not(.settled)');if(!c)return null;const P=(s)=>{const m=/rgba?\\(([^)]+)\\)/.exec(s);return m?m[1].split(/[ ,\\/]+/).filter(Boolean).slice(0,3).map(Number):[0,0,0]},Lm=(a)=>{const f=(x)=>{x/=255;return x<=0.03928?x/12.92:Math.pow((x+0.055)/1.055,2.4)};return 0.2126*f(a[0])+0.7152*f(a[1])+0.0722*f(a[2])};const bg=P(getComputedStyle(c).backgroundColor);const worst=[...c.querySelectorAll('*')].filter(e=>e.children.length===0&&e.textContent.trim()&&e.getClientRects().length&&!e.closest('.btn')).map(e=>{const a=Lm(P(getComputedStyle(e).color)),b=Lm(bg);return (Math.max(a,b)+0.05)/(Math.min(a,b)+0.05)});return {lum:Lm(bg),btns:c.querySelectorAll('.btn').length,texts:worst.length,min:worst.length?Math.min(...worst):0}})()`);
       assert.ok(perm && perm.lum < 0.2 && perm.btns >= 2 && perm.texts > 0 && perm.min >= 4.5, `${tag}: the permission card in the arcade's chat is dark, has its buttons and its text reads at 4.5:1: ${JSON.stringify(perm)}`);
       await shot(world, 'cell-chat', w, h);
+      /* 102 T223 (issue 1891): chat-shell, chat-header and chat-open in the arcade's own tokens (the arcade world.css): the framed screen, the pink rule under the header, the mono upper-case name, the stepped switch-on; none of it is the flat chat's rounded 1 px look */
+      const cs = await js(`(()=>{const g=(s)=>document.querySelector(s),S=(e)=>getComputedStyle(e),panel=S(g('#panel')),rail=g('#panel>.rail'),ph=g('#panel .ph'),h2=g('#panel .ph h2'),pin=S(g('#panel .panel-in'));
+        const btn=[...document.querySelectorAll('#panel .ph .btn')].map(b=>S(b).borderTopLeftRadius);
+        return {frame:panel.outlineWidth,frameStyle:panel.outlineStyle,railEdge:rail?S(rail).borderRightWidth:'none',rule:S(ph).borderBottomWidth,ruleColor:S(ph).borderBottomColor,page:S(document.body).backgroundColor,caps:S(h2).textTransform,mono:/mono|Menlo|Consolas/i.test(S(h2).fontFamily),btnRadius:btn,anim:pin.animationName,steps:pin.animationTimingFunction}})()`);
+      assert.ok(cs.frame === '3px' && cs.frameStyle === 'solid', `${tag}: chat-shell: the open chat is a framed screen (the arcade's 3px frame): ${JSON.stringify(cs)}`);
+      assert.ok(cs.railEdge === '3px', `${tag}: chat-shell: the rail has the arcade's 3px edge: ${JSON.stringify(cs)}`);
+      assert.ok(cs.rule === '3px' && cs.caps === 'uppercase' && cs.mono && cs.btnRadius.length >= 1 && cs.btnRadius.every((r) => r === '0px'), `${tag}: chat-header: a 3px rule, the name in mono capitals, square buttons: ${JSON.stringify(cs)}`);
+      assert.ok(OS_REDUCED ? cs.anim === 'none' : (cs.anim === 'arc-chat-on' && /^steps\(/.test(cs.steps)), `${tag}: chat-open: the chat switches on in hard steps (none under reduced motion): ${JSON.stringify(cs)}`);
+      await shot(world, 'cell-chatshell', w, h);
       /* 102 T223: the chat of the simulator's first Claude agent (Ada) holds the simulator's question card (the question-card cell); Kenji sits on another floor with floors on, so this page has one floor */
       await H.load({ w, h, query: q(world, { sim: '15', simquestion: '1' }), ready: REAL, settle: false });
       await must(PICS, 'the pictures');
@@ -664,11 +673,30 @@ module.exports = async (ctx) => {
       const ab = await js(`(()=>{const {Pa,Lm,over,bgOf,rat,phc}=window.__cx;const b=document.getElementById('answerBar');const lf=[...b.querySelectorAll('*')].filter(e=>e.children.length===0&&e.textContent.trim()&&e.getClientRects().length).map(e=>{const bg=bgOf(e,b);return rat(over(Pa(getComputedStyle(e).color),bg),bg)});return {texts:lf.length,min:lf.length?Math.min(...lf):0,asks:/ asks:/.test(b.textContent),btns:[...b.querySelectorAll('.ab-act button')].map(x=>x.textContent.trim()),small:[...b.querySelectorAll('*')].filter(e=>e.children.length===0&&e.textContent.trim()&&e.getClientRects().length&&parseFloat(getComputedStyle(e).fontSize)<10.5).length,inside:b.getBoundingClientRect().bottom<=document.getElementById('chat').getBoundingClientRect().bottom+120}})()`);
       assert.ok(ab.asks && ab.btns.includes('Answer in chat') && ab.small === 0 && ab.inside && ab.texts > 0 && ab.min >= 4.5, `${tag}: the answer bar names the asker, offers Answer in chat, every text (the buttons too) reads at 4.5:1, text >= 10.5px: ${JSON.stringify(ab)}`);
       await shot(world, 'cell-answerbar', w, h);
+      /* 102 T223 (issue 1891): the MCP elicitation card in the arcade's chat, opened from its bubble: dark like the question card, the arcade's square pink edge and mono heading, its form and buttons there, every text at 4.5:1 and 10.5 px or more */
+      await H.load({ w, h, query: q(world, { simelicit: '1', sim: '3' }), ready: REAL, settle: false });
+      await must(PICS, 'the pictures');
+      await js('window.__cx=(()=>{' + CX + 'return {Pa,Lm,over,bgOf,rat,phc}})();0');
+      await must(`window.__durbarSimUi.slips().elicit.length>=1&&!!document.querySelector('#stage .ro-slip.ro-bubble [data-slipact="open"]')`, 'the MCP request bubble');
+      await js(`document.querySelector('#stage .ro-slip.ro-bubble [data-slipact="open"]').click()`);
+      await must(`document.body.classList.contains('panel-open')&&!!document.querySelector('#chat .note.elicit:not(.settled)')`, 'the MCP card in the arcade chat');
+      await H.settle();
+      const ec = await js(`(()=>{const {Pa,Lm,over,bgOf,rat,phc}=window.__cx;const c=document.querySelector('#chat .note.elicit:not(.settled)');if(!c)return null;const S=getComputedStyle(c),leaf=(e)=>e.children.length===0&&e.textContent.trim()&&e.getClientRects().length;
+        const bg=bgOf(c,document.documentElement),lf=[...c.querySelectorAll('*')].filter(leaf);const min=Math.min(...lf.map(e=>{const b=bgOf(e,document.documentElement);return rat(over(Pa(getComputedStyle(e).color),b),b)}));
+        return {lum:Lm(bg),edge:S.borderTopWidth,radius:S.borderTopLeftRadius,shadow:S.boxShadow!=='none',mono:/mono|Menlo|Consolas/i.test(getComputedStyle(c.querySelector(':scope > b')).fontFamily),fields:c.querySelectorAll('input,select,textarea,.q-other').length,btns:[...c.querySelectorAll('.btn')].length,min,small:lf.filter(e=>parseFloat(getComputedStyle(e).fontSize)<10.5).length}})()`);
+      assert.ok(ec && ec.lum < 0.2 && ec.edge === '3px' && ec.radius === '0px' && ec.shadow && ec.mono, `${tag}: elicitation: the MCP card is dark, with the arcade's 3px square edge, hard shadow and mono heading: ${JSON.stringify(ec)}`);
+      assert.ok(ec.fields >= 1 && ec.btns >= 2 && ec.min >= 4.5 && ec.small === 0, `${tag}: elicitation: its form and buttons are there, every text reads at 4.5:1, nothing under 10.5px: ${JSON.stringify(ec)}`);
+      await shot(world, 'cell-elicit', w, h);
       }
       await H.load({ w, h, query: q(world, { sim: '15', simfloors: '1' }), ready: REAL, settle: false });
       await must(PICS, 'the pictures');
       /* 102 T223 building-preview (097 FR-105): the real pointer rests on All, as a visitor's does; the page must have seen it enter the button */
       await must(`!!document.querySelector('#lift:not([hidden]) [data-lift="*all"]')`, 'the lift with its All button');
+      /* 102 T223 (issue 1891): lift-panel in the arcade's own tokens: square keys with a hard shadow in the mono font, the shown floor a pressed key in the mark's yellow (the flat lift's rounded 1px keys are the fallback this must not be) */
+      const lf = await js(`(()=>{const S=(e)=>getComputedStyle(e),ks=[...document.querySelectorAll('#lift .lift-b')],cur=ks.find(k=>k.getAttribute('aria-current')==='true'),oth=ks.find(k=>k!==cur);if(!cur||!oth)return null;
+        return {n:ks.length,radius:ks.map(k=>S(k).borderTopLeftRadius),shadow:S(oth).boxShadow!=='none',mono:/mono|Menlo|Consolas/i.test(S(oth).fontFamily),curBg:S(cur).backgroundColor,othBg:S(oth).backgroundColor,small:ks.filter(k=>parseFloat(S(k).fontSize)<10.5).length}})()`);
+      assert.ok(lf && lf.n >= 3 && lf.radius.every((r) => r === '0px') && lf.shadow && lf.mono && lf.curBg !== lf.othBg && lf.small === 0, `${tag}: lift-panel: square keys with a hard shadow in the mono font, the shown floor a pressed key of its own colour, 10.5px or more: ${JSON.stringify(lf)}`);
+      await shot(world, 'cell-lift', w, h);
       await js(`window.__bpEnter=false;document.querySelector('#lift [data-lift="*all"]').addEventListener('mouseenter',()=>{window.__bpEnter=true});0`);
       const bp = await js(`(()=>{const r=document.querySelector('#lift [data-lift="*all"]').getBoundingClientRect();return {x:Math.round(r.left+r.width/2),y:Math.round(r.top+r.height/2)}})()`);
       ctx.win.webContents.sendInputEvent({ type: 'mouseMove', x: bp.x, y: bp.y });
@@ -715,7 +743,7 @@ module.exports = async (ctx) => {
       const btn = await js(`(()=>{const R=e=>e.getBoundingClientRect();const out=[];for(const sg of document.querySelectorAll('#stage .ro-sign:not(.ro-stag)')){const sr=R(sg);for(const b of sg.querySelectorAll('[data-newsess],[data-foldermenu]')){const r=R(b),at=document.elementFromPoint(r.left+r.width/2,r.top+r.height/2);out.push({id:b.dataset.newsess||b.dataset.foldermenu,inside:r.left>=sr.left-0.5&&r.right<=sr.right+0.5&&r.top>=sr.top-0.5&&r.bottom<=sr.bottom+0.5,hit:!!at&&(at===b||b.contains(at))})}}return out})()`);
       assert.ok(btn.length >= 2 && btn.every((b) => b.inside && b.hit), `${tag}: every sign's + and folder-actions buttons are inside the sign and reachable: ${JSON.stringify(btn.filter((b) => !b.inside || !b.hit))} of ${btn.length}`);
       await shot(world, 'cell-allfloors', w, h);
-      for (const f of world === 'retro' ? ['cell-chat', 'cell-question', 'cell-focus-answer', 'cell-focus-skip', 'cell-answerbar', 'cell-preview', 'cell-allfloors'] : ['cell-preview', 'cell-allfloors']) assert.ok(fs.existsSync(path.join(OUT, `${world}-${f}-${w}x${h}.png`)), `${tag}: the picture ${f} was written`);
+      for (const f of world === 'retro' ? ['cell-chat', 'cell-question', 'cell-focus-answer', 'cell-focus-skip', 'cell-answerbar', 'cell-chatshell', 'cell-elicit', 'cell-lift', 'cell-preview', 'cell-allfloors'] : ['cell-preview', 'cell-allfloors']) assert.ok(fs.existsSync(path.join(OUT, `${world}-${f}-${w}x${h}.png`)), `${tag}: the picture ${f} was written`);
       await js(`localStorage.removeItem('durbar.floor');localStorage.removeItem('durbar.floorView')`); /* the next size starts on one floor */
     }
   }
