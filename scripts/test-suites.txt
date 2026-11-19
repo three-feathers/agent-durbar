@@ -202,6 +202,7 @@ test:crew-diag
 test:pointer-log
 test:labelsbackfill
 test:claim
+test:prgateanswered
 test:prgatenotes
 test:prgatecodeql
 test:trustedcontent
