@@ -651,7 +651,8 @@ assert.strictEqual(sentenceOf(s), s.sentence);
     const ps = pieces(v);
     for (const delta of [...chunks.map((d) => ({ type: 'thinking', delta: d })), start('bash', { command: 'ls' })]) {
       st = feed(st, [delta], 1);
-      const out = JSON.stringify(st);
+      // what the views read: a stream's held copy (round 2) is internal; `shown` is the text read whole (review of PR 1899, round 3)
+      const out = JSON.stringify({ ...st, think: st.think.shown ?? st.think.buf, out: st.out.shown ?? st.out.buf });
       if (ps.some((p) => out.includes(p))) return true;
     }
     return false;
@@ -683,8 +684,35 @@ assert.strictEqual(sentenceOf(s), s.sentence);
       assert.ok(!showsAny(['x ' + h.slice(0, h.length - 6), h.slice(h.length - 6) + pw + ' done'], pw), `#1320 decoded brain: a header written in such a form, cut inside its scheme word, hides the value (${heads.indexOf(h)})`);
     }
     assert.strictEqual(hleak, 0, '#1320 decoded brain: random cuts over a header written in such a form never show the value');
+    // round 3: a separator in such a form glued to a partial scheme word
+    for (const sepForm of ['&#x3a;', '&#58;', '%3A', '&colon;']) {
+      assert.ok(!showsAny(['x Authorization' + sepForm + 'Bea', 'rer ' + pw + ' done'], pw), `#1320 decoded brain: a separator in such a form glued to a partial scheme word hides the value (${sepForm.length})`);
+    }
+    assert.ok(!showsAny(['x Authorization' + '&#58;B', 'earer ' + pw + ' done'], pw), '#1320 decoded brain: a separator in such a form glued to one letter of the scheme word hides the value');
     // a whole scheme word glued to a separator in such a form, the value in the next piece (the word loop of the held-head check reads the decoded word)
     assert.ok(!showsAny(['x Authorization' + '&#58;Bearer', ' ' + pw + ' done'], pw), '#1320 decoded brain: a scheme word glued to a separator in such a form hides the value');
+  }
+  // round 3: a held form right after a raw value head the stream holds (a header name and the start of a token): the held form is never folded away
+  {
+    const v = 'bgEhq5' + 'EEId94' + '3tg4zGF';
+    const head = 'token: gl' + 'pat-F';
+    for (const chunks of [[head + '&#820', '3;' + v + ' done'], [head + '&#', '820', '3;' + v + ' done'], [head, '&#820', '3;' + v + ' done']]) {
+      assert.ok(!showsAny(chunks, v), `#1320 decoded brain: a held form after a held value head keeps the value hidden (${chunks.length} pieces, ${chunks[0].length})`);
+    }
+    let hs = 1899_3;
+    const hr = (): number => { hs = (Math.imul(hs, 1103515245) + 12345) >>> 0; return hs / 2 ** 32; };
+    let held = 0;
+    for (const text of [head + '&#8203;' + v + ' done', 'password=gl' + 'pat-F&#8203;' + v + ' done', head + '&#x200b;' + v + ' done']) {
+      const formAt = text.indexOf('&#');
+      for (let k = 0; k < 100; k++) {
+        const cuts = new Set<number>([formAt + 1 + Math.floor(hr() * 6)]);
+        const n = Math.floor(hr() * 3);
+        while (cuts.size < 1 + n) cuts.add(1 + Math.floor(hr() * (text.length - 1)));
+        const pts = [0, ...[...cuts].sort((x, y) => x - y), text.length];
+        if (showsAny(pts.slice(1).map((q, i) => text.slice(pts[i], q)), v)) held++;
+      }
+    }
+    assert.strictEqual(held, 0, '#1320 decoded brain: random cuts with a held form after a held value head never show the value');
   }
   const forms = ['&#95;', '&#x5f;', '&#95', '&lowbar;', '%5F', '%255F', '&#000095;'];
   const tails = ['&#8203;', '&#8203', '%2D', '&#46;'];

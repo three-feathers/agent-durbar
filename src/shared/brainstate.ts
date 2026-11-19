@@ -327,9 +327,13 @@ function valueExpected(mask: BrainMask, joined: string): { at: number; head: str
     const lastW = L.match(/\S+$/);
     if (lastW) {
       const lastAt = starts[starts.length - 1];
-      const sep = Math.max(lastW[0].lastIndexOf(':'), lastW[0].lastIndexOf('='));
-      const part = lastW[0].slice(sep + 1).replace(/^["']/, '');
-      if (part.length > 0 && part.length <= 9 && mask.schemePrefix(part)) {
+      // the separator is found in the decoded word (FR-188, review of PR 1899, round 3: a separator in such a form glued to the scheme word); the part after it is
+      // the same characters at the end of the word as written, or the word is not read here
+      const dw = dec(lastW[0]);
+      const dsep = Math.max(dw.lastIndexOf(':'), dw.lastIndexOf('='));
+      const part = dw.slice(dsep + 1).replace(/^["']/, '');
+      const sep = dsep < 0 ? -1 : lastW[0].endsWith(dw.slice(dsep + 1)) ? lastW[0].length - (dw.length - dsep - 1) - 1 : -2;
+      if (sep > -2 && part.length > 0 && part.length <= 9 && mask.schemePrefix(part)) {
         const restAt = lastAt + sep + 1;
         let tried = 0;
         for (let k = starts.length - 1; k >= 0 && tried < 4; k--) {
@@ -434,9 +438,8 @@ function streamText(tail: Tail, piece: string, whole: boolean, mask: BrainMask):
   let shown = buf;
   if (held && !failed && nest.depth === 0 && open < 0) {
     shown = safe(() => mask.maskGluedTail(brainMaskText(mask, whole0))).slice(-BUF_MAX);
-    // the held copy is kept only when it shows no word the whole reading hides (a token that is whole only with the form read stays masked in the state too)
-    const words = new Set(shown.match(/[A-Za-z0-9]{4,}/g) || []);
-    buf = (buf.match(/[A-Za-z0-9]{4,}/g) || []).every((w) => words.has(w)) ? (buf + held).slice(-BUF_MAX) : shown;
+    // the held copy always joins the next piece (review of PR 1899, round 3: folding the whole reading back in lost the form, and a later piece showed); the views read `shown`
+    buf = (buf + held).slice(-BUF_MAX);
   }
   return { buf, key, carry, shown };
 }

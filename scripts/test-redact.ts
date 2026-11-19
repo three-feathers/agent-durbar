@@ -115,10 +115,15 @@ for (const keep of ['ghp_short', 'see ghs_count', 'wei' + 'ghs_' + 'TotalWeightK
     for (const [label, t] of [
       ['GitHub', 'gh' + 'p_' + ghBody.slice(0, 30) + '&#' + ghBody.charCodeAt(30) + ';' + ghBody.slice(31) + '\u200bmysql -p' + kpw],
       ['Anthropic', 'sk-' + 'ant-api03-' + body.repeat(3) + '&#72' + 'Wx5Yz7' + '\u200bmysql -p' + kpw],
+      // round 3: the decoded character is the first one of the stretch
+      ['first character', '&#103;' + 'hp_' + ghBody + '\u200bmysql -p' + kpw],
     ] as Array<[string, string]>) {
       for (const [name, mask] of [['redact', (x: string) => redact(x, {})], ['desk maskRaw', (x: string) => ST2.maskRaw(x, (y) => redact(y, {}))], ['desk excerpt', (x: string) => ST2.excerpt(x, (y) => redact(y, {}))]] as Array<[string, (x: string) => string]>) {
         assert.ok(!mask(t).includes(kpw), `#1320 decoded: ${name} hides a password after a keyword that follows a decoded token and a piece (${label})`);
       }
+      // round 3: the stretch stops at the piece, so the keyword stays for its own rule (redact keeps it; the desk, which masks a word its readings cut differently, keeps the flag)
+      assert.ok(redact(t, {}).includes('mysql -p'), `#1320 decoded: redact keeps the keyword after a decoded token and a piece (${label})`);
+      if (label === 'first character') assert.ok(ST2.maskRaw(t, (y) => redact(y, {})).includes('] -p['), `#1320 decoded: desk maskRaw keeps the flag after a decoded token and a piece (${label})`);
     }
   }
   // near misses: text with such forms and no token stays byte for byte
