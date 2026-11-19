@@ -764,3 +764,10 @@ PR #1232 (spec 095) was red with `FR-026, T026 and T027 are also in PR #1240`, b
   - FR-063 accounting: no rule text changes; this clarifies how the existing gate reads FR-035, so one line is added to the gate's header comment.
   - `[KNOWN GAP]` Not verified: the gate on a live PR other than a read-only replay on #1906 (old script: not ready on the reviewer's CHANGES_REQUESTED review; new script: ready, same checks and head). A later approval is matched by time, not by whether its commit contains the fix: a reviewer who approves a head that does not contain the fix has answered their own ask.
   - Numbers checked 2026-11-19 with `npm run specs:numbers`, open PRs and remote `021-*` branches: this takes FR-097 and T084.
+
+### 2026-11-19: `specs:numbers` compares across specs (FR-098, issue #1935)
+
+*Why:* on 2026-11-19 three pairs of open PRs took the same task number in different specs (T371 in 052 and 102, T375 in 030 and 097, T377 in 052 and 095) and `specs:numbers` said OK on each. Cause: `findClashes` compared a number only inside the SAME file, and `collect` measured every other head only over the spec files THIS branch changed, so a number added in another spec was never read.
+
+- **FR-098** `[IMPLEMENTED]` `test:` A number this branch adds in an existing `spec.md` (FR, Q) or `tasks.md` (T) is a clash when another open PR head adds it in a different existing file of the same kind: the output names that head and its file. `collect` reads each head's own changed spec files. The stack rule (FR-094) is unchanged: a stack member counts only for what it adds beyond the shared history. A spec that is new on `origin/main` (either side) numbers from 001 and is not compared across files; a T is never compared with an FR or Q. Replaces FR-085's "numbers are per spec" reading for heads; the comparison with `origin/main` stays per file (older specs reuse low numbers).
+  - `[KNOWN GAP]` Not checked: another head that adds the same number in a spec file this branch did not touch, against main (only heads are compared across files, not main); the replay on the real 2026-11-19 clashes (the branches may be gone; the fixtures stand in).
