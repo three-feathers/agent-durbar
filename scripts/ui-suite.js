@@ -175,6 +175,7 @@ const DRIVERS = [
   { name: 'check-005-announce-error' }, // spec 005 FR-244 (#1908): an agent that enters the error state with its chat closed is said once through #srAnnounce
   { name: 'check-005-announce-failed' }, // spec 005 FR-038 (#1917): a turn that ends in an error says "Reply failed", not "Reply finished", through #srAnnounce
   { name: 'check-005-failed-state' }, // spec 005 FR-245 (#1919): a turn that failed stays in Error after its idle, not Done
+  { name: 'check-005-error-ends-turn' }, // spec 005 FR-246 (#1920): after an error the chat shows Send, not Stop and the spinner; an idle keeps Error; working resumes
   { name: 'check-answer-safety' }, // spec 052 FR-209..FR-212: the answer bar, a held Enter, a limit in flight, a plan while typing
   { name: 'check-inbox-safety' }, // spec 052 FR-206..FR-208: Needs you: a stale button, a held key and a limit row answer nothing they should not
   { name: 'check-needs-panel' }, // spec 052 FR-191..FR-195 (T196, T197): Your door, the Needs you panel behind its flag: non-modal, no focus change on opening, app start with Later, no shift, Esc and the amber toggle, All clear, Real office slips
@@ -248,6 +249,7 @@ const DRIVERS = [
   { name: 'shots-097-cave' }, // spec 097 phase 4: the Prehistoric cave behind its flag (World row, its set, any set in any world, no blend)
   { name: 'shots-001-lobby' }, // spec 001 FR-034..FR-040: Boss queue, Bank, Postbox and its letter, who is at a place (simsched in its own query)
   { name: 'check-102-arcade-postbox' }, // spec 102 T318 (issue #1399): the Postbox in the arcade: a lobby plate with the arcade's word, the missed runs, a click opens Settings > Schedules
+  { name: 'check-102-arcade-limit-remove' }, // spec 102 T395 (issue #1954): the arcade's limit pill offers Remove limit (the Real and Photo office slip's button), one line, pressing it removes the limit
   { name: 'check-done-desk-mask' }, // spec 041 FR-065: no token of a done reply on the office floor
   // spec 052 FR-171: wrapping, sizes, box widths, field weight, dark contrast. Two drivers that run at once (issue #738: one took ~650 s
   // against the 600 s limit); the light part also has the built-in themes' contrast, the dark part the tones and the stylesheet check
