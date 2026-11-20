@@ -1,1 +1,0 @@
-- **World picture prompts name the arched walkway** (spec 102): the exclusion line in every world prompt now says "architectural arcade", so it rules out arched walkways and not a games hall. Checked by `test:worldpack`.

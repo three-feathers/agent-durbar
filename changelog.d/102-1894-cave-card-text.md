@@ -1,1 +1,0 @@
-- **Cave card says the circle falls back to rows** (spec 102 T368, issue #1894): the Cave's world card now reads "circle when it fits, rows otherwise", as the scene draws it at 15 agents; `test:world-catalogue` checks a circle world's card names the fall-back. Simulator only, Linux (Windows and macOS not run).

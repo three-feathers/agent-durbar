@@ -49,5 +49,30 @@
     for(const p of closed instanceof Set?closed:[]){if(typeof p==='string'&&p.length&&p.length<=MAX_PATH&&(all||k.has(p)))list.push(p);if(list.length>=MAX_FOLDS)break;}
     return list.length?JSON.stringify({v:1,closed:list}):null;
   }
-  return {FOLD_KEY,MAX_FOLDS,MAX_PATH,group,loadFolds,foldsJSON};
+  /* spec 005 FR-340 (issue 1905): folders whose display names are equal (case folded) are told apart on screen by the nearest parent folder that
+     differs: `rooms` is [{id,name,path}] (the path as the app shows it, home as ~); the result is a Map id -> label for the folders that share their
+     name with another, nothing for a unique one. One parent first ("acme"), then two ("clients/acme") while the labels still collide; when the
+     parents are all equal too (renamed folders), the folder's own last segment. Never throws, never reads more than MAX_PATH characters of a path. */
+  function parentNames(rooms){
+    const by=new Map(), out=new Map();
+    for(const r of Array.isArray(rooms)?rooms:[]){
+      if(!r||typeof r.id!=='string')continue;
+      const k=String(r.name==null?'':r.name).trim().toLowerCase(), segs=String(r.path==null?'':r.path).slice(0,MAX_PATH).split(/[\\/]+/).filter(Boolean);
+      let g=by.get(k); if(!g){g=[];by.set(k,g);}
+      g.push({id:r.id,leaf:segs.pop()||'',up:segs});
+    }
+    for(const g of by.values()){
+      if(g.length<2)continue;
+      const most=Math.max(...g.map(x=>x.up.length));
+      let lab=null;
+      for(let d=1;d<=Math.max(1,most);d++){
+        const l=g.map(x=>x.up.slice(-d).join('/'));
+        if(new Set(l).size===g.length){lab=l;break;}
+      }
+      if(!lab)lab=g.map(x=>x.leaf); /* the same parents: the folder's own name tells them apart */
+      g.forEach((x,i)=>out.set(x.id,lab[i]));
+    }
+    return out;
+  }
+  return {FOLD_KEY,MAX_FOLDS,MAX_PATH,group,loadFolds,foldsJSON,parentNames};
 })());

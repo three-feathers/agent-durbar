@@ -35,9 +35,11 @@
 
   /* ---- the page ---- */
   let tip=null, cur=null /* {el,get} shown */, hov=null, foc=null, dismissed=null, binds=[], wired=false;
-  const find=t=>{
+  /* `kb` (a focus event) ignores a bind's `except`: spec 001 FR-270 (issue 1905): a room head gives its tooltip on hover where nothing inside has its own
+     (`except`: the buttons and parts that carry a title), and on the keyboard focus of any control in it */
+  const find=(t,kb)=>{
     if(!t||!t.closest)return null;
-    for(const b of binds){const el=t.closest(b.selector); if(el&&b.root.contains(el))return {el,get:b.text};}
+    for(const b of binds){const el=t.closest(b.selector); if(el&&b.root.contains(el)&&(kb||!b.except||!(t.closest(b.except)&&el.contains(t.closest(b.except)))))return {el,get:b.text};}
     return null;
   };
   function ensure(){
@@ -76,6 +78,8 @@
   function refresh(){
     if(!cur)return;
     if(!cur.el.isConnected||(hov&&!hov.el.isConnected&&!foc)){hov=foc=null;hide();return;}
+    /* the same words on the same element: nothing to say and nothing to measure (placing the box reads the layout; a status update must add no layout reads, spec 097 FR-186; the box already stands where its element is, and a scroll or a resize hides it) */
+    if(tip&&!tip.hidden&&cur.get(cur.el)===tip.textContent)return;
     show(cur);
   }
   const focusVisible=el=>{try{return el.matches(':focus-visible');}catch(e){return true;}};
@@ -83,7 +87,9 @@
     if(wired)return; wired=true;
     document.addEventListener('pointerover',e=>{
       if(e.pointerType==='touch')return;
-      const f=find(e.target); if(!f||(hov&&hov.el===f.el))return;
+      const f=find(e.target);
+      if(!f){if(hov&&hov.el.contains(e.target)){hov=null;update();}return;} /* onto a part with its own tooltip (`except`): this one steps back */
+      if(hov&&hov.el===f.el)return;
       hov=f; update();
     },true);
     document.addEventListener('pointerout',e=>{
@@ -91,17 +97,18 @@
       hov=null; if(dismissed===f.el)dismissed=null; update(); /* a new visit is a new intent */
     },true);
     document.addEventListener('focusin',e=>{
-      const f=find(e.target); if(!f||!focusVisible(f.el))return;
+      const f=find(e.target,true); if(!f||!focusVisible(e.target))return; /* the focused control, which may sit inside the bound element (spec 001 FR-270) */
       foc=f; update();
     },true);
     document.addEventListener('focusout',e=>{
-      const f=find(e.target); if(!f||!foc||foc.el!==f.el)return;
+      const f=find(e.target,true); if(!f||!foc||foc.el!==f.el)return;
       foc=null; if(dismissed===f.el)dismissed=null; update();
     },true);
     document.addEventListener('click',e=>{const f=find(e.target); if(!f)return; dismissed=f.el; hide();},true);
     document.addEventListener('keydown',e=>{
       if(e.key!=='Escape'||!cur||!tip||tip.hidden)return;
-      dismissed=cur.el; hide(); e.stopPropagation(); /* WCAG 1.4.13: dismissible; this Escape is used up */
+      const byPointer=!!hov&&cur===hov; /* a tooltip the pointer is resting on (the pointer stays where a click left it) must not take the Escape that closes a chat or a menu: it is hidden here and the key goes on; a keyboard focus tooltip is dismissed and the key is used up (spec 001 FR-270, 2026-11-19) */
+      dismissed=cur.el; hide(); if(!byPointer)e.stopPropagation(); /* WCAG 1.4.13: dismissible */
     },true);
     window.addEventListener('scroll',()=>{if(cur)hide();},true);
     window.addEventListener('blur',()=>{hov=foc=dismissed=null;hide();});
@@ -110,7 +117,7 @@
   /* `text(el)` returns the tooltip text for an element that matches `selector` inside `rootEl` ('' for none) */
   function bind(rootEl,o){
     if(!rootEl||!o||!o.selector||typeof o.text!=='function')return;
-    if(!binds.some(b=>b.root===rootEl&&b.selector===o.selector))binds.push({root:rootEl,selector:o.selector,text:o.text});
+    if(!binds.some(b=>b.root===rootEl&&b.selector===o.selector))binds.push({root:rootEl,selector:o.selector,text:o.text,except:o.except||''});
     wire();
   }
   return {statusText,place,bind,refresh,hide,GAP,MARGIN};

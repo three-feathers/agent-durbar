@@ -75,7 +75,7 @@ module.exports = async (ctx) => {
   assert.ok(/could not be switched on/.test(await js(`[...document.querySelectorAll('.toast.with-act')].map(t=>t.textContent).join('|')`)), 'the toast says it too, with a Show button');
   assert.strictEqual(await js(`document.querySelector('#floorsBtn .fl-cnt').textContent.trim()`), '2/3', 'the floor stayed off');
   // Show tries again; while it still fails the person is told, not left with nothing
-  await js(`window.__ann=[];[...document.querySelectorAll('.toast.with-act .toast-act')].find(b=>/Show/.test(b.textContent)).click()`);
+  await js(`window.__ann=[];[...document.querySelectorAll('.toast.with-act')].find(t=>/could not be switched on/.test(t.textContent)).querySelector('.toast-act').click()`); // the failed switch-on's own toast (spec 001 FR-272: an earlier "already added" toast has a Show too)
   await until(`window.__ann.some(a=>/still could not be switched on/.test(a))`, 4000);
   assert.ok(await js(`window.__ann.some(a=>/still could not be switched on/.test(a))`), 'a second failure is said too');
   assert.strictEqual(await js(`document.querySelector('#floorsBtn .fl-cnt').textContent.trim()`), '2/3', 'the floor is still off');
