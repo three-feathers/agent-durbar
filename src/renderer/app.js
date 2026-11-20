@@ -7130,25 +7130,34 @@ function settlePlan(a,action){
    Otherwise, or when the redact module or the renderer is missing, or the render is empty, the card shows the masked plain text of the decoded
    question (fail closed). The raw question is never shown. */
 const Q_UNSAFE='This question cannot be shown safely. Choose an option or write your answer.';
-/* character references, decoded without any HTML parser: numeric (decimal or hex, any case, leading zeros, with or without `;`) and a small table of names (the
-   five basic ones, no-break space and the hidden characters the masks know, src/shared/redact.ts HIDDEN_ENTITY); a code point out of range is U+FFFD as in HTML.
-   A reference left over (an unknown name, a name without `;`, a C1 number HTML maps elsewhere) makes qRefsLeft true and the card falls back (fail closed). */
-const Q_NAMED={amp:'&',AMP:'&',lt:'<',LT:'<',gt:'>',GT:'>',quot:'"',QUOT:'"',apos:"'",nbsp:'\u00a0',shy:'\u00ad',zwnj:'\u200c',zwj:'\u200d',lrm:'\u200e',rlm:'\u200f',
-  ZeroWidthSpace:'\u200b',NegativeVeryThinSpace:'\u200b',NegativeThinSpace:'\u200b',NegativeMediumSpace:'\u200b',NegativeThickSpace:'\u200b',NoBreak:'\u2060',
-  af:'\u2061',ApplyFunction:'\u2061',it:'\u2062',InvisibleTimes:'\u2062',ic:'\u2063',InvisibleComma:'\u2063'};
+/* character references, decoded without any HTML parser: numeric (decimal or hex, any case, leading zeros, with or without `;`) and a table of names: every
+   name HTML has for an ASCII punctuation character, the hidden characters the masks know (src/shared/redact.ts HIDDEN_ENTITY), the dashes and hyphens and a
+   few common signs (checked against the HTML list in the tests). A code point out of range is U+FFFD as in HTML.
+   A reference left over (an unknown `&name;`, a C1 number HTML maps elsewhere) makes qRefsLeft true and the card falls back (fail closed); a bare `&` before a
+   letter (R&D, a&b.ts, ?a=1&b=2) is ordinary text, and what the browser still decodes is caught by the checks after rendering. */
+const Q_NAMED=Object.assign(Object.create(null),{af:'\u2061',AMP:'&',amp:'&',apos:'\'',ApplyFunction:'\u2061',ast:'*',bsol:'\\',bull:'\u2022',bullet:'\u2022',CenterDot:'\u00b7',centerdot:'\u00b7',circledR:'\u00ae',CloseCurlyDoubleQuote:'\u201d',CloseCurlyQuote:'\u2019',colon:':',comma:',',commat:'@',COPY:'\u00a9',copy:'\u00a9',dash:'\u2010',deg:'\u00b0',DiacriticalGrave:'`',dollar:'$',equals:'=',euro:'\u20ac',excl:'!',grave:'`',GT:'>',gt:'>',Hat:'^',hellip:'\u2026',horbar:'\u2015',hyphen:'\u2010',ic:'\u2063',InvisibleComma:'\u2063',InvisibleTimes:'\u2062',it:'\u2062',laquo:'\u00ab',larr:'\u2190',lbrace:'{',lbrack:'[',lcub:'{',ldquo:'\u201c',LeftArrow:'\u2190',leftarrow:'\u2190',lowbar:'_',lpar:'(',lrm:'\u200e',lsqb:'[',lsquo:'\u2018',LT:'<',lt:'<',mdash:'\u2014',midast:'*',middot:'\u00b7',minus:'\u2212',mldr:'\u2026',nbsp:'\u00a0',ndash:'\u2013',NegativeMediumSpace:'\u200b',NegativeThickSpace:'\u200b',NegativeThinSpace:'\u200b',NegativeVeryThinSpace:'\u200b',NoBreak:'\u2060',NonBreakingSpace:'\u00a0',num:'#',OpenCurlyDoubleQuote:'\u201c',OpenCurlyQuote:'\u2018',percnt:'%',period:'.',plus:'+',quest:'?',QUOT:'"',quot:'"',raquo:'\u00bb',rarr:'\u2192',rbrace:'}',rbrack:']',rcub:'}',rdquo:'\u201d',rdquor:'\u201d',REG:'\u00ae',reg:'\u00ae',RightArrow:'\u2192',rightarrow:'\u2192',rlm:'\u200f',rpar:')',rsqb:']',rsquo:'\u2019',rsquor:'\u2019',semi:';',ShortLeftArrow:'\u2190',ShortRightArrow:'\u2192',shy:'\u00ad',slarr:'\u2190',sol:'/',srarr:'\u2192',times:'\u00d7',TRADE:'\u2122',trade:'\u2122',UnderBar:'_',verbar:'|',vert:'|',VerticalLine:'|',ZeroWidthSpace:'\u200b',zwj:'\u200d',zwnj:'\u200c'});
 const Q_REF=/&(?:#(?:[xX]([0-9A-Fa-f]+)|([0-9]+));?|([A-Za-z][A-Za-z0-9]{0,31});)/g;
 function qRef(all,hex,dec,name){
-  if(name!=null)return Object.prototype.hasOwnProperty.call(Q_NAMED,name)?Q_NAMED[name]:all;
+  if(name!=null)return Q_NAMED[name]!==undefined?Q_NAMED[name]:all;
   const d=(hex!=null?hex:dec).replace(/^0+/,''), cp=d.length>8?Infinity:parseInt(d||'0',hex!=null?16:10);
   if(cp>=0x80&&cp<=0x9f)return all; /* HTML reads these as other characters: left, so the card falls back */
   return String.fromCodePoint(cp===0||cp>0x10ffff||(cp>=0xd800&&cp<=0xdfff)?0xfffd:cp);
 }
 function qDecodeRefs(t){let x=t;for(let i=0;i<8;i++){const y=x.replace(Q_REF,qRef);if(y===x)return x;x=y;}return null;}
-const qRefsLeft=t=>/&(?:[A-Za-z]|#[0-9]|#[xX][0-9A-Fa-f])/.test(t);
+const qRefsLeft=t=>/&(?:[A-Za-z][A-Za-z0-9]{0,31};|#[0-9]|#[xX][0-9A-Fa-f])/.test(t);
+/* a reference still sitting between token characters (an unknown `&name;`, a C1 number, or a known name written without its `;`) would show its own text between
+   two pieces of a value, and no mask joins across it: the whole run is masked (12 characters or more, so "AT&T" or "R&D" stay) */
+const Q_RUN=/[A-Za-z0-9_-]+(?:&(?:#[xX]?[0-9A-Fa-f]{1,8};?|[A-Za-z][A-Za-z0-9]{0,31};?)[A-Za-z0-9_-]+)+/g;
+const qMaskRefRuns=t=>t.replace(Q_RUN,run=>{
+  if(run.length<12)return run;
+  const between=[...run.matchAll(/&(#[xX]?[0-9A-Fa-f]{1,8};?|([A-Za-z][A-Za-z0-9]{0,31})(;?))/g)].some(m=>m[1][0]==='#'||m[3]===';'||Object.keys(Q_NAMED).some(k=>m[2].startsWith(k)));
+  return between?'[redacted]':run;
+});
 const qRunsIn=(shown,m)=>(shown.match(/[A-Za-z0-9_-]{6,}/g)||[]).every(w=>m.includes(w)); /* a run the raw reading masked (a value the renderer split or wrapped) is missing from m */
 function qMdHTML(raw){
-  const s=qDecodeRefs(String(raw==null?'':raw));
-  if(s==null)return '<p>'+esc(Q_UNSAFE)+'</p>'; /* references nested past any sane depth: a fixed phrase */
+  const s0=qDecodeRefs(String(raw==null?'':raw));
+  if(s0==null)return '<p>'+esc(Q_UNSAFE)+'</p>'; /* references nested past any sane depth: a fixed phrase */
+  const s=qMaskRefRuns(s0);
   const m=safeMask(s), plain=()=>'<p>'+esc(m)+'</p>';
   const r=RED?RED.redact(s):null;
   if(typeof r!=='string'||!window.DurbarMD||/!\[/.test(s)||qRefsLeft(s))return plain(); /* an image: the card needs none, and the renderer's own stand-in words could sit inside a value */
@@ -10450,7 +10459,7 @@ if(pendingOpen&&demoOn){openPanel(pendingOpen,false);pendingOpen=null;}
 const settleNow=()=>{if(!agentsListed||!window.__durbarSimReplayed||baselineQueued||baselineAsking)return false;if(renderQueued){renderQueued=false;renderAll();}return true;};
 /* simulator drivers load with simfreeze=1: the desk glow then holds still (FR-178: the geometry and screenshot checks measure boxes, so no zoom may be mid-way); the unread driver opts back in with hlmotion=1 to test the motion itself */
 if(SIM&&qs.get('simfreeze')==='1'&&qs.get('hlmotion')!=='1')document.documentElement.classList.add('hl-still');
-if(SIM)window.__durbarSimUi={qMdHTML, /* spec 052 (issue 1927): check-question-markdown renders a question built from invented pieces through the card's own renderer */brain:{host:()=>BRAIN_H,state:()=>BRAIN_STATE,why:()=>BRAIN_WHY,flag:BRAIN_PREVIEW,queued:()=>BRAIN_Q.length}, /* spec 106 T005: check-brain-draw reads the floating host's frame counts */announce,renderRestoreStrip,afArrivalPrio,afTracker:{ids:()=>AFT.ids(),pending:()=>AFT.pendingList().map(v=>v.id+'|'+v.kind),quiet:()=>AFT.isQuiet,follow:id=>AFT.follow(id)}, /* spec 005 FR-237: drivers only: what Auto-follow follows, holds and whether it is quiet; follow() makes an agent followed without a hand open (which would drop the others, spec 052 FR-185) */ afNotice:{ms:v=>{AF_NOTICE_MS=Math.max(100,Number(v)||3000);return AF_NOTICE_MS;},on:v=>{setAutoFollowOn(!!v);return AF_ON;},shown:()=>!!AF_NOTICE}, /* spec 052 FR-239: drivers only: the notice's length, Auto-follow without Settings */swapCardOptions:id=>{const c=byId(id)&&pendingCardOf(byId(id));if(!c)return 0;const os=[...c.querySelectorAll('.q-opt')];os.forEach(b=>b.replaceWith(b.cloneNode(true)));return os.length;}, /* spec 052 FR-197: the live card rebuilds its options (the card stays, the old buttons are gone); a driver checks that a row's old option answers nothing */
+if(SIM)window.__durbarSimUi={qMdHTML,qSafeMask:t=>safeMask(t),qNames:()=>Object.keys(Q_NAMED).map(k=>k+'='+Q_NAMED[k]), /* spec 052 (issue 1927): check-question-markdown renders a question built from invented pieces through the card's own renderer */brain:{host:()=>BRAIN_H,state:()=>BRAIN_STATE,why:()=>BRAIN_WHY,flag:BRAIN_PREVIEW,queued:()=>BRAIN_Q.length}, /* spec 106 T005: check-brain-draw reads the floating host's frame counts */announce,renderRestoreStrip,afArrivalPrio,afTracker:{ids:()=>AFT.ids(),pending:()=>AFT.pendingList().map(v=>v.id+'|'+v.kind),quiet:()=>AFT.isQuiet,follow:id=>AFT.follow(id)}, /* spec 005 FR-237: drivers only: what Auto-follow follows, holds and whether it is quiet; follow() makes an agent followed without a hand open (which would drop the others, spec 052 FR-185) */ afNotice:{ms:v=>{AF_NOTICE_MS=Math.max(100,Number(v)||3000);return AF_NOTICE_MS;},on:v=>{setAutoFollowOn(!!v);return AF_ON;},shown:()=>!!AF_NOTICE}, /* spec 052 FR-239: drivers only: the notice's length, Auto-follow without Settings */swapCardOptions:id=>{const c=byId(id)&&pendingCardOf(byId(id));if(!c)return 0;const os=[...c.querySelectorAll('.q-opt')];os.forEach(b=>b.replaceWith(b.cloneNode(true)));return os.length;}, /* spec 052 FR-197: the live card rebuilds its options (the card stays, the old buttons are gone); a driver checks that a row's old option answers nothing */
   chatTrimNow:()=>chatTrimPending(false), /* spec 005 FR-238: trim the chats waiting for a frame now (a burst with no frame between) */
   hiddenTrimTimer:()=>({on:!!hiddenTrimT,ms:TRIM_HIDDEN_MS}),
   helperState:(id,st)=>{const h=agents.find(x=>x.id===id&&x.parent);if(!h||!['working','thinking','waiting','error','limit','done','idle'].includes(st))return false;h.state=st==='limit'?'waiting':st;h.limit=st==='limit';h.paused=false;layoutKey='';renderAll();return true;}, /* spec 097 T335 (issue 1642): drivers only: a helper's state the simulator never sends (waiting, limit), for the kids on the desk */

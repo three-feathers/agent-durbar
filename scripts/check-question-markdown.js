@@ -20,6 +20,11 @@
  *   6. app.js qMdHTML: the fallback shows the raw question (`plain=()=>'<p>'+esc(m)+'</p>'` -> `plain=()=>'<p>'+esc(String(raw))+'</p>'`)  => "definition only"
  *   7. app.js qMdHTML: render images again (`||/!\[/.test(s)||qRefsLeft(s))` -> `||qRefsLeft(s))`)  => "an image"
  *   8. app.js qMdHTML: drop the cross-check with the raw reading (`if(!qRunsIn(shown,m))return plain();` -> ``)  => "short tail"
+ *   9. app.js qRef: drop the C1 branch (`if(cp>=0x80&&cp<=0x9f)return all;` -> ``)  => "a number HTML reads as another character"
+ *  10. app.js qMdHTML: no masking of reference runs (`const s=qMaskRefRuns(s0);` -> `const s=s0;`)  => "unknown reference between value pieces"
+ *  11. app.js qRefsLeft: any `&` before a letter is a leftover (`/&(?:[A-Za-z][A-Za-z0-9]{0,31};|` -> `/&(?:[A-Za-z]|`)  => "a bare ampersand is ordinary text"
+ *  12. app.js Q_NAMED: drop the names beyond the basic ones (`colon:':',` and `mdash:'\u2014',` removed)  => "known named references keep the Markdown"
+ * Named references are checked against the browser's own reading (a textarea in the test page), never against the card's decoder.
  * Edge questions (review of PR 1933), built from invented pieces and rendered through the card's own qMdHTML (the simulator's bridge): a question
  * made only of a definition, a value split late, a literal mask word as link text, character references, a link address, a link title, character references in every form (and ones nested past the limit or unknown), images
  * (a value's head as alt text with the rest after it, an image then a link, two images; a plain image), a value split late with a short tail. Each must
@@ -88,6 +93,25 @@ module.exports = async (ctx) => {
     assert.ok(!edge.near.piece && !edge.near.strong && !edge.near.empty, `${tag}: a reference the card does not know falls back to masked plain text: ${E('near')}`);
     assert.ok(!edge.href.href, `${tag}: link address: a link whose address holds a value is not rendered: ${E('href')}`);
     assert.ok(!edge.title.piece && !edge.title.title, `${tag}: a link keeps no title: ${E('title')}`);
+    const refs = await js(`(()=>{const U=window.__durbarSimUi,v='gh'+'p_'+'A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8',ch=v.slice(4).match(/.{4}/g);
+      const tx=h=>{const d=document.createElement('template');d.innerHTML=h;return d.content;};
+      const ta=document.createElement('textarea'),bdec=t=>{let x=t;for(let i=0;i<9;i++){ta.innerHTML=x;if(ta.value===x)break;x=ta.value;}return x;}; /* the browser's own reading, as the baseline */
+      const names=['lowbar','UnderBar','equals','period','colon','sol','commat','percnt','ast','midast','grave','DiacriticalGrave','Hat','hyphen','dash','minus','dollar','plus','num','excl','quest','bsol','verbar'];
+      const more=[];for(const nm of names)for(const ref of ['&'+nm+';','&amp;'+nm+';','&ZeroWidthSpace;&'+nm+';','&'+nm])for(const at of [3,4,12,20]){
+        const q='**see** '+v.slice(0,at)+ref+v.slice(at)+' ok',card=tx(U.qMdHTML(q)).textContent,base=U.qSafeMask(bdec(q));if(ch.some(c=>card.includes(c)&&!base.includes(c)))more.push(nm+'|'+ref+'|'+at);}
+      const bad=U.qNames().filter(e=>{const i=e.indexOf('=');return bdec('&'+e.slice(0,i)+';')!==e.slice(i+1);});
+      const md=q=>{const c=tx(U.qMdHTML(q));return !!c.querySelector('strong');};
+      const bare=['**R&D** plan?','**AT&T** or **A&B**?','Eat **M&Ms**?','Edit \x60a&b.ts\x60 **now**?','See [the page](https://example.com/x?a=1&b=2) **first**?'].filter(q=>!md(q));
+      const link=!!tx(U.qMdHTML('See [the page](https://example.com/x?a=1&b=2) **first**?')).querySelector('a[href="https://example.com/x?a=1&b=2"]');
+      const named=['**Copyright** &copy; 2026 &mdash; ok?','**a** &colon; b &lowbar; c &ndash; d &hellip; e &equals; f'].filter(q=>!md(q));
+      const unk=tx(U.qMdHTML('**see** '+v.slice(0,12)+'&zzunknownzz;'+v.slice(12))).textContent;
+      return {more,bad,bare,link,named,unk:{text:unk,piece:ch.some(c=>unk.includes(c)),ref:unk.includes('&zz')},c1:md('**see** &#150; here')};})()`);
+    assert.deepStrictEqual(refs.bad, [], `${tag}: every name in the card's reference table reads as the browser reads it`);
+    assert.deepStrictEqual(refs.more, [], `${tag}: named references inside a value (plain, double-encoded, after a hidden character, without a semicolon) show nothing that masking the raw text hides`);
+    assert.ok(!refs.unk.piece && !refs.unk.ref, `${tag}: unknown reference between value pieces: the run is masked: ${JSON.stringify(refs.unk)}`);
+    assert.ok(!refs.c1, `${tag}: a number HTML reads as another character falls back to masked plain text`);
+    assert.ok(refs.bare.length === 0 && refs.link, `${tag}: a bare ampersand is ordinary text: these keep their Markdown and link: ${JSON.stringify(refs)}`);
+    assert.deepStrictEqual(refs.named, [], `${tag}: known named references keep the Markdown`);
     for (const k of ['img', 'imgLink', 'img2']) assert.ok(!edge[k].piece && !edge[k].stand && !edge[k].empty, `${tag}: an image question (${k}) shows masked plain text with no piece of the value: ${E(k)}`);
     assert.ok(!edge.pic.stand && !edge.pic.empty, `${tag}: an image: a question with an image shows plain text, never the image stand-in: ${E('pic')}`);
     assert.ok(!edge.tail.piece && edge.tail.masks === 1 && !edge.tail.strong, `${tag}: short tail: a value split late with a short tail falls back to masked plain text: ${E('tail')}`);
