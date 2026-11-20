@@ -244,6 +244,17 @@ The slide is short and soft. It never blocks input and never hides a waiting age
 
 ## Changes
 
+### 2026-11-20: a hint says which floor the pointer is on (issue #1958, FR-085, T051)
+
+Owner request (Ruben, 2026-11-20): hovering a floor should say which floor it is. He chose both parts below. Details decided by the coordinator under Ruben's delegation.
+
+- **FR-085**: With two or more floors on (the lift shows), the floor gets a hint on hover:
+  - **(a) The office.** The empty floor area of a floor screen (not a room head, desk, agent or any control, which keep their own tips) shows the tooltip "<floor name>, floor <n> of <m>", where <n> is the number on that floor's lift button and <m> the floors that are on. In the All floors view (FR-031) it names the floor under the pointer. It uses the office's existing tooltip mechanism, adds no pointer handler per frame, and is not announced by screen readers: the floor is already in the lift's accessible names and the floor-change announcement.
+  - **(b) The lift.** A floor button's tooltip (FR-007) starts with the same "<floor name>, floor <n> of <m>", adds " (you are here)" on the current floor (not in the All floors view, where no floor button is current), and then, on a new line, the attention words of FR-015 as today. The accessible name does not change: `aria-current` already says it.
+  - With one floor on, or floors off, nothing changes.
+- **Reused**: the lift's label code in `renderLift()` and `topDown()` numbering in `floornav.js`; the office tooltip mechanism that room heads use.
+- **Evidence**: to be filled in by T051.
+
 ### 2026-10-31: natural floor numbering in the flat lift and All floors (Q-D closed, T050)
 
 Q-D (below) is answered yes, so the flat lift and All floors now draw the building the way spec 097 FR-116 draws it in Real office, and the two modes agree about which way is up. This replaces Q-A and D3 (Paco, 2026-10-27) with Paco's agreement. FR-006, FR-011, FR-031 and FR-032 and User Story text are amended in place.
