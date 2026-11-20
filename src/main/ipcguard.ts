@@ -7,8 +7,11 @@
  * Spec 010 FR-023 (2026-10-22): in simulator mode (`DURBAR_SIM`) every channel except `SIM_OPEN_CHANNELS` is refused here too,
  * before its handler runs, so neither the window nor a driver's page script can reach a real agent app or the real profile.
  * FR-029: this is the only file in src/ that may use `ipcMain` or `webContents.ipc` (`test:ipcchannels`). FR-031: the mode is main's.
+ *
+ * Spec 045 FR-066 (issue #1682): every `ipcHandle` handler runs inside `answer`, so an unexpected throw reaches the window only as `IPC_FAILED`.
  */
 import { redact } from '../shared/redact';
+import { ShownError } from '../shared/shownerror';
 import { ipcMain } from 'electron';
 import type { IpcMainEvent, IpcMainInvokeEvent } from 'electron';
 import * as path from 'path';
@@ -53,8 +56,28 @@ export function ipcHandle<A extends unknown[]>(channel: string, fn: (e: IpcMainI
   ipcMain.handle(channel, (e, ...args) => {
     if (!fromAppFrame(e)) throw new Error('Agent Durbar refused a call that did not come from its own window.');
     if (!simAllows(channel)) throw new Error(simRefusal(channel));
-    return fn(e, ...(args as A));
+    return answer(channel, () => fn(e, ...(args as A)));
   });
+}
+
+/** Spec 045 FR-066 (issue #1682): what the window gets for any throw that is not a `ShownError`. Fixed: nothing of the thrown value. */
+export const IPC_FAILED = 'Agent Durbar could not do that: something unexpected went wrong. The details stay in its own log.';
+
+/**
+ * Spec 045 FR-066: runs one handler. A value or a promise comes back as it is; a throw or a rejection is logged in main through `redact`
+ * (the masked log line, spec 012 FR-080), and the window gets a new `Error` with one message: a `ShownError`'s own text, masked again, or
+ * `IPC_FAILED`. The thrown value itself, its stack, its fields and its cause never cross: a thrown value may carry a token, a path or session data.
+ */
+export function answer(channel: string, run: () => unknown): unknown {
+  const fail = (err: unknown): never => {
+    let detail: string;
+    try { detail = err instanceof Error ? (err.stack ?? `${err.name}: ${err.message}`) : `a thrown ${err === null ? 'null' : typeof err}: ${String(err)}`; } catch { detail = 'a thrown value that cannot be read'; }
+    console.warn(redact(`[ipc] "${channel}" failed: ${detail}`));
+    throw new Error(err instanceof ShownError ? redact(err.message) : IPC_FAILED);
+  };
+  let out: unknown;
+  try { out = run(); } catch (err) { return fail(err); }
+  return out !== null && typeof out === 'object' && typeof (out as { then?: unknown }).then === 'function' ? Promise.resolve(out).catch(fail) : out;
 }
 
 /** `ipcMain.on` with the sender check: a message from anywhere else is dropped (and, under the simulator, any channel not open). */

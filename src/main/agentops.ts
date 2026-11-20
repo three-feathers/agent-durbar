@@ -11,6 +11,7 @@ import { answerTooLong, MAX_ANSWER, readAnswerPayload } from '../adapters/questi
 import type { AgentInfo, PermMode, SessionOptions } from '../shared/api';
 import { adapterOf, modeForSession } from './folders';
 import type { FolderStore, SavedFolder } from './folders';
+import { ShownError } from '../shared/shownerror';
 
 export interface OpsDeps {
   agents: Map<string, AgentInfo>;
@@ -238,7 +239,7 @@ export function startModeOf(o: Pick<StartOptions, 'permissionMode' | 'allow' | '
 export async function startGuardOp(d: StartGuardDeps, ad: Pick<AgentAdapter, 'id' | 'start'>, opts: StartOptions): Promise<{ result: string; note?: string }> {
   const ask = { mode: startModeOf(opts), model: opts.model ?? '' };
   const no = await d.refusal(ad.id, ask);
-  if (no) throw new Error(no);
+  if (no) throw new ShownError(no);
   const note = await d.advice?.(ad.id, ask);
   const result = await ad.start(opts);
   if (note) d.onNote?.(note, result);
@@ -320,13 +321,13 @@ export async function scheduledSendOp(d: ScheduledSendDeps, prompt: string, s: {
   // review of PR #1080 (item 4): a gate that throws never loses the run: the prompt goes
   if (d.gate && (await Promise.resolve().then(() => d.gate?.(a.id)).catch(() => 'go' as const)) === 'stopped') {
     d.agentState.noteNotSent?.(a.id);
-    throw new Error('Not sent: stopped while MCP sign-ins were reconnecting.');
+    throw new ShownError('Not sent: stopped while MCP sign-ins were reconnecting.');
   }
   try {
     await d.ensureLive(a);
     if (d.stillWanted && !d.stillWanted()) {
       d.agentState.noteNotSent?.(a.id); // not an error: the agent is ready again
-      throw new Error(NOT_SENT_STOPPED);
+      throw new ShownError(NOT_SENT_STOPPED);
     }
     d.toWindow('agent:event', { type: 'user', sessionId: a.id, timestamp: d.now(), text: prompt });
     d.toWindow('schedule:ran', { agentId: a.id, scheduleId: s.id, every: s.every, at: s.at, rule: s.rule });

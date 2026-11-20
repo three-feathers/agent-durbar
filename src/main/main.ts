@@ -140,6 +140,7 @@ import { profileDir } from './profiledir';
 import { simClockSetup } from './simclock';
 import { debugSwitchesToRemove } from './debugguard';
 import { aumidToSet } from './aumid';
+import { ShownError } from '../shared/shownerror';
 
 // Spec 008 FR-038: no DevTools endpoint in a packaged build. No fuse covers these switches; removing them before ready is shown to work on the packed Linux app (npm run check:fuses-launch).
 for (const sw of debugSwitchesToRemove(app.isPackaged)) app.commandLine.removeSwitch(sw);
@@ -466,10 +467,10 @@ async function addWorkspace(
   const effort = asEffort(opts.effort);
   const wsr = resolveWorkspaceCwd(workspace);
   const picked = adapterForAdd(opts.adapterId, (() => { const f = folderStore?.get(wsr.workspaceFile ?? wsr.cwd); return f ? adapterOf(f) : undefined; })(), (i) => registry.has(i), registry.defaultId, opts.readyIds && ((i) => opts.readyIds!.has(i)));
-  if ('error' in picked) throw new Error(picked.error); // nothing started, nothing written
+  if ('error' in picked) throw new ShownError(picked.error); // nothing started, nothing written
   const adapterId = picked.id;
   const blocked = updateBlocks(adapterId, false); // a new session is never live yet
-  if (blocked) throw new Error(blocked); // spec 081 FR-013: nothing starts while its app updates
+  if (blocked) throw new ShownError(blocked); // spec 081 FR-013: nothing starts while its app updates
   const ad = router.instance(adapterId);
   const draft = infoFor(workspace, permMode, '', model, effort, {}, ad);
   // Cap: explicit choice (null = none) > the folder's saved cap > the global default (spec 011); a dollar cap only when chosen (FR-150).
@@ -501,7 +502,7 @@ async function ensureLive(a: AgentInfo, opts: { quiet?: boolean } = {}): Promise
   if (!ad) throw new Error('unknown agent');
   if (ad.isLive(a.id)) return;
   const blocked = updateBlocks(router.adapterIdOf(a.id) ?? a.adapterId, ad.isLive(a.id)); // spec 081 FR-013: a resume is a start too; a session that is still open is not touched
-  if (blocked) throw new Error(blocked);
+  if (blocked) throw new ShownError(blocked);
   let p = starting.get(a.id);
   if (!p) {
     p = (async () => {
