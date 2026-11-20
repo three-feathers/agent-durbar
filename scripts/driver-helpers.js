@@ -291,12 +291,22 @@ function helpers(ctx) {
   /**
    * Spec 052 (issue #1658): a precheck for a driver that needs `:focus-visible`, which never matches in a page without the OS focus. Asks for the focus
    * through `focusPage` (the one focus step, repeated up to `ms`, default 2000, as it can arrive late) and fails at once, with `tag`, when the page still
-   * reports none, instead of the first `:focus-visible` wait timing out as a product assertion. `expr` (default `document.hasFocus()`) is the reading; a mutant may pass `false`.
+   * reports none, instead of the first `:focus-visible` wait timing out as a product assertion. `expr` (default `document.hasFocus()`) is the reading; a mutant may pass `false`. `host: true` also waits for the host's own focus (`win.isFocused()` and `webContents.isFocused()`, issue #1239).
    */
   const needFocus = async (tag, o = {}) => {
     const ms = o.ms || 2000;
     const had = await focusPage({ ms });
     if (!(had && (!o.expr || await w.until(o.expr, ms)))) require('assert').fail(`${tag}: the window does not have focus (document.hasFocus() is false): bring the app to the front; the machine may have no key window`);
+    /* spec 008 (issue #1239): document.hasFocus() stays true while the window is NOT the key window (macOS: another app in front), so a driver that asserts the host's own focus (webContents.isFocused()) asks for it here, by name, with host: true; a missing key window is not something show(), focus() or app.focus() can fix on macOS */
+    if (o.host) {
+      const hostOk = () => { try { return (typeof ctx.win.isFocused !== 'function' || !!ctx.win.isFocused()) && (typeof wc().isFocused !== 'function' || !!wc().isFocused()); } catch { return false; } };
+      const end = Date.now() + ms;
+      while (!hostOk() && Date.now() < end) {
+        try { if (ctx.win.show) ctx.win.show(); if (ctx.win.focus) ctx.win.focus(); wc().focus(); } catch { /* the window is going away: the guard reports it */ }
+        await ctx.sleep(100);
+      }
+      if (!hostOk()) require('assert').fail(`${tag}: the window is not the key window (win.isFocused() is false while document.hasFocus() is true): another app has the OS focus and macOS does not give it back to a test window; close or move what is in front, or run this check alone (issue 1239)`);
+    }
   };
   const loseFocus = async () => { await releaseFocus(); try { ctx.win.blur(); } catch { /* gone */ } return w.until('!document.hasFocus()', 4000); };
   /** Give another web contents (a Browser tab's view) the real focus and wait until it reports it; false when it never does. */

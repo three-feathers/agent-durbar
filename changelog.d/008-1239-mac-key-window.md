@@ -1,0 +1,1 @@
+- **A macOS test window that is not in front now says so** (test tooling, spec 008): `check-browser-tabs` names the missing key window at once and runs alone (#1239).

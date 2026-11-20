@@ -397,16 +397,17 @@ console.log('braindraw: ok');
 }
 console.log('braindraw: page load ok');
 
-// ---- the floating host (host.js) on a minimal fake page: name masking, Hide, blur, forgetting, the cap, the Motion button's focus
+// ---- the dock (dock.js, T006) on a minimal fake page: name masking, the open chat only, legend, roomy, hidden contexts, blur, forgetting, the cap, the Motion button's focus, FR-086's inputs on every text
 {
   // eslint-disable-next-line @typescript-eslint/no-var-requires
-  const H = load(path.join(DIR, 'host.js'));
+  const H = load(path.join(DIR, 'dock.js'));
   // eslint-disable-next-line @typescript-eslint/no-var-requires
   const R = require('../src/shared/redact'); const BS = require('../src/shared/brainstate'); const SF = require('../src/shared/brainsurface');
   const root = path.join(__dirname, '..', '..', 'src', 'renderer');
   const USAGE = load(path.join(root, 'usagetotals.js')), COST = load(path.join(root, 'costtable.js'));
   const mask = { ...R, units: { validNano: USAGE.validNano, AIU_USD: COST.AIU_USD, money: COST.money, creditsWord: 'AIU', estimateWord: 'Claude (est.)' } };
   const GH = 'ghp_' + 'A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8';
+  const SK = 'sk-live-' + 'a1B2c3D4e5F6g7H8i9J0k1L2', SESS = 'SESS_' + 'q9W8e7R6t5Y4u3I2o1P0aSdFg';
   type Fn = (...a: unknown[]) => void;
   function fakeEl(): Record<string, unknown> {
     const kids = new Map<string, Record<string, unknown>>(), classes = new Set<string>(), attrs: Record<string, string> = {}, listeners: Record<string, Fn[]> = {};
@@ -437,35 +438,80 @@ console.log('braindraw: page load ok');
       requestAnimationFrame: (f: Fn) => rafs.push(f), cancelAnimationFrame: () => undefined,
       setTimeout: (f: Fn) => timers.push(f), clearTimeout: () => undefined, addEventListener: (k: string, f: Fn) => { (winL[k] = winL[k] || []).push(f); },
     };
-    const host = H.start({ doc, win, mask, now: () => clock, name: nameOf });
+    doc.body.classes.add('panel-open'); /* a chat is open: the dock lives in its right rail */
+    const host = H.start({ doc, win, mask, now: () => clock, name: nameOf, folder: () => '/home/ana/work/x' });
+    host.mount({ appendChild: () => undefined }); host.show('a');
     const flush = (): void => { for (let i = 0; i < 50 && timers.length; i++) timers.splice(0).forEach((f) => f()); };
     const ev = (n: number, tool = 'bash'): unknown => ({ type: 'toolCall', sessionId: 'x', callId: 'c' + n, tool, phase: 'start', args: { command: 'ls' }, timestamp: clock });
     return { host, doc, win, docL, winL, rootEl, observers, mqReduce, mqForced, flush, ev, tick: (ms: number) => { clock += ms; }, rafs };
   }
   const q = (h: { el: Record<string, unknown> }, s: string): { attrs: Record<string, string>; listeners: Record<string, Fn[]> } => (h.el.querySelector as (s: string) => never)(s);
 
+  const txt = (h: { el: Record<string, unknown> }, sel: string): string => String((h.el.querySelector as (s: string) => Record<string, unknown>)(sel).textContent);
+  const html = (h: { el: Record<string, unknown> }, sel: string): string => String((h.el.querySelector as (s: string) => Record<string, unknown>)(sel).innerHTML);
+  const drain = (p: { rafs: Fn[]; tick: (ms: number) => void }): void => { for (let i = 0; i < 40 && p.rafs.length; i++) { p.tick(17); p.rafs.splice(0).forEach((f) => f()); } };
+
   // the region's name is masked like every other surface (FR-021, FR-085)
   {
     const p = page(() => 'Ada ' + GH + ' ‮\nx'); p.host.feed('a', 'x', p.ev(1)); p.flush();
     const label = (p.host.el.attrs as Record<string, string>)['aria-label'];
     assert.ok(label.startsWith('Brain view, Ada') && !/ghp_|[‪-‮⁦-⁩\n]/.test(label), 'the region label holds no token, bidi control or line break: ' + label);
+    assert.ok(!/ghp_/.test(txt(p.host, '.bv-title')), 'the title holds no token');
   }
-  // Hide tells the renderer: nothing is drawn while folded, one frame when shown again
+  // FR-030: the dock shows the OPEN chat's agent; another agent's events wait for its chat
   {
-    const p = page(() => 'Ada'); p.host.feed('a', 'Ada', p.ev(1)); p.flush(); while (p.rafs.length) { p.tick(17); p.rafs.splice(0).forEach((f) => f()); }
-    const fold = q(p.host, '[data-bv=fold]'), btn = (p.host.el.querySelector as (s: string) => Record<string, unknown>)('[data-bv=fold]');
-    fold.listeners.click[0]({ currentTarget: btn });
+    const p = page((id) => (id === 'b' ? 'Bo' : 'Ada'));
+    p.host.feed('a', 'Ada', p.ev(1)); p.flush(); drain(p);
+    assert.ok(/Shell/.test(txt(p.host, '.bv-c1')), 'the open chat\'s step is on the card');
     const f = p.host.draw.stats.frames;
-    p.host.feed('a', 'Ada', p.ev(2, 'view')); p.flush(); p.tick(300); p.rafs.splice(0).forEach((fn) => fn());
-    assert.strictEqual(p.host.draw.stats.frames, f, 'folded (Hide): the renderer draws no frame');
-    assert.strictEqual(p.rafs.length, 0, 'folded: no loop');
-    fold.listeners.click[0]({ currentTarget: btn });
-    assert.strictEqual(p.host.draw.stats.frames, f + 1, 'shown again: the settled state is drawn once');
+    p.host.feed('b', 'Bo', { type: 'toolCall', sessionId: 'b', callId: 'b1', tool: 'view', phase: 'start', args: { path: 'src/b.ts' }, timestamp: 1 }); p.flush(); drain(p);
+    assert.strictEqual(p.host.shown(), 'a', 'open chat only: another agent\'s event does not take the dock (the floating host showed the most recent agent)');
+    assert.ok(/Shell/.test(txt(p.host, '.bv-c1')) && p.host.draw.stats.frames === f, 'open chat only: nothing of the other agent is painted');
+    p.host.show('b');
+    assert.ok(/Read/.test(txt(p.host, '.bv-c1')) && /b\.ts/.test(txt(p.host, '.bv-c2')) && txt(p.host, '.bv-title') === 'Brain · Bo', 'a switch of chat paints that agent\'s kept state at once');
+    p.host.show('c');
+    assert.strictEqual(txt(p.host, '.bv-c1'), 'Waiting for the first step', 'an agent with no event yet: the waiting card (edge case)');
+    assert.strictEqual(txt(p.host, '.bv-sum'), 'No steps this turn', 'and no steps');
+  }
+  // FR-025: Latest steps: "N steps this turn · M earlier" and the newest 24 as text, from turnMapLine (paths relative to the folder)
+  {
+    const p = page(() => 'Ada');
+    for (let i = 1; i <= 30; i++) { p.host.feed('a', 'Ada', { type: 'toolCall', sessionId: 'a', callId: 'r' + i, tool: 'view', phase: 'start', args: { path: '/home/ana/work/x/src/f' + i + '.ts' }, timestamp: i }); p.host.feed('a', 'Ada', { type: 'toolCall', sessionId: 'a', callId: 'r' + i, tool: 'view', phase: 'complete', output: 'x', timestamp: i }); p.tick(300); p.flush(); }
+    assert.strictEqual(txt(p.host, '.bv-sum'), '24 steps this turn · 6 earlier', 'the summary counts the shown and the earlier steps');
+    const list = html(p.host, '.bv-list');
+    assert.strictEqual((list.match(/<li>/g) || []).length, 24, 'the list holds the 24 newest steps');
+    assert.ok(list.includes('<li>30 Read · src/f30.ts · done</li>') && !list.includes('f6.ts'), 'newest last, folder-relative, the oldest left out: ' + list.slice(-80));
+    assert.ok(!/\/home\/ana/.test(list), 'no home path in the list');
+  }
+  // FR-014: the legend takes the brain area; the picture is not drawn behind it; one frame when it closes
+  {
+    const p = page(() => 'Ada'); p.host.feed('a', 'Ada', p.ev(1)); p.flush(); drain(p);
+    const b = q(p.host, '[data-bv=legend]');
+    assert.strictEqual(b.attrs['aria-expanded'], 'false', 'legend: closed at start');
+    b.listeners.click[0]();
+    const lg = html(p.host, '.bv-legend');
+    assert.ok(String(b.attrs['aria-expanded']) === 'true' && lg.includes('A picture of tools, not a real brain'), 'legend: open, with its title');
+    for (const w of ['Think', 'Read', 'Edit', 'Shell', 'Web', 'MCP', 'You', 'Reply', 'looping?', 'bloom']) assert.ok(lg.includes(w), 'legend names ' + w);
+    assert.strictEqual(((p.host.el.querySelector as (s: string) => Record<string, unknown>)('.bv-pic')).hidden, true, 'legend: the picture gives way');
+    const f = p.host.draw.stats.frames; p.host.feed('a', 'Ada', p.ev(2, 'view')); p.flush(); drain(p);
+    assert.strictEqual(p.host.draw.stats.frames, f, 'legend open: no frame is drawn behind it');
+    b.listeners.click[0]();
+    assert.strictEqual(p.host.draw.stats.frames, f + 1, 'legend closed: the settled state is drawn once');
+    assert.ok(p.host.legend() === false && String(b.attrs['aria-expanded']) === 'false', 'legend: closed again');
+  }
+  // FR-031: roomy when Your door is empty (the brain at the rail's width), compact otherwise
+  {
+    const p = page(() => 'Ada');
+    assert.strictEqual(p.host.draw.size().w, H.W_COMPACT, 'compact at start');
+    p.host.setRoomy(true, 326);
+    assert.ok(p.host.roomy() && p.host.draw.size().w === 326 && (p.host.el.classes as Set<string>).has('is-roomy'), 'roomy: the brain takes the given width');
+    p.host.setRoomy(false);
+    assert.ok(!p.host.roomy() && p.host.draw.size().w === H.W_COMPACT && !(p.host.el.classes as Set<string>).has('is-roomy'), 'compact again');
   }
   // focus and blur are wired: an unfocused window draws Still (FR-104)
   {
     const p = page(() => 'Ada'); assert.strictEqual(p.host.draw.mode(), 'full');
-    assert.ok(p.winL.blur && p.winL.focus && p.docL.visibilitychange, 'the host listens for blur, focus and visibilitychange');
+    assert.ok(p.winL.blur && p.winL.focus && p.docL.visibilitychange, 'the dock listens for blur, focus and visibilitychange');
     p.winL.blur[0](); assert.strictEqual(p.host.draw.mode(), 'still', 'blur: Still');
     p.winL.focus[0](); assert.strictEqual(p.host.draw.mode(), 'full', 'focus: the user\'s setting again');
     p.doc.hidden = true; p.docL.visibilitychange[0]();
@@ -481,26 +527,63 @@ console.log('braindraw: page load ok');
     has = false; p.host.feed('a', 'Ada', p.ev(2)); p.flush();
     assert.strictEqual(p.host.draw.mode(), 'still', 'the focus went with no blur event: the next event draws Still');
   }
-  // over a chat, Settings or List view the box is hidden (brain.css) and the renderer draws nothing (no overlap with the composer)
-  for (const cls of ['panel-open', 'screen-open', 'list-mode']) {
-    const p = page(() => 'Ada'); p.doc.body.classes.add(cls);
+  // no chat, Settings or List view over it, or the rail collapsed: the dock draws nothing (FR-104); back in the chat it draws again
+  for (const [cls, add] of [['panel-open', false], ['screen-open', true], ['list-mode', true], ['brain-rail-off', true]] as [string, boolean][]) {
+    const p = page(() => 'Ada'); if (add) p.doc.body.classes.add(cls); else p.doc.body.classes.delete(cls);
     const f = p.host.draw.stats.frames; p.host.feed('a', 'Ada', p.ev(1)); p.flush(); p.tick(300); p.rafs.splice(0).forEach((fn) => fn());
-    assert.strictEqual(p.host.draw.stats.frames, f, `body.${cls}: the covered box draws no frame`);
-    p.doc.body.classes.delete(cls); p.host.feed('a', 'Ada', p.ev(2, 'view')); p.flush();
-    assert.ok(p.host.draw.stats.frames > f, `without body.${cls}: it draws again`);
+    assert.strictEqual(p.host.draw.stats.frames, f, `body ${add ? 'with' : 'without'} ${cls}: no frame`);
+    if (add) p.doc.body.classes.delete(cls); else p.doc.body.classes.add(cls);
+    p.host.feed('a', 'Ada', p.ev(2, 'view')); p.flush();
+    assert.ok(p.host.draw.stats.frames > f, `body ${add ? 'without' : 'with'} ${cls} again: it draws`);
   }
-  const css = readSrc(path.join(DIR, 'brain.css'));
-  assert.ok(/body\.panel-open \.bv,body\.screen-open \.bv,body\.list-mode \.bv\{display:none\}/.test(css), 'brain.css hides the floating box over a chat, Settings and List view');
-  // a removed agent's brain is forgotten; the box is empty if it was the one shown
+  // unmounted (the chat closed): nothing is drawn
+  {
+    const p = page(() => 'Ada'); p.host.unmount();
+    const f = p.host.draw.stats.frames; p.host.feed('a', 'Ada', p.ev(1)); p.flush(); drain(p);
+    assert.strictEqual(p.host.draw.stats.frames, f, 'unmounted: no frame');
+  }
+  {
+    const css = readSrc(path.join(DIR, 'brain.css'));
+    assert.ok(/#panel>\.brail\{flex:0 0 360px;width:360px/.test(css), 'brain.css: the right rail is 360 px beside the chat (FR-030)');
+    assert.ok(/body\.brain-rail-off #panel>\.brail\{display:none\}/.test(css), 'brain.css: a collapsed rail is hidden (FR-031)');
+    assert.ok(/\.bv-pic\[hidden\]\{display:none\}/.test(css), 'brain.css: the picture gives way to the legend (its display:flex would beat [hidden])');
+  }
+  // a removed agent's brain is forgotten; the dock is empty if it was the one shown
   {
     const p = page(() => 'Ada'); p.host.feed('a', 'Ada', p.ev(1)); p.flush();
     assert.strictEqual(p.host.shown(), 'a');
     p.host.forget('a');
     assert.strictEqual(p.host.shown(), null, 'the removed agent is no longer shown');
-    assert.ok((p.host.el.classes as Set<string>).has('is-empty'), 'and the box is empty');
+    assert.ok((p.host.el.classes as Set<string>).has('is-empty'), 'and the dock is empty');
     assert.strictEqual(p.host.count(), 0, 'its state is gone');
-    p.host.feed('b', 'Bo', p.ev(2)); p.flush();
-    assert.ok(!(p.host.el.classes as Set<string>).has('is-empty'), 'the next event brings the box back');
+    p.host.show('b');
+    assert.ok(!(p.host.el.classes as Set<string>).has('is-empty'), 'the next open chat brings the dock back');
+  }
+  // FR-086's inputs on every text of the dock (FR-085's Docked card and Turn map rows): card, sentence, title, cost, lobe, Latest steps, labels and tooltips
+  {
+    const INPUTS: [string, unknown][] = [
+      ['bash', { command: `npm run deploy -- --token=${GH}` }], ['bash', { command: `curl -H "Authorization: Bearer ${SK}" https://api.example.com/v1/users?key=XYZ` }],
+      ['bash', { command: 'psql postgres://admin:hunter2@db.internal/prod' }], ['view', { path: '/home/ana/work/x/registry.ts' }], ['view', { path: 'C:\\Users\\ana\\work\\x\\registry.ts' }],
+      ['bash', { command: `git push https://ana:${GH}@github.com/acme/app.git` }], ['bash', { command: `teams-mcp list_channels --cookie=${SESS}` }],
+      ['web_fetch', { url: `https://ana:hunter2@api.example.com/v1/users?key=XYZ&token=${GH}` }],
+    ];
+    const LEAK: [string, RegExp][] = [['ghp_', /ghp_[A-Za-z0-9]{6,}/], ['sk-', /sk-[A-Za-z0-9-]{8,}/], ['Bearer value', /Bearer\s+(?!\[redacted)\S/], ['URL password', /:\/\/[^/\s@]*:[^/\s@]+@/], ['hunter2', /hunter2/],
+      ['--token=', /--token=(?!\[)\S/], ['--cookie=', /--cookie=(?!\[)\S/], ['SESS_', /SESS_[A-Za-z0-9]/], ['?key=', /[?&]key=(?!\[)[^&\s]/i], ['home', /\/home\/ana|C:\\Users\\ana|C:\/Users\/ana/i]];
+    const SELS = ['.bv-title', '.bv-cost', '.bv-sentence', '.bv-lobe', '.bv-c1', '.bv-c2', '.bv-c3', '.bv-sum', '.bv-list'];
+    const all = (p: ReturnType<typeof page>): string => SELS.map((sl) => { const e = (p.host.el.querySelector as (s: string) => Record<string, unknown>)(sl); return [e.textContent, e.innerHTML, ...Object.values(e.attrs as Record<string, string>)].join('\n'); }).join('\n') + '\n' + Object.values(p.host.el.attrs as Record<string, string>).join('\n');
+    for (const [tool, args] of INPUTS) {
+      const p = page(() => 'Ada');
+      p.host.feed('a', 'Ada', { type: 'thinking', delta: `I will try this. My key is ${GH}, then run it.`, timestamp: 1 });
+      p.host.feed('a', 'Ada', { type: 'toolCall', sessionId: 'a', callId: 'm1', tool, args, phase: 'start', timestamp: 2 }); p.flush();
+      p.host.feed('a', 'Ada', { type: 'toolCall', sessionId: 'a', callId: 'm1', tool, phase: 'complete', output: 'ok', timestamp: 3 });
+      p.host.feed('a', 'Ada', { type: 'toolCall', sessionId: 'a', callId: 'm2', tool, args, phase: 'start', timestamp: 4 }); p.tick(300); p.flush();
+      const t = all(p), bad = LEAK.filter(([, re]) => re.test(t)).map(([n]) => n);
+      assert.deepStrictEqual(bad, [], `FR-086 on the dock, ${tool} ${JSON.stringify(args).slice(0, 60)}: ${bad.join(', ')}`);
+      assert.ok(txt(p.host, '.bv-c1').length > 0 && (html(p.host, '.bv-list').match(/<li>/g) || []).length === 2, 'the dock did paint the steps');
+    }
+    // the planted mutation: a dock that writes the raw command is caught by the same check
+    const raw = `npm run deploy -- --token=${GH}`;
+    assert.ok(LEAK.some(([, re]) => re.test(raw)), 'the leak check sees a raw token (planted mutation)');
   }
   // the 60-state cap holds even when the oldest agent is the one shown and keeps feeding
   {
@@ -545,4 +628,4 @@ console.log('braindraw: page load ok');
     assert.strictEqual(p.host.draw.colors().frontal, '#e0a458', 'live world: the neutral colours are back');
   }
 }
-console.log('braindraw: host ok');
+console.log('braindraw: dock ok');
