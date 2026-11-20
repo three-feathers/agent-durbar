@@ -562,6 +562,12 @@ const { killTree } = require('./ui-suite');
     assert.ok(!ok(src.replace("x.textContent==='Remove limit');if(b)b.click()", "x.textContent==='Remove limit');")), 'mutant: a lounge scene that never presses Remove limit is caught');
     assert.ok(!ok(src.replace("throw new Error('lounge: the limit slip did not go')", '0')), 'mutant: a lounge scene that does not wait for the slip to go is caught');
     assert.ok(src.indexOf("lounge: the limit slip did not go") < src.indexOf("await S.caption('{step}. Finished, reply not read yet'"), 'the slip is answered before the first caption and still');
+    // FR-274 (issue #1954): the arcade's pill has the same Remove limit button, so the scene films in every world and never branches on it
+    for (const w of ['retro', 'cave']) assert.strictEqual(RV.parseArgs(['--version', 'v0.1.27', '--out', 'x', '--scenes', 'needsyou,signin,lounge', '--world', w]).world, w, `lounge is accepted with --world ${w}`);
+    assert.ok('lounge' in RV.SCENES, 'the lounge scene is in the catalogue');
+    const noWorld = (x) => !/world|retro|cave|DRIVER_WORLD|\.ro-rm|ro-cab/i.test(lounge(x));
+    assert.ok(noWorld(src), 'the lounge scene has no branch on the world (issue #1954)');
+    assert.ok(!noWorld(src.replace("      await H.until(`${SIM}.visitsSettled()`, 8000);", "      if (process.env.DRIVER_WORLD) throw new Error('lounge: not in a world');\n      await H.until(`${SIM}.visitsSettled()`, 8000);")), 'mutant: a lounge scene that is left out of a world again is caught at "no branch on the world"');
   }
   {
     // FR-274 (issue #1946): the world option, the arcade scene, the contact sheet and the caps; no Electron
