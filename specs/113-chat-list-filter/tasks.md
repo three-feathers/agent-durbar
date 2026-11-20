@@ -57,6 +57,7 @@
 - [ ] T034 `renderStrip` paints the flat Recent list with the folder name per row, `parent/name` for same-name folders (FR-043); the filter applies; folds untouched.
 - [ ] T035 Driver cases in `check-rail-filter` for FR-040..FR-044 and SC-005, both sizes, every world, `railstore=1`.
 - [ ] T036 Screenshots `113-rail-recent-{1440x900,1280x800}.png`; docs rows (feature inventory, features.md, changelog fragment) extended.
+- [ ] T038 The "Not used since Durbar started" folded group and the per-row age in Recent; app start time from main (FR-045); unit and driver cases.
 - [ ] T037 `npm run typecheck && npm run build && npm test` once at the final `checks run at <sha>` of P6.
 
 ## Checks a person does (not CI)
