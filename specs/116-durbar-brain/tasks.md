@@ -66,8 +66,8 @@
 Each check uses a temp memory folder holding one file, `notes/hello.md`, with one neutral line, and one Read-only prompt: "Read <memory>/notes/hello.md and reply with its first line." Record the app version, the result (read approved by `in-memory` / refused by the runtime / blocked by its sandbox) and the reported usage in the spec. FR-023 stays `[KNOWN GAP]` for that app until its check is done.
 
 - [ ] T030 `real:` (needs T006 and T009 built) Copilot: 1 prompt, about 1 premium request times the model's multiplier.
-- [ ] T031 `real:` Claude Code: 1 prompt, a few thousand input tokens (cents in USD), memory note included. Run with `--strict-mcp-config --setting-sources ""` (CLAUDE.md).
-- [ ] T032 `real:` Codex: 1 prompt, a few thousand tokens.
+- [ ] T031 `real:` (needs T006 and T009 built) Claude Code: 1 prompt, a few thousand input tokens (cents in USD), memory note included. Run with `--strict-mcp-config --setting-sources ""` (CLAUDE.md).
+- [ ] T032 `real:` (needs T006 and T009 built) Codex: 1 prompt, a few thousand tokens.
 
 ## Converge
 
