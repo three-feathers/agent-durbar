@@ -115,7 +115,7 @@ export function unsafeTarget(roots: readonly string[], abs: string): string | un
 /** Creates the missing folders of `dir` one level at a time, each checked to be a real folder (never a link) inside the root. */
 function makeParents(roots: readonly string[], dir: string): void {
   const root = roots.find((r) => isInside(r, dir));
-  if (!root) throw new Error('outside the session’s folders');
+  if (!root) throw new ShownError('outside the session’s folders');
   let cur = root;
   for (const part of path.relative(root, dir).split(path.sep).filter(Boolean)) {
     cur = path.join(cur, part);
@@ -125,7 +125,7 @@ function makeParents(roots: readonly string[], dir: string): void {
       if ((e as NodeJS.ErrnoException).code !== 'EEXIST') throw e;
     }
     const st = fs.lstatSync(cur);
-    if (st.isSymbolicLink() || !st.isDirectory()) throw new Error('a folder on its path is now a link');
+    if (st.isSymbolicLink() || !st.isDirectory()) throw new ShownError('a folder on its path is now a link');
   }
 }
 

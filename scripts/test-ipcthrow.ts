@@ -145,28 +145,80 @@ async function main(): Promise<void> {
     });
     assert.deepStrictEqual(ow, { ok: false, error: IPC_FAILED }, `a real handler that catches and returns gives IPC_FAILED (got ${JSON.stringify(ow)})`);
 
-    // 8. the scan: a caught error's own text is used only in ipcerror.ts
+    // 8. the scans (review of #1980, items 1, 2, 7). A line may be exempt only with an honest marker: `FR-066: read, not shown` (a classification,
+    // a re-throw, a masked log line) or `FR-066: shown masked` / `FR-066: shown only as` (shown after its own masks, said how).
+    const MARK = /FR-066: (?:read, not shown|shown masked|shown only as)/;
     const RAW: [RegExp, string][] = [
       [/\berrText\b/, 'an errText helper'],
       [/\b(\w+) instanceof Error \? \1\.message\b/, 'err instanceof Error ? err.message'],
       [/\b(?:e|err|error|ex)\.message\b/, 'a caught error .message'],
       [/\bString\((?:e|err|error|ex)\)/, 'String(err)'],
+      [/\$\{\s*(?:e|err|error|ex)\s*\}/, 'a caught error in a template'],
     ];
-    const scan = (text: string): string[] => text.split('\n').flatMap((l, i) => (l.includes('FR-066: read, not shown') ? [] : RAW.filter(([re]) => re.test(l)).map(([, what]) => `${i + 1}: ${what}`)));
+    const scan = (text: string): string[] => text.split('\n').flatMap((l, i) => (MARK.test(l) ? [] : RAW.filter(([re]) => re.test(l)).map(([, what]) => `${i + 1}: ${what}`)));
+    // everywhere in src/ (adapters, shared, preload, main): an `error:` value built from a caught error, raw or through a function that is not a known mask
+    const SAFE = new Set(['failText', 'windowText', 'errCode', 'listReason', 'cleanRemoteError', 'shortReason', 'safeGenerateError', 'signInErrorText', 'fromApp', 'fromAppFrame']); // masks, fixed classifications, and the IPC event's sender check
+    const errorValue = (l: string): boolean => {
+      if (!/\berror\s*:/.test(l)) return false;
+      if (RAW.slice(1).some(([re]) => re.test(l))) return true;
+      return [...l.matchAll(/\b(\w+)\(\s*(?:e|err|ex)\s*[,)]/g)].some((m) => !SAFE.has(m[1]));
+    };
+    const scanAll = (text: string): string[] => text.split('\n').flatMap((l, i) => (!MARK.test(l) && errorValue(l) ? [`${i + 1}: an error value from a caught error`] : []));
     const walk = (dir: string): string[] => fs.readdirSync(dir, { withFileTypes: true }).flatMap((d) => (d.isDirectory() ? walk(path.join(dir, d.name)) : d.name.endsWith('.ts') ? [path.join(dir, d.name)] : []));
-    const mainDir = path.join(__dirname, '..', '..', 'src', 'main');
+    const srcDir = path.join(__dirname, '..', '..', 'src');
+    const mainDir = path.join(srcDir, 'main');
     const files = walk(mainDir).filter((f) => path.basename(f) !== 'ipcerror.ts');
     assert.ok(files.length > 100, `src/main has many files (${files.length})`);
     for (const f of files) {
       const found = scan(fs.readFileSync(f, 'utf8'));
       assert.deepStrictEqual(found, [], `${path.relative(mainDir, f)} uses a caught error's own text outside ipcerror.ts (failText): ${found.join('; ')}`);
     }
-    // the scan is not vacuous (its mutants): each shape is caught, the marker exempts, failText is left alone
-    for (const [sample, n] of [["return { ok: false, error: errText(err) };", 0], ["error: e instanceof Error ? e.message : String(e) }", 1], ["const why = 'x: ' + err.message;", 2], ["return { ok: false, error: String(err) };", 3]] as const) {
+    const everywhere = ['adapters', 'shared', 'preload', 'main'].flatMap((d) => walk(path.join(srcDir, d))).filter((f) => path.basename(f) !== 'ipcerror.ts');
+    assert.ok(everywhere.some((f) => f.includes(`${path.sep}adapters${path.sep}`)) && everywhere.length > files.length + 50, 'the error-value scan reads src/adapters, src/shared, src/preload and src/main');
+    for (const f of everywhere) {
+      const found = scanAll(fs.readFileSync(f, 'utf8'));
+      assert.deepStrictEqual(found, [], `${path.relative(srcDir, f)} returns a caught error's own text as an error (use failText in main, ShownError or a mask in an adapter): ${found.join('; ')}`);
+    }
+    // the scans are not vacuous (their mutants): each shape is caught, the markers exempt, the masks are left alone
+    for (const [sample, n] of [["return { ok: false, error: errText(err) };", 0], ["error: e instanceof Error ? e.message : String(e) }", 1], ["const why = 'x: ' + err.message;", 2], ["return { ok: false, error: String(err) };", 3], ["return { ok: false, error: `Could not do it: ${err}` };", 4]] as const) {
       assert.ok(RAW[n][0].test(sample) && scan(sample).length > 0, `the scan catches: ${sample}`);
     }
+    for (const sample of ["return { ok: false, error: cleanUp(e) };", "      return { ok: false, error: `x ${e.message}` };", "error: `failed: ${err}`,", "r = { ok: false, error: reasonOf(err, 300) };"]) assert.ok(scanAll(sample).length > 0, `the error-value scan catches: ${sample}`);
     assert.deepStrictEqual(scan("const t = err.message; // FR-066: read, not shown"), [], 'the marker exempts a line');
+    assert.deepStrictEqual(scan("const t = err.message; // FR-066: shown masked (redact)"), [], 'the shown-masked marker exempts a line');
+    assert.ok(scan("const t = err.message; // FR-066 read").length > 0, 'a wrong marker does not exempt');
     assert.deepStrictEqual(scan("return { ok: false, error: failText(err, 'x') };"), [], 'the scan leaves failText alone');
+    assert.deepStrictEqual(scanAll("return { ok: false, error: cleanRemoteError(err) };"), [], 'the error-value scan leaves the masks alone');
+
+    // 9. the remote control error (item 1): masked like a ShownError
+    const { cleanRemoteError } = require('../src/shared/remote') as typeof import('../src/shared/remote');
+    const rc = cleanRemoteError(new Error(`could not reach ${where} with ${token}`));
+    assert.ok(rc.startsWith('could not reach ') && !rc.includes(token) && !rc.includes(os.homedir()), `cleanRemoteError masks a token and the home folder (got ${JSON.stringify(rc)})`);
+
+    // 10. Durbar's own words stay useful (items 3-6): the workspace refusals; the installer, the undo and Claude's restart reason are in
+    // test:officialinstall, test:checkpoints and test:claude-adapter
+    const { resolveWorkspaceCwd } = require('../src/adapters/workspace') as typeof import('../src/adapters/workspace');
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-ipcthrow-'));
+    try {
+      const plain = path.join(tmp, 'notes.txt');
+      fs.writeFileSync(plain, 'x');
+      const empty = path.join(tmp, 'empty.code-workspace');
+      fs.writeFileSync(empty, JSON.stringify({ folders: [] }));
+      const said = (f: string): string => { try { resolveWorkspaceCwd(f); return 'no error'; } catch (err) { return failText(err, 'test'); } };
+      assert.ok(said(plain).startsWith('Not a folder or .code-workspace file: '), `a plain file: the window keeps the app's words (got ${JSON.stringify(said(plain))})`);
+      assert.ok(said(empty).startsWith('No folders in workspace file: '), `an empty workspace file: the window keeps the app's words (got ${JSON.stringify(said(empty))})`);
+    } finally { fs.rmSync(tmp, { recursive: true, force: true }); }
+
+    // 11. the two exemptions that ARE shown (item 7): masked, honestly labelled
+    const { shortReason } = require('../src/main/updatecheck') as typeof import('../src/main/updatecheck');
+    assert.strictEqual(shortReason(new Error('timed out')), 'timed out', 'a short plain phrase is kept');
+    assert.strictEqual(shortReason(new Error('getaddrinfo ENOTFOUND registry.npmjs.org')), 'network problem');
+    const legacyKey = ['0123456789', 'abcdef0123', '456789abcd', 'ef01234567'].join('');
+    assert.strictEqual(shortReason(new Error(legacyKey)), 'unexpected answer', 'a key-shaped word is never shown');
+    assert.strictEqual(shortReason(new Error(`bad ${token}`)), 'unexpected answer', 'a token is never shown');
+    const { safeGenerateError } = require('../src/main/ipc/characters') as typeof import('../src/main/ipc/characters');
+    const gen = safeGenerateError(new Error(`failed reading ${where} with ${token}`), ['a cat']);
+    assert.ok(!gen.includes(token) && !gen.includes(os.homedir()), `the character maker's error is masked (got ${JSON.stringify(gen)})`);
     console.log('test:ipcthrow OK');
   } finally {
     console.warn = realWarn;

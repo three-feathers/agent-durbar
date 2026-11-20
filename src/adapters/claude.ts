@@ -1450,7 +1450,12 @@ export class ClaudeAdapter implements AgentAdapter {
     if (!s) throw new ShownError('This session is not running. Send a message to start it.');
     if (!s.transport?.alive) throw new ShownError('Claude Code starts its MCP servers with your next message; there is nothing to restart yet.');
     if (s.launchedOff?.has(name) || (s.options.disabledMcpServers ?? []).includes(name)) throw new ShownError('Switch it on first; it starts with your next message.');
-    await s.transport.request({ subtype: 'mcp_reconnect', serverName: name }, 30_000);
+    try {
+      await s.transport.request({ subtype: 'mcp_reconnect', serverName: name }, 30_000);
+    } catch (e) {
+      // spec 058 FR-012: Claude Code's own reason is shown (masked on the way, spec 045 FR-066)
+      throw new ShownError(`Claude Code could not restart ${name}: ${e instanceof Error ? e.message : String(e)}`);
+    }
     // spec 058 FR-176: a restart is a real change for this server: its FR-060 sign-in mark ends (a sign-in finished outside Durbar shows)
     s.mcpAuthSeen?.delete(name);
     try {

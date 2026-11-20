@@ -9,6 +9,8 @@ import * as os from 'os';
 import * as path from 'path';
 import { CLAUDE_AGENTS_FILE_MIN_VERSION, CLAUDE_PROMPT_FILE_MIN_VERSION, claudeLaunchFilesRefusal, CLAUDE_ENTRYPOINT, ClaudeAdapter, PRE_TOOL_USE_HOOK, budgetText, claudeArgs, claudeForwardsSubagentText, CLAUDE_FORWARD_SUBAGENT_MIN_VERSION, handoffArgs, oneShotArgs, parseHandoffOutput, claudeMdNodeIo, claudeMdPrompt, claudeModelFlag, claudeModelOptions, cliLaunchArgs, mcpConfigOf, permissionLikeOf, userContentOf } from '../src/adapters/claude';
 import { createCliTransport } from '../src/adapters/claudeTransport';
+import { failText } from '../src/main/ipcerror';
+import { ShownError } from '../src/shared/shownerror';
 import type { AgentEvent } from '../src/adapters/types';
 import { FakeClaudeChild, fakeSpawn, SANDBOX_HOST_OK } from './fakes/claude-cli';
 import { tmpDir } from './test-tmp';
@@ -816,6 +818,7 @@ async function main(): Promise<void> {
     const usageReqs: Record<string, unknown>[] = []; // spec 100 T013
     let usageMode: 'ok' | 'silent' | 'unknown' = 'ok';
     let usageReply: unknown = {};
+    let reconnectError: string | undefined; // spec 045 FR-066 (review of #1980): Claude Code refuses the reconnect
     sp.next = (c) => {
       c.onWrite = (o) => {
         if (o.type !== 'control_request') {
@@ -824,6 +827,7 @@ async function main(): Promise<void> {
         }
         const r = o.request as { subtype: string; serverName?: string };
         if (r.subtype.startsWith('mcp_')) reqs.push(r);
+        if (r.subtype === 'mcp_reconnect' && reconnectError) return void setTimeout(() => c.send({ type: 'control_response', response: { subtype: 'error', request_id: o.request_id, error: reconnectError } }), 0);
         if (r.subtype === 'mcp_reconnect') servers = servers.map((x) => (x.name === r.serverName ? { name: x.name, status: 'connected' } : x));
         if (r.subtype === 'get_context_usage') {
           usageReqs.push(r);
@@ -862,6 +866,12 @@ async function main(): Promise<void> {
     assert.ok(reqs.every((r) => r.subtype === 'mcp_reconnect' || r.subtype === 'mcp_status'), 'needs-auth: still only mcp_reconnect / mcp_status: ' + JSON.stringify(reqs));
     assert.ok(!reqs.some((r) => /authenticate|oauth|clear_auth/.test(String(r.subtype))), 'never a sign-in request');
     servers = servers.map((x) => (x.name === 'notes' ? { name: 'notes', status: 'connected' } : x));
+    // spec 045 FR-066 (review of #1980): Claude Code's own reason for a failed restart is a ShownError, so the window still shows it (masked)
+    reconnectError = 'Server not found: notes';
+    const why = await ad.restartMcpServer(sid, 'notes').then(() => undefined, (e: unknown) => e);
+    reconnectError = undefined;
+    assert.ok(why instanceof ShownError, 'a refused restart is a ShownError');
+    assert.strictEqual(failText(why, 'test'), 'Claude Code could not restart notes: Server not found: notes', "the window gets Claude Code's reason for a refused restart");
     await assert.rejects(ad.restartMcpServer('no-such', 'notes'), /not running/);
     // spec 069 FR-031: a server's tools come from the same mcp_status reply (documented McpServerStatus.tools)
     servers = servers.map((x) => (x.name === 'web' ? { ...x, tools: [{ name: 'fetch', description: 'Fetch a URL' }, { name: 'search' }] } : x)) as typeof servers;
