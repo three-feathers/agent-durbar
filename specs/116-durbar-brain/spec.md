@@ -4,14 +4,14 @@
 group: 046
 title: Durbar brain (issue #1962, owner 2026-11-20): link one folder of your own (for example a git repo `durbar-brain`) as the office's memory; every agent on every agent app can read it, read-only; Durbar keeps a chat index (metadata only) in one folder of it that Durbar owns, and a link in it opens that chat in Durbar; local only, never pushes or pulls, off by default
 status: draft
-note: spec only, for the owner's clarify (Q1..Q12 open with recommendations); no plan or tasks yet; nothing built
+note: spec, plan and tasks written; Q1..Q12 decided (owner and coordinator, 2026-11-20); nothing built
 -->
 
 **Feature Branch**: `116-durbar-brain` (spec, then plan and tasks after clarify); code branches `116-pN-slug`, one per phase.
 
 **Created**: 2026-11-20
 
-**Status**: Draft. Nothing built. Q1..Q12 (*Clarifications*) are open: each has options and a recommendation; the owner decides in clarify. FRs are written for the recommended options and name the question they depend on.
+**Status**: Draft. Nothing built. Q1..Q12 (*Clarifications*) are decided (2026-11-20; each line says by whom, and the owner may still change the coordinator's). FRs follow the decided options and name the question they depend on.
 
 **Issue**: #1962 (rubenlupi, owner request, 2026-11-20). Refs, not Closes, until the last phase.
 
@@ -23,7 +23,7 @@ No spec owns a folder that is not an office folder, that every session may read,
 
 ## Name
 
-"Brain" is already the name of spec 106's **Brain view** (the point-cloud picture of an agent's thinking, `specs/106-brain-view/spec.md`, building), shown in the chat's right rail. Two features called "brain" in one window will confuse people and screen readers. Q1 settles the visible name; this spec says **brain folder** for the feature and `durbar-brain` only as an example repository name.
+"Brain" is already the name of spec 106's **Brain view** (the point-cloud picture of an agent's thinking, `specs/106-brain-view/spec.md`, building), shown in the chat's right rail. Two features called "brain" in one window will confuse people and screen readers. Q1 settles the visible name; this spec says **memory folder** for the feature (Q1 a, UI name "Office memory") and `durbar-brain` only as an example repository name.
 
 ## Context: what exists today (spec 021 FR-031, reuse first)
 
@@ -48,7 +48,7 @@ All references are `origin/main` at `5b52cd95c` (2026-11-20), `read:` unless tag
 
 ## Clarifications
 
-Open. Each question has options and a recommendation; the FRs below follow the recommended option and say which question they depend on.
+Decided (each line says by whom). Each question keeps its options; the FRs below follow the decided option and say which question they depend on.
 
 - **Q1 Visible name.** **Decided: (a)** by the owner (Ruben, 2026-11-20, in the terminal). (a) **recommended** "Office memory" in the UI (Settings section, chips, menus), "memory folder" in text; `durbar-brain` stays an example repo name; (b) "Brain" as the owner wrote it, and spec 106's "Brain view" keeps its name (two "brain" things in one window); (c) "Knowledge folder".
 - **Q2 How many.** **Decided: (a)** by the coordinator under Ruben's delegation (2026-11-20); the owner may still change it. (a) **recommended** one per office (one path in Settings); (b) one per office plus one per floor; (c) several, each with a label.
@@ -143,6 +143,8 @@ Ana tagged a chat `invoice-export` last week. Today she asks any agent "which ch
 - **Two Durbar processes on one profile**: each write re-checks the file's hash (083's pattern); the last writer wins; the index is rebuilt from Durbar's state, so nothing is lost but an ordering.
 - **Session renamed, ended, removed**: the entry follows within 5 seconds; a removed folder's entries stay "ended" until the person removes them.
 - **Simulator and demo**: the simulator writes to a temp folder only, never to a real memory folder (FR-081).
+- **`.git` is a file, a link or includes other config**: the remote check answers "could not check" (FR-051), not "no remote".
+- **A secret location** (`~/.ssh`, `~/.config` and its parents, `%APPDATA%`, `~/Library`, ...): refused (FR-004).
 - **Windows**: the folder on another drive than the office folders is allowed; UNC paths (`\\server\share`) are refused in v1 (FR-004); case-insensitive comparisons.
 - **Reduced motion, Serious mode**: nothing animates; the feature has no picture.
 
@@ -155,11 +157,11 @@ Ana tagged a chat `invoice-export` last week. Today she asks any agent "which ch
 - **FR-001** **Off by default.** One setting `memoryFolder` (path or none) and `memoryOn` (default off) in `SettingsStore` (`src/main/settings.ts:43`), set through new `settings:` handlers in the `setting()` pattern (`src/main/ipc/settings.ts:23-70`). While off, no session gets anything (FR-020, FR-022) and Durbar reads and writes nothing in the folder. *Acceptance:* `test:` store default and handlers; source test: no memory code path runs while off.
 - **FR-002** **Settings > Office memory** (Q1 name). Path (shown with `~`), *Choose folder…* (`pickFolder`, `src/main/pickfolder.ts:6`), *Stop using*, the switch, a status line (On / Off / Not found / Refused: reason), the chat index line (entries, last written, *Open folder* through the existing open-folder action), *Keep the chat index in git* (Q11), and the Allow all sentence (Q12). Findable by Settings search (spec 112, when built). *Acceptance:* `sim:` driver at both sizes.
 - **FR-003** **Said before it is on.** Turning it on asks first (`askDialog`, **Cancel** focused) with the text of US1.2 and, when FR-055 finds a remote, US1.3. *Acceptance:* driver reads the dialog text.
-- **FR-004** **Refused folders**, checked in main on the real path: the home folder itself, a drive or file-system root, Durbar's `userData`, the agent apps' own folders (`~/.copilot`, `~/.claude`, `~/.codex`), a folder equal to, inside, or holding any office folder, a UNC path on Windows (v1), a path that is not a folder or cannot be read. Re-checked at every start and when an office folder is added (a new office folder inside the memory folder is refused with the reason, or the memory turns off: plan decides, said in Settings). *Acceptance:* `test:` pure check with `path.win32` and `path.posix` cases, case folding on Windows and macOS.
+- **FR-004** **Refused folders**, checked in main on the real path: the home folder itself, a drive or file-system root, Durbar's `userData`, the agent apps' own folders (`~/.copilot`, `~/.claude`, `~/.codex`), a folder equal to, inside, or holding any office folder, **a folder that is, is inside, or contains one of the secret locations** (a fixed denylist, below), a UNC path on Windows (v1), a path that is not a folder or cannot be read. The denylist, each entry under the home folder and resolved with `realpath`: `.ssh`, `.aws`, `.gnupg`, `.kube`, `.docker`, `.config`, `.npmrc` (a file: a folder that is the home folder or holds it is already refused by the home rule); on Windows also `%APPDATA%`, `%LOCALAPPDATA%` and `%USERPROFILE%\AppData`; on macOS also `~/Library`; on Linux also `$XDG_CONFIG_HOME`, `$XDG_DATA_HOME`. "Contains" means a parent such as `~/.config` as well as a child such as `~/.config/x`. Re-checked at every start and when an office folder is added (a new office folder inside the memory folder is refused with the reason, or the memory turns off: plan decides, said in Settings). *Acceptance:* `test:` pure check with `path.win32` and `path.posix` cases, case folding on Windows and macOS.
 
 **What Durbar writes** (Q4 a)
 
-- **FR-010** **Only `durbar/`.** Durbar creates and writes only `<memory>/durbar/` and the files inside it: `chats.md`, `.gitignore`, and a marker `.durbar-owned` (content: a fixed sentence, no id). It never creates, moves, renames, rewrites or deletes any other path in the memory folder. *Acceptance:* `test:` a fake fs records every call; any path outside `durbar/` fails the test.
+- **FR-010** **Only `durbar/`.** Durbar creates and writes only `<memory>/durbar/` and the files inside it: `chats.md`, `.gitignore`, a marker `.durbar-owned` (content: a fixed sentence, no id), and the short-lived temp file `.chats.md.<random>.tmp` of one atomic write (FR-011). It never creates, moves, renames, rewrites or deletes any other path in the memory folder. *Acceptance:* `test:` a fake fs records every call; any path outside `durbar/` fails the test.
 - **FR-011** **Checked writes, `NotesFile`'s rules** (`src/main/notesfile.ts:1-17`, reused or generalized, not copied): `durbar/` must be a real folder (not a link or junction, `lstat`) right inside the memory folder's real path, carrying the marker; if `durbar/` exists without the marker, or is a link or a file, Durbar writes nothing and says why. Writes go to a temp file opened `O_CREAT|O_EXCL|O_WRONLY|O_NOFOLLOW`, mode 0600 on POSIX, then rename after re-checking; Windows retry as `NotesFile`. A missing `durbar/` is created (with marker and `.gitignore`) on the next write. *Acceptance:* `test:` link, junction (simulated), file, foreign folder, deleted folder.
 - **FR-012** **No process, no network.** Nothing in this feature starts a process (no git: FR-055 reads a file) or calls a URL; a source test lists the module's imports (095 FR-025's pattern). *Acceptance:* `test:` import list.
 - **FR-013** **Bounded.** `chats.md` at most 2,000 entries and 1 MB; writes at most once per 5 seconds (coalesced) and only when the content changed. *Acceptance:* `test:` cap and coalescing with a fake clock.
@@ -175,7 +177,7 @@ Ana tagged a chat `invoice-export` last week. Today she asks any agent "which ch
 
 - **FR-030** **Chat keys.** Each indexed session gets a random 128-bit key (base32, 26 characters), kept in Durbar's local data (a small store, 0600, beside `durbar-folders.json`) as key -> folder key, agent app, session id. The key is never derived from the session id. The vendor session id never goes into the memory folder (083 D8). *Acceptance:* `test:` store round trip, 0600, no session id in `chats.md`.
 - **FR-031** **The file.** `durbar/chats.md`: a fixed header ("Written by Agent Durbar. Edits here are replaced. Your own notes go anywhere else in this folder."), then one section per floor and folder (headings), then one line per chat: `- [<name>](durbar://chat/<key>) <app>, <state>, created <YYYY-MM-DD>, last active <YYYY-MM-DD>, tags: <t1>, <t2>. <note>`. No chat text, no absolute path, no session id, no model, no usage. *Acceptance:* `test:` golden file.
-- **FR-032** **Masked and escaped.** Every free text (name, folder name, floor name, tags, note) is masked with `maskOutgoing`, then `cut`, then Markdown-escaped so it cannot close the link or start a heading, list or HTML (`[`, `]`, `(`, `)`, `<`, `>`, `` ` ``, `#` at line start, line ends). `maskTokenShapes` runs over the whole file before the write as a backstop (109 FR-021's pattern). *Acceptance:* `test:` hostile names (`](javascript:x)`, `<img onerror>`, a token, a newline).
+- **FR-032** **Masked and escaped.** Every free text (name, folder name, floor name, tags, note) is masked with `maskOutgoing`, then `cut` (name 80, folder 40, floor 40, tag 32, note 200 characters), then Markdown-escaped so it cannot close the link or start a heading, list, table or HTML (`\`, `[`, `]`, `(`, `)`, `<`, `>`, `` ` ``, `*`, `_`, `|`, `#` and `-` at line start; line ends, tabs and control and bidi characters become a space or are removed). `maskTokenShapes` runs over the whole file before the write as a backstop (109 FR-021's pattern). *Acceptance:* `test:` hostile names (`](javascript:x)`, `<img onerror>`, a token, a newline).
 - **FR-033** **Which sessions** (Q6 a): main sessions open in the office while the memory is on; an entry stays after its session ends (state "ended") until the person removes it (*Remove from memory*); helpers never. At most 2,000: the oldest ended entries go first.
 - **FR-034** **When.** Create, rename (spec 059), end, floor or folder change, tag or note change: coalesced per FR-013.
 - **FR-035** **Tags and note** (Q9 a): *Memory note and tags…* in the agent menu (`openAgentMenu`, `app.js:8808`) and the rail row's menu; a small dialog (`DurbarDialog`, `src/renderer/dialog.js`), tags 0..8, each `[A-Za-z0-9-]{1,32}`, note at most 200 characters, `checkDisplayName`-clean (`src/shared/names.ts`); stored in the key store (FR-030), masked. *Copy chat link* beside it.
@@ -192,8 +194,8 @@ Ana tagged a chat `invoice-export` last week. Today she asks any agent "which ch
 
 **Security** (constitution III)
 
-- **FR-050** **Durbar never reads the person's files.** Durbar reads only: the memory folder's top-level names (to find FR-022's entry file and `durbar/`), `.git/config` (FR-055), and its own `durbar/` files' metadata (for FR-011's checks). It never parses, indexes, follows or acts on the content of anything else in the folder. *Acceptance:* `test:` fake fs: no read outside that list.
-- **FR-051** **Untrusted where read.** `.git/config` is read with `readCapped` (64 KB, `O_NOFOLLOW`), parsed tolerantly; only `url =` lines of `[remote ...]` sections are used, and only their host is shown, masked (`maskTokenShapes`) and cut to 64 characters (a URL may carry a token: `https://user:token@host/...`).
+- **FR-050** **Durbar never reads the person's files.** Durbar reads only: the memory folder's top-level names (to find FR-022's entry file and `durbar/`), `.git/config` (FR-055), and its own `durbar/` files' metadata (for FR-011's checks). It never parses, indexes, follows or acts on the content of anything else in the folder. *Acceptance:* `test:` fake fs records every read in `memoryops`, `memoryfile` and the reader: any read outside that list fails (SC-004; tasks T014).
+- **FR-051** **Untrusted where read.** `.git/config` is read with `readCapped` (64 KB, `O_NOFOLLOW`), parsed tolerantly; only `url =` lines of `[remote ...]` sections are used, and only their host is shown, masked (`maskTokenShapes`) and cut to 64 characters (a URL may carry a token: `https://user:token@host/...`). When Durbar cannot tell (`.git` is a file, as in a worktree or submodule, or a link, or the config has an `include`/`includeIf`, or it is unreadable), it says "Could not check for a git remote", never "no remote".
 - **FR-052** **Nothing secret written.** No token, `.env` value, content of `~/.copilot`, `~/.claude`, `~/.codex`, session file or chat text is written to the memory folder (FR-031, FR-032); no log line carries a path inside the memory folder or any index text.
 - **FR-053** **Prompt injection.** The memory folder's content is data for the agent that reads it, never instructions to Durbar (FR-050). The memory note frames it as notes (FR-022). An agent reading a hostile file is the same risk as reading a hostile project file; Durbar's mode still governs what the agent may do (Read-only stays read-only). Said in Settings and docs.
 - **FR-054** **Allow all** (Q12 a): Settings says "An agent in Allow all can also change files in your memory folder." No broker change.
@@ -216,7 +218,7 @@ Ana tagged a chat `invoice-export` last week. Today she asks any agent "which ch
 
 **Pointer deltas** (written in the owning specs in the same PR as the phase that needs them)
 
-- **FR-090** Spec 003 (broker: `in-memory` reason, `readOnlyFolders`), spec 095 FR-021 (tags matched), spec 109 FR-013 (two settings), spec 111 FR-036 (the shared framed chain), spec 114 when written (Q10), spec 006 (single-instance lock, P4 only), spec 080 FR-030 (the `durbar:` route).
+- **FR-090** Spec 003 (broker: `in-memory` reason, `readOnlyFolders`; task T006), spec 095 FR-021 (tags matched), spec 109 FR-013 (two settings), spec 111 FR-036 (the shared framed chain), spec 114 when written (Q10), spec 006 (single-instance lock, P4 only), spec 080 FR-030 (the `durbar:` route; task T021).
 
 ### Key Entities
 
@@ -244,7 +246,7 @@ Ana tagged a chat `invoice-export` last week. Today she asks any agent "which ch
 
 ## Open questions
 
-See *Clarifications* (Q1..Q12). The FRs follow the recommended options; the owner's answers in clarify will change the FRs that name a question.
+None open. Q1..Q12 are decided (*Clarifications*); a change by the owner to a coordinator decision changes the FRs that name that question.
 
 ## Changes
 

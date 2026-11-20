@@ -65,7 +65,7 @@ Nothing existing gives a session an extra read-only folder, writes a file about 
 
 | Unit | Kind | Job | FR |
 |---|---|---|---|
-| `src/shared/memoryfolder.ts` | pure, no imports beyond `path` types | `checkMemoryFolder(candidate, ctx, flavor)`, `parseChatLink(s)`, `CHAT_LINK_RE`, `newChatKey(bytes)` (base32), `remoteHosts(configText)` | FR-004, FR-030, FR-040, FR-051 |
+| `src/shared/memoryfolder.ts` | pure, no imports beyond `path` types | `checkMemoryFolder(candidate, ctx, flavor)`, `parseChatLink(s)`, `CHAT_LINK_RE`, `newChatKey(bytes)` (base32), `remoteHosts(configText)` (answers hosts, none, or could-not-check) | FR-004, FR-030, FR-040, FR-051 |
 | `src/shared/chatindex.ts` | pure | `chatIndexText(entries, floors)`: order, header, per-field mask, cut, escape, backstop | FR-031, FR-032 |
 | `src/main/ownedwrite.ts` | main, injected fs | Checked folder and atomic write taken out of `NotesFile` (real folder, not a link, inside parent, `O_EXCL`/`O_NOFOLLOW` temp, re-check, rename, Windows retry) | FR-011 |
 | `src/main/memorykeys.ts` | main, injected fs | `MemoryKeyStore`: key -> folder key, app, session id, tags, note, dates, state; at most 2,000; 0600 | FR-030, FR-033, FR-035 |
@@ -118,19 +118,20 @@ No log line carries a path inside the memory folder, a key, a tag or a note (sou
 
 ## Path containment (Windows, macOS, Linux)
 
-**Picking the folder (FR-004, `checkMemoryFolder`, pure, one `flavor`).** The input is main's dialog result, resolved with `realpath` (`fs.realpathSync.native`); a failure means refused. The comparison key is case-folded on `win32` **and** `darwin`; folding is stricter on macOS, and over-refusing is the safe side. Refused when:
+**Picking the folder (FR-004, `checkMemoryFolder`, pure, one `flavor`).** The input is main's dialog result, resolved with `realpath` (`fs.realpathSync.native`); a failure means refused. The comparison key is case-folded on `win32` **and** `darwin`; folding is stricter on macOS, and over-refusing is the safe side. Refused when (rules 1..6):
 
 1. the path is not absolute, is drive-relative (`C:foo`), or starts with `\\?\`, `\\.\` or `\\` (UNC and device paths; v1);
 2. it is a file-system root (`flavor.parse(p).root === p`) or the home folder itself;
 3. it is equal to, inside, or holds `userData`, `~/.copilot`, `~/.claude`, `~/.codex` (each also resolved with `realpath`);
 4. it is equal to, inside, or holds any office folder (each folder's real path; `.code-workspace` folders included);
-5. `lstat` says it is not a directory.
+5. it is, is inside, or contains a **secret location**, each resolved with `realpath`: `.ssh`, `.aws`, `.gnupg`, `.kube`, `.docker`, `.config`, `.npmrc` under the home folder; on win32 `%APPDATA%`, `%LOCALAPPDATA%`, `%USERPROFILE%\AppData`; on darwin `~/Library`; on linux `$XDG_CONFIG_HOME` and `$XDG_DATA_HOME` ("contains" covers a parent such as `~/.config` or `~/Library`);
+6. `lstat` says it is not a directory.
 
 The check runs again at every start, on `memory:apply`, and when an office folder is added. When a new office folder breaks rule 4, the **memory turns off** (`state: refused`) and Settings names the clash. The folder is still added: adding a folder is the person's main action, and the memory is the extra. (The spec left this to the plan; decided here, and recorded in the spec's *Changes* by T008.)
 
 **Agent reads.** `isInsideRoots` with the session's broker: `..` collapsed and symlinks resolved, so a link inside the memory folder pointing out of it counts as outside. Today it is case-insensitive on `win32` only. On macOS a case-variant path therefore counts as outside: denied, which is the safe side. This is noted as `read:` and not changed here (it is spec 003's rule). Junctions are reported by `lstat`/`realpath` like symlinks (Node docs; no Windows device check, `[KNOWN GAP]` as in spec 043).
 
-**Durbar's writes.** Only `<memory>/durbar/{chats.md,.gitignore,.durbar-owned}` and temp files `durbar/.chats.md.<random>.tmp`:
+**Durbar's writes.** Only `<memory>/durbar/{chats.md,.gitignore,.durbar-owned}` and temp files `durbar/.chats.md.<random>.tmp` (all four named in FR-010):
 
 - `durbar` must be a real folder (`lstat`, not a link or junction) whose real path's parent is the memory folder's real path, holding the marker;
 - a `durbar`, `Durbar` or `DURBAR` that is a link, a file, or a folder without the marker means no write and a Settings line (on case-insensitive file systems these are the same entry);
@@ -175,13 +176,13 @@ Fixed names only, so no alternate data stream (`name:stream`) or reserved device
 
 ## Test plan (zero AI credits)
 
-- `test:memoryfolder`: FR-004 table with `path.win32` and `path.posix` (root, home, `C:foo`, UNC, `\\?\`, case variants on win32 and darwin, office folder inside and around, symlink to an office folder through injected `realpath`). Mutants: case fold removed; "holds" direction dropped; UNC allowed.
+- `test:memoryfolder`: FR-004 table with `path.win32` and `path.posix` (root, home, each secret location as itself, inside and as a parent (`~/.config`, `~/Library`, `%APPDATA%`), `C:foo`, UNC, `\\?\`, case variants on win32 and darwin, office folder inside and around, symlink to an office folder through injected `realpath`). Mutants: case fold removed; "holds" direction dropped; UNC allowed.
 - `test:memoryops`: token flow (the window never sends a path), status, setOn, stop, re-check on folder add, read roots empty while off. Mutants: path accepted from the window; roots given while off.
-- `test:memoryremote`: `.git/config` with `user:token@host`, `insteadOf`, 64 KB + 1, a FIFO and a symlink (injected fs). Mutant: user info shown.
+- `test:memoryremote`: `.git` as a file (worktree), `include`/`includeIf`: answer "could not check", never "no remote"; `.git/config` with `user:token@host`, `insteadOf`, 64 KB + 1, a FIFO and a symlink (injected fs). Mutant: user info shown.
 - `test:memoryroots` per adapter (fake runtimes): a read inside is approved in Read-only and Ask first with `in-memory`; a write inside is denied in Read-only and asked in Ask first; a symlink out of the folder is outside; Allow all unchanged. Mutants: the folder passed as a write root; `extraRoots` used for writes; Claude Code `PreToolUse` read roots also used for writes.
 - `test:ownedwrite` plus the existing `test:notesfile` unchanged: link, junction (simulated with `isSymbolicLink`), file, foreign folder, parent swap between check and rename, `O_NOFOLLOW` missing (Windows flags).
 - `test:chatindex`: golden file; hostile names (`](javascript:x)`, `<img onerror=…>`, a token, a newline, `# heading`, bidi); no session id, no absolute path, no model. Mutants: escape removed, mask removed, backstop removed.
-- `test:memoryfile`: marker, `.gitignore` bytes, keep-in-git, coalescing with a fake clock, 2,000 and 1 MB caps, import-list source test (no `child_process`, `net`, `http`, `https`).
+- `test:memoryfile`: a fake fs records every read and write: a read outside FR-050's list or a write outside `durbar/` fails; marker, `.gitignore` bytes, keep-in-git, coalescing with a fake clock, 2,000 and 1 MB caps, import-list source test (no `child_process`, `net`, `http`, `https`).
 - `test:chatlink`: grammar table (valid; uppercase scheme; `durbar:chat/`; `durbar://Chat/`; path parts; `?`, `#`, `%`; 25 and 27 characters; base32 out of alphabet; 41+ characters). Mutants: prefix match only; case-insensitive key; `URL` parsing.
 - `test:memoryopen`: open, previous, unknown, folder gone; never calls an adapter `start` or `send`.
 - Drivers (simulator, temp folder): `shots-116-settings`, `shots-116-tags`, `shots-116-link` in Flat, Retro and Real office at both sizes; `check:office` unchanged.
