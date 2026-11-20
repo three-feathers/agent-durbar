@@ -20,7 +20,7 @@ const { helpers, jsLiteral } = require('./driver-helpers');
 
 const THEMES = [['retro', 'pixel', 'Pixel figures']];
 const CREW_IMG = 'image[href*="crew/art/"]';
-/* CHARACTERS_MUTANT (spec 102 T390, issue #1873): skipflat = the Retro pixel heads are skipped in Flat (the theme's own figures are drawn); note = the old Flat line is put back under the list; smooth = the heads are scaled smooth (image-rendering auto). Each must fail the Flat Retro pixel block below. */
+/* CHARACTERS_MUTANT (spec 102 T390, issue #1873): skipflat = the Retro pixel heads are skipped in Flat (the theme's own figures are drawn); note = the old Flat line is put back under the list; smooth = the heads are scaled smooth (image-rendering auto). Each must fail the Flat Retro pixel block below. T391: skipoffice = Office people draw the theme's own figures in Flat; pixelatedoffice = the Office heads are scaled nearest; each must fail the Flat Office people block. */
 const MUTANT = process.env.CHARACTERS_MUTANT || '';
 
 module.exports = async (ctx) => {
@@ -31,7 +31,7 @@ module.exports = async (ctx) => {
   const desks = () => H.js(`(()=>{const sc=[...document.querySelectorAll('#stage .desk[data-id] svg.scene')].filter(s=>s.getClientRects().length);
     const kit=(s)=>{const m=/\\|(pixel|crew)(\\||$)/.exec(s.dataset.sig||'');return m?m[1]:'office';};
     const by={};for(const s of sc){const k=kit(s);by[k]=(by[k]||0)+1;}
-    return {n:sc.length,by,pics:sc.filter(s=>s.querySelector(${jsLiteral(CREW_IMG)})).length,heads:sc.filter(s=>s.querySelector('svg.crew-head image.px')).length,anyPic:document.querySelectorAll(${jsLiteral('#stage ' + CREW_IMG)}).length};})()`);
+    return {n:sc.length,by,pics:sc.filter(s=>s.querySelector(${jsLiteral(CREW_IMG)})).length,heads:sc.filter(s=>s.querySelector('svg.crew-head image')).length,anyPic:document.querySelectorAll(${jsLiteral('#stage ' + CREW_IMG)}).length};})()`);
   /* issue 839: what the app holds when a crew step times out (it only failed on the macOS runner, never on a Mac at scale 1 or 2 or under reduced
      motion): the next nightly says why instead of only "timed out" */
   const why = async () => (await whyNow()) + ' ' + (await afterRender());
@@ -248,7 +248,8 @@ module.exports = async (ctx) => {
     assert.strictEqual(await evt('Escape'), false, `${tag}: Escape is left alone`);
     assert.strictEqual(await H.js(`window.THEME.characters()`), 'theme', `${tag}: Tab and Escape choose nothing`);
     await pickChars('office');
-    assert.strictEqual(await H.js(`window.THEME.sceneKit()`), 'office', `${tag}: Office people in Flat draw the theme's own figures until Flat has their heads (T391)`);
+    assert.strictEqual(await H.js(`window.THEME.sceneKit()`), 'crew', `${tag}: T391: Office people in Flat draw the crew kit's heads, not the theme's own figures`);
+    assert.ok(await H.until(`document.getElementById('chNote').textContent===''`, 3000), `${tag}: T391: an Office people pick in Flat shows no line`);
     await pickChars('pixel');
     assert.strictEqual(await H.js(`window.THEME.characters()`), 'pixel', `${tag}: T230: a click on Retro pixel picks it`);
     /* T390 (issue #1873): Flat draws the Retro pixel heads, and the old line is gone */
@@ -276,6 +277,21 @@ module.exports = async (ctx) => {
     await H.load({ w, h, query: { characters: 'pixel', officeview: 'real' }, ready: `!!document.querySelector('#stage .ro .ro-plate')`, settle: false });
     await openSettings();
     assert.strictEqual(await H.js(`document.getElementById('chNote').textContent`), '', `${tag}: in Real office Retro pixel draws its people, so no line`);
+    await close();
+    /* spec 102 FR-203, T391 (issue #1873): Office people in Flat: the crew kit, a head crop of the set's seated photo on every desk, smooth (a photo), ids with the prefix, no line */
+    await H.load({ w, h, query: { characters: 'office' }, ready: 'fit', settle: false });
+    await H.office(15);
+    assert.strictEqual(await H.js(`window.THEME.characters()`), 'office', `${tag}: a saved Office people is kept`);
+    if (MUTANT === 'skipoffice') await H.js(`window.THEME.setCharacters('theme');window.__durbarSimUi.render();true`);
+    if (MUTANT === 'pixelatedoffice') await H.js(`document.querySelectorAll('svg.crew-head image').forEach(i=>i.style.imageRendering='pixelated')`);
+    assert.strictEqual(await H.js(`window.THEME.sceneKit()`), 'crew', `${tag}: a saved Office people draws the crew kit's heads in Flat`);
+    const dOff = await desks();
+    await must(dOff.n >= 12 && dOff.by.crew === dOff.n && dOff.heads === dOff.n && dOff.anyPic === 0, `${tag}: a saved Office people draws an Office head on every desk in Flat, no Cheeky portrait (${JSON.stringify(dOff)})`);
+    const smooth = await H.js(`(()=>{const im=[...document.querySelectorAll('#stage svg.crew-head image')].filter(i=>i.getClientRects().length);return {n:im.length,px:im.filter(i=>getComputedStyle(i).imageRendering==='pixelated').length,sets:im.every(i=>/^realoffice\\/sets\\/office\\/p\\d\\d-(typeA|waveA|rest)\\.webp$/.test(i.getAttribute('href')))}})()`);
+    await must(smooth.n >= 10 && smooth.px === 0 && smooth.sets, `${tag}: T391: every Office head is smooth (a photo) and is a frame of the set's folder, no copy (${JSON.stringify(smooth)})`);
+    await openSettings();
+    assert.strictEqual(await H.js(`document.getElementById('chNote').textContent`), '', `${tag}: in Flat a saved Office people shows no line (T391)`);
+    assert.strictEqual(await H.js(`document.querySelector('#chList [data-characters="office"]').getAttribute('aria-checked')`), 'true', `${tag}: the saved Office people is the checked radio`);
     await close();
     console.log(`[characters] ${tag} ok`, JSON.stringify(await desks()));
   }

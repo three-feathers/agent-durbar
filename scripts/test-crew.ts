@@ -385,11 +385,21 @@ assert.deepStrictEqual(Object.keys(C.FACE).sort(), [...C.ALL_IDS].sort(), 'a fac
   assert.strictEqual(C.file('retro-p03', 'waiting'), 'realoffice/sets/retro/p03-waveA.webp', 'the Real office file, no copy');
   assert.deepStrictEqual(C.files(ri).length, 45, '45 pictures to load, all in the set folder');
   assert.ok(C.files(ri).every((f) => fs.existsSync(path.join(__dirname, '..', '..', 'src', 'renderer', f))), 'every file exists where the set keeps it (no copy, no new file)');
-  assert.ok(ri.every((id) => C.usable(id)) && !C.usable('retro-p16') && !C.usable('p01') && !C.usable('office-p01'), 'usable: the 15 ids of the set only');
+  assert.ok(ri.every((id) => C.usable(id)) && !C.usable('retro-p16') && !C.usable('p01'), 'usable: the 15 ids of the set only');
   const hd = C.head('retro-p05', 'resting');
   assert.ok(hd && hd.sharp === true && hd.href === 'realoffice/sets/retro/p05-rest.webp' && hd.crop.length === 3 && hd.box.s === C.HEAD_BOX.s, 'the head of a Retro pixel person: sharp, its own picture and crop');
   assert.strictEqual(C.head('punk', 'working'), null, 'a crew character has no head crop: its portrait is drawn');
-  assert.strictEqual(C.head('office-p01', 'working'), null, 'Office people have no flat heads until T391');
+  // Office people (T391): the same, smooth, their own ids, file and key
+  const oi = C.idsFor('office');
+  assert.deepStrictEqual(oi, Array.from({ length: 15 }, (_, i) => `office-p${String(i + 1).padStart(2, '0')}`), 'Office people: office-p01..office-p15');
+  assert.ok(oi.every((id) => !C.ALL_IDS.includes(id) && !ri.includes(id)), 'no clash with the crews or Retro pixel');
+  assert.strictEqual(C.storeKey('office'), 'durbar.crew.office', 'its own saved map');
+  assert.strictEqual(C.file('office-p03', 'resting'), 'realoffice/sets/office/p03-rest.webp', 'the Real office file, no copy');
+  assert.ok(C.files(oi).length === 45 && C.files(oi).every((f) => fs.existsSync(path.join(__dirname, '..', '..', 'src', 'renderer', f))), '45 pictures, every one where the set keeps it (no copy, no new file)');
+  assert.ok(oi.every((id) => C.usable(id)) && !C.usable('office-p16'), 'usable: the 15 ids of the set');
+  const ho = C.head('office-p01', 'working');
+  assert.ok(ho && ho.sharp === false && ho.href === 'realoffice/sets/office/p01-typeA.webp' && ho.crop.length === 3 && ho.box.s === C.HEAD_BOX.s, 'the head of an Office person: smooth, its own picture and crop');
+  assert.deepStrictEqual(C.loadCrew({ s1: 'office-p03', s2: 'retro-p03' }, oi), { s1: 'office-p03' }, 'an Office load drops the Retro pixel ids');
   assert.strictEqual(C.viewBox('retro-p02', 'working', 'seat'), `${C.HEAD_BOX.x} ${C.HEAD_BOX.y} ${C.HEAD_BOX.s} ${C.HEAD_BOX.s}`, 'the avatar and the seat show the head square');
   assert.deepStrictEqual(C.faceBox('retro-p02', 'resting'), [C.HEAD_BOX.x, C.HEAD_BOX.y, C.HEAD_BOX.s, C.HEAD_BOX.s], 'the face box is the square');
   assert.deepStrictEqual(C.loadCrew({ s1: 'retro-p03', s2: 'punk' }, ri), { s1: 'retro-p03' }, 'a Retro pixel load drops the other crews\' ids');

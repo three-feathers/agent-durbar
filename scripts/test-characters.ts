@@ -89,11 +89,11 @@ for (const [id, own] of Object.entries(OWN)) {
   assert.strictEqual(T.characters(), 'theme', `${id}: an unknown value is the default`);
   assert.strictEqual(T.sceneKit(), own, `${id}: and draws the theme's own`);
 }
-// spec 102 FR-320, FR-321 (T290): the two set values parse in main and in the renderer, are kept whatever the flag, and in Flat Retro pixel draws its heads (T390) while Office people draw the theme's own figures until T391
+// spec 102 FR-320, FR-321 (T290): the two set values parse in main and in the renderer, are kept whatever the flag, and in Flat Retro pixel draws its heads (T390) and so do Office people (T391)
 for (const v of ['office', 'pixel']) {
   assert.strictEqual(parseCharacters(v), v, `main keeps ${v}`); assert.strictEqual(T.parseCharacters(v), v, `the renderer keeps ${v}`);
   assert.deepStrictEqual(parseSettings(JSON.stringify({ characters: v })), { characters: v }, `a stored ${v} is read back (main knows no flag: FR-322)`);
-  for (const [id, own] of Object.entries(OWN)) { T.setTheme(id); T.setCharacters(v); assert.strictEqual(T.characters(), v, `${id}: ${v} applies`); assert.strictEqual(T.sceneKit(), v === 'pixel' ? 'crew' : own, `${id}: ${v} draws ${v === 'pixel' ? 'the Retro pixel heads (T390)' : "the theme's own flat figures until T391"}`); }
+  for (const [id, own] of Object.entries(OWN)) { T.setTheme(id); T.setCharacters(v); assert.strictEqual(T.characters(), v, `${id}: ${v} applies`); assert.strictEqual(T.sceneKit(), 'crew', `${id}: ${v} draws the heads of its set in Flat (T390, T391), not ${own}`); }
 }
 T.setCharacters('theme'); T.setTheme('clean-office');
 // a choice applies on top of a user pack too (FR-065)
@@ -183,7 +183,8 @@ assert.strictEqual(PIXEL_CHARACTERS, 'pixel'); assert.strictEqual(T.PIXEL_CHARAC
   T.setTheme('clean-office'); T.setCharacters(loaded as string);
   assert.strictEqual(T.characters(), PIXEL_CHARACTERS, 'T290: Flat keeps the value'); assert.strictEqual(T.sceneKit(), 'crew', 'T390: and Flat draws the Retro pixel heads (the crew kit), not the theme\'s own figures');
   assert.strictEqual(kitFor('office', PIXEL_CHARACTERS), 'crew', 'T390: the shared rule agrees'); assert.strictEqual(T.kitFor('pixel', PIXEL_CHARACTERS), 'crew', 'T390: on any theme kit');
-  T.setCharacters('office'); assert.strictEqual(T.sceneKit(), 'office', 'T391 is not built: Office people still draw the theme\'s own figures in Flat'); T.setCharacters(PIXEL_CHARACTERS);
+  T.setCharacters('office'); assert.strictEqual(T.sceneKit(), 'crew', 'T391: Office people draw the heads of their set in Flat'); assert.strictEqual(kitFor('office', 'office'), 'crew', 'T391: the shared rule agrees'); assert.strictEqual(T.kitFor('pixel', 'office'), 'crew', 'T391: on any theme kit');
+  assert.deepStrictEqual(T.FLAT_HEAD_SETS, ['office', 'pixel'], 'T391: both set values have Flat heads'); T.setCharacters(PIXEL_CHARACTERS);
   /* T390 mutants, run on the real sources: the Retro pixel heads skipped in Flat (the theme's own figures drawn) and the Flat line left in place must each fail the assertions above and below */
   {
     const themeSrc = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'theme.js'), 'utf8'), screensSrc = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'screens.js'), 'utf8').replace(/\r\n/g, '\n');
@@ -191,6 +192,12 @@ assert.strictEqual(PIXEL_CHARACTERS, 'pixel'); assert.strictEqual(T.PIXEL_CHARAC
     assert.notStrictEqual(skip, themeSrc, 'T390 mutant: the kitFor line is where the test expects it');
     const kitOf = (src: string): string => { const m = { exports: {} as Record<string, unknown> }; new Function('module', 'exports', 'self', src)(m, m.exports, undefined); return (m.exports.kitFor as (a: string, b: string) => string)('office', PIXEL_CHARACTERS); };
     assert.strictEqual(kitOf(themeSrc), 'crew', 'T390: theme.js as built draws the heads in Flat');
+    /* T391 mutant: Office people dropped from FLAT_HEAD_SETS draw the theme's own figures (SC-017: a stored value without heads draws as before) */
+    const dropOffice = themeSrc.replace("const FLAT_HEAD_SETS=['office',PIXEL_CHARACTERS];", 'const FLAT_HEAD_SETS=[PIXEL_CHARACTERS];');
+    assert.notStrictEqual(dropOffice, themeSrc, 'T391 mutant: the FLAT_HEAD_SETS line is where the test expects it');
+    const kitOfOffice = (src: string): string => { const m = { exports: {} as Record<string, unknown> }; new Function('module', 'exports', 'self', src)(m, m.exports, undefined); return (m.exports.kitFor as (a: string, b: string) => string)('office', 'office'); };
+    assert.strictEqual(kitOfOffice(themeSrc), 'crew', 'T391: theme.js as built draws the Office heads in Flat');
+    assert.notStrictEqual(kitOfOffice(dropOffice), 'crew', 'T391 mutant: Office people dropped from the Flat sets draw the theme\'s own figures, which the assertion above rejects');
     assert.notStrictEqual(kitOf(skip), 'crew', 'T390 mutant: skipping the Retro pixel heads in Flat draws the theme\'s own figures, which the assertion above rejects');
     const LINE = 'Flat draws the theme\u2019s own figures until Retro pixel has its flat heads.';
     assert.ok(!screensSrc.includes(LINE) && !/until Retro pixel has its flat heads/.test(screensSrc), 'T390: the Flat line is gone from Settings (charNote)');

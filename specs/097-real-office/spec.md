@@ -1402,6 +1402,8 @@ Numbers checked 2026-11-08 against `main`, every remote branch and every open PR
 | Monster | `crew` kit, 6 heads | Retro pixel people + note | Office people + note | Prehistoric people + note |
 | Royal | `crew` kit, 6 heads | Retro pixel people + note | Office people + note | Prehistoric people + note |
 | Rebels | `crew` kit, 6 heads | Retro pixel people + note | Office people + note | Prehistoric people + note |
+| Office people (`office`; cells added 2026-11-20, spec 102 T391/T392, issue #1873) | `crew` kit, 15 head crops of the Office set's seated photos (`typeA`, `waveA`, `rest`; smooth) | Office people (its own set, full) | Office people (its own set, full) | Office people (its own set, full) |
+| Retro pixel (`pixel`; cells added 2026-11-20, spec 102 T390/T392, issue #1873) | `crew` kit, 15 head crops of the Retro set's seated pictures (nearest-neighbour) | Retro pixel people (its own set, full) | Retro pixel people (its own set, full) | Retro pixel people (its own set, full) |
 | My characters | not a Characters value yet (spec 096 unbuilt; absent from `CHARACTER_CHOICES`) | none | none (FR-081: Office people when it exists and has no frames) | none |
 
 Missing cells and the task that books each (none is built in this PR): the six crew and Minimalist cells in the Photo office, the arcade and the cave need the set to exist: T240..T245 (art, one per set, with the note's removal). Every landed set must then be drawn and read in the arcade and in the cave: T247 (arcade, with spec 102 T225 for Prehistoric and the Retro pixel people in the Photo office) and T248 (cave). My characters everywhere: T246 (with spec 096 and spec 102 T112). Flat has every cell but My characters.

@@ -116,8 +116,8 @@
   };
   /* spec 102 FR-203, T389/T390 (issue #1873): Flat's heads of a full set are crops of its seated busts: `typeA` for working, `waveA` for waiting, `rest` for resting, of `realoffice/sets/<set>/<person>-<frame>.webp`
      (no new file, no copy). `pic` is the picture's size in its own pixels (it differs per person); each pose has one square crop [x, y, side] in those pixels, its centre the face point, measured once per person and pose
-     (a throwaway script: the head top, the neck and the alpha channel) and corrected by hand on a contact sheet where the hair is tall (spiky p05, buns p06 and p13, afro p03, pigtails p10). Office people's points
-     are measured now and drawn by T391; the working crop of Office people is a bowed head (typeA), so it shows the crown and the lowered face. test:crew keeps every crop square and inside its picture; each crop starts at the head's own top, never above the picture's alpha box (checked once by the script, not in the test: no WebP decoder in the tests). */
+     (a throwaway script: the head top, the neck and the alpha channel) and corrected by hand on a contact sheet where the hair is tall (spiky p05, buns p06 and p13, afro p03, pigtails p10). Office people's crops
+     are drawn since T391; the working crop of Office people is a bowed head (typeA): it shows the crown and the lowered face, the eyes and the mouth are in the crop for all 15 (contact sheet, T391), so typeA stays. test:crew keeps every crop square and inside its picture; each crop starts at the head's own top, never above the picture's alpha box (checked once by the script, not in the test: no WebP decoder in the tests). */
   const HEAD_FRAME = { working: 'typeA', waiting: 'waveA', resting: 'rest' };
   const HEADS = {
     retro: {
@@ -155,8 +155,8 @@
     p15: { pic: [439, 620], working: [101, 142, 220], waiting: [110, 141, 202], resting: [110, 148, 202] },
     },
   };
-  /* the Characters values Flat draws as heads, the set each names, the id prefix (both sets name their people p01..p15, so `retro-p01`; no clash in FACE, OWN or a stored crew) and the scaling: Retro pixel is nearest (sharp) */
-  const FLAT_SETS = { pixel: { set: 'retro', prefix: 'retro-', sharp: true } };
+  /* the Characters values Flat draws as heads, the set each names, the id prefix (both sets name their people p01..p15, so `retro-p01` and `office-p01`; no clash in FACE, OWN or a stored crew) and the scaling: Retro pixel is nearest (sharp), Office people are photos (smooth) */
+  const FLAT_SETS = { pixel: { set: 'retro', prefix: 'retro-', sharp: true }, office: { set: 'office', prefix: 'office-', sharp: false } };
   const FLAT_IDS = {};
   for (const [choice, f] of Object.entries(FLAT_SETS)) FLAT_IDS[choice] = Object.keys(HEADS[f.set]).map((k) => f.prefix + k);
   /* where a head is drawn in the 200x124 stage: a square above the desk top (y 86), left of the monitor (x 112); the round avatars and the lounge seat show the same square */
