@@ -21,3 +21,9 @@ body.panel-open .bv,body.screen-open .bv,body.list-mode .bv{display:none}
 html[data-world="retro"][data-ui="retro"] .bv{font-family:var(--ui-display);border-color:var(--line);border-radius:0;background:var(--surface);color:var(--ink);box-shadow:var(--shadow-pop)}
 html[data-world="retro"][data-ui="retro"] .bv .btn{font-family:inherit;border-radius:0;background:var(--surface-2);color:var(--ink);border-color:var(--line-ctl)}
 html[data-world="retro"][data-ui="retro"] .bv-card{border-radius:0;background:var(--surface-2)}
+/* Spec 106 FR-110 (T027, #1219): the Prehistoric cave skin: parchment and earth from the cave's own page tokens, the cave's soft pop shadow. Colours only: no width, height, margin, padding, font or font-size here (070 D2). */
+html[data-world="cave"] .bv{border-color:var(--line-2);background:var(--surface-2);color:var(--ink);box-shadow:var(--shadow-pop)}
+html[data-world="cave"] .bv .btn{background:var(--raised);color:var(--ink);border-color:var(--line-ctl)}
+html[data-world="cave"] .bv .btn:focus-visible{outline-color:var(--focus)}
+html[data-world="cave"] .bv-card{background:var(--soft)}
+@media (forced-colors:active){html[data-world="cave"] .bv{border-color:CanvasText;background:Canvas;color:CanvasText;box-shadow:none}html[data-world="cave"] .bv .btn{background:ButtonFace;color:ButtonText;border-color:ButtonText}html[data-world="cave"] .bv-card{background:Canvas}}
