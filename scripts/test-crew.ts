@@ -2,6 +2,7 @@
 import * as assert from 'assert';
 import * as fs from 'fs';
 import * as path from 'path';
+import { webpInfo } from './webpinfo';
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const C = require(path.join(__dirname, '..', '..', 'src', 'renderer', 'crew.js')) as {
@@ -14,6 +15,7 @@ const C = require(path.join(__dirname, '..', '..', 'src', 'renderer', 'crew.js')
   loadCrew: (j: unknown, ids?: string[]) => Record<string, string>;
   POSES: string[]; BOX: { x: number; y: number; w: number; h: number }; PX_PER_UNIT: number; FACE: Record<string, Record<string, number[]>>; FACE_W: number; FACE_H: number; faceBox: (id: string, pose: string) => number[] | null; viewBox: (id: string, pose: string, use?: string) => string | null;
   registerOwn: (l: unknown) => string[]; ownName: (id: string) => string; ownRev: (id: string) => string; folderKey: (p: string, platform: string) => string; pinKey: (i: unknown, platform: string) => string | null; pinCrew: (m: Record<string, string>, s: { id: string; key: string }[], pins: Record<string, string>, ids: string[], bad?: Set<string>) => Record<string, string>; viewBoxAt: (f: number[], use?: string) => string;
+  HEADS: Record<string, Record<string, Record<string, number[]>>>; HEAD_FRAME: Record<string, string>; HEAD_BOX: { x: number; y: number; s: number }; FLAT_SETS: Record<string, { set: string; prefix: string; sharp: boolean }>; FLAT_IDS: Record<string, string[]>; head: (id: string, pose: string) => { href: string; pic: number[]; crop: number[]; box: { x: number; y: number; s: number }; sharp: boolean } | null;
   poseFor: (st: string) => string; file: (id: string, pose: string) => string; files: (ids?: string[]) => string[]; usable: (id: unknown, bad?: Set<string>) => boolean;
 };
 
@@ -332,4 +334,71 @@ assert.deepStrictEqual(Object.keys(C.FACE).sort(), [...C.ALL_IDS].sort(), 'a fac
   assert.strictEqual(C.file(A, 'working'), 'crew/art/' + A + '-working.webp', 'and their URLs are gone (no reader: usable is false)');
   assert.strictEqual(C.usable(A), false);
 }
+// ---- spec 102 FR-203, T389/T390 (issue #1873): Flat's heads, crops of the seated busts, measured once; no new picture file ----
+{
+  const SETS = path.join(__dirname, '..', '..', 'src', 'renderer', 'realoffice', 'sets');
+  /** What is wrong with one set's head crops: every person and pose has a crop; the picture size is the file's; the crop is square, at least 24 px, whole pixels and inside the picture; its centre, the face point, is inside the picture. */
+  const headProblems = (heads: Record<string, Record<string, number[]>>, sizes: Record<string, number[]>, people: string[]): string[] => {
+    const out: string[] = [];
+    for (const p of people) {
+      const h = heads[p]; if (!h) { out.push(`${p}: no crops`); continue; }
+      const [w, ht] = sizes[p];
+      if (h.pic[0] !== w || h.pic[1] !== ht) out.push(`${p}: pic ${h.pic} is not the file's ${w}x${ht}`);
+      for (const pose of C.POSES) {
+        const c = h[pose]; if (!c || c.length !== 3 || !c.every((n) => Number.isInteger(n))) { out.push(`${p} ${pose}: not [x, y, side] in whole pixels`); continue; }
+        const [x, y, side] = c;
+        if (side < 24) out.push(`${p} ${pose}: side ${side} under 24 px`);
+        if (x < 0 || y < 0 || x + side > w || y + side > ht) out.push(`${p} ${pose}: the crop leaves the picture`);
+        const fx = x + side / 2, fy = y + side / 2;
+        if (fx < 0 || fx > w || fy < 0 || fy > ht) out.push(`${p} ${pose}: the face point is outside the picture`);
+      }
+    }
+    return out;
+  };
+  for (const set of ['retro', 'office']) {
+    const dir = path.join(SETS, set), seat = JSON.parse(fs.readFileSync(path.join(dir, 'set.json'), 'utf8')).seat as Record<string, unknown>;
+    const people = Object.keys(seat).sort();
+    assert.strictEqual(people.length, 15, `${set}: 15 people`);
+    assert.deepStrictEqual(Object.keys(C.HEADS[set]).sort(), people, `${set}: a crop entry for every person of the set, none more`);
+    const sizes: Record<string, number[]> = {};
+    for (const p of people) {
+      for (const pose of C.POSES) {
+        const buf = fs.readFileSync(path.join(dir, `${p}-${C.HEAD_FRAME[pose]}.webp`)), i = webpInfo(buf);
+        if (pose === 'working') sizes[p] = [i.width, i.height]; else assert.deepStrictEqual([i.width, i.height], sizes[p], `${set} ${p}: the three frames have one size`);
+      }
+    }
+    assert.deepStrictEqual(headProblems(C.HEADS[set], sizes, people), [], `${set}: every person and pose has a square crop inside its picture, face point inside`);
+    // mutant: a face point (crop) outside the picture fails
+    const bad = JSON.parse(JSON.stringify(C.HEADS[set])); bad.p07.waiting = [sizes.p07[0] - 10, 0, 52];
+    assert.ok(headProblems(bad, sizes, people).some((m) => /p07 waiting: the crop leaves the picture/.test(m)), `${set}: a crop outside the picture fails`);
+    const nonSquare = JSON.parse(JSON.stringify(C.HEADS[set])); nonSquare.p01.working = [0, 0, 52, 40];
+    assert.ok(headProblems(nonSquare, sizes, people).length > 0, `${set}: a crop that is not [x, y, side] fails`);
+    const wrong = JSON.parse(JSON.stringify(C.HEADS[set])); wrong.p02.pic = [1, 1];
+    assert.ok(headProblems(wrong, sizes, people).some((m) => /not the file's/.test(m)), `${set}: a wrong picture size fails`);
+  }
+  assert.deepStrictEqual(C.HEAD_FRAME, { working: 'typeA', waiting: 'waveA', resting: 'rest' }, 'the three frames of the poses');
+  // Retro pixel: its own ids with the prefix, its own file, its own key, sharp scaling; no clash with another crew's id
+  const ri = C.idsFor('pixel');
+  assert.deepStrictEqual(ri, Array.from({ length: 15 }, (_, i) => `retro-p${String(i + 1).padStart(2, '0')}`), 'Retro pixel: retro-p01..retro-p15');
+  assert.ok(ri.every((id) => !C.ALL_IDS.includes(id)), 'no clash with the crews');
+  assert.strictEqual(C.storeKey('pixel'), 'durbar.crew.pixel', 'its own saved map');
+  assert.strictEqual(C.file('retro-p03', 'waiting'), 'realoffice/sets/retro/p03-waveA.webp', 'the Real office file, no copy');
+  assert.deepStrictEqual(C.files(ri).length, 45, '45 pictures to load, all in the set folder');
+  assert.ok(C.files(ri).every((f) => fs.existsSync(path.join(__dirname, '..', '..', 'src', 'renderer', f))), 'every file exists where the set keeps it (no copy, no new file)');
+  assert.ok(ri.every((id) => C.usable(id)) && !C.usable('retro-p16') && !C.usable('p01') && !C.usable('office-p01'), 'usable: the 15 ids of the set only');
+  const hd = C.head('retro-p05', 'resting');
+  assert.ok(hd && hd.sharp === true && hd.href === 'realoffice/sets/retro/p05-rest.webp' && hd.crop.length === 3 && hd.box.s === C.HEAD_BOX.s, 'the head of a Retro pixel person: sharp, its own picture and crop');
+  assert.strictEqual(C.head('punk', 'working'), null, 'a crew character has no head crop: its portrait is drawn');
+  assert.strictEqual(C.head('office-p01', 'working'), null, 'Office people have no flat heads until T391');
+  assert.strictEqual(C.viewBox('retro-p02', 'working', 'seat'), `${C.HEAD_BOX.x} ${C.HEAD_BOX.y} ${C.HEAD_BOX.s} ${C.HEAD_BOX.s}`, 'the avatar and the seat show the head square');
+  assert.deepStrictEqual(C.faceBox('retro-p02', 'resting'), [C.HEAD_BOX.x, C.HEAD_BOX.y, C.HEAD_BOX.s, C.HEAD_BOX.s], 'the face box is the square');
+  assert.deepStrictEqual(C.loadCrew({ s1: 'retro-p03', s2: 'punk' }, ri), { s1: 'retro-p03' }, 'a Retro pixel load drops the other crews\' ids');
+  assert.deepStrictEqual(C.loadCrew({ s1: 'retro-p03', s2: 'punk' }), { s2: 'punk' }, 'a Cheeky load drops the Retro pixel ids');
+  for (const odd of ['__proto__', 'constructor', 'retro-__proto__', 'retro-constructor', 'retro-', '']) assert.strictEqual(C.head(odd, 'working'), null, `no head for ${odd}`);
+  // the scene: Retro pixel's picture is drawn clipped, nearest, with no copy (scenekits.js, styles.css)
+  const kits = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'renderer', 'scenekits.js'), 'utf8'), css = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'renderer', 'styles.css'), 'utf8');
+  assert.ok(/'px' : 'sm'/.test(kits) && /\.crew-head \.px\{image-rendering:pixelated\}/.test(css), 'a Retro pixel head carries the class px, and styles.css scales it nearest');
+  assert.ok(!/\.crew-head \.sm/.test(css), 'smooth is the default of the other sets');
+}
+
 console.log('crew tests passed');

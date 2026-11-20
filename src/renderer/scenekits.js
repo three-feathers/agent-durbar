@@ -181,6 +181,8 @@
   /* spec 096: registerOwn already refuses anything but a plain blob: URL; this is the second line, since the markup is built from it */
   const attrText = (s) => String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/'/g, '&#39;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
   const crewPic = (o) => { const C = crewApi(); return C && !o.crewFb && C.usable(o.crew) ? C : null; };
+  /* spec 102 FR-203, T390: the head of a full set (Retro pixel): a square crop of its seated bust, drawn by a nested svg that clips the picture at its own size; Retro pixel scales nearest (class `px`, styles.css) */
+  const headPic = (h) => { const [x, y, s] = h.crop, bx = h.box; return `<svg class="crew-pic crew-head" x="${bx.x}" y="${bx.y}" width="${bx.s}" height="${bx.s}" viewBox="${x} ${y} ${s} ${s}" overflow="hidden"><image class="${h.sharp ? 'px' : 'sm'}" href="${attrText(h.href)}" x="0" y="0" width="${h.pic[0]}" height="${h.pic[1]}" preserveAspectRatio="none"/></svg>`; };
   KIT.crew = {
     sigExtra: (o) => { const C = crewApi(); return (o.crew || '') + (C && C.ownRev ? C.ownRev(o.crew) : '') + (o.crewFb ? '|fb' : ''); }, // spec 096: a registered character's pictures can move to new URLs
     noFace: (o) => !!crewPic(o),
@@ -188,7 +190,7 @@
     avatarView: (o) => { const C = crewPic(o); return C ? C.viewBox(o.crew, C.poseFor(o.st), o.view) : null; },
     chair: (o) => { const ch = o.T('--chair'); return `<rect x="47" y="33" width="54" height="65" rx="17" fill="${ch}"/><rect x="53" y="39" width="42" height="53" rx="12" fill="${o.shade(ch, 0.14)}"/><rect x="60" y="41" width="28" height="4" rx="2" fill="${o.T('--crew-accent')}"/>`; },
     hairBack: (o) => !crewPic(o) && o.k.style === 'long' ? `<path d="M60 44a14 14 0 0 1 28 0v14q0 4-4 4H64q-4 0-4-4z" fill="${o.k.hair}"/>` : '',
-    body: (o) => { const C = crewPic(o); if (C) { const b = C.BOX; return `<image class="crew-pic" href="${attrText(C.file(o.crew, C.poseFor(o.st)))}" x="${b.x}" y="${b.y}" width="${b.w}" height="${b.h}" preserveAspectRatio="xMidYMid meet"/>`; } return `<path d="${torso(o)}" fill="${o.k.shirt}"/><path d="M69.5 63.5q4.5 5 9 0" fill="none" stroke="${o.shade(o.k.shirt, 0.35)}" stroke-width="2" stroke-linecap="round"/><rect x="70" y="53" width="8" height="10" rx="3" fill="${o.skinD}"/>`; },
+    body: (o) => { const C = crewPic(o); if (C) { const hd = C.head && C.head(o.crew, C.poseFor(o.st)); if (hd) return headPic(hd); const b = C.BOX; return `<image class="crew-pic" href="${attrText(C.file(o.crew, C.poseFor(o.st)))}" x="${b.x}" y="${b.y}" width="${b.w}" height="${b.h}" preserveAspectRatio="xMidYMid meet"/>`; } return `<path d="${torso(o)}" fill="${o.k.shirt}"/><path d="M69.5 63.5q4.5 5 9 0" fill="none" stroke="${o.shade(o.k.shirt, 0.35)}" stroke-width="2" stroke-linecap="round"/><rect x="70" y="53" width="8" height="10" rx="3" fill="${o.skinD}"/>`; },
     head: (o) => crewPic(o) ? '' : `<circle cx="74" cy="44" r="12.5" fill="${o.k.skin}"/>`,
     hair: (o) => {
       if (crewPic(o)) return '';

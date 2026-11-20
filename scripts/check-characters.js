@@ -20,6 +20,8 @@ const { helpers, jsLiteral } = require('./driver-helpers');
 
 const THEMES = [['retro', 'pixel', 'Pixel figures']];
 const CREW_IMG = 'image[href*="crew/art/"]';
+/* CHARACTERS_MUTANT (spec 102 T390, issue #1873): skipflat = the Retro pixel heads are skipped in Flat (the theme's own figures are drawn); note = the old Flat line is put back under the list; smooth = the heads are scaled smooth (image-rendering auto). Each must fail the Flat Retro pixel block below. */
+const MUTANT = process.env.CHARACTERS_MUTANT || '';
 
 module.exports = async (ctx) => {
   const H = helpers(ctx);
@@ -29,7 +31,7 @@ module.exports = async (ctx) => {
   const desks = () => H.js(`(()=>{const sc=[...document.querySelectorAll('#stage .desk[data-id] svg.scene')].filter(s=>s.getClientRects().length);
     const kit=(s)=>{const m=/\\|(pixel|crew)(\\||$)/.exec(s.dataset.sig||'');return m?m[1]:'office';};
     const by={};for(const s of sc){const k=kit(s);by[k]=(by[k]||0)+1;}
-    return {n:sc.length,by,pics:sc.filter(s=>s.querySelector(${jsLiteral(CREW_IMG)})).length,anyPic:document.querySelectorAll(${jsLiteral('#stage ' + CREW_IMG)}).length};})()`);
+    return {n:sc.length,by,pics:sc.filter(s=>s.querySelector(${jsLiteral(CREW_IMG)})).length,heads:sc.filter(s=>s.querySelector('svg.crew-head image.px')).length,anyPic:document.querySelectorAll(${jsLiteral('#stage ' + CREW_IMG)}).length};})()`);
   /* issue 839: what the app holds when a crew step times out (it only failed on the macOS runner, never on a Mac at scale 1 or 2 or under reduced
      motion): the next nightly says why instead of only "timed out" */
   const why = async () => (await whyNow()) + ' ' + (await afterRender());
@@ -246,10 +248,12 @@ module.exports = async (ctx) => {
     assert.strictEqual(await evt('Escape'), false, `${tag}: Escape is left alone`);
     assert.strictEqual(await H.js(`window.THEME.characters()`), 'theme', `${tag}: Tab and Escape choose nothing`);
     await pickChars('office');
-    assert.strictEqual(await H.js(`window.THEME.sceneKit()`), 'office', `${tag}: Office people in Flat draw the theme's own figures until Flat has their heads (T294)`);
+    assert.strictEqual(await H.js(`window.THEME.sceneKit()`), 'office', `${tag}: Office people in Flat draw the theme's own figures until Flat has their heads (T391)`);
     await pickChars('pixel');
     assert.strictEqual(await H.js(`window.THEME.characters()`), 'pixel', `${tag}: T230: a click on Retro pixel picks it`);
-    assert.ok(await H.until(`document.getElementById('chNote').textContent==='Flat draws the theme\u2019s own figures until Retro pixel has its flat heads.'`, 3000), `${tag}: a Retro pixel pick in Flat shows the line at once`);
+    /* T390 (issue #1873): Flat draws the Retro pixel heads, and the old line is gone */
+    if (MUTANT === 'note') await H.js(`document.getElementById('chNote').textContent='Flat draws the theme\u2019s own figures until Retro pixel has its flat heads.'`);
+    assert.ok(await H.until(`document.getElementById('chNote').textContent===''`, 3000), `${tag}: T390: a Retro pixel pick in Flat shows no line (Flat draws its heads)`);
     await pickChars('theme');
     assert.ok(await H.until(`document.getElementById('chNote').textContent===''`, 3000), `${tag}: another pick clears the line`);
     await pickChars('pixel');
@@ -257,12 +261,16 @@ module.exports = async (ctx) => {
     await H.load({ w, h, query: { characters: 'pixel' }, ready: 'fit', settle: false });
     await H.office(15);
     assert.strictEqual(await H.js(`window.THEME.characters()`), 'pixel', `${tag}: a saved Retro pixel is kept`);
-    /* spec 102 FR-322, T294 after the flip (issue #1873): Flat draws the theme's own figures until Retro pixel has its Flat heads */
-    assert.strictEqual(await H.js(`window.THEME.sceneKit()`), 'office', `${tag}: a saved Retro pixel draws the theme's own kit in Flat (T294 open)`);
+    if (MUTANT === 'skipflat') await H.js(`window.THEME.setCharacters('theme');window.__durbarSimUi.render();true`); /* the theme's own figures drawn */
+    if (MUTANT === 'smooth') await H.js(`document.querySelectorAll('svg.crew-head image.px').forEach(i=>i.style.imageRendering='auto')`);
+    /* spec 102 FR-203, T390: Flat draws the Retro pixel heads: the crew kit, a head crop of the set's seated bust on every desk, nearest-neighbour, ids with the prefix */
+    assert.strictEqual(await H.js(`window.THEME.sceneKit()`), 'crew', `${tag}: a saved Retro pixel draws the crew kit's heads in Flat`);
     const dFlat = await desks();
-    assert.ok(dFlat.n >= 12 && dFlat.by.office === dFlat.n && dFlat.anyPic === 0, `${tag}: a saved Retro pixel draws the theme's own figures on every desk in Flat (${JSON.stringify(dFlat)})`);
+    await must(dFlat.n >= 12 && dFlat.by.crew === dFlat.n && dFlat.heads === dFlat.n && dFlat.anyPic === 0, `${tag}: a saved Retro pixel draws a Retro pixel head on every desk in Flat, no Cheeky portrait (${JSON.stringify(dFlat)})`);
+    const sharp = await H.js(`(()=>{const im=[...document.querySelectorAll('#stage svg.crew-head image')].filter(i=>i.getClientRects().length);return {n:im.length,px:im.filter(i=>getComputedStyle(i).imageRendering==='pixelated').length,hrefs:[...new Set(im.map(i=>i.getAttribute('href').replace(/p\\d\\d-/,'p..-')))],sets:im.every(i=>/^realoffice\\/sets\\/retro\\/p\\d\\d-(typeA|waveA|rest)\\.webp$/.test(i.getAttribute('href')))}})()`);
+    await must(sharp.n >= 10 && sharp.px === sharp.n && sharp.sets, `${tag}: T390: every Retro pixel head is scaled nearest (image-rendering: pixelated) and is a frame of the set's folder, no copy (${JSON.stringify(sharp)})`);
     await openSettings();
-    assert.strictEqual(await H.js(`document.getElementById('chNote').textContent`), 'Flat draws the theme\u2019s own figures until Retro pixel has its flat heads.', `${tag}: in Flat a saved Retro pixel says why the desks keep the theme's figures (T294, #1873; review of #1898)`);
+    assert.strictEqual(await H.js(`document.getElementById('chNote').textContent`), '', `${tag}: in Flat a saved Retro pixel shows no line (T390: Flat draws its heads)`);
     assert.strictEqual(await H.js(`document.querySelector('#chList [data-characters="pixel"]').getAttribute('aria-checked')`), 'true', `${tag}: the saved Retro pixel is the checked radio`);
     await close();
     await H.load({ w, h, query: { characters: 'pixel', officeview: 'real' }, ready: `!!document.querySelector('#stage .ro .ro-plate')`, settle: false });
