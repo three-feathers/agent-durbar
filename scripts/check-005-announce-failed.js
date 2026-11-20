@@ -4,7 +4,7 @@
  * status events go through the normal path; a MutationObserver on #srAnnounce records every value.
  *   1. working, error, idle: "Reply failed" is said, and "Reply finished" is not (the turn ends at the idle, after the error);
  *   2. working, idle: "Reply finished" is said, and "Reply failed" is not (the old behaviour for a normal end stays);
- *   3. working, error, working again, idle: the agent went on, so "Reply finished" is said and "Reply failed" is not.
+ *   3. the chat closed, working, error, working again, the chat reopened, idle: the agent went on, so "Reply finished" is said and "Reply failed" is not (FR-246: with the chat open the failure is said when the error arrives).
  * Not driven: Stop (check-composer-toolbar), a lost session (`stopped`), Windows, Linux, a real screen reader.
  *
  *   npm run check:ui -- --only check-005-announce-failed
@@ -64,11 +64,16 @@ module.exports = async (ctx) => {
     q = await seen();
     assert.ok(q.includes('Reply finished'), '2: a turn that ends normally still says "Reply finished"; #srAnnounce took ' + JSON.stringify(q));
     assert.ok(!q.includes('Reply failed'), '2: it does not say "Reply failed"; #srAnnounce took ' + JSON.stringify(q));
-    /* 3 */
+    /* 3: the chat is CLOSED during the error and the agent goes on, then the chat is reopened and the turn ends: no "Reply failed" for a turn that recovered (nothing was said at the error, so the flag waits for the next working status to clear it) */
+    await js(`document.getElementById('backBtn').click();0`);
+    assert.ok(await until(`!document.body.classList.contains('panel-open')`, 6000), '3: the chat closed');
     await js('window.__seq=[];0');
     await emit('working'); await idle('the third turn started');
     await emit('error', 'a failure'); await idle('the failure that was not the end');
     await emit('working'); await idle('the agent went on');
+    const reopened = await H.openSimAgent(`a=>a.id===${jsLiteral(A)}`, '#msgInput');
+    assert.ok(reopened.ok, '3: the chat reopened ' + jsLiteral(reopened.seen));
+    await js('window.__seq=[];0');
     await emit('idle'); await idle('the third turn ended');
     q = await seen();
     assert.ok(q.includes('Reply finished'), '3: a turn that went on after an error says "Reply finished"; #srAnnounce took ' + JSON.stringify(q));
