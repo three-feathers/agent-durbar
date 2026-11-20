@@ -982,10 +982,14 @@
     if (slips.limit) {
       const L = slips.limit;
       put('slip:limit', 'ro-slip ro-limit', {
-        sig: [L.id, L.name, L.who, L.text, L.actions, L.input && [L.input.label, L.input.min, L.input.step, L.input.value]],
+        sig: [lay.cabinet, L.id, L.name, L.who, L.text, L.actions, L.input && [L.input.label, L.input.min, L.input.step, L.input.value]],
         fill: (e, v) => {
           e.setAttribute('role', 'group'); e.setAttribute('aria-label', 'Spending limit reached');
-          if (v === 'pill') { const sfx = ': Spending limit reached \u00B7 Show in chat', t = L.name + sfx, b = btn(t, t, 'ro-pill', /* spec 097 FR-359: the title is the whole text, for what the ellipsis cuts (the accessible name is the button's text) */ { slipact: 'open', slipid: L.id, slipfocus: 'limit' }); b.textContent = ''; const n = document.createElement('span'); n.className = 'ro-pn'; n.textContent = L.name; const x = document.createElement('span'); x.className = 'ro-ps'; x.textContent = sfx; b.appendChild(n); b.appendChild(x); /* FR-359: only the name span is cut by the ellipsis, the suffix stays whole */ e.appendChild(b); return; }
+          if (v === 'pill') { const sfx = ': Spending limit reached \u00B7 Show in chat', t = L.name + sfx, b = btn(t, t, 'ro-pill', /* spec 097 FR-359: the title is the whole text, for what the ellipsis cuts (the accessible name is the button's text) */ { slipact: 'open', slipid: L.id, slipfocus: 'limit' }); b.textContent = ''; const n = document.createElement('span'); n.className = 'ro-pn'; n.textContent = L.name; const x = document.createElement('span'); x.className = 'ro-ps'; x.textContent = sfx; b.appendChild(n); b.appendChild(x); /* FR-359: only the name span is cut by the ellipsis, the suffix stays whole */ e.appendChild(b);
+            /* spec 102 T395 (issue #1954): the arcade's one line also holds Remove limit, the card's own button (the same handler as the full slip's, no new channel); the amount field and Raise limit stay in the chat and the inbox, where a number can be read first */
+            const rm = lay.cabinet && L.actions.find((a) => a.label === 'Remove limit');
+            if (rm) { const r = btn(rm.label, rm.title, 'ro-pill', { slipact: 'limit', slipid: L.id, slipreq: L.req, slipidx: rm.idx }); r.className = 'ro-sbtn ro-rm'; /* the pill's own look (realoffice.css), underlined, so the arcade's chrome counts no new size */ r.setAttribute('aria-label', 'Remove limit: ' + L.name); e.appendChild(r); }
+            return; }
           e.appendChild(p('sl-h', L.who)); e.appendChild(p('sl-t', L.text));
           const row = document.createElement('div'); row.className = 'sl-act';
           if (L.input) { const i = document.createElement('input'); i.type = 'number'; i.className = 'limit-amt'; i.min = L.input.min; i.step = L.input.step; i.value = L.input.value; i.setAttribute('aria-label', L.input.label); row.appendChild(i); }
