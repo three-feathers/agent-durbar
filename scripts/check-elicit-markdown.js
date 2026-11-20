@@ -43,13 +43,12 @@ module.exports = async (ctx) => {
     const tag = `${world} ${w}x${h}`;
     const query = { sim: '15', simelicit: 'md', ...(world === 'flat' ? {} : { officeview: 'real' }) };
     await H.load({ w, h, query, ready: 'fit', ...(INDEX ? { index: INDEX } : {}) });
-    const READY = `document.querySelector('#chat .note.question.elicit .q-md')`;
     let ok;
     if (world === 'flat') ok = (await H.openSimAgent(`a=>!a.parent&&a.question`, '#chat .note.question.elicit .q-md')).ok;
     else { // the Real office has no desks: open the asking agent's chat as check-question-markdown does
       const id = await H.until(`((window.__durbarSimUi&&window.__durbarSimUi.agents().find(a=>!a.parent&&a.question))||{}).id`, 20000) && await js(`window.__durbarSimUi.agents().find(a=>!a.parent&&a.question).id`);
       await js(`window.__durbarSimUi.crew.openPanel(${jsLiteral(id)})`);
-      ok = await H.until(`document.body.classList.contains('panel-open')&&!!${READY}`, 15000);
+      ok = await H.until("document.body.classList.contains('panel-open')&&!!document.querySelector('#chat .note.question.elicit .q-md')", 15000);
     }
     assert.ok(ok, `${tag}: an agent has the MCP form in its chat`);
     await settle();
