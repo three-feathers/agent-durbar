@@ -1,1 +1,0 @@
-- **A failing agent is announced to screen readers** (spec 005): when an agent enters the error state while its chat is not open, "<name> has an error." is said once (#1908).

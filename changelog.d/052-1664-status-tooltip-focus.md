@@ -1,1 +1,0 @@
-- **`check-status-tooltip` says when the window has no focus** (spec 052, issue #1664): a test-only change; no app behaviour changes.

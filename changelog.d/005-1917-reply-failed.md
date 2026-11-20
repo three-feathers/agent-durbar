@@ -1,1 +1,0 @@
-- **The open chat says that a reply failed** (spec 005): a turn that ends in an error is announced as "Reply failed" to a screen reader, not "Reply finished" (#1917).
