@@ -147,8 +147,13 @@ if (require.main === module) {
   /* issue 1644: helpers in the arcade is not built (T327 not started) */
   fails('helpers claimed built for the arcade', (i) => { const m = i.reg.moments.find((x) => x.id === 'helpers'); m.worlds.retro = 'built'; m.evidence = { retro: { steps: ['asleep'], pictures: ['asleep'] } }; }, /retro cell helpers: the arcade has no kids/);
   fails('helpers fallback-flat loses its #1643 note', (i) => { i.reg.moments.find((x) => x.id === 'helpers').gap.retro = 'the arcade has no kids yet'; }, /retro cell helpers: the arcade has no kids/);
-  fails('the shared note changes with no new moment (retro cells also changed)', (i) => { i.reg.moments.splice(i.reg.moments.findIndex((m) => m.id === 'helpers'), 1); i.reg.moments.find((m) => m.id === 'lobby').gap = { retro: 'x' }; i.reg.note += ' extra'; }, /also another world or the shared registry/);
-  fails('the shared note is rewritten, not extended, by the moment-adding change', (i) => { i.reg.note = 'rewritten ' + i.reg.note; }, /also another world or the shared registry/);
+  { /* main stands in with the same 27 moments (so the moment-count assert is not what fails) and a different retro part (so the main comparison runs, also in a shallow CI clone) */
+    const mainSame = () => { const m = clone(); m.moments.find((x) => x.id === 'lobby').worlds.retro = 'designed'; return m; };
+    const mainBeforeHelpers = () => { const m = mainSame(); m.moments.splice(m.moments.findIndex((x) => x.id === 'helpers'), 1); return m; };
+    fails('the shared note changes with no new moment (retro cells also changed)', (i) => { i.main = mainSame(); i.reg.note += ' extra'; }, /also another world or the shared registry/);
+    fails('the shared note is rewritten, not extended, by the moment-adding change', (i) => { i.main = mainBeforeHelpers(); i.reg.note = 'rewritten ' + i.reg.note; }, /also another world or the shared registry/);
+    { const i = { reg: clone(), main: mainBeforeHelpers(), driver, css }; i.main.note = i.reg.note.slice(0, i.reg.note.length - 5); assert.ok(!check(i).some((g) => /also another world/.test(g)), 'a moment-adding change may extend the note'); }
+  }
   fails('a retro cell removed', (i) => { i.reg.moments.splice(i.reg.moments.findIndex((m) => m.id === 'walk'), 1); }, /not the 27/);
   fails('a retro cell is not a state', (i) => { i.reg.moments.find((m) => m.id === 'lobby').worlds.retro = 'bogus'; }, /lobby is "bogus"/);
   fails('a moment has no retro key', (i) => { delete i.reg.moments.find((m) => m.id === 'lobby').worlds.retro; }, /lobby is undefined/);
