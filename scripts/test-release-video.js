@@ -458,7 +458,7 @@ const { killTree } = require('./ui-suite');
     if (distOk) {
       let seen = null;
       const opts = [];
-      const fakeRun = (file, args, o) => { opts.push(o); fs.writeFileSync(args[args.length - 1], 'x'); return ''; };
+      const fakeRun = (file, args, o) => { opts.push(o); fs.writeFileSync(path.resolve(o.cwd || '.', args[args.length - 1]), 'x'); return ''; }; // the sheet is written in the folder the child runs in, as ffmpeg would
       const rec = async (d, dir) => {
         seen = d; seen.xvfbEnv = process.env.UI_SUITE_XVFB;
         fs.writeFileSync(path.join(dir, 'f00000.png'), 'x');
@@ -562,6 +562,82 @@ const { killTree } = require('./ui-suite');
     assert.ok(!ok(src.replace("x.textContent==='Remove limit');if(b)b.click()", "x.textContent==='Remove limit');")), 'mutant: a lounge scene that never presses Remove limit is caught');
     assert.ok(!ok(src.replace("throw new Error('lounge: the limit slip did not go')", '0')), 'mutant: a lounge scene that does not wait for the slip to go is caught');
     assert.ok(src.indexOf("lounge: the limit slip did not go") < src.indexOf("await S.caption('{step}. Finished, reply not read yet'"), 'the slip is answered before the first caption and still');
+  }
+  {
+    // FR-274 (issue #1946): the world option, the arcade scene, the contact sheet and the caps; no Electron
+    const src = fs.readFileSync(path.join(__dirname, 'release-video.js'), 'utf8').replace(/\r\n/g, '\n');
+    const hd = fs.readFileSync(path.join(__dirname, 'driver-helpers.js'), 'utf8');
+    assert.deepStrictEqual(RV.WORLDS, ['retro', 'cave'], 'the worlds are the two DRIVER_WORLD takes');
+    assert.ok(/DRIVER_WORLD !== 'retro' && DRIVER_WORLD !== 'cave'/.test(hd), 'driver-helpers takes exactly those two (FR-031: one list of world ids)');
+    assert.strictEqual(RV.parseArgs(['--version', 'v0.1.7', '--out', 'x']).world, null, 'no --world: the Photo office, as before');
+    assert.strictEqual(RV.parseArgs(['--version', 'v0.1.27', '--out', 'x', '--world', 'retro']).world, 'retro');
+    for (const bad of ['arcade', 'Retro', 'photo', 'toString', '__proto__', 'retro,cave']) assert.throws(() => RV.parseArgs(['--version', 'v0.1.7', '--out', 'x', '--world', bad]), /--world must be one of retro, cave/, `--world ${bad} is refused`);
+    assert.throws(() => RV.parseArgs(['--version', 'v0.1.7', '--out', 'x', '--world']), /needs a value/);
+    assert.deepStrictEqual(RV.worldQuery('retro'), { officeview: 'real', world: 'retro', worldflags: 'retro' }, 'the pair the app and H.load use for the arcade');
+    assert.deepStrictEqual(RV.worldQuery(null), { officeview: 'real' });
+    assert.throws(() => RV.worldQuery('arcade'), /unknown world/);
+    assert.ok(/Object\.assign\(query, \{ worldflags: 'retro', world: 'retro' \}\)/.test(hd), 'worldQuery matches the pair driver-helpers adds under DRIVER_WORLD=retro');
+    const env0 = RV.recordEnv({ version: 'v0.1.7', scenes: ['intro'], count: null, world: null });
+    assert.ok(!('DRIVER_WORLD' in env0), 'no --world: no DRIVER_WORLD');
+    assert.strictEqual(RV.recordEnv({ version: 'v0.1.7', scenes: ['intro', 'arcade'], count: null, world: 'retro' }).DRIVER_WORLD, 'retro', '--world retro reaches the driver as DRIVER_WORLD');
+    assert.strictEqual(RV.recordEnv({ version: 'v0.1.7', scenes: ['intro', 'arcade'], count: 3, world: 'cave' }).RV_SCENES, 'intro,arcade');
+
+    // the scene registry: the arcade scene is in it, plays in the arcade by its own query (not by --world), and is picked like any other
+    const arc = RV.SCENES.arcade;
+    assert.ok(arc && typeof arc.play === 'function', 'the catalogue has the arcade scene');
+    assert.ok(/worldQuery\('retro'\)/.test(arc.play.toString()) && /data-world="retro"/.test(arc.play.toString()), 'the arcade scene draws the arcade itself and waits for it');
+    assert.ok(/>=15/.test(arc.play.toString()) && !/>=1[6-9]|>=[2-9]\d/.test(arc.play.toString()), 'the arcade scene shows 15 cabinets, no more than the other scenes');
+    assert.deepStrictEqual(RV.chooseScenes({ sceneFields: ['arcade'], bullets: [] }), ['intro', 'arcade', 'needsyou', 'signin', 'outro'], 'a Scene: arcade field is picked and filled up like any other');
+    assert.deepStrictEqual(RV.chooseScenes({ sceneFields: ['arcade', 'nonesuch', 'intro'], bullets: [] }).filter((x) => x === 'nonesuch' || x === 'intro'), ['intro'], 'unknown ids and the cards from a field are ignored');
+    assert.ok(RV.chooseScenes({ sceneFields: [], bullets: ['- **The Retro arcade is a world** (spec 102 FR-1, issue #1)'] }).includes('arcade'), 'a bullet naming spec 102 refs the arcade');
+    assert.ok(!RV.chooseScenes({ sceneFields: ['crews'], bullets: ['- x (spec 021 FR-1)'] }).includes('arcade'), 'a release that does not name the arcade does not get it');
+    const many = RV.chooseScenes({ sceneFields: ['crews', 'mcp', 'org', 'floors', 'arcade'], bullets: [] });
+    assert.deepStrictEqual(many, ['intro', 'crews', 'mcp', 'org', 'floors', 'outro'], 'Scene: fields first: a fifth field (the arcade) is cut at AUTO_MAX');
+
+    // the cap arithmetic: AUTO_MAX feature scenes of the longest known length and the two cards stay inside LEN_MAX; the GIF and MP4 caps are pinned
+    assert.strictEqual(RV.AUTO_MAX, 4);
+    assert.strictEqual(RV.GIF_MAX, 5 * 1024 * 1024, 'the GIF cap is 5 MiB');
+    assert.strictEqual(RV.MP4_MAX, 20 * 1024 * 1024);
+    assert.ok(arc.stillAt > 0 && arc.stillAt < 0.4, 'the arcade scene\'s still is taken early, in the whole-arcade shot, not in its zoom');
+    assert.ok(/\(sc\.stillAt === undefined \? 0\.6 : sc\.stillAt\)/.test(src), 'the driver uses a scene\'s stillAt');
+    assert.ok(!/\(sc\.stillAt === undefined \? 0\.6 : sc\.stillAt\)/.test(src.replace('(sc.stillAt === undefined ? 0.6 : sc.stillAt)', '0.6')), 'mutant: a driver that ignores stillAt is caught');
+    assert.ok(arc.secs > 0 && arc.secs <= 7, `the arcade scene is short (${arc.secs} s declared)`);
+    assert.ok(2 * 3 + RV.AUTO_MAX * 12.6 <= RV.LEN_MAX, 'four of the longest scenes (needsyou 12.6 s) and two 3 s cards fit the length ceiling');
+    assert.ok(RV.lengthOk(2 * 3 + arc.secs + 12.6 + 7 + 10.5), 'a clip of the arcade, needsyou, signin and lounge is inside 25-75 s');
+
+    // the contact sheet: one picture of every still, names only, no shell
+    const a1 = RV.contactArgs(['release-v1-scene-01-intro.png', 'release-v1-scene-02-arcade.png', 'release-v1-scene-03-lounge.png', 'release-v1-scene-04-x.png'], 'sheet.jpg');
+    assert.ok(Array.isArray(a1) && a1.filter((x) => x === '-i').length === 4, 'one input for each still');
+    assert.ok(/concat=n=4:v=1:a=0,scale=480:-2,tile=3x2/.test(a1.join(' ')), 'four stills at three a row make two rows, 480 px wide');
+    assert.strictEqual(a1[a1.length - 1], 'sheet.jpg');
+    assert.ok(a1.includes('-frames:v') && a1[a1.indexOf('-frames:v') + 1] === '1', 'one picture');
+    assert.throws(() => RV.contactArgs([], 'x.jpg'), /no still/);
+    for (const bad of ['../x.png', 'a b.png', 'x.png;rm', 'x.gif', '-x.png;']) assert.throws(() => RV.contactArgs([bad], 'x.jpg'), /unexpected name/, `still name ${bad} refused`);
+    assert.ok(/stills\.jpg/.test(src) && /contactArgs\(sheet,/.test(src) && /const finals = \['\.mp4', '\.gif', '\.json', '-stills\.jpg'\]/.test(src), 'main makes the sheet, and removes an old one first and on failure like the other files');
+
+    // mutants: each must die at its own assert
+    const dies = (name, from, to, re) => {
+      assert.ok(src.includes(from), `mutant ${name}: the text to change is there`);
+      const m = src.replace(from, to);
+      assert.notStrictEqual(m, src);
+      const checks = {
+        world: () => /else if \(k === '--world'\) a\.world = val\(\);/.test(m),
+        wlist: () => /const WORLDS = \['retro', 'cave'\]/.test(m),
+        env: () => /\.\.\.\(a\.world \? \{ DRIVER_WORLD: a\.world \} : \{\}\)/.test(m),
+        sheet: () => /contactArgs\(sheet,/.test(m),
+        q: () => /worldflags: world \}/.test(m),
+        names: () => /\^\[A-Za-z0-9\._-\]\+\\\.png\$/.test(m),
+        arcSlot: () => /refs: \[\{ spec: '102' \}\],\n    stillAt/.test(m),
+      };
+      assert.ok(!checks[re](), `mutant ${name} is caught`);
+    };
+    dies('no --world parsing', "else if (k === '--world') a.world = val();", '', 'world');
+    dies('another world list', "const WORLDS = ['retro', 'cave'];", "const WORLDS = ['retro', 'cave', 'arcade'];", 'wlist');
+    dies('DRIVER_WORLD not passed', '...(a.world ? { DRIVER_WORLD: a.world } : {})', '', 'env');
+    dies('no contact sheet', 'contactArgs(sheet,', 'contactArgs([],', 'sheet');
+    dies('no worldflags', "worldflags: world }", "}", 'q');
+    dies('still names unchecked', "/^[A-Za-z0-9._-]+\\.png$/.test(f)", 'true', 'names');
+    dies('no ref for the arcade', "refs: [{ spec: '102' }],\n    stillAt", "stillAt", 'arcSlot');
   }
   console.log('release-video: tests passed');
 })().catch((e) => { console.error(e); process.exitCode = 1; });
