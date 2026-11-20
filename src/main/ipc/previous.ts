@@ -41,6 +41,8 @@ export interface PreviousIpcDeps {
   vsChatRefs: Map<string, Map<string, ChatFileRef>>;
   /** Spec 095 FR-026 (review N-R1): the folder's earlier sessions changed (a delete succeeded): the search drops its kept Codex titles. */
   sessionsChanged?(): void;
+  /** Issue 1904 (FR-026): the panel lists this folder again (a Refresh): the search's kept lists of it are older than this one and go. */
+  folderListed?(folderKey: string): void;
   /** Spec 058 FR-067: replayed history with failed tool output masked (session secret values from main). */
   maskHistory<H extends { items: { type: string; failed?: boolean; output?: string }[] }>(id: string, h: H): H;
 }
@@ -60,7 +62,8 @@ export function register(deps: PreviousIpcDeps): void {
   // window's own IPC (ipcHandle): the MCP tools, remote control, schedules and agents have no path to it (scripts/test-prevsessions.ts).
   const prevDeps: PrevDeps = { agents, router, get store() { return folderStore(); }, wsKey, resumeIdFor: (id) => resumeIdFor(id), appName: (a) => registry.get(a.adapterId)?.displayName ?? a.adapterId, log: (a, decision, action) => logActivity(a, decision, action), changed: () => deps.sessionsChanged?.() };
   const prevSessions = new PrevSessions(prevDeps);
-  ipcHandle('sessions:listPrevious', (_e, id: unknown) => listPreviousOp(prevDeps, id));
+  const listed = (id: unknown): void => { const a = typeof id === 'string' ? agents.get(id) : undefined; if (a) try { deps.folderListed?.(wsKey(a)); } catch { /* a listener never fails the list */ } };
+  ipcHandle('sessions:listPrevious', (_e, id: unknown) => { listed(id); return listPreviousOp(prevDeps, id); });
   const renameSessionOp = renameSessionOpFor(() => openIdsOf(prevDeps));
   ipcHandle('sessions:rename', (_e, id: unknown, sessionId: unknown, name: unknown) => renameSessionOp(id, sessionId, name));
   ipcHandle('sessions:mark', (_e, id: unknown, src: unknown, sessionId: unknown, mark: unknown) => markOp(prevDeps, id, src, sessionId, mark));
@@ -112,6 +115,7 @@ export function register(deps: PreviousIpcDeps): void {
   });
 
   ipcHandle('vschat:list', async (_e, id: unknown): Promise<VsChatListResult> => {
+    listed(id);
     const empty = { sessions: [], storesFound: 0, unreadable: 0, tooLarge: 0, formatNote: VSCODE_CHAT_FORMAT_NOTE };
     const a = typeof id === 'string' ? agents.get(id) : undefined;
     if (!a) return { ok: false, error: 'unknown agent', ...empty };

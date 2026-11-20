@@ -120,6 +120,13 @@
     return 'price not reported';
   }
 
+  /* spec 030 FR-068, FR-070: the words of an empty or failed model list (reason = a fixed phrase from main), and how many models a policy hides, when known */
+  function listUnavailable(st){
+    st=st||{};
+    return {text:'Model list unavailable: '+(st.reason||'the app returned no models'),
+      hidden:nn(st.hidden)&&st.hidden>0?st.hidden+(st.hidden===1?' model is':' models are')+' hidden by your account\'s policy.':''};
+  }
+
   /* What must be confirmed before a switch (spec 030 FR-004, FR-005): a pricier model, an unreported price, the long tier, a bigger bill than the cap
      leaves, or a smaller window than the context in use. Cheaper or equal switches need none and apply with an Undo.
      ctx: {tokens (context in use), cap (credits, optional), used (credits so far, optional), tierFrom, tierTo}. The cap is never changed here. */
@@ -328,5 +335,5 @@
     return m.includes(cur)?cur:'read-only';
   }
 
-  return {mergeChoice,sameChoice,choiceWords,droppedText,compactingNow,COMPACTING_LINE,AUTO_TIERS,AUTO_TIER_HINT,autoTiersOf,autoTierOf,autoTierLocked,autoTierConfirm,autoTierName,autoTierFailText,handoverTargets,provenanceLine,modesFor,fallbackMode,pricingFromBatch,priceOf,windowOf,hasLong,relativePrice,estimateInputCredits,confirmFor,suggestFresh,compactionText,compactionFoldText,modelChangeText,fmtCredits,fmtRatio,fmtTokens,priceLine,hasPrice,capsOf,kindChoices,showsKindPicker,shows,cardMenuActions};
+  return {mergeChoice,sameChoice,choiceWords,droppedText,compactingNow,COMPACTING_LINE,AUTO_TIERS,AUTO_TIER_HINT,autoTiersOf,autoTierOf,autoTierLocked,autoTierConfirm,autoTierName,autoTierFailText,handoverTargets,provenanceLine,modesFor,fallbackMode,pricingFromBatch,priceOf,windowOf,hasLong,relativePrice,estimateInputCredits,confirmFor,suggestFresh,compactionText,compactionFoldText,modelChangeText,fmtCredits,fmtRatio,fmtTokens,priceLine,listUnavailable,hasPrice,capsOf,kindChoices,showsKindPicker,shows,cardMenuActions};
 })());

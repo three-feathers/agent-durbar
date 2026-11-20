@@ -56,7 +56,7 @@ Every file, the Windows and Mac notes, verifying a download and the requirements
 - **Ask first**: writes, shell commands, URLs and tools wait for *Allow once*, *Allow for this session* or *Deny*.
 - **Allow all**: no prompts. Use it only in folders you trust; it asks once to confirm.
 
-**Search conversations** runs on your computer only: Durbar reads the sessions' text through the agent apps' own files and sessions, masks every excerpt before you see it, stores nothing (no index; the earlier Codex session titles are kept in memory until you clear the box) and sends nothing. Tool output, hidden earlier sessions and the content of earlier Copilot and Codex sessions (their titles only) are not searched; when saved MCP values are locked in the vault, the results say excerpts may show them.
+**Search conversations** runs on your computer only: Durbar reads the sessions' text through the agent apps' own files and sessions, masks every excerpt before you see it, stores nothing (no index; the lists of earlier sessions and VS Code chats are kept in memory for up to 5 minutes, until you clear the box) and sends nothing. Tool output, hidden earlier sessions and the content of earlier Copilot and Codex sessions (their titles only) are not searched; when saved MCP values are locked in the vault, the results say excerpts may show them.
 
 An approval card marks lookalike letters in a host, program or tool name (a Cyrillic letter in a Latin word, a fullwidth form) and names an address's host as the network reads it; it warns and never blocks, with small closed lists rather than the full confusables table ([docs/safety.md](docs/safety.md)).
 

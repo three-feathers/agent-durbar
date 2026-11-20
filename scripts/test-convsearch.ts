@@ -134,6 +134,15 @@ async function main(): Promise<void> {
     assert.deepStrictEqual(hs(h4), [['acc', 0]], 'rank: accents are folded before the rank is read');
   }
 
+  // ---- issue 1904, part 2 (FR-022): a read that ran out of its own limit is skipped and counted; the scan goes on with the next session
+  {
+    const h = harness({ slow1: { ok: false, reason: 'timeout' }, fine: [u('the invoice export')], slow2: { ok: false, reason: 'timeout' } });
+    const end = await run(h, [sess({ sessionId: 'slow1', title: 'a', time: 30 }), sess({ sessionId: 'fine', title: 'b', time: 20 }), sess({ sessionId: 'slow2', title: 'c', time: 10 })], 'invoice');
+    assert.deepStrictEqual([end.notes.slow, end.notes.searched, end.notes.unreadable, end.notes.timedOut, end.failed], [2, 3, 0, false, false], 'slow: two reads that gave no answer in time are counted (not unreadable) and the scan is not failed');
+    assert.deepStrictEqual(h.reads, ['slow1', 'fine', 'slow2'], 'slow: every session is tried, in order, after a slow one');
+    assert.deepStrictEqual(hitsOf(h).map((x) => x.sessionId), ['fine'], 'slow: the session after a slow one is searched and found');
+  }
+
   // ---- T014: the excerpt builder
   {
     const o = { n: 4, speaker: 'agent' as const, values: [MCPV], masker: MASKER, search: S };

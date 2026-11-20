@@ -86,8 +86,13 @@ module.exports = async (ctx) => {
        0.12 s fade must clear first, so a pointer left on a plate by the load (or the world before) is not read as a pencil shown without hover */
     wc().sendInputEvent({ type: 'mouseMove', x: 1, y: 1 });
     const calm = `![...document.querySelectorAll('#stage .ro-plate,#stage .ren.ro-ren')].some(e=>e.matches(':hover'))&&[...document.querySelectorAll('#stage .ren.ro-ren')].every(b=>getComputedStyle(b).opacity==='0')`;
-    if (!(await until(calm, 3000))) console.log('[097-plate-pencil] shown before hover', tag, JSON.stringify(await js(`[...document.querySelectorAll('#stage .ren.ro-ren')].filter(b=>getComputedStyle(b).opacity!=='0').map(b=>({k:b.dataset.ren,op:getComputedStyle(b).opacity,plateHover:b.previousElementSibling.matches(':hover'),plateFocus:b.previousElementSibling.matches(':focus-visible'),penHover:b.matches(':hover'),renShow:document.body.classList.contains('ren-show'),hoverNone:matchMedia('(hover:none)').matches}))`)));
-    assert.ok(await js(calm), `${tag}: the pencils are hidden until a plate is hovered or focused (pointer parked at 1,1, no plate hovered)`);
+    /* issue #1930: a Linux xvfb run once failed this step and the assert text was not kept; the failure now carries the full state (which plates and pencils are
+       :hover, which pencils are not at opacity 0, the matched-hover media query, the pointer sent) in the assert message itself, not in a log line before it */
+    const parkState = () => js(`({parked:{x:1,y:1},hoverNone:matchMedia('(hover:none)').matches,renShow:document.body.classList.contains('ren-show'),focus:document.activeElement?document.activeElement.className||document.activeElement.tagName:'',
+      hovered:[...document.querySelectorAll('#stage .ro-plate,#stage .ren.ro-ren,#stage .ro-sign')].filter(e=>e.matches(':hover')).map(e=>e.dataset.id||e.dataset.ren||e.className),
+      shown:[...document.querySelectorAll('#stage .ren.ro-ren')].filter(b=>getComputedStyle(b).opacity!=='0').map(b=>({k:b.dataset.ren,op:getComputedStyle(b).opacity,plateHover:b.previousElementSibling.matches(':hover'),plateFocus:b.previousElementSibling.matches(':focus-visible'),penHover:b.matches(':hover')}))})`);
+    const parked = await until(calm, 3000);
+    assert.ok(parked, `${tag}: the pencils are hidden until a plate is hovered or focused (pointer parked at 1,1, no plate hovered) state ${JSON.stringify(await parkState())}`);
     /* hover shows it */
     const k = (geo.find((g) => !g.named) || geo[0]).k; /* FR-357: a cabinet plate when there is one (its field goes over the marquee) */
     await js(INSTALL); await js(`window.__ppK=${jsLiteral(k)};true`);

@@ -1425,7 +1425,7 @@ html[data-world="retro"] .letter.real{box-shadow:none;outline:1px solid var(--in
 .mode-menu .mm-seg button[aria-pressed=true]{background:var(--pb-working,#e3ecf4);border-color:#9db8d0;font-weight:700;color:var(--blue-ink)}
 .mode-menu .mm-seg button[aria-pressed=true]::before{content:"✓ "}
 .mode-menu .mm-pend{display:flex;align-items:center;justify-content:space-between;gap:8px;margin:4px 6px;padding:6px 10px;font-size:12px;background:var(--tone-ok-faint);border:1px solid var(--tone-ok-line);border-radius:10px}
-.mode-menu .mm-pend button{padding:2px 10px;border:1px solid var(--line-2);border-radius:8px;background:var(--raised);font-size:11px;align-items:center}
+.mode-menu .mm-pend button,.mode-menu .mm-unavail button{padding:2px 10px;border:1px solid var(--line-2);border-radius:8px;background:var(--raised);font-size:11px;align-items:center}
 .mode-menu .mm-foot{padding:6px 10px 8px}
 .mode-menu .mm-model{margin-top:4px;border-top:1px solid var(--line);border-radius:0 0 10px 10px}
 .note.info{background:var(--note);border-color:var(--line);font-size:12px;padding:5px 10px;color:var(--ink-2)}
