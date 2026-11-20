@@ -222,6 +222,9 @@ module.exports = async (ctx) => {
     await go(WEB + 'tabs?focus=1'); // a new page load: its own 5
     const n = count();
     await inWc(openerWc, `setTimeout(()=>window.open('/index?timer=1'),300);true`, 'the timer');
+    // #1239: ask for the window's focus first through the shared helper (focusPage inside); a window that never gets it fails here with its label, not as a timeout below.
+    // BROWSER_TABS_NO_WINDOW_FOCUS=1 is the mutant (the reading is false): it must die at this message.
+    await H.needFocus('FR-129', process.env.BROWSER_TABS_NO_WINDOW_FOCUS ? { expr: 'false' } : {});
     // the OS focus can go to a neighbour on a busy Windows runner: ask again on every round until the window and the composer have it
     await wait(async () => { if (!win().webContents.isFocused()) win().webContents.focus(); await js(`document.getElementById('msgInput').focus()`); return win().webContents.isFocused() && js(`document.activeElement&&document.activeElement.id==='msgInput'`); }, 'the composer has the focus');
     await wait(() => count() === n + 1 && view() && view().webContents.getURL() === WEB + 'index?timer=1' && !view().webContents.isLoading(), 'the timer\'s tab opens and loads');

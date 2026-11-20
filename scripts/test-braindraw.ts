@@ -296,7 +296,7 @@ for (const [name, mk] of [['Still', () => rig({ motion: 'still' })], ['forced co
 // ---- skins (FR-110..FR-112): only the arcade has one; its colours come from the page's tokens, with a fallback; a skin carries no size
 {
   const K = load(path.join(DIR, 'skins.js'));
-  assert.strictEqual(K.forWorld('', null).id, 'neutral'); assert.strictEqual(K.forWorld('photo', null).id, 'neutral'); assert.strictEqual(K.forWorld('cave', null).id, 'neutral');
+  assert.strictEqual(K.forWorld('', null).id, 'neutral'); assert.strictEqual(K.forWorld('photo', null).id, 'neutral'); assert.strictEqual(K.forWorld('cave', null).id, 'cave', 'the cave has its own skin (T027)');
   const a = K.forWorld('retro', (n: string) => (n === '--tone-warn-ink' ? ' #123456 ' : ''));
   assert.strictEqual(a.id, 'arcade'); assert.strictEqual(a.shape, 'square'); assert.strictEqual(a.colors.frontal, '#123456', 'a token the page has is read'); assert.strictEqual(a.colors.stem, '#ffec27', 'a missing token falls back');
   assert.deepStrictEqual(Object.keys(a.colors).sort(), [...P.LOBES].sort(), 'one colour per lobe');
@@ -327,6 +327,26 @@ for (const [name, mk] of [['Still', () => rig({ motion: 'still' })], ['forced co
     assert.strictEqual(b.ops.arc || 0, 0, `${name} skin: no point is drawn as a disc (arc calls on the base layer)`);
     assert.strictEqual(b.ops.fillRect, r.d.stats.basePoints, `${name} skin: one filled square per point on the base layer`);
     assert.strictEqual(r.d.stats.pointRects, b.ops.fillRect, `${name} skin: the renderer's own square count matches the drawing calls`);
+  }
+  // the cave skin (T027, #1219): its colours are read from the page's tokens and NONE is written in skins.js (no literal colour); a missing token leaves that lobe to draw.js's own colour
+  {
+    const toks: Record<string, string> = { '--tone-warn-ink': ' #111111 ', '--focus': '#222222', '--sel-border': '#333333', '--ink-2': '#444444', '--ink': '#555555' };
+    const c = K.forWorld('cave', (n: string) => toks[n] || '');
+    assert.strictEqual(c.id, 'cave'); assert.strictEqual(c.shape, 'pebble', 'cave skin: pebble points');
+    assert.strictEqual(c.colors.frontal, '#111111', 'cave skin: the frontal lobe reads --tone-warn-ink'); assert.strictEqual(c.colors.stem, '#222222', 'cave skin: the stem reads the cave --focus');
+    assert.strictEqual(c.colors.port, '#333333', 'cave skin: the port reads --sel-border'); assert.strictEqual(c.trail, '#444444'); assert.strictEqual(c.marker, '#555555');
+    assert.strictEqual(c.colors.occipital, undefined, 'cave skin: a token the page lacks leaves the lobe to draw.js, no colour of its own in the skin');
+    assert.deepStrictEqual(Object.keys(c).sort(), ['baseAlpha', 'colors', 'id', 'marker', 'shape', 'trail'], 'cave skin: colours, a shape and inks, no size or position');
+    assert.deepStrictEqual(Object.keys(K.CAVE_TOKENS).sort(), Object.keys(K.ARCADE_TOKENS).sort(), 'cave skin: one token per lobe');
+    const src = fs.readFileSync(path.join(DIR, 'skins.js'), 'utf8'), caveSrc = src.slice(src.indexOf('const CAVE_TOKENS'), src.indexOf('/* world: the shown'));
+    assert.ok(!/#[0-9a-fA-F]{3,8}\b|rgba?\(/.test(caveSrc), 'cave skin: no literal colour in the cave part of skins.js');
+    assert.strictEqual(K.forWorld('cave', () => { throw new Error('x'); }).id, 'cave'); assert.deepStrictEqual(K.forWorld('cave', null).colors, {}, 'cave skin: no page, no colours of its own');
+    const r = rig({ skin: c }); const b = baseOf(r);
+    assert.strictEqual(b.ops.arc, r.d.stats.basePoints, 'cave skin: one disc (arc) per point on the base layer');
+    assert.strictEqual(b.ops.fillRect || 0, 0, 'cave skin: no square on the base layer');
+    const n = rig({ skin: K.NEUTRAL });
+    assert.strictEqual(r.d.stats.basePoints, n.d.stats.basePoints, 'cave skin: the same number of points as neutral'); assert.deepStrictEqual(r.d.geometry(), n.d.geometry(), 'cave skin: the same positions and size as neutral');
+    assert.ok(baseOf(r).fillStyles.includes('#111111'), 'cave skin: drawn in the page-token colour');
   }
   // a world switch repaints with the new colours (G1): setSkin rebuilds the base layer in the new lobe colours and drops the old ones
   {

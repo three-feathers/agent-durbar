@@ -4217,7 +4217,7 @@ function syncRunState(){
   /* spec 005 T074 (review on PR 498; FR-038 amended for issue 1917: a turn that ends in the error state says "Reply failed"): the spinner is decorative; a screen reader hears the change once through the shared live region.
      Only a change in the same chat speaks: opening a chat (or redrawing it) is not a turn starting or ending */
   const was=RUN_SAID.id===a.id?RUN_SAID.run:null; RUN_SAID.id=a.id; RUN_SAID.run=run;
-  if(was!==null&&was!==run){const said=!run&&UNREAD_SAID.delete(a.id);if(run)UNREAD_SAID.delete(a.id);if(!said)announce(run?'Working…':RUN_SAID.stopped?'Stopped':a.failedTurn?'Reply failed':'Reply finished');RUN_SAID.stopped=false;if(!run)a.failedTurn=false;} /* a new turn forgets an earlier Stop; the end of a turn forgets its failure */
+  if(was!==null&&was!==run){const said=!run&&UNREAD_SAID.delete(a.id);if(run)UNREAD_SAID.delete(a.id);if(!said)announce(run?'Working…':RUN_SAID.stopped?'Stopped':a.failedTurn?'Reply failed':'Reply finished');RUN_SAID.stopped=false;} /* a new turn forgets an earlier Stop; the failure flag is cleared elsewhere: by a working status and by the person's message (spec 005 FR-245), not by the end of a turn */
 }
 /* the mode, model, profile and context menus: below their chip, or above it when the chip sits in the composer toolbar (FR-037); spec 073's "/" list too */
 function placeMenu(m,x,y,anchor){
@@ -7786,13 +7786,13 @@ function onLiveEvent(e){
       if(a.pendingModel){const nm=a.pendingModel.name;a.pendingModel=undefined;updateModelChip(a);addNote(chat,'The queued switch to '+esc(nm)+' was dropped when you stopped the reply. Choose it again if you still want it.');}
       setState(a,'idle',null,'Stopped. Ready for your next message.');}
     else if(e.status==='idle'){const was=a.worked;a.worked=false;closeTurn(a);if(a.pendingProfile){const p=a.pendingProfile;a.pendingProfile=undefined;applyProfile(a,p);}
-      if(was&&a.failedTurn){/* spec 005 FR-245 (issue 1919): the turn failed and ends here: the agent stays in Error, no Finished text, no New reply mark, no finished announcement; a working status starts the next turn */scheduleRender(); /* the turn ended with no state change: the chat's Stop and spinner, and the end said once, need a redraw */}
+      if(a.state==='error'&&a.failedTurn){/* spec 005 FR-245 (issue 1919, amended by FR-246 / issue 1920: the error already ended the turn, so the idle reads the state): the turn failed and ends here: the agent stays in Error, no Finished text, no New reply mark, no finished announcement; a working status starts the next turn */scheduleRender(); /* the turn ended with no state change: the chat's Stop and spinner, and the end said once, need a redraw */}
       else if(was){noteCompleted(a);setState(a,'done','Done',a.lastOutput?safeExcerpt(a.lastOutput,140):'Finished.');} else setState(a,'idle',null,a.task);
       updateCtxChip(a);maybeSuggestFresh(a);
       /* a queued switch applies when the turn ends (its model event follows at once); if none came, do not leave "Next: ..." standing */
       if(a.pendingModel){const p=a.pendingModel;setTimeout(()=>{if(a.pendingModel===p){a.pendingModel=undefined;updateModelChip(a);}},2000);}}
     else if(e.status==='error'&&e.errorKind==='auth'){closeTurn(a);a.worked=false;a.failedTurn=true;markKindSignedOut(kindOf(a));showSignInCard(a,{detail:e.intent||''});setState(a,'error',null,kindWord(kindOf(a))+' needs you to sign in again.');} /* spec 012 FR-157 */
-    else if(e.status==='error'){closeTurn(a);a.failedTurn=true;addNote(chat,esc(e.intent||'Error'),true);setState(a,'error',null,gaveUp||safeExcerpt(e.intent||'Error',140,'Error'));}
+    else if(e.status==='error'){closeTurn(a);a.worked=false;a.failedTurn=true; /* spec 005 FR-246 (issue 1920): an error ends the turn in the chat: Send, not Stop and the spinner; a working status resumes it */addNote(chat,esc(e.intent||'Error'),true);setState(a,'error',null,gaveUp||safeExcerpt(e.intent||'Error',140,'Error'));}
     else if(e.status==='stopped'){
       if(a.limit)settleLimit(a,'cancel');
       /* a permission still pending when the session stops is denied cleanly: no Approve/Deny left behind, grants gone */

@@ -33,7 +33,9 @@
     const px=(x)=>x*W, py=(y)=>y*H;
     function fit(){canvas.width=Math.round(W*dpr);canvas.height=Math.round(H*dpr);if(canvas.style){canvas.style.width=W+'px';canvas.style.height=H+'px';}ctx=canvas.getContext('2d');base=null;buildBase();} /* the base layer is built here, never inside a frame: a frame draws only the lit lobe (FR-102) */
     /* one point: a square (the arcade's voxel, and the neutral cloud at these sizes). The skin never changes where or how big (FR-110); stats count what was drawn so a test can see the shape */
-    function pointAt(c,x,y,sz){c.fillRect(x,y,sz,sz);stats.pointRects++;}
+    function pointAt(c,x,y,sz){
+      if(skin.shape==='pebble'){const r=sz/2;c.beginPath();c.arc(x+r,y+r,r,0,6.283185307179586);c.fill();stats.pointArcs++;return;} /* the cave's pebble: a disc inside the same square cell (T027) */
+      c.fillRect(x,y,sz,sz);stats.pointRects++;}
     function buildBase(){
       const c=host.makeCanvas(canvas.width,canvas.height), x=c.getContext('2d'), s=PT[size]*dpr;
       x.setTransform(1,0,0,1,0,0);
