@@ -744,6 +744,12 @@ assert.strictEqual(sentenceOf(s), s.sentence);
     }
     assert.strictEqual(held, 0, '#1320 decoded brain: random cuts with a held form after a held value head never show the value');
   }
+  // round 5: a tool call clears a stream's reference reading with its text, so plain text after it is shown as written
+  {
+    let st = feed(fresh(), [{ type: 'user' }], 1);
+    for (const ev of [{ type: 'thinking', delta: 'R' + '&D: set Authorization: Bearer' }, start('bash', { command: 'ls' }), { type: 'thinking', delta: 'Verifying results now' }]) st = feed(st, [ev], 1);
+    assert.strictEqual(st.buf, 'Verifying results now', '#1320 decoded brain: plain text after a tool call is shown as written (the reference reading is cleared)');
+  }
   const forms = ['&#95;', '&#x5f;', '&#95', '&lowbar;', '%5F', '%255F', '&#000095;'];
   const tails = ['&#8203;', '&#8203', '%2D', '&#46;'];
   let seed = 1899;

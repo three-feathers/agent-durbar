@@ -2763,7 +2763,8 @@ const BLOCK_TAG = /^<\/?(?:br|p|div|li|ul|ol|dl|dd|dt|td|th|tr|table|thead|tbody
  * rest as written. For short words only (a header name the brain view holds raw while its value is awaited); at most `DECODE_TEXT_MAX` characters are read.
  */
 export function decodeTokenForms(text: string): string {
-  if (typeof text !== 'string' || !DECODE_GATE.test(text)) return typeof text === 'string' ? text : '';
+  // with the decoded reading off (`withoutDecode`), a word is read as written, as before FR-188 (review of PR 1899, round 5)
+  if (typeof text !== 'string' || decodeOff || !DECODE_GATE.test(text)) return typeof text === 'string' ? text : '';
   const s = text.slice(0, DECODE_TEXT_MAX);
   let out = '';
   let from = 0;

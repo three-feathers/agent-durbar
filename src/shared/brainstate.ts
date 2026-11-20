@@ -429,19 +429,14 @@ function streamText(tail: Tail, piece: string, whole: boolean, mask: BrainMask):
   const nest = openDepth(joined);
   if (open >= 0 || nest.depth > 0) { key = Math.max(1, nest.depth); carry = markerSuffix(joined); }
   let cut = open >= 0 || nest.depth > 0 ? null : valueExpected(mask, joined);
-  // spec 012 FR-188 (review of PR 1899, independent differential): a header found only through its decoded name that the held-head check refuses (a name glued after a
-  // mark) is read as before FR-188, as `main` reads it: the decoded reading would mask the partial scheme word, and the value after it would show in the next piece
-  const cut0 = cut;
   if (cut && !heldOk(mask, cut.head)) cut = null; // J1: a raw head is held only when it holds no secret; else the whole text is masked
-  const asBefore = !cut && !!cut0 && typeof mask.withoutDecode === 'function' && !!mask.decodeTokenForms && safe(() => mask.decodeTokenForms!(cut0.head)) !== cut0.head;
   if (failed) buf = '[redacted]';
   else if (nest.depth > 0 && open < 0) buf = (safe(() => mask.maskGluedTail(brainMaskText(mask, joined.slice(0, nest.at)))) + '[redacted]').slice(-BUF_MAX);
   else if (cut) {
     // F1b: a header or secret name that expects its value ("Authorization: Bearer") masks to a mark, and the value then arrives after a
     // space. The header words (no secret yet) stay raw until the value comes, so the whole line masks together.
     buf = (safe(() => mask.maskGluedTail(brainMaskText(mask, joined.slice(0, cut.at)))) + cut.head).slice(-BUF_MAX);
-  } else if (asBefore) buf = safe(() => mask.withoutDecode!(() => mask.maskGluedTail(brainMaskText(mask, joined)))).slice(-BUF_MAX);
-  else buf = safe(() => mask.maskGluedTail(brainMaskText(mask, joined))).slice(-BUF_MAX);
+  } else buf = safe(() => mask.maskGluedTail(brainMaskText(mask, joined))).slice(-BUF_MAX);
   // what the views show: with a held form, the whole text read at once (it may hide more than the next piece will), so a held form is never shown as written
   // and no state waits for a next piece (FR-188, review of PR 1899, round 2: a stream that ends on it); the held copy only joins the next piece
   let shown = buf;
@@ -590,7 +585,7 @@ function onTool(s: BrainState, ev: Ev, now: number, mask: BrainMask): void {
       helper: typeof ev.agentId === 'string' && ev.agentId !== '', program: g.glyph === 'mcp' ? programOf(server) : tg.program, server, targetKind: tg.targetKind, target: tg.target,
       why: phase === 'start' && !ev.agentId ? lastSentence(s.buf) : '', files: tg.files, costAtStart: s.turnCost,
     };
-    if (phase === 'start' && !ev.agentId) { s.buf = ''; s.think = { ...s.think, buf: '', shown: '' }; s.out = { ...s.out, buf: '', shown: '' }; }
+    if (phase === 'start' && !ev.agentId) { s.buf = ''; s.think = { ...s.think, buf: '', shown: '', ref: undefined }; s.out = { ...s.out, buf: '', shown: '', ref: undefined }; }
     turn.steps.push(st);
     if (turn.steps.length > STEP_CAP) { turn.steps.shift(); turn.folded += 1; }
     if (phase !== 'start') countAndRun(s, st, phase === 'failed', late);

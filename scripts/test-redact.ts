@@ -143,6 +143,12 @@ for (const keep of ['ghp_short', 'see ghs_count', 'wei' + 'ghs_' + 'TotalWeightK
     const t = 'Authorization: Bearer gh' + 'p_' + ghBody.slice(0, 10) + '&#' + ghBody.charCodeAt(10) + ';' + ghBody.slice(11) + '\u200bmysql -p' + dpw;
     for (const [name, mask] of deskSurfaces) assert.ok(!mask(t).includes(dpw), `#1320 decoded: ${name} hides a password after a header, a decoded token, a hidden character and a keyword`);
   }
+  // round 5: with the decoded reading off, a word is read as written (the brain's reference reading reads header names as before FR-188)
+  {
+    const R5 = require(path.join(__dirname, '..', 'src', 'shared', 'redact')) as { decodeTokenForms(t: string): string; withoutDecode<T>(fn: () => T): T };
+    assert.strictEqual(R5.decodeTokenForms('Authorizatio' + '%6e:'), 'Authorization:', '#1320 decoded: decodeTokenForms reads a header name in such a form');
+    assert.strictEqual(R5.withoutDecode(() => R5.decodeTokenForms('Authorizatio' + '%6e:')), 'Authorizatio' + '%6e:', '#1320 decoded: decodeTokenForms reads a word as written with the decoded reading off');
+  }
   // near misses: text with such forms and no token stays byte for byte
   const keep = [
     'R&amp;D &#169; 2024 &mdash; build_v1.2.3',
