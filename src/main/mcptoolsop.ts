@@ -9,6 +9,7 @@ import type { AgentInfo, McpToolsResult } from '../shared/api';
 import { cut } from '../shared/redact';
 import { maskMcpError, maskMcpText } from './mcpmask';
 import { failText } from './ipcerror';
+import { ShownError } from '../shared/shownerror';
 
 export const MCP_TOOLS_MAX = 500;
 export const MCP_TOOL_NAME_MAX = 128;
@@ -38,7 +39,7 @@ export async function mcpToolsOp(d: McpToolsDeps, id: unknown, name: unknown): P
     const list = await Promise.race([
       ad.listMcpTools(a.id, name),
       new Promise<never>((_r, reject) => {
-        timer = setTimeout(() => reject(new Error('The server did not answer in time.')), d.timeoutMs ?? MCP_TOOLS_TIMEOUT_MS);
+        timer = setTimeout(() => reject(new ShownError('The server did not answer in time.')), d.timeoutMs ?? MCP_TOOLS_TIMEOUT_MS);
       }),
     ]);
     const all = Array.isArray(list) ? list : [];

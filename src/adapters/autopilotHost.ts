@@ -65,7 +65,7 @@ export interface AutopilotPorts {
 /** Resolves or rejects with `p`, or rejects after `ms`. */
 export function within<T>(p: Promise<T>, ms: number, what: string): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined;
-  return Promise.race([p, new Promise<never>((_, rej) => { timer = setTimeout(() => rej(new Error(`${what} did not answer in time`)), ms); })]).finally(() => clearTimeout(timer));
+  return Promise.race([p, new Promise<never>((_, rej) => { timer = setTimeout(() => rej(new ShownError(`${what} did not answer in time`)), ms); })]).finally(() => clearTimeout(timer));
 }
 
 /** The lower of the session's own cap and the Autopilot cap (FR-022). */

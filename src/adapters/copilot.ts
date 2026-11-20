@@ -1279,7 +1279,7 @@ export class CopilotAdapter implements AgentAdapter {
   /** Spec 099 FR-059: a runtime call of a queued step, bounded like the turn-on: no answer in time fails with COPILOT_STEP_NO_ANSWER. */
   private bounded<T>(call: Promise<T> | T): Promise<T> {
     return within(Promise.resolve(call), this.autopilotTuning.waitMs ?? CLEAR_WAIT_MS, 'Copilot').catch((e: unknown) => {
-      throw e instanceof Error && /did not answer in time/.test(e.message) ? new Error(COPILOT_STEP_NO_ANSWER) : e;
+      throw e instanceof Error && /did not answer in time/.test(e.message) ? new ShownError(COPILOT_STEP_NO_ANSWER) : e;
     });
   }
 
@@ -2068,7 +2068,7 @@ export class CopilotAdapter implements AgentAdapter {
           const n = Number((d.copilotUsage as { totalNanoAiu?: unknown } | undefined)?.totalNanoAiu);
           if (Number.isFinite(n) && n > 0) nano += n;
         } else if (e.type === 'session.idle' && !e.agentId) finish();
-        else if (e.type === 'session.error' && !e.agentId) finish(new Error(`Copilot could not answer${typeof d.errorType === 'string' ? ` (${d.errorType.slice(0, 60)})` : ''}.`));
+        else if (e.type === 'session.error' && !e.agentId) finish(new ShownError(`Copilot could not answer${typeof d.errorType === 'string' ? ` (${d.errorType.slice(0, 60)})` : ''}.`));
       });
       const timeout = new Promise<never>((_, reject) => {
         timer = setTimeout(() => {

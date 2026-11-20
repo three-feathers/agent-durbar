@@ -16,6 +16,7 @@ import { redact } from '../shared/redact';
 import { setModeOp } from './agentops';
 import type { OpsDeps } from './agentops';
 import { failText } from './ipcerror';
+import { ShownError } from '../shared/shownerror';
 
 type Unit = 'aiu' | 'usd' | 'tokens';
 export type AutopilotResult = { ok: boolean; error?: string; cancelled?: true; mode?: PermMode; autopilot?: AgentInfo['autopilot']; pending?: number; note?: string };
@@ -201,14 +202,14 @@ export function createAutopilotOps(d: AutopilotOpsDeps) {
   const limited = <T>(t: Turning, p: Promise<T>, ms: number): Promise<T> => {
     let timer: ReturnType<typeof setTimeout> | undefined;
     p.catch(() => undefined);
-    return Promise.race([p, t.released, new Promise<never>((_r, rej) => { timer = setTimeout(() => rej(new Error(TOOK_TOO_LONG)), ms); })]).finally(() => clearTimeout(timer));
+    return Promise.race([p, t.released, new Promise<never>((_r, rej) => { timer = setTimeout(() => rej(new ShownError(TOOK_TOO_LONG)), ms); })]).finally(() => clearTimeout(timer));
   };
 
   /** A call that must answer within `ms`: rejects with TOOK_TOO_LONG after it, and leaves no timer behind. */
   const settleWithin = <T>(p: Promise<T>, ms: number): Promise<T> => {
     let timer: ReturnType<typeof setTimeout> | undefined;
     p.catch(() => undefined);
-    return Promise.race([p, new Promise<never>((_r, rej) => { timer = setTimeout(() => rej(new Error(TOOK_TOO_LONG)), ms); })]).finally(() => clearTimeout(timer));
+    return Promise.race([p, new Promise<never>((_r, rej) => { timer = setTimeout(() => rej(new ShownError(TOOK_TOO_LONG)), ms); })]).finally(() => clearTimeout(timer));
   };
 
   /** FR-059: the adapter's refusal text of a call, if it settles within `ms`; undefined when it answered ok or not in time. */
