@@ -46,15 +46,15 @@ module.exports = async (ctx) => {
     const A = first.id;
     const emit = (status, intent) => js(`window.__durbarSimUi.emit(${jsLiteral({ type: 'status', sessionId: A, timestamp: Date.now(), status, intent })});0`);
     const look = () => js(`(()=>{const a=window.__durbarSimUi.agents().find(x=>x.id===${jsLiteral(A)});const sh=id=>{const e=document.getElementById(id);return !!e&&!e.hidden};return {state:a.state,stop:sh('stopBtn'),spin:sh('runSpin'),send:sh('sendBtn')}})()`);
-    const want = async (cond, what) => { const ok = await until(`(()=>{const a=window.__durbarSimUi.agents().find(x=>x.id===${jsLiteral(A)});const sh=id=>{const e=document.getElementById(id);return !!e&&!e.hidden};const s={state:a.state,stop:sh('stopBtn'),spin:sh('runSpin'),send:sh('sendBtn')};return ${cond}})()`, 6000); assert.ok(ok, what + '; saw ' + JSON.stringify(await look())); };
+    const want = async (cond, what) => { const ok = await until(`(()=>{const a=window.__durbarSimUi.agents().find(x=>x.id===${jsLiteral(A)});const sh=id=>{const e=document.getElementById(id);return !!e&&!e.hidden};const s={state:a.state,stop:sh('stopBtn'),spin:sh('runSpin'),send:sh('sendBtn')};return (${cond.toString()})(s)})()`, 6000); assert.ok(ok, what + '; saw ' + JSON.stringify(await look())); };
     await emit('working');
-    await want(`s.stop&&s.spin&&!s.send`, '1: a running turn shows Stop and the spinner, not Send');
+    await want((s) => s.stop && s.spin && !s.send, '1: a running turn shows Stop and the spinner, not Send');
     await emit('error', 'a failure');
-    await want(`s.state==='error'&&!s.stop&&!s.spin&&s.send`, '2: after an error the turn is over: Send, not Stop and the spinner, the agent in Error');
+    await want((s) => s.state === 'error' && !s.stop && !s.spin && s.send, '2: after an error the turn is over: Send, not Stop and the spinner, the agent in Error');
     await emit('idle');
-    await want(`s.state==='error'&&!s.stop&&!s.spin`, '3: an idle after an error changes nothing: still Error, still no Stop');
+    await want((s) => s.state === 'error' && !s.stop && !s.spin, '3: an idle after an error changes nothing: still Error, still no Stop');
     await emit('working');
-    await want(`s.state==='working'&&s.stop&&s.spin`, '4: a working status resumes the turn: Stop and the spinner are back');
+    await want((s) => s.state === 'working' && s.stop && s.spin, '4: a working status resumes the turn: Stop and the spinner are back');
     console.log('[005-error-ends-turn] ok: an error ends the turn, an idle keeps Error, working resumes');
   } finally {
     if (copy) fs.rmSync(copy, { recursive: true, force: true });
