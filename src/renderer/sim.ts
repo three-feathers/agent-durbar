@@ -1468,7 +1468,8 @@ const planMcpSignInRefresh = (i: SignInPlanInput): SignInPlan => {
         ];
         simE = { s, requestId: 'e-' + s.info.id, fields: url ? [] : fields, ...(url ? { url: 'https://auth.example.com/device?code=DURBAR-1234' } : {}) };
         s.state = 'waiting';
-        const message = url ? 'Sign in to the deploy service to continue.' : 'Where should this deploy go?';
+        const md = opts.elicit === 'md'; // spec 052 (2026-11-20 delta, issue #1934, T423): a Markdown message of about 6,000 characters (over the old 2,000 cut) with an invented token built from pieces
+        const message = md ? '**Where should this deploy go?**\n\n1. **Staging:** safe, resets at night\n2. **Production:** needs the ticket in `settings.ts`\n3. Read [the runbook](https://example.com/runbook) and the token ' + 'ghp_' + 'A1b2C3d4E5f6G7h8I9j0K1l2M3n4' + ' stays hidden <b>not bold</b>\n\n' + 'Details of the release, line by line. '.repeat(160) + '\n\nLAST-LINE-OF-THE-MESSAGE' : url ? 'Sign in to the deploy service to continue.' : 'Where should this deploy go?';
         emit({ type: 'question', sessionId: s.info.id, timestamp: now(), phase: 'asked', requestId: simE.requestId, questions: [{ question: message, header: 'deploy-mcp', multiSelect: false, options: [] }],
           elicitation: url
             ? { message, source: 'deploy-mcp', url: simE.url, host: 'auth.example.com' }
