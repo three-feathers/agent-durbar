@@ -3039,6 +3039,15 @@ function noteCompleted(a){
   if(r==='marked'){UNREAD_AT.set(a.id,Date.now());const rm=roomOf(a);if(rm&&roomShown(rm)){announce(a.name+' finished. New reply.');UNREAD_SAID.add(a.id);}} /* FR-174: nothing is announced for a hidden folder or floor */
   else if(r==='seen')UNREAD_AT.delete(a.id);
 }
+/* spec 005 FR-244 (issue 1908): an agent that ENTERS the error state while its chat is not shown is said once, "<name> has an error.", in every world (the office draws the state; a screen reader had only the plate's name changing).
+   Nothing for a helper, for a hidden folder or floor (FR-174's rule), for the simulator's start-up replay, nor while the agent stays in error. Normal priority: a request outranks it (FR-237). */
+function noteFailed(a){
+  if(a.parent)return;
+  if(SIM&&!window.__durbarSimReplayed)return;
+  if(chatShownNow(a.id))return;
+  const rm=roomOf(a);if(!rm||!roomShown(rm))return;
+  announce(a.name+' has an error.');
+}
 /* FR-176: the chat of the open panel is shown now (the panel opened, the window came back, the Chat tab or the Notes drawer closed) */
 function syncSeen(){const id=ui.selected;if(id&&UNREAD.has(id)&&chatShownNow(id)){UNREAD.read(id);UNREAD_AT.delete(id);scheduleRender();}}
 function markRead(a){if(!a||!UNREAD.read(a.id))return false;UNREAD_AT.delete(a.id);scheduleRender();announce(a.name+': marked as read.');return true;}
@@ -6987,7 +6996,9 @@ const TASK_LOG_KEEP=500; /* spec 005 FR-239: the simulator's task log keeps the 
 function setState(a,state,label,task){
   if(typeof task==='string')task=taskMask(task); /* spec 041 FR-065: backstop, whatever path built the line (the helper masks before cutting; this one cannot repair a cut token) */
   const ch=a.state!==state||(label!==undefined&&a.label!==label)||(task!==undefined&&a.task!==task);
+  const wasState=a.state;
   a.state=state; if(label!==undefined)a.label=label; if(task!==undefined)a.task=task;
+  if(state==='error'&&wasState!=='error')noteFailed(a); /* spec 005 FR-244 */
   if(SIM&&task!==undefined){const L=(window.__taskLog=window.__taskLog||[]);L.push(a.task);if(L.length>TASK_LOG_KEEP)L.splice(0,L.length-TASK_LOG_KEEP);} /* simulator only: the last task lines stored (FR-239), for the FR-065 driver (a line is often replaced at once) */
   if(state==='working'||state==='thinking'){if(!a.busySince)a.busySince=Date.now();}else if(state==='done'||state==='idle')a.busySince=null; /* spec 001 FR-047: time on task */
   if(ch&&a.live&&a.info&&a.info.modelControl&&a.info.modelControl.compact&&!a.parent)updateCtxChip(a); /* the Compact button is greyed while the agent works */
@@ -7772,7 +7783,8 @@ function onLiveEvent(e){
       if(a.pendingModel){const nm=a.pendingModel.name;a.pendingModel=undefined;updateModelChip(a);addNote(chat,'The queued switch to '+esc(nm)+' was dropped when you stopped the reply. Choose it again if you still want it.');}
       setState(a,'idle',null,'Stopped. Ready for your next message.');}
     else if(e.status==='idle'){const was=a.worked;a.worked=false;closeTurn(a);if(a.pendingProfile){const p=a.pendingProfile;a.pendingProfile=undefined;applyProfile(a,p);}
-      if(was){noteCompleted(a);setState(a,'done','Done',a.lastOutput?safeExcerpt(a.lastOutput,140):'Finished.');} else setState(a,'idle',null,a.task);
+      if(was&&a.failedTurn){/* spec 005 FR-245 (issue 1919): the turn failed and ends here: the agent stays in Error, no Finished text, no New reply mark, no finished announcement; a working status starts the next turn */scheduleRender(); /* the turn ended with no state change: the chat's Stop and spinner, and the end said once, need a redraw */}
+      else if(was){noteCompleted(a);setState(a,'done','Done',a.lastOutput?safeExcerpt(a.lastOutput,140):'Finished.');} else setState(a,'idle',null,a.task);
       updateCtxChip(a);maybeSuggestFresh(a);
       /* a queued switch applies when the turn ends (its model event follows at once); if none came, do not leave "Next: ..." standing */
       if(a.pendingModel){const p=a.pendingModel;setTimeout(()=>{if(a.pendingModel===p){a.pendingModel=undefined;updateModelChip(a);}},2000);}}
@@ -7865,6 +7877,7 @@ async function sendLive(text,forId,opts){
   if(fromComposer){attached=[];renderAttached();attNotice([]);
     const input=$('msgInput');if(input){input.value='';autoGrow();}}
   if(LIVEACT)LIVEACT.clear(a.id); /* spec 001 FR-028: a new message starts a fresh readout */
+  a.failedTurn=false; /* the person's message starts a new turn: an earlier failure is over (spec 005 FR-245) */
   a.worked=true; a.intent=''; closeTurn(a); ensureTurn(a); setState(a,'thinking',null,'Thinking');
   const planFirst=!!a.planNext&&!!(capsFor(a)&&capsFor(a).planMode); /* spec 066: one message only */
   if(a.planNext){a.planNext=false;renderAttached();}
@@ -8546,13 +8559,36 @@ async function loadModels(){
   /* spec 012 FR-157: main changed the list itself (a session was refused because of the sign-in) */
   if(bridge.onAdaptersChanged)bridge.onAdaptersChanged(list=>{if(Array.isArray(list)&&list.length){KINDS=list;applyKinds();}});
   if(!bridge.listModels)return;
-  const r=await bridge.listModels().catch(()=>null);
-  if(!r||!r.ok||!r.models.length)return;
-  MODELS=r.models;
-  const ms=$('modelSel');
-  fillModelSelect(ms,'auto','');ms.dataset.kind='';
-  ms.title='Model for new sessions. This is what your Copilot account offers; × is the cost multiplier the API reports.';
-  syncKindModel();
+  /* spec 030 FR-072: a wake from sleep (main's powerMonitor 'resume'): a list that is empty is asked once more; one ask per app, none for a list we have */
+  if(bridge.onResume)bridge.onResume(()=>{if(!MODELS.length)void refreshModels('',true);for(const k of Object.keys(MODELS_BY))if(!MODELS_BY[k].length)void refreshModels(k,true);});
+  if(!(await refreshModels('',false))&&!MODELS_RETRY){
+    /* issue 1909: the start-up fetch can lose a race with the app's own start; one more try shortly after, then only when a menu opens (spec 030 FR-068) */
+    MODELS_RETRY=setTimeout(()=>{if(!MODELS.length)void refreshModels('',true);},8000);
+  }
+}
+let MODELS_RETRY=0;
+/* spec 030 FR-068: why each app's list is unavailable (kind -> {reason,hidden}); cleared once a list arrived */
+const MODELS_STATE={};
+const MODELS_INFLIGHT={};
+/* Asks main for one app's list (fresh = past the app's cache, FR-071); true when it brought models. One call at a time per app. */
+function refreshModels(k,fresh){
+  const key=isDefaultKind(k)?'':k;
+  if(MODELS_INFLIGHT[key])return MODELS_INFLIGHT[key];
+  const p=(async()=>{
+    /* spec 030 FR-073: main caps the call too; this cap is for a main that never answers, so the in-flight mark is always cleared and Retry, a wake and the next open really ask again */
+    let tm; const cap=new Promise(res=>{tm=setTimeout(()=>res({ok:false,reason:'the request timed out'}),window.__modelListMs||35000);});
+    const r=await Promise.race([bridge.listModels(key||undefined,fresh?{fresh:true}:undefined).catch(()=>null),cap]); clearTimeout(tm);
+    if(!r||!r.ok||!r.models.length){MODELS_STATE[key]={reason:r&&r.reason||'the app could not list its models',hidden:r&&r.hidden||0};return false;}
+    delete MODELS_STATE[key];
+    if(key){MODELS_BY[key]=r.models;return true;}
+    MODELS=r.models;
+    const ms=$('modelSel');
+    fillModelSelect(ms,'auto','');ms.dataset.kind='';
+    ms.title='Model for new sessions. This is what your Copilot account offers; × is the cost multiplier the API reports.';
+    syncKindModel();
+    return true;
+  })().finally(()=>{delete MODELS_INFLIGHT[key];});
+  MODELS_INFLIGHT[key]=p;return p;
 }
 
 /* ---------------- agent kinds: choose one, see which are ready, gate controls by capability (spec 012 T017) ---------------- */
@@ -8826,19 +8862,28 @@ async function applyProfile(a,p,anchor){
   addNote(liveChat(a),a.profile?'Profile: '+esc(a.profile.name)+' for the next replies.':'Back to the default profile.');
 }
 function closeModelMenu(){const m=document.getElementById('modelMenu');if(m){m.remove();const c=$('modelChip');if(c)c.setAttribute('aria-expanded','false');}}
-function openModelMenu(a0,x,y,anchor){
+function openModelMenu(a0,x,y,anchor,again){
   const a=liveRoot(a0); if(!a||!a.live||!a.info||!bridge.setModel)return;
   closeModelMenu();closeModeMenu();
   /* spec 030 FR-060: the menu shows what comes next: with a queued switch its model, effort and window are the ticked ones */
   const on=ctrlOf(a).switch!=='none'&&!!bridge.setModel, next=choiceOf(a), cur=modelOf(next.model,a.info.adapterId), curId=cur.id, tier=next.tier, pend=a.pendingModel;
   const dis=on?'':' aria-disabled="true"';
-  const kl=modelsFor(a.info.adapterId), list=kl.length?kl:[cur];
+  const kl=modelsFor(a.info.adapterId), none=!kl.length, list=none?[Object.assign({},cur,{noList:true})]:kl, kk=a.info.adapterId, busyList=!!MODELS_INFLIGHT[isDefaultKind(kk)?'':kk];
+  /* spec 030 FR-068 (issue 1909): an empty list is asked for again, once, when the menu opens (and by Retry), past the app's own cache */
+  if(none&&!again&&bridge.listModels){
+    const ik=isDefaultKind(kk)?'':kk, reopen=()=>{const mm=document.getElementById('modelMenu');if(mm&&mm.dataset.kind===kk&&a.live)openModelMenu(a,x,y,anchor,true);};
+    /* a call already running (start-up, a wake) is waited for, then the list is asked past the cache only if it is still empty; the menu is rebuilt when that ends */
+    if(busyList)MODELS_INFLIGHT[ik].then(()=>modelsFor(kk).length?0:refreshModels(kk,true)).then(reopen,reopen);
+    else setTimeout(()=>{refreshModels(kk,true).then(reopen,reopen);},0);
+  }
   let h=on?'':`<p class="mm-why" role="note">${esc(NO_SWITCH_WHY)}</p>`;
+  if(none){const u=DM.listUnavailable(MODELS_STATE[isDefaultKind(kk)?'':kk]),chk=!!busyList||(!again&&!!bridge.listModels);
+    h+=`<div class="mm-unavail" role="status" style="display:flex;flex-direction:column;align-items:flex-start"><p class="mm-why">${chk?'Checking the model list…':esc(u.text)}</p>${!chk&&u.hidden?`<p class="mm-info">${esc(u.hidden)}</p>`:''}${chk||!bridge.listModels?'':'<button type="button" class="btn sm" data-retrylist="1">Retry</button>'}</div>`;}
   h+='<p class="mm-h">Model</p>'+list.map(m=>{const chk=m.id===curId,w=DM.windowOf(m);
     /* spec 076 FR-202: blocked by the app's organization policy: the reason (also on the current model), disabled unless it is the current
        one; advice (FR-201): the words, still selectable */
     const ow=m.orgBlocked||m.orgDoubt||'', ob=m.orgBlocked&&!chk;
-    return `<button type="button" role="menuitemradio" aria-checked="${chk}" data-pick="${esc(m.id)}"${dis||(ob?' aria-disabled="true"':'')}${ow?` class="${m.orgBlocked?'mm-org':'mm-orgdoubt'}" title="${esc(ow)}"`:''}><span class="mt"><b>${esc(m.name)}${m.multiplier!=null?' ×'+esc(m.multiplier):''}</b><small>${ow?esc(ow):esc(DM.priceLine(m))+(w?' · '+esc(DM.fmtTokens(w))+' window':'')}</small></span><span class="ck">${chk?'✓':''}</span></button>`;}).join('');
+    return `<button type="button" role="menuitemradio" aria-checked="${chk}" data-pick="${esc(m.id)}"${dis||(ob?' aria-disabled="true"':'')}${ow?` class="${m.orgBlocked?'mm-org':'mm-orgdoubt'}" title="${esc(ow)}"`:''}><span class="mt"><b>${esc(m.name)}${m.multiplier!=null?' ×'+esc(m.multiplier):''}</b><small>${m.noList?'Current model':ow?esc(ow):esc(DM.priceLine(m))+(w?' · '+esc(DM.fmtTokens(w))+' window':'')}</small></span><span class="ck">${chk?'✓':''}</span></button>`;}).join('');
   /* spec 007 FR-013/FR-017: the Auto routing tier, a group like the effort (Copilot's Auto only); a locked organization tier shows disabled */
   const ats=curId==='auto'?DM.autoTiersOf(cur):[];
   if(ats.length){const atNow=DM.autoTierOf(cur,next.autoTier||a.info.autoTier),lock=DM.autoTierLocked(cur);
@@ -8851,12 +8896,13 @@ function openModelMenu(a0,x,y,anchor){
   if(DM.hasLong(cur))h+=`<button type="button" role="menuitemcheckbox" aria-checked="${tier==='long'}" data-tier="1"${dis} class="mm-tier"><span class="mt"><b>Long context</b><small>${esc(DM.fmtTokens(DM.windowOf(cur,'long')))} window · ${esc(DM.priceLine(cur,'long'))}</small></span><span class="ck">${tier==='long'?'✓':''}</span></button>`;
   if(pend)h+=`<div class="mm-pend" role="status"><span>Next: <b>${esc(pend.name)}</b>${DM.choiceWords(pend.req)?' ('+esc(DM.choiceWords(pend.req))+')':''}, when this reply ends.</span><button type="button" data-cancelq="1">Cancel</button></div>`;
   h+=on?'<p class="mm-note">'+(pend?'Applies when this reply ends':'Applies from the next message')+'; the conversation is kept. Costlier switches ask first, and your spending limit never changes.'+(ctrlOf(a).unverified?' '+esc(UNVERIFIED_WHY):'')+'</p>':'<div class="mm-foot"><button type="button" class="btn" data-newsess="1">New session…</button></div>';
-  const m=document.createElement('div');m.id='modelMenu';m.className='mode-menu model-menu';m.setAttribute('role','menu');m.setAttribute('aria-label','Model and context for '+a.name);
+  const m=document.createElement('div');m.id='modelMenu';m.dataset.kind=kk;m.className='mode-menu model-menu';m.setAttribute('role','menu');m.setAttribute('aria-label','Model and context for '+a.name);
   m.innerHTML=h;document.body.appendChild(m);
   const {px,py}=placeMenu(m,x,y,anchor); /* spec 005 FR-037: above a toolbar chip */
   m.addEventListener('click',e=>{
     const b=e.target.closest('button');if(!b)return;
     if(b.dataset.newsess){closeModelMenu();newSession(a);return;}
+    if(b.dataset.retrylist){refreshModels(kk,true).then(()=>{if(document.getElementById('modelMenu')&&a.live)openModelMenu(a,x,y,anchor,true);});openModelMenu(a,x,y,anchor,true);return;} /* spec 030 FR-068: one ask per press */
     if(b.dataset.cancelq){closeModelMenu();cancelPendingModel(a,anchor);return;}
     if(b.getAttribute('aria-disabled')==='true')return;
     closeModelMenu();

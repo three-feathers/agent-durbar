@@ -117,6 +117,7 @@ const DRIVERS = [
   { name: 'shots-841-entra-explain' }, // spec 058 FR-193, FR-194 (#841): the fixed line and Sign in again... under a failed policy call
   { name: 'shots-model', label: 'shots-model 1440', env: { MODEL_W: '1440', MODEL_H: '900' } },
   { name: 'shots-model', label: 'shots-model 1280', env: { MODEL_W: '1280', MODEL_H: '800' } },
+  { name: 'check-model-list-unavailable' }, // spec 030 FR-068..FR-070 (#1909): a failed or empty model list is asked again on open, says why, Retry, the policy count
   { name: 'check-model-choice' }, // spec 030 FR-060..FR-066: model, effort and context chosen one after another stay together, each app, each order
   { name: 'shots-007-autotier' }, // spec 007 FR-013..FR-018 (#607): the Auto routing tier in the model menu, confirm, Undo, the organization lock
   { name: 'shots-111-templates' }, // spec 111 T008 (FR-020, FR-021, FR-131): Settings > Team templates: starter and own rows, keyboard only, Delete asks, Export disabled, blocked/changed/failed seeds
@@ -171,7 +172,9 @@ const DRIVERS = [
   { name: 'check-permission-scope' }, // spec 003 FR-108: the approval card says how far "for this session" reaches
   { name: 'check-permission-lookalike' }, // spec 003 FR-117..FR-119 (#1300): lookalike letters marked on the approval card, its line, the session button from the key, chips, why-allowed; all buttons stay
   { name: 'check-005-announce-request' }, // spec 005 FR-237 (#1488): the first permission request or question after a chat opens is what #srAnnounce ends on, not "Working…"
+  { name: 'check-005-announce-error' }, // spec 005 FR-244 (#1908): an agent that enters the error state with its chat closed is said once through #srAnnounce
   { name: 'check-005-announce-failed' }, // spec 005 FR-038 (#1917): a turn that ends in an error says "Reply failed", not "Reply finished", through #srAnnounce
+  { name: 'check-005-failed-state' }, // spec 005 FR-245 (#1919): a turn that failed stays in Error after its idle, not Done
   { name: 'check-answer-safety' }, // spec 052 FR-209..FR-212: the answer bar, a held Enter, a limit in flight, a plan while typing
   { name: 'check-inbox-safety' }, // spec 052 FR-206..FR-208: Needs you: a stale button, a held key and a limit row answer nothing they should not
   { name: 'check-needs-panel' }, // spec 052 FR-191..FR-195 (T196, T197): Your door, the Needs you panel behind its flag: non-modal, no focus change on opening, app start with Later, no shift, Esc and the amber toggle, All clear, Real office slips

@@ -431,3 +431,7 @@ Order: T327 (the owner's picture gate) before any code PR; T328, T329 (art, #164
 ## 2026-11-19: check-097-order step 6 pair from one read (issue #1922)
 
 - [ ] T376 [US2] Bug #1922 (spec delta 2026-11-19): `scripts/check-097-order.js` step 6 reads facts and shown order in one call, remakes the pair up to 3 times with the reason, and its failure prints every desk's state, room and away flag; asserts unchanged
+
+## 2026-11-19: check-097-plate-pencil hover-parking state (issue #1930)
+
+- [x] T393 [US2] Refs #1930 (spec delta 2026-11-19): `scripts/check-097-plate-pencil.js` puts the full hover state in the hover-parking assert's message; the failure did not reproduce in 5 local xvfb runs (2 under load); `PENCIL_MUTANT=shown` fails it with the state

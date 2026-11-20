@@ -9,6 +9,7 @@ type Conf = { needed: boolean; direction: string; reasons: { code: string; text:
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const D = require(path.join(__dirname, '..', '..', 'src', 'renderer', 'modelswitch.js')) as {
   pricingFromBatch: (p: unknown, b: unknown) => number | undefined;
+  listUnavailable: (s?: { reason?: string; hidden?: number }) => { text: string; hidden: string };
   priceOf: (m: M | null, t?: string) => { input?: number; output?: number } | null;
   windowOf: (m: M | null, t?: string) => number;
   relativePrice: (a: M, b: M, ta?: string, tb?: string) => { direction: string; input?: number; output?: number; basis: string };
@@ -416,4 +417,9 @@ console.log('effort: the models\' own names (none included) OK');
   assert.strictEqual(F({ reason: 'weird' }), 'Copilot could not switch Auto to the default routing. It still uses its default routing.');
   assert.strictEqual(F({ requested: '__proto__', effective: 'constructor', reason: 'toString' }), 'Copilot could not switch Auto to the default routing. It still uses its default routing.', 'only the three names and known reasons');
   console.log('spec 007: Auto routing tier validation and helpers OK');
+  // spec 030 FR-068, FR-070 (issue #1909): the words of an unavailable model list
+  assert.deepStrictEqual(D.listUnavailable({ reason: 'the request timed out' }), { text: 'Model list unavailable: the request timed out', hidden: '' });
+  assert.strictEqual(D.listUnavailable({ reason: 'x', hidden: 1 }).hidden, "1 model is hidden by your account's policy.");
+  assert.strictEqual(D.listUnavailable({ reason: 'x', hidden: 3 }).hidden, "3 models are hidden by your account's policy.");
+  assert.strictEqual(D.listUnavailable().text, 'Model list unavailable: the app returned no models');
 }

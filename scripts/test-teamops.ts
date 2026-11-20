@@ -715,11 +715,11 @@ section('modelsOf', async () => {
     const router = { onEvent: () => () => undefined, forAgent: () => undefined, instance: (k: string) => ({ id: k, capabilities: { models: true }, listModelOptions: async () => { if (k === 'broken') throw new Error('nope ' + MARK); return lists[k]; } }) };
     const verdict = async (id: string, m: string) => (id === 'copilot' && m === 'm-two' ? { refuse: true, why: 'Blocked by policy.' } : id === 'copilot' && m === 'm-one' ? { refuse: false, why: 'Maybe blocked.' } : undefined);
     const mi = register({ agents: new Map(), router: router as never, registry: { defaultId: 'copilot', has: (k: string) => k in lists || k === 'broken' } as never, wsKey: () => '', getFolderStore: () => undefined, orgModel: verdict as never });
-    const call = (...a: unknown[]) => Promise.resolve(handlers.get('models:list')!(win, ...a)) as Promise<{ ok: boolean; error?: string; models: unknown[] }>;
+    const call = (...a: unknown[]) => Promise.resolve(handlers.get('models:list')!(win, ...a)) as Promise<{ ok: boolean; error?: string; models: unknown[]; hidden?: number }>;
     const expected = [{ id: 'm-one', name: 'One', efforts: ['low'], orgDoubt: 'Maybe blocked.' }, { id: 'm-two', name: 'Two', efforts: ['low', 'high'], orgBlocked: 'Blocked by policy.' }];
-    eq(await call('copilot'), { ok: true, models: expected }, 'models:list: disabled models dropped, the policy verdicts added');
-    eq(await call(), { ok: true, models: expected }, 'models:list with no kind: the default app');
-    eq(await call(''), { ok: true, models: expected }, 'models:list with an empty kind: the default app');
+    eq(await call('copilot'), { ok: true, models: expected, hidden: 1 }, 'models:list: disabled models dropped, the policy verdicts added');
+    eq(await call(), { ok: true, models: expected, hidden: 1 }, 'models:list with no kind: the default app');
+    eq(await call(''), { ok: true, models: expected, hidden: 1 }, 'models:list with an empty kind: the default app');
     eq(await call('claude'), { ok: true, models: [{ id: 'c-one', name: 'C', efforts: [] }] }, 'models:list: another app, no verdict, no extra keys');
     eq(await call('nosuch'), { ok: false, error: 'unknown agent app', models: [] }, 'models:list: an unknown app is refused');
     eq(await call(7), { ok: false, error: 'unknown agent app', models: [] }, 'models:list: a non-string kind is refused');

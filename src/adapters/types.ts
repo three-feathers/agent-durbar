@@ -840,8 +840,8 @@ export interface AgentAdapter {
   isLive(sessionId: string): boolean;
   /** Stop every session and free the runtime. */
   dispose(): Promise<void>;
-  /** The models the account offers, in the UI's shape (no inference, no credits). Optional (`capabilities.models`). */
-  listModelOptions?(): Promise<ModelOption[]>;
+  /** The models the account offers, in the UI's shape (no inference, no credits). Optional (`capabilities.models`). `fresh` (spec 030 FR-071): ask the app again, past a cache of its own. */
+  listModelOptions?(opts?: { fresh?: boolean }): Promise<ModelOption[]>;
   /** Earlier sessions of a folder, newest first; `excludeIds` are left out. Optional (`capabilities.history`). */
   listPreviousSessions?(cwd: string, excludeIds?: ReadonlySet<string>): Promise<PreviousSession[]>;
   /**

@@ -113,3 +113,7 @@
 ## 2026-11-19: a later approval answers the same reviewer's earlier asks (FR-097)
 
 - [x] T084 (FR-097, #1910) `scripts/pr-gate-answered.awk` filters the gate's "unanswered" list by the same trusted reviewer's later `APPROVED` latest review; `scripts/pr-gate.sh` runs it on `newer` with the trusted humans' non-comment reviews. Test `test:prgateanswered` (`scripts/test-pr-gate-answered.ts`, in `scripts/test-suites.txt`): fixtures for approved after comment, comment after approval, changes requested after approval, another author's approval, same time, outsider and bot; six mutants, each dying at its own assert. Replayed read-only on #1906.
+
+## 2026-11-19: `specs:numbers` across specs (FR-098, issue #1935)
+
+- [x] T085 (FR-098) `scripts/spec-numbers.js`: `collect` reads each head's own changed spec files and the set of files new on `origin/main` (`fresh`); `findClashes` compares an added id with the ids other heads add in a different existing file of the same kind. Test `test:specnumbers`: same T in two specs clashes (pure and through git), same FR and same Q across specs clash, a free number passes, a new spec or a T against an FR does not, a stack with a free number in another spec passes and a re-taken inherited number clashes. Mutants (cross-file loop off, head files limited to this branch's, `fresh` ignored, kind ignored, `fresh` ignored for the other file), each dying at its own assert.

@@ -182,8 +182,14 @@ PRs, gates and line-count goals: `plan.md`. Each PR measures on `main` first and
 ## 2026-11-17: the planner's size check counts work (issue #1846)
 - [x] T254 [US1] `scripts/test-subretire.ts`: replace the fixed 1000 ms wall limit for 200,000 helpers with counted field reads (`assertPlanWork`, fake-count self-test) and a 20 s thread-CPU backstop; mutants: insertion sort (dies at "end time ... worse than n log n"), an extra status pass (dies at "status ... times").
 
+## 2026-11-19: an agent that fails is announced when its chat is not open (issue #1908)
+- [x] T255 [US1] `noteFailed(a)` in `app.js`, called by `setState` on entering the error state: `announce("<name> has an error.")` unless the agent is a helper, its folder or floor is hidden, the simulator is still replaying, or its chat is shown; `scripts/check-005-announce-error.js` (in `ui-suite.js`), mutants `ANNOUNCE_ERR_MUTANT=silent|again|shown` each fail at their own label [FR-244]. `[KNOWN GAP]` a hidden folder or floor, the replay and a real screen reader are not driven; a failure in the open chat still says "Reply finished" (FR-038).
+
 ## 2026-11-19 (second entry): the open chat says that the reply failed (issue #1917)
 - [x] T256 [US1] `failedTurn` flag on the agent (set by an `error` status, cleared by a `working` status) read by `syncRunState` in `app.js`: a turn that ends after an error says "Reply failed" (Stop still says "Stopped", else "Reply finished"); `scripts/check-005-announce-failed.js` (in `ui-suite.js`), mutants `ANNOUNCE_FAIL_MUTANT=finished|always|sticky` [FR-038]
 
 ## 2026-11-19 (third entry): the agent rail says which folder (issue #1905)
 - [x] T383 [US1] (FR-340): rail group heads and rows give the masked folder path through `DurbarTip` (native `title` removed); equal group names show their nearest differing parent (`DurbarRail.parentNames`, pure); `scripts/check-005-rail-folder.js` (in `ui-suite.js`) with its mutants; `check-rail` follows the tooltip. Test: `sim:` `check-005-rail-folder`, `check-rail`, `test:railorder` `[IMPLEMENTED]` 2026-11-19: `check-005-rail-folder`; mutants title, nosuffix, nofocus, raw die; `check-rail` takes the first Escape for the tooltip
+
+## 2026-11-19 (third entry): a failed turn keeps showing the error (issue #1919)
+- [x] T257 [US1] the `idle` that ends a turn with `failedTurn` set leaves the state Error (no Done, no unread mark, no finished announcement); `scripts/check-005-failed-state.js` (in `ui-suite.js`), mutants `FAILED_STATE_MUTANT=done|always` [FR-245]
