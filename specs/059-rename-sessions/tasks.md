@@ -141,3 +141,4 @@ Decisions D1..D9: coordinator, under Ruben's delegation. Renderer only; no IPC, 
 
 - [x] T082 Issue #1067 (FR-030): `placeRen`'s fallback keeps the pencil's whole 24px box in the name's right half; `check:office` fails a box reaching the name's middle or a name-centre hit on a pencil
 - [x] T083 Issue #1155 (FR-170): the pencil beside a Real office plate's name, reusing `.ren[data-ren]`, its handlers and `startSessionEdit`; anchored by CSS to the name; F2 on a plate edits in place; `scripts/check-097-plate-pencil.js` in `check:ui`, mutation-checked
+- [x] T084 Issue #1966 (FR-180): `sessionTitles` in the folder store (masked, 80 characters, 12 entries), written on a `title` event, applied to a lazy restored agent in `restoreFolders()`, dropped with the session; `scripts/test-folders.ts`

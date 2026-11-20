@@ -13,6 +13,8 @@ import * as floorOps from '../shared/floors';
 import type { FloorOp, FloorsDoc } from '../shared/floors';
 import { emptyOrder, parseOrder } from '../shared/roomorder';
 import type { OrderDoc } from '../shared/roomorder';
+import { redact } from '../shared/redact';
+import { cleanSessionTitle } from '../adapters/history';
 import { cleanDisplayName, nameError, MAX_FOLDER_LABEL } from '../shared/names';
 import type { SessionNameEntry } from '../shared/sessionname';
 import { markIdOk, markSrcOk } from '../shared/sessionid';
@@ -46,6 +48,8 @@ export interface SavedFolder {
   openSessions?: Array<{ id: string; adapterId?: string }>;
   /** Spec 059 FR-005: the user's names for this folder's sessions (oldest set first, at most 200). Ids and short names, never content. */
   sessionNames?: SessionNameEntry[];
+  /** Spec 059 FR-180: the agent app's last title of each restorable session (newest last, at most 12), shown on its lazy desk until the session reports its own. Ids and masked titles only, never message text. */
+  sessionTitles?: SessionTitle[];
   /** Spec 006 FR-026: rows of Previous sessions pinned to the top / hidden from the list. Ids only (`src` = adapter id or `vscode`), at most 200 each. */
   prevPinned?: PrevMark[];
   prevHidden?: PrevMark[];
@@ -221,6 +225,35 @@ export function sessionsToRestore(f: Pick<SavedFolder, 'lastSession' | 'openSess
   return out.slice(0, MAX_OPEN_SESSIONS);
 }
 
+/** Spec 059 FR-180: one remembered runtime title. */
+export interface SessionTitle { id: string; title: string }
+/** Spec 059 FR-180: how many titles a folder keeps (every restorable session: 6 open ones plus the last). */
+export const MAX_SESSION_TITLES = 12;
+/** Spec 059 FR-180: the longest saved title, the same cut as the title the adapters report. */
+export const MAX_SAVED_TITLE = 80;
+
+/** A title as it is saved: secrets masked, one line, at most 80 characters; `undefined` when nothing is left or it is not text. */
+export function cleanSavedTitle(v: unknown): string | undefined {
+  return typeof v === 'string' ? cleanSessionTitle(redact(v.slice(0, 2000)), MAX_SAVED_TITLE) : undefined;
+}
+
+/** A saved title list: bad entries dropped (the title is masked and cut again), the same id collapses (last wins), the newest 12 kept; empty is `undefined`. */
+export function parseSessionTitles(v: unknown): SessionTitle[] | undefined {
+  if (!Array.isArray(v)) return undefined;
+  const out: SessionTitle[] = [];
+  for (const e of v.slice(-100)) {
+    if (!e || typeof e !== 'object') continue;
+    const o = e as Record<string, unknown>;
+    const title = cleanSavedTitle(o.title);
+    if (typeof o.id !== 'string' || !SESSION_ID.test(o.id) || !title) continue;
+    const at = out.findIndex((x) => x.id === o.id);
+    if (at >= 0) out.splice(at, 1);
+    out.push({ id: o.id, title });
+  }
+  const kept = out.slice(-MAX_SESSION_TITLES);
+  return kept.length ? kept : undefined;
+}
+
 /** Spec 059 FR-005: how many session names a folder keeps. */
 export const MAX_SESSION_NAMES = 200;
 /** The session id rule of spec 006 FR-026 / spec 059 FR-005. */
@@ -313,6 +346,7 @@ export function parseSavedFolders(text: string): SavedFolder[] {
       ...(parseLastSession(o.lastSession) ? { lastSession: parseLastSession(o.lastSession) } : {}),
       ...(parseOpenSessions(o.openSessions) ? { openSessions: parseOpenSessions(o.openSessions) } : {}),
       ...(parseSessionNames(o.sessionNames) ? { sessionNames: parseSessionNames(o.sessionNames) } : {}),
+      ...(parseSessionTitles(o.sessionTitles) ? { sessionTitles: parseSessionTitles(o.sessionTitles) } : {}),
       ...(parsePrevMarks(o.prevPinned) ? { prevPinned: parsePrevMarks(o.prevPinned) } : {}),
       ...(parsePrevMarks(o.prevHidden) ? { prevHidden: parsePrevMarks(o.prevHidden) } : {}),
       ...(parseSessionModes(o.sessionModes) ? { sessionModes: parseSessionModes(o.sessionModes) } : {}),
@@ -546,7 +580,34 @@ export class FolderStore {
     const cur = this.get(workspace);
     if (!cur || cur.lastSession?.id !== id) return;
     cur.lastSession = undefined;
+    this.dropTitle(cur, id);
     this.save();
+  }
+
+  /** Spec 059 FR-180: forgets a session's saved title (no write; the caller saves). */
+  private dropTitle(cur: SavedFolder, id: string): void {
+    const t = cur.sessionTitles?.filter((x) => x.id !== id);
+    if (t && t.length !== cur.sessionTitles?.length) cur.sessionTitles = t.length ? t : undefined;
+  }
+
+  /** The saved title of a session of this folder (spec 059 FR-180), or undefined. */
+  sessionTitleOf(workspace: string, id: string): string | undefined {
+    return this.get(workspace)?.sessionTitles?.find((x) => x.id === id)?.title;
+  }
+
+  /** Spec 059 FR-180: remembers the session's last title (masked, cut); only for a session that comes back after a restart. No write when nothing changes. */
+  setSessionTitle(workspace: string, id: string, title: unknown): boolean {
+    const cur = this.get(workspace);
+    const t = cleanSavedTitle(title);
+    if (!cur || !t || !SESSION_ID.test(id)) return false;
+    if (!sessionsToRestore(cur).some((x) => x.id === id)) return false;
+    const list = cur.sessionTitles ?? [];
+    if (list[list.length - 1]?.id === id && list[list.length - 1].title === t) return true;
+    const before = cur.sessionTitles;
+    cur.sessionTitles = [...list.filter((x) => x.id !== id), { id, title: t }].slice(-MAX_SESSION_TITLES);
+    if (this.save()) return true;
+    cur.sessionTitles = before;
+    return false;
   }
 
   /** Spec 052 FR-088: the session is open in this folder (it got a message, or was resumed). Written only when new; past 6 the oldest one other than the last session is dropped. */
@@ -576,6 +637,7 @@ export class FolderStore {
     const out = list.filter((x) => x.id !== id);
     const wasLast = cur.lastSession?.id === id;
     if (out.length === list.length && !wasLast) return;
+    this.dropTitle(cur, id); // spec 059 FR-180
     cur.openSessions = out.length ? out : undefined;
     if (wasLast) cur.lastSession = undefined;
     this.save();

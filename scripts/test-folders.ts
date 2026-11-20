@@ -4,7 +4,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { MAX_FOLDER_LABEL } from '../src/shared/names';
-import { FolderStore, hasLegacyClosed, adapterOf, parseAdapterId, parseDefaultAgent, parseLabel, labelError, renameFolderOp, MAX_LABEL, parseLastSession, parseOpenSessions, parsePrevMarks, MAX_PREV_MARKS, parseSavedFloors, parseSavedFolders, restoreMode, sessionsToRestore, MAX_OPEN_SESSIONS, MAX_SESSION_NAMES, parseSessionNames, parseSessionModes, modeForSession, MAX_SESSION_MODES } from '../src/main/folders';
+import { FolderStore, hasLegacyClosed, adapterOf, parseAdapterId, parseDefaultAgent, parseLabel, labelError, renameFolderOp, MAX_LABEL, parseLastSession, parseOpenSessions, parsePrevMarks, MAX_PREV_MARKS, parseSavedFloors, parseSavedFolders, restoreMode, sessionsToRestore, MAX_OPEN_SESSIONS, MAX_SESSION_NAMES, parseSessionNames, parseSessionModes, modeForSession, MAX_SESSION_MODES, parseSessionTitles, MAX_SESSION_TITLES, MAX_SAVED_TITLE } from '../src/main/folders';
 import { GROUND, GROUND_NAME } from '../src/shared/floors';
 
 const abs = (p: string): string => path.resolve('/', p);
@@ -722,5 +722,56 @@ function await_sync(): void {
   } finally {
     fs.rmSync(d8, { recursive: true, force: true });
   }
+}
+// ---- spec 059 FR-180: the last runtime title of each restorable session ----
+{
+  const d9 = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-folders9-'));
+  try {
+    const f9 = path.join(d9, 'f.json');
+    const st = new FolderStore(f9);
+    st.upsert({ workspace: abs('m'), permMode: 'read-only' });
+    assert.strictEqual(st.setSessionTitle(abs('m'), 's1', 'Fix login'), false, 'a session that is not restorable keeps no title');
+    st.setLastSession(abs('m'), 's1', undefined);
+    st.addOpenSession(abs('m'), 's1', undefined);
+    st.addOpenSession(abs('m'), 's2', undefined);
+    assert.strictEqual(st.setSessionTitle(abs('nope'), 's1', 'x'), false, 'only saved folders');
+    assert.strictEqual(st.setSessionTitle(abs('m'), 's1', '   '), false, 'an empty title is refused');
+    assert.strictEqual(st.setSessionTitle(abs('m'), 'bad id', 'x'), false);
+    assert.ok(st.setSessionTitle(abs('m'), 's1', 'Fix  login\nflow'));
+    assert.ok(st.setSessionTitle(abs('m'), 's2', 'Docs'));
+    let back = new FolderStore(f9);
+    back.load();
+    assert.strictEqual(back.sessionTitleOf(abs('m'), 's1'), 'Fix login flow', 'round trip, one line');
+    assert.strictEqual(back.sessionTitleOf(abs('m'), 's2'), 'Docs');
+    const mtime = fs.statSync(f9).mtimeMs;
+    st.setSessionTitle(abs('m'), 's2', 'Docs'); // unchanged: no write
+    assert.strictEqual(fs.statSync(f9).mtimeMs, mtime);
+    // a token-shaped title is stored masked, never raw
+    const tok = 'ghp_' + 'a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8';
+    st.setSessionTitle(abs('m'), 's2', `Use ${tok} now`);
+    const raw = fs.readFileSync(f9, 'utf8');
+    assert.ok(!raw.includes(tok), 'the token is not in the file');
+    assert.ok(!(st.sessionTitleOf(abs('m'), 's2') ?? '').includes(tok));
+    // capped in length
+    st.setSessionTitle(abs('m'), 's2', 'w'.repeat(500));
+    assert.ok([...(st.sessionTitleOf(abs('m'), 's2') ?? '')].length <= MAX_SAVED_TITLE, 'cut to the title limit');
+    // removal
+    st.removeOpenSession(abs('m'), 's2');
+    assert.strictEqual(st.sessionTitleOf(abs('m'), 's2'), undefined, 'a removed session forgets its title');
+    back = new FolderStore(f9);
+    back.load();
+    assert.strictEqual(back.sessionTitleOf(abs('m'), 's1'), 'Fix login flow');
+    st.clearLastSession(abs('m'), 's1');
+    assert.ok(!('sessionTitles' in new FolderStore(f9).load()[0]), 'an empty list is not written');
+  } finally {
+    fs.rmSync(d9, { recursive: true, force: true });
+  }
+  // old files without titles load; bad values are ignored; the list is capped
+  const old = parseSavedFolders(JSON.stringify({ folders: [{ workspace: abs('a') }, { workspace: abs('b'), sessionTitles: 5 }, { workspace: abs('c'), sessionTitles: [null, 'x', { id: 'bad id', title: 't' }, { id: 's1', title: 7 }, { id: 's2', title: '' }, { id: 's3', title: 'ok' }] }] }));
+  assert.ok(!('sessionTitles' in old[0]) && !('sessionTitles' in old[1]));
+  assert.deepStrictEqual(old[2].sessionTitles, [{ id: 's3', title: 'ok' }]);
+  const many = parseSessionTitles(Array.from({ length: 30 }, (_, i) => ({ id: 's' + i, title: 't' + i })));
+  assert.strictEqual(many?.length, MAX_SESSION_TITLES);
+  assert.strictEqual(many?.[many.length - 1].id, 's29');
 }
 console.log('folders tests passed');

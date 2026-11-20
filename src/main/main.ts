@@ -351,6 +351,7 @@ router.onEvent((e) => {
   if (!a) return;
   a.title = e.title;
   syncSessionName(a, e.title); // spec 059 FR-011
+  folderStore?.setSessionTitle(wsKey(a), resumeIdFor(a.id), e.title); // spec 059 FR-180: kept for a restart's lazy desk (written only when it changes)
 });
 router.onEvent((e) => {
   if (e.type !== 'toolCall') return;
@@ -576,6 +577,8 @@ function restoreFolders(): void {
         if (f.autoTier) info.autoTier = f.autoTier; // spec 007 FR-016
         router.bind(info.id, kind);
         agents.set(info.id, info);
+        const savedTitle = ls ? folderStore.sessionTitleOf(f.workspace, ls.id) : undefined;
+        if (savedTitle) info.title = savedTitle; // spec 059 FR-180: until the session runs and reports its own
         applyStoredAlias(info); // spec 059 FR-014
       }
     } catch {
@@ -755,6 +758,7 @@ function noteLastSession(a: AgentInfo | undefined): void {
   folderStore?.setLastSession(wsKey(a), rid, router.adapterIdOf(a.id));
   folderStore?.addOpenSession(wsKey(a), rid, router.adapterIdOf(a.id)); // spec 052 FR-088: every open session comes back, not only the last
   folderStore?.setSessionMode(wsKey(a), rid, a.permMode); // spec 003 (2026-10-21): it comes back in its own mode
+  if (a.title) folderStore?.setSessionTitle(wsKey(a), rid, a.title); // spec 059 FR-180
   mcp.noteSession(a.id); // spec 058 (2026-11-14 delta): and with its own MCP switches
 }
 /** The id a session is resumed under after a restart (Codex: its thread id; others: the agent id). */

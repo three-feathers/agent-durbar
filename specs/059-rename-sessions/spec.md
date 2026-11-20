@@ -638,3 +638,14 @@ Real office shipped without FR-020 item 2's pencil: its desks rename through the
   - The second mutant shows that F2 never reached a Real office plate before this change, although the feature inventory said "works F2"; the row now says what is built.
   - The pencil shows only on hover or focus, so no linked picture changes.
 
+### 2026-11-20: a restored session keeps its last title (issue #1966; FR-180, T084)
+
+*Seen* (owner, after a clean restart): a folder's saved sessions come back as lazy "Not started" desks (spec 052 FR-088). Only the person's name (FR-014) was restored, not the agent app's title, so a desk showed "<folder> #2" until the session started and reported its own title.
+
+- **FR-180** **A restored session shows its last runtime title until it runs.**
+  - **Saved with the folder.** `sessionTitles` in the folder's entry of the folders file (the store that already holds `openSessions` and `sessionNames`; no new file, FR-031): `{ id, title }`, newest last, at most 12, only for a session that `sessionsToRestore` brings back. Written when a `title` event arrives and when a session is first noted as open, and only when the title changed (no write storm).
+  - **Masked and cut.** The title goes through `redact`, then the adapters' one-line cleaner at 80 characters. Titles only, never message text. On read each title is masked and cut again.
+  - **On restore** the lazy agent's `info.title` is that title, so the display name is the alias (FR-014, still wins), else the title, else "<folder> #n"; the session's own `title` event replaces it when it runs.
+  - **Removed** with the session (`removeOpenSession`, `clearLastSession`) and with its folder. A file without `sessionTitles` loads unchanged; a bad entry (not text, bad id, empty after cleaning) is dropped.
+- `test:` `scripts/test-folders.ts` (round trip, masked token, cap, removal, old file, bad values). `[KNOWN GAP]` the restart wiring in `restoreFolders()` (main process) has no automated test and was not run in the simulator.
+

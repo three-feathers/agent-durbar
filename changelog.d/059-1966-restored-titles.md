@@ -1,0 +1,1 @@
+- **A restored session keeps its title** (spec 059 FR-180, issue #1966): after a restart a "Not started" desk shows the agent app's last title for that session (masked, one line, 80 characters) instead of "<folder> #2", until the session runs; a name you gave it still wins. Checked with unit tests only; not in a real restart.
