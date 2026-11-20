@@ -72,3 +72,5 @@
 
 - Phase 1 before Phase 2 before Phase 3. Inside Phase 1: T010 and T011 first; T012, T013 in parallel; T014 needs T011 and T013; T015 needs T012 and T014; T016-T018 after T015.
 - Inside Phase 3: T040 first (it can change FR-013); T030, T031 before T032; T041 and T042 need T040. The owner's answers (Q1-Q9, review questions A, B) are recorded in *Clarifications* and applied in T020, T021, T031, T033, T044.
+- [ ] T399 Issue 1967 (2026-11-20 *Changes*): the running sign (spinner, static ring under reduced motion and Motion off, `aria-busy`), announced at the existing pace (`app.js`, `styles.css`, `test-convsearchui.ts`, `shots-095.js`) [FR-053]
+- [ ] T400 Issue 1967 (2026-11-20 *Changes*): titles first: `onSessions` in `buildScope`, early title rows, the title pass in `startScan`, rows updated in place with excerpts (`convscope.ts`, `convsearch.ts`, `ipc/convsearch.ts`, `main.ts`; tests `test-convsearch.ts`, `test-convsearchipc.ts`) [FR-054]
