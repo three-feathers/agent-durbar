@@ -489,3 +489,7 @@
 
 ## 2026-11-19: `check-answer-safety` limit step waits like the other steps (issue #1770)
 - [x] T377 `scripts/check-answer-safety.js` FR-210 (B): the step calls `barUp()` (card painted, two frames) before the filler and scroll, as every other step does (issue 839); mutant `ANSWER_SAFETY_MUTANT=follow` fails at `only "Show in chat"` with `bar hidden=true`. Spec 052 Changes 2026-11-19. Natural trigger not reproduced (0 of 165 loops): Refs only.
+
+## 2026-11-20: a long question and an MCP form's message are not cut at 2,000 characters; the form renders Markdown (issue #1934)
+- [ ] T422 (delta 2026-11-20, issue #1934) spec 052: the decision (20,000, cut at a space, no control), the unchanged bounds, the known gaps [FR-160]
+- [ ] T423 (delta 2026-11-20, issue #1934) `src/adapters/questions.ts`, `src/adapters/history.ts` (`cleanSessionTitle` whole-word option), `src/shared/elicit.ts`, `src/renderer/app.js` (`showElicitation`), `src/renderer/sim.ts` (`simelicit=md`), `scripts/check-elicit-markdown.js` + `scripts/ui-suite.js`, `scripts/test-claude-adapter.ts`, `scripts/test-elicit.ts` [FR-160]
