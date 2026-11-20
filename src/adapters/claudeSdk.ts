@@ -11,6 +11,7 @@ import type { ClaudeMessage } from './claudeMap';
 import type { ClaudeTransport, TransportHandlers, UserContent } from './claudeTransport';
 import type { TransportInput } from './claude';
 import { CLAUDE_EFFORTS, PRE_TOOL_USE_HOOK, claudeModelFlag } from './claude';
+import { ShownError } from '../shared/shownerror';
 
 export const SDK_PACKAGE = '@anthropic-ai/claude-agent-sdk';
 
@@ -105,7 +106,7 @@ export function createSdkTransport(sdk: SdkModule, o: TransportInput): ClaudeTra
   let n = 0;
   const control = async (subtype: string, request: Record<string, unknown>): Promise<Record<string, unknown>> => {
     const a = await h.control({ requestId: `sdk-${++n}`, subtype, request: { subtype, ...request } });
-    if ('error' in a) throw new Error(a.error);
+    if ('error' in a) throw new ShownError(a.error);
     return a.response;
   };
   const canUseTool = async (toolName: string, toolInput: Record<string, unknown>, opts: { toolUseID?: string } = {}) => {

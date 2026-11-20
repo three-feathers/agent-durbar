@@ -8,6 +8,8 @@ import type { AdapterRouter } from '../adapters/router';
 import type { AgentInfo, McpToolsResult } from '../shared/api';
 import { cut } from '../shared/redact';
 import { maskMcpError, maskMcpText } from './mcpmask';
+import { failText } from './ipcerror';
+import { ShownError } from '../shared/shownerror';
 
 export const MCP_TOOLS_MAX = 500;
 export const MCP_TOOL_NAME_MAX = 128;
@@ -23,7 +25,6 @@ export interface McpToolsDeps {
   orgTool?(agentId: string, server: string, tool: string): Promise<OrgVerdict | undefined>;
 }
 
-const errText = (err: unknown): string => (err instanceof Error ? err.message : String(err));
 
 export async function mcpToolsOp(d: McpToolsDeps, id: unknown, name: unknown): Promise<McpToolsResult> {
   const a = typeof id === 'string' ? d.agents.get(id) : undefined;
@@ -38,7 +39,7 @@ export async function mcpToolsOp(d: McpToolsDeps, id: unknown, name: unknown): P
     const list = await Promise.race([
       ad.listMcpTools(a.id, name),
       new Promise<never>((_r, reject) => {
-        timer = setTimeout(() => reject(new Error('The server did not answer in time.')), d.timeoutMs ?? MCP_TOOLS_TIMEOUT_MS);
+        timer = setTimeout(() => reject(new ShownError('The server did not answer in time.')), d.timeoutMs ?? MCP_TOOLS_TIMEOUT_MS);
       }),
     ]);
     const all = Array.isArray(list) ? list : [];
@@ -51,7 +52,7 @@ export async function mcpToolsOp(d: McpToolsDeps, id: unknown, name: unknown): P
     });
     return { ok: true, tools, total: all.length };
   } catch (err) {
-    return { ok: false, error: maskMcpError(errText(err), secrets) ?? 'Could not list the tools.' };
+    return { ok: false, error: maskMcpError(failText(err, 'mcp tools'), secrets) ?? 'Could not list the tools.' };
   } finally {
     if (timer) clearTimeout(timer);
   }

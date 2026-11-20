@@ -28,6 +28,7 @@ import { CLAUDE_SIGN_IN_TIMEOUT_MS, ClaudeAdapter, claudeArgs } from '../src/ada
 import { createCliTransport } from '../src/adapters/claudeTransport';
 import { fakeSpawn, SANDBOX_HOST_OK } from './fakes/claude-cli';
 import { McpStore } from '../src/main/mcpstore';
+import { ShownError } from '../src/shared/shownerror';
 
 const PAGE = 'https://auth.example.com/authorize?client_id=abc&state=SECRETSTATE123&code_challenge=PKCEPKCEPKCE';
 const info = (id: string): AgentInfo => ({ id, name: 'Ana', cwd: '/w', permMode: 'ask', model: 'auto' }) as AgentInfo;
@@ -100,7 +101,7 @@ async function main(): Promise<void> {
       assert.deepStrictEqual(opened, [], 'http: never reaches the opener');
       assert.ok(!st.has('a', 'z'));
       // the opener fails: the entry stays and the error is not an address
-      const bad = new McpSignInStore(() => 0, async () => { throw new Error(`no browser for ${PAGE}`); });
+      const bad = new McpSignInStore(() => 0, async () => { throw new ShownError(`no browser for ${PAGE}`); });
       bad.begin('a', 'x', PAGE, 'h');
       assert.strictEqual(await bad.open('a', 'x', 'h'), 'failed');
       assert.ok(bad.has('a', 'x') && bad.view('a', 'x')!.opened === false, 'a failed open can be tried again');
@@ -195,7 +196,7 @@ async function main(): Promise<void> {
       // the runtime fails: masked, no address, manual steps
       const stub = ad as unknown as { startMcpSignIn: (s: string, n: string) => Promise<unknown> };
       const real = stub.startMcpSignIn;
-      stub.startMcpSignIn = async () => { throw new Error(`login failed at ${PAGE} using ${secret} Authorization: Bearer abcdefghijklmnop`); };
+      stub.startMcpSignIn = async () => { throw new ShownError(`login failed at ${PAGE} using ${secret} Authorization: Bearer abcdefghijklmnop`); };
       const f = await mcpSignInOp(d, store, sid, 'teams');
       assert.strictEqual(f.ok, false);
       assert.strictEqual((f as { manual?: boolean }).manual, true);
@@ -204,8 +205,8 @@ async function main(): Promise<void> {
       assert.ok(!leaked, `no address or secret in the error: ${ftext}`);
       assert.ok(!store.has(sid, 'teams') && store.reserve(sid, 'teams'), 'a failed start leaves nothing held or reserved');
       store.release(sid, 'teams');
-      assert.strictEqual(signInErrorText(new Error('x'), [], 'fallback'), 'x');
-      assert.strictEqual(signInErrorText(new Error('  '), [], 'fallback'), 'fallback', 'an empty error gets the fallback');
+      assert.strictEqual(signInErrorText(new ShownError('x'), [], 'fallback'), 'x');
+      assert.strictEqual(signInErrorText(new ShownError('  '), [], 'fallback'), 'fallback', 'an empty error gets the fallback');
       stub.startMcpSignIn = real;
 
       // no method (an older runtime or another agent app): manual, nothing asked
@@ -933,7 +934,7 @@ async function main(): Promise<void> {
       // the start fails: the shared wording shows, masked, with the steps
       blocked = true;
       const ad3 = new FakeAdapter({ displayName: 'Copilot', capabilities: { mcpSignIn: true, mcpSignInAgain: true } });
-      ensureErr = new Error(`could not start https://x.example.com/a?code=SECRET`);
+      ensureErr = new ShownError(`could not start https://x.example.com/a?code=SECRET`);
       const r3 = await mcpSignInOp({ ...d, router: routerOf(ad3) }, store, sid, 'teams');
       assert.deepStrictEqual([r3.ok, (r3 as { manual?: boolean }).manual], [false, true]);
       {
