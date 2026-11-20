@@ -7296,9 +7296,10 @@ function showElicitation(a,e){
   const n=document.createElement('div');n.className='note perm question elicit';n.setAttribute('role','group');n.setAttribute('aria-label',isUrl?'An MCP server asks you to open a page':'An MCP server asks for input');
   const head=document.createElement('b');head.textContent=isUrl?'An MCP server asks you to open a page':'An MCP server asks for input';n.appendChild(head);
   const st=document.createElement('span');st.className='pstate';n.appendChild(st);
-  const qt=document.createElement('p');qt.className='q-text';qt.id=uid+'-msg';
+  const qt=document.createElement('div');qt.className='q-text';qt.id=uid+'-msg';
   if(R.source){const h=document.createElement('span');h.className='tag';h.textContent=SHORT(R.source,40);qt.appendChild(h);qt.appendChild(document.createTextNode(' '));}
-  qt.appendChild(document.createTextNode(SHORT(R.message||'',2000)));n.appendChild(qt);n.setAttribute('aria-describedby',qt.id);
+  /* spec 052 (2026-11-20 delta, issue 1934, T423): the form's message is MCP-server text, rendered like the question card (qMdHTML: masked, cross-checked, plain fallback), not cut here (the adapters bound it) */
+  const qb=document.createElement('div');qb.className='q-md';qb.innerHTML=qMdHTML(R.message||'');qt.classList.add('md');qt.appendChild(qb);n.appendChild(qt);n.setAttribute('aria-describedby',qt.id);
   const row=document.createElement('div');row.className='note-actions';
   const btn=(label,cls,title,fn)=>{const b=document.createElement('button');b.type='button';b.className='btn '+cls;b.textContent=label;if(title)b.title=title;b.onclick=fn;return b;};
   const inputs=[];

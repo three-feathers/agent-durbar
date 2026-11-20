@@ -678,13 +678,28 @@ async function main(): Promise<void> {
       assert.strictEqual(q.question, longQ, 'a 1,100-character question is not cut');
       assert.strictEqual(q.options[0].label, longL, 'a 280-character label is not cut');
       assert.strictEqual(q.options[0].description, longD, 'a 600-character description is not cut');
-      const [huge] = parseQuestions({ questions: [{ question: 'x'.repeat(5000), options: [{ label: 'y'.repeat(900), description: 'z'.repeat(3000) }] }] });
-      assert.strictEqual(huge.question.length, 2000, 'still bounded');
+      const [huge] = parseQuestions({ questions: [{ question: 'x'.repeat(25000), options: [{ label: 'y'.repeat(900), description: 'z'.repeat(3000) }] }] });
+      assert.strictEqual(huge.question.length, 20000, 'still bounded (spec 052 2026-11-20 delta, issue 1934: 20,000, was 2,000)');
       assert.strictEqual(huge.options[0].label.length, 300);
       assert.strictEqual(huge.options[0].description?.length, 1000);
+      // issue 1934: a question of 12,000 characters (6x the old bound) is whole; a longer one is cut at a space, never inside a word, and ends with an ellipsis
+      const w12 = 'alpha '.repeat(2000).trim();
+      assert.strictEqual(parseQuestions({ questions: [{ question: w12 }] })[0].question, w12, 'a 12,000-character question is not cut');
+      const secret = 'sk-test-' + 'AbCd1234'.repeat(40); // an invented value of 328 characters, no space inside
+      const lead = 'word '.repeat(3990); // 19,950 characters: the value straddles the 20,000 bound
+      const cut = parseQuestions({ questions: [{ question: lead + secret + ' tail' }] })[0].question;
+      assert.ok(cut.endsWith('…') && cut.length <= 20000, 'a text over the bound ends with an ellipsis within it');
+      assert.ok(!/sk-test-/.test(cut), 'a value that straddles the bound is dropped whole, not shown half (cut at the last space)');
+      assert.ok(/ word…$/.test(cut), 'the cut is at a space');
       const { parseElicitRequest } = await import('../src/shared/elicit');
       const el = parseElicitRequest({ message: 'm '.repeat(700).trim(), schema: { type: 'object', properties: { a: { type: 'string', title: 'T'.repeat(250), description: 'h'.repeat(900) } } } });
       assert.ok(el.ok && el.request.message.length === 1399 && !el.request.message.endsWith('…'), 'a 1,399-character elicitation message is not cut');
+      const bigM = parseElicitRequest({ message: 'beta '.repeat(2400).trim() });
+      assert.ok(bigM.ok && bigM.request.message.length === 11999 && !bigM.request.message.endsWith('…'), 'a 12,000-character elicitation message is not cut (issue 1934)');
+      const hugeM = parseElicitRequest({ message: ('gamma '.repeat(3325) + secret + ' tail') });
+      assert.ok(hugeM.ok && hugeM.request.message.endsWith('…') && hugeM.request.message.length <= 20000 && !/sk-test-/.test(hugeM.request.message) && / gamma…$/.test(hugeM.request.message), 'a longer message is cut at a space and a straddling value is dropped whole');
+      const fv = parseElicitRequest({ message: 'm', schema: { type: 'object', properties: { a: { type: 'string', default: 'v'.repeat(5000) } } } });
+      assert.ok(fv.ok && (fv.request.fields?.[0] as { default?: string }).default?.length === 2000, 'a field value stays bound at 2,000');
       assert.ok(el.ok && el.request.fields?.[0].title.length === 250 && el.request.fields[0].description?.length === 900, 'field title and help are not cut');
     }
 
