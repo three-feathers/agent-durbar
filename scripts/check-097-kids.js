@@ -69,12 +69,13 @@ module.exports = async (ctx) => {
     await js(`window.DurbarRealOfficeWorlds.cave.arrangement='rows';0`);
     const id = await js(`window.__durbarSimUi.realLayout().zones[0].desks[0].id`);
     await emit({ sessionId: id, type: 'status', status: 'error', intent: 'x' });
-    if (IDLE_DELAY) await js(`setTimeout(()=>window.__durbarSimEmit({timestamp:Date.now(),sessionId:${jsLiteral(id)},type:'status',status:'idle',intent:'x'}),${jsLiteral(IDLE_DELAY)});0`); /* the injected delay: the idle drawn late, as under load */
-    else await emit({ sessionId: id, type: 'status', status: 'idle', intent: 'x' });
+    /* spec 005 FR-245 (issue 1919): an idle after an error leaves the agent in Error until a new turn starts, so the fixture sends `working` (the agent went on) before its idle, as the idle that ends a normal turn */
+    if (IDLE_DELAY) await js(`setTimeout(()=>{window.__durbarSimEmit({timestamp:Date.now(),sessionId:${jsLiteral(id)},type:'status',status:'working',intent:'x'});window.__durbarSimEmit({timestamp:Date.now(),sessionId:${jsLiteral(id)},type:'status',status:'idle',intent:'x'});},${jsLiteral(IDLE_DELAY)});0`); /* the injected delay: the idle drawn late, as under load */
+    else { await emit({ sessionId: id, type: 'status', status: 'working', intent: 'x' }); await emit({ sessionId: id, type: 'status', status: 'idle', intent: 'x' }); }
     await must(`document.querySelector('#stage .ro').dataset.arrangement==='rows'`, `${tag}: the rows fixture draws rows`);
     /* #1867 flake: the rows can be drawn while the desk is still in error (the idle not drawn yet); an error desk goes first, so the caller's `first` (zones[0].desks[0]) came from that
        stale layout: at 4 agents 1440x900 a desk with its person at the desk has no kid room. So wait (bounded, polled) until the drawn layout has the idle, not a longer sleep */
-    if (MUTANT !== 'nowait') await must(`${SIM}.settleNow()&&(()=>{const d=${SIM}.realLayout().zones.flatMap(z=>z.desks).find(x=>x.id===${jsLiteral(id)});return !!d&&d.state!=='error'})()`, `${tag}: the rows fixture drew the idle`);
+    if (MUTANT !== 'nowait') await must(`${SIM}.settleNow()&&(()=>{const d=${SIM}.realLayout().zones.flatMap(z=>z.desks).find(x=>x.id===${jsLiteral(id)});return !!d&&d.state!=='error'&&d.state!=='working'})()`, `${tag}: the rows fixture drew the idle`);
     await must(PICS, `${tag}: the pictures in rows`);
   };
   const hit = (a, b, t = 0.5) => a.x + t < b.x + b.w && b.x + t < a.x + a.w && a.y + t < b.y + b.h && b.y + t < a.y + a.h;

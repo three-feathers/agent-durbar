@@ -36,8 +36,9 @@ module.exports = async (ctx) => {
     assert.strictEqual(rows.n, 0, `${tag}: with rows no .ro-focus is drawn (T167)`);
     // the fixture: circle, set in the page only, and drawn at the next status change
     await js(`(()=>{window.DurbarRealOfficeWorlds.photo.arrangement='circle';const s=document.createElement('style');s.id='fixFocus';s.textContent='.ro[data-world="photo"] .ro-focus{background-color:#b5651d}';document.head.appendChild(s);return 0})()`);
+    /* spec 005 FR-245 (issue 1919): an idle after an error leaves the agent in Error until a new turn starts, so a fixture that wants the agent to end its failure and rest sends `working` between the two (the agent went on) */
     const poke = async (id, status) => { await js(`window.__durbarSimEmit({type:'status',sessionId:${jsLiteral(id)},timestamp:Date.now(),status:${jsLiteral(status)},intent:'x'});0`); };
-    await poke(ids[0], 'error'); await poke(ids[0], 'idle');
+    await poke(ids[0], 'error'); await poke(ids[0], 'working'); await poke(ids[0], 'idle');
     assert.ok(await until(`document.querySelectorAll('#stage .ro-focus').length===1`, 8000), `${tag}: with circle one .ro-focus is drawn`);
     await settle();
     const c = await js(READ);
@@ -57,7 +58,7 @@ module.exports = async (ctx) => {
     // a picture that loads, and the same box with a picture that fails: every plate, zone, sign and the box itself is where it was (nothing in the layout reads the picture)
     const PIC = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==';
     const setPic = (url) => js(`(()=>{document.getElementById('fixFocus').textContent='.ro[data-world="photo"] .ro-focus{background-image:url(${jsLiteral(url).slice(1, -1)})}';return new Promise(res=>{const i=new Image();i.onload=i.onerror=()=>res(1);i.src=${jsLiteral(url)}})})()`);
-    const frame = async (id) => { await poke(id, 'error'); await poke(id, 'idle'); await settle(); const r = await js(READ); return JSON.stringify({ dr: r.dr, zones: r.zones, box: r.box, desks: r.desks }); };
+    const frame = async (id) => { await poke(id, 'error'); await poke(id, 'working'); await poke(id, 'idle'); await settle(); const r = await js(READ); return JSON.stringify({ dr: r.dr, zones: r.zones, box: r.box, desks: r.desks }); };
     /* at 15 agents every sign is as wide as its room, so the two frames below may end in different states (the original fixture: a seat that depended on a state would show); with 12 agents at 1280x800 a sign is as wide as its own chips and cost, so a first error-then-idle settles this agent into the state both frames end in */
     if (warm) await frame(ids[2]);
     await setPic(PIC);
@@ -88,14 +89,14 @@ module.exports = async (ctx) => {
     const was = JSON.parse(loaded);
     assert.deepStrictEqual({ dr: noBox.dr, zones: noBox.zones, desks: noBox.desks }, { dr: was.dr, zones: was.zones, desks: was.desks }, `${tag}: a layout with no focus box moves no plate, zone or sign`);
     await js(`(()=>{window.exports.layoutFor=window.__fixLF;window.exports.layoutWithFallback=window.__fixLW;window.DurbarRealOffice.render=window.__fixRender;return 0})()`);
-    await poke(ids[2], 'error'); await poke(ids[2], 'idle');
+    await poke(ids[2], 'error'); await poke(ids[2], 'working'); await poke(ids[2], 'idle');
     assert.ok(await until(`document.querySelectorAll('#stage .ro-focus').length===1`, 8000), `${tag}: with the box back one .ro-focus is drawn again`);
     await settle();
     await H.shot(path.join(OUT, `102-focus-${w}x${h}.png`), { prep: 'mouse', tag: '102' });
     console.log(`[102] ${tag}: focus box ${JSON.stringify(c.box)} in room ${JSON.stringify(c.room)}`);
     // back to rows: the box is gone
     await js(`(()=>{window.DurbarRealOfficeWorlds.photo.arrangement='rows';return 0})()`);
-    await poke(ids[1], 'error'); await poke(ids[1], 'idle');
+    await poke(ids[1], 'error'); await poke(ids[1], 'working'); await poke(ids[1], 'idle');
     assert.ok(await until(`document.querySelectorAll('#stage .ro-focus').length===0`, 8000), `${tag}: back to rows the .ro-focus is removed`);
   }
   // 15 agents at 1280x800: the circle does not fit at the face floor, the ladder draws rows, so there is no focus box and nothing scrolls
