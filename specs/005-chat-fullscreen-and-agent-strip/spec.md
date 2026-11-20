@@ -107,6 +107,24 @@ Header actions: **Stop** (interrupt the turn; the agent stays ready), **End sess
 
 ## Changes
 
+### 2026-11-20: the agent rail can be sorted (issue #1961, FR-341, T384)
+
+*Request* (Ruben, 2026-11-20): with a chat open, sort the conversations on the left by working, waiting, waiting time and creation, oldest or newest first. Details decided by the coordinator under Ruben's delegation.
+
+- **FR-341** **A sort choice in the rail.** The rail's top row gets one small *Sort* button (accessible name "Sort conversations: <choice>", tooltip the same) that opens a menu with radio items:
+  1. **Needs you first** (default): exactly today's FR-194 order.
+  2. **Working first**: working agents first, then waiting, then the rest in FR-194's order.
+  3. **Waiting first**: agents that need you (`needsMe()`) first, then working, then the rest.
+  4. **Longest waiting**: agents that need you first, the longest wait (`NEED_SINCE`, oldest first) at the top; the rest by FR-194's order. A row moves only when a status changes, never with the clock (FR-194's rule stands).
+  5. **Oldest first** and 6. **Newest first**: by when the session was created in Durbar, ties by FR-194's order.
+  - **Folders stay.** The rail keeps its folder groups (FR-194, FR-340). The choice sorts the rows inside each folder, and the folders are ordered by their first row under the same choice. With *Needs you first* the folder order is FR-194's.
+  - **Tall rows stay.** Whoever needs you keeps the tall, tinted row with the wait (FR-194) whatever the order.
+  - **Remembered** per window profile in the renderer's settings, like the List view's sort; the chat list filter (spec 113) filters the sorted list and does not change the order.
+  - **Creation time.** The plan names where it comes from. It must survive a restart for restored sessions; chat numbers (`chatNoOf`) are reused and do not count. A session with no known creation time sorts after those that have one under *Oldest first* and before them under *Newest first*, with a `[KNOWN GAP]` if any exist.
+  - **Reused**: the List view's sort helpers (`ACT.sortBy`, `LVAL`, `ST_ORDER`) and the existing menu component of the rail's top row; no new IPC unless the creation time needs one.
+  - **Calm UI**: no row height change, text at least 10.5 px; 15 agents fit at 1440x900 and 1280x800 with the chat open; keyboard: the button opens the menu with Enter or Space, arrows move, Esc closes and returns focus.
+- **Evidence**: to be filled in by T384 (`test:` of the order function for each choice and ties; `sim:` rail screenshots at both sizes with each choice).
+
 ### 2026-11-19: the agent rail says which folder a group or a chat is in (issue #1905, FR-340)
 
 *Report* (Paco, 2026-11-19): with a chat open, two groups in the rail both read `iot-portal` (two paths, one last folder name); the group head's `title` is the name only and a session row's hover gives no folder. *Read* (`app.js` `renderStrip`, `railRow`): the head had `title="name"`, a row `title="C3 · name · status: task"`; native titles never show on keyboard focus.
