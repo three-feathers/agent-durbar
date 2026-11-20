@@ -10,7 +10,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { pathToFileURL } from 'url';
-import { CHARACTER_CHOICES, CHARACTER_KITS, SET_CHOICES, LEGACY_CREW_THEME, PIXEL_CHARACTERS, kitFor, migrateLegacyTheme, parseCharacters } from '../src/shared/characters';
+import { CHARACTER_CHOICES, CHARACTER_KITS, FLAT_HEAD_SETS, SET_CHOICES, LEGACY_CREW_THEME, PIXEL_CHARACTERS, kitFor, migrateLegacyTheme, parseCharacters } from '../src/shared/characters';
 import * as charactersModule from '../src/shared/characters';
 import { parseSettings } from '../src/shared/credits';
 import { SCENE_KITS } from '../src/shared/themes';
@@ -22,6 +22,7 @@ const T = require(path.join(ROOT, 'src', 'renderer', 'theme.js'));
 // --- the two copies of the rule (agent notes: two copies, one corpus) ---
 assert.deepStrictEqual(T.CHARACTERS, [...CHARACTER_CHOICES], 'theme.js lists the same Characters values, in the same order');
 assert.deepStrictEqual([...CHARACTER_CHOICES], ['theme', 'office', 'minimalist', 'cheeky', 'prehistoric', 'pirate', 'monster', 'royal', 'rebels', 'pixel', 'mine'], 'Office people right after the default (spec 102 FR-321), Retro pixel (FR-320), then My characters (spec 096 FR-040) appended; the crews keep their order (FR-064, FR-072)');
+assert.deepStrictEqual(T.FLAT_HEAD_SETS, [...FLAT_HEAD_SETS], 'theme.js names the same Flat-head sets (spec 102 FR-203, T390)');
 assert.deepStrictEqual(T.SET_CHOICES, [...SET_CHOICES], 'theme.js names the same set values (spec 102 FR-320, FR-321)');
 // spec 102 FR-266, FR-320 (review of #1676): the stored value is `pixel`; `retro` is the SET (and the world and the flag), never a Characters value, and T344's rename is not built: a stored `retro` is dropped like any value off the list (FR-064), in main and in the renderer, with no alias
 assert.strictEqual(parseCharacters('retro'), undefined, 'main: a stored retro is dropped (the value is pixel; retro is the set)');
@@ -88,11 +89,11 @@ for (const [id, own] of Object.entries(OWN)) {
   assert.strictEqual(T.characters(), 'theme', `${id}: an unknown value is the default`);
   assert.strictEqual(T.sceneKit(), own, `${id}: and draws the theme's own`);
 }
-// spec 102 FR-320, FR-321 (T290): the two set values parse in main and in the renderer, are kept whatever the flag, and draw the theme's own flat figures until Flat has their heads (T294)
+// spec 102 FR-320, FR-321 (T290): the two set values parse in main and in the renderer, are kept whatever the flag, and in Flat Retro pixel draws its heads (T390) while Office people draw the theme's own figures until T391
 for (const v of ['office', 'pixel']) {
   assert.strictEqual(parseCharacters(v), v, `main keeps ${v}`); assert.strictEqual(T.parseCharacters(v), v, `the renderer keeps ${v}`);
   assert.deepStrictEqual(parseSettings(JSON.stringify({ characters: v })), { characters: v }, `a stored ${v} is read back (main knows no flag: FR-322)`);
-  for (const [id, own] of Object.entries(OWN)) { T.setTheme(id); T.setCharacters(v); assert.strictEqual(T.characters(), v, `${id}: ${v} applies`); assert.strictEqual(T.sceneKit(), own, `${id}: ${v} draws the theme's own flat figures for now`); }
+  for (const [id, own] of Object.entries(OWN)) { T.setTheme(id); T.setCharacters(v); assert.strictEqual(T.characters(), v, `${id}: ${v} applies`); assert.strictEqual(T.sceneKit(), v === 'pixel' ? 'crew' : own, `${id}: ${v} draws ${v === 'pixel' ? 'the Retro pixel heads (T390)' : "the theme's own flat figures until T391"}`); }
 }
 T.setCharacters('theme'); T.setTheme('clean-office');
 // a choice applies on top of a user pack too (FR-065)
@@ -180,7 +181,23 @@ assert.strictEqual(PIXEL_CHARACTERS, 'pixel'); assert.strictEqual(T.PIXEL_CHARAC
   assert.strictEqual(CREW.peopleFor('photo', loaded, OPEN).setName, 'Retro pixel', 'T290: the set keeps its name');
   assert.strictEqual(CREW.peopleFor('photo', loaded, { cave: false, retro: false }).set, 'retro', 'T230: no flag closes it since the flip: the Retro pixel set draws whatever the flags');
   T.setTheme('clean-office'); T.setCharacters(loaded as string);
-  assert.strictEqual(T.characters(), PIXEL_CHARACTERS, 'T290: Flat keeps the value'); assert.strictEqual(T.sceneKit(), 'office', 'T290: and draws the theme\'s own figures until T294');
+  assert.strictEqual(T.characters(), PIXEL_CHARACTERS, 'T290: Flat keeps the value'); assert.strictEqual(T.sceneKit(), 'crew', 'T390: and Flat draws the Retro pixel heads (the crew kit), not the theme\'s own figures');
+  assert.strictEqual(kitFor('office', PIXEL_CHARACTERS), 'crew', 'T390: the shared rule agrees'); assert.strictEqual(T.kitFor('pixel', PIXEL_CHARACTERS), 'crew', 'T390: on any theme kit');
+  T.setCharacters('office'); assert.strictEqual(T.sceneKit(), 'office', 'T391 is not built: Office people still draw the theme\'s own figures in Flat'); T.setCharacters(PIXEL_CHARACTERS);
+  /* T390 mutants, run on the real sources: the Retro pixel heads skipped in Flat (the theme's own figures drawn) and the Flat line left in place must each fail the assertions above and below */
+  {
+    const themeSrc = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'theme.js'), 'utf8'), screensSrc = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'screens.js'), 'utf8').replace(/\r\n/g, '\n');
+    const skip = themeSrc.replace('(!SET_CHOICES.includes(c)||FLAT_HEAD_SETS.includes(c))', '!SET_CHOICES.includes(c)');
+    assert.notStrictEqual(skip, themeSrc, 'T390 mutant: the kitFor line is where the test expects it');
+    const kitOf = (src: string): string => { const m = { exports: {} as Record<string, unknown> }; new Function('module', 'exports', 'self', src)(m, m.exports, undefined); return (m.exports.kitFor as (a: string, b: string) => string)('office', PIXEL_CHARACTERS); };
+    assert.strictEqual(kitOf(themeSrc), 'crew', 'T390: theme.js as built draws the heads in Flat');
+    assert.notStrictEqual(kitOf(skip), 'crew', 'T390 mutant: skipping the Retro pixel heads in Flat draws the theme\'s own figures, which the assertion above rejects');
+    const LINE = 'Flat draws the theme\u2019s own figures until Retro pixel has its flat heads.';
+    assert.ok(!screensSrc.includes(LINE) && !/until Retro pixel has its flat heads/.test(screensSrc), 'T390: the Flat line is gone from Settings (charNote)');
+    const left = screensSrc.replace("const charNote=()=>{const C=window.DurbarCrew,c=window.THEME.characters();", "const charNote=()=>{const C=window.DurbarCrew,c=window.THEME.characters();if(c===window.THEME.PIXEL_CHARACTERS)return '" + LINE + "';");
+    assert.notStrictEqual(left, screensSrc, 'T390 mutant: charNote is where the test expects it');
+    assert.ok(left.includes(LINE), 'T390 mutant: the note left in place is caught by the assertion that the line is gone');
+  }
   T.setCharacters('theme');
 }
 
