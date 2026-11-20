@@ -4217,7 +4217,7 @@ function syncRunState(){
   /* spec 005 T074 (review on PR 498; FR-038 amended for issue 1917: a turn that ends in the error state says "Reply failed"): the spinner is decorative; a screen reader hears the change once through the shared live region.
      Only a change in the same chat speaks: opening a chat (or redrawing it) is not a turn starting or ending */
   const was=RUN_SAID.id===a.id?RUN_SAID.run:null; RUN_SAID.id=a.id; RUN_SAID.run=run;
-  if(was!==null&&was!==run){const said=!run&&UNREAD_SAID.delete(a.id);if(run)UNREAD_SAID.delete(a.id);if(!said)announce(run?'Working…':RUN_SAID.stopped?'Stopped':a.failedTurn?'Reply failed':'Reply finished');RUN_SAID.stopped=false;} /* a new turn forgets an earlier Stop; the end of a turn forgets its failure */
+  if(was!==null&&was!==run){const said=!run&&UNREAD_SAID.delete(a.id);if(run)UNREAD_SAID.delete(a.id);if(!said)announce(run?'Working…':RUN_SAID.stopped?'Stopped':a.failedTurn?'Reply failed':'Reply finished');RUN_SAID.stopped=false;} /* a new turn forgets an earlier Stop; the failure flag is cleared elsewhere: by a working status and by the person's message (spec 005 FR-245), not by the end of a turn */
 }
 /* the mode, model, profile and context menus: below their chip, or above it when the chip sits in the composer toolbar (FR-037); spec 073's "/" list too */
 function placeMenu(m,x,y,anchor){
