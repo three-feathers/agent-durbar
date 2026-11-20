@@ -20,7 +20,7 @@ const { helpers, jsLiteral } = require('./driver-helpers');
 const MUT = process.env.ERROR_TURN_MUTANT || '';
 const PATCH = {
   busy: ["closeTurn(a);a.worked=false;a.failedTurn=true; /* spec 005 FR-246", "closeTurn(a);a.failedTurn=true; /* spec 005 FR-246"],
-  idle: ["if(a.state==='error'){/* spec 005 FR-245", "if(false){/* spec 005 FR-245"],
+  idle: ["if(a.state==='error'&&a.failedTurn){/* spec 005 FR-245", "if(false){/* spec 005 FR-245"],
 };
 if (MUT && !PATCH[MUT]) throw new Error('ERROR_TURN_MUTANT must be busy or idle');
 
