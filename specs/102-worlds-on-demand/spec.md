@@ -2365,3 +2365,16 @@ The rule is unchanged. Spec 098 T011 in part (#1902, merged) put `data-surface="
 
 **Numbers:** no new FR or task (`npm run specs:numbers`: no clash; checked against every remote branch and open PR head on 2026-11-20).
 
+## Changes 2026-11-20: `helpers` is a registered world moment (T235, issue #1644; FR-271; no new FR)
+
+**Status: built for the registry only (`test:`); the kids in the cave's circle and in the arcade are not built.** Spec 097 Q36 is **resolved 2026-11-12, option (a)**: "Owner (Vikram, Telegram DM, 2026-11-12 21:19:57 UTC): the same \"Ok\", so (a): hovering a kid shows a short tooltip with the helper's task, **not the big hover card**" (097 *Changes 2026-11-12*, Q36). Issue #1644's text still calls it open; this entry is the record. FR-271's hover-card line was already amended to a tooltip (*Changes 2026-11-12*); the kid keeps the helper's accessible name (`helperWords`), nothing new for screen readers.
+
+- **The moment.** `helpers` is added to `docs/experience/world-moments.json` (098 FR-004, FR-010) and to `MOMENT_BLOCKS` in `src/shared/worldmoments.ts` (block `person` only: it asks a pack for no file of its own). `code: planned`: no root carries `data-surface="helpers"` yet (the desk-card plate, issue #1901, holds the strip; a root of its own and a world-matrix scene are `[KNOWN GAP]`, no new task: T011's flip covers it).
+- **The cells as they are on `main` (2026-11-20).** Flat office = its helper tiles (no column: the baseline, owner 2026-11-12). Photo office = `built` (the desk kids, 097 FR-368..FR-376). Prehistoric cave = `built`, **rows only**: its circle draws no helper strip and no kids (`[KNOWN GAP]`, T326, T175). Cheeky loft = `missing`. Retro arcade = `fallback-flat`: no kids (T327, issue #1643, not started); it keeps 097's adult head row with a status dot. It is **not** `built`; `test:momentsregistry` fails a `built` arcade cell for `helpers` and a `gap.retro` without #1643 and T327.
+- **The arcade is shippable with this cell.** The registry rule "retro is not shippable while a cell is `missing`" would have flipped the arcade back, so the cell is `fallback-flat`, not `missing`, with its own named exception beside the #1892 ones. `[KNOWN GAP]` FR-271 and T327 say the arcade is "not offered before its kids land"; it is offered today (#1400). Whether to hold that or accept the head row is the owner's call; this entry does not decide it.
+- **T235** is ticked for the registry part only; the kids per world stay T326 and T327.
+
+**Not verified.** No Electron run: the change is data and tests. The world matrix does not shoot `helpers` (planned).
+
+**Numbers:** no new FR, T or Q (`npm run specs:numbers`: no clash, checked 2026-11-20 against `origin/main` and every open PR head).
+

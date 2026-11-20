@@ -1,6 +1,6 @@
 /*
  * Spec 102 RA7 (`npm run test:momentsregistry`, review of #1279, FR-264, T223): the `retro` cells of docs/experience/world-moments.json are guarded.
- *   - every moment has a `worlds.retro` cell, and the cells are exactly the 26 ids below (written out by hand, so the registry cannot vouch for itself);
+ *   - every moment has a `worlds.retro` cell, and the cells are exactly the 27 ids below (written out by hand, so the registry cannot vouch for itself);
  *   - a cell is built | designed | fallback-flat | missing;
  *   - the retro world is `shippable: false` while any cell is `missing` (or `designed`: drawn, not looked at);
  *   - a `built` cell names its evidence: driver steps that exist in scripts/shots-097-moments.js and pictures that driver writes; a `missing` cell says why (`gap`);
@@ -16,7 +16,9 @@ const { gitTry } = require('./git-index-helper.js');
 
 const ROOT = path.join(__dirname, '..');
 const STATES = ['built', 'designed', 'fallback-flat', 'missing'];
-const RETRO_CELLS = ['office-floor', 'lobby', 'boss-bank-post-coffee', 'desk-card', 'desk-lights', 'live-screen', 'lounge', 'walk', 'empty-office', 'first-run', 'lift-panel', 'floor-change', 'floor-indicator', 'all-floors', 'building-preview', 'floor-jumps', 'inbox', 'chat-open', 'chat-shell', 'chat-header', 'limit-card', 'permission-card', 'question-card', 'elicitation', 'answer-bar', 'coffee-bar'];
+const RETRO_CELLS = ['office-floor', 'lobby', 'boss-bank-post-coffee', 'desk-card', 'helpers', 'desk-lights', 'live-screen', 'lounge', 'walk', 'empty-office', 'first-run', 'lift-panel', 'floor-change', 'floor-indicator', 'all-floors', 'building-preview', 'floor-jumps', 'inbox', 'chat-open', 'chat-shell', 'chat-header', 'limit-card', 'permission-card', 'question-card', 'elicitation', 'answer-bar', 'coffee-bar'];
+/* issue 1644 (spec 102 T235, T327): `helpers` is the one cell that may stay `fallback-flat` for lack of kids: the arcade has no kids (issue #1643, T327, not started) and keeps 097's adult head row; the cell says so in `gap.retro` and is never `built` until T327 is ticked */
+const KIDS_PENDING = 'helpers';
 const WORLDS = ['photo', 'cave', 'loft', 'retro'];
 /* issue 1891: the only cells that may stay `fallback-flat` in the arcade: no world has the surface, so they are not part of the flip (owner, Vikram, 2026-11-19; a backlog feature for all worlds, issue #1892); each says so in `gap.retro` */
 const DEFERRED = ['floor-indicator', 'building-preview'];
@@ -53,7 +55,7 @@ function check({ reg, main, driver, css }) {
   /* only names given to the picture writer count: shot(world, 'X', ...) and `${world}-X-${w}x${h}.png` */
   const written = writtenPictures(driver);
   const ids = reg.moments.map((m) => m.id);
-  if (JSON.stringify(ids.slice().sort()) !== JSON.stringify(RETRO_CELLS.slice().sort())) bad.push(`the moments are not the 26 the arcade has cells for: ${ids.join(',')}`);
+  if (JSON.stringify(ids.slice().sort()) !== JSON.stringify(RETRO_CELLS.slice().sort())) bad.push(`the moments are not the 27 the arcade has cells for: ${ids.join(',')}`);
   const world = reg.worlds.retro;
   if (!world) bad.push('the retro world is not in the registry');
   const cells = {};
@@ -73,6 +75,7 @@ function check({ reg, main, driver, css }) {
   if (world && world.shippable !== false && Object.values(cells).some((s) => s === 'missing' || s === 'designed')) bad.push('retro is shippable while a cell is missing or only designed');
   for (const m of reg.moments) {
     const s = m.worlds && m.worlds.retro;
+    if (m.id === KIDS_PENDING) { if (!(s === 'fallback-flat' && m.gap && /#1643/.test(m.gap.retro || '') && /T327/.test(m.gap.retro || ''))) bad.push(`retro cell ${m.id}: the arcade has no kids (T327, issue #1643): fallback-flat with a gap.retro naming #1643 and T327, never built`); continue; }
     if (s === 'fallback-flat' && !DEFERRED.includes(m.id)) bad.push(`retro cell ${m.id} falls back to the flat drawing: draw it in the arcade (issue 1891), or the owner defers it`);
     if (DEFERRED.includes(m.id) && !(s === 'fallback-flat' && m.gap && /#1892/.test(m.gap.retro || ''))) bad.push(`retro cell ${m.id} is deferred to #1892 (owner, 2026-11-19): fallback-flat with a gap.retro naming #1892`);
   }
@@ -88,7 +91,9 @@ function check({ reg, main, driver, css }) {
   // scoped to the arcade
   if (main) {
     if (retroPart(reg) !== retroPart(main)) {
-      if (JSON.stringify(stripRetro(reg)) !== JSON.stringify(stripRetro(main))) bad.push('the change touches the retro cells and also another world or the shared registry: it is not equal to origin/main outside the retro cells');
+      const known = new Set(main.moments.map((m) => m.id)); /* a moment main does not have yet (issue 1644: helpers) is new, not a change to another world's row */
+      const old = stripRetro(reg); old.moments = old.moments.filter((m) => known.has(m.id)); old.note = main.note;
+      if (JSON.stringify(old) !== JSON.stringify(stripRetro(main))) bad.push('the change touches the retro cells and also another world or the shared registry: it is not equal to origin/main outside the retro cells');
     }
   }
   const rules = css.replace(/\/\*[\s\S]*?\*\//g, '').split('}').map((r) => r.trim()).filter((r) => /#stats\b/.test(r));
@@ -114,7 +119,7 @@ if (require.main === module) {
   if (!main) console.log('[momentsregistry] SKIP the origin/main comparison: no merge-base with origin/main in this checkout (a shallow clone as in CI: this runs locally and in a full clone only); every other check ran');
   const inputs = { reg, main, driver, css };
   assert.deepStrictEqual(check(inputs), [], 'the real registry passes');
-  assert.strictEqual(RETRO_CELLS.length, 26);
+  assert.strictEqual(RETRO_CELLS.length, 27);
   { const w = writtenPictures(driver);
     for (const n of ['inbox', 'asleep', 'coffee', 'notes', 'jump-f1', 'jump-f2', 'cell-chat', 'cell-question', 'cell-focus-answer', 'cell-focus-skip', 'cell-answerbar', 'cell-preview', 'walk-desk', 'walk-place']) assert.ok(w.has(n), 'the picture ' + n + ' is read as written');
     for (const n of ['15', 'inbox-', 'world', 'limitfocus', 'scope', 'w', 'h']) assert.ok(!w.has(n), `${n} is not a picture name`);
@@ -137,7 +142,10 @@ if (require.main === module) {
   fails('elicitation rule gone', (i) => { i.css = i.css.replace('.note.elicit{border:3px', '.note.elicit{border:1px'); }, /elicitation: its arcade rule/);
   fails('elicitation back to fallback-flat', (i) => { const m = i.reg.moments.find((x) => x.id === 'elicitation'); m.worlds.retro = 'fallback-flat'; delete m.evidence; }, /elicitation falls back to the flat drawing/);
   fails('a deferred cell loses its #1892 note', (i) => { delete i.reg.moments.find((x) => x.id === 'floor-indicator').gap; }, /floor-indicator is deferred to #1892/);
-  fails('a retro cell removed', (i) => { i.reg.moments.splice(i.reg.moments.findIndex((m) => m.id === 'walk'), 1); }, /not the 26/);
+  /* issue 1644: helpers in the arcade is not built (T327 not started) */
+  fails('helpers claimed built for the arcade', (i) => { const m = i.reg.moments.find((x) => x.id === 'helpers'); m.worlds.retro = 'built'; m.evidence = { retro: { steps: ['asleep'], pictures: ['asleep'] } }; }, /retro cell helpers: the arcade has no kids/);
+  fails('helpers fallback-flat loses its #1643 note', (i) => { i.reg.moments.find((x) => x.id === 'helpers').gap.retro = 'the arcade has no kids yet'; }, /retro cell helpers: the arcade has no kids/);
+  fails('a retro cell removed', (i) => { i.reg.moments.splice(i.reg.moments.findIndex((m) => m.id === 'walk'), 1); }, /not the 27/);
   fails('a retro cell is not a state', (i) => { i.reg.moments.find((m) => m.id === 'lobby').worlds.retro = 'bogus'; }, /lobby is "bogus"/);
   fails('a moment has no retro key', (i) => { delete i.reg.moments.find((m) => m.id === 'lobby').worlds.retro; }, /lobby is undefined/);
   fails('a built cell without evidence', (i) => { delete i.reg.moments.find((m) => m.id === 'lobby').evidence; }, /lobby is built and names no evidence/);
