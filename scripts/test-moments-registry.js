@@ -92,7 +92,9 @@ function check({ reg, main, driver, css }) {
   if (main) {
     if (retroPart(reg) !== retroPart(main)) {
       const known = new Set(main.moments.map((m) => m.id)); /* a moment main does not have yet (issue 1644: helpers) is new, not a change to another world's row */
-      const old = stripRetro(reg); old.moments = old.moments.filter((m) => known.has(m.id)); old.note = main.note;
+      const old = stripRetro(reg); old.moments = old.moments.filter((m) => known.has(m.id));
+      /* the shared note may only grow, and only by the PR that adds a moment (issue 1644: it says what helpers is); any other note change is a change to the shared registry */
+      if (reg.moments.length > main.moments.length && typeof reg.note === 'string' && reg.note.startsWith(main.note)) old.note = main.note;
       if (JSON.stringify(old) !== JSON.stringify(stripRetro(main))) bad.push('the change touches the retro cells and also another world or the shared registry: it is not equal to origin/main outside the retro cells');
     }
   }
@@ -145,6 +147,8 @@ if (require.main === module) {
   /* issue 1644: helpers in the arcade is not built (T327 not started) */
   fails('helpers claimed built for the arcade', (i) => { const m = i.reg.moments.find((x) => x.id === 'helpers'); m.worlds.retro = 'built'; m.evidence = { retro: { steps: ['asleep'], pictures: ['asleep'] } }; }, /retro cell helpers: the arcade has no kids/);
   fails('helpers fallback-flat loses its #1643 note', (i) => { i.reg.moments.find((x) => x.id === 'helpers').gap.retro = 'the arcade has no kids yet'; }, /retro cell helpers: the arcade has no kids/);
+  fails('the shared note changes with no new moment (retro cells also changed)', (i) => { i.reg.moments.splice(i.reg.moments.findIndex((m) => m.id === 'helpers'), 1); i.reg.moments.find((m) => m.id === 'lobby').gap = { retro: 'x' }; i.reg.note += ' extra'; }, /also another world or the shared registry/);
+  fails('the shared note is rewritten, not extended, by the moment-adding change', (i) => { i.reg.note = 'rewritten ' + i.reg.note; }, /also another world or the shared registry/);
   fails('a retro cell removed', (i) => { i.reg.moments.splice(i.reg.moments.findIndex((m) => m.id === 'walk'), 1); }, /not the 27/);
   fails('a retro cell is not a state', (i) => { i.reg.moments.find((m) => m.id === 'lobby').worlds.retro = 'bogus'; }, /lobby is "bogus"/);
   fails('a moment has no retro key', (i) => { delete i.reg.moments.find((m) => m.id === 'lobby').worlds.retro; }, /lobby is undefined/);
