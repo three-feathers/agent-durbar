@@ -17,7 +17,17 @@
     const colors={};for(const l of Object.keys(ARCADE_TOKENS))colors[l]=g(ARCADE_TOKENS[l]);
     return {id:'arcade',shape:'square',baseAlpha:0.9,trail:g(ARCADE_TRAIL),marker:g(ARCADE_INK),colors}; /* the voxel brain: opaque cells, not a translucent cloud */
   }
-  /* world: the shown world's id (html[data-world]) or ''. Only the arcade has a skin so far (the Photo skin is T020's second slice) */
-  function forWorld(world,read){return world==='retro'?arcade(read):NEUTRAL;}
-  return {NEUTRAL,arcade,forWorld,ARCADE_TOKENS};
+  /* the Prehistoric cave (T027, issue 1219): painted pebbles on parchment. Lobe -> the token it is read from: the status inks (the cave sets none of its own, so the page's base inks) for five lobes
+     and the cave's own earth tokens for the stem and the port. NO colour is written here: a token the page lacks (a test page, Node) leaves that lobe to draw.js's own LOBE_COLORS */
+  const CAVE_TOKENS={frontal:'--tone-warn-ink',occipital:'--tone-info-ink',parietal:'--tone-ok-ink',cerebellum:'--tone-bad-ink',temporal:'--tone-idea-ink',stem:'--focus',port:'--sel-border'};
+  function cave(read){
+    const g=(n)=>{let v='';try{v=String((read&&read(n))||'').trim();}catch(e){}return v;};
+    const colors={};for(const l of Object.keys(CAVE_TOKENS)){const v=g(CAVE_TOKENS[l]);if(v)colors[l]=v;}
+    const o={id:'cave',shape:'pebble',baseAlpha:0.88,trail:g('--ink-2'),marker:g('--ink'),colors}; /* pebbles: small opaque discs; the same points at the same size as every skin */
+    if(!o.trail)o.trail=NEUTRAL.trail; if(!o.marker)o.marker=NEUTRAL.marker;
+    return o;
+  }
+  /* world: the shown world's id (html[data-world]) or ''. The Photo skin is T020's second slice */
+  function forWorld(world,read){return world==='retro'?arcade(read):world==='cave'?cave(read):NEUTRAL;}
+  return {NEUTRAL,arcade,cave,forWorld,ARCADE_TOKENS,CAVE_TOKENS};
 })());

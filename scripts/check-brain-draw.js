@@ -7,6 +7,7 @@
  *   - a step does not change the picture; a failed step is not drawn as a cross (the cross is checked in the unit test; here the picture must differ);
  *   - a loop is left running when nothing happens (FR-103); a frame draws more points than the largest lit lobe (FR-102);
  *   - Still (the button, by keyboard) or reduced motion (emulated) starts an animation frame loop (SC-004); a hidden page draws a frame; forced colours keep it still.
+ *   - the Prehistoric cave skin (T027, #1219; labels "cave skin: ...", both sizes): on only in the cave; pebble discs, never squares; the palette read from the cave's tokens; the same geometry, sizes and masked texts as Flat and the Photo office; text 12 px and 4.5:1, lobes 3:1 on the box.
  *   - the Retro arcade skin (spec 106 FR-110..FR-112, T020; checked at both sizes, labels "arcade skin: ..."): on only in the arcade world (Flat and the Photo office stay neutral);
  *     points drawn as squares, never discs; the box's font is the arcade's display font; palette read from the arcade's tokens and different from the neutral one;
  *     and the geometry is IDENTICAL to the neutral skin: the same points (count and positions), the canvas size, the box's width and corner, every text size, and the masked texts.
@@ -227,6 +228,43 @@ module.exports = async (ctx) => {
       assert.strictEqual(arc.border, o.border, 'arcade skin: the frame keeps its width');
     }
     console.log(`[106-brain] ${tag}: arcade skin ok (font ${arc.font.slice(0, 40)})`);
+
+    // ---- the Prehistoric cave skin (spec 106 T027, issue #1219): colours and point shape only; same geometry, texts and sizes as Flat and the Photo office
+    const cave = await measure({ officeview: 'real', worldflags: 'cave', world: 'cave' }, 'Prehistoric cave');
+    assert.ok(await js(`!!document.querySelector('#stage .ro[data-world="cave"]')`), 'cave skin: the cave office is the one drawn (a pass elsewhere would prove nothing)');
+    await H.shot(path.join(OUT, `106-brain-cave-${tag}.png`), { prep: 'calm', keepActions: true });
+    assert.strictEqual(cave.world, 'cave', 'cave skin: html[data-world] is cave');
+    assert.strictEqual(cave.skin, 'cave', 'cave skin: applied in the cave (' + tag + ')');
+    assert.strictEqual(cave.dom, 'cave', 'cave skin: the box says which skin it wears');
+    assert.strictEqual(cave.shape, 'pebble', 'cave skin: point shape is pebble');
+    assert.ok(cave.real.arcs >= cave.real.basePoints && cave.real.basePoints > 1000, 'cave skin: the base layer is drawn as discs by the context itself (' + cave.real.arcs + ' arc calls for ' + cave.real.basePoints + ' points)');
+    assert.strictEqual(cave.real.rects, 0, 'cave skin: no point is drawn as a square (' + cave.real.rects + ' fillRect calls on the base layer at ' + tag + ')');
+    assert.notStrictEqual(cave.colors, flat.colors, 'cave skin: the palette differs from the neutral one');
+    assert.notStrictEqual(cave.colors, arc.colors, 'cave skin: the palette differs from the arcade one');
+    assert.deepStrictEqual(JSON.parse(cave.colors).frontal, cave.tok[0], 'cave skin: the frontal lobe wears the cave page --tone-warn-ink token');
+    assert.deepStrictEqual(JSON.parse(cave.colors).port, cave.tok[6], 'cave skin: the port lobe wears the cave --sel-border token (' + cave.tok[6] + ')');
+    assert.deepStrictEqual(JSON.parse(cave.colors).stem, cave.tok[5], 'cave skin: the stem wears the cave --focus token');
+    assert.strictEqual(cave.font, flat.font, 'cave skin: the font is not changed (the cave has no display font of its own)');
+    for (const [n, o] of [['Flat', flat], ['Photo office', photo]]) {
+      assert.deepStrictEqual(cave.geo, o.geo, 'cave skin: same points, canvas and point size as ' + n + ' (' + tag + ')');
+      assert.strictEqual(cave.box, o.box, 'cave skin: the box keeps its width and corner, as in ' + n + ': ' + cave.box + ' vs ' + o.box);
+      assert.strictEqual(cave.canvasBox, o.canvasBox, 'cave skin: the canvas keeps its size and place, as in ' + n);
+      assert.deepStrictEqual(cave.fontSizes, o.fontSizes, 'cave skin: every text keeps its size, as in ' + n);
+      assert.strictEqual(cave.texts, o.texts, 'cave skin: the masked texts are identical to ' + n);
+      assert.strictEqual(cave.border, o.border, 'cave skin: the frame keeps its width');
+    }
+    const caveSmall = await js(`[...document.querySelectorAll('.bv, .bv *')].filter(e=>[...e.childNodes].some(n=>n.nodeType===3&&n.textContent.trim())).map(e=>parseFloat(getComputedStyle(e).fontSize)).filter(s=>s<12)`);
+    assert.deepStrictEqual(caveSmall, [], 'cave skin: every text of the brain is at least 12 px (FR-097)');
+    // contrast against the real colours the page shows (FR-098): the text on the box and on the card at 4.5:1, each lobe colour on the box at 3:1
+    const contrast = await js(`(()=>{const rgb=(c)=>{const m=String(c).match(/[\\d.]+/g).map(Number);return m.length>3&&m[3]===0?null:m.slice(0,3);},lum=(a)=>{const f=a.map(v=>{v/=255;return v<=0.03928?v/12.92:Math.pow((v+0.055)/1.055,2.4)});return 0.2126*f[0]+0.7152*f[1]+0.0722*f[2];},ratio=(a,b)=>{const x=lum(a),y=lum(b);return (Math.max(x,y)+0.05)/(Math.min(x,y)+0.05);};
+      const box=document.querySelector('.bv'),bs=getComputedStyle(box),bg=rgb(bs.backgroundColor),card=getComputedStyle(box.querySelector('.bv-card')),cg=rgb(card.backgroundColor);
+      const cv=document.createElement('canvas').getContext('2d'),norm=(c)=>{cv.fillStyle='#000';cv.fillStyle=c;const h=cv.fillStyle;return [1,3,5].map(i=>parseInt(h.slice(i,i+2),16));};
+      const cols=window.__durbarSimUi.brain.host().draw.colors();
+      return {text:ratio(rgb(bs.color),bg),card:ratio(rgb(card.color),cg),opaque:bs.backgroundColor,lobes:Object.fromEntries(Object.entries(cols).map(([k,v])=>[k,ratio(norm(v),bg)]))};})()`);
+    assert.ok(contrast.text >= 4.5, 'cave skin: the box text is 4.5:1 on the box: ' + contrast.text.toFixed(2));
+    assert.ok(contrast.card >= 4.5, 'cave skin: the card text is 4.5:1 on the card: ' + contrast.card.toFixed(2));
+    for (const [k, r] of Object.entries(contrast.lobes)) assert.ok(r >= 3, 'cave skin: the ' + k + ' lobe colour is 3:1 on the box: ' + r.toFixed(2));
+    console.log(`[106-brain] ${tag}: cave skin ok (text ${contrast.text.toFixed(1)}:1, lobes ${Object.values(contrast.lobes).map((r) => r.toFixed(1)).join('/')})`);
     console.log(`[106-brain] ${tag}: ok`);
   }
   console.log('[106-brain] screenshots in ' + OUT);
