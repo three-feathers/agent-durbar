@@ -89,16 +89,30 @@ if (!LABELS) {
     eq(shared.maskLinkSplitTokens(t), '[redacted] ok', `#1940 a one-character tail after ${fn} is read with the token (${tn})`);
     for (const [kind, out] of [['other', S.maskLabel(t, 'other', label)], ['run', S.maskLabel(t, 'run', label)]]) ok(!out.includes(tok.slice(-9, -1)) && !out.includes(tok.slice(4, 12)), `#1940 the ${kind} label hides a token with a one-character tail after ${fn} (${tn}): ${out}`);
   }
+  // the gate (review of PR 1949, round 2): a piece between two blanks or between punctuation joins nothing and costs no mask pass; a link before a full stop
+  // costs a pass in the readings that keep its text (a token's own `.` can stand there) and masks nothing
   shared._linkPassesForTest();
-  eq(shared.maskLinkSplitTokens('See [the docs](https://example.com/a_long_path_name). Then <https://example.com/b>, and [x] done.'), 'See [the docs](https://example.com/a_long_path_name). Then <https://example.com/b>, and [x] done.', '#1940 links before a blank or a full stop are kept');
-  eq(shared._linkPassesForTest(), 0, '#1940 links before a blank or a full stop join nothing and cost no mask pass');
+  eq(shared.maskLinkSplitTokens('a [](u) b, then (c) and [] d; [-](y) - ok, ../[](u)/.. =[^]:'), 'a [](u) b, then (c) and [] d; [-](y) - ok, ../[](u)/.. =[^]:', '#1940 pieces between blanks are kept');
+  eq(shared._linkPassesForTest(), 0, '#1940 pieces between blanks or punctuation join nothing and cost no mask pass');
+  eq(shared.maskLinkSplitTokens('See [docs](u).'), 'See [docs](u).', '#1940 a link before a full stop is kept');
+  eq(shared._linkPassesForTest(), 2, '#1940 a link before a full stop costs a pass in the two readings that keep its text');
   // a target or a link text ends on its own line (a bracket on the next line is no end), and a long one is read to its end
-  eq((shared.maskLinkSplitTokens('See [a](x\ny)z ok'), shared._linkPassesForTest()), 0, '#1940 a target is not matched across a line break');
+  eq((shared.maskLinkSplitTokens('.-[](x\ny)-.'), shared._linkPassesForTest()), 0, '#1940 a target is not matched across a line break');
   eq(shared.maskLinkSplitTokens('x ' + ghp.slice(0, 12) + '[y](https://e.x/' + 'q'.repeat(600) + ')' + ghp.slice(12) + ' z'), 'x [redacted] z', '#1940 a token split by a link with a long target is hidden');
   // a secret name split by a link, then a separator and its value (review of PR 1949, F2): the value is hidden on every desk surface
   for (const t of ['Run: pas[][r]sword: Hx9Kq2Lm7Np4Rs now', 'tok[^]en: Hx9Kq2Lm7Np4Rs now', 'mys[][r]ql -pHx9Kq2Lm7Np4Rs', 'sec[][r]ret_key = "Hx9Kq2Lm7Np4Rs"', 'pass[w](u)word=Hx9Kq2Lm7Np4Rs ok', 'api<b></b>_key: Hx9Kq2Lm7Np4Rs'])
     for (const [sn, out] of [['excerpt', S.excerpt(t, red, 600)], ['maskRaw', S.maskRaw(t, red)], ['the wrapper excerpt', T.excerpt(t, 600)], ['a tool label', S.maskLabel(t, 'other', label)], ['a command label', S.maskLabel(t, 'run', label)]] as Array<[string, string]>)
       ok(!out.includes('Hx9Kq2Lm'), `#1940 ${sn} hides the value after a secret name split by a link (${t.replace('Hx9Kq2Lm7Np4Rs', '<value>')}): ${out}`);
+  // a split right beside a token's own `:` or `.` (review of PR 1949, round 2, N1), and markup between a separator and its value (N2): hidden on every desk surface
+  {
+    const kb = 'AAZq3Wd8' + 'Kp2Lm5Rt7Yx4Bn6Hj9Fc1Vg0Ts3', jh = 'ey' + 'JhbGciOiJIUzI1NiJ9', jp = 'ey' + 'JzdWIiOiIxMjM0NTY3ODkwIn0', js = 'Xk9Lp2Qr7St4Uv1Wx8Yz5Ab3Cd6Ef0Gh', v = 'Hx9Kq2Lm7Np4Rs';
+    const bot = '123456789';
+    const cases = ['key ' + bot + '[][r]:' + kb + ' ok', 'key ' + bot + ':[^]' + kb + ' ok', 'key ' + bot + '[]:' + kb + ' ok', 'key ' + bot + '[](u):' + kb + ' ok', 'key ' + bot + '![](u):' + kb + ' ok', 'pass' + 'word=' + bot + '<img src="x">:' + kb,
+      jh + '[^].' + jp + '.' + js, jh + '.' + jp + '[](u).' + js, jh + '.[^]' + jp + '.' + js,
+      'Run: pass' + 'word: [](u)' + v + ' now', 'token: [](u)' + v, 'pass' + 'word=[](u)' + v, 'API_KEY=[](u)' + v, 'secret_key = "[](u)' + v + '"', 'pass' + 'word=[^]' + v, 'pass' + 'word: [^]' + v, 'token: [^]' + v, 'API_KEY=[^]' + v, 'secret_key = "[^]' + v + '"'];
+    for (const t of cases) for (const [sn, out] of [['excerpt', S.excerpt(t, red, 600)], ['maskRaw', S.maskRaw(t, red)], ['the wrapper excerpt', T.excerpt(t, 600)], ['a tool label', S.maskLabel(t, 'other', label)], ['a command label', S.maskLabel(t, 'run', label)]] as Array<[string, string]>)
+      ok(!/Hx9Kq2Lm|Kp2Lm5Rt|JzdWIiOi|Xk9Lp2Qr|zI1NiJ9/.test(out), `#1940 ${sn} hides a split beside a token's own mark or markup before a value (${t.replace(v, '<value>').slice(0, 30)}): ${out}`);
+  }
   // a text that holds an open mask label and a token split by a link (review of PR 1949, F1): the desk fails closed as it did before the link step
   {
     const t = ghp.slice(0, 16) + '[redacted:] ' + ghp.slice(16, 24) + ' and ' + ghp.slice(0, 12) + '[y][r]' + ghp.slice(12);

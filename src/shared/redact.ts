@@ -3125,13 +3125,21 @@ function withoutLinks(s: string, mode: 0 | 1 | 2, parens: Int32Array, brackets: 
 }
 const LINK_RUN_CHAR = /[A-Za-z0-9_\-.~+/=:@%]/;
 const LINK_ALNUM = /[A-Za-z0-9_-]/; // a letter, a digit, or the `_` and `-` names and token bodies join with
+const LINK_VALUE_START = /[A-Za-z0-9]/;
+const LINK_SEP = /[\s=:"']/;
 /**
- * Whether `k` (a `withoutLinks` copy) joins a letter, digit, `_` or `-` to another across a removed piece: only then can a reading show a token, or a secret
- * name, that the text as written does not (review of PR 1949, round 1: F2, a name split by a link; F3, a token's last character alone after a link). A link or a
- * tag before a blank or a full stop joins nothing, so it costs no mask pass. One pass.
+ * Whether `k` (a `withoutLinks` copy) joins two characters across a removed piece in a way that can make a token or a secret's value: two token characters, one
+ * of them a letter, digit, `_` or `-`, or a letter or digit after a blank or a separator. Only then can a reading show what the text as written does not (review
+ * of PR 1949: round 1, F2 and F3; round 2, N1 and N2). A piece between two blanks, or between punctuation, joins nothing and costs no mask pass. One pass.
  */
 function gluedRun(k: string, at: readonly number[]): boolean {
-  for (let p = 1; p < k.length; p++) if (at[p] !== at[p - 1] + 1 && LINK_ALNUM.test(k[p]) && LINK_ALNUM.test(k[p - 1])) return true;
+  for (let p = 1; p < k.length; p++) {
+    if (at[p] === at[p - 1] + 1) continue;
+    const a = k[p - 1], b = k[p];
+    // two token characters, one a letter, digit, `_` or `-` (a token's own `:`, `.`, `/`, `+` or `=` beside the piece: review of PR 1949, round 2, N1), or a letter or
+    // digit after a blank or a separator (a value after a secret name and its separator, with the piece between: N2)
+    if ((LINK_RUN_CHAR.test(a) && LINK_RUN_CHAR.test(b) && (LINK_ALNUM.test(a) || LINK_ALNUM.test(b))) || (LINK_VALUE_START.test(b) && LINK_SEP.test(a))) return true;
+  }
   return false;
 }
 /** Per character of `k`: whether it stands in a run of token characters with a removed piece inside it (one pass forward, one back). */
