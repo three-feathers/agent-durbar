@@ -196,7 +196,7 @@
       "gap": {
         "cave": "[KNOWN GAP] rows only: the cave's circle draws no helper strip and no kids (helpers stay as +N and dots there); 102 T326, T175.",
         "loft": "The loft has no pack and no kids yet; it is not offered (102 FR-271).",
-        "retro": "[KNOWN GAP] the arcade has no kids: 102 T327, issue #1643 (not started). It keeps 097's adult head row with a status dot (fallback to the shared strip), never claimed as built."
+        "retro": "[KNOWN GAP] the arcade has no full-body kids: 102 T327, issue #1643 (open). Its head row under the plate shows its six pixel kids' faces with a status dot (102 T396); the kids beside the cabinet are not built, so the cell stays fallback-flat, never claimed as built."
       }
     },
     {
