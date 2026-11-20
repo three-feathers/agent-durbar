@@ -38,6 +38,145 @@ for (const keep of ['ghp_short', 'see ghs_count', 'wei' + 'ghs_' + 'TotalWeightK
   assert.ok(!STe.maskRaw('see ' + cutTok, (x) => redact(x, {})).includes('R1t2Y3u4'), '#1329 early: the desk maskRaw hides a cut token');
 }
 
+// spec 012 FR-188 (issue #1320): one token character written in an entity form or a percent-escape form left the whole token readable. The split step reads
+// such a form as the character it stands for. Every value here is invented and built from pieces.
+{
+  const STe = require(path.join(__dirname, '..', '..', 'src', 'renderer', 'safetext.js')) as { maskRaw(t: string, r: (s: string) => string): string };
+  const surfaces: Array<[string, (t: string) => string]> = [
+    ['redact', (t) => redact(t, {})],
+    ['maskSecretCommand', (t) => maskSecretCommand(t, {})],
+    ['maskSecretArgs', (t) => maskSecretArgs(t.split(' '), {}).join(' ')],
+    ['maskOutgoing', (t) => maskOutgoing(t).text],
+    ['maskNoteText', (t) => maskNoteText(t).text],
+    ['desk maskRaw', (t) => STe.maskRaw(t, (x) => redact(x, {}))],
+  ];
+  const body = 'Zq3' + 'Wd8' + 'Kp2' + 'Lm5' + 'Rt7' + 'Yx4' + 'Bn6' + 'Hj9' + 'Fc1' + 'Vg0' + 'Ts3' + 'Qa8';
+  const ghBody = body; // 36
+  const tail = ghBody.slice(-12);
+  // [label, text, a piece of the token that must not show]
+  const hidden: Array<[string, string, string]> = [
+    ['decimal entity of the prefix separator', 'gh' + 'p&#95;' + ghBody, tail],
+    ['decimal entity without ;', 'gh' + 'p&#95' + ghBody, tail],
+    ['hex entity', 'gh' + 'p&#x5f;' + ghBody, tail],
+    ['hex entity without ;, upper case', 'gh' + 'p&#X5F' + ghBody, tail],
+    ['named entity', 'gh' + 'p&lowbar;' + ghBody, tail],
+    ['entity with leading zeros', 'gh' + 'p&#0095;' + ghBody, tail],
+    ['entity of a prefix letter', 'g&#104;' + 'p_' + ghBody, tail],
+    ['entity inside the body', 'gh' + 'p_' + ghBody.slice(0, 10) + '&#' + ghBody.charCodeAt(10) + ';' + ghBody.slice(11), tail],
+    ['two entities with one character between', 'gh' + 'p_' + ghBody.slice(0, 20) + '&#x' + ghBody.charCodeAt(20).toString(16) + ';' + ghBody[21] + '&#x' + ghBody.charCodeAt(22).toString(16) + ';' + ghBody.slice(23), tail],
+    // the scan takes every digit (a number that is no token character); the longest run of its first digits that is one is read, the rest stay text
+    ['entity without ; whose number goes on', '1234' + '56789:AA' + body.slice(0, 31) + '&#56' + '8', body.slice(0, 12)],
+    ['entity of the first character', '&#103;' + 'hp_' + ghBody, tail],
+    ['entity of the last character', 'gh' + 'p_' + ghBody.slice(0, 35) + '&#' + ghBody.charCodeAt(35) + ';', '#' + ghBody.charCodeAt(35) + ';'],
+    ['an entity in the rest after a break tag', 'sk-' + 'proj-' + body + '<wbr>' + 'Q' + '&#95;' + body.slice(0, 18), body.slice(6, 18)],
+    ['percent escape', 'gh' + 'p%5F' + ghBody, tail],
+    ['percent escape, lower case', 'gh' + 'p%5f' + ghBody, tail],
+    ['percent escape encoded twice', 'gh' + 'p%255F' + ghBody, tail],
+    ['percent escape in a URL query', 'curl "https://api.example/x?q=gh' + 'p%5F' + ghBody + '&y=1"', tail],
+    ['entity of a dash in a project key', 'sk' + '&#45;proj-' + body + body, tail],
+    ['percent escape of a dash in a project key', 'sk' + '%2Dproj-' + body + body, tail],
+    ['entity of the colon of a bot token', '1234' + '56789&#58;AA' + body.slice(0, 33), body.slice(21, 33)],
+    ['entity of a dot in a JWT', 'ey' + 'JhbGciOiJIUzI1NiJ9&#46;eyJzdWIiOiIxMjM0NTY3ODkwIn0&period;' + body + 'Xy7', body.slice(0, 12)],
+    ['percent escape of a dot in a JWT', 'ey' + 'JhbGciOiJIUzI1NiJ9%2EeyJzdWIiOiIxMjM0NTY3ODkwIn0%2E' + body + 'Xy7', body.slice(0, 12)],
+    ['an entity and a percent escape in one token', '1%3' + '23456789&#58;AA' + body.slice(0, 33), body.slice(21, 33)],
+    // review of PR 1899: any number of leading zeros, and a percent escape re-encoded more than 8 times
+    ['entity with many leading zeros', 'gh' + 'p&#' + '0'.repeat(12) + '95;' + ghBody, tail],
+    ['hex entity with many leading zeros', 'gh' + 'p&#x' + '0'.repeat(9) + '5f;' + ghBody, tail],
+    ['percent escape encoded ten times', 'gh' + 'p%' + '25'.repeat(9) + '5f' + ghBody, tail],
+    ['inside an HTML code element', '<code>gh' + 'p&#95;' + ghBody + '</code>', tail],
+    ['in a JSON string', '{"k":"gh' + 'p%5F' + ghBody + '"}', tail],
+  ];
+  for (const [label, text, piece] of hidden) {
+    assert.ok(text.includes(piece), `#1320 decoded: the case holds its piece (${label})`);
+    for (const [name, mask] of surfaces) {
+      const out = mask(text);
+      assert.ok(!out.includes(piece), `#1320 decoded: ${name} hides it (${label}): ${out}`);
+    }
+  }
+  // a separator written in such a form: the value after the name is read as a value (accepted over-masking: the stretch starts right after the decoded character)
+  const pv = 'Hq7' + 'Ln2' + 'Xv9';
+  assert.ok(!redact('pass' + 'word&#61;' + pv, {}).includes(pv), '#1320 decoded: a value after a separator written as an entity is hidden');
+  assert.ok(!redact('pass' + 'word%3D' + pv, {}).includes(pv), '#1320 decoded: a value after a separator written as a percent escape is hidden');
+  // review of PR 1899: a letter of a secret name written in such a form (the value is read after the name)
+  for (const named of ['pass' + 'w&#111;rd=', 'pass' + '%77ord=', 'pass' + '&#119;ord = ', 'to' + 'k&#x65;n: ']) {
+    assert.ok(!redact(named + pv, {}).includes(pv), `#1320 decoded: a value after a secret name with a letter in such a form is hidden (${named.replace(/[a-z]+/g, 'n')})`);
+  }
+  // review of PR 1899: the decoded reading is a reading of its own, joined to the one before it: a fixed-length key split by a piece and followed by a glued form
+  // stays hidden as main hides it (the decoded character after its end made it no key in that reading)
+  const aiza = 'AI' + 'za' + 'Sy' + body.slice(0, 33);
+  for (const piece of ['<b></b>', '\u200b', '&#8203;']) for (const glued of ['%5Fword', '&#95;word', '%2Dab']) {
+    const t = aiza.slice(0, 4) + piece + aiza.slice(4) + glued;
+    for (const [name, mask] of surfaces) assert.ok(!mask(t).includes(body.slice(10, 22)), `#1320 decoded: ${name} hides a split fixed-length key with a glued form (${piece.length} ${glued.slice(0, 3)})`);
+  }
+  // review of PR 1899, round 2: after a token with a decoded character, a keyword past a removed piece keeps its own rule (the stretch stops there), on the desk too
+  {
+    const ST2 = require(path.join(__dirname, '..', '..', 'src', 'renderer', 'safetext.js')) as { maskRaw(t: string, r: (s: string) => string): string; excerpt(t: string, r: (s: string) => string): string };
+    const kpw = 'Hx9' + 'Kq2' + 'Lm7' + 'Np4' + 'Rs';
+    for (const [label, t] of [
+      ['GitHub', 'gh' + 'p_' + ghBody.slice(0, 30) + '&#' + ghBody.charCodeAt(30) + ';' + ghBody.slice(31) + '\u200bmysql -p' + kpw],
+      ['Anthropic', 'sk-' + 'ant-api03-' + body.repeat(3) + '&#72' + 'Wx5Yz7' + '\u200bmysql -p' + kpw],
+      // round 3: the decoded character is the first one of the stretch
+      ['first character', '&#103;' + 'hp_' + ghBody + '\u200bmysql -p' + kpw],
+    ] as Array<[string, string]>) {
+      for (const [name, mask] of [['redact', (x: string) => redact(x, {})], ['desk maskRaw', (x: string) => ST2.maskRaw(x, (y) => redact(y, {}))], ['desk excerpt', (x: string) => ST2.excerpt(x, (y) => redact(y, {}))]] as Array<[string, (x: string) => string]>) {
+        assert.ok(!mask(t).includes(kpw), `#1320 decoded: ${name} hides a password after a keyword that follows a decoded token and a piece (${label})`);
+      }
+      // round 3: the stretch stops at the piece, so the keyword stays for its own rule (redact keeps it; the desk, which masks a word its readings cut differently, keeps the flag)
+      assert.ok(redact(t, {}).includes('mysql -p'), `#1320 decoded: redact keeps the keyword after a decoded token and a piece (${label})`);
+      if (label === 'first character') assert.ok(ST2.maskRaw(t, (y) => redact(y, {})).includes('] -p['), `#1320 decoded: desk maskRaw keeps the flag after a decoded token and a piece (${label})`);
+    }
+  }
+  // independent differential of PR 1899: the readings as before FR-188 keep their bounded entity, so a hidden-character entity with leading zeros inside a token reads as
+  // it did (the digits after the bound are token text there); and the desk's own steps after the split step read a decoded mask as before (a decoded reading is a reference)
+  {
+    const ST3 = require(path.join(__dirname, '..', '..', 'src', 'renderer', 'safetext.js')) as { maskRaw(t: string, r: (s: string) => string): string; excerpt(t: string, r: (s: string) => string): string };
+    const deskSurfaces: Array<[string, (t: string) => string]> = [['redact', (t) => redact(t, {})], ['desk maskRaw', (t) => ST3.maskRaw(t, (y) => redact(y, {}))], ['desk excerpt', (t) => ST3.excerpt(t, (y) => redact(y, {}))]];
+    for (const [label, t, piece] of [
+      ['decimal', 'gh' + 'p_' + ghBody.slice(0, 32) + '&#000' + '8203' + '1234', ghBody.slice(18, 30)],
+      ['hex', 'x gh' + 'p_' + ghBody.slice(0, 32) + '&#x00' + '200b' + '5678 y', ghBody.slice(18, 30)],
+      ['fixed-length key, hex', 'x AI' + 'za' + ghBody.slice(0, 31) + '&#x00' + '200b' + '5678 y', ghBody.slice(10, 22)],
+      ['fixed-length key, decimal', 'x AI' + 'za' + ghBody.slice(0, 31) + '&#000' + '8203' + '5678 y', ghBody.slice(10, 22)],
+    ] as Array<[string, string, string]>) {
+      for (const [name, mask] of deskSurfaces) assert.ok(!mask(t).includes(piece), `#1320 decoded: ${name} reads a hidden-character entity with leading zeros as before (${label})`);
+    }
+    const dpw = 'Hx9' + 'Kq2' + 'Lm7' + 'Np4' + 'Rs';
+    const t = 'Authorization: Bearer gh' + 'p_' + ghBody.slice(0, 10) + '&#' + ghBody.charCodeAt(10) + ';' + ghBody.slice(11) + '\u200bmysql -p' + dpw;
+    for (const [name, mask] of deskSurfaces) assert.ok(!mask(t).includes(dpw), `#1320 decoded: ${name} hides a password after a header, a decoded token, a hidden character and a keyword`);
+  }
+  // round 5: with the decoded reading off, a word is read as written (the brain's reference reading reads header names as before FR-188)
+  {
+    const R5 = require(path.join(__dirname, '..', 'src', 'shared', 'redact')) as { decodeTokenForms(t: string): string; withoutDecode<T>(fn: () => T): T };
+    assert.strictEqual(R5.decodeTokenForms('Authorizatio' + '%6e:'), 'Authorization:', '#1320 decoded: decodeTokenForms reads a header name in such a form');
+    assert.strictEqual(R5.withoutDecode(() => R5.decodeTokenForms('Authorizatio' + '%6e:')), 'Authorizatio' + '%6e:', '#1320 decoded: decodeTokenForms reads a word as written with the decoded reading off');
+  }
+  // near misses: text with such forms and no token stays byte for byte
+  const keep = [
+    'R&amp;D &#169; 2024 &mdash; build_v1.2.3',
+    'see https://example.com/a%2Fb/c%3Fd%3D1&amp;e=2',
+    'path C%3A%5CUsers%5CPublic%5Cdocs_v2',
+    'foo&#95;bar&#95;baz_helper()',
+    'query?q=hello%5Fworld%5F2&page=3',
+    'v1&#46;2&#46;3 release_notes',
+    'MyComponent&#46;render&#40;&#41;',
+    'a%2Bb%3Dc%2Fd and 50%25 done',
+    'https%3A%2F%2Fgithub.com%2Forg%2Frepo%2Fpull%2F12',
+    'user_name&#58;admin_role',
+    '&#x1F600; and &#8364;100',
+  ];
+  for (const k of keep) {
+    assert.strictEqual(redact(k, {}), k, `#1320 decoded near miss stays: ${k}`);
+    assert.strictEqual(maskSplitTokens(k), k, `#1320 decoded near miss stays (split step): ${k}`);
+  }
+  // a form that stands for no token character is not read as one: a token cut by it stays apart, as on main
+  assert.strictEqual(maskSplitTokens('gh' + 'p&#169;' + ghBody), 'gh' + 'p&#169;' + ghBody, '#1320 decoded: a form of a character that is no token character is not read');
+  // linear: long runs of the forms, alone and inside tokens
+  assertLinearShape('#1320 decoded: redact a run of percent escapes', (x) => { redact(x, {}); }, (k) => 'a%2F'.repeat(Math.ceil(k / 4)).slice(0, k), 200_000);
+  assertLinearShape('#1320 decoded: redact a run of entities', (x) => { redact(x, {}); }, (k) => 'b&#95;'.repeat(Math.ceil(k / 6)).slice(0, k), 200_000);
+  assertLinearShape('#1320 decoded: redact an entity with a long run of leading zeros', (x) => { redact(x, {}); }, (k) => 'gh' + 'p&#' + '0'.repeat(Math.max(1, k - 8)) + '39', 200_000);
+  const unit = 'x gh' + 'p%5F' + ghBody + ' ';
+  assertLinearShape('#1320 decoded: redact many decoded tokens', (x) => { redact(x, {}); }, (k) => unit.repeat(Math.ceil(k / unit.length)).slice(0, k), 200_000);
+}
+
 // spec 012 FR-187 (issue #1320): a secret name glued to the end of a token is taken into the token's mask, so the value after it was no value of any name.
 // A value after a mask and `=` is now read as a named value. Every value here is invented and built from pieces.
 {

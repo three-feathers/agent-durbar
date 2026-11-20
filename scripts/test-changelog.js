@@ -616,8 +616,9 @@ assert.ok(cl.parseFragment('- x <!-- hidden -->\n').errors.some((e) => /HTML com
       }
       const spans = items.map((l) => /^- `[0-9a-f]{12}` `([^`]*)`$/.exec(l)[1]).reverse(); // newest first in the notes
       assert.strictEqual(spans[0], "Ping @octocat about 'code' and **bold** <b>tag</b> ![x](https://example.invalid/i.png) [a](http://x)", 'a backtick becomes a quote, the rest stays literal inside the span');
-      // spec 012 FR-182 (issue #1613): redact() now reads a token split by an empty tag or a comment, so those two subjects are masked before they reach the notes
-      assert.deepStrictEqual(spans.slice(1), [hostile[1], '[redacted]', '[redacted]', hostile[4]], 'the four masking-bypass forms are inside a code span, so they render literally, never as a ghp_ token (the tag and comment forms masked)');
+      // spec 012 FR-182 (issue #1613): redact() now reads a token split by an empty tag or a comment, so those two subjects are masked before they reach the notes;
+      // spec 012 FR-188 (issue #1320): it also reads a token character in an entity form, so that subject is masked too
+      assert.deepStrictEqual(spans.slice(1), [hostile[1], '[redacted]', '[redacted]', '[redacted]'], 'the four masking-bypass forms are inside a code span, so they render literally, never as a ghp_ token (the tag, comment and entity forms masked)');
     }
     {
       // at most TEST_COMMITS_MAX commits are listed, then a count of the rest

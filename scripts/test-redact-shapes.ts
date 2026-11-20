@@ -82,14 +82,15 @@ for (const s of ['np' + 'm_' + an(36), 'sk' + '_live_' + an(24), 'AI' + 'za' + a
   for (const pre of ['"', 'x=', '%3D', '=3D', '\\n', '`']) assert.ok(!redact(pre + s, {}).includes(s.slice(4)), `start after ${pre}`);
 }
 
-// A shape added by T137 starts after `%` re-encoded up to 8 times (the old shapes have no limit: redact-held-lib.ts); one more level is a listed limit
+// A shape added by T137 starts after `%` re-encoded up to 8 times (the old shapes have no limit: redact-held-lib.ts); one more level was a listed limit, read by FR-188's split step since
 for (const s of ['np' + 'm_' + an(36), 'sk' + '_live_' + an(24), 'AI' + 'za' + an(35), 'AB' + 'SK' + an(120)]) {
   for (const depth of [0, 1, 2, 7, 8]) {
     const before = 'q=%' + '25'.repeat(depth) + '3D';
     assert.strictEqual(redact(before + s, {}), before + '[redacted]', `${s.slice(0, 4)}… after % encoded ${depth} more times`);
   }
-  const deep = 'q=%' + '25'.repeat(9) + '3D' + s;
-  assert.strictEqual(redact(deep, {}), deep, `limit: ${s.slice(0, 4)}… after 9 more`);
+  // spec 012 FR-188 (review of PR 1899): the split step reads a percent escape re-encoded any number of times as its character, so one more level is hidden too (was a listed limit)
+  const deep = 'q=%' + '25'.repeat(9) + '3D';
+  assert.strictEqual(redact(deep + s, {}), deep + '[redacted]', `${s.slice(0, 4)}… after % encoded 9 more times (FR-188)`);
 }
 
 // Issue #1009's five, in both masks
