@@ -284,6 +284,7 @@ const SCENES = {
         return out})()`);
       if (pick.length !== 2) throw new Error('lounge: two agents to finish were not found');
       // FR-270 (issue #1792): Omar's simulated spending limit puts a limit slip at the right edge of the room, and it covered the lounge row's zoom; the scene answers it as a user would (Remove limit), then waits for the slip to go
+      // FR-274 (issue #1954): the arcade's pill carries the same button (class `ro-sbtn`, text `Remove limit`), so this one selector serves the Photo office and the arcade; the scene never branches
       if (await H.until(`!!document.querySelector('#stage .ro-limit:not([hidden]) .ro-sbtn')`, 6000)) {
         await H.js(`(()=>{const b=[...document.querySelectorAll('#stage .ro-limit .ro-sbtn')].find(x=>x.textContent==='Remove limit');if(b)b.click();return !!b})()`);
         if (!(await H.until(`!document.querySelector('#stage .ro-limit:not([hidden])')`, 8000))) throw new Error('lounge: the limit slip did not go');
