@@ -3137,6 +3137,7 @@ function openPanel(id,focus){
   BP.mount(a); /* spec 080 T015: wires the tabs and the browser bar; the same session keeps its tab, another starts on Chat */
   syncSeen(); /* spec 005 FR-176: the chat is shown now, so a reply not read yet is read (not when the Browser tab is in front) */
   renderStrip(); const sl=$('stripList'); if(sl)sl.scrollTop=stripScroll;
+  brainRailSync(); /* spec 106 T006: the right rail with the dock (behind the preview flag) */
   const chat=getChat(a); $('chat').appendChild(chat.el);
   updatePanelHeader(); renderGrants();
   const chatEl=$('chat'); chatEl.dataset.pin='1'; chatEl._lastTop=undefined; chatEl.scrollTop=1e6;
@@ -4314,6 +4315,7 @@ function closePanel(){closeSlash();keepDraft();
   if(ctObs){ctObs.res.disconnect();ctObs.mut.disconnect();ctObs=null;} closeCtMore(false); closeCtxMenu();
   if(chatBoxRO){chatBoxRO.disconnect();chatBoxRO=null;} /* spec 005 FR-243: the box observer ends with its chat */
   const id=ui.selected; ui.selected=null; document.body.classList.remove('panel-open'); $('panel').innerHTML='';
+  brainRailSync(); /* spec 106 T006: the dock leaves with its chat */
   renderAll(); placeToasts();
   const n=id&&document.querySelector(`[data-id="${CSS.escape(id)}"]`); if(n)focusIn(n);
   if(DOOR_ON)doorReturn();
@@ -7756,31 +7758,82 @@ function onAgentRenamed(e){
   a.alias=typeof e.alias==='string'&&e.alias?e.alias:undefined;
   repaintName(a);
 }
-/* spec 106 T005: Brain view's temporary floating host, OFF by default (localStorage durbar.brainPreview = "on", or ?brain=1 in the simulator).
-   Loaded on first use (FR-105) from files that are not in index.html; events that arrive while it loads wait in a short queue. Removed by T006's dock. */
-const BRAIN_PREVIEW=(()=>{try{return (qs.has('sim')&&qs.get('brain')==='1')||localStorage.getItem('durbar.brainPreview')==='on';}catch(e){return false;}})();
-let BRAIN_H=null, BRAIN_STATE='idle', BRAIN_WHY=''; const BRAIN_Q=[];
+/* spec 106 T006 (delta 2026-11-20): Brain view's dock at the top of the chat's right rail, above a Your door section. Behind the preview flag until T009's
+   Settings switch (localStorage durbar.brainPreview = "on"; ?brain=1, which main sets from DURBAR_BRAIN=1 in a development run, as DURBAR_DOOR).
+   Loaded on first use (FR-105) from files that are not in index.html: the stylesheet first, so the rail is never drawn unstyled; events that arrive while
+   it loads wait in a short queue. Off: nothing loads and the chat is unchanged. */
+const BRAIN_PREVIEW=(()=>{try{return qs.get('brain')==='1'||localStorage.getItem('durbar.brainPreview')==='on';}catch(e){return false;}})();
+let BRAIN_H=null, BRAIN_STATE='idle', BRAIN_WHY='', BRAIN_RAIL_OFF=null, BRAIN_EMPTY=null; const BRAIN_Q=[];
 function brainLoad(){
+  if(BRAIN_STATE!=='idle'&&BRAIN_STATE!=='waiting')return;
   BRAIN_STATE='loading';
-  const lk=document.createElement('link');lk.rel='stylesheet';lk.href='brainview/brain.css';document.head.appendChild(lk);
-  const files=['../shared/brainstate.js','../shared/brainsurface.js','brainview/points.js','brainview/skins.js','brainview/draw.js','brainview/host.js'];
+  const files=['../shared/brainstate.js','../shared/brainsurface.js','brainview/points.js','brainview/skins.js','brainview/draw.js','brainview/dock.js'];
   const next=i=>{
     if(i>=files.length){
       const R=window.DurbarRedact,U=window.DurbarUsage,C=window.DurbarCost;
       if(NO_REDACT||!R||typeof R.redact!=='function'||!U||!C){BRAIN_STATE='failed';BRAIN_WHY='no mask';BRAIN_Q.length=0;return;} /* no masking, no brain */
       const mask=Object.assign({},R,{units:{validNano:U.validNano,AIU_USD:C.AIU_USD,money:C.money,creditsWord:'AIU',estimateWord:'Claude (est.)'}});
-      BRAIN_H=window.DurbarBrainHost.start({mask,now:()=>Date.now(),name:id=>{const a=liveById(id);return a?a.name:'Agent';}});
-      BRAIN_STATE=BRAIN_H?'ready':'failed';if(!BRAIN_H)BRAIN_WHY='host refused';
+      BRAIN_H=window.DurbarBrainDock.start({mask,now:()=>Date.now(),name:id=>{const a=liveById(id)||byId(id);return a?a.name:'Agent';},folder:id=>{const a=byId(id),r=a&&roomOf(a);return r?r.path:undefined;}});
+      BRAIN_STATE=BRAIN_H?'ready':'failed';if(!BRAIN_H)BRAIN_WHY='dock refused';
       BRAIN_Q.splice(0).forEach(x=>{if(BRAIN_H)BRAIN_H.feed(x[0],x[1],x[2]);});
+      brainRailSync();
       return;
     }
     const sc=document.createElement('script');sc.src=files[i];sc.onload=()=>next(i+1);sc.onerror=()=>{BRAIN_STATE='failed';BRAIN_WHY='script '+files[i];BRAIN_Q.length=0;};document.head.appendChild(sc);
   };
-  next(0);
+  const lk=document.createElement('link');lk.rel='stylesheet';lk.href='brainview/brain.css';
+  lk.onload=()=>next(0); lk.onerror=()=>{BRAIN_STATE='failed';BRAIN_WHY='style';BRAIN_Q.length=0;};
+  document.head.appendChild(lk);
 }
+function brainStart(){if(!BRAIN_PREVIEW||BRAIN_STATE!=='idle')return;BRAIN_STATE='waiting';if(document.readyState==='complete')brainLoad();else window.addEventListener('load',brainLoad,{once:true});}
 function brainFeed(a,e){
   if(!BRAIN_PREVIEW||BRAIN_STATE==='failed')return;
-  if(BRAIN_H)BRAIN_H.feed(a.id,a.name,e);else{BRAIN_Q.push([a.id,a.name,e]);if(BRAIN_Q.length>500)BRAIN_Q.shift(); /* while it loads, the newest 500 events are kept (a step's end beats its start) */if(BRAIN_STATE==='idle'){BRAIN_STATE='waiting';if(document.readyState==='complete')brainLoad();else window.addEventListener('load',brainLoad,{once:true});}}
+  if(BRAIN_H)BRAIN_H.feed(a.id,a.name,e);else{BRAIN_Q.push([a.id,a.name,e]);if(BRAIN_Q.length>500)BRAIN_Q.shift(); /* while it loads, the newest 500 events are kept (a step's end beats its start) */brainStart();}
+}
+/* FR-031: the rail's collapse is kept as the agent rail keeps its folds (005 FR-196: only when rememberOn(); `railstore=1` for drivers) */
+function brainRailOff(){if(BRAIN_RAIL_OFF===null){BRAIN_RAIL_OFF=false;if(railRemember()){try{BRAIN_RAIL_OFF=localStorage.getItem('durbar.brainRail')==='collapsed';}catch(e){/* storage off: open */}}}return BRAIN_RAIL_OFF;}
+function brainRailHTML(){
+  return '<aside class="brail" id="brainRail" aria-label="Brain view and Your door"><div class="brail-slot" id="brainSlot"></div>'
+    +'<section class="brail-door" aria-labelledby="brailDoorT"><div class="brail-dh"><h2 id="brailDoorT">Your door <b class="brail-n" id="brailDoorN">0</b></h2><button class="btn sm" type="button" id="brailHide" aria-controls="brainRail" aria-expanded="true" title="Hide the brain and Your door; the Brain button in the chat header brings them back">Collapse</button></div>'
+    +'<ul class="brail-dl" id="brailDoorL" aria-label="Who needs you"></ul></section></aside>';
+}
+function brainRailCollapse(off){
+  BRAIN_RAIL_OFF=!!off; if(railRemember()){try{if(off)localStorage.setItem('durbar.brainRail','collapsed');else localStorage.removeItem('durbar.brainRail');}catch(e){/* kept for this run */}}
+  brainRailSync();
+  const f=off?$('brainBack'):$('brailHide'); if(f&&f.getClientRects().length)focusIn(f);
+}
+/* the rail with a chat open: built after openPanel's innerHTML (which drops it), the dock moved into it, the open chat's agent shown (a helper's chat: its parent, FR-007) */
+function brainRailSync(){
+  if(!BRAIN_PREVIEW)return;
+  const open=document.body.classList.contains('panel-open')&&!!ui.selected&&!!byId(ui.selected), off=open&&brainRailOff();
+  document.body.classList.toggle('brain-rail-off',off);
+  if(!open){if(BRAIN_H){BRAIN_H.unmount();BRAIN_H.show(null);}return;}
+  if(!BRAIN_H){brainStart();return;}
+  const p=$('panel'), head=$('panelHead');
+  if(head&&!$('brainBack')){const m=head.querySelector('.ph-meta');if(m){m.insertAdjacentHTML('afterbegin','<button class="btn sm" type="button" id="brainBack" aria-controls="brainRail" aria-expanded="false" title="Show the brain and Your door" hidden>Brain</button>');$('brainBack').onclick=()=>brainRailCollapse(false);}}
+  const back=$('brainBack'); if(back)back.hidden=!off;
+  let r=$('brainRail');
+  if(!r){p.insertAdjacentHTML('beforeend',brainRailHTML());r=$('brainRail');$('brailHide').onclick=()=>brainRailCollapse(true);$('brailDoorL').onclick=e=>{const b=e.target.closest('[data-door]');if(b)openInbox(b.dataset.door);};BRAIN_EMPTY=null;}
+  if(off){BRAIN_H.unmount();return;}
+  BRAIN_H.mount($('brainSlot'));
+  const a=byId(ui.selected), root=a.parent&&byId(a.parent)?a.parent:a.id;
+  if(BRAIN_H.shown()!==root)BRAIN_H.show(root);
+  brainDoorPaint();
+}
+/* the Your door section: the count and who needs you, in the agent rail's own words (railAge, railReq: masked, cut); a row opens the existing Needs you queue there */
+function brainDoorPaint(){
+  const l=$('brailDoorL'), n=$('brailDoorN'), r=$('brainRail'); if(!l||!n||!r||!BRAIN_H)return;
+  const list=needsMeOrder(), now=Date.now(), rows=list.map(x=>({id:x.id,name:x.name,age:railAge(x,now),said:railAgeSaid(x,now),req:SHORT(railReq(x),200)}));
+  if(n.textContent!==String(list.length))n.textContent=String(list.length);
+  const sig=JSON.stringify(rows);
+  if(l.dataset.sig!==sig){
+    const fa=document.activeElement, fk=fa&&l.contains(fa)&&fa.dataset?fa.dataset.door:null;
+    l.dataset.sig=sig;
+    l.innerHTML=rows.length?rows.map(x=>`<li><button class="btn" type="button" data-door="${esc(x.id)}" aria-label="${esc(x.name)}, ${esc(x.said)}: ${esc(x.req)}. Open Needs you."><span class="brail-who"><b>${esc(x.name)}</b> <span class="brail-age">${esc(x.age)}</span></span><span class="brail-req">${esc(x.req)}</span></button></li>`).join(''):'<li class="brail-none">Nobody needs you now.</li>';
+    if(fk){const b=l.querySelector('[data-door="'+CSS.escape(fk)+'"]');if(b)focusIn(b);}
+  }
+  const empty=!rows.length;
+  if(empty!==BRAIN_EMPTY){BRAIN_EMPTY=empty;r.classList.toggle('door-empty',empty);const cs=getComputedStyle(BRAIN_H.el);BRAIN_H.setRoomy(empty,BRAIN_H.el.clientWidth-parseFloat(cs.paddingLeft)-parseFloat(cs.paddingRight)-parseFloat(cs.borderLeftWidth)-parseFloat(cs.borderRightWidth));}
 }
 function onLiveEvent(e){
   const a=liveById(e.sessionId); if(!a)return;
@@ -7789,7 +7842,7 @@ function onLiveEvent(e){
   a.lastEventAt=Date.now(); /* spec 052 FR-062: last activity (when it arrived here; a helper's event counts for its main agent) */
   feedStats(a,e);
   liveFeed(a,e); /* spec 001 FR-028 */
-  brainFeed(a,e); /* spec 106 T005: off unless the preview flag is on */
+  brainFeed(a,e); /* spec 106 T006: off unless the preview flag is on */
   if(!e.agentId){ /* spec 034: only main-agent events change the mood */
     if(e.type==='toolCall')MOOD.onTool(a.id,e);
     else if(e.type==='status'){MOOD.onStatus(a.id,e.status);if(e.permission)MOOD.onPermission(a.id,e.permission,e.timestamp);} /* a pending request arrives inside a needs-permission status */
@@ -8213,6 +8266,7 @@ function renderRailDoor(){
   const n=needsMeOrder().length;
   b.classList.toggle('attn',n>0); const c=b.querySelector('b'); if(c&&c.textContent!==String(n))c.textContent=String(n);
   b.setAttribute('aria-label','Your door: '+(n?n+(n===1?' agent needs':' agents need')+' you':'nobody needs you')+'. Open Needs you.');
+  if(BRAIN_PREVIEW)brainDoorPaint(); /* spec 106 T006: the right rail's Your door section counts the same */
 }
 let railTick=0;
 function renderStrip(){
@@ -9983,7 +10037,7 @@ async function removeSessionUi(a){
   const name=r.name; removeLiveAgent(r.id); renderFolders(); scheduleRender(); toast(esc(name)+' removed. Its history is under Previous sessions.',3600).classList.add('ok');
 }
 function removeLiveAgent(id){
-  STATS.forget(id); MOOD.forget(id); if(BRAIN_H)BRAIN_H.forget(id); /* spec 106 T005 */
+  STATS.forget(id); MOOD.forget(id); if(BRAIN_H)BRAIN_H.forget(id); /* spec 106 T006 */
   if(LIVEACT){LIVEACT.drop(id);clearTimeout(liveTimers.get(id));liveTimers.delete(id);} /* spec 001 FR-028 */
   VISITS.leave(id); dropWalker(id); BREAKS.end(id); /* spec 068: a removed agent's break is forgotten */
   for(let i=agents.length-1;i>=0;i--)if(agents[i].id===id||agents[i].parent===id){forgetCardState(agents[i].id);agents.splice(i,1);}
@@ -10561,7 +10615,7 @@ if(pendingOpen&&demoOn){openPanel(pendingOpen,false);pendingOpen=null;}
 const settleNow=()=>{if(!agentsListed||!window.__durbarSimReplayed||baselineQueued||baselineAsking)return false;if(renderQueued){renderQueued=false;renderAll();}return true;};
 /* simulator drivers load with simfreeze=1: the desk glow then holds still (FR-178: the geometry and screenshot checks measure boxes, so no zoom may be mid-way); the unread driver opts back in with hlmotion=1 to test the motion itself */
 if(SIM&&qs.get('simfreeze')==='1'&&qs.get('hlmotion')!=='1')document.documentElement.classList.add('hl-still');
-if(SIM)window.__durbarSimUi={qMdHTML,qSafeMask:t=>safeMask(t),qNames:()=>Object.keys(Q_NAMED).map(k=>k+'='+Q_NAMED[k]), /* spec 052 (issue 1927): check-question-markdown renders a question built from invented pieces through the card's own renderer */brain:{host:()=>BRAIN_H,state:()=>BRAIN_STATE,why:()=>BRAIN_WHY,flag:BRAIN_PREVIEW,queued:()=>BRAIN_Q.length}, /* spec 106 T005: check-brain-draw reads the floating host's frame counts */announce,renderRestoreStrip,afArrivalPrio,afTracker:{ids:()=>AFT.ids(),pending:()=>AFT.pendingList().map(v=>v.id+'|'+v.kind),quiet:()=>AFT.isQuiet,follow:id=>AFT.follow(id)}, /* spec 005 FR-237: drivers only: what Auto-follow follows, holds and whether it is quiet; follow() makes an agent followed without a hand open (which would drop the others, spec 052 FR-185) */ afNotice:{ms:v=>{AF_NOTICE_MS=Math.max(100,Number(v)||3000);return AF_NOTICE_MS;},on:v=>{setAutoFollowOn(!!v);return AF_ON;},shown:()=>!!AF_NOTICE}, /* spec 052 FR-239: drivers only: the notice's length, Auto-follow without Settings */swapCardOptions:id=>{const c=byId(id)&&pendingCardOf(byId(id));if(!c)return 0;const os=[...c.querySelectorAll('.q-opt')];os.forEach(b=>b.replaceWith(b.cloneNode(true)));return os.length;}, /* spec 052 FR-197: the live card rebuilds its options (the card stays, the old buttons are gone); a driver checks that a row's old option answers nothing */
+if(SIM)window.__durbarSimUi={qMdHTML,qSafeMask:t=>safeMask(t),qNames:()=>Object.keys(Q_NAMED).map(k=>k+'='+Q_NAMED[k]), /* spec 052 (issue 1927): check-question-markdown renders a question built from invented pieces through the card's own renderer */brain:{host:()=>BRAIN_H,state:()=>BRAIN_STATE,why:()=>BRAIN_WHY,flag:BRAIN_PREVIEW,queued:()=>BRAIN_Q.length}, /* spec 106 T006: check-brain-draw and check-brain-dock read the dock's frame counts */announce,renderRestoreStrip,afArrivalPrio,afTracker:{ids:()=>AFT.ids(),pending:()=>AFT.pendingList().map(v=>v.id+'|'+v.kind),quiet:()=>AFT.isQuiet,follow:id=>AFT.follow(id)}, /* spec 005 FR-237: drivers only: what Auto-follow follows, holds and whether it is quiet; follow() makes an agent followed without a hand open (which would drop the others, spec 052 FR-185) */ afNotice:{ms:v=>{AF_NOTICE_MS=Math.max(100,Number(v)||3000);return AF_NOTICE_MS;},on:v=>{setAutoFollowOn(!!v);return AF_ON;},shown:()=>!!AF_NOTICE}, /* spec 052 FR-239: drivers only: the notice's length, Auto-follow without Settings */swapCardOptions:id=>{const c=byId(id)&&pendingCardOf(byId(id));if(!c)return 0;const os=[...c.querySelectorAll('.q-opt')];os.forEach(b=>b.replaceWith(b.cloneNode(true)));return os.length;}, /* spec 052 FR-197: the live card rebuilds its options (the card stays, the old buttons are gone); a driver checks that a row's old option answers nothing */
   chatTrimNow:()=>chatTrimPending(false), /* spec 005 FR-238: trim the chats waiting for a frame now (a burst with no frame between) */
   hiddenTrimTimer:()=>({on:!!hiddenTrimT,ms:TRIM_HIDDEN_MS}),
   helperState:(id,st)=>{const h=agents.find(x=>x.id===id&&x.parent);if(!h||!['working','thinking','waiting','error','limit','done','idle'].includes(st))return false;h.state=st==='limit'?'waiting':st;h.limit=st==='limit';h.paused=false;layoutKey='';renderAll();return true;}, /* spec 097 T335 (issue 1642): drivers only: a helper's state the simulator never sends (waiting, limit), for the kids on the desk */
