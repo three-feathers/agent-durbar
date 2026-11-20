@@ -246,6 +246,7 @@ for (const wid of worldIds) {
   const pending = [...sections(mdAll)].filter(([, x]) => /^pending/.test(x['likeness-check'] || '')).map(([n]) => n);
   assert.deepStrictEqual(pending, [], `${wid}: every person has its likeness check on record (FR-068)`);
   if (wid === 'cave') assert.strictEqual([...w.files.keys()].filter((n) => /^kid\d-/.test(n)).length, 42, 'the cave ships 6 kids x 7 states (spec 102 T326)');
+  if (wid === 'retro') assert.strictEqual([...w.files.keys()].filter((n) => /^kid\d-/.test(n)).length, 42, 'the arcade ships 6 pixel kids x 7 states (spec 102 T327)');
   packs++; biggest = Math.max(biggest, [...all.values()].reduce((n, b) => n + b.length, 0));
   if (wid === 'photo') { for (const [k, v] of all) files.set(k, v); md = mdAll; pj = merged; META = JSON.parse(merged); }
 }
@@ -489,7 +490,7 @@ if (worldIds.includes('retro')) {
 {
   const kw = require(path.join(ROOT, 'scripts', 'kids-worlds.js')) as { kidsWorlds: () => string[]; pickKidsWorld: (v: string | undefined, m?: string) => string }; // eslint-disable-line @typescript-eslint/no-var-requires
   const kidWorlds = kw.kidsWorlds();
-  assert.ok(kidWorlds.includes('photo') && kidWorlds.includes('cave'), 'the worlds with kids (world.json has `kids`) include photo and cave: ' + kidWorlds.join(', '));
+  assert.ok(kidWorlds.includes('photo') && kidWorlds.includes('cave') && kidWorlds.includes('retro'), 'the worlds with kids (world.json has `kids`) include photo, cave and retro: ' + kidWorlds.join(', '));
   /* check-097-kids.js KIDS_WORLD (outside the Pillow branch, #1867 review: the fail-loud validation needs no Pillow and runs on every machine): an unknown name fails loudly with the valid names; KIDS_MUTANT=worldfallback (the old silent fallback to photo) must be caught here */
   const kidsWorldProbe = (value: string | undefined, mutant?: string): void => {
     assert.strictEqual(kw.pickKidsWorld(undefined, mutant), 'photo', 'KIDS_WORLD unset checks photo');
