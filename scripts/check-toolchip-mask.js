@@ -202,6 +202,27 @@ module.exports = async (ctx) => {
     console.log(`[toolchip-mask] continuation, replay, VS Code and demo feeds masked`);
   }
 
+  // the adapter-cut rule takes only a label at an adapter's cap: a harmless replayed or VS Code label of 199 to 299 characters reads as
+  // chipArg reads it (one pin per path: 250 characters), and so does every line of 199 to 299 characters of this repository's sources and specs
+  {
+    await H.load({ w: 1440, h: 900, query: {}, ready: 'fit' });
+    const pin = ('npm run build && ' + 'node scripts/build-step.js --quiet && '.repeat(6) + 'echo finished building the whole project tree').slice(0, 250);
+    assert.strictEqual(pin.length, 250);
+    const fs = require('fs'), path = require('path');
+    const lines = new Set();
+    const walk = (d) => { for (const e of fs.readdirSync(d, { withFileTypes: true })) { const f = path.join(d, e.name); if (e.isDirectory()) walk(f); else if (/\.(js|ts|md)$/.test(e.name)) for (const l of fs.readFileSync(f, 'utf8').split(/\r?\n/)) { const t = l.replace(/\s+/g, ' ').trim(); if (t.length >= 199 && t.length <= 299) lines.add(t); } } };
+    for (const d of ['src', 'specs', 'scripts']) walk(path.join(__dirname, '..', d));
+    const r = await js(`(()=>{const U=window.__durbarSimUi,pin=${jsLiteral(pin)},ls=${jsLiteral([...lines])};
+      const pins={replay:U.cutLabel('bash',pin),vscode:U.cutLabel('tool',pin)};let bad=0;const ex=[];
+      for(const l of ls){if(U.cutLabel('bash',l)!==U.chipArg('bash',l).label||U.cutLabel('tool',l)!==U.chipArg('tool',l).label){bad++;if(ex.length<5)ex.push(l.slice(0,120));}}
+      return {pins,n:ls.length,bad,ex};})()`);
+    assert.strictEqual(r.pins.replay, pin, 'CUT-PIN replay: a 250-character harmless label reads unchanged');
+    assert.strictEqual(r.pins.vscode, pin, 'CUT-PIN VS Code: a 250-character harmless label reads unchanged');
+    console.log(`[toolchip-mask] adapter-cut rule: ${r.n} repo lines of 199-299 characters, changes ${r.bad}`);
+    for (const e of r.ex) console.log('  changed:', e);
+    assert.strictEqual(r.bad, 0, `CUT-RULE ${r.bad} of ${r.n} uncut lines lose their last word`);
+  }
+
   // differential: the harmless corpus shows exactly what main shows (main: label = raw one line cut at 400, full = raw cut at 20,000)
   {
     await H.load({ w: 1440, h: 900, query: {}, ready: 'fit' });
