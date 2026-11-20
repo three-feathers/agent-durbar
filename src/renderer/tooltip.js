@@ -107,7 +107,7 @@
     document.addEventListener('click',e=>{const f=find(e.target); if(!f)return; dismissed=f.el; hide();},true);
     document.addEventListener('keydown',e=>{
       if(e.key!=='Escape'||!cur||!tip||tip.hidden)return;
-      const byPointer=!!hov&&cur===hov; /* a tooltip the pointer is resting on (the pointer stays where a click left it) must not take the Escape that closes a chat or a menu: it goes hides here and goes on; a keyboard focus tooltip is dismissed and the key is used up (spec 001 FR-270, 2026-11-19) */
+      const byPointer=!!hov&&cur===hov; /* a tooltip the pointer is resting on (the pointer stays where a click left it) must not take the Escape that closes a chat or a menu: it is hidden here and the key goes on; a keyboard focus tooltip is dismissed and the key is used up (spec 001 FR-270, 2026-11-19) */
       dismissed=cur.el; hide(); if(!byPointer)e.stopPropagation(); /* WCAG 1.4.13: dismissible */
     },true);
     window.addEventListener('scroll',()=>{if(cur)hide();},true);
