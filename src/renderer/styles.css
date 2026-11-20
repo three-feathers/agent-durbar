@@ -2314,7 +2314,7 @@ body.has-csearch.cs-demo .cs-box{visibility:hidden} /* the demo office: kept in 
 .cs-spin{flex:none;width:14px;height:14px;color:var(--ink-2)} /* spec 095 FR-053: the running sign; the text says it too */
 .cs-state.running .cs-spin{animation:bspin 1s linear infinite}
 @media (prefers-reduced-motion:reduce){.cs-state.running .cs-spin{animation:none}}
-html[data-motion-off] .cs-state.running .cs-spin{animation:none} /* a static ring beside the text */
+html[data-motion-off] .cs-state.running .cs-spin{animation:none} /* a static arc beside the text */
 .cs-notes{padding:var(--s-2) var(--s-4);font-size:var(--t4-size);line-height:var(--t4-lh);color:var(--muted);border-bottom:1px solid var(--line-soft)}
 .cs-ghead{padding:var(--s-3) var(--s-4) var(--s-1);font-size:var(--t4-size);font-weight:var(--t1-weight);color:var(--ink)}
 .cs-ghead span{font-weight:var(--t3-weight);color:var(--muted)}

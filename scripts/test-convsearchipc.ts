@@ -125,6 +125,7 @@ async function main(): Promise<void> {
   const NOTES0 = { floorOffFolders: 0, mcpValuesLocked: false, lateLists: 0, lateApps: [] as string[] };
   let scopeOf: () => Scope = () => ({ plan: { sessions: [] }, read: async () => ({ ok: true, items: [] }), values: () => [], notes: NOTES0 });
   let hold: Promise<void> | undefined;
+  let maskCalls = 0; // titles masked by the early title pass (a cancelled search must stop it)
   let sessionSteps: ((cb: (x: unknown[], v: () => string[]) => void) => void) | undefined; // spec 095 FR-054: the sessions the fake plan has so far
   const listingSteps: Array<[number, number]> = []; // issue 1904: what the fake plan reports while it is built
   const deferred: Array<() => void> = [];
@@ -133,7 +134,7 @@ async function main(): Promise<void> {
     keptLists: cache,
     hasSessions: () => sessions > 0,
     scope: async (...a: unknown[]) => { scopeCalls.push(a); stops.push(a[0] as () => boolean); for (const [d, t] of listingSteps) (a[2] as (d: number, t: number) => void)(d, t); sessionSteps?.(a[3] as (x: unknown[], v: () => string[]) => void); if (hold) await hold; return scopeOf(); },
-    matcher: () => ({ masker, search }),
+    matcher: () => ({ masker: { ...masker, maskText: (...a: Parameters<typeof masker.maskText>) => { maskCalls++; return masker.maskText(...a); } }, search }),
     defer: (fn) => { deferred.push(fn); },
     sleep: () => tick(), // the 250 ms between batches, without waiting
   });
@@ -367,6 +368,24 @@ async function main(): Promise<void> {
     assert.deepStrictEqual(all.sort(), ['e1', 'o1'], 'the scan does not send the early rows again');
     sessionSteps = undefined;
     hold = undefined;
+    // a search cancelled between two plan steps matches no more titles and sends nothing more
+    win1.sent.length = 0;
+    let sid1 = '';
+    let masksAtCancel = -1;
+    sessionSteps = (cb) => {
+      cb([sess({ sessionId: 'a1x', title: 'invoice first' })], vals);
+      void handlers.get('search:cancel')!(E1, sid1);
+      masksAtCancel = maskCalls;
+      cb([sess({ sessionId: 'b1x', title: 'invoice second' })], vals);
+    };
+    const rq = await start(E1, 'invoice');
+    assert.ok(rq.ok);
+    sid1 = rq.ok ? rq.searchId : '';
+    runDeferred();
+    await settle(30);
+    assert.deepStrictEqual(win1.sent.flatMap(([, p]) => (p.kind === 'batch' ? p.hits.map((h) => h.sessionId) : [])), ['a1x'], 'the first step was sent, the second never');
+    assert.strictEqual(maskCalls, masksAtCancel, 'a cancelled search masks and matches no more titles');
+    sessionSteps = undefined;
   }
 
   // a scope that throws: said with a failed done, never silent

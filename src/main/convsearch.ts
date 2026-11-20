@@ -420,11 +420,14 @@ export function createEarlyTitles(query: string, d: Pick<ScanDeps, 'masker' | 's
     add(sessions) {
       if (!words.length) return;
       const out: ScanHit[] = [];
+      let looked = 0;
       for (const s of sessions) {
         if (!s || s.helper || s.floorOff || s.hidden || emitted.size >= BUDGET.maxResults) continue; // the same left-outs as `orderPlan`, which counts them
+        if (looked >= BUDGET.maxSessions) break; // bounded work per call: the rest is left to `startScan`'s title pass (not marked seen)
         const k = sessionKey(s, d.platform);
         if (seen.has(k)) continue;
         seen.add(k);
+        looked++;
         let t: ReturnType<typeof titleOf>;
         try { t = titleOf(s, query, d, d.values(s), words.length); } catch { continue; }
         if (t.failed || t.confirmed.size < words.length) continue;
@@ -540,8 +543,7 @@ export function startScan(plan: ScanPlan, query: string, deps: ScanDeps): { canc
       const best = t.best.slice(); // issue 1904: the best place of each word in the title or a shown message
       const titleDone = !t.failed && confirmed.size === words.length;
       const hit = (excerpts: Excerpt[], more: number): ScanHit => hitOf(s, title, titleMarks, excerpts, more, rankOfBest(best));
-      if (titleDone && s.content === 'title') return undefined; // its row went out in the title pass
-      if (s.content === 'title') return undefined;
+      if (s.content === 'title') return undefined; // searched by title only (Q4): a title hit went out in the title pass
       // review of PR 1098, finding 4: a reader that throws costs this session only (counted as unreadable), not the scan
       let r: ReadOutcome;
       try {
