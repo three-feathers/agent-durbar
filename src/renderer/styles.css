@@ -291,6 +291,7 @@ button.room-aiu:hover{text-decoration:underline;text-underline-offset:2px}
 /* spec 052 FR-101: on cards and list rows a status that needs nothing from you is a dot and the word in its colour; Waiting, Error,
    Failing and Limit reached (a waiting state) keep the filled pill. Only colours change: the pill keeps its height and padding */
 :is(.desk,.lrow) .pill:is(.st-working,.st-thinking,.st-compacting,.st-idle,.st-done){background:transparent;border-color:transparent}
+.crew-head .px{image-rendering:pixelated} /* spec 102 FR-203, T390: Retro pixel heads scale nearest, never smoothed */
 .stage[data-d="full"] .desk.is-idle .scene:not(.has-crew-pic),.stage[data-d="full"] .desk.is-idle .info{opacity:.7}
 
 /* sub-agents: beside the parent, connected by a line */

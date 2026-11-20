@@ -25,6 +25,12 @@ export interface BrainMask {
   schemePrefix(word: string): boolean;
   /** Is the whole word an auth scheme word (`Bearer`)? */
   schemeWord(word: string): boolean;
+  /** Spec 012 FR-188: a word with its entity and percent-escape forms of token characters read as the characters (a header name written that way). */
+  decodeTokenForms?(text: string): string;
+  /** Spec 012 FR-188: runs `fn` with the decoded reading off (the reading as before FR-188). */
+  withoutDecode?<T>(fn: () => T): T;
+  /** Spec 012 FR-182/FR-188: `head` with every piece that `ref` (another masked reading of the same text) does not show masked. */
+  keepShownBy?(head: string, ref: string): string;
   /**
    * The app's usage units (spec 011 `usagetotals.js` `validNano`, spec 052 `costtable.js` `AIU_USD` and `money`): the page passes `DurbarUsage` and
    * `DurbarCost`. Without it a `nanoAiu` figure is "not reported" and only `costUsd` counts.
@@ -294,7 +300,10 @@ function expects(mask: BrainMask, text: string): boolean {
 function heldOk(mask: BrainMask, head: string): boolean {
   const words = head.split(/\s+/).filter(Boolean);
   // a name then its separator, with or without the scheme word glued on (`Authorization:Bearer`, `"Authorization":"Bea`)
-  const named = (w: string): boolean => {
+  // spec 012 FR-188 (review of PR 1899, round 2): a name with a character in an entity or a percent-escape form is read as the masks read it
+  const dec = (w: string): string => (mask.decodeTokenForms ? safe(() => mask.decodeTokenForms!(w)) : w);
+  const named = (w0: string): boolean => {
+    const w = dec(w0);
     const m = /^["'(]?([A-Za-z][A-Za-z0-9_.-]{0,40})["']?[:=]["']?(.*)$/.exec(w);
     // spec 012 FR-187 (review of PR 1872, round 4): the name itself must be no secret (a token glued to a separator reads as a name here, and the value pass after a mask
     // made it look like a header that expects its value, so its raw head was held); a name the masks change is never held raw
@@ -309,6 +318,8 @@ function heldOk(mask: BrainMask, head: string): boolean {
  * Does the end of `joined`'s last line expect a secret value? `at` is where its raw tail starts, `head` the tail itself (header words, no secret yet). Null when not.
  */
 function valueExpected(mask: BrainMask, joined: string): { at: number; head: string } | null {
+  // spec 012 FR-188 (review of PR 1899, round 2): a header written with a character in an entity or a percent-escape form is a header to the masks, so here too
+  const dec = (w: string): string => (mask.decodeTokenForms ? mask.decodeTokenForms(w) : w);
   try {
     const line0 = joined.lastIndexOf('\n') + 1;
     const start = Math.max(line0, joined.length - 400);
@@ -320,13 +331,17 @@ function valueExpected(mask: BrainMask, joined: string): { at: number; head: str
     const lastW = L.match(/\S+$/);
     if (lastW) {
       const lastAt = starts[starts.length - 1];
-      const sep = Math.max(lastW[0].lastIndexOf(':'), lastW[0].lastIndexOf('='));
-      const part = lastW[0].slice(sep + 1).replace(/^["']/, '');
-      if (part.length > 0 && part.length <= 9 && mask.schemePrefix(part)) {
+      // the separator is found in the decoded word (FR-188, review of PR 1899, round 3: a separator in such a form glued to the scheme word); the part after it is
+      // the same characters at the end of the word as written, or the word is not read here
+      const dw = dec(lastW[0]);
+      const dsep = Math.max(dw.lastIndexOf(':'), dw.lastIndexOf('='));
+      const part = dw.slice(dsep + 1).replace(/^["']/, '');
+      const sep = dsep < 0 ? -1 : lastW[0].endsWith(dw.slice(dsep + 1)) ? lastW[0].length - (dw.length - dsep - 1) - 1 : -2;
+      if (sep > -2 && part.length > 0 && part.length <= 9 && mask.schemePrefix(part)) {
         const restAt = lastAt + sep + 1;
         let tried = 0;
         for (let k = starts.length - 1; k >= 0 && tried < 4; k--) {
-          if (starts[k] > lastAt || (starts[k] === lastAt && sep < 0) || !/[:=]/.test(L.slice(starts[k], k === starts.length - 1 ? restAt : starts[k + 1]))) continue;
+          if (starts[k] > lastAt || (starts[k] === lastAt && sep < 0) || !/[:=]/.test(dec(L.slice(starts[k], k === starts.length - 1 ? restAt : starts[k + 1])))) continue;
           tried++;
           // the words before the part scheme word must themselves expect a value (a bare `Bearer x` is masked after any words)
           if (expects(mask, L.slice(starts[k], restAt))) return { at: start + starts[k], head: L.slice(starts[k]) };
@@ -337,7 +352,7 @@ function valueExpected(mask: BrainMask, joined: string): { at: number; head: str
     let tried = 0;
     for (let k = starts.length - 1; k >= 0 && tried < 4; k--) {
       const word = L.slice(starts[k]).split(/\s/, 1)[0];
-      if (!/[:=]/.test(word) && !mask.schemeWord(word)) continue;
+      if (!/[:=]/.test(dec(word)) && !mask.schemeWord(dec(word))) continue;
       tried++;
       const tail = L.slice(starts[k]);
       if (!expects(mask, tail)) continue;
@@ -350,8 +365,8 @@ function valueExpected(mask: BrainMask, joined: string): { at: number; head: str
 /* ---------- streamed text: one masked tail per stream ---------- */
 
 /** One stream's masked tail; `key` is the depth of unclosed private key blocks (its pieces are dropped), `carry` a possible start of an END marker. */
-export interface Tail { buf: string; key: number; carry: string }
-const freshTail = (): Tail => ({ buf: '', key: 0, carry: '' });
+export interface Tail { buf: string; key: number; carry: string; shown?: string; ref?: Tail }
+const freshTail = (): Tail => ({ buf: '', key: 0, carry: '', shown: '' });
 function clearStreams(s: BrainState): void { s.think = freshTail(); s.out = freshTail(); s.inKeyBlock = false; }
 
 const KEY_MARK = /-----(BEGIN|END)[\sA-Z0-9_-]{0,100}?PRIVATE\s{1,8}KEY(?:\s{1,8}BLOCK)?-----/gi;
@@ -382,6 +397,13 @@ function markerSuffix(text: string): string {
   return run;
 }
 
+/**
+ * Spec 012 FR-188 (review of PR 1899): the end of a piece that can still become another character once the next piece comes: a numeric entity without its `;`
+ * (up to 7 decimal or 6 hex digits after at most 4 zeros: a number HTML may still read as another character, a hidden one included), a lone `&` (review of PR 1899, round 4: an entity that completes in the next piece, after a masked value too), a start of a known entity name, or a percent escape still missing
+ * a hex digit (re-encoded up to 8 times). It holds digits of a character code or a fixed entity name only, and is never shown: the views show the whole text read at once.
+ */
+const HELD_FORM = /(?:&(?:#(?:[Xx]0{0,4}[0-9A-Fa-f]{0,6}|0{0,4}[0-9]{0,7})?|(?:l(?:o(?:w(?:b(?:ar?)?)?)?)?|u(?:n(?:d(?:e(?:r(?:b(?:ar?)?)?)?)?)?)?|p(?:e(?:r(?:i(?:od?)?)?)?|l(?:us?)?)?|s(?:ol?)?|e(?:q(?:u(?:a(?:ls?)?)?)?)?|c(?:o(?:l(?:on?)?)?)?))?|%(?:25){0,8}[0-9A-Fa-f]?)$/i;
+const HELD_MAX = 32;
 /** One piece of text into a stream's tail (F1, F1b, H1..H4): masks the masked tail plus the new text again, as a whole. */
 function streamText(tail: Tail, piece: string, whole: boolean, mask: BrainMask): Tail {
   let { buf, key, carry } = tail;
@@ -392,10 +414,14 @@ function streamText(tail: Tail, piece: string, whole: boolean, mask: BrainMask):
     const r = scanKeys(text, key);
     if (r.rest !== null) { key = 0; carry = ''; raw = r.rest; } else { key = r.depth; carry = markerSuffix(text); raw = ''; }
   }
-  if (!raw) return { buf, key, carry };
+  if (!raw) return { buf, key, carry, shown: buf };
   // The masked tail plus the new text: a token split across deltas is whole again here. The head of a token that was already
   // masked leaves its tail glued to the mask in the next delta, which matches no shape: that tail goes into the mask (F1).
-  const joined = buf + raw;
+  const whole0 = buf + raw;
+  // spec 012 FR-188 (review of PR 1899): an entity or a percent escape that the next piece can still extend (`&#82` before `03;`) is held as written, out of
+  // this reading, so the masks never read it as a character it is not; it holds a few digits or a known entity name only, and joins the next piece
+  const held = (HELD_FORM.exec(whole0.slice(-HELD_MAX)) || [''])[0];
+  const joined = held ? whole0.slice(0, -held.length) : whole0;
   let open = -1;
   let failed = false;
   try { open = mask.openKeyBlockStart(joined); } catch { open = 0; failed = true; } // a failing check fails closed: treat as open, keep no text (H8)
@@ -411,7 +437,15 @@ function streamText(tail: Tail, piece: string, whole: boolean, mask: BrainMask):
     // space. The header words (no secret yet) stay raw until the value comes, so the whole line masks together.
     buf = (safe(() => mask.maskGluedTail(brainMaskText(mask, joined.slice(0, cut.at)))) + cut.head).slice(-BUF_MAX);
   } else buf = safe(() => mask.maskGluedTail(brainMaskText(mask, joined))).slice(-BUF_MAX);
-  return { buf, key, carry };
+  // what the views show: with a held form, the whole text read at once (it may hide more than the next piece will), so a held form is never shown as written
+  // and no state waits for a next piece (FR-188, review of PR 1899, round 2: a stream that ends on it); the held copy only joins the next piece
+  let shown = buf;
+  if (held && !failed && nest.depth === 0 && open < 0) {
+    shown = safe(() => mask.maskGluedTail(brainMaskText(mask, whole0))).slice(-BUF_MAX);
+    // the held copy always joins the next piece (review of PR 1899, round 3: folding the whole reading back in lost the form, and a later piece showed); the views read `shown`
+    buf = (buf + held).slice(-BUF_MAX);
+  }
+  return { buf, key, carry, shown };
 }
 
 /**
@@ -551,7 +585,7 @@ function onTool(s: BrainState, ev: Ev, now: number, mask: BrainMask): void {
       helper: typeof ev.agentId === 'string' && ev.agentId !== '', program: g.glyph === 'mcp' ? programOf(server) : tg.program, server, targetKind: tg.targetKind, target: tg.target,
       why: phase === 'start' && !ev.agentId ? lastSentence(s.buf) : '', files: tg.files, costAtStart: s.turnCost,
     };
-    if (phase === 'start' && !ev.agentId) { s.buf = ''; s.think = { ...s.think, buf: '' }; s.out = { ...s.out, buf: '' }; }
+    if (phase === 'start' && !ev.agentId) { s.buf = ''; s.think = { ...s.think, buf: '', shown: '', ref: undefined }; s.out = { ...s.out, buf: '', shown: '', ref: undefined }; }
     turn.steps.push(st);
     if (turn.steps.length > STEP_CAP) { turn.steps.shift(); turn.folded += 1; }
     if (phase !== 'start') countAndRun(s, st, phase === 'failed', late);
@@ -609,9 +643,22 @@ export function brainState(prev: BrainState, ev: unknown, now: number, mask: Bra
         const t = ensureTurn(s, now);
         const whole = e.type === 'output' && e.final === true && typeof e.text === 'string';
         const key = e.type === 'thinking' ? 'think' : 'out';
-        s[key] = streamText(s[key], whole ? (e.text as string) : str(e.delta), whole, mask);
+        const piece = whole ? (e.text as string) : str(e.delta);
+        const prev = s[key];
+        let next = streamText(prev, piece, whole, mask);
+        // spec 012 FR-188 (review of PR 1899, independent differential): once a stream holds an entity or a percent escape, it is also read with the decoded reading off
+        // (as before FR-188; until then both readings are the same, so it starts from this tail), and the views show nothing that reading hides: a token the decoded
+        // reading masked early glues the next piece to its mask, and the rules after it can read that differently
+        if (typeof mask.withoutDecode === 'function' && typeof mask.keepShownBy === 'function' && (prev.ref || /[&%]/.test(piece))) {
+          const ref0: Tail = prev.ref ?? { buf: prev.buf, key: prev.key, carry: prev.carry, shown: prev.shown };
+          const ref = mask.withoutDecode(() => streamText(ref0, piece, whole, mask));
+          const shownNow = next.shown ?? next.buf;
+          const keptRaw = safe(() => mask.keepShownBy!(shownNow, ref.shown ?? ref.buf));
+          next = { ...next, shown: keptRaw.slice(-BUF_MAX), ref: { buf: ref.buf, key: ref.key, carry: ref.carry, shown: ref.shown } };
+        }
+        s[key] = next;
         s.inKeyBlock = s.think.key > 0 || s.out.key > 0;
-        s.buf = s[key].buf;
+        s.buf = s[key].shown ?? s[key].buf;
         const cur = currentStep(s);
         if (t.endedAt === null && !(s.act.kind === 'tool' && cur && cur.state === 'running')) s.act = { kind: e.type === 'thinking' ? 'think' : 'reply', glyph: e.type === 'thinking' ? 'think' : null, stepN: null };
         break;

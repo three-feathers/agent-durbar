@@ -82,7 +82,13 @@
   const unhidBoth=(raw,run,bare,fail)=>{try{const s=String(raw==null?'':raw),c=unhide(s);if(c===s)return run(s);const m=run(s);if(m===null||m==='')return m;
     const c2=unhide(m);if(c2===m)return m;const m2=run(c2);return m2===null||m2===bare(c2)?m:m2;}catch(e){return fail;}};
   /* both readings of one text: this PR's (split tokens masked first, unhidBoth) and the one before it (old, unhid), nothing shown that the second hides */
-  const both2=(raw,w,go)=>{const s=String(raw==null?'':raw);const h=go(w,unhidBoth);if(h===null||h==='')return h;if(w===s&&unhide(s)===s)return h;const r=old(()=>go(s,unhid));if(r===null||r==='')return r;return keep(h,r);};
+  const both2=(raw,w,go,src)=>{const s=String(raw==null?'':raw);const h=go(w,unhidBoth);if(h===null||h==='')return h;
+    /* spec 012 FR-188 (review of PR 1899, independent differential): with an entity or a percent escape in the text, the same reading with the decoded reading off is a
+       reference too (its split step as before FR-188; the steps after it can read a decoded mask differently: a hidden character removed glues a keyword to it), so
+       nothing it hides shows; the shared withoutDecode, throws without it (callers fail closed) */
+    let hd=h;if(DEC_GATE.test(s)){if(!SH||typeof SH.withoutDecode!=='function')throw new Error('no withoutDecode');const h0=SH.withoutDecode(()=>go(splitFirst(src==null?s:src),unhidBoth));if(h0===null||h0==='')return h0;hd=keep(h,h0);}
+    if(w===s&&unhide(s)===s)return hd;const r=old(()=>go(s,unhid));if(r===null||r==='')return r;return keep(hd,r);};
+  const DEC_GATE=/[&%]/;
   /* spec 012 FR-182 (review of PR 1721, round 4): every desk mask first masks the tokens split by a line break, a mark, a tag, a comment or a hidden character
      (the shared maskSplitTokens, the step redact starts with; nothing else of the text changes), then runs its own steps (unhide, unescape, plain, redact) on that
      output exactly as before PR 1721. A split token is gone before those steps can glue or break it, and everything else they read as they did. Without the
@@ -127,9 +133,9 @@
     const u=unesc(r0),m=both(u,plainKeep(u,codeWord),redact);
     return looseNow(m).replace(/_/g,'');}catch(e){if(e===OVER)throw e;return null;}}; /* spec 012 FR-185: the GitHub last pass before `_` goes, which it needs */ /* OVER is final: unhid's catch gives null, never the text as written */
   const maskPlain1=(raw,redact,codeWord)=>{if(typeof redact!=='function')return null;
-    const s0=String(raw==null?'':raw);let w;try{w=splitFirst(s0.length>DESK_SPLIT_MAX?windowOf(shownSource(s0)):s0);}catch(e){return null;}
+    const s0=String(raw==null?'':raw);let w,src;try{src=s0.length>DESK_SPLIT_MAX?windowOf(shownSource(s0)):s0;w=splitFirst(src);}catch(e){return null;}
     const go=(x,u)=>u(x,t=>maskPlain0(t,redact,codeWord),c=>plainKeep(unesc(c),codeWord).replace(/_/g,''),null);
-    try{return both2(raw,w,go);}catch(e){return null;}};
+    try{return both2(raw,w,go,src);}catch(e){return null;}};
   /* the masked text, not made plain or cut: masked as it is, and again on the plain-kept text when Markdown that can split a token is
      present (otherwise the text is shown as it is). '' when masking is not possible. */
   const maskRaw1=(raw,redact)=>{if(typeof redact!=='function')return '';const s0=String(raw==null?'':raw);
