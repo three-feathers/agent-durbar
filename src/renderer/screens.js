@@ -512,6 +512,15 @@
     const stillSec=X.bridge.setStillHighlights&&X.isStillHl?`<section class="scr-sec" aria-labelledby="stillH"><h3 id="stillH">Highlights</h3>
         <p class="scr-note">A desk that needs you or has a New reply glows, and its person jumps and then keeps pulsing until you answer. Turn this on to keep the glow and the New badge but stop that movement: the pulsing, the waving hand, the tapping and the badge's pings. In Real office the whole room stands still. Some other small animations still follow your system's reduced motion setting.</p>
         <div class="scr-tools"><span class="swrow" style="display:flex;align-items:center;gap:10px"><b>Still highlights</b> <small>(no motion)</small>${sw(stillOn,'Still highlights (no motion): desks keep the glow and the New badge, the person does not move','id="stillSw"')}</span><span class="scr-note small" id="stillMsg" role="status"></span></div></section>`:'';
+    /* spec 106 FR-060 (T426): Settings > Brain view: the dock beside the chat (on by default) and its motion; the row shows what main saved (settings:get) */
+    const BV=X.brainView, bvOn=BV?(typeof app.brainView==='boolean'?app.brainView:!!BV.on()):true, bvMo=BV?((app.brainMotion==='calm'||app.brainMotion==='still'||app.brainMotion==='full')?app.brainMotion:BV.motion()):'full';
+    if(BV&&typeof app.brainView==='boolean'&&app.brainView!==!!BV.on())BV.set(app.brainView);
+    if(BV&&bvMo!==BV.motion())BV.setMotion(bvMo);
+    const bvWhy=BV?BV.forced():'';
+    const brainSec=BV&&X.bridge.setBrainView&&X.bridge.setBrainMotion?`<section class="scr-sec" aria-labelledby="brainH"><h3 id="brainH">Brain view</h3>
+        <p class="scr-note">Beside an open chat, a picture of which tools its agent uses, with the step, why and the cost in words, and Your door under it. It is a picture of tools, not a real brain. It reads what the agent already reports and sends nothing.</p>
+        <div class="scr-tools"><span class="swrow" style="display:flex;align-items:center;gap:10px"><b>Brain view</b> <small>(beside the chat)</small>${sw(bvOn,'Brain view: the brain and Your door beside an open chat','id="brainSw"')}</span><span class="scr-note small" id="brainMsg" role="status">${BV.override()!==null?'This run starts it '+(BV.override()?'on':'off')+' (DURBAR_BRAIN); the switch is saved for the next start.':''}</span></div>
+        <div class="scr-tools"><label class="swrow" style="display:flex;align-items:center;gap:10px"><b>Brain motion</b><select id="brainMotionSel" aria-label="Brain motion"${bvWhy?' aria-describedby="brainMoMsg"':''}><option value="full"${bvMo==='full'?' selected':''}>Full</option><option value="calm"${bvMo==='calm'?' selected':''}>Calm (no glow or sparks)</option><option value="still"${bvMo==='still'?' selected':''}>Still (no motion)</option></select></label><span class="scr-note small" id="brainMoMsg" role="status">${bvWhy?'Still for now: set by '+esc(bvWhy)+'.':''}</span></div></section>`:'';
     const ab=app.about;
     const aboutSec=ab?`<section class="scr-sec" aria-labelledby="aboutH"><h3 id="aboutH">About</h3>
         <p class="scr-note"><b>${esc(ab.name)}</b> ${esc(ab.version)} · by <b>${esc(ab.owner)}</b></p>
@@ -549,7 +558,7 @@
         <li>It sends nothing to any server of its own.</li>
         <li>Rooms you hide or switch off still run and cost money.</li></ul></section>`;
     const keep=focus?null:keepPlace(r); /* spec 069 FR-069: a repaint (not the opening) keeps the scroll and the focused control */
-    r.innerHTML=head('Settings')+`<div class="scr-wrap"><div class="scr-cols"><nav class="scr-nav" id="scrNav" aria-label="Settings sections" hidden></nav><div class="scr-body">${hsSec}${pfSec}${detailSec}${worldSec}${keySec}${notSec}${themeSec}${charSec}${logoSec}${motionSec}${stillSec}${capSec}${moodSec}${breakSec}${linksSec}${notifySec}${followSec}${schedSec}${floorsSec}${teamsSec}${orgSec}${placesSec}
+    r.innerHTML=head('Settings')+`<div class="scr-wrap"><div class="scr-cols"><nav class="scr-nav" id="scrNav" aria-label="Settings sections" hidden></nav><div class="scr-body">${hsSec}${pfSec}${detailSec}${worldSec}${keySec}${notSec}${themeSec}${charSec}${logoSec}${motionSec}${stillSec}${brainSec}${capSec}${moodSec}${breakSec}${linksSec}${notifySec}${followSec}${schedSec}${floorsSec}${teamsSec}${orgSec}${placesSec}
       <details class="scr-adv" id="advMcp"${advOpen?' open':''}><summary><h3 class="scr-adv-h">Advanced: MCP servers (extra tools for agents)</h3><span class="mtag warn" id="advMcpAtt"${live&&live.agg.attention?'':' hidden'}>${esc(attText(live?live.agg.attention:0))}</span></summary>
       <section class="scr-sec" aria-labelledby="mcpH"><h3 id="mcpH" tabindex="-1">MCP servers</h3>
         ${liveSection()}
@@ -618,7 +627,7 @@
       else{const m=$('usageTotalsMsg');if(m)m.textContent='Could not reset the totals.';}
     };
     r.onclick=onSettingsClick;r.onkeydown=(e)=>{worldKeys(e);charKeys(e);};
-    r.onchange=e=>{if(e.target&&e.target.id==='chatLinksSel')return onChatLinksChange(e);return onPlaceChange(e);};
+    r.onchange=e=>{if(e.target&&e.target.id==='chatLinksSel')return onChatLinksChange(e);if(e.target&&e.target.id==='brainMotionSel')return onBrainMotionChange(e);return onPlaceChange(e);};
     /* theme picker (spec 037): click applies live through app.js's applyTheme; no restart */
     /* spec 037 FR-014: each swatch shows its own theme's colours (validated colour values set through CSSOM) */
     /* FR-030 (#309): a mini room per card; previewRoom returns only validated colour values, set as custom properties through CSSOM */
@@ -989,6 +998,16 @@
     if(res&&res.ok){const v=res.chatLinksIn==='system'?'system':'session';if(X.setChatLinksIn)X.setChatLinksIn(v);e.target.value=v;if(m)m.textContent=v==='system'?'Chat links open in your usual browser.':'Chat links open in the session\'s Browser tab.';}
     else{e.target.value=X.chatLinksIn&&X.chatLinksIn()==='system'?'system':'session';saveFailed(res,'chatLinksMsg',e.target.value==='system'?'in your usual browser':'in the session browser');}
   }
+  /* spec 106 FR-060 (T426): Brain motion; what main says is in force stays shown */
+  async function onBrainMotionChange(e){
+    if(!X.bridge.setBrainMotion||!X.brainView)return;
+    const want=['full','calm','still'].includes(e.target.value)?e.target.value:'full';
+    let res=null; try{res=await X.bridge.setBrainMotion(want);}catch(err){res=null;}
+    const m=$('brainMoMsg'), v=res&&['full','calm','still'].includes(res.brainMotion)?res.brainMotion:X.brainView.motion();
+    X.brainView.setMotion(v); e.target.value=v;
+    if(!res||!res.ok){saveFailed(res,'brainMoMsg',v==='full'?'Full':v==='calm'?'Calm':'Still');return;}
+    const why=X.brainView.forced(); if(m)m.textContent='Brain motion is '+(v==='full'?'Full':v==='calm'?'Calm':'Still')+'.'+(why&&v!=='still'?' Still for now: set by '+why+'.':'');
+  }
   async function onPlaceChange(e){
     const sel=e.target.closest('select[data-place-sel]'); if(!sel||!X.bridge.setPlace)return;
     const li=sel.closest('li.plrow'), name=li&&li.dataset.srv; if(!name)return;
@@ -1107,6 +1126,19 @@
         mo.classList.toggle('on',inForce);mo.setAttribute('aria-checked',inForce?'true':'false');
         if(m)m.textContent='Could not save this setting. It stays '+(inForce?'on':'off')+'.';return;}
       mo.classList.toggle('on',res.motion);mo.setAttribute('aria-checked',res.motion?'true':'false');if(m)m.textContent=res.motion?'Motion is on.':'Motion is off: everything stays still.';
+      return;
+    }
+    const bvs=e.target.closest('#brainSw');
+    if(bvs&&X.bridge.setBrainView&&X.brainView){
+      if(bvs.dataset.busy==='1')return;
+      bvs.dataset.busy='1';
+      const on=bvs.getAttribute('aria-checked')!=='true';
+      let res=null; try{res=await X.bridge.setBrainView(on);}catch(err){res=null;}
+      delete bvs.dataset.busy;
+      const m=$('brainMsg'), isBool=!!res&&typeof res.brainView==='boolean';
+      if(isBool)X.brainView.set(res.brainView);
+      if(!res||!res.ok){const inForce=isBool?res.brainView:bvs.getAttribute('aria-checked')==='true';bvs.classList.toggle('on',inForce);bvs.setAttribute('aria-checked',inForce?'true':'false');if(m)m.textContent='Could not save this setting. It stays '+(inForce?'on':'off')+'.';return;}
+      bvs.classList.toggle('on',res.brainView);bvs.setAttribute('aria-checked',res.brainView?'true':'false');if(m)m.textContent=res.brainView?'Brain view is on: it shows beside an open chat.':'Brain view is off: chats use the full width.';
       return;
     }
     const st=e.target.closest('#stillSw');

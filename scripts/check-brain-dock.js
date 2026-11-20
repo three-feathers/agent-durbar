@@ -1,9 +1,10 @@
 /*
- * Spec 106 T006 (FR-014, FR-015, FR-025, FR-030, FR-031, FR-033, FR-037, SC-007): the dock at the top of the chat's right rail, behind the preview flag
- * (`?brain=1`), in the simulator with 15 agents, at 1440x900 and 1280x800, in Flat, the Photo office, the Retro arcade and the Prehistoric cave. No credits.
+ * Spec 106 T006, T426 (FR-014, FR-015, FR-025, FR-030, FR-031, FR-033, FR-037, FR-060, SC-007): the dock at the top of the chat's right rail, ON BY DEFAULT
+ * (Settings > Brain view; `?brain=0` is the run override that turns it off), in the simulator with 15 agents, at 1440x900 and 1280x800, in Flat, the Photo office, the Retro arcade and the Prehistoric cave. No credits.
  * In ui-suite.js; `node scripts/ui-suite.js --only check-brain-dock`. It fails (exit 1) when:
- *   - the flag is off and a chat has a right rail or loads anything of Brain view (FR-105), or the chat's width changes;
- *   - with the flag: the rail is not 360 px at the right of the chat, the chat is not the window less the agent rail and 360 px (FR-030), the page scrolls sideways,
+ *   - Brain view off (the run override, or Settings > Brain view switched off) and a chat has a right rail, loads anything of Brain view (FR-105), or loses width;
+ *   - the switch does not bring the rail back when turned on again; a window under 1100 px wide does not start with the rail collapsed (T426);
+ *   - on (the default, no query): the rail is not 360 px at the right of the chat, the chat is not the window less the agent rail and 360 px (FR-030), the page scrolls sideways,
  *     the dock is not above Your door, or any part of the rail is outside the window (15 agents fit, FR-037);
  *   - the region is not named "Brain view, <name>", the canvas is not decorative, or the dock shows another agent than the open chat's (a switch of chat follows);
  *   - Your door's heading and count are not visible, or its count differs from the agent rail's Your door count (SC-007), in the compact, legend and roomy states;
@@ -51,22 +52,64 @@ module.exports = async (ctx) => {
   const small = () => js(`[...document.querySelectorAll('#brainRail, #brainRail *')].filter(e=>e.getClientRects().length&&[...e.childNodes].some(n=>n.nodeType===3&&n.textContent.trim())).map(e=>[e.className||e.tagName,parseFloat(getComputedStyle(e).fontSize)]).filter(x=>x[1]<12)`);
   const pageScroll = () => js(`document.scrollingElement.scrollWidth>innerWidth||document.scrollingElement.scrollHeight>innerHeight`);
 
-  // ---- off by default: a chat has no right rail, nothing of Brain view loads (FR-105)
+  const settingsSwitch = async (on) => {
+    await js(`document.getElementById('backBtn')&&document.getElementById('backBtn').click()`);
+    await must(`!document.body.classList.contains('panel-open')`, 'the office');
+    await js(`document.getElementById('settingsBtn').click()`);
+    await must(`!!document.getElementById('brainSw')`, 'Settings > Brain view');
+    if ((await js(`document.getElementById('brainSw').getAttribute('aria-checked')==='true'`)) !== on) await js(`document.getElementById('brainSw').click()`);
+    await must(`document.getElementById('brainSw').getAttribute('aria-checked')===${jsLiteral(String(on))}&&/Brain view is /.test(document.getElementById('brainMsg').textContent)`, 'Brain view ' + (on ? 'on' : 'off'));
+    if (!on) {
+      await js(`document.getElementById('brainH').scrollIntoView({block:'center'})`);
+      assert.deepStrictEqual(await js(`[...document.querySelectorAll('#brainH, #brainH ~ *, #brainH ~ * *')].filter(e=>e.getClientRects().length&&[...e.childNodes].some(n=>n.nodeType===3&&n.textContent.trim())).map(e=>parseFloat(getComputedStyle(e).fontSize)).filter(x=>x<10.5)`), [], 'Settings > Brain view: text at least 10.5 px');
+      await H.shot(path.join(OUT, `106-dock-settings-${await js('innerWidth')}x${await js('innerHeight')}.png`), { prep: 'calm', tag: '106-dock' });
+    }
+    await js(`document.getElementById('scrClose').click()`);
+    await must(`!document.getElementById('brainSw')`, 'Settings closed');
+  };
+  // ---- off: the run override, and Settings > Brain view switched off: no right rail, nothing of Brain view loads (FR-105), the chat keeps its width
   for (const [w, h] of SIZES) {
-    await H.load({ w, h });
+    await H.load({ w, h, query: { brain: '0' } });
     const id = await js(`document.querySelector('#stage .desk[data-id]').dataset.id`);
     await openChat(id);
     const chatOff = await box('#panel>.panel-in');
-    assert.strictEqual(await js(`!!document.getElementById('brainRail')`), false, `off by default: no right rail in a chat at ${w}x${h}`);
-    assert.strictEqual(await js(`document.querySelectorAll('script[src*=brain],link[href*=brain]').length`), 0, 'off by default: no Brain view file is loaded (FR-105)');
+    assert.strictEqual(await js(`!!document.getElementById('brainRail')`), false, `override off: no right rail in a chat at ${w}x${h}`);
+    assert.strictEqual(await js(`document.querySelectorAll('script[src*=brain],link[href*=brain]').length`), 0, 'override off: no Brain view file is loaded (FR-105)');
     assert.ok(chatOff && chatOff.r === w, `off: the chat reaches the window's right edge (${JSON.stringify(chatOff)})`);
+  }
+  {
+    const [w, h] = SIZES[1];
+    await H.load({ w, h });
+    const id = await js(`document.querySelector('#stage .desk[data-id]').dataset.id`);
+    await openChat(id);
+    await must(`!!document.querySelector('#brainRail .bv')`, 'on by default: the rail with no query (T426)');
+    await H.shot(path.join(OUT, `106-dock-default-on-${w}x${h}.png`), { prep: 'calm', tag: '106-dock' });
+    await settingsSwitch(false);
+    await openChat(id);
+    assert.strictEqual(await js(`!!document.getElementById('brainRail')||!!document.getElementById('brainBack')`), false, 'Settings off: no rail and no Brain button in the chat');
+    assert.strictEqual((await box('#panel>.panel-in')).r, w, 'Settings off: the chat has the full width again');
+    const f0 = await js(`window.__durbarSimUi.brain.host().stats().frames`);
+    await emit({ type: 'toolCall', sessionId: id, callId: 'off-2', tool: 'view', phase: 'start', args: { path: 'a.ts' } });
+    await new Promise((r) => setTimeout(r, 600));
+    assert.strictEqual(await js(`window.__durbarSimUi.brain.host().stats().frames`), f0, 'Settings off: nothing is drawn');
+    await settingsSwitch(true);
+    await openChat(id);
+    await must(`!!document.querySelector('#brainRail .bv')`, 'Settings on again: the rail is back');
+    // a narrow window: the rail starts collapsed (not saved); the header's Brain button opens it for this window
+    await H.load({ w: 1024, h: 768 });
+    await openChat(id);
+    await must(`!!document.getElementById('brainBack')&&!document.getElementById('brainBack').hidden&&!(document.getElementById('brainRail')||{getClientRects:()=>[]}).getClientRects().length`, 'under 1100 px: the rail starts collapsed with the Brain button shown');
+    assert.strictEqual((await box('#panel>.panel-in')).r, 1024, 'under 1100 px: the chat has the window\'s width');
+    await H.shot(path.join(OUT, `106-dock-narrow-1024x768.png`), { prep: 'calm', tag: '106-dock' });
+    await js(`document.getElementById('brainBack').click()`);
+    await must(`!!document.getElementById('brainRail').getClientRects().length`, 'the Brain button opens the rail in a narrow window');
   }
 
   for (const world of WORLDS) {
     for (const [w, h] of SIZES) {
       const tag = `${world.id}-${w}x${h}`;
       const real = !!world.query.officeview;
-      await H.load({ w, h, query: { brain: '1', ...world.query }, ...(real ? { ready: `document.querySelectorAll('#stage .ro-plate[data-id]').length>=15`, readyMs: 30000 } : {}) });
+      await H.load({ w, h, query: { ...world.query }, ...(real ? { ready: `document.querySelectorAll('#stage .ro-plate[data-id]').length>=15`, readyMs: 30000 } : {}) });
       await js(`window.__errs=[];addEventListener('error',e=>window.__errs.push(String(e.message)+' '+String(e.filename).split('/').pop()));0`);
       const SEL = real ? '#stage .ro-plate[data-id]' : '#stage .desk[data-id]';
       const ids = await js(`[...new Set([...document.querySelectorAll(${jsLiteral(SEL)})].map(d=>d.dataset.id))]`);
@@ -174,7 +217,7 @@ module.exports = async (ctx) => {
       assert.deepStrictEqual(errs, [], `no page error in ${tag}`);
 
       // Your door empty: the dock grows (FR-031). The simulator's 2 agents (Ada working, Mira thinking) need nobody: no hook, no faked state
-      await H.load({ w, h, query: { brain: '1', ...world.query, sim: '2' }, ready: `document.querySelectorAll(${jsLiteral(SEL)}).length>=2`, readyMs: 30000 });
+      await H.load({ w, h, query: { ...world.query, sim: '2' }, ready: `document.querySelectorAll(${jsLiteral(SEL)}).length>=2`, readyMs: 30000 });
       const two = await js(`[...new Set([...document.querySelectorAll(${jsLiteral(SEL)})].map(d=>d.dataset.id))]`);
       await openChat(two[0]);
       await must(`!!document.querySelector('#brainRail .bv')&&window.__durbarSimUi.brain.host().shown()===${jsLiteral(two[0])}`, `the dock with 2 agents in ${tag}`);

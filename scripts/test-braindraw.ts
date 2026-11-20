@@ -591,27 +591,22 @@ console.log('braindraw: page load ok');
     for (let i = 1; i <= 150; i++) { p.host.feed('0', 'Zero', p.ev(i * 2)); p.host.feed('id' + i, 'A' + i, p.ev(i * 2 + 1)); p.flush(); }
     assert.ok(p.host.count() <= 60, `at most 60 brains are kept (${p.host.count()})`);
   }
-  // reduced motion disables nothing the user is standing on: the Motion button keeps focus (aria-disabled) and ignores a click
+  // Settings > Brain motion (T426): the dock takes the choice from app.js; reduced motion, forced colours and the app's forced Still (Still highlights, Motion off, low battery) win
   {
-    const p = page(() => 'Ada'); const b = q(p.host, '[data-bv=motion]');
+    const p = page(() => 'Ada');
+    assert.strictEqual(p.host.motion(), 'full', 'motion: Full by default (an unset Settings value)');
+    assert.strictEqual(q(p.host, '[data-bv=motion]').attrs['aria-label'], undefined, 'the dock has no Motion button of its own any more (Settings has the choice)');
+    p.host.setMotion('calm'); assert.ok(p.host.motion() === 'calm' && p.host.draw.mode() === 'calm', 'Settings Calm: the dock draws Calm');
+    p.host.setMotion('nonsense'); assert.strictEqual(p.host.motion(), 'calm', 'junk is ignored');
+    p.host.setForceStill(true); assert.ok(p.host.motion() === 'still' && p.host.draw.mode() === 'still', 'forced Still (Still highlights, Motion off or a low battery): Still');
+    p.host.setForceStill(false); assert.strictEqual(p.host.draw.mode(), 'calm', 'forced Still ends: the Settings choice again');
     p.mqReduce.matches = true; p.mqReduce.listeners.forEach((f) => f());
-    assert.strictEqual(b.attrs['aria-disabled'], 'true', 'set by the system: aria-disabled');
-    assert.strictEqual((b as unknown as { disabled?: boolean }).disabled, undefined, 'not the disabled attribute, which would drop the keyboard focus');
-    const text = (p.host.el.querySelector as (s: string) => Record<string, unknown>)('[data-bv=motion]').textContent;
-    b.listeners.click[0](); assert.strictEqual((p.host.el.querySelector as (s: string) => Record<string, unknown>)('[data-bv=motion]').textContent, text, 'a click does nothing while the system decides');
-  }
-  // forced colours decide like reduced motion (PR 1282 review F1): the button says Still, (system), aria-disabled; a click does nothing
-  {
-    const p = page(() => 'Ada'); const el = p.host.el.querySelector as (s: string) => Record<string, unknown>; const b = q(p.host, '[data-bv=motion]');
-    assert.strictEqual(b.attrs['aria-disabled'], 'false', 'forced colours F1: free before forced colours');
+    assert.ok(p.host.motion() === 'still' && p.host.bySystem(), 'reduced motion: Still, and the dock says the system decides');
+    p.mqReduce.matches = false; p.mqReduce.listeners.forEach((f) => f());
     p.mqForced.matches = true; p.mqForced.listeners.forEach((f) => f());
-    assert.strictEqual(b.attrs['aria-disabled'], 'true', 'forced colours F1: the Motion button is aria-disabled');
-    const text = String(el('[data-bv=motion]').textContent);
-    assert.ok(/Still/.test(text) && /\(system\)/.test(text), `forced colours F1: the button says Still (system), not Full (${text})`);
-    assert.ok(/Still/.test(b.attrs['aria-label']) && /system/.test(b.attrs['aria-label']), 'forced colours F1: the spoken label says Still and the system');
-    b.listeners.click[0](); assert.strictEqual(el('[data-bv=motion]').textContent, text, 'forced colours F1: a click does nothing while the system decides');
+    assert.ok(p.host.draw.mode() === 'still' && p.host.bySystem(), 'forced colours F1: Still, set by the system');
     p.mqForced.matches = false; p.mqForced.listeners.forEach((f) => f());
-    assert.ok(/Full/.test(String(el('[data-bv=motion]').textContent)) && b.attrs['aria-disabled'] === 'false', 'forced colours F1: back to the chosen motion when forced colours end');
+    assert.strictEqual(p.host.draw.mode(), 'calm', 'forced colours end: the Settings choice again');
   }
   // the live world switch (G1): flipping html[data-world] repaints the brain with no reload; the data-world observer is what does it
   {
