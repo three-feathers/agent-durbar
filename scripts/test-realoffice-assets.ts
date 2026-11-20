@@ -67,6 +67,21 @@ export function sections(md: string): Map<string, Record<string, string>> {
   return out;
 }
 
+/** spec 097 FR-068, spec 102 T396 (review of #1957): a kid sheet's owner look on likeness, `owner-likeness-look: pending (<owner>)`, blocks shipping: a world that is
+ *  OFFERED (its row in crew.js `WORLDS` has no flag, or its flag is on) must carry no pending look in its ASSETS.md (or its default set's). A world behind an off flag (the cave) may
+ *  hold one until it is opened. The answer is recorded by the owner's words as `likeness-check: ...` (written only from his answer). Returns the sections still pending. */
+export function pendingLooks(md: string, offered: boolean): string[] {
+  if (process.env.ASSETS_MUTANT === 'lookoff') return []; /* the mutant: the guard removed; the red cases below must fail at their own assert */
+  if (!offered) return [];
+  return [...sections(md)].filter(([, x]) => /^pending\b/.test(x['owner-likeness-look'] || '')).map(([n]) => n);
+}
+/** spec 102 FR-200..FR-202: is a world offered? crew.js `WORLDS` and `WORLD_FLAGS` (the one list the app reads) */
+export function worldOffered(id: string): boolean {
+  const C = require(path.join(ROOT, 'src', 'renderer', 'crew.js')) as { WORLD_FLAGS: Record<string, boolean>; WORLDS: { id: string; flag?: string }[] }; // eslint-disable-line @typescript-eslint/no-var-requires
+  const row = C.WORLDS.find((w) => w.id === id);
+  return !!row && (!row.flag || C.WORLD_FLAGS[row.flag] === true);
+}
+
 /** FR-068: the removal records (`## Removed`): each needs a date, who reported and the replacement */
 export function removals(md: string): string[] {
   const m = /\n## Removed\s*\n([\s\S]*?)(?:\n## |$)/.exec(md);
@@ -246,6 +261,8 @@ for (const wid of worldIds) {
   const pending = [...sections(mdAll)].filter(([, x]) => /^pending/.test(x['likeness-check'] || '')).map(([n]) => n);
   assert.deepStrictEqual(pending, [], `${wid}: every person has its likeness check on record (FR-068)`);
   if (wid === 'cave') assert.strictEqual([...w.files.keys()].filter((n) => /^kid\d-/.test(n)).length, 42, 'the cave ships 6 kids x 7 states (spec 102 T326)');
+  /* spec 102 T396 (review of #1957): an offered world ships no kid (or person) whose owner likeness look is pending; the cave, behind its off flag, may */
+  assert.deepStrictEqual(pendingLooks(mdAll, worldOffered(wid)), [], `${wid} is offered${worldOffered(wid) ? '' : ' (no: behind its flag)'}: no sheet may ship with \`owner-likeness-look: pending\` (FR-068); record the owner's answer as \`likeness-check\``);
   if (wid === 'retro') assert.strictEqual([...w.files.keys()].filter((n) => /^kid\d-/.test(n)).length, 42, 'the arcade ships 6 pixel kids x 7 states (spec 102 T327)');
   packs++; biggest = Math.max(biggest, [...all.values()].reduce((n, b) => n + b.length, 0));
   if (wid === 'photo') { for (const [k, v] of all) files.set(k, v); md = mdAll; pj = merged; META = JSON.parse(merged); }
@@ -488,6 +505,14 @@ if (worldIds.includes('retro')) {
 }
 
 {
+  /* spec 102 T396: the likeness guard's red cases (ASSETS_MUTANT=lookoff removes the guard and must fail here) */
+  {
+    const caveMd = fs.readFileSync(path.join(RO, 'worlds', 'cave', 'ASSETS.md'), 'utf8');
+    assert.strictEqual(worldOffered('cave'), false, 'the cave is behind its off flag, so its pending look does not fail it');
+    assert.ok(worldOffered('retro') && worldOffered('photo'), 'the arcade and the Photo office are offered');
+    assert.ok(pendingLooks(caveMd, true).length === 6, 'red: the cave opened with its six pending kid looks fails the likeness guard');
+    assert.deepStrictEqual(pendingLooks(caveMd.replace(/- owner-likeness-look: pending \([^)]*\)[^\n]*/g, '- likeness-check: Vikram, 2026-11-20'), true), [], 'a recorded likeness-check passes the guard');
+  }
   const kw = require(path.join(ROOT, 'scripts', 'kids-worlds.js')) as { kidsWorlds: () => string[]; pickKidsWorld: (v: string | undefined, m?: string) => string }; // eslint-disable-line @typescript-eslint/no-var-requires
   const kidWorlds = kw.kidsWorlds();
   assert.ok(kidWorlds.includes('photo') && kidWorlds.includes('cave') && kidWorlds.includes('retro'), 'the worlds with kids (world.json has `kids`) include photo, cave and retro: ' + kidWorlds.join(', '));
