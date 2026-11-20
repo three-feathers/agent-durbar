@@ -154,6 +154,7 @@ async function main(): Promise<void> {
       [/\b(?:e|err|error|ex)\.message\b/, 'a caught error .message'],
       [/\bString\((?:e|err|error|ex)\)/, 'String(err)'],
       [/\$\{\s*(?:e|err|error|ex)\s*\}/, 'a caught error in a template'],
+      [/(?:\+\s*(?:e|err|error|ex)\b(?![.\w(\[])|(?<![.\w])(?:e|err|error|ex)\s*\+)/, 'a caught error joined with +'],
     ];
     const scan = (text: string): string[] => text.split('\n').flatMap((l, i) => (MARK.test(l) ? [] : RAW.filter(([re]) => re.test(l)).map(([, what]) => `${i + 1}: ${what}`)));
     // everywhere in src/ (adapters, shared, preload, main): an `error:` value built from a caught error, raw or through a function that is not a known mask
@@ -180,14 +181,15 @@ async function main(): Promise<void> {
       assert.deepStrictEqual(found, [], `${path.relative(srcDir, f)} returns a caught error's own text as an error (use failText in main, ShownError or a mask in an adapter): ${found.join('; ')}`);
     }
     // the scans are not vacuous (their mutants): each shape is caught, the markers exempt, the masks are left alone
-    for (const [sample, n] of [["return { ok: false, error: errText(err) };", 0], ["error: e instanceof Error ? e.message : String(e) }", 1], ["const why = 'x: ' + err.message;", 2], ["return { ok: false, error: String(err) };", 3], ["return { ok: false, error: `Could not do it: ${err}` };", 4]] as const) {
+    for (const [sample, n] of [["return { ok: false, error: errText(err) };", 0], ["error: e instanceof Error ? e.message : String(e) }", 1], ["const why = 'x: ' + err.message;", 2], ["return { ok: false, error: String(err) };", 3], ["return { ok: false, error: `Could not do it: ${err}` };", 4], ["return { ok: false, error: 'x: ' + err };", 5], ["return { ok: false, error: 'Remote: ' + e };", 5], ["return { ok: false, error: err + ' (remote)' };", 5]] as const) {
       assert.ok(RAW[n][0].test(sample) && scan(sample).length > 0, `the scan catches: ${sample}`);
     }
-    for (const sample of ["return { ok: false, error: cleanUp(e) };", "      return { ok: false, error: `x ${e.message}` };", "error: `failed: ${err}`,", "r = { ok: false, error: reasonOf(err, 300) };"]) assert.ok(scanAll(sample).length > 0, `the error-value scan catches: ${sample}`);
+    for (const sample of ["return { ok: false, error: 'x: ' + err };", "return { ok: false, error: 'Remote: ' + e };", "return { ok: false, error: err + ' (remote)' };", "return { ok: false, error: cleanUp(e) };", "      return { ok: false, error: `x ${e.message}` };", "error: `failed: ${err}`,", "r = { ok: false, error: reasonOf(err, 300) };"]) assert.ok(scanAll(sample).length > 0, `the error-value scan catches: ${sample}`);
     assert.deepStrictEqual(scan("const t = err.message; // FR-066: read, not shown"), [], 'the marker exempts a line');
     assert.deepStrictEqual(scan("const t = err.message; // FR-066: shown masked (redact)"), [], 'the shown-masked marker exempts a line');
     assert.ok(scan("const t = err.message; // FR-066 read").length > 0, 'a wrong marker does not exempt');
     assert.deepStrictEqual(scan("return { ok: false, error: failText(err, 'x') };"), [], 'the scan leaves failText alone');
+    assert.deepStrictEqual(scan('const n = e + 1; out[k] + e[k]; r.error + left; i < n + 1;').length, 1, 'the + pattern leaves a property, an index and a field alone (only `e + 1` counts)');
     assert.deepStrictEqual(scanAll("return { ok: false, error: cleanRemoteError(err) };"), [], 'the error-value scan leaves the masks alone');
 
     // 9. the remote control error (item 1): masked like a ShownError
