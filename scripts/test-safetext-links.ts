@@ -24,9 +24,11 @@ const ghp = 'gh' + 'p_' + 'A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8';
 const pat = 'github' + '_pat_' + '11ABCDEFG0aBcDeFgHiJkL_mNoPqRsTuVwXyZ0123456789abcdefghij';
 const sk = 's' + 'k-' + 'proj-AbCdEfGhIjKlMnOpQrStUvWxYz0123456789';
 
+// two parts, each its own suite under ~30 s (`npm run test:safetext-links` and `test:safetext-links-labels`): the labels' differential runs only in the second
+const LABELS = process.argv[2] === 'labels';
 // spec 012 FR-189 (issue #1940): a token split by link or image markup on the plain-text surfaces (invented values, built from pieces)
-{
-  const shared = require('../src/shared/redact') as { maskLinkSplitTokens(t: unknown): string; _linkWorkForTest(): number; withoutSplit<X>(f: () => X): X };
+if (!LABELS) {
+  const shared = require('../src/shared/redact') as { maskLinkSplitTokens(t: unknown): string; _linkWorkForTest(): number; _linkPassesForTest(): number; withoutSplit<X>(f: () => X): X };
   const red = (t: string): string => redact(t);
   const T = S.create({ redact: red });
   const aws = 'AK' + 'IA' + 'Q7R2T5V8X3Z6B9D4';
@@ -79,8 +81,43 @@ const sk = 's' + 'k-' + 'proj-AbCdEfGhIjKlMnOpQrStUvWxYz0123456789';
   const one = 'x ' + ghp.slice(0, 12) + '[y][r]' + ghp.slice(12) + ' z';
   eq(shared.withoutSplit(() => shared.maskLinkSplitTokens(one)), one, '#1940 with the split step off the shared step reads nothing');
   eq(shared.maskLinkSplitTokens(one), 'x [redacted] z', '#1940 the shared step masks the stretch as written, the markup between its pieces included');
-  // the gate: a run joined across a removed piece with two letters or digits after it is read (a tail of two), one with none is not (a link before a full stop)
+  // the gate: a letter or digit joined to a letter or digit across a removed piece is read (a tail of two, and of one: review of PR 1949, F3); a link before a
+  // blank or a full stop joins nothing and costs no mask pass (F4)
   for (const [tn, tok] of toks) eq(shared.maskLinkSplitTokens('x ' + tok.slice(0, -2) + '[y][r]' + tok.slice(-2) + ' z'), 'x [redacted] z', `#1940 a tail of two after the link is read with the token (${tn})`);
+  for (const [tn, tok] of toks) for (const [fn, f] of [['a full reference', '[][r]'], ['a collapsed reference', '[][]'], ['a full reference image', '![][r]'], ['a footnote mark', '[^]'], ['an inline link', '[](u)'], ['an inline image', '![](u)']]) {
+    const t = tok.slice(0, -1) + f + tok.slice(-1) + ' ok';
+    eq(shared.maskLinkSplitTokens(t), '[redacted] ok', `#1940 a one-character tail after ${fn} is read with the token (${tn})`);
+    for (const [kind, out] of [['other', S.maskLabel(t, 'other', label)], ['run', S.maskLabel(t, 'run', label)]]) ok(!out.includes(tok.slice(-9, -1)) && !out.includes(tok.slice(4, 12)), `#1940 the ${kind} label hides a token with a one-character tail after ${fn} (${tn}): ${out}`);
+  }
+  shared._linkPassesForTest();
+  eq(shared.maskLinkSplitTokens('See [the docs](https://example.com/a_long_path_name). Then <https://example.com/b>, and [x] done.'), 'See [the docs](https://example.com/a_long_path_name). Then <https://example.com/b>, and [x] done.', '#1940 links before a blank or a full stop are kept');
+  eq(shared._linkPassesForTest(), 0, '#1940 links before a blank or a full stop join nothing and cost no mask pass');
+  // a target or a link text ends on its own line (a bracket on the next line is no end), and a long one is read to its end
+  eq((shared.maskLinkSplitTokens('See [a](x\ny)z ok'), shared._linkPassesForTest()), 0, '#1940 a target is not matched across a line break');
+  eq(shared.maskLinkSplitTokens('x ' + ghp.slice(0, 12) + '[y](https://e.x/' + 'q'.repeat(600) + ')' + ghp.slice(12) + ' z'), 'x [redacted] z', '#1940 a token split by a link with a long target is hidden');
+  // a secret name split by a link, then a separator and its value (review of PR 1949, F2): the value is hidden on every desk surface
+  for (const t of ['Run: pas[][r]sword: Hx9Kq2Lm7Np4Rs now', 'tok[^]en: Hx9Kq2Lm7Np4Rs now', 'mys[][r]ql -pHx9Kq2Lm7Np4Rs', 'sec[][r]ret_key = "Hx9Kq2Lm7Np4Rs"', 'pass[w](u)word=Hx9Kq2Lm7Np4Rs ok', 'api<b></b>_key: Hx9Kq2Lm7Np4Rs'])
+    for (const [sn, out] of [['excerpt', S.excerpt(t, red, 600)], ['maskRaw', S.maskRaw(t, red)], ['the wrapper excerpt', T.excerpt(t, 600)], ['a tool label', S.maskLabel(t, 'other', label)], ['a command label', S.maskLabel(t, 'run', label)]] as Array<[string, string]>)
+      ok(!out.includes('Hx9Kq2Lm'), `#1940 ${sn} hides the value after a secret name split by a link (${t.replace('Hx9Kq2Lm7Np4Rs', '<value>')}): ${out}`);
+  // a text that holds an open mask label and a token split by a link (review of PR 1949, F1): the desk fails closed as it did before the link step
+  {
+    const t = ghp.slice(0, 16) + '[redacted:] ' + ghp.slice(16, 24) + ' and ' + ghp.slice(0, 12) + '[y][r]' + ghp.slice(12);
+    eq(S.excerpt(t, red, 600), '', '#1940 an open mask label in the text: the excerpt fails closed');
+    eq(T.excerpt(t, 600), 'Finished.', '#1940 an open mask label in the text: the wrapper excerpt shows its fallback word');
+    eq(S.maskRaw(t, red), withoutLinkSplit(() => S.maskRaw(t, red)) === '' ? '' : S.maskRaw(t, red), '#1940 an open mask label in the text: maskRaw fails closed where the desk did before');
+  }
+  // benign Markdown stays as written on the desk (the link step masks nothing in it, and reads as with it off)
+  for (const t of [
+    'See the [README](README.md#install) and the [docs][d], then run `npm test`.\n\n[d]: https://example.com/docs',
+    '![screenshot](docs/shots/lobby_1440x900.png "The lobby") shows the [Real office](specs/097-real-office/spec.md).',
+    '| file | note |\n|---|---|\n| [safetext.js](src/renderer/safetext.js) | the desk masks |',
+    '- [x] [Spec 012](specs/012-claude-codex-adapters/spec.md)[^1]\n- [ ] <https://github.com/three-feathers/agent-durbar> <b>bold</b>\n\n[^1]: a note',
+    'Use [`maskRaw`](src/renderer/safetext.js)_and_ [this][link_ref_name] or <kbd>Ctrl</kbd>+<kbd>K</kbd>.',
+  ]) {
+    eq(S.maskRaw(t, red), t, `#1940 benign Markdown: maskRaw keeps it as written: ${t.slice(0, 40)}`);
+    eq(S.excerpt(t, red, 600), withoutLinkSplit(() => S.excerpt(t, red, 600)), `#1940 benign Markdown: the excerpt reads as with the link step off: ${t.slice(0, 40)}`);
+    eq(S.maskLabel(t, 'other', label), withoutLinkSplit(() => S.maskLabel(t, 'other', label)), `#1940 benign Markdown: the label reads as with the link step off: ${t.slice(0, 40)}`);
+  }
   eq(shared.maskLinkSplitTokens('See <https://example.com/a_long_path_name>. Then [docs][r].'), 'See <https://example.com/a_long_path_name>. Then [docs][r].', '#1940 a link before a full stop is no joined token');
   // a link whose text is one character of a fixed-length token, with a reference label: only the reading that drops the label alone joins it
   const aws1 = 'x ' + aws.slice(0, 10) + '[' + aws[10] + '][r]' + aws.slice(11) + ' z';
@@ -100,6 +137,9 @@ const sk = 's' + 'k-' + 'proj-AbCdEfGhIjKlMnOpQrStUvWxYz0123456789';
     ['many tags never closed', (k) => '<a b'.repeat(k)],
     ['many opening tags', (k) => '<a>b'.repeat(k)],
     ['many links around token pieces', (k) => (ghp.slice(0, 12) + '[y][r]' + ghp.slice(12) + ' ').repeat(k)],
+    ['many target openings (review of PR 1949, F5)', (k) => ']('.repeat(k)],
+    ['many target openings with a closing far off', (k) => ('](' + '('.repeat(200) + ')').repeat(k)],
+    ['many nested openings with a closing far off', (k) => ('[' + '['.repeat(200) + ']').repeat(k)],
   ];
   for (const [sn, mk] of shapes) {
     const small = mk(4000), big = mk(32000);
@@ -108,7 +148,7 @@ const sk = 's' + 'k-' + 'proj-AbCdEfGhIjKlMnOpQrStUvWxYz0123456789';
     const ws = shared._linkWorkForTest();
     shared.maskLinkSplitTokens(big);
     const wb = shared._linkWorkForTest();
-    ok(ws >= 3 * small.length && wb <= 9 * ws && wb <= 3 * 1100 * big.length, `#1940 the shared step's work grows linearly (${sn}): ${ws} then ${wb} for 8 times the text`);
+    ok(ws >= 3 * small.length && wb <= 9 * ws && wb <= 12 * big.length, `#1940 the shared step's work grows linearly (${sn}): ${ws} then ${wb} for 8 times the text`);
   }
 }
 // the differential with the link step on: over the random texts of the #1593 differential (and two bracket-heavy shapes), every text the link step changes
@@ -118,6 +158,7 @@ const sk = 's' + 'k-' + 'proj-AbCdEfGhIjKlMnOpQrStUvWxYz0123456789';
   const ENV = {}; // an empty environment for the masks of this test (the environment's secrets are read per call; the link step reads them once per call itself)
   const red = (t: string): string => redact(t, ENV);
   const T = S.create({ redact: red, cut: cutText });
+  const label = { cmd: (x: string) => maskSecretCommand(x, {}), url: (x: string) => maskSecretUrl(x, {}), redact: red };
   const refFile = path.join(ROOT, 'scripts', 'fixtures', 'safetext-1593-main-ref.js');
   const refText = fs.readFileSync(refFile, 'utf8').replace(/\r\n/g, '\n');
   eq(crypto.createHash('sha256').update(refText, 'utf8').digest('hex'), '4a1856a6ff14310d9354e7c2e3cae0f1aa6eef742f75c73330c9d46e79191a27', '#1940 differential: the frozen copy is unchanged');
@@ -129,24 +170,34 @@ const sk = 's' + 'k-' + 'proj-AbCdEfGhIjKlMnOpQrStUvWxYz0123456789';
   const cutAt = /\s+|\[redacted(?::[^\]\r\n]{1,128})?\]/;
   let lnk = 0;
   let other = 0;
-  for (const t of [...cases, '['.repeat(20_000), '[x]('.repeat(5_000)]) {
+  const planted = [ghp.slice(0, 16) + '[redacted:] ' + ghp.slice(16, 24) + 'xYz', 'x ' + pat.slice(0, 30) + '[y][r]' + pat.slice(30) + ' [redacted: ' + pat.slice(0, 40) + ' and ' + pat, ghp.slice(0, 12) + '[^]' + ghp.slice(12) + ' [redacted:a'];
+  for (const t of [...cases, '['.repeat(20_000), '[x]('.repeat(5_000), ...planted]) {
     const where = JSON.stringify(t.slice(0, 60));
     if (!/[[\]<]/.test(t) || (maskLinkSplitTokens(t) === t && withoutShell(() => maskLinkSplitTokens(t)) === t)) {
       // a text the link step leaves as it is reads the same with the step on and off (test-safetext.ts checks it with the step off)
-      eq(S.maskRaw(t, red), withoutLinkSplit(() => S.maskRaw(t, red)), `#1940 differential: maskRaw of a text the link step leaves reads as with the step off: ${where}`);
+      if (!LABELS) eq(S.maskRaw(t, red), withoutLinkSplit(() => S.maskRaw(t, red)), `#1940 differential: maskRaw of a text the link step leaves reads as with the step off: ${where}`);
       other++;
       continue;
     }
     lnk++;
     const pieceCheck = (h: string, r: string, what: string): void => { const shown = r.split(cutAt).join('\u0000'); for (const p of h.split(cutAt)) assert.ok(p === '' || shown.includes(p), `#1940 differential: ${what} shows nothing main hides: ${where}: ${JSON.stringify(p)}`); };
     // the wrapper's mask is maskRaw with the same redact (one code path), so maskRaw stands for both; the wrapper excerpt is the excerpt with the code word
-    pieceCheck(S.maskRaw(t, red), ref(() => R0.maskRaw(t, red)), 'maskRaw');
+    // where main gives nothing (fails closed), the head gives nothing too (review of PR 1949, F1); the labels too
+    const pc = (h: string, r: string, what: string): void => { if (r === '') eq(h, '', `#1940 differential: ${what} fails closed where main does: ${where}`); else pieceCheck(h, r, what); };
+    if (LABELS) {
+      // the labels against the head with the link step off (main's label since FR-184/185 differs from the frozen copy's; with the step off the head is main's)
+      pc(S.maskLabel(t, 'other', label), withoutLinkSplit(() => S.maskLabel(t, 'other', label)), 'a tool label');
+      pc(S.maskLabel(t, 'run', label), withoutLinkSplit(() => S.maskLabel(t, 'run', label)), 'a command label');
+      continue;
+    }
+    pc(S.maskRaw(t, red), ref(() => R0.maskRaw(t, red)), 'maskRaw');
+    if (ref(() => R0.excerpt(t, red, 140)) === '') eq(S.excerpt(t, red, 140), '', `#1940 differential: the excerpt fails closed where main does: ${where}`);
     const all = ref(() => R0.excerpt(t, red, undefined, true)), allPlain = ref(() => R0.excerpt(t, red));
     for (const [what, h, a] of [['excerpt', S.excerpt(t, red, 140), allPlain], ['the wrapper excerpt', T.excerpt(t, 140), all]] as Array<[string, string, string]>) {
       const shown = a.replace(/\s+/g, ''), hs = h.replace(/\s+/g, '');
       for (const sec of SECRETS) for (let i = 0; i + 8 <= sec.length; i++) if (hs.includes(sec.slice(i, i + 8))) assert.ok(shown.includes(sec.slice(i, i + 8)), `#1940 differential: ${what} shows no secret main hides: ${where}: ${sec.slice(i, i + 8)}`);
     }
   }
-  ok(lnk >= 500 && lnk + other === cases.size + 2, `#1940 differential: ${lnk} texts the link step changes show nothing main hides; ${other} others read as with the step off`);
+  ok(lnk >= 500 && lnk + other === cases.size + 2 + planted.length, `#1940 differential: ${lnk} texts the link step changes show nothing main hides; ${other} others read as with the step off`);
 }
-console.log(`safetext-links: ${n} checks passed`);
+console.log(`safetext-links${LABELS ? ' (labels)' : ''}: ${n} checks passed`);
