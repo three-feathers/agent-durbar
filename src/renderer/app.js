@@ -240,7 +240,7 @@ const floorRank=r=>{const f=floorById(r.floor);return f?FLOORS.floors.indexOf(f)
 const RO=window.DurbarReorder;
 let ORDER=RO.empty();
 const roomsInOrder=()=>{const rk=new Map(ORDER.rooms.map((k,i)=>[k,i])),at=r=>rk.has(r.path)?rk.get(r.path):1e9;return ROOMS.map((r,i)=>[r,i]).sort((x,y)=>floorRank(x[0])-floorRank(y[0])||at(x[0])-at(y[0])||x[1]-y[1]).map(p=>p[0]);};
-const floorTag=r=>{if(!floorTagsOn())return '';const f=floorById(r.floor);return f?`<span class="floor-tag" title="Floor: ${esc(f.name)}">${esc(f.name)}</span>`:'';};
+const floorTag=r=>{if(!floorTagsOn())return '';const f=floorById(r.floor);return f?`<span class="floor-tag">${esc(f.name)}</span>`:'';}; /* spec 001 FR-270: its full name is in the head's tooltip, not a native title */
 /* spec 092 (floors as places, phase 1): with two or more floors on, the office shows one floor at a time. The current floor is a display
    preference of this window (FR-022: its id in localStorage); the rules live in floornav.js (pure). */
 const FLOOR_PREF='durbar.floor';
@@ -1488,25 +1488,31 @@ function roomSchedChip(r){
   const tip=ss.length+' schedule'+(ss.length>1?'s':'')+' for '+r.name+(off?' (paused)':next?', next run '+next:'')+'. Click to see or change them.';
   return `<button class="room-sched${off?' off':''}" type="button" data-schedroom="${esc(r.id)}" title="${esc(tip)}" aria-label="${esc(tip)}">${CLOCK_SVG}<span>${ss.length}${off?'':short?' · '+esc(short):''}</span></button>`;
 }
+/* spec 001 FR-270 (issue 1905): what the whole head says on hover and on focus: the folder's name, its path (masked, home as ~), the cost, the floor.
+   FR-271: a long name is two parts, the start (cut with an ellipsis when the head is narrow) and a tail that stays, so the end of the name is always seen. */
+const pathTip=p=>{const a=Array.from(p||'');return a.length>200?'…'+a.slice(-199).join(''):a.join('');}; /* a tooltip stays within 300 characters (spec 052 FR-168); a long path loses its start, where the folder is its end */
+const headTip=r=>{const u=roomAiu(r),f=floorTagsOn()?floorById(r.floor):null; return [r.name,pathTip(deskMask(showPath(r.path))),u?u.long:'',f?'Floor: '+f.name:''].filter(Boolean).join('\n');};
+const nameHTML=nm=>{const t=window.DurbarCutText.nameTail(nm); if(!t)return esc(nm); return `<span class="rn-h">${esc(nm.slice(0,nm.length-t.length))}</span><span class="rn-t">${esc(t)}</span>`;};
 function roomHTML({r,mains,all,rolled},d,aw,cap){
   const al=roomAlert(r), alAttr=(al.tone==='calm'?'':` data-alert="${al.tone}"`)+(al.siren?' data-siren="1"':''), alLabel=al.siren?'. '+ALERT_WORDS:'';
   const dots=['waiting','error','working','done','idle'].map(k=>{const n=all.filter(a=>{const s=vis(a);return k==='working'?(s==='working'||s==='thinking'):s===k}).length;return n?`<span class="rd${k==='waiting'?' attn':(k==='done'||k==='idle')?' calm':''}" title="${n} ${LABELS[k]}"><span class="dot ${k}"></span>${n}<span class="rdw"> ${LABELS[k].toLowerCase()}</span></span>`:''}).join(''); /* spec 001 FR-037: "5 working" when the header has room */
   /* spec 052 FR-006: the counts in words too (screen readers, and a tooltip for colour-blind users) */
   const dotsLabel=['waiting','error','working','done','idle'].map(k=>{const n=all.filter(a=>{const s=vis(a);return k==='working'?(s==='working'||s==='thinking'):s===k}).length;return n?n+' '+LABELS[k].toLowerCase():'';}).filter(Boolean).join(', ');
-  const head=`<div class="room-head"><span class="room-name" title="${esc(r.name)}\n${esc(r.path)}${(()=>{const u=roomAiu(r);return u?'\n'+esc(u.long):'';})()}">${esc(r.name)}</span>${renFolderBtn(r,true)}${al.siren&&!SIM_QUIET_HEADS.has('siren')?SIREN():''}${floorTag(r)}<span class="room-path" title="${esc(r.path)}">${esc(showPath(r.path))}</span>${(()=>{const u=SIM_QUIET_HEADS.has('aiu')?null:roomAiu(r);return u?`<button class="room-aiu" type="button" data-costview="${esc(r.id)}" title="${esc(u.tip+'\nClick for the cost by folder.')}">${esc(u.long)}</button>`:'';})()}${dotsLabel?`<span class="room-dots" role="img" aria-label="${esc(dotsLabel)}" title="${esc(dotsLabel)}">${dots}</span>`:`<span class="room-dots" aria-hidden="true">${dots}</span>`}${bridge&&bridge.newSession&&anyKindReady()&&!demoOn?`<button class="room-new" type="button" data-newsess="${esc(r.id)}" title="New session in ${esc(r.name)}" aria-label="New session in ${esc(r.name)}">+</button>`:''}${bridge&&bridge.removeFolder&&!demoOn?`<button class="room-new room-more" type="button" data-foldermenu="${esc(r.id)}" title="Folder actions: new session, schedules, rename, hide, remove" aria-label="Folder actions for ${esc(r.name)}" aria-haspopup="menu">⋯</button>`:''}${roomSchedChip(r)}${bridge&&bridge.mcpFolderState&&agents.some(x=>x.room===r.id&&!x.parent&&x.info&&feat(x,'mcp'))&&!demoOn?`<button class="room-mcp" type="button" data-mcproom="${esc(r.id)}" title="MCP extras for ${esc(r.name)}: optional servers for this folder only" aria-label="MCP extras for ${esc(r.name)}">MCP</button>`:''}${PLANT()}</div>`;
+  const nmHTML=nameHTML(r.name); /* escaped inside */
+  const head=`<div class="room-head" data-tip="${esc(headTip(r))}"><span class="room-name">${nmHTML}</span>${renFolderBtn(r,true)}${al.siren&&!SIM_QUIET_HEADS.has('siren')?SIREN():''}${floorTag(r)}<span class="room-path">${esc(showPath(r.path))}</span>${(()=>{const u=SIM_QUIET_HEADS.has('aiu')?null:roomAiu(r);return u?`<button class="room-aiu" type="button" data-costview="${esc(r.id)}" title="${esc(u.tip+'\nClick for the cost by folder.')}">${esc(u.long)}</button>`:'';})()}${dotsLabel?`<span class="room-dots" role="img" aria-label="${esc(dotsLabel)}" title="${esc(dotsLabel)}">${dots}</span>`:`<span class="room-dots" aria-hidden="true">${dots}</span>`}${bridge&&bridge.newSession&&anyKindReady()&&!demoOn?`<button class="room-new" type="button" data-newsess="${esc(r.id)}" title="New session in ${esc(r.name)}" aria-label="New session in ${esc(r.name)}">+</button>`:''}${bridge&&bridge.removeFolder&&!demoOn?`<button class="room-new room-more" type="button" data-foldermenu="${esc(r.id)}" title="Folder actions: new session, schedules, rename, hide, remove" aria-label="Folder actions for ${esc(r.name)}" aria-haspopup="menu">⋯</button>`:''}${roomSchedChip(r)}${bridge&&bridge.mcpFolderState&&agents.some(x=>x.room===r.id&&!x.parent&&x.info&&feat(x,'mcp'))&&!demoOn?`<button class="room-mcp" type="button" data-mcproom="${esc(r.id)}" title="MCP extras for ${esc(r.name)}: optional servers for this folder only" aria-label="MCP extras for ${esc(r.name)}">MCP</button>`:''}${PLANT()}</div>`;
   if(d==='full'){
     const gap=6, pad=12;
     const sw=shutW(r,rolled), widths=mains.map(a=>unitWidth(a,d)).concat(sw?[sw]:[]); /* FR-053: the squeezed group sits in the desks' row */
     const basis=Math.min(aw,widths.reduce((x,y)=>x+y,0)+gap*(widths.length-1)+2*pad+30);
     const min=Math.max(DENS.full.cw,...widths)+2*pad+30;
-    return `<section class="room" data-room="${esc(r.id)}" data-key="room:${esc(r.id)}" data-tint="${r.tint}"${alAttr} style="--w:${Math.round(basis)};--min:${Math.round(min)}px" aria-label="Folder ${esc(r.name)}${alLabel}">${head}
+    return `<section class="room" data-room="${esc(r.id)}" data-key="room:${esc(r.id)}" data-tint="${r.tint}"${alAttr}${freshRoom(r.id)?' data-new="1"':''} style="--w:${Math.round(basis)};--min:${Math.round(min)}px" aria-label="Folder ${esc(r.name)}${(()=>{const p=deskMask(showPath(r.path));return p?', '+esc(p):'';})()}${alLabel}">${head}
       <div class="units">${roomArt()}${mains.map(a=>unitHTML(a,d)).join('')}${shuttersHTML(r,rolled)}</div></section>`;
   }
   /* compact: the room is a floor-plan zone with `cols` desk columns */
   const D=DENS[d], sw=shutW(r,rolled), over=2*D.rp+4+(sw?sw+D.gap:0); /* FR-053: the room's width counts the squeezed group */
   const cols=Math.max(1,Math.min(mains.length||1,cap,sw?Math.floor((aw-over+D.gap)/(D.cw+D.gap)):Infinity)); /* and its columns still get a whole cell each */
   const basis=cols*D.cw+(cols-1)*D.gap+over, min=D.cw+over;
-  return `<section class="room" data-room="${esc(r.id)}" data-key="room:${esc(r.id)}" data-tint="${r.tint}"${alAttr} style="--w:${Math.round(basis)};--min:${Math.round(min)}px" aria-label="Folder ${esc(r.name)}${alLabel}">${head}
+  return `<section class="room" data-room="${esc(r.id)}" data-key="room:${esc(r.id)}" data-tint="${r.tint}"${alAttr}${freshRoom(r.id)?' data-new="1"':''} style="--w:${Math.round(basis)};--min:${Math.round(min)}px" aria-label="Folder ${esc(r.name)}${(()=>{const p=deskMask(showPath(r.path));return p?', '+esc(p):'';})()}${alLabel}">${head}
     ${sw?`<div class="units has-shut">${roomArt()}<div class="units-in" style="--cols:${cols}">${mains.map(a=>unitHTML(a,d)).join('')}</div>${shuttersHTML(r,rolled)}</div>`:`<div class="units" style="--cols:${cols}">${roomArt()}${mains.map(a=>unitHTML(a,d)).join('')}</div>`}</section>`;
 }
 /* ---- keyed DOM updates: patch only what changed, so desk animations keep running ---- */
@@ -1853,7 +1859,7 @@ function realModel(model){
     const list=m.mains.concat((m.rolled||[]).map(x=>x.a));
     const counts=['waiting','error','working','done','idle'].map(k=>{const n=m.all.filter(a=>!a.parent&&(k==='working'?(vis(a)==='working'||vis(a)==='thinking'):vis(a)===k)).length;return {state:k,n,word:LABELS[k].toLowerCase()};}).filter(c=>c.n);
     const u=SIM_QUIET_HEADS.has('aiu')?null:roomAiu(r);
-    return {id:r.id,floor:roFloor(r),keep:!!(ORDER.desks[r.path]&&ORDER.desks[r.path].length),name:r.name,path:deskMask(showPath(r.path)),cost:u?u.long:'',counts,newSess:!!(bridge&&bridge.newSession&&anyKindReady()&&!demoOn),menu:!!(bridge&&bridge.removeFolder&&!demoOn),
+    return {id:r.id,floor:roFloor(r),keep:!!(ORDER.desks[r.path]&&ORDER.desks[r.path].length),name:r.name,path:deskMask(showPath(r.path)),tip:headTip(r),fresh:freshRoom(r.id),cost:u?u.long:'',counts,newSess:!!(bridge&&bridge.newSession&&anyKindReady()&&!demoOn),menu:!!(bridge&&bridge.removeFolder&&!demoOn),
       agents:list.map(a=>{const v=VISITS.at(a.id),st=stOf(a,old.has(a.id)),task=deskMask(taskOf(a)),place=v?placeLabel(v.place):'',needs=st==='waiting'||st==='limit';
         if(rolled.has(a.id)&&!v){ /* spec 097 FR-246, FR-120: in the lounge row, resting or asleep; the words of the flat lounge's peek card and label, the same masked reply (shutReply) */
           const asleep=old.has(a.id), ago=ACT.agoLong(sinceLast(a)), said=SHUT.spoken(ago), line=shutReply(a,140), who=a.profile?a.profile.name+' · '+a.role:a.role, word=asleep?'Asleep':stWord(a);
@@ -2193,7 +2199,9 @@ function nameSqueezed(hd){
   if(!NAME_CTX)NAME_CTX=document.createElement('canvas').getContext('2d');
   NAME_CTX.font=cs.fontStyle+' '+cs.fontWeight+' '+cs.fontSize+' '+cs.fontFamily;
   const r=document.createRange(); r.selectNodeContents(n);
-  const min=Math.min(ROOM_NAME_CH*NAME_CTX.measureText('0').width,r.getBoundingClientRect().width), have=nameRoom(n,cs); /* a name shorter than the minimum is only cut by a fraction */
+  const zw=NAME_CTX.measureText('0').width, tail=n.querySelector(':scope>.rn-t');
+  const floor=tail?Math.max(ROOM_NAME_CH*zw,NAME_CTX.measureText(tail.textContent).width+NAME_CTX.measureText('…').width+2*zw):ROOM_NAME_CH*zw; /* spec 001 FR-271: a split name keeps its tail whole, then the ellipsis and two letters of its start */
+  const min=Math.min(floor,r.getBoundingClientRect().width), have=nameRoom(n,cs); /* a name shorter than the minimum is only cut by a fraction */
   return have<min-0.5;
 }
 /* spec 001 FR-179 (change 2026-10-26): every part of every room header is inside its header and its name holds its minimum (what check:office asserts);
@@ -2525,6 +2533,7 @@ function renderAll(){
   rememberUi();
   placePencils(ui.view==='office'?PLACE_ONLY:null,PLACE_DIRTY); INL().follow(); /* spec 059 FR-023 item 5: the open field follows its name; spec 097 FR-184: pencils only on the parts renderOffice rewrote */
   if(floorSwitchTimed)endFloorSwitchTiming();
+  if(window.DurbarTip)window.DurbarTip.refresh(); /* a tooltip on a head that was redrawn says what the head says now (spec 001 FR-270) */
 }
 
 
@@ -5815,7 +5824,7 @@ document.addEventListener('scroll',()=>INL().follow(),{capture:true,passive:true
 /* DURBAR_SIM=N (Electron env, passed as ?sim=N) or ?sim=N in a plain browser feeds fake normalized
    events through exactly the same onLiveEvent path as the Copilot adapter. No AI credits are used. */
 const SIM = qs.has('sim') ? Math.max(1,Math.min(40,parseInt(qs.get('sim')||'12',10)||12)) : 0;
-const sim = SIM && window.__durbarSim ? window.__durbarSim.create({n:SIM, freeze:qs.get('simfreeze')==='1', titles:qs.get('simtitles')==='long'?'long':qs.get('simtitles')==='1', names:qs.get('simnames')==='long'?'long':undefined, reply:qs.get('simreply')==='long'?'long':qs.get('simreply')==='secrets'?'secrets':undefined, grants:qs.get('simgrants')==='many'?'many':qs.get('simgrants')==='stuck'?'stuck':undefined, question:qs.get('simquestion')==='long'?'long':qs.get('simquestion')==='compact'?'compact':qs.get('simquestion')==='1', elicit:qs.get('simelicit')||undefined, solo:qs.get('simrooms')==='solo', unreported:qs.get('simunreported')||undefined, waitOld:qs.get('simwaitold')==='1', sched:qs.get('simsched')==='1',ws:qs.get('simws')==='1', schedFire:Math.max(0,Math.min(600,parseInt(qs.get('simschedfire')||'0',10)||0)), seedTotals:qs.get('simtotals')==='1', seed:parseInt(qs.get('seed')||'7',10), edits:qs.get('simedits')==='1', floors:qs.get('simfloors')==='1'||qs.get('simfloors')==='ground', floorsGround:qs.get('simfloors')==='ground', floorsOff:(qs.get('floorsoff')||'').split(',').map(x=>x.trim()).filter(Boolean)}) : null;
+const sim = SIM && window.__durbarSim ? window.__durbarSim.create({n:SIM, freeze:qs.get('simfreeze')==='1', titles:qs.get('simtitles')==='long'?'long':qs.get('simtitles')==='1', names:qs.get('simnames')==='long'?'long':qs.get('simnames')==='alike'?'alike':undefined, reply:qs.get('simreply')==='long'?'long':qs.get('simreply')==='secrets'?'secrets':undefined, grants:qs.get('simgrants')==='many'?'many':qs.get('simgrants')==='stuck'?'stuck':undefined, question:qs.get('simquestion')==='long'?'long':qs.get('simquestion')==='compact'?'compact':qs.get('simquestion')==='1', elicit:qs.get('simelicit')||undefined, solo:qs.get('simrooms')==='solo', unreported:qs.get('simunreported')||undefined, waitOld:qs.get('simwaitold')==='1', sched:qs.get('simsched')==='1',ws:qs.get('simws')==='1', schedFire:Math.max(0,Math.min(600,parseInt(qs.get('simschedfire')||'0',10)||0)), seedTotals:qs.get('simtotals')==='1', seed:parseInt(qs.get('seed')||'7',10), edits:qs.get('simedits')==='1', floors:qs.get('simfloors')==='1'||qs.get('simfloors')==='ground', floorsGround:qs.get('simfloors')==='ground', floorsOff:(qs.get('floorsoff')||'').split(',').map(x=>x.trim()).filter(Boolean)}) : null;
 const bridge = sim || window.agentDurbar;
 if(bridge&&typeof bridge.convSearchStart==='function')document.body.classList.add('has-csearch'); /* spec 095: the box is in the top bar from the first layout, so the office is not laid out again when it appears */
 try{localStorage.removeItem('durbar.doorsigns');}catch(e){} /* spec 017 FR-034: the preference of the removed Office layout row is deleted on the first start */
@@ -6255,6 +6264,10 @@ async function floorCall(p){
    The drag code is the one of rooms, desks and places (reorder.js, issue 677): transform and opacity only, Esc cancels, the arrow buttons stay the keyboard route. */
 (function(){
   if(window.DurbarTip)window.DurbarTip.bind(document.body,{selector:'.floors-ui .fl-focus',text:el=>el.dataset.tip||''});
+  /* spec 001 FR-270 (issue 1905): the whole room head (flat) and the whole folder sign (Real office) say their folder on hover and on the focus of any control in them; a part with a title of its own (a button, the counts, the cost chip) keeps it on hover. The storey tag is a note: hover only. */
+  if(window.DurbarTip)window.DurbarTip.bind(document.body,{selector:'#stage .room-head, #stage .ro-sign:not(.ro-stag)',except:'button,a,[title]',text:el=>el.dataset.tip||''});
+  if(window.DurbarTip)window.DurbarTip.bind(document.body,{selector:'#stage .ro-stag',text:el=>el.dataset.tip||''});
+  if(window.DurbarTip)window.DurbarTip.bind(document.body,{selector:'#stripList .rg-h, #stripList .sitem',text:el=>el.dataset.tip||''}); /* spec 005 FR-340: the rail's group heads and rows give their folder on hover and on focus */
   if(!RO||!RO.attach)return;
   RO.attach(document.body,[{kind:'floor',
     item:t=>{const h=t.closest('.floors-ui .fl-grip');return h?h.closest('.fl-floor'):null;},
@@ -8118,13 +8131,15 @@ function railAge(x,now){
 }
 function railAgeSaid(x,now){const t=NEED_SINCE.get(x.id);return vis(x)==='waiting'?(t==null?stWord(x,true):ATT.waitLabel(Math.max(0,now-t))):stWord(x,true)+(t==null?'':', '+ATT.waitLabel(Math.max(0,now-t)).replace(/^waiting /,'for '));}
 function railReq(x){const c=x.live||chats[x.id]?pendingCardOf(x):null;return c?requestText(c):taskText(x);} /* never builds a demo chat just to look (as attentionItems) */
+/* spec 005 FR-340 (issue 1905): a rail row's tooltip names the folder (its path masked, home as ~), on a second line; a group head's gives name and path */
+const railFolderLine=x=>{const r=roomOf(x),p=r?pathTip(deskMask(showPath(r.path))):'';return p?'\n'+esc('Folder: '+p):'';};
 function railRow(x,root,now){
   const st=pillSt(x),attn=st==='waiting'||st==='error'||st==='failing'||st==='retrying', sel=x.id===root, tall=needsMe(x); /* spec 052 FR-092: Failing here too; spec 034 FR-018: Retrying */
   const head=`<span class="sav" data-face="${esc(faceKey(x))}">${avatar(x)}</span>`, name=`<b>${esc(x.name)}${draftHTML(x)}${unreadHTML(x)}${dialogHTML(x)}</b>`;
   const cls=`sitem st-${st}${attn?' attn':''}${tall?' tall':''}${sel?' sel':''}`, key=`data-sw="${esc(x.id)}" data-key="sw:${esc(x.id)}" aria-current="${sel}"`, who=`${esc(x.name)}${chatNoWords(x)}${draftWords(x)}${unreadWords(x)}`, no=chatNoOf(x)?'C'+chatNoOf(x)+' · ':'';
-  if(!tall)return `<button class="${cls}" type="button" ${key} title="${no}${esc(x.name)} · ${esc(stWord(x,true))}: ${esc(taskText(x))}" aria-label="${who}, ${esc(stWord(x,true))}. Open chat.">${head}<span class="stx">${name}</span><span class="sst"><span class="dot ${st}"></span><span class="sw">${esc(stWord(x,true))}</span></span></button>`;
+  if(!tall)return `<button class="${cls}" type="button" ${key} data-tip="${no}${esc(x.name)} · ${esc(stWord(x,true))}: ${esc(taskText(x))}${railFolderLine(x)}" aria-label="${who}, ${esc(stWord(x,true))}. Open chat.">${head}<span class="stx">${name}</span><span class="sst"><span class="dot ${st}"></span><span class="sw">${esc(stWord(x,true))}</span></span></button>`;
   const req=SHORT(railReq(x),200); /* masked first (requestText), then cut: tooltips stay within 300 characters (spec 052 FR-171) */
-  return `<button class="${cls}" type="button" ${key} title="${no}${esc(x.name)} · ${esc(railAge(x,now))}: ${esc(req)}" aria-label="${who}, ${esc(railAgeSaid(x,now))}: ${esc(req)}. Open chat.">${head}<span class="stx"><span class="stop">${name}<span class="sage">${esc(railAge(x,now))}</span></span><span class="sreq">${esc(req)}</span></span></button>`;
+  return `<button class="${cls}" type="button" ${key} data-tip="${no}${esc(x.name)} · ${esc(railAge(x,now))}: ${esc(req)}${railFolderLine(x)}" aria-label="${who}, ${esc(railAgeSaid(x,now))}: ${esc(req)}. Open chat.">${head}<span class="stx"><span class="stop">${name}<span class="sage">${esc(railAge(x,now))}</span></span><span class="sreq">${esc(req)}</span></span></button>`;
 }
 function renderRailDoor(){
   const b=$('railDoor'); if(!b)return;
@@ -8139,11 +8154,12 @@ function renderStrip(){
   renderRailDoor();
   /* spec 005 FR-216: a moved folder is re-inserted by morphHTML, which drops the focus; the focused row or heading gets it back by key */
   const fa=document.activeElement, fk=fa&&box.contains(fa)?(fa.dataset.sw!=null?'[data-sw="'+CSS.escape(fa.dataset.sw)+'"]':fa.dataset.rgfold!=null?'[data-rgfold="'+CSS.escape(fa.dataset.rgfold)+'"]':null):null;
-  const rows=withFaceMemo(()=>railGroups().map((g,gi)=>{
+  const groups=railGroups(), pn=RAIL.parentNames(groups.map(g=>ROOMS.find(x=>x.id===g.room)).filter(Boolean)); /* FR-340: equal names told apart */
+  const rows=withFaceMemo(()=>groups.map((g,gi)=>{
     const r=ROOMS.find(x=>x.id===g.room); if(!r)return '';
-    const shut=folds.has(r.path), n=g.ids.length, here=!!root&&g.ids.includes(root);
+    const shut=folds.has(r.path), n=g.ids.length, here=!!root&&g.ids.includes(root), par=pn.has(r.id)?deskMask(pn.get(r.id)):'';
     const need=shut&&g.needN?`<span class="rg-need" title="${g.needN} ${g.needN===1?'needs':'need'} you">${ALERT_ICON}${g.needN}</span>`:'';
-    return `<div class="rgrp" data-key="rg:${esc(r.id)}"><h3 class="rg-hd"><button class="rg-h${shut&&here?' has-sel':''}" type="button" data-rgfold="${esc(r.id)}" aria-expanded="${!shut}" aria-controls="rgRows${gi}" title="${esc(r.name)}" aria-label="${esc(r.name)}: ${n} ${n===1?'session':'sessions'}${g.needN?', '+g.needN+(g.needN===1?' needs':' need')+' you':''}${shut&&here?', the open chat is here':''}">${ICON('chev')}<span class="rg-n">${esc(r.name)}</span>${need}<span class="rg-c" aria-hidden="true">${n}</span></button></h3><div class="rg-rows" id="rgRows${gi}"${shut?' hidden':''}>${g.ids.map(id=>railRow(byId(id),root,now)).join('')}</div></div>`;
+    return `<div class="rgrp" data-key="rg:${esc(r.id)}"><h3 class="rg-hd"><button class="rg-h${shut&&here?' has-sel':''}" type="button" data-rgfold="${esc(r.id)}" aria-expanded="${!shut}" aria-controls="rgRows${gi}" data-tip="${esc([r.name,pathTip(deskMask(showPath(r.path)))].filter(Boolean).join('\n'))}" aria-label="${esc(r.name)}${par?' ('+esc(par)+')':''}: ${n} ${n===1?'session':'sessions'}${g.needN?', '+g.needN+(g.needN===1?' needs':' need')+' you':''}${shut&&here?', the open chat is here':''}">${ICON('chev')}<span class="rg-n">${esc(r.name)}</span>${par?`<span class="rg-p">${esc(par)}</span>`:''}${need}<span class="rg-c" aria-hidden="true">${n}</span></button></h3><div class="rg-rows" id="rgRows${gi}"${shut?' hidden':''}>${g.ids.map(id=>railRow(byId(id),root,now)).join('')}</div></div>`;
   }).join(''));
   morphHTML(box,rows);
   if(fk&&!box.contains(document.activeElement)){const n=box.querySelector(fk);if(n&&n.getClientRects().length)n.focus({preventScroll:true});}
@@ -10297,25 +10313,49 @@ async function addVia(fn){
 /* What happens after main added folders (Add existing, or spec 093's created folder with its own success line). */
 function applyAddResult(r,okText){
   if(r.error)toast('Could not add: '+esc(r.error),6000);
-  if(okText&&r.ok){toast(esc(okText),4200);announce(okText);} /* spec 093 FR-082: the result is announced */
+  if(okText&&r.ok){const a0=(r.agents||[]).find(a=>!a.parent);if(a0)toastAction(esc(okText),'Show',()=>revealRoom(roomIdOfAgent(a0.id)),6000);else toast(esc(okText),4200);announce(okText);} /* spec 093 FR-082: the result is announced; spec 001 FR-272: with Show, which goes to the new room */
   /* spec 006 FR-016 (issue #170): adding is allowed, but say once what such a folder exposes */
   (r.warnings||[]).forEach(w=>toast('<b>'+esc(w.name)+'</b>: agents in this folder can read everything '+(w.kind==='root'?'on this drive':'under your home folder')+', including SSH keys and saved credentials.',9000));
   r.agents.forEach(addLiveAgent);
   r.agents.forEach(x=>{const ag=liveById(x.id);if(ag)announcePrevious(ag);});
   INTO=null; if(bridge.floorsState)bridge.floorsState().then(applyFloors).catch(()=>{});
-  addFloorNote(r).catch(()=>{});
+  addFloorNote(r,!!okText).catch(()=>{});
 }
 /* spec 033 FR-089..FR-091 (issue 1709, owner report 2026-11-13): after an add, say where the folder is. A floor that is off is switched on (its room was
    hidden, so the person added it again); a floor that is not the one shown gets a toast naming it with Show; a folder that was already there says so
    and on which floor (main started nothing for it). Reuses toastAction, goToFloor, announce and the floors calls. */
-async function addFloorNote(r){
+/* spec 001 FR-272 (issue 1905): a folder just added is found. Its room (or Real office sign) is marked for 3 s (`data-new`, a model state, so a render keeps it) and
+   the office goes to it: scrolled into view (centred, instantly) when it is not wholly in view; the mark is an outline, with one soft pulse only while motion is on. Office view only. */
+let FRESH=null, FRESH_T=0;
+const FRESH_MS=3000;
+const freshRoom=id=>!!FRESH&&FRESH===id;
+const roomElOf=id=>document.querySelector('#stage .room[data-room="'+CSS.escape(id)+'"],#stage .ro-sign[data-folder="'+CSS.escape(id)+'"]');
+function revealRoom(id){
+  if(!id||ui.view!=='office'||document.body.classList.contains('panel-open'))return;
+  FRESH=id; clearTimeout(FRESH_T); FRESH_T=setTimeout(()=>{FRESH=null;if(ui.view==='office')scheduleRender();},FRESH_MS);
+  scheduleRender();
+  let frames=0;
+  const go=()=>{ /* wait for the draw (and for a floor change's lift) with animation frames, never a fixed sleep */
+    const el=FRESH===id?roomElOf(id):null; if(FRESH!==id)return;
+    if(!el||!el.getClientRects().length){if(++frames<240)requestAnimationFrame(go);return;}
+    const fl=$('floor'),b=el.getBoundingClientRect(),f=fl.getBoundingClientRect();
+    if(b.top<f.top||b.bottom>f.bottom||b.left<f.left||b.right>f.right)window.DurbarScroll.reveal(el,{block:'center'}); /* the office's own scroller (#floor.scrolls), never the page (spec 052 FR-055); instant */
+  };
+  requestAnimationFrame(go);
+}
+const roomIdOfAgent=id=>{const a=id?byId(id):null,r=a?roomOf(a):null;return r?r.id:null;};
+async function addFloorNote(r,quiet){
   let state=null;
   try{state=bridge.floorsState?await bridge.floorsState():null;}catch(e){state=null;}
   if(state)applyFloors(state);
-  const items=[...(r.agents||[]).filter(a=>!a.parent).map(a=>({name:a.name,floor:(state&&state.byAgent&&state.byAgent[a.id])||a.floor,dup:false})),
-    ...(r.existing||[]).map(x=>({name:x.name,floor:x.floor,dup:true}))];
+  const items=[...(r.agents||[]).filter(a=>!a.parent).map(a=>({name:a.name,floor:(state&&state.byAgent&&state.byAgent[a.id])||a.floor,dup:false,room:roomIdOfAgent(a.id)})),
+    ...(r.existing||[]).map(x=>({name:x.name,floor:x.floor,dup:true,room:roomIdOfAgent(x.id)}))];
   for(const it of items){
-    if(!floorsLive()||FLOORS.floors.length<2){if(it.dup){const t=it.name+' is already added.';toast(esc(t),5000);announce(t);}continue;}
+    if(!floorsLive()||FLOORS.floors.length<2){
+      if(quiet&&!it.dup){revealRoom(it.room);continue;} /* a created folder has its own success line, which has Show (applyAddResult) */
+      const t=it.dup?it.name+' is already added.':'Added '+it.name+'.'; /* FR-272: one floor: say it, and go to the room */
+      toastAction(esc(t),'Show',()=>revealRoom(it.room),it.dup?5000:8000); announce(t); revealRoom(it.room); continue;
+    }
     const f=floorById(it.floor); if(!f)continue;
     let switched=false, failed=false;
     if(!f.on){
@@ -10323,12 +10363,12 @@ async function addFloorNote(r){
       if(res&&res.ok)switched=true; else failed=true; /* still say where it is: it is on a floor that stays off */
     }
     const nm=floorById(f.id).name, shown=failed?false:(!oneFloorView()||f.id===curFloorId());
-    if(shown&&!switched&&!it.dup)continue; /* it is on the floor the person is looking at: the room is there */
+    if(shown&&!switched&&!it.dup){if(quiet){revealRoom(it.room);continue;}const t='Added '+it.name+'.';toastAction(esc(t),'Show',()=>revealRoom(it.room),8000);announce(t);revealRoom(it.room);continue;} /* on the floor the person is looking at: marked, gone to (FR-272) */
     const text=(it.dup?it.name+' is already added on the floor "'+nm+'".':'Added '+it.name+' on the floor "'+nm+'".')+(switched?' The floor was off, so it is switched on.':'')+(failed?' The floor is off and could not be switched on.':'');
     const html=esc(text);
-    if(shown){toast(html,6000);}
-    else if(failed)toastAction(html,'Show',async()=>{const r=await floorCall(bridge.setFloorOn(f.id,true));if(r&&r.ok)goToFloor(f.id);else{const t2='The floor "'+nm+'" still could not be switched on.';toast(esc(t2),8000);announce(t2);}},12000); /* Show tries the switch again, then goes there */
-    else toastAction(html,'Show',()=>goToFloor(f.id),12000);
+    if(shown){toastAction(html,'Show',()=>revealRoom(it.room),6000);revealRoom(it.room);}
+    else if(failed)toastAction(html,'Show',async()=>{const r=await floorCall(bridge.setFloorOn(f.id,true));if(r&&r.ok){goToFloor(f.id);revealRoom(it.room);}else{const t2='The floor "'+nm+'" still could not be switched on.';toast(esc(t2),8000);announce(t2);}},12000); /* Show tries the switch again, then goes there */
+    else toastAction(html,'Show',()=>{goToFloor(f.id);revealRoom(it.room);},12000);
     announce(text+(shown?'':' Press Show to '+(failed?'try again.':'go there.')));
   }
 }

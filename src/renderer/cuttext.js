@@ -32,5 +32,20 @@
     while(lo<hi){const m=(lo+hi+1)>>1;if(fits(cutText(full,m)))lo=m;else hi=m-1;}
     return cutText(full,lo);
   }
-  return {cutText,fitCut};
+  /* spec 001 FR-271 (issue 1905): the tail of a long folder name, the part that stays visible when the name is cut in the middle ("iot-pl…form-2").
+     '' for a name of 12 characters or fewer (not split). Otherwise whole segments (split at - _ . and space) added from the end until the tail has
+     6 or more characters; when that is more than 10, the last 8 characters. Code points, so a surrogate pair is never split. */
+  const SEP=/^[-_. ]$/;
+  function nameTail(name){
+    const cps=Array.from(String(name==null?'':name));
+    if(cps.length<=12)return '';
+    let start=-1;
+    for(let i=cps.length-1;i>0;i--){
+      if(!SEP.test(cps[i-1])||SEP.test(cps[i]))continue; /* a segment starts after a separator */
+      if(cps.length-i>=6){start=i;break;}
+    }
+    const len=start<0?Infinity:cps.length-start;
+    return (len<=10?cps.slice(start):cps.slice(-8)).join('');
+  }
+  return {cutText,fitCut,nameTail};
 })());
