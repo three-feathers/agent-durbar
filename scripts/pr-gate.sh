@@ -11,7 +11,8 @@
 #   - a PR GitHub cannot merge (conflicts): GitHub then runs only CodeQL, so the other checks look absent rather than red;
 #   - a PR whose file list (paginated files API, renames' old paths too, count equal to changed_files, under 3000) is unreadable or incomplete (spec 021 FR-091, #1422);
 #   - a PR that changes src/ without the Spec Kit gate and the Linux build-and-test check present and passing;
-#   - an open code-scanning alert on the PR's merge ref or head ref (a bot line comment can be carried forward after its alert is fixed);
+#   - an open code-scanning alert on the PR's merge ref, or on its head ref when the PR's base branch does not hold it too (FR-099, #1868: the head ref's
+#     analysis also lists main's alerts); a bot line comment can be carried forward after its alert is fixed;
 #   - a reviewer whose latest review is CHANGES_REQUESTED;
 #   - an unresolved, non-outdated review thread;
 #     durbar-samikshak[bot] (spec 103 FR-071, #1706) is read like a teammate: its issue comments, line comments, review bodies and unresolved threads are asks and its
@@ -151,8 +152,18 @@ if [ -n "$codeql_ok" ]; then
     codeql_ok=; codeql="$codeql(not exactly one CodeQL run from github-advanced-security, run $codeql_id of $head_sha)"
   fi
 fi
-# the open alerts on the merge and head refs, read as two numbers; an API error or a non-number blocks
-a_merge=$(gh api "repos/$R/code-scanning/alerts?ref=refs/pull/$p/merge&state=open" --jq length) && a_head=$(gh api "repos/$R/code-scanning/alerts?ref=refs/pull/$p/head&state=open" --jq length) && isnum "$a_merge" && isnum "$a_head" && alerts=$((a_merge + a_head)) || alerts="unread(code-scanning API)"
+# the open alerts on the merge and head refs, read as two numbers; an API error or a non-number blocks.
+# FR-099 (#1868): CodeQL on a PR's head ref lists main's alerts too, so a head-ref alert counts only when it is not also open on the PR's base branch
+# (same alert number; a fresh alert has a number main does not hold). The merge ref counts as before. A base branch name that is not plain, or an
+# unreadable base list, blocks (fail closed).
+a_merge=$(gh api "repos/$R/code-scanning/alerts?ref=refs/pull/$p/merge&state=open" --jq length) && isnum "$a_merge" || a_merge=
+case $pr_baseref in ''|*[!A-Za-z0-9._/-]*|*..*) a_base_nums=ERR;; *) a_base_nums=$(gh api --paginate "repos/$R/code-scanning/alerts?ref=refs/heads/$pr_baseref&state=open" --jq '.[].number') || a_base_nums=ERR;; esac
+a_head_nums=$(gh api --paginate "repos/$R/code-scanning/alerts?ref=refs/pull/$p/head&state=open" --jq '.[].number') || a_head_nums=ERR
+numlist() { [ -z "$1" ] || ! grep -qvE '^[0-9]+$' <<< "$1"; }
+if [ -n "$a_merge" ] && [ "$a_base_nums" != ERR ] && [ "$a_head_nums" != ERR ] && numlist "$a_base_nums" && numlist "$a_head_nums"; then
+  a_head=0; [ -z "$a_head_nums" ] || a_head=$(grep -cvxF -f <(printf '%s\n' "$a_base_nums") <<< "$a_head_nums")
+  alerts=$((a_merge + a_head))
+else alerts="unread(code-scanning API)"; fi
 # --paginate everywhere below: the REST lists return 30 items a page, and a long PR has more (spec 021 FR-055). --jq runs per page,
 # so the latest review per person is picked in the shell, across pages, not with jq's group_by
 changes=$(gh api --paginate repos/$R/pulls/$p/reviews --jq '.[]|select(.state!="COMMENTED" and .state!="PENDING")|"\(.user.login)\t\(.submitted_at)\t\(.state)"' | sort -k1,1 -k2,2 | awk -F'\t' -v me="$ME" '{last[$1]=$3} END{for(u in last) if(last[u]=="CHANGES_REQUESTED" && u!=me) printf "%s%s", (n++?",":""), u}')
