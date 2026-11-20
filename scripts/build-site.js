@@ -76,13 +76,21 @@ const dims = (rel) => {
 
 /* Markdown with our rules: raw HTML is shown as text; repo-relative links point to GitHub; screenshots are copied. */
 const copied = new Set();
+// spec 050 FR-012 delta 2026-11-20 (issue #1169): the 1280x800 copies stay in docs/screenshots, never in the site
+const SHOT_1280 = /^docs\/screenshots\/[^/]+-1280x800\.png$/;
+const twinOf1440 = (rel) => {
+  if (!SHOT_1280.test(rel)) return rel;
+  const twin = rel.replace(/-1280x800\.png$/, '-1440x900.png');
+  return fs.existsSync(path.join(ROOT, twin)) ? twin : rel;
+};
 function makeMd(baseDir, { ids = false } = {}) {
   const md = new Marked({ gfm: true, breaks: false, async: false });
   const fix = (href, isImg) => {
     if (!href || /^(https?:|mailto:|#)/.test(href)) return href;
-    const rel = path.posix.normalize(path.posix.join(baseDir, href.split('#')[0]));
+    let rel = path.posix.normalize(path.posix.join(baseDir, href.split('#')[0]));
     const frag = href.includes('#') ? '#' + href.split('#')[1] : '';
     if (isImg || /^docs\/screenshots\/[^/]+\.png$/.test(rel)) {
+      rel = twinOf1440(rel);
       copied.add(rel);
       return 'screenshots/' + path.posix.basename(rel);
     }
@@ -93,11 +101,15 @@ function makeMd(baseDir, { ids = false } = {}) {
     renderer: {
       html(tok) { return esc(tok.text !== undefined ? tok.text : tok.raw || ''); },
       image(tok) {
+        let rel = /^https?:/.test(tok.href || '') ? null : path.posix.normalize(path.posix.join(baseDir, tok.href));
+        if (rel) rel = twinOf1440(rel);
+        if (rel && SHOT_1280.test(rel)) return ''; // spec 050 FR-012 delta 2026-11-20: no 1440x900 twin, so no picture
         const src = fix(tok.href, true);
-        const rel = /^https?:/.test(tok.href || '') ? null : path.posix.normalize(path.posix.join(baseDir, tok.href));
         return `<img src="${esc(src)}" alt="${esc(tok.text || '')}"${rel ? dims(rel) : ''} loading="lazy">`;
       },
       link(tok) {
+        // spec 050 FR-012 delta 2026-11-20: the site serves only 1440x900 pictures; a link to a 1280x800 one is its text
+        if (!/^(https?:|mailto:|#)/.test(tok.href || '') && SHOT_1280.test(path.posix.normalize(path.posix.join(baseDir, tok.href.split('#')[0])))) return this.parser.parseInline(tok.tokens);
         const href = fix(tok.href, false);
         const ext = /^https?:/.test(href) ? ' rel="noopener"' : '';
         return `<a href="${esc(href)}"${ext}>${this.parser.parseInline(tok.tokens)}</a>`;
@@ -905,7 +917,7 @@ async function main() {
   console.log(`site: ${OUT} (index ${index.length} B, docs ${docs.length} B, ${feats.length} features, ${gallery.length} gallery images, ${copied.size} images copied${rel ? ', release ' + rel.tag : ', no release info'}${talks.length ? `, ${talks.length} unlisted talk page(s)` : ''})`);
 }
 
-module.exports = { withoutTags, pickRelease, APP_TAG_RE, unreleasedPhrases, loadUnreleased, unreleasedHits, readings, fold, publicTexts, unreleasedProblems, stripDraftNotes, validateWorlds, validateMedia, MEDIA_KINDS, MEDIA_SITE_MAX, vttText, videoTag, playerProblems, siteSource, copyTalks, validateLanding, headingAnchors, harnessNames, installSteps, features, latestChanges, shortChanges, stripRefs, slugger, landingBullet, LANDING_REF_RE, bulletSiteProblems };
+module.exports = { SHOT_1280, makeMd, copiedImages: () => copied, withoutTags, pickRelease, APP_TAG_RE, unreleasedPhrases, loadUnreleased, unreleasedHits, readings, fold, publicTexts, unreleasedProblems, stripDraftNotes, validateWorlds, validateMedia, MEDIA_KINDS, MEDIA_SITE_MAX, vttText, videoTag, playerProblems, siteSource, copyTalks, validateLanding, headingAnchors, harnessNames, installSteps, features, latestChanges, shortChanges, stripRefs, slugger, landingBullet, LANDING_REF_RE, bulletSiteProblems };
 
 if (require.main === module) {
   main().catch((e) => {
