@@ -10,7 +10,7 @@ import type { HistoryItem } from '../src/adapters/history';
 import { MaskBudgetError, createMasker } from '../src/main/convmask';
 import { SEARCH_HISTORY_LIMITS, SEARCH_MAX_TEXT_CHARS, cut as readerCut } from '../src/adapters/history';
 import type { Masker } from '../src/main/convmask';
-import { BUDGET, createReadGate, messageExcerpts, orderPlan, rendererScript, startScan } from '../src/main/convsearch';
+import { BUDGET, createEarlyTitles, createReadGate, messageExcerpts, orderPlan, rendererScript, startScan } from '../src/main/convsearch';
 import type { PlanSession, ReadOutcome, ScanBatch, ScanDeps, ScanEnd, SessionSearchApi } from '../src/main/convsearch';
 
 process.exitCode = 1;
@@ -281,11 +281,12 @@ async function main(): Promise<void> {
     });
     const end = await run(h, [claude, open, vs, codexOpen, toolOnly, codexEarlier, copilotEarlier, titleHit, big, broken], 'invoice export', { unavailable: ['Codex (not installed)'] });
     const hits = hitsOf(h);
-    assert.deepStrictEqual(hits.map((x) => x.sessionId), ['open-copilot', 'claude-earlier', 'vs-chat', 'codex-earlier', 'title-hit'], 'the matching sessions, office first, then newest first');
+    assert.deepStrictEqual(hits.map((x) => x.sessionId), ['codex-earlier', 'title-hit', 'open-copilot', 'claude-earlier', 'vs-chat'], 'FR-054: the title rows first (the title pass, in plan order), then the content rows, office first, newest first');
     assert.ok(!hits.some((x) => x.sessionId === 'tool-only'), 'D2: tool output never matches');
     assert.ok(!hits.some((x) => x.sessionId === 'codex-open'), 'a session without the words is not a hit');
     assert.ok(!h.reads.includes('codex-earlier') && !h.reads.includes('copilot-earlier'), 'earlier Copilot and Codex sessions: title only, never read');
-    assert.ok(!h.reads.includes('title-hit'), 'a title hit is a hit at once, before its messages are read');
+    assert.ok(h.reads.includes('title-hit'), 'FR-054: a title hit is shown at once and its messages are still read, for the excerpts');
+    assert.strictEqual(h.batches[0].hits.map((x) => x.sessionId).join(), 'codex-earlier,title-hit', 'the title rows are in the first batch, before any read');
     const th = hits.find((x) => x.sessionId === 'title-hit')!;
     assert.deepStrictEqual([th.excerpts.length, th.titleMarks.map(([s, t]) => th.title.slice(s, t))], [0, ['Invoice', 'export']], 'title hit: no excerpt line, the title marked');
     const oc = hits.find((x) => x.sessionId === 'open-copilot')!;
@@ -586,6 +587,54 @@ async function main(): Promise<void> {
       assert.ok(!/\bspawn|exec(?:File)?\s*\(/.test(code), `${f}: no process`);
     }
     assert.ok(imports >= 6, `the import scan saw the imports (${imports})`);
+  }
+
+  // ---- FR-054: titles first, then the contents; a title row is updated in place and counted once
+  {
+    sid = 0;
+    const h = harness({ c1: [u('nothing')], c2: [u('the invoice is here')], c3: [u('invoice too')] });
+    const end = await run(h, [sess({ sessionId: 'c1', title: 'invoice notes' }), sess({ sessionId: 'c2' }), sess({ sessionId: 'c3', title: 'Invoice again' })], 'invoice');
+    assert.deepStrictEqual(h.batches[0].hits.map((x) => x.sessionId), ['c1', 'c3'], 'the title rows go first, before any read');
+    assert.deepStrictEqual(h.batches[0].progress, { done: 0, total: 3 }, 'and carry the total');
+    assert.deepStrictEqual(hitsOf(h).map((x) => [x.sessionId, x.excerpts.length]), [['c1', 0], ['c3', 0], ['c2', 1], ['c3', 1]], 'c3 gets its excerpt later; c1 has none to add, no second row');
+    assert.deepStrictEqual(h.batches[h.batches.length - 1].groups, { office: 0, earlier: 3 }, 'rows counted once');
+    assert.strictEqual(end.progress.done, 3);
+    // early rows (while the plan is built): sent at once, and the scan does not send them again
+    sid = 0;
+    const h2 = harness({ c2: [u('the invoice is here')] });
+    const early = createEarlyTitles('invoice', { masker: h2.deps.masker, search: S, values: h2.deps.values, emit: h2.deps.emit });
+    early.add([sess({ sessionId: 'c1', title: 'invoice notes' }), sess({ sessionId: 'x', title: 'other' }), sess({ sessionId: 'y', title: 'invoice hidden', hidden: true }), sess({ sessionId: 'f', title: 'invoice off floor', floorOff: true }), sess({ sessionId: 'hp', title: 'invoice helper', helper: true })]);
+    assert.deepStrictEqual(h2.batches.map((b) => b.hits.map((x) => x.sessionId)), [['c1']], 'hidden, floor-off and helper sessions are not shown (orderPlan counts them); the title row is sent before the plan is complete');
+    sid = 0;
+    await startScan({ sessions: [sess({ sessionId: 'c1', title: 'invoice notes' }), sess({ sessionId: 'c2' })] }, 'invoice', { ...h2.deps, early }).done;
+    assert.deepStrictEqual(hitsOf(h2).map((x) => x.sessionId), ['c1', 'c2'], 'c1 once (its read finds nothing to add), c2 from its content');
+  }
+
+  // ---- FR-054 with FR-022: title rows from the early pass and the title pass together stop at maxResults; nothing past it is read; early work is bounded
+  {
+    const titled = (n: number): PlanSession[] => Array.from({ length: n }, (_x, i) => sess({ sessionId: `t${i}`, title: `invoice ${i}`, folderKey: `/f${i % 5}`, time: 5000 - i }));
+    for (const earlyN of [210, 120]) {
+      sid = 0;
+      const all = titled(210);
+      const h = harness({});
+      const early = createEarlyTitles('invoice', { masker: h.deps.masker, search: S, values: h.deps.values, emit: h.deps.emit });
+      early.add(all.slice(0, earlyN));
+      const end = await startScan({ sessions: all }, 'invoice', { ...h.deps, early }).done;
+      const ids = new Set(hitsOf(h).map((x) => x.sessionId));
+      assert.strictEqual(ids.size, BUDGET.maxResults, `${earlyN} early: the rows stop at maxResults`);
+      assert.ok(end.notes.capped.results, 'and the end state says so');
+      assert.ok(h.reads.every((id) => ids.has(id)), `${earlyN} early: no session without a row is read after the limit`);
+    }
+    // the early pass looks at a bounded number of sessions per call; the title pass finds the rest
+    sid = 0;
+    const many = Array.from({ length: 1000 }, (_x, i) => sess({ sessionId: `m${i}`, title: i === 900 ? 'invoice late' : `other ${i}`, folderKey: i === 900 ? '/g0' : `/g${i % 7}`, time: i === 900 ? 99_999 : 1000 - i }));
+    const h2 = harness({});
+    const early2 = createEarlyTitles('invoice', { masker: h2.deps.masker, search: S, values: h2.deps.values, emit: h2.deps.emit });
+    early2.add(many);
+    assert.ok(h2.work.masks <= BUDGET.maxSessions, `a call masks at most ${BUDGET.maxSessions} titles (${h2.work.masks})`);
+    assert.strictEqual(early2.emitted.size, 0);
+    await startScan({ sessions: many }, 'invoice', { ...h2.deps, early: early2 }).done;
+    assert.ok(hitsOf(h2).some((x) => x.sessionId === 'm900'), 'a title past the bound is found by the scan\'s own title pass');
   }
 
   console.log('convsearch tests passed');

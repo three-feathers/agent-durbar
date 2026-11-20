@@ -176,6 +176,8 @@ export interface ScanDeps {
   masker: Masker;
   search: SessionSearchApi;
   emit(b: ScanBatch): void;
+  /** FR-054: the title rows already sent while the plan was built (`createEarlyTitles`). */
+  early?: EarlyTitles;
 }
 
 const isWs = (c: number): boolean => c === 32 || (c >= 9 && c <= 13) || c === 0xa0 || c === 0x2028 || c === 0x2029 || c === 0x3000 || (c >= 0x2000 && c <= 0x200a);
@@ -306,6 +308,9 @@ export function messageExcerpts(
   return { excerpts: out, confirmed };
 }
 
+/** The identity of a planned session: one row per (app, folder, session). */
+export const sessionKey = (s: PlanSession, platform: NodeJS.Platform = process.platform): string => `${s.adapter}\0${normDir(String(s.folderKey), platform)}\0${s.sessionId}`;
+
 /** The sessions to scan, in scan order (FR-020), with what is left out counted. */
 export function orderPlan(plan: ScanPlan): { list: PlanSession[]; notes: ScanNotes } {
   const platform = plan.platform ?? process.platform;
@@ -321,7 +326,7 @@ export function orderPlan(plan: ScanPlan): { list: PlanSession[]; notes: ScanNot
     if (s.floorOff) { notes.floorsOff++; continue; }
     if (s.hidden) { notes.hidden++; continue; }
     const fk = normDir(String(s.folderKey), platform);
-    const key = `${s.adapter}\0${fk}\0${s.sessionId}`;
+    const key = sessionKey(s, platform);
     if (seen.has(key)) continue; // FR-020: two agents of one app in a folder list the same earlier sessions
     seen.add(key);
     if (!folderOrder.includes(fk)) folderOrder.push(fk);
@@ -372,6 +377,69 @@ export function createReadGate<T>(o: { timeoutMs?: number; wait?: (ms: number) =
   };
 }
 
+/** FR-021: the masked title of a planned session, where the query words are in it, and the best place of each word (issue 1904). A throwing mask is no title hit (`failed`). */
+function titleOf(s: PlanSession, query: string, d: Pick<ScanDeps, 'masker' | 'search'>, values: readonly string[], nWords: number): { title?: string; marks: Array<[number, number]>; confirmed: Set<number>; best: number[]; failed: boolean } {
+  const marks: Array<[number, number]> = [];
+  const confirmed = new Set<number>();
+  const best: number[] = Array.from({ length: nWords }, () => 3);
+  let title: string;
+  try {
+    title = d.masker.maskText(String(s.title ?? ''), values);
+  } catch {
+    return { marks, confirmed, best, failed: true };
+  }
+  for (const r of d.search.locate(title, query)) { marks.push([r.start, r.end]); confirmed.add(r.term); }
+  d.search.bestTiers(title, query).forEach((t, i) => { if (t < best[i]) best[i] = t; });
+  return { title, marks, confirmed, best, failed: false };
+}
+const rankOfBest = (best: readonly number[]): 0 | 1 | 2 => Math.min(2, Math.max(0, ...best)) as 0 | 1 | 2;
+
+function hitOf(s: PlanSession, title: string | undefined, marks: Array<[number, number]>, excerpts: Excerpt[], more: number, rank: 0 | 1 | 2): ScanHit {
+  return {
+    adapter: s.adapter, sessionId: s.sessionId, ...(s.agentId ? { agentId: s.agentId } : {}), group: s.group === 'office' ? 'office' : 'earlier',
+    app: s.app, folderName: s.folderName, title: title ?? 'Untitled session', titleMarks: title !== undefined ? marks : [], time: s.time, excerpts, more, rank,
+  };
+}
+
+/** Spec 095 FR-054: the title rows already sent while the plan was being built; `startScan` skips the sessions in `emitted` in its own title pass. */
+export interface EarlyTitles {
+  emitted: Set<string>;
+  groups: { office: number; earlier: number };
+  /** The sessions the plan has so far (the open ones, then a folder's listing): their title hits go out at once, in batches of at most 20. */
+  add(sessions: readonly PlanSession[]): void;
+}
+
+export function createEarlyTitles(query: string, d: Pick<ScanDeps, 'masker' | 'search' | 'values' | 'emit'> & { platform?: NodeJS.Platform }): EarlyTitles {
+  const words = [...new Set(d.search.terms(query))];
+  const emitted = new Set<string>();
+  const seen = new Set<string>();
+  const groups = { office: 0, earlier: 0 };
+  return {
+    emitted,
+    groups,
+    add(sessions) {
+      if (!words.length) return;
+      const out: ScanHit[] = [];
+      let looked = 0;
+      for (const s of sessions) {
+        if (!s || s.helper || s.floorOff || s.hidden || emitted.size >= BUDGET.maxResults) continue; // the same left-outs as `orderPlan`, which counts them
+        if (looked >= BUDGET.maxSessions) break; // bounded work per call: the rest is left to `startScan`'s title pass (not marked seen)
+        const k = sessionKey(s, d.platform);
+        if (seen.has(k)) continue;
+        seen.add(k);
+        looked++;
+        let t: ReturnType<typeof titleOf>;
+        try { t = titleOf(s, query, d, d.values(s), words.length); } catch { continue; }
+        if (t.failed || t.confirmed.size < words.length) continue;
+        emitted.add(k);
+        groups[s.group === 'office' ? 'office' : 'earlier']++;
+        out.push(hitOf(s, t.title, t.marks, [], 0, rankOfBest(t.best)));
+      }
+      for (let i = 0; i < out.length; i += BUDGET.batchHits) d.emit({ hits: out.slice(i, i + BUDGET.batchHits), progress: { done: 0, total: 0 }, groups: { ...groups } });
+    },
+  };
+}
+
 /** T015: the streamed scan. `cancel()` stops it before the next session or message; `done` always settles. */
 export function startScan(plan: ScanPlan, query: string, deps: ScanDeps): { cancel(): void; done: Promise<ScanEnd> } {
   let cancelled = false;
@@ -381,14 +449,15 @@ export function startScan(plan: ScanPlan, query: string, deps: ScanDeps): { canc
   async function run(): Promise<ScanEnd> {
     const { list, notes } = orderPlan(plan);
     const progress: ScanProgress = { done: 0, total: list.length };
-    const groups = { office: 0, earlier: 0 };
+    const emitted = deps.early?.emitted ?? new Set<string>();
+    const groups = { office: deps.early?.groups.office ?? 0, earlier: deps.early?.groups.earlier ?? 0 };
+    let flushes = 0;
     const queue: ScanHit[] = [];
     const started = deps.now();
     let sliceStart = started;
     let lastFlush = started - BUDGET.batchMs;
     let dirty = false;
     let stopped = false;
-    let found = 0;
     const words = [...new Set(deps.search.terms(query))];
     const titleOnlyApps = new Set<string>();
     const end = (failed: boolean): ScanEnd => ({ cancelled, failed, notes: { ...notes, titleOnly: { count: notes.titleOnly.count, apps: [...titleOnlyApps] } }, progress: { ...progress } });
@@ -397,6 +466,7 @@ export function startScan(plan: ScanPlan, query: string, deps: ScanDeps): { canc
       deps.emit({ hits: queue.splice(0, BUDGET.batchHits), progress: { ...progress }, groups: { ...groups } });
       lastFlush = deps.now();
       dirty = queue.length > 0;
+      flushes++;
     };
     // review of PR 1098, finding 7: the 60 s stop also holds during a read (a reader asks `halt` between its lines)
     const halt = (): boolean => {
@@ -412,9 +482,29 @@ export function startScan(plan: ScanPlan, query: string, deps: ScanDeps): { canc
         sliceStart = deps.now();
       }
     };
+    const keyOf = (s: PlanSession): string => sessionKey(s, plan.platform);
     if (!words.length) return end(false);
     try {
+      // FR-054: the title pass first: every title is in the plan, no read; those rows go out at once, not held to the 250 ms spacing
       for (const s of list) {
+        if (cancelled || emitted.size >= BUDGET.maxResults) break;
+        const k = keyOf(s);
+        if (emitted.has(k)) continue;
+        let t: ReturnType<typeof titleOf>;
+        try { t = titleOf(s, query, deps, deps.values(s), words.length); } catch { continue; } // counted in the content pass
+        if (!t.failed && t.confirmed.size === words.length) {
+          emitted.add(k);
+          groups[s.group === 'office' ? 'office' : 'earlier']++;
+          queue.push(hitOf(s, t.title, t.marks, [], 0, rankOfBest(t.best)));
+          if (queue.length >= BUDGET.batchHits) flush();
+        }
+        if (deps.now() - sliceStart >= BUDGET.sliceMs) { await deps.yieldNow(); sliceStart = deps.now(); }
+      }
+      if (emitted.size >= BUDGET.maxResults) notes.capped.results = true;
+      while (queue.length && !cancelled) flush();
+      if (!cancelled && !flushes) deps.emit({ hits: [], progress: { ...progress }, groups: { ...groups } }); // the first batch tells the window the plan's total
+      for (const s of list) {
+        if (emitted.size >= BUDGET.maxResults && !emitted.has(keyOf(s))) { stopped = true; break; }
         await tick();
         if (halt()) break;
         const hit = await session(s);
@@ -423,8 +513,8 @@ export function startScan(plan: ScanPlan, query: string, deps: ScanDeps): { canc
         dirty = true;
         if (!hit) continue;
         queue.push(hit);
-        groups[hit.group]++;
-        if (++found >= BUDGET.maxResults) { notes.capped.results = true; stopped = true; }
+        const k = keyOf(s);
+        if (!emitted.has(k)) { emitted.add(k); groups[hit.group]++; if (emitted.size >= BUDGET.maxResults) { notes.capped.results = true; stopped = true; } }
       }
       while (queue.length && !cancelled) {
         const wait = BUDGET.batchMs - (deps.now() - lastFlush);
@@ -447,27 +537,13 @@ export function startScan(plan: ScanPlan, query: string, deps: ScanDeps): { canc
         return undefined;
       }
       // FR-021: the title is masked before it is matched; a throwing mask means no title hit
-      let title: string | undefined;
-      try {
-        title = deps.masker.maskText(String(s.title ?? ''), values);
-      } catch {
-        title = undefined;
-        notes.maskFailed++;
-      }
-      const titleMarks: Array<[number, number]> = [];
-      const confirmed = new Set<number>();
-      const best = words.map(() => 3); // issue 1904: the best place of each word in the title or a shown message
-      if (title !== undefined) {
-        for (const r of deps.search.locate(title, query)) { titleMarks.push([r.start, r.end]); confirmed.add(r.term); }
-        deps.search.bestTiers(title, query).forEach((t, i) => { if (t < best[i]) best[i] = t; });
-      }
-      const rank = (): 0 | 1 | 2 => Math.min(2, Math.max(0, ...best)) as 0 | 1 | 2;
-      const hit = (excerpts: Excerpt[], more: number): ScanHit => ({
-        adapter: s.adapter, sessionId: s.sessionId, ...(s.agentId ? { agentId: s.agentId } : {}), group: s.group === 'office' ? 'office' : 'earlier',
-        app: s.app, folderName: s.folderName, title: title ?? 'Untitled session', titleMarks: title !== undefined ? titleMarks : [], time: s.time, excerpts, more, rank: rank(),
-      });
-      if (confirmed.size === words.length) return hit([], 0); // a title hit at once, before its messages are read
-      if (s.content === 'title') return undefined;
+      const t = titleOf(s, query, deps, values, words.length);
+      if (t.failed) notes.maskFailed++;
+      const { title, marks: titleMarks, confirmed } = t;
+      const best = t.best.slice(); // issue 1904: the best place of each word in the title or a shown message
+      const titleDone = !t.failed && confirmed.size === words.length;
+      const hit = (excerpts: Excerpt[], more: number): ScanHit => hitOf(s, title, titleMarks, excerpts, more, rankOfBest(best));
+      if (s.content === 'title') return undefined; // searched by title only (Q4): a title hit went out in the title pass
       // review of PR 1098, finding 4: a reader that throws costs this session only (counted as unreadable), not the scan
       let r: ReadOutcome;
       try {
@@ -536,6 +612,7 @@ export function startScan(plan: ScanPlan, query: string, deps: ScanDeps): { canc
         } else reserve.push(e);
       }
       const chosen = shown.concat(reserve).slice(0, BUDGET.maxExcerpts).sort((a, b) => a.anchor.n - b.anchor.n);
+      if (titleDone && !chosen.length) return undefined; // FR-054: its title row is shown already, and there is nothing to add
       return hit(chosen.map(({ terms: _t, tiers: _i, tier: _r, forTerm: _f, ...e }) => e), total - chosen.length);
     }
   }

@@ -255,9 +255,12 @@ module.exports = async (ctx) => {
     await typeQuery('registry');
     await ok(`/^Searching, \\d+ of \\d+ sessions$/.test((document.querySelector('#list .cs-st')||{}).textContent||'')&&!!document.getElementById('csStop')`, `${w}: "Searching, N of M sessions" with Stop`);
     await ok(`(window.__durbarSimUi?1:1)&&document.querySelector('#list .cs-st').textContent!=='Searching, 0 of 0 sessions'`, `${w}: the progress moves`);
+    // spec 095 FR-053: the running sign is there while it scans and gone at the end
+    await ok(`!!document.querySelector('#list .cs-state.running .cs-spin')&&document.querySelector('#list .cs-wrap').getAttribute('aria-busy')==='true'`, `${w}: the running sign and aria-busy while it scans`);
     await shot('searching', w, h, { prep: 'calm' });
     await js(`document.getElementById('csStop').click()`);
     await ok(`(document.querySelector('#list .cs-notes')||{}).textContent==='Stopped.'&&!document.getElementById('csStop')`, `${w}: Stop says "Stopped."`);
+    await ok(`!document.querySelector('#list .cs-spin')&&!document.querySelector('#list .cs-wrap').hasAttribute('aria-busy')`, `${w}: the sign and aria-busy are gone at the end`);
     assert.strictEqual(await count('__csCancels'), 1, `${w}: Stop cancels main's scan once (review of PR 1240, R3)`);
     await ok(`document.activeElement&&document.activeElement.id==='convSearch'`, `${w}: and the focus goes back to the box`);
 
