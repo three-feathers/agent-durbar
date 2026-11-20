@@ -77,10 +77,10 @@ const dims = (rel) => {
 /* Markdown with our rules: raw HTML is shown as text; repo-relative links point to GitHub; screenshots are copied. */
 const copied = new Set();
 // spec 050 FR-012 delta 2026-11-20 (issue #1169): the 1280x800 copies stay in docs/screenshots, never in the site
-const SHOT_1280 = /^docs\/screenshots\/[^/]+-1280x800\.png$/;
+const SHOT_1280 = /^docs\/screenshots\/[^/]+-1280x800\.(?:png|jpg|webp)$/;
 const twinOf1440 = (rel) => {
   if (!SHOT_1280.test(rel)) return rel;
-  const twin = rel.replace(/-1280x800\.png$/, '-1440x900.png');
+  const twin = rel.replace(/-1280x800\.(png|jpg|webp)$/, '-1440x900.$1');
   return fs.existsSync(path.join(ROOT, twin)) ? twin : rel;
 };
 function makeMd(baseDir, { ids = false } = {}) {

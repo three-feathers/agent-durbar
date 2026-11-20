@@ -364,6 +364,11 @@ for (const name of ['index.html', 'docs.html']) assert.ok(!/-1280x800\./.test(fs
   assert.ok(!/1280x800\.png/.test(html) && !/<a /.test(html), 'a 1280x800 link is plain text and no 1280x800 image is named');
   assert.ok(html.includes('src="screenshots/015-compacting-office-1440x900.png"'), 'a 1280x800 image becomes its 1440x900 twin');
   assert.ok(![...site.copiedImages()].some((r) => site.SHOT_1280.test(r)), 'no 1280x800 picture is queued for copying');
+  // a .jpg pair keeps its extension: the 1280x800 link is text, the image is the 1440x900 .jpg twin
+  const jpg = md.parse('[a](screenshots/052-follow-notice-chat-cave-1280x800.jpg) ![b](screenshots/052-follow-notice-chat-cave-1280x800.jpg) ![c](screenshots/no-such-thing-1280x800.jpg)');
+  assert.ok(!/1280x800\.jpg/.test(jpg) && !/<a /.test(jpg), 'a 1280x800 .jpg link is plain text and no 1280x800 .jpg image is named');
+  assert.ok(jpg.includes('src="screenshots/052-follow-notice-chat-cave-1440x900.jpg"'), 'a 1280x800 .jpg image becomes its 1440x900 .jpg twin');
+  assert.ok(![...site.copiedImages()].some((r) => /-1280x800\.(png|jpg|webp)$/.test(r)), 'no 1280x800 .jpg is queued for copying');
   assert.ok(site.copiedImages().size >= before, 'the twin is queued');
 }
 
