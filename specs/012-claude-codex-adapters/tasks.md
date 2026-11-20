@@ -284,4 +284,4 @@ T133 verification (2026-10-25, review on #698): typecheck, build and the offline
 
 ## Changes 2026-11-20 (masking batch: a token split by link or image markup on the plain-text surfaces: issue #1940)
 
-- [ ] T177 (2026-11-20, issue #1940) FR-189: `maskLinkSplitTokens` and `_linkWorkForTest` in `src/shared/redact.ts`; the desk's `splitFirst` runs it first (`src/renderer/safetext.js`); the `#1940` blocks in `scripts/test-safetext.ts` and `scripts/test-redact.ts`; the line in `specs/012-claude-codex-adapters/secret-coverage.md`; mutants and a differential fuzz against `main` in the PR.
+- [x] T177 (2026-11-20, issue #1940) FR-189: `maskLinkSplitTokens`, `withoutLinkSplit` and `_linkWorkForTest` in `src/shared/redact.ts`; the desk's `linkFirst` in `both2` and `maskLabel1` (`src/renderer/safetext.js`); the new suite `scripts/test-safetext-links.ts` (with `scripts/safetext-1593-corpus.ts`, the `#1593 differential`'s texts, shared with `scripts/test-safetext.ts`, which now checks them with the step off); the line in `specs/012-claude-codex-adapters/secret-coverage.md`; mutants and a differential fuzz against `main` in the PR.
