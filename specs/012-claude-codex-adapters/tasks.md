@@ -281,3 +281,7 @@ T133 verification (2026-10-25, review on #698): typecheck, build and the offline
 ## Changes 2026-11-11 (adversarial growth baseline: issue #1519)
 
 - [x] T160 (2026-11-11, issue #1519) FR-080, extends T138: `assertLinearGrowth` `retryReps` (16-run baseline on a retry), `reps` and an untimed 4 KB warm-up in the adversarial, masks and R12 worker scripts; fake-clock test and a worker-level quadratic mutant (fake clock, no real timing) in `scripts/test-redact-growth.ts`. The R12 worker has its own cases in the `hashtable` part (workers on a fake clock, no real timing): `reps` mean per run (kills removing the loop or the `/reps` division), a linear worker that does no work for a one-run baseline passes only through the 16-run retry baseline (kills the call site not passing `retryReps`), and a quadratic worker still fails. Not run on Windows.
+
+## Changes 2026-11-20 (masking batch: a token split by link or image markup on the plain-text surfaces: issue #1940)
+
+- [ ] T177 (2026-11-20, issue #1940) FR-189: `maskLinkSplitTokens` and `_linkWorkForTest` in `src/shared/redact.ts`; the desk's `splitFirst` runs it first (`src/renderer/safetext.js`); the `#1940` blocks in `scripts/test-safetext.ts` and `scripts/test-redact.ts`; the line in `specs/012-claude-codex-adapters/secret-coverage.md`; mutants and a differential fuzz against `main` in the PR.
