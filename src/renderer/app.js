@@ -1012,6 +1012,7 @@ function announceFilterNote(){ /* once per change of the pill, not on every coun
    is not drawn (roomHTML reads the filtered model), so it reserves no width either */
 let lastSizing=[];
 const OPS={renders:0,searches:0,probes:0}; /* spec 097 FR-186: counts of office renders and layout searches since the page started; the simulator's driver reads them (`__durbarSimUi.ops`), nothing else does */
+let OFFICE_OWED=false; /* spec 077 (2026-11-19, issue 1460): renderOffice found the floor covered by a screen (no width) and drew nothing; officeOwed makes the draw when the screen closes */
 const sizingModel=model=>ui.status?officeModel(true).map(m=>({...m,rolled:(m.rolled||[]).filter(x=>matchStatus(x.a))})):model;
 
 /* ---------------- office view ---------------- */
@@ -2047,8 +2048,9 @@ function renderOffice(){
   const cs=getComputedStyle(floor);
   const aw=floor.clientWidth-parseFloat(cs.paddingLeft)-parseFloat(cs.paddingRight);
   const ah=floor.clientHeight-parseFloat(cs.paddingTop)-parseFloat(cs.paddingBottom);
-  if(aw<=0||ah<=0)return;
+  if(aw<=0||ah<=0){OFFICE_OWED=true;return;} /* spec 077 (2026-11-19, issue 1460): a screen covers the floor; the draw is owed and made when the screen closes (officeOwed), not left to the floor observer */
   if(SIM&&!window.__durbarSimReplayed)return; /* spec 097 FR-363: simulator only: while its start-up replay is pending the first states are not here, so no layout search and no desks for the early shape; the first render after the replay searches once (the replay sets the flag, then its states schedule that render). Before the render counter so ops() does not count it */
+  OFFICE_OWED=false;
   const model=officeModel();
   if(!model.length)$('probe').style.width=aw+'px'; /* spec 092 FR-008: the layout probe is only resized by a layout search; an empty screen has none, so a probe left at a wider width (the lift panel came or went) would overflow the floor */
   /* spec 092 FR-001, edge case "a floor with 0 agents": a floor screen with nothing to show says so and keeps the shared lobby (never a bare empty screen).
@@ -5802,6 +5804,7 @@ let dprPending=false; /* the ratio changed (see watchDpr): the next relayoutNow 
 const relayoutNow=()=>{resizeQueued=false;if(dprPending){dprPending=false;document.documentElement.dataset.dprn=String((+document.documentElement.dataset.dprn||0)+1);}if(ui.view==='office'){renderOffice();syncWalkers();afTick();}placePencils();INL().follow();};
 const relayout=()=>{if(resizeQueued)return;resizeQueued=true;requestAnimationFrame(relayoutNow);}; /* spec 024: figures follow a resize */
 new ResizeObserver(relayoutNow).observe($('floor')); /* spec 052 FR-243: the floor changed size (the Auto-follow strip came, a bar wrapped): lay out before the next paint, not a frame later; the stage keeps its old height until then and would overflow the shorter floor */
+const officeOwed=()=>{if(OFFICE_OWED)relayoutNow();}; /* spec 077 (2026-11-19, issue 1460): a pick made under Settings is drawn when it closes, whether or not the floor observer saw the size change (none if no frame came between opening and closing) */
 window.addEventListener('resize',relayout);
 /* spec 102 FR-255 (T204, review of PR 1884): the window moved to a screen with another scale keeps its CSS size, so no resize comes and the floor's scale `g` (chosen for the ratio) would stay stale until the next update; a resolution query per ratio fires once on the change and is set again for the new one */
 let dprMQ=null;const watchDpr=()=>{try{if(dprMQ)dprMQ.onchange=null;dprMQ=matchMedia('(resolution: '+(window.devicePixelRatio||1)+'dppx)');document.documentElement.dataset.dprq=dprMQ.media;dprMQ.onchange=()=>{dprPending=true;watchDpr();relayout();};}catch(e){}};watchDpr();
@@ -10356,7 +10359,7 @@ if(bridge){
     const s=e.target.closest&&e.target.closest('.floors-ui select[data-fl="move"]');if(s)moveRoomToFloor(s.dataset.room,s.value);
     if(e.target&&e.target.classList&&e.target.classList.contains('fl-into-sel')){INTO=e.target.value;renderIntoFloor();renderFloorsPanel();renderFloorsSettings();}});
   document.addEventListener('keydown',e=>{const t=e.target;if(e.key==='Enter'&&t&&t.closest&&t.closest('.floors-ui .fl-new')){e.preventDefault();floorAction(t.closest('.fl-new').querySelector('[data-fl="create"]'));}});
-  window.DurbarScreens.init({handover:{ /* spec 011 FR-088: a near-limit card offers the existing dialog for a live session; found again by id at the click */
+  window.DurbarScreens.init({afterClose:officeOwed,handover:{ /* spec 011 FR-088: a near-limit card offers the existing dialog for a live session; found again by id at the click */
     sessions:(kind)=>agents.filter(a=>a.live&&!a.parent&&(a.info&&a.info.adapterId||'copilot')===kind&&canHandover(a)).slice(0,3).map(a=>({id:a.id,name:a.name})),
     open:(id,to)=>{const a=byId(id);if(!a||!a.live||!canHandover(a))return false;newSession(a,{summary:true,handover:true,to});return true;}
   },autoFollow:{get:()=>AF_ON,set:v=>setAutoFollowOn(v)},shutters:{get:()=>SHUT_PREF,set:setShutOn,usable:()=>!!SHUT},view:{get:officeView,set:setOfficeView,note:()=>roPeople().note&&officeView()==='real'?roPeople().note:'',world:{get:()=>roPeople().world,set:setRoWorld,list:roWorlds,defaultSet:()=>roPeople().setName}},navKey:{text:navKeyText,textOf:c=>keyText(NAV.comboParts(c)),defText:()=>keyText(NAV.comboParts(NAV.DEFAULT_COMBO)),isDefault:()=>NAV.sameCombo(NAV_KEY,NAV.DEFAULT_COMBO),set:setNavKey,recording:on=>{navRecording=!!on;},fromEvent:e=>NAV.comboFromEvent(e,IS_MAC),clash:c=>NAV.sameCombo(c,SEARCH_KEY)&&!NAV.sameCombo(SEARCH_KEY,NAV.SEARCH_COMBO)?'Already used for Search conversations.':NAV.clashOf(c,IS_MAC)},searchKey:bridge&&bridge.convSearchStart?{text:searchKeyText,textOf:c=>keyText(NAV.comboParts(c)),defText:()=>keyText(NAV.comboParts(NAV.SEARCH_COMBO)),isDefault:()=>NAV.sameCombo(SEARCH_KEY,NAV.SEARCH_COMBO),bound:searchKeyBound,set:setSearchKey,recording:on=>{navRecording=!!on;},fromEvent:e=>NAV.comboFromEvent(e,IS_MAC),clash:c=>NAV.searchClashOf(c,IS_MAC,NAV_KEY)}:null,roomName:id=>{const r=ROOMS.find(x=>x.id===id);return r?r.name:String(id||'');},refreshKinds:()=>loadKinds(true),setAccounts,density:{get:()=>DENSITY,set:setDensity},liveAct:{get:()=>LIVE_PREF,set:setLiveOn,usable:()=>!!LIVEACT},bridge,stats:STATS,esc,mask:safeMask,toast,announce,floors:{on:()=>floorsLive(),render:()=>renderFloorsSettings()},sched:{on:()=>!!bridge.listSchedules&&!demoOn,render:()=>renderSchedSettings()},onSettings:v=>{APP_SETTINGS=v||{};},onUsageReset,isSerious:()=>SERIOUS,isNotify:()=>NOTIFY,setNotify:on=>{NOTIFY=!!on;},breakResume:()=>BREAK_RESUME,setBreakResume:v=>{BREAK_RESUME=v==='ask'?'ask':'auto';},chatLinksIn:()=>CHAT_LINKS,setChatLinksIn:v=>{CHAT_LINKS=v==='system'?'system':'session';},setSerious:on=>{SERIOUS=!!on;markSerious();scheduleRender();},isMotion:()=>MOTION,setMotion:on=>{MOTION=!!on;markMotion();scheduleRender();},isStillHl:()=>STILL_HL,setStillHl:on=>{STILL_HL=!!on;markStillHl();scheduleRender();},usageSince:()=>LEDGER.since(),usageOffice:()=>LEDGER.office(),costData,usageError:()=>usageSaveError,

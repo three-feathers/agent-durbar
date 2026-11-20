@@ -38,6 +38,7 @@
     document.body.classList.remove('screen-open');
     ['toolsBtn','settingsBtn'].forEach(id=>{const b=$(id);if(b)b.setAttribute('aria-pressed','false');});
     if(after){try{after();}catch(e){/* the screen is closed whatever the hook does */}}
+    if(X.afterClose){try{X.afterClose();}catch(e){/* a draw that fails here is the page's error, not the screen's */}} /* spec 077 (2026-11-19, issue 1460): the office is visible again; a draw it skipped while covered is made now */
   }
   const isOpen=()=>!!cur;
   function paint(focus){
