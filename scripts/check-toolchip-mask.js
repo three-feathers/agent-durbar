@@ -32,6 +32,19 @@ const CASES = [
   { id: 'lines', tool: 'bash', args: { command: j('cd app &&\n  curl -H "Authorization', ': Bearer ', BEARER, '" \\\n  https://api.example.test/') } },  { id: 'cut', tool: 'bash', args: { command: j('echo ', 'ab '.repeat(131), TOK, ' done') } }, // the token across the label's 400 cut: masked before the cut
   { id: 'long', tool: 'bash', args: { command: j('echo ', 'ab '.repeat(4200), TOK) }, hides: false }, // past the masks' input limit: the part shown ends before it
 ];
+/* a value broken by a line continuation or a line break (the task line reads the flat form): each break kind, two shapes */
+const CA = j('Hx9', 'Kq2'), CB = j('Lm7', 'Np4Rs');
+const BREAKS = [['bs-lf', '\\\n'], ['bs-crlf', '\\\r\n'], ['caret-crlf', '^\r\n'], ['lf', '\n'], ['crlf', '\r\n']];
+const CONT = [];
+for (const [bk, br] of BREAKS) {
+  CONT.push({ id: 'env-' + bk, raw: j('export DB_', 'PASSWORD=', CA, br, CB, ' && npm test') });
+  CONT.push({ id: 'url-' + bk, raw: j('git clone https://ana:', 'password=3gP5K2', br, CB, '@git.example.test/a.git') });
+}
+/* labels an adapter already cut (history: 300; Codex: 200 and "…"; VS Code: 299 or 199 and "…"), the cut inside a token of several families */
+const FAM = [j('sk', '-proj-', 'Rt5Wq8Zx2Vb7Nm4Kp1'), j('gl', 'pat-', 'Wd3Fh7Jk2Lm9Qs4Tv6'), j('xo', 'xb-', '1234567890', '-', 'Gh5Jk8Lm2Np4'), j('github', '_pat_', '11AB', 'Zx9Cv8Bn7Mm6Lk5Jh4'), j('AK', 'IA', 'QW3ER5TY7UI9OP2A')];
+const FAM_NEEDLES = FAM.map((t) => t.slice(0, 12).toLowerCase()); // the head an adapter's cut leaves (12 to 16 characters)
+const cutAt = (n, mark) => (t) => { const pad = 'echo ' + 'ab '.repeat(Math.max(0, Math.floor((n - 5 - 14) / 3))); return (pad + t + ' done').replace(/\s+/g, ' ').slice(0, n) + mark; };
+const PATHNEEDLES = [TOK, BEARER].map((x) => x.toLowerCase());
 /* near misses (pinned): harmless text the task line's mask leaves as it is reads exactly as on main; text it hides by its own rule (every
    header value of a command, a name or flag that says token, a URL's user part) is hidden on the chip too, as on the task line */
 const NEAR_SAME = [['bash', 'gh auth status'], ['bash', 'grep -rn "Authorization" src'], ['bash', 'git clone git@github.com:acme/app.git'], ['grep', 'password'], ['view', 'src/auth/token.ts'], ['bash', 'echo $GITHUB_TOKEN | wc -c'], ['bash', 'git log --format=%H -n 1'], ['web_fetch', 'https://example.com/login?next=/home']];
@@ -142,6 +155,51 @@ module.exports = async (ctx) => {
     }
     // the masked text is the task line's (the same mask): a chip never shows more than the header's task line for the same call
     console.log(`[toolchip-mask] ${world}: ${CASES.length * 2} chips masked (start and update)`);
+  }
+
+  // continuation: the chip hides whatever the task line (the flat reading) hides, for each break kind
+  {
+    await H.load({ w: 1440, h: 900, query: {}, ready: 'fit' });
+    const id = ID = await agentId();
+    await open(id);
+    let hiddenByTask = 0;
+    for (const c of CONT) {
+      const cs = 'cont-' + c.id;
+      await emit({ type: 'toolCall', sessionId: id, callId: cs, tool: 'bash', phase: 'start', args: { command: c.raw } });
+      assert.ok(await until(`!!window.__durbarSimUi.chipEl(${jsLiteral(ID)},${jsLiteral(cs)})`, 5000), `chip ${cs}`);
+      const v = await read(cs);
+      const task = String(await js(`window.__durbarSimUi.taskLabel('bash',${jsLiteral(c.raw)})`));
+      if (task.includes(CB)) continue; // the task line shows it too: not more than the task line
+      hiddenByTask++;
+      for (const [k, t] of [['line', v.code], ['title', v.title], ['command', v.pre], ['copy', v.copied], ['html', v.html]]) assert.ok(!t.includes(CB), `CONTINUATION ${c.id}: the chip's ${k} shows what the task line hides: ${t.slice(0, 120)}`);
+    }
+    assert.ok(hiddenByTask >= 4, `CONTINUATION: the task line hides the value in ${hiddenByTask} cases (the check needs some)`);
+  }
+
+  // the other feeds of a chip: a replayed history, the VS Code transcript, a demo turn; labels cut by the adapters at their caps
+  {
+    const chatText = () => js(`(document.getElementById('chat')||document.body).outerHTML.toLowerCase()`);
+    const pathCheck = async (tag, needles) => { const t = await chatText(); for (const n of needles) assert.ok(!t.includes(n), `${tag} shows "${n.slice(0, 14)}..."`); assert.ok(/\[redacted\]|\u2026|…/.test(t), `${tag}: the chips are there`); };
+    const cut300 = cutAt(300, ''), cut200 = cutAt(200, '\u2026'), cut299 = cutAt(299, '\u2026'), cut199 = cutAt(199, '\u2026');
+    await H.load({ w: 1440, h: 900, query: {}, ready: 'fit' });
+    let id = ID = await agentId();
+    await open(id);
+    const items = [{ type: 'tool', callId: 'r0', tool: 'bash', label: CASES[0].args.command }, { type: 'tool', callId: 'r1', tool: 'bash', label: CASES[2].args.command }];
+    FAM.forEach((t, i) => { items.push({ type: 'tool', callId: 'ra' + i, tool: 'bash', label: cut300(t) }); items.push({ type: 'tool', callId: 'rb' + i, tool: 'shell', label: cut200(t) }); });
+    await js(`window.__durbarSimUi.replay(${jsLiteral(id)},${jsLiteral(items)})`);
+    await pathCheck('REPLAY', [...PATHNEEDLES, ...FAM_NEEDLES]);
+    const blocks = [{ type: 'user', text: 'hi' }, { type: 'tool', label: CASES[0].args.command }, { type: 'tool', label: CASES[2].args.command }];
+    FAM.forEach((t) => { blocks.push({ type: 'tool', label: cut299(t) }); blocks.push({ type: 'tool', label: cut199(t) }); });
+    await js(`window.__durbarSimUi.vsView(${jsLiteral(id)},${jsLiteral({ title: 'VS Code chat', blocks, notes: [], shownRequests: 1, totalRequests: 1 })})`);
+    assert.ok(await until(`!!document.querySelector('.vsview .chip')`, 5000), 'VSCODE: the transcript is shown');
+    await pathCheck('VSCODE', [...PATHNEEDLES, ...FAM_NEEDLES]);
+    await H.load({ w: 1440, h: 900, query: {}, ready: 'fit' });
+    id = ID = await agentId();
+    await open(id);
+    await js(`window.__durbarSimUi.demoTurn(${jsLiteral(id)},${jsLiteral([['run', CASES[0].args.command, 'ok', 'ok'], ['run', CASES[2].args.command, 'ok', 'ok']])})`);
+    assert.ok(await until(`[...document.querySelectorAll('#chat .chip code')].some(c=>/\[redacted\]/.test(c.textContent))`, 8000), 'DEMO: the demo chips are there');
+    await pathCheck('DEMO', PATHNEEDLES);
+    console.log(`[toolchip-mask] continuation, replay, VS Code and demo feeds masked`);
   }
 
   // differential: the harmless corpus shows exactly what main shows (main: label = raw one line cut at 400, full = raw cut at 20,000)
