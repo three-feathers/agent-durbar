@@ -65,7 +65,7 @@ const DRIVERS = [
   { name: 'check-browser-follow' }, // spec 005 FR-235 (issue #1168): a chat that followed the end still follows after Chat, Browser, Chat (a turn writing meanwhile); one scrolled up keeps its place; both sizes
   { name: 'check-status-filter' }, // spec 001 FR-180 (issue #790): a status pill says what it hides, and Show all
   { name: 'check-status-filter', label: 'check-status-filter retro', env: { DRIVER_WORLD: 'retro' } }, // spec 102 delta 2026-11-11 (issue 1559): the notice's contrast in the arcade, both sizes
-  { name: 'check-001-room-heads' }, // spec 001 FR-270, FR-271 (issue #1905): 16 folders whose names start alike: a cut name keeps its end, the whole head (and the Real office sign) says its folder on hover and on keyboard focus, masked
+  { name: 'check-001-room-heads', focus: true }, // spec 001 FR-270, FR-271 (issue #1905): 16 folders whose names start alike: a cut name keeps its end, the whole head (and the Real office sign) says its folder on hover and on keyboard focus, masked
   { name: 'check-001-room-heads', label: 'check-001-room-heads retro', env: { DRIVER_WORLD: 'retro' } }, // spec 001 FR-270..FR-272 (issue #1905): the same checks in the Retro arcade (its signs have more room: see the driver's note)
   { name: 'check-005-rail-folder' }, // spec 005 FR-340 (issue #1905): the rail's group heads and rows give their folder (masked) on hover and focus; equal names show their parent; 220 and 180 px
   { name: 'check-001-add-go' }, // spec 001 FR-272 (issue #1905): after an add the office goes to the new room and marks it for 3 s; Show; still under reduced motion; another floor; the Real office sign
@@ -269,8 +269,8 @@ const DRIVERS = [
   { name: 'check-browser-links', label: 'check-browser-links note', env: { DURBAR_SIM_BROWSER_CONSENT: 'ask' } }, // the same click with the one-time note: Not now sends the link to the system browser that time
   { name: 'check-browser-dialogs', env: { DURBAR_SIM_BROWSER_CONSENT: 'ask' } }, // spec 080 T015 AC6: the once-per-app consent, Leave this page?, a hidden session's page dialog (toast, chat forward once, marker)
   { name: 'check-browser-dialogs', label: 'check-browser-dialogs 1280', env: { DURBAR_SIM_BROWSER_CONSENT: 'ask', BROWSER_DIALOGS_SIZE: '1280x800' } }, // the same at 1280x800: the note, Leave this page?, the hidden dialog's toast
-  { name: 'check-browser-tabs' }, // spec 080 Phase 1b (US6, FR-120..FR-133): page tabs, the toggle, pages opening tabs, 10 tabs, close while loading, keys, the cap, session end
-  { name: 'check-browser-tabs', label: 'check-browser-tabs 1280', env: { BROWSER_TABS_SIZE: '1280x800' } }, // the same at 1280x800 (SC-011)
+  { name: 'check-browser-tabs', focus: true }, // spec 080 Phase 1b (US6, FR-120..FR-133): page tabs, the toggle, pages opening tabs, 10 tabs, close while loading, keys, the cap, session end
+  { name: 'check-browser-tabs', label: 'check-browser-tabs 1280', focus: true, env: { BROWSER_TABS_SIZE: '1280x800' } }, // the same at 1280x800 (SC-011)
   { name: 'check-080-browser-expand' }, // spec 080 FR-134..FR-139 (issue #1691): Expand browser fills the chat panel, Back to small browser and Escape restore, focus, the page keeps its Escape, not remembered; Flat, both sizes
   { name: 'check-080-browser-expand', label: 'check-080-browser-expand photo', env: { EXPAND_WORLD: 'real' } }, // the same in the Photo office (Real office)
   { name: 'check-080-browser-expand', label: 'check-080-browser-expand retro', env: { EXPAND_WORLD: 'real', DRIVER_WORLD: 'retro' } }, // the same in the Retro arcade
