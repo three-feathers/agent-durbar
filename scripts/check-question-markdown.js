@@ -21,9 +21,10 @@
  *   7. app.js qMdHTML: render images again (`||/!\[/.test(s)||qRefsLeft(s))` -> `||qRefsLeft(s))`)  => "an image"
  *   8. app.js qMdHTML: drop the cross-check with the raw reading (`if(!qRunsIn(shown,m))return plain();` -> ``)  => "short tail"
  *   9. app.js qRef: drop the C1 branch (`if(cp>=0x80&&cp<=0x9f)return all;` -> ``)  => "a number HTML reads as another character"
- *  10. app.js qMdHTML: no masking of reference runs (`const s=qMaskRefRuns(s0);` -> `const s=s0;`)  => "unknown reference between value pieces"
+ *  10. app.js qMdHTML: the fallback is safeMask alone, without the added run mask (`m=qMaskRefRuns(safeMask(s))` -> `m=safeMask(s)`)  => "named and numeric references inside a value"
  *  11. app.js qRefsLeft: any `&` before a letter is a leftover (`/&(?:[A-Za-z][A-Za-z0-9]{0,31};|` -> `/&(?:[A-Za-z]|`)  => "a bare ampersand is ordinary text"
  *  12. app.js Q_NAMED: drop the names beyond the basic ones (`colon:':',` and `mdash:'\u2014',` removed)  => "known named references keep the Markdown"
+ *  13. app.js Q_RUN: the run holds only word characters (`[A-Za-z0-9_\-.:@\/+=~%]` -> `[A-Za-z0-9_\-]`, both places)  => "masked whole"
  * Named references are checked against the browser's own reading (a textarea in the test page), never against the card's decoder.
  * Edge questions (review of PR 1933), built from invented pieces and rendered through the card's own qMdHTML (the simulator's bridge): a question
  * made only of a definition, a value split late, a literal mask word as link text, character references, a link address, a link title, character references in every form (and ones nested past the limit or unknown), images
@@ -99,16 +100,25 @@ module.exports = async (ctx) => {
       const names=['lowbar','UnderBar','equals','period','colon','sol','commat','percnt','ast','midast','grave','DiacriticalGrave','Hat','hyphen','dash','minus','dollar','plus','num','excl','quest','bsol','verbar'];
       const more=[];for(const nm of names)for(const ref of ['&'+nm+';','&amp;'+nm+';','&ZeroWidthSpace;&'+nm+';','&'+nm])for(const at of [3,4,12,20]){
         const q='**see** '+v.slice(0,at)+ref+v.slice(at)+' ok',card=tx(U.qMdHTML(q)).textContent,base=U.qSafeMask(bdec(q));if(ch.some(c=>card.includes(c)&&!base.includes(c)))more.push(nm+'|'+ref+'|'+at);}
+      const fwd=[c=>'&amp#'+c.charCodeAt(0)+';',c=>'&amp#x'+c.charCodeAt(0).toString(16)+';',c=>'&AMP#'+c.charCodeAt(0)+';',c=>c==='_'?'&amplowbar;':'&ampcolon;'];
+      const cls=[];for(const f of fwd)for(const at of [3,4,12,20])cls.push('**see** '+v.slice(0,at)+f(v[at])+v.slice(at+1)+' ok');
+      for(const nm of ['micro','eacute','frac12','pound','gt','nbsp','shy','not','para','times','copy','amp']){for(const at of [3,4,12,20])cls.push('**see** '+v.slice(0,at)+'&'+nm+v.slice(at)+' ok');cls.push('**see** password=&'+nm+v.slice(4)+' ok');}
+      for(const nm of ['zzq','alpha','notin'])for(const at of [3,12,20])cls.push('**see** '+v.slice(0,at)+'&'+nm+';'+v.slice(at)+' ok');
+      for(const q of cls){const card=tx(U.qMdHTML(q)).textContent,base=U.qSafeMask(bdec(q));if(ch.some(c=>card.includes(c)&&!base.includes(c)))more.push(q.slice(8,40));}
+      const jwt='eyJ'+'aGVsbG8tdGVzdC1oZWFkZXI'+'.'+'eyJ'+'aW52ZW50ZWQtcGF5bG9hZC0x'+'.'+'U2lnbmF0dXJlLWludmVudGVkLTEyMzQ',jt=tx(U.qMdHTML('**see** '+jwt.slice(0,30)+'&zzq;'+jwt.slice(30)+' ok')).textContent;
+      const ut=tx(U.qMdHTML('**see** https://user:Pa55w0rdInv&zzq;ented42@example.com/x ok')).textContent;
+      const whole={jwt:/aGVsbG8t|ZWFkZXI|aW52ZW50|bG9hZC0x|U2lnbmF0|LTEyMzQ/.test(jt),url:/Pa55w0rd|ented42/.test(ut),jt,ut};
       const bad=U.qNames().filter(e=>{const i=e.indexOf('=');return bdec('&'+e.slice(0,i)+';')!==e.slice(i+1);});
       const md=q=>{const c=tx(U.qMdHTML(q));return !!c.querySelector('strong');};
       const bare=['**R&D** plan?','**AT&T** or **A&B**?','Eat **M&Ms**?','Edit \x60a&b.ts\x60 **now**?','See [the page](https://example.com/x?a=1&b=2) **first**?'].filter(q=>!md(q));
       const link=!!tx(U.qMdHTML('See [the page](https://example.com/x?a=1&b=2) **first**?')).querySelector('a[href="https://example.com/x?a=1&b=2"]');
-      const named=['**Copyright** &copy; 2026 &mdash; ok?','**a** &colon; b &lowbar; c &ndash; d &hellip; e &equals; f'].filter(q=>!md(q));
+      const named=['**Copyright** &copy; 2026 &mdash; ok?','**a** &colon; b &lowbar; c &ndash; d &hellip; e &equals; f','**half** &frac12; cup'].filter(q=>!md(q));
       const unk=tx(U.qMdHTML('**see** '+v.slice(0,12)+'&zzunknownzz;'+v.slice(12))).textContent;
-      return {more,bad,bare,link,named,unk:{text:unk,piece:ch.some(c=>unk.includes(c)),ref:unk.includes('&zz')},c1:md('**see** &#150; here')};})()`);
+      return {more,bad,bare,link,named,whole,unk:{text:unk,piece:ch.some(c=>unk.includes(c)),ref:unk.includes('&zz')},c1:md('**see** &#150; here')};})()`);
     assert.deepStrictEqual(refs.bad, [], `${tag}: every name in the card's reference table reads as the browser reads it`);
-    assert.deepStrictEqual(refs.more, [], `${tag}: named references inside a value (plain, double-encoded, after a hidden character, without a semicolon) show nothing that masking the raw text hides`);
+    assert.deepStrictEqual(refs.more, [], `${tag}: named and numeric references inside a value (plain, double-encoded, through a legacy name without its semicolon, after a hidden character, unknown) show nothing that masking the raw text hides`);
     assert.ok(!refs.unk.piece && !refs.unk.ref, `${tag}: unknown reference between value pieces: the run is masked: ${JSON.stringify(refs.unk)}`);
+    assert.ok(!refs.whole.jwt && !refs.whole.url, `${tag}: a dotted or credential value with a reference left in one part is masked whole: ${JSON.stringify(refs.whole)}`);
     assert.ok(!refs.c1, `${tag}: a number HTML reads as another character falls back to masked plain text`);
     assert.ok(refs.bare.length === 0 && refs.link, `${tag}: a bare ampersand is ordinary text: these keep their Markdown and link: ${JSON.stringify(refs)}`);
     assert.deepStrictEqual(refs.named, [], `${tag}: known named references keep the Markdown`);

@@ -7130,35 +7130,38 @@ function settlePlan(a,action){
    Otherwise, or when the redact module or the renderer is missing, or the render is empty, the card shows the masked plain text of the decoded
    question (fail closed). The raw question is never shown. */
 const Q_UNSAFE='This question cannot be shown safely. Choose an option or write your answer.';
-/* character references, decoded without any HTML parser: numeric (decimal or hex, any case, leading zeros, with or without `;`) and a table of names: every
-   name HTML has for an ASCII punctuation character, the hidden characters the masks know (src/shared/redact.ts HIDDEN_ENTITY), the dashes and hyphens and a
-   few common signs (checked against the HTML list in the tests). A code point out of range is U+FFFD as in HTML.
+/* character references, decoded without any HTML parser, the way HTML reads them in text: numeric (decimal or hex, any case, leading zeros, with or without `;`),
+   a name with its `;` from a table (every name HTML has for an ASCII punctuation character, the hidden characters the masks know, the dashes and hyphens, a few
+   common signs and every legacy name), and a legacy name without its `;` (the longest one that starts the letters after `&`, as HTML does). Repeated until nothing
+   changes (at most 8 rounds), so a reference written through `&amp` reads as its character too; a name with `;` the table lacks is left (fail closed). The tests check every entry against the browser's own reading.
    A reference left over (an unknown `&name;`, a C1 number HTML maps elsewhere) makes qRefsLeft true and the card falls back (fail closed); a bare `&` before a
-   letter (R&D, a&b.ts, ?a=1&b=2) is ordinary text, and what the browser still decodes is caught by the checks after rendering. */
-const Q_NAMED=Object.assign(Object.create(null),{af:'\u2061',AMP:'&',amp:'&',apos:'\'',ApplyFunction:'\u2061',ast:'*',bsol:'\\',bull:'\u2022',bullet:'\u2022',CenterDot:'\u00b7',centerdot:'\u00b7',circledR:'\u00ae',CloseCurlyDoubleQuote:'\u201d',CloseCurlyQuote:'\u2019',colon:':',comma:',',commat:'@',COPY:'\u00a9',copy:'\u00a9',dash:'\u2010',deg:'\u00b0',DiacriticalGrave:'`',dollar:'$',equals:'=',euro:'\u20ac',excl:'!',grave:'`',GT:'>',gt:'>',Hat:'^',hellip:'\u2026',horbar:'\u2015',hyphen:'\u2010',ic:'\u2063',InvisibleComma:'\u2063',InvisibleTimes:'\u2062',it:'\u2062',laquo:'\u00ab',larr:'\u2190',lbrace:'{',lbrack:'[',lcub:'{',ldquo:'\u201c',LeftArrow:'\u2190',leftarrow:'\u2190',lowbar:'_',lpar:'(',lrm:'\u200e',lsqb:'[',lsquo:'\u2018',LT:'<',lt:'<',mdash:'\u2014',midast:'*',middot:'\u00b7',minus:'\u2212',mldr:'\u2026',nbsp:'\u00a0',ndash:'\u2013',NegativeMediumSpace:'\u200b',NegativeThickSpace:'\u200b',NegativeThinSpace:'\u200b',NegativeVeryThinSpace:'\u200b',NoBreak:'\u2060',NonBreakingSpace:'\u00a0',num:'#',OpenCurlyDoubleQuote:'\u201c',OpenCurlyQuote:'\u2018',percnt:'%',period:'.',plus:'+',quest:'?',QUOT:'"',quot:'"',raquo:'\u00bb',rarr:'\u2192',rbrace:'}',rbrack:']',rcub:'}',rdquo:'\u201d',rdquor:'\u201d',REG:'\u00ae',reg:'\u00ae',RightArrow:'\u2192',rightarrow:'\u2192',rlm:'\u200f',rpar:')',rsqb:']',rsquo:'\u2019',rsquor:'\u2019',semi:';',ShortLeftArrow:'\u2190',ShortRightArrow:'\u2192',shy:'\u00ad',slarr:'\u2190',sol:'/',srarr:'\u2192',times:'\u00d7',TRADE:'\u2122',trade:'\u2122',UnderBar:'_',verbar:'|',vert:'|',VerticalLine:'|',ZeroWidthSpace:'\u200b',zwj:'\u200d',zwnj:'\u200c'});
-const Q_REF=/&(?:#(?:[xX]([0-9A-Fa-f]+)|([0-9]+));?|([A-Za-z][A-Za-z0-9]{0,31});)/g;
-function qRef(all,hex,dec,name){
-  if(name!=null)return Q_NAMED[name]!==undefined?Q_NAMED[name]:all;
+   letter that names nothing (R&D, a&b.ts, ?a=1&b=2) is ordinary text. */
+const Q_NAMED=Object.assign(Object.create(null),{af:'\u2061',AMP:'&',amp:'&',apos:'\'',ApplyFunction:'\u2061',ast:'*',bsol:'\\',bull:'\u2022',bullet:'\u2022',CenterDot:'\u00b7',centerdot:'\u00b7',circledR:'\u00ae',CloseCurlyDoubleQuote:'\u201d',CloseCurlyQuote:'\u2019',colon:':',comma:',',commat:'@',COPY:'\u00a9',copy:'\u00a9',dash:'\u2010',deg:'\u00b0',DiacriticalGrave:'`',dollar:'$',equals:'=',euro:'\u20ac',excl:'!',grave:'`',GT:'>',gt:'>',Hat:'^',hellip:'\u2026',horbar:'\u2015',hyphen:'\u2010',ic:'\u2063',InvisibleComma:'\u2063',InvisibleTimes:'\u2062',it:'\u2062',laquo:'\u00ab',larr:'\u2190',lbrace:'{',lbrack:'[',lcub:'{',ldquo:'\u201c',LeftArrow:'\u2190',leftarrow:'\u2190',lowbar:'_',lpar:'(',lrm:'\u200e',lsqb:'[',lsquo:'\u2018',LT:'<',lt:'<',mdash:'\u2014',midast:'*',middot:'\u00b7',minus:'\u2212',mldr:'\u2026',nbsp:'\u00a0',ndash:'\u2013',NegativeMediumSpace:'\u200b',NegativeThickSpace:'\u200b',NegativeThinSpace:'\u200b',NegativeVeryThinSpace:'\u200b',NoBreak:'\u2060',NonBreakingSpace:'\u00a0',num:'#',OpenCurlyDoubleQuote:'\u201c',OpenCurlyQuote:'\u2018',percnt:'%',period:'.',plus:'+',quest:'?',QUOT:'"',quot:'"',raquo:'\u00bb',rarr:'\u2192',rbrace:'}',rbrack:']',rcub:'}',rdquo:'\u201d',rdquor:'\u201d',REG:'\u00ae',reg:'\u00ae',RightArrow:'\u2192',rightarrow:'\u2192',rlm:'\u200f',rpar:')',rsqb:']',rsquo:'\u2019',rsquor:'\u2019',semi:';',ShortLeftArrow:'\u2190',ShortRightArrow:'\u2192',shy:'\u00ad',slarr:'\u2190',sol:'/',srarr:'\u2192',times:'\u00d7',TRADE:'\u2122',trade:'\u2122',UnderBar:'_',verbar:'|',vert:'|',VerticalLine:'|',ZeroWidthSpace:'\u200b',zwj:'\u200d',zwnj:'\u200c'},{Aacute:'\u00c1',aacute:'\u00e1',Acirc:'\u00c2',acirc:'\u00e2',acute:'\u00b4',AElig:'\u00c6',aelig:'\u00e6',Agrave:'\u00c0',agrave:'\u00e0',AMP:'&',amp:'&',Aring:'\u00c5',aring:'\u00e5',Atilde:'\u00c3',atilde:'\u00e3',Auml:'\u00c4',auml:'\u00e4',brvbar:'\u00a6',Ccedil:'\u00c7',ccedil:'\u00e7',cedil:'\u00b8',cent:'\u00a2',COPY:'\u00a9',copy:'\u00a9',curren:'\u00a4',deg:'\u00b0',divide:'\u00f7',Eacute:'\u00c9',eacute:'\u00e9',Ecirc:'\u00ca',ecirc:'\u00ea',Egrave:'\u00c8',egrave:'\u00e8',ETH:'\u00d0',eth:'\u00f0',Euml:'\u00cb',euml:'\u00eb',frac12:'\u00bd',frac14:'\u00bc',frac34:'\u00be',GT:'>',gt:'>',Iacute:'\u00cd',iacute:'\u00ed',Icirc:'\u00ce',icirc:'\u00ee',iexcl:'\u00a1',Igrave:'\u00cc',igrave:'\u00ec',iquest:'\u00bf',Iuml:'\u00cf',iuml:'\u00ef',laquo:'\u00ab',LT:'<',lt:'<',macr:'\u00af',micro:'\u00b5',middot:'\u00b7',nbsp:'\u00a0',not:'\u00ac',Ntilde:'\u00d1',ntilde:'\u00f1',Oacute:'\u00d3',oacute:'\u00f3',Ocirc:'\u00d4',ocirc:'\u00f4',Ograve:'\u00d2',ograve:'\u00f2',ordf:'\u00aa',ordm:'\u00ba',Oslash:'\u00d8',oslash:'\u00f8',Otilde:'\u00d5',otilde:'\u00f5',Ouml:'\u00d6',ouml:'\u00f6',para:'\u00b6',plusmn:'\u00b1',pound:'\u00a3',QUOT:'"',quot:'"',raquo:'\u00bb',REG:'\u00ae',reg:'\u00ae',sect:'\u00a7',shy:'\u00ad',sup1:'\u00b9',sup2:'\u00b2',sup3:'\u00b3',szlig:'\u00df',THORN:'\u00de',thorn:'\u00fe',times:'\u00d7',Uacute:'\u00da',uacute:'\u00fa',Ucirc:'\u00db',ucirc:'\u00fb',Ugrave:'\u00d9',ugrave:'\u00f9',uml:'\u00a8',Uuml:'\u00dc',uuml:'\u00fc',Yacute:'\u00dd',yacute:'\u00fd',yen:'\u00a5',yuml:'\u00ff'});
+const Q_LEGACY='Aacute aacute Acirc acirc acute AElig aelig Agrave agrave AMP amp Aring aring Atilde atilde Auml auml brvbar Ccedil ccedil cedil cent COPY copy curren deg divide Eacute eacute Ecirc ecirc Egrave egrave ETH eth Euml euml frac12 frac14 frac34 GT gt Iacute iacute Icirc icirc iexcl Igrave igrave iquest Iuml iuml laquo LT lt macr micro middot nbsp not Ntilde ntilde Oacute oacute Ocirc ocirc Ograve ograve ordf ordm Oslash oslash Otilde otilde Ouml ouml para plusmn pound QUOT quot raquo REG reg sect shy sup1 sup2 sup3 szlig THORN thorn times Uacute uacute Ucirc ucirc Ugrave ugrave uml Uuml uuml Yacute yacute yen yuml'.split(' ').sort((a,b)=>b.length-a.length);
+function qNum(all,hex,dec){
   const d=(hex!=null?hex:dec).replace(/^0+/,''), cp=d.length>8?Infinity:parseInt(d||'0',hex!=null?16:10);
   if(cp>=0x80&&cp<=0x9f)return all; /* HTML reads these as other characters: left, so the card falls back */
   return String.fromCodePoint(cp===0||cp>0x10ffff||(cp>=0xd800&&cp<=0xdfff)?0xfffd:cp);
 }
+const Q_REF=/&(?:#(?:[xX]([0-9A-Fa-f]+)|([0-9]+));?|([A-Za-z][A-Za-z0-9]{0,31})(;?))/g;
+function qRef(all,hex,dec,word,semi){
+  if(word==null)return qNum(all,hex,dec);
+  if(semi)return Q_NAMED[word]!==undefined?Q_NAMED[word]:all; /* a name with `;` the table lacks may be a longer name HTML knows: left, so the card falls back */
+  const l=Q_LEGACY.find(n=>word.startsWith(n));
+  return l?Q_NAMED[l]+word.slice(l.length):all;
+}
 function qDecodeRefs(t){let x=t;for(let i=0;i<8;i++){const y=x.replace(Q_REF,qRef);if(y===x)return x;x=y;}return null;}
 const qRefsLeft=t=>/&(?:[A-Za-z][A-Za-z0-9]{0,31};|#[0-9]|#[xX][0-9A-Fa-f])/.test(t);
-/* a reference still sitting between token characters (an unknown `&name;`, a C1 number, or a known name written without its `;`) would show its own text between
-   two pieces of a value, and no mask joins across it: the whole run is masked (12 characters or more, so "AT&T" or "R&D" stay) */
-const Q_RUN=/[A-Za-z0-9_-]+(?:&(?:#[xX]?[0-9A-Fa-f]{1,8};?|[A-Za-z][A-Za-z0-9]{0,31};?)[A-Za-z0-9_-]+)+/g;
-const qMaskRefRuns=t=>t.replace(Q_RUN,run=>{
-  if(run.length<12)return run;
-  const between=[...run.matchAll(/&(#[xX]?[0-9A-Fa-f]{1,8};?|([A-Za-z][A-Za-z0-9]{0,31})(;?))/g)].some(m=>m[1][0]==='#'||m[3]===';'||Object.keys(Q_NAMED).some(k=>m[2].startsWith(k)));
-  return between?'[redacted]':run;
-});
+/* in the fallback, after safeMask and only adding to it: a reference still left between characters of a value (an unknown `&name;`, a C1 number) would show its
+   own text between two pieces, and no mask joins across it. The whole value is masked: the run of value characters (with `.`, `:`, `@`, `/`, `+`, `=`, `~`, `%`)
+   around it, so a dotted or credential value is masked whole. */
+const Q_RUN=/[A-Za-z0-9_\-.:@\/+=~%]*(?:&(?:#[xX]?[0-9A-Fa-f]{1,8};?|[A-Za-z][A-Za-z0-9]{0,31};)[A-Za-z0-9_\-.:@\/+=~%]*)+/g;
+const qMaskRefRuns=t=>t.replace(Q_RUN,run=>qRefsLeft(run)?'[redacted]':run);
 const qRunsIn=(shown,m)=>(shown.match(/[A-Za-z0-9_-]{6,}/g)||[]).every(w=>m.includes(w)); /* a run the raw reading masked (a value the renderer split or wrapped) is missing from m */
 function qMdHTML(raw){
   const s0=qDecodeRefs(String(raw==null?'':raw));
   if(s0==null)return '<p>'+esc(Q_UNSAFE)+'</p>'; /* references nested past any sane depth: a fixed phrase */
-  const s=qMaskRefRuns(s0);
-  const m=safeMask(s), plain=()=>'<p>'+esc(m)+'</p>';
+  const s=s0, m=qMaskRefRuns(safeMask(s)), plain=()=>'<p>'+esc(m)+'</p>';
   const r=RED?RED.redact(s):null;
   if(typeof r!=='string'||!window.DurbarMD||/!\[/.test(s)||qRefsLeft(s))return plain(); /* an image: the card needs none, and the renderer's own stand-in words could sit inside a value */
   const tp=document.createElement('template');tp.innerHTML=window.DurbarMD.render(r); /* inert: nothing in a template loads or runs */
