@@ -7159,7 +7159,8 @@ function settlePlan(a,action){
 const Q_UNSAFE='This question cannot be shown safely. Choose an option or write your answer.';
 /* character references, decoded without any HTML parser, the way HTML reads them in text: numeric (decimal or hex, any case, leading zeros, with or without `;`),
    a name with its `;` from a table (every name HTML has for an ASCII punctuation character, the hidden characters the masks know, the dashes and hyphens, a few
-   common signs and every legacy name), and a legacy name without its `;` (the longest one that starts the letters after `&`, as HTML does). Repeated until nothing
+   common signs and every legacy name), and a legacy name without its `;` (the longest one that starts the letters after `&`, as HTML does; in an address, HTML's rule for attribute values:
+   not before `=`, a letter or a digit). Repeated until nothing
    changes (at most 8 rounds), so a reference written through `&amp` reads as its character too; a name with `;` the table lacks is left (fail closed). The tests check every entry against the browser's own reading.
    A reference left over (an unknown `&name;`, a C1 number HTML maps elsewhere) makes qRefsLeft true and the card falls back (fail closed); a bare `&` before a
    letter that names nothing (R&D, a&b.ts, ?a=1&b=2) is ordinary text. */
@@ -7167,28 +7168,37 @@ const Q_NAMED=Object.assign(Object.create(null),{af:'\u2061',AMP:'&',amp:'&',apo
 const Q_LEGACY='Aacute aacute Acirc acirc acute AElig aelig Agrave agrave AMP amp Aring aring Atilde atilde Auml auml brvbar Ccedil ccedil cedil cent COPY copy curren deg divide Eacute eacute Ecirc ecirc Egrave egrave ETH eth Euml euml frac12 frac14 frac34 GT gt Iacute iacute Icirc icirc iexcl Igrave igrave iquest Iuml iuml laquo LT lt macr micro middot nbsp not Ntilde ntilde Oacute oacute Ocirc ocirc Ograve ograve ordf ordm Oslash oslash Otilde otilde Ouml ouml para plusmn pound QUOT quot raquo REG reg sect shy sup1 sup2 sup3 szlig THORN thorn times Uacute uacute Ucirc ucirc Ugrave ugrave uml Uuml uuml Yacute yacute yen yuml'.split(' ').sort((a,b)=>b.length-a.length);
 function qNum(all,hex,dec){
   const d=(hex!=null?hex:dec).replace(/^0+/,''), cp=d.length>8?Infinity:parseInt(d||'0',hex!=null?16:10);
-  if(cp>=0x80&&cp<=0x9f)return all; /* HTML reads these as other characters: left, so the card falls back */
-  return String.fromCodePoint(cp===0||cp>0x10ffff||(cp>=0xd800&&cp<=0xdfff)?0xfffd:cp);
+  /* left, so the card falls back and the whole value around it is masked: a number HTML reads as another character (C1), one it reads as U+FFFD (zero, out of
+     range, a surrogate) and a control character (also what a reference cut short by a hidden character becomes) */
+  if((cp>=0x80&&cp<=0x9f)||cp===0||cp>0x10ffff||(cp>=0xd800&&cp<=0xdfff)||cp<0x20||cp===0x7f)return all;
+  return String.fromCodePoint(cp);
 }
 const Q_REF=/&(?:#(?:[xX]([0-9A-Fa-f]+)|([0-9]+));?|([A-Za-z][A-Za-z0-9]{0,31})(;?))/g;
-function qRef(all,hex,dec,word,semi){
+function qRef(urls,all,hex,dec,word,semi,at,str){
   if(word==null)return qNum(all,hex,dec);
   if(semi)return Q_NAMED[word]!==undefined?Q_NAMED[word]:all; /* a name with `;` the table lacks may be a longer name HTML knows: left, so the card falls back */
   const l=Q_LEGACY.find(n=>word.startsWith(n));
-  return l?Q_NAMED[l]+word.slice(l.length):all;
+  if(!l)return all;
+  const next=l.length<word.length?word[l.length]:str.charAt(at+all.length);
+  const inUrl=urls.some(([a,b])=>at>=a&&at<b); /* in a link address or a bare address: HTML's rule for attribute values, a legacy name without `;` before `=` or a letter or digit stays as written (`?a=1&copy=2`) */
+  return inUrl&&/[A-Za-z0-9=]/.test(next)?all:Q_NAMED[l]+word.slice(l.length);
 }
-function qDecodeRefs(t){let x=t;for(let i=0;i<8;i++){const y=x.replace(Q_REF,qRef);if(y===x)return x;x=y;}return null;}
+const Q_URL=/[A-Za-z][A-Za-z0-9+.-]{0,31}:\/\/[^\s<>()[\]]*|\]\([^)\s]*|<[A-Za-z][A-Za-z0-9+.-]{0,31}:[^\s<>]*|\bwww\.[^\s<>()[\]]*/g; /* addresses: scheme://, a link's (...) part, an <autolink>, www. */
+function qDecodeRefs(t){let x=t;for(let i=0;i<8;i++){const urls=[...x.matchAll(Q_URL)].map(m=>[m.index,m.index+m[0].length]);const y=x.replace(Q_REF,(...a)=>qRef(urls,...a));if(y===x)return x;x=y;}return null;}
 const qRefsLeft=t=>/&(?:[A-Za-z][A-Za-z0-9]{0,31};|#[0-9]|#[xX][0-9A-Fa-f])/.test(t);
 /* in the fallback, after safeMask and only adding to it: a reference still left between characters of a value (an unknown `&name;`, a C1 number) would show its
    own text between two pieces, and no mask joins across it. The whole value is masked: the run of value characters (with `.`, `:`, `@`, `/`, `+`, `=`, `~`, `%`)
    around it, so a dotted or credential value is masked whole. */
 const Q_RUN=/[A-Za-z0-9_\-.:@\/+=~%]*(?:&(?:#[xX]?[0-9A-Fa-f]{1,8};?|[A-Za-z][A-Za-z0-9]{0,31};)[A-Za-z0-9_\-.:@\/+=~%]*)+/g;
 const qMaskRefRuns=t=>t.replace(Q_RUN,run=>qRefsLeft(run)?'[redacted]':run);
-const qRunsIn=(shown,m)=>(shown.match(/[A-Za-z0-9_-]{6,}/g)||[]).every(w=>m.includes(w)); /* a run the raw reading masked (a value the renderer split or wrapped) is missing from m */
+const qRunsIn=(shown,m,n=6)=>(shown.match(new RegExp('[A-Za-z0-9_-]{'+n+',}','g'))||[]).every(w=>w==='redacted'||m.includes(w)); /* a run the raw reading masked (a value the renderer split or wrapped) is missing from m */
+/* add-only: every word-like run of t that the other reading `ref` does not show (it masked it) is masked here too */
+const qAddMask=(t,ref)=>t.replace(/[A-Za-z0-9_-]{4,}/g,(w,at)=>(w==='redacted'&&t[at-1]==='[')||ref.includes(w)?w:'[redacted]');
 function qMdHTML(raw){
   const s0=qDecodeRefs(String(raw==null?'':raw));
   if(s0==null)return '<p>'+esc(Q_UNSAFE)+'</p>'; /* references nested past any sane depth: a fixed phrase */
-  const s=s0, m=qMaskRefRuns(safeMask(s)), plain=()=>'<p>'+esc(m)+'</p>';
+  /* two readings, add-only: the decoded text (s) and the text as written (mR, what the other masked surfaces show); nothing either one hides is shown */
+  const s=s0, mR=safeMask(String(raw==null?'':raw)), m=qAddMask(qMaskRefRuns(safeMask(s)),mR), plain=()=>'<p>'+esc(m)+'</p>';
   const r=RED?RED.redact(s):null;
   if(typeof r!=='string'||!window.DurbarMD||/!\[/.test(s)||qRefsLeft(s))return plain(); /* an image: the card needs none, and the renderer's own stand-in words could sit inside a value */
   const tp=document.createElement('template');tp.innerHTML=window.DurbarMD.render(r); /* inert: nothing in a template loads or runs */
@@ -7196,7 +7206,7 @@ function qMdHTML(raw){
   els.forEach(e=>e.removeAttribute('title'));
   const shown=tp.content.textContent;
   if(!shown.trim()||!same(shown))return plain();
-  if(!qRunsIn(shown,m))return plain(); /* the cross-check with the raw reading: every word-like run the card shows must also be in the masked raw text */
+  if(!qRunsIn(shown,m)||!qRunsIn(shown,mR,4))return plain(); /* the cross-check with both readings: every word-like run the card shows must also be in each masked text */
   for(const e of els)for(const at of [...e.attributes]){
     if(!same(at.value))return plain();
     if(at.name==='href'){let d=null;try{d=decodeURIComponent(at.value);}catch(_){}if(d==null||!same(d))return plain();}

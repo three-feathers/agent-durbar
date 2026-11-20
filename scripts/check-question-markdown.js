@@ -12,19 +12,22 @@
  * "Question from the agent", the options are in a radiogroup named without Markdown marks, the "Other answer" box keeps its placeholder
  * and its label; every text in the question is at least 10.5px; nothing is cut (no ellipsis, line clamp or hidden overflow) and the card
  * stays inside the chat without a sideways scroll. Mutants (source edits, run by hand; each dies at its own assert):
- *   1. app.js qMdHTML: render the unmasked text and drop the checks (`const r=RED?RED.redact(s):null;` -> `const r=s;`, `const same=v=>safeMask(v)===v` -> `const same=v=>true`, drop `if(!qRunsIn(shown,m))return plain();`)  => "the token is in no text of the card"
+ *   1. app.js qMdHTML: render the unmasked text and drop the checks (`const r=RED?RED.redact(s):null;` -> `const r=s;`, `const same=v=>safeMask(v)===v` -> `const same=v=>true`, drop `if(!qRunsIn(shown,m)||!qRunsIn(shown,mR,4))return plain();`)  => "the token is in no text of the card"
  *   2. app.js showQuestion: `qb.innerHTML=qMdHTML(q.question)` -> `qb.textContent=q.question` => "the bold is a <strong>"
  *   3. styles.css `.note.question .q-text .q-md{overflow-wrap:anywhere}` plus `overflow:hidden;max-height:3em`  => "nothing is cut"
- *   4. app.js qMdHTML: decide by a count of masks again (`const same=v=>safeMask(v)===v` -> `const same=()=>(c=>c(safeMask(s))<=c(r))(t=>(t.match(/\[redacted\]/g)||[]).length)`, and drop `if(!qRunsIn(shown,m))return plain();`)  => "split value"
+ *   4. app.js qMdHTML: decide by a count of masks again (`const same=v=>safeMask(v)===v` -> `const same=()=>(c=>c(safeMask(s))<=c(r))(t=>(t.match(/\[redacted\]/g)||[]).length)`, and drop `if(!qRunsIn(shown,m)||!qRunsIn(shown,mR,4))return plain();`)  => "split value"
  *   5. app.js qMdHTML: check only the shown text, not the attributes (`for(const e of els)for(const at` -> `for(const e of [])for(const at`)  => "link address"
  *   6. app.js qMdHTML: the fallback shows the raw question (`plain=()=>'<p>'+esc(m)+'</p>'` -> `plain=()=>'<p>'+esc(String(raw))+'</p>'`)  => "definition only"
  *   7. app.js qMdHTML: render images again (`||/!\[/.test(s)||qRefsLeft(s))` -> `||qRefsLeft(s))`)  => "an image"
- *   8. app.js qMdHTML: drop the cross-check with the raw reading (`if(!qRunsIn(shown,m))return plain();` -> ``)  => "short tail"
- *   9. app.js qRef: drop the C1 branch (`if(cp>=0x80&&cp<=0x9f)return all;` -> ``)  => "a number HTML reads as another character"
- *  10. app.js qMdHTML: the fallback is safeMask alone, without the added run mask (`m=qMaskRefRuns(safeMask(s))` -> `m=safeMask(s)`)  => "named and numeric references inside a value"
+ *   8. app.js qMdHTML: drop the cross-check with the raw reading (`if(!qRunsIn(shown,m)||!qRunsIn(shown,mR,4))return plain();` -> ``)  => "short tail"
+ *   9. app.js qRef: drop the C1 branch (`(cp>=0x80&&cp<=0x9f)||` -> ``)  => "a number HTML reads as another character"
+ *  10. app.js qMdHTML: the fallback is safeMask alone, without the added run mask (`m=qAddMask(qMaskRefRuns(safeMask(s)),mR)` -> `m=qAddMask(safeMask(s),mR)`)  => "named and numeric references inside a value"
  *  11. app.js qRefsLeft: any `&` before a letter is a leftover (`/&(?:[A-Za-z][A-Za-z0-9]{0,31};|` -> `/&(?:[A-Za-z]|`)  => "a bare ampersand is ordinary text"
  *  12. app.js Q_NAMED: drop the names beyond the basic ones (`colon:':',` and `mdash:'\u2014',` removed)  => "known named references keep the Markdown"
  *  13. app.js Q_RUN: the run holds only word characters (`[A-Za-z0-9_\-.:@\/+=~%]` -> `[A-Za-z0-9_\-]`, both places)  => "masked whole"
+ *  14. app.js qNum: control characters decode again (`||cp<0x20||cp===0x7f)return all;` -> `)return all;`)  => "a reference to a control character"
+ *  15. app.js qMdHTML: no reading of the text as written (`||!qRunsIn(shown,mR,4)` -> ``, `m=qAddMask(qMaskRefRuns(safeMask(s)),mR)` -> `m=qMaskRefRuns(safeMask(s))`)  => "takes in a value's digits"
+ *  16. app.js qRef: no address rule (`return inUrl&&` -> `return false&&`)  => "an address keeps a legacy name"
  * Named references are checked against the browser's own reading (a textarea in the test page), never against the card's decoder.
  * Edge questions (review of PR 1933), built from invented pieces and rendered through the card's own qMdHTML (the simulator's bridge): a question
  * made only of a definition, a value split late, a literal mask word as link text, character references, a link address, a link title, character references in every form (and ones nested past the limit or unknown), images
@@ -80,10 +83,10 @@ module.exports = async (ctx) => {
         refs2:'**see** '+[...v].map(c=>'&#X'+c.charCodeAt(0).toString(16).toUpperCase()+';').join('')+' and '+[...v].map(c=>'&#0000'+c.charCodeAt(0)).join(' ').replace(/ /g,'')+' and '+v.slice(0,12)+'&ZeroWidthSpace;'+v.slice(12),
         deep:'**see** '+v.slice(0,10)+'&'+'amp;'.repeat(8)+'#'+v.charCodeAt(10)+';'+v.slice(11),near:'**see** '+v.slice(0,12)+'&zerowidthspace;'+v.slice(12)+' and '+'&ZeroWidthSpac;'+' and R&D',
         img:'see !['+v.slice(0,12)+'](https://example.com/a.png)'+v.slice(12),imgLink:'see !['+v.slice(0,12)+'](https://example.com/a.png)['+v.slice(12)+'](https://example.com/b)',
-        img2:'![x](https://example.com/a.png)!['+v.slice(0,25)+'](https://example.com/b.png)'+v.slice(25),pic:'Look at ![a picture](https://example.com/p.png) first.',tail:'one '+v.slice(0,34)+'*'+v.slice(34)+'*',href:'Read [the notes](https://example.com/'+pct+').',title:'Read [the notes](https://example.com/notes "'+ref+'").'};
+        img2:'![x](https://example.com/a.png)!['+v.slice(0,25)+'](https://example.com/b.png)'+v.slice(25),pic:'Look at ![an image of the plan](https://example.com/p.png) first.',tail:'one '+v.slice(0,34)+'*'+v.slice(34)+'*',href:'Read [the notes](https://example.com/'+v.slice(0,10)+'%C2%AD'+v.slice(10)+').',title:'Read [the notes](https://example.com/notes "'+ref+'").'};
       const out={};for(const k in qs){const d=document.createElement('template');d.innerHTML=window.__durbarSimUi.qMdHTML(qs[k]);const x=d.content.textContent,at=[...d.content.querySelectorAll('*')].flatMap(e=>[...e.attributes].map(a=>a.name+'='+a.value));
         out[k]={piece:/A1b2C3d4|E5f6G7h8|I9j0|K1l2M3n4|O5p6Q7r8|p6Q7r8/.test(x+at.join(' ')),masks:(x.match(/\\[redacted\\]/g)||[]).length,strong:!!d.content.querySelector('strong,em'),
-          href:at.some(a=>/^href=.*%41%31/i.test(a)),title:at.some(a=>a.startsWith('title=')),stand:x.includes('[image'),fixed:x.startsWith('This question cannot be shown safely.'),empty:!x.trim()};}return out;})()`);
+          href:at.some(a=>/^href=.*(A1b2C3|d4E5f6|G7h8I9)/.test(a)),title:at.some(a=>a.startsWith('title=')),stand:x.includes('[image'),fixed:x.startsWith('This question cannot be shown safely.'),empty:!x.trim()};}return out;})()`);
     const E = (k) => JSON.stringify(edge[k]);
     assert.ok(!edge.def.piece && !edge.def.empty && edge.def.masks === 1, `${tag}: definition only: the card shows masked text, never the raw question: ${E('def')}`);
     assert.ok(!edge.split.piece && edge.split.masks === 2 && !edge.split.strong, `${tag}: split value: a value split late falls back to masked plain text: ${E('split')}`);
@@ -114,17 +117,29 @@ module.exports = async (ctx) => {
       const link=!!tx(U.qMdHTML('See [the page](https://example.com/x?a=1&b=2) **first**?')).querySelector('a[href="https://example.com/x?a=1&b=2"]');
       const named=['**Copyright** &copy; 2026 &mdash; ok?','**a** &colon; b &lowbar; c &ndash; d &hellip; e &equals; f','**half** &frac12; cup'].filter(q=>!md(q));
       const unk=tx(U.qMdHTML('**see** '+v.slice(0,12)+'&zzunknownzz;'+v.slice(12))).textContent;
-      return {more,bad,bare,link,named,whole,unk:{text:unk,piece:ch.some(c=>unk.includes(c)),ref:unk.includes('&zz')},c1:md('**see** &#150; here')};})()`);
+      const rawMore=[];
+      for(const at of [3,4,12,20]){const c=v.charCodeAt(at);for(const q of ['**see** '+v.slice(0,at)+'&#0;'+v.slice(at)+' ok','**see** '+v.slice(0,at)+'&#x0;'+v.slice(at)+' ok',
+          '**see** '+v.slice(0,at)+'&#'+String(c)[0]+'\\u00ad'+String(c).slice(1)+';'+v.slice(at+1)+' ok','**see** '+v.slice(0,at)+'&#'+c+v.slice(at+1)+' ok','**see** '+v.slice(0,at)+'&#1'+v.slice(at)+' ok']){
+        const card=tx(U.qMdHTML(q)).textContent;if(ch.some(c2=>card.includes(c2)&&!U.qSafeMask(q).includes(c2)))rawMore.push(q.slice(8,40));}}
+      for(const r of ['&quot;','&nbsp;','&#34;','&#160;']){const q='**see** https://user:Pa55w0rd'+r+'Invented42x@example.com/x ok',card=tx(U.qMdHTML(q)).textContent;if(/Pa55w0rd|Invented42/.test(card)&&!/Pa55w0rd|Invented42/.test(U.qSafeMask(q)))rawMore.push('cred|'+r);}
+      const sw=tx(U.qMdHTML('**see** '+v.slice(0,12)+'&#x4'+v.slice(12)+' ok')).textContent,swallow={piece:ch.some(c=>sw.includes(c)),text:sw};
+      const ctl=md('**see** a&#1;b here');
+      const addr=['See [the page](https://example.com/x?a=1&copy=2&region=3) **first**?','Open https://example.com/x?a=1&copy=2&region=3 **now**?'].map(q=>{const c=tx(U.qMdHTML(q)),a=c.querySelector('a');return !!c.querySelector('strong')&&!!a&&a.getAttribute('href')==='https://example.com/x?a=1&copy=2&region=3';});
+      return {more,rawMore,bad,bare,link,named,whole,swallow,ctl,addr,unk:{text:unk,piece:ch.some(c=>unk.includes(c)),ref:unk.includes('&zz')},c1:md('**see** &#150; here')};})()`);
     assert.deepStrictEqual(refs.bad, [], `${tag}: every name in the card's reference table reads as the browser reads it`);
     assert.deepStrictEqual(refs.more, [], `${tag}: named and numeric references inside a value (plain, double-encoded, through a legacy name without its semicolon, after a hidden character, unknown) show nothing that masking the raw text hides`);
     assert.ok(!refs.unk.piece && !refs.unk.ref, `${tag}: unknown reference between value pieces: the run is masked: ${JSON.stringify(refs.unk)}`);
     assert.ok(!refs.whole.jwt && !refs.whole.url, `${tag}: a dotted or credential value with a reference left in one part is masked whole: ${JSON.stringify(refs.whole)}`);
+    assert.ok(!refs.ctl, `${tag}: a reference to a control character falls back to masked plain text`);
     assert.ok(!refs.c1, `${tag}: a number HTML reads as another character falls back to masked plain text`);
     assert.ok(refs.bare.length === 0 && refs.link, `${tag}: a bare ampersand is ordinary text: these keep their Markdown and link: ${JSON.stringify(refs)}`);
     assert.deepStrictEqual(refs.named, [], `${tag}: known named references keep the Markdown`);
+    assert.deepStrictEqual(refs.addr, [true, true], `${tag}: an address keeps a legacy name without its semicolon as written (link and bare address)`);
     for (const k of ['img', 'imgLink', 'img2']) assert.ok(!edge[k].piece && !edge[k].stand && !edge[k].empty, `${tag}: an image question (${k}) shows masked plain text with no piece of the value: ${E(k)}`);
     assert.ok(!edge.pic.stand && !edge.pic.empty, `${tag}: an image: a question with an image shows plain text, never the image stand-in: ${E('pic')}`);
     assert.ok(!edge.tail.piece && edge.tail.masks === 1 && !edge.tail.strong, `${tag}: short tail: a value split late with a short tail falls back to masked plain text: ${E('tail')}`);
+    assert.ok(!refs.swallow.piece, `${tag}: a reference without its semicolon that takes in a value's digits shows nothing the mask of the text as written hides: ${JSON.stringify(refs.swallow)}`);
+    assert.deepStrictEqual(refs.rawMore, [], `${tag}: references that decode to a character which breaks a value (zero, a cut reference, digits taken in, a split password) show nothing the mask of the text as written hides`);
     assert.deepStrictEqual(r.small, [], `${tag}: every text of the question is at least 10.5px`);
     assert.deepStrictEqual(r.cut, [], `${tag}: nothing is cut (no ellipsis, line clamp or hidden overflow)`);
     assert.strictEqual(r.group, 'group|Question from the agent', `${tag}: the card keeps its group name`);
