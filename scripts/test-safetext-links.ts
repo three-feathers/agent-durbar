@@ -113,6 +113,21 @@ if (!LABELS) {
     for (const t of cases) for (const [sn, out] of [['excerpt', S.excerpt(t, red, 600)], ['maskRaw', S.maskRaw(t, red)], ['the wrapper excerpt', T.excerpt(t, 600)], ['a tool label', S.maskLabel(t, 'other', label)], ['a command label', S.maskLabel(t, 'run', label)]] as Array<[string, string]>)
       ok(!/Hx9Kq2Lm|Kp2Lm5Rt|JzdWIiOi|Xk9Lp2Qr|zI1NiJ9/.test(out), `#1940 ${sn} hides a split beside a token's own mark or markup before a value (${t.replace(v, '<value>').slice(0, 30)}): ${out}`);
   }
+  // an environment value (the runner's own values are one: CI sets several, review of PR 1949 round 3): the masks hide it on every desk surface, with the link step
+  // and without it alike, and one split by a link is hidden too (the link step's mask passes read the environment). The fixtures above use invented hosts and names
+  {
+    const name = 'LINKTEST_SERVER_URL', value = 'https://code.example.invalid/' + 'acme-widget';
+    const had = Object.prototype.hasOwnProperty.call(process.env, name), old = process.env[name];
+    process.env[name] = value;
+    try {
+      const plain = 'See [the docs](' + value + '/docs) now', split = 'See ' + value.slice(0, 20) + '[](u)' + value.slice(20) + ' now';
+      for (const t of [plain, split]) for (const [sn, f] of [['maskRaw', () => S.maskRaw(t, red)], ['excerpt', () => S.excerpt(t, red, 600)], ['a tool label', () => S.maskLabel(t, 'other', label)]] as Array<[string, () => string]>) {
+        const out = f();
+        ok(!out.includes(value.slice(14, 26)) && !out.includes(value.slice(20)), `#1940 ${sn} hides an environment value${t === split ? ' split by a link' : ''}: ${out}`);
+        if (t === plain) eq(out, withoutLinkSplit(f), `#1940 ${sn} of a text with an environment value reads as with the link step off`);
+      }
+    } finally { if (had) process.env[name] = old; else delete process.env[name]; }
+  }
   // a text that holds an open mask label and a token split by a link (review of PR 1949, F1): the desk fails closed as it did before the link step
   {
     const t = ghp.slice(0, 16) + '[redacted:] ' + ghp.slice(16, 24) + ' and ' + ghp.slice(0, 12) + '[y][r]' + ghp.slice(12);
@@ -125,7 +140,7 @@ if (!LABELS) {
     'See the [README](README.md#install) and the [docs][d], then run `npm test`.\n\n[d]: https://example.com/docs',
     '![screenshot](docs/shots/lobby_1440x900.png "The lobby") shows the [Real office](specs/097-real-office/spec.md).',
     '| file | note |\n|---|---|\n| [safetext.js](src/renderer/safetext.js) | the desk masks |',
-    '- [x] [Spec 012](specs/012-claude-codex-adapters/spec.md)[^1]\n- [ ] <https://github.com/three-feathers/agent-durbar> <b>bold</b>\n\n[^1]: a note',
+    '- [x] [Spec 012](specs/012-claude-codex-adapters/spec.md)[^1]\n- [ ] <https://code.example.invalid/acme/widget-tool> <b>bold</b>\n\n[^1]: a note',
     'Use [`maskRaw`](src/renderer/safetext.js)_and_ [this][link_ref_name] or <kbd>Ctrl</kbd>+<kbd>K</kbd>.',
   ]) {
     eq(S.maskRaw(t, red), t, `#1940 benign Markdown: maskRaw keeps it as written: ${t.slice(0, 40)}`);
