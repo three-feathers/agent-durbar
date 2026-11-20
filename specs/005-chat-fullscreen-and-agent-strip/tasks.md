@@ -188,6 +188,9 @@ PRs, gates and line-count goals: `plan.md`. Each PR measures on `main` first and
 ## 2026-11-19 (second entry): the open chat says that the reply failed (issue #1917)
 - [x] T256 [US1] `failedTurn` flag on the agent (set by an `error` status, cleared by a `working` status) read by `syncRunState` in `app.js`: a turn that ends after an error says "Reply failed" (Stop still says "Stopped", else "Reply finished"); `scripts/check-005-announce-failed.js` (in `ui-suite.js`), mutants `ANNOUNCE_FAIL_MUTANT=finished|always|sticky` [FR-038]
 
+## 2026-11-20: a tool chip masks the call's arguments (issue #1974)
+- [x] T424 [US1] (FR-342): every feed of `makeChip` (`tTool` start and argument update, `replayHistory`, the VS Code transcript, demo turns) masks the argument once through `chipArg` (the task line's `STX.maskLabel` with `TOOLMASK`, whole argument before the cut; unchanged text exactly as before; fail closed); `scripts/check-toolchip-mask.js` (in `ui-suite.js`) with canaries, work counter, a 3,000-item harmless differential and near-miss pins; mutants each fail at their own assert. Test: `sim:` `check-toolchip-mask` `[IMPLEMENTED]`
+
 ## 2026-11-19 (third entry): the agent rail says which folder (issue #1905)
 - [x] T383 [US1] (FR-340): rail group heads and rows give the masked folder path through `DurbarTip` (native `title` removed); equal group names show their nearest differing parent (`DurbarRail.parentNames`, pure); `scripts/check-005-rail-folder.js` (in `ui-suite.js`) with its mutants; `check-rail` follows the tooltip. Test: `sim:` `check-005-rail-folder`, `check-rail`, `test:railorder` `[IMPLEMENTED]` 2026-11-19: `check-005-rail-folder`; mutants title, nosuffix, nofocus, raw die; `check-rail` takes the first Escape for the tooltip
 
