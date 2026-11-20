@@ -3018,6 +3018,195 @@ function coveredBy(spans: ReadonlyArray<[number, number]>, a: number, b: number)
 export function maskSplitTokens(text: unknown): string {
   try { return maskSplitFirst(typeof text === 'string' ? text : text == null ? '' : String(text)); } catch { return '[redaction failed]'; }
 }
+/** Spec 012 FR-189: how far one reference label or footnote mark is read; past it the syntax is read as written (a target or a link text: to its matching end on its line). */
+const LINK_PART_MAX = 512;
+/** Spec 012 FR-189: what can start link, image or HTML syntax; a text without any is returned as it is. */
+const LINK_GATE = /[[\]<]/;
+const AUTOLINK_INNER = /^(?:[A-Za-z][A-Za-z0-9+.-]{1,31}:[^\s<>]*|[^\s<>@]+@[^\s<>@]+)$/;
+const TAG_INNER = /^(?:\/?[A-Za-z][A-Za-z0-9:_.-]*(?:[\s/][\s\S]*)?|[!?][\s\S]*)$/;
+let linkWork = 0;
+/** Test only (spec 012 FR-189): the characters `maskLinkSplitTokens` has read since the last call (its scans and the bounded part reads). */
+export function _linkWorkForTest(): number { const n = linkWork; linkWork = 0; return n; }
+let linkPasses = 0;
+/** Test only (spec 012 FR-189, review of PR 1949): the mask passes `maskLinkSplitTokens` has run since the last call (one per reading its gate lets through). */
+export function _linkPassesForTest(): number { const n = linkPasses; linkPasses = 0; return n; }
+/**
+ * Spec 012 FR-189 (review of PR 1949, round 1, F5): for each `open` character of `s`, the index of its matching `close` on the same line (-1: none); with `esc`, a
+ * character after a backslash is skipped. One pass with a stack, so a target or a link text is found without reading it again from every opening.
+ */
+function matchPairs(s: string, open: string, close: string, esc: boolean): Int32Array {
+  const m = new Int32Array(s.length).fill(-1);
+  const stack: number[] = [];
+  for (let j = 0; j < s.length; j++) {
+    const c = s[j];
+    if (esc && c === '\\') { j++; continue; }
+    if (c === '\n' || c === '\r') stack.length = 0;
+    else if (c === open) stack.push(j);
+    else if (c === close && stack.length) m[stack.pop() as number] = j;
+  }
+  linkWork += s.length;
+  return m;
+}
+/**
+ * Spec 012 FR-189: one reading of `s` with link and image syntax removed: every `[`, `]`, the `!` of an image, a target `(…)` after `]`, an angle autolink's
+ * `<` and `>` and an HTML tag. `mode` 0 keeps the text inside brackets and tags; 1 also drops a reference label `[…]` after `]` and a footnote mark `[^…]`
+ * whole; 2 also drops a link's or an image's own text `[…]`, and the text between an opening tag and the closing tag right after it, whole (a token around
+ * a short link then reads joined).
+ * A mask already in the text stays as written. `k` is the copy, `at` the index in `s` of each of its characters. One scan; a target or a link text ends at its
+ * matching bracket on its line (`matchPairs`), a label or a footnote mark is read up to the next bracket, a tag or an autolink up to the next `<` or `>`.
+ */
+function withoutLinks(s: string, mode: 0 | 1 | 2, parens: Int32Array, brackets: Int32Array): { k: string; at: number[] } {
+  const dropLabels = mode > 0;
+  const keep: string[] = [];
+  const at: number[] = [];
+  const put = (i: number): void => { keep.push(s[i]); at.push(i); };
+  const closeOf = (from: number): number => { // the `]` that ends a label or a footnote mark from `from`, or -1
+    const end = Math.min(s.length, from + LINK_PART_MAX);
+    let j = from;
+    while (j < end && s[j] !== ']' && s[j] !== '[' && s[j] !== '\n' && s[j] !== '\r') j++;
+    linkWork += j - from;
+    return j < end && s[j] === ']' ? j : -1;
+  };
+  let i = 0;
+  while (i < s.length) {
+    const c = s[i];
+    if (c === '[' || (c === '!' && s[i + 1] === '[')) {
+      const b = c === '!' ? i + 1 : i;
+      MASK_AT.lastIndex = b;
+      if (MASK_AT.test(s)) { // a mask stays whole, as written (an image mark before it too)
+        for (let p = i; p < MASK_AT.lastIndex; p++) put(p);
+        i = MASK_AT.lastIndex;
+        continue;
+      }
+      if (dropLabels && s[b + 1] === '^') { const j = closeOf(b + 2); if (j >= 0) { i = j + 1; continue; } }
+      if (mode === 2) { // the text goes, nested brackets too; its `]` is read next (a target or a label after it)
+        const j = brackets[b];
+        if (j > b) { i = j; continue; }
+      }
+      i = b + 1;
+      continue;
+    }
+    if (c === ']') {
+      i++;
+      if (s[i] === '(') { // a target, balanced, up to the end of the line (its matching `)`, found once for the whole text)
+        const j = parens[i];
+        if (j > i) i = j + 1;
+      } else if (dropLabels && s[i] === '[') {
+        MASK_AT.lastIndex = i;
+        if (!MASK_AT.test(s)) { const j = closeOf(i + 1); if (j >= 0) i = j + 1; }
+      }
+      continue;
+    }
+    if (c === '<') {
+      let j = i + 1;
+      while (j < s.length && s[j] !== '<' && s[j] !== '>') j++;
+      linkWork += j - i;
+      if (s[j] === '>') {
+        const inner = s.slice(i + 1, j);
+        if (AUTOLINK_INNER.test(inner)) { for (let p = i + 1; p < j; p++) put(p); i = j + 1; continue; }
+        if (TAG_INNER.test(inner)) {
+          i = j + 1;
+          if (mode === 2 && /^[A-Za-z]/.test(inner)) { // an opening tag: its text goes too when a closing tag follows it within the bound
+            const end = Math.min(s.length, i + LINK_PART_MAX);
+            let q = i;
+            while (q < end && s[q] !== '<' && s[q] !== '\n' && s[q] !== '\r') q++;
+            linkWork += q - i;
+            if (s[q] === '<' && s[q + 1] === '/') i = q;
+          }
+          continue;
+        }
+      }
+    }
+    put(i);
+    i++;
+  }
+  linkWork += s.length;
+  return { k: keep.join(''), at };
+}
+const LINK_RUN_CHAR = /[A-Za-z0-9_\-.~+/=:@%]/;
+const LINK_ALNUM = /[A-Za-z0-9_-]/; // a letter, a digit, or the `_` and `-` names and token bodies join with
+const LINK_VALUE_START = /[A-Za-z0-9]/;
+const LINK_SEP = /[\s=:"']/;
+/**
+ * Whether `k` (a `withoutLinks` copy) joins two characters across a removed piece in a way that can make a token or a secret's value: two token characters, one
+ * of them a letter, digit, `_` or `-`, or a letter or digit after a blank or a separator. Only then can a reading show what the text as written does not (review
+ * of PR 1949: round 1, F2 and F3; round 2, N1 and N2). A piece between two blanks, or between punctuation, joins nothing and costs no mask pass. One pass.
+ */
+function gluedRun(k: string, at: readonly number[]): boolean {
+  for (let p = 1; p < k.length; p++) {
+    if (at[p] === at[p - 1] + 1) continue;
+    const a = k[p - 1], b = k[p];
+    // two token characters, one a letter, digit, `_` or `-` (a token's own `:`, `.`, `/`, `+` or `=` beside the piece: review of PR 1949, round 2, N1), or a letter or
+    // digit after a blank or a separator (a value after a secret name and its separator, with the piece between: N2)
+    if ((LINK_RUN_CHAR.test(a) && LINK_RUN_CHAR.test(b) && (LINK_ALNUM.test(a) || LINK_ALNUM.test(b))) || (LINK_VALUE_START.test(b) && LINK_SEP.test(a))) return true;
+  }
+  return false;
+}
+/** Per character of `k`: whether it stands in a run of token characters with a removed piece inside it (one pass forward, one back). */
+function joinedRuns(k: string, at: readonly number[]): boolean[] {
+  const out = new Array<boolean>(k.length).fill(false);
+  let from = 0;
+  let gap = false;
+  for (let p = 0; p <= k.length; p++) {
+    if (p === k.length || !LINK_RUN_CHAR.test(k[p])) {
+      if (gap) for (let q = from; q < p; q++) out[q] = true;
+      from = p + 1;
+      gap = false;
+      continue;
+    }
+    if (p > from && at[p] !== at[p - 1] + 1) gap = true;
+  }
+  return out;
+}
+/**
+ * Spec 012 FR-189 (issue #1940): a token split by link or image syntax (any Markdown link or image form, an angle autolink, an HTML tag) reads as one token
+ * once that syntax is removed. `s` is read three times that way (`withoutLinks`' modes: bracketed text kept, labels and footnote marks dropped, all
+ * bracketed text dropped), each copy masked by
+ * `redact`, and each stretch a copy hides that touches a run of token characters joined across a removed piece (a token split by it, or a value after a
+ * secret name split by it) is masked as written, the removed pieces inside it included. Nothing else of the text changes; a text without such a stretch is
+ * returned as it is (what the rules hide as written there the desk's own steps hide after it, as before). With the split step off (`withoutSplit`, the
+ * readings as before): `s`. For the window's desk masks (their split-first step). Throws on a failed mask (the desk fails closed).
+ */
+function maskLinkSplit(s: string): string {
+  if (splitOff || linkOff || !LINK_GATE.test(s)) return s;
+  const spans: Array<[number, number]> = [];
+  let env: Env | undefined; // the environment's secrets read once for every pass of this call (`maskKeepingMarkdownOnce`'s rule), only when a pass runs
+  let written: Array<[number, number]> | undefined; // what `redact` hides in `s` as written, read once, only when a pass runs
+  const parens = matchPairs(s, '(', ')', true);
+  const brackets = matchPairs(s, '[', ']', false);
+  for (const mode of [0, 1, 2] as const) {
+    const { k, at } = withoutLinks(s, mode, parens, brackets);
+    if (k.length === s.length || !gluedRun(k, at)) continue; // nothing removed, or no run of token characters joined across a removed piece
+    env ??= snapshot();
+    linkPasses++;
+    const r = redact(k, env);
+    if (r === k) continue;
+    if (r === '[redaction failed]') throw new Error('mask'); // redact's own failure (it gives exactly this)
+    if (!written) { const w = redact(s, env); if (w === '[redaction failed]') throw new Error('mask'); written = hiddenSpans(s, w); }
+    const joined = joinedRuns(k, at);
+    for (const [a, b] of hiddenSpans(k, r)) {
+      let touches = false;
+      for (let p = a; p < b && !touches; p++) touches = joined[p];
+      // review of PR 1949 (F2): also a stretch the rules do not hide as written (a secret name split by a link, then a separator and its value)
+      const A = at[a], B = at[b - 1] + 1;
+      if (touches || !coveredBy(written, A, B)) spans.push([A, B]);
+    }
+  }
+  if (!spans.length) return s;
+  spans.sort((x, y) => x[0] - y[0]);
+  return maskSplitSpans(s, spans, [], MASK);
+}
+let linkOff = false;
+/** Runs `fn` with FR-189's link step off (`maskLinkSplitTokens` gives its text back): the desk as before FR-189, for the differential tests. */
+export function withoutLinkSplit<T>(fn: () => T): T {
+  if (linkOff) return fn();
+  linkOff = true;
+  try { return fn(); } finally { linkOff = false; }
+}
+/** `maskLinkSplit` for the window's `DurbarSafeText` (spec 012 FR-189). Never throws: a failure gives `[redaction failed]` (the desk fails closed on it). */
+export function maskLinkSplitTokens(text: unknown): string {
+  try { return maskLinkSplit(typeof text === 'string' ? text : text == null ? '' : String(text)); } catch { return '[redaction failed]'; }
+}
 /** How far on each side of a cut `splitSafeCut` reads: more than a token plus the longest piece of `SPLIT_AT` or `LINE_BREAKS` (about 324 characters). */
 const CUT_NEAR = 512;
 /** How far past `CUT_NEAR` `splitSafeCut` follows a run to its end; a longer run is read up to there (a token is far shorter). */
