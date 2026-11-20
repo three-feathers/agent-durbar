@@ -90,7 +90,7 @@
       const s=stateOf(shownId), ctx=ctxOf(shownId), st=S.currentStep(s), nm=opts.name?opts.name(shownId):s.name;
       syncVisible();
       el.setAttribute('aria-label',regionLabel(SF,nm,ctx));
-      q('.bv-title').textContent='Brain · '+SF.orbName(String(nm==null?'':nm),ctx);
+      {const t='Brain · '+SF.orbName(String(nm==null?'':nm),ctx), te=q('.bv-title'); te.textContent=t; te.setAttribute('title',t);} /* a long session title is cut with an ellipsis: the whole (masked) name in its tooltip */
       const c=st?SF.cardLines(st,ctx):{head:SF.WAITING_CARD||'Waiting for the first step',preview:'',why:''};
       const cost=SF.costText(s.costKnown?s.turnCost:null,ctx)+' this turn', detail=SF.costDetail(s,ctx), co=q('.bv-cost');
       co.textContent=cost; if(detail){co.setAttribute('title',detail);co.setAttribute('aria-label',detail+' this turn');}else{co.setAttribute('title','');co.setAttribute('aria-label',cost);}
