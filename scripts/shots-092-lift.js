@@ -46,7 +46,7 @@ module.exports = async (ctx) => {
   /* spec 092 FR-085: the hint of the empty floor (the office tooltip, a real mouse move) and the lift tooltip's text */
   const OWN = 'button,a,input,select,textarea,[title],[data-tip],[role="button"],.room-head,.desk,.helpers,.shutters,.unit,.lobby,.floor-empty,.welcome,.filter-note';
   const emptySpot = (inRoom) => js(`(()=>{const fl=document.getElementById('floor').getBoundingClientRect(),own=${jsLiteral(OWN)};
-    for(let y=fl.top+6;y<fl.bottom-6;y+=9)for(let x=fl.left+6;x<fl.right-6;x+=9){const e=document.elementFromPoint(x,y);if(!e||e.closest(own)||!e.closest('#floor')||(${!!inRoom}&&!e.closest('#stage .room[data-room]')))continue;
+    for(let y=fl.top+6;y<fl.bottom-6;y+=9)for(let x=fl.left+6;x<fl.right-6;x+=9){const e=document.elementFromPoint(x,y);if(!e||e.closest(own)||!e.closest('#floor')||(${jsLiteral(!!inRoom)}&&!e.closest('#stage .room[data-room]')))continue;
       const rm=e.closest('#stage .room[data-room]');return {x:Math.round(x),y:Math.round(y),floor:rm?rm.querySelector('.floor-tag')?rm.querySelector('.floor-tag').textContent.trim():null:'screen'};}
     return null;})()`);
   const hoverHint = async (spot) => {
@@ -57,7 +57,7 @@ module.exports = async (ctx) => {
   };
   /* FR-085: where the hint stands. An empty spot of the floor nearest to a point (fractions of #floor), hovered with a real mouse; the tip is inside the window
      (DurbarTip.MARGIN 8 px) and next to the pointer (not under the whole floor). */
-  const emptyNear = (fx, fy) => js(`(()=>{const fl=document.getElementById('floor').getBoundingClientRect(),own=${jsLiteral(OWN)},tx=fl.left+fl.width*${fx},ty=fl.top+fl.height*${fy};let best=null;
+  const emptyNear = (fx, fy) => js(`(()=>{const fl=document.getElementById('floor').getBoundingClientRect(),own=${jsLiteral(OWN)},tx=fl.left+fl.width*${jsLiteral(fx)},ty=fl.top+fl.height*${jsLiteral(fy)};let best=null;
     for(let y=fl.top+2;y<fl.bottom-2;y+=5)for(let x=fl.left+2;x<fl.right-2;x+=5){const e=document.elementFromPoint(x,y);if(!e||e.closest(own)||!e.closest('#floor'))continue;
       const d=(x-tx)**2+(y-ty)**2;if(!best||d<best.d)best={d,x:Math.round(x),y:Math.round(y)};}
     return best;})()`);
@@ -81,9 +81,13 @@ module.exports = async (ctx) => {
     return js(`(()=>{const t=document.getElementById('appTip');return t&&!t.hidden?t.textContent:'';})()`);
   };
   const ownTips = async (tag) => {
-    await js(`(()=>{const u=document.querySelector('#stage .units');if(u&&!document.getElementById('titledPart')){const e=document.createElement('span');e.id='titledPart';e.title='own title';e.textContent='titled part of a room';e.style.cssText='display:inline-block;padding:6px';u.appendChild(e);}})()`);
+    const inject = () => js(`(()=>{const u=document.querySelector('#stage .units');if(u&&!document.getElementById('titledPart')){const e=document.createElement('span');e.id='titledPart';e.title='own title';e.textContent='titled part of a room';e.style.cssText='display:inline-block;padding:6px';u.appendChild(e);}})()`);;
+    await inject();
     for (const [what, sel] of [['a titled part', '#titledPart'], ['a room head', '#stage .room-head .room-name'], ['a desk', '#stage .desk[data-id]'], ['a button in a room head', '#stage .room-head button'], ['a helper', '#stage .helpers .desk, #stage .helpers .card, #stage .helpers [data-id]'], ['the lobby', '#stage .lobby'], ['a place chip', '#stage .lobby .place.boss, #stage .lobby .place']]) {
-      const t = await hoverOn(sel);
+      let t = await hoverOn(sel);
+      /* the All floors view redraws rooms now and then and drops the injected part: draw it again and hover again, until it stood there while the pointer rested on it */
+      for (let k = 0; sel === '#titledPart' && k < 5 && !(await js(`!!document.getElementById('titledPart')`)); k++) { await inject(); t = await hoverOn(sel); }
+      if (sel === '#titledPart') assert.ok(await js(`!!document.getElementById('titledPart')`), `${tag}: the titled part stayed in place while hovered`);
       assert.ok(!NOT_HINT.test(t), `${tag}: ${what} keeps its own tip, not the floor hint (got ${JSON.stringify(t)})`);
     }
   };
