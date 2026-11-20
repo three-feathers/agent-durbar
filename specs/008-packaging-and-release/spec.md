@@ -1172,7 +1172,7 @@ Same class as #1850: a `Date.now() - t < N` assert fails on a loaded machine and
 - `test-teamops.ts` (#1854's) no longer has its own `cpuAsync` and `c0 < N` checks: its three CPU checks (1500, 1500, 5000) call `assertCpuUnderAsync` (FR-031, one helper). Checked after the switch: a 25 s `Atomics.wait` in `createPreview` for a huge target dies at `wall-time backstop: 25162.0 ms wall for 172.0 ms CPU, limit 20000 ms` (the floor of the helper's backstop is 20 s, where the local helper had 10 x the cap, 15 s for 1500); a 6 s CPU burn there dies at `a huge target is refused in well under a second of CPU time: 6132 ms CPU, limit 1500 ms`.
 - Numbers checked 2026-11-17 with `npm run specs:numbers`: T190 is free.
 
-### 2026-11-20: a driver that needs the HOST window's focus asks for it by name on macOS, and `check-browser-tabs` runs alone (FR-210 follow-up, T398, T399; issue #1239)
+### 2026-11-20: a driver that needs the HOST window's focus asks for it by name on macOS, and `check-browser-tabs` runs alone (FR-210 follow-up, T400, T401; issue #1239)
 
 Request (issue #1239, found on a real Mac): `check-browser-tabs` (both sizes) fails on macOS with "timed out: the composer has the focus" (the later one: `check-browser-tab`, "More menu: the still picture is shown in the page area", is not looked at here). Measured on an Apple M4, simulator only, 2026-11-20 (Mac session):
 
@@ -1186,4 +1186,4 @@ Request (issue #1239, found on a real Mac): `check-browser-tabs` (both sizes) fa
 
 `[KNOWN GAP]` not made to pass: a Mac with another app in front still cannot run `check-browser-tabs`; it now says so at once instead of timing out. Not verified: Windows and Linux (the unit test is OS-independent; no driver run there), the other macOS failure of #1239 (`check-browser-tab`), a run while another app is deliberately in front (I could not bring one to the front from here without a permission prompt). **The other drivers that ask `needFocus` or `focusPage` and whose entries are not `focus: true`** (measured by reading `ui-suite.js`: check-005-rail-folder, check-052-focus-ring, check-052-follow-notice, check-097-hover-card, check-edit-popups, check-list-columns, check-needs-panel, check-rail, check-status-tooltip, check-001-add-go, check-001-room-heads, check-097-kids, check-auto-follow, check-chat-visibility, check-status-filter, check-080-browser-expand) are NOT changed here: marking them all serial costs CI time, which the suite has little of (issue #738); a follow-up for the owner to decide.
 
-**Numbers** (`npm run specs:numbers`): T398 and T399 (T397 is the highest on any branch); no new FR.
+**Numbers** (`npm run specs:numbers`): T400 and T401 (T397 is the highest on any branch); no new FR.
