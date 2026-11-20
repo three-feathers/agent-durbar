@@ -72,7 +72,7 @@ export function makeLookupGet(factory: NetRequestFactory): LookupGet {
       try {
         req = factory({ method, url, redirect: 'manual', credentials: 'omit', useSessionCookies: false });
       } catch (e) {
-        done(() => reject(e instanceof Error ? e : new Error(String(e))));
+        done(() => reject(e instanceof Error ? e : new Error(String(e)))); // FR-066: read, not shown (re-thrown)
         return;
       }
       setFixedHeaders(req);
@@ -117,7 +117,7 @@ export function makeDownloadGet(factory: NetRequestFactory): HttpGet {
       try {
         req = factory({ method: 'GET', url, redirect: 'manual', credentials: 'omit', useSessionCookies: false });
       } catch (e) {
-        finish(() => reject(e instanceof Error ? e : new Error(String(e))));
+        finish(() => reject(e instanceof Error ? e : new Error(String(e)))); // FR-066: read, not shown (re-thrown)
         return;
       }
       setFixedHeaders(req);

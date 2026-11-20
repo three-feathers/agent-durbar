@@ -348,7 +348,7 @@ export function failureDetail(stderr: string | undefined): string | undefined {
 
 /** A short reason for the card: a known short word, else a generic one. Raw output is never used. */
 export function shortReason(e: unknown): string {
-  const m = e instanceof Error ? e.message : String(e);
+  const m = e instanceof Error ? e.message : String(e); // FR-066: read, not shown
   // Chromium's network errors (net::ERR_INTERNET_DISCONNECTED, ERR_NAME_NOT_RESOLVED, ERR_PROXY_*, ...) and Node's are a network problem (FR-003, FR-014)
   if (/\bnet::ERR_|\b(ENOTFOUND|EAI_AGAIN|ECONNREFUSED|ECONNRESET|ETIMEDOUT|ENETUNREACH|EHOSTUNREACH)\b/.test(m)) return 'network problem';
   return /^[a-z0-9 .,'-]{1,80}$/i.test(m) ? m : 'unexpected answer';

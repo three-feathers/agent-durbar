@@ -8,7 +8,11 @@
  *  4. the main log line names the channel and the error, through `redact` (no token);
  *  5. a value or a resolved promise comes back unchanged; the sender check and the simulator refusal keep their own texts;
  *  6. `ipcHandle` runs every handler through `answer` (read from its source), and `ipcguard.ts` is still the only file that touches `ipcMain`
- *     (that scan and its own mutants are `test:ipcchannels`).
+ *     (that scan and its own mutants are `test:ipcchannels`);
+ *  7. a handler that catches and returns `{ ok: false, error }` goes through `failText` (`ipcerror.ts`): the same rules, its own fixed fallback,
+ *     a home path in a `ShownError` masked; real handlers (`openWithOp`-style ops) return neither the token nor the path;
+ *  8. no file in src/main uses a caught error's own text outside `ipcerror.ts` (a scan of the source, with its own mutants), unless the line
+ *     says `FR-066: read, not shown` (a classification or a log line that is masked).
  */
 import * as assert from 'assert';
 import * as fs from 'fs';
@@ -118,6 +122,51 @@ async function main(): Promise<void> {
     const body = /export function ipcHandle[\s\S]*?\n\}/.exec(src)?.[0] ?? '';
     assert.ok(/return answer\(channel, \(\) => fn\(e, \.\.\.\(args as A\)\)\);/.test(body), 'ipcHandle returns answer(channel, () => fn(...))');
     assert.strictEqual((body.match(/\bfn\(/g) ?? []).length, 1, 'ipcHandle calls the handler only inside answer');
+
+    // 7. the helper for handlers that catch and return their own { ok: false, error }
+    const { failText } = require('../src/main/ipcerror') as typeof import('../src/main/ipcerror');
+    const before = logged.length;
+    const raw = Object.assign(new Error(`${marker}: could not read ${where} with ${token}`), { path: where });
+    assert.strictEqual(failText(raw, 'test'), IPC_FAILED, 'failText: a plain Error gives IPC_FAILED');
+    assert.strictEqual(failText(`${token} ${where}`, 'test'), IPC_FAILED, 'failText: a thrown string gives IPC_FAILED');
+    assert.strictEqual(failText(raw, 'test', 'Could not start it.'), 'Could not start it.', "failText: a plain Error gives the caller's fixed fallback");
+    assert.ok(logged.length === before + 3 && logged.slice(before).every((l) => l.includes('[ipc] test failed') && !l.includes(token)), 'failText logs one masked main line per error');
+    assert.ok(logged[before].includes(marker), "failText's log line carries the real error");
+    assert.strictEqual(failText(new ShownError('That session is open. End it first.'), 'test', 'x'), 'That session is open. End it first.', 'failText: a ShownError keeps its words');
+    const shownMixed = failText(new ShownError(`Codex refused the settings: ${where} ${token}`), 'test');
+    assert.ok(shownMixed.startsWith('Codex refused the settings: ') && !shownMixed.includes(token), `failText: a ShownError is masked for tokens (got ${JSON.stringify(shownMixed)})`);
+    assert.ok(!shownMixed.includes(os.homedir()) && shownMixed.includes(path.join('~', ['inv', 'ented'].join(''))), `failText: a ShownError's home path is masked (got ${JSON.stringify(shownMixed)})`);
+    // a real op that catches and returns: the open-with op on a launcher that throws an error carrying a token and a path
+    const { openWith } = require('../src/main/openwith') as typeof import('../src/main/openwith');
+    const dir = { isDirectory: () => true, isFile: () => false, isSymbolicLink: () => false };
+    const ow = await openWith({ cwd: '/srv/project' }, 'folder', {
+      platform: 'linux', launchEnv: {} as never, lstat: () => dir, realpath: (x) => x, reveal: () => undefined, start: async () => ({ ok: true }),
+      openPath: async () => { throw Object.assign(new Error(`${marker} EACCES ${where} ${token}`), { path: where }); },
+    });
+    assert.deepStrictEqual(ow, { ok: false, error: IPC_FAILED }, `a real handler that catches and returns gives IPC_FAILED (got ${JSON.stringify(ow)})`);
+
+    // 8. the scan: a caught error's own text is used only in ipcerror.ts
+    const RAW: [RegExp, string][] = [
+      [/\berrText\b/, 'an errText helper'],
+      [/\b(\w+) instanceof Error \? \1\.message\b/, 'err instanceof Error ? err.message'],
+      [/\b(?:e|err|error|ex)\.message\b/, 'a caught error .message'],
+      [/\bString\((?:e|err|error|ex)\)/, 'String(err)'],
+    ];
+    const scan = (text: string): string[] => text.split('\n').flatMap((l, i) => (l.includes('FR-066: read, not shown') ? [] : RAW.filter(([re]) => re.test(l)).map(([, what]) => `${i + 1}: ${what}`)));
+    const walk = (dir: string): string[] => fs.readdirSync(dir, { withFileTypes: true }).flatMap((d) => (d.isDirectory() ? walk(path.join(dir, d.name)) : d.name.endsWith('.ts') ? [path.join(dir, d.name)] : []));
+    const mainDir = path.join(__dirname, '..', '..', 'src', 'main');
+    const files = walk(mainDir).filter((f) => path.basename(f) !== 'ipcerror.ts');
+    assert.ok(files.length > 100, `src/main has many files (${files.length})`);
+    for (const f of files) {
+      const found = scan(fs.readFileSync(f, 'utf8'));
+      assert.deepStrictEqual(found, [], `${path.relative(mainDir, f)} uses a caught error's own text outside ipcerror.ts (failText): ${found.join('; ')}`);
+    }
+    // the scan is not vacuous (its mutants): each shape is caught, the marker exempts, failText is left alone
+    for (const [sample, n] of [["return { ok: false, error: errText(err) };", 0], ["error: e instanceof Error ? e.message : String(e) }", 1], ["const why = 'x: ' + err.message;", 2], ["return { ok: false, error: String(err) };", 3]] as const) {
+      assert.ok(RAW[n][0].test(sample) && scan(sample).length > 0, `the scan catches: ${sample}`);
+    }
+    assert.deepStrictEqual(scan("const t = err.message; // FR-066: read, not shown"), [], 'the marker exempts a line');
+    assert.deepStrictEqual(scan("return { ok: false, error: failText(err, 'x') };"), [], 'the scan leaves failText alone');
     console.log('test:ipcthrow OK');
   } finally {
     console.warn = realWarn;

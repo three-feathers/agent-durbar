@@ -11,7 +11,7 @@
  * Spec 045 FR-066 (issue #1682): every `ipcHandle` handler runs inside `answer`, so an unexpected throw reaches the window only as `IPC_FAILED`.
  */
 import { redact } from '../shared/redact';
-import { ShownError } from '../shared/shownerror';
+import { failText } from './ipcerror';
 import { ipcMain } from 'electron';
 import type { IpcMainEvent, IpcMainInvokeEvent } from 'electron';
 import * as path from 'path';
@@ -60,21 +60,15 @@ export function ipcHandle<A extends unknown[]>(channel: string, fn: (e: IpcMainI
   });
 }
 
-/** Spec 045 FR-066 (issue #1682): what the window gets for any throw that is not a `ShownError`. Fixed: nothing of the thrown value. */
-export const IPC_FAILED = 'Agent Durbar could not do that: something unexpected went wrong. The details stay in its own log.';
+export { IPC_FAILED } from './ipcerror';
 
 /**
- * Spec 045 FR-066: runs one handler. A value or a promise comes back as it is; a throw or a rejection is logged in main through `redact`
- * (the masked log line, spec 012 FR-080), and the window gets a new `Error` with one message: a `ShownError`'s own text, masked again, or
- * `IPC_FAILED`. The thrown value itself, its stack, its fields and its cause never cross: a thrown value may carry a token, a path or session data.
+ * Spec 045 FR-066: runs one handler. A value or a promise comes back as it is; a throw or a rejection gets a new `Error` whose message is
+ * `failText` (`ipcerror.ts`: a `ShownError`'s own text masked, else `IPC_FAILED`, the real error logged in main, masked). The thrown value itself,
+ * its stack, its fields and its cause never cross: a thrown value may carry a token, a path or session data.
  */
 export function answer(channel: string, run: () => unknown): unknown {
-  const fail = (err: unknown): never => {
-    let detail: string;
-    try { detail = err instanceof Error ? (err.stack ?? `${err.name}: ${err.message}`) : `a thrown ${err === null ? 'null' : typeof err}: ${String(err)}`; } catch { detail = 'a thrown value that cannot be read'; }
-    console.warn(redact(`[ipc] "${channel}" failed: ${detail}`));
-    throw new Error(err instanceof ShownError ? redact(err.message) : IPC_FAILED);
-  };
+  const fail = (err: unknown): never => { throw new Error(failText(err, `"${channel}"`)); };
   let out: unknown;
   try { out = run(); } catch (err) { return fail(err); }
   return out !== null && typeof out === 'object' && typeof (out as { then?: unknown }).then === 'function' ? Promise.resolve(out).catch(fail) : out;

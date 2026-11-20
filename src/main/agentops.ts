@@ -12,6 +12,7 @@ import type { AgentInfo, PermMode, SessionOptions } from '../shared/api';
 import { adapterOf, modeForSession } from './folders';
 import type { FolderStore, SavedFolder } from './folders';
 import { ShownError } from '../shared/shownerror';
+import { failText } from './ipcerror';
 
 export interface OpsDeps {
   agents: Map<string, AgentInfo>;
@@ -36,7 +37,6 @@ const MODE_WORDS: Record<PermMode, string> = { 'read-only': 'Read-only', ask: 'A
 
 const NO_INTERRUPT = 'This agent cannot stop a running turn. End the session instead.';
 const NO_LIVE_SETTING = 'This agent cannot change that setting while its session is running. Start a new session with it.';
-export const errText = (err: unknown): string => (err instanceof Error ? err.message : String(err));
 export const validMode = (m: unknown): PermMode => (m === 'ask' || m === 'allow' ? m : 'read-only');
 /**
  * The window's options for a folder it adds (floor, agent app, model, effort, cap), read the same way for Add existing
@@ -109,7 +109,7 @@ export async function setCapOp(d: OpsDeps, id: unknown, credits: unknown): Promi
     d.log?.(a, 'limit-change', cap === undefined ? 'Spending limit removed' : `Spending limit set to ${usd ? `$${cap.toFixed(2)}` : `${cap} AI credits`}`);
     return { ok: true, maxAiCredits: cap };
   } catch (err) {
-    return { ok: false, error: errText(err) };
+    return { ok: false, error: failText(err, 'agents') };
   }
 }
 
@@ -166,7 +166,7 @@ export async function setMcpOp(d: OpsDeps, off: Map<string, Set<string>>, id: un
     return { ok: true };
   } catch (err) {
     // e.g. a server that was not part of this session at start: it comes in with the next start
-    return { ok: true, error: `Saved for this agent. The running session could not apply it now (${trunc(err instanceof Error ? err.message : err, 120)}); it applies at the next start.` };
+    return { ok: true, error: `Saved for this agent. The running session could not apply it now (${trunc(failText(err, 'mcp toggle', 'it was not accepted'), 120)}); it applies at the next start.` };
   }
 }
 
@@ -334,7 +334,7 @@ export async function scheduledSendOp(d: ScheduledSendDeps, prompt: string, s: {
     await ad.send(a.id, { text: prompt });
     d.noteLastSession(a);
   } catch (err) {
-    if (!(err instanceof Error && err.message === NOT_SENT_STOPPED)) d.agentState.noteSendFailed(a.id);
+    if (!(err instanceof Error && err.message === NOT_SENT_STOPPED)) d.agentState.noteSendFailed(a.id); // FR-066: read, not shown
     throw err;
   }
   return a.id;

@@ -14,6 +14,8 @@ import { createHash, randomBytes } from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
 import { simpleDiff } from '../shared/diff';
+import { failText } from './ipcerror';
+import { ShownError } from '../shared/shownerror';
 
 export interface CheckpointLimits {
   fileBytes: number;
@@ -284,7 +286,7 @@ export class CheckpointStore {
       for (const f of t.files.values()) {
         // checked again right before each change, so a swap during the undo is caught too
         const why = unsafeTarget(t.roots, f.abs);
-        if (why) throw new Error(`${f.rel}: ${why}`);
+        if (why) throw new ShownError(`${f.rel}: ${why}`);
         if (!f.existed) {
           const st = fs.lstatSync(f.abs);
           if (st.isFile()) fs.unlinkSync(f.abs);
@@ -295,7 +297,7 @@ export class CheckpointStore {
         const dir = path.dirname(f.abs);
         const wasMissing = stateOf(f.abs) === MISSING;
         makeParents(t.roots, dir);
-        if (unsafeTarget(t.roots, f.abs)) throw new Error(`${f.rel}: its folder changed during the undo`);
+        if (unsafeTarget(t.roots, f.abs)) throw new ShownError(`${f.rel}: its folder changed during the undo`);
         const tmp = path.join(dir, `.${path.basename(f.abs)}.durbar-${randomBytes(6).toString('hex')}`);
         fs.writeFileSync(tmp, data, { mode: f.mode, flag: 'wx' });
         fs.chmodSync(tmp, f.mode);
@@ -307,7 +309,7 @@ export class CheckpointStore {
       // stopped part way (a path changed during the undo): what was already restored can be undone again from the new checkpoint
       this.endTurn(agent);
       const done = restored + removed + created;
-      return { ok: false, error: `The undo stopped${done ? ` after ${done} file${done === 1 ? '' : 's'}` : ''}: ${e instanceof Error ? e.message : String(e)}. Nothing outside the session’s folders was touched.` };
+      return { ok: false, error: `The undo stopped${done ? ` after ${done} file${done === 1 ? '' : 's'}` : ''}: ${failText(e, 'checkpoint undo', 'something unexpected went wrong')}. Nothing outside the session’s folders was touched.` };
     } finally {
       if (this.open.has(agent)) this.endTurn(agent);
     }

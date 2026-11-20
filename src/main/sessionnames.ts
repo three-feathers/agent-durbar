@@ -3,11 +3,12 @@
  * dependency is injected, so tests use fakes. Main validates everything; the window only sends an agent id, an optional session id and
  * the name.
  */
-import { cut, redact } from '../shared/redact';
+import { cut } from '../shared/redact';
 import { checkDisplayName } from '../shared/names';
 import { renameTarget, syncEntry } from '../shared/sessionname';
 import type { RenameCap, SessionNameEntry } from '../shared/sessionname';
 import { sessionIdOk } from '../shared/sessionid';
+import { failText } from './ipcerror';
 
 export type RenameResult = { ok: true; name?: string; inApp: boolean; pending?: boolean; note?: string } | { ok: false; error: string };
 
@@ -90,7 +91,7 @@ export function renameOp(deps: RenameDeps): (agentId: unknown, sessionId: unknow
           inApp = target === 'now';
           pending = target === 'next-turn';
         } catch (err) {
-          const why = cut(redact(err instanceof Error ? err.message : String(err)).replace(/\s+/g, ' ').trim(), 120);
+          const why = cut(failText(err, 'rename', '').replace(/\s+/g, ' ').trim(), 120);
           note = `Renamed in Agent Durbar only. ${ad.displayName} did not accept the name${why ? `: ${why}` : ''}.`;
         }
       }
