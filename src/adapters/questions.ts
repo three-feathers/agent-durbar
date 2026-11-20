@@ -19,12 +19,12 @@ export class SkipNotes {
 export const MAX_QUESTIONS = 4;
 export const MAX_OPTIONS = 6;
 export { MAX_ANSWER };
-/** Spec 052 FR-160: the card shows all of it; these only bound the event log and the renderer, far above what agents send. */
-export const MAX_QUESTION_TEXT = 2000;
+/** Spec 052 FR-160: the card shows all of it; these only bound the event log and the renderer, far above what agents send (the question and the MCP message: 20,000 since issue 1934). */
+export const MAX_QUESTION_TEXT = 20000; // spec 052 2026-11-20 delta (issue 1934): was 2,000; a longer text is cut at a space
 export const MAX_OPTION_LABEL = 300;
 export const MAX_OPTION_DESCRIPTION = 1000;
 
-const line = (v: unknown, max: number): string | undefined => cleanSessionTitle(v, max);
+const line = (v: unknown, max: number, wholeWords = false): string | undefined => cleanSessionTitle(v, max, wholeWords);
 
 /** `AskUserQuestion`'s input (`questions[]` with `question`, `header`, `options[]`, `multiSelect`) to the normalized list; [] when unusable. */
 export function parseQuestions(input: unknown): AskedQuestion[] {
@@ -39,7 +39,7 @@ export function parseQuestionsWithOriginals(input: unknown): { asked: AskedQuest
   for (const q of qs.slice(0, 50)) {
     if (out.length >= MAX_QUESTIONS) break;
     if (!isObj(q)) continue;
-    const question = line(q.question, MAX_QUESTION_TEXT);
+    const question = line(q.question, MAX_QUESTION_TEXT, true);
     if (!question) continue;
     const options = (Array.isArray(q.options) ? q.options : [])
       .slice(0, MAX_OPTIONS)

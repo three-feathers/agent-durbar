@@ -246,7 +246,7 @@ async function main(): Promise<void> {
     assert.deepStrictEqual(got.pop(), ['g1', 'r1', { [longQ]: 'my own' }], 'g: the answer to a question over 300 characters reaches the adapter');
     assert.deepStrictEqual(answerQuestionOp(d, 'g1', 'r2', null), { ok: true });
     assert.deepStrictEqual(got.pop(), ['g1', 'r2', null], 'g: null is a skip');
-    for (const bad of [{ q: '' }, { q: '   ' }, {}, 'text', 5, undefined, { [`${'x'.repeat(2001)}`]: 'a' }]) {
+    for (const bad of [{ q: '' }, { q: '   ' }, {}, 'text', 5, undefined, { [`${'x'.repeat(20001)}`]: 'a' }]) {
       assert.strictEqual(answerQuestionOp(d, 'g1', 'r3', bad).ok, false, 'g: refused: ' + JSON.stringify(bad)?.slice(0, 30));
     }
     assert.strictEqual(got.length, 0, 'g: a refused answer never reaches the adapter as a skip');
