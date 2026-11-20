@@ -6,10 +6,9 @@
   if(typeof module==='object'&&module.exports) module.exports=api; else root.DurbarBrainDock=api;
 })(typeof self!=='undefined'?self:this, (function(){
   'use strict';
-  const MOTIONS=['full','calm','still'], WORD={full:'Full',calm:'Calm',still:'Still'};
+  const MOTIONS=['full','calm','still'];
   const STEPS_SHOWN=24; /* brainstate.ts TRAIL_MAX: the list shows the steps the trail draws, "M earlier" counts the rest (FR-025, FR-040) */
   const W_COMPACT=150; /* the brain beside the card while Your door has items (FR-031) */
-  const store={get(k){try{return localStorage.getItem(k);}catch(e){return null;}},set(k,v){try{localStorage.setItem(k,v);}catch(e){}}};
   const esc=(s)=>String(s==null?'':s).replace(/[&<>"]/g,(c)=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 
   /* what the renderer needs from a brain state: the lit lobe (the current step's, else what the agent is doing), the trail, the bloom */
@@ -34,16 +33,16 @@
   const LEGEND_TITLE='A picture of tools, not a real brain';
   const LEGEND_NOTES=['<b>looping?</b> two tools take turns and the last failed','<b>bloom</b> the lobes a turn used swell once at its end'];
 
-  /* opts: {doc, win, mask, now(), name(id), folder?(id)} */
+  /* opts: {doc, win, mask, now(), name(id), folder?(id), motion?: 'full'|'calm'|'still' (Settings > Brain motion, T426)} */
   function start(opts){
     const doc=opts.doc||document, win=opts.win||window, S=win.exports, SF=win.exports, DR=win.DurbarBrainDraw;
     if(!S||!S.brainState||!SF.cardLines||!SF.turnMapLine||!DR||!opts.mask)return null; /* fail closed: no mask, no brain */
     const states=new Map(); let shownId=null, timer=0, mounted=false, roomy=false, legendOpen=false;
-    let motion=store.get('durbar.brainMotion'); if(MOTIONS.indexOf(motion)<0)motion='full';
+    let motion=MOTIONS.indexOf(opts.motion)>=0?opts.motion:'full', forceStill=false; /* the Settings choice; forceStill: Still highlights, Motion off or a low battery (app.js, FR-060) */
     const mqReduce=win.matchMedia?win.matchMedia('(prefers-reduced-motion: reduce)'):null, mqForced=win.matchMedia?win.matchMedia('(forced-colors: active)'):null;
 
     const el=doc.createElement('section'); el.className='bv'; el.setAttribute('role','region'); el.setAttribute('aria-label','Brain view');
-    el.innerHTML='<div class="bv-head"><strong class="bv-title">Brain</strong><button type="button" class="btn" data-bv="legend" aria-expanded="false" aria-controls="bvLegend">Legend</button><button type="button" class="btn" data-bv="motion"></button></div>'+
+    el.innerHTML='<div class="bv-head"><strong class="bv-title">Brain</strong><button type="button" class="btn" data-bv="legend" aria-expanded="false" aria-controls="bvLegend">Legend</button></div>'+
       '<p class="bv-cost"></p><p class="bv-sentence"></p>'+
       '<div class="bv-body"><div class="bv-pic"><canvas class="bv-canvas" aria-hidden="true"></canvas><div class="bv-card"><strong class="bv-lobe"></strong><strong class="bv-c1"></strong><div class="bv-c2"></div><div class="bv-c3"></div></div></div>'+
       '<div class="bv-legend" id="bvLegend" hidden></div></div>'+
@@ -58,9 +57,11 @@
     /* drawn only while the window is shown, the dock is in the open rail and its picture is not swapped for the legend (FR-104) */
     function covered(){const c=doc.body&&doc.body.classList;return !!c&&!!c.contains&&(!c.contains('panel-open')||c.contains('screen-open')||c.contains('list-mode')||c.contains('brain-rail-off'));}
     function syncVisible(){draw.setVisible(mounted&&!doc.hidden&&!legendOpen&&!covered());}
-    const bySystem=()=>!!((mqReduce&&mqReduce.matches)||(mqForced&&mqForced.matches)); /* reduced motion or forced colours: Still, the button says so */
-    const applyMotion=()=>{const m=bySystem()?'still':motion;draw.setMotion(m);const b=q('[data-bv=motion]');b.textContent='Motion: '+WORD[m]+(m!==motion?' (system)':'');b.setAttribute('aria-label','Brain motion '+WORD[m]+(m!==motion?', set by the system (reduced motion or forced colours)':'')+'. Press to change');b.setAttribute('aria-disabled',String(m!==motion));};
-    q('[data-bv=motion]').addEventListener('click',()=>{if(bySystem())return; /* set by the system: the button keeps focus and does nothing */motion=MOTIONS[(MOTIONS.indexOf(motion)+1)%3];store.set('durbar.brainMotion',motion);applyMotion();});
+    const bySystem=()=>!!((mqReduce&&mqReduce.matches)||(mqForced&&mqForced.matches)); /* reduced motion or forced colours: Still */
+    const motionNow=()=>bySystem()||forceStill?'still':motion;
+    const applyMotion=()=>{draw.setMotion(motionNow());};
+    function setMotion(m){if(MOTIONS.indexOf(m)<0)return;motion=m;applyMotion();}
+    function setForceStill(on){forceStill=!!on;applyMotion();}
     /* FR-014: the legend takes the brain area; the header, the cost line and Your door stay where they are */
     function setLegend(on){
       legendOpen=!!on; const b=q('[data-bv=legend]'), lg=q('.bv-legend'), pic=q('.bv-pic');
@@ -130,7 +131,7 @@
     }
     /* an agent removed from the office: its brain goes too */
     function forget(id){states.delete(String(id));if(shownId===String(id))show(null);}
-    return {feed,show,mount,unmount,setRoomy,setLegend,paint,forget,draw,el,stats:()=>draw.stats,shown:()=>shownId,count:()=>states.size,roomy:()=>roomy,legend:()=>legendOpen};
+    return {feed,show,mount,unmount,setRoomy,setLegend,setMotion,setForceStill,motion:motionNow,bySystem,paint,forget,draw,el,stats:()=>draw.stats,shown:()=>shownId,count:()=>states.size,roomy:()=>roomy,legend:()=>legendOpen};
   }
   return {start,viewOf,lobeText,regionLabel,stepsOf,legendRows,LEGEND_TITLE,STEPS_SHOWN,W_COMPACT};
 })());

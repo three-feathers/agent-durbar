@@ -175,6 +175,32 @@ export class SettingsStore {
     return this.s.motion !== false;
   }
 
+  /** Spec 106 FR-060 (T426): *Brain view*, on by default; only `false` is written, so an unset value or an older file means on. */
+  get brainView(): boolean {
+    return this.s.brainView !== false;
+  }
+
+  setBrainView(v: unknown): Saved<boolean> {
+    if (typeof v !== 'boolean') return { ok: false, value: this.brainView };
+    const next: AppSettings = { ...this.s };
+    if (v) delete next.brainView;
+    else next.brainView = false;
+    return this.commit(next) ? { ok: true, value: v } : { ok: false, value: this.brainView };
+  }
+
+  /** Spec 106 FR-060 (T426): *Brain motion* Full / Calm / Still; Full is not written. */
+  get brainMotion(): 'full' | 'calm' | 'still' {
+    return this.s.brainMotion === 'calm' || this.s.brainMotion === 'still' ? this.s.brainMotion : 'full';
+  }
+
+  setBrainMotion(v: unknown): Saved<'full' | 'calm' | 'still'> {
+    if (v !== 'full' && v !== 'calm' && v !== 'still') return { ok: false, value: this.brainMotion };
+    const next: AppSettings = { ...this.s };
+    if (v === 'full') delete next.brainMotion;
+    else next.brainMotion = v;
+    return this.commit(next) ? { ok: true, value: v } : { ok: false, value: this.brainMotion };
+  }
+
   /** Only a real boolean changes it. `ok` only when the write reached disk; `value` the one in force. */
   setMotion(v: unknown): Saved<boolean> {
     if (typeof v !== 'boolean') return { ok: false, value: this.motion };
