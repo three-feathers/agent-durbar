@@ -435,3 +435,7 @@ Order: T327 (the owner's picture gate) before any code PR; T328, T329 (art, #164
 ## 2026-11-19: check-097-plate-pencil hover-parking state (issue #1930)
 
 - [x] T393 [US2] Refs #1930 (spec delta 2026-11-19): `scripts/check-097-plate-pencil.js` puts the full hover state in the hover-parking assert's message; the failure did not reproduce in 5 local xvfb runs (2 under load); `PENCIL_MUTANT=shown` fails it with the state
+## 2026-11-20: the Photo office kids' likeness look (issue #1641)
+
+- [x] T398 [US2] Refs #1641 (spec delta 2026-11-20): the six Photo office kids' `owner-likeness-look: pending (Vikram)` in `worlds/photo/ASSETS.md` replaced by `likeness-check` with the owner's answer of 2026-11-20 10:15 UTC (option 1); no picture changed. Test: `test:realoffice-assets` (and, once spec 102 T396 lands, its likeness guard)
+
