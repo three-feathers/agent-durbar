@@ -46,7 +46,7 @@ One row per thing a user can do or see. [features.md](features.md) stays the use
 | Attachments (pick, drop, paste) | works | works | none (owner decision, #1404) | 004 | test:attachments |
 | Browser tab in a chat | works | works | none (owner decision, #1404) | 080 | test:browsertabs test:browserpane |
 | Expand the chat's browser to fill the window, and back (Esc) | works | works, Photo office and Retro arcade checked | none (owner decision, #1404) | 080 | test:browserpane driver:check-080-browser-expand |
-| Questions and permission cards | works | works | mock+planned (permission-card) (owner decision, #1404) | 003 012 | test:elicit test:permissions test:lookalike driver:shots-012-elicit driver:check-permission-lookalike |
+| Questions and permission cards | works | works | mock+planned (permission-card) (owner decision, #1404) | 003 012 | test:elicit test:permissions test:lookalike driver:shots-012-elicit driver:check-question-markdown driver:check-permission-lookalike |
 | Auto-follow work (Settings, off by default): back to the office after a send, the agent's chat when it finishes or needs you; a full-screen notice with a 3 s countdown and Stay before each automatic move; Previous and Next over the attention queue | works | works, the same notice in the Photo office, the cave and the arcade | none (owner decision, #1404) | 052 | driver:check-auto-follow driver:check-052-follow-notice |
 | Needs-you inbox | works | works | planned+built (inbox) | 052 | test:attention read:src/renderer/app.js |
 | Modes Read-only, Ask first, Allow all; switch any time | works | works | none (owner decision, #1404) | 003 018 | test:permissions driver:shots-018 |
