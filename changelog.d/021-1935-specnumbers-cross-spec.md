@@ -1,1 +1,0 @@
-- **Spec-number check across specs** (spec 021): `npm run specs:numbers` now also fails when another open PR takes the same T, FR or Q number in a different existing spec; before, only the same spec file was compared. Checked offline with fixtures.

@@ -1,1 +1,0 @@
-- **Retro arcade: Tab follows the seats after an agent changes state** (spec 102): the keyboard order of the plates, pencils and helpers is re-slotted in the model's order, as the lounge already was (#1907).

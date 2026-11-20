@@ -1,1 +1,0 @@
-- **A failed turn keeps showing the error** (spec 005): when a turn ends in an error the agent stays in Error instead of turning Done (#1919).
