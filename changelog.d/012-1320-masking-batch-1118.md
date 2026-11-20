@@ -1,1 +1,0 @@
-- **Masking hides a secret value written right after a token, and a home folder on the Real office monitor in one more spelling** (spec 012 FR-187, issue #1320): on every surface built on the shared masks, and on the monitor's lines. Other forms stay a known gap under the issue.

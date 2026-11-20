@@ -27,8 +27,8 @@
   const CREW_OF = new Map(Object.entries(CREWS).flatMap(([c, ids]) => ids.map((id) => [id, c])));
   const LEGACY_CREW = 'cheeky';
   /* the characters of a Characters value (an unknown value or the theme's own: the Cheeky crew, as before) and the key the choice is stored under */
-  const idsFor = (choice) => choice === 'mine' ? [...OWN.keys()] : has(CREWS, choice) ? CREWS[choice] : IDS;
-  const storeKey = (choice) => choice === 'mine' ? 'durbar.crew.mine' : has(CREWS, choice) && choice !== LEGACY_CREW ? 'durbar.crew.' + choice : 'durbar.crew';
+  const idsFor = (choice) => choice === 'mine' ? [...OWN.keys()] : has(CREWS, choice) ? CREWS[choice] : has(FLAT_SETS, choice) ? FLAT_IDS[choice] : IDS;
+  const storeKey = (choice) => choice === 'mine' ? 'durbar.crew.mine' : (has(CREWS, choice) && choice !== LEGACY_CREW) || has(FLAT_SETS, choice) ? 'durbar.crew.' + choice : 'durbar.crew';
   /* spec 096 FR-043: My characters, registered by app.js once main has listed them and their frames are URLs; newest first. A set belongs to no theme or world: the crew kit draws any registered id on any of them.
      Everything is checked here, since these strings end up in scene markup: an id main makes, a blob: URL of this page and numeric face points; anything else is not registered. */
   const OWN = new Map();
@@ -114,12 +114,70 @@
     punkcat: { working: [185, 150], waiting: [208, 150], resting: [195, 155] },
     raccoon: { working: [190, 155], waiting: [208, 150], resting: [185, 155] },
   };
+  /* spec 102 FR-203, T389/T390 (issue #1873): Flat's heads of a full set are crops of its seated busts: `typeA` for working, `waveA` for waiting, `rest` for resting, of `realoffice/sets/<set>/<person>-<frame>.webp`
+     (no new file, no copy). `pic` is the picture's size in its own pixels (it differs per person); each pose has one square crop [x, y, side] in those pixels, its centre the face point, measured once per person and pose
+     (a throwaway script: the head top, the neck and the alpha channel) and corrected by hand on a contact sheet where the hair is tall (spiky p05, buns p06 and p13, afro p03, pigtails p10). Office people's crops
+     are drawn since T391; the working crop of Office people is a bowed head (typeA): it shows the crown and the lowered face, the eyes and the mouth are in the crop for all 15 (contact sheet, T391), so typeA stays. test:crew keeps every crop square and inside its picture; each crop starts at the head's own top, never above the picture's alpha box (checked once by the script, not in the test: no WebP decoder in the tests). */
+  const HEAD_FRAME = { working: 'typeA', waiting: 'waveA', resting: 'rest' };
+  const HEADS = {
+    retro: {
+    p01: { pic: [80, 79], working: [12, 2, 52], waiting: [14, 2, 52], resting: [14, 4, 52] },
+    p02: { pic: [79, 80], working: [10, 2, 52], waiting: [10, 2, 52], resting: [12, 3, 52] },
+    p03: { pic: [78, 79], working: [10, 4, 52], waiting: [9, 4, 52], resting: [12, 4, 52] },
+    p04: { pic: [80, 80], working: [10, 3, 52], waiting: [11, 3, 52], resting: [14, 4, 52] },
+    p05: { pic: [64, 78], working: [2, 6, 52], waiting: [6, 6, 52], resting: [4, 6, 52] },
+    p06: { pic: [65, 79], working: [2, 4, 52], waiting: [4, 4, 52], resting: [2, 4, 52] },
+    p07: { pic: [72, 80], working: [10, 0, 52], waiting: [10, 4, 52], resting: [10, 4, 52] },
+    p08: { pic: [78, 80], working: [11, 3, 52], waiting: [10, 3, 52], resting: [13, 3, 52] },
+    p09: { pic: [87, 86], working: [14, 8, 56], waiting: [12, 8, 56], resting: [16, 9, 56] },
+    p10: { pic: [66, 79], working: [1, 1, 56], waiting: [6, 1, 56], resting: [2, 3, 56] },
+    p11: { pic: [83, 80], working: [12, 3, 52], waiting: [10, 3, 52], resting: [12, 3, 52] },
+    p12: { pic: [88, 89], working: [14, 12, 58], waiting: [13, 12, 58], resting: [15, 13, 58] },
+    p13: { pic: [61, 79], working: [0, 8, 54], waiting: [4, 8, 54], resting: [0, 8, 54] },
+    p14: { pic: [80, 79], working: [13, 2, 52], waiting: [12, 2, 52], resting: [14, 3, 52] },
+    p15: { pic: [71, 81], working: [5, 3, 52], waiting: [8, 3, 52], resting: [8, 5, 52] },
+    },
+    office: {
+    p01: { pic: [457, 618], working: [118, 112, 228], waiting: [145, 111, 210], resting: [128, 132, 210] },
+    p02: { pic: [410, 600], working: [106, 157, 205], waiting: [122, 156, 189], resting: [114, 164, 189] },
+    p03: { pic: [431, 640], working: [110, 178, 221], waiting: [118, 182, 203], resting: [118, 179, 203] },
+    p04: { pic: [442, 549], working: [124, 33, 221], waiting: [128, 32, 203], resting: [132, 51, 203] },
+    p05: { pic: [454, 583], working: [121, 72, 227], waiting: [139, 71, 209], resting: [134, 129, 209] },
+    p06: { pic: [452, 640], working: [118, 160, 226], waiting: [118, 159, 208], resting: [126, 166, 208] },
+    p07: { pic: [421, 606], working: [113, 131, 210], waiting: [128, 129, 194], resting: [121, 144, 194] },
+    p08: { pic: [391, 640], working: [92, 78, 204], waiting: [97, 79, 187], resting: [100, 98, 187] },
+    p09: { pic: [417, 587], working: [112, 153, 208], waiting: [132, 152, 192], resting: [120, 159, 192] },
+    p10: { pic: [454, 610], working: [122, 70, 227], waiting: [156, 70, 209], resting: [130, 91, 209] },
+    p11: { pic: [453, 640], working: [102, 73, 239], waiting: [98, 76, 220], resting: [112, 85, 220] },
+    p12: { pic: [460, 640], working: [122, 172, 230], waiting: [118, 172, 212], resting: [131, 181, 212] },
+    p13: { pic: [404, 640], working: [96, 180, 220], waiting: [94, 195, 203], resting: [105, 186, 203] },
+    p14: { pic: [420, 640], working: [105, 166, 214], waiting: [130, 167, 196], resting: [116, 167, 196] },
+    p15: { pic: [439, 620], working: [101, 142, 220], waiting: [110, 141, 202], resting: [110, 148, 202] },
+    },
+  };
+  /* the Characters values Flat draws as heads, the set each names, the id prefix (both sets name their people p01..p15, so `retro-p01` and `office-p01`; no clash in FACE, OWN or a stored crew) and the scaling: Retro pixel is nearest (sharp), Office people are photos (smooth) */
+  const FLAT_SETS = { pixel: { set: 'retro', prefix: 'retro-', sharp: true }, office: { set: 'office', prefix: 'office-', sharp: false } };
+  const FLAT_IDS = {};
+  for (const [choice, f] of Object.entries(FLAT_SETS)) FLAT_IDS[choice] = Object.keys(HEADS[f.set]).map((k) => f.prefix + k);
+  /* where a head is drawn in the 200x124 stage: a square above the desk top (y 86), left of the monitor (x 112); the round avatars and the lounge seat show the same square */
+  const HEAD_BOX = { x: 40, y: 22, s: 64 };
+  const flatOf = (id) => {
+    if (typeof id !== 'string') return null;
+    for (const f of Object.values(FLAT_SETS)) if (id.startsWith(f.prefix) && has(HEADS[f.set], id.slice(f.prefix.length))) return { f, key: id.slice(f.prefix.length), heads: HEADS[f.set][id.slice(f.prefix.length)] };
+    return null;
+  };
+  /* what the crew kit draws for a flat-set person: the picture, its size, the crop and the box, or null for any other character */
+  function head(id, pose) {
+    const o = flatOf(id); if (!o || !has(HEAD_FRAME, pose)) return null;
+    return { href: file(id, pose), pic: o.heads.pic, crop: o.heads[pose], box: HEAD_BOX, sharp: !!o.f.sharp };
+  }
   const k = BOX.w / PIC;
   /* a face box or the avatar's crop, in stage units: [x, y, w, h]; null for an unknown picture */
   const facePoint = (id, pose) => OWN.has(id) ? (OWN.get(id).face[pose] || null) : (has(FACE, id) && has(FACE[id], pose)) ? FACE[id][pose] : null;
-  function faceBox(id, pose) { const f = facePoint(id, pose); return f ? [BOX.x + (f[0] - FACE_W / 2) * k, BOX.y + (f[1] - FACE_H / 2) * k, FACE_W * k, FACE_H * k] : null; }
+  function faceBox(id, pose) { if (flatOf(id)) return has(HEAD_FRAME, pose) ? [HEAD_BOX.x, HEAD_BOX.y, HEAD_BOX.s, HEAD_BOX.s] : null; const f = facePoint(id, pose); return f ? [BOX.x + (f[0] - FACE_W / 2) * k, BOX.y + (f[1] - FACE_H / 2) * k, FACE_W * k, FACE_H * k] : null; }
   /* the view box of a round avatar (chip, walker, chat header, inbox): the face fills the circle; of a seat on a couch: the bust from its top edge (FR-060) */
   function viewBox(id, pose, use) {
+    if (flatOf(id)) return has(HEAD_FRAME, pose) ? [HEAD_BOX.x, HEAD_BOX.y, HEAD_BOX.s, HEAD_BOX.s].join(' ') : null; /* a head crop is square and already the face: the circle and the seat show it whole */
     const f = facePoint(id, pose); if (!f) return null;
     return viewBoxAt(f, use);
   }
@@ -134,10 +192,10 @@
   }
   /* the pose for a status: working and thinking type, waiting and error need the person, the rest rests */
   const poseFor = (st) => (st === 'working' || st === 'thinking' || st === 'avatar') ? 'working' : (st === 'waiting' || st === 'error') ? 'waiting' : 'resting';
-  const file = (id, pose) => { if (OWN.has(id)) return OWN.get(id).urls[pose]; const c = CREW_OF.get(id); return 'crew/art/' + (c && c !== LEGACY_CREW ? c + '-' : '') + id + '-' + pose + '.webp'; };
+  const file = (id, pose) => { if (OWN.has(id)) return OWN.get(id).urls[pose]; const fl = flatOf(id); if (fl && has(HEAD_FRAME, pose)) return 'realoffice/sets/' + fl.f.set + '/' + fl.key + '-' + HEAD_FRAME[pose] + '.webp'; const c = CREW_OF.get(id); return 'crew/art/' + (c && c !== LEGACY_CREW ? c + '-' : '') + id + '-' + pose + '.webp'; };
   const files = (ids) => (ids || IDS).reduce((a, id) => a.concat(POSES.map((p) => file(id, p))), []);
   /* FR-055: a character can be drawn when it is known and none of its pictures failed to load (`bad`: a Set of character ids) */
-  const usable = (id, bad) => typeof id === 'string' && (ALL_IDS.includes(id) || OWN.has(id)) && !(bad && bad.has && bad.has(id));
+  const usable = (id, bad) => typeof id === 'string' && (ALL_IDS.includes(id) || OWN.has(id) || !!flatOf(id)) && !(bad && bad.has && bad.has(id));
 
   /* a small repeatable random source from a string (the session id): FNV-1a into mulberry32 */
   function seeded(str) {
@@ -276,5 +334,5 @@
     if (row) return on(row, flags) ? 'full' : 'closed';
     return crewName(c) ? 'heads' : 'default';
   }
-  return { registerOwn, ownName, ownRev, viewBoxAt, folderKey, pinKey, pinCrew, WORLD_FLAGS, WORLDS, REAL_SETS, PIXEL_CHARACTERS, offeredWorlds, parseWorld, peopleFor, levelFor, CREWS, PREHISTORIC_IDS, PIRATE_IDS, MONSTER_IDS, ROYAL_IDS, REBELS_IDS, ALL_IDS, idsFor, storeKey, POSES, BOX, PX_PER_UNIT, FACE, FACE_W, FACE_H, FACE_CROP, faceBox, viewBox, poseFor, file, files, usable, IDS, MAX_ENTRIES, MAX_ID, seeded, seededRand, pickCharacter, assignCrew, pruneCrew, loadCrew };
+  return { registerOwn, ownName, ownRev, viewBoxAt, folderKey, pinKey, pinCrew, WORLD_FLAGS, WORLDS, REAL_SETS, PIXEL_CHARACTERS, offeredWorlds, parseWorld, peopleFor, levelFor, CREWS, PREHISTORIC_IDS, PIRATE_IDS, MONSTER_IDS, ROYAL_IDS, REBELS_IDS, ALL_IDS, idsFor, storeKey, POSES, BOX, PX_PER_UNIT, FACE, FACE_W, FACE_H, FACE_CROP, HEADS, HEAD_FRAME, HEAD_BOX, FLAT_SETS, FLAT_IDS, head, faceBox, viewBox, poseFor, file, files, usable, IDS, MAX_ENTRIES, MAX_ID, seeded, seededRand, pickCharacter, assignCrew, pruneCrew, loadCrew };
 })());

@@ -95,9 +95,10 @@ async function main(): Promise<void> {
       ids[k] = sid;
       agents.set(sid, { id: sid, name: k, cwd: ws, folders: [ws], permMode: 'ask', adapterId: k, model: 'auto' } as unknown as AgentInfo);
     }
+    const clock = { t: 1_000_000 };
     const saved: { key: string; c: Record<string, unknown> }[] = [];
     const router = { onEvent: () => () => undefined, forAgent: (id: string) => Object.values(ads).find((x) => x.isLive(id)) ?? ads.claude, instance: (k: string) => ads[k] };
-    register({ agents, router: router as never, registry: { defaultId: 'copilot', has: (k: string) => k in lists } as never, wsKey: (a) => a.adapterId ?? '', getFolderStore: () => ({ setModelChoice: (key: string, c: Record<string, unknown>) => void saved.push({ key, c }) }) as never });
+    register({ agents, router: router as never, registry: { defaultId: 'copilot', has: (k: string) => k in lists } as never, wsKey: (a) => a.adapterId ?? '', getFolderStore: () => ({ setModelChoice: (key: string, c: Record<string, unknown>) => void saved.push({ key, c }) }) as never, now: () => clock.t, listTimeoutMs: 100 });
 
     // Claude Code's and Codex's own models and efforts are accepted (they were checked against Copilot's list and refused), Copilot's own too
     const setOk = async (k: string, req: unknown, what: string): Promise<void> => {
@@ -127,6 +128,74 @@ async function main(): Promise<void> {
     await setOk('codex', { model: 'gpt-next' }, 'the newest list counts');
     assert.ok(!(await call('agents:setModel', ids.codex, { model: 'gpt-sol' })).ok, 'and the older one no longer');
     await setOk('copilot', { model: 'gpt-deep' }, "and Copilot's list is untouched");
+    // spec 030 FR-068..FR-071 (issue #1909): the owner's case, the first list fails or is empty and the second succeeds, with no restart
+    {
+      type Reply = { ok: boolean; error?: string; reason?: string; hidden?: number; models: { id: string }[] };
+      const lc = (opts?: unknown) => call('models:list', 'extra', opts) as unknown as Promise<Reply>;
+      const asked: Array<unknown> = [];
+      const warned: string[] = [];
+      const warn = console.warn; console.warn = (m: unknown) => void warned.push(String(m));
+      let mode: 'throw' | 'cached-empty' | 'hidden' = 'throw';
+      const asyncRestore = async (o?: { fresh?: boolean }): Promise<unknown[]> => {
+        asked.push(o);
+        if (mode === 'throw') throw Object.assign(new Error('boom ghp_SECRET123 /home/me/.copilot/x'), { name: 'RpcError' });
+        if (mode === 'hidden') return [{ id: 'a', name: 'A', efforts: [], disabled: true }, { id: 'b', name: 'B', efforts: [], disabled: true }];
+        return o?.fresh ? [{ id: 'gpt-full', name: 'Full', efforts: [], disabled: false }] : []; // the SDK keeps an empty answer for the client's life
+      };
+      (ads.extra as unknown as { listModelOptions: unknown }).listModelOptions = asyncRestore;
+      try {
+        // spec 030 FR-073: a call that never answers is cut off (TimeoutError, "the request timed out"), and the next fresh ask asks again
+        {
+          const hang: { on: boolean } = { on: true };
+          (ads.extra as unknown as { listModelOptions: unknown }).listModelOptions = async () => (hang.on ? new Promise<never>(() => undefined) : [{ id: 'gpt-late', name: 'Late', efforts: [], disabled: false }]);
+          const within = <T>(p: Promise<T>, what: string): Promise<T> => Promise.race([p, new Promise<never>((_, rej) => setTimeout(() => rej(new assert.AssertionError({ message: what })), 4000))]);
+          const hr = await within(lc({ fresh: true }), 'a list call that never answers is cut off (the reply came)') as Reply;
+          assert.ok(!hr.ok && hr.reason === 'the request timed out', 'the cut-off says timed out: ' + JSON.stringify(hr));
+          assert.deepStrictEqual(warned.slice(-1), ['[models] the list failed: TimeoutError'], 'and logs only the type: ' + JSON.stringify(warned));
+          hang.on = false; clock.t += 6000;
+          const ok = await within(lc({ fresh: true }), 'after the cut-off the next ask answers') as Reply;
+          assert.ok(ok.ok && ok.models.length === 1, 'the next fresh ask really asks again: ' + JSON.stringify(ok));
+          warned.length = 0; clock.t += 6000;
+          (ads.extra as unknown as { listModelOptions: unknown }).listModelOptions = asyncRestore;
+        }
+        let r = await lc();
+        assert.ok(!r.ok && r.reason === 'the app could not list its models' && r.error === r.reason && r.models.length === 0, 'a failed list: a fixed reason, no models: ' + JSON.stringify(r));
+        assert.ok(!JSON.stringify(r).includes('SECRET') && !JSON.stringify(r).includes('.copilot'), 'the error text never reaches the window');
+        assert.deepStrictEqual(warned, ['[models] the list failed: RpcError'], 'only the error type is logged: ' + JSON.stringify(warned));
+        mode = 'cached-empty';
+        r = await lc();
+        assert.ok(r.ok && r.models.length === 0 && r.reason === 'the app returned no models', 'an empty list says why: ' + JSON.stringify(r));
+        r = await lc({ fresh: true });
+        assert.deepStrictEqual(r.models.map((m) => m.id), ['gpt-full'], 'fresh asks again past the cache: the full list without a restart');
+        assert.deepStrictEqual(asked.slice(-2), [undefined, { fresh: true }], 'fresh reaches the adapter only when asked, as exactly true');
+        // review on PR 1923: a fresh ask costs a runtime call (Claude starts a probe): one per app per 5 s, the answer shared inside the window
+        const before = asked.length;
+        const [r1, r2, r3] = await Promise.all([lc({ fresh: true }), lc({ fresh: true }), lc({ fresh: true })]);
+        assert.strictEqual(asked.length, before, 'inside the floor no new ask reaches the adapter (the earlier fresh answer is reused): ' + (asked.length - before));
+        assert.deepStrictEqual([r1.models.length, r2.models.length, r3.models.length], [1, 1, 1], 'and every caller gets that answer');
+        clock.t += 6000;
+        await Promise.all([lc({ fresh: true }), lc({ fresh: true })]);
+        assert.strictEqual(asked.length, before + 1, 'after the floor one more ask, for two parallel fresh calls');
+        await lc({ fresh: true });
+        assert.strictEqual(asked.length, before + 1, 'and again only one');
+        await lc({ fresh: 'yes' });
+        assert.strictEqual(asked[asked.length - 1], undefined, 'only fresh:true counts');
+        {
+          const { listReason } = require('../src/main/ipc/model') as typeof import('../src/main/ipc/model');
+          const SI = 'the sign-in was not accepted', OT = 'the app could not list its models';
+          for (const m of ['max tokens exceeded for this request', 'rate limit reached (429), retry later', 'the author field is missing', 'authority mismatch', 'failed in 4010 ms', 'token budget']) assert.strictEqual(listReason(new Error(m)), OT, 'near miss: ' + m);
+          for (const m of ['HTTP 401', 'Unauthorized', 'request failed {"status":403}', 'You are not signed in', 'Authentication failed']) assert.strictEqual(listReason(new Error(m)), SI, 'sign-in: ' + m);
+          assert.strictEqual(listReason(Object.assign(new Error('x'), { status: 401 })), SI, 'a 401 status');
+          assert.strictEqual(listReason(Object.assign(new Error('x'), { statusCode: 429 })), OT, 'a 429 status is not a sign-in');
+          assert.strictEqual(listReason(new Error('request timed out')), 'the request timed out');
+          assert.strictEqual(listReason(new Error('connect ECONNREFUSED 127.0.0.1:1')), 'no connection');
+          assert.strictEqual(listReason(new Error('socket hang up')), OT, 'a word alone is no connection verdict');
+        }
+        mode = 'hidden';
+        r = await lc();
+        assert.ok(r.ok && r.models.length === 0 && r.hidden === 2 && /policy/.test(r.reason ?? ''), 'policy-disabled models are counted: ' + JSON.stringify(r));
+      } finally { console.warn = warn; (ads.extra as unknown as { listModelOptions: unknown }).listModelOptions = async () => lists.extra; }
+    }
     // an app whose first list is empty is asked again at the next request, not cached empty (review on PR 935)
     assert.ok(!(await call('agents:setModel', ids.extra, { model: 'gpt-late' })).ok, 'an empty list offers nothing');
     lists.extra = [{ id: 'gpt-late', name: 'Late', efforts: [], disabled: false }];

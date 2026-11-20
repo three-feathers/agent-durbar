@@ -101,7 +101,8 @@ export interface ScanPlan {
   platform?: NodeJS.Platform;
 }
 
-export type ReadOutcome = { ok: true; items: readonly HistoryItem[] } | { ok: false; reason: 'too-large' | 'unreadable' | 'missing' };
+/** `timeout` (issue 1904): the read did not answer within its own limit (`SEARCH_READ_MS`): skipped and counted. */
+export type ReadOutcome = { ok: true; items: readonly HistoryItem[] } | { ok: false; reason: 'too-large' | 'unreadable' | 'missing' | 'timeout' };
 
 export interface ScanHit {
   adapter: string;
@@ -139,6 +140,8 @@ export interface ScanNotes {
   notInstalled: string[];
   tooLarge: number;
   unreadable: number;
+  /** Issue 1904 (FR-022): sessions whose read did not answer within its own limit. */
+  slow: number;
   titleOnly: { count: number; apps: string[] };
   hidden: number;
   floorsOff: number;
@@ -307,7 +310,7 @@ export function messageExcerpts(
 export function orderPlan(plan: ScanPlan): { list: PlanSession[]; notes: ScanNotes } {
   const platform = plan.platform ?? process.platform;
   const notes: ScanNotes = {
-    searched: 0, folders: 0, notInstalled: [...new Set((plan.unavailable ?? []).map(String))], tooLarge: 0, unreadable: 0,
+    searched: 0, folders: 0, notInstalled: [...new Set((plan.unavailable ?? []).map(String))], tooLarge: 0, unreadable: 0, slow: 0,
     titleOnly: { count: 0, apps: [] }, hidden: 0, floorsOff: 0, capped: { sessions: false, perFolder: false, results: false }, timedOut: false, cut: 0, bounded: 0, maskFailed: 0,
   };
   const seen = new Set<string>();
@@ -477,6 +480,7 @@ export function startScan(plan: ScanPlan, query: string, deps: ScanDeps): { canc
       if (!r.ok) {
         if (r.reason === 'too-large') notes.tooLarge++;
         else if (r.reason === 'unreadable') notes.unreadable++;
+        else if (r.reason === 'timeout') notes.slow++; // issue 1904: skipped, counted, the scan goes on
         return undefined; // missing: the session ended or was deleted meanwhile
       }
       // issue 1904: the excerpts kept so far, at most `maxExcerpts` per word they were built for, the best place first (then the earliest message)

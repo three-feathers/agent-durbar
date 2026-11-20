@@ -18,6 +18,7 @@ const R = require(path.join(ROOT, 'src', 'renderer', 'railorder.js')) as {
   group(items: Item[]): Group[];
   loadFolds(raw: unknown): Set<string>;
   foldsJSON(closed: Set<string>, known: Iterable<string>, listed?: boolean): string | null;
+  parentNames(rooms: unknown): Map<string, string>;
 };
 
 // ---- order ----
@@ -107,6 +108,19 @@ assert.strictEqual(R.foldsJSON(new Set(['x'.repeat(R.MAX_PATH + 1)]), ['x'.repea
 }
 // round trip
 assert.deepStrictEqual([...R.loadFolds(R.foldsJSON(new Set(['/a']), ['/a']))], ['/a']);
+
+// parentNames (spec 005 FR-340, issue #1905): folders with equal names are told apart by the nearest parent that differs
+{
+  const L = (rooms: Array<{ id: string; name: string; path: string }>) => [...R.parentNames(rooms)].map(([k, v]) => k + '=' + v).join(';');
+  assert.strictEqual(L([{ id: 'a', name: 'iot-portal', path: '~/clients/acme/iot-portal' }, { id: 'b', name: 'iot-portal', path: '~/clients/globex/iot-portal' }, { id: 'c', name: 'blog', path: '~/work/blog' }]), 'a=acme;b=globex', 'one parent, a unique name shows none');
+  assert.strictEqual(L([{ id: 'a', name: 'web', path: '~/x/acme/web' }, { id: 'b', name: 'Web', path: '~/y/acme/web' }]), 'a=x/acme;b=y/acme', 'equal parents: the next one up joins, case folded');
+  assert.strictEqual(L([{ id: 'a', name: 'web', path: '~/a/x' }, { id: 'b', name: 'web', path: '~/a/y' }]), 'a=x;b=y', 'renamed folders with the same parent: the folder itself');
+  assert.strictEqual(L([{ id: 'a', name: 'web', path: 'C:\\Users\\v\\a\\web' }, { id: 'b', name: 'web', path: '~\\b\\web' }]), 'a=a;b=b', 'Windows separators');
+  assert.strictEqual(L([{ id: 'a', name: 'web', path: '~/web' }, { id: 'b', name: 'web', path: '/srv/web' }]), 'a=~;b=srv', 'the home folder is a parent too');
+  assert.strictEqual(L([{ id: 'a', name: 'x', path: '~/x' }, { id: 'b', name: 'y', path: '~/y' }]), '', 'no equal names, no labels');
+  assert.strictEqual(R.parentNames(null).size, 0, 'a non-list is nothing');
+  assert.strictEqual(R.parentNames([null, { id: 1 }, { id: 'a', name: null, path: null }]).size, 0, 'bad rows are skipped');
+}
 
 // source pin (FR-216 item 4): the page prunes saved folds only once the session list has loaded, as pruneNumbers does
 {

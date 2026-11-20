@@ -581,6 +581,9 @@ assert.ok(Object.values(META.stand).some((s) => Object.values(s.foot as Record<s
       assert.strictEqual(C.peopleFor(w.id, c, ALL).world, w.id, `${w.id} x ${c}: the world is kept when open`);
     }
     for (const c of Object.keys(C.CREWS)) assert.ok(c in own, `crew ${c} has no cell in the matrix (T249)`);
+    // T392 (spec 102, issue #1873): the two set values have their rows in the spec's table, Flat column included (a crop kit since T390, T391)
+    const matrixText = fs.readFileSync(path.join(ROOT, 'specs', '097-real-office', 'spec.md'), 'utf8');
+    for (const [label, cell] of [['Office people (`office`', 'Office set'], ['Retro pixel (`pixel`', 'Retro set']]) assert.ok(matrixText.split('\n').some((l) => l.startsWith('| ' + label) && l.includes('`crew` kit, 15 head crops of the ' + cell)), `the spec's parity table has the ${label}) row with its Flat cell`);
   }
   C.CREWS.futurecrew = []; // a future crew (mutant check: a hand list of names would miss it)
   try { assert.strictEqual(note('futurecrew'), 'Real office shows Office people until Futurecrew has Real office poses.', 'a new crew gets its note by construction'); } finally { delete C.CREWS.futurecrew; }

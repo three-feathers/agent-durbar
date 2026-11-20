@@ -989,9 +989,9 @@ async function driver(ctx) {
     for (const sim of SIMS) {
       if (!mine()) continue;
       await run(`solo sim${sim}-${w}x${h}`, `sim=${sim}&simfreeze=1&simrooms=solo`, w, h, shotsDir ? `solo-sim${sim}-${w}x${h}` : '');
-      const tip = await ctx.js(`[...document.querySelectorAll('#stage .room-name')].every((n)=>(n.title||'').startsWith(n.textContent.replace(/…$/,'')))`);
+      const tip = await ctx.js(`[...document.querySelectorAll('#stage .room-name')].every((n)=>{const t=n.closest('.room-head').dataset.tip||'';return t.split('\\n')[0]===n.textContent;})`);
       total++;
-      if (!tip) { failed++; console.log(`FAIL solo sim${sim}-${w}x${h}: a room name has no full-name tooltip`); }
+      if (!tip) { failed++; console.log(`FAIL solo sim${sim}-${w}x${h}: a room head has no tooltip with its full name`); }
     }
   }
   /* spec 012 T018 (FR-068): Claude-like, Codex-like and basic agents beside Copilot. No floors here, so no floor-tag checks; the toolbar stays on one row */

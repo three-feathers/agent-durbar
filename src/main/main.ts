@@ -844,7 +844,7 @@ const browserGone = (id: string): void => void browser.destroy(id).catch(() => u
 const profileFreshness = createProfileFreshness();
 registerAgentsIpc({ browserGone, autopilot: autopilotOps, agents, router, agentState, opsDeps, remoteOps, mcpGate: (id) => mcp.signInRefresh.beforeSend(id), mcpStopWait: (id) => mcp.signInRefresh.stopWait(id), mcpBusy: (id) => chatBusy(id), mcpForget: (id) => mcp.signInRefresh.forget(id), mcpStopped: (id) => mcp.signInRefresh.noteStop(id), mcpSecrets: (id) => mcp.secretValuesFor(id), logMcp: (a, action) => logActivity(a, 'mcp-restart', action), getScheduler: () => scheduler, getCheckpointStore: () => checkpointStore, profileFreshness, vsChatRefs, continued, wsKey, asEffort, addMany, addWorkspace, sendOp, ensureLive, readyAdapterIds, forgetOpenSession, maskHistory, forgetSandboxNote: (id) => sandboxOps.forget(id), getSummaryDays: () => summaryDays }); // spec 087: sandboxOps is set below, before any IPC call
 registerAttachmentsIpc({ dev, pickedFiles, getStageDir, sizeOf });
-registerPreviousIpc({ browserGone, sessionsChanged: () => convSearch.dropKept(), renameSessionOpFor, dev, agents, router, registry, agentState, getFolderStore: () => folderStore, getScheduler: () => scheduler, wsKey, resumeIdFor, forgetOpenSession, logActivity, addWorkspace, vsChatRefs, maskHistory });
+registerPreviousIpc({ browserGone, sessionsChanged: () => convSearch.dropKept(), folderListed: (key) => convSearch.dropKept(key), renameSessionOpFor, dev, agents, router, registry, agentState, getFolderStore: () => folderStore, getScheduler: () => scheduler, wsKey, resumeIdFor, forgetOpenSession, logActivity, addWorkspace, vsChatRefs, maskHistory });
 // spec 095 (T022): the conversation search. Scope from main's own agents and folder store; MCP values without a keychain prompt (as
 // NotesOps); one cross-scan gate for what starts a Codex process; the matcher is the window's own file, loaded when first needed
 const convGate = createReadGate<unknown>();
@@ -852,11 +852,11 @@ const convListings = new Map<string, Promise<unknown>>(); // FR-022: the folder 
 let convMatcher: { masker: ReturnType<typeof createMasker>; search: SessionSearchApi } | undefined;
 const convSearch = registerConvSearchIpc({
   hasSessions: () => agents.size > 0,
-  scope: (stop, codexLists, onListing) => buildScope({
+  scope: (stop, keptLists, onListing) => buildScope({
     agents, router, store: folderStore, wsKey, resumeIdFor, appName: (id) => registry.get(id)?.displayName ?? id, vsUserDirs: () => vsUserDirsOf(dev),
     rememberChat: (agentId, ref) => { const m = vsChatRefs.get(agentId) ?? new Map<string, ChatFileRef>(); m.set(ref.summary.key, ref); vsChatRefs.set(agentId, m); }, // FR-012: View opens it
     values: { knownSecretValues: (key) => mcpStore?.knownSecretValues(key) ?? [], noPrompt: () => !mcpStore || mcpStore.noPrompt(), secretValuesFor: (id) => mcp.secretValuesFor(id), copilotValuesFor: (id) => mcp.copilotValuesFor(id) },
-    gate: convGate, codexLists, listings: convListings, onListing, // FR-026: the box session's Codex titles, memory only
+    gate: convGate, keptLists, listings: convListings, onListing, // FR-026: the box session's Codex titles, memory only
   }, stop),
   matcher: () => (convMatcher ??= { masker: createMasker({ unhide: (s) => rendererScript<{ unhide(s: string): string }>('safetext.js').unhide(s) }), search: rendererScript<SessionSearchApi>('sessionsearch.js') }),
 });
@@ -1126,6 +1126,7 @@ function createWindow(): void {
 
 app.whenReady().then(() => {
   powerMonitor.on('resume', () => mcp.signInRefresh.resumed()); // spec 058 FR-205: a wake from sleep puts every chat past the quiet-hour gap
+  powerMonitor.on('resume', () => toRenderer('system:resumed', null)); // spec 030 FR-072: an empty model list is asked once more after a wake
   app.setAboutPanelOptions(aboutPanelOptions(app.getVersion())); // owner and contributors: src/shared/about.ts (spec 008 FR-018)
   // spec 052 FR-083, FR-164: a Mac menu from roles (Settings… ⌘,; File > Add Folder… ⌘O); no menu on Windows and Linux (no Reload or DevTools for users)
   const menu = appMenuTemplate(process.platform, {

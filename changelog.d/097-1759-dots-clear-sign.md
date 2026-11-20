@@ -1,1 +1,0 @@
-- **The thinking dots keep clear of the folder sign or floor tag above them** (spec 097 FR-038, issue #1759): in the cave's All floors view the dots touched the lower edge of a sign at 1280x800; they now start 6 px below it, in every Real office world.

@@ -819,8 +819,19 @@ export class CopilotAdapter implements AgentAdapter {
   }
 
   /** Models visible to the logged-in user (no inference, no credits). */
-  async listModels(): Promise<ModelInfo[]> {
-    return (await this.getClient()).listModels();
+  async listModels(fresh = false): Promise<ModelInfo[]> {
+    const client = await this.getClient();
+    if (fresh) {
+      // spec 030 FR-071: the SDK's listModels() keeps its first successful answer, an empty one too, for the client's life; the runtime's own
+      // call (the one verifySignIn uses) asks again. It is the same JSON-RPC method `models.list` the SDK's listModels() sends (read: client.js); the SDK
+      // only fills default `capabilities` afterwards, which modelOptionFrom reads defensively. Not confirmed on a real account (KNOWN GAP). A runtime without it falls back to the cached list.
+      const rpc = (client as unknown as { rpc?: { models?: { list?: (p: object) => Promise<{ models?: unknown }> } } }).rpc;
+      if (typeof rpc?.models?.list === 'function') {
+        const r = await rpc.models.list({});
+        if (Array.isArray(r?.models)) return r.models as ModelInfo[];
+      }
+    }
+    return client.listModels();
   }
 
   /** Cheapest model by billing multiplier, falling back to input token price. Undefined if none reports billing. */
@@ -829,8 +840,8 @@ export class CopilotAdapter implements AgentAdapter {
    * routing tiers when the runtime is new enough (`getStatus().version`), and the organization's tier from `managedSettings.resolve` (read again
    * on every listing, so a changed policy shows; both calls cost nothing and are capped, and a failure only leaves the extra fields out).
    */
-  async listModelOptions(): Promise<ModelOption[]> {
-    const options = (await this.listModels()).map((m) => modelOptionFrom(m as unknown as RawModelInfo));
+  async listModelOptions(opts?: { fresh?: boolean }): Promise<ModelOption[]> {
+    const options = (await this.listModels(opts?.fresh === true)).map((m) => modelOptionFrom(m as unknown as RawModelInfo));
     if (!options.some((o) => o.id === 'auto')) return options;
     const client = await this.getClient();
     this.managedTier = undefined;

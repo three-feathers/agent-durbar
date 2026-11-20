@@ -6,7 +6,8 @@
  *
  * It fails (exit 1) when an FR-, T- or Q- number that this branch ADDS in specs/NNN-*\/spec.md (FR, Q) or tasks.md (T), measured against
  * the merge-base with origin/main, is also (a) added by another open PR head, or (b) already defined on origin/main, in the SAME file
- * (numbers are per spec: two specs may use the same number). Exit 2: it could not check (no origin/main, a failed fetch, an unreadable PR list or
+ * (a same-file clash). Issue #1935: an id another head adds in a DIFFERENT existing spec's file of the same kind is a clash too (numbers are global since the
+ * FR-048c sequence); a spec that is new on main numbers from 001 and is not compared across files. Exit 2: it could not check (no origin/main, a failed fetch, an unreadable PR list or
  * file, no network); never a silent pass. The branch is `--head <sha>` (CI passes the PR head: HEAD there is a merge commit, and a number
  * that main took meanwhile would be hidden by the merge); a number defined twice in one file at HEAD, more often than on origin/main, is a clash too.
  *
@@ -85,12 +86,18 @@ const added = (before, after) => new Set([...after].filter((x) => !before.has(x)
  * Pure clash logic. branchAdds: Map(file -> Set(id)); main: Map(file -> Set(id defined on origin/main));
  * prs: [{ label, adds: Map(file -> Set(id)) }]  -> [{ file, id, with }] sorted
  */
-function findClashes({ branchAdds, main, prs, twice = [] }) {
+function findClashes({ branchAdds, main, prs, twice = [], fresh = new Set() }) {
   const out = twice.map(({ file, id, lines }) => ({ file, id, with: `this branch itself (defined twice in the file${lines ? `, lines ${lines.join(' and ')}` : ''}; main took it too?)` }));
   for (const [file, ids] of branchAdds) {
     for (const id of ids) {
       if ((main.get(file) || new Set()).has(id)) out.push({ file, id, with: 'origin/main (already defined there)' });
-      for (const pr of prs) if ((pr.adds.get(file) || new Set()).has(id)) out.push({ file, id, with: `${pr.label} (added there too)` });
+      for (const pr of prs) {
+        if ((pr.adds.get(file) || new Set()).has(id)) out.push({ file, id, with: `${pr.label} (added there too)` });
+        // Issue #1935: numbers run across specs (T375 in two specs is one clash). Other file of the same kind only; a spec that is new on main
+        // (this side or that) numbers from 001 on its own, so it is not compared across files.
+        if (fresh.has(file)) continue;
+        for (const [pf, pids] of pr.adds) if (pf !== file && kindOf(pf) === kindOf(file) && !fresh.has(pf) && pids.has(id)) out.push({ file, id, with: `${pr.label} (added there too, in ${printable(pf)}: numbers are global)` });
+      }
     }
   }
   return out.sort((a, b) => a.file.localeCompare(b.file) || a.id.localeCompare(b.id, undefined, { numeric: true }) || a.with.localeCompare(b.with));
@@ -244,9 +251,12 @@ function collect(root, heads, headRev = 'HEAD', self = null) {
     const inStack = stacked.has(h.label) || isAncestor(root, headRev, h.sha);
     const pbase = gitq(root, ['merge-base', h.sha, inStack ? headRev : 'origin/main']);
     if (!pbase) { noBase.push(h.label); continue; }
-    prs.push({ label: h.label, adds: addsOf(root, pbase, h.sha, files) });
+    // that head's OWN spec files, not only this branch's (issue #1935: a number taken in another spec is the same clash)
+    prs.push({ label: h.label, adds: addsOf(root, pbase, h.sha, [...new Set([...files, ...specFilesChanged(root, pbase, h.sha)])]) });
   }
-  return { base, branchAdds, main, prs, skipped, noBase, twice, files };
+  const fresh = new Set();
+  for (const f of new Set([...files, ...prs.flatMap((p) => [...p.adds.keys()])])) if (show(root, 'origin/main', f) === '') fresh.add(f);
+  return { base, branchAdds, main, prs, skipped, noBase, twice, files, fresh };
 }
 
 // ---------- open PR heads ----------

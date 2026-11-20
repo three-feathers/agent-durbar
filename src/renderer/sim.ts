@@ -719,7 +719,7 @@ interface SimOptions {
   /** Issue #126: some main agents receive a session title, as the runtime sends after the first prompt (page address `simtitles=1`; `simtitles=long`: the first one is 120 characters, the longest a session title can be, spec 052 FR-174). */
   titles?: boolean | 'long';
   /** Spec 059 FR-016: every main agent carries a 60-character user name, and (spec 052 FR-170) every folder a long name (page address `simnames=long`), to check that the office still fits; agent 3 has no alias and a long first-prompt title with one unbroken URL-like token (FR-019). */
-  names?: 'long';
+  names?: 'long' | 'alike';
   /** Spec 052 FR-170 (T155): long replies and long sub-agent prompts that run to the right edge of the chat, to check that the Copy button covers no text (page address `simreply=long`). */
   reply?: 'long' | 'secrets';
   /** Spec 012 FR-130: the first Claude agent (or the first agent) asks a question (page address `simquestion=1`). */
@@ -1034,6 +1034,13 @@ const planMcpSignInRefresh = (i: SignInPlanInput): SignInPlan => {
 /* mcpsigninrefresh:end */
 
 (function () {
+  /** spec 001 FR-270 (issue #1905): `simrooms=solo&simnames=alike`: [folder name, path]. Several start alike (iot-platform*, itdse-ism*, 2026-07-*, operations-*); two are both `iot-portal` under different parents; one lives under /Users/paco, which the window shows as ~. */
+  const SIM_ALIKE_FOLDERS: Array<[string, string]> = [
+    ['itdse-ism-portal', '~/work/itdse-ism-portal'], ['itdse-ism-reports', '~/work/itdse-ism-reports'], ['iot-platform-gateway', '~/work/iot-platform-gateway'], ['iot-platform-form-2', '~/work/iot-platform-form-2'],
+    ['iot-platform-form-3', '~/work/iot-platform-form-3'], ['iot-portal', '~/clients/acme/iot-portal'], ['iot-portal', '~/clients/globex/iot-portal'], ['2026-07-offsite', '/Users/paco/work/2026-07-offsite'],
+    ['2026-07-budget', '~/work/2026-07-budget'], ['2026-07-hiring', '~/work/2026-07-hiring'], ['operations-weekly', '~/work/operations-weekly'], ['operations-monthly', '~/work/operations-monthly'],
+    ['mcp-swiss', '~/work/mcp-swiss'], ['blog', '~/work/blog'], ['customer-reconciliation-batch-jobs', '~/work/customer-reconciliation-batch-jobs'], ['infra-notes', '~/work/infra-notes'],
+  ];
   const SIM_ROOM_ORDER = ['mcp-swiss', 'swisscontract-ai', 'command-center', 'blog', 'infra-notes'];
   const ROOM_DEFS: Record<string, string> = {
     'mcp-swiss': '~/work/mcp-swiss',
@@ -1197,8 +1204,9 @@ const planMcpSignInRefresh = (i: SignInPlanInput): SignInPlan => {
       const k = simRooms ? Math.max(1, Math.min(SIM_ROOM_ORDER.length, Math.floor(simRooms))) : 0;
       const room = k ? SIM_ROOM_ORDER[Math.min(k - 1, Math.floor((i * k) / rows.length))] : room0; // simrooms=<n>: in blocks, the first folders first
       const helpers = noHelpers ? 0 : simHelpers || helpers0;
-      const roomName = opts.solo ? name.toLowerCase() + '-app' : room + (opts.names === 'long' ? '-customer-reconciliation-batch-jobs-2026'.slice(0, 55 - room.length) : ''); // simnames=long: a folder name is long too (60 characters at most, spec 059)
-      const cwd = opts.solo ? '~/work/' + roomName : ROOM_DEFS[room] ?? '~/work/' + room;
+      const alike = opts.solo && opts.names === 'alike' ? SIM_ALIKE_FOLDERS[i % SIM_ALIKE_FOLDERS.length] : null; // spec 001 FR-270 (issue #1905): simrooms=solo&simnames=alike: sixteen folders whose names start alike, two with the same name under different parents
+      const roomName = alike ? alike[0] : opts.solo ? name.toLowerCase() + '-app' : room + (opts.names === 'long' ? '-customer-reconciliation-batch-jobs-2026'.slice(0, 55 - room.length) : ''); // simnames=long: a folder name is long too (60 characters at most, spec 059)
+      const cwd = alike ? alike[1] : opts.solo ? '~/work/' + roomName : ROOM_DEFS[room] ?? '~/work/' + room;
       const info: AgentInfo = { id: 'sim-' + (i + 1), name, cwd, folders: [cwd], adapterId: mixed ? SIM_KIND_BY_AGENT[i] ?? 'copilot' : 'copilot', permMode: i % 3 === 1 ? 'ask' : i % 3 === 2 ? 'allow' : 'read-only', model: SIM_MODEL_BY_AGENT[i] ?? 'auto', maxAiCredits: SIM_CAPS[name], permRestored: i % 3 === 2 && i < 6 ? true : undefined, modelControl: { switch: 'next-message', effort: true, contextTier: true, compact: true, windowKnown: true }, profiles: true, slash: !(simQs && simQs.get('simslash') === 'none' && mixed && SIM_KIND_BY_AGENT[i] === 'basic'), ...(opts.reply === 'secrets' && i === 7 ? { title: SECRETS_TEXT } : {}) } as AgentInfo; // FR-065: one agent starts with a runtime title that holds the planted secrets (it becomes its name)
       // Spec 052 FR-046: a pending permission card only happens in Ask first, so a waiting agent starts in Ask first (Jonas was Allow all
       // and restored, Lena Read-only); the restored Allow-all folder the restore strip names is then Tomas's (swisscontract-ai).
@@ -3117,6 +3125,7 @@ const planMcpSignInRefresh = (i: SignInPlanInput): SignInPlan => {
     const tierQ = typeof location !== 'undefined' ? new URLSearchParams(location.search) : new URLSearchParams();
     const simTierLock = (() => { const v = tierQ.get('simtierlock'); return v === 'efficiency' || v === 'balance' || v === 'intelligence' || v === 'other' ? v : undefined; })();
     const simTierFail = tierQ.get('simtierfail') === '1';
+    { const ms = Number(tierQ.get('simmodelms')); if (ms > 0 && typeof window !== 'undefined') (window as unknown as { __modelListMs?: number }).__modelListMs = ms; } // issue 1909: a short cap for the model-list call (driver only)
     const simModelList = (): ModelChoice[] => [...SIM_MODELS, ...simRichModels('copilot')].map((m) => ({ ...m, ...(m.id === 'auto' && simTierLock ? { autoTierManaged: simTierLock === 'other' ? { locked: true } : { tier: simTierLock, locked: true } } : {}) }));
     /** Spec 030 FR-063, as main checks it: each agent app's own list; `auto` is that app's own default even when its list does not name it. */
     const simKindModels = (kind: string): ModelChoice[] => (kind === 'claude' ? [...SIM_CLAUDE_MODELS, ...simRichModels('claude')] : kind === 'copilot' ? simModelList() : simRichModels(kind));
@@ -3617,6 +3626,7 @@ const planMcpSignInRefresh = (i: SignInPlanInput): SignInPlan => {
       version: async () => 'sim',
       // Spec 012 T017 (FR-063): only Copilot by default; simkinds=1 adds a Claude Code that is not installed and a Codex that is too old.
       listAdapters: async () => simAdapters(),
+      onResume: (cb) => { (window as unknown as { __simResume?: () => void }).__simResume = cb; return () => undefined; }, // spec 030 FR-072: the driver wakes the page by hand
       onAdaptersChanged: () => () => undefined, // FR-157: the window marks the app itself from the auth error; nothing else pushes here
       // Spec 051 FR-009: harness setup in the simulator: canned plans and output (a fake link and code), nothing runs
       // spec 051 FR-014: a fake identity per ready app (never a real account, so screenshots show no personal data); `simacct=unknown`
@@ -4034,7 +4044,20 @@ const planMcpSignInRefresh = (i: SignInPlanInput): SignInPlan => {
         if (opts.grants !== 'stuck' && s && s.grants.delete(key)) grantsEvent(s);
       },
       // No disk, no account: canned answers so the new folder / session / history UI can be exercised without credits.
-      listModels: async (kind) => ({ ok: true, models: (simKindModels(kind || 'copilot')).map((m) => { const ob = simOrgModel(kind, m.id); return ob ? { ...m, orgBlocked: ob } : { ...m }; }) }),
+      // spec 030 FR-068 (issue #1909): page address simmodelfail=once (the first call fails, the next succeeds: the owner's report), twice (the start-up call and its one retry fail), hang (the first two calls never answer), error (always fails), empty, hidden (empty, 3 policy-hidden)
+      listModels: async (kind, opts) => {
+        const mode = typeof location !== 'undefined' ? new URLSearchParams(location.search).get('simmodelfail') : null;
+        const w = window as unknown as { __simListCalls?: Array<{ kind?: string; fresh: boolean }> };
+        (w.__simListCalls ??= []).push({ kind, fresh: !!opts?.fresh });
+        const delay = typeof location !== 'undefined' ? Number(new URLSearchParams(location.search).get('simmodeldelay')) || 0 : 0; // issue 1909: a slow list call
+        if (delay > 0) await new Promise((r) => setTimeout(r, Math.min(delay, 10000)));
+        if ((mode === 'once' && w.__simListCalls.length === 1) || (mode === 'twice' && w.__simListCalls.length <= 2)) return { ok: false, error: 'the request timed out', reason: 'the request timed out', models: [] };
+        if (mode === 'hang' && w.__simListCalls.length <= 2) return new Promise(() => undefined); // issue 1909: a call that never answers; the third call answers (Retry works)
+        if (mode === 'error') return { ok: false, error: 'the sign-in was not accepted', reason: 'the sign-in was not accepted', models: [] };
+        if (mode === 'empty') return { ok: true, reason: 'the app returned no models', models: [] };
+        if (mode === 'hidden') return { ok: true, hidden: 3, reason: "every model is turned off by your account's policy", models: [] };
+        return { ok: true, models: (simKindModels(kind || 'copilot')).map((m) => { const ob = simOrgModel(kind, m.id); return ob ? { ...m, orgBlocked: ob } : { ...m }; }) };
+      },
       /* spec 076 FR-205/FR-207: main's view of the canned policy (no values) */
       orgPolicyView: async (): Promise<Record<string, import('../shared/orgpolicy').OrgPolicyAppView>> => {
         if (!SIM_ORG) return {};

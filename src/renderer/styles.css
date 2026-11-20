@@ -103,7 +103,7 @@ html[data-density="compact"] #topMoreMenu{--h-ctl:32px; --h-chip:26px; --h-pill:
 .stat.attn{background:var(--warn-bg)}
 .stat.attn span.l{color:var(--amber-ink);font-weight:600}
 /* spec 001 FR-187: the instant tooltip (tooltip.js). Inverted tokens, so the contrast holds in every theme; placed by script (fixed), never over its anchor */
-.app-tip{position:fixed;left:0;top:0;z-index:200;max-width:min(280px,calc(100vw - 16px));padding:6px 10px;border-radius:var(--r-sm);background:var(--ink);color:var(--surface);border:1px solid var(--surface);font-size:12px;line-height:1.35;font-weight:500;box-shadow:var(--shadow-pop);pointer-events:none;overflow-wrap:break-word}
+.app-tip{white-space:pre-line;position:fixed;left:0;top:0;z-index:200;max-width:min(280px,calc(100vw - 16px));padding:6px 10px;border-radius:var(--r-sm);background:var(--ink);color:var(--surface);border:1px solid var(--surface);font-size:12px;line-height:1.35;font-weight:500;box-shadow:var(--shadow-pop);pointer-events:none;overflow-wrap:break-word}
 .app-tip[hidden]{display:none}
 @media (forced-colors:active){.app-tip{background:Canvas;color:CanvasText;border:1px solid CanvasText}}
 .dot{width:9px;height:9px;border-radius:50%;background:var(--gray);flex:none;display:inline-block}
@@ -292,6 +292,7 @@ button.room-aiu:hover{text-decoration:underline;text-underline-offset:2px}
 /* spec 052 FR-101: on cards and list rows a status that needs nothing from you is a dot and the word in its colour; Waiting, Error,
    Failing and Limit reached (a waiting state) keep the filled pill. Only colours change: the pill keeps its height and padding */
 :is(.desk,.lrow) .pill:is(.st-working,.st-thinking,.st-compacting,.st-idle,.st-done){background:transparent;border-color:transparent}
+.crew-head .px{image-rendering:pixelated} /* spec 102 FR-203, T390: Retro pixel heads scale nearest, never smoothed */
 .stage[data-d="full"] .desk.is-idle .scene:not(.has-crew-pic),.stage[data-d="full"] .desk.is-idle .info{opacity:.7}
 
 /* sub-agents: beside the parent, connected by a line */
@@ -668,6 +669,10 @@ body.panel-open .topbar,body.panel-open #stage-host,body.panel-open #list{displa
 @container room (max-width:460px){.stage .room .room-head .room-path{display:none}} /* the path (also in the name's tooltip) goes before the name is cut */
 @container (max-width:250px){.rd.calm{display:none}}
 .stage:not([data-d="full"]) .room-name{flex:0 .05 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* spec 001 FR-271 (issue 1905): a long name is its start (cut with an ellipsis when the head is narrow) and its tail (always whole), so names that start alike stay apart */
+.room-name:has(>.rn-t){display:flex}
+.room-name>.rn-h{flex:0 1000000 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.room-name>.rn-t{flex:0 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap} /* the start gives way first; the tail is cut (with its own ellipsis) only when the start is gone */
 .stage:not([data-d="full"]) .room-path{font-size:11px;flex-shrink:1000} /* spec 052 (2026-10-21): the path gives way completely before the room name is cut */
 .stage:not([data-d="full"]) .room-dots{gap:6px;min-width:0}
 .stage:not([data-d="full"]) .room-dots{padding-right:0}
@@ -875,6 +880,10 @@ body.panel-open #panel{flex-direction:row}
 .rg-h .chev{width:10px;height:10px;flex:none;transition:transform .2s}
 .rg-h[aria-expanded="true"] .chev{transform:rotate(90deg)}
 .rg-n{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* spec 005 FR-340 (issue 1905): a group whose name another group shares shows its nearest differing parent after the name; the name keeps 7 characters, the parent 5, and the parent gives way first */
+.rg-n:has(+.rg-p){flex:0 3 auto;min-width:7ch}
+.rg-p{flex:1 1 0;min-width:5ch;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted)}
+.rg-p::before{content:"· "}
 .rg-need{flex:none;display:inline-flex;align-items:center;gap:2px;height:18px;padding:0 5px;border-radius:999px;background:var(--card-waiting);box-shadow:inset 0 0 0 1px var(--card-waiting-line);color:var(--ink);font-variant-numeric:tabular-nums}
 .rg-need svg{width:11px;height:11px}
 .rg-c{flex:none;color:var(--muted);font-weight:500;font-variant-numeric:tabular-nums}
@@ -1426,7 +1435,7 @@ html[data-world="retro"] .letter.real{box-shadow:none;outline:1px solid var(--in
 .mode-menu .mm-seg button[aria-pressed=true]{background:var(--pb-working,#e3ecf4);border-color:#9db8d0;font-weight:700;color:var(--blue-ink)}
 .mode-menu .mm-seg button[aria-pressed=true]::before{content:"✓ "}
 .mode-menu .mm-pend{display:flex;align-items:center;justify-content:space-between;gap:8px;margin:4px 6px;padding:6px 10px;font-size:12px;background:var(--tone-ok-faint);border:1px solid var(--tone-ok-line);border-radius:10px}
-.mode-menu .mm-pend button{padding:2px 10px;border:1px solid var(--line-2);border-radius:8px;background:var(--raised);font-size:11px;align-items:center}
+.mode-menu .mm-pend button,.mode-menu .mm-unavail button{padding:2px 10px;border:1px solid var(--line-2);border-radius:8px;background:var(--raised);font-size:11px;align-items:center}
 .mode-menu .mm-foot{padding:6px 10px 8px}
 .mode-menu .mm-model{margin-top:4px;border-top:1px solid var(--line);border-radius:0 0 10px 10px}
 .note.info{background:var(--note);border-color:var(--line);font-size:12px;padding:5px 10px;color:var(--ink-2)}
@@ -1718,6 +1727,10 @@ html:is(.hl-still,[data-still-highlights]) .desk .pp,html[data-still-highlights]
 .lname .unread-mark{margin-right:6px}
 .sitem .stx b .unread-mark{margin:0 0 0 4px}
 @media (prefers-reduced-motion:no-preference){.unread-mark.fresh{animation:unread-pulse 1.2s ease-out 1}}
+/* spec 001 FR-272 (issue 1905): a folder just added is marked for 3 s: a still outline, and one soft pulse only while motion is on */
+.room[data-new],.ro-sign[data-new]{outline:2px solid var(--accent);outline-offset:3px}
+@media (prefers-reduced-motion:no-preference){html:not([data-motion-off]) :is(.room,.ro-sign)[data-new]{animation:new-room 1.2s ease-out 1}}
+@keyframes new-room{0%{outline-offset:10px;outline-color:transparent}60%{outline-offset:3px;outline-color:var(--accent)}}
 @keyframes unread-pulse{0%{box-shadow:0 0 0 0 var(--pc-working)}70%{box-shadow:0 0 0 6px transparent}100%{box-shadow:0 0 0 0 transparent}}
 .pal-dlg kbd,.kbd-dlg kbd{display:inline-block;min-width:20px;padding:1px 6px;border:1px solid var(--line-2);border-bottom-width:2px;border-radius:5px;background:var(--surface-2);font-family:inherit;font-size:11px;font-weight:600;line-height:1.5;color:var(--ink-2);text-align:center}
 .dlg.kbd-dlg{width:min(var(--dlg-w-m),calc(100vw - 32px))}

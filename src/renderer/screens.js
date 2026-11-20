@@ -38,6 +38,7 @@
     document.body.classList.remove('screen-open');
     ['toolsBtn','settingsBtn'].forEach(id=>{const b=$(id);if(b)b.setAttribute('aria-pressed','false');});
     if(after){try{after();}catch(e){/* the screen is closed whatever the hook does */}}
+    if(X.afterClose){try{X.afterClose();}catch(e){/* a draw that fails here is the page's error, not the screen's */}} /* spec 077 (2026-11-19, issue 1460): the office is visible again; a draw it skipped while covered is made now */
   }
   const isOpen=()=>!!cur;
   function paint(focus){
@@ -474,8 +475,8 @@
     /* spec 102 FR-320, T230: Retro pixel is listed and can be picked like any set (its flag and its closed state went with the arcade's flip); a set's pick preview is its own first person */
     const setPreview=(id)=>{const px=id==='retro';return `<svg viewBox="${px?'0 0 80 80':'85 95 290 290'}" focusable="false"><image class="chsw-set${px?' chsw-px':''}" href="realoffice/sets/${id}/p01-typeA.webp" x="0" y="0" width="${px?80:457}" height="${px?79:618}"/></svg>`;}; /* the first person's seated frame, cropped to head and shoulders (the office frame is 457x618, the head from y 111) */
     /* FR-322: the line under the list says what is drawn when a chosen set is behind a closed flag (`levelFor`'s `closed`; no set is flagged since the arcade's flip);
-       and, in the flat office, that Retro pixel has no flat heads yet (spec 102 T294, issue 1873), so the pick changes nothing there (review of PR 1898) */
-    const charNote=()=>{const C=window.DurbarCrew,c=window.THEME.characters();if(c===window.THEME.PIXEL_CHARACTERS&&!(X.view&&X.view.get&&X.view.get()==='real'))return 'Flat draws the theme\u2019s own figures until Retro pixel has its flat heads.';if(!C||!C.peopleFor||!C.levelFor||C.levelFor(c)!=='closed')return '';const w=X.view&&X.view.world&&X.view.world.get?X.view.world.get():'';return C.peopleFor(w,c).note||'';};
+       Retro pixel has no Flat line since T390 (Flat draws its heads, issue 1873) */
+    const charNote=()=>{const C=window.DurbarCrew,c=window.THEME.characters();if(!C||!C.peopleFor||!C.levelFor||C.levelFor(c)!=='closed')return '';const w=X.view&&X.view.world&&X.view.world.get?X.view.world.get():'';return C.peopleFor(w,c).note||'';};
     const charItems=()=>{
       const cur=X.charactersChosen?X.charactersChosen():window.THEME.characters(), own=window.THEME.themeKit(), crewN=window.DurbarCrew&&Array.isArray(window.DurbarCrew.IDS)?window.DurbarCrew.IDS.length:0; const preN=window.DurbarCrew&&Array.isArray(window.DurbarCrew.PREHISTORIC_IDS)?window.DurbarCrew.PREHISTORIC_IDS.length:0,pirN=window.DurbarCrew&&Array.isArray(window.DurbarCrew.PIRATE_IDS)?window.DurbarCrew.PIRATE_IDS.length:0,monN=window.DurbarCrew&&Array.isArray(window.DurbarCrew.MONSTER_IDS)?window.DurbarCrew.MONSTER_IDS.length:0,royN=window.DurbarCrew&&Array.isArray(window.DurbarCrew.ROYAL_IDS)?window.DurbarCrew.ROYAL_IDS.length:0,rebN=window.DurbarCrew&&Array.isArray(window.DurbarCrew.REBELS_IDS)?window.DurbarCrew.REBELS_IDS.length:0;
       const real=X.view&&X.view.get()==='real'&&X.view.world; /* FR-201: in Real office the first choice is the world's default set */

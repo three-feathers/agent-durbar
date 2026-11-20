@@ -1,1 +1,0 @@
-- **`check-answer-safety` waits for the painted limit card** (spec 052): the limit step now waits like the other steps before it scrolls the card away; test driver only (#1770).

@@ -113,3 +113,11 @@
 ## 2026-11-19: a later approval answers the same reviewer's earlier asks (FR-097)
 
 - [x] T084 (FR-097, #1910) `scripts/pr-gate-answered.awk` filters the gate's "unanswered" list by the same trusted reviewer's later `APPROVED` latest review; `scripts/pr-gate.sh` runs it on `newer` with the trusted humans' non-comment reviews. Test `test:prgateanswered` (`scripts/test-pr-gate-answered.ts`, in `scripts/test-suites.txt`): fixtures for approved after comment, comment after approval, changes requested after approval, another author's approval, same time, outsider and bot; six mutants, each dying at its own assert. Replayed read-only on #1906.
+
+## 2026-11-19: `specs:numbers` across specs (FR-098, issue #1935)
+
+- [x] T085 (FR-098) `scripts/spec-numbers.js`: `collect` reads each head's own changed spec files and the set of files new on `origin/main` (`fresh`); `findClashes` compares an added id with the ids other heads add in a different existing file of the same kind. Test `test:specnumbers`: same T in two specs clashes (pure and through git), same FR and same Q across specs clash, a free number passes, a new spec or a T against an FR does not, a stack with a free number in another spec passes and a re-taken inherited number clashes. Mutants (cross-file loop off, head files limited to this branch's, `fresh` ignored, kind ignored, `fresh` ignored for the other file), each dying at its own assert.
+
+## 2026-11-20: gate head-ref alerts new against main (FR-099, issue #1868)
+
+- [x] T086 (FR-099) `scripts/pr-gate.sh`: the head ref's open alerts are read as numbers (`--paginate`) and those open on the base branch are subtracted; the merge ref count is unchanged; fail closed on any read error, non-number or odd base name. Test `test:prgatecodeql` (`scripts/test-pr-gate-codeql.ts`, fixtures only): `alert-main-on-head`, `alert-new-and-main`, `alert-merge-main`, `alert-head-page2`, `alert-main-page2`, `alert-main-unread`, `alert-main-number`, `alert-base-ref`; eight mutants (main's alerts not subtracted, merge ref left out, no `--paginate` on either list, a main read error ignored, no number check, no base-name check, the merge count unchecked), each dying at its named case.
