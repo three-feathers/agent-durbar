@@ -11,7 +11,8 @@ import fs from 'fs';
 
 process.exitCode = 1;
 const ROOT = path.join(__dirname, '..', '..');
-const SRC = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'railorder.js'), 'utf8');
+// a Windows checkout may have CRLF line endings: the mutants' anchor texts span lines, so read the source with LF
+const SRC = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'railorder.js'), 'utf8').replace(/\r\n/g, '\n');
 type Item = { id: string; room: string; rank?: number; needs?: boolean; working?: boolean; since?: number; created?: number; prio?: number; i?: number };
 type Group = { room: string; ids: string[]; needN: number };
 type Mod = {
