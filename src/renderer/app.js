@@ -6100,7 +6100,7 @@ function renderLift(){
     const c=counts[f.id], words=FN.badgeText(c), hid=c&&c.hidden===c.n?' (in a hidden folder)':'';
     const label=f.name+', floor '+(i+1)+' of '+m+(words?': '+words+hid:'');
     if(b.getAttribute('aria-label')!==label)b.setAttribute('aria-label',label);
-    const tip=f.name+(words?'\n'+words+hid:''); if(b.title!==tip)b.title=tip;
+    const tip=FN.floorHint(FLOORS.floors,f.id,!all&&f.id===cur,words?words+hid:''); if(b.title!==tip)b.title=tip; /* FR-085 (b) */
     if(!all&&f.id===cur)b.setAttribute('aria-current','true'); else b.removeAttribute('aria-current');
     const bd=b.querySelector('.lift-badge'), num=c?FN.badgeNum(c.n):'';
     if(bd.textContent!==num)bd.textContent=num; bd.hidden=!c;
@@ -6268,6 +6268,11 @@ async function floorCall(p){
   if(window.DurbarTip)window.DurbarTip.bind(document.body,{selector:'.floors-ui .fl-focus',text:el=>el.dataset.tip||''});
   /* spec 001 FR-270 (issue 1905): the whole room head (flat) and the whole folder sign (Real office) say their folder on hover and on the focus of any control in them; a part with a title of its own (a button, the counts, the cost chip) keeps it on hover. The storey tag is a note: hover only. */
   if(window.DurbarTip)window.DurbarTip.bind(document.body,{selector:'#stage .room-head, #stage .ro-sign:not(.ro-stag)',except:'button,a,[title]',text:el=>el.dataset.tip||''});
+  /* spec 092 FR-085 (a): the empty floor of a floor screen says which floor it is: a room's own body (the All floors view: its floor) and the floor around the rooms. Parts with their own tip or title keep it (`except`). The Real office draws its own floors: no hint there. */
+  const floorHintOf=r=>{if(!floorScreens()||(officeView()==='real'&&RO_LOAD==='ready'))return ''; /* the Real office draws its own storeys; a Real office that failed to load draws the flat one */const f=allFloorsView()?(r?floorById(r.floor):null):floorById(curFloorId());return f?window.DurbarFloorNav.floorHint(FLOORS.floors,f.id,false,''):'';}; /* All floors: the room's floor, none between rooms; one floor: the floor shown */
+  const FLOOR_OWN='button,a,input,select,textarea,[title],[data-tip],[role="button"],.room-head,.desk,.helpers,.shutters,.agent,.unit,.lobby,.floor-empty,.welcome,.filter-note';
+  if(window.DurbarTip)window.DurbarTip.bind(document.body,{selector:'#stage .room[data-room]',except:FLOOR_OWN,at:'pointer',text:el=>floorHintOf(ROOMS.find(x=>x.id===el.dataset.room)||null)});
+  if(window.DurbarTip)window.DurbarTip.bind(document.body,{selector:'#floor',except:FLOOR_OWN,at:'pointer',text:()=>floorHintOf(null)});
   if(window.DurbarTip)window.DurbarTip.bind(document.body,{selector:'#stage .ro-stag',text:el=>el.dataset.tip||''});
   if(window.DurbarTip)window.DurbarTip.bind(document.body,{selector:'#stripList .rg-h, #stripList .sitem',text:el=>el.dataset.tip||''}); /* spec 005 FR-340: the rail's group heads and rows give their folder on hover and on focus */
   if(!RO||!RO.attach)return;
