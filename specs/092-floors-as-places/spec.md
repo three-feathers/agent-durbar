@@ -244,6 +244,13 @@ The slide is short and soft. It never blocks input and never hides a waiting age
 
 ## Changes
 
+### 2026-11-22: the pill tooltip check is steady again (bug #1989, T052)
+
+*Report* (own finding, 2026-11-22): `check-status-tooltip` fails at "after redraw" and "after a pointer event on the floor" (the pill loses `aria-describedby`) on Windows CI and on a loaded Linux machine, on main since #1987 (FR-085). Expected: a status pill hovered by the pointer keeps its tooltip and its description through a top-bar redraw and through pointer events on the floor, every run.
+
+- **Fix at the cause**: the tooltip's pointer state (`hov`, `describe`) must follow the element actually under the pointer after a redraw, and the floor's hover-only binds (FR-085) must never take or drop the tip of a part the pointer is not on. The driver is not loosened: its waits use `until()`, not fixed sleeps.
+- **Evidence**: to be filled in by T052 (the cause with a repro; `check-status-tooltip` and `shots-092-lift` repeated runs under load; mutants).
+
 ### 2026-11-20: a hint says which floor the pointer is on (issue #1958, FR-085, T051)
 
 Owner request (Ruben, 2026-11-20): hovering a floor should say which floor it is. He chose both parts below. Details decided by the coordinator under Ruben's delegation.
