@@ -706,6 +706,8 @@ function roomAiu(r){const f=folderOfRoom(r.id),t=LEDGER.room(r.id,f&&f.key),usd=
 /* spec 052 FR-076: one word per status on every screen (pills, list, header, palette, counters); longer phrases only in sentences */
 const LABELS={working:'Working',thinking:'Thinking',waiting:'Waiting',idle:'Idle',error:'Error',done:'Done',limit:'Limit reached',asleep:'Asleep'}; /* limit and asleep too: a state with no label of its own never reads "undefined" (relayed, 2026-11-03) */
 const vis = a => a.paused ? 'idle' : a.state;
+/* the status pill's and the status filter's "Working": working or thinking (a paused agent reads idle); Retrying, Failing and Compacting are overlays on these states, so they count as working only while the state is */
+const isWorkingVis = a => { const s = vis(a); return s==='working'||s==='thinking'; };
 const label = (a,short) => a.paused ? 'Paused' : (a.label || LABELS[a.state] || '');
 /* spec 052 FR-062: Working (or Thinking) while its recent tool calls failed in a row (the mood's "dizzy" streak) reads "Failing", in the waiting
    colours (.st-failing); the card keeps its is-working look and its place in the status filters. Main agents only (the tracker's scope). */
@@ -985,7 +987,7 @@ function renderFilter(){
   sel.value=ui.ws;
   fitTopbar(); /* the narrow value is reapplied to the new options */
 }
-const matchStatus = a => !ui.status || ((ui.status==='working')?['working','thinking'].includes(vis(a)):vis(a)===ui.status);
+const matchStatus = a => !ui.status || ((ui.status==='working')?isWorkingVis(a):vis(a)===ui.status);
 /* spec 001 FR-180 (issue 790): while a status pill filters, say so. The office and List show "Showing only <state> · N hidden · Show all"
    (Show all is the pill's own toggle) so a finished session the filter hides never looks lost. N counts the main sessions the office or the list
    would show without the pill (same folder, workspace and floor rules), not helpers. */
@@ -8276,14 +8278,16 @@ function setRailSort(k){
 /* the creation time of a session: Durbar has none, so the time this computer first saw its id (durbar.railBorn, ids and times only, kept as
    the chat numbers are: rememberOn(), the simulator with railstore=1, never the demo; ids that are gone are dropped once the list has loaded).
    Sessions that existed before FR-341 shipped all read "first seen" on that day (a [KNOWN GAP] in the spec) */
-let RAIL_BORN=null;
+let RAIL_BORN=null, RAIL_BORN_SAVED;
 function railBornSync(list){
   if(RAIL_BORN===null){RAIL_BORN={};if(!demoOn&&railRemember()){try{RAIL_BORN=RAIL.loadBorn(localStorage.getItem(RAIL.BORN_KEY));}catch(e){RAIL_BORN={};}}}
   const ids=list.map(x=>x.id), next=RAIL.stampBorn(RAIL_BORN,ids,Date.now());
-  const grew=Object.keys(next).length!==Object.keys(RAIL_BORN).length; RAIL_BORN=next;
+  RAIL_BORN=next;
   if(demoOn||!railRemember())return;
-  /* pruning uses every main session, not only the shown floors, so a hidden floor's sessions keep their time */
-  try{const v=RAIL.bornJSON(RAIL_BORN,agents.filter(x=>!x.parent).map(x=>x.id),agentsListed);if(v===null)localStorage.removeItem(RAIL.BORN_KEY);else if(grew||agentsListed)localStorage.setItem(RAIL.BORN_KEY,v);}catch(e){/* storage off: kept for this run */}
+  /* pruning uses every main session, not only the shown floors, so a hidden floor's sessions keep their time; the value is written only when it
+     differs from the last one written (a render runs on every event while a chat is open) */
+  try{const v=RAIL.bornJSON(RAIL_BORN,agents.filter(x=>!x.parent).map(x=>x.id),agentsListed);
+    if(v!==RAIL_BORN_SAVED){RAIL_BORN_SAVED=v;if(v===null)localStorage.removeItem(RAIL.BORN_KEY);else localStorage.setItem(RAIL.BORN_KEY,v);}}catch(e){/* storage off: kept for this run */}
 }
 const railCreated=x=>(RAIL_BORN||{})[x.id];
 function closeRailSortMenu(back){
@@ -8313,7 +8317,7 @@ function railGroups(){
   const rank=new Map(roomsInOrder().map((r,i)=>[r.id,i]));
   const list=agents.filter(x=>!x.parent&&roomShown(roomOf(x)));
   railBornSync(list);
-  return RAIL.group(list.map((x,i)=>({id:x.id,room:x.room,rank:rank.get(x.room),needs:needsMe(x),working:['working','thinking','compacting'].includes(pillSt(x)),since:NEED_SINCE.get(x.id),created:railCreated(x),prio:prio(x),i})),railSort());
+  return RAIL.group(list.map((x,i)=>({id:x.id,room:x.room,rank:rank.get(x.room),needs:needsMe(x),working:isWorkingVis(x),since:NEED_SINCE.get(x.id),created:railCreated(x),prio:prio(x),i})),railSort());
 }
 function railHTML(){
   const ib=$('inboxBtn');

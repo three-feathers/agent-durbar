@@ -29,7 +29,7 @@ module.exports = async (ctx) => {
   const H = helpers(ctx);
   const { js, until } = H;
   const ok = async (expr, what, ms) => assert.ok(await until(expr, ms || 8000), what);
-  const rows = () => js(`[...document.querySelectorAll('#stripList .rgrp')].map(g=>({room:g.dataset.key.slice(3),rows:[...g.querySelectorAll('.sitem')].map(r=>({id:r.dataset.sw,tall:r.classList.contains('tall'),work:/\\bst-(working|thinking|compacting)\\b/.test(r.className),h:+r.getBoundingClientRect().height.toFixed(1)}))}))`);
+  const rows = () => js(`[...document.querySelectorAll('#stripList .rgrp')].map(g=>({room:g.dataset.key.slice(3),rows:[...g.querySelectorAll('.sitem')].map(r=>({id:r.dataset.sw,tall:r.classList.contains('tall'),work:/\\bst-(working|thinking|failing|retrying)\\b/.test(r.className),h:+r.getBoundingClientRect().height.toFixed(1)}))}))`);
   const flat = (g) => g.flatMap((x) => x.rows.map((r) => r.id));
   const stored = () => js(`localStorage.getItem('durbar.railSort')`);
   const label = () => js(`document.getElementById('railSortBtn').getAttribute('aria-label')`);
@@ -134,6 +134,13 @@ module.exports = async (ctx) => {
     await pick('Needs you first');
     assert.strictEqual(await stored(), null, `${tag}: the default removes the key`);
     assert.deepStrictEqual(await rows(), base, `${tag}: Needs you first is the default order again`);
+
+    // repeated renders write nothing: with no session change, 20 events must not call setItem for durbar.railBorn (it is written only when the value changes)
+    await js(`(()=>{window.__bornWrites=0;const o=Storage.prototype.setItem;Storage.prototype.setItem=function(k,v){if(k==='durbar.railBorn')window.__bornWrites++;return o.call(this,k,v);};})()`);
+    const sid = await js(`document.querySelector('#stripList .sitem[data-sw]').dataset.sw`);
+    for (let i = 0; i < 20; i++) await js(`window.__durbarSimEmit({timestamp:Date.now(),sessionId:${jsLiteral(sid)},type:'status',status:'working',intent:'Working'})`);
+    await js(`new Promise(r=>setTimeout(r,300))`);
+    assert.strictEqual(await js(`window.__bornWrites`), 0, `${tag}: repeated renders and events write durbar.railBorn 0 times`);
 
     // not remembering (the simulator default, no railstore): choosing a sort and rendering stores nothing. The demo (no bridge) cannot be reached from a driver: the simulator always has one.
     await js(`localStorage.setItem('durbar.railSort','oldest');localStorage.removeItem('durbar.railBorn')`); // a stored choice is not read either
