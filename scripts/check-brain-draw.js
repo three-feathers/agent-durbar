@@ -1,9 +1,10 @@
 /*
- * Spec 106 T005 (P1 G2 first slice): the brain on its temporary floating host, in the simulator, at both sizes with 15 agents. No credits.
+ * Spec 106 T005 (P1 G2 first slice), moved to T006's dock (2026-11-20): the brain in the open chat's right rail, in the simulator, at both sizes with 15 agents. No credits.
+ * The dock's own layout (placement, Your door, legend, collapse, worlds) is check-brain-dock; this driver keeps the drawing checks.
  * In ui-suite.js; `node scripts/ui-suite.js --only check-brain-draw`. It fails (exit 1) when:
  *   - the flag is off (the default) and anything of Brain view loads, or a `.bv` exists (FR-105);
  *   - with `?brain=1`: no brain after an event; a canary token in a command reaches any text of the host, its labels or its canvas alternative (FR-021, FR-085);
- *   - a text of the host is under 12 px (FR-097); the host moves a desk (the office layout must be unchanged); the canvas is not decorative or not drawn;
+ *   - a text of the dock is under 12 px (FR-097); the dock moves a desk (the office layout must be unchanged after the chat closes) or shows in the office; the canvas is not decorative or not drawn;
  *   - a step does not change the picture; a failed step is not drawn as a cross (the cross is checked in the unit test; here the picture must differ);
  *   - a loop is left running when nothing happens (FR-103); a frame draws more points than the largest lit lobe (FR-102);
  *   - Still (the button, by keyboard) or reduced motion (emulated) starts an animation frame loop (SC-004); a hidden page draws a frame; forced colours keep it still.
@@ -11,7 +12,6 @@
  *   - the Retro arcade skin (spec 106 FR-110..FR-112, T020; checked at both sizes, labels "arcade skin: ..."): on only in the arcade world (Flat and the Photo office stay neutral);
  *     points drawn as squares, never discs; the box's font is the arcade's display font; palette read from the arcade's tokens and different from the neutral one;
  *     and the geometry is IDENTICAL to the neutral skin: the same points (count and positions), the canvas size, the box's width and corner, every text size, and the masked texts.
- * Reported, not asserted: how many desks the floating host covers (it is fixed at the corner until T006's dock; the covering is why it stays off by default).
  * Screenshots: <SHOTS_OUT>/106-brain-<state>-<w>x<h>.png
  */
 const os = require('os');
@@ -38,6 +38,8 @@ module.exports = async (ctx) => {
   const emit = (e) => js(`void window.__durbarSimEmit(Object.assign({timestamp:Date.now()},${jsLiteral(e)}));0`);
   const stats = () => js(`window.__durbarSimUi.brain.host().stats()`);
   const calmDown = async () => { await H.until(`window.__durbarSimUi.brain.host()&&!window.__durbarSimUi.brain.host().stats().loopRunning`, 8000); };
+  const SELA = (x) => `document.querySelector('#stage .desk[data-id="'+CSS.escape(${jsLiteral(x)})+'"],#stage .ro-plate[data-id="'+CSS.escape(${jsLiteral(x)})+'"]')`;
+  const openChat = async (x) => { await js(`(()=>{const d=${SELA(x)};if(d)d.click();})()`); await must(`document.body.classList.contains('panel-open')&&!!document.querySelector('#brainRail .bv')`, 'the chat and its dock'); };
   const DESKS = `[...document.querySelectorAll('#stage .desk[data-id]')].map(d=>{const r=d.getBoundingClientRect();return [d.dataset.id,Math.round(r.left),Math.round(r.top),Math.round(r.width),Math.round(r.height)].join(':')})`;
   /* setEmulatedMedia replaces the whole list: always both features, so neither falls back to the machine's own value (the Windows runner reports reduced motion) */
   const motionAllowed = () => media([{ name: 'prefers-reduced-motion', value: 'no-preference' }, { name: 'forced-colors', value: 'none' }]);
@@ -70,6 +72,7 @@ module.exports = async (ctx) => {
     const before = await js(DESKS);
     assert.strictEqual(before.length, 15, '15 desks');
     await js(`window.__errs=[];addEventListener('error',e=>window.__errs.push(String(e.message)+' '+String(e.filename).split('/').pop()));0`);
+    await openChat(id);
     const cmd = `curl -H "Authorization: Bearer ${CANARY}" https://example.test/x`;
     await emit({ type: 'toolCall', sessionId: id, callId: 'b-1', tool: 'bash', phase: 'start', args: { command: cmd } });
     await must(`!!document.querySelector('.bv .bv-c1')&&/running/.test(document.querySelector('.bv .bv-c1').textContent)`, 'the card of a running command');
@@ -78,7 +81,7 @@ module.exports = async (ctx) => {
     const why = full ? null : await js(`({mode:window.__durbarSimUi.brain.host().draw.mode(),degraded:window.__durbarSimUi.brain.host().stats().degraded,hasFocus:document.hasFocus(),reduce:matchMedia('(prefers-reduced-motion: reduce)').matches,forced:matchMedia('(forced-colors: active)').matches})`);
     assert.ok(full, 'the brain is in Full (the page has focus), so the Still checks below test something at ' + tag + ': ' + JSON.stringify(why));
     assert.ok((await stats()).loops >= 1, 'a step in Full ran an animation loop');
-    assert.deepStrictEqual(await js(DESKS), before, 'the floating brain moves no desk');
+    assert.ok(await js(`!!document.querySelector('#brainRail #brainSlot .bv')`), 'the brain is in the chat\'s right rail (T006)');
     const everything = await js(`document.querySelector('.bv').outerHTML+'|'+document.querySelector('.bv').innerText+'|'+document.querySelector('.bv canvas').toDataURL().length`);
     assert.ok(!everything.includes(CANARY) && !everything.includes('ghp_'), 'a token in a command reaches no text of the brain (FR-021)');
     assert.ok((await js(`document.querySelector('.bv-lobe').textContent`)).startsWith('Shell, cerebellum'), 'the lobe is also text');
@@ -89,8 +92,6 @@ module.exports = async (ctx) => {
     const lit = (cv) => js(`(()=>{const c=document.querySelector('.bv canvas'),d=c.getContext('2d').getImageData(0,0,c.width,c.height).data;let n=0,s=0;for(let i=3;i<d.length;i+=4){if(d[i]>0){n++;s+=d[i-3]*3+d[i-2]*7+d[i-1]*11;}}return {n,s};})()`);
     const shell = await lit();
     assert.ok(shell.n > 1500, 'the brain is drawn: ' + shell.n + ' lit pixels');
-    const covered = await js(`(()=>{const b=document.querySelector('.bv').getBoundingClientRect();return [...document.querySelectorAll('#stage .desk[data-id]')].filter(d=>{const r=d.getBoundingClientRect();return r.left<b.right&&r.right>b.left&&r.top<b.bottom&&r.bottom>b.top;}).length;})()`);
-    console.log(`[106-brain] ${tag}: the floating host covers ${covered} of 15 desks (reported; T006's dock replaces it)`);
     await H.shot(path.join(OUT, `106-brain-running-${tag}.png`), { prep: 'calm' });
 
     // ---- a second tool lights another lobe and changes the picture; idle is free
@@ -165,21 +166,28 @@ module.exports = async (ctx) => {
     assert.strictEqual(await js(`document.querySelector('.bv [data-bv=motion]').getAttribute('aria-disabled')`), 'true', 'forced colours: the Motion button is aria-disabled');
     await H.shot(path.join(OUT, `106-brain-forced-${tag}.png`), { prep: 'calm' });
     await media([{ name: 'forced-colors', value: 'none' }]);
-    // ---- no overlap with the chat: the floating box is for the office only; with a chat open it is hidden and the composer is not under it
-    assert.ok(await H.focusPage({ emulate: 'first' }), `the page has the focus before the chat opens at ${tag}`);
-    const opened = await H.openSimAgent(`a=>a.id===${jsLiteral(id)}`, '#msgInput');
-    assert.ok(opened.ok, 'the chat opens: ' + JSON.stringify(opened.seen));
+    // ---- no overlap with the composer: the dock is in the right rail, beside the chat, never over the message box or Send
     const under = await js(`(()=>{const out=[];for(const sel of ['#msgInput','#sendBtn','.composer']){const e=document.querySelector(sel);if(!e)continue;const r=e.getBoundingClientRect();if(!r.width)continue;
       for(const [fx,fy] of [[0.5,0.5],[0.1,0.5],[0.9,0.5],[0.5,0.2],[0.5,0.8]]){const h=document.elementFromPoint(r.left+r.width*fx,r.top+r.height*fy);if(h&&h.closest('.bv'))out.push(sel+'@'+fx+','+fy);}}
       const b=document.querySelector('.bv').getBoundingClientRect();return {out,w:b.width,composer:!!document.querySelector('.composer')};})()`);
     assert.ok(under.composer, 'the composer exists');
-    assert.deepStrictEqual(under.out, [], 'FR-105: the brain box is not over the composer, the message box or Send at ' + tag);
-    assert.strictEqual(under.w, 0, 'with a chat open the floating box takes no room at all (' + tag + ')');
+    assert.deepStrictEqual(under.out, [], 'the dock is not over the composer, the message box or Send at ' + tag);
+    assert.ok(under.w > 0, 'with a chat open the dock is shown (' + tag + ')');
+    // ---- back in the office: no brain there (T011/T012), the desks where they were, nothing drawn
+    await js(`document.getElementById('backBtn').click()`);
+    await must(`!document.body.classList.contains('panel-open')`, 'back in the office');
+    assert.deepStrictEqual(await js(DESKS), before, 'the dock moves no desk');
+    assert.strictEqual(await js(`[...document.querySelectorAll('.bv')].some(b=>b.getClientRects().length&&b.getBoundingClientRect().width>0)`), false, 'no brain is shown in the office (the floating host is gone)');
+    const ff = (await stats()).frames;
+    await emit({ type: 'toolCall', sessionId: id, callId: 'b-7', tool: 'view', phase: 'start', args: { path: 'b.ts' } });
+    await new Promise((r) => setTimeout(r, 600));
+    assert.strictEqual((await stats()).frames, ff, 'in the office the dock draws nothing');
 
     // ---- the Retro arcade skin (FR-110..FR-112): colours, point shape and font only; never sizes, placements or masking (070 D2)
     const measure = async (query, label) => {
       await H.load({ w, h, query: { brain: '1', ...query }, ready: query.officeview ? `!!document.querySelector('#stage .ro[data-world]')` : undefined });
       await H.focusPage({ emulate: 'first' });
+      await openChat(id);
       await emit({ type: 'toolCall', sessionId: id, callId: 'sk-1', tool: 'bash', phase: 'start', args: { command: cmd } });
       await must(`!!document.querySelector('.bv .bv-c1')&&/running/.test(document.querySelector('.bv .bv-c1').textContent)`, 'the card of a running command (' + label + ')');
       await calmDown();

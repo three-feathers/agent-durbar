@@ -1,14 +1,16 @@
 #!/usr/bin/env python3
 """A world's helper kids (spec 097 FR-371, T328, issue #1641; the cave's: spec 102 T326, issue #1643): cut-out PNGs -> WebP pictures + the `kids` block of world.json.
 
-    python3 scripts/build-kid-pack.py <cut-dir> [--world=photo|cave] [--write]
+    python3 scripts/build-kid-pack.py <cut-dir> [--world=photo|cave|retro] [--write]
 
 <cut-dir> holds kid1..kid6/<state>.png, one transparent cut-out per state (working, thinking, waiting, error, limit, done, asleep),
 made from Codex pose sheets by the cutting step recorded in the world's ASSETS.md (the sheets and cut-outs are not in the repo, so
 this script only repeats the last, deterministic step: resize, WebP, measure). Writes src/renderer/realoffice/worlds/<world>/kidN-<state>.webp (default world: photo)
 (Pillow, WebP quality 80, method 6, no EXIF, XMP or ICC chunk) and prints the `kids` JSON; with --write it also puts it in world.json.
 One scale (SCALE) for every picture of every kid, so a pose is never stretched against another (FR-369: "shrink everything together").
-All numbers in `kids` are in SHIPPED picture pixels. Without --write nothing is changed but the pictures."""
+All numbers in `kids` are in SHIPPED picture pixels. Without --write nothing is changed but the pictures.
+The Retro arcade's kids (spec 102 T327, issue #1643) are pixel art: their cut-outs are already one pixel per grid pixel, so its pack keeps them at scale 1 and writes lossless WebP
+(VP8L, as every picture of a pixel-art world, spec 102 FR-254)."""
 import json, os, sys
 from PIL import Image
 
@@ -23,6 +25,9 @@ PACKS = {
     # spec 102 T326: the cave's 'limit' holds the empty basket above the head, so the standing reference is 'thinking' (arms low, about 510 px tall cut-outs)
     'cave': {'scale': 0.5, 'ref': 'thinking',
              'head': {1: (5, 0, 190, 158), 2: (40, 0, 230, 182), 3: (10, 0, 195, 165), 4: (5, 0, 175, 160), 5: (10, 0, 215, 170), 6: (20, 0, 205, 172)}},
+    # spec 102 T327: the arcade's pixel kids, cut and snapped to the grid already (56 grid px for `thinking`, the standing reference): scale 1, lossless, nothing resampled
+    'retro': {'scale': 1, 'ref': 'thinking', 'lossless': True,
+              'head': {1: (1, 0, 27, 22), 2: (0, 0, 31, 23), 3: (2, 0, 26, 23), 4: (2, 0, 26, 22), 5: (2, 0, 26, 23), 6: (1, 0, 27, 22)}},
 }
 ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..')
 
@@ -38,8 +43,10 @@ def main():
         poses = {}
         for st in STATES:
             im = Image.open(os.path.join(cut, 'kid%d' % k, st + '.png')).convert('RGBA')
-            im = im.resize((max(1, round(im.width * SCALE)), max(1, round(im.height * SCALE))), Image.LANCZOS)
-            im.save(os.path.join(WORLD, 'kid%d-%s.webp' % (k, st)), 'WEBP', quality=80, method=6, exact=False)  # no exif/icc/xmp passed
+            if SCALE != 1: im = im.resize((max(1, round(im.width * SCALE)), max(1, round(im.height * SCALE))), Image.LANCZOS)
+            out = os.path.join(WORLD, 'kid%d-%s.webp' % (k, st))
+            if PACKS[world].get('lossless'): im.save(out, 'WEBP', lossless=True, quality=100, method=6, exact=False)  # pixel art: VP8L, one file pixel per grid pixel
+            else: im.save(out, 'WEBP', quality=80, method=6, exact=False)  # no exif/icc/xmp passed
             poses[st] = [im.width, im.height]
         x0, y0, x1, y1 = [round(v * SCALE) for v in HEAD[k]]
         w, h = poses[REF]

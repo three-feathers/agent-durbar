@@ -38,6 +38,7 @@ const { helpers, jsLiteral } = require('./driver-helpers');
 const MUTANT = process.env.HELPERS_MUTANT || '';
 const SIZES = [[1440, 900], [1280, 800]];
 const WORLDS = (process.env.HELPERS_WORLDS || 'photo,cave,retro').split(',');
+const KID_WORLDS = require('./kids-worlds').kidsWorlds(); /* every world whose world.json has `kids` (photo, cave, retro): its head row shows the kids' faces (097 FR-370) */
 const FACE_FLOOR = 31; /* SC-002's ratchet, desk face */
 const HEAD_FACE_MIN = 24; /* a helper's face, FR-307 */
 const EXTRA = 4; /* helpers added to the first desk through the event path, and one hostile one: 6 + 4 + 1 = 11, more than any strip holds */
@@ -190,7 +191,7 @@ module.exports = async (ctx) => {
         const pic = await picture(t.id, d.id);
         assert.ok(!pic.err, `${tag}: picture facts: ${pic.err}`);
         assert.ok(pic.got && pic.got === pic.want && pic.got !== pic.parent, `${tag}: ${t.id}'s picture is ${pic.got}, helperHead says ${pic.want}, the parent is ${pic.parent}`);
-        if (world === 'photo' || world === 'cave') assert.ok(pic.kid && /^kid\d-/.test(pic.got), `${tag}: ${t.id}'s head is a kid's face in the Photo office and the cave (FR-370; the cave's kids: spec 102 T326), not an adult (${pic.got})`);
+        if (KID_WORLDS.includes(world)) assert.ok(pic.kid && /^kid\d-/.test(pic.got), `${tag}: ${t.id}'s head is a kid's face in ${world} (FR-370; the cave's kids: spec 102 T326; the arcade's pixel kids: T327), not an adult (${pic.got})`);
         assert.ok(Math.abs(pic.w - pic.ew) < 0.2 && Math.abs(pic.left - pic.el) < 0.2 && Math.abs(pic.top - pic.et) < 0.2 && pic.nat > 0, `${tag}: ${t.id}'s crop ${JSON.stringify([pic.w, pic.left, pic.top])} is headCrop's ${JSON.stringify([pic.ew, pic.el, pic.et])}`);
         pictures++;
         assert.strictEqual(t.glyph, false, `${tag}: ${t.id} has its picture, no placeholder`);

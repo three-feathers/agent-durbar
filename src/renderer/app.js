@@ -2628,7 +2628,7 @@ async function playTurn(chat,a,turn,opts){
   const cut=()=>{think.classList.remove('streaming');m.querySelectorAll('.caret').forEach(x=>x.classList.remove('caret'));collapseThink(think);return false;};
   await typeInto(body,turn.think,16,chat,tok); if(off())return cut();
   think.classList.remove('streaming');
-  for(const t of turn.tools){await sleep(380);if(off())return cut();const [k,l,res,rs]=t;addChip(chips,makeChip({kind:k,tool:k,label:l,res,state:rs}));stickyScroll(chat);}
+  for(const t of turn.tools){await sleep(380);if(off())return cut();const [k,l,res,rs]=t;addChip(chips,makeChip({kind:k,tool:k,label:chipArg(k,l).label,res,state:rs}));stickyScroll(chat);}
   if(turn.reply){
     await sleep(350); if(off())return cut();
     const b=document.createElement('div');b.className='bubble caret';m.appendChild(b);
@@ -3137,6 +3137,7 @@ function openPanel(id,focus){
   BP.mount(a); /* spec 080 T015: wires the tabs and the browser bar; the same session keeps its tab, another starts on Chat */
   syncSeen(); /* spec 005 FR-176: the chat is shown now, so a reply not read yet is read (not when the Browser tab is in front) */
   renderStrip(); const sl=$('stripList'); if(sl)sl.scrollTop=stripScroll;
+  brainRailSync(); /* spec 106 T006: the right rail with the dock (behind the preview flag) */
   const chat=getChat(a); $('chat').appendChild(chat.el);
   updatePanelHeader(); renderGrants();
   const chatEl=$('chat'); chatEl.dataset.pin='1'; chatEl._lastTop=undefined; chatEl.scrollTop=1e6;
@@ -4217,7 +4218,7 @@ function syncRunState(){
   /* spec 005 T074 (review on PR 498; FR-038 amended for issue 1917: a turn that ends in the error state says "Reply failed"): the spinner is decorative; a screen reader hears the change once through the shared live region.
      Only a change in the same chat speaks: opening a chat (or redrawing it) is not a turn starting or ending */
   const was=RUN_SAID.id===a.id?RUN_SAID.run:null; RUN_SAID.id=a.id; RUN_SAID.run=run;
-  if(was!==null&&was!==run){const said=!run&&UNREAD_SAID.delete(a.id);if(run)UNREAD_SAID.delete(a.id);if(!said)announce(run?'Working…':RUN_SAID.stopped?'Stopped':a.failedTurn?'Reply failed':'Reply finished');RUN_SAID.stopped=false;if(!run)a.failedTurn=false;} /* a new turn forgets an earlier Stop; the end of a turn forgets its failure */
+  if(was!==null&&was!==run){const said=!run&&UNREAD_SAID.delete(a.id);if(run)UNREAD_SAID.delete(a.id);if(!said)announce(run?'Working…':RUN_SAID.stopped?'Stopped':a.failedTurn?'Reply failed':'Reply finished');RUN_SAID.stopped=false;} /* a new turn forgets an earlier Stop; the failure flag is cleared elsewhere: by a working status and by the person's message (spec 005 FR-245), not by the end of a turn */
 }
 /* the mode, model, profile and context menus: below their chip, or above it when the chip sits in the composer toolbar (FR-037); spec 073's "/" list too */
 function placeMenu(m,x,y,anchor){
@@ -4314,6 +4315,7 @@ function closePanel(){closeSlash();keepDraft();
   if(ctObs){ctObs.res.disconnect();ctObs.mut.disconnect();ctObs=null;} closeCtMore(false); closeCtxMenu();
   if(chatBoxRO){chatBoxRO.disconnect();chatBoxRO=null;} /* spec 005 FR-243: the box observer ends with its chat */
   const id=ui.selected; ui.selected=null; document.body.classList.remove('panel-open'); $('panel').innerHTML='';
+  brainRailSync(); /* spec 106 T006: the dock leaves with its chat */
   renderAll(); placeToasts();
   const n=id&&document.querySelector(`[data-id="${CSS.escape(id)}"]`); if(n)focusIn(n);
   if(DOOR_ON)doorReturn();
@@ -5824,7 +5826,7 @@ document.addEventListener('scroll',()=>INL().follow(),{capture:true,passive:true
 /* DURBAR_SIM=N (Electron env, passed as ?sim=N) or ?sim=N in a plain browser feeds fake normalized
    events through exactly the same onLiveEvent path as the Copilot adapter. No AI credits are used. */
 const SIM = qs.has('sim') ? Math.max(1,Math.min(40,parseInt(qs.get('sim')||'12',10)||12)) : 0;
-const sim = SIM && window.__durbarSim ? window.__durbarSim.create({n:SIM, freeze:qs.get('simfreeze')==='1', titles:qs.get('simtitles')==='long'?'long':qs.get('simtitles')==='1', names:qs.get('simnames')==='long'?'long':qs.get('simnames')==='alike'?'alike':undefined, reply:qs.get('simreply')==='long'?'long':qs.get('simreply')==='secrets'?'secrets':undefined, grants:qs.get('simgrants')==='many'?'many':qs.get('simgrants')==='stuck'?'stuck':undefined, question:qs.get('simquestion')==='long'?'long':qs.get('simquestion')==='compact'?'compact':qs.get('simquestion')==='1', elicit:qs.get('simelicit')||undefined, solo:qs.get('simrooms')==='solo', unreported:qs.get('simunreported')||undefined, waitOld:qs.get('simwaitold')==='1', sched:qs.get('simsched')==='1',ws:qs.get('simws')==='1', schedFire:Math.max(0,Math.min(600,parseInt(qs.get('simschedfire')||'0',10)||0)), seedTotals:qs.get('simtotals')==='1', seed:parseInt(qs.get('seed')||'7',10), edits:qs.get('simedits')==='1', floors:qs.get('simfloors')==='1'||qs.get('simfloors')==='ground', floorsGround:qs.get('simfloors')==='ground', floorsOff:(qs.get('floorsoff')||'').split(',').map(x=>x.trim()).filter(Boolean)}) : null;
+const sim = SIM && window.__durbarSim ? window.__durbarSim.create({n:SIM, freeze:qs.get('simfreeze')==='1', titles:qs.get('simtitles')==='long'?'long':qs.get('simtitles')==='1', names:qs.get('simnames')==='long'?'long':qs.get('simnames')==='alike'?'alike':undefined, reply:qs.get('simreply')==='long'?'long':qs.get('simreply')==='secrets'?'secrets':undefined, grants:qs.get('simgrants')==='many'?'many':qs.get('simgrants')==='stuck'?'stuck':undefined, question:qs.get('simquestion')==='long'?'long':qs.get('simquestion')==='compact'?'compact':qs.get('simquestion')==='markdown'?'markdown':qs.get('simquestion')==='1', elicit:qs.get('simelicit')||undefined, solo:qs.get('simrooms')==='solo', unreported:qs.get('simunreported')||undefined, waitOld:qs.get('simwaitold')==='1', sched:qs.get('simsched')==='1',ws:qs.get('simws')==='1', schedFire:Math.max(0,Math.min(600,parseInt(qs.get('simschedfire')||'0',10)||0)), seedTotals:qs.get('simtotals')==='1', seed:parseInt(qs.get('seed')||'7',10), edits:qs.get('simedits')==='1', floors:qs.get('simfloors')==='1'||qs.get('simfloors')==='ground', floorsGround:qs.get('simfloors')==='ground', floorsOff:(qs.get('floorsoff')||'').split(',').map(x=>x.trim()).filter(Boolean)}) : null;
 const bridge = sim || window.agentDurbar;
 if(bridge&&typeof bridge.convSearchStart==='function')document.body.classList.add('has-csearch'); /* spec 095: the box is in the top bar from the first layout, so the office is not laid out again when it appears */
 try{localStorage.removeItem('durbar.doorsigns');}catch(e){} /* spec 017 FR-034: the preference of the removed Office layout row is deleted on the first start */
@@ -6484,14 +6486,14 @@ function tIntent(T,txt){
 }
 function tTool(T,e){
   const box=tChips(T);
-  if(e.phase==='start'){const label=editLabel(e)||toolLabel(e.args),cmd=toolFull(e.args);const el=makeChip({tool:e.tool,label,full:cmd,res:'running',state:'run'});addChip(box,el);
+  if(e.phase==='start'){const {label,full:cmd}=chipArgs(e);const el=makeChip({tool:e.tool,label,full:cmd,res:'running',state:'run'});addChip(box,el);
     const c=T.chipEls[e.callId]={el,tool:e.tool,label,cmd,t0:e.timestamp,seen:Date.now(),box,T,state:'run',res:'running',output:'',ms:null,edit:e.edit||null};
     if(c.edit)edPaint(c);
     tAct(T,e.callId,c);}
   else{const c=T.chipEls[e.callId];if(c){
     /* spec 005 FR-019: an update may bring the whole arguments (a call that started from its streamed arguments) and the edit so far */
     if(e.edit)c.edit=e.edit;
-    if(e.args!==undefined){const l=editLabel(e)||toolLabel(e.args);if(l)c.label=l;const f=toolFull(e.args);if(f)c.cmd=f;}
+    if(e.args!==undefined){const {label:l,full:f}=chipArgs(e);if(l)c.label=l;if(f)c.cmd=f;} /* spec 005 FR-342: masked like the start */
     if(e.phase!=='update'||e.output!=null){const full=String(e.output||''),done=e.phase!=='update';
       c.ms=done&&typeof c.t0==='number'&&typeof e.timestamp==='number'?e.timestamp-c.t0:null; /* spec 052 FR-063: duration from the start and end events' times */
       c.res=done?SHORT(full||(e.phase==='complete'?'ok':'failed'),60):'running';c.output=full;c.state=!done?'run':e.phase==='failed'?'failed':'ok';
@@ -7031,8 +7033,30 @@ const taskMask=t=>{
 const intentText=t=>typeof t!=='string'||!t||PERM_LINE.test(t)?t:(SAFE.ready?SAFE.excerpt(t,null,''):t);
 const toolArg=args=>!args||typeof args!=='object'?'':String(args.path||args.pattern||args.command||args.url||args.query||args.file_path||Object.values(args).find(x=>typeof x==='string')||'');
 function toolLabel(args){return toolArg(args).replace(/\s+/g,' ').slice(0,400);}
-/* spec 052 FR-063: the whole argument as written (line breaks kept), for the open chip; at most 20000 characters */
-const toolFull=args=>toolArg(args).slice(0,OUT_SHOWN);
+/* spec 005 FR-342 (issue 1974): what a tool chip shows of a call's argument (its line, its title, the open chip's command and what Copy copies),
+   masked once where the chip is fed, by the task line's own mask (safeToolLabel's STX.maskLabel with TOOLMASK: a command by maskSecretCommand,
+   a URL by maskSecretUrl, else redact), on the whole argument before any cut, in both readings: as written (line breaks kept) and flat (blanks
+   collapsed, the task line's form); the shown text hides whatever either hides (keepShownBy). When neither hides anything the chip shows the
+   argument exactly as before (line breaks kept); else the masked one-line text. Longer than the masks take (MASK_INPUT_MAX): masked up to the last
+   blank before that length. No mask (no safetext.js or redact module, ?noredact=1): '' (the chip shows the tool name only; fail closed). */
+let CHIP_MASKS=0; /* simulator drivers: how many times chipArg ran (once per start and per update that brings arguments, never per output) */
+function chipArg(tool,raw){
+  CHIP_MASKS++;
+  const s0=String(raw==null?'':raw);if(!s0.trim())return {label:'',full:''};
+  const cap=(RED&&Number(RED.MASK_INPUT_MAX))||12288;let s=s0;
+  if(s.length>cap){const b=s.slice(0,cap+1).search(/\s\S*$/);s=b>0?s.slice(0,b):'';if(!s.trim())return {label:'',full:''};}
+  const flat=s.replace(/\s+/g,' '), k=toolKind(tool), m1=STX?STX.maskLabel(s,k,TOOLMASK):'', m2=flat===s?m1:STX?STX.maskLabel(flat,k,TOOLMASK):'';
+  if(!m1||!m2)return {label:'',full:''};
+  const t=flat.trim();if(m1===t&&m2===t)return {label:flat.slice(0,400),full:s.slice(0,OUT_SHOWN)};
+  let m='';try{m=m1===m2?m1:RED.keepShownBy(m1,m2);}catch(e){m='';}if(typeof m!=='string'||!m)return {label:'',full:''};
+  return {label:m.slice(0,400),full:m.slice(0,OUT_SHOWN)};
+}
+/* a label an adapter already cut (a replayed history item: 300 characters, Codex 200 and "…"; the VS Code transcript: 300 or 200 with "…"): the cut may
+   fall inside a secret, whose head the masks no longer know, so a label the adapter cut (exactly 300 characters, or ending in "…") loses its last run
+   of non-blanks before it is masked; any other label is masked as it is */
+const cutLabel=(tool,l)=>{let x=String(l==null?'':l);if(x.length===300||(x.length>=150&&x.endsWith('\u2026'))){const b=x.search(/\s\S*$/);x=(b>0?x.slice(0,b):'')+' \u2026';}return chipArg(tool,x).label;};
+/* the chip's label and command for a toolCall event: an edit names its file (main masked the edit, FR-024; masked here again like the task line) */
+const chipArgs=e=>{const a=chipArg(e.tool,toolArg(e.args)),f=editLabel(e);return {label:f?chipArg(e.tool,f).label:a.label,full:a.full};};
 /* ---------------- AI-credit cap: chip, dialog, limit reached (spec 011) ---------------- */
 let APP_SETTINGS={};
 function capChipHTML(a){
@@ -7149,6 +7173,70 @@ function settlePlan(a,action){
   if(action==='reject'){closeTurn(a);a.worked=false;setState(a,'idle',null,'Plan rejected. Nothing was changed.');}
   else setState(a,'working',null,action==='approve'?'Carrying out the plan':'Revising the plan');
 }
+/* spec 052 (2026-11-19 delta, issue 1927, T378; review of PR 1933): a question's Markdown, masked first and then rendered by the chat's own renderer.
+   1. Character references are decoded first (until nothing changes, qDecodeRefs), so both masks and the renderer read the same characters; one left over: plain text.
+   2. The Markdown-keeping mask (RED.redact) runs, then DurbarMD renders; links lose their `title`.
+   3. The rendered HTML is kept only when every text it shows and every attribute value it holds (a link's address also read percent-decoded) is
+      already fully masked: the Markdown-aware mask (safeMask) leaves it unchanged. Compared by value, never by a count of masks.
+   Otherwise, or when the redact module or the renderer is missing, or the render is empty, the card shows the masked plain text of the decoded
+   question (fail closed). The raw question is never shown. */
+const Q_UNSAFE='This question cannot be shown safely. Choose an option or write your answer.';
+/* character references, decoded without any HTML parser, the way HTML reads them in text: numeric (decimal or hex, any case, leading zeros, with or without `;`),
+   a name with its `;` from a table (every name HTML has for an ASCII punctuation character, the hidden characters the masks know, the dashes and hyphens, a few
+   common signs and every legacy name), and a legacy name without its `;` (the longest one that starts the letters after `&`, as HTML does; in an address, HTML's rule for attribute values:
+   not before `=`, a letter or a digit). Repeated until nothing
+   changes (at most 8 rounds), so a reference written through `&amp` reads as its character too; a name with `;` the table lacks is left (fail closed). The tests check every entry against the browser's own reading.
+   A reference left over (an unknown `&name;`, a C1 number HTML maps elsewhere) makes qRefsLeft true and the card falls back (fail closed); a bare `&` before a
+   letter that names nothing (R&D, a&b.ts, ?a=1&b=2) is ordinary text. */
+const Q_NAMED=Object.assign(Object.create(null),{af:'\u2061',AMP:'&',amp:'&',apos:'\'',ApplyFunction:'\u2061',ast:'*',bsol:'\\',bull:'\u2022',bullet:'\u2022',CenterDot:'\u00b7',centerdot:'\u00b7',circledR:'\u00ae',CloseCurlyDoubleQuote:'\u201d',CloseCurlyQuote:'\u2019',colon:':',comma:',',commat:'@',COPY:'\u00a9',copy:'\u00a9',dash:'\u2010',deg:'\u00b0',DiacriticalGrave:'`',dollar:'$',equals:'=',euro:'\u20ac',excl:'!',grave:'`',GT:'>',gt:'>',Hat:'^',hellip:'\u2026',horbar:'\u2015',hyphen:'\u2010',ic:'\u2063',InvisibleComma:'\u2063',InvisibleTimes:'\u2062',it:'\u2062',laquo:'\u00ab',larr:'\u2190',lbrace:'{',lbrack:'[',lcub:'{',ldquo:'\u201c',LeftArrow:'\u2190',leftarrow:'\u2190',lowbar:'_',lpar:'(',lrm:'\u200e',lsqb:'[',lsquo:'\u2018',LT:'<',lt:'<',mdash:'\u2014',midast:'*',middot:'\u00b7',minus:'\u2212',mldr:'\u2026',nbsp:'\u00a0',ndash:'\u2013',NegativeMediumSpace:'\u200b',NegativeThickSpace:'\u200b',NegativeThinSpace:'\u200b',NegativeVeryThinSpace:'\u200b',NoBreak:'\u2060',NonBreakingSpace:'\u00a0',num:'#',OpenCurlyDoubleQuote:'\u201c',OpenCurlyQuote:'\u2018',percnt:'%',period:'.',plus:'+',quest:'?',QUOT:'"',quot:'"',raquo:'\u00bb',rarr:'\u2192',rbrace:'}',rbrack:']',rcub:'}',rdquo:'\u201d',rdquor:'\u201d',REG:'\u00ae',reg:'\u00ae',RightArrow:'\u2192',rightarrow:'\u2192',rlm:'\u200f',rpar:')',rsqb:']',rsquo:'\u2019',rsquor:'\u2019',semi:';',ShortLeftArrow:'\u2190',ShortRightArrow:'\u2192',shy:'\u00ad',slarr:'\u2190',sol:'/',srarr:'\u2192',times:'\u00d7',TRADE:'\u2122',trade:'\u2122',UnderBar:'_',verbar:'|',vert:'|',VerticalLine:'|',ZeroWidthSpace:'\u200b',zwj:'\u200d',zwnj:'\u200c'},{Aacute:'\u00c1',aacute:'\u00e1',Acirc:'\u00c2',acirc:'\u00e2',acute:'\u00b4',AElig:'\u00c6',aelig:'\u00e6',Agrave:'\u00c0',agrave:'\u00e0',AMP:'&',amp:'&',Aring:'\u00c5',aring:'\u00e5',Atilde:'\u00c3',atilde:'\u00e3',Auml:'\u00c4',auml:'\u00e4',brvbar:'\u00a6',Ccedil:'\u00c7',ccedil:'\u00e7',cedil:'\u00b8',cent:'\u00a2',COPY:'\u00a9',copy:'\u00a9',curren:'\u00a4',deg:'\u00b0',divide:'\u00f7',Eacute:'\u00c9',eacute:'\u00e9',Ecirc:'\u00ca',ecirc:'\u00ea',Egrave:'\u00c8',egrave:'\u00e8',ETH:'\u00d0',eth:'\u00f0',Euml:'\u00cb',euml:'\u00eb',frac12:'\u00bd',frac14:'\u00bc',frac34:'\u00be',GT:'>',gt:'>',Iacute:'\u00cd',iacute:'\u00ed',Icirc:'\u00ce',icirc:'\u00ee',iexcl:'\u00a1',Igrave:'\u00cc',igrave:'\u00ec',iquest:'\u00bf',Iuml:'\u00cf',iuml:'\u00ef',laquo:'\u00ab',LT:'<',lt:'<',macr:'\u00af',micro:'\u00b5',middot:'\u00b7',nbsp:'\u00a0',not:'\u00ac',Ntilde:'\u00d1',ntilde:'\u00f1',Oacute:'\u00d3',oacute:'\u00f3',Ocirc:'\u00d4',ocirc:'\u00f4',Ograve:'\u00d2',ograve:'\u00f2',ordf:'\u00aa',ordm:'\u00ba',Oslash:'\u00d8',oslash:'\u00f8',Otilde:'\u00d5',otilde:'\u00f5',Ouml:'\u00d6',ouml:'\u00f6',para:'\u00b6',plusmn:'\u00b1',pound:'\u00a3',QUOT:'"',quot:'"',raquo:'\u00bb',REG:'\u00ae',reg:'\u00ae',sect:'\u00a7',shy:'\u00ad',sup1:'\u00b9',sup2:'\u00b2',sup3:'\u00b3',szlig:'\u00df',THORN:'\u00de',thorn:'\u00fe',times:'\u00d7',Uacute:'\u00da',uacute:'\u00fa',Ucirc:'\u00db',ucirc:'\u00fb',Ugrave:'\u00d9',ugrave:'\u00f9',uml:'\u00a8',Uuml:'\u00dc',uuml:'\u00fc',Yacute:'\u00dd',yacute:'\u00fd',yen:'\u00a5',yuml:'\u00ff'});
+const Q_LEGACY='Aacute aacute Acirc acirc acute AElig aelig Agrave agrave AMP amp Aring aring Atilde atilde Auml auml brvbar Ccedil ccedil cedil cent COPY copy curren deg divide Eacute eacute Ecirc ecirc Egrave egrave ETH eth Euml euml frac12 frac14 frac34 GT gt Iacute iacute Icirc icirc iexcl Igrave igrave iquest Iuml iuml laquo LT lt macr micro middot nbsp not Ntilde ntilde Oacute oacute Ocirc ocirc Ograve ograve ordf ordm Oslash oslash Otilde otilde Ouml ouml para plusmn pound QUOT quot raquo REG reg sect shy sup1 sup2 sup3 szlig THORN thorn times Uacute uacute Ucirc ucirc Ugrave ugrave uml Uuml uuml Yacute yacute yen yuml'.split(' ').sort((a,b)=>b.length-a.length);
+function qNum(all,hex,dec){
+  const d=(hex!=null?hex:dec).replace(/^0+/,''), cp=d.length>8?Infinity:parseInt(d||'0',hex!=null?16:10);
+  /* left, so the card falls back and the whole value around it is masked: a number HTML reads as another character (C1), one it reads as U+FFFD (zero, out of
+     range, a surrogate) and a control character (also what a reference cut short by a hidden character becomes) */
+  if((cp>=0x80&&cp<=0x9f)||cp===0||cp>0x10ffff||(cp>=0xd800&&cp<=0xdfff)||cp<0x20||cp===0x7f)return all;
+  return String.fromCodePoint(cp);
+}
+const Q_REF=/&(?:#(?:[xX]([0-9A-Fa-f]+)|([0-9]+));?|([A-Za-z][A-Za-z0-9]{0,31})(;?))/g;
+function qRef(urls,all,hex,dec,word,semi,at,str){
+  if(word==null)return qNum(all,hex,dec);
+  if(semi)return Q_NAMED[word]!==undefined?Q_NAMED[word]:all; /* a name with `;` the table lacks may be a longer name HTML knows: left, so the card falls back */
+  const l=Q_LEGACY.find(n=>word.startsWith(n));
+  if(!l)return all;
+  const next=l.length<word.length?word[l.length]:str.charAt(at+all.length);
+  const inUrl=urls.some(([a,b])=>at>=a&&at<b); /* in a link address or a bare address: HTML's rule for attribute values, a legacy name without `;` before `=` or a letter or digit stays as written (`?a=1&copy=2`) */
+  return inUrl&&/[A-Za-z0-9=]/.test(next)?all:Q_NAMED[l]+word.slice(l.length);
+}
+const Q_URL=/[A-Za-z][A-Za-z0-9+.-]{0,31}:\/\/[^\s<>()[\]]*|\]\([^)\s]*|<[A-Za-z][A-Za-z0-9+.-]{0,31}:[^\s<>]*|\bwww\.[^\s<>()[\]]*/g; /* addresses: scheme://, a link's (...) part, an <autolink>, www. */
+function qDecodeRefs(t){let x=t;for(let i=0;i<8;i++){const urls=[...x.matchAll(Q_URL)].map(m=>[m.index,m.index+m[0].length]);const y=x.replace(Q_REF,(...a)=>qRef(urls,...a));if(y===x)return x;x=y;}return null;}
+const qRefsLeft=t=>/&(?:[A-Za-z][A-Za-z0-9]{0,31};|#[0-9]|#[xX][0-9A-Fa-f])/.test(t);
+/* in the fallback, after safeMask and only adding to it: a reference still left between characters of a value (an unknown `&name;`, a C1 number) would show its
+   own text between two pieces, and no mask joins across it. The whole value is masked: the run of value characters (with `.`, `:`, `@`, `/`, `+`, `=`, `~`, `%`)
+   around it, so a dotted or credential value is masked whole. */
+const Q_RUN=/[A-Za-z0-9_\-.:@\/+=~%]*(?:&(?:#[xX]?[0-9A-Fa-f]{1,8};?|[A-Za-z][A-Za-z0-9]{0,31};)[A-Za-z0-9_\-.:@\/+=~%]*)+/g;
+const qMaskRefRuns=t=>t.replace(Q_RUN,run=>qRefsLeft(run)?'[redacted]':run);
+const qRunsIn=(shown,m,n=6)=>(shown.match(new RegExp('[A-Za-z0-9_-]{'+n+',}','g'))||[]).every(w=>w==='redacted'||m.includes(w)); /* a run the raw reading masked (a value the renderer split or wrapped) is missing from m */
+/* add-only: every word-like run of t that the other reading `ref` does not show (it masked it) is masked here too */
+const qAddMask=(t,ref)=>t.replace(/[A-Za-z0-9_-]{4,}/g,(w,at)=>(w==='redacted'&&t[at-1]==='[')||ref.includes(w)?w:'[redacted]');
+function qMdHTML(raw){
+  const s0=qDecodeRefs(String(raw==null?'':raw));
+  if(s0==null)return '<p>'+esc(Q_UNSAFE)+'</p>'; /* references nested past any sane depth: a fixed phrase */
+  /* two readings, add-only: the decoded text (s) and the text as written (mR, what the other masked surfaces show); nothing either one hides is shown */
+  const s=s0, mR=safeMask(String(raw==null?'':raw)), m=qAddMask(qMaskRefRuns(safeMask(s)),mR), plain=()=>'<p>'+esc(m)+'</p>';
+  const r=RED?RED.redact(s):null;
+  if(typeof r!=='string'||!window.DurbarMD||/!\[/.test(s)||qRefsLeft(s))return plain(); /* an image: the card needs none, and the renderer's own stand-in words could sit inside a value */
+  const tp=document.createElement('template');tp.innerHTML=window.DurbarMD.render(r); /* inert: nothing in a template loads or runs */
+  const same=v=>safeMask(v)===v, els=[...tp.content.querySelectorAll('*')];
+  els.forEach(e=>e.removeAttribute('title'));
+  const shown=tp.content.textContent;
+  if(!shown.trim()||!same(shown))return plain();
+  if(!qRunsIn(shown,m)||!qRunsIn(shown,mR,4))return plain(); /* the cross-check with both readings: every word-like run the card shows must also be in each masked text */
+  for(const e of els)for(const at of [...e.attributes]){
+    if(!same(at.value))return plain();
+    if(at.name==='href'){let d=null;try{d=decodeURIComponent(at.value);}catch(_){}if(d==null||!same(d))return plain();}
+  }
+  const box=document.createElement('div');box.appendChild(tp.content);return box.innerHTML;
+}
 function showQuestion(a,e){
   if(e.elicitation&&typeof e.elicitation==='object'){showElicitation(a,e);return;}
   const t=ensureTurn(a), qs=(e.questions||[]).slice(0,4);
@@ -7158,10 +7246,13 @@ function showQuestion(a,e){
   const picks=qs.map(()=>new Set()), others=[];
   qs.forEach((q,i)=>{
     const box=document.createElement('div');box.className='q-item';
-    const qt=document.createElement('p');qt.className='q-text';
-    if(q.header){const h=document.createElement('span');h.className='tag';h.textContent=q.header;qt.appendChild(h);qt.appendChild(document.createTextNode(' '));}
-    qt.appendChild(document.createTextNode(q.question));box.appendChild(qt);
-    const opts=document.createElement('div');opts.className='q-opts';opts.setAttribute('role',q.multiSelect?'group':'radiogroup');opts.setAttribute('aria-label',q.question);
+    /* spec 052 (2026-11-19 delta, issue 1927, T378): the question's Markdown is rendered by the chat's own safe renderer (DurbarMD: raw HTML is text, links keep the chat's click handling),
+       after the text is masked: the rendered output never holds an unmasked value. The answer is still keyed by the agent's own question text. */
+    const qt=document.createElement('div');qt.className='q-text md';
+    if(q.header){const h=document.createElement('span');h.className='tag';h.textContent=q.header;qt.appendChild(h);}
+    const qb=document.createElement('div');qb.className='q-md';qb.innerHTML=qMdHTML(q.question);qt.appendChild(qb);box.appendChild(qt);
+    const qPlain=qb.textContent.replace(/\s+/g,' ').trim(); /* the words a screen reader says, without the Markdown marks; masked like the card (never the raw question) */
+    const opts=document.createElement('div');opts.className='q-opts';opts.setAttribute('role',q.multiSelect?'group':'radiogroup');opts.setAttribute('aria-label',qPlain);
     (q.options||[]).forEach(o=>{const b=document.createElement('button');b.type='button';b.className='btn q-opt';b.setAttribute(q.multiSelect?'aria-pressed':'aria-checked','false');if(!q.multiSelect)b.setAttribute('role','radio');
       const lb=document.createElement('span');lb.className='q-lbl';lb.textContent=o.label;b.appendChild(lb);b.title=DurbarCutText.cutText(o.description?o.label+' — '+o.description:o.label,300); /* FR-140: the title always has the label; FR-168: a data tooltip is at most 300 characters */
       if(o.description){const d=document.createElement('span');d.className='q-desc';d.textContent=o.description;b.appendChild(d);} /* spec 052 FR-160: the description is on screen, not only in the tooltip */
@@ -7169,7 +7260,7 @@ function showQuestion(a,e){
         else{s.clear();s.add(o.label);opts.querySelectorAll('.q-opt').forEach(x=>{x.setAttribute('aria-checked',String(x===b));x.classList.toggle('primary',x===b);});others[i].value='';others[i].classList.remove('chosen');others[i].style.height='';}};
       opts.appendChild(b);});
     /* spec 052 FR-160/FR-161: a box that grows with its text; typing chooses it; Enter sends the card (Answer's own handler), Shift+Enter adds a line */
-    const other=document.createElement('textarea');other.rows=1;other.maxLength=window.exports.MAX_ANSWER;other.className='q-other';other.placeholder='Other answer (Enter to send)';other.setAttribute('aria-label','Other answer: '+q.question);
+    const other=document.createElement('textarea');other.rows=1;other.maxLength=window.exports.MAX_ANSWER;other.className='q-other';other.placeholder='Other answer (Enter to send)';other.setAttribute('aria-label','Other answer: '+qPlain);
     const hint=document.createElement('span');hint.className='sr-only';hint.id='qh'+(++qFormSeq);hint.textContent='Enter sends this answer. Shift+Enter adds a line.';
     other.setAttribute('aria-describedby',hint.id);other.setAttribute('aria-keyshortcuts','Enter');
     const grow=()=>{other.style.height='auto';other.style.height=other.scrollHeight+2+'px';};
@@ -7229,9 +7320,10 @@ function showElicitation(a,e){
   const n=document.createElement('div');n.className='note perm question elicit';n.setAttribute('role','group');n.setAttribute('aria-label',isUrl?'An MCP server asks you to open a page':'An MCP server asks for input');
   const head=document.createElement('b');head.textContent=isUrl?'An MCP server asks you to open a page':'An MCP server asks for input';n.appendChild(head);
   const st=document.createElement('span');st.className='pstate';n.appendChild(st);
-  const qt=document.createElement('p');qt.className='q-text';qt.id=uid+'-msg';
+  const qt=document.createElement('div');qt.className='q-text';qt.id=uid+'-msg';
   if(R.source){const h=document.createElement('span');h.className='tag';h.textContent=SHORT(R.source,40);qt.appendChild(h);qt.appendChild(document.createTextNode(' '));}
-  qt.appendChild(document.createTextNode(SHORT(R.message||'',2000)));n.appendChild(qt);n.setAttribute('aria-describedby',qt.id);
+  /* spec 052 (2026-11-20 delta, issue 1934, T423): the form's message is MCP-server text, rendered like the question card (qMdHTML: masked, cross-checked, plain fallback), not cut here (the adapters bound it) */
+  const qb=document.createElement('div');qb.className='q-md';qb.innerHTML=qMdHTML(R.message||'');qt.classList.add('md');qt.appendChild(qb);n.appendChild(qt);n.setAttribute('aria-describedby',qt.id);
   const row=document.createElement('div');row.className='note-actions';
   const btn=(label,cls,title,fn)=>{const b=document.createElement('button');b.type='button';b.className='btn '+cls;b.textContent=label;if(title)b.title=title;b.onclick=fn;return b;};
   const inputs=[];
@@ -7689,31 +7781,82 @@ function onAgentRenamed(e){
   a.alias=typeof e.alias==='string'&&e.alias?e.alias:undefined;
   repaintName(a);
 }
-/* spec 106 T005: Brain view's temporary floating host, OFF by default (localStorage durbar.brainPreview = "on", or ?brain=1 in the simulator).
-   Loaded on first use (FR-105) from files that are not in index.html; events that arrive while it loads wait in a short queue. Removed by T006's dock. */
-const BRAIN_PREVIEW=(()=>{try{return (qs.has('sim')&&qs.get('brain')==='1')||localStorage.getItem('durbar.brainPreview')==='on';}catch(e){return false;}})();
-let BRAIN_H=null, BRAIN_STATE='idle', BRAIN_WHY=''; const BRAIN_Q=[];
+/* spec 106 T006 (delta 2026-11-20): Brain view's dock at the top of the chat's right rail, above a Your door section. Behind the preview flag until T009's
+   Settings switch (localStorage durbar.brainPreview = "on"; ?brain=1, which main sets from DURBAR_BRAIN=1 in a development run, as DURBAR_DOOR).
+   Loaded on first use (FR-105) from files that are not in index.html: the stylesheet first, so the rail is never drawn unstyled; events that arrive while
+   it loads wait in a short queue. Off: nothing loads and the chat is unchanged. */
+const BRAIN_PREVIEW=(()=>{try{return qs.get('brain')==='1'||localStorage.getItem('durbar.brainPreview')==='on';}catch(e){return false;}})();
+let BRAIN_H=null, BRAIN_STATE='idle', BRAIN_WHY='', BRAIN_RAIL_OFF=null, BRAIN_EMPTY=null; const BRAIN_Q=[];
 function brainLoad(){
+  if(BRAIN_STATE!=='idle'&&BRAIN_STATE!=='waiting')return;
   BRAIN_STATE='loading';
-  const lk=document.createElement('link');lk.rel='stylesheet';lk.href='brainview/brain.css';document.head.appendChild(lk);
-  const files=['../shared/brainstate.js','../shared/brainsurface.js','brainview/points.js','brainview/skins.js','brainview/draw.js','brainview/host.js'];
+  const files=['../shared/brainstate.js','../shared/brainsurface.js','brainview/points.js','brainview/skins.js','brainview/draw.js','brainview/dock.js'];
   const next=i=>{
     if(i>=files.length){
       const R=window.DurbarRedact,U=window.DurbarUsage,C=window.DurbarCost;
       if(NO_REDACT||!R||typeof R.redact!=='function'||!U||!C){BRAIN_STATE='failed';BRAIN_WHY='no mask';BRAIN_Q.length=0;return;} /* no masking, no brain */
       const mask=Object.assign({},R,{units:{validNano:U.validNano,AIU_USD:C.AIU_USD,money:C.money,creditsWord:'AIU',estimateWord:'Claude (est.)'}});
-      BRAIN_H=window.DurbarBrainHost.start({mask,now:()=>Date.now(),name:id=>{const a=liveById(id);return a?a.name:'Agent';}});
-      BRAIN_STATE=BRAIN_H?'ready':'failed';if(!BRAIN_H)BRAIN_WHY='host refused';
+      BRAIN_H=window.DurbarBrainDock.start({mask,now:()=>Date.now(),name:id=>{const a=liveById(id)||byId(id);return a?a.name:'Agent';},folder:id=>{const a=byId(id),r=a&&roomOf(a);return r?r.path:undefined;}});
+      BRAIN_STATE=BRAIN_H?'ready':'failed';if(!BRAIN_H)BRAIN_WHY='dock refused';
       BRAIN_Q.splice(0).forEach(x=>{if(BRAIN_H)BRAIN_H.feed(x[0],x[1],x[2]);});
+      brainRailSync();
       return;
     }
     const sc=document.createElement('script');sc.src=files[i];sc.onload=()=>next(i+1);sc.onerror=()=>{BRAIN_STATE='failed';BRAIN_WHY='script '+files[i];BRAIN_Q.length=0;};document.head.appendChild(sc);
   };
-  next(0);
+  const lk=document.createElement('link');lk.rel='stylesheet';lk.href='brainview/brain.css';
+  lk.onload=()=>next(0); lk.onerror=()=>{BRAIN_STATE='failed';BRAIN_WHY='style';BRAIN_Q.length=0;};
+  document.head.appendChild(lk);
 }
+function brainStart(){if(!BRAIN_PREVIEW||BRAIN_STATE!=='idle')return;BRAIN_STATE='waiting';if(document.readyState==='complete')brainLoad();else window.addEventListener('load',brainLoad,{once:true});}
 function brainFeed(a,e){
   if(!BRAIN_PREVIEW||BRAIN_STATE==='failed')return;
-  if(BRAIN_H)BRAIN_H.feed(a.id,a.name,e);else{BRAIN_Q.push([a.id,a.name,e]);if(BRAIN_Q.length>500)BRAIN_Q.shift(); /* while it loads, the newest 500 events are kept (a step's end beats its start) */if(BRAIN_STATE==='idle'){BRAIN_STATE='waiting';if(document.readyState==='complete')brainLoad();else window.addEventListener('load',brainLoad,{once:true});}}
+  if(BRAIN_H)BRAIN_H.feed(a.id,a.name,e);else{BRAIN_Q.push([a.id,a.name,e]);if(BRAIN_Q.length>500)BRAIN_Q.shift(); /* while it loads, the newest 500 events are kept (a step's end beats its start) */brainStart();}
+}
+/* FR-031: the rail's collapse is kept as the agent rail keeps its folds (005 FR-196: only when rememberOn(); `railstore=1` for drivers) */
+function brainRailOff(){if(BRAIN_RAIL_OFF===null){BRAIN_RAIL_OFF=false;if(railRemember()){try{BRAIN_RAIL_OFF=localStorage.getItem('durbar.brainRail')==='collapsed';}catch(e){/* storage off: open */}}}return BRAIN_RAIL_OFF;}
+function brainRailHTML(){
+  return '<aside class="brail" id="brainRail" aria-label="Brain view and Your door"><div class="brail-slot" id="brainSlot"></div>'
+    +'<section class="brail-door" aria-labelledby="brailDoorT"><div class="brail-dh"><h2 id="brailDoorT">Your door <b class="brail-n" id="brailDoorN">0</b></h2><button class="btn sm" type="button" id="brailHide" aria-controls="brainRail" aria-expanded="true" title="Hide the brain and Your door; the Brain button in the chat header brings them back">Collapse</button></div>'
+    +'<ul class="brail-dl" id="brailDoorL" aria-label="Who needs you"></ul></section></aside>';
+}
+function brainRailCollapse(off){
+  BRAIN_RAIL_OFF=!!off; if(railRemember()){try{if(off)localStorage.setItem('durbar.brainRail','collapsed');else localStorage.removeItem('durbar.brainRail');}catch(e){/* kept for this run */}}
+  brainRailSync();
+  const f=off?$('brainBack'):$('brailHide'); if(f&&f.getClientRects().length)focusIn(f);
+}
+/* the rail with a chat open: built after openPanel's innerHTML (which drops it), the dock moved into it, the open chat's agent shown (a helper's chat: its parent, FR-007) */
+function brainRailSync(){
+  if(!BRAIN_PREVIEW)return;
+  const open=document.body.classList.contains('panel-open')&&!!ui.selected&&!!byId(ui.selected), off=open&&brainRailOff();
+  document.body.classList.toggle('brain-rail-off',off);
+  if(!open){if(BRAIN_H){BRAIN_H.unmount();BRAIN_H.show(null);}return;}
+  if(!BRAIN_H){brainStart();return;}
+  const p=$('panel'), head=$('panelHead');
+  if(head&&!$('brainBack')){const m=head.querySelector('.ph-meta');if(m){m.insertAdjacentHTML('afterbegin','<button class="btn sm" type="button" id="brainBack" aria-controls="brainRail" aria-expanded="false" title="Show the brain and Your door" hidden>Brain</button>');$('brainBack').onclick=()=>brainRailCollapse(false);}}
+  const back=$('brainBack'); if(back)back.hidden=!off;
+  let r=$('brainRail');
+  if(!r){p.insertAdjacentHTML('beforeend',brainRailHTML());r=$('brainRail');$('brailHide').onclick=()=>brainRailCollapse(true);$('brailDoorL').onclick=e=>{const b=e.target.closest('[data-door]');if(b)openInbox(b.dataset.door);};BRAIN_EMPTY=null;}
+  if(off){BRAIN_H.unmount();return;}
+  BRAIN_H.mount($('brainSlot'));
+  const a=byId(ui.selected), root=a.parent&&byId(a.parent)?a.parent:a.id;
+  if(BRAIN_H.shown()!==root)BRAIN_H.show(root);
+  brainDoorPaint();
+}
+/* the Your door section: the count and who needs you, in the agent rail's own words (railAge, railReq: masked, cut); a row opens the existing Needs you queue there */
+function brainDoorPaint(){
+  const l=$('brailDoorL'), n=$('brailDoorN'), r=$('brainRail'); if(!l||!n||!r||!BRAIN_H)return;
+  const list=needsMeOrder(), now=Date.now(), rows=list.map(x=>({id:x.id,name:x.name,age:railAge(x,now),said:railAgeSaid(x,now),req:SHORT(railReq(x),200)}));
+  if(n.textContent!==String(list.length))n.textContent=String(list.length);
+  const sig=JSON.stringify(rows);
+  if(l.dataset.sig!==sig){
+    const fa=document.activeElement, fk=fa&&l.contains(fa)&&fa.dataset?fa.dataset.door:null;
+    l.dataset.sig=sig;
+    l.innerHTML=rows.length?rows.map(x=>`<li><button class="btn" type="button" data-door="${esc(x.id)}" aria-label="${esc(x.name)}, ${esc(x.said)}: ${esc(x.req)}. Open Needs you."><span class="brail-who"><b>${esc(x.name)}</b> <span class="brail-age">${esc(x.age)}</span></span><span class="brail-req">${esc(x.req)}</span></button></li>`).join(''):'<li class="brail-none">Nobody needs you now.</li>';
+    if(fk){const b=l.querySelector('[data-door="'+CSS.escape(fk)+'"]');if(b)focusIn(b);}
+  }
+  const empty=!rows.length;
+  if(empty!==BRAIN_EMPTY){BRAIN_EMPTY=empty;r.classList.toggle('door-empty',empty);const cs=getComputedStyle(BRAIN_H.el);BRAIN_H.setRoomy(empty,BRAIN_H.el.clientWidth-parseFloat(cs.paddingLeft)-parseFloat(cs.paddingRight)-parseFloat(cs.borderLeftWidth)-parseFloat(cs.borderRightWidth));}
 }
 function onLiveEvent(e){
   const a=liveById(e.sessionId); if(!a)return;
@@ -7722,7 +7865,7 @@ function onLiveEvent(e){
   a.lastEventAt=Date.now(); /* spec 052 FR-062: last activity (when it arrived here; a helper's event counts for its main agent) */
   feedStats(a,e);
   liveFeed(a,e); /* spec 001 FR-028 */
-  brainFeed(a,e); /* spec 106 T005: off unless the preview flag is on */
+  brainFeed(a,e); /* spec 106 T006: off unless the preview flag is on */
   if(!e.agentId){ /* spec 034: only main-agent events change the mood */
     if(e.type==='toolCall')MOOD.onTool(a.id,e);
     else if(e.type==='status'){MOOD.onStatus(a.id,e.status);if(e.permission)MOOD.onPermission(a.id,e.permission,e.timestamp);} /* a pending request arrives inside a needs-permission status */
@@ -7786,13 +7929,13 @@ function onLiveEvent(e){
       if(a.pendingModel){const nm=a.pendingModel.name;a.pendingModel=undefined;updateModelChip(a);addNote(chat,'The queued switch to '+esc(nm)+' was dropped when you stopped the reply. Choose it again if you still want it.');}
       setState(a,'idle',null,'Stopped. Ready for your next message.');}
     else if(e.status==='idle'){const was=a.worked;a.worked=false;closeTurn(a);if(a.pendingProfile){const p=a.pendingProfile;a.pendingProfile=undefined;applyProfile(a,p);}
-      if(was&&a.failedTurn){/* spec 005 FR-245 (issue 1919): the turn failed and ends here: the agent stays in Error, no Finished text, no New reply mark, no finished announcement; a working status starts the next turn */scheduleRender(); /* the turn ended with no state change: the chat's Stop and spinner, and the end said once, need a redraw */}
+      if(a.state==='error'&&a.failedTurn){/* spec 005 FR-245 (issue 1919, amended by FR-246 / issue 1920: the error already ended the turn, so the idle reads the state): the turn failed and ends here: the agent stays in Error, no Finished text, no New reply mark, no finished announcement; a working status starts the next turn */scheduleRender(); /* the turn ended with no state change: the chat's Stop and spinner, and the end said once, need a redraw */}
       else if(was){noteCompleted(a);setState(a,'done','Done',a.lastOutput?safeExcerpt(a.lastOutput,140):'Finished.');} else setState(a,'idle',null,a.task);
       updateCtxChip(a);maybeSuggestFresh(a);
       /* a queued switch applies when the turn ends (its model event follows at once); if none came, do not leave "Next: ..." standing */
       if(a.pendingModel){const p=a.pendingModel;setTimeout(()=>{if(a.pendingModel===p){a.pendingModel=undefined;updateModelChip(a);}},2000);}}
     else if(e.status==='error'&&e.errorKind==='auth'){closeTurn(a);a.worked=false;a.failedTurn=true;markKindSignedOut(kindOf(a));showSignInCard(a,{detail:e.intent||''});setState(a,'error',null,kindWord(kindOf(a))+' needs you to sign in again.');} /* spec 012 FR-157 */
-    else if(e.status==='error'){closeTurn(a);a.failedTurn=true;addNote(chat,esc(e.intent||'Error'),true);setState(a,'error',null,gaveUp||safeExcerpt(e.intent||'Error',140,'Error'));}
+    else if(e.status==='error'){closeTurn(a);a.worked=false;a.failedTurn=true; /* spec 005 FR-246 (issue 1920): an error ends the turn in the chat: Send, not Stop and the spinner; a working status resumes it */addNote(chat,esc(e.intent||'Error'),true);setState(a,'error',null,gaveUp||safeExcerpt(e.intent||'Error',140,'Error'));}
     else if(e.status==='stopped'){
       if(a.limit)settleLimit(a,'cancel');
       /* a permission still pending when the session stops is denied cleanly: no Approve/Deny left behind, grants gone */
@@ -8146,6 +8289,7 @@ function renderRailDoor(){
   const n=needsMeOrder().length;
   b.classList.toggle('attn',n>0); const c=b.querySelector('b'); if(c&&c.textContent!==String(n))c.textContent=String(n);
   b.setAttribute('aria-label','Your door: '+(n?n+(n===1?' agent needs':' agents need')+' you':'nobody needs you')+'. Open Needs you.');
+  if(BRAIN_PREVIEW)brainDoorPaint(); /* spec 106 T006: the right rail's Your door section counts the same */
 }
 let railTick=0;
 function renderStrip(){
@@ -9916,7 +10060,7 @@ async function removeSessionUi(a){
   const name=r.name; removeLiveAgent(r.id); renderFolders(); scheduleRender(); toast(esc(name)+' removed. Its history is under Previous sessions.',3600).classList.add('ok');
 }
 function removeLiveAgent(id){
-  STATS.forget(id); MOOD.forget(id); if(BRAIN_H)BRAIN_H.forget(id); /* spec 106 T005 */
+  STATS.forget(id); MOOD.forget(id); if(BRAIN_H)BRAIN_H.forget(id); /* spec 106 T006 */
   if(LIVEACT){LIVEACT.drop(id);clearTimeout(liveTimers.get(id));liveTimers.delete(id);} /* spec 001 FR-028 */
   VISITS.leave(id); dropWalker(id); BREAKS.end(id); /* spec 068: a removed agent's break is forgotten */
   for(let i=agents.length-1;i>=0;i--)if(agents[i].id===id||agents[i].parent===id){forgetCardState(agents[i].id);agents.splice(i,1);}
@@ -10104,7 +10248,7 @@ function replayHistory(a,h,title,lead){
   for(const it of ((h&&h.items)||[])){
     if(it.type==='user'){m=null;addUserMsg(chat,it.text,(it.attachments||[]).map(x=>({name:x.name,img:x.kind==='image'})),it.ts);}
     else if(it.type==='output'){const b=document.createElement('div');b.className='bubble';agentMsg().appendChild(b);mdSet(b,it.text,true);}
-    else{const full=it.output||'';addChip(chipBox(),makeChip({tool:it.tool,label:it.label,res:SHORT(full||(it.failed?'failed':'ok'),60),output:full,state:it.failed?'failed':'ok'}));}
+    else{const full=it.output||'';addChip(chipBox(),makeChip({tool:it.tool,label:cutLabel(it.tool,it.label), /* spec 005 FR-342 */res:SHORT(full||(it.failed?'failed':'ok'),60),output:full,state:it.failed?'failed':'ok'}));}
   }
   addNote(chat,(lead||'Resumed')+': '+esc((title||'earlier session').replace(/[.!?…]+$/,''))+'. New messages continue this session.');
 }
@@ -10127,9 +10271,9 @@ function leaveVsView(){
   const a=byId(ui.selected),pi=document.querySelector('#panel .panel-in'); if(pi)pi.classList.remove('viewing');
   if(a){const c=$('chat');c.replaceChildren(liveChat(a).el);c.scrollTop=1e6;ntCountSync(a);notesMarkSoon();} /* spec 083 FR-027: the read-only VS Code view hides the count; back in the chat it returns */
 }
-async function viewVs(a,key,btn){
+async function viewVs(a,key,btn,read){ /* read: simulator drivers only (check-toolchip-mask), a transcript instead of the bridge's */
   if(btn){btn.disabled=true;}
-  const r=await bridge.readVsChat(a.id,key).catch(e=>({ok:false,error:String(e&&e.message||e)}));
+  const r=await (read?read():bridge.readVsChat(a.id,key)).catch(e=>({ok:false,error:String(e&&e.message||e)}));
   if(btn)btn.disabled=false;
   if(!r.ok){toast(esc(r.error||'Could not read this chat.'),6000);return;}
   const tr=r.transcript, wrap=document.createElement('div'); wrap.className='vsview';
@@ -10139,7 +10283,7 @@ async function viewVs(a,key,btn){
   for(const b of tr.blocks){
     if(b.type==='user'){am=null;addUserMsg(fake,b.text||'(attachment)',(b.attachments||[]).map(n=>({name:n,img:false})),b.ts);}
     else if(b.type==='assistant'){if(!am){am=document.createElement('div');am.className='msg agent';am.innerHTML='<div class="meta">Copilot (VS Code)</div>';body.appendChild(am);}const d=document.createElement('div');d.className='bubble';am.appendChild(d);mdSet(d,b.text,true);}
-    else if(b.type==='tool'){if(!am){am=document.createElement('div');am.className='msg agent';am.innerHTML='<div class="meta">Copilot (VS Code)</div>';body.appendChild(am);}let l=am.lastElementChild;if(!l||!l.classList.contains('chips')){l=document.createElement('div');l.className='chips';am.appendChild(l);}addChip(l,makeChip({tool:'tool',kind:'tool',label:b.label,state:'ok'}));}
+    else if(b.type==='tool'){if(!am){am=document.createElement('div');am.className='msg agent';am.innerHTML='<div class="meta">Copilot (VS Code)</div>';body.appendChild(am);}let l=am.lastElementChild;if(!l||!l.classList.contains('chips')){l=document.createElement('div');l.className='chips';am.appendChild(l);}addChip(l,makeChip({tool:'tool',kind:'tool',label:cutLabel('tool',b.label),state:'ok'})); /* spec 005 FR-342 */}
     else if(b.type==='note'){const n=document.createElement('div');n.className='note err';n.textContent=b.text;body.appendChild(n);}
   }
   const c=$('chat'); c.replaceChildren(wrap); vsViewing=true; ntCountSync(a);
@@ -10494,7 +10638,7 @@ if(pendingOpen&&demoOn){openPanel(pendingOpen,false);pendingOpen=null;}
 const settleNow=()=>{if(!agentsListed||!window.__durbarSimReplayed||baselineQueued||baselineAsking)return false;if(renderQueued){renderQueued=false;renderAll();}return true;};
 /* simulator drivers load with simfreeze=1: the desk glow then holds still (FR-178: the geometry and screenshot checks measure boxes, so no zoom may be mid-way); the unread driver opts back in with hlmotion=1 to test the motion itself */
 if(SIM&&qs.get('simfreeze')==='1'&&qs.get('hlmotion')!=='1')document.documentElement.classList.add('hl-still');
-if(SIM)window.__durbarSimUi={brain:{host:()=>BRAIN_H,state:()=>BRAIN_STATE,why:()=>BRAIN_WHY,flag:BRAIN_PREVIEW,queued:()=>BRAIN_Q.length}, /* spec 106 T005: check-brain-draw reads the floating host's frame counts */announce,renderRestoreStrip,afArrivalPrio,afTracker:{ids:()=>AFT.ids(),pending:()=>AFT.pendingList().map(v=>v.id+'|'+v.kind),quiet:()=>AFT.isQuiet,follow:id=>AFT.follow(id)}, /* spec 005 FR-237: drivers only: what Auto-follow follows, holds and whether it is quiet; follow() makes an agent followed without a hand open (which would drop the others, spec 052 FR-185) */ afNotice:{ms:v=>{AF_NOTICE_MS=Math.max(100,Number(v)||3000);return AF_NOTICE_MS;},on:v=>{setAutoFollowOn(!!v);return AF_ON;},shown:()=>!!AF_NOTICE}, /* spec 052 FR-239: drivers only: the notice's length, Auto-follow without Settings */swapCardOptions:id=>{const c=byId(id)&&pendingCardOf(byId(id));if(!c)return 0;const os=[...c.querySelectorAll('.q-opt')];os.forEach(b=>b.replaceWith(b.cloneNode(true)));return os.length;}, /* spec 052 FR-197: the live card rebuilds its options (the card stays, the old buttons are gone); a driver checks that a row's old option answers nothing */
+if(SIM)window.__durbarSimUi={chipArg:(t,r)=>chipArg(t,r),cutLabel:(t,l)=>cutLabel(t,l),chipMasks:()=>CHIP_MASKS,replay:(id,items)=>{replayHistory(byId(id),{items},'test');return true;},vsView:(id,tr)=>viewVs(byId(id),'sim-vs',null,()=>Promise.resolve({ok:true,transcript:tr})).then(()=>true),demoTurn:(id,tools)=>{const a=byId(id);return playTurn(getChat(a),a,{think:'',tools,reply:''});},taskLabel:(t,l)=>safeToolLabel(t,String(l).replace(/\s+/g,' ').slice(0,400),100000),chipEl:(id,callId)=>{const a=byId(id),c=a&&a.turn&&a.turn.T&&a.turn.T.chipEls[callId];return c?c.el:null;}, /* spec 005 FR-342: check-toolchip-mask runs its harmless corpus through the chip's own mask and counts its calls */qMdHTML,qSafeMask:t=>safeMask(t),qNames:()=>Object.keys(Q_NAMED).map(k=>k+'='+Q_NAMED[k]), /* spec 052 (issue 1927): check-question-markdown renders a question built from invented pieces through the card's own renderer */brain:{host:()=>BRAIN_H,state:()=>BRAIN_STATE,why:()=>BRAIN_WHY,flag:BRAIN_PREVIEW,queued:()=>BRAIN_Q.length}, /* spec 106 T006: check-brain-draw and check-brain-dock read the dock's frame counts */announce,renderRestoreStrip,afArrivalPrio,afTracker:{ids:()=>AFT.ids(),pending:()=>AFT.pendingList().map(v=>v.id+'|'+v.kind),quiet:()=>AFT.isQuiet,follow:id=>AFT.follow(id)}, /* spec 005 FR-237: drivers only: what Auto-follow follows, holds and whether it is quiet; follow() makes an agent followed without a hand open (which would drop the others, spec 052 FR-185) */ afNotice:{ms:v=>{AF_NOTICE_MS=Math.max(100,Number(v)||3000);return AF_NOTICE_MS;},on:v=>{setAutoFollowOn(!!v);return AF_ON;},shown:()=>!!AF_NOTICE}, /* spec 052 FR-239: drivers only: the notice's length, Auto-follow without Settings */swapCardOptions:id=>{const c=byId(id)&&pendingCardOf(byId(id));if(!c)return 0;const os=[...c.querySelectorAll('.q-opt')];os.forEach(b=>b.replaceWith(b.cloneNode(true)));return os.length;}, /* spec 052 FR-197: the live card rebuilds its options (the card stays, the old buttons are gone); a driver checks that a row's old option answers nothing */
   chatTrimNow:()=>chatTrimPending(false), /* spec 005 FR-238: trim the chats waiting for a frame now (a burst with no frame between) */
   hiddenTrimTimer:()=>({on:!!hiddenTrimT,ms:TRIM_HIDDEN_MS}),
   helperState:(id,st)=>{const h=agents.find(x=>x.id===id&&x.parent);if(!h||!['working','thinking','waiting','error','limit','done','idle'].includes(st))return false;h.state=st==='limit'?'waiting':st;h.limit=st==='limit';h.paused=false;layoutKey='';renderAll();return true;}, /* spec 097 T335 (issue 1642): drivers only: a helper's state the simulator never sends (waiting, limit), for the kids on the desk */

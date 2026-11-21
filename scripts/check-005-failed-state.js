@@ -4,7 +4,8 @@
  *   1. working, error, idle: the agent is in Error (not Done), its desk has no "New" unread mark (a second agent's normal end, whose mark shows, proves the page redrew since), its text is not "Finished.";
  *   2. then working: Working again (the error is left by the next turn);
  *   3. working, idle: Done as before, with the unread mark (the old behaviour for a normal end stays, and the mark can show);
- *   4. working, error, working, idle: the agent went on, so Done.
+ *   4. working, error, working, idle: the agent went on, so Done;
+ *   5. working, error, then the person sends a message (the chat of that agent open) and the answer is an idle with no working: Done, as the person's message ends the failure (#1924's rule; the same as check-auto-follow's "Not sent" guard). A mutant that drops `&& a.failedTurn` from the condition SURVIVES this case, measured: the person's message sets the state to Thinking before the idle comes, so a flag false with the state still Error cannot be reached through the page; the flag is kept as a second guard.
  * Not driven: a real session's order of events, Windows, Linux.
  *
  *   npm run check:ui -- --only check-005-failed-state
@@ -18,7 +19,7 @@ const path = require('path');
 const { helpers, jsLiteral } = require('./driver-helpers');
 
 const MUT = process.env.FAILED_STATE_MUTANT || '';
-const LINE = "if(was&&a.failedTurn){";
+const LINE = "if(a.state==='error'&&a.failedTurn){";
 const PATCH = {
   done: [LINE, "if(false){"],
   always: [LINE, "if(was){"],
@@ -72,6 +73,14 @@ module.exports = async (ctx) => {
     await emit('error', 'a failure that was not the end'); await settle('error', '4: error');
     await emit('working'); await settle('working', '4: went on');
     await emit('idle'); l = await settle('done', '4: a turn that went on after an error ends Done');
+    /* 5 */
+    await emit('working'); await settle('working', '5: working');
+    await emit('error', 'a failure to move on from'); await settle('error', '5: error');
+    const opened = await H.openSimAgent(`a=>a.id===${jsLiteral(A)}`, '#msgInput');
+    assert.ok(opened.ok, '5: opened the chat of the failed agent ' + jsLiteral(opened.seen));
+    await js(`(()=>{const b=window.__durbarSimUi.bridge();b.__send=b.send;b.send=async(id)=>{window.__durbarSimEmit({timestamp:Date.now(),sessionId:id,type:'status',status:'idle',intent:'Not sent'});return {ok:true};};})();0`);
+    await js(`(()=>{const m=document.getElementById('msgInput');m.value='hello again';m.dispatchEvent(new Event('input',{bubbles:true}));document.getElementById('sendBtn').click();})();0`);
+    l = await settle('done', "5: the person's message ended the failure: an idle with no working is Done, not Error");
     console.log('[005-failed-state] ok: a failed turn stays in Error; a normal end and a turn that went on are Done');
   } finally {
     if (copy) fs.rmSync(copy, { recursive: true, force: true });

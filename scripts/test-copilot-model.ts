@@ -563,7 +563,7 @@ async function main(): Promise<void> {
         assert.deepStrictEqual(await p, { answer: 'my own long-question answer', wasFreeform: true }, 'the custom answer, not a skip');
         assert.ok(!t.events.slice(from).some((e) => e.type === 'question' && e.phase === 'cancelled'), 'no skipped card');
         assert.deepStrictEqual(readAnswerPayload(null), null, 'null stays a skip');
-        for (const bad of [undefined, 'text', 5, [], {}, { k: 5 }, { k: '' }, { k: '   ' }, { ['x'.repeat(2001)]: 'a' }]) assert.strictEqual(readAnswerPayload(bad), undefined, 'unusable is refused, never a skip: ' + JSON.stringify(bad)?.slice(0, 30));
+        for (const bad of [undefined, 'text', 5, [], {}, { k: 5 }, { k: '' }, { k: '   ' }, { ['x'.repeat(20001)]: 'a' }]) assert.strictEqual(readAnswerPayload(bad), undefined, 'unusable is refused, never a skip: ' + JSON.stringify(bad)?.slice(0, 30));
         assert.strictEqual(readAnswerPayload({ a: 'x'.repeat(500) })!.a.length, 500, 'exactly the cap is kept whole');
         assert.strictEqual(readAnswerPayload({ a: 'x'.repeat(501) }), undefined, 'just over the cap is refused, not cut');
         assert.strictEqual(readAnswerPayload({ a: ' ' + 'x'.repeat(500) + '  ' })!.a.trim().length, 500, 'spaces around do not count');

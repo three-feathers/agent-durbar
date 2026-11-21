@@ -462,6 +462,18 @@ assert.ok(dh.darkProblem({ id: 'check-user', bg: 'rgb(20, 18, 43)' }).includes('
     assert.ok(reads >= 4 && evs.includes('show') && evs.includes('win.focus') && evs.includes('wc.focus'), `needFocus: focus that comes after 3 reads passes, through the focus step (${reads} reads, ${evs.join(',')})`);
     const never = { ...fctx, js: async (c: string) => !c.includes('document.hasFocus()') };
     await assert.rejects(() => dh.helpers(never).needFocus('t 1440x900', { ms: 300 }), /t 1440x900: the window does not have focus \(document\.hasFocus\(\) is false\): bring the app to the front; the machine may have no key window/, 'needFocus: a page without focus fails with the label');
+    // spec 008 (issue #1239): `host: true` also asks the HOST window's focus: a page that reports focus in a window that is not the key window fails with the label (macOS: another app in front); a host focus that comes after 3 reads passes through the focus step; without `host` nothing changes
+    {
+      const evs2: string[] = []; let hostReads = 0;
+      const base = { ...ctx, js: async (c: string) => !c.includes('!!(false)') };
+      const notKey = { ...base, win: { ...ctx.win, show: () => evs2.push('show'), focus: () => evs2.push('win.focus'), isFocused: () => false, webContents: { focus: () => evs2.push('wc.focus'), isFocused: () => false } } };
+      await assert.rejects(() => dh.helpers(notKey).needFocus('t host', { ms: 300, host: true }), /t host: the window is not the key window \(win\.isFocused\(\) is false while document\.hasFocus\(\) is true\)/, 'needFocus host: a page with focus in a window that is not the key window fails with the label');
+      assert.ok(evs2.includes('show') && evs2.includes('win.focus') && evs2.includes('wc.focus'), 'needFocus host: the key window is asked for first (show, focus, webContents.focus)');
+      await dh.helpers(notKey).needFocus('t nohost', { ms: 300 }); // without host: the old behaviour, a page that has the focus passes
+      const late = { ...base, win: { ...ctx.win, show: () => {}, focus: () => {}, isFocused: () => ++hostReads > 3, webContents: { focus: () => {}, isFocused: () => hostReads > 3 } } };
+      await dh.helpers(late).needFocus('t late', { ms: 3000, host: true });
+      assert.ok(hostReads >= 4, `needFocus host: a host focus that comes after 3 reads passes (${hostReads} reads)`);
+    }
     const mut = { ...fctx, js: async (c: string) => !c.includes('!!(false)') };
     await assert.rejects(() => dh.helpers(mut).needFocus('t', { ms: 300, expr: 'false' }), /does not have focus/, 'needFocus: a false reading (the mutant) fails with the label');
   }
@@ -982,7 +994,7 @@ console.log('ui-suite: check-parallel and ui-suite install Electron once before 
     const suite = require(SUITE) as { main: (o: unknown) => Promise<void>; DRIVERS: { name: string; label?: string; focus?: boolean }[]; sharedDesktop: (p: string, e: Record<string, string>) => boolean };
     const label = (d: { name: string; label?: string }): string => d.label || d.name;
     const flagged = suite.DRIVERS.filter((d) => d.focus).map(label).sort();
-    assert.deepStrictEqual(flagged, ['check-097-drag-cancel', 'check-097-hover-card', 'check-brain-draw', 'shots-097-screens', 'shots-097-screens retro'], 'the focus entries are the ones with a failure on record (#1498, #1408, #1282: check-brain-draw failed its Full-mode assert on windows-latest shard 2/4, both tries); check-097-drag-cancel is focus-sensitive by design: its held drags end on a real OS blur from a neighbour window (issue 1550)');
+    assert.deepStrictEqual(flagged, ['check-001-room-heads', 'check-097-drag-cancel', 'check-097-hover-card', 'check-brain-draw', 'check-browser-tabs', 'check-browser-tabs 1280', 'shots-097-screens', 'shots-097-screens retro'], 'the focus entries are the ones with a failure on record (#1498, #1408, #1282, #1239: check-browser-tabs failed on a Mac with the OS focus elsewhere; check-brain-draw failed its Full-mode assert on windows-latest shard 2/4, both tries); check-097-drag-cancel is focus-sensitive by design: its held drags end on a real OS blur from a neighbour window (issue 1550)');
     assert.deepStrictEqual([['darwin', {}], ['win32', {}], ['linux', {}], ['linux', { DISPLAY: ':0' }], ['linux', { DISPLAY: ':0', UI_SUITE_XVFB: '1' }]].map(([p, e]) => suite.sharedDesktop(p as string, e as Record<string, string>)), [true, true, false, true, false], 'windows share a desktop on macOS, Windows and Linux with a display; not under xvfb');
     assert.deepStrictEqual([['1'], ['1.25'], ['1.5'], ['2'], ['x'], ['']].map(([d]) => suite.sharedDesktop('linux', { DISPLAY: ':0', UI_SUITE_DPR: d })), [true, false, false, false, true, true], 'FR-273 (issue 1914): a forced ratio above 1 never runs on the desktop (a small display clamps the window); 1, none and a bad value keep it');
     assert.strictEqual(suite.sharedDesktop('darwin', { UI_SUITE_DPR: '2' }), true, 'FR-273: macOS has no virtual display, the forced ratio runs there');
