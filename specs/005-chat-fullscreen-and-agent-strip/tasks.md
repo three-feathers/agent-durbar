@@ -196,7 +196,7 @@ PRs, gates and line-count goals: `plan.md`. Each PR measures on `main` first and
 
 ## 2026-11-19 (third entry): a failed turn keeps showing the error (issue #1919)
 - [x] T257 [US1] the `idle` that ends a turn with `failedTurn` set leaves the state Error (no Done, no unread mark, no finished announcement); `scripts/check-005-failed-state.js` (in `ui-suite.js`), mutants `FAILED_STATE_MUTANT=done|always` [FR-245]
-- [ ] T384 Rail sort (#1961): the Sort menu in the rail top row with the six choices, order inside folders and of folders, remembered choice, creation time that survives restart; pure order function with a unit test; rail screenshots at 1440x900 and 1280x800 [FR-341]
+- [x] T384 Rail sort (#1961): the Sort menu in the rail top row with five choices (no Longest waiting: the default has it), order inside folders and of folders, remembered choice, first-seen time (`durbar.railBorn`) that survives a restart; pure order function with a unit test; rail screenshots at 1440x900 and 1280x800 [FR-341]
 
 
 ## 2026-11-19 (fourth entry): an error ends the turn in the chat (issue #1920)

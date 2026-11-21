@@ -866,6 +866,7 @@ body.panel-open #panel{flex-direction:row}
 .rail{position:relative;flex:none;width:var(--rail-w,220px);display:flex;flex-direction:column;min-height:0;background:var(--surface-2);border-right:1px solid var(--line)}
 .rail-top{flex:none;display:flex;align-items:center;gap:var(--s-2);height:40px;padding:0 var(--s-2)}
 .rail-top .back{flex:none;height:var(--h-ctl);padding:0 12px 0 8px}
+.rail-top .rail-sort{flex:none;margin-left:auto;height:var(--h-ctl);padding:0 8px;gap:4px}
 .rail-door{flex:none;display:flex;padding:0 var(--s-2) var(--s-1)}
 .rail-door .btn{flex:1;min-width:0;justify-content:flex-start;gap:6px;height:28px;padding:0 var(--s-2);font-size:var(--t4-size)}
 .rail-door .btn svg{flex:none;width:14px;height:14px}

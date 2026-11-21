@@ -3,7 +3,7 @@
    group(items): the rows by folder. Each item is {id, room, rank, needs, since, prio, i}: the folder key, the folder's place in the office's
    room order, whether the session needs you (`needsMe`), since when (`NEED_SINCE`, ms), its `prio` and its creation order. Folders with
    someone needing you come first, oldest wait first, then the office's room order; inside a folder those needing you first, oldest first,
-   then `prio`, then creation order. Time never reorders anything: only `needs` and `since`, which change with a status, do.
+   then `prio`, then creation order. group(items, sort) takes FR-341's choice (see SORTS below). Time never reorders anything: only `needs` and `since`, which change with a status, do.
    loadFolds / foldsJSON: the collapsed folders, kept by path (the key the app already stores for the view, durbar.ui's `ws`). A corrupt,
    oversized or wrong-typed value loads as "nothing collapsed", never an error. */
 (function(root, api){
@@ -12,7 +12,49 @@
   'use strict';
   const FOLD_KEY='durbar.railFolds', MAX_FOLDS=200, MAX_PATH=1024;
   const num=v=>typeof v==='number'&&Number.isFinite(v);
-  function group(items){
+  /* spec 005 FR-341 (issue 1961): the rail's sort choice. 'needs' is FR-194's order exactly. The others reorder the rows inside each folder by
+     one key, ties by FR-194's order; folders are ordered by their first row under the same key, ties by FR-194's folder order. `created` is the
+     session's creation time (ms) or missing: missing sorts last under 'oldest' and first under 'newest'. Still no clock: only status and the
+     fixed creation time move a row. */
+  const SORTS=[
+    ['needs','Needs you first'],['working','Working first'],['waiting','Waiting first'],
+    ['oldest','Oldest first'],['newest','Newest first']];
+  const SORT_KEY='durbar.railSort', DEFAULT_SORT='needs';
+  const isSort=v=>typeof v==='string'&&SORTS.some(s=>s[0]===v);
+  const sortLabel=k=>(SORTS.find(s=>s[0]===k)||SORTS[0])[1];
+  function loadSort(raw){return isSort(raw)?raw:DEFAULT_SORT;} /* anything else (corrupt, wrong type, an old build's value) is the default */
+  /* the key of one row under a choice: a number, lower first; 0 for every row when the choice has no key of its own */
+  function primary(sort,x){
+    if(sort==='working')return x.working?0:x.needs?1:2;
+    if(sort==='waiting')return x.needs?0:x.working?1:2;
+    if(sort==='oldest')return num(x.created)?x.created:Infinity;
+    if(sort==='newest')return num(x.created)?-x.created:-Infinity;
+    return 0;
+  }
+  /* FR-341: when each session was first seen (`durbar.railBorn`, {id: ms}), the creation time the rail sorts by. loadBorn: string ids up to 200
+     characters, finite positive times, at most MAX_BORN entries; anything else loads as an empty map. stampBorn adds `now` for each id without
+     a time (one batch shares one time, so ties fall to FR-194's order). bornJSON is the value to store: only ids still listed (as pruneNumbers
+     does, and, before the session list has loaded (`listed` false), every saved id is kept), or null to remove the key. */
+  const BORN_KEY='durbar.railBorn', MAX_BORN=500;
+  function loadBorn(raw){
+    let o=raw; if(typeof raw==='string'){try{o=JSON.parse(raw);}catch(e){return {};}}
+    const out={}; if(!o||typeof o!=='object'||Array.isArray(o))return out;
+    let n=0;
+    for(const [id,t] of Object.entries(o)){if(n>=MAX_BORN)break;if(id&&id.length<=200&&num(t)&&t>0){out[id]=t;n++;}}
+    return out;
+  }
+  function stampBorn(map,ids,now){
+    const out=Object.assign({},map||{});
+    for(const id of Array.isArray(ids)?ids:[])if(typeof id==='string'&&id&&!Object.prototype.hasOwnProperty.call(out,id))out[id]=now;
+    return out;
+  }
+  function bornJSON(map,ids,listed){
+    const keep=new Set(ids||[]), out={}; let n=0;
+    for(const [id,t] of Object.entries(map||{})){if(n>=MAX_BORN)break;if(listed===false||keep.has(id)){out[id]=t;n++;}}
+    return n?JSON.stringify(out):null;
+  }
+  function group(items,sort){
+    const how=isSort(sort)?sort:DEFAULT_SORT;
     const by=new Map();
     for(const x of Array.isArray(items)?items:[]){
       if(!x||typeof x.id!=='string')continue;
@@ -25,12 +67,17 @@
       if(p.needs){const a=num(p.since)?p.since:Infinity,b=num(q.since)?q.since:Infinity;if(a!==b)return a<b?-1:1;}
       return (p.prio||0)-(q.prio||0)||(p.i||0)-(q.i||0);
     };
+    const cmp=(p,q)=>{const a=primary(how,p),b=primary(how,q);return a===b?inGroup(p,q):a<b?-1:1;};
     const gs=[...by.values()];
-    for(const g of gs)g.rows.sort(inGroup);
-    gs.sort((a,b)=>{
+    for(const g of gs)g.rows.sort(cmp);
+    const dflt=(a,b)=>{
       if(!!a.needN!==!!b.needN)return a.needN?-1:1;
       if(a.needN&&a.since!==b.since)return a.since<b.since?-1:1;
       return a.rank-b.rank||a.first-b.first;
+    };
+    gs.sort((a,b)=>{
+      const x=primary(how,a.rows[0]),y=primary(how,b.rows[0]);
+      return x===y?dflt(a,b):x<y?-1:1;
     });
     return gs.map(g=>({room:g.room,ids:g.rows.map(r=>r.id),needN:g.needN}));
   }
@@ -74,5 +121,5 @@
     }
     return out;
   }
-  return {FOLD_KEY,MAX_FOLDS,MAX_PATH,group,loadFolds,foldsJSON,parentNames};
+  return {FOLD_KEY,BORN_KEY,MAX_BORN,loadBorn,stampBorn,bornJSON,SORT_KEY,DEFAULT_SORT,SORTS,sortLabel,loadSort,MAX_FOLDS,MAX_PATH,group,loadFolds,foldsJSON,parentNames};
 })());
