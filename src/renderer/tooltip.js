@@ -87,7 +87,8 @@
     if(wired)return; wired=true;
     document.addEventListener('pointerover',e=>{
       if(e.pointerType==='touch')return;
-      const f=find(e.target);
+      let f=find(e.target);
+      if(f&&f.at==='pointer'&&!f.get(f.el))f=null; /* a wide hover-only bind with nothing to say here (the floor, no hint): the tip of the part the pointer came from stays, as before the bind existed */
       if(!f){if(hov&&hov.el.contains(e.target)){hov=null;update();}return;} /* onto a part with its own tooltip (`except`): this one steps back */
       if(hov&&hov.el===f.el)return;
       if(f.at==='pointer')f.pt={left:e.clientX,right:e.clientX,top:e.clientY-2,bottom:e.clientY+14}; /* a wide element (the empty floor): the tip stands at the pointer, not under the element */
