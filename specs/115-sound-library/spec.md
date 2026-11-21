@@ -2,14 +2,14 @@
 
 <!-- specs-index (the row of the generated specs index; npm run specs:index shows it)
 group: 046
-title: Sound library (issue #1960, owner 2026-11-20): optional, calm sounds for needs you, finished, error, limit reached and new reply; a quiet default pack and a Japanese street pack, made live with Web Audio (no audio files); each event's sound can be changed or set to none, with preview, volume, cooldown and quiet hours; carried by the setup export
+title: Sound library (issue #1960, owner 2026-11-20): optional, calm sounds for four moments (needs you, finished with a reply not seen yet, error, limit reached); a quiet default pack and a Japanese street pack, made live with Web Audio (no audio files); each event's sound can be changed or set to none, with preview, volume, cooldown and quiet hours; carried by the setup export
 status: draft
-note: spec only (first draft 2026-11-21); Q1..Q9 open; nothing built
+note: spec, plan and tasks committed (analyzed 2026-11-21); Q1..Q9 decided; nothing built
 -->
 
-**Feature Branch**: `115-sound-library` (spec only; plan and tasks follow once the questions are answered).
+**Feature Branch**: `115-sound-library` (spec, plan and tasks committed; nothing in `src/` yet).
 **Created**: 2026-11-21
-**Status**: Draft. Nothing built. Q1..Q9 (*Clarifications*) are open, each with a recommendation.
+**Status**: Draft. Nothing built. Q1..Q9 (*Clarifications*) are decided (2026-11-21), all option (a): Q1, Q2, Q4 and Q5 by the owner, the rest by the coordinator under Ruben's delegation.
 **Issue**: #1960 (rubenlupi).
 **Input**: Owner request (Ruben, 2026-11-20, in Spanish, translated): "a library of different sounds: for when it is waiting for an answer, when it has finished something, etc., and that you can change it. I'd like Japanese sounds, the little bird and the owl when you cross traffic lights, etc. ... and see if more can be put." The coordinator told the owner that the second crosswalk sound is a cuckoo (*kakko*), not an owl; this spec uses *kakko*.
 
@@ -17,13 +17,12 @@ note: spec only (first draft 2026-11-21); Q1..Q9 open; nothing built
 
 Agent Durbar has no sound today (spec 070 FR-050 says so). Everything that needs the person is shown: the state word and icon, the Needs you inbox, the window title count, the app badge, one OS notification when the window is in the background (spec 052 FR-059), the screen-reader announcement and, on floors, the lift badge (spec 092 FR-014).
 
-This spec adds an **optional sound** for five moments, on top of what is already shown, never instead of it:
+This spec adds an **optional sound** for four moments, on top of what is already shown, never instead of it:
 
 1. **Needs you**: a permission request, a question, an Autopilot run that ended for a reason other than done.
-2. **Finished**: a turn ended with a reply nobody has seen yet.
+2. **Finished**: a turn ended with a reply nobody has seen yet (the chat was not on screen). This is also the "new reply" moment: Q2 (a) made them one event.
 3. **Error**.
 4. **Limit reached**: the spending limit card or the usage-limit coffee break.
-5. **New reply** while that chat is not shown (see Q2: it may be the same moment as *Finished*).
 
 Sounds come in **packs**: a quiet default pack and a **Japanese street pack** (crosswalk *piyo piyo* and *kakko*, wind chime *furin*, temple bowl *rin*, bamboo knock *shishi-odoshi*, wooden clappers *hyoshigi*, *koto* pluck, bush warbler *uguisu*). The person picks a pack, can change the sound of any one moment, or set it to none, and can listen to each one first. Sounds are **made live in the window with Web Audio** from small recipes in code: no audio files, nothing downloaded, nothing copied.
 
@@ -33,7 +32,7 @@ Sounds come in **packs**: a quiet default pack and a **Japanese street pack** (c
 - **OS notification path** (spec 052 FR-059): `attentionItems(list, withText)` (`app.js:4761`) gives each item a stable key `id|kind|card` with kinds `q` question, `p` permission, `e` error, `l` spending limit, `c` coffee break, `w` other waiting; `syncAttention(list)` (`app.js:4772`) feeds `NOTIFIER.observe`; `showAttention()` (`app.js:4782`) fires `new Notification(title, {body})` at `app.js:4786` (no `silent` option today). `ATT_ARMED` (`app.js:4758`, set at `app.js:10610`, 3 s after start) stops anything that was already waiting at startup from alerting. The pure notifier is `createNotifier` in `src/renderer/attention.js:45` (coalesce 2 s and throttle 10 s, `attention.js:13-14`; injected clock).
 - **Finished and unread** (spec 001 FR-170..FR-177, spec 005 FR-176): `noteCompleted(a)` (`app.js:3036`) is called when a turn that worked goes idle (`app.js:7938`); it asks `UNREAD.complete(id, chatShownNow(id))` (`src/renderer/unread.js:21`), which answers `'marked'` (new, not seen), `'already'` or `'seen'`; on `'marked'` it announces "finished. New reply." only if `roomShown(roomOf(a))` (`app.js:3041`, `roomShown` at `app.js:234`: folder not hidden and floor on). `chatShownNow(id)` (`app.js:3027`) with `DurbarUnread.isShown` (`unread.js:11`) is the existing "this chat is on screen" test. The simulator's start-up replay is skipped at `app.js:3038`.
 - **Where states change.** The live event handler's `status` case (`app.js:7900`): `needs-permission` -> waiting (`app.js:7926`), `idle` after work -> `noteCompleted` and Done (`app.js:7938`), `error` (`app.js:7943`), plus `showPerm` (`app.js:7578`), `showQuestion` (`app.js:7245`), `showLimit` (`app.js:7113`), `startCoffee` (`app.js:7487`). All of them end in `renderInboxBtn()` (`app.js:4793`), which calls `syncAttention(needsMeOrder())`: that one call already sees every needs-you change.
-- **Floor lift badge** (spec 092 FR-014, FR-015): `liftKind(a)` (`app.js:6070`) maps an agent to `limit` (spending limit or coffee), `error`, `waiting` or `reply` (unread). The same four words this spec uses.
+- **Floor lift badge** (spec 092 FR-014, FR-015): `liftKind(a)` (`app.js:6070`) maps an agent to `limit` (spending limit or coffee), `error`, `waiting` or `reply` (unread). This spec takes its grouping of the spending limit and the coffee break as one `limit`; its `waiting` is this spec's `needs-you` and its `reply` this spec's `finished`.
 - **Screen-reader announcements**: `announce(text, prio)` (`app.js:4879`), `ANN_REQUEST` (`app.js:4869`). Sound never replaces them.
 - **Settings**: `paintSettings` (`src/renderer/screens.js:366`), one `<section class="scr-sec">` with an `<h3>` per feature; the *Notifications* section (`screens.js:410-412`) and its switch handler (`screens.js:1170-1175`) are the pattern; `sw()` switch (`screens.js:95`); a `<select>` row (*Chat links*, `screens.js:408`); `saveFailed` (`screens.js:982`). The section list (`src/renderer/settingsnav.js`, spec 052 FR-226) and Settings search (spec 112) are built from the headings, so a new section needs no extra code there.
 - **Store and IPC**: `AppSettings` (`src/shared/credits.ts:77`), tolerant `parseSettings` (`credits.ts:145`); `SettingsStore` getters and setters (`src/main/settings.ts:245-256`, `notifyNeedsMe` as the pattern); the `setting()` IPC helper (`src/main/ipc/settings.ts:25`) and its handlers (`settings.ts:40`); preload `setNotifyNeedsMe` (`src/preload/preload.ts:71`); the bridge type (`src/shared/api.ts:1098`); the simulator's setter (`src/renderer/sim.ts:2830`, notifications off in the demo, `sim.ts:2691`).
@@ -55,7 +54,7 @@ Sounds come in **packs**: a quiet default pack and a **Japanese street pack** (c
 | 058 FR-215 (`specs/058-mcp-session-controls/spec.md:2225`) | MCP sign-in status: no modal, no focus move, no sound | Kept: MCP sign-in lines are not an event here (FR-016). |
 | 094 FR-060 (`specs/094-terminal-tab/spec.md:147`, `:248`) | A terminal bell is ignored: no sound | Kept: the terminal bell never plays a sound (FR-016). |
 | 080 FR-012 (`specs/080-session-browser/spec.md:189`) | Session browser views start muted | Untouched: this spec never unmutes a view; its own sounds play in the main window only (FR-052). |
-| 024, 034, 068 *Out of scope* (`specs/024-office-places/spec.md:99`, `specs/034-agent-health/spec.md:88`, `specs/068-coffee-break/spec.md:180`) | Sounds are out of those specs | Still true for them; the coffee break gets a sound through this spec's *Limit reached* (FR-011). A dated pointer in 068's *Changes*. |
+| 024, 034, 068 *Out of scope* (`specs/024-office-places/spec.md:99`, `specs/034-agent-health/spec.md:88`, `specs/068-coffee-break/spec.md:180`) | Sounds are out of those specs | Still true for them; the coffee break gets a sound through this spec's *Limit reached* (FR-010). A dated pointer in 068's *Changes*. |
 | 050, 104 (project site) | Site talk sounds; site videos silent until play | Not the app; nothing changes. |
 
 ## User Scenarios & Testing *(mandatory)*
@@ -77,17 +76,17 @@ Ana runs eight agents and reads email in another window. In Settings > *Sounds* 
 
 ### User Story 2 - Choose the Japanese street pack and change one sound (Priority: P1)
 
-Ana picks the *Japanese street* pack. Needs you becomes the crosswalk *piyo piyo*. She does not like the error sound, so she sets *Error* to the temple bowl, presses its *Play* button to hear it, and sets *New reply* to *None*.
+Ana picks the *Japanese street* pack. Needs you becomes the crosswalk *piyo piyo*. She does not like the error sound, so she sets *Error* to the temple bowl, presses its *Play* button to hear it, and sets *Finished* to *None*.
 
 **Why this priority**: the owner asked for exactly this: a library, Japanese sounds, and changing them.
 
-**Independent Test**: simulator: change pack and two events; reload; the choices are kept; each *Play* button produces one play request with the chosen sound id.
+**Independent Test**: simulator: change pack and two events; reload the page; the choices are kept; each *Play* button produces one play request with the chosen sound id.
 
 **Acceptance Scenarios**:
 
 1. **Given** the Japanese pack, **When** Ana changes *Error* to *Rin (temple bowl)*, **Then** only *Error* changes and the row says "changed from the pack".
-2. **Given** *New reply* is *None*, **When** a reply arrives unseen, **Then** no sound plays; the New marker shows as before.
-3. **Given** she switches back to the quiet pack, **When** asked, **Then** the dialog says her own changes are kept or reset, as she chooses (Q6).
+2. **Given** *Finished* is *None*, **When** a reply arrives unseen, **Then** no sound plays; the New marker shows as before.
+3. **Given** she has two own changes, **When** she switches back to the Quiet pack, **Then** a confirmation says "Your 2 changes go"; confirming resets every event to the Quiet pack, cancelling changes nothing (Q6 (a)).
 
 ### User Story 3 - Calm with fifteen agents (Priority: P2)
 
@@ -107,14 +106,26 @@ Ana sets quiet hours 22:00-08:00. At night nothing plays; everything is still sh
 
 **Independent Test**: pure test of the window across midnight with an injected clock.
 
+**Acceptance Scenarios**:
+
+1. **Given** quiet hours 22:00-08:00, **When** an agent needs her at 23:30, **Then** nothing plays and the inbox, title and badge show it as usual.
+2. **Given** the same hours, **When** she presses a *Play* button at 23:30, **Then** it plays (FR-034).
+
 ### User Story 5 - Take my sounds to another computer (Priority: P3)
 
 The setup export (spec 109) carries the on/off choice, pack, per-event choices, volume and quiet hours.
 
+**Independent Test**: spec 109's export and import suite, once 109 is built (FR-060).
+
+**Acceptance Scenarios**:
+
+1. **Given** a file exported with sounds on and the Japanese pack, **When** it is imported with the app-settings box ticked, **Then** the same choices are in force; with the box unticked nothing changes.
+2. **Given** a file with a bad sound value, **When** imported, **Then** the value is read as FR-063 says and the rest of the import goes on.
+
 ### Edge Cases
 
 - **No audio device** (a server, a remote desktop, a headset unplugged): creating or resuming the audio context fails or stays suspended. Nothing throws, nothing retries in a loop; the *Play* button says "No sound device found" in the section's status line (FR-053).
-- **Window hidden or minimized**: sounds still play; that is when they help most. The audio context may be suspended by the OS or Chromium; the player resumes it before playing and gives up quietly if it cannot (FR-052).
+- **Window hidden or minimized**: sounds still play; that is when they help most. The player suspends its audio context while idle or hidden and resumes it before each sound; if the resume fails it gives up quietly (FR-052, FR-053).
 - **The OS is muted**: the sound is silent, as every app's is. Durbar cannot read the OS mute or a Do Not Disturb / Focus mode reliably on all three systems: `[KNOWN GAP]` (FR-054).
 - **OS notification and sound together**: today's notification (spec 052 FR-059) may already play the OS's own sound on Windows and macOS, since `silent` is not set: not verified on a device. Q7 decides.
 - **A helper (sub-agent) asks for something**: helpers are not in `needsMe()` (`!a.parent`), so they play nothing of their own (Q3).
@@ -130,16 +141,16 @@ The setup export (spec 109) carries the on/off choice, pack, per-event choices, 
 
 #### A. Events
 
-- **FR-010** **Five events, from the existing model.** The events are `needs-you`, `finished`, `error`, `limit` and `reply` (Q2 may merge `finished` and `reply`). They are derived in one pure function from what `attentionItems()` (`app.js:4761`) and `noteCompleted()` (`app.js:3036`) already compute, not from new hooks in each card function:
+- **FR-010** **Four events, from the existing model.** The events are `needs-you`, `finished`, `error` and `limit` (Q2 (a): *finished* and *new reply* are one event, `finished`). They are derived in one pure function from what `attentionItems()` (`app.js:4761`) and `noteCompleted()` (`app.js:3036`) already compute, not from new hooks in each card function:
   - `needs-you`: a new key of kind `p`, `q` or `w` in `attentionItems(needsMeOrder())` (permission, question, waiting, an Autopilot run that ended for a reason other than done);
   - `error`: a new key of kind `e`;
   - `limit`: a new key of kind `l` (spending limit card) or `c` (coffee break, spec 068); liftKind's grouping (`app.js:6070`);
-  - `finished` / `reply`: `UNREAD.complete()` answered `'marked'` in `noteCompleted` (`app.js:3040-3041`).
+  - `finished`: `UNREAD.complete()` answered `'marked'` in `noteCompleted` (`app.js:3040-3041`): the turn ended and its chat was not shown, so the reply is new and unread.
 - **FR-011** **Once per thing.** An event plays at most once per key (the same `id|kind|card` key the notifier uses), so a status repeated by an adapter, a repaint or a reconnect never plays twice. A new request from the same agent is a new key and may play.
 - **FR-012** **Sound is an extra, the state is the source.** The sound layer reads the attention list and the unread result; it never changes state, sort, counts, focus, the inbox, the title, the badge or the notification.
 - **FR-013** **Nothing at startup.** Keys present before `ATT_ARMED` (`app.js:4758`, `:10610`) are only remembered; the simulator's start-up replay plays nothing (as `app.js:3038`).
 - **FR-014** **Hidden and off floors are silent** (033 FR-010, 001 FR-174). No sound for an agent whose folder is hidden or whose floor is off (`roomShown(roomOf(a))`, `app.js:234`). When the floor is switched on again, nothing plays for what was already waiting (its keys are remembered, FR-011).
-- **FR-015** **Not for the chat you are looking at.** No sound for agent A when the window has focus and `chatShownNow(A)` (`app.js:3027`) is true. The `finished` event already follows this through `UNREAD.complete` (`'seen'`). Q4 decides whether sounds also play while the window has focus on the office.
+- **FR-015** **Not for the chat you are looking at.** No sound for agent A when the window has focus and `chatShownNow(A)` (`app.js:3027`) is true. The `finished` event already follows this through `UNREAD.complete` (`'seen'`). With the window focused, sounds for other agents still play (Q4 (a)); with the window not focused, the chat on screen is not being looked at and its sounds play too.
 - **FR-016** **What is not an event**: helpers' own states (Q3), the lift badge appearing or growing (092 FR-015), MCP sign-in lines (058 FR-215), the terminal bell (094 FR-060), Durbar MCP requests (041; not in `needsMe()` today), toasts, schedules starting, Working, Thinking. A later spec may add one; it names it here.
 
 #### B. Packs and sounds
@@ -148,8 +159,8 @@ The setup export (spec 109) carries the on/off choice, pack, per-event choices, 
 - **FR-021** **Built-in packs, in code.** Packs and sounds ship with the app as data in one renderer module; this spec adds no way to load a pack from a file, the web or another person (room for it later, FR-062).
 - **FR-022** **Short and soft.** Every sound lasts at most 1.5 s (the *rin* and *furin* tails at most 2.5 s, fading), peaks at the chosen volume (FR-030) with no clipping (a master gain and a gentle compressor or limiter at the end of the chain), and starts with an attack of at least 5 ms (no click).
 - **FR-023** **Two packs at first:**
-  - **Quiet** (default pack): soft sine and triangle tones only. Needs you: two notes up; Finished: one round note; Error: two notes down, lower; Limit: three short low notes; New reply: one very short tick. (Q2: if `finished` and `reply` merge, the tick is dropped.)
-  - **Japanese street**: Needs you: *piyo piyo*; Finished: *koto* pluck; Error: *hyoshigi*; Limit: *shishi-odoshi*; New reply: *furin*. *Kakko*, *rin* and *uguisu* are in the list for any event. Every sound of every pack can be chosen for any event.
+  - **Quiet** (default pack): soft sine and triangle tones only. Needs you: two notes up; Finished: one round note; Error: two notes down, lower; Limit: three short low notes.
+  - **Japanese street**: Needs you: *piyo piyo*; Finished: *koto* pluck; Error: *hyoshigi*; Limit: *shishi-odoshi*. *Kakko*, *furin*, *rin* and *uguisu* are in the list for any event. Every sound of every pack can be chosen for any event.
 - **FR-024** **Made live with Web Audio**, from oscillators, filtered noise and gain envelopes in the main window: no audio files, no `<audio>` element, no network, no change to the page CSP (`index.html:6`). A recipe is plain data (frequencies, durations, envelope times, filter values, repeats), validated by a pure function (positive finite numbers, total length within FR-022). Approximations, for the plan to tune (none is a recording or a copy):
   - *Piyo piyo* (crosswalk bird): two or three short sine chirps, each a fast pitch drop in the 2-3 kHz range, about 100 ms each with a short gap, repeated once.
   - *Kakko* (crosswalk cuckoo): two soft sine or triangle notes, the second lower by about a major third, about 150 ms each.
@@ -160,12 +171,12 @@ The setup export (spec 109) carries the on/off choice, pack, per-event choices, 
   - *Koto* pluck: a plucked-string model (Karplus-Strong style delay with a low-pass in the loop) or a triangle tone with a fast attack, a slight pitch fall and about 1 s decay; notes from a Japanese pentatonic scale.
   - *Uguisu* (bush warbler): a held whistle (sine with a slow rise) then a quick falling phrase, after the "ho-hokekyo" shape, kept under 1.5 s.
 - **FR-025** **Nothing protected.** No sound copies or imitates a station departure melody, a shop or train door chime, a game sound, a brand jingle or any other melody someone owns; recipes are written for this spec. A review checks each recipe against this rule.
-- **FR-026** **Files only as a fallback, never by default.** If the plan finds a sound that synthesis cannot make acceptable (Q5), a CC0 file may be added only with its source URL, author, license and date recorded next to it in the repo, at most 50 KB, and with the CSP change named in that PR. Not part of this spec's first build.
+- **FR-026** **No files in this spec (Q5 (a)).** A sound the owner rejects is retuned, not replaced by a file. A later spec delta may allow a CC0 file only with its source URL, author, license and date recorded next to it in the repo, at most 50 KB, and with the CSP change named in that PR.
 
 #### C. Calm
 
 - **FR-030** **Off by default** (Q1). One switch *Play sounds*; a volume with steps from 10% to 100% (default 40%, Q8); changing it plays the *Needs you* sound once as a sample.
-- **FR-031** **One at a time, the most important.** Events arriving within 1.5 s form one batch; one sound plays for the batch, the event first in this order: `error`, `needs-you`, `limit`, `finished`, `reply`. A key that leaves the attention list before the batch plays leaves the batch. While a sound plays, nothing else starts.
+- **FR-031** **One at a time, the most important.** Events arriving within 1.5 s form one batch; one sound plays for the batch, the event first in this order: `error`, `needs-you`, `limit`, `finished`. A key that leaves the attention list before the batch plays leaves the batch. While a sound plays, nothing else starts.
 - **FR-032** **Cooldown.** After a sound, nothing plays for 5 s; at most 6 sounds in any 60 s. Events dropped by the cooldown are not queued for later (the visual state is still there). Pure, with an injected monotonic clock, as `createNotifier`.
 - **FR-033** **Quiet hours** (optional, off by default): a start and end time (local, 24 h, may cross midnight). Inside them nothing plays except the *Play* buttons.
 - **FR-034** **Preview is always allowed.** A *Play* button plays its sound once at the current volume, even with sounds off, in quiet hours or in the cooldown; it does not start a cooldown for events.
@@ -179,9 +190,9 @@ The setup export (spec 109) carries the on/off choice, pack, per-event choices, 
 
 - **FR-050** **A *Sounds* section in Settings**, next to *Notifications* (`screens.js:410`), built like it: an `<h3>`, a short note ("Sounds are an extra: everything is still shown on screen. Off by default; kept on this computer."), the *Play sounds* switch (`sw()`, `screens.js:95`), a *Pack* `<select>` (as `screens.js:408`), a volume control (Q8), one row per event with a `<select>` of every sound plus *None* and a *Play* button, *Quiet hours* (switch and two times), a status line (`role="status"`) with `saveFailed` (`screens.js:982`). The section list and Settings search pick it up from its heading (spec 052 FR-226, spec 112).
 - **FR-051** **Stored as one value.** `AppSettings.sounds` (`credits.ts:77`): `{ on, pack, volume, events: { <event>: <soundId> | "none" }, quiet: { on, from, to } }`, only fields that differ from the defaults are written (as `notifyNeedsMe`, `settings.ts:245`); read by `parseSettings` (`credits.ts:145`) tolerantly (FR-063); one IPC setter through the `setting()` helper (`ipc/settings.ts:25`), validated in main (own keys only, known event names, ids by pattern, numbers in range); the simulator bridge gets the same setter (`sim.ts:2830`). Text at least 10.5px; the section fits both screen sizes.
-- **FR-052** **Player in the main window only.** One audio context, created lazily on the first sound or *Play*; resumed before each play if suspended; closed never (reused). The session browser views (spec 080) are never touched.
-- **FR-053** **No audio device.** If the context cannot be created or resumed, the player records "unavailable" for the run, plays nothing, throws nothing, and the *Sounds* section shows "No sound device found. Sounds are off for now." A later *Play* tries once more.
-- **FR-054** **OS mute and Do Not Disturb.** Durbar does not read the OS mute or focus modes; it relies on the OS muting its output. `[KNOWN GAP]` on all three systems, written in the section note's help text and in the README's limits.
+- **FR-052** **Player in the main window only.** One audio context, created lazily on the first sound or *Play* (none while sounds are off and nothing was previewed); **suspended when idle or hidden** (1 s after the last sound ends, and at once when the window is hidden with nothing playing); **resumed before each sound**, so a hidden window still plays; closed only when the page unloads. The session browser views (spec 080) are never touched.
+- **FR-053** **No audio device.** If the context cannot be created, or two resumes in a row fail (each waits at most 500 ms), the player records "unavailable" for the run, plays nothing, throws nothing, and the *Sounds* section shows "No sound device found. Sounds are off for now." A later *Play* tries once more.
+- **FR-054** **OS mute and Do Not Disturb.** Durbar does not read the OS mute or focus modes; it relies on the OS muting its output. `[KNOWN GAP]` on all three systems, written in the *Sounds* section's note and in `docs/limits.md`.
 
 #### F. Platforms
 
@@ -198,12 +209,12 @@ The setup export (spec 109) carries the on/off choice, pack, per-event choices, 
 
 - **FR-070** **Pure tests** (`test:`), Node only, no audio: event derivation from attention items and unread results (FR-010, FR-011, FR-013, FR-014, FR-015); the batch, priority, cooldown and per-minute cap with an injected clock (FR-031, FR-032), including 15 agents in 60 s; quiet hours across midnight (FR-033); the pack and per-event resolution with *None* (FR-023); the recipe validator, every built-in recipe within FR-022 (FR-024); `parseSettings` and the IPC validator with bad values (FR-051, FR-063). Each with mutants that fail at their own label, as other specs do.
 - **FR-071** **What cannot be tested**: how a sound *sounds*. The tests check the parameters, never the audio. Whether *piyo piyo* sounds like a crosswalk is the owner's listening check (`real:`, owner), recorded in this spec's *Changes* with the date.
-- **FR-072** **Simulator check** (`sim:`): the player has a stub that records `{event, soundId}` instead of playing (in drivers only); a driver with `DURBAR_SIM=15` turns sounds on, scripts a permission, an error, a finish with the chat shown and one with it closed, an agent on an off floor, and checks the recorded list. Screenshots of the *Sounds* section at 1440x900 and 1280x800.
+- **FR-072** **Simulator check** (`sim:`): the player has a stub that records `{event, soundId}` instead of playing (in drivers only); a driver with `DURBAR_SIM=15` turns sounds on, scripts at least an agent already waiting at start, a permission, an error, a spending limit, a finish with the chat shown and focused, one with it closed, and an agent on an off floor, and checks the recorded list exactly. Screenshots of the *Sounds* section at 1440x900 and 1280x800.
 - **FR-073** **No credits.** Nothing here needs a real session; all checks run on the simulator and Node.
 
 ### Key Entities
 
-- **Event**: one of `needs-you`, `finished`, `error`, `limit`, `reply`; derived, never stored.
+- **Event**: one of `needs-you`, `finished`, `error`, `limit`; derived, never stored.
 - **Sound**: id, name, recipe (plain numbers), built in.
 - **Pack**: id, name, sound id or none per event, built in.
 - **Sound settings**: `{ on, pack, volume, events, quiet }` in `AppSettings`, on this computer, exported by spec 109.
@@ -214,9 +225,9 @@ The setup export (spec 109) carries the on/off choice, pack, per-event choices, 
 
 - **SC-001**: With sounds off (the default), the app plays nothing and behaves exactly as today (no change to any existing check).
 - **SC-002**: With sounds on, 15 agents changing state within 60 s produce at most 6 sounds, never two at once (pure test).
-- **SC-003**: A person changes one event's sound and hears it with *Play* in under 15 seconds from opening Settings.
+- **SC-003**: From the *Sounds* section, changing one event's sound and hearing it takes two actions: choose the sound in its row, press its *Play* (simulator driver).
 - **SC-004**: No audio file, `<audio>` element or `media-src` is added (a test fails if one is).
-- **SC-005**: The owner listens to every Japanese sound once and records yes or which to retune.
+- **SC-005**: The owner listens to every built-in sound once (Quiet and Japanese street) and records yes, retune or drop for each.
 
 ## Assumptions
 
@@ -227,7 +238,7 @@ The setup export (spec 109) carries the on/off choice, pack, per-event choices, 
 
 ## Clarifications
 
-Proposed by the analyst on 2026-11-21; all open.
+Proposed by the analyst on 2026-11-21; all nine decided on 2026-11-21 (each question says by whom).
 
 - **Q1 Default.** **Decided: (a)** by the owner (Ruben, 2026-11-21, in the terminal). (a) **recommended**: off by default, one switch turns on the Quiet pack (calm by default, no surprise after an update, matches 041's "no sound by default"); (b) on by default with only *Needs you* in the Quiet pack; (c) a one-time "Turn on sounds?" line in the inbox. Recommendation (a), with a mention in *What's new*.
 - **Q2 Finished and new reply.** **Decided: (a)** by the owner (Ruben, 2026-11-21, in the terminal). (a) **recommended**: one event *Finished* ("finished, reply not seen yet": exactly `UNREAD.complete() === 'marked'`), so four events; (b) two events: *Finished* for every completed turn, even with the chat shown and focused, and *New reply* only when unseen (more noise, and FR-015 then needs a rule for the first); the owner's words name "finished" once.
@@ -244,3 +255,9 @@ Proposed by the analyst on 2026-11-21; all open.
 ### 2026-11-21: first draft (analyst, for issue #1960)
 
 Spec only. FR, SC and Q numbers are new to this spec; `npm run specs:numbers` run before the push. Nothing in `src/` changes until the plan and tasks are committed. The build PR adds dated pointers to the *Changes* of specs 052 (FR-059, if Q7 (a)), 068 (coffee break has a sound), 070 (FR-050 "the app has none" is stale) and 109 (FR-013 allow-list), and the docs-sync entries.
+
+### 2026-11-21: aligned with Q2 (a), and analyze (analyst)
+
+- **Four events.** *Finished* and *New reply* are one event, `finished` (Q2 (a)): the Summary, the specs-index title, FR-010, FR-023 (the Quiet tick is gone; *furin* is in the list for any event), FR-031, US2 and *Key Entities* say so.
+- **Audio context**: suspended when idle or hidden, resumed before each sound, so a hidden window still plays (FR-052; accepted by the coordinator).
+- **Analyze fixes**: FR-015 states Q4 (a); FR-026 states Q5 (a); FR-053 names the two failed resumes; FR-054 points to `docs/limits.md`; FR-072 lists the full scenario; US2 scenario 3 follows Q6 (a); US4 and US5 got acceptance scenarios; SC-003 and SC-005 are measurable; the 068 row points to FR-010; the header and *Clarifications* say the questions are decided.
