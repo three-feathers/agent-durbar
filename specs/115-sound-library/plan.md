@@ -6,7 +6,7 @@
 
 An optional, calm sound for four agent moments, made live in the main window with Web Audio from recipes kept as data. No audio files, no new dependency, no change to the page CSP. Off by default.
 
-Q1..Q9 were decided on 2026-11-21, all option (a): Q1, Q2, Q4 and Q5 by the owner (Ruben), the rest by the coordinator under Ruben's delegation. **Q2 (a) merges *Finished* and *New reply***, so this plan has four events: `needs-you`, `finished`, `error` and `limit`. The spec's FR-010, FR-023, US2 and *Summary* still name `reply`; T020 (converge) takes it out. All references are to `115-sound-library` at `5aca5f142`, where `src/` is unchanged from `origin/main` `8eaf0ee68`. Line numbers are a snapshot; each task re-reads them.
+Q1..Q9 were decided on 2026-11-21, all option (a): Q1, Q2, Q4 and Q5 by the owner (Ruben), the rest by the coordinator under Ruben's delegation. **Q2 (a) merges *Finished* and *New reply***, so this plan has four events: `needs-you`, `finished`, `error` and `limit`. The spec says the same since the analyze pass of 2026-11-21. All references are to `115-sound-library` at `5aca5f142`, where `src/` is unchanged from `origin/main` `8eaf0ee68`. Line numbers are a snapshot; each task re-reads them.
 
 ## Technical context
 
@@ -26,7 +26,7 @@ Q1..Q9 were decided on 2026-11-21, all option (a): Q1, Q2, Q4 and Q5 by the owne
 
 | Principle | How this plan meets it |
 |---|---|
-| I Spec Kit | Spec (51932921a), clarify (5aca5f142); this plan and `tasks.md` come before any `src/` change; each phase PR ticks its tasks and converges (T020). |
+| I Spec Kit | Spec (51932921a), clarify (5aca5f142), analyze (2026-11-21); this plan and `tasks.md` come before any `src/` change; each phase PR ticks its tasks and converges (T020). |
 | II Adapters are plug-ins | Events come from the window's existing attention model; no adapter, capability or vendor type is touched. |
 | III Safe by default | Off by default. The `sounds` value is checked in main (known event names, ids by pattern, numbers in range, own keys only, spec 109 FR-059 style). No text from an agent reaches the sound layer (only ids, kinds and booleans). Nothing is logged. |
 | IV No AI credits | Simulator and Node only; the listening check (T018) costs no credits. |
@@ -195,7 +195,7 @@ Japanese pack mapping:
 - `test:soundsettings` (T002, T003): defaults; `parseSoundSettings` on `null`, arrays, `__proto__`, `constructor`, unknown events, ids with spaces, upper case or more than 32 characters, volume `-1`, `101`, `NaN` and `"40"`, times `24:00`, `9:5` and `aa:bb`; `soundSettingsToStore` writes nothing for defaults; `settings:setSounds` round trip through the `setting()` helper; the simulator block equals the shared code. **Mutants**: a default written; an inherited key accepted; volume not clamped; an unknown event kept.
 - `test:soundgate` (T004, T005, T013): arming; once per key; a new card key plays again; hidden room; focused and shown; not focused and shown (plays, Q4 a); helper; off; batch priority; a key that leaves the batch; cooldown; 6 per 60 s with 15 agents; discarded, not queued; quiet hours (inside, outside, across midnight, `from === to`). Each rule has a named mutant: `arm`, `once`, `hidden`, `shown`, `helper`, `off`, `priority`, `stale`, `cooldown`, `cap`, `queue`, `midnight`. Each mutant fails at its own label.
 - `test:sounds` (T006, T007, T011): every built-in recipe passes `validateRecipe` and fits its length; `resolve` with `none`, an unknown id and an unknown pack (FR-063); `pluckBuffer` (length, no NaN, peak at most 1, decays, the same output for the same seed); player with a fake `Ctx`: no context before the first play; one context for many plays; `resume` before play; `suspend` after idle and on hidden; `unavailable` when the constructor throws or `resume` rejects twice; no throw; `play` while playing returns false. Source test: no `.mp3`, `.wav`, `.ogg`, `.m4a` or `.flac` under `src/`; no `<audio` and no `media-src` in `src/renderer/index.html`; no `AudioContext` outside `sounds.js`. **Mutants**: a recipe over the length; an attack under 5 ms; a context made eagerly; `unavailable` never set.
-- `sim: check-115-sounds` (T008): `DURBAR_SIM=15`, recording stub; sounds turned on; then a permission, a question, an error, a spending limit, a finish with the chat shown and focused, a finish with the chat closed, an agent on a floor that is off, and five finishes within 1 s. The driver checks the recorded list exactly. Run with sounds off: an empty list. `SOUND_MUTANT` (`arm`, `hidden`, `shown`, `off`), each failing at its own label.
+- `sim: check-115-sounds` (T008): `DURBAR_SIM=15`, recording stub; sounds turned on; an agent already waiting when the page loads (nothing recorded for it); then a permission, a question, an error, a spending limit, a finish with the chat shown and focused, a finish with the chat closed, an agent on a floor that is off, and five finishes within 1 s. The driver checks the recorded list exactly, and that the `#srAnnounce` texts and the inbox count are the same as in a run with sounds off (FR-012, FR-040, FR-041). Run with sounds off: an empty list and no audio context. `SOUND_MUTANT` (`arm`, `hidden`, `shown`, `off`), each failing at its own label.
 - `sim: shots-115-sounds` (T009, T012, T013): the *Sounds* section at 1440x900 and 1280x800, in a light and a dark theme, with the "No sound device found" line forced; keyboard only (Tab, Space on the switch, Enter on *Play*); the section is listed in the Settings nav and found by Settings search ("sound").
 - `test:attention` (T015): `ATT.notificationOptions(body, soundsOn)` gives `silent: true` only when sounds are on. **Mutants**: always silent; never silent.
 
@@ -222,5 +222,4 @@ None.
 - **OS mute and Do Not Disturb cannot be read**: `[KNOWN GAP]` (FR-054).
 - **Protected melodies**: the FR-025 review is a human rule; a test only stops files.
 - **Double sound**: until P3 lands, the OS notification may also make a sound on Windows and macOS.
-- **The spec still names `reply`** in FR-010, FR-023, US2 and *Summary* (before Q2); T020 converges it. Build tasks follow this plan.
 - **Spec 109 order**: if 109 lands first, its key-classification test forces T017 into P1.

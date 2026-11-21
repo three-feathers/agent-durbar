@@ -1,6 +1,6 @@
 # Tasks: 115 Sound library
 
-**Input**: [spec.md](spec.md), [plan.md](plan.md). Write the tests first. 0 AI credits, 0 audio: simulator, Node, a fake `AudioContext` and the recording stub only (plan *Keeping sound out of tests and CI*). One PR per phase (P1..P4); each task is one issue (Refs #1960 until the last phase closes it). Numbers checked with `npm run specs:numbers` on 2026-11-21.
+**Input**: [spec.md](spec.md), [plan.md](plan.md). Write the tests first. A new `test:` suite is listed in `scripts/test-suites.txt`; a new `sim:` driver is registered in `scripts/ui-suite.js`. 0 AI credits (FR-073), 0 audio (FR-070, FR-071): simulator, Node, a fake `AudioContext` and the recording stub only (plan *Keeping sound out of tests and CI*). One PR per phase (P1..P4); each task is one issue (Refs #1960 until the last phase closes it). Numbers checked with `npm run specs:numbers` on 2026-11-21.
 
 Every task names its check:
 
@@ -21,7 +21,7 @@ A mutant must fail at its own label. **Four events** after Q2 (a): `needs-you`, 
   - every bad value in plan *Test plan* is clamped or dropped;
   - only own keys are copied, into new objects.
 
-  `test:` `test:soundsettings`, `test:credits`. **Mutants**: `default-written`, `inherited-key`, `volume-unclamped`, `unknown-event-kept`. Who: senior. [FR-051, FR-063]
+  `test:` `test:soundsettings`, `test:credits`. **Mutants**: `default-written`, `inherited-key`, `volume-unclamped`, `unknown-event-kept`. Who: senior. [FR-051, FR-063, FR-070]
 - [ ] T003 [P1] Store and IPC. `SettingsStore.sounds` and `setSounds(v)` follow the `notifyNeedsMe` pattern (`src/main/settings.ts:245-256`). `settings:setSounds` goes through the `setting()` helper (`src/main/ipc/settings.ts:25`), and `settings:get` (`:23`) returns the parsed value. Add the preload member (beside `src/preload/preload.ts:71`) and the bridge type (`src/shared/api.ts:1098`). The simulator setter and `getSettings` (`src/renderer/sim.ts:2824-2830`) use a `/* soundsettings:begin */` block compared with the shared code (`docs/agent-notes.md:67`). **Accept**:
   - the answer is `{ ok, sounds }`, and `ok` is true only when the write reached disk;
   - a non-object is refused;
@@ -32,16 +32,19 @@ A mutant must fail at its own label. **Four events** after Q2 (a): `needs-you`, 
   - nothing before `armed`;
   - once per key, and a new card key is new;
   - dropped for `!on`, a hidden room, focused-and-shown, and a helper;
-  - not focused but shown still plays (Q4 a).
+  - not focused but shown still plays (Q4 a);
+  - focused, another agent's event plays (Q4 a);
+  - an unknown kind gives nothing, and a source test finds the gate called only from `syncAttention` and `noteCompleted` (FR-016: no terminal bell, MCP sign-in, toast or lift-badge path).
 
-  `test:` `test:soundgate`. **Mutants**: `arm`, `once`, `hidden`, `shown`, `helper`, `off`. Who: junior. [FR-010..FR-016]
-- [ ] T005 [P1] Throttle in the same gate: a 1.5 s batch played by priority (`error` > `needs-you` > `limit` > `finished`); a key that leaves the list leaves the batch; a 5 s cooldown; at most 6 plays in any 60 s; anything dropped is discarded, never queued; `dueIn()` and `take()` use the injected monotonic clock (the `MONO` pattern, `src/renderer/attention.js:11`). **Accept**: 15 agents changing state in 60 s give at most 6 plays, at least 5 s apart (SC-002). `test:` `test:soundgate`. **Mutants**: `priority`, `stale`, `cooldown`, `cap`, `queue`. Who: junior. [FR-031, FR-032]
+  `test:` `test:soundgate`. **Mutants**: `arm`, `once`, `hidden`, `shown`, `helper`, `off`, `unknown-kind`. Who: junior. [FR-010..FR-016]
+- [ ] T005 [P1] Throttle in the same gate: a 1.5 s batch played by priority (`error` > `needs-you` > `limit` > `finished`); a key that leaves the list leaves the batch; a 5 s cooldown; at most 6 plays in any 60 s; anything dropped is discarded, never queued; `dueIn()` and `take()` use the injected monotonic clock (the `MONO` pattern, `src/renderer/attention.js:11`). **Accept**: 15 agents changing state in 60 s give at most 6 plays, at least 5 s apart (SC-002). `test:` `test:soundgate`. **Mutants**: `priority`, `stale`, `cooldown`, `cap`, `queue`. Who: junior. [FR-031, FR-032, FR-070]
 - [ ] T006 [P1] `src/renderer/sounds.js` (UMD, wired as T004), catalog part: the recipe format, `validateRecipe`, `recipeLength`, `resolve(settings, event)`, and the **Quiet** pack's four recipes (plan *Synthesis design*). **Accept**:
   - every recipe is valid and at most 1.5 s;
+  - the catalog in `sounds.js` is the only source of sounds: no theme, world or pack file elsewhere (FR-021, FR-061, FR-062);
   - `none`, an unknown id and an unknown pack resolve as FR-063 says;
   - a source test finds no audio file under `src/`, no `<audio` or `media-src` in `index.html`, and no `AudioContext` outside `sounds.js` (SC-004).
 
-  `test:` `test:sounds`. **Mutants**: `long-recipe`, `click-attack`, `peak-over-1`, `none-plays`. Who: junior. [FR-020..FR-024, FR-026]
+  `test:` `test:sounds`. **Mutants**: `long-recipe`, `click-attack`, `peak-over-1`, `none-plays`. Who: junior. [FR-020..FR-024, FR-026, FR-061, FR-062, SC-004]
 - [ ] T007 [P1] Player in `sounds.js`: `createPlayer({ Ctx, now, onState })`, following plan *Audio context lifecycle* 1-6:
   - lazy;
   - one context;
@@ -60,9 +63,9 @@ A mutant must fail at its own label. **Four events** after Q2 (a): `needs-you`, 
   - settings read at `:10631`;
   - the recording stub only when `SIM` (plan, the `__durbarSimUi` pattern `:10646`).
 
-  **Accept**: sounds off gives nothing recorded and no context; the scenario list of plan *Test plan* is recorded exactly. `sim:` `check-115-sounds` (`DURBAR_SIM=15`), with `SOUND_MUTANT` `arm`, `hidden`, `shown`, `off` (the pattern of `scripts/check-005-announce-error.js:10-25`). Who: junior. [FR-010..FR-015, FR-072]
+  **Accept**: sounds off gives nothing recorded and no context, and every existing check is unchanged (SC-001); an agent already waiting at load records nothing (FR-013); the scenario list of plan *Test plan* is recorded exactly; the `#srAnnounce` texts and the inbox count match a run with sounds off (FR-012, FR-040, FR-041). `sim:` `check-115-sounds` (`DURBAR_SIM=15`), with `SOUND_MUTANT` `arm`, `hidden`, `shown`, `off` (the pattern of `scripts/check-005-announce-error.js:10-25`). Who: junior. [FR-010..FR-015, FR-012, FR-040, FR-041, FR-072, SC-001]
 - [ ] T009 [P1] Settings > **Sounds** section in `src/renderer/screens.js`, after *Notifications* (`:410-412`), with the same parts:
-  - the FR-050 note;
+  - the FR-050 note, with the FR-054 sentence (OS mute and Do Not Disturb are not read);
   - a *Play sounds* switch (`sw()`, `:95`);
   - a *Pack* select (only Quiet in P1);
   - a *Volume* select with 10 steps (Q8 a; changing it plays the Needs you sound once);
@@ -75,7 +78,7 @@ A mutant must fail at its own label. **Four events** after Q2 (a): `needs-you`, 
   - it works from the keyboard only;
   - it is listed in the Settings nav and found by Settings search ("sound").
 
-  `sim:` `shots-115-sounds` (1440x900 and 1280x800, light and dark theme, the unavailable line forced), `check-settings-save.js` extended to `settings:setSounds`. Who: junior. [FR-030, FR-034, FR-041, FR-050]
+  `sim:` `shots-115-sounds` (1440x900 and 1280x800, light and dark theme, the unavailable line forced), `check-settings-save.js` extended to `settings:setSounds`. Who: junior. [FR-030, FR-034, FR-041, FR-050, FR-054]
 - [ ] T010 [P1] Docs for P1:
   - `docs/features.md` (off by default; an extra, never the only sign);
   - `docs/limits.md` with the `[KNOWN GAP]`s: OS mute and Do Not Disturb are not read; how a sound sounds is untested; autoplay and background play are unchecked on macOS and Windows (T019);
@@ -99,12 +102,13 @@ A mutant must fail at its own label. **Four events** after Q2 (a): `needs-you`, 
 
   `test:` `test:sounds`. **Mutants**: `long-over`, `pluck-nan`, `pluck-unseeded`. Who: junior; reviewer checks FR-025. [FR-023..FR-025]
 - [ ] T012 [P2] Per-event mapping editor in the *Sounds* section. Each event row gets a select of every sound plus *None* and a *Play* button; a row that differs from the pack says "changed from the pack". Switching pack after own changes asks through `askDialog` (`src/renderer/dialog.js:65`): "Use the <pack> sounds? Your N changes go." (Q6 a). **Accept**:
-  - only the changed event is stored;
+  - only the changed event is stored, and the choices are the same after a page reload (US2);
+  - choosing a sound in a row and pressing its *Play* is two actions, the driver counts them (SC-003);
   - *None* plays nothing (the FR-072 recording);
   - a cancelled switch changes nothing.
 
-  `sim:` `shots-115-sounds` (editor at both sizes), `check-115-sounds` (a *None* event records nothing). `test:` `test:sounds` (`resolve` with own changes). **Mutant**: `switch-keeps-changes`. Who: junior. [FR-020, FR-023, FR-050]
-- [ ] T013 [P2] Quiet hours (Q9 a): `inQuiet(date, from, to)` in `soundgate.js`, used by the gate (preview exempt), plus a switch and two `HH:MM` selects in the section. **Accept**:
+  `sim:` `shots-115-sounds` (editor at both sizes), `check-115-sounds` (a *None* event records nothing). `test:` `test:sounds` (`resolve` with own changes). **Mutant**: `switch-keeps-changes`. Who: junior. [FR-020, FR-023, FR-050, SC-003]
+- [ ] T013 [P2] Quiet hours (Q9 a): `inQuiet(date, from, to)` in `soundgate.js`, used by the gate (preview exempt), plus a switch and two time selects (every 30 minutes, 48 options, `HH:MM`) in the section. **Accept**:
   - inside the window nothing plays;
   - a window across midnight works;
   - `from === to` is never quiet.
@@ -143,4 +147,4 @@ A mutant must fail at its own label. **Four events** after Q2 (a): `needs-you`, 
 
 ## Converge
 
-- [ ] T020 `/speckit.converge` after each phase. The spec text goes to four events after Q2 (a): FR-010, FR-023, US2, *Summary* and the specs-index title drop `reply`. Every FR is tagged `[IMPLEMENTED]`, `[KNOWN GAP]`, `test:`, `sim:` or `read:`. The specs-index status and note are current. *Changes* entries record each decision made while building. Check: `npm run specs:check`, `npm run specs:index -- --check`, `npm run specs:numbers`. Who: coordinator.
+- [ ] T020 `/speckit.converge` after each phase. The spec text already has four events (Q2 (a), aligned 2026-11-21); converge keeps it so. Every FR is tagged `[IMPLEMENTED]`, `[KNOWN GAP]`, `test:`, `sim:` or `read:`. The specs-index status and note are current. *Changes* entries record each decision made while building. Check: `npm run specs:check`, `npm run specs:index -- --check`, `npm run specs:numbers`. Who: coordinator.
