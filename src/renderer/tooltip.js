@@ -39,7 +39,7 @@
      (`except`: the buttons and parts that carry a title), and on the keyboard focus of any control in it */
   const find=(t,kb)=>{
     if(!t||!t.closest)return null;
-    for(const b of binds){const el=t.closest(b.selector); if(el&&b.root.contains(el)&&(kb||!b.except||!(t.closest(b.except)&&el.contains(t.closest(b.except)))))return {el,get:b.text,at:b.at};}
+    for(const b of binds){if(kb&&b.at==='pointer')continue; /* `at:'pointer'` = a hover-only tip (the floor's hint): keyboard focus never shows it */ const el=t.closest(b.selector); if(el&&b.root.contains(el)&&(kb||!b.except||!(t.closest(b.except)&&el.contains(t.closest(b.except)))))return {el,get:b.text,at:b.at};}
     return null;
   };
   function ensure(){

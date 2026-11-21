@@ -63,13 +63,12 @@ module.exports = async (ctx) => {
     return best;})()`);
   const checkPlace = async (tag, fx, fy, what) => {
     const sp = await emptyNear(fx, fy); assert.ok(sp, `${tag}: an empty spot ${what}`);
-    const text = await hoverHint(sp); assert.ok(NOT_HINT_OK.test(text), `${tag}: the hint ${what}: ${text}`);
+    const text = await hoverHint(sp); assert.ok(NOT_HINT.test(text), `${tag}: the hint ${what}: ${text}`);
     const r = await js(`(()=>{const b=document.getElementById('appTip').getBoundingClientRect(),de=document.documentElement;return {l:b.left,t:b.top,r:b.right,b:b.bottom,w:de.clientWidth,h:de.clientHeight};})()`);
     assert.ok(r.l >= 8 - 1 && r.t >= 8 - 1 && r.r <= r.w - 8 + 1 && r.b <= r.h - 8 + 1, `${tag}: the hint ${what} is inside the window with its margin: ${JSON.stringify(r)}`);
     assert.ok(Math.abs(r.t - sp.y) <= 40 || Math.abs(r.b - sp.y) <= 40, `${tag}: the hint ${what} is next to the pointer vertically (pointer y ${sp.y}): ${JSON.stringify(r)}`);
     assert.ok(r.l - 40 <= sp.x && sp.x <= r.r + 40, `${tag}: the hint ${what} is next to the pointer horizontally (pointer x ${sp.x}): ${JSON.stringify(r)}`);
   };
-  const NOT_HINT_OK = /, floor \d+ of \d+/;
   /* FR-085: parts with their own tip never show the floor hint. Targets are picked by their own selectors (not by the app's exclusion list). */
   const NOT_HINT = /, floor \d+ of \d+/;
   const hoverOn = async (sel) => {
@@ -80,8 +79,27 @@ module.exports = async (ctx) => {
     H.wc().sendInputEvent({ type: 'mouseMove', x: pt.x, y: pt.y }); await settle();
     return js(`(()=>{const t=document.getElementById('appTip');return t&&!t.hidden?t.textContent:'';})()`);
   };
+  /* FR-085: hover only. A real Tab to a desk shows no floor hint and leaves no aria-describedby on the room or the floor; a room head's button keeps its own tip (spec 001 FR-270). */
+  const tabTo = async (sel) => {
+    await js(`document.activeElement&&document.activeElement.blur&&document.activeElement.blur();document.getElementById('floor').scrollTop=0`);
+    for (let k = 0; k < 80; k++) { await H.key('Tab'); if (await js(`!!document.activeElement&&document.activeElement.matches(${jsLiteral(sel)})`)) return true; }
+    return false;
+  };
+  const focusTips = async (tag) => {
+    H.wc().sendInputEvent({ type: 'mouseMove', x: 5, y: 5 }); await settle();
+    assert.ok(await tabTo('#stage .desk[data-id]'), `${tag}: Tab reaches a desk`);
+    await settle();
+    const st = await js(`(()=>{const t=document.getElementById('appTip'),d=document.activeElement;return {tip:t&&!t.hidden?t.textContent:'',room:!!(d.closest('.room')&&d.closest('.room').getAttribute('aria-describedby')),floor:document.getElementById('floor').getAttribute('aria-describedby')||''};})()`);
+    assert.ok(!NOT_HINT.test(st.tip), `${tag}: keyboard focus on a desk shows no floor hint (got ${JSON.stringify(st.tip)})`);
+    assert.ok(!st.room && !st.floor, `${tag}: no aria-describedby on the room or the floor: ${JSON.stringify(st)}`);
+    assert.ok(await tabTo('#stage .room-head button'), `${tag}: Tab reaches a button of a room head`);
+    await settle();
+    const hd = await js(`(()=>{const t=document.getElementById('appTip'),h=document.activeElement.closest('.room-head');return {tip:t&&!t.hidden?t.textContent:'',want:h?h.dataset.tip:''};})()`);
+    assert.ok(hd.want && hd.tip === hd.want && !NOT_HINT.test(hd.tip), `${tag}: keyboard focus in a room head keeps its own tip (FR-270): ${JSON.stringify(hd)}`);
+    await js(`document.activeElement.blur()`);
+  };
   const ownTips = async (tag) => {
-    const inject = () => js(`(()=>{const u=document.querySelector('#stage .units');if(u&&!document.getElementById('titledPart')){const e=document.createElement('span');e.id='titledPart';e.title='own title';e.textContent='titled part of a room';e.style.cssText='display:inline-block;padding:6px';u.appendChild(e);}})()`);;
+    const inject = () => js(`(()=>{const u=document.querySelector('#stage .units');if(u&&!document.getElementById('titledPart')){const e=document.createElement('span');e.id='titledPart';e.title='own title';e.textContent='titled part of a room';e.style.cssText='display:inline-block;padding:6px';u.appendChild(e);}})()`);
     await inject();
     for (const [what, sel] of [['a titled part', '#titledPart'], ['a room head', '#stage .room-head .room-name'], ['a desk', '#stage .desk[data-id]'], ['a button in a room head', '#stage .room-head button'], ['a helper', '#stage .helpers .desk, #stage .helpers .card, #stage .helpers [data-id]'], ['the lobby', '#stage .lobby'], ['a place chip', '#stage .lobby .place.boss, #stage .lobby .place']]) {
       let t = await hoverOn(sel);
@@ -142,7 +160,7 @@ module.exports = async (ctx) => {
       assert.strictEqual(await hoverHint(sp), `${NAMES[0]}, floor 1 of 3`, `${tag}: the empty floor says which floor it is (FR-085 a)`);
       await shot('hint-one', w, h); }
     await checkPlace(tag, 0.5, 0.5, 'in the middle of the floor'); await checkPlace(tag, 1, 1, 'near the bottom-right corner');
-    await ownTips(tag + ' one floor');
+    await ownTips(tag + ' one floor'); await focusTips(tag + ' one floor');
     await shot('one', w, h);
 
     // ---- FR-085: the Real office draws its own storeys: no floor hint on its empty floor ----
@@ -232,7 +250,7 @@ module.exports = async (ctx) => {
       const want = NAMES.indexOf(sp.floor) + 1; assert.ok(want > 0, `${tag}: floor tag ${sp.floor}`);
       assert.strictEqual(await hoverHint(sp), `${sp.floor}, floor ${want} of 3`, `${tag}: All floors: the hint names the floor under the pointer (FR-085 a)`);
       await shot('hint-all', w, h); }
-    await ownTips(tag + ' All floors');
+    await ownTips(tag + ' All floors'); await focusTips(tag + ' All floors');
     await shot('all', w, h);
     await js(`document.body.focus()`);
     await key('PageDown'); await key('PageUp'); await key('PageDown');
