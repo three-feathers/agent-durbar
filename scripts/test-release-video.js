@@ -91,8 +91,16 @@ const checkChoice = (M) => {
   assert.ok(M.sceneIdsFor(['- x (spec 100): a']).includes('mcp'), 'a scene without `fr` takes any change to its spec');
   // Scene: fields come first, then refs; unknown ids and the cards are ignored; at most AUTO_MAX feature scenes
   assert.deepStrictEqual(pick(V12, ['notesource']).slice(1, 3), ['notesource', 'lounge'], 'a Scene: field comes first, once');
-  assert.deepStrictEqual(pick([], ['crews', 'crews']), ['intro', 'crews', 'outro'], 'a Scene: field alone picks its scene, once');
+  assert.deepStrictEqual(pick([], ['crews', 'crews']), ['intro', 'crews', 'needsyou', 'signin', 'outro'], 'a Scene: field alone picks its scene, once, and the clip is filled up to three (FR-218)');
   assert.throws(() => pick([], ['intro', 'nope', 'toString']), /no scene shows/, 'the cards and unknown ids are no scene');
+  // FR-218 (issue #1790): one or two scenes of the release are filled up to AUTO_MIN from FILL_SCENES, the release's own first; none stays an error; never a duplicate
+  assert.strictEqual(M.AUTO_MIN, 3, 'AUTO_MIN is pinned at 3 feature scenes (three scenes and two cards are over the 25 s floor)');
+  assert.deepStrictEqual(M.FILL_SCENES, ['needsyou', 'signin', 'lounge'], 'the fill list and its order are pinned');
+  assert.ok(M.FILL_SCENES.every((id) => M.SCENES[id] && typeof M.SCENES[id].play === 'function'), 'every fill scene is in the catalogue');
+  assert.deepStrictEqual(pick([], ['mcp']), ['intro', 'mcp', 'needsyou', 'signin', 'outro'], 'one scene of the release is followed by two fill scenes');
+  assert.deepStrictEqual(pick([], ['needsyou']), ['intro', 'needsyou', 'signin', 'lounge', 'outro'], 'a fill scene the release already names is not shown twice');
+  assert.deepStrictEqual(pick([], ['crews', 'mcp']), ['intro', 'crews', 'mcp', 'needsyou', 'outro'], 'two scenes get one fill scene');
+  assert.deepStrictEqual(pick([], ['crews', 'mcp', 'org']), ['intro', 'crews', 'mcp', 'org', 'outro'], 'three of the release\'s own scenes need no fill');
   const six = ['crews', 'mcp', 'org', 'floors', 'refresh', 'needsyou'];
   assert.strictEqual(M.AUTO_MAX, 4, 'AUTO_MAX is pinned at 4 feature scenes (spec 008 FR-187, issue #1305: with two Real office photo scenes a clip of 5 was 6.2 MB at 640 px and 128 colours, over the 5 MiB cap)');
   assert.deepStrictEqual(pick([], ['realoffice', 'crews', 'mcp']).slice(1, 3), ['realoffice', 'crews'], 'the realoffice scene is chosen by its Scene: field (spec 008 FR-187)');
@@ -101,6 +109,11 @@ const checkChoice = (M) => {
   assert.ok(!lounge('- x (respec 097 FR-246): a') && !lounge('- x (prespec 097 FR-246): a'), '"respec 097" is not "spec 097" (word boundary)');
 };
 checkChoice(RV);
+{
+  // FR-217: the driver refuses a window the screen clamped (it would be stretched into the frame and every camera would point at the wrong place); the driver runs in Electron, so the check is read from the source
+  const drv = fs.readFileSync(path.join(__dirname, 'release-video.js'), 'utf8');
+  assert.ok(/H\.js\('\[innerWidth,innerHeight\]'\)/.test(drv) && /Math\.abs\(win\[0\] - W\) > 2 \|\| Math\.abs\(win\[1\] - H_\) > 2/.test(drv) && /not \$\{W\}x\$\{H_\}/.test(drv), 'reset() fails a window that is not 1440x900 (issue #1789)');
+}
 // ---- spec 008 FR-197: the v0.1.15 scenes (Real office crews, mouse drag) are in the catalogue and the release picks them ----
 const V15 = [
   "- **Real office**: the Characters choice Cheeky, Pirate, Monster, Royal and Rebels now draws that crew's own people (spec 097 FR-335, FR-336, issue #1154).",
@@ -116,7 +129,7 @@ const checkNew = (M) => {
   assert.ok(M.sceneIdsFor([V15[0]]).includes('real-crews'), 'the v0.1.15 crews bullet picks real-crews');
   assert.ok(M.sceneIdsFor([V15[2]]).includes('real-drag'), 'the v0.1.15 keyboard bullet picks real-drag');
   assert.ok(!M.sceneIdsFor([V15[1]]).includes('real-drag'), 'the drag bullet names no FR, so it needs its Scene: field');
-  assert.deepStrictEqual(M.chooseScenes({ bullets: V15, sceneFields: ['real-crews', 'real-drag'] }), ['intro', 'real-crews', 'real-drag', 'outro'], 'the v0.1.15 clip shows its two new scenes');
+  assert.deepStrictEqual(M.chooseScenes({ bullets: V15, sceneFields: ['real-crews', 'real-drag'] }), ['intro', 'real-crews', 'real-drag', 'needsyou', 'outro'], 'the v0.1.15 clip shows its two new scenes, then the first fill scene');
   assert.ok(!M.sceneIdsFor(V12).some((id) => id.startsWith('real-')), 'the v0.1.12 bullets pick neither new scene');
 };
 checkNew(RV);
@@ -152,7 +165,7 @@ const checkSources = (M) => {
     fs.writeFileSync(path.join(root, 'CHANGELOG.md'), '# Changelog\n\n## Unreleased\n\n## v0.9.0 (2026-01-01)\n\n- **Rail** (spec 005 FR-236): drag.\n\n## v0.8.0 (2025-12-01)\n\n- **Lounge** (spec 097 FR-246): old.\n\n## v0.1.11 (2025-11-01)\n\n- **Sign in** (spec 058 FR-229): old.\n');
     const src = M.releaseSources('v0.9.0', root);
     assert.deepStrictEqual(src.sceneFields, ['crews'], 'the fragment\'s Scene: field');
-    assert.deepStrictEqual(M.chooseScenes(src), ['intro', 'crews', 'railwidth', 'outro'], 'a fragment and the folded section of that version');
+    assert.deepStrictEqual(M.chooseScenes(src), ['intro', 'crews', 'railwidth', 'needsyou', 'outro'], 'a fragment and the folded section of that version, filled up to three');
     assert.ok(!M.chooseScenes(src).includes('lounge'), 'another version\'s section is not read');
     assert.deepStrictEqual(M.releaseSources('v0.7.0', root).bullets.length, 1, 'a version with no section: the fragments alone');
     assert.strictEqual(M.releaseSources('v0.1.1', root).bullets.length, 1, 'v0.1.1 does not read the v0.1.11 section (exact heading match, not a prefix)');
@@ -205,6 +218,9 @@ assert.ok(5240561 <= RV.GIF_MAX, 'the v0.1.12 GIF is under the cap');
     ['no end card', "return ['intro', ...feature, 'outro'];", "return ['intro', ...feature];", /the default clip of v0\.1\.12/],
     ['no title card', "return ['intro', ...feature, 'outro'];", "return [...feature, 'outro'];", /the default clip of v0\.1\.12/],
     ['nothing to show falls back instead of an error', "if (!feature.length) throw new Error(", "if (false) throw new Error(", /nothing to show is an error/],
+    ['no fill for a short default clip', "if (feature.length >= AUTO_MIN) break;", "break;", /filled up to three|followed by two fill scenes|two scenes get one fill/],
+    ['the fill scenes first', "const feature = [...named, ...byRef].slice(0, AUTO_MAX);", "const feature = [...FILL_SCENES, ...named, ...byRef].slice(0, AUTO_MAX);", /filled up to three|a Scene: field comes first|the default clip of v0\.1\.12/],
+    ['a fill scene shown twice', "if (!feature.includes(id) && Object.prototype", "if (Object.prototype", /not shown twice/],
     ['no cap on the number of scenes', ".slice(0, AUTO_MAX);", ";", /cut to AUTO_MAX/],
     ['Scene: fields after refs', "const feature = [...named, ...byRef]", "const feature = [...byRef, ...named]", /a Scene: field comes first/],
     ['prefix version match', "l.startsWith(`## ${version} `) || l === `## ${version}`", "l.startsWith(`## ${version}`)", /v0\.1\.1 does not read/],
@@ -364,9 +380,8 @@ assert.ok(!/gh release|releases\/|--notes/.test(src.replace(/^\s*\*.*$/gm, '')),
 
 // ---- review on #1083: a hung child is killed at its limit (FR-175) ----
 {
-  const t0 = Date.now();
   assert.throws(() => RV.run(process.execPath, ['-e', 'setInterval(()=>{},1000)'], { timeout: 400 }), (e) => e.code === 'ETIMEDOUT' || /ETIMEDOUT|timed out/i.test(String(e.message)), 'a child over its limit throws');
-  assert.ok(Date.now() - t0 < 10000, 'and is killed at the limit');
+  // the 10 s wall check is gone (#1853): `run` returned, so the child was killed; the 400 ms `timeout` is what ends it (ETIMEDOUT above), and a child that outlived it would hang this call, not pass it
   process.env.RV_TEST_SECRET_TOKEN = 'ghp_' + 'z'.repeat(36);
   const keys = JSON.parse(String(RV.run(process.execPath, ['-e', 'process.stdout.write(JSON.stringify(Object.keys(process.env)))'], { timeout: 10000 })));
   delete process.env.RV_TEST_SECRET_TOKEN;
@@ -443,17 +458,20 @@ const { killTree } = require('./ui-suite');
     if (distOk) {
       let seen = null;
       const opts = [];
-      const fakeRun = (file, args, o) => { opts.push(o); fs.writeFileSync(args[args.length - 1], 'x'); return ''; };
+      const fakeRun = (file, args, o) => { opts.push(o); fs.writeFileSync(path.resolve(o.cwd || '.', args[args.length - 1]), 'x'); return ''; }; // the sheet is written in the folder the child runs in, as ffmpeg would
       const rec = async (d, dir) => {
-        seen = d;
+        seen = d; seen.xvfbEnv = process.env.UI_SUITE_XVFB;
         fs.writeFileSync(path.join(dir, 'f00000.png'), 'x');
         fs.writeFileSync(path.join(dir, 'frames.json'), JSON.stringify({ seconds: 30, frames: [{ file: 'f00000.png', t: 0 }], scenes: [{ n: '01', id: 'intro', title: 't', sub: 's', from: 0, to: 30, still: 'f00000.png' }], privacy: {} }));
         return { ok: true, code: 0, log: '' };
       };
       process.env.RV_TEST_SECRET_TOKEN = 'x';
+      const xvfbBefore = process.env.UI_SUITE_XVFB;
       const m2 = await RV.main(['--version', 'v0.1.7', '--out', out], { chooseScenes: () => ['intro', 'outro'], hasFfmpeg: () => true, ensure: () => true, runOne: rec, run: fakeRun });
       delete process.env.RV_TEST_SECRET_TOKEN;
       assert.ok(m2 && m2.gif.bytes === 1);
+      if (process.platform === 'linux') assert.strictEqual(seen.xvfbEnv, '1', 'FR-217: on Linux the recording runs under xvfb whatever the display (issue #1789)');
+      assert.strictEqual(process.env.UI_SUITE_XVFB, xvfbBefore, 'and the setting is put back afterwards');
       assert.ok(seen.killTree === undefined && seen.timeoutMs === RV.RECORD_MS && seen.timeoutMs <= 10 * 60 * 1000, 'the recording has a limit (runOne ends its tree on every run, FR-199; no killTree flag)');
       assert.ok(seen.baseEnv && !('RV_TEST_SECRET_TOKEN' in seen.baseEnv) && Object.keys(seen.baseEnv).every((k) => RV.ENV_ALLOW.includes(k.toUpperCase())), 'Electron gets the allow-listed environment');
       assert.ok(opts.length >= 2 && opts.every((o) => o.timeout === RV.FFMPEG_MS), 'every encode has a limit');
@@ -534,6 +552,98 @@ const { killTree } = require('./ui-suite');
     assert.ok(!/getAnimations\(\{subtree:true\}\)/.test(rvsrc), 'release-video.js has no copy of the stillness expression (FR-031: one helper)');
     const pesrc = fs.readFileSync(path.join(__dirname, 'check-097-pencil-ease.js'), 'utf8').replace(/\r\n/g, '\n');
     assert.ok(/const STILL = STILL_STAGE;/.test(pesrc) && !/getAnimations\(\{subtree:true\}\)/.test(pesrc), 'check-097-pencil-ease uses the same STILL_STAGE');
+  }
+  {
+    // FR-270 (issue #1792): the lounge scene answers the simulator's spending-limit slip before it films; the driver runs in Electron, so the check reads the source
+    const src = fs.readFileSync(path.join(__dirname, 'release-video.js'), 'utf8').replace(/\r\n/g, '\n');
+    const lounge = (x) => { const a = x.indexOf('\n  lounge: {'), b = x.indexOf('\n  railwidth: {'); return a < 0 || b < a ? '' : x.slice(a, b); };
+    const ok = (x) => { const l = lounge(x); return /\.ro-limit/.test(l) && /textContent==='Remove limit'\)/.test(l) && /b\.click\(\)/.test(l) && /the limit slip did not go/.test(l); };
+    assert.ok(ok(src), 'the lounge scene removes the limit and waits for the slip to go (issue #1792)');
+    assert.ok(!ok(src.replace("x.textContent==='Remove limit');if(b)b.click()", "x.textContent==='Remove limit');")), 'mutant: a lounge scene that never presses Remove limit is caught');
+    assert.ok(!ok(src.replace("throw new Error('lounge: the limit slip did not go')", '0')), 'mutant: a lounge scene that does not wait for the slip to go is caught');
+    assert.ok(src.indexOf("lounge: the limit slip did not go") < src.indexOf("await S.caption('{step}. Finished, reply not read yet'"), 'the slip is answered before the first caption and still');
+    // FR-274 (issue #1954): the arcade's pill has the same Remove limit button, so the scene films in every world and never branches on it
+    for (const w of ['retro', 'cave']) assert.strictEqual(RV.parseArgs(['--version', 'v0.1.27', '--out', 'x', '--scenes', 'needsyou,signin,lounge', '--world', w]).world, w, `lounge is accepted with --world ${w}`);
+    assert.ok('lounge' in RV.SCENES, 'the lounge scene is in the catalogue');
+    const noWorld = (x) => !/world|retro|cave|DRIVER_WORLD|\.ro-rm|ro-cab/i.test(lounge(x));
+    assert.ok(noWorld(src), 'the lounge scene has no branch on the world (issue #1954)');
+    assert.ok(!noWorld(src.replace("      await H.until(`${SIM}.visitsSettled()`, 8000);", "      if (process.env.DRIVER_WORLD) throw new Error('lounge: not in a world');\n      await H.until(`${SIM}.visitsSettled()`, 8000);")), 'mutant: a lounge scene that is left out of a world again is caught at "no branch on the world"');
+  }
+  {
+    // FR-274 (issue #1946): the world option, the arcade scene, the contact sheet and the caps; no Electron
+    const src = fs.readFileSync(path.join(__dirname, 'release-video.js'), 'utf8').replace(/\r\n/g, '\n');
+    const hd = fs.readFileSync(path.join(__dirname, 'driver-helpers.js'), 'utf8');
+    assert.deepStrictEqual(RV.WORLDS, ['retro', 'cave'], 'the worlds are the two DRIVER_WORLD takes');
+    assert.ok(/DRIVER_WORLD !== 'retro' && DRIVER_WORLD !== 'cave'/.test(hd), 'driver-helpers takes exactly those two (FR-031: one list of world ids)');
+    assert.strictEqual(RV.parseArgs(['--version', 'v0.1.7', '--out', 'x']).world, null, 'no --world: the Photo office, as before');
+    assert.strictEqual(RV.parseArgs(['--version', 'v0.1.27', '--out', 'x', '--world', 'retro']).world, 'retro');
+    for (const bad of ['arcade', 'Retro', 'photo', 'toString', '__proto__', 'retro,cave']) assert.throws(() => RV.parseArgs(['--version', 'v0.1.7', '--out', 'x', '--world', bad]), /--world must be one of retro, cave/, `--world ${bad} is refused`);
+    assert.throws(() => RV.parseArgs(['--version', 'v0.1.7', '--out', 'x', '--world']), /needs a value/);
+    assert.deepStrictEqual(RV.worldQuery('retro'), { officeview: 'real', world: 'retro', worldflags: 'retro' }, 'the pair the app and H.load use for the arcade');
+    assert.deepStrictEqual(RV.worldQuery(null), { officeview: 'real' });
+    assert.throws(() => RV.worldQuery('arcade'), /unknown world/);
+    assert.ok(/Object\.assign\(query, \{ worldflags: 'retro', world: 'retro' \}\)/.test(hd), 'worldQuery matches the pair driver-helpers adds under DRIVER_WORLD=retro');
+    const env0 = RV.recordEnv({ version: 'v0.1.7', scenes: ['intro'], count: null, world: null });
+    assert.ok(!('DRIVER_WORLD' in env0), 'no --world: no DRIVER_WORLD');
+    assert.strictEqual(RV.recordEnv({ version: 'v0.1.7', scenes: ['intro', 'arcade'], count: null, world: 'retro' }).DRIVER_WORLD, 'retro', '--world retro reaches the driver as DRIVER_WORLD');
+    assert.strictEqual(RV.recordEnv({ version: 'v0.1.7', scenes: ['intro', 'arcade'], count: 3, world: 'cave' }).RV_SCENES, 'intro,arcade');
+
+    // the scene registry: the arcade scene is in it, plays in the arcade by its own query (not by --world), and is picked like any other
+    const arc = RV.SCENES.arcade;
+    assert.ok(arc && typeof arc.play === 'function', 'the catalogue has the arcade scene');
+    assert.ok(/worldQuery\('retro'\)/.test(arc.play.toString()) && /data-world="retro"/.test(arc.play.toString()), 'the arcade scene draws the arcade itself and waits for it');
+    assert.ok(/>=15/.test(arc.play.toString()) && !/>=1[6-9]|>=[2-9]\d/.test(arc.play.toString()), 'the arcade scene shows 15 cabinets, no more than the other scenes');
+    assert.deepStrictEqual(RV.chooseScenes({ sceneFields: ['arcade'], bullets: [] }), ['intro', 'arcade', 'needsyou', 'signin', 'outro'], 'a Scene: arcade field is picked and filled up like any other');
+    assert.deepStrictEqual(RV.chooseScenes({ sceneFields: ['arcade', 'nonesuch', 'intro'], bullets: [] }).filter((x) => x === 'nonesuch' || x === 'intro'), ['intro'], 'unknown ids and the cards from a field are ignored');
+    assert.ok(RV.chooseScenes({ sceneFields: [], bullets: ['- **The Retro arcade is a world** (spec 102 FR-1, issue #1)'] }).includes('arcade'), 'a bullet naming spec 102 refs the arcade');
+    assert.ok(!RV.chooseScenes({ sceneFields: ['crews'], bullets: ['- x (spec 021 FR-1)'] }).includes('arcade'), 'a release that does not name the arcade does not get it');
+    const many = RV.chooseScenes({ sceneFields: ['crews', 'mcp', 'org', 'floors', 'arcade'], bullets: [] });
+    assert.deepStrictEqual(many, ['intro', 'crews', 'mcp', 'org', 'floors', 'outro'], 'Scene: fields first: a fifth field (the arcade) is cut at AUTO_MAX');
+
+    // the cap arithmetic: AUTO_MAX feature scenes of the longest known length and the two cards stay inside LEN_MAX; the GIF and MP4 caps are pinned
+    assert.strictEqual(RV.AUTO_MAX, 4);
+    assert.strictEqual(RV.GIF_MAX, 5 * 1024 * 1024, 'the GIF cap is 5 MiB');
+    assert.strictEqual(RV.MP4_MAX, 20 * 1024 * 1024);
+    assert.ok(arc.stillAt > 0 && arc.stillAt < 0.4, 'the arcade scene\'s still is taken early, in the whole-arcade shot, not in its zoom');
+    assert.ok(/\(sc\.stillAt === undefined \? 0\.6 : sc\.stillAt\)/.test(src), 'the driver uses a scene\'s stillAt');
+    assert.ok(!/\(sc\.stillAt === undefined \? 0\.6 : sc\.stillAt\)/.test(src.replace('(sc.stillAt === undefined ? 0.6 : sc.stillAt)', '0.6')), 'mutant: a driver that ignores stillAt is caught');
+    assert.ok(arc.secs > 0 && arc.secs <= 7, `the arcade scene is short (${arc.secs} s declared)`);
+    assert.ok(2 * 3 + RV.AUTO_MAX * 12.6 <= RV.LEN_MAX, 'four of the longest scenes (needsyou 12.6 s) and two 3 s cards fit the length ceiling');
+    assert.ok(RV.lengthOk(2 * 3 + arc.secs + 12.6 + 7 + 10.5), 'a clip of the arcade, needsyou, signin and lounge is inside 25-75 s');
+
+    // the contact sheet: one picture of every still, names only, no shell
+    const a1 = RV.contactArgs(['release-v1-scene-01-intro.png', 'release-v1-scene-02-arcade.png', 'release-v1-scene-03-lounge.png', 'release-v1-scene-04-x.png'], 'sheet.jpg');
+    assert.ok(Array.isArray(a1) && a1.filter((x) => x === '-i').length === 4, 'one input for each still');
+    assert.ok(/concat=n=4:v=1:a=0,scale=480:-2,tile=3x2/.test(a1.join(' ')), 'four stills at three a row make two rows, 480 px wide');
+    assert.strictEqual(a1[a1.length - 1], 'sheet.jpg');
+    assert.ok(a1.includes('-frames:v') && a1[a1.indexOf('-frames:v') + 1] === '1', 'one picture');
+    assert.throws(() => RV.contactArgs([], 'x.jpg'), /no still/);
+    for (const bad of ['../x.png', 'a b.png', 'x.png;rm', 'x.gif', '-x.png;']) assert.throws(() => RV.contactArgs([bad], 'x.jpg'), /unexpected name/, `still name ${bad} refused`);
+    assert.ok(/stills\.jpg/.test(src) && /contactArgs\(sheet,/.test(src) && /const finals = \['\.mp4', '\.gif', '\.json', '-stills\.jpg'\]/.test(src), 'main makes the sheet, and removes an old one first and on failure like the other files');
+
+    // mutants: each must die at its own assert
+    const dies = (name, from, to, re) => {
+      assert.ok(src.includes(from), `mutant ${name}: the text to change is there`);
+      const m = src.replace(from, to);
+      assert.notStrictEqual(m, src);
+      const checks = {
+        world: () => /else if \(k === '--world'\) a\.world = val\(\);/.test(m),
+        wlist: () => /const WORLDS = \['retro', 'cave'\]/.test(m),
+        env: () => /\.\.\.\(a\.world \? \{ DRIVER_WORLD: a\.world \} : \{\}\)/.test(m),
+        sheet: () => /contactArgs\(sheet,/.test(m),
+        q: () => /worldflags: world \}/.test(m),
+        names: () => /\^\[A-Za-z0-9\._-\]\+\\\.png\$/.test(m),
+        arcSlot: () => /refs: \[\{ spec: '102' \}\],\n    stillAt/.test(m),
+      };
+      assert.ok(!checks[re](), `mutant ${name} is caught`);
+    };
+    dies('no --world parsing', "else if (k === '--world') a.world = val();", '', 'world');
+    dies('another world list', "const WORLDS = ['retro', 'cave'];", "const WORLDS = ['retro', 'cave', 'arcade'];", 'wlist');
+    dies('DRIVER_WORLD not passed', '...(a.world ? { DRIVER_WORLD: a.world } : {})', '', 'env');
+    dies('no contact sheet', 'contactArgs(sheet,', 'contactArgs([],', 'sheet');
+    dies('no worldflags', "worldflags: world }", "}", 'q');
+    dies('still names unchecked', "/^[A-Za-z0-9._-]+\\.png$/.test(f)", 'true', 'names');
+    dies('no ref for the arcade', "refs: [{ spec: '102' }],\n    stillAt", "stillAt", 'arcSlot');
   }
   console.log('release-video: tests passed');
 })().catch((e) => { console.error(e); process.exitCode = 1; });

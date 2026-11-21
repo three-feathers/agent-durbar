@@ -244,6 +244,20 @@ The slide is short and soft. It never blocks input and never hides a waiting age
 
 ## Changes
 
+### 2026-11-20: a hint says which floor the pointer is on (issue #1958, FR-085, T051)
+
+Owner request (Ruben, 2026-11-20): hovering a floor should say which floor it is. He chose both parts below. Details decided by the coordinator under Ruben's delegation.
+
+- **FR-085**: With two or more floors on (the lift shows), the floor gets a hint on hover:
+  - **(a) The office.** The empty floor area of a floor screen (not a room head, desk, agent or any control, which keep their own tips) shows the tooltip "<floor name>, floor <n> of <m>", where <n> is the number on that floor's lift button and <m> the floors that are on. In the All floors view (FR-031) it names the floor under the pointer. It uses the office's existing tooltip mechanism, adds no pointer handler per frame, and is not announced by screen readers: the floor is already in the lift's accessible names and the floor-change announcement.
+  - **(b) The lift.** A floor button's tooltip (FR-007) starts with the same "<floor name>, floor <n> of <m>", adds " (you are here)" on the current floor (not in the All floors view, where no floor button is current), and then, on a new line, the attention words of FR-015 as today. The accessible name does not change: `aria-current` already says it.
+  - With one floor on, or floors off, nothing changes.
+- **Reused**: the lift's label code in `renderLift()` and `topDown()` numbering in `floornav.js`; the office tooltip mechanism that room heads use.
+  - In the Real office (the Retro arcade included) the floor hint is not shown: it draws its own storeys (`.ro-stag`); if the Real office fails to load and the flat office is drawn, the hint is shown.
+  - Hover only: keyboard focus never shows the floor hint (focus keeps the FR-270 tips).
+  - The hint stands at the pointer where it entered the floor (a wide element), not under the whole floor (`DurbarTip.bind` option `at:'pointer'`; other callers unchanged).
+- **Evidence** (T051): `[IMPLEMENTED]` test: `test:floornav` (the text of `floorHint`: number counts only floors on, "(you are here)", words on the next line, no hint for one floor, an off or unknown floor; six mutants killed); sim: `shots-092-lift` at 1440x900 and 1280x800 (a real mouse over the empty floor shows "<floor>, floor n of 3" in the one-floor view and the room's floor in All floors; a room head, a desk, a button in a head, a helper, the lobby and a place chip keep their own tips; Tab to a desk shows no floor hint and sets no `aria-describedby` on the room or the floor, in one-floor and All floors, while Tab to a room head's button keeps its FR-270 tip; no hint in the Real office; lift tooltips carry the number, "(you are here)" only on the current floor and not in All). `[KNOWN GAP]` read: in All floors the gaps between rooms show no hint; native `title` tooltips of the lift are checked by attribute, not as a picture; touch has no hover.
+
 ### 2026-10-31: natural floor numbering in the flat lift and All floors (Q-D closed, T050)
 
 Q-D (below) is answered yes, so the flat lift and All floors now draw the building the way spec 097 FR-116 draws it in Real office, and the two modes agree about which way is up. This replaces Q-A and D3 (Paco, 2026-10-27) with Paco's agreement. FR-006, FR-011, FR-031 and FR-032 and User Story text are amended in place.

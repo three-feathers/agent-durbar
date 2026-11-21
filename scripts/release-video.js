@@ -5,6 +5,7 @@
  *   npm run build
  *   node scripts/release-video.js --version v0.1.7 --out <folder>          the clip of the release's scenes (the fragments' Scene: fields and the scenes whose `refs` a bullet names)
  *   node scripts/release-video.js --version v0.1.7 --out <folder> --scenes crews,mcp
+ *   node scripts/release-video.js --version v0.1.7 --out <folder> --world retro   the Real office scenes in the Retro arcade (the same DRIVER_WORLD the check drivers use; `retro` or `cave`)
  *   node scripts/release-video.js --list                                    the scene catalogue
  *   FFMPEG=<path to ffmpeg>                                                  when ffmpeg is not on PATH
  *
@@ -12,7 +13,7 @@
  * - the command (plain Node): checks ffmpeg and the build, starts the app once through ui-suite's `runOne` (a fresh profile, no shell,
  *   xvfb-run on Linux without a display) with this file as the driver, then encodes the frames with ffmpeg (no shell, fixed arguments):
  *   `release-<version>.mp4` (1440x1028: the app's 1440x900 with a 128 px caption band under it, H.264, 30 fps) and `release-<version>.gif` (800 px wide, 8 fps, at most GIF_MAX bytes; it
- *   retries smaller when it is over), plus `release-<version>.json` (scenes, lengths, sizes) and one still per scene to look at;
+ *   retries smaller when it is over), plus `release-<version>.json` (scenes, lengths, sizes) and one still per scene to look at, and `release-<version>-stills.jpg`, a contact sheet of those stills (FR-176: every still is looked at);
  * - the driver (Electron main, `module.exports`): plays each scene in the simulator at 1440x900 with a caption naming the change and
  *   captures the page with `webContents.capturePage()` at FPS frames a second; the caption is drawn by a second, offscreen window into a
  *   band under the app, so no caption covers an app pixel. Before and after filming each scene it refuses to go on when the
@@ -39,6 +40,13 @@ const GIF_MAX = 5 * 1024 * 1024;     // FR-172: loads fast in the notes
 const MP4_MAX = 20 * 1024 * 1024;
 const LEN_MIN = 25, LEN_MAX = 75;    // seconds; FR-172 aims at 30-60, the bounds fail a broken run
 const VERSION_RE = /^v\d+\.\d+\.\d+(?:-(?:alpha|beta|rc)\.\d+)?$/;
+const WORLDS = ['retro', 'cave'];    // the worlds a clip can film besides the Photo office: the ids `DRIVER_WORLD` takes (driver-helpers.js, FR-031) and the app's `world` query uses
+/** The page query that draws the Real office in `world` (spec 102 T283, the same pair `H.load` adds under DRIVER_WORLD): no world, the Photo office. */
+function worldQuery(world) {
+  if (!world) return { officeview: 'real' };
+  if (!WORLDS.includes(world)) throw new Error(`unknown world ${JSON.stringify(world)} (one of ${WORLDS.join(', ')})`);
+  return { officeview: 'real', world, worldflags: world };
+}
 const CLOCK = '2026-10-20T09:30:00Z'; // the same pinned page clock as shots-docs
 const RECORD_MS = 5 * 60 * 1000;     // FR-175: time limits, so a hang never holds a release (the whole tree is killed)
 const FFMPEG_MS = 3 * 60 * 1000;
@@ -244,6 +252,22 @@ const SCENES = {
       if (!(await H.until(`!document.getElementById('inboxDlg')`, 4000))) throw new Error('realoffice: the inbox did not close');
     },
   },
+  arcade: {
+    title: 'The Retro arcade', sub: 'Settings > World > Retro arcade: the office as cabinets, one for each agent',
+    refs: [{ spec: '102' }],
+    stillAt: 0.1, // the scene's still is 10 % in (the whole arcade; 25 % was already inside the first zoom frames when the capture ran slower than 8 a second); the default 60 % falls in the zoom, which has its own still
+    secs: 6.9, // film time: 4.2 s of the whole arcade (the scene's still is taken in it), the zoom's 0.7 s, then 2 s on the first two cabinets
+    async play(S) {
+      const H = S.H;
+      const ARCADE = `!!document.querySelector('#stage .ro[data-world="retro"] .ro-plate')&&document.getElementById('stage').dataset.d==='real'&&[...document.querySelectorAll('#stage .ro img')].every(i=>i.complete)`;
+      await S.reset({ ...worldQuery('retro'), simfreeze: '1', romotion: '1' }, { ready: ARCADE });
+      if (!(await H.until(`document.querySelectorAll('#stage .ro[data-world="retro"] .ro-plate').length>=15`, 12000))) throw new Error('arcade: no 15 cabinets in the Retro arcade');
+      await S.film(4.2);
+      await S.caption('{step}. One cabinet for each agent', 'Each agent plays at its own cabinet; its screen shows what it does');
+      await S.zoomTo(await S.rectOfJs(`[...document.querySelectorAll('#stage .ro[data-world="retro"] .ro-plate')].slice(0,2)`, { pad: 50, above: 50 }));
+      await S.film(2);
+    },
+  },
   lounge: {
     title: 'Real office: a lounge row', sub: 'Finished agents whose reply you have read sit in a compact row under the desks',
     refs: [{ spec: '097', fr: [246, 249] }],
@@ -259,6 +283,12 @@ const SCENES = {
         for(const a of cand){if(out.length===2)break;const next=out.concat(a.id);if(next.every(id=>{const r=A.find(x=>x.id===id).room;return M.some(o=>o.room===r&&!next.includes(o.id)&&!fin(o))}))out.push(a.id);}
         return out})()`);
       if (pick.length !== 2) throw new Error('lounge: two agents to finish were not found');
+      // FR-270 (issue #1792): Omar's simulated spending limit puts a limit slip at the right edge of the room, and it covered the lounge row's zoom; the scene answers it as a user would (Remove limit), then waits for the slip to go
+      // FR-274 (issue #1954): the arcade's pill carries the same button (class `ro-sbtn`, text `Remove limit`), so this one selector serves the Photo office and the arcade; the scene never branches
+      if (await H.until(`!!document.querySelector('#stage .ro-limit:not([hidden]) .ro-sbtn')`, 6000)) {
+        await H.js(`(()=>{const b=[...document.querySelectorAll('#stage .ro-limit .ro-sbtn')].find(x=>x.textContent==='Remove limit');if(b)b.click();return !!b})()`);
+        if (!(await H.until(`!document.querySelector('#stage .ro-limit:not([hidden])')`, 8000))) throw new Error('lounge: the limit slip did not go');
+      }
       await H.js(`(()=>{for(const id of [${pick.map(idLit).join(',')}]){const a=${SIM}.agents().find(x=>x.id===id);a.state='done';a.lastOutput=a.lastOutput||'Finished the change and ran the tests.';a.lastEventAt=Date.now();${SIM}.unread.mark(id);}${SIM}.crew.renderAll();return 1})()`);
       if (!(await H.until(`document.querySelectorAll('#stage .ro-plate.st-done').length>=2`, 8000))) throw new Error('lounge: no finished desks');
       await H.settle();
@@ -491,6 +521,8 @@ const SCENES = {
  * A scene's `refs` say which spec and FR numbers it shows: `{ spec: '097', fr: [246, 249] }` (no `fr`: any change to that spec). Without
  * --scenes the clip gets the scenes named by a fragment's `Scene:` field and the scenes whose refs a bullet of the release names, between
  * the title and end cards; none found is an error that asks for --scenes (never a stale list). */
+const AUTO_MIN = 3;                  // feature scenes a default clip is filled up to (spec 008 FR-218, issue #1790: one scene gave 16.8 s, under LEN_MIN)
+const FILL_SCENES = ['needsyou', 'signin', 'lounge']; // the standing tour that fills a short default clip, in this order (12.6 s, 7 s, 10.5 s measured)
 const AUTO_MAX = 4;                  // feature scenes in a default clip, so its length stays inside LEN_MAX and its GIF inside GIF_MAX (issue #1305: Real office scenes are photos, about 1-2.4 MB each at 640 px and 128 colours; five of them did not fit)
 /** The (lo, hi) FR numbers a text names for `spec`: "(spec 097 FR-246..FR-249, FR-236)" gives [[246,249],[236,236]]; [] when the spec is named without FR numbers, null when it is not named. */
 function frsNamed(text, spec) {
@@ -521,6 +553,10 @@ function chooseScenes({ sceneFields = [], bullets = [] }, scenes = SCENES) {
   const byRef = sceneIdsFor(bullets, scenes).filter((id) => !named.includes(id));
   const feature = [...named, ...byRef].slice(0, AUTO_MAX);
   if (!feature.length) throw new Error('no scene shows this release (no fragment has a Scene: field and no bullet names a scene\'s spec and FR); pass --scenes <ids> (see --list)');
+  for (const id of FILL_SCENES) { // FR-218: the release's own scenes come first; a clip with one or two is filled up so it stays over the length floor
+    if (feature.length >= AUTO_MIN) break;
+    if (!feature.includes(id) && Object.prototype.hasOwnProperty.call(scenes, id)) feature.push(id);
+  }
   return ['intro', ...feature, 'outro'];
 }
 /** The bullets and Scene: fields of a release: the pending fragments of the checkout, and the version's section of CHANGELOG.md once folded. */
@@ -544,7 +580,7 @@ function releaseSources(version, root = ROOT) {
 /* ---------------------------------------------------------------- pure parts (tested by scripts/test-release-video.js) ---------------------------------------------------------------- */
 
 function parseArgs(argv) {
-  const a = { scenes: null, keepFrames: false, list: false, count: null };
+  const a = { scenes: null, keepFrames: false, list: false, count: null, world: null };
   for (let i = 0; i < argv.length; i++) {
     const k = argv[i];
     const val = () => { const v = argv[++i]; if (v === undefined || v.startsWith('--')) throw new Error(`${k} needs a value`); return v; };
@@ -552,6 +588,7 @@ function parseArgs(argv) {
     else if (k === '--out') a.out = val();
     else if (k === '--scenes') a.scenes = val().split(',').map((s) => s.trim()).filter(Boolean);
     else if (k === '--count') a.count = Number(val());
+    else if (k === '--world') a.world = val();
     else if (k === '--keep-frames') a.keepFrames = true;
     else if (k === '--list') a.list = true;
     else throw new Error(`unknown argument ${k}`);
@@ -559,6 +596,7 @@ function parseArgs(argv) {
   if (a.list) return a;
   if (!a.version || !VERSION_RE.test(a.version)) throw new Error(`--version must be a release tag like v1.2.3 or v1.2.3-alpha.4 (got ${JSON.stringify(a.version)})`);
   if (!a.out) throw new Error('--out <folder> is required');
+  if (a.world !== null && !WORLDS.includes(a.world)) throw new Error(`--world must be one of ${WORLDS.join(', ')} (got ${JSON.stringify(a.world)})`);
   if (a.count !== null && !(Number.isInteger(a.count) && a.count > 0 && a.count < 1000)) throw new Error('--count must be a whole number of changes');
   if (a.scenes === null) return a; // no --scenes: main() picks them from the release (chooseScenes)
   const unknown = a.scenes.filter((s) => !Object.prototype.hasOwnProperty.call(SCENES, s));
@@ -693,6 +731,19 @@ function gifArgs(list, out, width, colors = 192) {
     '-loop', '0', out];
 }
 /** The GIF tries, best first: each width with 192 colours, then the smallest width with 128. */
+/** ffmpeg arguments for the contact sheet of the stills (FR-176): the files joined in order, scaled to `tileW` px wide, `cols` to a row, one JPEG. Names only, run in the folder that holds them. */
+function contactArgs(files, out, { cols = 3, tileW = 480 } = {}) {
+  if (!files.length) throw new Error('no still for the contact sheet');
+  if (!files.every((f) => /^[A-Za-z0-9._-]+\.png$/.test(f))) throw new Error('a still has an unexpected name');
+  const rows = Math.ceil(files.length / cols);
+  return ['-y', '-hide_banner', '-loglevel', 'error', ...files.flatMap((f) => ['-i', f]),
+    '-filter_complex', `${files.map((_, i) => `[${i}:v]`).join('')}concat=n=${files.length}:v=1:a=0,scale=${tileW}:-2,tile=${cols}x${rows}:padding=6:color=white`,
+    '-frames:v', '1', '-q:v', '3', out];
+}
+/** The variables the recording gets besides the allow-list: the simulator's clock, the scenes and, with --world, the DRIVER_WORLD every Real office load follows (driver-helpers.js). */
+function recordEnv(a) {
+  return { DURBAR_SIM_CLOCK: CLOCK, TZ: 'UTC', LANG: 'en_US.UTF-8', RV_VERSION: a.version, RV_SCENES: a.scenes.join(','), RV_COUNT: a.count === null ? '' : String(a.count), ...(a.world ? { DRIVER_WORLD: a.world } : {}) };
+}
 function gifTries() { return [...GIF_WIDTHS.map((w) => ({ width: w, colors: 192 })), { width: GIF_WIDTHS[GIF_WIDTHS.length - 1], colors: 128 }]; }
 
 /* ---- the camera (owner review of the v0.1.9 clip: "make it better with zooms"): a crop of the app frame, always W:H_ in shape ---- */
@@ -759,7 +810,7 @@ async function main(argv = process.argv.slice(2), deps = {}) {
   if (a.list) { for (const [id, s] of Object.entries(SCENES)) console.log(`${id.padEnd(11)} ${s.title}: ${s.sub}`); return null; }
   const out = path.resolve(a.out);
   const base = `release-${a.version}`;
-  const finals = ['.mp4', '.gif', '.json'].map((x) => path.join(out, base + x));
+  const finals = ['.mp4', '.gif', '.json', '-stills.jpg'].map((x) => path.join(out, base + x));
   for (const f of finals) fs.rmSync(f, { force: true }); // FR-175: an old clip never stands in for a failed new one, even when this run is killed
   if (a.scenes === null) a.scenes = (deps.chooseScenes || ((v) => chooseScenes((deps.releaseSources || releaseSources)(v))))(a.version); // after the removal: no scene shows this release is a failure like any other, and it leaves no old clip
   fs.mkdirSync(out, { recursive: true });
@@ -771,7 +822,10 @@ async function main(argv = process.argv.slice(2), deps = {}) {
   try {
     console.log(`release-video: ${a.version}, scenes ${a.scenes.join(', ')}, frames in ${frames}`);
     const runOne = deps.runOne || require('./ui-suite').runOne;
-    const r = await runOne({ name: 'release-video', baseEnv: childEnv(), timeoutMs: RECORD_MS, dpr: 2, env: { DURBAR_SIM_CLOCK: CLOCK, TZ: 'UTC', LANG: 'en_US.UTF-8', RV_VERSION: a.version, RV_SCENES: a.scenes.join(','), RV_COUNT: a.count === null ? '' : String(a.count) } }, frames);
+    const xvfbWas = process.env.UI_SUITE_XVFB;
+    if (process.platform === 'linux') process.env.UI_SUITE_XVFB = '1'; // FR-217: always a virtual screen, so the window is 1440x900 whatever the host's desktop (a clamped window filmed the wrong desks, #1789); `runOne` reads it
+    let r;
+    try { r = await runOne({ name: 'release-video', baseEnv: childEnv(), timeoutMs: RECORD_MS, dpr: 2, env: recordEnv(a) }, frames); } finally { if (xvfbWas === undefined) delete process.env.UI_SUITE_XVFB; else process.env.UI_SUITE_XVFB = xvfbWas; }
     if (!r.ok) throw new Error(`the recording failed (${r.why || 'exit ' + r.code}):\n${r.log.split(/\r?\n/).filter((l) => l.trim()).slice(-20).join('\n')}`);
     const shot = JSON.parse(fs.readFileSync(path.join(frames, 'frames.json'), 'utf8'));
     fs.writeFileSync(path.join(frames, 'list.ffconcat'), concatList(shot.frames));
@@ -794,10 +848,12 @@ async function main(argv = process.argv.slice(2), deps = {}) {
     if (!lengthOk(len)) throw new Error(`the clip is ${len.toFixed(1)} s, outside ${LEN_MIN}-${LEN_MAX} s`);
     for (const f of fs.readdirSync(out)) if (f.startsWith(`${base}-scene-`) && f.endsWith('.png')) fs.rmSync(path.join(out, f), { force: true }); // no still of an older run stays
     for (const s of shot.scenes) for (const [name, file] of stillNames(base, s)) fs.copyFileSync(path.join(frames, file), path.join(out, name));
+    const sheet = shot.scenes.filter((s) => s.still).map((s) => stillNames(base, s)[0][0]);
+    enc(ffmpegPath(), contactArgs(sheet, path.basename(finals[3])), { cwd: out, timeout: FFMPEG_MS }); // FR-176: one picture of every scene's still, for the look
     fs.renameSync(mp4Part, finals[0]);
     fs.renameSync(gif.part, finals[1]);
     const manifest = { version: a.version, seconds: Number(len.toFixed(1)), mp4: { file: path.basename(finals[0]), bytes: mp4Bytes, width: W, height: FRAME_H, fps: MP4_FPS, probedSeconds: seconds(finals[0]) },
-      gif: { file: path.basename(finals[1]), bytes: gif.bytes, width: gif.width, colors: gif.colors, fps: FPS }, scenes: shot.scenes.map(({ id, title, sub, from, to, zooms }) => ({ id, title, sub, from, to, zooms: zooms || [] })), privacy: shot.privacy };
+      world: a.world, contact: path.basename(finals[3]), gif: { file: path.basename(finals[1]), bytes: gif.bytes, width: gif.width, colors: gif.colors, fps: FPS }, scenes: shot.scenes.map(({ id, title, sub, from, to, zooms }) => ({ id, title, sub, from, to, zooms: zooms || [] })), privacy: shot.privacy };
     fs.writeFileSync(finals[2], JSON.stringify(manifest, null, 2) + '\n');
     console.log(`release-video: ${finals[0]} (${(mp4Bytes / 1048576).toFixed(2)} MB), ${finals[1]} (${(gif.bytes / 1048576).toFixed(2)} MB), ${len.toFixed(1)} s`);
     return manifest;
@@ -885,6 +941,8 @@ async function driver(ctx) {
     async reset(query = {}, o = {}) {
       cam = FULL; zoomStill = false;
       await H.load({ w: W, h: H_, ready: o.ready || 'fit', query, settle: o.ready ? false : undefined }); // `ready`: a page expression for a world whose desks are not `.desk` cards (Real office)
+      const win = await H.js('[innerWidth,innerHeight]'); // FR-217: a window the screen clamped would be stretched into the frame and the camera would point at the wrong place
+      if (!Array.isArray(win) || Math.abs(win[0] - W) > 2 || Math.abs(win[1] - H_) > 2) throw new Error(`the app window is ${win && win[0]}x${win && win[1]} CSS px, not ${W}x${H_} (the screen is too small?); no clip is made`);
       if (!o.ready) await H.office(query.simfloors === '1' ? 1 : 12);
       else await H.settle();
       H.wc().sendInputEvent({ type: 'mouseMove', x: 1, y: 1 });
@@ -1024,7 +1082,7 @@ async function driver(ctx) {
     if (cam !== FULL) await S.zoomOut(); // a scene never ends zoomed in: the next starts from the whole app
     rec.to = Number((clipMs / 1000).toFixed(2));
     if (frames.length === rec.firstFrame) throw new Error(`scene ${id} filmed nothing`);
-    rec.still = frames[Math.min(frames.length - 1, rec.firstFrame + Math.floor((frames.length - rec.firstFrame) * 0.6))].file;
+    rec.still = frames[Math.min(frames.length - 1, rec.firstFrame + Math.floor((frames.length - rec.firstFrame) * (sc.stillAt === undefined ? 0.6 : sc.stillAt)))].file;
     console.log(`[release-video] ${rec.n} ${id}: ${rec.from}-${rec.to} s, ${frames.length - rec.firstFrame} frames`);
   }
   band.destroy();
@@ -1033,5 +1091,5 @@ async function driver(ctx) {
 }
 
 module.exports = driver;
-Object.assign(module.exports, { sceneTitle, ZOOM_MAX, ZOOM_FPS, ZOOM_SECS, FULL, fitCamera, ease, zoomPath, cropRect, stillNames, HOME_PATH_RE, PLATFORM_ADDED, unexpectedEnvKeys, ENV_ALLOW, RECORD_MS, FFMPEG_MS, childEnv, gitEmail, run, W, H_, BAND, FRAME_H, composeFrame, SCENES, AUTO_MAX, frsNamed, refMatches, sceneIdsFor, chooseScenes, releaseSources, stepCounter, VERSION_RE, FPS, GIF_MAX, MP4_MAX, parseArgs, fill, forbiddenValues, privacyProblems, concatList, mp4Args, gifArgs, gifTries, lengthOk, main });
+Object.assign(module.exports, { LEN_MAX, LEN_MIN, WORLDS, worldQuery, contactArgs, recordEnv, sceneTitle, ZOOM_MAX, ZOOM_FPS, ZOOM_SECS, FULL, fitCamera, ease, zoomPath, cropRect, stillNames, HOME_PATH_RE, PLATFORM_ADDED, unexpectedEnvKeys, ENV_ALLOW, RECORD_MS, FFMPEG_MS, childEnv, gitEmail, run, W, H_, BAND, FRAME_H, composeFrame, SCENES, AUTO_MAX, AUTO_MIN, FILL_SCENES, frsNamed, refMatches, sceneIdsFor, chooseScenes, releaseSources, stepCounter, VERSION_RE, FPS, GIF_MAX, MP4_MAX, parseArgs, fill, forbiddenValues, privacyProblems, concatList, mp4Args, gifArgs, gifTries, lengthOk, main });
 if (require.main === module) main().catch((e) => { console.error('release-video:', e.message); process.exitCode = 1; });

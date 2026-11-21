@@ -1,10 +1,12 @@
 /** Agent text on the office floor (spec 041 FR-065, issue #541): mask first, then plain, then cut; fails closed. `npm run test:safetext`. No credits spent. */
 import './safetext-shared'; // the compiled hidden-character module for safetext.js (spec 084 FR-033)
+import { cases1593 } from './safetext-1593-corpus';
 import assert from 'assert';
 import { assertLinearShape } from './redact-growth-lib';
 import fs from 'fs';
+import crypto from 'crypto';
 import path from 'path';
-import { redact, maskSecretCommand, maskSecretUrl } from '../src/shared/redact';
+import { redact, maskSecretCommand, maskSecretUrl, withoutShell, withoutLoose, maskLoose, withoutLooseAll, withoutAfterMask } from '../src/shared/redact';
 
 const ROOT = path.join(__dirname, '..', '..');
 const R = path.join(ROOT, 'src', 'renderer');
@@ -16,6 +18,7 @@ const S = require(path.join(R, 'safetext.js')) as {
   unesc(t: unknown): string;
   excerpt(raw: unknown, redact: unknown, n?: number, codeWord?: boolean): string;
   maskLabel(raw: unknown, kind: string, mask: Record<string, unknown>): string;
+  maskRaw(raw: unknown, redact: unknown): string;
 };
 let n = 0;
 const ok = (c: unknown, m: string) => { assert.ok(c, m); n++; };
@@ -214,5 +217,112 @@ eq(T.ready, true, 'redact: ready');
   const configured = S as Bare;
   eq(configured.useShared({ unhide: (x: string) => x }), false, 'a found module cannot be replaced');
   eq(S.create({ redact: (s: string) => redact(s, {}) }).ready, true, 'with the shared module: ready');
+}
+// spec 012 FR-183 (issue 1593): the desk masks stay linear on many link openings and on many secrets after a mark; over the second pass's work budget they
+// fail closed; under it they give exactly what main gave (a frozen copy of safetext.js as on main at 7ce319809)
+{
+  const red = (x: string): string => redact(x, {});
+  const opens = (k: number): string => '[redacted:'.repeat(Math.ceil(k / 10)).slice(0, k) + ']a\\b';
+  assertLinearShape('#1593 maskRaw of many [redacted: openings', (x) => void S.maskRaw(x, red), opens, 400_000); // 25,000 and 400,000: both over the window, one path
+  assertLinearShape('#1593 excerpt of many [redacted: openings', (x) => void S.excerpt(x, red, 140), opens, 400_000);
+  const pwRun = (k: number, f: (i: number) => string = (i) => 'password=' + String(i).padStart(14, 'K') + ' '): string => { let t = '*'; for (let i = 0; t.length < k; i++) t += f(i); return t.slice(0, k); };
+  assertLinearShape('#1593 maskRaw of many distinct secrets after a mark', (x) => void S.maskRaw(x, red), (k) => pwRun(k), 400_000);
+  assertLinearShape('#1593 excerpt of many distinct secrets after a mark', (x) => void S.excerpt(x, red, 140), (k) => pwRun(k), 400_000);
+  // over the budget: nothing, never a half-masked text; also when the secrets' names hold a hidden character (the copy without it is over the budget, the text
+  // as written is not: the failure is final, the text as written is not read in its place)
+  const over = pwRun(200_000);
+  eq(S.maskRaw(over, red), '', '#1593 over the budget: maskRaw gives nothing');
+  eq(S.excerpt(over, red, 140), '', '#1593 over the budget: the excerpt gives nothing');
+  eq(T.mask(over), '', '#1593 over the budget: the wrapper mask gives nothing');
+  eq(T.excerpt(over, 140), 'Finished.', '#1593 over the budget: the wrapper excerpt gives its fallback word');
+  const hid = pwRun(60_000, (i) => 'pass\u200bword=' + String(i).padStart(14, 'K') + ' ');
+  eq(S.excerpt(hid, red, 140), '', '#1593 over the budget with a hidden character in each name: the excerpt gives nothing');
+  eq(S.maskRaw(hid, red), '', '#1593 over the budget with a hidden character in each name: maskRaw gives nothing');
+  // the boundary, with an injected mask: 8,192 runs it changes x an output of 8,192 characters is exactly the budget (runs); one more character is over it (nothing)
+  {
+    const runs = Array.from({ length: 8192 }, (_, i) => 'q' + String(i).padStart(11, '0'));
+    const text = '*' + runs.join(' ');
+    const inj = (len: number) => (t: string): string => (/^q\d{11}$/.test(t) ? '[x]' : t.length > 1000 ? 'a'.repeat(len) : t);
+    eq((S as unknown as { BOTH_WORK: number }).BOTH_WORK, 8192 * 8192, '#1593 the budget is 8,192 x 8,192');
+    eq(S.maskRaw(text, inj(8192)), 'a'.repeat(8192), '#1593 exactly at the budget: the pass runs');
+    eq(S.maskRaw(text, inj(8193)), '', '#1593 one output character over the budget: nothing');
+    // round 2 of the review of PR 1816: over the budget the pass stops at the first run that crosses it (2^26 / 65,536 = 1,024 runs fit), not after all 8,192
+    let calls = 0;
+    const counted = (t: string): string => { if (/^q\d{11}$/.test(t)) calls++; return inj(65_536)(t); };
+    eq(S.maskRaw(text, counted), '', '#1593 far over the budget: nothing');
+    eq(calls, 1025, '#1593 over the budget: the pass stops at the run that crosses it (1,025 run masks, not 8,192)');
+  }
+
+  // the differential: byte-identical output to main's copy under the budget
+  const ROOT_ = path.join(__dirname, '..', '..');
+  const refFile = path.join(ROOT_, 'scripts', 'fixtures', 'safetext-1593-main-ref.js');
+  const refText = fs.readFileSync(refFile, 'utf8').replace(/\r\n/g, '\n');
+  eq(crypto.createHash('sha256').update(refText, 'utf8').digest('hex'), '4a1856a6ff14310d9354e7c2e3cae0f1aa6eef742f75c73330c9d46e79191a27', '#1593 differential: the frozen copy is unchanged');
+  ok(!refText.includes('BOTH_WORK'), '#1593 differential: the frozen copy is not the head');
+  const R0 = require(refFile) as typeof S & { useShared(m: unknown): boolean; create: typeof S.create };
+  R0.useShared(require('../src/shared/redact'));
+  const RT = R0.create({ redact: red, cut: cutText });
+  // the random texts (one generator, shared with test-safetext-links.ts: spec 012 FR-189)
+  const { cases, z } = cases1593(ghp, pat, sk);
+  // adversarial shapes under the budget, and the issue's own
+  // about 2,800 distinct runs of 14 characters that the mask leaves alone, and a secret every 500th: the budget counts only the runs the mask changes
+  const manyPlain = pwRun(40_000, (i) => (i % 500 === 7 ? 'password=Hx9Kq2Lm7Np4Rs' + i + ' ' : 'plainword' + String(i).padStart(5, '0') + ' '));
+  ok(S.maskRaw(manyPlain, red) !== '' && !S.maskRaw(manyPlain, red).includes('Hx9Kq2Lm7Np4Rs'), '#1593 many runs the mask leaves alone: masked, not failed closed');
+  const shapes = [opens(1_000), opens(16_000), opens(40_000), pwRun(10_000), pwRun(16_384), pwRun(30_000), '['.repeat(20_000), '[x]('.repeat(5_000), '\\['.repeat(10_000),
+    pwRun(20_000, (i) => 'x*gh' + 'p_' + String(i).padStart(36, 'Q') + '*.'), pwRun(40_000, (i) => 'gh' + 'p_' + String(i).padStart(36, 'Q') + ' '), pwRun(16_000, (i) => 'pass\u200bword=' + String(i).padStart(14, 'K') + ' '),
+    pwRun(40_000), manyPlain]; // near the budget (about 5.5e7); many runs the mask leaves alone and a few secrets
+  let same = 0;
+  let cont = 0;
+  let l185 = 0;
+  const { withoutLinkSplit } = require('../src/shared/redact') as { withoutLinkSplit<X>(f: () => X): X };
+  const SECRETS = [ghp.slice(4), pat.slice(11), sk.slice(3), z.slice(4), 'Hx9Kq2Lm7Np4Rs'];
+  for (const t of [...cases, ...shapes]) {
+    const where = JSON.stringify(t.slice(0, 60));
+    // spec 012 FR-184 (issue #1543): a text with a backslash, or a backtick or caret between token characters, is also read with the shell readings off and shows
+    // nothing that reading hides, so it may hide more than main (and the excerpt masks a line continuation as written first); it never shows a piece main's output does not show
+    const shell = /\\|[A-Za-z0-9_\-.~+/=:@%][`^][A-Za-z0-9_\-.~+/=:@%]/.test(t);
+    let differs = false;
+    let loose = false;
+    const sameOrMore = (h: string, r: string, what: string, off?: () => string): void => {
+      if (h === r) return;
+      // spec 012 FR-187: a text that differs only by the value pass after a mask (as on main with that pass off) is checked the same way: it shows nothing main hides
+      const byAfter = !!off && off() === r;
+      assert.ok(shell || byAfter, `#1593 differential: ${what} as on main: ${where}`);
+      differs = true;
+      const cutAt = /\s+|\[redacted(?::[^\]\r\n]{1,128})?\]/;
+      const shown = r.split(cutAt).join('\u0000');
+      for (const p of h.split(cutAt)) assert.ok(p === '' || shown.includes(p), `#1593 differential (FR-184): ${what} shows nothing main hides: ${where}: ${JSON.stringify(p)}`);
+    };
+    // main's reading: the frozen window with the shared masks' shell readings off (with them off the shared masks are byte for byte main's); spec 012 FR-185: also with
+    // the GitHub last pass off inside, then that pass once over the result, as the window does it (`maskLoose` only adds masks)
+    // spec 012 FR-187 (review of PR 1872): the value pass after a mask runs with FR-185's pass in `maskLoose`; the reference is main plus FR-185's pass, so it is off here (`withoutAfterMask`)
+    const ref = (f: () => string): string => withoutAfterMask(() => maskLoose(withoutLoose(() => withoutShell(f))));
+    // spec 012 FR-189 (issue #1940): the desk masks a token split by link or image markup first (the shared maskLinkSplitTokens); with that step off it reads every
+    // text as before, so the checks below run with it off (byte for byte, or FR-184/185/187's differences only). test-safetext-links.ts checks the same texts with it
+    // on: a text it changes shows nothing main hides, and any other text reads the same with it on and off.
+    const run = <X,>(f: () => X): X => withoutLinkSplit(f);
+    sameOrMore(run(() => S.maskRaw(t, red)), ref(() => R0.maskRaw(t, red)), 'maskRaw', () => run(() => withoutAfterMask(() => S.maskRaw(t, red))));
+    sameOrMore(run(() => T.mask(t)), ref(() => RT.mask(t)), 'the wrapper mask', () => run(() => withoutAfterMask(() => T.mask(t))));
+    // the excerpt runs FR-185's pass before it drops `_` (the frozen copy cannot): with that pass fully off it is main's; with it on, more is hidden, so the cut can
+    // fall later and a mask can take other neighbouring marks: no 8 characters of a secret it shows that main's uncut excerpt hides
+    const exc = (what: string, head: () => string, main: () => string, mainAll: () => string): void => {
+      const h = run(head), h0 = run(() => withoutLooseAll(head));
+      sameOrMore(h0, ref(main), what);
+      if (h === h0) return;
+      loose = true;
+      const shown = ref(mainAll).replace(/\s+/g, '');
+      const hs = h.replace(/\s+/g, '');
+      for (const b of SECRETS) for (let i = 0; i + 8 <= b.length; i++) if (hs.includes(b.slice(i, i + 8))) assert.ok(shown.includes(b.slice(i, i + 8)), `#1329 differential: ${what} shows no secret main hides: ${where}: ${b.slice(i, i + 8)}`);
+    };
+    exc('excerpt', () => S.excerpt(t, red, 140), () => R0.excerpt(t, red, 140), () => R0.excerpt(t, red));
+    exc('excerpt with the code word', () => S.excerpt(t, red, undefined, true), () => R0.excerpt(t, red, undefined, true), () => R0.excerpt(t, red, undefined, true));
+    exc('the wrapper excerpt', () => T.excerpt(t, 140), () => RT.excerpt(t, 140), () => R0.excerpt(t, red, undefined, true));
+    if (differs) { cont++; continue; }
+    if (loose) { l185++; continue; }
+    same++;
+  }
+  ok(same + l185 >= 1500 && same + cont + l185 >= 2000 + shapes.length, `#1593 differential: ${same} texts byte-identical, ${l185} more whose excerpt FR-185 changed (byte-identical with its pass off), ${cont} more changed by FR-184 that show nothing main hides (FR-189's link step off)`);
+  // over the budget the head shows nothing where main showed a masked text (the intended change)
+  ok(R0.maskRaw(over, red).length > 0 && S.maskRaw(over, red) === '', '#1593 over the budget: main showed a masked text, the head shows nothing');
 }
 console.log(`safetext: ${n} checks passed`);

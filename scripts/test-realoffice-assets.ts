@@ -15,13 +15,13 @@ const ROOT = (() => { let d = __dirname; while (!fs.existsSync(path.join(d, 'pac
 const RO = path.join(ROOT, 'src', 'renderer', 'realoffice');
 
 /** FR-062 caps, in bytes, by kind of picture */
-export const CAPS = { person: 80 * 1024, fixture: 120 * 1024, desk: 60 * 1024, floor: 40 * 1024, wall: 120 * 1024, monitor: 30 * 1024, glow: 20 * 1024, welcome: 150 * 1024, total: 10 * 1024 * 1024 };
+export const CAPS = { person: 80 * 1024, fixture: 120 * 1024, desk: 60 * 1024, floor: 40 * 1024, wall: 120 * 1024, monitor: 30 * 1024, glow: 20 * 1024, welcome: 150 * 1024, focus: 120 * 1024, total: 10 * 1024 * 1024 };
 /** spec 102 FR-213: all shipped art (every world and every set) at most this many bytes */
 export const SHIPPED_MAX = 30 * 1024 * 1024;
 export const PERSON_MAX_H = 640;
 const KEYS = ['files', 'source', 'tool', 'date', 'made by', 'approved by', 'reference', 'prompt', 'cut', 'licence'];
 const CLAUSE = /fictional and must not resemble any real or famous person; no real person, celebrity, brand, logo or franchise is named/;
-const kindOf = (f: string): keyof typeof CAPS | null => /^fx-[a-z]+\.webp$/.test(f) ? 'fixture' : /^p\d\d-[\w-]+(\.h)?\.webp$/.test(f) || /^[a-z][a-z0-9-]*-\w+\.webp$/.test(f) ? 'person' : f === 'desk.webp' || f === 'desk.h.webp' ? 'desk' : /^floor(-night)?\.webp$/.test(f) ? 'floor' : /^wall(-night)?\.webp$/.test(f) ? 'wall' : /^monitor(-[a-z]+)?\.webp$/.test(f) ? 'monitor' : f === 'glow.webp' ? 'glow' : f === 'welcome.webp' ? 'welcome' : null;
+const kindOf = (f: string): keyof typeof CAPS | null => /^fx-[a-z]+\.webp$/.test(f) ? 'fixture' : /^p\d\d-[\w-]+(\.h)?\.webp$/.test(f) || /^[a-z][a-z0-9-]*-\w+\.webp$/.test(f) ? 'person' : f === 'desk.webp' || f === 'desk.h.webp' ? 'desk' : /^floor(-night)?\.webp$/.test(f) ? 'floor' : /^wall(-night)?\.webp$/.test(f) ? 'wall' : /^monitor(-[a-z]+)?\.webp$/.test(f) ? 'monitor' : f === 'glow.webp' ? 'glow' : f === 'welcome.webp' ? 'welcome' : f === 'focus.webp' ? 'focus' : null;
 
 /** Spec 102 FR-302 (T265a): the world previews in `realoffice/previews/`: one WebP per built-in world and Plain, 640 px wide, each at most 48 KB with no metadata chunk,
  *  and `previews.json` naming exactly those, each with its own size and a zoom origin of 0..100 percent (FR-301). Sentences, empty = fine. */
@@ -65,6 +65,21 @@ export function sections(md: string): Map<string, Record<string, string>> {
     if (cur && kv) cur[kv[1]] = kv[2].trim();
   }
   return out;
+}
+
+/** spec 097 FR-068, spec 102 T396 (review of #1957): a kid sheet's owner look on likeness, `owner-likeness-look: pending (<owner>)`, blocks shipping: a world that is
+ *  OFFERED (its row in crew.js `WORLDS` has no flag, or its flag is on) must carry no pending look in its ASSETS.md (or its default set's). A world behind an off flag (the cave) may
+ *  hold one until it is opened. The answer is recorded by the owner's words as `likeness-check: ...` (written only from his answer). Returns the sections still pending. */
+export function pendingLooks(md: string, offered: boolean): string[] {
+  if (process.env.ASSETS_MUTANT === 'lookoff') return []; /* the mutant: the guard removed; the red cases below must fail at their own assert */
+  if (!offered) return [];
+  return [...sections(md)].filter(([, x]) => /^pending\b/.test(x['owner-likeness-look'] || '')).map(([n]) => n);
+}
+/** spec 102 FR-200..FR-202: is a world offered? crew.js `WORLDS` and `WORLD_FLAGS` (the one list the app reads) */
+export function worldOffered(id: string): boolean {
+  const C = require(path.join(ROOT, 'src', 'renderer', 'crew.js')) as { WORLD_FLAGS: Record<string, boolean>; WORLDS: { id: string; flag?: string }[] }; // eslint-disable-line @typescript-eslint/no-var-requires
+  const row = C.WORLDS.find((w) => w.id === id);
+  return !!row && (!row.flag || C.WORLD_FLAGS[row.flag] === true);
 }
 
 /** FR-068: the removal records (`## Removed`): each needs a date, who reported and the replacement */
@@ -176,6 +191,7 @@ export function problems(files: Map<string, Buffer>, peopleJson: string, md: str
   }
   if (objs.night) { want.add(objs.night.wall); want.add(objs.night.floor); }
   if (objs.glow) want.add(objs.glow.file);
+  if ((meta as { arrangement?: unknown }).arrangement === 'circle') { want.add('focus.webp'); if (!files.has('focus.webp')) out.push('arrangement circle needs focus.webp (spec 102 FR-227)'); } /* the one picture the circle stands round, named by the arrangement, not by a key */
   for (const f of want) if (!files.has(f)) out.push(`people.json names ${f}, which is not in the folder`);
   for (const f of files.keys()) if (!want.has(f.replace(/\.h\.webp$/, '.webp'))) out.push(`${f}: people.json does not name it`);
   return out;
@@ -223,7 +239,7 @@ for (const wid of worldIds) {
   const cssName = (w.json as { css?: string }).css;
   assert.strictEqual(fs.existsSync(path.join(RO, 'worlds', wid, 'world.css')), cssName === 'world.css', `${wid}: world.css exists exactly when world.json names it`);
   if (cssName) {
-    const css = fs.readFileSync(path.join(RO, 'worlds', wid, 'world.css'), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
+    const css = fs.readFileSync(path.join(RO, 'worlds', wid, 'world.css'), 'utf8').replace(/\r\n/g, '\n').replace(/\/\*[\s\S]*?\*\//g, '');
     assert.ok(!/mix-blend-mode\s*:\s*(?!normal)/.test(css) && !/backdrop-filter|[^-]filter\s*:/.test(css), `${wid}: world.css has no blend mode, blur or filter (FR-180)`);
     assert.ok(!/url\(\s*['"]?(?:https?:|\/|\.\.|data:)/i.test(css), `${wid}: world.css loads only files of its own folder`);
     /* spec 102 T214, FR-260: a world's own motion: keyframes move transform and opacity only, and a loop is stepped */
@@ -244,17 +260,21 @@ for (const wid of worldIds) {
   assert.deepStrictEqual(real, [], `${wid} + ${wj.defaultSet} pass: ` + real.slice(0, 10).join('; '));
   const pending = [...sections(mdAll)].filter(([, x]) => /^pending/.test(x['likeness-check'] || '')).map(([n]) => n);
   assert.deepStrictEqual(pending, [], `${wid}: every person has its likeness check on record (FR-068)`);
+  if (wid === 'cave') assert.strictEqual([...w.files.keys()].filter((n) => /^kid\d-/.test(n)).length, 42, 'the cave ships 6 kids x 7 states (spec 102 T326)');
+  /* spec 102 T396 (review of #1957): an offered world ships no kid (or person) whose owner likeness look is pending; the cave, behind its off flag, may */
+  assert.deepStrictEqual(pendingLooks(mdAll, worldOffered(wid)), [], `${wid} is offered${worldOffered(wid) ? '' : ' (no: behind its flag)'}: no sheet may ship with \`owner-likeness-look: pending\` (FR-068); record the owner's answer as \`likeness-check\``);
+  if (wid === 'retro') assert.strictEqual([...w.files.keys()].filter((n) => /^kid\d-/.test(n)).length, 42, 'the arcade ships 6 pixel kids x 7 states (spec 102 T327)');
   packs++; biggest = Math.max(biggest, [...all.values()].reduce((n, b) => n + b.length, 0));
   if (wid === 'photo') { for (const [k, v] of all) files.set(k, v); md = mdAll; pj = merged; META = JSON.parse(merged); }
 }
 /* spec 097 Changes 2026-11-08 (T240..T244): a set that is no world's default is a crew set; it is drawn only because crew.js has a `REAL_SETS` row for it
    (wired). It still passes every picture and text check and has its approval on record. A set with no row is refused, except a set named in SETS_PACK_ONLY
-   (T245 art part: the art lands before its wiring PR); that allowance fails as soon as crew.js gives the set a row, so it cannot go stale. */
+   (an art-only set whose wiring PR is to come; empty since T245); that allowance fails as soon as crew.js gives the set a row, so it cannot go stale. */
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const REAL_SETS = (require(path.join(__dirname, '..', '..', 'src', 'renderer', 'crew.js')) as { REAL_SETS: { id: string }[] }).REAL_SETS;
 const wiredIds = REAL_SETS.map((r) => r.id);
 for (const id of wiredIds) assert.ok(setIds.includes(id), `${id}: a REAL_SETS row has its set folder`);
-const SETS_PACK_ONLY = ['minimalist']; // art landed, wiring PR to come (T245); remove the name when crew.js has its REAL_SETS row
+const SETS_PACK_ONLY: string[] = []; // empty since T245 (Minimalist wired, #1154); a name here is an art-only set whose wiring PR is to come
 for (const id of SETS_PACK_ONLY) assert.ok(!wiredIds.includes(id), `${id} is wired: remove it from SETS_PACK_ONLY`);
 /* each crew set's owner approval (date, time and quote of every frame line) and likeness check, one explicit entry per set: a set missing here fails */
 const QUOTE_1143 = 'Vikram Gorla (owner), 2026-11-08 11:43 UTC, Telegram DM: "Yes, I looked at every art carefully and it does not resemble any person I know"';
@@ -351,6 +371,14 @@ const total = [...files.values()].reduce((s, b) => s + b.length, 0);
   }
   const big = new Map(files); big.set('p01-typeA.webp', Buffer.concat([good, Buffer.alloc(CAPS.total)]));
   assert.ok(problems(big, pj, md).some((p) => /over 10485760/.test(p)), 'red: a pack over 10 MB');
+  /* spec 102 FR-227, T174, T242: focus.webp is named by the arrangement circle, listed in ASSETS.md and capped */
+  const pjc = JSON.stringify({ ...JSON.parse(pj1), arrangement: 'circle' }), mdf = okMd.replace('\n## Removed', '### focus\n- files: focus.webp\n- source: s\n- tool: t\n- date: 2026-11-14\n- made by: m\n- approved by: a\n- reference: r\n- prompt: p\n- cut: c\n- licence: MIT\n\n## Removed');
+  const withFocus = new Map(one('p01-book.webp', book)); withFocus.set('focus.webp', good);
+  assert.deepStrictEqual(only(problems(withFocus, pjc, mdf)), [], 'a circle world with focus.webp, listed, passes');
+  assert.ok(only(problems(one('p01-book.webp', book), pjc, okMd)).some((p) => /arrangement circle needs focus.webp/.test(p)), 'red: circle without focus.webp');
+  assert.ok(only(problems(withFocus, pj1, mdf)).some((p) => /focus.webp: people.json does not name it/.test(p)), 'red: focus.webp in a world that does not name circle');
+  const fat = new Map(withFocus); fat.set('focus.webp', Buffer.concat([good, Buffer.alloc(130 * 1024)]));
+  assert.ok(only(problems(fat, pjc, mdf)).some((p) => /over the focus cap/.test(p)), 'red: a 130 KB focus picture');
 }
 
 assert.deepStrictEqual(halfProblems(files, (META as unknown as { px: Record<string, number> }).px), [], 'every person and the desk has both sizes (FR-183)');
@@ -477,6 +505,30 @@ if (worldIds.includes('retro')) {
 }
 
 {
+  /* spec 102 T396: the likeness guard's red cases (ASSETS_MUTANT=lookoff removes the guard and must fail here) */
+  {
+    const caveMd = fs.readFileSync(path.join(RO, 'worlds', 'cave', 'ASSETS.md'), 'utf8');
+    assert.strictEqual(worldOffered('cave'), false, 'the cave is behind its off flag, so its pending look does not fail it');
+    assert.ok(worldOffered('retro') && worldOffered('photo'), 'the arcade and the Photo office are offered');
+    assert.ok(pendingLooks(caveMd, true).length === 6, 'red: the cave opened with its six pending kid looks fails the likeness guard');
+    assert.deepStrictEqual(pendingLooks(caveMd.replace(/- owner-likeness-look: pending \([^)]*\)[^\n]*/g, '- likeness-check: Vikram, 2026-11-20'), true), [], 'a recorded likeness-check passes the guard');
+  }
+  const kw = require(path.join(ROOT, 'scripts', 'kids-worlds.js')) as { kidsWorlds: () => string[]; pickKidsWorld: (v: string | undefined, m?: string) => string }; // eslint-disable-line @typescript-eslint/no-var-requires
+  const kidWorlds = kw.kidsWorlds();
+  assert.ok(kidWorlds.includes('photo') && kidWorlds.includes('cave') && kidWorlds.includes('retro'), 'the worlds with kids (world.json has `kids`) include photo, cave and retro: ' + kidWorlds.join(', '));
+  /* check-097-kids.js KIDS_WORLD (outside the Pillow branch, #1867 review: the fail-loud validation needs no Pillow and runs on every machine): an unknown name fails loudly with the valid names; KIDS_MUTANT=worldfallback (the old silent fallback to photo) must be caught here */
+  const kidsWorldProbe = (value: string | undefined, mutant?: string): void => {
+    assert.strictEqual(kw.pickKidsWorld(undefined, mutant), 'photo', 'KIDS_WORLD unset checks photo');
+    for (const wid of kidWorlds) assert.strictEqual(kw.pickKidsWorld(wid, mutant), wid, `KIDS_WORLD=${wid} checks ${wid}`);
+    let msg = '';
+    try { kw.pickKidsWorld(value, mutant); } catch (e) { msg = (e as Error).message; }
+    assert.ok(msg.includes('is not a world with kids') && kidWorlds.every((w) => msg.includes(w)), `KIDS_WORLD=${value} must fail loudly naming the valid worlds, got: ${msg || 'no error (silent fallback)'}`);
+    const r = spawnSync(process.execPath, [path.join(ROOT, 'scripts', 'check-097-kids.js')], { encoding: 'utf8', env: { ...process.env, KIDS_WORLD: value, KIDS_MUTANT: mutant || '' } });
+    assert.strictEqual(r.status, 1, `check-097-kids.js with KIDS_WORLD=${value} must exit 1 (exit ${r.status})`);
+    assert.ok(/is not a world with kids/.test(r.stderr), 'check-097-kids.js prints the valid names on a wrong KIDS_WORLD');
+  };
+  for (const bad of ['Cave', 'arcade', 'caves', ' photo']) kidsWorldProbe(bad);
+  assert.throws(() => kidsWorldProbe('Cave', 'worldfallback'), /KIDS_WORLD=Cave must fail loudly naming the valid worlds, got: no error \(silent fallback\)/, 'red: the silent fallback to photo is caught at its own assert');
   /* spec 097 FR-371 (issue #1641 review): no kid picture is clipped by a side border. A tight crop of a whole cube or stool may rest on the
    * edge (the most in the shipped 42 is 47 rows of 220, a stool's flat side), a clipped figure runs far more: the count is of rows with
    * alpha > 128 in the first and the last column (scripts/kid-edge-rows.py decodes the WebP; plain Node cannot): needs python3 with Pillow. */
@@ -484,25 +536,27 @@ if (worldIds.includes('retro')) {
   const have = spawnSync('python3', ['-I', '-c', 'import PIL'], { encoding: 'utf8' });
   if (have.error || have.status !== 0) console.log('kid edge check skipped: needs python3 with Pillow (not on this machine)');
   else {
-    const dir = path.join(RO, 'worlds', 'photo'), names = fs.readdirSync(dir).filter((f) => /^kid\d-\w+\.webp$/.test(f)).sort();
-    assert.strictEqual(names.length, 42, 'the edge check sees all 42 kid pictures');
     const run = (args: string[]) => { const r = spawnSync('python3', ['-I', path.join(ROOT, 'scripts', 'kid-edge-rows.py'), ...args], { encoding: 'utf8' }); assert.strictEqual(r.status, 0, 'kid-edge-rows.py: ' + r.stderr); return r.stdout.trim().split('\n').map((l) => l.split(' ')); };
-    const bad = run(names.map((n) => path.join(dir, n))).filter(([, l, r]) => Number(l) > MAX_EDGE_ROWS || Number(r) > MAX_EDGE_ROWS).map(([n, l, r]) => `${n}: ${l} rows on the left edge, ${r} on the right`);
-    assert.deepStrictEqual(bad, [], `kid pictures clipped by a side border (more than ${MAX_EDGE_ROWS} opaque rows on an edge): re-cut with a margin`);
+    for (const wid of kidWorlds) {
+      const dir = path.join(RO, 'worlds', wid), names = fs.readdirSync(dir).filter((f) => /^kid\d-\w+\.webp$/.test(f)).sort();
+      assert.strictEqual(names.length, 42, `the edge check sees all 42 kid pictures of ${wid}`);
+      const bad = run(names.map((n) => path.join(dir, n))).filter(([, l, r]) => Number(l) > MAX_EDGE_ROWS || Number(r) > MAX_EDGE_ROWS).map(([n, l, r]) => `${n}: ${l} rows on the left edge, ${r} on the right`);
+      assert.deepStrictEqual(bad, [], `${wid}: kid pictures clipped by a side border (more than ${MAX_EDGE_ROWS} opaque rows on an edge): re-cut with a margin`);
+    }
     const red = run(['--red'])[0];
     assert.ok(Number(red[1]) > MAX_EDGE_ROWS && Number(red[2]) === 0, 'red: a picture cut flat on its left edge (90 opaque rows) is over the limit');
   }
 }
 
 // ---- packaging (FR-060, FR-061, T012): the build ships each pack's pictures and its script, never ASSETS.md or the JSON; the CSP is unchanged ----
-const copy = fs.readFileSync(path.join(ROOT, 'scripts', 'copy-assets.js'), 'utf8');
+const copy = fs.readFileSync(path.join(ROOT, 'scripts', 'copy-assets.js'), 'utf8').replace(/\r\n/g, '\n');
 assert.ok(/'worlds', 'world', 'DurbarRealOfficeWorlds'/.test(copy) && /'sets', 'set', 'DurbarRealOfficeSets'/.test(copy), 'copy-assets.js copies realoffice/worlds and realoffice/sets');
 if (fs.existsSync(path.join(ROOT, 'dist', 'renderer', 'index.html'))) {
   for (const [kind, json, global] of [['worlds', 'world', 'DurbarRealOfficeWorlds'], ['sets', 'set', 'DurbarRealOfficeSets']]) for (const id of dirs(kind)) {
     const src = readPack(kind, id), out = path.join(ROOT, 'dist', 'renderer', 'realoffice', kind, id);
     const extra = kind === 'worlds' && fs.existsSync(path.join(RO, kind, id, 'world.css')) ? ['world.css'] : [];
     assert.deepStrictEqual(fs.readdirSync(out).sort(), [...src.files.keys(), json + '.js', ...extra].sort(), `dist ${kind}/${id} holds exactly the pictures and ${json}.js: no ASSETS.md, no ${json}.json`);
-    const m = new RegExp(`self\\.${global}\\[\"${id}\"\\]=(\\{.*\\});\\s*$`).exec(fs.readFileSync(path.join(out, json + '.js'), 'utf8'));
+    const m = new RegExp(`self\\.${global}\\[\"${id}\"\\]=(\\{.*\\});\\s*$`).exec(fs.readFileSync(path.join(out, json + '.js'), 'utf8').replace(/\r\n/g, '\n'));
     assert.ok(m, `${json}.js sets self.${global}[${id}]`);
     assert.deepStrictEqual(JSON.parse((m as RegExpExecArray)[1]), src.json, `${json}.js carries ${json}.json unchanged`);
   }
@@ -535,9 +589,27 @@ if (fs.existsSync(path.join(ROOT, 'dist', 'renderer', 'index.html'))) {
   if (fs.existsSync(path.join(ROOT, 'dist', 'renderer', 'index.html'))) assert.deepStrictEqual(fs.readdirSync(dist).sort(), [...pf.keys(), 'previews.js'].sort(), 'dist previews/ holds the pictures and previews.js, not previews.json');
   assert.ok(/previews/.test(copy) && /DurbarWorldPreviews/.test(copy), 'copy-assets.js copies realoffice/previews');
 }
-const index = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'index.html'), 'utf8');
+const index = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'index.html'), 'utf8').replace(/\r\n/g, '\n');
 const csp = /Content-Security-Policy" content="([^"]*)"/.exec(index);
-assert.strictEqual(csp && csp[1], "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:;", 'the CSP is unchanged (FR-060)');
+assert.strictEqual(csp && csp[1], "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:;", 'the CSP is unchanged by spec 097 (FR-060); spec 096 FR-043 added blob: to img-src only (test:crew-assets pins it)');
 assert.ok(!/realoffice/.test(index), 'index.html does not load Real office (FR-061: only on first use)');
+// spec 097 Changes 2026-11-14 (#1751): the cave draws its monitor frame round the engine's glass (3 px in); the CSS numbers come from the slate opening measured on the picture (Pillow, by hand: no WebP decoder here),
+// and the picture is pinned by hash so a new picture must be measured again
+{
+  const OPEN = { x0: 0.0964, x1: 0.9107, y0: 0.1227, y1: 0.8712 }, fw = OPEN.x1 - OPEN.x0, fh = OPEN.y1 - OPEN.y0;
+  const css = fs.readFileSync(path.join(RO, 'worlds', 'cave', 'world.css'), 'utf8').replace(/\r\n/g, '\n');
+  const pic = require('crypto').createHash('sha256').update(fs.readFileSync(path.join(RO, 'worlds', 'cave', 'monitor.webp'))).digest('hex');
+  assert.strictEqual(pic, 'b31356faa0a595ba6cd0a364e42653aced1df19ab626dd13e1cddc9f59460e14', 'the cave monitor picture changed: measure its slate opening again and update OPEN here and the calc() numbers in world.css (spec 097, #1751)');
+  const want: Record<string, [number, number]> = { left: [3 + (OPEN.x0 / fw) * 6, -(OPEN.x0 / fw) * 100], top: [3 + (OPEN.y0 / fh) * 6, -(OPEN.y0 / fh) * 100], width: [-6 / fw, 100 / fw], height: [-6 / fh, 100 / fh] };
+  const rule = /\.ro\[data-world="cave"\] \.ro-bezel::before\{([^}]*)\}/.exec(css);
+  assert.ok(rule, 'the cave bezel frame rule exists');
+  for (const k of Object.keys(want)) {
+    const m = new RegExp('(?:^|;)' + k + ':calc\\((-?[\\d.]+)px ([-+]) ([\\d.]+)%\\)').exec(rule![1]) || new RegExp('(?:^|;)' + k + ':calc\\(([\\d.]+)% ([-+]) ([\\d.]+)px\\)').exec(rule![1]);
+    assert.ok(m, `the cave frame's ${k} is a calc() of a pixel part and a percentage`);
+    const px = k === 'left' || k === 'top' ? Number(m![1]) : (m![2] === '-' ? -1 : 1) * Number(m![3]), pct = k === 'left' || k === 'top' ? (m![2] === '-' ? -1 : 1) * Number(m![3]) : Number(m![1]);
+    assert.ok(Math.abs(px - want[k][0]) < 0.01 && Math.abs(pct - want[k][1]) < 0.01, `the cave frame's ${k} follows the measured slate opening (css ${px}px ${pct}%, want ${want[k][0].toFixed(3)}px ${want[k][1].toFixed(3)}%)`);
+  }
+  assert.ok(!/\.ro\[data-world="cave"\] \.ro-bezel\{[^}]*padding/.test(css), 'the cave bezel keeps the engine\'s 3 px padding: the glass is the engine\'s');
+}
 console.log(`realoffice assets tests passed (${packs} world packs with their default sets, largest ${(biggest / 1024 / 1024).toFixed(2)} MB; the Photo office ${files.size} pictures, ${(total / 1024 / 1024).toFixed(2)} MB)`);
 process.exitCode = 0;

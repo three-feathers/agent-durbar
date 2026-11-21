@@ -2,6 +2,7 @@
 import * as assert from 'assert';
 import * as fs from 'fs';
 import * as path from 'path';
+import { webpInfo } from './webpinfo';
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const C = require(path.join(__dirname, '..', '..', 'src', 'renderer', 'crew.js')) as {
@@ -13,6 +14,8 @@ const C = require(path.join(__dirname, '..', '..', 'src', 'renderer', 'crew.js')
   pruneCrew: (m: Record<string, string>, ids: string[]) => Record<string, string>;
   loadCrew: (j: unknown, ids?: string[]) => Record<string, string>;
   POSES: string[]; BOX: { x: number; y: number; w: number; h: number }; PX_PER_UNIT: number; FACE: Record<string, Record<string, number[]>>; FACE_W: number; FACE_H: number; faceBox: (id: string, pose: string) => number[] | null; viewBox: (id: string, pose: string, use?: string) => string | null;
+  registerOwn: (l: unknown) => string[]; ownName: (id: string) => string; ownRev: (id: string) => string; folderKey: (p: string, platform: string) => string; pinKey: (i: unknown, platform: string) => string | null; pinCrew: (m: Record<string, string>, s: { id: string; key: string }[], pins: Record<string, string>, ids: string[], bad?: Set<string>) => Record<string, string>; viewBoxAt: (f: number[], use?: string) => string;
+  HEADS: Record<string, Record<string, Record<string, number[]>>>; HEAD_FRAME: Record<string, string>; HEAD_BOX: { x: number; y: number; s: number }; FLAT_SETS: Record<string, { set: string; prefix: string; sharp: boolean }>; FLAT_IDS: Record<string, string[]>; head: (id: string, pose: string) => { href: string; pic: number[]; crop: number[]; box: { x: number; y: number; s: number }; sharp: boolean } | null;
   poseFor: (st: string) => string; file: (id: string, pose: string) => string; files: (ids?: string[]) => string[]; usable: (id: unknown, bad?: Set<string>) => boolean;
 };
 
@@ -212,7 +215,7 @@ assert.deepStrictEqual(Object.keys(C.FACE).sort(), [...C.ALL_IDS].sort(), 'a fac
     characterFor: (c: unknown, name: unknown, ids?: string[]) => string; seed: (c: unknown, agents: unknown[], ids?: string[]) => Record<string, string>;
   };
   const root = path.join(__dirname, '..', '..');
-  const simTs = fs.readFileSync(path.join(root, 'src', 'renderer', 'sim.ts'), 'utf8');
+  const simTs = fs.readFileSync(path.join(root, 'src', 'renderer', 'sim.ts'), 'utf8').replace(/\r\n/g, '\n');
   const roster = simTs.slice(simTs.indexOf('const ROSTER: Row[] = ['), simTs.indexOf('// Spec 052 FR-046: each waiting agent'));
   const demoNames = [...roster.matchAll(/^\s*\['([A-Z][a-z]+)', '/gm)].map((m) => m[1]);
   assert.ok(demoNames.length >= 15 && demoNames.includes('Ada') && demoNames.includes('Hugo'), 'found the simulator roster: ' + demoNames.join(','));
@@ -246,10 +249,166 @@ assert.deepStrictEqual(Object.keys(C.FACE).sort(), [...C.ALL_IDS].sort(), 'a fac
   const m = C.assignCrew(S.seed('cheeky', agents, C.IDS), ['sim-1', 'sim-2', 'r1'], C.IDS, (id) => C.seededRand(id));
   assert.strictEqual(m['sim-1'], S.NAMES.Ada[0]); assert.ok(C.IDS.includes(m.r1));
   // the real-session path is untouched: the table is read only in app.js's syncCrew, only under SIM, and crew.js does not know it
-  const app = fs.readFileSync(path.join(root, 'src', 'renderer', 'app.js'), 'utf8');
+  const app = fs.readFileSync(path.join(root, 'src', 'renderer', 'app.js'), 'utf8').replace(/\r\n/g, '\n');
   const uses = app.split('\n').filter((l) => l.includes('DurbarSimCrew'));
   assert.strictEqual(uses.length, 1, 'app.js reads the table in one place');
   assert.ok(/SIM&&window\.DurbarSimCrew\?window\.DurbarSimCrew\.seed\(/.test(uses[0]), 'and only when SIM is on');
-  assert.ok(!/simcrew|DurbarSimCrew/i.test(fs.readFileSync(path.join(root, 'src', 'renderer', 'crew.js'), 'utf8')), 'crew.js does not know the table');
+  assert.ok(!/simcrew|DurbarSimCrew/i.test(fs.readFileSync(path.join(root, 'src', 'renderer', 'crew.js'), 'utf8').replace(/\r\n/g, '\n')), 'crew.js does not know the table');
 }
+
+// ---- spec 096 FR-043, FR-044: My characters registered with the crew, and pins in the pick ----
+{
+  const A = 'my-aaaaaaaaaaaa', B = 'my-bbbbbbbbbbbb', D = 'my-dddddddddddd';
+  const face = { working: [176, 150], waiting: [170, 150], resting: [176, 140] };
+  const urls = (id: string): Record<string, string> => ({ working: `blob:file:///${id}-w`, waiting: `blob:file:///${id}-t`, resting: `blob:file:///${id}-r`, blink: `blob:file:///${id}-b` });
+  const own = (id: string, name = id): Record<string, unknown> => ({ id, name, face, urls: urls(id) });
+  assert.deepStrictEqual(C.idsFor('mine'), [], 'nothing registered: no characters, never the Cheeky crew under another name');
+  assert.strictEqual(C.storeKey('mine'), 'durbar.crew.mine', 'its own saved map');
+  assert.strictEqual(C.usable(A), false);
+  assert.deepStrictEqual(C.registerOwn([own(A, 'Greta'), own(B)]), [A, B], 'the list, in its order (newest first)');
+  assert.deepStrictEqual(C.idsFor('mine'), [A, B]);
+  assert.deepStrictEqual(C.idsFor('cheeky'), C.IDS, 'the crews do not change');
+  assert.ok(C.usable(A) && !C.usable(A, new Set([A])), 'usable, and a bad picture still marks it (FR-055)');
+  assert.strictEqual(C.file(A, 'waiting'), urls(A).waiting, 'its picture is the URL');
+  assert.strictEqual(C.ownName(A), 'Greta');
+  assert.strictEqual(C.ownName('punk'), '', 'a built-in character has no name here');
+  assert.ok(C.faceBox(A, 'waiting'), 'a face box from its own points');
+  const vb = C.viewBox(A, 'waiting');
+  assert.ok(vb && vb === C.viewBoxAt([170, 150]) && vb !== C.viewBox(A, 'working'), 'the crop follows the pose\'s face point');
+  // what reaches scene markup is checked: nothing here may hold a quote or markup
+  const BAD: unknown[] = [
+    null, 'x', { id: A }, { ...own(D), id: '../my-dddddddddddd' }, { ...own(D), id: 'my-DDDDDDDDDDDD' }, { ...own(D), id: 'punk' }, { ...own(D), id: '__proto__' },
+    { ...own(D), urls: { ...urls(D), working: 'x" onload="alert(1)' } }, { ...own(D), urls: { ...urls(D), waiting: 'https://example.com/a.webp' } }, { ...own(D), urls: { ...urls(D), resting: 'data:image/svg+xml,<svg/>' } },
+    { ...own(D), urls: { ...urls(D), working: 'blob:x" onload="alert(1)' } }, { ...own(D), urls: { ...urls(D), waiting: "blob:x' onload='alert(1)" } }, { ...own(D), urls: { ...urls(D), resting: 'blob:x><script>' } }, { ...own(D), urls: { ...urls(D), working: 'blob:x y' } }, { ...own(D), urls: { ...urls(D), working: 'blob:' } }, { ...own(D), urls: { ...urls(D), working: 'blob:x&amp;y' } }, { ...own(D), urls: { ...urls(D), working: 'xblob:file:///a' } },
+    { ...own(D), urls: { working: urls(D).working } }, { ...own(D), face: { ...face, working: [176, NaN] } }, { ...own(D), face: { ...face, waiting: [176, 'x'] } }, { ...own(D), face: { ...face, resting: [176, 9999] } },
+  ];
+  for (const b of BAD) assert.deepStrictEqual(C.registerOwn([b]), [], `refused: ${JSON.stringify(b)}`);
+  assert.deepStrictEqual(C.registerOwn('nope'), [], 'not a list');
+  C.registerOwn([{ ...own(D), name: '<img src=x>', urls: { ...urls(D), blink: 'javascript:alert(1)' } }]);
+  assert.strictEqual(C.file(D, 'blink' as string), undefined, 'a bad blink URL is left out, the character stays');
+  // a new URL is a new signature; a second registration with the same URLs is not
+  C.registerOwn([own(A)]);
+  const rev = C.ownRev(A);
+  assert.ok(/^@\d+$/.test(rev));
+  C.registerOwn([own(A, 'renamed')]);
+  assert.strictEqual(C.ownRev(A), rev, 'a rename keeps the pictures, so the scene stays');
+  assert.strictEqual(C.ownName(A), 'renamed');
+  C.registerOwn([{ ...own(A), urls: { ...urls(A), working: 'blob:file:///new' } }]);
+  assert.notStrictEqual(C.ownRev(A), rev, 'new URLs: the scene is drawn again');
+  assert.strictEqual(C.ownRev('punk'), '', 'no change for the built-in crews');
+  // US2 scenario 2: a stored map naming a deleted character: the entry goes, the session gets a new pick
+  C.registerOwn([own(A), own(B)]);
+  assert.deepStrictEqual(C.loadCrew({ s1: A, s2: D, s3: 'punk' }, C.idsFor('mine')), { s1: A }, 'unknown ids dropped by loadCrew');
+  // least used with registered ids
+  assert.strictEqual(C.pickCharacter('n', C.idsFor('mine'), [A, A, B], () => 0), B, 'least used among the registered');
+  assert.strictEqual(new Set(Object.values(C.assignCrew({}, ['s1', 's2'], C.idsFor('mine'), (id) => C.seededRand(id)))).size, 2, 'no twin while one is free');
+  // folder keys are the same as main's
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const { normaliseFolderKey } = require(path.join(__dirname, '..', 'src', 'shared', 'usagedoc.js')) as { normaliseFolderKey: (p: string, platform: string) => string };
+  for (const plat of ['win32', 'darwin', 'linux']) for (const p of ['/a/b', '/a/b/', '/a/b//', '/', '', ' /a/x ', 'C:\\Work\\App\\', 'c:/work/app', 'C:\\', '\\\\srv\\share\\', '~/x/', '/A/B\\']) assert.strictEqual(C.folderKey(p, plat), normaliseFolderKey(p, plat), `${plat} ${p}`);
+  // a session with no folder has no key: a pin on `/` must not dress it
+  for (const info of [undefined, null, {}, { cwd: '' }, { cwd: '   ' }, { cwd: 3 }]) assert.strictEqual(C.pinKey(info, 'darwin'), null, `no folder: ${JSON.stringify(info)}`);
+  assert.strictEqual(C.pinKey({ cwd: '/a/b/' }, 'darwin'), '/a/b');
+  assert.strictEqual(C.pinKey({ cwd: '/' }, 'darwin'), '/', 'a session really in `/` has that key');
+  assert.strictEqual(C.pinKey({ cwd: '/a', workspaceFile: '/w/x.code-workspace' }, 'darwin'), '/w/x.code-workspace', 'the workspace file first, as folderKeyOf');
+  assert.deepStrictEqual(C.pinCrew({}, [{ id: 's', key: null as unknown as string }], { '/': C.idsFor('mine')[0] }, C.idsFor('mine')), {}, 'and it is not dressed');
+  // FR-044: pinned first, counted as in use by the others
+  const ids = C.idsFor('mine');
+  const sess = [{ id: 's1', key: '/a' }, { id: 's2', key: '/a' }, { id: 's3', key: '/b' }];
+  const pinned = C.pinCrew({}, sess, { '/a': B }, ids);
+  assert.deepStrictEqual(pinned, { s1: B, s2: B }, 'both sessions of the folder, the other left to the pick');
+  const picked = C.assignCrew(pinned, ['s1', 's2', 's3'], ids, () => 0);
+  assert.deepStrictEqual(picked, { s1: B, s2: B, s3: A }, 'the pinned one counts as in use, so the other session gets the free one (with the pick first, s3 would get A too only by chance: rand 0 is the first of the pool)');
+  const order = C.assignCrew(C.pinCrew({}, sess, { '/a': A }, ids), ['s1', 's2', 's3'], ids, () => 0);
+  assert.deepStrictEqual(order, { s1: A, s2: A, s3: B }, 'pin order: a pin on the first character leaves the second to the others; assigning before pinning would give s3 the pinned one');
+  assert.deepStrictEqual(C.pinCrew({ s1: A }, sess, { '/a': B }, ids), { s1: B, s2: B }, 'a pin beats the random pick already kept');
+  assert.deepStrictEqual(C.pinCrew({ s3: A }, sess, {}, ids), { s3: A }, 'no pin: the kept pick stays');
+  assert.deepStrictEqual(C.pinCrew({ s1: 'punk' }, sess, { '/a': B }, C.IDS), { s1: B, s2: B }, 'a pin to a generated character also applies under a crew');
+  assert.deepStrictEqual(C.pinCrew({ s1: B }, sess, {}, C.IDS), {}, 'a pin taken away under a crew: its id is not in that list, so the session gets a new pick');
+  assert.deepStrictEqual(C.pinCrew({ s1: D }, sess, { '/a': D }, ids), {}, 'a pin to a character that is gone is not worn, and a kept deleted id goes (US4 scenario 2)');
+  assert.deepStrictEqual(C.pinCrew({}, sess, { '/a': B }, ids, new Set([B])), {}, 'a pinned character whose pictures failed is not worn (FR-055)');
+  assert.deepStrictEqual(C.pinCrew({}, [{ id: 's', key: '/a' }], Object.create({ '/a': B }) as Record<string, string>, ids), {}, 'a key is looked up as own data only');
+  assert.deepStrictEqual(C.pinCrew({}, [{ id: 's', key: 'toString' }], {}, ids), {}, 'and an inherited name is no pin');
+  C.registerOwn([]);
+  assert.deepStrictEqual(C.idsFor('mine'), [], 'an empty list clears them');
+  assert.strictEqual(C.file(A, 'working'), 'crew/art/' + A + '-working.webp', 'and their URLs are gone (no reader: usable is false)');
+  assert.strictEqual(C.usable(A), false);
+}
+// ---- spec 102 FR-203, T389/T390 (issue #1873): Flat's heads, crops of the seated busts, measured once; no new picture file ----
+{
+  const SETS = path.join(__dirname, '..', '..', 'src', 'renderer', 'realoffice', 'sets');
+  /** What is wrong with one set's head crops: every person and pose has a crop; the picture size is the file's; the crop is square, at least 24 px, whole pixels and inside the picture; its centre, the face point, is inside the picture. */
+  const headProblems = (heads: Record<string, Record<string, number[]>>, sizes: Record<string, number[]>, people: string[]): string[] => {
+    const out: string[] = [];
+    for (const p of people) {
+      const h = heads[p]; if (!h) { out.push(`${p}: no crops`); continue; }
+      const [w, ht] = sizes[p];
+      if (h.pic[0] !== w || h.pic[1] !== ht) out.push(`${p}: pic ${h.pic} is not the file's ${w}x${ht}`);
+      for (const pose of C.POSES) {
+        const c = h[pose]; if (!c || c.length !== 3 || !c.every((n) => Number.isInteger(n))) { out.push(`${p} ${pose}: not [x, y, side] in whole pixels`); continue; }
+        const [x, y, side] = c;
+        if (side < 24) out.push(`${p} ${pose}: side ${side} under 24 px`);
+        if (x < 0 || y < 0 || x + side > w || y + side > ht) out.push(`${p} ${pose}: the crop leaves the picture`);
+        const fx = x + side / 2, fy = y + side / 2;
+        if (fx < 0 || fx > w || fy < 0 || fy > ht) out.push(`${p} ${pose}: the face point is outside the picture`);
+      }
+    }
+    return out;
+  };
+  for (const set of ['retro', 'office']) {
+    const dir = path.join(SETS, set), seat = JSON.parse(fs.readFileSync(path.join(dir, 'set.json'), 'utf8')).seat as Record<string, unknown>;
+    const people = Object.keys(seat).sort();
+    assert.strictEqual(people.length, 15, `${set}: 15 people`);
+    assert.deepStrictEqual(Object.keys(C.HEADS[set]).sort(), people, `${set}: a crop entry for every person of the set, none more`);
+    const sizes: Record<string, number[]> = {};
+    for (const p of people) {
+      for (const pose of C.POSES) {
+        const buf = fs.readFileSync(path.join(dir, `${p}-${C.HEAD_FRAME[pose]}.webp`)), i = webpInfo(buf);
+        if (pose === 'working') sizes[p] = [i.width, i.height]; else assert.deepStrictEqual([i.width, i.height], sizes[p], `${set} ${p}: the three frames have one size`);
+      }
+    }
+    assert.deepStrictEqual(headProblems(C.HEADS[set], sizes, people), [], `${set}: every person and pose has a square crop inside its picture, face point inside`);
+    // mutant: a face point (crop) outside the picture fails
+    const bad = JSON.parse(JSON.stringify(C.HEADS[set])); bad.p07.waiting = [sizes.p07[0] - 10, 0, 52];
+    assert.ok(headProblems(bad, sizes, people).some((m) => /p07 waiting: the crop leaves the picture/.test(m)), `${set}: a crop outside the picture fails`);
+    const nonSquare = JSON.parse(JSON.stringify(C.HEADS[set])); nonSquare.p01.working = [0, 0, 52, 40];
+    assert.ok(headProblems(nonSquare, sizes, people).length > 0, `${set}: a crop that is not [x, y, side] fails`);
+    const wrong = JSON.parse(JSON.stringify(C.HEADS[set])); wrong.p02.pic = [1, 1];
+    assert.ok(headProblems(wrong, sizes, people).some((m) => /not the file's/.test(m)), `${set}: a wrong picture size fails`);
+  }
+  assert.deepStrictEqual(C.HEAD_FRAME, { working: 'typeA', waiting: 'waveA', resting: 'rest' }, 'the three frames of the poses');
+  // Retro pixel: its own ids with the prefix, its own file, its own key, sharp scaling; no clash with another crew's id
+  const ri = C.idsFor('pixel');
+  assert.deepStrictEqual(ri, Array.from({ length: 15 }, (_, i) => `retro-p${String(i + 1).padStart(2, '0')}`), 'Retro pixel: retro-p01..retro-p15');
+  assert.ok(ri.every((id) => !C.ALL_IDS.includes(id)), 'no clash with the crews');
+  assert.strictEqual(C.storeKey('pixel'), 'durbar.crew.pixel', 'its own saved map');
+  assert.strictEqual(C.file('retro-p03', 'waiting'), 'realoffice/sets/retro/p03-waveA.webp', 'the Real office file, no copy');
+  assert.deepStrictEqual(C.files(ri).length, 45, '45 pictures to load, all in the set folder');
+  assert.ok(C.files(ri).every((f) => fs.existsSync(path.join(__dirname, '..', '..', 'src', 'renderer', f))), 'every file exists where the set keeps it (no copy, no new file)');
+  assert.ok(ri.every((id) => C.usable(id)) && !C.usable('retro-p16') && !C.usable('p01'), 'usable: the 15 ids of the set only');
+  const hd = C.head('retro-p05', 'resting');
+  assert.ok(hd && hd.sharp === true && hd.href === 'realoffice/sets/retro/p05-rest.webp' && hd.crop.length === 3 && hd.box.s === C.HEAD_BOX.s, 'the head of a Retro pixel person: sharp, its own picture and crop');
+  assert.strictEqual(C.head('punk', 'working'), null, 'a crew character has no head crop: its portrait is drawn');
+  // Office people (T391): the same, smooth, their own ids, file and key
+  const oi = C.idsFor('office');
+  assert.deepStrictEqual(oi, Array.from({ length: 15 }, (_, i) => `office-p${String(i + 1).padStart(2, '0')}`), 'Office people: office-p01..office-p15');
+  assert.ok(oi.every((id) => !C.ALL_IDS.includes(id) && !ri.includes(id)), 'no clash with the crews or Retro pixel');
+  assert.strictEqual(C.storeKey('office'), 'durbar.crew.office', 'its own saved map');
+  assert.strictEqual(C.file('office-p03', 'resting'), 'realoffice/sets/office/p03-rest.webp', 'the Real office file, no copy');
+  assert.ok(C.files(oi).length === 45 && C.files(oi).every((f) => fs.existsSync(path.join(__dirname, '..', '..', 'src', 'renderer', f))), '45 pictures, every one where the set keeps it (no copy, no new file)');
+  assert.ok(oi.every((id) => C.usable(id)) && !C.usable('office-p16'), 'usable: the 15 ids of the set');
+  const ho = C.head('office-p01', 'working');
+  assert.ok(ho && ho.sharp === false && ho.href === 'realoffice/sets/office/p01-typeA.webp' && ho.crop.length === 3 && ho.box.s === C.HEAD_BOX.s, 'the head of an Office person: smooth, its own picture and crop');
+  assert.deepStrictEqual(C.loadCrew({ s1: 'office-p03', s2: 'retro-p03' }, oi), { s1: 'office-p03' }, 'an Office load drops the Retro pixel ids');
+  assert.strictEqual(C.viewBox('retro-p02', 'working', 'seat'), `${C.HEAD_BOX.x} ${C.HEAD_BOX.y} ${C.HEAD_BOX.s} ${C.HEAD_BOX.s}`, 'the avatar and the seat show the head square');
+  assert.deepStrictEqual(C.faceBox('retro-p02', 'resting'), [C.HEAD_BOX.x, C.HEAD_BOX.y, C.HEAD_BOX.s, C.HEAD_BOX.s], 'the face box is the square');
+  assert.deepStrictEqual(C.loadCrew({ s1: 'retro-p03', s2: 'punk' }, ri), { s1: 'retro-p03' }, 'a Retro pixel load drops the other crews\' ids');
+  assert.deepStrictEqual(C.loadCrew({ s1: 'retro-p03', s2: 'punk' }), { s2: 'punk' }, 'a Cheeky load drops the Retro pixel ids');
+  for (const odd of ['__proto__', 'constructor', 'retro-__proto__', 'retro-constructor', 'retro-', '']) assert.strictEqual(C.head(odd, 'working'), null, `no head for ${odd}`);
+  // the scene: Retro pixel's picture is drawn clipped, nearest, with no copy (scenekits.js, styles.css)
+  const kits = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'renderer', 'scenekits.js'), 'utf8'), css = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'renderer', 'styles.css'), 'utf8');
+  assert.ok(/'px' : 'sm'/.test(kits) && /\.crew-head \.px\{image-rendering:pixelated\}/.test(css), 'a Retro pixel head carries the class px, and styles.css scales it nearest');
+  assert.ok(!/\.crew-head \.sm/.test(css), 'smooth is the default of the other sets');
+}
+
 console.log('crew tests passed');

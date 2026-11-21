@@ -54,12 +54,12 @@ module.exports = async (ctx) => {
         assert.ok(!q.clipped, `${w}: the question text is clipped: ${q.text.slice(0, 60)}`);
         assert.ok(q.h >= q.lh * 2 - 1 || q.text.length < 200, `${w}: a long question takes several lines (${q.h}px): ${JSON.stringify(q)}`);
       }
-      assert.ok(r.qs.some((q) => q.text.includes('knowing that the second one touches every theme')) && r.qs.some((q) => q.text.endsWith('should stay?')), `${w}: the full question texts are in the card`);
-      assert.ok(r.qs.some((q) => q.text.length > 1100 && q.text.endsWith('write your own plan below.')), `${w}: the 1,117-character question is whole`);
+      assert.ok(r.qs.some((q) => q.text.includes('knowing that the second one touches every theme')) && r.qs.some((q) => q.text.trim().endsWith('should stay?')), `${w}: the full question texts are in the card`);
+      assert.ok(r.qs.some((q) => q.text.length > 1100 && q.text.trim().endsWith('write your own plan below.')), `${w}: the 1,117-character question is whole`);
       await shot(`052-question-options-${w}x${h}.png`);
       // the inbox row: the question text in full, nothing clipped
       await js(`document.activeElement&&document.activeElement.blur()`);
-      H.key('I', [], { char: 'always', pause: 0 });
+      await H.key('I', [], { char: 'always', pause: 0 });
       await until(`[...document.querySelectorAll('#inboxDlg .inbox-row .ib-t')].some(p=>/Before I change/.test(p.textContent))`); await settle();
       const ib = await js(`(()=>{const d=document.getElementById('inboxDlg');if(!d)return null;const t=[...d.querySelectorAll('.inbox-row .ib-t')].find(p=>/Before I change/.test(p.textContent));if(!t)return {found:false};
         const br=t.getBoundingClientRect(),rr=t.closest('.inbox-row').getBoundingClientRect();return {found:true,text:t.textContent,clipped:t.scrollWidth>t.clientWidth+1||t.scrollHeight>t.clientHeight+1,inside:br.right<=rr.right+0.5}})()`);

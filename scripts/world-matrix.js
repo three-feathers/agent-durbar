@@ -43,7 +43,7 @@ const SCENES = {
   'office-floor': { query: { sim: '15' } },
   lobby: { query: { sim: '15' } },
   'boss-bank-post-coffee': { query: { sim: '15' } },
-  'desk-card': { query: { sim: '15' } },
+  'desk-card': { query: { sim: '15', officeview: 'real' } }, /* spec 098 T011 (issue #1901): the Real office desk's plate is the root (realoffice.js) */
   walk: { query: { sim: '15' } },
   'lift-panel': { query: { sim: '15', simfloors: '1' } },
   'all-floors': { query: { sim: '15', simfloors: '1' } },
@@ -259,7 +259,8 @@ if (require.main === module) {
   const electron = require('electron');
   const args = ['.', '--no-sandbox', '--force-prefers-reduced-motion'];
   const useXvfb = process.platform === 'linux' && !process.env.DISPLAY;
-  const r = useXvfb ? spawnSync('xvfb-run', ['-a', electron, ...args], { cwd: ROOT, env, stdio: 'inherit' }) : spawnSync(electron, args, { cwd: ROOT, env, stdio: 'inherit' });
+  const [file, runArgs] = require('./ui-suite.js').launchCommand(useXvfb, electron, args, ''); // spec 008 FR-269: the sized Xvfb screen of the suite, no screen change elsewhere
+  const r = spawnSync(file, runArgs, { cwd: ROOT, env, stdio: 'inherit' });
   if (r.error) { console.error(r.error.message); process.exit(2); }
   process.exit(fs.existsSync(marker) ? 1 : r.status === 0 ? 0 : r.status || 1);
 }

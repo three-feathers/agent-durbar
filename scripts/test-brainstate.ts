@@ -4,7 +4,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as R from '../src/shared/redact';
 import { costDetail, exportText, formatStep, officeLine, sentenceFor } from '../src/shared/brainsurface';
-import { BrainMask, BrainState, FRAME_MS, GLYPHS, HISTORY_MAX, PAINT_MS, REVEAL_ORDER, STEP_CAP, TRAIL_MAX, baseName, brainState, currentStep, glyphOf, initBrain, loopText, markPainted, maskText, programOf, revealStages, sentenceOf, shouldPaint, trailOf, usedLobes } from '../src/shared/brainstate';
+import { BrainMask, BrainState, FRAME_MS, GLYPHS, HISTORY_MAX, PAINT_MS, REVEAL_ORDER, STEP_CAP, TRAIL_MAX, baseName, brainState, currentStep, glyphOf, initBrain, loopText, markPainted, brainMaskText, programOf, revealStages, sentenceOf, shouldPaint, trailOf, usedLobes } from '../src/shared/brainstate';
 
 // the app's own usage units (spec 011 `usagetotals.js`, spec 052 `costtable.js`), as the page passes them next to redact's functions
 const USAGE = require(path.join(__dirname, '..', '..', 'src', 'renderer', 'usagetotals.js'));
@@ -326,9 +326,9 @@ assert.ok(!JSON.stringify(s).includes('SECRET-OUTPUT'), 'tool output is never ke
   assert.strictEqual(feed(kc, [{ type: 'user' }]).inKeyBlock, false, 'a new turn starts outside a block');
 }
 // F7: a mask returning a non-string yields no text, never a coerced object
-assert.strictEqual(maskText({ ...mask, maskTokenShapes: () => ({ toString: () => 'LEAK-' + GH }) as unknown as string } as never, 'x'), '', 'a non-string result fails closed');
-assert.strictEqual(maskText({ ...mask, maskTokenShapes: () => 5 as unknown as string } as never, 'x'), '', 'a number result fails closed');
-assert.strictEqual(maskText(mask, 'a\u202Eb\u2066c\u2069d'), 'abcd', 'bidi override and isolate characters are dropped');
+assert.strictEqual(brainMaskText({ ...mask, maskTokenShapes: () => ({ toString: () => 'LEAK-' + GH }) as unknown as string } as never, 'x'), '', 'a non-string result fails closed');
+assert.strictEqual(brainMaskText({ ...mask, maskTokenShapes: () => 5 as unknown as string } as never, 'x'), '', 'a number result fails closed');
+assert.strictEqual(brainMaskText(mask, 'a\u202Eb\u2066c\u2069d'), 'abcd', 'bidi override and isolate characters are dropped');
 assert.strictEqual(initBrain('Ada\u202E', mask).name, 'Ada', 'also in a name');
 
 // F3: the program of a command is taken from the MASKED command: a token as the first word never reaches the office cell
@@ -455,7 +455,7 @@ assert.ok(Math.abs(s.turnCost - 0.05) < 1e-9, 'junk costs are ignored');
   let cases = 0;
   for (const h of heads) for (const tl of tails) for (const sz of [1, 3, 7, 1000]) {
     const text = 'I will send ' + h + SEC + tl;
-    if (maskText(mask, text).includes(SEC.slice(0, 8))) continue; // redact itself does not mask this shape (#1227's kind of gap): out of scope here
+    if (brainMaskText(mask, text).includes(SEC.slice(0, 8))) continue; // redact itself does not mask this shape (#1227's kind of gap): out of scope here
     cases++;
     const chunks: string[] = []; for (let i = 0; i < text.length; i += sz) chunks.push(text.slice(i, i + sz));
     const st = feed(fresh(), [{ type: 'user' }, ...chunks.map((delta) => ({ type: 'thinking', delta })), start('bash', { command: 'ls' })], 1);
@@ -477,7 +477,7 @@ for (const seed0 of [1, 7, 42]) {
   for (let it = 0; it < 400; it++) {
     const sec = pick(SECS), text = pick(pres) + pick(heads) + sec + pick(tails);
     const slices: string[] = []; for (let j = 0; j + 8 <= sec.length; j += 3) slices.push(sec.slice(j, j + 8));
-    if (slices.some((x) => maskText(mask, text).includes(x))) continue; // redact itself does not mask this text as a whole (#1227)
+    if (slices.some((x) => brainMaskText(mask, text).includes(x))) continue; // redact itself does not mask this text as a whole (#1227)
     const chunks: string[] = []; for (let i = 0; i < text.length;) { const n = 1 + Math.floor(rnd() * (rnd() < 0.3 ? 60 : 12)); chunks.push(text.slice(i, i + n)); i += n; }
     cases++;
     const kind = rnd() < 0.5 ? 'thinking' : 'output';
@@ -639,6 +639,219 @@ assert.strictEqual(sentenceOf(s), s.sentence);
   }
   assert.deepStrictEqual(leaks(['pwd=red7 ', 'blue8 x'], ['red7', 'blue8']), [], 'the issue pair');
   assert.deepStrictEqual(leaks(['password: ab12 cd34 e', 'f56 done'], ['ab12', 'cd34', 'ef56']), [], 'the issue pair with a cut inside a word');
+}
+
+// spec 012 FR-188 (review of PR 1899): a token with a character in an entity or a percent-escape form, streamed in pieces cut inside the forms too: no state
+// shows a piece of its body. An entity the next piece extends into another character (`&#82` then `03;`) is held as written until it is complete.
+{
+  const body = 'Ab3' + 'Cd5' + 'Ef7' + 'Gh9' + 'Jk2' + 'Lm4' + 'Np6' + 'Qr8' + 'St1' + 'Uv3' + 'Wx5' + 'Yz7';
+  const pieces = (v: string): string[] => Array.from({ length: v.length - 5 }, (_x, i) => v.slice(i, i + 6));
+  const showsAny = (chunks: string[], v: string): boolean => {
+    let st = feed(fresh(), [{ type: 'user' }], 1);
+    const ps = pieces(v);
+    for (const delta of [...chunks.map((d) => ({ type: 'thinking', delta: d })), start('bash', { command: 'ls' })]) {
+      st = feed(st, [delta], 1);
+      // what the views read: a stream's held copy (round 2) is internal; `shown` is the text read whole (review of PR 1899, round 3)
+      const out = JSON.stringify({ ...st, think: st.think.shown ?? st.think.buf, out: st.out.shown ?? st.out.buf });
+      if (ps.some((p) => out.includes(p))) return true;
+    }
+    return false;
+  };
+  // the review's case: the first piece ends inside an entity of a hidden character whose first digits read as a token character
+  assert.ok(!showsAny(['x gh' + 'p_' + body.slice(0, 22) + '&#82', '03;' + body.slice(22) + ' done'], body.slice(12)), '#1320 decoded brain: an entity cut before its last digits is held');
+  // review of PR 1899, round 2: an entity whose first digits read as a token character and whose whole number is a hidden one, cut after 4 digits
+  for (const [cutAt, rest] of [['&#6527', '9;'], ['&#6158', ';']]) {
+    assert.ok(!showsAny(['x gh' + 'p_' + body.slice(0, 22) + cutAt, rest + body.slice(22) + ' done'], body.slice(22)), `#1320 decoded brain: a long entity cut inside is held (${cutAt.length})`);
+  }
+  // a stream that ends on a form: the views show the whole text read at once, so the form is read
+  assert.ok(!showsAny(['x AK' + 'IA' + 'Q3WD8KP2LM5RT7Y' + '&#88'], 'Q3WD8KP2LM5RT7Y'), '#1320 decoded brain: a stream that ends on a form shows the token read whole');
+  // a header name or its separator written in such a form, streamed with random cuts: the header is held raw as its plain form is, and the value never shows
+  {
+    const pw = 'Hx9' + 'Kq2' + 'Lm7' + 'Np4' + 'Rs';
+    let hs = 4242;
+    const hr = (): number => { hs = (Math.imul(hs, 1103515245) + 12345) >>> 0; return hs / 2 ** 32; };
+    const heads = ['Authorizatio' + '%6e: Bearer ', 'Au' + '&#116;horization: Bearer ', 'Authorization' + '&#58; Bearer ', 'Authorization' + '%3A Bearer '];
+    let hleak = 0;
+    for (const h of heads) {
+      const text = 'x ' + h + pw + ' done';
+      for (let k = 0; k < 150; k++) {
+        const cuts = new Set<number>();
+        const n = 1 + Math.floor(hr() * 4);
+        while (cuts.size < n) cuts.add(1 + Math.floor(hr() * (text.length - 1)));
+        const pts = [0, ...[...cuts].sort((x, y) => x - y), text.length];
+        if (showsAny(pts.slice(1).map((q, i) => text.slice(pts[i], q)), pw)) hleak++;
+      }
+      assert.ok(!showsAny(['x ' + h.slice(0, h.length - 6), h.slice(h.length - 6) + pw + ' done'], pw), `#1320 decoded brain: a header written in such a form, cut inside its scheme word, hides the value (${heads.indexOf(h)})`);
+    }
+    assert.strictEqual(hleak, 0, '#1320 decoded brain: random cuts over a header written in such a form never show the value');
+    // independent differential of PR 1899: a header name glued after a mark, with a letter in such a form, cut inside the scheme word: read as before FR-188 (as main)
+    for (const mark of ['(', '[']) for (const name of ['Au' + '&#116;horization', 'Authorizatio' + '%6e']) {
+      assert.ok(!showsAny(['x' + mark + name + ': Bea', 'rer ' + pw + ' done'], pw), `#1320 decoded brain: a header name in such a form glued after a mark hides the value (${mark}${name.length})`);
+    }
+    // independent differential of PR 1899: a token the decoded reading masks early, then a hidden character, a keyword and a password in a later piece: the views
+    // show nothing the reading with the decoded reading off hides
+    {
+      const t = 'Authorization: Bearer gh' + 'p_' + body.slice(0, 10) + '&#104;' + body.slice(11) + '\u200bmysql -p' + pw;
+      for (const at of [40, 50, 60]) assert.ok(!showsAny([t.slice(0, at), t.slice(at)], pw), `#1320 decoded brain: a token masked early keeps a later password hidden (${at})`);
+    }
+    // round 4: a short value after a header, then a hidden-character entity cut in pieces (a lone `&` at the end of a piece too), then the rest: never shown,
+    // after the header written plainly (a gap on main, the same code) and in such a form
+    {
+      const v = 'O4tb3ay' + 'bVwXpNvbq';
+      let qs = 18994;
+      const qr = (): number => { qs = (Math.imul(qs, 1103515245) + 12345) >>> 0; return qs / 2 ** 32; };
+      let qleak = 0;
+      for (const h of ['x Authorization: Bearer Ab3C', 'x Authorization' + '&#x3a;Bearer Ab3C']) for (const ent of ['&#8203;', '&#173;', '&#6158;', '&#65279;', '&#x200b;']) {
+        const t = h + ent + v + ' done';
+        assert.ok(!showsAny([h + '&', ent.slice(1) + v + ' done'], v), `#1320 decoded brain: a lone & at the end of a piece after a header value is held (${h.length} ${ent.length})`);
+        for (let k = 0; k < 20; k++) {
+          const cuts = new Set<number>([h.length + 1 + Math.floor(qr() * (ent.length - 1))]);
+          // a second cut inside the entity or before it; a cut right after a whole entity before the rest shows on main too ([KNOWN GAP], FR-188, listed on #1320)
+          if (qr() < 0.5) cuts.add(1 + Math.floor(qr() * (h.length + ent.length - 1)));
+          const pts = [0, ...[...cuts].sort((x, y) => x - y), t.length];
+          if (showsAny(pts.slice(1).map((q, i) => t.slice(pts[i], q)), v)) qleak++;
+        }
+      }
+      assert.strictEqual(qleak, 0, '#1320 decoded brain: random cuts inside an entity after a header value never show the rest');
+    }
+    // round 3: a separator in such a form glued to a partial scheme word
+    for (const sepForm of ['&#x3a;', '&#58;', '%3A', '&colon;']) {
+      assert.ok(!showsAny(['x Authorization' + sepForm + 'Bea', 'rer ' + pw + ' done'], pw), `#1320 decoded brain: a separator in such a form glued to a partial scheme word hides the value (${sepForm.length})`);
+    }
+    assert.ok(!showsAny(['x Authorization' + '&#58;B', 'earer ' + pw + ' done'], pw), '#1320 decoded brain: a separator in such a form glued to one letter of the scheme word hides the value');
+    // a whole scheme word glued to a separator in such a form, the value in the next piece (the word loop of the held-head check reads the decoded word)
+    assert.ok(!showsAny(['x Authorization' + '&#58;Bearer', ' ' + pw + ' done'], pw), '#1320 decoded brain: a scheme word glued to a separator in such a form hides the value');
+  }
+  // round 3: a held form right after a raw value head the stream holds (a header name and the start of a token): the held form is never folded away
+  {
+    const v = 'bgEhq5' + 'EEId94' + '3tg4zGF';
+    const head = 'token: gl' + 'pat-F';
+    for (const chunks of [[head + '&#820', '3;' + v + ' done'], [head + '&#', '820', '3;' + v + ' done'], [head, '&#820', '3;' + v + ' done']]) {
+      assert.ok(!showsAny(chunks, v), `#1320 decoded brain: a held form after a held value head keeps the value hidden (${chunks.length} pieces, ${chunks[0].length})`);
+    }
+    let hs = 1899_3;
+    const hr = (): number => { hs = (Math.imul(hs, 1103515245) + 12345) >>> 0; return hs / 2 ** 32; };
+    let held = 0;
+    for (const text of [head + '&#8203;' + v + ' done', 'password=gl' + 'pat-F&#8203;' + v + ' done', head + '&#x200b;' + v + ' done']) {
+      const formAt = text.indexOf('&#');
+      for (let k = 0; k < 100; k++) {
+        const cuts = new Set<number>([formAt + 1 + Math.floor(hr() * 6)]);
+        const n = Math.floor(hr() * 3);
+        while (cuts.size < 1 + n) cuts.add(1 + Math.floor(hr() * (text.length - 1)));
+        const pts = [0, ...[...cuts].sort((x, y) => x - y), text.length];
+        if (showsAny(pts.slice(1).map((q, i) => text.slice(pts[i], q)), v)) held++;
+      }
+    }
+    assert.strictEqual(held, 0, '#1320 decoded brain: random cuts with a held form after a held value head never show the value');
+  }
+  // round 5: a tool call clears a stream's reference reading with its text, so plain text after it is shown as written
+  {
+    let st = feed(fresh(), [{ type: 'user' }], 1);
+    for (const ev of [{ type: 'thinking', delta: 'R' + '&D: set Authorization: Bearer' }, start('bash', { command: 'ls' }), { type: 'thinking', delta: 'Verifying results now' }]) st = feed(st, [ev], 1);
+    assert.strictEqual(st.buf, 'Verifying results now', '#1320 decoded brain: plain text after a tool call is shown as written (the reference reading is cleared)');
+  }
+  const forms = ['&#95;', '&#x5f;', '&#95', '&lowbar;', '%5F', '%255F', '&#000095;'];
+  const tails = ['&#8203;', '&#8203', '%2D', '&#46;'];
+  let seed = 1899;
+  const rnd = (): number => { seed = (Math.imul(seed, 1103515245) + 12345) >>> 0; return seed / 2 ** 32; };
+  let runs = 0;
+  const leaked: string[][] = [];
+  for (const form of forms) for (const mid of tails) {
+    const text = 'x gh' + 'p' + form + body.slice(0, 20) + mid + body.slice(20, 36) + ' done';
+    const formAt = [text.indexOf(form), text.indexOf(mid, 4 + form.length)];
+    for (let k = 0; k < 60; k++) {
+      const cuts = new Set<number>();
+      // one cut inside each form, then random ones
+      for (const [at, len] of [[formAt[0], form.length], [formAt[1], mid.length]]) cuts.add(at + 1 + Math.floor(rnd() * (len - 1)));
+      const n = Math.floor(rnd() * 3);
+      while (cuts.size < 2 + n) cuts.add(1 + Math.floor(rnd() * (text.length - 1)));
+      const pts = [0, ...[...cuts].sort((x, y) => x - y), text.length];
+      const chunks = pts.slice(1).map((q, i) => text.slice(pts[i], q));
+      runs++;
+      if (showsAny(chunks, body)) leaked.push(chunks);
+    }
+  }
+  assert.strictEqual(runs, forms.length * tails.length * 60, '#1320 decoded brain: every random cut was fed');
+  // a ratchet, not zero: a state that holds a mask, then a piece, then fewer than 8 letters and digits of the token's rest keeps them readable until the next piece
+  // (FR-182's [KNOWN GAP], the same with any piece); a frozen main shows a piece of the token in every one of these runs (1680), and in no state less than this branch
+  assert.ok(leaked.length <= 26, `#1320 decoded brain: cuts inside the forms that show a piece of the token may only go down (${leaked.length} > 26): ${JSON.stringify(leaked.slice(0, 2))}`);
+}
+
+// spec 012 FR-187 (review of PR 1872): a secret name glued to a token's end, streamed in pieces: no cut shows the value, for each separator form
+{
+  const tok = 'gh' + 'p_' + 'Zq3' + 'x'.repeat(16) + 'K9m' + 'p'.repeat(14);
+  const val = 'Vq7' + 'v0T' + 'wQ4';
+  const pw = 'pass' + 'word';
+  const forms = ['=' + val, ' = ' + val, '="' + val + '"', ': ' + val, ': "' + val + '"', '":"' + val + '"', '=>' + val, ':=' + val, '\\":\\"' + val + '\\"', ':' + val];
+  let seed = 1872;
+  const rnd = (): number => { seed = (Math.imul(seed, 1103515245) + 12345) >>> 0; return seed / 2 ** 32; };
+  // review of PR 1872, round 3: every state after each delta (and after the turn's next step) is checked for any 4-character piece of the value, not only the final text
+  const pieces = (v: string): string[] => Array.from({ length: v.length - 3 }, (_x, i) => v.slice(i, i + 4));
+  const showsAny = (chunks: string[], v: string): boolean => {
+    let st = feed(fresh(), [{ type: 'user' }], 1);
+    const ps = pieces(v);
+    for (const delta of [...chunks.map((d) => ({ type: 'thinking', delta: d })), start('bash', { command: 'ls' })]) {
+      st = feed(st, [delta], 1);
+      const out = JSON.stringify(st);
+      if (ps.some((p) => out.includes(p))) return true;
+    }
+    return false;
+  };
+  const shows = (chunks: string[]): boolean => showsAny(chunks, val);
+  let runs = 0;
+  const leaked: string[][] = [];
+  for (const form of forms) {
+    const text = 'x ' + tok + pw + form + ' done';
+    assert.ok(!shows([text]), `#1320 brain: the whole text hides the value (${form.replace(val, 'V')})`);
+    for (let k = 0; k < 750; k++) {
+      const n = 1 + Math.floor(rnd() * 5);
+      const cuts = new Set<number>();
+      if (k % 2 === 0) cuts.add(2 + tok.length); // half the runs are also cut right after the token (round 3)
+      while (cuts.size < n) cuts.add(1 + Math.floor(rnd() * (text.length - 1)));
+      const pts = [0, ...[...cuts].sort((x, y) => x - y), text.length];
+      const chunks = pts.slice(1).map((q, i) => text.slice(pts[i], q));
+      runs++;
+      if (shows(chunks)) leaked.push(chunks.map((c) => c.replace(val, 'V')));
+    }
+  }
+  assert.strictEqual(runs, forms.length * 750, '#1320 brain: every random cut was fed');
+  assert.deepStrictEqual(leaked.slice(0, 3), [], `#1320 brain: no random cut inside the token shows the value (${leaked.length} of ${runs} did)`);
+  // round 4: the same random cuts, always with a cut right after the token, for values the named rules leave alone when written whole (a dotted value, a value on the
+  // next line after a line continuation) and the backtick separator. Some of these show on main too ([KNOWN GAP], FR-187 round 4: a quoted or backtick value that reads
+  // as a dotted name, a value after a line continuation), so the check is a ratchet: per form, how many of the cuts show a piece of the value may only go down. The
+  // counts are main's (checked against a frozen main in the review); the round-2 fold showed more (46, 20 and 51 where these read 5, 12 and 14).
+  const hard = ['cfg.' + val, 'cfg.x\\\n' + val];
+  const hardForms = (v: string): Array<[string, string]> => [['=V', '=' + v], ['=`V`', '=`' + v + '`'], [':=V', ':=' + v], ['="V"', '="' + v + '"']];
+  const hardCount: Record<string, number> = {};
+  seed = 18724; // its own seed, so the counts do not move when the loop above changes
+  for (const [hi, v] of hard.entries()) for (const [fk, form] of hardForms(v)) {
+    const key = (hi ? 'next line ' : 'dotted ') + fk;
+    hardCount[key] = 0;
+    const text = 'x ' + tok + pw + form + ' done';
+    for (let k = 0; k < 60; k++) {
+      const n = 1 + Math.floor(rnd() * 4);
+      const cuts = new Set<number>([2 + tok.length]);
+      while (cuts.size < n + 1) cuts.add(2 + tok.length + 1 + Math.floor(rnd() * (text.length - tok.length - 3)));
+      const pts = [0, ...[...cuts].sort((x, y) => x - y), text.length];
+      if (shows(pts.slice(1).map((q, i) => text.slice(pts[i], q)))) hardCount[key]++;
+    }
+  }
+  const HARD_RATCHET: Record<string, number> = { 'dotted =V': 0, 'dotted =`V`': 5, 'dotted :=V': 0, 'dotted ="V"': 60, 'next line =V': 12, 'next line =`V`': 14, 'next line :=V': 13, 'next line ="V"': 60 };
+  assert.deepStrictEqual(Object.keys(hardCount).sort(), Object.keys(HARD_RATCHET).sort(), '#1320 brain round 4: every hard form is counted');
+  // round 4: a token glued to a separator at the end of a piece is no header name: its raw head is never held while the value is awaited
+  for (const second of ['cfg.' + 'Vq7Ab1Cd2 done', '`cfg', 'Vq7' + 'v0TwQ4 done']) assert.ok(!showsAny(['x ' + tok + '=', second], tok.slice(4)), `#1320 brain round 4: a token before a separator is not held raw (${second.slice(0, 4)})`);
+  for (const key of Object.keys(HARD_RATCHET)) assert.ok(hardCount[key] <= HARD_RATCHET[key], `#1320 brain round 4: cuts after the token that show a ${key} value may only go down (${hardCount[key]} > ${HARD_RATCHET[key]})`);
+  // round 3: a stream cut right after the token, the name and its separator in the next piece, then a value the named rules leave alone (a dotted name; a quoted
+  // one with a line continuation and a long value on the next line): hidden as on main, no piece of it shows
+  const dotted = 'cfg.' + 'Vq7' + 'Ab1' + 'Cd2';
+  const long = 'Ab1Cd2' + 'Ef3Gh4' + 'Ij5Kl6Mn';
+  const regress: Array<[string, string[], string]> = [
+    ['a dotted value', ['x ' + tok, pw + '=' + dotted + ' done'], dotted.slice(4)],
+    ['a dotted value in a backtick, split', ['x ' + tok, pw + '=`' + dotted.slice(0, 9), dotted.slice(9) + ' done'], dotted.slice(4)],
+    ['a backtick value, a line continuation and a long value', ['x ' + tok, pw + '=`cfg.x\\\n' + long], long],
+    ['the separator alone, then the value', ['x ' + tok, 'api_' + 'key:=', 'cfg.x\\\n' + long + ' done'], long],
+  ];
+  for (const [label, chunks, v] of regress) assert.ok(!showsAny(chunks, v), `#1320 brain round 3: a cut right after the token hides the value (${label})`);
 }
 
 // spec 012 FR-181 (issue #1541): an escaped token (`ghp\_<body>`) in a shell step's command, as a string and as an argument list, is hidden in the step target

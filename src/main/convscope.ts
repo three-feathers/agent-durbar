@@ -47,13 +47,15 @@ export interface ScopeDeps {
   /** Tests: the Claude config folder and the readers. */
   claudeDir?: string;
   /** FR-026: the box session's kept Codex lists (absent: list every time). */
-  codexLists?: CodexListCache;
+  keptLists?: ListCache;
   /** FR-022 (review of phase 2 code): the listings running now, shared across scans (main's one map; absent: no sharing), so quick new starts never pile up readers of the same folder. */
   listings?: Map<string, Promise<unknown>>;
   /** The clock of the kept lists and of the plan's deadline (ms; default `Date.now`). */
   now?(): number;
   /** The plan's deadline timer (tests inject their own; main: an unref'd `setTimeout`). */
   wait?(ms: number): Promise<void>;
+  /** Issue 1904 (FR-015): folders whose listings are over, of all the plan's folders; called at the start (0) and after each folder. */
+  onListing?(done: number, total: number): void;
   readClaude?: typeof readClaudeHistoryStream;
   listChats?: typeof listChats;
   readChat?: typeof readChat;
@@ -68,40 +70,52 @@ export interface Scope {
 }
 
 /** FR-026: a kept list older than this is listed again (a session deleted in Previous sessions, or made in the Codex app, shows within it). */
-export const CODEX_LIST_TTL_MS = 5 * 60_000;
+export const KEPT_LIST_TTL_MS = 5 * 60_000;
 /** FR-022 (review N-R2): the most building the plan may take; a listing still running then is given up, the rest are skipped. */
 export const SCOPE_LIST_MS = 30_000;
+/** FR-022 (issue 1904, part 2): the most one read of the plan may take; then it is skipped and counted (`notes.slow`), and the scan goes on. Under the Codex gate's 20 s, a fraction of the scan's 60 s. */
+export const SEARCH_READ_MS = 15_000;
 const LATE = Symbol('late');
 
 /**
- * FR-026 (owner answer C): a folder's earlier Codex sessions as `thread/list` gave them, kept in memory for the search box session, so
- * the searches typed one after another start no new app-server. Nothing is written. A folder's list is dropped when it is older than
- * `CODEX_LIST_TTL_MS`, or when an open Codex session of that folder has left the office since it was listed (it is an earlier session
- * now). A new open Codex session does not drop it: it adds no earlier session, and a resumed one is left out by the open-session filter
- * at each search. `clear()` drops everything (the box cleared or closed, the window gone, main's own stop).
+ * FR-026 (owner answer C; issue 1904, part 2): what a listing gave, kept in memory for the search box session, so the searches typed one
+ * after another list nothing again: each folder's earlier sessions per app (`previousSessionsOf`, Codex's `thread/list` among them: no new
+ * app-server) and each folder's VS Code chats. Nothing is written or sent. A key is `folderKey + NUL + kind`. An entry is dropped when it
+ * is older than `KEPT_LIST_TTL_MS`, or when an open session of that folder and app (`ids`, the agents' ids at the listing) has left the
+ * office since it was listed (it is an earlier session now). A new open session does not drop it: it adds no earlier session, and a
+ * resumed one is left out by the open-session filter at each search. `dropFolder` drops one folder (the Previous sessions panel listed it
+ * again); `clear()` drops everything (the box cleared or closed, a delete, the window gone, main's own stop).
  */
-export interface CodexListCache {
-  get(folderKey: string, openCodexIds: readonly string[], now: number): PreviousSession[] | undefined;
-  set(folderKey: string, openCodexIds: readonly string[], list: readonly PreviousSession[], now: number): void;
+export interface ListCache {
+  get<T = PreviousSession>(key: string, openIds: readonly string[], now: number): T[] | undefined;
+  set<T = PreviousSession>(key: string, openIds: readonly string[], list: readonly T[], now: number): void;
+  dropFolder(folderKey: string): void;
   clear(): void;
   size(): number;
 }
 
-export function createCodexListCache(ttlMs: number = CODEX_LIST_TTL_MS): CodexListCache {
-  const m = new Map<string, { at: number; ids: Set<string>; list: PreviousSession[] }>();
+/** The key of a kept list: a folder and what was listed in it (an adapter id, or `vscode` for its chats). */
+export const keptKey = (folderKey: string, kind: string): string => `${folderKey}\0${kind}`;
+
+export function createListCache(ttlMs: number = KEPT_LIST_TTL_MS): ListCache {
+  const m = new Map<string, { at: number; ids: Set<string>; list: unknown[] }>();
+  const copy = <T>(list: readonly T[]): T[] => JSON.parse(JSON.stringify(list)) as T[]; // plain data (titles, times, chat refs): a copy goes out and comes in
   return {
-    get(folderKey, openCodexIds, now) {
-      const e = m.get(folderKey);
+    get<T>(key: string, openIds: readonly string[], now: number): T[] | undefined {
+      const e = m.get(key);
       if (!e) return undefined;
-      const open = new Set(openCodexIds);
+      const open = new Set(openIds);
       if (!(now - e.at >= 0 && now - e.at < ttlMs) || [...e.ids].some((id) => !open.has(id))) {
-        m.delete(folderKey);
+        m.delete(key);
         return undefined;
       }
-      return e.list.map((p) => ({ ...p }));
+      return copy(e.list as T[]);
     },
-    set(folderKey, openCodexIds, list, now) {
-      m.set(folderKey, { at: now, ids: new Set(openCodexIds), list: list.map((p) => ({ ...p })) });
+    set<T>(key: string, openIds: readonly string[], list: readonly T[], now: number): void {
+      m.set(key, { at: now, ids: new Set(openIds), list: copy(list) });
+    },
+    dropFolder(folderKey) {
+      for (const k of [...m.keys()]) if (k === folderKey || k.startsWith(folderKey + '\0')) m.delete(k);
     },
     clear: () => m.clear(),
     size: () => m.size,
@@ -185,8 +199,24 @@ export async function buildScope(d: ScopeDeps, stop: () => boolean = () => false
   // one copy of the agents for the folder loop: the open ids and a folder's Codex ids (key of the kept list) must agree, whatever closes while a listing is awaited
   const snapshot = new Map(d.agents);
   const openIds = openIdsOf({ agents: snapshot, resumeIdFor: d.resumeIdFor });
+  // issue 1904: a folder counts as done when all its listings (VS Code chats, and each app's earlier sessions) are over, whatever they gave
+  const left = new Map<string, number>();
+  for (const [k, a] of firstOf) left.set(d.wsKey(a), (left.get(d.wsKey(a)) ?? 0) + 1);
+  let foldersDone = 0;
+  const report = (): void => { try { d.onListing?.(foldersDone, left.size); } catch { /* a progress callback never stops the plan */ } };
+  report();
+  let previous: string | undefined;
+  const finished = (): void => {
+    if (previous === undefined) return;
+    const n = (left.get(previous) ?? 1) - 1;
+    left.set(previous, n);
+    if (n === 0) { foldersDone++; report(); }
+    previous = undefined;
+  };
   for (const [k, a] of firstOf) {
+    finished(); // the step before this one is over (every `continue` below ends a step)
     if (stop()) break;
+    previous = d.wsKey(a);
     const key = d.wsKey(a);
     const f = d.store?.get(key);
     const hidden = (src: string): Set<string> => new Set((f?.prevHidden ?? []).filter((m) => m.src === src).map((m) => m.id));
@@ -200,27 +230,24 @@ export async function buildScope(d: ScopeDeps, stop: () => boolean = () => false
       try {
         let started = false; // this scan's call ran (it was not shared): only then is the list excluding this scan's open ids kept
         const listing = (): Promise<PreviousSession[]> => { started = true; return previousSessionsOf(ad, a.cwd, openIds); };
-        if (adapter === 'codex') {
-          // owner answer C: a folder on a floor that is off starts no app-server; it is counted instead
-          if (off) { floorOffFolders++; continue; }
-          // FR-026: the box session's kept list, else `thread/list` through a short-lived app-server, behind the gate (one at a time)
-          const ids = [...snapshot.values()].filter((x) => d.wsKey(x) === key && adapterOf(x) === 'codex').map((x) => x.id);
-          const at = (d.now ?? Date.now)();
-          const kept = d.codexLists?.get(key, ids, at);
-          if (kept) list = kept.filter((s) => !openIds.has(s.id)); // a session resumed since: open now, not earlier
-          else {
-            if (clock() >= deadline) { late(d.appName(adapter)); continue; } // past the plan's deadline: not started
-            const r = await inTime(d.gate.run(`list\0${key}`, listing, CODEX_LIST_GATE_MS) as Promise<PreviousSession[]>);
-            if (r === LATE) { late(d.appName(adapter)); continue; } // given up: not kept
-            // a listing leaves out the open ids of the scan that started it, so only that scan keeps it, under its own ids (review of PR 1232, round 2)
-            if (started) d.codexLists?.set(key, ids, r, at);
-            list = r.filter((s) => !openIds.has(s.id)); // shared with an earlier scan's call: a session resumed since is open now
-          }
-        } else {
-          if (clock() >= deadline) { late(d.appName(adapter)); continue; }
-          const r = await inTime(shared(`list\0${k}`, listing));
-          if (r === LATE) { late(d.appName(adapter)); continue; }
-          list = r.filter((s) => !openIds.has(s.id)); // the running listing may be an earlier scan's, with its open ids
+        // owner answer C: a folder on a floor that is off starts no app-server; it is counted instead
+        if (adapter === 'codex' && off) { floorOffFolders++; continue; }
+        // FR-026: the box session's kept list (issue 1904: of every app), else the listing; Codex's `thread/list` goes through the gate (one at a time)
+        const ids = [...snapshot.values()].filter((x) => d.wsKey(x) === key && adapterOf(x) === adapter).map((x) => x.id);
+        const at = clock();
+        const kk = keptKey(key, adapter);
+        const kept = d.keptLists?.get<PreviousSession>(kk, ids, at);
+        if (kept) list = kept.filter((s) => !openIds.has(s.id)); // a session resumed since: open now, not earlier
+        else {
+          if (clock() >= deadline) { late(d.appName(adapter)); continue; } // past the plan's deadline: not started
+          const run = adapter === 'codex'
+            ? d.gate.run(`list\0${key}`, listing, CODEX_LIST_GATE_MS) as Promise<PreviousSession[]>
+            : shared(`list\0${k}`, listing);
+          const r = await inTime(run);
+          if (r === LATE) { late(d.appName(adapter)); continue; } // given up: not kept
+          // a listing leaves out the open ids of the scan that started it, so only that scan keeps it, under its own ids (review of PR 1232, round 2)
+          if (started) d.keptLists?.set(kk, ids, r, at);
+          list = r.filter((s) => !openIds.has(s.id)); // shared with an earlier scan's call: a session resumed since is open now
         }
       } catch {
         unavailable.add(d.appName(adapter)); // FR-014: "Not searched: Codex (not installed)", once
@@ -236,12 +263,20 @@ export async function buildScope(d: ScopeDeps, stop: () => boolean = () => false
         }, read ? { kind: 'claude', id: p.id, cwd: a.cwd } : { kind: 'none' });
       }
     } else {
-      let chats;
+      let chats: { sessions: ChatFileRef[] };
       try {
-        if (clock() >= deadline) { late('VS Code'); continue; }
-        const r = await inTime(shared(`chats\0${key}`, () => (d.listChats ?? listChats)(d.vsUserDirs(), { folders: a.folders, workspaceFile: a.workspaceFile })));
-        if (r === LATE) { late('VS Code'); continue; }
-        chats = r;
+        const kk = keptKey(key, VSCODE);
+        const at = clock();
+        const kept = d.keptLists?.get<ChatFileRef>(kk, [], at); // issue 1904: the box session's kept chat list; no open-session filter applies to chats
+        if (kept) chats = { sessions: kept };
+        else {
+          if (clock() >= deadline) { late('VS Code'); continue; }
+          let started = false;
+          const r = await inTime(shared(`chats\0${key}`, () => { started = true; return (d.listChats ?? listChats)(d.vsUserDirs(), { folders: a.folders, workspaceFile: a.workspaceFile }); }));
+          if (r === LATE) { late('VS Code'); continue; }
+          if (started) d.keptLists?.set(kk, [], r.sessions, at); // a failed or given up listing is not kept
+          chats = r;
+        }
       } catch {
         continue;
       }
@@ -257,8 +292,9 @@ export async function buildScope(d: ScopeDeps, stop: () => boolean = () => false
       }
     }
   }
+  finished();
 
-  const read = async (s: PlanSession, halt: () => boolean): Promise<ReadOutcome> => {
+  const readOnce = async (s: PlanSession, halt: () => boolean): Promise<ReadOutcome> => {
     const src = sources.get(s) ?? { kind: 'none' };
     if (src.kind === 'claude') {
       const r = await (d.readClaude ?? readClaudeHistoryStream)(src.id, src.cwd, SEARCH_HISTORY_LIMITS, d.claudeDir, { stop: halt });
@@ -285,6 +321,16 @@ export async function buildScope(d: ScopeDeps, stop: () => boolean = () => false
       return { ok: true, items };
     }
     return { ok: false, reason: 'unreadable' };
+  };
+  // issue 1904 (FR-022): every read races its own limit; the plan's `wait` is the timer (tests inject their own). A Claude Code stream is told to stop.
+  const read = async (s: PlanSession, halt: () => boolean): Promise<ReadOutcome> => {
+    let over = false;
+    const run = readOnce(s, () => halt() || over);
+    run.catch(() => undefined); // a read given up that fails later is not an unhandled rejection
+    const r = await Promise.race([run, wait(SEARCH_READ_MS).then((): typeof LATE => LATE)]);
+    if (r !== LATE) return r;
+    over = true;
+    return { ok: false, reason: 'timeout' };
   };
   const values = (s: PlanSession): readonly string[] => scanSecretValues(d.values, { folderKey: s.folderKey, agentId: s.agentId, open: s.group === 'office' });
   // owner answer D: the open agents' session values are left out of the mask while the vault would prompt (`scanSecretValues`): said

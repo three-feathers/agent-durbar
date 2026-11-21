@@ -303,6 +303,7 @@ Owner request (Vikram, 2026-11-13): see the browser big, make it small before go
 - [x] T082 [US1] Driver `scripts/check-080-browser-expand.js`, registered in `scripts/ui-suite.js` for Flat, Real office and the Retro arcade, at 1440x900 and 1280x800: AC1-AC3 of T081, an overlay over the big page (FR-008), text at least 10.5 px, no page or panel scroll; pictures small and big. Mutants: *expand does not fill*, *restore forgets*, *focus not returned*, *Escape steals from the page*, *state persisted*, each failing at its labelled assertion (the PR lists them). [FR-134..FR-139]
 - [x] T083 Docs: `docs/features.md`, `docs/feature-inventory.md` (the Browser tab row), a `changelog.d/080-1691-browser-expand.md` fragment, the spec's tags, the `specs-index` note. [FR-134..FR-139]
   - Done 2026-11-13 (T080-T083): `test:` `test:browserpane` (T080 AC1); `sim:` `check-080-browser-expand` in Flat, the Photo office and the Retro arcade at 1440x900 and 1280x800 (T081 AC1-AC3, T082); the five named mutants each failed at their labelled assertion at 1280x800 in Flat (the PR lists them); docs pictures `080-browser-expand-{small,big}-flat-{1440x900,1280x800}.png` through `shots:docs`, and `080-browser-tabs-*.png` retaken (the bar has the new button). Not run on macOS or Windows by hand; DPR 2 not checked.
+- [x] T084 (issue #1239, spec delta 2026-11-20; FR-129's driver step) `scripts/check-browser-tabs.js`: before the composer-focus wait of the FR-129 step the driver calls `H.needFocus('FR-129', ...)` (the shared focus helper, FR-031), so a window without the OS focus fails with the helper's label instead of `timed out: the composer has the focus`. Mutant `BROWSER_TABS_NO_WINDOW_FOCUS=1` (reading `false`) dies at "FR-129: the window does not have focus" at both sizes. `sim:` Linux only; `[KNOWN GAP]` macOS cause not reproduced, `check-browser-tab` half unexplained, unchanged.
 
 **Checkpoint**: the browser can be made big and small again; nothing about the page changes.
 
@@ -542,3 +543,6 @@ Owner request (Vikram, 2026-11-13): see the browser big, make it small before go
 | SC-009 | T040 |
 | SC-010 | T021 |
 | SC-011 | T024 |
+
+## 2026-11-20: the owner accepts the macOS dialog stall (issue #1415)
+- [x] T425 (delta 2026-11-20, issue #1415) spec 080: option 2 recorded (native dialogs kept, stall accepted, no hold built), what the agent sees from the code, the measured cost, issue #1982 for a real hold; no code change [FR-025d]

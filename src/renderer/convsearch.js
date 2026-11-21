@@ -18,7 +18,7 @@
   const longEnough=q=>[...String(q==null?'':q).replace(/\s+/g,'')].length>=3;
 
   /* the results of one search: hits by key, the arrival order per group (FR-015: rows already shown do not move while it scans) */
-  function create(){return {hits:new Map(),order:{office:[],earlier:[]},progress:{done:0,total:0},done:false,notes:null,stopped:false,failed:false,userStop:false,queryCut:false};}
+  function create(){return {hits:new Map(),order:{office:[],earlier:[]},progress:{done:0,total:0},listing:null,done:false,notes:null,stopped:false,failed:false,userStop:false,queryCut:false};}
   /* a batch (FR-020): new hits are appended in the order they came (per folder, newest first inside it); a hit seen again replaces its data in place */
   function addBatch(st,b){
     for(const h of (b&&Array.isArray(b.hits)?b.hits:[])){
@@ -30,7 +30,15 @@
     if(b&&b.progress)st.progress={done:+b.progress.done||0,total:+b.progress.total||0};
     return st;
   }
-  /* search:done: each group newest first (FR-010; the office group by `timeOf`, since main does not know when an open session was last
+  /* issue 1904 (FR-015): main's `listing` event while it builds the plan: folders whose listings are over, of all the plan's folders (whole numbers, never text) */
+  function addListing(st,e){
+    const total=Math.max(0,+e.total|0), done=Math.max(0,Math.min(total,+e.done|0));
+    st.listing={done,total};
+    return st;
+  }
+  /* issue 1904 (FR-040): a hit's rank, 0 whole word, 1 word start, 2 inside a word; a missing or odd value is 0 (no demotion) */
+  const rankOf=h=>{const r=+(h&&h.rank);return r===1||r===2?r:0;};
+  /* search:done: each group by rank (whole words first, in-word hits below, none hidden), then newest first (FR-010; the office group by `timeOf`, since main does not know when an open session was last
      active). Pinned earlier sessions are not moved up (Q8). `keep` (a key) is the row under the pointer or with focus: it is the caller's
      job to keep it on screen; the order of the others is the new one. */
   function finish(st,d,timeOf){
@@ -41,7 +49,7 @@
   }
   function resort(st,timeOf){
     const t=k=>{const h=st.hits.get(k);const v=typeof timeOf==='function'?timeOf(h):h&&h.time;return typeof v==='number'&&isFinite(v)?v:0;};
-    for(const g of ['office','earlier']){const idx=new Map(st.order[g].map((k,i)=>[k,i]));st.order[g]=st.order[g].slice().sort((a,b)=>t(b)-t(a)||idx.get(a)-idx.get(b));}
+    for(const g of ['office','earlier']){const idx=new Map(st.order[g].map((k,i)=>[k,i])), rk=k=>rankOf(st.hits.get(k));st.order[g]=st.order[g].slice().sort((a,b)=>rk(a)-rk(b)||t(b)-t(a)||idx.get(a)-idx.get(b));}
     return st;
   }
   /* sort headers (FR-004): by name, app, folder or when; ascending or descending, inside each group; null = the search's own order */
@@ -89,6 +97,8 @@
 
   /* FR-015: the state line while scanning, and the final line (US3.4) */
   function stateText(st){
+    /* issue 1904: until the first batch (its total is the plan's size) main is still listing sessions: never "Searching, 0 of 0 sessions" */
+    if(!st.done&&!st.progress.total){const l=st.listing;return l&&l.total>0?'Listing sessions in '+l.done+' of '+plural(l.total,'folder')+'\u2026':'Listing sessions\u2026';}
     if(!st.done)return 'Searching, '+st.progress.done+' of '+plural(st.progress.total,'session');
     const n=count(st);
     if(st.failed&&!n)return 'The search could not finish.';
@@ -111,6 +121,7 @@
     if(n.titleOnly&&n.titleOnly.count)not.push('earlier '+listWords(n.titleOnly.apps||[])+' sessions, by title only ('+n.titleOnly.count+')');
     if(n.tooLarge)not.push(plural(n.tooLarge,'session')+' too large to search');
     if(n.unreadable)not.push(plural(n.unreadable,'unreadable session'));
+    if(n.slow)not.push(plural(+n.slow|0,'session')+' that did not answer in time'); /* issue 1904 (FR-022): a read that ran out of its own limit */
     if(n.hidden)not.push(plural(n.hidden,'hidden earlier session'));
     if(n.floorsOff)not.push(plural(n.floorsOff,'session')+' on floors that are off');
     if(n.floorOffFolders)not.push('earlier Codex sessions of '+plural(n.floorOffFolders,'folder')+' on floors that are off');
@@ -141,5 +152,5 @@
     return best;
   }
 
-  return {dropBidi,moreOf,keyOf,longEnough,create,addBatch,finish,resort,sorted,count,markedHTML,excerptHTML,accName,stateText,notesText,LOCKED,announceDue,pickAnchor};
+  return {dropBidi,moreOf,keyOf,longEnough,create,addBatch,addListing,rankOf,finish,resort,sorted,count,markedHTML,excerptHTML,accName,stateText,notesText,LOCKED,announceDue,pickAnchor};
 })());

@@ -5,7 +5,7 @@
  *   OUT=<folder>  (optional) saves 102-world-section-{1440x900,1280x800}.jpg (Plain in use, the World section at the top)
  *
  * At 1440x900 and 1280x800 (the flat office, and Real office):
- *   - the Display section has no Office layout or World row any more; a section named World holds the cards (Plain, Photo office), one radio group;
+ *   - the Display section has no Office layout or World row any more; a section named World holds the cards (Plain, Photo office, Retro arcade: no flag since spec 102 T230), one radio group;
  *   - a world behind a closed flag is not listed; with its flag open (the simulator's `worldflags`) it is, after the Photo office, with a plain tile when it has no picture;
  *   - exactly one card is checked and has "In use" and a 2 px edge in --accent (not colour alone); one Tab stop (the checked card);
  *   - the arrow keys move the focus (roving tabindex) and do not choose; Enter and Space choose, at once: Plain is the flat office, a world card is Real office in it;
@@ -59,8 +59,8 @@ module.exports = async (ctx) => {
       assert.strictEqual(sec.role, 'radiogroup', `${tag}: the cards are one radio group`);
       assert.strictEqual(sec.label, 'worldH', `${tag}: the group is named by the heading`);
       assert.ok(!sec.layoutRow && !sec.oldRow, `${tag}: the Office layout row and the World row are gone from Display`);
-      assert.ok(sec.theme && sec.chars, `${tag}: Theme and Characters stay until the flip`);
-      assert.deepStrictEqual(await names(), ['plain', 'photo'], `${tag}: the closed flag: only Plain and the Photo office are listed`);
+      assert.ok(sec.theme && sec.chars, `${tag}: Theme and Characters stay (the Retro pixel theme stays, owner 2026-11-14)`);
+      assert.deepStrictEqual(await names(), ['plain', 'photo', 'retro'], `${tag}: the cave's flag closed: Plain, the Photo office and the Retro arcade (no flag since T230) are listed`);
 
       // ---- one checked card, In use, a 2 px accent edge, one Tab stop ----
       const want = wname === 'real' ? 'photo' : 'plain';
@@ -85,7 +85,7 @@ module.exports = async (ctx) => {
       // ---- keys: arrows move the focus and choose nothing; Enter and Space choose ----
       await js(`document.querySelector(${jsLiteral(CARDS + '[tabindex="0"]')}).focus();0`);
       await key('Right');
-      await ok(`document.activeElement&&document.activeElement.dataset.world===${jsLiteral(wname === 'real' ? 'plain' : 'photo')}`, `${tag}: Right arrow moves the focus to the next card (it wraps)`);
+      await ok(`document.activeElement&&document.activeElement.dataset.world===${jsLiteral(wname === 'real' ? 'retro' : 'photo')}`, `${tag}: Right arrow moves the focus to the next card`);
       assert.deepStrictEqual(await checked(), [want], `${tag}: an arrow key does not choose`);
       assert.strictEqual(await js(`document.querySelectorAll(${jsLiteral(CARDS + '[tabindex="0"]')}).length`), 1, `${tag}: still one Tab stop after an arrow`);
       // focus is drawn outside the card, with a gap, and not like the chosen edge
@@ -103,8 +103,8 @@ module.exports = async (ctx) => {
       for (const [id, on, text] of desc) assert.strictEqual(/\bIn use\b/.test(text), on === 'true', `${tag}: ${id}: only the checked card's description says In use (announced): ${JSON.stringify(text)}`);
       assert.strictEqual(await js(`[...document.querySelectorAll(${jsLiteral(CARDS)})].map(b=>Math.round(b.getBoundingClientRect().height*10)).join()`), await js(`window.__h`), `${tag}: no card changes size when the choice moves (each keeps the room of its In use line)`);
       const view = await js(`localStorage.getItem('durbar.officeview')+' '+localStorage.getItem('durbar.world')`);
-      assert.ok(target === 'plain' ? /^flat /.test(view) : view === 'real photo', `${tag}: choosing applies at once, stored as it always was: ${view}`);
-      await ok(target === 'plain' ? `!document.documentElement.dataset.world` : `document.documentElement.dataset.world==='photo'`, `${tag}: the app is in ${target} (the page's world mark)`);
+      assert.ok(target === 'plain' ? /^flat /.test(view) : (wname === 'real' ? view.endsWith(' ' + target) : view === 'real ' + target), `${tag}: choosing applies at once, stored as it always was (in the real run the view comes from the query, so only the world is written): ${view}`);
+      await ok(target === 'plain' ? `!document.documentElement.dataset.world` : `document.documentElement.dataset.world===${jsLiteral(target)}`, `${tag}: the app is in ${target} (the page's world mark)`);
       // the other card with Space
       await key('Left');
       await ok(`document.activeElement&&document.activeElement.dataset.world&&document.activeElement.dataset.world!==${jsLiteral(target)}`, `${tag}: Left moves the focus to the other card`);
@@ -170,7 +170,7 @@ module.exports = async (ctx) => {
           const sb=document.querySelector('#screen .scr-body');sb.scrollTop=300;window.__top=sb.scrollTop;return 0})()`);
         const top = await js(`window.__top`);
         assert.ok(top > 100, `${w}x${h}: the page is scrolled before the previews arrive (${top})`);
-        await ok(`document.querySelectorAll('#wrGroup .wpic img').length===2`, `${w}x${h}: the previews' pictures arrive`);
+        await ok(`document.querySelectorAll('#wrGroup .wpic img').length===3`, `${w}x${h}: the previews' pictures arrive`);
         const calls = await js(`window.__mcpCalls`);
         assert.strictEqual(calls, 0, `${w}x${h}: the previews' arrival does not call agents:mcp (${calls} calls)`);
         assert.strictEqual(await js(`document.getElementById('themeH').closest('section').dataset.mark||''`), 'kept', `${w}x${h}: the previews' arrival does not repaint the page`);
@@ -184,7 +184,7 @@ module.exports = async (ctx) => {
     await open(w, h, { officeview: 'real' });
     await js(`localStorage.setItem('durbar.world','cave');0`);
     await open(w, h, { officeview: 'real' });
-    assert.deepStrictEqual(await names(), ['plain', 'photo'], `${w}x${h}: a saved cave with the flag closed: no cave card`);
+    assert.deepStrictEqual(await names(), ['plain', 'photo', 'retro'], `${w}x${h}: a saved cave with the flag closed: no cave card`);
     assert.deepStrictEqual(await checked(), ['photo'], `${w}x${h}: a saved cave with the flag closed: the Photo office is the one in use`);
     assert.strictEqual(await js(`document.documentElement.dataset.world`), 'photo', `${w}x${h}: a saved cave with the flag closed: the page is in the Photo office`);
     await js(`localStorage.removeItem('durbar.world');0`);

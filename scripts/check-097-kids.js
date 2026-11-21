@@ -4,9 +4,14 @@
  * until(), every page value goes through jsLiteral.
  *
  *   npm run check:ui -- --only check-097-kids      (builds first)
- *   SHOTS_OUT=<dir>   where its pictures go (097-kids-<n>-<w>x<h>.jpg, JPEG quality 60; a temporary folder by default)
+ *   SHOTS_OUT=<dir>   where its pictures go (097-kids-<n>-<w>x<h>.jpg, in the cave 097-kids-cave-<n>-<w>x<h>.jpg, JPEG quality 60; a temporary folder by default)
+ *   KIDS_WORLD=<world>   unset = photo; a world whose world.json has `kids` (today photo, cave, retro; retro: the arcade's pixel kids, spec 102 T327, in the same rows fixture as the cave's, since its aisles have no desk tops); any other value exits 1 naming the valid ones (KIDS_MUTANT=worldfallback restores the silent fallback: test-realoffice-assets must fail). KIDS_WORLD=cave: the Prehistoric cave's painted kids (spec 102 T326, issue #1643; the suite's `check-097-kids cave` entry), behind its flag; default: the Photo office
  *   KIDS_MUTANT=nokids|status|name|overlap|adulthead   no kid is drawn / a status change rebuilds a kid's node / a kid's name is drawn / a kid lies over its plate /
  *     the head row shows an adult at 15 agents (each must fail)
+ *   KIDS_MUTANT=nofocus|noring   the focus precheck reads false / the "+K" ring is removed by a style: must fail at `the window does not have focus` /
+ *     `"+K" shows a 2 px focus ring` (spec 097 T349: the ring is :focus-visible, which never matches in a page without the OS focus)
+ *   KIDS_IDLE_DELAY=<ms>   test only (#1867 flake): the cave fixture's idle arrives that late, as under load; with KIDS_MUTANT=nowait (the wait for the drawn idle removed) KIDS_WORLD=cave
+ *     KIDS_COUNTS=4 must fail at `4 agents 1440x900: the first desk has kids`
  *
  *   Three source mutants (edit, `npm run build`, run this driver, undo; each must fail at its own assertion; review of #1694):
  *     hashelp:    realoffice.js, the plate class `(!d.strip && !d.kids && a.helpers ...` -> `(!d.strip && a.helpers ...`   -> "its plate has no has-help class"
@@ -34,6 +39,11 @@ const assert = require('assert');
 const { helpers, jsLiteral } = require('./driver-helpers');
 
 const MUTANT = process.env.KIDS_MUTANT || '';
+const IDLE_DELAY = Math.max(0, Math.min(5000, Number(process.env.KIDS_IDLE_DELAY) || 0)); /* test only: the cave fixture's idle arrives this many ms late (the #1867 flake made certain) */
+let WORLD;
+try { WORLD = require('./kids-worlds').pickKidsWorld(process.env.KIDS_WORLD, MUTANT); } catch (e) { console.error(e.message); process.exit(1); } /* a wrong name fails loudly, never the Photo office */
+const WQ = WORLD !== 'photo' ? { worldflags: WORLD, world: WORLD } : {}; /* the cave is behind its flag (spec 102 FR-205) */
+const SHOT = WORLD === 'photo' ? '097-kids' : `097-kids-${WORLD}`;
 const SIZES = [[1440, 900], [1280, 800]];
 const COUNTS = (process.env.KIDS_COUNTS || '1,2,3,4').split(',').map(Number);
 const TOKEN = 'ghp_' + 'Z9y8X7w6V5u4T3s2R1q0P9o8N7m6L5k4J3i2';
@@ -49,6 +59,29 @@ module.exports = async (ctx) => {
   const REAL = (n) => `!!document.querySelector('#stage .ro .ro-plate')&&document.getElementById('stage').dataset.d==='real'&&document.querySelectorAll('#stage .ro .ro-plate').length>=${n}`;
   const PICS = `[...document.querySelectorAll('#stage .ro img')].every(i=>i.complete)`;
   const emit = (e) => js(`void window.__durbarSimEmit(Object.assign({timestamp:Date.now()},${jsLiteral(e)}));0`);
+  /* spec 102 T326 (#1643): the cave names `circle`, which draws no helper strip and no kids (T175's gap): the plates keep "+N" and dots there. So the cave run first checks what the
+     page drew (the circle: no kid group; rows: kids), then switches to a page-only rows fixture (as check-097-helpers), where FR-368..FR-370 hold as in the Photo office */
+  /* spec 102 T327 (#1643): the Retro arcade names `aisles`: cabinets, no desk tops, so no kid stands in it; its helpers are the kids' faces in the head row under the plate (FR-370,
+     check-097-helpers). The kids' pictures and data are still checked here in the same page-only rows fixture as the cave's */
+  const WORLD_ARR = { cave: ['circle', 'rows'], retro: ['aisles'] };
+  const caveRows = async (tag) => {
+    if (!WORLD_ARR[WORLD]) return;
+    const arr = await js(`document.querySelector('#stage .ro').dataset.arrangement`);
+    assert.ok(WORLD_ARR[WORLD].includes(arr), `${tag}: ${WORLD} draws ${WORLD_ARR[WORLD].join(' or ')} (${arr})`);
+    if (arr === 'circle') assert.strictEqual(await js(`document.querySelectorAll('#stage .ro-kids').length`), 0, `${tag}: the circle draws no kids (T175)`);
+    if (arr === 'aisles') assert.strictEqual(await js(`document.querySelectorAll('#stage .ro-kids').length`), 0, `${tag}: the aisles draw no kids on a desk top (T327: the head row shows their faces)`);
+    await js(`window.DurbarRealOfficeWorlds[${jsLiteral(WORLD)}].arrangement='rows';0`);
+    const id = await js(`window.__durbarSimUi.realLayout().zones[0].desks[0].id`);
+    await emit({ sessionId: id, type: 'status', status: 'error', intent: 'x' });
+    /* spec 005 FR-245 (issue 1919): an idle after an error leaves the agent in Error until a new turn starts, so the fixture sends `working` (the agent went on) before its idle, as the idle that ends a normal turn */
+    if (IDLE_DELAY) await js(`setTimeout(()=>{window.__durbarSimEmit({timestamp:Date.now(),sessionId:${jsLiteral(id)},type:'status',status:'working',intent:'x'});window.__durbarSimEmit({timestamp:Date.now(),sessionId:${jsLiteral(id)},type:'status',status:'idle',intent:'x'});},${jsLiteral(IDLE_DELAY)});0`); /* the injected delay: the idle drawn late, as under load */
+    else { await emit({ sessionId: id, type: 'status', status: 'working', intent: 'x' }); await emit({ sessionId: id, type: 'status', status: 'idle', intent: 'x' }); }
+    await must(`document.querySelector('#stage .ro').dataset.arrangement==='rows'`, `${tag}: the rows fixture draws rows`);
+    /* #1867 flake: the rows can be drawn while the desk is still in error (the idle not drawn yet); an error desk goes first, so the caller's `first` (zones[0].desks[0]) came from that
+       stale layout: at 4 agents 1440x900 a desk with its person at the desk has no kid room. So wait (bounded, polled) until the drawn layout has the idle, not a longer sleep */
+    if (MUTANT !== 'nowait') await must(`${SIM}.settleNow()&&(()=>{const d=${SIM}.realLayout().zones.flatMap(z=>z.desks).find(x=>x.id===${jsLiteral(id)});return !!d&&d.state!=='error'&&d.state!=='working'})()`, `${tag}: the rows fixture drew the idle`);
+    await must(PICS, `${tag}: the pictures in rows`);
+  };
   const hit = (a, b, t = 0.5) => a.x + t < b.x + b.w && b.x + t < a.x + a.w && a.y + t < b.y + b.h && b.y + t < a.y + a.h;
   const mutate = async () => {
     const watch = (body) => js(`(()=>{const f=new Function(${jsLiteral(body)});f();new MutationObserver(f).observe(document.getElementById('stage'),{childList:true,subtree:true,attributes:true,attributeFilter:['class','src']});return 1})()`);
@@ -77,8 +110,10 @@ module.exports = async (ctx) => {
 
   for (const [w, h] of SIZES) for (const n of COUNTS) {
     const tag = `${n} agent${n > 1 ? 's' : ''} ${w}x${h}`;
-    await H.load({ w, h, query: { officeview: 'real', simfreeze: '1', sim: String(n), simhelpers: '6' }, ready: REAL(n), readyMs: 30000, settle: false });
+    await H.load({ w, h, query: { officeview: 'real', simfreeze: '1', sim: String(n), simhelpers: '6', ...WQ }, ready: REAL(n), readyMs: 30000, settle: false });
     await must(PICS, `${tag}: the pictures`);
+    assert.strictEqual(await js(`document.querySelector('#stage .ro').dataset.world`), WORLD, `${tag}: the world drawn`);
+    await caveRows(tag);
     const first = await js(`${SIM}.realLayout().zones[0].desks[0].id`);
     for (let i = 0; i < 2; i++) await emit({ sessionId: first, type: 'subagent', subagentId: 'kid-x-' + i, name: 'Extra helper ' + (i + 1), phase: 'started', task: 'Check ' + (i + 1), agentName: 'explore' });
     await emit({ sessionId: first, type: 'subagent', subagentId: 'kid-hostile', name: HOSTILE, phase: 'started', task: HOSTILE, agentName: 'explore' });
@@ -91,6 +126,9 @@ module.exports = async (ctx) => {
     await must(PICS, `${tag}: the kid pictures`);
     await mutate();
     if (MUTANT) console.log('[097-kids] mutant:', MUTANT);
+    /* the office settled first (a desk whose person is out on a visit has other kid places until it returns; reached in the cave's rows, spec 102 T326) */
+    await must(`${SIM}.visitsSettled()&&${SIM}.settleNow()`, `${tag}: the office settled before the first read`);
+    await must(PICS, `${tag}: the pictures after the settle`);
     let s = await read();
     assert.ok(s.big && !s.scroll, `${tag}: the big level, no scroll`);
     const withKids = s.desks.filter((d) => d.kz);
@@ -107,7 +145,7 @@ module.exports = async (ctx) => {
       const rank = (st) => (st === 'waiting' || st === 'limit' ? 0 : st === 'error' ? 1 : 2);
       d.kids.forEach((k, i) => {
         assert.strictEqual(k.parent, d.id, `${tag}: kid ${k.id} is a helper of ${d.id}`);
-        assert.ok(k.done && k.nat > 0 && k.src === `realoffice/worlds/photo/${k.kid}-${k.pose}.webp`, `${tag}: ${k.id} shows ${k.kid}'s ${k.pose} picture, loaded (${k.src}, ${k.nat})`);
+        assert.ok(k.done && k.nat > 0 && k.src === `realoffice/worlds/${WORLD}/${k.kid}-${k.pose}.webp`, `${tag}: ${k.id} shows ${k.kid}'s ${k.pose} picture, loaded (${k.src}, ${k.nat})`);
         const r = k.box, e = k.want;
         assert.ok(e && Math.abs(r.x - e.x) < 0.75 && Math.abs(r.y - e.y) < 0.75 && Math.abs(r.w - e.w) < 0.75 && Math.abs(r.h - e.h) < 0.75, `${tag}: ${k.id}'s box ${JSON.stringify(r)} is kidBox's ${JSON.stringify(e)}`);
         assert.ok(Math.abs(r.h - k.poseH * 0.4 * s.u / k.bodyH) < 0.75, `${tag}: ${k.id}: one scale per kid (0.40 u)`);
@@ -138,6 +176,9 @@ module.exports = async (ctx) => {
     const fd = s.desks.find((d) => d.id === first);
     /* Tab order (FR-309, FR-372): the plate, its pencil, the kids in order, "+K", then out of the group */
     if (process.env.KIDS_TRACE) await js(`(()=>{if(!window.__fT){window.__fT=[];const o=HTMLElement.prototype.focus;HTMLElement.prototype.focus=function(...a){window.__fT.push((this.className||this.tagName)+' '+String(new Error().stack).split('\\n').slice(2,6).join(' | '));return o.apply(this,a)};}return 1})()`);
+    /* T349: the "+K" ring is :focus-visible, which needs the OS focus; Tab moves activeElement without it, so ask first (as check-052-focus-ring) */
+    await H.needFocus(tag, MUTANT === 'nofocus' ? { expr: 'false' } : {});
+    if (MUTANT === 'noring') await js(`(()=>{const s=document.createElement('style');s.textContent='.ro-kmore:focus-visible{outline:none!important}';document.head.append(s);return 1})()`);
     await js(`(()=>{document.querySelector('#stage .ro-plate[data-id="'+CSS.escape(${jsLiteral(first)})+'"]').focus();return 1})()`);
     await H.key('Tab');
     if (await js(`document.activeElement.matches('.ren.ro-ren')`)) await H.key('Tab');
@@ -146,7 +187,9 @@ module.exports = async (ctx) => {
     const focusNow = onMore ? '' : await js(`(document.activeElement.className||document.activeElement.tagName)+' '+(document.activeElement.dataset.id||'')`);
     if (!onMore && process.env.KIDS_TRACE) console.log('[097-kids] focus calls', JSON.stringify(await js('window.__fT')));
     assert.ok(onMore, `${tag}: after the last kid, Tab reaches "+K" (focus on ` + focusNow + ')');
-    assert.ok(await js(`(()=>{const c=getComputedStyle(document.activeElement);return c.outlineStyle!=='none'&&parseFloat(c.outlineWidth)>=2})()`), `${tag}: "+K" shows a 2 px focus ring`);
+    const ringOk = await H.until(`(()=>{const e=document.activeElement,c=getComputedStyle(e);return e.matches('.ro-kmore')&&c.outlineStyle!=='none'&&parseFloat(c.outlineWidth)>=2})()`, 2000);
+    const ringNow = ringOk ? '' : await js(`(()=>{const e=document.activeElement,c=getComputedStyle(e);return 'outline '+c.outlineStyle+' '+c.outlineWidth+', focus-visible '+e.matches(':focus-visible')+', kmore '+e.matches('.ro-kmore')+', hasFocus '+document.hasFocus()})()`);
+    assert.ok(ringOk, `${tag}: "+K" shows a 2 px focus ring (` + ringNow + ')');
     /* review of #1694: a redraw that makes the focused "+K" anew (its node replaced) gives the focus to the new one by its own data-kmore (app.js renderAll), not to the plate */
     assert.ok(await js(`(()=>{const m=document.activeElement;if(!m.matches('.ro-kmore'))return false;const g=m.parentNode;g._more=null;window.__durbarSimUi.crew.renderAll();const now=document.activeElement;m.remove();return now===g._more&&g._more!==m&&document.activeElement===g._more})()`), `${tag}: after a redraw that makes "+K" anew, the new "+K" keeps the focus (data-kmore)`);
     await H.key('Tab');
@@ -154,7 +197,9 @@ module.exports = async (ctx) => {
     await js(`document.activeElement.blur();0`);
 
     /* a status change: no node added or removed, the kid keeps its node, its picture and class change, its place stays (FR-015, FR-184) */
-    const target = fd.kids.find((k) => k.state === 'working') || fd.kids[fd.kids.length - 1];
+    /* a `done` helper keeps the simulator's own "Done" label over a state set by the hook, so its words cannot change: a working kid first, else any kid not done (reached in the
+       arcade's rows fixture at 2 agents, spec 102 T327, where the first desk shows no working kid) */
+    const target = fd.kids.find((k) => k.state === 'working') || fd.kids.find((k) => !['done', 'idle'].includes(k.state)) || fd.kids[fd.kids.length - 1];
     assert.ok(target, `${tag}: a kid to change`);
     await must(`${SIM}.visitsSettled()&&${SIM}.settleNow()`, `${tag}: the office settled`);
     /* a node moved for the new order (waiting and error first, orderedHelpers) is the same node; only a node made or dropped counts */
@@ -165,7 +210,7 @@ module.exports = async (ctx) => {
     for (const st of seq) {
       assert.ok(await js(`${SIM}.helperState(${jsLiteral(target.id)},${jsLiteral(st)})`), `${tag}: set ${st}`);
       if (MUTANT === 'status') await js(`(()=>{const n=document.querySelector('#stage .ro-kid[data-id="'+CSS.escape(${jsLiteral(target.id)})+'"]');if(n)n.replaceWith(n.cloneNode(true));return 1})()`);
-      await must(`(()=>{const b=document.querySelector('#stage .ro-kid[data-id="'+CSS.escape(${jsLiteral(target.id)})+'"]');return !!b&&b.classList.contains('st-'+${jsLiteral(st)})&&b.querySelector('img').getAttribute('src').endsWith('-'+window.exports.kidPose(${jsLiteral(st)},false)+'.webp')&&(${jsLiteral(st)}===${jsLiteral(target.state)}||${jsLiteral(st)}==='limit'||b.getAttribute('aria-label')!==${jsLiteral(label0)}) /* a helper's words have no limit of their own (helperWords): limit reads as waiting */})()`, `${tag}: the kid shows ${st}`);
+      await must(`(()=>{const b=document.querySelector('#stage .ro-kid[data-id="'+CSS.escape(${jsLiteral(target.id)})+'"]');return !!b&&b.classList.contains('st-'+${jsLiteral(st)})&&b.querySelector('img').getAttribute('src').endsWith('-'+window.exports.kidPose(${jsLiteral(st)},false)+'.webp')&&(${jsLiteral(st)}===${jsLiteral(target.state)}||${jsLiteral(st)}==='limit'||(${jsLiteral(st)}==='waiting'&&${jsLiteral(target.state)}==='limit')||b.getAttribute('aria-label')!==${jsLiteral(label0)}) /* a helper's words have no limit of their own (helperWords): limit reads as waiting, both ways (limit to waiting keeps the words: reached in the cave, spec 102 T326) */})()`, `${tag}: the kid shows ${st}`);
       await must(PICS, `${tag}: the ${st} picture`);
     }
     const nodes = await js(`(()=>{const b=window.__kBefore,now=new Set(document.querySelectorAll('#stage .ro *')),out=[];for(const e of now)if(!b.has(e)&&!e.closest('.ro-slip'))out.push('+'+(typeof e.className==='string'?e.className:e.tagName));for(const e of b)if(!e.isConnected&&!(e.closest&&e.closest('.ro-slip')))out.push('-'+(typeof e.className==='string'?e.className:e.tagName));return out})()`);
@@ -200,8 +245,8 @@ module.exports = async (ctx) => {
     ctx.win.webContents.sendInputEvent({ type: 'mouseMove', x: 1, y: 1 });
     await js(`document.activeElement&&document.activeElement.blur();0`);
     await must(PICS, `${tag}: the pictures before the shot`);
-    await H.shot(path.join(OUT, `097-kids-${n}-${w}x${h}.jpg`), { prep: 'calm', tag: 'kids', what: tag });
-    shots.push(`097-kids-${n}-${w}x${h}.jpg`);
+    await H.shot(path.join(OUT, `${SHOT}-${n}-${w}x${h}.jpg`), { prep: 'calm', tag: 'kids', what: tag });
+    shots.push(`${SHOT}-${n}-${w}x${h}.jpg`);
     /* a picture that fails: the kid keeps its button and name and shows the silhouette, never a letter */
     const gone = fd.kids[0].id, nm = await js(`document.querySelector('#stage .ro-kid[data-id="'+CSS.escape(${jsLiteral(gone)})+'"]').getAttribute('aria-label')`);
     await js(`(()=>{document.querySelector('#stage .ro-kid[data-id="'+CSS.escape(${jsLiteral(gone)})+'"]').querySelector('img').dispatchEvent(new Event('error'));return 1})()`);
@@ -212,18 +257,20 @@ module.exports = async (ctx) => {
   /* 15 agents: no desk top has room; the head row's heads are the kids' faces (FR-370) */
   for (const [w, h] of SIZES) {
     const tag = `15 agents ${w}x${h}`;
-    await H.load({ w, h, query: { officeview: 'real', simfreeze: '1', sim: '15', simhelpers: '6' }, ready: REAL(10), readyMs: 30000, settle: false });
+    await H.load({ w, h, query: { officeview: 'real', simfreeze: '1', sim: '15', simhelpers: '6', ...WQ }, ready: REAL(10), readyMs: 30000, settle: false });
     await must(PICS, `${tag}: the pictures`);
+    assert.strictEqual(await js(`document.querySelector('#stage .ro').dataset.world`), WORLD, `${tag}: the world drawn`);
+    await caveRows(tag);
     await must(`document.querySelectorAll('#stage .ro-hd img').length>=10`, `${tag}: the head rows`);
     await mutate();
     await must(PICS, `${tag}: the head pictures`);
     assert.strictEqual(await js(`document.querySelectorAll('#stage .ro-kids').length`), 0, `${tag}: no kids on a busy desk`);
     const heads = await js(`(()=>{const E=window.exports,ro=document.querySelector('#stage .ro'),meta=Object.assign({},window.DurbarRealOfficeWorlds[ro.dataset.world],window.DurbarRealOfficeSets[ro.dataset.set]);
-      return [...document.querySelectorAll('#stage .ro-hd')].map(b=>{const im=b.querySelector('img'),hd=E.helperHead(b.dataset.id,null,meta);return {id:b.dataset.id,src:im&&im.getAttribute('src'),nat:im?im.naturalWidth:0,want:'realoffice/worlds/photo/'+hd.file}})})()`);
+      return [...document.querySelectorAll('#stage .ro-hd')].map(b=>{const im=b.querySelector('img'),hd=E.helperHead(b.dataset.id,null,meta);return {id:b.dataset.id,src:im&&im.getAttribute('src'),nat:im?im.naturalWidth:0,want:'realoffice/worlds/'+${jsLiteral(WORLD)}+'/'+hd.file}})})()`);
     assert.ok(heads.length >= 10, `${tag}: heads drawn (${heads.length})`);
     for (const t of heads) assert.ok(t.src === t.want && /\/kid\d-/.test(t.src) && t.nat > 0, `${tag}: ${t.id}'s head is a kid's face (${t.src}, want ${t.want})`);
-    await H.shot(path.join(OUT, `097-kids-15-${w}x${h}.jpg`), { prep: 'calm', tag: 'kids', what: tag });
-    shots.push(`097-kids-15-${w}x${h}.jpg`);
+    await H.shot(path.join(OUT, `${SHOT}-15-${w}x${h}.jpg`), { prep: 'calm', tag: 'kids', what: tag });
+    shots.push(`${SHOT}-15-${w}x${h}.jpg`);
   }
   console.log('[097-kids] ok', OUT, shots.join(' '));
   process.exitCode = 0;

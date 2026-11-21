@@ -38,6 +38,7 @@ const { helpers, jsLiteral } = require('./driver-helpers');
 const MUTANT = process.env.HELPERS_MUTANT || '';
 const SIZES = [[1440, 900], [1280, 800]];
 const WORLDS = (process.env.HELPERS_WORLDS || 'photo,cave,retro').split(',');
+const KID_WORLDS = require('./kids-worlds').kidsWorlds(); /* every world whose world.json has `kids` (photo, cave, retro): its head row shows the kids' faces (097 FR-370) */
 const FACE_FLOOR = 31; /* SC-002's ratchet, desk face */
 const HEAD_FACE_MIN = 24; /* a helper's face, FR-307 */
 const EXTRA = 4; /* helpers added to the first desk through the event path, and one hostile one: 6 + 4 + 1 = 11, more than any strip holds */
@@ -112,10 +113,38 @@ module.exports = async (ctx) => {
   const hit = (a, b, t = 0.5) => a.x + t < b.x + b.w && b.x + t < a.x + a.w && a.y + t < b.y + b.h && b.y + t < a.y + a.h;
   const shots = [];
 
-  for (const world of WORLDS) for (const [w, h] of SIZES) {
-    const tag = `${world} ${w}x${h}`;
+  /* spec 102 T174 (review of #1764): the Cave names `circle`, which draws no helper strips (T175's gaps, spec 102 Changes 2026-11-17 (third entry)); where the page says `circle` this driver asserts what the circle really does, and where it says `rows` the strip asserts below stay. The Cave is also run a second time as a page-only rows fixture, so the strips are still exercised at both sizes there */
+  const toRows = async (tag) => {
+    await js(`window.DurbarRealOfficeWorlds.cave.arrangement='rows';0`);
+    const id = await js(`window.__durbarSimUi.realLayout().zones[0].desks[0].id`);
+    await emit({ sessionId: id, type: 'status', status: 'error', intent: 'x' }); await emit({ sessionId: id, type: 'status', status: 'idle', intent: 'x' });
+    await must(`document.querySelector('#stage .ro').dataset.arrangement==='rows'`, `${tag}: the rows fixture draws rows`);
+  };
+  /* spec 098 FR-010, T011 (issue #1901): the desk card's moment marker. Every desk's plate carries data-surface="desk-card" (a lounge seat "lounge"),
+     so the plate that holds a desk's "+N and dots" is the registry's desk-card root (code: present), in every world and size this driver runs */
+  const marker = async (tag) => {
+    const m = await js(`(()=>{const p=[...document.querySelectorAll('#stage .ro .ro-plate[data-id]')];return {n:p.length,card:p.filter(e=>e.dataset.surface==='desk-card').length,other:p.filter(e=>!['desk-card','lounge'].includes(e.dataset.surface)).map(e=>e.dataset.id),help:[...document.querySelectorAll('#stage .ro-plate .ro-help')].filter(e=>e.closest('.ro-plate').dataset.surface!=='desk-card').length}})()`);
+    assert.ok(m.card >= 10 && m.other.length === 0 && m.help === 0, `${tag}: every desk's plate is the desk card (data-surface="desk-card"; a lounge seat "lounge"), the helpers' fallback in it: ${JSON.stringify(m)}`);
+  };
+  const CIRCLE_SIZES = new Set(); /* the sizes at which the Cave as shipped draws the circle: the linked picture 097-helpers-cave-<size>.jpg is then taken in the rows fixture (spec 097 FR-308, spec 102 Changes 2026-11-17 (fourth entry)) */
+  const arrOf = () => js(`document.querySelector('#stage .ro').dataset.arrangement`);
+  for (const world of WORLDS) for (const asRows of world === 'cave' ? [false, true] : [false]) for (const [w, h] of SIZES) {
+    const tag = `${world}${asRows ? ' (rows fixture)' : ''} ${w}x${h}`;
     await H.load({ w, h, query: q(world, { sim: '15', simhelpers: '6' }), ready: REAL, readyMs: 30000, settle: false });
     await must(PICS, `${tag}: the pictures`);
+    await marker(tag);
+    if (asRows) await toRows(tag);
+    const ranArr = await arrOf();
+    if (world === 'cave') assert.ok(asRows ? ranArr === 'rows' : ['circle', 'rows'].includes(ranArr), `${tag}: the arrangement drawn is ${ranArr}`);
+    if (ranArr === 'circle') {
+      if (!asRows) CIRCLE_SIZES.add(w);
+      /* what the circle really does (KNOWN GAP, T175): no helper strip, no helper row; the plates keep their "+N" and dots (FR-306's fallback) */
+      assert.strictEqual(await js(`document.querySelectorAll('#stage .ro-hstrip').length`), 0, `${tag}: the circle draws no helper strips (circle-no-strips)`);
+      assert.ok(await js(`document.querySelectorAll('#stage .ro-plate .ro-help').length>=10`), `${tag}: in the circle the plates keep their +N and dots (circle-no-strips)`);
+      assert.strictEqual((await read()).rows, 0, `${tag}: the circle's helpRows is 0 (circle-no-strips)`);
+      console.log('[097-helpers]', tag, 'circle: no strips, plates keep +N and dots');
+      continue;
+    }
     if (world === 'retro' && w < 1440) { /* measured: one row of heads under every cabinet's plate fits the hall at 1440x900 but not at 1280x800 (spec 097 FR-308 as built): the plates keep "+N" and dots */
       assert.strictEqual(await js(`document.querySelectorAll('#stage .ro-hstrip').length`), 0, `${tag}: no strips in the arcade at this size`);
       assert.ok(await js(`document.querySelectorAll('#stage .ro-plate .ro-help').length>=10`), `${tag}: the plates keep their +N and dots`);
@@ -162,7 +191,7 @@ module.exports = async (ctx) => {
         const pic = await picture(t.id, d.id);
         assert.ok(!pic.err, `${tag}: picture facts: ${pic.err}`);
         assert.ok(pic.got && pic.got === pic.want && pic.got !== pic.parent, `${tag}: ${t.id}'s picture is ${pic.got}, helperHead says ${pic.want}, the parent is ${pic.parent}`);
-        if (world === 'photo') assert.ok(pic.kid && /^kid\d-/.test(pic.got), `${tag}: ${t.id}'s head is a kid's face in the Photo office (FR-370), not an adult (${pic.got})`);
+        if (KID_WORLDS.includes(world)) assert.ok(pic.kid && /^kid\d-/.test(pic.got), `${tag}: ${t.id}'s head is a kid's face in ${world} (FR-370; the cave's kids: spec 102 T326; the arcade's pixel kids: T327), not an adult (${pic.got})`);
         assert.ok(Math.abs(pic.w - pic.ew) < 0.2 && Math.abs(pic.left - pic.el) < 0.2 && Math.abs(pic.top - pic.et) < 0.2 && pic.nat > 0, `${tag}: ${t.id}'s crop ${JSON.stringify([pic.w, pic.left, pic.top])} is headCrop's ${JSON.stringify([pic.ew, pic.el, pic.et])}`);
         pictures++;
         assert.strictEqual(t.glyph, false, `${tag}: ${t.id} has its picture, no placeholder`);
@@ -255,8 +284,8 @@ module.exports = async (ctx) => {
     await js(`document.querySelector('#stage .ro-hmore[data-more="'+CSS.escape(${jsLiteral(mid)})+'"]').click()`);
     await must(`(()=>{const m=document.querySelector('#stage .ro-hmore[data-more="'+CSS.escape(${jsLiteral(mid)})+'"]');return m&&m.getAttribute('aria-expanded')==='false'&&!m.parentElement.classList.contains('open')&&m.parentElement.querySelectorAll('.ro-hd').length===${jsLiteral(firstD.heads.length)}})()`, `${tag}: "Fewer" folds them`);
     await js(`document.activeElement&&document.activeElement.blur();0`);
-    await H.shot(path.join(OUT, `097-helpers-${world}-${w}x${h}.jpg`), { prep: 'calm', tag: 'helpers', what: tag });
-    shots.push(`097-helpers-${world}-${w}x${h}.jpg`);
+    if (!asRows || CIRCLE_SIZES.has(w)) { await H.shot(path.join(OUT, `097-helpers-${world}-${w}x${h}.jpg`), { prep: 'calm', tag: 'helpers', what: tag });
+    shots.push(`097-helpers-${world}-${w}x${h}.jpg`); }
     /* a picture that fails to load: the head keeps its button and its accessible name and shows a neutral silhouette, never a letter of the name */
     const gone = firstD.heads[0].id, nameBefore = await js(`document.querySelector('#stage .ro-hd[data-id="'+CSS.escape(${jsLiteral(gone)})+'"]').getAttribute('aria-label')`);
     await js(`(()=>{const im=document.querySelector('#stage .ro-hd[data-id="'+CSS.escape(${jsLiteral(gone)})+'"] img');im.dispatchEvent(new Event('error'));return 1})()`);
@@ -270,6 +299,7 @@ module.exports = async (ctx) => {
     const tag = `default scene, ${world} ${w}x${h}`;
     await H.load({ w, h, query: q(world, { sim: '15' }), ready: REAL, readyMs: 30000, settle: false });
     await must(PICS, tag + ': the pictures');
+    await marker(tag);
     const nf = await fallback(tag);
     console.log('[097-helpers]', tag, 'fallback plates checked:', nf);
     if (world === 'photo' && w < 1440) assert.ok(nf >= 3, `${tag}: the fallback plates (${nf})`);

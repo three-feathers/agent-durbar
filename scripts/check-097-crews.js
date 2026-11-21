@@ -8,8 +8,8 @@
  * For each Characters value (picked in Settings, the real path, for the line under Office layout; the page is then loaded again on that choice
  * (the simulator's `characters=`, as a saved choice) and the main process's request log is read from that load on, so every request Real
  * office makes is seen, not only what is left in the DOM; `performance` resource timings are empty on a file:// page) it fails when:
- *   - the room does not draw the people set `peopleFor` names (data-set on the room): the Office people for the default and Minimalist;
- *     the crew's own set for Cheeky, Pirate, Monster, Royal and Rebels (T240..T244: each a REAL_SETS row, no flag) and the Prehistoric set, also with the cave
+ *   - the room does not draw the people set `peopleFor` names (data-set on the room): the Office people for the default;
+ *     the crew's own set for Minimalist (T245, #1154), Cheeky, Pirate, Monster, Royal and Rebels (T240..T244: each a REAL_SETS row, no flag) and the Prehistoric set, also with the cave
  *     gate closed (owner 2026-11-08, Q12: only the cave world is gated; its frames are requested, no Office people picture is, and the
  *     cave world is not offered); the same with the simulator's worldflags=cave;
  *   - a person or visitor picture of the scene is not from that set's folder, or there are fewer than 12 of them;
@@ -18,8 +18,7 @@
  *   - the Office people's frames are requested for any other set, or are not requested for the default (12 at least);
  *   - a crew picture (crew/art/) is in the Real office scene, or was requested by the page at all, or a set's pack other than the chosen
  *     set's, or any world but the Photo office, was requested (spec 102 FR-205; after the reload the page starts on the chosen set);
- *   - the line under Office layout (#dsR) is not the true one: "... until Minimalist has Real office poses." for Minimalist
- *     (no set yet), "Real office draws the <Crew> people." for every crew with a set, empty for the default;
+ *   - the line under Office layout (#dsR) is not the true one: "Real office draws the <Crew> people." for every crew with a set (Minimalist included), empty for the default;
  *   - the room scrolls or a name plate overlaps another (spec 001's 15-agent fit; every pair of plates is compared).
  *   - a requested file is missing, or did not complete with status 200. A request the browser cancelled because the page swapped a frame's file (net::ERR_ABORTED, no status)
  *     is not a failure when the file is on disk, and every picture on screen must have a request that completed with status 200;
@@ -44,12 +43,12 @@ const MUTANT = process.env.CREWS_MUTANT || '';
 const OUT = process.env.SHOTS_OUT || fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-097-crews-'));
 const SIZES = [[1440, 900], [1280, 800]];
 /* the worlds drawn (T247, T248): the Photo office, the Retro arcade (a pixel-art world; `worldflags=retro`) and the Prehistoric cave (`worldflags=cave`), each with the people set it
-   takes for the default and for Minimalist (the world's default set: spec 102 FR-202); every crew with a set draws its own people in every world. CREWS_WORLD=photo|retro|cave runs one. */
+   takes for the default (the world's default set: spec 102 FR-202); every crew with a set draws its own people in every world. CREWS_WORLD=photo|retro|cave runs one. */
 const WORLDS = [['photo', 'office', 'Office people'], ['retro', 'retro', 'Retro pixel'], ['cave', 'prehistoric', 'Prehistoric']].filter(([w]) => !process.env.CREWS_WORLD || process.env.CREWS_WORLD === w);
 /* value, gate open in the simulator, set drawn ('' = the world's default set), Settings line ('{def}' = the world's default set's name) */
 const CASES = [
   ['theme', false, '', ''],
-  ['minimalist', false, '', 'Real office shows {def} until Minimalist has Real office poses.'],
+  ['minimalist', false, 'minimalist', 'Real office draws the Minimalist people.'], /* T245 (#1154): its own set, full poses; the "until Minimalist has Real office poses" line is gone */
   ['cheeky', false, 'cheeky', 'Real office draws the Cheeky people.'],
   ['pirate', false, 'pirate', 'Real office draws the Pirate people.'],
   ['monster', false, 'monster', 'Real office draws the Monster people.'],
@@ -157,7 +156,7 @@ module.exports = async (ctx) => {
       return {shown:[...new Set([...document.querySelectorAll('#stage .ro img')].map(i=>decodeURIComponent(i.currentSrc||i.src)))],overlaps,unloaded:[...document.querySelectorAll('#stage .ro img')].filter(i=>!(i.complete&&i.naturalWidth>0)).map(i=>i.getAttribute('src')),set:ro.dataset.set,world:ro.dataset.world,n:pics.length,foreign:pics.filter(i=>!i.getAttribute('src').includes('sets/'+ro.dataset.set+'/')).map(i=>i.getAttribute('src')),
         crewInScene:document.querySelectorAll('#stage image[href*="crew/art/"],#stage img[src*="crew/art/"]').length,        worlds:window.DurbarCrew.offeredWorlds().map(x=>x.id),scroll:L.scroll,plates:document.querySelectorAll('#stage .ro-plate').length}})()`);
     const open = flagsOf(gate, world, value);
-    assert.deepStrictEqual(r.worlds, ['photo', ...['cave', 'retro'].filter((f) => open.includes(f))], `${tag}: a world other than the Photo office is offered only with its own flag: ${r.worlds}`);
+    assert.deepStrictEqual(r.worlds, ['photo', ...(open.includes('cave') ? ['cave'] : []), 'retro'], `${tag}: the cave is offered only with its own flag; the arcade has none since the flip (spec 102 T230): ${r.worlds}`);
     /* the picture first, so a failed case leaves what the room looked like */
     await H.shot(path.join(OUT, `097-crews-${world === 'photo' ? '' : world + '-'}${value}${gate ? '-open' : ''}-${w}x${h}.png`), { prep: 'calm' });
     const log = [...reqs.values()], urls = log.map((e) => e.url), webps = log.filter((e) => /\.webp(\?|$)/.test(e.url));
@@ -197,5 +196,5 @@ module.exports = async (ctx) => {
     assert.ok(r.plates >= 15, `${tag}: ${r.plates} plates at 15 agents`);
     console.log(`[crews] ${tag}: set ${r.set}, ${r.n} people, packs ${packs.join(' ')}`);
   }
-  console.log('check-097-crews: every Characters value draws its own set (or the default set of the world for the default and Minimalist) in the Photo office, the arcade and the cave, and says why');
+  console.log('check-097-crews: every Characters value draws its own set (or the default set of the world for the default) in the Photo office, the arcade and the cave, and says why');
 };

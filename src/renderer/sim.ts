@@ -17,6 +17,7 @@ type McpWarnLevels = import('../shared/mcpcost').McpWarnLevels;
 type McpContextView = import('../shared/api').McpContextView;
 type AgentInfo = import('../shared/api').AgentInfo;
 type DurbarApi = import('../shared/api').DurbarApi;
+type CharacterTryResult = import('../shared/api').CharacterTryResult;
 type HeldBeforeList = import('../shared/api').HeldBeforeList;
 type UpdatesView = import('../shared/api').UpdatesView;
 type NewFolderProgress = import('../shared/api').NewFolderProgress;
@@ -414,10 +415,11 @@ const simCleanQuery = (q: unknown): { ok: true; query: string; cut: boolean } | 
  * random `searchId`, one live search (a new start or a cancel ends the old one), events only for the live id. `simsearch=slow`: one
  * session every 400 ms, for the "Searching, N of M sessions" state; `simsearch=locked`: the end state says saved MCP values were locked;
  * `simsearch=older`: each open session also has a message its chat does not show, for "That message is older than the chat shows".
+ * `simsearch=listing` (issue 1904): the plan is built first, one folder every 400 ms (`listing` events), then the scan.
  * `simsearch=delayed`: the start answers after 700 ms, for a query that changes while it is pending.
  */
 function simConvSearchApi(qs: URLSearchParams, scope: () => SimConvSession[]): Pick<DurbarApi, 'convSearchStart' | 'convSearchCancel' | 'convSearchClear' | 'onConvSearch'> {
-  type Search = { fold(s: unknown): string; terms(q: string): string[]; locate(t: unknown, q: string): Array<{ start: number; end: number; term: number }>; anchorKey(t: unknown): string };
+  type Search = { fold(s: unknown): string; terms(q: string): string[]; locate(t: unknown, q: string): Array<{ start: number; end: number; term: number }>; bestTiers(t: unknown, q: string): number[]; anchorKey(t: unknown): string };
   const lib = (): Search | undefined => (window as unknown as { DurbarSessionSearch?: Search }).DurbarSessionSearch;
   const mask = (t: string): string | undefined => {
     const r = (window as unknown as { DurbarRedact?: { maskNoteText?: (t: string) => { text: string } } }).DurbarRedact;
@@ -436,7 +438,11 @@ function simConvSearchApi(qs: URLSearchParams, scope: () => SimConvSession[]): P
     if (title === undefined) { notes.maskFailed++; return undefined; }
     const found = new Set(S.locate(title, q).map((r) => r.term));
     const base = { adapter: s.adapter, sessionId: s.sessionId, agentId: s.agentId, group: s.group, app: s.app, folderName: s.folderName, title, titleMarks: marks(S, title, q), time: s.time };
-    if (found.size === words.length) return { ...base, excerpts: [], more: 0 };
+    const best = words.map(() => 3); // issue 1904: the best place of each word in its word (0 whole word, 1 word start, 2 inside)
+    const seen = (t: string): void => S.bestTiers(t, q).forEach((x, i) => { if (x < best[i]) best[i] = x; });
+    const rank = (): 0 | 1 | 2 => Math.min(2, Math.max(0, ...best)) as 0 | 1 | 2;
+    seen(title);
+    if (found.size === words.length) return { ...base, excerpts: [], more: 0, rank: rank() };
     if (s.content === 'title') return undefined;
     const excerpts: ConvSearchHit['excerpts'] = [];
     let total = 0;
@@ -449,11 +455,12 @@ function simConvSearchApi(qs: URLSearchParams, scope: () => SimConvSession[]): P
       const terms = new Set(S.locate(t, q).map((r) => r.term));
       if (!terms.size) continue;
       for (const x of terms) found.add(x);
+      seen(t);
       total++;
       const text = t.length > 178 ? t.slice(0, 178) + '…' : t;
       if (excerpts.length < 3) excerpts.push({ text, marks: marks(S, text, q), speaker: m.speaker, anchor: { n, head: [...S.anchorKey(t)].slice(0, 60).join('') } });
     }
-    return found.size === words.length ? { ...base, excerpts, more: total - excerpts.length } : undefined;
+    return found.size === words.length ? { ...base, excerpts, more: total - excerpts.length, rank: rank() } : undefined;
   };
   return {
     convSearchStart: async (query) => {
@@ -472,6 +479,7 @@ function simConvSearchApi(qs: URLSearchParams, scope: () => SimConvSession[]): P
       notes.folders = new Set(list.map((s) => s.folderName)).size;
       const groups = { office: 0, earlier: 0 };
       let i = 0;
+      let listed = 0;
       const step = (): void => {
         if (live !== me) return;
         const hits: ConvSearchHit[] = [];
@@ -488,7 +496,15 @@ function simConvSearchApi(qs: URLSearchParams, scope: () => SimConvSession[]): P
         live = undefined;
         emit({ kind: 'done', searchId: me.id, notes, progress, failed: false });
       };
-      me.timer = setTimeout(step, slow ? 400 : 30); // after the answer: the window knows the id before the first event
+      // `simsearch=listing` (issue 1904): main still builds the plan, one folder every 400 ms, before the scan's first batch
+      const folders = Math.max(3, notes.folders);
+      const listing = (): void => {
+        if (live !== me) return;
+        emit({ kind: 'listing', searchId: me.id, done: listed, total: folders });
+        if (listed < folders) { listed++; me.timer = setTimeout(listing, 400); return; }
+        me.timer = setTimeout(step, 30);
+      };
+      me.timer = setTimeout(qs.get('simsearch') === 'listing' ? listing : step, qs.get('simsearch') === 'listing' ? 30 : slow ? 400 : 30); // after the answer: the window knows the id before the first event
       return { ok: true, searchId: me.id, query: q.query, cut: q.cut };
     },
     convSearchCancel: async (searchId) => {
@@ -498,6 +514,183 @@ function simConvSearchApi(qs: URLSearchParams, scope: () => SimConvSession[]): P
     },
     convSearchClear: async () => { stop(); return { ok: true }; }, // FR-026: the simulator keeps no titles; the search stops without a done
     onConvSearch: (cb) => { subs.push(cb); return () => { const k = subs.indexOf(cb); if (k >= 0) subs.splice(k, 1); }; },
+  };
+}
+
+/* simcharname:begin (spec 096 FR-031, the same rule as `cleanCharacterName` in src/shared/charrules.ts; `test:charipc` compares them) */
+function simCharacterName(raw: unknown): { ok: true; name: string } | { ok: false; error: string } {
+  if (typeof raw !== 'string' || raw.length > 160) return { ok: false, error: 'Use 1 to 40 characters.' };
+  if (/[\p{C}\p{Zl}\p{Zp}\p{Default_Ignorable_Code_Point}\u2800\u{1D159}]/u.test(raw.replace(/\p{Extended_Pictographic}\p{Emoji_Modifier}?[\uFE0E\uFE0F]?(?:\u200D\p{Extended_Pictographic}\p{Emoji_Modifier}?[\uFE0E\uFE0F]?)*(?:[\u{E0020}-\u{E007E}]+\u{E007F})?|[0-9#*]\uFE0F\u20E3/gu, 'x').replace(/(?<=[\p{L}\p{M}])(?<!\p{Script=Latin})[\u200C\u200D](?=[\p{L}\p{M}])(?!\p{Script=Latin})|(?<=\p{L}\p{M})(?<!\p{Script=Latin}\p{M})[\u200C\u200D](?![\p{L}\p{M}])/gu, ''))) return { ok: false, error: 'Remove control or hidden characters from the name.' };
+  const name = raw.replace(/[<>{}]/g, '').trim();
+  const n = Array.from(name).length;
+  if (n < 1 || n > 40 || !/[\p{L}\p{N}\p{P}\p{S}]/u.test(name)) return { ok: false, error: 'Use 1 to 40 characters.' };
+  return { ok: true, name };
+}
+/* simcharname:end */
+
+/* simcharpin:begin (spec 096 FR-031, FR-033, the same rule as `pinDecision` in src/shared/charrules.ts, `normaliseFolderKey` included; `test:charipc` compares them) */
+function simPinDecision(folderKey: unknown, id: unknown, ctx: { known(id: unknown): boolean; open: readonly string[]; platform: string }): { ok: true; key: string } | { ok: false; error: string } {
+  const good = (v: unknown): v is string => typeof v === 'string' && v.length <= 4096 && /^(?:\/|~\/|[A-Za-z]:(?:[\\/]|$)|\\\\)/.test(v) && !/[\p{Cc}\p{Zl}\p{Zp}]/u.test(v);
+  const norm = (p: string): string => {
+    let t = String(p ?? '').trim();
+    if (ctx.platform === 'win32') t = t.replace(/\\/g, '/').toLowerCase();
+    t = t.replace(/[\\/]+$/g, '');
+    return t || '/';
+  };
+  if (!good(folderKey)) return { ok: false, error: 'That folder cannot be used.' };
+  const key = norm(folderKey);
+  if (!good(key)) return { ok: false, error: 'That folder cannot be used.' };
+  if (id !== null) {
+    if (!ctx.known(id)) return { ok: false, error: 'That character is not in the list.' };
+    if (!ctx.open.some((k) => norm(k) === key)) return { ok: false, error: 'That folder is not open.' };
+  }
+  return { ok: true, key };
+}
+/* simcharpin:end */
+
+/**
+ * Spec 096 FR-070 (T038): the fake image generator and a store in the page, at zero credits. `generateCharacter` waits 1.5 s (0.2 s with `simfast=1`, the drivers' flag) and draws four
+ * frames on a canvas: a simple bust in a colour from a hash of the description, the blink frame with the eyes closed. They reach the window through the same bridge calls as main's.
+ * Nothing is kept across a reload, and the description is not kept at all.
+ */
+function simCharactersApi(qs: URLSearchParams, openFolders: () => string[]): Pick<DurbarApi, 'characterGenerate' | 'characterCancel' | 'characterSave' | 'characterList' | 'characterFrames' | 'characterRename' | 'characterDelete' | 'characterExport' | 'characterPin' | 'characterIdeas' | 'characterLoginKind'> & { simPins(): Record<string, string> } {
+  type Frames = NonNullable<CharacterTryResult['frames']>;
+  type Face = NonNullable<CharacterTryResult['face']>;
+  const FACE: Face = { working: [176, 150], waiting: [176, 150], resting: [176, 150] };
+  const delay = qs.get('simfast') === '1' ? 200 : 1500;
+  const IDEAS = ['a night-shift nurse turned developer, tired but kind', 'a retired sea captain in a navy jumper', 'a young bakery owner with flour on his apron', 'a quiet librarian with a long braid and a cardigan', 'a cheerful bicycle courier in a yellow rain jacket', 'a calm yoga teacher with a bun and a linen shirt', 'a grandfather with a white beard and a tweed jacket', 'a freckled intern in an oversized hoodie', 'a sharp-eyed lawyer in a charcoal blazer', 'a gardener with a straw hat and dirt-stained hands', 'a jazz pianist in a rolled-sleeve shirt and suspenders', 'a lab scientist with safety glasses pushed up on her hair', 'a fisherman turned accountant in a wool cap', 'a tired new parent with a coffee-stained shirt', 'a stern but fair head chef in a white jacket', 'a curly-haired architect with a pencil behind the ear', 'a soft-spoken teacher in a mustard scarf', 'a skateboarder in his thirties with a denim jacket', 'a museum guide in a neat waistcoat', 'a farmer in clean overalls on a city day', 'a nervous first-day hire in a crisp new shirt', 'a night owl with messy hair and big headphones', 'a retired pilot in a cream polo shirt', 'a tall woman in her fifties with short grey hair, round glasses and a green cardigan'];
+  const hex = (n: number): string => Array.from(crypto.getRandomValues(new Uint8Array(n)), (b) => b.toString(16).padStart(2, '0')).join('');
+  const hashOf = (t: string): number => { let h = 0; for (const c of t) h = (h * 31 + (c.codePointAt(0) as number)) >>> 0; return h; };
+  async function drawFrame(hue: number, pose: 'working' | 'waiting' | 'resting' | 'blink'): Promise<Uint8Array> {
+    const c = new OffscreenCanvas(352, 352);
+    const g = c.getContext('2d') as OffscreenCanvasRenderingContext2D;
+    g.fillStyle = `hsl(${hue} 45% 45%)`;
+    g.beginPath(); g.ellipse(176, 330, 120, 130, 0, Math.PI, 0); g.fill();
+    g.fillStyle = 'hsl(28 45% 72%)';
+    g.beginPath(); g.arc(176, 140, 62, 0, Math.PI * 2); g.fill();
+    g.fillStyle = 'hsl(28 30% 20%)';
+    if (pose === 'working' || pose === 'waiting') {
+      g.beginPath(); g.arc(154, 134, 6, 0, Math.PI * 2); g.arc(198, 134, 6, 0, Math.PI * 2); g.fill();
+    } else {
+      g.fillRect(146, 133, 16, 3); g.fillRect(190, 133, 16, 3);
+    }
+    if (pose === 'waiting') { g.fillStyle = `hsl(${hue} 45% 45%)`; g.fillRect(290, 190, 30, 80); }
+    if (pose === 'resting') { g.fillStyle = 'hsl(200 15% 88%)'; g.fillRect(150, 240, 52, 56); }
+    return new Uint8Array(await (await c.convertToBlob({ type: 'image/webp', quality: 0.82 })).arrayBuffer());
+  }
+  interface SimChar { id: string; name: string; created: string; frames: Frames }
+  let chars: SimChar[] = [];
+  /* FR-034 (T041a): `simlogin=chatgpt` (default), `unknown`, `apikey`, or `absent` (no answer, as the real app today, so `unknown`). The fake holds the gate as T030a will hold it in main: a call around the dialog gets nothing. Every call is counted for the drivers. */
+  const login = qs.get('simlogin') ?? 'chatgpt';
+  const calls = { generate: 0, started: 0, droppedLate: 0 };
+  /* `simlate=1`: Cancel does not stop the fake, so its picture still arrives (main can answer so, when a cancel comes too late); `simminebad=all`: no saved frames can be read */
+  const late = qs.get('simlate') === '1';
+  const unreadable = qs.get('simminebad') === 'all';
+  (window as unknown as { __simCharCalls?: unknown }).__simCharCalls = calls;
+  /* FR-070: `simmine=N` starts with N saved characters; `simminename=hostile`: main's name rule is skipped, so the first name and every reply's name are markup: the window must never treat them as markup */
+  const HOSTILE = '"><img src=x onerror="window.__pwned=1"><b>Eve</b>&amp;';
+  const hostile = qs.get('simminename') === 'hostile';
+  const SEED_NAMES = ['Greta', 'Bo', 'Ines', 'Tariq', 'Wen', 'Asha'];
+  const seedCount = Math.min(60, Math.max(0, Number(qs.get('simmine')) || 0));
+  const seedIds = Array.from({ length: seedCount }, () => `my-${hex(6)}`);
+  /* `simminepin=<folder>`: that folder starts pinned to the newest saved character, so a load shows the pick with a pin in place */
+  const seedPin = qs.get('simminepin');
+  const seeded = (async () => {
+    const n = seedCount;
+    const made: SimChar[] = [];
+    for (let i = 0; i < n; i++) {
+      const hue = (i * 67 + 20) % 360;
+      const [working, waiting, resting, blink] = await Promise.all((['working', 'waiting', 'resting', 'blink'] as const).map((p) => drawFrame(hue, p)));
+      made.push({ id: seedIds[i], name: hostile && i === 0 ? HOSTILE : (SEED_NAMES[i] ?? `Person ${i + 1}`), created: new Date(Date.UTC(2026, 9, 30, 12, 0, 24 - i)).toISOString(), frames: { working, waiting, resting, blink } });
+    }
+    chars = made;
+  })();
+  let held: { tryId: string; frames: Frames } | null = null;
+  let running: { stop(): void } | null = null;
+  const pins: Record<string, string> = {};
+  if (seedPin && seedIds.length) pins[seedPin] = seedIds[0];
+  const UNKNOWN = { ok: false, error: 'That character is not in the list.' };
+  const find = (id: unknown): SimChar | undefined => chars.find((c) => c.id === id);
+  const generateCharacter = async (description: string, adapterId: string, opts?: { confirmed: boolean }): Promise<CharacterTryResult> => {
+    calls.generate++;
+    if (login === 'apikey') return { ok: false, error: 'Codex is signed in with an API key, so each picture would be charged by OpenAI. Sign in to Codex with ChatGPT to make characters.' };
+    if (login !== 'chatgpt' && opts?.confirmed !== true) return { ok: false, error: 'This try was not confirmed.' };
+    if (running) return { ok: false, error: 'One character at a time: wait for this one or cancel it.' };
+    const text = typeof description === 'string' ? description.trim() : '';
+    if (Array.from(text).length < 3) return { ok: false, error: 'Describe the person in at least 3 characters.' };
+    if (adapterId !== 'codex') return { ok: false, error: 'This needs OpenAI Codex, installed and signed in with ChatGPT on this computer.' };
+    held = null;
+    calls.started++;
+    const started = Date.now();
+    const go = await new Promise<boolean>((resolve) => {
+      const t = setTimeout(() => { running = null; resolve(true); }, delay);
+      running = { stop: () => { if (late) return; clearTimeout(t); running = null; resolve(false); } };
+    });
+    if (!go) return { ok: false, cancelled: true };
+    const hue = hashOf(text) % 360;
+    const [working, waiting, resting, blink] = await Promise.all((['working', 'waiting', 'resting', 'blink'] as const).map((p) => drawFrame(hue, p)));
+    const frames: Frames = { working, waiting, resting, blink };
+    const tryId = hex(12);
+    held = { tryId, frames };
+    return { ok: true, tryId, frames, face: FACE, notes: [], tookMs: Date.now() - started };
+  };
+  return {
+    simPins: () => ({ ...pins }),
+    characterGenerate: generateCharacter,
+    characterCancel: async (tryId) => {
+      if (tryId === undefined || tryId === null) { if (!running) return { ok: false }; running.stop(); return { ok: true }; }
+      if (!held || held.tryId !== tryId) return { ok: false };
+      held = null;
+      calls.droppedLate++;
+      return { ok: true };
+    },
+    characterSave: async (tryId, name) => {
+      if (!held || held.tryId !== tryId) return { ok: false, error: 'That character is no longer held. Make it again.' };
+      let final = '';
+      if (!hostile && (typeof name !== 'string' || name.replace(/[<>{}\s]/g, '') !== '')) {
+        if (name !== undefined && name !== null) {
+          const n = simCharacterName(name);
+          if (!n.ok) return n;
+          final = n.name;
+        }
+      }
+      if (!final) { let n = chars.length + 1; while (chars.some((c) => c.name === `My character ${n}`)) n++; final = `My character ${n}`; }
+      if (hostile) final = HOSTILE;
+      const c: SimChar = { id: `my-${hex(6)}`, name: final, created: new Date().toISOString(), frames: held.frames };
+      chars = [c, ...chars];
+      held = null;
+      return { ok: true, id: c.id, name: c.name };
+    },
+    characterList: async () => (await seeded, chars).map((c) => ({ id: c.id, name: c.name, face: FACE, blink: true, style: 'realistic-office-v1', created: c.created })),
+    characterFrames: async (id) => { await seeded; if (unreadable) return { ok: false, error: 'The pictures of that character could not be read.' }; const c = find(id); return c ? { ok: true, frames: c.frames } : UNKNOWN; },
+    characterRename: async (id, name) => {
+      const c = find(id);
+      if (!c) return UNKNOWN;
+      const n = simCharacterName(name);
+      if (!n.ok) return n;
+      c.name = hostile ? HOSTILE : n.name;
+      return { ok: true, id: c.id, name: c.name };
+    },
+    characterDelete: async (id) => {
+      if (!find(id)) return UNKNOWN;
+      chars = chars.filter((c) => c.id !== id);
+      let pinsRemoved = 0;
+      for (const k of Object.keys(pins)) if (pins[k] === id) { delete pins[k]; pinsRemoved++; }
+      return { ok: true, pinsRemoved };
+    },
+    characterExport: async (id) => (find(id) ? { ok: true, to: '/simulated/export' } : UNKNOWN), // the simulator writes nothing
+    characterPin: async (folderKey, id) => {
+      const d = simPinDecision(folderKey, id, { known: (x) => !!find(x), open: openFolders(), platform: /Windows/.test(navigator.userAgent) ? 'win32' : 'other' });
+      if (!d.ok) return d;
+      if (id === null) delete pins[d.key];
+      else {
+        if (!Object.prototype.hasOwnProperty.call(pins, d.key) && Object.keys(pins).length >= 500) return { ok: false, error: 'The pin could not be saved.' };
+        Object.defineProperty(pins, d.key, { value: id, enumerable: true, writable: true, configurable: true });
+      }
+      return { ok: true, pins: { ...pins } };
+    },
+    characterIdeas: async () => IDEAS.slice(),
+    ...(login === 'absent' ? {} : { characterLoginKind: async () => login }),
   };
 }
 
@@ -526,13 +719,13 @@ interface SimOptions {
   /** Issue #126: some main agents receive a session title, as the runtime sends after the first prompt (page address `simtitles=1`; `simtitles=long`: the first one is 120 characters, the longest a session title can be, spec 052 FR-174). */
   titles?: boolean | 'long';
   /** Spec 059 FR-016: every main agent carries a 60-character user name, and (spec 052 FR-170) every folder a long name (page address `simnames=long`), to check that the office still fits; agent 3 has no alias and a long first-prompt title with one unbroken URL-like token (FR-019). */
-  names?: 'long';
+  names?: 'long' | 'alike';
   /** Spec 052 FR-170 (T155): long replies and long sub-agent prompts that run to the right edge of the chat, to check that the Copy button covers no text (page address `simreply=long`). */
   reply?: 'long' | 'secrets';
   /** Spec 012 FR-130: the first Claude agent (or the first agent) asks a question (page address `simquestion=1`). */
   /** Spec 052 FR-141 (issue #367): the first agent has eight session grants with long names (page address `simgrants=many`). */
   grants?: 'many' | 'stuck'; /* 'stuck': revokes are accepted but never remove anything (a failed revoke) */
-  question?: boolean | 'long' | 'compact'; /* 'long' (spec 052 FR-140): a long question text and long option labels and descriptions (FR-160); 'compact' (FR-162, FR-163): a short question, then six compactions in a row while it waits */
+  question?: boolean | 'long' | 'compact' | 'markdown'; /* 'long' (spec 052 FR-140): a long question text and long option labels and descriptions (FR-160); 'compact' (FR-162, FR-163): a short question, then six compactions in a row while it waits */
   /** Spec 012 FR-151: an MCP server asks one agent for input: a small form (`simelicit=1`) or an https page to open (`simelicit=url`). */
   elicit?: string;
   /** Spec 033: names of floors that start switched off. */
@@ -784,7 +977,7 @@ const SIM_APP_NAME: Record<string, string> = { copilot: 'GitHub Copilot', claude
 const SIM_COPILOT_CAPS = { ...SIM_PLAN_CAPS, remoteService: { name: 'GitHub', host: 'github.com', mobile: 'GitHub Mobile' }, interrupt: true, resume: true, images: true, models: true, effort: true, permissionModes: ['read-only', 'ask', 'allow'], permModeSwitch: 'live', usage: { tokens: true, costUsd: false, nanoAiu: true }, context: true, caps: true, helpers: true, history: true, mcpStatus: true, mcpToggle: true, mcpStart: 'next-message', mcpToggleApplies: 'live', mcpRestart: true, mcpSignInReconnect: true, handoff: true, remote: true, oneShot: true, deleteSession: true, renameSession: 'any' } as AdapterInfo['capabilities'];
 const SIM_MIXED_KINDS: AdapterInfo[] = [
   { id: 'claude', displayName: 'Claude Code (simulated)', state: 'ready', version: 'sim', capabilities: { ...SIM_COPILOT_CAPS, modelSwitch: { verified: true, contextTier: false }, usage: { tokens: true, costUsd: true, nanoAiu: false }, caps: true, capUnit: 'usd', oneShot: true, remote: true, remoteService: { name: 'Claude', host: 'claude.ai', mobile: 'the Claude app' }, mcpToggle: true, mcpStart: 'next-message', permModeSwitch: 'live', helpers: true, history: true, deleteSession: false, renameSession: 'next-turn' } }, // spec 006 FR-028: Claude Code has no per-session delete
-  { id: 'codex', displayName: 'Codex (simulated)', state: 'ready', version: 'sim', capabilities: { ...SIM_COPILOT_CAPS, modelSwitch: { verified: true, contextTier: false }, usage: { tokens: true, costUsd: false, nanoAiu: false }, caps: false, permModeSwitch: 'next-message', history: false, helpers: false, mcpToggle: true, mcpStart: 'session', mcpToggleApplies: 'next-message', mcpRestart: false, mcpSignInReconnect: false, remote: false } }, // spec 058 T028: the real switch values (FR-133, FR-147)
+  { id: 'codex', displayName: 'Codex (simulated)', state: 'ready', version: 'sim', capabilities: { ...SIM_COPILOT_CAPS, imageGen: true, modelSwitch: { verified: true, contextTier: false }, usage: { tokens: true, costUsd: false, nanoAiu: false }, caps: false, permModeSwitch: 'next-message', history: false, helpers: false, mcpToggle: true, mcpStart: 'session', mcpToggleApplies: 'next-message', mcpRestart: false, mcpSignInReconnect: false, remote: false } }, // spec 058 T028: the real switch values (FR-133, FR-147)
   { id: 'basic', displayName: 'Basic agent (simulated)', state: 'ready', version: 'sim', capabilities: { interrupt: false, resume: false, images: false, models: false, effort: false, permissionModes: ['read-only'], permModeSwitch: 'none', usage: { tokens: true, costUsd: false, nanoAiu: false }, context: false, caps: false, helpers: false, history: false, mcpStatus: false, mcpToggle: false } as AdapterInfo['capabilities'] },
 ];
 
@@ -841,6 +1034,13 @@ const planMcpSignInRefresh = (i: SignInPlanInput): SignInPlan => {
 /* mcpsigninrefresh:end */
 
 (function () {
+  /** spec 001 FR-270 (issue #1905): `simrooms=solo&simnames=alike`: [folder name, path]. Several start alike (iot-platform*, itdse-ism*, 2026-07-*, operations-*); two are both `iot-portal` under different parents; one lives under /Users/paco, which the window shows as ~. */
+  const SIM_ALIKE_FOLDERS: Array<[string, string]> = [
+    ['itdse-ism-portal', '~/work/itdse-ism-portal'], ['itdse-ism-reports', '~/work/itdse-ism-reports'], ['iot-platform-gateway', '~/work/iot-platform-gateway'], ['iot-platform-form-2', '~/work/iot-platform-form-2'],
+    ['iot-platform-form-3', '~/work/iot-platform-form-3'], ['iot-portal', '~/clients/acme/iot-portal'], ['iot-portal', '~/clients/globex/iot-portal'], ['2026-07-offsite', '/Users/paco/work/2026-07-offsite'],
+    ['2026-07-budget', '~/work/2026-07-budget'], ['2026-07-hiring', '~/work/2026-07-hiring'], ['operations-weekly', '~/work/operations-weekly'], ['operations-monthly', '~/work/operations-monthly'],
+    ['mcp-swiss', '~/work/mcp-swiss'], ['blog', '~/work/blog'], ['customer-reconciliation-batch-jobs', '~/work/customer-reconciliation-batch-jobs'], ['infra-notes', '~/work/infra-notes'],
+  ];
   const SIM_ROOM_ORDER = ['mcp-swiss', 'swisscontract-ai', 'command-center', 'blog', 'infra-notes'];
   const ROOM_DEFS: Record<string, string> = {
     'mcp-swiss': '~/work/mcp-swiss',
@@ -1004,8 +1204,9 @@ const planMcpSignInRefresh = (i: SignInPlanInput): SignInPlan => {
       const k = simRooms ? Math.max(1, Math.min(SIM_ROOM_ORDER.length, Math.floor(simRooms))) : 0;
       const room = k ? SIM_ROOM_ORDER[Math.min(k - 1, Math.floor((i * k) / rows.length))] : room0; // simrooms=<n>: in blocks, the first folders first
       const helpers = noHelpers ? 0 : simHelpers || helpers0;
-      const roomName = opts.solo ? name.toLowerCase() + '-app' : room + (opts.names === 'long' ? '-customer-reconciliation-batch-jobs-2026'.slice(0, 55 - room.length) : ''); // simnames=long: a folder name is long too (60 characters at most, spec 059)
-      const cwd = opts.solo ? '~/work/' + roomName : ROOM_DEFS[room] ?? '~/work/' + room;
+      const alike = opts.solo && opts.names === 'alike' ? SIM_ALIKE_FOLDERS[i % SIM_ALIKE_FOLDERS.length] : null; // spec 001 FR-270 (issue #1905): simrooms=solo&simnames=alike: sixteen folders whose names start alike, two with the same name under different parents
+      const roomName = alike ? alike[0] : opts.solo ? name.toLowerCase() + '-app' : room + (opts.names === 'long' ? '-customer-reconciliation-batch-jobs-2026'.slice(0, 55 - room.length) : ''); // simnames=long: a folder name is long too (60 characters at most, spec 059)
+      const cwd = alike ? alike[1] : opts.solo ? '~/work/' + roomName : ROOM_DEFS[room] ?? '~/work/' + room;
       const info: AgentInfo = { id: 'sim-' + (i + 1), name, cwd, folders: [cwd], adapterId: mixed ? SIM_KIND_BY_AGENT[i] ?? 'copilot' : 'copilot', permMode: i % 3 === 1 ? 'ask' : i % 3 === 2 ? 'allow' : 'read-only', model: SIM_MODEL_BY_AGENT[i] ?? 'auto', maxAiCredits: SIM_CAPS[name], permRestored: i % 3 === 2 && i < 6 ? true : undefined, modelControl: { switch: 'next-message', effort: true, contextTier: true, compact: true, windowKnown: true }, profiles: true, slash: !(simQs && simQs.get('simslash') === 'none' && mixed && SIM_KIND_BY_AGENT[i] === 'basic'), ...(opts.reply === 'secrets' && i === 7 ? { title: SECRETS_TEXT } : {}) } as AgentInfo; // FR-065: one agent starts with a runtime title that holds the planted secrets (it becomes its name)
       // Spec 052 FR-046: a pending permission card only happens in Ask first, so a waiting agent starts in Ask first (Jonas was Allow all
       // and restored, Lena Read-only); the restored Allow-all folder the restore strip names is then Tomas's (swisscontract-ai).
@@ -1234,6 +1435,9 @@ const planMcpSignInRefresh = (i: SignInPlanInput): SignInPlan => {
             { label: 'Change everything at once, including the saved preferences and the themes, and fix what breaks afterwards; this is the fastest way to a consistent screen, but every theme, every window size and every platform has to be checked again in the same pull request before anyone can merge it' },
             { label: 'Short' } ] },
           { question: 'Which of the supercalifragilisticexpialidocious_configuration_option_names_that_are_unbroken_strings should stay?', header: 'Options', multiSelect: true, options: [{ label: 'an_option_label_without_any_space_that_is_much_longer_than_the_card_is_wide_in_any_window_size_and_keeps_going_with_more_words_joined_by_underscores_so_it_cannot_break_at_a_space_at_all' }, { label: 'Keep all of them' }] },
+        ] : opts.question === 'markdown' ? [
+          /* spec 052 (2026-11-19 delta, issue #1927, T378): a question written in Markdown (bold, a numbered list, a code span, a link, an arrow, raw HTML) with an invented token built from pieces, which the card masks before it renders */
+          { question: '**Which plan should I follow?**\n\n1. **Small:** change `settings.ts` first -> then the office\n2. **Large:** every theme at once\n3. Read [the notes](https://example.com/notes) and the token ' + 'ghp_' + 'A1b2C3d4E5f6G7h8I9j0K1l2M3n4' + ' stays hidden <b>not bold</b>\n\nTell me which one.', header: 'Plan', multiSelect: false, options: [{ label: 'Small' }, { label: 'Large' }] },
         ] : [
           { question: 'Which colour should the focus ring use?', header: 'Focus ring', multiSelect: false, options: [{ label: 'Sage', description: 'The calm green of the office walls' }, { label: 'Blue', description: 'Matches the links' }] },
           { question: 'Which screens should get it first?', header: 'Screens', multiSelect: true, options: [{ label: 'Office' }, { label: 'Chat' }, { label: 'Settings' }] },
@@ -1264,7 +1468,8 @@ const planMcpSignInRefresh = (i: SignInPlanInput): SignInPlan => {
         ];
         simE = { s, requestId: 'e-' + s.info.id, fields: url ? [] : fields, ...(url ? { url: 'https://auth.example.com/device?code=DURBAR-1234' } : {}) };
         s.state = 'waiting';
-        const message = url ? 'Sign in to the deploy service to continue.' : 'Where should this deploy go?';
+        const md = opts.elicit === 'md'; // spec 052 (2026-11-20 delta, issue #1934, T423): a Markdown message of about 6,000 characters (over the old 2,000 cut) with an invented token built from pieces
+        const message = md ? '**Where should this deploy go?**\n\n1. **Staging:** safe, resets at night\n2. **Production:** needs the ticket in `settings.ts`\n3. Read [the runbook](https://example.com/runbook) and the token ' + 'ghp_' + 'A1b2C3d4E5f6G7h8I9j0K1l2M3n4' + ' stays hidden <b>not bold</b>\n\n' + 'Details of the release, line by line. '.repeat(160) + '\n\nLAST-LINE-OF-THE-MESSAGE' : url ? 'Sign in to the deploy service to continue.' : 'Where should this deploy go?';
         emit({ type: 'question', sessionId: s.info.id, timestamp: now(), phase: 'asked', requestId: simE.requestId, questions: [{ question: message, header: 'deploy-mcp', multiSelect: false, options: [] }],
           elicitation: url
             ? { message, source: 'deploy-mcp', url: simE.url, host: 'auth.example.com' }
@@ -2576,7 +2781,7 @@ const planMcpSignInRefresh = (i: SignInPlanInput): SignInPlan => {
     let simTheme = /^[a-z0-9_-]{1,64}$/.test(simQuery.get('theme') ?? '') ? (simQuery.get('theme') as string) : undefined;
     /* characters=<value> (spec 077 FR-064, FR-070): who sits at the desks in this run, in memory, like the theme; only a listed value */
     type SimChars = import('../shared/characters').CharacterChoice; // the type is the shared list: a value this list lacks, or one the shared list lacks, fails the typecheck
-    const CHARS: readonly SimChars[] = ['theme', 'office', 'minimalist', 'cheeky', 'prehistoric', 'pirate', 'monster', 'royal', 'rebels', 'pixel']; /* the list of src/shared/characters.ts (spec 102 FR-320, FR-321) */
+    const CHARS: readonly SimChars[] = ['theme', 'office', 'minimalist', 'cheeky', 'prehistoric', 'pirate', 'monster', 'royal', 'rebels', 'pixel', 'mine']; /* the list of src/shared/characters.ts (spec 102 FR-320, FR-321; spec 096 FR-040) */
     const isChars = (v: unknown): v is SimChars => typeof v === 'string' && (CHARS as readonly string[]).includes(v);
     let simCharacters: SimChars = isChars(simQuery.get('characters')) ? (simQuery.get('characters') as SimChars) : 'theme';
     const simUserThemes: Record<string, unknown>[] = []; // spec 040 FR-032: the saved themes of this simulated run (from ?usertheme=), removable
@@ -2611,10 +2816,12 @@ const planMcpSignInRefresh = (i: SignInPlanInput): SignInPlan => {
       return [...open, ...earlier, ...vs];
     });
     const { forgetFolder: simNotesForget, ...simNotesCalls } = simNotesApi(simQuery, (id) => { const s = sims.find((x) => x.info.id === id); return s ? { key: s.info.workspaceFile || s.info.cwd, name: (s.info as AgentInfo & { roomName?: string }).roomName ?? s.info.name, session: simQuery.get('simresumeid') ? 'resume-' + s.info.id : s.info.id } : undefined; }); // spec 083 FR-060 (simresumeid=1: the saved session id is not the agent's id, as with a Codex thread id)
+    const { simPins, ...simCharacters_ } = simCharactersApi(simQuery, () => sims.map((x) => x.info.workspaceFile || x.info.cwd)); // spec 096 FR-070
     const capApi: Partial<DurbarApi> = {
+      ...simCharacters_,
       usageTotals: async () => ({ ok: true, since: savedSince, office: saved.office, folders: saved.folders }),
       usageResetTotals: async () => { savedSince = new Date().toISOString(); saved = { office: zero, folders: [] }; return { ok: true, since: savedSince, office: zero, folders: [] }; },
-      getSettings: async () => ({ mcpSignInRefresh: simSignIn.on, diagnostics: simDiagnostics, mcpWarnLevels: simMcpLevels, defaultMaxAiCredits: defaultCap, placeMap: { ...placeMap }, customPlaces: customPlaces.map((p) => ({ ...p })), seriousMode, motion, stillHighlights, autoFollowWork, notifyNeedsMe, breakResume, chatLinksIn, ...(simTheme ? { theme: simTheme } : {}), characters: simCharacters, about: { name: 'Agent Durbar', version: `${(globalThis as unknown as { DurbarAppVersion?: string }).DurbarAppVersion ?? 'dev'} (simulator)`, owner: 'Three Feathers', copyright: 'Copyright (c) 2026 Three Feathers contributors', website: 'https://github.com/three-feathers/agent-durbar', contributors: [{ label: 'vikramgorla', url: 'https://github.com/vikramgorla' }, { label: 'fjcabello', url: 'https://github.com/fjcabello' }, { label: 'rubenlupi', url: 'https://github.com/rubenlupi' }] } /* sample data, real values come from src/shared/about.ts */ }),
+      getSettings: async () => ({ mcpSignInRefresh: simSignIn.on, diagnostics: simDiagnostics, mcpWarnLevels: simMcpLevels, defaultMaxAiCredits: defaultCap, placeMap: { ...placeMap }, customPlaces: customPlaces.map((p) => ({ ...p })), seriousMode, motion, stillHighlights, autoFollowWork, notifyNeedsMe, breakResume, chatLinksIn, ...(simTheme ? { theme: simTheme } : {}), characters: simCharacters, characterPins: simPins(), about: { name: 'Agent Durbar', version: `${(globalThis as unknown as { DurbarAppVersion?: string }).DurbarAppVersion ?? 'dev'} (simulator)`, owner: 'Three Feathers', copyright: 'Copyright (c) 2026 Three Feathers contributors', website: 'https://github.com/three-feathers/agent-durbar', contributors: [{ label: 'vikramgorla', url: 'https://github.com/vikramgorla' }, { label: 'fjcabello', url: 'https://github.com/fjcabello' }, { label: 'rubenlupi', url: 'https://github.com/rubenlupi' }] } /* sample data, real values come from src/shared/about.ts */ }),
       setDefaultCap: async (c) => { defaultCap = c !== null && c >= 30 ? Math.round(c * 100) / 100 : undefined; return { ok: true, defaultMaxAiCredits: defaultCap }; },
       setSeriousMode: async (on) => { if (typeof on === 'boolean') seriousMode = on; return { ok: true, seriousMode }; },
       setMotion: async (on) => { if (typeof on !== 'boolean') return { ok: false, motion }; motion = on; return { ok: true, motion }; },
@@ -2919,6 +3126,7 @@ const planMcpSignInRefresh = (i: SignInPlanInput): SignInPlan => {
     const tierQ = typeof location !== 'undefined' ? new URLSearchParams(location.search) : new URLSearchParams();
     const simTierLock = (() => { const v = tierQ.get('simtierlock'); return v === 'efficiency' || v === 'balance' || v === 'intelligence' || v === 'other' ? v : undefined; })();
     const simTierFail = tierQ.get('simtierfail') === '1';
+    { const ms = Number(tierQ.get('simmodelms')); if (ms > 0 && typeof window !== 'undefined') (window as unknown as { __modelListMs?: number }).__modelListMs = ms; } // issue 1909: a short cap for the model-list call (driver only)
     const simModelList = (): ModelChoice[] => [...SIM_MODELS, ...simRichModels('copilot')].map((m) => ({ ...m, ...(m.id === 'auto' && simTierLock ? { autoTierManaged: simTierLock === 'other' ? { locked: true } : { tier: simTierLock, locked: true } } : {}) }));
     /** Spec 030 FR-063, as main checks it: each agent app's own list; `auto` is that app's own default even when its list does not name it. */
     const simKindModels = (kind: string): ModelChoice[] => (kind === 'claude' ? [...SIM_CLAUDE_MODELS, ...simRichModels('claude')] : kind === 'copilot' ? simModelList() : simRichModels(kind));
@@ -3291,7 +3499,8 @@ const planMcpSignInRefresh = (i: SignInPlanInput): SignInPlan => {
         default: return ok(copilot ? [reqs(506, 1500, 66.3), chat] : wins(12, 41));
       }
     };
-    const simAdapters = (): AdapterInfo[] => simAdapterList().map(signInState).map((k) => (SIM_AUTOPILOT && simApCap(k.id) ? { ...k, capabilities: { ...k.capabilities, autopilot: simApCap(k.id) } } : k));
+    /* spec 096: `simimagegen=0`: Codex ready but with no `imageGen`, which is every real app today */
+    const simAdapters = (): AdapterInfo[] => simAdapterList().map(signInState).map((k) => (SIM_AUTOPILOT && simApCap(k.id) ? { ...k, capabilities: { ...k.capabilities, autopilot: simApCap(k.id) } } : k)).map((a) => (a.id === 'codex' && simQuery.get('simimagegen') === '0' ? { ...a, capabilities: { ...a.capabilities, imageGen: false } } : a));
     const simAdapterList = (): AdapterInfo[] => [
       { id: 'copilot', displayName: 'Copilot', state: 'ready', version: 'sim', capabilities: { ...copilotCaps } },
       ...(simKinds ? [
@@ -3299,7 +3508,7 @@ const planMcpSignInRefresh = (i: SignInPlanInput): SignInPlan => {
           ? { id: 'claude', displayName: 'Claude Code', state: 'not-installed', hint: 'Install Claude Code, then choose Check again.', capabilities: { ...copilotCaps, caps: false, mcpToggle: false, remote: false } }
           : { id: 'claude', displayName: 'Claude Code', state: 'ready', version: 'sim', where: '~/.local/bin/claude', capabilities: { ...copilotCaps, caps: false, mcpToggle: false, remote: false } },
         // spec 060 FR-003: found through a version manager's folder (nvm), shown as where it was found
-        simKindsParam === 'ready' ? { id: 'codex', displayName: 'Codex', state: 'ready', version: 'sim', where: '~/.nvm/versions/node/v22.3.0/bin/codex', capabilities: { ...copilotCaps, caps: false, mcpToggle: false, remote: false } } : { id: 'codex', displayName: 'Codex', state: 'too-old', version: '0.9.0', hint: 'Update Codex to 1.0 or newer, then choose Check again.', where: '~/.nvm/versions/node/v22.3.0/bin/codex', capabilities: { ...copilotCaps, interrupt: false, history: false, permissionModes: ['read-only'], remote: false } },      ] as AdapterInfo[] : []),
+        simKindsParam === 'ready' ? { id: 'codex', displayName: 'Codex', state: 'ready', version: 'sim', where: '~/.nvm/versions/node/v22.3.0/bin/codex', capabilities: { ...copilotCaps, caps: false, mcpToggle: false, remote: false } } : { id: 'codex', displayName: 'Codex', state: 'too-old', version: '0.9.0', hint: 'Update Codex to 1.0 or newer, then choose Check again.', where: '~/.nvm/versions/node/v22.3.0/bin/codex', capabilities: { ...copilotCaps, imageGen: true, interrupt: false, history: false, permissionModes: ['read-only'], remote: false } },      ] as AdapterInfo[] : []),
       ...(mixed ? SIM_MIXED_KINDS : []),
     ];
     const notReady = (adapterId: string): string | undefined => {
@@ -3418,6 +3627,7 @@ const planMcpSignInRefresh = (i: SignInPlanInput): SignInPlan => {
       version: async () => 'sim',
       // Spec 012 T017 (FR-063): only Copilot by default; simkinds=1 adds a Claude Code that is not installed and a Codex that is too old.
       listAdapters: async () => simAdapters(),
+      onResume: (cb) => { (window as unknown as { __simResume?: () => void }).__simResume = cb; return () => undefined; }, // spec 030 FR-072: the driver wakes the page by hand
       onAdaptersChanged: () => () => undefined, // FR-157: the window marks the app itself from the auth error; nothing else pushes here
       // Spec 051 FR-009: harness setup in the simulator: canned plans and output (a fake link and code), nothing runs
       // spec 051 FR-014: a fake identity per ready app (never a real account, so screenshots show no personal data); `simacct=unknown`
@@ -3612,9 +3822,14 @@ const planMcpSignInRefresh = (i: SignInPlanInput): SignInPlan => {
           /* simlate=<ms> (spec 097 FR-363, issue #1238): the replay starts that much later, so the first states arrive after the page's first frame (a check's forced race); absent = 0, unchanged */
           const late = Math.max(0, Math.min(2000, Number(typeof location !== 'undefined' ? new URLSearchParams(location.search).get('simlate') : null) || 0));
           const listedAt = typeof performance !== 'undefined' ? performance.now() : 0;
+          /* simreal=<gap ms> (spec 097 FR-378, issue #1575): the start as the real app has it: no first-state batch, so the office's gate is open from the first frame (`__durbarSimReplayed` set now) and agent i's script starts i x gap ms after the listing (0 to 1000), or with `idle` no script plays; absent = the replay below, unchanged */
+          const realRaw = typeof location !== 'undefined' ? new URLSearchParams(location.search).get('simreal') : null;
+          const realGap = realRaw === 'idle' ? -1 : realRaw !== null && Number.isFinite(Number(realRaw)) ? Math.max(0, Math.min(1000, Number(realRaw))) : null;
+          if (realGap !== null) { const w = window as unknown as { __durbarSimReplayed?: boolean; __durbarSimReal?: number }; w.__durbarSimReplayed = true; w.__durbarSimReal = realGap; } // the check reads __durbarSimReal: an ignored simreal shows nothing
           setTimeout(() => {
             if (late > 0) (window as unknown as { __durbarSimReplayDelay?: number }).__durbarSimReplayDelay = Math.round(performance.now() - listedAt); // the check reads it: a simlate that is ignored shows 0
-            sims.forEach(play);
+            if (realGap === null) sims.forEach(play);
+            else if (realGap >= 0) sims.forEach((x, i) => setTimeout(() => play(x), realGap * i)); // -1 (`idle`): no script plays, the agents stay as listed
             if (opts.edits && sims[0]) simEdits(sims[0]); // spec 005 FR-026
             /* spec 008 FR-113: every script has run (a frozen simulator emits nothing more); the page's settleNow() test hook reads it */
             (window as unknown as { __durbarSimReplayed?: boolean }).__durbarSimReplayed = true;
@@ -3830,7 +4045,20 @@ const planMcpSignInRefresh = (i: SignInPlanInput): SignInPlan => {
         if (opts.grants !== 'stuck' && s && s.grants.delete(key)) grantsEvent(s);
       },
       // No disk, no account: canned answers so the new folder / session / history UI can be exercised without credits.
-      listModels: async (kind) => ({ ok: true, models: (simKindModels(kind || 'copilot')).map((m) => { const ob = simOrgModel(kind, m.id); return ob ? { ...m, orgBlocked: ob } : { ...m }; }) }),
+      // spec 030 FR-068 (issue #1909): page address simmodelfail=once (the first call fails, the next succeeds: the owner's report), twice (the start-up call and its one retry fail), hang (the first two calls never answer), error (always fails), empty, hidden (empty, 3 policy-hidden)
+      listModels: async (kind, opts) => {
+        const mode = typeof location !== 'undefined' ? new URLSearchParams(location.search).get('simmodelfail') : null;
+        const w = window as unknown as { __simListCalls?: Array<{ kind?: string; fresh: boolean }> };
+        (w.__simListCalls ??= []).push({ kind, fresh: !!opts?.fresh });
+        const delay = typeof location !== 'undefined' ? Number(new URLSearchParams(location.search).get('simmodeldelay')) || 0 : 0; // issue 1909: a slow list call
+        if (delay > 0) await new Promise((r) => setTimeout(r, Math.min(delay, 10000)));
+        if ((mode === 'once' && w.__simListCalls.length === 1) || (mode === 'twice' && w.__simListCalls.length <= 2)) return { ok: false, error: 'the request timed out', reason: 'the request timed out', models: [] };
+        if (mode === 'hang' && w.__simListCalls.length <= 2) return new Promise(() => undefined); // issue 1909: a call that never answers; the third call answers (Retry works)
+        if (mode === 'error') return { ok: false, error: 'the sign-in was not accepted', reason: 'the sign-in was not accepted', models: [] };
+        if (mode === 'empty') return { ok: true, reason: 'the app returned no models', models: [] };
+        if (mode === 'hidden') return { ok: true, hidden: 3, reason: "every model is turned off by your account's policy", models: [] };
+        return { ok: true, models: (simKindModels(kind || 'copilot')).map((m) => { const ob = simOrgModel(kind, m.id); return ob ? { ...m, orgBlocked: ob } : { ...m }; }) };
+      },
       /* spec 076 FR-205/FR-207: main's view of the canned policy (no values) */
       orgPolicyView: async (): Promise<Record<string, import('../shared/orgpolicy').OrgPolicyAppView>> => {
         if (!SIM_ORG) return {};

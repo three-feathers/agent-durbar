@@ -9,7 +9,7 @@ const path = require('path');
 const { execFileSync, spawnSync } = require('child_process');
 const modPath = process.env.SN_MODULE ? path.resolve(process.env.SN_MODULE) : path.join(__dirname, 'spec-numbers.js');
 const sn = require(modPath);
-const { plumbCommit } = require('./git-index-helper.js');
+const { plumbCommit, gitRun } = require('./git-index-helper.js');
 const { printable } = require('./safe-print.js');
 const ids = (t, k) => [...sn.parseDefinitions(t, k)].sort();
 
@@ -89,10 +89,19 @@ const clashes = sn.findClashes({
   main: M({ [A]: ['T11'], [B]: [] }),
   prs: [{ label: 'PR #7', adds: M({ [A]: ['T10'] }) }, { label: 'PR #8', adds: M({ [B]: ['T99'], [A]: ['T50'] }) }],
 });
-assert.deepStrictEqual(clashes.map((c) => `${c.file} ${c.id} ${c.with.split(' ')[0]}`), [`${A} T10 PR`, `${A} T11 origin/main`]);
+assert.deepStrictEqual(clashes.map((c) => `${c.file} ${c.id} ${c.with.split(' ')[0]}`), [`${A} T10 PR`, `${A} T11 origin/main`, `${B} T10 PR`]);
 assert.match(clashes[0].with, /PR #7/);
-// the same number in another spec is allowed; nothing added: no clash
-assert.deepStrictEqual(sn.findClashes({ branchAdds: M({ [B]: ['T10'] }), main: M({}), prs: [{ label: 'PR #7', adds: M({ [A]: ['T10'] }) }] }), []);
+// issue #1935: the same number in ANOTHER existing spec is a clash (numbers are global), naming both files and the PR; a free number, a spec new on main, and a T against an FR do not
+const x = sn.findClashes({ branchAdds: M({ [B]: ['T10'] }), main: M({}), prs: [{ label: 'PR #7', adds: M({ [A]: ['T10'] }) }] });
+assert.deepStrictEqual(x.map((c) => `${c.file} ${c.id}`), [`${B} T10`], 'T10 in two different specs is a clash');
+assert.match(x[0].with, /PR #7.*specs\/001-a\/tasks\.md/, 'the clash names the other head and its file');
+assert.deepStrictEqual(sn.findClashes({ branchAdds: M({ [B]: ['T10'] }), main: M({}), prs: [{ label: 'PR #7', adds: M({ [A]: ['T11'] }) }] }), [], 'a number free in every head passes');
+assert.deepStrictEqual(sn.findClashes({ branchAdds: M({ [B]: ['T10'] }), main: M({}), fresh: new Set([A]), prs: [{ label: 'PR #7', adds: M({ [A]: ['T10'] }) }] }), [], 'a spec new on main numbers from its own start');
+assert.deepStrictEqual(sn.findClashes({ branchAdds: M({ [B]: ['T10'] }), main: M({}), fresh: new Set([B]), prs: [{ label: 'PR #7', adds: M({ [A]: ['T10'] }) }] }), [], 'the same when the branch file is the new one');
+const SA = 'specs/001-a/spec.md', SB = 'specs/002-b/spec.md';
+assert.deepStrictEqual(sn.findClashes({ branchAdds: M({ [SB]: ['FR-300'] }), main: M({}), prs: [{ label: 'PR #7', adds: M({ [SA]: ['FR-300'] }) }] }).map((c) => `${c.file} ${c.id}`), [`${SB} FR-300`], 'the same FR in two specs is a clash');
+assert.deepStrictEqual(sn.findClashes({ branchAdds: M({ [SB]: ['Q9'] }), main: M({}), prs: [{ label: 'PR #7', adds: M({ [SA]: ['Q9'] }) }] }).length, 1, 'the same Q in two specs is a clash');
+assert.deepStrictEqual(sn.findClashes({ branchAdds: M({ [B]: ['T10'] }), main: M({}), prs: [{ label: 'PR #7', adds: M({ [SA]: ['T10'] }) }] }), [], 'a spec.md id is never compared with a tasks.md id');
 assert.deepStrictEqual(sn.findClashes({ branchAdds: new Map(), main: M({ [A]: ['T10'] }), prs: [{ label: 'x', adds: M({ [A]: ['T10'] }) }] }), []);
 
 // ---- scrub
@@ -110,7 +119,7 @@ assert.strictEqual(sn.scrub('has MyValue99 inside', { MY_API_KEY: 'MyValue99', P
 
 // ---- git repos, --no-fetch
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-sn-'));
-const G = (cwd, ...a) => execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@example.com', '-c', 'commit.gpgsign=false', ...a], { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
+const G = (cwd, ...a) => gitRun(cwd, ['-c', 'user.name=t', '-c', 'user.email=t@example.com', '-c', 'commit.gpgsign=false', ...a]).trim();
 const write = (d, f, t) => { fs.mkdirSync(path.dirname(path.join(d, f)), { recursive: true }); fs.writeFileSync(path.join(d, f), t); };
 const commit = (d, m) => { G(d, 'add', '--all'); G(d, 'commit', '-q', '-m', m); return G(d, 'rev-parse', 'HEAD'); }; // throwaway repo
 const cli = (d, args = ['--no-fetch'], env = {}) => spawnSync(process.execPath, [modPath, '--root', d, ...args], { encoding: 'utf8', env: { ...process.env, ...env } });
@@ -134,13 +143,18 @@ try {
   G(d, 'checkout', '-q', '-b', 'mine', 'main~1');
   write(d, 'specs/001-a/tasks.md', '- [ ] T001 task\n- [ ] T003 task\n- [ ] T002 task moved\n- [ ] T010 task\n- [ ] T011 task\n'); // T010 clashes with PR 7; T002 only moved
   write(d, 'specs/001-a/spec.md', S('001', '009'));  // FR-009 was added on main meanwhile
-  write(d, 'specs/002-b/tasks.md', T('001', '010')); // T010 here is another spec: allowed
+  write(d, 'specs/002-b/tasks.md', T('001', '040')); // another spec, a number free everywhere: allowed
   commit(d, 'mine');
   let r = cli(d);
   assert.strictEqual(r.status, 1, r.stdout + r.stderr);
   assert.match(r.stdout, /specs\/001-a\/tasks\.md: T010 is also in PR #7/);
   assert.match(r.stdout, /specs\/001-a\/spec\.md: FR-009 is also in origin\/main/);
   assert.doesNotMatch(r.stdout, /T002|T011|002-b/);
+  // issue #1935 through git: PR 7's T010 in spec 001, this branch takes T010 in spec 002 (collect reads the head's own files): a clash naming PR #7
+  write(d, 'specs/002-b/tasks.md', T('001', '010')); commit(d, 'takes T010 in the other spec');
+  r = cli(d); assert.strictEqual(r.status, 1, r.stdout + r.stderr);
+  assert.match(r.stdout, /specs\/002-b\/tasks\.md: T010 is also in PR #7 \(added there too, in specs\/001-a\/tasks\.md/);
+  write(d, 'specs/002-b/tasks.md', T('001', '040')); commit(d, 'free again');
   assert.match(r.stdout, /Fix: take the next free number/);
   // renumber to a free number: ok
   write(d, 'specs/001-a/tasks.md', '- [ ] T001 task\n- [ ] T003 task\n- [ ] T002 task moved\n- [ ] T012 task\n- [ ] T011 task\n');
@@ -299,6 +313,15 @@ try {
     r = names(sd, ['--no-fetch']); assert.strictEqual(r.status, 0, 'a PR containing the checked head is not a second claim of what it inherits: ' + r.stdout);
     assert.ok(win);
   }
+  { // issue #1935 in a stack: the stacked PR keeps the inherited T020 (spec 001) and adds T040 in spec 002: no clash; taking the inherited T020 again in spec 002 is one
+    const { sd, win } = stackRepo();
+    G(sd, 'checkout', '-q', '-b', 'search-ui'); write(sd, 'specs/002-b/tasks.md', T('001', '040')); const ui = commit(sd, 'ui, other spec, free number');
+    const hd = [{ label: 'PR #10', sha: ui, headRef: 'search-ui', baseRef: 'search-window', sameRepo: true }];
+    assert.deepStrictEqual(sn.findClashes(sn.collect(sd, hd, win, { headRef: 'search-window', baseRef: 'main', sameRepo: true })), [], 'a stacked head with a free number in another spec is no clash');
+    write(sd, 'specs/002-b/tasks.md', T('001', '020')); const ui2 = commit(sd, 'ui takes the inherited T020 again in spec 002');
+    const cl = sn.findClashes(sn.collect(sd, [{ ...hd[0], sha: ui2 }], win, { headRef: 'search-window', baseRef: 'main', sameRepo: true }));
+    assert.deepStrictEqual(cl.map((c) => `${c.file} ${c.id}`), ['specs/001-a/tasks.md T020'], 'the same number in two specs inside a stack is a clash when taken on its own');
+  }
   { // a real double-take INSIDE one stack: both take T030 on their own after the cut (history shared up to the cut, neither contains the other)
     const { sd } = stackRepo();
     G(sd, 'checkout', '-q', '-b', 'search-ui'); write(sd, 'specs/001-a/tasks.md', T('001', '002', '003', '020', '030')); const ui = commit(sd, 'ui takes T030');
@@ -398,6 +421,42 @@ try {
   assert.match(nums, /PR_HEAD_SHA: \$\{\{ github\.event\.pull_request\.head\.sha \}\}/);
   assert.strictEqual((nums.match(/GH_TOKEN/g) || []).length, 1, 'the token is in the environment of one step only');
   assert.doesNotMatch(nums, /\$\{\{ github\.event\.pull_request\.(body|title|head\.ref)/);
+
+  // ---- one number defined twice inside one file (issue #1553), whole tree, offline, temp folders
+  assert.strictEqual(sn.checkDuplicates([{ file: 'specs/001-a/spec.md', id: 'FR-001', lines: [1, 3] }], '').length, 1, 'MUTANT-A a number defined twice in one file is a problem');
+  assert.deepStrictEqual(sn.checkDuplicates([{ file: 'specs/001-a/spec.md', id: 'FR-001', lines: [1, 3] }], 'specs/001-a/spec.md FR-001 2'), []);
+  { const dd = path.join(tmp, 'dups'); fs.mkdirSync(dd);
+    const spec = (...ls) => ls.join('\n') + '\n';
+    write(dd, 'specs/001-a/spec.md', spec('# A', '- **FR-001** one', '- **FR-002** two', 'A reference to **FR-001** in prose and "FR-002" in a table:', '| FR-002 | row |', '- see **FR-002, FR-003** (a list)'));
+    write(dd, 'specs/001-a/tasks.md', T('001', '002'));
+    write(dd, 'specs/002-b/spec.md', spec('- **FR-001** one', '- **FR-002** two', '- **FR-001** again'));
+    let r = cli(dd, ['--dups']);
+    assert.strictEqual(r.status, 1, 'MUTANT-C a duplicate in the second spec folder must fail --dups (every folder is read): ' + r.stdout + r.stderr);
+    assert.match(r.stdout, /specs\/002-b\/spec\.md: FR-001 is defined 2 times \(lines 1, 3\)/, 'duplicate named with both lines (second spec folder)');
+    assert.doesNotMatch(r.stdout, /001-a/, 'MUTANT-B references and a list in the first folder are not definitions');
+    // the first folder alone is also checked
+    write(dd, 'specs/002-b/spec.md', spec('- **FR-001** ok'));
+    r = cli(dd, ['--dups']); assert.strictEqual(r.status, 0, r.stdout + r.stderr);
+    write(dd, 'specs/001-a/tasks.md', T('001', '002', '002'));
+    r = cli(dd, ['--dups']); assert.strictEqual(r.status, 1, 'duplicate T in the first spec folder must fail --dups: ' + r.stdout); assert.match(r.stdout, /specs\/001-a\/tasks\.md: T002 is defined 2 times \(lines 2, 3\)/, 'duplicate in the first spec folder');
+    // a baseline allows what was there, never more; a stale line fails
+    r = cli(dd, ['--write-baseline']); assert.strictEqual(r.status, 0, r.stdout);
+    r = cli(dd, ['--dups']); assert.strictEqual(r.status, 0, 'baselined duplicate passes: ' + r.stdout);
+    write(dd, 'specs/001-a/tasks.md', T('001', '002', '002', '002'));
+    r = cli(dd, ['--dups']); assert.strictEqual(r.status, 1); assert.match(r.stdout, /T002 is defined 3 times \(lines 2, 3, 4\); the baseline allows 2/, 'a baselined duplicate may not grow');
+    write(dd, 'specs/001-a/tasks.md', T('001', '002'));
+    r = cli(dd, ['--dups']); assert.strictEqual(r.status, 1); assert.match(r.stdout, /T002 is no longer duplicated/, 'a stale baseline line fails');
+  }
+  // a branch that adds a second definition: the clash names both lines
+  { const d2 = repo();
+    G(d2, 'update-ref', 'refs/remotes/origin/main', 'HEAD');
+    G(d2, 'checkout', '-q', '-b', 'mine');
+    write(d2, 'specs/001-a/spec.md', S('001', '002') + '- **FR-001** again\n'); commit(d2, 'dup');
+    const r = cli(d2); assert.strictEqual(r.status, 1, r.stdout);
+    assert.match(r.stdout, /specs\/001-a\/spec\.md: FR-001 is also in this branch itself \(defined twice in the file, lines 1 and 3;/, 'both lines named');
+  }
+  // the repository's own specs: no duplicate beyond the baseline (mutant: references counted as definitions fails here)
+  { const r = cli(path.join(__dirname, '..'), ['--dups']); assert.strictEqual(r.status, 0, 'MUTANT-B the repository specs have no duplicate beyond the baseline: ' + r.stdout + r.stderr); }
 
   // the real repository's own files parse to something sane (the patterns still match the specs)
   const root = path.join(__dirname, '..');

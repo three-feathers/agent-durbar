@@ -14,13 +14,14 @@ const ROOT = ((): string => {
     if (path.dirname(d) === d) throw new Error('repo root not found');
   }
 })();
-type Hit = { adapter: string; sessionId: string; agentId?: string; group: 'office' | 'earlier'; app: string; folderName: string; title: string; titleMarks: Array<[number, number]>; time: number; excerpts: Array<{ text: string; marks: Array<[number, number]>; speaker: string; anchor: { n: number; head: string } }>; more: number };
+type Hit = { adapter: string; sessionId: string; agentId?: string; group: 'office' | 'earlier'; app: string; folderName: string; title: string; titleMarks: Array<[number, number]>; time: number; excerpts: Array<{ text: string; marks: Array<[number, number]>; speaker: string; anchor: { n: number; head: string } }>; more: number; rank?: number };
 type St = { hits: Map<string, Hit>; order: { office: string[]; earlier: string[] }; progress: { done: number; total: number }; done: boolean; notes: Record<string, unknown> | null; stopped: boolean; failed: boolean; userStop: boolean; queryCut: boolean };
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const C = require(path.join(ROOT, 'src', 'renderer', 'convsearch.js')) as {
   keyOf(h: Hit): string; longEnough(q: string): boolean; create(): St; addBatch(st: St, b: unknown): St; finish(st: St, d: unknown, timeOf?: (h: Hit) => number): St;
   sorted(st: St, sort: { key: string; dir: string } | null, timeOf?: (h: Hit) => number, sortBy?: unknown): { office: Hit[]; earlier: Hit[] }; count(st: St): number;
   moreOf(h: unknown): number; markedHTML(t: string, m: unknown, esc: (s: string) => string): string; excerptHTML(x: unknown, esc: (s: string) => string): string; accName(h: Hit): string;
+  addListing(st: St, e: unknown): St; rankOf(h: unknown): number;
   stateText(st: St): string; notesText(st: St): string; LOCKED: string; announceDue(last: number | undefined, now: number): boolean; pickAnchor(keys: string[], a: unknown): number;
 };
 // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -149,6 +150,57 @@ assert.ok(C.announceDue(undefined, 0) && !C.announceDue(1000, 2500) && C.announc
   assert.strictEqual(C.pickAnchor(keys, { n: 0, head: 'not in this chat' }), -1, 'older than the chat shows');
   assert.strictEqual(C.pickAnchor(keys, { n: 0, head: '' }), -1, 'no head, no jump');
   assert.strictEqual(C.pickAnchor([], { n: 0, head: 'x' }), -1);
+}
+
+// ---- issue 1904, FR-015: while main lists sessions the state says so; "Searching, 0 of 0 sessions" is never shown
+{
+  const st = C.create();
+  assert.strictEqual(C.stateText(st), 'Listing sessions\u2026', 'listing: before main has said anything (the start has answered, no count yet)');
+  C.addListing(st, { kind: 'listing', searchId: 'x', done: 0, total: 16 });
+  assert.strictEqual(C.stateText(st), 'Listing sessions in 0 of 16 folders\u2026', 'listing: N of M folders');
+  C.addListing(st, { kind: 'listing', searchId: 'x', done: 3, total: 16 });
+  assert.strictEqual(C.stateText(st), 'Listing sessions in 3 of 16 folders\u2026', 'listing: it moves');
+  C.addListing(st, { kind: 'listing', searchId: 'x', done: 1, total: 1 });
+  assert.strictEqual(C.stateText(st), 'Listing sessions in 1 of 1 folder\u2026', 'listing: one folder is singular');
+  C.addListing(st, { kind: 'listing', searchId: 'x', done: 99, total: 4 });
+  assert.strictEqual(C.stateText(st), 'Listing sessions in 4 of 4 folders\u2026', 'listing: done never passes total');
+  C.addListing(st, { kind: 'listing', searchId: 'x', done: '<b>9</b>', total: '<i>2</i>' });
+  assert.strictEqual(C.stateText(st), 'Listing sessions\u2026', 'listing: markup is no count');
+  C.addListing(st, { kind: 'listing', searchId: 'x', done: 2, total: 5 });
+  C.addBatch(st, { hits: [], progress: { done: 0, total: 7 } });
+  assert.strictEqual(C.stateText(st), 'Searching, 0 of 7 sessions', 'listing: the first batch (the plan\'s size) ends it: now the sessions are counted');
+  for (const t of ['Listing sessions\u2026', 'Listing sessions in 0 of 3 folders\u2026']) assert.ok(!/0 of 0/.test(t));
+  const never = C.create();
+  C.addListing(never, { done: 0, total: 3 });
+  assert.ok(!/0 of 0 sessions/.test(C.stateText(never)), 'listing: never "0 of 0 sessions"');
+}
+
+// ---- issue 1904, FR-040: at the end each group lists whole words first, then word starts, then in-word hits (none hidden), newest first inside a rank
+{
+  const st = C.create();
+  const batch = [hit({ sessionId: 'in-new', group: 'earlier', time: 50, rank: 2 }), hit({ sessionId: 'whole-old', group: 'earlier', time: 10, rank: 0 }), hit({ sessionId: 'start', group: 'earlier', time: 30, rank: 1 }), hit({ sessionId: 'whole-new', group: 'earlier', time: 20, rank: 0 }), hit({ sessionId: 'norank', group: 'earlier', time: 5 }), hit({ sessionId: 'odd', group: 'earlier', time: 99, rank: '<b>' as unknown as number })];
+  C.addBatch(st, { hits: batch, progress: { done: 6, total: 6 } });
+  assert.deepStrictEqual(st.order.earlier.map((k) => st.hits.get(k)!.sessionId), ['in-new', 'whole-old', 'start', 'whole-new', 'norank', 'odd'], 'rank: while scanning the rows do not move (FR-015)');
+  C.finish(st, { notes: { searched: 6, folders: 1 } });
+  assert.deepStrictEqual(st.order.earlier.map((k) => st.hits.get(k)!.sessionId), ['odd', 'whole-new', 'whole-old', 'norank', 'start', 'in-new'], 'rank: at the end whole words first (a missing or odd rank counts as 0), then word starts, then in-word hits, newest first inside a rank; nothing is dropped');
+  assert.deepStrictEqual([C.rankOf(hit({ rank: 0 })), C.rankOf(hit({ rank: 1 })), C.rankOf(hit({ rank: 2 })), C.rankOf(hit({})), C.rankOf(hit({ rank: 7 })), C.rankOf(null)], [0, 1, 2, 0, 0, 0], 'rank: only 1 and 2 demote');
+  assert.deepStrictEqual(C.sorted(st, { key: 'ago', dir: 'asc' }, undefined, ACT.sortBy).earlier.map((h) => h.sessionId), ['odd', 'in-new', 'start', 'whole-new', 'whole-old', 'norank'], 'a sort chosen in a column header replaces the rank order');
+}
+
+// ---- issue 1904, part 2 (FR-022, FR-014): sessions whose read ran out of its limit are named in the end state
+{
+  const st = C.create();
+  C.finish(st, { notes: { searched: 5, folders: 2, slow: 2, unreadable: 1 } });
+  assert.strictEqual(C.notesText(st), 'Searched 5 sessions in 2 folders. Not searched: 1 unreadable session; 2 sessions that did not answer in time.', 'slow: the end state says how many sessions did not answer in time');
+  const one = C.create();
+  C.finish(one, { notes: { searched: 1, folders: 1, slow: 1 } });
+  assert.strictEqual(C.notesText(one), 'Searched 1 session in 1 folder. Not searched: 1 session that did not answer in time.', 'slow: singular');
+  const none = C.create();
+  C.finish(none, { notes: { searched: 1, folders: 1 } });
+  assert.strictEqual(C.notesText(none), 'Searched 1 session in 1 folder.', 'slow: an older end state without the count says nothing');
+  const odd = C.create();
+  C.finish(odd, { notes: { searched: 1, folders: 1, slow: '<b>9</b>' } });
+  assert.ok(!/<b>/.test(C.notesText(odd)), 'slow: markup is no count');
 }
 
 process.exitCode = 0;

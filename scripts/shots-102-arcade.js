@@ -3,7 +3,7 @@
  * `node scripts/ui-suite.js --only shots-102-arcade`.
  *
  * It fails (exit 1) when:
- *   - the flag is closed and a stored choice draws the arcade, asks for one of its files or offers it (FR-254);
+ *   - (since the flip, spec 102 T230) a stored choice does not draw the arcade or it is not offered;
  *   - the flag is open and the night room's files (wall-night, floor-night) are not fetched, or the day room's (wall, floor, welcome) are, seen in a session request log (T218, SC-023);
  *   - the flag is open and a file of another world or set is asked for, a picture fails, or the art is not at one integer scale with the nearest pixel (FR-255);
  *   - at 3, 4, 8 and 15 agents, 1440x900 and 1280x800: plates, signs, marquees, cues, chips or fixtures overlap, text is under 10.5 px or a marquee under 12 px,
@@ -49,6 +49,11 @@ const run = async (ctx, reqs) => {
   const loadArcade = async (w, h, n, query = {}) => {
     reqs.clear();
     await H.load({ w, h, query: { officeview: 'real', ...ARCADE, sim: String(n), ...query }, ready: REAL, settle: false });
+    /* spec 008 FR-273 (issue 1914): a window the screen clamped is not the size this case names (a display smaller than the window at the forced ratio: 830x584 CSS px at 2x on a 1660x1216 display, so 15 agents scroll and 3 overlap); fail with the cause, never as a layout failure.
+       ARCADE_MUTANT=smallwin (test only): the window is made 830x584 after the load, must fail here */
+    if (process.env.ARCADE_MUTANT === 'smallwin') { ctx.win.setContentSize(830, 584); await ctx.sleep(300); }
+    const [iw, ih] = await js('[innerWidth,innerHeight]');
+    assert.ok(Math.abs(iw - w) <= 2 && Math.abs(ih - h) <= 2, 'issue 1914: the window is ' + iw + 'x' + ih + ' CSS px, not the ' + w + 'x' + h + ' this case names (the display is too small for it at devicePixelRatio ' + await js('devicePixelRatio') + ': run under xvfb, UI_SUITE_XVFB=1, which ui-suite does itself when UI_SUITE_DPR is above 1)');
     await must(PICS, 'the pictures');
   };
 
@@ -63,7 +68,7 @@ const run = async (ctx, reqs) => {
       const ow=p.querySelector('.ro-l2>.dot'),rec0=!!(ow&&ow.getClientRects().length);const rec={ownDot:rec0,pc:p.className.replace(/ro-plate |has-help|has-ren/g,'').trim(),t:l2.textContent.slice(0,40),id,word,helped,narrow:p.classList.contains('cab-narrow'),ren:p.classList.contains('has-ren'),plateW:Math.round(pr.width),shown:0,helpers:0,urgentShown:-1};seen.push(rec);
       const wdE=p.querySelector('.ro-wd'),boxR=helped&&wdE?Math.min(wdE.getBoundingClientRect().right,right):right;rec.l2c=[l2.scrollWidth,l2.clientWidth];rec.label=p.getAttribute('aria-label')||'';rec.title=p.getAttribute('title')||'';
       const lc=getComputedStyle(l2),cx=document.createElement('canvas').getContext('2d');cx.font=lc.fontStyle+' '+lc.fontWeight+' '+lc.fontSize+' '+lc.fontFamily;const ellW=!helped&&l2.scrollWidth>l2.clientWidth+0.5?cx.measureText('\u2026').width:0;rec.ell=+ellW.toFixed(2);rec.spare=+(boxR-a.right-ellW).toFixed(3);rec.room=+(right-a.right-ellW).toFixed(3); /* no helpers: the word's right end to the content box, less the ellipsis; with helpers (below): the content box less the +N! less what the word needs in its own line (the word, and whatever the plate draws before it, such as an own dot and its gap) */ /* a line that runs on past the word ends in an ellipsis, which takes the room of the word's last letters: the word is whole only when it and the ellipsis fit */
-      const cb=helped&&wdE?wdE:l2,ccs=getComputedStyle(cb),wb=cb.getBoundingClientRect(),ellip=ccs.textOverflow==='ellipsis'&&ccs.overflowX==='hidden'&&cb.scrollWidth>cb.clientWidth;rec.cut=cb.scrollWidth>cb.clientWidth;{const bl=parseFloat(cs.borderLeftWidth),br=parseFloat(cs.borderRightWidth),pl=parseFloat(cs.paddingLeft),pr2=parseFloat(cs.paddingRight),cr=pr.right-br-pr2,rb=p.nextElementSibling,pen=rb&&rb.classList.contains('ro-ren')?(rb.firstElementChild||rb).getBoundingClientRect():null;rec.pad=[pl,pr2];rec.cbox=+(pr.width-bl-br-pl-pr2).toFixed(2);rec.penClear=pen&&pen.width?+(pen.left-cr).toFixed(3):null;rec.penGap=pen&&pen.width?+(pen.left-(a.right+ellW)).toFixed(3):null;} /* the allowance of the 1558 work, kept: where the caller says the word may be cut (ell), it must end in an ellipsis of its clipping box (the word's own box with helpers, else the line) and stay inside the content box */
+      const cb=helped&&wdE?wdE:l2,ccs=getComputedStyle(cb),wb=cb.getBoundingClientRect(),ellip=ccs.textOverflow==='ellipsis'&&ccs.overflowX==='hidden'&&cb.scrollWidth>cb.clientWidth;rec.cut=cb.scrollWidth>cb.clientWidth;{const bl=parseFloat(cs.borderLeftWidth),br=parseFloat(cs.borderRightWidth),pl=parseFloat(cs.paddingLeft),pr2=parseFloat(cs.paddingRight),cr=pr.right-br-pr2,rb=p.nextElementSibling,pen=rb&&rb.classList.contains('ro-ren')?(rb.firstElementChild||rb).getBoundingClientRect():null;rec.pad=[pl,pr2];rec.cbox=+(pr.width-bl-br-pl-pr2).toFixed(2);rec.bw=+pr.width.toFixed(3);rec.bb=[bl,br];rec.dpr=devicePixelRatio;rec.penClear=pen&&pen.width?+(pen.left-cr).toFixed(3):null;rec.penGap=pen&&pen.width?+(pen.left-(a.right+ellW)).toFixed(3):null;} /* the allowance of the 1558 work, kept: where the caller says the word may be cut (ell), it must end in an ellipsis of its clipping box (the word's own box with helpers, else the line) and stay inside the content box */
       if(a.right+ellW>boxR+0.02&&!(${jsLiteral(!!ell)}&&ellip&&wb.right<=right+0.5))out.push(id+' "'+word+'" ends at '+Math.round(a.right)+' of a content box to '+Math.round(right)+' (helped '+helped+'; line '+Math.round(b.left)+'..'+Math.round(b.right)+', mark '+(p.querySelector('.ro-l1').getBoundingClientRect().width|0)+' px, plate '+Math.round(pr.left)+'..'+Math.round(pr.right)+', word box '+(((p.querySelector('.ro-wd')||l2).getBoundingClientRect().width)|0)+' px)');
       const h=p.querySelector('.ro-help');if(!helped||!h)continue;const l1=p.querySelector('.ro-l1').getBoundingClientRect(),hr=h.getBoundingClientRect(),hc=h.querySelector('.ro-hc'),hn=hc.firstChild,c=R(hn,0,hn.data.trim().length);
       if(c.left<l1.left-0.5||c.right>l1.right+0.5||c.right>hr.right+0.5)out.push(id+' the +N is cut: ends at '+Math.round(c.right)+' of a box to '+Math.round(Math.min(l1.right,hr.right)));
@@ -87,10 +92,10 @@ const run = async (ctx, reqs) => {
     console.log('[102-arcade] wide font installed', JSON.stringify(r));
   };
   const MARK_GAP = 4; /* spec 102 FR-313 (round 4): px between the last helper mark shown and the word on the narrow plate, so a helper's mark never reads as the plate's own state */
-  const NARROW_BOX = 99; /* the narrow plate's content box with a pencil: 122 - the border - 3 - 18 */
+  const NARROW_PLATE = 122; /* the narrow plate's border box, CSS px */
   const NARROW_ROOM = 3; /* spec 102 FR-312: the written margin, in px, between the status word's right end and the narrow plate's content box (measured on macOS/Electron in the spec delta); a font 3 px wider than this one still shows the word whole */
   /* ARCADE_MUTANT (test only), each must fail at its own label: cutword = the line as it was (the helpers' mark a fixed width, the line free to shrink below its word); cutplate = a plate narrower than its line
-     (the word runs under the pencil); nodots = the mark's line has no room but the +N (no dot shown); sliver = the dots do not wrap, so one is cut in part; clipstate = the dots in creation order (an error dot last) */
+     (the word runs under the pencil); nodots = the mark's line has no room but the +N (no dot shown); plate121 = the narrow plate 121 px wide (T204, PR 1530); border2 = its border 2 px; pad19 = its right padding 19 px; idle15 = a plate not waiting or at its limit with a 1.5 px border (it must draw 1 px); sliver = the dots do not wrap, so one is cut in part; clipstate = the dots in creation order (an error dot last) */
   const MUTS = {
     cutword: `.ro[data-world="retro"] .ro-plate.has-help:not(.lounge) .ro-l1{flex:none!important;min-width:0!important}.ro[data-world="retro"] .ro-plate.has-help:not(.lounge) .ro-l2{display:block!important;flex:1 1 auto!important;min-width:0!important}.ro[data-world="retro"] .ro-plate.has-help:not(.lounge) .ro-help{flex:none!important;flex-wrap:nowrap!important;height:auto!important}`,
     cutplate: `.ro[data-world="retro"] .ro-plate.has-help:not(.lounge){width:90px!important}`,
@@ -109,7 +114,17 @@ const run = async (ctx, reqs) => {
     penclose: `.ro[data-world="retro"] .ro-chrome>.ro-plate:not(.lounge)+.ren.ro-ren{left:calc(anchor(right) - 26px)!important}`,
     nopendotfull: `.ro[data-world="retro"] .ro-plate.cab-narrow.has-help:not(.has-ren) .ro-l2{gap:0!important}.ro[data-world="retro"] .ro-plate.cab-narrow.has-help:not(.has-ren) .ro-l2>.dot{display:inline-block!important;margin-right:10px!important}`,
     nopendot: `.ro[data-world="retro"] .ro-plate.cab-narrow.has-help:not(.has-ren) .ro-l2>.dot{display:inline-block!important;width:1px!important;height:1px!important;margin:0!important}`,
+    plate121: `.ro[data-world="retro"] .ro-plate.cab-narrow:not(.lounge){width:121px!important;min-width:121px!important;max-width:121px!important}`,
+    border2: `.ro[data-world="retro"] .ro-plate.cab-narrow:not(.lounge){border-width:2px!important}`,
+    pad19: `.ro[data-world="retro"] .ro-plate.cab-narrow:not(.lounge){padding-right:19px!important}`,
+    idle15: `.ro[data-world="retro"] .ro-plate.cab-narrow:not(.lounge):not(.st-waiting):not(.st-limit){border-width:1.5px!important}`,
     sliver: `.ro[data-world="retro"] .ro-plate.has-help:not(.lounge) .ro-help{flex-wrap:nowrap!important}.ro[data-world="retro"] .ro-plate.has-help:not(.lounge) .ro-l1{min-width:0!important}`,
+  };
+  /* T204 (PR 1530, round 2): each narrow plate's border by its state: 1.5 px (floored to a whole device px) only on a waiting or limit plate (realoffice.css, the `.st-waiting,.st-limit` rule), 1 px on every other (the error plate's left border is 3 px, `.st-error`), so an idle or working plate drawing 1.5 px fails here at every ratio, 1 and 2 included (ARCADE_MUTANT=idle15). Read in the limit scenes (markCheck) and in the Working scene, which has plates in another state. */
+  const borderByState = (tag, seen) => {
+    const bord = seen.filter((x) => x.narrow && !/\blounge\b/.test(x.pc));
+    const dev = (css, d) => Math.max(1, Math.floor(css * d + 1e-9)) / d; /* a device pixel step */
+    assert.ok(bord.every((x) => { const wl = /\bst-(waiting|limit)\b/.test(x.pc), left = /\bst-error\b/.test(x.pc) ? 3 : wl ? 1.5 : 1, right = wl ? 1.5 : 1; return Math.abs(x.bb[0] - dev(left, x.dpr)) <= 0.01 && Math.abs(x.bb[1] - dev(right, x.dpr)) <= 0.01; }), 'issue 1574: ' + tag + ': a narrow plate draws a 1.5 px border (floored to a whole device px) only in the waiting and limit states and a 1 px border in every other state (an error plate: 3 px on the left) (measured [state classes, [left, right] border, ratio]): ' + JSON.stringify(bord.map((x) => [x.pc, x.bb, x.dpr])));
   };
   const markCheck = async (tag, scene, { want, states, urgent, nohelp, nopencil, helper } = {}) => { /* urgent (the narrow plates): true = a helper failed (a mark "+N!" is due), false = none did (no mark) */
     if (states) await js(`(()=>{const U=window.__durbarSimUi;U.agents().filter(a=>!a.parent).forEach((a)=>{a.state=${jsLiteral(states)};delete a.label;});U.render();})();0`);
@@ -135,14 +150,15 @@ const run = async (ctx, reqs) => {
     const r = await js(PLATES(nopencil));
     console.log('[102-arcade] plate marks', tag, JSON.stringify(scene), JSON.stringify(r.seen.filter((x) => x.helped)));
     const helped = r.seen.filter((x) => x.helped);
+    borderByState(tag, r.seen);
     if (urgent !== undefined) { /* spec 102 FR-312: the narrow cabinet's plate with a pencil (122 px, content box 99 px since round 5) */
       const nm = helped.filter((x) => x.narrow && !!x.ren === !nopencil && x.word === 'Limit reached');
       assert.ok(nm.length >= 1, 'issue 1574: ' + tag + ': a narrow plate with ' + (nopencil ? 'NO pencil' : 'a pencil') + ', helpers and the word "Limit reached" is drawn (the case under test), saw ' + JSON.stringify(helped.map((x) => x.word + ' ' + x.pc + ' ' + x.plateW + ' ' + x.ren)));
       assert.deepStrictEqual(r.out.filter((o) => o.includes('"Limit reached"') && nm.some((x) => o.startsWith(x.id + ' '))), [], 'issue 1574: ' + tag + ': on the narrow plate the status word "Limit reached" is whole, inside the content box and not cut by an ellipsis');
       assert.deepStrictEqual(r.out.filter((o) => o.includes('the +N is cut') && nm.some((x) => o.startsWith(x.id + ' '))), [], 'issue 1574: ' + tag + ': on the narrow plate the "+N" is whole');
       assert.ok(nm.every((x) => x.room >= NARROW_ROOM), 'issue 1574: ' + tag + ': on the narrow plate the word keeps at least ' + NARROW_ROOM + ' px of room to the content box (a wider font must not eat the margin; the spec records the measured room): ' + JSON.stringify(nm.map((x) => x.room)));
-      if (!nopencil) { /* the geometry of FR-312 round 5 is layout, not font: the content box is 99 px (+-0.5) with 3 px left and 18 px right padding, so a revert to 4 and 20 px fails here whatever the font (round 8 of #1599: the 3 px floor of the room alone let it pass) */
-        assert.ok(nm.every((x) => Math.abs(x.cbox - NARROW_BOX) <= 0.5 && Math.abs(x.pad[0] - 3) <= 0.05 && Math.abs(x.pad[1] - 18) <= 0.05), 'issue 1574: ' + tag + ': the narrow plate with a pencil has a content box of ' + NARROW_BOX + ' px (+-0.5), 3 px of left padding and an 18 px right reserve for the pencil (measured box, [left, right] padding): ' + JSON.stringify(nm.map((x) => [x.cbox, x.pad])));
+      if (!nopencil) { /* the geometry of FR-312 round 5 is layout, not font: the border box is 122 px (+-0.5), with 3 px left and 18 px right padding, so a revert to 4 and 20 px or a 1 px change of the plate fails here whatever the font and the ratio (round 8 of #1599: the 3 px floor of the room alone let it pass). The content box is the border box less the border (as Chromium floors it to device pixels: the measured one; the limit plate's border is 1.5 px, so the box is 98 px at ratio 2 and 98.33 at 1.5, not 99) and the padding, within 0.05 px, so it is exact at every ratio (T204, PR 1530) */
+        assert.ok(nm.every((x) => Math.abs(x.bw - NARROW_PLATE) <= 0.5 && Math.abs(x.cbox - (x.bw - x.bb[0] - x.bb[1] - x.pad[0] - x.pad[1])) <= 0.05 && Math.abs(x.pad[0] - 3) <= 0.05 && Math.abs(x.pad[1] - 18) <= 0.05 && x.bb.every((w) => Math.abs(w - Math.max(1, Math.floor(1.5 * x.dpr + 1e-9)) / x.dpr) <= 0.01)), 'issue 1574: ' + tag + ': the narrow plate with a pencil is ' + NARROW_PLATE + ' px wide (+-0.5, border box) with a content box of that less its border (1.5 px on the limit plate, floored to a whole device px) and the padding (within 0.05 px), 3 px of left padding and an 18 px right reserve for the pencil (measured [border box, content box, [left, right] padding, [left, right] border, ratio]): ' + JSON.stringify(nm.map((x) => [x.bw, x.cbox, x.pad, x.bb, x.dpr])));
         assert.ok(nm.every((x) => x.penClear !== null && x.penClear >= -0.01 && x.penGap >= -0.01), 'issue 1574: ' + tag + ': the word (and its ellipsis) ends before the pencil icon\'s left edge: the content box ends at least 0 px before the icon (measured clear, then the word\'s end to the icon): ' + JSON.stringify(nm.map((x) => [x.penClear, x.penGap])));
       }
       assert.ok(nm.every((x) => !x.ownDot), 'issue 1574: ' + tag + ': on the narrow plate with helpers the plate\'s own status dot is not drawn (the word, border and marquee say the state): ' + JSON.stringify(nm.map((x) => x.ownDot)));
@@ -213,6 +229,8 @@ const run = async (ctx, reqs) => {
     if (WIDE) await wideFont();
     if (WIDE) await js(`(()=>{const s=document.createElement('style');s.textContent=${jsLiteral(WIDE_CSS)};document.head.appendChild(s);})();0`);
     const wk = await js(PLATES());
+    assert.ok(wk.seen.some((x) => x.narrow && x.pc.includes('st-working')), 'issue 1574: ' + w + 'x' + h + ' narrow working: a narrow plate not waiting or at its limit is drawn (the case for the 1 px border)');
+    borderByState(w + 'x' + h + ' narrow working', wk.seen);
     const wp = wk.seen.filter((x) => x.narrow && x.helped && x.word === 'Working' && x.shown >= 1);
     assert.ok(wp.length >= 1, 'issue 1574: ' + w + 'x' + h + ' narrow working: a narrow plate with helpers, the word "Working" and at least one helper mark shown is drawn (the case for the gap), saw ' + JSON.stringify(wk.seen.filter((x) => x.narrow && x.helped).slice(0, 3).map((x) => [x.word, x.shown, x.gap])));
     assert.ok(wp.every((x) => x.gap !== null && x.gap >= MARK_GAP - 0.02), 'issue 1574: ' + w + 'x' + h + ' narrow working: the last helper mark shown is at least ' + MARK_GAP + ' px from the word (measured between the mark\'s right edge and the word\'s left edge), so it cannot read as the plate\'s own state: ' + JSON.stringify(wp.map((x) => [x.shown, x.gap])));
@@ -258,16 +276,16 @@ const run = async (ctx, reqs) => {
   }
 
 
-  // ---- the flag closed: a stored choice draws the Photo office, asks for nothing of the arcade, and it is not offered ----
+  // ---- no flag since the flip (spec 102 T230): a stored choice draws the arcade with its own people, and it is offered (restoring the flag fails here) ----
   await H.load({ w: 1440, h: 900, query: { officeview: 'real' }, ready: REAL, settle: false });
   await js(`localStorage.setItem('durbar.world','retro');0`);
   await H.load({ w: 1440, h: 900, query: { officeview: 'real' }, ready: REAL, settle: false });
   await must(PICS, 'the pictures');
-  assert.strictEqual(await js(`(()=>{const r=document.querySelector('#stage .ro');return r.dataset.world+' '+r.dataset.set})()`), 'photo office', 'flag closed: the Photo office');
-  assert.strictEqual(await packs(), 'sets/office worlds/photo', 'flag closed: no file of the arcade asked for: ' + await packs());
+  assert.strictEqual(await js(`(()=>{const r=document.querySelector('#stage .ro');return r.dataset.world+' '+r.dataset.set})()`), 'retro retro', 'no flag: a stored retro draws the arcade and its people');
+  assert.strictEqual(await packs(), 'sets/retro worlds/retro', 'no flag: only the arcade\'s files are asked for: ' + await packs());
   await js(`window.DurbarScreens.openSettings();0`);
   await must(`!!document.querySelector('#wrGroup [data-world="photo"]')`, 'Settings');
-  assert.strictEqual(await js(`!![...document.querySelectorAll('#wrGroup [data-world]')].find(b=>b.dataset.world==='retro')`), false, 'flag closed: not offered');
+  assert.strictEqual(await js(`!![...document.querySelectorAll('#wrGroup [data-world]')].find(b=>b.dataset.world==='retro')`), true, 'no flag: the arcade is offered');
   await js(`document.getElementById('scrClose').click();localStorage.removeItem('durbar.world');0`);
 
   /* what overlaps what, on the page's own boxes */
@@ -295,12 +313,13 @@ const run = async (ctx, reqs) => {
       const px=getComputedStyle(document.querySelector('#stage .ro-person,#stage .ro-visitor')).imageRendering,cab=getComputedStyle(document.querySelector('#stage .ro-cab')).imageRendering;
       return {g,off,px,cab,scroll:!!L.scroll,fh:document.getElementById('floor').scrollHeight-document.getElementById('floor').clientHeight,scan:[...document.querySelectorAll('#stage *')].filter(e=>/skew/.test(e.style.transform||'')||/matrix\\([^)]*\\)/.test(getComputedStyle(e).transform)&&(()=>{const m=getComputedStyle(e).transform.match(/[-\\d.]+/g).map(Number);return Math.abs(m[0]*m[2]+m[1]*m[3])>1e-3;})()).length,mirrorText:[...document.querySelectorAll('#stage .mir')].filter(e=>e.textContent.trim()).length};})()`);
     console.log('[102-arcade]', tag, JSON.stringify({ g: art.g, scroll: art.scroll }));
-    assert.ok(Number.isInteger(art.g) && art.g >= 2, tag + ': an integer scale: ' + art.g);
+    const dprNow = await js('devicePixelRatio'); /* FR-255 (T204): an integer at a whole ratio; at 1.25 and 1.5, a whole number of device px (the next one up where it fits, else as it was) */
+    assert.ok(art.g >= 2 && (Number.isInteger(art.g) || (!Number.isInteger(dprNow) && Math.abs(art.g * dprNow - Math.round(art.g * dprNow)) < 1e-6)), tag + ': an integer scale (a whole number of device px at 1.25 and 1.5): ' + art.g);
     assert.deepStrictEqual(art.off, [], tag + ': the art on the grid');
     /* spec 102 FR-255 (owner 2026-11-04, #1104): the lobby too: every fixture and visitor at a whole scale, on a whole device pixel */
-    const lobby = await js(`(()=>{const d=devicePixelRatio,off=[];let n=0;
+    const lobby = await js(`(()=>{const d=devicePixelRatio,off=[],tol=Number.isInteger(d)?0.01:Math.max(0.01,d/64+0.001);let n=0; /* tol: 0.01 at a whole ratio; at 1.25 and 1.5 the engine keeps a position in 1/64 CSS px, which is up to d/64 device px (T204) */
       for(const i of document.querySelectorAll('#stage img.ro-fx,#stage img.ro-visitor')){if(i.hidden||!i.getClientRects().length||!i.naturalWidth)continue;n++;const b=i.getBoundingClientRect(),s=b.width*d/i.naturalWidth,s2=b.height*d/i.naturalHeight,x=b.left*d;
-        if(Math.abs(s-Math.round(s))>0.01||Math.abs(s2-Math.round(s2))>0.01||Math.round(s)<1)off.push((i.dataset.place||i.className)+' x'+s.toFixed(3));if(Math.abs(x-Math.round(x))>0.01)off.push((i.dataset.place||i.className)+' left '+x.toFixed(2));}
+        if(Math.abs(s-Math.round(s))>0.01||Math.abs(s2-Math.round(s2))>0.01||Math.round(s)<1)off.push((i.dataset.place||i.className)+' x'+s.toFixed(3));if(Math.abs(x-Math.round(x))>tol)off.push((i.dataset.place||i.className)+' left '+x.toFixed(2));}
       return {n,d,off};})()`);
     console.log('[102-arcade]', tag, 'lobby', JSON.stringify({ n: lobby.n, dpr: lobby.d }));
     assert.ok(lobby.n > 0, tag + ': the lobby has pictures');
@@ -370,6 +389,51 @@ const run = async (ctx, reqs) => {
     const seats = await js(`(()=>{const L=window.__durbarSimUi.realLayout(),T=window.exports.aisleTabOrder(L),P=[...document.querySelectorAll('#stage .ro-plate')].map(p=>p.dataset.id);return {tab:T,dom:P};})()`);
     assert.deepStrictEqual(seats.dom, seats.tab, tag + ': Tab follows the seats');
     await H.shot(path.join(OUT, `102-arcade-${n}-${w}x${h}.png`), { prep: 'calm' });
+  }
+
+  // ---- T372, FR-229, spec 097 FR-309 (issue #1907): the keyboard order follows the seats AFTER the seats change, with real Tab presses ----
+  /* The check above compares the plates' order once, at load. The layout's sequence changes with the states (a resting agent comes to a desk), and a plate stays where it was first drawn
+     unless the order is kept (realoffice.js keyOrder). ARCADE_MUTANT=taborder: Element.after does nothing, so no element is ever moved (must fail at "Tab follows the seats after the states change"). */
+  {
+    await loadArcade(1440, 900, 15, { simfreeze: '1' });
+    if (MUT === 'taborder') await js(`Element.prototype.after=function(){};0`);
+    const SEQ = ['working', 'thinking', 'waiting', 'limit', 'error', 'done', 'idle', 'asleep'];
+    await js(`(()=>{const U=window.__durbarSimUi,S=${jsLiteral(SEQ)};U.agents().filter(a=>!a.parent).forEach((a,i)=>{a.state=S[i%S.length];delete a.label;});U.render();})();0`);
+    await H.until(`document.querySelectorAll('#stage .ro-plate').length===15&&!document.querySelector('#stage .ro-ghost')`, 8000);
+    await ctx.sleep(600);
+    const ids = await js(`window.__durbarSimUi.realLayout().zones.flatMap(z=>z.desks).filter(d=>d.person).map(d=>d.id).slice(0,2)`);
+    const plateClick = (id) => js(`(()=>{const p=document.querySelector('#stage .ro-plate[data-id="'+CSS.escape(${jsLiteral(id)})+'"]');if(!p)return false;p.click();return true})()`);
+    assert.ok(await plateClick(ids[0]), 'the first plate to give a draft');
+    await must(`document.body.classList.contains('panel-open')&&document.getElementById('msgInput')`, 'the chat for the draft');
+    await js(`(()=>{const m=document.getElementById('msgInput');m.value='a note not sent yet';m.dispatchEvent(new Event('input',{bubbles:true}));})()`);
+    assert.ok(await plateClick(ids[1]), 'the second plate, to leave the first chat');
+    await ctx.sleep(500);
+    await js(`(()=>{const b=document.getElementById('backBtn')||document.querySelector('[data-act=back]');if(b)b.click();})()`);
+    await must(`!document.body.classList.contains('panel-open')&&document.querySelectorAll('#stage .ro-plate').length===15`, 'the office back after the draft');
+    await ctx.sleep(500);
+    const after = await js(`(()=>{const T=window.exports.aisleTabOrder(window.__durbarSimUi.realLayout()),P=[...document.querySelectorAll('#stage .ro-plate')].map(p=>p.dataset.id);return {tab:T,dom:P};})()`);
+    assert.deepStrictEqual(after.dom, after.tab, 'T372: Tab follows the seats after the states change (the page order of the plates)');
+    /* real Tab presses, from the start of the page: the plates in the order they are visited, the pencil straight after its plate */
+    const wc = H.wc(); wc.focus();
+    /* the browser starts from where the last click was, so the walk starts on the first seat by focus() and presses Tab from there */
+    await js(`(()=>{const p=document.querySelector('#stage .ro-plate[data-id="'+CSS.escape(${jsLiteral(after.tab[0])})+'"]');p.focus();})()`);
+    const stop = () => js(`(()=>{const e=document.activeElement;if(!e)return null;return {plate:e.classList.contains('ro-plate')?e.dataset.id:null,ren:e.dataset&&e.dataset.ren||null}})()`);
+    const visited = [after.tab[0]], bad = [];
+    let prev = { plate: after.tab[0], ren: null };
+    for (let i = 0; i < 160; i++) {
+      wc.sendInputEvent({ type: 'keyDown', keyCode: 'Tab' }); wc.sendInputEvent({ type: 'keyUp', keyCode: 'Tab' }); await ctx.sleep(40);
+      const s = await stop(); if (!s) continue;
+      if (s.plate) { if (visited.includes(s.plate)) break; visited.push(s.plate); }
+      if (s.ren && prev && prev.plate !== s.ren && prev.ren !== s.ren) bad.push(s.ren);
+      prev = s;
+    }
+    assert.deepStrictEqual(visited, after.tab, 'T372: Tab follows the seats after the states change (real Tab presses, the plates in the order they are reached)');
+    assert.deepStrictEqual(bad, [], 'T372: each pencil comes straight after its own plate');
+    /* the Draft tag: the plate's name carries it, the tag is hidden from the tree (spec 097 FR-316) */
+    const dr = await js(`(()=>{const p=document.querySelector('#stage .ro-plate[data-id="'+CSS.escape(${jsLiteral(ids[0])})+'"]'),t=[...document.querySelectorAll('#stage .ro-drafttag.on')];return {label:p?p.getAttribute('aria-label'):'',tags:t.map(e=>e.getAttribute('aria-hidden'))}})()`);
+    assert.ok(/unsent draft/.test(dr.label), 'T372: a plate with a draft says "unsent draft" in its name: ' + dr.label);
+    assert.deepStrictEqual(dr.tags, ['true'], 'T372: one visible Draft tag, hidden from the tree');
+    console.log('[102-arcade] tab order after the states change:', visited.length, 'plates, in the order of the seats');
   }
 
   // ---- FR-259: the frame by state; FR-257: hostile text stays text ----

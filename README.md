@@ -6,7 +6,7 @@
 
 <p align="center"><em>A calm command center for your AI agents</em></p>
 
-<p align="center"><a href="#build-cost-so-far"><img src="docs/build-cost-badge.svg" alt="Build cost, about US$6,096 at API list prices (estimate, not billing)"></a></p>
+<p align="center"><a href="#build-cost-so-far"><img src="docs/build-cost-badge.svg" alt="Build cost, about US$6,932 at API list prices (estimate, not billing)"></a></p>
 
 When you run many agent sessions across several windows, you end up watching your digital agents instead of working. Agent Durbar puts them in one office and shows you only the ones that need you. It is for anyone who works with agents, not only developers: a room is any folder an agent works in.
 
@@ -16,7 +16,7 @@ When you run many agent sessions across several windows, you end up watching you
 
 **Works with:** GitHub Copilot, Claude Code and OpenAI Codex ([agent apps](docs/harnesses.md)). **Not yet:** signed builds (your OS warns the first time), auto-update, and Windows tried by hand only once; the spending limit is soft ([known limits](docs/limits.md)).
 
-> **Status:** first stable release, latest [`v0.1.21`](https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.21), unsigned. What changed: [CHANGELOG](CHANGELOG.md).
+> **Status:** first stable release, latest [`v0.1.26`](https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.26), unsigned. What changed: [CHANGELOG](CHANGELOG.md).
 
 ## What it does
 
@@ -28,6 +28,8 @@ When you run many agent sessions across several windows, you end up watching you
 - **Sessions that last:** resume after a restart, scheduled prompts, undo file changes, notes.
 - **MCP servers** shared across your agent apps, with health, sign-in and what each costs in context.
 - **Three looks:** the Real office (shown here), the flat Clean Office (the default) and Retro Pixel.
+- **Worlds** for the Real office in Settings > World: the Photo office and the Retro arcade, a hall of arcade cabinets with pixel people ([spec 102](specs/102-worlds-on-demand/spec.md)). `[KNOWN GAP]` the arcade is checked in the simulator on Linux only, not yet on a real graphics card or on Windows.
+- **My characters**, your own people at the desks, on any theme ([spec 096](specs/096-ai-character-maker/spec.md)). `[KNOWN GAP]` In the Real office, My characters still shows the world's default people with no line saying why (spec 097 T353 waits). Nothing can make one yet: Codex image generation stays off until it has been tested with a real Codex, so *Make a character with AI…* says so; everything else is checked on the simulator's fake generator only. When it is on, Codex keeps its own copy of each picture under `~/.codex/generated_images/`; Durbar neither reads nor deletes it, and keeps nothing from your description.
 
 ![The Needs you inbox over the Real office: permission requests and an error](docs/screenshots/readme-real-inbox-1440x900.jpg)
 
@@ -54,7 +56,7 @@ Every file, the Windows and Mac notes, verifying a download and the requirements
 - **Ask first**: writes, shell commands, URLs and tools wait for *Allow once*, *Allow for this session* or *Deny*.
 - **Allow all**: no prompts. Use it only in folders you trust; it asks once to confirm.
 
-**Search conversations** runs on your computer only: Durbar reads the sessions' text through the agent apps' own files and sessions, masks every excerpt before you see it, stores nothing (no index; the earlier Codex session titles are kept in memory until you clear the box) and sends nothing. Tool output, hidden earlier sessions and the content of earlier Copilot and Codex sessions (their titles only) are not searched; when saved MCP values are locked in the vault, the results say excerpts may show them.
+**Search conversations** runs on your computer only: Durbar reads the sessions' text through the agent apps' own files and sessions, masks every excerpt before you see it, stores nothing (no index; the lists of earlier sessions and VS Code chats are kept in memory for up to 5 minutes, until you clear the box) and sends nothing. Tool output, hidden earlier sessions and the content of earlier Copilot and Codex sessions (their titles only) are not searched; when saved MCP values are locked in the vault, the results say excerpts may show them.
 
 An approval card marks lookalike letters in a host, program or tool name (a Cyrillic letter in a Latin word, a fullwidth form) and names an address's host as the network reads it; it warns and never blocks, with small closed lists rather than the full confusables table ([docs/safety.md](docs/safety.md)).
 
@@ -87,7 +89,7 @@ How we work (spec-driven, with [GitHub Spec Kit](https://github.com/github/spec-
 <!-- build-cost:begin (written by `npm run usage:readme`; method in docs/build-cost.md) -->
 ## Build cost so far
 
-**About US$6,096** at API list prices to build this app with AI agents, as of 2026-11-15 (release [`v0.1.21`](https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.21)): an **API list-price estimate, not billing** of work on 3 machines: one since 2026-10-25, one from 2026-11-07 and one from 2026-11-09, mostly spread over earlier days rather than measured. The rest is not counted yet; the split, the spread of the earlier days and the method: [docs/build-cost.md](docs/build-cost.md).
+**About US$6,932** at API list prices to build this app with AI agents, as of 2026-11-20 (release [`v0.1.26`](https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.26)): an **API list-price estimate, not billing** of work on 3 machines: one since 2026-10-25, one from 2026-11-07 and one from 2026-11-09, mostly spread over earlier days rather than measured. The rest is not counted yet; the split, the spread of the earlier days and the method: [docs/build-cost.md](docs/build-cost.md).
 
 ![Daily build cost by model: measured days solid, estimated (spread) days faded and dashed](docs/build-cost-days.svg)
 <!-- build-cost:end -->

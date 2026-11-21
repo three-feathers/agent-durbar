@@ -275,6 +275,13 @@ void (async () => {
     (w.setup as unknown as { plans: typeof w.setup.plans }).plans = () => ({ ...real, plans: real.plans.map((pl) => ({ ...pl, args: [...pl.args, 'a b'] })) });
     assert.deepStrictEqual(w.setup.prepare('codex', 'install'), { ok: false, error: 'This command cannot be run safely on this computer.' }, 'white space in an argument is refused');
     assert.strictEqual(w.calls.length, 0, 'nothing started');
+    // spec 045 FR-065: no drive or UNC cmd.exe (SystemRoot, windir and ComSpec unusable or root-relative): refused, never a bare cmd.exe
+    for (const env of [{ PATH: 'C:\\Program Files\\nodejs' }, { PATH: 'C:\\Program Files\\nodejs', SystemRoot: '\\Windows', ComSpec: '\\x\\cmd.exe' }]) {
+      const n = mk('win32', ['C:\\Program Files\\nodejs\\npm.cmd']);
+      n.setup['deps'].detectEnv.env = env;
+      assert.deepStrictEqual(n.setup.prepare('codex', 'install'), { ok: false, error: 'This command cannot be run safely on this computer.' }, 'FR-065: no drive or UNC cmd.exe, the npm.cmd route is refused: ' + JSON.stringify(env));
+      assert.strictEqual(n.calls.length, 0, 'FR-065: nothing started');
+    }
   }
   // output lines are redacted before they reach the window
   {

@@ -9,6 +9,7 @@
  *  5. personal data stays out of the debug log, `adapters:list` (withSignIn) and the log and export paths (FR-015).
  */
 import * as assert from 'assert';
+import { loggingTimers, withBackstop } from './hang-backstop';
 import { SANDBOX_HOST_OK } from './fakes/claude-cli';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -365,9 +366,8 @@ void (async () => {
         if (id === 'claude') return { nope: true } as unknown as AccountIdentity;
         return new Promise<AccountIdentity>(() => undefined);
       } });
-    const t0 = Date.now();
-    assert.deepStrictEqual(await slow.get(), { copilot: { status: 'unknown', text: 'Account unknown' }, claude: { status: 'unknown', text: 'Account unknown' }, codex: { status: 'unknown', text: 'Account unknown' } });
-    assert.ok(Date.now() - t0 < 2000, 'the time limit holds');
+    const slowGot = await loggingTimers(() => withBackstop(slow.get(), 'account cache: the time limit cuts a check that never answers'), (d) => assert.ok(d.includes(30), `account cache: the check was cut by a timer of the given timeoutMs (30 ms); timers: ${d.join(',')}`));
+    assert.deepStrictEqual(slowGot, { copilot: { status: 'unknown', text: 'Account unknown' }, claude: { status: 'unknown', text: 'Account unknown' }, codex: { status: 'unknown', text: 'Account unknown' } });
     const syncThrow = createAccountCache({ list: async () => [info('copilot', 'ready')], check: () => () => { throw new Error('sync'); } });
     assert.deepStrictEqual(await syncThrow.get(), { copilot: { status: 'unknown', text: 'Account unknown' } });
     // review on #620 (item 2): concurrent refreshes join the running ask; a refresh after it settled asks again
@@ -575,9 +575,8 @@ void (async () => {
       let makes = 0;
       c.createSession = (cfg: Record<string, unknown>) => { makes++; if (typeof cfg.workingDirectory === 'string') hungDirs.push(cfg.workingDirectory); return new Promise<never>(() => undefined); };
       const ad = tune(new FakeCopilot(c));
-      const t0 = Date.now();
-      assert.deepStrictEqual(await ad.accountInfo(), base, 'a hung createSession: the account without a plan');
-      assert.ok(Date.now() - t0 < 1000, 'within the cap');
+      const hungInfo = await loggingTimers(() => withBackstop(ad.accountInfo(), 'a hung createSession: the cap around the whole read'), (d) => assert.ok(d.includes(40), `a hung createSession: the whole read is capped by planTimeoutMs (40 ms); timers: ${d.join(',')}`));
+      assert.deepStrictEqual(hungInfo, base, 'a hung createSession: the account without a plan');
       assert.deepStrictEqual(await ad.accountInfo({ recheck: true }), base, 'Check again answers too');
       assert.strictEqual(makes, 1, 'while it is still in flight, no second session is started beside it');
       tune(ad, { planStaleMs: 0 });

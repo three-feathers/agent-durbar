@@ -16,6 +16,7 @@
  *    and the option row's escaping (a hostile entry).
  */
 import './safetext-shared'; // the compiled hidden-character module for safetext.js (spec 084 FR-033)
+import { cpuMs } from './redact-growth-lib';
 import * as assert from 'assert';
 import { SANDBOX_HOST_OK } from './fakes/claude-cli';
 import { execFileSync } from 'child_process';
@@ -227,10 +228,8 @@ async function main(): Promise<void> {
       }
       const a = S.expandSlash('/f hi', list), b = S.expandSlash('/c hi', list);
       process.stdout.write(JSON.stringify([a === undefined, b === undefined]));`;
-    const t0 = Date.now();
-    const res = execFileSync(process.execPath, ['-e', code], { timeout: 8000, encoding: 'utf8' });
+    const res = execFileSync(process.execPath, ['-e', code], { timeout: 8000, encoding: 'utf8' }); // a hang is the child's own 8 s limit (it throws), not a second wall-clock assert
     assert.deepStrictEqual(JSON.parse(res), [true, true], 'both FIFOs are refused');
-    assert.ok(Date.now() - t0 < 8000);
   });
 
   await test('safety: oversized files, the per-directory cap and the total cap', () => {
@@ -686,11 +685,11 @@ async function main(): Promise<void> {
     const big = 'x'.repeat(10 * 1024);
     // a 200 KB argument in 6,500 placeholders would be 1.3 G characters, past V8's string limit: only an early stop gets through this
     for (const line of [`/many ${'w'.repeat(200 * 1024)}`, `/many ${big}`, `/args ${big}`, '/pos ' + 'y'.repeat(20), `/sk ${'z'.repeat(MAX_SLASH_EXPANDED)}`]) {
-      const t0 = Date.now();
-      const ex = expandSlash(line, l);
+      let ex: ReturnType<typeof expandSlash>;
+      const cpu = cpuMs(() => { ex = expandSlash(line, l); }, 1000);
       assert.ok(ex && ex.asTyped === true && ex.text === line, `${line.slice(0, 6)}: sent as typed`);
       assert.match(ex!.note!, /^Not expanded: the text of .+ would be over 256 KB, so the line was sent as typed\.$/);
-      assert.ok(Date.now() - t0 < 1000, `${line.slice(0, 6)}: stopped early (${Date.now() - t0} ms)`);
+      assert.ok(cpu < 1000, `${line.slice(0, 6)}: stopped early (${cpu.toFixed(0)} ms of CPU time)`);
     }
     // the boundary, for each kind: exactly the cap is expanded, one character less is refused
     const entry = (n: string) => l.find((e) => e.name === n)!;

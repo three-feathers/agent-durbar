@@ -194,35 +194,40 @@ module.exports = async (ctx) => {
     }
     // ---- FR-119 empty office ----
     if (run('empty-office')) {
-      await H.load({ w, h, query: q(world, { simfloors: 'ground' }), ready: REAL, settle: false });
-      await must(PICS, 'the pictures');
-      /* the order is fixed, not left to the simulator's clock: the limit slip is on the first floor (placed under that floor's lobby) before the empty floor is shown, so the slip that crosses is always checked (its kept spot must be placed again under the empty floor's taller lobby) */
-      if (world === 'retro') await must(`!!document.querySelector('#stage .ro-slip.ro-limit:not([hidden])')`, 'the limit slip on the first floor');
-      await H.goToFloor((await H.floors())[1].id);
-      await must(`!!document.querySelector('#stage .ro-eplate')&&!document.querySelector('#stage .ro-ride')`, 'the empty plate, the ride over');
-      await must(PICS, 'the pictures');
-      const em = await js(`(()=>{const p=document.querySelector('#stage .ro-eplate');return {text:p.textContent,desks:document.querySelectorAll('#stage .ro-edesk').length,screens:document.querySelectorAll('#stage .ro-escreen.off').length,lobby:!!document.querySelector('#stage .ro-lobby'),
-        lift:!!document.querySelector('#lift:not([hidden])'),amb:document.querySelector('#stage .ro').dataset.ambient,small:parseFloat(getComputedStyle(p).fontSize)}})()`);
-      assert.ok(/^Nothing on .+ yet\. Move a folder here from its ⋯ menu \(Move to floor\)\.$/.test(em.text), `${tag}: the flat sentence: ${em.text}`);
-      assert.strictEqual(em.desks, 3, `${tag}: three empty desks`);
-      assert.strictEqual(em.screens, 3, `${tag}: screens off`);
-      assert.ok(em.lobby && em.lift, `${tag}: the lobby and the lift stay`);
-      assert.strictEqual(em.amb, '0.7', `${tag}: room at 70 %`);
-      assert.ok(em.small >= 10.5, `${tag}: plate text >= 10.5px`);
-      assert.deepStrictEqual(await slipOverlaps(), [], `${tag}: no slip covers the empty floor's plate`);
-      if (world === 'retro') { /* spec 102 delta 2026-11-14 (T223): the arcade's empty office is a hall: the stage takes the floor like the 15-agent hall, the plate is over its floor and readable, nothing scrolls */
-        const hall = await js(`(()=>{const R=e=>e.getBoundingClientRect(),f=document.getElementById('floor'),s=document.getElementById('stage'),p=document.querySelector('#stage .ro-eplate'),cs=getComputedStyle(f),pc=getComputedStyle(p),fr=R(f),sr=R(s),pr=R(p);
-          return {stageH:Math.round(sr.height),floorBottom:Math.round(fr.bottom-parseFloat(cs.paddingBottom)),stageBottom:Math.round(sr.bottom),gap:Math.round(fr.bottom-parseFloat(cs.paddingBottom)-sr.bottom),scrolls:f.scrollHeight>f.clientHeight+1,fit:s.dataset.fit,
-          plateIn:pr.left>=sr.left&&pr.right<=sr.right&&pr.top>=sr.top&&pr.bottom<=sr.bottom,plateH:Math.round(pr.height),ink:pc.color,bg:pc.backgroundColor,cabs:document.querySelectorAll('#stage .ro-edesk').length}})()`);
-        console.log(`[moments] ${tag}: empty office stage height ${hall.stageH}, floor bottom ${hall.floorBottom}, stage bottom ${hall.stageBottom}`);
-        assert.ok(Math.abs(hall.gap) <= 8, `${tag}: the arcade's empty stage fills the office area: its bottom edge is ${hall.gap}px from the floor's bottom (stage ${hall.stageH}px)`);
-        assert.ok(!hall.scrolls && hall.fit === 'ok', `${tag}: the empty arcade office does not scroll`);
-        const lum = (c) => { const v = (c.match(/[\d.]+/g) || []).slice(0, 3).map(Number).map((x) => { x /= 255; return x <= 0.03928 ? x / 12.92 : ((x + 0.055) / 1.055) ** 2.4; }); return 0.2126 * v[0] + 0.7152 * v[1] + 0.0722 * v[2]; };
-        const ratio = (lum(hall.ink) + 0.05 > lum(hall.bg) + 0.05 ? (lum(hall.ink) + 0.05) / (lum(hall.bg) + 0.05) : (lum(hall.bg) + 0.05) / (lum(hall.ink) + 0.05));
-        assert.ok(ratio >= 4.5, `${tag}: the empty arcade office's words read at 4.5:1 or better (${ratio.toFixed(2)}: ${hall.ink} on ${hall.bg})`);
-        assert.ok(hall.plateIn && hall.plateH > 0, `${tag}: the words card is drawn on the hall's floor`);
+      try {
+        await H.load({ w, h, query: q(world, { simfloors: 'ground' }), ready: REAL, settle: false });
+        await must(PICS, 'the pictures');
+        /* the order is fixed, not left to the simulator's clock: the limit slip is on the first floor (placed under that floor's lobby) before the empty floor is shown, so the slip that crosses is always checked (its kept spot must be placed again under the empty floor's taller lobby) */
+        if (world === 'retro') await must(`!!document.querySelector('#stage .ro-slip.ro-limit:not([hidden])')`, 'the limit slip on the first floor');
+        await H.goToFloor((await H.floors())[1].id);
+        await must(`!!document.querySelector('#stage .ro-eplate')&&!document.querySelector('#stage .ro-ride')`, 'the empty plate, the ride over');
+        await must(PICS, 'the pictures');
+        const em = await js(`(()=>{const p=document.querySelector('#stage .ro-eplate');return {text:p.textContent,desks:document.querySelectorAll('#stage .ro-edesk').length,screens:document.querySelectorAll('#stage .ro-escreen.off').length,lobby:!!document.querySelector('#stage .ro-lobby'),
+          lift:!!document.querySelector('#lift:not([hidden])'),amb:document.querySelector('#stage .ro').dataset.ambient,small:parseFloat(getComputedStyle(p).fontSize)}})()`);
+        assert.ok(/^Nothing on .+ yet\. Move a folder here from its ⋯ menu \(Move to floor\)\.$/.test(em.text), `${tag}: the flat sentence: ${em.text}`);
+        assert.strictEqual(em.desks, 3, `${tag}: three empty desks`);
+        assert.strictEqual(em.screens, 3, `${tag}: screens off`);
+        assert.ok(em.lobby && em.lift, `${tag}: the lobby and the lift stay`);
+        assert.strictEqual(em.amb, '0.7', `${tag}: room at 70 %`);
+        assert.ok(em.small >= 10.5, `${tag}: plate text >= 10.5px`);
+        assert.deepStrictEqual(await slipOverlaps(), [], `${tag}: no slip covers the empty floor's plate`);
+        if (world === 'retro') { /* spec 102 delta 2026-11-14 (T223): the arcade's empty office is a hall: the stage takes the floor like the 15-agent hall, the plate is over its floor and readable, nothing scrolls */
+          const hall = await js(`(()=>{const R=e=>e.getBoundingClientRect(),f=document.getElementById('floor'),s=document.getElementById('stage'),p=document.querySelector('#stage .ro-eplate'),cs=getComputedStyle(f),pc=getComputedStyle(p),fr=R(f),sr=R(s),pr=R(p);
+            return {stageH:Math.round(sr.height),floorBottom:Math.round(fr.bottom-parseFloat(cs.paddingBottom)),stageBottom:Math.round(sr.bottom),gap:Math.round(fr.bottom-parseFloat(cs.paddingBottom)-sr.bottom),scrolls:f.scrollHeight>f.clientHeight+1,fit:s.dataset.fit,
+            plateIn:pr.left>=sr.left&&pr.right<=sr.right&&pr.top>=sr.top&&pr.bottom<=sr.bottom,plateH:Math.round(pr.height),ink:pc.color,bg:pc.backgroundColor,cabs:document.querySelectorAll('#stage .ro-edesk').length}})()`);
+          console.log(`[moments] ${tag}: empty office stage height ${hall.stageH}, floor bottom ${hall.floorBottom}, stage bottom ${hall.stageBottom}`);
+          assert.ok(Math.abs(hall.gap) <= 8, `${tag}: the arcade's empty stage fills the office area: its bottom edge is ${hall.gap}px from the floor's bottom (stage ${hall.stageH}px)`);
+          assert.ok(!hall.scrolls && hall.fit === 'ok', `${tag}: the empty arcade office does not scroll`);
+          const lum = (c) => { const v = (c.match(/[\d.]+/g) || []).slice(0, 3).map(Number).map((x) => { x /= 255; return x <= 0.03928 ? x / 12.92 : ((x + 0.055) / 1.055) ** 2.4; }); return 0.2126 * v[0] + 0.7152 * v[1] + 0.0722 * v[2]; };
+          const ratio = (lum(hall.ink) + 0.05 > lum(hall.bg) + 0.05 ? (lum(hall.ink) + 0.05) / (lum(hall.bg) + 0.05) : (lum(hall.bg) + 0.05) / (lum(hall.ink) + 0.05));
+          assert.ok(ratio >= 4.5, `${tag}: the empty arcade office's words read at 4.5:1 or better (${ratio.toFixed(2)}: ${hall.ink} on ${hall.bg})`);
+          assert.ok(hall.plateIn && hall.plateH > 0, `${tag}: the words card is drawn on the hall's floor`);
+        }
+        await shot(world, 'empty', w, h);
+      } finally {
+        /* issue #1777: going to the empty floor stores it (durbar.floor); a step that runs later in the same run must not start on it (the cells step looks for Jonas's plate on the first floor), so the step leaves the storage as it found it: the first floor */
+        await js(`localStorage.removeItem('durbar.floor');localStorage.removeItem('durbar.floorView')`).catch(() => undefined);
       }
-      await shot(world, 'empty', w, h);
     }
     // ---- FR-120 asleep ----
     if (run('asleep')) {
@@ -242,7 +247,10 @@ module.exports = async (ctx) => {
       const after = await widths();
       const sleepers = after.lounge.filter((x) => x[1] === 'asleep');
       assert.ok(sleepers.length >= 1 && !after.desks.some((x) => x[1] === 'asleep'), `${tag}: an asleep agent whose message is read sits in the lounge row, not at a desk: ${JSON.stringify(after.lounge)}`);
-      assert.ok(after.u >= before.u - 1e-6, `${tag}: the room it leaves goes to the desks: u ${before.u} -> ${after.u}`);
+      /* spec 102 T174: in the circle the lounge row takes its height from the ring, so the desks can come down (the Cave at 1440x900: u 129 -> 92); the claim "the desks take the freed room" is the rows' (097 FR-246), and the circle's is the face floor (FR-229) */
+      const ringed = (await js(`document.querySelector('#stage .ro').dataset.arrangement`)) === 'circle';
+      if (ringed) assert.ok(after.face >= 24, `${tag}: in the circle the desks keep the face floor after an agent goes to the lounge: ${after.face} px`);
+      else assert.ok(after.u >= before.u - 1e-6, `${tag}: the room it leaves goes to the desks: u ${before.u} -> ${after.u}`);
       console.log('[moments] when the message is read', `desk faces ${before.face} -> ${after.face} px; lounge`, JSON.stringify(after.lounge));
       const sl = await js(`(()=>{const P=[...document.querySelectorAll('#stage .ro-plate.asleep')];return P.map(p=>({id:p.dataset.id,l:p.getAttribute('aria-label'),t:p.getAttribute('title'),x:p.textContent,
         person:!!document.querySelector('#stage .ro-person.asleep[data-for="'+p.dataset.id+'"]'),zz:!!document.querySelector('#stage .ro-zz'),w:p.getBoundingClientRect().width,
@@ -267,6 +275,10 @@ module.exports = async (ctx) => {
       assert.strictEqual(geo.chair + geo.small, 0, `${tag}: no empty-chair marker on an asleep desk; no text under 10.5px`);
       console.log('[moments] asleep ok', sl.length);
       await shot(world, 'asleep', w, h);
+      /* spec 097 FR-364: a lounge seat with a pencil has a line of 55% of the plate plus the 22 px the pencil keeps, so the capped name is not cut. Font-independent: the name is forced wide, so the line is at its cap, whatever the font */
+      if (process.env.MOMENTS_MUTANT === 'lounge22') await js(`(()=>{document.querySelectorAll('#stage .ro-plate.lounge.has-ren .ro-l1').forEach(l=>l.style.setProperty('max-width','55%','important'));return 1})()`);
+      const cap = await js(`(()=>{const o=[];for(const p of document.querySelectorAll('#stage .ro-plate.lounge.has-ren')){const l=p.querySelector('.ro-l1'),b=l&&l.querySelector(':scope>b');if(!b)continue;const old=b.style.cssText;b.style.cssText+=';width:1000px';const cs=getComputedStyle(p),w=l.getBoundingClientRect().width,c=p.clientWidth-parseFloat(cs.paddingLeft)-parseFloat(cs.paddingRight);b.style.cssText=old;o.push({want:+(c*0.55+22).toFixed(2),got:+w.toFixed(2)})}return o})()`);
+      if (world === 'retro') assert.ok(cap.length >= 1 && cap.every((c) => Math.abs(c.got - c.want) <= 0.5), `${tag}: a lounge seat's line keeps 22 px more than 55% of the plate for the pencil: ${JSON.stringify(cap)}`);
       /* the name has priority in a narrow plate: no name is cut, at any desk (review 2026-11-02) */
       const CUT = `[...document.querySelectorAll('#stage .ro-plate .ro-l1 b')].filter(b=>{const r=document.createRange();r.selectNodeContents(b);return r.getBoundingClientRect().width>b.getBoundingClientRect().width+0.01}).map(b=>b.textContent)`;
       await H.until(CUT + '.length===0', 4000).catch(() => undefined); /* plates are fitted after the draw */
@@ -358,6 +370,23 @@ module.exports = async (ctx) => {
       await must(`!!document.querySelector('#chat .note.elicit')`, 'the card in the chat');
       assert.ok(await js(`document.getElementById('chat').querySelector('.note.elicit').textContent`).then((t) => /An MCP server asks for input/.test(t)), `${tag}: the chat holds the flat card`);
     }
+    // ---- spec 102 T174 (review finding on #1764, Changes 2026-11-15): every folder sign's + and folder-actions buttons are inside the sign and the topmost thing at their centre (not clipped by the circle's narrow rooms) ----
+    if (run('signreach') && (world === 'cave' || world === 'photo')) {
+      const READ = `(()=>{const R=e=>e.getBoundingClientRect(),out=[];for(const g of document.querySelectorAll('#stage .ro-sign:not(.ro-stag)')){const q=R(g);for(const b of g.querySelectorAll('[data-newsess],[data-foldermenu]')){const r=R(b),e=document.elementFromPoint(r.left+r.width/2,r.top+r.height/2);out.push({sign:g.textContent.trim().slice(0,14),w:Math.round(q.width),ok:r.width>0&&r.left>=q.left-0.5&&r.right<=q.right+0.5&&r.top>=q.top-0.5&&r.bottom<=q.bottom+0.5&&!!e&&(e===b||b.contains(e))})}}return out})()`;
+      for (const n of ['15', '8']) {
+        await H.load({ w, h, query: q(world, { sim: n }), ready: REAL, settle: true });
+        /* what is drawn matters: the Cave's 15-agent frame is rows at both sizes (the ring's face is under the Cave's minFace 30.5 at 1440x900, its folders' rooms leave it no room at 1280x800; spec 102 Changes 2026-11-17), so a check of its signs there is a check of rows; the Cave's 8-agent frame is the circle, the Photo office is rows */
+        const arr = await js(`document.querySelector('#stage .ro').dataset.arrangement`), want = world === 'cave' && n === '8' ? 'circle' : 'rows';
+        assert.strictEqual(arr, want, `${tag}: ${n} agents: the arrangement drawn is ${want}`);
+        const rd = await js(READ);
+        assert.ok(rd.length >= 2, `${tag}: ${n} agents: the signs' buttons were found (${rd.length})`);
+        assert.deepStrictEqual(rd.filter((b) => !b.ok), [], `${tag}: ${n} agents: every sign's + and folder-actions buttons are inside the sign and reachable (elementFromPoint), none clipped`);
+        if (world === 'cave') await shot(world, 'signreach-' + n, w, h); /* the Cave's circle (8 agents) and rows (15) as drawn, for docs/screenshots/102-174-cave-circle-* */
+        /* the mutant of this check: a sign cut to 60 px (what the circle's narrow room did) must fail it, so the check can fail */
+        await js(`(()=>{const g=document.querySelector('#stage .ro-sign:not(.ro-stag) [data-newsess]').closest('.ro-sign');g.classList.add('short');g.style.maxWidth='60px'})()`);
+        assert.ok((await js(READ)).some((b) => !b.ok), `${tag}: mutant (a sign cut to 60 px) is caught by the reachability check`);
+      }
+    }
     // ---- T139: reduced motion and forced colours ----
     if (run('emulation')) {
       await emulate([{ name: 'forced-colors', value: 'active' }], async () => {
@@ -439,7 +468,7 @@ module.exports = async (ctx) => {
       const cf = await js(`(()=>{const p=[...document.querySelectorAll('#stage .ro-plate')].find(p=>/Tomas/.test(p.textContent));return {plate:p.textContent,label:p.getAttribute('aria-label'),title:p.getAttribute('title'),state:p.dataset.state,away:[...document.querySelectorAll('#stage .ro-away')].map(e=>e.textContent),
         chips:[...document.querySelectorAll('#stage .ro-chip')].filter(c=>c.dataset.coffeeid).map(c=>[c.textContent,c.getAttribute('aria-label')])}})()`);
       assert.ok(new RegExp(`^TomasPrompt tuner Coffee break \\u00B7 Coffee break \\u2014 ${RESUMES}`).test(cf.plate) && cf.state === 'waiting', `${tag}: the plate and the status (Waiting, never Error): ${cf.plate} ${cf.state}`);
-      assert.ok(/^Tomas, Prompt tuner, Coffee break, .*at Coffee corner(, context \d+ %)?\. Open chat panel\.$/.test(cf.label), `${tag}: the name (spec 097 FR-325: the context words, when the context is known, come before "Open chat panel."): ${cf.label}`);
+      assert.ok(/^Tomas, Prompt tuner, Coffee break, .*at Coffee corner, On a coffee break(, context \d+ %)?\. Open chat panel\.$/.test(cf.label), `${tag}: the name (spec 097 FR-362: Open office's mood words, "On a coffee break", then FR-325: the context words, when the context is known, before "Open chat panel."): ${cf.label}`);
       assert.ok(cf.away.some((t) => /^at Coffee corner until /.test(t)), `${tag}: the coffee-break post-it says where and until when (owner 2026-11-02): ${JSON.stringify(cf.away)}`);
       assert.strictEqual(await js(`document.querySelectorAll('#stage .ro-tent').length`), 0, `${tag}: no tent card (replaced by the post-it)`);
       assert.deepStrictEqual(await js(`(()=>{const R=e=>e.getBoundingClientRect(),N=[...document.querySelectorAll('#stage .ro-away')],o=[];for(let i=0;i<N.length;i++)for(let j=i+1;j<N.length;j++){const a=R(N[i]),b=R(N[j]);if(a.left<b.right-0.5&&b.left<a.right-0.5&&a.top<b.bottom-0.5&&b.top<a.bottom-0.5)o.push([N[i].textContent,N[j].textContent])}return o})()`), [], `${tag}: no post-it overlaps another, a wide font included`);
@@ -589,8 +618,9 @@ module.exports = async (ctx) => {
       assert.ok(a2.at && a2.chip >= 1 && a2.walkers === 0, `${tag}: after: Mira stands at the Terminal and nothing walks (097 FR-075): ${JSON.stringify(a2)}`);
       await shot(world, 'walk-place', w, h);
     }
-    // ---- 102 T223: the cells that are not one of the nine, looked at in the arcade (chat with a request, the All floors view): pictures and no text under 10.5px ----
-    if (run('cells') && world === 'retro') {
+    // ---- 097 T113: the All floors view as storeys in Photo and the cave too (the same step, same checks); 102 T223: the cells that are not one of the nine, looked at in the arcade (chat with a request, the All floors view): pictures and no text under 10.5px ----
+    if (run('cells')) {
+      if (world === 'retro') {
       await H.load({ w, h, query: q(world, { sim: '15', simfloors: '1' }), ready: REAL, settle: false });
       await must(PICS, 'the pictures');
       await js(`(()=>{const p=[...document.querySelectorAll('#stage .ro-plate')].find(x=>x.textContent.startsWith('Jonas'));p.click()})()`);
@@ -602,6 +632,15 @@ module.exports = async (ctx) => {
       const perm = await js(`(()=>{const c=document.querySelector('#chat .note.perm:not(.settled)');if(!c)return null;const P=(s)=>{const m=/rgba?\\(([^)]+)\\)/.exec(s);return m?m[1].split(/[ ,\\/]+/).filter(Boolean).slice(0,3).map(Number):[0,0,0]},Lm=(a)=>{const f=(x)=>{x/=255;return x<=0.03928?x/12.92:Math.pow((x+0.055)/1.055,2.4)};return 0.2126*f(a[0])+0.7152*f(a[1])+0.0722*f(a[2])};const bg=P(getComputedStyle(c).backgroundColor);const worst=[...c.querySelectorAll('*')].filter(e=>e.children.length===0&&e.textContent.trim()&&e.getClientRects().length&&!e.closest('.btn')).map(e=>{const a=Lm(P(getComputedStyle(e).color)),b=Lm(bg);return (Math.max(a,b)+0.05)/(Math.min(a,b)+0.05)});return {lum:Lm(bg),btns:c.querySelectorAll('.btn').length,texts:worst.length,min:worst.length?Math.min(...worst):0}})()`);
       assert.ok(perm && perm.lum < 0.2 && perm.btns >= 2 && perm.texts > 0 && perm.min >= 4.5, `${tag}: the permission card in the arcade's chat is dark, has its buttons and its text reads at 4.5:1: ${JSON.stringify(perm)}`);
       await shot(world, 'cell-chat', w, h);
+      /* 102 T223 (issue 1891): chat-shell, chat-header and chat-open in the arcade's own tokens (the arcade world.css): the framed screen, the pink rule under the header, the mono upper-case name, the stepped switch-on; none of it is the flat chat's rounded 1 px look */
+      const cs = await js(`(()=>{const g=(s)=>document.querySelector(s),S=(e)=>getComputedStyle(e),panel=S(g('#panel')),rail=g('#panel>.rail'),ph=g('#panel .ph'),h2=g('#panel .ph h2'),pin=S(g('#panel .panel-in'));
+        const btn=[...document.querySelectorAll('#panel .ph .btn')].map(b=>S(b).borderTopLeftRadius);
+        return {frame:panel.outlineWidth,frameStyle:panel.outlineStyle,railEdge:rail?S(rail).borderRightWidth:'none',rule:S(ph).borderBottomWidth,ruleColor:S(ph).borderBottomColor,page:S(document.body).backgroundColor,caps:S(h2).textTransform,mono:/mono|Menlo|Consolas/i.test(S(h2).fontFamily),btnRadius:btn,anim:pin.animationName,steps:pin.animationTimingFunction}})()`);
+      assert.ok(cs.frame === '3px' && cs.frameStyle === 'solid', `${tag}: chat-shell: the open chat is a framed screen (the arcade's 3px frame): ${JSON.stringify(cs)}`);
+      assert.ok(cs.railEdge === '3px', `${tag}: chat-shell: the rail has the arcade's 3px edge: ${JSON.stringify(cs)}`);
+      assert.ok(cs.rule === '3px' && cs.caps === 'uppercase' && cs.mono && cs.btnRadius.length >= 1 && cs.btnRadius.every((r) => r === '0px'), `${tag}: chat-header: a 3px rule, the name in mono capitals, square buttons: ${JSON.stringify(cs)}`);
+      assert.ok(OS_REDUCED ? cs.anim === 'none' : (cs.anim === 'arc-chat-on' && /^steps\(/.test(cs.steps)), `${tag}: chat-open: the chat switches on in hard steps (none under reduced motion): ${JSON.stringify(cs)}`);
+      await shot(world, 'cell-chatshell', w, h);
       /* 102 T223: the chat of the simulator's first Claude agent (Ada) holds the simulator's question card (the question-card cell); Kenji sits on another floor with floors on, so this page has one floor */
       await H.load({ w, h, query: q(world, { sim: '15', simquestion: '1' }), ready: REAL, settle: false });
       await must(PICS, 'the pictures');
@@ -634,10 +673,37 @@ module.exports = async (ctx) => {
       const ab = await js(`(()=>{const {Pa,Lm,over,bgOf,rat,phc}=window.__cx;const b=document.getElementById('answerBar');const lf=[...b.querySelectorAll('*')].filter(e=>e.children.length===0&&e.textContent.trim()&&e.getClientRects().length).map(e=>{const bg=bgOf(e,b);return rat(over(Pa(getComputedStyle(e).color),bg),bg)});return {texts:lf.length,min:lf.length?Math.min(...lf):0,asks:/ asks:/.test(b.textContent),btns:[...b.querySelectorAll('.ab-act button')].map(x=>x.textContent.trim()),small:[...b.querySelectorAll('*')].filter(e=>e.children.length===0&&e.textContent.trim()&&e.getClientRects().length&&parseFloat(getComputedStyle(e).fontSize)<10.5).length,inside:b.getBoundingClientRect().bottom<=document.getElementById('chat').getBoundingClientRect().bottom+120}})()`);
       assert.ok(ab.asks && ab.btns.includes('Answer in chat') && ab.small === 0 && ab.inside && ab.texts > 0 && ab.min >= 4.5, `${tag}: the answer bar names the asker, offers Answer in chat, every text (the buttons too) reads at 4.5:1, text >= 10.5px: ${JSON.stringify(ab)}`);
       await shot(world, 'cell-answerbar', w, h);
+      /* 102 T223 (issue 1891): the MCP elicitation card in the arcade's chat, opened from its bubble: dark like the question card, the arcade's square pink edge and mono heading, its form and buttons there, every text at 4.5:1 and 10.5 px or more */
+      await H.load({ w, h, query: q(world, { simelicit: '1', sim: '3' }), ready: REAL, settle: false });
+      await must(PICS, 'the pictures');
+      await js('window.__cx=(()=>{' + CX + 'return {Pa,Lm,over,bgOf,rat,phc}})();0');
+      await must(`window.__durbarSimUi.slips().elicit.length>=1&&!!document.querySelector('#stage .ro-slip.ro-bubble [data-slipact="open"]')`, 'the MCP request bubble');
+      await js(`document.querySelector('#stage .ro-slip.ro-bubble [data-slipact="open"]').click()`);
+      await must(`document.body.classList.contains('panel-open')&&!!document.querySelector('#chat .note.elicit:not(.settled)')`, 'the MCP card in the arcade chat');
+      await H.settle();
+      const ec = await js(`(()=>{const {Pa,Lm,over,bgOf,rat,phc}=window.__cx;const c=document.querySelector('#chat .note.elicit:not(.settled)');if(!c)return null;const S=getComputedStyle(c),leaf=(e)=>e.children.length===0&&e.textContent.trim()&&e.getClientRects().length;
+        const bg=bgOf(c,document.documentElement),lf=[...c.querySelectorAll('*')].filter(leaf);const min=Math.min(...lf.map(e=>{const b=bgOf(e,document.documentElement);return rat(over(Pa(getComputedStyle(e).color),b),b)}));
+        return {lum:Lm(bg),edge:S.borderTopWidth,radius:S.borderTopLeftRadius,shadow:S.boxShadow!=='none',mono:/mono|Menlo|Consolas/i.test(getComputedStyle(c.querySelector(':scope > b')).fontFamily),fields:c.querySelectorAll('input,select,textarea,.q-other').length,btns:[...c.querySelectorAll('.btn')].length,min,small:lf.filter(e=>parseFloat(getComputedStyle(e).fontSize)<10.5).length}})()`);
+      assert.ok(ec && ec.lum < 0.2 && ec.edge === '3px' && ec.radius === '0px' && ec.shadow && ec.mono, `${tag}: elicitation: the MCP card is dark, with the arcade's 3px square edge, hard shadow and mono heading: ${JSON.stringify(ec)}`);
+      assert.ok(ec.fields >= 1 && ec.btns >= 2 && ec.min >= 4.5 && ec.small === 0, `${tag}: elicitation: its form and buttons are there, every text reads at 4.5:1, nothing under 10.5px: ${JSON.stringify(ec)}`);
+      await shot(world, 'cell-elicit', w, h);
+      }
       await H.load({ w, h, query: q(world, { sim: '15', simfloors: '1' }), ready: REAL, settle: false });
       await must(PICS, 'the pictures');
       /* 102 T223 building-preview (097 FR-105): the real pointer rests on All, as a visitor's does; the page must have seen it enter the button */
       await must(`!!document.querySelector('#lift:not([hidden]) [data-lift="*all"]')`, 'the lift with its All button');
+      if (world === 'retro') { /* the lift asserts and the picture are the arcade's: Photo and the cave draw the flat lift */
+      /* 102 T223 (issue 1891): lift-panel in the arcade's own tokens: square keys with a hard shadow in the mono font, the shown floor a pressed key in the mark's yellow (the flat lift's rounded 1px keys are the fallback this must not be) */
+      const lf = await js(`(()=>{const S=(e)=>getComputedStyle(e),ks=[...document.querySelectorAll('#lift .lift-b')],cur=ks.find(k=>k.getAttribute('aria-current')==='true'),oth=ks.find(k=>k!==cur);if(!cur||!oth)return null;
+        return {n:ks.length,radius:ks.map(k=>S(k).borderTopLeftRadius),shadow:S(oth).boxShadow!=='none',mono:/mono|Menlo|Consolas/i.test(S(oth).fontFamily),curBg:S(cur).backgroundColor,othBg:S(oth).backgroundColor,small:ks.filter(k=>parseFloat(S(k).fontSize)<10.5).length}})()`);
+      assert.ok(lf && lf.n >= 3 && lf.radius.every((r) => r === '0px') && lf.shadow && lf.mono && lf.curBg !== lf.othBg && lf.small === 0, `${tag}: lift-panel: square keys with a hard shadow in the mono font, the shown floor a pressed key of its own colour, 10.5px or more: ${JSON.stringify(lf)}`);
+      /* the lift's colour pairs: the shown key's ink on its yellow and another key's ink on its own surface read at 4.5:1 (MOMENTS_MUTANT=lift-ink sets the shown key's ink to its background: this assert must fail) */
+      await js('window.__cx=(()=>{' + CX + 'return {Pa,Lm,over,bgOf,rat,phc}})();0');
+      if (process.env.MOMENTS_MUTANT === 'lift-ink') await js(`(()=>{const c=document.querySelector('#lift .lift-b[aria-current="true"]');c.style.color=getComputedStyle(c).backgroundColor})()`);
+      const lc = await js(`(()=>{const {Pa,over,bgOf,rat}=window.__cx,ks=[...document.querySelectorAll('#lift .lift-b')],cur=ks.find(k=>k.getAttribute('aria-current')==='true'),oth=ks.find(k=>k!==cur),f=(k)=>{const b=bgOf(k,document.documentElement);return rat(over(Pa(getComputedStyle(k).color),b),b)};return {cur:f(cur),oth:f(oth)}})()`);
+      assert.ok(lc.cur >= 4.5 && lc.oth >= 4.5, `${tag}: lift-panel: the shown key and another key read at 4.5:1: ${JSON.stringify(lc)}`);
+      await shot(world, 'cell-lift', w, h);
+      }
       await js(`window.__bpEnter=false;document.querySelector('#lift [data-lift="*all"]').addEventListener('mouseenter',()=>{window.__bpEnter=true});0`);
       const bp = await js(`(()=>{const r=document.querySelector('#lift [data-lift="*all"]').getBoundingClientRect();return {x:Math.round(r.left+r.width/2),y:Math.round(r.top+r.height/2)}})()`);
       ctx.win.webContents.sendInputEvent({ type: 'mouseMove', x: bp.x, y: bp.y });
@@ -651,10 +717,11 @@ module.exports = async (ctx) => {
       await must(`document.querySelector('#lift [data-lift="*all"]').getAttribute('aria-current')==='true'`, 'the All floors view (the lift says All)');
       await must(PICS, 'the pictures');
       /* 102 T223 (#1268, spec 097 FR-104): the All floors view is the building: a tag with the floor's name for every floor that has a folder, at least two floors, each name at 10.5 px or more and 4.5:1, no tag over a sign, a cabinet or another tag, nothing scrolls */
+      /* spec 097 (#1763, review of #1802): the cave draws its All floors view as storeys at both sizes, as Photo does (the dots fix frees the room the flat hall was taking), so every world and size meets the storey checks below; a cave that fell back to the flat hall now fails them. */
       await must(`document.querySelectorAll('#stage .ro-stag').length>=2`, 'the storey tags of the All floors view');
       const sto = await js(`(()=>{const P=(s)=>{const m=/rgba?\\(([^)]+)\\)/.exec(s);return m?m[1].split(/[ ,\\/]+/).filter(Boolean).slice(0,3).map(Number):[0,0,0]},Lm=(a)=>{const f=(x)=>{x/=255;return x<=0.03928?x/12.92:Math.pow((x+0.055)/1.055,2.4)};return 0.2126*f(a[0])+0.7152*f(a[1])+0.0722*f(a[2])};
         const R=e=>e.getBoundingClientRect(),hit=(a,b)=>a.left<b.right-0.5&&b.left<a.right-0.5&&a.top<b.bottom-0.5&&b.top<a.bottom-0.5;
-        const tags=[...document.querySelectorAll('#stage .ro-stag')], others=[...document.querySelectorAll('#stage .ro-sign:not(.ro-stag),#stage .ro-plate')];
+        const tags=[...document.querySelectorAll('#stage .ro-stag')], others=[...document.querySelectorAll('#stage .ro-sign:not(.ro-stag),#stage .ro-plate,#stage .ro-dots,#stage .ro-chip,#stage .ro-bub,#stage .ro-bang')]; /* review of #1746: the thinking dots and the status chips and cues are in the keep-out too */
         const names=[...document.querySelectorAll('#lift [data-lift]')].filter(b=>b.dataset.lift!=='*all').map(b=>(b.getAttribute('aria-label')||'').split(', floor')[0]);
         const lay=window.__durbarSimUi.realLayout(), folders=new Set(window.__durbarSimUi.agents().filter(a=>!a.parent).map(a=>a.room)).size;
         const fl=document.getElementById('floor'), st=document.getElementById('stage');
@@ -663,23 +730,27 @@ module.exports = async (ctx) => {
           ratio:Math.min(...tags.map(t=>{const b=t.querySelector('b')||t,a=Lm(P(getComputedStyle(b).color)),c=Lm(P(getComputedStyle(t).backgroundColor));return (Math.max(a,c)+0.05)/(Math.min(a,c)+0.05)})),
           overlap:tags.flatMap((t,i)=>tags.slice(i+1).filter(o=>hit(R(t),R(o))).map(()=>'tag x tag').concat(others.filter(o=>hit(R(t),R(o))).map(o=>'tag x '+o.className))),
           cut:tags.filter(t=>{const b=t.querySelector('b');return !b||b.scrollWidth>b.clientWidth+0.5||!R(t).width}).map(t=>t.textContent.trim()), /* review of #1741: the ellipsis is on the <b>, not on the tag's box (that one never overflows) */
+          signDots:[...document.querySelectorAll('#stage .ro-sign:not(.ro-stag)')].flatMap(g=>[...document.querySelectorAll('#stage .ro-dots')].filter(d=>hit(R(g),R(d))).map(()=>g.textContent.trim().slice(0,20))), /* issue #1759: no sign over a thinking person's dots */
+          signBtns:[...document.querySelectorAll('#stage .ro-sign:not(.ro-stag)')].flatMap(g=>[...g.querySelectorAll('.ro-sb')].filter(b=>{const r=R(b),q=R(g),e=document.elementFromPoint((r.left+r.right)/2,(r.top+r.bottom)/2);return !(r.width>0&&r.left>=q.left-1&&r.right<=q.right+1&&r.top>=q.top-1&&r.bottom<=q.bottom+1&&e&&(e===b||b.contains(e)))}).map(b=>(g.textContent.trim().slice(0,12))+' '+(b.dataset.newsess?'+':'...'))), /* review of #1746 round 3: a sign's + and folder-actions buttons are inside the sign and the topmost thing at their centre (not clipped) */
           lounge:document.querySelectorAll('#stage .ro-plate.lounge').length,rest:tags.some(t=>t.textContent.trim()==='Resting'),
           inWindow:tags.every(t=>{const r=R(t);return r.left>=0&&r.right<=innerWidth&&r.top>=0&&r.bottom<=innerHeight}),
           storeys:(lay.storeys||[]).length,scroll:st.dataset.fit==='scroll'||fl.scrollHeight>fl.clientHeight+1}})()`);
       assert.ok(sto.storeys >= 2, `${tag}: the All floors view has at least two storeys: ${JSON.stringify(sto)}`);
-      assert.ok(sto.lounge >= 1 && sto.rest, `${tag}: the simulator's resting agents are on screen under the Resting tag (spec 102, review of #1741: no floor's band holds them): ${JSON.stringify(sto)}`);
+      assert.ok(world !== 'retro' || (sto.lounge >= 1 && sto.rest), `${tag}: the simulator's resting agents are on screen under the Resting tag (spec 102, review of #1741: no floor's band holds them): ${JSON.stringify(sto)}`);
       assert.ok(sto.names.length >= 2 && sto.names.every((n) => sto.texts.some((t) => t.endsWith(' ' + n))), `${tag}: every floor's name is on screen in a storey tag: ${JSON.stringify([sto.names, sto.texts])}`);
       assert.deepStrictEqual(sto.cut, [], `${tag}: no storey tag cuts its name (its <b> fits)`);
       assert.strictEqual(sto.small, 0, `${tag}: the storey tags are 10.5px or more`);
       assert.ok(sto.ratio >= 4.5, `${tag}: the storey tags read at 4.5:1: ${sto.ratio}`);
-      assert.deepStrictEqual(sto.overlap, [], `${tag}: no storey tag covers a sign, a plate or another tag`);
+      assert.deepStrictEqual(sto.overlap, [], `${tag}: no storey tag covers a sign, a plate, thinking dots, a chip or another tag`);
+      assert.deepStrictEqual(sto.signBtns, [], `${tag}: every folder sign's + and folder-actions buttons are visible, inside the sign and not clipped`);
+      assert.deepStrictEqual(sto.signDots, [], `${tag}: no folder sign covers a thinking person's dots (issue #1759)`);
       assert.ok(sto.inWindow, `${tag}: every storey tag is inside the window`);
       assert.strictEqual(sto.scroll, false, `${tag}: the All floors view does not scroll`);
       /* round 4 of the review of #1741: a storey tag never cuts a folder sign so far that its "New session" and "Folder actions" buttons fall outside it: each button lies inside its sign and the element at its centre is the button */
       const btn = await js(`(()=>{const R=e=>e.getBoundingClientRect();const out=[];for(const sg of document.querySelectorAll('#stage .ro-sign:not(.ro-stag)')){const sr=R(sg);for(const b of sg.querySelectorAll('[data-newsess],[data-foldermenu]')){const r=R(b),at=document.elementFromPoint(r.left+r.width/2,r.top+r.height/2);out.push({id:b.dataset.newsess||b.dataset.foldermenu,inside:r.left>=sr.left-0.5&&r.right<=sr.right+0.5&&r.top>=sr.top-0.5&&r.bottom<=sr.bottom+0.5,hit:!!at&&(at===b||b.contains(at))})}}return out})()`);
       assert.ok(btn.length >= 2 && btn.every((b) => b.inside && b.hit), `${tag}: every sign's + and folder-actions buttons are inside the sign and reachable: ${JSON.stringify(btn.filter((b) => !b.inside || !b.hit))} of ${btn.length}`);
       await shot(world, 'cell-allfloors', w, h);
-      for (const f of ['cell-chat', 'cell-question', 'cell-focus-answer', 'cell-focus-skip', 'cell-answerbar', 'cell-preview', 'cell-allfloors']) assert.ok(fs.existsSync(path.join(OUT, `${world}-${f}-${w}x${h}.png`)), `${tag}: the picture ${f} was written`);
+      for (const f of world === 'retro' ? ['cell-chat', 'cell-question', 'cell-focus-answer', 'cell-focus-skip', 'cell-answerbar', 'cell-chatshell', 'cell-elicit', 'cell-lift', 'cell-preview', 'cell-allfloors'] : ['cell-preview', 'cell-allfloors']) assert.ok(fs.existsSync(path.join(OUT, `${world}-${f}-${w}x${h}.png`)), `${tag}: the picture ${f} was written`);
       await js(`localStorage.removeItem('durbar.floor');localStorage.removeItem('durbar.floorView')`); /* the next size starts on one floor */
     }
   }

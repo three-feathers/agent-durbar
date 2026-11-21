@@ -411,15 +411,15 @@ async function driver(ctx) {
      screen must be the one asked for, or the run fails (it once measured Clean Office for every theme). */
   const userTheme = process.env.OFFICE_USER_THEME ? JSON.parse(fs.readFileSync(process.env.OFFICE_USER_THEME, 'utf8')) : null;
   const wantTheme = userTheme ? userTheme.id : (process.env.OFFICE_THEME || '');
-  /* spec 077 FR-070: OFFICE_CHARACTERS=<value> (theme, minimalist, cheeky, prehistoric, pirate, monster, royal, rebels) puts who sits at the desks in the address too; checked like the theme */
-  const wantChars = /^(theme|minimalist|cheeky|prehistoric|pirate|monster|royal|rebels)$/.test(process.env.OFFICE_CHARACTERS || '') ? process.env.OFFICE_CHARACTERS : '';
-  if (process.env.OFFICE_CHARACTERS && !wantChars) throw new Error('OFFICE_CHARACTERS must be theme, minimalist, cheeky, prehistoric, pirate, monster, royal or rebels');
+  /* spec 077 FR-070: OFFICE_CHARACTERS=<value> (theme, minimalist, cheeky, prehistoric, pirate, monster, royal, rebels, mine) puts who sits at the desks in the address too; checked like the theme */
+  const wantChars = /^(theme|minimalist|cheeky|prehistoric|pirate|monster|royal|rebels|mine)$/.test(process.env.OFFICE_CHARACTERS || '') ? process.env.OFFICE_CHARACTERS : '';
+  if (process.env.OFFICE_CHARACTERS && !wantChars) throw new Error('OFFICE_CHARACTERS must be theme, minimalist, cheeky, prehistoric, pirate, monster, royal, rebels or mine');
   /* spec 102 T226 (FR-267): OFFICE_WORLD=retro or cave (with OFFICE_VIEW=real) draws the arcade or the cave, the worlds behind a flag, in the address like the theme; only a listed value (spec 097 Changes 2026-11-14) */
   const wantWorld = process.env.OFFICE_WORLD === 'retro' || process.env.OFFICE_WORLD === 'cave' ? process.env.OFFICE_WORLD : '';
   if (process.env.OFFICE_WORLD && !wantWorld) throw new Error('OFFICE_WORLD must be retro or cave');
   const expectDark = process.env.CHECK_EXPECT_DARK === '1';
   if (expectDark && !userTheme) throw new Error('CHECK_EXPECT_DARK=1 needs OFFICE_USER_THEME: the dark fixture is a user theme');
-  const themeQuery = (wantWorld ? '&worldflags=' + wantWorld + '&world=' + wantWorld : '') + (wantTheme ? '&theme=' + encodeURIComponent(wantTheme) : '') + (userTheme ? '&usertheme=' + encodeURIComponent(JSON.stringify(userTheme)) : '') + (wantChars ? '&characters=' + wantChars : '');
+  const themeQuery = (wantWorld ? '&worldflags=' + wantWorld + '&world=' + wantWorld : '') + (wantTheme ? '&theme=' + encodeURIComponent(wantTheme) : '') + (userTheme ? '&usertheme=' + encodeURIComponent(JSON.stringify(userTheme)) : '') + (wantChars ? '&characters=' + wantChars : '') + (wantChars === 'mine' ? '&simmine=3' : ''); /* spec 096 FR-072: the simulator's three saved characters */
   if (wantChars) console.log('check:office: characters ' + wantChars);
   let motionShown = false;
   if (wantTheme) console.log('check:office: theme ' + wantTheme + (userTheme ? ' (user theme from ' + path.basename(process.env.OFFICE_USER_THEME) + ')' : ''));
@@ -440,11 +440,11 @@ async function driver(ctx) {
       try { await ctx.waitFor(`window.THEME.characters()===${jsLiteral(wantChars)}`, 5000); } catch (e) { /* reported below */ }
       const ch = await ctx.js(`window.THEME.characters()`);
       if (ch !== wantChars) throw new Error(`characters ${wantChars} were not applied (on screen: ${ch})`);
-      /* Cheeky: the kit drawn must be the crew, and the desk scenes on screen must show it, or the run would measure the theme's own figures */
-      if (wantChars === 'cheeky') {
+      /* Cheeky: the kit drawn must be the crew, and the desk scenes on screen (none when every room is closed) must show it, or the run would measure the theme's own figures */
+      if (wantChars === 'cheeky' || wantChars === 'mine') {
         const crewOn = `window.THEME.sceneKit()==='crew'&&(()=>{const sc=[...document.querySelectorAll('#stage svg.scene')].filter(s=>s.getClientRects().length);return !sc.length||sc.some(s=>/\\|crew(\\||$)/.test(s.dataset.sig||''));})()`;
         try { await ctx.waitFor(crewOn, 8000); } catch (e) { /* reported below */ }
-        if (!(await ctx.js(crewOn))) throw new Error('characters cheeky: the desks on screen do not draw the crew kit');
+        if (!(await ctx.js(crewOn))) throw new Error(`characters ${wantChars}: the desks on screen do not draw the crew kit`);
       }
     }
     if (!motionShown) { motionShown = true; console.log('check:office: motion ' + ((await ctx.js(`matchMedia('(prefers-reduced-motion: reduce)').matches`)) ? 'reduced' : 'on')); }
@@ -496,7 +496,7 @@ async function driver(ctx) {
     const flatFiles = await ctx.js(`performance.getEntriesByType('resource').map(e=>e.name).filter(n=>/realoffice|\\/shared\\/(lights|realoffice-layout)\\.js/.test(n))`);
     total++;
     if (flatFiles.length || (await ctx.js(`!!window.DurbarRealOffice||!!document.querySelector('.ro')`))) { failed++; console.log('FAIL real: flat mode loaded Real office files: ' + flatFiles.join(', ')); }
-    const realCheck = (amb, want, asked) => {
+    const realCheck = (amb, want, asked, floors, mut) => {
       const P = [], ro = document.querySelector('#stage .ro'), L = window.__durbarSimUi.realLayout();
       if (!ro || !L) return { problems: ['no Real office drawn'], info: {} };
       /* T276: a run that asked for the arcade must have drawn it, or it would pass on the Photo office */
@@ -509,14 +509,32 @@ async function driver(ctx) {
       const boxes = [];
       const add = (kind, e, r, rid) => { if (e && !e.getClientRects().length) return; boxes.push({ kind, id: e ? (e.dataset.id || e.dataset.place || e.dataset.folder || e.dataset.for || e.textContent.slice(0, 16)) : (rid || ''), r: r || R(e) }); };
       document.querySelectorAll('#stage .ro-plate').forEach((e) => add('plate', e));
-      document.querySelectorAll('#stage .ro-sign').forEach((e) => add('sign', e));
+      document.querySelectorAll('#stage .ro-sign:not(.ro-stag)').forEach((e) => add('sign', e));
+      /* spec 097 FR-038 (delta 2026-11-15, T350, issues 1763 and 1759) and FR-104 (T113, review of PR 1746): the storey tags of the All floors view and the thinking dots over a head are boxes too; a folder sign (every view) and a storey tag must keep clear of the dots, and the dots are measured against nothing else here (they stand over a person by design) */
+      document.querySelectorAll('#stage .ro-stag').forEach((e) => add('stag', e));
+      /* spec 097 FR-038 (delta 2026-11-19, issue 1759, T369): the dots keep 6 px (DOTS_CLEAR + the sign's 1 px) clear below a sign or a storey tag, not only no overlap: at 3 px they read as touching. Mutant (a test-only edit of the page, OFFICE_MUTANT=dots-close): every dots box moves up 3 px, which still does not overlap but leaves 3 px. */
+      if (mut === 'dots-close') document.querySelectorAll('#stage .ro-dots').forEach((e) => { e.style.transform = 'translateY(-3px)'; });
+      document.querySelectorAll('#stage .ro-dots').forEach((e) => add('dots', e));
+      if (floors) {
+        /* spec 097 (issue 1810, T357; review of PR 1811): the cave draws its All floors view as storeys, as Photo does (measured: macOS Apple M4 and Linux under xvfb with DejaVu Sans both draw 3 storeys, 3 tags; no machine has been shown drawing it flat), so the check asserts storeys in every world: a cave that fell back to the flat hall would be a regression, not an accepted outcome. Mutants (a test-only edit of the page, OFFICE_MUTANT): cave-tag drops one tag; cave-flat takes the storeys and tags away (a cave that fell back to flat). */
+        if (asked === 'cave' && mut === 'cave-flat' && L.storeys) { L.storeys = null; document.querySelectorAll('#stage .ro-stag, #stage .ro-slab').forEach((e) => e.remove()); }
+        if (asked === 'cave' && mut === 'cave-tag' && L.storeys) { const t = document.querySelector('#stage .ro-stag'); if (t) t.remove(); }
+        const tags = [...document.querySelectorAll('#stage .ro-stag')];
+        if (!L.storeys || L.storeys.length < 2 || tags.length !== L.storeys.length) P.push('the All floors view did not draw its storeys (' + (L.storeys ? L.storeys.length : 0) + ' in the layout, ' + tags.length + ' tags on screen)');
+        tags.forEach((e) => { const b = e.querySelector('b'); if (!b || b.scrollWidth > b.clientWidth + 0.5) P.push('storey tag "' + e.textContent.trim() + '" cuts its name'); }); /* the ellipsis is on the <b>, not on the tag's box */
+      }
       document.querySelectorAll('#stage .ro-lplate').forEach((e) => add('placeplate', e));
       document.querySelectorAll('#stage .ro-chip').forEach((e) => add('chip', e));
       document.querySelectorAll('#stage .ro-drafttag.on').forEach((e) => add('drafttag', e)); /* spec 097 FR-316 */
       /* spec 102 (issue #1632): in the arcade a Draft tag stays off its cabinet's whole screen box (the glass and the bezel round it), and an empty seat's tag, on the post-it beside the cabinet, off the cabinet too: both boxes are measured against the Draft tag only. Mutant (a source edit): in src/renderer/realoffice.js the `dr:` tag's box, drop the `lay.cabinet && ...` clamp (use `d.away.x - d.away.s / 2` alone), build, run: it must fail "drafttag <id> overlaps cabinet <id>" (and screenbox) on every post-it that stands right of its cabinet */
-      if (want) {
+      let cabs = 0;
+      if (want === 'retro') { /* the arcade's cabinets only: the cave has none (`want` is `cave` there, and the cabinet lookup threw on null: spec 097 delta 2026-11-15) */
         document.querySelectorAll('#stage .ro-screen:not(.ro-lmon)').forEach((e) => add('screenbox', e));
-        for (const z of L.zones) for (const d of z.desks) if (d.away) add('cabinet', document.querySelector('#stage .ro-desk.ro-cab[data-for="' + d.id + '"]'));
+        for (const z of L.zones) for (const d of z.desks) { /* every cabinet, not only an empty seat's: a Draft tag of a desk with its person must stay off the cabinet's base too (owner decision 2026-11-18, issue #1632; the person's stand box is measured with it). Mutant (a source edit): in src/renderer/realoffice.js the `dr:` tag, make `side` always null, build, run: it must fail "drafttag <id> overlaps cabinet <id>" on every desk that has a person */
+          add('cabinet', document.querySelector('#stage .ro-desk.ro-cab[data-for="' + d.id + '"]'));
+          if (!d.away && d.stand) { cabs++; add('figure', null, { x: o.left + d.stand.x, y: o.top + d.stand.y, r: o.left + d.stand.x + d.stand.w, b: o.top + d.stand.y + d.stand.h }, d.id); }
+        }
+        if (!cabs) P.push('no cabinet with a person was in the checked layout');
       }
       document.querySelectorAll('#stage .ro-away').forEach((e) => add('away', e));
       document.querySelectorAll('#stage .ro-screen .ro-bezel').forEach((e) => add('screen', e));
@@ -530,7 +548,12 @@ async function driver(ctx) {
       for (let i = 0; i < boxes.length; i++) for (let j = i + 1; j < boxes.length; j++) {
         const a = boxes[i], b = boxes[j];
         if (a.kind === 'face' && b.kind === 'face') continue;
+        if ((a.kind === 'dots' || b.kind === 'dots') && ![a.kind, b.kind].some((k) => k === 'stag' || k === 'sign')) continue; /* FR-038: a sign never covers the dots, in any view (the dots meet only a sign or a storey tag here; the All floors view's tags: review round 2, issue #1759) */
         if (['figure', 'cabinet', 'screenbox'].some((k) => a.kind === k || b.kind === k) && a.kind !== 'drafttag' && b.kind !== 'drafttag') continue; /* a figure, a cabinet and a screen box are only measured against the Draft tag (the plate stands in front of the lap by design) */
+        if ((a.kind === 'dots' || b.kind === 'dots') && [a.kind, b.kind].some((k) => k === 'stag' || k === 'sign')) { /* the dots' clearance below a sign or tag that stands over them: at least 6 px (FR-038) */
+          const d = a.kind === 'dots' ? a : b, t = d === a ? b : a;
+          if (d.r.x < t.r.r && t.r.x < d.r.r && d.r.y >= t.r.y && d.r.y - t.r.b < 5.5) P.push(`dots ${d.id} are ${(d.r.y - t.r.b).toFixed(1)} px under ${t.kind} ${t.id}, less than the 6 px clear (FR-038)`);
+        }
         if (hit(a.r, b.r)) P.push(`${a.kind} ${a.id} overlaps ${b.kind} ${b.id}`);
       }
       for (const b of boxes) if (b.r.x < fl.left - 0.5 || b.r.r > fl.right + 0.5 || b.r.y < o.top - 0.5 || b.r.b > o.bottom + 0.5) P.push(`${b.kind} ${b.id} outside the office`);
@@ -567,13 +590,15 @@ async function driver(ctx) {
       const se = document.scrollingElement;
       if (se.scrollWidth > innerWidth + 1 || se.scrollHeight > innerHeight + 1) P.push('the page overflows');
       if (amb != null) ro.style.removeProperty('--ro-amb');
-      return { problems: P, info: { plates: document.querySelectorAll('#stage .ro-plate').length, face: L.faceH, u: L.u, scroll: L.scroll, minFont, minRatio, drafts: document.querySelectorAll('#stage .ro-drafttag.on').length, seats: L.lounge ? L.lounge.desks.length : 0 } };
+      return { problems: P, info: { storeys: L.storeys ? L.storeys.length : 0, plates: document.querySelectorAll('#stage .ro-plate').length, face: L.faceH, u: L.u, scroll: L.scroll, minFont, minRatio, drafts: document.querySelectorAll('#stage .ro-drafttag.on').length, seats: L.lounge ? L.lounge.desks.length : 0 } };
     };
     /* simrooms=1: one folder of 15, split over rows (its sign repeats); simrooms=solo: 15 folders, past the exhaustive search */
-    for (const [sim, rooms] of [[3, ''], [12, ''], [15, ''], [15, '1'], [15, 'solo']]) for (const [w, h] of SIZES) {
+    /* spec 097 T113 (FR-104, review of PR 1746): the All floors view in the Real office too (`simfloors=1`, the lift's All): 15 agents over three floors, drawn as storeys; the same checks plus no storey tag over a sign, plate, chip, dots or another tag, none cut. */
+    for (const [sim, rooms, floors] of [[3, ''], [12, ''], [15, ''], [15, '1'], [15, 'solo'], [15, '', true]]) for (const [w, h] of SIZES) {
       if (!mine()) continue;
-      const tag = `real sim${sim}${rooms ? '-rooms' + rooms : ''}-${w}x${h}`;
-      await load(`sim=${sim}&simfreeze=1&officeview=real${rooms ? '&simrooms=' + rooms : ''}`, w, h);
+      const tag = `real sim${sim}${rooms ? '-rooms' + rooms : ''}${floors ? '-allfloors' : ''}-${w}x${h}`;
+      await ctx.js(`localStorage.removeItem('durbar.floor');` + (floors ? `localStorage.setItem('durbar.floorView','all')` : `localStorage.removeItem('durbar.floorView')`)); // the view is read at start (FR-037)
+      await load(`sim=${sim}&simfreeze=1&officeview=real${rooms ? '&simrooms=' + rooms : ''}${floors ? '&simfloors=1' : ''}`, w, h);
       if (!(await H.until(`!!document.querySelector('#stage .ro .ro-plate')&&[...document.querySelectorAll('#stage .ro img')].every(i=>i.complete)`, 15000))) { total++; failed++; console.log(`FAIL ${tag}: the Real office was not drawn`); continue; }
       /* OFFICE_FONT: the other fonts of other machines (a CI runner's wider sans broke the chips and plates once): every Real office text in that family, drawn again */
       if (process.env.OFFICE_FONT) {
@@ -615,15 +640,16 @@ async function driver(ctx) {
       if (!(await H.until(`window.__durbarSimUi.visitsSettled()&&window.__durbarSimUi.settleNow()`, 15000))) { total++; failed++; console.log(`FAIL ${tag}: the office did not settle after the drafts were seeded`); continue; }
       await stable(tag + ' with drafts');
       for (const [step, amb] of [['closed', 0.7], ['closed', 1]]) {
-        const res = await ctx.js(`(${realCheck.toString()})(${amb},${jsLiteral(wantWorld)},${jsLiteral(process.env.OFFICE_WORLD || '')})`);
+        const res = await ctx.js(`(${realCheck.toString()})(${amb},${jsLiteral(wantWorld)},${jsLiteral(process.env.OFFICE_WORLD || '')},${jsLiteral(!!floors)},${jsLiteral(process.env.OFFICE_MUTANT || '')})`);
         if (amb === 1 && res.info.seats) console.log(`  ${tag}: ${res.info.seats} lounge seat${res.info.seats > 1 ? 's' : ''}, each with its Draft tag measured against its own figure`);
         if (!res.info.drafts) res.problems.push('no Draft tag was in the checked layout');
         total++;
         if (sim === 15 && res.info.scroll) res.problems.push('the office scrolls at the 15-agent scale');
-        if (sim === 15 && !rooms && res.info.face < 30.5) res.problems.push(`desk face ${res.info.face.toFixed(1)}px (ratchet 30.5px, lowered 2026-11-01 for a room that stays still; SC-002 target 40px is a KNOWN GAP)`);
+        const ratchet = 30.5; /* the cave too (spec 097 FR-308, delta 2026-11-15): its helper strip is not drawn where it would take the face under 30.5 px (world.json `minFace`) */
+        if (sim === 15 && !rooms && res.info.face < ratchet) res.problems.push(`desk face ${res.info.face.toFixed(1)}px (ratchet ${ratchet.toFixed(1)}px, lowered 2026-11-01 for a room that stays still; SC-002 target 40px is a KNOWN GAP)`);
         if (res.problems.length) { failed++; console.log(`FAIL ${tag} ${step} ambient ${amb}: ${res.problems.slice(0, 12).join('; ')}`); }
         rows.push({ label: `${tag} ${step} ambient ${amb}`, d: 'real', h: '-', rooms: '-', plates: res.info.plates, desks: res.info.plates, stageH: Math.round(res.info.u || 0), floorH: 0, minFont: res.info.minFont, problems: res.problems.length });
-        console.log(`  ${tag}: face ${res.info.face ? res.info.face.toFixed(1) : '?'}px, u ${res.info.u ? res.info.u.toFixed(0) : '?'}, contrast >= ${res.info.minRatio ? res.info.minRatio.toFixed(2) : '?'}`);
+        console.log(`  ${tag}:${res.info.outcome ? ' outcome: ' + res.info.outcome + ',' : ''} face ${res.info.face ? res.info.face.toFixed(1) : '?'}px, u ${res.info.u ? res.info.u.toFixed(0) : '?'}, contrast >= ${res.info.minRatio ? res.info.minRatio.toFixed(2) : '?'}`);
       }
       /* OFFICE_SHOTS only (spec 102 T281): the draft seeding leaves the last plate hovered and focused, and its tooltip covers cabinets in the picture; take the pointer and the focus away first (the checks above are done) */
       if (shotsDir) {
@@ -963,9 +989,9 @@ async function driver(ctx) {
     for (const sim of SIMS) {
       if (!mine()) continue;
       await run(`solo sim${sim}-${w}x${h}`, `sim=${sim}&simfreeze=1&simrooms=solo`, w, h, shotsDir ? `solo-sim${sim}-${w}x${h}` : '');
-      const tip = await ctx.js(`[...document.querySelectorAll('#stage .room-name')].every((n)=>(n.title||'').startsWith(n.textContent.replace(/…$/,'')))`);
+      const tip = await ctx.js(`[...document.querySelectorAll('#stage .room-name')].every((n)=>{const t=n.closest('.room-head').dataset.tip||'';return t.split('\\n')[0]===n.textContent;})`);
       total++;
-      if (!tip) { failed++; console.log(`FAIL solo sim${sim}-${w}x${h}: a room name has no full-name tooltip`); }
+      if (!tip) { failed++; console.log(`FAIL solo sim${sim}-${w}x${h}: a room head has no tooltip with its full name`); }
     }
   }
   /* spec 012 T018 (FR-068): Claude-like, Codex-like and basic agents beside Copilot. No floors here, so no floor-tag checks; the toolbar stays on one row */
@@ -1275,7 +1301,7 @@ async function driver(ctx) {
       await type('explicacion');
       if (shotsDir) await ctx.shot(path.join(shotsDir, `${prefix}-prevsearch-${w}x${h}.png`));
       await ctx.js(`document.getElementById('prevQ').focus()`);
-      H.key('Escape', [], { pause: 0 });
+      await H.key('Escape', [], { pause: 0 });
       await must(`(document.getElementById('prevQ')||{value:'x'}).value===''`, 'Escape to clear the search box');
       await stable('after Escape');
       const cleared = await ctx.js(`({v:document.getElementById('prevQ')&&document.getElementById('prevQ').value,rows:document.querySelectorAll('#prevLists .prev-row').length})`);
@@ -1313,7 +1339,8 @@ if (require.main === module) {
   // OFFICE_REDUCED_MOTION=1: Chromium reports prefers-reduced-motion, so walks are instant and nothing animates (spec 008 FR-030).
   // The plain check keeps motion on, so walking and animated states are still checked there once.
   const args = ['.', '--no-sandbox', ...(process.env.OFFICE_REDUCED_MOTION === '1' ? ['--force-prefers-reduced-motion'] : [])];
-  const r = useXvfb ? spawnSync('xvfb-run', ['-a', electron, ...args], { cwd: ROOT, env, stdio: 'inherit' }) : spawnSync(electron, args, { cwd: ROOT, env, stdio: 'inherit' });
+  const [file, argv] = require('./ui-suite.js').launchCommand(useXvfb, electron, args, ''); // spec 008 FR-269: the sized Xvfb screen of the suite, no screen change elsewhere
+  const r = spawnSync(file, argv, { cwd: ROOT, env, stdio: 'inherit' });
   if (r.error) { console.error(r.error.message); process.exit(2); }
   process.exit(fs.existsSync(marker) ? 1 : r.status === 0 ? 0 : r.status || 1);
 }

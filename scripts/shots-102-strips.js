@@ -15,6 +15,8 @@
  *   aria-expanded and a tab stop; the strips are hidden until Show; Show opens each as an overlay under the bar that takes no office height;
  *   List... opens the overlay by itself and the list is in view; Escape hides it and focus is on the bar's button; Dismiss on the last strip
  *   takes the bar away;
+ * - restore+away+MCP (three strips) and crash Pick open with restore: the same rule at both sizes (issue #1589, Linux; Windows not run);
+ * - a status filter (Working pill, 14 or 11 cabinets) plus the MCP strip, restore+away, or restore+away+MCP: the office does not scroll and the filter note is not covered (gap (b) of #1597);
  * - 16 agents with five strips at 1280x800: the yield does not help, so the strips stay in the flow and the office scrolls as before;
  * - Photo: no yield whatever the strips.
  */
@@ -33,8 +35,11 @@ module.exports = async (ctx) => {
     { id: 'crash', strips: ['crash'], bar: false },
     { id: 'mcp+crash', strips: ['mcp', 'crash'], bar: false },
     { id: 'mcp-list', strips: ['mcp'], list: true, bar: true },
+    { id: 'restore+away+mcp', strips: ['restore', 'away', 'mcp'], bar: (w) => w === 1280 },
+    { id: 'crash-pick+restore', strips: ['restore', 'crash'], pick: true, bar: (w) => w === 1280 },
     { id: 'all5', strips: ['restore', 'away', 'crash', 'follow', 'mcp'], bar: (w) => w === 1280 },
   ];
+  const ALL5 = CASES.find((c) => c.id === 'all5');
   const setup = async (c, w, h, agents) => {
     const q = { simkinds: 'mixed', officeview: 'real', sim: String(agents || 15) };
     if (c.strips.includes('away')) q.simaway = '1';
@@ -61,7 +66,7 @@ module.exports = async (ctx) => {
   const fits = (S) => S.sh <= S.ch + 1 && S.fit === 'ok' && S.inside;
 
   if (PHOTO) {
-    const c = CASES[3];
+    const c = ALL5;
     await H.load({ w: 1280, h: 800, ready: 'fit', focus: true, query: { simkinds: 'mixed', officeview: 'real', simaway: '1', simcrash: '3', simmcplaunch: '1', simmcpauth: '1' } });
     assert.strictEqual(await js(`document.documentElement.dataset.world`), 'photo', 'photo: the world is the Photo office');
     await js(`window.__durbarSimUi.afNotice.on(true);0`);
@@ -80,7 +85,8 @@ module.exports = async (ctx) => {
     for (const c of CASES) {
       await setup(c, w, h);
       if (c.list) await js(`document.querySelector('#mcpStrip [data-ml="list"]').click();0`);
-      if (c.list) await settle();
+      if (c.pick) await js(`document.querySelector('#crashStrip [data-cr="pick"]').click();0`);
+      if (c.list || c.pick) await settle();
       let S = await js(STATE);
       const tell = JSON.stringify(S);
       assert.ok(fits(S), `${c.id} ${w}x${h}: the office does not scroll (scrollHeight ${S.sh} against ${S.ch}): ${tell}`);
@@ -94,8 +100,8 @@ module.exports = async (ctx) => {
       const n = S.shown.length;
       assert.ok(S.bar && S.yield, `${c.id} ${w}x${h}: the strips gave way to the bar: ${tell}`);
       assert.ok(S.barText.startsWith(`${n} notice${n === 1 ? '' : 's'}: `), `${c.id} ${w}x${h}: the bar counts the strips (${n}): ${S.barText}`);
-      if (c.id === 'all5') {
-        assert.ok(/Allow all restored/.test(S.barText) && /Interrupted sessions/.test(S.barText), `${c.id} ${w}x${h}: the bar's text names the folded alert strips: ${S.barText}`);
+      if (c.strips.includes('restore')) {
+        assert.ok(/Allow all restored/.test(S.barText) && (!c.strips.includes('crash') || /Interrupted sessions/.test(S.barText)), `${c.id} ${w}x${h}: the bar's text names the folded alert strips: ${S.barText}`);
         assert.strictEqual(await js(`document.getElementById('stripBar').getAttribute('role')`), 'status', `${c.id} ${w}x${h}: the bar stays role=status (the alert is its own region)`);
         assert.strictEqual(await js(`document.getElementById('stripAlert').textContent`), 'Allow all restored', `${c.id} ${w}x${h}: the always-present alert region holds the phrase while the restore strip is folded in (a display:none alert is never read)`);
         assert.strictEqual(await js(`document.getElementById('stripAlert').getAttribute('role')`), 'alert', `${c.id} ${w}x${h}: the alert region is role=alert`);
@@ -103,9 +109,9 @@ module.exports = async (ctx) => {
         assert.strictEqual(await js(`document.getElementById('stripAlert').textContent`), '', `${c.id} ${w}x${h}: no restore strip folded in, so the alert region is empty`);
       }
       assert.ok(S.btn && S.btn.name && /^(Show|Hide) /.test(S.btn.name) && S.btn.tab >= 0 && !S.btn.dis, `${c.id} ${w}x${h}: the bar's button has an accessible name and a tab stop: ${JSON.stringify(S.btn)}`);
-      if (c.list) {
+      if ((c.list || c.pick)) {
         assert.ok(S.open && S.btn.exp === 'true', `${c.id} ${w}x${h}: List... opens the overlay by itself: ${tell}`);
-        assert.ok(await js(`(()=>{const l=document.querySelector('#mcpStrip [data-mlk]');if(!l)return false;const r=l.getBoundingClientRect();return r.height>0&&r.bottom<=innerHeight})()`), `${c.id} ${w}x${h}: the opened list is in view`);
+        assert.ok(await js(`(()=>{const l=document.querySelector(${jsLiteral(c.pick ? '#crashList' : '#mcpStrip [data-mlk]')});if(!l)return false;const r=l.getBoundingClientRect();return r.height>0&&r.bottom<=innerHeight})()`), `${c.id} ${w}x${h}: the opened list is in view`);
         await js(`document.getElementById('sbBtn').click();0`);
         await settle();
       } else {
@@ -114,10 +120,10 @@ module.exports = async (ctx) => {
         await settle();
       }
       S = await js(STATE);
-      if (c.list) assert.ok(!S.open && S.btn.exp === 'false' && S.vis.length === 0, `${c.id} ${w}x${h}: Hide closes the overlay: ${JSON.stringify(S)}`);
+      if ((c.list || c.pick)) assert.ok(!S.open && S.btn.exp === 'false' && S.vis.length === 0, `${c.id} ${w}x${h}: Hide closes the overlay: ${JSON.stringify(S)}`);
       else assert.ok(S.open && S.btn.exp === 'true' && S.vis.length === n, `${c.id} ${w}x${h}: Show opens every strip (${S.vis.length} of ${n}): ${JSON.stringify(S)}`);
       assert.ok(fits(S) && S.floorTop <= S.barBottom + 1, `${c.id} ${w}x${h}: the overlay takes no office height: ${JSON.stringify(S)}`);
-      if (!c.list) {
+      if (!(c.list || c.pick)) {
         const ov = await js(`(()=>{const bar=document.getElementById('stripBar').getBoundingClientRect();let y=bar.bottom,ok=true;for(const n of ['restore','away','crash','follow','mcp']){const e=document.getElementById(n+'Strip');if(!e||e.hidden)continue;const r=e.getBoundingClientRect();if(Math.abs(r.top-y)>2)ok=false;y=r.bottom;}return ok})()`);
         assert.ok(ov, `${c.id} ${w}x${h}: the strips stack under the bar without overlap`);
         /* Escape from inside an opened strip */
@@ -141,7 +147,7 @@ module.exports = async (ctx) => {
   }
   /* the restore strip JOINS an already folded bar (the path of the review finding): folded with four strips and no restore strip, #stripAlert is empty;
      the strip arrives (renderRestoreStrip, as the app does for a restored Allow all) and the region holds the phrase, written once: a redraw does not write it again */
-  await setup(CASES[3], 1280, 800);
+  await setup(ALL5, 1280, 800);
   await js(`document.querySelector('#restoreStrip [data-ns="keep"]').click();0`);
   await until(`document.getElementById('restoreStrip').hidden`, 4000);
   await settle();
@@ -159,7 +165,7 @@ module.exports = async (ctx) => {
   assert.ok(J1.yield && J1.text === 'Allow all restored' && J1.role === 'status', `join: still folded, the phrase stays, the bar stays status: ${JSON.stringify(J1)}`);
   assert.strictEqual(J1.writes, 1, `join: the alert region was written once, not again by a redraw (${J1.writes} mutations)`);
   /* the yield ends with the Office view: List puts the strips back in the flow and forgets the open overlay; Office brings the bar back */
-  await setup(CASES[3], 1280, 800);
+  await setup(ALL5, 1280, 800);
   await js(`document.getElementById('sbBtn').click();0`);
   await settle();
   assert.ok(await js(`document.body.classList.contains('strips-open')`), 'view switch: the overlay is open before the switch');
@@ -173,8 +179,58 @@ module.exports = async (ctx) => {
   assert.strictEqual(await js(`document.getElementById('stripAlert').textContent`), '', 'view switch: in List the alert region is empty');
   await js(`document.getElementById('vOffice').click();0`);
   assert.ok(await until(`document.body.classList.contains('strips-yield')&&!document.getElementById('stripBar').hidden&&!document.body.classList.contains('strips-open')`, 4000), 'view switch: back in the Office the strips yield again, folded');
+  /* gap (b) of #1597: a status filter (the Working pill) showing 14 or 11 cabinets, plus one, two or three strips: the filter note stands in the floor's top padding
+     and the strips yield / the lend take it back, so the office does not scroll; the note stays visible and is not covered by the hall (Linux, simulator; Windows not run) */
+  for (const [w, h] of [[1280, 800], [1440, 900]]) {
+    for (const strips of [['mcp'], ['restore', 'away'], ['restore', 'away', 'mcp']]) {
+      for (const n of [14, 11]) {
+        const tag = `filter note (${n} cabinets) + ${strips.join('+')} ${w}x${h}`;
+        await setup({ id: 'fnote', strips }, w, h);
+        const ids = await js(`window.__durbarSimUi.agents().filter(a=>!a.parent).map(a=>a.id)`);
+        for (const id of ids) await js(`window.__durbarSimEmit({type:'output',sessionId:${jsLiteral(id)},timestamp:Date.now(),text:'x',final:false});0`);
+        await settle();
+        const working = await js(`window.__durbarSimUi.agents().filter(a=>!a.parent&&a.state==='working').map(a=>a.id)`);
+        for (const id of working.slice(n)) await js(`window.__durbarSimEmit({type:'status',sessionId:${jsLiteral(id)},timestamp:Date.now(),status:'error',intent:'stopped'});0`);
+        await settle();
+        await js(`document.querySelector('.stat[data-k="working"]').click();0`);
+        assert.ok(await until(`(()=>{const n=document.getElementById('filterNote');return !!n&&!n.hidden&&document.getElementById('floor').classList.contains('has-fnote')})()`, 6000), `${tag}: the filter note shows`);
+        await settle();
+        const F = await js(`(()=>{const n=document.getElementById('filterNote').getBoundingClientRect(),r=document.querySelector('#stage .ro').getBoundingClientRect();return {cabs:document.querySelectorAll('#stage .ro .ro-plate[data-id]').length,noteBottom:Math.round(n.bottom),roTop:Math.round(r.top)}})()`);
+        const T = await js(STATE);
+        assert.strictEqual(F.cabs, n, `${tag}: ${n} cabinets are drawn: ${JSON.stringify(F)}`);
+        assert.ok(fits(T), `${tag}: the office does not scroll (scrollHeight ${T.sh} against ${T.ch}): ${JSON.stringify(T)}`);
+        assert.ok(F.roTop >= F.noteBottom, `${tag}: the filter note is not covered by the hall (note ends ${F.noteBottom}, hall starts ${F.roTop})`);
+        if (process.env.SHOTS && n === 14) await H.shot(path.join(OUT, `102-1589-fnote-${strips.join('-')}-${w}x${h}.png`), { prep: 'mouse', tag: '102' });
+      }
+    }
+  }
+  /* issue #1625 (Linux, simulator): a strip whose text wraps to two lines (a long project or session name; the text takes the row at its 360px basis and wraps) is taller
+     than the 31px the rule was measured with; one such strip, alone or with a second, must not make the office scroll at either size (Windows not run) */
+  const LONG = 'A long notice text that wraps onto a second line because the sentence names several projects and sessions and keeps going well past the width of the strip, so the strip is at least two lines tall here.';
+  for (const [w, h] of [[1280, 800], [1440, 900]]) {
+    for (const [strips, lines] of [[['restore'], 2], [['away'], 2], [['crash'], 2], [['follow'], 2], [['mcp'], 2], [['restore', 'away'], 2], [['restore'], 4], [['away', 'follow'], 4]]) {
+      const tag = `${lines === 2 ? 'two' : 'four'}-line text, ${strips.join('+')} ${w}x${h}`;
+      const TEXT = process.env.TWOLINE_MUTANT === 'nogrow' ? '' : lines === 2 ? LONG : (LONG + ' ').repeat(3).trim();
+      await setup({ id: 'twoline', strips }, w, h);
+      const one = await js(`(()=>JSON.parse(JSON.stringify(${jsLiteral(strips)}.map(n=>document.getElementById(n+'Strip').getBoundingClientRect().height))))()`);
+      /* mutants (T365): each dies at its own assert; TWOLINE_MUTANT=nogrow leaves the text alone, =scroll makes the stage taller than the floor, =followwrap lets the follow text wrap */
+      const MU = process.env.TWOLINE_MUTANT || '';
+      if (MU === 'followwrap') await js(`(()=>{const e=document.createElement('style');e.textContent='.follow-strip .af-t{white-space:normal!important;overflow:visible!important}';document.head.appendChild(e);return 0})()`);
+      if (MU === 'scroll') await js(`(()=>{document.getElementById('stage').style.minHeight='3000px';return 0})()`);
+      await js(`(()=>{for(const n of ${jsLiteral(strips)}){if(n==='follow'){document.getElementById('followStrip').insertAdjacentHTML('afterbegin','<span class="af-t" id="afLong"></span>');document.getElementById('afLong').textContent=${jsLiteral(TEXT)};continue}const t=document.querySelector('#'+n+'Strip .ns-t');if(t)t.insertAdjacentText('afterbegin',${jsLiteral(TEXT)}+' ')}window.dispatchEvent(new Event('resize'));return 0})()`);
+      await settle();
+      await js(`window.dispatchEvent(new Event('resize'));0`);
+      await settle();
+      const T = await js(STATE);
+      const two = await js(`(()=>JSON.parse(JSON.stringify(${jsLiteral(strips)}.map(n=>{const e=document.getElementById(n+'Strip');return e.hidden?0:e.getBoundingClientRect().height}))))()`);
+      console.log(`[102] ${tag}: one-line heights ${one}, long-text heights ${two}, floor ${T.sh}/${T.ch}, bar ${T.bar}, yield ${T.yield}`);
+      assert.ok(T.yield || two.every((v, i) => (strips[i] === 'follow' ? v <= one[i] + 1 : v >= one[i] + 3)), `${tag}: the long text made every wrapping strip taller and left the follow strip (one line, ellipsis: its own long span, as a redraw rewrites #afText) alone (the case is not vacuous): one-line ${one}, long ${two}`);
+      assert.ok(fits(T), `${tag}: the office does not scroll (scrollHeight ${T.sh} against ${T.ch}): ${JSON.stringify(T)}`);
+      if (process.env.SHOTS) await H.shot(path.join(OUT, `102-1625-${lines}line-${strips.join('-')}-${w}x${h}.png`), { prep: 'mouse', tag: '102' });
+    }
+  }
   /* 16 agents with five strips: the bar would not make them fit, so the strips stay where they were (as the lend, T308) */
-  await setup(CASES[3], 1280, 800, 16);
+  await setup(ALL5, 1280, 800, 16);
   const S16 = await js(STATE);
   assert.ok(!S16.bar && !S16.yield && S16.vis.length === S16.shown.length && S16.sh > S16.ch + 1, `16 agents, five strips, 1280x800: the yield does not help, the strips stay in the flow and the office scrolls as before: ${JSON.stringify(S16)}`);
   console.log('[102] strips arcade PASS');

@@ -60,7 +60,7 @@ Each sign-in was started **without a terminal** (stdin closed, output to a file)
 - **FR-003** **No usable route:** the dialog explains that no package manager was found and opens the vendor's official install page (a fixed https URL per harness) on click. It never runs a downloaded script.
 - **FR-004** **Running an install or update** (`src/main/harnesssetup.ts`):
   - the exact command line is shown before it runs, and the user confirms;
-  - argv only, no shell; a Windows `.cmd` (npm) goes through `windowsCmd` with `/d /s /c` and is refused when its path has a `cmd.exe` metacharacter (as detection does);
+  - argv only, no shell; a Windows `.cmd` (npm) goes through `windowsCmdPath` (spec 045 FR-065: refused when it gives no drive or UNC `cmd.exe`) with `/d /s /c` and is refused when its path has a `cmd.exe` metacharacter (as detection does);
   - the dialog shows *Installing…*, the elapsed time and the **last 6 lines** of output (ANSI removed, through `redact()`), with *Cancel* (kills the process tree);
   - a 15-minute limit; one setup operation at a time;
   - on exit 0, detection runs again and the card updates; otherwise the dialog shows the exit code and the last lines, and suggests the official page.

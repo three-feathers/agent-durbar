@@ -469,7 +469,7 @@ const withTimeout = (p, ms, msg) => Promise.race([p, new Promise((_, rej) => set
   assert.strictEqual(spreadSum + measSum, Math.round(Object.values(realBase.models).reduce((a, b) => a + b, 0) * 100), 'repo data: the committed spread plus the measured days is the baseline to the cent (run "npm run usage:spread -- --write")');
   assert.ok(Math.abs(realSpread.days.reduce((a, d) => a + d.weight, 0) - 1) < 1e-8, 'repo data: the committed weights sum to 1');
   const committedSpread = JSON.parse(fs.readFileSync(path.join(repo, 'docs', 'build-cost-spread.json'), 'utf8'));
-  let haveCommit = false; try { execFileSync('git', ['cat-file', '-e', `${committedSpread.commit}^{commit}`], { cwd: repo, stdio: 'ignore' }); haveCommit = /^[0-9a-f]{40}$/.test(committedSpread.commit); } catch { /* shallow clone: the pinned commit is not here, skipped */ }
+  let haveCommit = false; if (require('./git-index-helper.js').gitTry(repo, ['cat-file', '-e', `${committedSpread.commit}^{commit}`]) !== null) haveCommit = /^[0-9a-f]{40}$/.test(committedSpread.commit); /* null: shallow clone, the pinned commit is not here, skipped; a hang throws */
   if (haveCommit) {
     const again2 = S.computeSpread(realBase, realStates, S.gitStats(committedSpread.commit, realBase.through), committedSpread.ref, committedSpread.commit);
     assert.deepStrictEqual(JSON.parse(JSON.stringify(again2)), committedSpread, 'repo data: the committed spread is exactly what the pinned git history gives');

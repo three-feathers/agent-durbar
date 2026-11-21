@@ -1,6 +1,6 @@
 /*
  * Spec 102 RA7 (`npm run test:momentsregistry`, review of #1279, FR-264, T223): the `retro` cells of docs/experience/world-moments.json are guarded.
- *   - every moment has a `worlds.retro` cell, and the cells are exactly the 26 ids below (written out by hand, so the registry cannot vouch for itself);
+ *   - every moment has a `worlds.retro` cell, and the cells are exactly the 27 ids below (written out by hand, so the registry cannot vouch for itself);
  *   - a cell is built | designed | fallback-flat | missing;
  *   - the retro world is `shippable: false` while any cell is `missing` (or `designed`: drawn, not looked at);
  *   - a `built` cell names its evidence: driver steps that exist in scripts/shots-097-moments.js and pictures that driver writes; a `missing` cell says why (`gap`);
@@ -12,12 +12,18 @@
 const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
-const { spawnSync } = require('child_process');
+const { gitTry } = require('./git-index-helper.js');
 
 const ROOT = path.join(__dirname, '..');
 const STATES = ['built', 'designed', 'fallback-flat', 'missing'];
-const RETRO_CELLS = ['office-floor', 'lobby', 'boss-bank-post-coffee', 'desk-card', 'desk-lights', 'live-screen', 'lounge', 'walk', 'empty-office', 'first-run', 'lift-panel', 'floor-change', 'floor-indicator', 'all-floors', 'building-preview', 'floor-jumps', 'inbox', 'chat-open', 'chat-shell', 'chat-header', 'limit-card', 'permission-card', 'question-card', 'elicitation', 'answer-bar', 'coffee-bar'];
+const RETRO_CELLS = ['office-floor', 'lobby', 'boss-bank-post-coffee', 'desk-card', 'helpers', 'desk-lights', 'live-screen', 'lounge', 'walk', 'empty-office', 'first-run', 'lift-panel', 'floor-change', 'floor-indicator', 'all-floors', 'building-preview', 'floor-jumps', 'inbox', 'chat-open', 'chat-shell', 'chat-header', 'limit-card', 'permission-card', 'question-card', 'elicitation', 'answer-bar', 'coffee-bar'];
+/* issue 1644 (spec 102 T235, T327): `helpers` is the one cell that may stay `fallback-flat` for lack of kids: the arcade has no kids (issue #1643, T327, not started) and keeps 097's adult head row; the cell says so in `gap.retro` and is never `built` until T327 is ticked */
+const KIDS_PENDING = 'helpers';
 const WORLDS = ['photo', 'cave', 'loft', 'retro'];
+/* issue 1891: the only cells that may stay `fallback-flat` in the arcade: no world has the surface, so they are not part of the flip (owner, Vikram, 2026-11-19; a backlog feature for all worlds, issue #1892); each says so in `gap.retro` */
+const DEFERRED = ['floor-indicator', 'building-preview'];
+/* issue 1891: the five chrome cells are drawn by rules in the arcade's world.css (its own tokens); a rule gone is a cell fallen back to the flat drawing, even if the registry still says `built` */
+const CHROME_RULES = { 'lift-panel': '.lift-b{border-radius:0', 'chat-shell': '#panel>.rail{border-right:3px', 'chat-header': '.ph{border-bottom:3px', 'chat-open': 'arc-chat-on .2s steps(4)', elicitation: '.note.elicit{border:3px' };
 
 const stripRetro = (reg) => {
   const c = JSON.parse(JSON.stringify(reg));
@@ -49,7 +55,7 @@ function check({ reg, main, driver, css }) {
   /* only names given to the picture writer count: shot(world, 'X', ...) and `${world}-X-${w}x${h}.png` */
   const written = writtenPictures(driver);
   const ids = reg.moments.map((m) => m.id);
-  if (JSON.stringify(ids.slice().sort()) !== JSON.stringify(RETRO_CELLS.slice().sort())) bad.push(`the moments are not the 26 the arcade has cells for: ${ids.join(',')}`);
+  if (JSON.stringify(ids.slice().sort()) !== JSON.stringify(RETRO_CELLS.slice().sort())) bad.push(`the moments are not the 27 the arcade has cells for: ${ids.join(',')}`);
   const world = reg.worlds.retro;
   if (!world) bad.push('the retro world is not in the registry');
   const cells = {};
@@ -67,11 +73,29 @@ function check({ reg, main, driver, css }) {
     if (s === 'missing' && !(m.gap && typeof m.gap.retro === 'string' && m.gap.retro.length > 10)) bad.push(`retro cell ${m.id} is missing and says nothing why (gap.retro)`);
   }
   if (world && world.shippable !== false && Object.values(cells).some((s) => s === 'missing' || s === 'designed')) bad.push('retro is shippable while a cell is missing or only designed');
+  for (const m of reg.moments) {
+    const s = m.worlds && m.worlds.retro;
+    if (m.id === KIDS_PENDING) { if (!(s === 'fallback-flat' && m.gap && /#1643/.test(m.gap.retro || '') && /T327/.test(m.gap.retro || ''))) bad.push(`retro cell ${m.id}: the arcade has no kids (T327, issue #1643): fallback-flat with a gap.retro naming #1643 and T327, never built`); continue; }
+    if (s === 'fallback-flat' && !DEFERRED.includes(m.id)) bad.push(`retro cell ${m.id} falls back to the flat drawing: draw it in the arcade (issue 1891), or the owner defers it`);
+    if (DEFERRED.includes(m.id) && !(s === 'fallback-flat' && m.gap && /#1892/.test(m.gap.retro || ''))) bad.push(`retro cell ${m.id} is deferred to #1892 (owner, 2026-11-19): fallback-flat with a gap.retro naming #1892`);
+  }
+  if (typeof css === 'string') {
+    const flat = css.replace(/\s+/g, '').replace(/html\[data-world="retro"\]\[data-ui="retro"\]/g, '');
+    for (const [id, frag] of Object.entries(CHROME_RULES)) if (!flat.includes(frag.replace(/\s+/g, ''))) bad.push(`retro cell ${id}: its arcade rule (${frag}) is not in the arcade's world.css: the cell fell back to the flat drawing`);
+  }
   if (world && typeof world.shippable !== 'boolean') bad.push('retro `shippable` is not a boolean');
+  /* issue #1777: the empty-office step goes to the empty floor, which the app stores (durbar.floor); the next step of the same run (cells) then starts on that floor and finds no Jonas. The step must put the storage back in a finally. */
+  { const d = driver.replace(/\r\n/g, '\n'), a = d.indexOf("run('empty-office')) {"), e = d.indexOf('// ---- FR-120', a), step = a < 0 || e < 0 ? '' : d.slice(a, e);
+    if (!step) bad.push('the empty-office step is not found in shots-097-moments (the step-order check cannot read it)');
+    else if (!/\} finally \{[^]*localStorage\.removeItem\('durbar\.floor'\)/.test(step)) bad.push('the empty-office step leaves durbar.floor stored (restore it in a finally): the next step of the same run starts on the empty floor'); }
   // scoped to the arcade
   if (main) {
     if (retroPart(reg) !== retroPart(main)) {
-      if (JSON.stringify(stripRetro(reg)) !== JSON.stringify(stripRetro(main))) bad.push('the change touches the retro cells and also another world or the shared registry: it is not equal to origin/main outside the retro cells');
+      const known = new Set(main.moments.map((m) => m.id)); /* a moment main does not have yet (issue 1644: helpers) is new, not a change to another world's row */
+      const old = stripRetro(reg); old.moments = old.moments.filter((m) => known.has(m.id));
+      /* the shared note may only grow, and only by the PR that adds a moment (issue 1644: it says what helpers is); any other note change is a change to the shared registry */
+      if (reg.moments.length > main.moments.length && typeof reg.note === 'string' && reg.note.startsWith(main.note)) old.note = main.note;
+      if (JSON.stringify(old) !== JSON.stringify(stripRetro(main))) bad.push('the change touches the retro cells and also another world or the shared registry: it is not equal to origin/main outside the retro cells');
     }
   }
   const rules = css.replace(/\/\*[\s\S]*?\*\//g, '').split('}').map((r) => r.trim()).filter((r) => /#stats\b/.test(r));
@@ -82,10 +106,11 @@ function check({ reg, main, driver, css }) {
 
 function readMain() {
   /* the registry at the merge-base with origin/main, not at whatever origin/main is now; null in a shallow checkout (CI fetches depth 2), where the comparison is skipped and says so */
-  const mb = spawnSync('git', ['merge-base', 'HEAD', 'origin/main'], { cwd: ROOT, encoding: 'utf8' });
-  if (mb.status !== 0 || !mb.stdout.trim()) return null;
-  const r = spawnSync('git', ['show', mb.stdout.trim() + ':docs/experience/world-moments.json'], { cwd: ROOT, encoding: 'utf8' });
-  return r.status === 0 ? JSON.parse(r.stdout) : null;
+  const git = (args) => (gitTry(ROOT, args) || '').trim(); // an ordinary git failure is "no answer"; a hang throws (gitTry)
+  const mb = git(['merge-base', 'HEAD', 'origin/main']);
+  if (!mb) return null;
+  const r = git(['show', mb + ':docs/experience/world-moments.json']);
+  return r ? JSON.parse(r) : null;
 }
 
 if (require.main === module) {
@@ -96,7 +121,7 @@ if (require.main === module) {
   if (!main) console.log('[momentsregistry] SKIP the origin/main comparison: no merge-base with origin/main in this checkout (a shallow clone as in CI: this runs locally and in a full clone only); every other check ran');
   const inputs = { reg, main, driver, css };
   assert.deepStrictEqual(check(inputs), [], 'the real registry passes');
-  assert.strictEqual(RETRO_CELLS.length, 26);
+  assert.strictEqual(RETRO_CELLS.length, 27);
   { const w = writtenPictures(driver);
     for (const n of ['inbox', 'asleep', 'coffee', 'notes', 'jump-f1', 'jump-f2', 'cell-chat', 'cell-question', 'cell-focus-answer', 'cell-focus-skip', 'cell-answerbar', 'cell-preview', 'walk-desk', 'walk-place']) assert.ok(w.has(n), 'the picture ' + n + ' is read as written');
     for (const n of ['15', 'inbox-', 'world', 'limitfocus', 'scope', 'w', 'h']) assert.ok(!w.has(n), `${n} is not a picture name`);
@@ -111,7 +136,25 @@ if (require.main === module) {
     assert.ok(got.some((g) => re.test(g)), `mutant "${what}" must fail with ${re}: ${JSON.stringify(got)}`);
     console.log(`[momentsregistry] mutant killed: ${what}`);
   };
-  fails('a retro cell removed', (i) => { i.reg.moments.splice(i.reg.moments.findIndex((m) => m.id === 'walk'), 1); }, /not the 26/);
+  /* issue 1891: a chrome cell falling back again fails at its own assert */
+  fails('lift-panel back to the flat drawing (rule gone)', (i) => { i.css = i.css.replace('.lift-b{border-radius:0', '.lift-b{border-radius:4px'); }, /lift-panel: its arcade rule/);
+  fails('chat-shell rule gone', (i) => { i.css = i.css.replace('#panel>.rail{border-right:3px', '#panel>.rail{border-right:1px'); }, /chat-shell: its arcade rule/);
+  fails('chat-header rule gone', (i) => { i.css = i.css.replace('.ph{border-bottom:3px', '.ph{border-bottom:1px'); }, /chat-header: its arcade rule/);
+  fails('chat-open rule gone', (i) => { i.css = i.css.replace('arc-chat-on .2s steps(4)', 'slide .28s ease-out'); }, /chat-open: its arcade rule/);
+  fails('elicitation rule gone', (i) => { i.css = i.css.replace('.note.elicit{border:3px', '.note.elicit{border:1px'); }, /elicitation: its arcade rule/);
+  fails('elicitation back to fallback-flat', (i) => { const m = i.reg.moments.find((x) => x.id === 'elicitation'); m.worlds.retro = 'fallback-flat'; delete m.evidence; }, /elicitation falls back to the flat drawing/);
+  fails('a deferred cell loses its #1892 note', (i) => { delete i.reg.moments.find((x) => x.id === 'floor-indicator').gap; }, /floor-indicator is deferred to #1892/);
+  /* issue 1644: helpers in the arcade is not built (T327 not started) */
+  fails('helpers claimed built for the arcade', (i) => { const m = i.reg.moments.find((x) => x.id === 'helpers'); m.worlds.retro = 'built'; m.evidence = { retro: { steps: ['asleep'], pictures: ['asleep'] } }; }, /retro cell helpers: the arcade has no kids/);
+  fails('helpers fallback-flat loses its #1643 note', (i) => { i.reg.moments.find((x) => x.id === 'helpers').gap.retro = 'the arcade has no kids yet'; }, /retro cell helpers: the arcade has no kids/);
+  { /* main stands in with the same 27 moments (so the moment-count assert is not what fails) and a different retro part (so the main comparison runs, also in a shallow CI clone) */
+    const mainSame = () => { const m = clone(); m.moments.find((x) => x.id === 'lobby').worlds.retro = 'designed'; return m; };
+    const mainBeforeHelpers = () => { const m = mainSame(); m.moments.splice(m.moments.findIndex((x) => x.id === 'helpers'), 1); return m; };
+    fails('the shared note changes with no new moment (retro cells also changed)', (i) => { i.main = mainSame(); i.reg.note += ' extra'; }, /also another world or the shared registry/);
+    fails('the shared note is rewritten, not extended, by the moment-adding change', (i) => { i.main = mainBeforeHelpers(); i.reg.note = 'rewritten ' + i.reg.note; }, /also another world or the shared registry/);
+    { const i = { reg: clone(), main: mainBeforeHelpers(), driver, css }; i.main.note = i.reg.note.slice(0, i.reg.note.length - 5); assert.ok(!check(i).some((g) => /also another world/.test(g)), 'a moment-adding change may extend the note'); }
+  }
+  fails('a retro cell removed', (i) => { i.reg.moments.splice(i.reg.moments.findIndex((m) => m.id === 'walk'), 1); }, /not the 27/);
   fails('a retro cell is not a state', (i) => { i.reg.moments.find((m) => m.id === 'lobby').worlds.retro = 'bogus'; }, /lobby is "bogus"/);
   fails('a moment has no retro key', (i) => { delete i.reg.moments.find((m) => m.id === 'lobby').worlds.retro; }, /lobby is undefined/);
   fails('a built cell without evidence', (i) => { delete i.reg.moments.find((m) => m.id === 'lobby').evidence; }, /lobby is built and names no evidence/);
@@ -132,6 +175,7 @@ if (require.main === module) {
   fails('building-preview built with no evidence', (i) => { i.reg.moments.find((m) => m.id === 'building-preview').worlds.retro = 'built'; }, /building-preview is built and names no evidence/);
   fails('building-preview fallback-flat naming evidence', (i) => { i.reg.moments.find((m) => m.id === 'building-preview').evidence = { retro: { steps: ['cells'], pictures: ['cell-preview'] } }; }, /building-preview is fallback-flat but names evidence/);
   fails('empty-office built with no evidence', (i) => { delete i.reg.moments.find((m) => m.id === 'empty-office').evidence; }, /empty-office is built and names no evidence/);
+  fails('the empty-office step does not restore the stored floor (issue 1777)', (i) => { const d0 = i.driver.replace(/\r\n/g, '\n'); /* a Windows checkout has CRLF: the check normalises, so the mutant does too */ i.driver = d0.replace("localStorage.removeItem('durbar.floor');localStorage.removeItem('durbar.floorView')`).catch(() => undefined);\n      }\n    }\n    // ---- FR-120", "`).catch(() => undefined);\n      }\n    }\n    // ---- FR-120"); assert.notStrictEqual(i.driver, d0, 'the mutation applied'); }, /empty-office step leaves durbar\.floor stored/);
   fails('a missing cell without a reason', (i) => { const m = i.reg.moments.find((x) => x.id === 'all-floors'); m.worlds.retro = 'missing'; delete m.evidence; delete m.gap; }, /all-floors is missing and says nothing why/); /* all-floors may already be built (the All floors PR): the mutant makes it missing first */
   fails('shippable while a cell is missing', (i) => { const m = i.reg.moments.find((x) => x.id === 'all-floors'); m.worlds.retro = 'missing'; delete m.evidence; m.gap = 'x'; i.reg.worlds.retro.shippable = true; }, /shippable while a cell is missing/); /* all-floors built on this branch: the mutant makes one cell missing first */
   fails('the first-run rule unscoped', (i) => { i.css = i.css.replace('html[data-world="retro"] body:has(#stage > .welcome) #stats', 'body:has(#stage > .welcome) #stats'); }, /not scoped to html\[data-world="retro"\]/);

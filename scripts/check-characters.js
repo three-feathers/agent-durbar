@@ -8,6 +8,8 @@
  *   - a theme switch with Cheeky keeps the crew on the new theme;
  *   - The theme's own: Retro's pixel figures come back, no portrait is left;
  *   - Minimalist: the office figure on top of the theme.
+ *   - spec 077 (2026-11-19, issue #1460): Cheeky picked under Settings and Settings closed in the same task: the close draws the crew kit (CHARS_MUTANT=noclose: a copy of dist/ without
+ *     the close hook must fail at 'draws the crew kit').
  * Screenshots of the Settings section and of the office (SHOTS_OUT, default characters-shots in the OS temp folder).
  *
  *   DURBAR_SIM=15 DURBAR_SIM_FREEZE=1 DURBAR_DRIVER=$PWD/scripts/check-characters.js electron . --no-sandbox   (in check:ui)
@@ -20,6 +22,8 @@ const { helpers, jsLiteral } = require('./driver-helpers');
 
 const THEMES = [['retro', 'pixel', 'Pixel figures']];
 const CREW_IMG = 'image[href*="crew/art/"]';
+/* CHARACTERS_MUTANT (spec 102 T390, issue #1873): skipflat = the Retro pixel heads are skipped in Flat (the theme's own figures are drawn); note = the old Flat line is put back under the list; smooth = the heads are scaled smooth (image-rendering auto). Each must fail the Flat Retro pixel block below. T391: skipoffice = Office people draw the theme's own figures in Flat; pixelatedoffice = the Office heads are scaled nearest; each must fail the Flat Office people block. */
+const MUTANT = process.env.CHARACTERS_MUTANT || '';
 
 module.exports = async (ctx) => {
   const H = helpers(ctx);
@@ -29,7 +33,7 @@ module.exports = async (ctx) => {
   const desks = () => H.js(`(()=>{const sc=[...document.querySelectorAll('#stage .desk[data-id] svg.scene')].filter(s=>s.getClientRects().length);
     const kit=(s)=>{const m=/\\|(pixel|crew)(\\||$)/.exec(s.dataset.sig||'');return m?m[1]:'office';};
     const by={};for(const s of sc){const k=kit(s);by[k]=(by[k]||0)+1;}
-    return {n:sc.length,by,pics:sc.filter(s=>s.querySelector(${jsLiteral(CREW_IMG)})).length,anyPic:document.querySelectorAll(${jsLiteral('#stage ' + CREW_IMG)}).length};})()`);
+    return {n:sc.length,by,pics:sc.filter(s=>s.querySelector(${jsLiteral(CREW_IMG)})).length,heads:sc.filter(s=>s.querySelector('svg.crew-head image')).length,anyPic:document.querySelectorAll(${jsLiteral('#stage ' + CREW_IMG)}).length};})()`);
   /* issue 839: what the app holds when a crew step times out (it only failed on the macOS runner, never on a Mac at scale 1 or 2 or under reduced
      motion): the next nightly says why instead of only "timed out" */
   const why = async () => (await whyNow()) + ' ' + (await afterRender());
@@ -88,8 +92,8 @@ module.exports = async (ctx) => {
       assert.ok(await H.until(`(document.querySelector('#chList [data-characters="theme"]')||{}).textContent&&document.querySelector('#chList [data-characters="theme"]').textContent.includes(${jsLiteral(own)})`, 4000), `${where}: The theme's own follows the theme (${own})`);
       const sc = await section();
       assert.ok(sc.afterTheme, `${where}: Characters comes right after Theme`);
-      assert.deepStrictEqual(sc.items.map((i) => i.id), ['theme', 'office', 'minimalist', 'cheeky', 'prehistoric', 'pirate', 'monster', 'royal', 'rebels', 'pixel'], `${where}: the ten choices in order: Office people right after the default (spec 102 FR-321), Retro pixel always listed (FR-320)`);
-      assert.deepStrictEqual(sc.items.map((i) => i.pressed), ['true', 'false', 'false', 'false', 'false', 'false', 'false', 'false', 'false', 'false'], `${where}: the default is pressed`);
+      assert.deepStrictEqual(sc.items.map((i) => i.id), ['theme', 'office', 'minimalist', 'cheeky', 'prehistoric', 'pirate', 'monster', 'royal', 'rebels', 'pixel', 'mine'], `${where}: the eleven choices in order: Office people right after the default (spec 102 FR-321), Retro pixel always listed (FR-320)`);
+      assert.deepStrictEqual(sc.items.map((i) => i.pressed), ['true', 'false', 'false', 'false', 'false', 'false', 'false', 'false', 'false', 'false', 'false'], `${where}: the default is pressed`);
       for (const i of sc.items) {
         assert.ok(i.svg, `${where}: ${i.id} has a preview figure`);
         assert.ok(i.minFont >= 10.5, `${where}: ${i.id}: text is at least 10.5px (${i.minFont})`);
@@ -102,11 +106,12 @@ module.exports = async (ctx) => {
       assert.ok(sc.items.find((i) => i.id === 'royal').pic, `${where}: the Royal preview is a portrait (spec 077 FR-076)`);
       assert.ok(sc.items.find((i) => i.id === 'rebels').pic, `${where}: the Animal Rebels preview is a portrait (spec 077 FR-077)`);
       assert.ok(!sc.items.find((i) => i.id === 'minimalist').pic && !sc.items.find((i) => i.id === 'theme').pic, `${where}: the other previews are drawn figures`);
-      /* spec 102 FR-320, FR-321: the two set entries show the set's own picture; the flag is closed here, so Retro pixel is disabled and says so (name and label) */
+      /* spec 102 FR-320, FR-321: the two set entries show the set's own picture; since the flip (T230) Retro pixel can be picked like Office people, and no card says it is not open */
       const setPic = await H.js(`[['office','office'],['pixel','retro']].map(([id,set])=>{const b=document.querySelector('#chList [data-characters="'+id+'"]'),im=b.querySelector('.chsw image');return {id,href:im?im.getAttribute('href'):'',disabled:b.getAttribute('aria-disabled')==='true',label:b.getAttribute('aria-label'),sub:(b.querySelector('small')||{}).textContent}})`);
       assert.ok(/sets\/office\/p01-typeA/.test(setPic[0].href) && /sets\/retro\/p01-typeA/.test(setPic[1].href), `${where}: the set previews are the sets' own pictures (${JSON.stringify(setPic)})`);
       assert.strictEqual(setPic[0].disabled, false, `${where}: Office people can be picked`);
-      assert.ok(setPic[1].disabled && /Not open yet$/.test(setPic[1].label) && setPic[1].sub === 'Not open yet', `${where}: the retro flag is closed: Retro pixel is disabled and its name says "Not open yet" (${JSON.stringify(setPic[1])})`);
+      assert.ok(!setPic[1].disabled && setPic[1].sub === '15 pixel people' && !/not open/i.test(setPic[1].label), `${where}: T230: Retro pixel can be picked and says what it is (${JSON.stringify(setPic[1])})`);
+      assert.strictEqual(await H.js(`[...document.querySelectorAll('#chList [data-characters]')].filter(b=>/not open/i.test(b.textContent+' '+(b.getAttribute('aria-label')||''))).length`), 0, `${where}: T230: no Characters card says "Not open yet"`);
       if (kit === 'pixel') assert.strictEqual(sc.items.find((i) => i.id === 'theme').kit, 'crispEdges', `${where}: The theme's own preview is a pixel figure`);
       assert.ok(sc.pageX && sc.pageY, `${where}: Settings does not overflow the page`);
       if (theme === 'retro') {
@@ -190,21 +195,18 @@ module.exports = async (ctx) => {
     assert.ok(await H.until(`window.THEME.sceneKit()==='crew'&&document.querySelectorAll(${jsLiteral('#stage .desk[data-id] svg.scene ' + CREW_IMG)}).length>=12`, 10000), `${tag}: the crew stays on the new theme`);
     await pickChars('theme');
     await close();
-    // spec 102 T291 (FR-320..FR-322): Retro pixel while its flag is closed (a click changes nothing), a saved Retro pixel with the flag closed (kept, the line says what is drawn), and open (a normal pick)
+    // spec 102 T230 (FR-320, FR-322): since the flip Retro pixel is a normal radio: a click picks it, no line is shown, Flat keeps the theme's own figures until its Flat heads (T294, issue #1873)
     await openSettings();
     await H.clearToasts();
-    await H.js(`document.querySelector('#chList [data-characters="pixel"]').click()`);
-    await H.settle(); // a refused click has no event to wait for: the page settles, then the state must be as it was
-    assert.strictEqual(await H.js(`window.THEME.characters()`), 'theme', `${tag}: a click on the closed Retro pixel changes nothing`);
-    assert.strictEqual(await H.js(`document.querySelector('#chList [data-characters="pixel"]').getAttribute('aria-checked')`), 'false', `${tag}: and does not check it`);
     /* spec 102 FR-303 (review of #1676): Characters are one radio group like the World row: roles, aria-checked, one Tab stop, arrows only move (and skip the closed entry), Enter and Space choose, Tab and Escape are left alone */
     const rg = await H.js(`(()=>{const g=document.getElementById('chList'),r=[...g.querySelectorAll('[data-characters]')];return {role:g.getAttribute('role'),lb:g.getAttribute('aria-labelledby'),roles:[...new Set(r.map(b=>b.getAttribute('role')))],n:r.length,checked:r.filter(b=>b.getAttribute('aria-checked')==='true').map(b=>b.dataset.characters),tabs:r.filter(b=>b.tabIndex===0).map(b=>b.dataset.characters),dis:r.filter(b=>b.getAttribute('aria-disabled')==='true').map(b=>b.dataset.characters),pressed:r.some(b=>b.hasAttribute('aria-pressed'))}})()`);
-    assert.deepStrictEqual([rg.role, rg.lb, rg.roles, rg.n, rg.pressed], ['radiogroup', 'chH', ['radio'], 10, false], `${tag}: Characters is a radio group of radios: ${JSON.stringify(rg)}`);
-    assert.deepStrictEqual([rg.checked, rg.tabs, rg.dis], [['theme'], ['theme'], ['pixel']], `${tag}: one checked radio, it is the one Tab stop, only the closed Retro pixel is aria-disabled: ${JSON.stringify(rg)}`);
+    assert.deepStrictEqual([rg.role, rg.lb, rg.roles, rg.n, rg.pressed], ['radiogroup', 'chH', ['radio'], 11, false], `${tag}: Characters is a radio group of radios: ${JSON.stringify(rg)}`);
+    assert.deepStrictEqual([rg.checked, rg.tabs, rg.dis], [['theme'], ['theme'], ['mine']], `${tag}: one checked radio, it is the one Tab stop, only My characters with none saved is aria-disabled (Retro pixel is open since T230): ${JSON.stringify(rg)}`);
     const keyed = (sel) => H.js(`(()=>{const a=document.activeElement;return {on:a&&a.dataset?a.dataset.characters:null,now:window.THEME.characters(),checked:[...document.querySelectorAll('#chList [data-characters]')].filter(b=>b.getAttribute('aria-checked')==='true').map(b=>b.dataset.characters).join(),tabs:[...document.querySelectorAll('#chList [data-characters]')].filter(b=>b.tabIndex===0).map(b=>b.dataset.characters).join()}})()`);
     // FR-301 through FR-303: arrows, Home and End only MOVE the focus (roving tabindex), Enter and Space choose
     const openIds = await H.js(`[...document.querySelectorAll('#chList [data-characters]')].filter(b=>b.getAttribute('aria-disabled')!=='true').map(b=>b.dataset.characters)`);
-    assert.deepStrictEqual([openIds.length, openIds[0], openIds.includes('pixel')], [9, 'theme', false], `${tag}: the radios that can be picked: nine, the theme's own first, not the closed Retro pixel: ${JSON.stringify(openIds)}`);
+    assert.deepStrictEqual([openIds.length, openIds[0], openIds[openIds.length - 1]], [10, 'theme', 'pixel'], `${tag}: the radios that can be picked: ten, the theme's own first, Retro pixel last (T230): ${JSON.stringify(openIds)}`);
+    const last = openIds.length - 1;
     const moved = async (to, what) => {
       assert.ok(await H.until(`document.activeElement.dataset.characters===${jsLiteral(to)}`, 3000), `${tag}: ${what} moves the focus to ${to}`);
       assert.deepStrictEqual(await keyed(), { on: to, now: 'theme', checked: 'theme', tabs: to }, `${tag}: ${what} only moves the focus: the checked radio and the stored choice stay on the theme's own, the one Tab stop follows the focus`);
@@ -221,11 +223,11 @@ module.exports = async (ctx) => {
     await H.key('Up');
     await moved(openIds[1], 'ArrowUp');
     await H.key('End');
-    await moved(openIds[8], 'End (the closed Retro pixel is skipped)');
+    await moved(openIds[last], 'End (Retro pixel, open since T230)');
     await H.key('Down');
-    await moved(openIds[0], 'ArrowDown after the last radio that can be picked (it wraps; the closed Retro pixel is skipped)');
+    await moved(openIds[0], 'ArrowDown after the last radio that can be picked (it wraps; My characters with none saved is skipped)');
     await H.key('Left');
-    await moved(openIds[8], 'ArrowLeft from the first (it wraps)');
+    await moved(openIds[last], 'ArrowLeft from the first (it wraps)');
     await H.key('Home');
     await moved(openIds[0], 'Home');
     await H.key('Down');
@@ -248,32 +250,113 @@ module.exports = async (ctx) => {
     assert.strictEqual(await evt('Escape'), false, `${tag}: Escape is left alone`);
     assert.strictEqual(await H.js(`window.THEME.characters()`), 'theme', `${tag}: Tab and Escape choose nothing`);
     await pickChars('office');
-    assert.strictEqual(await H.js(`window.THEME.sceneKit()`), 'office', `${tag}: Office people in Flat draw the theme's own figures until Flat has their heads (T294)`);
-    await H.js(`window.DurbarCrew.levelFor=()=>'full',1`);
-    await close(); await openSettings();
-    assert.strictEqual(await H.js(`document.querySelector('#chList [data-characters="pixel"]').getAttribute('aria-disabled')`), null, `${tag}: the level full with the flag closed: Retro pixel can be picked (it reads levelFor, not the flag)`);
+    assert.strictEqual(await H.js(`window.THEME.sceneKit()`), 'crew', `${tag}: T391: Office people in Flat draw the crew kit's heads, not the theme's own figures`);
+    assert.ok(await H.until(`document.getElementById('chNote').textContent===''`, 3000), `${tag}: T391: an Office people pick in Flat shows no line`);
+    await pickChars('pixel');
+    assert.strictEqual(await H.js(`window.THEME.characters()`), 'pixel', `${tag}: T230: a click on Retro pixel picks it`);
+    /* T390 (issue #1873): Flat draws the Retro pixel heads, and the old line is gone */
+    if (MUTANT === 'note') await H.js(`document.getElementById('chNote').textContent='Flat draws the theme\u2019s own figures until Retro pixel has its flat heads.'`);
+    assert.ok(await H.until(`document.getElementById('chNote').textContent===''`, 3000), `${tag}: T390: a Retro pixel pick in Flat shows no line (Flat draws its heads)`);
+    await pickChars('theme');
+    assert.ok(await H.until(`document.getElementById('chNote').textContent===''`, 3000), `${tag}: another pick clears the line`);
+    await pickChars('pixel');
     await close();
     await H.load({ w, h, query: { characters: 'pixel' }, ready: 'fit', settle: false });
     await H.office(15);
-    assert.strictEqual(await H.js(`window.THEME.characters()`), 'pixel', `${tag}: a saved Retro pixel is kept while its flag is closed`);
-    /* spec 102 FR-322: Flat draws the theme's own figures meanwhile (the stored value stays) */
-    assert.strictEqual(await H.js(`window.THEME.sceneKit()`), 'office', `${tag}: a saved Retro pixel with its flag closed draws the theme's own kit in Flat`);
+    assert.strictEqual(await H.js(`window.THEME.characters()`), 'pixel', `${tag}: a saved Retro pixel is kept`);
+    if (MUTANT === 'skipflat') await H.js(`window.THEME.setCharacters('theme');window.__durbarSimUi.render();true`); /* the theme's own figures drawn */
+    if (MUTANT === 'smooth') await H.js(`document.querySelectorAll('svg.crew-head image.px').forEach(i=>i.style.imageRendering='auto')`);
+    /* spec 102 FR-203, T390: Flat draws the Retro pixel heads: the crew kit, a head crop of the set's seated bust on every desk, nearest-neighbour, ids with the prefix */
+    assert.strictEqual(await H.js(`window.THEME.sceneKit()`), 'crew', `${tag}: a saved Retro pixel draws the crew kit's heads in Flat`);
     const dFlat = await desks();
-    assert.ok(dFlat.n >= 12 && dFlat.by.office === dFlat.n && dFlat.anyPic === 0, `${tag}: a saved Retro pixel with its flag closed draws the theme's own figures on every desk in Flat (${JSON.stringify(dFlat)})`);
+    await must(dFlat.n >= 12 && dFlat.by.crew === dFlat.n && dFlat.heads === dFlat.n && dFlat.anyPic === 0, `${tag}: a saved Retro pixel draws a Retro pixel head on every desk in Flat, no Cheeky portrait (${JSON.stringify(dFlat)})`);
+    const sharp = await H.js(`(()=>{const im=[...document.querySelectorAll('#stage svg.crew-head image')].filter(i=>i.getClientRects().length);return {n:im.length,px:im.filter(i=>getComputedStyle(i).imageRendering==='pixelated').length,hrefs:[...new Set(im.map(i=>i.getAttribute('href').replace(/p\\d\\d-/,'p..-')))],sets:im.every(i=>/^realoffice\\/sets\\/retro\\/p\\d\\d-(typeA|waveA|rest)\\.webp$/.test(i.getAttribute('href')))}})()`);
+    await must(sharp.n >= 10 && sharp.px === sharp.n && sharp.sets, `${tag}: T390: every Retro pixel head is scaled nearest (image-rendering: pixelated) and is a frame of the set's folder, no copy (${JSON.stringify(sharp)})`);
     await openSettings();
-    assert.strictEqual(await H.js(`document.getElementById('chNote').textContent`), 'Real office shows Office people until Retro pixel is open in Real office. Flat draws the theme\u2019s own figures until then.', `${tag}: the line under the list says what is drawn meanwhile`);
+    assert.strictEqual(await H.js(`document.getElementById('chNote').textContent`), '', `${tag}: in Flat a saved Retro pixel shows no line (T390: Flat draws its heads)`);
+    assert.strictEqual(await H.js(`document.querySelector('#chList [data-characters="pixel"]').getAttribute('aria-checked')`), 'true', `${tag}: the saved Retro pixel is the checked radio`);
     await close();
-    await H.load({ w, h, query: { worldflags: 'retro' }, ready: 'fit', settle: false });
+    await H.load({ w, h, query: { characters: 'pixel', officeview: 'real' }, ready: `!!document.querySelector('#stage .ro .ro-plate')`, settle: false });
+    await openSettings();
+    assert.strictEqual(await H.js(`document.getElementById('chNote').textContent`), '', `${tag}: in Real office Retro pixel draws its people, so no line`);
+    await close();
+    /* spec 102 FR-203, T391 (issue #1873): Office people in Flat: the crew kit, a head crop of the set's seated photo on every desk, smooth (a photo), ids with the prefix, no line */
+    await H.load({ w, h, query: { characters: 'office' }, ready: 'fit', settle: false });
     await H.office(15);
-    await pickChars('pixel');
-    assert.strictEqual(await H.js(`document.getElementById('chNote').textContent`), '', `${tag}: flag open: a normal pick, no line`);
-    assert.strictEqual(await H.js(`document.querySelector('#chList [data-characters="pixel"]').getAttribute('aria-disabled')`), null, `${tag}: flag open: Retro pixel is not disabled`);
-    /* FR-320: "closed" is the level of levelFor, not a second read of the flag: change the level alone (the flag stays open) and the entry closes */
-    await H.js(`window.DurbarCrew.levelFor=()=>'closed',1`);
-    await close(); await openSettings();
-    assert.strictEqual(await H.js(`document.querySelector('#chList [data-characters="pixel"]').getAttribute('aria-disabled')`), 'true', `${tag}: the level closed with the flag open: Retro pixel is disabled (it reads levelFor, not the flag)`);
+    assert.strictEqual(await H.js(`window.THEME.characters()`), 'office', `${tag}: a saved Office people is kept`);
+    if (MUTANT === 'skipoffice') await H.js(`window.THEME.setCharacters('theme');window.__durbarSimUi.render();true`);
+    if (MUTANT === 'pixelatedoffice') await H.js(`document.querySelectorAll('svg.crew-head image').forEach(i=>i.style.imageRendering='pixelated')`);
+    assert.strictEqual(await H.js(`window.THEME.sceneKit()`), 'crew', `${tag}: a saved Office people draws the crew kit's heads in Flat`);
+    const dOff = await desks();
+    await must(dOff.n >= 12 && dOff.by.crew === dOff.n && dOff.heads === dOff.n && dOff.anyPic === 0, `${tag}: a saved Office people draws an Office head on every desk in Flat, no Cheeky portrait (${JSON.stringify(dOff)})`);
+    const smooth = await H.js(`(()=>{const im=[...document.querySelectorAll('#stage svg.crew-head image')].filter(i=>i.getClientRects().length);return {n:im.length,px:im.filter(i=>getComputedStyle(i).imageRendering==='pixelated').length,sets:im.every(i=>/^realoffice\\/sets\\/office\\/p\\d\\d-(typeA|waveA|rest)\\.webp$/.test(i.getAttribute('href')))}})()`);
+    await must(smooth.n >= 10 && smooth.px === 0 && smooth.sets, `${tag}: T391: every Office head is smooth (a photo) and is a frame of the set's folder, no copy (${JSON.stringify(smooth)})`);
+    await openSettings();
+    assert.strictEqual(await H.js(`document.getElementById('chNote').textContent`), '', `${tag}: in Flat a saved Office people shows no line (T391)`);
+    assert.strictEqual(await H.js(`document.querySelector('#chList [data-characters="office"]').getAttribute('aria-checked')`), 'true', `${tag}: the saved Office people is the checked radio`);
     await close();
     console.log(`[characters] ${tag} ok`, JSON.stringify(await desks()));
+  }
+  // spec 096 US2 scenario 4: a stored `mine` with no character draws the theme's own figures, never the Cheeky crew under another name, and stays stored
+  await H.load({ w: 1280, h: 800, ready: 'fit', settle: false, query: { characters: 'mine', theme: 'retro' } });
+  await H.office(15);
+  assert.strictEqual(await H.js(`window.THEME.characters()`), 'theme', 'a stored mine draws the theme\'s own figures');
+  assert.strictEqual((await desks()).anyPic, 0, 'and no crew portrait');
+  assert.strictEqual(await H.js(`window.__durbarSimUi.bridge().getSettings().then(s=>s.characters)`), 'mine', 'the stored value stays');
+  await openSettings();
+  let empty = (await section()).items.find((i) => i.id === 'mine');
+  assert.strictEqual(empty.pressed, 'true', 'My characters stays the choice');
+  assert.ok(empty.text.includes('Make one first') && !empty.pic, `with nothing to draw it says so (${empty.text})`);
+  await close();
+  // spec 096 T044: the mine value, on any theme: the desks draw the saved characters, the theme stays, the preview is the newest one's working pose
+  for (const theme of ['retro', 'clean-office']) {
+    await H.load({ w: 1280, h: 800, ready: 'fit', settle: false, query: { simmine: '2', theme } });
+    await H.office(15);
+    await openSettings();
+    await H.clearToasts();
+    const row = (await section()).items.find((i) => i.id === 'mine');
+    assert.ok(row.text.includes('2 characters'), `${theme}: the count (${row.text})`);
+    assert.strictEqual(await H.js(`(document.querySelector('#chList [data-characters="mine"] .chsw image')||{getAttribute(){return ''}}).getAttribute('href').slice(0,5)`), 'blob:', `${theme}: the preview is a saved picture`);
+    await H.js(`document.querySelector('#chList [data-characters="mine"]').click()`);
+    assert.ok(await H.until(`window.THEME.characters()==='mine'`, 4000), `${theme}: mine applied`);
+    assert.ok(await H.until(`[...document.querySelectorAll('#toasts .toast')].some(t=>/^Characters: My characters/.test(t.textContent))`, 4000), `${theme}: the choice is announced`);
+    assert.strictEqual(await H.js(`window.__durbarSimUi.bridge().getSettings().then(s=>s.characters)`), 'mine', `${theme}: saved`);
+    await close();
+    assert.ok(await H.until(`(()=>{const sc=[...document.querySelectorAll('#stage .desk[data-id] svg.scene')].filter(s=>s.getClientRects().length);return sc.length>=12&&sc.every(s=>/\\|crew\\|my-/.test(s.dataset.sig||'')&&s.querySelector('image[href^="blob:"]'))})()`, 10000), `${theme}: every desk scene draws a saved character`);
+    assert.strictEqual(await H.js(`window.THEME.current().id`), theme, `${theme}: the theme stays`);
+    assert.strictEqual(await H.js(`document.querySelectorAll('#stage image[href^="crew/art/"]').length`), 0, `${theme}: no crew picture under mine`);
+    await pickChars('theme');
+    await close();
+    assert.ok(await H.until(`document.querySelectorAll('#stage image[href^="blob:"]').length===0`, 8000), `${theme}: back to the theme's own, no saved picture is left`);
+    assert.ok(await H.until(`window.__durbarSimUi.crew.own().urls.length===0`, 4000), `${theme}: and the URLs are given back`);
+  }
+  /* spec 077 (2026-11-19, issue #1460): a draw the office skipped while a screen covered it is made when the screen closes, also when no rendering update came between the two. A screen
+     (Settings) hides the office (`body.screen-open`), so a Characters pick made then draws nothing (the floor has no width) and the office was left to the floor's size observer, which
+     reports a change between two rendering updates: with open, pick and close inside 11 ms (one frame is 16.7 ms; reduced motion applies the pick at once, as on the CI runners) it saw the
+     same width twice and never called, and the crew was never drawn (check-crew, 'dark fixture': macOS nightlies, Windows). The step opens Settings, applies the pick, runs the draw the pick
+     runs and closes Settings in ONE task, so no frame can come in between: the draw must come from the screen's close.
+     CHARS_MUTANT=noclose runs the step on a copy of dist/ whose close hook is removed (the old behaviour): it must die at the label 'draws the crew kit'. */
+  {
+    const MUT = process.env.CHARS_MUTANT === 'noclose';
+    const tmp = MUT ? fs.mkdtempSync(path.join(os.tmpdir(), 'chars-noclose-')) : '';
+    try {
+      let index;
+      if (MUT) {
+        fs.cpSync(path.join(__dirname, '..', 'dist'), path.join(tmp, 'dist'), { recursive: true });
+        index = path.join(tmp, 'dist', 'renderer', 'index.html');
+        const appJs = path.join(tmp, 'dist', 'renderer', 'app.js'), src = fs.readFileSync(appJs, 'utf8');
+        assert.strictEqual(src.split('afterClose:officeOwed,').length - 1, 1, 'the mutant applies: one close hook in app.js to remove');
+        fs.writeFileSync(appJs, src.replace('afterClose:officeOwed,', ''));
+      }
+      await H.load({ w: 1920, h: 1080, ...(index ? { index } : {}), query: { sim: '2', simrooms: '1', simhelpers: '0' }, ready: `document.querySelectorAll('#stage .desk[data-id]').length>=2&&document.getElementById('stage').dataset.fit` });
+      assert.strictEqual(await H.js(`window.THEME.sceneKit()`), 'office', 'close draw: the office kit is on screen before the pick');
+      const crewScenes = () => [...document.querySelectorAll('#stage .desk[data-id] svg.scene')].filter((s) => s.getClientRects().length && /\|crew\|/.test(s.dataset.sig || '') && s.querySelector('image')).length;
+      const r = await H.js(`(()=>{const S=window.DurbarScreens,U=window.__durbarSimUi,crew=${crewScenes.toString()};S.openSettings();window.THEME.setCharacters('cheeky');U.render();const drew=U.settleNow();const w=document.getElementById('floor').clientWidth;const before=crew();S.close();return {drew,coveredFloorWidth:w,kit:window.THEME.sceneKit(),crewScenesBeforeClose:before,crewScenesAtClose:crew()};})()`);
+      assert.deepStrictEqual({ ...r, crewScenesAtClose: r.crewScenesAtClose >= 2 }, { drew: true, coveredFloorWidth: 0, kit: 'crew', crewScenesBeforeClose: 0, crewScenesAtClose: true }, `close draw: the pick was applied and its draw run while Settings covered the floor (width 0, nothing drawn), and Settings closed in the same task; the close draws the crew kit (a portrait on each desk scene) at once (${JSON.stringify(r)})`);
+      console.log('[characters] close draw: the pick made under Settings is drawn when it closes');
+    } finally {
+      if (tmp) fs.rmSync(tmp, { recursive: true, force: true });
+    }
   }
   console.log('[characters] checks passed');
   process.exitCode = 0;

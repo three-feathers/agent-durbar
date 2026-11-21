@@ -12,6 +12,7 @@ process.exitCode = 1;
 let stage = 'load';
 process.on('exit', (code) => { if (code) console.error(`convsearchipc: failed or never settled in: ${stage}`); });
 import * as assert from 'assert';
+import { assertCutFirst, withBackstop } from './hang-backstop';
 import * as fs from 'fs';
 import * as path from 'path';
 import { pathToFileURL } from 'url';
@@ -43,7 +44,7 @@ async function main(): Promise<void> {
   (require('../src/main/ipcguard') as typeof import('../src/main/ipcguard')).initSimGuard(false);
   /* eslint-disable @typescript-eslint/no-require-imports */
   const { register, cleanQuery, QUERY, SHORT, NONE } = require('../src/main/ipc/convsearch') as typeof import('../src/main/ipc/convsearch');
-  const { CODEX_LIST_GATE_MS, CODEX_LIST_TTL_MS, SCOPE_LIST_MS, buildScope, createCodexListCache } = require('../src/main/convscope') as typeof import('../src/main/convscope');
+  const { CODEX_LIST_GATE_MS, KEPT_LIST_TTL_MS, SCOPE_LIST_MS, SEARCH_READ_MS, buildScope, createListCache, keptKey } = require('../src/main/convscope') as typeof import('../src/main/convscope');
   type Scope = import('../src/main/convscope').Scope;
   type ScopeDeps = import('../src/main/convscope').ScopeDeps;
   const { DEFAULT_TIMEOUT_MS: CODEX_RPC_TIMEOUT_MS } = require('../src/adapters/codexRpc') as typeof import('../src/adapters/codexRpc');
@@ -79,9 +80,9 @@ async function main(): Promise<void> {
     assert.strictEqual([...astral.query].length, 200, 'cut in code points, never inside a surrogate pair');
     assert.ok(!/[\uD800-\uDBFF]$/.test(astral.query));
     const huge = 'word '.repeat(200_000);
-    const t0 = Date.now();
-    assert.strictEqual(ok(huge).cut, true);
-    assert.ok(Date.now() - t0 < 200, 'a huge query is bounded before it is split');
+    // the property is the order: the input is cut to 4 x maxChars before any scan sees it (replace, split, trim, normalize, match, test, ...: the longest string seen, counted, not timed)
+    const hugeCut = assertCutFirst('cleanQuery: a 1 MB query is cut to 4 x maxChars', 4 * QUERY.maxChars, () => ok(huge).cut);
+    assert.strictEqual(hugeCut, true);
     // review of phase 2 (R4): the input is cut to 800 characters before it is split, so a word far behind is never reached
     assert.deepStrictEqual(ok('abc' + ' '.repeat(900) + 'def'), { ok: true, query: 'abc', cut: true });
     short('ab' + ' '.repeat(900) + 'cd');
@@ -124,12 +125,13 @@ async function main(): Promise<void> {
   const NOTES0 = { floorOffFolders: 0, mcpValuesLocked: false, lateLists: 0, lateApps: [] as string[] };
   let scopeOf: () => Scope = () => ({ plan: { sessions: [] }, read: async () => ({ ok: true, items: [] }), values: () => [], notes: NOTES0 });
   let hold: Promise<void> | undefined;
+  const listingSteps: Array<[number, number]> = []; // issue 1904: what the fake plan reports while it is built
   const deferred: Array<() => void> = [];
-  const cache = createCodexListCache();
+  const cache = createListCache();
   const ipc = register({
-    codexLists: cache,
+    keptLists: cache,
     hasSessions: () => sessions > 0,
-    scope: async (...a: unknown[]) => { scopeCalls.push(a); stops.push(a[0] as () => boolean); if (hold) await hold; return scopeOf(); },
+    scope: async (...a: unknown[]) => { scopeCalls.push(a); stops.push(a[0] as () => boolean); for (const [d, t] of listingSteps) (a[2] as (d: number, t: number) => void)(d, t); if (hold) await hold; return scopeOf(); },
     matcher: () => ({ masker, search }),
     defer: (fn) => { deferred.push(fn); },
     sleep: () => tick(), // the 250 ms between batches, without waiting
@@ -174,7 +176,8 @@ async function main(): Promise<void> {
   runDeferred();
   await settle(400);
   assert.strictEqual(scopeCalls.length, 1);
-  assert.strictEqual(scopeCalls[0].length, 2, 'the scope gets a stop function and main\'s own cache: nothing the window sent (no folder, path or session)');
+  assert.strictEqual(scopeCalls[0].length, 3, 'the scope gets a stop function, main\'s own cache and the progress callback: nothing the window sent (no folder, path or session)');
+  assert.strictEqual(typeof scopeCalls[0][2], 'function', 'issue 1904: the plan reports its progress through the third');
   assert.strictEqual(typeof scopeCalls[0][0], 'function');
   assert.strictEqual(scopeCalls[0][1], cache, 'the second is main\'s box-session cache (FR-026)');
   const evs = win1.sent.map(([ch, p]) => [ch, p] as const);
@@ -185,11 +188,26 @@ async function main(): Promise<void> {
   const hits = evs.flatMap(([, p]) => (p.kind === 'batch' ? p.hits : []));
   assert.deepStrictEqual(hits.map((h) => h.sessionId).sort(), ['a1', 'p1'], 'the open session by content, the earlier one by its masked title');
   const a1 = hits.find((h) => h.sessionId === 'a1')!;
-  assert.deepStrictEqual(Object.keys(a1).sort(), ['adapter', 'agentId', 'app', 'excerpts', 'folderName', 'group', 'more', 'sessionId', 'time', 'title', 'titleMarks'], 'FR-031: only these fields');
+  assert.deepStrictEqual(Object.keys(a1).sort(), ['adapter', 'agentId', 'app', 'excerpts', 'folderName', 'group', 'more', 'rank', 'sessionId', 'time', 'title', 'titleMarks'], 'FR-031: only these fields');
   assert.ok(a1.excerpts.length >= 1 && a1.excerpts.every((x) => x.marks.length > 0));
   const all = JSON.stringify(win1.sent);
   for (const bad of [GH, GH.slice(6, 20), MCP_VALUE, HOME, 'alice', 'grep invoice']) assert.ok(!all.includes(bad), `no "${bad}" in any payload`);
   assert.strictEqual(win2.sent.length, 0, 'the other window gets nothing');
+
+  // issue 1904 (FR-015): the plan's progress reaches the window as `listing` events, before the scan's batches, for this search's id only
+  {
+    win1.sent.length = 0;
+    listingSteps.push([0, 3], [1, 3], [3, 3]);
+    const rl = await start(E1, 'invoice');
+    assert.ok(rl.ok);
+    runDeferred();
+    await settle(400);
+    listingSteps.length = 0;
+    const kinds = win1.sent.map(([ch, p]) => `${ch}:${p.kind}`);
+    assert.deepStrictEqual(kinds.slice(0, 3), ['search:batch:listing', 'search:batch:listing', 'search:batch:listing'], 'listing: one event per report, first');
+    assert.ok(kinds.indexOf('search:done:done') > 2 && !kinds.slice(3).includes('search:batch:listing'), 'listing: nothing after the plan is built');
+    assert.deepStrictEqual(win1.sent.slice(0, 3).map(([, p]) => p), [0, 1, 3].map((d) => ({ kind: 'listing', searchId: rl.ok ? rl.searchId : '', done: d, total: 3 })), 'listing: the id, the counts and nothing else');
+  }
 
   // review of the phase 2 code (FR-031): `toHit` is the only way a hit reaches the window; a hit object that carries more (a folder
   // key with a home path, an excerpt's file) loses it. The scan builds its hits by hand, so the test stands in for it (restored below).
@@ -209,7 +227,7 @@ async function main(): Promise<void> {
       await settle(100);
       const got = win1.sent.flatMap(([, p]) => (p.kind === 'batch' ? p.hits : []));
       assert.strictEqual(got.length, 1);
-      assert.deepStrictEqual(Object.keys(got[0]).sort(), ['adapter', 'agentId', 'app', 'excerpts', 'folderName', 'group', 'more', 'sessionId', 'time', 'title', 'titleMarks']);
+      assert.deepStrictEqual(Object.keys(got[0]).sort(), ['adapter', 'agentId', 'app', 'excerpts', 'folderName', 'group', 'more', 'rank', 'sessionId', 'time', 'title', 'titleMarks']);
       assert.deepStrictEqual(Object.keys(got[0].excerpts[0]).sort(), ['anchor', 'marks', 'speaker', 'text']);
       assert.deepStrictEqual(Object.keys(got[0].excerpts[0].anchor).sort(), ['head', 'n']);
       const wire = JSON.stringify(win1.sent);
@@ -512,7 +530,8 @@ async function main(): Promise<void> {
     const stop = () => false;
     const rk = await scope.read(by('k1'), stop);
     assert.deepStrictEqual(claudeReads[0].slice(0, 4), ['k1-resume', '/w/one', SEARCH_HISTORY_LIMITS, '/claude-config'], 'an open Claude session: the streamed read of its resume id, with the search limits');
-    assert.strictEqual((claudeReads[0][4] as { stop: unknown }).stop, stop);
+    assert.strictEqual(typeof (claudeReads[0][4] as { stop: unknown }).stop, 'function', 'the read gets a stop that follows the scan\'s own (and its read limit, issue 1904)');
+    assert.strictEqual((claudeReads[0][4] as { stop(): boolean }).stop(), false);
     assert.ok(rk.ok && rk.items.length === 1);
     await scope.read(by('kp1'), stop);
     assert.deepStrictEqual(claudeReads[1].slice(0, 3), ['kp1', '/w/one', SEARCH_HISTORY_LIMITS]);
@@ -561,7 +580,7 @@ async function main(): Promise<void> {
 
   // ---- FR-026 (owner answer C): the cache itself, and buildScope with it; owner answer D: locked values said
   {
-    const c = createCodexListCache(1000);
+    const c = createListCache(1000);
     const P = (id: string): PreviousSession => ({ id, title: id, startTime: 1, modifiedTime: 2 });
     c.set('/f', ['x1'], [P('a')], 0);
     assert.deepStrictEqual(c.get('/f', ['x1'], 999)?.map((p) => p.id), ['a'], 'kept within its time');
@@ -577,7 +596,7 @@ async function main(): Promise<void> {
     assert.strictEqual(c.get('/f', [], 1)![0].title, 'a', 'a copy is handed out');
     c.clear();
     assert.strictEqual(c.size(), 0);
-    assert.strictEqual(CODEX_LIST_TTL_MS, 5 * 60_000);
+    assert.strictEqual(KEPT_LIST_TTL_MS, 5 * 60_000);
 
     const ag = (id: string, adapterId: string, cwd: string, floor?: string): AgentInfo => ({ id, name: path.basename(cwd), cwd, folders: [cwd], permMode: 'read-only', adapterId, ...(floor ? { floor } : {}) } as AgentInfo);
     const agents = new Map<string, AgentInfo>([['x1', ag('x1', 'codex', '/c/one')], ['x2', ag('x2', 'codex', '/c/one')], ['x3', ag('x3', 'codex', '/c/off', 'up')]]);
@@ -586,12 +605,12 @@ async function main(): Promise<void> {
     const codex = { id: 'codex', isLive: () => false, listPreviousSessions: async (cwd: string, ex?: ReadonlySet<string>) => { listed.push(cwd); if (fail) throw new Error('no'); return [P('t1'), P('t2'), P('x2')].filter((p) => !ex?.has(p.id)); } };
     let noPrompt = true;
     let clock = 1000;
-    const cache2 = createCodexListCache();
+    const cache2 = createListCache();
     const deps = {
       agents, router: { forAgent: () => codex as never, adapterIdOf: (id: string) => agents.get(id)?.adapterId }, wsKey: (a: AgentInfo) => a.cwd, resumeIdFor: (id: string) => id, appName: () => 'Codex', vsUserDirs: () => [],
       store: { get: () => undefined as never, sessionNames: () => [], floors: () => ({ floors: [{ id: 'ground', name: 'Ground floor', on: true }, { id: 'up', name: 'Up', on: false }], lastFloor: 'ground' }) },
       values: { knownSecretValues: () => [], noPrompt: () => noPrompt, secretValuesFor: () => [] }, gate: { run: (_k: string, fn: () => Promise<unknown>) => fn() },
-      listChats: (async () => ({ sessions: [], storesFound: 0, unreadable: 0, tooLarge: 0 })) as never, codexLists: cache2, now: () => clock,
+      listChats: (async () => ({ sessions: [], storesFound: 0, unreadable: 0, tooLarge: 0 })) as never, keptLists: cache2, now: () => clock,
     };
     const titles = (sc: Scope) => sc.plan.sessions.filter((x) => x.group === 'earlier').map((x) => x.sessionId);
     const s1 = await buildScope(deps);
@@ -607,13 +626,13 @@ async function main(): Promise<void> {
     agents.delete('x2'); // open when the folder was listed, so not in the kept list: it left the office, so the folder is listed again
     const s4b = await buildScope(deps);
     assert.deepStrictEqual([listed.length, titles(s4b)], [2, ['t1', 't2', 'x2']], 'a session open at the listing left the office: listed again, and it shows');
-    clock += CODEX_LIST_TTL_MS;
+    clock += KEPT_LIST_TTL_MS;
     await buildScope(deps);
     assert.strictEqual(listed.length, 3, 'after 5 minutes: listed again');
     cache2.clear();
     fail = true;
     const s5 = await buildScope(deps);
-    assert.deepStrictEqual([s5.plan.unavailable, cache2.size()], [['Codex'], 0], 'a listing that fails is not kept');
+    assert.deepStrictEqual([s5.plan.unavailable, cache2.size(), cache2.get(keptKey('/c/one', 'codex'), ['x1', 'x2'], clock)], [['Codex'], 2, undefined], 'a listing that fails is not kept (only the two folders\' chat lists are)');
     fail = false;
     noPrompt = false;
     assert.strictEqual((await buildScope(deps)).notes.mcpValuesLocked, true, 'owner answer D: values locked in the vault are said');
@@ -632,7 +651,7 @@ async function main(): Promise<void> {
     let threads = ['th1', 'th2'];
     const ad = { capabilities: { deleteSession: true }, isLive: () => false, deleteSession: async (id: string) => { if (id === 'th2') throw new Error('Codex refused'); removed.push(id); threads = threads.filter((t) => t !== id); }, listPreviousSessions: async () => threads.map((id) => ({ id, title: id, startTime: 1, modifiedTime: 2 })) };
     let changed = 0;
-    const c = createCodexListCache();
+    const c = createListCache();
     const prev = new PrevSessions({ agents: new Map([['x1', a]]), router: { forAgent: () => ad as never, adapterIdOf: () => 'codex' }, wsKey: (x) => x.cwd, resumeIdFor: (id) => id, appName: () => 'Codex', changed: () => { changed++; c.clear(); } });
     c.set('/c/one', ['x1'], [{ id: 'th1', title: 'th1', startTime: 1, modifiedTime: 2 }], Date.now());
     assert.deepStrictEqual((await prev.delete('x1', 'th2')).ok, false);
@@ -646,6 +665,16 @@ async function main(): Promise<void> {
     cache.set('/w/x', [], [{ id: 't1', title: 'kept', startTime: 1, modifiedTime: 2 }], Date.now());
     ipc.dropKept();
     assert.strictEqual(cache.size(), 0, 'dropKept drops the kept titles');
+    // issue 1904 (FR-026): the Previous sessions panel listing one folder drops that folder's kept lists only
+    cache.set(keptKey('/w/a', 'claude'), [], [{ id: 'a1', title: 'a', startTime: 1, modifiedTime: 2 }], Date.now());
+    cache.set(keptKey('/w/a', 'vscode'), [], [], Date.now());
+    cache.set(keptKey('/w/ab', 'claude'), [], [], Date.now());
+    ipc.dropKept('/w/a');
+    assert.deepStrictEqual([cache.size(), cache.get(keptKey('/w/ab', 'claude'), [], Date.now())], [1, []], 'dropKept(folder) drops that folder\'s lists (every app and its chats), not another folder\'s whose name starts the same');
+    ipc.dropKept();
+    assert.ok(/folderListed: \(key\) => convSearch\.dropKept\(key\)/.test(read('src/main/main.ts')), 'main.ts points the panel\'s listing at the search (issue 1904)');
+    const prevSrc = read('src/main/ipc/previous.ts');
+    assert.ok(/ipcHandle\('sessions:listPrevious', \(_e, id: unknown\) => \{ listed\(id\);/.test(prevSrc) && /ipcHandle\('vschat:list', async \(_e, id: unknown\): Promise<VsChatListResult> => \{\n\s+listed\(id\);/.test(prevSrc), 'the panel\'s two listings (Copilot/Claude/Codex sessions and VS Code chats) tell the search (issue 1904)');
     assert.ok(/registerPreviousIpc\(\{ browserGone, sessionsChanged: \(\) => convSearch\.dropKept\(\),/.test(read('src/main/main.ts')), 'main.ts points sessionsChanged at the search');
     assert.ok(/changed: \(\) => deps\.sessionsChanged\?\.\(\) \}/.test(read('src/main/ipc/previous.ts')), 'previous.ts hands it to PrevSessions');
   }
@@ -667,27 +696,25 @@ async function main(): Promise<void> {
     const fireAll = (): void => { for (const t of timers.splice(0)) t.fire(); };
     let gateCalls = 0;
     let rejectLate: ((e: Error) => void) | undefined;
-    const kept = createCodexListCache();
+    const kept = createListCache();
     const deps = {
       agents, router: { forAgent: (id: string) => adapters[agents.get(id)!.adapterId] as never, adapterIdOf: (id: string) => agents.get(id)?.adapterId }, wsKey: (a: AgentInfo) => a.cwd, resumeIdFor: (id: string) => id, appName: (id: string) => ({ codex: 'Codex', claude: 'Claude Code' }[id] ?? id), vsUserDirs: () => [],
       values: { knownSecretValues: () => [], noPrompt: () => true, secretValuesFor: () => [] },
       gate: { run: () => { gateCalls++; return new Promise<unknown>((_r, j) => { rejectLate = j; }); } }, // a hung app-server: the gate never answers
       listChats: (async () => ({ sessions: [], storesFound: 0, unreadable: 0, tooLarge: 0 })) as never,
-      codexLists: kept, now: () => clock, wait,
+      keptLists: kept, now: () => clock, wait,
     };
-    const t0 = Date.now();
     const pending = buildScope(deps);
     for (let i = 0; i < 200 && !gateCalls; i++) await tick();
     assert.strictEqual(gateCalls, 1, 'the first Codex listing waits at the hung gate');
     assert.ok(timers.some((t) => t.ms === SCOPE_LIST_MS), 'it races the time left: the whole deadline');
     fireAll(); // the deadline passes
-    const sc = await pending;
-    assert.ok(Date.now() - t0 < 1000, 'the plan is ready without really waiting');
+    const sc = await withBackstop(pending, 'the plan is ready once the injected deadline fires, without really waiting'); // the wait is the injected `wait` (fireAll above), not a real timer
     assert.strictEqual(gateCalls, 1, 'no listing starts after the deadline (the second Codex folder is never listed)');
     assert.deepStrictEqual(listings, [], 'nothing else listed after it');
     assert.deepStrictEqual([sc.notes.lateLists, sc.notes.lateApps.sort()], [5, ['Claude Code', 'Codex', 'VS Code']], 'every folder and app not listed in time is counted: Codex x2, Claude Code, VS Code x2 (the first VS Code list was in time)');
     assert.deepStrictEqual(sc.plan.sessions.map((x) => x.sessionId), ['x1', 'x2', 'k1'], 'the plan holds the open sessions');
-    assert.strictEqual(kept.size(), 0, 'a listing given up is not kept');
+    assert.strictEqual(kept.size(), 1, 'a listing given up is not kept (only the first folder\'s VS Code list, which was in time)');
     rejectLate!(new Error('probe died')); // a listing given up that fails later is not an unhandled rejection
     await settle(5);
     assert.strictEqual(SCOPE_LIST_MS, 30_000);
@@ -697,6 +724,203 @@ async function main(): Promise<void> {
     assert.deepStrictEqual([ok.notes.lateLists, ok.notes.lateApps], [0, []]);
     assert.ok(ok.plan.sessions.some((x) => x.sessionId === 'kp') && listings.length === 3, 'listed in time: in the plan');
     timers.length = 0;
+  }
+
+  // issue 1904 (FR-015): the plan reports "N of M folders" while it is built, so the window never has to say "0 of 0 sessions"
+  stage = 'scope listing progress';
+  {
+    const ag = (id: string, adapterId: string, cwd: string): AgentInfo => ({ id, name: path.basename(cwd), cwd, folders: [cwd], permMode: 'read-only', adapterId } as AgentInfo);
+    // two folders; the first has two apps (two Copilot-style listings and its chats), the second one app
+    const agents = new Map<string, AgentInfo>([['k1', ag('k1', 'claude', '/p/one')], ['c1', ag('c1', 'copilot', '/p/one')], ['k2', ag('k2', 'claude', '/p/two')]]);
+    let release!: () => void;
+    const held = new Promise<void>((r) => { release = r; });
+    let holdFolder: string | undefined;
+    const lister = (kind: string) => ({ id: kind, isLive: () => false, listPreviousSessions: async (cwd: string) => { if (cwd === holdFolder) await held; return [] as PreviousSession[]; } });
+    const adapters: Record<string, unknown> = { claude: lister('claude'), copilot: lister('copilot') };
+    const seen: Array<[number, number]> = [];
+    const mk = (over: Partial<ScopeDeps> = {}): ScopeDeps => ({
+      agents, router: { forAgent: (id: string) => adapters[agents.get(id)!.adapterId] as never, adapterIdOf: (id: string) => agents.get(id)?.adapterId }, wsKey: (a: AgentInfo) => a.cwd, resumeIdFor: (id: string) => id, appName: (id: string) => id, vsUserDirs: () => [],
+      values: { knownSecretValues: () => [], noPrompt: () => true, secretValuesFor: () => [] }, gate: { run: (_k: string, fn: () => Promise<unknown>) => fn() },
+      listChats: (async () => ({ sessions: [], storesFound: 0, unreadable: 0, tooLarge: 0 })) as never,
+      onListing: (d, t) => seen.push([d, t]), ...over,
+    });
+    await buildScope(mk());
+    assert.deepStrictEqual(seen, [[0, 2], [1, 2], [2, 2]], 'listing: 0 of 2 at the start, then a folder counts when ALL its listings (each app and its chats) are over');
+    // a folder whose listing is still running is not counted: the report stays at what is over, the plan waits
+    seen.length = 0;
+    holdFolder = '/p/two';
+    const pending = buildScope(mk());
+    for (let i = 0; i < 50 && seen.length < 2; i++) await tick();
+    await settle(5);
+    assert.deepStrictEqual(seen, [[0, 2], [1, 2]], 'listing: the first folder is over, the second is still listing: 1 of 2 and no more');
+    release();
+    await pending;
+    assert.deepStrictEqual(seen[seen.length - 1], [2, 2], 'listing: all over when the plan is ready');
+    // a failing listing is over too; a throwing progress callback never stops the plan
+    seen.length = 0;
+    holdFolder = undefined;
+    adapters.copilot = { id: 'copilot', isLive: () => false, listPreviousSessions: async () => { throw new Error('not signed in'); } };
+    const sc = await buildScope(mk({ onListing: (d, t) => { seen.push([d, t]); throw new Error('callback'); } }));
+    assert.deepStrictEqual([seen[seen.length - 1], sc.plan.unavailable], [[2, 2], ['copilot']], 'listing: a failed listing counts as over; a throwing callback is ignored');
+    // a stopped search reports no more
+    seen.length = 0;
+    let n = 0;
+    await buildScope(mk(), () => n++ >= 1);
+    assert.ok(seen.every(([d, t]) => d < t), 'listing: a search that is stopped is never reported as complete');
+  }
+
+  // issue 1904, part 2 (FR-026): the box session keeps every listing, not only Codex's: a second search lists nothing again
+  stage = 'scope kept listings';
+  {
+    const ag = (id: string, adapterId: string, cwd: string): AgentInfo => ({ id, name: path.basename(cwd), cwd, folders: [cwd], permMode: 'read-only', adapterId } as AgentInfo);
+    const agents = new Map<string, AgentInfo>([['c1', ag('c1', 'copilot', '/k/one')], ['k1', ag('k1', 'claude', '/k/one')], ['x1', ag('x1', 'codex', '/k/one')], ['k2', ag('k2', 'claude', '/k/two')]]);
+    const calls: string[] = [];
+    let fail = false;
+    const P = (id: string): PreviousSession => ({ id, title: 'earlier ' + id, startTime: 1, modifiedTime: 5 });
+    const lister = (kind: string) => ({ id: kind, isLive: () => false, listPreviousSessions: async (cwd: string, ex?: ReadonlySet<string>) => { calls.push(`${kind} ${cwd}`); if (fail && kind === 'copilot') throw new Error('no'); return [P(`${kind}-a`), P(`${kind}-b`)].filter((p) => !ex?.has(p.id)); } });
+    const adapters: Record<string, unknown> = { copilot: lister('copilot'), claude: lister('claude'), codex: lister('codex') };
+    const ref = (key: string): ChatFileRef => ({ summary: { key, title: 'vs chat', updated: 60, requests: 1, format: 'json' }, file: '/secret/' + key + '.json' });
+    const remembered: string[] = [];
+    let names: Array<{ src: string; id: string; name: string }> = [];
+    let clock = 1000;
+    const kept = createListCache();
+    const mk = (): ScopeDeps => ({
+      agents, router: { forAgent: (id: string) => adapters[agents.get(id)!.adapterId] as never, adapterIdOf: (id: string) => agents.get(id)?.adapterId }, wsKey: (a: AgentInfo) => a.cwd, resumeIdFor: (id: string) => id, appName: (id: string) => id, vsUserDirs: () => [],
+      store: { get: () => undefined as never, sessionNames: () => names as never, floors: () => ({ floors: [{ id: 'ground', name: 'Ground floor', on: true }], lastFloor: 'ground' }) },
+      values: { knownSecretValues: () => [], noPrompt: () => true, secretValuesFor: () => [] }, gate: { run: (_k: string, fn: () => Promise<unknown>) => fn() },
+      listChats: (async (_d: unknown, t: { folders: string[] }) => { calls.push('chats ' + t.folders[0]); return { sessions: [ref('h/' + t.folders[0])], storesFound: 1, unreadable: 0, tooLarge: 0 }; }) as never,
+      rememberChat: (_a: string, r: ChatFileRef) => remembered.push(r.summary.key), keptLists: kept, now: () => clock,
+    });
+    const ids = (sc: Scope) => sc.plan.sessions.filter((x) => x.group === 'earlier').map((x) => `${x.adapter}:${x.sessionId}`).sort();
+    const s1 = await buildScope(mk());
+    const first = calls.slice().sort();
+    assert.deepStrictEqual(first, ['chats /k/one', 'chats /k/two', 'claude /k/one', 'claude /k/two', 'codex /k/one', 'copilot /k/one'], 'kept: the first search lists every folder and app once');
+    calls.length = 0;
+    names = [{ src: 'claude', id: 'claude-a', name: 'Renamed' }];
+    const s2 = await buildScope(mk());
+    assert.deepStrictEqual(calls, [], 'kept: the second search makes ZERO listing calls (every app and the chats)');
+    assert.deepStrictEqual(ids(s2), ids(s1), 'kept: and finds the same earlier sessions');
+    assert.ok(s2.plan.sessions.some((x) => x.sessionId === 'claude-a' && x.title === 'Renamed'), 'kept: a rename is applied again at each search');
+    assert.strictEqual(remembered.length, 4, 'kept: a kept chat is remembered for View again (2 searches x 2 folders)');
+    assert.ok(!JSON.stringify(s2.plan.sessions.map(({ folderKey: _k, ...x }) => x)).includes('/secret/'), 'kept: a chat file path never enters the plan');
+    // a session resumed since is open now: left out without a listing
+    agents.set('claude-a', ag('claude-a', 'claude', '/k/one'));
+    const s3 = await buildScope(mk());
+    assert.deepStrictEqual([calls.length, ids(s3).includes('claude:claude-a')], [0, false], 'kept: a session resumed since is open, so it is left out; still no listing');
+    agents.delete('claude-a');
+    // the panel listed one folder again (the Refresh): that folder only
+    kept.dropFolder('/k/one');
+    await buildScope(mk());
+    assert.deepStrictEqual(calls.slice().sort(), ['chats /k/one', 'claude /k/one', 'codex /k/one', 'copilot /k/one'], 'kept: a Previous sessions listing of a folder drops that folder\'s lists only');
+    calls.length = 0;
+    // an open session of that folder and app left the office: it is an earlier session now, so that app's list is listed again
+    agents.set('k9', ag('k9', 'claude', '/k/two'));
+    await buildScope(mk()); // a new open session does not drop it (it adds no earlier session)
+    assert.deepStrictEqual(calls, [], 'kept: a new open session does not drop the list');
+    agents.delete('k2');
+    await buildScope(mk());
+    assert.deepStrictEqual(calls, ['claude /k/two'], 'kept: an open session of that folder and app left the office (it is an earlier session now): that list is listed again, only that');
+    calls.length = 0;
+    agents.delete('k9');
+    await buildScope(mk());
+    assert.deepStrictEqual(calls.slice().sort(), [], 'kept: no agent is left in /k/two, so there is nothing to list there');
+    agents.set('k2', ag('k2', 'claude', '/k/two'));
+    calls.length = 0;
+    await buildScope(mk());
+    assert.deepStrictEqual(calls.slice().sort(), ['claude /k/two'], 'kept: an app listed again once an agent of it is back in the folder (its list was dropped when the last one left)');
+    calls.length = 0;
+    agents.delete('c1'); // the only Copilot agent of /k/one: its kept list goes; no agent of the app, so it is not listed either
+    await buildScope(mk());
+    assert.deepStrictEqual(calls, [], 'kept: an app with no agent in the folder is not listed');
+    agents.set('c9', ag('c9', 'copilot', '/k/one')); // a new Copilot agent: the session of c1 is an earlier one now, so the kept list (made while c1 was open) goes
+    await buildScope(mk());
+    assert.deepStrictEqual(calls, ['copilot /k/one'], 'kept: the open session left the office and an agent of the app is there again: listed again, and its sessions show');
+    calls.length = 0;
+    // a new folder is listed, the others are not
+    agents.set('k3', ag('k3', 'claude', '/k/three'));
+    await buildScope(mk());
+    assert.deepStrictEqual(calls.slice().sort(), ['chats /k/three', 'claude /k/three'], 'kept: a new folder is listed, the others stay kept');
+    calls.length = 0;
+    // a delete clears everything
+    kept.clear();
+    await buildScope(mk());
+    assert.strictEqual(calls.length, 8, 'kept: after a delete every folder and app is listed again (copilot, claude, codex in /k/one; claude and chats in the others)');
+    calls.length = 0;
+    // five minutes
+    await buildScope(mk());
+    assert.strictEqual(calls.length, 0);
+    clock += KEPT_LIST_TTL_MS;
+    await buildScope(mk());
+    assert.strictEqual(calls.length, 8, 'kept: after 5 minutes everything is listed again');
+    calls.length = 0;
+    // a listing that fails is not kept: it fails again at the next search; the others stay kept
+    kept.clear();
+    fail = true;
+    const sf = await buildScope(mk());
+    assert.deepStrictEqual(sf.plan.unavailable, ['copilot']);
+    calls.length = 0;
+    await buildScope(mk());
+    assert.deepStrictEqual(calls, ['copilot /k/one'], 'kept: only the failing listing is tried again');
+    assert.strictEqual(KEPT_LIST_TTL_MS, 5 * 60_000);
+  }
+
+  // issue 1904, part 2 (FR-022): every read has its own time limit; one that never answers is skipped and counted
+  stage = 'scope read limit';
+  {
+    const ag = (id: string, adapterId: string, cwd: string): AgentInfo => ({ id, name: path.basename(cwd), cwd, folders: [cwd], permMode: 'read-only', adapterId } as AgentInfo);
+    const agents = new Map<string, AgentInfo>([['c1', ag('c1', 'copilot', '/r/one')], ['x1', ag('x1', 'codex', '/r/one')], ['k1', ag('k1', 'claude', '/r/one')], ['c2', ag('c2', 'copilot', '/r/two')]]);
+    let clock = 0;
+    const timers: Array<{ ms: number; fire(): void }> = [];
+    const wait = (ms: number): Promise<void> => new Promise<void>((r) => timers.push({ ms, fire: () => { clock += ms; r(); } }));
+    const fire = (ms: number): void => { for (const t of timers.filter((x) => x.ms === ms)) t.fire(); };
+    const never = (): Promise<never> => new Promise<never>(() => undefined); // a runtime that never answers
+    let hungCopilot = true;
+    let lateReject: ((e: Error) => void) | undefined;
+    const adapters: Record<string, unknown> = {
+      copilot: { id: 'copilot', isLive: () => true, history: async (id: string) => { if (hungCopilot && id === 'c1') return never(); if (id === 'c2') return { items: [{ type: 'user', text: 'answers in time' }], total: 1, truncated: false }; return new Promise((_r, j) => { lateReject = j; }); } },
+      codex: { id: 'codex', isLive: () => true, history: () => never() },
+      claude: { id: 'claude', isLive: () => true },
+    };
+    const claudeStops: Array<() => boolean> = [];
+    const deps: ScopeDeps = {
+      agents, router: { forAgent: (id: string) => adapters[agents.get(id)!.adapterId] as never, adapterIdOf: (id: string) => agents.get(id)?.adapterId }, wsKey: (a: AgentInfo) => a.cwd, resumeIdFor: (id: string) => id, appName: (id: string) => id, vsUserDirs: () => [],
+      values: { knownSecretValues: () => [], noPrompt: () => true, secretValuesFor: () => [] }, gate: { run: (_k: string, fn: () => Promise<unknown>) => fn() }, // a gate that adds no limit of its own: only the read's own limit is tested
+      listChats: (async () => ({ sessions: [{ summary: { key: 'h/1', title: 'vs', updated: 1, requests: 1, format: 'json' }, file: '/f' }], storesFound: 1, unreadable: 0, tooLarge: 0 })) as never,
+      readClaude: (async (_i: string, _c: string, _l: unknown, _d: unknown, o: { stop(): boolean }) => { claudeStops.push(o.stop); return never(); }) as never,
+      readChat: (() => never()) as never,
+      now: () => clock, wait,
+    };
+    const sc = await buildScope(deps);
+    const by = (id: string) => sc.plan.sessions.find((x) => x.sessionId === id)!;
+    const stop = (): boolean => false;
+    assert.strictEqual(SEARCH_READ_MS, 15_000);
+    const outcome = async (s: Parameters<Scope['read']>[0]): Promise<unknown> => {
+      const p = sc.read(s, stop);
+      for (let i = 0; i < 50 && !timers.some((t) => t.ms === SEARCH_READ_MS); i++) await tick();
+      assert.ok(timers.some((t) => t.ms === SEARCH_READ_MS), `read: ${s.sessionId} races its own limit`);
+      fire(SEARCH_READ_MS);
+      timers.length = 0;
+      return withBackstop(p, `read: ${s.sessionId} ends once its limit fires, without really waiting`);
+    };
+    const skipped = { ok: false, reason: 'timeout' };
+    assert.deepStrictEqual(await outcome(by('c1')), skipped, 'read: a Copilot session whose getEvents never answers is skipped');
+    assert.deepStrictEqual(await outcome(by('x1')), skipped, 'read: a Codex session whose thread/read never answers is skipped (the gate here has no limit of its own)');
+    assert.deepStrictEqual(await outcome(by('k1')), skipped, 'read: a Claude Code stream that never ends is skipped');
+    assert.strictEqual(claudeStops[0](), true, 'read: and the stream is told to stop');
+    const vs = sc.plan.sessions.find((x) => x.adapter === 'vscode')!;
+    assert.deepStrictEqual(await outcome(vs), skipped, 'read: a VS Code chat that never answers is skipped');
+    // one that answers in time is read as before, and its timer is not what decides
+    const ok = await sc.read(by('c2'), stop);
+    assert.deepStrictEqual(ok, { ok: true, items: [{ type: 'user', text: 'answers in time' }] }, 'read: a read that answers in time is unchanged');
+    timers.length = 0;
+    // a given up read that fails later is not an unhandled rejection, and its late result changes nothing
+    hungCopilot = false;
+    const late = sc.read(by('c1'), stop);
+    for (let i = 0; i < 50 && !timers.some((t) => t.ms === SEARCH_READ_MS); i++) await tick();
+    fire(SEARCH_READ_MS);
+    assert.deepStrictEqual(await withBackstop(late, 'read: the late one ends'), skipped);
+    lateReject?.(new Error('runtime died after the limit'));
+    await settle(5);
   }
 
   // review of the phase 2 code (FR-022): quick new starts do not pile up listings of the same folder; the running one is shared
@@ -739,10 +963,10 @@ async function main(): Promise<void> {
     let started = 0;
     const adapter = { id: 'codex', isLive: () => false, listPreviousSessions: async (_cwd: string, exclude: ReadonlySet<string>) => { started++; await held; return [{ id: 'th1', title: 'one', startTime: 1, modifiedTime: 2 }, { id: 'th2', title: 'two', startTime: 1, modifiedTime: 3 }].filter((p) => !exclude.has(p.id)); } };
     const gate = createReadGate<unknown>();
-    const kept = createCodexListCache();
+    const kept = createListCache();
     const mk = (): ScopeDeps => ({
       agents, router: { forAgent: () => adapter as never, adapterIdOf: () => 'codex' }, wsKey: (a: AgentInfo) => a.cwd, resumeIdFor: (id: string) => id, appName: () => 'Codex', vsUserDirs: () => [],
-      values: { knownSecretValues: () => [], noPrompt: () => true, secretValuesFor: () => [] }, gate, codexLists: kept,
+      values: { knownSecretValues: () => [], noPrompt: () => true, secretValuesFor: () => [] }, gate, keptLists: kept,
       listChats: (async () => ({ sessions: [], storesFound: 0, unreadable: 0, tooLarge: 0 })) as never,
     });
     const first = buildScope(mk());
@@ -770,10 +994,10 @@ async function main(): Promise<void> {
     const all = [{ id: 'th1', title: 'one', startTime: 1, modifiedTime: 2 }, { id: 's1', title: 'was open', startTime: 1, modifiedTime: 3 }];
     const adapter = { id: 'codex', isLive: () => false, listPreviousSessions: async (_cwd: string, exclude: ReadonlySet<string>) => { started++; await held; return all.filter((p) => !exclude.has(p.id)); } };
     const gate = createReadGate<unknown>();
-    const kept = createCodexListCache();
+    const kept = createListCache();
     const mk = (): ScopeDeps => ({
       agents, router: { forAgent: () => adapter as never, adapterIdOf: () => 'codex' }, wsKey: (a: AgentInfo) => a.cwd, resumeIdFor: (id: string) => id, appName: () => 'Codex', vsUserDirs: () => [],
-      values: { knownSecretValues: () => [], noPrompt: () => true, secretValuesFor: () => [] }, gate, codexLists: kept,
+      values: { knownSecretValues: () => [], noPrompt: () => true, secretValuesFor: () => [] }, gate, keptLists: kept,
       listChats: (async () => ({ sessions: [], storesFound: 0, unreadable: 0, tooLarge: 0 })) as never,
     });
     const earlier = (sc: Awaited<ReturnType<typeof buildScope>>): string[] => sc.plan.sessions.filter((x) => x.group === 'earlier').map((x) => x.sessionId).sort();
@@ -803,10 +1027,10 @@ async function main(): Promise<void> {
       claude: { id: 'claude', isLive: () => false },
       codex: { id: 'codex', isLive: () => false, listPreviousSessions: async (_cwd: string, exclude: ReadonlySet<string>) => all.filter((p) => !exclude.has(p.id)) },
     };
-    const kept = createCodexListCache();
+    const kept = createListCache();
     const mk = (): ScopeDeps => ({
       agents, router: { forAgent: (id: string) => adapters[agents.get(id)!.adapterId] as never, adapterIdOf: (id: string) => agents.get(id)?.adapterId }, wsKey: (a: AgentInfo) => a.cwd, resumeIdFor: (id: string) => id, appName: (id: string) => id, vsUserDirs: () => [],
-      values: { knownSecretValues: () => [], noPrompt: () => true, secretValuesFor: () => [] }, gate: createReadGate<unknown>(), codexLists: kept,
+      values: { knownSecretValues: () => [], noPrompt: () => true, secretValuesFor: () => [] }, gate: createReadGate<unknown>(), keptLists: kept,
       listChats: (async () => { await held; return { sessions: [], storesFound: 0, unreadable: 0, tooLarge: 0 }; }) as never,
     });
     const earlier = (sc: Awaited<ReturnType<typeof buildScope>>): string[] => sc.plan.sessions.filter((x) => x.group === 'earlier').map((x) => x.sessionId).sort();
@@ -874,7 +1098,7 @@ async function main(): Promise<void> {
     // main.ts hands over main's own state and stops the scan on window close and quit
     const mainSrc = read('src/main/main.ts');
     assert.ok(/registerConvSearchIpc\(\{/.test(mainSrc) && /hasSessions: \(\) => agents\.size > 0/.test(mainSrc), 'main.ts registers the search with its own agents');
-    assert.ok(/const convListings = new Map<string, Promise<unknown>>\(\)/.test(mainSrc) && /gate: convGate, codexLists, listings: convListings,/.test(mainSrc), 'main.ts passes its one map of running listings to every scan (FR-022)');
+    assert.ok(/const convListings = new Map<string, Promise<unknown>>\(\)/.test(mainSrc) && /gate: convGate, keptLists, listings: convListings,/.test(mainSrc), 'main.ts passes its one map of running listings to every scan (FR-022)');
     assert.ok(/noPrompt: \(\) => !mcpStore \|\| mcpStore\.noPrompt\(\)/.test(mainSrc) && /knownSecretValues: \(key\) => mcpStore\?\.knownSecretValues\(key\) \?\? \[\]/.test(mainSrc), 'MCP values without a prompt, as NotesOps; no store yet means nothing is locked (review of PR 1232, Q1: as valuesPending, `!!mcpStore && ...`)');
     {
       // Q1: the wiring's own expression, run: no store yet is "nothing locked" (the note says nothing), a store that would prompt is locked

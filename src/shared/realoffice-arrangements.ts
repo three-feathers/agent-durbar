@@ -1,7 +1,7 @@
 /** Spec 102 FR-227, FR-256 (T202, T203, T205): where the people sit. `rows` is `realLayout`, untouched; `aisles` is the Retro arcade hall:
  *  staggered aisles of cabinets in an integer pixel scale `g`. Pure, no DOM, nothing draws it yet (RA3). The numbers marked "provisional"
  *  come from the mockup and the art by eye and are replaced by measured ones (T201's `faceBox`, T207's frame sizes). */
-import { lobbyBand, lobbyRange, loungeRows, realLayout, rowGeom, deskStation, shownDesks, signWidth, signMin, splitLounge, BIG_MAX, helpH, helpCols, helpShown, FACE_U, PW, SR, PAD, ZGAP, STRIP, U_MAX, type DeskBox, type Layout, type RealAgent, type RealMeta, type RealModel, type RealState, type Rect, type ZoneBox, STOREY_GAP, STOREY_TAG_MIN, storeyRuns, storeyTagW, type StoreyBand } from './realoffice-layout';
+import { devStep, lobbyBand, lobbyRange, loungeRows, realLayout, rowGeom, deskStation, shownDesks, signWidth, signMin, signShortMin, CHIP_KINDS, splitLounge, BIG_MAX, helpH, helpCols, helpShown, FACE_U, PW, SR, PAD, ZGAP, STRIP, U_MAX, type DeskBox, type Layout, type RealAgent, type RealMeta, type RealModel, type RealState, type Rect, type ZoneBox, STOREY_GAP, STOREY_TAG_MIN, storeyRuns, storeyTagW, type StoreyBand } from './realoffice-layout';
 
 export const ARRANGEMENTS = ['rows', 'circle', 'aisles'] as const;
 export type Arrangement = (typeof ARRANGEMENTS)[number];
@@ -70,12 +70,23 @@ interface Plan { keep: boolean; g: number; gw: number; gh: number; cols: number;
  *  straight plan of the same scale, cabinet and rows and covers the same floor, so it never won; the rows stagger instead. The order: no bare band over a quarter of
  *  the floor if any plan manages that, then the biggest scale, then the biggest cabinet, then the least bare floor. Past what fits, rows are added
  *  at the smallest choice and the floor scrolls inside itself (T203). */
-function planFor(sizes: number[], W: number, F: number, PW: number = AISLE_PERSON.w, extra = 0, sh = 0, starts?: ReadonlySet<number>, ends?: ReadonlyMap<number, number>): Plan {
+/** FR-255 (T204, #1876): the scales to try at device pixel ratio `dpr`, biggest first. A `g` that is a whole number of device px stays. Any other (2 at 1.25 is 2.5 device px,
+ *  which draws 2 px, 3 px, 2 px, 3 px) is tried first at the next whole-device scale up (2.4 at 1.25), "where the floor still fits" (FR-255), then at itself, uneven as before:
+ *  the scale never goes down to make pixels even (1.6 at 1.25 made the 15-agent cabinets 20 % smaller: an owner choice, T204). At a whole ratio the list is `gs` itself. */
+export function deviceScales(gs: ReadonlyArray<number>, dpr = 1): number[] {
+  const st = devStep(dpr);
+  if (st === 1) return [...gs];
+  const out = new Set<number>();
+  for (const g of gs) { out.add(g); const n = g / st; if (Math.abs(n - Math.round(n)) > 1e-6) out.add(Math.ceil(n) * st); }
+  return [...out].sort((a, b) => b - a);
+}
+
+function planFor(sizes: number[], W: number, F: number, PW: number = AISLE_PERSON.w, extra = 0, sh = 0, starts?: ReadonlySet<number>, ends?: ReadonlyMap<number, number>, dpr = 1): Plan {
   const gaps = starts ? starts.size * STOREY_GAP : 0; /* the rule between two storeys */
   const k = sizes.reduce((a, b) => a + b, 0) + extra; /* extra: the lounge's cells (spec 097 FR-248) */
   const rowCost = (gh: number, g: number): number => AISLE_SIGN_H + cabGrid(0, gh).h * g + AISLE_PLATE_H + g - 1 + sh; /* g - 1: the cabinet snaps down to the grid; sh: the helper strip's fixed height under every plate (spec 097 FR-306, 0 without helpers) */
   const plans: Plan[] = [];
-  for (const keep of [true, false]) for (const g of k <= 4 ? AISLE_G_FEW : [3, 2]) for (const [name, c] of Object.entries(CABINETS)) for (let cols = 1; cols <= AISLE_COLS; cols++) {
+  for (const keep of [true, false]) for (const g of deviceScales(k <= 4 ? AISLE_G_FEW : [3, 2], dpr)) for (const [name, c] of Object.entries(CABINETS)) for (let cols = 1; cols <= AISLE_COLS; cols++) {
     const rows = packSeats(sizes, cols, keep, extra, starts, ends).rows, cab = cabGrid(c.gw, c.gh), slotW = (cab.w + PW + AISLE_GAP) * g;
     const cw = (W - 2 * AISLE_PAD) / cols, spareY = F - rows * rowCost(c.gh, g) - gaps;
     if (slotW > cw || slotW < AISLE_SIGN_MIN_W || spareY < 0 || cols > k) continue;
@@ -222,12 +233,13 @@ export function aislesLayout(model: RealModel, view: { w: number; h: number }, m
   const covered = (p: Plan): number => p.fits ? p.g * p.g * (cabGrid(p.gw, p.gh).w * cabGrid(p.gw, p.gh).h + PW * AISLE_PERSON.h) : -1;
   /* spec 097 FR-306, FR-308 (issue #1139): with helpers, one row of head figures under every plate (a fixed height in every row); if the hall then no longer fits, no strip: the plate keeps +N and dots */
   const hasHelpers = folders.some((f) => f.agents.some((a) => (a.helpers || 0) > 0));
+  const pf = (F: number, nCells: number, sh: number, st?: ReadonlySet<number>, en?: ReadonlyMap<number, number>): Plan => planFor(planSizes, W, F, PW, nCells, sh, st, en, meta.dpr || 1); /* one place gives every plan the ratio (T204): the first, the low-lobby loop and the low plan cannot disagree */
   const planAt = (sh: number, st?: ReadonlySet<number>, en?: ReadonlyMap<number, number>): Plan => {
     const nCells = en ? nCellsS : nCells0;
-    let first = planFor(planSizes, W, Ho - lobbyT - AISLE_LANE - AISLE_PAD, PW, nCells, sh, st, en);
-    if (kc <= 4 && AISLE_LOW_LOBBY) for (let L = lobbyT - 4; L >= Math.min(lobbyMin + AISLE_LANE, AISLE_LOBBY_LOW); L -= 2) { const p = planFor(planSizes, W, Ho - L - AISLE_LANE - AISLE_PAD, PW, nCells, sh, st, en); if (covered(p) > covered(first)) first = p; }
+    let first = pf(Ho - lobbyT - AISLE_LANE - AISLE_PAD, nCells, sh, st, en);
+    if (kc <= 4 && AISLE_LOW_LOBBY) for (let L = lobbyT - 4; L >= Math.min(lobbyMin + AISLE_LANE, AISLE_LOBBY_LOW); L -= 2) { const p = pf(Ho - L - AISLE_LANE - AISLE_PAD, nCells, sh, st, en); if (covered(p) > covered(first)) first = p; }
     /* spec 102 delta 2026-11-12 (issue 1590): the lowest lobby is also tried when the plan at the set lobby fits only by cutting a folder of 4 or fewer across rows (keep: false) and the lowest lobby keeps them whole */
-    const low = planFor(planSizes, W, Ho - lobbyMin - AISLE_LANE - AISLE_PAD, PW, nCells, sh, st, en);
+    const low = pf(Ho - lobbyMin - AISLE_LANE - AISLE_PAD, nCells, sh, st, en);
     return first.fits && (first.keep || !low.keep) ? first : low;
   };
   const solve = (st?: ReadonlySet<number>, en?: ReadonlyMap<number, number>): { sh: number; plan: Plan } => {
@@ -265,7 +277,7 @@ export function aislesLayout(model: RealModel, view: { w: number; h: number }, m
   const spare = plan.fits ? Math.max(0, Ho - Lb - AISLE_LANE - used - AISLE_PAD) : 0, extra = spare / (rows + 1);
   /* rows stagger by 8 % of a column, less where the floor is narrow */
   /* columns no wider than 1.1 slots, the grid in the middle: a small group stands close together */
-  const cw = Math.min((W - 2 * AISLE_PAD) / cols, plan.slotW * AISLE_CLOSE), x0g = (W - cols * cw) / 2, snap = (v: number): number => Math.round(v / g) * g;
+  const cw = Math.min((W - 2 * AISLE_PAD) / cols, plan.slotW * AISLE_CLOSE), x0g = (W - cols * cw) / 2, dFloor = (v: number): number => { const st = devStep(meta.dpr || 1); return st === 1 ? Math.floor(v) : Math.floor(v / st + 1e-9) * st; } /* FR-255 (T204): centring in whole device px at 1.25 and 1.5, in whole CSS px as before at a whole ratio */, snap = (v: number): number => Math.round(v / g) * g;
   const shift = rows < 2 ? 0 : Math.max(0, /* one row has nothing to stagger against: it stands in the middle */ Math.min(cw * AISLE_STAGGER, (cw - plan.slotW - g) / 2));
   const inRow = pk.inRow;
   const cxOf = (i: number): number => {
@@ -299,8 +311,8 @@ export function aislesLayout(model: RealModel, view: { w: number; h: number }, m
         const d: DeskBox = {
           id: a.id, state: a.state as RealState, narrow: false, slot: b.slot, desk: { ...b.cab, full: cabH },
           plate: { x: b.cab.x, y: plateY, w: cabW, h: AISLE_PLATE_H }, screen: { x: gl.x - 4 * g, y: gl.y - 4 * g, w: gl.w + 8 * g, h: gl.h + 8 * g }, glass: gl,
-          person: fr ? { x: px + Math.floor((pw - fr.w * g) / 2), y: plateY - fr.h * g, w: fr.w * g, h: fr.h * g, file: `${a.person}-${fr.pose}.webp`, fileB: null, pose: fr.pose, pid: String(a.person), vis: { x: px + Math.floor((pw - faceS) / 2), y: py, w: faceS, h: faceS } } : null,
-          face: { x: px + Math.floor((pw - faceS) / 2), y: py + 4 * g, w: faceS, h: faceS },
+          person: fr ? { x: px + dFloor((pw - fr.w * g) / 2), y: plateY - fr.h * g, w: fr.w * g, h: fr.h * g, file: `${a.person}-${fr.pose}.webp`, fileB: null, pose: fr.pose, pid: String(a.person), vis: { x: px + dFloor((pw - faceS) / 2), y: py, w: faceS, h: faceS } } : null,
+          face: { x: px + dFloor((pw - faceS) / 2), y: py + 4 * g, w: faceS, h: faceS },
           away: a.away ? aisleNote(gl, b.face, g) : null,
           lamp: { x: b.cab.x - 4 * g, y: b.cab.y - 4 * g, w: cabW + 8 * g, h: cabH + 8 * g },
           cue: a.away || a.state === 'error' ? { x: gl.x + gl.w - 4 * g, y: gl.y - 4 * g } : { x: px + pw / 2, y: Math.max(py + 2 * g, b.cab.y + 12 * g) }, bubble: null, bang: null, /* inside the cabinet's height: a sign may lie above it */
@@ -422,7 +434,7 @@ export function aislesLayout(model: RealModel, view: { w: number; h: number }, m
 export const CIRCLE_U_MIN = Math.ceil(FACE_FLOOR / FACE_U);
 export const CIRCLE_FOCUS_MIN = { w: 160, h: 120 } as const;
 /** `side`: the widest side, 1 or 2 desks (default 2: one desk wide does not hold 15 at 1280x800, measured in the Changes of 2026-11-13) */
-export interface CircleOpts { side?: 1 | 2 }
+export interface CircleOpts { side?: 1 | 2; /** test only: the room from the sign's LIVE chips (what #1764's first fix did): the mutant of 097 FR-015, which the same-slots test must kill */ liveChips?: boolean }
 interface CirclePlan { nl: number; nt: number; nr: number; wl: number; wr: number; colH: number }
 export function circleWith(model: RealModel, view: { w: number; h: number }, meta: RealMeta, signs: Record<string, { name: string; path: string; counts: number }> | undefined, opt: CircleOpts = {}): Layout {
   const W = Math.max(200, view.w), H0 = Math.max(200, view.h);
@@ -438,6 +450,16 @@ export function circleWith(model: RealModel, view: { w: number; h: number }, met
   const rowsOf = (i: number, j: number, w: number): number => runs(i, j).reduce((s, [p, q]) => s + Math.ceil((q - p) / w), 0);
   const sideH = (i: number, j: number, w: number, b: number): number => (j > i ? rowsOf(i, j, w) * b + (runs(i, j).length - 1) * ZGAP : 0);
   const zonesIn = (i: number, j: number): number => (j > i ? seats[j - 1].fx - seats[i].fx + 1 : 0);
+  /** the least width a folder's room may have so its sign keeps its + and menu (FR-231): the short sign's measured width (`signShortMin`) for the MOST chips the folder can ever show, one per agent up to `CHIP_KINDS`: from the agents, never from the states, so a status change moves no seat (097 FR-015, 102 FR-230) */
+  const needW = (fx: number): number => {
+    const f = folders[fx], all = model.folders.find((x) => x.id === f.id), s = signs && Object.prototype.hasOwnProperty.call(signs, f.id) ? (signs[f.id] as { chips?: number }) : undefined;
+    return signShortMin(opt.liveChips && s && s.chips !== undefined ? s.chips : Math.min(all ? all.agents.length : f.agents.length, CHIP_KINDS)) + 8;
+  };
+  /** a zone of `c` desk columns holding folder `fx`, at desk width `Sw`: the desks' width, or the sign's if that is wider */
+  const zoneW = (fx: number, c: number, Sw: number): number => Math.max(c * Sw + 8, needW(fx));
+  /** the width of the top row over seats [i, j): its zones and the gaps between them; `sideBw` the width of a side over [i, j), `w` desks wide: the widest of its zones, never under the desks' */
+  const topW = (i: number, j: number, Sw: number): number => { const r = runs(i, j); return r.reduce((a, [p, q]) => a + zoneW(seats[p].fx, q - p, Sw), 0) + ZGAP * Math.max(0, r.length - 1); };
+  const sideBw = (i: number, j: number, w: number, Sw: number): number => runs(i, j).reduce((a, [p, q]) => Math.max(a, zoneW(seats[p].fx, Math.min(w, q - p), Sw)), w * Sw + 8);
   const rowOf = (u: number) => ({ zones: folders, n: k, Sw: (PW + SR) * u, scrH: 0, strip: 0 });
   const needOf = (withFocus: boolean): number => (withFocus ? CIRCLE_FOCUS_MIN.h + PAD : 0);
   /* the seats at unit u: the split into a left side, a top row and a right side (k >= 3: a ring, each of them used) that fits, the most even and narrowest first; null when none does */
@@ -450,8 +472,8 @@ export function circleWith(model: RealModel, view: { w: number; h: number }, met
         const hl = sideH(0, nl, wl, b);
         if (hl > avail) break;
         for (let nr = ring ? 1 : 0; nl + nr <= k - 1 || (k === 1 && nl + nr === 0); nr++) {
-          const nt = k - nl - nr, zt = zonesIn(nl, nl + nt);
-          if (Math.max(nt * Sw + zt * 8 + ZGAP * (zt - 1), ring ? (wl + wr) * Sw + 16 + 2 * ZGAP + CIRCLE_FOCUS_MIN.w : 0) > W - 2 * PAD) continue; /* the row, and the two sides with the focus between them, fit the width */
+          const nt = k - nl - nr;
+          if (Math.max(topW(nl, nl + nt, Sw), ring ? sideBw(0, nl, wl, Sw) + sideBw(nl + nt, k, wr, Sw) + 2 * ZGAP + CIRCLE_FOCUS_MIN.w : 0) > W - 2 * PAD) continue; /* the row, and the two sides with the focus between them, fit the width */
           const colH = Math.max(hl, sideH(nl + nt, k, wr, b)), used = b + ZGAP + Math.max(colH, needOf(withFocus));
           if (used > avail) continue;
           const score = -Math.abs(nl - nr) * 1e4 - colH - (wl + wr - 2) * 5e3;
@@ -470,8 +492,8 @@ export function circleWith(model: RealModel, view: { w: number; h: number }, met
     else { /* nothing fits at CIRCLE_U_MIN: as many in the top row as its width holds, the rest in two sides of the widest kind, and the floor scrolls */
       const Sw = (PW + SR) * u, b = rowGeom(meta, rowOf(u), u).bottom, ring = k >= 3;
       let nt = ring ? k - 2 : k;
-      const topW = (n: number): number => { const l = Math.ceil((k - n) / 2); return n * Sw + zonesIn(l, l + n) * 8 + ZGAP * (zonesIn(l, l + n) - 1); };
-      while (nt > 1 && topW(nt) > W - 2 * PAD) nt--;
+      const topAt = (n: number): number => { const l = Math.ceil((k - n) / 2); return topW(l, l + n, Sw); };
+      while (nt > 1 && topAt(nt) > W - 2 * PAD) nt--;
       const nl = ring ? Math.ceil((k - nt) / 2) : 0, nr = k - nt - nl;
       cfg = { nl, nt, nr, wl: 1, wr: 1, colH: Math.max(sideH(0, nl, 1, b), sideH(nl + nt, k, 1, b)) };
     }
@@ -482,11 +504,12 @@ export function circleWith(model: RealModel, view: { w: number; h: number }, met
   const spare = fits ? Math.max(0, Ho - Lb - used) : 0, y0 = Lb + spare / 3;
   const zones: ZoneBox[] = [], part: Record<number, number> = {};
   /** one zone of consecutive seats [i, j): `at` gives each seat's slot corner; the box is their union and the sign sits on its top edge */
-  const zoneOf = (i: number, j: number, at: (n: number) => { x: number; y: number }): void => {
+  const zoneOf = (i: number, j: number, at: (n: number) => { x: number; y: number }, wide?: { x: number; w: number }): void => {
     const f = folders[seats[i].fx], desks: DeskBox[] = [];
     for (let n = i; n < j; n++) { const p = at(n), d = deskStation(meta, seats[n].a, p.x, p.y, Sw, u, g, false, 0, 0, 0); d.slot.h = b; desks.push(d); }
-    const x = Math.min(...desks.map((d) => d.slot.x)) - 4, top = Math.min(...desks.map((d) => d.slot.y)), bot = Math.max(...desks.map((d) => d.slot.y + d.slot.h));
-    const zw = Math.max(...desks.map((d) => d.slot.x + d.slot.w)) + 4 - x;
+    let x = Math.min(...desks.map((d) => d.slot.x)) - 4, top = Math.min(...desks.map((d) => d.slot.y)), bot = Math.max(...desks.map((d) => d.slot.y + d.slot.h));
+    let zw = Math.max(...desks.map((d) => d.slot.x + d.slot.w)) + 4 - x;
+    if (wide) { x = wide.x; zw = wide.w; } /* the room is the sign's width where the desks are narrower (FR-231): the desks keep their place in it */
     const s = signs && Object.prototype.hasOwnProperty.call(signs, f.id) ? signs[f.id] : { name: f.id, path: '', counts: 1 };
     const sw = signWidth(s.name, s.path, s.counts, zw);
     const hands = desks.filter((d) => d.person && (d.state === 'waiting' || d.state === 'limit') && d.person.y < top + STRIP).map((d) => [d.person!.x, d.person!.x + d.person!.w * 0.6]);
@@ -496,31 +519,31 @@ export function circleWith(model: RealModel, view: { w: number; h: number }, met
     sx = Math.max(x + 4, Math.min(sx, x + zw - 4 - sw));
     zones.push({ id: f.id, part: (part[seats[i].fx] = (part[seats[i].fx] || 0) + 1), box: { x, y: top + 2, w: zw, h: bot - top - 2 }, sign: { x: sx, y: top + 1, w: sw, h: 20 }, desks, ...(signMin(s.counts) > zw - 8 ? { signShort: true } : {}) });
   };
-  const bw = (w: number): number => w * Sw + 8, ringed = k >= 3 && withFocus;
-  const rowW = k ? cfg!.nt * Sw + zonesIn(cfg!.nl, cfg!.nl + cfg!.nt) * 8 + ZGAP * (zonesIn(cfg!.nl, cfg!.nl + cfg!.nt) - 1) : 0;
+  const ringed = k >= 3 && withFocus;
+  const rowW = k ? topW(cfg!.nl, cfg!.nl + cfg!.nt, Sw) : 0, bwL = k ? sideBw(0, cfg!.nl, cfg!.wl, Sw) : 0, bwR = k ? sideBw(cfg!.nl + cfg!.nt, k, cfg!.wr, Sw) : 0;
   /* the ring spans the row, or the two sides with the focus between them when that is wider (a ring of a few people); the sides stand at its two ends, the row in the middle */
-  const span = ringed ? Math.max(rowW, (cfg!.wl + cfg!.wr) * Sw + 16 + 2 * ZGAP + CIRCLE_FOCUS_MIN.w) : rowW, rx0 = PAD + (W - 2 * PAD - span) / 2, rx1 = rx0 + span;
+  const span = ringed ? Math.max(rowW, bwL + bwR + 2 * ZGAP + CIRCLE_FOCUS_MIN.w) : rowW, rx0 = PAD + (W - 2 * PAD - span) / 2, rx1 = rx0 + span;
   if (k) {
     const { nl, nt, nr, wl, wr } = cfg!, yc = y0 + b + ZGAP;
     /* the left side: the first seat at its foot, upwards; a seat's column snakes with its row (outer, then inner, then outer again) */
     let yb = yc + sideH(0, nl, wl, b), row = 0;
     for (const [i, j] of runs(0, nl)) {
       const rows = Math.ceil((j - i) / wl), r0 = row; row += rows;
-      zoneOf(i, j, (n) => { const r = Math.floor((n - i) / wl), c0 = (n - i) % wl, c = (r0 + r) % 2 ? wl - 1 - c0 : c0; return { x: rx0 + 4 + c * Sw, y: yb - (r + 1) * b }; });
+      zoneOf(i, j, (n) => { const r = Math.floor((n - i) / wl), c0 = (n - i) % wl, c = (r0 + r) % 2 ? wl - 1 - c0 : c0; return { x: rx0 + 4 + c * Sw, y: yb - (r + 1) * b }; }, { x: rx0, w: bwL });
       yb -= rows * b + ZGAP;
     }
     let x = rx0 + (span - rowW) / 2;
-    for (const [i, j] of runs(nl, nl + nt)) { const x0 = x; zoneOf(i, j, (n) => ({ x: x0 + 4 + (n - i) * Sw, y: y0 })); x += (j - i) * Sw + 8 + ZGAP; }
+    for (const [i, j] of runs(nl, nl + nt)) { const x0 = x, zw = zoneW(seats[i].fx, j - i, Sw); zoneOf(i, j, (n) => ({ x: x0 + (zw - (j - i) * Sw) / 2 + (n - i) * Sw, y: y0 }), { x: x0, w: zw }); x += zw + ZGAP; }
     let yr = yc; row = 0;
     for (const [i, j] of runs(nl + nt, k)) {
       const rows = Math.ceil((j - i) / wr), r0 = row, y1 = yr; row += rows;
-      zoneOf(i, j, (n) => { const r = Math.floor((n - i) / wr), c0 = (n - i) % wr, c = (r0 + r) % 2 ? wr - 1 - c0 : c0; return { x: rx1 - bw(wr) + 4 + c * Sw, y: y1 + r * b }; });
+      zoneOf(i, j, (n) => { const r = Math.floor((n - i) / wr), c0 = (n - i) % wr, c = (r0 + r) % 2 ? wr - 1 - c0 : c0; return { x: rx1 - bwR + 4 + c * Sw, y: y1 + r * b }; }, { x: rx1 - bwR, w: bwR });
       yr += rows * b + ZGAP;
     }
   }
   const lb = lobbyBand(meta, model.places, W, Lb);
   const height = fits ? H0 : Math.ceil(Lb + used + PAD + R);
-  const fx0 = ringed ? rx0 + bw(cfg!.wl) + ZGAP : PAD, fx1 = ringed ? rx1 - bw(cfg!.wr) - ZGAP : W - PAD, fy = y0 + b + ZGAP;
+  const fx0 = ringed ? rx0 + bwL + ZGAP : PAD, fx1 = ringed ? rx1 - bwR - ZGAP : W - PAD, fy = y0 + b + ZGAP;
   const lay: Layout = { u, big: false, lobbyH: Lb, floorH: height - Lb, width: W, height, scroll: !fits || Ho + R > H0 + 0.5, faceH: FACE_U * u, zones, fixtures: lb.fixtures, floorStrip: lb.floorStrip, helpRows: 0 };
   /* the focus box, when it holds `CIRCLE_FOCUS_MIN`: with every agent in the lounge, or the ring dropped it to fit, there is none (never a negative height) */
   const focus: Rect = { x: fx0, y: fy, w: fx1 - fx0, h: fits ? Ho - PAD - fy : Math.max(need - PAD, (cfg ? cfg.colH : 0)) };
@@ -535,12 +558,30 @@ export function arrangementFits(id: Arrangement, model: RealModel, view: { w: nu
   if (id === 'rows') return true;
   const n = model.folders.reduce((s, f) => s + f.agents.length, 0);
   if (leftAt !== undefined && n > leftAt - 2) return false;
-  return !layoutFor(id, model, view, meta).scroll;
+  const lay = layoutFor(id, model, view, meta);
+  /* review of #1764 (097 FR-308): the face floor of the circle is the larger of FR-229's 24 px and the world's `minFace` (the Cave's 30.5) */
+  return !lay.scroll && (id !== 'circle' || lay.faceH >= Math.max(FACE_FLOOR, meta.minFace || 0) - 1e-6);
 }
 
 /** FR-228's one seam: the arrangement a world names picks the function. `rows` is `realLayout` and nothing else (T167: byte-identical). */
 export function layoutFor(arrangement: Arrangement, model: RealModel, view: { w: number; h: number }, meta: RealMeta, signs?: Record<string, { name: string; path: string; counts: number }>): Layout {
   return arrangement === 'aisles' ? aislesLayout(model, view, meta, signs) : arrangement === 'circle' ? circleLayout(model, view, meta, signs) : realLayout(model, view, meta, signs);
+}
+
+/** FR-230 (owner, 2026-11-14 13:10 UTC): the ladder `circle` to `rows`. A `circle` that does not fit this floor at the face floor (`arrangementFits`; `leftAt` holds it off until two agents fewer) draws `rows`, so no floor scrolls
+ *  with 15 agents because of the arrangement; every other id runs as `layoutFor` says. `ran` is the arrangement that drew. Pure. */
+export function layoutWithFallback(arrangement: Arrangement, model: RealModel, view: { w: number; h: number }, meta: RealMeta, signs?: Record<string, { name: string; path: string; counts: number }>, leftAt?: number): { lay: Layout; ran: Arrangement; why?: 'fit' | 'floors' } {
+  /* the All floors view stays rows (spec 102 FR-230, 097 FR-104): a world that draws storeys (`meta.storeys`) with a building of two floors or more is `rows` with its tags and rules, the circle having none; it is not a "does not fit", so no hold is set */
+  if (arrangement === 'circle' && meta.storeys && storeyRuns(model.folders)) return { lay: realLayout(model, view, meta, signs), ran: 'rows', why: 'floors' };
+  if (arrangement === 'circle' && !arrangementFits('circle', model, view, meta, leftAt)) return { lay: realLayout(model, view, meta, signs), ran: 'rows', why: 'fit' };
+  return { lay: layoutFor(arrangement, model, view, meta, signs), ran: arrangement };
+}
+
+/** FR-230's hold, pure (review of #1764): what the page keeps after a layout. `hold` is where the circle fell back to rows and at how many agents (`at`, for the folder list `key`). The circle drawn clears it; rows drawn because the circle did not fit (`why` `fit`) set it once per key; rows drawn for any other reason (`floors`: the All floors view) leave it as it was, so a building that drops to one floor gets the circle back at once. */
+export function holdAfter(hold: { key: string; at: number } | null, key: string, agents: number, ran: Arrangement, why?: 'fit' | 'floors'): { key: string; at: number } | null {
+  if (ran === 'circle') return null;
+  if (why === 'fit' && (!hold || hold.key !== key)) return { key, at: agents };
+  return hold;
 }
 
 /** Spec 102 T171 (FR-220): what `cabinetOf` may paint from a world's `monitor` entry: a plain file name (lower-case letters, digits and single hyphens, `.webp`, no path, no quote, no `url()`) and a whole number of cells from 1 to 1024

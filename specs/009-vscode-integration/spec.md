@@ -85,6 +85,10 @@ In **Previous sessions**, "VS Code chat history" lists chats VS Code saved for t
 
 ## Changes
 
+### 2026-11-18: the `.cmd` route reviewed for code-scanning alert 107 (issue #1868)
+
+- One behaviour change: `planCmd` refuses the `.cmd` route when no absolute `cmd.exe` is known, instead of a bare `cmd.exe` (spec 045 FR-065). The security review of FR-022/FR-028/FR-029's `cmd.exe` route, its verdict (not reachable with untrusted input) and the conditions that must keep holding are spec 045 FR-065; its `FR-065` rows live in this spec's `test:vscode`.
+
 ### 2026-11-11: the `cmd.exe /d /s /c` line gets its outer pair of quotes; one helper for all three routes (issue #1525, FR-029, T031)
 
 *Found* (pre-review of #1523, read from the code): the `.cmd` route built `cmd.exe /d /s /c "<shim>" "<target>"` with no outer pair of quotes. With `/s`, cmd.exe removes the first and the last quote on the line after `/c` and runs the rest as written, which leaves `<shim>" "<target>`: a shim under `...\Microsoft VS Code\bin\code.cmd` would run `...\Microsoft`. Node's own `shell: true` (cmd.exe as the shell) builds `/d /s /c "<whole line>"` with `windowsVerbatimArguments` for this reason. The same line was built in three places: `planCmd` (`src/main/vscode.ts`, Open in VS Code), `execFound` (`src/adapters/detect.ts`, version and sign-in probes, update checks) and the harness setup job (`src/main/harnesssetup.ts`, `npm.cmd` install and update). It always failed closed (a `CMD_UNSAFE` character was already refused), and it is rare (FR-002 prefers `Code.exe` next to `code.cmd`), but npm's own shim sits under `C:\Program Files\nodejs` by default.

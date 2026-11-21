@@ -223,6 +223,8 @@ export interface AppSettingsView {
   theme?: string;
   /** Spec 077 FR-064: who sits at the desks (`theme`: the theme's own). */
   characters?: CharacterChoice;
+  /** Spec 096 FR-033: folder key to character id, only ids main lists. */
+  characterPins?: Record<string, string>;
   /** OS notifications when an agent needs you while the window is in the background (spec 052 FR-059). On unless turned off. */
   notifyNeedsMe?: boolean;
   /** Spec 099 S1: the turn limit last used for Autopilot; absent until then. */
@@ -237,6 +239,39 @@ export interface AppSettingsView {
   diagnostics?: boolean;
 }
 
+/** Spec 096 FR-030, FR-031: a character's frames as WebP bytes. */
+export interface CharacterFrames {
+  working: Uint8Array;
+  waiting: Uint8Array;
+  resting: Uint8Array;
+  blink?: Uint8Array;
+}
+/** Spec 096 FR-025: a face point `[x, y]` per pose, in picture pixels. */
+export interface CharacterFace {
+  working: [number, number];
+  waiting: [number, number];
+  resting: [number, number];
+}
+/** Spec 096 FR-031: what `character:list` gives per character. */
+export interface CharacterListItem {
+  id: string;
+  name: string;
+  face: CharacterFace;
+  blink: boolean;
+  style: string;
+  created: string;
+}
+/** Spec 096 FR-031: the reply of `character:generate`. `cancelled`: the user cancelled. */
+export interface CharacterTryResult {
+  ok: boolean;
+  tryId?: string;
+  frames?: CharacterFrames;
+  face?: CharacterFace;
+  notes?: string[];
+  tookMs?: number;
+  error?: string;
+  cancelled?: boolean;
+}
 /** Spec 058 FR-208, FR-211: main's sign-in refresh lines for one chat (names and fixed kinds only; no vendor text, no token). */
 export type McpSignInRefreshNote =
   | { id: string; kind: 'waiting'; count: number }
@@ -898,6 +933,8 @@ export interface ConvSearchHit {
   excerpts: ConvSearchExcerpt[];
   /** Hits not shown ("+N more"). */
   more: number;
+  /** Issue 1904 (FR-040): 0 every query word occurs as a whole word, 1 as a word start at worst, 2 inside a word at worst; the window lists lower first. */
+  rank: 0 | 1 | 2;
 }
 export interface ConvSearchNotes {
   searched: number;
@@ -905,6 +942,8 @@ export interface ConvSearchNotes {
   notInstalled: string[];
   tooLarge: number;
   unreadable: number;
+  /** Issue 1904 (FR-022): sessions whose read did not answer within its own limit (skipped). */
+  slow?: number;
   titleOnly: { count: number; apps: string[] };
   hidden: number;
   floorsOff: number;
@@ -929,6 +968,8 @@ export interface ConvSearchNotes {
  */
 export type ConvSearchEvent =
   | { kind: 'batch'; searchId: string; hits: ConvSearchHit[]; progress: { done: number; total: number }; groups: { office: number; earlier: number } }
+  /** Issue 1904 (FR-015): while the plan is built: folders whose listings are over, of all the plan's folders. */
+  | { kind: 'listing'; searchId: string; done: number; total: number }
   | { kind: 'done'; searchId: string; notes: ConvSearchNotes; progress: { done: number; total: number }; failed: boolean; stopped?: true };
 /** `short`: under 3 characters (spaces not counted); `none`: no session is open, nothing to search yet; `invalid`: not a query. */
 export type ConvSearchStart = { ok: true; searchId: string; query: string; cut: boolean } | { ok: false; code: 'short' | 'none' | 'invalid'; error: string };
@@ -964,13 +1005,16 @@ export interface DurbarApi {
   newSession?(id: string, opts: SessionOptions): Promise<{ ok: boolean; error?: string; agent?: AgentInfo }>;
   /** Models the account offers (no credits used). */
   /** Models of an agent kind (spec 012 FR-120); no kind = the default kind. */
-  listModels?(kind?: string): Promise<{ ok: boolean; error?: string; models: ModelChoice[] }>;
+  /** `opts.fresh` (spec 030 FR-068, FR-071): ask the agent app again, past its own cache. `reason` (a fixed phrase) and `hidden` (policy-disabled models) explain an empty list (FR-069, FR-070). */
+  listModels?(kind?: string, opts?: { fresh?: boolean }): Promise<{ ok: boolean; error?: string; reason?: string; hidden?: number; models: ModelChoice[] }>;
   /** Spec 076 FR-207 (issue #602): per agent app, what its own organization policy blocks (modes with reasons, counts; no values). */
   orgPolicyView?(): Promise<Record<string, OrgPolicyAppView>>;
   /** Adapters and whether each can run (spec 012 FR-033). `refresh` probes again instead of using the cached answer. */
   listAdapters?(refresh?: boolean): Promise<AdapterInfo[]>;
   /** Spec 012 FR-157: main changed the cached list by itself (a session was refused because of the sign-in). */
   onAdaptersChanged?(cb: (list: AdapterInfo[]) => void): () => void;
+  /** The computer woke from sleep (Electron `powerMonitor` `resume`, main); spec 030 FR-072. */
+  onResume?(cb: () => void): () => void;
   /** End the session (frees it; sending again resumes it). `stop` only interrupts the current turn. */
   end?(id: string): Promise<void>;
   /** Open an http(s) link in the system browser (anything else is refused in the main process). */
@@ -1063,6 +1107,24 @@ export interface DurbarApi {
   setTheme?(id: string): Promise<{ ok: boolean; theme?: string; characters?: CharacterChoice }>;
   /** Spec 077 FR-064: set who sits at the desks; main refuses anything not on the list (`ok: false`, the value in force). */
   setCharacters?(v: string): Promise<{ ok: boolean; characters: CharacterChoice }>;
+  /** Spec 096 FR-031: one try: frames as WebP bytes, held by main under `tryId` until saved or dropped. The description is never stored. */
+  /** `confirmed`: this try's own answer to FR-034's question. T030a makes main enforce it; until then no real adapter makes pictures (`test:charipc`), and the simulator's fake enforces it. */
+  characterGenerate?(description: string, adapterId: string, opts?: { confirmed: boolean }): Promise<CharacterTryResult>;
+  /** Spec 096 FR-034: how the app is signed in. Only the simulator answers: no real channel exists until probe P6 (T014) and T030a, and no answer means `unknown`. */
+  characterLoginKind?(adapterId: string): Promise<string>;
+  /** Spec 096 FR-031: no id cancels the running generation; a `tryId` drops that held try (Discard). */
+  characterCancel?(tryId?: string): Promise<{ ok: boolean }>;
+  /** Spec 096 FR-031: an empty name gets "My character N". */
+  characterSave?(tryId: string, name?: string): Promise<{ ok: boolean; id?: string; name?: string; error?: string }>;
+  characterList?(): Promise<CharacterListItem[]>;
+  characterFrames?(id: string): Promise<{ ok: boolean; frames?: CharacterFrames; error?: string }>;
+  characterRename?(id: string, name: string): Promise<{ ok: boolean; id?: string; name?: string; error?: string }>;
+  /** Spec 096 FR-033: `pinsRemoved` says how many folder pins went with it. */
+  characterDelete?(id: string): Promise<{ ok: boolean; pinsRemoved?: number; error?: string }>;
+  characterExport?(id: string): Promise<{ ok: boolean; to?: string; cancelled?: boolean; error?: string }>;
+  /** Spec 096 FR-033: `id` null clears the pin; `folderKey` is one main gave. */
+  characterPin?(folderKey: string, id: string | null): Promise<{ ok: boolean; pins?: Record<string, string>; error?: string }>;
+  characterIdeas?(): Promise<string[]>;
   /** Spec 102 FR-064: installed worlds as main lists them; `state` is *Damaged* when a re-check failed. No path, no description. */
   worldList?(): Promise<Array<{ key: string; name: string; origin: 'project' | 'source' | 'uploaded' | 'made' | 'imported' | null; version: number; size: number; state: 'ok' | 'unfinished' | 'damaged' | 'revoked'; unfinished: boolean; parts: string[]; date: string }>>;
   /** Spec 102 FR-062, FR-063: one part's bytes (PNG or WebP) for a key main listed, after the re-check; nothing for anything else. */

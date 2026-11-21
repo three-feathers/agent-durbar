@@ -1,6 +1,8 @@
 # The suites `npm test` runs (scripts/run-tests.js), one `npm run` script name per line, in the order `npm run test:serial` runs them.
 # Add a new suite on its own line in the middle of the list, not at the end (two PRs appending at the end conflict). Blank lines and # comments are ignored.
 test:safetext
+test:safetext-links
+test:safetext-links-labels
 test:settingsnav
 test:rendersyntax
 test:perfrecord
@@ -9,6 +11,9 @@ test:attachments
 test:vscode
 test:runtime-core
 test:runtime-redact
+test:redact-monotone
+test:redact-monotone-b
+test:redact-monotone-c
 test:livehead
 test:maskoutgoing-fuzz
 test:maskoutgoing-fuzz-b
@@ -40,6 +45,7 @@ test:site
 test:blogcheck
 test:compressshots
 test:changelog
+test:releasenodeps
 test:releasevideo
 test:usage
 test:specsindex
@@ -172,6 +178,9 @@ test:crew
 test:characters
 test:chargen
 test:imagecheck
+test:charencoder
+test:charstore
+test:charipc
 test:crew-assets
 test:realoffice-layout
 test:realoffice-assets
@@ -184,6 +193,7 @@ test:browserurl
 test:browserviews
 test:browsertabs
 test:browseripc
+test:paneltabs
 test:browserpane
 test:chatlinks
 test:simguard
@@ -191,9 +201,11 @@ test:shutters
 test:unread
 test:tooltip
 test:simclock
+test:crew-diag
 test:pointer-log
 test:labelsbackfill
 test:claim
+test:prgateanswered
 test:prgatenotes
 test:prgatecodeql
 test:trustedcontent
@@ -257,7 +269,10 @@ test:mcpcontextipc
 test:quota
 test:featureinventory
 test:simversion
+test:brainpoints
+test:braindraw
 test:momentsregistry
+test:world-pack
 test:paritytick
 test:picturebudget
 test:chargroups
