@@ -1,0 +1,1 @@
+- **A long question is shown whole, and an MCP form's message is formatted like it** (spec 052): the question card and the form card no longer end a long text at 2,000 characters (the limit is now 20,000, and a longer text is cut at a space); the form's message shows bold, lists and links (#1934).

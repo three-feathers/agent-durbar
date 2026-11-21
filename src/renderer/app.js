@@ -2628,7 +2628,7 @@ async function playTurn(chat,a,turn,opts){
   const cut=()=>{think.classList.remove('streaming');m.querySelectorAll('.caret').forEach(x=>x.classList.remove('caret'));collapseThink(think);return false;};
   await typeInto(body,turn.think,16,chat,tok); if(off())return cut();
   think.classList.remove('streaming');
-  for(const t of turn.tools){await sleep(380);if(off())return cut();const [k,l,res,rs]=t;addChip(chips,makeChip({kind:k,tool:k,label:l,res,state:rs}));stickyScroll(chat);}
+  for(const t of turn.tools){await sleep(380);if(off())return cut();const [k,l,res,rs]=t;addChip(chips,makeChip({kind:k,tool:k,label:chipArg(k,l).label,res,state:rs}));stickyScroll(chat);}
   if(turn.reply){
     await sleep(350); if(off())return cut();
     const b=document.createElement('div');b.className='bubble caret';m.appendChild(b);
@@ -6491,14 +6491,14 @@ function tIntent(T,txt){
 }
 function tTool(T,e){
   const box=tChips(T);
-  if(e.phase==='start'){const label=editLabel(e)||toolLabel(e.args),cmd=toolFull(e.args);const el=makeChip({tool:e.tool,label,full:cmd,res:'running',state:'run'});addChip(box,el);
+  if(e.phase==='start'){const {label,full:cmd}=chipArgs(e);const el=makeChip({tool:e.tool,label,full:cmd,res:'running',state:'run'});addChip(box,el);
     const c=T.chipEls[e.callId]={el,tool:e.tool,label,cmd,t0:e.timestamp,seen:Date.now(),box,T,state:'run',res:'running',output:'',ms:null,edit:e.edit||null};
     if(c.edit)edPaint(c);
     tAct(T,e.callId,c);}
   else{const c=T.chipEls[e.callId];if(c){
     /* spec 005 FR-019: an update may bring the whole arguments (a call that started from its streamed arguments) and the edit so far */
     if(e.edit)c.edit=e.edit;
-    if(e.args!==undefined){const l=editLabel(e)||toolLabel(e.args);if(l)c.label=l;const f=toolFull(e.args);if(f)c.cmd=f;}
+    if(e.args!==undefined){const {label:l,full:f}=chipArgs(e);if(l)c.label=l;if(f)c.cmd=f;} /* spec 005 FR-342: masked like the start */
     if(e.phase!=='update'||e.output!=null){const full=String(e.output||''),done=e.phase!=='update';
       c.ms=done&&typeof c.t0==='number'&&typeof e.timestamp==='number'?e.timestamp-c.t0:null; /* spec 052 FR-063: duration from the start and end events' times */
       c.res=done?SHORT(full||(e.phase==='complete'?'ok':'failed'),60):'running';c.output=full;c.state=!done?'run':e.phase==='failed'?'failed':'ok';
@@ -7038,8 +7038,30 @@ const taskMask=t=>{
 const intentText=t=>typeof t!=='string'||!t||PERM_LINE.test(t)?t:(SAFE.ready?SAFE.excerpt(t,null,''):t);
 const toolArg=args=>!args||typeof args!=='object'?'':String(args.path||args.pattern||args.command||args.url||args.query||args.file_path||Object.values(args).find(x=>typeof x==='string')||'');
 function toolLabel(args){return toolArg(args).replace(/\s+/g,' ').slice(0,400);}
-/* spec 052 FR-063: the whole argument as written (line breaks kept), for the open chip; at most 20000 characters */
-const toolFull=args=>toolArg(args).slice(0,OUT_SHOWN);
+/* spec 005 FR-342 (issue 1974): what a tool chip shows of a call's argument (its line, its title, the open chip's command and what Copy copies),
+   masked once where the chip is fed, by the task line's own mask (safeToolLabel's STX.maskLabel with TOOLMASK: a command by maskSecretCommand,
+   a URL by maskSecretUrl, else redact), on the whole argument before any cut, in both readings: as written (line breaks kept) and flat (blanks
+   collapsed, the task line's form); the shown text hides whatever either hides (keepShownBy). When neither hides anything the chip shows the
+   argument exactly as before (line breaks kept); else the masked one-line text. Longer than the masks take (MASK_INPUT_MAX): masked up to the last
+   blank before that length. No mask (no safetext.js or redact module, ?noredact=1): '' (the chip shows the tool name only; fail closed). */
+let CHIP_MASKS=0; /* simulator drivers: how many times chipArg ran (once per start and per update that brings arguments, never per output) */
+function chipArg(tool,raw){
+  CHIP_MASKS++;
+  const s0=String(raw==null?'':raw);if(!s0.trim())return {label:'',full:''};
+  const cap=(RED&&Number(RED.MASK_INPUT_MAX))||12288;let s=s0;
+  if(s.length>cap){const b=s.slice(0,cap+1).search(/\s\S*$/);s=b>0?s.slice(0,b):'';if(!s.trim())return {label:'',full:''};}
+  const flat=s.replace(/\s+/g,' '), k=toolKind(tool), m1=STX?STX.maskLabel(s,k,TOOLMASK):'', m2=flat===s?m1:STX?STX.maskLabel(flat,k,TOOLMASK):'';
+  if(!m1||!m2)return {label:'',full:''};
+  const t=flat.trim();if(m1===t&&m2===t)return {label:flat.slice(0,400),full:s.slice(0,OUT_SHOWN)};
+  let m='';try{m=m1===m2?m1:RED.keepShownBy(m1,m2);}catch(e){m='';}if(typeof m!=='string'||!m)return {label:'',full:''};
+  return {label:m.slice(0,400),full:m.slice(0,OUT_SHOWN)};
+}
+/* a label an adapter already cut (a replayed history item: 300 characters, Codex 200 and "…"; the VS Code transcript: 300 or 200 with "…"): the cut may
+   fall inside a secret, whose head the masks no longer know, so a label the adapter cut (exactly 300 characters, or ending in "…") loses its last run
+   of non-blanks before it is masked; any other label is masked as it is */
+const cutLabel=(tool,l)=>{let x=String(l==null?'':l);if(x.length===300||(x.length>=150&&x.endsWith('\u2026'))){const b=x.search(/\s\S*$/);x=(b>0?x.slice(0,b):'')+' \u2026';}return chipArg(tool,x).label;};
+/* the chip's label and command for a toolCall event: an edit names its file (main masked the edit, FR-024; masked here again like the task line) */
+const chipArgs=e=>{const a=chipArg(e.tool,toolArg(e.args)),f=editLabel(e);return {label:f?chipArg(e.tool,f).label:a.label,full:a.full};};
 /* ---------------- AI-credit cap: chip, dialog, limit reached (spec 011) ---------------- */
 let APP_SETTINGS={};
 function capChipHTML(a){
@@ -7303,9 +7325,10 @@ function showElicitation(a,e){
   const n=document.createElement('div');n.className='note perm question elicit';n.setAttribute('role','group');n.setAttribute('aria-label',isUrl?'An MCP server asks you to open a page':'An MCP server asks for input');
   const head=document.createElement('b');head.textContent=isUrl?'An MCP server asks you to open a page':'An MCP server asks for input';n.appendChild(head);
   const st=document.createElement('span');st.className='pstate';n.appendChild(st);
-  const qt=document.createElement('p');qt.className='q-text';qt.id=uid+'-msg';
+  const qt=document.createElement('div');qt.className='q-text';qt.id=uid+'-msg';
   if(R.source){const h=document.createElement('span');h.className='tag';h.textContent=SHORT(R.source,40);qt.appendChild(h);qt.appendChild(document.createTextNode(' '));}
-  qt.appendChild(document.createTextNode(SHORT(R.message||'',2000)));n.appendChild(qt);n.setAttribute('aria-describedby',qt.id);
+  /* spec 052 (2026-11-20 delta, issue 1934, T423): the form's message is MCP-server text, rendered like the question card (qMdHTML: masked, cross-checked, plain fallback), not cut here (the adapters bound it) */
+  const qb=document.createElement('div');qb.className='q-md';qb.innerHTML=qMdHTML(R.message||'');qt.classList.add('md');qt.appendChild(qb);n.appendChild(qt);n.setAttribute('aria-describedby',qt.id);
   const row=document.createElement('div');row.className='note-actions';
   const btn=(label,cls,title,fn)=>{const b=document.createElement('button');b.type='button';b.className='btn '+cls;b.textContent=label;if(title)b.title=title;b.onclick=fn;return b;};
   const inputs=[];
@@ -10230,7 +10253,7 @@ function replayHistory(a,h,title,lead){
   for(const it of ((h&&h.items)||[])){
     if(it.type==='user'){m=null;addUserMsg(chat,it.text,(it.attachments||[]).map(x=>({name:x.name,img:x.kind==='image'})),it.ts);}
     else if(it.type==='output'){const b=document.createElement('div');b.className='bubble';agentMsg().appendChild(b);mdSet(b,it.text,true);}
-    else{const full=it.output||'';addChip(chipBox(),makeChip({tool:it.tool,label:it.label,res:SHORT(full||(it.failed?'failed':'ok'),60),output:full,state:it.failed?'failed':'ok'}));}
+    else{const full=it.output||'';addChip(chipBox(),makeChip({tool:it.tool,label:cutLabel(it.tool,it.label), /* spec 005 FR-342 */res:SHORT(full||(it.failed?'failed':'ok'),60),output:full,state:it.failed?'failed':'ok'}));}
   }
   addNote(chat,(lead||'Resumed')+': '+esc((title||'earlier session').replace(/[.!?…]+$/,''))+'. New messages continue this session.');
 }
@@ -10253,9 +10276,9 @@ function leaveVsView(){
   const a=byId(ui.selected),pi=document.querySelector('#panel .panel-in'); if(pi)pi.classList.remove('viewing');
   if(a){const c=$('chat');c.replaceChildren(liveChat(a).el);c.scrollTop=1e6;ntCountSync(a);notesMarkSoon();} /* spec 083 FR-027: the read-only VS Code view hides the count; back in the chat it returns */
 }
-async function viewVs(a,key,btn){
+async function viewVs(a,key,btn,read){ /* read: simulator drivers only (check-toolchip-mask), a transcript instead of the bridge's */
   if(btn){btn.disabled=true;}
-  const r=await bridge.readVsChat(a.id,key).catch(e=>({ok:false,error:String(e&&e.message||e)}));
+  const r=await (read?read():bridge.readVsChat(a.id,key)).catch(e=>({ok:false,error:String(e&&e.message||e)}));
   if(btn)btn.disabled=false;
   if(!r.ok){toast(esc(r.error||'Could not read this chat.'),6000);return;}
   const tr=r.transcript, wrap=document.createElement('div'); wrap.className='vsview';
@@ -10265,7 +10288,7 @@ async function viewVs(a,key,btn){
   for(const b of tr.blocks){
     if(b.type==='user'){am=null;addUserMsg(fake,b.text||'(attachment)',(b.attachments||[]).map(n=>({name:n,img:false})),b.ts);}
     else if(b.type==='assistant'){if(!am){am=document.createElement('div');am.className='msg agent';am.innerHTML='<div class="meta">Copilot (VS Code)</div>';body.appendChild(am);}const d=document.createElement('div');d.className='bubble';am.appendChild(d);mdSet(d,b.text,true);}
-    else if(b.type==='tool'){if(!am){am=document.createElement('div');am.className='msg agent';am.innerHTML='<div class="meta">Copilot (VS Code)</div>';body.appendChild(am);}let l=am.lastElementChild;if(!l||!l.classList.contains('chips')){l=document.createElement('div');l.className='chips';am.appendChild(l);}addChip(l,makeChip({tool:'tool',kind:'tool',label:b.label,state:'ok'}));}
+    else if(b.type==='tool'){if(!am){am=document.createElement('div');am.className='msg agent';am.innerHTML='<div class="meta">Copilot (VS Code)</div>';body.appendChild(am);}let l=am.lastElementChild;if(!l||!l.classList.contains('chips')){l=document.createElement('div');l.className='chips';am.appendChild(l);}addChip(l,makeChip({tool:'tool',kind:'tool',label:cutLabel('tool',b.label),state:'ok'})); /* spec 005 FR-342 */}
     else if(b.type==='note'){const n=document.createElement('div');n.className='note err';n.textContent=b.text;body.appendChild(n);}
   }
   const c=$('chat'); c.replaceChildren(wrap); vsViewing=true; ntCountSync(a);
@@ -10620,7 +10643,7 @@ if(pendingOpen&&demoOn){openPanel(pendingOpen,false);pendingOpen=null;}
 const settleNow=()=>{if(!agentsListed||!window.__durbarSimReplayed||baselineQueued||baselineAsking)return false;if(renderQueued){renderQueued=false;renderAll();}return true;};
 /* simulator drivers load with simfreeze=1: the desk glow then holds still (FR-178: the geometry and screenshot checks measure boxes, so no zoom may be mid-way); the unread driver opts back in with hlmotion=1 to test the motion itself */
 if(SIM&&qs.get('simfreeze')==='1'&&qs.get('hlmotion')!=='1')document.documentElement.classList.add('hl-still');
-if(SIM)window.__durbarSimUi={qMdHTML,qSafeMask:t=>safeMask(t),qNames:()=>Object.keys(Q_NAMED).map(k=>k+'='+Q_NAMED[k]), /* spec 052 (issue 1927): check-question-markdown renders a question built from invented pieces through the card's own renderer */brain:{host:()=>BRAIN_H,state:()=>BRAIN_STATE,why:()=>BRAIN_WHY,flag:BRAIN_PREVIEW,queued:()=>BRAIN_Q.length}, /* spec 106 T006: check-brain-draw and check-brain-dock read the dock's frame counts */announce,renderRestoreStrip,afArrivalPrio,afTracker:{ids:()=>AFT.ids(),pending:()=>AFT.pendingList().map(v=>v.id+'|'+v.kind),quiet:()=>AFT.isQuiet,follow:id=>AFT.follow(id)}, /* spec 005 FR-237: drivers only: what Auto-follow follows, holds and whether it is quiet; follow() makes an agent followed without a hand open (which would drop the others, spec 052 FR-185) */ afNotice:{ms:v=>{AF_NOTICE_MS=Math.max(100,Number(v)||3000);return AF_NOTICE_MS;},on:v=>{setAutoFollowOn(!!v);return AF_ON;},shown:()=>!!AF_NOTICE}, /* spec 052 FR-239: drivers only: the notice's length, Auto-follow without Settings */swapCardOptions:id=>{const c=byId(id)&&pendingCardOf(byId(id));if(!c)return 0;const os=[...c.querySelectorAll('.q-opt')];os.forEach(b=>b.replaceWith(b.cloneNode(true)));return os.length;}, /* spec 052 FR-197: the live card rebuilds its options (the card stays, the old buttons are gone); a driver checks that a row's old option answers nothing */
+if(SIM)window.__durbarSimUi={chipArg:(t,r)=>chipArg(t,r),cutLabel:(t,l)=>cutLabel(t,l),chipMasks:()=>CHIP_MASKS,replay:(id,items)=>{replayHistory(byId(id),{items},'test');return true;},vsView:(id,tr)=>viewVs(byId(id),'sim-vs',null,()=>Promise.resolve({ok:true,transcript:tr})).then(()=>true),demoTurn:(id,tools)=>{const a=byId(id);return playTurn(getChat(a),a,{think:'',tools,reply:''});},taskLabel:(t,l)=>safeToolLabel(t,String(l).replace(/\s+/g,' ').slice(0,400),100000),chipEl:(id,callId)=>{const a=byId(id),c=a&&a.turn&&a.turn.T&&a.turn.T.chipEls[callId];return c?c.el:null;}, /* spec 005 FR-342: check-toolchip-mask runs its harmless corpus through the chip's own mask and counts its calls */qMdHTML,qSafeMask:t=>safeMask(t),qNames:()=>Object.keys(Q_NAMED).map(k=>k+'='+Q_NAMED[k]), /* spec 052 (issue 1927): check-question-markdown renders a question built from invented pieces through the card's own renderer */brain:{host:()=>BRAIN_H,state:()=>BRAIN_STATE,why:()=>BRAIN_WHY,flag:BRAIN_PREVIEW,queued:()=>BRAIN_Q.length}, /* spec 106 T006: check-brain-draw and check-brain-dock read the dock's frame counts */announce,renderRestoreStrip,afArrivalPrio,afTracker:{ids:()=>AFT.ids(),pending:()=>AFT.pendingList().map(v=>v.id+'|'+v.kind),quiet:()=>AFT.isQuiet,follow:id=>AFT.follow(id)}, /* spec 005 FR-237: drivers only: what Auto-follow follows, holds and whether it is quiet; follow() makes an agent followed without a hand open (which would drop the others, spec 052 FR-185) */ afNotice:{ms:v=>{AF_NOTICE_MS=Math.max(100,Number(v)||3000);return AF_NOTICE_MS;},on:v=>{setAutoFollowOn(!!v);return AF_ON;},shown:()=>!!AF_NOTICE}, /* spec 052 FR-239: drivers only: the notice's length, Auto-follow without Settings */swapCardOptions:id=>{const c=byId(id)&&pendingCardOf(byId(id));if(!c)return 0;const os=[...c.querySelectorAll('.q-opt')];os.forEach(b=>b.replaceWith(b.cloneNode(true)));return os.length;}, /* spec 052 FR-197: the live card rebuilds its options (the card stays, the old buttons are gone); a driver checks that a row's old option answers nothing */
   chatTrimNow:()=>chatTrimPending(false), /* spec 005 FR-238: trim the chats waiting for a frame now (a burst with no frame between) */
   hiddenTrimTimer:()=>({on:!!hiddenTrimT,ms:TRIM_HIDDEN_MS}),
   helperState:(id,st)=>{const h=agents.find(x=>x.id===id&&x.parent);if(!h||!['working','thinking','waiting','error','limit','done','idle'].includes(st))return false;h.state=st==='limit'?'waiting':st;h.limit=st==='limit';h.paused=false;layoutKey='';renderAll();return true;}, /* spec 097 T335 (issue 1642): drivers only: a helper's state the simulator never sends (waiting, limit), for the kids on the desk */
