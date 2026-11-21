@@ -42,7 +42,7 @@ import { nativeConfirm } from './nativeconfirm';
 import { register as registerNotesIpc } from './ipc/notes';
 import { register as registerTeamsIpc } from './ipc/teams';
 import { TeamsIpcOps } from './teamsipc';
-import { TeamOps, resolveTargetFrom } from './teamops';
+import { TeamOps, pathExists, resolveTargetFrom } from './teamops';
 import type { LazyMemberSpec } from './teamops';
 import { TeamTemplateStore } from './teamstore';
 import { NotesOps, notesConfirmText } from './notesops';
@@ -948,6 +948,7 @@ registerTeamsIpc({
     // T011: the not-started members, the one write (record and names), then the office; a team member is never started here
     create: {
       room: (key) => { const f = folderStore?.get(key); return { count: f?.team?.members.length ?? 0, savedCap: f?.maxAiCredits, team: f?.team, known: f !== undefined, sessionNames: f?.sessionNames?.map((x) => ({ ...x })) }; },
+      exists: pathExists,
       build: addLazyMember,
       commit: (key, team, infos) => !!folderStore && folderStore.setTeamRecord(key, team, infos.map((i) => ({ src: i.adapterId ?? DEFAULT_ADAPTER, id: i.id, name: i.alias ?? '' }))),
       place: (info) => { router.bind(info.id, info.adapterId ?? DEFAULT_ADAPTER); agents.set(info.id, info); },

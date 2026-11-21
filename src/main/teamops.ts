@@ -18,6 +18,7 @@
  * `teamtemplate.ts` and the argument helpers of `teamsipc.ts`.
  */
 import { randomBytes } from 'crypto';
+import * as fs from 'fs';
 import { isDeepStrictEqual } from 'util';
 import type { AdapterInfo } from '../shared/adapters';
 import type { AgentInfo, ModelChoice } from '../shared/api';
@@ -126,9 +127,14 @@ export interface TeamOpsDeps {
 
 /** what main builds one not-started member from: all of it already validated here */
 export interface LazyMemberSpec { app: string; model: string | undefined; effort: string | undefined; mode: SavedPermMode; cap: number | undefined; name: string; key: string }
+/** the room's folder (or workspace file) is there: the `exists` of `CreateDeps`, as `restoreFolders` asks it */
+export const pathExists = (key: string): boolean => fs.existsSync(key);
+
 export interface CreateDeps {
   /** the real count and record of the room's key and its saved limit, read fresh */
   room(key: string): { count: number; savedCap?: number; team?: TeamRecord; known?: boolean; sessionNames?: unknown };
+  /** the room's folder (or workspace file) is still there: checked right before the write */
+  exists(key: string): boolean;
   /** `addLazyMember`: one not-started agent like a restored session (`infoFor(..., { lazy: true })`); no adapter start; no effect in the office */
   build(spec: LazyMemberSpec): AgentInfo;
   /** ONE write: the team record and the members' session names (`setTeamRecord`); false = nothing was written */
@@ -363,6 +369,7 @@ export class TeamOps {
     if (picked.length === 0) return cfail('empty', 'No member is included.');
     // ---- from here to the write there is no `await`: two creates in one room cannot both pass the count
     if (!this.unchanged(t)) return cfail('changed', CHANGED_NOW); // again: it may have been edited during the awaits above
+    if (!dep.exists(e.key)) return cfail('failed', 'The folder is not there any more.'); // the token lives 10 minutes: a picked folder may be gone or unplugged
     const room = dep.room(e.key);
     const have = Number.isInteger(room.count) && room.count > 0 ? room.count : 0;
     if (have + picked.length > LIMITS.members) return cfail('full', `This room has ${have} team members; this template adds ${picked.length}; at most ${LIMITS.members}`);
@@ -390,7 +397,8 @@ export class TeamOps {
       for (const info of infos) dep.place(info);
     } catch (err) {
       for (const info of infos) { try { dep.unplace(info.id); } catch { /* best effort */ } }
-      try { dep.rollback(e.key, room.team, room.sessionNames, room.known === false); } catch { /* the answer is `failed` all the same */ }
+      // the record is put back; if that write fails (disk full, a locked file) it is tried ONCE more; the answer is `failed` all the same (ghost members are a KNOWN GAP)
+      for (let attempt = 0, back = false; attempt < 2 && !back; attempt++) { try { back = dep.rollback(e.key, room.team, room.sessionNames, room.known === false) === true; } catch { back = false; } }
       throw err;
     }
     for (const info of infos) { try { dep.announce(info); } catch { /* the team exists and is written; a window that missed one shows it at its next refresh */ } }

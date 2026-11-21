@@ -21,13 +21,14 @@ import type { StoredTemplate } from '../src/main/teamstore';
 import type { AdapterInfo } from '../src/shared/adapters';
 import type { AgentInfo, ModelChoice } from '../src/shared/api';
 import type { TeamMember } from '../src/shared/teamtemplate';
+import { LIMITS } from '../src/shared/teamtemplate';
 import type { TeamRecord } from '../src/main/folders';
 
 const OPS = process.env.TEAMCREATE_OPS ?? 'teamops';
 const FOLD = process.env.TEAMCREATE_FOLDERS ?? 'folders';
 const IS_COPY = process.env.TEAMCREATE_OPS !== undefined || process.env.TEAMCREATE_FOLDERS !== undefined;
 // eslint-disable-next-line @typescript-eslint/no-var-requires
-const { TeamOps, resolveTargetFrom } = require('../src/main/' + OPS) as typeof import('../src/main/teamops');
+const { TeamOps, resolveTargetFrom, pathExists } = require('../src/main/' + OPS) as typeof import('../src/main/teamops');
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const { FolderStore, parseTeamRecord, parseSavedFolders } = require('../src/main/' + FOLD) as typeof import('../src/main/folders');
 
@@ -61,7 +62,7 @@ const isOk = (v: unknown): CreateOk => { assert.ok((v as CreateOk).ok === true, 
 interface Room { team?: TeamRecord; savedCap?: number }
 interface World {
   ops: InstanceType<typeof TeamOps>; log: string[]; starts: { n: number }; office: Map<string, AgentInfo>; rooms: Map<string, Room>; store: Map<string, StoredTemplate>; clock: { t: number };
-  bound: Set<string>; announced: string[]; built: LazyMemberSpec[]; names: Array<{ src: string; id: string; name: string }>; set: (o: Partial<TeamOpsDeps>) => void; fail: { commit: boolean; placeAt: number; announceAt: number };
+  bound: Set<string>; announced: string[]; built: LazyMemberSpec[]; names: Array<{ src: string; id: string; name: string }>; set: (o: Partial<TeamOpsDeps>) => void; fail: { commit: boolean; placeAt: number; announceAt: number; missing: boolean; rollbackFails: number };
   preview: (target?: Target, id?: string) => Promise<string>;
 }
 let tokenN = 0;
@@ -73,12 +74,13 @@ function world(templates: StoredTemplate[], rooms: Record<string, Room> = {}, o:
   const office = new Map<string, AgentInfo>();
   const bound = new Set<string>(), announced: string[] = [];
   const starts = { n: 0 };
-  const fail = { commit: false, placeAt: -1, announceAt: -1 };
+  const fail = { commit: false, placeAt: -1, announceAt: -1, missing: false, rollbackFails: 0 };
   let announcedN = 0;
   let ids = 0, placed = 0;
   const adapterOf = (a: string) => ({ capabilities: { caps: true }, start: () => { starts.n++; } }) as { capabilities: unknown; start(): void; a?: string };
   const create = {
     room: (key: string) => { const r = rm.get(key); return { count: r?.team?.members.length ?? 0, savedCap: r?.savedCap, team: r?.team, known: r !== undefined }; },
+    exists: (): boolean => !fail.missing,
     build: (s: LazyMemberSpec): AgentInfo => { log.push('build'); built.push(s); adapterOf(s.app); return { id: 'agent-' + ++ids, name: 'room', alias: s.name, cwd: s.key, permMode: s.mode, model: s.model ?? '', effort: s.effort, maxAiCredits: s.cap, adapterId: s.app, lazy: true } as unknown as AgentInfo; },
     commit: (key: string, team: TeamRecord, infos: AgentInfo[]): boolean => {
       log.push('commit');
@@ -93,6 +95,7 @@ function world(templates: StoredTemplate[], rooms: Record<string, Room> = {}, o:
     announce: (i: AgentInfo): void => { if (announcedN++ === fail.announceAt) throw new Error('window gone ' + MARK); log.push('announce:' + i.id); announced.push(i.id); },
     rollback: (key: string, previous: TeamRecord | undefined, _names: unknown, removeRoom: boolean): boolean => {
       log.push('rollback');
+      if (fail.rollbackFails > 0) { fail.rollbackFails--; return false; }
       const r = rm.get(key); if (!r) return true;
       if (previous) rm.set(key, { ...r, team: previous }); else if (removeRoom) rm.delete(key); else rm.set(key, { ...r, team: undefined });
       return true;
@@ -264,6 +267,14 @@ section('arguments', async () => {
     eq(w.log, [], 'nothing built');
     ok(e.errors.length === 1 && !JSON.stringify(e).includes(MARK) && !/x{20}|Ludi crous|\.\.\/x/.test(JSON.stringify(e)), 'fixed words, no value echoed');
   }
+  // exactly LIMITS.members rows are read (a bound one below the limit would refuse a full team)
+  const full = Array.from({ length: LIMITS.members }, (_, i) => mem(i + 1));
+  isOk(await created(world([tpl(full)]), { rows: Object.fromEntries(full.map((m) => [m.memberId, {}])) }));
+  // 9 rows: the bound on the rows object itself answers (not the later 'row not in this preview')
+  eq(isFail(await created(world([tpl([mem(1)])]), { rows: Object.fromEntries(Array.from({ length: 9 }, (_, i) => [hexId(i + 1), {}])) })).errors, ['Choices: rows not valid.'], 'nine rows: refused by the bound');
+  // an amount of 33 characters that is a valid number is refused for its length; 32 is read
+  eq(isFail(await created(world([tpl([mem(1)])]), { rows: { [hexId(1)]: { cap: { unit: 'aiu', amount: '0'.repeat(31) + '45' } } } })).code, 'invalid', 'an amount of 33 characters');
+  isOk(await created(world([tpl([mem(1)])]), { rows: { [hexId(1)]: { cap: { unit: 'aiu', amount: '0'.repeat(30) + '45' } } } }));
   // too many rows
   const rows: Record<string, object> = {};
   for (let i = 1; i <= 9; i++) rows[hexId(i)] = {};
@@ -473,6 +484,26 @@ section('atomicity', async () => {
   const r2e = isOk(await created(w2e));
   eq([r2e.added, w2e.office.size, w2e.rooms.get('key-r1')!.team!.members.length, w2e.log.filter((l) => l.startsWith('unplace') || l === 'rollback')], [3, 3, 3, []], 'a failing announce: all placed, record intact, no unplace, no rollback');
   eq(w2e.announced, ['agent-1', 'agent-3'], 'the others were still announced');
+  // the rollback's own write fails: tried once more (the second works: the record is back; both fail: still failed, no more tries)
+  const w2f = world([tpl([mem(1), mem(2), mem(3)])], { 'key-r1': { team: old } });
+  w2f.fail.placeAt = 1; w2f.fail.rollbackFails = 1;
+  await assert.rejects(async () => created(w2f), /boom/, 'a throw with a rollback that fails once');
+  n++;
+  eq([w2f.log.filter((l) => l === 'rollback').length, w2f.rooms.get('key-r1')!.team], [2, old], 'the rollback was retried once and the record is back');
+  const w2g = world([tpl([mem(1), mem(2), mem(3)])], { 'key-r1': { team: old } });
+  w2g.fail.placeAt = 1; w2g.fail.rollbackFails = 5;
+  await assert.rejects(async () => created(w2g), /boom/, 'a rollback that keeps failing: failed all the same');
+  n++;
+  eq(w2g.log.filter((l) => l === 'rollback').length, 2, 'two tries and no more');
+  // the real `exists` of main.ts (`pathExists`): a folder there, then removed (a real temp dir)
+  const dirX = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-teamcreate-x-'));
+  try { ok(pathExists(dirX) === true, 'a folder that is there'); fs.rmSync(dirX, { recursive: true, force: true }); ok(pathExists(dirX) === false, 'a folder removed meanwhile'); } finally { fs.rmSync(dirX, { recursive: true, force: true }); }
+  // the folder is gone when the token is used: failed, nothing built or written
+  const w2h = world([tpl([mem(1)])]);
+  const t2h = await w2h.preview();
+  w2h.fail.missing = true;
+  const e2h = isFail(await w2h.ops.create(t2h, { rows: {} }));
+  eq([e2h.code, w2h.log, w2h.rooms.size], ['failed', [], 0], 'a folder that is not there any more: failed before any effect');
   // a name the session-name rule refuses: nothing is created, never under another name
   const secret = 'ghp' + '_' + 'A1b2C3d4'.repeat(5);
   const w3 = world([tpl([mem(1, { name: secret })])]);
@@ -480,7 +511,7 @@ section('atomicity', async () => {
   eq([e3.code, w3.log], ['failed', []], 'a name that is refused: failed before any effect');
   ok(!JSON.stringify(e3).includes('ghp'), 'no value in the answer');
   // a build that throws: no effect, the throw reaches the handler
-  const w4 = world([tpl([mem(1)])], {}, { create: { room: () => ({ count: 0 }), build: () => { throw new Error('x'); }, commit: () => { throw new Error('no'); }, place: () => undefined, unplace: () => undefined, announce: () => undefined, rollback: () => true } });
+  const w4 = world([tpl([mem(1)])], {}, { create: { exists: () => true, room: () => ({ count: 0 }), build: () => { throw new Error('x'); }, commit: () => { throw new Error('no'); }, place: () => undefined, unplace: () => undefined, announce: () => undefined, rollback: () => true } });
   await assert.rejects(async () => created(w4), /x/, 'a build that throws');
   n++;
   // no `create` dependency (the simulator): failed
@@ -612,6 +643,7 @@ section('realstore', async () => {
       const store = new FolderStore(path.join(dir, file)); store.load();
       let i = 0, p = 0;
       const create = {
+        exists: (): boolean => true,
         room: (key: string) => { const f = store.get(key); return { count: f?.team?.members.length ?? 0, savedCap: f?.maxAiCredits, team: f?.team, known: f !== undefined, sessionNames: f?.sessionNames?.map((x) => ({ ...x })) }; },
         build: (s_: LazyMemberSpec): AgentInfo => ({ id: 'agent-' + ++i, alias: s_.name, adapterId: s_.app, cwd: s_.key, lazy: true }) as unknown as AgentInfo,
         commit: (key: string, team: TeamRecord, infos: AgentInfo[]): boolean => store.setTeamRecord(key, team, infos.map((x) => ({ src: x.adapterId ?? 'copilot', id: x.id, name: x.alias ?? '' }))),
@@ -789,11 +821,18 @@ section('main', () => {
     { name: 'an odd mode is read as Allow all', from: "permMode: o.mode === 'ask' || o.mode === 'allow' ? o.mode : 'read-only'", to: "permMode: o.mode === 'ask' ? o.mode : 'allow'", section: 'folders', file: 'folders' },
     { name: 'a failing announce is propagated', from: 'dep.announce(info);\n            }\n            catch { /* the team exists', to: 'dep.announce(info);\n            }\n            catch (e) { throw e; /* the team exists', section: 'atomicity' },
     { name: 'the default limit is not normalized', from: 'const c = (0, credits_1.parseCapIn)(unit === \'none\' ? undefined : unit, cap);', to: 'const c = cap;', section: 'limits' },
+    { name: 'the rollback is not retried', from: 'attempt < 2 && !back', to: 'attempt < 1 && !back', section: 'atomicity' },
+    { name: 'a missing folder is not noticed', from: "if (!dep.exists(e.key))", to: 'if (false)', section: 'atomicity' },
+    { name: 'the rows object is not bounded', from: 'moreKeysThan)(rowsIn, teamtemplate_1.LIMITS.members)', to: 'moreKeysThan)(rowsIn, 1000)', section: 'arguments' },
+    { name: 'the rows bound is one below the limit', from: 'moreKeysThan)(rowsIn, teamtemplate_1.LIMITS.members)', to: 'moreKeysThan)(rowsIn, teamtemplate_1.LIMITS.members - 1)', section: 'arguments' },
+    { name: 'the real exists always says yes', from: 'fs.existsSync(key)', to: 'true', section: 'atomicity' },
+    { name: 'the real exists always says no', from: 'fs.existsSync(key)', to: 'false', section: 'atomicity' },
+    { name: 'the amount text is not bounded', from: 'amount.length <= 32', to: 'amount.length <= 1000', section: 'arguments' },
     { name: 'the snapshot is compared only once', from: "if (!this.unchanged(t))\n            return cfail('changed', CHANGED_NOW);", to: 'if (false)\n            return cfail(\'changed\', CHANGED_NOW);', section: 'snapshot2' },
     { name: 'a throw at place removes only the first agent', from: 'for (const info of infos) {\n                try {\n                    dep.unplace(info.id);', to: 'for (const info of infos.slice(0, 1)) {\n                try {\n                    dep.unplace(info.id);', section: 'atomicity' },
     { name: 'the agent whose place threw stays', from: 'for (const info of infos) {\n                try {\n                    dep.unplace(info.id);', to: 'for (const info of infos.slice(0, 1).concat(infos.slice(2))) {\n                try {\n                    dep.unplace(info.id);', section: 'atomicity' },
-    { name: 'the record is not put back after a throw', from: 'dep.rollback(e.key, room.team, room.sessionNames, room.known === false);', to: 'void 0;', section: 'atomicity' },
-    { name: 'a room the write created stays after a throw', from: 'room.known === false);', to: 'false);', section: 'atomicity' },
+    { name: 'the record is not put back after a throw', from: 'back = dep.rollback(e.key, room.team, room.sessionNames, room.known === false) === true;', to: 'back = true;', section: 'atomicity' },
+    { name: 'a room the write created stays after a throw', from: 'room.known === false) === true;', to: 'false) === true;', section: 'atomicity' },
     { name: 'the window is told before every member is placed', from: 'for (const info of infos)\n                dep.place(info);', to: 'for (const info of infos) {\n                dep.place(info);\n                dep.announce(info);\n            }', section: 'atomicity' },
     { name: 'a record that loses a field is saved', from: '!(0, util_1.isDeepStrictEqual)(rec, JSON.parse(JSON.stringify(team)))', to: 'false', section: 'folders', file: 'folders' },
     { name: 'the record is not checked when read', from: 'const r = (0, teamtemplate_1.checkMember)(cand, \'own\');', to: 'const r = { ok: true, member: { name: cand.name, role: cand.role, app: cand.app, permMode: cand.permMode, sendBrief: cand.sendBrief, brief: cand.brief, briefFrom: cand.briefFrom, profile: cand.profile, model: cand.model, effort: cand.effort, cap: cand.cap } };', section: 'folders', file: 'folders' },
