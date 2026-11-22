@@ -70,25 +70,30 @@ function parseWorktrees(text) {
   return list;
 }
 
-/** Disk used by a directory tree in bytes, links not followed. */
-function dirSize(dir) {
-  let total = 0;
+/**
+ * Disk used by a directory tree in bytes (links and junctions not followed), and how many entries could not be read (EPERM, EBUSY, EACCES...).
+ * Stats.blocks is 0 on Windows, so the allocated size is used only when blocks is positive and the file size otherwise. statFn is for the test.
+ */
+function dirSizeChecked(dir, statFn) {
+  const stat = statFn || fs.lstatSync;
+  let bytes = 0, unreadable = 0;
   const stack = [dir];
   while (stack.length) {
     const d = stack.pop();
     let entries;
-    try { entries = fs.readdirSync(d, { withFileTypes: true }); } catch { continue; }
+    try { entries = fs.readdirSync(d, { withFileTypes: true }); } catch (e) { if (!e || e.code !== 'ENOENT') unreadable += 1; continue; }
     for (const e of entries) {
       const p = path.join(d, e.name);
       try {
-        const st = fs.lstatSync(p);
-        total += typeof st.blocks === 'number' ? st.blocks * 512 : st.size;
+        const st = stat(p);
+        bytes += st.blocks > 0 ? st.blocks * 512 : st.size;
         if (e.isDirectory() && !st.isSymbolicLink()) stack.push(p);
-      } catch { /* vanished */ }
+      } catch (err) { if (!err || err.code !== 'ENOENT') unreadable += 1; }
     }
   }
-  return total;
+  return { bytes, unreadable };
 }
+function dirSize(dir, statFn) { return dirSizeChecked(dir, statFn).bytes; }
 
 /** A `.git` entry anywhere below dir (not dir's own), skipping node_modules and links. A tree deeper than MAX_NESTED_DEPTH counts as a hit. */
 function findNestedGit(root) {
@@ -280,8 +285,10 @@ function run(opts) {
   for (const wt of all.slice(1)) {
     if (inside(here, wt.path)) { rows.push({ wt, verdict: 'skip', why: 'the worktree this runs in', bytes: 0 }); continue; }
     const c = classify(wt, ctx);
-    const bytes = fs.existsSync(wt.path) ? dirSize(wt.path) : 0;
-    rows.push({ wt, bytes, ...c });
+    const sz = fs.existsSync(wt.path) ? dirSizeChecked(wt.path) : { bytes: 0, unreadable: 0 };
+    // a tree that cannot be read completely is not removable: git worktree remove would meet the same entries
+    if (c.verdict === 'removable' && sz.unreadable > 0) { rows.push({ wt, bytes: sz.bytes, verdict: 'look', why: sz.unreadable + ' entr' + (sz.unreadable === 1 ? 'y' : 'ies') + ' cannot be read (permission or lock)' }); continue; }
+    rows.push({ wt, bytes: sz.bytes, ...c });
   }
   let reclaimable = 0;
   let removed = 0;
@@ -334,5 +341,5 @@ function main(argv, env) {
   return 0;
 }
 
-module.exports = { newWorktreeRoot, parseWorktrees, classify, run, staleTmp, ghPrState, dirSize, ignoredData, main, TMP_PATTERNS };
+module.exports = { dirSizeChecked, newWorktreeRoot, parseWorktrees, classify, run, staleTmp, ghPrState, dirSize, ignoredData, main, TMP_PATTERNS };
 if (require.main === module) process.exit(main(process.argv.slice(2), process.env));

@@ -157,7 +157,19 @@ function check(modPath, tag) {
   assert.ok(!/upstream/.test(row('merged-clean').why), tag + ': merged-clean has the origin upstream');
   assert.ok(lines.some((l) => /finished but dirty: 1 file\b/.test(l)), tag + ': the dirty line says "finished but dirty: 1 file"');
   assert.ok(Object.values(fx.wts).every((p) => fs.existsSync(p)), tag + ': a dry run removes nothing');
-  assert.ok(dry.reclaimable > 0, tag + ': the reclaimable total is counted');
+  // sizes: Stats.blocks is 0 on Windows (size is used then); an unreadable entry is counted, not skipped
+  const sd = path.join(tmp, tag + '-size'); fs.mkdirSync(sd); write(path.join(sd, 'a', 'f.txt'), 'x'.repeat(1000)); write(path.join(sd, 'g.txt'), 'y'.repeat(500));
+  const noBlocks = (q) => { const l = fs.lstatSync(q); return { size: l.size, blocks: 0, isSymbolicLink: () => l.isSymbolicLink() }; };
+  const sz0 = mod.dirSizeChecked(sd, noBlocks);
+  assert.ok(sz0.bytes >= 1500 && sz0.unreadable === 0, tag + ': size: with blocks 0 (Windows) the file sizes are used ' + JSON.stringify(sz0));
+  const eperm = (q) => { if (q.endsWith('g.txt')) { const err = new Error('locked'); err.code = 'EBUSY'; throw err; } return noBlocks(q); };
+  const sz1 = mod.dirSizeChecked(sd, eperm);
+  assert.ok(sz1.unreadable === 1 && sz1.bytes >= 1000, tag + ': size: an entry that cannot be read is counted ' + JSON.stringify(sz1));
+  // independent walk: the sum of lstat sizes of everything in the removable worktrees is a floor for the reported bytes (blocks are never smaller)
+  const floorOf = (dir) => { let n = 0; const st = [dir]; while (st.length) { const d = st.pop(); for (const e of fs.readdirSync(d, { withFileTypes: true })) { const q = path.join(d, e.name); const l = fs.lstatSync(q); n += l.size; if (e.isDirectory() && !l.isSymbolicLink()) st.push(q); } } return n; };
+  const removableRows = dry.rows.filter((r) => r.verdict === 'removable');
+  const floor = removableRows.reduce((a, r) => a + floorOf(r.wt.path), 0);
+  assert.ok(floor > 0 && dry.reclaimable >= floor, tag + ': the reclaimable total is counted: ' + JSON.stringify({ reclaimable: dry.reclaimable, floor, perRow: removableRows.map((r) => [path.basename(r.wt.path), r.bytes]) }));
 
   // guards that need a git or gh that fails, and the ones a real repo cannot show (bare, missing directory)
   const wtOf = (b) => ({ path: fx.wts[b], head: g(fx.wts[b], 'rev-parse', 'HEAD').trim(), branch: b, detached: false, locked: false, bare: false, prunable: false });
@@ -351,6 +363,8 @@ const MUTANTS = [
   ['branch-moved-dropped', ' || first.branch !== wt.branch', '', /branch that changed/],
   ['last-reread-dropped', "  const last = readHeadBranch(wt, tg);\n  if (!last) return { removed: false, note: 'changed during the PR check, kept: HEAD or branch unreadable' };\n  if (last.head !== wt.head || last.branch !== wt.branch) return { removed: false, note: 'changed during the PR check, kept: HEAD or branch moved' };\n  const fin = classify({ ...wt, head: last.head, branch: last.branch }, { ...ctx, prState: () => seen });\n  if (fin.verdict !== 'removable') return { removed: false, note: 'changed during the PR check, kept: ' + fin.why };\n", '', /mid: a commit made during/],
   ['last-branch-compare-dropped', ' || last.branch !== wt.branch', '', /mid: a branch switch/],
+  ['size-blocks-zero', 'st.blocks > 0 ? st.blocks * 512 : st.size', 'st.blocks * 512', /blocks 0/],
+  ['size-unreadable-skipped', "catch (err) { if (!err || err.code !== 'ENOENT') unreadable += 1; }", 'catch (err) { /* skipped */ }', /cannot be read is counted/],
   ['recheck-unreadable', "if (!first) return { removed: false, note: 'changed since the check, kept: HEAD or branch unreadable' };\n  if (first.head !== wt.head || first.branch !== wt.branch)", "if (first && (first.head !== wt.head || first.branch !== wt.branch))", /unreadable/],
   ['other-remote-ok', " || remote.out.trim() !== 'origin'", '', /another remote|upstream on another remote/],
   ['progress-cherry', "'CHERRY_PICK_HEAD', ", '', /CHERRY_PICK_HEAD in progress/],
