@@ -295,7 +295,9 @@ FIXTURES = ['library', 'software', 'terminal', 'web', 'boss', 'coffee', 'bank', 
 
 # ---------------------------------------------------------------------------------------------------------------- room: wall and floor, day and night
 WALL_W, WALL_H, SHADOW = 720, 112, 6
-def wall(day, signs=True):   # signs=False: no neon sign in the label rows (spec 102 T445, issue #2009); the first-run hall keeps its signs
+# the four neon signs wall() draws (grid px of the 720 x 118 wall, tube and halo): the renderer keeps name chips and place plates off them (spec 102 T445, issue #2009)
+WALL_SIGNS = [dict(id='bolt', x=200, y=10, w=15, h=23), dict(id='star', x=291, y=8, w=22, h=22), dict(id='sign', x=407, y=10, w=22, h=16), dict(id='heart', x=508, y=5, w=20, h=22)]
+def wall(day):
     c = C(WALL_W, WALL_H + SHADOW); R = c.R; w, band = WALL_W, WALL_H
     R('#bfae84' if day else '#141b3d', 0, 0, w, band)
     for r in range(0, band, 4):
@@ -324,15 +326,14 @@ def wall(day, signs=True):   # signs=False: no neon sign in the label rows (spec
     y0, top = 4, band - 5
     tube(poly([[2, y0 + 2], [w - 3, y0 + 2]]), P['pink'], P['pink']); tube(poly([[2, top], [w - 3, top]]), P['blue'], P['blue'])
     # four signs in the middle of the picture: the room is shown cropped at the middle at the other scales (RA3), so none sits at its edge
-    if signs:
-        a = round(w * .28); b = y0 + 8
-        tube(poly([[a + 6, b], [a, b + 9], [a + 5, b + 9], [a + 1, b + 18], [a + 10, b + 7], [a + 5, b + 7], [a + 8, b]]), P['yellow'], P['orange'])
-        a = round(w * .42); b = y0 + 14
-        tube(poly([[a, b - 8], [a + 3, b - 2], [a + 9, b - 1], [a + 4, b + 3], [a + 6, b + 9], [a, b + 5], [a - 6, b + 9], [a - 4, b + 3], [a - 9, b - 1], [a - 3, b - 2]], True), P['blue'], P['blue'])
-        a = round(w * .58); b = y0 + 14
-        tube(poly([[a - 9, b - 6], [a + 9, b - 6], [a + 9, b + 6], [a - 9, b + 6]], True), P['lime'], P['lime']); tube(poly([[a - 4, b], [a + 4, b]]), P['lime'], P['lime']); tube(poly([[a, b - 3], [a, b + 3]]), P['lime'], P['lime'])
-        a = round(w * .72); b = y0 + 12
-        tube(poly([[a - 8, b - 6], [a, b + 8], [a + 8, b - 6], [a + 4, b - 9], [a, b - 5], [a - 4, b - 9]], True), P['pink'], P['pink'])
+    a = round(w * .28); b = y0 + 8
+    tube(poly([[a + 6, b], [a, b + 9], [a + 5, b + 9], [a + 1, b + 18], [a + 10, b + 7], [a + 5, b + 7], [a + 8, b]]), P['yellow'], P['orange'])
+    a = round(w * .42); b = y0 + 14
+    tube(poly([[a, b - 8], [a + 3, b - 2], [a + 9, b - 1], [a + 4, b + 3], [a + 6, b + 9], [a, b + 5], [a - 6, b + 9], [a - 4, b + 3], [a - 9, b - 1], [a - 3, b - 2]], True), P['blue'], P['blue'])
+    a = round(w * .58); b = y0 + 14
+    tube(poly([[a - 9, b - 6], [a + 9, b - 6], [a + 9, b + 6], [a - 9, b + 6]], True), P['lime'], P['lime']); tube(poly([[a - 4, b], [a + 4, b]]), P['lime'], P['lime']); tube(poly([[a, b - 3], [a, b + 3]]), P['lime'], P['lime'])
+    a = round(w * .72); b = y0 + 12
+    tube(poly([[a - 8, b - 6], [a, b + 8], [a + 8, b - 6], [a + 4, b - 9], [a, b - 5], [a - 4, b - 9]], True), P['pink'], P['pink'])
     if day:
         for X in range(w):
             st = (X // 6) % 2
@@ -596,7 +597,7 @@ def write_world(repo):
     for f in os.listdir(W):
         if f.endswith('.webp'): os.remove(os.path.join(W, f))
     total = 0
-    total += save(wall(True, signs=False).im, f'{W}/wall.webp'); total += save(wall(False, signs=False).im, f'{W}/wall-night.webp')
+    total += save(wall(True).im, f'{W}/wall.webp'); total += save(wall(False).im, f'{W}/wall-night.webp')
     total += save(floor(True).im, f'{W}/floor.webp'); total += save(floor(False).im, f'{W}/floor-night.webp')
     fx, ftop = {}, {}; FL = max(fixture(f).im.height for f in FIXTURES)
     for fid in FIXTURES:
@@ -610,7 +611,7 @@ def write_world(repo):
     total += save(glow().im, f'{W}/glow.webp'); total += save(console().im, f'{W}/desk.webp'); total += save(welcome().im, f'{W}/welcome.webp')
     meta = dict(formatVersion=1, id='retro', name='Retro arcade', defaultSet='retro', pixelArt=True, storeys=True, arrangement='aisles', css='world.css', wall='wall.webp', floorTile=[24, 24],
                 night=dict(wall='wall-night.webp', floor='floor-night.webp'), welcome='welcome.webp', monitor=mon, glow=dict(file='glow.webp', cells=STATES, cell=[56, 15]),
-                desk=[40, 22], fixtures=fx, fixtureTop=ftop, floorLine=FL, wallSize=[WALL_W, WALL_H + SHADOW], bandRows=WALL_H)
+                desk=[40, 22], fixtures=fx, fixtureTop=ftop, floorLine=FL, wallSize=[WALL_W, WALL_H + SHADOW], bandRows=WALL_H, wallSigns=WALL_SIGNS)
     with open(os.path.join(W, 'world.json'), 'w') as f: f.write(json.dumps(meta, indent=1, sort_keys=True) + '\n')
     return meta, total
 

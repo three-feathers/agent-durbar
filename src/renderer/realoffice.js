@@ -429,7 +429,7 @@
     if (ZOOM && !ZOOM.panel.isConnected) closeZoom();
     const sized = view.w + 'x' + view.h, sameSize = !!CUR && CUR.sized === sized && !!CUR.painted;
     const wasLive = CUR && CUR.ro === ro ? CUR.live : undefined;
-    CUR = { pixelArt: !!meta.pixelArt, ro, live: opts.live, screenOf: opts.screenOf || null, factsOf: opts.factsOf || null, sized, still: !!opts.still, hold: !!opts.hold, desks: new Map(lay.zones.flatMap((z) => z.desks.map((d) => [d.id, d])).concat(lay.lounge ? lay.lounge.desks.map((d) => [d.id, d]) : [])), agents: new Map(model.folders.flatMap((f) => f.agents.map((a) => [a.id, { ...a, folder: f.name }]))), drawn, scroll: !!lay.scroll };
+    CUR = { pixelArt: !!meta.pixelArt, signs: Array.isArray(meta.wallSigns) && Array.isArray(meta.wallSize) ? { list: meta.wallSigns, size: meta.wallSize } : null, ro, live: opts.live, screenOf: opts.screenOf || null, factsOf: opts.factsOf || null, sized, still: !!opts.still, hold: !!opts.hold, desks: new Map(lay.zones.flatMap((z) => z.desks.map((d) => [d.id, d])).concat(lay.lounge ? lay.lounge.desks.map((d) => [d.id, d]) : [])), agents: new Map(model.folders.flatMap((f) => f.agents.map((a) => [a.id, { ...a, folder: f.name }]))), drawn, scroll: !!lay.scroll };
     SLIDE = sameSize && moving() && !hiddenNow();
     CUR.painted = true;
     ro.classList.toggle('paused', hiddenNow()); if (hiddenNow()) finishMoves(ro);
@@ -1328,23 +1328,38 @@
      a pixel world is taken to the free place nearest where the layout put it (`L0`) that is `need` wide, on its rows `y0..y1` clear of every head and of the plates
      already placed (`done`, with a 2 px gap); with no place that wide it is narrowed to the widest free one (the plate's own ellipsis), at least 44 px while one that
      wide exists. Returns the plate's left and width. */
+  /* spec 102 (issue 2009, 2026-11-22): the wall picture's neon signs (the world's `wallSigns`, in the picture's own grid pixels) as boxes in the chrome's pixels: the wall is the lobby's
+     background at the lobby's height, repeated across, so a sign's box is its grid box times height / picture height, once for each repeat. A name chip or place plate never stands on one. */
+  function signRects(chrome) {
+    const sg = CUR && CUR.signs, lob = chrome.parentNode.querySelector('.ro-art > .ro-lobby'); if (!sg || !lob) return [];
+    const cr = chrome.getBoundingClientRect(), lr = lob.getBoundingClientRect(), k = lob.clientHeight / sg.size[1], tile = sg.size[0] * k, out = [], ox = lr.left + lob.clientLeft - cr.left, oy = lr.top + lob.clientTop - cr.top; /* the picture is sized and placed by the padding box */
+    if (!(k > 0)) return out;
+    for (let t = 0; t * tile < lob.clientWidth; t++) for (const q of sg.list) out.push({ x0: ox + t * tile + q.x * k, x1: ox + t * tile + (q.x + q.w) * k, y0: oy + q.y * k, y1: oy + (q.y + q.h) * k });
+    return out;
+  }
   function clearOfHeads(chrome, W, L0, need, y0, y1, done) {
-    const cr = chrome.getBoundingClientRect(), GAP2 = 2, block = [];
+    const cr = chrome.getBoundingClientRect(), GAP2 = 2, signs = signRects(chrome), heads = [];
     for (const v of chrome.parentNode.querySelectorAll('.ro-art > .ro-visitor, .ro-art > .ro-visitor2')) {
       const r = v.getBoundingClientRect(); if (!r.width) continue;
-      const top = r.top - cr.top, bot = top + 0.3 * r.height;
-      if (top < y1 && y0 < bot) block.push([r.left - cr.left + 0.25 * r.width - GAP2, r.right - cr.left - 0.25 * r.width + GAP2]);
+      const top = r.top - cr.top; heads.push({ x0: r.left - cr.left + 0.25 * r.width, x1: r.right - cr.left - 0.25 * r.width, y0: top, y1: top + 0.3 * r.height });
     }
-    for (const q of done) block.push([q.x0 - GAP2, q.x1 + GAP2]);
-    block.sort((a, b) => a[0] - b[0]);
-    const free = []; let at = 0;
-    for (const [a, b] of block) { if (a > at) free.push([at, a]); at = Math.max(at, b); }
-    if (at < W) free.push([at, W]);
-    let best = null;
-    for (const [a, b] of free) if (b - a >= need - 0.01) { const l = Math.min(Math.max(L0, a), b - need); if (!best || Math.abs(l - L0) < Math.abs(best.l - L0)) best = { l, w: need }; }
-    if (best) return best;
-    const wide = free.filter(([a, b]) => b - a >= 44).sort((p, q) => (q[1] - q[0]) - (p[1] - p[0]) || Math.abs(p[0] - L0) - Math.abs(q[0] - L0))[0] || free.sort((p, q) => (q[1] - q[0]) - (p[1] - p[0]))[0];
-    return wide ? { l: wide[0], w: Math.max(1, wide[1] - wide[0]) } : { l: L0, w: need };
+    /* the plate may also stand a few px lower, under a sign (the plate's row 0, then each lower step that clears a sign it would touch), at 3 px of cost per px: the nearest place wins */
+    const dys = [0];
+    for (const q of signs) if (q.y0 < y1 && y0 < q.y1) { const d = Math.ceil(q.y1 - y0) + 1; if (d <= 10 && !dys.includes(d)) dys.push(d); }
+    let pick = null, narrow = null;
+    for (const dy of dys) {
+      const a0 = y0 + dy, a1 = y1 + dy, block = [];
+      for (const q of [...heads, ...done, ...signs]) if (q.y0 < a1 && a0 < q.y1) block.push([q.x0 - GAP2, q.x1 + GAP2]);
+      block.sort((p, q) => p[0] - q[0]);
+      const free = []; let at = 0;
+      for (const [x0, x1] of block) { if (x0 > at) free.push([at, x0]); at = Math.max(at, x1); }
+      if (at < W) free.push([at, W]);
+      for (const [x0, x1] of free) if (x1 - x0 >= need - 0.01) { const l = Math.min(Math.max(L0, x0), x1 - need), cost = Math.abs(l - L0) + 3 * dy; if (!pick || cost < pick.cost) pick = { l, w: need, dy, cost }; }
+      if (!narrow) narrow = free;
+    }
+    if (pick) return pick;
+    const free = narrow || [], wide = free.filter(([x0, x1]) => x1 - x0 >= 44).sort((p, q) => (q[1] - q[0]) - (p[1] - p[0]) || Math.abs(p[0] - L0) - Math.abs(q[0] - L0))[0] || free.sort((p, q) => (q[1] - q[0]) - (p[1] - p[0]))[0];
+    return wide ? { l: wide[0], w: Math.max(1, wide[1] - wide[0]), dy: 0 } : { l: L0, w: need, dy: 0 };
   }
   function fitPlates(chrome, W) {
     const pl = [...chrome.querySelectorAll(':scope > .ro-lplate')].sort((a, b) => a.offsetLeft - b.offsetLeft);
@@ -1354,12 +1369,13 @@
       p.style.maxWidth = 'none'; const need = p.getBoundingClientRect().width + 1; p.style.maxWidth = px(base); /* fractional, plus a pixel: a text 0.4 px wider than its box still gets the ellipsis */
       const y0 = p.offsetTop, y1 = y0 + p.offsetHeight;
       const rows = (q) => q.y0 < y1 && y0 < q.y1;
-      if (PIXEL) { /* spec 102 (issue 2009): in a pixel world a place plate never covers a visitor's head */
+      if (PIXEL) { /* spec 102 (issue 2009): in a pixel world a place plate never covers a visitor's head or a wall sign */
         const spot = clearOfHeads(chrome, W, L0, need, y0, y1, done.filter(rows));
         p.style.left = px(spot.l); p.style.maxWidth = px(spot.w);
+        if (spot.dy) { p.style.top = px((parseFloat(p.style.top) || 0) + spot.dy); }
         const rr = p.getBoundingClientRect(), cr = chrome.getBoundingClientRect();
         p._w = rr.width;
-        done.push({ x0: rr.left - cr.left, x1: rr.right - cr.left, y0, y1 });
+        done.push({ x0: rr.left - cr.left, x1: rr.right - cr.left, y0: y0 + (spot.dy || 0), y1: y1 + (spot.dy || 0) });
         continue;
       }
       if (need > base) {
@@ -1402,6 +1418,7 @@
     /* the place plates are there first: a chip never covers one */
     const cr = chrome.getBoundingClientRect(); /* fractional boxes: a rounded offsetLeft hides half a pixel of overlap */
     const placed = [...chrome.querySelectorAll(':scope > .ro-lplate')].map((e) => { const r = e.getBoundingClientRect(); return [r.left - cr.left, r.right - cr.left, r.top - cr.top, r.bottom - cr.top]; });
+    for (const q of signRects(chrome)) placed.push([q.x0, q.x1, q.y0, q.y1]); /* a wall sign is fixed too: a chip never stands on one (issue 2009) */
     const plates = placed.slice(), chipsPlaced = []; /* plates stay fixed; a placed chip may move left to make room (pushLeft) */
     const band = W || chrome.clientWidth || 1e9;
     for (const c of chips) {
@@ -1475,7 +1492,7 @@
     const cr = chrome.getBoundingClientRect(), rel = (e) => { const r = e.getBoundingClientRect(); return { x0: r.left - cr.left, x1: r.right - cr.left, y0: r.top - cr.top, y1: r.bottom - cr.top }; };
     const chips = [...chrome.querySelectorAll(':scope > .ro-chip')].sort((a, b) => a.getBoundingClientRect().left - b.getBoundingClientRect().left);
     for (let pass = 0; pass < 4; pass++) {
-      const placed = [...chrome.querySelectorAll(':scope > .ro-lplate')].map(rel);
+      const placed = [...chrome.querySelectorAll(':scope > .ro-lplate')].map(rel).concat(signRects(chrome));
       let moved = false;
       for (const c of chips) {
         const r = rel(c), hit = placed.filter((q) => q.x0 < r.x1 - 0.3 && r.x0 < q.x1 - 0.3 && q.y0 < r.y1 - 0.3 && r.y0 < q.y1 - 0.3);
