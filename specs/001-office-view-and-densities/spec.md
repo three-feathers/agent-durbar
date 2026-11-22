@@ -867,7 +867,7 @@ Spec first; the measurement PR follows in the next commits. No FR or task number
 
 Spec delta only, no `src/` change. 097 T156, T157 and T158 are ticked on `main` by the owner's decisions (2026-11-13 06:17 UTC "Ok with all recommendations"; 2026-11-14 07:30 and 08:28 UTC, answer '1'; recorded on #1401 and in spec 097 *Changes 2026-11-14*). T182's first half is therefore done and ticked. What stays open for spec 097 FR-179 and spec 102 FR-269 (a): **T181** (this spec) and **097 T162**, the real-Mac and integrated-GPU runs, now issue #1879. `[KNOWN GAP]` T167's remaining parts and T168 are not measured and nothing is built on them; the owner decides whether to drop them. Not verified: no run was made for this delta, it reads the specs only.
 
-## Changes 2026-11-22: a cut room name hides its path; the Postbox keeps its name at its minimum width (bugs, issues #2011 and #2014; T430; amends FR-037, FR-039, FR-179, FR-271; no new FR)
+## Changes 2026-11-22: a cut room name hides its path; the Postbox keeps its name at its minimum width (bugs, issues #2011 and #2014; T432; amends FR-037, FR-039, FR-179, FR-271; no new FR)
 
 **Defect.** Found by a visual check of `main` at `722a48a8e` (simulator, 15 agents, Linux, xvfb). (A, #2011) Flat office, both sizes: the head of `swisscontract-ai` reads "swissc… tract-ai" beside a path that is still drawn ("~/work/swissco…"), though FR-037 and FR-179 say the path gives way before the name is cut. (B, #2014) Flat office at 1280x800: the Postbox tile shows no "Postbox" title (an icon and "none today" only).
 
