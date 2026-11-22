@@ -2,16 +2,20 @@
  * Unit test (spec 117 FR-020, FR-021, T013): scripts/review-profile.js, the one light list; everything else is heavy.
  * A table of changed-path lists with the expected profile, then mutants of the classifier (a widened light list, a dropped heavy
  * veto, renames ignored, the sink rule dropped, one light file hiding a heavy one): each must fail its own named cases.
- * No git, no network, no Electron.
+ * One throwaway git repo in the OS temp dir (head reader); no network, no Electron.
  */
 import * as assert from 'assert';
 import * as path from 'path';
+import * as fs from 'fs';
+import * as os from 'os';
+import * as cp from 'child_process';
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const rp = require(path.join(__dirname, '..', '..', 'scripts', 'review-profile.js')) as {
   createProfile: (c?: Record<string, unknown>) => { classify: (e: Entry[], ctx?: { readFile?: (p: string) => string }) => { profile: string; files: { path: string; profile: string }[] } };
   DEFAULT_CONFIG: { lightRules: Rule[]; heavyVeto: Rule[]; sinkPatterns: RegExp[]; combine: (r: { profile: string }[]) => string };
   validRef: (r: string) => boolean;
+  headReader: (head: string, cwd: string) => (p: string) => string;
 };
 interface Rule { name: string; test: (p: string) => boolean; content?: boolean; loads?: boolean }
 type Entry = string | { status: string; path: string; oldPath?: string; patch?: string };
@@ -24,6 +28,10 @@ const FILES: Record<string, string> = {
   'scripts/test-plain.ts': "import * as a from 'assert'; // loads src/renderer/office.js",
   'scripts/test-loads-ipc.ts': "import { x } from '../src/main/ipc/x';",
   'scripts/test-loads-gh.ts': "require('./gh-trusted.sh')",
+  'scripts/test-safetext.ts': "const S = require(path.join(R, 'safetext.js'));",
+  'scripts/test-lookalike-links.ts': "const L = require(path.join(R, 'lookalike.js'));",
+  'scripts/test-unlisted-module.ts': "const L = require(path.join(R, 'sandboxtext.js'));",
+  'scripts/check-loads-office.js': "const L = require(path.join(R, 'office.js'));",
 };
 const readFile = (p: string): string => {
   if (/^scripts\/test-[a-z-]+-thing\.ts$/.test(p)) return "import * as a from 'assert';";
@@ -74,6 +82,14 @@ const CASES: Case[] = [
   { name: 'driver with no reader', entries: ['scripts/check-safe.js'], want: 'heavy' },
   ...['redact', 'mask', 'trust', 'permiss', 'url', 'path', 'ipc', 'token', 'secret', 'fuzz', 'gate', 'claim', 'safe-print', 'spawn', 'shell', 'credit', 'spend']
     .map((k): Case => ({ name: `test name with "${k}"`, entries: [`scripts/test-${k}-thing.ts`], want: 'heavy', ctx: true })),
+  // hole 1: renderer masking and trust modules are heavy by path, with no sink word on the changed line
+  ...['safetext', 'lookalike', 'markdown', 'sandboxtext', 'grantlabel', 'whyallowed'].map((m): Case => ({ name: `renderer module by path: ${m}.js`, entries: [{ status: 'M', path: `src/renderer/${m}.js`, patch: ui('+const LIMIT = 3;') }], want: 'heavy' })),
+  { name: 'renderer module by path, rename away', entries: [{ status: 'R100', oldPath: 'src/renderer/safetext.js', path: 'src/renderer/plain.js', patch: ui('+const A = 1;') }], want: 'heavy' },
+  // hole 2: a test that loads a heavy module by path.join is heavy
+  { name: 'test-safetext loads safetext.js by path.join', entries: ['scripts/test-safetext.ts'], want: 'heavy', ctx: true },
+  { name: 'test loads lookalike.js by path.join', entries: ['scripts/test-lookalike-links.ts'], want: 'heavy', ctx: true },
+  { name: 'test loads sandboxtext.js by path.join (name has no keyword)', entries: ['scripts/test-unlisted-module.ts'], want: 'heavy', ctx: true },
+  { name: 'driver loads a light renderer module by path.join', entries: ['scripts/check-loads-office.js'], want: 'light', ctx: true },
   { name: 'shots driver with no reader', entries: ['scripts/shots-x.js'], want: 'heavy' },
 ];
 
@@ -126,8 +142,31 @@ mutant('one light file hides a heavy one (decided by the last)', { combine: (r: 
 mutant('any light file makes it light', { combine: (r: { profile: string }[]) => (r.some((f) => f.profile === 'light') ? 'light' : 'heavy') }, ['light first, heavy last', 'many light, one unknown']);
 mutant('keyword check dropped', { keywords: [] }, ['test name with "redact"', 'test name with "mask"']);
 
+// hole 2 mutants: no name scanning; shorter keyword list
+mutant('path.join names not scanned', { keywords: [], heavyRenderer: [] }, ['test-safetext loads safetext.js by path.join']);
+mutant('heavy renderer list dropped', { heavyVeto: D.heavyVeto.filter((r) => r.name !== 'renderer masking, trust and text modules') }, ['renderer module by path: safetext.js', 'renderer module by path: whyallowed.js', 'renderer module by path, rename away']);
+
+// hole 3: contents are read from <head>, not from the working tree
+{
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'rp-'));
+  try {
+    const g = (...a: string[]): void => { cp.execFileSync('git', ['-c', 'commit.gpgsign=false', '-c', 'user.name=t', '-c', 'user.email=t@t', ...a], { cwd: dir, stdio: 'ignore' }); };
+    g('init', '-q');
+    fs.writeFileSync(path.join(dir, 'f.txt'), 'at-head');
+    g('add', 'f.txt'); g('commit', '-q', '-m', 'x');
+    fs.writeFileSync(path.join(dir, 'f.txt'), 'working-tree');
+    const rd = rp.headReader('HEAD', dir);
+    assert.strictEqual(rd('f.txt'), 'at-head', 'the reader must return the content at <head>, not the working tree');
+    assert.throws(() => rd('missing.txt'), 'a file missing at head must throw (heavy)');
+    assert.throws(() => rp.headReader('--output=x', dir), 'an option-shaped ref is refused');
+    // mutant: a working-tree reader dies at the first assert
+    const wt = (p: string): string => fs.readFileSync(path.join(dir, p), 'utf8');
+    assert.notStrictEqual(wt('f.txt'), 'at-head', 'mutant (working-tree reader) must differ from the head reader');
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+}
+
 // 3. refs given to git are never options or shell text
 assert.ok(rp.validRef('origin/main') && rp.validRef('HEAD~3') && rp.validRef('0123abcd'));
 assert.ok(!rp.validRef('--output=x') && !rp.validRef('-x') && !rp.validRef('a b') && !rp.validRef('a;ls') && !rp.validRef('') && !rp.validRef('$(x)'));
 
-console.log(`test-review-profile: ${CASES.length} cases and 20 mutants pass`);
+console.log(`test-review-profile: ${CASES.length} cases and 22 mutants and the head-reader check pass`);

@@ -10,14 +10,23 @@
  * first stdout line; exit 2 (and the line `heavy`) when git could not be read. Pure functions are exported for
  * scripts/test-review-profile.ts. Not wired into ci-changes.js yet (see spec 117 tasks T014 note).
  */
-const fs = require('fs');
 const path = require('path');
 const { execFileSync } = require('child_process');
 
 // ---- the light list (FR-020): the only way to be light ----
 const RASTER_AUDIO_FONT = /\.(png|webp|jpe?g|gif|mp3|ogg|woff2)$/;
 const CODE_EXT = /\.(js|mjs|cjs|ts|tsx|html?|css|svg|sh|ps1|py|yml|yaml)$/;
-const KEYWORDS = ['redact', 'mask', 'trust', 'permiss', 'url', 'path', 'ipc', 'token', 'secret', 'fuzz', 'gate', 'claim', 'safe-print', 'spawn', 'shell', 'credit', 'spend'];
+// Renderer modules that mask, sanitise, escape, label grants, check URLs or render agent text: heavy BY PATH, whatever the changed line says
+// (Paco's review of #2027). Derived with: grep -rlE "safeMask|redact|sanitiz|\besc[A-Z_(]|escapeHtml|escape|lookalike|mask[A-Z]" src/renderer
+// (every hit is kept: fail closed, a cosmetic file in the list only costs a heavy review), plus the trust and text modules that grep misses.
+const HEAVY_RENDERER = [
+  'safetext', 'lookalike', 'markdown', 'sandboxtext', 'grantlabel', 'whyallowed', 'mcpwords', 'signin', 'cuttext', 'chattrim',
+  'browserpane', 'activitytable', 'modelswitch', 'foldersetup', 'exports-shim', 'app', 'teams', 'realoffice', 'profileeditor', 'scenekits',
+  'places', 'orgwords', 'reorder', 'harnesses', 'slashsuggest', 'retry', 'liveact', 'helpercard', 'charmaker', 'theme', 'activity',
+  'convsearch', 'screens', 'newfolder', 'notes', 'dock',
+];
+const KEYWORDS = ['redact', 'mask', 'trust', 'permiss', 'url', 'path', 'ipc', 'token', 'secret', 'fuzz', 'gate', 'claim', 'safe-print', 'spawn', 'shell', 'credit', 'spend',
+  'safetext', 'brainstate', 'sanit', 'escape', 'csp', 'auth', 'lookalike', 'markdown', 'grantlabel', 'whyallowed', 'sandboxtext'];
 /** Renderer line content that makes a renderer .js change heavy (FR-020 content rule). */
 const SINK_PATTERNS = [
   /innerHTML|outerHTML|insertAdjacentHTML|document\s*\.\s*write|srcdoc/i,
@@ -51,6 +60,7 @@ const HEAVY_VETO = [
   { name: 'src/adapters', test: (p) => p.startsWith('src/adapters/') },
   { name: '.github', test: (p) => p.startsWith('.github/') },
   { name: 'build', test: (p) => p.startsWith('build/') },
+  { name: 'renderer masking, trust and text modules', test: (p) => p.startsWith('src/renderer/') && /\.js$/.test(p) && HEAVY_RENDERER.includes(p.split('/').pop().slice(0, -3)) },
   { name: 'renderer html (CSP pages)', test: (p) => p.startsWith('src/renderer/') && /\.html?$/.test(p) },
   { name: 'scripts shell and trust tooling', test: (p) => /^scripts\/[^/]*(\.sh|\.ps1|trust)[^/]*$/.test(p) || /^scripts\/(pr-gate|claim|safe-print|gh-trusted)\b/.test(p) },
   { name: 'docs/rules', test: (p) => p.startsWith('docs/rules/') },
@@ -66,7 +76,7 @@ function combineAny(results) {
   return results.length > 0 && results.every((r) => r.profile === 'light') ? 'light' : 'heavy';
 }
 
-const DEFAULT_CONFIG = { lightRules: LIGHT_RULES, heavyVeto: HEAVY_VETO, sinkPatterns: SINK_PATTERNS, combine: combineAny, pathsOf: allPaths, keywords: KEYWORDS };
+const DEFAULT_CONFIG = { lightRules: LIGHT_RULES, heavyVeto: HEAVY_VETO, sinkPatterns: SINK_PATTERNS, combine: combineAny, pathsOf: allPaths, keywords: KEYWORDS, heavyRenderer: HEAVY_RENDERER };
 
 function normalize(p) {
   if (typeof p !== 'string' || p === '' || p.includes('\0')) return null;
@@ -84,6 +94,8 @@ function referencedFiles(text) {
   const out = new Set();
   for (const m of text.matchAll(/(?:\.\.\/|\.\/|['"`])((?:src|\.github|scripts)\/[A-Za-z0-9_./-]+)/g)) out.add(m[1]);
   for (const m of text.matchAll(/['"`]\.\/([A-Za-z0-9_.-]+)['"`]/g)) out.add('scripts/' + m[1]);
+  // modules loaded by name through path.join(R, 'safetext.js') or a bare quoted file name
+  for (const m of text.matchAll(/['"`]([A-Za-z0-9_-]+)\.(?:js|ts)['"`]/g)) out.add('name:' + m[1].toLowerCase());
   return [...out];
 }
 
@@ -113,6 +125,11 @@ function createProfile(config = DEFAULT_CONFIG) {
       try { text = ctx.readFile(raw); } catch { text = null; }
       if (typeof text !== 'string') return { profile: 'heavy', reason: 'cannot read the file to see what it loads' };
       for (const ref of referencedFiles(text)) {
+        if (ref.startsWith('name:')) {
+          const stem = ref.slice(5);
+          if (cfg.heavyRenderer.includes(stem) || cfg.keywords.some((k) => stem.includes(k))) return { profile: 'heavy', reason: 'loads a heavy module by name: ' + stem };
+          continue;
+        }
         const cands = path.extname(ref) ? [ref] : [ref + '.ts', ref + '.js'];
         const isSrc = cands.some((c) => /^(src|\.github)\//.test(c)) || cands.some((c) => cfg.keywords.some((k) => c.split('/').pop().toLowerCase().includes(k)));
         if (!isSrc) continue;
@@ -174,13 +191,20 @@ function readDiff(base, head, cwd) {
   return entries;
 }
 
+/** Reader of file contents AS OF <head> (git show <head>:<path>, argument array); a path missing at head throws. */
+function headReader(head, cwd) {
+  if (!validRef(head)) throw new Error('bad ref');
+  return (p) => git(['show', head + ':' + p], cwd);
+}
+
 function main(argv) {
   const [base, head] = argv;
   if (!base || !head) { process.stdout.write('heavy\nusage: node scripts/review-profile.js <base> <head>\n'); return 2; }
   const root = path.join(__dirname, '..');
   let entries;
   try { entries = readDiff(base, head, root); } catch { process.stdout.write('heavy\nunreadable diff (fail closed)\n'); return 2; }
-  const readFile = (p) => fs.readFileSync(path.join(root, p), 'utf8');
+  // contents come from <head>, never the working tree; a file missing at head throws, which classifies heavy
+  const readFile = headReader(head, root);
   const res = DEFAULT.classify(entries, { readFile });
   const lines = [res.profile];
   if (res.reason) lines.push(res.reason);
@@ -192,4 +216,4 @@ function main(argv) {
 
 if (require.main === module) process.exitCode = main(process.argv.slice(2));
 
-module.exports = { classify: DEFAULT.classify, classifyPath: DEFAULT.classifyPath, createProfile, DEFAULT_CONFIG, LIGHT_RULES, HEAVY_VETO, SINK_PATTERNS, KEYWORDS, referencedFiles, readDiff, validRef };
+module.exports = { classify: DEFAULT.classify, classifyPath: DEFAULT.classifyPath, createProfile, DEFAULT_CONFIG, LIGHT_RULES, HEAVY_VETO, SINK_PATTERNS, KEYWORDS, HEAVY_RENDERER, referencedFiles, readDiff, validRef, headReader };
