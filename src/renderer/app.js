@@ -706,6 +706,8 @@ function roomAiu(r){const f=folderOfRoom(r.id),t=LEDGER.room(r.id,f&&f.key),usd=
 /* spec 052 FR-076: one word per status on every screen (pills, list, header, palette, counters); longer phrases only in sentences */
 const LABELS={working:'Working',thinking:'Thinking',waiting:'Waiting',idle:'Idle',error:'Error',done:'Done',limit:'Limit reached',asleep:'Asleep'}; /* limit and asleep too: a state with no label of its own never reads "undefined" (relayed, 2026-11-03) */
 const vis = a => a.paused ? 'idle' : a.state;
+/* the status pill's and the status filter's "Working": working or thinking (a paused agent reads idle); Retrying, Failing and Compacting are overlays on these states, so they count as working only while the state is */
+const isWorkingVis = a => { const s = vis(a); return s==='working'||s==='thinking'; };
 const label = (a,short) => a.paused ? 'Paused' : (a.label || LABELS[a.state] || '');
 /* spec 052 FR-062: Working (or Thinking) while its recent tool calls failed in a row (the mood's "dizzy" streak) reads "Failing", in the waiting
    colours (.st-failing); the card keeps its is-working look and its place in the status filters. Main agents only (the tracker's scope). */
@@ -985,7 +987,7 @@ function renderFilter(){
   sel.value=ui.ws;
   fitTopbar(); /* the narrow value is reapplied to the new options */
 }
-const matchStatus = a => !ui.status || ((ui.status==='working')?['working','thinking'].includes(vis(a)):vis(a)===ui.status);
+const matchStatus = a => !ui.status || ((ui.status==='working')?isWorkingVis(a):vis(a)===ui.status);
 /* spec 001 FR-180 (issue 790): while a status pill filters, say so. The office and List show "Showing only <state> · N hidden · Show all"
    (Show all is the pill's own toggle) so a finished session the filter hides never looks lost. N counts the main sessions the office or the list
    would show without the pill (same folder, workspace and floor rules), not helpers. */
@@ -3146,6 +3148,7 @@ function openPanel(id,focus){
   if(window.ResizeObserver){if(chatBoxRO)chatBoxRO.disconnect();let h0=-1;chatBoxRO=new ResizeObserver(()=>{const h=chatEl.clientHeight;if(h0>=0&&h!==h0&&chatEl.isConnected&&chatEl.dataset.pin!=='0')chatEl.scrollTop=chatEl.scrollHeight;h0=h;});chatBoxRO.observe(chatEl);} /* spec 005 FR-243: the box got shorter (an answer bar, the coffee bar, the message box) or taller: a chat at the end stays there; only down, only with the pin on (FR-214); the content's growth is stickyFlush's */
   $('panel').querySelector('.panel-in').classList.toggle('helper-ro',!!(a.live&&a.parent)); /* spec 097 Changes 2026-11-04 (issue 1140): not 'ro', the Real office root's class, whose floor picture and corners it took */
   $('backBtn').onclick=closePanel;
+  { const sb=$('railSortBtn'); if(sb){ sb.onclick=()=>document.getElementById('railSortMenu')?closeRailSortMenu(true):openRailSortMenu(); sb.onkeydown=e=>{if(e.key==='ArrowDown'){e.preventDefault();openRailSortMenu();}}; } } /* spec 005 FR-341 */
   refreshFolderStatus(a); /* spec 063: branch and changed files on the folder chip */
   if(a.live)wireOpenWith(a);else $('vscodeBtn').onclick=()=>toast('Would run <code>code '+esc(room.path)+'</code>',3800);
   if(a.live)$('pauseBtn').hidden=true;
@@ -8272,15 +8275,65 @@ function toggleFold(roomId){
   const f=railFolds(); if(f.has(r.path))f.delete(r.path); else f.add(r.path);
   saveFolds(); renderStrip();
 }
+/* spec 005 FR-341 (issue 1961): the rail's sort choice, kept like the collapsed folders (railRemember(); the simulator with railstore=1) */
+let RAIL_SORT=null;
+function railSort(){
+  if(RAIL_SORT===null){RAIL_SORT=RAIL.DEFAULT_SORT;if(railRemember()){try{RAIL_SORT=RAIL.loadSort(localStorage.getItem(RAIL.SORT_KEY));}catch(e){RAIL_SORT=RAIL.DEFAULT_SORT;}}}
+  return RAIL_SORT;
+}
+function setRailSort(k){
+  RAIL_SORT=RAIL.loadSort(k);
+  if(railRemember()){try{if(RAIL_SORT===RAIL.DEFAULT_SORT)localStorage.removeItem(RAIL.SORT_KEY);else localStorage.setItem(RAIL.SORT_KEY,RAIL_SORT);}catch(e){/* storage off: kept for this run */}}
+  const b=$('railSortBtn');if(b){const t='Sort conversations: '+RAIL.sortLabel(RAIL_SORT);b.setAttribute('aria-label',t);b.title=t;}
+  renderStrip();
+}
+/* the creation time of a session: Durbar has none, so the time this computer first saw its id (durbar.railBorn, ids and times only, kept as
+   the chat numbers are: rememberOn(), the simulator with railstore=1, never the demo; ids that are gone are dropped once the list has loaded).
+   Sessions that existed before FR-341 shipped all read "first seen" on that day (a [KNOWN GAP] in the spec) */
+let RAIL_BORN=null, RAIL_BORN_SAVED;
+function railBornSync(list){
+  if(RAIL_BORN===null){RAIL_BORN={};if(!demoOn&&railRemember()){try{RAIL_BORN=RAIL.loadBorn(localStorage.getItem(RAIL.BORN_KEY));}catch(e){RAIL_BORN={};}}}
+  const ids=list.map(x=>x.id), next=RAIL.stampBorn(RAIL_BORN,ids,Date.now());
+  RAIL_BORN=next;
+  if(demoOn||!railRemember())return;
+  /* pruning uses every main session, not only the shown floors, so a hidden floor's sessions keep their time; the value is written only when it
+     differs from the last one written (a render runs on every event while a chat is open) */
+  try{const v=RAIL.bornJSON(RAIL_BORN,agents.filter(x=>!x.parent).map(x=>x.id),agentsListed);
+    if(v!==RAIL_BORN_SAVED){RAIL_BORN_SAVED=v;if(v===null)localStorage.removeItem(RAIL.BORN_KEY);else localStorage.setItem(RAIL.BORN_KEY,v);}}catch(e){/* storage off: kept for this run */}
+}
+const railCreated=x=>(RAIL_BORN||{})[x.id];
+function closeRailSortMenu(back){
+  const m=document.getElementById('railSortMenu');if(m)m.remove();
+  document.removeEventListener('mousedown',railSortOutside,true);
+  const b=$('railSortBtn');if(b){b.setAttribute('aria-expanded','false');if(back)focusIn(b);}
+}
+function railSortOutside(e){const m=document.getElementById('railSortMenu');if(m&&!m.contains(e.target)&&!e.target.closest('#railSortBtn'))closeRailSortMenu(false);}
+/* the existing popup pattern of the chat's profile and model menus (role=menu, menuitemradio, placeMenu); one choice is checked */
+function openRailSortMenu(){
+  const b=$('railSortBtn');if(!b)return;
+  closeRailSortMenu(false);closeCtxMenu();closeModeMenu();closeModelMenu();closeAgentMenu();
+  const cur=railSort(),m=document.createElement('div');m.id='railSortMenu';m.className='mode-menu model-menu';m.setAttribute('role','menu');m.setAttribute('aria-label','Sort conversations');
+  m.innerHTML=RAIL.SORTS.map(([k,t])=>`<button type="button" role="menuitemradio" aria-checked="${k===cur}" data-rsort="${k}"><span class="mt"><b>${esc(t)}</b></span></button>`).join('');
+  document.body.appendChild(m);
+  const r=b.getBoundingClientRect();placeMenu(m,r.left,r.bottom+6,b);
+  b.setAttribute('aria-expanded','true');document.addEventListener('mousedown',railSortOutside,true);
+  m.addEventListener('click',e=>{const i=e.target.closest('[data-rsort]');if(!i)return;closeRailSortMenu(true);setRailSort(i.dataset.rsort);});
+  m.addEventListener('keydown',e=>{const it=[...m.querySelectorAll('button')],i=it.indexOf(document.activeElement);
+    if(e.key==='ArrowDown'){e.preventDefault();focusIn(it[(i+1)%it.length]);}else if(e.key==='ArrowUp'){e.preventDefault();focusIn(it[(i+it.length-1)%it.length]);}
+    else if(e.key==='Home'){e.preventDefault();focusIn(it[0]);}else if(e.key==='End'){e.preventDefault();focusIn(it[it.length-1]);}
+    else if(e.key==='Escape'||e.key==='Tab'){e.preventDefault();e.stopPropagation();closeRailSortMenu(true);}});
+  focusIn(m.querySelector('[aria-checked="true"]')||m.querySelector('button'));
+}
 function railGroups(){
   needsMeOrder(); /* NEED_SINCE for whoever needs you now */
   const rank=new Map(roomsInOrder().map((r,i)=>[r.id,i]));
   const list=agents.filter(x=>!x.parent&&roomShown(roomOf(x)));
-  return RAIL.group(list.map((x,i)=>({id:x.id,room:x.room,rank:rank.get(x.room),needs:needsMe(x),since:NEED_SINCE.get(x.id),prio:prio(x),i})));
+  railBornSync(list);
+  return RAIL.group(list.map((x,i)=>({id:x.id,room:x.room,rank:rank.get(x.room),needs:needsMe(x),working:isWorkingVis(x),since:NEED_SINCE.get(x.id),created:railCreated(x),prio:prio(x),i})),railSort());
 }
 function railHTML(){
   const ib=$('inboxBtn');
-  return `<nav class="rail" aria-label="Agents"><h2 class="sr-only">Agents</h2><div class="rail-top"><button class="btn back" id="backBtn" type="button" title="Back to the office (Esc)">${ICON('back')}<span>Office</span></button><!-- spec 005 FR-190: R2 (T127) puts the Plan | List switch here, R3 (T116) the collapse button --></div>
+  return `<nav class="rail" aria-label="Agents"><h2 class="sr-only">Agents</h2><div class="rail-top"><button class="btn back" id="backBtn" type="button" title="Back to the office (Esc)">${ICON('back')}<span>Office</span></button><button class="btn sm" id="railSortBtn" type="button" aria-haspopup="menu" aria-expanded="false" aria-label="Sort conversations: ${esc(RAIL.sortLabel(railSort()))}" title="Sort conversations: ${esc(RAIL.sortLabel(railSort()))}">Sort<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6l4 4 4-4"/></svg></button><!-- spec 005 FR-190: R2 (T127) puts the Plan | List switch here, R3 (T116) the collapse button --></div>
    <div class="rail-door"><button class="btn sm" id="railDoor" type="button" aria-haspopup="dialog" title="${esc(ib?ib.title:'Needs you')}"${ib&&ib.getAttribute('aria-keyshortcuts')?` aria-keyshortcuts="${esc(ib.getAttribute('aria-keyshortcuts'))}"`:''}>${ALERT_ICON}<span>Your door</span><b>0</b></button><!-- spec 052 FR-219: the red lock goes beside it (T223) --></div>
    <div class="rail-list" id="stripList"></div><div class="rgrip" id="railGrip" role="separator" aria-orientation="vertical" aria-label="Resize the agent list" aria-controls="stripList" tabindex="0" title="Drag to resize the agent list. Double-click to go back to the default width."></div></nav>`;
 }
