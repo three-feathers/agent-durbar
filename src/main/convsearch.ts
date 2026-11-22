@@ -415,7 +415,8 @@ export function createEarlyTitles(query: string, d: Pick<ScanDeps, 'masker' | 's
   const seen = new Set<string>();
   const groups = { office: 0, earlier: 0 };
   const times = new Map<string, number[]>(); // review of PR 1972: per folder, the times of the earlier sessions seen so far (what `orderPlan` ranks)
-  let planned = 0; // sessions seen so far that `orderPlan` keeps, in arrival order (office first, then folder by folder)
+  const folderOrder: string[] = []; // the plan's folder order: first appearance (`orderPlan`)
+  let offices = 0; // office sessions seen: they come with the open sessions, in the first call
   return {
     emitted,
     groups,
@@ -426,8 +427,9 @@ export function createEarlyTitles(query: string, d: Pick<ScanDeps, 'masker' | 's
       const byFolder = new Map<string, PlanSession[]>();
       for (const s of sessions) {
         if (!s || s.helper || s.floorOff || s.hidden) continue; // the same left-outs as `orderPlan`, which counts them
-        if (s.group === 'office') { office.push(s); continue; }
         const fk = normDir(String(s.folderKey), d.platform ?? process.platform);
+        if (!folderOrder.includes(fk)) folderOrder.push(fk);
+        if (s.group === 'office') { office.push(s); continue; }
         if (!byFolder.has(fk)) byFolder.set(fk, []);
         byFolder.get(fk)!.push(s);
       }
@@ -442,19 +444,19 @@ export function createEarlyTitles(query: string, d: Pick<ScanDeps, 'masker' | 's
         if (seen.has(k)) continue;
         seen.add(k);
         looked++;
-        // the caps of `orderPlan` (FR-022): 200 earlier sessions per folder, 400 in all; a session it would drop gets no row here
+        // the caps of `orderPlan` (FR-022): 200 earlier sessions per folder, 400 in all; a session it could drop gets no row here
         let inPlan = true;
-        if (s.group !== 'office') {
+        if (s.group === 'office') inPlan = ++offices <= BUDGET.maxSessions;
+        else {
           const fk = normDir(String(s.folderKey), d.platform ?? process.platform);
           const ts = times.get(fk) ?? [];
           times.set(fk, ts);
           const rank = ts.filter((t) => t >= (s.time || 0)).length;
           ts.push(s.time || 0);
-          inPlan = rank < BUDGET.perFolder;
+          // worst case for the 400: every folder before this one grows to its cap (a later listing of it may add sessions)
+          inPlan = rank < BUDGET.perFolder && offices + BUDGET.perFolder * folderOrder.indexOf(fk) + rank < BUDGET.maxSessions;
         }
-        if (inPlan && planned >= BUDGET.maxSessions) inPlan = false;
         if (!inPlan) continue;
-        planned++;
         let t: ReturnType<typeof titleOf>;
         try { t = titleOf(s, query, d, d.values(s), words.length); } catch { continue; }
         if (t.failed || t.confirmed.size < words.length) continue;

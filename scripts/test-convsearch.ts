@@ -697,6 +697,27 @@ async function main(): Promise<void> {
       await startScan({ sessions: [...fa, ...fb, ...fc] }, 'invoice', { ...h.deps, early }).done;
       assert.deepStrictEqual([...lastRows(h).keys()].sort(), fa.map((x) => x.sessionId).sort(), 'the 200 rows are folder a (first in the plan)');
     }
+    // the 400 counts worst case (review of PR 1972, Vikram's side): F (Claude Code) 100, G 200, H 200, then F's Codex listing, newer: the plan is F 200 + G 200, so H's titles must not get early rows
+    {
+      sid = 0;
+      const mk2 = (f: string, n: number, base: number, title: string, adapter: string): PlanSession[] => Array.from({ length: n }, (_x, i) => sess({ sessionId: `${adapter}-${f}-${i}`, adapter, title: `${title} ${i}`, folderKey: `/${f}`, time: base + i }));
+      const F1 = mk2('F', 100, 1000, 'invoice', 'claude');
+      const G = mk2('G', 200, 1000, 'other', 'claude');
+      const H = mk2('H', 200, 1000, 'invoice', 'claude');
+      const F2 = mk2('F', 100, 5000, 'other', 'codex'); // newer than F's Claude Code sessions: the plan keeps them in F
+      const all2 = [...F1, ...G, ...H, ...F2];
+      const its: Record<string, HistoryItem[]> = {};
+      for (const x of all2) its[x.sessionId] = [u('nothing')];
+      const h = harness(its);
+      const early = createEarlyTitles('invoice', { masker: h.deps.masker, search: S, values: h.deps.values, emit: h.deps.emit });
+      for (const c of [F1, G, H, F2]) early.add(c);
+      const ids2 = [...early.emitted].map((k) => k.split('\0')[2]);
+      assert.ok(ids2.some((id) => id.startsWith('claude-F-')), 'F, the first folder, gets early rows');
+      assert.ok(!ids2.some((id) => id.startsWith('claude-H-')), 'H is the third folder: the plan may drop it, so no early row (the scan\'s own title pass is in plan order)');
+      await startScan({ sessions: all2 }, 'invoice', { ...h.deps, early }).done;
+      assert.ok(!hitsOf(h).some((x) => x.sessionId.startsWith('claude-H-')), 'and no row of H is shown: the plan is F 200 + G 200');
+      assert.strictEqual(lastRows(h).size, 100, 'the 100 title matches of F');
+    }
     // once the limit is reached, a session without a row does not stop the scan: the rows after it still get their excerpts (finding 2), and it is not read or counted
     {
       sid = 0;
