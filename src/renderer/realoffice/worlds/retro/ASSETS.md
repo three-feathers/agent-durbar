@@ -17,7 +17,7 @@ A hall of arcade cabinets, drawn **in code** (`scripts/build-arcade-pack.py`, fr
 - approved by: Vikram, 2026-11-01 (the mockup's look); the rebuilt pictures 2026-11-19 (the contact sheet, issue 1402)
 - reference: the mockup
 - prompt: none, drawn in code
-- cut: the wall is 720 x 118 grid pixels, its four neon signs in the middle so a crop at another scale keeps them
+- cut: the wall is 720 x 118 grid pixels (spec 102 T445, 2026-11-22, issue #2009: it carries no neon sign: the four signs of the first drawing stood in the rows a name chip or place plate fills, `wall(day, signs=False)`; only the first-run hall's own picture still draws them; the owner has not looked at the signless wall)
 - licence: MIT
 
 ### room-night

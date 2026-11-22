@@ -295,7 +295,7 @@ FIXTURES = ['library', 'software', 'terminal', 'web', 'boss', 'coffee', 'bank', 
 
 # ---------------------------------------------------------------------------------------------------------------- room: wall and floor, day and night
 WALL_W, WALL_H, SHADOW = 720, 112, 6
-def wall(day):
+def wall(day, signs=True):   # signs=False: no neon sign in the label rows (spec 102 T445, issue #2009); the first-run hall keeps its signs
     c = C(WALL_W, WALL_H + SHADOW); R = c.R; w, band = WALL_W, WALL_H
     R('#bfae84' if day else '#141b3d', 0, 0, w, band)
     for r in range(0, band, 4):
@@ -324,14 +324,15 @@ def wall(day):
     y0, top = 4, band - 5
     tube(poly([[2, y0 + 2], [w - 3, y0 + 2]]), P['pink'], P['pink']); tube(poly([[2, top], [w - 3, top]]), P['blue'], P['blue'])
     # four signs in the middle of the picture: the room is shown cropped at the middle at the other scales (RA3), so none sits at its edge
-    a = round(w * .28); b = y0 + 8
-    tube(poly([[a + 6, b], [a, b + 9], [a + 5, b + 9], [a + 1, b + 18], [a + 10, b + 7], [a + 5, b + 7], [a + 8, b]]), P['yellow'], P['orange'])
-    a = round(w * .42); b = y0 + 14
-    tube(poly([[a, b - 8], [a + 3, b - 2], [a + 9, b - 1], [a + 4, b + 3], [a + 6, b + 9], [a, b + 5], [a - 6, b + 9], [a - 4, b + 3], [a - 9, b - 1], [a - 3, b - 2]], True), P['blue'], P['blue'])
-    a = round(w * .58); b = y0 + 14
-    tube(poly([[a - 9, b - 6], [a + 9, b - 6], [a + 9, b + 6], [a - 9, b + 6]], True), P['lime'], P['lime']); tube(poly([[a - 4, b], [a + 4, b]]), P['lime'], P['lime']); tube(poly([[a, b - 3], [a, b + 3]]), P['lime'], P['lime'])
-    a = round(w * .72); b = y0 + 12
-    tube(poly([[a - 8, b - 6], [a, b + 8], [a + 8, b - 6], [a + 4, b - 9], [a, b - 5], [a - 4, b - 9]], True), P['pink'], P['pink'])
+    if signs:
+        a = round(w * .28); b = y0 + 8
+        tube(poly([[a + 6, b], [a, b + 9], [a + 5, b + 9], [a + 1, b + 18], [a + 10, b + 7], [a + 5, b + 7], [a + 8, b]]), P['yellow'], P['orange'])
+        a = round(w * .42); b = y0 + 14
+        tube(poly([[a, b - 8], [a + 3, b - 2], [a + 9, b - 1], [a + 4, b + 3], [a + 6, b + 9], [a, b + 5], [a - 6, b + 9], [a - 4, b + 3], [a - 9, b - 1], [a - 3, b - 2]], True), P['blue'], P['blue'])
+        a = round(w * .58); b = y0 + 14
+        tube(poly([[a - 9, b - 6], [a + 9, b - 6], [a + 9, b + 6], [a - 9, b + 6]], True), P['lime'], P['lime']); tube(poly([[a - 4, b], [a + 4, b]]), P['lime'], P['lime']); tube(poly([[a, b - 3], [a, b + 3]]), P['lime'], P['lime'])
+        a = round(w * .72); b = y0 + 12
+        tube(poly([[a - 8, b - 6], [a, b + 8], [a + 8, b - 6], [a + 4, b - 9], [a, b - 5], [a - 4, b - 9]], True), P['pink'], P['pink'])
     if day:
         for X in range(w):
             st = (X // 6) % 2
@@ -595,7 +596,7 @@ def write_world(repo):
     for f in os.listdir(W):
         if f.endswith('.webp'): os.remove(os.path.join(W, f))
     total = 0
-    total += save(wall(True).im, f'{W}/wall.webp'); total += save(wall(False).im, f'{W}/wall-night.webp')
+    total += save(wall(True, signs=False).im, f'{W}/wall.webp'); total += save(wall(False, signs=False).im, f'{W}/wall-night.webp')
     total += save(floor(True).im, f'{W}/floor.webp'); total += save(floor(False).im, f'{W}/floor-night.webp')
     fx, ftop = {}, {}; FL = max(fixture(f).im.height for f in FIXTURES)
     for fid in FIXTURES:

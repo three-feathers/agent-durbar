@@ -1324,6 +1324,28 @@
     const w = todo.map((r) => r.getBoundingClientRect().width);
     todo.forEach((r, i) => { r.hidden = w[i] < ROLE_MIN; });
   }
+  /* spec 102 (issue 2009, Changes 2026-11-22): the head of a standing visitor is the middle half of its picture's width and the top 30 % of its height; a place plate in
+     a pixel world is taken to the free place nearest where the layout put it (`L0`) that is `need` wide, on its rows `y0..y1` clear of every head and of the plates
+     already placed (`done`, with a 2 px gap); with no place that wide it is narrowed to the widest free one (the plate's own ellipsis), at least 44 px while one that
+     wide exists. Returns the plate's left and width. */
+  function clearOfHeads(chrome, W, L0, need, y0, y1, done) {
+    const cr = chrome.getBoundingClientRect(), GAP2 = 2, block = [];
+    for (const v of chrome.parentNode.querySelectorAll('.ro-art > .ro-visitor, .ro-art > .ro-visitor2')) {
+      const r = v.getBoundingClientRect(); if (!r.width) continue;
+      const top = r.top - cr.top, bot = top + 0.3 * r.height;
+      if (top < y1 && y0 < bot) block.push([r.left - cr.left + 0.25 * r.width - GAP2, r.right - cr.left - 0.25 * r.width + GAP2]);
+    }
+    for (const q of done) block.push([q.x0 - GAP2, q.x1 + GAP2]);
+    block.sort((a, b) => a[0] - b[0]);
+    const free = []; let at = 0;
+    for (const [a, b] of block) { if (a > at) free.push([at, a]); at = Math.max(at, b); }
+    if (at < W) free.push([at, W]);
+    let best = null;
+    for (const [a, b] of free) if (b - a >= need - 0.01) { const l = Math.min(Math.max(L0, a), b - need); if (!best || Math.abs(l - L0) < Math.abs(best.l - L0)) best = { l, w: need }; }
+    if (best) return best;
+    const wide = free.filter(([a, b]) => b - a >= 44).sort((p, q) => (q[1] - q[0]) - (p[1] - p[0]) || Math.abs(p[0] - L0) - Math.abs(q[0] - L0))[0] || free.sort((p, q) => (q[1] - q[0]) - (p[1] - p[0]))[0];
+    return wide ? { l: wide[0], w: Math.max(1, wide[1] - wide[0]) } : { l: L0, w: need };
+  }
   function fitPlates(chrome, W) {
     const pl = [...chrome.querySelectorAll(':scope > .ro-lplate')].sort((a, b) => a.offsetLeft - b.offsetLeft);
     const done = [];
@@ -1332,6 +1354,14 @@
       p.style.maxWidth = 'none'; const need = p.getBoundingClientRect().width + 1; p.style.maxWidth = px(base); /* fractional, plus a pixel: a text 0.4 px wider than its box still gets the ellipsis */
       const y0 = p.offsetTop, y1 = y0 + p.offsetHeight;
       const rows = (q) => q.y0 < y1 && y0 < q.y1;
+      if (PIXEL) { /* spec 102 (issue 2009): in a pixel world a place plate never covers a visitor's head */
+        const spot = clearOfHeads(chrome, W, L0, need, y0, y1, done.filter(rows));
+        p.style.left = px(spot.l); p.style.maxWidth = px(spot.w);
+        const rr = p.getBoundingClientRect(), cr = chrome.getBoundingClientRect();
+        p._w = rr.width;
+        done.push({ x0: rr.left - cr.left, x1: rr.right - cr.left, y0, y1 });
+        continue;
+      }
       if (need > base) {
         const mine = done.filter(rows), others = pl.filter((q) => q !== p && !done.includes(q)).map((q) => ({ x0: parseFloat(q.style.left) || 0, y0: q.offsetTop, y1: q.offsetTop + q.offsetHeight })).filter(rows);
         const lo = Math.max(0, ...mine.map((q) => q.x1 + 2)), hi = Math.min(W, ...others.filter((q) => q.x0 >= L0).map((q) => q.x0 - 2));
