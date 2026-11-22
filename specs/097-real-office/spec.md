@@ -2167,3 +2167,19 @@ Issue #1930: on a local Linux xvfb run of `main` the hover-parking step of `chec
 
 **Not verified.** Windows and macOS; a real GPU; the Photo office at sizes other than the two. `[KNOWN GAP]` The docs pictures of the office are not retaken: issue #2019 (Retake the docs pictures of the office after the text-fit changes).
 
+
+
+## Changes 2026-11-22: the recorder's idle read waits for the load tail to end and stops its own frame loop (issue #2023; no FR or task number taken; test tooling only, no `src/` change)
+
+Issue #2023 reported Real office idle CPU at 10.8 % of one core at 1280x800 against 3.3 % at 1440x900 (15 agents, device pixel ratio 2 forced, Apple M4, PR #2020's T162 Mac half above). A scratch probe (not committed; same machine, simulator, 15 agents, `simfreeze=1` as the recorder runs it, CPU every 6 s for 48 s after load, 3 launches per case) did not find a size effect. It found two faults in how `check-perf.js --record` reads idle CPU:
+
+- **It reads too early.** After a load the GPU and renderer processes stay busy for about 15 s (first 6 s: 3.7 to 11 % at both sizes), then fall to a flat level. The idle read (15 s) starts about 5 s after load, behind a DOM-count settle that does not see this tail. That is why the ranges were wide (1440x900: 3.3 to 10.3) and why the first A/B base reading was 2 to 2.5 times the last.
+- **It measures itself.** The page instruments (`INST`) keep a `requestAnimationFrame` loop running for the frame rows. During an idle read it forces 60 main-thread frames a second (60 style recalcs a second where the page alone has none) and adds about 1 point of one core in the renderer.
+
+Settled, 30 to 48 s after load, median of 3 launches [min-max], % of one core: page alone 1.0 [0.9-2.4] at 1280x800 and 1.6 [1.0-2.4] at 1440x900; with the recorder's loop 2.1 [1.2-2.1] and 2.3 [2.1-5.3]. One animation runs at both sizes (a screen's breathing glow; the people hold still under `simfreeze=1`). With people moving (`romotion=1`, 23 animations) settled idle is 2.3 to 2.6 % at both sizes and about 0.1 % with every animation off. Hiding the lights moved nothing at 1280x800 (2.3 against 2.4). So the idle CPU rows of 2026-11-22 above overstate. They are kept there, **superseded: measured too early**, and the size gap they show is not reproduced.
+
+**Change (`scripts/perf-record.js`, `scripts/perf-record-driver.js`).** Before each idle CPU read (visible idle, and each idle row of the GPU A/B), the driver (1) pauses the instruments' frame loop and resumes it after the read, and (2) waits until CPU has settled: samples of 3 s each until the last 3 lie within a band (spread at most 0.5 points or 25 % of their median, whichever is larger), at most 60 s. The rule is a pure helper (`cpuSettled`, `settleCpu`) with the sampler passed in. A read whose wait reached the cap is still taken and says so (`settle.settled: false`, the samples), it is never dropped. The idle rows record the wait (`settle`) and how many loop frames ran during the read (`loopFrames`, 0 expected). `PERF_W` and `PERF_H` set the window (default 1440x900, as before), so 1280x800 needs no local change. Every other row, the order of the phases and the frame instruments are unchanged.
+
+`test:` `test:perfrecord`: the settle rule on fake samples (a tail-shaped series is not settled until its flat end; a flat series settles at once; the cap ends a series that never settles, with `settled: false`); `settleCpu` takes its idle read only after the tail. A patched copy of `settleCpu` that skips the wait fails at its own labelled assert.
+
+**Not verified.** Windows, Linux, a non-Apple GPU, a real Retina panel, 40 agents, real sessions and the packaged app. The re-recorded rows (both sizes, flat and Real office) are in PR text, not here, until the owner decides the `real:` rows (FR-189).
