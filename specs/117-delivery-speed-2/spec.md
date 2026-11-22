@@ -366,3 +366,7 @@ Found by a plan-only note of the Mac session; Paco's bot agreed in the team grou
 - **New spec item, FR-382 / T024:** split `app.js` into modules (not started, own spec needed, not designed).
 - **Dependencies.** Only the 021 FR-084 point 4 amendment wording (T008) and the 008 T130 tick (T007) wait for #1247 to land; T006 (test first) and the pure data part can be written against `main` today but merge after #1247 so T130 exists.
 
+
+### 2026-11-22: stop-gap, `build-test` `timeout-minutes` 25 to 45 (#1983)
+
+FR-018 says the 25-minute limit is not raised first. The queue is blocked now (#1978, #1994, #1972, #1996 twice, #1533 cut at the limit with no assert failing; each costs a new head, a re-approval and a rerun), and Paco's bot suggested a stop-gap. Decision: raise the one `build-test` limit (it is a matrix, so all three legs) to 45 until T012's shard split lands, then T025 lowers it again. This is a stop-gap only: it changes no suite, name or job structure, and the target stays Windows Build and test p90 at or under 15 min, zero limit cancels in 7 days (SC-003, FR-018). A cut run now ends as a slow green or a real failure instead of a cancel. `test-electron-cache` item 10 (work plus npm ci retries within the limit) still holds. Not verified: the new Windows p90 until the next runs are measured.
