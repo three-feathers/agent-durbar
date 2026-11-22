@@ -248,6 +248,8 @@
     "test:officeops": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-office-ops.js",
     "test:uisuite": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-ui-suite.js",
     "test:cichanges": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-ci-changes.js",
+    "test:ciossensitive": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-ci-os-sensitive.js",
+    "test:uievents": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-ui-platforms-events.js",
     "test:activity": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-activity.js",
     "test:globals": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-renderer-globals.js",
     "test:authcheck": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-authcheck.js",

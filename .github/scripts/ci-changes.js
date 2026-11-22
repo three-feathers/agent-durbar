@@ -19,6 +19,9 @@
  *                 change only to npm scripts the UI run cannot reach (not build, pack:dir or a lifecycle hook).
  *   macos=true    the path-filtered macOS build and test (macos-pr.yml) has work: false only when every change is docs or a
  *                 version-only bump (FR-191)
+ *   os_sensitive=true  the diff can behave differently on Windows: ui-platforms.yml runs its Windows UI shards on the pull request
+ *                 (spec 117 FR-012, O2); false only when the diff is not empty and every path is on the OS-neutral list (fails
+ *                 closed: osSensitive below). ci-changes.sh writes true when the decision wrote no exact true/false.
  *
  * When in doubt a path counts (fail open toward running): an unknown top-level file or folder, a file under scripts/fixtures or
  * scripts/fakes, a non-source file in scripts/, a scripts/ path gone at head (deleted or renamed away), a scripts/ name the literal
@@ -233,6 +236,67 @@ function uiClosure(io) {
   return seen;
 }
 
+// ---- spec 117 FR-012 (O2, owner decision Vikram 2026-11-22, T045): `os_sensitive=true|false`, whether a pull request's diff can
+// behave differently on Windows, so ui-platforms.yml starts its Windows UI shards on the PR. It FAILS CLOSED: a path counts as
+// OS-neutral only when it is a plain path on the OS_NEUTRAL list below and on no OS_SENSITIVE line; every other path (the main
+// process, preload, build, packaging, dependencies, workflows and CI scripts, the driver plumbing, shell scripts, fonts, any unknown
+// or new path, an odd path) and an empty diff are os_sensitive. A src/shared or src/adapters file is neutral only when neither its base
+// nor its head text, nor any file it imports by a relative path (followed, base and head), uses an OS module (fs, path, os,
+// child_process, ...) or a process field that differs per OS; a file unreadable on both sides, or an import that resolves to nothing
+// in src/, counts. The neutral prefixes are lower case on purpose (`Src/renderer/x.js` is not on the list, and a case-insensitive
+// checkout could make it another folder); the sensitive lines match in any case (`src/renderer/KEYS.js` is keys.js on Windows and
+// macOS). scripts/test-ci-os-sensitive.ts guards each line with a fixture and a mutant that dies at its own assert.
+const OS_NEUTRAL = /^(docs\/|specs\/|changelog\.d\/|src\/renderer\/|scripts\/fixtures\/|scripts\/(test|shots|check)-[\w.-]+\.(ts|js)$)|^[^/]+\.md$/;
+const OS_SENSITIVE = [
+  /^src\/renderer\/(keys|browserpane)\.js$/i, // the platform's shortcut keys; the browser pane (a native view)
+  /\.(ttf|otf|woff2?|ttc)$/i, // fonts lay out differently per OS
+  /^scripts\/(driver-helpers|ui-suite|check-parallel|check-office-overlap|check-theme-geometry|check-mac-titlebar)\.js$/i, // the UI run's plumbing and its font-sensitive layout checks
+  /\.(sh|ps1|cmd|bat)$/i, // shell scripts
+];
+const OS_SHARED = /^src\/(shared|adapters)\/[\w./-]+\.(ts|js)$/;
+// an OS module by import, require or dynamic import (with or without `node:`, any subpath), or a process field that differs per OS
+const OS_USE = /(?:\bfrom\s*|\brequire\s*\(\s*|\bimport\s*\(\s*|\bimport\s+)['"`](?:node:)?(?:fs|path|os|child_process|net|tls|dgram|worker_threads|cluster|readline|electron)(?:\/[\w/]*)?['"`]|\bprocess\s*\.\s*(?:platform|env|arch|cwd|execPath|kill|pid)\b/;
+// a relative import or require ('./x', '../y/z')
+const REL_IMPORT = /(?:\bfrom\s*|\brequire\s*\(\s*|\bimport\s*\(\s*|\bimport\s+)['"`](\.{1,2}\/[^'"`]*)['"`]/g;
+/** A plain git path: no backslash, no `.` or `..` or empty segment, no leading or trailing blank, no control character, not absolute. */
+const osPlainPath = (f) => typeof f === 'string' && f !== '' && f === f.trim() && !/[\\\u0000-\u001f\u007f]/.test(f) && f.split('/').every((seg) => seg !== '' && seg !== '.' && seg !== '..');
+/** Does a src/shared or src/adapters file (base or head, and what it imports by a relative path, followed) use an OS module? */
+function sharedUsesOs(f, io) {
+  const seen = new Set(), todo = [f];
+  const exists = (p) => io.read(p) != null || io.readBase(p) != null;
+  while (todo.length) {
+    const p = todo.pop();
+    if (seen.has(p)) continue;
+    seen.add(p);
+    const texts = [io.read(p), io.readBase(p)].filter((t) => t != null);
+    if (!texts.length) return true; // unreadable on both sides
+    for (const t of texts) {
+      if (OS_USE.test(t)) return true;
+      for (const m of t.matchAll(REL_IMPORT)) {
+        const rel = path.posix.normalize(path.posix.join(path.posix.dirname(p), m[1]));
+        if (!rel.startsWith('src/')) return true; // leaves src/: cannot say
+        const stem = rel.replace(/\.js$/, '');
+        const hit = [rel, `${stem}.ts`, `${stem}.js`, `${rel}/index.ts`, `${rel}/index.js`].find((c) => /\.(ts|js)$/.test(c) && exists(c));
+        if (!hit) return true; // an import that resolves to nothing (a .json, a folder, a typo)
+        todo.push(hit);
+      }
+    }
+  }
+  return false;
+}
+/** One changed path: can it behave differently on Windows? */
+function osPath(f, io) {
+  if (!osPlainPath(f)) return true;
+  if (OS_SENSITIVE.some((re) => re.test(f))) return true;
+  if (OS_SHARED.test(f)) return sharedUsesOs(f, io);
+  return !OS_NEUTRAL.test(f);
+}
+/** The decision for a pull request: true unless the diff is not empty and every path is OS-neutral. */
+function osSensitive(files, io) {
+  const list = Array.isArray(files) ? files : [];
+  return list.length === 0 || list.some((f) => osPath(f, io));
+}
+
 /** The reached npm names of base and head together: a line reached on either side counts when it changes. */
 function keepNpm(io) {
   return new Set([...reachedNpm(io.read('package.json'), uiWorkflowText(io.read(WF_UI), io.read(WF_CI))),
@@ -294,7 +358,7 @@ function main(env = process.env, argv = process.argv.slice(2)) {
   const out = (k, v) => { if (env.GITHUB_OUTPUT) fs.appendFileSync(env.GITHUB_OUTPUT, `${k}=${v}\n`); else console.log(`${k}=${v}`); };
   let r;
   if (env.EVENT_NAME !== 'pull_request') {
-    r = { code: true, themes: true, ui: true, macos: true };
+    r = { code: true, themes: true, ui: true, macos: true, os_sensitive: true };
     console.log(`${env.EVENT_NAME || 'no event'}: not a pull request, everything runs.`);
   } else {
     // --root <checkout>: the workflow runs the base copy of this file from a temp folder on the PR's checkout
@@ -302,13 +366,15 @@ function main(env = process.env, argv = process.argv.slice(2)) {
     const root = at >= 0 && argv[at + 1] ? path.resolve(argv[at + 1]) : path.join(__dirname, '..', '..');
     const files = execFileSync('git', ['diff', '--name-only', '--no-renames', '-z', 'HEAD^1', 'HEAD'], { cwd: root, encoding: 'utf8', shell: false, maxBuffer: 64 * 1024 * 1024 }).split('\0').filter(Boolean);
     for (const f of files) console.log(printable(f)); // a name may hold a newline or `::`: never a workflow command
-    r = decide(files, gitIo(root));
+    const tree = gitIo(root);
+    r = { ...decide(files, tree), os_sensitive: osSensitive(files, tree) };
     if (!r.code) console.log('Docs, specs and Markdown only: build, test and office checks are skipped (the job passes).');
     else if (!r.ui) console.log('Nothing the app, its build or the UI drivers use changed: the UI suite, office layout and package smoke are skipped (spec 008 FR-191).');
     if (r.code && !r.macos) console.log('Docs and a version-only package bump: the macOS pull-request build and test is skipped (spec 008 FR-191).');
+    if (r.ui && !r.os_sensitive) console.log('No OS-sensitive path changed: the Windows UI shards are skipped on this pull request (spec 117 FR-012).');
   }
-  for (const k of ['code', 'themes', 'ui', 'macos']) out(k, r[k]);
+  for (const k of ['code', 'themes', 'ui', 'macos', 'os_sensitive']) out(k, r[k]);
 }
 
-module.exports = { decide, uiClosure, versionOnly, gitIo, npmTargets, reachedNpm, workflowCommands };
+module.exports = { decide, uiClosure, versionOnly, gitIo, npmTargets, reachedNpm, workflowCommands, osSensitive };
 if (require.main === module) main();

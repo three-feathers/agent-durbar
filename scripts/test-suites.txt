@@ -127,6 +127,8 @@ test:gitstatus
 test:officeops
 test:uisuite
 test:cichanges
+test:ciossensitive
+test:uievents
 test:pathdirs
 test:officialinstall
 test:checknames

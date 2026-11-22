@@ -10,7 +10,7 @@
 # workflow files: CODEOWNERS review of .github/ guards those.
 set -euo pipefail
 out="${GITHUB_OUTPUT:-/dev/stdout}"
-all() { printf 'code=true\nthemes=true\nui=true\nmacos=true\n' >> "$out"; }
+all() { printf 'code=true\nthemes=true\nui=true\nmacos=true\nos_sensitive=true\n' >> "$out"; }
 if [ "${EVENT_NAME:-}" != "pull_request" ]; then
   echo "${EVENT_NAME:-no event}: not a pull request, everything runs."
   all
@@ -29,3 +29,13 @@ if ! git show 'HEAD^1:.github/scripts/ci-changes.js' > "$tmp/.github/scripts/ci-
   exit 0
 fi
 node "$tmp/.github/scripts/ci-changes.js" --root .
+# spec 117 FR-012 (T045): fail closed. ui-platforms.yml skips the Windows UI shards of a pull request only on os_sensitive=false; a
+# base copy older than that output (main before this landed), one that writes nothing, or one whose last os_sensitive line is not
+# exactly `true` or `false` (`FALSE`, `false ` or empty: GitHub's == ignores case) gets os_sensitive=true appended (the last line wins).
+if [ "$out" != /dev/stdout ]; then
+  last="$(grep '^os_sensitive=' "$out" | tail -n 1 || true)"
+  if [ "$last" != "os_sensitive=true" ] && [ "$last" != "os_sensitive=false" ]; then
+    echo "The decision wrote no exact os_sensitive=true|false: the Windows UI shards run."
+    echo "os_sensitive=true" >> "$out"
+  fi
+fi

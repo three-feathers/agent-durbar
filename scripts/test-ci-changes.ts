@@ -303,9 +303,9 @@ assert.strictEqual(d(['scripts/test-usage.js']).macos, true, 'a test script runs
     execFileSync(process.execPath, [path.join(repo, '.github', 'scripts', 'ci-changes.js')], { cwd: repo, env: { ...process.env, EVENT_NAME: ev, GITHUB_OUTPUT: outFile }, stdio: 'ignore', shell: false });
     return fs.readFileSync(outFile, 'utf8');
   };
-  assert.strictEqual(run('pull_request'), 'code=false\nthemes=false\nui=false\nmacos=false\n', 'pull_request: the diff of HEAD^1..HEAD decides (docs only: nothing)');
-  for (const ev of ['push', 'merge_group', 'schedule', 'workflow_dispatch', '']) assert.strictEqual(run(ev), 'code=true\nthemes=true\nui=true\nmacos=true\n', `${ev || 'no event'}: everything runs`);
-  const ALL = 'code=true\nthemes=true\nui=true\nmacos=true\n';
+  assert.strictEqual(run('pull_request'), 'code=false\nthemes=false\nui=false\nmacos=false\nos_sensitive=false\n', 'pull_request: the diff of HEAD^1..HEAD decides (docs only: nothing)');
+  for (const ev of ['push', 'merge_group', 'schedule', 'workflow_dispatch', '']) assert.strictEqual(run(ev), 'code=true\nthemes=true\nui=true\nmacos=true\nos_sensitive=true\n', `${ev || 'no event'}: everything runs`);
+  const ALL = 'code=true\nthemes=true\nui=true\nmacos=true\nos_sensitive=true\n';
   // finding 3: a file name with a newline and `::` is printed escaped, so it cannot start a workflow command (POSIX: Windows forbids the name)
   if (process.platform !== 'win32') {
     fs.writeFileSync(path.join(repo, 'scripts', 'x\n::warning::injected ##[error]y.txt'), 'x');
@@ -326,12 +326,12 @@ assert.strictEqual(d(['scripts/test-usage.js']).macos, true, 'a test script runs
     // a tooling script the closure does not name, present at head: the base copy, run with --root on the checkout, says ui=false
     fs.writeFileSync(path.join(repo, 'scripts', 'tool.js'), 'module.exports = 1;\n');
     git('add', '-A'); git('commit', '-q', '-m', 'a tooling script');
-    assert.strictEqual(bash(repo, 'pull_request'), 'code=true\nthemes=false\nui=false\nmacos=true\n', 'the wrapper decides on the PR checkout (--root): a tooling script is not UI');
+    assert.strictEqual(bash(repo, 'pull_request'), 'code=true\nthemes=false\nui=false\nmacos=true\nos_sensitive=true\n', 'the wrapper decides on the PR checkout (--root): a tooling script is not UI');
     // a committed .ci-changes-base/ is cleared first: its package.json saying "type":"module" would make the copied decision fail
     fs.mkdirSync(path.join(repo, '.ci-changes-base'));
     fs.writeFileSync(path.join(repo, '.ci-changes-base', 'package.json'), '{"type":"module"}\n');
     git('add', '-A'); git('commit', '-q', '-m', 'a planted base folder');
-    assert.strictEqual(bash(repo, 'pull_request'), 'code=true\nthemes=false\nui=true\nmacos=true\n', 'a committed .ci-changes-base/ is cleared before the base copy runs');
+    assert.strictEqual(bash(repo, 'pull_request'), 'code=true\nthemes=false\nui=true\nmacos=true\nos_sensitive=true\n', 'a committed .ci-changes-base/ is cleared before the base copy runs');
     const broken = "require('fs').appendFileSync(process.env.GITHUB_OUTPUT, 'code=true\\nthemes=false\\nui=false\\nmacos=false\\n');\n";
     fs.mkdirSync(path.join(repo, 'src'), { recursive: true });
     fs.writeFileSync(path.join(repo, 'src', 'app.js'), 'x');
