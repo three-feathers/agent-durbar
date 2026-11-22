@@ -1430,11 +1430,11 @@
       /* Paco's review of #921: names while there is room. Every spot within 64 px left or right on up to three levels is tried, the
          least move first (a level costs 12 px); only when none is free do the initials try the same, then (a crowd with no room) the
          initials move right until they touch nobody */
-      const best = () => {
+      const best = (reach = 64) => {
         const w = c.getBoundingClientRect().width, l = x0 - w / 2; let pick = null;
         for (let k = 0; k < 3; k++) {
           const t = base - 18 * k; if (t < 0 && k > 0) break;
-          for (let d = 0; d <= 64; d += 2) for (const dx of d ? [d, -d] : [0]) {
+          for (let d = 0; d <= reach; d += 2) for (const dx of d ? [d, -d] : [0]) {
             if (l + dx < 0 || l + dx + w > band || hits(l + dx, l + dx + w, t)) continue;
             const score = d + 12 * k; if (!pick || score < pick.score) pick = { score, t, dx, l, w };
           }
@@ -1454,11 +1454,11 @@
         }
         return moves;
       };
-      const withPush = () => {
+      const withPush = (reach = 64) => {
         const w = c.getBoundingClientRect().width, l = x0 - w / 2; let found = null;
         for (let k = 0; k < 3; k++) {
           const t = base - 18 * k; if (t < 0 && k > 0) break;
-          for (let d = 0; d <= 64; d += 2) for (const dx of d ? [d, -d] : [0]) {
+          for (let d = 0; d <= reach; d += 2) for (const dx of d ? [d, -d] : [0]) {
             const L = l + dx;
             if (L < 0 || L + w > band || plates.some(([a, b, y0, y1]) => a < L + w + GAPC && L < b + GAPC && y0 < t + h && t < y1)) continue;
             const moves = pushLeft(L, t); if (!moves) continue;
@@ -1472,6 +1472,8 @@
         return found;
       };
       let pick = best() || withPush();
+      /* spec 102 (issue 2009, 2026-11-22): in a pixel world a name is never cut while a free spot exists farther along the row (up to 160 px from its person): the wall's signs and plates take room, and a shortened name ("Le\u2026") is the worse of the two */
+      if (!pick && PIXEL) pick = best(160) || withPush(160);
       /* no free spot for the whole name: a shorter one (its first letters and "…", from 6 down to 2), never bare initials (Paco, #921) */
       const nm = c.dataset.name || '', n = c.querySelector('.ro-cn'), g = Array.from(nm);
       for (const k of [6, 5, 4, 3, 2]) {

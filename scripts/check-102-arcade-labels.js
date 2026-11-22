@@ -13,12 +13,14 @@
  *     hides or removes a sign instead of moving the labels fails;
  *   - "no plate on a head" / "no chip on a head": a place plate or a name chip touches a visitor's head box. The head box is written out here from the
  *     standing picture's drawn box (the middle half of its width, its top 30 %), not asked of the code;
+ *   - "no wall label is cut": a name chip shows its whole name (not shortened by the placement, no text wider than its box: the Range probe of app.js nameCut);
  *   - "plate text": a plate's text is under 10.5 px, or a place plate's word is cut while a plate-sized free place exists on its rows;
  *   - "one outline": in an open chat with the message box focused, the textarea draws a ring or halo of its own as well as the box around it, or the box
  *     draws none (focus must stay shown, by exactly one ring).
  * ARCADE_LABELS_MUTANT=sign  paints a neon sign on the wall in the label rows       (dies at "no neon under a label")
  *                     heads  moves every plate over the first visitor's head        (run with LABELS_ONLY=heads: the plates then sit on a sign as well; dies at "no plate on a head")
  *                     halo   gives the textarea its focus halo back                 (dies at "one outline")
+ *                     cutname   cuts one name to two letters and an ellipsis        (dies at "no wall label is cut")
  *                     hidesign  paints the wall's top rows over, so the signs are not drawn (dies at "the wall keeps its signs")
  * Screenshots: <SHOTS_OUT>/102-arcade-labels-<w>x<h>.png and ...-chat-<w>x<h>.png.
  */
@@ -41,7 +43,7 @@ module.exports = async (ctx) => {
   const BOXES = `(()=>{const q=(s)=>[...document.querySelectorAll(s)],b=(e)=>{const r=e.getBoundingClientRect();return {x0:r.left,y0:r.top,x1:r.right,y1:r.bottom}};
     const lob=document.querySelector('#stage .ro-lobby');
     return {lobby:b(lob),lobIn:{x:lob.getBoundingClientRect().left+lob.clientLeft,y:lob.getBoundingClientRect().top+lob.clientTop,w:lob.clientWidth,h:lob.clientHeight},lobby0:0,
-      chips:q('#stage .ro-chip').map(e=>({n:e.dataset.name,...b(e)})),
+      chips:q('#stage .ro-chip').map(e=>({n:e.dataset.name,shown:(e.querySelector('.ro-cn')||{}).textContent,cut:e.dataset.full!==undefined||(()=>{const n=e.querySelector('.ro-cn'),cs=getComputedStyle(n),r=document.createRange();r.selectNodeContents(n);return n.scrollWidth>n.clientWidth+0.5||r.getBoundingClientRect().width>n.getBoundingClientRect().width-parseFloat(cs.paddingLeft)-parseFloat(cs.paddingRight)+0.01})(),...b(e)})),
       plates:q('#stage .ro-lplate').map(e=>({n:e.dataset.place,fs:parseFloat(getComputedStyle(e).fontSize),cut:(e.firstElementChild||e).scrollWidth>(e.firstElementChild||e).clientWidth+0.5,...b(e)})),
       heads:q('#stage .ro-visitor,#stage .ro-visitor2').filter(e=>e.getBoundingClientRect().width>0).map(e=>{const r=e.getBoundingClientRect(),w=r.width,h=r.height;return {n:e.dataset.for||'',x0:r.left+0.25*w,x1:r.right-0.25*w,y0:r.top,y1:r.top+0.30*h}})}})()`;
   /* lit wall pixels (a neon sign) under a rectangle, from the page's own pixels with everything but the wall hidden */
@@ -76,6 +78,7 @@ module.exports = async (ctx) => {
     if (MUTANT === 'heads') await js(`(()=>{const v=document.querySelector('#stage .ro-visitor'),vr=v.getBoundingClientRect(),cr=document.querySelector('#stage .ro-chrome').getBoundingClientRect();for(const p of document.querySelectorAll('#stage .ro-lplate')){p.style.left=(vr.left+0.3*vr.width-cr.left)+'px';p.style.top=(vr.top-cr.top)+'px'}return 1})()`);
     await H.settle();
     if (ONLY !== 'chat') {
+    if (MUTANT === 'cutname') await js(`(()=>{const c=[...document.querySelectorAll('#stage .ro-chip')].pop(),n=c.querySelector('.ro-cn');c.dataset.full=n.textContent;n.textContent=n.textContent.slice(0,2)+'\u2026';return 1})()`);
     const g = await js(BOXES);
     assert.ok(g.plates.length >= 8 && g.heads.length >= 4 && g.chips.length >= 4, `${tag}: a lobby with plates, chips and heads is drawn: ${g.plates.length} plates, ${g.chips.length} chips, ${g.heads.length} heads`);
     if (process.env.LABELS_DEBUG) console.log('[102-labels] DEBUG', JSON.stringify({ plates: g.plates.map((p) => [p.n, Math.round(p.x0), Math.round(p.y0), Math.round(p.x1), Math.round(p.y1)]), heads: g.heads.map((q) => [q.n, Math.round(q.x0), Math.round(q.y0), Math.round(q.x1), Math.round(q.y1)]), world: await js(`document.querySelector('#stage .ro').dataset.world+' '+location.href`) }));
@@ -89,6 +92,7 @@ module.exports = async (ctx) => {
     labels.forEach((l, i) => assert.strictEqual(neon[i], 0, `${tag}: no neon under a label: the ${l.kind} ${l.n} stands on ${neon[i]} lit wall pixels (a sign in the wall picture) at ${Math.round(l.x0)},${Math.round(l.y0)}`));
     sgRects.forEach((q, i) => { if (q.x1 < L.x + L.w - 2) assert.ok(lit[i] >= 10, `${tag}: the wall keeps its signs: the ${q.id} at ${Math.round(q.x0)},${Math.round(q.y0)} is not drawn (${lit[i]} lit pixels)`); });
     for (const p of g.plates) for (const hd of g.heads) assert.ok(!hit(p, hd), `${tag}: no plate on a head: the plate ${p.n} (${Math.round(p.x0)}..${Math.round(p.x1)} x ${Math.round(p.y0)}..${Math.round(p.y1)}) touches the head of ${hd.n} (${Math.round(hd.x0)}..${Math.round(hd.x1)} x ${Math.round(hd.y0)}..${Math.round(hd.y1)})`);
+    for (const c of g.chips) assert.ok(!c.cut && c.shown === c.n, `${tag}: no wall label is cut: the chip ${c.n} reads "${c.shown}"`);
     for (const c of g.chips) for (const hd of g.heads) assert.ok(!hit(c, hd), `${tag}: no chip on a head: the chip ${c.n} touches the head of ${hd.n}`);
     for (const p of g.plates) assert.ok(p.fs >= 10.5, `${tag}: plate text at least 10.5 px: ${p.n} is ${p.fs}`);
     g.plates.forEach((p, i) => { for (const q of g.plates.slice(i + 1)) assert.ok(!hit(p, q), `${tag}: plates ${p.n} and ${q.n} overlap`); });
