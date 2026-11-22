@@ -87,6 +87,7 @@ test:grantlabel
 test:floors
 test:mood
 test:retry
+test:review-profile
 test:compaction
 test:attention
 test:theme
@@ -127,6 +128,7 @@ test:gitstatus
 test:officeops
 test:uisuite
 test:cichanges
+test:fastlane
 test:pathdirs
 test:officialinstall
 test:checknames
@@ -163,6 +165,7 @@ test:modelchoice
 test:mcphealth
 test:globals
 test:runtests
+test:ci-required-suites
 test:runtestsreal
 test:theme-tokens
 test:slashcommands
@@ -281,4 +284,6 @@ test:chargroups
 test:dangersites
 test:specnumbers
 test:worktreesclean
+test:prpreflight
 test:pencilpark
+test:arcade-wall-signs

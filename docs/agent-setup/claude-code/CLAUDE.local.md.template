@@ -17,7 +17,7 @@
 - **Analyst only when there are real decisions to make**; a clear bug goes straight to the implementer.
 - **At most 2 heavy agents at a time** on a small machine (4 cores). Queue the rest. Electron always under `flock -o … timeout N`.
 - **Keep the same implementer** for every fix round of one PR (it keeps its context).
-- **Short, concrete briefs**: the risks to check, "read CI for the sha" (AGENTS.md *Test once*), mutations and probes only.
+- **Short, concrete briefs**: the risks to check, "read CI for the sha" (AGENTS.md *Test once*), mutations and probes only; for an open PR, "run `npm run pr:preflight -- <N>` before asking for review; fix every FAIL".
 - **Model per task**: a smaller model for small implementations, the top model for security/design reviews and large work.
 
 ## Accounts

@@ -1,7 +1,8 @@
 /*
  * The Electron half of `check-perf.js --record` (spec 097 FR-187, T145): flat or Real office, 15 or 40 agents, simulator only, 0 AI
  * credits, no assert on any time. Started by `scripts/perf-record.js` through check-perf.js (DURBAR_DRIVER); env: DURBAR_PERF_RECORD_PHASE
- * (seed | start | main; the variable is DURBAR_PERF_RECORD_PHASE), PERF_MODE (flat | real), PERF_OUT (the JSON file), PERF_RUNS, PERF_SECONDS_SCALE (quick | full), PERF_GPU (1 adds the T162 A/B rows).
+ * (seed | start | main; the variable is DURBAR_PERF_RECORD_PHASE), PERF_MODE (flat | real), PERF_OUT (the JSON file), PERF_RUNS, PERF_SECONDS_SCALE (quick | full), PERF_GPU (1 adds the T162 A/B rows), PERF_W and PERF_H (the window, default 1440x900).
+ * Idle CPU (visible, and the A/B idle rows) is read after CPU has settled, with the instruments' frame loop paused (issue #2023).
  *
  * Honest limits (the record repeats them in `limits`):
  *  - Frames are requestAnimationFrame deltas. They see the main thread and a late frame. They do NOT see compositor-only jank,
@@ -22,7 +23,7 @@ const os = require('os');
 const { app } = require('electron');
 const { helpers, waits, jsLiteral } = require('./driver-helpers.js');
 
-const { median, medianOf, PHASE_ENV } = require('./perf-record.js');
+const { median, medianOf, PHASE_ENV, SETTLE, settleCpu } = require('./perf-record.js');
 const PHASE = process.env[PHASE_ENV] || 'main';
 const MODE = process.env.PERF_MODE === 'real' ? 'real' : 'flat';
 const N = String(process.env.DURBAR_SIM || 15);
@@ -30,7 +31,9 @@ const RUNS = Math.max(1, Math.min(9, Number(process.env.PERF_RUNS) || 3));
 const QUICK = process.env.PERF_SECONDS_SCALE === 'quick';
 const GPU_AB = process.env.PERF_GPU === '1';
 const OUT = process.env.PERF_OUT;
-const W = 1440, HH = 900;
+// PERF_W and PERF_H set the window (issue #2023: 1280x800 without a local change); default 1440x900
+const dim = (v, d) => (/^\d{3,4}$/.test(String(v || '')) ? Number(v) : d);
+const W = dim(process.env.PERF_W, 1440), HH = dim(process.env.PERF_H, 900);
 const SEC = (x) => (QUICK ? Math.min(x, 3) : x);
 
 const REAL = `!!document.querySelector('#stage .ro .ro-plate')&&document.getElementById('stage').dataset.d==='real'`;
@@ -38,14 +41,16 @@ const FLAT = `document.querySelectorAll('#stage .desk[data-id]').length>=1&&!doc
 
 /* page instruments: frames, rAF callback cost, long tasks, layout reads, mutations; renders of the Real office when present */
 const INST = `(()=>{ if(window.__P)return;
-  const P=window.__P={frames:[],long:[],gcs:0,reads:0,rafMs:[],renders:0,renderMs:[],floorGcs:0,added:0,removed:0,attrs:0,recording:false};
+  const P=window.__P={frames:[],long:[],gcs:0,reads:0,rafMs:[],renders:0,renderMs:[],floorGcs:0,added:0,removed:0,attrs:0,recording:false,loopFrames:0,paused:false,loopOn:true};
   const gcs=window.getComputedStyle; window.getComputedStyle=function(e){ if(P.recording){P.gcs++; if(e&&e.id==='floor')P.floorGcs++;} return gcs.apply(this,arguments); };
   for(const prop of ['offsetWidth','offsetHeight','offsetTop','offsetLeft','clientWidth','clientHeight','scrollHeight','scrollWidth','scrollTop']){
     for(const proto of [HTMLElement.prototype,Element.prototype]){const d=Object.getOwnPropertyDescriptor(proto,prop); if(d&&d.get){Object.defineProperty(proto,prop,{...d,get(){if(P.recording)P.reads++;return d.get.call(this);}});}}
   }
   const gbr=Element.prototype.getBoundingClientRect; Element.prototype.getBoundingClientRect=function(){if(P.recording)P.reads++;return gbr.call(this);};
   const raf=window.requestAnimationFrame; window.requestAnimationFrame=function(cb){return raf.call(window,(t)=>{const a=performance.now();try{return cb(t);}finally{if(P.recording)P.rafMs.push(performance.now()-a);}});};
-  let last=performance.now(); const loop=()=>{const n=performance.now(); if(P.recording)P.frames.push(n-last); last=n; raf.call(window,loop);}; raf.call(window,loop);
+  let last=performance.now(); const loop=()=>{if(P.paused){P.loopOn=false;return;} P.loopFrames++; const n=performance.now(); if(P.recording)P.frames.push(n-last); last=n; raf.call(window,loop);}; raf.call(window,loop);
+  /* issue #2023: the frame loop forces a main-thread frame every vsync, so it is paused while idle CPU is read */
+  P.pause=()=>{P.paused=true;}; P.resume=()=>{P.paused=false; if(!P.loopOn){P.loopOn=true; last=performance.now(); raf.call(window,loop);}};
   try{new PerformanceObserver(l=>{if(!P.recording)return;for(const e of l.getEntries())P.long.push(Math.round(e.duration));}).observe({entryTypes:['longtask']});}catch(e){}
   new MutationObserver(ms=>{if(!P.recording)return;for(const m of ms){if(m.type==='attributes'){P.attrs++;continue;}for(const n of m.addedNodes)if(n.nodeType===1)P.added++;for(const n of m.removedNodes)if(n.nodeType===1)P.removed++;}}).observe(document.getElementById('stage'),{childList:true,subtree:true,attributes:true});
   P.wrap=()=>{const D=window.DurbarRealOffice; if(D&&!D.__w&&typeof D.render==='function'){D.__w=1;const r=D.render;D.render=function(){const a=performance.now();try{return r.apply(this,arguments);}finally{if(P.recording){P.renders++;P.renderMs.push(performance.now()-a);}}};}};
@@ -91,6 +96,18 @@ const cpuOver = async (ctx, sec) => {
     total += d;
   }
   return { method: linux ? 'proc-ticks-percent-of-one-core' : 'electron-percentCPUUsage', totalPct: r2(total), byType };
+};
+/* issue #2023: idle CPU after the load tail, with the instruments' frame loop paused; the wait and the loop frames during the read are recorded */
+const idleRead = async (ctx, js, sec) => {
+  await js(`window.__P.pause()`);
+  const step = QUICK ? 1 : SETTLE.stepSec;
+  const st = await settleCpu(async () => (await cpuOver(ctx, step)).totalPct, QUICK ? { ...SETTLE, cap: 4 } : SETTLE);
+  const f0 = await js(`window.__P.loopFrames`);
+  const cpu = await cpuOver(ctx, sec);
+  const loopFrames = (await js(`window.__P.loopFrames`)) - f0;
+  await js(`window.__P.resume()`);
+  if (!st.settled) console.log('[perf-record] ' + st.note);
+  return { ...cpu, settle: { settled: st.settled, waitedSec: st.waitedSamples * step, samples: st.samples.map(r2) }, loopFrames };
 };
 const memory = async (js) => {
   const heap = await js(`(()=>{ if(window.gc){gc();gc();} const m=performance.memory; return {used:m.usedJSHeapSize,nodes:document.getElementsByTagName('*').length,stageNodes:document.querySelectorAll('#stage *').length}; })()`);
@@ -237,7 +254,7 @@ module.exports = async (ctx) => {
     R.memorySettled = await memory(js);
 
     /* idle, nothing changing: visible, then hidden (no frames) */
-    R.idleVisible = await cpuOver(ctx, SEC(15));
+    R.idleVisible = await idleRead(ctx, js, SEC(15));
     ctx.win.webContents.setBackgroundThrottling(true); // as in production: drivers switch it off (spec 097 FR-103)
     ctx.win.hide();
     // the page says it is hidden (checked, not assumed): a hidden window that never reported it makes the row a failure of the run, not a number
@@ -323,7 +340,7 @@ module.exports = async (ctx) => {
     const setV = (css) => js(`(()=>{let s=document.getElementById('perfVar');if(!s){s=document.createElement('style');s.id='perfVar';document.head.append(s);}s.textContent=${jsLiteral(css)};})()`);
     out.ab = { idle: {}, dialog: {} };
     await loadAndInstrument();
-    for (const [k, css] of Object.entries(V)) { await setV(css); if (!(await until(`(document.getElementById('perfVar')||{}).textContent===${jsLiteral(css)}`, 5000))) throw new Error('the A/B style was not applied'); await settle(3000); out.ab.idle[k] = await cpuOver(ctx, SEC(10)); }
+    for (const [k, css] of Object.entries(V)) { await setV(css); if (!(await until(`(document.getElementById('perfVar')||{}).textContent===${jsLiteral(css)}`, 5000))) throw new Error('the A/B style was not applied'); await settle(3000); out.ab.idle[k] = await idleRead(ctx, js, SEC(10)); }
     await loadAndInstrument({ simspeed: '10', simfreeze: undefined });
     for (const [k, css] of [['base', V.base], ['noBlur', V.noBlur], ['base', V.base], ['noBlur', V.noBlur]]) {
       await setV(css);

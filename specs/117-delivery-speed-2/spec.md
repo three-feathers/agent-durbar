@@ -4,14 +4,14 @@
 group: 046
 title: Delivery speed 2 (owner 2026-11-22): measured CI and review cost per PR; lighter review profile for UI/feature PRs (never for masking, IPC, secrets, permissions, user files); Linux-first CI by diff on top of 021 FR-084 / 008 T130; Windows npm test split (#1983); world packs with one contract suite; bigger feature slices
 status: draft
-note: spec, plan, tasks and the 2026-11-22 measurements only; nothing built; O5 no and O6 not now (owner 2026-11-22); O1..O4 open (coordinator's picks to confirm)
+note: merged: the spec, T002, T003 (#2005); P8 fast lane (FR-386, FR-387) built here; O5 no, O6 not now (owner); O1..O4 open
 -->
 
 **Feature Branch**: `117-delivery-speed-2` (spec, plan, tasks only); build branches `117-pN-slug`, one per rollout step
 
 **Created**: 2026-11-22
 
-**Status**: Draft. Nothing built. O5 (paid runners: no) and O6 (separate repos: not now) are decided by the owner (2026-11-22); O1..O4 are open (*Owner decisions*).
+**Status**: Draft. Merged from this spec so far: the spec itself and T002, T003 (#2005, CI stats). Open (not merged): #2008 (T004, concurrency test), #2004 (T011 suite times in the job summary, T012 first half heavy five first, T022 required-suites guard). O5 (paid runners: no) and O6 (separate repos: not now) are decided by the owner (2026-11-22); O1..O4 are open (*Owner decisions*).
 
 **Input**: Owner request (Vikram, team chat, 2026-11-22 09:06-09:11 UTC, relayed by his coordinating agent): another agent's audit says the pace has massively slowed and we write more test fixes and docs than code. Coordinator's figures from `main` (first-parent merges, lines added; code = `src/` non-test, tests = `scripts/` checks, docs = `specs/` and `docs/`): W43 353 PRs, 50k / 64k / 32k; W44 149, 14k / 25k / 14k; W45 218, 20k / 49k / 11k; W46 235, 11k / 33k / 8k; W47 so far 140, 5k / 14k / 4k (with a 40 h outage). Vikram: "Implement all your recommendations": **A** a lighter review profile for UI/feature PRs; **B** CI by diff for real and fewer jobs per PR; **C** worlds and characters as data packs with one contract suite in core; **D** bigger feature slices; **E** measure and fix CI (issue #1983). He also asked about separate repos for worlds and characters; the coordinator advised packages in this repo first (a repo in the same organization shares the same concurrency cap).
 
@@ -222,8 +222,13 @@ Adding or changing a world touches its pack folder and its own small test; the c
 
 ### E (continued): Windows `npm test` (#1983)
 
-- **FR-017** Measure first, with work counters (agent-notes: CPU time, not wall time): `scripts/run-tests.js` writes each suite's CPU and wall seconds to the job summary on every OS.
-- **FR-018** Every suite, the masking and redaction suites above all, **stays under a required check name** (`Build and test (<os>)`) on every OS it runs on today. First, inside the same job, `run-tests.js` starts the five heavy suites #1983 names first (longest first). Only if that misses the target, the Windows leg splits into time-balanced shards whose summary job carries the required name `Build and test (windows-latest)` and fails when any shard failed, was skipped or was cancelled, or when the union of the shards' suite lists differs from `test-suites.txt`. A non-required job for any suite is not allowed; moving one there would be an O1 change. No suite is dropped, no assertion weakened, the 25-minute limit is not raised first (#1983). Guard: T022. **Target**: Windows Build and test p90 ≤ 15 min (today 20.1), zero limit cancels in 7 days (today 4).
+- **FR-017** Measure first, with work counters (agent-notes: CPU time, not wall time): `scripts/run-tests.js` writes each suite's CPU and wall seconds to the job summary on every OS. `[IMPLEMENTED in #2004, open, not merged]` test: `test:runtests` (a row per suite as it ends, so a cut-short run keeps the finished suites; CPU is each suite's node step main process only: forks and Electron children are not counted); macOS and Windows runs `[KNOWN GAP]` (CI is the record).
+- **FR-018** Every suite, the masking and redaction suites above all, **stays under a required check name** (`Build and test (<os>)`) on every OS it runs on today. First, inside the same job, `run-tests.js` starts the five heavy suites #1983 names first (longest first). Only if that misses the target, the Windows leg splits into time-balanced shards whose summary job carries the required name `Build and test (windows-latest)` and fails when any shard failed, was skipped or was cancelled, or when the union of the shards' suite lists differs from `test-suites.txt`. A non-required job for any suite is not allowed; moving one there would be an O1 change. No suite is dropped, no assertion weakened, the 25-minute limit is not raised first (#1983). Guard: T022. `[IMPLEMENTED in #2004, open, not merged]` heavy five first (`HEAVY_FIRST`), same suites, no split; guard `scripts/test-ci-required-suites.ts` (test: `test:ci-required-suites`, `test:runtests`); the 7-day Windows measurement is `[KNOWN GAP]` (SC-003, not measured). **Target**: Windows Build and test p90 ≤ 15 min (today 20.1), zero limit cancels in 7 days (today 4).
+
+### F: fast lane and the docs-only skip (2026-11-22 delta)
+
+- **FR-386** **Fast lane** (advisory, owner order 2026-11-22). A separate workflow, `.github/workflows/fast-lane.yml`, on `pull_request` only, with a three-OS matrix (`ubuntu-latest`, `windows-latest`, `macos-latest`), runs ONLY the `npm test` suites the PR's diff touches, so a platform-only failure shows in minutes, not at the end of a 14-25 minute Build and test leg. Which suites: the one decider, `.github/scripts/ci-changes.js --suites` (FR-011's one deciding file), run as the base branch's copy through `ci-changes.sh` (a base without the option makes the PR's own copy pick, which is harmless: the lane only adds runs). A suite is picked when it is new on `scripts/test-suites.txt` or its `package.json` line changed, when one of its step files changed, when a step file names a changed file (or a folder at least two levels deep holding one) by a string literal, one level deep, relative to the step file or the repo root (so `../src/shared/api` maps `src/shared/api.ts` to its tests: the derived map; `package.json`, its lock and the list pick only by the line rule), (a bare word also names a file at the repo root exactly, so `'LICENSE'` picks `test:about`), or by a two-line docs table (`specs/**` to `test:specsindex`, `changelog.d/**` to `test:changelog`; rule text needs no row, `rules-check.js` names `AGENTS.md` and `docs/rules`). Nothing picked: the job stops after the decision. `scripts/fast-lane.js` runs the picked suites with `run-tests.js`'s runner, compiles only the picked test files, and builds the app only for a suite that reads `dist/`. **Not a required check**, never `pull_request_target`, no secrets, a read-only token, `persist-credentials: false`, a PR-number concurrency group that cancels (FR-010), suite names only through `env:` and checked against the list. The required jobs still run every suite; the lane can make nothing skip. **Target**: work time (setup through the last suite) under 3 minutes on each OS for a PR touching a few suites; a change to a module many tests import (e.g. `src/shared/redact.ts`, about 50 suites) is slower, capped by the 10-minute job limit. Queue wait is not counted (FR-016 measures it), and the lane adds up to three short jobs per PR head to the 20-job pool: FR-001 measures that cost after it lands (T042).
+- **FR-387** **The docs-only skip fails closed** (rewritten after Paco's review of #2032). `ci-changes.js` gives `code=false` (Build and test, Office layout and package smoke report success without running, 008 FR-104) only when the diff is not empty, every path is in plain form (no backslash, no `.`/`..`/empty segment, no edge blank or control character, not absolute), every path is on a small **allow list** (Markdown only under `specs/` and `docs/`, never another file type there, except `docs/rules/`, `docs/agent-setup/` and `docs/site/`; and two named root files, `CHANGELOG.md` and `CONTRIBUTING.md`; prefixes lower case, exclusions in any case, so `Src/`, `Docs/`, `docs/RULES/` run; `changelog.d/` is not on it, so a changelog fragment always runs everything), **and no `npm test` suite names any of them** (a string literal in a step file, read as FR-386 reads them, bare root words such as `'LICENSE'` included; an unreadable suite list counts as named). Anything else runs everything. `ci-changes.sh` replaces the output with "everything runs" unless the decision wrote exactly one `code=` line holding `true` or `false`, so ci.yml's `code == 'true'` cannot read empty (ci.yml itself is not edited: #2004's guard pins that condition). Before this delta a lone `.md` anywhere skipped: `scripts/prereview/prompts/*.md` (read by `test:prereview`), `src/renderer/**/ASSETS.md`, `.github/*.md`, `AGENTS.md`, `LICENSE`. Guard: `test-ci-changes.ts` walks every live file under `src/`, `scripts/`, `.github/` and a fixture list (rule text, site code, README, LICENSE, case tricks, odd paths, a doc a suite names, a folder a suite names), alone and beside a doc, plus an empty diff and a tree with no suite list; fourteen mutants (the old rule, the deny list case-sensitive or missing rules/site/agent-setup, the allow list in any case, taking any root Markdown, any file type or changelog fragments, odd paths accepted, an empty diff, a missing list, the named-by-a-suite check dropped, "some" for "every") and four wrapper mutants (no guard, presence only, any one line, a valid value anywhere) each fail at their own assert; fixtures include `SECURITY.md`, `docs/x.js`, `.sh`, `.svg`, `docs/CODEOWNERS`, a picture, a spec's JSON sample, `code=` empty, `code=maybe` and two code lines. Unchanged: the Spec Kit gate, CodeQL and the number check run on a docs-only PR; `npm test` runs in the merge queue; the fast lane runs `test:specsindex` on such a PR. `[KNOWN GAP]` `specs-index.js` reads `specs/` by listing, not by a literal, so a spec-only PR still skips Build and test; its specs index check runs in the fast lane (advisory) and the merge queue.
 
 ### A: review profile by risk
 
@@ -329,6 +334,10 @@ The coordinator's suggested first step (concurrency groups and `cancel-in-progre
 
 ## Changes
 
+### 2026-11-22: status after Paco's review of #2004
+
+Merged: the spec and #2005 (T002, T003). Open and not merged: #2008 (T004), #2004 (T011, T012 first half, T022). Review fixes in #2004: the guard parses the workflow with js-yaml and fails closed on shapes it does not read, reads CRLF files, the summary is written as each suite ends, the CPU temp folder is removed on signals, forks and Electron children are not counted (stated).
+
 ### 2026-11-22: created (owner request, Vikram, team chat 09:06-09:11 UTC)
 
 Spec, plan, tasks and the measurements above (at `4c962b39b`). Paco's input (heavy list adds user-file writes; build B on 021 T063 / 008 T130; baseline checks; macOS/Windows legs as an owner decision with cost and benefit) and Ruben's (audit every workflow's concurrency; required checks are an owner call) are folded in. Nothing built.
@@ -366,7 +375,42 @@ Found by a plan-only note of the Mac session; Paco's bot agreed in the team grou
 - **New spec item, FR-382 / T024:** split `app.js` into modules (not started, own spec needed, not designed).
 - **Dependencies.** Only the 021 FR-084 point 4 amendment wording (T008) and the 008 T130 tick (T007) wait for #1247 to land; T006 (test first) and the pure data part can be written against `main` today but merge after #1247 so T130 exists.
 
+### 2026-11-22: option C waits for vocabulary profiles (spec 102 *Changes 2026-11-22*, last entry; issue #1877; no new FR)
+
+Spec 102 T100's first step found that no built-in pack meets 102 FR-204 and FR-205 as written and none goes through the user-pack part table (evidence table in spec 102). FR-030's "`checkSet` on every built-in" holds through a vocabulary profile: one `checkSet`, user packs always on the user profile, built-ins on their declared 097 vocabulary, caps the same (spec 102 T100, T433, T434). T016's inventory (Mac session, plan-only, static reads, about plus or minus 10 %): 71 files, about 190 world-specific asserts.
+
+- **R1** built-in part files pass the part table and `checkSet` (about 32, new checks: the six validator tests never read a built-in; only `test-realoffice-assets.ts` does).
+- **R2** moment coverage per built-in (2).
+- **R3** the inventory's Worlds marker (0: `scripts/feature-inventory.js` already checks it).
+- **R4** picker card name, picture and label per world (about 16).
+- **R5** a missing required pose fails naming it (about 16, new).
+- **R6** the driver map: 34 `ui-suite` entries change only when they run (T018); `test-release-video.js` pins a second copy of the `DRIVER_WORLD` id list, replaced first.
+- **Stays** (about 124): built-in `world.css` rules (no blend or blur, own-folder URLs, the cave bezel), flag runtime, lazy load, plain-tile fallback, layout, contrast and accessibility asserts.
+- **`loft`**: listed by `test:momentsregistry` and `world-moments.json` with no pack folder; reported "no pack" (spec 102 OP-14 (c)).
+
+T016, T017 and T018 amended; T017 waits for 102 T100, T433 and T434.
 
 ### 2026-11-22: stop-gap, `build-test` `timeout-minutes` 25 to 45 (#1983)
 
 FR-018 says the 25-minute limit is not raised first. The queue is blocked now (#1978, #1994, #1972, #1996 twice, #1533 cut at the limit with no assert failing; each costs a new head, a re-approval and a rerun), and Paco's bot suggested a stop-gap. Decision: raise the one `build-test` limit (it is a matrix, so all three legs) to 45 until T012's shard split lands, then T025 lowers it again. This is a stop-gap only: it changes no suite, name or job structure, and the target stays Windows Build and test p90 at or under 15 min, zero limit cancels in 7 days (SC-003, FR-018). A cut run now ends as a slow green or a real failure instead of a cancel. `test-electron-cache` item 10 (work plus npm ci retries within the limit) still holds. Not verified: the new Windows p90 until the next runs are measured.
+
+### 2026-11-22: fast lane and a fail-closed docs-only skip (owner order, Vikram: delivery 5-10x faster without losing quality)
+
+- **Problem.** Windows-only failures (CRLF in a `.sh` read, 8.3 short paths against git's long paths, `Stats.blocks` 0) and a macOS-only one (the require cache under the `/private/var` realpath) on PRs #1535, #1996 and #2004 each showed only after the full Windows or macOS leg (14-25 min), one per round, 3-4 rounds per PR. And the docs-only skip took any lone `.md`, so a PR changing only `scripts/prereview/prompts/system.md` ran no test.
+- **Decision.** FR-386 (fast lane, advisory) and FR-387 (docs-only skip fails closed), tasks T040..T042. The lane is a new workflow file, not a ci.yml job: FR-018's suite guard (#2004, T022) treats every `npm test` in ci.yml as the required one, and a separate file keeps clear of the Windows shard work (T012). The plan's "no new workflow file" is amended for this one file. FR-063: no rule text added.
+- **Reuse** (021 FR-031): the one decider `ci-changes.js` and its base-copy wrapper `ci-changes.sh`, `run-tests.js`'s `loadSuites` and `runMain`, the `npm-ci` action, `safe-print.js`.
+- `[KNOWN GAP]` The fast-lane time is measured on this PR's own runs (T042 records it); on its own PR the base copy predates `--suites`, so the PR's copy picks (the fallback above).
+
+### 2026-11-22: Paco's review of #2032 (CHANGES_REQUESTED, six findings)
+
+- 1, 6: the skip is an allow list plus "no suite names the path" (rule text, the site's code, README and LICENSE now run); the fast lane resolves bare root words (`'LICENSE'` picks `test:about`).
+- 2: exclusions match in any case; the allow-list prefixes are lower case only.
+- 3: an empty diff, odd paths and a missing suite list run everything; `ci-changes.sh` writes everything when the decision wrote nothing (ci.yml unchanged to stay disjoint from #2004).
+- 4: `--suites` on every non-PR event picks nothing, tested in a repo with a suite list and a changed step file.
+- 5: the `test:rules` row of the docs table was redundant (the literal rule picks it) and is removed; a new rule file is tested.
+
+### 2026-11-22: Paco's round 2 on #2032 (two items and a text fix)
+
+- The wrapper accepts only exactly one `code=true` or `code=false` line; anything else (empty, another value, two lines) is replaced by "everything runs".
+- The allow list is narrowed: Markdown only under `specs/` and `docs/`, two named root files (`CHANGELOG.md`, `CONTRIBUTING.md`); `SECURITY.md`, scripts, SVGs, pictures and `CODEOWNERS` run everything. `changelog.d/` is off the list (a fragment always runs everything), and the text above now says so.
+
