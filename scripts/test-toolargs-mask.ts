@@ -8,7 +8,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { createRequire } from 'module';
 import * as R from '../src/shared/redact';
-import { maskMcpEvent, maskToolArgs } from '../src/main/mcpmask';
+import { ARGS_CHARS_MAX, ARGS_NODES_MAX, ARGS_STRINGS_MAX, _toolArgsWorkForTest, createToolArgsMasker, maskMcpEvent, maskToolArgs } from '../src/main/mcpmask';
 import { BrainMask, brainState, currentStep, initBrain } from '../src/shared/brainstate';
 import type { AgentEvent } from '../src/adapters/types';
 
@@ -109,6 +109,107 @@ ok('DEPTH: past the walk depth a value is the mask', () => {
   let deep: unknown = `token ${GH}`;
   for (let i = 0; i < 12; i++) deep = { x: deep };
   assert.deepStrictEqual(leaks(maskToolArgs(deep)), [], 'DEPTH nothing deep shows');
+  // a harmless value 9 objects down: depth 8 is an object, so it is the mask; 8 down it is kept
+  const nest = (k: number, leaf: unknown): unknown => (k ? { x: nest(k - 1, leaf) } : leaf);
+  const dig = (v: unknown, k: number): unknown => (k ? dig((v as { x: unknown }).x, k - 1) : v);
+  assert.strictEqual(dig(maskToolArgs(nest(9, { y: 'plain words' })), 8), '[redacted]', 'DEPTH-EXACT the object at depth 8 is the mask');
+  assert.deepStrictEqual(maskToolArgs(nest(7, { y: 'plain words' })), nest(7, { y: 'plain words' }), 'DEPTH-EXACT 7 levels down is kept');
+});
+
+// ---- review of #2002
+ok('CATCH: a failure inside the walk fails closed', () => {
+  const evil = { command: 'echo hi', get boom(): string { throw new Error('boom'); } };
+  assert.strictEqual(maskToolArgs(evil), '[redacted]', 'CATCH a throwing argument gives the mask, not the arguments');
+});
+ok('CAP-NOBLANK and CAP-BLANK: over the cap a string is cut at its last blank, or AT the cap when it has none, never emptied', () => {
+  const word = 'QUJD'.repeat(R.MASK_INPUT_MAX); // one long harmless word (encoded content)
+  const m = maskToolArgs({ content: word }) as { content: string };
+  assert.strictEqual(m.content, word.slice(0, R.MASK_INPUT_MAX), 'CAP-NOBLANK a long word keeps its head, cut at the cap');
+  const spaced = 'abc '.repeat(R.MASK_INPUT_MAX); // a blank right after the cap's last whole word
+  const ms = maskToolArgs({ prompt: spaced }) as { prompt: string };
+  assert.ok(ms.prompt.length < R.MASK_INPUT_MAX && ms.prompt.endsWith('abc') && !/\s$/.test(ms.prompt), 'CAP-BLANK a text with blanks is cut at its last blank, not mid-word');
+});
+ok('WRITE-12K: a normal file write passes unchanged within the budget', () => {
+  const content = 'const x = 1;\n'.repeat(Math.floor(R.MASK_INPUT_MAX / 13));
+  const a = { file_path: 'src/a.ts', content };
+  assert.deepStrictEqual(maskToolArgs(a), a, 'WRITE-12K unchanged');
+  const w = _toolArgsWorkForTest();
+  assert.ok(w.strings === 2 && w.chars === content.length + 'src/a.ts'.length, `WRITE-12K work ${JSON.stringify(w)}`);
+});
+ok('BUDGET: large arguments stop at a fixed work cap and become the mask', () => {
+  const nest = (d: number): unknown => (d ? Object.fromEntries(Array.from({ length: 6 }, (_, i) => ['k' + i, nest(d - 1)])) : 'leaf');
+  const big: Array<[string, unknown]> = [
+    ['10k elements', { a: Array.from({ length: 10_000 }, (_, i) => 'w' + i) }],
+    ['10k keys', Object.fromEntries(Array.from({ length: 10_000 }, (_, i) => ['k' + i, 'v ' + i]))],
+    ['100k elements', { a: Array.from({ length: 100_000 }, (_, i) => 'w' + i) }],
+    ['1000 x 12k strings', { a: Array.from({ length: 1000 }, () => 'echo hello world '.repeat(700)) }],
+    ['6 keys x 7 levels', nest(7)],
+    ['10k numbers', { a: Array.from({ length: 10_000 }, (_, i) => i) }],
+    ['10 x 12k strings', { a: Array.from({ length: 10 }, () => 'echo hello world '.repeat(700)) }],
+    ['600 short strings', { a: Array.from({ length: 30 }, () => Object.fromEntries(Array.from({ length: 20 }, (_, i) => ['k' + i, 'v' + i]))) }],
+  ];
+  for (const [name, a] of big) {
+    const m = maskToolArgs(a);
+    const w = _toolArgsWorkForTest();
+    assert.strictEqual(m, '[redacted]', `BUDGET ${name}: replaced by the mask`);
+    assert.ok(w.nodes <= ARGS_NODES_MAX && w.strings <= ARGS_STRINGS_MAX && w.chars <= ARGS_CHARS_MAX, `BUDGET ${name}: work within the caps ${JSON.stringify(w)}`);
+  }
+});
+ok('REPEAT: main masks an arguments object once and an over-budget call once', () => {
+  const masker = createToolArgsMasker();
+  const wide = { a: Array.from({ length: 10_000 }, (_, i) => 'w' + i) };
+  const e1 = ev('start', 'bash', wide);
+  assert.strictEqual(masker(e1, []), '[redacted]', 'REPEAT the over-budget start is the mask');
+  maskToolArgs('marker words');
+  const before = _toolArgsWorkForTest();
+  assert.strictEqual(masker(ev('update', 'bash', { a: Array.from({ length: 10_000 }, (_, i) => 'u' + i) }), []), '[redacted]', 'REPEAT a later update of that call is the mask');
+  assert.deepStrictEqual(_toolArgsWorkForTest(), before, 'REPEAT-NOWORK the update did no masking work');
+  const ok1 = ev('start', 'bash', { command: `mysql --password ${PW}` });
+  (ok1 as unknown as { callId: string }).callId = 'c2';
+  const m1 = masker(ok1, []);
+  maskToolArgs('marker words');
+  const b2 = _toolArgsWorkForTest();
+  assert.strictEqual(masker(ok1, []), m1, 'REPEAT-SAME the same arguments object (window and debug log) gives the same copy');
+  assert.deepStrictEqual(_toolArgsWorkForTest(), b2, 'REPEAT-SAME no work the second time');
+  assert.deepStrictEqual(leaks(m1), [], 'REPEAT the masker masks');
+});
+ok('URL-READING: a URL only the URL reading hides', () => {
+  const W = ['plain', 'wordy', 'x'].join('');
+  const m = maskToolArgs({ prompt: `[https://h.example/x?session=${W}]` });
+  assert.ok(!JSON.stringify(m).includes(W), `URL-READING hidden: ${JSON.stringify(m)}`);
+});
+ok('NO-NEW-TEXT: a reading that rewrites the text shows no text the argument did not hold', () => {
+  const input = 'powershell -Command "$h = @{Authorization=\\"' + PW + '\\"}; echo \\"a b\\""';
+  const m = maskToolArgs({ command: input }) as { command: string };
+  assert.ok(!m.command.includes(PW), 'NO-NEW-TEXT hidden');
+  const extra = m.command.split(/(\s+|\[redacted(?::[^\]\r\n]{1,128})?\])/).filter((p, k) => k % 2 === 0 && p && !input.includes(p));
+  assert.deepStrictEqual(extra, [], 'NO-NEW-TEXT every shown piece is from the argument');
+});
+ok('AS-WRITTEN: the command reading reads the text as written, not the note mask output', () => {
+  const input = `https://u:${PW}@h.example/ $h = @{Authorization=\\"${PW}\\"}`;
+  assert.deepStrictEqual(leaks(maskToolArgs({ prompt: input })), [], 'AS-WRITTEN hidden');
+});
+ok('VALUES-READINGS: the command reading gets the session values replaced too', () => {
+  const V = ['alpha', 'beta', 'gamma7'].join(' '); // a session value with blanks, whose words also stand alone in the text
+  const m = maskToolArgs({ command: `echo alpha, beta and gamma7: ${V} --token x` }, [V]) as { command: string };
+  assert.ok(!m.command.includes(V), `VALUES-READINGS the value does not show: ${m.command}`);
+});
+ok('QUOTE: a masked header keeps its quotes, one mask', () => {
+  const input = 'curl --header "Accept: text/html" https://example.com';
+  assert.strictEqual((maskToolArgs({ command: input }) as { command: string }).command, R.maskSecretCommand(input), 'QUOTE the command reading as it is');
+});
+ok('VALUES-SHORT: session values under 4 characters mask nothing', () => {
+  const a = { command: 'ls -la src', description: 'list it' };
+  assert.deepStrictEqual(maskToolArgs(a, ['', 'l', 'ab', 'src']), a, 'VALUES-SHORT harmless text kept');
+  assert.deepStrictEqual(leaks(maskToolArgs({ command: `mysql --password ${PW}` }, [''])), [], 'VALUES-EMPTY an empty value does not break the command reading');
+});
+ok('JSON SHAPES: own __proto__ key, mixed lists, non-JSON objects', () => {
+  const p = JSON.parse('{"__proto__": {"command": "echo hi"}, "a": 1}');
+  const m = maskToolArgs(p) as Record<string, unknown>;
+  assert.deepStrictEqual(Object.keys(m), ['__proto__', 'a'], 'PROTO the own key stays a key');
+  assert.strictEqual(Object.getPrototypeOf(m), Object.prototype, 'PROTO the copy is a plain object');
+  assert.deepStrictEqual(leaks(maskToolArgs({ command: ['mysql', '--password', PW, 1] })), [], 'MIXED-LIST the words of a mixed list are read whole');
+  assert.strictEqual((maskToolArgs({ x: new Map([['k', `token ${GH}`]]) }) as { x: unknown }).x, '[redacted]', 'NONJSON a Map is the mask');
 });
 
 // ---- the wire: maskMcpEvent (main's `outward`) masks the arguments of a start and an update, MCP or not
@@ -126,6 +227,7 @@ function wire(mask: MaskFn): void {
   assert.strictEqual(mask(done, []), done, 'WIRE-NOARGS an event with no arguments is the same object');
 }
 ok('WIRE: maskMcpEvent masks start and update arguments', () => wire(maskMcpEvent as MaskFn));
+ok('WIRE-MASKER: with main\'s cached masker too', () => { const mk = createToolArgsMasker(); wire(((e: AgentEvent, v?: readonly string[]) => maskMcpEvent(e, v, mk)) as MaskFn); });
 
 // ---- the Brain dock reads the masked event: a harmless target is the same, a hidden value stays hidden
 ok('BRAIN: a step built from the masked event', () => {
@@ -145,7 +247,7 @@ ok('BRAIN: a step built from the masked event', () => {
 ok('MUTANT: raw arguments fail at WIRE-START', () => {
   const file = path.join(__dirname, '..', 'src', 'main', 'mcpmask.js');
   const src = fs.readFileSync(file, 'utf8');
-  const re = /args: maskToolArgs\(e\.args, values\)/;
+  const re = /args: maskArgs\(e, values\)/;
   assert.ok(re.test(src), 'the masking call is in the compiled module (the mutation applies)');
   const mod = { exports: {} as { maskMcpEvent?: MaskFn } };
   new Function('module', 'exports', 'require', src.replace(re, 'args: e.args'))(mod, mod.exports, createRequire(file));

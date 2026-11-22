@@ -3,7 +3,7 @@ import type { AgentEvent, McpServerStatus } from '../adapters/types';
 import type { McpServerSpec } from '../shared/mcp';
 import { classifyMcpCall } from '../shared/mcpcall';
 import type { EditInfo } from '../shared/edits';
-import { MASK_INPUT_MAX, cut, keepShownBy, maskHomePaths, maskNoteText, maskSecretArgs, maskSecretCommand, maskSecretUrl, redact, secretFlag } from '../shared/redact';
+import { MASK_INPUT_MAX, cut, keepShownWithin, maskHomePaths, maskNoteText, maskSecretArgs, maskSecretCommand, maskSecretUrl, redact, secretFlag } from '../shared/redact';
 
 export const MCP_ERROR_MAX_CHARS = 300;
 
@@ -159,77 +159,151 @@ export function maskEditInfo(edit: EditInfo, values: readonly string[] = []): Ed
 /** Spec 005 FR-342 (main half): how deep `maskToolArgs` walks; a value deeper is replaced by the mask (fail closed). */
 const ARGS_DEPTH = 8;
 const ARGS_MASK = '[redacted]';
+/**
+ * Spec 005 FR-342 (main half): the work one `maskToolArgs` call may do (review of #2002): array elements and object keys visited, strings masked, and
+ * characters given to the masks (a word list's characters count again for its whole reading). Past any of them the call stops and the arguments are
+ * replaced by the mask whole (fail closed), so the time is bounded whatever the arguments hold. A file write of `MASK_INPUT_MAX` characters fits.
+ */
+export const ARGS_NODES_MAX = 4096;
+export const ARGS_STRINGS_MAX = 256;
+export const ARGS_CHARS_MAX = 4 * MASK_INPUT_MAX;
+interface ArgsWork { nodes: number; strings: number; chars: number }
+class OverBudget extends Error {}
+let lastWork: ArgsWork = { nodes: 0, strings: 0, chars: 0 };
+/** Test only: the work counters of the last `maskToolArgs` call. */
+export const _toolArgsWorkForTest = (): ArgsWork => ({ ...lastWork });
+/* each counter is checked before it grows, so it never passes its cap: the counters are the work done */
+const spendNodes = (w: ArgsWork, k: number): void => { if (w.nodes + k > ARGS_NODES_MAX) throw new OverBudget(); w.nodes += k; };
+const spendChars = (w: ArgsWork, k: number): void => { if (w.chars + k > ARGS_CHARS_MAX) throw new OverBudget(); w.chars += k; };
 /** Masks (and failed masks) in a text: a reading "hides more" when it has more of them. */
 const maskCount = (s: string): number => (s.match(/\[redact/g) ?? []).length;
-/** The masks' input cap, as the chip cuts (FR-342): at the last blank before `MASK_INPUT_MAX`, '' when there is none. */
+/**
+ * The masks' input cap: a longer string is cut at its last blank before `MASK_INPUT_MAX` (as the chip cuts, FR-342), and AT the cap when it has no blank
+ * there (a long word such as encoded file content keeps its head; never ''). The rest is not sent.
+ */
 function capArg(s: string): string {
   if (s.length <= MASK_INPUT_MAX) return s;
   const b = s.slice(0, MASK_INPUT_MAX + 1).search(/\s\S*$/);
-  return b > 0 ? s.slice(0, b) : '';
+  return b > 0 ? s.slice(0, b) : s.slice(0, MASK_INPUT_MAX);
 }
 /**
  * One string of a call's arguments: `maskNoteText` with the session values (line breaks kept), the command reading and, for a URL, the URL reading.
  * Nothing hidden by any reading: the string as written. Else the masked text; when the command or URL reading hides more than the note mask, that
- * reading's text with nothing the note mask hides shown (`keepShownBy`, one line: the command mask reads words).
+ * reading's text with nothing shown that another reading hides or that the text did not hold (`keepShownWithin`, one line: the command mask reads words).
  */
-function maskArgText(raw: string, values: readonly string[]): string {
+function maskArgText(raw: string, values: readonly string[], w: ArgsWork): string {
   const s = capArg(raw);
+  if (w.strings + 1 > ARGS_STRINGS_MAX) throw new OverBudget();
+  w.strings++;
+  spendChars(w, s.length);
   if (!s) return s;
   const n = maskNoteText(s, values).text;
+  // the command and URL readings run on the text as written (one reading's quirk cannot hide a value from the other), with the session values
+  // already replaced (they do not know them)
+  let sv = s;
+  for (const v of values) if (typeof v === 'string' && v.length >= 4 && sv.includes(v)) sv = sv.split(v).join(ARGS_MASK);
+  const base = maskCount(sv);
   let out = n;
   const flat = (x: string): string => x.replace(/\s+/g, ' ').trim();
-  const c = maskSecretCommand(n);
-  if (maskCount(c) > maskCount(n)) out = keepShownBy(c, flat(n));
-  if (/:\/\//.test(n)) {
-    const u = maskSecretUrl(n);
-    if (maskCount(u) > maskCount(n)) out = keepShownBy(out === n ? u : out, flat(u));
+  const c = maskSecretCommand(sv);
+  if (maskCount(c) > base) out = keepShownWithin(c, flat(n));
+  if (/:\/\//.test(sv)) {
+    const u = maskSecretUrl(sv);
+    if (maskCount(u) > base) out = keepShownWithin(out === n ? u : out, flat(out === n ? n : u));
   }
   return out;
 }
-function maskArgValue(v: unknown, values: readonly string[], depth: number): unknown {
-  if (typeof v === 'string') return maskArgText(v, values);
+/** A plain JSON-like object (what an adapter parses); anything else (a Map, a Date, a class instance) is replaced by the mask. */
+const plainObject = (v: object): boolean => { const p = Object.getPrototypeOf(v); return p === Object.prototype || p === null; };
+function maskArgValue(v: unknown, values: readonly string[], depth: number, w: ArgsWork): unknown {
+  if (typeof v === 'string') return maskArgText(v, values, w);
   if (v === null || typeof v !== 'object') return v;
   if (depth >= ARGS_DEPTH) return ARGS_MASK;
   if (Array.isArray(v)) {
-    const out = v.map((x) => maskArgValue(x, values, depth + 1));
-    // a word list (a command as words): also read whole, so a word secret only because of the word before it is masked
-    if (out.length && out.every((x) => typeof x === 'string')) {
-      const whole = maskSecretArgs(out as string[]);
-      return out.map((x, i) => (typeof whole[i] === 'string' && maskCount(whole[i]) > maskCount(x as string) ? whole[i] : x));
+    spendNodes(w, v.length); // before the walk: a huge list stops here
+    const out: unknown[] = [];
+    for (let i = 0; i < v.length; i++) out.push(maskArgValue(v[i], values, depth + 1, w));
+    // the strings of a list (a command as words) also read whole, so a word secret only because of the word before it is masked
+    const at = out.flatMap((x, i) => (typeof x === 'string' ? [i] : []));
+    if (at.length) {
+      const words = at.map((i) => out[i] as string);
+      spendChars(w, words.reduce((k, x) => k + x.length, 0));
+      const whole = maskSecretArgs(words);
+      at.forEach((i, j) => { if (typeof whole[j] === 'string' && maskCount(whole[j]) > maskCount(words[j])) out[i] = whole[j]; });
     }
     return out;
   }
+  if (!plainObject(v)) return ARGS_MASK;
   const out: Record<string, unknown> = {};
-  for (const [k, x] of Object.entries(v as Record<string, unknown>)) out[k] = maskArgValue(x, values, depth + 1);
+  for (const k in v) {
+    if (!Object.prototype.hasOwnProperty.call(v, k)) continue;
+    spendNodes(w, 1);
+    // defineProperty: an own `__proto__` key (JSON.parse makes one) stays a key, not the copy's prototype
+    Object.defineProperty(out, k, { value: maskArgValue((v as Record<string, unknown>)[k], values, depth + 1, w), enumerable: true, writable: true, configurable: true });
+  }
   return out;
 }
 /**
  * Spec 005 FR-342 (main half, issue #1975): a tool call's arguments as the window may hold them, masked in main as well as in the window (defence in
- * depth). Same shape; keys kept; a string no mask hides anything in is the same string. Composes the shared masks only (FR-031). Never throws: on a
- * failure the arguments are replaced by the mask.
+ * depth). Same shape; keys kept; a string up to `MASK_INPUT_MAX` characters that no mask hides anything in is the same string. Composes the shared masks
+ * only (FR-031). Bounded work (`ARGS_*_MAX`). Never throws: over the budget, or on any failure, the arguments are replaced by the mask.
  */
 export function maskToolArgs(args: unknown, values: readonly string[] = []): unknown {
+  const w: ArgsWork = { nodes: 0, strings: 0, chars: 0 };
   try {
-    return maskArgValue(args, values.filter((x) => typeof x === 'string' && x.length >= 4), 0);
+    return maskArgValue(args, values, 0, w);
   } catch {
     return ARGS_MASK;
+  } finally {
+    lastWork = w;
   }
+}
+
+/** A call whose arguments went over the budget once: its later events get the mask at once (no work). At most this many calls are remembered. */
+const OVER_CALLS_MAX = 1024;
+/**
+ * Spec 005 FR-342 (main half, review of #2002): `maskToolArgs` for main's `outward`, so repeated events do not repeat the cost. The same arguments object
+ * (the window and the debug log both take one event) is masked once; a call (session and call id) whose arguments went over the budget gets the
+ * mask for every later event without any work, until it completes or fails.
+ */
+export function createToolArgsMasker(): (e: AgentEvent, values: readonly string[]) => unknown {
+  const seen = new WeakMap<object, unknown>();
+  const over = new Set<string>();
+  return (e, values) => {
+    if (e.type !== 'toolCall') return undefined;
+    const key = `${e.sessionId}\u0000${e.callId}`;
+    const ended = e.phase === 'complete' || e.phase === 'failed';
+    try {
+      if (over.has(key)) return ARGS_MASK;
+      const a = e.args;
+      if (a !== null && typeof a === 'object' && seen.has(a)) return seen.get(a);
+      const m = maskToolArgs(a, values);
+      if (m === ARGS_MASK && a !== ARGS_MASK && !ended) {
+        over.add(key);
+        if (over.size > OVER_CALLS_MAX) over.delete(over.values().next().value as string);
+      }
+      if (a !== null && typeof a === 'object') seen.set(a, m);
+      return m;
+    } finally {
+      if (ended) over.delete(key);
+    }
+  };
 }
 
 /**
  * Spec 019 FR-022: the copy of an event that may leave main (window, debug sink): an `mcp` event with its errors masked; any other event
  * unchanged (same object). Spec 058 FR-067: every `toolCall` (update, complete or failed) that names an `mcpServer` has its `output` masked too, cut to `MCP_CARD_MAX_CHARS`.
  * Spec 005 FR-024: a `toolCall` with an `edit` (any phase) has its paths and diffs masked with the session values (`maskEditInfo`).
- * Spec 005 FR-342 (main half): a `toolCall` with `args` (any phase) has them masked (`maskToolArgs`).
+ * Spec 005 FR-342 (main half): a `toolCall` with `args` (any phase) has them masked (`maskArgs`: `maskToolArgs`, or main's `createToolArgsMasker`).
  */
-export function maskMcpEvent<E extends AgentEvent>(e: E, values: readonly string[] = []): E {
+export function maskMcpEvent<E extends AgentEvent>(e: E, values: readonly string[] = [], maskArgs: (e: AgentEvent, values: readonly string[]) => unknown = (x, v) => maskToolArgs(x.type === 'toolCall' ? x.args : undefined, v)): E {
   if (e.type === 'mcp') return { ...e, servers: maskMcpStatuses(e.servers, values) };
   if (e.type !== 'toolCall') return e;
   let out = e;
   if (e.phase !== 'start' && e.mcpServer && e.output !== undefined) out = { ...out, output: maskMcpText(e.output, values, MCP_CARD_MAX_CHARS) };
   if (e.phase === 'failed' && e.mcpServer && out.type === 'toolCall' && classifyMcpCall(out.output) === 'policy') out = { ...out, mcpCall: 'policy' }; // FR-193: from the masked text; the word only
   if (e.edit && values.length) out = { ...out, edit: maskEditInfo(e.edit, values) };
-  if (e.args !== undefined) out = { ...out, args: maskToolArgs(e.args, values) }; // spec 005 FR-342, main half (issue #1975)
+  if (e.args !== undefined) out = { ...out, args: maskArgs(e, values) }; // spec 005 FR-342, main half (issue #1975); main passes its cached masker
   return out;
 }
 

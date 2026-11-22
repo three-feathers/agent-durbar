@@ -139,5 +139,6 @@ assert.strictEqual(maskMcpError(undefined), undefined);
   assert.ok(/\|\|\s*e\.edit(?:\)|\s*\|\|)/.test(line), `outward() passes the session values for a toolCall with an edit: ${line}`);
   // spec 005 FR-342, main half (issue #1975): and for a toolCall that carries arguments
   assert.ok(/\|\|\s*e\.args !== undefined\)/.test(line), `outward() passes the session values for a toolCall with arguments: ${line}`);
+  assert.ok(/: \[\], toolArgsMasker\);/.test(line) && /^const toolArgsMasker = createToolArgsMasker\(\);$/m.test(main), `outward() masks arguments with main's one cached masker: ${line}`);
 }
 console.log('mcp error mask: planted secrets, normal text, mask-then-cut, session values, event copy OK');

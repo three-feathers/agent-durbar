@@ -2974,7 +2974,7 @@ const WITHIN_MAX = 64;
  * Spec 012 FR-184: `keepShownBy`, but a piece of `head` that is no piece of `ref` stays when it stands inside one of `ref`'s shown pieces (`$'` and `'` around a mask
  * where `ref` showed `$'<escaped run>'`), so the command keeps its shape; nothing `ref` hides shows. At most `WITHIN_MAX` such searches, the rest masked.
  */
-function keepShownWithin(head: string, ref: string): string {
+export function keepShownWithin(head: string, ref: string): string {
   if (head === ref) return head;
   const pieces = new Set<string>();
   const rs = ref.split(PIECE_CUT);
