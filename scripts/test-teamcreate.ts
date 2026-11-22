@@ -62,7 +62,7 @@ const isOk = (v: unknown): CreateOk => { assert.ok((v as CreateOk).ok === true, 
 interface Room { team?: TeamRecord; savedCap?: number }
 interface World {
   ops: InstanceType<typeof TeamOps>; log: string[]; starts: { n: number }; office: Map<string, AgentInfo>; rooms: Map<string, Room>; store: Map<string, StoredTemplate>; clock: { t: number };
-  bound: Set<string>; announced: string[]; built: LazyMemberSpec[]; names: Array<{ src: string; id: string; name: string }>; set: (o: Partial<TeamOpsDeps>) => void; fail: { commit: boolean; placeAt: number; announceAt: number; missing: boolean; rollbackFails: number };
+  bound: Set<string>; announced: string[]; built: LazyMemberSpec[]; names: Array<{ src: string; id: string; name: string }>; set: (o: Partial<TeamOpsDeps>) => void; fail: { commit: boolean; placeAt: number; announceAt: number; missing: boolean; rollbackFails: number; rollbackThrows: number };
   preview: (target?: Target, id?: string) => Promise<string>;
 }
 let tokenN = 0;
@@ -74,13 +74,14 @@ function world(templates: StoredTemplate[], rooms: Record<string, Room> = {}, o:
   const office = new Map<string, AgentInfo>();
   const bound = new Set<string>(), announced: string[] = [];
   const starts = { n: 0 };
-  const fail = { commit: false, placeAt: -1, announceAt: -1, missing: false, rollbackFails: 0 };
+  const fail = { commit: false, placeAt: -1, announceAt: -1, missing: false, rollbackFails: 0, rollbackThrows: 0 };
   let announcedN = 0;
   let ids = 0, placed = 0;
   const adapterOf = (a: string) => ({ capabilities: { caps: true }, start: () => { starts.n++; } }) as { capabilities: unknown; start(): void; a?: string };
   const create = {
     room: (key: string) => { const r = rm.get(key); return { count: r?.team?.members.length ?? 0, savedCap: r?.savedCap, team: r?.team, known: r !== undefined }; },
-    exists: (): boolean => !fail.missing,
+    // answers by key: normally every room's key is there; `missing` = the target is gone while another folder is still there
+    exists: (k: string): boolean => fail.missing ? k === 'other-folder' : k.startsWith('key-'),
     build: (s: LazyMemberSpec): AgentInfo => { log.push('build'); built.push(s); adapterOf(s.app); return { id: 'agent-' + ++ids, name: 'room', alias: s.name, cwd: s.key, permMode: s.mode, model: s.model ?? '', effort: s.effort, maxAiCredits: s.cap, adapterId: s.app, lazy: true } as unknown as AgentInfo; },
     commit: (key: string, team: TeamRecord, infos: AgentInfo[]): boolean => {
       log.push('commit');
@@ -95,6 +96,7 @@ function world(templates: StoredTemplate[], rooms: Record<string, Room> = {}, o:
     announce: (i: AgentInfo): void => { if (announcedN++ === fail.announceAt) throw new Error('window gone ' + MARK); log.push('announce:' + i.id); announced.push(i.id); },
     rollback: (key: string, previous: TeamRecord | undefined, _names: unknown, removeRoom: boolean): boolean => {
       log.push('rollback');
+      if (fail.rollbackThrows > 0) { fail.rollbackThrows--; throw new Error('disk gone ' + MARK); }
       if (fail.rollbackFails > 0) { fail.rollbackFails--; return false; }
       const r = rm.get(key); if (!r) return true;
       if (previous) rm.set(key, { ...r, team: previous }); else if (removeRoom) rm.delete(key); else rm.set(key, { ...r, team: undefined });
@@ -495,6 +497,18 @@ section('atomicity', async () => {
   await assert.rejects(async () => created(w2g), /boom/, 'a rollback that keeps failing: failed all the same');
   n++;
   eq(w2g.log.filter((l) => l === 'rollback').length, 2, 'two tries and no more');
+  // the rollback THROWS (both tries): tried twice, the answer is still the original failure, and the record stays as the failed write left it (the KNOWN GAP: said, not hidden)
+  const w2i = world([tpl([mem(1), mem(2), mem(3)])], { 'key-r1': { team: old } });
+  w2i.fail.placeAt = 1; w2i.fail.rollbackThrows = 5;
+  await assert.rejects(async () => created(w2i), /boom/, 'a rollback that throws: the answer is the failure of the place, not the rollback\'s');
+  n++;
+  eq([w2i.log.filter((l) => l === 'rollback').length, w2i.office.size, w2i.rooms.get('key-r1')!.team!.members.length], [2, 0, 5], 'two tries, no agent left, the record keeps the batch (ghost members, a KNOWN GAP)');
+  // a rollback that throws once and then works: the record is back
+  const w2j = world([tpl([mem(1), mem(2), mem(3)])], { 'key-r1': { team: old } });
+  w2j.fail.placeAt = 1; w2j.fail.rollbackThrows = 1;
+  await assert.rejects(async () => created(w2j), /boom/, 'a rollback that throws once');
+  n++;
+  eq([w2j.log.filter((l) => l === 'rollback').length, w2j.rooms.get('key-r1')!.team], [2, old], 'tried again, the record is back');
   // the real `exists` of main.ts (`pathExists`): a folder there, then removed (a real temp dir)
   const dirX = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-teamcreate-x-'));
   try { ok(pathExists(dirX) === true, 'a folder that is there'); fs.rmSync(dirX, { recursive: true, force: true }); ok(pathExists(dirX) === false, 'a folder removed meanwhile'); } finally { fs.rmSync(dirX, { recursive: true, force: true }); }
@@ -773,6 +787,7 @@ section('main', () => {
   ok(/lazy: true/.test(lazy), 'the not-started flag');
   ok(/lazyInfo\(f\.workspace/.test(src), 'restoreFolders uses the same path');
   const create = src.slice(src.indexOf('create: {'), src.indexOf('resolveTarget: (t)', src.indexOf('create: {')));
+  ok(/\bexists: pathExists,/.test(create) && /import \{[^}]*\bpathExists\b[^}]*\} from '\.\/teamops'/.test(src), 'the wiring asks the real folder check (pathExists), not a stub');
   ok(/build: addLazyMember/.test(create) && !/ensureLive|startGuardOp|\.start\(/.test(create), 'the wiring builds with addLazyMember and starts nothing');
 });
 
@@ -830,6 +845,8 @@ section('main', () => {
     { name: 'a failing announce is propagated', from: 'dep.announce(info);\n            }\n            catch { /* the team exists', to: 'dep.announce(info);\n            }\n            catch (e) { throw e; /* the team exists', section: 'atomicity' },
     { name: 'the default limit is not normalized', from: 'const c = (0, credits_1.parseCapIn)(unit === \'none\' ? undefined : unit, cap);', to: 'const c = cap;', section: 'limits' },
     { name: 'the rollback is not retried', from: 'attempt < 2 && !back', to: 'attempt < 1 && !back', section: 'atomicity' },
+    { name: 'the folder check is asked about the wrong key', from: 'dep.exists(e.key)', to: "dep.exists('')", section: 'atomicity' },
+    { name: 'a rollback that throws counts as done', from: 'catch {\n                    back = false;', to: 'catch {\n                    back = true;', section: 'atomicity' },
     { name: 'a missing folder is not noticed', from: "if (!dep.exists(e.key))", to: 'if (false)', section: 'atomicity' },
     { name: 'the rows object is not bounded', from: 'moreKeysThan)(rowsIn, teamtemplate_1.LIMITS.members)', to: 'moreKeysThan)(rowsIn, 1000)', section: 'arguments' },
     { name: 'a room with no names keeps the batch names after a rollback', from: 'cur.sessionNames = parseSessionNames(previousNames);', to: 'cur.sessionNames = parseSessionNames(previousNames) ?? cur.sessionNames;', section: 'realstore', file: 'folders' },
