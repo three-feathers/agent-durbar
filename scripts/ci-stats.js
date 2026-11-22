@@ -162,6 +162,7 @@ function run({ days = 7, sample = 60, now = new Date(), gh = ghJson, repo } = {}
   if (!REPO_RE.test(slug)) throw new Error('repository must be owner/name');
   const [owner, name] = slug.split('/');
   const runs = [];
+  let forkRuns = 0;
   for (const w of dayWindows(days, now)) {
     for (let page = 1; ; page++) {
       const r = gh(['api', '-X', 'GET', `repos/${slug}/actions/runs`, '-f', `created=${w.from}..${w.to}`, '-f', 'per_page=100', '-f', `page=${page}`]);
@@ -170,6 +171,12 @@ function run({ days = 7, sample = 60, now = new Date(), gh = ghJson, repo } = {}
       if (list.length < 100) break;
     }
   }
+  // A fork's run uses the fork's own workflow file, so its workflow and job names are outside text (AGENTS.md). Only runs whose
+  // head repository is this repo count; the rest are counted as a number and never fetched or printed.
+  const own = runs.filter((r) => r.head_repository && r.head_repository.full_name === slug);
+  forkRuns = runs.length - own.length;
+  runs.length = 0;
+  runs.push(...own);
   const byName = group(runs, (r) => r.name);
   const picked = [];
   for (const [n, list] of byName) {
@@ -187,7 +194,9 @@ function run({ days = 7, sample = 60, now = new Date(), gh = ghJson, repo } = {}
   }
   const g = gh(['api', 'graphql', '-f', `query=${PR_QUERY}`, '-f', `owner=${owner}`, '-f', `name=${name}`]);
   const prs = (((g || {}).data || {}).repository || {}).pullRequests;
-  return report({ runs, jobs, prs: (prs && prs.nodes) || [], fromMs: now.getTime() - days * DAY, toMs: now.getTime(), days });
+  const lines = report({ runs, jobs, prs: (prs && prs.nodes) || [], fromMs: now.getTime() - days * DAY, toMs: now.getTime(), days });
+  lines.splice(1, 0, `Runs from other repositories (forks) are left out of every number and name: ${forkRuns}`);
+  return lines;
 }
 
 function parseArgs(argv) {
