@@ -5,9 +5,14 @@
  * .github/workflows/ci.yml. Moving a suite (a masking one most of all) to a job that is not required would let a PR merge with that suite
  * red, so each way of doing it is a mutant below that must fail at its own assert.
  *
- * The line-based reader below understands the shape of ci.yml (jobs at two spaces, steps at six); a shape it does not understand
- * makes the check fail loudly, never pass. The summary-job rules of T022 (a failed, skipped or cancelled shard; `if: !cancelled()`)
- * land with the Windows split, if it is ever needed: there is no summary job today.
+ * ci.yml is parsed with js-yaml (the file is read with line endings normalised, so a Windows checkout passes). The guard FAILS CLOSED: a workflow
+ * shape it does not read (anchors, aliases, flow style, a computed or excluded matrix, a reusable workflow, a `run` that mentions `npm test` in any
+ * form but the plain one) is a problem, never a pass. For the one job that runs `npm test` it asserts: the name is a required check on every OS;
+ * each matrix entry runs on the OS it names (runner = os, real = 'yes'; macOS only the reviewed FR-106 expressions); the `changes` step is the
+ * reviewed script under the reviewed condition; no `defaults`, no job or workflow `env`, no step that writes GITHUB_ENV or GITHUB_PATH, and only
+ * reviewed env keys on the `npm test` step; the `npm test` step is the real command under no condition but the reviewed one. The summary-job
+ * rules of T022 (a failed, skipped or cancelled shard; `if: !cancelled()`) land with the Windows split, if it is ever needed: there is no
+ * summary job today.
  */
 import * as assert from 'assert';
 import * as fs from 'fs';
@@ -37,7 +42,7 @@ export function requiredFromSpec(raw: string): string[] {
 }
 
 interface Step { [k: string]: unknown }
-interface Job { id: string; name: string; raw: Record<string, unknown>; steps: Step[]; oses: string[]; matrixError?: string }
+interface Job { id: string; name: string; raw: Record<string, unknown>; steps: Step[]; oses: string[]; entries: Record<string, unknown>[]; matrixError?: string }
 /** YAML shapes the guard does not read (it fails closed on them: a person must extend the guard, a workflow may not slip past it). */
 export function unsupportedShapes(wf: string): string[] {
   const out: string[] = [];
@@ -45,6 +50,12 @@ export function unsupportedShapes(wf: string): string[] {
   if (code.some((l) => /(^|[:,\[{-]\s+)[&*][\w-]+/.test(l) || /^\s*<<\s*:/.test(l))) out.push('the workflow uses YAML anchors, aliases or merge keys (not read by this guard)');
   if (code.some((l) => /^\s*-\s*[{[]/.test(l) || /^\s*(steps|jobs|include|strategy|matrix)\s*:\s*[{[]/.test(l))) out.push('the workflow uses flow style (braces or brackets) for jobs, steps or the matrix (not read by this guard)');
   return out;
+}
+
+/** The top-level keys of a workflow: `defaults` and `env` there change what every job runs. */
+export function topLevel(wf: string): Record<string, unknown> {
+  const doc = (yaml as { load: (s: string) => unknown }).load(norm(wf));
+  return doc && typeof doc === 'object' && !Array.isArray(doc) ? doc as Record<string, unknown> : {};
 }
 
 /** The jobs of a workflow file, from the parsed YAML. Throws (the guard fails) on a shape it does not understand. */
@@ -61,6 +72,7 @@ export function readJobs(wf: string): Job[] {
     const name = raw.name === undefined ? id : raw.name;
     if (typeof name !== 'string') throw new Error(`job ${id} has a name that is not a string`);
     const oses: string[] = [];
+    const entries: Record<string, unknown>[] = [];
     let matrixError: string | undefined;
     const fail = (m: string) => { matrixError = matrixError || m; };
     const matrix = (raw.strategy as { matrix?: unknown } | undefined)?.matrix;
@@ -71,10 +83,10 @@ export function readJobs(wf: string): Job[] {
       if (m.os !== undefined) { if (!Array.isArray(m.os) || m.os.some((o) => typeof o !== 'string')) fail(`job ${id}: matrix.os is not a list of strings`); else oses.push(...(m.os as string[])); }
       if (m.include !== undefined) {
         if (!Array.isArray(m.include) || m.include.some((e) => !e || typeof e !== 'object' || typeof (e as { os?: unknown }).os !== 'string')) fail(`job ${id}: matrix.include is not a list of mappings with a string os`);
-        else oses.push(...(m.include as { os: string }[]).map((e) => e.os));
+        else { oses.push(...(m.include as { os: string }[]).map((e) => e.os)); entries.push(...(m.include as Record<string, unknown>[])); }
       }
     }
-    jobs.push({ id, name, raw, steps: steps as Step[], oses, matrixError });
+    jobs.push({ id, name, raw, steps: steps as Step[], oses, entries, matrixError });
   }
   return jobs;
 }
@@ -85,6 +97,7 @@ export function jobNames(job: Job): string[] {
 }
 
 const MASK = /redact|mask/i;
+const ENV_KEYS = ['PREREVIEW_REQUIRE_REAL_SDK'];
 const RUNS_NPM_TEST = /\bnpm\s+test\b/;
 const runOf = (s: Step) => (typeof s.run === 'string' ? s.run : '');
 
@@ -111,6 +124,9 @@ export function problems(io: { ci: string; spec: string; suites: string; pkgScri
   try { jobs = readJobs(io.ci); } catch (e) { out.push(`ci.yml is in a shape this guard does not understand: ${(e as Error).message}`); return out; }
   if (shapes.length) return out;
   const PLAIN_KEYS = ['if', 'env', 'run', 'name'];
+  const top = topLevel(io.ci);
+  if (top.defaults !== undefined) out.push('the workflow has top-level `defaults` (a working-directory or shell there changes what every job runs)');
+  if (top.env !== undefined) out.push('the workflow has top-level `env` (it reaches every step, `npm test` included)');
   for (const j of jobs) for (const s of j.steps) {
     if (RUNS_NPM_TEST.test(runOf(s)) && runOf(s).trim() !== 'npm test') out.push(`job ${j.id} has a step whose run mentions \`npm test\` in a shape this guard does not understand (a filter, a chain or several lines): ${JSON.stringify(runOf(s))}`);
   }
@@ -118,6 +134,28 @@ export function problems(io: { ci: string; spec: string; suites: string; pkgScri
   if (full.length !== 1) { out.push(`expected exactly one ci.yml job that runs plain \`npm test\`, found ${full.length}`); return out; }
   const job = full[0];
   if (job.matrixError) { out.push(`ci.yml is in a shape this guard does not understand: ${job.matrixError}`); return out; }
+  // every matrix entry runs on the OS its name says, and is really run (FR-106: only macOS reports on Linux in PRs, on purpose)
+  const MAC = { runner: "${{(github.event_name=='pull_request'||github.event_name=='merge_group')&&'ubuntu-latest'||'macos-latest'}}", real: "${{(github.event_name=='pull_request'||github.event_name=='merge_group')&&'no'||'yes'}}" };
+  const flat = (v: unknown) => String(v).replace(/\s+/g, '');
+  if (job.raw['runs-on'] === undefined || flat(job.raw['runs-on']) !== '${{matrix.runner}}') out.push(`the suite job's runs-on is not "\${{ matrix.runner }}": ${String(job.raw['runs-on'])}`);
+  for (const e of job.entries) {
+    for (const k of Object.keys(e)) if (!['os', 'runner', 'real'].includes(k)) out.push(`matrix entry ${String(e.os)} has the key "${k}", which this guard does not understand`);
+    if (e.os === 'macos-latest') {
+      if (flat(e.runner) !== MAC.runner) out.push(`the macos-latest matrix entry's runner is not the reviewed FR-106 expression: ${String(e.runner)}`);
+      if (flat(e.real) !== MAC.real) out.push(`the macos-latest matrix entry's real is not the reviewed FR-106 expression: ${String(e.real)}`);
+    } else {
+      if (e.runner !== e.os) out.push(`the ${String(e.os)} matrix entry runs on "${String(e.runner)}": a required check named for an OS must run on that OS`);
+      if (e.real !== 'yes') out.push(`the ${String(e.os)} matrix entry has real: ${JSON.stringify(e.real)}: it would skip checkout and \`npm test\` and go green with zero suites`);
+    }
+  }
+  if (job.raw.defaults !== undefined) out.push('the suite job has `defaults` (a working-directory or shell there changes what runs)');
+  if (job.raw.env !== undefined) out.push('the suite job has job-level `env` (it reaches `npm test`; NODE_OPTIONS could change what runs)');
+  const changes = job.steps.filter((s) => s.id === 'changes');
+  const ch = changes[0];
+  if (changes.length !== 1 || runOf(ch).trim() !== 'bash .github/scripts/ci-changes.sh' || flat(ch.if) !== "matrix.real=='yes'") out.push("the `changes` step is not the reviewed `bash .github/scripts/ci-changes.sh` under \"matrix.real == 'yes'\": it decides whether `npm test` runs, so it may not be replaced");
+  else for (const k of Object.keys(ch)) if (!['id', 'if', 'shell', 'env', 'run'].includes(k) || (k === 'shell' && ch.shell !== 'bash') || (k === 'env' && JSON.stringify(Object.keys(ch.env as object)) !== '["EVENT_NAME"]')) out.push(`the \`changes\` step has the unreviewed key "${k}"`);
+  const testAt = job.steps.findIndex((s) => runOf(s).trim() === 'npm test');
+  for (const s of job.steps.slice(0, testAt)) if (/GITHUB_ENV|GITHUB_PATH/.test(runOf(s))) out.push(`a step before \`npm test\` writes GITHUB_ENV or GITHUB_PATH (it can change what \`npm test\` runs): ${JSON.stringify(runOf(s).slice(0, 60))}`);
   const names = jobNames(job);
   for (const n of names) if (!required.includes(n)) out.push(`the job that runs every suite is named "${n}", which is not a required check (required: ${required.join('; ')})`);
   for (const n of buildReq) if (!names.includes(n)) out.push(`required check "${n}" has no job running the suites: the matrix lacks that OS`);
@@ -128,6 +166,7 @@ export function problems(io: { ci: string; spec: string; suites: string; pkgScri
   const step = testSteps[0];
   if (step['continue-on-error'] !== undefined) out.push('the `npm test` step has continue-on-error');
   for (const k of Object.keys(step)) if (!PLAIN_KEYS.includes(k) && k !== 'continue-on-error') out.push(`the \`npm test\` step has the key "${k}", which this guard does not understand (a working-directory or shell could change what runs)`);
+  if (step.env !== undefined) for (const k of Object.keys(step.env as object)) if (!ENV_KEYS.includes(k)) out.push(`the \`npm test\` step sets env "${k}", which is not a reviewed key (${ENV_KEYS.join(', ')}): it could change what runs`);
   const stepIf = step.if;
   if (stepIf !== undefined && String(stepIf).replace(/\s+/g, '') !== "steps.changes.outputs.code=='true'") out.push(`the \`npm test\` step runs only under "${String(stepIf)}": a suite would be skipped on some OS (only the docs-only skip "steps.changes.outputs.code == 'true'" is allowed)`);
   return out;
@@ -196,4 +235,26 @@ mutant('the npm test step runs in another folder', (io) => ({ ...io, ci: swap(io
 mutant('a computed matrix', (io) => ({ ...io, ci: swap(io.ci, '      matrix:\n        include:', '      matrix: ${{ fromJSON(needs.x.outputs.m) }}\n      zz:\n        include:') }), /strategy\.matrix is not a mapping/);
 mutant('a workflow that does not parse', (io) => ({ ...io, ci: io.ci + '\n  bad: [unclosed\n' }), /not understand/);
 
-console.log(`ci required suites: ok (${live.suites.split('\n').filter((l) => /^test:/.test(l)).length} suites, ${maskSuites.length} masking, 27 mutants)`);
+// a required check that runs no suites, or the wrong OS
+const WIN = "          - os: windows-latest\n            runner: windows-latest\n            real: 'yes'\n";
+const NT = '        run: npm test\n';
+const RUNS_ON = '    runs-on: ${{ matrix.runner }}\n    # spec 008 FR-195';
+mutant('Windows entry with real: no (zero suites, green)', (io) => ({ ...io, ci: swap(io.ci, WIN, WIN.replace("real: 'yes'", "real: 'no'")) }), /windows-latest matrix entry has real: "no"/);
+mutant('Windows entry on an ubuntu runner', (io) => ({ ...io, ci: swap(io.ci, WIN, WIN.replace('runner: windows-latest', 'runner: ubuntu-latest')) }), /windows-latest matrix entry runs on "ubuntu-latest"/);
+mutant('Ubuntu entry with real: no', (io) => ({ ...io, ci: swap(io.ci, "          - os: ubuntu-latest\n            runner: ubuntu-latest\n            real: 'yes'\n", "          - os: ubuntu-latest\n            runner: ubuntu-latest\n            real: 'no'\n") }), /ubuntu-latest matrix entry has real: "no"/);
+mutant('macOS entry always on Linux', (io) => ({ ...io, ci: swap(io.ci, /(          - os: macos-latest\n            runner: )[^\n]*\n/, '$1ubuntu-latest\n') }), /macos-latest matrix entry's runner is not the reviewed FR-106 expression/);
+mutant('macOS real expression changed', (io) => ({ ...io, ci: swap(io.ci, /(          - os: macos-latest\n            runner: [^\n]*\n            real: )[^\n]*\n/, "$1'no'\n") }), /macos-latest matrix entry's real is not the reviewed FR-106 expression/);
+mutant('runs-on not the matrix runner', (io) => ({ ...io, ci: swap(io.ci, RUNS_ON, '    runs-on: ubuntu-latest\n    # spec 008 FR-195') }), /runs-on is not "\$\{\{ matrix\.runner \}\}"/);
+mutant('a matrix entry with an extra key', (io) => ({ ...io, ci: swap(io.ci, WIN, WIN + '            container: node\n') }), /has the key "container"/);
+mutant('the changes step replaced by one that writes code=false', (io) => ({ ...io, ci: swap(io.ci, '        run: bash .github/scripts/ci-changes.sh\n', '        run: echo code=false >> "$GITHUB_OUTPUT"\n') }), /`changes` step is not the reviewed/);
+mutant('the changes step loses its condition', (io) => ({ ...io, ci: swap(io.ci, "      - id: changes\n        if: matrix.real == 'yes'\n", "      - id: changes\n        if: matrix.os == 'macos-latest'\n") }), /`changes` step is not the reviewed/);
+mutant('the changes step has a second key', (io) => ({ ...io, ci: swap(io.ci, '        run: bash .github/scripts/ci-changes.sh\n', '        continue-on-error: true\n        run: bash .github/scripts/ci-changes.sh\n') }), /`changes` step has the unreviewed key "continue-on-error"/);
+mutant('job-level defaults working-directory', (io) => ({ ...io, ci: swap(io.ci, RUNS_ON, '    runs-on: ${{ matrix.runner }}\n    defaults:\n      run:\n        working-directory: scripts\n    # spec 008 FR-195') }), /suite job has `defaults`/);
+mutant('workflow-level defaults', (io) => ({ ...io, ci: swap(io.ci, /^jobs:\n/m, 'defaults:\n  run:\n    working-directory: scripts\njobs:\n') }), /top-level `defaults`/);
+mutant('workflow-level env', (io) => ({ ...io, ci: swap(io.ci, /^jobs:\n/m, 'env:\n  NODE_OPTIONS: --max-old-space-size=1\njobs:\n') }), /top-level `env`/);
+mutant('job-level env NODE_OPTIONS', (io) => ({ ...io, ci: swap(io.ci, RUNS_ON, '    runs-on: ${{ matrix.runner }}\n    env:\n      NODE_OPTIONS: --require ./x.js\n    # spec 008 FR-195') }), /job-level `env`/);
+mutant('NODE_OPTIONS on the npm test step', (io) => ({ ...io, ci: swap(io.ci, '          PREREVIEW_REQUIRE_REAL_SDK:', '          NODE_OPTIONS: --require ./x.js\n          PREREVIEW_REQUIRE_REAL_SDK:') }), /sets env "NODE_OPTIONS"/);
+mutant('a step before npm test writes GITHUB_ENV', (io) => ({ ...io, ci: swap(io.ci, "      - if: steps.changes.outputs.code == 'true'\n        run: npm run build\n", "      - run: echo NODE_OPTIONS=--require=./x.js >> \"$GITHUB_ENV\"\n      - if: steps.changes.outputs.code == 'true'\n        run: npm run build\n") }), /writes GITHUB_ENV or GITHUB_PATH/);
+mutant('the npm test step is an echo', (io) => ({ ...io, ci: swap(io.ci, NT, '        run: echo npm test\n') }), /mentions `npm test` in a shape this guard does not understand/);
+
+console.log(`ci required suites: ok (${live.suites.split('\n').filter((l) => /^test:/.test(l)).length} suites, ${maskSuites.length} masking, 44 mutants)`);

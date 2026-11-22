@@ -197,6 +197,13 @@ function makeCpuDir({ proc = process, tmpdir = os.tmpdir(), signals = true } = {
   return dir;
 }
 
+// What the command line does after the suites are chosen: the CPU folder (its own signal handlers only without --bail: with --bail runMain's handlers
+// stop the running suites first and exit, and the folder goes with that exit) and the run. Exported so a test drives the same wiring.
+function startMain({ suites, jobs, bail, t0 = Date.now(), env = process.env }) {
+  const cpuDir = makeCpuDir({ signals: !bail });
+  return runMain({ suites, jobs, bail, t0, cpuDir, env });
+}
+
 // The wiring of a run: handlers, the run, the summary and the exit code. `exit` is injectable. When bailing, Ctrl-C or a kill of this runner
 // stops the suites the same way a bail does (TERM, then KILL after the grace period) and the exit code is 128 + the signal number
 // (SIGINT 130, SIGTERM 143, SIGHUP 129), not 1.
@@ -242,7 +249,7 @@ function runMain({ suites, jobs, bail, t0 = Date.now(), exit = process.exit, run
   });
 }
 
-module.exports = { suiteTmpEnv, leftBehind, parseArgs, readSuiteList, unlistedSuites, NOT_SUITES, loadSuites, stopChild, runSuites, runMain, HEAVY_FIRST, orderSuites, formatSummary, readCpuSeconds, makeCpuDir };
+module.exports = { suiteTmpEnv, leftBehind, parseArgs, readSuiteList, unlistedSuites, NOT_SUITES, loadSuites, stopChild, runSuites, runMain, startMain, HEAVY_FIRST, orderSuites, formatSummary, readCpuSeconds, makeCpuDir };
 
 if (require.main === module) {
   const { ensureElectron } = require('./ensure-electron');
@@ -266,6 +273,5 @@ if (require.main === module) {
   // leave a core for the desktop and run at low priority, so the machine stays usable while the suites run
   const jobs = process.argv.includes('--serial') ? 1 : Math.max(1, Number(process.env.TEST_JOBS) || Math.min(os.cpus().length - 1, 8));
   try { os.setPriority(10); } catch (_) { /* not allowed: normal priority */ }
-  const cpuDir = makeCpuDir({ signals: !bail });
-  runMain({ suites, jobs, bail, t0, cpuDir });
+  startMain({ suites, jobs, bail, t0 });
 }

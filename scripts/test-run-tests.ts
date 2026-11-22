@@ -257,7 +257,16 @@ process.on('exit', () => { if (!done) { console.error('test-run-tests: did not f
       assert.ok(/^\d+\.\d$/.test(cpu), `the real preload reported CPU seconds: ${row}`);
     }
     // a summary write error does not fail the run
-    await rt.runMain({ suites: [{ name: 'real', steps: [[okJs]] }], jobs: 1, bail: false, cpuDir, exit: () => { throw new Error('must not exit'); }, env: { ...process.env, GITHUB_STEP_SUMMARY: '/x' }, appendFile: () => { throw Object.assign(new Error('x'), { code: 'EACCES' }); } });
+    // and the note prints exactly once however many suites and writes follow (the first error turns the writes off)
+    {
+      const notes: string[] = []; let writes = 0;
+      const log = console.log; console.log = (...a: unknown[]) => { notes.push(a.join(' ')); };
+      try {
+        await rt.runMain({ suites: [{ name: 'real', steps: [[okJs]] }, { name: 'real2', steps: [[okJs]] }, { name: 'real3', steps: [[okJs]] }], jobs: 1, bail: false, cpuDir, exit: () => { throw new Error('must not exit'); }, env: { ...process.env, GITHUB_STEP_SUMMARY: '/x' }, appendFile: () => { writes++; throw Object.assign(new Error('x'), { code: 'EACCES' }); } });
+      } finally { console.log = log; }
+      assert.strictEqual(notes.filter((n) => n.includes('could not write the suite times')).length, 1, 'the note prints exactly once');
+      assert.strictEqual(writes, 1, 'after the first error no more writes are tried');
+    }
     fs.rmSync(dir, { recursive: true, force: true });
   }
   // spec 117 FR-017 (SC-003): a run cut short keeps the suites done so far. A real runner process is killed midway (SIGKILL: no handler runs, as when a
