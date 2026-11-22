@@ -1,0 +1,1 @@
+- **CI fast lane** (spec 117): each pull request now runs only the test suites its diff touches on Linux, Windows and macOS, so a platform-only failure shows within minutes instead of after the full test leg; advisory, the required checks still run everything. A pull request with Markdown under `src/`, `scripts/` or `.github/` no longer skips the tests as docs only.

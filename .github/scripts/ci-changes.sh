@@ -28,4 +28,5 @@ if ! git show 'HEAD^1:.github/scripts/ci-changes.js' > "$tmp/.github/scripts/ci-
   all
   exit 0
 fi
-node "$tmp/.github/scripts/ci-changes.js" --root .
+# arguments pass through: `--suites` asks for the fast lane's suites only (spec 117 FR-383, fast-lane.yml)
+node "$tmp/.github/scripts/ci-changes.js" --root . "$@"

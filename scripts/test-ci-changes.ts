@@ -282,6 +282,99 @@ assert.strictEqual(d(['package.json', 'package-lock.json', 'CHANGELOG.md', 'chan
 assert.strictEqual(d(['package.json', 'src/main/main.ts'], versionBump).macos, true, 'a bump with code runs it');
 assert.strictEqual(d(['scripts/test-usage.js']).macos, true, 'a test script runs it (unit tests are what it checks)');
 
+// ---- spec 117 FR-384: the docs-only skip FAILS CLOSED. No path under src/, scripts/ or .github/ (Markdown there included: a test reads
+// scripts/prereview/prompts/*.md, the app ships src/**/ASSETS.md) and no unknown path can take it. Every live file there is checked, then
+// mutants of the rule (each a way of widening the skip) must each die at this guard's own assert.
+type Decision = { code: boolean; themes: boolean; ui: boolean; macos: boolean };
+type Cc = { decide: (files: string[], io: Io) => Decision; DOCS: { test(f: string): boolean } };
+// `code` does not read the tree; an empty tree keeps the many calls below cheap (the UI closure is then empty)
+const emptyIo: Io = { read: () => null, readBase: () => null, isFile: () => false, isDir: () => false };
+const walk = (rel: string): string[] => {
+  const out: string[] = [];
+  let ents: fs.Dirent[] = [];
+  try { ents = fs.readdirSync(path.join(ROOT, ...rel.split('/')), { withFileTypes: true }); } catch { return out; }
+  for (const e of ents) {
+    if (e.name === 'node_modules') continue;
+    const r = `${rel}/${e.name}`;
+    if (e.isDirectory()) out.push(...walk(r)); else out.push(r);
+  }
+  return out;
+};
+const LIVE = [...walk('src'), ...walk('scripts'), ...walk('.github')];
+const NEVER_SKIP = ['src/renderer/x.md', 'scripts/x.md', 'scripts/prereview/prompts/system.md', '.github/pull_request_template.md', '.github/agents/new.agent.md',
+  'src/LICENSE', 'scripts/docs/a.md', '.github/specs/a.md', 'src/changelog.d/a.md', 'unknown-top-level.txt', 'build/x.json', 'tsconfig.json', 'zz/new.js'];
+const DOCS_ONLY = ['docs/a.md', 'docs/site/app.js', 'specs/117-delivery-speed-2/spec.md', 'changelog.d/x.md', 'README.md', 'AGENTS.md', 'LICENSE', 'docs/rules/merge-mechanics.md'];
+/** What is wrong with a decision's docs-only skip: a never-skip path that skips (alone, with docs), or a docs path that does not. */
+function skipProblems(c: Cc): string[] {
+  const bad: string[] = [];
+  for (const f of LIVE) if (c.DOCS.test(f)) bad.push(`${f} alone takes the docs-only skip`);
+  for (const f of NEVER_SKIP) {
+    if (!c.decide([f], emptyIo).code) bad.push(`${f} alone takes the docs-only skip`);
+    if (!c.decide(['docs/a.md', f], emptyIo).code) bad.push(`${f} with a doc takes the docs-only skip`);
+  }
+  for (const f of DOCS_ONLY) if (c.decide([f], emptyIo).code) bad.push(`${f} is docs only but runs everything`);
+  return bad;
+}
+assert.ok(LIVE.filter((f) => f.startsWith('src/')).length > 50 && LIVE.some((f) => f.startsWith('.github/workflows/')) && LIVE.includes('scripts/run-tests.js') && LIVE.includes('scripts/prereview/prompts/system.md'), 'the guard walked the live src/, scripts/ and .github/ trees');
+assert.deepStrictEqual(skipProblems(cc as unknown as Cc), [], 'FR-384: nothing under src/, scripts/ or .github/, and no unknown path, takes the docs-only skip');
+{
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const Module = require('module') as { new (id: string, parent: unknown): { filename: string; paths: string[]; exports: unknown; _compile(src: string, file: string): void }; _nodeModulePaths(dir: string): string[] };
+  const file = path.join(ROOT, '.github', 'scripts', 'ci-changes.js');
+  const source = fs.readFileSync(file, 'utf8');
+  const variant = (from: string | RegExp, to: string): Cc => {
+    const text = source.replace(from, to);
+    assert.notStrictEqual(text, source, `mutant anchor found: ${String(from)}`);
+    const m = new Module(file, null);
+    m.filename = file; m.paths = Module._nodeModulePaths(path.dirname(file));
+    m._compile(text, file);
+    return m.exports as Cc;
+  };
+  const mutants: [string, Cc, RegExp][] = [
+    ['the old rule (any .md anywhere is docs)', variant(/const DOCS = \{[^\n]*\n/, 'const DOCS = /^(docs\\/|specs\\/|changelog\\.d\\/)|\\.md$|^LICENSE$/;\n'), /src\/renderer\/x\.md alone takes the docs-only skip/],
+    ['scripts/ dropped from the never-docs list', variant('const NEVER_DOCS = /^(src|scripts|\\.github)\\//;', 'const NEVER_DOCS = /^(src|\\.github)\\//;'), /scripts\/prereview\/prompts\/system\.md alone takes/],
+    ['.github/ dropped from the never-docs list', variant('const NEVER_DOCS = /^(src|scripts|\\.github)\\//;', 'const NEVER_DOCS = /^(src|scripts)\\//;'), /\.github\/pull_request_template\.md alone takes/],
+    ['src/ dropped from the never-docs list', variant('const NEVER_DOCS = /^(src|scripts|\\.github)\\//;', 'const NEVER_DOCS = /^(scripts|\\.github)\\//;'), /src\/renderer\/x\.md alone takes/],
+    ['an unknown path counted as docs', variant("const DOCS_PATH = /^(docs\\/|specs\\/|changelog\\.d\\/)|\\.md$|^LICENSE$/;", "const DOCS_PATH = /^(docs\\/|specs\\/|changelog\\.d\\/|zz\\/)|\\.md$|^LICENSE$|\\.txt$/;"), /(unknown-top-level\.txt|zz\/new\.js) alone takes/],
+    ['docs only when one file is docs (some, not every)', variant('const code = list.some((f) => !DOCS.test(f));', 'const code = !list.some((f) => DOCS.test(f));'), /with a doc takes the docs-only skip/],
+  ];
+  for (const [name, c, expect] of mutants) {
+    const bad = skipProblems(c);
+    assert.ok(bad.some((b) => expect.test(b)), `mutant "${name}" dies at its own assert (got: ${bad.slice(0, 3).join('; ') || 'nothing'})`);
+  }
+}
+
+// ---- spec 117 FR-383: the fast lane's suites (`--suites`), derived from the diff
+{
+  type Fs = { fastSuites: (files: string[], io: Io) => string[]; suiteNames: (t: string) => string[]; stepSources: (c: string) => string[] };
+  const fc = cc as unknown as Fs;
+  const list = fc.suiteNames(fs.readFileSync(path.join(ROOT, 'scripts', 'test-suites.txt'), 'utf8'));
+  const shared = io(); // one tree for the plain cases: its literal reads are cached across calls
+  const fast = (files: string[], x: Io = shared) => fc.fastSuites(files, x);
+  assert.deepStrictEqual(fc.stepSources('tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-a.js && node scripts/b.js'), ['scripts/test-a.ts', 'scripts/b.js'], 'a compiled step is its .ts source; a plain node step is itself');
+  assert.deepStrictEqual(fc.suiteNames('test:a\n# c\n\ntest:b # note\nnot a suite\ntest:$(x)\n'), ['test:a', 'test:b'], 'only plain test:* names, comments dropped');
+  assert.ok(fast(['scripts/test-ci-changes.ts']).includes('test:cichanges'), 'a changed test file runs its suite');
+  assert.ok(fast(['scripts/run-tests.js']).includes('test:runtests'), 'a file a test loads by a relative literal (./run-tests) runs that test');
+  assert.ok(fast(['src/shared/redact.ts']).includes('test:runtime-redact'), 'a src file a test imports (../src/shared/redact) runs that test');
+  assert.ok(fast(['scripts/prereview/prompts/system.md']).includes('test:prereview'), 'a file inside a folder a test names (scripts/prereview) runs that test');
+  assert.ok(fast(['.github/scripts/ci-changes.js']).includes('test:cichanges'), 'a repo-relative path a test names runs that test');
+  assert.deepStrictEqual(fast(['specs/999-none/spec.md']), ['test:specsindex'], 'a spec change runs the specs index check (docs table)');
+  assert.ok(fast(['AGENTS.md']).includes('test:rules') && fast(['docs/rules/review-rounds.md']).includes('test:rules'), 'rule text runs the word budget check');
+  assert.ok(fast(['changelog.d/x.md']).includes('test:changelog'), 'a changelog fragment runs the changelog check');
+  assert.deepStrictEqual(fast(['zz/new-file.txt']), [], 'a file nothing names runs no suite (the lane is advisory: the required jobs run everything)');
+  const r = fast(['src/shared/api.ts', 'scripts/run-tests.js', 'specs/x/spec.md']);
+  assert.ok(r.length > 3 && r.every((n) => list.includes(n)), 'every picked name is on the list');
+  assert.deepStrictEqual(r, list.filter((n) => r.includes(n)), 'the picks are in list order, each once');
+  // a new suite, or a changed package.json line, runs that suite even when no file it names changed
+  const listText = fs.readFileSync(path.join(ROOT, 'scripts', 'test-suites.txt'), 'utf8');
+  const baseList = listText.split(/\r?\n/).filter((l) => l.trim() !== 'test:cichanges').join('\n');
+  assert.ok(fast(['scripts/test-suites.txt'], io({}, { 'scripts/test-suites.txt': baseList })).includes('test:cichanges'), 'a suite new on the list runs');
+  const basePkg = JSON.stringify({ ...pkg, scripts: { ...pkg.scripts, 'test:cichanges': pkg.scripts['test:cichanges'] + ' && node scripts/x.js' } });
+  assert.ok(fast(['package.json'], io({}, { 'package.json': basePkg })).includes('test:cichanges'), 'a suite whose package.json line changed runs');
+  // a hostile name on the list is never output (the output is one line of plain names)
+  assert.ok(!fast(['scripts/test-suites.txt'], io({ 'scripts/test-suites.txt': listText + '\ntest:x\nsuites=y\n' }, { 'scripts/test-suites.txt': listText })).some((n) => /[=\s]/.test(n)), 'names are plain');
+}
+
 // the CLI on a throwaway repository whose last commit changes only docs: a pull request says code=false, every other event (main,
 // merge queue, nightly, by hand, none) runs everything. No network; git with argument arrays, no shell.
 {
@@ -298,12 +391,15 @@ assert.strictEqual(d(['scripts/test-usage.js']).macos, true, 'a test script runs
   git('add', '-A'); git('commit', '-q', '-m', 'base');
   fs.writeFileSync(path.join(repo, 'docs', 'a.md'), 'docs\n');
   git('add', '-A'); git('commit', '-q', '-m', 'docs only');
-  const run = (ev: string) => {
-    const outFile = path.join(tmp, `out-${ev || 'none'}`);
-    execFileSync(process.execPath, [path.join(repo, '.github', 'scripts', 'ci-changes.js')], { cwd: repo, env: { ...process.env, EVENT_NAME: ev, GITHUB_OUTPUT: outFile }, stdio: 'ignore', shell: false });
+  const run = (ev: string, args: string[] = []) => {
+    const outFile = path.join(tmp, `out-${ev || 'none'}-${args.length}`);
+    execFileSync(process.execPath, [path.join(repo, '.github', 'scripts', 'ci-changes.js'), ...args], { cwd: repo, env: { ...process.env, EVENT_NAME: ev, GITHUB_OUTPUT: outFile }, stdio: 'ignore', shell: false });
     return fs.readFileSync(outFile, 'utf8');
   };
   assert.strictEqual(run('pull_request'), 'code=false\nthemes=false\nui=false\nmacos=false\n', 'pull_request: the diff of HEAD^1..HEAD decides (docs only: nothing)');
+  // spec 117 FR-383: --suites writes only the fast lane's two outputs (this repo has no suite list: none picked); other events pick none
+  assert.strictEqual(run('pull_request', ['--suites']), 'fast=yes\nsuites=\n', '--suites: only fast and suites');
+  assert.strictEqual(run('push', ['--suites']), 'fast=yes\nsuites=\n', '--suites on a push: the lane runs on pull requests only');
   for (const ev of ['push', 'merge_group', 'schedule', 'workflow_dispatch', '']) assert.strictEqual(run(ev), 'code=true\nthemes=true\nui=true\nmacos=true\n', `${ev || 'no event'}: everything runs`);
   const ALL = 'code=true\nthemes=true\nui=true\nmacos=true\n';
   // finding 3: a file name with a newline and `::` is printed escaped, so it cannot start a workflow command (POSIX: Windows forbids the name)
@@ -315,9 +411,9 @@ assert.strictEqual(d(['scripts/test-usage.js']).macos, true, 'a test script runs
     assert.ok(stdout.includes('injected') && stdout.split(/\r?\n/).every((l) => !l.trim().startsWith('::') && !l.includes('##[') && !l.includes('::warning')), 'a hostile file name is printed escaped: no line starts a workflow command');
   }
   // finding 4: ci-changes.sh runs the BASE copy of the decision (HEAD^1), never the PR's; with no base copy everything runs
-  const bash = (cwd: string, ev: string) => {
+  const bash = (cwd: string, ev: string, args: string[] = []) => {
     const outFile = path.join(tmp, `sh-${Math.random().toString(36).slice(2)}`);
-    execFileSync('bash', [path.join('.github', 'scripts', 'ci-changes.sh')], { cwd, env: { ...process.env, EVENT_NAME: ev, GITHUB_OUTPUT: outFile }, stdio: 'ignore', shell: false });
+    execFileSync('bash', [path.join('.github', 'scripts', 'ci-changes.sh'), ...args], { cwd, env: { ...process.env, EVENT_NAME: ev, GITHUB_OUTPUT: outFile }, stdio: 'ignore', shell: false });
     return fs.readFileSync(outFile, 'utf8');
   };
   let haveBash = true;
@@ -327,6 +423,7 @@ assert.strictEqual(d(['scripts/test-usage.js']).macos, true, 'a test script runs
     fs.writeFileSync(path.join(repo, 'scripts', 'tool.js'), 'module.exports = 1;\n');
     git('add', '-A'); git('commit', '-q', '-m', 'a tooling script');
     assert.strictEqual(bash(repo, 'pull_request'), 'code=true\nthemes=false\nui=false\nmacos=true\n', 'the wrapper decides on the PR checkout (--root): a tooling script is not UI');
+    assert.strictEqual(bash(repo, 'pull_request', ['--suites']), 'fast=yes\nsuites=\n', 'the wrapper passes --suites to the base copy (spec 117 FR-383)');
     // a committed .ci-changes-base/ is cleared first: its package.json saying "type":"module" would make the copied decision fail
     fs.mkdirSync(path.join(repo, '.ci-changes-base'));
     fs.writeFileSync(path.join(repo, '.ci-changes-base', 'package.json'), '{"type":"module"}\n');
