@@ -52,11 +52,27 @@ export function problems(ci: string, ruleset: string): string[] {
     .filter((c) => c.startsWith('Build and test ('));
   if (required.length !== 3) out.push(`the ruleset lists ${required.length} required "Build and test (...)" checks, expected 3`);
 
-  // the parts: one job per OS, on that OS, 2 parts, each runs plain `npm test` with TEST_SHARD i/2 under the docs-only condition only
+  // nothing workflow-wide may change what every part runs
+  const top = (yaml as { load: (s: string) => unknown }).load(norm(ci)) as Record<string, unknown>;
+  if (top.env !== undefined) out.push('the workflow has top-level `env` (it reaches every npm test step)');
+  if (top.defaults !== undefined) out.push('the workflow has top-level `defaults` (a working-directory or shell changes what every part runs)');
+
+  // the parts: one job per OS, on that OS, 2 parts, each runs plain `npm test` with TEST_SHARD i/2 under the docs-only condition only; the steps that
+  // decide whether npm test runs (the `changes` step) and what it runs (its env) are pinned to the reviewed values (review of #2031: a `changes` step
+  // under `if: matrix.shard == 1` let part 2 skip npm test and go green)
+  const JOB_KEYS = ['name', 'if', 'runs-on', 'timeout-minutes', 'strategy', 'steps'];
+  const JOB_IF: Record<string, string> = { 'test-ubuntu': '${{!github.event.pull_request.draft}}', 'test-windows': '${{!github.event.pull_request.draft}}', 'test-macos': "${{!github.event.pull_request.draft&&github.event_name!='pull_request'&&github.event_name!='merge_group'}}" };
   for (const [id, { os: osName }] of Object.entries(PARTS)) {
     const j = jobs[id];
     if (!j) { out.push(`ci.yml has no job ${id} (the ${osName} parts of npm test)`); continue; }
     if (j['runs-on'] !== osName) out.push(`${id} runs on ${String(j['runs-on'])}, not ${osName}: a part named for an OS must run on it`);
+    for (const k of Object.keys(j)) if (!JOB_KEYS.includes(k)) out.push(`${id} has the job key "${k}", which this test does not allow (env, defaults, a container or continue-on-error change what the part runs or whether it counts)`);
+    if (flat(j.if) !== JOB_IF[id]) out.push(`${id}'s if is ${JSON.stringify(j.if)}, not the reviewed condition`);
+    const changes = (j.steps || []).filter((x) => x.id === 'changes');
+    const ch = changes[0];
+    const chOk = changes.length === 1 && JSON.stringify(Object.keys(ch).sort()) === JSON.stringify(['env', 'id', 'run', 'shell']) && ch.shell === 'bash' && ch.run === 'bash .github/scripts/ci-changes.sh'
+      && JSON.stringify(Object.keys((ch.env || {}) as object)) === '["EVENT_NAME"]' && flat((ch.env as Record<string, unknown>).EVENT_NAME) === '${{github.event_name}}';
+    if (!chOk) out.push(`${id}: the \`changes\` step is not the reviewed one (id changes, shell bash, env EVENT_NAME only, run bash .github/scripts/ci-changes.sh, no if): it decides whether npm test runs`);
     if (required.includes(String(j.name))) out.push(`${id} carries a required name (${String(j.name)}): only the summary may`);
     if (j['continue-on-error'] !== undefined) out.push(`${id} has continue-on-error`);
     if (Number(j['timeout-minutes']) > 25) out.push(`${id} raises the 25-minute limit (#1983: not the first step)`);
@@ -70,6 +86,12 @@ export function problems(ci: string, ruleset: string): string[] {
     if (tests.length !== 1 || flat(tests[0].run) !== 'npmtest') { out.push(`${id}: expected one step that runs plain \`npm test\`, found ${tests.map((s) => JSON.stringify(s.run)).join(', ') || 'none'}`); continue; }
     const t = tests[0];
     const at = (j.steps || []).indexOf(t);
+    for (const s0 of (j.steps || []).slice(0, at)) if (/GITHUB_ENV|GITHUB_PATH/.test(String(s0.run || ''))) out.push(`${id}: a step before npm test writes GITHUB_ENV or GITHUB_PATH (it can change what npm test runs)`);
+    for (const k of Object.keys(t)) if (!['if', 'env', 'run', 'name'].includes(k)) out.push(`${id}: the npm test step has the key "${k}", which this test does not allow`);
+    const envKeys = Object.keys((t.env || {}) as object).sort();
+    const wantKeys = id === 'test-ubuntu' ? ['PREREVIEW_REQUIRE_REAL_SDK', 'TEST_SHARD'] : ['TEST_SHARD'];
+    if (JSON.stringify(envKeys) !== JSON.stringify(wantKeys)) out.push(`${id}: the npm test step's env keys are ${JSON.stringify(envKeys)}, expected ${JSON.stringify(wantKeys)} (another key could change what runs)`);
+    if (id === 'test-ubuntu' && ((t.env || {}) as Record<string, unknown>).PREREVIEW_REQUIRE_REAL_SDK !== '1') out.push(`${id}: PREREVIEW_REQUIRE_REAL_SDK is not '1' (test:prereview would skip the real-SDK test)`);
     if (!(j.steps || []).slice(0, at).some((s) => s.run === 'npm run build')) out.push(`${id}: no \`npm run build\` before \`npm test\` (the suites read dist/; spec 008 FR-193)`);
     const env = (t.env || {}) as Record<string, unknown>;
     if (flat(env.TEST_SHARD) !== `\${{matrix.shard}}/${n}`) out.push(`${id}: TEST_SHARD is ${JSON.stringify(env.TEST_SHARD)}, expected "\${{ matrix.shard }}/${n}" (the matrix has ${n} parts): a part count that differs from the matrix drops suites`);
@@ -85,7 +107,8 @@ export function problems(ci: string, ruleset: string): string[] {
   const names = Array.isArray(oses) ? oses.map((o) => `Build and test (${String(o)})`) : [];
   for (const r of required) if (!names.includes(r)) out.push(`required check "${r}" has no summary job`);
   if (JSON.stringify([...(Array.isArray(bt.needs) ? bt.needs : [bt.needs])].sort()) !== JSON.stringify(Object.keys(PARTS).sort())) out.push(`the summary needs ${JSON.stringify(bt.needs)}, expected exactly the part jobs ${Object.keys(PARTS).join(', ')}`);
-  if (flat(bt.if) !== '${{!cancelled()&&!github.event.pull_request.draft}}') out.push(`the summary's if is ${JSON.stringify(bt.if)}, expected "\${{ !cancelled() && !github.event.pull_request.draft }}" (without !cancelled() a failed part SKIPS the summary, and GitHub counts a skipped required check as passing)`);
+  if (flat(bt.if) !== '${{always()&&!github.event.pull_request.draft}}') out.push(`the summary's if is ${JSON.stringify(bt.if)}, expected "\${{ always() && !github.event.pull_request.draft }}" (as FR-183's UI suite complete: without always() a failed or cancelled part can SKIP the summary, and GitHub counts a skipped required check as passing)`);
+  if (JSON.stringify(bt.permissions) !== '{}') out.push(`the summary's permissions are ${JSON.stringify(bt.permissions)}, expected {} (it reads only needs results)`);
   if (bt['continue-on-error'] !== undefined) out.push('the summary has continue-on-error');
   const steps = bt.steps || [];
   if (steps.length !== 1 || typeof steps[0].run !== 'string' || steps[0].shell !== 'bash') { out.push('the summary is not one bash step'); return out; }
@@ -126,9 +149,24 @@ function mutant(label: string, change: (ci: string) => string, expect: RegExp, n
   assert.ok(p.some((x) => expect.test(x)), `${label}: expected a problem matching ${expect}, got ${JSON.stringify(p)}`);
 }
 const swap = (text: string, from: string | RegExp, to: string) => { const t = text.replace(from, to); assert.notStrictEqual(t, text, `no "${String(from)}" in ci.yml to mutate`); return t; };
-const IF = 'if: ${{ !cancelled() && !github.event.pull_request.draft }}';
-mutant('the summary loses !cancelled()', (ci) => swap(ci, IF, 'if: ${{ !github.event.pull_request.draft }}'), /without !cancelled\(\) a failed part SKIPS the summary/);
-mutant('the summary uses always()', (ci) => swap(ci, IF, 'if: ${{ always() }}'), /the summary's if is/);
+const IF = 'if: ${{ always() && !github.event.pull_request.draft }}';
+mutant('the summary loses always()', (ci) => swap(ci, IF, 'if: ${{ !github.event.pull_request.draft }}'), /without always\(\) a failed or cancelled part can SKIP the summary/);
+mutant('the summary uses !cancelled()', (ci) => swap(ci, IF, 'if: ${{ !cancelled() && !github.event.pull_request.draft }}'), /the summary's if is/);
+mutant('the summary loses permissions: {}', (ci) => swap(ci, /(  build-test:[\s\S]*?)    permissions: \{\}\n/, '$1'), /the summary's permissions are undefined/);
+// pins of review #2031: the changes step, the npm test env, job and workflow env/defaults
+mutant('the Windows changes step only in part 1 (part 2 green with no suites)', (ci) => swap(ci, /(  test-windows:[\s\S]*?      - id: changes\n)/, '$1        if: matrix.shard == 1\n'), /test-windows: the `changes` step is not the reviewed one/);
+mutant('the changes step writes code=false', (ci) => swap(ci, /(  test-macos:[\s\S]*?)run: bash \.github\/scripts\/ci-changes\.sh/, '$1run: echo code=false >> "$GITHUB_OUTPUT"'), /test-macos: the `changes` step is not the reviewed one/);
+mutant('the changes step gets another env key', (ci) => swap(ci, /(  test-ubuntu:[\s\S]*?          EVENT_NAME: \$\{\{ github\.event_name \}\}\n)/, '$1          FORCE: x\n'), /test-ubuntu: the `changes` step is not the reviewed one/);
+mutant('an extra env key on the npm test step', (ci) => swap(ci, /(  test-windows:[\s\S]*?          TEST_SHARD: [^\n]*\n)/, '$1          NODE_OPTIONS: --require ./x.js\n'), /test-windows: the npm test step's env keys are/);
+mutant('Ubuntu loses PREREVIEW_REQUIRE_REAL_SDK', (ci) => swap(ci, /          # spec 103: on Linux test:prereview[^\n]*\n          PREREVIEW_REQUIRE_REAL_SDK: '1'\n/, ''), /test-ubuntu: the npm test step's env keys are \["TEST_SHARD"\]/);
+mutant('PREREVIEW_REQUIRE_REAL_SDK off', (ci) => swap(ci, "PREREVIEW_REQUIRE_REAL_SDK: '1'", "PREREVIEW_REQUIRE_REAL_SDK: ''"), /PREREVIEW_REQUIRE_REAL_SDK is not '1'/);
+mutant('job-level env on a part', (ci) => swap(ci, /(  test-windows:\n    name: [^\n]*\n)/, '$1    env:\n      NODE_OPTIONS: --require ./x.js\n'), /test-windows has the job key "env"/);
+mutant('job-level defaults on a part', (ci) => swap(ci, /(  test-macos:\n    name: [^\n]*\n)/, '$1    defaults:\n      run:\n        working-directory: scripts\n'), /test-macos has the job key "defaults"/);
+mutant('workflow-level env', (ci) => swap(ci, /^jobs:\n/m, 'env:\n  NODE_OPTIONS: --require ./x.js\njobs:\n'), /top-level `env`/);
+mutant('workflow-level defaults', (ci) => swap(ci, /^jobs:\n/m, 'defaults:\n  run:\n    working-directory: scripts\njobs:\n'), /top-level `defaults`/);
+mutant('a step before npm test writes GITHUB_ENV', (ci) => swap(ci, /(  test-windows:[\s\S]*?)(      - if: steps\.changes\.outputs\.code == 'true'\n        run: npm run build\n)/, '$1      - run: echo NODE_OPTIONS=x >> "$GITHUB_ENV"\n$2'), /test-windows: a step before npm test writes GITHUB_ENV/);
+mutant('the npm test step in another folder', (ci) => swap(ci, /(  test-windows:[\s\S]*?)(        run: npm test\n)/, '$1        working-directory: scripts\n$2'), /test-windows: the npm test step has the key "working-directory"/);
+mutant('a part job condition changed', (ci) => swap(ci, /(  test-ubuntu:\n    name: [^\n]*\n    if: )[^\n]*\n/, "$1${{ github.event_name == 'push' }}\n"), /test-ubuntu's if is/);
 mutant('the summary ignores skipped parts', (ci) => swap(ci, 'if [ "$result" != success ]; then', 'if [ "$result" != success ] && [ "$result" != skipped ]; then'), /on push passes when its parts are "skipped"/, true);
 mutant('the summary ignores cancelled parts', (ci) => swap(ci, 'if [ "$result" != success ]; then', 'if [ "$result" = failure ]; then'), /passes when its parts are "cancelled"/, true);
 mutant('the macOS skip also on push', (ci) => swap(ci, 'if [ "$OS" = macos-latest ] && { [ "$EVENT_NAME" = pull_request ] || [ "$EVENT_NAME" = merge_group ]; }; then', 'if [ "$OS" = macos-latest ]; then'), /macos-latest on push passes when its parts are "skipped"/, true);
@@ -150,4 +188,4 @@ mutant('a part raises the limit', (ci) => swap(ci, /(  test-windows:[\s\S]*?time
 mutant('a part without the build', (ci) => swap(ci, /(  test-macos:[\s\S]*?)run: npm run build\n/, '$1run: echo no build\n'), /test-macos: no `npm run build` before `npm test`/);
 mutant('a part continue-on-error', (ci) => swap(ci, /(  test-windows:\n)/, '$1    continue-on-error: true\n'), /test-windows has continue-on-error/);
 
-console.log(`ci shards: ok (3 OSes x 2 parts, summary script ${BASH ? 'run for every result and event' : 'NOT run on Windows (no bash assumed); the wiring was checked'}, 22 mutants)`);
+console.log(`ci shards: ok (3 OSes x 2 parts, summary script ${BASH ? 'run for every result and event' : 'NOT run on Windows (no bash assumed); the wiring was checked'}, 38 mutants)`);

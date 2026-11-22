@@ -164,14 +164,16 @@ jobs:
         run: npm test
 
   # The required checks "Build and test (ubuntu-latest | windows-latest | macos-latest)" (spec 117 FR-018): a short Linux job per OS that passes
-  # only when every part of that OS passed. `!cancelled()` so a failed part cannot skip it (GitHub counts a skipped required check as passing); a
-  # cancelled or skipped part fails it, except the macOS parts on pull requests and merge queue entries, which FR-106 skips on purpose.
+  # only when every part of that OS passed. `always()` (as FR-183's "UI suite complete") so a failed or cancelled part cannot skip it (GitHub counts a
+  # skipped required check as passing); a failed, cancelled or skipped part fails it, except the macOS parts on pull requests and merge queue entries,
+  # which FR-106 skips on purpose. permissions: {}: it reads only the needs results.
   build-test:
     name: Build and test (${{ matrix.os }})
     needs: [test-ubuntu, test-windows, test-macos]
-    if: ${{ !cancelled() && !github.event.pull_request.draft }}
+    if: ${{ always() && !github.event.pull_request.draft }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    permissions: {}
     strategy:
       fail-fast: false
       matrix:
