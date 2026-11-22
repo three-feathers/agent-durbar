@@ -1692,7 +1692,23 @@ function growSearch(sizing,aw,ah,lo){
   GROW=0; setGrow(probe,0);
   return best;
 }
-let layoutKey='', layout=null, FIT_KEY='';
+let layoutKey='', layout=null, FIT_KEY='', layoutShape='';
+/* spec 001 delta 2026-11-22 (issue 2024): the layout key without the desks' order inside each room (the rooms keep theirs): which desks, not where */
+function layoutShapeKey(key){
+  const k=JSON.parse(key), rooms=k[k.length-1], byId=(x,y)=>x[0]<y[0]?-1:x[0]>y[0]?1:0;
+  k[k.length-1]=rooms.map(([id,mains,rolled,shut])=>[id,[...mains].sort(byId),[...rolled].sort(byId),shut]);
+  return JSON.stringify(k);
+}
+/* one probe of a layout the search chose, with today's desk order: it fits the floor and every header holds its parts without giving way (headsFit, the search's strict test) */
+function layoutHolds(sizing,aw,ah,L){
+  const probe=$('probe'); probe.style.width=aw+'px';
+  HCAP=L.hcap; HBOOST=new Map(L.boost); LIVE_SIDE=!!L.side; GROW=L.grow?1:0; HX=L.hx||0;
+  probe.dataset.d=L.d; probe.style.height='auto'; setGrow(probe,L.grow||0);
+  probeSet(probe,stageHTML(sizing,L.d,aw,L.cap));
+  const ok=probe.scrollHeight<=ah+1&&probe.scrollWidth<=aw+1&&headsFit(probe);
+  probe.innerHTML=''; probePrev=null; LIVE_SIDE=false; GROW=0; HX=0; setGrow(probe,0);
+  return ok;
+}
 let SIM_QUIET_HEADS=new Set(); /* spec 001 FR-023 (2026-10-23): simulator only (__durbarSimUi.quietHeads(['siren','aiu'])): room headers drawn without those parts, so a driver can lay the office out first and add them after, as a late siren or cost does */
 let HEAD_RETRY=''; /* the layout key and header contents of the last relayout made because a header no longer held its parts */
 /* spec 001 FR-026: what a new user needs before the first folder: sign in once (spec 052 FR-056: named by the AI account, not the app), add a folder (Read-only), or look around in the demo */
@@ -2089,8 +2105,13 @@ function renderOffice(){
   OPS.renders++;
   const sizing=lastSizing=sizingModel(model); /* what chooseLayout is given (the hook below reads it) */
   const key=JSON.stringify([aw,ah,FORCE_DENSITY,liveOn(),THEME.themeIdForCache(),lobbyOn(),floorTagsOn()&&floorsOnList().map(f=>f.id+':'+f.name),curFloorId(),allFloorsView(),sizing.map(m=>[m.r.id,m.mains.map(a=>[a.id,helpersOf(a).length,!!ui.expanded[a.id]]),(m.rolled||[]).map(x=>[x.a.id,x.k]),!!ui.expanded['shut:'+m.r.id]])]);
-  const reused=key===layoutKey&&!!layout; /* spec 097 FR-184: the last layout search still holds (same shape, width and height) */
+  let reused=key===layoutKey&&!!layout; /* spec 097 FR-184: the last layout search still holds (same shape, width and height) */
+  /* spec 001 delta 2026-11-22 (issue 2024): the same desks in another order (a desk that waits for you moves to the front of its room, and back) is one
+     probe of the layout it has, not a whole search: kept when it still fits with its headers holding, searched as before when not */
+  const shape=layoutShapeKey(key);
+  if(!reused&&layoutKey&&layout&&layout.fit&&shape===layoutShape&&layoutHolds(sizing,aw,ah,layout)){reused=true;layoutKey=key;}
   if(!reused){layout=chooseLayout(sizing,aw,ah);layoutKey=key;}
+  layoutShape=shape;
   HCAP=layout.hcap; HBOOST=new Map(layout.boost); LIVE_SIDE=!!layout.side; GROW=layout.grow?1:0; HX=layout.hx||0; /* a cached layout skips chooseLayout: restore the helper level too */
   const parts=stageParts(model,layout.d,aw,layout.cap);
   const fresh=stage.dataset.d!==layout.d||!!stage.querySelector('.empty');
@@ -2386,7 +2407,8 @@ function renderConvResults(){
     const on=CS.sort&&CS.sort.key===k,dir=on?(CS.sort.dir==='asc'?'ascending':'descending'):'none';
     return `<span role="columnheader" aria-sort="${dir}"${k==='folder'?' class="lfold"':k==='ago'?' class="num"':''}><button type="button" class="lsort" data-cssort="${k}" data-csf="sort-${k}" title="Sort the results by ${esc(t.toLowerCase())}">${esc(t)}<span class="sarr" aria-hidden="true">${on?(CS.sort.dir==='asc'?'▲':'▼'):'↕'}</span></button></span>`;}).join('');
   const scanning=!!st&&!st.done;
-  const state=st?`<div class="cs-state"><span class="cs-st">${esc(CSU.stateText(st))}</span>${scanning&&CS.id?'<button class="btn sm" type="button" id="csStop" data-csf="stop">Stop</button>':''}</div>`:'';
+  const spin='<svg class="cs-spin" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><path d="M8 2.2a5.8 5.8 0 1 1-5.8 5.8"/></svg>'; /* spec 095 FR-053: the running sign, from the start to the end of the scan */
+  const state=st?`<div class="cs-state${scanning?' running':''}">${scanning?spin:''}<span class="cs-st">${esc(CSU.stateText(st))}</span>${scanning&&CS.id?'<button class="btn sm" type="button" id="csStop" data-csf="stop">Stop</button>':''}</div>`:'';
   const notes=st&&st.done?CSU.notesText(st):'';
   const ex=(h,k)=>h.excerpts&&h.excerpts.length?`<div class="cs-exs">${h.excerpts.map((x,i)=>`<button type="button" data-csk="${esc(k)}" data-csx="${i}" data-csf="${esc(k)}#${i}" title="${h.group==='office'?'Open the chat at this message':h.adapter==='vscode'?'View this chat at this message':'Resume this session at this message'}">${CSU.excerptHTML(x,esc)}</button>`).join('')}${CSU.moreOf(h)?`<span class="cs-more">+${CSU.moreOf(h)} more</span>`:''}</div>`:'';
   const officeRow=h=>{
@@ -2400,7 +2422,7 @@ function renderConvResults(){
     return `<div class="cs-hit" data-csk="${esc(k)}"><div class="lrow cs-prow"><span class="lname"><span class="lnm" title="${esc(h.title)}">${CSU.markedHTML(h.title,h.titleMarks,esc)}</span></span><span class="lcell" title="${esc(h.app)}">${esc(h.app)}</span><span class="lcell lrole">${view?'VS Code chat':'Earlier session'}</span><span class="lcell mono lfold" title="${esc(h.folderName)}">${esc(h.folderName)}</span><span class="lcell"></span><span class="lcell num"${agoL?` title="Last active ${esc(agoL)}"`:''}>${esc(ago)}</span><span class="lcell num"></span><span><button class="btn sm" type="button" data-csact="1" data-csk="${esc(k)}" data-csnav="1" data-csf="${esc(k)}" aria-label="${esc(act+': '+CSU.accName(h))}">${act}</button></span></div>${ex(h,k)}</div>`;};
   const group=(g,title,list,row)=>list.length?`<div class="cs-ghead" role="heading" aria-level="3">${esc(title)} <span>· ${list.length===1?'1 session':list.length+' sessions'}</span></div>${list.map(row).join('')}`:'';
   const none=st&&st.done&&!CSU.count(st)&&!st.failed?`<div class="empty">No conversation matches “${esc(CS.q.trim())}”.</div>`:'';
-  L.innerHTML=`<div class="list-wrap cs-wrap" role="group" aria-label="Search results" data-sort="${CS.sort?CS.sort.key:''}"><div class="lrow lhead" role="row">${head}</div>${state}${notes?`<div class="cs-notes">${esc(notes)}</div>`:''}${group('office','In the office',view.office,officeRow)}${group('earlier','Earlier sessions',view.earlier,earlierRow)}${none}</div>`;
+  L.innerHTML=`<div class="list-wrap cs-wrap" role="group" aria-label="Search results"${scanning?' aria-busy="true"':''} data-sort="${CS.sort?CS.sort.key:''}"><div class="lrow lhead" role="row">${head}</div>${state}${notes?`<div class="cs-notes">${esc(notes)}</div>`:''}${group('office','In the office',view.office,officeRow)}${group('earlier','Earlier sessions',view.earlier,earlierRow)}${none}</div>`;
   L.scrollTop=scrollTop;
   if(fk){const n=[...L.querySelectorAll('[data-csf]')].find(x=>x.dataset.csf===fk);if(n&&document.activeElement!==n)n.focus({preventScroll:true});}
 }
