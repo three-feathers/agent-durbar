@@ -2153,7 +2153,7 @@ Issue #1930: on a local Linux xvfb run of `main` the hover-parking step of `chec
 - **The owner's answer (FR-068).** Vikram, Telegram, 2026-11-20 10:15 UTC, option 1: "does not look like a real person", on the contact sheet of the six clay-toy helper kids (6 kids x 7 states, the 42 pictures on `main`, nothing redrawn). Each kid's section of `src/renderer/realoffice/worlds/photo/ASSETS.md` now has `likeness-check` with that answer in place of `owner-likeness-look: pending (Vikram)`, which the kids had carried since 2026-11-12 while the Photo office was offered.
 - **Why now.** Spec 102 T396 (PR #1957, review by Paco) adds a guard to `test:realoffice-assets`: a world that is offered may not ship a sheet with `owner-likeness-look: pending`. It found these six kids; this change records the answer so the guard passes. No picture, number or other text changes.
 
-## Changes 2026-11-22: a lobby chip keeps its whole name and its place (bugs, issues #2012 and #2013; T431; amends FR-023..FR-027 and FR-024; no new FR)
+## Changes 2026-11-22: a lobby chip keeps its whole name and its place (bugs, issues #2012 and #2013; T440; amends FR-023..FR-027 and FR-024; no new FR)
 
 **Defect.** Found by a visual check of `main` at `722a48a8e` (simulator, 15 agents, Linux, xvfb). (A, #2012) Photo office at 1280x800: Rosa's wall chip reads "Ro…" though "Rosa" fits (it is two characters shorter). (B, #2013) Cave, both sizes: Omar's chip lies on the band's bottom edge, which is the folder frame line, away from the Bank, and no figure stands at the Bank.
 
