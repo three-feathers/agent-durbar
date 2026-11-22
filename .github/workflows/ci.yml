@@ -202,9 +202,9 @@ jobs:
             echo "FAILED: the macOS parts should be skipped here, but their result is: $result" | tee -a "$GITHUB_STEP_SUMMARY"
             exit 1
           fi
-          echo "$OS: npm test parts: ${result:-none}" | tee -a "$GITHUB_STEP_SUMMARY"
+          echo "$OS: test parts: ${result:-none}" | tee -a "$GITHUB_STEP_SUMMARY"
           if [ "$result" != success ]; then
-            echo "FAILED: a part of npm test on $OS failed, was cancelled or was skipped (${result:-none}); every suite must pass on every OS" | tee -a "$GITHUB_STEP_SUMMARY"
+            echo "FAILED: a test part on $OS failed, was cancelled or was skipped (${result:-none}); every suite must pass on every OS" | tee -a "$GITHUB_STEP_SUMMARY"
             exit 1
           fi
 

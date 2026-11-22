@@ -9,9 +9,8 @@
  */
 import * as assert from 'assert';
 import * as fs from 'fs';
-import * as os from 'os';
 import * as path from 'path';
-import { spawnSync } from 'child_process';
+import { canRun, summaryPasses } from './ci-summary-probe';
 
 const ROOT = path.join(__dirname, '..', '..');
 const norm = (t: string) => t.replace(/\r\n?/g, '\n');
@@ -29,18 +28,7 @@ const PARTS: Record<string, { os: string; key: string }> = {
 };
 const flat = (v: unknown) => String(v).replace(/\s+/g, '');
 const RESULTS = ['success', 'failure', 'cancelled', 'skipped', ''];
-const BASH = process.platform !== 'win32';
-
-/** Run the summary's script for one OS, event and set of part results; true when it passes (exit 0). */
-function summaryPasses(script: string, osName: string, event: string, results: Record<string, string>): boolean {
-  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'ci-shards-'));
-  try {
-    const env = { PATH: process.env.PATH || '', OS: osName, EVENT_NAME: event, GITHUB_STEP_SUMMARY: path.join(tmp, 'summary.md'), ...results };
-    const r = spawnSync('bash', ['-c', script], { env, encoding: 'utf8' });
-    assert.ok(r.status !== null, `bash did not run the summary script: ${String(r.error)}`);
-    return r.status === 0;
-  } finally { fs.rmSync(tmp, { recursive: true, force: true }); }
-}
+const BASH = canRun;
 
 /** Every way the wiring is wrong, as sentences; empty when it holds. */
 export function problems(ci: string, ruleset: string): string[] {

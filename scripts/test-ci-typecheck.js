@@ -8,12 +8,14 @@ const ROOT = path.join(__dirname, '..');
 const project = (cmd) => { const m = /(?:^|&&\s*)tsc\b[^&]*?\s-p\s+(\S+)/.exec(cmd); return m && m[1]; };
 
 // the jobs of ci.yml that run `npm test` (spec 117 FR-018: the "Build and test (<os>) part i/2" jobs; the summary runs no suites), each from its job key to the next
+const PART_JOBS = ['test-ubuntu', 'test-windows', 'test-macos'];
 const testJobs = (text) => {
   const body = text.slice(text.search(/^jobs:/m));
   const out = [];
   const re = /^ {2}([\w-]+):\n([\s\S]*?)(?=^ {2}[\w-]+:\n|(?![\s\S]))/gm;
-  for (let m = re.exec(body); m; m = re.exec(body)) if (/^\s+run: npm test\s*$/m.test(m[2])) out.push([m[1], m[2]]);
-  assert.ok(out.length >= 1, 'ci.yml has jobs that run npm test');
+  for (let m = re.exec(body); m; m = re.exec(body)) if (/^\s+(?:- )?run: npm test\s*$/m.test(m[2])) out.push([m[1], m[2]]);
+  // exactly the three part jobs (review of #2031): a part that stopped running `npm test`, or a new job that runs it, is a change this check must see
+  assert.deepStrictEqual(out.map(([id]) => id), PART_JOBS, `ci.yml: the jobs that run npm test are ${JSON.stringify(out.map(([id]) => id))}, expected exactly ${JSON.stringify(PART_JOBS)}`);
   return out;
 };
 function check(pkg, workflows) {
@@ -48,7 +50,8 @@ fails(() => check(pkg, { 'ci.yml': ci.replace(/run: npm run build\s*$/gm, 'run: 
 const inJob = (id, from, to) => { const i = ci.indexOf(`\n  ${id}:\n`); assert.ok(i >= 0, `ci.yml has ${id}`); const j = ci.indexOf(from, i); assert.ok(j > i, `${id} has ${from}`); return ci.slice(0, j) + to + ci.slice(j + from.length); };
 fails(() => check(pkg, { 'ci.yml': inJob('test-windows', '        run: npm run build\n', '        run: npm run build\n      - run: npm run typecheck\n') }), /ci\.yml test-windows runs typecheck and build/);
 fails(() => check(pkg, { 'ci.yml': inJob('test-macos', '        run: npm run build\n', '        run: echo no build\n') }), /ci\.yml test-macos still runs npm run build/);
-assert.deepStrictEqual(testJobs(ci).map(([id]) => id), ['test-ubuntu', 'test-windows', 'test-macos'], 'the three part jobs are the ones checked');
+fails(() => check(pkg, { 'ci.yml': inJob('test-macos', '        run: npm test\n', '        run: echo skipped\n') }), /the jobs that run npm test are \["test-ubuntu","test-windows"\], expected exactly/);
+fails(() => check(pkg, { 'ci.yml': ci + '\n  extra:\n    runs-on: ubuntu-latest\n    steps:\n      - run: npm test\n' }), /expected exactly \["test-ubuntu","test-windows","test-macos"\]/);
 fails(() => check(pkg, { 'ci.yml': ci.replace(/( *)- if: (.*)\n( *)run: npm run build/, '$1- run: npm run typecheck\n$1- if: $2\n$3run: npm run build') }), /ci\.yml test-ubuntu runs typecheck and build/);
 fails(() => check(pkg, { 'release.yml': rel.replace(/run: npm run build\s*$/m, 'run: npm run typecheck') }), /release\.yml still runs npm run build/);
 fails(() => check(pkg, { 'release.yml': rel.replace(/( *)- run: npm run build\s*$/m, '$1- run: npm run typecheck\n$1- run: npm run build') }), /release\.yml runs typecheck and build/);
