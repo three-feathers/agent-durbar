@@ -1,22 +1,27 @@
 #!/usr/bin/env node
 /*
- * Spec 021 FR-100 (issue #1992): `npm run worktrees:clean` lists, and with `--apply` removes, the linked git worktrees of THIS repo that are
- * finished. Every PR leaves one worktree (a node_modules copy, 200-900 MB); on 2026-11-22 35 of them filled a disk to 94%.
+ * Spec 021 FR-100 (issue #1992): `npm run worktrees:clean -- --apply` lists, and with `--apply` removes, the linked git worktrees of THIS repo
+ * that are finished. Every PR leaves one worktree (a node_modules copy, 200-900 MB); on 2026-11-22 35 of them filled a disk to 94%.
+ * NOTE: through npm the flag needs `--`: `npm run worktrees:clean -- --apply` (without it npm eats the flag; this script then warns loudly and stays a dry run).
  *
- * DRY RUN BY DEFAULT: without `--apply` nothing is changed. For each linked worktree (never the main checkout, never the one this runs in):
- *   REMOVABLE  only when ALL hold: it is on a branch (not a detached HEAD, not locked); that branch's PR is MERGED or CLOSED (no PR, an
- *              OPEN PR, or a state that could not be read is never removable: "needs a look"); the working tree has no change at all
- *              (no tracked change, staged change or untracked file; ignored files such as node_modules do not count); and it holds no
- *              commit origin lacks (`git log origin/<branch>..HEAD` is empty; a branch origin no longer has is accepted only when its
- *              PR is MERGED, the branch having been deleted on merge).
- *   Removal    `git worktree remove <path>` WITHOUT --force, then `git branch -d <branch>` (never -D), then `git worktree prune`.
- *   A finished (merged or closed PR) worktree that is dirty is listed "finished but dirty: N files" and NEVER deleted.
- * It reports the disk each worktree uses and the total reclaimable. git runs through execFile with argument arrays (no shell, no user
- * string in a command line); the PR state comes from `gh pr list --head <branch> --state all --json state` (gh missing or failing = unknown).
+ * DRY RUN BY DEFAULT: without `--apply` nothing is changed. For each linked worktree (never the main checkout, never the one this runs in)
+ * it is REMOVABLE only when ALL hold; anything else is "needs a look" or "finished but dirty" and is never deleted:
+ *   - it is on a branch (not detached, not locked, not bare), its directory exists, and no other registered worktree or `.git` lives inside it;
+ *   - no merge, rebase, cherry-pick, revert or bisect is in progress (MERGE_HEAD, REBASE_HEAD, rebase-merge, rebase-apply, CHERRY_PICK_HEAD,
+ *     REVERT_HEAD, sequencer, BISECT_LOG; found with `git rev-parse --git-path`);
+ *   - the branch has a PR in THIS repository (not a fork) whose head commit is the worktree's HEAD or a descendant of it (the branch name alone
+ *     proves nothing: names get reused) and that PR is MERGED or CLOSED (no PR, an open PR, gh missing or failing = needs a look);
+ *   - the working tree has no change at all: no tracked change, staged change or untracked file, and no IGNORED file except rebuildable ones
+ *     (node_modules, dist, dist-scripts, out, release, build, _site, *.tsbuildinfo): a `.env`, local settings or notes that .gitignore hides count as dirty;
+ *   - the branch's upstream is `origin/<same name>`, and no commit is missing on origin (`git log origin/<branch>..HEAD` is empty; an upstream
+ *     origin no longer has is accepted only for a MERGED PR whose head matched, the branch having been deleted on merge).
+ *   Removal: the state is checked AGAIN right before each removal; then `git worktree remove <path>` WITHOUT --force, then `git branch -d <branch>`
+ *   (never -D), then `git worktree prune`.
+ * It reports the disk each worktree uses and the total reclaimable. git runs through execFile with argument arrays (no shell, no user string in a
+ * command line); the PR comes from `gh pr list --head <branch> --state all --json state,headRefOid,isCrossRepository`.
  *
- * `--tmp` (list only, never deletes, even with --apply): stale agent temp directories directly under os.tmpdir() whose names match
- * `durbar-ui-shots-*` or `durbar-site-*`, a real directory (not a link), not changed for 2 days, and not a registered worktree.
- * `tmp.*` is NOT included: nothing here proves it is ours. Delete what it lists by hand after looking.
+ * `--tmp` (list only, never deletes, even with --apply): stale agent temp directories directly under os.tmpdir() named `durbar-ui-shots-*` or
+ * `durbar-site-*`, real directories, not changed for 2 days, not a registered worktree. `tmp.*` is NOT included: nothing proves it is ours.
  *
  *   node scripts/worktrees-clean.js [--apply] [--tmp] [--root D]     --root D: the repo to read (default: this one)
  * Exit 0 on a finished run, 2 on usage or when git cannot be read.
@@ -30,6 +35,9 @@ const { execFileSync } = require('child_process');
 const GIT_TIMEOUT_MS = 60000;
 const TMP_PATTERNS = [/^durbar-ui-shots-[A-Za-z0-9._-]+$/, /^durbar-site-[A-Za-z0-9._-]+$/];
 const TMP_MAX_AGE_MS = 2 * 24 * 3600 * 1000;
+// Ignored paths that a build recreates. Anything else ignored (.env, local settings, notes) is the owner's data.
+const REBUILDABLE = new Set(['node_modules', 'dist', 'dist-scripts', 'out', 'release', 'build', '_site']);
+const IN_PROGRESS = ['MERGE_HEAD', 'REBASE_HEAD', 'CHERRY_PICK_HEAD', 'REVERT_HEAD', 'BISECT_LOG', 'rebase-merge', 'rebase-apply', 'sequencer'];
 
 function git(args, cwd) {
   return execFileSync('git', args, { cwd, encoding: 'utf8', timeout: GIT_TIMEOUT_MS, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'], maxBuffer: 64 * 1024 * 1024 });
@@ -39,7 +47,7 @@ function tryGit(args, cwd) {
   try { return { ok: true, out: git(args, cwd) }; } catch (e) { return { ok: false, out: '', err: String((e && e.stderr) || e.message || e).split('\n')[0] }; }
 }
 
-/** `git worktree list --porcelain` text -> [{ path, head, branch (short name or null), detached, locked, prunable }]. The first one is the main checkout. */
+/** `git worktree list --porcelain` text -> [{ path, head, branch (short name or null), detached, locked, prunable, bare }]. The first one is the main checkout. */
 function parseWorktrees(text) {
   const list = [];
   for (const block of text.split(/\r?\n\r?\n/)) {
@@ -78,42 +86,104 @@ function dirSize(dir) {
   return total;
 }
 
-/** The PR state of a branch through gh: MERGED, CLOSED, OPEN, NONE (no PR) or UNKNOWN (gh missing or failed). */
-function ghPrState(branch, cwd) {
+/** A `.git` entry below dir (not dir's own), looked for up to `depth` levels, skipping node_modules and the .git of dir itself. */
+function findNestedGit(dir, depth) {
+  let entries;
+  try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { return null; }
+  for (const e of entries) {
+    if (e.name === '.git') { if (depth < 4) return path.join(dir, e.name); continue; }
+    if (e.name === 'node_modules' || !e.isDirectory()) continue;
+    if (depth <= 1) continue;
+    const hit = findNestedGit(path.join(dir, e.name), depth - 1);
+    if (hit) return hit;
+  }
+  return null;
+}
+
+/**
+ * The PR state of a worktree's branch through gh: MERGED, CLOSED, OPEN, NONE (no PR in this repository whose head is this HEAD or a descendant)
+ * or UNKNOWN (gh missing, failed or unreadable). Only PRs of THIS repository count (a fork PR can share the branch name) and only those whose
+ * headRefOid is the worktree's HEAD, or a descendant of it (the PR got more commits): a reused branch name does not match.
+ */
+function ghPrState(branch, headSha, cwd) {
   let out;
   try {
-    out = execFileSync('gh', ['pr', 'list', '--head', branch, '--state', 'all', '--json', 'state', '--limit', '30'], { cwd, encoding: 'utf8', timeout: GIT_TIMEOUT_MS, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
+    out = execFileSync('gh', ['pr', 'list', '--head', branch, '--state', 'all', '--json', 'state,headRefOid,isCrossRepository', '--limit', '30'], { cwd, encoding: 'utf8', timeout: GIT_TIMEOUT_MS, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
   } catch { return 'UNKNOWN'; }
   let arr;
   try { arr = JSON.parse(out); } catch { return 'UNKNOWN'; }
   if (!Array.isArray(arr)) return 'UNKNOWN';
-  if (arr.length === 0) return 'NONE';
-  const states = arr.map((x) => (x && typeof x.state === 'string' ? x.state : 'UNKNOWN'));
-  if (states.includes('OPEN')) return 'OPEN';
-  if (states.every((s) => s === 'MERGED' || s === 'CLOSED')) return states.includes('MERGED') ? 'MERGED' : 'CLOSED';
+  const mine = [];
+  for (const x of arr) {
+    if (!x || typeof x.state !== 'string' || typeof x.headRefOid !== 'string' || x.isCrossRepository !== false) continue;
+    if (x.headRefOid === headSha || tryGit(['merge-base', '--is-ancestor', headSha, x.headRefOid], cwd).ok) mine.push(x.state);
+  }
+  if (mine.length === 0) return 'NONE';
+  if (mine.includes('OPEN')) return 'OPEN';
+  if (mine.every((s) => s === 'MERGED' || s === 'CLOSED')) return mine.includes('MERGED') ? 'MERGED' : 'CLOSED';
   return 'UNKNOWN';
 }
 
+function realOr(p) { try { return fs.realpathSync(p); } catch { return path.resolve(p); } }
+function inside(child, parent) {
+  const rel = path.relative(realOr(parent), realOr(child));
+  return rel === '' || (!rel.startsWith('..') && !path.isAbsolute(rel));
+}
+
+/** Ignored entries of a `git status --porcelain --ignored=matching` that are not rebuildable. */
+function ignoredData(statusOut) {
+  const keep = [];
+  for (const l of statusOut.split(/\r?\n/)) {
+    if (!l.startsWith('!! ')) continue;
+    const p = l.slice(3).replace(/^"|"$/g, '');
+    const segs = p.split('/').filter(Boolean);
+    if (segs.some((s) => REBUILDABLE.has(s)) || /\.tsbuildinfo$/.test(p)) continue;
+    keep.push(p);
+  }
+  return keep;
+}
+
 /**
- * Decide one worktree. Returns { verdict: 'removable' | 'dirty' | 'look', why, files }.
- * 'dirty' = finished but has changes (never deleted); 'look' = anything else that is not removable.
+ * Decide one worktree. Returns { verdict: 'removable' | 'dirty' | 'look', why }.
+ * ctx: { prState(branch, headSha), tryGit(args, cwd), mainPath, all (every registered worktree) }.
+ * 'dirty' = finished but holds changes or non-rebuildable ignored files (never deleted); 'look' = anything else that is not removable.
  */
 function classify(wt, ctx) {
+  const tg = ctx.tryGit || tryGit;
+  const mainPath = ctx.mainPath || wt.path;
   if (wt.bare) return { verdict: 'look', why: 'bare repository' };
   if (wt.locked) return { verdict: 'look', why: 'locked' };
   if (wt.detached || !wt.branch) return { verdict: 'look', why: 'detached HEAD' };
   if (!fs.existsSync(wt.path)) return { verdict: 'look', why: 'directory missing (git worktree prune clears the record)' };
-  const state = ctx.prState(wt.branch);
-  if (state === 'NONE') return { verdict: 'look', why: 'branch has no PR' };
+  const inner = (ctx.all || []).find((o) => o.path !== wt.path && inside(o.path, wt.path));
+  if (inner) return { verdict: 'look', why: 'contains worktree ' + inner.path };
+  const nested = findNestedGit(wt.path, 4);
+  if (nested) return { verdict: 'look', why: 'contains a nested .git: ' + nested };
+  for (const name of IN_PROGRESS) {
+    const gp = tg(['rev-parse', '--git-path', name], wt.path);
+    if (!gp.ok) return { verdict: 'look', why: 'git rev-parse failed' };
+    const p = path.resolve(wt.path, gp.out.trim());
+    if (fs.existsSync(p)) return { verdict: 'look', why: 'a ' + name + ' is in progress' };
+  }
+  const state = ctx.prState(wt.branch, wt.head);
+  if (state === 'NONE') return { verdict: 'look', why: 'no PR of this repository matches this branch and HEAD' };
   if (state === 'OPEN') return { verdict: 'look', why: 'PR is open' };
   if (state !== 'MERGED' && state !== 'CLOSED') return { verdict: 'look', why: 'PR state unknown' };
-  const st = tryGit(['status', '--porcelain', '--untracked-files=all'], wt.path);
+  const st = tg(['status', '--porcelain', '--untracked-files=all', '--ignored=matching'], wt.path);
   if (!st.ok) return { verdict: 'look', why: 'git status failed' };
-  const files = st.out.split(/\r?\n/).filter((l) => l.length > 0).length;
-  if (files > 0) return { verdict: 'dirty', why: 'finished but dirty: ' + files + ' file' + (files === 1 ? '' : 's'), files };
-  const onOrigin = tryGit(['rev-parse', '--verify', '--quiet', 'refs/remotes/origin/' + wt.branch], wt.path).ok;
+  const lines = st.out.split(/\r?\n/).filter((l) => l.length > 0);
+  const changed = lines.filter((l) => !l.startsWith('!! ') && !(l === '?? node_modules' && isLink(path.join(wt.path, 'node_modules')))).length;
+  const data = ignoredData(st.out);
+  if (changed > 0) return { verdict: 'dirty', why: 'finished but dirty: ' + changed + ' file' + (changed === 1 ? '' : 's') };
+  if (data.length > 0) return { verdict: 'dirty', why: 'finished but holds ' + data.length + ' ignored file' + (data.length === 1 ? '' : 's') + ' that are not rebuildable: ' + data.slice(0, 3).join(', ') };
+  const remote = tg(['config', '--get', 'branch.' + wt.branch + '.remote'], mainPath);
+  const merge = tg(['config', '--get', 'branch.' + wt.branch + '.merge'], mainPath);
+  if (!remote.ok || remote.out.trim() !== 'origin' || !merge.ok || merge.out.trim() !== 'refs/heads/' + wt.branch) {
+    return { verdict: 'look', why: 'no upstream origin/' + wt.branch + ' (push with -u)' };
+  }
+  const onOrigin = tg(['rev-parse', '--verify', '--quiet', 'refs/remotes/origin/' + wt.branch], mainPath).ok;
   if (onOrigin) {
-    const ahead = tryGit(['log', '--oneline', 'origin/' + wt.branch + '..HEAD'], wt.path);
+    const ahead = tg(['log', '--oneline', 'origin/' + wt.branch + '..' + wt.head], mainPath);
     if (!ahead.ok) return { verdict: 'look', why: 'cannot compare with origin' };
     if (ahead.out.trim() !== '') return { verdict: 'look', why: 'commits origin does not have' };
   } else if (state !== 'MERGED') {
@@ -122,19 +192,17 @@ function classify(wt, ctx) {
   return { verdict: 'removable', why: 'PR ' + state.toLowerCase() + ', clean, nothing unpushed' };
 }
 
-/** Remove one removable worktree: `worktree remove` (no --force), `branch -d` (never -D), `worktree prune`. Returns { removed, note }. */
-function removeOne(wt, mainPath) {
+function isLink(p) { try { return fs.lstatSync(p).isSymbolicLink(); } catch { return false; } }
+
+/** Remove one removable worktree: check again, `worktree remove` (no --force), `branch -d` (never -D), `worktree prune`. Returns { removed, note }. */
+function removeOne(wt, mainPath, ctx) {
+  const again = classify(wt, ctx);
+  if (again.verdict !== 'removable') return { removed: false, note: 'changed since the check, kept: ' + again.why };
   const r = tryGit(['worktree', 'remove', wt.path], mainPath);
   if (!r.ok) return { removed: false, note: 'git worktree remove refused: ' + r.err };
   const b = tryGit(['branch', '-d', wt.branch], mainPath);
   tryGit(['worktree', 'prune'], mainPath);
   return { removed: true, note: b.ok ? 'branch deleted' : 'worktree removed, branch kept (git branch -d refused: ' + b.err + ')' };
-}
-
-function realOr(p) { try { return fs.realpathSync(p); } catch { return path.resolve(p); } }
-function inside(child, parent) {
-  const rel = path.relative(realOr(parent), realOr(child));
-  return rel === '' || (!rel.startsWith('..') && !path.isAbsolute(rel));
 }
 
 function fmt(bytes) { return bytes >= 1e9 ? (bytes / 1e9).toFixed(2) + ' GB' : (bytes / 1e6).toFixed(0) + ' MB'; }
@@ -160,7 +228,7 @@ function staleTmp(dirs, now, exclude) {
 }
 
 /**
- * Whole run. opts: { apply, tmp, root, cwd, prState, now, tmpDirs, log }.
+ * Whole run. opts: { apply, tmp, root, cwd, prState, tryGit, now, tmpDirs, log }.
  * Returns { rows, removed, reclaimable, tmp } for the test.
  */
 function run(opts) {
@@ -172,24 +240,24 @@ function run(opts) {
   if (all.length === 0) throw new Error('git worktree list is empty');
   const mainPath = all[0].path;
   const here = opts.cwd || process.cwd();
-  const prState = opts.prState || ((b) => ghPrState(b, mainPath));
+  const ctx = { prState: opts.prState || ((b, sha) => ghPrState(b, sha, mainPath)), tryGit: opts.tryGit || tryGit, mainPath, all };
   const rows = [];
   for (const wt of all.slice(1)) {
     if (inside(here, wt.path)) { rows.push({ wt, verdict: 'skip', why: 'the worktree this runs in', bytes: 0 }); continue; }
-    const c = classify(wt, { prState });
+    const c = classify(wt, ctx);
     const bytes = fs.existsSync(wt.path) ? dirSize(wt.path) : 0;
     rows.push({ wt, bytes, ...c });
   }
   let reclaimable = 0;
   let removed = 0;
-  log((opts.apply ? 'worktrees:clean --apply' : 'worktrees:clean (dry run: nothing is changed; --apply removes the REMOVABLE ones)') + ', ' + rows.length + ' linked worktree' + (rows.length === 1 ? '' : 's'));
+  log((opts.apply ? 'worktrees:clean --apply' : 'worktrees:clean (dry run: nothing is changed; `npm run worktrees:clean -- --apply` removes the REMOVABLE ones)') + ', ' + rows.length + ' linked worktree' + (rows.length === 1 ? '' : 's'));
   for (const r of rows) {
     const label = { removable: 'REMOVABLE', dirty: 'DIRTY    ', look: 'NEEDS A LOOK', skip: 'SKIPPED  ' }[r.verdict];
     let line = label + '  ' + fmt(r.bytes).padStart(9) + '  ' + r.wt.path + '  [' + (r.wt.branch || 'detached') + ']  ' + r.why;
     if (r.verdict === 'removable') {
       reclaimable += r.bytes;
       if (opts.apply) {
-        const res = removeOne(r.wt, mainPath);
+        const res = removeOne(r.wt, mainPath, ctx);
         r.removed = res.removed;
         if (res.removed) removed += 1;
         line += '  -> ' + (res.removed ? 'removed, ' : 'kept, ') + res.note;
@@ -213,17 +281,21 @@ function run(opts) {
   return { rows, removed, reclaimable, tmp };
 }
 
-function main(argv) {
+function main(argv, env) {
   let apply = false, tmp = false, root = path.join(__dirname, '..');
   for (let i = 0; i < argv.length; i++) {
     if (argv[i] === '--apply') apply = true;
     else if (argv[i] === '--tmp') tmp = true;
     else if (argv[i] === '--root' && argv[i + 1]) root = argv[++i];
-    else { process.stderr.write('usage: node scripts/worktrees-clean.js [--apply] [--tmp] [--root D]\n'); return 2; }
+    else { process.stderr.write('usage: node scripts/worktrees-clean.js [--apply] [--tmp] [--root D]   (through npm: npm run worktrees:clean -- --apply)\n'); return 2; }
+  }
+  // `npm run worktrees:clean --apply` (no `--`): npm keeps the flag for itself and sets npm_config_apply. Never apply on that; say so loudly.
+  if (!apply && env && env.npm_config_apply && env.npm_config_apply !== 'false') {
+    process.stderr.write('WARNING: you ran this through npm without `--`, so npm ate --apply. Nothing will be removed. Use: npm run worktrees:clean -- --apply\n');
   }
   try { run({ apply, tmp, root }); } catch (e) { process.stderr.write('worktrees:clean: ' + e.message + '\n'); return 2; }
   return 0;
 }
 
-module.exports = { parseWorktrees, classify, run, staleTmp, ghPrState, dirSize, TMP_PATTERNS };
-if (require.main === module) process.exit(main(process.argv.slice(2)));
+module.exports = { parseWorktrees, classify, run, staleTmp, ghPrState, dirSize, ignoredData, main, TMP_PATTERNS };
+if (require.main === module) process.exit(main(process.argv.slice(2), process.env));
