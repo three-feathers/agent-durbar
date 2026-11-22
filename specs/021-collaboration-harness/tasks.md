@@ -65,7 +65,7 @@
 - [ ] T062 (FR-084 point 2) `scripts/claim.sh --expire`: release a review claim with no review and no ETA comment after 4 h; run in each sweep (`docs/agent-setup/` loops template); `test-claim.ts` with mutants [FR-084]
 - [ ] T063 (FR-084 point 4; owned by spec 008, task T130 there) CI by diff: a file-to-driver map, PR CI runs only the touched UI drivers, sharded three-OS UI job; unmapped file runs all; a check fails when a driver is missing from the map; nightly and `main` keep the full matrix [FR-084]
 - [ ] T064 (FR-084 point 6) `npm run dora`: weekly deployment frequency, lead time, change failure rate and time to restore for the retro (the DORA rule of `incident-triage.md`: never rank people); used by `weekly-retro.js` [FR-084]
-- [x] T065 (FR-084, Vikram and Ruben agreed 2026-11-07; Paco's agreement pending, draft PR) AGENTS.md *Delivery speed* bullet and the `review-rounds.md` lines for points 1-6; `rules:check` budget [FR-084]
+- [x] T065 (FR-084, Vikram and Ruben agreed 2026-11-07, Paco 2026-11-21) AGENTS.md *Delivery speed* bullet and the `review-rounds.md` lines for points 1-6; `rules:check` budget [FR-084]
 
 
 ## 2026-11-08: a picture budget and a spec-number check (FR-085)
