@@ -173,7 +173,7 @@ export function wiringProblems(text: string): string[] {
   if (JSON.stringify(permLines) !== JSON.stringify(['actions: read', 'contents: read'])) bad.push(`ui-gate permissions are not exactly actions: read and contents: read (${permLines.join(', ')})`);
   if (!/\n {6}- name: [^\n]*\n(?: {8}.*\n)*? {8}run: node scripts\/release-ui-gate\.js /.test(body + '\n')) bad.push('ui-gate does not run scripts/release-ui-gate.js');
   for (const [k, v] of [['SHA', '${{ github.sha }}'], ['REPO', '${{ github.repository }}'], ['TAG', '${{ github.ref_name }}'], ['GH_TOKEN', '${{ github.token }}']]) {
-    if (!new RegExp(`\\n {10}${k}: ${v.replace(/[$(){}.]/g, '\\$&')}\\n`).test(body + '\n')) bad.push(`ui-gate env ${k} is not ${v}`);
+    if (!body.split('\n').includes(`${' '.repeat(10)}${k}: ${v}`)) bad.push(`ui-gate env ${k} is not ${v}`);
   }
   const runLine = g.find((l) => /^ {8}run: /.test(l)) || '';
   if (runLine.includes('${{')) bad.push('ui-gate run: has a ${{ }} expression');
