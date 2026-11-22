@@ -101,7 +101,7 @@ function readSheet(file: string): SheetRead {
 const echoForms = (d: string): string[] => { const once = JSON.stringify(d).slice(1, -1); return [d, once, JSON.stringify(once).slice(1, -1)]; };
 /** FR-032: what a failed try says. The description is removed first (any case, escaped forms too), then secrets and home folders are masked, and the cut comes last, so nothing is left half-masked. */
 export function safeGenerateError(err: unknown, description: readonly string[]): string {
-  let s = err instanceof Error && typeof err.message === 'string' ? err.message : '';
+  let s = err instanceof Error && typeof err.message === 'string' ? err.message : ''; // FR-066: shown masked (description removed, redactMarkdown, maskHomePaths below)
   const forms = [...new Set(description.filter(Boolean).flatMap(echoForms))].sort((a, b) => b.length - a.length);
   for (const d of forms) s = s.replace(new RegExp(d.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi'), '[your description]');
   s = maskHomePaths(redactMarkdown(s, s)).replace(/\s+/g, ' ').trim();

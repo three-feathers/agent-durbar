@@ -15,6 +15,7 @@ import type { AgentInfo } from '../src/shared/api';
 import type { PreviousSession } from '../src/adapters/history';
 import { CHANGE_TOOLS, READ_TOOLS } from '../src/main/mcp/tools';
 import { FakeClient, TestAdapter } from './fakes/copilot-sdk';
+import { ShownError } from '../src/shared/shownerror';
 
 const ROOT = path.resolve(__dirname, '..', '..');
 const UUID = (n: number): string => `a1b2c3d4-0000-4000-8000-${String(n).padStart(12, '0')}`;
@@ -133,7 +134,7 @@ async function main(): Promise<void> {
     // adapter error (the runtime lost it): passed on, nothing else changes
     const orig = r.ad.deleteSession!;
     r.ad.deleteSession = async () => {
-      throw new Error('session gone\nfrom disk');
+      throw new ShownError('session gone\nfrom disk');
     };
     r.store.markPrevious(abs('proj'), 'fake', UUID(1), 'pin');
     assert.deepStrictEqual(await r.sessions.delete('card-1', UUID(1)), { ok: false, error: 'session gone from disk' });

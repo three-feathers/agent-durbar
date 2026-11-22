@@ -1,1 +1,0 @@
-- **Tool calls in the chat hide secrets in their arguments**: a tool call's line, its tooltip, the open command and what Copy copies now mask the call's arguments the way the header's task line already did, and Copy copies the masked text. Harmless commands read exactly as before (spec 005; checked in the simulator with invented values).

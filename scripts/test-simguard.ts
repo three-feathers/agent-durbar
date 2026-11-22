@@ -189,7 +189,7 @@ assert.ok(/const SIMULATOR = simulatorOn\(dev\);\n\s*initSimGuard\(SIMULATOR\);/
   assert.ok(/const signInCheck = [^\n]*\n\s*if \(SIMULATOR\) return undefined;/.test(mainSrc), 'the sign-in check asks nothing under the simulator (FR-030)');
   assert.ok(/childProcessAttempts: \(\) => childSeal\?\.tried\(\)/.test(mainSrc), 'the driver context reports child process attempts (FR-030)');
 }
-assert.ok(/fromAppFrame\(e\)\) throw [^\n]*\n\s*if \(!simAllows\(channel\)\) throw new Error\(simRefusal\(channel\)\);\n\s*return fn\(/.test(guardSrc), 'ipcHandle refuses before the handler');
+assert.ok(/fromAppFrame\(e\)\) throw [^\n]*\n\s*if \(!simAllows\(channel\)\) throw new Error\(simRefusal\(channel\)\);\n\s*return answer\(channel, \(\) => fn\(/.test(guardSrc), 'ipcHandle refuses before the handler (which then runs inside answer, spec 045 FR-066)');
 assert.ok(/if \(fromAppFrame\(e\) && simAllows\(channel\)\) fn\(/.test(guardSrc), 'ipcOn drops before the handler');
 
 // ---- 4. the stand-in adapter (FR-024) ----
