@@ -49,15 +49,15 @@
 - [ ] T028 `npm run typecheck && npm run build && npm test` once at the final `checks run at <sha>`.
 - [ ] T029 `/speckit.converge`: FR tags (`[IMPLEMENTED]` with `test:`/`sim:`, or `[KNOWN GAP]`), specs-index status, tasks ticked.
 
-## P6: Recent order (FR-040..FR-044)
+## P6: Recent order (FR-040..FR-045)
 
 - [ ] T031 `DurbarRail.recent(items)` in `src/renderer/railorder.js` with unit tests (FR-041), mutant "order by agent time" fails.
-- [ ] T032 `youAt` stamped on your sends; load/save helper for `durbar.railYouAt` (cap 500, unknown ids, bad JSON), only with `rememberOn()` and not in demo (FR-042).
+- [ ] T032 `youAt` stamped on your sends; load/save helper for `durbar.railYouAt` (cap 500, unknown ids, bad JSON), only with `railRemember()` and not in demo; a failed send does not stamp; a future value reads as now (FR-042).
 - [ ] T033 The Folders | Recent control in the filter row; order kept in `durbar.railOrder` (FR-040, FR-044).
-- [ ] T034 `renderStrip` paints the flat Recent list with the folder name per row, `parent/name` for same-name folders (FR-043); the filter applies; folds untouched.
+- [ ] T034 `renderStrip` paints the flat Recent list with the folder name per row, `parent/name` for same-name folders, every new text through `safeMask` before `esc()` (FR-043); the filter applies; folds untouched.
 - [ ] T035 Driver cases in `check-rail-filter` for FR-040..FR-044 and SC-005, both sizes, every world, `railstore=1`.
 - [ ] T036 Screenshots `113-rail-recent-{1440x900,1280x800}.png`; docs rows (feature inventory, features.md, changelog fragment) extended.
-- [ ] T038 The "Not used since Durbar started" folded group and the per-row age in Recent; app start time from main (FR-045); unit and driver cases.
+- [ ] T038 The "Not used since Durbar started" folded group and the per-row age in Recent; main's `startedAt` (`main.ts`, not exposed today) added as a field of an existing answer (no new channel), the preload and `src/shared/api.ts` types, `test:ipcchannels` unchanged (FR-045); unit and driver cases.
 - [ ] T037 `npm run typecheck && npm run build && npm test` once at the final `checks run at <sha>` of P6.
 
 ## Checks a person does (not CI)
