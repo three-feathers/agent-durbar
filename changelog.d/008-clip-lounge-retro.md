@@ -1,1 +1,0 @@
-- **The release clip's lounge scene films in the Retro arcade** (spec 008): `--world retro` with the `lounge` scene works now that the arcade's limit pill has Remove limit (issue #1954); simulator only, Linux run, not run on macOS or Windows.
