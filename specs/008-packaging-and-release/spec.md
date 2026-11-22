@@ -1196,7 +1196,7 @@ Request (issue #1239, found on a real Mac): `check-browser-tabs` (both sizes) fa
 
 **Numbers** (`npm run specs:numbers`): T400 and T401 (T397 is the highest on any branch); no new FR.
 
-### 2026-11-22: the Flat and Photo entries of `check-080-browser-expand` run alone (FR-210 follow-up, T426; issue #1239)
+### 2026-11-22: the Flat and Photo entries of `check-080-browser-expand` run alone (FR-210 follow-up, T427; issue #1239)
 
 Follow-up of the 2026-11-20 delta above (PR #1970's proposal for the other focus-asking drivers; the call is the Linux lane's, under Vikram's 2026-11-15 00:28 UTC delegation, with the cost recorded here). **Measured** on an Apple M4 (macOS darwin 25, simulator only, one Electron at a time), the build of PR #1970: the 14 focus-asking drivers whose entries were not `focus: true` (21 entries), run `UI_SUITE_JOBS=4` twice and `UI_SUITE_JOBS=1` once. `check-080-browser-expand` Flat (1440x900) and its `photo` entry failed at four windows at once in 2 of 2 runs (`the page has the focus before its key`) and passed alone (10 s and 6 s); its `retro` entry passed in all three runs and stays parallel. **Change:** the two entries are `focus: true` (FR-210: a `focus: true` entry runs alone, after the others, on a shared desktop). **Cost:** about 16 s of wall time on the Mac (10 s + 6 s); CI's shards are not measured. The other 17 of 21 entries passed either way and are unchanged; `check-097-kids` fails both ways and is issue #1977, not touched here. The pinned list of focus entries in `test:uisuite` gets the two entries.
 
