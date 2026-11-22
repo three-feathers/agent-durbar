@@ -274,7 +274,7 @@ eq(T.ready, true, 'redact: ready');
   let same = 0;
   let cont = 0;
   let l185 = 0;
-  const { withoutLinkSplit } = require('../src/shared/redact') as { withoutLinkSplit<X>(f: () => X): X };
+  const { withoutLinkSplit, withoutContinuation } = require('../src/shared/redact') as { withoutLinkSplit<X>(f: () => X): X; withoutContinuation<X>(f: () => X): X };
   const SECRETS = [ghp.slice(4), pat.slice(11), sk.slice(3), z.slice(4), 'Hx9Kq2Lm7Np4Rs'];
   for (const t of [...cases, ...shapes]) {
     const where = JSON.stringify(t.slice(0, 60));
@@ -296,11 +296,13 @@ eq(T.ready, true, 'redact: ready');
     // main's reading: the frozen window with the shared masks' shell readings off (with them off the shared masks are byte for byte main's); spec 012 FR-185: also with
     // the GitHub last pass off inside, then that pass once over the result, as the window does it (`maskLoose` only adds masks)
     // spec 012 FR-187 (review of PR 1872): the value pass after a mask runs with FR-185's pass in `maskLoose`; the reference is main plus FR-185's pass, so it is off here (`withoutAfterMask`)
-    const ref = (f: () => string): string => withoutAfterMask(() => maskLoose(withoutLoose(() => withoutShell(f))));
+    // spec 012 FR-190: and with the continuation step off (main has none; it is checked against this reading below)
+    const ref = (f: () => string): string => withoutAfterMask(() => maskLoose(withoutLoose(() => withoutShell(() => withoutContinuation(f)))));
     // spec 012 FR-189 (issue #1940): the desk masks a token split by link or image markup first (the shared maskLinkSplitTokens); with that step off it reads every
     // text as before, so the checks below run with it off (byte for byte, or FR-184/185/187's differences only). test-safetext-links.ts checks the same texts with it
     // on: a text it changes shows nothing main hides, and any other text reads the same with it on and off.
-    const run = <X,>(f: () => X): X => withoutLinkSplit(f);
+    // spec 012 FR-190 (issue #1320): the continuation step is off here too, and checked on its own after these: with it on, a surface shows nothing it shows hidden with it off
+    const run = <X,>(f: () => X): X => withoutLinkSplit(() => withoutContinuation(f));
     sameOrMore(run(() => S.maskRaw(t, red)), ref(() => R0.maskRaw(t, red)), 'maskRaw', () => run(() => withoutAfterMask(() => S.maskRaw(t, red))));
     sameOrMore(run(() => T.mask(t)), ref(() => RT.mask(t)), 'the wrapper mask', () => run(() => withoutAfterMask(() => T.mask(t))));
     // the excerpt runs FR-185's pass before it drops `_` (the frozen copy cannot): with that pass fully off it is main's; with it on, more is hidden, so the cut can
@@ -317,6 +319,14 @@ eq(T.ready, true, 'redact: ready');
     exc('excerpt', () => S.excerpt(t, red, 140), () => R0.excerpt(t, red, 140), () => R0.excerpt(t, red));
     exc('excerpt with the code word', () => S.excerpt(t, red, undefined, true), () => R0.excerpt(t, red, undefined, true), () => R0.excerpt(t, red, undefined, true));
     exc('the wrapper excerpt', () => T.excerpt(t, 140), () => RT.excerpt(t, 140), () => R0.excerpt(t, red, undefined, true));
+    // spec 012 FR-190: the continuation step on (link step off): nothing shown that the reading with it off hides, or the surface fails closed (as `contBoth` does on
+    // a text with an open mask label that the two readings read differently); the excerpts uncut (a cut falls elsewhere when more is hidden)
+    for (const [what, f, closed] of [['maskRaw', () => S.maskRaw(t, red), ''], ['excerpt', () => S.excerpt(t, red), ''], ['the wrapper excerpt', () => T.excerpt(t, 1_000_000), 'Finished.']] as Array<[string, () => string, string]>) {
+      const on = withoutLinkSplit(f), off = run(f);
+      if (on === off || on === closed) continue;
+      const cutAt = /\s+|\[redacted(?::[^\]\r\n]{1,128})?\]/, shown = off.split(cutAt).join('\u0000');
+      for (const p of on.split(cutAt)) assert.ok(p === '' || shown.includes(p), `#1320 continuation differential: ${what} shows nothing the reading without the step hides: ${where}: ${JSON.stringify(p)}`);
+    }
     if (differs) { cont++; continue; }
     if (loose) { l185++; continue; }
     same++;
