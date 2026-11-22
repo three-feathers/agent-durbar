@@ -4,14 +4,14 @@
 group: 046
 title: Delivery speed 2 (owner 2026-11-22): measured CI and review cost per PR; lighter review profile for UI/feature PRs (never for masking, IPC, secrets, permissions, user files); Linux-first CI by diff on top of 021 FR-084 / 008 T130; Windows npm test split (#1983); world packs with one contract suite; bigger feature slices
 status: draft
-note: merged: spec, T002, T003 (#2005); T012 split brought forward (delta 2026-11-22); O5 no, O6 not now (owner 2026-11-22); O1..O4 open
+note: merged: spec, T002, T003 (#2005), T011, T022 (#2004); T012 split brought forward (delta 2026-11-22); O5 no, O6 not now; O1..O4 open
 -->
 
 **Feature Branch**: `117-delivery-speed-2` (spec, plan, tasks only); build branches `117-pN-slug`, one per rollout step
 
 **Created**: 2026-11-22
 
-**Status**: Draft. Nothing built. O5 (paid runners: no) and O6 (separate repos: not now) are decided by the owner (2026-11-22); O1..O4 are open (*Owner decisions*).
+**Status**: Draft. Merged from this spec so far: the spec itself and T002, T003 (#2005, CI stats); T011 suite times in the job summary, T012 first half (heavy five first), T022 required-suites guard (#2004). #2031: T012's split (delta 2026-11-22). O5 (paid runners: no) and O6 (separate repos: not now) are decided by the owner (2026-11-22); O1..O4 are open (*Owner decisions*).
 
 **Input**: Owner request (Vikram, team chat, 2026-11-22 09:06-09:11 UTC, relayed by his coordinating agent): another agent's audit says the pace has massively slowed and we write more test fixes and docs than code. Coordinator's figures from `main` (first-parent merges, lines added; code = `src/` non-test, tests = `scripts/` checks, docs = `specs/` and `docs/`): W43 353 PRs, 50k / 64k / 32k; W44 149, 14k / 25k / 14k; W45 218, 20k / 49k / 11k; W46 235, 11k / 33k / 8k; W47 so far 140, 5k / 14k / 4k (with a 40 h outage). Vikram: "Implement all your recommendations": **A** a lighter review profile for UI/feature PRs; **B** CI by diff for real and fewer jobs per PR; **C** worlds and characters as data packs with one contract suite in core; **D** bigger feature slices; **E** measure and fix CI (issue #1983). He also asked about separate repos for worlds and characters; the coordinator advised packages in this repo first (a repo in the same organization shares the same concurrency cap).
 
@@ -222,8 +222,8 @@ Adding or changing a world touches its pack folder and its own small test; the c
 
 ### E (continued): Windows `npm test` (#1983)
 
-- **FR-017** Measure first, with work counters (agent-notes: CPU time, not wall time): `scripts/run-tests.js` writes each suite's CPU and wall seconds to the job summary on every OS.
-- **FR-018** Every suite, the masking and redaction suites above all, **stays under a required check name** (`Build and test (<os>)`) on every OS it runs on today. First, inside the same job, `run-tests.js` starts the five heavy suites #1983 names first (longest first). Only if that misses the target, the Windows leg splits into time-balanced shards whose summary job carries the required name `Build and test (windows-latest)` and fails when any shard failed, was skipped or was cancelled, or when the union of the shards' suite lists differs from `test-suites.txt`. A non-required job for any suite is not allowed; moving one there would be an O1 change. No suite is dropped, no assertion weakened, the 25-minute limit is not raised first (#1983). Guard: T022. **Target**: Windows Build and test p90 ≤ 15 min (today 20.1), zero limit cancels in 7 days (today 4). *Amended by the delta 2026-11-22 (split brought forward)*: the split does not wait for the 7-day measurement; it lands now on all three OSes, see *Changes*.
+- **FR-017** Measure first, with work counters (agent-notes: CPU time, not wall time): `scripts/run-tests.js` writes each suite's CPU and wall seconds to the job summary on every OS. `[IMPLEMENTED in #2004]` test: `test:runtests` (a row per suite as it ends, so a cut-short run keeps the finished suites; CPU is each suite's node step main process only: forks and Electron children are not counted); macOS and Windows runs `[KNOWN GAP]` (CI is the record).
+- **FR-018** Every suite, the masking and redaction suites above all, **stays under a required check name** (`Build and test (<os>)`) on every OS it runs on today. First, inside the same job, `run-tests.js` starts the five heavy suites #1983 names first (longest first). Only if that misses the target, the Windows leg splits into time-balanced shards whose summary job carries the required name `Build and test (windows-latest)` and fails when any shard failed, was skipped or was cancelled, or when the union of the shards' suite lists differs from `test-suites.txt`. A non-required job for any suite is not allowed; moving one there would be an O1 change. No suite is dropped, no assertion weakened, the 25-minute limit is not raised first (#1983). Guard: T022. `[IMPLEMENTED in #2004]` heavy five first (`HEAVY_FIRST`), same suites, no split; guard `scripts/test-ci-required-suites.ts` (test: `test:ci-required-suites`, `test:runtests`); the 7-day Windows measurement is `[KNOWN GAP]` (SC-003, not measured). **Target**: Windows Build and test p90 ≤ 15 min (today 20.1), zero limit cancels in 7 days (today 4). *Amended by the delta 2026-11-22 (split brought forward)*: the split does not wait for the 7-day measurement; it lands now on all three OSes, see *Changes*.
 
 ### A: review profile by risk
 
@@ -339,7 +339,11 @@ The coordinator's suggested first step (concurrency groups and `cancel-in-progre
 
 **Amends spec 008 FR-104** ("no `needs:`" in `ci.yml`): one exception, the `Build and test (<os>)` summaries wait for the npm test parts; the parts start at once, as every other job. **Cost**: a pull request starts 4 part jobs and 3 short summary jobs where it started 3 Build and test jobs (macOS still starts no macOS runner on PRs).
 
-**Guard**: T022's `scripts/test-ci-required-suites.ts` (#2004, open) reads a single `npm test` job today; when #2004 lands this branch merges `main` and extends it to the parts and summary (T022's summary-job mutants). Until then `scripts/test-ci-shards.ts` checks the wiring from `ci.yml` and the ruleset file and runs the summary's own script for every part result, OS and event (22 mutants). `[KNOWN GAP]` the summary's script is not run on the Windows leg of `npm test` (no bash assumed there; the wiring checks run). SC-003's 7-day Windows p90 is still to be measured.
+**Guard**: T022's `scripts/test-ci-required-suites.ts` (merged in #2004) is extended here to the split: one part job per required OS on that OS, `shard: [1..n]` with `TEST_SHARD` `${{ matrix.shard }}/n`, the `changes` step with no condition, pinned env and pre-test steps per part, and one summary job carrying the required names, needing exactly the parts, under `always()` with `permissions: {}`, whose script is run (`scripts/ci-summary-probe.ts`, shared with `test:ci-shards`) and must fail on a failed, cancelled, skipped or missing part. `test:citypecheck` asserts the jobs that run `npm test` are exactly the three part jobs. `[KNOWN GAP]` the summary's script is not run on the Windows leg of `npm test` (no bash assumed there; the wiring checks run). SC-003's 7-day Windows p90 is still to be measured.
+
+### 2026-11-22: status after Paco's review of #2004
+
+Merged: the spec and #2005 (T002, T003). Open and not merged: #2008 (T004), #2004 (T011, T012 first half, T022). Review fixes in #2004: the guard parses the workflow with js-yaml and fails closed on shapes it does not read, reads CRLF files, the summary is written as each suite ends, the CPU temp folder is removed on signals, forks and Electron children are not counted (stated).
 
 ### 2026-11-22: created (owner request, Vikram, team chat 09:06-09:11 UTC)
 

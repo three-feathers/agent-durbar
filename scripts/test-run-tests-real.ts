@@ -13,7 +13,7 @@ import { execFileSync, spawn } from 'child_process';
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const rt = require(path.join(__dirname, '..', '..', 'scripts', 'run-tests.js')) as {
   runSuites: (o: Record<string, unknown>) => Promise<{ failed: string[]; bailed: string | null }>;
-  runMain: unknown;
+  startMain: unknown;
 };
 
 const alive = (pid: number): boolean => {
@@ -27,7 +27,7 @@ const GRAND_SRC = "process.on('SIGTERM', () => {}); process.on('SIGINT', () => {
 const HANG_SRC = "process.on('SIGTERM', () => {}); require('child_process').spawn(process.execPath, [process.env.GRAND], { stdio: 'inherit' }); setInterval(() => {}, 1000);\n";
 const FAIL_SRC = "const fs = require('fs'); setInterval(() => { if (fs.existsSync(process.env.PIDFILE) && fs.readFileSync(process.env.PIDFILE, 'utf8')) { console.log('fixture failing'); process.exit(1); } }, 50);\n";
 // the driver runs the real runner wiring (handlers, exit code) on one slow suite; the slow suite records its pid and waits
-const DRIVER_SRC = "require(process.env.RUNNER).runMain({ suites: [{ name: 'test:slow', steps: [[process.env.SLOW]] }], jobs: 1, bail: true });\n";
+const DRIVER_SRC = "require(process.env.RUNNER).startMain({ suites: [{ name: 'test:slow', steps: [[process.env.SLOW]] }], jobs: 1, bail: true });\n";
 const SLOW_SRC = "require('fs').writeFileSync(process.env.PIDFILE, String(process.pid)); setInterval(() => {}, 1000);\n";
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -77,7 +77,7 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
       fs.writeFileSync(path.join(dir, 'driver.js'), DRIVER_SRC);
       fs.writeFileSync(path.join(dir, 'slow.js'), SLOW_SRC);
       const runner = spawn(process.execPath, [path.join(dir, 'driver.js')], {
-        env: { ...process.env, RUNNER: path.join(__dirname, '..', '..', 'scripts', 'run-tests.js'), SLOW: path.join(dir, 'slow.js'), PIDFILE: slowPid }, stdio: 'ignore',
+        env: { ...process.env, RUNNER: path.join(__dirname, '..', '..', 'scripts', 'run-tests.js'), SLOW: path.join(dir, 'slow.js'), PIDFILE: slowPid, GITHUB_STEP_SUMMARY: path.join(dir, 'summary.md') }, stdio: 'ignore',
       });
       let spid = 0;
       try {
@@ -90,6 +90,7 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
         assert.strictEqual(code, want, `${sig} to a bailing runner exits ${want}`);
         for (let i = 0; i < 30 && alive(spid); i++) await sleep(100);
         assert.ok(!alive(spid), `${sig}: the slow suite (pid ${spid}) is gone: no orphan`);
+        assert.ok(/Suite times as they finish/.test(fs.readFileSync(path.join(dir, 'summary.md'), 'utf8')), `${sig}: the job summary was written before the stop`);
         console.log(`run-tests signal exit code: ${sig} -> ${want} ok`);
       } finally {
         if (runner.exitCode === null && runner.signalCode === null) runner.kill('SIGKILL');

@@ -12,6 +12,9 @@
  *
  * With --bail no new suite starts after the first failure and the running ones are stopped (POSIX: the suite's whole process group;
  * Windows: `taskkill /T /F` on its tree), so no Electron or Xvfb is left behind. The final run, PR CI and the merge queue run everything.
+ * Spec 117 FR-017: with GITHUB_STEP_SUMMARY set, the run appends each suite's wall and CPU seconds to the job summary (longest first), on every OS.
+ * CPU is the suite's own node steps' main processes (a preload, scripts/cpu-report.js, reports process.cpuUsage() at exit); every child a step starts (a fork() included, an Electron too) is not counted. The summary is written as the suites end (a header, one row per suite), so a run cut short keeps the suites done so far.
+ * Spec 117 FR-018: the five heaviest suites (#1983) start first, longest first; the same suites run, none is dropped.
  * Every suite runs with its own empty TMPDIR and fails if a `durbar-*` entry is left in it (spec 012 FR-166). A suite's output is printed when it ends, whole, so lines never interleave.
  */
 const fs = require('fs');
@@ -106,11 +109,46 @@ function selectSuites(pkg, argv, env, names = readSuiteList(), times = readSuite
   return { suites, part, note };
 }
 
+// spec 117 FR-018 (#1983): the five heaviest suites, longest first (Windows seconds in #1983: 507, 338, about 300 each). They start first so the
+// last suites to run are short and a slow runner does not end on a 500 s suite. Only the ORDER changes: the same suites run (orderSuites keeps the
+// rest in list order, adds none, drops none; scripts/test-run-tests.ts asserts it on the real list).
+const HEAVY_FIRST = ['test:runtime-redact', 'test:brainstate', 'test:redact-monotone', 'test:redact-monotone-b', 'test:redact-monotone-c'];
+function orderSuites(suites, heavy = HEAVY_FIRST) {
+  const rank = (s) => { const i = heavy.indexOf(s.name); return i < 0 ? heavy.length : i; };
+  return suites.map((s, i) => [s, i]).sort((a, b) => rank(a[0]) - rank(b[0]) || a[1] - b[1]).map((x) => x[0]);
+}
+
+// spec 117 FR-017: the job summary table (markdown): one row per suite, wall seconds longest first, then CPU seconds
+// (`n/a` when a suite's steps reported none); a total row. `times` is [{ name, wall, cpu }] (cpu null when unknown).
+function formatSummary(times, { os: osName = process.platform, jobs = 0, top = 0 } = {}) {
+  const sorted = [...times].sort((a, b) => b.wall - a.wall || a.name.localeCompare(b.name));
+  const f = (n) => (n === null || n === undefined ? 'n/a' : n.toFixed(1));
+  const wall = times.reduce((n, t) => n + t.wall, 0);
+  const cpu = times.reduce((n, t) => n + (t.cpu || 0), 0);
+  const lines = [`### Suite times (${osName}, ${times.length} suites${jobs ? `, ${jobs} at a time` : ''})`, '', '| Suite | Wall s | CPU s |', '|---|---:|---:|'];
+  for (const t of top ? sorted.slice(0, top) : sorted) lines.push(`| ${t.name} | ${f(t.wall)} | ${f(t.cpu)} |`);
+  lines.push(`| **total (sum of suites)** | ${f(wall)} | ${f(cpu)} |`, '');
+  return lines.join('\n');
+}
+
+// the CPU seconds the preload wrote for one suite (one number per line, microseconds, one line per node process); null when none
+// the incremental part of the summary (written as each suite ends, so a job cancelled at its limit keeps what finished)
+const summaryHeader = (count, { os: osName = process.platform, jobs = 0 } = {}) => `### Suite times as they finish (${osName}, ${count} suites${jobs ? `, ${jobs} at a time` : ''})\n\n| Suite | Wall s | CPU s |\n|---|---:|---:|\n`;
+const summaryRow = (t) => `| ${t.name} | ${t.wall.toFixed(1)} | ${t.cpu === null || t.cpu === undefined ? 'n/a' : t.cpu.toFixed(1)} |\n`;
+
+function readCpuSeconds(file) {
+  try {
+    const us = fs.readFileSync(file, 'utf8').split(/\r?\n/).filter(Boolean).map(Number).filter((n) => Number.isFinite(n));
+    return us.length ? us.reduce((a, b) => a + b, 0) / 1e6 : null;
+  } catch (_) { return null; }
+}
+
 // Stop one child this runner started, with everything it started, and only that. POSIX: the child was spawned detached (its pid is
 // its process group id), so SIGTERM goes to the group; anything still alive after GRACE_MS gets SIGKILL, and so does the group once the
 // child's pipes close (a grandchild that ignores TERM keeps them open, so the child would never close). Windows: taskkill /T /F forces
 // the whole tree at once, spawned without a shell.
 const GRACE_MS = 5000;
+const CPU_REPORT = path.join(__dirname, 'cpu-report.js');
 function stopChild(child, { platform = process.platform, spawnFn = spawn, kill = process.kill, graceMs = GRACE_MS, setTimer = setTimeout, clearTimer = clearTimeout } = {}) {
   if (!child || !child.pid) return;
   try {
@@ -138,13 +176,16 @@ function removeSuiteTmp(dir) { try { fs.rmSync(dir, { recursive: true, force: tr
 // Run the suites with `jobs` at a time. Returns { failed: [names], bailed: name | null }. Everything the outside world touches
 // (spawn, kill, platform, output, clock) is injected so scripts/test-run-tests.ts can drive it with fakes.
 async function runSuites({ suites, jobs, bail = false, cwd = ROOT, env = process.env, platform = process.platform, spawnFn = spawn, kill = process.kill,
-  write = (t) => process.stdout.write(t), now = Date.now, running = new Set(), stopOpts = {}, ctl = {}, tmp = { make: makeSuiteTmp, left: leftBehind, remove: removeSuiteTmp } }) {
+  write = (t) => process.stdout.write(t), now = Date.now, cpuDir = null, onSuite = () => {}, running = new Set(), stopOpts = {}, ctl = {}, tmp = { make: makeSuiteTmp, left: leftBehind, remove: removeSuiteTmp } }) {
   const failed = [];
+  const times = [];
   let bailed = null;
   let next = 0;
-  const runStep = (args, stepEnv) =>
+  // cpuDir (spec 117 FR-017): each step is started with `--require scripts/cpu-report.js`, which appends its CPU microseconds to DURBAR_CPU_FILE
+  // (a folder of its own, not the suite's TMPDIR, so the leak check and suites that list their temp folder never see it). Off when null.
+  const runStep = (args, stepEnv, cpuFile) =>
     new Promise((resolve) => {
-      const p = spawnFn(process.execPath, args, { cwd, env: stepEnv, stdio: ['ignore', 'pipe', 'pipe'], detached: bail && platform !== 'win32' });
+      const p = spawnFn(process.execPath, cpuFile ? ['--require', CPU_REPORT, ...args] : args, { cwd, env: cpuFile ? { ...stepEnv, DURBAR_CPU_FILE: cpuFile } : stepEnv, stdio: ['ignore', 'pipe', 'pipe'], detached: bail && platform !== 'win32' });
       running.add(p);
       let out = '';
       p.stdout.on('data', (d) => (out += d));
@@ -162,9 +203,10 @@ async function runSuites({ suites, jobs, bail = false, cwd = ROOT, env = process
       let log = '';
       let code = 0;
       const tmpDir = tmp.make();
+      const cpuFile = cpuDir ? path.join(cpuDir, `${next}.cpu`) : null;
       for (const args of s.steps) {
         if (bailed) break;
-        const r = await runStep(args, suiteTmpEnv(env, tmpDir));
+        const r = await runStep(args, suiteTmpEnv(env, tmpDir), cpuFile);
         log += r.out;
         if (r.code !== 0) { code = r.code || 1; break; }
       }
@@ -175,7 +217,11 @@ async function runSuites({ suites, jobs, bail = false, cwd = ROOT, env = process
         code = 1;
         log += `${s.name} left ${leaks.length} durbar-* temp entr${leaks.length === 1 ? 'y' : 'ies'} behind (${leaks.slice(0, 5).join(', ')}${leaks.length > 5 ? ', ...' : ''}): remove what the suite makes (try/finally) or use a helper that does\n`;
       }
-      const secs = ((now() - st) / 1000).toFixed(1);
+      const wallS = (now() - st) / 1000;
+      const secs = wallS.toFixed(1);
+      const entry = { name: s.name, wall: wallS, cpu: cpuFile ? readCpuSeconds(cpuFile) : null };
+      times.push(entry);
+      try { onSuite(entry); } catch (_) { /* the summary is optional */ }
       if (code) {
         failed.push(s.name);
         write(`\nFAIL ${s.name} (${secs} s)\n${log}\n`);
@@ -184,13 +230,31 @@ async function runSuites({ suites, jobs, bail = false, cwd = ROOT, env = process
     }
   };
   await Promise.all(Array.from({ length: Math.min(jobs, suites.length) }, worker));
-  return { failed, bailed };
+  return { failed, bailed, times };
+}
+
+// The folder the CPU files go to, removed on every way out of this process: a normal exit and process.exit (the 'exit' event) and, when `signals`
+// is set (no --bail: with --bail runMain's handlers exit, which lands here too), SIGINT, SIGTERM and SIGHUP (exit code 128 + n). Windows has no
+// catchable TERM, so there a killed runner can leave it (it is in the OS temp folder). null when no folder could be made (no CPU column then).
+function makeCpuDir({ proc = process, tmpdir = os.tmpdir(), signals = true } = {}) {
+  let dir = null;
+  try { dir = fs.mkdtempSync(path.join(tmpdir, 'suite-cpu-')); } catch (_) { return null; }
+  proc.on('exit', () => { try { fs.rmSync(dir, { recursive: true, force: true }); } catch (_) { /* temp */ } });
+  if (signals) for (const [sig, n] of [['SIGINT', 2], ['SIGTERM', 15], ['SIGHUP', 1]]) proc.on(sig, () => proc.exit(128 + n));
+  return dir;
+}
+
+// What the command line does after the suites are chosen: the CPU folder (its own signal handlers only without --bail: with --bail runMain's handlers
+// stop the running suites first and exit, and the folder goes with that exit) and the run. Exported so a test drives the same wiring.
+function startMain({ suites, jobs, bail, t0 = Date.now(), env = process.env }) {
+  const cpuDir = makeCpuDir({ signals: !bail });
+  return runMain({ suites, jobs, bail, t0, cpuDir, env });
 }
 
 // The wiring of a run: handlers, the run, the summary and the exit code. `exit` is injectable. When bailing, Ctrl-C or a kill of this runner
 // stops the suites the same way a bail does (TERM, then KILL after the grace period) and the exit code is 128 + the signal number
 // (SIGINT 130, SIGTERM 143, SIGHUP 129), not 1.
-function runMain({ suites, jobs, bail, t0 = Date.now(), exit = process.exit, running = new Set(), stopOpts = {}, env = process.env }) {
+function runMain({ suites, jobs, bail, t0 = Date.now(), exit = process.exit, running = new Set(), stopOpts = {}, env = process.env, cpuDir = null, appendFile = fs.appendFileSync }) {
   let signalled = 0;
   const ctl = {};
   if (bail) {
@@ -205,7 +269,17 @@ function runMain({ suites, jobs, bail, t0 = Date.now(), exit = process.exit, run
       });
     }
   }
-  return runSuites({ suites, jobs, bail, running, stopOpts, ctl, env }).then(({ failed, bailed }) => {
+  // spec 117 FR-017: the suite times go to the job summary as each suite ends, pass or fail (a job cancelled at its limit keeps the suites done so far);
+  // never fatal: the first write error prints one note and the rest are skipped
+  const summary = env.GITHUB_STEP_SUMMARY;
+  let summaryOk = !!summary;
+  const put = (text) => {
+    if (!summaryOk) return;
+    try { appendFile(summary, text); } catch (e) { summaryOk = false; console.log(`note: could not write the suite times to the job summary (${e.code || e.message})`); }
+  };
+  put(summaryHeader(suites.length, { jobs }));
+  return runSuites({ suites, jobs, bail, running, stopOpts, ctl, env, cpuDir, onSuite: (t) => put(summaryRow(t)) }).then(({ failed, bailed, times }) => {
+    if (times.length) put('\n' + formatSummary(times, { jobs, top: 10 }).replace('### Suite times', '### Slowest suites') + '\n');
     const total = ((Date.now() - t0) / 1000).toFixed(1);
     if (signalled) { console.log(`\nstopped by a signal after ${total} s; the suites were stopped, so the run is not complete`); exit(signalled); return; }
     if (bailed) {
@@ -222,7 +296,7 @@ function runMain({ suites, jobs, bail, t0 = Date.now(), exit = process.exit, run
   });
 }
 
-module.exports = { suiteTmpEnv, leftBehind, parseArgs, parseShard, readSuiteTimes, shardNames, selectSuites, readSuiteList, unlistedSuites, NOT_SUITES, loadSuites, stopChild, runSuites, runMain };
+module.exports = { suiteTmpEnv, leftBehind, parseArgs, parseShard, readSuiteTimes, shardNames, selectSuites, readSuiteList, unlistedSuites, NOT_SUITES, loadSuites, stopChild, runSuites, runMain, startMain, HEAVY_FIRST, orderSuites, formatSummary, readCpuSeconds, makeCpuDir };
 
 if (require.main === module) {
   const { ensureElectron } = require('./ensure-electron');
@@ -230,7 +304,7 @@ if (require.main === module) {
   const { bail, ignoredBail } = parseArgs(process.argv.slice(2), process.env);
   if (ignoredBail) console.log('--bail ignored under CI: running every suite');
   let suites;
-  try { const sel = selectSuites(pkg, process.argv.slice(2), process.env); suites = sel.suites; if (sel.note) console.log(sel.note); } catch (e) { console.error(e.message); process.exit(2); }
+  try { const sel = selectSuites(pkg, process.argv.slice(2), process.env); suites = orderSuites(sel.suites); if (sel.note) console.log(sel.note); } catch (e) { console.error(e.message); process.exit(2); }
 
   const t0 = Date.now();
   const tsc = spawnSync(process.execPath, [require.resolve('typescript/bin/tsc'), '-p', 'tsconfig.scripts.json'], { cwd: ROOT, stdio: 'inherit' });
@@ -247,5 +321,5 @@ if (require.main === module) {
   // leave a core for the desktop and run at low priority, so the machine stays usable while the suites run
   const jobs = process.argv.includes('--serial') ? 1 : Math.max(1, Number(process.env.TEST_JOBS) || Math.min(os.cpus().length - 1, 8));
   try { os.setPriority(10); } catch (_) { /* not allowed: normal priority */ }
-  runMain({ suites, jobs, bail, t0 });
+  startMain({ suites, jobs, bail, t0 });
 }

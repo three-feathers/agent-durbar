@@ -87,6 +87,7 @@ test:grantlabel
 test:floors
 test:mood
 test:retry
+test:review-profile
 test:compaction
 test:attention
 test:theme
@@ -164,6 +165,7 @@ test:mcphealth
 test:globals
 test:runtests
 test:ci-shards
+test:ci-required-suites
 test:runtestsreal
 test:theme-tokens
 test:slashcommands
