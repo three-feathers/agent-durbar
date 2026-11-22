@@ -281,7 +281,7 @@ const toRenderer = (channel: string, payload: unknown): void => {
 
 /** An MCP status event carries server error text: masked here, once, before the window sees it (spec 019 FR-021). */
 /** Spec 019 FR-022: the masked copy of an `mcp` event, built once per event; every path out of main (window, debug sink) uses it. */
-const outward = (e: AgentEvent): AgentEvent => maskMcpEvent(e, e.type === 'mcp' || (e.type === 'toolCall' && ((e.phase !== 'start' && e.mcpServer) || e.edit)) ? mcp.secretValuesFor(e.sessionId) : []); // spec 005 FR-024: edits too
+const outward = (e: AgentEvent): AgentEvent => maskMcpEvent(e, e.type === 'mcp' || (e.type === 'toolCall' && ((e.phase !== 'start' && e.mcpServer) || e.edit || e.args !== undefined)) ? mcp.secretValuesFor(e.sessionId) : []); // spec 005 FR-024: edits too; FR-342: arguments too
 /**
  * Spec 099: main's Autopilot. `AUTOPILOT_WIRED` is false, so in the default build it refuses to turn on and no surface offers it (spec *Changes*, Phase 3 gate).
  * The other half is the test-only switch, which a packaged build cannot open.

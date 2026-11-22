@@ -136,6 +136,8 @@ assert.strictEqual(maskMcpError(undefined), undefined);
   const line = main.split('\n').find((l) => l.startsWith('const outward = ')) ?? '';
   assert.ok(line.includes("'toolCall'") && line.includes("e.phase !== 'start'") && line.includes('mcpServer') && line.includes('secretValuesFor'), `outward() passes the session values for failed MCP tool cards: ${line}`);
   // spec 005 FR-024 (review on #463): a tool card with an edit gets the session values too, in every phase
-  assert.ok(/\|\|\s*e\.edit\)/.test(line), `outward() passes the session values for a toolCall with an edit: ${line}`);
+  assert.ok(/\|\|\s*e\.edit(?:\)|\s*\|\|)/.test(line), `outward() passes the session values for a toolCall with an edit: ${line}`);
+  // spec 005 FR-342, main half (issue #1975): and for a toolCall that carries arguments
+  assert.ok(/\|\|\s*e\.args !== undefined\)/.test(line), `outward() passes the session values for a toolCall with arguments: ${line}`);
 }
 console.log('mcp error mask: planted secrets, normal text, mask-then-cut, session values, event copy OK');

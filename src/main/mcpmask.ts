@@ -3,7 +3,7 @@ import type { AgentEvent, McpServerStatus } from '../adapters/types';
 import type { McpServerSpec } from '../shared/mcp';
 import { classifyMcpCall } from '../shared/mcpcall';
 import type { EditInfo } from '../shared/edits';
-import { cut, maskHomePaths, maskSecretUrl, redact, secretFlag } from '../shared/redact';
+import { MASK_INPUT_MAX, cut, keepShownBy, maskHomePaths, maskNoteText, maskSecretArgs, maskSecretCommand, maskSecretUrl, redact, secretFlag } from '../shared/redact';
 
 export const MCP_ERROR_MAX_CHARS = 300;
 
@@ -156,10 +156,71 @@ export function maskEditInfo(edit: EditInfo, values: readonly string[] = []): Ed
   };
 }
 
+/** Spec 005 FR-342 (main half): how deep `maskToolArgs` walks; a value deeper is replaced by the mask (fail closed). */
+const ARGS_DEPTH = 8;
+const ARGS_MASK = '[redacted]';
+/** Masks (and failed masks) in a text: a reading "hides more" when it has more of them. */
+const maskCount = (s: string): number => (s.match(/\[redact/g) ?? []).length;
+/** The masks' input cap, as the chip cuts (FR-342): at the last blank before `MASK_INPUT_MAX`, '' when there is none. */
+function capArg(s: string): string {
+  if (s.length <= MASK_INPUT_MAX) return s;
+  const b = s.slice(0, MASK_INPUT_MAX + 1).search(/\s\S*$/);
+  return b > 0 ? s.slice(0, b) : '';
+}
+/**
+ * One string of a call's arguments: `maskNoteText` with the session values (line breaks kept), the command reading and, for a URL, the URL reading.
+ * Nothing hidden by any reading: the string as written. Else the masked text; when the command or URL reading hides more than the note mask, that
+ * reading's text with nothing the note mask hides shown (`keepShownBy`, one line: the command mask reads words).
+ */
+function maskArgText(raw: string, values: readonly string[]): string {
+  const s = capArg(raw);
+  if (!s) return s;
+  const n = maskNoteText(s, values).text;
+  let out = n;
+  const flat = (x: string): string => x.replace(/\s+/g, ' ').trim();
+  const c = maskSecretCommand(n);
+  if (maskCount(c) > maskCount(n)) out = keepShownBy(c, flat(n));
+  if (/:\/\//.test(n)) {
+    const u = maskSecretUrl(n);
+    if (maskCount(u) > maskCount(n)) out = keepShownBy(out === n ? u : out, flat(u));
+  }
+  return out;
+}
+function maskArgValue(v: unknown, values: readonly string[], depth: number): unknown {
+  if (typeof v === 'string') return maskArgText(v, values);
+  if (v === null || typeof v !== 'object') return v;
+  if (depth >= ARGS_DEPTH) return ARGS_MASK;
+  if (Array.isArray(v)) {
+    const out = v.map((x) => maskArgValue(x, values, depth + 1));
+    // a word list (a command as words): also read whole, so a word secret only because of the word before it is masked
+    if (out.length && out.every((x) => typeof x === 'string')) {
+      const whole = maskSecretArgs(out as string[]);
+      return out.map((x, i) => (typeof whole[i] === 'string' && maskCount(whole[i]) > maskCount(x as string) ? whole[i] : x));
+    }
+    return out;
+  }
+  const out: Record<string, unknown> = {};
+  for (const [k, x] of Object.entries(v as Record<string, unknown>)) out[k] = maskArgValue(x, values, depth + 1);
+  return out;
+}
+/**
+ * Spec 005 FR-342 (main half, issue #1975): a tool call's arguments as the window may hold them, masked in main as well as in the window (defence in
+ * depth). Same shape; keys kept; a string no mask hides anything in is the same string. Composes the shared masks only (FR-031). Never throws: on a
+ * failure the arguments are replaced by the mask.
+ */
+export function maskToolArgs(args: unknown, values: readonly string[] = []): unknown {
+  try {
+    return maskArgValue(args, values.filter((x) => typeof x === 'string' && x.length >= 4), 0);
+  } catch {
+    return ARGS_MASK;
+  }
+}
+
 /**
  * Spec 019 FR-022: the copy of an event that may leave main (window, debug sink): an `mcp` event with its errors masked; any other event
  * unchanged (same object). Spec 058 FR-067: every `toolCall` (update, complete or failed) that names an `mcpServer` has its `output` masked too, cut to `MCP_CARD_MAX_CHARS`.
  * Spec 005 FR-024: a `toolCall` with an `edit` (any phase) has its paths and diffs masked with the session values (`maskEditInfo`).
+ * Spec 005 FR-342 (main half): a `toolCall` with `args` (any phase) has them masked (`maskToolArgs`).
  */
 export function maskMcpEvent<E extends AgentEvent>(e: E, values: readonly string[] = []): E {
   if (e.type === 'mcp') return { ...e, servers: maskMcpStatuses(e.servers, values) };
@@ -168,6 +229,7 @@ export function maskMcpEvent<E extends AgentEvent>(e: E, values: readonly string
   if (e.phase !== 'start' && e.mcpServer && e.output !== undefined) out = { ...out, output: maskMcpText(e.output, values, MCP_CARD_MAX_CHARS) };
   if (e.phase === 'failed' && e.mcpServer && out.type === 'toolCall' && classifyMcpCall(out.output) === 'policy') out = { ...out, mcpCall: 'policy' }; // FR-193: from the masked text; the word only
   if (e.edit && values.length) out = { ...out, edit: maskEditInfo(e.edit, values) };
+  if (e.args !== undefined) out = { ...out, args: maskToolArgs(e.args, values) }; // spec 005 FR-342, main half (issue #1975)
   return out;
 }
 

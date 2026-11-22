@@ -1,0 +1,1 @@
+- **Tool call arguments are masked in main too**: Durbar now masks a tool call's arguments before they reach the window or the debug log, as well as in the chat's tool chip, so the window never holds a value the mask hides (defence in depth). Harmless arguments read exactly as before (spec 005).
