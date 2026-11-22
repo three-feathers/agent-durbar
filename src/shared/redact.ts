@@ -2510,7 +2510,7 @@ const MASK_SHOWN = /\[redacted(?::[^\]\r\n]{1,128})?\]/;
  * The literal pieces between the masks are placed twice, as early and as late as they fit; a character counts as shown only when every
  * placement shows it, so an ambiguous placement hides more, never less. Anything that does not fit (a mask failed) hides all.
  */
-function hiddenSpans(orig: string, masked: string): Array<[number, number]> {
+export function hiddenSpans(orig: string, masked: string): Array<[number, number]> {
   if (masked === orig) return [];
   const all: Array<[number, number]> = [[0, orig.length]];
   let m = masked;
@@ -2976,12 +2976,19 @@ const WITHIN_MAX = 64;
  */
 export function keepShownWithin(head: string, ref: string): string {
   if (head === ref) return head;
+  return keepShownWithinRef(head, shownRef(ref));
+}
+/** `keepShownWithin`'s reading of `ref`, made once: its shown pieces, its shown text, and the searches used so far (spec 005 FR-342: one ref for many heads, linear). */
+export interface ShownRef { pieces: Set<string>; shown: string; looked: number }
+export function shownRef(ref: string): ShownRef {
   const pieces = new Set<string>();
   const rs = ref.split(PIECE_CUT);
   for (let k = 0; k < rs.length; k += 2) pieces.add(rs[k]);
-  const shown = rs.filter((_p, k) => k % 2 === 0).join('\u0000');
-  let looked = 0;
-  return head.split(PIECE_CUT).map((p, k) => (k % 2 || p === '' || pieces.has(p) || (++looked <= WITHIN_MAX && shown.includes(p)) ? p : MASK)).join('');
+  return { pieces, shown: rs.filter((_p, k) => k % 2 === 0).join('\u0000'), looked: 0 };
+}
+/** `keepShownWithin` against a prepared ref; the `WITHIN_MAX` searches are shared by every head read against the same ref. */
+export function keepShownWithinRef(head: string, r: ShownRef): string {
+  return head.split(PIECE_CUT).map((p, k) => (k % 2 || p === '' || r.pieces.has(p) || (++r.looked <= WITHIN_MAX && r.shown.includes(p)) ? p : MASK)).join('');
 }
 /** Test only: the span-level union of two readings (`unionMasks`). */
 export const _unionMasksForTest = (s: string, first: string, written: string): string => unionMasks(s, first, written);

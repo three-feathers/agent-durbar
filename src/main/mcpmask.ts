@@ -3,7 +3,7 @@ import type { AgentEvent, McpServerStatus } from '../adapters/types';
 import type { McpServerSpec } from '../shared/mcp';
 import { classifyMcpCall } from '../shared/mcpcall';
 import type { EditInfo } from '../shared/edits';
-import { MASK_INPUT_MAX, cut, keepShownWithin, maskHomePaths, maskNoteText, maskSecretArgs, maskSecretCommand, maskSecretUrl, redact, secretFlag } from '../shared/redact';
+import { MASK_INPUT_MAX, ShownRef, cut, hiddenSpans, keepShownWithinRef, shownRef, maskHomePaths, maskNoteText, maskSecretArgs, maskSecretCommand, maskSecretUrl, redact, secretFlag } from '../shared/redact';
 
 export const MCP_ERROR_MAX_CHARS = 300;
 
@@ -167,10 +167,11 @@ const ARGS_MASK = '[redacted]';
 export const ARGS_NODES_MAX = 4096;
 export const ARGS_STRINGS_MAX = 256;
 export const ARGS_CHARS_MAX = 2 * MASK_INPUT_MAX;
-/** `readings`: strings actually read by the masks (a string the masker already read for this call is not read again). */
-interface ArgsWork { nodes: number; strings: number; chars: number; readings: number }
+/** `readings`: strings actually read by the masks (a string the masker already read for this call is not read again); `pieces`: pieces merged;
+ * `searches`: searches for a piece inside a reading's shown text (at most `WITHIN_MAX` per reading, shared by the words of a list). */
+interface ArgsWork { nodes: number; strings: number; chars: number; readings: number; pieces: number; searches: number }
 class OverBudget extends Error {}
-const noWork = (): ArgsWork => ({ nodes: 0, strings: 0, chars: 0, readings: 0 });
+const noWork = (): ArgsWork => ({ nodes: 0, strings: 0, chars: 0, readings: 0, pieces: 0, searches: 0 });
 let lastWork: ArgsWork = noWork();
 /** Test only: the work counters of the last `maskToolArgs` call. */
 export const _toolArgsWorkForTest = (): ArgsWork => ({ ...lastWork });
@@ -202,7 +203,6 @@ function scanArgs(v: unknown, depth: number, w: ArgsWork): void {
   if (Array.isArray(v)) {
     spendNodes(w, v.length); // before the walk: a huge list stops here
     for (const x of v) scanArgs(x, depth + 1, w);
-    for (const x of v) if (typeof x === 'string' && !overLimit(x)) spendChars(w, 2 * x.length + 1); // the list's whole reading and its comma-joined reading
     return;
   }
   if (!plainObject(v)) return;
@@ -225,34 +225,37 @@ const READ_CACHE_MAX = 64;
  */
 /** A text as the window reads it flat: every blank run one space, trimmed (how the chip, the task line and the desk read a list's joined text). */
 const flatText = (t: string): string => t.replace(/\s+/g, ' ').trim();
-/** A shell, cmd or PowerShell line-continuation mark right before a line break (`\\`, `^`, a backtick). */
-const CONT_MARK = /^[\\^`]$/;
+/** `keepShownWithin(head, ref)` against a prepared ref (one per reading, shared by the words of a list), counted. Continuation marks: `maskAfterContinuations`. */
+function mergeRef(head: string, r: ShownRef, w: ArgsWork): string {
+  w.pieces += head.length;
+  const before = r.looked;
+  const merged = keepShownWithinRef(head, r);
+  w.searches += r.looked - before;
+  return merged;
+}
 /**
- * `keepShownWithin(head, ref)` that never masks a line-continuation mark (review of #2002, round 5): a mark at the end of a word before a line break is
- * read as its own piece and always kept, so a mask in the window still joins the next line as on the raw text (a masked value never takes the mark with
- * it). Blank runs are kept as they are; any surprise in the pieces fails closed (the whole text is the mask).
+ * After the merges (review of #2002, round 6): a line of the original that ends with a continuation mark and whose last piece came out masked keeps its
+ * mark (also one the note mask took with the value), and the first piece of the next line is masked too: the window joins the lines, so the value may
+ * run on there. Lines are kept as they are; when the line count does not match, the whole text is the mask (fail closed).
  */
-function mergeKeepingMarks(head: string, ref: string): string {
-  const parts = head.split(/(\s+)/);
-  const marks = new Set<number>(); // indexes in `split` of a continuation mark (kept as written)
-  const inserted = new Set<number>(); // indexes in `split` of the blank put between a word and its mark (dropped again)
-  const split: string[] = [];
-  for (let i = 0; i < parts.length; i++) {
-    const t = parts[i];
-    const brk = i % 2 === 0 && i + 1 < parts.length && /[\r\n]/.test(parts[i + 1]);
-    if (brk && t.length > 1 && CONT_MARK.test(t[t.length - 1])) {
-      split.push(t.slice(0, -1));
-      inserted.add(split.length); split.push(' ');
-      marks.add(split.length); split.push(t[t.length - 1]);
-    } else {
-      if (brk && CONT_MARK.test(t)) marks.add(split.length);
-      split.push(t);
+function maskAfterContinuations(orig: string, out: string): string {
+  if (out === orig || !/[\\^`][ \t]*(?:\r\n|\n|\r)/.test(orig)) return out;
+  const ol = orig.split(/(\r\n|\n|\r)/), ml = out.split(/(\r\n|\n|\r)/);
+  if (ol.length !== ml.length) return ARGS_MASK;
+  let carry = false; // the previous line ended in a masked value before its mark
+  for (let i = 0; i < ol.length; i += 2) {
+    if (carry) ml[i] = ml[i].replace(/^(\s*)\S+/, (_m, b: string) => b + ARGS_MASK); // the value may run on into this piece
+    const mk = /([\\^`])([ \t]*)$/.exec(ol[i]);
+    carry = false;
+    if (mk && i + 1 < ol.length) {
+      const last = /(\S+)\s*$/.exec(ml[i]);
+      if (last && last[1].includes('[redact')) {
+        carry = true;
+        if (!/[\\^`]$/.test(last[1])) ml[i] = ml[i].replace(/\s*$/, '') + mk[1] + mk[2];
+      }
     }
   }
-  if (!marks.size) return keepShownWithin(head, ref);
-  const outParts = keepShownWithin(split.join(''), ref).split(/(\s+)/);
-  if (outParts.length !== split.length) return ARGS_MASK; // the pieces did not line up: fail closed
-  return outParts.map((x, i) => (inserted.has(i) ? '' : marks.has(i) ? split[i] : x)).join('');
+  return ml.join('');
 }
 function readArgText(s: string, values: readonly string[], w: ArgsWork, cache?: ReadCache): string {
   if (!s) return s;
@@ -263,10 +266,61 @@ function readArgText(s: string, values: readonly string[], w: ArgsWork, cache?: 
   if (out.trim() !== ARGS_MASK) { // the note mask hid the whole value: no other reading can hide more
     // the session values: the note mask hides each of them and keeps those masks, so the other readings need not know them
     const readings: Array<(t: string) => string> = [(t) => maskSecretCommand(t), ...(/:\/\//.test(s) ? [(t: string) => maskSecretUrl(t)] : [])];
-    for (const read of readings) out = mergeKeepingMarks(out, read(s));
+    for (const read of readings) out = mergeRef(out, shownRef(read(s)), w);
+    out = maskAfterContinuations(s, out);
   }
   if (key) { cache!.set(key, out); if (cache!.size > READ_CACHE_MAX) cache!.delete(cache!.keys().next().value as string); }
   return out;
+}
+/** `s` with the given sorted, disjoint ranges replaced by one mask each. */
+function maskRanges(s: string, ranges: ReadonlyArray<[number, number]>): string {
+  let out = '', at = 0;
+  for (const [a, b] of ranges) { out += s.slice(at, a) + ARGS_MASK; at = b; }
+  return out + s.slice(at);
+}
+/**
+ * Review of #2002, rounds 5 and 6: the window reads a list joined with commas and flat (`String(list)`: the chip, the task line, the desk), where a value
+ * can run into the next word and both are hidden. The note mask, the command reading and the URL reading run once on that joined text; what each hides
+ * (`hiddenSpans`) is mapped back to every word it covers, so the work is linear in the list's length. A reading that hides something but cannot be placed
+ * on the text hides every word (fail closed); a reading that hides nothing changes nothing.
+ */
+function joinedHidden(words: readonly string[], values: readonly string[], w: ArgsWork): Array<Array<[number, number]>> {
+  // the flat joined text, with each character's word and place in it (a collapsed blank run keeps its first character's place; a comma has none)
+  let flat = '';
+  const word: number[] = [], pos: number[] = [];
+  let blank = false;
+  words.forEach((x, j) => {
+    if (j) { if (blank) { flat += ' '; word.push(-1); pos.push(-1); blank = false; } flat += ','; word.push(-1); pos.push(-1); }
+    for (let k = 0; k < x.length; k++) {
+      if (/\s/.test(x[k])) { blank = flat.length > 0; continue; }
+      if (blank) { flat += ' '; word.push(j); pos.push(k - 1); blank = false; }
+      flat += x[k]; word.push(j); pos.push(k);
+    }
+  });
+  w.pieces += flat.length;
+  const out: Array<Array<[number, number]>> = words.map(() => []);
+  const reads = [maskNoteText(flat, values).text, maskSecretCommand(flat), ...(/:\/\//.test(flat) ? [maskSecretUrl(flat)] : [])];
+  for (const r of reads) {
+    if (r === flat || !/\[redact/.test(r)) continue; // hides nothing
+    for (const [a, b] of hiddenSpans(flat, r)) {
+      let k = a;
+      while (k < b) {
+        const j = word[k];
+        if (j < 0) { k++; continue; }
+        const from = pos[k];
+        let to = from;
+        while (k < b && word[k] === j) { to = pos[k] + 1; k++; }
+        out[j].push([from, to]);
+      }
+    }
+  }
+  // per word: sorted, overlapping ranges joined
+  return out.map((rs) => {
+    rs.sort((x, y) => x[0] - y[0]);
+    const m: Array<[number, number]> = [];
+    for (const [a, b] of rs) { if (m.length && a <= m[m.length - 1][1]) m[m.length - 1][1] = Math.max(m[m.length - 1][1], b); else m.push([a, b]); }
+    return m;
+  });
 }
 function maskArgValue(v: unknown, values: readonly string[], depth: number, w: ArgsWork, cache?: ReadCache): unknown {
   if (typeof v === 'string') return overLimit(v) ? '' : readArgText(v, values, w, cache);
@@ -281,12 +335,20 @@ function maskArgValue(v: unknown, values: readonly string[], depth: number, w: A
     if (at.length) {
       const words = at.map((i) => v[i] as string);
       const whole = maskSecretArgs(words);
-      at.forEach((i, j) => { out[i] = typeof whole[j] === 'string' ? mergeKeepingMarks(out[i] as string, whole[j]) : ARGS_MASK; });
+      // review of #2002, round 6: the whole-list reading is merged only into a word that names a secret or follows one (a flag, `NAME=`, a header
+      // word): elsewhere it can hide a harmless shell word (a wrapper's script split into words) that neither the chip nor the word read alone hides
+      const named = (x: string | undefined): boolean => typeof x === 'string' && secretFlag(x.replace(/[=:].*$/s, ''));
+      at.forEach((i, j) => {
+        if (typeof whole[j] !== 'string') { out[i] = ARGS_MASK; return; }
+        if (named(words[j]) || named(words[j - 1])) out[i] = mergeRef(out[i] as string, shownRef(whole[j]), w);
+      });
       // review of #2002, round 5: the window reads a list joined with commas (`String(list)`: the chip, the task line, the desk), where a value can run
       // into the next word and both are hidden; the same readings on that joined text, merged into every word, so main never hides fewer words
-      const joined = flatText(words.join(',')); // as the chip, the task line and the desk read it (flat)
-      const reads = [maskNoteText(joined, values).text, maskSecretCommand(joined), ...(/:\/\//.test(joined) ? [maskSecretUrl(joined)] : [])];
-      at.forEach((i) => { for (const r of reads) out[i] = mergeKeepingMarks(out[i] as string, r); });
+      const hid = joinedHidden(words, values, w); // per word: its characters a joined reading hides (round 6: spans mapped back, linear)
+      at.forEach((i, j) => {
+        if (hid[j].length) out[i] = mergeRef(out[i] as string, shownRef(maskRanges(words[j], hid[j])), w);
+        out[i] = maskAfterContinuations(words[j], out[i] as string);
+      });
     }
     return out;
   }

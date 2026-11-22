@@ -151,8 +151,6 @@ ok('BUDGET: large arguments stop at a fixed work cap and become the mask', () =>
     ['1000 x 12k strings', { a: Array.from({ length: 1000 }, () => 'echo hello world '.repeat(700)) }],
     ['6 keys x 7 levels', nest(7)],
     ['10k numbers', { a: Array.from({ length: 10_000 }, (_, i) => i) }],
-    ['a list read twice', { command: ['a '.repeat(3500), 'b '.repeat(3500)] }],
-    ['a list read three times', { command: ['a '.repeat(2500), 'b '.repeat(2500)] }],
     ['10 x 12k strings', { a: Array.from({ length: 10 }, () => 'echo hello world '.repeat(700)) }],
     ['600 short strings', { a: Array.from({ length: 30 }, () => Object.fromEntries(Array.from({ length: 20 }, (_, i) => ['k' + i, 'v' + i]))) }],
   ];
@@ -331,6 +329,53 @@ ok('CACHE-VALUES: the read cache is keyed by the session values too', () => {
   mk({ ...(ev('start', 'bash', { command: long }) as object), sessionId: 'sA', callId: 'k1' } as AgentEvent, []);
   const m = mk({ ...(ev('start', 'bash', { command: long }) as object), sessionId: 'sB', callId: 'k2' } as AgentEvent, [V]);
   assert.ok(!JSON.stringify(m).includes(V), 'CACHE-VALUES a string read for one session does not come back unmasked where it holds another session\'s value');
+});
+ok('R1B: a value attached to its option, then a continuation mark, then the next piece: nothing main hid shows', () => {
+  const A2 = ['Hq4W', 'n7Ks2', 'Pd9Lm', '3Xc5Ty'].join(''), B2 = ['Bz8Nv6', 'Mc4Lk2', 'Jh0Gf'];
+  const B = B2.join('');
+  const pres = [['--pass', 'word='].join('') + A2, '-p' + A2];
+  const marks = ['\\\n', '\\\r\n', '`\n', '`\r\n'];
+  const posts = ['-p' + B, B, B + ' && next', '  ' + B, '--x ' + B];
+  const shapes: Array<[string, (raw: string) => unknown]> = [['task', (raw) => ({ prompt: 'p', description: raw })], ['bash', (raw) => ({ command: raw })], ['web_fetch', (raw) => ({ url: raw })]];
+  const bad: string[] = [];
+  for (const pre of pres) for (const mk of marks) for (const post of posts) for (const [tool, mkArgs] of shapes) {
+    const a = mkArgs(pre + mk + post), m = maskToolArgs(a);
+    for (const [name, f] of Object.entries(SURFACES)) {
+      const raw = f(tool, a), masked = f(tool, m);
+      for (const p of B2) if (!raw.includes(p) && masked.includes(p)) bad.push(`${tool} ${name} ${JSON.stringify(mk)}`);
+    }
+  }
+  assert.deepStrictEqual([...new Set(bad)], [], 'R1B no piece of the next value shows that main hid');
+});
+ok('LIST-CONT-MARK: a list word keeps its continuation mark when a joined reading masks the value before it', () => {
+  const A2 = ['Hq4W', 'n7Ks2', 'Pd9Lm', '3Xc5Ty'].join(''), B = ['Bz8Nv6', 'Mc4Lk2', 'Jh0Gf'].join('');
+  const m = maskToolArgs({ command: ['curl', ['Coo', 'kie:'].join(''), A2 + '\\\n' + B] }) as { command: string[] };
+  assert.ok(!m.command[2].includes(A2) && !m.command[2].includes(B), 'LIST-CONT-MARK the values are masked');
+  assert.ok(m.command[2].includes('\\\n'), `LIST-CONT-MARK the mark and its line break are kept: ${JSON.stringify(m.command[2]).replace(A2, 'A').replace(B, 'B')}`);
+});
+ok('NPM-WRAPPER: a shell wrapper\'s script split into words stays as written', () => {
+  const words = ['npm', 'run', 'build', '&&', 'sh', '-c', '"L=\\$(mktemp);', 'DURBAR_SIM=15', 'electron', '.', '2>&1', '|', 'tee', '\\$L"'];
+  assert.deepStrictEqual(maskToolArgs({ command: words }), { command: words }, 'NPM-WRAPPER harmless words unchanged');
+});
+ok('LIST-10K: a harmless list of about 10,000 characters passes unchanged, each word counted once', () => {
+  const words = Array.from({ length: 200 }, (_, i) => 'src/renderer/some/long/folder/name/file' + String(i).padStart(4, '0') + '.js');
+  assert.deepStrictEqual(maskToolArgs({ command: words }), { command: words }, 'LIST-10K unchanged');
+  const w = _toolArgsWorkForTest();
+  assert.strictEqual(w.chars, words.reduce((k, x) => k + x.length, 0), `LIST-10K each word counted once ${JSON.stringify(w)}`);
+});
+ok('LINEAR: a long list is merged in work linear in its length', () => {
+  const V = ['Pl4n', 'Vq8', 'wordy7'].join('');
+  const words = [...Array.from({ length: 150 }, (_, i) => 'w' + i), ['--pass', 'word'].join(''), V, ...Array.from({ length: 100 }, (_, i) => 'x' + i)];
+  const m = maskToolArgs({ command: words }) as { command: string[] };
+  const w = _toolArgsWorkForTest();
+  const chars = words.reduce((k, x) => k + x.length + 1, 0);
+  assert.ok(!m.command.includes(V) && m.command[0] === 'w0' && m.command[words.length - 1] === 'x99', 'LINEAR the value masked, the others kept');
+  assert.ok(w.pieces <= 4 * chars, `LINEAR-PIECES pieces within four per character ${JSON.stringify(w)}`);
+  assert.ok(w.searches <= 64 * 4, `LINEAR-SEARCHES searches bounded, not one per word ${JSON.stringify(w)}`);
+});
+ok('FAIL-CLOSED-LINES: when a mask takes line breaks in a text with a continuation, the text is the mask', () => {
+  const key = ['-----BEGIN ', 'PRIVATE KEY-----\nMIIabc', 'def\nghi\n-----END ', 'PRIVATE KEY----- \\\nnext'].join('');
+  assert.strictEqual((maskToolArgs({ description: key }) as { description: string }).description, '[redacted]', 'FAIL-CLOSED-LINES the mask');
 });
 ok('DIFF: no word a window surface hides on the raw arguments shows on the masked copy', () => {
   const corpus: Array<[string, unknown, string[]]> = [];
