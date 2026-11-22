@@ -1,6 +1,6 @@
 # Review rounds and pace
 
-This file is rule text, part of [AGENTS.md](../../AGENTS.md) (FR-082): read it before you ask for review, review a PR, post checks, plan a round, sub-agents or load, or publish the daily release. It binds like AGENTS.md, unlike the guidance files (review checklist, agent-notes, agent-apps); "here" and "this file" in it mean AGENTS.md with `docs/rules/`.
+This file is rule text, part of [AGENTS.md](../../AGENTS.md) (FR-082): read it before you ask for review, review a PR, post checks, plan a round, sub-agents or load, or publish the daily release.
 
 ## First time right
 
@@ -25,9 +25,9 @@ This file is rule text, part of [AGENTS.md](../../AGENTS.md) (FR-082): read it b
 
 ## Pace and load
 
-- **Land before building** (FR-039): open PRs follow machine capacity (CPU, RAM, disk, one Electron), in FR-081 order, to cut the backlog; the PR limit is in AGENTS.md *Delivery speed*. Capacity as read in spec 021 *Changes 2026-11-08*. Masking hardening: one batched PR a day; a confirmed leak lands alone at once. Vikram's side: Codex and spec 103 pre-reviews, findings fixed, before teammate review.
+- **Land before building** (FR-039): open PRs follow machine capacity (CPU, RAM, disk, one Electron), in FR-081 order, to cut the backlog; PR limit: AGENTS.md *Delivery speed*. Capacity as read in spec 021 *Changes 2026-11-08*. Masking hardening: one batched PR a day; a confirmed leak lands alone at once. Vikram's side: Codex and spec 103 pre-reviews, findings fixed, before teammate review.
 - **Sub-agents by size** (FR-038): small = one smaller-model agent; medium = implementer that mutation-checks; sensitive (secrets, user files, IPC, redaction, permissions, spending) = analyst, implementer, reviewer. Two heavy agents per machine at most.
 - **Weekly retro** (FR-063): each side posts its retro, blind first, on the week's "Weekly retro" issue the same day; whoever finishes first merges them; owner decisions: one batched message.
-- **Fuzz, CI, mockups** (FR-084): run `scripts/fuzz/` before a security-relevant PR's first push, reviewers reuse it (T061). PR CI runs only the UI drivers the diff touches (unmapped file: all; a check fails on an unmapped driver); nightly and `main` run all (T063). Mockups: 3 rounds before the spec, then iterate in the app behind a flag.
+- **Fuzz, CI, mockups** (FR-084): run `scripts/fuzz/` before a security-relevant PR's first push, reviewers reuse it (T061). PR CI runs only the touched UI drivers (unmapped file: all; a check fails on an unmapped driver); nightly and `main` run all (T063). Mockups: 3 rounds before the spec, then iterate in the app behind a flag.
 - **Daily release** (FR-064): when `main` has new fragments, agents publish a daily stable release unasked.
 - **Red means owned** (FR-063): a red scheduled workflow gets an owner within 24 h or is paused (owner OK if it spends credits).
