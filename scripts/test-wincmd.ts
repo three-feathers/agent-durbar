@@ -1,25 +1,30 @@
 /**
- * Spec 045: the security sweep. FR-003 `windowsCmd` (which cmd.exe runs a `.cmd` shim), FR-001 uniform place ids,
+ * Spec 045: the security sweep. FR-003/FR-065 `windowsCmdPath` (which cmd.exe runs a `.cmd` shim), FR-001 uniform place ids,
  * FR-002 the renderer's one-pass unescape. `npm run test:security`. No network, no credits.
  */
 import * as assert from 'assert';
 import * as fs from 'fs';
 import * as path from 'path';
-import { CMD_UNSAFE, windowsCmd } from '../src/shared/wincmd';
+import * as os from 'os';
+import { CMD_REFUSED, CMD_UNSAFE, cmdShimArgs, windowsCmdPath } from '../src/shared/wincmd';
+import { execFound, nodeDetectEnv, nodeExec } from '../src/adapters/detect';
+import type { DetectEnv, Exec } from '../src/adapters/detect';
 import { isObj, nonEmptyStr } from '../src/shared/guards';
 import { randomPlaceId } from '../src/main/settings';
 import { navigationAllowed, permissionAllowed } from '../src/main/hardening';
 
 // FR-003
-assert.strictEqual(windowsCmd({ SystemRoot: 'C:\\Windows' }), 'C:\\Windows\\System32\\cmd.exe', 'the system copy first');
-assert.strictEqual(windowsCmd({ SystemRoot: 'C:\\Windows', ComSpec: 'D:\\evil\\cmd.exe' }), 'C:\\Windows\\System32\\cmd.exe', 'SystemRoot wins over ComSpec');
-assert.strictEqual(windowsCmd({ ComSpec: 'D:\\tools\\cmd.exe' }), 'D:\\tools\\cmd.exe', 'an absolute cmd.exe from ComSpec');
-assert.strictEqual(windowsCmd({ COMSPEC: 'C:\\Windows\\system32\\CMD.EXE' }), 'C:\\Windows\\system32\\CMD.EXE');
-assert.strictEqual(windowsCmd({ ComSpec: 'calc.exe' }), 'cmd.exe', 'a relative ComSpec is not run');
-assert.strictEqual(windowsCmd({ ComSpec: 'C:\\x\\powershell.exe' }), 'cmd.exe', 'only a file named cmd.exe');
-assert.strictEqual(windowsCmd({ ComSpec: 'C:\\x\\cmd.exe" & calc & "' }), 'cmd.exe', 'no quotes');
-assert.strictEqual(windowsCmd({ SystemRoot: 'Windows' }), 'cmd.exe', 'a relative SystemRoot is ignored');
-assert.strictEqual(windowsCmd({}), 'cmd.exe');
+assert.strictEqual(windowsCmdPath({ SystemRoot: 'C:\\Windows' }), 'C:\\Windows\\System32\\cmd.exe', 'the system copy first');
+assert.strictEqual(windowsCmdPath({ windir: 'C:\\Windows' }), 'C:\\Windows\\System32\\cmd.exe', 'windir too');
+assert.strictEqual(windowsCmdPath({ SystemRoot: '\\\\srv\\share\\Windows' }), '\\\\srv\\share\\Windows\\System32\\cmd.exe', 'a UNC root');
+assert.strictEqual(windowsCmdPath({ SystemRoot: 'C:\\Windows', ComSpec: 'D:\\evil\\cmd.exe' }), 'C:\\Windows\\System32\\cmd.exe', 'SystemRoot wins over ComSpec');
+assert.strictEqual(windowsCmdPath({ ComSpec: 'D:\\tools\\cmd.exe' }), 'D:\\tools\\cmd.exe', 'a drive cmd.exe from ComSpec');
+assert.strictEqual(windowsCmdPath({ COMSPEC: 'C:\\Windows\\system32\\CMD.EXE' }), 'C:\\Windows\\system32\\CMD.EXE');
+// FR-065: no drive or UNC cmd.exe -> undefined (the caller refuses its .cmd route), never a bare `cmd.exe` for Windows to look up
+for (const e of [{}, { ComSpec: 'calc.exe' }, { ComSpec: 'C:\\x\\powershell.exe' }, { ComSpec: 'C:\\x\\cmd.exe" & calc & "' }, { SystemRoot: 'Windows' },
+  { SystemRoot: '\\Windows' }, { windir: '/Windows' }, { ComSpec: '\\x\\cmd.exe' }, { ComSpec: '/x/cmd.exe' }, { SystemRoot: 'C:Windows' }, { SystemRoot: '\\\\.\\C:\\Windows' }, { SystemRoot: '\\\\?\\C:\\Windows' }]) {
+  assert.strictEqual(windowsCmdPath(e), undefined, 'FR-065: no drive or UNC cmd.exe: ' + JSON.stringify(e));
+}
 
 // FR-001: shape, alphabet, and every character appears over many draws (a uniform draw; the old modulo favoured a-d)
 const seen = new Map<string, number>();
@@ -87,4 +92,83 @@ assert.ok(!CMD_UNSAFE.test('C:\\Users\\u\\AppData\\Roaming\\npm\\codex.cmd'), 'a
 assert.deepStrictEqual([isObj({}), isObj(null), isObj([]), isObj('x'), isObj(Object.create(null))], [true, false, false, false, true]);
 assert.deepStrictEqual([nonEmptyStr('a'), nonEmptyStr(''), nonEmptyStr(1), nonEmptyStr(undefined)], ['a', undefined, undefined, undefined]);
 
-console.log('security sweep tests passed');
+let eunsafeRun: Promise<void> = Promise.resolve();
+// spec 009 FR-029: the one quoting helper for `cmd.exe /d /s /c` and a `.cmd` shim. With /s, cmd.exe removes the first and the last quote
+// of the line after /c and runs the rest; Node's own `shell: true` therefore wraps the whole line in one more pair. `slashS` models that rule.
+{
+  const slashS = (line: string): string => { const a = line.indexOf('"'), b = line.lastIndexOf('"'); return a < 0 || a === b ? line : line.slice(0, a) + line.slice(a + 1, b) + line.slice(b + 1); };
+  const shim = 'C:\\Users\\a b\\AppData\\Local\\Programs\\Microsoft VS Code\\bin\\code.cmd';
+  const target = 'C:\\Users\\a b\\my project';
+  const args = cmdShimArgs(shim, [target]);
+  assert.deepStrictEqual(args, ['/d', '/s', '/c', `""${shim}" "${target}""`], 'the line is wrapped in one outer pair');
+  assert.strictEqual(slashS(args![3]), `"${shim}" "${target}"`, 'after /s strips its pair, the shim and the target keep their own quotes');
+  assert.ok(slashS(`"${shim}" "${target}"`).startsWith('C:\\Users\\a b'), 'without the outer pair /s would eat the shim\'s own quotes (the bug)');
+  assert.deepStrictEqual(cmdShimArgs('C:\\Program Files\\nodejs\\npm.cmd', ['install', '-g', '@openai/codex']), ['/d', '/s', '/c', '""C:\\Program Files\\nodejs\\npm.cmd" install -g @openai/codex"'], 'plain arguments stay bare');
+  assert.deepStrictEqual(cmdShimArgs('C:\\npm\\claude.cmd', ['--version']), ['/d', '/s', '/c', '""C:\\npm\\claude.cmd" --version"']);
+  assert.deepStrictEqual(cmdShimArgs('C:\\npm\\x.cmd', []), ['/d', '/s', '/c', '""C:\\npm\\x.cmd""'], 'no arguments');
+  assert.deepStrictEqual(cmdShimArgs('C:\\npm\\x.cmd', ['']), ['/d', '/s', '/c', '""C:\\npm\\x.cmd" """'], 'an empty argument is kept as ""');
+  // fails closed: every CMD_UNSAFE character in the shim or in any argument; an empty shim
+  for (const c of ['\r', '\n', '\0', '"', '&', '|', '<', '>', '^', '%', '!', '`', '(', ')', ',', ';', '=']) {
+    assert.strictEqual(cmdShimArgs(`C:\\x${c}y\\code.cmd`, ['C:\\p']), undefined, `unsafe shim: ${JSON.stringify(c)}`);
+    assert.strictEqual(cmdShimArgs('C:\\x\\code.cmd', ['C:\\p', `a${c}b`]), undefined, `unsafe argument: ${JSON.stringify(c)}`);
+  }
+  assert.strictEqual(cmdShimArgs('', ['x']), undefined, 'an empty shim');
+  // a quoted argument ending in \ would reach the program as `...\"`: refused; without white space it is not quoted, so a drive root is fine
+  assert.strictEqual(cmdShimArgs('C:\\bin\\code.cmd', ['\\\\server\\my share\\']), undefined, 'a spaced argument ending in \\ is refused');
+  assert.deepStrictEqual(cmdShimArgs('C:\\bin\\code.cmd', ['C:\\']), ['/d', '/s', '/c', '""C:\\bin\\code.cmd" C:\\"'], 'a drive root is not quoted and is kept');
+  assert.strictEqual(CMD_REFUSED, 'This command cannot be run safely on this computer.');
+  // FR-031: the three routes use the helper; none builds a /c line of its own
+  const root = path.join(__dirname, '..', '..');
+  // a /c switch in code, in any quote style ('/c', "/c", `/c`, '/C', or inside a longer literal such as `/d /s /c ...`), once comments are removed
+  const buildsOwnLine = (src: string): boolean => /['"`][^'"`\n]*\/c(\s|['"`])/i.test(src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:\\])\/\/.*$/gm, '$1'));
+  for (const s of [`x = ['/d', '/s', '/c', l]`, `x = ["/d", "/s", "/C", l]`, 'x = [`/c`, l]', 'x = `/d /s /c "${f}"`', "x = '/d /s /c ' + f"]) assert.ok(buildsOwnLine(s), `the check sees: ${s}`);
+  for (const s of ['// runs `cmd /d /s /c` with its own quotes', '/** goes through `cmd /d /s /c` */', "x = '/cache'", "x = 'C:/code'"]) assert.ok(!buildsOwnLine(s), `the check ignores: ${s}`);
+  for (const rel of ['src/main/vscode.ts', 'src/adapters/detect.ts', 'src/main/harnesssetup.ts']) {
+    const src = fs.readFileSync(path.join(root, ...rel.split('/')), 'utf8').replace(/\r\n/g, '\n');
+    assert.ok(/\bcmdShimArgs\(/.test(src), `${rel} uses cmdShimArgs`);
+    assert.ok(!buildsOwnLine(src), `${rel} builds no /c line of its own`);
+  }
+  // execFound refuses an unsafe line without starting anything (EUNSAFE), whatever the caller checked
+  const winEnv = { platform: 'win32', env: { SystemRoot: 'C:\\Windows' }, homedir: 'C:\\Users\\u', isFile: () => true } as unknown as DetectEnv;
+  let called = 0;
+  const fakeExec: Exec = async () => { called++; return { code: 0, stdout: '', stderr: '' }; };
+  eunsafeRun = execFound('C:\\a&b\\npm.cmd', ['view', 'x'], winEnv, fakeExec).then((r) => {
+    assert.deepStrictEqual([r.errorCode, r.code, called], ['EUNSAFE', null, 0], 'an unsafe shim: EUNSAFE and the exec is never called');
+    return execFound('C:\\npm\\npm.cmd', ['view', 'a|b'], winEnv, fakeExec);
+  }).then((r) => {
+    assert.deepStrictEqual([r.errorCode, called], ['EUNSAFE', 0], 'an unsafe argument: EUNSAFE and no exec');
+    return execFound('C:\\Program Files\\nodejs\\npm.cmd', ['view', 'x'], winEnv, async (file, args, opts) => { called++; assert.deepStrictEqual([file, args, opts.verbatim], ['C:\\Windows\\System32\\cmd.exe', ['/d', '/s', '/c', '""C:\\Program Files\\nodejs\\npm.cmd" view x"'], true]); return { code: 0, stdout: 'ok', stderr: '' }; });
+  }).then(async (r) => {
+    assert.deepStrictEqual([r.stdout, called], ['ok', 1], 'a safe shim runs once');
+    // spec 045 FR-065: no drive or UNC cmd.exe -> EUNSAFE and no exec, never a bare cmd.exe
+    for (const env of [{}, { SystemRoot: '\\Windows' }, { ComSpec: '\\x\\cmd.exe' }, { ComSpec: 'cmd.exe' }]) {
+      const e = { ...winEnv, env } as DetectEnv;
+      const r2 = await execFound('C:\\npm\\npm.cmd', ['--version'], e, fakeExec);
+      assert.deepStrictEqual([r2.errorCode, called], ['EUNSAFE', 1], 'FR-065: no drive or UNC cmd.exe, execFound refuses: ' + JSON.stringify(env));
+    }
+  });
+}
+
+// spec 009 FR-029, Windows only: a fake .cmd shim in a folder with spaces, run through the real route (execFound with the real exec),
+// echoes the arguments it got. On other systems this case cannot run and says so.
+async function windowsShimCase(): Promise<void> {
+  if (process.platform !== 'win32') { console.log('windows-only case skipped: not win32'); return; }
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar cmd quote '));
+  try {
+    const folder = path.join(dir, 'with space');
+    fs.mkdirSync(folder);
+    const shim = path.join(folder, 'echo args.cmd');
+    fs.writeFileSync(shim, '@echo off\r\necho ARG1=[%~1]\r\necho ARG2=[%~2]\r\n');
+    const target = path.join(dir, 'my project');
+    assert.ok(cmdShimArgs(shim, [target, 'two']), 'the temp path is safe for cmd.exe');
+    const r = await execFound(shim, [target, 'two'], nodeDetectEnv(), nodeExec);
+    assert.strictEqual(r.code, 0, `the shim ran (code ${r.code}, error ${r.errorCode ?? '-'}, stderr ${r.stderr.trim()})`);
+    const lines = r.stdout.replace(/\r\n/g, '\n').trim().split('\n');
+    assert.deepStrictEqual(lines, [`ARG1=[${target}]`, `ARG2=[two]`], 'cmd.exe ran the shim in a folder with spaces and passed a path with spaces as one argument');
+    console.log('windows-only case passed: a .cmd shim in a folder with spaces ran through cmd.exe /d /s /c');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+eunsafeRun.then(windowsShimCase).then(() => console.log('security sweep tests passed'), (e: unknown) => { console.error(e); process.exit(1); });

@@ -49,6 +49,16 @@ for (const kit of K.KITS.slice(1)) {
 // spec 077: the crew kit draws a portrait per pose with the shared cues over it, falls back to the plain figure, and keeps its id in the signature
 {
   const base = { st: 'working', mood: { body: 'normal' }, k: { shirt: '#336699', skin: '#e0b090', hair: '#222222', style: 'short', glasses: true }, mini: false, c: false, T, shade, reduced: false };
+  // spec 096: the picture's URL is escaped in the markup too, behind registerOwn's own check
+  {
+    const g = globalThis as unknown as { DurbarCrew?: unknown };
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const real = require('../../src/renderer/crew.js') as Record<string, unknown>;
+    g.DurbarCrew = { ...real, usable: () => true, file: () => 'blob:x" onload="alert(1)' };
+    const hostile: string = K.draw('crew', { id: 'c1' }, { ...base, crew: 'punk' });
+    delete g.DurbarCrew;
+    assert.ok(hostile.includes('href="blob:x&quot; onload=&quot;alert(1)"') && !hostile.includes('" onload="'), 'a quote in a URL stays inside the attribute');
+  }
   const plain: string = K.draw('crew', { id: 'c1' }, base);
   assert.ok(/\|crew\|"/.test(plain) && !plain.includes('<image'), 'no character: the plain figure, no picture, an empty id at the end of the signature');
   assert.ok(/stroke-width="1\.1"><circle/.test(plain), 'the fallback figure keeps the agent\'s own glasses (FR-017: the office figure with the agent\'s look)');

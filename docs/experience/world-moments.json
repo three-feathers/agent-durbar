@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "note": "Spec 098 registry of WORLD MOMENTS only (tool surfaces are not registered). Seeded 2026-10-31 from the experience inventory (surfaces.json, 27 world moments; mood-signs folded into desk-card, spec 098 D1). code: present = the root carries data-surface in src/renderer; planned = not yet. Cell states: built | designed | fallback-flat | missing (spec 098 D3).",
+  "note": "Spec 098 registry of WORLD MOMENTS only (tool surfaces are not registered). Seeded 2026-10-31 from the experience inventory (surfaces.json, 27 world moments; mood-signs folded into desk-card, spec 098 D1). code: present = the root carries data-surface in src/renderer; planned = not yet. Cell states: built | designed | fallback-flat | missing (spec 098 D3). The `helpers` moment (issue #1644) is added after the seed: Flat office has no column (it keeps its helper tiles, the baseline).",
   "nonNegotiableKeys": {
     "T": "text >= 10.5px",
     "A": "approval/question wording, button labels and order unchanged",
@@ -54,7 +54,7 @@
       "crews": [
         "retro"
       ],
-      "shippable": false,
+      "shippable": true,
       "pack": "src/renderer/realoffice/worlds/retro"
     }
   },
@@ -153,7 +153,7 @@
       "name": "Desk (agent)",
       "spec": "001, 034, 097 FR-010..022",
       "where": ".desk (scenekits.js, mood.js); 097 station()",
-      "code": "planned",
+      "code": "present",
       "blocks": [
         "person",
         "desk-screen",
@@ -175,6 +175,28 @@
             "asleep"
           ]
         }
+      }
+    },
+    {
+      "id": "helpers",
+      "name": "Helpers (sub-agents) beside a desk",
+      "spec": "102 FR-271, 097 FR-368..FR-376, 001 FR-089..FR-097",
+      "where": "the helper strip or kids on a desk plate (realoffice.js); Flat office: its helper tiles (helperTileHTML)",
+      "code": "planned",
+      "blocks": [
+        "person"
+      ],
+      "worlds": {
+        "photo": "built",
+        "cave": "built",
+        "loft": "missing",
+        "retro": "fallback-flat"
+      },
+      "nonNegotiables": "TKMFPR",
+      "gap": {
+        "cave": "[KNOWN GAP] rows only: the cave's circle draws no helper strip and no kids (helpers stay as +N and dots there); 102 T326, T175.",
+        "loft": "The loft has no pack and no kids yet; it is not offered (102 FR-271).",
+        "retro": "[KNOWN GAP] the arcade has no full-body kids: 102 T327, issue #1643 (open). Its head row under the plate shows its six pixel kids' faces with a status dot (102 T396); the kids beside the cabinet are not built, so the cell stays fallback-flat, never claimed as built."
       }
     },
     {
@@ -275,9 +297,20 @@
         "photo": "designed",
         "cave": "designed",
         "loft": "missing",
-        "retro": "designed"
+        "retro": "built"
       },
-      "nonNegotiables": "M"
+      "nonNegotiables": "M",
+      "evidence": {
+        "retro": {
+          "steps": [
+            "walk"
+          ],
+          "pictures": [
+            "walk-desk",
+            "walk-place"
+          ]
+        }
+      }
     },
     {
       "id": "empty-office",
@@ -292,11 +325,18 @@
         "photo": "built",
         "cave": "built",
         "loft": "missing",
-        "retro": "missing"
+        "retro": "built"
       },
       "nonNegotiables": "TK",
-      "gap": {
-        "retro": "the arcade stage ends about y=410 at 1280x800 and the window below it is blank dark page (retro-empty-1280x800 and 1440x900, looked at 2026-11-07); photo and cave fill the window. Words, three desks and lift are right; the layout is not built"
+      "evidence": {
+        "retro": {
+          "steps": [
+            "empty-office"
+          ],
+          "pictures": [
+            "empty"
+          ]
+        }
       }
     },
     {
@@ -313,9 +353,19 @@
         "photo": "built",
         "cave": "built",
         "loft": "missing",
-        "retro": "fallback-flat"
+        "retro": "built"
       },
-      "nonNegotiables": "TKS"
+      "nonNegotiables": "TKS",
+      "evidence": {
+        "retro": {
+          "steps": [
+            "first-run"
+          ],
+          "pictures": [
+            "firstrun"
+          ]
+        }
+      }
     },
     {
       "id": "lift-panel",
@@ -330,9 +380,19 @@
         "photo": "designed",
         "cave": "designed",
         "loft": "designed",
-        "retro": "fallback-flat"
+        "retro": "built"
       },
-      "nonNegotiables": "TKMCF"
+      "nonNegotiables": "TKMCF",
+      "evidence": {
+        "retro": {
+          "steps": [
+            "cells"
+          ],
+          "pictures": [
+            "cell-lift"
+          ]
+        }
+      }
     },
     {
       "id": "floor-change",
@@ -377,7 +437,10 @@
         "loft": "designed",
         "retro": "fallback-flat"
       },
-      "nonNegotiables": "TKC"
+      "nonNegotiables": "TKC",
+      "gap": {
+        "retro": "Not applicable to the flip: no world has this surface; a backlog feature for all worlds, tracked in #1892 (owner decision, Vikram, 2026-11-19)."
+      }
     },
     {
       "id": "all-floors",
@@ -394,11 +457,18 @@
         "photo": "designed",
         "cave": "designed",
         "loft": "designed",
-        "retro": "missing"
+        "retro": "built"
       },
       "nonNegotiables": "TFKM",
-      "gap": {
-        "retro": "looked at (retro-cell-allfloors, 2026-11-08): the window is full but every folder stands on one floor with no floor names or storeys, while the lift says All; the other worlds' All view shows three floor tags (shots-092-lift). Not the building view yet"
+      "evidence": {
+        "retro": {
+          "steps": [
+            "cells"
+          ],
+          "pictures": [
+            "cell-allfloors"
+          ]
+        }
       }
     },
     {
@@ -414,9 +484,12 @@
         "photo": "designed",
         "cave": "designed",
         "loft": "designed",
-        "retro": "designed"
+        "retro": "fallback-flat"
       },
-      "nonNegotiables": "TK"
+      "nonNegotiables": "TK",
+      "gap": {
+        "retro": "Not applicable to the flip: no world has this surface; a backlog feature for all worlds, tracked in #1892 (owner decision, Vikram, 2026-11-19)."
+      }
     },
     {
       "id": "floor-jumps",
@@ -488,9 +561,19 @@
         "photo": "designed",
         "cave": "designed",
         "loft": "designed",
-        "retro": "fallback-flat"
+        "retro": "built"
       },
-      "nonNegotiables": "MK"
+      "nonNegotiables": "MK",
+      "evidence": {
+        "retro": {
+          "steps": [
+            "cells"
+          ],
+          "pictures": [
+            "cell-chatshell"
+          ]
+        }
+      }
     },
     {
       "id": "chat-shell",
@@ -508,9 +591,19 @@
         "photo": "designed",
         "cave": "designed",
         "loft": "designed",
-        "retro": "fallback-flat"
+        "retro": "built"
       },
-      "nonNegotiables": "TKF"
+      "nonNegotiables": "TKF",
+      "evidence": {
+        "retro": {
+          "steps": [
+            "cells"
+          ],
+          "pictures": [
+            "cell-chatshell"
+          ]
+        }
+      }
     },
     {
       "id": "chat-header",
@@ -527,9 +620,19 @@
         "photo": "designed",
         "cave": "designed",
         "loft": "designed",
-        "retro": "fallback-flat"
+        "retro": "built"
       },
-      "nonNegotiables": "TKSC"
+      "nonNegotiables": "TKSC",
+      "evidence": {
+        "retro": {
+          "steps": [
+            "cells"
+          ],
+          "pictures": [
+            "cell-chatshell"
+          ]
+        }
+      }
     },
     {
       "id": "limit-card",
@@ -576,11 +679,18 @@
         "photo": "designed",
         "cave": "designed",
         "loft": "designed",
-        "retro": "missing"
+        "retro": "built"
       },
       "nonNegotiables": "ASKTC",
-      "gap": {
-        "retro": "cream card with pale unreadable text in the arcade chat (retro-cell-chat); fix with T221's dark chat"
+      "evidence": {
+        "retro": {
+          "steps": [
+            "cells"
+          ],
+          "pictures": [
+            "cell-chat"
+          ]
+        }
       }
     },
     {
@@ -598,11 +708,20 @@
         "photo": "designed",
         "cave": "designed",
         "loft": "designed",
-        "retro": "missing"
+        "retro": "built"
       },
       "nonNegotiables": "AKT",
-      "gap": {
-        "retro": "same cream card as the permission card (retro-cell-chat); fix with T221's dark chat"
+      "evidence": {
+        "retro": {
+          "steps": [
+            "cells"
+          ],
+          "pictures": [
+            "cell-question",
+            "cell-focus-answer",
+            "cell-focus-skip"
+          ]
+        }
       }
     },
     {
@@ -620,9 +739,19 @@
         "photo": "designed",
         "cave": "designed",
         "loft": "missing",
-        "retro": "fallback-flat"
+        "retro": "built"
       },
-      "nonNegotiables": "AKS"
+      "nonNegotiables": "AKS",
+      "evidence": {
+        "retro": {
+          "steps": [
+            "cells"
+          ],
+          "pictures": [
+            "cell-elicit"
+          ]
+        }
+      }
     },
     {
       "id": "answer-bar",
@@ -638,9 +767,19 @@
         "photo": "designed",
         "cave": "designed",
         "loft": "designed",
-        "retro": "designed"
+        "retro": "built"
       },
-      "nonNegotiables": "AKT"
+      "nonNegotiables": "AKT",
+      "evidence": {
+        "retro": {
+          "steps": [
+            "cells"
+          ],
+          "pictures": [
+            "cell-answerbar"
+          ]
+        }
+      }
     },
     {
       "id": "coffee-bar",

@@ -25,6 +25,8 @@ export interface PrevDeps {
   appName(a: AgentInfo): string;
   /** Local activity log (FR-031): recorded here, in main, never by the window. */
   log?(a: AgentInfo, decision: 'session-deleted', action: string): void;
+  /** Spec 095 FR-026 (review N-R1): the earlier sessions changed (a delete succeeded); what other features keep of them is dropped. */
+  changed?(): void;
 }
 
 export interface PrevMarks {
@@ -156,6 +158,7 @@ export class PrevSessions {
       d.store?.dropSessionName(key, adapterId, sessionId); // spec 059 FR-005: its name goes with it
       d.store?.removeOpenSession(key, sessionId);
       d.log?.(a, 'session-deleted', `Session deleted · ${d.appName(a)} · ${sessionId.slice(0, 8)} · last used ${isoDay(prev.modifiedTime)}`);
+      try { d.changed?.(); } catch { /* a listener's error never turns a done delete into a failure */ }
       return { ok: true };
     } finally {
       this.deleting.delete(sessionId);

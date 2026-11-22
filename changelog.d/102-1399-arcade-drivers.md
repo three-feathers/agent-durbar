@@ -1,1 +1,0 @@
-- **Desk-feature checks also run in the Retro arcade** (spec 102, issue #1399): test drivers only; five desk-feature checks (hover card, desk marks, one face, chat look, chat contrast) now also run in the Retro arcade in the UI suite. Nothing changes for users.

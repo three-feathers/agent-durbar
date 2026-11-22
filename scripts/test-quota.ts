@@ -3,6 +3,7 @@
  * Prints "test-quota: OK"; a hang leaves exit code 1 set.
  */
 import * as assert from 'assert';
+import { cpuMs } from './redact-growth-lib';
 import * as fs from 'fs';
 import * as path from 'path';
 import { cleanName } from '../src/shared/account';
@@ -92,10 +93,11 @@ const facts = (v: QuotaView, now = NOW, i = 0): Record<string, string> => Object
   assert.strictEqual(quotaZoneOf('2026-11-01T00:00:00+02:00'), '+02:00');
   // review (Paco's side): hostile `resetDate`s are read in linear time (`T.*` was quadratic on a long string)
   for (const hostile of ['T'.repeat(200_000) + '+1', '2026-11-01T' + '0'.repeat(200_000), 'T'.repeat(60_000) + '!', '9'.repeat(200_000)]) {
-    const t0 = process.hrtime.bigint();
-    assert.strictEqual(quotaZoneOf(hostile), undefined);
-    assert.strictEqual(quotaTimeMs(hostile), undefined);
-    assert.ok(Number(process.hrtime.bigint() - t0) / 1e6 < 100, 'a hostile time string is cut before any matching');
+    let z: string | undefined = 'unset', t: number | undefined = -1;
+    const cpu = cpuMs(() => { z = quotaZoneOf(hostile); t = quotaTimeMs(hostile); }, 500);
+    assert.strictEqual(z, undefined);
+    assert.strictEqual(t, undefined);
+    assert.ok(cpu < 500, `a hostile time string is cut before any matching (${cpu.toFixed(0)} ms of CPU time; a quadratic match took seconds)`);
   }
   assert.strictEqual(quotaZoneOf('2026-11-01'), undefined);
 }

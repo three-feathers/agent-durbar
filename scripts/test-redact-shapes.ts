@@ -82,14 +82,15 @@ for (const s of ['np' + 'm_' + an(36), 'sk' + '_live_' + an(24), 'AI' + 'za' + a
   for (const pre of ['"', 'x=', '%3D', '=3D', '\\n', '`']) assert.ok(!redact(pre + s, {}).includes(s.slice(4)), `start after ${pre}`);
 }
 
-// A shape added by T137 starts after `%` re-encoded up to 8 times (the old shapes have no limit: redact-held-lib.ts); one more level is a listed limit
+// A shape added by T137 starts after `%` re-encoded up to 8 times (the old shapes have no limit: redact-held-lib.ts); one more level was a listed limit, read by FR-188's split step since
 for (const s of ['np' + 'm_' + an(36), 'sk' + '_live_' + an(24), 'AI' + 'za' + an(35), 'AB' + 'SK' + an(120)]) {
   for (const depth of [0, 1, 2, 7, 8]) {
     const before = 'q=%' + '25'.repeat(depth) + '3D';
     assert.strictEqual(redact(before + s, {}), before + '[redacted]', `${s.slice(0, 4)}… after % encoded ${depth} more times`);
   }
-  const deep = 'q=%' + '25'.repeat(9) + '3D' + s;
-  assert.strictEqual(redact(deep, {}), deep, `limit: ${s.slice(0, 4)}… after 9 more`);
+  // spec 012 FR-188 (review of PR 1899): the split step reads a percent escape re-encoded any number of times as its character, so one more level is hidden too (was a listed limit)
+  const deep = 'q=%' + '25'.repeat(9) + '3D';
+  assert.strictEqual(redact(deep + s, {}), deep + '[redacted]', `${s.slice(0, 4)}… after % encoded 9 more times (FR-188)`);
 }
 
 // Issue #1009's five, in both masks
@@ -255,8 +256,8 @@ const STAYS = [
   'nfc_normalize_unicode_string_with_long_name', 'sgp_' + 'cross_validation_results_for_the_final_model_fit', 'sbp_' + 'cross_validation_results_for_the_final_model_fit', 'glc_' + 'cross_validation_results_for_the_final_model', 'figd_' + 'cross_validation_results_for_the_final', 'cfk_' + 'cross_validation_results_for_the_final_model', 'tskey-auth-kube-config-documentation-page', 'cfut_' + 'cross_validation_results_for_model_fitting_v2', 'gldt-' + 'cross-validation-results-v2-final', 'sgp_' + 'CrossValidation_ResultsForThe_FinalModelFitting_LongName', 'sbp_' + 'cross_validation_results_for_the_final_model_v2', 'ACCAGTTGCATGCATGCATG', 'ABIAGATTACAGATTACAGA', 'ico-' + hex(32) + '.css',
   // second review of #1015: lower-case words, timestamps, lower-case paths, dotted names, prose
   'token: gpt-4o-mini', 'token: cl100k_base', 'auth: oauth2-proxy', 'auth: fix-login-42', 'password: reset-flow-v2', 'token: rework-2026', 'secret: my-secret-1', 'password: must-include-1-digit', 'Token: 2026-11-01T10:00:00Z', 'secret: src/foo1', 'cookie: a=b is the format', 'token = config.token2;',
-  // a token shape glued to a word is not one (except `sk-ant-`, on purpose)
-  'x' + 'np' + 'm_' + an(36), 'my' + 'sk' + '_live_' + an(24), 'a' + 'gh' + 'p_' + an(36),
+  // a token shape glued to a word is not one (except `sk-ant-` and, since spec 012 FR-185, the GitHub prefixes, on purpose)
+  'x' + 'np' + 'm_' + an(36), 'my' + 'sk' + '_live_' + an(24),
   // `-u` away from curl, and curl with no password
   'git push -u origin:main', 'docker run -u 1000:1000 img', 'curl -u me https://h', 'curl -H "Accept: text/plain" https://h:8080/x',
   // prose
@@ -504,7 +505,9 @@ for (const [start, more] of [['AK' + 'IA' + up(16), 'A'], ['AK' + 'IA' + up(16),
       assert.strictEqual(redact(gh2 + '_' + an(15), {}), '[redacted]_' + an(15), '#1237: 15 after a _ stay (GLUE_MIN_UNDERSCORE)');
       assert.strictEqual(redact(gh2 + '/repos/owner/project', {}), '[redacted]/repos/owner/project', '#1237: a repository path after a token stays (GLUE_START has no / below 32)');
       assert.strictEqual(redact(gh2 + '/' + an(32), {}), '[redacted]', '#1237: 32 letters and digits after a / are the rest of a token (GLUE_MIN_B64)');
-      assert.strictEqual(redact(gh2 + '=' + an(40), {}), '[redacted]=' + an(40), '#1237: `=` does not start a glued rest (GLUE_START)');
+      // spec 012 FR-187 (issue #1320): a value after a mask and `=` is read as a named value now (the glued-name leak), so the GLUE_START pin for `=` uses a value that rule keeps (a dotted name)
+      assert.strictEqual(redact(gh2 + '=' + an(40), {}), '[redacted]=[redacted]', '#1320: a value after a token and `=` is read as a named value (FR-187)');
+      assert.strictEqual(redact(gh2 + '=config.valuename', {}), '[redacted]=config.valuename', '#1237: `=` does not start a glued rest (GLUE_START)');
       assert.strictEqual(redact(gh2 + '?' + an(40), {}), '[redacted]?' + an(40), '#1237: `?` does not start a glued rest (GLUE_START)');
     }
     // pre-review of PR 1317: the GOOG1 rule has the base64 list's start and line-break rules (each asserted alone: remove one and its own line fails)

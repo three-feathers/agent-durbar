@@ -40,6 +40,40 @@
     t.forEach((w,term)=>{for(let i=f.indexOf(w),n=0;i>=0&&n<lim;i=f.indexOf(w,i+w.length),n++)out.push(st?{start:st[i],end:en[i+w.length-1],term}:{start:i,end:i+w.length,term});});
     return out.sort((a,b)=>a.start-b.start||a.term-b.term);
   }
+  /* Spec 095 FR-040 (issue 1904): where a match sits in its word. A character is a letter or a digit by Unicode (marks included, so a decomposed accent
+     does not split a word); anything else is a boundary. Scripts written without spaces (Han, Hiragana, Katakana, Thai, Lao, Khmer, Myanmar) have no
+     word to be inside, so their letters count as boundaries too (Mac session's call, spec 095 Changes 2026-11-19). */
+  const WORD_CH=/[\p{L}\p{N}\p{M}]/u, SPACELESS=/[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Thai}\p{Script=Lao}\p{Script=Khmer}\p{Script=Myanmar}]/u;
+  const isWordCh=c=>c!==''&&WORD_CH.test(c)&&!SPACELESS.test(c);
+  const cpAt=(s,i)=>i<s.length?String.fromCodePoint(s.codePointAt(i)):'';
+  const cpBefore=(s,i)=>{if(i<=0)return '';if(i>=2&&/[\uDC00-\uDFFF]/.test(s[i-1])&&/[\uD800-\uDBFF]/.test(s[i-2]))return s.slice(i-2,i);return s[i-1];};
+  /* 0 = a whole word, 1 = the start of a word, 2 = inside a word, for the range [start, end) of the ORIGINAL text. A side where the match itself
+     begins (or ends) with a non-letter needs no boundary (`#1904`, `c++`). */
+  function wordTier(text,start,end){
+    const s=String(text==null?'':text), a=Math.max(0,Math.min(s.length,+start||0)), b=Math.max(a,Math.min(s.length,+end||0));
+    const left=!isWordCh(cpAt(s,a))||!isWordCh(cpBefore(s,a)), right=!isWordCh(cpBefore(s,b))||!isWordCh(cpAt(s,b));
+    return left?(right?0:1):2;
+  }
+  /* Like `locate`, each range with its `tier` and the best first: [{start, end, term, tier}] sorted by tier, then start, then term. At most `max`
+     per word (default 200), the best ones, found among at most 5000 occurrences of the word. */
+  function locateRanked(text,query,max){
+    const t=[...new Set(terms(query))], lim=typeof max==='number'&&max>0?max:200, out=[];
+    if(!t.length)return out;
+    const s=String(text==null?'':text), {f,st,en}=foldMap(s);
+    t.forEach((w,term)=>{
+      const rs=[];
+      for(let i=f.indexOf(w);i>=0&&rs.length<5000;i=f.indexOf(w,i+w.length)){const a=st?st[i]:i,b=st?en[i+w.length-1]:i+w.length;rs.push({start:a,end:b,term,tier:wordTier(s,a,b)});}
+      rs.sort((x,y)=>x.tier-y.tier||x.start-y.start);
+      for(const r of rs.slice(0,lim))out.push(r);
+    });
+    return out.sort((x,y)=>x.tier-y.tier||x.start-y.start||x.term-y.term);
+  }
+  /* The best tier of each word of the query in `text`, indexed like `locate`'s `term`; 3 = the word does not occur. */
+  function bestTiers(text,query){
+    const n=[...new Set(terms(query))].length, b=new Array(n).fill(3);
+    for(const r of locateRanked(text,query,1))if(r.tier<b[r.term])b[r.term]=r.tier;
+    return b;
+  }
   /* Spec 095 FR-013: the one comparison key of a message for the jump to it, used by main (on the masked text) and by the window (on the
      rendered message): Markdown marks stripped (code fences, links and images to their text, heading, quote and list marks, * _ ~ `),
      whitespace collapsed, then `fold`. The code inside a fence is kept, since the chat shows it. Linear (review of PR 1098: a link's text and
@@ -86,5 +120,5 @@
   /* The refusal dialog (FR-030): Remove from office is left out for a folder's only main session, and the extra line says what to do instead. */
   const refusalDialogText=canRemove=>({title:IN_OFFICE_TITLE,body:IN_OFFICE_BODY,lines:canRemove?[]:[ONLY_SESSION]});
   const noDeleteReason=app=>String(app||'This agent app')+' cannot delete one session. Hide it instead.';
-  return {fold, terms, locate, anchorKey, filterSessions, arrangeSessions, applyMark, visibleCount, deleteDialogText, refusalDialogText, noDeleteReason};
+  return {fold, terms, locate, wordTier, locateRanked, bestTiers, anchorKey, filterSessions, arrangeSessions, applyMark, visibleCount, deleteDialogText, refusalDialogText, noDeleteReason};
 })());

@@ -288,7 +288,9 @@
         const textish = (el.innerText || '').trim().length > 0;
         const clipX = textish && /(hidden|clip)/.test(cs.overflowX) && el.scrollWidth > el.clientWidth + 1 && (!isCtl || cs.textOverflow === 'ellipsis'); // a control cut with an ellipsis needs its title too
         if (clipX) {
-          const titled = cs.textOverflow === 'ellipsis' && (el.getAttribute('title') || (el.closest('[title]') || {}).title);
+          /* spec 001 FR-270, spec 005 FR-340: a cut name may give its full text in the instant tooltip (`data-tip`) instead of a native title, when that tooltip holds the text */
+          const tipHolder = el.closest('[data-tip]'), tip = tipHolder ? tipHolder.dataset.tip : '';
+          const titled = cs.textOverflow === 'ellipsis' && (el.getAttribute('title') || (el.closest('[title]') || {}).title || (tip && el.innerText.trim() && tip.includes(el.innerText.trim())));
           if (!titled) {
             if (cs.textOverflow === 'ellipsis' && !el.closest('.dpick')) add('ellipsis-title', root, el, `ellipsis without its full text in a title "${snip(el.innerText.trim(), 50)}"`);
             else add('clipped', root, el, `x: shows ${el.clientWidth}px of ${el.scrollWidth}px "${snip(el.innerText.trim(), 50)}"`);

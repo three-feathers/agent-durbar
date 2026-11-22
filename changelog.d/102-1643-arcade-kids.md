@@ -1,0 +1,1 @@
+- **Pixel kids in the Retro arcade** (spec 102, issue 1643): a helper under a cabinet's plate now shows the face of one of six invented pixel-art kids, drawn in the arcade's own style, instead of a grown-up's head; every kid has a picture for each of the seven helper states. Checked in the simulator at 1440x900 and 1280x800 with 3 and 15 agents.

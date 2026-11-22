@@ -17,19 +17,22 @@
  * `--gpu` adds the real-GPU A/B rows (blur, blending, animations on and off). Details and limits: scripts/perf-record-driver.js, scripts/perf-record.js.
  *
  * PERF_SECONDS (default 20) sets the load phase; PERF_SPEED (default 10) how much faster the simulator works than normal.
+ * PERF_CHAT=1 adds a phase with a chat open while the simulator works (PERF_SECONDS / 2): frame times, long tasks. PERF_BRAIN=1 (spec 106 T006) loads with
+ * Brain view's preview flag, so the chat has its right rail and dock; the report gains the dock's own frame counts. Run both to compare (FR-101's rows stay T025's).
  */
 const assert = require('assert');
 const path = require('path');
 const { helpers, jsLiteral, INDEX, CHECK_DARK } = require('./driver-helpers');
 const SECONDS = Number(process.env.PERF_SECONDS || 20);
 const SPEED = String(process.env.PERF_SPEED || 10);
+const BRAIN = process.env.PERF_BRAIN === '1', CHAT_LOAD = process.env.PERF_CHAT === '1' || BRAIN;
 
 module.exports = async (ctx) => {
   // spec 097 T145: `--record` (scripts/perf-record.js) starts this file as the driver with DURBAR_PERF_RECORD_PHASE set (only recordAll sets it); it only records, it asserts nothing
   if (process.env[require('./perf-record.js').PHASE_ENV]) return require('./perf-record-driver.js')(ctx);
   const H = helpers(ctx); // spec 008 FR-097: shared plumbing
   const { js } = H;
-  await H.load({ w: 1440, h: 900, query: { simspeed: SPEED, simfreeze: undefined }, settle: false }); // not frozen: the page never stops changing, so no settling wait
+  await H.load({ w: 1440, h: 900, query: { simspeed: SPEED, simfreeze: undefined, ...(BRAIN ? { brain: '1' } : {}) }, settle: false }); // not frozen: the page never stops changing, so no settling wait
   await ctx.sleep(1500);
 
   // instruments: counters around the renderer's own global functions, a frame loop, long tasks and the office's mutations
@@ -65,11 +68,26 @@ module.exports = async (ctx) => {
     await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(()=>r())));const ms=performance.now()-t;
     return {messages:1000,totalMs:Math.round(ms),perMessageMs:Math.round(ms/10)/100,domAdded:document.getElementsByTagName('*').length-n0};})()`);
 
+  // PERF_CHAT / PERF_BRAIN: a chat open while every agent works (the simulator at PERF_SPEED); with the dock, its own frames too
+  let chatLoad = null;
+  if (CHAT_LOAD) {
+    await js(`(()=>{const s=document.querySelector('#stripList [data-sw="sim-2"]');if(s)s.click();})()`);
+    await ctx.sleep(500);
+    await js(`(()=>{const P=window.__perfC={frames:[],long:[],stop:false};let last=performance.now();const loop=(t)=>{P.frames.push(t-last);last=t;if(!P.stop)requestAnimationFrame(loop);};requestAnimationFrame(loop);
+      try{new PerformanceObserver(l=>{for(const e of l.getEntries())P.long.push(e.duration);}).observe({entryTypes:['longtask']});}catch(e){}
+      const h=window.__durbarSimUi&&window.__durbarSimUi.brain&&window.__durbarSimUi.brain.host();P.d0=h?Object.assign({},h.stats()):null;})()`);
+    await ctx.sleep(Math.max(5, SECONDS / 2) * 1000);
+    chatLoad = await js(`(()=>{const P=window.__perfC;P.stop=true;const f=P.frames.slice(5).sort((a,b)=>a-b),q=p=>f.length?Math.round(f[Math.min(f.length-1,Math.floor(p*f.length))]*10)/10:0;
+      const h=window.__durbarSimUi&&window.__durbarSimUi.brain&&window.__durbarSimUi.brain.host(),d=h?h.stats():null,d0=P.d0;
+      return {brain:${jsLiteral(BRAIN)},rail:!!document.getElementById('brainRail'),frameP50:q(.5),frameP95:q(.95),frameMax:q(1),longTasks:P.long.length,longMs:Math.round(P.long.reduce((s,x)=>s+x,0)),
+        dock:d&&d0?{frames:d.frames-d0.frames,loops:d.loops-d0.loops,overBudget:d.overBudget-d0.overBudget,degraded:d.degraded,lastMs:Math.round(d.lastMs*100)/100,pointsMax:d.pointsMax}:null};})()`);
+  }
+
   // a theme switch and back
   const themeMs = await js(`(async()=>{if(!window.THEME||!window.THEME.setTheme)return null;const cur=window.THEME.current().id;const t=performance.now();window.THEME.setTheme(${jsLiteral(CHECK_DARK)});
     await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(()=>r())));const ms=performance.now()-t;window.THEME.setTheme(cur);return Math.round(ms);})()`);
 
-  const report = { office, openChatMs: openMs, switchAgent: switchMs, longChat: chat, themeSwitchMs: themeMs };
+  const report = { office, openChatMs: openMs, switchAgent: switchMs, longChat: chat, themeSwitchMs: themeMs, ...(chatLoad ? { chatLoad } : {}) };
   console.log('[perf] ' + JSON.stringify(report));
   // hard limits (generous: they catch freezes and leaks, not small regressions; the numbers go in the spec)
   assert.ok(office.frameMax < 1000, 'no frame froze for a second: ' + office.frameMax);
@@ -87,9 +105,10 @@ if (require.main === module) {
     return;
   }
   const fs = require('fs');
+  const { buildProblem } = require('./ensure-electron'); // spec 008 FR-211: one shared build check
   const os = require('os');
   const { spawnSync } = require('child_process');
-  if (!fs.existsSync(INDEX)) { console.error('dist/ missing: run npm run build first'); process.exit(2); }
+  { const noBuild = buildProblem(); if (noBuild) { console.error(noBuild); process.exit(2); } }
   const electron = require('electron');
   const env = { ...process.env, DURBAR_DRIVER: __filename, DURBAR_USER_DATA: fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-perf-')), DURBAR_SIM: '15' };
   const args = ['.', '--no-sandbox'];
