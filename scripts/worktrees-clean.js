@@ -236,6 +236,9 @@ function removeOne(wt, mainPath, ctx) {
   return { removed: true, note: b.ok ? 'branch deleted' : 'worktree removed, branch kept (git branch -d refused: ' + b.err + ')' };
 }
 
+/** The root for new worktrees: next to the MAIN checkout. git prints forward slashes on Windows, so the path is normalised to the OS form. */
+function newWorktreeRoot(mainPath) { return path.resolve(mainPath) + '-worktrees'; }
+
 function fmt(bytes) { return bytes >= 1e9 ? (bytes / 1e9).toFixed(2) + ' GB' : (bytes / 1e6).toFixed(0) + ' MB'; }
 
 /** Stale agent temp directories (list only). */
@@ -282,7 +285,7 @@ function run(opts) {
   let reclaimable = 0;
   let removed = 0;
   log((opts.apply ? 'worktrees:clean --apply' : 'worktrees:clean (dry run: nothing is changed; `npm run worktrees:clean -- --apply` removes the REMOVABLE ones)') + ', ' + rows.length + ' linked worktree' + (rows.length === 1 ? '' : 's'));
-  log('new worktrees go under (from the MAIN checkout, never from where you stand): ' + mainPath + '-worktrees' + path.sep + 'NNN-slug');
+  log('new worktrees go under (from the MAIN checkout, never from where you stand): ' + newWorktreeRoot(mainPath) + path.sep + 'NNN-slug');
   for (const r of rows) {
     const label = { removable: 'REMOVABLE', dirty: 'DIRTY    ', look: 'NEEDS A LOOK', skip: 'SKIPPED  ' }[r.verdict];
     let line = label + '  ' + fmt(r.bytes).padStart(9) + '  ' + r.wt.path + '  [' + (r.wt.branch || 'detached') + ']  ' + r.why;
@@ -330,5 +333,5 @@ function main(argv, env) {
   return 0;
 }
 
-module.exports = { parseWorktrees, classify, run, staleTmp, ghPrState, dirSize, ignoredData, main, TMP_PATTERNS };
+module.exports = { newWorktreeRoot, parseWorktrees, classify, run, staleTmp, ghPrState, dirSize, ignoredData, main, TMP_PATTERNS };
 if (require.main === module) process.exit(main(process.argv.slice(2), process.env));

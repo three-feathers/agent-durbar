@@ -17,6 +17,13 @@ const ENV = { ...process.env, GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@example
 function g(cwd, ...args) {
   return execFileSync('git', ['-c', 'commit.gpgsign=false', '-c', 'tag.gpgsign=false', ...args], { cwd, env: ENV, encoding: 'utf8', timeout: 60000, stdio: ['ignore', 'pipe', 'pipe'] });
 }
+// Same place on every OS: real paths (macOS /var vs /private/var, Windows short names), OS separators, case folded on Windows.
+function sameDir(a, b) {
+  const norm = (p) => { const r = path.join(fs.realpathSync(path.dirname(path.resolve(p))), path.basename(path.resolve(p))); return process.platform === 'win32' ? r.toLowerCase() : r; };
+  return norm(a) === norm(b);
+}
+// The directory printed by the "new worktrees go under" line.
+function printedRoot(line) { return line ? line.slice(line.indexOf('): ') + 3).replace(/[\\/]NNN-slug$/, '') : ''; }
 function branches(cwd) { return g(cwd, 'branch', '--format=%(refname:short)').split('\n').filter(Boolean); }
 function write(p, text) { fs.mkdirSync(path.dirname(p), { recursive: true }); fs.writeFileSync(p, text); }
 
@@ -105,7 +112,7 @@ function check(modPath, tag) {
   const lines = [];
   const dry = mod.run({ apply: false, root: fx.main, cwd: fx.main, prState, log: (s) => lines.push(s) });
   const rootLine = lines.find((l) => l.startsWith('new worktrees go under'));
-  assert.ok(rootLine && rootLine.includes(fx.main + '-worktrees'), tag + ': root: the root for new worktrees is printed');
+  assert.ok(rootLine && sameDir(printedRoot(rootLine), fx.main + '-worktrees'), tag + ': root: the root for new worktrees is printed');
   const row = (b) => dry.rows.find((r) => r.wt.branch === b || (b === 'detached' && !r.wt.branch));
   const is = (b, verdict, why, msg) => {
     assert.strictEqual(row(b).verdict, verdict, tag + ': ' + msg + ' (verdict ' + row(b).verdict + ': ' + row(b).why + ')');
@@ -215,7 +222,7 @@ function check(modPath, tag) {
   const fs2 = fixture(tag + '-self');
   const selfLines = [];
   const selfRes = mod.run({ apply: true, root: fs2.main, cwd: fs2.wts['merged-clean'], prState, log: (x) => selfLines.push(x) });
-  assert.ok(selfLines.some((l) => l.startsWith('new worktrees go under') && l.includes(fs2.main + '-worktrees') && !l.includes('merged-clean')), tag + ': root: run from a linked worktree, the root still comes from the main checkout');
+  assert.ok(selfLines.some((l) => l.startsWith('new worktrees go under') && sameDir(printedRoot(l), fs2.main + '-worktrees')), tag + ': root: run from a linked worktree, the root still comes from the main checkout');
   assert.ok(fs.existsSync(fs2.wts['merged-clean']) && selfRes.rows.find((r) => r.wt.branch === 'merged-clean').verdict === 'skip', tag + ': self: the worktree it runs in is skipped, not removed');
 
   const realGit = (args, cwd) => { try { return { ok: true, out: execFileSync('git', args, { cwd, env: ENV, encoding: 'utf8', timeout: 60000, stdio: ['ignore', 'pipe', 'pipe'] }) }; } catch (e) { return { ok: false, out: '', err: String(e.message) }; } };
@@ -291,6 +298,7 @@ function parseCase() {
   const mod = require(SRC);
   const l = mod.parseWorktrees('worktree /a\nHEAD 1\nbranch refs/heads/main\n\nworktree /b\nHEAD 2\ndetached\n\nworktree /c\nHEAD 3\nbranch refs/heads/x/y\nlocked reason\n');
   assert.deepStrictEqual(l.map((w) => [w.path, w.branch, w.detached, w.locked]), [['/a', 'main', false, false], ['/b', null, true, false], ['/c', 'x/y', false, true]], 'parse: porcelain output');
+  assert.strictEqual(mod.newWorktreeRoot('C:/Users/a/repo'), path.resolve('C:/Users/a/repo') + '-worktrees', 'root: git forward slashes become the OS form');
   assert.deepStrictEqual(mod.ignoredData(['dist/a.js', 'x.tsbuildinfo', '.env', 'notes/out/x.md', 'release/s.p12', 'dist/.env.local', 'dist/k.pem', 'out/a/b.js', 'a/x.tsbuildinfo', '']), ['.env', 'notes/out/x.md', 'release/s.p12', 'dist/.env.local', 'dist/k.pem', 'a/x.tsbuildinfo'], 'ignored: only non-rebuildable ignored entries are data');
 }
 
@@ -340,7 +348,7 @@ const MUTANTS = [
   ['progress-rebase-merge', "'rebase-merge', ", '', /rebase-merge in progress/],
   ['progress-rebase-apply', "'rebase-apply', 'sequencer']", "'sequencer']", /rebase-apply in progress/],
   ['progress-merge-head', "['MERGE_HEAD', ", '[', /merge in progress|MERGE_HEAD in progress/],
-  ['root-from-cwd', "mainPath + '-worktrees'", "here + '-worktrees'", /root/],
+  ['root-from-cwd', "newWorktreeRoot(mainPath) + path.sep", "newWorktreeRoot(here) + path.sep", /root/],
   ['nested-worktree', 'if (inner) return', 'if (false) return', /holding another worktree/],
   ['nested-git', 'if (nested) return', 'if (false) return', /nested \.git/],
   ['in-progress-dropped', "if (fs.existsSync(p)) return { verdict: 'look', why: 'a ' + name", "if (false) return { verdict: 'look', why: 'a ' + name", /merge in progress|in-progress/],
