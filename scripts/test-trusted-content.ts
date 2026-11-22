@@ -44,6 +44,10 @@ assert.deepStrictEqual(list, ['vikramgorla', 'fjcabello', 'rubenlupi', 'github-a
   assert.strictEqual(TA.trustedAuthors(empty).size, 0, 'an empty list is nobody');
   assert.throws(() => TA.trustedAuthors(path.join(empty, 'missing')), 'an unreadable list throws, never a default list');
   fs.rmSync(empty, { recursive: true, force: true });
+  // code owners (Paco 2026-11-21 on #1535): every reader of the list and the copy check have the owners of /scripts/prereview-*.ts
+  const owners = new Map(fs.readFileSync(path.join(ROOT, '.github', 'CODEOWNERS'), 'utf8').split('\n').filter((l) => l.trim() && !l.startsWith('#')).map((l) => { const [p, ...o] = l.trim().split(/\s+/); return [p, o.join(' ')] as const; }));
+  assert.strictEqual(owners.get('/scripts/prereview-*.ts'), '@vikramgorla @fjcabello @rubenlupi', 'the pre-review code owners');
+  for (const p of ['trusted-authors.txt', 'trusted-authors.js', 'trusted-lib.sh', 'weekly-test-audit.ts', 'weekly-test-audit.sh', 'check-trusted-copies.js']) assert.strictEqual(owners.get(`/scripts/${p}`), owners.get('/scripts/prereview-*.ts'), `CODEOWNERS: /scripts/${p} has the pre-review owners (FR-092)`);
 }
 
 // ---- static: pr-gate prints no raw body of anyone else; every list it prints goes through the trust defs
