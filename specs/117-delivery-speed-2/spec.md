@@ -4,7 +4,7 @@
 group: 046
 title: Delivery speed 2 (owner 2026-11-22): measured CI and review cost per PR; lighter review profile for UI/feature PRs (never for masking, IPC, secrets, permissions, user files); Linux-first CI by diff on top of 021 FR-084 / 008 T130; Windows npm test split (#1983); world packs with one contract suite; bigger feature slices
 status: draft
-note: P1 measurement built (T002, T003); O5 no and O6 not now (owner 2026-11-22); O2 and O3 yes by Vikram 2026-11-22, Paco's and Ruben's yes pending (T043 Windows UI off PRs, T010 main UI collapse, draft PR); O1 and O4 open
+note: P1 measurement built; O5 no, O6 not now; O2, O3 yes by Vikram 2026-11-22 (T043, T010; Paco and Ruben pending); O1, O4 open
 -->
 
 **Feature Branch**: `117-delivery-speed-2` (spec, plan, tasks only); build branches `117-pN-slug`, one per rollout step
