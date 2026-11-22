@@ -312,14 +312,17 @@ const LIVE = [...walk('src'), ...walk('scripts'), ...walk('.github')];
 const NEVER_SKIP = ['src/renderer/x.md', 'scripts/x.md', 'scripts/prereview/prompts/system.md', '.github/pull_request_template.md', '.github/agents/new.agent.md',
   'src/LICENSE', 'scripts/docs/a.md', '.github/specs/a.md', 'src/changelog.d/a.md', 'unknown-top-level.txt', 'build/x.json', 'tsconfig.json', 'zz/new.js',
   // rule text, the site's code and data, scripts in docs, files many suites read
-  'AGENTS.md', 'CLAUDE.md', 'README.md', 'docs/rules/x.md', 'docs/agent-setup/x.sh', 'docs/site/app.js', 'docs/site/gallery.json', 'LICENSE',
+  'AGENTS.md', 'CLAUDE.md', 'README.md', 'docs/rules/x.md', 'docs/agent-setup/x.sh', 'docs/agent-setup/x.md', 'docs/site/app.js', 'docs/site/x.md', 'docs/site/gallery.json', 'LICENSE',
   // case tricks (one folder on a case-insensitive checkout)
   'agents.md', 'Readme.md', 'docs/RULES/x.md', 'Docs/Site/app.js', 'Src/x.md', 'SCRIPTS/prereview/prompts/system.md', '.GitHub/x.md', 'Docs/x.md', 'SPECS/x.md',
   // odd paths
   'docs/../src/x.md', './docs/a.md', 'docs/./a.md', 'docs//a.md', '/docs/a.md', ' docs/a.md', 'docs/a.md ', 'docs\\a.md', 'docs/a\u0007.md', 'docs/a.md\n',
   // a doc a suite names (by a literal), and one inside a folder a suite names
-  'docs/named.md', 'docs/zzfolder/new.md'];
-const DOCS_ONLY = ['docs/a.md', 'docs/zz/b.md', 'specs/999-none/spec.md', 'changelog.d/x.md', 'zz-notes.md', 'CHANGELOG.md'];
+  'docs/named.md', 'docs/zzfolder/new.md',
+  // reviews of #2032: root files other than the two named ones, anything but Markdown under docs/ and specs/, every changelog fragment
+  'SECURITY.md', 'THIRD_PARTY_NOTICES.md', 'zz-notes.md', 'docs/x.js', 'docs/x.sh', 'docs/x.svg', 'docs/CODEOWNERS', 'docs/screenshots/a.png',
+  'specs/001-x/sample.json', 'changelog.d/x.md'];
+const DOCS_ONLY = ['docs/a.md', 'docs/zz/b.md', 'specs/999-none/spec.md', 'CHANGELOG.md', 'CONTRIBUTING.md'];
 /** What is wrong with a decision's docs-only skip: a never-skip path that skips (alone, with docs), or a docs path that does not. */
 function skipProblems(c: Cc): string[] {
   const bad: string[] = [];
@@ -351,16 +354,18 @@ assert.strictEqual(cc.decide(['docs/zz-none.md', 'specs/999-none/spec.md'], io()
     m._compile(text, file);
     return m.exports as Cc;
   };
-  const DENY = 'const DOCS_DENY = /^(docs\\/(rules|agent-setup|site)\\/|(agents|claude|readme)\\.md$)/i;';
-  const ALLOW = 'const DOCS_ALLOW = /^(specs\\/|changelog\\.d\\/|docs\\/)|^[^/]+\\.md$/;';
+  const DENY = 'const DOCS_DENY = /^docs\\/(rules|agent-setup|site)\\//i;';
+  const ALLOW = 'const DOCS_ALLOW = /^(specs|docs)\\/.+\\.md$|^(CHANGELOG|CONTRIBUTING)\\.md$/;';
   const mutants: [string, Cc, RegExp][] = [
     ['the old rule (any .md anywhere is docs)', variant(/const DOCS = \{[^\n]*\n/, 'const DOCS = /^(docs\\/|specs\\/|changelog\\.d\\/)|\\.md$|^LICENSE$/;\n'), /src\/renderer\/x\.md alone takes the docs-only skip/],
     ['deny list matched case-sensitively', variant(DENY, DENY.replace(/\/i;$/, '/;')), /docs\/RULES\/x\.md alone takes/],
     ['docs/rules/ dropped from the deny list', variant(DENY, DENY.replace('rules|', '')), /docs\/rules\/x\.md alone takes/],
-    ['docs/site/ dropped from the deny list', variant(DENY, DENY.replace('|site', '')), /docs\/site\/app\.js alone takes/],
-    ['AGENTS.md dropped from the deny list', variant(DENY, DENY.replace('agents|', '')), /AGENTS\.md alone takes/],
+    ['docs/site/ dropped from the deny list', variant(DENY, DENY.replace('|site', '')), /docs\/site\/x\.md alone takes/],
+    ['docs/agent-setup/ dropped from the deny list', variant(DENY, DENY.replace('|agent-setup', '')), /docs\/agent-setup\/x\.md alone takes/],
     ['allow list matched in any case', variant(ALLOW, ALLOW.replace(/\/;$/, '/i;')), /Docs\/x\.md alone takes/],
-    ['any top-level file allowed', variant(ALLOW, ALLOW.replace('^[^/]+\\.md$', '^[^/]+$')), /unknown-top-level\.txt alone takes/],
+    ['any top-level Markdown allowed', variant(ALLOW, ALLOW.replace('^(CHANGELOG|CONTRIBUTING)\\.md$', '^[^/]+\\.md$')), /SECURITY\.md alone takes/],
+    ['any file type under docs/ and specs/', variant(ALLOW, ALLOW.replace('^(specs|docs)\\/.+\\.md$', '^(specs|docs)\\/.+$')), /docs\/x\.js alone takes/],
+    ['changelog fragments allowed', variant(ALLOW, ALLOW.replace('^(specs|docs)\\/', '^(specs|docs|changelog\\.d)\\/')), /changelog\.d\/x\.md alone takes/],
     ['odd paths not refused', variant(/const PLAIN_PATH = [^\n]*\n/, 'const PLAIN_PATH = () => true;\n'), /docs\/\.\.\/src\/x\.md alone takes/],
     ['an empty diff allowed', variant('if (!list.length || !list.every', 'if (!list.every'), /an empty diff takes/],
     ['a missing suite list allowed', variant('if (!names.length) return false;', 'if (!names.length) return true;'), /no suite list takes/],
@@ -485,24 +490,47 @@ assert.strictEqual(cc.decide(['docs/zz-none.md', 'specs/999-none/spec.md'], io()
     fs.mkdirSync(path.join(fresh, 'docs')); fs.writeFileSync(path.join(fresh, 'docs', 'a.md'), 'x');
     g2('add', '-A'); g2('commit', '-q', '-m', 'docs');
     assert.strictEqual(bash(fresh, 'pull_request'), ALL, 'no base copy of the decision: everything runs');
-    // review of #2032: a base copy that exits 0 and writes nothing must not leave `code` empty (ci.yml reads code == 'true'): the
-    // wrapper writes "everything runs". The mutant (the wrapper without that guard) leaves the output empty.
+    // reviews of #2032: unless the base copy wrote exactly one `code=` line holding `true` or `false` (it exits 0 silently, writes
+    // `code=` empty, `code=maybe`, or two code lines), ci.yml's `code == 'true'` could read a wrong value: the wrapper replaces the
+    // output with "everything runs". Each mutant of the guard leaves at least one fixture without ALL.
     const silent = path.join(tmp, 'silent');
     fs.mkdirSync(path.join(silent, '.github', 'scripts'), { recursive: true });
     fs.mkdirSync(path.join(silent, 'scripts'));
-    fs.writeFileSync(path.join(silent, '.github', 'scripts', 'ci-changes.js'), 'process.exit(0);\n');
+    fs.mkdirSync(path.join(silent, 'docs'));
     fs.copyFileSync(path.join(ROOT, 'scripts', 'safe-print.js'), path.join(silent, 'scripts', 'safe-print.js'));
     const sh = fs.readFileSync(path.join(ROOT, '.github', 'scripts', 'ci-changes.sh'), 'utf8');
-    fs.writeFileSync(path.join(silent, '.github', 'scripts', 'ci-changes.sh'), sh);
     const g3 = (...a: string[]) => execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@example.invalid', '-c', 'commit.gpgsign=false', ...a], { cwd: silent, stdio: 'ignore', shell: false });
-    g3('init', '-q'); g3('add', '-A'); g3('commit', '-q', '-m', 'a base whose decision writes nothing');
-    fs.mkdirSync(path.join(silent, 'docs')); fs.writeFileSync(path.join(silent, 'docs', 'a.md'), 'x');
-    g3('add', '-A'); g3('commit', '-q', '-m', 'docs');
-    assert.strictEqual(bash(silent, 'pull_request'), ALL, 'a base decision that writes nothing: the wrapper writes everything runs');
-    const guard = /\nif \[ "\$\{1:-\}" != "--suites" \][^\n]*\n[^\n]*\n {2}all\nfi\n/;
-    assert.ok(guard.test(sh), 'mutant anchor: the wrapper guard');
-    fs.writeFileSync(path.join(silent, '.github', 'scripts', 'ci-changes.sh'), sh.replace(guard, '\n'));
-    assert.strictEqual(bash(silent, 'pull_request'), '', 'mutant: without the guard the output is empty (so the guard is what writes it)');
+    g3('init', '-q');
+    const out = (lines: string) => `require('fs').appendFileSync(process.env.GITHUB_OUTPUT, ${JSON.stringify(lines)});\n`;
+    const BASES: [string, string][] = [
+      ['writes nothing', 'process.exit(0);\n'],
+      ['writes code= empty', out('code=\nthemes=false\nui=false\nmacos=false\n')],
+      ['writes code=maybe', out('code=maybe\nthemes=false\nui=false\nmacos=false\n')],
+      ['writes two code lines', out('code=false\ncode=true\nthemes=false\nui=false\nmacos=false\n')],
+    ];
+    /** The wrapper's output with this base decision (committed as HEAD^1) and a docs commit on top. */
+    const withBase = (js: string, wrapper: string) => {
+      fs.writeFileSync(path.join(silent, '.github', 'scripts', 'ci-changes.js'), js);
+      fs.writeFileSync(path.join(silent, '.github', 'scripts', 'ci-changes.sh'), wrapper);
+      g3('add', '-A'); g3('commit', '-q', '--allow-empty', '-m', 'base');
+      fs.writeFileSync(path.join(silent, 'docs', 'a.md'), String(Math.random()));
+      g3('add', '-A'); g3('commit', '-q', '-m', 'docs');
+      return bash(silent, 'pull_request');
+    };
+    for (const [name, js] of BASES) assert.strictEqual(withBase(js, sh), ALL, `a base decision that ${name}: the wrapper writes everything runs`);
+    assert.strictEqual(withBase(out('code=false\nthemes=false\nui=false\nmacos=false\n'), sh), 'code=false\nthemes=false\nui=false\nmacos=false\n', 'a valid code=false passes through');
+    const cond = `  && ! { [ "$(grep -c '^code=' "$out")" = 1 ] && grep -qxE 'code=(true|false)' "$out"; }; then\n`;
+    const guard = /\nif \[ "\$\{1:-\}" != "--suites" \][\s\S]*?\n {2}all\nfi\n/;
+    assert.ok(sh.includes(cond) && guard.test(sh), 'mutant anchors: the wrapper guard and its exact-value condition');
+    const wrapperMutants: [string, string][] = [
+      ['no guard', sh.replace(guard, '\n')],
+      ['only that a code= line exists', sh.replace(cond, `  && ! grep -q '^code=' "$out"; then\n`)],
+      ['any one code= line', sh.replace(cond, `  && ! [ "$(grep -c '^code=' "$out")" = 1 ]; then\n`)],
+      ['a valid value anywhere, not exactly one line', sh.replace(cond, `  && ! grep -qxE 'code=(true|false)' "$out"; then\n`)],
+    ];
+    for (const [name, text] of wrapperMutants) {
+      assert.ok(BASES.some(([, js]) => withBase(js, text) !== ALL), `wrapper mutant "${name}" dies at its own assert`);
+    }
     assert.strictEqual(bash(fresh, 'push'), ALL, 'a push runs everything (the wrapper says so without the decision)');
   } else console.log('ci-changes: bash not found, the wrapper test is skipped here (CI runs it on every OS)');
   fs.rmSync(tmp, { recursive: true, force: true });

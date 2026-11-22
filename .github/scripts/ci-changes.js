@@ -40,19 +40,20 @@ const { execFileSync } = require('child_process');
 // runs the BASE branch's copy of this file and of safe-print.js, so both sit at the same relative place in the temp copy
 const { printable } = require(path.join(__dirname, '..', '..', 'scripts', 'safe-print.js'));
 
-// spec 117 FR-387 (review of #2032): the docs-only skip FAILS CLOSED. A path may take it only when it is on this small ALLOW list, in
+// spec 117 FR-387 (reviews of #2032): the docs-only skip FAILS CLOSED. A path may take it only when it is on this small ALLOW list, in
 // plain form, AND no `npm test` suite names it (docsOnly below); everything else, any unknown path, an odd path and an empty diff run
-// everything. Allowed: specs/**, changelog.d/**, docs/** except docs/rules/ (rule text, test:rules), docs/agent-setup/ (scripts) and
-// docs/site/ (the public site's code and data, test:site), and top-level Markdown except AGENTS.md, CLAUDE.md and README.md (read by
-// test:rules and a dozen suites). The prefixes are lower case on purpose (`Docs/x.md`, `Src/x.md` are not on the list, and a
-// case-insensitive checkout could make them the real folders); the exclusions match in any case (`docs/RULES/x.md` is docs/rules on
-// Windows and macOS). scripts/test-ci-changes.ts guards each part with a fixture and a mutant.
-const DOCS_ALLOW = /^(specs\/|changelog\.d\/|docs\/)|^[^/]+\.md$/;
-const DOCS_DENY = /^(docs\/(rules|agent-setup|site)\/|(agents|claude|readme)\.md$)/i;
+// everything. Allowed: Markdown under specs/ and docs/ (only `.md`: never a script, picture, SVG or CODEOWNERS there), except
+// docs/rules/ (rule text, test:rules), docs/agent-setup/ and docs/site/ (the public site), and two named root files, CHANGELOG.md and
+// CONTRIBUTING.md (not SECURITY.md, README.md, AGENTS.md, CLAUDE.md, LICENSE). changelog.d/ is not on the list: changelog.js reads
+// every fragment, so a fragment runs everything. The prefixes are lower case on purpose (`Docs/x.md`, `Src/x.md` are not on the list,
+// and a case-insensitive checkout could make them the real folders); the exclusions match in any case (`docs/RULES/x.md` is
+// docs/rules on Windows and macOS). scripts/test-ci-changes.ts guards each part with a fixture and a mutant.
+const DOCS_ALLOW = /^(specs|docs)\/.+\.md$|^(CHANGELOG|CONTRIBUTING)\.md$/;
+const DOCS_DENY = /^docs\/(rules|agent-setup|site)\//i; // root files need no entry: only the two named ones are allowed
 // a plain git path: no backslash, no `.` or `..` or empty segment, no leading or trailing blank, no control character, not absolute
 const PLAIN_PATH = (f) => typeof f === 'string' && f !== '' && f === f.trim() && !/[\\\u0000-\u001f\u007f]/.test(f) && f.split('/').every((seg) => seg !== '' && seg !== '.' && seg !== '..');
 const DOCS = { test: (f) => PLAIN_PATH(f) && DOCS_ALLOW.test(f) && !DOCS_DENY.test(f) };
-// for `ui` only (FR-191, unchanged): documentation and Markdown outside the always-UI folders do not start the UI suite, even when
+// for `ui` and `macos` only (FR-191, unchanged): documentation and Markdown outside the always-UI folders do not start the UI suite, even when
 // they run Build and test (a suite reads them)
 const UI_DOCS = /^(docs\/|specs\/|changelog\.d\/)|\.md$|^LICENSE$/;
 const THEMES = /^(src\/renderer\/|scripts\/check-office-overlap\.js|scripts\/check-theme-geometry\.js|scripts\/check-parallel\.js|scripts\/fixtures\/themes\/|\.github\/workflows\/ci\.yml|\.github\/scripts\/ci-changes\.(sh|js))/;
@@ -294,7 +295,8 @@ function decide(files, io) {
     const closure = uiClosure(io);
     ui = list.some((f) => uiPath(f, io, closure));
   }
-  const macos = list.some((f) => !DOCS.test(f) && !(PKG.includes(f) && versionOnly(f, io)));
+  // macos (FR-191, unchanged): only docs and a version-only bump skip the path-filtered macOS job, which code still gates elsewhere
+  const macos = list.some((f) => !UI_DOCS.test(f) && !(PKG.includes(f) && versionOnly(f, io)));
   return { code, themes, ui, macos };
 }
 

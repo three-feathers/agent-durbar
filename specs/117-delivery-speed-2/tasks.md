@@ -53,7 +53,7 @@
 
 ## P8: fast lane and the docs-only skip (2026-11-22 delta)
 
-- [x] T040 [P] `test-ci-changes.ts` first: the FR-387 guard (live files under `src/`, `scripts/`, `.github/`, rule text, site code, README, LICENSE, case tricks, odd paths, docs a suite names, an empty diff, no suite list: never `code=false`; allow-listed docs still skip) with twelve mutants and the wrapper guard mutant, each failing at its own assert; then `ci-changes.js` (`DOCS_ALLOW`, `DOCS_DENY`, `PLAIN_PATH`, `docsOnly`) and the `ci-changes.sh` guard [FR-387]
+- [x] T040 [P] `test-ci-changes.ts` first: the FR-387 guard (live files under `src/`, `scripts/`, `.github/`, rule text, site code, README, LICENSE, case tricks, odd paths, docs a suite names, an empty diff, no suite list: never `code=false`; allow-listed docs still skip) with fourteen mutants and four wrapper guard mutants, each failing at its own assert; then `ci-changes.js` (`DOCS_ALLOW`, `DOCS_DENY`, `PLAIN_PATH`, `docsOnly`) and the `ci-changes.sh` guard [FR-387]
 - [x] T041 `test-ci-changes.ts` cases for `fastSuites` (step file, relative and repo-relative literal, folder literal, new suite, changed suite line, docs table, nothing picked, list order, plain names) and `--suites` through the CLI and the wrapper; `ci-changes.js --suites`, `ci-changes.sh` passes its arguments; `scripts/fast-lane.js` and `test-fast-lane.ts` (list names only, picked files compiled, build only for `dist/` readers; workflow shape with 11 mutants); `.github/workflows/fast-lane.yml`; `test-electron-cache.ts` lists the job [FR-386]
 - [ ] T042 `real:` the lane's work time per OS from its own runs (setup through the last suite), in spec *Changes*; 7 days after landing, FR-001's jobs per PR head and queue wait beside E3/E4 [FR-386]
 
