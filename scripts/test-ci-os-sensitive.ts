@@ -129,7 +129,8 @@ assert.deepStrictEqual(problems(cc), [], 'FR-012: os_sensitive is false only for
 // ---- mutants of the decision: each dies at its own assert ----
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const Module = require('module') as { new (id: string, parent: unknown): { filename: string; paths: string[]; exports: unknown; _compile(src: string, file: string): void }; _nodeModulePaths(dir: string): string[] };
-const source = fs.readFileSync(FILE, 'utf8');
+// a Windows checkout may have CRLF line ends: the mutant anchors are written with \n
+const source = fs.readFileSync(FILE, 'utf8').replace(/\r\n/g, '\n');
 function variant(from: string, to: string): Cc {
   assert.strictEqual(source.split(from).length - 1, 1, `mutant anchor occurs once: ${from}`);
   const m = new Module(FILE, null);
@@ -204,7 +205,7 @@ let haveBash = true;
 try { execFileSync('bash', ['-c', 'exit 0'], { stdio: 'ignore', shell: false }); } catch { haveBash = false; }
 if (haveBash) {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'ci-os-'));
-  const wrapper = fs.readFileSync(path.join(ROOT, '.github', 'scripts', 'ci-changes.sh'), 'utf8');
+  const wrapper = fs.readFileSync(path.join(ROOT, '.github', 'scripts', 'ci-changes.sh'), 'utf8').replace(/\r\n/g, '\n');
   const write = (repo: string, rel: string, text: string) => { fs.mkdirSync(path.dirname(path.join(repo, ...rel.split('/'))), { recursive: true }); fs.writeFileSync(path.join(repo, ...rel.split('/')), text); };
   const git = (repo: string, ...a: string[]) => execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@example.invalid', '-c', 'commit.gpgsign=false', '-c', 'core.autocrlf=false', ...a], { cwd: repo, stdio: 'ignore', shell: false });
   let n = 0;

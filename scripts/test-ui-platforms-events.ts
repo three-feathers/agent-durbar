@@ -236,7 +236,7 @@ export function problems(text: string, releaseText: string = GATED_RELEASE): str
   return bad;
 }
 
-const real = fs.readFileSync(FILE, 'utf8');
+const real = fs.readFileSync(FILE, 'utf8').replace(/\r\n/g, '\n'); // a Windows checkout may have CRLF
 // Paco's O3 condition on the REAL release.yml: red until #2038 (the release UI gate) is on main; then this PR takes main in
 assert.deepStrictEqual(problems(real, fs.readFileSync(RELEASE, 'utf8')).filter((p) => p.startsWith('main pushes cancel but')), [], 'O3 order: main UI runs may cancel each other only when release.yml gates on the tagged commit\'s UI run (#2038)');
 assert.deepStrictEqual(releaseGateProblems(GATED_RELEASE), [], 'the gated fixture passes the release gate check');
