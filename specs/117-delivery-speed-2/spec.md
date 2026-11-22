@@ -4,14 +4,14 @@
 group: 046
 title: Delivery speed 2 (owner 2026-11-22): measured CI and review cost per PR; lighter review profile for UI/feature PRs (never for masking, IPC, secrets, permissions, user files); Linux-first CI by diff on top of 021 FR-084 / 008 T130; Windows npm test split (#1983); world packs with one contract suite; bigger feature slices
 status: draft
-note: P1 ci:stats and P8 fast lane (FR-386, FR-387) built; O5 no and O6 not now (owner 2026-11-22); O1..O4 open (coordinator's picks to confirm)
+note: merged: the spec, T002, T003 (#2005); P8 fast lane (FR-386, FR-387) built here; O5 no, O6 not now (owner); O1..O4 open
 -->
 
 **Feature Branch**: `117-delivery-speed-2` (spec, plan, tasks only); build branches `117-pN-slug`, one per rollout step
 
 **Created**: 2026-11-22
 
-**Status**: Draft. Nothing built. O5 (paid runners: no) and O6 (separate repos: not now) are decided by the owner (2026-11-22); O1..O4 are open (*Owner decisions*).
+**Status**: Draft. Merged from this spec so far: the spec itself and T002, T003 (#2005, CI stats). Open (not merged): #2008 (T004, concurrency test), #2004 (T011 suite times in the job summary, T012 first half heavy five first, T022 required-suites guard). O5 (paid runners: no) and O6 (separate repos: not now) are decided by the owner (2026-11-22); O1..O4 are open (*Owner decisions*).
 
 **Input**: Owner request (Vikram, team chat, 2026-11-22 09:06-09:11 UTC, relayed by his coordinating agent): another agent's audit says the pace has massively slowed and we write more test fixes and docs than code. Coordinator's figures from `main` (first-parent merges, lines added; code = `src/` non-test, tests = `scripts/` checks, docs = `specs/` and `docs/`): W43 353 PRs, 50k / 64k / 32k; W44 149, 14k / 25k / 14k; W45 218, 20k / 49k / 11k; W46 235, 11k / 33k / 8k; W47 so far 140, 5k / 14k / 4k (with a 40 h outage). Vikram: "Implement all your recommendations": **A** a lighter review profile for UI/feature PRs; **B** CI by diff for real and fewer jobs per PR; **C** worlds and characters as data packs with one contract suite in core; **D** bigger feature slices; **E** measure and fix CI (issue #1983). He also asked about separate repos for worlds and characters; the coordinator advised packages in this repo first (a repo in the same organization shares the same concurrency cap).
 
@@ -222,8 +222,8 @@ Adding or changing a world touches its pack folder and its own small test; the c
 
 ### E (continued): Windows `npm test` (#1983)
 
-- **FR-017** Measure first, with work counters (agent-notes: CPU time, not wall time): `scripts/run-tests.js` writes each suite's CPU and wall seconds to the job summary on every OS.
-- **FR-018** Every suite, the masking and redaction suites above all, **stays under a required check name** (`Build and test (<os>)`) on every OS it runs on today. First, inside the same job, `run-tests.js` starts the five heavy suites #1983 names first (longest first). Only if that misses the target, the Windows leg splits into time-balanced shards whose summary job carries the required name `Build and test (windows-latest)` and fails when any shard failed, was skipped or was cancelled, or when the union of the shards' suite lists differs from `test-suites.txt`. A non-required job for any suite is not allowed; moving one there would be an O1 change. No suite is dropped, no assertion weakened, the 25-minute limit is not raised first (#1983). Guard: T022. **Target**: Windows Build and test p90 ≤ 15 min (today 20.1), zero limit cancels in 7 days (today 4).
+- **FR-017** Measure first, with work counters (agent-notes: CPU time, not wall time): `scripts/run-tests.js` writes each suite's CPU and wall seconds to the job summary on every OS. `[IMPLEMENTED in #2004, open, not merged]` test: `test:runtests` (a row per suite as it ends, so a cut-short run keeps the finished suites; CPU is each suite's node step main process only: forks and Electron children are not counted); macOS and Windows runs `[KNOWN GAP]` (CI is the record).
+- **FR-018** Every suite, the masking and redaction suites above all, **stays under a required check name** (`Build and test (<os>)`) on every OS it runs on today. First, inside the same job, `run-tests.js` starts the five heavy suites #1983 names first (longest first). Only if that misses the target, the Windows leg splits into time-balanced shards whose summary job carries the required name `Build and test (windows-latest)` and fails when any shard failed, was skipped or was cancelled, or when the union of the shards' suite lists differs from `test-suites.txt`. A non-required job for any suite is not allowed; moving one there would be an O1 change. No suite is dropped, no assertion weakened, the 25-minute limit is not raised first (#1983). Guard: T022. `[IMPLEMENTED in #2004, open, not merged]` heavy five first (`HEAVY_FIRST`), same suites, no split; guard `scripts/test-ci-required-suites.ts` (test: `test:ci-required-suites`, `test:runtests`); the 7-day Windows measurement is `[KNOWN GAP]` (SC-003, not measured). **Target**: Windows Build and test p90 ≤ 15 min (today 20.1), zero limit cancels in 7 days (today 4).
 
 ### F: fast lane and the docs-only skip (2026-11-22 delta)
 
@@ -334,6 +334,10 @@ The coordinator's suggested first step (concurrency groups and `cancel-in-progre
 
 ## Changes
 
+### 2026-11-22: status after Paco's review of #2004
+
+Merged: the spec and #2005 (T002, T003). Open and not merged: #2008 (T004), #2004 (T011, T012 first half, T022). Review fixes in #2004: the guard parses the workflow with js-yaml and fails closed on shapes it does not read, reads CRLF files, the summary is written as each suite ends, the CPU temp folder is removed on signals, forks and Electron children are not counted (stated).
+
 ### 2026-11-22: created (owner request, Vikram, team chat 09:06-09:11 UTC)
 
 Spec, plan, tasks and the measurements above (at `4c962b39b`). Paco's input (heavy list adds user-file writes; build B on 021 T063 / 008 T130; baseline checks; macOS/Windows legs as an owner decision with cost and benefit) and Ruben's (audit every workflow's concurrency; required checks are an owner call) are folded in. Nothing built.
@@ -370,6 +374,21 @@ Found by a plan-only note of the Mac session; Paco's bot agreed in the team grou
 - **`[evidence, from a read-only plan note, not verified here]`** Over the last 200 merges: only 33 % of UI PRs pick a strict subset of drivers; 24 % pick 15 drivers or fewer; `app.js` alone forces all drivers in 18 merges; `os_sensitive` would start Windows on about 19 % of UI PRs. Not re-measured in this PR; the build PR re-measures (T006 fixture, then FR-001 after landing). So the FR-016 target for this lever is a thin win: the strict rule is kept anyway.
 - **New spec item, FR-382 / T024:** split `app.js` into modules (not started, own spec needed, not designed).
 - **Dependencies.** Only the 021 FR-084 point 4 amendment wording (T008) and the 008 T130 tick (T007) wait for #1247 to land; T006 (test first) and the pure data part can be written against `main` today but merge after #1247 so T130 exists.
+
+### 2026-11-22: option C waits for vocabulary profiles (spec 102 *Changes 2026-11-22*, last entry; issue #1877; no new FR)
+
+Spec 102 T100's first step found that no built-in pack meets 102 FR-204 and FR-205 as written and none goes through the user-pack part table (evidence table in spec 102). FR-030's "`checkSet` on every built-in" holds through a vocabulary profile: one `checkSet`, user packs always on the user profile, built-ins on their declared 097 vocabulary, caps the same (spec 102 T100, T433, T434). T016's inventory (Mac session, plan-only, static reads, about plus or minus 10 %): 71 files, about 190 world-specific asserts.
+
+- **R1** built-in part files pass the part table and `checkSet` (about 32, new checks: the six validator tests never read a built-in; only `test-realoffice-assets.ts` does).
+- **R2** moment coverage per built-in (2).
+- **R3** the inventory's Worlds marker (0: `scripts/feature-inventory.js` already checks it).
+- **R4** picker card name, picture and label per world (about 16).
+- **R5** a missing required pose fails naming it (about 16, new).
+- **R6** the driver map: 34 `ui-suite` entries change only when they run (T018); `test-release-video.js` pins a second copy of the `DRIVER_WORLD` id list, replaced first.
+- **Stays** (about 124): built-in `world.css` rules (no blend or blur, own-folder URLs, the cave bezel), flag runtime, lazy load, plain-tile fallback, layout, contrast and accessibility asserts.
+- **`loft`**: listed by `test:momentsregistry` and `world-moments.json` with no pack folder; reported "no pack" (spec 102 OP-14 (c)).
+
+T016, T017 and T018 amended; T017 waits for 102 T100, T433 and T434.
 
 ### 2026-11-22: stop-gap, `build-test` `timeout-minutes` 25 to 45 (#1983)
 
