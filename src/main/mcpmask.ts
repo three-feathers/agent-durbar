@@ -178,23 +178,21 @@ const spendChars = (w: ArgsWork, k: number): void => { if (w.chars + k > ARGS_CH
 /** Masks (and failed masks) in a text: a reading "hides more" when it has more of them. */
 const maskCount = (s: string): number => (s.match(/\[redact/g) ?? []).length;
 /**
- * The masks' input cap: a longer string is cut at its last blank before `MASK_INPUT_MAX` (as the chip cuts, FR-342), and AT the cap when it has no blank
- * there (a long word such as encoded file content keeps its head; never ''). The rest is not sent.
+ * The masks' input limit (review of #2002, round 3): the command and word-list readings do not take a string longer than `MASK_INPUT_MAX`, so such a
+ * string cannot be masked whole; it is sent empty (what the chip on main showed for an over-limit argument without a blank), never cut: a piece cut
+ * before masking could show the head of a value the cut splits.
  */
-function capArg(s: string): string {
-  if (s.length <= MASK_INPUT_MAX) return s;
-  const b = s.slice(0, MASK_INPUT_MAX + 1).search(/\s\S*$/);
-  return b > 0 ? s.slice(0, b) : s.slice(0, MASK_INPUT_MAX);
-}
+const overLimit = (s: string): boolean => s.length > MASK_INPUT_MAX;
 /**
  * One string of a call's arguments: `maskNoteText` with the session values (line breaks kept), the command reading and, for a URL, the URL reading.
  * Nothing hidden by any reading: the string as written. Else the masked text; when the command or URL reading hides more than the note mask, that
  * reading's text with nothing shown that another reading hides or that the text did not hold (`keepShownWithin`, one line: the command mask reads words).
  */
 function maskArgText(raw: string, values: readonly string[], w: ArgsWork): string {
-  const s = capArg(raw);
   if (w.strings + 1 > ARGS_STRINGS_MAX) throw new OverBudget();
   w.strings++;
+  if (overLimit(raw)) return '';
+  const s = raw;
   spendChars(w, s.length);
   if (!s) return s;
   const n = maskNoteText(s, values).text;
@@ -245,7 +243,7 @@ function maskArgValue(v: unknown, values: readonly string[], depth: number, w: A
 }
 /**
  * Spec 005 FR-342 (main half, issue #1975): a tool call's arguments as the window may hold them, masked in main as well as in the window (defence in
- * depth). Same shape; keys kept; a string up to `MASK_INPUT_MAX` characters that no mask hides anything in is the same string. Composes the shared masks
+ * depth). Same shape; keys kept; a string up to `MASK_INPUT_MAX` characters that no mask hides anything in is the same string, a longer one is ''. Composes the shared masks
  * only (FR-031). Bounded work (`ARGS_*_MAX`). Never throws: over the budget, or on any failure, the arguments are replaced by the mask.
  */
 export function maskToolArgs(args: unknown, values: readonly string[] = []): unknown {

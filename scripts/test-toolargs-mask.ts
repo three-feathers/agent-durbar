@@ -94,16 +94,26 @@ ok('SHAPE kept: keys, arrays and non-strings', () => {
   assert.strictEqual(m.n, 3); assert.strictEqual(m.b, false); assert.strictEqual(m.z, null);
   assert.strictEqual((m.command as string[])[0], 'mysql', 'SHAPE a harmless word stays');
 });
-ok('CAP: a string past the masks cap is cut like the chip and masked', () => {
-  const head = 'echo ' + 'word '.repeat(2000) + `--password ${PW} `;
-  const long = head + 'more '.repeat(2000) + GH;
-  const m = maskToolArgs({ command: long }) as { command: string };
-  assert.ok(long.length > R.MASK_INPUT_MAX, 'CAP the input is over the cap');
-  assert.ok(m.command.length <= R.MASK_INPUT_MAX, `CAP cut to the cap (${m.command.length})`);
-  assert.deepStrictEqual(leaks(m), [], 'CAP nothing hidden shows, in the head or past the cut');
+ok('STRADDLE: a value across the old cut point shows no piece of itself', () => {
+  // no piece of 6 or more characters of the invented value may appear (a cut before masking leaves its head)
+  const pieces = (v: string): string[] => Array.from({ length: v.length - 5 }, (_, i) => v.slice(i, i + 6));
+  const shows = (m: unknown): string[] => pieces(GH).filter((p) => JSON.stringify(m).includes(p));
+  const noBlank = 'Q'.repeat(R.MASK_INPUT_MAX - 10) + GH; // one word: the value starts 10 characters before the limit
+  assert.deepStrictEqual(shows(maskToolArgs({ content: noBlank })), [], 'STRADDLE-NOBLANK no piece of the value shows');
+  // a quoted value with blanks inside, its name 12 characters before the limit: a cut at a blank before masking leaves its first words
+  const V = ['Zr4', 'quiet', 'fern', 'Pw77', 'lake', 'Mo9n'].join(' ');
+  const name = ['PASS', 'WORD="'].join('');
+  const lead = 'word '.repeat(Math.ceil((R.MASK_INPUT_MAX - 12) / 5)).slice(0, R.MASK_INPUT_MAX - 12 - name.length);
+  const withBlank = `${lead} ${name}${V}" tail words`;
+  assert.ok(withBlank.indexOf(V) < R.MASK_INPUT_MAX && withBlank.indexOf(V) + V.length > R.MASK_INPUT_MAX, 'the value straddles the limit');
+  const out = JSON.stringify(maskToolArgs({ command: withBlank }));
+  assert.deepStrictEqual(V.split(' ').filter((w) => out.includes(w)), [], 'STRADDLE-BLANK no word of the value shows');
+});
+ok('OVER-LIMIT: a string over the masks input limit is sent empty, never cut', () => {
   const plain = 'a '.repeat(R.MASK_INPUT_MAX);
-  const mp = maskToolArgs({ prompt: plain }) as { prompt: string };
-  assert.strictEqual(mp.prompt, plain.slice(0, plain.slice(0, R.MASK_INPUT_MAX + 1).search(/\s\S*$/)), 'CAP a harmless long text is cut at its last blank before the cap, as the chip cuts');
+  assert.deepStrictEqual(maskToolArgs({ prompt: plain, path: 'src/a.ts' }), { prompt: '', path: 'src/a.ts' }, 'OVER-LIMIT a harmless long text is empty, the rest kept');
+  const exact = 'b'.repeat(R.MASK_INPUT_MAX);
+  assert.deepStrictEqual(maskToolArgs({ content: exact }), { content: exact }, 'OVER-LIMIT a string at the limit is kept whole');
 });
 ok('DEPTH: past the walk depth a value is the mask', () => {
   let deep: unknown = `token ${GH}`;
@@ -120,14 +130,6 @@ ok('DEPTH: past the walk depth a value is the mask', () => {
 ok('CATCH: a failure inside the walk fails closed', () => {
   const evil = { command: 'echo hi', get boom(): string { throw new Error('boom'); } };
   assert.strictEqual(maskToolArgs(evil), '[redacted]', 'CATCH a throwing argument gives the mask, not the arguments');
-});
-ok('CAP-NOBLANK and CAP-BLANK: over the cap a string is cut at its last blank, or AT the cap when it has none, never emptied', () => {
-  const word = 'QUJD'.repeat(R.MASK_INPUT_MAX); // one long harmless word (encoded content)
-  const m = maskToolArgs({ content: word }) as { content: string };
-  assert.strictEqual(m.content, word.slice(0, R.MASK_INPUT_MAX), 'CAP-NOBLANK a long word keeps its head, cut at the cap');
-  const spaced = 'abc '.repeat(R.MASK_INPUT_MAX); // a blank right after the cap's last whole word
-  const ms = maskToolArgs({ prompt: spaced }) as { prompt: string };
-  assert.ok(ms.prompt.length < R.MASK_INPUT_MAX && ms.prompt.endsWith('abc') && !/\s$/.test(ms.prompt), 'CAP-BLANK a text with blanks is cut at its last blank, not mid-word');
 });
 ok('WRITE-12K: a normal file write passes unchanged within the budget', () => {
   const content = 'const x = 1;\n'.repeat(Math.floor(R.MASK_INPUT_MAX / 13));
