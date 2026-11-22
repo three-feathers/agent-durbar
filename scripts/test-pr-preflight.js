@@ -43,6 +43,7 @@ const base = mk([], {
   'specs/002-b/tasks.md': '# B\n- [ ] T040 two\n',
   'scripts/t.js': "assert.ok(1, 'one');\nassert.ok(2, 'two');\n",
   'docs/x.md': 'line one\nline two\nline three\n',
+  'docs/s.md': 'the old fix strips a CRLF\n',
 }, 'base');
 // main moves on: a new script and a new FR in another spec, after the PR branches
 const main2 = mk([base], { 'package.json': PKG({ a: 'node a.js', b: 'node b.js', c: 'node c.js' }), 'specs/002-b/spec.md': '# B\n- **FR-020** two\n- **FR-030** three\n' }, 'main 2', { ref: 'refs/remotes/origin/main' });
@@ -174,20 +175,21 @@ const has = (list, re) => list.some((t) => re.test(t));
 
 // ---- 7 numbers
 {
-  // FR-030 is on main in 002-b: a global FR added in 001-a fails
+  // FR-030 is on main in 002-b only: new in 001-a it is no clash (the rule is specs:numbers', which never compares other files of main)
   const fr = mk([base], { 'specs/001-a/spec.md': '# A\n- **FR-010** one\n- **FR-030** again\n' }, 'fr', { ref: 'refs/remotes/origin/001-fr' });
   const r = run({ head: fr, branch: '001-fr' });
-  assert.ok(has(r.fails, /FR-030 \(specs\/001-a\/spec\.md\) is already on origin\/main in specs\/002-b\/spec\.md/), 'PP-numbers-main a global FR on main in another spec fails: ' + r.text);
+  assert.ok(!has(r.fails, /FR-030/) && has(r.lines.map((l) => l.text), /numbers: FR-030;/), 'PP-numbers-main a number other specs on main use is no clash: ' + r.text);
+  // the same file on main: a clash
+  const fr2 = mk([base], { 'specs/002-b/spec.md': '# B\n- **FR-020** two\n- **FR-030** mine too\n' }, 'fr2');
+  assert.ok(has(run({ head: fr2, branch: '001-fr2' }).fails, /FR-030 \(specs\/002-b\/spec\.md\) is also in origin\/main/), 'PP-numbers-main a number main defines in the same file fails');
   G(['update-ref', '-d', 'refs/remotes/origin/001-fr']);
   // another remote head adds FR-600 in 002-b and T501 in 001-a
   mk([base], { 'specs/002-b/spec.md': '# B\n- **FR-020** two\n- **FR-600** other\n', 'specs/001-a/tasks.md': '# A\n- [ ] T380 one\n- [ ] T501 other\n', 'specs/002-b/tasks.md': '# B\n- [ ] T040 two\n- [ ] T041 other\n' }, 'other', { ref: 'refs/remotes/origin/002-other' });
-  const mineN = mk([base], { 'specs/001-a/spec.md': '# A\n- **FR-010** one\n- **FR-600** mine\n', 'specs/001-a/tasks.md': '# A\n- [ ] T380 one\n- [ ] T501 mine\n- [ ] T041 per spec\n' }, 'mine');
+  const mineN = mk([base], { 'specs/001-a/spec.md': '# A\n- **FR-010** one\n- **FR-600** mine\n', 'specs/001-a/tasks.md': '# A\n- [ ] T380 one\n- [ ] T501 mine\n' }, 'mine');
   const n = run({ head: mineN, branch: '001-mine' });
-  assert.ok(has(n.fails, /FR-600 \(specs\/001-a\/spec\.md\) is also added on origin\/002-other in specs\/002-b\/spec\.md: numbers are global/), 'PP-numbers-global a global FR on another head in another spec fails: ' + n.text);
-  assert.ok(has(n.fails, /T501 \(specs\/001-a\/tasks\.md\) is also added on origin\/002-other$/), 'PP-numbers-same the same number in the same file on another head fails: ' + n.text);
-  assert.ok(!has(n.fails, /T041/), 'PP-numbers-perspec a T below 370 in another spec is no clash: ' + n.text);
+  assert.ok(has(n.fails, /FR-600 \(specs\/001-a\/spec\.md\) is also in origin\/002-other \(added there too, in specs\/002-b\/spec\.md/), 'PP-numbers-global a global FR on another head in another spec fails: ' + n.text);
+  assert.ok(has(n.fails, /T501 \(specs\/001-a\/tasks\.md\) is also in origin\/002-other \(added there too\)$/), 'PP-numbers-same the same number in the same file on another head fails: ' + n.text);
   G(['update-ref', '-d', 'refs/remotes/origin/002-other']);
-  assert.ok(pp.isGlobal('FR-001') && pp.isGlobal('T370') && !pp.isGlobal('T369') && !pp.isGlobal('Q001'), 'PP-numbers-perspec the global line is FR all and T370 on');
 }
 
 // ---- 8 removed asserts
@@ -205,6 +207,12 @@ const has = (list, re) => list.some((t) => re.test(t));
   assert.ok(has(r.fails, /public text: shape words in docs\/x\.md: "crlf"/), 'PP-security a shape word in docs fails a security PR: ' + r.text);
   assert.ok(has(run({ head: good, labels: ['bug', 'area:security', 'spec:021'], body: 'uses a Bearer header' }).fails, /PR body: "bearer"/), 'PP-security a shape word in the body fails');
   assert.ok(!has(run({ head: sh, branch: '001-sh' }).lines.map((l) => l.text), /public text/), 'PP-security only area:security PRs are checked');
+  // an edited sentence that already named the word on the base is not new; a second, new occurrence is
+  const ed = mk([base], { 'docs/s.md': 'the fix strips a CRLF from the value\n' }, 'ed');
+  const e = run({ head: ed, branch: '001-ed', labels: ['bug', 'area:security', 'spec:021'] });
+  assert.ok(!has(e.fails, /public text/) && has(e.lines.map((l) => l.text), /public text: no new shape words/), 'PP-security-net an edited line that kept the word is not new: ' + e.text);
+  const ed2 = mk([base], { 'docs/s.md': 'the fix strips a CRLF from the value, and a CRLF in the name\n' }, 'ed2');
+  assert.ok(has(run({ head: ed2, branch: '001-ed', labels: ['bug', 'area:security', 'spec:021'] }).fails, /docs\/s\.md: "crlf"/), 'PP-security-net a second occurrence is new');
 }
 
 // ---- 10 package.json

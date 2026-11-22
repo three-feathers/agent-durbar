@@ -16,10 +16,11 @@
  *   6  each merge commit is merge-only: its tree equals `git merge-tree` of its two parents; a file the merge had to resolve is a NOTE
  *      (read the resolution), any other change is a FAIL; a clean merge of main is a NOTE ("resolved nothing": proposed rule, merge main only
  *      on a conflict, red CI or a reviewer's request)
- *   7  spec numbers the PR adds (definitions, parsed by scripts/spec-numbers.js) against origin/main and every other remote head:
- *      same file = FAIL; another spec file: FR (all) and T370+ are global, FAIL; a lower T or a Q counts per spec (no clash)
+ *   7  spec numbers the PR adds, by the rule of `npm run specs:numbers` (its parser, collect and findClashes, reused) against
+ *      origin/main and every other remote head: a clash it reports is a FAIL; a number other specs on main also use is not one
  *   8  removed assert lines under scripts/: listed, NOTE (a removed assert needs an equal or stricter replacement)
- *   9  area:security PRs: no shape words (SHAPE_WORDS) in the body or added lines of specs/, docs/, changelog.d/: FAIL, named by place, never quoted
+ *   9  area:security PRs: no NET-NEW shape word (SHAPE_WORDS) in the body or in specs/, docs/, changelog.d/ (more often in added than in
+ *      removed lines of a file): FAIL, named by place and word
  *   10 package.json: no script removed or changed by the PR (merge-base to head, so a script main added later is not "removed")
  *   11 size: under 100 changed lines NOTE (batch), over 300 NOTE (split)
  *   12 the checks summary; a failing check is a FAIL
@@ -44,7 +45,6 @@ const ASSERT_LINE = /\bassert\b|\bexpect\(/;
 // Words that describe the SHAPE of a secret or a bypass in public text (spec 021 FR-060 "Public text"): matched case-insensitively.
 const SHAPE_WORDS = ['bearer ', 'gh' + 'p_', '--token', 'api_key=', 'password=', 'backslash', 'caret', 'crlf'];
 const SMALL = 100, LARGE = 300;
-const GLOBAL_T_FROM = 370;
 
 function git(root, args, { allowFail = false } = {}) {
   try {
@@ -65,51 +65,10 @@ function realGh(root) {
   };
 }
 
-const kindOf = (file) => (/\/tasks\.md$/.test(file) ? 'tasks' : 'spec');
-/** FR numbers are global (all of them); T numbers from T370 on; Q and lower T numbers count per spec. */
-function isGlobal(id) {
-  if (/^FR-/.test(id)) return true;
-  const m = /^T(\d+)/.exec(id);
-  return !!m && Number(m[1]) >= GLOBAL_T_FROM;
-}
-
-/** Pure: the clash lines for the numbers a PR adds. res: spec-numbers collect() result; mainOther: Map(id -> [files on origin/main, other than the adding file, that define it]). */
-function numberFindings(res, mainOther = new Map()) {
-  const out = [];
-  for (const t of res.twice || []) out.push({ level: 'FAIL', text: `number ${t.id} defined twice in ${t.file} (main took it too?)` });
-  for (const [file, ids] of res.branchAdds) {
-    for (const id of ids) {
-      if ((res.main.get(file) || new Set()).has(id)) out.push({ level: 'FAIL', text: `number ${id} (${file}) is already on origin/main` });
-      for (const f of mainOther.get(id) || []) out.push({ level: 'FAIL', text: `number ${id} (${file}) is already on origin/main in ${f}: numbers are global` });
-      for (const pr of res.prs) {
-        for (const [pf, pids] of pr.adds) {
-          if (!pids.has(id) || kindOf(pf) !== kindOf(file)) continue;
-          if (pf === file) out.push({ level: 'FAIL', text: `number ${id} (${file}) is also added on ${pr.label}` });
-          else if (isGlobal(id)) out.push({ level: 'FAIL', text: `number ${id} (${file}) is also added on ${pr.label} in ${pf}: numbers are global` });
-          // a Q or a T below T370 in another spec is that spec's own number: no clash
-        }
-      }
-    }
-  }
-  return out;
-}
-
-/** Global ids the PR adds that origin/main defines in ANOTHER spec file of the same kind: Map(id -> [files]). */
-function mainOtherFiles(root, branchAdds) {
-  const out = new Map();
-  for (const [file, ids] of branchAdds) {
-    const glob = [...ids].filter(isGlobal);
-    if (!glob.length) continue;
-    const pat = `(${glob.map((i) => i.replace(/[^A-Za-z0-9-]/g, '')).join('|')})([^0-9A-Za-z]|$)`;
-    const hits = gitq(root, ['grep', '-l', '-E', pat, 'origin/main', '--', 'specs']);
-    for (const h of (hits || '').split('\n').filter(Boolean)) {
-      const f = h.replace(/^origin\/main:/, '');
-      if (f === file || !sn.SPEC_FILE_RE.test(f) || kindOf(f) !== kindOf(file)) continue;
-      const defs = sn.parseDefinitions(sn.show(root, 'origin/main', f), kindOf(f));
-      for (const id of glob) if (defs.has(id)) { if (!out.has(id)) out.set(id, []); out.get(id).push(f); }
-    }
-  }
-  return out;
+/** The clash lines for the numbers a PR adds: exactly the rule of `npm run specs:numbers` (its findClashes, reused, FR-031: same file vs
+ * origin/main or another head, another spec file of the same kind vs another head, FR-098), never a stricter one of its own. */
+function numberFindings(res) {
+  return sn.findClashes(res).map((c) => ({ level: 'FAIL', text: `number ${c.id} (${printable(c.file)}) is also in ${c.with}` }));
 }
 
 /** Pure: label check. -> { level, text } */
@@ -138,25 +97,29 @@ function assertChanges(diff) {
   return { removed, added };
 }
 
-/** Pure: shape words in public text. sources: [{ where, text }] -> ['where: word', ...] */
+const countOf = (text, w) => String(text).toLowerCase().split(w).length - 1;
+/** Pure: NET-NEW shape words in public text. sources: [{ where, added, removed }] -> ['where: word', ...]; a word counts only when the
+ * added lines hold it more often than the removed ones (an edited sentence that already named it on the base is not new). */
 function shapeHits(sources) {
   const out = [];
-  for (const { where, text } of sources) {
-    const low = String(text).toLowerCase();
-    for (const w of SHAPE_WORDS) if (low.includes(w)) out.push(`${where}: "${w.trim()}"`);
+  for (const { where, added, removed = '' } of sources) {
+    for (const w of SHAPE_WORDS) if (countOf(added, w) > countOf(removed, w)) out.push(`${where}: "${w.trim()}"`);
   }
   return out;
 }
 
-/** Added lines per file of a unified diff: [{ where: file, text }]. */
-function addedLinesByFile(diff) {
+/** Added and removed lines per file of a unified diff: [{ where: file, added, removed }]. */
+function linesByFile(diff) {
   const m = new Map();
   let file = '';
+  const at = (f) => { if (!m.has(f)) m.set(f, { where: f, added: '', removed: '' }); return m.get(f); };
   for (const line of String(diff).split('\n')) {
-    if (line.startsWith('+++ ')) { file = line.replace(/^\+\+\+ (b\/)?/, ''); continue; }
-    if (line.startsWith('+')) m.set(file, (m.get(file) || '') + line.slice(1) + '\n');
+    if (line.startsWith('+++ ')) { if (line !== '+++ /dev/null') file = line.replace(/^\+\+\+ (b\/)?/, ''); continue; }
+    if (line.startsWith('--- ')) { if (line !== '--- /dev/null') file = line.replace(/^--- (a\/)?/, ''); continue; }
+    if (line.startsWith('+')) at(file).added += line.slice(1) + '\n';
+    else if (line.startsWith('-')) at(file).removed += line.slice(1) + '\n';
   }
-  return [...m].map(([where, text]) => ({ where, text }));
+  return [...m.values()];
 }
 
 /** Pure: package.json scripts removed or changed between two package.json texts. */
@@ -287,7 +250,7 @@ function preflight(n, deps = {}) {
       .filter((h) => h.name && h.name !== 'HEAD' && h.name !== 'main' && h.name !== branch && !h.name.startsWith('gh-readonly-queue/'))
       .map((h) => ({ label: `origin/${h.name}`, sha: h.sha, headRef: h.name, sameRepo: true }));
     const res = sn.collect(root, heads, head, { headRef: branch, baseRef: pr.baseRefName, sameRepo: true });
-    const found = numberFindings(res, mainOtherFiles(root, res.branchAdds));
+    const found = numberFindings(res);
     const addedIds = [...res.branchAdds.values()].flatMap((s) => [...s]);
     for (const f of found) add(f.level, f.text);
     if (!found.some((f) => f.level === 'FAIL')) add('ok', `numbers: ${addedIds.length ? addedIds.join(' ') : 'none added'}; checked against origin/main and ${res.prs.length} other remote head(s)`);
@@ -302,9 +265,9 @@ function preflight(n, deps = {}) {
 
   // 9. security shape words
   if (names.includes('area:security')) {
-    const sources = [{ where: 'PR body', text: pr.body || '' }, ...addedLinesByFile(gitq(root, ['diff', base, head, '--', 'specs', 'docs', 'changelog.d']) || '')];
+    const sources = [{ where: 'PR body', added: pr.body || '' }, ...linesByFile(gitq(root, ['diff', base, head, '--', 'specs', 'docs', 'changelog.d']) || '')];
     const hits = shapeHits(sources);
-    add(hits.length ? 'FAIL' : 'ok', hits.length ? `public text: shape words in ${hits.join(', ')} (a security PR describes the fix, not the shape)` : 'public text: no shape words');
+    add(hits.length ? 'FAIL' : 'ok', hits.length ? `public text: shape words in ${hits.join(', ')} (a security PR describes the fix, not the shape)` : 'public text: no new shape words');
   }
 
   // 10. package.json scripts
@@ -343,4 +306,4 @@ if (require.main === module) {
   process.exit(code);
 }
 
-module.exports = { preflight, format, labelFinding, assertChanges, shapeHits, scriptChanges, sizeFinding, checksFinding, numberFindings, isGlobal, AI_LINE, SHAPE_WORDS };
+module.exports = { preflight, format, labelFinding, assertChanges, shapeHits, scriptChanges, sizeFinding, checksFinding, numberFindings, AI_LINE, SHAPE_WORDS };
