@@ -438,6 +438,8 @@ I choose a world, and its people come with it. If I pick characters myself, they
   | My characters | Heads (096); per character | 096's Real office frames (T112) |
   | Shared | As its validator says | Up to its maker |
 
+  **Amended 2026-11-22 (Changes, last entry), proposal:** `checkSet` takes a vocabulary profile; untrusted packs always get the user profile (FR-204, FR-205 as written), built-in packs their own declared 097 vocabulary; caps are the same for both. The Cheeky and Minimalist rows above disagree with their `set.json` (`full`); T433 settles it.
+
 - **FR-207** **Migration, once** (the 077 FR-067 pattern: in main on read, written at once, a repeat changes nothing). It keeps each user's look, and it never downloads anything, closes or sends anything.
 
   | Today | Becomes |
@@ -739,6 +741,7 @@ Agent decisions stand until the owner changes them.
 - **OP-11 Minimalist: decided (owner, 2026-10-31).** Full poses like every set; art is in progress (FR-206, T110).
 - **OP-12 Retro Pixel theme: decided (owner, 2026-10-31).** It stays until the Retro arcade world ships, and that world ships in the app in the same release that removes the theme (FR-213, spec 035 FR-019). **Reversed 2026-11-14 by the owner (see Changes): the theme stays; the arcade ships as an option.**
 - **OP-13 Arrangements against worlds: decided (owner, 2026-11-01, relayed).** The closed list of arrangements grows, and no two project worlds share one ("substantially different"). Photo office keeps `rows`, the baseline. FR-226 has the list and who holds what. FR-016 fails a shared arrangement.
+- **OP-14 The built-in packs' vocabulary: open (Changes 2026-11-22, last entry).** No built-in pack meets FR-204 and FR-205 as written. Until answered, built-ins are checked through their own profiles (T433, T434) and the user profile stays FR-204 as written. (a) **The user vocabulary:** stay FR-204's names (`coffee`, `tread`, front views), or follow 097 FR-191's (`counter`, `type`, `runA`, view a, with optional `face-*`), as T224 first said? Recommended: follow 097, so a user set can be drawn like Office people; T224 then changes one table. (b) **Do the built-ins migrate to the user vocabulary later** (file renames, `ASSETS.md`, no new pictures), or keep their profile for good? Recommended: keep, until a built-in set is to be shared or exported (FR-205). (c) **The `loft` row** of `docs/experience/world-moments.json` names a pack folder that does not exist; the contract suite reports it as "no pack" (neither a pass nor a failure) until it is drawn or the row goes.
 - **Retro arcade questions** (2026-11-01; each has the recommended answer, which holds until he says otherwise):
   - **Q1 Slant. Decided (owner, 2026-11-01), after seeing the side-by-side (T200):** level glass and text, on a redrawn cabinet (FR-258).
   - **Q2 Chase lights. Held as told to the owner, 2026-11-01:** none; working is steady and the person moves (FR-261).
@@ -2421,3 +2424,53 @@ Found by the Mac lane's visual check on `main` `722a48a8e` (2026-11-22, simulato
 - **Honest limits.** `[KNOWN GAP]` macOS and Windows fonts (the plate widths are measured on the page, so another face moves them; the check reads the drawn boxes, so it holds there, but only Linux was run); no real GPU; the owner has not looked at the new label places (read: the pictures on the PR).
 - **Numbers** (checked 2026-11-22, `npm run specs:numbers`; the highest task on `main` is T431, every open PR head reaches T441 and another spec takes T433 (#2006)): this entry takes **T445** and **T446**, no FR or Q.
 - **Tasks:** T445 (the plates, signs and heads, issue #2009), T446 (the message box's one outline, issue #2010).
+## Changes 2026-11-22: the Set format against the built-in packs; vocabulary profiles for `checkSet` (T100 re-sliced, T433 and T434 new; T224 amended; FR-204..FR-206; issue #1877; no new FR; proposal for review, no `src/` change)
+
+**Why.** T100's first build step read the built-in packs on `main` at `f62239d53` before writing code (spec 117 option C needs every built-in through `checkSet`). **No built-in pack meets FR-204 and FR-205 as written**, and none goes through the user-pack part table: built-in worlds and sets have their own vocabulary, from spec 097. T100 stopped there (no code, no picture or `world.json` changed). This entry does **not** loosen FR-204 or FR-205 and does not touch a built-in pack: it records the gap and proposes how one `checkSet` can check both. Decided by the coordinator session under the owner's standing delegation as a spec-only step, for Paco's and Ruben's review like any spec.
+
+**Evidence: sets** (`src/renderer/realoffice/sets/<id>/`; `read:` file listings and `set.json` keys; caps measured with `pictureHeader` of `worldpack.ts`):
+
+| Set | People, names | Seated (6 required) | Standing on disk | FR-204 lacks | Anchors on disk | Half size | Other files and fields |
+|---|---|---|---|---|---|---|---|
+| Office people | 15, `p01`..`p15` | all 6 | view a `book`, `counter`, `knock`, `letter`, `runA`, `runB`, `type` (097 FR-191) | `coffee`, `tread`, every `face-*` | `seat`: `headTop`, `bodyH`, `hand`, `w`, `h`; `stand`: `feet`, `top`, `figH`, `foot`; no `faceBox`, `floorLine`, `realHeight` | `pNN-<pose>.h.webp` (195 files), not `-half` | `pNN-righead`, `-rigl`, `-rigr` (45 rig files); `facing`, `rig`, `px` |
+| Retro pixel people | 15, `p01`..`p15` | all 6, plus `sit` | view a as Office, plus `face-book`, `face-coffee`, `face-knock`, `face-letter`, `face-runA`, `face-runB` | view-a `coffee` and `tread` (only `face-coffee`, `face-runA`) | as Office; `faceBox` for `face-book` only | none (`pixelArt`, FR-254) | `sit`; `facing`, `pixelArt`, `faceBox` |
+| Prehistoric | 6, word ids (`bigbeard`, `braids`, ...) | all 6 | `book`, `coffee`, `knock`, `letter`, `runA`, `runB` | `tread` | `seat` and `stand` as above, no `foot`; no `faceBox`, `floorLine`, `realHeight` | none | none |
+| Cheeky (13), Minimalist, Monster, Pirate, Rebels, Royal (6 each) | word ids | all 6 | as Prehistoric | `tread` | as Prehistoric | none | none |
+
+All sets keep FR-204's caps: no frame over 80 KB (largest 54 KB, Office), none over 640 px tall (Office 640), every frame has alpha, Office 8.8 MB under 10 MB, at most 437 files. **What fails is vocabulary, not size.** FR-205's `p<NN>-<pose>[-half].webp` matches no built-in set exactly: Office and Retro use `pNN` but `.h` or no half size; the other seven use word ids. Also found: FR-206's table says Cheeky and Minimalist are `heads`, but both `set.json` files say `full` and both hold the same 12 frames per person as Prehistoric; which one is true is a question for T433 to settle by `checkSet`, not by editing either.
+
+**Evidence: worlds** (`src/renderer/realoffice/worlds/<id>/`; `validateWorldFiles` run once on each folder, `knownSets` office, prehistoric, retro, `requireHashes` false):
+
+| World | Files | Not in `PART_TABLE` | `world.json` fields not in `MANIFEST_FIELDS` | User validator says |
+|---|---|---|---|---|
+| Photo office | 57 | `kidN-<state>` (42), `desk.h.webp`, `world.css`, `ASSETS.md` | `storeys`, `css`, `desk`, `fixtureTop`, `fixtures`, `floorLine`, `px`, `kids`; no `parts` | "The folder has too many files." (over 40 kept); with only listed parts: "world.json has a field that is not on the list." |
+| Prehistoric cave | 59 | `kidN-<state>`, `world.css`, `ASSETS.md` | as Photo less `px`, plus `arrangement` (allowed), `minFace`, `wall`, `monitor` | the same two refusals |
+| Retro arcade | 64 | `kidN-<state>`, `floor-night`, `wall-night`, `glow`, `monitor-narrow`, `world.css`, `ASSETS.md` | as cave, plus `bandRows`, `floorTile`, `glow`, `night`, `pixelArt`, `wallSize`, `welcome` | the same two refusals |
+
+`pixelArt` is FR-254's field but is not in `MANIFEST_FIELDS` on `main`, so a user pack naming it is refused today (FR-254 refuses a non-project `pixelArt` pack in v1 anyway; noted, not changed here). `docs/experience/world-moments.json` and `test:momentsregistry` list a fourth world, `loft` (Cheeky loft), whose `pack` path `src/renderer/realoffice/worlds/loft` does not exist: a planned world, not a pack. The contract suite treats it as an open item (below), not a pass.
+
+**What the validator tests reach today** (spec 117 T016's inventory, from the Mac session, static reads, about plus or minus 10 %): 71 files, about 190 world-specific asserts, about 66 replaceable and about 124 staying. The six validator tests (`test-worldpack`, `test-world-packs`, `test-worldzip`, `test-worldstore`, `test-worldipc`, `test-world-pack.js`) never read a built-in pack; only `test-realoffice-assets.ts` does (manifest id equals folder, `formatVersion`, name 1..40, kid counts 42 = 6 x 7, Retro frame and size rows, preview rows). So running built-ins through `checkSet` and the part machinery is **a new check, not a move** of old asserts.
+
+**Proposed design: one `checkSet`, a vocabulary profile, and the untrusted path pinned to the user profile.**
+
+- **`checkSet(files, profile)`** in `worldpack.ts` is the one implementation (spec 021 FR-031). The **profile** says only *which names* mean what: the person-id grammar, the pose names, which required pose may be satisfied by which named frame (aliases, in order), the half-size suffix or none, the extra per-person files and `set.json` fields a pack may carry, and where each FR-204 anchor is read from. **Caps are not in a profile**: 80 KB, 640 px, alpha, 20 people, 600 files, 10 MB and every hostile-input rule stay constants in `worldpack.ts` and apply to every profile. Levels (`full`, `heads`, refused) and the report (each person `full` or the missing poses and anchors, by name) are computed the same way for every profile.
+- **The user profile** (`USER_SET_PROFILE`, a frozen constant in `worldpack.ts`) is FR-204 and FR-205 as written: `p01`..`p20`, `p<NN>-<pose>[-half].webp`, the closed pose list, `face-*` optional and falling back to view a, no `-half` with `pixelArt`, `coffee` and `tread` satisfied by `face-coffee` and `face-runA` (FR-259's Changes reading). Fail closed: any name outside it refuses the pack.
+- **Built-in profiles** are the 097 vocabulary each built-in pack actually uses, **declared once in a data file next to the pack** (`vocabulary.json` in `sets/<id>/` and `worlds/<id>/`). It does not define new rules: it **picks** from a closed superset in code (`BUILTIN_VOCABULARY`: the `.h` suffix, rig files, word person ids, 097's `counter`, `type`, `runA` aliases, `stand.feet` as `floorLine`, `kidN-<state>`, `world.css`, `desk.h`, the built-in `world.json` fields listed above, and the kid files' own count of 42). A name not in that superset is refused even for a built-in. Reading a `vocabulary.json` uses the same JSON reader, size cap and duplicate-key check as `world.json`.
+- **An untrusted pack can never choose its profile.** `validateWorldZip`, `validateWorldFiles`, the set zip and folder readers and every main-process import path take no profile argument and always use the user profile; `vocabulary.json` is not a user name, so a zip carrying one is refused by the closed list before it is parsed. Built-in profiles are read only by the contract suite (spec 117 T017) and by build-time checks, never on an import path.
+- **Worlds use the same split** (T434): a world profile for `world.json` fields and pack files, the user one being today's `MANIFEST_FIELDS` and `PART_TABLE`, unchanged.
+
+**Risks.** (1) **A built-in profile widening user zips**: the main risk. Guard: the untrusted entry points have no profile parameter (a compile error, not a runtime flag); a test feeds every built-in-only name, suffix and field (and a `vocabulary.json`) to the zip and folder validators and expects a refusal naming the rule; a mutant that lets the zip path take a built-in profile fails at its own assert. (2) **A data file next to a pack** may trip folder-listing asserts in `test-realoffice-assets` and the asset copy into the app; T433 checks both and puts the files elsewhere (one table under `src/shared/`) if they do, and says so. (3) **A built-in profile hides drift**: a built-in set passes with its profile but would fail as a user pack, so sharing or exporting a built-in set (FR-205) needs a conversion: `[KNOWN GAP]` until OP-14 (b) is answered. (4) **Two vocabularies to keep**: the superset is one table with a line per name and its reason; adding a name to it needs a spec line.
+
+**What the tasks become** (dependencies; which can start without an owner decision):
+
+- **T100** (re-sliced, can start now): the profile type, `USER_SET_PROFILE` and `checkSet` over user packs only, with the hostile set. Its pose table is FR-204 as written; if OP-14 (a) changes it, that is one table edit and its tests.
+- **T433** (new, after T100, can start without an owner decision): built-in set profiles as data, every built-in set through `checkSet` unchanged, the Cheeky and Minimalist level settled by the validator's answer.
+- **T434** (new, after T100's profile type, can start without an owner decision): the world profile, and every built-in world through the same part and manifest machinery.
+- **T224** (amended): Office people and Prehistoric stay `full` through their built-in profiles (T433), not by renaming FR-204; T224 itself is now the user vocabulary question, OP-14 (a), and waits for it.
+- **Spec 117 T016 and T017**: T016 is the inventory above, committed in full in T017's PR; T017 waits for T100, T433 and T434 (spec 117 *Changes 2026-11-22*).
+
+**Open point for the owners**, added to *Open points*: OP-14.
+
+**Numbers** (checked 2026-11-22, `npm run specs:numbers` against `origin/main` `f62239d53` and every open PR head; open PR heads reach T432): this entry takes **T433**, **T434** and **OP-14**, and no FR or Q.
+
+**Tasks:** T100 (amended), T433, T434 (new), T224 (amended); spec 117 T016, T017 (amended).
