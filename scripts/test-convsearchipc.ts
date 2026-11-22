@@ -125,14 +125,16 @@ async function main(): Promise<void> {
   const NOTES0 = { floorOffFolders: 0, mcpValuesLocked: false, lateLists: 0, lateApps: [] as string[] };
   let scopeOf: () => Scope = () => ({ plan: { sessions: [] }, read: async () => ({ ok: true, items: [] }), values: () => [], notes: NOTES0 });
   let hold: Promise<void> | undefined;
+  let maskCalls = 0; // titles masked by the early title pass (a cancelled search must stop it)
+  let sessionSteps: ((cb: (x: unknown[], v: () => string[]) => void) => void) | undefined; // spec 095 FR-054: the sessions the fake plan has so far
   const listingSteps: Array<[number, number]> = []; // issue 1904: what the fake plan reports while it is built
   const deferred: Array<() => void> = [];
   const cache = createListCache();
   const ipc = register({
     keptLists: cache,
     hasSessions: () => sessions > 0,
-    scope: async (...a: unknown[]) => { scopeCalls.push(a); stops.push(a[0] as () => boolean); for (const [d, t] of listingSteps) (a[2] as (d: number, t: number) => void)(d, t); if (hold) await hold; return scopeOf(); },
-    matcher: () => ({ masker, search }),
+    scope: async (...a: unknown[]) => { scopeCalls.push(a); stops.push(a[0] as () => boolean); for (const [d, t] of listingSteps) (a[2] as (d: number, t: number) => void)(d, t); sessionSteps?.(a[3] as (x: unknown[], v: () => string[]) => void); if (hold) await hold; return scopeOf(); },
+    matcher: () => ({ masker: { ...masker, maskText: (...a: Parameters<typeof masker.maskText>) => { maskCalls++; return masker.maskText(...a); } }, search }),
     defer: (fn) => { deferred.push(fn); },
     sleep: () => tick(), // the 250 ms between batches, without waiting
   });
@@ -176,7 +178,7 @@ async function main(): Promise<void> {
   runDeferred();
   await settle(400);
   assert.strictEqual(scopeCalls.length, 1);
-  assert.strictEqual(scopeCalls[0].length, 3, 'the scope gets a stop function, main\'s own cache and the progress callback: nothing the window sent (no folder, path or session)');
+  assert.strictEqual(scopeCalls[0].length, 4, 'the scope gets a stop function, main\'s own cache and the two progress callbacks: nothing the window sent (no folder, path or session)');
   assert.strictEqual(typeof scopeCalls[0][2], 'function', 'issue 1904: the plan reports its progress through the third');
   assert.strictEqual(typeof scopeCalls[0][0], 'function');
   assert.strictEqual(scopeCalls[0][1], cache, 'the second is main\'s box-session cache (FR-026)');
@@ -329,7 +331,7 @@ async function main(): Promise<void> {
     const tail = win1.sent.slice(1);
     assert.strictEqual(tail.length, 1);
     const fin = tail[0][1];
-    assert.ok(fin.kind === 'done' && fin.stopped === true && fin.progress.done === 1 && fin.progress.total === 2, JSON.stringify(fin));
+    assert.ok(fin.kind === 'done' && fin.stopped === true && fin.progress.done === 0 && fin.progress.total === 2, JSON.stringify(fin));
     ipc.cancelAll();
     await settle(20);
     assert.strictEqual(win1.sent.length, 2, 'a second cancelAll with nothing live sends nothing');
@@ -343,6 +345,48 @@ async function main(): Promise<void> {
     win1.dead = false;
   }
   assert.ok(win1.listenerCount('destroyed') === 1 && win1.listenerCount('did-start-loading') === 1, 'one listener per window, not one per search');
+
+  // FR-054: the titles of what the plan has so far go out before the plan is done, and the scan does not send them again
+  {
+    win1.sent.length = 0;
+    const vals = (): string[] => [];
+    sessionSteps = (cb) => {
+      cb([sess({ sessionId: 'o1', title: 'invoice export open' }), sess({ sessionId: 'o2', title: 'other' })], vals);
+      cb([sess({ sessionId: 'e1', group: 'earlier', title: 'old invoice export' })], vals);
+    };
+    hold = new Promise<void>((r) => { release = r; });
+    scopeOf = () => ({ plan: { sessions: [sess({ sessionId: 'o1', title: 'invoice export open' }), sess({ sessionId: 'o2', title: 'other' }), sess({ sessionId: 'e1', group: 'earlier', title: 'old invoice export' })] }, read: async () => ({ ok: true, items: [] }), values: vals, notes: NOTES0 });
+    const rp = await start(E1, 'invoice export');
+    assert.ok(rp.ok);
+    runDeferred();
+    await settle(30);
+    const early = win1.sent.filter(([, p]) => p.kind === 'batch').map(([, p]) => (p.kind === 'batch' ? p.hits.map((h) => [h.sessionId, h.excerpts.length]) : []));
+    assert.deepStrictEqual(early, [[['o1', 0]], [['e1', 0]]], 'the title rows went out while the plan is held');
+    release!();
+    await settle(100);
+    const all = win1.sent.flatMap(([, p]) => (p.kind === 'batch' ? p.hits.map((h) => h.sessionId) : []));
+    assert.deepStrictEqual(all.sort(), ['e1', 'o1'], 'the scan does not send the early rows again');
+    sessionSteps = undefined;
+    hold = undefined;
+    // a search cancelled between two plan steps matches no more titles and sends nothing more
+    win1.sent.length = 0;
+    let sid1 = '';
+    let masksAtCancel = -1;
+    sessionSteps = (cb) => {
+      cb([sess({ sessionId: 'a1x', title: 'invoice first' })], vals);
+      void handlers.get('search:cancel')!(E1, sid1);
+      masksAtCancel = maskCalls;
+      cb([sess({ sessionId: 'b1x', title: 'invoice second' })], vals);
+    };
+    const rq = await start(E1, 'invoice');
+    assert.ok(rq.ok);
+    sid1 = rq.ok ? rq.searchId : '';
+    runDeferred();
+    await settle(30);
+    assert.deepStrictEqual(win1.sent.flatMap(([, p]) => (p.kind === 'batch' ? p.hits.map((h) => h.sessionId) : [])), ['a1x'], 'the first step was sent, the second never');
+    assert.strictEqual(maskCalls, masksAtCancel, 'a cancelled search masks and matches no more titles');
+    sessionSteps = undefined;
+  }
 
   // a scope that throws: said with a failed done, never silent
 
@@ -767,6 +811,13 @@ async function main(): Promise<void> {
     let n = 0;
     await buildScope(mk(), () => n++ >= 1);
     assert.ok(seen.every(([d, t]) => d < t), 'listing: a search that is stopped is never reported as complete');
+    // FR-054: the plan tells its sessions as it grows: the open ones first, then what each listing step added
+    const told: string[][] = [];
+    const sc2 = await buildScope(mk({ onSessions: (x) => told.push(x.map((y) => y.sessionId)) }));
+    assert.deepStrictEqual([...told[0]].sort(), [...agents.keys()].sort(), 'the first call holds exactly the open sessions, before any listing');
+    assert.strictEqual(told.flat().length, sc2.plan.sessions.length, 'every session of the plan is told once, none twice');
+    assert.strictEqual(new Set(told.flat()).size, told.flat().length);
+    await buildScope(mk({ onSessions: () => { throw new Error('callback'); } })); // a throwing callback never stops the plan
   }
 
   // issue 1904, part 2 (FR-026): the box session keeps every listing, not only Codex's: a second search lists nothing again
@@ -1099,6 +1150,7 @@ async function main(): Promise<void> {
     const mainSrc = read('src/main/main.ts');
     assert.ok(/registerConvSearchIpc\(\{/.test(mainSrc) && /hasSessions: \(\) => agents\.size > 0/.test(mainSrc), 'main.ts registers the search with its own agents');
     assert.ok(/const convListings = new Map<string, Promise<unknown>>\(\)/.test(mainSrc) && /gate: convGate, keptLists, listings: convListings,/.test(mainSrc), 'main.ts passes its one map of running listings to every scan (FR-022)');
+    assert.ok(/scope: \(stop, keptLists, onListing, onSessions\) => buildScope\(\{[\s\S]*?onListing, onSessions,/.test(mainSrc), 'main.ts hands both progress callbacks to buildScope (FR-054): without onSessions no early titles, without onListing no listing line');
     assert.ok(/noPrompt: \(\) => !mcpStore \|\| mcpStore\.noPrompt\(\)/.test(mainSrc) && /knownSecretValues: \(key\) => mcpStore\?\.knownSecretValues\(key\) \?\? \[\]/.test(mainSrc), 'MCP values without a prompt, as NotesOps; no store yet means nothing is locked (review of PR 1232, Q1: as valuesPending, `!!mcpStore && ...`)');
     {
       // Q1: the wiring's own expression, run: no store yet is "nothing locked" (the note says nothing), a store that would prompt is locked

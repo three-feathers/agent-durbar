@@ -238,6 +238,7 @@
     "test:renameadapters": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-rename-adapters.js",
     "test:rendersyntax": "node scripts/test-renderer-syntax.js",
     "test:retry": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-retry.js",
+    "test:review-profile": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-review-profile.js",
     "test:roomorder": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-roomorder.js",
     "test:rules": "node scripts/test-rules-check.js && node scripts/rules-check.js",
     "test:runtests": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-run-tests.js",
