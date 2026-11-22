@@ -152,6 +152,7 @@ ok('BUDGET: large arguments stop at a fixed work cap and become the mask', () =>
     ['6 keys x 7 levels', nest(7)],
     ['10k numbers', { a: Array.from({ length: 10_000 }, (_, i) => i) }],
     ['a list read twice', { command: ['a '.repeat(3500), 'b '.repeat(3500)] }],
+    ['a list read three times', { command: ['a '.repeat(2500), 'b '.repeat(2500)] }],
     ['10 x 12k strings', { a: Array.from({ length: 10 }, () => 'echo hello world '.repeat(700)) }],
     ['600 short strings', { a: Array.from({ length: 30 }, () => Object.fromEntries(Array.from({ length: 20 }, (_, i) => ['k' + i, 'v' + i]))) }],
   ];
@@ -238,7 +239,7 @@ type Page = { chipArgs(e: unknown): { label: string; full: string }; safeToolLab
 const P = (win as unknown as { P: Page }).P;
 const BMASK: BrainMask = { ...R } as unknown as BrainMask;
 const SURFACES: Record<string, (tool: string, a: unknown) => string> = {
-  chip: (tool, a) => { const c = P.chipArgs({ tool, args: a }); return c.label + '\n' + c.full; },
+  chip: (tool, a) => { const c = P.chipArgs({ tool, args: a }); return c.label + '\n' + c.full; }, // the line, its title (the same text) and Copy (the full text)
   task: (tool, a) => P.safeToolLabel(tool, P.toolLabel(a), 400),
   helper: (_tool, a) => { const g = (a && typeof a === 'object' ? a : {}) as Record<string, unknown>; return [g.description, g.prompt].map((x) => (x ? P.helperMask(String(x)) + '\n' + P.safeExcerpt(P.homeMask(String(x)), 90, '') : '')).join('\n'); },
   desk: (tool, a) => LIVE.phrase({ kind: P.toolKind(tool), tool, label: P.toolLabel(a) }, P.LIVE_MASK),
@@ -291,6 +292,46 @@ ok('UNION: a value one reading hides and another value a second reading hides ar
   const m2 = JSON.stringify(maskToolArgs({ prompt: `${md} [https://h.example/x?session=${W}]` }));
   assert.ok(!m2.includes(GH.slice(4, 14)) && !m2.includes(W), 'UNION-NOTE what only the note mask hides stays hidden next to a URL');
 });
+ok('CONT-MARK: a mask never takes a line-continuation mark; the helper card hides the next line\'s value as on main', () => {
+  const S1 = ['Qm4', 'Tz8Lp', '2Wx9'].join(''), S2 = ['Rk7', 'Vn3Hs', '5Yd1Pa'].join('');
+  for (const form of ['^\r\n', '`\n', '\\\n', '\n']) for (const tool of ['bash', 'view']) {
+    const d = ['--api', '-key '].join('') + S1 + form + '-p' + S2;
+    const m = maskToolArgs({ prompt: 'p', description: d }) as { description: string };
+    assert.ok(!m.description.includes(S1), `CONT-MARK ${JSON.stringify(form)} ${tool}: the value is masked`);
+    if (form !== '\n') assert.ok(m.description.includes(form), `CONT-MARK-KEPT ${JSON.stringify(form)} ${tool}: the mark and its line break are kept`);
+    if (!P.helperMask(d).includes(S2)) assert.ok(!P.helperMask(m.description).includes(S2), `CONT-MARK-HELPER ${JSON.stringify(form)} ${tool}: the helper card hides the next line's value as on main`);
+  }
+});
+ok('LIST-JOINED: a word list keeps every word the window\'s comma-joined reading hides', () => {
+  const X = ['Ka7Lm2', 'Np4Qr6', 'St8Uv1'].join('.'), Y = ['Wx3Yz5', 'Ab7Cd9', 'Ef2Gh4'].join('.');
+  const cases: Array<[string, unknown]> = [
+    ['bash', { command: ['curl', '-ubob:' + X, '-p' + Y] }],
+    ['bash', { command: ['tool', ['pass', 'word='].join('') + X, Y] }],
+    ['web_fetch', { command: ['curl', ['Coo', 'kie:\r\n-ubob:'].join('') + X, '-p' + Y] }],
+  ];
+  const pieces = Y.split('.');
+  for (const [tool, a] of cases) {
+    const m = maskToolArgs(a);
+    for (const [name, f] of Object.entries(SURFACES)) {
+      const raw = f(tool, a), masked = f(tool, m);
+      const again = pieces.filter((p) => !raw.includes(p) && masked.includes(p));
+      assert.deepStrictEqual(again, [], `LIST-JOINED ${tool} ${name}: no piece of the next word shows that main hid`);
+    }
+  }
+});
+ok('LIST-READINGS: each reading of a list hides what only it hides', () => {
+  const V = ['Pl4n', 'Vq8', 'wordy7'].join('');
+  assert.ok(!JSON.stringify(maskToolArgs({ command: ['cmd', ['--pass', 'word:Ab3 '].join('') + V] })).includes(V), 'LIST-ORIGINAL the whole-list reading reads the original words');
+  assert.ok(!JSON.stringify(maskToolArgs({ command: ['cmd', ['Coo', 'kie:`\n'].join(''), V] })).includes(V), 'LIST-NOTE the joined text is read by the note mask too');
+});
+ok('CACHE-VALUES: the read cache is keyed by the session values too', () => {
+  const mk = createToolArgsMasker();
+  const V = ['qv', '7Lk', 'sess', 'ion-9'].join('');
+  const long = 'echo ' + 'plain words '.repeat(40) + V;
+  mk({ ...(ev('start', 'bash', { command: long }) as object), sessionId: 'sA', callId: 'k1' } as AgentEvent, []);
+  const m = mk({ ...(ev('start', 'bash', { command: long }) as object), sessionId: 'sB', callId: 'k2' } as AgentEvent, [V]);
+  assert.ok(!JSON.stringify(m).includes(V), 'CACHE-VALUES a string read for one session does not come back unmasked where it holds another session\'s value');
+});
 ok('DIFF: no word a window surface hides on the raw arguments shows on the masked copy', () => {
   const corpus: Array<[string, unknown, string[]]> = [];
   for (const pre of PRES) for (const g of GAPS) corpus.push(['task', { prompt: 'p', description: pre + g + '-p' + B1 }, []]);
@@ -299,9 +340,15 @@ ok('DIFF: no word a window surface hides on the raw arguments shows on the maske
     corpus.push([tool, { command: [['--tok', 'en'].join(''), 'a \\\n b ' + V1] }, []]);
     corpus.push([tool, { command: ['mysql', ['--pass', 'word'].join(''), '[redacted] ' + V1] }, []]);
     for (const [, a] of SECRET_ARGS) corpus.push([tool, a, [SESSION]]);
+    const S1 = ['Qm4', 'Tz8Lp', '2Wx9'].join(''), S2 = ['Rk7', 'Vn3Hs', '5Yd1Pa'].join('');
+    for (const form of ['^\r\n', '`\n', '\\\n', '\n']) corpus.push([tool, { prompt: 'p', description: ['--api', '-key '].join('') + S1 + form + '-p' + S2 }, []]);
+    const X = ['Ka7Lm2', 'Np4Qr6', 'St8Uv1'].join('.'), Y = ['Wx3Yz5', 'Ab7Cd9', 'Ef2Gh4'].join('.');
+    corpus.push([tool, { command: ['curl', '-ubob:' + X, '-p' + Y] }, []]);
+    corpus.push([tool, { command: ['tool', ['pass', 'word='].join('') + X, Y] }, []]);
+    corpus.push([tool, { command: ['curl', ['Coo', 'kie:\r\n-ubob:'].join('') + X, '-p' + Y] }, []]);
   }
   const bad: string[] = [];
-  for (const [tool, a, vals] of corpus) for (const x of shownAgain(tool, a, vals)) bad.push(`${tool} ${x}`);
+  for (const [tool, a, vals] of corpus) for (const x of shownAgain(tool, a, vals)) { bad.push(`${tool} ${x}`); if (process.env.DBG) console.log(JSON.stringify(a).slice(0, 90), x, JSON.stringify(SURFACES.chip(tool, a)).slice(0, 120), JSON.stringify(SURFACES.chip(tool, maskToolArgs(a, vals))).slice(0, 120)); }
   assert.deepStrictEqual(bad, [], 'DIFF words hidden on main shown again');
 });
 ok('OVER-LIMIT-PLUS1: a string one character over the limit arrives empty', () => {
