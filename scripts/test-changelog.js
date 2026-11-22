@@ -645,7 +645,11 @@ assert.ok(cl.parseFragment('- x <!-- hidden -->\n').errors.some((e) => /HTML com
   const body = wf.slice(wf.search(/^jobs:/m));
   const re = /^ {2}([\w-]+):\n([\s\S]*?)(?=^ {2}[\w-]+:\n|(?![\s\S]))/gm;
   for (let m = re.exec(body); m; m = re.exec(body)) jobs[m[1]] = m[2];
-  assert.deepStrictEqual(Object.keys(jobs), ['verify', 'build', 'draft-release']);
+  assert.deepStrictEqual(Object.keys(jobs), ['ui-gate', 'verify', 'build', 'draft-release']);
+  // spec 117 FR-014 (T044): the UI gate is the first job; it reads Actions runs only, and verify waits for it (full guard: test:releaseuigate)
+  assert.match(jobs['ui-gate'], /^ {4}permissions:\n {6}contents: read[^\n]*\n {6}actions: read[^\n]*\n {4}steps:/m, 'ui-gate: contents and actions read only');
+  assert.ok(!/npm ci|secrets\.|write/.test(jobs['ui-gate'].replace(/^\s*#.*$/gm, '')), 'ui-gate: no dependency install, no secret, no write');
+  assert.match(jobs.verify, /^ {4}needs: ui-gate$/m, 'verify only after the UI gate');
   assert.match(wf, /^on:\n {2}push:\n {4}tags: \['v\*'\]\n\n/m, 'started by a tag push only');
   assert.match(wf, /^permissions:\n {2}contents: read\n/m, 'read-only by default');
   assert.match(jobs.verify, /^ {4}permissions:\n {6}contents: read\n {4}outputs:\n[^\n]*\n[^\n]*\n {4}steps:/m, 'verify: contents read only (and its two outputs)');
@@ -653,14 +657,14 @@ assert.ok(cl.parseFragment('- x <!-- hidden -->\n').errors.some((e) => /HTML com
   assert.match(jobs.verify, /fetch-depth: 0/, 'verify sees main and every tag');
   assert.ok(!/npm ci|secrets\.|GH_TOKEN|github\.token/.test(jobs.verify), 'verify: no dependency install, no secret, no token');
   assert.match(jobs.verify, /node scripts\/release-notes\.js --tag "\$TAG" --repo "\$REPO" --main-ref refs\/remotes\/origin\/main --out release-notes\.md/, 'verify runs the checks on the tagged commit');
-  for (const j of ['verify', 'draft-release']) for (const l of jobs[j].split('\n').filter((x) => x.includes('${{'))) assert.match(l, /^ {10}(TAG|REPO|GH_TOKEN|GH_REPO): \$\{\{ github\.[a-z_]+ \}\}$|^ {6}(prerelease|latest): \$\{\{ steps\.notes\.outputs\.(prerelease|latest) \}\}$|^ {10}(PRERELEASE|LATEST): \$\{\{ needs\.verify\.outputs\.(prerelease|latest) \}\}$/, `${j}: an expression only as an env value, never inside a run script: ${l.trim()}`);
+  for (const j of ['ui-gate', 'verify', 'draft-release']) for (const l of jobs[j].split('\n').filter((x) => x.includes('${{'))) assert.match(l, /^ {10}(TAG|REPO|GH_TOKEN|GH_REPO|SHA): \$\{\{ github\.[a-z_]+ \}\}$|^ {6}(prerelease|latest): \$\{\{ steps\.notes\.outputs\.(prerelease|latest) \}\}$|^ {10}(PRERELEASE|LATEST): \$\{\{ needs\.verify\.outputs\.(prerelease|latest) \}\}$/, `${j}: an expression only as an env value, never inside a run script: ${l.trim()}`);
   assert.ok(!/^ {4}permissions:/m.test(jobs.build) && /^ {4}needs: verify$/m.test(jobs.build), 'build: read-only default, only after verify');
-  assert.match(jobs['draft-release'], /^ {4}needs: \[verify, build\]\n {4}permissions:\n {6}contents: write\n {6}id-token: write[^\n]*\n {6}attestations: write\n {4}steps:/m, 'draft-release alone may write and attest, after both');
+  assert.match(jobs['draft-release'], /^ {4}needs: \[ui-gate, verify, build\]\n {4}permissions:\n {6}contents: write\n {6}id-token: write[^\n]*\n {6}attestations: write\n {4}steps:/m, 'draft-release alone may write and attest, after both');
   // spec 008 FR-132: build provenance for every asset, pinned by full SHA, only in the job that holds the files
   assert.match(jobs['draft-release'], /uses: actions\/attest-build-provenance@[0-9a-f]{40} # v[\d.]+\n {8}with:\n {10}subject-path: dist-artifacts\/\*\n/, 'draft-release attests every asset');
   const dr = jobs['draft-release'];
   assert.ok(dr.indexOf('attest-build-provenance') > dr.indexOf('sha256sum') && dr.indexOf('attest-build-provenance') < dr.indexOf('gh release upload') && dr.indexOf('attest-build-provenance') < dr.indexOf('gh release create'), 'attest after the checksums and before any upload or release create');
-  assert.ok(!/id-token|attestations:/.test(jobs.verify + jobs.build), 'only draft-release gets the attestation permissions');
+  assert.ok(!/id-token|attestations:/.test(jobs['ui-gate'] + jobs.verify + jobs.build), 'only draft-release gets the attestation permissions');
   assert.match(jobs['draft-release'], /pattern: agent-durbar-\*/, 'the packages only, not the notes file, become release assets');
   // spec 008 FR-129: always a draft; pre-release or not comes from verify's outputs (releaseKind), not a second rule in YAML
   assert.match(jobs['draft-release'], /gh release create "\$TAG" dist-artifacts\/\* --draft "\$\{KIND\[@\]\}" --verify-tag/, 'always a draft');
@@ -679,7 +683,7 @@ assert.ok(cl.parseFragment('- x <!-- hidden -->\n').errors.some((e) => /HTML com
   assert.ok(!/git push|gh pr create|pull-requests:|gh release edit|--publish always/.test(wf), 'nothing pushes, opens a PR or publishes');
   // every checkout keeps no token; inside run scripts only matrix values are interpolated (never the tag or any github.* text)
   const checkouts = [...wf.matchAll(/- uses: actions\/checkout@\S+[^\n]*\n((?: {8}[^\n]*\n)*)/g)];
-  assert.strictEqual(checkouts.length, 2, 'verify and build check out');
+  assert.strictEqual(checkouts.length, 3, 'ui-gate, verify and build check out');
   for (const [, w] of checkouts) assert.match(w, /^ {10}persist-credentials: false$/m, 'every checkout: persist-credentials false');
   for (const [id, b] of Object.entries(jobs)) {
     for (const m of b.matchAll(/^( +)(?:- )?run: ?([^\n]*)\n((?:\1 {2,}[^\n]*\n|\s*\n)*)/gm)) {

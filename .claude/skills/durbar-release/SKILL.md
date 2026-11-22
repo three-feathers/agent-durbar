@@ -24,7 +24,7 @@ Only the daily patch release needs no owner OK; any other tag does ([AGENTS.md](
 ## Tag and draft
 
 7. Optional dry run on the merge commit: `node scripts/release-notes.js --tag vX.Y.Z --repo three-feathers/agent-durbar --out ../notes.md --title-out ../title.txt`.
-8. Annotated tag on that `main` commit: `git tag -a vX.Y.Z -m "vX.Y.Z" <sha> && git push origin vX.Y.Z`.
+8. `release.yml` first waits for that commit's *UI on three OSes* run and refuses the tag unless it is green (spec 117 FR-014): check it first with `gh run list --workflow ui-platforms.yml --commit <sha>`; a cancelled run (a newer merge) is re-run with `gh run rerun <id>`. Annotated tag on that `main` commit: `git tag -a vX.Y.Z -m "vX.Y.Z" <sha> && git push origin vX.Y.Z`.
 9. Wait for `release.yml` (`gh run list --workflow release.yml --limit 1`, then `gh run watch <id>`). A red run: use the `durbar-ci-rerun` skill.
 10. Check the draft: every asset, `SHA256SUMS.txt`, the notes (`gh release view vX.Y.Z`).
 

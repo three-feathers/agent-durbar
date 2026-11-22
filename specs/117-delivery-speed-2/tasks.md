@@ -25,6 +25,8 @@
 
 - [ ] T010 (after O3's written yes) `ui-platforms.yml` push group `ui-main` with `cancel-in-progress: true`; schedule and dispatch unchanged; spec 008 delta reversing FR-107 for this workflow and a spec 021 *Changes* line amending FR-084 point 4 ("`main` keeps the full three-OS matrix" becomes "the newest `main` push keeps it"); `read:` `release.yml`'s green-run check named in the delta [FR-014]
 
+- [x] T045 (Paco's condition for O3, 2026-11-22; the build of #2033's T044 `[KNOWN GAP]`, which #2033 drops or ticks when it rebases) `release.yml` first job `ui-gate` (`contents: read`, `actions: read`, quoted `env:`) runs `scripts/release-ui-gate.js`: the latest `push`-on-`main`, dispatch or nightly `ui-platforms.yml` run of exactly the tagged commit must have concluded `success`; waits 15 min for a run to appear and 150 min in all; a cancelled run fails with the re-run or dispatch command; `verify` and `draft-release` need it. `test:` `test:releaseuigate`; `real:` read-only on v0.1.23..v0.1.27 [FR-014]
+
 ## P4: Windows `npm test` (#1983)
 
 - [ ] T011 `run-tests.js` writes per-suite CPU and wall seconds to the job summary; test in `test-run-tests` (or the existing runner test) on a fake suite list [FR-017]

@@ -124,6 +124,7 @@
     "test:checkparallel": "node scripts/test-check-parallel.js",
     "test:changelog": "node scripts/test-changelog.js && node scripts/changelog.js check",
     "test:releasenodeps": "node scripts/test-release-nodeps.js",
+    "test:releaseuigate": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-release-ui-gate.js",
     "test:featureinventory": "node scripts/test-feature-inventory.js && node scripts/feature-inventory.js",
     "test:rendersyntax": "node scripts/test-renderer-syntax.js",
     "test:releasevideo": "node scripts/test-release-video.js",
