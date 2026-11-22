@@ -1,0 +1,84 @@
+/*
+ * Spec 001 FR-038, FR-039, FR-179, FR-271 and spec 097 FR-023..FR-027, FR-377 (issues #2011, #2012, #2013, #2014, found by a visual check of the 15-agent
+ * simulator at 1440x900 and 1280x800): text that does not fit is cut at the right place, and a title that has room is shown. Simulator only
+ * (DURBAR_SIM=15, a frozen simulator), no AI credits; every wait is an until().
+ *
+ *   npm run check:ui -- --only check-097-textfit        (builds first)
+ *   SHOTS_OUT=<dir>   where its pictures go (097-textfit-<world>-<w>x<h>.png; a temporary folder by default)
+ *
+ * Fails (exit 1) when, with 15 agents, at 1440x900 and 1280x800, in the Flat office, the Photo office, the cave and the Retro arcade:
+ *   - (#2011) a room header (a Flat head or a Real office sign) whose name is cut (its start, its tail or all of it) still shows its path: the path
+ *     gives way before the name does (FR-037); or a cut name has no whole name in the head's tooltip text (`data-tip`);
+ *   - (#2012) a visitor's name chip in the lobby is cut ("Ro…") though the lobby has a free spot for the whole name: a name is cut only when no spot
+ *     is free (the whole name stays in the chip's title);
+ *   - (#2013) a visitor's name chip touches the lobby band's bottom edge or the first folder sign (the room frame line), or stands off its place;
+ *   - (#2014) (Flat) the Postbox tile has no visible name ("Postbox" or the theme's word) at its minimum width, or the name is cut;
+ *   - a text under 10.5 px in what it reads, or the office scrolls.
+ * Mutants (edit the file, `npm run build`, run, `git checkout -- <file>`; each must fail its assert):
+ *   cutchild   in app.js nameCut() drop the two `.rn-h`/`.rn-t` lines          -> "a cut name hides its path" (Flat 1440x900)
+ *   chipcut    in realoffice.js stagger() drop the `c.dataset.full` restore in the last-resort branch -> "name chips are whole"
+ *   nofigure   in realoffice-layout.ts roLobby() put back `chipY = Lb - CHIP_H` for a visitor without a figure   -> "name chips stay clear of the frame line"
+ *   postnamed  in places.js set POST_NAMED back to 240                       -> "the Postbox tile shows its name"
+ */
+const os = require('os');
+const fs = require('fs');
+const path = require('path');
+const assert = require('assert');
+const { helpers } = require('./driver-helpers');
+
+const SIZES = [[1440, 900], [1280, 800]];
+const WORLDS = [['flat', null], ['photo', {}], ['cave', { worldflags: 'cave', world: 'cave' }], ['retro', { worldflags: 'retro', world: 'retro' }]];
+
+/* in the page: a text is cut when its text is wider than its box, even by a fraction of a pixel (the browser then draws an ellipsis; scrollWidth is a whole number and misses it) */
+const CUT = (e) => { if (e.scrollWidth > e.clientWidth + 0.5) return true; const cs = getComputedStyle(e), r = document.createRange(); r.selectNodeContents(e); return r.getBoundingClientRect().width > e.getBoundingClientRect().width - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight) + 0.01; };
+/* every room header of the Flat office, name and path as drawn (a path with no width is not drawn) */
+const HEADS = (sel, nameSel, pathSel, tipOf) => [...document.querySelectorAll(sel)].filter((h) => h.getClientRects().length && h.querySelector(nameSel)).map((hd) => {
+  const n = hd.querySelector(nameSel), p = hd.querySelector(pathSel), kids = [...n.querySelectorAll(':scope>.rn-h, :scope>.rn-t')];
+  return { name: n.textContent, cut: (kids.length ? kids : [n]).some(CUT), path: !!p && p.getBoundingClientRect().width > 1, tip: tipOf(hd), font: parseFloat(getComputedStyle(n).fontSize) };
+});
+const FLAT_HEADS = () => HEADS('#stage .room-head', '.room-name', '.room-path', (h) => h.dataset.tip || '');
+/* the same for the Real office signs (the continued sign of a split folder carries no path) */
+const SIGNS = () => HEADS('#stage .ro-sign:not(.ro-stag)', ':scope>b', ':scope>.ro-path', (h) => h.dataset.tip || '');
+
+module.exports = async (ctx) => {
+  const OUT = process.env.SHOTS_OUT || fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-097-textfit-'));
+  const H = helpers(ctx);
+  const { js } = H;
+  const problems = [];
+  const bad = (m) => { problems.push(m); console.log('[textfit] FAIL', m); };
+  for (const [w, h] of SIZES) for (const [world, wq] of WORLDS) {
+    const tag = `${world} ${w}x${h}`;
+    if (wq === null) await H.load({ w, h, query: { officeview: undefined } });
+    else {
+      await H.load({ w, h, query: { officeview: 'real', ...wq }, ready: `!!document.querySelector('#stage .ro .ro-plate')&&document.getElementById('stage').dataset.d==='real'`, readyMs: 30000, settle: false });
+      assert.ok(await H.until(`[...document.querySelectorAll('#stage .ro img')].every(i=>i.complete)`, 15000), `${tag}: the pictures load`);
+      await ctx.sleep(1200); /* the lobby's chips are placed after the pictures */
+    }
+    const heads = await js(`(()=>{const CUT=${CUT},HEADS=${HEADS};return (${wq === null ? FLAT_HEADS : SIGNS})();})()`);
+    assert.ok(heads.length >= 4, `${tag}: room headers are drawn (${heads.length})`);
+    for (const hd of heads) {
+      if (hd.cut && hd.path) bad(`${tag}: a cut name hides its path: "${hd.name}" is cut and its path still shows (#2011)`);
+      if (hd.cut && !hd.tip.includes(hd.name)) bad(`${tag}: a cut name has the whole name in its tooltip: "${hd.name}" not in "${hd.tip}"`);
+      if (hd.font < 10.5) bad(`${tag}: head text under 10.5 px: ${hd.font}`);
+    }
+    if (wq === null) {
+      const pb = await js(`(()=>{const p=document.querySelector('#stage .place.postbox'),n=p&&p.querySelector('.pn');return {named:!!n&&n.getClientRects().length>0,cut:!!n&&n.scrollWidth>n.clientWidth+0.5,w:p?p.getBoundingClientRect().width:0}})()`);
+      if (!pb.named || pb.cut) bad(`${tag}: the Postbox tile shows its name, whole: ${JSON.stringify(pb)} (#2014)`);
+    } else {
+      const chips = await js(`(()=>{const ro=document.querySelector('#stage .ro'),o=ro.getBoundingClientRect(),R=e=>{const b=e.getBoundingClientRect();return {x0:b.left-o.left,x1:b.right-o.left,y0:b.top-o.top,y1:b.bottom-o.top}};
+        const top=Math.min(...[...ro.querySelectorAll('.ro-sign')].filter(e=>e.getClientRects().length).map(e=>R(e).y0));
+        return {top,chips:[...ro.querySelectorAll('.ro-chip')].filter(e=>e.getClientRects().length).map(c=>({name:c.dataset.name,shown:(c.querySelector('.ro-cn')||c).textContent,r:R(c),title:c.title||c.getAttribute('aria-label')||''}))}})()`);
+      assert.ok(chips.chips.length >= 8, `${tag}: the lobby has its visitors' chips (${chips.chips.length})`);
+      for (const c of chips.chips) {
+        if (c.shown !== c.name) bad(`${tag}: name chips are whole: "${c.shown}" for ${c.name} (#2012)`);
+        if (c.shown !== c.name && !c.title.includes(c.name)) bad(`${tag}: a cut chip has its whole name in its title: ${c.name}`);
+        if (c.r.y1 > chips.top - 2) bad(`${tag}: name chips stay clear of the frame line: ${c.name} bottom ${c.r.y1.toFixed(1)}, first sign top ${chips.top.toFixed(1)} (#2013)`);
+      }
+    }
+    const scroll = await js(`(()=>{const f=document.getElementById('floor');return f.scrollHeight-f.clientHeight>1})()`);
+    if (scroll) bad(`${tag}: the office scrolls`);
+    await H.shot(path.join(OUT, `097-textfit-${world}-${w}x${h}.png`), { prep: 'calm' });
+  }
+  assert.strictEqual(problems.length, 0, problems.length + ' text-fit problems:\n' + problems.join('\n'));
+  console.log('[textfit] checks passed; shots in', OUT);
+};
