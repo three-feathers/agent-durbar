@@ -551,6 +551,7 @@ console.log('braindraw: page load ok');
     const css = readSrc(path.join(DIR, 'brain.css'));
     assert.ok(/#panel>\.brail\{flex:0 0 360px;width:360px/.test(css), 'brain.css: the right rail is 360 px beside the chat (FR-030)');
     assert.ok(/body\.brain-rail-off #panel>\.brail\{display:none\}/.test(css), 'brain.css: a collapsed rail is hidden (FR-031)');
+    assert.ok(/body\.browser-big #panel>\.brail\{display:none\}/.test(css), 'brain.css: the rail hides while the in-app browser fills the window (spec 080 FR-134, T426)');
     assert.ok(/\.bv-pic\[hidden\]\{display:none\}/.test(css), 'brain.css: the picture gives way to the legend (its display:flex would beat [hidden])');
   }
   // a removed agent's brain is forgotten; the dock is empty if it was the one shown
