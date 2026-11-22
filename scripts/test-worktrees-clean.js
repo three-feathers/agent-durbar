@@ -11,10 +11,14 @@ const os = require('os');
 const path = require('path');
 const { execFileSync, spawnSync } = require('child_process');
 
+const T0 = Date.now();
 const SRC = path.join(__dirname, 'worktrees-clean.js');
 const tmp = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'wtclean-test-')));
 const ENV = { ...process.env, GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@example.invalid', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@example.invalid', GIT_TERMINAL_PROMPT: '0' };
+const WORK = {};
+let GIT_CALLS = 0, FIXTURES = 0; // work counters (pinned at the end): a regression shows as a counter failure, not a CI timeout
 function g(cwd, ...args) {
+  GIT_CALLS++;
   return execFileSync('git', ['-c', 'commit.gpgsign=false', '-c', 'tag.gpgsign=false', ...args], { cwd, env: ENV, encoding: 'utf8', timeout: 60000, stdio: ['ignore', 'pipe', 'pipe'] });
 }
 // Same place on every OS: native real paths (macOS /var vs /private/var, Windows 8.3 short names), OS separators, no trailing separator,
@@ -41,7 +45,11 @@ function branches(cwd) { return g(cwd, 'branch', '--format=%(refname:short)').sp
 function write(p, text) { fs.mkdirSync(path.dirname(p), { recursive: true }); fs.writeFileSync(p, text); }
 
 /** A fresh origin + clone with one worktree per case. */
-function fixture(name) {
+// only: build just these worktrees (a mutant that needs --apply gets a small fixture); default all
+function fixture(name, only) {
+  FIXTURES++;
+  const want = (b) => !only || only.includes(b);
+  const NOPATH = path.join(tmp, name, '__not-built__');
   const base = path.join(tmp, name);
   fs.mkdirSync(base);
   const origin = path.join(base, 'origin.git');
@@ -59,11 +67,14 @@ function fixture(name) {
   g(main, 'add', '.'); g(main, 'commit', '-m', 'side');
   g(main, 'checkout', '-q', 'main');
   const wts = {};
+  const pending = [];
   function add(branch, { push = 'u', commit = true, at } = {}) {
+    if (!want(branch)) return NOPATH;
     const p = at || path.join(base, 'wt-' + branch);
     g(main, 'worktree', 'add', '-b', branch, p, 'main');
-    if (commit) { write(path.join(p, branch + '.txt'), branch + '\n'); g(p, 'add', '.'); g(p, 'commit', '-m', branch); }
-    if (push === 'u') g(p, 'push', '-u', 'origin', branch);
+    if (commit) g(p, 'commit', '--allow-empty', '-m', branch);
+    if (push === 'u') pending.push(branch); // one push for all of them, below
+    else if (push === 'now') g(p, 'push', '-u', 'origin', branch);
     else if (push === 'plain') g(p, 'push', 'origin', branch);
     else if (push === 'other') g(p, 'push', '-u', 'origin', branch + ':other-name');
     // push 'none': the caller pushes
@@ -72,12 +83,11 @@ function fixture(name) {
   }
   add('merged-clean');
   write(path.join(add('merged-dirty'), 'untracked.txt'), 'x\n');
-  const up = add('merged-unpushed');
-  write(path.join(up, 'late.txt'), 'late\n'); g(up, 'add', '.'); g(up, 'commit', '-m', 'late, not pushed');
+  const up = add('merged-unpushed', { push: 'now' });
+  if (want('merged-unpushed')) { write(path.join(up, 'late.txt'), 'late\n'); g(up, 'add', '.'); g(up, 'commit', '-m', 'late, not pushed'); }
   add('no-pr'); add('open-pr'); add('unknown-pr');
-  add('closed-gone'); g(main, 'update-ref', '-d', 'refs/remotes/origin/closed-gone');
-  add('squashed'); g(main, 'update-ref', '-d', 'refs/remotes/origin/squashed');
-  add('locked'); g(main, 'worktree', 'lock', wts.locked);
+  add('closed-gone'); add('squashed');
+  add('locked'); if (want('locked')) g(main, 'worktree', 'lock', wts.locked);
   write(path.join(add('ignored-env'), '.env'), 'SECRET=1\n');
   const ib = add('ignored-build');
   write(path.join(ib, 'node_modules', 'x', 'i.js'), '1\n'); write(path.join(ib, 'dist', 'o.js'), '1\n'); write(path.join(ib, 'out', 'p.js'), '1\n');
@@ -86,20 +96,20 @@ function fixture(name) {
   write(path.join(add('ignored-secret'), 'dist', '.env.local'), 'S=1\n');
   write(path.join(add('deep-repo'), 'out', 'a', 'b', 'c', 'd', '.git'), 'gitdir: /nowhere\n');
   add('other-remote', { push: 'none' });
-  g(main, 'remote', 'add', 'other', origin);
-  g(wts['other-remote'], 'push', '-u', 'other', 'other-remote');
+  if (want('other-remote')) { g(main, 'remote', 'add', 'other', origin); g(wts['other-remote'], 'push', '-u', 'other', 'other-remote'); }
   add('late-commit'); add('late-branch'); add('late-dirty'); add('mid-commit'); add('mid-branch');
   add('outer');
-  const inner = add('inner', { at: path.join(wts.outer, '.claude', 'worktrees', 'inner') });
-  add('outer2'); write(path.join(wts.outer2, '.claude', 'x', '.git'), 'gitdir: /nowhere\n');
-  const mm = add('mid-merge'); g(mm, 'merge', '--no-commit', '--no-ff', 'side');
+  const inner = add('inner', { at: path.join(wts.outer || NOPATH, '.claude', 'worktrees', 'inner') });
+  add('outer2'); write(path.join(wts.outer2 || NOPATH, '.claude', 'x', '.git'), 'gitdir: /nowhere\n');
+  const mm = add('mid-merge'); if (want('mid-merge')) g(mm, 'merge', '--no-commit', '--no-ff', 'side');
   add('diff-upstream', { push: 'other' });
   add('no-upstream', { push: 'plain' });
   add('flip');
-  const det = path.join(base, 'wt-detached');
-  g(main, 'worktree', 'add', '--detach', det, 'main');
-  wts.detached = det;
-  assert.ok(fs.existsSync(inner));
+  if (pending.length) g(main, 'push', '-u', 'origin', ...pending);
+  if (want('closed-gone')) g(main, 'update-ref', '-d', 'refs/remotes/origin/closed-gone'); // branches deleted on origin after the merge
+  if (want('squashed')) g(main, 'update-ref', '-d', 'refs/remotes/origin/squashed');
+  if (want('detached')) { const det = path.join(base, 'wt-detached'); g(main, 'worktree', 'add', '--detach', det, 'main'); wts.detached = det; }
+  assert.ok(!want('inner') || fs.existsSync(inner));
   return { base, main, wts };
 }
 
@@ -119,18 +129,24 @@ function stubGit(over) {
   };
 }
 
-function check(modPath, tag) {
+// o: which parts run. A mutant that a read-only (dry run) check can kill is checked against the one shared fixture: no new repository per mutant.
+function check(modPath, tag, o) {
+  o = o || { apply: true, self: true, npm: true };
   const mod = require(modPath);
-  const fx = fixture(tag + '-fx');
+  const fx = o.fx || fixture(tag + '-fx', o.fixtureOnly);
   const lines = [];
-  const dry = mod.run({ apply: false, root: fx.main, cwd: fx.main, prState, log: (s) => lines.push(s) });
+  const w0 = { git: mod.stats.git, stat: mod.stats.stat };
+  const dry = mod.run({ apply: false, root: fx.main, cwd: fx.main, prState, only: o.only, log: (s) => lines.push(s) });
   const rootLine = lines.find((l) => l.startsWith('new worktrees go under'));
   assert.ok(rootOk(rootLine, fx.main), tag + ': root: the root for new worktrees is printed' + rootDiag(rootLine, fx.main));
   const row = (b) => dry.rows.find((r) => r.wt.branch === b || (b === 'detached' && !r.wt.branch));
   const is = (b, verdict, why, msg) => {
+    if (o.only && !o.only.includes(b)) return;
     assert.strictEqual(row(b).verdict, verdict, tag + ': ' + msg + ' (verdict ' + row(b).verdict + ': ' + row(b).why + ')');
     if (why) assert.ok(why.test(row(b).why), tag + ': ' + msg + ' (reason "' + row(b).why + '")');
   };
+  const work = { git: mod.stats.git - w0.git, stat: mod.stats.stat - w0.stat, worktrees: dry.rows.length };
+  if (!o.only) WORK.real = work;
   assert.ok(!dry.rows.some((r) => r.wt.path === fx.main), tag + ': the main checkout is never in the loop');
   is('merged-clean', 'removable', null, 'merged-clean is removable');
   is('merged-dirty', 'dirty', /finished but dirty: 1 file\b/, 'a merged but dirty worktree is listed dirty');
@@ -154,8 +170,8 @@ function check(modPath, tag) {
   is('ignored-secret', 'dirty', /ignored file.*dist\/\.env\.local/, 'a .env inside an allowed dist/ is data');
   is('deep-repo', 'look', /nested \.git: .*d[\\/]\.git/, 'a nested .git four levels down needs a look');
   is('other-remote', 'look', /another remote|upstream/, 'an upstream on another remote needs a look');
-  assert.ok(!/upstream/.test(row('merged-clean').why), tag + ': merged-clean has the origin upstream');
-  assert.ok(lines.some((l) => /finished but dirty: 1 file\b/.test(l)), tag + ': the dirty line says "finished but dirty: 1 file"');
+  assert.ok(!o.only || !o.only.includes('merged-clean') || !/upstream/.test(row('merged-clean').why), tag + ': merged-clean has the origin upstream');
+  assert.ok(o.only || lines.some((l) => /finished but dirty: 1 file\b/.test(l)), tag + ': the dirty line says "finished but dirty: 1 file"');
   assert.ok(Object.values(fx.wts).every((p) => fs.existsSync(p)), tag + ': a dry run removes nothing');
   // sizes: Stats.blocks is 0 on Windows (size is used then); an unreadable entry is counted, not skipped
   const sd = path.join(tmp, tag + '-size'); fs.mkdirSync(sd); write(path.join(sd, 'a', 'f.txt'), 'x'.repeat(1000)); write(path.join(sd, 'g.txt'), 'y'.repeat(500));
@@ -169,7 +185,7 @@ function check(modPath, tag) {
   const floorOf = (dir) => { let n = 0; const st = [dir]; while (st.length) { const d = st.pop(); for (const e of fs.readdirSync(d, { withFileTypes: true })) { const q = path.join(d, e.name); const l = fs.lstatSync(q); n += l.size; if (e.isDirectory() && !l.isSymbolicLink()) st.push(q); } } return n; };
   const removableRows = dry.rows.filter((r) => r.verdict === 'removable');
   const floor = removableRows.reduce((a, r) => a + floorOf(r.wt.path), 0);
-  assert.ok(floor > 0 && dry.reclaimable >= floor, tag + ': the reclaimable total is counted: ' + JSON.stringify({ reclaimable: dry.reclaimable, floor, perRow: removableRows.map((r) => [path.basename(r.wt.path), r.bytes]) }));
+  assert.ok(o.only || (floor > 0 && dry.reclaimable >= floor), tag + ': the reclaimable total is counted: ' + JSON.stringify({ reclaimable: dry.reclaimable, floor, perRow: removableRows.map((r) => [path.basename(r.wt.path), r.bytes]) }));
 
   // guards that need a git or gh that fails, and the ones a real repo cannot show (bare, missing directory)
   const wtOf = (b) => ({ path: fx.wts[b], head: g(fx.wts[b], 'rev-parse', 'HEAD').trim(), branch: b, detached: false, locked: false, bare: false, prunable: false });
@@ -204,6 +220,7 @@ function check(modPath, tag) {
   assert.strictEqual(mod.classify(wtOf('merged-clean'), realCtx).verdict, 'removable', tag + ': progress: without a marker it is removable');
   assert.match(mod.classify(synth(), ctxFor({ 'ls-files': { ok: false, out: '' } })).why, /ls-files failed/, tag + ': unit: a git ls-files error needs a look');
 
+  if (o.apply) {
   // --apply on the same fixture; "flip" is merged at the first look and open at the re-check right before its removal
   const calls = {};
   const flip = (b) => {
@@ -224,12 +241,12 @@ function check(modPath, tag) {
   const w = fx.wts;
   assert.ok(!fs.existsSync(w['merged-clean']), tag + ': --apply removes merged-clean');
   assert.ok(!branches(fx.main).includes('merged-clean'), tag + ': --apply deletes the merged-clean branch');
-  assert.ok(!fs.existsSync(w['ignored-build']), tag + ': --apply removes a worktree holding only rebuildable ignored files');
-  assert.ok(fs.existsSync(path.join(w['merged-dirty'], 'untracked.txt')), tag + ': a dirty worktree is kept with its file');
-  assert.ok(fs.existsSync(path.join(w['ignored-env'], '.env')), tag + ': an ignored .env is kept');
-  assert.ok(fs.existsSync(w.inner) && fs.existsSync(w.outer), tag + ': a nested worktree is kept with its outer one');
+  assert.ok(!w['ignored-build'] || !fs.existsSync(w['ignored-build']), tag + ': --apply removes a worktree holding only rebuildable ignored files');
+  assert.ok(!w['merged-dirty'] || fs.existsSync(path.join(w['merged-dirty'], 'untracked.txt')), tag + ': a dirty worktree is kept with its file');
+  assert.ok(!w['ignored-env'] || fs.existsSync(path.join(w['ignored-env'], '.env')), tag + ': an ignored .env is kept');
+  assert.ok(!w.inner || (fs.existsSync(w.inner) && fs.existsSync(w.outer)), tag + ': a nested worktree is kept with its outer one');
   for (const k of ['merged-unpushed', 'no-pr', 'open-pr', 'unknown-pr', 'closed-gone', 'locked', 'outer2', 'mid-merge', 'diff-upstream', 'no-upstream', 'detached']) {
-    assert.ok(fs.existsSync(w[k]), tag + ': --apply keeps ' + k);
+    assert.ok(!w[k] || fs.existsSync(w[k]), tag + ': --apply keeps ' + k);
   }
   const lineOf = (b) => applyLines.find((l) => l.includes('[' + b + ']')) || '';
   assert.ok(fs.existsSync(w['late-commit']) && /changed since the check, kept: HEAD or branch moved/.test(lineOf('late-commit')), tag + ': late: a HEAD that moved before the removal is kept, "moved" (' + lineOf('late-commit').slice(-60) + ')');
@@ -237,12 +254,14 @@ function check(modPath, tag) {
   assert.ok(fs.existsSync(w['late-dirty']) && /changed since the check/.test(lineOf('late-dirty')), tag + ': late: a file that appeared before the removal keeps the worktree');
   assert.ok(fs.existsSync(w['mid-commit']) && /changed during the PR check, kept: HEAD or branch moved/.test(lineOf('mid-commit')), tag + ': mid: a commit made during the PR lookup keeps the worktree (' + lineOf('mid-commit').slice(-70) + ')');
   assert.ok(fs.existsSync(w['mid-branch']) && /changed during the PR check, kept: HEAD or branch moved/.test(lineOf('mid-branch')), tag + ': mid: a branch switch during the PR lookup keeps the worktree');
-  for (const k of ['ignored-deep', 'ignored-release', 'ignored-secret', 'deep-repo', 'other-remote']) assert.ok(fs.existsSync(w[k]), tag + ': --apply keeps ' + k);
+  for (const k of ['ignored-deep', 'ignored-release', 'ignored-secret', 'deep-repo', 'other-remote']) assert.ok(!w[k] || fs.existsSync(w[k]), tag + ': --apply keeps ' + k);
   assert.ok(fs.existsSync(w.flip) && /changed since the check, kept: PR is open/.test(lineOf('flip')), tag + ': the state is checked again right before the removal (recheck)');
   assert.ok(!fs.existsSync(w.squashed), tag + ': a squash-merged worktree whose branch left origin is removed');
   assert.ok(branches(fx.main).includes('squashed'), tag + ': git branch -d refuses the squash-merged branch, so it is kept (never -D)');
-  assert.ok(ap.removed >= 3 && fs.existsSync(fx.main), tag + ': the main checkout stays');
+  assert.ok(ap.removed >= (o.fixtureOnly ? 2 : 3) && fs.existsSync(fx.main), tag + ': the main checkout stays');
+  }
 
+  if (o.self) {
   // the worktree it runs in is skipped
   const fs2 = fixture(tag + '-self');
   const selfLines = [];
@@ -255,6 +274,8 @@ function check(modPath, tag) {
   const un = mod.run({ apply: true, root: fs2.main, cwd: fs2.main, prState, tryGit: (args, cwd) => (args[0] === 'symbolic-ref' ? { ok: false, out: '' } : realGit(args, cwd)), log: (x) => unreadLines.push(x) });
   assert.ok(un.removed === 0 && unreadLines.some((l) => /changed since the check, kept: HEAD or branch unreadable/.test(l)), tag + ': recheck: a HEAD or branch that cannot be read again keeps the worktree, "unreadable"');
 
+  }
+  if (o.npm) {
   // through npm without `--`
   const fs3 = fixture(tag + '-npm');
   const sp = spawnSync(process.execPath, [modPath, '--root', fs3.main], { cwd: fs3.main, env: { ...ENV, npm_lifecycle_event: 'worktrees:clean' }, encoding: 'utf8', timeout: 60000 });
@@ -263,6 +284,7 @@ function check(modPath, tag) {
   const sp2 = spawnSync(process.execPath, [modPath, '--apply', '--root', fs3.main], { cwd: fs3.main, env: { ...ENV, npm_lifecycle_event: 'worktrees:clean' }, encoding: 'utf8', timeout: 60000 });
   assert.ok(!/NOTE: run through npm/.test(sp2.stderr) && /^worktrees:clean --apply/m.test(sp2.stdout), tag + ': npm: with --apply it applies and does not nag');
 
+  }
   ghCases(mod, tag);
   staticCheck(modPath, tag);
 }
@@ -328,6 +350,7 @@ function parseCase() {
 }
 
 check(SRC, 'real');
+const T_REAL = Date.now() - T0;
 tmpList();
 parseCase();
 
@@ -374,11 +397,11 @@ const MUTANTS = [
   ['progress-sequencer', "'rebase-apply', 'sequencer']", "'rebase-apply']", /sequencer in progress/],
   ['progress-rebase-merge', "'rebase-merge', ", '', /rebase-merge in progress/],
   ['progress-rebase-apply', "'rebase-apply', 'sequencer']", "'sequencer']", /rebase-apply in progress/],
-  ['progress-merge-head', "['MERGE_HEAD', ", '[', /merge in progress|MERGE_HEAD in progress/],
+  ['progress-merge-head', "['MERGE_HEAD', ", '[', /merge in progress|MERGE_HEAD in progress|an in-progress operation/],
   ['root-from-cwd', "newWorktreeRoot(mainPath) + path.sep", "newWorktreeRoot(here) + path.sep", /root/],
   ['nested-worktree', 'if (inner) return', 'if (false) return', /holding another worktree/],
   ['nested-git', 'if (nested) return', 'if (false) return', /nested \.git/],
-  ['in-progress-dropped', "if (fs.existsSync(p)) return { verdict: 'look', why: 'a ' + name", "if (false) return { verdict: 'look', why: 'a ' + name", /merge in progress|in-progress/],
+  ['in-progress-dropped', "if (gpLines[i] && fs.existsSync(path.resolve(wt.path, gpLines[i].trim()))) return", "if (false) return", /merge in progress|in-progress/],
   ['upstream-dropped', "if (!remote.ok || remote.out.trim() !== 'origin' || !merge.ok || merge.out.trim() !== 'refs/heads/' + wt.branch) {", 'if (false) {', /upstream/],
   ['upstream-name-dropped', "|| !merge.ok || merge.out.trim() !== 'refs/heads/' + wt.branch", '|| !merge.ok', /another name/],
   ['recheck-dropped', "if (slow.verdict !== 'removable') return", 'if (false) return', /checked again|keeps the worktree/],
@@ -389,6 +412,21 @@ const MUTANTS = [
   ['npm-note-dropped', 'if (!apply && env && env.npm_lifecycle_event)', 'if (false)', /says how to apply/],
   ['tmp-any', "/^durbar-site-[A-Za-z0-9._-]+$/]", "/^durbar-site-[A-Za-z0-9._-]+$/, /^tmp\\./]", /only old durbar/],
 ];
+const APPLY_ONLY = ['merged-clean', 'squashed', 'flip', 'late-commit', 'late-branch', 'late-dirty', 'mid-commit', 'mid-branch'];
+const APPLY = new Set(['dry-run-applies', 'recheck-dropped', 'last-reread-dropped', 'last-branch-compare-dropped', 'head-moved-dropped', 'branch-moved-dropped']); // need a fixture they can change
+const SELF = new Set(['self-not-skipped', 'recheck-unreadable', 'root-from-cwd']); // judged in the "runs in a linked worktree" section only
+const NPM = new Set(['npm-note-dropped']);
+// Each read-only mutant is judged on the worktrees its guard concerns (the full battery ran on the real script); the unit cases always run.
+const ONLY = {
+  'unknown-removable': ['unknown-pr'], 'closed-not-on-origin': ['closed-gone'], 'locked-dropped': ['locked'], 'detached-dropped': ['detached'],
+  'main-in-loop': ['merged-clean', 'main'], 'open-dropped': ['open-pr'], 'none-dropped': ['no-pr'],
+  'ignored-data-allowed': ['ignored-env', 'ignored-deep', 'ignored-release', 'ignored-secret'], 'ignored-listing-dropped': ['ignored-env'],
+  'allow-any-depth': ['ignored-deep'], 'allow-release': ['ignored-release'], 'secret-in-dist': ['ignored-secret'], 'rebuildable-empty': ['ignored-build'],
+  'nested-depth-capped': ['deep-repo'], 'nested-worktree': ['outer', 'inner'], 'nested-git': ['outer2'], 'in-progress-dropped': ['mid-merge'],
+  'upstream-dropped': ['diff-upstream', 'no-upstream', 'other-remote'], 'upstream-name-dropped': ['diff-upstream'], 'other-remote-ok': ['other-remote'],
+};
+const shared = fixture('shared');
+let own = 0;
 let n = 0;
 for (const [name, from, to, expect] of MUTANTS) {
   assert.ok(src.includes(from), 'mutant ' + name + ': the text to change is gone from the script');
@@ -405,12 +443,21 @@ for (const [name, from, to, expect] of MUTANTS) {
     } else if (name === 'rebuildable-empty') {
       const m = require(mp);
       assert.deepStrictEqual(m.ignoredData('!! node_modules/\n'), [], 'ignored: only non-rebuildable ignored entries are data');
-      check(mp, name);
-    } else check(mp, name);
+      check(mp, name, { fx: shared, only: ['ignored-build'] });
+    } else if (APPLY.has(name)) { own++; check(mp, name, { apply: true, fixtureOnly: APPLY_ONLY, only: APPLY_ONLY });
+    } else if (SELF.has(name)) { own++; check(mp, name, { fx: shared, only: ['merged-clean'], self: true });
+    } else if (NPM.has(name)) { own++; check(mp, name, { fx: shared, only: ['merged-clean'], npm: true });
+    } else check(mp, name, { fx: shared, only: ONLY[name] || ['merged-clean'] });
   } catch (e) { died = e; }
   assert.ok(died, 'mutant ' + name + ' survived');
   assert.ok(expect.test(String(died.message)), 'mutant ' + name + ' died at the wrong assert: ' + String(died.message).split('\n')[0]);
   n++;
 }
+// Work pin: fixtures built = the real run (3) + the shared one + one per mutant that needs --apply/self/npm; git calls per fixture stay small.
+assert.ok(FIXTURES <= 3 + 1 + own, 'work: fixtures built ' + FIXTURES + ' > ' + (4 + own));
+// one dry run over the full fixture: at most 8 git calls and 40 stats per worktree (it was 14 git calls per worktree before the markers were batched)
+assert.ok(WORK.real && WORK.real.git <= WORK.real.worktrees * 8 && WORK.real.stat <= WORK.real.worktrees * 40, 'work: one dry run ' + JSON.stringify(WORK.real));
+assert.ok(GIT_CALLS <= FIXTURES * 70 + 300, 'work: git calls ' + GIT_CALLS + ' for ' + FIXTURES + ' fixtures');
+console.log('worktrees-clean: work ' + JSON.stringify({ dryRun: WORK.real, fixtures: FIXTURES, gitCalls: GIT_CALLS, realSec: Math.round(T_REAL / 100) / 10, wallSec: Math.round((Date.now() - T0) / 100) / 10 }));
 try { fs.rmSync(tmp, { recursive: true, force: true }); } catch { /* best effort */ }
 console.log('worktrees-clean: ok (' + n + ' mutants killed)');

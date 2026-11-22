@@ -47,7 +47,11 @@ function git(args, cwd) {
   return execFileSync('git', args, { cwd, encoding: 'utf8', timeout: GIT_TIMEOUT_MS, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'], maxBuffer: 64 * 1024 * 1024 });
 }
 
+// work counters, read by the test to pin the cost of one run (a regression shows as a counter failure, not a CI timeout)
+const stats = { git: 0, stat: 0 };
+
 function tryGit(args, cwd) {
+  stats.git++;
   try { return { ok: true, out: git(args, cwd) }; } catch (e) { return { ok: false, out: '', err: String((e && e.stderr) || e.message || e).split('\n')[0] }; }
 }
 
@@ -85,6 +89,7 @@ function dirSizeChecked(dir, statFn) {
     for (const e of entries) {
       const p = path.join(d, e.name);
       try {
+        stats.stat++;
         const st = stat(p);
         bytes += st.blocks > 0 ? st.blocks * 512 : st.size;
         if (e.isDirectory() && !st.isSymbolicLink()) stack.push(p);
@@ -171,11 +176,12 @@ function classify(wt, ctx) {
   if (inner) return { verdict: 'look', why: 'contains worktree ' + inner.path };
   const nested = findNestedGit(wt.path);
   if (nested) return { verdict: 'look', why: 'contains a nested .git: ' + nested };
-  for (const name of IN_PROGRESS) {
-    const gp = tg(['rev-parse', '--git-path', name], wt.path);
-    if (!gp.ok) return { verdict: 'look', why: 'git rev-parse failed' };
-    const p = path.resolve(wt.path, gp.out.trim());
-    if (fs.existsSync(p)) return { verdict: 'look', why: 'a ' + name + ' is in progress' };
+  // one git call answers for every marker: one line per --git-path, in order
+  const gp = tg(['rev-parse', ...IN_PROGRESS.flatMap((name) => ['--git-path', name])], wt.path);
+  if (!gp.ok) return { verdict: 'look', why: 'git rev-parse failed' };
+  const gpLines = gp.out.split(/\r?\n/);
+  for (let i = 0; i < IN_PROGRESS.length; i++) {
+    if (gpLines[i] && fs.existsSync(path.resolve(wt.path, gpLines[i].trim()))) return { verdict: 'look', why: 'a ' + IN_PROGRESS[i] + ' is in progress' };
   }
   const state = ctx.prState(wt.branch, wt.head);
   if (state === 'NONE') return { verdict: 'look', why: 'no PR of this repository matches this branch and HEAD' };
@@ -283,6 +289,7 @@ function run(opts) {
   const ctx = { prState: opts.prState || ((b, sha) => ghPrState(b, sha, mainPath)), tryGit: opts.tryGit || tryGit, mainPath, all, beforeRemove: opts.beforeRemove };
   const rows = [];
   for (const wt of all.slice(1)) {
+    if (opts.only && !opts.only.includes(wt.branch || 'detached')) continue; // test-only filter
     if (inside(here, wt.path)) { rows.push({ wt, verdict: 'skip', why: 'the worktree this runs in', bytes: 0 }); continue; }
     const c = classify(wt, ctx);
     const sz = fs.existsSync(wt.path) ? dirSizeChecked(wt.path) : { bytes: 0, unreadable: 0 };
@@ -341,5 +348,5 @@ function main(argv, env) {
   return 0;
 }
 
-module.exports = { dirSizeChecked, newWorktreeRoot, parseWorktrees, classify, run, staleTmp, ghPrState, dirSize, ignoredData, main, TMP_PATTERNS };
+module.exports = { stats, dirSizeChecked, newWorktreeRoot, parseWorktrees, classify, run, staleTmp, ghPrState, dirSize, ignoredData, main, TMP_PATTERNS };
 if (require.main === module) process.exit(main(process.argv.slice(2), process.env));
