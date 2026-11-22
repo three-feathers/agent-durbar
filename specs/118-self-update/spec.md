@@ -4,7 +4,7 @@
 group: 046
 title: Durbar's own update (owner request 2026-11-22, "like Duniya, including forks"): a daily check of the GitHub releases of the repository the build came from, an Update card with the release notes as plain text and a breaking-changes card, snooze and skip, a checked download (SHA256SUMS.txt) the person opens; in-place apply per OS later (Windows NSIS and Linux AppImage unsigned, macOS only after signing)
 status: draft
-note: spec, plan, tasks only; nothing built; owner decisions D1..D7 open (signing = money, default on/off, signature scheme and key home, fork source rules); check off until D2 is answered; security review round 1 (#2016) folded in
+note: spec, plan, tasks only; nothing built; owner decisions D1..D7 open; check off until D2; security review round 1 (#2016) folded in
 -->
 
 **Feature Branch**: `118-self-update` (spec, plan and tasks only). The build is one small PR per task group (P1..P6 in [tasks.md](tasks.md)).
