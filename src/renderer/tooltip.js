@@ -78,6 +78,8 @@
   function refresh(){
     if(!cur)return;
     if(!cur.el.isConnected||(hov&&!hov.el.isConnected&&!foc)){hov=foc=null;hide();return;}
+    /* a redraw by morphHTML copies the attributes of the new markup, which has no aria-describedby: the element that stays keeps its place but loses the link to the tooltip, so it is put back here (an attribute write, no layout read; issue 1989) */
+    if(tip&&!tip.hidden)describe(cur.el,true);
     /* the same words on the same element: nothing to say and nothing to measure (placing the box reads the layout; a status update must add no layout reads, spec 097 FR-186; the box already stands where its element is, and a scroll or a resize hides it) */
     if(tip&&!tip.hidden&&cur.get(cur.el)===tip.textContent)return;
     show(cur);
