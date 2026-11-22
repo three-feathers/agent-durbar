@@ -272,7 +272,7 @@ assert.strictEqual(ui(['scripts/a\u00f1o.js'], io({ 'scripts/a\u00f1o.js': 'modu
 
 // code / themes keep FR-104 and FR-031 as they were
 const d = (files: string[], x: Io = io()) => cc.decide(files, x);
-assert.deepStrictEqual(d(['docs/a.md', 'specs/008-packaging-and-release/tasks.md']), { code: false, themes: false, ui: false, macos: false }, 'docs only: nothing runs');
+assert.deepStrictEqual(d(['docs/zz-none.md', 'specs/999-none/tasks.md']), { code: false, themes: false, ui: false, macos: false }, 'docs only: nothing runs');
 assert.strictEqual(d(['scripts/usage-lib.js']).code, true, 'a script change still builds and tests (code=true)');
 assert.strictEqual(d(['package.json'], versionBump).code, true, 'a version bump still builds and tests (unit tests read the version)');
 assert.strictEqual(d(['src/renderer/styles.css']).themes, true, 'a renderer change runs theme geometry');
@@ -282,12 +282,20 @@ assert.strictEqual(d(['package.json', 'package-lock.json', 'CHANGELOG.md', 'chan
 assert.strictEqual(d(['package.json', 'src/main/main.ts'], versionBump).macos, true, 'a bump with code runs it');
 assert.strictEqual(d(['scripts/test-usage.js']).macos, true, 'a test script runs it (unit tests are what it checks)');
 
-// ---- spec 117 FR-387: the docs-only skip FAILS CLOSED. No path under src/, scripts/ or .github/ (Markdown there included: a test reads
-// scripts/prereview/prompts/*.md, the app ships src/**/ASSETS.md) and no unknown path can take it. Every live file there is checked, then
-// mutants of the rule (each a way of widening the skip) must each die at this guard's own assert.
+// ---- spec 117 FR-387 (and review of #2032): the docs-only skip FAILS CLOSED. Only a plain path on the small allow list that no suite
+// names may take it; every live file under src/, scripts/ and .github/, rule text, the site's code, README, LICENSE, case tricks, odd
+// paths, an empty diff and a missing suite list run everything. Each part has a fixture here and a mutant below that dies at its assert.
 type Decision = { code: boolean; themes: boolean; ui: boolean; macos: boolean };
 type Cc = { decide: (files: string[], io: Io) => Decision; DOCS: { test(f: string): boolean } };
-// `code` does not read the tree; an empty tree keeps the many calls below cheap (the UI closure is then empty)
+// a tiny tree: two suites, one names docs/named.md and LICENSE (bare word at the root), one names the docs/zzfolder folder
+const fakeFiles: Record<string, string> = {
+  'scripts/test-suites.txt': 'test:x\ntest:y\n',
+  'package.json': JSON.stringify({ scripts: { 'test:x': 'node scripts/test-x.js', 'test:y': 'tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-y.js' } }),
+  'scripts/test-x.js': "read('docs/named.md'); path.join(ROOT, 'LICENSE');\n",
+  'scripts/test-y.ts': "path.join(__dirname, '../docs/zzfolder');\n",
+  'docs/named.md': 'x', LICENSE: 'x',
+};
+const fakeIo: Io = { read: (p) => (p in fakeFiles ? fakeFiles[p] : null), readBase: (p) => (p in fakeFiles ? fakeFiles[p] : null), isFile: (p) => p in fakeFiles, isDir: (p) => p === 'docs/zzfolder' };
 const emptyIo: Io = { read: () => null, readBase: () => null, isFile: () => false, isDir: () => false };
 const walk = (rel: string): string[] => {
   const out: string[] = [];
@@ -302,21 +310,34 @@ const walk = (rel: string): string[] => {
 };
 const LIVE = [...walk('src'), ...walk('scripts'), ...walk('.github')];
 const NEVER_SKIP = ['src/renderer/x.md', 'scripts/x.md', 'scripts/prereview/prompts/system.md', '.github/pull_request_template.md', '.github/agents/new.agent.md',
-  'src/LICENSE', 'scripts/docs/a.md', '.github/specs/a.md', 'src/changelog.d/a.md', 'unknown-top-level.txt', 'build/x.json', 'tsconfig.json', 'zz/new.js'];
-const DOCS_ONLY = ['docs/a.md', 'docs/site/app.js', 'specs/117-delivery-speed-2/spec.md', 'changelog.d/x.md', 'README.md', 'AGENTS.md', 'LICENSE', 'docs/rules/merge-mechanics.md'];
+  'src/LICENSE', 'scripts/docs/a.md', '.github/specs/a.md', 'src/changelog.d/a.md', 'unknown-top-level.txt', 'build/x.json', 'tsconfig.json', 'zz/new.js',
+  // rule text, the site's code and data, scripts in docs, files many suites read
+  'AGENTS.md', 'CLAUDE.md', 'README.md', 'docs/rules/x.md', 'docs/agent-setup/x.sh', 'docs/site/app.js', 'docs/site/gallery.json', 'LICENSE',
+  // case tricks (one folder on a case-insensitive checkout)
+  'agents.md', 'Readme.md', 'docs/RULES/x.md', 'Docs/Site/app.js', 'Src/x.md', 'SCRIPTS/prereview/prompts/system.md', '.GitHub/x.md', 'Docs/x.md', 'SPECS/x.md',
+  // odd paths
+  'docs/../src/x.md', './docs/a.md', 'docs/./a.md', 'docs//a.md', '/docs/a.md', ' docs/a.md', 'docs/a.md ', 'docs\\a.md', 'docs/a\u0007.md', 'docs/a.md\n',
+  // a doc a suite names (by a literal), and one inside a folder a suite names
+  'docs/named.md', 'docs/zzfolder/new.md'];
+const DOCS_ONLY = ['docs/a.md', 'docs/zz/b.md', 'specs/999-none/spec.md', 'changelog.d/x.md', 'zz-notes.md', 'CHANGELOG.md'];
 /** What is wrong with a decision's docs-only skip: a never-skip path that skips (alone, with docs), or a docs path that does not. */
 function skipProblems(c: Cc): string[] {
   const bad: string[] = [];
   for (const f of LIVE) if (c.DOCS.test(f)) bad.push(`${f} alone takes the docs-only skip`);
   for (const f of NEVER_SKIP) {
-    if (!c.decide([f], emptyIo).code) bad.push(`${f} alone takes the docs-only skip`);
-    if (!c.decide(['docs/a.md', f], emptyIo).code) bad.push(`${f} with a doc takes the docs-only skip`);
+    if (!c.decide([f], fakeIo).code) bad.push(`${f} alone takes the docs-only skip`);
+    if (!c.decide(['docs/a.md', f], fakeIo).code) bad.push(`${f} with a doc takes the docs-only skip`);
   }
-  for (const f of DOCS_ONLY) if (c.decide([f], emptyIo).code) bad.push(`${f} is docs only but runs everything`);
+  if (!c.decide([], fakeIo).code) bad.push('an empty diff takes the docs-only skip');
+  if (!c.decide(['docs/a.md'], emptyIo).code) bad.push('a tree with no suite list takes the docs-only skip');
+  for (const f of DOCS_ONLY) if (c.decide([f], fakeIo).code) bad.push(`${f} is docs only but runs everything`);
   return bad;
 }
 assert.ok(LIVE.filter((f) => f.startsWith('src/')).length > 50 && LIVE.some((f) => f.startsWith('.github/workflows/')) && LIVE.includes('scripts/run-tests.js') && LIVE.includes('scripts/prereview/prompts/system.md'), 'the guard walked the live src/, scripts/ and .github/ trees');
-assert.deepStrictEqual(skipProblems(cc as unknown as Cc), [], 'FR-387: nothing under src/, scripts/ or .github/, and no unknown path, takes the docs-only skip');
+assert.deepStrictEqual(skipProblems(cc as unknown as Cc), [], 'FR-387: only a plain, allow-listed path no suite names takes the docs-only skip');
+// on the real tree: README and LICENSE are read by suites (and are off the list); a doc a real test names runs everything
+assert.strictEqual(cc.decide(['docs/collaboration.md'], io()).code, true, 'a doc a real test names (docs/collaboration.md) runs everything');
+assert.strictEqual(cc.decide(['docs/zz-none.md', 'specs/999-none/spec.md'], io()).code, false, 'docs no test names skip on the real tree');
 {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const Module = require('module') as { new (id: string, parent: unknown): { filename: string; paths: string[]; exports: unknown; _compile(src: string, file: string): void }; _nodeModulePaths(dir: string): string[] };
@@ -330,13 +351,21 @@ assert.deepStrictEqual(skipProblems(cc as unknown as Cc), [], 'FR-387: nothing u
     m._compile(text, file);
     return m.exports as Cc;
   };
+  const DENY = 'const DOCS_DENY = /^(docs\\/(rules|agent-setup|site)\\/|(agents|claude|readme)\\.md$)/i;';
+  const ALLOW = 'const DOCS_ALLOW = /^(specs\\/|changelog\\.d\\/|docs\\/)|^[^/]+\\.md$/;';
   const mutants: [string, Cc, RegExp][] = [
     ['the old rule (any .md anywhere is docs)', variant(/const DOCS = \{[^\n]*\n/, 'const DOCS = /^(docs\\/|specs\\/|changelog\\.d\\/)|\\.md$|^LICENSE$/;\n'), /src\/renderer\/x\.md alone takes the docs-only skip/],
-    ['scripts/ dropped from the never-docs list', variant('const NEVER_DOCS = /^(src|scripts|\\.github)\\//;', 'const NEVER_DOCS = /^(src|\\.github)\\//;'), /scripts\/prereview\/prompts\/system\.md alone takes/],
-    ['.github/ dropped from the never-docs list', variant('const NEVER_DOCS = /^(src|scripts|\\.github)\\//;', 'const NEVER_DOCS = /^(src|scripts)\\//;'), /\.github\/pull_request_template\.md alone takes/],
-    ['src/ dropped from the never-docs list', variant('const NEVER_DOCS = /^(src|scripts|\\.github)\\//;', 'const NEVER_DOCS = /^(scripts|\\.github)\\//;'), /src\/renderer\/x\.md alone takes/],
-    ['an unknown path counted as docs', variant("const DOCS_PATH = /^(docs\\/|specs\\/|changelog\\.d\\/)|\\.md$|^LICENSE$/;", "const DOCS_PATH = /^(docs\\/|specs\\/|changelog\\.d\\/|zz\\/)|\\.md$|^LICENSE$|\\.txt$/;"), /(unknown-top-level\.txt|zz\/new\.js) alone takes/],
-    ['docs only when one file is docs (some, not every)', variant('const code = list.some((f) => !DOCS.test(f));', 'const code = !list.some((f) => DOCS.test(f));'), /with a doc takes the docs-only skip/],
+    ['deny list matched case-sensitively', variant(DENY, DENY.replace(/\/i;$/, '/;')), /docs\/RULES\/x\.md alone takes/],
+    ['docs/rules/ dropped from the deny list', variant(DENY, DENY.replace('rules|', '')), /docs\/rules\/x\.md alone takes/],
+    ['docs/site/ dropped from the deny list', variant(DENY, DENY.replace('|site', '')), /docs\/site\/app\.js alone takes/],
+    ['AGENTS.md dropped from the deny list', variant(DENY, DENY.replace('agents|', '')), /AGENTS\.md alone takes/],
+    ['allow list matched in any case', variant(ALLOW, ALLOW.replace(/\/;$/, '/i;')), /Docs\/x\.md alone takes/],
+    ['any top-level file allowed', variant(ALLOW, ALLOW.replace('^[^/]+\\.md$', '^[^/]+$')), /unknown-top-level\.txt alone takes/],
+    ['odd paths not refused', variant(/const PLAIN_PATH = [^\n]*\n/, 'const PLAIN_PATH = () => true;\n'), /docs\/\.\.\/src\/x\.md alone takes/],
+    ['an empty diff allowed', variant('if (!list.length || !list.every', 'if (!list.every'), /an empty diff takes/],
+    ['a missing suite list allowed', variant('if (!names.length) return false;', 'if (!names.length) return true;'), /no suite list takes/],
+    ['docs a suite names allowed', variant('for (const name of names) for (const src of stepSources(scripts[name])) {', 'for (const name of []) for (const src of stepSources(scripts[name])) {'), /docs\/named\.md alone takes/],
+    ['docs only when one file is docs (some, not every)', variant('!list.every((f) => DOCS.test(f))', '!list.some((f) => DOCS.test(f))'), /with a doc takes the docs-only skip/],
   ];
   for (const [name, c, expect] of mutants) {
     const bad = skipProblems(c);
@@ -359,7 +388,9 @@ assert.deepStrictEqual(skipProblems(cc as unknown as Cc), [], 'FR-387: nothing u
   assert.ok(fast(['scripts/prereview/prompts/system.md']).includes('test:prereview'), 'a file inside a folder a test names (scripts/prereview) runs that test');
   assert.ok(fast(['.github/scripts/ci-changes.js']).includes('test:cichanges'), 'a repo-relative path a test names runs that test');
   assert.deepStrictEqual(fast(['specs/999-none/spec.md']), ['test:specsindex'], 'a spec change runs the specs index check (docs table)');
-  assert.ok(fast(['AGENTS.md']).includes('test:rules') && fast(['docs/rules/review-rounds.md']).includes('test:rules'), 'rule text runs the word budget check');
+  assert.ok(fast(['AGENTS.md']).includes('test:rules') && fast(['docs/rules/zz-new.md']).includes('test:rules'), 'rule text, even a new rule file, runs the word budget check (rules-check.js names AGENTS.md and docs/rules)');
+  assert.ok(fast(['LICENSE']).includes('test:about'), "a bare-word root file a test names ('LICENSE') runs that test");
+  assert.ok(fast(['changelog.d/zz-none.md']).includes('test:changelog'), 'a new changelog fragment runs the changelog check');
   assert.ok(fast(['changelog.d/x.md']).includes('test:changelog'), 'a changelog fragment runs the changelog check');
   assert.deepStrictEqual(fast(['zz/new-file.txt']), [], 'a file nothing names runs no suite (the lane is advisory: the required jobs run everything)');
   const r = fast(['src/shared/api.ts', 'scripts/run-tests.js', 'specs/x/spec.md']);
@@ -389,17 +420,27 @@ assert.deepStrictEqual(skipProblems(cc as unknown as Cc), [], 'FR-387: nothing u
   const git = (...a: string[]) => execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@example.invalid', '-c', 'commit.gpgsign=false', ...a], { cwd: repo, stdio: 'ignore', shell: false });
   git('init', '-q');
   git('add', '-A'); git('commit', '-q', '-m', 'base');
+  // a suite list, so the docs-only skip can say "no suite names this doc" (with no list it fails closed)
+  fs.writeFileSync(path.join(repo, 'scripts', 'test-suites.txt'), 'test:x\n');
+  fs.writeFileSync(path.join(repo, 'package.json'), JSON.stringify({ scripts: { 'test:x': 'node scripts/test-x.js' } }));
+  fs.writeFileSync(path.join(repo, 'scripts', 'test-x.js'), '// a test\n');
+  git('add', '-A'); git('commit', '-q', '-m', 'suite list');
   fs.writeFileSync(path.join(repo, 'docs', 'a.md'), 'docs\n');
   git('add', '-A'); git('commit', '-q', '-m', 'docs only');
   const run = (ev: string, args: string[] = []) => {
     const outFile = path.join(tmp, `out-${ev || 'none'}-${args.length}`);
+    fs.rmSync(outFile, { force: true });
     execFileSync(process.execPath, [path.join(repo, '.github', 'scripts', 'ci-changes.js'), ...args], { cwd: repo, env: { ...process.env, EVENT_NAME: ev, GITHUB_OUTPUT: outFile }, stdio: 'ignore', shell: false });
     return fs.readFileSync(outFile, 'utf8');
   };
   assert.strictEqual(run('pull_request'), 'code=false\nthemes=false\nui=false\nmacos=false\n', 'pull_request: the diff of HEAD^1..HEAD decides (docs only: nothing)');
-  // spec 117 FR-386: --suites writes only the fast lane's two outputs (this repo has no suite list: none picked); other events pick none
+  // spec 117 FR-386: --suites writes only the fast lane's two outputs (a docs change no suite names: none picked)
   assert.strictEqual(run('pull_request', ['--suites']), 'fast=yes\nsuites=\n', '--suites: only fast and suites');
-  assert.strictEqual(run('push', ['--suites']), 'fast=yes\nsuites=\n', '--suites on a push: the lane runs on pull requests only');
+  // a changed step file picks its suite on a pull request, and nothing on any other event (review of #2032: the lane is PR-only)
+  fs.writeFileSync(path.join(repo, 'scripts', 'test-x.js'), '// a test, changed\n');
+  git('add', '-A'); git('commit', '-q', '-m', 'a test changes');
+  assert.strictEqual(run('pull_request', ['--suites']), 'fast=yes\nsuites=test:x\n', '--suites on a pull request picks the changed suite');
+  for (const ev of ['push', 'merge_group', 'schedule', 'workflow_dispatch', '']) assert.strictEqual(run(ev, ['--suites']), 'fast=yes\nsuites=\n', `--suites on ${ev || 'no event'}: the lane runs on pull requests only`);
   for (const ev of ['push', 'merge_group', 'schedule', 'workflow_dispatch', '']) assert.strictEqual(run(ev), 'code=true\nthemes=true\nui=true\nmacos=true\n', `${ev || 'no event'}: everything runs`);
   const ALL = 'code=true\nthemes=true\nui=true\nmacos=true\n';
   // finding 3: a file name with a newline and `::` is printed escaped, so it cannot start a workflow command (POSIX: Windows forbids the name)
@@ -414,7 +455,7 @@ assert.deepStrictEqual(skipProblems(cc as unknown as Cc), [], 'FR-387: nothing u
   const bash = (cwd: string, ev: string, args: string[] = []) => {
     const outFile = path.join(tmp, `sh-${Math.random().toString(36).slice(2)}`);
     execFileSync('bash', [path.join('.github', 'scripts', 'ci-changes.sh'), ...args], { cwd, env: { ...process.env, EVENT_NAME: ev, GITHUB_OUTPUT: outFile }, stdio: 'ignore', shell: false });
-    return fs.readFileSync(outFile, 'utf8');
+    return fs.existsSync(outFile) ? fs.readFileSync(outFile, 'utf8') : '';
   };
   let haveBash = true;
   try { execFileSync('bash', ['-c', 'exit 0'], { stdio: 'ignore', shell: false }); } catch { haveBash = false; }
@@ -444,6 +485,24 @@ assert.deepStrictEqual(skipProblems(cc as unknown as Cc), [], 'FR-387: nothing u
     fs.mkdirSync(path.join(fresh, 'docs')); fs.writeFileSync(path.join(fresh, 'docs', 'a.md'), 'x');
     g2('add', '-A'); g2('commit', '-q', '-m', 'docs');
     assert.strictEqual(bash(fresh, 'pull_request'), ALL, 'no base copy of the decision: everything runs');
+    // review of #2032: a base copy that exits 0 and writes nothing must not leave `code` empty (ci.yml reads code == 'true'): the
+    // wrapper writes "everything runs". The mutant (the wrapper without that guard) leaves the output empty.
+    const silent = path.join(tmp, 'silent');
+    fs.mkdirSync(path.join(silent, '.github', 'scripts'), { recursive: true });
+    fs.mkdirSync(path.join(silent, 'scripts'));
+    fs.writeFileSync(path.join(silent, '.github', 'scripts', 'ci-changes.js'), 'process.exit(0);\n');
+    fs.copyFileSync(path.join(ROOT, 'scripts', 'safe-print.js'), path.join(silent, 'scripts', 'safe-print.js'));
+    const sh = fs.readFileSync(path.join(ROOT, '.github', 'scripts', 'ci-changes.sh'), 'utf8');
+    fs.writeFileSync(path.join(silent, '.github', 'scripts', 'ci-changes.sh'), sh);
+    const g3 = (...a: string[]) => execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@example.invalid', '-c', 'commit.gpgsign=false', ...a], { cwd: silent, stdio: 'ignore', shell: false });
+    g3('init', '-q'); g3('add', '-A'); g3('commit', '-q', '-m', 'a base whose decision writes nothing');
+    fs.mkdirSync(path.join(silent, 'docs')); fs.writeFileSync(path.join(silent, 'docs', 'a.md'), 'x');
+    g3('add', '-A'); g3('commit', '-q', '-m', 'docs');
+    assert.strictEqual(bash(silent, 'pull_request'), ALL, 'a base decision that writes nothing: the wrapper writes everything runs');
+    const guard = /\nif \[ "\$\{1:-\}" != "--suites" \][^\n]*\n[^\n]*\n {2}all\nfi\n/;
+    assert.ok(guard.test(sh), 'mutant anchor: the wrapper guard');
+    fs.writeFileSync(path.join(silent, '.github', 'scripts', 'ci-changes.sh'), sh.replace(guard, '\n'));
+    assert.strictEqual(bash(silent, 'pull_request'), '', 'mutant: without the guard the output is empty (so the guard is what writes it)');
     assert.strictEqual(bash(fresh, 'push'), ALL, 'a push runs everything (the wrapper says so without the decision)');
   } else console.log('ci-changes: bash not found, the wrapper test is skipped here (CI runs it on every OS)');
   fs.rmSync(tmp, { recursive: true, force: true });

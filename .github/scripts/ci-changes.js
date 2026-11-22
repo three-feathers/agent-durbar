@@ -11,8 +11,8 @@
  * and by hand.) On a pull request ci-changes.sh runs the BASE branch's copy of this file (HEAD^1's, reviewed on main) with
  * `--root <checkout>`, so a PR's own edit of the decision cannot skip its own checks; with no base copy everything runs.
  *
- *   code=false    only docs/, specs/, changelog.d/ or Markdown changed, none of it under src/, scripts/ or .github/ (spec 117
- *                 FR-387): build, test, office and package jobs pass without running (FR-104); the merge queue runs them all
+ *   code=false    every changed path is on the docs allow list and no test suite names one (spec 117 FR-387, DOCS_ALLOW
+ *                 below): build, test, office and package jobs pass without running (FR-104); the merge queue runs them all
  *   themes=true   the look or the layout checks can change: the office job also runs theme geometry (FR-031)
  *   ui=true       something the app, its build, its packaging or the simulator UI drivers use changed (FR-191): the UI suite
  *                 (ui-platforms.yml), the office layout job and package smoke run. False for tooling, report and unit-test
@@ -40,12 +40,21 @@ const { execFileSync } = require('child_process');
 // runs the BASE branch's copy of this file and of safe-print.js, so both sit at the same relative place in the temp copy
 const { printable } = require(path.join(__dirname, '..', '..', 'scripts', 'safe-print.js'));
 
-// spec 117 FR-387: docs only = specs/, docs/, changelog.d/, Markdown and LICENSE, and NEVER a path under src/, scripts/ or .github/ (a
-// test reads scripts/prereview/prompts/*.md, the app ships src/**/ASSETS.md, workflows read .github/*.md): fail closed, so such a path
-// (and any unknown path) is code and the full run happens. scripts/test-ci-changes.ts guards it with mutants.
-const NEVER_DOCS = /^(src|scripts|\.github)\//;
-const DOCS_PATH = /^(docs\/|specs\/|changelog\.d\/)|\.md$|^LICENSE$/;
-const DOCS = { test: (f) => !NEVER_DOCS.test(f) && DOCS_PATH.test(f) };
+// spec 117 FR-387 (review of #2032): the docs-only skip FAILS CLOSED. A path may take it only when it is on this small ALLOW list, in
+// plain form, AND no `npm test` suite names it (docsOnly below); everything else, any unknown path, an odd path and an empty diff run
+// everything. Allowed: specs/**, changelog.d/**, docs/** except docs/rules/ (rule text, test:rules), docs/agent-setup/ (scripts) and
+// docs/site/ (the public site's code and data, test:site), and top-level Markdown except AGENTS.md, CLAUDE.md and README.md (read by
+// test:rules and a dozen suites). The prefixes are lower case on purpose (`Docs/x.md`, `Src/x.md` are not on the list, and a
+// case-insensitive checkout could make them the real folders); the exclusions match in any case (`docs/RULES/x.md` is docs/rules on
+// Windows and macOS). scripts/test-ci-changes.ts guards each part with a fixture and a mutant.
+const DOCS_ALLOW = /^(specs\/|changelog\.d\/|docs\/)|^[^/]+\.md$/;
+const DOCS_DENY = /^(docs\/(rules|agent-setup|site)\/|(agents|claude|readme)\.md$)/i;
+// a plain git path: no backslash, no `.` or `..` or empty segment, no leading or trailing blank, no control character, not absolute
+const PLAIN_PATH = (f) => typeof f === 'string' && f !== '' && f === f.trim() && !/[\\\u0000-\u001f\u007f]/.test(f) && f.split('/').every((seg) => seg !== '' && seg !== '.' && seg !== '..');
+const DOCS = { test: (f) => PLAIN_PATH(f) && DOCS_ALLOW.test(f) && !DOCS_DENY.test(f) };
+// for `ui` only (FR-191, unchanged): documentation and Markdown outside the always-UI folders do not start the UI suite, even when
+// they run Build and test (a suite reads them)
+const UI_DOCS = /^(docs\/|specs\/|changelog\.d\/)|\.md$|^LICENSE$/;
 const THEMES = /^(src\/renderer\/|scripts\/check-office-overlap\.js|scripts\/check-theme-geometry\.js|scripts\/check-parallel\.js|scripts\/fixtures\/themes\/|\.github\/workflows\/ci\.yml|\.github\/scripts\/ci-changes\.(sh|js))/;
 // always UI: the app, the CI plumbing the UI and office runs use, the UI workflow and this decision itself
 const ALWAYS_UI = /^(src\/|scripts\/fixtures\/|scripts\/fakes\/|\.github\/actions\/|\.github\/workflows\/(ui-platforms|ci)\.yml$|\.github\/scripts\/ci-changes\.(sh|js)$)/;
@@ -256,14 +265,29 @@ function uiPath(f, io, closure) {
     if (!io.isFile(f) || !PLAIN_NAME.test(f)) return true;
     return !SOURCE.test(f);
   }
-  if (DOCS.test(f) || f.startsWith('.github/')) return false;
+  if (UI_DOCS.test(f) || f.startsWith('.github/')) return false;
   return true; // build/, tsconfig*.json, root dotfiles, anything new
 }
 
 /** The decision for a pull request's changed files. `io` reads the head tree (read, isFile, isDir) and the base (readBase). */
+/** True only when the diff may take the docs-only skip: not empty, every path on the allow list, and no suite names any of them
+ *  (by a literal in a step file, as the fast lane reads them: a suite that reads a doc must run when it changes). An unreadable suite
+ *  list counts as "named" (fail closed). */
+function docsOnly(list, io) {
+  if (!list.length || !list.every((f) => DOCS.test(f))) return false;
+  const names = suiteNames(io.read(SUITE_LIST));
+  if (!names.length) return false;
+  const scripts = (parseJson(io.read('package.json')) || {}).scripts || {};
+  const changed = new Set(list);
+  for (const name of names) for (const src of stepSources(scripts[name])) {
+    for (const r of literalTargets(src, io)) if (r.endsWith('/') ? list.some((f) => f.startsWith(r)) : changed.has(r)) return false;
+  }
+  return true;
+}
+
 function decide(files, io) {
-  const list = files.filter(Boolean);
-  const code = list.some((f) => !DOCS.test(f));
+  const list = files.filter((f) => f !== '');
+  const code = !docsOnly(list, io);
   const themes = list.some((f) => THEMES.test(f));
   let ui = false;
   if (code) {
@@ -285,9 +309,9 @@ function decide(files, io) {
 // Picking fewer than the full run is safe here because the lane decides nothing else: the required jobs still run every suite.
 const SUITE_LIST = 'scripts/test-suites.txt';
 const SUITE_NAME = /^test:[\w:.+-]+$/;
+// rule text needs no row: rules-check.js names 'AGENTS.md' and 'docs/rules', so the literal rule picks test:rules
 const FAST_DOC_SUITES = [
   [/^specs\//, 'test:specsindex'],
-  [/^(AGENTS|CLAUDE)\.md$|^docs\/rules\//, 'test:rules'],
   [/^changelog\.d\/|^CHANGELOG\.md$/, 'test:changelog'],
 ];
 /** The suite names of a test-suites.txt text (as scripts/run-tests.js reads it); names that are not plain `test:*` are dropped. */
@@ -302,7 +326,9 @@ function stepSources(cmd) {
 /** The file or folder (ending in /) a literal names from `dir`, or from the repo root; null when it names neither. */
 function resolveLiteral(lit, dir, io) {
   if (!lit || lit.startsWith('/')) return null;
-  // a bare word ('fs', 'fixtures') can only name a neighbour of the step file; only a literal with `/` or `.` is tried from the root
+  // a bare word ('fs', 'fixtures') names a neighbour of the step file or, exactly, a file at the repo root ('LICENSE', review of
+  // #2032); only a literal with `/` or `.` is resolved from the root with extensions
+  if (!/[./]/.test(lit) && io.isFile(lit)) return lit;
   for (const base of /[./]/.test(lit) ? [dir, ''] : [dir]) {
     const rel = path.posix.normalize(base ? path.posix.join(base, lit) : lit);
     if (!rel || rel === '.' || rel.startsWith('..')) continue;

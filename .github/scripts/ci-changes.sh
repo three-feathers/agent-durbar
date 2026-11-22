@@ -30,3 +30,9 @@ if ! git show 'HEAD^1:.github/scripts/ci-changes.js' > "$tmp/.github/scripts/ci-
 fi
 # arguments pass through: `--suites` asks for the fast lane's suites only (spec 117 FR-386, fast-lane.yml)
 node "$tmp/.github/scripts/ci-changes.js" --root . "$@"
+# spec 117 FR-387 (review of #2032): fail closed. If the decision wrote no `code=` line (a base copy that exits 0 silently), the jobs'
+# `code == 'true'` would read empty and skip: write "everything runs" instead. (--suites writes only the fast lane's outputs.)
+if [ "${1:-}" != "--suites" ] && [ "$out" != /dev/stdout ] && ! grep -q '^code=' "$out"; then
+  echo "The decision wrote no code= line: everything runs."
+  all
+fi
