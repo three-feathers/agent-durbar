@@ -381,3 +381,8 @@ Spec 102 T100's first step found that no built-in pack meets 102 FR-204 and FR-2
 
 T016, T017 and T018 amended; T017 waits for 102 T100, T433 and T434.
 
+
+
+### 2026-11-22: stop-gap, `build-test` `timeout-minutes` 25 to 45 (#1983)
+
+FR-018 says the 25-minute limit is not raised first. The queue is blocked now (#1978, #1994, #1972, #1996 twice, #1533 cut at the limit with no assert failing; each costs a new head, a re-approval and a rerun), and Paco's bot suggested a stop-gap. Decision: raise the one `build-test` limit (it is a matrix, so all three legs) to 45 until T012's shard split lands, then T025 lowers it again. This is a stop-gap only: it changes no suite, name or job structure, and the target stays Windows Build and test p90 at or under 15 min, zero limit cancels in 7 days (SC-003, FR-018). A cut run now ends as a slow green or a real failure instead of a cancel. `test-electron-cache` item 10 (work plus npm ci retries within the limit) still holds. Not verified: the new Windows p90 until the next runs are measured.
