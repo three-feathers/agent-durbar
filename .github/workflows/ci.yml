@@ -52,8 +52,9 @@ jobs:
     name: Build and test (ubuntu-latest) part ${{ matrix.shard }}/2
     if: ${{ !github.event.pull_request.draft }}
     runs-on: ubuntu-latest
-    # spec 008 FR-195: Windows took up to 10 min then and npm ci may wait out an Electron download outage (about 12 min); the limit is not raised (#1983)
-    timeout-minutes: 25
+    # spec 008 FR-195: npm ci may wait out an Electron download outage (about 12 min). Spec 117 T025 stop-gap (#2026): 45 while #1983 is open, kept
+    # on every part job (the parts took 12-14 min on Windows in this PR's run, too few runs to trust 25 on a slow runner); T025 lowers it after measuring
+    timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
@@ -102,7 +103,7 @@ jobs:
     name: Build and test (windows-latest) part ${{ matrix.shard }}/2
     if: ${{ !github.event.pull_request.draft }}
     runs-on: windows-latest
-    timeout-minutes: 25
+    timeout-minutes: 45 # spec 117 T025 stop-gap, as test-ubuntu
     strategy:
       fail-fast: false
       matrix:
@@ -135,7 +136,7 @@ jobs:
     name: Build and test (macos-latest) part ${{ matrix.shard }}/2
     if: ${{ !github.event.pull_request.draft && github.event_name != 'pull_request' && github.event_name != 'merge_group' }}
     runs-on: macos-latest
-    timeout-minutes: 25
+    timeout-minutes: 45 # spec 117 T025 stop-gap, as test-ubuntu
     strategy:
       fail-fast: false
       matrix:

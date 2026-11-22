@@ -75,7 +75,7 @@ export function problems(ci: string, ruleset: string): string[] {
     if (!chOk) out.push(`${id}: the \`changes\` step is not the reviewed one (id changes, shell bash, env EVENT_NAME only, run bash .github/scripts/ci-changes.sh, no if): it decides whether npm test runs`);
     if (required.includes(String(j.name))) out.push(`${id} carries a required name (${String(j.name)}): only the summary may`);
     if (j['continue-on-error'] !== undefined) out.push(`${id} has continue-on-error`);
-    if (Number(j['timeout-minutes']) > 25) out.push(`${id} raises the 25-minute limit (#1983: not the first step)`);
+    if (Number(j['timeout-minutes']) > 45) out.push(`${id} raises the limit above the T025 stop-gap of 45 minutes (#1983; T025 lowers it again after measuring the parts)`);
     const strat = (j.strategy || {}) as { 'fail-fast'?: unknown; matrix?: Record<string, unknown> };
     const shards = strat.matrix && strat.matrix.shard;
     if (!strat.matrix || Object.keys(strat.matrix).join() !== 'shard' || !Array.isArray(shards)) { out.push(`${id}: the matrix is not exactly "shard: [1, 2, ...]"`); continue; }
@@ -184,7 +184,7 @@ mutant('Windows parts on Linux', (ci) => swap(ci, 'runs-on: windows-latest', 'ru
 mutant('a part with fail-fast', (ci) => swap(ci, /(  test-windows:[\s\S]*?fail-fast: )false/, '$1true'), /test-windows: fail-fast is not false/);
 mutant('npm test filtered in a part', (ci) => swap(ci, /(  test-windows:[\s\S]*?)run: npm test\n/, '$1run: npm test -- redact\n'), /test-windows: expected one step that runs plain `npm test`/);
 mutant('npm test skipped on a condition', (ci) => swap(ci, /(  test-windows:[\s\S]*?- if: )steps\.changes\.outputs\.code == 'true'(\n        env:\n          TEST_SHARD)/, "$1steps.changes.outputs.code == 'true' && matrix.shard == 1$2"), /test-windows: the npm test step runs only under/);
-mutant('a part raises the limit', (ci) => swap(ci, /(  test-windows:[\s\S]*?timeout-minutes: )25/, '$140'), /test-windows raises the 25-minute limit/);
+mutant('a part raises the limit', (ci) => swap(ci, /(  test-windows:[\s\S]*?timeout-minutes: )45/, '$160'), /test-windows raises the limit above the T025 stop-gap/);
 mutant('a part without the build', (ci) => swap(ci, /(  test-macos:[\s\S]*?)run: npm run build\n/, '$1run: echo no build\n'), /test-macos: no `npm run build` before `npm test`/);
 mutant('a part continue-on-error', (ci) => swap(ci, /(  test-windows:\n)/, '$1    continue-on-error: true\n'), /test-windows has continue-on-error/);
 
