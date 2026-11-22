@@ -289,4 +289,4 @@ T133 verification (2026-10-25, review on #698): typecheck, build and the offline
   - Round 2 of the review of PR 1949 (2026-11-20), same task: the gate's two joins (`gluedRun`, `LINK_VALUE_START`, `LINK_SEP` in `src/shared/redact.ts`) and their asserts in `scripts/test-safetext-links.ts`.
 
 ## 2026-11-22: the question header and the automatic-answer question are masked (issue #1937)
-- [ ] T428 (delta 2026-11-22, issue #1937) `src/renderer/app.js` (`showQuestion` header tag, `showAutoQuestion` paragraph through `safeMask`), `scripts/check-question-header-mask.js` + `scripts/ui-suite.js` [FR-065]
+- [x] T428 (delta 2026-11-22, issue #1937) `src/renderer/app.js` (`showQuestion` header tag, `showAutoQuestion` paragraph through `safeMask`), `scripts/check-question-header-mask.js` + `scripts/ui-suite.js` [FR-065]
