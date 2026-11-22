@@ -450,7 +450,7 @@ export function toTranscript(parsed: ParsedChat): VsChatTranscript {
       blocks.push(b);
     }
     const err = isObj(req.result) && isObj(req.result.errorDetails) ? req.result.errorDetails.message : undefined;
-    if (typeof err === 'string' && err) blocks.push({ type: 'note', text: 'This response ended with an error: ' + oneLine(err, 300) });
+    if (typeof err === 'string' && err) blocks.push({ type: 'note', text: 'This response ended with an error: ' + oneLine(err, 300) }); // FR-066: shown masked (a transcript line, not a caught error; the chat masks it like every line)
   }
   if (all.length > shown.length) notes.push(`Only the last ${shown.length} of ${all.length} messages are shown.`);
   if (parsed.badLines) notes.push(`${parsed.badLines} unreadable line(s) in the log were skipped; the transcript may be incomplete.`);

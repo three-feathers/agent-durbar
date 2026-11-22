@@ -24,6 +24,7 @@ import { stepsHaveCommand } from '../src/shared/mcp';
 import type { McpReplyInput, RestartDeps, RestartSessionDeps } from '../src/main/mcpsession';
 import { isMethodNotFound, sdkErrorText } from '../src/adapters/copilot';
 import { FakeClient, FakeCopilot } from './fakes/copilot-sdk';
+import { ShownError } from '../src/shared/shownerror';
 
 const info = (id: string): AgentInfo => ({ id, name: 'Ana', cwd: '/w', permMode: 'ask', model: 'auto' }) as AgentInfo;
 const routerOf = (ad: AgentAdapter | undefined) => ({ forAgent: () => ad });
@@ -244,13 +245,13 @@ async function main(): Promise<void> {
 
       // a failed resume leaves the agent ended; the error is masked; a sign-in failure is marked
       calls.length = 0;
-      resumeError = new Error('Failed to authenticate. API Error: 401 OAuth access token is invalid.');
+      resumeError = new ShownError('Failed to authenticate. API Error: 401 OAuth access token is invalid.');
       const auth = await mcpRestartSessionOp(d, running, sid, false);
       assert.deepStrictEqual([auth.ok, auth.ended, auth.errorKind], [false, true, 'auth'], `sign-in failure (FR-027): ${JSON.stringify(auth)}`);
       assert.ok(!ad.isLive(sid), 'the agent stays ended, as after End session');
       assert.match((await mcpRestartSessionOp(d, running, sid, false)).error!, /not running/, 'an ended session is not restarted (a message resumes it)');
       await ad.start({ workspace: ws, sessionId: sid, quiet: true });
-      resumeError = new Error('spawn failed with TOKEN=sekret-value-42');
+      resumeError = new ShownError('spawn failed with TOKEN=sekret-value-42');
       const other = await mcpRestartSessionOp(d, running, sid, false);
       assert.deepStrictEqual([other.ok, other.ended, other.errorKind], [false, true, undefined], 'another error is not a sign-in error');
       assert.ok(other.error!.includes('[redacted]') && !other.error!.includes('sekret-value-42'), 'masked');
@@ -457,26 +458,26 @@ async function main(): Promise<void> {
       const mcpRpc = s.rpc.mcp as Record<string, unknown>;
       const realRestart = mcpRpc.restartServer;
       const rejectWith = (e: Error) => { mcpRpc.restartServer = async (x: unknown) => { s.calls.push({ name: 'mcp.restartServer', args: [x] }); throw e; }; };
-      rejectWith(Object.assign(new Error('Unhandled method session.mcp.restartServer'), { code: -32601 }));
+      rejectWith(Object.assign(new ShownError('Unhandled method session.mcp.restartServer'), { code: -32601 }));
       s.calls.length = 0;
       await ad.restartMcpServer(sid, 'notes');
       assert.deepStrictEqual(mcpCalls(), [['mcp.restartServer', { serverName: 'notes' }], ['mcp.disable', { serverName: 'notes' }], ['mcp.enable', { serverName: 'notes' }]], 'MethodNotFound: disable then enable, that server only');
-      rejectWith(new Error('Unhandled method session.mcp.restartServer')); // the text alone, as the SDK's own connect check reads it
+      rejectWith(new ShownError('Unhandled method session.mcp.restartServer')); // the text alone, as the SDK's own connect check reads it
       s.calls.length = 0;
       await ad.restartMcpServer(sid, 'notes');
       assert.deepStrictEqual(mcpCalls().map((c) => c[0]), ['mcp.restartServer', 'mcp.disable', 'mcp.enable'], '"Unhandled method" text: fallback');
       // any other failure is the restart's own: it is reported, the server is not switched off and on behind the user's back
-      rejectWith(new Error('MCP server notes failed to start: spawn ENOENT'));
+      rejectWith(new ShownError('MCP server notes failed to start: spawn ENOENT'));
       s.calls.length = 0;
       await assert.rejects(ad.restartMcpServer(sid, 'notes'), /spawn ENOENT/);
       assert.deepStrictEqual(mcpCalls().map((c) => c[0]), ['mcp.restartServer'], 'another error: no fallback');
       // real 2026-10-21 (T060, runtime 1.0.22): the SDK's own prefix is dropped, the runtime's reason is kept (and not a fallback)
-      rejectWith(Object.assign(new Error('Request session.mcp.restartServer failed with message: failed to spawn MCP server process: No such file or directory (os error 2)'), { code: -32603 }));
+      rejectWith(Object.assign(new ShownError('Request session.mcp.restartServer failed with message: failed to spawn MCP server process: No such file or directory (os error 2)'), { code: -32603 }));
       s.calls.length = 0;
       await assert.rejects(ad.restartMcpServer(sid, 'notes'), (e: Error) => e.message === 'failed to spawn MCP server process: No such file or directory (os error 2)');
       assert.deepStrictEqual(mcpCalls().map((c) => c[0]), ['mcp.restartServer'], 'a -32603 spawn failure: no fallback');
-      assert.strictEqual(sdkErrorText(new Error('plain reason')), 'plain reason');
-      assert.ok(!isMethodNotFound(new Error('timeout')) && !isMethodNotFound(undefined) && isMethodNotFound({ code: -32601 }));
+      assert.strictEqual(sdkErrorText(new ShownError('plain reason')), 'plain reason');
+      assert.ok(!isMethodNotFound(new ShownError('timeout')) && !isMethodNotFound(undefined) && isMethodNotFound({ code: -32601 }));
       // a runtime object without the method at all (an SDK older than 1.0.22's generated client)
       delete mcpRpc.restartServer;
       s.calls.length = 0;
@@ -533,10 +534,10 @@ async function main(): Promise<void> {
       s.loginAnswer = { authorizationUrl: 42 };
       await assert.rejects(ad.startMcpSignIn(sid, 'x'), /cannot read/, 'a non-string address is refused');
       // the runtime refuses: its reason, without the SDK prefix
-      s.loginFail = new Error('Request session.mcp.oauth.login failed with message: server x does not use OAuth');
+      s.loginFail = new ShownError('Request session.mcp.oauth.login failed with message: server x does not use OAuth');
       await assert.rejects(ad.startMcpSignIn(sid, 'x'), (e: Error) => e.message === 'server x does not use OAuth');
       // an older runtime: MethodNotFound, or no `oauth` object at all (no-method mode): a plain message, so main shows the terminal steps
-      s.loginFail = Object.assign(new Error('Unhandled method session.mcp.oauth.login'), { code: -32601 });
+      s.loginFail = Object.assign(new ShownError('Unhandled method session.mcp.oauth.login'), { code: -32601 });
       await assert.rejects(ad.startMcpSignIn(sid, 'x'), /cannot start a sign-in/);
       s.loginFail = undefined;
       delete (s.rpc.mcp as Record<string, unknown>).oauth;

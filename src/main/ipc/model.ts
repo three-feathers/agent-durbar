@@ -7,10 +7,10 @@ import type { AgentInfo, ModelChoice } from '../../shared/api';
 import type { AgentEvent } from '../../adapters/types';
 import { parseFocus, parseSwitchRequest } from '../../shared/modelswitch';
 import type { ModelSwitchRequest, ModelSwitchResult } from '../../shared/modelswitch';
-import { errText } from '../agentops';
 import { redact } from '../../shared/redact';
 import type { OrgVerdict } from '../../shared/orgpolicy';
 import type { FolderStore } from '../folders';
+import { failText } from '../ipcerror';
 
 export interface ModelIpcDeps {
   agents: Map<string, AgentInfo>;
@@ -92,7 +92,7 @@ export async function setModelOp(d: SetModelDeps, id: unknown, raw: unknown): Pr
     }
     return { ok: true, result };
   } catch (err) {
-    return { ok: false, error: errText(err) };
+    return { ok: false, error: failText(err, 'model') };
   }
 }
 
@@ -121,7 +121,7 @@ export interface ModelListReply { ok: boolean; error?: string; reason?: string; 
 /** A short fixed phrase for why a model list failed (spec 030 FR-068): the error's text may carry account data, so only its kind is read. */
 export function listReason(err: unknown): string {
   const status = err && typeof err === 'object' ? Number((err as { status?: unknown; statusCode?: unknown }).status ?? (err as { statusCode?: unknown }).statusCode) : NaN;
-  const t = `${err instanceof Error ? err.name : ''} ${err instanceof Error ? err.message : typeof err === 'string' ? err : ''}`;
+  const t = `${err instanceof Error ? err.name : ''} ${err instanceof Error ? err.message : typeof err === 'string' ? err : ''}`; // FR-066: read, not shown
   // narrow on purpose: "max tokens", a rate limit (429) or "author" are not a sign-in failure
   if (status === 401 || status === 403 || /\bunauthori[sz]ed\b|\bnot (signed|logged) ?in\b|\bnot authenticated\b|\bauthentication (failed|required)\b|\bsign-?in (required|expired)\b|\bHTTP 40[13]\b|"status":\s?40[13]\b/i.test(t)) return 'the sign-in was not accepted';
   if (/\btime(d)? ?out\b|\bETIMEDOUT\b/i.test(t)) return 'the request timed out';
@@ -192,7 +192,7 @@ export function register(deps: ModelIpcDeps): ModelIpc {
       await ad.cancelQueuedModel(a.id, queueId);
       return { ok: true };
     } catch (err) {
-      return { ok: false, error: errText(err) };
+      return { ok: false, error: failText(err, 'model') };
     }
   });
 
@@ -207,7 +207,7 @@ export function register(deps: ModelIpcDeps): ModelIpc {
       const r = await ad.handoffSummary(a.id);
       return { ok: true, summary: r.summary, ...(r.costUsd !== undefined ? { costUsd: r.costUsd } : {}) };
     } catch (err) {
-      return { ok: false, error: errText(err) };
+      return { ok: false, error: failText(err, 'model') };
     }
   });
   ipcHandle('agents:compact', async (_e, id: unknown, focus: unknown) => {
@@ -219,7 +219,7 @@ export function register(deps: ModelIpcDeps): ModelIpc {
       if (!ad.isLive(a.id)) return { ok: true, result: { success: false, message: 'This agent has not started yet, so there is nothing to compact.' } };
       return { ok: true, result: await ad.compact(a.id, parseFocus(focus)) };
     } catch (err) {
-      return { ok: false, error: errText(err) }; // the focus text is never logged or echoed
+      return { ok: false, error: failText(err, 'model') }; // the focus text is never logged or echoed
     }
   });
 

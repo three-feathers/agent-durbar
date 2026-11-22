@@ -87,7 +87,7 @@ export function commandFound(cmd: unknown, idx: CmdIndex): boolean | undefined {
   // Windows: a suffix is an extension only when it is one of the runnable ones (`python.exe`); `python3.11` gets each of them
   const ext = p.extname(c).toLowerCase();
   const known = win && !!ext && idx.exts.includes(ext);
-  const variants = (base: string): string[] => (win && !known ? idx.exts.map((e) => base + e) : [base]);
+  const variants = (base: string): string[] => (win && !known ? idx.exts.map((e) => base + e) : [base]); // FR-066: read, not shown (e is a file extension, not an error)
   const inDir = (dir: string, base: string): boolean | undefined => {
     const set = idx.names.get(win ? path.win32.normalize(dir).toLowerCase() : dir);
     if (!set) return undefined;

@@ -8,6 +8,14 @@ import { MAX_REDIRECTS, MAX_SCRIPT_BYTES, allowedScriptUrl, downloadScript, look
 import * as http from 'http';
 import type { HttpGet } from '../src/main/officialinstall';
 import { makeDownloadGet, makeNodeDownloadGet } from '../src/main/netget';
+import { failText } from '../src/main/ipcerror';
+
+/** Spec 045 FR-066 (review of #1980): the call rejects with the app's words, and the window's text (`failText`) still says them. */
+async function windowRejects(p: Promise<unknown>, re: RegExp, msg?: string): Promise<void> {
+  const e = await p.then(() => undefined, (x: unknown) => x);
+  assert.ok(e !== undefined, `${msg ?? String(re)}: rejects`);
+  assert.ok(re.test(failText(e, 'test')), `${msg ?? String(re)}: the window text keeps the app's words (got ${JSON.stringify(failText(e, 'test'))})`);
+}
 import type { NetRequestFactory, NetRequestLike } from '../src/main/netget';
 import { HarnessSetup, confirmText, setupEnv } from '../src/main/harnesssetup';
 import { installPlans, routeOwning } from '../src/shared/harnesssetup';
@@ -46,17 +54,17 @@ async function main(): Promise<void> {
   // a redirect to another host is refused, and nothing is fetched from it
   {
     const f = fake({ 'https://claude.ai/install.sh': { status: 302, location: 'https://evil.example/install.sh' } });
-    await assert.rejects(downloadScript(claude, '.sh', { get: f.get, tmpdir: tmp }), /not the vendor's/);
+    await windowRejects(downloadScript(claude, '.sh', { get: f.get, tmpdir: tmp }), /not the vendor's/);
     assert.deepStrictEqual(f.seen, ['https://claude.ai/install.sh']);
   }
   // too many redirects, an HTTP error, empty or oversized bodies
   {
     const loop: Record<string, { status: number; location?: string }> = {};
     for (let i = 0; i <= MAX_REDIRECTS + 1; i++) loop[i === 0 ? 'https://claude.ai/install.sh' : `https://claude.ai/r${i}`] = { status: 302, location: `https://claude.ai/r${i + 1}` };
-    await assert.rejects(downloadScript(claude, '.sh', { get: fake(loop).get, tmpdir: tmp }), /redirected too often/);
-    await assert.rejects(downloadScript(claude, '.sh', { get: fake({ 'https://claude.ai/install.sh': { status: 404 } }).get, tmpdir: tmp }), /HTTP 404/);
-    await assert.rejects(downloadScript(claude, '.sh', { get: fake({ 'https://claude.ai/install.sh': { status: 200 } }).get, tmpdir: tmp }), /empty or too large/);
-    await assert.rejects(downloadScript(claude, '.sh', { get: fake({ 'https://claude.ai/install.sh': { status: 200, body: Buffer.alloc(MAX_SCRIPT_BYTES + 1) } }).get, tmpdir: tmp }), /empty or too large/);
+    await windowRejects(downloadScript(claude, '.sh', { get: fake(loop).get, tmpdir: tmp }), /redirected too often/);
+    await windowRejects(downloadScript(claude, '.sh', { get: fake({ 'https://claude.ai/install.sh': { status: 404 } }).get, tmpdir: tmp }), /HTTP 404/);
+    await windowRejects(downloadScript(claude, '.sh', { get: fake({ 'https://claude.ai/install.sh': { status: 200 } }).get, tmpdir: tmp }), /empty or too large/);
+    await windowRejects(downloadScript(claude, '.sh', { get: fake({ 'https://claude.ai/install.sh': { status: 200, body: Buffer.alloc(MAX_SCRIPT_BYTES + 1) } }).get, tmpdir: tmp }), /empty or too large/);
   }
 
   // review on #393: a web page is never run. HTML content type, a .sh without #!, a .ps1 that starts with <
@@ -68,7 +76,7 @@ async function main(): Promise<void> {
   assert.ok(!looksLikeScript(Buffer.alloc(0), '.ps1'));
   {
     const f = fake({ 'https://claude.ai/install.sh': { status: 200, body: Buffer.from('<html><body>Verify you are human</body></html>') } });
-    await assert.rejects(downloadScript(claude, '.sh', { get: f.get, tmpdir: tmp }), /not the vendor's install script/);
+    await windowRejects(downloadScript(claude, '.sh', { get: f.get, tmpdir: tmp }), /not the vendor's install script/);
   }
   // the download's stream code (netget.makeDownloadGet over a fake net.request; review on #393: the size cap and the TOTAL time limit must be proven)
   {
@@ -80,9 +88,9 @@ async function main(): Promise<void> {
     assert.deepStrictEqual([okr.status, okr.contentType, okr.body.toString()], [200, 'text/x-sh', '#!/bin/sh\necho ok\n']);
     const rd = await makeDownloadGet(mkRes(302, { location: '/ok' }, () => undefined))('https://x/redir', { timeoutMs: 2000, maxBytes: 1000 });
     assert.deepStrictEqual([rd.status, rd.location], [302, '/ok'], 'redirects are reported, not followed');
-    await assert.rejects(makeDownloadGet(mkRes(200, {}, (res) => { res.emit('data', Buffer.alloc(600)); res.emit('data', Buffer.alloc(600)); res.emit('end'); }))('https://x/big', { timeoutMs: 2000, maxBytes: 1000 }), /larger than expected/, 'the size cap works while streaming');
+    await windowRejects(makeDownloadGet(mkRes(200, {}, (res) => { res.emit('data', Buffer.alloc(600)); res.emit('data', Buffer.alloc(600)); res.emit('end'); }))('https://x/big', { timeoutMs: 2000, maxBytes: 1000 }), /larger than expected/, 'the size cap works while streaming');
     let aborted = false;
-    await assert.rejects(makeDownloadGet(mkRes(200, {}, (res, req) => { const t = setInterval(() => res.emit('data', Buffer.from('x')), 40); req.on('aborted', () => { aborted = true; clearInterval(t); }); }))('https://x/drip', { timeoutMs: 300, maxBytes: 100000 }), /took too long/, 'a dripping server hits the TOTAL time limit');
+    await windowRejects(makeDownloadGet(mkRes(200, {}, (res, req) => { const t = setInterval(() => res.emit('data', Buffer.from('x')), 40); req.on('aborted', () => { aborted = true; clearInterval(t); }); }))('https://x/drip', { timeoutMs: 300, maxBytes: 100000 }), /took too long/, 'a dripping server hits the TOTAL time limit');
     assert.ok(aborted, 'the request is aborted when the total time limit hits (the rejection above is the proof it was cut, not a wall bound)');
     // FR-017: the fixed headers, no locale
     let seen: Record<string, string> = {};
@@ -190,7 +198,7 @@ async function main(): Promise<void> {
       if (u === 'https://claude.ai/install.sh') r.emit('redirect', 302, 'GET', 'https://evil.example/install.sh');
       else throw new Error('the off-list hop must never be requested: ' + u);
     });
-    await assert.rejects(downloadScript(claude, '.sh', { get: makeDownloadGet(net), tmpdir: tmp }), /not the vendor's/);
+    await windowRejects(downloadScript(claude, '.sh', { get: makeDownloadGet(net), tmpdir: tmp }), /not the vendor's/);
     assert.deepStrictEqual(requested, ['https://claude.ai/install.sh'], 'the off-list hop was refused before it was requested');
     assert.strictEqual(followed, 0, 'followRedirect is never called');
     requested.length = 0;
@@ -260,14 +268,14 @@ async function main(): Promise<void> {
     assert.ok(redirBytesSent - sent <= 65536 * 2, 'nothing more is sent to a destroyed request');
     assert.ok(redirBytesSent < 4 * 1024 * 1024, 'the redirect body read is bounded');
     // the cap: while streaming (a stall after maxBytes+1 fails on the cap, not on the timeout), and the boundary
-    await assert.rejects(get(`${base}/big`, { timeoutMs: 2000, maxBytes: 1000 }), /larger than expected/);
+    await windowRejects(get(`${base}/big`, { timeoutMs: 2000, maxBytes: 1000 }), /larger than expected/);
     assert.strictEqual((await get(`${base}/exact`, { timeoutMs: 2000, maxBytes: 1000 })).body.length, 1000, 'exactly maxBytes is accepted');
-    await assert.rejects(get(`${base}/over`, { timeoutMs: 2000, maxBytes: 1000 }), /larger than expected/, 'maxBytes + 1 is refused');
-    await assert.rejects(get(`${base}/overstall`, { timeoutMs: 5000, maxBytes: 1000 }), /larger than expected/, 'the cap fires before any timeout (refused on the cap, not "took too long")');
+    await windowRejects(get(`${base}/over`, { timeoutMs: 2000, maxBytes: 1000 }), /larger than expected/, 'maxBytes + 1 is refused');
+    await windowRejects(get(`${base}/overstall`, { timeoutMs: 5000, maxBytes: 1000 }), /larger than expected/, 'the cap fires before any timeout (refused on the cap, not "took too long")');
     // the timeout: a server that sends headers and a first chunk, then stalls
-    await assert.rejects(get(`${base}/stall`, { timeoutMs: 300, maxBytes: 100000 }), /took too long/, 'a stalled body hits the timeout');
+    await windowRejects(get(`${base}/stall`, { timeoutMs: 300, maxBytes: 100000 }), /took too long/, 'a stalled body hits the timeout');
     // a server that drips one byte at a time keeps the idle timer quiet: only the total limit ends it
-    await assert.rejects(get(`${base}/trickle`, { timeoutMs: 700, maxBytes: 100000 }), /took too long/, 'a dripping body hits the TOTAL time limit');
+    await windowRejects(get(`${base}/trickle`, { timeoutMs: 700, maxBytes: 100000 }), /took too long/, 'a dripping body hits the TOTAL time limit');
     for (const s of sockets) s.destroy();
     await new Promise<void>((r2) => server.close(() => r2()));
   }

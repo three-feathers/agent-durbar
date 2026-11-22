@@ -20,7 +20,7 @@ export type GenerateResult =
 let running = false;
 export const BUSY_ERROR = 'The first request is still running on the agent app and may be charged. Create is available again when it ends.';
 
-export async function generateProfile(req: unknown, deps: { oneShot(id: string): OneShot | undefined; parse(t: string): FrontmatterParse; errText(e: unknown): string }): Promise<GenerateResult> {
+export async function generateProfile(req: unknown, deps: { oneShot(id: string): OneShot | undefined; parse(t: string): FrontmatterParse; failText(e: unknown): string }): Promise<GenerateResult> {
   const r = (req && typeof req === 'object' ? req : {}) as Record<string, unknown>;
   const app = r.app === 'claude' || r.app === 'copilot' ? r.app : undefined;
   if (!app) return { ok: false, error: 'Choose an agent app.' };
@@ -51,7 +51,7 @@ export async function generateProfile(req: unknown, deps: { oneShot(id: string):
     const v = validateGeneratedProfile(g.text, input, deps.parse);
     return v.ok ? { ok: true, text: v.text, warnings: v.warnings, extraTools: v.extraTools, by: by.name, ...cost } : { ok: false, error: v.error, ...cost };
   } catch (err) {
-    return { ok: false, error: deps.errText(err) };
+    return { ok: false, error: deps.failText(err) };
   } finally {
     running = false;
   }

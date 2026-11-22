@@ -2,7 +2,6 @@
 import { fromAppFrame as fromApp, ipcHandle } from '../ipcguard';
 import type { AdapterRouter } from '../../adapters/router';
 import type { AgentInfo } from '../../shared/api';
-import { errText } from '../agentops';
 import type { AgentTrustStore } from '../agenttrust';
 import { hashAgentFile, readAgentFile, shownSha } from '../agenttrust';
 import type { AgentFileRead } from '../../adapters/types';
@@ -16,6 +15,7 @@ import type { FrontmatterParse } from '../../shared/profiletemplates';
 import { generateProfile } from '../profilegen';
 import type { OneShot } from '../profilegen';
 import type { EnsureLive } from './types';
+import { failText } from '../ipcerror';
 
 export interface ProfilesIpcDeps {
   agents: Map<string, AgentInfo>;
@@ -60,7 +60,7 @@ export function register(deps: ProfilesIpcDeps): void {
       const profiles = (await listAgentProfilesFresh(ad, a.id, fresh)).map((p) => ({ ...p, trusted: p.source !== 'repo' || (!!p.path && agentTrust()?.isTrusted(wsKey(a), p.id, hashAgentFile(p.path))) }));
       return { ok: true, profiles };
     } catch (err) {
-      return { ok: false, error: errText(err), profiles: [] };
+      return { ok: false, error: failText(err, 'profiles'), profiles: [] };
     }
   });
   ipcHandle('agents:selectProfile', async (_e, id: unknown, profileId: unknown, confirm: unknown) => {
@@ -96,7 +96,7 @@ export function register(deps: ProfilesIpcDeps): void {
       const profile = await ad.selectAgentProfile(a.id, profileId as string | null, file);
       return { ok: true, profile };
     } catch (err) {
-      return { ok: false, error: errText(err) };
+      return { ok: false, error: failText(err, 'profiles') };
     }
   });
 
@@ -133,7 +133,7 @@ export function register(deps: ProfilesIpcDeps): void {
     if (!fromApp(e)) return { ok: false, error: 'invalid request' };
     // the editor's own front matter check (FR-015): one parser for the editor and this check
     const PE = require(path.join(__dirname, '..', '..', 'renderer', 'profileeditor.js')) as { parseFrontmatter(t: string): FrontmatterParse };
-    return generateProfile(req, { oneShot: deps.oneShot, parse: (t) => PE.parseFrontmatter(t), errText });
+    return generateProfile(req, { oneShot: deps.oneShot, parse: (t) => PE.parseFrontmatter(t), failText: (e) => failText(e, 'profiles:generate') });
   });
   ipcHandle('profiles:openInVSCode', (e, id: unknown) => {
     if (!fromApp(e)) return { ok: false, error: 'invalid request' }; // spec 045 FR-065: like its siblings
