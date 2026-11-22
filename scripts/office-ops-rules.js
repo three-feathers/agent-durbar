@@ -75,4 +75,24 @@ function judge(rows, limits = LIMITS, known = KNOWN_FAILURES, minimums = MINIMUM
   return { failed, notes };
 }
 
-module.exports = { LIMITS, MINIMUMS, KNOWN_FAILURES, judge, limitOf };
+/* spec 001 delta 2026-11-22 (issue 2043, T456): a status event that leaves the desk's state as it is draws nothing: `setState` (app.js) redraws only a change, and
+   'working' keeps an agent that already works or thinks as it is, 'needs-permission' one that already waits. The driver's "make it work first" step waited for a
+   draw after such an event (sim-4 was already working in every run), so it passed only when an unrelated timer's render fell inside its 8 s (about half the
+   runs). `statusDraws` says whether the event changes the state; `toStatus` waits for a draw only then, and otherwise sends the event and checks the state. */
+const STAYS = { working: ['working', 'thinking'], 'needs-permission': ['waiting'] };
+function statusDraws(state, status) {
+  return !(STAYS[status] || []).includes(state);
+}
+/** `js(code)` runs page code; `drawn(code)` runs it and waits for one more render. Returns true when it waited for a draw. */
+async function toStatus(js, drawn, id, status) {
+  const lit = JSON.stringify(id), stateOf = `(window.__durbarSimUi.agents().find(a=>a.id===${lit})||{}).state`;
+  const action = `window.__durbarSimEmit({type:'status',sessionId:${lit},timestamp:Date.now(),status:${JSON.stringify(status)}})`;
+  const state = await js(stateOf);
+  if (statusDraws(state, status)) { await drawn(action); return true; }
+  await js(action);
+  const after = await js(stateOf);
+  if (after !== state) throw new Error(`${id}: ${status} was to leave its state ${state} as it is, and it is ${after}`);
+  return false;
+}
+
+module.exports = { LIMITS, MINIMUMS, KNOWN_FAILURES, judge, limitOf, statusDraws, toStatus };
