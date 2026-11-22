@@ -300,33 +300,50 @@ function check(modPath, tag, o) {
 }
 
 function ghCases(mod, tag) {
-  if (process.platform === 'win32') return; // the fake gh is a POSIX script
   const dir = path.join(tmp, tag + '-gh'); fs.mkdirSync(dir);
   const repo = path.join(dir, 'repo'); fs.mkdirSync(repo);
   g(repo, 'init', '-b', 'main');
   const commit = (n) => { write(path.join(repo, n), n); g(repo, 'add', '.'); g(repo, 'commit', '-m', n); return g(repo, 'rev-parse', 'HEAD').trim(); };
   const c0 = commit('c0'), c1 = commit('c1'), c2 = commit('c2');
-  const bin = path.join(dir, 'bin'); fs.mkdirSync(bin);
-  fs.writeFileSync(path.join(bin, 'gh'), '#!/usr/bin/env node\nif (process.env.FAKE_GH_MODE === "fail") { process.stderr.write("boom"); process.exit(1); }\nprocess.stdout.write(process.env.FAKE_GH_JSON || "");\n', { mode: 0o755 });
-  const saved = { PATH: process.env.PATH };
-  process.env.PATH = bin + path.delimiter + saved.PATH;
-  const ask = (json, mode) => { process.env.FAKE_GH_JSON = json; process.env.FAKE_GH_MODE = mode || ''; return mod.ghPrState('b', c1, repo); };
+  // The runner is injected: no gh binary, no PATH shim, so this runs the same on Windows. Every case must CALL it once (a never-called fake fails loudly).
+  const calls = [];
+  const ask = (json, fail) => {
+    const before = calls.length;
+    const r = mod.ghPrState('b', c1, repo, (args, cwd) => { calls.push({ args, cwd }); if (fail) throw new Error('boom'); return json; });
+    assert.strictEqual(calls.length, before + 1, tag + ': gh: the fake gh was called exactly once ' + JSON.stringify({ before, after: calls.length }));
+    const a = calls[calls.length - 1].args;
+    assert.ok(a[0] === 'pr' && a[1] === 'list' && a[a.indexOf('--head') + 1] === 'b' && a.includes('--state') && a.includes('state,headRefOid,isCrossRepository'), tag + ': gh: asked for the PRs of the branch with state, head and fork fields ' + JSON.stringify(a));
+    return r;
+  };
   const pr = (state, oid, cross) => ({ state, headRefOid: oid, isCrossRepository: cross === undefined ? false : cross });
+  assert.strictEqual(ask('', true), 'UNKNOWN', tag + ': gh: a gh failure is UNKNOWN');
+  assert.strictEqual(ask('not json'), 'UNKNOWN', tag + ': gh: unreadable output is UNKNOWN');
+  assert.strictEqual(ask('{}'), 'UNKNOWN', tag + ': gh: a non-list answer is UNKNOWN');
+  assert.strictEqual(ask('[]'), 'NONE', tag + ': gh: an empty answer is NONE');
+  assert.strictEqual(ask(JSON.stringify([pr('MERGED', c1)])), 'MERGED', tag + ': gh: a merged PR with this head is MERGED');
+  assert.strictEqual(ask(JSON.stringify([pr('CLOSED', c1)])), 'CLOSED', tag + ': gh: a closed PR with this head is CLOSED');
+  assert.strictEqual(ask(JSON.stringify([pr('MERGED', c1, true)])), 'NONE', tag + ': gh: a fork PR is ignored');
+  assert.strictEqual(ask(JSON.stringify([{ state: 'MERGED', headRefOid: c1 }])), 'NONE', tag + ': gh: a PR without isCrossRepository is ignored');
+  assert.strictEqual(ask(JSON.stringify([pr('MERGED', c0)])), 'NONE', tag + ': gh: a reused branch name (another head) does not match');
+  assert.strictEqual(ask(JSON.stringify([pr('MERGED', c2)])), 'MERGED', tag + ': gh: a PR whose head is a descendant of HEAD matches');
+  assert.strictEqual(ask(JSON.stringify([pr('MERGED', c1), pr('OPEN', c1)])), 'OPEN', tag + ': gh: any open matching PR makes it OPEN');
+  assert.strictEqual(ask(JSON.stringify([pr('WEIRD', c1)])), 'UNKNOWN', tag + ': gh: an odd state is UNKNOWN');
+  // The default runner (the real `gh` found on PATH) on POSIX: a fake gh script that logs every call, first on PATH.
+  if (process.platform === 'win32') return;
+  const bin = path.join(dir, 'bin'); fs.mkdirSync(bin);
+  const log = path.join(dir, 'gh-calls.log');
+  fs.writeFileSync(path.join(bin, 'gh'), '#!/usr/bin/env node\nrequire("fs").appendFileSync(process.env.FAKE_GH_LOG, process.argv.slice(2).join(" ") + "\\n");\nif (process.env.FAKE_GH_MODE === "fail") { process.stderr.write("boom"); process.exit(1); }\nprocess.stdout.write(process.env.FAKE_GH_JSON || "");\n', { mode: 0o755 });
+  const saved = process.env.PATH;
+  process.env.PATH = bin + path.delimiter + saved;
+  process.env.FAKE_GH_LOG = log;
   try {
-    assert.strictEqual(ask('', 'fail'), 'UNKNOWN', tag + ': gh: a gh failure is UNKNOWN');
-    assert.strictEqual(ask('not json'), 'UNKNOWN', tag + ': gh: unreadable output is UNKNOWN');
-    assert.strictEqual(ask('{}'), 'UNKNOWN', tag + ': gh: a non-list answer is UNKNOWN');
-    assert.strictEqual(ask('[]'), 'NONE', tag + ': gh: an empty answer is NONE');
-    assert.strictEqual(ask(JSON.stringify([pr('MERGED', c1)])), 'MERGED', tag + ': gh: a merged PR with this head is MERGED');
-    assert.strictEqual(ask(JSON.stringify([pr('CLOSED', c1)])), 'CLOSED', tag + ': gh: a closed PR with this head is CLOSED');
-    assert.strictEqual(ask(JSON.stringify([pr('MERGED', c1, true)])), 'NONE', tag + ': gh: a fork PR is ignored');
-    assert.strictEqual(ask(JSON.stringify([{ state: 'MERGED', headRefOid: c1 }])), 'NONE', tag + ': gh: a PR without isCrossRepository is ignored');
-    assert.strictEqual(ask(JSON.stringify([pr('MERGED', c0)])), 'NONE', tag + ': gh: a reused branch name (another head) does not match');
-    assert.strictEqual(ask(JSON.stringify([pr('MERGED', c2)])), 'MERGED', tag + ': gh: a PR whose head is a descendant of HEAD matches');
-    assert.strictEqual(ask(JSON.stringify([pr('MERGED', c1), pr('OPEN', c1)])), 'OPEN', tag + ': gh: any open matching PR makes it OPEN');
-    assert.strictEqual(ask(JSON.stringify([pr('WEIRD', c1)])), 'UNKNOWN', tag + ': gh: an odd state is UNKNOWN');
+    process.env.FAKE_GH_JSON = JSON.stringify([pr('MERGED', c1)]); process.env.FAKE_GH_MODE = '';
+    assert.strictEqual(mod.ghPrState('b', c1, repo), 'MERGED', tag + ': gh: the default runner finds gh on PATH');
+    process.env.FAKE_GH_MODE = 'fail';
+    assert.strictEqual(mod.ghPrState('b', c1, repo), 'UNKNOWN', tag + ': gh: the default runner reports a failing gh as UNKNOWN');
+    assert.strictEqual(fs.readFileSync(log, 'utf8').trim().split(/\r?\n/).length, 2, tag + ': gh: the PATH fake gh was called twice');
   } finally {
-    process.env.PATH = saved.PATH; delete process.env.FAKE_GH_JSON; delete process.env.FAKE_GH_MODE;
+    process.env.PATH = saved; delete process.env.FAKE_GH_JSON; delete process.env.FAKE_GH_MODE; delete process.env.FAKE_GH_LOG;
   }
 }
 
@@ -374,6 +391,7 @@ const MUTANTS = [
   ['missing-dropped', 'if (!fs.existsSync(wt.path)) return', 'if (false) return', /missing/],
   ['detached-dropped', 'if (wt.detached || !wt.branch) return', 'if (false) return', /detached/],
   ['main-in-loop', 'for (const wt of all.slice(1))', 'for (const wt of all)', /main checkout is never in the loop/],
+  ['gh-runner-ignored', "out = (runGh || defaultGh)(", "out = (defaultGh)(", /fake gh was called exactly once|called/],
   ['gh-failure-merged', "} catch { return 'UNKNOWN'; }\n  let arr;", "} catch { return 'MERGED'; }\n  let arr;", /gh failure/],
   ['gh-empty-merged', "if (mine.length === 0) return 'NONE';", "if (mine.length === 0) return 'MERGED';", /empty answer/],
   ['gh-fork-counts', "|| x.isCrossRepository !== false) continue;", ') continue;', /fork PR|isCrossRepository/],

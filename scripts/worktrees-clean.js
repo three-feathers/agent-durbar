@@ -122,10 +122,14 @@ function findNestedGit(root) {
  * or UNKNOWN (gh missing, failed or unreadable). Only PRs of THIS repository count (a fork PR can share the branch name) and only those whose
  * headRefOid is the worktree's HEAD, or a descendant of it (the PR got more commits): a reused branch name does not match.
  */
-function ghPrState(branch, headSha, cwd) {
+function defaultGh(args, cwd) {
+  return execFileSync('gh', args, { cwd, encoding: 'utf8', timeout: GIT_TIMEOUT_MS, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
+}
+// runGh(args, cwd) -> stdout text, or throws: injectable so a test runs on every OS without a gh binary or a PATH shim.
+function ghPrState(branch, headSha, cwd, runGh) {
   let out;
   try {
-    out = execFileSync('gh', ['pr', 'list', '--head', branch, '--state', 'all', '--json', 'state,headRefOid,isCrossRepository', '--limit', '30'], { cwd, encoding: 'utf8', timeout: GIT_TIMEOUT_MS, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
+    out = (runGh || defaultGh)(['pr', 'list', '--head', branch, '--state', 'all', '--json', 'state,headRefOid,isCrossRepository', '--limit', '30'], cwd);
   } catch { return 'UNKNOWN'; }
   let arr;
   try { arr = JSON.parse(out); } catch { return 'UNKNOWN'; }
