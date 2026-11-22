@@ -211,7 +211,7 @@
      their own widths; the `places` other tiles share the rest. Start from the preferred widths and shrink the special tiles together,
      proportionally, toward their minimums until every other tile is at least TILE_MIN (two initials entries) wide. Returns
      {boss, coffee, bank, post: {width, named, chips} | null, tile, caps} (caps = the other tiles' entry capacity). */
-  const SPECIAL_W={boss:[230,190],coffee:[160,96],bank:[130,96],post:[280,180]}, TILE_MIN=118, COFFEE_NAMED=148, POST_NAMED=240;
+  const SPECIAL_W={boss:[230,190],coffee:[160,96],bank:[130,96],post:[280,180]}, TILE_MIN=118, COFFEE_NAMED=148, POST_NAMED=180, POST_LONG=240; /* spec 001 FR-039 (issue 2014): the Postbox shows its name from its minimum width (180); the folder in its lines from 240 */
   /* issue #737 (spec 001 FR-189): below the minimums above (a window under about 1000 px wide) the four shrink further, toward SPECIAL_HARD, only until
      the other places are TILE_FLOOR wide (icon and a 22 px "+N" circle between 2 px of padding and the border). A place under PLACE_NAMED shows its icon
      only (its name stays in the tooltip and the label); the Bank does under BANK_NAMED, and the Boss drops the wait from its header under BOSS_WAIT (the wait stays in its tooltip and label). Wide enough windows never reach this: the widths above are unchanged. */
@@ -230,7 +230,7 @@
       tile=Math.max(0,(avail-keys.reduce((t,k)=>t+w[k],0))/n);
     }
     const box=(k,named)=>w[k]===undefined?null:{width:w[k],named,chips:chipsIn(w[k])};
-    return {boss:w.boss===undefined?null:{...box('boss',true),wait:w.boss>=BOSS_WAIT},coffee:box('coffee',w.coffee>=COFFEE_NAMED),bank:box('bank',w.bank>=BANK_NAMED),post:box('post',w.post>=POST_NAMED),tile,tileNamed:tile>=PLACE_NAMED,caps:chipsIn(tile)};
+    return {boss:w.boss===undefined?null:{...box('boss',true),wait:w.boss>=BOSS_WAIT},coffee:box('coffee',w.coffee>=COFFEE_NAMED),bank:box('bank',w.bank>=BANK_NAMED),post:w.post===undefined?null:{...box('post',w.post>=POST_NAMED),long:w.post>=POST_LONG},tile,tileNamed:tile>=PLACE_NAMED,caps:chipsIn(tile)};
   }
   /* Spec 001 FR-039: the lobby's tile order: the places, the Boss inserted at the middle of the whole row, then the coffee corner, the Bank
      and the Postbox (when shown). `ids` = the places' ids in their order. */

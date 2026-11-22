@@ -1431,7 +1431,7 @@
         if (pick || k > g.length - 2) continue;
         c.dataset.full = nm; text(n, g.slice(0, k).join('') + '\u2026'); pick = best() || withPush();
       }
-      if (!pick) { const w = c.getBoundingClientRect().width, l = x0 - w / 2; let dx = 0; for (let i = 0; i < 40; i++) { const hl = hitList(l + dx, l + dx + w, base); if (!hl.length) break; dx = Math.max(...hl.map(([, b]) => b)) + 2 - l; } pick = { t: base, dx, l, w }; }
+      if (!pick) { if (c.dataset.full) { text(n, c.dataset.full); delete c.dataset.full; } /* spec 097 FR-023 (issue 2012): no spot even for a short form: the whole name, slid right, not "Ro…" for "Rosa" */ const w = c.getBoundingClientRect().width, l = x0 - w / 2; let dx = 0; for (let i = 0; i < 40; i++) { const hl = hitList(l + dx, l + dx + w, base); if (!hl.length) break; dx = Math.max(...hl.map(([, b]) => b)) + 2 - l; } pick = { t: base, dx, l, w }; }
       const ent = [pick.l + pick.dx, pick.l + pick.dx + pick.w, pick.t, pick.t + h];
       placed.push(ent); chipsPlaced.push({ c, l: pick.l + pick.dx, w: pick.w, t: pick.t, h, x0, ent });
       c.style.top = px(pick.t); c.style.left = px(x0 + pick.dx); c._w = pick.w;
