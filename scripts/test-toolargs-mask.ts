@@ -10,6 +10,8 @@ import { createRequire } from 'module';
 import * as R from '../src/shared/redact';
 import { ARGS_CHARS_MAX, ARGS_NODES_MAX, ARGS_STRINGS_MAX, _toolArgsWorkForTest, createToolArgsMasker, maskMcpEvent, maskToolArgs } from '../src/main/mcpmask';
 import { BrainMask, brainState, currentStep, initBrain } from '../src/shared/brainstate';
+import './safetext-shared';
+import * as vm from 'vm';
 import type { AgentEvent } from '../src/adapters/types';
 
 let n = 0;
@@ -47,6 +49,7 @@ const HARMLESS: unknown[] = [
   { todos: [{ content: 'Write the test', status: 'pending' }, { content: 'Run it', status: 'done' }] },
   { old_string: 'const a = 1;\n', new_string: 'const a = 2;\n', replace_all: false },
   { flag: true, n: 0, nothing: null, list: [] },
+  { command: 'npm test \\\n  --verbose \\\n  --watch=false' },
   'just a string argument',
   ['ls', '-la'],
   { nested: { deeper: { list: ['a', 'b', { c: 'd' }] } } },
@@ -131,12 +134,13 @@ ok('CATCH: a failure inside the walk fails closed', () => {
   const evil = { command: 'echo hi', get boom(): string { throw new Error('boom'); } };
   assert.strictEqual(maskToolArgs(evil), '[redacted]', 'CATCH a throwing argument gives the mask, not the arguments');
 });
-ok('WRITE-12K: a normal file write passes unchanged within the budget', () => {
+ok('WRITE-CONTENT: file content next to its path is sent empty without being read; the path is kept', () => {
   const content = 'const x = 1;\n'.repeat(Math.floor(R.MASK_INPUT_MAX / 13));
-  const a = { file_path: 'src/a.ts', content };
-  assert.deepStrictEqual(maskToolArgs(a), a, 'WRITE-12K unchanged');
+  assert.deepStrictEqual(maskToolArgs({ file_path: 'src/a.ts', content }), { file_path: 'src/a.ts', content: '' }, 'WRITE-CONTENT the content is empty, the path kept');
   const w = _toolArgsWorkForTest();
-  assert.ok(w.strings === 2 && w.chars === content.length + 'src/a.ts'.length, `WRITE-12K work ${JSON.stringify(w)}`);
+  assert.ok(w.readings === 1 && w.chars === 'src/a.ts'.length, `WRITE-CONTENT only the path was read ${JSON.stringify(w)}`);
+  assert.deepStrictEqual(maskToolArgs({ path: 'b.ts', old_string: 'a', new_string: 'b' }), { path: 'b.ts', old_string: '', new_string: '' }, 'WRITE-CONTENT an edit\'s texts are empty');
+  assert.deepStrictEqual(maskToolArgs({ content: 'no path here' }), { content: 'no path here' }, 'WRITE-CONTENT without a path the content is read as any string');
 });
 ok('BUDGET: large arguments stop at a fixed work cap and become the mask', () => {
   const nest = (d: number): unknown => (d ? Object.fromEntries(Array.from({ length: 6 }, (_, i) => ['k' + i, nest(d - 1)])) : 'leaf');
@@ -147,6 +151,7 @@ ok('BUDGET: large arguments stop at a fixed work cap and become the mask', () =>
     ['1000 x 12k strings', { a: Array.from({ length: 1000 }, () => 'echo hello world '.repeat(700)) }],
     ['6 keys x 7 levels', nest(7)],
     ['10k numbers', { a: Array.from({ length: 10_000 }, (_, i) => i) }],
+    ['a list read twice', { command: ['a '.repeat(3500), 'b '.repeat(3500)] }],
     ['10 x 12k strings', { a: Array.from({ length: 10 }, () => 'echo hello world '.repeat(700)) }],
     ['600 short strings', { a: Array.from({ length: 30 }, () => Object.fromEntries(Array.from({ length: 20 }, (_, i) => ['k' + i, 'v' + i]))) }],
   ];
@@ -154,7 +159,8 @@ ok('BUDGET: large arguments stop at a fixed work cap and become the mask', () =>
     const m = maskToolArgs(a);
     const w = _toolArgsWorkForTest();
     assert.strictEqual(m, '[redacted]', `BUDGET ${name}: replaced by the mask`);
-    assert.ok(w.nodes <= ARGS_NODES_MAX && w.strings <= ARGS_STRINGS_MAX && w.chars <= ARGS_CHARS_MAX, `BUDGET ${name}: work within the caps ${JSON.stringify(w)}`);
+    assert.ok(w.nodes <= ARGS_NODES_MAX && w.strings <= ARGS_STRINGS_MAX && w.chars <= ARGS_CHARS_MAX, `BUDGET ${name}: counted within the caps ${JSON.stringify(w)}`);
+    assert.strictEqual(w.readings, 0, `BUDGET-NOREAD ${name}: nothing was masked before the budget said no`);
   }
 });
 ok('REPEAT: main masks an arguments object once and an over-budget call once', () => {
@@ -196,9 +202,10 @@ ok('VALUES-READINGS: the command reading gets the session values replaced too', 
   const m = maskToolArgs({ command: `echo alpha, beta and gamma7: ${V} --token x` }, [V]) as { command: string };
   assert.ok(!m.command.includes(V), `VALUES-READINGS the value does not show: ${m.command}`);
 });
-ok('QUOTE: a masked header keeps its quotes, one mask', () => {
+ok('QUOTE: a masked header value is one mask in place, the rest of the command as written', () => {
   const input = 'curl --header "Accept: text/html" https://example.com';
-  assert.strictEqual((maskToolArgs({ command: input }) as { command: string }).command, R.maskSecretCommand(input), 'QUOTE the command reading as it is');
+  const out = (maskToolArgs({ command: input }) as { command: string }).command;
+  assert.strictEqual(out, 'curl --header "Accept: [redacted] https://example.com', `QUOTE the piece the command reading hides is masked in place: ${out}`);
 });
 ok('VALUES-SHORT: session values under 4 characters mask nothing', () => {
   const a = { command: 'ls -la src', description: 'list it' };
@@ -212,6 +219,107 @@ ok('JSON SHAPES: own __proto__ key, mixed lists, non-JSON objects', () => {
   assert.strictEqual(Object.getPrototypeOf(m), Object.prototype, 'PROTO the copy is a plain object');
   assert.deepStrictEqual(leaks(maskToolArgs({ command: ['mysql', '--password', PW, 1] })), [], 'MIXED-LIST the words of a mixed list are read whole');
   assert.strictEqual((maskToolArgs({ x: new Map([['k', `token ${GH}`]]) }) as { x: unknown }).x, '[redacted]', 'NONJSON a Map is the mask');
+});
+
+// ---- round 4 of the review: union by content on the text as written, no flattening, the window's surfaces
+// the page's own masking path, cut out of app.js and run with the compiled shared mask (the window as on main: it masks the raw arguments itself)
+const R_DIR = path.join(__dirname, '..', '..', 'src', 'renderer');
+const APP = fs.readFileSync(path.join(R_DIR, 'app.js'), 'utf8').replace(/\r\n/g, '\n').split('\n');
+const one = (head: string): string => { const ls = APP.filter((l) => l.startsWith(head)); assert.strictEqual(ls.length, 1, `app.js has one line ${head}`); return ls[0]; };
+const upto = (head: string, end: (l: string) => boolean): string => { const i = APP.findIndex((l) => l.startsWith(head)); assert.ok(i >= 0, head); let j = i; while (!end(APP[j])) j++; return APP.slice(i, j + 1).join('\n'); };
+const PAGE = [one('const SHORT='), one('const RED='), one('const STX='), one('const SAFE='), one('const safeExcerpt='), one('const deskMask='), one('const homeMask='), one('const helperMask='),
+  one('const TOOLMASK='), one('const safeToolLabel='), one('const toolArg='), one('function toolLabel('), upto('const toolKind=', (l) => l.endsWith("return 'tool';};")), one('const OUT_SHOWN='),
+  one('let CHIP_MASKS='), upto('function chipArg(', (l) => l === '}'), one('const editLabel='), one('const chipArgs='), upto('const LIVE_MASK=', (l) => l.endsWith('})();'))].join('\n');
+const LIVE = require(path.join(R_DIR, 'liveact.js'));
+const win = vm.createContext({ window: { DurbarRedact: R, DurbarSafeText: require(path.join(R_DIR, 'safetext.js')), DurbarLiveAct: LIVE }, DurbarCutText: require(path.join(R_DIR, 'cuttext.js')), NO_REDACT: false });
+vm.runInContext(PAGE + '\nthis.P={chipArgs,safeToolLabel,toolLabel,toolKind,helperMask,safeExcerpt,homeMask,LIVE_MASK};', win);
+type Page = { chipArgs(e: unknown): { label: string; full: string }; safeToolLabel(t: string, l: string, n: number): string; toolLabel(a: unknown): string; toolKind(t: string): string;
+  helperMask(t: string): string; safeExcerpt(t: string, n: number, fb?: string): string; homeMask(t: string): string; LIVE_MASK: unknown };
+const P = (win as unknown as { P: Page }).P;
+const BMASK: BrainMask = { ...R } as unknown as BrainMask;
+const SURFACES: Record<string, (tool: string, a: unknown) => string> = {
+  chip: (tool, a) => { const c = P.chipArgs({ tool, args: a }); return c.label + '\n' + c.full; },
+  task: (tool, a) => P.safeToolLabel(tool, P.toolLabel(a), 400),
+  helper: (_tool, a) => { const g = (a && typeof a === 'object' ? a : {}) as Record<string, unknown>; return [g.description, g.prompt].map((x) => (x ? P.helperMask(String(x)) + '\n' + P.safeExcerpt(P.homeMask(String(x)), 90, '') : '')).join('\n'); },
+  desk: (tool, a) => LIVE.phrase({ kind: P.toolKind(tool), tool, label: P.toolLabel(a) }, P.LIVE_MASK),
+  brain: (tool, a) => { const st = currentStep(brainState(initBrain('Ada', BMASK), { type: 'toolCall', sessionId: 's', callId: 'c', tool, phase: 'start', args: a }, 1_000, BMASK)); return st ? st.target : ''; },
+};
+const strings = (v: unknown): string[] => (typeof v === 'string' ? [v] : v && typeof v === 'object' ? Object.values(v as object).flatMap(strings) : []);
+/** Words of the raw arguments a surface hides on main (the window masking the raw arguments) that it shows on the masked copy. */
+function shownAgain(tool: string, a: unknown, values: string[] = []): string[] {
+  const m = maskToolArgs(a, values);
+  const words = [...new Set(strings(a).flatMap((x) => x.match(/[A-Za-z0-9_]{4,}/g) ?? []))].filter((x) => x !== 'redacted');
+  const out: string[] = [];
+  for (const [name, f] of Object.entries(SURFACES)) {
+    const raw = f(tool, a), masked = f(tool, m);
+    for (const x of words) if (!raw.includes(x) && masked.includes(x)) out.push(`${name}:${x.slice(0, 3)}…`);
+  }
+  return out;
+}
+const A1 = ['Hq4W', 'n7Ks2', 'Pd9Lm', '3Xc5Ty'].join('');
+const B1 = ['Bz8N', 'v6Mc4', 'Lk2Jh', '0Gf'].join('');
+const V1 = ['Ws5', 'Kd8Rn', '3Tq'].join('');
+const PRES = [['--pass', 'word=', A1].join(''), ['tok', 'en ', A1].join('')];
+const GAPS = ['^\r\n', ' `\n', '\n', ' \\\n'];
+ok('F1-HELPER: a description the helper card masks on the raw text stays masked after main', () => {
+  for (const pre of PRES) for (const g of GAPS) {
+    const d = pre + g + '-p' + B1;
+    const m = maskToolArgs({ prompt: 'p', description: d }) as { description: string };
+    if (!P.helperMask(d).includes(B1)) assert.ok(!P.helperMask(m.description).includes(B1), `F1-HELPER ${JSON.stringify(g)}: the helper card hides the value as on main`);
+    assert.ok(m.description.split(/\r\n|\n|\r/).length === d.split(/\r\n|\n|\r/).length, `F1-LINES ${JSON.stringify(g)}: main keeps the line structure`);
+  }
+});
+ok('F1-BRAIN: a word list the Brain dock masks on the raw text stays masked after main', () => {
+  const a = { query: ['-p', ['x --sec', 'ret \\\n  '].join('') + V1] };
+  assert.ok(!SURFACES.brain('web_fetch', a).includes(V1), 'the Brain dock hides the value on the raw arguments (main)');
+  assert.ok(!SURFACES.brain('web_fetch', maskToolArgs(a)).includes(V1), 'F1-BRAIN the Brain dock hides the value after main too');
+});
+ok('F2-LIST: word lists are read whole on the original words, merged by content', () => {
+  const cases: Array<[string, unknown]> = [
+    ['grep', { query: [['--tok', 'en'].join(''), ['a --sec', 'ret \\\n  '].join('') + V1] }],
+    ['bash', { command: [['--tok', 'en'].join(''), 'a \\\n b ' + V1] }],
+    ['bash', { command: ['mysql', ['--pass', 'word'].join(''), '[redacted] ' + V1] }],
+  ];
+  for (const [tool, a] of cases) assert.ok(!JSON.stringify(maskToolArgs(a)).includes(V1), `F2-LIST ${tool}: the value does not reach the window`);
+});
+ok('UNION: a value one reading hides and another value a second reading hides are both hidden', () => {
+  const W = ['plain', 'wordy', 'x'].join('');
+  const m = JSON.stringify(maskToolArgs({ prompt: `[https://h.example/x?session=${W}] mysql --password ${PW}` }));
+  assert.ok(!m.includes(W), 'UNION-URL the URL reading\'s value hidden next to a command');
+  assert.ok(!m.includes(PW), 'UNION-COMMAND the command reading\'s value hidden next to a URL');
+  const md = ['**', GH.slice(0, 4), '**', GH.slice(4)].join('');
+  const m2 = JSON.stringify(maskToolArgs({ prompt: `${md} [https://h.example/x?session=${W}]` }));
+  assert.ok(!m2.includes(GH.slice(4, 14)) && !m2.includes(W), 'UNION-NOTE what only the note mask hides stays hidden next to a URL');
+});
+ok('DIFF: no word a window surface hides on the raw arguments shows on the masked copy', () => {
+  const corpus: Array<[string, unknown, string[]]> = [];
+  for (const pre of PRES) for (const g of GAPS) corpus.push(['task', { prompt: 'p', description: pre + g + '-p' + B1 }, []]);
+  for (const tool of ['bash', 'web_fetch', 'grep', 'view']) {
+    corpus.push([tool, { query: ['-p', ['x --sec', 'ret \\\n  '].join('') + V1] }, []]);
+    corpus.push([tool, { command: [['--tok', 'en'].join(''), 'a \\\n b ' + V1] }, []]);
+    corpus.push([tool, { command: ['mysql', ['--pass', 'word'].join(''), '[redacted] ' + V1] }, []]);
+    for (const [, a] of SECRET_ARGS) corpus.push([tool, a, [SESSION]]);
+  }
+  const bad: string[] = [];
+  for (const [tool, a, vals] of corpus) for (const x of shownAgain(tool, a, vals)) bad.push(`${tool} ${x}`);
+  assert.deepStrictEqual(bad, [], 'DIFF words hidden on main shown again');
+});
+ok('OVER-LIMIT-PLUS1: a string one character over the limit arrives empty', () => {
+  assert.deepStrictEqual(maskToolArgs({ query: 'c'.repeat(R.MASK_INPUT_MAX + 1) }), { query: '' }, 'OVER-LIMIT-PLUS1 empty');
+});
+ok('OVER-CALLID: an over-budget call does not over-mask the session\'s later calls', () => {
+  const mk = createToolArgsMasker();
+  const big = ev('start', 'bash', { a: Array.from({ length: 10_000 }, (_, i) => 'w' + i) });
+  assert.strictEqual(mk(big, []), '[redacted]', 'OVER-CALLID the big call is the mask');
+  const next = { ...(ev('start', 'bash', { command: 'npm test' }) as object), callId: 'c9' } as AgentEvent;
+  assert.deepStrictEqual(mk(next, []), { command: 'npm test' }, 'OVER-CALLID a later call of the session is masked as usual');
+});
+ok('REPEAT-STRINGS: an update repeating a long string of the start does not read it again', () => {
+  const mk = createToolArgsMasker();
+  const long = 'echo ' + 'plain words '.repeat(100);
+  mk(ev('start', 'bash', { command: long }), []);
+  mk(ev('update', 'bash', { command: long, description: 'x' }), []);
+  assert.strictEqual(_toolArgsWorkForTest().readings, 1, 'REPEAT-STRINGS only the new short string was read');
 });
 
 // ---- the wire: maskMcpEvent (main's `outward`) masks the arguments of a start and an update, MCP or not

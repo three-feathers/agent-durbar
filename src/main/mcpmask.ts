@@ -160,23 +160,24 @@ export function maskEditInfo(edit: EditInfo, values: readonly string[] = []): Ed
 const ARGS_DEPTH = 8;
 const ARGS_MASK = '[redacted]';
 /**
- * Spec 005 FR-342 (main half): the work one `maskToolArgs` call may do (review of #2002): array elements and object keys visited, strings masked, and
- * characters given to the masks (a word list's characters count again for its whole reading). Past any of them the call stops and the arguments are
- * replaced by the mask whole (fail closed), so the time is bounded whatever the arguments hold. A file write of `MASK_INPUT_MAX` characters fits.
+ * Spec 005 FR-342 (main half): the work one `maskToolArgs` call may do (review of #2002): array elements and object keys, strings to mask, and characters
+ * given to the masks (a word list's characters count again for its whole reading). A first pass counts them without masking anything; past any limit the
+ * arguments are replaced by the mask whole (fail closed) with no masking work done, so the time is bounded whatever the arguments hold.
  */
 export const ARGS_NODES_MAX = 4096;
 export const ARGS_STRINGS_MAX = 256;
-export const ARGS_CHARS_MAX = 4 * MASK_INPUT_MAX;
-interface ArgsWork { nodes: number; strings: number; chars: number }
+export const ARGS_CHARS_MAX = 2 * MASK_INPUT_MAX;
+/** `readings`: strings actually read by the masks (a string the masker already read for this call is not read again). */
+interface ArgsWork { nodes: number; strings: number; chars: number; readings: number }
 class OverBudget extends Error {}
-let lastWork: ArgsWork = { nodes: 0, strings: 0, chars: 0 };
+const noWork = (): ArgsWork => ({ nodes: 0, strings: 0, chars: 0, readings: 0 });
+let lastWork: ArgsWork = noWork();
 /** Test only: the work counters of the last `maskToolArgs` call. */
 export const _toolArgsWorkForTest = (): ArgsWork => ({ ...lastWork });
-/* each counter is checked before it grows, so it never passes its cap: the counters are the work done */
+/* each counter is checked before it grows, so it never passes its limit */
 const spendNodes = (w: ArgsWork, k: number): void => { if (w.nodes + k > ARGS_NODES_MAX) throw new OverBudget(); w.nodes += k; };
 const spendChars = (w: ArgsWork, k: number): void => { if (w.chars + k > ARGS_CHARS_MAX) throw new OverBudget(); w.chars += k; };
-/** Masks (and failed masks) in a text: a reading "hides more" when it has more of them. */
-const maskCount = (s: string): number => (s.match(/\[redact/g) ?? []).length;
+const spendString = (w: ArgsWork): void => { if (w.strings + 1 > ARGS_STRINGS_MAX) throw new OverBudget(); w.strings++; };
 /**
  * The masks' input limit (review of #2002, round 3): the command and word-list readings do not take a string longer than `MASK_INPUT_MAX`, so such a
  * string cannot be masked whole; it is sent empty (what the chip on main showed for an over-limit argument without a blank), never cut: a piece cut
@@ -184,72 +185,95 @@ const maskCount = (s: string): number => (s.match(/\[redact/g) ?? []).length;
  */
 const overLimit = (s: string): boolean => s.length > MASK_INPUT_MAX;
 /**
- * One string of a call's arguments: `maskNoteText` with the session values (line breaks kept), the command reading and, for a URL, the URL reading.
- * Nothing hidden by any reading: the string as written. Else the masked text; when the command or URL reading hides more than the note mask, that
- * reading's text with nothing shown that another reading hides or that the text did not hold (`keepShownWithin`, one line: the command mask reads words).
+ * File content next to the file's path (a write's or an edit's text): no window surface shows it (the chip, the task line and the desk read the path, the
+ * edit card reads `edit`, masked on its own, FR-024), so it is sent empty without being read (review of #2002, round 4: the cost of a write or an edit).
  */
-function maskArgText(raw: string, values: readonly string[], w: ArgsWork): string {
-  if (w.strings + 1 > ARGS_STRINGS_MAX) throw new OverBudget();
-  w.strings++;
-  if (overLimit(raw)) return '';
-  const s = raw;
-  spendChars(w, s.length);
-  if (!s) return s;
-  const n = maskNoteText(s, values).text;
-  // the command and URL readings run on the text as written (one reading's quirk cannot hide a value from the other), with the session values
-  // already replaced (they do not know them)
-  let sv = s;
-  for (const v of values) if (typeof v === 'string' && v.length >= 4 && sv.includes(v)) sv = sv.split(v).join(ARGS_MASK);
-  const base = maskCount(sv);
-  let out = n;
-  const flat = (x: string): string => x.replace(/\s+/g, ' ').trim();
-  const c = maskSecretCommand(sv);
-  if (maskCount(c) > base) out = keepShownWithin(c, flat(n));
-  if (/:\/\//.test(sv)) {
-    const u = maskSecretUrl(sv);
-    if (maskCount(u) > base) out = keepShownWithin(out === n ? u : out, flat(out === n ? n : u));
-  }
-  return out;
-}
+const CONTENT_KEYS = new Set(['content', 'file_text', 'old_string', 'new_string', 'old_str', 'new_str', 'new_source']);
+const hasPath = (o: Record<string, unknown>): boolean => (typeof o.path === 'string' && o.path !== '') || (typeof o.file_path === 'string' && o.file_path !== '');
+const skippedContent = (o: Record<string, unknown>, k: string): boolean => CONTENT_KEYS.has(k) && typeof o[k] === 'string' && hasPath(o);
 /** A plain JSON-like object (what an adapter parses); anything else (a Map, a Date, a class instance) is replaced by the mask. */
 const plainObject = (v: object): boolean => { const p = Object.getPrototypeOf(v); return p === Object.prototype || p === null; };
-function maskArgValue(v: unknown, values: readonly string[], depth: number, w: ArgsWork): unknown {
-  if (typeof v === 'string') return maskArgText(v, values, w);
+const ownKeys = (o: object): string[] => { const ks: string[] = []; for (const k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ks.push(k); return ks; };
+
+/** The first pass: the work the masking will do, counted against the limits; nothing is masked. Throws `OverBudget` past a limit. */
+function scanArgs(v: unknown, depth: number, w: ArgsWork): void {
+  if (typeof v === 'string') { spendString(w); if (!overLimit(v)) spendChars(w, v.length); return; }
+  if (v === null || typeof v !== 'object' || depth >= ARGS_DEPTH) return;
+  if (Array.isArray(v)) {
+    spendNodes(w, v.length); // before the walk: a huge list stops here
+    for (const x of v) scanArgs(x, depth + 1, w);
+    for (const x of v) if (typeof x === 'string' && !overLimit(x)) spendChars(w, x.length); // the list's whole reading
+    return;
+  }
+  if (!plainObject(v)) return;
+  for (const k of ownKeys(v)) {
+    spendNodes(w, 1);
+    const o = v as Record<string, unknown>;
+    if (skippedContent(o, k)) spendString(w);
+    else scanArgs(o[k], depth + 1, w);
+  }
+}
+
+type ReadCache = Map<string, string>;
+const READ_CACHE_MAX = 64;
+/**
+ * One string of a call's arguments, read by every mask on the text AS WRITTEN (review of #2002, round 4): `maskNoteText` with the session values (line
+ * breaks kept), the command reading (`maskSecretCommand`) and, for a URL, the URL reading, both on the text as written (they do not know
+ * the session values; the note mask's own masks of them are kept). The result is the note mask's text, line structure kept, with every piece another reading hides masked too (`keepShownWithin`): what is hidden
+ * is the union of what each reading hides, decided by content, never by counting masks, and the masked text is never flattened, so a mask in the window
+ * reads the same lines as on the raw text. Nothing hidden by any reading: the string as written.
+ */
+function readArgText(s: string, values: readonly string[], w: ArgsWork, cache?: ReadCache): string {
+  if (!s) return s;
+  const key = cache && s.length >= 256 ? `${values.join('\u0001')}\u0000${s}` : '';
+  if (key && cache!.has(key)) return cache!.get(key)!;
+  w.readings++;
+  let out = maskNoteText(s, values).text;
+  if (out.trim() !== ARGS_MASK) { // the note mask hid the whole value: no other reading can hide more
+    // the session values: the note mask hides each of them and keeps those masks, so the other readings need not know them
+    const readings: Array<(t: string) => string> = [(t) => maskSecretCommand(t), ...(/:\/\//.test(s) ? [(t: string) => maskSecretUrl(t)] : [])];
+    for (const read of readings) out = keepShownWithin(out, read(s));
+  }
+  if (key) { cache!.set(key, out); if (cache!.size > READ_CACHE_MAX) cache!.delete(cache!.keys().next().value as string); }
+  return out;
+}
+function maskArgValue(v: unknown, values: readonly string[], depth: number, w: ArgsWork, cache?: ReadCache): unknown {
+  if (typeof v === 'string') return overLimit(v) ? '' : readArgText(v, values, w, cache);
   if (v === null || typeof v !== 'object') return v;
   if (depth >= ARGS_DEPTH) return ARGS_MASK;
   if (Array.isArray(v)) {
-    spendNodes(w, v.length); // before the walk: a huge list stops here
-    const out: unknown[] = [];
-    for (let i = 0; i < v.length; i++) out.push(maskArgValue(v[i], values, depth + 1, w));
-    // the strings of a list (a command as words) also read whole, so a word secret only because of the word before it is masked
-    const at = out.flatMap((x, i) => (typeof x === 'string' ? [i] : []));
+    const out: unknown[] = v.map((x) => maskArgValue(x, values, depth + 1, w, cache));
+    // the strings of a list (a command as words) also read whole, on the ORIGINAL words (session values replaced): a word secret only because of the
+    // word before it is masked; merged per word by content (`keepShownWithin`), never by counting masks (the session values stay masked: each word's own
+    // reading masked them)
+    const at = v.flatMap((x, i) => (typeof x === 'string' && !overLimit(x) ? [i] : []));
     if (at.length) {
-      const words = at.map((i) => out[i] as string);
-      spendChars(w, words.reduce((k, x) => k + x.length, 0));
+      const words = at.map((i) => v[i] as string);
       const whole = maskSecretArgs(words);
-      at.forEach((i, j) => { if (typeof whole[j] === 'string' && maskCount(whole[j]) > maskCount(words[j])) out[i] = whole[j]; });
+      at.forEach((i, j) => { out[i] = typeof whole[j] === 'string' ? keepShownWithin(out[i] as string, whole[j]) : ARGS_MASK; });
     }
     return out;
   }
   if (!plainObject(v)) return ARGS_MASK;
   const out: Record<string, unknown> = {};
-  for (const k in v) {
-    if (!Object.prototype.hasOwnProperty.call(v, k)) continue;
-    spendNodes(w, 1);
+  const o = v as Record<string, unknown>;
+  for (const k of ownKeys(v)) {
     // defineProperty: an own `__proto__` key (JSON.parse makes one) stays a key, not the copy's prototype
-    Object.defineProperty(out, k, { value: maskArgValue((v as Record<string, unknown>)[k], values, depth + 1, w), enumerable: true, writable: true, configurable: true });
+    Object.defineProperty(out, k, { value: skippedContent(o, k) ? '' : maskArgValue(o[k], values, depth + 1, w, cache), enumerable: true, writable: true, configurable: true });
   }
   return out;
 }
 /**
  * Spec 005 FR-342 (main half, issue #1975): a tool call's arguments as the window may hold them, masked in main as well as in the window (defence in
- * depth). Same shape; keys kept; a string up to `MASK_INPUT_MAX` characters that no mask hides anything in is the same string, a longer one is ''. Composes the shared masks
- * only (FR-031). Bounded work (`ARGS_*_MAX`). Never throws: over the budget, or on any failure, the arguments are replaced by the mask.
+ * depth). Same shape; keys kept; a string up to `MASK_INPUT_MAX` characters that no mask hides anything in is the same string, a longer one is '', file
+ * content next to its path is ''. Composes the shared masks only (FR-031). Bounded work (`ARGS_*_MAX`, counted before any masking). Never throws: over
+ * the budget, or on any failure, the arguments are replaced by the mask. `cache`: main's masker, so a string already read for the call is not read again.
  */
-export function maskToolArgs(args: unknown, values: readonly string[] = []): unknown {
-  const w: ArgsWork = { nodes: 0, strings: 0, chars: 0 };
+export function maskToolArgs(args: unknown, values: readonly string[] = [], cache?: ReadCache): unknown {
+  const w = noWork();
   try {
-    return maskArgValue(args, values, 0, w);
+    scanArgs(args, 0, w);
+    return maskArgValue(args, values, 0, w, cache);
   } catch {
     return ARGS_MASK;
   } finally {
@@ -261,12 +285,13 @@ export function maskToolArgs(args: unknown, values: readonly string[] = []): unk
 const OVER_CALLS_MAX = 1024;
 /**
  * Spec 005 FR-342 (main half, review of #2002): `maskToolArgs` for main's `outward`, so repeated events do not repeat the cost. The same arguments object
- * (the window and the debug log both take one event) is masked once; a call (session and call id) whose arguments went over the budget gets the
- * mask for every later event without any work, until it completes or fails.
+ * (the window and the debug log both take one event) is masked once; a string already read (an update repeats the start's strings) is not read again;
+ * a call (session and call id) whose arguments went over the budget gets the mask for every later event without any work, until it completes or fails.
  */
 export function createToolArgsMasker(): (e: AgentEvent, values: readonly string[]) => unknown {
   const seen = new WeakMap<object, unknown>();
   const over = new Set<string>();
+  const cache: ReadCache = new Map();
   return (e, values) => {
     if (e.type !== 'toolCall') return undefined;
     const key = `${e.sessionId}\u0000${e.callId}`;
@@ -275,7 +300,7 @@ export function createToolArgsMasker(): (e: AgentEvent, values: readonly string[
       if (over.has(key)) return ARGS_MASK;
       const a = e.args;
       if (a !== null && typeof a === 'object' && seen.has(a)) return seen.get(a);
-      const m = maskToolArgs(a, values);
+      const m = maskToolArgs(a, values, cache);
       if (m === ARGS_MASK && a !== ARGS_MASK && !ended) {
         over.add(key);
         if (over.size > OVER_CALLS_MAX) over.delete(over.values().next().value as string);
