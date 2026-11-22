@@ -2755,11 +2755,14 @@ export function withoutContinuation<T>(fn: () => T): T {
   try { return fn(); } finally { contOff = false; }
 }
 let contWork = 0;
+let contScan = 0;
 let contPasses = 0;
 /** Spec 012 FR-190: how many texts the continuation reading hid something in (the callers' reference reading without it is then needed, as `shellReads`). */
 let contReads = 0;
 /** Test only (spec 012 FR-190): characters the continuation reading has read since the last call (its scan, the run checks and its copy). */
 export function _contWorkForTest(): number { const n = contWork; contWork = 0; return n; }
+/** Test only (spec 012 FR-190, review of PR 2001): the characters the middle-line scan has read since the last call (each character of a text at most once; also in `_contWorkForTest`). */
+export function _contScanForTest(): number { const n = contScan; contScan = 0; return n; }
 /** Test only (spec 012 FR-190): the mask passes the continuation reading has run since the last call (at most one per text). */
 export function _contPassesForTest(): number { const n = contPasses; contPasses = 0; return n; }
 /**
@@ -2796,10 +2799,12 @@ function contSpans(s: string, mask: string, written: () => ReadonlyArray<[number
     let mid = false;
     if (prevEnd >= 0) {
       if (scanAt < prevEnd) scanAt = prevEnd;
-      for (; scanAt < a; scanAt++) { contWork++; if (!BODY_CHAR.test(s[scanAt])) lastOut = scanAt; }
+      for (; scanAt < a; scanAt++) { contWork++; contScan++; if (!BODY_CHAR.test(s[scanAt])) lastOut = scanAt; }
       mid = a - prevEnd <= 4096 && lastOut < prevEnd;
     }
-    if (!mid && !inSpans(written(), a - 1)) continue;
+    // review of PR 2001: or the line's last run holds the head of a known token (its parts can sit on three lines, no two of them a token alone); the rules on the
+    // joined copy decide, so a line that only starts like one hides nothing
+    if (!mid && !inSpans(written(), a - 1) && !tokenHeadBefore(s, a)) continue;
     joins.push([a, b, false]);
     prevEnd = b;
   }
@@ -2842,6 +2847,20 @@ function contSpans(s: string, mask: string, written: () => ReadonlyArray<[number
     // mask, as the rules as written mask a continued run)
     if (whole && pieces.length * mask.length > at[y - 1] + 1 - at[x]) whole.push([at[x], at[y - 1] + 1]);
   }
+}
+/** Spec 012 FR-190 (review of PR 2001): the head of a token whose shape is known, at a word start: a line holding one may go on on the next lines. */
+const TOKEN_HEAD = /(?<![A-Za-z0-9])(?:gh[pousr]_|github_pat_|gl(?:pat|dt|rt|ft|cbt|ptt)-|sk-|sk_(?:live|test)_|xox[abposr]-|xapp-|AKIA|ASIA|AIza|npm_|hf_|pypi-|dckr_pat_|ya29\.|SG\.|glc_|lin_api_)/;
+/**
+ * Whether the run of token-body characters that ends at `a` (at most 128 back) holds a `TOKEN_HEAD` followed by a body part: 8 or more letters and digits, a digit
+ * among them (a word that only starts like a token, `sk-learn`, is no part of one); every step counted.
+ */
+function tokenHeadBefore(s: string, a: number): boolean {
+  let l = a;
+  while (l > 0 && a - l < 128 && BODY_CHAR.test(s[l - 1])) { l--; contWork++; }
+  const m = TOKEN_HEAD.exec(s.slice(l, a));
+  if (!m) return false;
+  const rest = s.slice(l + m.index + m[0].length, a);
+  return /[0-9]/.test(rest) && alnumIn(rest, 0, rest.length) >= GLUE_MIN;
 }
 let breakCalls = 0;
 /** Test only: how many line-break windows `breakSpans` masked since the last call (the guards of `breakRuns` that only spare work are pinned by it). */

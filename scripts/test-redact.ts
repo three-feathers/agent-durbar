@@ -3,7 +3,7 @@ import * as assert from 'assert';
 import * as fs from 'fs';
 import * as path from 'path';
 import { Worker } from 'worker_threads';
-import { MASK_INPUT_MAX, REDACT_MAX_CHARS, createDebugSink, _uncappedForTest, cut, maskSchemeSecrets, maskTokenShapes, maskTokenShapesUnguarded, maskSecretArgs, maskSecretCommand, maskHomePaths, maskSecretUrl, maskNoteText, maskOutgoing, maskGluedTail, maskSplitTokens, _breakCallsForTest, keepShownBy, _unionMasksForTest, withoutSplit, withoutShell, _shellRefsForTest, _shellPassesForTest, _shapePassesForTest, _runReadsForTest, ESC_RUN_SHELL_SOURCE, withoutLoose, maskLoose, _homeGuardReadsForTest, _homeGuardCharsForTest, _guardEdgeScanForTest, HOME_GUARD_WINDOW_FOR_TEST, _splitWorkForTest, withoutLinkSplit, withoutContinuation, _contWorkForTest, _contPassesForTest, redact, redactMarkdown, MARKDOWN_WORK, _markdownPassForTest, shQuote, splitCommand } from '../src/shared/redact';
+import { MASK_INPUT_MAX, REDACT_MAX_CHARS, createDebugSink, _uncappedForTest, cut, maskSchemeSecrets, maskTokenShapes, maskTokenShapesUnguarded, maskSecretArgs, maskSecretCommand, maskHomePaths, maskSecretUrl, maskNoteText, maskOutgoing, maskGluedTail, maskSplitTokens, _breakCallsForTest, keepShownBy, _unionMasksForTest, withoutSplit, withoutShell, _shellRefsForTest, _shellPassesForTest, _shapePassesForTest, _runReadsForTest, ESC_RUN_SHELL_SOURCE, withoutLoose, maskLoose, _homeGuardReadsForTest, _homeGuardCharsForTest, _guardEdgeScanForTest, HOME_GUARD_WINDOW_FOR_TEST, _splitWorkForTest, withoutLinkSplit, withoutContinuation, _contWorkForTest, _contScanForTest, _contPassesForTest, redact, redactMarkdown, MARKDOWN_WORK, _markdownPassForTest, shQuote, splitCommand } from '../src/shared/redact';
 
 import { assertLinearShape, assertWithinYardstick, cpuMs } from './redact-growth-lib';
 import './safetext-shared'; // the desk's maskRaw (src/renderer/safetext.js) reads the compiled redact.ts, for the FR-181 differential below
@@ -254,9 +254,17 @@ for (const keep of ['ghp_short', 'see ghs_count', 'wei' + 'ghs_' + 'TotalWeightK
     // every platform's line break: a break of one character of the older form is joined too
     assert.ok(!redact('API_' + 'KEY=' + w1 + '\r' + w2, {}).includes(w2), '#1320 continuation: a value split by the one-character break of the older form is hidden');
     assert.strictEqual(redact('line one\rline two\rline 3', {}), 'line one\rline two\rline 3', '#1320 continuation near miss stays: lines split by the older one-character break');
-    // [KNOWN GAP] (on #1320): a token whose parts are on three lines, none of two of them a token alone, keeps its last part readable, as on main (this pin turns red when it is fixed)
-    const t5 = 'gh' + 'p_' + 'Ab12Cd34Ef\nGh56Ij78Kl90Mn\nOp12Qr34St56';
-    assert.ok(redact(t5, {}).includes('Op12Qr34St56'), '#1320 continuation KNOWN GAP pinned: a token over three lines');
+    // review of PR 2001: a known token whose parts sit on three lines, no two of them a token alone, is hidden whole; a line that only starts like a token stays
+    for (const b of ['\n', '\r\n']) {
+      const t5 = 'x gh' + 'p_' + 'Ab12Cd34Ef' + b + 'Gh56Ij78Kl90Mn' + b + 'Op12Qr34St56 y';
+      for (const [sn, mask] of surfaces) {
+        const out = mask(t5);
+        assert.ok(!out.includes('Ab12Cd34') && !out.includes('Gh56Ij78') && !out.includes('Op12Qr34'), `#1320 continuation: ${sn} hides a token over three lines (${JSON.stringify(b)}): ${JSON.stringify(out)}`);
+      }
+    }
+    for (const k of ['gh' + 'p_short\nAb3Cd4Ef5Gh6\nRelease2024Notes', 'gh' + 'p_short\nREADME.md\nnext step', 'the npm_config value\nBuild2024Release\nVersion2025Notes']) {
+      assert.strictEqual(redact(k, {}), k, `#1320 continuation near miss stays: a line that only starts like a token (${JSON.stringify(k)})`);
+    }
     // the mask-end trim: a mask already in the text at the end of a stretch is no part of it, so the word after it stays
     const tk = 'gh' + 'p_' + 'VeLcXJQf4cb27' + 'Q'.repeat(23);
     const t6 = 'to' + 'ken: API_' + 'KEY=' + tk + '\\\nAb3Cd4Ef5Gh6pass' + 'word=[redacted] Ab3Cd4Ef5Gh6.';
@@ -290,14 +298,16 @@ for (const keep of ['ghp_short', 'see ghs_count', 'wei' + 'ghs_' + 'TotalWeightK
     _contPassesForTest();
     maskSplitTokens('no break here, ' + tok1);
     assert.strictEqual(_contPassesForTest(), 0, '#1320 continuation work: a text without a line break is not read again');
-    // review of PR 2001: the scan for a middle line reads each character once and counts it (a long line before many short ones was read again for each of them)
-    const blk = 'API_' + 'KEY=' + v1 + '\n' + 'A1'.repeat(1000) + ':x\n' + 'Ab3Cd4Ef5Gh6\n'.repeat(300);
+    // review of PR 2001: the scan for a middle line reads each character once and counts it. A record of many continued lines whose middles fail the body test: a
+    // long line, then short lines that each asked for the scan; it read the long line again for each of them (about 78 steps a character, none counted)
+    const blk = 'API_' + 'KEY=' + v1 + '\n' + 'A1'.repeat(1024) + '\n:x\n' + 'Ab3Cd4Ef5Gh6\n'.repeat(157);
     for (const len of [20_000, 400_000]) {
       const x = blk.repeat(Math.ceil(len / blk.length)).slice(0, len);
-      _contWorkForTest();
+      _contWorkForTest(); _contScanForTest();
       maskSplitTokens(x);
-      const w = _contWorkForTest();
-      assert.ok(w <= 6 * x.length, `#1320 continuation work: a long line before many short ones: ${w} characters read for ${x.length}`);
+      const w = _contWorkForTest(), sc = _contScanForTest();
+      assert.ok(sc >= 0.9 * x.length && sc <= x.length, `#1320 continuation work: the middle-line scan reads each character once, counted: ${sc} for ${x.length}`);
+      assert.ok(w >= sc && w <= 6 * x.length, `#1320 continuation work: a long line before many short ones: ${w} characters read for ${x.length}`);
     }
     _contPassesForTest();
     // a plain break after text the rules do not hide joins nothing, so the text is not read again (the guard that spares the pass)
