@@ -350,3 +350,7 @@ Spec, plan, tasks and the measurements above (at `4c962b39b`). Paco's input (hea
 - N6: the Windows-on-`main` question left *Not decided*; FR-014 decides it (the newest `main` push runs the full matrix, Windows included).
 - N7: T019 is word-neutral and keeps "changed".
 - N8: T023 updates `docs/agent-setup/README.md` *Sub-agents by size* (its *Medium* tier) with T015.
+
+### 2026-11-22: T004 built, how the guard reads a workflow (Mac lane)
+
+- FR-010 is read exactly as written: a workflow is "PR-triggered" when its `on:` block names `pull_request` (a comment that says "never on pull_request" does not count). Its top-level `concurrency:` must have a `group` that contains `github.event.pull_request.number` and a `cancel-in-progress` that is `true` or an expression naming `github.event_name == 'pull_request'`. The test reads the text by lines (no YAML dependency) and says which file and which of the three parts is missing. Mutants on a copy of `ui-platforms.yml` (group without the PR number, `cancel-in-progress: false`, the `concurrency:` block removed) each fail at a labelled assert. Not verified: that GitHub itself cancels the run (a hosted-runner fact; E2 of this spec records it).
