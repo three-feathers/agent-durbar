@@ -239,7 +239,8 @@ async function main(): Promise<void> {
   // Typical: the longest successful run among the last 15 of each workflow (gh run list/view, 2026-11-09), across its matrix.
   // Budget: the job's waits plus one failed npm ci try before each wait (an outage fails a try in about a minute; 1.5 allowed).
   const TYPICAL_MIN: Record<string, number> = {
-    'ci.yml:build-test': 9.8, 'ci.yml:office-check': 5.2, 'ci.yml:theme-shard': 3.0, 'e2e-real.yml:e2e': 2.5, 'install-check.yml:install': 4.4,
+    // spec 117 FR-018: npm test in 2 parts per OS (the summary job build-test installs nothing); estimates until the PR's own CI runs measure them
+    'ci.yml:test-ubuntu': 10, 'ci.yml:test-windows': 12, 'ci.yml:test-macos': 10, 'ci.yml:office-check': 5.2, 'ci.yml:theme-shard': 3.0, 'e2e-real.yml:e2e': 2.5, 'install-check.yml:install': 4.4,
     'installed-app.yml:installed': 10.2, 'macos-pr.yml:macos-test': 8.8, 'mac-titlebar-pr.yml:mac-titlebar': 6, // estimate, no run yet (FR-200)
     'mcp-oauth-real.yml:check': 1.1, 'packaged-check.yml:check': 1.6,
     'release.yml:build': 14.4, 'ui-platforms.yml:ui': 22.7, 'world-matrix.yml:subset': 2.1,

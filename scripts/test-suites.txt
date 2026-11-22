@@ -163,6 +163,7 @@ test:modelchoice
 test:mcphealth
 test:globals
 test:runtests
+test:ci-shards
 test:runtestsreal
 test:theme-tokens
 test:slashcommands

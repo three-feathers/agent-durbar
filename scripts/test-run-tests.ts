@@ -13,6 +13,10 @@ const rt = require(path.join(__dirname, '..', '..', 'scripts', 'run-tests.js')) 
   loadSuites: (pkg: unknown, filters: string[], names?: string[]) => { name: string; steps: string[][] }[];
   stopChild: (c: unknown, o: unknown) => void;
   runSuites: (o: Record<string, unknown>) => Promise<{ failed: string[]; bailed: string | null }>;
+  parseShard: (argv: string[], env: Record<string, string | undefined>) => string;
+  readSuiteTimes: (text?: string) => Record<string, number | string>;
+  shardNames: (names: string[], spec: string, times?: Record<string, unknown>, split?: (l: string[], n: number, w: (x: string) => number) => string[][]) => { names: string[]; parts: string[][]; seconds?: number[] };
+  selectSuites: (pkg: unknown, argv: string[], env: Record<string, string | undefined>, names?: string[], times?: Record<string, unknown>) => { suites: { name: string }[]; part: { parts: string[][] }; note: string };
 };
 
 type Fake = EventEmitter & { pid: number; stdout: EventEmitter; stderr: EventEmitter; file: string };
@@ -94,6 +98,71 @@ process.on('exit', () => { if (!done) { console.error('test-run-tests: did not f
     assert.deepStrictEqual(rt.unlistedSuites({ ...real.scripts, 'test:forgotten': 'node x.js' }), ['test:forgotten'], 'red: a test not in the list');
     assert.deepStrictEqual(rt.unlistedSuites({ 'test:a': 'x', 'test:chain': 'x', build: 'x' }, ['test:a'], ['test:chain']), [], 'listed, allowed and non-test scripts pass');
     assert.strictEqual(real.scripts['test:serial'], 'node scripts/run-tests.js --serial');
+  }
+
+  // spec 117 FR-018 (#1983): `--shard i/n` splits the list by recorded time; CI runs each part as its own job, so every suite must be in exactly one part
+  {
+    const real = require(path.join(__dirname, '..', '..', 'package.json')) as { scripts: Record<string, string> };
+    const names = rt.readSuiteList();
+    const times = rt.readSuiteTimes();
+    // the timing table: a note and numbers, only for listed suites (a stale entry would be noise; a missing one counts as the median)
+    for (const [k, v] of Object.entries(times)) {
+      if (k === '_note') continue;
+      assert.ok(names.includes(k), `scripts/test-suite-timings.json has ${k}, which is not in test-suites.txt: remove it`);
+      assert.ok(typeof v === 'number' && Number.isFinite(v) && v >= 0, `${k}: recorded seconds are a number`);
+    }
+    assert.ok(typeof times._note === 'string' && Object.keys(times).length > 100, 'the timing table is read and says where its numbers come from');
+    for (const n of [1, 2, 3, 4]) {
+      const parts = Array.from({ length: n }, (_, k) => rt.shardNames(names, `${k + 1}/${n}`, times).names);
+      const flat = parts.flat();
+      // the union of the parts is the list (same order when the parts are put back together by list position), and no suite is in two parts
+      assert.strictEqual(flat.length, names.length, `${n} parts hold ${flat.length} suites, the list has ${names.length}`);
+      assert.deepStrictEqual([...flat].sort(), [...names].sort(), `the ${n} parts together are exactly test-suites.txt`);
+      assert.strictEqual(new Set(flat).size, flat.length, `no suite is in two of the ${n} parts`);
+      for (const p of parts) assert.deepStrictEqual(p, names.filter((x) => p.includes(x)), 'a part keeps the list order');
+      // the same input gives the same parts (every job of a run computes them alone)
+      assert.deepStrictEqual(parts, Array.from({ length: n }, (_, k) => rt.shardNames(names, `${k + 1}/${n}`, times).names), 'deterministic');
+      // every masking suite still runs in one part
+      for (const m of names.filter((x) => /redact|mask/.test(x))) assert.strictEqual(parts.filter((p) => p.includes(m)).length, 1, `${m} runs in exactly one of ${n} parts`);
+    }
+    // balanced: the two halves' recorded seconds are within 10 % of each other, and the heavy redact suites (#1983) do not all land in one part
+    const two = rt.shardNames(names, '1/2', times);
+    const [s1, s2] = two.seconds as number[];
+    assert.ok(Math.abs(s1 - s2) <= 0.1 * Math.max(s1, s2), `the two parts are balanced by recorded time (${s1} s, ${s2} s)`);
+    const HEAVY = ['test:runtime-redact', 'test:brainstate', 'test:redact-monotone', 'test:redact-monotone-b', 'test:redact-monotone-c'];
+    for (const p of two.parts) assert.ok(HEAVY.some((h) => p.includes(h)), `each part holds some of the five heavy suites (${HEAVY.filter((h) => p.includes(h)).join(', ')})`);
+    assert.notStrictEqual(two.parts.findIndex((p) => p.includes('test:runtime-redact')), two.parts.findIndex((p) => p.includes('test:brainstate')), 'the two heaviest suites are in different parts');
+    // a suite with no recorded time counts as the median and still lands in exactly one part
+    const extra = [...names, 'test:brand-new'];
+    assert.strictEqual([1, 2].map((i) => rt.shardNames(extra, `${i}/2`, times).names).filter((p) => p.includes('test:brand-new')).length, 1, 'a new suite with no time is in one part');
+    // no spec: the whole list
+    assert.deepStrictEqual(rt.shardNames(names, '', times).names, names);
+    // bad values are refused, never "every suite"
+    for (const bad of ['0/2', '3/2', '1/0', 'x', '1/2/3', '-1/2', '2']) assert.throws(() => rt.shardNames(names, bad, times), /--shard wants i\/n with 1 <= i <= n/, `"${bad}" is refused`);
+    assert.throws(() => rt.shardNames(['test:a'], '1/2', {}), /needs 2 parts that each hold a suite/, 'more parts than suites is refused (a part would pass green with nothing run)');
+    // mutants: a split that drops a suite, repeats one, or invents one fails the check before anything runs
+    const dropOne = (l: string[], n: number) => { const p = Array.from({ length: n }, (_, k) => l.filter((_x, j) => j % n === k)); return p.map((q) => q.filter((x) => x !== 'test:redact-monotone-b')); };
+    assert.throws(() => rt.shardNames(names, '1/2', times, dropOne), /test:redact-monotone-b is in 0 of the 2 parts, expected exactly 1/, 'red: a split that drops a masking suite');
+    const twice = (l: string[], n: number) => { const p = Array.from({ length: n }, (_, k) => l.filter((_x, j) => j % n === k)); p[0] = [...p[0], l[1]]; return p; };
+    assert.throws(() => rt.shardNames(names, '2/2', times, twice), /is in 2 of the 2 parts, expected exactly 1/, 'red: a split that runs a suite twice');
+    const invent = (l: string[], n: number) => { const p = Array.from({ length: n }, (_, k) => l.filter((_x, j) => j % n === k)); p[0] = [...p[0], 'test:ghost']; return p; };
+    assert.throws(() => rt.shardNames(names, '1/2', times, invent), /test:ghost in a part, but it is not in test-suites\.txt/, 'red: a split that invents a suite');
+    // the command line: --shard i/n, --shard=i/n and TEST_SHARD (the flag wins); a bare --shard is refused; the value is not a name filter
+    assert.strictEqual(rt.parseShard(['--shard', '1/2'], {}), '1/2');
+    assert.strictEqual(rt.parseShard(['--shard=2/3'], {}), '2/3');
+    assert.strictEqual(rt.parseShard([], { TEST_SHARD: '2/2' }), '2/2', 'TEST_SHARD (what ci.yml sets)');
+    assert.strictEqual(rt.parseShard(['--shard', '1/2'], { TEST_SHARD: '2/2' }), '1/2', 'the flag wins over TEST_SHARD');
+    assert.strictEqual(rt.parseShard([], { TEST_SHARD: '' }), '', 'an empty TEST_SHARD is the whole list');
+    for (const bare of [['--shard'], ['--shard', '--bail'], ['--shard=']]) assert.throws(() => rt.parseShard(bare, {}), /--shard wants a value/, `${bare.join(' ')} is refused`);
+    assert.deepStrictEqual(rt.parseArgs(['--shard', '1/2', 'redact'], {}).filters, ['redact'], 'the shard value is not a filter');
+    // the wiring main uses: TEST_SHARD picks the part of the whole list, then the filters narrow it
+    const sel = rt.selectSuites(real, [], { TEST_SHARD: '1/2' }, names, times);
+    assert.deepStrictEqual(sel.suites.map((x) => x.name), two.parts[0], 'TEST_SHARD=1/2 runs part 1');
+    assert.ok(new RegExp(`^shard 1/2: ${two.parts[0].length} of ${names.length} suites; every suite is in exactly one of the 2 parts`).test(sel.note), sel.note);
+    const selF = rt.selectSuites(real, ['--shard', '2/2', 'redact'], {}, names, times);
+    assert.deepStrictEqual(selF.suites.map((x) => x.name), two.parts[1].filter((x) => x.includes('redact')), 'filters apply inside the part');
+    assert.deepStrictEqual(rt.selectSuites(real, [], {}, names, times).suites.map((x) => x.name), names, 'no shard: every suite');
+    assert.throws(() => rt.selectSuites(real, ['--shard', '9/2'], {}, names, times), /--shard wants i\/n/);
   }
 
   // default: everything runs even after a failure
