@@ -285,3 +285,4 @@ test:dangersites
 test:specnumbers
 test:prpreflight
 test:pencilpark
+test:arcade-wall-signs
