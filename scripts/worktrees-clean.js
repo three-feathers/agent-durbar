@@ -131,7 +131,8 @@ function ghPrState(branch, headSha, cwd) {
   return 'UNKNOWN';
 }
 
-function realOr(p) { try { return fs.realpathSync(p); } catch { return path.resolve(p); } }
+// realpath.native expands Windows 8.3 short names (RUNNER~1) the way git prints long ones; the JS realpath does not.
+function realOr(p) { try { return fs.realpathSync.native(p); } catch { return path.resolve(p); } }
 function inside(child, parent) {
   const rel = path.relative(realOr(parent), realOr(child));
   return rel === '' || (!rel.startsWith('..') && !path.isAbsolute(rel));

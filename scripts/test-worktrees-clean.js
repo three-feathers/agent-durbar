@@ -12,18 +12,31 @@ const path = require('path');
 const { execFileSync, spawnSync } = require('child_process');
 
 const SRC = path.join(__dirname, 'worktrees-clean.js');
-const tmp = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'wtclean-test-')));
+const tmp = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'wtclean-test-')));
 const ENV = { ...process.env, GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@example.invalid', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@example.invalid', GIT_TERMINAL_PROMPT: '0' };
 function g(cwd, ...args) {
   return execFileSync('git', ['-c', 'commit.gpgsign=false', '-c', 'tag.gpgsign=false', ...args], { cwd, env: ENV, encoding: 'utf8', timeout: 60000, stdio: ['ignore', 'pipe', 'pipe'] });
 }
-// Same place on every OS: real paths (macOS /var vs /private/var, Windows short names), OS separators, case folded on Windows.
-function sameDir(a, b) {
-  const norm = (p) => { const r = path.join(fs.realpathSync(path.dirname(path.resolve(p))), path.basename(path.resolve(p))); return process.platform === 'win32' ? r.toLowerCase() : r; };
-  return norm(a) === norm(b);
+// Same place on every OS: native real paths (macOS /var vs /private/var, Windows 8.3 short names), OS separators, no trailing separator,
+// compared with path.relative (case-insensitive drive and names on Windows). The parent must exist; the last name need not.
+function nativeDir(p) {
+  const r = path.resolve(p).replace(/[\\/]+$/, '');
+  return path.join(fs.realpathSync.native(path.dirname(r)), path.basename(r));
 }
+function sameDir(a, b) { return path.relative(nativeDir(a), nativeDir(b)) === ''; }
 // The directory printed by the "new worktrees go under" line.
-function printedRoot(line) { return line ? line.slice(line.indexOf('): ') + 3).replace(/[\\/]NNN-slug$/, '') : ''; }
+function printedRoot(line) { return line ? line.slice(line.indexOf('): ') + 3).replace(/[\\/]NNN-slug\s*$/, '') : ''; }
+// Both sides, raw and normalised, JSON-quoted so separators and case show in a CI log.
+function rootDiag(line, main) {
+  const printed = printedRoot(line);
+  return ' printed=' + JSON.stringify(printed) + ' printedNorm=' + JSON.stringify(nativeDir(printed || '.')) +
+    ' expectedFn=' + JSON.stringify(require(SRC).newWorktreeRoot(main)) + ' expectedIndep=' + JSON.stringify(path.join(fs.realpathSync.native(main) + '-worktrees')) + ' line=' + JSON.stringify(line);
+}
+function rootOk(line, main) {
+  if (!line) return false;
+  const printed = printedRoot(line);
+  return sameDir(printed, require(SRC).newWorktreeRoot(main)) && sameDir(printed, fs.realpathSync.native(main) + '-worktrees');
+}
 function branches(cwd) { return g(cwd, 'branch', '--format=%(refname:short)').split('\n').filter(Boolean); }
 function write(p, text) { fs.mkdirSync(path.dirname(p), { recursive: true }); fs.writeFileSync(p, text); }
 
@@ -112,7 +125,7 @@ function check(modPath, tag) {
   const lines = [];
   const dry = mod.run({ apply: false, root: fx.main, cwd: fx.main, prState, log: (s) => lines.push(s) });
   const rootLine = lines.find((l) => l.startsWith('new worktrees go under'));
-  assert.ok(rootLine && sameDir(printedRoot(rootLine), fx.main + '-worktrees'), tag + ': root: the root for new worktrees is printed');
+  assert.ok(rootOk(rootLine, fx.main), tag + ': root: the root for new worktrees is printed' + rootDiag(rootLine, fx.main));
   const row = (b) => dry.rows.find((r) => r.wt.branch === b || (b === 'detached' && !r.wt.branch));
   const is = (b, verdict, why, msg) => {
     assert.strictEqual(row(b).verdict, verdict, tag + ': ' + msg + ' (verdict ' + row(b).verdict + ': ' + row(b).why + ')');
@@ -222,7 +235,7 @@ function check(modPath, tag) {
   const fs2 = fixture(tag + '-self');
   const selfLines = [];
   const selfRes = mod.run({ apply: true, root: fs2.main, cwd: fs2.wts['merged-clean'], prState, log: (x) => selfLines.push(x) });
-  assert.ok(selfLines.some((l) => l.startsWith('new worktrees go under') && sameDir(printedRoot(l), fs2.main + '-worktrees')), tag + ': root: run from a linked worktree, the root still comes from the main checkout');
+  assert.ok(rootOk(selfLines.find((l) => l.startsWith('new worktrees go under')), fs2.main), tag + ': root: run from a linked worktree, the root still comes from the main checkout' + rootDiag(selfLines.find((l) => l.startsWith('new worktrees go under')), fs2.main));
   assert.ok(fs.existsSync(fs2.wts['merged-clean']) && selfRes.rows.find((r) => r.wt.branch === 'merged-clean').verdict === 'skip', tag + ': self: the worktree it runs in is skipped, not removed');
 
   const realGit = (args, cwd) => { try { return { ok: true, out: execFileSync('git', args, { cwd, env: ENV, encoding: 'utf8', timeout: 60000, stdio: ['ignore', 'pipe', 'pipe'] }) }; } catch (e) { return { ok: false, out: '', err: String(e.message) }; } };
