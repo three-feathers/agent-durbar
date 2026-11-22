@@ -12,6 +12,7 @@ import * as https from 'https';
 import type { HttpGet, HttpResponse } from './officialinstall';
 import { lookupAllowed } from '../shared/updatecheck';
 import type { LookupGet } from '../shared/updatecheck';
+import { ShownError } from '../shared/shownerror';
 
 /** The part of Electron's `ClientRequest` this file uses. */
 export interface NetRequestLike {
@@ -72,7 +73,7 @@ export function makeLookupGet(factory: NetRequestFactory): LookupGet {
       try {
         req = factory({ method, url, redirect: 'manual', credentials: 'omit', useSessionCookies: false });
       } catch (e) {
-        done(() => reject(e instanceof Error ? e : new Error(String(e))));
+        done(() => reject(e instanceof Error ? e : new Error(String(e)))); // FR-066: read, not shown (re-thrown)
         return;
       }
       setFixedHeaders(req);
@@ -113,11 +114,11 @@ export function makeDownloadGet(factory: NetRequestFactory): HttpGet {
         f();
         try { req?.abort(); } catch { /* already finished */ }
       };
-      const total = setTimeout(() => finish(() => reject(new Error('The download took too long.'))), timeoutMs);
+      const total = setTimeout(() => finish(() => reject(new ShownError('The download took too long.'))), timeoutMs);
       try {
         req = factory({ method: 'GET', url, redirect: 'manual', credentials: 'omit', useSessionCookies: false });
       } catch (e) {
-        finish(() => reject(e instanceof Error ? e : new Error(String(e))));
+        finish(() => reject(e instanceof Error ? e : new Error(String(e)))); // FR-066: read, not shown (re-thrown)
         return;
       }
       setFixedHeaders(req);
@@ -136,7 +137,7 @@ export function makeDownloadGet(factory: NetRequestFactory): HttpGet {
         res.on('data', (c) => {
           if (settled) return;
           n += c.length;
-          if (n > maxBytes) { finish(() => reject(new Error('The installer is larger than expected; not downloaded.'))); return; }
+          if (n > maxBytes) { finish(() => reject(new ShownError('The installer is larger than expected; not downloaded.'))); return; }
           parts.push(c);
         });
         res.on('end', () => finish(() => resolve({ status, contentType, body: Buffer.concat(parts) })));
@@ -169,13 +170,13 @@ export function makeNodeDownloadGet(get: typeof https.get): HttpGet {
         let n = 0;
         res.on('data', (c: Buffer) => {
           n += c.length;
-          if (n > maxBytes) { fail(new Error('The installer is larger than expected; not downloaded.')); req.destroy(); return; }
+          if (n > maxBytes) { fail(new ShownError('The installer is larger than expected; not downloaded.')); req.destroy(); return; }
           parts.push(c);
         });
         res.on('end', () => ok({ status, contentType, body: Buffer.concat(parts) }));
         res.on('error', fail);
       });
-      const tooLong = (): void => { fail(new Error('The download took too long.')); req.destroy(); };
+      const tooLong = (): void => { fail(new ShownError('The download took too long.')); req.destroy(); };
       const total = setTimeout(tooLong, timeoutMs);
       req.setTimeout(timeoutMs, tooLong);
       req.on('error', fail);

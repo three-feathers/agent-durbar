@@ -17,6 +17,7 @@ import type { FailureClass, UpdatePolicy, UpdateSource } from '../shared/updatec
 import * as fs from 'fs';
 import { downloadScript } from './officialinstall';
 import type { HttpGet } from './officialinstall';
+import { failText } from './ipcerror';
 
 export type SetupOp = 'install' | 'update' | 'signin';
 
@@ -331,7 +332,7 @@ export class HarnessSetup {
       const { file, dir } = await downloadScript(job.script, ext, { get: this.deps.httpGet, tmpdir: this.deps.tmpdir });
       return { ok: true, job: { ...job, args: [...job.args, file], spawnArgs: [...job.spawnArgs, file], cleanupDir: dir } };
     } catch (e) {
-      return { ok: false, error: e instanceof Error ? e.message : String(e) };
+      return { ok: false, error: failText(e, 'agent app setup') };
     }
   }
 
@@ -354,7 +355,7 @@ export class HarnessSetup {
         cwd = fs.mkdtempSync(path.join(this.deps.tmpdir ?? os.tmpdir(), 'durbar-codex-update-'));
         fs.chmodSync(cwd, 0o700);
       } catch (e) {
-        return { ok: false, error: 'Could not make a private working folder: ' + (e instanceof Error ? e.message : String(e)) };
+        return { ok: false, error: failText(e, 'agent app setup', 'Could not make a private working folder. The details stay in Agent Durbar\'s own log.') };
       }
       job = { ...job, cleanupDir: cwd };
       childEnv = codexUpdateEnv({ ...childEnv }, env.platform);
@@ -371,7 +372,7 @@ export class HarnessSetup {
     } catch (e) {
       dropDownload();
       if (cwd) try { fs.rmSync(cwd, { recursive: true, force: true }); } catch { /* the OS cleans its temp folder */ }
-      return { ok: false, error: 'Could not start it: ' + (e instanceof Error ? e.message : String(e)) };
+      return { ok: false, error: failText(e, 'agent app setup', 'Could not start it. The details stay in Agent Durbar\'s own log.') };
     }
     const now = this.deps.now ?? Date.now;
     const r = { child, kind, op, out: '', started: now(), ended: false, paste, lastSent: 0, cleanupDir: job.cleanupDir, codexUpdate: job.codexUpdate, target: job.pinned ?? job.checked, ...(op === 'update' && this.deps.snapshot ? { before: this.deps.snapshot().then((x) => x[kind], () => undefined) } : {}) } as NonNullable<HarnessSetup['running']>;

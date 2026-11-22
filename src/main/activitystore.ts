@@ -9,6 +9,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { ACTIVITY_MAX_ROWS, appendCapped, sanitizeActivityRow } from '../shared/activity';
 import type { ActivityRow } from '../shared/activity';
+import { failText } from './ipcerror';
 
 const MAX_FILE = 8 * 1024 * 1024;
 
@@ -99,7 +100,7 @@ export class ActivityStore {
       this.dirty = false;
       this.lastError = undefined;
     } catch (err) {
-      this.lastError = err instanceof Error ? err.message.slice(0, 160) : 'write failed';
+      this.lastError = failText(err, 'activity store', 'write failed').slice(0, 160);
     }
   }
 }

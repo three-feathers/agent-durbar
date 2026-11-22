@@ -260,6 +260,31 @@ if (process.platform !== 'win32') {
   u = st2.undo(B, t);
   assert.ok(!u.ok, 'restore onto a link is refused');
   assert.strictEqual(r(path.join(out2, 'new.txt')), 'agent made this\n', 'the link target is untouched');
+  // (c2) spec 045 FR-066 (review of #1980): a parent swapped for a link DURING the undo (after the first file): the undo stops with its own
+  // reason, a ShownError, so the window's text (failText) still names the file and why
+  {
+    fs.unlinkSync(path.join(ws2, 'f.txt'));
+    w(path.join(ws2, 'a.txt'), 'a1\n');
+    w(path.join(ws2, 'sub', 'b.txt'), 'b1\n');
+    const tc = st2.beginTurn(B, r2);
+    st2.capture(B, r2, path.join(ws2, 'a.txt'));
+    st2.capture(B, r2, path.join(ws2, 'sub', 'b.txt'));
+    w(path.join(ws2, 'a.txt'), 'a2\n');
+    w(path.join(ws2, 'sub', 'b.txt'), 'b2\n');
+    st2.endTurn(B);
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const realFs = require('fs') as typeof fs;
+    const realWrite = realFs.writeFileSync;
+    let swapped = false;
+    realFs.writeFileSync = ((...a: Parameters<typeof fs.writeFileSync>) => { realWrite(...a); if (!swapped && String(a[0]).startsWith(ws2 + path.sep)) { swapped = true; swap(); } }) as typeof fs.writeFileSync;
+    let uc: ReturnType<typeof st2.undo>;
+    try { uc = st2.undo(B, tc); } finally { realFs.writeFileSync = realWrite; }
+    assert.ok(swapped, 'the swap happened during the undo');
+    assert.ok(!uc.ok && /^The undo stopped after 1 file: sub[\\/]b\.txt: a folder or file on its path is now a link\. /.test(uc.error ?? ''), 'the undo stop reason is the app\'s own words: ' + JSON.stringify(uc));
+    assert.deepStrictEqual(fs.readdirSync(out2).filter((n) => n !== 'new.txt'), [], 'nothing written outside');
+    unswap();
+    w(path.join(ws2, 'f.txt'), 'x\n');
+  }
   // (d) a clean case still works, and missing parents are recreated as real folders
   fs.unlinkSync(path.join(ws2, 'f.txt'));
   w(path.join(ws2, 'deep', 'x', 'y.txt'), 'deep\n');
