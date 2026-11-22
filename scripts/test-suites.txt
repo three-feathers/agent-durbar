@@ -235,6 +235,7 @@ test:electroncache
 test:claudecliunit
 test:rules
 test:weeklyretro
+test:cistats
 test:docsscripts
 test:citypecheck
 test:worldmatrix

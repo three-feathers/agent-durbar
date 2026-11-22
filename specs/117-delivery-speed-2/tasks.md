@@ -8,8 +8,8 @@
 
 ## P1: measure and guard (no workflow behaviour change)
 
-- [ ] T002 [P] `scripts/test-ci-stats.ts` first, on a fixture of runs, jobs and PRs: percentiles (nearest rank), queue wait, minutes with ≥N queued, the code/tests/docs path classes of spec *Evidence*, by-label cycle time; the GraphQL query string contains no `body` or `title` field (mutant: add `title`, the test fails) [FR-001]
-- [ ] T003 `scripts/ci-stats.js` and `npm run ci:stats [--days N]`: `gh` through `execFileSync` with an argument array, per-day pagination, `filter=all` jobs, sampling flags, output through `safe-print.js`; passes T002. `read:` run once and compare with spec E1..E6 (SC-001) [FR-001, FR-002]
+- [x] T002 [P] `scripts/test-ci-stats.ts` first, on a fixture of runs, jobs and PRs: percentiles (nearest rank), queue wait, minutes with ≥N queued, the code/tests/docs path classes of spec *Evidence*, by-label cycle time; the GraphQL query string contains no `body` or `title` field (mutant: add `title`, the test fails) [FR-001]
+- [x] T003 `scripts/ci-stats.js` and `npm run ci:stats [--days N]`: `gh` through `execFileSync` with an argument array, per-day pagination, `filter=all` jobs, sampling flags, output through `safe-print.js`; passes T002. `read:` run once and compared with spec E1..E6 (SC-001) on 2026-11-22: queue wait, UI share (68 % vs 70 %), Windows build time, code/tests/docs split and merge-queue runs within ~5 %; minutes with >=10 queued 24 % vs 18.8 % (a busier week), jobs per head 15 vs 12 (no 15 s floor) and PR cycle p90 (newer window) differ [FR-001, FR-002]
 - [ ] T004 [P] `scripts/test-workflow-concurrency.ts` in `test-suites.txt`: every `pull_request`-triggered workflow has a PR-number concurrency group and `cancel-in-progress` on `pull_request`; mutant on a copy of `ui-platforms.yml` fails [FR-010]
 - [ ] T005 `weekly-retro.js` quotes `ci:stats` beside 021 T064's `dora` once both exist; until T064 lands, `ci:stats` alone [FR-001]
 
