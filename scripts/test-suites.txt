@@ -130,6 +130,7 @@ test:uisuite
 test:cichanges
 test:ciossensitive
 test:uievents
+test:fastlane
 test:pathdirs
 test:officialinstall
 test:checknames

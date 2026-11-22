@@ -165,7 +165,7 @@ const mutants: Array<[string, Cc, RegExp]> = [
   ['driver plumbing dropped', variant(PLUMBING, '/$^/,'), /^"scripts\/check-office-overlap\.js" \(the office layout check\) is neutral$/],
   ['driver plumbing case-sensitive', variant(PLUMBING, PLUMBING.replace(/\/i,$/, '/,')), /^"scripts\/check-Office-Overlap\.js" \(case: check-Office-Overlap\.js\) is neutral$/],
   ['shell scripts dropped', variant(SHELL, '/$^/,'), /^"docs\/agent-setup\/setup\.sh" \(a shell script under docs\) is neutral$/],
-  ['odd paths not refused', variant("const osPlainPath = (f) => typeof f === 'string' &&", "const osPlainPath = (f) => true || typeof f === 'string' &&"), /^"src\/renderer\/\.\.\/main\/x\.ts" \(a \.\. segment\) is neutral$/],
+  ['odd paths not refused', variant("const PLAIN_PATH = (f) => typeof f === 'string' &&", "const PLAIN_PATH = (f) => true || typeof f === 'string' &&"), /^"src\/renderer\/\.\.\/main\/x\.ts" \(a \.\. segment\) is neutral$/],
   ['backslashes allowed', variant("!/[\\\\\\u0000-\\u001f\\u007f]/.test(f)", "!/[\\u0000-\\u001f\\u007f]/.test(f)"), /^"docs\/\.\.\\\\src\\\\main\\\\x\.ts" \(backslashes \(src\/main on Windows\)\) is neutral$/],
   ['an empty diff neutral', variant('return list.length === 0 || list.some', 'return list.some'), /^an empty diff is neutral$/],
   ['one neutral path is enough (every, not some)', variant('list.some((f) => osPath(f, io))', 'list.every((f) => osPath(f, io))'), /^"src\/main\/main\.ts" \(main process\) beside a doc is neutral$/],
@@ -244,29 +244,25 @@ if (haveBash) {
   const old = "require('fs').appendFileSync(process.env.GITHUB_OUTPUT, 'code=true\\nthemes=false\\nui=true\\nmacos=true\\n');\n";
   const says = (v: string) => `require('fs').appendFileSync(process.env.GITHUB_OUTPUT, 'code=true\\nthemes=false\\nui=true\\nmacos=true\\nos_sensitive=${v}\\n');\n`;
   const docs = { 'docs/a.md': 'x\n' };
-  // review of #2039: every name is written EXACTLY ONCE; a name left out, repeated or inexact is written once as true
-  const once = (text: string): string[] => ['code', 'themes', 'ui', 'macos', 'os_sensitive'].filter((k) => text.split('\n').filter((l) => l.startsWith(`${k}=`)).length !== 1);
-  const outOld = bash(repoWith(old, docs));
-  assert.strictEqual(outOld, 'code=true\nthemes=false\nui=true\nmacos=true\nos_sensitive=true\n', 'wrapper: a base copy that writes no os_sensitive line gets true, once');
-  for (const v of ['FALSE', 'False', 'false ', '', 'no', '0']) {
-    const o = bash(repoWith(says(v), docs));
-    assert.ok(lastOs(o) === 'os_sensitive=true' && once(o).length === 0, `wrapper: os_sensitive=${JSON.stringify(v)} is not exact: true, written once (got ${JSON.stringify(o)})`);
-  }
-  const dup = "require('fs').appendFileSync(process.env.GITHUB_OUTPUT, 'code=false\\nthemes=false\\nui=false\\nmacos=false\\nos_sensitive=false\\nos_sensitive=false\\ncode=false\\n');\n";
-  assert.strictEqual(bash(repoWith(dup, docs)), 'code=true\nthemes=false\nui=false\nmacos=false\nos_sensitive=true\n', 'wrapper: a repeated name (code, os_sensitive) is written once as true; the others pass');
-  const silent = 'process.exit(0);\n';
-  assert.strictEqual(bash(repoWith(silent, docs)), 'code=true\nthemes=true\nui=true\nmacos=true\nos_sensitive=true\n', 'wrapper: a base copy that writes nothing: every name once, true');
+  // reviews of #2032 and #2039: every decision name is written EXACTLY ONCE; when the base copy left one out, repeated it or wrote
+  // another value, everything runs (all five true, once each)
+  const ALL5 = 'code=true\nthemes=true\nui=true\nmacos=true\nos_sensitive=true\n';
+  assert.strictEqual(bash(repoWith(old, docs)), ALL5, 'wrapper: a base copy that writes no os_sensitive line: everything runs');
+  for (const v of ['FALSE', 'False', 'false ', '', 'no', '0']) assert.strictEqual(bash(repoWith(says(v), docs)), ALL5, `wrapper: os_sensitive=${JSON.stringify(v)} is not exact: everything runs`);
+  const dup = "require('fs').appendFileSync(process.env.GITHUB_OUTPUT, 'code=false\\nthemes=false\\nui=false\\nmacos=false\\nos_sensitive=false\\nos_sensitive=false\\n');\n";
+  assert.strictEqual(bash(repoWith(dup, docs)), ALL5, 'wrapper: a repeated os_sensitive line: everything runs, each name once');
+  assert.strictEqual(bash(repoWith('process.exit(0);\n', docs)), ALL5, 'wrapper: a base copy that writes nothing: everything runs');
   assert.strictEqual(bash(repoWith(says('false'), docs)), 'code=true\nthemes=false\nui=true\nmacos=true\nos_sensitive=false\n', 'wrapper: an exact false is kept');
   assert.strictEqual(bash(repoWith(says('true'), docs)), 'code=true\nthemes=false\nui=true\nmacos=true\nos_sensitive=true\n', 'wrapper: an exact true is kept');
-  // mutants: the raw output passed through unchanged (no once-only rule) leaves a missing name missing and a repeat repeated
-  const LOOP = /\nfor k in code themes ui macos os_sensitive; do\n[^]*?\ndone\n/;
+  // mutants: the raw output passed through (no once-only rule) leaves a missing name missing and a repeat repeated; no exact test lets FALSE through
+  const LOOP = /\nlines=""\nfor k in code themes ui macos os_sensitive; do\n[^]*?\ndone\nprintf '%s' "\$lines" >> "\$out"\n/;
   assert.ok(LOOP.test(wrapper), 'mutant anchor: the once-only loop');
   const passThrough = wrapper.replace(LOOP, '\ncat "$raw" >> "$out"\n');
   assert.strictEqual(lastOs(bash(repoWith(old, docs, passThrough))), null, 'mutant: without the loop a base copy with no os_sensitive leaves it missing');
-  assert.deepStrictEqual(once(bash(repoWith(dup, docs, passThrough))), ['code', 'os_sensitive'], 'mutant: without the loop a repeated name is written twice');
-  const noExact = wrapper.replace('{ [ "$v" = true ] || [ "$v" = false ]; }', 'true');
-  assert.notStrictEqual(noExact, wrapper, 'mutant anchor: the exact-value test');
-  assert.strictEqual(lastOs(bash(repoWith(says('FALSE'), docs, noExact))), 'os_sensitive=FALSE', 'mutant: without the exact-value test FALSE passes (GitHub would read it as false)');
+  assert.strictEqual(bash(repoWith(dup, docs, passThrough)).split('\n').filter((l) => l.startsWith('os_sensitive=')).length, 2, 'mutant: without the loop a repeated name is written twice');
+  const EXACT = '{ [ "$v" != true ] && [ "$v" != false ]; }';
+  assert.strictEqual(wrapper.split(EXACT).length - 1, 1, 'mutant anchor: the exact-value test');
+  assert.strictEqual(lastOs(bash(repoWith(says('FALSE'), docs, wrapper.replace(EXACT, 'false')))), 'os_sensitive=FALSE', 'mutant: without the exact-value test FALSE passes (GitHub would read it as false)');
   // every other event: true from the wrapper itself
   for (const ev of ['push', 'merge_group', 'schedule', 'workflow_dispatch', '']) assert.strictEqual(lastOs(bash(repoWith(realDecision, docs), ev)), 'os_sensitive=true', `wrapper: ${ev || 'no event'} gives os_sensitive=true`);
   fs.rmSync(tmp, { recursive: true, force: true });
