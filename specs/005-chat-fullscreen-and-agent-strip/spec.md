@@ -107,6 +107,27 @@ Header actions: **Stop** (interrupt the turn; the agent stays ready), **End sess
 
 ## Changes
 
+### 2026-11-20: the agent rail can be sorted (issue #1961, FR-341, T384)
+
+*Request* (Ruben, 2026-11-20): with a chat open, sort the conversations on the left by working, waiting, waiting time and creation, oldest or newest first. Details decided by the coordinator under Ruben's delegation.
+
+- **FR-341** **A sort choice in the rail.** The rail's top row gets one small *Sort* button (accessible name "Sort conversations: <choice>", tooltip the same) that opens a menu with five radio items:
+  1. **Needs you first** (default): exactly today's FR-194 order.
+  2. **Working first**: working agents first, then waiting, then the rest in FR-194's order.
+  3. **Waiting first**: agents that need you (`needsMe()`) first, then working, then the rest.
+  4. **Oldest first** and 5. **Newest first**: by when the session was created in Durbar, ties by FR-194's order.
+  - The default already puts the longest wait first (FR-194), so there is no separate *Longest waiting* choice (decided by the coordinator, 2026-11-21). A row moves only when a status changes, never with the clock (FR-194's rule stands).
+  - **Folders stay.** The rail keeps its folder groups (FR-194, FR-340). The choice sorts the rows inside each folder, and the folders are ordered by their first row under the same choice. With *Needs you first* the folder order is FR-194's.
+  - **Tall rows stay.** Whoever needs you keeps the tall, tinted row with the wait (FR-194) whatever the order.
+  - **Remembered** per window profile in the renderer's settings, like the List view's sort; the chat list filter (spec 113) filters the sorted list and does not change the order.
+  - **Creation time** (decided by the coordinator under Ruben's delegation, 2026-11-21): the time this computer first saw the session's id, kept in `durbar.railBorn` `{id: ms}` in the renderer's storage like the chat numbers (`rememberOn()`; the simulator with `railstore=1`; ids and times only), pruned of ids that are gone once the session list has loaded; no main or IPC change. It must survive a restart for restored sessions; chat numbers (`chatNoOf`) are reused and do not count. A session with no known creation time sorts after those that have one under *Oldest first* and before them under *Newest first*, with a `[KNOWN GAP]` if any exist.
+  - **Reused**: the chat's popup menu pattern (`role=menu`, `menuitemradio`, `placeMenu`, as the profile and model menus), `railRemember()` and the chat numbers' storage pattern, and the status pill's own *Working* (`isWorkingVis`, the same test the status filter `matchStatus` uses). The List view's sort helpers (`ACT.sortBy`, `LVAL`, `ST_ORDER`) are not used: the rail sorts by one key and keeps FR-194's order for ties. No new IPC.
+  - **Working** is what the status pill counts as Working: the state is working or thinking (a paused agent reads idle). *Retrying* and *Failing* are overlays on those states, so a retrying or failing agent that is still working or thinking counts as working; *Compacting* counts only while its state is working or thinking. `durbar.railBorn` is written only when its value changes, not on every render.
+  - **Calm UI**: no row height change, text at least 10.5 px; 15 agents fit at 1440x900 and 1280x800 with the chat open; keyboard: the button opens the menu with Enter or Space, arrows move, Esc closes and returns focus.
+- **Evidence** (T384): `[IMPLEMENTED]` `test:` `test:railsort` (the order function for each choice, ties, a missing creation time, the stored choice, the first-seen map: stamp, reload, prune, tolerant load; 19 mutants); `sim:` `check-005-rail-sort` (menu, keyboard, order inside folders, stored times survive a reload and are pruned, heights, 180 px; screenshots at 1440x900 and 1280x800).
+- `[KNOWN GAP]` Sessions that existed before this shipped all read "first seen" on the day it shipped; their ties fall back to FR-194's order. Exact creation times would need main to stamp `createdAt`.
+- `[KNOWN GAP]` Spec 113's filter not on main at build time: filtering the sorted list not checked. Not run on macOS or Windows.
+
 ### 2026-11-20: a tool chip masks the call's arguments too (issue #1974, FR-342)
 
 *Report* (Vikram, 2026-11-20, found while building the Brain dock #1973, checked on a clean `main` in the simulator with invented values): a tool call's chip in the chat (its line, its hover `title` and the open chip's command) showed the call's arguments as the adapter sent them, while the header's task line masks the same text (`safeToolLabel`). FR-030 masks tool **outputs** in main; nothing masked the **arguments** on the chip. *Read* (`app.js`): `tTool` fed `makeChip` with `toolLabel(e.args)` and `toolFull(e.args)` raw, at a call's start and again when an update brings the arguments; the history replay and the VS Code transcript passed their labels raw too. Main's `outward` (`maskMcpEvent`) masks outputs and edit info, never arguments.

@@ -67,6 +67,7 @@ const DRIVERS = [
   { name: 'check-status-filter', label: 'check-status-filter retro', env: { DRIVER_WORLD: 'retro' } }, // spec 102 delta 2026-11-11 (issue 1559): the notice's contrast in the arcade, both sizes
   { name: 'check-001-room-heads', focus: true }, // spec 001 FR-270, FR-271 (issue #1905): 16 folders whose names start alike: a cut name keeps its end, the whole head (and the Real office sign) says its folder on hover and on keyboard focus, masked
   { name: 'check-001-room-heads', label: 'check-001-room-heads retro', env: { DRIVER_WORLD: 'retro' } }, // spec 001 FR-270..FR-272 (issue #1905): the same checks in the Retro arcade (its signs have more room: see the driver's note)
+  { name: 'check-005-rail-sort' }, // spec 005 FR-341 (issue #1961): the rail's Sort menu: five choices, order inside folders, keyboard, remembered, heights unchanged, 180 px
   { name: 'check-005-rail-folder' }, // spec 005 FR-340 (issue #1905): the rail's group heads and rows give their folder (masked) on hover and focus; equal names show their parent; 220 and 180 px
   { name: 'check-001-add-go' }, // spec 001 FR-272 (issue #1905): after an add the office goes to the new room and marks it for 3 s; Show; still under reduced motion; another floor; the Real office sign
   { name: 'check-001-add-go', label: 'check-001-add-go retro', env: { DRIVER_WORLD: 'retro' } }, // spec 001 FR-270..FR-272 (issue #1905): the same checks in the Retro arcade (its signs have more room: see the driver's note)
@@ -138,6 +139,7 @@ const DRIVERS = [
   { name: 'check-sched-history' }, // spec 044 FR-040..FR-044: a schedule's run history and Schedules here (N)
   { name: 'check-question-options' },
   { name: 'check-question-markdown' }, // spec 052 (2026-11-19, #1927): the question card renders the question's Markdown, masked first
+  { name: 'check-question-header-mask' }, // spec 012 (2026-11-22, #1937): the question's header tag and the automatic-answer question show masked text
   { name: 'check-elicit-markdown' }, // spec 052 (2026-11-20, #1934): the MCP form's message renders Markdown, masked first, and is shown whole (not cut at 2,000)
   { name: 'check-inbox-text' }, // spec 052 FR-214: the text of a Needs you card never runs words together
   { name: 'check-inbox-avatar' }, // spec 052 (#1174): no avatar in the Needs you dialog outgrows its box; the first Allow button is in view
@@ -274,8 +276,8 @@ const DRIVERS = [
   { name: 'check-browser-dialogs', label: 'check-browser-dialogs 1280', env: { DURBAR_SIM_BROWSER_CONSENT: 'ask', BROWSER_DIALOGS_SIZE: '1280x800' } }, // the same at 1280x800: the note, Leave this page?, the hidden dialog's toast
   { name: 'check-browser-tabs', focus: true }, // spec 080 Phase 1b (US6, FR-120..FR-133): page tabs, the toggle, pages opening tabs, 10 tabs, close while loading, keys, the cap, session end
   { name: 'check-browser-tabs', label: 'check-browser-tabs 1280', focus: true, env: { BROWSER_TABS_SIZE: '1280x800' } }, // the same at 1280x800 (SC-011)
-  { name: 'check-080-browser-expand' }, // spec 080 FR-134..FR-139 (issue #1691): Expand browser fills the chat panel, Back to small browser and Escape restore, focus, the page keeps its Escape, not remembered; Flat, both sizes
-  { name: 'check-080-browser-expand', label: 'check-080-browser-expand photo', env: { EXPAND_WORLD: 'real' } }, // the same in the Photo office (Real office)
+  { name: 'check-080-browser-expand', focus: true }, // spec 080 FR-134..FR-139 (issue #1691): Expand browser fills the chat panel, Back to small browser and Escape restore, focus, the page keeps its Escape, not remembered; Flat, both sizes
+  { name: 'check-080-browser-expand', label: 'check-080-browser-expand photo', focus: true, env: { EXPAND_WORLD: 'real' } }, // the same in the Photo office (Real office)
   { name: 'check-080-browser-expand', label: 'check-080-browser-expand retro', env: { EXPAND_WORLD: 'real', DRIVER_WORLD: 'retro' } }, // the same in the Retro arcade
   { name: 'check-browser-tab' }, // spec 080 T014/T015/T018: Chat | Browser tabs, the bar, the native view's attach and detach, the simulator's test pages, two sessions' own views
   // issue #748 (spec 021 FR-057): drivers that asserted but nothing ran, each passing alone on the simulator (seconds on a 4-core Linux box)

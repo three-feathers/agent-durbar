@@ -2,6 +2,7 @@
  * Remote control of a session (spec 054 FR-001, FR-005). Plain data and pure checks: no SDK, no I/O.
  * Any adapter with `capabilities.remote` answers `setRemote` with a `RemoteState`; the renderer sees only this shape.
  */
+import { maskHomePaths, redact } from './redact';
 
 /** Who can see a session exported to GitHub: `repo` = anyone who can read the repository; `unshared` = the creator and collaborators. */
 export type RemoteVisibility = 'repo' | 'unshared';
@@ -33,9 +34,12 @@ export function allowedRemoteUrl(url: unknown, host = 'github.com'): url is stri
   return u.protocol === 'https:' && !u.username && !u.password && !u.port && u.hostname.toLowerCase() === host.toLowerCase();
 }
 
-/** FR-002: an error as one plain line of at most 300 characters (control characters removed). */
+/**
+ * FR-002: an error as one plain line of at most 300 characters (control characters removed). Spec 045 FR-066 (review of #1980): masked like
+ * a `ShownError` on its way to the window (`redact`, then `maskHomePaths`), since the runtime's reason may carry a token or a path.
+ */
 export function cleanRemoteError(err: unknown): string {
-  const raw = err instanceof Error ? err.message : typeof err === 'string' ? err : '';
+  const raw = maskHomePaths(redact(err instanceof Error ? err.message : typeof err === 'string' ? err : '')); // FR-066: read, not shown raw (masked here)
   // eslint-disable-next-line no-control-regex
   const t = raw.replace(/[\u0000-\u001f\u007f]+/g, ' ').replace(/\s+/g, ' ').trim();
   if (!t) return 'Remote control failed.';

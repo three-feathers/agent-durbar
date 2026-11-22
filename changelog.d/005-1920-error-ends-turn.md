@@ -1,1 +1,0 @@
-- **After an error the chat is no longer busy** (spec 005): the Stop button and spinner go away when an agent reports an error, and the agent stays in Error (#1920).

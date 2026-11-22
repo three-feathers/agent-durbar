@@ -133,6 +133,7 @@ test:checknames
 test:platforms
 test:checkpoints
 test:ipcchannels
+test:ipcthrow
 test:planmode
 test:probe
 test:logo-assets
@@ -185,6 +186,7 @@ test:realoffice-layout
 test:realoffice-assets
 test:roomorder
 test:railorder
+test:railsort
 test:composersize
 test:innerscroll
 test:ctxbreakdown

@@ -132,7 +132,7 @@ export function createCliTransport(o: CliTransportOptions): ClaudeTransport {
         },
         (e: unknown) => {
           if (settled) return;
-          answer(requestId, { error: e instanceof Error ? e.message : 'host error' });
+          answer(requestId, { error: e instanceof Error ? e.message : 'host error' }); // FR-066: read, not shown (the answer goes to the Claude Code CLI, not the window)
         },
       );
   };
@@ -218,7 +218,7 @@ export function createCliTransport(o: CliTransportOptions): ClaudeTransport {
   };
   child.on('exit', (code, signal) => finish(code, signal));
   child.on('error', (e) => {
-    stderrLines.push(`spawn error: ${e.message}`.slice(0, 500));
+    stderrLines.push(`spawn error: ${e.message}`.slice(0, 500)); // FR-066: read, not shown (the stderr tail feeds the debug log and a classification)
     finish(null, null);
   });
 

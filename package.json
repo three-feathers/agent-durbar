@@ -1,6 +1,6 @@
 {
   "name": "agent-durbar",
-  "version": "0.1.26",
+  "version": "0.1.27",
   "description": "Office-style command center to see, chat with and coordinate AI agents across harnesses (GitHub Copilot, Claude Code, OpenAI Codex), for anyone who works with agents.",
   "private": true,
   "desktopName": "agent-durbar.desktop",
@@ -43,6 +43,7 @@
     "test:wsroots": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-workspace-roots.js",
     "test:security": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-wincmd.js",
     "test:ipcchannels": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-ipcchannels.js",
+    "test:ipcthrow": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-ipcthrow.js",
     "test:browserurl": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-browserurl.js",
     "test:browserviews": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-browserviews.js",
     "test:browsertabs": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-browsertabs.js",
@@ -193,6 +194,7 @@
     "test:places": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-places.js",
     "test:roomorder": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-roomorder.js",
     "test:railorder": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-railorder.js",
+    "test:railsort": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-railsort.js",
     "test:floornav": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-floornav.js",
     "test:floors": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-floors.js",
     "test:renameadapters": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-rename-adapters.js",
