@@ -1,5 +1,5 @@
 /**
- * Unit test (spec 117 FR-383): the fast lane, scripts/fast-lane.js and .github/workflows/fast-lane.yml. The runner runs only names on
+ * Unit test (spec 117 FR-386): the fast lane, scripts/fast-lane.js and .github/workflows/fast-lane.yml. The runner runs only names on
  * scripts/test-suites.txt, compiles only the picked test files, builds the app only for a suite that reads dist/; the workflow is
  * advisory and safe for fork PRs (pull_request only, no secrets, read-only token, no kept credential, PR-number concurrency group).
  * No git, no network, no Electron. Mutants of the workflow each die at their own assert.

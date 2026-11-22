@@ -240,7 +240,7 @@ async function main(): Promise<void> {
   // Budget: the job's waits plus one failed npm ci try before each wait (an outage fails a try in about a minute; 1.5 allowed).
   const TYPICAL_MIN: Record<string, number> = {
     'ci.yml:build-test': 9.8, 'ci.yml:office-check': 5.2, 'ci.yml:theme-shard': 3.0, 'e2e-real.yml:e2e': 2.5, 'install-check.yml:install': 4.4,
-    'fast-lane.yml:fast': 3, // spec 117 FR-383: the target, no run yet
+    'fast-lane.yml:fast': 3, // spec 117 FR-386: the target, no run yet
     'installed-app.yml:installed': 10.2, 'macos-pr.yml:macos-test': 8.8, 'mac-titlebar-pr.yml:mac-titlebar': 6, // estimate, no run yet (FR-200)
     'mcp-oauth-real.yml:check': 1.1, 'packaged-check.yml:check': 1.6,
     'release.yml:build': 14.4, 'ui-platforms.yml:ui': 22.7, 'world-matrix.yml:subset': 2.1,

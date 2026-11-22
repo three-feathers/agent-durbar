@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /*
- * Spec 117 FR-383: the fast lane's runner (.github/workflows/fast-lane.yml, advisory, never a required check). It runs ONLY the `npm test`
+ * Spec 117 FR-386: the fast lane's runner (.github/workflows/fast-lane.yml, advisory, never a required check). It runs ONLY the `npm test`
  * suites the PR's diff touches, as .github/scripts/ci-changes.js `--suites` (the one decision) picked them, so a Windows or macOS bug is
  * heard about in minutes instead of at the end of the full Build and test leg. The required jobs still run every suite.
  *

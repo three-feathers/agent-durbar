@@ -52,9 +52,9 @@
 
 ## P8: fast lane and the docs-only skip (2026-11-22 delta)
 
-- [x] T025 [P] `test-ci-changes.ts` first: the FR-384 guard (every live file under `src/`, `scripts/`, `.github/`, an unknown path, alone and with a doc: never `code=false`; docs paths still skip) and six mutants that widen the skip, each failing at its own assert; then `ci-changes.js` (`NEVER_DOCS`) [FR-384]
-- [x] T026 `test-ci-changes.ts` cases for `fastSuites` (step file, relative and repo-relative literal, folder literal, new suite, changed suite line, docs table, nothing picked, list order, plain names) and `--suites` through the CLI and the wrapper; `ci-changes.js --suites`, `ci-changes.sh` passes its arguments; `scripts/fast-lane.js` and `test-fast-lane.ts` (list names only, picked files compiled, build only for `dist/` readers; workflow shape with 11 mutants); `.github/workflows/fast-lane.yml`; `test-electron-cache.ts` lists the job [FR-383]
-- [ ] T027 `real:` the lane's work time per OS from its own runs (setup through the last suite), in spec *Changes*; 7 days after landing, FR-001's jobs per PR head and queue wait beside E3/E4 [FR-383]
+- [x] T040 [P] `test-ci-changes.ts` first: the FR-387 guard (every live file under `src/`, `scripts/`, `.github/`, an unknown path, alone and with a doc: never `code=false`; docs paths still skip) and six mutants that widen the skip, each failing at its own assert; then `ci-changes.js` (`NEVER_DOCS`) [FR-387]
+- [x] T041 `test-ci-changes.ts` cases for `fastSuites` (step file, relative and repo-relative literal, folder literal, new suite, changed suite line, docs table, nothing picked, list order, plain names) and `--suites` through the CLI and the wrapper; `ci-changes.js --suites`, `ci-changes.sh` passes its arguments; `scripts/fast-lane.js` and `test-fast-lane.ts` (list names only, picked files compiled, build only for `dist/` readers; workflow shape with 11 mutants); `.github/workflows/fast-lane.yml`; `test-electron-cache.ts` lists the job [FR-386]
+- [ ] T042 `real:` the lane's work time per OS from its own runs (setup through the last suite), in spec *Changes*; 7 days after landing, FR-001's jobs per PR head and queue wait beside E3/E4 [FR-386]
 
 ## Owner settings (O1)
 

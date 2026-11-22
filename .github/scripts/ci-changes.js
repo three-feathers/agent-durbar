@@ -12,7 +12,7 @@
  * `--root <checkout>`, so a PR's own edit of the decision cannot skip its own checks; with no base copy everything runs.
  *
  *   code=false    only docs/, specs/, changelog.d/ or Markdown changed, none of it under src/, scripts/ or .github/ (spec 117
- *                 FR-384): build, test, office and package jobs pass without running (FR-104); the merge queue runs them all
+ *                 FR-387): build, test, office and package jobs pass without running (FR-104); the merge queue runs them all
  *   themes=true   the look or the layout checks can change: the office job also runs theme geometry (FR-031)
  *   ui=true       something the app, its build, its packaging or the simulator UI drivers use changed (FR-191): the UI suite
  *                 (ui-platforms.yml), the office layout job and package smoke run. False for tooling, report and unit-test
@@ -40,7 +40,7 @@ const { execFileSync } = require('child_process');
 // runs the BASE branch's copy of this file and of safe-print.js, so both sit at the same relative place in the temp copy
 const { printable } = require(path.join(__dirname, '..', '..', 'scripts', 'safe-print.js'));
 
-// spec 117 FR-384: docs only = specs/, docs/, changelog.d/, Markdown and LICENSE, and NEVER a path under src/, scripts/ or .github/ (a
+// spec 117 FR-387: docs only = specs/, docs/, changelog.d/, Markdown and LICENSE, and NEVER a path under src/, scripts/ or .github/ (a
 // test reads scripts/prereview/prompts/*.md, the app ships src/**/ASSETS.md, workflows read .github/*.md): fail closed, so such a path
 // (and any unknown path) is code and the full run happens. scripts/test-ci-changes.ts guards it with mutants.
 const NEVER_DOCS = /^(src|scripts|\.github)\//;
@@ -274,7 +274,7 @@ function decide(files, io) {
   return { code, themes, ui, macos };
 }
 
-// ---- spec 117 FR-383: the fast lane (fast-lane.yml, advisory, never a required check). `--suites` writes `fast=yes` and
+// ---- spec 117 FR-386: the fast lane (fast-lane.yml, advisory, never a required check). `--suites` writes `fast=yes` and
 // `suites=<names>`: the `npm test` suites (scripts/test-suites.txt) this PR's diff touches, so each OS hears about a platform bug in
 // minutes, before its full Build and test leg ends. Derived, not hand-listed, except the docs table below. A suite is picked when:
 //   - it is new in the list, or its package.json line changed;
@@ -378,7 +378,7 @@ function main(env = process.env, argv = process.argv.slice(2)) {
   const at = argv.indexOf('--root');
   const root = at >= 0 && argv[at + 1] ? path.resolve(argv[at + 1]) : path.join(__dirname, '..', '..');
   const changedFiles = () => execFileSync('git', ['diff', '--name-only', '--no-renames', '-z', 'HEAD^1', 'HEAD'], { cwd: root, encoding: 'utf8', shell: false, maxBuffer: 64 * 1024 * 1024 }).split('\0').filter(Boolean);
-  if (argv.includes('--suites')) { // spec 117 FR-383: the fast lane's suites only (the other outputs are not written)
+  if (argv.includes('--suites')) { // spec 117 FR-386: the fast lane's suites only (the other outputs are not written)
     const suites = env.EVENT_NAME === 'pull_request' ? fastSuites(changedFiles(), gitIo(root)) : [];
     if (env.EVENT_NAME !== 'pull_request') console.log(`${env.EVENT_NAME || 'no event'}: the fast lane runs on pull requests only.`);
     else console.log(suites.length ? `fast lane: ${suites.length} suite(s): ${suites.join(' ')}` : 'fast lane: no suite is touched by this diff.');

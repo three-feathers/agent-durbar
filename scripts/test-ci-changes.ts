@@ -282,7 +282,7 @@ assert.strictEqual(d(['package.json', 'package-lock.json', 'CHANGELOG.md', 'chan
 assert.strictEqual(d(['package.json', 'src/main/main.ts'], versionBump).macos, true, 'a bump with code runs it');
 assert.strictEqual(d(['scripts/test-usage.js']).macos, true, 'a test script runs it (unit tests are what it checks)');
 
-// ---- spec 117 FR-384: the docs-only skip FAILS CLOSED. No path under src/, scripts/ or .github/ (Markdown there included: a test reads
+// ---- spec 117 FR-387: the docs-only skip FAILS CLOSED. No path under src/, scripts/ or .github/ (Markdown there included: a test reads
 // scripts/prereview/prompts/*.md, the app ships src/**/ASSETS.md) and no unknown path can take it. Every live file there is checked, then
 // mutants of the rule (each a way of widening the skip) must each die at this guard's own assert.
 type Decision = { code: boolean; themes: boolean; ui: boolean; macos: boolean };
@@ -316,7 +316,7 @@ function skipProblems(c: Cc): string[] {
   return bad;
 }
 assert.ok(LIVE.filter((f) => f.startsWith('src/')).length > 50 && LIVE.some((f) => f.startsWith('.github/workflows/')) && LIVE.includes('scripts/run-tests.js') && LIVE.includes('scripts/prereview/prompts/system.md'), 'the guard walked the live src/, scripts/ and .github/ trees');
-assert.deepStrictEqual(skipProblems(cc as unknown as Cc), [], 'FR-384: nothing under src/, scripts/ or .github/, and no unknown path, takes the docs-only skip');
+assert.deepStrictEqual(skipProblems(cc as unknown as Cc), [], 'FR-387: nothing under src/, scripts/ or .github/, and no unknown path, takes the docs-only skip');
 {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const Module = require('module') as { new (id: string, parent: unknown): { filename: string; paths: string[]; exports: unknown; _compile(src: string, file: string): void }; _nodeModulePaths(dir: string): string[] };
@@ -344,7 +344,7 @@ assert.deepStrictEqual(skipProblems(cc as unknown as Cc), [], 'FR-384: nothing u
   }
 }
 
-// ---- spec 117 FR-383: the fast lane's suites (`--suites`), derived from the diff
+// ---- spec 117 FR-386: the fast lane's suites (`--suites`), derived from the diff
 {
   type Fs = { fastSuites: (files: string[], io: Io) => string[]; suiteNames: (t: string) => string[]; stepSources: (c: string) => string[] };
   const fc = cc as unknown as Fs;
@@ -397,7 +397,7 @@ assert.deepStrictEqual(skipProblems(cc as unknown as Cc), [], 'FR-384: nothing u
     return fs.readFileSync(outFile, 'utf8');
   };
   assert.strictEqual(run('pull_request'), 'code=false\nthemes=false\nui=false\nmacos=false\n', 'pull_request: the diff of HEAD^1..HEAD decides (docs only: nothing)');
-  // spec 117 FR-383: --suites writes only the fast lane's two outputs (this repo has no suite list: none picked); other events pick none
+  // spec 117 FR-386: --suites writes only the fast lane's two outputs (this repo has no suite list: none picked); other events pick none
   assert.strictEqual(run('pull_request', ['--suites']), 'fast=yes\nsuites=\n', '--suites: only fast and suites');
   assert.strictEqual(run('push', ['--suites']), 'fast=yes\nsuites=\n', '--suites on a push: the lane runs on pull requests only');
   for (const ev of ['push', 'merge_group', 'schedule', 'workflow_dispatch', '']) assert.strictEqual(run(ev), 'code=true\nthemes=true\nui=true\nmacos=true\n', `${ev || 'no event'}: everything runs`);
@@ -423,7 +423,7 @@ assert.deepStrictEqual(skipProblems(cc as unknown as Cc), [], 'FR-384: nothing u
     fs.writeFileSync(path.join(repo, 'scripts', 'tool.js'), 'module.exports = 1;\n');
     git('add', '-A'); git('commit', '-q', '-m', 'a tooling script');
     assert.strictEqual(bash(repo, 'pull_request'), 'code=true\nthemes=false\nui=false\nmacos=true\n', 'the wrapper decides on the PR checkout (--root): a tooling script is not UI');
-    assert.strictEqual(bash(repo, 'pull_request', ['--suites']), 'fast=yes\nsuites=\n', 'the wrapper passes --suites to the base copy (spec 117 FR-383)');
+    assert.strictEqual(bash(repo, 'pull_request', ['--suites']), 'fast=yes\nsuites=\n', 'the wrapper passes --suites to the base copy (spec 117 FR-386)');
     // a committed .ci-changes-base/ is cleared first: its package.json saying "type":"module" would make the copied decision fail
     fs.mkdirSync(path.join(repo, '.ci-changes-base'));
     fs.writeFileSync(path.join(repo, '.ci-changes-base', 'package.json'), '{"type":"module"}\n');

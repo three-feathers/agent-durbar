@@ -69,7 +69,7 @@ Measure first (`npm run ci:stats`), then cut the one big cost: the UI shards are
 
 - `.specify/templates/*` are managed by `specify integration` (hashes in `.specify/integrations/speckit.manifest.json`, `read:` 2026-11-22), so they are not edited. The guidance is one word-neutral rewrite of `docs/review-checklist.md`'s *Slice size* line (T019); `docs/agent-notes.md` gets nothing (4,597 of 4,600).
 
-### P8: fast lane and the docs-only skip (FR-383, FR-384), 2026-11-22 delta
+### P8: fast lane and the docs-only skip (FR-386, FR-387), 2026-11-22 delta
 
 - `ci-changes.js`: `NEVER_DOCS` (`src/`, `scripts/`, `.github/` are never docs) in front of the old docs pattern; `fastSuites(files, io)` and the `--suites` mode (writes `fast=yes` and `suites=<names>` only, so the existing outputs and their tests stay as they are). The literal targets of each step file are read once per tree (a `WeakMap` cache), so the decision takes about a second.
 - `fast-lane.yml` (one job, three-OS matrix): checkout (`fetch-depth: 2`, no kept credential), `ci-changes.sh --suites` (base copy), the PR's copy only when the base has no `fast` output, then setup-node, `npm-ci` (one 30 s retry) and `node scripts/fast-lane.js` only when a suite was picked.

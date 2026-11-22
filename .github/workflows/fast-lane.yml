@@ -1,6 +1,6 @@
 name: Fast lane
 
-# Spec 117 FR-383 (owner order, Vikram 2026-11-22: faster delivery without losing quality). On each pull request, on all three OSes,
+# Spec 117 FR-386 (owner order, Vikram 2026-11-22: faster delivery without losing quality). On each pull request, on all three OSes,
 # run ONLY the `npm test` suites the diff touches, so a Windows- or macOS-only failure (CRLF, 8.3 short paths, /private/var realpath)
 # shows in a few minutes instead of at the end of a 14-25 minute Build and test leg, one bug per round. ADVISORY: not a required
 # check, and it decides nothing else; the required jobs in ci.yml still run every suite, and the merge queue runs everything.
