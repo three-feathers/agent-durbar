@@ -251,6 +251,35 @@ module.exports = async (ctx) => {
     rows[`floorStyleReadsPerStatus@${n}`] = med(per.gcsFloor);
     rows[`readsPerStatus@${n}`] = med(per.reads);
 
+    /* spec 001 delta 2026-11-22 (issue 2024): a desk that moves inside its room (it waits for you: to the front; it works again: back) is the same desks in
+       another order. That re-ran the whole layout search (18 to 21 probes, about 3000 layout reads, 65 to 76 ms of the 79 ms p95 at DPR 2); now it is one probe of the
+       layout it has. Asserted where the office fits (15 agents always; a scrolling office searches as before). The order must really change, or the row tests nothing */
+    const fits = await js(`document.getElementById('stage').dataset.fit==='ok'`);
+    if (n === 15) assert.ok(fits, `${n} agents: the office fits at 1440x900, so the desk-order case is asserted`);
+    if (fits) {
+      const mover = await js(`(()=>{for(const r of document.querySelectorAll('#stage .room')){const d=[...r.querySelectorAll('.desk[data-id]')].map(e=>e.dataset.id).filter(x=>/^sim-\\d+$/.test(x));if(d.length>=3)return d[d.length-1];}return null;})()`);
+      assert.ok(mover, `${n} agents: a room with three desks or more`);
+      const place = `(()=>{const e=document.querySelector('#stage .desk[data-id=${jsLiteral(mover)}]');const r=e&&e.closest('.room');return r?[...r.querySelectorAll('.desk[data-id]')].indexOf(e):-1;})()`;
+      const emitM = (st) => `window.__durbarSimEmit({type:'status',sessionId:${jsLiteral(mover)},timestamp:Date.now(),status:${jsLiteral(st)}})`;
+      await drawn(emitM('working'));
+      const reorder = { searches: [], probes: [], moved: [] };
+      for (let i = 0; i < 4; i++) {
+        for (const st of ['needs-permission', 'working']) {
+          assert.ok(await until(`window.__durbarSimUi.visitsSettled()&&window.__durbarSimUi.settleNow()`, 15000), `${n} agents: the office settled before reorder ${i} ${st}`);
+          await js(TWO_FRAMES);
+          const at0 = await js(place), o0 = await js(`window.__durbarSimUi.ops()`);
+          await drawn(emitM(st));
+          const o1 = await js(`window.__durbarSimUi.ops()`), at1 = await js(place);
+          reorder.searches.push(o1.searches - o0.searches); reorder.probes.push(o1.probes - o0.probes); reorder.moved.push(at0 !== at1 ? 1 : 0);
+        }
+      }
+      console.log('[ops]', n, 'agents, desk moves in its room (8): searches', reorder.searches.join(','), 'probes', reorder.probes.join(','), 'moved', reorder.moved.join(','));
+      assert.ok(reorder.moved.every((m) => m === 1), `${n} agents: every waiting or working status moved ${mover} inside its room (${reorder.moved}), so the reorder is real`);
+      assert.ok(reorder.searches.every((s) => s === 0), `${n} agents: a desk that moves inside its room runs no layout search (searches ${reorder.searches}, probes ${reorder.probes})`);
+      rows[`searchesPerReorder@${n}`] = Math.max(...reorder.searches);
+      rows[`probesPerReorder@${n}`] = Math.max(...reorder.probes);
+    }
+
     /* one live paint (spec 001 FR-028, review of #1138): a thinking delta rewrites one desk's live line without a render. Its layout reads, through the
        pencils' frame (two frames waited), must not grow with the pencils of the room: the line's height is read, the names only when it changed */
     const lid = await js(`(()=>{const e=document.querySelector('#stage .desk[data-id] [data-live]');return e&&e.dataset.live;})()`);
