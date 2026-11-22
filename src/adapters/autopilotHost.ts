@@ -8,6 +8,7 @@ import { AUTOPILOT_ANSWER, AutopilotRun, CLOCK_SAMPLE_MS, hoursOrDefault, limitO
 import type { GoalTextResult } from './autopilot';
 import type { AskedQuestion, AutopilotEnd, AutopilotEvent, AutopilotSettings } from './types';
 import type { EventBody } from './map';
+import { ShownError } from '../shared/shownerror';
 
 /**
  * False in the default build (spec *Changes*, Phase 3 gate): main's calls of `setAutopilot` refuse while it is. Until then nothing about a session that is not on Autopilot changes: a resume sends no clear
@@ -64,7 +65,7 @@ export interface AutopilotPorts {
 /** Resolves or rejects with `p`, or rejects after `ms`. */
 export function within<T>(p: Promise<T>, ms: number, what: string): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined;
-  return Promise.race([p, new Promise<never>((_, rej) => { timer = setTimeout(() => rej(new Error(`${what} did not answer in time`)), ms); })]).finally(() => clearTimeout(timer));
+  return Promise.race([p, new Promise<never>((_, rej) => { timer = setTimeout(() => rej(new ShownError(`${what} did not answer in time`)), ms); })]).finally(() => clearTimeout(timer));
 }
 
 /** The lower of the session's own cap and the Autopilot cap (FR-022). */
@@ -113,7 +114,7 @@ export class AutopilotState {
   /** A new run for the message being sent (FR-020). */
   begin(): AutopilotRun {
     const s = this.settings;
-    if (!s) throw new Error('This session is not on Autopilot.');
+    if (!s) throw new ShownError('This session is not on Autopilot.');
     const run = new AutopilotRun({ limit: s.limit, hours: s.hours, runId: randomUUID(), halt: (r) => this.halt(r), emit: (e) => this.onRun(e), ...(this.ports.backstopPer ? { backstopPer: this.ports.backstopPer } : {}), ...(this.tuning.now ? { now: this.tuning.now } : {}) });
     this.run = run;
     run.start();

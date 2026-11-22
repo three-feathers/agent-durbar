@@ -11,6 +11,7 @@
  */
 import type { SetupKind } from '../shared/harnesssetup';
 import type { PolicyView } from '../shared/updatecheck';
+import { failText } from './ipcerror';
 
 /**
  * FR-013, the one rule for every call site in main (`addWorkspace`, `ensureLive`, the scheduler's `heldBy`): a session that is
@@ -144,7 +145,7 @@ export class UpdateGate {
     this.leaveAsking(lock);
     lock.phase = 'running';
     let r: RunReply;
-    try { r = await proceed(() => this.d.count(kind).open); } catch (e) { r = { ok: false, error: e instanceof Error ? e.message : String(e) }; }
+    try { r = await proceed(() => this.d.count(kind).open); } catch (e) { r = { ok: false, error: failText(e, 'update gate') }; }
     if (r.recount) {
       // a session was open after the confirmation: the lock stays and the gate dialog comes back
       if (this.locks.has(kind)) this.asking(kind);

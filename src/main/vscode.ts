@@ -3,6 +3,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { pathDirs } from '../shared/pathdirs';
 import { cmdShimArgs, windowsCmdPath } from '../shared/wincmd';
+import { failText } from './ipcerror';
 
 export interface LaunchPlan {
   command: string;
@@ -148,7 +149,7 @@ export function spawnPlan(plan: LaunchPlan, spawnFn: typeof spawn = spawn, platf
       windowsVerbatimArguments: platform === 'win32' && plan.verbatim === true,
     });
     child.once('error', (err: NodeJS.ErrnoException) =>
-      resolve({ ok: false, error: err.code === 'ENOENT' ? `Could not start ${plan.edition ?? 'VS Code'} (${plan.via})` : err.message }),
+      resolve({ ok: false, error: err.code === 'ENOENT' ? `Could not start ${plan.edition ?? 'VS Code'} (${plan.via})` : failText(err, 'VS Code', `Could not start ${plan.edition ?? 'VS Code'}.`) }),
     );
     child.once('spawn', () => {
       child.unref();

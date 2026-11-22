@@ -14,6 +14,7 @@ import * as path from 'path';
 import { EDITIONS, EDITOR_NOT_FOUND, defaultEnv, isWindowsTarget, planEdition, spawnPlan } from './vscode';
 import type { LaunchEnv, LaunchPlan, OpenResult } from './vscode';
 import { CMD_UNSAFE } from '../shared/wincmd';
+import { failText } from './ipcerror';
 
 export type TargetId = 'vscode' | 'vscode-insiders' | 'vscodium' | 'folder';
 /** FR-020: the only target ids; each editor id is one of spec 009's editions. */
@@ -150,7 +151,7 @@ export async function openWith(agent: OwnedAgent | undefined, targetId: unknown,
       const err = await d.openPath(f.path);
       return err ? { ok: false, error: err } : { ok: true, ...(f.linked ? { note: LINK_NOTE } : {}) };
     } catch (e) {
-      return { ok: false, error: e instanceof Error ? e.message : String(e) };
+      return { ok: false, error: failText(e, 'open with') };
     }
   }
   if (!Object.prototype.hasOwnProperty.call(EDITOR_TARGETS, targetId)) return { ok: false, error: 'unknown target' };

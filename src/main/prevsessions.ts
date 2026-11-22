@@ -13,6 +13,9 @@ import type { PreviousSession } from '../adapters/history';
 import type { AgentInfo } from '../shared/api';
 import { markIdOk, sessionIdOk } from '../shared/sessionid';
 import type { FolderStore, PrevMarkOp } from './folders';
+import { failText } from './ipcerror';
+/** One line for the window (`failText`, spec 045 FR-066), control characters removed, at most 200 characters. */
+const windowText = (err: unknown): string => failText(err, 'sessions').replace(/[\u0000-\u001f\u007f]+/g, ' ').trim().slice(0, 200) || 'unknown error';
 
 export interface PrevDeps {
   agents: Map<string, AgentInfo>;
@@ -42,7 +45,6 @@ export const NOT_AVAILABLE = 'That session is no longer available for this folde
 export const ALREADY_DELETING = 'Already deleting this session.';
 export const BEING_OPENED = 'This session is being opened.';
 
-const errText = (err: unknown): string => (err instanceof Error ? err.message : String(err)).replace(/[\u0000-\u001f\u007f]+/g, ' ').trim().slice(0, 200) || 'unknown error';
 
 /** Ids of the sessions that have a card in the office: Durbar ids and resume ids (FR-032). */
 export function openIdsOf(d: Pick<PrevDeps, 'agents' | 'resumeIdFor'>): Set<string> {
@@ -76,7 +78,7 @@ export async function listPreviousOp(d: PrevDeps, id: unknown): Promise<{ ok: bo
     for (const e of d.store?.sessionNames(d.wsKey(a)) ?? []) if (e.src === src && present.has(e.id)) names[e.id] = e.name;
     return { ok: true, sessions, names, ...marksFor(d, a, src, present) };
   } catch (err) {
-    return { ok: false, error: errText(err), sessions: [], pinned: [], hidden: [] };
+    return { ok: false, error: windowText(err), sessions: [], pinned: [], hidden: [] };
   }
 }
 
@@ -138,7 +140,7 @@ export class PrevSessions {
       try {
         prev = (await previousSessionsOf(ad, a.cwd, openIdsOf(d))).find((s) => s.id === sessionId);
       } catch (err) {
-        return { ok: false, error: errText(err) };
+        return { ok: false, error: windowText(err) };
       }
       if (!prev) return { ok: false, error: NOT_AVAILABLE };
       // 3 again, right before the call: a card (e.g. a lazy restore) may have appeared during the await above
@@ -150,7 +152,7 @@ export class PrevSessions {
       try {
         await deleteSessionOf(ad, sessionId);
       } catch (err) {
-        return { ok: false, error: errText(err) };
+        return { ok: false, error: windowText(err) };
       }
       // 7. forget its marks (and any saved last/open session), log once, no title
       const key = d.wsKey(a);

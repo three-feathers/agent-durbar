@@ -218,7 +218,7 @@ process.on('exit', () => { if (!finished) { console.error('profile generation te
 void (async () => {
   const calls: string[] = [];
   const good: OneShot = { name: 'Fake', generate: async (p) => { calls.push(p); return { text: filled('claude', 'pay-reviewer'), costUsd: 0.001 }; } };
-  const deps = { oneShot: (id: string) => (id === 'fake' ? good : undefined), parse, errText: (e: unknown) => String(e) };
+  const deps = { oneShot: (id: string) => (id === 'fake' ? good : undefined), parse, failText: (e: unknown) => String(e) };
   const base = { app: 'claude', name: 'pay-reviewer', by: 'fake', mode: 'describe', description: 'A careful payments reviewer' };
   const ok = await generateProfile(base, deps);
   assert.ok(ok.ok && ok.by === 'Fake' && ok.costUsd === 0.001 && calls.length === 1, 'a good request');

@@ -290,10 +290,10 @@ let SERIOUS=false; /* Serious mode (Settings): no mood drawings at all */
 function markSerious(){document.documentElement.toggleAttribute('data-serious',SERIOUS);}
 /* spec 052 FR-069 (changed 2026-11-05, issue 1182): looping animation stops under the system's reduced motion or with Settings > Motion off (styles.css, html[data-motion-off]); Serious mode no longer stops it */
 let MOTION=true;
-function markMotion(){document.documentElement.toggleAttribute('data-motion-off',!MOTION);}
+function markMotion(){document.documentElement.toggleAttribute('data-motion-off',!MOTION);if(typeof brainMotionSync==='function')brainMotionSync();} /* spec 106 FR-060: Motion off makes the brain Still */
 /* spec 001 FR-192 (WCAG 2.2.2): Settings > Still highlights (no motion): the desk glow and the New badge stay, the person and the badge do not move (styles.css, html[data-still-highlights]) */
 let STILL_HL=false;
-function markStillHl(){document.documentElement.toggleAttribute('data-still-highlights',STILL_HL);}
+function markStillHl(){document.documentElement.toggleAttribute('data-still-highlights',STILL_HL);if(typeof brainMotionSync==='function')brainMotionSync();} /* spec 106 FR-060: so do Still highlights */
 /* Spec 052 FR-031 (removed 2026-11-02): the Simple / Expert switch is gone and Expert is the only behaviour. A value stored by the old switch is dropped once. */
 try{localStorage.removeItem('durbar.detail');}catch(e){}
 /* spec 052 FR-099 (round 10): Spacing, Comfortable or Compact. Compact tightens the chrome only (chat, screens, dialogs, inbox); the top bar,
@@ -4901,6 +4901,7 @@ function doorGeom(){
 }
 function doorPlace(p){const g=doorGeom();p.style.top=g.top+'px';p.style.maxHeight=g.maxH+'px';p.style.width=g.full?'auto':g.w+'px';p.style.right=g.right+'px';p.style.left=g.full?'0':'auto';}
 window.addEventListener('resize',()=>{const p=$('needsPanel');if(p)doorPlace(p);});
+window.addEventListener('resize',()=>{if(document.body.classList.contains('panel-open')&&brainOn())brainRailSync();}); /* spec 106 T426: the narrow-window rule follows the window */
 /* FR-202, FR-203: it never opens by itself over a dialog, a menu, Settings or Tools, a chat, a narrow window, or the key the person is on */
 function doorHeld(){
   if(ui.selected||modalOpen()||document.querySelector('.dlg-ov')||innerWidth<900)return true;
@@ -7257,7 +7258,7 @@ function showQuestion(a,e){
     /* spec 052 (2026-11-19 delta, issue 1927, T378): the question's Markdown is rendered by the chat's own safe renderer (DurbarMD: raw HTML is text, links keep the chat's click handling),
        after the text is masked: the rendered output never holds an unmasked value. The answer is still keyed by the agent's own question text. */
     const qt=document.createElement('div');qt.className='q-text md';
-    if(q.header){const h=document.createElement('span');h.className='tag';h.textContent=q.header;qt.appendChild(h);}
+    if(q.header){const h=document.createElement('span');h.className='tag';h.textContent=safeMask(String(q.header));qt.appendChild(h);} /* spec 012 (2026-11-22 delta, issue 1937): the header is agent text: masked like the question */
     const qb=document.createElement('div');qb.className='q-md';qb.innerHTML=qMdHTML(q.question);qt.appendChild(qb);box.appendChild(qt);
     const qPlain=qb.textContent.replace(/\s+/g,' ').trim(); /* the words a screen reader says, without the Markdown marks; masked like the card (never the raw question) */
     const opts=document.createElement('div');opts.className='q-opts';opts.setAttribute('role',q.multiSelect?'group':'radiogroup');opts.setAttribute('aria-label',qPlain);
@@ -7789,12 +7790,19 @@ function onAgentRenamed(e){
   a.alias=typeof e.alias==='string'&&e.alias?e.alias:undefined;
   repaintName(a);
 }
-/* spec 106 T006 (delta 2026-11-20): Brain view's dock at the top of the chat's right rail, above a Your door section. Behind the preview flag until T009's
-   Settings switch (localStorage durbar.brainPreview = "on"; ?brain=1, which main sets from DURBAR_BRAIN=1 in a development run, as DURBAR_DOOR).
-   Loaded on first use (FR-105) from files that are not in index.html: the stylesheet first, so the rail is never drawn unstyled; events that arrive while
-   it loads wait in a short queue. Off: nothing loads and the chat is unchanged. */
-const BRAIN_PREVIEW=(()=>{try{return qs.get('brain')==='1'||localStorage.getItem('durbar.brainPreview')==='on';}catch(e){return false;}})();
+/* spec 106 T006, T426 (deltas 2026-11-20): Brain view's dock at the top of the chat's right rail, above a Your door section. On by default: Settings > Brain view
+   (`brainView` through setting() in main; unknown until settings:get answers, which means on). ?brain=0|1 is a run override only (the simulator's drivers;
+   main sets it from DURBAR_BRAIN=0|1 in a development run), never saved. Loaded on first use (FR-105) from files that are not in index.html: the stylesheet
+   first, so the rail is never drawn unstyled; events that arrive while it loads wait in a short queue. Off: nothing loads and the chat keeps its width. */
+const BRAIN_OVERRIDE=qs.get('brain')==='1'?true:qs.get('brain')==='0'?false:null;
+let BRAIN_SET=true, BRAIN_MOTION_SET='full', BRAIN_LOWPOWER=false, BRAIN_NARROW_OPEN=false;
+const brainOn=()=>BRAIN_OVERRIDE!==null?BRAIN_OVERRIDE:BRAIN_SET;
+const BRAIN_NARROW_W=1100; /* under this window width the rail starts collapsed, not saved (T426) */
 let BRAIN_H=null, BRAIN_STATE='idle', BRAIN_WHY='', BRAIN_RAIL_OFF=null, BRAIN_EMPTY=null; const BRAIN_Q=[];
+/* FR-060: Settings > Brain motion, forced Still by Still highlights, Motion off or a low battery (reduced motion and forced colours: the dock itself) */
+function brainMotionSync(){if(!BRAIN_H)return;BRAIN_H.setMotion(BRAIN_MOTION_SET);BRAIN_H.setForceStill(STILL_HL||!MOTION||BRAIN_LOWPOWER);}
+/* FR-104: a low battery (not charging, under 20 %) from the renderer's own Battery Status API; missing or refused: nothing is assumed */
+function brainBattery(){try{if(!navigator.getBattery)return;navigator.getBattery().then(b=>{const f=()=>{BRAIN_LOWPOWER=!!b&&b.charging===false&&typeof b.level==='number'&&b.level<0.2;brainMotionSync();};f();b.addEventListener('chargingchange',f);b.addEventListener('levelchange',f);}).catch(()=>{});}catch(e){/* no API: nothing assumed */}}
 function brainLoad(){
   if(BRAIN_STATE!=='idle'&&BRAIN_STATE!=='waiting')return;
   BRAIN_STATE='loading';
@@ -7804,10 +7812,10 @@ function brainLoad(){
       const R=window.DurbarRedact,U=window.DurbarUsage,C=window.DurbarCost;
       if(NO_REDACT||!R||typeof R.redact!=='function'||!U||!C){BRAIN_STATE='failed';BRAIN_WHY='no mask';BRAIN_Q.length=0;return;} /* no masking, no brain */
       const mask=Object.assign({},R,{units:{validNano:U.validNano,AIU_USD:C.AIU_USD,money:C.money,creditsWord:'AIU',estimateWord:'Claude (est.)'}});
-      BRAIN_H=window.DurbarBrainDock.start({mask,now:()=>Date.now(),name:id=>{const a=liveById(id)||byId(id);return a?a.name:'Agent';},folder:id=>{const a=byId(id),r=a&&roomOf(a);return r?r.path:undefined;}});
+      BRAIN_H=window.DurbarBrainDock.start({mask,motion:BRAIN_MOTION_SET,now:()=>Date.now(),name:id=>{const a=liveById(id)||byId(id);return a?a.name:'Agent';},folder:id=>{const a=byId(id),r=a&&roomOf(a);return r?r.path:undefined;}});
       BRAIN_STATE=BRAIN_H?'ready':'failed';if(!BRAIN_H)BRAIN_WHY='dock refused';
       BRAIN_Q.splice(0).forEach(x=>{if(BRAIN_H)BRAIN_H.feed(x[0],x[1],x[2]);});
-      brainRailSync();
+      brainMotionSync(); brainBattery(); brainRailSync();
       return;
     }
     const sc=document.createElement('script');sc.src=files[i];sc.onload=()=>next(i+1);sc.onerror=()=>{BRAIN_STATE='failed';BRAIN_WHY='script '+files[i];BRAIN_Q.length=0;};document.head.appendChild(sc);
@@ -7816,9 +7824,9 @@ function brainLoad(){
   lk.onload=()=>next(0); lk.onerror=()=>{BRAIN_STATE='failed';BRAIN_WHY='style';BRAIN_Q.length=0;};
   document.head.appendChild(lk);
 }
-function brainStart(){if(!BRAIN_PREVIEW||BRAIN_STATE!=='idle')return;BRAIN_STATE='waiting';if(document.readyState==='complete')brainLoad();else window.addEventListener('load',brainLoad,{once:true});}
+function brainStart(){if(!brainOn()||BRAIN_STATE!=='idle')return;BRAIN_STATE='waiting';if(document.readyState==='complete')brainLoad();else window.addEventListener('load',brainLoad,{once:true});}
 function brainFeed(a,e){
-  if(!BRAIN_PREVIEW||BRAIN_STATE==='failed')return;
+  if(!brainOn()||BRAIN_STATE==='failed')return;
   if(BRAIN_H)BRAIN_H.feed(a.id,a.name,e);else{BRAIN_Q.push([a.id,a.name,e]);if(BRAIN_Q.length>500)BRAIN_Q.shift(); /* while it loads, the newest 500 events are kept (a step's end beats its start) */brainStart();}
 }
 /* FR-031: the rail's collapse is kept as the agent rail keeps its folds (005 FR-196: only when rememberOn(); `railstore=1` for drivers) */
@@ -7829,14 +7837,18 @@ function brainRailHTML(){
     +'<ul class="brail-dl" id="brailDoorL" aria-label="Who needs you"></ul></section></aside>';
 }
 function brainRailCollapse(off){
-  BRAIN_RAIL_OFF=!!off; if(railRemember()){try{if(off)localStorage.setItem('durbar.brainRail','collapsed');else localStorage.removeItem('durbar.brainRail');}catch(e){/* kept for this run */}}
+  BRAIN_RAIL_OFF=!!off; BRAIN_NARROW_OPEN=!off; /* in a narrow window the Brain button opens it for this window */ if(railRemember()){try{if(off)localStorage.setItem('durbar.brainRail','collapsed');else localStorage.removeItem('durbar.brainRail');}catch(e){/* kept for this run */}}
   brainRailSync();
   const f=off?$('brainBack'):$('brailHide'); if(f&&f.getClientRects().length)focusIn(f);
 }
 /* the rail with a chat open: built after openPanel's innerHTML (which drops it), the dock moved into it, the open chat's agent shown (a helper's chat: its parent, FR-007) */
 function brainRailSync(){
-  if(!BRAIN_PREVIEW)return;
-  const open=document.body.classList.contains('panel-open')&&!!ui.selected&&!!byId(ui.selected), off=open&&brainRailOff();
+  if(!brainOn()){ /* turned off (Settings): the rail and its button go, the chat gets its width back; nothing more is drawn */
+    document.body.classList.remove('brain-rail-off');const r0=$('brainRail'),b0=$('brainBack');if(r0)r0.remove();if(b0)b0.remove();
+    if(BRAIN_H){BRAIN_H.unmount();BRAIN_H.show(null);}return;
+  }
+  const narrow=window.innerWidth<BRAIN_NARROW_W&&!BRAIN_NARROW_OPEN;
+  const open=document.body.classList.contains('panel-open')&&!!ui.selected&&!!byId(ui.selected), off=open&&(brainRailOff()||narrow);
   document.body.classList.toggle('brain-rail-off',off);
   if(!open){if(BRAIN_H){BRAIN_H.unmount();BRAIN_H.show(null);}return;}
   if(!BRAIN_H){brainStart();return;}
@@ -7860,7 +7872,7 @@ function brainDoorPaint(){
   if(l.dataset.sig!==sig){
     const fa=document.activeElement, fk=fa&&l.contains(fa)&&fa.dataset?fa.dataset.door:null;
     l.dataset.sig=sig;
-    l.innerHTML=rows.length?rows.map(x=>`<li><button class="btn" type="button" data-door="${esc(x.id)}" aria-label="${esc(x.name)}, ${esc(x.said)}: ${esc(x.req)}. Open Needs you."><span class="brail-who"><b>${esc(x.name)}</b> <span class="brail-age">${esc(x.age)}</span></span><span class="brail-req">${esc(x.req)}</span></button></li>`).join(''):'<li class="brail-none">Nobody needs you now.</li>';
+    l.innerHTML=rows.length?rows.map(x=>`<li><button type="button" data-door="${esc(x.id)}" aria-label="${esc(x.name)}, ${esc(x.said)}: ${esc(x.req)}. Open Needs you."><span class="brail-who"><b>${esc(x.name)}</b> <span class="brail-age">${esc(x.age)}</span></span><span class="brail-req">${esc(x.req)}</span></button></li>`).join(''):'<li class="brail-none">Nobody needs you now.</li>';
     if(fk){const b=l.querySelector('[data-door="'+CSS.escape(fk)+'"]');if(b)focusIn(b);}
   }
   const empty=!rows.length;
@@ -8347,7 +8359,7 @@ function renderRailDoor(){
   const n=needsMeOrder().length;
   b.classList.toggle('attn',n>0); const c=b.querySelector('b'); if(c&&c.textContent!==String(n))c.textContent=String(n);
   b.setAttribute('aria-label','Your door: '+(n?n+(n===1?' agent needs':' agents need')+' you':'nobody needs you')+'. Open Needs you.');
-  if(BRAIN_PREVIEW)brainDoorPaint(); /* spec 106 T006: the right rail's Your door section counts the same */
+  if(brainOn())brainDoorPaint(); /* spec 106 T006: the right rail's Your door section counts the same */
 }
 let railTick=0;
 function renderStrip(){
@@ -8472,7 +8484,7 @@ function showAutoQuestion(a,e){
   const t=ensureTurn(a),qs=(e.questions||[]).slice(0,4);
   const n=document.createElement('div');n.className='note ap-question';n.setAttribute('role','group');n.setAttribute('aria-label','Question from the agent');
   const head=document.createElement('b');head.textContent=e.elicitation?'Declined (Autopilot)':'Decided by itself (Autopilot)';n.appendChild(head);
-  qs.forEach(q=>{const p=document.createElement('p');p.className='q-text';p.textContent=String(q&&q.question||'');n.appendChild(p);});
+  qs.forEach(q=>{const p=document.createElement('p');p.className='q-text';p.textContent=safeMask(String(q&&q.question||''));n.appendChild(p);});
   tChips(t.T).appendChild(n);stickyScroll(liveChat(a));
 }
 function closeModeMenu(){const m=document.getElementById('modeMenu');if(m){m.remove();const c=$('modeChip');if(c)c.setAttribute('aria-expanded','false');document.querySelectorAll('[data-act="ro-ask"][aria-expanded="true"]').forEach(b=>b.setAttribute('aria-expanded','false'));}}
@@ -10604,7 +10616,7 @@ if(bridge){
   window.DurbarScreens.init({afterClose:officeOwed,handover:{ /* spec 011 FR-088: a near-limit card offers the existing dialog for a live session; found again by id at the click */
     sessions:(kind)=>agents.filter(a=>a.live&&!a.parent&&(a.info&&a.info.adapterId||'copilot')===kind&&canHandover(a)).slice(0,3).map(a=>({id:a.id,name:a.name})),
     open:(id,to)=>{const a=byId(id);if(!a||!a.live||!canHandover(a))return false;newSession(a,{summary:true,handover:true,to});return true;}
-  },autoFollow:{get:()=>AF_ON,set:v=>setAutoFollowOn(v)},shutters:{get:()=>SHUT_PREF,set:setShutOn,usable:()=>!!SHUT},view:{get:officeView,set:setOfficeView,note:()=>roPeople().note&&officeView()==='real'?roPeople().note:'',world:{get:()=>roPeople().world,set:setRoWorld,list:roWorlds,defaultSet:()=>roPeople().setName}},navKey:{text:navKeyText,textOf:c=>keyText(NAV.comboParts(c)),defText:()=>keyText(NAV.comboParts(NAV.DEFAULT_COMBO)),isDefault:()=>NAV.sameCombo(NAV_KEY,NAV.DEFAULT_COMBO),set:setNavKey,recording:on=>{navRecording=!!on;},fromEvent:e=>NAV.comboFromEvent(e,IS_MAC),clash:c=>NAV.sameCombo(c,SEARCH_KEY)&&!NAV.sameCombo(SEARCH_KEY,NAV.SEARCH_COMBO)?'Already used for Search conversations.':NAV.clashOf(c,IS_MAC)},searchKey:bridge&&bridge.convSearchStart?{text:searchKeyText,textOf:c=>keyText(NAV.comboParts(c)),defText:()=>keyText(NAV.comboParts(NAV.SEARCH_COMBO)),isDefault:()=>NAV.sameCombo(SEARCH_KEY,NAV.SEARCH_COMBO),bound:searchKeyBound,set:setSearchKey,recording:on=>{navRecording=!!on;},fromEvent:e=>NAV.comboFromEvent(e,IS_MAC),clash:c=>NAV.searchClashOf(c,IS_MAC,NAV_KEY)}:null,roomName:id=>{const r=ROOMS.find(x=>x.id===id);return r?r.name:String(id||'');},refreshKinds:()=>loadKinds(true),setAccounts,density:{get:()=>DENSITY,set:setDensity},liveAct:{get:()=>LIVE_PREF,set:setLiveOn,usable:()=>!!LIVEACT},bridge,stats:STATS,esc,mask:safeMask,toast,announce,floors:{on:()=>floorsLive(),render:()=>renderFloorsSettings()},sched:{on:()=>!!bridge.listSchedules&&!demoOn,render:()=>renderSchedSettings()},onSettings:v=>{APP_SETTINGS=v||{};},onUsageReset,isSerious:()=>SERIOUS,isNotify:()=>NOTIFY,setNotify:on=>{NOTIFY=!!on;},breakResume:()=>BREAK_RESUME,setBreakResume:v=>{BREAK_RESUME=v==='ask'?'ask':'auto';},chatLinksIn:()=>CHAT_LINKS,setChatLinksIn:v=>{CHAT_LINKS=v==='system'?'system':'session';},setSerious:on=>{SERIOUS=!!on;markSerious();scheduleRender();},isMotion:()=>MOTION,setMotion:on=>{MOTION=!!on;markMotion();scheduleRender();},isStillHl:()=>STILL_HL,setStillHl:on=>{STILL_HL=!!on;markStillHl();scheduleRender();},usageSince:()=>LEDGER.since(),usageOffice:()=>LEDGER.office(),costData,usageError:()=>usageSaveError,
+  },autoFollow:{get:()=>AF_ON,set:v=>setAutoFollowOn(v)},shutters:{get:()=>SHUT_PREF,set:setShutOn,usable:()=>!!SHUT},view:{get:officeView,set:setOfficeView,note:()=>roPeople().note&&officeView()==='real'?roPeople().note:'',world:{get:()=>roPeople().world,set:setRoWorld,list:roWorlds,defaultSet:()=>roPeople().setName}},navKey:{text:navKeyText,textOf:c=>keyText(NAV.comboParts(c)),defText:()=>keyText(NAV.comboParts(NAV.DEFAULT_COMBO)),isDefault:()=>NAV.sameCombo(NAV_KEY,NAV.DEFAULT_COMBO),set:setNavKey,recording:on=>{navRecording=!!on;},fromEvent:e=>NAV.comboFromEvent(e,IS_MAC),clash:c=>NAV.sameCombo(c,SEARCH_KEY)&&!NAV.sameCombo(SEARCH_KEY,NAV.SEARCH_COMBO)?'Already used for Search conversations.':NAV.clashOf(c,IS_MAC)},searchKey:bridge&&bridge.convSearchStart?{text:searchKeyText,textOf:c=>keyText(NAV.comboParts(c)),defText:()=>keyText(NAV.comboParts(NAV.SEARCH_COMBO)),isDefault:()=>NAV.sameCombo(SEARCH_KEY,NAV.SEARCH_COMBO),bound:searchKeyBound,set:setSearchKey,recording:on=>{navRecording=!!on;},fromEvent:e=>NAV.comboFromEvent(e,IS_MAC),clash:c=>NAV.searchClashOf(c,IS_MAC,NAV_KEY)}:null,roomName:id=>{const r=ROOMS.find(x=>x.id===id);return r?r.name:String(id||'');},refreshKinds:()=>loadKinds(true),setAccounts,density:{get:()=>DENSITY,set:setDensity},liveAct:{get:()=>LIVE_PREF,set:setLiveOn,usable:()=>!!LIVEACT},bridge,stats:STATS,esc,mask:safeMask,toast,announce,floors:{on:()=>floorsLive(),render:()=>renderFloorsSettings()},sched:{on:()=>!!bridge.listSchedules&&!demoOn,render:()=>renderSchedSettings()},onSettings:v=>{APP_SETTINGS=v||{};},onUsageReset,isSerious:()=>SERIOUS,isNotify:()=>NOTIFY,setNotify:on=>{NOTIFY=!!on;},breakResume:()=>BREAK_RESUME,setBreakResume:v=>{BREAK_RESUME=v==='ask'?'ask':'auto';},chatLinksIn:()=>CHAT_LINKS,setChatLinksIn:v=>{CHAT_LINKS=v==='system'?'system':'session';},setSerious:on=>{SERIOUS=!!on;markSerious();scheduleRender();},isMotion:()=>MOTION,setMotion:on=>{MOTION=!!on;markMotion();scheduleRender();},brainView:{on:()=>BRAIN_SET,override:()=>BRAIN_OVERRIDE,set:on=>{BRAIN_SET=!!on;brainRailSync();},motion:()=>BRAIN_MOTION_SET,setMotion:m=>{BRAIN_MOTION_SET=m==='calm'||m==='still'?m:'full';brainMotionSync();},forced:()=>{const sys=window.matchMedia&&(matchMedia('(prefers-reduced-motion: reduce)').matches||matchMedia('(forced-colors: active)').matches);return sys?'your system (reduced motion or forced colours)':STILL_HL?'Still highlights':!MOTION?'Motion off':BRAIN_LOWPOWER?'a low battery':'';}}, /* spec 106 T426: Settings > Brain view */isStillHl:()=>STILL_HL,setStillHl:on=>{STILL_HL=!!on;markStillHl();scheduleRender();},usageSince:()=>LEDGER.since(),usageOffice:()=>LEDGER.office(),costData,usageError:()=>usageSaveError,
     places:window.DurbarPlaces,customPlaces:()=>CUSTOM,placeMap:()=>PLACE_MAP,placeLabel,setCustomPlaces,placeServers:()=>[...SEEN_SERVERS],setPlaceMap:m=>{PLACE_MAP=(m&&typeof m==='object')?m:{};scheduleRender();},
     applyTheme,
     applyCharacters,charPreview, /* spec 077 FR-068 */
@@ -10681,7 +10693,7 @@ if(bridge){
     }).catch(()=>apply());}else apply();
   };
   if(bridge.getOrder)bridge.getOrder().then(d=>{ORDER=RO.sanitize(d);scheduleRender();}).catch(()=>{}); /* issue 677: a failed or corrupt read keeps the automatic order */
-  if(bridge.getSettings)bridge.getSettings().then(v=>{APP_SETTINGS=v||{};PLACE_MAP=(v&&v.placeMap)||{};CUSTOM=(v&&Array.isArray(v.customPlaces))?v.customPlaces:[];SERIOUS=!!(v&&v.seriousMode);markSerious();STILL_HL=!!(v&&v.stillHighlights);markStillHl();MOTION=!(v&&v.motion===false);markMotion();setAutoFollowOn(!!(v&&v.autoFollowWork===true));NOTIFY=!!(v&&v.notifyNeedsMe!==false);BREAK_RESUME=v&&v.breakResume==='ask'?'ask':'auto';CHAT_LINKS=v&&v.chatLinksIn==='system'?'system':'session';themeBoot(v);}).catch(()=>{});
+  if(bridge.getSettings)bridge.getSettings().then(v=>{APP_SETTINGS=v||{};PLACE_MAP=(v&&v.placeMap)||{};CUSTOM=(v&&Array.isArray(v.customPlaces))?v.customPlaces:[];SERIOUS=!!(v&&v.seriousMode);markSerious();STILL_HL=!!(v&&v.stillHighlights);markStillHl();MOTION=!(v&&v.motion===false);markMotion();setAutoFollowOn(!!(v&&v.autoFollowWork===true));NOTIFY=!!(v&&v.notifyNeedsMe!==false);BREAK_RESUME=v&&v.breakResume==='ask'?'ask':'auto';CHAT_LINKS=v&&v.chatLinksIn==='system'?'system':'session';BRAIN_SET=!(v&&v.brainView===false);BRAIN_MOTION_SET=v&&(v.brainMotion==='calm'||v.brainMotion==='still')?v.brainMotion:'full';brainMotionSync();brainRailSync();themeBoot(v);}).catch(()=>{});
   setInterval(()=>{if(VISITS.tick())scheduleRender();},250);
   setInterval(coffeeTick,SIM_BREAK?1000:5000); /* spec 068: resume, ask or remind when a break is due */
   agents=LIVE.agents; ROOMS=LIVE.rooms;
@@ -10696,7 +10708,7 @@ if(pendingOpen&&demoOn){openPanel(pendingOpen,false);pendingOpen=null;}
 const settleNow=()=>{if(!agentsListed||!window.__durbarSimReplayed||baselineQueued||baselineAsking)return false;if(renderQueued){renderQueued=false;renderAll();}return true;};
 /* simulator drivers load with simfreeze=1: the desk glow then holds still (FR-178: the geometry and screenshot checks measure boxes, so no zoom may be mid-way); the unread driver opts back in with hlmotion=1 to test the motion itself */
 if(SIM&&qs.get('simfreeze')==='1'&&qs.get('hlmotion')!=='1')document.documentElement.classList.add('hl-still');
-if(SIM)window.__durbarSimUi={chipArg:(t,r)=>chipArg(t,r),cutLabel:(t,l)=>cutLabel(t,l),chipMasks:()=>CHIP_MASKS,replay:(id,items)=>{replayHistory(byId(id),{items},'test');return true;},vsView:(id,tr)=>viewVs(byId(id),'sim-vs',null,()=>Promise.resolve({ok:true,transcript:tr})).then(()=>true),demoTurn:(id,tools)=>{const a=byId(id);return playTurn(getChat(a),a,{think:'',tools,reply:''});},taskLabel:(t,l)=>safeToolLabel(t,String(l).replace(/\s+/g,' ').slice(0,400),100000),chipEl:(id,callId)=>{const a=byId(id),c=a&&a.turn&&a.turn.T&&a.turn.T.chipEls[callId];return c?c.el:null;}, /* spec 005 FR-342: check-toolchip-mask runs its harmless corpus through the chip's own mask and counts its calls */qMdHTML,qSafeMask:t=>safeMask(t),qNames:()=>Object.keys(Q_NAMED).map(k=>k+'='+Q_NAMED[k]), /* spec 052 (issue 1927): check-question-markdown renders a question built from invented pieces through the card's own renderer */brain:{host:()=>BRAIN_H,state:()=>BRAIN_STATE,why:()=>BRAIN_WHY,flag:BRAIN_PREVIEW,queued:()=>BRAIN_Q.length}, /* spec 106 T006: check-brain-draw and check-brain-dock read the dock's frame counts */announce,renderRestoreStrip,afArrivalPrio,afTracker:{ids:()=>AFT.ids(),pending:()=>AFT.pendingList().map(v=>v.id+'|'+v.kind),quiet:()=>AFT.isQuiet,follow:id=>AFT.follow(id)}, /* spec 005 FR-237: drivers only: what Auto-follow follows, holds and whether it is quiet; follow() makes an agent followed without a hand open (which would drop the others, spec 052 FR-185) */ afNotice:{ms:v=>{AF_NOTICE_MS=Math.max(100,Number(v)||3000);return AF_NOTICE_MS;},on:v=>{setAutoFollowOn(!!v);return AF_ON;},shown:()=>!!AF_NOTICE}, /* spec 052 FR-239: drivers only: the notice's length, Auto-follow without Settings */swapCardOptions:id=>{const c=byId(id)&&pendingCardOf(byId(id));if(!c)return 0;const os=[...c.querySelectorAll('.q-opt')];os.forEach(b=>b.replaceWith(b.cloneNode(true)));return os.length;}, /* spec 052 FR-197: the live card rebuilds its options (the card stays, the old buttons are gone); a driver checks that a row's old option answers nothing */
+if(SIM)window.__durbarSimUi={chipArg:(t,r)=>chipArg(t,r),cutLabel:(t,l)=>cutLabel(t,l),chipMasks:()=>CHIP_MASKS,replay:(id,items)=>{replayHistory(byId(id),{items},'test');return true;},vsView:(id,tr)=>viewVs(byId(id),'sim-vs',null,()=>Promise.resolve({ok:true,transcript:tr})).then(()=>true),demoTurn:(id,tools)=>{const a=byId(id);return playTurn(getChat(a),a,{think:'',tools,reply:''});},taskLabel:(t,l)=>safeToolLabel(t,String(l).replace(/\s+/g,' ').slice(0,400),100000),chipEl:(id,callId)=>{const a=byId(id),c=a&&a.turn&&a.turn.T&&a.turn.T.chipEls[callId];return c?c.el:null;}, /* spec 005 FR-342: check-toolchip-mask runs its harmless corpus through the chip's own mask and counts its calls */qMdHTML,qSafeMask:t=>safeMask(t),qNames:()=>Object.keys(Q_NAMED).map(k=>k+'='+Q_NAMED[k]), /* spec 052 (issue 1927): check-question-markdown renders a question built from invented pieces through the card's own renderer */brain:{host:()=>BRAIN_H,state:()=>BRAIN_STATE,why:()=>BRAIN_WHY,on:()=>brainOn(),override:BRAIN_OVERRIDE,queued:()=>BRAIN_Q.length}, /* spec 106 T006: check-brain-draw and check-brain-dock read the dock's frame counts */announce,renderRestoreStrip,afArrivalPrio,afTracker:{ids:()=>AFT.ids(),pending:()=>AFT.pendingList().map(v=>v.id+'|'+v.kind),quiet:()=>AFT.isQuiet,follow:id=>AFT.follow(id)}, /* spec 005 FR-237: drivers only: what Auto-follow follows, holds and whether it is quiet; follow() makes an agent followed without a hand open (which would drop the others, spec 052 FR-185) */ afNotice:{ms:v=>{AF_NOTICE_MS=Math.max(100,Number(v)||3000);return AF_NOTICE_MS;},on:v=>{setAutoFollowOn(!!v);return AF_ON;},shown:()=>!!AF_NOTICE}, /* spec 052 FR-239: drivers only: the notice's length, Auto-follow without Settings */swapCardOptions:id=>{const c=byId(id)&&pendingCardOf(byId(id));if(!c)return 0;const os=[...c.querySelectorAll('.q-opt')];os.forEach(b=>b.replaceWith(b.cloneNode(true)));return os.length;}, /* spec 052 FR-197: the live card rebuilds its options (the card stays, the old buttons are gone); a driver checks that a row's old option answers nothing */
   chatTrimNow:()=>chatTrimPending(false), /* spec 005 FR-238: trim the chats waiting for a frame now (a burst with no frame between) */
   hiddenTrimTimer:()=>({on:!!hiddenTrimT,ms:TRIM_HIDDEN_MS}),
   helperState:(id,st)=>{const h=agents.find(x=>x.id===id&&x.parent);if(!h||!['working','thinking','waiting','error','limit','done','idle'].includes(st))return false;h.state=st==='limit'?'waiting':st;h.limit=st==='limit';h.paused=false;layoutKey='';renderAll();return true;}, /* spec 097 T335 (issue 1642): drivers only: a helper's state the simulator never sends (waiting, limit), for the kids on the desk */
