@@ -7258,7 +7258,7 @@ function showQuestion(a,e){
     /* spec 052 (2026-11-19 delta, issue 1927, T378): the question's Markdown is rendered by the chat's own safe renderer (DurbarMD: raw HTML is text, links keep the chat's click handling),
        after the text is masked: the rendered output never holds an unmasked value. The answer is still keyed by the agent's own question text. */
     const qt=document.createElement('div');qt.className='q-text md';
-    if(q.header){const h=document.createElement('span');h.className='tag';h.textContent=q.header;qt.appendChild(h);}
+    if(q.header){const h=document.createElement('span');h.className='tag';h.textContent=safeMask(String(q.header));qt.appendChild(h);} /* spec 012 (2026-11-22 delta, issue 1937): the header is agent text: masked like the question */
     const qb=document.createElement('div');qb.className='q-md';qb.innerHTML=qMdHTML(q.question);qt.appendChild(qb);box.appendChild(qt);
     const qPlain=qb.textContent.replace(/\s+/g,' ').trim(); /* the words a screen reader says, without the Markdown marks; masked like the card (never the raw question) */
     const opts=document.createElement('div');opts.className='q-opts';opts.setAttribute('role',q.multiSelect?'group':'radiogroup');opts.setAttribute('aria-label',qPlain);
@@ -8484,7 +8484,7 @@ function showAutoQuestion(a,e){
   const t=ensureTurn(a),qs=(e.questions||[]).slice(0,4);
   const n=document.createElement('div');n.className='note ap-question';n.setAttribute('role','group');n.setAttribute('aria-label','Question from the agent');
   const head=document.createElement('b');head.textContent=e.elicitation?'Declined (Autopilot)':'Decided by itself (Autopilot)';n.appendChild(head);
-  qs.forEach(q=>{const p=document.createElement('p');p.className='q-text';p.textContent=String(q&&q.question||'');n.appendChild(p);});
+  qs.forEach(q=>{const p=document.createElement('p');p.className='q-text';p.textContent=safeMask(String(q&&q.question||''));n.appendChild(p);});
   tChips(t.T).appendChild(n);stickyScroll(liveChat(a));
 }
 function closeModeMenu(){const m=document.getElementById('modeMenu');if(m){m.remove();const c=$('modeChip');if(c)c.setAttribute('aria-expanded','false');document.querySelectorAll('[data-act="ro-ask"][aria-expanded="true"]').forEach(b=>b.setAttribute('aria-expanded','false'));}}

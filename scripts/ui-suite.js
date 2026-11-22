@@ -139,6 +139,7 @@ const DRIVERS = [
   { name: 'check-sched-history' }, // spec 044 FR-040..FR-044: a schedule's run history and Schedules here (N)
   { name: 'check-question-options' },
   { name: 'check-question-markdown' }, // spec 052 (2026-11-19, #1927): the question card renders the question's Markdown, masked first
+  { name: 'check-question-header-mask' }, // spec 012 (2026-11-22, #1937): the question's header tag and the automatic-answer question show masked text
   { name: 'check-elicit-markdown' }, // spec 052 (2026-11-20, #1934): the MCP form's message renders Markdown, masked first, and is shown whole (not cut at 2,000)
   { name: 'check-inbox-text' }, // spec 052 FR-214: the text of a Needs you card never runs words together
   { name: 'check-inbox-avatar' }, // spec 052 (#1174): no avatar in the Needs you dialog outgrows its box; the first Allow button is in view
@@ -242,9 +243,9 @@ const DRIVERS = [
   { name: 'check-097-desk-marks' }, // spec 097 FR-316 (#1149): the Draft tag above a Real office plate for an unsent draft, its words in the plate's name, shown by class, both sizes
   { name: 'check-097-desk-marks', label: 'check-097-desk-marks retro', env: { DRIVER_WORLD: 'retro' } }, // spec 102 T283 (issue #1399): the same driver in the arcade
   { name: 'check-097-helpers' }, // spec 097 FR-306..FR-311 (#1139): a desk's helpers as head figures with a status dot under its plate, Photo office, cave and the arcade at 1440x900, both sizes; where no strip fits (the arcade at 1280x800, the default scene at 1280x800) the plate keeps +N
-  { name: 'check-097-kids' }, // spec 097 FR-368..FR-376 (#1642): the helpers as clay-toy kids on the desk top in the Photo office at 1 to 4 agents (picture, pose, one scale, +K, Tab, click, no zoom, no node per status), kid faces in the head row at 15, both sizes; KIDS_MUTANT=nokids|status|name|overlap|adulthead
-  { name: 'check-097-kids', label: 'check-097-kids cave', env: { KIDS_WORLD: 'cave' } }, // spec 102 T326 (#1643): the same for the Prehistoric cave's painted kids behind its flag, 1 to 4 agents and 15, both sizes
-  { name: 'check-097-kids', label: 'check-097-kids retro', env: { KIDS_WORLD: 'retro', KIDS_COUNTS: '1,2,3' } }, // spec 102 T327 (#1643): the arcade's pixel kids: its aisles draw no kids on a desk top, then the rows fixture at 1 to 3 agents and 15, both sizes (at 4 the fixture's smaller retro desk has no kid place: a fixture limit, the arcade never draws rows)
+  { name: 'check-097-kids', focus: true }, // spec 097 FR-368..FR-376 (#1642): the helpers as clay-toy kids on the desk top in the Photo office at 1 to 4 agents (picture, pose, one scale, +K, Tab, click, no zoom, no node per status), kid faces in the head row at 15, both sizes; KIDS_MUTANT=nokids|status|name|overlap|adulthead
+  { name: 'check-097-kids', label: 'check-097-kids cave', focus: true, env: { KIDS_WORLD: 'cave' } }, // spec 102 T326 (#1643): the same for the Prehistoric cave's painted kids behind its flag, 1 to 4 agents and 15, both sizes
+  { name: 'check-097-kids', label: 'check-097-kids retro', focus: true, env: { KIDS_WORLD: 'retro', KIDS_COUNTS: '1,2,3' } }, // spec 102 T327 (#1643): the arcade's pixel kids: its aisles draw no kids on a desk top, then the rows fixture at 1 to 3 agents and 15, both sizes (at 4 the fixture's smaller retro desk has no kid place: a fixture limit, the arcade never draws rows)
   { name: 'check-097-helper-row' }, // spec 097 FR-338 (issue #1384), FR-356 (issue #1392: every folder sign whole, its + and menu inside it): a helper strip never wraps a head onto a second line; the last place is +K (6 and 7 helpers, the default scene and the lounge scene, Photo office, cave and arcade, both sizes)
   { name: 'check-097-hover-card', focus: true }, // spec 097 FR-327..FR-330 (#1151): the zoom opens over the person, desk and plate, for asleep agents, with the Changed line
   { name: 'check-097-hover-card', label: 'check-097-hover-card retro', env: { DRIVER_WORLD: 'retro' } }, // spec 102 T283 (issue #1399): the same driver in the arcade

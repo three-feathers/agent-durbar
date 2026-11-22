@@ -95,7 +95,7 @@ function main(env, root, call = gh) {
   const repo = env.GITHUB_REPOSITORY || '';
   if (!REPO_RE.test(repo)) { console.log('parity-tick: bad repository name; nothing done'); return 1; }
   const trusted = readTrusted(root);
-  if (trusted.size === 0) { console.log('parity-tick: no trusted accounts read from scripts/trusted-authors.txt; nothing done'); return 0; }
+  if (trusted.size === 0) { console.log('parity-tick: no trusted accounts read through scripts/trusted-authors.js; nothing done'); return 0; }
   const isTrusted = (login) => typeof login === 'string' && trusted.has(login); // exact match against the list
   const states = new Map(); // issue number -> desired state, looked up once per run
   let failed = 0;
