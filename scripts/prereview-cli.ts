@@ -10,7 +10,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { pathToFileURL } from 'url';
 import {
-  Ceilings, GATE_QUERY, GatePayload, OWNERS_REQUIRED, REPO_REMOTE, REPO_SLUG, StatLite, ancestorProblems, ceilingsFrom, clean, factsFromGraphql, maskAll, parseLedger, parseTrusted, payloadProblems, refusal, revalidateReport, shaToRead, signPayload,
+  Ceilings, GATE_QUERY, GatePayload, OWNERS_REQUIRED, REPO_REMOTE, REPO_SLUG, StatLite, ancestorProblems, ceilingsFrom, clean, factsFromGraphql, maskAll, parseLedger, payloadProblems, refusal, revalidateReport, shaToRead, signPayload,
 } from './prereview-core';
 import { Exec, QueryFn, RunDeps, placesFor, runReview } from './prereview-run';
 import { Fetch, postComment, readPostConfig } from './prereview-post';
@@ -109,13 +109,20 @@ const ghEnv = (env: Record<string, string | undefined>): Record<string, string> 
 
 /** Operator side: refuse first (FR-004), then fetch the filtered PR text (FR-005). Returns what the runner stage needs, or the refusal line. */
 export async function gate(d: CliDeps, a: Args): Promise<{ ok: true; sha: string; url: string; prText: string | null } | { ok: false; why: string }> {
-  const tp = codeTrustProblems(d, d.root, ['scripts/trusted-authors.txt', 'scripts/trusted-lib.sh', 'scripts/gh-trusted.sh']);
+  const tp = codeTrustProblems(d, d.root, ['scripts/trusted-authors.txt', 'scripts/trusted-authors.js', 'scripts/trusted-lib.sh', 'scripts/gh-trusted.sh']);
   if (tp.length) return { ok: false, why: HUMAN(`refusing to run code or a trust list that someone else could have swapped: ${tp.join('; ')}`) };
   const [owner, name] = REPO_SLUG.split('/');
   const q = await d.exec('gh', ['api', 'graphql', '-f', `query=${GATE_QUERY(owner, name, a.pr)}`], { env: ghEnv(d.env), timeoutMs: 60_000 });
   if (q.code !== 0) return { ok: false, why: HUMAN('could not read the PR') };
   let trusted: string[];
-  try { trusted = parseTrusted(fs.readFileSync(path.join(d.root, 'scripts', 'trusted-authors.txt'), 'utf8')); } catch { return { ok: false, why: HUMAN('the trusted list is missing') }; }
+  // only a Set or an array of single logins, each read back unchanged by the loader's own parser; a string, null, an object or an odd
+  // entry goes down the "missing" path (review of #1535: a string would make each character a login)
+  try {
+    const m = require(path.join(d.root, 'scripts', 'trusted-authors.js')) as { trustedAuthors(r: string): unknown; parseTrusted(t: string): string[] };
+    const r = m.trustedAuthors(d.root);
+    if (!(r instanceof Set || Array.isArray(r))) throw new Error('not a list');
+    trusted = Array.from(r as Iterable<unknown>, (x) => { if (typeof x !== 'string' || JSON.stringify(m.parseTrusted(x)) !== JSON.stringify([x])) throw new Error('not a login'); return x; });
+  } catch { return { ok: false, why: HUMAN('the trusted list is missing') }; }
   if (trusted.length === 0) return { ok: false, why: HUMAN('the trusted list is empty') };
   let facts;
   try { facts = factsFromGraphql(JSON.parse(q.stdout)); } catch { return { ok: false, why: HUMAN('could not read the PR\'s facts') }; }
@@ -276,7 +283,7 @@ async function postStage(d: CliDeps, a: Args): Promise<number> {
 /** Copies the reviewed code of `main` (clean checkout, HEAD == origin/main) to dest, then installs the pinned dependencies there. */
 export const INSTALL_FILES: Array<[string, string]> = [
   ['scripts/prereview-core.ts', 'scripts/prereview-core.ts'], ['scripts/prereview-run.ts', 'scripts/prereview-run.ts'], ['scripts/prereview-cli.ts', 'scripts/prereview-cli.ts'], ['scripts/prereview-post.ts', 'scripts/prereview-post.ts'],
-  ['src/shared/redact.ts', 'src/shared/redact.ts'], ['scripts/trusted-authors.txt', 'scripts/trusted-authors.txt'], ['scripts/trusted-lib.sh', 'scripts/trusted-lib.sh'], ['scripts/gh-trusted.sh', 'scripts/gh-trusted.sh'],
+  ['src/shared/redact.ts', 'src/shared/redact.ts'], ['scripts/trusted-authors.txt', 'scripts/trusted-authors.txt'], ['scripts/trusted-authors.js', 'scripts/trusted-authors.js'], ['scripts/trusted-lib.sh', 'scripts/trusted-lib.sh'], ['scripts/gh-trusted.sh', 'scripts/gh-trusted.sh'],
   ['docs/review-checklist.md', 'docs/review-checklist.md'],
   ['scripts/prereview/package.json', 'scripts/prereview/package.json'], ['scripts/prereview/package-lock.json', 'scripts/prereview/package-lock.json'], ['scripts/prereview/cli.mts', 'scripts/prereview/cli.mts'],
   ['scripts/prereview/prompts/system.md', 'prompts/system.md'], ['scripts/prereview/prompts/reach.md', 'prompts/reach.md'], ['scripts/prereview/prompts/evidence.md', 'prompts/evidence.md'],

@@ -87,6 +87,7 @@ test:grantlabel
 test:floors
 test:mood
 test:retry
+test:review-profile
 test:compaction
 test:attention
 test:theme
@@ -235,6 +236,7 @@ test:electroncache
 test:claudecliunit
 test:rules
 test:weeklyretro
+test:cistats
 test:docsscripts
 test:citypecheck
 test:worldmatrix
