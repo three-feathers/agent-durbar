@@ -10,7 +10,9 @@ import * as path from 'path';
 
 const ROOT = path.resolve(__dirname, '..', '..');
 const GATE = path.join(ROOT, 'scripts', 'release-ui-gate.js');
-const REAL = fs.readFileSync(GATE, 'utf8');
+/** Text as LF: a Windows checkout (core.autocrlf) has CRLF, and `.` in a regex stops at `\r` (the shebang strip failed there). */
+const lf = (t: string): string => t.replace(/\r\n?/g, '\n');
+const REAL = lf(fs.readFileSync(GATE, 'utf8'));
 
 type Run = Record<string, any>;
 type Verdict = { verdict: 'pass' | 'wait' | 'fail'; reason: string; run?: Run; message: string };
@@ -27,7 +29,7 @@ type Gate = {
 function load(src: string): Gate {
   const mod = { exports: {} as any };
   // eslint-disable-next-line no-new-func
-  new Function('module', 'exports', 'require', '__filename', '__dirname', src.replace(/^#!.*\n/, ''))(mod, mod.exports, require, GATE, path.dirname(GATE));
+  new Function('module', 'exports', 'require', '__filename', '__dirname', lf(src).replace(/^#!.*\n/, ''))(mod, mod.exports, require, GATE, path.dirname(GATE));
   return mod.exports as Gate;
 }
 
@@ -196,6 +198,7 @@ export function wiringProblems(text: string): string[] {
 
 (async () => {
   await suite(REAL);
+  await suite(REAL.replace(/\n/g, '\r\n')); // the gate as a Windows checkout has it (CRLF): it loads and passes the same
   let killed = 0;
   for (const [name, from, to, want] of mutants) {
     assert.strictEqual(REAL.split(from).length - 1, 1, `mutant "${name}" anchor found once: ${from}`);
@@ -205,7 +208,8 @@ export function wiringProblems(text: string): string[] {
     killed++;
   }
 
-  const yml = fs.readFileSync(path.join(ROOT, '.github', 'workflows', 'release.yml'), 'utf8');
+  const yml = lf(fs.readFileSync(path.join(ROOT, '.github', 'workflows', 'release.yml'), 'utf8'));
+  assert.deepStrictEqual(wiringProblems(lf(yml.replace(/\n/g, '\r\n'))), [], 'release.yml with CRLF line ends (a Windows checkout) is read the same');
   assert.deepStrictEqual(wiringProblems(yml), [], 'release.yml: the UI gate is wired');
   // the existing release checks stay (never weakened by this change)
   for (const keep of ['node scripts/release-notes.js --tag "$TAG"', 'sha256sum * > SHA256SUMS.txt', 'actions/attest-build-provenance@', '--draft "${KIND[@]}" --verify-tag', 'is already published: its files are not replaced', "CSC_IDENTITY_AUTO_DISCOVERY: 'false'"]) {
