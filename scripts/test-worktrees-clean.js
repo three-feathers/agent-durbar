@@ -68,7 +68,7 @@ function fixture(name) {
   add('other-remote', { push: 'none' });
   g(main, 'remote', 'add', 'other', origin);
   g(wts['other-remote'], 'push', '-u', 'other', 'other-remote');
-  add('late-commit'); add('late-branch'); add('late-dirty');
+  add('late-commit'); add('late-branch'); add('late-dirty'); add('mid-commit'); add('mid-branch');
   add('outer');
   const inner = add('inner', { at: path.join(wts.outer, '.claude', 'worktrees', 'inner') });
   add('outer2'); write(path.join(wts.outer2, '.claude', 'x', '.git'), 'gitdir: /nowhere\n');
@@ -174,7 +174,14 @@ function check(modPath, tag) {
 
   // --apply on the same fixture; "flip" is merged at the first look and open at the re-check right before its removal
   const calls = {};
-  const flip = (b) => { if (b !== 'flip') return prState(b); calls[b] = (calls[b] || 0) + 1; return calls[b] === 1 ? 'MERGED' : 'OPEN'; };
+  const flip = (b) => {
+    calls[b] = (calls[b] || 0) + 1;
+    // the 2nd call is the lookup inside the removal: the worktree changes DURING it (a commit; a branch switch)
+    if (b === 'mid-commit' && calls[b] === 2) { const p = fx.wts[b]; write(path.join(p, 'mid.txt'), 'm\n'); g(p, 'add', '.'); g(p, 'commit', '-m', 'mid'); }
+    if (b === 'mid-branch' && calls[b] === 2) g(fx.wts[b], 'switch', '-c', 'mid-branch-2');
+    if (b !== 'flip') return prState(b);
+    return calls[b] === 1 ? 'MERGED' : 'OPEN';
+  };
   const hooked = (wt) => {
     if (wt.branch === 'late-commit') { write(path.join(wt.path, 'late.txt'), 'l\n'); g(wt.path, 'add', '.'); g(wt.path, 'commit', '-m', 'late'); }
     if (wt.branch === 'late-branch') { g(wt.path, 'switch', '-c', 'late-branch-2'); }
@@ -193,11 +200,13 @@ function check(modPath, tag) {
     assert.ok(fs.existsSync(w[k]), tag + ': --apply keeps ' + k);
   }
   const lineOf = (b) => applyLines.find((l) => l.includes('[' + b + ']')) || '';
-  assert.ok(fs.existsSync(w['late-commit']) && /HEAD or branch moved/.test(lineOf('late-commit')), tag + ': late: a HEAD that moved before the removal is kept, "moved" (' + lineOf('late-commit').slice(-60) + ')');
-  assert.ok(fs.existsSync(w['late-branch']) && /HEAD or branch moved/.test(lineOf('late-branch')), tag + ': late: a branch that changed before the removal is kept, "moved"');
+  assert.ok(fs.existsSync(w['late-commit']) && /changed since the check, kept: HEAD or branch moved/.test(lineOf('late-commit')), tag + ': late: a HEAD that moved before the removal is kept, "moved" (' + lineOf('late-commit').slice(-60) + ')');
+  assert.ok(fs.existsSync(w['late-branch']) && /changed since the check, kept: HEAD or branch moved/.test(lineOf('late-branch')), tag + ': late: a branch that changed before the removal is kept, "moved"');
   assert.ok(fs.existsSync(w['late-dirty']) && /changed since the check/.test(lineOf('late-dirty')), tag + ': late: a file that appeared before the removal keeps the worktree');
+  assert.ok(fs.existsSync(w['mid-commit']) && /changed during the PR check, kept: HEAD or branch moved/.test(lineOf('mid-commit')), tag + ': mid: a commit made during the PR lookup keeps the worktree (' + lineOf('mid-commit').slice(-70) + ')');
+  assert.ok(fs.existsSync(w['mid-branch']) && /changed during the PR check, kept: HEAD or branch moved/.test(lineOf('mid-branch')), tag + ': mid: a branch switch during the PR lookup keeps the worktree');
   for (const k of ['ignored-deep', 'ignored-release', 'ignored-secret', 'deep-repo', 'other-remote']) assert.ok(fs.existsSync(w[k]), tag + ': --apply keeps ' + k);
-  assert.ok(fs.existsSync(w.flip), tag + ': the state is checked again right before the removal (recheck)');
+  assert.ok(fs.existsSync(w.flip) && /changed since the check, kept: PR is open/.test(lineOf('flip')), tag + ': the state is checked again right before the removal (recheck)');
   assert.ok(!fs.existsSync(w.squashed), tag + ': a squash-merged worktree whose branch left origin is removed');
   assert.ok(branches(fx.main).includes('squashed'), tag + ': git branch -d refuses the squash-merged branch, so it is kept (never -D)');
   assert.ok(ap.removed >= 3 && fs.existsSync(fx.main), tag + ': the main checkout stays');
@@ -212,7 +221,7 @@ function check(modPath, tag) {
   const realGit = (args, cwd) => { try { return { ok: true, out: execFileSync('git', args, { cwd, env: ENV, encoding: 'utf8', timeout: 60000, stdio: ['ignore', 'pipe', 'pipe'] }) }; } catch (e) { return { ok: false, out: '', err: String(e.message) }; } };
   const unreadLines = [];
   const un = mod.run({ apply: true, root: fs2.main, cwd: fs2.main, prState, tryGit: (args, cwd) => (args[0] === 'symbolic-ref' ? { ok: false, out: '' } : realGit(args, cwd)), log: (x) => unreadLines.push(x) });
-  assert.ok(un.removed === 0 && unreadLines.some((l) => /HEAD or branch unreadable/.test(l)), tag + ': recheck: a HEAD or branch that cannot be read again keeps the worktree, "unreadable"');
+  assert.ok(un.removed === 0 && unreadLines.some((l) => /changed since the check, kept: HEAD or branch unreadable/.test(l)), tag + ': recheck: a HEAD or branch that cannot be read again keeps the worktree, "unreadable"');
 
   // through npm without `--`
   const fs3 = fixture(tag + '-npm');
@@ -317,9 +326,11 @@ const MUTANTS = [
   ['secret-in-dist', ' && !SECRET_LIKE.test(p)', '', /\.env inside an allowed dist|only non-rebuildable/],
   ['nested-depth-capped', 'const MAX_NESTED_DEPTH = 64;', 'const MAX_NESTED_DEPTH = 2;', /nested \.git four levels/],
   ['ls-files-error-ignored', "if (!ig.ok) return { verdict: 'look', why: 'git ls-files failed' };", '', /ls-files error/],
-  ['head-moved-dropped', 'head.out.trim() !== wt.head || ', '', /HEAD that moved/],
-  ['branch-moved-dropped', ' || br.out.trim() !== wt.branch', '', /branch that changed/],
-  ['recheck-unreadable', "if (!head.ok || !br.ok) return { removed: false, note: 'changed since the check, kept: HEAD or branch unreadable' };", '', /unreadable/],
+  ['head-moved-dropped', 'first.head !== wt.head || ', '', /HEAD that moved/],
+  ['branch-moved-dropped', ' || first.branch !== wt.branch', '', /branch that changed/],
+  ['last-reread-dropped', "  const last = readHeadBranch(wt, tg);\n  if (!last) return { removed: false, note: 'changed during the PR check, kept: HEAD or branch unreadable' };\n  if (last.head !== wt.head || last.branch !== wt.branch) return { removed: false, note: 'changed during the PR check, kept: HEAD or branch moved' };\n  const fin = classify({ ...wt, head: last.head, branch: last.branch }, { ...ctx, prState: () => seen });\n  if (fin.verdict !== 'removable') return { removed: false, note: 'changed during the PR check, kept: ' + fin.why };\n", '', /mid: a commit made during/],
+  ['last-branch-compare-dropped', ' || last.branch !== wt.branch', '', /mid: a branch switch/],
+  ['recheck-unreadable', "if (!first) return { removed: false, note: 'changed since the check, kept: HEAD or branch unreadable' };\n  if (first.head !== wt.head || first.branch !== wt.branch)", "if (first && (first.head !== wt.head || first.branch !== wt.branch))", /unreadable/],
   ['other-remote-ok', " || remote.out.trim() !== 'origin'", '', /another remote|upstream on another remote/],
   ['progress-cherry', "'CHERRY_PICK_HEAD', ", '', /CHERRY_PICK_HEAD in progress/],
   ['progress-rebase-head', "'REBASE_HEAD', ", '', /REBASE_HEAD in progress/],
@@ -335,7 +346,7 @@ const MUTANTS = [
   ['in-progress-dropped', "if (fs.existsSync(p)) return { verdict: 'look', why: 'a ' + name", "if (false) return { verdict: 'look', why: 'a ' + name", /merge in progress|in-progress/],
   ['upstream-dropped', "if (!remote.ok || remote.out.trim() !== 'origin' || !merge.ok || merge.out.trim() !== 'refs/heads/' + wt.branch) {", 'if (false) {', /upstream/],
   ['upstream-name-dropped', "|| !merge.ok || merge.out.trim() !== 'refs/heads/' + wt.branch", '|| !merge.ok', /another name/],
-  ['recheck-dropped', "if (again.verdict !== 'removable') return", 'if (false) return', /checked again|keeps the worktree/],
+  ['recheck-dropped', "if (slow.verdict !== 'removable') return", 'if (false) return', /checked again|keeps the worktree/],
   ['self-not-skipped', 'if (inside(here, wt.path)) {', 'if (false) {', /runs in is skipped/],
   ['force-double-quoted', "['worktree', 'remove', wt.path]", '["worktree", "remove", "-f", "-f", wt.path]', /static/],
   ['branch-force-D', "['branch', '-d', wt.branch]", "['branch', '-D', wt.branch]", /never -D|static/],

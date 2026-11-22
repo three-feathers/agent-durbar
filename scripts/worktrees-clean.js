@@ -17,7 +17,7 @@
  *     and even there never a `.env*`, key or certificate. A `.env`, local settings, notes, `notes/out/x.md` or `release/x.p12` count as dirty;
  *   - the branch's upstream is `origin/<same name>`, and no commit is missing on origin (`git log origin/<branch>..HEAD` is empty; an upstream
  *     origin no longer has is accepted only for a MERGED PR whose head matched, the branch having been deleted on merge).
- *   Removal: the HEAD, the branch and the whole state are read AGAIN right before each removal; then `git worktree remove <path>` WITHOUT --force, then `git branch -d <branch>`
+ *   Removal: the HEAD, the branch and the whole state are read AGAIN after the (slow) PR lookup, immediately before each removal; then `git worktree remove <path>` WITHOUT --force, then `git branch -d <branch>`
  *   (never -D), then `git worktree prune`.
  * It reports the disk each worktree uses and the total reclaimable. git runs through execFile with argument arrays (no shell, no user string in a
  * command line); the PR comes from `gh pr list --head <branch> --state all --json state,headRefOid,isCrossRepository`.
@@ -202,16 +202,33 @@ function classify(wt, ctx) {
 
 function isLink(p) { try { return fs.lstatSync(p).isSymbolicLink(); } catch { return false; } }
 
-/** Remove one removable worktree: read HEAD and branch again and check everything again, `worktree remove` (no --force), `branch -d` (never -D), `worktree prune`. */
+/** HEAD and branch of a worktree right now, or null when either cannot be read. */
+function readHeadBranch(wt, tg) {
+  const head = tg(['rev-parse', 'HEAD'], wt.path);
+  const br = tg(['symbolic-ref', '--short', '-q', 'HEAD'], wt.path);
+  return head.ok && br.ok ? { head: head.out.trim(), branch: br.out.trim() } : null;
+}
+
+/**
+ * Remove one removable worktree. The PR lookup (gh, up to 60 s) is the slow part and anything can change during it, so everything else is read
+ * AGAIN after it, immediately before `git worktree remove`: HEAD, branch, status, nested and ignored files. Then `worktree remove` (no --force),
+ * `branch -d` (never -D), `worktree prune`.
+ */
 function removeOne(wt, mainPath, ctx) {
   if (ctx.beforeRemove) ctx.beforeRemove(wt);
   const tg = ctx.tryGit || tryGit;
-  const head = tg(['rev-parse', 'HEAD'], wt.path);
-  const br = tg(['symbolic-ref', '--short', '-q', 'HEAD'], wt.path);
-  if (!head.ok || !br.ok) return { removed: false, note: 'changed since the check, kept: HEAD or branch unreadable' };
-  if (head.out.trim() !== wt.head || br.out.trim() !== wt.branch) return { removed: false, note: 'changed since the check, kept: HEAD or branch moved' };
-  const again = classify({ ...wt, head: head.out.trim(), branch: br.out.trim() }, ctx);
-  if (again.verdict !== 'removable') return { removed: false, note: 'changed since the check, kept: ' + again.why };
+  const first = readHeadBranch(wt, tg);
+  if (!first) return { removed: false, note: 'changed since the check, kept: HEAD or branch unreadable' };
+  if (first.head !== wt.head || first.branch !== wt.branch) return { removed: false, note: 'changed since the check, kept: HEAD or branch moved' };
+  let seen;
+  const slow = classify({ ...wt }, { ...ctx, prState: (b, h) => { seen = ctx.prState(b, h); return seen; } });
+  if (slow.verdict !== 'removable') return { removed: false, note: 'changed since the check, kept: ' + slow.why };
+  // last re-read: no slow call between here and the removal (the PR state is the one just looked up)
+  const last = readHeadBranch(wt, tg);
+  if (!last) return { removed: false, note: 'changed during the PR check, kept: HEAD or branch unreadable' };
+  if (last.head !== wt.head || last.branch !== wt.branch) return { removed: false, note: 'changed during the PR check, kept: HEAD or branch moved' };
+  const fin = classify({ ...wt, head: last.head, branch: last.branch }, { ...ctx, prState: () => seen });
+  if (fin.verdict !== 'removable') return { removed: false, note: 'changed during the PR check, kept: ' + fin.why };
   const r = tryGit(['worktree', 'remove', wt.path], mainPath);
   if (!r.ok) return { removed: false, note: 'git worktree remove refused: ' + r.err };
   const b = tryGit(['branch', '-d', wt.branch], mainPath);
