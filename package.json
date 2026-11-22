@@ -225,6 +225,7 @@
     "test:mood": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-mood.js",
     "test:compaction": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-compaction.js",
     "test:retry": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-retry.js",
+    "test:review-profile": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-review-profile.js",
     "test:attention": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-attention.js",
     "test:profiledir": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-profiledir.js",
     "test:debuggerguard": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-debuggerguard.js",
