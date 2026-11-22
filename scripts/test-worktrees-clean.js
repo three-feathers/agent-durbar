@@ -41,7 +41,9 @@ function rootOk(line, main) {
   const printed = printedRoot(line);
   return sameDir(printed, require(SRC).newWorktreeRoot(main)) && sameDir(printed, fs.realpathSync.native(main) + '-worktrees');
 }
-function branches(cwd) { return g(cwd, 'branch', '--format=%(refname:short)').split('\n').filter(Boolean); }
+// Source text with LF line ends, whatever the checkout's line-ending setting.
+function readLF(p) { return fs.readFileSync(p, 'utf8').replace(/\r\n/g, '\n'); }
+function branches(cwd) { return g(cwd, 'branch', '--format=%(refname:short)').split(/\r?\n/).filter(Boolean); }
 function write(p, text) { fs.mkdirSync(path.dirname(p), { recursive: true }); fs.writeFileSync(p, text); }
 
 /** A fresh origin + clone with one worktree per case. */
@@ -329,7 +331,7 @@ function ghCases(mod, tag) {
 
 // No force anywhere in the code, whatever the quote style (comments stripped).
 function staticCheck(modPath, tag) {
-  const code = fs.readFileSync(modPath, 'utf8').replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+  const code = readLF(modPath).replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
   assert.ok(!/--force|['"`]-f+['"`]|['"`]-D['"`]|['"`]-[a-zA-Z]*f[a-zA-Z]*['"`]/.test(code), tag + ': static: the script never forces a removal or force-deletes a branch');
 }
 
@@ -362,7 +364,7 @@ tmpList();
 parseCase();
 
 // Mutants: each must die at its own message.
-const src = fs.readFileSync(SRC, 'utf8');
+const src = readLF(SRC); // LF text: a Windows checkout (autocrlf) has CRLF, and the multi-line anchors below are written with \n
 const MUTANTS = [
   ['unknown-removable', "  if (state !== 'MERGED' && state !== 'CLOSED') return { verdict: 'look', why: 'PR state unknown' };\n", '', /unknown/],
   ['closed-not-on-origin', "} else if (state !== 'MERGED') {", '} else if (false) {', /not on origin/],
@@ -458,7 +460,7 @@ for (const [name, from, to, expect] of MUTANTS) {
     } else check(mp, name, { fx: shared, only: ONLY[name] || ['merged-clean'] });
   } catch (e) { died = e; }
   assert.ok(died, 'mutant ' + name + ' survived');
-  assert.ok(expect.test(String(died.message)), 'mutant ' + name + ' died at the wrong assert: ' + String(died.message).split('\n')[0]);
+  assert.ok(expect.test(String(died.message)), 'mutant ' + name + ' died at the wrong assert: ' + String(died.message).split(/\r?\n/)[0]);
   n++;
 }
 // Work pin: fixtures built = the real run (3) + the shared one + one per mutant that needs --apply/self/npm; git calls per fixture stay small.
