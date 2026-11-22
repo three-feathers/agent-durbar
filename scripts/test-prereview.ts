@@ -19,7 +19,7 @@ import { startMockApi } from './fakes/mock-messages-api';
 
 if (process.platform === 'win32') { console.log('prereview: the bot is Linux only (spec 103 FR-025); skipped on Windows'); process.exit(0); }
 
-process.env.HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-prereview-home-')); // the account's own git config lives here (planted below)
+process.env.HOME = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-prereview-home-'))); // the account's own git config lives here (planted below); the real path, because require caches a module under it (macOS: /var is /private/var) and the tests' cache deletes must name the same key
 process.exitCode = 1; // an async test whose promise never settles must not exit 0
 const ROOT = path.join(__dirname, '..', '..');
 const tmp = process.env.HOME as string;

@@ -184,7 +184,7 @@ const many = (k: number): Finding[] => Array.from({ length: k }, (_, i) => good(
     assert.throws(() => trustedAuthors('/nonexistent-dir-for-test'), /trusted-authors/, 'no list, no run');
     // FR-092: one parser. An installed layout (<dest>/scripts/{trusted-authors.js,.txt}) is read by the loader; a loader or list that gives nobody, or throws, means no run
     {
-      const dest = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-ta-')); fs.mkdirSync(path.join(dest, 'scripts'));
+      const dest = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-ta-'))); fs.mkdirSync(path.join(dest, 'scripts')); // the real path: require caches the loader under it (macOS: /var is /private/var), so put()'s cache delete must name the same key
       const put = (f: string, t: string): void => { delete require.cache[path.join(dest, 'scripts', 'trusted-authors.js')]; fs.writeFileSync(path.join(dest, 'scripts', f), t); }; // a fresh load each time
       const real = fs.readFileSync(path.join(ROOT, 'scripts', 'trusted-authors.js'), 'utf8');
       put('trusted-authors.js', real); put('trusted-authors.txt', 'VikramGorla\r\n# c\nGithub-Actions[bot]\nbad login\n');
@@ -200,9 +200,9 @@ const many = (k: number): Finding[] => Array.from({ length: k }, (_, i) => good(
       }
       put('trusted-authors.js', giving("['VikramGorla']")); assert.deepStrictEqual(Array.from(trustedAuthors(path.join(dest, 'scripts'))), ['vikramgorla'], 'a loader returning an array of logins is read (lower case)');
       delete require.cache[path.join(dest, 'scripts', 'trusted-authors.js')]; fs.unlinkSync(path.join(dest, 'scripts', 'trusted-authors.js')); assert.throws(() => trustedAuthors(path.join(dest, 'scripts')), /trusted-authors/, 'no loader: no run, never a second parser');
-      assert.ok(fs.readFileSync(path.join(ROOT, 'scripts', 'weekly-test-audit.sh'), 'utf8').split('\n').includes('  install -m 644 scripts/trusted-authors.js "$dest/scripts/trusted-authors.js"   # spec 021 FR-092: the one parser of the list'), 'install-filer installs the loader');
+      assert.ok(fs.readFileSync(path.join(ROOT, 'scripts', 'weekly-test-audit.sh'), 'utf8').split(/\r?\n/).includes('  install -m 644 scripts/trusted-authors.js "$dest/scripts/trusted-authors.js"   # spec 021 FR-092: the one parser of the list'), 'install-filer installs the loader');
       // no second folder: a loader and list planted next to the install folder are never tried (mutant: a fallback root)
-      const outer = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-ta2-')); fs.mkdirSync(path.join(outer, 'inst', 'scripts'), { recursive: true }); fs.mkdirSync(path.join(outer, 'scripts'));
+      const outer = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-ta2-'))); fs.mkdirSync(path.join(outer, 'inst', 'scripts'), { recursive: true }); fs.mkdirSync(path.join(outer, 'scripts'));
       fs.writeFileSync(path.join(outer, 'scripts', 'trusted-authors.js'), real); fs.writeFileSync(path.join(outer, 'scripts', 'trusted-authors.txt'), 'vikramgorla\n');
       const inst = path.join(outer, 'inst', 'scripts');
       assert.throws(() => trustedAuthors(inst), /trusted-authors/, 'an installed copy without its loader does not fall back to another folder');
@@ -210,21 +210,23 @@ const many = (k: number): Finding[] => Array.from({ length: k }, (_, i) => good(
       assert.throws(() => trustedAuthors(inst), /trusted-authors/, 'an emptied installed list refuses, another folder\'s list is not used');
       fs.rmSync(outer, { recursive: true, force: true });
       // an installed copy in a folder named dist-scripts is its own root (the marker), never the folder above it (review of #1535: /srv/dist-scripts loaded /srv/scripts)
-      const srv = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-ta3-')); const ds = path.join(srv, 'dist-scripts');
+      const srv = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-ta3-'))); const ds = path.join(srv, 'dist-scripts');
       fs.mkdirSync(path.join(ds, 'scripts'), { recursive: true }); fs.mkdirSync(path.join(srv, 'scripts'));
       fs.writeFileSync(path.join(srv, 'scripts', 'trusted-authors.js'), real); fs.writeFileSync(path.join(srv, 'scripts', 'trusted-authors.txt'), 'vikramgorla\n');
       fs.writeFileSync(path.join(ds, 'scripts', 'trusted-authors.js'), real); fs.writeFileSync(path.join(ds, 'scripts', 'trusted-authors.txt'), 'fjcabello\n');
       fs.writeFileSync(path.join(ds, INSTALL_MARKER), 'installed\n');
       assert.deepStrictEqual(Array.from(trustedAuthors(path.join(ds, 'scripts'))), ['fjcabello'], 'an install under <x>/dist-scripts reads its own list, not <x>/scripts');
       const sh = fs.readFileSync(path.join(ROOT, 'scripts', 'weekly-test-audit.sh'), 'utf8');
-      assert.ok(sh.split('\n').some((l) => l.startsWith('  printf ') && l.includes(`> "$dest/${INSTALL_MARKER}"`)), 'install-filer writes the marker');
-      // install-filer refuses a dest named dist-scripts before it touches git (a stub git that fails shows any later step)
+      assert.ok(sh.split(/\r?\n/).some((l) => l.startsWith('  printf ') && l.includes(`> "$dest/${INSTALL_MARKER}"`)), 'install-filer writes the marker');
+      // install-filer refuses a dest named dist-scripts before it touches git (a stub git that fails shows any later step); bash runs it on Linux and macOS only, like the audit cases
+      if (posix) {
       const stub = path.join(srv, 'bin'); fs.mkdirSync(stub); fs.writeFileSync(path.join(stub, 'git'), '#!/bin/sh\nexit 97\n', { mode: 0o755 });
       for (const d of [ds, `${ds}/`, path.join(srv, 'x', 'dist-scripts')]) {
         const r = spawnSync('bash', [path.join(ROOT, 'scripts', 'weekly-test-audit.sh'), 'install-filer', '--dest', d], { env: { PATH: `${stub}${path.delimiter}${process.env.PATH}`, HOME: srv }, encoding: 'utf8' });
         assert.ok(r.status === 2 && /must not be a folder named dist-scripts/.test(r.stderr), `install-filer refuses --dest ${d}: ${r.status} ${r.stderr}`);
       }
       assert.ok(!fs.existsSync(path.join(srv, 'x')), 'nothing installed');
+      }
       fs.rmSync(srv, { recursive: true, force: true });
       fs.rmSync(dest, { recursive: true, force: true });
     }
