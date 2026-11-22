@@ -236,7 +236,7 @@ function uiClosure(io) {
   return seen;
 }
 
-// ---- spec 117 FR-012 (O2, owner decision Vikram 2026-11-22, T045): `os_sensitive=true|false`, whether a pull request's diff can
+// ---- spec 117 FR-012 (O2, owner decision Vikram 2026-11-22, T048): `os_sensitive=true|false`, whether a pull request's diff can
 // behave differently on Windows, so ui-platforms.yml starts its Windows UI shards on the PR. It FAILS CLOSED: a path counts as
 // OS-neutral only when it is a plain path on the OS_NEUTRAL list below and on no OS_SENSITIVE line; every other path (the main
 // process, preload, build, packaging, dependencies, workflows and CI scripts, the driver plumbing, shell scripts, fonts, any unknown

@@ -1209,7 +1209,7 @@ Follow-up of the 2026-11-20 delta above (PR #1970's proposal for the other focus
 
 `[KNOWN GAP]` Windows and Linux are not measured for this driver (CI's runners have other focus behaviour); one run alone, not several, on the Mac; what else was running on the Mac during the four-window runs was not checked.
 
-### 2026-11-22: Windows UI shards on a pull request only when `os_sensitive`, and `main` UI runs collapse to the newest (spec 117 FR-012 / O2, FR-014 / O3; T045, T046, T010)
+### 2026-11-22: Windows UI shards on a pull request only when `os_sensitive`, and `main` UI runs collapse to the newest (spec 117 FR-012 / O2, FR-014 / O3; T048, T049, T010)
 
 Owner decision (Vikram, team chat, 2026-11-22 17:56 UTC, with Paco's variant): O2 and O3 yes. Supersedes draft PR #2033's simple form (no Windows UI on any PR).
 
@@ -1217,5 +1217,5 @@ Owner decision (Vikram, team chat, 2026-11-22 17:56 UTC, with Paco's variant): O
 - **`main` pushes of `ui-platforms.yml` only (reverses FR-107).** Its group is `${{ github.workflow }}-${{ github.event_name == 'push' && 'ui-main' || github.event.pull_request.number || github.run_id }}` with `cancel-in-progress` on `pull_request` and `push` (the workflow's `push` trigger is `main` only): a newer merge cancels the older `main` UI run, and the run that finishes is the newest push's full Linux and Windows matrix. Schedule and `workflow_dispatch` runs keep `github.run_id` groups and are never cancelled. Every other workflow keeps FR-107 as written; `ci.yml` on `main` still finishes every run.
 - **"UI suite complete"** keeps its name and check: it needs the shard job, whose result on a PR with Windows left out on purpose is the Linux shards' alone, so an absent Windows shard cannot block a PR, a Windows shard that ran and failed fails it, and a failed, skipped or cancelled Linux shard fails it. It is not a required check (the ruleset requires Spec Kit gate, the three *Build and test* and *Office layout check (xvfb)*, read 2026-11-22).
 - `test:` `test:ciossensitive`, `test:uievents` (per-event evaluation of the matrix, concurrency and summary), `test:uisuite` pins; details in spec 117.
-- `read:` `release.yml` does **not** check that a tagged commit's UI run finished green (it checks the tag is on `main` and matches `package.json`). `[KNOWN GAP]` a release can tag a `main` commit whose UI run a newer merge cancelled; spec 117 T047.
+- `read:` `release.yml` does **not** check that a tagged commit's UI run finished green (it checks the tag is on `main` and matches `package.json`). `[KNOWN GAP]` a release can tag a `main` commit whose UI run a newer merge cancelled, until open PR #2038 (a release UI gate, spec 117) lands.
 - `[KNOWN GAP]` a cancelled `main` UI run shows as cancelled on that commit; nightly-watch reports only failed scheduled runs, so it opens no issue (as intended). Not verified on a real run here.

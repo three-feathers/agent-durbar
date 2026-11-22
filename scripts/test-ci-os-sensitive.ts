@@ -1,5 +1,5 @@
 /**
- * Unit test (spec 117 FR-012, O2; T045): the `os_sensitive` output of .github/scripts/ci-changes.js, which decides whether a pull
+ * Unit test (spec 117 FR-012, O2; T048): the `os_sensitive` output of .github/scripts/ci-changes.js, which decides whether a pull
  * request's diff starts the Windows UI shards of ui-platforms.yml. It FAILS CLOSED: only a plain path on the OS-neutral list that no
  * OS-sensitive line names is neutral, an empty diff is sensitive, and the base branch's copy decides (ci-changes.sh), with a missing or
  * inexact output read as true. Each rule has a fixture here and a mutant (a changed copy of ci-changes.js or ci-changes.sh) that dies at
@@ -202,7 +202,7 @@ if (haveBash) {
   assert.strictEqual(bash(repoWith(says('false'), docs)), 'code=true\nthemes=false\nui=true\nmacos=true\nos_sensitive=false\n', 'wrapper: an exact false is kept as it is (nothing appended)');
   assert.strictEqual(bash(repoWith(says('true'), docs)), 'code=true\nthemes=false\nui=true\nmacos=true\nos_sensitive=true\n', 'wrapper: an exact true is kept as it is');
   // mutant: without the guard, a base copy with no os_sensitive line leaves the output missing
-  const guard = /\n# spec 117 FR-012 \(T045\)[^]*?\nfi\n$/;
+  const guard = /\n# spec 117 FR-012 \(T048\)[^]*?\nfi\n$/;
   assert.ok(guard.test(wrapper), 'mutant anchor: the os_sensitive guard ends the wrapper');
   assert.strictEqual(lastOs(bash(repoWith(old, docs, wrapper.replace(guard, '\n')))), null, 'mutant: without the guard the output has no os_sensitive (so the guard is what writes true)');
   // every other event: true from the wrapper itself

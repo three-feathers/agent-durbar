@@ -29,7 +29,7 @@ if ! git show 'HEAD^1:.github/scripts/ci-changes.js' > "$tmp/.github/scripts/ci-
   exit 0
 fi
 node "$tmp/.github/scripts/ci-changes.js" --root .
-# spec 117 FR-012 (T045): fail closed. ui-platforms.yml skips the Windows UI shards of a pull request only on os_sensitive=false; a
+# spec 117 FR-012 (T048): fail closed. ui-platforms.yml skips the Windows UI shards of a pull request only on os_sensitive=false; a
 # base copy older than that output (main before this landed), one that writes nothing, or one whose last os_sensitive line is not
 # exactly `true` or `false` (`FALSE`, `false ` or empty: GitHub's == ignores case) gets os_sensitive=true appended (the last line wins).
 if [ "$out" != /dev/stdout ]; then
