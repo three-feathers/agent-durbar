@@ -3,15 +3,15 @@
 <!-- specs-index (the row of the generated specs index; npm run specs:index shows it)
 group: 046
 title: Durbar's own update (owner request 2026-11-22, "like Duniya, including forks"): a daily check of the GitHub releases of the repository the build came from, an Update card with the release notes as plain text and a breaking-changes card, snooze and skip, a checked download (SHA256SUMS.txt) the person opens; in-place apply per OS later (Windows NSIS and Linux AppImage unsigned, macOS only after signing)
-status: draft
-note: spec, plan, tasks only; nothing built; all owner decisions D1..D7 answered 2026-11-22; phase 2 barred (no signature now); review rounds 1-2 (#2016) folded in
+status: building
+note: P1 pure core built (T002..T006, no behaviour change); all owner decisions D1..D7 answered; phase 2 barred (no signature now)
 -->
 
 **Feature Branch**: `118-self-update` (spec, plan and tasks only). The build is one small PR per task group (P1..P6 in [tasks.md](tasks.md)).
 
 **Created**: 2026-11-22
 
-**Status**: Draft. Nothing built, nothing in `src/` changes in this PR, no dependency is added. All seven owner decisions D1..D7 are answered (Vikram, team chat (Telegram) 2026-11-22, 14:39 to 14:45 UTC); phase 1 is the whole build for now, and phase 2 stays barred until a signature scheme exists (D3).
+**Status**: Building. P1, the pure core (T002..T006, `src/shared/selfupdate.ts`), is built and changes no behaviour: nothing calls it yet, no request is made, no dependency is added. All seven owner decisions D1..D7 are answered (Vikram, team chat (Telegram) 2026-11-22, 14:39 to 14:45 UTC); phase 1 is the whole build for now, and phase 2 stays barred until a signature scheme exists (D3).
 
 **Input**: Owner request (Vikram, team chat, 2026-11-22 14:18 UTC, relayed by his coordinating agent): "Can we implement auto update like what duniya does including making it work for forks? https://github.com/vikramgorla/duniya".
 
@@ -211,6 +211,7 @@ On Windows NSIS and Linux AppImage, after a checked download and a valid signatu
 
 ## Changes
 
+- **2026-11-22, P1 pure core built (T002..T006), converge:** `src/shared/selfupdate.ts` holds the pure functions of plan D2 and nothing calls them yet. What the code fixes where the spec was silent: the repository parser takes the text exactly as given (surrounding spaces are refused, not trimmed); feed URLs must equal their own normalised form, so any text the URL parser would rewrite is refused; a tag with a pre-release suffix counts as a pre-release even when the entry is not marked as one; two tags naming the same version (leading zeros) refuse the feed like a duplicate tag; `validateFeed` also says whether the page was full, for the gap rule of FR-009; `isBreaking` takes the per-version marks that T008's `parseReleasesJson` will produce (absent = missing or invalid file = *Breaking: unknown*), and a breaking mark for any version in the range counts, also one the page does not list; *Skip* hides that version and older ones; a saved snooze longer than 7 days or of another version is ignored (FR-021); a last check dated in the future is due once (a clock set back never stops the check); *Check now* is allowed with the switch off but not in a dev run, the simulator, a build without a baked source, or under a blocking policy. The run-time env and resolver-order mutants of `test-selfupdate-repo.ts` move to T007 (the resolver), and the abort of a running check to T010: the pure part is `selfCheckOn`, asked again when an answer arrives.
 - **2026-11-22, owner decisions D3..D7** (Vikram, team chat (Telegram) 2026-11-22, 14:39 to 14:45 UTC): D3 no signature scheme now, phase 2 barred (FR-014 note keeps the reviewed format for later); D4 option 1, Settings override, GitHub `owner/name` only, warning and native confirmation, never in-place; D5 option B; D6 option 2, `releases.json` read from the tag (FR-009, new FR-026, T008 rewritten); D7 option 1, Downloads, numbered name.
 - **2026-11-22, owner decisions D1 and D2** (Vikram, team chat 14:39 UTC, both option A): no code-signing certificates now; the daily check is on by default, once every 24 hours, Settings switch off = zero network calls. D3..D7 open.
 - **2026-11-22, security review round 2 on #2016:** Environment protection (*Prevent self-review*, `v*`-only deployments, tag ruleset), offline next key, compromised-owner `[KNOWN GAP]` (D3, FR-014); replay rule and mutant (FR-014); abort a running check when turned off (FR-004); `$APPIMAGE` validation (FR-019); spec 107 links tied to the built-in slug (FR-018, T027); macOS *Open Anyway* wording, `[read: not tested on a Mac]`.
