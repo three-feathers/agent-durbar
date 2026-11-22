@@ -366,3 +366,6 @@ Found by a plan-only note of the Mac session; Paco's bot agreed in the team grou
 - **New spec item, FR-382 / T024:** split `app.js` into modules (not started, own spec needed, not designed).
 - **Dependencies.** Only the 021 FR-084 point 4 amendment wording (T008) and the 008 T130 tick (T007) wait for #1247 to land; T006 (test first) and the pure data part can be written against `main` today but merge after #1247 so T130 exists.
 
+### 2026-11-22: TEST_JOBS 4 (delivery-speed review)
+
+- FR-017: `scripts/run-tests.js` defaults to CPUs minus one (3 jobs on a 4 vCPU runner). The `npm test` step of the required Build and test jobs and of `macos-pr.yml` sets `TEST_JOBS: 4`; expected up to 25 % less `npm test` time. Task T026 measures it over 20 runs before and after, queue-wait excluded; revert if flakes rise.

@@ -96,6 +96,8 @@ jobs:
         env:
           # spec 103: on this job test:prereview must run the real-SDK test, never skip it (the install step above)
           PREREVIEW_REQUIRE_REAL_SDK: ${{ matrix.os == 'ubuntu-latest' && '1' || '' }}
+          # spec 117 T026: the runners have 4 vCPU, the default is CPUs minus one (3 jobs)
+          TEST_JOBS: 4
         run: npm test
       # spec 102 T201: the art build script's own checks, and T296's frame guard (FR-326); they need Pillow, nothing else does, and no art is made here
       - if: steps.changes.outputs.code == 'true' && matrix.os == 'ubuntu-latest'
