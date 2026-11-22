@@ -107,6 +107,21 @@ Header actions: **Stop** (interrupt the turn; the agent stays ready), **End sess
 
 ## Changes
 
+### 2026-11-22: main masks a tool call's arguments too, defence in depth (issue #1975, FR-342, T429)
+
+*Follow-up* of #1974 (Vikram, 2026-11-20): FR-342 masks a call's arguments where the chip is fed, in the window, but main still sent them to the window unmasked (`outward` masks outputs and edit info, not arguments), so the window held them in memory. Decisions below are the Mac session's call under Vikram's 00:28 UTC delegation.
+
+- **FR-342, main half** `[IMPLEMENTED]` `test:` `test:toolargs-mask` **The window never receives a tool call's argument value that the shared masks hide.** Main's `outward` (the one masked copy of an event for the window and the debug log, spec 019 FR-022) masks `args` of every `toolCall` that carries them (start and update, every adapter, MCP or not) through `maskToolArgs` in `src/main/mcpmask.ts`, next to `maskEditInfo`. FR-031: no second masker; it composes the existing masks of `src/shared/redact.ts`:
+  - **Every string** in the arguments, at any depth (objects and arrays walked; keys kept; past a fixed depth a value is replaced by the mask, fail closed) is read by `maskNoteText` with the session's secret values (structure and line breaks kept) and by `maskSecretCommand` (the command reading, which the chip and the Brain dock also use); a URL also by `maskSecretUrl`. A value no reading hides anything in is passed **exactly as the adapter sent it**; a value one reading hides something in is passed masked (the command reading's one-line text when that reading hides more, with nothing another reading hides shown, `keepShownBy`).
+  - **A list of strings** (a command as a word list) is read by `maskSecretArgs` as a whole as well, so a word that is secret only because of the word before it is masked.
+  - **Over the masks' input cap** (`MASK_INPUT_MAX`): a string is cut at its last blank before the cap, as the chip already cuts it (FR-342), then masked; the rest is not sent. Only the sub-agent's task prompt (the helper card) shows more than the chip, so a task prompt longer than the cap now ends at that cut.
+- **Which consumers keep the raw shape** (decided): none needs a raw value. The chip (`chipArg`, FR-342), the header's task line, the desk line, the Brain dock (spec 106, which masks again on its own), the edit labels (they read `edit`, masked since FR-024) and the sub-agent block (`description`, `prompt`, `agent_type`) all read the masked arguments; the task-tool detection reads the tool's name, not its arguments. The question card and the approval card come from their own events (spec 012 FR-128, the permission request), never from a call's arguments, so **masking arguments never changes what a person answers or approves**. For arguments no mask hides anything in every consumer shows exactly what it showed before; for an argument with a value the mask hides, the window masks the already masked text again, so its shown form can differ from before while no hidden value shows.
+- Supersedes the 2026-11-20 entry's bullet *Defence in depth in main ... not done here*.
+- **Evidence** (T429): `test:toolargs-mask` (invented values built from pieces: harmless arguments pass unchanged; values the mask hides are gone from every string the window receives, also nested, in word lists and past the cap; `outward`'s `maskMcpEvent` masks a start and an update; the Brain dock's step built from the masked event keeps its target for harmless arguments), with a mutant that passes the raw arguments, which dies at its own labelled assert.
+- `[KNOWN GAP]` The simulator's events do not pass through main, so no driver shows it; replayed history labels (`maskHistory`) are not part of this change. Unit test run on macOS only (CI runs it on the others); not run with a real agent session.
+
+**Tasks:** T429 in `tasks.md`. Numbers: T429 (`npm run specs:numbers` 2026-11-22); no new FR (FR-342 extended).
+
 ### 2026-11-20: the agent rail can be sorted (issue #1961, FR-341, T384)
 
 *Request* (Ruben, 2026-11-20): with a chat open, sort the conversations on the left by working, waiting, waiting time and creation, oldest or newest first. Details decided by the coordinator under Ruben's delegation.
