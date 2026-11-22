@@ -29,6 +29,8 @@ export interface BrainMask {
   decodeTokenForms?(text: string): string;
   /** Spec 012 FR-188: runs `fn` with the decoded reading off (the reading as before FR-188). */
   withoutDecode?<T>(fn: () => T): T;
+  /** Spec 012 FR-190: runs `fn` with the continuation reading off (the reading as before FR-190). */
+  withoutContinuation?<T>(fn: () => T): T;
   /** Spec 012 FR-182/FR-188: `head` with every piece that `ref` (another masked reading of the same text) does not show masked. */
   keepShownBy?(head: string, ref: string): string;
   /**
@@ -365,7 +367,7 @@ function valueExpected(mask: BrainMask, joined: string): { at: number; head: str
 /* ---------- streamed text: one masked tail per stream ---------- */
 
 /** One stream's masked tail; `key` is the depth of unclosed private key blocks (its pieces are dropped), `carry` a possible start of an END marker. */
-export interface Tail { buf: string; key: number; carry: string; shown?: string; ref?: Tail }
+export interface Tail { buf: string; key: number; carry: string; shown?: string; ref?: Tail; cref?: Tail }
 const freshTail = (): Tail => ({ buf: '', key: 0, carry: '', shown: '' });
 function clearStreams(s: BrainState): void { s.think = freshTail(); s.out = freshTail(); s.inKeyBlock = false; }
 
@@ -585,7 +587,7 @@ function onTool(s: BrainState, ev: Ev, now: number, mask: BrainMask): void {
       helper: typeof ev.agentId === 'string' && ev.agentId !== '', program: g.glyph === 'mcp' ? programOf(server) : tg.program, server, targetKind: tg.targetKind, target: tg.target,
       why: phase === 'start' && !ev.agentId ? lastSentence(s.buf) : '', files: tg.files, costAtStart: s.turnCost,
     };
-    if (phase === 'start' && !ev.agentId) { s.buf = ''; s.think = { ...s.think, buf: '', shown: '', ref: undefined }; s.out = { ...s.out, buf: '', shown: '', ref: undefined }; }
+    if (phase === 'start' && !ev.agentId) { s.buf = ''; s.think = { ...s.think, buf: '', shown: '', ref: undefined, cref: undefined }; s.out = { ...s.out, buf: '', shown: '', ref: undefined, cref: undefined }; }
     turn.steps.push(st);
     if (turn.steps.length > STEP_CAP) { turn.steps.shift(); turn.folded += 1; }
     if (phase !== 'start') countAndRun(s, st, phase === 'failed', late);
@@ -645,16 +647,27 @@ export function brainState(prev: BrainState, ev: unknown, now: number, mask: Bra
         const key = e.type === 'thinking' ? 'think' : 'out';
         const piece = whole ? (e.text as string) : str(e.delta);
         const prev = s[key];
-        let next = streamText(prev, piece, whole, mask);
         // spec 012 FR-188 (review of PR 1899, independent differential): once a stream holds an entity or a percent escape, it is also read with the decoded reading off
         // (as before FR-188; until then both readings are the same, so it starts from this tail), and the views show nothing that reading hides: a token the decoded
         // reading masked early glues the next piece to its mask, and the rules after it can read that differently
-        if (typeof mask.withoutDecode === 'function' && typeof mask.keepShownBy === 'function' && (prev.ref || /[&%]/.test(piece))) {
-          const ref0: Tail = prev.ref ?? { buf: prev.buf, key: prev.key, carry: prev.carry, shown: prev.shown };
+        const decodeKept = (from: Tail): Tail => {
+          const n = streamText(from, piece, whole, mask);
+          if (typeof mask.withoutDecode !== 'function' || typeof mask.keepShownBy !== 'function' || !(from.ref || /[&%]/.test(piece))) return n;
+          const ref0: Tail = from.ref ?? { buf: from.buf, key: from.key, carry: from.carry, shown: from.shown };
           const ref = mask.withoutDecode(() => streamText(ref0, piece, whole, mask));
-          const shownNow = next.shown ?? next.buf;
-          const keptRaw = safe(() => mask.keepShownBy!(shownNow, ref.shown ?? ref.buf));
-          next = { ...next, shown: keptRaw.slice(-BUF_MAX), ref: { buf: ref.buf, key: ref.key, carry: ref.carry, shown: ref.shown } };
+          const keptRaw = safe(() => mask.keepShownBy!(n.shown ?? n.buf, ref.shown ?? ref.buf));
+          return { ...n, shown: keptRaw.slice(-BUF_MAX), ref: { buf: ref.buf, key: ref.key, carry: ref.carry, shown: ref.shown } };
+        };
+        let next = decodeKept(prev);
+        // spec 012 FR-190 (review of PR 2001): the same for the continuation reading: once a stream holds a line break, the whole step above (with its own decoded
+        // reference) is also run with that reading off, from this tail until then, and the views show nothing that reading hides, at every step
+        if (typeof mask.withoutContinuation === 'function' && typeof mask.keepShownBy === 'function' && (prev.cref || /[\r\n]/.test(piece))) {
+          const cref0: Tail = prev.cref ?? { buf: prev.buf, key: prev.key, carry: prev.carry, shown: prev.shown, ref: prev.ref };
+          const cref = mask.withoutContinuation(() => decodeKept(cref0));
+          const keptRaw = safe(() => mask.keepShownBy!(next.shown ?? next.buf, cref.shown ?? cref.buf));
+          // the stream's own text too (a later view of it, and what the next piece is read after), so no part of the state holds what that reading hides
+          const keptBuf = next.buf === cref.buf ? next.buf : safe(() => mask.keepShownBy!(next.buf, cref.buf));
+          next = { ...next, buf: keptBuf.slice(-BUF_MAX), shown: keptRaw.slice(-BUF_MAX), cref: { buf: cref.buf, key: cref.key, carry: cref.carry, shown: cref.shown, ref: cref.ref } };
         }
         s[key] = next;
         s.inKeyBlock = s.think.key > 0 || s.out.key > 0;

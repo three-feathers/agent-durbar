@@ -234,6 +234,34 @@ for (const keep of ['ghp_short', 'see ghs_count', 'wei' + 'ghs_' + 'TotalWeightK
     const out = STc.maskRaw(t, red);
     assert.deepStrictEqual(wordsShown(t, out, withoutContinuation(() => STc.maskRaw(t, red))), [], `#1320 continuation: desk maskRaw keeps the union with its reading without the step: ${JSON.stringify(out)}`);
   }
+  // review of PR 2001: the command mask also reads the command as a shell does, so a flag's value split by a continuation is one word; continuations in an ordinary
+  // command stay as written
+  {
+    const w1 = 'Qz7' + 'Wx4' + 'Lk9' + 'Tb2', w2 = 'Rt3' + 'Mn8' + 'Pb5' + 'Hc6';
+    for (const [bk, b] of breaks.slice(0, 3)) {
+      for (const flag of ['--pass' + 'word ', '--to' + 'ken ', '--pass' + 'word=']) {
+        const out = maskSecretCommand(flag + w1 + b + w2, {});
+        assert.ok(!out.includes(w1) && !out.includes(w2), `#1320 continuation: maskSecretCommand hides a flag value split by a continuation (${bk}, ${flag.length}): ${JSON.stringify(out)}`);
+      }
+    }
+    for (const k of ['npm run build \\\n  --watch', 'echo abc\\\ndef', 'cd src ^\r\n&& dir']) {
+      assert.strictEqual(maskSecretCommand(k, {}), withoutContinuation(() => maskSecretCommand(k, {})), `#1320 continuation: an ordinary command with a continuation reads as before (${JSON.stringify(k)})`);
+    }
+    // the marks themselves stay, alone or glued to a word, when the joined reading hides something elsewhere
+    const tk0 = 'gh' + 'p_' + 'VeLcXJQf4cb27' + 'Q'.repeat(23);
+    assert.strictEqual(maskSecretCommand('echo abc\\\n def ' + tk0, {}), 'echo abc\\ def [redacted]', '#1320 continuation near miss: a word glued to a continuation stays when a token elsewhere is hidden');
+    assert.ok(maskSecretCommand('--pass' + 'word ' + w1 + '\\\n' + w2 + ' \\\n  --verbose', {}).endsWith(' \\ --verbose'), '#1320 continuation near miss: a later continuation mark and flag stay after a split value is hidden');
+    // every platform's line break: a break of one character of the older form is joined too
+    assert.ok(!redact('API_' + 'KEY=' + w1 + '\r' + w2, {}).includes(w2), '#1320 continuation: a value split by the one-character break of the older form is hidden');
+    assert.strictEqual(redact('line one\rline two\rline 3', {}), 'line one\rline two\rline 3', '#1320 continuation near miss stays: lines split by the older one-character break');
+    // [KNOWN GAP] (on #1320): a token whose parts are on three lines, none of two of them a token alone, keeps its last part readable, as on main (this pin turns red when it is fixed)
+    const t5 = 'gh' + 'p_' + 'Ab12Cd34Ef\nGh56Ij78Kl90Mn\nOp12Qr34St56';
+    assert.ok(redact(t5, {}).includes('Op12Qr34St56'), '#1320 continuation KNOWN GAP pinned: a token over three lines');
+    // the mask-end trim: a mask already in the text at the end of a stretch is no part of it, so the word after it stays
+    const tk = 'gh' + 'p_' + 'VeLcXJQf4cb27' + 'Q'.repeat(23);
+    const t6 = 'to' + 'ken: API_' + 'KEY=' + tk + '\\\nAb3Cd4Ef5Gh6pass' + 'word=[redacted] Ab3Cd4Ef5Gh6.';
+    assert.ok(maskSplitTokens(t6).endsWith(' Ab3Cd4Ef5Gh6.'), `#1320 continuation near miss: the word after a mask that ends a stretch stays: ${JSON.stringify(maskSplitTokens(t6))}`);
+  }
   // near misses, byte for byte: line breaks with no secret, ordinary next lines after a hidden value, two whole tokens on two lines (nothing new to hide)
   const tok1 = 'gh' + 'p_' + 'Zq3Wd8Kp2Lm5Rt7Yx4Bn6Hj9Fc1Vg0Ts3Qa8';
   const tok2 = 'gh' + 'p_' + 'Hj9Fc1Vg0Ts3Qa8Zq3Wd8Kp2Lm5Rt7Yx4Bn6';
@@ -262,6 +290,16 @@ for (const keep of ['ghp_short', 'see ghs_count', 'wei' + 'ghs_' + 'TotalWeightK
     _contPassesForTest();
     maskSplitTokens('no break here, ' + tok1);
     assert.strictEqual(_contPassesForTest(), 0, '#1320 continuation work: a text without a line break is not read again');
+    // review of PR 2001: the scan for a middle line reads each character once and counts it (a long line before many short ones was read again for each of them)
+    const blk = 'API_' + 'KEY=' + v1 + '\n' + 'A1'.repeat(1000) + ':x\n' + 'Ab3Cd4Ef5Gh6\n'.repeat(300);
+    for (const len of [20_000, 400_000]) {
+      const x = blk.repeat(Math.ceil(len / blk.length)).slice(0, len);
+      _contWorkForTest();
+      maskSplitTokens(x);
+      const w = _contWorkForTest();
+      assert.ok(w <= 6 * x.length, `#1320 continuation work: a long line before many short ones: ${w} characters read for ${x.length}`);
+    }
+    _contPassesForTest();
     // a plain break after text the rules do not hide joins nothing, so the text is not read again (the guard that spares the pass)
     maskSplitTokens('x build\nRelease2024Notes y\r\nAb3Cd4Ef5Gh6 z');
     assert.strictEqual(_contPassesForTest(), 0, '#1320 continuation work: plain breaks after text that is not hidden are not read again');

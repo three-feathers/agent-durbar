@@ -2125,10 +2125,20 @@ function maskCommandImpl(command: unknown, envIn: Env | undefined, cap: boolean,
       // spec 012 FR-184: the same with the shell readings off; nothing that reading hides shows (a run the shell readings hide can take a keyword or flag a rule needed)
       return keepShownWithin(head, withoutShell(read));
     };
-    const h1 = read1();
-    if (contOff || contReads === c0n) return h1;
-    const r1 = withoutContinuation(read1);
-    return h1 === r1 ? h1 : keepShownWithin(h1, r1);
+    let h1 = read1();
+    if (!contOff && contReads !== c0n) {
+      const r1 = withoutContinuation(read1);
+      if (h1 !== r1) h1 = keepShownWithin(h1, r1);
+    }
+    // spec 012 FR-190 (review of PR 2001): the command read once more as a shell reads it, its line continuations removed, so a flag's value split by one is one word
+    // for the flag rules; when that reading hides a word this one shows, nothing it hides shows (the continuation marks themselves stay: they are no word of it)
+    if (contOff || !SHELL_CONT.test(c0)) return h1;
+    const joined = maskCommandImpl(c0.replace(SHELL_CONT_G, ''), envIn, cap, mapWord);
+    if (joined === '[redaction failed]') return joined;
+    if (!joined.includes('[redacted')) return h1;
+    const shown = new Set(joined.split(PIECE_CUT).filter((p, k) => !(k % 2)));
+    const more = h1.split(PIECE_CUT).some((p, k) => !(k % 2) && p !== '' && !shown.has(p) && !/[\\^]$/.test(p));
+    return more ? keepShownWithin(h1, joined + ' \\ ^') : h1;
   } catch { return '[redaction failed]'; }
 }
 
@@ -2733,7 +2743,10 @@ function bodyRunAt(s: string, at: number): string {
   return s.slice(at, e);
 }
 /** Spec 012 FR-190: a line break, with the backslash or cmd caret of a shell line continuation before it when there is one. */
-const CONT_BREAK = /[\\^]?(?:\r\n|\n)/g;
+/** Spec 012 FR-190 (review of PR 2001): a shell line continuation (a backslash, or cmd's caret, before a line break), which the shell removes. */
+const SHELL_CONT = /[\\^](?:\r\n|\n|\r)/;
+const SHELL_CONT_G = /[\\^](?:\r\n|\n|\r)/g;
+const CONT_BREAK = /[\\^]?(?:\r\n|\n|\r)/g;
 let contOff = false;
 /** Runs `fn` with FR-190's continuation reading off (tests only: the reference reading as before FR-190). */
 export function withoutContinuation<T>(fn: () => T): T {
@@ -2751,13 +2764,13 @@ export function _contWorkForTest(): number { const n = contWork; contWork = 0; r
 export function _contPassesForTest(): number { const n = contPasses; contPasses = 0; return n; }
 /**
  * Spec 012 FR-190: a value split across a line break after a secret name. The text is read once more with some line breaks removed: every shell line
- * continuation (a backslash or cmd's caret before LF or CRLF), which a shell removes, and a plain LF or CRLF only where the text right before it is hidden by
+ * continuation (a backslash or cmd's caret before a line break), which a shell removes, and a plain line break (LF, CRLF or a lone CR) only where the text right before it is hidden by
  * the rules as written (a value that reaches the line's end) or is a line that such a join already took whole (a value over three lines), and the next line
  * starts with a run that looks like a token's tail (`tailRun`, with FR-173's 8 letters and digits: a word, a keyword, a name and value, an indented line, a short
  * line stay apart). The copy goes through the
  * rules as written (`maskEscapedRuns` then `maskShapesCore`, every name, header and flag rule); each stretch it hides that crosses a removed continuation is
- * masked as written, each side on its own (the break stays), and so is one crossing a removed plain break that holds text hidden as written right before
- * it (or a break of the same stretch taken before it); past a break it does not take, the stretch stops. The union with what the rules hide as written
+ * masked as written, each side on its own (the break stays), and so is one crossing a removed plain break (only breaks after text hidden as written, or
+ * the line after one taken whole, are removed; review of PR 2001: the stop at a later one was never reached, and is gone). The union with what the rules hide as written
  * (`maskSplitSpans`), so nothing hidden before shows. A stretch the rules already hide whole as written is not taken (nothing new); one whose pieces would be
  * longer as masks than the stretch is also given in `whole` (masked as one). Linear: one scan, each next line's run read once (at most 4,096 characters), one copy
  * and one mask pass. `contReads` counts the texts it hid something in, for the callers' reference reading without it (`maskKeepingMarkdown`).
@@ -2765,6 +2778,10 @@ export function _contPassesForTest(): number { const n = contPasses; contPasses 
 function contSpans(s: string, mask: string, written: () => ReadonlyArray<[number, number]>, out: Array<[number, number]>, whole?: Array<[number, number]>): void {
   const joins: Array<[number, number, boolean]> = []; // removed [a, b), and whether it is a continuation (a backslash or a caret before the break)
   let prevEnd = -1; // the end of the last plain break joined: a line from there to the next break with no blank is the middle of one value
+  // the last character outside a token body seen so far, found by one scan that only moves forward (review of PR 2001: a scan from `prevEnd` per break was not
+  // counted and read the same characters again for every break of a long text); every step is counted
+  let scanAt = 0;
+  let lastOut = -1;
   CONT_BREAK.lastIndex = 0;
   for (let m = CONT_BREAK.exec(s); m; m = CONT_BREAK.exec(s)) {
     const a = m.index;
@@ -2776,9 +2793,12 @@ function contSpans(s: string, mask: string, written: () => ReadonlyArray<[number
     contWork += run.length;
     // FR-173's 8 letters and digits, as `breakSpans` asks after a hidden head: a short next line (`l3`, `ok2`) stays its own line
     if (!tailRun(run) || alnumIn(run, 0, run.length) < GLUE_MIN) continue;
-    let mid = prevEnd >= 0 && a - prevEnd <= 4096;
-    for (let i = prevEnd; mid && i < a; i++) mid = BODY_CHAR.test(s[i]);
-    if (mid) contWork += a - prevEnd;
+    let mid = false;
+    if (prevEnd >= 0) {
+      if (scanAt < prevEnd) scanAt = prevEnd;
+      for (; scanAt < a; scanAt++) { contWork++; if (!BODY_CHAR.test(s[scanAt])) lastOut = scanAt; }
+      mid = a - prevEnd <= 4096 && lastOut < prevEnd;
+    }
     if (!mid && !inSpans(written(), a - 1)) continue;
     joins.push([a, b, false]);
     prevEnd = b;
@@ -2807,7 +2827,6 @@ function contSpans(s: string, mask: string, written: () => ReadonlyArray<[number
     const pieces: Array<[number, number]> = [];
     for (let i = x + 1; i < y; i++) {
       if (!joint[i]) continue;
-      if (joint[i] === 2 && !pieces.length && !inSpans(written(), at[i - 1])) break;
       pieces.push([at[seg], at[i - 1] + 1]);
       seg = i;
     }

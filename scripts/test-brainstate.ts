@@ -865,7 +865,8 @@ assert.strictEqual(sentenceOf(s), s.sentence);
   const states = (chunks: string[]): string[] => {
     let st = feed(fresh(), [{ type: 'user' }], 1);
     const out: string[] = [];
-    for (const delta of [...chunks.map((d) => ({ type: 'thinking', delta: d })), start('bash', { command: 'ls' })]) { st = feed(st, [delta], 1); out.push(JSON.stringify(st)); }
+    // the reference streams kept beside a stream (`ref`, `cref`: the readings with a step off, as on main) are left out: they are what the state is compared with
+    for (const delta of [...chunks.map((d) => ({ type: 'thinking', delta: d })), start('bash', { command: 'ls' })]) { st = feed(st, [delta], 1); out.push(JSON.stringify(st, (k, v) => (k === 'ref' || k === 'cref' ? undefined : v))); }
     return out;
   };
   let seed = 1320;
@@ -900,6 +901,30 @@ assert.strictEqual(sentenceOf(s), s.sentence);
         if (rs) refRuns++;
       }
     }
+  }
+  // review of PR 2001: streams of other shapes, cut at up to 8 places (a reference stream with the step off now runs beside the brain's own once a piece holds a line
+  // break), and two streams of the review: no state shows a word the same state with the step off hides
+  const U = String.fromCharCode(0x202e);
+  // a piece of 5 characters of an invented value (the views pick their lines differently, so a word around a mask is no measure; the value's pieces are)
+  const piecesOf = (vals: string[]): string[] => vals.flatMap((v) => Array.from({ length: Math.max(0, v.length - 4) }, (_x, i) => v.slice(i, i + 5)));
+  const lockStep = (chunks: string[], label: string, vals: string[]): void => {
+    const h = states(chunks);
+    const r = R.withoutContinuation(() => states(chunks));
+    const vp = piecesOf(vals);
+    for (let i = 0; i < h.length; i++) {
+      const extra = vp.filter((p) => h[i].includes(p) && !r[i].includes(p));
+      assert.deepStrictEqual(extra, [], `#1320 continuation brain: state ${i} shows no piece of a value the reading without the step hides (${label})`);
+    }
+  };
+  lockStep(['> ' + 'To' + 'ken ' + '4du65', 'mcCAwO\\\r\nOsSuKbLNmTbszQ\\\r\nk\\\r\n', 'l3wo8', 'v', 'WMw\r\n2. Second item'], 'review stream 1', ['4du65' + 'mcCAwO', 'OsSuKbLNmTbszQ', 'l3wo8' + 'vWMw']);
+  lockStep(['``', '`\n' + 'pass' + 'word', '=R1siWe' + U, '^\nQxlBLv' + U + '^\n', 'H6JaLk1s7d8hk/K3SnLoRwqxs4V', 'Ow='], 'review stream 2', ['R1siWe', 'QxlBLv', 'H6JaLk1s7d8hk', 'K3SnLoRwqxs4VOw']);
+  const shapes = ['> ' + 'To' + 'ken ' + v1 + '\\\r\n' + v2 + '\\\r\nk\\\r\n' + v1.toLowerCase() + '\r\n2. Second item', '``\n' + 'pass' + 'word=' + v1 + U + '^\n' + v2 + U + '^\n' + v1 + v2 + '/K3', 'x API_' + 'KEY=' + v1 + '\n' + v2 + '\n' + v1 + '\n- next', 'Bearer ' + v1 + '\r' + v2 + ' done'];
+  for (const [si, text] of shapes.entries()) for (let k = 0; k < 40; k++) {
+    const cuts = new Set<number>();
+    const c = 1 + rnd(8);
+    while (cuts.size < c) cuts.add(1 + rnd(text.length - 1));
+    const pts = [0, ...[...cuts].sort((x, y) => x - y), text.length];
+    lockStep(pts.slice(1).map((q, i) => text.slice(pts[i], q)), `shape ${si}, run ${k}`, [v1, v2, v1.toLowerCase()]);
   }
   assert.strictEqual(runs, 6 * 5 * 30, '#1320 continuation brain: every random cut was fed');
   assert.deepStrictEqual(more.slice(0, 3), [], `#1320 continuation brain: no state shows a piece the reading without the step hides (${more.length})`);
