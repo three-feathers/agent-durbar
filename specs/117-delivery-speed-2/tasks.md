@@ -15,10 +15,11 @@
 
 ## P2: driver map and Linux-first UI (with 008 T130, after #1247)
 
-- [ ] T006 `test-ci-changes.ts` cases first: `drivers` for a renderer-only diff, `all` for an unmapped file, a driver missing from the map fails, `os_sensitive` for a `src/main` file, every non-PR event gives `all` and `true` [FR-011, FR-012]
-- [ ] T007 `.github/scripts/ci-drivers.json` and `ci-changes.js` outputs `drivers`, `os_sensitive` (base-branch copy decides, as FR-191); implements 008 T130's map in the same PR and ticks it there [FR-011]
-- [ ] T008 `ui-platforms.yml`: Linux shards from the mapped drivers' recorded times (`ceil(sum/15)`), Windows shards only with `os_sensitive` (needs O2's yes; until then Windows keeps today's shards), "UI suite complete" unchanged; `ui-suite.js --only` if missing. Spec 008 pointer delta and a spec 021 *Changes* line naming the amendment of FR-084 point 4 (FR-063 accounting as spec FR-012). `read:` 7-day `ci:stats` after landing in spec *Changes* [FR-012, FR-013, FR-016]
-- [ ] T009 `docs/development.md` (CI section): the by-hand full run (`gh workflow run ui-platforms.yml --ref <branch>`) for a PR whose risk the map does not see [FR-012]
+- [ ] T006 (after #1247 landed, so 008 T130 exists) `test-ci-changes.ts` cases first: `drivers` for a renderer-only diff, `all` for an unknown path and for each core path (`src/main`, `src/preload`, `src/shared`, `src/adapters`, `app.js`, `index.html`, styles, `sim.ts`, build, `package.json`, a workflow file, a driver helper), guard fails when a `DRIVERS` entry or renderer module is in any rule's gap, `os_sensitive` for `src/main`, `appmenu.ts`, `keys.js`, `browserpane.js` and a `src/shared` file using `fs`, every non-PR event gives `all` and `true` [FR-011, FR-012]
+- [ ] T007 (after T006; depends on #1247 for the 008 T130 tick) `ci-changes.js` only, no `ci-drivers.json`: outputs `drivers`, `os_sensitive` (base-branch copy decides, as FR-191); the reviewed table is a const in the same file; ticks 008 T130 in the same PR [FR-011]
+- [ ] T008 (after T007; O2's yes for the Windows part) `ui-platforms.yml`: Linux shards from the mapped drivers' recorded times (`ceil(sum/15)`), Windows shards only with `os_sensitive` (until O2's yes Windows keeps today's shards), "UI suite complete" unchanged; `ui-suite.js --only` if missing. Spec 008 pointer delta and a spec 021 *Changes* line naming the amendment of FR-084 point 4 (**waits on #1247**: it amends that text; FR-063 accounting as spec FR-012). `read:` 7-day `ci:stats` after landing in spec *Changes* [FR-012, FR-013, FR-016]
+- [ ] T009 (with T008) `docs/development.md` (CI section): the by-hand full run (`gh workflow run ui-platforms.yml --ref <branch>`) for a PR whose risk the map does not see [FR-012]
+- [ ] T024 `[KNOWN GAP]` Not started, own spec needed (`/speckit.specify`): split `src/renderer/app.js` into modules so CI by diff and review get narrower; separate from P2, does not block it (FR-042). Not designed here
 
 ## P3: `main` UI collapse (after O3)
 
