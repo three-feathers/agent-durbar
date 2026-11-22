@@ -12,6 +12,7 @@ const cs = require(path.join(ROOT, 'scripts', 'ci-stats.js')) as {
   dayWindows: (days: number, now: Date) => Array<{ from: string; to: string }>;
   prStats: (prs: unknown[]) => Record<string, any>;
   run: (o: Record<string, unknown>) => string[];
+  ghJson: (args: string[], exec: (cmd: string, args: string[], o: unknown) => string) => any;
   PR_QUERY: string;
 };
 
@@ -72,7 +73,7 @@ assert.strictEqual(st.task.prs, 1);
 assert.ok(!/\b(body|title|bodyText|bodyHTML|message)\b/i.test(cs.PR_QUERY), 'PR_QUERY has no body or title field');
 const src = fs.readFileSync(path.join(ROOT, 'scripts', 'ci-stats.js'), 'utf8');
 assert.ok(!/(?<![.\w])(exec|execSync|spawn|spawnSync)\(/.test(src.replace(/execFileSync/g, '')), 'no shell-spawning call');
-assert.ok(/execFileSync\('gh', args,/.test(src) && !/shell\s*:/.test(src), 'gh through execFileSync with an argument array, no shell option');
+assert.ok(/call = execFileSync/.test(src) && /(?:execFileSync|call)\('gh', args,/.test(src) && !/shell\s*:/.test(src), 'gh through execFileSync with an argument array, no shell option');
 assert.ok(/require\('\.\/safe-print\.js'\)/.test(src) && /emit\(run\(/.test(src), 'output goes through safe-print');
 
 // A full run with a fake gh: calls are checked, planted texts must not appear, pagination asks until a short page.
@@ -117,5 +118,21 @@ assert.ok(calls.filter((a) => /\/jobs$/.test(a[3])).every((a) => a.includes('fil
 assert.strictEqual(calls.filter((a) => /\/jobs$/.test(a[3])).length, 5 + 2, 'sampled workflows capped, full ones whole');
 assert.ok(calls.every((a) => !a.some((x) => /^query=/.test(x) && /\b(body|title)\b/.test(x))), 'no body or title in a request');
 for (const bad of [{ days: 0 }, { days: 1.5 }, { days: 31 }, { days: 7, repo: 'o/r; rm -rf' }, { days: 7, sample: 0 }]) assert.throws(() => cs.run({ now: NOW, gh: fakeGh, repo: 'o/r', ...bad }), bad.repo ? /owner\/name/ : /--/);
+
+// gh retry: a transient failure is retried twice; three failures name the endpoint (digits as N) and print no stderr.
+let tries = 0;
+const flaky = (_c: string, _a: string[]): string => { if (++tries < 3) throw Object.assign(new Error('boom'), { status: 1, stderr: 'SECRETSTDERR' }); return '{"ok":1}'; };
+assert.deepStrictEqual(cs.ghJson(['api', '-X', 'GET', 'repos/o/r/actions/runs/123/jobs'], flaky), { ok: 1 });
+assert.strictEqual(tries, 3, 'failed twice, third try succeeded');
+tries = 0;
+const dead = (_c: string, _a: string[]): string => { tries++; throw Object.assign(new Error('boom SECRETSTDERR'), { status: 1, stderr: 'SECRETSTDERR' }); };
+assert.throws(() => cs.ghJson(['api', '-X', 'GET', 'repos/o/r/actions/runs/123/jobs'], dead), (e: Error) => /failed \(exit 1\)/.test(e.message) && e.message.includes('runs/N/jobs') && !/SECRETSTDERR|123/.test(e.message));
+assert.strictEqual(tries, 3, 'exactly three attempts, no more');
+
+// E1: the UI shard share of runner minutes is printed from our own workflow name only.
+const uiRuns = [{ id: 1, name: 'UI on three OSes', event: 'pull_request' }, { id: 2, name: 'CI', event: 'pull_request' }];
+const uiJobs = [mkJob(1, 'UI shard (ubuntu-latest 1/4)', 'ubuntu-latest', 0, 1, 31), mkJob(2, 'Build and test (ubuntu-latest)', 'ubuntu-latest', 0, 1, 11)];
+const uiText = (cs as any).report({ runs: uiRuns, jobs: uiJobs, prs: [], fromMs: from, toMs: from + 3600000, days: 1 }).join('\n');
+assert.ok(/Share of pull_request runner minutes in the UI shards \(UI on three OSes\): 75 % \(30 of 40;/.test(uiText), uiText);
 
 console.log('ci-stats tests passed');

@@ -13,6 +13,7 @@ const { emit } = require('./safe-print.js');
 const MIN = 60000;
 const DAY = 86400000;
 const FULL_WORKFLOWS = ['CI', 'UI on three OSes', 'macOS on pull requests', 'World matrix', 'Mac title bar on pull requests'];
+const UI_WORKFLOW = 'UI on three OSes';
 const PR_QUERY = 'query($owner:String!,$name:String!){repository(owner:$owner,name:$name){pullRequests(states:MERGED,first:100,orderBy:{field:UPDATED_AT,direction:DESC}){nodes{number createdAt mergedAt labels(first:20){nodes{name}} reviews{totalCount} commits{totalCount} files(first:100){nodes{path additions}}}}}}';
 
 /** Nearest-rank percentile (p in 1..100) of a list of numbers; null for an empty list. */
@@ -129,6 +130,12 @@ function report({ runs, jobs, prs, fromMs, toMs, days }) {
   const pjMin = pj.reduce((s, j) => s + (duration(j) || 0), 0);
   const cancelled = pj.filter((j) => j.conclusion === 'cancelled').reduce((s, j) => s + (duration(j) || 0), 0);
   L.push('', `Cancelled share of pull_request runner minutes: ${f1((100 * cancelled) / (pjMin || 1))} % (${f1(cancelled)} of ${f1(pjMin)})`);
+  for (const ev of ['pull_request', 'push']) { // E1: only our own workflow's name is ever matched, nothing else is named
+    const evJobs = jobs.filter((j) => (runById.get(j.run_id) || {}).event === ev);
+    const tot = evJobs.reduce((a, j) => a + (duration(j) || 0), 0);
+    const ui = evJobs.filter((j) => (runById.get(j.run_id) || {}).name === UI_WORKFLOW).reduce((a, j) => a + (duration(j) || 0), 0);
+    L.push(`Share of ${ev} runner minutes in the UI shards (${UI_WORKFLOW}): ${f1((100 * ui) / (tot || 1))} % (${Math.round(ui)} of ${Math.round(tot)}; sampled workflows make the total a lower bound)`);
+  }
   const perHead = group(pj.filter((j) => j.conclusion !== 'skipped'), (j) => (runById.get(j.run_id) || {}).head_sha);
   L.push(`Jobs that ran per PR head (p50 / p90): ${pair(perHead.map(([, g]) => g.length))} over ${perHead.length} heads`);
   const prRuns = runs.filter((r) => r.event === 'pull_request' && r.pull_requests && r.pull_requests[0]);
@@ -145,11 +152,11 @@ function report({ runs, jobs, prs, fromMs, toMs, days }) {
 }
 
 /** The real `gh`: an argument array, no shell. Never prints stderr (it could echo request details). */
-function ghJson(args) {
+function ghJson(args, call = execFileSync) {
   let last;
   for (let attempt = 0; attempt < 3; attempt++) { // a transient 5xx or network error is retried
     try {
-      return JSON.parse(execFileSync('gh', args, { encoding: 'utf8', maxBuffer: 256 * 1024 * 1024, stdio: ['ignore', 'pipe', 'pipe'] }));
+      return JSON.parse(call('gh', args, { encoding: 'utf8', maxBuffer: 256 * 1024 * 1024, stdio: ['ignore', 'pipe', 'pipe'] }));
     } catch (e) {
       last = e;
     }
@@ -222,4 +229,4 @@ if (require.main === module) {
   }
 }
 
-module.exports = { percentile, queueWait, duration, osOf, classifyPath, queuedMinutes, dayWindows, prStats, report, run, parseArgs, PR_QUERY };
+module.exports = { ghJson, percentile, queueWait, duration, osOf, classifyPath, queuedMinutes, dayWindows, prStats, report, run, parseArgs, PR_QUERY };
