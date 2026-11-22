@@ -679,6 +679,14 @@ section('realstore', async () => {
     eq(m2.store.get(ws)!.sessionNames, before, 'the names are exactly as before (the oldest ones were not lost)');
     eq([m2.store.get(ws)!.team, m2.store.get(ws)!.permMode], [undefined, 'ask'], 'no record, the room as it was');
     eq(new FolderStore(path.join(dir, 'b.json')).load()[0].sessionNames, before, 'also on disk');
+    // a room with NO names: the rollback gives back "none", not the batch's names
+    const m3 = make('c.json', [three], 1);
+    m3.store.upsert({ workspace: ws, permMode: 'ask' });
+    eq(m3.store.get(ws)!.sessionNames, undefined, 'a room with no names to start with');
+    await assert.rejects(async () => created(m3.w), /boom/, 'the place throws in a room with no names');
+    n++;
+    eq([m3.store.get(ws)!.sessionNames, m3.store.get(ws)!.team], [undefined, undefined], 'no names and no record in memory');
+    eq(new FolderStore(path.join(dir, 'c.json')).load()[0].sessionNames, undefined, 'no names on disk either');
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
 
@@ -824,6 +832,7 @@ section('main', () => {
     { name: 'the rollback is not retried', from: 'attempt < 2 && !back', to: 'attempt < 1 && !back', section: 'atomicity' },
     { name: 'a missing folder is not noticed', from: "if (!dep.exists(e.key))", to: 'if (false)', section: 'atomicity' },
     { name: 'the rows object is not bounded', from: 'moreKeysThan)(rowsIn, teamtemplate_1.LIMITS.members)', to: 'moreKeysThan)(rowsIn, 1000)', section: 'arguments' },
+    { name: 'a room with no names keeps the batch names after a rollback', from: 'cur.sessionNames = parseSessionNames(previousNames);', to: 'cur.sessionNames = parseSessionNames(previousNames) ?? cur.sessionNames;', section: 'realstore', file: 'folders' },
     { name: 'the rows bound is one below the limit', from: 'moreKeysThan)(rowsIn, teamtemplate_1.LIMITS.members)', to: 'moreKeysThan)(rowsIn, teamtemplate_1.LIMITS.members - 1)', section: 'arguments' },
     { name: 'the real exists always says yes', from: 'fs.existsSync(key)', to: 'true', section: 'atomicity' },
     { name: 'the real exists always says no', from: 'fs.existsSync(key)', to: 'false', section: 'atomicity' },
