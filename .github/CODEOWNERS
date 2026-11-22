@@ -20,3 +20,7 @@
 /src/shared/mcpcatalog.schema.json    @vikramgorla @fjcabello @rubenlupi
 # the parity tick runs with an issues: write token (spec 021 FR-088); its tracker list is under /.github/ above
 /scripts/parity-tick.js    @vikramgorla @fjcabello @rubenlupi
+# the other readers of the trusted list and the check that there is only one parser (spec 021 FR-092): approved by Paco 2026-11-21 on #1535
+/scripts/weekly-test-audit.ts    @vikramgorla @fjcabello @rubenlupi
+/scripts/weekly-test-audit.sh    @vikramgorla @fjcabello @rubenlupi
+/scripts/check-trusted-copies.js    @vikramgorla @fjcabello @rubenlupi
