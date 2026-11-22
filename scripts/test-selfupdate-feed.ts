@@ -103,6 +103,8 @@ assert.strictEqual(good?.unplaced, false, 'the clean fixture has nothing unplace
 assert.deepStrictEqual(good?.dropped, [], 'the clean fixture drops nothing');
 assert.deepStrictEqual(feed(edit((e) => { e.body = 42; }))?.dropped, ['0.1.29'], 'a malformed stable entry is reported by version');
 assert.strictEqual(feed(edit((e) => { e.tag_name = 'release-29'; }))?.unplaced, true, 'an unreadable tag is unplaced');
+assert.deepStrictEqual(feed(edit((e) => { e.draft = 'true'; }))?.dropped, ['0.1.29'], 'a wrongly typed draft flag is reported, not skipped as a draft');
+assert.deepStrictEqual(feed(edit((e) => { e.prerelease = 1; }))?.dropped, ['0.1.29'], 'a wrongly typed pre-release flag is reported, not skipped');
 assert.strictEqual(feed(Array.from({ length: 30 }, (_, i) => tagged('v1.0.' + i)))?.full, true, 'a page of 30 is full');
 
 // ---- target (FR-009, User Story 1) ----
@@ -153,4 +155,6 @@ assert.strictEqual(isBreaking('0.1.27', ph, marks({ '0.1.28': false, '0.1.29': f
 const pu = pickTarget('0.1.27', { ...f, unplaced: true });
 assert.strictEqual(isBreaking('0.1.27', pu, marks({ '0.1.28': false, '0.1.29': false })), 'breaking', 'an unplaced entry is never covered');
 assert.deepStrictEqual(pickTarget('0.1.28', holey).missing, [], 'a dropped version below the running one does not matter');
+const above = feed([mk('v0.1.30', 42), mk('v0.1.29', 'ok'), mk('v0.1.27', 'ok')], O) as Feed;
+assert.deepStrictEqual(pickTarget('0.1.27', above).missing, [], 'a dropped version above the target is not missing from the range');
 console.log('selfupdate-feed: ok');

@@ -36,6 +36,11 @@ assert.ok(!t('token ' + T + ' here').includes(T), 'a token is masked');
 assert.ok(!t('see /home/ravi/notes.txt').includes('ravi'), 'a home folder is masked');
 for (const v of [null, undefined, 42, {}, ['x']]) assert.deepStrictEqual(notesText(v), { text: '', clipped: false }, 'a non-string body is empty: ' + typeof v);
 
+assert.strictEqual(utf8Bytes('a'), 1, 'UTF-8 size: ASCII is 1 byte');
+assert.strictEqual(utf8Bytes(ch(0xe9) + ch(0x7ff)), 4, 'UTF-8 size: up to U+07FF is 2 bytes');
+assert.strictEqual(utf8Bytes(ch(0x20ac)), 3, 'UTF-8 size: the euro sign is 3 bytes');
+assert.strictEqual(utf8Bytes(ch(0x1f600)), 4, 'UTF-8 size: an emoji (a surrogate pair) is 4 bytes');
+assert.strictEqual(utf8Bytes(String.fromCharCode(0xd800)), 3, 'UTF-8 size: a lone surrogate is 3 bytes, as TextEncoder writes it');
 // Clip by UTF-8 bytes (item 8), with redact.ts `cut` (marker, no half token, no half surrogate pair)
 const long = notesText('word '.repeat(2000));
 assert.ok(long.clipped && utf8Bytes(long.text) <= NOTE_MAX && long.text.endsWith('[truncated]'), 'clipped to 8 KiB with a marker');
