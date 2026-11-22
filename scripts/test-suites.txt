@@ -164,6 +164,7 @@ test:modelchoice
 test:mcphealth
 test:globals
 test:runtests
+test:ci-required-suites
 test:runtestsreal
 test:theme-tokens
 test:slashcommands
@@ -282,4 +283,5 @@ test:picturebudget
 test:chargroups
 test:dangersites
 test:specnumbers
+test:prpreflight
 test:pencilpark
