@@ -7864,7 +7864,7 @@ function brainDoorPaint(){
   if(l.dataset.sig!==sig){
     const fa=document.activeElement, fk=fa&&l.contains(fa)&&fa.dataset?fa.dataset.door:null;
     l.dataset.sig=sig;
-    l.innerHTML=rows.length?rows.map(x=>`<li><button class="btn" type="button" data-door="${esc(x.id)}" aria-label="${esc(x.name)}, ${esc(x.said)}: ${esc(x.req)}. Open Needs you."><span class="brail-who"><b>${esc(x.name)}</b> <span class="brail-age">${esc(x.age)}</span></span><span class="brail-req">${esc(x.req)}</span></button></li>`).join(''):'<li class="brail-none">Nobody needs you now.</li>';
+    l.innerHTML=rows.length?rows.map(x=>`<li><button type="button" data-door="${esc(x.id)}" aria-label="${esc(x.name)}, ${esc(x.said)}: ${esc(x.req)}. Open Needs you."><span class="brail-who"><b>${esc(x.name)}</b> <span class="brail-age">${esc(x.age)}</span></span><span class="brail-req">${esc(x.req)}</span></button></li>`).join(''):'<li class="brail-none">Nobody needs you now.</li>';
     if(fk){const b=l.querySelector('[data-door="'+CSS.escape(fk)+'"]');if(b)focusIn(b);}
   }
   const empty=!rows.length;

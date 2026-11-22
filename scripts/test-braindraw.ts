@@ -482,6 +482,11 @@ console.log('braindraw: page load ok');
     assert.strictEqual((list.match(/<li>/g) || []).length, 24, 'the list holds the 24 newest steps');
     assert.ok(list.includes('<li>30 Read · src/f30.ts · done</li>') && !list.includes('f6.ts'), 'newest last, folder-relative, the oldest left out: ' + list.slice(-80));
     assert.ok(!/\/home\/ana/.test(list), 'no home path in the list');
+    const sb = q(p.host, '[data-bv=steps]'), ol = (p.host.el.querySelector as (s: string) => Record<string, unknown>)('.bv-list');
+    const hid = (): boolean => Boolean(ol.hidden);
+    assert.ok(hid() && sb.attrs['aria-expanded'] === 'false', 'Latest steps: the list starts closed (a real button, not a <details>)');
+    sb.listeners.click[0](); assert.ok(!hid() && String(sb.attrs['aria-expanded']) === 'true', 'Latest steps: the button opens the list');
+    sb.listeners.click[0](); assert.ok(hid(), 'Latest steps: and closes it');
   }
   // FR-014: the legend takes the brain area; the picture is not drawn behind it; one frame when it closes
   {

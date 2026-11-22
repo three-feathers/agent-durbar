@@ -126,12 +126,12 @@ module.exports = async (ctx) => {
       await emit({ type: 'toolCall', sessionId: sec, callId: 's-2', tool: 'bash', phase: 'start', args: { command: `npm run deploy -- --token=${CANARY}` } });
       await emit({ type: 'toolCall', sessionId: sec, callId: 's-3', tool: 'view', phase: 'start', args: { path: '/home/someone/project/src/registry.ts' } });
       await must(`/Read/.test(document.querySelector('#brainRail .bv-c1').textContent)&&document.querySelectorAll('#brainRail .bv-list li').length>=3`, `the masked steps in ${tag}`);
-      await js(`document.querySelector('#brainRail .bv-steps').open=true`);
+      await js(`document.querySelector('#brainRail [data-bv=steps]').click()`);
       const secret = await js(`(()=>{const r=document.getElementById('brainRail');return r.outerHTML+'|'+r.innerText+'|'+[...r.querySelectorAll('[title],[aria-label]')].map(e=>(e.title||'')+(e.getAttribute('aria-label')||'')).join('|');})()`);
       assert.ok(!secret.includes(CANARY) && !secret.includes('ghp_') && !secret.includes('--token=ghp'), `a token in a command reaches no text, title or label of the rail in ${tag} (FR-021)`);
       assert.ok(secret.includes('[redacted]'), `the masked command is shown with redact's own mark in ${tag}`);
       assert.ok(!secret.includes('/home/someone'), `a home path is masked in ${tag} (FR-085)`);
-      await js(`document.querySelector('#brainRail .bv-steps').open=false`);
+      await js(`document.querySelector('#brainRail [data-bv=steps]').click()`);
       await openChat(id);
       await must(`window.__durbarSimUi.brain.host().shown()===${jsLiteral(id)}`, `the dock follows the open chat in ${tag}`);
       await emit({ type: 'toolCall', sessionId: id, callId: 'k-1', tool: 'bash', phase: 'start', args: { command: 'git status' } });
@@ -168,9 +168,9 @@ module.exports = async (ctx) => {
       await H.shot(path.join(OUT, `106-dock-${world.id}-running-${w}x${h}.png`), { prep: 'calm', tag: '106-dock' });
 
       // Latest steps open: the list stays inside the dock, Your door's heading stays visible
-      await js(`document.querySelector('#brainRail .bv-steps').open=true`);
+      await js(`document.querySelector('#brainRail [data-bv=steps]').click()`);
       assert.ok(await visibleIn('#brailDoorT', w, h), `Your door's heading stays visible with Latest steps open in ${tag}`);
-      await js(`document.querySelector('#brainRail .bv-steps').open=false`);
+      await js(`document.querySelector('#brainRail [data-bv=steps]').click()`);
 
       // Legend (FR-014): inside the brain area; the header, the cost line and Your door do not move
       const costBefore = await box('#brainRail .bv-cost');

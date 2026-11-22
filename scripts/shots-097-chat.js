@@ -58,11 +58,12 @@ module.exports = async (ctx) => {
     await H.load({ w, h, query: q(world), ready: REAL, settle: false });
     await must(`[...document.querySelectorAll('#stage .ro img')].every(i=>i.complete)`, 'the pictures');
     await open('Mira');
-    const st = await js(`(()=>{const pi=document.querySelector('.panel-in'),port=document.getElementById('roPortrait'),im=port&&port.querySelector('img');const rl=document.querySelector('#panel>.rail');return {col:!!document.querySelector('.ro-col,.rc-stage'),chat:pi.getBoundingClientRect().width,iw:innerWidth,rail:rl?rl.getBoundingClientRect().width:0,
+    const st = await js(`(()=>{const pi=document.querySelector('.panel-in'),port=document.getElementById('roPortrait'),im=port&&port.querySelector('img');const rl=document.querySelector('#panel>.rail'),br=document.querySelector('#panel>.brail');return {brail:br&&br.getClientRects().length?br.getBoundingClientRect().width:0,col:!!document.querySelector('.ro-col,.rc-stage'),chat:pi.getBoundingClientRect().width,iw:innerWidth,rail:rl?rl.getBoundingClientRect().width:0,
       port:port&&[port.getBoundingClientRect().width,port.getBoundingClientRect().height],ring:port&&getComputedStyle(port).outlineStyle==='solid',dot:!!(port&&port.querySelector('.dot')),img:!!im,crop:!!(im&&im.style.left&&im.style.top),lamp:(document.querySelector('.ro-lampwords')||{}).textContent,where:[...document.querySelectorAll('.ro-lampwords')].map(e=>e.parentElement.className+'/'+(e.previousElementSibling||{}).className),headH:document.querySelector('.ph').getBoundingClientRect().height}})()`);
     assert.strictEqual(st.col, false, `${tag}: no desk-side column`);
     assert.strictEqual(st.rail, 220, `${tag}: the agent rail is on the left (spec 005 FR-190): ${st.rail}`);
-    assert.strictEqual(Math.round(st.chat), st.iw - st.rail, `${tag}: the chat has the rest of the window's width (${st.chat})`);
+    assert.strictEqual(st.brail, 360, `${tag}: Brain view's right rail is open beside the chat, 360 px (spec 106 FR-030, on by default since T426): ${st.brail}`);
+    assert.strictEqual(Math.round(st.chat), st.iw - st.rail - st.brail, `${tag}: the chat has the rest of the window's width, between the two rails (${st.chat})`);
     assert.deepStrictEqual(st.port, [32, 32], `${tag}: a 32 px portrait`);
     assert.deepStrictEqual(st.where, ['ph-line/ptask'], `${tag}: the lamp words on the task line, after the task, and nowhere else`);
     console.log('[097-chat]', tag, 'header', st.headH);
