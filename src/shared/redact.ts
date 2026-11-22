@@ -2138,7 +2138,12 @@ function maskCommandImpl(command: unknown, envIn: Env | undefined, cap: boolean,
     if (!joined.includes('[redacted')) return h1;
     const shown = new Set(joined.split(PIECE_CUT).filter((p, k) => !(k % 2)));
     const more = h1.split(PIECE_CUT).some((p, k) => !(k % 2) && p !== '' && !shown.has(p) && !/[\\^]$/.test(p));
-    return more ? keepShownWithin(h1, joined + ' \\ ^') : h1;
+    if (!more) return h1;
+    // review of PR 2001, round 2: this reading changed the result, so it counts as the continuation reading hiding something (`contReads`): the callers that gate their
+    // own reference reading without the step on that count (`maskKeepingMarkdown`, the desk's `contBoth`: the run label, the permission card) then make it and keep
+    // the union; uncounted, a desk surface whose further steps read the changed mask differently kept no reference and could show a piece the step-off reading hides
+    contReads++;
+    return keepShownWithin(h1, joined + ' \\ ^');
   } catch { return '[redaction failed]'; }
 }
 

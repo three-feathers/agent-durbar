@@ -270,6 +270,49 @@ for (const keep of ['ghp_short', 'see ghs_count', 'wei' + 'ghs_' + 'TotalWeightK
     const t6 = 'to' + 'ken: API_' + 'KEY=' + tk + '\\\nAb3Cd4Ef5Gh6pass' + 'word=[redacted] Ab3Cd4Ef5Gh6.';
     assert.ok(maskSplitTokens(t6).endsWith(' Ab3Cd4Ef5Gh6.'), `#1320 continuation near miss: the word after a mask that ends a stretch stays: ${JSON.stringify(maskSplitTokens(t6))}`);
   }
+  // review of PR 2001, round 2: the command read as a shell reads it counts as the continuation reading hiding something (`contReads`), so the desk's run label and
+  // the permission card (`maskLabel`, `maskLabelPair`, through `contBoth`) take their own reading without the step and keep the union. Five composed texts of the
+  // review (invented values, built from pieces): each listed piece is hidden with the step off, and stays hidden with it on, on all three surfaces
+  {
+    const STl = require(path.join(__dirname, '..', '..', 'src', 'renderer', 'safetext.js')) as { maskLabel(t: string, k: string, m: Record<string, unknown>): string; maskLabelPair(t: string, k: string, m: Record<string, unknown>): { text: string; ref: string } };
+    const lm = { cmd: (x: string) => maskSecretCommand(x, {}), url: (x: string) => maskSecretUrl(x, {}), redact: (x: string) => redact(x, {}) };
+    const rows: Array<[string, string, number]> = [
+    [['curl -', 'H "eyJ', 'xHreLZ', 'HvQACy', 'NWTFU4', 'M7.eyJ', 'v\u202e^\u000d\u000a\u00ad', '    uZ', 'HNLZtD', 'FlzJoq', 'YlkC3Y', 'DLYupb', '7an.jX', 'XTq_ze', 'WNilyd', 'PkMKnX', 'uxW6lu', 'II8d G', 'H_TOKE', 'N=4283', '23\u200b\u000a\u000a5', '284115', '542\u200b\u000a\u000a', '45\u200b\u000a\u000a4', '1194" ', '\\\u000aAuth', 'orizat', 'ion: B', 'earer ', 'qgmebn', '\u202e`\u000d\u000anv', 'tpyvsl', '\u202e`\u000d\u000aqd'].join(''), '5284 2841 8411 4115 1155 1554 5542 nvtp vtpy tpyv pyvs yvsl', 3],
+    [['Run: T', 'oken g', '\u202e\\\u000d\u000av5', 'fMbDMi', 'Ns\u202e\\\u000d\u000a', '++xxB8', '1Og3D/', 'oMIAlX', 'vMj0mg', '" expo', 'rt e\u200b\\', '\u000d\u000ayJy3', 'dd7dI6', 'gwoSjU', '\u200b\\\u000d\u000aB4', 'JYv0.e', 'yJWjUh', 'q9Kf6A', 'pUHVwP', 'vOPVkA', 'HeLmM7', '1h.-Yy', 'gxnCEl', '\u200b\\\u000d\u000aa4', '6U_vw7', 'gFQWKU', 'HgJ5BW', 'p" && ', 'xoxb-0', '\u200b`\u000a134', '904208', '\u200b`\u000a96-', 'IZvUUV', 'p\u200b`\u000amv', 'jvilSh', 'B4WFxh', 'F2e\u000d\u000a2', '. Seco', 'nd ite', 'm Run:', ' s\u000a\u2060- ', 'k-proj', '-UR4Hn', 'GyAHVQ', 'xRrNnh', 'zntTbY', 'QCN\u000a\u2060-', ' c\u000a\u2060- ', 'cL2xdK', 'CRfbc5', 't \\\u000a  ', '--watc', 'h'].join(''), 'xoxb 1349 3490 4904 9042 0420 4208 IZvU ZvUU vUUV UUVp', 3],
+    [['- clie', 'nt_sec', 'ret=1\u200b', '^\u000a> 1c', '\u200b^\u000a> g', '293yb\u200b', '^\u000a> j1', 'vtnx51', '\u000a\u000aok\u000ae', 'xport ', 'DB_PAS', 'SWORD=', 'fbc9d9', '1\u2060`\u000a54', '1d00fc', '7c don', 'e'].join(''), '541d 41d0 1d00 d00f 00fc 0fc7 fc7c', 3],
+    [['1. DB_', 'PASSWO', 'RD=g-s', 'i\u2029    ', 'q0O6LH', 'tc\u2029   ', ' _Dm1E', '0VxUmW', '7skE\u2029 ', '   AI7', '8s3\u000a\u000ae', 'cho -p', '3\u202e^\u000a72', '719\u202e^\u000a', '323916', '316672', '\u000d\u000a2. S', 'econd ', 'item; ', 'glpat-', 'q^\u000d\u000a- ', 'maqHRh', 'Wl^\u000d\u000a-', ' O4KP4', '^\u000d\u000a- J', 'CSsB5\u000a', '```; e', 'yJiICu', '290RYx', 'QDOoP6', 'lMHm.e', 'yJPsmZ', 'eHFCV9', 'yftWel', '6z8Izh', 'r2gcAX', 'Dm.WP8', 'yseBJC', 'lC_Cg\ufeff', '\u2028MuZKr', 'zzgrp7', 'eXueA ', '\\\u000a  --', 'watch'].join(''), 'q0O6 0O6L O6LH 6LHt LHtc', 3],
+    [['Run: g', 'ithub_', 'pat_ue', 'NkFHou', '1nzO3V', 'dvbSDd', 'Ki_9GD', 'oVjEgY', 'tTMlMe', '1eCqQV', '0qkx\u200d^', '\u000ayYTf4', 'jB5egC', 'TYhXkW', '4TTL3e', '8SlGtD', '5k\u200d^\u000aP', '0B"\u000acu', 'rl -H ', '"ghp_o', 'M2i\u00ad^\u000a', '> zBbP', 'DZgtCx', 'EBePnq', 'joNYfY', 'hP2zqw', '5Gep\u000an', 'ext st', 'ep Run', ': API_', 'KEY=HN', 'BBACBP', '\ufeff`\u000a\u200bE\ufeff', '`\u000a\u200bHHP', 'VWOPO\ufeff', '`\u000a\u200bD\u000d\u000a', '- gith', 'ub_pat', '_9YtL5', 'TLDbRr', 'EU1I5l', 'R\u202e`\u000a\u0009H', 'BgB_h2', 'etlywR', 'SyEP0h', 'iAVtYW', '\u202e`\u000a\u00096q', 'L9Oa2u', 'JEeIgP', '9hZ6\u202e`', '\u000a\u0009RcOx', 'txAaxW', 'gAu8Iw', 'eIciT ', 'done'].join(''), 'HBgB h2et 2etl etly tlyw lywR ywRS wRSy RSyE SyEP yEP0 EP0h P0hi 0hiA hiAV iAVt AVtY VtYW 6qL9 qL9O L9Oa 9Oa2 Oa2u a2uJ 2uJE uJEe JEeI EeIg eIgP IgP9 gP9h P9hZ 9hZ6', 3],
+    ];
+    for (const [k, [t, list, n]] of rows.entries()) {
+      const ps = list.split(' ');
+      assert.strictEqual(n, 3, 'three surfaces per row');
+      const off = withoutContinuation(() => STl.maskLabel(t, 'run', lm));
+      assert.deepStrictEqual(ps.filter((x) => off.includes(x)), [], `#1320 continuation desk label: the reading without the step hides the row's pieces (row ${k})`);
+      const pair = STl.maskLabelPair(t, 'run', lm);
+      for (const [sn, out] of [['the run label', STl.maskLabel(t, 'run', lm)], ['the permission card text', pair.text], ['the permission card reference', pair.ref]]) {
+        assert.ok(out !== '', `#1320 continuation desk label: ${sn} is not empty (row ${k})`);
+        assert.deepStrictEqual(ps.filter((x) => out.includes(x)), [], `#1320 continuation desk label: ${sn} shows no piece the reading without the step hides (row ${k}): ${JSON.stringify(out)}`);
+      }
+    }
+  }
+  // review of PR 2001, round 2: the command mask's own union with its reading without the step, on a command with no shell continuation (the shell-joined reading
+  // does not run): the step-off reading hides a quoted value's closing marks inside its mask, the reading with the step shows them, and the union hides them
+  {
+    const t = "'sk-" + '\nOHo8AE8D' + '0ArX2cnHopF1\n"API_' + 'KEY=JB26\rMWm7' + 'tyV4"' + "'";
+    const cutAt = /\s+|\[redacted(?::[^\]\r\n]{1,128})?\]/;
+    const out = maskSecretCommand(t, {}), ref = withoutContinuation(() => maskSecretCommand(t, {}));
+    const refShown = new Set(ref.split(cutAt));
+    assert.deepStrictEqual(out.split(cutAt).filter((p) => p !== '' && !refShown.has(p)), [], `#1320 continuation union: maskSecretCommand shows no piece its reading without the step hides, no shell continuation: ${JSON.stringify(out)}`);
+    assert.ok(!out.includes('JB26') && !out.includes('MWm7'), `#1320 continuation union: the value stays hidden: ${JSON.stringify(out)}`);
+  }
+  // review of PR 2001, round 2: the middle-line rule joins a line only when it holds no blank or punctuation (the middle of one value); a line that holds one, then a
+  // line that looks like a token's tail, read as written after a hidden value (the over-masking guard)
+  for (const b of ['\n', '\r\n']) {
+    const t = 'API_' + 'KEY=' + v1 + b + v2 + b + 'pass' + 'word=abc' + b + 'Release2024Notes';
+    for (const [sn, out] of [['redact', redact(t, {})], ['split step', maskSplitTokens(t)]] as Array<[string, string]>) {
+      assert.ok(out.endsWith(b + 'pass' + 'word=abc' + b + 'Release2024Notes') && !out.includes(v1), `#1320 continuation near miss: a line with punctuation and the next one read as written after a hidden value (${sn}, ${JSON.stringify(b)}): ${JSON.stringify(out)}`);
+    }
+  }
   // near misses, byte for byte: line breaks with no secret, ordinary next lines after a hidden value, two whole tokens on two lines (nothing new to hide)
   const tok1 = 'gh' + 'p_' + 'Zq3Wd8Kp2Lm5Rt7Yx4Bn6Hj9Fc1Vg0Ts3Qa8';
   const tok2 = 'gh' + 'p_' + 'Hj9Fc1Vg0Ts3Qa8Zq3Wd8Kp2Lm5Rt7Yx4Bn6';

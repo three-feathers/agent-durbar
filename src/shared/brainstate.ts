@@ -256,6 +256,23 @@ export function programOf(maskedCommand: string): string {
   return w.replace(/[^A-Za-z0-9._+\-[\]]/g, '').slice(0, 24);
 }
 
+/**
+ * Spec 012 FR-190 (review of PR 2001, round 2): a step target of a text with a line break is masked once more with the continuation reading off (as before FR-190)
+ * and shows nothing that reading hides (`keepShownBy`, the brain's own form of the desk's `contBoth`). The target is masked twice (the shared mask, then the brain's
+ * own pass): with the step on, the first mask already hides a value's middle, so the second pass no longer reads mask, middle and its last part as one value
+ * after its name, and that last part stayed readable where the reading as before hid it. Both readings are kept cut as the view cuts them, so the cut target shows
+ * no piece the reading as before leaves out of its own cut either (one that hides more reaches further into the text). `[full, cut]`; without the shared functions
+ * (an older mask), the target as masked.
+ */
+function contKept(mask: BrainMask, raw: string, fn: () => string): [string, string] {
+  const h = fn();
+  if (!h || !/[\r\n]/.test(raw) || typeof mask.withoutContinuation !== 'function' || typeof mask.keepShownBy !== 'function') return [h, cutTo(h, PREVIEW_MAX)];
+  const r = mask.withoutContinuation(fn);
+  if (h === r) return [h, cutTo(h, PREVIEW_MAX)];
+  const full = safe(() => mask.keepShownBy!(h, r));
+  const hc = cutTo(h, PREVIEW_MAX), rc = cutTo(r, PREVIEW_MAX);
+  return [full, cutTo(hc === rc ? hc : safe(() => mask.keepShownBy!(hc, rc)), PREVIEW_MAX)];
+}
 interface Target { targetKind: BrainStep['targetKind']; target: string; program: string; files: BrainFile[] }
 function targetOf(ev: Ev, glyph: GlyphId, mask: BrainMask): Target {
   const none: Target = { targetKind: 'none', target: '', program: '', files: [] };
@@ -272,18 +289,18 @@ function targetOf(ev: Ev, glyph: GlyphId, mask: BrainMask): Target {
   if (glyph === 'shell') {
     const c = asText(pickString(args, CMD_KEYS), mask);
     if (!c) return none;
-    const m = brainMaskText(mask, safe(() => mask.maskSecretCommand(c)));
-    return { targetKind: 'command', target: cutTo(m, PREVIEW_MAX), program: programOf(m), files };
+    const [m, mc] = contKept(mask, c, () => brainMaskText(mask, safe(() => mask.maskSecretCommand(c))));
+    return { targetKind: 'command', target: mc, program: programOf(m), files };
   }
   if (glyph === 'web') {
     const u = asText(pickString(args, URL_KEYS), mask);
-    if (u) return { targetKind: 'url', target: cutTo(brainMaskText(mask, safe(() => mask.maskSecretUrl(u))), PREVIEW_MAX), program: '', files };
+    if (u) return { targetKind: 'url', target: contKept(mask, u, () => brainMaskText(mask, safe(() => mask.maskSecretUrl(u))))[1], program: '', files };
   }
   const p = asText(pickString(args, PATH_KEYS), mask);
   if (p && glyph !== 'web') return { targetKind: 'file', target: cutTo(brainMaskText(mask, p), PREVIEW_MAX), program: '', files };
   const q = asText(pickString(args, QUERY_KEYS), mask);
   // F5: a query or an Other tool's target can hold `password=…` or a flag: the command mask runs on it too
-  if (q) return { targetKind: 'query', target: cutTo(brainMaskText(mask, safe(() => mask.maskSecretCommand(q))), PREVIEW_MAX), program: '', files };
+  if (q) return { targetKind: 'query', target: contKept(mask, q, () => brainMaskText(mask, safe(() => mask.maskSecretCommand(q))))[1], program: '', files };
   return none;
 }
 
