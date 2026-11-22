@@ -1,6 +1,6 @@
 {
   "styles.css": {
-    "colors": 105,
+    "colors": 99,
     "fonts": 0
   },
   "screens.css": {
@@ -8,7 +8,7 @@
     "fonts": 0
   },
   "themes.css": {
-    "colors": 10,
+    "colors": 8,
     "fonts": 0
   },
   "app.js": {
@@ -29,6 +29,22 @@
   },
   "realoffice-world.css": {
     "colors": 0,
+    "fonts": 0
+  },
+  "brainview/brain.css": {
+    "colors": 8,
+    "fonts": 0
+  },
+  "brainview/draw.js": {
+    "colors": 8,
+    "fonts": 0
+  },
+  "brainview/dock.js": {
+    "colors": 0,
+    "fonts": 0
+  },
+  "brainview/skins.js": {
+    "colors": 11,
     "fonts": 0
   }
 }

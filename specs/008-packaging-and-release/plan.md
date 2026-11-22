@@ -28,7 +28,7 @@ npm run dist:<target> = build (tsc + copy-assets) -> prepare-runtime <target> ->
 electron-builder -> asar (dist, package.json) + asarUnpack(@github/copilot-sdk-*, koffi) -> afterPack check -> dmg/zip | nsis/portable | AppImage
 runtime: app (packaged) -> unpackedRuntimePath() -> CopilotClient(RuntimeConnection.forStdio({path}))
 
-ci.yml        pull_request, push main: build-test (3 OS) -> package-smoke (ubuntu, pack:dir)
+ci.yml        pull_request, push main: build-test (3 OS); office-check (ubuntu: build once, layout, then pack:dir:prebuilt; FR-194)
 release.yml   tag v*: build (mac, win, linux; tag==version check; typecheck; test; package) -> draft-release (checksums, gh release create --draft)
 ```
 
@@ -88,3 +88,28 @@ specs/008-packaging-and-release/
 - Reuse: `redact`/`cut` (spec 012) rather than any new masking; `previousRelease` keeps `RELEASE_TAG_RE`, which already leaves test tags out.
 - Tests in `scripts/test-changelog.js` on throwaway repositories (one `git fast-import` for the 102-commit cap case) and the static workflow checks; mutations listed in FR-124.
 - Docs: `docs/collaboration.md` (*Cutting a test build*), `changelog.d/README.md` (test builds have no fragments to fold), README *Development* line, a fragment.
+
+## 2026-11-07: the Build cost report (T131, T132, FR-181)
+
+- Plain Node scripts, built-ins only (`http`, `fs`, `os`, `path`, `zlib`), no dependency, no spawn. `usage-lib.js` holds every rule on what may be kept (an allowlist of three attributes, value and name checks); `usage-receiver.js` is the loopback server and the atomic file write; `usage-day.js` reads the files, validates them again (same validator) and prints the table.
+- Reuse: no existing usage code fits (spec 011 shows the app's own credits; this is the build team's spend, from Claude Code's telemetry); `scripts/test-suites.txt` and `run-tests.js` for the suite; the changelog fragment and docs-sync rules for docs.
+- One file per machine label, so machines never write the same file; the report adds files. Delta temporality only.
+- Docs: `docs/build-cost.md`, README, `docs/development.md`, `docs/collaboration.md`, `changelog.d/README.md`.
+
+## 2026-11-08: pull requests skip the CI parts their change cannot affect (T144, FR-191, owner decision)
+
+- One decision, `.github/scripts/ci-changes.js` (plain Node, built-ins only, git through `execFileSync` with argument arrays, no shell). `ci-changes.sh` stays the entry point every job already calls and only runs it, so FR-104's code and themes are unchanged and the new outputs (`ui`, `macos`) come from the same place.
+- The UI closure is derived from the tree, not a hand list: roots from `ui-platforms.yml`'s `scripts/*.js`, `check-parallel.js`, `package.json`'s `build` and `pack:dir` and `build.afterPack`; then every string literal in a closure file naming a file or folder in `scripts/` (`require('./x')`, `path.join(__dirname, 'x.json')`, the DRIVERS names). scripts/ is listed once, so a decision takes about 40 ms.
+- `ui-platforms.yml` gets a short Linux `changes` job the shards `need` (a skipped shard costs no runner; the decision job about 15 s, against 8 Windows and Linux shards); `macos-pr.yml` decides in the macOS job's first step (it runs rarely, so a decision job would cost more than it saves); `ci.yml` keeps FR-104's no-gate-job layout and only switches the office and package smoke steps from `code` to `ui`.
+- `package.json` for `ui` is compared without `version` and without the npm scripts the UI run cannot reach (all but `build`, `pack:dir` and lifecycle hooks): the measurement showed tooling PRs adding an npm script line (`usage:spread`) running the UI suite seven times. "UI suite complete" passes on ui=false and fails when the decision job did not succeed.
+- Reuse: FR-104's `ci-changes.sh` and its `fetch-depth: 2` test-merge diff; FR-189's aggregate job; `test-suites.txt` / `run-tests.js` for the new suite `test:cichanges`; `test-ui-suite.ts`'s `jobsOf` for the workflow wiring checks.
+- Reviewed and left as they are (already path-filtered to their own files on pull requests, or cheap and required): `spec-kit.yml`, `pages.yml`, `world-matrix.yml`, `install-check.yml`, `installed-app.yml`, `packaged-check.yml`; scheduled and by-hand workflows. Every `npm ci` of the app already goes through `.github/actions/npm-ci` (the Electron download cache); `pages.yml` uses `--ignore-scripts` and loads no Electron.
+- Review of PR #1349: the wrapper runs the base copy of the decision (`git show HEAD^1:` into `.ci-changes-base/`, relative so the Windows runner's Git Bash converts no path), as `spec-kit.yml` runs its base scripts (#1316); names print through `scripts/safe-print.js`; a `scripts/` path gone at head or with an unreadable name counts; roots follow `npm run` chains, lifecycle hooks and `.ts` files. `ui-platforms.yml` keeps no `merge_group` trigger (8 shards per queue entry for a check that is not required); the docs were corrected.
+
+## 2026-11-10: the build-cost total uses the chart's rounded cents (T154, FR-198, issue #1449)
+
+One rounding rule for both: whole cents per machine/day/model. `cumulative` (usage-lib) sums those cents and `usage:readme` checks the chart against `totalCents` exactly. Considered and rejected: widening the 1.1-cent tolerance (the drift grows with every machine and day, and the check would stop meaning anything).
+
+## 2026-11-10: the Mac title bar check on CSS pull requests (T156, FR-200, issue #1469)
+
+A separate workflow, `.github/workflows/mac-titlebar-pr.yml`, because `paths:` filters a whole workflow and a second job in `macos-pr.yml` would either start `npm test` on every CSS PR or start a macOS runner to skip. Same pins, `npm-ci` Electron cache, concurrency group and `contents: read` as `macos-pr.yml`; one job runs `npm run build` and `node scripts/check-mac-titlebar.js`. Not required. #1458's failure is fixed on `main` by PR #1537, so it no longer waits on it.

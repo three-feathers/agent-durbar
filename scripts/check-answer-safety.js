@@ -12,9 +12,29 @@
  *     DURBAR_DRIVER=$PWD/scripts/check-answer-safety.js xvfb-run -a npx electron . --no-sandbox
  *
  * Also in `npm run check:ui` (scripts/ui-suite.js).
+ *
+ * Issue 1770 (spec 052 T346): when the FR-210 (B) limit step reads a wrong label list, its assertion message also carries the bar's hidden flag, its labels one
+ * painted frame later, its outerHTML and the pending request cards, masked by dist/shared/redact.js and bounded (withheld when that file does not load).
+ *   ANSWER_SAFETY_MUTANT=emptybar   the bar's buttons are replaced by a span holding a token-shaped string once the bar shows: must fail at
+ *                                   `only "Show in chat"` with the diagnostic printed and the token masked (else: `the 1770 diagnostic did not print`)
+ *   ANSWER_SAFETY_MUTANT=follow     the chat follows its end after the bar showed (the race of issue 1770: card back in view, bar hidden and emptied): must fail at
+ *                                   `only "Show in chat"` with `bar hidden=true` in the diagnostic
+ *   ANSWER_SAFETY_MUTANT=noredact   the same with redact.js not loaded: the HTML is withheld, so it must fail at `the 1770 diagnostic did not print`
+ *   ANSWER_SAFETY_MUTANT=diagthrow  the bar emptied and the diagnostic's page read throws: must still fail at `only "Show in chat"`, ending ` [1770 diagnostic failed]`
+ *   ANSWER_SAFETY_MUTANT=diagthrow-nocatch   the same with the catch rethrowing (the guard removed): fails with the thrown error, not that label (killed)
  */
+const path = require('path');
 const assert = require('assert');
 const { helpers, jsLiteral } = require('./driver-helpers');
+
+const MUTANT = process.env.ANSWER_SAFETY_MUTANT || '';
+const PLANTED = 'ghp_' + 'Q1w2E3r4T5y6U7i8O9p0A1s2D3f4G5h6J7k8';
+let redactLib = null;
+const THROW = MUTANT === 'diagthrow' || MUTANT === 'diagthrow-nocatch';
+const EMPTY = MUTANT === 'emptybar' || MUTANT === 'noredact' || THROW;
+if (MUTANT !== 'noredact') { try { redactLib = require(path.join(__dirname, '..', 'dist', 'shared', 'redact.js')); } catch { redactLib = null; } }
+/* mask first, then cut (constitution III); null when redact.js did not load, so the caller withholds the text (fail closed) */
+const masked = (s, max) => (redactLib && typeof redactLib.redact === 'function' && typeof redactLib.cut === 'function' ? redactLib.cut(redactLib.redact(String(s)), max) : null);
 
 module.exports = async (ctx) => {
   const H = helpers(ctx);
@@ -37,7 +57,7 @@ module.exports = async (ctx) => {
     const ask = (rid, q, labels) => emit({ type: 'question', phase: 'asked', requestId: rid, questions: [{ question: q, multiSelect: false, options: (labels || ['yes', 'no']).map((label) => ({ label })) }] });
     // a page per part; every answer that reaches the bridge is counted, and a limit answer can be held in flight (window.__hold)
     const fresh = async (query) => {
-      await H.load({ w, h, focus: true, query });
+      await H.load({ fastVisits: true, w, h, focus: true, query });
       const first = await H.openSimAgent(`a=>!a.parent&&a.live&&a.info&&(a.state==='idle'||a.state==='done')`, '#msgInput');
       assert.ok(first.ok, `${w}: opened an idle agent's chat ${jsLiteral(first.seen)}`);
       A = first.id;
@@ -156,9 +176,34 @@ module.exports = async (ctx) => {
     // ---- FR-210 (B): a limit card out of view: the bar has no amount to send, only "Show in chat" ----
     await fresh();
     await limit('lb-' + w);
-    await js(`(()=>{const c=document.getElementById('chat');if(!document.getElementById('fillerX')){const f=document.createElement('div');f.id='fillerX';f.style.height='4000px';f.style.flex='none';c.prepend(f);}c.scrollTop=0;c.dispatchEvent(new Event('scroll'));})()`);
-    assert.ok(await until(`!document.getElementById('answerBar').hidden`, 5000), `${w}: the bar shows for the limit`);
-    assert.deepStrictEqual(await barLabels(), ['Show in chat'], `${w}: only "Show in chat" ${jsLiteral(await barLabels())}`);
+    await barUp(); /* issue 1770: the card painted and two frames settled before the chat is scrolled away (the chat's auto-follow hides the bar and empties it when it comes after) */
+    if (MUTANT === 'follow') await js(`(()=>{const c=document.getElementById('chat');c.scrollTop=c.scrollHeight;c.dispatchEvent(new Event('scroll'));return new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(()=>r(1))))})()`);
+    if (EMPTY) await js(`(()=>{const b=document.getElementById('answerBar');b.querySelectorAll('button').forEach(x=>x.remove());const s=document.createElement('span');s.className='mut-1770';s.textContent=${jsLiteral(PLANTED)};b.append(s);return 1})()`);
+    const limitLabels = await barLabels();
+    let diag = '';
+    if (JSON.stringify(limitLabels) !== JSON.stringify(['Show in chat'])) {
+      /* issue 1770: the state at the failed read, for the next time it happens; the assertion below is the same first read as before */
+      if (THROW) await js(`window.__diagThrow=true`);
+      try {
+        const st = await js(`(async()=>{if(window.__diagThrow)throw new Error('diagthrow mutant');const b=document.getElementById('answerBar');const now={hidden:b?b.hidden:null,html:b?b.outerHTML:'no #answerBar'};
+        await new Promise(r=>{const t=setTimeout(r,250);requestAnimationFrame(()=>{clearTimeout(t);r()})});
+        const cards=[...document.querySelectorAll('#chat .note.perm, #chat .note.limit, #chat .note.question, #chat .note.plan')];
+        return Object.assign(now,{later:b?[...b.querySelectorAll('button')].map(x=>x.textContent):[],n:cards.length,
+          cards:cards.slice(0,8).map(c=>({cls:String(c.className),data:Object.entries(c.dataset).map(([k,v])=>k+'='+v).join(' '),text:(c.textContent||'').replace(/\\s+/g,' ').trim()}))})})()`);
+        /* public CI logs: every page value is masked (redact, then cut) and left out when redact.js did not load; the flag and the count only as such */
+        const hidden = st.hidden === true ? 'true' : st.hidden === false ? 'false' : 'null';
+        const html = masked(st.html, 1500);
+        const cards = (Array.isArray(st.cards) ? st.cards : []).map((c) => { const k = masked(c.cls, 80), t = masked(c.data + ' | ' + c.text, 160); return (k === null ? '[class withheld]' : k) + (t === null ? ' [text withheld: redact.js did not load]' : ' ' + t); });
+        const later = (Array.isArray(st.later) ? st.later : []).map((x) => { const m = masked(x, 40); return m === null ? '[withheld]' : m; });
+        diag = ` [1770 diagnostic] bar hidden=${hidden}; labels a frame later ${JSON.stringify(later)}; bar ${html === null ? '[html withheld: redact.js did not load]' : html}; cards (${Number(st.n) || 0}): ${cards.length ? cards.join(' || ') : 'none'}`;
+      } catch (e) {
+        if (MUTANT === 'diagthrow-nocatch') throw e; /* the mutant: the guard removed */
+        diag = ' [1770 diagnostic failed]'; /* fixed text, no error text: the original assertion below is still what fails */
+      }
+      if (EMPTY && !THROW) assert.ok(diag.includes('id="answerBar"') && /note[^|]*limit/.test(diag) && !diag.includes(PLANTED), `${w}: the 1770 diagnostic did not print (or printed the planted token): ${diag.split(PLANTED).join('<planted>')}`);
+      if (MUTANT === 'diagthrow') assert.ok(diag === ' [1770 diagnostic failed]', `${w}: the 1770 diagnostic did not fall back after a throw: ${diag.split(PLANTED).join('<planted>')}`);
+    }
+    assert.deepStrictEqual(limitLabels, ['Show in chat'], `${w}: only "Show in chat" ${jsLiteral(limitLabels)}${diag}`);
     assert.strictEqual(await js(`!!document.querySelector('#answerBar input')`), false, `${w}: no field in the bar`);
 
     // ---- FR-211 (C): a held Enter in the message box sends nothing; one Enter sends the draft ----
@@ -410,6 +455,37 @@ module.exports = async (ctx) => {
     assert.deepStrictEqual(await got('plan'), [], `${w}: a held Enter on Approve answers nothing ${jsLiteral(await got('plan'))}`);
     await nkey('Return');
     assert.ok(await until(`window.__plan.length===1`, 3000), `${w}: one Enter on Approve approves (the control)`);
+
+    // ---- spec 005 FR-237 (issue 1324): an idle agent goes straight to needs-permission, with NO earlier `working` status (no workaround).
+    // The chat is closed while the request arrives, so the header has not yet said "Working…"; opening it says "Working…" (turn start) and
+    // "needs your OK" in one tick, and the request must be what the live region ends on ----
+    await fresh();
+    await js(`document.getElementById('backBtn').click()`);
+    await js(`window.__ann.length=0;0`);
+    await perm('an-' + w, 'Run the announce check');
+    await js(`document.querySelector('.desk[data-id='+${jsLiteral(A)}+']').click()`);
+    assert.ok(await until(`!!document.querySelector('#chat .note.perm.pending')`, 8000), `${w}: the permission card is in the chat`);
+    assert.ok(await until(`window.__ann.some(t=>/needs your OK/.test(t))`, 5000), `${w}: "needs your OK" reaches the live region ${jsLiteral(await got('ann'))}`);
+    await ctx.sleep(400); // past the 60 ms write window: a late "Working…" would have replaced it by now
+    const said = await js(`document.getElementById('srAnnounce').textContent`);
+    assert.ok(/needs your OK/.test(said), `${w}: the live region ends on the request, not a status (is ${jsLiteral(said)}; history ${jsLiteral(await got('ann'))})`);
+
+    // the rule itself, in one tick: a status after a request never replaces it; a request after a status does; equal priority: the latest wins
+    // a step is [text, priority, wait before it in ms]
+    const run = (steps) => js(`(async()=>{const ann=window.__durbarSimUi.announce;for(const [t,p,w] of ${jsLiteral(steps)}){if(w)await new Promise(r=>setTimeout(r,w));ann(t,p)}await new Promise(r=>setTimeout(r,300));return document.getElementById('srAnnounce').textContent})()`);
+    const REQ = 'Noor needs your OK: x';
+    assert.strictEqual(await run([[REQ, 1], ['Working…']]), REQ, `${w}: a status in the same window does not replace a request`);
+    assert.strictEqual(await run([['Working…'], [REQ, 1]]), REQ, `${w}: a later request replaces a status`);
+    assert.strictEqual(await run([['Noor asks: a', 1], [REQ, 1]]), REQ, `${w}: equal priority: the latest wins`);
+    assert.strictEqual(await run([['One'], ['Two']]), 'Two', `${w}: statuses: the latest wins, as before`);
+    assert.strictEqual(await run([[REQ, 1], ['Working…', 0, 200]]), 'Working…', `${w}: after the request was written, a status is spoken again`);
+    // the Auto-follow arrival line (afDeliver) at the priority the app gives each kind: a limit arrival beats the limit card's own request said by
+    // openPanel just before it; a done or error arrival of agent A never replaces agent B's request in the same window
+    const prio = (kind) => js(`window.__durbarSimUi.afArrivalPrio(${jsLiteral(kind)})`);
+    const LIM = 'Maya reached its limit. Its chat is open.';
+    assert.strictEqual(await run([['Maya needs your OK: Choose in the limit card', 1], [LIM, await prio('limit')]]), LIM, `${w}: a limit arrival is what the live region ends on`);
+    assert.strictEqual(await run([[REQ, 1], ['Ada finished. Its chat is open.', await prio('done')]]), REQ, `${w}: agent A's done arrival does not replace agent B's request`);
+    assert.strictEqual(await run([[REQ, 1], ['Ada has an error. Its chat is open.', await prio('error')]]), REQ, `${w}: agent A's error arrival does not replace agent B's request`);
   }
   console.log('[answer-safety] PASS');
 };

@@ -16,7 +16,7 @@
  */
 const assert = require('assert');
 const path = require('path');
-const { helpers, jsLiteral } = require('./driver-helpers');
+const { helpers, jsLiteral, CHECK_DARK, CHECK_DARK_QUERY } = require('./driver-helpers');
 const OUT = process.env.OUT || '/tmp';
 /* the page's mod key: Meta (⌘) on a Mac, Control elsewhere (the same inline pattern as scripts/check-ui-text.js); the texts the app shows follow it */
 const MAC = process.env.SCHED_TOP_FORCE_MAC === '1' /* mutation check only */ || process.platform === 'darwin';
@@ -93,10 +93,10 @@ module.exports = async (ctx) => {
   const closeScreen = async () => { await H.key('Escape'); await until(`document.getElementById('screen').hidden`); };
   /* load with the seeds; `stamp` is what durbar.schedSeen holds before the page starts ('' = none) */
   const load = async (w, h, stamp, query = {}) => {
-    await H.load({ w, h, query: { simsched: '1', ...query }, ready: 'fit', settle: false });
+    /* the seed goes into the page that is already loaded (the same origin), then one load starts with it: the first of the two loads this driver made only gave the seed a page to be written from (spec 008 FR-190) */
     if (stamp === '') await js(`localStorage.removeItem('durbar.schedSeen');true`);
     else await js(`localStorage.setItem('durbar.schedSeen',${jsLiteral(String(stamp))});true`);
-    await H.load({ w, h, query: { simsched: '1', ...query }, ready: 'fit', settle: false });
+    await H.load({ fastVisits: true, w, h, query: { simsched: '1', ...query }, ready: 'fit', settle: false });
     await until(`!document.getElementById('schedTopBtn').hidden`);
     await H.calm();
     H.wc().focus();
@@ -282,7 +282,7 @@ module.exports = async (ctx) => {
   /* FR-034: widths from 1280 to 2040 stay one row with floors and mixed agent apps, also with the Mac room forced */
   for (const mac of [false, true]) for (const w of [1280, 1320, 1321, 1360, 1400, 1439, 1440, 1441, 1512, 1600, 1728, 1920, 2039, 2040]) {
     const hh = w === 1280 ? 800 : 900;
-    await H.load({ w, h: hh, query: { simsched: '1', simfloors: '1', simkinds: 'mixed' }, ready: 'fit', settle: false });
+    await H.load({ fastVisits: true, w, h: hh, query: { simsched: '1', simfloors: '1', simkinds: 'mixed' }, ready: 'fit', settle: false });
     await until(`!document.getElementById('schedTopBtn').hidden`);
     if (mac) { await js(`document.documentElement.dataset.platform='darwin';window.DurbarFit&&window.DurbarFit();true`); await js(`new Promise(r=>setTimeout(r,0))`); }
     const P = await js(`(${barCheck.toString()})(${w},${jsLiteral(ARIA)})`);
@@ -291,7 +291,7 @@ module.exports = async (ctx) => {
 
   /* resizing the window while fitTopbar narrows the folder filter raises no "ResizeObserver loop" error (it runs in the next frame, not inside the observer) */
   {
-    await H.load({ w: 1440, h: 900, query: { simsched: '1', simfloors: '1', simkinds: 'mixed' }, ready: 'fit', settle: false });
+    await H.load({ fastVisits: true, w: 1440, h: 900, query: { simsched: '1', simfloors: '1', simkinds: 'mixed' }, ready: 'fit', settle: false });
     await js(`window.__roErr=[];addEventListener('error',e=>{if(/ResizeObserver loop/.test(String(e.message)))window.__roErr.push(String(e.message))});true`);
     for (const w of [1280, 1440, 1100, 1728, 1280, 1440]) {
       ctx.win.setContentSize(w, 800);
@@ -302,11 +302,10 @@ module.exports = async (ctx) => {
     check(roErr.length === 0, 'ResizeObserver loop errors during resizes: ' + roErr.join(' | '));
   }
 
-  /* the badge disc holds 3:1 against the button in every built-in theme (WCAG 1.4.11) */
-  for (const theme of ['clean', 'retro']) {
-    await H.load({ w: 1440, h: 900, query: { simsched: '1', theme }, ready: 'fit', settle: false });
-    await js(`localStorage.removeItem('durbar.schedSeen');true`);
-    await H.load({ w: 1440, h: 900, query: { simsched: '1', theme }, ready: 'fit', settle: false });
+  /* the badge disc holds 3:1 against the button in Clean Office and the dark fixture theme (WCAG 1.4.11; spec 102 T226: the fixture took Retro's place) */
+  for (const [theme, themeQuery] of [['clean', { theme: 'clean' }], ['dark', CHECK_DARK_QUERY]]) {
+    await js(`localStorage.removeItem('durbar.schedSeen');true`); /* into the loaded page, then one load (as in `load` above) */
+    await H.load({ fastVisits: true, w: 1440, h: 900, query: { simsched: '1', ...themeQuery }, ready: 'fit', settle: false });
     await until(`document.getElementById('schedTopBtn').classList.contains('trouble')`);
     /* .btn fades its background for 120ms (styles.css): a read taken mid-fade sees the previous theme's white (CI: ratio 1 once on a themed style), so wait for the transitions to end and two frames to paint */
     await until(`document.getAnimations().every(a=>a.playState!=='running')`);

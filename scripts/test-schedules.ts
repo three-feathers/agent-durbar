@@ -3,6 +3,7 @@ import * as assert from 'assert';
 import * as fs from 'fs';
 import * as path from 'path';
 import { MAX_PROMPT, MAX_SCHEDULES, Scheduler, alignedNext, loopSupport, cleanSchedule, dueAt, needsReview, parseSchedules, loadSchedules, saveSchedules } from '../src/main/schedules';
+import { assertCpuUnder } from './hang-backstop';
 import type { Schedule, SchedulesDoc, SchedulerDeps } from '../src/main/schedules';
 
 const MIN = 60_000;
@@ -257,13 +258,15 @@ async function main(): Promise<void> {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-sched-size-'));
     try {
       const f = path.join(dir, 'durbar-schedules.json');
-      const t0 = Date.now();
-      assert.ok(saveSchedules(f, doc), 'saved');
-      const back = loadSchedules(f, now);
-      const ms = Date.now() - t0;
+      // CPU time, not wall time (#1853): a loaded machine cannot fail it; a blocking wait still fails the helper's wall backstop.
+      let back!: SchedulesDoc;
+      const ms = assertCpuUnder('50 schedules at 10,000 characters with full logs: save and load', 2000, () => {
+        assert.ok(saveSchedules(f, doc), 'saved');
+        back = loadSchedules(f, now);
+      });
       const bytes = fs.statSync(f).size;
       assert.ok(bytes < 1_500_000, `50 schedules at 10,000 characters with full logs: ${bytes} bytes`);
-      assert.ok(ms < 2000, `save and load in ${ms} ms`);
+      console.log(`schedules: save and load of the largest document took ${ms.toFixed(1)} ms CPU`);
       assert.strictEqual(back.schedules.length, MAX_SCHEDULES);
       assert.ok(back.schedules.every((s) => s.prompt.length === MAX_PROMPT), 'every prompt comes back whole');
     } finally {

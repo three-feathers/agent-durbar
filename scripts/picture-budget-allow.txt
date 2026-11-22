@@ -1,0 +1,2 @@
+# Pictures that may be over the picture budget (scripts/picture-budget.js). One line each: path | max KB | reason
+# A line needs a reason and a whole number of KB, and the file must exist. Empty on purpose: compress-shots fixes screenshots.

@@ -37,7 +37,7 @@ import type { ElicitAnswer } from '../shared/elicit';
 import { codexMcpConfig, codexMcpServers, codexMcpState } from './codexMcp';
 import type { McpServerStatus } from './types';
 import { cleanSessionTitle } from './history';
-import type { HistoryResult, PreviousSession } from './history';
+import type { HistoryLimits, HistoryResult, PreviousSession } from './history';
 import type { ModelOption, ModelSwitchRequest, ModelSwitchResult } from '../shared/modelswitch';
 import type { SandboxHostView } from '../shared/api';
 import { CODEX_INITIALIZE_CAPABILITIES, codexSandboxHost, codexSandboxState, codexFileChanges, codexInstallRoot, codexModeSettings, codexPermission, codexProfileArgs, codexReadEnforceable, codexReply, codexSpawnPath, codexWorkspaceRoots } from './codexModes';
@@ -492,12 +492,12 @@ export class CodexAdapter implements AgentAdapter {
   }
 
   /** FR-141: a session's prompts, answers, commands and file changes, for the chat replay after a resume. */
-  async history(sessionId: string): Promise<HistoryResult> {
+  async history(sessionId: string, limits?: Partial<HistoryLimits>): Promise<HistoryResult> {
     const live = this.sessions.get(sessionId);
     const threadId = live?.threadId ?? sessionId;
     const read = (rpc: CodexRpc): Promise<unknown> => rpc.request('thread/read', { threadId, includeTurns: true });
     const res = live ? await read(live.rpc) : await this.probe(read);
-    return codexHistory(isObj(res) ? res.thread : undefined);
+    return codexHistory(isObj(res) ? res.thread : undefined, limits); // spec 095 FR-024: `limits` only from the search
   }
 
   /**

@@ -8,6 +8,7 @@ import type { AgentEvent } from '../../adapters/types';
 import { parseFocus, parseSwitchRequest } from '../../shared/modelswitch';
 import type { ModelSwitchRequest, ModelSwitchResult } from '../../shared/modelswitch';
 import { errText } from '../agentops';
+import { redact } from '../../shared/redact';
 import type { OrgVerdict } from '../../shared/orgpolicy';
 import type { FolderStore } from '../folders';
 
@@ -20,7 +21,24 @@ export interface ModelIpcDeps {
   wsKey(a: AgentInfo): string;
   /** Spec 076 FR-202/FR-203 (issue #602): why the agent app's own organization policy blocks this model, or undefined. */
   orgModel?(adapterId: string, model: string): Promise<OrgVerdict | undefined>;
+  /** The clock of the fresh-ask floor (tests only). */
+  now?(): number;
+  /** How long one model-list call may take (tests only; default {@link LIST_TIMEOUT_MS}). */
+  listTimeoutMs?: number;
 }
+
+/** Spec 030 FR-073: how long one model-list call may take. The runtime calls (`models.list`, `listModels()`) have no limit of their own, and a call that never answers would hold the menu on "Checking" for good. Claude's probe has its own 20 s limit. */
+export const LIST_TIMEOUT_MS = 25_000;
+
+/** Rejects with a `TimeoutError` when `p` has not settled in `ms`; the timer never outlives the call. */
+export function capListCall<T>(p: Promise<T>, ms: number): Promise<T> {
+  let t: ReturnType<typeof setTimeout> | undefined;
+  const limit = new Promise<never>((_, rej) => { t = setTimeout(() => rej(Object.assign(new Error('the model list timed out'), { name: 'TimeoutError' })), ms); });
+  return Promise.race([p, limit]).finally(() => { if (t) clearTimeout(t); });
+}
+
+/** Spec 030 FR-068: the least time between two fresh model-list asks of one agent app. */
+export const FRESH_FLOOR_MS = 5000;
 
 const NO_SWITCH = 'This agent cannot change its model in place. Start a new session with the model you want.';
 
@@ -97,11 +115,63 @@ export function onAutoTierFailed(e: AgentEvent, agents: Map<string, AgentInfo>, 
   store?.setAutoTier(wsKey(a), e.effective ?? null);
 }
 
-export function register(deps: ModelIpcDeps): void {
+/** `models:list`'s answer (spec 030 FR-069, FR-070): `reason` is a fixed phrase, never the error's own text; `hidden` counts policy-disabled models. */
+export interface ModelListReply { ok: boolean; error?: string; reason?: string; hidden?: number; models: ModelChoice[] }
+
+/** A short fixed phrase for why a model list failed (spec 030 FR-068): the error's text may carry account data, so only its kind is read. */
+export function listReason(err: unknown): string {
+  const status = err && typeof err === 'object' ? Number((err as { status?: unknown; statusCode?: unknown }).status ?? (err as { statusCode?: unknown }).statusCode) : NaN;
+  const t = `${err instanceof Error ? err.name : ''} ${err instanceof Error ? err.message : typeof err === 'string' ? err : ''}`;
+  // narrow on purpose: "max tokens", a rate limit (429) or "author" are not a sign-in failure
+  if (status === 401 || status === 403 || /\bunauthori[sz]ed\b|\bnot (signed|logged) ?in\b|\bnot authenticated\b|\bauthentication (failed|required)\b|\bsign-?in (required|expired)\b|\bHTTP 40[13]\b|"status":\s?40[13]\b/i.test(t)) return 'the sign-in was not accepted';
+  if (/\btime(d)? ?out\b|\bETIMEDOUT\b/i.test(t)) return 'the request timed out';
+  if (/\b(ENOTFOUND|ECONNREFUSED|ECONNRESET|EAI_AGAIN|ENETUNREACH)\b|fetch failed/i.test(t)) return 'no connection';
+  return 'the app could not list its models';
+}
+
+/** Runs one listing: an error or an empty list becomes a reason, and only the error's type is logged (spec 030 FR-069). */
+export async function modelListReply(load: () => Promise<ModelChoice[]>, hidden: () => number, warn: (m: string) => void = (m) => console.warn(redact(m))): Promise<ModelListReply> {
+  try {
+    const models = await load();
+    const h = hidden();
+    return { ok: true, models, ...(h > 0 ? { hidden: h } : {}), ...(models.length ? {} : { reason: h > 0 ? 'every model is turned off by your account\'s policy' : 'the app returned no models' }) };
+  } catch (err) {
+    warn(`[models] the list failed: ${err instanceof Error && /^\w{1,40}$/.test(err.name) ? err.name : 'Error'}`);
+    return { ok: false, error: listReason(err), reason: listReason(err), models: [] };
+  }
+}
+
+/** What `register` hands back: the models of an agent app as `models:list` answers them (spec 111 T010 reuses it, FR-031 of spec 021). */
+export interface ModelIpc {
+  /** one list per agent app id (a known one), each model with the organization's verdict; throws when the app cannot list */
+  modelsOf(kind: string): Promise<ModelChoice[]>;
+}
+
+export function register(deps: ModelIpcDeps): ModelIpc {
   const { agents, router, registry, wsKey } = deps;
   const folderStore = deps.getFolderStore;
   /** The last list of models each agent app offers; a switch request is checked against its session's own app (spec 030 FR-018, FR-063). */
   const lastModels = new Map<string, ModelChoice[]>();
+  /** Policy-disabled models the last list of each app dropped (spec 030 FR-070). */
+  const lastHidden = new Map<string, number>();
+  /** `models:list`'s body (spec 076 FR-202), extracted unchanged for spec 111 T010: the list of one app with `orgBlocked`/`orgDoubt`, and remembered for a switch. `fresh`: past the app's own cache (spec 030 FR-071). */
+  /** Spec 030 FR-068 (review on PR 1923): a fresh ask costs a runtime call (Claude Code starts a probe), so at most one per app per few seconds; inside the window the in-flight or last answer is returned. */
+  const freshRuns = new Map<string, { at: number; p: Promise<ModelChoice[]> }>();
+  const modelsOf = (id: string, fresh = false): Promise<ModelChoice[]> => {
+    if (!fresh) return loadList(id, false);
+    const now = (deps.now ?? Date.now)(), prev = freshRuns.get(id);
+    if (prev && now - prev.at < FRESH_FLOOR_MS) return prev.p;
+    const p = loadList(id, true);
+    freshRuns.set(id, { at: now, p });
+    return p;
+  };
+  const loadList = async (id: string, fresh: boolean): Promise<ModelChoice[]> => {
+    const all = await capListCall(modelOptionsOf(router.instance(id), fresh ? { fresh: true } : undefined), deps.listTimeoutMs ?? LIST_TIMEOUT_MS);
+    lastHidden.set(id, all.filter((m) => m.disabled).length);
+    const models = await withOrgModels(all.filter((m) => !m.disabled).map(({ disabled: _d, ...m }) => m), deps.orgModel && ((m) => deps.orgModel!(id, m)));
+    lastModels.set(id, models);
+    return models;
+  };
   const modelsForValidation = async (kind: string): Promise<ModelChoice[]> => {
     let list = lastModels.get(kind);
     if (!list?.length) {
@@ -153,16 +223,12 @@ export function register(deps: ModelIpcDeps): void {
     }
   });
 
-  ipcHandle('models:list', async (_e, kind: unknown): Promise<{ ok: boolean; error?: string; models: ModelChoice[] }> => {
+  ipcHandle('models:list', async (_e, kind: unknown, opts: unknown): Promise<ModelListReply> => {
     // spec 012 FR-120: one list per agent kind; no kind = the default kind (as before); an unknown kind is refused
     const id = kind === undefined || kind === null || kind === '' ? registry.defaultId : typeof kind === 'string' && registry.has(kind) ? kind : undefined;
     if (!id) return { ok: false, error: 'unknown agent app', models: [] };
-    try {
-      const models = await withOrgModels((await modelOptionsOf(router.instance(id))).filter((m) => !m.disabled).map(({ disabled: _d, ...m }) => m), deps.orgModel && ((m) => deps.orgModel!(id, m)));
-      lastModels.set(id, models);
-      return { ok: true, models };
-    } catch (err) {
-      return { ok: false, error: errText(err), models: [] };
-    }
+    const fresh = !!opts && typeof opts === 'object' && (opts as { fresh?: unknown }).fresh === true;
+    return modelListReply(() => modelsOf(id, fresh), () => lastHidden.get(id) ?? 0);
   });
+  return { modelsOf };
 }

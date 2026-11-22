@@ -6,7 +6,7 @@
 
 Codex gets a new adapter capability, `imageGen`. It makes one 2x2 sheet (working, waiting, resting, blink) from a fixed style preset, a fixed layout block and the user's description inside a guard wrapper.
 - **Main** reads the one expected file, checks its header bytes, and has a sandboxed hidden encoder window decode, slice, key out, resize and encode it to four 352x352 WebP frames. Main checks the frames again, holds them as a *try*, and saves them to `userData/characters/<id>/` on Save.
-- **The renderer** reuses the theme maker's dialog parts, adds **My characters** as a Characters value, and registers the generated ids with `crew.js`, so the existing pick, crops, fallback and checks work unchanged.
+- **The renderer** reuses `screens.js`'s `dialog` helper and writes the idea chips and harness picker as neutral helpers (the theme maker is retired), adds **My characters** as a Characters value, and registers the generated ids with `crew.js`, so the existing pick, crops, fallback and checks work unchanged.
 - **Motion** is route (1): cross-fade, discrete bob, blink frame, typing cue, existing glow. It is paused by reduced motion, the global Motion setting (not Serious mode, 2026-11-05), a hidden window and idleness.
 
 ## Technical Context
@@ -22,7 +22,7 @@ Codex gets a new adapter capability, `imageGen`. It makes one 2x2 sheet (working
 - **Constraints**:
   - a frame is at most 40 KB and a character at most 160 KB;
   - a generation times out after 5 minutes and the encoder after 20 s;
-  - at most 24 characters;
+  - from 24 characters the maker warns, with no limit (spec `## Changes`, 2026-10-31);
   - text is at least 10.5px;
   - motion adds at most 3 points of renderer CPU (recorded, not gated).
 
@@ -39,7 +39,7 @@ main  src/main/ipc/characters.ts ──► AdapterRouter.instance('codex').gener
    │          ▼
    │   src/shared/imagecheck.ts (magic, header dimensions)
    │          ▼
-   │   src/main/charencoder.ts ──► hidden sandboxed BrowserWindow (src/renderer/charencoder.html + .js, no preload Node)
+   │   src/main/charencoder.ts ──► hidden sandboxed BrowserWindow (about:blank + fixed charencoder.html, .js; no preload Node)
    │          ◄── 4 x WebP bytes + face points
    │   src/shared/webpcheck.ts (RIFF/WEBP, 352x352, ≤ 40 KB, chunk allow-list, strip)
    │          ▼
@@ -75,12 +75,12 @@ Results go to `docs/agent-apps.md` (Codex) and this spec's `## Changes`, with `r
 |---|---|---|
 | Short-lived Codex child, temp folder, cleanup | `CodexAdapter.probe`, `generateText`'s mkdtemp/rm pattern, `spawnChild`, `codexSpawnPath` | a new method `generateImage` next to `generateText` |
 | Capability flag and contract test | `capabilities.ts` `oneShot`, contract C2 in `test:runtime` | add `imageGen` and C2-style pair |
-| Dialog, idea chips, harness select, cost line, busy toast, error and retry dialog | `aiTheme()` in `screens.js` (`dialog`, `ideaHtml`/`pick`, `oneShotCostLine`, `X.toast`) | factor the chips and the harness picker into small helpers that both makers call; `oneShotCostLine` gains an `image` variant |
-| Ideas | `pickIdeas` in `src/shared/themegen.ts` | move to a tiny shared helper or import; `CHARACTER_IDEAS` list |
+| Dialog, idea chips, harness select, cost line, busy toast, error and retry dialog | `dialog`, `oneShotCostLine`, `X.toast` in `screens.js` (`aiTheme()` with its chips was retired, spec 040 FR-031: write the chips and harness picker new, as neutral helpers) | factor the chips and the harness picker into small helpers that both makers call; `oneShotCostLine` gains an `image` variant |
+| Ideas | `pickFrom` in `src/shared/ideas.ts` (built; `pickIdeas` is gone with the theme maker) | `CHARACTER_IDEAS` list |
 | Pick, keep, prune, load | `crew.js` `pickCharacter`, `assignCrew`, `pruneCrew`, `loadCrew`, `storeKey`, `idsFor` | `registerOwn(list)` adds ids, face points and URLs; `idsFor('mine')`; nothing forked |
 | Crops, seats, fallback | `viewBox`, `faceBox`, `FACE_CROP`, `CREW_BAD`, `crewPreload`, `crewRefreshAvatars` | `facePoint` looks up registered faces |
 | Characters setting | `src/shared/characters.ts`, `theme.js` list, `settings:setCharacters`, `#chList` | append `mine`; kit `crew` |
-| WebP chunk check | `scripts/test-crew-assets.ts` chunk reader | move to `src/shared/webpcheck.ts`, used by the test and main |
+| WebP chunk check | `webpInfo` in `src/shared/webpcheck.ts` (built; `scripts/webpinfo.ts` wraps it for the art tests, `worldpack.ts` uses it) | `checkFrame`, `stripChunks` next to it |
 | Error masking | `redactMarkdown`, `maskHomePaths` (as history replay) | none |
 | Folder key | `folderKeyOf`, `normaliseFolderKey` (`src/shared/usagedoc.ts`) | none |
 | Usage line | Codex `account/rateLimits/read` (spec 051/068) | show the plan's window in the maker when it answers |
@@ -92,12 +92,12 @@ Results go to `docs/agent-apps.md` (Codex) and this spec's `## Changes`, with `r
 ## Data flow of one try
 
 1. The renderer calls `character:generate(desc, 'codex')`.
-2. Main validates the description (FR-011), builds the prompt (`chargen.ts`) and makes `temp = mkdtemp('durbar-img-')`.
-3. Main calls `generateImage(prompt, {outName: 'sheet.png', timeoutMs: 300000, signal})`, which returns `<temp>/sheet.png`.
-4. Main checks the file: `lstat`, regular file, at most 20 MB. It reads the bytes, then runs `imagecheck` (magic, header width and height).
-5. `charencoder.encode(bytes)`: a new hidden window gets the bytes over a `MessagePort`, then sends back `{frames[4], face[4], notes}` or an error. The window is destroyed.
-6. `webpcheck` runs on each frame.
-7. The try is held under a new `tryId`. The temp folder is removed in `finally`.
+2. Main validates the description (FR-011) and builds the prompt (`chargen.ts`).
+3. Main calls `generateImage(prompt, {outName: 'sheet.png', timeoutMs: 300000, signal})`. The **adapter** makes `temp = mkdtemp('durbar-img-')` in the OS temp folder and returns `<temp>/sheet.png`; if it throws or is cancelled, the adapter removes `temp` itself.
+4. Main checks the returned path (`sheet.png` directly in a real `durbar-img-*` folder of the OS temp folder; otherwise it refuses and removes nothing), then the file: `lstat`, regular file, at most 20 MB. It reads the bytes, **removes `temp`**, then runs `imagecheck` (magic, header width and height).
+5. `encodeSheet(bytes, header)`: a new hidden window gets the bytes over a `MessagePort`, then sends back `{frames[4], face[4]}` or a refusal code. The window is destroyed. No text from the window is kept: `parseEncoderReply` takes these fields only, and main's `notes` is empty.
+6. `parseEncoderReply` strips and checks each frame (`webpcheck`).
+7. The try is held under a new `tryId`.
 8. The reply to the window is `{ok, tryId, frames, face, notes, tookMs}`. The renderer shows the frames through `blob:` URLs.
 9. On Save, `charstore.save(try, name)` writes the files to `<userData>/characters/.tmp-<rand>/`, renames the folder to `<id>/` and returns `{id, name}`.
 
@@ -115,7 +115,7 @@ Results go to `docs/agent-apps.md` (Codex) and this spec's `## Changes`, with `r
 - **R3 Showing user pictures within the CSP.**
   - The choice is `blob:` in `img-src` (FR-043). Blob URLs can only be made by our own script (`script-src 'self'`), and the markup stays small.
   - The alternative, `data:` URLs (already allowed), costs about 54 KB per desk string, and 15 desks x re-renders make the scene cache heavy.
-  - The phase-3 PR measures both on the simulator (`check:office` time, heap) and keeps `data:` if the difference is small, so the CSP stays unchanged.
+  - Measured in phase 4 (spec `## Changes`, 2026-10-31): `data:` costs 1.6x the time and 1,117 KB of markup per paint against 3 KB, so `blob:` is kept and the CSP gains it for images only.
 - **R4 Blur from animation** (agent note, spec 077 FR-051). The bob is a discrete `y` attribute, a repaint with no compositor layer. The typing keys use `fill-opacity`. The cross-fade uses `opacity` only for 250 ms. `check:crew` measures sharpness after it.
 - **R5 CPU with 15 desks.**
   - One shared blink timer; the discrete bob repaints 3 times per 4.2 s per desk; only working and waiting desks move.
@@ -134,7 +134,7 @@ Results go to `docs/agent-apps.md` (Codex) and this spec's `## Changes`, with `r
 1. **Probes** P1-P8, owner's go given 2026-10-31 for P1-P6 (P7, P8 ride the same run), with results recorded (`docs/agent-apps.md`, spec `## Changes`). No `src/` change.
 2. **Pure core**: `chargen.ts`, `charstyle.ts`, `imagecheck.ts`, `webpcheck.ts` (moved from the test), plus tests.
 3. **Adapter and main**: `imageGen` capability, `CodexAdapter.generateImage`, fake app-server modes, `charencoder`, `charstore`, IPC, preload and types, pins, simulator fake.
-4. **Window**: the maker dialog (shared helpers with the theme maker), My characters in the Characters setting, `registerOwn`, `blob:` URLs, manage rows; CSP decision R3; screenshots.
+4. **Window**: the maker dialog (neutral shared dialog helpers; the theme maker is retired), My characters in the Characters setting, `registerOwn`, `blob:` URLs, manage rows; CSP decision R3; screenshots.
 5. **Motion**: cross-fade, bob, blink, typing cue, pause rules, Motion setting, `check-charmotion`.
 6. **Close-out**: README (features, *Safety model* line on Codex image generation, limits), the spec 077 `## Changes` line (FR-061), converge, a real run (SC-006) on the owner's go.
 

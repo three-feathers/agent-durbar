@@ -167,7 +167,7 @@ assert.strictEqual((reo.match(/getBoundingClientRect/g) || []).length, 1, 'layou
 assert.ok(/function begin[\s\S]*getBoundingClientRect[\s\S]*function move/.test(reo), 'that read is in begin(), not in move()');
 const moveBody = reo.slice(reo.indexOf('function move('), reo.indexOf('function end('));
 assert.ok(!/getBoundingClientRect|offset(Top|Left|Width|Height)|clientWidth|clientHeight|getComputedStyle/.test(moveBody), 'move() reads no layout');
-assert.deepStrictEqual([...reo.matchAll(/\.style\.(\w+)\s*=/g)].map((m) => m[1]).filter((v, i, a) => a.indexOf(v) === i), ['transform'], 'a drag sets only style.transform');
+assert.deepStrictEqual([...reo.matchAll(/\.style\.(\w+)\s*=/g)].map((m) => m[1]).filter((v, i, a) => a.indexOf(v) === i), ['transition', 'transform'], 'a drag sets only style.transform (and style.transition, to none, when motion is off: spec 097 FR-352)');
 const lift = /\.reo-lift\{([^}]*)\}/.exec(css)?.[1] ?? '';
 assert.ok(!/(^|;)\s*(top|left|right|bottom|width|height|margin|padding)\s*:/.test(lift), '.reo-lift moves nothing in the layout');
 assert.ok(/\.reo-slot\{[^}]*transition:transform/.test(css) && /prefers-reduced-motion:reduce\)\{\.reo-slot\{transition:none/.test(css), 'the preview slides, and not under reduced motion');

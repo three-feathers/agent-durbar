@@ -14,6 +14,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { execFileSync } = require('child_process');
+const { gitRun } = require('./git-index-helper.js');
 const cl = require('./changelog.js');
 const rn = require('./release-notes.js');
 
@@ -259,7 +260,7 @@ assert.ok(cl.parseFragment('- x <!-- hidden -->\n').errors.some((e) => /HTML com
   const emptyConfig = path.join(mkTmp('durbar-gitconfig-'), 'config');
   fs.writeFileSync(emptyConfig, '');
   const gitEnv = { ...process.env, GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: emptyConfig, GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@example.invalid', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@example.invalid', GIT_AUTHOR_DATE: '2026-10-23T10:00:00Z', GIT_COMMITTER_DATE: '2026-10-23T10:00:00Z' };
-  const g = (d, ...args) => execFileSync('git', args, { cwd: d, env: gitEnv, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
+  const g = (d, ...args) => gitRun(d, args, { env: gitEnv }).trim();
   const pkg = (d, v) => fs.writeFileSync(path.join(d, 'package.json'), `${JSON.stringify({ name: 'x', version: v })}\n`);
   const commit = (d, msg) => { g(d, 'add', '-A'); g(d, 'commit', '-q', '-m', msg); };
   // a repository whose main has alpha.10 tagged (its section is in RELEASED), then two fragments and the alpha.11 version bump
@@ -373,6 +374,14 @@ assert.ok(cl.parseFragment('- x <!-- hidden -->\n').errors.some((e) => /HTML com
     assert.strictEqual(rn.previousRelease(d, g(d, 'rev-parse', 'v0.1.0-alpha.12^{commit}'), 'v0.1.0-alpha.12'), 'v0.1.0-alpha.11');
     g(d, 'checkout', '-q', 'v0.1.0-alpha.12');
     assert.throws(() => rn.releaseNotes(d, { ...opts, tag: 'v0.1.0-alpha.12' }), /no section for the previous release v0\.1\.0-alpha\.11: merge its fold PR/);
+    // FR-271: the refusal names the fix for a tag that never got a release, and such a section satisfies the check
+    assert.throws(() => rn.releaseNotes(d, { ...opts, tag: 'v0.1.0-alpha.12' }), /never released, add a "## v0\.1\.0-alpha\.11 \(not released, YYYY-MM-DD\)" section/);
+    {
+      const text = fs.readFileSync(path.join(d, 'CHANGELOG.md'), 'utf8');
+      const mark = '## v0.1.0-alpha.11 (not released, 2026-10-23)\n\nTagged but never released.\n\n';
+      const i = text.search(/^## v/m);
+      cl.requirePrevious({ rest: (text.slice(0, i) + mark + text.slice(i)).split('\n') }, 'v0.1.0-alpha.11');
+    }
     // after the fold of alpha.11 (done from its tag, then main merged) the alpha.12 notes list only C
     g(d, 'checkout', '-q', '-b', 'fold', 'v0.1.0-alpha.11');
     cl.build(d, { release: 'v0.1.0-alpha.11 ([pre-release](https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.0-alpha.11), 2026-10-23)' });
@@ -585,7 +594,7 @@ assert.ok(cl.parseFragment('- x <!-- hidden -->\n').errors.some((e) => /HTML com
     }
     {
       // subjects are untrusted Markdown: each one is a single code span, so no mention, link, image or HTML renders, and Markdown or
-      // HTML that would rebuild a token redact() cannot see (bold, an empty tag, a comment, an entity) shows literally (review on #665)
+      // HTML that would rebuild a token redact() cannot see (bold, an entity of a visible character) shows literally (review on #665)
       const T36 = 'Ab1'.repeat(12);
       const hostile = [
         'Ping @octocat about `code` and **bold** <b>tag</b> ![x](https://example.invalid/i.png) [a](http://x)',
@@ -607,7 +616,9 @@ assert.ok(cl.parseFragment('- x <!-- hidden -->\n').errors.some((e) => /HTML com
       }
       const spans = items.map((l) => /^- `[0-9a-f]{12}` `([^`]*)`$/.exec(l)[1]).reverse(); // newest first in the notes
       assert.strictEqual(spans[0], "Ping @octocat about 'code' and **bold** <b>tag</b> ![x](https://example.invalid/i.png) [a](http://x)", 'a backtick becomes a quote, the rest stays literal inside the span');
-      assert.deepStrictEqual(spans.slice(1), hostile.slice(1), 'the four masking-bypass forms are inside a code span, so they render literally, never as a ghp_ token');
+      // spec 012 FR-182 (issue #1613): redact() now reads a token split by an empty tag or a comment, so those two subjects are masked before they reach the notes;
+      // spec 012 FR-188 (issue #1320): it also reads a token character in an entity form, so that subject is masked too
+      assert.deepStrictEqual(spans.slice(1), [hostile[1], '[redacted]', '[redacted]', '[redacted]'], 'the four masking-bypass forms are inside a code span, so they render literally, never as a ghp_ token (the tag, comment and entity forms masked)');
     }
     {
       // at most TEST_COMMITS_MAX commits are listed, then a count of the rest
@@ -615,7 +626,7 @@ assert.ok(cl.parseFragment('- x <!-- hidden -->\n').errors.some((e) => /HTML com
       // one git fast-import for the empty commits (a git commit per step took seconds)
       const steps = Array.from({ length: rn.TEST_COMMITS_MAX + 2 }, (_, i) => `step ${i + 1}`);
       const stream = steps.map((m, i) => `commit refs/heads/many\ncommitter t <t@example.invalid> 1792749600 +0000\ndata ${m.length}\n${m}\n${i ? '' : 'from refs/heads/main^0\n'}\n`).join('');
-      execFileSync('git', ['fast-import', '--quiet'], { cwd: d, env: gitEnv, input: stream, stdio: ['pipe', 'ignore', 'pipe'] });
+      gitRun(d, ['fast-import', '--quiet'], { env: gitEnv, input: stream });
       g(d, 'checkout', '-q', 'many');
       g(d, 'tag', '-a', '-m', 'test', 'v0.1.0-alpha.11-test.1');
       g(d, 'checkout', '-q', 'v0.1.0-alpha.11-test.1');
@@ -676,7 +687,7 @@ assert.ok(cl.parseFragment('- x <!-- hidden -->\n').errors.some((e) => /HTML com
     }
   }
   assert.match(jobs['draft-release'], /if \[ "\$\(gh release view "\$TAG" --json isDraft -q \.isDraft\)" != "true" \]; then\n[^\n]*\n {14}exit 1\n {12}fi\n {12}gh release upload "\$TAG" dist-artifacts\/\* --clobber/, 'files are replaced only on a draft, a published release is refused');
-  for (const [, u] of wf.matchAll(/uses: (\S+)/g)) assert.match(u, /^[\w.-]+\/[\w.-]+@[0-9a-f]{40}$/, `${u} pinned by commit sha`);
+  for (const [, u] of wf.matchAll(/uses: (?!\.\/)(\S+)/g)) assert.match(u, /^[\w.-]+\/[\w.-]+@[0-9a-f]{40}$/, `${u} pinned by commit sha`);
 }
 
 // --- spec 058 T160 (#509): the safety properties of .github/workflows/mcp-oauth-real.yml (a manual run with the real CI secret) ---
@@ -697,7 +708,7 @@ assert.ok(cl.parseFragment('- x <!-- hidden -->\n').errors.some((e) => /HTML com
     '    strategy:', '      fail-fast: false', '      matrix:', MATRIX_OS, '    steps:',
     SHA('checkout'), '        with:', '          persist-credentials: false',
     SHA('setup-node'), '        with:', '          node-version: 22', '          cache: npm',
-    '      - run: npm ci', '      - run: npx tsc -p tsconfig.scripts.json', '      - run: node dist-scripts/scripts/test-demo-oauth-mcp.js',
+    '      - uses: ./.github/actions/npm-ci', '      - run: npx tsc -p tsconfig.scripts.json', '      - run: node dist-scripts/scripts/test-demo-oauth-mcp.js',
     FIXED(6, '- '), '        shell: bash', '        env:',
     '          COPILOT_GITHUB_TOKEN: ${{ secrets.COPILOT_CODEX_GITHUB_FINE_GRAINED_TOKEN }}',
     '        run: node dist-scripts/scripts/mcp-oauth-real.js "$RUNNER_TEMP/mcp-oauth.json"',
@@ -753,8 +764,8 @@ assert.ok(cl.parseFragment('- x <!-- hidden -->\n').errors.some((e) => /HTML com
   const mutants = {
     'type: string': [sub('type: choice', 'type: string'), /type: string/],
     'fromJSON(inputs.oses)': [sub(/os: \$\{\{ fromJSON\(.*\) \}\}/, 'os: ${{ fromJSON(inputs.oses) }}'), /fromJSON\(inputs\.oses\) \}\}"/],
-    'an input in run:': [sub('- run: npm ci', '- run: echo ${{ inputs.oses }}'), /echo \$\{\{ inputs/],
-    'an input in a multi-line run:': [sub('- run: npm ci', '- run: |\n          echo ${{ inputs.oses }}'), /run: \|/],
+    'an input in run:': [sub('- uses: ./.github/actions/npm-ci', '- run: echo ${{ inputs.oses }}'), /echo \$\{\{ inputs/],
+    'an input in a multi-line run:': [sub('- uses: ./.github/actions/npm-ci', '- run: |\n          echo ${{ inputs.oses }}'), /run: \|/],
     'a self-hosted label': [sub('"macos-latest"', '"self-hosted"'), /self-hosted/],
     'an extra option': [sub('- macos-latest\n', '- macos-latest\n          - self-hosted\n'), /- self-hosted/],
     'write permission': [sub('contents: read', 'contents: write'), /contents: write/],
@@ -769,15 +780,15 @@ assert.ok(cl.parseFragment('- x <!-- hidden -->\n').errors.some((e) => /HTML com
     'a second string input': [sub('      oses:\n', '      target:\n        type: string\n      oses:\n'), /target:/],
     'FROMJSON of the input': [sub(/os: \$\{\{ fromJSON\(.*\) \}\}/, 'os: ${{ FROMJSON(inputs.oses) }}'), /FROMJSON/],
     'an input in a github-script': [`${file.trimEnd()}\n      - uses: actions/github-script@0000000000000000000000000000000000000000\n        with:\n          script: console.log('\${{ inputs.oses }}')\n`, /github-script|extra line/],
-    'github.event.inputs': [sub('- run: npm ci', '- run: echo ${{ github.event.inputs.oses }}'), /github\.event\.inputs/],
+    'github.event.inputs': [sub('- uses: ./.github/actions/npm-ci', '- run: echo ${{ github.event.inputs.oses }}'), /github\.event\.inputs/],
     'a fifth comparison': [sub("|| '[\"windows-latest\",\"ubuntu-latest\"]') }}", "|| inputs.oses == 'x' && '[\"y\"]' || '[\"windows-latest\",\"ubuntu-latest\"]') }}"), /inputs\.oses == 'x'/],
     'runs-on from the input': [sub('runs-on: ${{ matrix.os }}', 'runs-on: ${{ inputs.oses }}'), /runs-on: \$\{\{ inputs/],
     'matrix include on a custom runner': [sub('    steps:\n', '        include:\n          - os: my-runner\n    steps:\n'), /include:/],
     'matrix include from a variable': [sub('    steps:\n', '        include:\n          - os: ${{ vars.RUNNER }}\n    steps:\n'), /include:/],
-    'github.event in a - run: line': [sub('- run: npm ci', '- run: echo "${{ github.event.sender.login }}"'), /github\.event\.sender/],
-    'github.head_ref in a - run: line': [sub('- run: npm ci', '- run: echo "${{ github.head_ref }}"'), /github\.head_ref/],
-    'github.event in a multi-line run': [sub('- run: npm ci', '- run: |\n          echo "${{ github.event.sender.login }}"'), /run: \|/],
-    'the secret in a - run: line': [sub('- run: npm ci', '- run: echo ${{ secrets.COPILOT_CODEX_GITHUB_FINE_GRAINED_TOKEN }}'), /secrets\. must appear exactly once/],
+    'github.event in a - run: line': [sub('- uses: ./.github/actions/npm-ci', '- run: echo "${{ github.event.sender.login }}"'), /github\.event\.sender/],
+    'github.head_ref in a - run: line': [sub('- uses: ./.github/actions/npm-ci', '- run: echo "${{ github.head_ref }}"'), /github\.head_ref/],
+    'github.event in a multi-line run': [sub('- uses: ./.github/actions/npm-ci', '- run: |\n          echo "${{ github.event.sender.login }}"'), /run: \|/],
+    'the secret in a - run: line': [sub('- uses: ./.github/actions/npm-ci', '- run: echo ${{ secrets.COPILOT_CODEX_GITHUB_FINE_GRAINED_TOKEN }}'), /secrets\. must appear exactly once/],
     'the secret in a second env entry': [sub('        run: node dist-scripts/scripts/mcp-oauth-real.js', '          OTHER: ${{ secrets.X }}\n        run: node dist-scripts/scripts/mcp-oauth-real.js'), /secrets\. must appear exactly once/],
     'the secret in a step name': [sub('name: Summary', 'name: ${{ secrets.X }}'), /secrets\. must appear exactly once/],
     'a # line inside the path block': [sub('mcp-oauth.json\n', 'mcp-oauth.json\n            # ~/.copilot/**\n'), /line 6\d: "            # ~\/\.copilot/],
@@ -799,6 +810,27 @@ assert.ok(cl.parseFragment('- x <!-- hidden -->\n').errors.some((e) => /HTML com
     assert.notStrictEqual(text, file, `mutation "${name}" changed the file`);
     assert.throws(() => checkOauthWorkflow(text), (e) => /mcp-oauth-real\.yml/.test(e.message) && reason.test(e.message), `the check must fail for "${name}" with ${reason}`);
   }
+}
+
+// spec 008 FR-272 (#1834): a fragment fails in its own PR when it would fail the site's rules at the fold (build-site.js, the same functions)
+{
+  const site = require('./build-site.js');
+  const siteRepo = (frag) => {
+    const dir = repo('', { 'x.md': frag });
+    fs.mkdirSync(path.join(dir, 'docs', 'site'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'docs', 'site', 'unreleased.json'), JSON.stringify({ phrases: ['Cheeky loft', 'Arcade world'] }));
+    return cl.check(dir).errors;
+  };
+  assert.deepStrictEqual(siteRepo('- **Fine lead** (spec 077 FR-075, issue #1): the loft is open.\n'), [], 'a clean fragment passes');
+  assert.deepStrictEqual(siteRepo('- **Fine lead** (spec 077): the cheeky world is not a listed phrase.\n'), [], 'one word of a phrase is not a hit');
+  assert.ok(siteRepo('- **The Cheeky  Loft opens**: text.\n').some((e) => /changelog\.d\/x\.md: .*names "Cheeky loft", which is not in a release/.test(e)), 'FAIL unreleased-phrase: a listed name (case, spaces) in a fragment must fail');
+  assert.ok(siteRepo('- **Fine lead**: text.\n  Continued line about the Arcade world.\n').some((e) => /names "Arcade world"/.test(e)), 'FAIL unreleased-phrase: a name on a continuation line must fail');
+  assert.ok(siteRepo('- **Spec 001 T167, a first slice**: text.\n').some((e) => /landing-page line keeps "Spec 001"/.test(e)), 'FAIL spec-number: a bold lead that starts with a spec number must fail');
+  assert.ok(siteRepo('- **A lead**: first sentence FR-12 stays. Second.\n').some((e) => /keeps "FR-1"/.test(e)), 'FAIL spec-number: an FR id outside a group must fail');
+  assert.deepStrictEqual(siteRepo('- **A lead**: first sentence. Second sentence names spec 077.\n'), [], 'a number after the first sentence never reaches the landing page');
+  assert.deepStrictEqual(site.bulletSiteProblems('- **Lead** (spec 001 T167): text.', ['Cheeky loft']), [], 'bulletSiteProblems: a (spec NNN) group is stripped');
+  // the real fragments and unreleased list pass or fail the same way as the build: nothing here is copied from build-site.js
+  assert.strictEqual(typeof site.landingBullet, 'function');
 }
 
 console.log('test-changelog: ok');

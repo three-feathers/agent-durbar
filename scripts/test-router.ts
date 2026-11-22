@@ -279,8 +279,12 @@ async function main(): Promise<void> {
     assert.ok(mix.every((e) => g2(e)), 'the mix is all good events');
     // main sets the guard right after making the router, before its first listener, and masks the line
     const mainTs = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'main', 'main.ts'), 'utf8');
-    const at = mainTs.indexOf('router.setEventGuard(eventGate((line) => console.warn(redact(line))));');
-    assert.ok(at > 0 && at < mainTs.indexOf('router.onEvent('), 'FR-035: main.ts sets the masked gate before its first router.onEvent');
+    const at = mainTs.indexOf('const eventShape = eventGate((line) => console.warn(redact(line)));');
+    const set = mainTs.indexOf('router.setEventGuard(eventShape);');
+    assert.ok(at > 0 && at < set && set < mainTs.indexOf('router.onEvent('), 'FR-035: main.ts sets the masked gate before its first router.onEvent');
+    // spec 099 FR-082: Autopilot's guard is added to this one, never put in its place; every later setEventGuard keeps the shape check first
+    const later = mainTs.slice(set + 1).match(/router\.setEventGuard\([^\n]*/g) ?? [];
+    assert.ok(later.length > 0 && later.every((l) => l.startsWith('router.setEventGuard(bothGuards(eventShape, ')), `FR-035: a later guard keeps the shape check: ${later.join(' | ')}`);
   }
   console.log('router tests passed');
 }

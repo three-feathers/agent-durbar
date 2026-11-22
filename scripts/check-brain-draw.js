@@ -1,0 +1,279 @@
+/*
+ * Spec 106 T005 (P1 G2 first slice), moved to T006's dock (2026-11-20): the brain in the open chat's right rail, in the simulator, at both sizes with 15 agents. No credits.
+ * The dock's own layout (placement, Your door, legend, collapse, worlds) is check-brain-dock; this driver keeps the drawing checks.
+ * In ui-suite.js; `node scripts/ui-suite.js --only check-brain-draw`. It fails (exit 1) when:
+ *   - the flag is off (the default) and anything of Brain view loads, or a `.bv` exists (FR-105);
+ *   - with `?brain=1`: no brain after an event; a canary token in a command reaches any text of the host, its labels or its canvas alternative (FR-021, FR-085);
+ *   - a text of the dock is under 12 px (FR-097); the dock moves a desk (the office layout must be unchanged after the chat closes) or shows in the office; the canvas is not decorative or not drawn;
+ *   - a step does not change the picture; a failed step is not drawn as a cross (the cross is checked in the unit test; here the picture must differ);
+ *   - a loop is left running when nothing happens (FR-103); a frame draws more points than the largest lit lobe (FR-102);
+ *   - Still (the button, by keyboard) or reduced motion (emulated) starts an animation frame loop (SC-004); a hidden page draws a frame; forced colours keep it still.
+ *   - the Prehistoric cave skin (T027, #1219; labels "cave skin: ...", both sizes): on only in the cave; pebble discs, never squares; the palette read from the cave's tokens; the same geometry, sizes and masked texts as Flat and the Photo office; text 12 px and 4.5:1, lobes 3:1 on the box.
+ *   - the Retro arcade skin (spec 106 FR-110..FR-112, T020; checked at both sizes, labels "arcade skin: ..."): on only in the arcade world (Flat and the Photo office stay neutral);
+ *     points drawn as squares, never discs; the box's font is the arcade's display font; palette read from the arcade's tokens and different from the neutral one;
+ *     and the geometry is IDENTICAL to the neutral skin: the same points (count and positions), the canvas size, the box's width and corner, every text size, and the masked texts.
+ * Screenshots: <SHOTS_OUT>/106-brain-<state>-<w>x<h>.png
+ */
+const os = require('os');
+const fs = require('fs');
+const path = require('path');
+const assert = require('assert');
+const { helpers, jsLiteral } = require('./driver-helpers');
+
+const OUT = process.env.SHOTS_OUT || fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-106-brain-'));
+const SIZES = [[1440, 900], [1280, 800]];
+const CANARY = 'ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789ab';
+
+module.exports = async (ctx) => {
+  const H = helpers(ctx);
+  const { js } = H;
+  const wc = () => ctx.win.webContents;
+  const must = async (expr, what, ms = 15000) => {
+    const ok = await H.until(expr, ms);
+    if (!ok) console.log('[106-brain] page state: ' + JSON.stringify(await js(`({flag:window.__durbarSimUi.brain.flag,load:window.__durbarSimUi.brain.state()+' '+window.__durbarSimUi.brain.why(),queued:window.__durbarSimUi.brain.queued(),host:!!document.querySelector('.bv'),txt:(document.querySelector('.bv')||{innerText:''}).innerText.slice(0,160),tags:0,errs:window.__errs,mods:['GLYPHS','WAITING_CARD','relPath','sentenceFor','officeTag','cardLines','currentStep'].map(k=>k in window.exports?1:0).join('')})`)));
+    assert.ok(ok, 'timed out waiting for ' + what);
+  };
+  const dbg = () => { const d = wc().debugger; if (!d.isAttached()) d.attach('1.3'); return d; };
+  const media = (features) => dbg().sendCommand('Emulation.setEmulatedMedia', { features });
+  const emit = (e) => js(`void window.__durbarSimEmit(Object.assign({timestamp:Date.now()},${jsLiteral(e)}));0`);
+  const stats = () => js(`window.__durbarSimUi.brain.host().stats()`);
+  const calmDown = async () => { await H.until(`window.__durbarSimUi.brain.host()&&!window.__durbarSimUi.brain.host().stats().loopRunning`, 8000); };
+  const SELA = (x) => `document.querySelector('#stage .desk[data-id="'+CSS.escape(${jsLiteral(x)})+'"],#stage .ro-plate[data-id="'+CSS.escape(${jsLiteral(x)})+'"]')`;
+  const openChat = async (x) => { await js(`(()=>{const d=${SELA(x)};if(d)d.click();})()`); await must(`document.body.classList.contains('panel-open')&&!!document.querySelector('#brainRail .bv')`, 'the chat and its dock'); };
+  const DESKS = `[...document.querySelectorAll('#stage .desk[data-id]')].map(d=>{const r=d.getBoundingClientRect();return [d.dataset.id,Math.round(r.left),Math.round(r.top),Math.round(r.width),Math.round(r.height)].join(':')})`;
+  /* setEmulatedMedia replaces the whole list: always both features, so neither falls back to the machine's own value (the Windows runner reports reduced motion) */
+  const motionAllowed = () => media([{ name: 'prefers-reduced-motion', value: 'no-preference' }, { name: 'forced-colors', value: 'none' }]);
+  await motionAllowed();
+
+  for (const [w, h] of SIZES) {
+    const tag = `${w}x${h}`;
+    // ---- off by default: nothing loads, nothing shows (FR-105)
+    await H.load({ w, h });
+    const id = await js(`document.querySelector('#stage .desk[data-id]').dataset.id`);
+    assert.ok(id, 'an agent');
+    await emit({ type: 'toolCall', sessionId: id, callId: 'off-1', tool: 'bash', phase: 'start', args: { command: 'npm test' } });
+    await new Promise((r) => setTimeout(r, 600));
+    assert.strictEqual(await js(`!!document.querySelector('.bv')`), false, 'off by default: no brain on the page');
+    assert.strictEqual(await js(`document.querySelectorAll('script[src*=brain],link[href*=brain]').length>0`), false, 'off by default: no Brain view file is loaded (FR-105)');
+    await emit({ type: 'toolCall', sessionId: id, callId: 'off-1', tool: 'bash', phase: 'complete', output: 'ok' });
+
+    // ---- no masking, no brain (fail closed): with the redact module "missing" the loader gives up and shows nothing
+    await H.load({ w, h, query: { brain: '1', noredact: '1' } });
+    await emit({ type: 'toolCall', sessionId: id, callId: 'nr-1', tool: 'bash', phase: 'start', args: { command: 'npm test' } });
+    await must(`window.__durbarSimUi.brain.state()==='failed'&&window.__durbarSimUi.brain.why()==='no mask'`, 'the brain refuses to start without masking');
+    assert.strictEqual(await js(`!!document.querySelector('.bv')`), false, 'no masking, no brain: nothing is shown');
+
+    // ---- on: the layout is unchanged, the brain follows the agent
+    await H.load({ w, h, query: { brain: '1' } });
+    // the OS may take the focus from a driver (three run at a time): an unfocused page draws Still, which would make the "no loop" checks below pass for any code
+    assert.ok(await H.focusPage({ emulate: 'first' }), `the page has the focus (real or emulated) before the Full checks at ${tag}`);
+    // the first size's reduced-motion and forced-colours steps changed the emulated media, and focusPage may detach the debugger (which clears it): allow motion again
+    await motionAllowed();
+    const before = await js(DESKS);
+    assert.strictEqual(before.length, 15, '15 desks');
+    await js(`window.__errs=[];addEventListener('error',e=>window.__errs.push(String(e.message)+' '+String(e.filename).split('/').pop()));0`);
+    await openChat(id);
+    const cmd = `curl -H "Authorization: Bearer ${CANARY}" https://example.test/x`;
+    await emit({ type: 'toolCall', sessionId: id, callId: 'b-1', tool: 'bash', phase: 'start', args: { command: cmd } });
+    await must(`!!document.querySelector('.bv .bv-c1')&&/running/.test(document.querySelector('.bv .bv-c1').textContent)`, 'the card of a running command');
+    await calmDown();
+    const full = await H.until(`window.__durbarSimUi.brain.host().draw.mode()==='full'`, 3000);
+    const why = full ? null : await js(`({mode:window.__durbarSimUi.brain.host().draw.mode(),degraded:window.__durbarSimUi.brain.host().stats().degraded,hasFocus:document.hasFocus(),reduce:matchMedia('(prefers-reduced-motion: reduce)').matches,forced:matchMedia('(forced-colors: active)').matches})`);
+    assert.ok(full, 'the brain is in Full (the page has focus), so the Still checks below test something at ' + tag + ': ' + JSON.stringify(why));
+    assert.ok((await stats()).loops >= 1, 'a step in Full ran an animation loop');
+    assert.ok(await js(`!!document.querySelector('#brainRail #brainSlot .bv')`), 'the brain is in the chat\'s right rail (T006)');
+    const everything = await js(`document.querySelector('.bv').outerHTML+'|'+document.querySelector('.bv').innerText+'|'+document.querySelector('.bv canvas').toDataURL().length`);
+    assert.ok(!everything.includes(CANARY) && !everything.includes('ghp_'), 'a token in a command reaches no text of the brain (FR-021)');
+    assert.ok((await js(`document.querySelector('.bv-lobe').textContent`)).startsWith('Shell, cerebellum'), 'the lobe is also text');
+    assert.strictEqual(await js(`document.querySelector('.bv canvas').getAttribute('aria-hidden')`), 'true', 'the canvas is decorative; its meaning is text');
+    assert.ok((await js(`document.querySelector('.bv').getAttribute('aria-label')`)).startsWith('Brain view, '), 'the region is named');
+    const small = await js(`[...document.querySelectorAll('.bv, .bv *')].filter(e=>[...e.childNodes].some(n=>n.nodeType===3&&n.textContent.trim())).map(e=>parseFloat(getComputedStyle(e).fontSize)).filter(s=>s<12)`);
+    assert.deepStrictEqual(small, [], 'every text of the brain is at least 12 px (FR-097)');
+    const lit = (cv) => js(`(()=>{const c=document.querySelector('.bv canvas'),d=c.getContext('2d').getImageData(0,0,c.width,c.height).data;let n=0,s=0;for(let i=3;i<d.length;i+=4){if(d[i]>0){n++;s+=d[i-3]*3+d[i-2]*7+d[i-1]*11;}}return {n,s};})()`);
+    const shell = await lit();
+    assert.ok(shell.n > 1500, 'the brain is drawn: ' + shell.n + ' lit pixels');
+    await H.shot(path.join(OUT, `106-brain-running-${tag}.png`), { prep: 'calm' });
+
+    // ---- a second tool lights another lobe and changes the picture; idle is free
+    await emit({ type: 'toolCall', sessionId: id, callId: 'b-1', tool: 'bash', phase: 'complete', output: 'ok' });
+    await emit({ type: 'toolCall', sessionId: id, callId: 'b-2', tool: 'view', phase: 'start', args: { path: '/home/someone/project/src/registry.ts' } });
+    await must(`/Read/.test(document.querySelector('.bv-lobe').textContent)`, 'the Read lobe');
+    await calmDown();
+    const read = await lit();
+    assert.notStrictEqual(read.s, shell.s, 'another tool, another picture');
+    assert.ok((await js(`document.querySelector('.bv-c2').textContent`)).includes('registry.ts'), 'the card names the file');
+    assert.ok(!(await js(`document.querySelector('.bv').innerText`)).includes('/home/someone'), 'a home path is masked (FR-085)');
+    let s = await stats();
+    assert.strictEqual(s.loopRunning, false, 'FR-103: no frame loop is left');
+    const litMax = await js(`window.DurbarBrainPoints.build('dock').byLobe.reduce((m,l)=>Math.max(m,l.length),0)`);
+    assert.ok(s.pointsMax > 0 && s.pointsMax <= litMax, 'FR-102: a frame draws only the lit lobe, at most ' + litMax + ' points: ' + s.pointsMax);
+    assert.strictEqual(s.basePoints, 6000, 'the base layer holds the 6,000 dock points, built outside any frame');
+    assert.strictEqual(s.canvases, 1, 'one canvas');
+    const f0 = s.frames; await new Promise((r) => setTimeout(r, 1500));
+    assert.strictEqual((await stats()).frames, f0, 'FR-103: 1.5 s of nothing, 0 frames drawn');
+    await emit({ type: 'toolCall', sessionId: id, callId: 'b-2', tool: 'view', phase: 'complete', output: 'x' });
+    await emit({ type: 'toolCall', sessionId: id, callId: 'b-3', tool: 'bash', phase: 'start', args: { command: 'false' } });
+    await emit({ type: 'toolCall', sessionId: id, callId: 'b-3', tool: 'bash', phase: 'failed', output: 'boom' });
+    await must(`/failed/.test(document.querySelector('.bv-c1').textContent)`, 'a failed step in words');
+    await calmDown();
+    await H.shot(path.join(OUT, `106-brain-failed-${tag}.png`), { prep: 'calm' });
+
+    // ---- Still by keyboard: no animation frame loop (SC-004)
+    await js(`document.querySelector('.bv [data-bv=motion]').focus();0`);
+    await H.key('Return'); // Full -> Calm
+    await H.key('Return'); // Calm -> Still
+    await must(`/Still/.test(document.querySelector('.bv [data-bv=motion]').textContent)`, 'Still by keyboard');
+    s = await stats(); const loops = s.loops, fr = s.frames;
+    await emit({ type: 'toolCall', sessionId: id, callId: 'b-4', tool: 'grep', phase: 'start', args: { pattern: 'x' } });
+    await must(`/Read/.test(document.querySelector('.bv-lobe').textContent)`, 'a step under Still');
+    await new Promise((r) => setTimeout(r, 600));
+    s = await stats();
+    assert.strictEqual(s.loops, loops, 'Still: no animation loop started');
+    assert.ok(s.frames - fr <= 2 && s.frames - fr >= 1, 'Still: one frame for the change (' + (s.frames - fr) + ')');
+    assert.strictEqual(s.loopRunning, false);
+    await H.shot(path.join(OUT, `106-brain-still-${tag}.png`), { prep: 'calm' });
+    // back to Full for the next checks
+    await H.key('Return'); await must(`/Full/.test(document.querySelector('.bv [data-bv=motion]').textContent)`, 'Full again');
+
+    // ---- hidden: nothing draws (the page is told it is hidden; a real hidden window cannot be made under xvfb); shown: one frame
+    await js(`Object.defineProperty(document,'hidden',{get:()=>true,configurable:true});document.dispatchEvent(new Event('visibilitychange'));0`);
+    const hf = (await stats()).frames;
+    await emit({ type: 'toolCall', sessionId: id, callId: 'b-5', tool: 'edit', phase: 'start', args: { path: 'a.ts' } });
+    await must(`/Edit/.test(document.querySelector('.bv-lobe').textContent)`, 'a step while hidden');
+    await new Promise((r) => setTimeout(r, 600));
+    s = await stats();
+    assert.strictEqual(s.frames, hf, 'FR-104: a hidden page draws 0 frames');
+    assert.strictEqual(s.loopRunning, false);
+    await js(`delete document.hidden;document.dispatchEvent(new Event('visibilitychange'));0`);
+    await must(`window.__durbarSimUi.brain.host().stats().frames===${jsLiteral(hf + 1)}`, 'one frame when shown again', 3000);
+
+    // ---- reduced motion (emulated): forced Still, the button says why
+    await media([{ name: 'prefers-reduced-motion', value: 'reduce' }]);
+    await must(`/system/.test(document.querySelector('.bv [data-bv=motion]').textContent)`, 'the button says reduced motion decides');
+    assert.strictEqual(await js(`document.querySelector('.bv [data-bv=motion]').getAttribute('aria-disabled')`), 'true');
+    s = await stats(); const rl = s.loops;
+    await emit({ type: 'toolCall', sessionId: id, callId: 'b-6', tool: 'fetch', phase: 'start', args: { url: 'https://example.test/' } });
+    await must(`/Web/.test(document.querySelector('.bv-lobe').textContent)`, 'a step under reduced motion');
+    await new Promise((r) => setTimeout(r, 500));
+    assert.strictEqual((await stats()).loops, rl, 'reduced motion: no animation loop');
+    await media([{ name: 'prefers-reduced-motion', value: 'no-preference' }]);
+
+    // ---- forced colours: still, drawn
+    await media([{ name: 'forced-colors', value: 'active' }]);
+    await must(`window.__durbarSimUi.brain.host().draw.mode()==='still'`, 'forced colours draw Still');
+    assert.ok((await lit()).n > 1000, 'forced colours: still drawn');
+    await must(`/Still/.test(document.querySelector('.bv [data-bv=motion]').textContent)&&/system/.test(document.querySelector('.bv [data-bv=motion]').textContent)`, 'forced colours: the Motion button says Still (system), not Full');
+    assert.strictEqual(await js(`document.querySelector('.bv [data-bv=motion]').getAttribute('aria-disabled')`), 'true', 'forced colours: the Motion button is aria-disabled');
+    await H.shot(path.join(OUT, `106-brain-forced-${tag}.png`), { prep: 'calm' });
+    await media([{ name: 'forced-colors', value: 'none' }]);
+    // ---- no overlap with the composer: the dock is in the right rail, beside the chat, never over the message box or Send
+    const under = await js(`(()=>{const out=[];for(const sel of ['#msgInput','#sendBtn','.composer']){const e=document.querySelector(sel);if(!e)continue;const r=e.getBoundingClientRect();if(!r.width)continue;
+      for(const [fx,fy] of [[0.5,0.5],[0.1,0.5],[0.9,0.5],[0.5,0.2],[0.5,0.8]]){const h=document.elementFromPoint(r.left+r.width*fx,r.top+r.height*fy);if(h&&h.closest('.bv'))out.push(sel+'@'+fx+','+fy);}}
+      const b=document.querySelector('.bv').getBoundingClientRect();return {out,w:b.width,composer:!!document.querySelector('.composer')};})()`);
+    assert.ok(under.composer, 'the composer exists');
+    assert.deepStrictEqual(under.out, [], 'the dock is not over the composer, the message box or Send at ' + tag);
+    assert.ok(under.w > 0, 'with a chat open the dock is shown (' + tag + ')');
+    // ---- back in the office: no brain there (T011/T012), the desks where they were, nothing drawn
+    await js(`document.getElementById('backBtn').click()`);
+    await must(`!document.body.classList.contains('panel-open')`, 'back in the office');
+    assert.deepStrictEqual(await js(DESKS), before, 'the dock moves no desk');
+    assert.strictEqual(await js(`[...document.querySelectorAll('.bv')].some(b=>b.getClientRects().length&&b.getBoundingClientRect().width>0)`), false, 'no brain is shown in the office (the floating host is gone)');
+    const ff = (await stats()).frames;
+    await emit({ type: 'toolCall', sessionId: id, callId: 'b-7', tool: 'view', phase: 'start', args: { path: 'b.ts' } });
+    await new Promise((r) => setTimeout(r, 600));
+    assert.strictEqual((await stats()).frames, ff, 'in the office the dock draws nothing');
+
+    // ---- the Retro arcade skin (FR-110..FR-112): colours, point shape and font only; never sizes, placements or masking (070 D2)
+    const measure = async (query, label) => {
+      await H.load({ w, h, query: { brain: '1', ...query }, ready: query.officeview ? `!!document.querySelector('#stage .ro[data-world]')` : undefined });
+      await H.focusPage({ emulate: 'first' });
+      await openChat(id);
+      await emit({ type: 'toolCall', sessionId: id, callId: 'sk-1', tool: 'bash', phase: 'start', args: { command: cmd } });
+      await must(`!!document.querySelector('.bv .bv-c1')&&/running/.test(document.querySelector('.bv .bv-c1').textContent)`, 'the card of a running command (' + label + ')');
+      await calmDown();
+      // the real draw calls of the base layer (G2): rebuild it with the context's own fillRect and arc counted (offscreen canvases only: the visible one also draws the state marker)
+      const real = await js(`(()=>{const P=CanvasRenderingContext2D.prototype,fr=P.fillRect,ar=P.arc;let rects=0,arcs=0;
+        P.fillRect=function(...a){if(!this.canvas.isConnected)rects++;return fr.apply(this,a);};P.arc=function(...a){if(!this.canvas.isConnected)arcs++;return ar.apply(this,a);};
+        try{window.__durbarSimUi.brain.host().draw.setForced(false);}finally{P.fillRect=fr;P.arc=ar;}return {rects,arcs,basePoints:window.__durbarSimUi.brain.host().stats().basePoints};})()`);
+      const m = await js(`(()=>{const b=document.querySelector('.bv'),cv=b.querySelector('canvas'),r=b.getBoundingClientRect(),cr=cv.getBoundingClientRect(),host=window.__durbarSimUi.brain.host(),st=host.stats(),
+        pr=document.createElement('span');pr.style.fontFamily='var(--ui-display)';document.body.appendChild(pr);const disp=getComputedStyle(pr).fontFamily;pr.remove();
+        const inh=getComputedStyle(document.body).fontFamily,cs=getComputedStyle(b);
+        return {world:document.documentElement.dataset.world||'',ui:document.documentElement.dataset.ui||'',skin:st.skin,shape:st.shape,rects:st.pointRects,arcs:st.pointArcs,dom:b.getAttribute('data-skin'),geo:host.draw.geometry(),
+          font:cs.fontFamily,disp,inh,fontSizes:[...b.querySelectorAll('*')].filter(e=>[...e.childNodes].some(n=>n.nodeType===3&&n.textContent.trim())).map(e=>e.className+'='+getComputedStyle(e).fontSize),
+          box:[r.width,Math.round(r.right),Math.round(r.bottom)].join(','),canvasBox:[cr.width,cr.height,Math.round(cr.left-r.left)].join(','),
+          texts:['.bv-title','.bv-lobe','.bv-sentence','.bv-c2'].map(q=>b.querySelector(q).textContent).join('|')+'|'+b.getAttribute('aria-label'),
+          colors:JSON.stringify(host.draw.colors?host.draw.colors():null),border:cs.borderTopWidth,
+          tok:['--tone-warn-ink','--tone-info-ink','--tone-ok-ink','--tone-bad-ink','--tone-idea-ink','--focus','--sel-border'].map(n=>getComputedStyle(document.documentElement).getPropertyValue(n).trim())};})()`);
+      return { ...m, real };
+    };
+    const flat = await measure({}, 'Flat');
+    const photo = await measure({ officeview: 'real' }, 'Photo office');
+    const arc = await measure({ officeview: 'real', worldflags: 'retro', world: 'retro' }, 'Retro arcade');
+    assert.ok(await js(`!!document.querySelector('#stage .ro[data-world="retro"]')`), 'arcade skin: the arcade office is the one drawn (a pass in the Photo office would prove nothing)');
+    await H.shot(path.join(OUT, `106-brain-arcade-${tag}.png`), { prep: 'calm', keepActions: true });
+    assert.strictEqual(arc.world, 'retro', 'arcade skin: html[data-world] is retro');
+    assert.strictEqual(arc.skin, 'arcade', 'arcade skin: applied in the arcade world (' + tag + ')');
+    assert.strictEqual(arc.dom, 'arcade', 'arcade skin: the box says which skin it wears');
+    assert.strictEqual(flat.skin, 'neutral', 'arcade skin: not applied in Flat');
+    assert.strictEqual(photo.skin, 'neutral', 'arcade skin: not applied in the Photo office (world ' + photo.world + ')');
+    assert.notStrictEqual(photo.world, 'retro', 'arcade skin: the Photo load is not the arcade');
+    assert.strictEqual(arc.shape, 'square', 'arcade skin: point shape is square');
+    // an arc-drawn point (a disc) dies at the next label first (no fillRect calls); the arc count after it is the second assert for the same fault
+    assert.ok(arc.real.rects >= arc.real.basePoints && arc.real.basePoints > 1000, 'arcade skin: the base layer is drawn as filled squares by the context itself (' + arc.real.rects + ' fillRect calls for ' + arc.real.basePoints + ' points)');
+    assert.strictEqual(arc.real.arcs, 0, 'arcade skin: points are drawn as squares, never discs (' + arc.real.arcs + ' arc calls on the base layer at ' + tag + ')');
+    assert.strictEqual(flat.real.arcs, 0, 'neutral skin: no point is a disc either');
+    assert.ok(arc.disp && arc.font === arc.disp, 'arcade skin: the font is the arcade world display font: ' + arc.font + ' vs ' + arc.disp);
+    assert.notStrictEqual(flat.font, arc.font, 'arcade skin: the arcade font is not the neutral one');
+    assert.notStrictEqual(arc.colors, flat.colors, 'arcade skin: the palette differs from the neutral one');
+    assert.deepStrictEqual(JSON.parse(arc.colors).frontal, arc.tok[0], 'arcade skin: the frontal lobe wears the arcade --tone-warn-ink token');
+    assert.deepStrictEqual(JSON.parse(arc.colors).port, arc.tok[6], 'arcade skin: the port lobe wears the arcade --sel-border token');
+    for (const [n, o] of [['Flat', flat], ['Photo office', photo]]) {
+      assert.deepStrictEqual(arc.geo, o.geo, 'arcade skin: same points, canvas and point size as ' + n + ' (' + tag + ')');
+      assert.strictEqual(arc.box, o.box, 'arcade skin: the box keeps its width and corner, as in ' + n + ': ' + arc.box + ' vs ' + o.box);
+      assert.strictEqual(arc.canvasBox, o.canvasBox, 'arcade skin: the canvas keeps its size and place, as in ' + n);
+      assert.deepStrictEqual(arc.fontSizes, o.fontSizes, 'arcade skin: every text keeps its size, as in ' + n);
+      assert.strictEqual(arc.texts, o.texts, 'arcade skin: the masked texts are identical to ' + n);
+      assert.strictEqual(arc.border, o.border, 'arcade skin: the frame keeps its width');
+    }
+    console.log(`[106-brain] ${tag}: arcade skin ok (font ${arc.font.slice(0, 40)})`);
+
+    // ---- the Prehistoric cave skin (spec 106 T027, issue #1219): colours and point shape only; same geometry, texts and sizes as Flat and the Photo office
+    const cave = await measure({ officeview: 'real', worldflags: 'cave', world: 'cave' }, 'Prehistoric cave');
+    assert.ok(await js(`!!document.querySelector('#stage .ro[data-world="cave"]')`), 'cave skin: the cave office is the one drawn (a pass elsewhere would prove nothing)');
+    await H.shot(path.join(OUT, `106-brain-cave-${tag}.png`), { prep: 'calm', keepActions: true });
+    assert.strictEqual(cave.world, 'cave', 'cave skin: html[data-world] is cave');
+    assert.strictEqual(cave.skin, 'cave', 'cave skin: applied in the cave (' + tag + ')');
+    assert.strictEqual(cave.dom, 'cave', 'cave skin: the box says which skin it wears');
+    assert.strictEqual(cave.shape, 'pebble', 'cave skin: point shape is pebble');
+    assert.ok(cave.real.arcs >= cave.real.basePoints && cave.real.basePoints > 1000, 'cave skin: the base layer is drawn as discs by the context itself (' + cave.real.arcs + ' arc calls for ' + cave.real.basePoints + ' points)');
+    assert.strictEqual(cave.real.rects, 0, 'cave skin: no point is drawn as a square (' + cave.real.rects + ' fillRect calls on the base layer at ' + tag + ')');
+    assert.notStrictEqual(cave.colors, flat.colors, 'cave skin: the palette differs from the neutral one');
+    assert.notStrictEqual(cave.colors, arc.colors, 'cave skin: the palette differs from the arcade one');
+    assert.deepStrictEqual(JSON.parse(cave.colors).frontal, cave.tok[0], 'cave skin: the frontal lobe wears the cave page --tone-warn-ink token');
+    assert.deepStrictEqual(JSON.parse(cave.colors).port, cave.tok[6], 'cave skin: the port lobe wears the cave --sel-border token (' + cave.tok[6] + ')');
+    assert.deepStrictEqual(JSON.parse(cave.colors).stem, cave.tok[5], 'cave skin: the stem wears the cave --focus token');
+    assert.strictEqual(cave.font, flat.font, 'cave skin: the font is not changed (the cave has no display font of its own)');
+    for (const [n, o] of [['Flat', flat], ['Photo office', photo]]) {
+      assert.deepStrictEqual(cave.geo, o.geo, 'cave skin: same points, canvas and point size as ' + n + ' (' + tag + ')');
+      assert.strictEqual(cave.box, o.box, 'cave skin: the box keeps its width and corner, as in ' + n + ': ' + cave.box + ' vs ' + o.box);
+      assert.strictEqual(cave.canvasBox, o.canvasBox, 'cave skin: the canvas keeps its size and place, as in ' + n);
+      assert.deepStrictEqual(cave.fontSizes, o.fontSizes, 'cave skin: every text keeps its size, as in ' + n);
+      assert.strictEqual(cave.texts, o.texts, 'cave skin: the masked texts are identical to ' + n);
+      assert.strictEqual(cave.border, o.border, 'cave skin: the frame keeps its width');
+    }
+    const caveSmall = await js(`[...document.querySelectorAll('.bv, .bv *')].filter(e=>[...e.childNodes].some(n=>n.nodeType===3&&n.textContent.trim())).map(e=>parseFloat(getComputedStyle(e).fontSize)).filter(s=>s<12)`);
+    assert.deepStrictEqual(caveSmall, [], 'cave skin: every text of the brain is at least 12 px (FR-097)');
+    // contrast against the real colours the page shows (FR-098): the text on the box and on the card at 4.5:1, each lobe colour on the box at 3:1
+    const contrast = await js(`(()=>{const rgb=(c)=>{const m=String(c).match(/[\\d.]+/g).map(Number);return m.length>3&&m[3]===0?null:m.slice(0,3);},lum=(a)=>{const f=a.map(v=>{v/=255;return v<=0.03928?v/12.92:Math.pow((v+0.055)/1.055,2.4)});return 0.2126*f[0]+0.7152*f[1]+0.0722*f[2];},ratio=(a,b)=>{const x=lum(a),y=lum(b);return (Math.max(x,y)+0.05)/(Math.min(x,y)+0.05);};
+      const box=document.querySelector('.bv'),bs=getComputedStyle(box),bg=rgb(bs.backgroundColor),card=getComputedStyle(box.querySelector('.bv-card')),cg=rgb(card.backgroundColor);
+      const cv=document.createElement('canvas').getContext('2d'),norm=(c)=>{cv.fillStyle='#000';cv.fillStyle=c;const h=cv.fillStyle;return [1,3,5].map(i=>parseInt(h.slice(i,i+2),16));};
+      const cols=window.__durbarSimUi.brain.host().draw.colors();
+      return {text:ratio(rgb(bs.color),bg),card:ratio(rgb(card.color),cg),opaque:bs.backgroundColor,lobes:Object.fromEntries(Object.entries(cols).map(([k,v])=>[k,ratio(norm(v),bg)]))};})()`);
+    assert.ok(contrast.text >= 4.5, 'cave skin: the box text is 4.5:1 on the box: ' + contrast.text.toFixed(2));
+    assert.ok(contrast.card >= 4.5, 'cave skin: the card text is 4.5:1 on the card: ' + contrast.card.toFixed(2));
+    for (const [k, r] of Object.entries(contrast.lobes)) assert.ok(r >= 3, 'cave skin: the ' + k + ' lobe colour is 3:1 on the box: ' + r.toFixed(2));
+    console.log(`[106-brain] ${tag}: cave skin ok (text ${contrast.text.toFixed(1)}:1, lobes ${Object.values(contrast.lobes).map((r) => r.toFixed(1)).join('/')})`);
+    console.log(`[106-brain] ${tag}: ok`);
+  }
+  console.log('[106-brain] screenshots in ' + OUT);
+};

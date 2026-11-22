@@ -9,6 +9,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { execFileSync } from 'child_process';
 import { readCapped } from '../src/shared/cappedread';
+import { hardLinkOrSkip } from './fakes/hardlinks';
 import { realFs, discoverSlash, SLASH_HEAD_BYTES } from '../src/adapters/slashcommands';
 
 const posix = process.platform !== 'win32';
@@ -57,11 +58,26 @@ const code = (r: ReturnType<typeof readCapped>): string => (r.ok ? 'ok' : r.code
     const noFollow = { O_RDONLY: fs.constants.O_RDONLY, O_NONBLOCK: fs.constants.O_NONBLOCK };
     assert.strictEqual(code(readCapped(fs, noFollow, f('link'), 100)), 'ok', 'proves the test sees the flag');
   });
-  await test('a file with a second (hard) link is refused', () => {
-    fs.writeFileSync(f('orig'), 'x');
-    try { fs.linkSync(f('orig'), f('hard')); } catch (e) { return console.log(`  (skipped: no hard links here, ${(e as { code?: string }).code})`); }
-    assert.strictEqual(code(readCapped(fs, fs.constants, f('hard'), 100)), 'links');
-    assert.strictEqual(code(readCapped(fs, fs.constants, f('orig'), 100)), 'links');
+  // the hard-link case, run against a reader and a link function so the mutant checks below can swap each (issue #1808)
+  const hardCase = (read: typeof readCapped, link: (t: string, a: string) => void, name: string): void => {
+    fs.writeFileSync(f(name + '-orig'), 'x');
+    if (!hardLinkOrSkip('test-cappedread', f(name + '-orig'), f(name + '-hard'), link, console.log)) return;
+    assert.strictEqual(code(read(fs, fs.constants, f(name + '-hard'), 100)), 'links', 'a file with a second hard link is refused (hard)');
+    assert.strictEqual(code(read(fs, fs.constants, f(name + '-orig'), 100)), 'links', 'a file with a second hard link is refused (orig)');
+  };
+  await test('a file with a second (hard) link is refused', () => hardCase(readCapped, (t, a) => fs.linkSync(t, a), 'real'));
+  await test('mutants: a refused link fails off Windows; readCapped without the nlink refusal fails at its own assert', () => {
+    const refuse = (): void => { throw Object.assign(new Error('refused'), { code: 'EPERM' }); };
+    if (process.platform === 'win32' && !process.env.CI) assert.doesNotThrow(() => hardCase(readCapped, refuse, 'skip'));
+    else assert.throws(() => hardCase(readCapped, refuse, 'eperm'), /test-cappedread: a hard link was refused \(EPERM\)/, 'a linkSync refused with EPERM fails the case here');
+    // the same reader with `st.nlink > 1` made false: the hard-link asserts must be what fails (a compile error or missing file is not a kill)
+    const srcPath = path.join(__dirname, '..', 'src', 'shared', 'cappedread.js');
+    const src = fs.readFileSync(srcPath, 'utf8');
+    assert.ok(/st\.nlink > 1/.test(src), 'the nlink refusal is still in the compiled reader (the mutation applies)');
+    const mod = { exports: {} as { readCapped?: typeof readCapped } };
+    new Function('module', 'exports', 'require', src.replace(/st\.nlink > 1/, 'false'))(mod, mod.exports, require);
+    assert.strictEqual(typeof mod.exports.readCapped, 'function', 'the mutant loads');
+    assert.throws(() => hardCase(mod.exports.readCapped as typeof readCapped, (t, a) => fs.linkSync(t, a), 'mut'), /a file with a second hard link is refused \(hard\)/, 'the mutant fails at the hard-link assert');
   });
   await test('a FIFO is refused at once; the open does not block (child process with a time limit)', () => {
     if (!posix) return console.log('  (skipped on Windows: no mkfifo; the regular-file check still applies)');
@@ -100,6 +116,11 @@ const code = (r: ReturnType<typeof readCapped>): string => (r.ok ? 'ok' : r.code
     assert.deepStrictEqual(seen, [50], 'vet ran although the size is over the cap: it comes first');
     assert.strictEqual(code(readCapped(fs, fs.constants, f('v'), 10, () => undefined)), 'too-big');
     assert.strictEqual(code(readCapped(fs, { O_RDONLY: fs.constants.O_RDONLY }, f('v'), 100)), 'ok');
+    // issue #1491: the vet gets the open descriptor, so a caller can fstat it with { bigint: true } and compare 64-bit ids
+    let ids: [bigint, bigint] | undefined;
+    const withFd = readCapped(fs, fs.constants, f('v'), 100, (_st, fd) => { const b = fs.fstatSync(fd, { bigint: true }); ids = [b.dev, b.ino]; return undefined; });
+    const want = fs.statSync(f('v'), { bigint: true });
+    assert.ok(withFd.ok && ids !== undefined && ids[0] === want.dev && ids[1] === want.ino, 'the vet\'s descriptor is the opened file');
   });
   await test('an unexpected error gives code "error" with the errno, never a throw; the descriptor is closed', () => {
     let closed = 0;

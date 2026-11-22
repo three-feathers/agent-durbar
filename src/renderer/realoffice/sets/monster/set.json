@@ -1,0 +1,322 @@
+{
+ "formatVersion": 1,
+ "id": "monster",
+ "name": "Monster",
+ "level": "full",
+ "seat": {
+  "frankenstein": {
+   "bodyH": 342,
+   "h": 358,
+   "hand": 0.88,
+   "headTop": 16,
+   "w": 401
+  },
+  "ghost": {
+   "bodyH": 343,
+   "h": 358,
+   "hand": 0.88,
+   "headTop": 15,
+   "w": 328
+  },
+  "mummy": {
+   "bodyH": 343,
+   "h": 354,
+   "hand": 0.88,
+   "headTop": 11,
+   "w": 334
+  },
+  "seacreature": {
+   "bodyH": 342,
+   "h": 357,
+   "hand": 0.88,
+   "headTop": 15,
+   "w": 371
+  },
+  "vampire": {
+   "bodyH": 343,
+   "h": 355,
+   "hand": 0.88,
+   "headTop": 12,
+   "w": 379
+  },
+  "werewolf": {
+   "bodyH": 343,
+   "h": 355,
+   "hand": 0.88,
+   "headTop": 12,
+   "w": 369
+  }
+ },
+ "stand": {
+  "frankenstein": {
+   "feet": {
+    "book": 1.0,
+    "coffee": 1.0,
+    "knock": 1.0,
+    "letter": 1.0,
+    "runA": 1.0,
+    "runB": 1.0
+   },
+   "figH": 361,
+   "poses": {
+    "book": [
+     127,
+     361
+    ],
+    "coffee": [
+     115,
+     361
+    ],
+    "knock": [
+     131,
+     361
+    ],
+    "letter": [
+     140,
+     361
+    ],
+    "runA": [
+     156,
+     361
+    ],
+    "runB": [
+     147,
+     361
+    ]
+   },
+   "top": {
+    "book": 0.0,
+    "coffee": 0.0,
+    "knock": 0.0,
+    "letter": 0.0,
+    "runA": 0.0,
+    "runB": 0.0
+   }
+  },
+  "ghost": {
+   "feet": {
+    "book": 1.0,
+    "coffee": 1.0,
+    "knock": 1.0,
+    "letter": 1.0,
+    "runA": 1.0,
+    "runB": 1.0
+   },
+   "figH": 361,
+   "poses": {
+    "book": [
+     165,
+     361
+    ],
+    "coffee": [
+     162,
+     361
+    ],
+    "knock": [
+     178,
+     361
+    ],
+    "letter": [
+     182,
+     361
+    ],
+    "runA": [
+     201,
+     361
+    ],
+    "runB": [
+     187,
+     361
+    ]
+   },
+   "top": {
+    "book": 0.0,
+    "coffee": 0.0,
+    "knock": 0.0,
+    "letter": 0.0,
+    "runA": 0.0,
+    "runB": 0.0
+   }
+  },
+  "mummy": {
+   "feet": {
+    "book": 1.0,
+    "coffee": 1.0,
+    "knock": 1.0,
+    "letter": 1.0,
+    "runA": 1.0,
+    "runB": 1.0
+   },
+   "figH": 361,
+   "poses": {
+    "book": [
+     138,
+     361
+    ],
+    "coffee": [
+     140,
+     361
+    ],
+    "knock": [
+     141,
+     361
+    ],
+    "letter": [
+     168,
+     361
+    ],
+    "runA": [
+     155,
+     361
+    ],
+    "runB": [
+     163,
+     361
+    ]
+   },
+   "top": {
+    "book": 0.0,
+    "coffee": 0.0,
+    "knock": 0.0,
+    "letter": 0.0,
+    "runA": 0.0,
+    "runB": 0.0
+   }
+  },
+  "seacreature": {
+   "feet": {
+    "book": 1.0,
+    "coffee": 1.0,
+    "knock": 1.0,
+    "letter": 1.0,
+    "runA": 1.0,
+    "runB": 1.0
+   },
+   "figH": 361,
+   "poses": {
+    "book": [
+     132,
+     361
+    ],
+    "coffee": [
+     131,
+     360
+    ],
+    "knock": [
+     148,
+     361
+    ],
+    "letter": [
+     129,
+     361
+    ],
+    "runA": [
+     138,
+     360
+    ],
+    "runB": [
+     149,
+     360
+    ]
+   },
+   "top": {
+    "book": 0.0,
+    "coffee": 0.0,
+    "knock": 0.0,
+    "letter": 0.0,
+    "runA": 0.0,
+    "runB": 0.0
+   }
+  },
+  "vampire": {
+   "feet": {
+    "book": 1.0,
+    "coffee": 1.0,
+    "knock": 1.0,
+    "letter": 1.0,
+    "runA": 1.0,
+    "runB": 1.0
+   },
+   "figH": 362,
+   "poses": {
+    "book": [
+     182,
+     362
+    ],
+    "coffee": [
+     185,
+     361
+    ],
+    "knock": [
+     183,
+     361
+    ],
+    "letter": [
+     204,
+     361
+    ],
+    "runA": [
+     164,
+     361
+    ],
+    "runB": [
+     178,
+     361
+    ]
+   },
+   "top": {
+    "book": 0.0,
+    "coffee": 0.0028,
+    "knock": 0.0,
+    "letter": 0.0,
+    "runA": 0.0028,
+    "runB": 0.0
+   }
+  },
+  "werewolf": {
+   "feet": {
+    "book": 1.0,
+    "coffee": 1.0,
+    "knock": 1.0,
+    "letter": 1.0,
+    "runA": 1.0,
+    "runB": 1.0
+   },
+   "figH": 361,
+   "poses": {
+    "book": [
+     138,
+     361
+    ],
+    "coffee": [
+     137,
+     361
+    ],
+    "knock": [
+     160,
+     361
+    ],
+    "letter": [
+     139,
+     361
+    ],
+    "runA": [
+     145,
+     360
+    ],
+    "runB": [
+     150,
+     360
+    ]
+   },
+   "top": {
+    "book": 0.0,
+    "coffee": 0.0,
+    "knock": 0.0028,
+    "letter": 0.0028,
+    "runA": 0.0028,
+    "runB": 0.0028
+   }
+  }
+ }
+}

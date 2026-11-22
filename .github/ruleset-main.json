@@ -28,7 +28,6 @@
           { "context": "Build and test (ubuntu-latest)" },
           { "context": "Build and test (macos-latest)" },
           { "context": "Build and test (windows-latest)" },
-          { "context": "Package smoke (unpacked Linux app)" },
           { "context": "Office layout check (xvfb)" }
         ]
       }

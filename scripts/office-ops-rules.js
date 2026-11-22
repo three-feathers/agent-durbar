@@ -11,19 +11,37 @@ const LIMITS = {
   rendersPerStatus: 1, // T159, FR-184
   searchesPerStatus: 0, // a status change of one agent runs no layout search
   floorStyleReadsPerStatus: 1, // T159: `getComputedStyle(#floor)` once per render (it was twice)
-  readsPerStatus: 110, // T156, PROPOSED: measured 98 at 15 agents and 86 at 40 (650 and 998 before); the floor is the checks a status change needs
+  /* T156 (issue 1401), reads per status update of one agent, per size and agent count: measured 81 / 73 at 1440x900 (15 / 40 agents) and 77 / 60 at 1280x800 (97 / 85 and 89 / 72 before
+     the lobby figures read the floor's scroll once); each limit is the measured median plus 2 (all 8 samples were equal, the median drops a render's outlier). The target is under 40 (owner reading 2026-11-13): lowered by each site's change */
+  walkersOffSlot: 0, // T156: with the floor scrolled, every lobby figure's target is a slot's centre in the floor's content coordinates
+  'readsPerStatus@15': 83,
+  'readsPerStatus@40': 75,
+  'readsPerStatus1280@15': 79,
+  'readsPerStatus1280@40': 62,
   readsPerLivePaint: 1, // review of #1138: one live paint reads its line's height once (measured 1 at 15 and 40 agents); the pencils' names only when it changed
-  searchesAtStart: 2, // T157: measured 2 at 15 agents, 1 to 2 at 40
-  probesAtStart: 90, // T157: measured 30 at 15, 47 to 85 at 40
+  searchesAtStart: 1, // T157, FR-363: owner decision 2026-11-11 (issue #1238): one layout search at start (the simulator gate)
+  /* the two @late rows equal `searchesAtStart` and are kept only to document that the forced-late loads (which fail every time without the gate) are held to the same one search */
+  'searchesAtStart@late15': 1, // T303, FR-363: the replay's first states arrive 50 ms late (`simlate=50`): still one search
+  'searchesAtStart@late40': 1,
+  searchesAtRealStart: 1, // T351, FR-378 (issue #1575): the real app's start (no first-state batch; `simreal=idle`): one layout search
+  'probesAtRealStart@15': 20, // T351: measured 12
+  'probesAtRealStart@40': 50, // measured 38
+  'probesAtStart@15': 20, // T157, owner decision 2026-11-11: measured 18
+  'probesAtStart@40': 50, // measured 47
   rendersAtStart: 8,
   animationsRunning: 90, // T158: measured 78 at 15 agents
   'animationsRunning@40': 260, // measured 250
   animatedOtherProperties: 0, // FR-180: only transform and opacity animate
   tintNodesPerStatus: 0, // spec 097 FR-244 (T190): tinting or clearing a screen (FR-236) adds or removes no screen or New reply tag
+  statusNodes: 0, // spec 102 T262 (FR-229): in a world (the arcade) a status update adds or removes no element under the office
   leakedPlaced: 0, // a `data-placed` mark on anything but a role or a pencil
   staleFits: 0, // header and usage-line classes that a full fit would change, after a status filter and a body-class change
 };
 const MINIMUMS = {
+  'realStartIdle@15': 1, // T351: `simreal=idle` was honoured (the page records -1, the row is 1; an ignored option leaves 0)
+  'realStartIdle@40': 1,
+  'lateReplayDelay@late15': 50, // T303: `simlate=50` was honoured: the replay waited at least 50 ms (an ignored option reads 0 and the forced-late row would test nothing)
+  'lateReplayDelay@late40': 50,
   handPositions: 2, // T158: a compact desk's tapping hand shows at least two positions over its cycle (it is alive)
 };
 /* A row over its limit today: `{ task, max }` names the open task that fixes it and the most it may reach meanwhile. The task's PR deletes the entry. */

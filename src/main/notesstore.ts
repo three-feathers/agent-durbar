@@ -45,7 +45,9 @@ export interface NotesStoreOptions {
   pid?: number;
 }
 
-interface Sig { size: number; mtimeMs: number; ino: number }
+/** In memory only (never written). Read with `{ bigint: true }` (issue #1491): a 64-bit NTFS file ID loses its low bit as a number, and a
+ * bigint read gives whole milliseconds only, so the time is `mtimeNs`. */
+interface Sig { size: bigint; mtimeNs: bigint; ino: bigint }
 interface Entry { doc: NotesDoc; sig?: Sig; readOnly?: string }
 type Loaded = { ok: true; entry: Entry } | { ok: false; error: string };
 
@@ -53,8 +55,8 @@ const errCode = (e: unknown): string => {
   const c = (e as { code?: unknown } | null)?.code;
   return typeof c === 'string' && /^[A-Z0-9_]{2,24}$/.test(c) ? c : 'ERROR';
 };
-const sameSig = (a: Sig | undefined, b: Sig): boolean => !!a && a.size === b.size && a.mtimeMs === b.mtimeMs && a.ino === b.ino;
-const sigOf = (st: nodeFs.Stats): Sig => ({ size: st.size, mtimeMs: st.mtimeMs, ino: st.ino });
+const sameSig = (a: Sig | undefined, b: Sig): boolean => !!a && a.size === b.size && a.mtimeNs === b.mtimeNs && a.ino === b.ino;
+const sigOf = (st: nodeFs.BigIntStats): Sig => ({ size: st.size, mtimeNs: st.mtimeNs, ino: st.ino });
 const UNREADABLE = 'Durbar could not read the notes file of this folder; it is left as it is.';
 
 export class NotesStore {
@@ -97,9 +99,9 @@ export class NotesStore {
   private load(fp: string): Loaded {
     const file = this.fileOf(fp);
     const cached = this.cache.get(fp);
-    let st: nodeFs.Stats;
+    let st: nodeFs.BigIntStats;
     try {
-      st = this.fs.lstatSync(file);
+      st = this.fs.lstatSync(file, { bigint: true });
     } catch (e) {
       if (errCode(e) === 'ENOENT') {
         const entry: Entry = { doc: emptyNotesDoc() }; // gone after we saw it (a delete, a restore): an empty document, never the cache
@@ -109,7 +111,7 @@ export class NotesStore {
       return { ok: false, error: `${UNREADABLE} (${errCode(e)})` };
     }
     if (!st.isFile()) return { ok: false, error: UNREADABLE };
-    if (!fitsCap(st.size, NOTES_LIMITS.storeBytes)) return { ok: false, error: UNREADABLE };
+    if (!fitsCap(Number(st.size), NOTES_LIMITS.storeBytes)) return { ok: false, error: UNREADABLE };
     const sig = sigOf(st);
     if (cached && sameSig(cached.sig, sig)) return { ok: true, entry: cached };
     let raw: string;
@@ -166,7 +168,7 @@ export class NotesStore {
 
   private remember(fp: string, doc: NotesDoc): void {
     let sig: Sig | undefined;
-    try { sig = sigOf(this.fs.lstatSync(this.fileOf(fp))); } catch { sig = undefined; }
+    try { sig = sigOf(this.fs.lstatSync(this.fileOf(fp), { bigint: true })); } catch { sig = undefined; }
     this.cache.set(fp, { doc, sig });
   }
 
@@ -669,7 +671,7 @@ export class NotesStore {
   setMirror(folderKey: string, folderName: string, mirror: NotesMirror | undefined): Promise<NotesWrote> {
     return this.mutate(folderKey, folderName, (doc) => {
       const next: NotesDoc = { ...doc, notes: doc.notes.map((n) => ({ ...n })), tombstones: doc.tombstones.map((t) => ({ ...t })) };
-      if (mirror) { next.mirror = { sha256: mirror.sha256, bytes: mirror.bytes, at: mirror.at }; delete next.filePending; } // written: every note is in the file now
+      if (mirror) { next.mirror = { sha256: mirror.sha256, bytes: mirror.bytes, at: mirror.at, ...(mirror.id ? { id: mirror.id } : {}) }; delete next.filePending; } // written: every note is in the file now
       else { delete next.mirror; delete next.fileImport; delete next.filePending; } // forgetting the file forgets everything about it (turn-on; Changes 2026-11-01: the old .durbar/notes/notes.md is not followed)
       return { ok: true, doc: next };
     });

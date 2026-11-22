@@ -8,14 +8,15 @@ const assert = require('assert');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { execFileSync, spawnSync } = require('child_process');
+const { spawnSync } = require('child_process');
+const { gitRun } = require('./git-index-helper.js');
 const cp = require('./check-posts.js');
 
 process.exitCode = 1; // set to 0 only after the last line (a promise that never settles must not pass)
 const ROOT = path.join(__dirname, '..');
 const T = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-blogcheck-'));
 process.on('exit', () => { try { fs.rmSync(T, { recursive: true, force: true }); } catch { /* best effort */ } }); // a failed assert leaves nothing behind
-const g = (...a) => execFileSync('git', a, { cwd: T, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
+const g = (...a) => gitRun(T, a).trim();
 const w = (rel, text) => { fs.mkdirSync(path.dirname(path.join(T, rel)), { recursive: true }); fs.writeFileSync(path.join(T, rel), text); };
 
 // a small repository: the files the check reads, one commit on main
@@ -330,7 +331,7 @@ const cliReady = (() => {
   return () => {
     if (done) return;
     fs.mkdirSync(path.join(T, 'scripts'), { recursive: true });
-    for (const f of ['check-posts.js', 'build-site.js', 'specs-index.js', 'release-notes.js']) fs.copyFileSync(path.join(__dirname, f), path.join(T, 'scripts', f));
+    for (const f of ['check-posts.js', 'build-site.js', 'specs-index.js', 'release-notes.js', 'trusted-authors.js']) fs.copyFileSync(path.join(__dirname, f), path.join(T, 'scripts', f));
     fs.symlinkSync(path.join(ROOT, 'node_modules'), path.join(T, 'node_modules'), process.platform === 'win32' ? 'junction' : 'dir');
     // a fake gh first on PATH that refuses everything: the CLI must never reach the network from a test
     fs.mkdirSync(path.join(T, 'fakebin'), { recursive: true });

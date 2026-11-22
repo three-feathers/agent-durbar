@@ -164,3 +164,103 @@
 - [x] T128 Issue #839 (FR-180): `check-inbox-safety` and `check-answer-safety` press the Mac keys; `check-answer-safety` waits for the card before scrolling; `shots-097-realoffice` measures the glass at `prefers-reduced-transparency: no-preference`; `check-characters` reports the app state on a crew-step timeout (cause not found yet)
 - [x] T129 Issue #1214: the release clip's step captions use `{step}`, numbered 1..n by position in the clip; test and mutant in `test:releasevideo` [FR-171] (spec delta 2026-11-06)
 - [ ] T130 (owner decision 2026-11-07, spec 021 FR-084 point 4, 021 T063) CI by diff: a file-to-driver map; PR CI runs only the UI drivers the diff touches and shards the three-OS UI job; a file not in the map runs the full set; a check fails if a driver is missing from the map; nightly and `main` keep the full three-OS matrix
+
+- [x] T135 (2026-11-07, owner: the v0.1.12 clip showed v0.1.11's scenes): `refs` on every scene and a default taken from the release's fragments and CHANGELOG section instead of `DEFAULT_SCENES`; scenes `lounge`, `railwidth`, `signin`, `notesource`; `test:releasevideo` with ten mutants; v0.1.12 re-filmed and its assets replaced [FR-183] (spec delta 2026-11-07)
+
+## 2026-11-07: the Build cost report (owner request; FR-181)
+
+- [x] T131: `scripts/usage-lib.js`, `scripts/usage-receiver.js`, `scripts/usage-day.js`, `npm run usage:receiver` and `usage:day`; `scripts/test-usage.js` (`test:usage`, in `test-suites.txt`), mutation-checked [FR-181]
+- [x] T132: `docs/build-cost.md` (env vars, running the receiver, start-at-login examples as text, privacy), linked from README, `docs/development.md`, `docs/collaboration.md`, `changelog.d/README.md`; fragment `changelog.d/008-build-cost.md` [FR-181]
+- [x] T133: `npm run usage:readme` (`scripts/usage-readme.js`): the README *Build cost so far* block between markers, `docs/build-cost-baseline.json`, `docs/build-cost-history.json` (seeded 2026-11-07, v0.1.12), `docs/build-cost-badge.svg`, `docs/build-cost.svg`; the fold-PR release step; tests and goldens in `test:usage` [FR-181] (owner addition 2026-11-07; T133 checked against main, branches and open PRs)
+
+## 2026-11-07: the macOS nightly UI checks in three shards (issue #839; FR-182)
+
+- [x] T134 Issue #839 (FR-182, owner decision 2026-11-07): `ui-suite --shard i/n` / `UI_SUITE_SHARD`, bare `--shard` and an empty shard refused; tested in `test:uisuite` (incl. `main()` and the workflow matrix); `ui-platforms.yml` runs macOS as three shards (geometry in every shard, office layout and title bar in shard 1, artifacts per shard), 45 minutes for every job
+- [x] T136 (2026-11-08, issues #1301, #1302, #1208; FR-184): `check-097-chat-contrast` waits for a capture that holds its own marker (was 4 of 10 under load, now 20 of 20); the mood and "ago" ticks compare with what the last draw showed (`renderAll`, `timerDraw` hook) and `check-office-ops` asserts none is due after an update; its calibration trace holds the page's marker; the arcade screen keeps one caret element and hides it (`paintScreen`), and the `statusNodes` row waits for the screen repaint after each update. Mutants: `CONTRAST_MUTANT=nohide`, `OPS_TRACE_MUTANT=name|nomark`, a build without the stored signatures. Mutants also: a build that removes the caret on repaint (`statusNodes@retro15 = 8, limit 0`). `[KNOWN GAP]` #1208's cause is a hypothesis; `check-097-plate-pencil` fails with and without this change (not investigated).
+
+
+## 2026-11-08: the spec-numbers job (FR-185)
+
+- [x] T137 (FR-185) `.github/workflows/spec-kit.yml` job `spec-numbers`: `spec-numbers-selftest` (the PR's scripts, no token) and `spec-numbers` (the BASE copy of `picture-budget.js --strict` and `spec-numbers.js` on the PR checkout as data, `persist-credentials: false` everywhere, token on one step), no `pull_request_target`; workflow-shape test in `test:specnumbers`. Mutants: a checkout without `persist-credentials: false`, a token in the self-test job, the PR's copy of the script in the token job each fail it. `[KNOWN GAP]` the jobs run for the first time on the next PR (the base has no scripts yet).
+- [x] T140 (FR-188) `.github/actions/npm-ci` (Electron and electron-builder download cache + 3-try `npm ci`) used by every Electron-installing job; assert in `test:supplychain`. `[KNOWN GAP]` proves itself on CI only.
+- [x] T142 (2026-11-08, owner: spread the single-day lump) `scripts/usage-spread.js` + `npm run usage:spread`, `docs/build-cost-spread.json`, `docs/build-cost/data/usage-linux.json`, `docs/build-cost-days.svg`, README note, `usage:readme --publish`, all machines' committed files, `docs/build-cost.md`, `changelog.d/README.md`; `test:usage` (weights, cents, measured days, determinism, malformed data file) [FR-181]
+- [x] T141 (FR-189) `ui-suite.js shard()` balanced by `scripts/ui-suite-timings.json`; `ui-platforms.yml` 4 shards per OS (macOS 3) and the aggregate job `UI suite complete`; `test:uisuite` updated. `[KNOWN GAP]` proves itself on this PR's CI run.
+
+## 2026-11-08: the README for first-time visitors (FR-186, FR-187; issue #1256)
+
+- [x] T138 (FR-186) README cut to a 30-second read (owner: clean, no release numbers, no junk): tagline, problem line, download line, the Real office picture, Works with / Not yet, one-line status, short bullets, Install, short Safety lead, Quick start with the clone line, Contributing, Build cost block moved down, short credits; `docs/credits.md` takes the art and app-id history; `scripts/shots-readme-real.js` registered in `ui-suite.js` and `shots-docs.js`; the two pictures through `npm run shots:docs`; both pictures are JPEGs under 170 KB (no budget exception). `[KNOWN GAP]` the About description, Discussions and topics are owner actions.
+- [x] T139 (FR-187) `scripts/release-video.js`: scene `realoffice` (Real office, queue slip, Needs you inbox); fragment `changelog.d/008-readme-refresh.md` with `Scene: realoffice`; `AUTO_MAX` 5 to 4 after the v0.1.13 clip measured 6.23 MB against the 5 MiB cap (#1305); the clip is 4.52 MiB; `test:releasevideo` covers the scene and the new `AUTO_MAX`.
+
+## 2026-11-09: no duplicate typecheck step before build in CI
+
+- [x] T150 (FR-193) Removed `npm run typecheck` before `npm run build` in `ci.yml` and `macos-pr.yml`; `scripts/test-ci-typecheck.js` + suite `test:citypecheck` with three mutants; `release.yml` unchanged (no build before its tests)
+
+## 2026-11-08: faster UI drivers (FR-190)
+
+- [x] T143 (FR-190) Wave 1 of the faster UI drivers: `scripts/driver-helpers.js` (`load` steady wait, ready-timeout line, `fastVisits`), `src/renderer/app.js` (`simvisits=fast`) (simulator-only); drivers check-office-fill, check-crew, check-auto-follow, shots-017, check-sched-top, check-answer-safety. Each changed driver: a mutant that still fails on its own labelled assert, 5 local runs.
+- [x] T147 (FR-194) Fold *Package smoke (unpacked Linux app)* into *Office layout check (xvfb)* in `ci.yml` (`pack:dir:prebuilt` step with `always()`, summary step naming the failed part), `pack:dir` split, required-name pins and mutants in `test-ui-suite.ts` / `test-checknames.ts`, `ruleset-main.json`, docs. The PR waits (`status:blocked`) until an owner removes the old required check.
+- [x] T151 (FR-195) `scripts/electron-cache.js` (plan, seed, warm), `.github/actions/npm-ci` (shared plan, same-Electron `restore-keys`, 4 tries 30/120/300 s, host-naming error, checksum seed), `.github/workflows/electron-cache.yml` (lookup-only warmer on main, schedule and by hand; contents: read), `nightly-watch.yml`, suite `test:electroncache` with 27 mutants (review of #1363: `retry-waits` input, raised limits in `ci.yml` and `macos-pr.yml`, the job-limit guard, `warm()` and seed tests, a hard fail without js-yaml), `test:supplychain` and `test:uisuite` updated, `docs/development.md`. `[KNOWN GAP]` proves itself on CI after the merge.
+- [x] T152 (FR-196) `scripts/test-electron-cache.ts`: the checksums-source assertion compares `fs.realpathSync` of both sides (symlinked or real `node_modules`, junction-safe), plus a decoy-copy case that must fail it. Issue #1391. `[KNOWN GAP]` Windows and Linux via CI.
+
+## 2026-11-08: pull requests skip the CI parts their change cannot affect (FR-191, owner decision)
+
+- [x] T144 (FR-191) `.github/scripts/ci-changes.js` (the one decision: code, themes, ui, macos; derived UI closure; version-only bumps; fail open), `ci-changes.sh` runs it; `ui-platforms.yml` (a `changes` job, shards on ui=true, "UI suite complete" passes on ui=false, prefilter paths), `ci.yml` (office layout and package smoke steps on ui), `macos-pr.yml` (the first step decides, the rest on macos=true); `scripts/test-ci-changes.ts` (`test:cichanges`, in `npm test`), `scripts/test-ui-suite.ts` (wiring); `docs/development.md`, fragment `changelog.d/008-ui-skip-non-ui.md`. Mutation-checked. Review of #1349: base copy of the decision, safe printing, deleted and unreadable names, wider roots, merge-queue wording, more rows.
+
+## 2026-11-10: the release clip shows the new features of v0.1.15 (FR-197)
+
+- [x] T153 (FR-197) `scripts/release-video.js`: scenes `real-crews` (spec 097 FR-335..FR-337) and `real-drag` (spec 097 FR-345..FR-355) with `refs`; `Scene:` fields in `changelog.d/097-crews-real-office.md` and `changelog.d/097-real-drag.md`; `scripts/test-release-video.js`: catalogue, `--list`, the v0.1.15 choice, two mutants
+- [x] T154 (FR-198) `scripts/usage-lib.js` `cumulative` adds whole cents per machine/day/model like `dailyRows` (and returns `totalCents`); `scripts/usage-readme.js` compares the chart's cents to `totalCents` exactly; `scripts/test-usage.js` three-machine sub-cent case. Issue #1449.
+
+## 2026-11-10: every UI driver ends with its whole process tree (FR-199)
+
+- [x] T155 (FR-199) `scripts/ui-suite.js` `runOne`: `detached` (POSIX), `guardTree` and `killTree` at the limit for every driver, `launch` option for tests; `scripts/test-ui-suite.ts` two cases (time limit leaves no grandchild; SIGINT/SIGTERM end the tree and remove the user-data folder); `d.killTree` removed from `scripts/release-video.js`; `scripts/test-release-video.js` source check follows; `changelog.d/008-uisuite-kill-tree.md`.
+
+## 2026-11-10: the Mac title bar check on CSS pull requests (FR-200, issue #1469)
+
+- [x] T156 (FR-200) `.github/workflows/mac-titlebar-pr.yml` (own file: `paths:` is workflow-level); `scripts/test-ui-suite.ts` (filter, wiring, path matcher, mutants), `scripts/test-electron-cache.ts` (`TYPICAL_MIN`). Not blocked: #1458's failure is fixed on `main` by PR #1537 and the PR's own `Mac title bar (path-filtered)` job passed at its head, so no `[KNOWN GAP]` marking was needed.
+
+## 2026-11-11: a driver that waits on the OS window focus never runs next to another window (FR-210)
+
+- [x] T170 (FR-210) `scripts/ui-suite.js`: `focus: true` on `shots-097-screens` (both entries) and `check-097-hover-card`; `main` runs the other entries at the job count and then the `focus` entries alone when drivers share a desktop; `scripts/test-ui-suite.ts` overlap test and a mutant; `changelog.d/008-uisuite-focus-serial.md`. Issue #1498.
+
+## 2026-11-11: a missing build fails in seconds with its path (FR-211)
+
+- [x] T171 (FR-211) `scripts/ensure-electron.js` `buildProblem`; `scripts/ui-suite.js` `main` and `runOne` and `scripts/check-parallel.js` `main` stop on it before Electron; the other plain-Node Electron launchers (`check-mac-titlebar`, `check-office-overlap`, `check-theme-geometry`, `check-perf`, `world-matrix`, `perf-record`, `release-video`) call it too; `scripts/test-ui-suite.ts` runs every site against a folder with no build (message, failure, fast) as asserts on a copy of `scripts/` (no per-site mutants); `buildProblem` shows the file relative to the repo folder.
+
+## 2026-11-11: a name given to --only that matches no driver fails the run (FR-212)
+
+- [x] T172 (FR-212) `scripts/ui-suite.js` `unknownOnly` and `editDistance`; `main` throws the unknown names before anything starts; `scripts/test-ui-suite.ts` covers an unknown name, a `NOT_IN_SUITE` name, a near name and a label, with a mutant.
+
+## 2026-11-12: the Xvfb screen is as big as the window at the requested density (FR-213)
+
+- [x] T173 (FR-213) `scripts/ui-suite.js` `xvfbScreenArgs` and `launchCommand` (the xvfb path of `runOne`); `scripts/test-ui-suite.ts` checks the argument and the argv shape with two mutants. Linux/Xvfb run by the coordinator, see the PR.
+- [x] T174 (FR-214) `scripts/check-ui-text.js` `run()`: pointer to 0,0, wait for no `:hover` under the roots, `hovered` finding, `UITEXT_MUTANT=hover`; `changelog.d/008-1591-xvfb-screen.md`. Linux/Xvfb run by the coordinator, see the PR.
+- [x] T175 (FR-214, round 2) `scripts/driver-helpers.js` `pointerOff`; `scripts/check-097-chat-contrast.js` and `scripts/shots-102-arcade.js` reset the pointer and assert no `:hover` at the colour read, mutants `CONTRAST_MUTANT=hover`, `ARCADE_MUTANT=hover`.
+- [x] T176 (FR-215) `scripts/driver-helpers.js` `pointerOff` (re-sent move, labelled failure); `scripts/test-ui-suite.ts` fake-page test with two mutants; `changelog.d/008-1648-pointeroff-wait.md`.
+- [x] T177 (FR-268) await every `H.key` call and wrapper call in `scripts/*.js`; `checkKeyAwait` in `scripts/test-ui-suite.ts` parsed with the TypeScript compiler (aliases, destructures, wrappers, `case`, ternary and comma forms), a fixture per closed form and a mutant per real-driver form; `changelog.d/008-1653-await-key.md`.
+- [x] T179 (FR-216) `scripts/driver-helpers.js` `pointerOff` (capture listener for the 0,0 move, two clear samples a frame and 100 ms apart, re-send on a re-hover); `scripts/test-ui-suite.ts` vm stub-page test with two mutants; `changelog.d/008-1719-pointeroff-two-samples.md`.
+- [x] T180 (FR-193 amended) `release.yml` runs `npm run build` instead of `npm run typecheck` before `npm test`; `scripts/test-ci-typecheck.js` also reads `release.yml`, with a mutant that restores the typecheck step (v0.1.20 release run 43685791437)
+- [x] T181 (FR-118, delta 2026-11-15) `CHANGELOG.md` `## v0.1.20 (not released, 2026-11-15)` section so `v0.1.21` can be tagged; fragments left unfolded; follow-up issue #1784 (`previousRelease()` counts a tag with no published release)
+- [x] T182 (FR-217) `scripts/release-video.js` sets `UI_SUITE_XVFB=1` for the Linux recording and `reset()` fails a page whose `innerWidth`/`innerHeight` is not 1440x900; `scripts/test-release-video.js` tests with mutants; stills of the lounge scene looked at under xvfb (issue #1789)
+- [x] T183 (FR-218) `scripts/release-video.js` `FILL_SCENES` and `chooseScenes` fill to three scenes; `scripts/test-release-video.js` updated; `changelog.d/008-1789-release-video-scenes.md`; README step 4.1 says so (issue #1790)
+- [x] T184 (FR-270, delta 2026-11-15) `scripts/release-video.js` `lounge` scene presses the limit slip's Remove limit before filming; `scripts/test-release-video.js` source check with two mutants; `changelog.d/008-1792-lounge-popover.md`
+- [x] T185 (FR-271, delta 2026-11-15) the previous-release refusal names the "not released" section fix; `changelog.d/README.md`; `scripts/test-changelog.js` (a not-released section passes, an unfolded real release is refused with the hint)
+- [x] T186 (FR-272, delta 2026-11-17) `scripts/build-site.js` exports `bulletSiteProblems`/`landingBullet`/`LANDING_REF_RE`; `scripts/changelog.js` `check()` runs them on each fragment bullet; `scripts/test-changelog.js` with four mutants; `changelog.d/README.md`; `changelog.d/008-1834-fragment-site-check.md` (issue #1834)
+
+- [x] T187 (FR-211, delta 2026-11-17, issue #1850) `scripts/test-ui-suite.ts`: the five `Date.now() - t < 5000` halves are gone (missing-build `main`, `runOne`, `check-parallel`, the five launchers, `--only`); the property is asserted by the calls made (`calls.join(",") === ""`); mutant: `main` calls `ensure` before the build check.
+- [x] T189 (delta 2026-11-17, issue #1853, part 1: tests n to z) the fixed wall-clock `<` limits in 17 `scripts/test-[n-z]*.ts` suites are replaced: wall halves deleted where the assert already names the cause, `cpuMs` (CPU time) for linear-time guards, 30 s hang backstops for sleeping waits; mutants per site; `changelog.d/008-1853-n-z-wallclock.md`
+- [x] T190 (delta 2026-11-17, issue #1853 part 1) `scripts/hang-backstop.ts` (`withBackstop`, `assertCpuUnder`, self-tested in `test-checkpoints.ts`); no fixed wall-clock limit left in the asserts of `test-a*` to `test-m*`: property asserted (`cleanQuery` cut before split, bomb reason), hang backstop, or CPU time with a generous cap; `logTimerDelays`, `assertCutFirst`, `assertCpuUnder` (on `cpuMs`, wall backstop, async refused); caps sized to measured CPU; mutants as the spec delta lists; `test-teamops.ts` uses `assertCpuUnderAsync` (its local `cpuAsync` dropped)
+- [x] T191 (FR-272 amended, delta 2026-11-18, issue #1864) `siteRules` option on `check`/`build`/`notes` in `scripts/changelog.js`; `scripts/release-notes.js` passes `false`; `scripts/test-release-nodeps.js` (`test:releasenodeps`): the verify job's commands under a no-dependency require hook, `check()` off and on; five mutants; `changelog.d/008-1864-release-verify-nodeps.md`
+
+## 2026-11-13: the launchers with a window wider than 1280 get the sized Xvfb screen (FR-269)
+
+- [x] T178 (FR-269) `launchCommand` of `scripts/ui-suite.js` in `check-office-overlap.js`, `check-theme-geometry.js`, `check-mac-titlebar.js`, `world-matrix.js`, `installed-app-ci.js`; `scripts/test-ui-suite.ts` source check with a mutant; `changelog.d/008-1628-xvfb-screen.md`. The decision table and the DPR 2 CI numbers are in the spec.
+
+## 2026-11-19: the last wall-clock limits in test asserts (issue #1853)
+
+- [x] T370 (delta 2026-11-19, issue #1853, part 3) `scripts/test-schedules.ts` (`assertCpuUnder`), `scripts/test-check-parallel.js` (worker 0 reads the memory 0 times), `scripts/test-release-video.js` (wall half dropped; `ETIMEDOUT` is the property): no fixed wall-clock `<` limit left in the asserts of `scripts/test-*`; two mutants die at their own text.
+- [x] T374 (delta 2026-11-19, issue #1914) `scripts/ui-suite.js` (`sharedDesktop`: Linux with a forced ratio above 1 runs under xvfb), `scripts/shots-102-arcade.js` (window size read after each load, `ARCADE_MUTANT=smallwin`), `scripts/test-ui-suite.ts`: the arcade driver at `UI_SUITE_DPR=2` and `1.5` is not run on a desktop that clamps the window; the mutant dies at its own text.
+- [x] T394 (delta 2026-11-20, issue #1946) `scripts/release-video.js` (`--world`, `WORLDS`, `worldQuery`, `recordEnv`, the `arcade` scene, `contactArgs` and the `-stills.jpg` contact sheet), `scripts/test-release-video.js`: the release clip can film the Retro arcade; the picker, `AUTO_MAX` 4 and the 5 MiB GIF cap are unchanged.
+- [x] T397 (delta 2026-11-20, issues #1954, #1946) `scripts/release-video.js` (the lounge scene's comment: one selector for both worlds), `scripts/test-release-video.js`: `--world retro` with the `lounge` scene is accepted and the scene has no world branch.
+- [x] T400 (delta 2026-11-20, issue #1239) spec 008: the cause measured; `needFocus` takes `host: true`; the two `check-browser-tabs` entries are `focus: true` [FR-210]
+- [x] T401 (delta 2026-11-20, issue #1239) `scripts/driver-helpers.js` (`needFocus` host reading), `scripts/check-browser-tabs.js` (`host: true`), `scripts/ui-suite.js` (`focus: true`), `scripts/test-ui-suite.ts` (the cases) [FR-210]

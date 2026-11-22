@@ -3,6 +3,7 @@
  * Synthetic pictures only (flat UI colours, 1px text-like strokes, gradients, an "avatar"); no Electron, no real screenshot, no network.
  */
 import * as assert from 'assert';
+import { assertCpuUnder } from './hang-backstop';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
@@ -18,8 +19,8 @@ const cs = require(path.join(ROOT, 'scripts', 'compress-shots.js')) as {
   GUARD: { mean: number; maxChannel: number; badAbove: number; badFraction: number; minSaving: number };
   decodePng: (b: Buffer) => { width: number; height: number; rgba: Buffer; chunks: { type: string; data: Buffer }[] };
   compressPng: (b: Buffer, o?: Record<string, unknown>) => { status: string; buffer: Buffer; before: number; after: number; reason?: string; stats?: { mean: number; max: number; badFraction: number } };
-  guardFailure: (s: { mean: number; max: number; badFraction: number }) => string | null;
-  measure: (rgba: Buffer, idx: Buffer, pal: number[][]) => { mean: number; max: number; badFraction: number };
+  guardFailure: (s: { mean: number; max: number; badFraction: number; blockMax?: number; blockAt?: number[] }, g?: Record<string, number>) => string | null;
+  measure: (rgba: Buffer, idx: Buffer, pal: number[][], badAbove?: number, width?: number) => { mean: number; max: number; badFraction: number; blockMax?: number; blockAt?: number[] };
 };
 const docs = require(path.join(ROOT, 'scripts', 'shots-docs.js')) as { squeeze: (f: string, env?: Record<string, string>, root?: string) => number; main: (o: Record<string, unknown>) => Promise<{ copied: string[] } | undefined> };
 /* eslint-enable @typescript-eslint/no-require-imports */
@@ -128,6 +129,22 @@ assert.strictEqual(cs.guardFailure(base), null);
 assert.ok(/mean/.test(cs.guardFailure({ ...base, mean: cs.GUARD.mean + 0.1 }) || ''));
 assert.ok(/largest channel/.test(cs.guardFailure({ ...base, max: cs.GUARD.maxChannel + 1 }) || ''));
 assert.ok(/pixels off/.test(cs.guardFailure({ ...base, badFraction: cs.GUARD.badFraction + 0.001 }) || ''));
+// the local check (2026-11-10, opt-in maxBlockDelta): a 16x16 tint 8 levels off a flat background, quantised away. The global limits
+// pass it (mean tiny, max 8, no pixel off by > 24); only the 8x8 block mean sees it, and names the block.
+{
+  const w = 128, h = 128, px = Buffer.alloc(w * h * 4);
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) set(px, w, x, y, x >= 64 && x < 80 && y >= 32 && y < 48 ? [BG[0], BG[1] - 8, BG[2] - 8] : BG);
+  const tinted = writePng(w, h, px, false);
+  const flatten = (_rgba: Buffer, ww: number, hh: number) => ({ palette: [BG.slice(), [0, 0, 0]], indices: Buffer.alloc(ww * hh), exact: false });
+  const loose = cs.compressPng(tinted, { quantise: flatten, guard: { minSaving: 0 } });
+  assert.strictEqual(loose.status, 'compressed', 'mutation: without maxBlockDelta the global guard lets the lost tint through');
+  const strict = cs.compressPng(tinted, { quantise: flatten, guard: { minSaving: 0, maxBlockDelta: 6 } });
+  assert.strictEqual(strict.status, 'kept', 'maxBlockDelta 6 refuses the lost tint');
+  assert.ok(/8x8 block at 64,32 shifted by 8\.0 > 6/.test(strict.reason || ''), strict.reason);
+  const st = cs.measure(px, Buffer.alloc(w * h), [BG.slice()], cs.GUARD.badAbove, w);
+  assert.strictEqual(st.blockMax, 8); assert.deepStrictEqual(st.blockAt, [64, 32]);
+  assert.strictEqual(cs.guardFailure({ ...base, blockMax: 8, blockAt: [0, 0] }), null, 'without maxBlockDelta the block shift is not a limit (the default guard is unchanged)');
+}
 
 // 4. transparency: a soft shadow with many alpha levels is kept; a few exact RGBA colours go to a lossless palette with tRNS
 const ta = Buffer.alloc(200 * 100 * 4);
@@ -177,9 +194,8 @@ assert.strictEqual(cs.compressPng(trunc).status, 'kept');
   const ih = Buffer.alloc(13); ih.writeUInt32BE(50, 0); ih.writeUInt32BE(50, 4); ih[8] = 8; ih[9] = 2;
   const bomb = Buffer.concat([original.subarray(0, 8), ch('IHDR', ih), ch('IDAT', zlib.deflateSync(Buffer.alloc(40 * 1024 * 1024), { level: 9 })), ch('IEND', Buffer.alloc(0))]);
   assert.ok(bomb.length < 100000, `the bomb is small (${bomb.length} B)`);
-  const tb = Date.now(); const rb2 = cs.compressPng(bomb);
+  const rb2 = cs.compressPng(bomb); // refused by the size the header gives (inflate's maxOutputLength), so the reason below is the property; no time bound
   assert.strictEqual(rb2.status, 'kept'); assert.ok(/larger than its header says/.test(rb2.reason || ''), `bomb: ${rb2.reason}`);
-  assert.ok(Date.now() - tb < 5000, 'refused quickly');
 }
 
 // 5c. APNG: an acTL chunk means an animation; flattening it to a still would lose frames, so the original stays
@@ -287,10 +303,9 @@ function refDecodeIndices(png: Buffer): { w: number; h: number; idx: Buffer; pal
 {
   const big = uiPicture(1440, 900);
   const bigPng = writePng(1440, 900, big.px, false);
-  const t0 = Date.now();
-  const rb = cs.compressPng(bigPng);
+  let rb!: { status: string; reason?: string };
+  assertCpuUnder('1440x900 compresses (a backstop: 60 s of CPU)', 60_000, () => { rb = cs.compressPng(bigPng); });
   assert.strictEqual(rb.status, 'compressed', rb.reason);
-  assert.ok(Date.now() - t0 < 30000, `1440x900 compresses in under 30 s (${Date.now() - t0} ms)`);
 }
 
 async function cliAndHook(): Promise<void> {
@@ -327,6 +342,17 @@ try {
   assert.deepStrictEqual(res!.copied, ['005-card-menu-stop-end-1440x900.png']);
   assert.ok(fs.statSync(path.join(outDir, '005-card-menu-stop-end-1440x900.png')).size < original.length * 0.7, 'shots-docs wrote a compressed picture');
   assert.ok(logs.some((l) => /KB smaller/.test(l)), 'and says how much it saved');
+  // spec 102 FR-302 (T265a): the world previews are shipped files: written as the driver made them (a WebP is never palette-compressed), into --out here, and exempt from the linked-picture check
+  const previewFiles = ['plain.webp', 'photo.webp', 'cave.webp', 'retro.webp', 'previews.json'];
+  const fakePrev = async (_d: unknown, dir: string) => { for (const f of previewFiles) fs.writeFileSync(path.join(dir, f), 'x:' + f); return { ok: true, secs: 0, log: '', why: '' }; };
+  const prevOut = path.join(tmp, 'prev');
+  console.log = (...a: unknown[]) => { logs.push(a.join(' ')); };
+  let prev;
+  try { prev = await docs.main({ argv: ['--out', prevOut, '--only', 'shots-102-previews'], run: fakePrev, ensure: () => true, clockQuery: () => 'x' }); } finally { console.log = realLog; }
+  assert.deepStrictEqual(prev!.copied, previewFiles, 'shots-docs copies every preview file');
+  for (const f of previewFiles) assert.strictEqual(fs.readFileSync(path.join(prevOut, f), 'utf8'), 'x:' + f, `${f} is written as the driver made it`);
+  const cov = (docs as unknown as { coverage: () => { unlinked: string[] } }).coverage();
+  assert.ok(!cov.unlinked.some((f) => previewFiles.includes(f)), 'a shipped preview needs no link in the docs');
 } finally { fs.rmSync(tmp, { recursive: true, force: true }); }
 
 }

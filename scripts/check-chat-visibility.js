@@ -5,6 +5,7 @@
  *   node scripts/ui-suite.js --only check-chat-visibility            (npm run check:ui runs it with the rest)
  *   DURBAR_CV_MUTANT=off|hidden|nosize|zero node scripts/ui-suite.js --only check-chat-visibility     (must FAIL)
  *   CVONLY=1440|1280    one of the two sizes (a normal run that can pass: ui-suite.js runs one entry per size, FR-063)
+ *   CVPASS=6            the one pass over the chat takes 6 screens a step, not 1.5 (must FAIL: some message is never laid out)
  *   CVWH=1280x520 ...   one other window size; CVBASE=1 skips the "is skipped" checks (with DURBAR_CV_MUTANT=off: the rule-off baseline)
  *
  * At 1440x900 and 1280x800 the first agent's chat is filled with 4000 simulated messages (copies of its own with 1 to 9 sentences, a
@@ -39,7 +40,7 @@ module.exports = async (ctx) => {
   /* waits on state, not time: two frames after a scroll, then until the chat's scroll position and height stop changing for three frames */
   const quiet = async (what) => assert.ok(await js('window.__cvQ()'), `the chat settles after ${what}`);
   const MUT = process.env.DURBAR_CV_MUTANT || '';
-  const DEBUG = !!(process.env.CVLOG || process.env.CVBASE || process.env.CVSKIP || process.env.CVWH || process.env.CVSIZE || MUT);
+  const DEBUG = !!(process.env.CVLOG || process.env.CVBASE || process.env.CVSKIP || process.env.CVWH || process.env.CVSIZE || process.env.CVPASS || MUT);
   const MUTANTS = {
     off: '.chat-inner>*{content-visibility:visible!important}',
     hidden: '.chat-inner>*{content-visibility:hidden!important}',
@@ -56,7 +57,7 @@ module.exports = async (ctx) => {
 
   /* the chat of an agent, filled with N simulated messages of different heights */
   const open = async (w, h) => {
-    await H.load({ w, h, ready: 'fit', focus: true });
+    await H.load({ w, h, ready: 'fit', focus: true, query: { simchatkeep: '100000' } }); // spec 005 FR-238: this chat is 4,004 messages on purpose, above the 300 a chat keeps
     const o = await H.openSimAgent(`a=>!a.parent&&!a.question&&(a.state==='done'||a.state==='idle')`, '#chat .msg');
     assert.ok(o.ok, `${w}x${h}: a chat is open: ${JSON.stringify(o.seen)}`);
     assert.ok(await until(`!document.querySelector('#chat .typing')`, 20000), 'the first turn is over: '+(await js(`document.querySelector('#chat').innerHTML.slice(0,700)`)));
@@ -160,7 +161,14 @@ module.exports = async (ctx) => {
     await quiet('the jump to the start');
     assert.strictEqual(await js(`document.getElementById('chat').scrollTop`), 0, `${tag}: the start of the chat stays the start (no late shift)`);
     // one pass over everything remembers the real heights: the whole chat is as tall as with the rule off
-    await js(`(async()=>{const c=document.getElementById('chat');for(let y=0;y<c.scrollHeight;y+=c.clientHeight*0.8){c.scrollTop=y;await new Promise(r=>requestAnimationFrame(r));}})()`);
+    // a frame per step is the cost, so the step is 1.5 screens (it was 0.8, about 1,700 frames at 1440x900: the largest part of this driver's time); what makes that enough is asserted, not assumed:
+    // every message was laid out in at least one frame of the pass (a step too long leaves some never laid out, CVPASS=6 shows it)
+    const pass = await js(`(async()=>{const c=document.getElementById('chat'),all=[...c.querySelectorAll('.chat-inner>[data-cv]')],seen=new Set();let frames=0;
+      for(let y=0;y<c.scrollHeight;y+=c.clientHeight*${jsLiteral(Number(process.env.CVPASS) || 1.5)}){c.scrollTop=y;await new Promise(r=>requestAnimationFrame(r));frames++;
+        const i0=Math.round(y/c.scrollHeight*all.length);for(let i=Math.max(0,i0-300);i<Math.min(all.length,i0+300);i++)if(all[i].firstElementChild.checkVisibility({contentVisibilityAuto:true}))seen.add(i);} // only the messages near the place are looked at: a frame stays cheap, and a miss outside the window shows as a message never seen
+      return {frames,laid:seen.size,n:all.length}})()`);
+    console.log(`PASS ${tag}: ${pass.frames} frames, ${pass.laid} of ${pass.n} messages laid out at least once`);
+    assert.ok(pass.n === N && pass.laid === N, `${tag}: the pass over the chat lays out every message at least once: ${JSON.stringify(pass)}`);
     await js(`document.getElementById('chat').scrollTop=0`); await quiet('a scroll');
     const tot = await js(`document.getElementById('chat').scrollHeight`);
     /* bound: 2 px at 1x. On a screen with more than one device pixel per CSS pixel (a Retina Mac, --force-device-scale-factor=2, seen on Linux too) a remembered

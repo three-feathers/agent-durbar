@@ -204,7 +204,9 @@ function releaseNotes(root, { tag, repo, mainRef = MAIN_REF }) {
   const previous = previousRelease(root, commit, tag);
   const stable = !releaseKind(tag).prerelease;
   const heading = `${tag} ([${stable ? 'release' : 'pre-release'}](https://github.com/${repo}/releases/tag/${tag}), ${date})`;
-  const { section, source } = cl.notes(root, { release: heading, previous });
+  // spec 008 FR-272 delta 2026-11-18 (#1864): release.yml's verify job has no node_modules; the site rules (build-site.js, `marked`)
+  // ran in each fragment's own PR, so they are skipped here by name, not by catching a missing module
+  const { section, source } = cl.notes(root, { release: heading, previous, siteRules: false });
   // spec 008 FR-173 (T125): the Highlights block above the long list, from the fragments' `Highlight:` fields. Only while the notes
   // come from fragments (a section already in CHANGELOG.md has had its fields dropped by the fold); none, no block.
   const block = source === 'fragments' ? cl.highlightsBlock(cl.highlights(cl.readFragments(root))) : '';

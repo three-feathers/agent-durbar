@@ -381,6 +381,18 @@ async function main(): Promise<void> {
     assert.ok(!('autoTiers' in opts[0]), 'the input is not changed');
   }
   // the adapter: version and policy read through the (fake) runtime, no session, no credits
+  // spec 030 FR-071 (issue #1909): the SDK's listModels() keeps an empty answer for the client's life; `fresh` asks the runtime's own call
+  {
+    const fake = new FakeClient();
+    const ad = new TestAdapter(fake);
+    fake.modelInfos = []; // the cached first answer
+    fake.rpcModels = [{ id: 'gpt-x', name: 'GPT X', capabilities: { limits: { max_context_window_tokens: 128000 } } }];
+    assert.deepStrictEqual((await ad.listModelOptions()).map((m) => m.id), [], 'without fresh the cached empty list stands');
+    assert.deepStrictEqual((await ad.listModelOptions({ fresh: true })).map((m) => m.id), ['gpt-x'], 'fresh reads the runtime again');
+    fake.noRpcModels = true;
+    fake.modelInfos = [{ id: 'gpt-y', name: 'Y', capabilities: { limits: { max_context_window_tokens: 1 } } }];
+    assert.deepStrictEqual((await ad.listModelOptions({ fresh: true })).map((m) => m.id), ['gpt-y'], 'a runtime without the call falls back to listModels');
+  }
   {
     const fake = new FakeClient();
     const ad = new TestAdapter(fake);
@@ -551,7 +563,7 @@ async function main(): Promise<void> {
         assert.deepStrictEqual(await p, { answer: 'my own long-question answer', wasFreeform: true }, 'the custom answer, not a skip');
         assert.ok(!t.events.slice(from).some((e) => e.type === 'question' && e.phase === 'cancelled'), 'no skipped card');
         assert.deepStrictEqual(readAnswerPayload(null), null, 'null stays a skip');
-        for (const bad of [undefined, 'text', 5, [], {}, { k: 5 }, { k: '' }, { k: '   ' }, { ['x'.repeat(2001)]: 'a' }]) assert.strictEqual(readAnswerPayload(bad), undefined, 'unusable is refused, never a skip: ' + JSON.stringify(bad)?.slice(0, 30));
+        for (const bad of [undefined, 'text', 5, [], {}, { k: 5 }, { k: '' }, { k: '   ' }, { ['x'.repeat(20001)]: 'a' }]) assert.strictEqual(readAnswerPayload(bad), undefined, 'unusable is refused, never a skip: ' + JSON.stringify(bad)?.slice(0, 30));
         assert.strictEqual(readAnswerPayload({ a: 'x'.repeat(500) })!.a.length, 500, 'exactly the cap is kept whole');
         assert.strictEqual(readAnswerPayload({ a: 'x'.repeat(501) }), undefined, 'just over the cap is refused, not cut');
         assert.strictEqual(readAnswerPayload({ a: ' ' + 'x'.repeat(500) + '  ' })!.a.trim().length, 500, 'spaces around do not count');

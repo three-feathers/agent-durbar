@@ -230,6 +230,8 @@ export class FakeClient {
   /** `rpc.account.getQuota` / `rpc.models.list` / `listModels` reject with this message; `noQuota` / `noRpcModels` leave the method out. */
   quotaFail = '';
   modelsFail = '';
+  /** What `rpc.models.list` answers (spec 030 FR-071: the runtime's own list, past the SDK's cache of `listModels`). */
+  rpcModels: unknown[] = [];
   listModelsFail = '';
   noQuota = false;
   /** Spec 011 FR-081: what `account.getQuota` answers; default no snapshots. */
@@ -248,7 +250,7 @@ export class FakeClient {
     return {
       sandbox: { getHostSupport: async () => { this.hostCalls++; if (this.sandboxHostFail) throw new Error(this.sandboxHostFail); return this.sandboxHost; } },
       ...(this.noQuota ? {} : { account: { getQuota: async (p: unknown) => { this.authCalls.push('account.getQuota'); void p; if (this.quotaFail) throw new Error(this.quotaFail); return this.quotaResult; } } }),
-      ...(this.noRpcModels ? {} : { models: { list: async () => { this.authCalls.push('models.list'); if (this.modelsFail) throw new Error(this.modelsFail); return { models: [] }; } } }),
+      ...(this.noRpcModels ? {} : { models: { list: async () => { this.authCalls.push('models.list'); if (this.modelsFail) throw new Error(this.modelsFail); return { models: this.rpcModels }; } } }),
       ...(this.managed === undefined && !this.managedFail && !this.managedHangs ? {} : { managedSettings: { resolve: async (p: unknown) => {
         void p; this.managedCalls++;
         if (this.managedHangs) await new Promise(() => undefined);

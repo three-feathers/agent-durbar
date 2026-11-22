@@ -7,12 +7,13 @@
  *
  * For each world (Photo office; the Prehistoric cave behind its flag) at 1440x900 and 1280x800 it checks the moments listed in MOMENTS below
  * (each states what it asserts) and writes <SHOTS_OUT>/<world>-<moment>-<w>x<h>.png. Driver waits use until(); nothing sleeps for a fixed time.
+ * Developer aids: MOMENTS_CPU_SLOW=<2..20> slows the page's CPU for the whole run, like a loaded runner (issue #1753); MOMENTS_MUTANT=notes-nowait reads the post-its before the crowd is drawn (must fail).
  */
 const os = require('os');
 const fs = require('fs');
 const path = require('path');
 const assert = require('assert');
-const { helpers, jsLiteral } = require('./driver-helpers');
+const { helpers, jsLiteral, CHECK_DARK, CHECK_DARK_QUERY } = require('./driver-helpers');
 const { AT_CLOCK } = require('./shots-068-coffee');
 /* the plate's words after "Coffee break — ": "resumes at 14:30" today, "resumes Tue 12:08 AM" when the reset is on the next day (a run just before midnight UTC); test-coffeebreak checks it against untilText */
 const RESUMES = `resumes ${AT_CLOCK}`;
@@ -21,6 +22,8 @@ const SIZES = [[1440, 900], [1280, 800]];
 const WORLDS = (process.env.MOMENTS_WORLDS || 'photo').split(',');
 const ONLY = (process.env.MOMENTS_ONLY || '').split(',').filter(Boolean);
 
+/* in-page contrast helpers for the cells step: Pa parses a computed colour (with alpha), Lm is its luminance, over lays it on a background, bgOf stacks the backgrounds up to the root, rat is the WCAG ratio */
+const CX = String.raw`const Pa=(s)=>{const m=/rgba?\(([^)]+)\)/.exec(s||'');if(!m)return[0,0,0,0];const v=m[1].split(/[ ,\/]+/).filter(Boolean).map(Number);return[v[0]||0,v[1]||0,v[2]||0,v.length>3?v[3]:1]};const Lm=(a)=>{const f=(x)=>{x/=255;return x<=0.03928?x/12.92:Math.pow((x+0.055)/1.055,2.4)};return 0.2126*f(a[0])+0.7152*f(a[1])+0.0722*f(a[2])};const over=(f,b)=>[f[0]*f[3]+b[0]*(1-f[3]),f[1]*f[3]+b[1]*(1-f[3]),f[2]*f[3]+b[2]*(1-f[3]),1];const bgOf=(e,root)=>{const L=[];for(let n=e;n;n=n.parentElement){const c=Pa(getComputedStyle(n).backgroundColor);if(c[3]>0)L.push(c);if(c[3]>=1||n===root)break}let b=[0,0,0,1];for(const c of L.reverse())b=over(c,b);return b};const phc=(o)=>{const k=getComputedStyle(o,'::placeholder');const c=Pa(k.color);c[3]*=parseFloat(k.opacity);return c};const rat=(a,b)=>{const x=Lm(a),y=Lm(b);return (Math.max(x,y)+0.05)/(Math.min(x,y)+0.05)};`;
 module.exports = async (ctx) => {
   // made when the driver runs, not when the file is required (test-coffeebreak requires it for RESUMES: spec 012 FR-166)
   const OUT = process.env.SHOTS_OUT || fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-097-moments-'));
@@ -29,7 +32,7 @@ module.exports = async (ctx) => {
   const must = async (expr, what, ms = 15000) => assert.ok(await H.until(expr, ms), 'timed out waiting for ' + what);
   const REAL = `!!document.querySelector('#stage .ro .ro-plate')&&document.getElementById('stage').dataset.d==='real'`;
   const PICS = `[...document.querySelectorAll('#stage .ro img')].every(i=>i.complete)`;
-  const q = (world, extra = {}) => ({ officeview: 'real', ...(world === 'cave' ? { worldflags: 'cave', world: 'cave' } : {}), ...extra });
+  const q = (world, extra = {}) => ({ officeview: 'real', ...(world === 'cave' || world === 'retro' ? { worldflags: world, world } : {}), ...extra });
   const run = (id) => !ONLY.length || ONLY.includes(id);
   const shot = (world, name, w, h) => H.shot(path.join(OUT, `${world}-${name}-${w}x${h}.png`), { prep: 'calm', settle: true, tag: 'moments', what: `${world}-${name}-${w}x${h}` });
   /* CDP media emulation (reduced motion, forced colours), always undone */
@@ -51,15 +54,92 @@ module.exports = async (ctx) => {
     const dbg = ctx.win.webContents.debugger; if (!dbg.isAttached()) dbg.attach('1.3');
     await dbg.sendCommand('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'reduce' }] });
   }
+  /* a developer aid (issue #1753): MOMENTS_CPU_SLOW=<2..20> slows the page's CPU by that factor (CDP) for the whole run, every step and size, as a loaded runner does (never reset, on purpose); the notes step's race showed at 4 */
+  if (/^([2-9]|1\d|20)$/.test(process.env.MOMENTS_CPU_SLOW || '')) { const dbg = ctx.win.webContents.debugger; if (!dbg.isAttached()) dbg.attach('1.3'); await dbg.sendCommand('Emulation.setCPUThrottlingRate', { rate: Number(process.env.MOMENTS_CPU_SLOW) }); console.log('[moments] the page CPU is slowed ' + process.env.MOMENTS_CPU_SLOW + 'x (MOMENTS_CPU_SLOW)'); }
   await H.load({ w: 1440, h: 900, query: { simfreeze: '1' }, ready: 'fit', settle: false });
   const OS_REDUCED = await js(`matchMedia('(prefers-reduced-motion: reduce)').matches`);
   if (OS_REDUCED) console.log('[moments] the OS asks for reduced motion: the ring and the ride are checked in their reduced form only');
   for (const world of WORLDS) for (const [w, h] of SIZES) {
     const tag = `${world} ${w}x${h}`;
+    // ---- spec 097 2026-11-14 (issue #1711): a world is drawn only once its stylesheet has loaded (the stylesheet answers 400 ms late, the hook of check-097-crews, T320) ----
+    if (run('worldcss-late') && world !== 'photo') {
+      const ses = ctx.win.webContents.session;
+      ses.webRequest.onBeforeRequest({ urls: ['file://*/*'] }, (d, cb) => { if (/\/realoffice\/worlds\/[a-z0-9-]+\/world\.css$/.test(d.url)) setTimeout(() => cb({}), 400); else cb({}); });
+      await H.load({ w, h, query: q(world), ready: REAL, settle: false });
+      const sheetAtDraw = await js(`!!(document.getElementById('roWorldCss-'+${jsLiteral(world)})||{}).sheet`);
+      await must(`!!(document.getElementById('roWorldCss-'+${jsLiteral(world)})||{}).sheet`, 'the world stylesheet');
+      await H.until(`document.getElementById('stage').dataset.fit`, 2000).catch(() => undefined);
+      const sliver = await js(`[...document.querySelectorAll('#stage .ro-plate .ro-role')].filter(r=>!r.hidden&&getComputedStyle(r).display!=='none'&&r.getBoundingClientRect().width<19).map(r=>[r.textContent,Math.round(r.getBoundingClientRect().width)])`);
+      // the 4 s timer must not settle a second time: after it would have fired, the counter is still 1
+      await H.until(`document.documentElement.dataset.roSheets==='1'`, 2000).catch(() => undefined);
+      const sheetsAtLoad = await js(`document.documentElement.dataset.roSheets||''`);
+      await new Promise((r) => setTimeout(r, 4600));
+      const sheetsLater = await js(`document.documentElement.dataset.roSheets||''`);
+      ses.webRequest.onBeforeRequest(null);
+      assert.deepStrictEqual([sheetsAtLoad, sheetsLater], ['1', '1'], `${tag}: worldcss-late: the stylesheet settles once: the counter after the load and after the 4 s timer would have fired`);
+      assert.deepStrictEqual(sliver, [], `${tag}: a role is shown as a sliver: ${JSON.stringify(sliver)}`);
+      assert.strictEqual(sheetAtDraw, true, `${tag}: the office is drawn only after the ${world} stylesheet has loaded`);
+      console.log('[moments] worldcss-late ok', sheetAtDraw);
+    }
+    // ---- the same bug's other ends: a stylesheet that fails (cancelled) or never answers (held, 4 s timer in app.js) still draws, with the base CSS ----
+    // The product's own timing, read from inside the app: a poll of the page every 100 ms that does not depend on the page's load event (a held sheet can hold the load event back). Every call is bounded, so a stalled renderer is a failed assertion and not a hung run.
+    const within = (p, ms, dflt) => Promise.race([p, new Promise((r) => setTimeout(() => r(dflt), ms))]);
+    for (const mode of ['fail', 'hang']) {
+      if (!run('worldcss-' + mode) || world === 'photo') continue;
+      const ses = ctx.win.webContents.session;
+      const held = [];
+      let hits = 0, tReq = 0;
+      ses.webRequest.onBeforeRequest({ urls: ['file://*/*'] }, (d, cb) => { if (/\/realoffice\/worlds\/[a-z0-9-]+\/world\.css$/.test(d.url)) { if (!hits++) tReq = Date.now(); if (mode === 'fail') cb({ redirectURL: 'file:///durbar-no-such-world.css' }); else held.push(cb); } else cb({}); });
+      const wc = ctx.win.webContents;
+      await js(`localStorage.clear()`).catch(() => undefined); /* a clean start, on the page the earlier moment left (the storage is that page's): its world and view are gone */
+      await ses.clearCache(); /* an earlier moment's copy of the sheet would answer for the request */
+      if (!wc.debugger.isAttached()) wc.debugger.attach('1.3'); /* DevTools protocol: Electron's executeJavaScript waits for the page's load event, which a held sheet can hold back */
+      let loading, sheetsAfterLate = '1';
+      try {
+      await within(wc.debugger.sendCommand('Page.navigate', { url: 'about:blank' }), 5000, undefined); /* the page's memory cache of an earlier load of the sheet would answer for the request */
+      const t0 = Date.now();
+      let err = '';
+      loading = H.load({ w, h, query: q(world), ready: REAL, settle: false }).catch((e) => { err = String(e && e.message || e); });
+      const probe = `(()=>{const s=document.getElementById('stage');return [s&&s.dataset.d||'',document.querySelectorAll('#stage .ro-plate').length,document.documentElement.dataset.roSheets||''].join('|')})()`;
+      const evs = [];
+      const hooks = ['did-start-navigation', 'did-navigate', 'dom-ready', 'did-finish-load', 'did-fail-load', 'render-process-gone', 'unresponsive'].map((n) => { const f = () => evs.push(`${n}@${Date.now() - t0}`); wc.on(n, f); return [n, f]; });
+      let tDrawn = -1, tSettled = -1, last = '', polls = 0, stalled = 0;
+      while (Date.now() - t0 < 16000 && (tDrawn < 0 || tSettled < 0)) {
+        const r = await within(wc.debugger.sendCommand('Runtime.evaluate', { expression: probe, returnByValue: true }).then((o) => String((o.result && o.result.value) || ''), () => 'STALLED'), 400, 'STALLED');
+        polls++;
+        if (r === 'STALLED') stalled++; else {
+          last = r;
+          const [d, plates, sheets] = r.split('|');
+          if (tSettled < 0 && sheets) tSettled = Date.now() - t0;
+          if (tDrawn < 0 && d === 'real' && Number(plates) > 0) tDrawn = Date.now() - t0;
+        }
+        await new Promise((r2) => setTimeout(r2, 100));
+      }
+      const sinceReq = (t) => (t < 0 || !tReq ? -1 : t - (tReq - t0)); /* from the moment the page asked for the sheet: that is when the 4 s timer starts */
+      const timing = `drawn ${sinceReq(tDrawn)} ms and sheet settled ${sinceReq(tSettled)} ms after the page asked for it (drawn at ${tDrawn} ms, settled at ${tSettled} ms from the load), ${stalled} of ${polls} polls stalled, last state ${last}, window events ${evs.join(',')}, loading ${wc.isLoading()}`;
+      hooks.forEach(([n, f]) => wc.removeListener(n, f));
+      if (mode === 'hang') { /* the sheet answers at last, after the timer settled the pack: that load must not settle it a second time */
+        held.splice(0).forEach((cb) => cb({}));
+        await new Promise((r) => setTimeout(r, 1000));
+        sheetsAfterLate = await within(wc.debugger.sendCommand('Runtime.evaluate', { expression: `document.documentElement.dataset.roSheets||''`, returnByValue: true }).then((o) => String((o.result && o.result.value) || ''), () => 'STALLED'), 1500, 'STALLED');
+      }
+      ses.webRequest.onBeforeRequest(null);
+      held.forEach((cb) => cb({ cancel: true }));
+      await within(loading, 15000, undefined);
+      assert.strictEqual(err, '', `${tag}: worldcss-${mode}: the page loads: ${err}`);
+      assert.ok(hits >= 1, `${tag}: worldcss-${mode}: the stylesheet was requested (${hits})`);
+      assert.ok(tSettled >= 0 && tDrawn >= 0, `${tag}: worldcss-${mode}: the ${world} office is still drawn when its stylesheet ${mode === 'fail' ? 'fails' : 'never answers'}, and the pack is ready: ${timing}`);
+      if (mode === 'fail') assert.ok(sinceReq(tSettled) >= 0 && sinceReq(tSettled) < 3500, `${tag}: worldcss-fail: a failed stylesheet settles at once through its error event, not through the 4 s timer (${timing})`);
+      if (mode === 'hang') assert.ok(sinceReq(tSettled) >= 3500 && sinceReq(tSettled) < 12000 && sinceReq(tDrawn) < 12000, `${tag}: worldcss-hang: the draw waits for the 4 s timer, not for ever (${timing})`);
+      if (mode === 'hang') assert.strictEqual(sheetsAfterLate, '1', `${tag}: worldcss-hang: the sheet that answers after the timer does not settle the pack a second time (counter ${sheetsAfterLate})`);
+      await within(must(PICS, 'the pictures'), 14000, undefined);
+      console.log(`[moments] worldcss-${mode} ok: ${timing}`);
+      } finally { try { wc.debugger.detach(); } catch { /* already detached */ } }
+    }
     // ---- FR-118 first run ----
     if (run('first-run')) {
-      if (world === 'cave') {
-        /* the cave is behind a flag the simulator's page address switches on, so its first run is a simulator page whose agents are all gone (no real folder, no agent) */
+      if (world === 'cave' || world === 'retro') {
+        /* the cave and the arcade are behind a flag the simulator's page address switches on, so its first run is a simulator page whose agents are all gone (no real folder, no agent) */
         await H.load({ w, h, query: q(world), ready: REAL, settle: false });
         await js(`window.__durbarSimUi.agents().splice(0);window.__durbarSimUi.crew.renderAll()`);
         await must(`!!document.querySelector('#stage .welcome')`, 'the first-run card');
@@ -93,23 +173,61 @@ module.exports = async (ctx) => {
       }
       await shot(world, 'firstrun', w, h);
     }
+    // ---- 102 RA7 (review of #1279): the arcade's first-run rule is scoped to the arcade. The photo and cave rules hide the counts too, so the check takes the world off the page (a Real office without a world draws them) and adds retro's world.css read from dist ----
+    if (run('scope') && world !== 'retro') {
+      if (world === 'cave') await H.load({ w, h, query: q(world), ready: REAL, settle: false });
+      else {
+        await H.load({ w, h, query: q(world), settle: false });
+        await js(`localStorage.setItem('durbar.officeview','real');localStorage.setItem('durbar.world',${jsLiteral(world)})`);
+        await H.load({ w, h, query: q(world, { sim: undefined, officeview: undefined }), ready: `!!document.querySelector('#stage .welcome')`, settle: false });
+      }
+      if (world === 'cave') { await js(`window.__durbarSimUi.agents().splice(0);window.__durbarSimUi.crew.renderAll()`); }
+      await must(`!!document.querySelector('#stage .welcome')`, 'the first-run card');
+      await must(`!!document.getElementById('roWorldCss-'+${jsLiteral(world)})&&document.documentElement.dataset.world===${jsLiteral(world)}`, `the ${world} stylesheet`);
+      assert.strictEqual(await js(`!!document.getElementById('roWorldCss-retro')`), false, `${tag}: the arcade's stylesheet is not loaded in ${world}`);
+      assert.strictEqual(await js(`getComputedStyle(document.getElementById('stats')).visibility`), 'hidden', `${tag}: ${world} hides its own counts on a first run`);
+      const css = fs.readFileSync(path.join(__dirname, '..', 'dist', 'renderer', 'realoffice', 'worlds', 'retro', 'world.css'), 'utf8');
+      assert.ok(/body:has\(#stage > \.welcome\) #stats\{visibility:hidden\}/.test(css), "the arcade's first-run rule is in its world.css (the check below would prove nothing without it)");
+      await js(`(()=>{document.documentElement.removeAttribute('data-world');const s=document.createElement('style');s.id='scopeProbe';s.textContent=${jsLiteral(css)};document.head.appendChild(s)})()`);
+      assert.strictEqual(await js(`getComputedStyle(document.getElementById('stats')).visibility`), 'visible', `${tag}: with the arcade's CSS present on a page that is not the arcade, the counts stay: the rule is scoped to html[data-world="retro"]`);
+      await js(`document.getElementById('scopeProbe').remove()`);
+    }
     // ---- FR-119 empty office ----
     if (run('empty-office')) {
-      await H.load({ w, h, query: q(world, { simfloors: 'ground' }), ready: REAL, settle: false });
-      await must(PICS, 'the pictures');
-      await H.goToFloor((await H.floors())[1].id);
-      await must(`!!document.querySelector('#stage .ro-eplate')&&!document.querySelector('#stage .ro-ride')`, 'the empty plate, the ride over');
-      await must(PICS, 'the pictures');
-      const em = await js(`(()=>{const p=document.querySelector('#stage .ro-eplate');return {text:p.textContent,desks:document.querySelectorAll('#stage .ro-edesk').length,screens:document.querySelectorAll('#stage .ro-escreen.off').length,lobby:!!document.querySelector('#stage .ro-lobby'),
-        lift:!!document.querySelector('#lift:not([hidden])'),amb:document.querySelector('#stage .ro').dataset.ambient,small:parseFloat(getComputedStyle(p).fontSize)}})()`);
-      assert.ok(/^Nothing on .+ yet\. Move a folder here from its ⋯ menu \(Move to floor\)\.$/.test(em.text), `${tag}: the flat sentence: ${em.text}`);
-      assert.strictEqual(em.desks, 3, `${tag}: three empty desks`);
-      assert.strictEqual(em.screens, 3, `${tag}: screens off`);
-      assert.ok(em.lobby && em.lift, `${tag}: the lobby and the lift stay`);
-      assert.strictEqual(em.amb, '0.7', `${tag}: room at 70 %`);
-      assert.ok(em.small >= 10.5, `${tag}: plate text >= 10.5px`);
-      assert.deepStrictEqual(await slipOverlaps(), [], `${tag}: no slip covers the empty floor's plate`);
-      await shot(world, 'empty', w, h);
+      try {
+        await H.load({ w, h, query: q(world, { simfloors: 'ground' }), ready: REAL, settle: false });
+        await must(PICS, 'the pictures');
+        /* the order is fixed, not left to the simulator's clock: the limit slip is on the first floor (placed under that floor's lobby) before the empty floor is shown, so the slip that crosses is always checked (its kept spot must be placed again under the empty floor's taller lobby) */
+        if (world === 'retro') await must(`!!document.querySelector('#stage .ro-slip.ro-limit:not([hidden])')`, 'the limit slip on the first floor');
+        await H.goToFloor((await H.floors())[1].id);
+        await must(`!!document.querySelector('#stage .ro-eplate')&&!document.querySelector('#stage .ro-ride')`, 'the empty plate, the ride over');
+        await must(PICS, 'the pictures');
+        const em = await js(`(()=>{const p=document.querySelector('#stage .ro-eplate');return {text:p.textContent,desks:document.querySelectorAll('#stage .ro-edesk').length,screens:document.querySelectorAll('#stage .ro-escreen.off').length,lobby:!!document.querySelector('#stage .ro-lobby'),
+          lift:!!document.querySelector('#lift:not([hidden])'),amb:document.querySelector('#stage .ro').dataset.ambient,small:parseFloat(getComputedStyle(p).fontSize)}})()`);
+        assert.ok(/^Nothing on .+ yet\. Move a folder here from its ⋯ menu \(Move to floor\)\.$/.test(em.text), `${tag}: the flat sentence: ${em.text}`);
+        assert.strictEqual(em.desks, 3, `${tag}: three empty desks`);
+        assert.strictEqual(em.screens, 3, `${tag}: screens off`);
+        assert.ok(em.lobby && em.lift, `${tag}: the lobby and the lift stay`);
+        assert.strictEqual(em.amb, '0.7', `${tag}: room at 70 %`);
+        assert.ok(em.small >= 10.5, `${tag}: plate text >= 10.5px`);
+        assert.deepStrictEqual(await slipOverlaps(), [], `${tag}: no slip covers the empty floor's plate`);
+        if (world === 'retro') { /* spec 102 delta 2026-11-14 (T223): the arcade's empty office is a hall: the stage takes the floor like the 15-agent hall, the plate is over its floor and readable, nothing scrolls */
+          const hall = await js(`(()=>{const R=e=>e.getBoundingClientRect(),f=document.getElementById('floor'),s=document.getElementById('stage'),p=document.querySelector('#stage .ro-eplate'),cs=getComputedStyle(f),pc=getComputedStyle(p),fr=R(f),sr=R(s),pr=R(p);
+            return {stageH:Math.round(sr.height),floorBottom:Math.round(fr.bottom-parseFloat(cs.paddingBottom)),stageBottom:Math.round(sr.bottom),gap:Math.round(fr.bottom-parseFloat(cs.paddingBottom)-sr.bottom),scrolls:f.scrollHeight>f.clientHeight+1,fit:s.dataset.fit,
+            plateIn:pr.left>=sr.left&&pr.right<=sr.right&&pr.top>=sr.top&&pr.bottom<=sr.bottom,plateH:Math.round(pr.height),ink:pc.color,bg:pc.backgroundColor,cabs:document.querySelectorAll('#stage .ro-edesk').length}})()`);
+          console.log(`[moments] ${tag}: empty office stage height ${hall.stageH}, floor bottom ${hall.floorBottom}, stage bottom ${hall.stageBottom}`);
+          assert.ok(Math.abs(hall.gap) <= 8, `${tag}: the arcade's empty stage fills the office area: its bottom edge is ${hall.gap}px from the floor's bottom (stage ${hall.stageH}px)`);
+          assert.ok(!hall.scrolls && hall.fit === 'ok', `${tag}: the empty arcade office does not scroll`);
+          const lum = (c) => { const v = (c.match(/[\d.]+/g) || []).slice(0, 3).map(Number).map((x) => { x /= 255; return x <= 0.03928 ? x / 12.92 : ((x + 0.055) / 1.055) ** 2.4; }); return 0.2126 * v[0] + 0.7152 * v[1] + 0.0722 * v[2]; };
+          const ratio = (lum(hall.ink) + 0.05 > lum(hall.bg) + 0.05 ? (lum(hall.ink) + 0.05) / (lum(hall.bg) + 0.05) : (lum(hall.bg) + 0.05) / (lum(hall.ink) + 0.05));
+          assert.ok(ratio >= 4.5, `${tag}: the empty arcade office's words read at 4.5:1 or better (${ratio.toFixed(2)}: ${hall.ink} on ${hall.bg})`);
+          assert.ok(hall.plateIn && hall.plateH > 0, `${tag}: the words card is drawn on the hall's floor`);
+        }
+        await shot(world, 'empty', w, h);
+      } finally {
+        /* issue #1777: going to the empty floor stores it (durbar.floor); a step that runs later in the same run must not start on it (the cells step looks for Jonas's plate on the first floor), so the step leaves the storage as it found it: the first floor */
+        await js(`localStorage.removeItem('durbar.floor');localStorage.removeItem('durbar.floorView')`).catch(() => undefined);
+      }
     }
     // ---- FR-120 asleep ----
     if (run('asleep')) {
@@ -129,7 +247,10 @@ module.exports = async (ctx) => {
       const after = await widths();
       const sleepers = after.lounge.filter((x) => x[1] === 'asleep');
       assert.ok(sleepers.length >= 1 && !after.desks.some((x) => x[1] === 'asleep'), `${tag}: an asleep agent whose message is read sits in the lounge row, not at a desk: ${JSON.stringify(after.lounge)}`);
-      assert.ok(after.u >= before.u - 1e-6, `${tag}: the room it leaves goes to the desks: u ${before.u} -> ${after.u}`);
+      /* spec 102 T174: in the circle the lounge row takes its height from the ring, so the desks can come down (the Cave at 1440x900: u 129 -> 92); the claim "the desks take the freed room" is the rows' (097 FR-246), and the circle's is the face floor (FR-229) */
+      const ringed = (await js(`document.querySelector('#stage .ro').dataset.arrangement`)) === 'circle';
+      if (ringed) assert.ok(after.face >= 24, `${tag}: in the circle the desks keep the face floor after an agent goes to the lounge: ${after.face} px`);
+      else assert.ok(after.u >= before.u - 1e-6, `${tag}: the room it leaves goes to the desks: u ${before.u} -> ${after.u}`);
       console.log('[moments] when the message is read', `desk faces ${before.face} -> ${after.face} px; lounge`, JSON.stringify(after.lounge));
       const sl = await js(`(()=>{const P=[...document.querySelectorAll('#stage .ro-plate.asleep')];return P.map(p=>({id:p.dataset.id,l:p.getAttribute('aria-label'),t:p.getAttribute('title'),x:p.textContent,
         person:!!document.querySelector('#stage .ro-person.asleep[data-for="'+p.dataset.id+'"]'),zz:!!document.querySelector('#stage .ro-zz'),w:p.getBoundingClientRect().width,
@@ -144,7 +265,7 @@ module.exports = async (ctx) => {
         return {seat:a.map(d=>!!d.lounge&&!!d.table),pose:a.map(d=>d.person&&d.person.pose),shades:document.querySelectorAll('#stage .ro-lamp.lamp-off').length,asleep:a.length,screensOff:document.querySelectorAll('#stage .ro-screen.asleep.off').length,
           chair:a.filter(d=>d.away).length,small:[...document.querySelectorAll('#stage .ro-plate.asleep *,#stage .ro-zz')].filter(e=>parseFloat(getComputedStyle(e).fontSize)<10.5).length}})()`);
       assert.ok(geo.seat.length >= 1 && geo.seat.every(Boolean), `${tag}: each sleeper has a lounge seat with its small desk: ${geo.seat}`);
-      assert.deepStrictEqual(geo.pose, geo.pose.map(() => 'rest'), `${tag}: the person is in rest`);
+      assert.deepStrictEqual(geo.pose, geo.pose.map(() => (world === 'retro' ? 'sit' : 'rest')), `${tag}: the person is in ${world === 'retro' ? 'sit (the arcade draws it beside the cabinet, 102 FR-264)' : 'rest'}`);
       assert.strictEqual(geo.shades, geo.asleep, `${tag}: a lamp-off marker on each asleep desk only`);
       /* review 2026-11-02: no dark oval over the room behind a sleeper; the person dims instead */
       const dim = await js(`(()=>{const L=[...document.querySelectorAll('#stage .ro-lights .ro-lamp.lamp-off')].map(e=>{const c=getComputedStyle(e);return [c.backgroundImage,c.backgroundColor]});const P=[...document.querySelectorAll('#stage .ro-person.asleep')].map(e=>getComputedStyle(e).filter);const A=[...document.querySelectorAll('#stage .ro-person:not(.asleep)')].map(e=>getComputedStyle(e).filter);return {L,P,A}})()`);
@@ -154,6 +275,10 @@ module.exports = async (ctx) => {
       assert.strictEqual(geo.chair + geo.small, 0, `${tag}: no empty-chair marker on an asleep desk; no text under 10.5px`);
       console.log('[moments] asleep ok', sl.length);
       await shot(world, 'asleep', w, h);
+      /* spec 097 FR-364: a lounge seat with a pencil has a line of 55% of the plate plus the 22 px the pencil keeps, so the capped name is not cut. Font-independent: the name is forced wide, so the line is at its cap, whatever the font */
+      if (process.env.MOMENTS_MUTANT === 'lounge22') await js(`(()=>{document.querySelectorAll('#stage .ro-plate.lounge.has-ren .ro-l1').forEach(l=>l.style.setProperty('max-width','55%','important'));return 1})()`);
+      const cap = await js(`(()=>{const o=[];for(const p of document.querySelectorAll('#stage .ro-plate.lounge.has-ren')){const l=p.querySelector('.ro-l1'),b=l&&l.querySelector(':scope>b');if(!b)continue;const old=b.style.cssText;b.style.cssText+=';width:1000px';const cs=getComputedStyle(p),w=l.getBoundingClientRect().width,c=p.clientWidth-parseFloat(cs.paddingLeft)-parseFloat(cs.paddingRight);b.style.cssText=old;o.push({want:+(c*0.55+22).toFixed(2),got:+w.toFixed(2)})}return o})()`);
+      if (world === 'retro') assert.ok(cap.length >= 1 && cap.every((c) => Math.abs(c.got - c.want) <= 0.5), `${tag}: a lounge seat's line keeps 22 px more than 55% of the plate for the pencil: ${JSON.stringify(cap)}`);
       /* the name has priority in a narrow plate: no name is cut, at any desk (review 2026-11-02) */
       const CUT = `[...document.querySelectorAll('#stage .ro-plate .ro-l1 b')].filter(b=>{const r=document.createRange();r.selectNodeContents(b);return r.getBoundingClientRect().width>b.getBoundingClientRect().width+0.01}).map(b=>b.textContent)`;
       await H.until(CUT + '.length===0', 4000).catch(() => undefined); /* plates are fitted after the draw */
@@ -245,6 +370,23 @@ module.exports = async (ctx) => {
       await must(`!!document.querySelector('#chat .note.elicit')`, 'the card in the chat');
       assert.ok(await js(`document.getElementById('chat').querySelector('.note.elicit').textContent`).then((t) => /An MCP server asks for input/.test(t)), `${tag}: the chat holds the flat card`);
     }
+    // ---- spec 102 T174 (review finding on #1764, Changes 2026-11-15): every folder sign's + and folder-actions buttons are inside the sign and the topmost thing at their centre (not clipped by the circle's narrow rooms) ----
+    if (run('signreach') && (world === 'cave' || world === 'photo')) {
+      const READ = `(()=>{const R=e=>e.getBoundingClientRect(),out=[];for(const g of document.querySelectorAll('#stage .ro-sign:not(.ro-stag)')){const q=R(g);for(const b of g.querySelectorAll('[data-newsess],[data-foldermenu]')){const r=R(b),e=document.elementFromPoint(r.left+r.width/2,r.top+r.height/2);out.push({sign:g.textContent.trim().slice(0,14),w:Math.round(q.width),ok:r.width>0&&r.left>=q.left-0.5&&r.right<=q.right+0.5&&r.top>=q.top-0.5&&r.bottom<=q.bottom+0.5&&!!e&&(e===b||b.contains(e))})}}return out})()`;
+      for (const n of ['15', '8']) {
+        await H.load({ w, h, query: q(world, { sim: n }), ready: REAL, settle: true });
+        /* what is drawn matters: the Cave's 15-agent frame is rows at both sizes (the ring's face is under the Cave's minFace 30.5 at 1440x900, its folders' rooms leave it no room at 1280x800; spec 102 Changes 2026-11-17), so a check of its signs there is a check of rows; the Cave's 8-agent frame is the circle, the Photo office is rows */
+        const arr = await js(`document.querySelector('#stage .ro').dataset.arrangement`), want = world === 'cave' && n === '8' ? 'circle' : 'rows';
+        assert.strictEqual(arr, want, `${tag}: ${n} agents: the arrangement drawn is ${want}`);
+        const rd = await js(READ);
+        assert.ok(rd.length >= 2, `${tag}: ${n} agents: the signs' buttons were found (${rd.length})`);
+        assert.deepStrictEqual(rd.filter((b) => !b.ok), [], `${tag}: ${n} agents: every sign's + and folder-actions buttons are inside the sign and reachable (elementFromPoint), none clipped`);
+        if (world === 'cave') await shot(world, 'signreach-' + n, w, h); /* the Cave's circle (8 agents) and rows (15) as drawn, for docs/screenshots/102-174-cave-circle-* */
+        /* the mutant of this check: a sign cut to 60 px (what the circle's narrow room did) must fail it, so the check can fail */
+        await js(`(()=>{const g=document.querySelector('#stage .ro-sign:not(.ro-stag) [data-newsess]').closest('.ro-sign');g.classList.add('short');g.style.maxWidth='60px'})()`);
+        assert.ok((await js(READ)).some((b) => !b.ok), `${tag}: mutant (a sign cut to 60 px) is caught by the reachability check`);
+      }
+    }
     // ---- T139: reduced motion and forced colours ----
     if (run('emulation')) {
       await emulate([{ name: 'forced-colors', value: 'active' }], async () => {
@@ -259,19 +401,20 @@ module.exports = async (ctx) => {
       });
     }
     if (run('inbox')) assert.ok(staleRan > 0, `${tag}: the stale-button check ran (a queue of two or more in a full slip)`);
-    // ---- spec 097 FR-004 / Codex sweep: choosing an Office layout keeps keyboard focus on the choice; FR-122: Show in chat from the limit slip focuses the amount field ----
+    // ---- spec 097 FR-004 / Codex sweep: choosing a World card keeps keyboard focus on the choice; FR-122: Show in chat from the limit slip focuses the amount field ----
     if (run('focus') && world === 'photo') {
       await H.load({ w, h, query: q(world), ready: REAL, settle: false, focus: true });
       await js(`window.DurbarScreens.openSettings()`);
-      await must(`!!document.querySelector('[data-officelayout="open"]')`, 'Settings');
-      await js(`document.querySelector('[data-officelayout="open"]').focus()`);
+      await must(`!!document.querySelector('#wrGroup [data-world="plain"]')`, 'Settings');
+      await must(`document.querySelectorAll('#wrGroup .wpic img').length>=2`, 'the cards show their previews (the page is painted again once, when the previews script has loaded)');
+      await js(`document.querySelector('#wrGroup [data-world="plain"]').focus()`);
       await H.key('Return');
-      await must(`document.querySelector('[data-officelayout="open"]').getAttribute('aria-pressed')==='true'`, 'Open office chosen');
-      assert.strictEqual(await js(`(document.activeElement.dataset||{}).officelayout`), 'open', `${tag}: after the repaint the focus is on the choice just made`);
-      await js(`document.querySelector('[data-officelayout="real"]').focus()`);
+      await must(`document.querySelector('#wrGroup [data-world="plain"]').getAttribute('aria-checked')==='true'`, 'Open office chosen');
+      assert.strictEqual(await js(`(document.activeElement.dataset||{}).world`), 'plain', `${tag}: after the repaint the focus is on the choice just made`);
+      await js(`document.querySelector('#wrGroup [data-world="photo"]').focus()`);
       await H.key('Return');
-      await must(`document.querySelector('[data-officelayout="real"]').getAttribute('aria-pressed')==='true'`, 'Real office chosen');
-      assert.strictEqual(await js(`(document.activeElement.dataset||{}).officelayout`), 'real', `${tag}: and back`);
+      await must(`document.querySelector('#wrGroup [data-world="photo"]').getAttribute('aria-checked')==='true'`, 'Real office chosen');
+      assert.strictEqual(await js(`(document.activeElement.dataset||{}).world`), 'photo', `${tag}: and back`);
       await js(`document.getElementById('scrClose').click()`);
     }
     if (run('limitfocus')) {
@@ -319,24 +462,40 @@ module.exports = async (ctx) => {
     if (run('coffee')) {
       await H.load({ w, h, query: q(world, { simbreak: '600' }), ready: REAL, settle: false });
       await must(`(window.__durbarSimUi.agents().find(a=>a.name==='Tomas')||{}).paused||[...document.querySelectorAll('#stage .ro-plate')].some(p=>/Tomas/.test(p.textContent)&&/Coffee/i.test(p.textContent))`, 'Tomas on a coffee break', 30000);
+      /* simbreak also sends Rosa to the corner 1.5 s after the load (sim.ts, spec 068 FR-017): the read waits until her break is drawn (a slow page draws it late: issue 1758), so it always sees the settled scene of both */
+      await must(`['Tomas','Rosa'].every(n=>[...document.querySelectorAll('#stage .ro-chip[data-coffeeid]')].some(c=>(c.getAttribute('aria-label')||'').startsWith(n+' ')))`, "Rosa's simulated break drawn at the corner beside Tomas's", 30000);
       if (process.env.MOMENTS_FONT) { await js(`(()=>{const s=document.createElement('style');s.textContent='#stage .ro *{font-family:'+${jsLiteral(process.env.MOMENTS_FONT)}+' !important}';document.head.appendChild(s);window.__durbarSimUi.crew.renderAll();})()`); await H.until(PICS, 10000); } /* a developer aid: another font's widths (CI's Linux fonts are wider) */
       const cf = await js(`(()=>{const p=[...document.querySelectorAll('#stage .ro-plate')].find(p=>/Tomas/.test(p.textContent));return {plate:p.textContent,label:p.getAttribute('aria-label'),title:p.getAttribute('title'),state:p.dataset.state,away:[...document.querySelectorAll('#stage .ro-away')].map(e=>e.textContent),
         chips:[...document.querySelectorAll('#stage .ro-chip')].filter(c=>c.dataset.coffeeid).map(c=>[c.textContent,c.getAttribute('aria-label')])}})()`);
       assert.ok(new RegExp(`^TomasPrompt tuner Coffee break \\u00B7 Coffee break \\u2014 ${RESUMES}`).test(cf.plate) && cf.state === 'waiting', `${tag}: the plate and the status (Waiting, never Error): ${cf.plate} ${cf.state}`);
-      assert.ok(/^Tomas, Prompt tuner, Coffee break, .*at Coffee corner\. Open chat panel\.$/.test(cf.label), `${tag}: the name: ${cf.label}`);
+      assert.ok(/^Tomas, Prompt tuner, Coffee break, .*at Coffee corner, On a coffee break(, context \d+ %)?\. Open chat panel\.$/.test(cf.label), `${tag}: the name (spec 097 FR-362: Open office's mood words, "On a coffee break", then FR-325: the context words, when the context is known, before "Open chat panel."): ${cf.label}`);
       assert.ok(cf.away.some((t) => /^at Coffee corner until /.test(t)), `${tag}: the coffee-break post-it says where and until when (owner 2026-11-02): ${JSON.stringify(cf.away)}`);
       assert.strictEqual(await js(`document.querySelectorAll('#stage .ro-tent').length`), 0, `${tag}: no tent card (replaced by the post-it)`);
       assert.deepStrictEqual(await js(`(()=>{const R=e=>e.getBoundingClientRect(),N=[...document.querySelectorAll('#stage .ro-away')],o=[];for(let i=0;i<N.length;i++)for(let j=i+1;j<N.length;j++){const a=R(N[i]),b=R(N[j]);if(a.left<b.right-0.5&&b.left<a.right-0.5&&a.top<b.bottom-0.5&&b.top<a.bottom-0.5)o.push([N[i].textContent,N[j].textContent])}return o})()`), [], `${tag}: no post-it overlaps another, a wide font included`);
-      assert.ok(await js(`getComputedStyle(document.querySelector('#stage .ro-away[data-place="coffee"]')).backgroundColor`) !== await js(`getComputedStyle(document.querySelector('#stage .ro-away:not([data-place="coffee"])')||document.body).backgroundColor`), `${tag}: the coffee post-it has its own colour`);
-      assert.strictEqual(cf.chips.length, 1, `${tag}: only the agent on a coffee break stands at the corner (FR-128): ${JSON.stringify(cf.chips)}`);
-      assert.ok(/^Tomas \(until .* back in \d+ min\)\. Open the chat\.$/.test(cf.chips[0][1]), `${tag}: the corner chip's name: ${cf.chips[0][1]}`);
+      /* the arcade's ticket is a dark card with a neon edge (102 FR-264, owner 2026-11-03): its own colour is the edge and the words, not the paper */
+      const NOTE_PROP = world === 'retro' ? 'borderTopColor' : 'backgroundColor';
+      assert.ok(await js(`getComputedStyle(document.querySelector('#stage .ro-away[data-place="coffee"]'))[${jsLiteral(NOTE_PROP)}]`) !== await js(`getComputedStyle(document.querySelector('#stage .ro-away:not([data-place="coffee"])')||document.body)[${jsLiteral(NOTE_PROP)}]`), `${tag}: the coffee post-it has its own colour`);
+      assert.deepStrictEqual(cf.chips.map((c) => c[1].split(' ')[0]).sort(), ['Rosa', 'Tomas'], `${tag}: only the agents on a coffee break (Tomas and Rosa) stand at the corner (FR-128): ${JSON.stringify(cf.chips)}`);
+      const tomasChip = cf.chips.find((c) => c[1].startsWith('Tomas '));
+      assert.ok(/^Tomas \(until .* back in \d+ min\)\. Open the chat\.$/.test(tomasChip[1]), `${tag}: the corner chip's name: ${tomasChip[1]}`);
       await shot(world, 'coffee', w, h);
       await H.load({ w, h, query: q(world), ready: REAL, settle: false });
       await must(PICS, 'the pictures');
       assert.strictEqual(await js(`[...document.querySelectorAll('#stage .ro-chip')].filter(c=>c.dataset.coffeeid).length`), 0, `${tag}: with no coffee break nobody stands at the corner `);
     }
     // ---- review on #994 (2026-11-02): a slip never offers Allow without the change or command the inbox row shows; other approve rules ----
-    if (run('review')) {
+    if (run('review') && world === 'retro') {
+      /* the arcade shows one-line pills only (102 FR-257, T273): the slip's Allow and Review buttons are not drawn, the pill opens the inbox, which holds the words and buttons */
+      await H.load({ w, h, query: q(world, { sim: '3', simfloors: '1' }), ready: REAL, settle: false });
+      await must(PICS, 'the pictures');
+      await must(`!!document.querySelector('#stage .ro-slip.ro-queue[data-variant="pill"]')`, 'the queue pill');
+      const pill = await js(`(()=>{const e=document.querySelector('#stage .ro-slip.ro-queue');return {btns:[...e.querySelectorAll('button')].map(b=>b.textContent.trim()),perm:e.querySelectorAll('[data-slipact="perm"]').length,lines:e.getBoundingClientRect().height}})()`);
+      assert.ok(pill.perm === 0 && pill.btns.length === 1 && /^\d+ needs? you \u00B7 Open the inbox$|^\d+ need you \u00B7 Open the inbox$/.test(pill.btns[0]), `${tag}: the arcade's queue is one pill that opens the inbox: ${JSON.stringify(pill)}`);
+      await js(`document.querySelector('#stage .ro-slip.ro-queue [data-slipact="inbox"]').click()`);
+      await must(`!!document.querySelector('#inboxDlg .inbox-row')`, 'the pill opens the inbox');
+      await js(`document.getElementById('inboxClose').click()`);
+    }
+    if (run('review') && world !== 'retro') {
       await H.load({ w, h, query: q(world, { sim: '3', simfloors: '1' }), ready: REAL, settle: false });
       await must(PICS, 'the pictures');
       await must(`!!document.querySelector('#stage .ro-slip.ro-queue[data-variant="full"]')`, 'the full queue slip');
@@ -377,13 +536,23 @@ module.exports = async (ctx) => {
       await H.load({ w, h, query: q(world), ready: REAL, settle: false }); /* the Boss's post-its are the simulator's own waiting agents (a visit to the Boss is not pinned) */
       await must(PICS, 'the pictures');
       const PL = ['boss', 'bank', 'coffee', 'library', 'software', 'terminal', 'web', 'other'];
-      await js('window.__durbarSimUi.uncrowd();' + PL.filter((id) => id !== 'boss').map((id, i) => 'window.__durbarSimUi.crowd(' + jsLiteral(id) + ',1,' + (8 + i) + ')').join(';'));
+      /* issue #1753: the simulator's own visits (replayed tool calls at the Terminal, the Software library and the Library, the cap at the Bank, the waiting agents at the Boss) are
+         promoted 600 ms after their call on the wall clock; wait for them, so the scene before the crowd is the same on a fast and a slow machine (9 post-its, no coffee, web or other) */
+      await must(H.SETTLED, "the simulator's own visits settled");
+      const CROWD = 'window.__durbarSimUi.uncrowd();' + PL.filter((id) => id !== 'boss').map((id, i) => 'window.__durbarSimUi.crowd(' + jsLiteral(id) + ',1,' + (8 + i) + ')').join(';');
+      const NOWAIT = process.env.MOMENTS_MUTANT === 'notes-nowait'; /* the mutant reads in the same task as the crowd, before its render: it must fail at "one post-it for each place" */
+      if (!NOWAIT) await js(CROWD);
       const CONTRAST = `const P=s=>{const m=/rgba?\\(([^)]+)\\)/.exec(s);return m?m[1].split(/[ ,\\/]+/).filter(Boolean).slice(0,3).map(Number):[0,0,0]},Lm=c=>{const f=x=>{x/=255;return x<=0.03928?x/12.92:Math.pow((x+0.055)/1.055,2.4)};return 0.2126*f(c[0])+0.7152*f(c[1])+0.0722*f(c[2])},K=(a,b)=>{const x=Lm(P(a)),y=Lm(P(b));return (Math.max(x,y)+0.05)/(Math.min(x,y)+0.05)};`;
-      const readNotes = () => js('(()=>{' + CONTRAST + "return [...document.querySelectorAll('#stage .ro-away')].map(e=>{const c=getComputedStyle(e);return {place:e.dataset.place,text:e.textContent,bg:c.backgroundColor,ink:c.color,ratio:K(c.color,c.backgroundColor),size:parseFloat(c.fontSize)}})})()");
-      await must(`document.querySelectorAll('#stage .ro-away').length>=8`, 'a post-it for each place');
-      const ns = await readNotes();
+      const NOTES = '(()=>{' + CONTRAST + "const ARC=" + jsLiteral(world === 'retro') + ";return [...document.querySelectorAll('#stage .ro-away')].map(e=>{const c=getComputedStyle(e);return {place:e.dataset.place,text:e.textContent,bg:c.backgroundColor,key:ARC?c.color:c.backgroundColor,ink:c.color,ratio:K(c.color,c.backgroundColor),size:parseFloat(c.fontSize)}})})()";
+      const readNotes = () => js(NOTES);
+      /* issue #1753: crowd() only queues a render (requestAnimationFrame), and the scene before it already has 8 or more post-its, so a count alone was met by the old scene
+         on a slow page. settleNow() draws the queued render before the count and the read. */
+      if (!NOWAIT) await must(`window.__durbarSimUi.settleNow()`, 'the crowd drawn');
+      if (!NOWAIT) await must(`document.querySelectorAll('#stage .ro-away').length>=8`, 'a post-it for each place');
+      const ns = NOWAIT ? await js(CROWD + ';' + NOTES) : await readNotes();
       assert.deepStrictEqual([...new Set(ns.map((x) => x.place))].sort(), PL.slice().sort(), `${tag}: one post-it for each place: ${JSON.stringify(ns.map((x) => [x.place, x.text]))}`);
-      assert.strictEqual(new Set(ns.map((x) => x.bg)).size, PL.length, `${tag}: one colour per place, all different: ${JSON.stringify(ns.map((x) => [x.place, x.bg]))}`);
+      /* the arcade's ticket is a dark card whose edge and words carry the place's colour (102 FR-264, owner 2026-11-03) */
+      assert.strictEqual(new Set(ns.map((x) => x.key)).size, PL.length, `${tag}: one colour per place, all different: ${JSON.stringify(ns.map((x) => [x.place, x.key]))}`);
       for (const x of ns) {
         assert.ok(x.ratio >= 4.5 && x.size >= 10.5, `${tag}: ${x.place} ink contrast ${x.ratio.toFixed(2)}:1 at ${x.size}px`);
         assert.ok(/^at [A-Z]/.test(x.text), `${tag}: the words stay: ${x.text}`);
@@ -394,6 +563,195 @@ module.exports = async (ctx) => {
         assert.ok(fc.length >= 8 && fc.every((x) => x.ratio >= 4.5), `${tag}: forced colours keep the post-it text readable: ${JSON.stringify(fc.map((x) => [x.place, x.ratio.toFixed(1)]))}`);
       });
       console.log('[moments] notes ok', ns.length);
+    }
+    // ---- review of #1740: the question card's "Other answer" placeholder reads at 4.5:1 on its field in every built-in theme and the dark fixture, in this world (the table is in the spec delta) ----
+    if (run('placeholder')) {
+      /* the plain office (no world: the light Clean Office) and this world's own look; each with the built-in themes, and with the dark fixture */
+      for (const [name, plain, extra] of [['plain office', true, {}], ['plain office dark fixture', true, CHECK_DARK_QUERY], ['world look', false, {}], ['world look dark fixture', false, CHECK_DARK_QUERY]]) {
+        await H.load({ w, h, query: plain ? { sim: '15', officeview: 'flat', simquestion: '1', ...extra } : q(world, { sim: '15', simquestion: '1', ...extra }), ready: plain ? 'fit' : REAL, settle: false });
+        if (!plain) await must(PICS, 'the pictures');
+        /* an earlier step may have left the page on another floor (the floor choice is stored); the question's agent must be on the floor shown */
+        const had = await js(`(()=>{const h=!!(localStorage.getItem('durbar.floor')||localStorage.getItem('durbar.floorView'));localStorage.removeItem('durbar.floor');localStorage.removeItem('durbar.floorView');return h})()`);
+        if (had) {
+          await H.load({ w, h, query: plain ? { sim: '15', officeview: 'flat', simquestion: '1', ...extra } : q(world, { sim: '15', simquestion: '1', ...extra }), ready: plain ? 'fit' : REAL, settle: false });
+          if (!plain) await must(PICS, 'the pictures');
+        }
+        await js('window.__cx=(()=>{' + CX + 'return {Pa,Lm,over,bgOf,rat,phc}})();0');
+        if (plain) {
+          const o = await H.openSimAgent(`a=>!a.parent&&a.question`, '#chat .note.question .q-other');
+          assert.ok(o.ok, `${tag}: an agent has the question in its chat (${name}): ${JSON.stringify({ id: o.id, ...o.seen })}`);
+        } else {
+          const asker = await js(`(()=>{const A=window.__durbarSimUi.agents();return (A.find(a=>a.info&&a.info.adapterId==='claude')||A[0]||{}).id||''})()`);
+          assert.ok(asker, `${tag}: the simulator has a Claude agent to ask the question`);
+          await js(`document.querySelector('#stage .ro-plate[data-id="'+${jsLiteral(asker)}+'"]').click()`);
+          await must(`!!document.querySelector('#chat .note.question:not(.settled) .q-other')`, 'the question card with its Other answer field');
+        }
+        const ids = !/dark fixture/.test(name) ? await js(`Object.keys(window.THEME._builtins())`) : [CHECK_DARK.id];
+        const rows = [];
+        for (const id of ids) {
+          if (!/dark fixture/.test(name)) await js(`window.THEME.setTheme(${jsLiteral(id)});0`);
+          await must(`window.THEME.current().id===${jsLiteral(id)}`, 'the theme ' + id);
+          await H.settle();
+          const r = await js(`(()=>{const {Pa,Lm,over,bgOf,rat,phc}=window.__cx;const o=document.querySelector('#chat .note.question:not(.settled) .q-other');if(!o)return 0;const b=bgOf(o,document.documentElement);return rat(over(phc(o),b),b)})()`);
+          rows.push([id, Math.round(r * 100) / 100, r]);
+        }
+        console.log(`[moments] placeholder ratio ${tag} (${name}): ${JSON.stringify(rows.map((x) => [x[0], x[1]]))}`);
+        assert.ok(rows.length >= 1 && rows.every((x) => x[2] >= 4.5), `${tag}: the Other answer placeholder reads at 4.5:1 on its field in ${name} theme(s): ${JSON.stringify(rows.map((x) => [x[0], x[1]]))}`);
+      }
+    }
+    // ---- 102 T223 walk (097 FR-073, FR-075): the Real office draws no walk; a person at a desk is gone from it and appears at the place (a still pair: before, after), in the arcade ----
+    if (run('walk') && world === 'retro') {
+      await H.load({ w, h, query: q(world), ready: REAL, settle: false });
+      await must(PICS, 'the pictures');
+      const MIRA = `(()=>{const a=window.__durbarSimUi.agents().find(x=>x.name==='Mira');return a?a.id:''})()`;
+      const mira = await js(MIRA);
+      assert.ok(mira, `${tag}: the simulator has Mira`);
+      const where = () => js(`(()=>{const id=${jsLiteral(mira)};return {chip:[...document.querySelectorAll('#stage .ro-chip,#stage .ro-lplate')].filter(c=>/Mira/.test(c.dataset.name||c.textContent)).length,at:window.__durbarSimUi.awayIds().includes(id),walkers:document.querySelectorAll('#walkers .walker,#stage .walker,#stage .ro-walker').length}})()`);
+      const b = await where();
+      assert.deepStrictEqual([b.at, b.chip, b.walkers], [false, 0, 0], `${tag}: before: Mira works at her desk, nobody at a place: ${JSON.stringify(b)}`);
+      await shot(world, 'walk-desk', w, h);
+      assert.ok(await js(`window.__durbarSimUi.pinAt(${jsLiteral(mira)},'terminal')`), `${tag}: Mira is sent to the Terminal`);
+      await must(`window.__durbarSimUi.awayIds().includes(${jsLiteral(mira)})&&[...document.querySelectorAll('#stage .ro-chip,#stage .ro-lplate')].some(c=>/Mira/.test(c.dataset.name||c.textContent))`, 'Mira at the Terminal');
+      await must(PICS, 'the pictures');
+      await H.settle();
+      const a2 = await where();
+      assert.ok(a2.at && a2.chip >= 1 && a2.walkers === 0, `${tag}: after: Mira stands at the Terminal and nothing walks (097 FR-075): ${JSON.stringify(a2)}`);
+      await shot(world, 'walk-place', w, h);
+    }
+    // ---- 097 T113: the All floors view as storeys in Photo and the cave too (the same step, same checks); 102 T223: the cells that are not one of the nine, looked at in the arcade (chat with a request, the All floors view): pictures and no text under 10.5px ----
+    if (run('cells')) {
+      if (world === 'retro') {
+      await H.load({ w, h, query: q(world, { sim: '15', simfloors: '1' }), ready: REAL, settle: false });
+      await must(PICS, 'the pictures');
+      await js(`(()=>{const p=[...document.querySelectorAll('#stage .ro-plate')].find(x=>x.textContent.startsWith('Jonas'));p.click()})()`);
+      await must(`document.body.classList.contains('panel-open')&&!!document.querySelector('#chat .note.perm')`, 'the chat of Jonas with its request');
+      await H.settle();
+      const small = await js(`[...document.querySelectorAll('#panel *')].filter(e=>e.children.length===0&&e.textContent.trim()&&e.getClientRects().length&&parseFloat(getComputedStyle(e).fontSize)<10.5).length`);
+      assert.strictEqual(small, 0, `${tag}: the chat has no text under 10.5px`);
+      /* 102 T223 (#1268): the permission card in the arcade's chat is dark (T221 fixed the cream card found in #1279) and every text of it reads at 4.5:1; its buttons are there */
+      const perm = await js(`(()=>{const c=document.querySelector('#chat .note.perm:not(.settled)');if(!c)return null;const P=(s)=>{const m=/rgba?\\(([^)]+)\\)/.exec(s);return m?m[1].split(/[ ,\\/]+/).filter(Boolean).slice(0,3).map(Number):[0,0,0]},Lm=(a)=>{const f=(x)=>{x/=255;return x<=0.03928?x/12.92:Math.pow((x+0.055)/1.055,2.4)};return 0.2126*f(a[0])+0.7152*f(a[1])+0.0722*f(a[2])};const bg=P(getComputedStyle(c).backgroundColor);const worst=[...c.querySelectorAll('*')].filter(e=>e.children.length===0&&e.textContent.trim()&&e.getClientRects().length&&!e.closest('.btn')).map(e=>{const a=Lm(P(getComputedStyle(e).color)),b=Lm(bg);return (Math.max(a,b)+0.05)/(Math.min(a,b)+0.05)});return {lum:Lm(bg),btns:c.querySelectorAll('.btn').length,texts:worst.length,min:worst.length?Math.min(...worst):0}})()`);
+      assert.ok(perm && perm.lum < 0.2 && perm.btns >= 2 && perm.texts > 0 && perm.min >= 4.5, `${tag}: the permission card in the arcade's chat is dark, has its buttons and its text reads at 4.5:1: ${JSON.stringify(perm)}`);
+      await shot(world, 'cell-chat', w, h);
+      /* 102 T223 (issue 1891): chat-shell, chat-header and chat-open in the arcade's own tokens (the arcade world.css): the framed screen, the pink rule under the header, the mono upper-case name, the stepped switch-on; none of it is the flat chat's rounded 1 px look */
+      const cs = await js(`(()=>{const g=(s)=>document.querySelector(s),S=(e)=>getComputedStyle(e),panel=S(g('#panel')),rail=g('#panel>.rail'),ph=g('#panel .ph'),h2=g('#panel .ph h2'),pin=S(g('#panel .panel-in'));
+        const btn=[...document.querySelectorAll('#panel .ph .btn')].map(b=>S(b).borderTopLeftRadius);
+        return {frame:panel.outlineWidth,frameStyle:panel.outlineStyle,railEdge:rail?S(rail).borderRightWidth:'none',rule:S(ph).borderBottomWidth,ruleColor:S(ph).borderBottomColor,page:S(document.body).backgroundColor,caps:S(h2).textTransform,mono:/mono|Menlo|Consolas/i.test(S(h2).fontFamily),btnRadius:btn,anim:pin.animationName,steps:pin.animationTimingFunction}})()`);
+      assert.ok(cs.frame === '3px' && cs.frameStyle === 'solid', `${tag}: chat-shell: the open chat is a framed screen (the arcade's 3px frame): ${JSON.stringify(cs)}`);
+      assert.ok(cs.railEdge === '3px', `${tag}: chat-shell: the rail has the arcade's 3px edge: ${JSON.stringify(cs)}`);
+      assert.ok(cs.rule === '3px' && cs.caps === 'uppercase' && cs.mono && cs.btnRadius.length >= 1 && cs.btnRadius.every((r) => r === '0px'), `${tag}: chat-header: a 3px rule, the name in mono capitals, square buttons: ${JSON.stringify(cs)}`);
+      assert.ok(OS_REDUCED ? cs.anim === 'none' : (cs.anim === 'arc-chat-on' && /^steps\(/.test(cs.steps)), `${tag}: chat-open: the chat switches on in hard steps (none under reduced motion): ${JSON.stringify(cs)}`);
+      await shot(world, 'cell-chatshell', w, h);
+      /* 102 T223: the chat of the simulator's first Claude agent (Ada) holds the simulator's question card (the question-card cell); Kenji sits on another floor with floors on, so this page has one floor */
+      await H.load({ w, h, query: q(world, { sim: '15', simquestion: '1' }), ready: REAL, settle: false });
+      await must(PICS, 'the pictures');
+      await js('window.__cx=(()=>{' + CX + 'return {Pa,Lm,over,bgOf,rat,phc}})();0');
+      /* the simulator's question comes from its first Claude agent (its first agent when there is none), a little after the first draw */
+      const asker = await js(`(()=>{const A=window.__durbarSimUi.agents();return (A.find(a=>a.info&&a.info.adapterId==='claude')||A[0]||{}).id||''})()`);
+      assert.ok(asker, `${tag}: the simulator has a Claude agent to ask the question`);
+      await js(`document.querySelector('#stage .ro-plate[data-id="'+${jsLiteral(asker)}+'"]').click()`);
+      await must(`document.body.classList.contains('panel-open')&&!!document.querySelector('#chat .note.question:not(.settled)')`, 'the chat of the asker with its question');
+      await H.settle();
+      /* the question card is dark like the permission card and reads at 4.5:1; its options and its two buttons are there; no text under 10.5px */
+      const qc = await js(`(()=>{const {Pa,Lm,over,bgOf,rat,phc}=window.__cx;const c=document.querySelector('#chat .note.question:not(.settled)');if(!c)return null;const leaf=(e)=>e.children.length===0&&e.textContent.trim()&&e.getClientRects().length;const ink=(e,col)=>{const b=bgOf(e,c);return rat(over(Pa(col),b),b)};const all=[...c.querySelectorAll('*')].filter(leaf);const text=all.filter(e=>!e.closest('.btn')).map(e=>ink(e,getComputedStyle(e).color));const btn=all.filter(e=>e.closest('.btn')).map(e=>ink(e,getComputedStyle(e).color));const other=c.querySelector('.q-other');const ph=other&&other.placeholder?(()=>{const b=bgOf(other,c);return rat(over(phc(other),b),b)})():0;return {lum:Lm(bgOf(c,c)),opts:c.querySelectorAll('.q-opt').length,btns:[...c.querySelectorAll(':scope > .note-actions .btn')].map(b=>b.textContent.trim()),texts:text.length,min:text.length?Math.min(...text):0,btnTexts:btn.length,btnMin:btn.length?Math.min(...btn):0,ph,small:all.filter(e=>parseFloat(getComputedStyle(e).fontSize)<10.5).length}})()`);
+      assert.ok(qc && qc.lum < 0.2 && qc.opts >= 2 && qc.btns.length === 2 && qc.texts > 0 && qc.min >= 4.5 && qc.small === 0, `${tag}: the question card in the arcade's chat is dark, has its options and buttons, its text reads at 4.5:1, nothing under 10.5px: ${JSON.stringify(qc)}`);
+      assert.ok(qc.btnTexts >= 4 && qc.btnMin >= 4.5, `${tag}: the options, Answer and Skip read at 4.5:1 on their own background: ${JSON.stringify(qc)}`);
+      assert.ok(qc.ph >= 4.5, `${tag}: the Other answer placeholder reads at 4.5:1 on its field: ${JSON.stringify(qc)}`);
+      await shot(world, 'cell-question', w, h);
+      /* the keyboard ring of Answer and Skip (the base :focus-visible rule): a solid outline of 2px or more that shows at 3:1 against the card, each with its picture */
+      for (const label of ['Answer', 'Skip']) {
+        const fr = await js(`(()=>{const {Pa,Lm,over,bgOf,rat,phc}=window.__cx;const c=document.querySelector('#chat .note.question:not(.settled)');const b=[...c.querySelectorAll(':scope > .note-actions .btn')].find(x=>x.textContent.trim()===${jsLiteral(label)});if(!b)return null;b.focus();const k=getComputedStyle(b);return {on:document.activeElement===b&&b.matches(':focus-visible'),style:k.outlineStyle,width:parseFloat(k.outlineWidth),ring:rat(over(Pa(k.outlineColor),bgOf(c,c)),bgOf(c,c))}})()`);
+        assert.ok(fr && fr.on && fr.style === 'solid' && fr.width >= 2 && fr.ring >= 3, `${tag}: ${label} shows a keyboard focus ring (solid, 2px or more, 3:1 on the card): ${JSON.stringify(fr)}`);
+        await H.settle();
+        if (label === 'Answer') await shot(world, 'cell-focus-answer', w, h);
+        else await shot(world, 'cell-focus-skip', w, h);
+      }
+      await js(`document.activeElement&&document.activeElement.blur()`);
+      /* the answer bar is the same question, shown under the chat while its card is scrolled out of view (052 FR-162) */
+      await js(`document.getElementById('chat').scrollTop=0`);
+      await must(`!document.getElementById('answerBar').hidden&&!!document.querySelector('#answerBar .ab-act button')`, 'the answer bar once the card is out of view');
+      await H.settle();
+      const ab = await js(`(()=>{const {Pa,Lm,over,bgOf,rat,phc}=window.__cx;const b=document.getElementById('answerBar');const lf=[...b.querySelectorAll('*')].filter(e=>e.children.length===0&&e.textContent.trim()&&e.getClientRects().length).map(e=>{const bg=bgOf(e,b);return rat(over(Pa(getComputedStyle(e).color),bg),bg)});return {texts:lf.length,min:lf.length?Math.min(...lf):0,asks:/ asks:/.test(b.textContent),btns:[...b.querySelectorAll('.ab-act button')].map(x=>x.textContent.trim()),small:[...b.querySelectorAll('*')].filter(e=>e.children.length===0&&e.textContent.trim()&&e.getClientRects().length&&parseFloat(getComputedStyle(e).fontSize)<10.5).length,inside:b.getBoundingClientRect().bottom<=document.getElementById('chat').getBoundingClientRect().bottom+120}})()`);
+      assert.ok(ab.asks && ab.btns.includes('Answer in chat') && ab.small === 0 && ab.inside && ab.texts > 0 && ab.min >= 4.5, `${tag}: the answer bar names the asker, offers Answer in chat, every text (the buttons too) reads at 4.5:1, text >= 10.5px: ${JSON.stringify(ab)}`);
+      await shot(world, 'cell-answerbar', w, h);
+      /* 102 T223 (issue 1891): the MCP elicitation card in the arcade's chat, opened from its bubble: dark like the question card, the arcade's square pink edge and mono heading, its form and buttons there, every text at 4.5:1 and 10.5 px or more */
+      await H.load({ w, h, query: q(world, { simelicit: '1', sim: '3' }), ready: REAL, settle: false });
+      await must(PICS, 'the pictures');
+      await js('window.__cx=(()=>{' + CX + 'return {Pa,Lm,over,bgOf,rat,phc}})();0');
+      await must(`window.__durbarSimUi.slips().elicit.length>=1&&!!document.querySelector('#stage .ro-slip.ro-bubble [data-slipact="open"]')`, 'the MCP request bubble');
+      await js(`document.querySelector('#stage .ro-slip.ro-bubble [data-slipact="open"]').click()`);
+      await must(`document.body.classList.contains('panel-open')&&!!document.querySelector('#chat .note.elicit:not(.settled)')`, 'the MCP card in the arcade chat');
+      await H.settle();
+      const ec = await js(`(()=>{const {Pa,Lm,over,bgOf,rat,phc}=window.__cx;const c=document.querySelector('#chat .note.elicit:not(.settled)');if(!c)return null;const S=getComputedStyle(c),leaf=(e)=>e.children.length===0&&e.textContent.trim()&&e.getClientRects().length;
+        const bg=bgOf(c,document.documentElement),lf=[...c.querySelectorAll('*')].filter(leaf);const min=Math.min(...lf.map(e=>{const b=bgOf(e,document.documentElement);return rat(over(Pa(getComputedStyle(e).color),b),b)}));
+        return {lum:Lm(bg),edge:S.borderTopWidth,radius:S.borderTopLeftRadius,shadow:S.boxShadow!=='none',mono:/mono|Menlo|Consolas/i.test(getComputedStyle(c.querySelector(':scope > b')).fontFamily),fields:c.querySelectorAll('input,select,textarea,.q-other').length,btns:[...c.querySelectorAll('.btn')].length,min,small:lf.filter(e=>parseFloat(getComputedStyle(e).fontSize)<10.5).length}})()`);
+      assert.ok(ec && ec.lum < 0.2 && ec.edge === '3px' && ec.radius === '0px' && ec.shadow && ec.mono, `${tag}: elicitation: the MCP card is dark, with the arcade's 3px square edge, hard shadow and mono heading: ${JSON.stringify(ec)}`);
+      assert.ok(ec.fields >= 1 && ec.btns >= 2 && ec.min >= 4.5 && ec.small === 0, `${tag}: elicitation: its form and buttons are there, every text reads at 4.5:1, nothing under 10.5px: ${JSON.stringify(ec)}`);
+      await shot(world, 'cell-elicit', w, h);
+      }
+      await H.load({ w, h, query: q(world, { sim: '15', simfloors: '1' }), ready: REAL, settle: false });
+      await must(PICS, 'the pictures');
+      /* 102 T223 building-preview (097 FR-105): the real pointer rests on All, as a visitor's does; the page must have seen it enter the button */
+      await must(`!!document.querySelector('#lift:not([hidden]) [data-lift="*all"]')`, 'the lift with its All button');
+      if (world === 'retro') { /* the lift asserts and the picture are the arcade's: Photo and the cave draw the flat lift */
+      /* 102 T223 (issue 1891): lift-panel in the arcade's own tokens: square keys with a hard shadow in the mono font, the shown floor a pressed key in the mark's yellow (the flat lift's rounded 1px keys are the fallback this must not be) */
+      const lf = await js(`(()=>{const S=(e)=>getComputedStyle(e),ks=[...document.querySelectorAll('#lift .lift-b')],cur=ks.find(k=>k.getAttribute('aria-current')==='true'),oth=ks.find(k=>k!==cur);if(!cur||!oth)return null;
+        return {n:ks.length,radius:ks.map(k=>S(k).borderTopLeftRadius),shadow:S(oth).boxShadow!=='none',mono:/mono|Menlo|Consolas/i.test(S(oth).fontFamily),curBg:S(cur).backgroundColor,othBg:S(oth).backgroundColor,small:ks.filter(k=>parseFloat(S(k).fontSize)<10.5).length}})()`);
+      assert.ok(lf && lf.n >= 3 && lf.radius.every((r) => r === '0px') && lf.shadow && lf.mono && lf.curBg !== lf.othBg && lf.small === 0, `${tag}: lift-panel: square keys with a hard shadow in the mono font, the shown floor a pressed key of its own colour, 10.5px or more: ${JSON.stringify(lf)}`);
+      /* the lift's colour pairs: the shown key's ink on its yellow and another key's ink on its own surface read at 4.5:1 (MOMENTS_MUTANT=lift-ink sets the shown key's ink to its background: this assert must fail) */
+      await js('window.__cx=(()=>{' + CX + 'return {Pa,Lm,over,bgOf,rat,phc}})();0');
+      if (process.env.MOMENTS_MUTANT === 'lift-ink') await js(`(()=>{const c=document.querySelector('#lift .lift-b[aria-current="true"]');c.style.color=getComputedStyle(c).backgroundColor})()`);
+      const lc = await js(`(()=>{const {Pa,over,bgOf,rat}=window.__cx,ks=[...document.querySelectorAll('#lift .lift-b')],cur=ks.find(k=>k.getAttribute('aria-current')==='true'),oth=ks.find(k=>k!==cur),f=(k)=>{const b=bgOf(k,document.documentElement);return rat(over(Pa(getComputedStyle(k).color),b),b)};return {cur:f(cur),oth:f(oth)}})()`);
+      assert.ok(lc.cur >= 4.5 && lc.oth >= 4.5, `${tag}: lift-panel: the shown key and another key read at 4.5:1: ${JSON.stringify(lc)}`);
+      await shot(world, 'cell-lift', w, h);
+      }
+      await js(`window.__bpEnter=false;document.querySelector('#lift [data-lift="*all"]').addEventListener('mouseenter',()=>{window.__bpEnter=true});0`);
+      const bp = await js(`(()=>{const r=document.querySelector('#lift [data-lift="*all"]').getBoundingClientRect();return {x:Math.round(r.left+r.width/2),y:Math.round(r.top+r.height/2)}})()`);
+      ctx.win.webContents.sendInputEvent({ type: 'mouseMove', x: bp.x, y: bp.y });
+      await must(`window.__bpEnter===true&&document.querySelector('#lift [data-lift="*all"]').matches(':hover')`, 'the pointer on the All button');
+      await H.settle();
+      await shot(world, 'cell-preview', w, h);
+      ctx.win.webContents.sendInputEvent({ type: 'mouseMove', x: 0, y: 0 });
+      await must(`!document.querySelector('#lift [data-lift="*all"]').matches(':hover')`, 'the pointer off the All button');
+      await js(`document.querySelector('#lift [data-lift="*all"]').click()`);
+      /* review of #1279: no silent skip. The same condition shots-092-lift uses for the All floors view; if it never comes, the run fails, so no picture is ever quietly missing */
+      await must(`document.querySelector('#lift [data-lift="*all"]').getAttribute('aria-current')==='true'`, 'the All floors view (the lift says All)');
+      await must(PICS, 'the pictures');
+      /* 102 T223 (#1268, spec 097 FR-104): the All floors view is the building: a tag with the floor's name for every floor that has a folder, at least two floors, each name at 10.5 px or more and 4.5:1, no tag over a sign, a cabinet or another tag, nothing scrolls */
+      /* spec 097 (#1763, review of #1802): the cave draws its All floors view as storeys at both sizes, as Photo does (the dots fix frees the room the flat hall was taking), so every world and size meets the storey checks below; a cave that fell back to the flat hall now fails them. */
+      await must(`document.querySelectorAll('#stage .ro-stag').length>=2`, 'the storey tags of the All floors view');
+      const sto = await js(`(()=>{const P=(s)=>{const m=/rgba?\\(([^)]+)\\)/.exec(s);return m?m[1].split(/[ ,\\/]+/).filter(Boolean).slice(0,3).map(Number):[0,0,0]},Lm=(a)=>{const f=(x)=>{x/=255;return x<=0.03928?x/12.92:Math.pow((x+0.055)/1.055,2.4)};return 0.2126*f(a[0])+0.7152*f(a[1])+0.0722*f(a[2])};
+        const R=e=>e.getBoundingClientRect(),hit=(a,b)=>a.left<b.right-0.5&&b.left<a.right-0.5&&a.top<b.bottom-0.5&&b.top<a.bottom-0.5;
+        const tags=[...document.querySelectorAll('#stage .ro-stag')], others=[...document.querySelectorAll('#stage .ro-sign:not(.ro-stag),#stage .ro-plate,#stage .ro-dots,#stage .ro-chip,#stage .ro-bub,#stage .ro-bang')]; /* review of #1746: the thinking dots and the status chips and cues are in the keep-out too */
+        const names=[...document.querySelectorAll('#lift [data-lift]')].filter(b=>b.dataset.lift!=='*all').map(b=>(b.getAttribute('aria-label')||'').split(', floor')[0]);
+        const lay=window.__durbarSimUi.realLayout(), folders=new Set(window.__durbarSimUi.agents().filter(a=>!a.parent).map(a=>a.room)).size;
+        const fl=document.getElementById('floor'), st=document.getElementById('stage');
+        return {texts:tags.map(t=>t.textContent.trim()),names,
+          small:tags.filter(t=>parseFloat(getComputedStyle(t.querySelector('b')||t).fontSize)<10.5).length,
+          ratio:Math.min(...tags.map(t=>{const b=t.querySelector('b')||t,a=Lm(P(getComputedStyle(b).color)),c=Lm(P(getComputedStyle(t).backgroundColor));return (Math.max(a,c)+0.05)/(Math.min(a,c)+0.05)})),
+          overlap:tags.flatMap((t,i)=>tags.slice(i+1).filter(o=>hit(R(t),R(o))).map(()=>'tag x tag').concat(others.filter(o=>hit(R(t),R(o))).map(o=>'tag x '+o.className))),
+          cut:tags.filter(t=>{const b=t.querySelector('b');return !b||b.scrollWidth>b.clientWidth+0.5||!R(t).width}).map(t=>t.textContent.trim()), /* review of #1741: the ellipsis is on the <b>, not on the tag's box (that one never overflows) */
+          signDots:[...document.querySelectorAll('#stage .ro-sign:not(.ro-stag)')].flatMap(g=>[...document.querySelectorAll('#stage .ro-dots')].filter(d=>hit(R(g),R(d))).map(()=>g.textContent.trim().slice(0,20))), /* issue #1759: no sign over a thinking person's dots */
+          signBtns:[...document.querySelectorAll('#stage .ro-sign:not(.ro-stag)')].flatMap(g=>[...g.querySelectorAll('.ro-sb')].filter(b=>{const r=R(b),q=R(g),e=document.elementFromPoint((r.left+r.right)/2,(r.top+r.bottom)/2);return !(r.width>0&&r.left>=q.left-1&&r.right<=q.right+1&&r.top>=q.top-1&&r.bottom<=q.bottom+1&&e&&(e===b||b.contains(e)))}).map(b=>(g.textContent.trim().slice(0,12))+' '+(b.dataset.newsess?'+':'...'))), /* review of #1746 round 3: a sign's + and folder-actions buttons are inside the sign and the topmost thing at their centre (not clipped) */
+          lounge:document.querySelectorAll('#stage .ro-plate.lounge').length,rest:tags.some(t=>t.textContent.trim()==='Resting'),
+          inWindow:tags.every(t=>{const r=R(t);return r.left>=0&&r.right<=innerWidth&&r.top>=0&&r.bottom<=innerHeight}),
+          storeys:(lay.storeys||[]).length,scroll:st.dataset.fit==='scroll'||fl.scrollHeight>fl.clientHeight+1}})()`);
+      assert.ok(sto.storeys >= 2, `${tag}: the All floors view has at least two storeys: ${JSON.stringify(sto)}`);
+      assert.ok(world !== 'retro' || (sto.lounge >= 1 && sto.rest), `${tag}: the simulator's resting agents are on screen under the Resting tag (spec 102, review of #1741: no floor's band holds them): ${JSON.stringify(sto)}`);
+      assert.ok(sto.names.length >= 2 && sto.names.every((n) => sto.texts.some((t) => t.endsWith(' ' + n))), `${tag}: every floor's name is on screen in a storey tag: ${JSON.stringify([sto.names, sto.texts])}`);
+      assert.deepStrictEqual(sto.cut, [], `${tag}: no storey tag cuts its name (its <b> fits)`);
+      assert.strictEqual(sto.small, 0, `${tag}: the storey tags are 10.5px or more`);
+      assert.ok(sto.ratio >= 4.5, `${tag}: the storey tags read at 4.5:1: ${sto.ratio}`);
+      assert.deepStrictEqual(sto.overlap, [], `${tag}: no storey tag covers a sign, a plate, thinking dots, a chip or another tag`);
+      assert.deepStrictEqual(sto.signBtns, [], `${tag}: every folder sign's + and folder-actions buttons are visible, inside the sign and not clipped`);
+      assert.deepStrictEqual(sto.signDots, [], `${tag}: no folder sign covers a thinking person's dots (issue #1759)`);
+      assert.ok(sto.inWindow, `${tag}: every storey tag is inside the window`);
+      assert.strictEqual(sto.scroll, false, `${tag}: the All floors view does not scroll`);
+      /* round 4 of the review of #1741: a storey tag never cuts a folder sign so far that its "New session" and "Folder actions" buttons fall outside it: each button lies inside its sign and the element at its centre is the button */
+      const btn = await js(`(()=>{const R=e=>e.getBoundingClientRect();const out=[];for(const sg of document.querySelectorAll('#stage .ro-sign:not(.ro-stag)')){const sr=R(sg);for(const b of sg.querySelectorAll('[data-newsess],[data-foldermenu]')){const r=R(b),at=document.elementFromPoint(r.left+r.width/2,r.top+r.height/2);out.push({id:b.dataset.newsess||b.dataset.foldermenu,inside:r.left>=sr.left-0.5&&r.right<=sr.right+0.5&&r.top>=sr.top-0.5&&r.bottom<=sr.bottom+0.5,hit:!!at&&(at===b||b.contains(at))})}}return out})()`);
+      assert.ok(btn.length >= 2 && btn.every((b) => b.inside && b.hit), `${tag}: every sign's + and folder-actions buttons are inside the sign and reachable: ${JSON.stringify(btn.filter((b) => !b.inside || !b.hit))} of ${btn.length}`);
+      await shot(world, 'cell-allfloors', w, h);
+      for (const f of world === 'retro' ? ['cell-chat', 'cell-question', 'cell-focus-answer', 'cell-focus-skip', 'cell-answerbar', 'cell-chatshell', 'cell-elicit', 'cell-lift', 'cell-preview', 'cell-allfloors'] : ['cell-preview', 'cell-allfloors']) assert.ok(fs.existsSync(path.join(OUT, `${world}-${f}-${w}x${h}.png`)), `${tag}: the picture ${f} was written`);
+      await js(`localStorage.removeItem('durbar.floor');localStorage.removeItem('durbar.floorView')`); /* the next size starts on one floor */
     }
   }
 };

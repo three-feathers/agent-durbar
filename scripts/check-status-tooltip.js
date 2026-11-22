@@ -16,7 +16,7 @@
  */
 const assert = require('assert');
 const path = require('path');
-const { helpers, jsLiteral } = require('./driver-helpers');
+const { helpers, jsLiteral, CHECK_DARK } = require('./driver-helpers');
 const OUT = process.env.OUT || require('os').tmpdir();
 const KEYS = ['working', 'waiting', 'idle', 'error', 'done'];
 const MEANING = { working: ['working or thinking', 'working or thinking'], waiting: ['waiting for you', 'waiting for you'], idle: ['idle or paused', 'idle or paused'], error: ['with an error', 'with errors'], done: ['done', 'done'] };
@@ -50,10 +50,11 @@ module.exports = async (ctx) => {
   // scroll (FR-187), so a step that fails is tried again (up to 3 times) only when such a trusted event came; with none it fails at once
   const osWatch = () => js(`(()=>{window.__osEv=[];if(!window.__osWatch){window.__osWatch=1;['blur','resize','scroll'].forEach(t=>window.addEventListener(t,e=>{if(e.isTrusted&&(t!=='blur'||e.target===window))window.__osEv.push(t);},true));}})()`);
   const osEvents = () => js(`(window.__osEv||[]).join(',')`);
-  const focusWin = async () => { for (let i = 0; i < 20 && !(await js(`document.hasFocus()`)); i++) { ctx.win.show(); ctx.win.focus(); wc().focus(); await ctx.sleep(150); } }; // a window the OS did not activate has no :focus-visible
+  // T371 (#1664): the shared focus precheck (H.needFocus, FR-031): a window the OS did not activate has no :focus-visible; fails with the label, not at a product assertion; STATUSTIP_NO_WINDOW_FOCUS=1 is the mutant (reading false)
+  const focusWin = (what) => H.needFocus(what, process.env.STATUSTIP_NO_WINDOW_FOCUS ? { expr: 'false' } : {});
   const osRetry = async (what, fn) => {
     for (let i = 0; ; i++) {
-      await focusWin(); await osWatch();
+      await focusWin(what); await osWatch();
       try { return await fn(); } catch (e) {
         const ev = await osEvents();
         if (!ev || i === 2) assert.fail(`${e.message} ${ev ? `(the OS took the window on 3 tries: ${ev})` : '(no window blur, resize or scroll came)'}`);
@@ -109,8 +110,7 @@ module.exports = async (ctx) => {
     // keyboard focus: Tab to a pill, Escape, and it stays hidden until focus returns
     await osRetry(`${tag}: keyboard`, async () => {
       await js(`document.activeElement&&document.activeElement.blur&&document.activeElement.blur();document.body.focus()`);
-      await focusWin();
-      assert.ok(await js(`document.hasFocus()`), `${tag}: the page has focus`);
+      await focusWin(tag);
       let k0 = null;
       for (let i = 0; i < 40 && !k0; i++) { await H.key('Tab', [], { pause: 40 }); k0 = await js(`(document.activeElement&&document.activeElement.matches&&document.activeElement.matches('#stats .stat[data-k]'))?document.activeElement.dataset.k:null`); }
       assert.ok(k0, `${tag}: Tab reaches a status count`);
@@ -156,6 +156,11 @@ module.exports = async (ctx) => {
       });
       assert.strictEqual(await tipText(), expected('idle', await count('idle'), await on('idle')), `${tag}: the text follows the redraw: ${await tipText()}`);
       checkGeo(await geo('idle'), 'idle', `${tag} after redraw`);
+      // a pointer event on the empty floor while the pill is hovered (a redraw moves what is under a still pointer; Windows sends it): the floor has no hint here (one floor), so the pill keeps its tooltip
+      await js(`document.getElementById('floor').dispatchEvent(new PointerEvent('pointerover',{bubbles:true,pointerType:'mouse'}))`);
+      await H.settle();
+      await ok(shown, `${tag}: a pointer event on a floor with no hint leaves the pill's tooltip shown`);
+      checkGeo(await geo('idle'), 'idle', `${tag} after a pointer event on the floor`);
       await js(`(()=>{const s=document.getElementById('wsFilter');s.value='all';s.dispatchEvent(new Event('change'))})()`);
       await H.settle();
     }
@@ -188,9 +193,10 @@ module.exports = async (ctx) => {
   // every built-in theme, a dark user theme and Serious mode: shown, inside, clear, contrast
   await H.load({ w: 1280, h: 800 });
   await H.calm({ blur: true });
-  const themes = ['clean-office', 'retro'];
-  for (const theme of themes) {
-    await js(`window.THEME.setTheme(${jsLiteral(theme)})`);
+  const themes = ['clean-office', CHECK_DARK]; // spec 102 T226: the dark fixture theme took Retro's place
+  for (const manifest of themes) {
+    const theme = typeof manifest === 'string' ? manifest : manifest.id;
+    await js(`window.THEME.setTheme(${jsLiteral(manifest)})`);
     await ok(`window.THEME.current().id===${jsLiteral(theme)}`, theme + ' applied');
     await H.settle();
     for (const k of ['idle', 'error']) {

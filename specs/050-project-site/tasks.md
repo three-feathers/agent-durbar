@@ -26,3 +26,11 @@
 
 - [x] T029 `copyTalks()` in `scripts/build-site.js` (copy `docs/site/talk/`, screenshots named `shots/<file>.png`), the LEVEL UP, ARCHITECT talk (Barcelona, 27 October 2026) and its host page under `docs/site/talk/level-up-architect/`, and the talk checks in `scripts/test-site.js` (noindex, CSP, unlinked, no sitemap, budgets) [FR-014]
 - [x] T030 Drop in `talk.mp4`, `talk.vtt` and `poster.png` (produced separately) and check the player at 1920x1080 [FR-014] (2026-10-26: 3:34, 37.5 MB, 44 captions; test-site checks size and links; the play/next steps were checked by script with a stand-in clip, the final file was checked by ffprobe and frame grabs, not played in a browser here)
+
+## 2026-11-10: site headroom (FR-012 unchanged)
+
+- [x] T031 Opt-in local guard `maxBlockDelta` (8x8 block mean shift) in `scripts/compress-shots.js` with its `test:compressshots` case; re-quantise the site pictures to 192 colours under it (`maxChannel: 40`, `maxBlockDelta: 6`): 58 written, 48 kept; site 8,388,304 B to 8,198,363 B, margin 190,245 B under FR-012's 8 MB; the worst pictures looked at at 4x [FR-012]
+
+## 2026-11-20: site serves 1440x900 only (issue #1169)
+
+- [x] T399 The site build skips 1280x800 pictures (link: text, image: its 1440x900 twin) and `test:site` checks every named picture exists and none is 1280x800, with a mutant [FR-012] (site 8,369,344 B to 6,737,953 B)

@@ -351,15 +351,16 @@
 
 ## FR-191..FR-205: the Needs you panel (2026-11-01, owner). Not before the Retro world
 - [x] T195 Q-NY-1..Q-NY-16 recorded as agent decisions of 2026-11-01, told to the owner and reversible by him [FR-191..FR-204]
-- [ ] T196 Tests first: `createArrivals()` in `attention.js`, `test-attention` with its mutants [FR-193, FR-205]
-- [ ] T197 Panel in place of the modal: non-modal region, no layout effect, automatic opening with no focus change, dismiss and reopen, the Settings switch, keys; `scripts/check-needs-panel.js` steps 1, 2, 3, 8 [FR-191, FR-192, FR-194, FR-195]
-- [ ] T198 Request binding and guards in rows, by the mechanism on `main` (#994, #1004): stale press, `RISE_GUARD_MS`, `e.repeat`, the word from the card's real outcome; driver steps 5, 6 and mutants [FR-197, FR-198, FR-200]
-- [ ] T199 What a row offers, per the agent decisions: limit, long request, question, form, error, usage window, Read-only; simulator hooks; driver step 7 [FR-196, FR-199]
+- [x] T267 Owner answers of 2026-11-07 recorded: Q-NY-2..Q-NY-16 are owner decisions; Q-NY-3, Q-NY-12, Q-NY-15 and Q-NY-16 changed; FR-193, FR-194, FR-199, FR-203, FR-205 and T196, T197, T199, T201, T202 updated; T224 and T225 unchanged by the answers (spec 052's 2026-11-07 delta)
+- [x] T196 Tests first: `createArrivals()` in `attention.js`, `test-attention` with its mutants; an app-start case: what waits at arming opens the panel once, and *Later* closes it (Q-NY-3, owner 2026-11-07, changed) [FR-193, FR-205] (built behind the `door` flag, off by default; `createDoorGate()` added for the open, hold, dismissal and throttle rules; 7 mutants; review of #1273: 9 more mutants, see the spec delta of 2026-11-08)
+- [x] T197 Panel in place of the modal (behind the `door` flag, default off; the modal stays while it is off; with a chat open the modal still serves until T201's push): non-modal region, no layout effect, automatic opening with no focus change, dismiss and reopen, app-start opening with the *Later* button (Q-NY-3), no Settings switch (Q-NY-16: removed from the plan, decide after use), keys; `scripts/check-needs-panel.js` steps 1, 2, 3, 8, 9a [FR-191, FR-192, FR-194, FR-195] (review of #1273 fixed: repaint focus never on a button, answer keys wait after a repaint, desk-click handler no longer opens a chat from a panel row, aria-controls only while mounted; driver steps for the stale press, held keys, dismissal, focus hold, step aside; pictures wait for T202)
+- [x] T198 Request binding and guards in rows, by the mechanism on `main` (#994, #1004): stale press, `RISE_GUARD_MS`, `e.repeat`, the word from the card's real outcome; driver steps 5, 6 and mutants [FR-197, FR-198, FR-200]
+- [x] T199 What a row offers, per the agent decisions: limit, long request, question, form, error, usage window, Read-only; simulator hooks; **option buttons in the row by request id (Q-NY-12, owner 2026-11-07, changed)**; driver steps 7, 9b [FR-196, FR-199]
 - [ ] T200 Announcements and the burst; keyed row updates; one slide, reduced motion, `check:perf`; driver step 4 [FR-201, FR-204]
-- [ ] T201 Chat, other views, sizes, Flat and Real office, tokens, slips; driver steps 9, 10 [FR-202, FR-203]
+- [ ] T201 Chat, other views, sizes, Flat and Real office, tokens; **slips stay visible while the panel is open (Q-NY-15, owner 2026-11-07, changed)**; driver steps 9, 10 [FR-202, FR-203]
 - [ ] T224 Your door: faces in a line, "N outside your door, oldest first", the control's name, below notices. Measure first the rows at 1280 with a notice. Test: `check-needs-panel` step 11 [FR-191, FR-196, FR-203]
 - [ ] T225 In a chat, on request, the panel pushes the chat; composer never covered; hint and chips at 700 px; `check:perf` with a long chat. Test: step 11; mutant: panel over the chat [FR-202, Q-NY-1]
-- [ ] T202 Existing drivers follow the panel; pictures retaken; docs, changelog fragment; older FRs updated in place (the delta's list), spec 003, 074, 092, 097 lines included; `/speckit.converge` [FR-205]
+- [ ] T202 Existing drivers follow the panel; pictures retaken; docs, changelog fragment; older FRs updated in place (the delta's list; the 2026-11-07 owner answers included), spec 003, 074, 092, 097 lines included; `/speckit.converge` [FR-205]
 
 ## FR-214..FR-227: design sweep (2026-11-01, owner). PRs, gates and line-count goals: spec 005 `plan.md`
 - [x] T220 [PR D1, first] `requestText()` puts a space between blocks. Test first: a pure-helper test and a driver that fail on `main` with the run-together words; mutant: old `textContent` [FR-214]
@@ -372,7 +373,7 @@
 - [ ] T216 [PR K1] The toggle rule in `docs/design-rules.md` and `docs/review-checklist.md`; immediate checkboxes become `.swt` through `sw()`. Test: `check-ui-text`; existing screen drivers [FR-222]
 - [ ] T217 [PR K3] `accent-color`, `.inbox:focus-within`, `.send` from tokens (`.send` green in 070 A14, by whichever lands first), 3:1 and 4.5:1 in every set. Test: `check-ui-text`, ratchet lowered [FR-224]
 - [ ] T218 [PR K4] Information notes neutral, amber kept for what waits for you. Test: `check-ui-text` reads `.note.info` and a waiting card; mutant: amber default back [FR-225]
-- [ ] T219 [PR S, after spec 102 removes themes] Measure first, 7238 px and 22 headings. Section list and one row layout. Test: new `check-settings-nav` at both sizes, keyboard, jump to each section [FR-226]
+- [x] T219 [PR S] (owner decision 2026-11-07: the section list ships before 102 T266; it is built from the rendered sections so T266's removals need no list edit) Measure first, 7238 px and 22 headings. Section list (`settingsnav.js`, `<nav>` with `aria-current`) built from the rendered headings; the one row layout stays `[KNOWN GAP]` until the page is re-measured after 102. Tests: `test:settingsnav` (unit), new `check-settings-nav` at both sizes, keyboard, jump to each section [FR-226]
 
 ## FR-206..FR-208: the Needs you inbox cannot answer a request by accident (2026-11-01)
 - [x] T203 `check-inbox-safety.js` first (on `main` it fails: a stale button re-answers a request, a held A answers, key A sends a limit's hidden amount), then `reqOf` and the live-card check in `paintInbox` [FR-206]; UI-suite entry
@@ -407,3 +408,88 @@
 
 ## 2026-11-05: Windows UI drivers wait for the focus (issue #1179)
 - [x] T266 Windows flakes: `check-auto-follow` waits for arrivals with the real focus asked again at each look; `H.focusPage({emulate:'first'})` emulates from the start (`check-edit-popups`, `check-auto-follow`), `emulate:true` stays fallback-only (`check-list-columns`) [issue #1179, test driver only]
+
+## 2026-11-09: `check-auto-follow` waits for the office layout before a click (issue #1343)
+- [x] T268 `check-auto-follow`: `openChat` waits until the office fits its floor and asserts the chat that opened; the dialog, menu and typing hold steps send with `sendQuiet` and emit the arrival with `finish()` once their guard is up; the typing step's no-switch check outlasts the 2 s key hold; the "chat already shown" step leaves the message box by a click on the chat log, not the title (mutation-checked) [issue #1343, test driver only]
+
+## 2026-11-09: the Auto-follow notice (FR-238..FR-241, owner request)
+- [x] T270 `askDialog()` options `overlayClass`, `role` + `label`, `auto(close)`; `test-dialog` cases (a dialog that closes by itself, its cleanup on every close, the role and name, nothing changed without them) [FR-239, FR-240]
+- [x] T271 `afNotice()` in `app.js`: words, mask, countdown that runs only in a visible focused window, Stay and Escape, `ANN_REQUEST` once; before `afBackToOffice()` in `afOnAccepted()` and before `openPanel()` in `afDeliver()` ; `relayout()` runs `afTick()` after drawing the office (found while building) [FR-238, FR-239, FR-240]
+- [x] T272 `styles.css`: the full-screen overlay, the card, the picture and the ring from theme tokens; no motion under reduced motion or Motion off [FR-241]
+- [x] T273 `scripts/check-052-follow-notice.js` in the UI suite (both notices, Stay, Escape, timeout, background pause, announcement and priority, reduced motion, four looks at two sizes, pictures); `check-auto-follow` through the notice; mutants fail on labelled asserts [FR-238..FR-241]
+- [x] T274 Docs: `docs/features.md`, `docs/feature-inventory.md` (an Auto-follow row in every world), a `changelog.d` fragment; both notices in every world and in Open office's Retro Pixel theme at both sizes in `docs/screenshots/`, linked from the spec, looked at [FR-238]
+- [x] T275 Review on #1414: the notice waits while you type and a typed character closes it into the box; a replaced `askDialog` leaves the focus in the new one; a hostile name stays text (driver steps, `test-dialog` cases, mutants) [FR-238, FR-239]
+- [x] T276 `check-052-follow-notice`: motion allowed by media emulation, asserted (a Windows runner asks for reduced motion; CI run 42670456931) [FR-241]
+
+## 2026-11-09: `check-needs-panel` presses ⇧⌘A on a Mac (issue #1377)
+- [x] T269 `check-needs-panel` step 8 sends the inbox shortcut with Meta on darwin, Control elsewhere (FR-084); the failing step passes on a Mac, Control on darwin fails it again (mutation) [FR-205, issue #1377, test driver only]
+
+## 2026-11-10: `check-052-follow-notice` empties the box on a Mac (test driver only)
+- [x] T277 `check-052-follow-notice`: `emptyBox()` selects all through `webContents.selectAll()`, presses Backspace and asserts the box is empty, in both places that used a synthetic Ctrl/Cmd+A; the failing step passes on a Mac, the Cmd+A key fails it again (mutation) [FR-239, test driver only]
+
+## 2026-11-10: a completion seen in its own chat is never offered after the next send (FR-242, issue #1444)
+- [x] T278 `autofollow.js` `sent()` and `seen()`; `afOnAccepted()` uses `sent()`, `afOnCompleted()` uses `seen()` when `chatShownNow()`, the notice to the office moves only a still-followed agent; `test-autofollow` FR-242 block, six tracker mutants fail it; `check-052-follow-notice` waits for the move by an observer, then 1 s with no notice (counted) and no chat, and the seen completion is not waiting; fails without the app fix [FR-242, FR-184, FR-185]; a seen completion leaves the tracker not quiet
+- [x] T279 `afNotice()` takes `still()`: the notice to the office closes at once, silently, when the agent is no longer followed; `check-052-follow-notice` drives it (fails without the close) and drives FR-242 (b) (a held completion, then a send: fails without the `sent()` call in `afOnAccepted`) [FR-242 (b), (c), review on PR 1445, issue #1450]
+
+## 2026-11-11: the office lays out in the frame its floor changes size (FR-243, issue #1362)
+- [x] T281 `app.js`: the `ResizeObserver` on `#floor` calls `relayoutNow()` (the redraw, `syncWalkers`, `afTick`, pencils) in its own callback; `relayout()` (window resize) keeps the frame-later call; `check-auto-follow` asserts the floor never overflows at an observer call after Settings closes with the strip and after a 31 px change, both sizes, with the mutant
+
+## 2026-11-11: the Settings title keeps the traffic-light room in narrow windows (FR-138, issues #1538 and #1539)
+- [x] T282 `screens.css`: Mac rules for a screen with a section list over a chat (`max(78px, --sn-pad)`, 78px under 760 px; a notice strip above keeps `--sn-pad`); `check-mac-titlebar` runs Settings at 1208, 1100, 991, 900, 760, 759 and 700 wide and fails a title at x < 78 in the traffic-light box, and expects `max(78, W/2 - 526)`; mutant (rule removed) fails 6 states with "screen title at x=24 is under the traffic lights" [FR-138, FR-097]
+
+## 2026-11-10: Tools > Activity uses the window width (FR-071, FR-097, issue #1466)
+- [x] T280 `scr-wide` on `.scr-head`/`.scr-body` for the Activity tab (`screens.js`, `screens.css`, `--scr-col` in `screens.css`, read by the darwin rules in `styles.css`); `.act-s` no-wrap cells in `activitytable.js`; `check-activity-table` asserts the full width, no clipped Decision, no short-column wrap, and the Cost tab keeps 880px. A 900x800 narrow case asserts Action keeps `min-width:24ch` (rendered width >= 24 x the width of `0` in its font) and no page scroll; mutant: without `.act-a{min-width:24ch}` it fails at `900x800 narrow: Action keeps its 24ch minimum`.
+
+## 2026-11-12: the Tools header over a chat keeps a 32 px grab block in narrow Mac windows (FR-138, issue #1548)
+- [x] T318 `styles.css`: the screen-header no-drag list takes `[tabindex]:not([tabindex="-1"])` (the title is draggable); `test-macos` pins it and tests the title double-click on jsdom (the `keys.js` change itself is covered by #1659 and was dropped when main was merged in, 2026-11-17; the assertion that a tabindex=-1 element outside the title does not zoom was removed, it is no longer the rule); `check-mac-titlebar` records the grab block of Tools, Cost and Activity inside the narrow-fit loop and runs `chat-tools-models` and `chat-folder` at 760, 759, 700 and 640 wide; every chat-screen state asserts the title is draggable; mutant (the bare `[tabindex]`) fails 39 states with "the screen title is a no-drag hole" (none for `chat-folder`, a regression state) [FR-138]
+
+## 2026-11-12: the themed primary button reads at 4.5:1 at rest, hovered and pressed (FR-053, issue #1614)
+- [x] T316 `themes.css` themed primary hover mixes toward `--brand-hover` (the target `theme.js` picks for a user theme: the text where that reads, else away from it) with `--brand-mark` as the fallback (one rule, the retro 88% rule removed); `theme.js` `contrastFix(t, ui)` holds the text to 4.5:1 on the rest and hovered (= pressed) fill in a ui that paints with `--brand-bg` and writes `--brand-hover`, `themegen.ts` `BRAND_HOVER_MIX`, `brandHoverTarget` and the `themeIssues` hover check; new driver `check-052-primary-btn` (rest, hovered, pressed in nine looks at both sizes, three of them dark or mid-tone fills, review of PR #1618); unit tests in `test-themegen`, `test-theme-tokens`, `test-userthemes`; mutants fail with their own labels [FR-053, no new FR, issue #1614]; second review round (fixes 1 to 5 of the spec delta: resolved mark, rest at 4.5:1 in the search, stable driver read, cleanup test, world clears --brand-hover)
+
+## 2026-11-12: the keyboard ring on the segment buttons and the ⋯ menu in the retro UI (FR-052, issue #1615)
+- [x] T317 `themes.css`: the retro top bar's yellow focus ring excludes `.seg button` and `.more-menu *`; a segment button gets an inset `--ink` ring (`--brand-mark` when pressed); new driver `check-052-focus-ring` (listed in `ui-suite.js`) reads the ring from a real picture beside the pixels next to it for every control of the bar and every ⋯ item, in four looks at both sizes; `FOCUS_MUTANT=old|menu|seg` each fail with their own elements [FR-052, no new FR, issue #1615]
+- [x] T319 `check-052-focus-ring`: `await H.key(...)` and wait until the first Tab has moved focus off the body (3000 ms, labelled failure) before the first `focus()`; mutant `FOCUS_NO_TAB=1` [FR-052, no new FR, issue #1651]
+- [x] T322 `H.needFocus` (`driver-helpers.js`, reuses `H.focusPage`) and its call in `check-052-focus-ring` before the first Tab: a window without focus fails at once as "the window does not have focus (document.hasFocus() is false)", not as "is focus-visible"; unit test in `test-ui-suite`; mutant `FOCUS_NO_WINDOW_FOCUS=1` [FR-052, no new FR, issue #1658]
+
+## 2026-11-11: the red confirm button of a destructive dialog in the arcade and under the pixel theme (FR-053, FR-076, issue #1565)
+- [x] T314 `themes.css`: `html[data-ui]:not([data-ui="clean"]) .btn.primary.danger:not(:disabled,[aria-disabled=true])` and its hover, after the FR-053 primary rules; new driver `check-052-danger-btn` (listed in `ui-suite.js`) measures the End all sessions confirm button as rendered at rest, focus and hover (>= 4.5:1, background not the panel's, hover differs from rest) and the disabled look of a clone, in the arcade, the Flat office under the pixel theme and Photo, at both sizes; the hover fade is sampled per frame (opaque, never darker than both ends) and waited for with `getAnimations()`; `DANGER_MUTANT=old|unguard|nohover|flash` each fail with their own label [FR-053, FR-076, no new FR, issue #1565; same class: #1570]
+
+## 2026-11-12: the danger hover keeps its contrast on a light fill (FR-053, FR-076, issue #1565)
+- [x] T315 `styles.css` and `themes.css`: the `.btn.primary.danger:hover` mix is `--red-ink` 86% with `--ink` (was black: 4.14:1 in a dark theme); `check-052-danger-btn` adds the dark fixture and the Cave world and asserts the hovered contrast >= 4.5:1, `DANGER_MUTANT=blackmix` fails at the dark fixture's hover [FR-053, FR-076, no new FR]
+
+## 2026-11-13: every destructive dialog's red confirm button and the retro-ui user themes (FR-053, FR-076, issue #1647)
+- [x] T323 New driver `scripts/check-052-danger-dialogs.js` (listed in `ui-suite.js`): reads the 19 `primary danger` call sites of every `src/renderer/*.js` (`scripts/danger-sites.js`, any spelling, count asserted; `test-danger-sites.js` self-tests six spellings and two failing shapes), opens each through the app's own builders (`DurbarDialog`, `DurbarScreens.dialog`), builds each dialog with its own label and measures its confirm button at rest, focus and hover (>= 4.5:1, not the panel's, hover differs) in the arcade, the Flat office under the pixel theme, Cave, three retro-ui user themes and two `clean` controls, at both sizes; nothing was wrong, no CSS change; `DANGER_MUTANT=old|one|sites|screens` each fail with their own label [FR-053, FR-076, no new FR, issue #1647; partial-theme hover defect: #1700]
+
+## 2026-11-13: the danger hover reads 4.5:1 in a partial user theme (FR-053, FR-076, FR-169, issue #1700)
+- [x] T344 `theme.js` `contrastFix` writes `--red-hover` where the `--ink` mix of the danger hover is under 4.5:1 (cleared in `setTheme` and `paintWorld`); `styles.css` and `themes.css` mix toward `var(--red-hover,var(--ink))`; `test-themegen` cases; `check-052-danger-dialogs` partial dark retro-ui user theme and mutant `DANGER_MUTANT=hover` [FR-053, FR-076, FR-169, issue #1700, no new FR]
+
+## 2026-11-14: warn, plain danger hover and plain red confirms in the themed looks (FR-053, FR-076, issue #1570)
+- [x] T345 `themes.css`: warn rest and hover, plain `.btn.danger:hover` restored after the themed `.btn` rule; `screens.js` Remove theme and `harnesses.js` End N sessions and update are `primary danger`; `danger-sites.js` ALLOW `harnesses.js`, 21 sites; new driver `scripts/check-052-warn-danger-btn.js` (in `ui-suite.js`) with mutants `WARN_MUTANT=old|warn|dangerhover|sites` [FR-053, FR-076, issue #1570, no new FR]
+
+## 2026-11-13: a screen header fits a narrow window (FR-138, issue #1635)
+- [x] T320 `screens.css`: `.scr-head` wraps (`flex-wrap:wrap`, `gap:calc(var(--s-1)*1.5) 12px`) and `#scrClose` keeps `margin-left:auto`, so Close ends the last row inside the window at 640 to 760 px; `check-mac-titlebar` adds 760x800, 700x800 and 640x800 over a chat (Tools tool usage, Cost, Activity, Settings): Close's right edge in the window, header not wider than its box, title not under the traffic lights (not Settings); mutant `MAC_TITLEBAR_MUTANT=nowrap` [FR-138, no new FR, issue #1635]
+
+## 2026-11-16: check-052-focus-ring modality per control (FR-052, issue #1820)
+- [x] T348 `check-052-focus-ring`: per control, `H.needFocus` again and one real F13 key counted by a capture-phase keydown listener before `focus()`; each look runs under `H.focusPage({ emulate: 'first' })` (released after the loop; PR #1823's Windows run showed hasFocus=false at the assert); the `:focus-visible` timeout prints hasFocus, activeElement, visibilityState [FR-052, FR-087]
+
+## 2026-11-15: a double-click on a screen title zooms the window on a Mac (FR-085, issue #1659)
+- [x] T347 `keys.js` `TITLE_CONTROLS`: `[tabindex]:not([tabindex="-1"])` (the screen title `h2` focus target is no control); `test-macos` selector case; `check-mac-titlebar` double-clicks the screen title with real input in `settings`, `tools`, `chat-settings`, `chat-tools` at both sizes (filter yes, one `window:titleDoubleClick` on a Mac, main's handler swapped for a counter); mutant: the old selector fails at the 8 `*-title-dblclick` labels [FR-085, no new FR, issue #1659]
+
+## 2026-11-15: `check-answer-safety` diagnostic on the limit step (FR-210, issue #1770)
+- [x] T346 `scripts/check-answer-safety.js` FR-210 (B): on a wrong label list, the assertion message carries the bar's hidden flag, its labels a frame later, its `outerHTML` and the pending request cards, masked by `dist/shared/redact.js` and bounded (fail closed when it does not load); the asserted read is unchanged; mutant `ANSWER_SAFETY_MUTANT=emptybar` must fail at `only "Show in chat"` with the diagnostic printed and the planted token masked, and `ANSWER_SAFETY_MUTANT=noredact` (redact.js not loaded, HTML withheld) must fail at `the 1770 diagnostic did not print`; review of PR #1775: the card class masked too, the diagnostic in a `try` (fixed text ` [1770 diagnostic failed]`, the original label still fails), mutants `diagthrow` (fails at `only "Show in chat"` with that text) and `diagthrow-nocatch` (the guard removed: killed) [FR-210, issue #1770, no new FR, test driver only]
+
+## 2026-11-18: the two `tabindex` rules of the Mac title bar are written down (issue #1847)
+- [x] T360 Spec 052 Changes 2026-11-18: Rule 1 (the darwin no-drag lists in `styles.css`: bare `[tabindex]` for the top bar, notice strip, `.rail-top` and `.ph`; `:not([tabindex="-1"])` for the screen header) and Rule 2 (`keys.js` `TITLE_CONTROLS`: `:not([tabindex="-1"])`) stated with their selectors, why both, and that a `tabindex="-1"` non-control is no-drag but zooms outside the screen header; the pins by name; the 2026-11-15 line about the screen-header arm marked out of date. Spec only: no code, no picture.
+
+## 2026-11-19: `check-status-tooltip` focus message (issue #1664)
+- [x] T371 `scripts/check-status-tooltip.js`: `focusWin` calls `H.needFocus(label)` (mutant `STATUSTIP_NO_WINDOW_FOCUS=1` fails with the focus message); the `hasFocus` assert removed. Spec 052 Changes 2026-11-19.
+
+## 2026-11-19: the question card renders the question's Markdown (FR-160, issue #1927)
+- [x] T378 `app.js` `showQuestion`: `safeMask` then `DurbarMD.render` into `.q-text.md > .q-md`; the options' group and the "Other answer" label read the plain rendered text; `styles.css` `.q-md` rules; `sim.ts` `simquestion=markdown`; `scripts/check-question-markdown.js` (in `ui-suite.js`) with sixteen mutants in its header; references decoded first as HTML reads them (no HTML parser; addresses kept as written; leftovers fall back, and the fallback masks the whole value around a reference left in it; nothing the mask of the text as written hides is shown), links keep no title, images shown as plain text, a cross-check with the masked raw text, the fallback compares the rendered text and attributes with their mask by value, never the raw question (review of PR 1933). Spec 052 Changes 2026-11-19.
+
+## 2026-11-19: `check-answer-safety` limit step waits like the other steps (issue #1770)
+- [x] T377 `scripts/check-answer-safety.js` FR-210 (B): the step calls `barUp()` (card painted, two frames) before the filler and scroll, as every other step does (issue 839); mutant `ANSWER_SAFETY_MUTANT=follow` fails at `only "Show in chat"` with `bar hidden=true`. Spec 052 Changes 2026-11-19. Natural trigger not reproduced (0 of 165 loops): Refs only.
+
+## 2026-11-20: a long question and an MCP form's message are not cut at 2,000 characters; the form renders Markdown (issue #1934)
+- [x] T422 (delta 2026-11-20, issue #1934) spec 052: the decision (20,000, cut at a space, no control), the unchanged bounds, the known gaps [FR-160]
+- [x] T423 (delta 2026-11-20, issue #1934) `src/adapters/questions.ts`, `src/adapters/history.ts` (`cleanSessionTitle` whole-word option), `src/shared/elicit.ts`, `src/renderer/app.js` (`showElicitation`), `src/renderer/sim.ts` (`simelicit=md`), `scripts/check-elicit-markdown.js` + `scripts/ui-suite.js`, `scripts/test-claude-adapter.ts`, `scripts/test-elicit.ts` [FR-160]

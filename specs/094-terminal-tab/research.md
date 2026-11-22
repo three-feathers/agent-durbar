@@ -6,7 +6,7 @@ Everything here was read on 2026-10-27 from the npm registry metadata and from t
 
 | Need | Existing code | Use |
 |---|---|---|
-| Chat-level tablist, roving focus, start tab, keep tab on rebuild | `src/renderer/browserpane.js:14` `tabKey`, `:87` `tabsHTML`, `:106` `startTab`, `:108` `setSelected`, `:158` `select`, `:255` `wantTab`, `:271` `mount`, `:308` `hide`, `:315` `current` | Generalise to N tabs (plan step 1); the terminal pane registers as one tab |
+| Chat-level tablist, roving focus, start tab, keep tab on rebuild | `src/renderer/browserpane.js:14` `tabKey`, `:87` `tabsHTML` (lines of 2026-10-27; T040 moved the tablist to `paneltabs.js` and `browserpane.js` delegates), `:106` `startTab`, `:108` `setSelected`, `:158` `select`, `:255` `wantTab`, `:271` `mount`, `:308` `hide`, `:315` `current` | Generalise to N tabs (plan step 1); the terminal pane registers as one tab |
 | Tab and pane insertion in the panel | `src/renderer/app.js:2287` (tablist), `:2291` (pane), `:2302` `BP.mount(a)`, `:3009` `BP.hide()` in `closePanel()` (`:3008`) | Same spots for the terminal pane |
 | Hide chat log on a non-chat tab | `src/renderer/styles.css:862-863` (`.panel-in.on-browser #chat`, `.prev`) | Generalise the class to "not on Chat" |
 | Unread logic aware of the tab | `src/renderer/app.js:2228` `chatShownNow` (reads `BP.current().tab`), `:2245` `syncSeen` | Must read the shared tab state, so Terminal counts as "chat not shown" |

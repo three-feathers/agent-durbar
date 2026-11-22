@@ -3,6 +3,8 @@
  *
  *   npm run check:ui -- --only check-auto-follow
  *   OUT=<folder>  (optional) saves the pictures (052-auto-follow-{1440x900,1280x800}.png and the steps)
+ *   DRIVER_WORLD=retro (ui-suite entry `check-auto-follow retro`, spec 102 T320): the Real office step in the arcade (about 215 s alone on macOS; 600 s is the suite's limit per driver); it also measures the followed plate's mark at 1440x900 and 1280x800 (T284: dashed 2 px, size, in the stage, not covered, 3:1, reach, moves with the follow; pictures 102-arcade-follow-mark-*)
+ *   AFOLLOW_MUTANT=mark   the followed plate loses its mark at once (Real office step; must fail at "FR-183: its plate is marked")
  *
  * At 1440x900 and 1280x800 (15 agents): off by default (no strip, `[` / `]` do nothing, a send leaves the chat open); Settings' switch turns it on
  * (a real click); a send returns to the office with the desk marked and the focus on it; a completion, a permission request, an error and a limit open
@@ -20,6 +22,10 @@ const OUT = process.env.OUT || require('os').tmpdir();
 module.exports = async (ctx) => {
   const H = helpers(ctx);
   const { js, until } = H;
+  /* spec 052 FR-239: every automatic move here goes through the Auto-follow notice, shortened to 600 ms after each load (simulator only) so this
+     driver's many moves stay quick; its words, the 3 s default, Stay and Escape are check-052-follow-notice's */
+  const load0 = H.load;
+  H.load = async (o) => { await load0(o); assert.strictEqual(await js(`window.__durbarSimUi.afNotice.ms(600)`), 600, 'the notice is shortened for this driver'); };
   /* The whole driver runs with Chromium's focus emulation on (spec 052 delta 2026-11-05, #1179): the return to the office after a send is decided once, at the
      moment the app accepts the message, and is skipped when the window is in the background then; on the shared Windows desktop a neighbour can take the OS focus at
      that moment, and no later wait can bring the return back. The hold steps below stand in for a blur with window.__durbarFocus, not with the OS, so they still test it. */
@@ -67,7 +73,19 @@ module.exports = async (ctx) => {
   const followed = () => js(`[...document.querySelectorAll('.is-followed')].map(n=>n.dataset.id).sort().join(',')`);
   const marks = () => js(`[...document.querySelectorAll('#stage .unread-mark')].map(m=>m.closest('[data-id]').dataset.id).sort().join(',')`);
   /* the desk's picture: the middle of a name or a card can be the rename pencil, which is there on purpose and opens a rename */
-  const openChat = async (id) => { const p = await js(`(()=>{const d=document.querySelector(${jsLiteral(sel(id))});d.scrollIntoView({block:'nearest'});const b=d.getBoundingClientRect(),x=Math.round(b.left+Math.min(24,b.width/4)),y=Math.round(b.top+b.height*0.7),e=document.elementFromPoint(x,y);return {x,y,inside:!!e&&d.contains(e)};})()`); assert.ok(p.inside, id + ': the point on its desk is the desk'); await clickAt(p.x, p.y); await ok(`document.body.classList.contains('panel-open')&&!!document.getElementById('msgInput')`, 'the chat of ' + id + ' opens'); };
+  /* Issue #1343: the office lays out again only some time after the floor changes height (the strip appearing when Auto-follow is turned on: up to
+     2 s here, longer on a loaded runner), and until then its desks overflow the floor. At 1280x800 that layout puts Priya's desk elsewhere, so a
+     point measured before it was a point on another desk by the time of the click (Omar's: the send went to him and nothing was followed). The
+     click waits for the office to fit its floor again, and the chat that opens must be the one asked for. */
+  const officeFits = `document.body.classList.contains('panel-open')||document.getElementById('stage').dataset.fit!=='ok'||document.getElementById('floor').scrollHeight<=document.getElementById('floor').clientHeight+1`;
+  const openChat = async (id) => {
+    if (!(await until(officeFits, 10000))) assert.fail('the office is laid out for its floor before ' + id + ' is clicked (floor scroll/client height: ' + await js(`(()=>{const f=document.getElementById('floor');return f.scrollHeight+'/'+f.clientHeight})()`) + ')');
+    const name = await nameOf(id);
+    const p = await js(`(()=>{const d=document.querySelector(${jsLiteral(sel(id))});d.scrollIntoView({block:'nearest'});const b=d.getBoundingClientRect(),x=Math.round(b.left+Math.min(24,b.width/4)),y=Math.round(b.top+b.height*0.7),e=document.elementFromPoint(x,y);return {x,y,inside:!!e&&d.contains(e)};})()`);
+    assert.ok(p.inside, id + ': the point on its desk is the desk');
+    await clickAt(p.x, p.y);
+    if (!(await until(`document.body.classList.contains('panel-open')&&!!document.getElementById('msgInput')&&(document.getElementById('panelTitle')||{}).textContent===${jsLiteral(name)}`, 8000))) assert.fail('the chat of ' + id + ' (' + name + ') opens (open: ' + await panelOpen() + ', title: ' + JSON.stringify(await title()) + ')');
+  };
   const backToOffice = async () => { await H.key('Escape'); await ok(`!document.body.classList.contains('panel-open')`, 'the chat closes'); };
   const send = async (id, text) => { await openChat(id); await mclick('#msgInput'); await type(text); await H.key('Return'); };
   /* accepted, with no scripted reply after it: the event the step emits is the only arrival (the script's own Done would replace an error) */
@@ -128,7 +146,19 @@ module.exports = async (ctx) => {
 
     // ---- on: the switch is a real click, the answer comes from main (the simulator's stand-in refuses a non-boolean like main)
     assert.deepStrictEqual(await js(`window.__durbarSimUi.bridge().setAutoFollowWork('yes').then(r=>({ok:r.ok,v:r.autoFollowWork}))`), { ok: false, v: false }, `${tag}: a non-boolean is refused with ok:false`);
+    /* Issue #1362 (spec 052 FR-243): the office lays out in the same frame as the floor changes size, before it is painted. This observer is made after the app's own
+       (the callbacks of one delivery run in the order the observers were made), so at each of its calls the app has had its turn: no floor with a height may still overflow. */
+    await js(`(()=>{window.__fitRO={n:0,bad:[]};const f=document.getElementById('floor');new ResizeObserver(()=>{if(!f.clientHeight)return;window.__fitRO.n++;if(f.scrollHeight>f.clientHeight+1)window.__fitRO.bad.push(f.scrollHeight+'/'+f.clientHeight);}).observe(f);})();0`);
     await setting(true);
+    {
+      const r = await js(`window.__fitRO`);
+      assert.ok(r.n >= 1, `${tag}: the floor changed size when Settings closed with the strip (calls: ${r.n})`);
+      assert.deepStrictEqual(r.bad, [], `${tag}: FR-243: the office fits its floor in the frame the floor changed size, not a frame later (scroll/client heights of each overflowing call)`);
+      /* the same on a shown floor that gets 31 px shorter (what the strip appearing does), then back */
+      const r2 = await js(`(()=>{const f=document.getElementById('floor'),R=window.__fitRO,two=()=>new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));R.n=0;R.bad=[];f.style.maxHeight=(f.clientHeight-31)+'px';return two().then(()=>{f.style.maxHeight='';return two();}).then(()=>({n:R.n,bad:R.bad}));})()`);
+      assert.ok(r2.n >= 2, `${tag}: the floor changed size twice (calls: ${r2.n})`);
+      assert.deepStrictEqual(r2.bad, [], `${tag}: FR-243: a floor 31 px shorter: the office fits at once (scroll/client heights of each overflowing call)`);
+    }
     let st = await strip();
     assert.ok(!st.hidden && st.h >= 28 && st.h <= 40, `${tag}: the strip shows, one row: ${st.h}px`);
     assert.strictEqual(st.text, 'Auto-follow on. It follows an agent after you send it a message.', `${tag}: idle words`);
@@ -143,7 +173,7 @@ module.exports = async (ctx) => {
     // ---- send -> office and desk -> completion opens the chat on its title
     await sendQuiet(A, 'hello follow');
     const nameA = await nameOf(A);
-    await ok(`!document.body.classList.contains('panel-open')&&!!document.querySelector(${jsLiteral(sel(A) + '.is-followed')})&&document.activeElement&&document.activeElement.dataset.id===${jsLiteral(A)}`, `${tag}: back to the office with ${nameA} followed and focused`);
+    if (!(await until(`!document.body.classList.contains('panel-open')&&!!document.querySelector(${jsLiteral(sel(A) + '.is-followed')})&&document.activeElement&&document.activeElement.dataset.id===${jsLiteral(A)}`, 8000))) assert.fail(`${tag}: back to the office with ${nameA} followed and focused ` + JSON.stringify(await js(`({open:document.body.classList.contains('panel-open'),f:[...document.querySelectorAll('.is-followed')].map(n=>n.dataset.id),act:document.activeElement&&(document.activeElement.id||document.activeElement.className),notice:!!document.querySelector('.af-notice'),strip:document.getElementById('afText').textContent})`)));
     const off = await js(`(()=>{const c=getComputedStyle(document.querySelector(${jsLiteral(sel(A))}));return {ol:c.outlineStyle+' '+c.outlineWidth,tx:document.getElementById('afText').textContent};})()`);
     assert.strictEqual(off.ol, 'dashed 2px', `${tag}: the marker is a dashed 2px outline (not colour alone): ${off.ol}`);
     assert.ok(new RegExp(nameA + ' is working\\. Back to the office\\.').test(off.tx), `${tag}: honest status: ${off.tx}`);
@@ -236,6 +266,26 @@ module.exports = async (ctx) => {
     await stays(`!!document.querySelector('#chat .q-opts')&&!document.querySelector('#chat .q-opts button[disabled]')`, `${tag}: Enter and Space on the title answered nothing`);
     await E(Q, { type: 'question', phase: 'cancelled', requestId: 'q-af', reason: 'stop' });
     await mclick('#backBtn'); await ok(`!document.body.classList.contains('panel-open')`, `${tag}: the Office button closes the chat`);
+    // ---- a followed agent's limit while a chat that Auto-follow itself opened is open (spec 005 FR-237, spec 052 FR-184, FR-185). A hand open drops every other
+    // followed agent, so Rosa is followed through the tracker's sim hook after Priya's send; Priya finishing makes Auto-follow open her chat (the tracker goes quiet),
+    // and Rosa's limit then arrives: held (pending, no notice, no move), the card says its line once.
+    const trk = () => js(`({ids:window.__durbarSimUi.afTracker.ids(),pending:window.__durbarSimUi.afTracker.pending(),quiet:window.__durbarSimUi.afTracker.quiet()})`);
+    await sendQuiet(A, 'hello follow again');
+    await js(`window.__durbarSimUi.afTracker.follow(${jsLiteral(Q)})`);
+    await finish(A, 'All done.');
+    await okArrival(`document.body.classList.contains('panel-open')&&document.getElementById('panelTitle').textContent===${jsLiteral(nameA)}`, `${tag}: Auto-follow opens ${nameA}'s chat when it finishes`, 25000);
+    await ok(`window.__ann.includes(${jsLiteral(nameA + ' finished. Its chat is open.')})`, `${tag}: the arrival was the completion`);
+    const before = await trk();
+    assert.deepStrictEqual(before, { ids: [Q], pending: [], quiet: true }, `${tag}: before the limit the tracker follows ${nameQ}, holds nothing and is quiet: ${JSON.stringify(before)}`);
+    await E(Q, { type: 'limit', phase: 'exhausted', requestId: 'lim-af2', maxAiCredits: 30, usedAiCredits: 30 });
+    const cardLine = nameQ + ' reached its spending limit. Open its chat to choose.', noticeLine = nameQ + ' reached its limit. Its chat is open.';
+    await ok(`window.__durbarSimUi.afTracker.pending().includes(${jsLiteral(Q + '|limit')})`, `${tag}: the tracker holds ${nameQ}'s limit as an arrival`);
+    await ok(`window.__ann.includes(${jsLiteral(cardLine)})`, `${tag}: a limit in another chat is said, naming the chat to open`);
+    await stays(`document.getElementById('panelTitle').textContent===${jsLiteral(nameA)}&&!window.__durbarSimUi.afNotice.shown()&&!window.__ann.includes(${jsLiteral(noticeLine)})&&window.__durbarSimUi.afTracker.pending().includes(${jsLiteral(Q + '|limit')})`, `${tag}: held: the chat does not move, no notice is up and the arrival stays pending`, 1500);
+    assert.deepStrictEqual(await trk(), { ids: [Q], pending: [Q + '|limit'], quiet: true }, `${tag}: after the limit the tracker still follows ${nameQ}, holds its limit and is quiet`);
+    assert.strictEqual((await anns()).filter((t) => t === cardLine).length, 1, `${tag}: the card said its line once: ${JSON.stringify(await anns())}`);
+    // what a later delivery says (a second line) is argued from the code in the spec delta, not driven here
+    await mclick('#backBtn'); await ok(`!document.body.classList.contains('panel-open')`, `${tag}: the Office button closes the chat`);
     console.log(`[follow] ${tag} on, send, arrivals, queue ok`);
   }
 
@@ -249,12 +299,15 @@ module.exports = async (ctx) => {
     await setting(true);
     const S1 = A, S2 = B, S3 = C;
 
+    /* The dialog, menu and typing steps make the arrival themselves (sendQuiet, then finish() once the guard is up), as the pointer and popover
+       steps do. They used to send for real and race the simulator's scripted reply (Done about 3 s after the send) against the guard: on a slow
+       runner the reply came first, its chat opened with nothing to hold, and the 25 s wait for "Held: ..." failed (issue #1343). */
     // a dialog holds the switch; closing it delivers
-    await send(S1, 'hello dialog');
+    await sendQuiet(S1, 'hello dialog');
     await H.key('k', MOD, { char: 'never' });
     await ok(`!!document.getElementById('palDlg')`, `${tag}: the palette (a dialog) is open`);
+    await finish(S1);
     await ok(`(document.getElementById('afText').textContent||'').startsWith('Held: a dialog is open')`, `${tag}: held by the dialog, and it says so`, 25000);
-    await settled(S1);
     await stays(`!document.body.classList.contains('panel-open')&&!!document.getElementById('palDlg')`, `${tag}: the dialog and the office stay: nothing was switched while it was open`);
     assert.ok((await strip()).text.includes('1 is waiting to open'), `${tag}: the arrival waits in the count`);
     await H.key('Escape');
@@ -263,37 +316,53 @@ module.exports = async (ctx) => {
     await backToOffice();
 
     // a menu holds it
-    await send(S1, 'hello menu');
-    await ok(`!document.body.classList.contains('panel-open')`, `${tag}: back in the office`);
+    await sendQuiet(S1, 'hello menu');
     await mclick('#topMoreBtn');
     await ok(`document.getElementById('topMoreBtn').getAttribute('aria-expanded')==='true'`, `${tag}: the More menu is open`);
+    await finish(S1);
     await ok(`(document.getElementById('afText').textContent||'').startsWith('Held: a menu is open')`, `${tag}: held by the menu`, 25000);
     await stays(`!document.body.classList.contains('panel-open')`, `${tag}: nothing switched under the open menu`);
     await H.key('Escape');
     await ok(`document.body.classList.contains('panel-open')&&document.getElementById('panelTitle').textContent===${jsLiteral(await nameOf(S1))}`, `${tag}: closing the menu delivers it`, 8000);
-    await settled(S1); await backToOffice();
+    await backToOffice();
 
     // typing in a field holds it (renaming a desk in place)
-    await send(S1, 'hello typing');
+    await sendQuiet(S1, 'hello typing');
     await ok(`!document.body.classList.contains('panel-open')&&document.activeElement&&document.activeElement.dataset.id===${jsLiteral(S1)}`, `${tag}: office, desk focused`);
     await H.key('F2');
     await ok(`document.activeElement&&document.activeElement.tagName==='INPUT'`, `${tag}: the rename field is open`);
     await type('zz');
+    await finish(S1);
     await ok(`(document.getElementById('afText').textContent||'').startsWith('Held: you are typing')`, `${tag}: held while typing`, 25000);
-    await stays(`!document.body.classList.contains('panel-open')&&String(document.activeElement.value).endsWith('zz')`, `${tag}: the field keeps its focus and text; no switch`);
+    /* longer than the 2 s a typed key holds it (FR-185), so the field having the focus is what holds it at the end */
+    await stays(`!document.body.classList.contains('panel-open')&&String(document.activeElement.value).endsWith('zz')`, `${tag}: the field keeps its focus and text; no switch`, 2600);
     /* FR-185: out of the field, a key typed in the last 2 s still holds it: a lower bound, so a slow machine cannot fail it */
     await js(`(()=>{window.__keyAt=0;window.__openAt=0;document.addEventListener('keydown',e=>{if(e.key==='q')window.__keyAt=Date.now();},true);clearInterval(window.__op);window.__op=setInterval(()=>{if(!window.__openAt&&document.body.classList.contains('panel-open'))window.__openAt=Date.now();},20);})();0`);
     await type('q');
     await H.key('Escape');
     await ok(`document.body.classList.contains('panel-open')&&window.__openAt>0`, `${tag}: leaving the field delivers it`, 10000);
     { const gap = await js(`clearInterval(window.__op);window.__openAt-window.__keyAt`); assert.ok(gap >= 1900, `${tag}: the last key held it for 2 s, then it came: ${gap} ms`); }
-    await settled(S1); await backToOffice();
+    await backToOffice();
 
     // the user opened another agent by hand: the following has ended (FR-185), so its chat, typed in and scrolled up, is never switched away from
     await send(S1, 'hello other');
+    await ok(`!document.querySelector('.af-notice')&&!document.body.classList.contains('panel-open')`, `${tag}: the notice, then the office (FR-238)`, 8000);
     await openChat(S2);
-    await js(`(()=>{const c=document.getElementById('chat');const f=document.createElement('div');f.id='afFill';f.style.height='3000px';f.style.flex='none';c.appendChild(f);c.scrollTop=c.scrollHeight;})()`);
-    await js(`document.getElementById('chat').scrollTop=0`); // fixture: scrolled to the top (the page's own scroll handler marks it as being read)
+    // spec 005 FR-238 (review of PR 1431): a line added to the open chat while it is still short (the chat flushes once at its end), then
+    // the fill and both scroll writes in ONE call, so they always reach the page's scroll handler as one event (the old "reset the scroll
+    // baseline after every flush" made the chat look not scrolled up here only when the writes happened to fall in one frame)
+    // and a chat in the background at its message cap, trimmed in that same flush: only a trim of the OPEN chat may reset the baseline
+    const BG = await js(`(()=>{const ids=window.__durbarSimUi.agents().filter(x=>!x.parent).map(x=>x.id).filter(id=>![${jsLiteral(S1)},${jsLiteral(S2)},${jsLiteral(S3)}].includes(id));return ids[ids.length-1];})()`);
+    assert.ok(BG, `${tag}: a fourth top-level agent exists for the background chat (without it the "a trim of any chat" mutant would pass unseen)`);
+    await js(`(()=>{for(let i=0;i<310;i++)window.__durbarSimUi.emit({type:'user',sessionId:${jsLiteral(BG)},timestamp:Date.now(),text:'bg '+i});})()`);
+    await js('new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(()=>r())))');
+    const bgRuns0 = await js(`(window.__durbarSimUi.chatSizes().find(x=>x.id===${jsLiteral(BG)})||{}).runs||0`);
+    await js(`(()=>{const U=window.__durbarSimUi;U.emit({type:'user',sessionId:${jsLiteral(BG)},timestamp:Date.now(),text:'bg more'});U.emit({type:'compaction',sessionId:${jsLiteral(S2)},timestamp:Date.now(),phase:'complete',trigger:'truncation',tokensBefore:1000,tokensAfter:500});})()`);
+    { const bg = await js(`new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(()=>{const z=window.__durbarSimUi.chatSizes().find(x=>x.id===${jsLiteral(BG)});r(z?{messages:z.messages,trimmed:z.trimmed,runs:z.runs,note:z.note}:null);})))`);
+      assert.ok(bg && bg.runs > bgRuns0 && bg.messages <= 300 && /removed/.test(bg.note), `${tag}: the background chat was trimmed in that flush: ` + JSON.stringify(bg)); }
+    await js('new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(()=>r())))');
+    await js(`(()=>{const c=document.getElementById('chat');const f=document.createElement('div');f.id='afFill';f.style.height='3000px';f.style.flex='none';c.appendChild(f);c.scrollTop=c.scrollHeight;c.scrollTop=0;})()`); // fixture: scrolled to the top (the page's own scroll handler marks it as being read)
+    await js('new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(()=>r())))');
     await ok(`document.getElementById('chat').dataset.pin==='0'`, `${tag}: the chat is scrolled up: ` + await js(`(()=>{const c=document.getElementById('chat');return [c.scrollHeight,c.clientHeight,c.scrollTop,c.dataset.pin,getComputedStyle(c).overflowY,!!document.getElementById('afFill')].join(' ')})()`));
     await mclick('#msgInput'); await type('my draft');
     const top0 = await js(`document.getElementById('chat').scrollTop`);
@@ -332,7 +401,10 @@ module.exports = async (ctx) => {
     await ok(`document.getElementById('panelTitle').textContent===${jsLiteral(await nameOf(S1))}&&${jsLiteral(S1)}===(document.querySelector('.is-followed')||{dataset:{}}).dataset.id`, `${tag}: its own chat, still followed`);
     await js(`(()=>{const c=document.getElementById('chat');const f=document.createElement('div');f.id='afFill';f.style.height='3000px';f.style.flex='none';c.appendChild(f);c.scrollTop=0;window.__ann=[];})();0`);
     await ok(`document.getElementById('chat').dataset.pin==='0'`, `${tag}: scrolled up`);
-    await mclick('#panelTitle');
+    /* out of the message box with a click on the chat log, not on the title: a click on the title more than 400 ms after the chat opened starts
+       a rename (FR-020 item 1), whose field then holds the arrival as typing for good (issue #1343: seen under load, where the click came late) */
+    await mclick('#chat');
+    await ok(`document.activeElement&&document.activeElement.id!=='msgInput'&&!document.activeElement.closest('input,textarea,[contenteditable="true"]')`, `${tag}: out of the message box, in no field`);
     await ok(`!document.querySelector('.is-followed')`, `${tag}: its arrival was handled: no longer followed, nothing held`, 25000);
     assert.ok(!(await anns()).some((t) => /Its chat is open/.test(t)), `${tag}: already shown: no switch and nothing said: ${JSON.stringify(await anns())}`);
     assert.strictEqual(await js(`document.getElementById('chat').scrollTop`), 0, `${tag}: the chat stays where it was scrolled`);
@@ -447,7 +519,7 @@ module.exports = async (ctx) => {
   // ---- the empty queue: two agents, none needs you
   for (const [w, h] of SIZES) {
     const tag = `${w}x${h} empty queue`;
-    await H.load({ w, h, query: { sim: '2' } });
+    await H.load({ w, h, query: { sim: '2' }, ready: `document.querySelectorAll('#stage .desk[data-id]').length>=2` }); /* the default (15 desks) never holds with 2 agents: the load waited its whole 15 s (spec 008 FR-190) */
     await H.calm({ blur: true });
     wc.focus();
     await hooks();
@@ -497,6 +569,9 @@ module.exports = async (ctx) => {
     await settled(A); await settled(B);
     assert.strictEqual((await anns()).filter((t) => /Back to the office/.test(t)).length, 1, `${tag}: exactly one "Back to the office" for the whole send: ` + JSON.stringify(await anns()));
     // a chat opened by hand while the sends are on their way stays open (the setting off and on forgets the followed ones, and a chat an arrival opened is closed)
+    /* an arrival of the two opens a chat after its notice (FR-238): wait for it, so Settings is not clicked under the notice (no assert: only the order matters here) */
+    await until(`!document.querySelector('.af-notice')&&document.body.classList.contains('panel-open')`, 6000);
+    await ok(`!document.querySelector('.af-notice')`, `${tag}: no notice is up`);
     if (await panelOpen()) await backToOffice();
     await setting(false); await setting(true);
     await js(`(()=>{const b=window.__durbarSimUi.bridge();b.__send=b.send;window.__gate=new Promise(r=>{window.__openGate=r;});b.send=async()=>{await window.__gate;return {ok:true};};})();0`);
@@ -543,6 +618,60 @@ module.exports = async (ctx) => {
     console.log(`[follow] ${tag} ok`);
   }
 
+  /* Spec 102 T284 (issue #1399), folded into T320's DRIVER_WORLD=retro run: the Real office step below, drawn as the arcade, also measures the followed plate's
+     mark (the second size is a second load there). */
+  const PLATE = (id) => `#stage .ro-plate[data-id="${id}"]`;
+  /* the plate's mark (a dashed 2 px outline, 4 px inside its edge: styles.css .ro-plate.is-followed) measured in the page: its box, its colour against the plate's
+     own paint (the plate's background laid over its parents', WCAG 1.4.11 wants 3:1 for a mark), and what of the plate's contents reaches into the ring's band */
+  const markOf = (id) => js(`(()=>{const p=document.querySelector(${jsLiteral(PLATE(id))});if(!p)return null;const cs=getComputedStyle(p),r=p.getBoundingClientRect(),st=document.getElementById('stage').getBoundingClientRect();
+    const px=(s)=>{const m=String(s).match(/rgba?\\(([^)]+)\\)/);if(!m)return [255,255,255,1];const v=m[1].split(/[ ,\\/]+/).filter(Boolean).map(Number);return [v[0],v[1],v[2],v.length>3?v[3]:1];};
+    const over=(top,bot)=>[0,1,2].map(i=>top[i]*top[3]+bot[i]*(1-top[3])).concat([1]);
+    let bg=[255,255,255,1];const chain=[];for(let n=p;n;n=n.parentElement)chain.push(n);for(const n of chain.reverse())bg=over(px(getComputedStyle(n).backgroundColor),bg);
+    const lum=(c)=>{const f=(v)=>{v/=255;return v<=0.03928?v/12.92:Math.pow((v+0.055)/1.055,2.4)};return 0.2126*f(c[0])+0.7152*f(c[1])+0.0722*f(c[2]);};
+    const ink=px(cs.outlineColor),a=lum(ink),b=lum(bg),ratio=(Math.max(a,b)+0.05)/(Math.min(a,b)+0.05);
+    const W=parseFloat(cs.outlineWidth),O=parseFloat(cs.outlineOffset),inner=-O-W,outer=-O; /* the band, in px inside the plate's edge: its inner edge is outlineOffset (-4) in, it grows outward by its width (2): from 2 to 4 */
+    const shown=(c)=>{let l=-1e9,t=-1e9,rr=1e9,bb=1e9;const q=c.getBoundingClientRect();l=q.left;t=q.top;rr=q.right;bb=q.bottom;for(let n=c.parentElement;n&&n!==p;n=n.parentElement){const o=getComputedStyle(n);if(o.overflowX==='visible'&&o.overflowY==='visible')continue;const k=n.getBoundingClientRect();l=Math.max(l,k.left);t=Math.max(t,k.top);rr=Math.min(rr,k.right);bb=Math.min(bb,k.bottom);}return {left:l,top:t,right:rr,bottom:bb,width:rr-l,height:bb-t};}; /* what a clipping line (overflow not visible) between the element and the plate shows of it */
+    const reach=[];for(const c of p.querySelectorAll('*')){const q=shown(c);if(!(q.width>0)||!(q.height>0))continue;const cc=getComputedStyle(c);if(cc.visibility==='hidden'||cc.display==='none')continue;
+      const into=Math.max(0,(q.left-r.left)<outer?outer-(q.left-r.left):0,(r.right-q.right)<outer?outer-(r.right-q.right):0,(q.top-r.top)<outer?outer-(q.top-r.top):0,(r.bottom-q.bottom)<outer?outer-(r.bottom-q.bottom):0);
+      if(into>1)reach.push((c.className&&String(c.className)||c.tagName)+' '+Math.round(into*10)/10+'px');}
+    const cx=Math.round(r.left+r.width/2),cy=Math.round(r.top+r.height/2),top=document.elementFromPoint(r.left+3,r.top+3);
+    return {followed:p.classList.contains('is-followed'),following:p.getAttribute('data-following'),style:cs.outlineStyle,w:W,off:O,inner,outer,color:cs.outlineColor,bg:'rgb('+bg.slice(0,3).map(Math.round)+')',ratio:Math.round(ratio*100)/100,
+      box:{l:r.left+inner,t:r.top+inner,w:r.width-2*inner,h:r.height-2*inner},plate:{l:r.left,t:r.top,w:r.width,h:r.height},inStage:r.left>=st.left&&r.top>=st.top&&r.right<=st.right&&r.bottom<=st.bottom,reach,onTop:!!top&&p.contains(top),cx,cy,world:p.closest('.ro').dataset.world};})()`);
+  const toPlate = async (id, tag) => {
+    await ok(`!!document.querySelector(${jsLiteral(PLATE(id))})`, `${tag}: the plate of ${id} is drawn`);
+    await mclick(PLATE(id));
+    await ok(`document.body.classList.contains('panel-open')&&!!document.getElementById('msgInput')`, `${tag}: the chat of ${id} opens`);
+  };
+  /* with the plate of A followed, its focus ring blurred and the pointer away: the mark measured, then moved to B's plate by a second send */
+  const arcadeMark = async (w, h) => {
+    const tag = `arcade ${w}x${h}`;
+    await until(`!document.getElementById('roZoom')`, 2000);
+    await ok(`!!document.querySelector('#stage .ro[data-world="retro"]')&&!document.querySelector('#stage .ro[data-world="photo"]')`, `${tag}: data-world is retro (a pass on the Photo office would prove nothing)`);
+    const mA = await markOf(A);
+    await shotTo(`102-arcade-follow-mark-${w}x${h}-first.png`); /* taken before the asserts: a failing step leaves its picture */
+    assert.strictEqual(mA.world, 'retro', `${tag}: the followed plate is in the arcade`);
+    assert.strictEqual(mA.following, '1', `${tag}: the followed plate says data-following`);
+    assert.deepStrictEqual([mA.style, mA.w], ['dashed', 2], `${tag}: the mark is a dashed 2 px outline (not colour alone): ${JSON.stringify([mA.style, mA.w])}`);
+    assert.ok(mA.box.w > 20 && mA.box.h > 10, `${tag}: the mark has a size: ${JSON.stringify(mA.box)}`);
+    assert.ok(mA.inStage, `${tag}: the marked plate is inside the stage: ${JSON.stringify(mA.plate)}`);
+    assert.ok(mA.onTop, `${tag}: nothing covers the marked plate's corner`);
+    assert.ok(mA.ratio >= 3, `${tag}: the mark is readable on the plate: ${mA.color} on ${mA.bg} is ${mA.ratio}:1 (at least 3:1)`);
+    assert.deepStrictEqual(mA.reach, [], `${tag}: no text, pencil or status chip of the plate reaches more than 1 px into the ring's band (a line box's leading is 1 px in: the glyphs are clear, read in the picture): ${JSON.stringify(mA.reach)}`);
+    /* it moves with the follow: the next agent sent a message gets the mark on its own plate, which is elsewhere, and only followed plates carry it */
+    await toPlate(B, tag); await mclick('#msgInput'); await type('hello again'); await H.key('Return');
+    await ok(`!document.body.classList.contains('panel-open')`, `${tag}: back in the office after the second send`);
+    await ok(`!!document.querySelector(${jsLiteral(PLATE(B) + '.is-followed')})`, `${tag}: the second agent's plate carries is-followed`);
+    await js(`document.activeElement&&document.activeElement.blur();0`);
+    wc.sendInputEvent({ type: 'mouseMove', x: 1, y: 1 });
+    await until(`!document.getElementById('roZoom')`, 2000);
+    const mB = await markOf(B);
+    assert.ok(Math.abs(mB.cx - mA.cx) + Math.abs(mB.cy - mA.cy) > 20, `${tag}: the mark is on another plate, ${JSON.stringify([mA.cx, mA.cy])} then ${JSON.stringify([mB.cx, mB.cy])}`);
+    assert.deepStrictEqual([mB.ratio >= 3, mB.reach, mB.inStage, mB.box.w > 20], [true, [], true, true], `${tag}: the second mark reads and fits too: ${JSON.stringify([mB.ratio, mB.reach, mB.inStage])}`);
+    assert.strictEqual(await followed(), B, `${tag}: the mark moved: it is on the second agent's plate only, not the first's`);
+    await shotTo(`102-arcade-follow-mark-${w}x${h}.png`);
+    console.log(`[follow] ${tag}: ratio ${mA.ratio}:1 (${mA.color} on ${mA.bg}), plate ${Math.round(mA.plate.w)}x${Math.round(mA.plate.h)}, second ${mB.ratio}:1`);
+  };
+
   // ---- pre-review: an automatic send follows nothing; the keys wait behind Settings; the Real office has the marker and the focus too
   const EXTRA = [
     ['a coffee break resuming by itself', async () => {
@@ -565,8 +694,9 @@ module.exports = async (ctx) => {
     }],
     ['the Real office', async () => {
       const REAL = `!!document.querySelector('#stage .ro .ro-plate')&&document.getElementById('stage').dataset.d==='real'`;
-      await H.load({ w: 1440, h: 900, query: { officeview: 'real' } });
+      await H.load({ w: 1440, h: 900, query: { officeview: 'real' }, ready: REAL }); /* the Real office has plates, not desks: the default ready never held (spec 008 FR-190) */
       await ok(REAL, 'the Real office');
+      if (process.env.AFOLLOW_MUTANT === 'mark') await js(`(()=>{new MutationObserver(()=>document.querySelectorAll('#stage .ro-plate.is-followed').forEach(e=>e.classList.remove('is-followed'))).observe(document.getElementById('stage'),{attributes:true,subtree:true,attributeFilter:['class']});return 1})()`);
       await setting(true);
       await ok(REAL, 'the Real office after Settings');
       const plate = `#stage .ro-plate[data-id="${A}"]`;
@@ -589,6 +719,22 @@ module.exports = async (ctx) => {
       await E(B, { type: 'status', status: 'working', intent: 'Another' }); /* a redraw must not take the mark away */
       await until(`document.querySelector(${jsLiteral(`#stage .ro-plate[data-id="${B}"]`)})&&document.querySelector(${jsLiteral(`#stage .ro-plate[data-id="${B}"]`)}).classList.contains('st-working')`, 4000);
       await ok(`!!document.querySelector(${jsLiteral(plate)}+'.is-followed')`, 'the mark survives a redraw');
+      if (process.env.DRIVER_WORLD === 'retro') { /* T284, folded into T320: the arcade's mark, then the same at the other size (a second load) */
+        await arcadeMark(1440, 900);
+        if (!process.env.AF_FAST) {
+          await H.load({ w: 1280, h: 800, query: { officeview: 'real' }, ready: REAL });
+          await setting(true);
+          await ok(REAL, 'the arcade at 1280x800 after Settings');
+          await mclick(plate);
+          await ok(`document.body.classList.contains('panel-open')&&!!document.getElementById('msgInput')`, 'arcade 1280x800: its chat opens');
+          await mclick('#msgInput'); await type('hello real'); await H.key('Return');
+          await ok(`!document.body.classList.contains('panel-open')`, 'arcade 1280x800: back to the office');
+          await ok(`!!document.querySelector(${jsLiteral(plate)}+'.is-followed')`, 'arcade 1280x800: FR-183: its plate is marked');
+          await js(`document.activeElement&&document.activeElement.blur();0`);
+          wc.sendInputEvent({ type: 'mouseMove', x: 1, y: 1 });
+          await arcadeMark(1280, 800);
+        }
+      }
       await js(`window.__durbarSimUi.setOfficeView&&window.__durbarSimUi.setOfficeView('flat');0`);
     }],
   ];

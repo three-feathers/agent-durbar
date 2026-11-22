@@ -11,7 +11,7 @@
      "The agent app did not send this." It is never filled with another field (a task is never shown as a result) or with invented words.
    - Masked once per field change: the cut lines are kept per helper, field and raw value, so a repaint with unchanged fields masks nothing.
    - The tooltip is built from the already masked, cut parts and then cut to HX_TIP (the number the desk card's tooltip uses).
-   deps: { excerpt(text, n, fallback) masked+plain+cut, mask(text) masked, toolLabel(tool, label, n) masked and cut ('' when masking is
+   deps: { excerpt(text, n, fallback) masked+plain+cut, mask(text) masked, toolName(tool) the tool's name through the one tool-name mask (spec 097 FR-317; none: 'tool'), toolLabel(tool, label, n) masked and cut ('' when masking is
    not possible), cut(text, n), fmtTok(n) }. */
 (function(root, api){
   if(typeof module==='object'&&module.exports) module.exports=api; else root.DurbarHelperCard=api;
@@ -34,7 +34,7 @@
     const D=deps||{};
     /* every dependency answers a string or nothing: a throwing one, or one that answers something else, is an empty answer (fail closed) */
     const wrap=f=>typeof f==='function'?(...a)=>{try{const r=f(...a);return typeof r==='string'?r:'';}catch(e){return '';}}:()=>'';
-    const excerpt=wrap(D.excerpt), mask=wrap(D.mask), toolLabel=wrap(D.toolLabel), cut0=wrap(D.cut);
+    const excerpt=wrap(D.excerpt), mask=wrap(D.mask), toolLabel=wrap(D.toolLabel), toolN=wrap(D.toolName), cut0=wrap(D.cut);
     const cut=(t,n)=>cut0(t,n)||(typeof D.cut==='function'?'':String(t).slice(0,n));
     const fmtTok=typeof D.fmtTok==='function'?D.fmtTok:n=>String(n);
     /* ---- the memo: per holder (the helper's record, else its card), field and raw value ---- */
@@ -62,7 +62,7 @@
       if(!has(now.tool))return null;
       const raw=['e',now.kind||'',now.tool,now.label==null?'':now.label].join('\u0001');
       const out=cached(holder,'now:tool',raw,()=>{
-        const tool=cut(mask(now.tool),40)||'tool', ml=has(now.label)?toolLabel(now.tool,now.label,HX_CHARS):'';
+        const tool=cut(toolN(now.tool),40)||'tool', ml=has(now.label)?toolLabel(now.tool,now.label,HX_CHARS):'';
         return tool+(ml?' '+ml:'');
       });
       return out||SAFE_WORD.now;

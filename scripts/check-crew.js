@@ -18,20 +18,22 @@
  * review fixes of PR 621, the missing module) run once, with Cheeky.
  *
  *   npm run check:ui -- --only check-crew            (builds first)
- *   CREW_THEME=<theme id>         the theme under the crew (default clean-office)
- *   CREW_CHARS=<cheeky|prehistoric|pirate|monster|royal|rebels>  run one crew only (default: both)
+ *   CREW_THEME=<theme id>         the theme under the crew (default clean-office; check-dark is the dark fixture user theme, spec 102 T226, saved in each page load)
+ *   CREW_CHARS=<cheeky|prehistoric|pirate|monster|royal|rebels|mine>  run one crew only (default: the six crews); OFFICE_CHARACTERS=mine means the same. `mine` (spec 096 FR-072): My characters, the simulator's 3 saved ones, through the same desk, pose, sharpness and face steps; a missing picture
+ *                                 cannot happen by a file there, so that step is check-charmaker's (a revoked URL)
  *   SHOTS_OUT=<folder>            screenshots (default: crew-shots in the OS temp folder)
  */
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const assert = require('assert');
-const { helpers, jsLiteral } = require('./driver-helpers');
+const { helpers, jsLiteral, CHECK_DARK } = require('./driver-helpers');
 
 /* spec 077 FR-064..FR-066: Cheeky is a Characters choice, picked on top of a theme */
 const THEME_ID = process.env.CREW_THEME || 'clean-office';
 let CHARS = 'cheeky'; // the crew being checked (see RUNS)
-const RUNS = process.env.CREW_CHARS ? [[process.env.CREW_CHARS, true]] : [['cheeky', true], ['prehistoric', false], ['pirate', false], ['monster', false], ['royal', false], ['rebels', false]]; // [Characters value, whole check (the crew-independent steps too)]
+const WANT_CHARS = process.env.CREW_CHARS || (process.env.OFFICE_CHARACTERS === 'mine' ? 'mine' : '');
+const RUNS = WANT_CHARS ? [[WANT_CHARS, WANT_CHARS !== 'mine']] : [['cheeky', true], ['prehistoric', false], ['pirate', false], ['monster', false], ['royal', false], ['rebels', false]]; // [Characters value, whole check (the crew-independent steps too)]
 /* FR-014 zones in stage units: [x0, y0, x1, y1] */
 const ZONES = { 'monitor and halo': [101, 22, 187, 88], 'bubble and badge corner': [16, 3, 61, 34], 'cup zone': [96, 66, 114, 87] };
 /* FR-060: the screen's frame starts here; the portrait box ends here, so the status colour is never under it */
@@ -148,11 +150,26 @@ const naturals = (files) => `Promise.all(${jsLiteral(files)}.map(f=>new Promise(
 const hit = (a, b) => a[0] < b[2] && a[2] > b[0] && a[1] < b[3] && a[3] > b[1];
 
 async function runCrew(ctx, full) {
-  const H = helpers(ctx);
+  const H0 = helpers(ctx);
+  /* a user theme under test (the dark fixture) is put in every page address, so Settings lists it and it can be picked */
+  const H = THEME_ID === CHECK_DARK.id ? { ...H0, load: (o) => H0.load({ ...o, query: { ...(o.query || {}), usertheme: JSON.stringify(CHECK_DARK) } }) } : H0;
   const out = process.env.SHOTS_OUT || path.join(os.tmpdir(), 'crew-shots');
   fs.mkdirSync(out, { recursive: true });
   const C = require('../src/renderer/crew.js');
-  const CREW_IDS = C.idsFor(CHARS), PIC_RE = /crew\/art\/(?:prehistoric-|pirate-|monster-|royal-|rebels-)?([\w-]+)-(working|waiting|resting)\.webp/;
+  const MINE = CHARS === 'mine';
+  let CREW_IDS = C.idsFor(CHARS);
+  const PIC_RE = /crew\/art\/(?:prehistoric-|pirate-|monster-|royal-|rebels-)?([\w-]+)-(working|waiting|resting)\.webp/;
+  /* spec 096: My characters: the picture of a desk is a blob: URL of this load, so the driver's copy of crew.js registers what the page registered, and a URL is read back to its id and pose */
+  const picOf = (href) => {
+    if (!MINE) return PIC_RE.exec(href);
+    for (const id of CREW_IDS) for (const pose of C.POSES) if (C.file(id, pose) === href) return [href, id, pose];
+    return null;
+  };
+  if (MINE) {
+    const load0 = H.load;
+    H.load = (o = {}) => load0({ ...o, query: { ...(o.query || {}), simmine: '3' } });
+  }
+  const syncOwn = async () => { if (!MINE) return; CREW_IDS = C.registerOwn(await H.js(`window.__durbarSimUi.crew.own().entries`)); assert.strictEqual(CREW_IDS.length, 3, 'the three saved characters are registered'); };
   /* one Settings pick: a theme (kind 'theme', #thList) or a Characters value (kind 'characters', #chList) */
   const pickIn = async (kind, id) => {
     const list = kind === 'theme' ? '#thList' : '#chList', sel = `${list} [data-${kind}="${id}"]`;
@@ -164,8 +181,10 @@ async function runCrew(ctx, full) {
     await H.js(`window.DurbarScreens.close()`);
     await H.until(`!document.querySelector('.scene-out')`, 3000);
     await H.settle();
+    /* spec 008 FR-190: instead of a fixed 250 ms for the new pictures: every portrait on the stage is decoded (the fade of the old scene was waited for above
+       with `.scene-out`), then two painted frames */
+    await H.js(`Promise.all([...document.querySelectorAll('#stage image')].map((i)=>{const m=new Image();m.src=i.getAttribute('href')||i.getAttribute('xlink:href')||'';return m.decode().catch(()=>0);})).then(()=>true)`);
     await H.js(`new Promise((r)=>requestAnimationFrame(()=>requestAnimationFrame(()=>r(true))))`);
-    await ctx.sleep(250);
   };
   const pick = (id) => pickIn('theme', id);
   const pickChars = (v) => pickIn('characters', v);
@@ -174,6 +193,21 @@ async function runCrew(ctx, full) {
     if (await H.js(`window.THEME.current().id`) !== THEME_ID) await pick(THEME_ID);
     await pickChars(CHARS);
     assert.strictEqual(await H.js(`window.THEME.sceneKit()`), 'crew', `${THEME_ID}: Characters = ${CHARS} draws the crew kit`);
+    await syncOwn();
+  };
+  /* issue #1460: the crew scenes drawn on screen, as survey() will read them (visible, with the crew kit's signature and a picture). A bounded wait (CREW_WAIT_MS),
+     never a retry: the asserts that follow are the same. On a timeout it prints what the page shows (driver-helpers `crewTimeout`) and the driver fails there.
+     CREW_MUTANT (test-only, a one-off in the page): `slow` hides the scenes for 1.5 s after useCrew() (the wait must carry the check through it),
+     `slow-nowait` hides them and skips the wait (the existing assert must fail with its (0)). */
+  const CREW_WAIT_MS = 5000; // the one cap: the wait and its message both read it
+  const MUTANT = process.env.CREW_MUTANT || '';
+  const crewDrawn = async (n) => {
+    if (MUTANT) await H.js(`(()=>{const s=document.createElement('style');s.id='crew-mutant';s.textContent='#stage svg.scene{display:none!important}';document.head.appendChild(s);setTimeout(()=>s.remove(),1500);return true;})()`);
+    if (MUTANT === 'slow-nowait') return false;
+    const drawn = `[...document.querySelectorAll('#stage .desk[data-id] svg.scene, #stage .helper svg.scene')].filter((s)=>s.getClientRects().length&&/\\|crew\\|/.test(s.dataset.sig||'')&&s.querySelector('image')).length`;
+    if (await H.until(`${drawn}>=${Number(n)}`, CREW_WAIT_MS)) return true;
+    await H.crewTimeout(THEME_ID, n, CREW_WAIT_MS / 1000); // prints the diagnostics (short fields first, each line under the suite's 240-character cap), then fails: no redraw, no longer wait
+    return false;
   };
   console.log(`[crew] theme ${THEME_ID}, characters ${CHARS}`);
 
@@ -183,7 +217,7 @@ async function runCrew(ctx, full) {
     const uses = {};
     for (const f of list) {
       if (!f.href) continue; // the plain figure (fallback) has no picture
-      const m = PIC_RE.exec(f.href);
+      const m = picOf(f.href);
       assert.ok(m, `${tag}: ${f.use}: a crew picture (${f.href})`);
       const [id, pose] = [m[1], m[2]];
       const fb = C.faceBox(id, pose); // stage units
@@ -236,6 +270,7 @@ async function runCrew(ctx, full) {
     await H.load({ w, h, ready: 'fit', settle: false });
     await H.office(15);
     await useCrew();
+    await crewDrawn(15);
     const nat = await sizes();
     const s = await H.js(`(${survey.toString()})()`);
     assert.strictEqual(s.theme, THEME_ID, 'the theme stays the one under test');
@@ -257,7 +292,7 @@ async function runCrew(ctx, full) {
     await faceChecks(tag);
     assert.ok(seen.size === CREW_IDS.length, `${tag}: all ${CREW_IDS.length} ${CHARS} characters on screen with 15 agents (the simulator's name table uses every one, FR-073) (${[...seen]})`);
     // spec 077 FR-073 (issue #879): the simulator gives each demo name its fitting character; Ada and Hugo are the check's anchors (literals, not read from the table)
-    const want = { cheeky: { Ada: 'gamer', Hugo: 'bookworm' }, prehistoric: { Ada: 'braids', Hugo: 'inventor' }, pirate: { Ada: 'captain', Hugo: 'cook' }, monster: { Ada: 'werewolf', Hugo: 'vampire' }, royal: { Ada: 'knight', Hugo: 'alchemist' }, rebels: { Ada: 'fox', Hugo: 'owl' } }[CHARS];
+    const want = { cheeky: { Ada: 'gamer', Hugo: 'bookworm' }, prehistoric: { Ada: 'braids', Hugo: 'inventor' }, pirate: { Ada: 'captain', Hugo: 'cook' }, monster: { Ada: 'werewolf', Hugo: 'vampire' }, royal: { Ada: 'knight', Hugo: 'alchemist' }, rebels: { Ada: 'fox', Hugo: 'owl' } }[CHARS] || {}; // My characters have no name table (spec 096)
     const SC = require('../src/renderer/simcrew.js');
     assert.ok(await H.until(`(()=>{const U=window.__durbarSimUi,s=U.crew.state();return U.agents().filter((x)=>!x.parent).every((x)=>s.map[x.id]);})()`, 6000), `${tag}: every main agent has a character`);
     const named = await H.js(`(()=>{const U=window.__durbarSimUi,s=U.crew.state();return U.agents().filter((x)=>!x.parent).map((x)=>{const d=document.querySelector('#stage .desk[data-id="'+x.id+'"] svg.scene');return {name:x.baseName||x.name,c:s.map[x.id],sig:d?d.dataset.sig||'':null};});})()`);
@@ -267,7 +302,7 @@ async function runCrew(ctx, full) {
       assert.strictEqual(a.c, c, `${tag}: ${n} wears ${c} in the ${CHARS} crew (got ${a.c})`);
       assert.ok(a.sig && a.sig.includes('|crew|' + c), `${tag}: ${n}'s desk draws ${c} (sig ${a.sig})`);
     }
-    for (const a of named) assert.strictEqual(a.c, SC.characterFor(CHARS, a.name, CREW_IDS), `${tag}: ${a.name} wears its table character`);
+    if (!MINE) for (const a of named) assert.strictEqual(a.c, SC.characterFor(CHARS, a.name, CREW_IDS), `${tag}: ${a.name} wears its table character`);
     for (const [kind, list] of [['walker', s.walkers], ['chip', s.chips], ['lounge figure', s.lounge]]) for (const [i, imgs] of list.entries()) {
       assert.strictEqual(imgs.length, 1, `${tag}: ${kind} ${i} draws the portrait`);
       sharpOk(`${tag} ${kind} ${i}`, imgs[0], nat[imgs[0].href]);
@@ -275,7 +310,7 @@ async function runCrew(ctx, full) {
     assert.strictEqual(s.broken, 0, `${tag}: no picture without a source`);
     console.log(`[crew] ${tag}`, JSON.stringify({ scenes: mains.length, characters: [...seen], walkers: s.walkers.length, chips: s.chips.length, lounge: s.lounge.length }));
     await H.clearToasts();
-    await ctx.sleep(200);
+    await H.js(`new Promise((r)=>requestAnimationFrame(()=>requestAnimationFrame(()=>r(true))))`); /* the toasts are gone from a painted frame (was a 200 ms sleep) */
     await ctx.shot(path.join(out, `crew-office-${CHARS}-${THEME_ID}-${tag}.png`));
     // FR-061: an idle desk's portrait is full colour; its furniture keeps the dim
     const idle = await H.js(`(${idleOpacity.toString()})()`);
@@ -289,7 +324,7 @@ async function runCrew(ctx, full) {
     const gz = await H.js(`(${glowZoom.toString()})()`);
     assert.ok(gz.length >= 1, `${tag}: a desk to measure the glow on`);
     for (const g of gz) {
-      const m = PIC_RE.exec(g.href), fb = C.faceBox(m[1], m[2]), [vx, vy] = g.vb;
+      const m = picOf(g.href), fb = C.faceBox(m[1], m[2]), [vx, vy] = g.vb;
       const z = (p, o) => o + (p - o) * g.e, X = (u) => z(u, 74), Y = (u) => z(u, 99); // the zoom about the chair, in stage units
       const [u0, v0, u1, v1] = [X(fb[0]), Y(fb[1]), X(fb[0] + fb[2]), Y(fb[1] + fb[3])];
       const R = g.svg, sc = Math.min((R[2] - R[0]) / g.vb[2], (R[3] - R[1]) / g.vb[3]), ox = R[0] + ((R[2] - R[0]) - g.vb[2] * sc) / 2, oy = R[1] + ((R[3] - R[1]) - g.vb[3] * sc) / 2;
@@ -315,6 +350,7 @@ async function runCrew(ctx, full) {
   {
     await H.load({ w: 1920, h: 1080, query: { sim: '2', simrooms: '1', simhelpers: '0' }, ready: `document.querySelectorAll('#stage .desk[data-id]').length>=2&&document.getElementById('stage').dataset.fit` });
     await useCrew();
+    await crewDrawn(2);
     const nat = await sizes();
     const s = await H.js(`(${survey.toString()})()`);
     const imgs = s.scenes.flatMap((x) => x.images);
@@ -353,7 +389,7 @@ async function runCrew(ctx, full) {
       assert.ok(x.crew && !x.lying && x.href, `${where}: drawn with the crew picture, upright (${JSON.stringify({ crew: x.crew, lying: x.lying, href: x.href })})`);
       assert.ok(inside(x.av, x.slot) && inside(x.slot, x.lounge), `${where}: the figure ${x.av.map(Math.round)} is inside its bed slot ${x.slot.map(Math.round)} and the lounge ${x.lounge.map(Math.round)}`);
       // the face is not cut: the face box of the picture, mapped to the screen, is inside the visible figure
-      const m = PIC_RE.exec(x.href), fb = C.faceBox(m[1], m[2]), [vx, vy, vw, vh] = x.vb, R = x.svg;
+      const m = picOf(x.href), fb = C.faceBox(m[1], m[2]), [vx, vy, vw, vh] = x.vb, R = x.svg;
       const sc = Math.min((R[2] - R[0]) / vw, (R[3] - R[1]) / vh), ox = R[0] + ((R[2] - R[0]) - vw * sc) / 2, oy = R[1] + ((R[3] - R[1]) - vh * sc) / 2;
       const face = [ox + (fb[0] - vx) * sc, oy + (fb[1] - vy) * sc, ox + (fb[0] + fb[2] - vx) * sc, oy + (fb[1] + fb[3] - vy) * sc];
       assert.ok(inside(face, x.av), `${where}: the face box ${face.map(Math.round)} is inside the visible figure ${x.av.map(Math.round)} (not cut)`);
@@ -376,7 +412,7 @@ async function runCrew(ctx, full) {
 
   // FR-055: one picture removed from a copy of dist/: its character is drawn as the plain figure, the others keep their pictures
   // The log's "refused a call that did not come from its own window" for 'app:version' is expected here: the sender guard accepts only the real dist index, and this step loads a temp copy
-  {
+  if (!MINE) {
     const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'crew-dist-'));
     try {
       fs.cpSync(path.join(__dirname, '..', 'dist'), path.join(tmp, 'dist'), { recursive: true });
@@ -489,7 +525,7 @@ async function runCrew(ctx, full) {
 module.exports = async (ctx) => {
   for (const [chars, full] of RUNS) {
     CHARS = chars;
-    assert.ok(require('../src/renderer/crew.js').CREWS[chars], `CREW_CHARS ${chars} is a crew`);
+    assert.ok(chars === 'mine' || require('../src/renderer/crew.js').CREWS[chars], `CREW_CHARS ${chars} is a crew`);
     await runCrew(ctx, full);
   }
   console.log('[crew] checks passed');

@@ -1,0 +1,196 @@
+{
+  "version": 1,
+  "rows": [
+    {
+      "date": "2026-11-07",
+      "version": "v0.1.12",
+      "models": {
+        "claude-opus-5-5": 2856,
+        "claude-sonnet-5-5": 902
+      },
+      "machines": {
+        "linux": 3758
+      }
+    },
+    {
+      "date": "2026-11-08",
+      "version": "v0.1.13",
+      "models": {
+        "claude-opus-5-5": 3028.13,
+        "claude-sonnet-5-5": 1012.99,
+        "claude-haiku-5-5": 0.91
+      },
+      "machines": {
+        "linux": 4042.04
+      }
+    },
+    {
+      "date": "2026-11-09",
+      "version": "v0.1.14",
+      "models": {
+        "claude-opus-5-5": 3261.11,
+        "claude-sonnet-5-5": 1173.05,
+        "claude-haiku-5-5": 1.76
+      },
+      "machines": {
+        "linux": 4197.04,
+        "mac": 236.39,
+        "ruben-server": 2.49
+      }
+    },
+    {
+      "date": "2026-11-10",
+      "version": "v0.1.15",
+      "models": {
+        "claude-opus-5-5": 3559.2,
+        "claude-sonnet-5-5": 1191.84,
+        "claude-haiku-5-5": 1.76
+      },
+      "machines": {
+        "linux": 4197.04,
+        "mac": 236.4,
+        "ruben-server": 319.36
+      }
+    },
+    {
+      "date": "2026-11-11",
+      "version": "v0.1.16",
+      "models": {
+        "claude-opus-5-5": 3850.85,
+        "claude-sonnet-5-5": 1333.61,
+        "claude-haiku-5-5": 2.36
+      },
+      "machines": {
+        "linux": 4468.1,
+        "mac": 236.4,
+        "ruben-server": 482.32
+      }
+    },
+    {
+      "date": "2026-11-12",
+      "version": "v0.1.17",
+      "models": {
+        "claude-opus-5-5": 3934.71,
+        "claude-sonnet-5-5": 1460.26,
+        "claude-haiku-5-5": 2.71
+      },
+      "machines": {
+        "linux": 4636.35,
+        "mac": 236.4,
+        "ruben-server": 524.93
+      }
+    },
+    {
+      "date": "2026-11-13",
+      "version": "v0.1.18",
+      "models": {
+        "claude-opus-5-5": 4043.51,
+        "claude-sonnet-5-5": 1587.47,
+        "claude-haiku-5-5": 3.37
+      },
+      "machines": {
+        "linux": 4873.02,
+        "mac": 236.4,
+        "ruben-server": 524.93
+      }
+    },
+    {
+      "date": "2026-11-14",
+      "version": "v0.1.19",
+      "models": {
+        "claude-opus-5-5": 4186.31,
+        "claude-sonnet-5-5": 1667.9,
+        "claude-haiku-5-5": 3.79
+      },
+      "machines": {
+        "linux": 5096.67,
+        "mac": 236.4,
+        "ruben-server": 524.93
+      }
+    },
+    {
+      "date": "2026-11-15",
+      "version": "v0.1.21",
+      "models": {
+        "claude-opus-5-5": 4318.74,
+        "claude-sonnet-5-5": 1773.45,
+        "claude-haiku-5-5": 4.11
+      },
+      "machines": {
+        "linux": 5334.97,
+        "mac": 236.4,
+        "ruben-server": 524.93
+      }
+    },
+    {
+      "date": "2026-11-16",
+      "version": "v0.1.22",
+      "models": {
+        "claude-opus-5-5": 4351.99,
+        "claude-sonnet-5-5": 1805.1,
+        "claude-haiku-5-5": 4.23
+      },
+      "machines": {
+        "linux": 5399.99,
+        "mac": 236.4,
+        "ruben-server": 524.93
+      }
+    },
+    {
+      "date": "2026-11-17",
+      "version": "v0.1.23",
+      "models": {
+        "claude-opus-5-5": 4466.08,
+        "claude-sonnet-5-5": 1828.01,
+        "claude-haiku-5-5": 4.61
+      },
+      "machines": {
+        "linux": 5537.37,
+        "mac": 236.4,
+        "ruben-server": 524.93
+      }
+    },
+    {
+      "date": "2026-11-18",
+      "version": "v0.1.24",
+      "models": {
+        "claude-opus-5-5": 4567.07,
+        "claude-sonnet-5-5": 1937.83,
+        "claude-haiku-5-5": 5.06
+      },
+      "machines": {
+        "linux": 5748.63,
+        "mac": 236.4,
+        "ruben-server": 524.93
+      }
+    },
+    {
+      "date": "2026-11-19",
+      "version": "v0.1.25",
+      "models": {
+        "claude-opus-5-5": 4801.94,
+        "claude-sonnet-5-5": 1966.09,
+        "claude-haiku-5-5": 5.34
+      },
+      "machines": {
+        "linux": 6012.04,
+        "mac": 236.4,
+        "ruben-server": 524.93
+      }
+    },
+    {
+      "date": "2026-11-20",
+      "version": "v0.1.26",
+      "models": {
+        "claude-opus-5-5": 4893.08,
+        "claude-sonnet-5-5": 2033.36,
+        "claude-haiku-5-5": 5.66
+      },
+      "machines": {
+        "linux": 6170.77,
+        "mac": 236.4,
+        "ruben-server": 524.93
+      }
+    }
+  ]
+}

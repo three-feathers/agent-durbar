@@ -169,9 +169,10 @@ async function main(): Promise<void> {
     assert.strictEqual(modes(await readCopilotOrgPolicy({ rpc: { managedSettings: { resolve: async () => { throw new Error('x'); } } } }, file)), '--B', 'b: a failing runtime: the file');
     assert.strictEqual(modes(await readCopilotOrgPolicy({ rpc: { managedSettings: { resolve: async () => ({ resolved: { bypassPermissionsDisabled: 'yes' } }) } } }, file)), '--B', 'b: an answer that is not a resolve answer: the file');
     assert.strictEqual(fileRead, 3, 'b: the file read only in those three cases');
-    const t0 = Date.now();
-    assert.strictEqual(await resolveCopilotManaged({ rpc: { managedSettings: { resolve: () => new Promise(() => undefined) } } }, 50), undefined, 'b: a runtime that never answers is cut at the time limit');
-    assert.ok(Date.now() - t0 < 5000, 'b: and does not hang');
+    let hangTimer: NodeJS.Timeout | undefined;
+    const hung = new Promise<string>((r) => { hangTimer = setTimeout(() => r('hung'), 20_000); }); // a hang backstop only: the 50 ms limit is what ends the wait
+    assert.strictEqual(await Promise.race([resolveCopilotManaged({ rpc: { managedSettings: { resolve: () => new Promise(() => undefined) } } }, 50), hung]), undefined, 'b: a runtime that never answers is cut at the time limit (it did not hang)');
+    clearTimeout(hangTimer);
     assert.strictEqual(copilotOrgPolicyFromResolve(Object.create({ resolved: { bypassPermissionsDisabled: true } })), undefined, 'b: own properties of the answer only');
     for (const v of ['disable', 'allow-auto-only']) assert.deepStrictEqual(modeVerdict(copilot({ permissions: { disableBypassPermissionsMode: v } }), 'allow'), B(P), `b: file ${v} blocks Allow all`);
     assert.deepStrictEqual(modeVerdict(copilot({ permissions: { disableBypassPermissionsMode: { overridable: 'disable' } } }), 'allow'), D(P), 'b: file `overridable`: a team file may set unmanaged: advice (probe g)');
@@ -396,7 +397,7 @@ async function main(): Promise<void> {
     // the two calls exactly: nothing after the spread may override what the guard checks (`{ ...opts, model: x }` would start x unchecked)
     const guardCalls = mainSrc.match(/startGuardOp\(orgGuard, ad, \{[^\n]*\}\)/g) ?? [];
     assert.deepStrictEqual(guardCalls, [
-      'startGuardOp(orgGuard, ad, { ...startOptionsFor(draft), resumeSessionId: opts.resumeSessionId })',
+      'startGuardOp(orgGuard, ad, { ...startOptionsFor(draft, opts.resumeSessionId), resumeSessionId: opts.resumeSessionId })',
       'startGuardOp(orgGuard, ad, { ...startOptionsFor(a), ...(resume ? { resumeSessionId: a.id } : { sessionId: a.id }), quiet: opts.quiet ?? true })',
     ], 'f: main.ts: addWorkspace and the lazy start call startGuardOp with the adapter and its start options, nothing overriding the mode or model');
     assert.deepStrictEqual(mainSrc.match(/\.start\(\s*[^)\s]/g) ?? [], [], 'f: main.ts: no other start call with arguments (an adapter start outside the guard)');
@@ -617,7 +618,7 @@ async function main(): Promise<void> {
     (cyc.resolved as Record<string, unknown>).self = cyc;
     const fallback = emptyOrgPolicy(P);
     const cy = await readCopilotOrgPolicy({ rpc: { managedSettings: { resolve: async () => cyc } } }, () => fallback);
-    assert.strictEqual(cy, fallback, 'i: Copilot: a cyclic runtime answer falls back to the file');
+    assert.deepStrictEqual(cy, { ...fallback, runtimeUnread: 'failed' }, 'i: Copilot: a cyclic runtime answer falls back to the file, and says so (spec 099 FR-070)');
     // the string-list byte cap (the rule list is ALSO bounded in total, so the problem text proves which cap fired)
     const bs = claude({ availableModels: Array.from({ length: 150 }, (_, i) => `${i}-` + 'y'.repeat(2000)) });
     assert.ok(bs.problems.some((x) => x.includes('availableModels is longer than Agent Durbar reads')), 'i: a string list over the byte cap says so (the list cap, not only the total)');

@@ -20,3 +20,5 @@
 - [x] T019 Docs: README MCP section, CHANGELOG Unreleased, docs, specs/README.md [AGENTS.md "Keep docs in sync"]
 - [x] T020 `/speckit.analyze` and `/speckit.converge`: spec, plan, tasks and code agree; statuses honest [FR-031]
 - [x] T021 Remove the old app-level server lists (code, IPC, dialog section, sim, tests, docs); an old file is ignored and kept; `legacyEnc` stays (folder servers) [FR-032]
+- [x] T022 The usage file stores a secret-shaped tool or server name as a fixed placeholder and cleans an old file on load [FR-033, #1291]: `name`-level `toolName`/`serverName` in `toolusage.ts` (shared mask, two reads), `sanitizeDoc` remap and report, `UsageStore.load` rewrite. Test: `test:toolusage`, `test:usagestore` and 11 mutants
+- [x] T023 Review of #1294 (security): bounded slice-keyed verdict cache, whitespace-split names judged, prototype keys refused and prototype-free maps, stale `.tmp` removed on load and after a failed rename, tests for M6/M9/M12/M14 [FR-033]

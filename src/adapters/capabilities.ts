@@ -81,6 +81,8 @@ export interface AdapterCapabilities {
   readonly handoff?: boolean;
   /** `generateText()` exists: one prompt, no tools, no session kept (spec 040 FR-015); missing = false. */
   readonly oneShot?: boolean;
+  /** Spec 096 FR-001: `generateImage()` exists: one prompt makes one picture in an empty temp folder; missing = false. Codex stays off until probes P2 and P8 (T030). */
+  readonly imageGen?: boolean;
   /** `setRemote()` exists: the session can be followed and steered from the vendor's web or mobile app (spec 054 FR-001); missing = false. */
   readonly remote?: boolean;
   /**
@@ -105,7 +107,7 @@ export interface AdapterCapabilities {
    * `capUnit` is the unit of the optional spend cap (`null`: none possible); `attachments`: the Autopilot send takes attachments (D10);
    * `planApproval`: the plan card may offer Autopilot (FR-060); `verified`: true only after a real run is recorded in the spec.
    */
-  readonly autopilot?: Readonly<{ capUnit: 'aiu' | 'usd' | 'tokens' | null; attachments: boolean; planApproval: boolean; verified: boolean }>;
+  readonly autopilot?: Readonly<{ capUnit: 'aiu' | 'usd' | 'tokens' | null; attachments: boolean; planApproval: boolean; verified: boolean; /** The app's smallest spend cap, in `capUnit`: a lower one is raised to it, and the window says so (the app's own fact, not main's or the window's). */ capMin?: number }>;
 }
 
 /** Where an adapter stands on this machine (spec 012 FR-030). `unknown` also covers a detect that failed. */

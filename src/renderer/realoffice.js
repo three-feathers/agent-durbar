@@ -15,22 +15,26 @@
   let SET_SHOWN = '';
   const peopleKey = () => SET_SHOWN === 'office' || !SET_SHOWN ? 'durbar.realpeople' : 'durbar.realpeople.' + SET_SHOWN;
   let onArt = null;
-  let EMPTY_BOX = null, SLIP_RO = null;
+  let EMPTY_BOX = null, SLIP_RO = null, MOOD_BOXES = []; /* MOOD_BOXES: this draw's trouble signs (FR-361), on the avoid list of the slips */
   /* phase P2 (FR-030..FR-035, FR-070..FR-074). CUR: the drawn scene; a monitor repaints on its own, at most once per REPAINT_MS, only when its
      lines changed, and not at all while the office is hidden or the desk is scrolled away: so no timer runs in an idle office. */
   const REPAINT_MS = 2000; /* FR-033 */
   const SCR = new Map(); /* desk id -> {box, last, timer, dirty, away, fit, sig} */
   const OFF = new Set(); /* keys of desks whose motion stands still: scrolled away or under the zoom */
+  let ARC = false; /* the arcade is drawn (the Retro world on a cabinet layout): the narrow cabinet's plate rules of spec 102 FR-312 apply to it alone */
   let LAY_G = 0; const CUR_G = () => LAY_G; /* the arcade's scale, for its screen text (0 in other worlds) */
   let CUR = null; /* {ro, screenOf, still, hold, desks: Map id -> desk, agents: Map id -> model agent, folders: Map, drawn} */
+  let CIRCLE_HOLD = null; /* FR-230: {key, at}: where the circle fell back to rows, and the count of agents it fell back at */
   let ZOOM = null; /* {id, hover, focus, panel, plate} */
   let IO = null, DISMISSED = '';
   /* spec 052 FR-183: focus the app moves by itself onto a plate is not the person asking to read that screen */
+  let PT = ''; /* the pointer's last position in the office (x,y of its last pointermove), the format of QUIET_AT: a card held under a resting pointer (FR-328) is let go only by a move to another one */
   let QUIET_FOCUS = false, QUIET_POINTER = false, QUIET_AT = '', ARMED = false; /* QUIET_POINTER: the room came back (Esc from a chat, issue 1040) under a pointer that has not moved; hovering starts when it leaves QUIET_AT. ARMED: a hover zoom is waiting out its 120 ms (driver reads hoverState) */
   function quietFocus(fn) { QUIET_FOCUS = true; QUIET_POINTER = true; QUIET_AT = ''; try { fn(); } finally { QUIET_FOCUS = false; } }
 
   const has = (o, k) => Object.prototype.hasOwnProperty.call(o, k);
-  const px = (n) => Math.round(n * 10) / 10 + 'px';
+  let FRAC = false; /* spec 102 FR-255 (T204): a pixel world at a fractional device pixel ratio keeps 3 decimals, so a lobby edge stays on its whole device pixel (0.1 px would move it by up to 0.075 device px) */
+  const px = (n) => FRAC ? Math.round(n * 1000) / 1000 + 'px' : Math.round(n * 10) / 10 + 'px';
   /* FR-184: nothing rewrites what did not change: a style or dataset value is written only when it differs */
   const sty = (e, k, v) => { if (e.style[k] !== v) e.style[k] = v; };
   const dset = (e, k, v) => { if (e.dataset[k] !== v) e.dataset[k] = v; };
@@ -40,20 +44,38 @@
   const easeFrom = (el, dx, dy, sx, sy) => {
     if (!el.animate || (Math.abs(dx) < 0.5 && Math.abs(dy) < 0.5 && sx === 1 && sy === 1)) return;
     const ms = Math.max(280, Math.min(520, Math.hypot(dx, dy) * 1.2)), ease = { duration: ms, easing: 'cubic-bezier(.25,.1,.25,1)' };
-    if (sx === 1 && sy === 1) { el.animate([{ translate: `${dx}px ${dy}px` }, { translate: '0 0' }], ease); return; }
+    if (sx === 1 && sy === 1) return el.animate([{ translate: `${dx}px ${dy}px` }, { translate: '0 0' }], ease);
     /* scaled about the element's own origin: the translate brings its top left to where it was */
     const o = getComputedStyle(el).transformOrigin.split(' '), ox = parseFloat(o[0]) || 0, oy = parseFloat(o[1]) || 0;
     const flip = el.classList.contains('mir') ? -1 : 1; /* a mirrored picture stays mirrored while it eases (spec 102 FR-256) */
-    el.animate([{ translate: `${dx - ox * (1 - sx)}px ${dy - oy * (1 - sy)}px`, scale: `${flip * sx} ${sy}` }, { translate: '0 0', scale: `${flip} 1` }], ease);
+    return el.animate([{ translate: `${dx - ox * (1 - sx)}px ${dy - oy * (1 - sy)}px`, scale: `${flip * sx} ${sy}` }, { translate: '0 0', scale: `${flip} 1` }], ease);
   };
-  const box = (el, r) => {
+  const box = (el, r) => { /* gives the ease it started, if any */
+    let a = null;
     if (SLIDE && el._x !== undefined && !el.classList.contains('ro-chip') && !el.classList.contains('ro-lplate')) {
       const sw = r.w != null && el._bw > 0 && Math.abs(el._bw - r.w) >= 1 && r.w > 0 ? el._bw / r.w : 1, sh = r.h != null && el._bh > 0 && Math.abs(el._bh - r.h) >= 1 && r.h > 0 ? el._bh / r.h : 1;
-      easeFrom(el, el._x - r.x, el._y - r.y, sw, sh);
+      a = easeFrom(el, el._x - r.x, el._y - r.y, sw, sh) || null;
     }
     if (r.w != null) el._bw = r.w;
     if (r.h != null) el._bh = r.h;
-    el._x = r.x; el._y = r.y; sty(el, 'left', px(r.x)); sty(el, 'top', px(r.y)); if (r.w != null) sty(el, 'width', px(r.w)); if (r.h != null) sty(el, 'height', px(r.h)); };
+    el._x = r.x; el._y = r.y; sty(el, 'left', px(r.x)); sty(el, 'top', px(r.y)); if (r.w != null) sty(el, 'width', px(r.w)); if (r.h != null) sty(el, 'height', px(r.h));
+    return a; };
+  /* spec 097 FR-365 (bug 1513): the rename pencil is placed by CSS anchor only, so its plate's ease (translate and scale on the compositor) does not carry
+     its painted icon: in the first ~200 ms it was drawn over the name and the status icon. While the plate eases the pencil is not painted (opacity, so it
+     keeps its name and Tab place); it fades in at its own spot when the ease ends. Under reduced motion nothing eases, so nothing hides. A pencil that
+     has the focus is not hidden (its focus ring stays; it may be drawn displaced for the ease, a known gap). */
+  const REN_IN = 120;
+  function hideWhile(e, ease) {
+    if (e._hide) e._hide.cancel();
+    if (!e._hf) { e._hf = true; e.addEventListener('focus', () => { if (e._hide) { e._hide.cancel(); e._hide = null; } }); } /* focused while hidden: shown at once, and no fade from 0 when the ease ends (`show` stops at its guard) */
+    /* held until the plate's own ease ends (its `finished`), not for a time of its own: a plate's ease can start a frame after the pencil's hold
+       (measured in the cave, 17 ms), and a timed hold then ended while the plate still moved (review of PR 1555) */
+    const h = e._hide = e.animate([{ opacity: 0 }, { opacity: 0 }], { duration: Infinity });
+    const show = () => { if (e._hide !== h) return; h.cancel(); e._hide = e.animate([{ opacity: 0 }], { duration: REN_IN, easing: 'linear' }); }; /* one keyframe: it ends on the CSS opacity (hover, focus, ren-show) */
+    ease.finished.then(show, show);
+  }
+  /* the plate's ease still under way (a move on translate or scale), for a pencil made while it runs */
+  const easeOf = (el) => el.getAnimations ? el.getAnimations().find((n) => !n.animationName && n.playState === 'running' && n.effect && n.effect.getKeyframes().some((f) => f.translate || f.scale)) || null : null;
   const initials = (name) => String(name || '?').trim().split(/\s+/).slice(0, 2).map((w) => Array.from(w)[0] || '').join('').toUpperCase() || '?';
 
   /* the keyed layers: one Map per layer, elements reused by key; unseen keys are removed at the end of a render */
@@ -75,6 +97,38 @@
   }
   /* FR-073: `fade`: a person or visitor who left fades where they stood (the fade itself is a picture nobody can click); an element that leaves is also unobserved (the resize observer of the chrome layer, settle), so the observed set cannot grow all day */
   /* spec 097 FR-249: a desk picture whose agent went to the lounge (or a lounge desk whose agent went back) fades out where it stood */
+  /* spec 102 FR-229, spec 097 FR-249 and FR-309 (issue #1907): the keyboard order is the model's. Every element is made once, by its key, and stays where it was made, so the order of the page is
+     the order of first drawing; when the layout's sequence changes (a resting agent comes to a desk, a seat moves to the lounge) it is stale. Here: for each folder its sign, then its desks' groups
+     (plate, pencil, helper strip or kids), then the lounge seats'. If the page already has them in that order (the common case, the first drawing too) nothing is touched. Otherwise only the elements
+     that are out of order are moved (the longest run already in order stays), each to just after the one before it in the model's order; the element that holds the focus is never moved (moving it drops
+     the focus), the others are moved round it. No element is made or removed, so a status update still adds no node (FR-261): a move is the only mutation. */
+  function keyOrder(chrome, lay) {
+    const D = [];
+    const grp = (d) => ['n:', 'rn:', 'h:', 'kz:'].map((p) => chrome._k.get(p + d.id)).filter(Boolean);
+    for (const z of lay.zones) { const sg = chrome._k.get('s:' + z.id + '\u0000' + z.part); if (sg) D.push(sg); for (const d of z.desks) D.push(...grp(d)); }
+    if (lay.lounge) for (const d of lay.lounge.desks) D.push(...grp(d));
+    let ordered = true;
+    for (let i = 1; i < D.length && ordered; i++) if (!(D[i - 1].compareDocumentPosition(D[i]) & Node.DOCUMENT_POSITION_FOLLOWING)) ordered = false;
+    if (ordered) return;
+    const at = new Map(); let n = 0; for (const e of chrome.children) at.set(e, n++); /* where each is now */
+    const P = D.map((e) => at.get(e));
+    /* the longest increasing run of P (patience sorting, with the predecessor links): those elements stay */
+    const tail = [], prev = new Array(P.length).fill(-1);
+    for (let i = 0; i < P.length; i++) {
+      let lo = 0, hi = tail.length;
+      while (lo < hi) { const mid = (lo + hi) >> 1; if (P[tail[mid]] < P[i]) lo = mid + 1; else hi = mid; }
+      if (lo) prev[i] = tail[lo - 1]; tail[lo] = i;
+    }
+    const keep = new Set(); for (let i = tail[tail.length - 1]; i !== undefined && i >= 0; i = prev[i]) keep.add(i);
+    /* the focused element stays too: the kept ones that disagree with it about before and after are moved instead */
+    const act = document.activeElement, fi = D.findIndex((e) => e.contains(act));
+    if (fi >= 0 && !keep.has(fi)) { for (const i of [...keep]) if ((i < fi) !== (P[i] < P[fi])) keep.delete(i); keep.add(fi); }
+    for (let i = 0; i < D.length; i++) {
+      if (keep.has(i)) continue;
+      if (i > 0) D[i - 1].after(D[i]);
+      else { let j = 1; while (j < D.length && !keep.has(j)) j++; if (j < D.length) D[j].before(D[0]); else chrome.prepend(D[0]); }
+    }
+  }
   function sweep(layer, fade) { for (const [k, e] of layer._k) if (!layer._seen.has(k)) { if (layer._obs && layer._obs.delete(e)) layer._ro.unobserve(e); if (fade && (k.startsWith('p:') || k.startsWith('v:'))) zoomOut(e); else if (fade && (k.startsWith('d:') || k.startsWith('ld:'))) fadeOut(e, 220); else e.remove(); layer._k.delete(k); } }
   function fadeOut(e, ms) { delete e.dataset.for; e.style.pointerEvents = 'none'; const a = e.animate([{ opacity: 1 }, { opacity: 0 }], { duration: ms, easing: 'ease-in-out', fill: 'forwards' }); a.onfinish = a.oncancel = () => e.remove(); }
   function text(e, t) { t = String(t == null ? '' : t); if (e.textContent !== t) e.textContent = t; }
@@ -106,7 +160,7 @@
     if (ro._ready || ro._waiting) return;
     ro._waiting = true;
     setTimeout(() => {
-      ro._ready = true;
+      ro._ready = true; ro.dataset.go = '1'; /* spec 102 FR-309: the arcade's CSS loops (marquee flash, cue dots, caret) start now, not at the first draw */
       if (!CUR || CUR.ro !== ro) return;
       for (const c of SCR.values()) if (c.caret) clock(c.caret, c.caretMs);
       if (onArt) onArt();
@@ -223,6 +277,13 @@
   function cabinetOf(dc, meta, cab, k, state, body) {
     dc.classList.toggle('st-idle', state === 'idle'); /* FR-260: dim by opacity: a shade would darken the floor beside it too */
     const kind = cab.gw === meta.monitor.big.glass[2] ? 'big' : cab.gw === meta.monitor.small.glass[2] ? 'small' : 'narrow', m = meta.monitor[kind];
+    /* spec 102 T171: a file name or cell count that is not plain paints no picture, and neither does a missing validator (fail closed); the element is reused
+       across renders, so a picture an earlier, accepted entry painted is taken off first */
+    if (!X().monitorProblem || X().monitorProblem(m)) {
+      for (const p of ['backgroundImage', 'backgroundSize', 'backgroundPosition']) if (dc.style[p]) dc.style[p] = '';
+      delete dc.dataset.body;
+      return;
+    }
     let h = 0; for (const c of k) h = (h * 31 + c.charCodeAt(0)) >>> 0;
     const nb = m.bodies || 1, cell = ((body || 0) % nb) * (m.cells / nb) + (h % (m.cells / nb));
     const url = 'url("' + WD + m.file + '")', size = m.cells * 100 + '% 100%', pos = (cell / Math.max(1, m.cells - 1)) * 100 + '% 0';
@@ -286,37 +347,81 @@
     return PEOPLE;
   }
 
+  /* The numbers one scene is drawn with: the world's furniture numbers with the set's people numbers. Spec 102 FR-323: `pixelArt` is the WORLD's (grid snap, screen box,
+     smoothing of the room), whatever the set; the set's own `pixelArt` only says how its people are drawn (`pixelPeople`, spec 097 T247: a crew's hi-res people in a pixel world are scaled to its people). */
+  function metaOf(worldMeta, setMeta) {
+    const meta = Object.assign({}, worldMeta, setMeta);
+    meta.pixelArt = !!(worldMeta && worldMeta.pixelArt);
+    meta.pixelPeople = !!(setMeta && setMeta.pixelArt);
+    return meta;
+  }
   /**
    * Draw the office into `stage`. `model`: {folders:[{id,name,path,cost,counts:[{state,n,word}],newSess,menu,agents:[{id,name,role,
-   * state,word,task,label,tip,selected,away,awayLabel,helpers:[state]}]}], places:[{id,label,custom,post,title,go,visitors:[{id,name,
+   * state,word,task,label,tip,selected,away,awayLabel,helpers:[state],helpWords}]}], places:[{id,label,custom,post,title,go,visitors:[{id,name,
    * needsYou,title}]}]}; `view`: {w,h}; `opts`: {still, world, set, rand, remember, onArt}. Returns the layout (for the app's checks).
    */
+  /* spec 102 delta 2026-11-14 (review of #1741): a storey tag's text width in the sign's own 12 px bold, in the font of this machine (a canvas measure; the layout adds the padding). Cached by font and text; null when it cannot be measured (the layout then takes 8 px a letter) */
+  let TAGCV = null;
+  function tagMeasure(stage) { /* one probe a render: the sign's bold font; returns text => px, or null (the layout then takes 8 px a letter) */
+    try {
+      const probe = document.createElement('div'); probe.className = 'ro-sign'; probe.style.cssText = 'position:absolute;visibility:hidden;left:0;top:0'; const pb = document.createElement('b'); probe.appendChild(pb); stage.appendChild(probe);
+      const cs = getComputedStyle(pb), font = cs.fontStyle + ' ' + cs.fontWeight + ' ' + cs.fontSize + ' ' + cs.fontFamily; probe.remove();
+      TAGCV = TAGCV || document.createElement('canvas').getContext('2d'); TAGCV.font = font;
+      return (text) => { const w = TAGCV.measureText(text).width; return w > 0 ? w : undefined; };
+    } catch (e) { return null; }
+  }
   function render(stage, model, view, opts) {
     const L = X();
     const world = has(root.DurbarRealOfficeWorlds || {}, opts.world || 'photo') ? opts.world || 'photo' : 'photo', set = has(root.DurbarRealOfficeSets || {}, opts.set || 'office') ? opts.set || 'office' : 'office';
     WD = 'realoffice/worlds/' + world + '/'; SD = 'realoffice/sets/' + set + '/';
     if (SET_SHOWN !== set) { SET_SHOWN = set; PEOPLE = null; SEEN.clear(); } /* the people belong to a set: switching sets draws its own, kept apart */
     WPX = root.DurbarRealOfficeWorlds[world].px || {}; SPX = root.DurbarRealOfficeSets[set].px || {};
-    const meta = Object.assign({}, root.DurbarRealOfficeWorlds[world], root.DurbarRealOfficeSets[set]); /* the world's furniture numbers with the set's people numbers */
+    const meta = metaOf(root.DurbarRealOfficeWorlds[world], root.DurbarRealOfficeSets[set]);
     onArt = opts.onArt || null;
     PIXEL = !!meta.pixelArt;
+    meta.dpr = root.devicePixelRatio || 1; FRAC = PIXEL && Math.abs(meta.dpr - Math.round(meta.dpr)) > 1e-9; /* spec 102 FR-255 (T204): the lobby's pictures sit on whole device pixels at any ratio */
     const ids = Object.keys(meta.seat).sort();
     const who = people(model, ids, opts.rand, !!opts.remember);
     const seatOk = (p) => !!p && !['typeA', 'think', 'waveA', 'rest'].some((f) => BAD.has(SD + p + '-' + f + '.webp'));
+    const tagW = model.folders.some((f) => f.floor) ? tagMeasure(stage) : null; /* review of #1741: the storey tags are sized from the text as this machine draws it */
     const engine = {
-      folders: model.folders.map((f) => ({ id: f.id, agents: f.agents.map((a) => ({ id: a.id, state: a.state, away: a.away || null, person: seatOk(who[a.id]) ? who[a.id] : null, lounge: !!a.lounge })) })), /* spec 097 FR-246: the app's room rule (shutPlan) seats it in the lounge row */
+      keepRooms: !!model.keepRooms, /* spec 097 FR-353: a saved room order is kept in the rows */
+      restW: tagW ? tagW('Resting') : undefined, /* review of #1741: the Resting tag */
+      folders: model.folders.map((f) => ({ id: f.id, floor: f.floor ? Object.assign({}, f.floor, { w: tagW ? tagW(f.floor.n + ' ' + f.floor.name) : undefined }) : undefined, keep: !!f.keep, agents: f.agents.map((a) => ({ id: a.id, state: a.state, away: a.away || null, person: seatOk(who[a.id]) ? who[a.id] : null, lounge: !!a.lounge, helpers: a.lounge || !a.subs ? 0 : a.subs.length })) })), /* spec 097 FR-246: the app's room rule (shutPlan) seats it in the lounge row; FR-306: the strip's helpers (none in the lounge; none without their list: the plate keeps its +N) */
       places: model.places.map((p) => ({ id: p.id, custom: !!p.custom, visitors: p.visitors.map((v) => ({ id: v.id, needsYou: !!v.needsYou, person: who[v.id] || null })) })),
     };
     const signs = {};
     for (const f of model.folders) signs[f.id] = { name: f.name, path: f.path, counts: f.counts.length + (f.cost ? 1 : 0) };
-    const lay = meta.arrangement && meta.arrangement !== 'rows' && L.layoutFor ? L.layoutFor(meta.arrangement, engine, view, meta, signs) : L.realLayout(engine, view, meta, signs); /* spec 102 FR-228: the one seam */
+    /* spec 102 FR-228: the one seam; FR-230 (owner, 2026-11-14 13:10 UTC): a circle that does not fit at the face floor draws rows, and comes back only with two agents fewer than it left at (kept per world, window size and folder list, so another floor does not inherit it) */
+    const arr = meta.arrangement && meta.arrangement !== 'rows' && L.layoutFor ? meta.arrangement : 'rows';
+    let ran = arr;
+    const layOut = (eng) => {
+      if (arr === 'circle' && L.layoutWithFallback) {
+        const n = eng.folders.reduce((c, f) => c + f.agents.length, 0), key = world + '|' + view.w + 'x' + view.h + '|' + eng.folders.map((f) => f.id).join(',');
+        const r = L.layoutWithFallback('circle', eng, view, meta, signs, CIRCLE_HOLD && CIRCLE_HOLD.key === key ? CIRCLE_HOLD.at : undefined);
+        ran = r.ran;
+        CIRCLE_HOLD = L.holdAfter(CIRCLE_HOLD, key, n, ran, r.why); /* the hold follows a failed fit only, never the All floors rows (review of #1764; pure, tested in test-realoffice-circle) */
+        return r.lay;
+      }
+      ran = arr;
+      return arr !== 'rows' ? L.layoutFor(arr, eng, view, meta, signs) : L.realLayout(eng, view, meta, signs);
+    };
+    let lay = L.layoutOrFlat(layOut, engine); /* spec 097 review of #1746: a layout that throws is drawn again without floors (tested by test-realoffice-aisles) */
+    /* spec 102 delta 2026-11-11 (issue 1566): an arcade hall that would scroll takes the floor's own padding (`opts.lend`, px) when that makes it fit, so a strip over the floor does not make 15 agents scroll at 1280x800; `lent` tells the host to drop that padding */
+    /* spec 102 delta 2026-11-13 (issue 1598): the same when the hall fits only by cutting a folder of 4 or fewer across rows (no scroll, so the test above never ran): the lent layout is used when it keeps them whole */
+    const cutSmall = (l) => { const parts = {}, size = {}; for (const z of l.zones || []) { parts[z.id] = (parts[z.id] || 0) + 1; size[z.id] = (size[z.id] || 0) + z.desks.length; } return Object.keys(parts).some((id) => parts[id] > 1 && size[id] <= 4); };
+    if ((lay.scroll || cutSmall(lay)) && opts.lend > 0 && meta.arrangement === 'aisles' && L.layoutFor) {
+      const v2 = { w: view.w, h: view.h + opts.lend }, l2 = L.layoutFor(meta.arrangement, engine, v2, meta, signs);
+      if (!l2.scroll && (lay.scroll || !cutSmall(l2))) { lay = l2; view = v2; lay.lent = true; }
+    }
+    lay.aisles = meta.arrangement === 'aisles'; /* spec 102 T340: the host yields its notice strips only for this arrangement */
 
     let ro = stage.querySelector(':scope > .ro');
     if (!ro) { stage.textContent = ''; ro = document.createElement('div'); ro.className = 'ro'; stage.appendChild(ro); ro.addEventListener('click', forward); wireZoom(ro); }
     sty(ro, 'width', px(lay.width)); sty(ro, 'height', px(lay.height));
-    LAY_G = lay.cabinet ? lay.g || 0 : 0;
+    LAY_G = lay.cabinet ? lay.g || 0 : 0; ARC = !!lay.cabinet && world === 'retro';
     if (lay.g) setVar(ro, '--ro-g', String(lay.g)); /* spec 102 FR-255: one integer scale for the world's art */
-    dset(ro, 'set', set); dset(ro, 'world', world); dset(ro, 'u', String(Math.round(lay.u))); dset(ro, 'face', String(Math.round(lay.faceH * 10) / 10)); dset(ro, 'big', lay.big ? '1' : '0');
+    dset(ro, 'set', set); dset(ro, 'world', world); dset(ro, 'arrangement', ran); dset(ro, 'u', String(Math.round(lay.u))); dset(ro, 'face', String(Math.round(lay.faceH * 10) / 10)); dset(ro, 'big', lay.big ? '1' : '0');
     ro.classList.toggle('still', !!opts.still);
     ro.classList.toggle('hold', !!opts.hold); /* the people stand still, the lights may not (FR-071) */
     const drawn = !!(CUR && CUR.ro === ro && CUR.drawn);
@@ -324,7 +429,7 @@
     if (ZOOM && !ZOOM.panel.isConnected) closeZoom();
     const sized = view.w + 'x' + view.h, sameSize = !!CUR && CUR.sized === sized && !!CUR.painted;
     const wasLive = CUR && CUR.ro === ro ? CUR.live : undefined;
-    CUR = { pixelArt: !!meta.pixelArt, ro, live: opts.live, screenOf: opts.screenOf || null, sized, still: !!opts.still, hold: !!opts.hold, desks: new Map(lay.zones.flatMap((z) => z.desks.map((d) => [d.id, d])).concat(lay.lounge ? lay.lounge.desks.map((d) => [d.id, d]) : [])), agents: new Map(model.folders.flatMap((f) => f.agents.map((a) => [a.id, { ...a, folder: f.name }]))), drawn, scroll: !!lay.scroll };
+    CUR = { pixelArt: !!meta.pixelArt, ro, live: opts.live, screenOf: opts.screenOf || null, factsOf: opts.factsOf || null, sized, still: !!opts.still, hold: !!opts.hold, desks: new Map(lay.zones.flatMap((z) => z.desks.map((d) => [d.id, d])).concat(lay.lounge ? lay.lounge.desks.map((d) => [d.id, d]) : [])), agents: new Map(model.folders.flatMap((f) => f.agents.map((a) => [a.id, { ...a, folder: f.name }]))), drawn, scroll: !!lay.scroll };
     SLIDE = sameSize && moving() && !hiddenNow();
     CUR.painted = true;
     ro.classList.toggle('paused', hiddenNow()); if (hiddenNow()) finishMoves(ro);
@@ -332,6 +437,7 @@
     const art = layerOf(ro, 'ro-art'), amb = layerOf(ro, 'ro-amb'), lights = layerOf(ro, 'ro-lights'), chrome = layerOf(ro, 'ro-chrome');
     const lobby = el(art, 'lobby', 'div', 'ro-lobby'); box(lobby, { x: 0, y: 0, w: lay.width, h: lay.lobbyH });
     const strip = el(art, 'strip', 'div', 'ro-strip'); box(strip, lay.floorStrip);
+    if (lay.focus) { const fc = el(art, 'focus', 'div', 'ro-focus'); box(fc, lay.focus); fc.setAttribute('aria-hidden', 'true'); } /* spec 102 FR-227, T166: the one still picture the ring stands round; the world's stylesheet paints it, a picture that fails to load moves nothing */
     /* FR-043: the room ambient: the share of active desks among the visible ones */
     const allDesks = lay.zones.flatMap((z) => z.desks).concat(lay.lounge ? lay.lounge.desks : []); /* spec 097 FR-247: the lounge's seats are desks to the room's light, the zoom and the slips */
     const states = model.empty ? ['idle'] : allDesks.map((d) => d.state); /* FR-119: an empty floor is lit at 70 % (FR-043) */
@@ -341,7 +447,7 @@
     dset(ro, 'ambient', String(ambient));
     const ambEl = el(amb, 'amb', 'div', 'ro-ambient'); box(ambEl, { x: 0, y: 0, w: lay.width, h: lay.height });
 
-    EMPTY_BOX = null;
+    EMPTY_BOX = null; MOOD_BOXES = [];
     if (model.empty) drawEmpty(art, chrome, lay, meta, model.empty);
     const byFolder = new Map(model.folders.map((f) => [f.id, f]));
     const byAgent = new Map(model.folders.flatMap((f) => f.agents.map((a) => [a.id, a])));
@@ -356,19 +462,15 @@
       signFill(sg, f, z);
       for (const d of z.desks) deskOne(d);
     }
-    if (lay.lounge) {
-      for (const d of lay.lounge.desks) deskOne(d); /* spec 097 FR-247: after the desks */
-      /* FR-249: keyboard order is the desks', then the seats': a plate that was a desk's keeps its element, so it is moved after the last desk's plate (and its pencil), unless it has the focus */
-      const last = lay.zones.length ? lay.zones[lay.zones.length - 1].desks.slice(-1)[0] : null;
-      let at = last ? chrome._k.get('rn:' + last.id) || chrome._k.get('n:' + last.id) : null;
-      for (const d of lay.lounge.desks) {
-        const pl = chrome._k.get('n:' + d.id), rb = chrome._k.get('rn:' + d.id);
-        if (!pl || pl.contains(document.activeElement) || (rb && rb.contains(document.activeElement))) { at = rb || pl || at; continue; }
-        if (at && at.nextElementSibling !== pl) at.after(pl);
-        if (rb && pl.nextElementSibling !== rb) pl.after(rb);
-        at = rb || pl;
-      }
+    /* spec 102 delta 2026-11-14 (spec 097 FR-104): the All floors view as storeys, when the layout has them: a rule (the world's, drawn under the signs) and a tag with the floor's name per storey */
+    for (const b of lay.storeys || []) {
+      if (b.slab) { const sl = el(art, 'storey-slab:' + b.id, 'div', 'ro-slab'); box(sl, b.slab); dset(sl, 'storey', b.id); }
+      const tg = el(chrome, 'storey-tag:' + b.id, 'div', 'ro-sign ro-stag'); box(tg, b.tag); dset(tg, 'storey', b.id); dset(tg, 'surface', 'storey');
+      if (tg._sig !== b.name + '\u0000' + b.n) { tg._sig = b.name + '\u0000' + b.n; tg.textContent = ''; const nb = document.createElement('b'); nb.textContent = (b.n ? b.n + ' ' : '') + b.name; tg.appendChild(nb); }
+      attr(tg, 'data-tip', b.n ? 'Floor ' + b.n + ': ' + b.name : 'Resting: not on any floor'); attr(tg, 'role', 'note'); /* spec 001 FR-270: the instant tooltip, the floor's whole name */
     }
+    if (lay.lounge) for (const d of lay.lounge.desks) deskOne(d); /* spec 097 FR-247: after the desks */
+    keyOrder(chrome, lay);
     function deskOne(d) {
         const a = byAgent.get(d.id), k = d.id;
         const lt = L.lightFor(d.state, { still: !!opts.still, unread: !!a.unread }); /* FR-236: a done desk with an unread reply tints green */
@@ -410,8 +512,9 @@
         }
         /* the monitor: the glass in the art; its text sits with the chrome, above the lights (FR-044), and repaints on its own (FR-033) */
         const sc = el(art, 'm:' + k, 'div', 'ro-screen st-' + d.state + (lt.glow === 'off' ? ' off' : '') + (a.asleep ? ' asleep' : '') + (d.lounge ? ' ro-lmon' : '') + (lt.tint !== 'none' ? ' tint-' + lt.tint : '')); /* FR-236: the screen is the status cue */ box(sc, d.screen); dset(sc, 'for', k);
-        if (!sc.firstChild) sc.innerHTML = '<div class="ro-bezel"><div class="ro-glass" aria-hidden="true"></div></div><div class="ro-neck"></div><div class="ro-foot"></div>';
+        if (!sc.firstChild) sc.innerHTML = '<div class="ro-bezel"><div class="ro-glass" aria-hidden="true"></div></div><div class="ro-neck"></div><div class="ro-foot"></div><svg class="ro-ctx" aria-hidden="true" focusable="false"><rect class="ro-ck" pathLength="100" fill="none"/><rect pathLength="100" fill="none"/></svg>'; /* spec 097 FR-324: the context line, made once per desk */
         const bez = sc.firstChild; bez.style.height = px(d.glass.h + 6);
+        ctxPaint(sc, a, d); /* FR-322: the line round the frame, outside the glass; attributes only (FR-326) */
         if (!d.lounge) screenBox(chrome, d, k);
         else { const s = SCR.get(k); if (s) { clearTimeout(s.timer); if (IO) IO.unobserve(s.box); SCR.delete(k); } } /* FR-247: a lounge monitor shows no text (the zoom still reads its last lines, FR-034) */
         /* spec 102 FR-257: the marquee carries the name: real text, level, never inside the mirrored picture */
@@ -431,6 +534,10 @@
         if (L.doneTick(SEEN, k, d.state) && st && st.flourish && moving() && !hiddenNow()) coinUp(chrome, k, lay.g); /* spec 102 FR-261: the arcade's coin on a turn to done (FR-236: no call light any more) */
         /* FR-238: "New reply" above the plate's right end while the reply is unread (the flat desk's "New", the same isUnread); made once, shown by class */
         const nt = el(chrome, 'nr:' + k, 'span', 'ro-newtag' + (a.unread ? ' on' : '')); box(nt, { x: d.plate.x + d.plate.w, y: d.plate.y }); attr(nt, 'aria-hidden', 'true'); text(nt, 'New reply'); dset(nt, 'for', k);
+        /* spec 097 FR-316: "Draft" above the plate's left end while the chat has an unsent draft (the flat desk's pencil, the same hasDraft); made once, shown by class; aria-hidden (the plate's name says it) */
+        /* spec 102 (issue #1632, owner decision 2026-11-18): at a cabinet with its person beside it the tag stands off the cabinet's base, beside the plate's end on the person's side, below the person's feet (the stand box ends at the plate's top), clear of cabinet, screen box, plate and person */ const side = lay.cabinet && !d.away && !d.lounge && d.stand ? (d.stand.x + d.stand.w / 2 > d.plate.x + d.plate.w / 2 ? 'r' : 'l') : null;
+        const dt = el(chrome, 'dr:' + k, 'span', 'ro-drafttag' + (side ? ' beside-' + side : '') + (a.draft ? ' on' : '')); box(dt, side ? { x: side === 'r' ? d.plate.x + d.plate.w + 2 : d.plate.x - 2, y: d.plate.y + 2 } : d.away ? { x: lay.cabinet && d.away.x > d.plate.x + d.plate.w / 2 ? Math.max(d.away.x - d.away.s / 2, d.plate.x + d.plate.w) : d.away.x - d.away.s / 2, y: d.away.y } : d.lounge ? { x: d.screen.x, y: d.screen.y } : { x: d.plate.x, y: d.plate.y }); /* spec 097 FR-316: a lounge seat's person sits over the plate's left end, so the tag stands on top of the seat's small screen instead */ /* an empty seat's post-it fills the place above the plate: the tag sits on top of the note's left corner; at a cabinet whose note stands on its right (the note overlaps the cabinet's edge by 4 px), from the cabinet's right edge on, so it reaches neither the cabinet nor its screen box (spec 102, issue #1632) */ attr(dt, 'aria-hidden', 'true'); dset(dt, 'for', k);
+        if (!dt.firstChild) { if (model.draftIcon) dt.innerHTML = model.draftIcon; dt.appendChild(document.createTextNode('Draft')); } /* the icon is the app's own markup (trusted, as renIcon) */
         /* FR-038: cues, inside the slot */
         if (d.bubble) { const b = el(chrome, 'b:' + k, 'div', 'ro-bub'); box(b, d.bubble); attr(b, 'aria-hidden', 'true'); text(b, '?'); }
         if (d.bang) { const b = el(chrome, 'x:' + k, 'div', 'ro-bang'); box(b, d.bang); attr(b, 'aria-hidden', 'true'); text(b, '!'); }
@@ -438,22 +545,47 @@
         if (d.away) { const w = el(chrome, 'a:' + k, 'div', 'ro-away'); dset(w, 'place', a.away); if (a.away === 'coffee') dset(w, 'surface', 'coffee-bar'); /* spec 098 FR-010: the moment's marker */ w.style.setProperty('--ro-note', L.notePaper(a.away)); w.style.setProperty('--ro-note-ink', L.NOTE_INK); box(w, { x: d.away.x, y: d.away.y, w: d.away.s, h: d.away.s }); text(w, 'at ' + a.awayLabel); if (!w._in && CUR.drawn && moving() && !hiddenNow()) w.animate([{ transform: 'translateX(-50%) rotate(-2.5deg) scale(.7)', opacity: 0 }, { transform: 'translateX(-50%) rotate(-2.5deg)', opacity: 1 }], { duration: ZOOM_IN, delay: ZOOM_OUT - 40, easing: 'cubic-bezier(.2,.7,.3,1)', fill: 'backwards' }); w._in = true; }
         /* FR-120: a static "z z" over a sleeping person (carved in the cave); aria-hidden, the plate and the name carry the meaning */
         if (a.asleep && d.person) { const z = el(chrome, 'z:' + k, 'div', 'ro-zz'); box(z, { x: d.person.x + d.person.w * 0.62, y: Math.max(d.slot.y + 2, d.person.y + d.person.h * 0.04) }); attr(z, 'aria-hidden', 'true'); text(z, 'z z'); }
+        /* spec 097 FR-360..FR-362 (#1171): Open office's trouble signs on the desk, the same triggers (the app's moodFor, passed as a.mood): the sweat drop of a heavy
+           body, the horns and green ring of a monster, the siren of an ambulance or a faint. Chrome layer, aria-hidden, beside and above the face, never over it; the
+           plate's name carries the words. A desk with no person (away, narrow), a lounge seat and the arcade's cabinets draw none. */
+        const mo = a.mood, hf = d.face && !d.lounge && !lay.cabinet && mo ? d.face : null, ms = hf ? Math.max(14, Math.min(26, Math.round(hf.h * 0.55))) : 0;
+        const mbox = (e, r) => { box(e, r); MOOD_BOXES.push(r); }; /* a slip or a bubble is placed clear of every sign (review of #1321: the cave's inbox pill touched a siren) */
+        if (hf && mo.body === 'heavy') { const e = el(chrome, 'mw:' + k, 'span', 'ro-mood ro-sweat'); mbox(e, { x: hf.x + hf.w + 1, y: hf.y, w: ms * 0.62, h: ms }); attr(e, 'aria-hidden', 'true'); dset(e, 'for', k); if (!e.firstChild) e.innerHTML = '<svg viewBox="0 0 10 16" focusable="false"><path d="M5 1.2C3 5.6 1.2 7.6 1.2 10.4a3.8 3.8 0 0 0 7.6 0C8.8 7.6 7 5.6 5 1.2z"/></svg>'; }
+        if (hf && mo.body === 'monster') {
+          const e = el(chrome, 'mh:' + k, 'span', 'ro-mood ro-horns'); const hy = Math.max(d.slot.y + 2, hf.y - ms * 0.8); mbox(e, { x: hf.x + hf.w * 0.04, y: hy, w: hf.w * 0.92, h: hf.y - hy }); /* ends where the face begins */ attr(e, 'aria-hidden', 'true'); dset(e, 'for', k);
+          if (!e.firstChild) e.innerHTML = '<svg viewBox="0 0 40 20" preserveAspectRatio="none" focusable="false"><path d="M4 19 7 2 17 14z"/><path d="M36 19 33 2 23 14z"/></svg>';
+          const rg = el(chrome, 'mr:' + k, 'span', 'ro-mood ro-ring'); mbox(rg, { x: hf.x - 3, y: hf.y - 3, w: hf.w + 6, h: hf.h + 6 }); /* a frame around the face, outside it */ attr(rg, 'aria-hidden', 'true'); dset(rg, 'for', k);
+        }
+        if (hf && mo.siren && model.sirenIcon) { const e = el(chrome, 'ms:' + k, 'span', 'ro-mood ro-siren'); mbox(e, { x: hf.x - ms - 2, y: Math.max(d.slot.y + 2, hf.y), w: ms, h: ms }); attr(e, 'aria-hidden', 'true'); dset(e, 'for', k); if (!e.firstChild) e.innerHTML = model.sirenIcon; /* the app's own siren markup (trusted, as alertIcon) */ }
         /* FR-016, FR-090: the name plate is the desk's one focusable button; the app's click handler opens the chat ([data-id]) */
-        const pl = el(chrome, 'n:' + k, 'button', 'ro-plate st-' + d.state + (a.selected ? ' sel' : '') + (d.narrow ? ' narrow' : '') + (a.asleep ? ' asleep' : '') + (d.lounge ? ' lounge' : '') + (a.ren ? ' has-ren' : '')); box(pl, d.plate);
-        if (pl.type !== 'button') pl.type = 'button'; dset(pl, 'id', k); dset(pl, 'state', d.state); if (d.lounge) dset(pl, 'surface', 'lounge'); else if (pl.dataset.surface) delete pl.dataset.surface; /* spec 098 FR-010: the moment's marker (spec 097 FR-246: every lounge seat) */
-        attr(pl, 'aria-pressed', a.selected ? 'true' : 'false'); attr(pl, 'aria-label', a.label); attr(pl, 'title', a.tip);
-        plateFill(pl, a, d.state);
+        const pl = el(chrome, 'n:' + k, 'button', 'ro-plate st-' + d.state + (a.selected ? ' sel' : '') + (d.narrow ? ' narrow' : '') + (a.asleep ? ' asleep' : '') + (d.lounge ? ' lounge' : '') + (isNarrowPlate(d) ? ' cab-narrow' : '') + (a.ren ? ' has-ren' : '') + (!d.strip && !d.kids && a.helpers && a.helpers.length ? ' has-help' : '')); const plEase = box(pl, d.plate); /* has-help: the plate carries the +N (FR-308); a class, not :has(), so one text change does not re-match the arcade's whole tree */
+        if (pl.type !== 'button') pl.type = 'button'; dset(pl, 'id', k); dset(pl, 'state', d.state); dset(pl, 'surface', d.lounge ? 'lounge' : 'desk-card'); /* spec 098 FR-010, T011: the moment's marker: every lounge seat (spec 097 FR-246), every other desk's plate the desk card (its name, status and helpers, issue #1901) */
+        /* spec 097 FR-308 (review of PR 1322): helpers with no strip (the fallback: the plate's +N and dots) are said in the plate's name and tooltip, in the flat desk's words (`helpWords`); FR-325: so is the context (`labelOf`) */
+        const hw = helpWordsOf(a, d);
+        attr(pl, 'aria-pressed', a.selected ? 'true' : 'false'); attr(pl, 'aria-label', labelOf(a, d)); attr(pl, 'title', hw ? a.tip + ' · ' + hw.slice(2) : a.tip);
+        plateFill(pl, a, d.state, !!(d.strip || d.kids), isNarrowPlate(d));
         /* spec 059 FR-170 (#1155): Open office's rename pencil (.ren[data-ren]: the app's own click and F2 handlers, the same in-place edit), right
            after its plate (a button cannot sit inside one) so the plate's hover and focus show it; CSS anchors it just after the name: no layout read */
         if (a.ren) {
-          const anc = '--ren-' + k.replace(/[^A-Za-z0-9_-]/g, '_'), nm = pl._parts.nm;
+          /* spec 097 FR-357 (#1427): two anchors, the name and the plate; the world's CSS picks the plate where the plate does not draw the name (an arcade cabinet's) */
+          const anc = '--ren-' + k.replace(/[^A-Za-z0-9_-]/g, '_'), ancP = anc + '-pl', nm = pl._parts.nm;
           if (nm.style.getPropertyValue('anchor-name') !== anc) nm.style.setProperty('anchor-name', anc);
+          if (pl.style.getPropertyValue('anchor-name') !== ancP) pl.style.setProperty('anchor-name', ancP);
           const rb = el(chrome, 'rn:' + k, 'button', 'ren ro-ren');
           if (pl.nextElementSibling !== rb) pl.after(rb);
           if (rb.type !== 'button') rb.type = 'button'; dset(rb, 'ren', k); attr(rb, 'aria-label', 'Rename ' + a.name); attr(rb, 'title', 'Rename ' + a.name);
-          if (rb.style.getPropertyValue('position-anchor') !== anc) rb.style.setProperty('position-anchor', anc);
+          if (rb.style.getPropertyValue('--ro-ren-nm') !== anc) { rb.style.setProperty('--ro-ren-nm', anc); rb.style.setProperty('--ro-ren-pl', ancP); }
           if (!rb.firstChild && model.renIcon) rb.innerHTML = model.renIcon; /* the app's own icon markup (trusted, as alertIcon) */
+          const fresh = !rb._ren; rb._ren = true;
+          const mv = plEase || (fresh ? easeOf(pl) : null); /* FR-365: a pencil made (or come back) while its plate eases waits for the rest of it */
+          if (mv && rb !== document.activeElement) hideWhile(rb, mv); /* FR-365 */
         }
+        /* spec 097 FR-306..FR-309 (issue #1139): the helpers' head figures under the plate, right after it and its pencil in the Tab order; a lounge seat and the fallback (no room: the plate keeps +N; the arcade at 1280x800) have no strip box, so no strip */
+        if (d.strip && a.subs && a.subs.length) helperStrip(chrome, d, a, k, who, ids, meta);
+        else if (chrome._k.get('h:' + k)) { chrome._k.get('h:' + k).remove(); chrome._k.delete('h:' + k); }
+        /* spec 097 FR-368..FR-372 (#1642): at the big level the helpers are kids on the desk top, in the same place of the Tab order (a desk has kids or a strip, never both) */
+        if (d.kids && a.subs && a.subs.length) kidsOnDesk(chrome, d, a, k, meta, lay.u);
+        else if (chrome._k.get('kz:' + k)) { chrome._k.get('kz:' + k).remove(); chrome._k.delete('kz:' + k); }
     }
     /* the lobby band: fixtures, their lights, visitors and chips, place plates (FR-023..FR-027, FR-045) */
     const byPlace = new Map(model.places.map((p) => [p.id, p]));
@@ -470,9 +602,9 @@
           const sh = el(art, 'vs:' + v.id, 'div', 'ro-shadow'); box(sh, v.shadow);
           /* FR-070: stride frames, a knock or a breath; FR-073: in at the fixture after the fade at the desk */
           const m = L.personMotion(v.id, v.fig.pose, null), fresh = !art._k.has('v:' + v.id), mov = moving() && !OFF.has(v.id);
-          const two = mov && m.kind === 'frames' && v.fig.fileB && !BAD.has(SD + v.fig.fileB) && !(GLIDING.has(v.id) || (fresh && CUR.drawn && WHERE.has(v.id))) ? second(art, 'vb:' + v.id, v.id, v.fig.b || v.fig, v.fig.fileB, 'ro-visitor2', m) : null;
+          const two = mov /* spec 102 T350: a pixel world draws the second picture too, but its loop is a hard swap (retro world.css), never the cross-fade */ && m.kind === 'frames' && v.fig.fileB && !BAD.has(SD + v.fig.fileB) && !(GLIDING.has(v.id) || (fresh && CUR.drawn && WHERE.has(v.id))) ? second(art, 'vb:' + v.id, v.id, v.fig.b || v.fig, v.fig.fileB, 'ro-visitor2' + (v.fig.mir ? ' mir' : ''), m) : null;
           const cl = two && two.on ? ' m-a m-' + m.style : mov ? ({ breathe: ' m-br', knock: ' m-knock' }[m.kind] || '') : '';
-          const im = el(art, 'v:' + v.id, 'img', 'ro-visitor' + cl); box(im, v.fig); dset(im, 'for', v.id); dset(im, 'place', fx.id); dset(im, 'pose', v.fig.pose); dset(im, 'faces', v.fig.faces); dset(im, 'feet', String(Math.round(v.fig.feetY * 10) / 10)); img(im, v.fig.file, true, v.fig.w);
+          const im = el(art, 'v:' + v.id, 'img', 'ro-visitor' + (v.fig.mir ? ' mir' : '') + cl); /* spec 097 FR-191 (#1743): a set drawn facing right is mirrored by the scale property, so a breath or a knock on transform keeps it */ box(im, v.fig); dset(im, 'for', v.id); dset(im, 'place', fx.id); dset(im, 'pose', v.fig.pose); dset(im, 'faces', v.fig.faces); dset(im, 'feet', String(Math.round(v.fig.feetY * 10) / 10)); img(im, v.fig.file, true, v.fig.w);
           if (cl) { setVar(im, '--ro-per', m.period + 's'); setVar(im, '--ro-sw', m.sway + 's'); setVar(im, '--ro-u', (v.fig.h / 100).toFixed(3) + 'px'); setVar(im, '--ro-org', '50% ' + px(v.fig.feetY - v.fig.y)); }
           if (fresh && CUR.drawn && moving() && !hiddenNow() && !glide(im, v.id, WHERE.get(v.id), v.fig)) fadeIn(im, 150, 150);
           WHERE.set(v.id, v.fig);
@@ -482,7 +614,7 @@
            data-coffeeid for the coffee menu): app.js's delegated handlers open the chat; others forward to their plate (data-for) */
         const ch = el(chrome, 'vc:' + v.id, p.go ? 'button' : 'span', 'ro-chip' + (ag.needsYou ? ' wait' : '')); dset(ch, 'y', String(v.chip.y)); dset(ch, 'x', String(v.chip.x)); /* its place is stagger()'s to write */
         if (p.go) { if (ch.type !== 'button') ch.type = 'button'; dset(ch, 'pvopen', v.id); if (fx.id === 'coffee') dset(ch, 'coffeeid', v.id); attr(ch, 'aria-label', ag.title + '. Open the chat.'); } else dset(ch, 'for', v.id);
-        attr(ch, 'title', ag.title); dset(ch, 'name', ag.name); chipFill(ch, ag.name, ag.needsYou, model.alertIcon);
+        dset(ch, 'place', fx.id); attr(ch, 'title', ag.title); dset(ch, 'name', ag.name); chipFill(ch, ag.name, ag.needsYou, model.alertIcon);
       }
       /* FR-025/FR-026 "as the flat lobby": the people that do not fit ("+N") open the flat lobby's own list (data-placemore, app.js
          openPlaceMenu), so the plate is a button then, with a name that says so */
@@ -500,7 +632,7 @@
     watchBody(); wasHidden = hiddenNow();
     fitRoles(chrome); /* keeps its own record of what it measured */
     /* FR-184: a status update reads no layout here: chips and plates are measured and placed again only when one of them or the width changed */
-    const lobbySig = JSON.stringify([lay.width, [...chrome.querySelectorAll(':scope > .ro-chip')].map((c) => [c.dataset.name, c.dataset.x, c.dataset.y, !!c._ic]), [...chrome.querySelectorAll(':scope > .ro-lplate')].map((e) => [e.dataset.place, e.title, e.style.left, e.style.top])]);
+    const lobbySig = JSON.stringify([lay.width, document.documentElement.dataset.roSheets, [...chrome.querySelectorAll(':scope > .ro-chip')].map((c) => [c.dataset.name, c.dataset.x, c.dataset.y, !!c._ic]), [...chrome.querySelectorAll(':scope > .ro-lplate')].map((e) => [e.dataset.place, e.title, e.style.left, e.style.top])]);
     if (chrome._lobbySig !== lobbySig) { placeLobby(chrome, lay.width); chrome._lobbySig = document.hidden || document.body.classList.contains('panel-open') ? null : lobbySig; } /* under a chat nothing is laid out: what it measures there is not remembered */
     else for (const e of chrome.querySelectorAll(':scope > .ro-chip, :scope > .ro-lplate')) if (e._at) { sty(e, 'left', e._at[0]); sty(e, 'top', e._at[1]); if (e._at[2]) sty(e, 'maxWidth', e._at[2]); } /* the draw above wrote the unplaced box: back to where they were placed */
     /* a chip or plate does not travel: it fades in where it now is, so nothing passes over anything (owner 2026-11-01) */
@@ -522,8 +654,8 @@
     }
     if (ZOOM) {
       const zd = CUR.desks.get(ZOOM.id);
-      if (!zd || zd.state === 'asleep' || hiddenNow()) closeZoom(); /* FR-035: an asleep screen is off, nothing to read */
-      else placeZoom();
+      if (!zd || hiddenNow()) closeZoom(); /* FR-328: an asleep agent's card stays (its glass is dark, the card has its reply) */
+      else { if (ZOOM.st !== zd.state) { fillZoom(); ZOOM.held = PT || '?'; } placeZoom(); } /* FR-328 (2026-11-08): the card follows the agent's state as its facts do (FR-315): asleep or back, it is filled again, not left with the old tool log */
     }
     settle(chrome, lay.width);
     return lay;
@@ -534,7 +666,10 @@
     const sig = JSON.stringify([f.name, f.path, !!f.cost, f.newSess, f.menu, z.part]);
     if (sg._sig !== sig) {
       sg._sig = sig; sg.textContent = ''; sg._cnt = null; sg._cost = null;
-      const b = document.createElement('b'); b.textContent = z.part > 1 ? f.name + ' (continued)' : f.name; b.title = f.name + '\n' + f.path; sg.appendChild(b);
+      const b = document.createElement('b'); sg.appendChild(b); sg._b = b;
+      const tail = z.part > 1 || !root.DurbarCutText ? '' : root.DurbarCutText.nameTail(f.name); /* spec 001 FR-271: a long name keeps its end when it is cut */
+      if (tail) { const h = document.createElement('span'), t = document.createElement('span'); h.className = 'rn-h'; t.className = 'rn-t'; h.textContent = f.name.slice(0, f.name.length - tail.length); t.textContent = tail; b.appendChild(h); b.appendChild(t); }
+      else b.textContent = z.part > 1 ? f.name + ' (continued)' : f.name;
       if (z.part > 1) return;
       const p = document.createElement('span'); p.className = 'ro-path'; p.textContent = f.path; sg.appendChild(p);
       const sc = document.createElement('span'); sc.className = 'ro-sc'; sg._sc = sc; sg._cnt = new Map();
@@ -543,6 +678,8 @@
       if (f.menu) { const mb = document.createElement('button'); mb.type = 'button'; mb.className = 'ro-sb'; mb.dataset.foldermenu = z.id; mb.setAttribute('aria-haspopup', 'menu'); mb.setAttribute('aria-label', 'Folder actions for ' + f.name); mb.title = 'Folder actions'; mb.textContent = '⋯'; sc.appendChild(mb); }
       sg.appendChild(sc);
     }
+    attr(sg, 'data-new', f.fresh ? '1' : null); /* spec 001 FR-272: a folder just added is outlined for a moment */
+    attr(sg, 'data-tip', f.tip || f.name + '\n' + f.path); /* spec 001 FR-270: the whole sign says its folder on hover and on the focus of its buttons (the app binds DurbarTip); the short sign hides the cost, so the tip has it (FR-256, FR-356) */
     if (!sg._cnt) return;
     if (sg._cost) text(sg._cost, f.cost);
     /* one count per state, reused by state and kept in the model's order, in front of the cost and the buttons */
@@ -558,24 +695,166 @@
     }
   }
 
+  /* spec 097 FR-322..FR-326: the context line round a desk's monitor frame. One svg with one rect per desk (made with the monitor); the rect's dash is the share of
+     its outline (pathLength 100, from the top-left corner, clockwise), its band is data-lv (the CSS colours it from the theme tokens). No line for an unknown
+     context, a known 0 % or a lounge seat. Only attributes and two custom properties change: no node, no layout read. */
+  function ctxPaint(sc, a, d) {
+    const s = sc.lastElementChild; if (!s || !s.classList.contains('ro-ctx')) return;
+    const f = d && d.lounge ? null : X().ctxFrame(a.ctx && a.ctx.pct, a.ctx && a.ctx.level);
+    const lv = f ? f.lv : '', dash = f ? f.dash : '';
+    if ((s.dataset.lv || '') !== lv) { if (lv) s.dataset.lv = lv; else delete s.dataset.lv; }
+    for (const r of s.children) attr(r, 'stroke-dasharray', dash || null); /* the dark keyline under the line (.ro-ck) and the line itself: the same dash */
+    if (d) { setVar(s, '--ro-cw', px(d.screen.w)); setVar(s, '--ro-ch', px(CUR && CUR.pixelArt ? d.screen.h : d.glass.h + 6)); /* the arcade's screen box is the whole frame; the others' is the bezel */ }
+  }
+  /* FR-325: the plate's name with the context in the flat office's words, before "Open chat panel."; a lounge seat's name is the model's */
+  const OPEN_WORDS = '. Open chat panel.';
+  /* a helper that failed or waits for the user is counted by the model (`helpUrgent`, from `prio` in app.js, the order of the heads and of the dots: spec 001 FR-089), not guessed here from the light states */
+  const NARROW_CAB_PLATE_W = 122.5; /* the narrow cabinet's plate at the smallest scale (CABINETS.narrow at g = 2 is 122 px in realoffice-arrangements.ts; the next cabinet's plate is 146) */
+  const isNarrowPlate = (d) => ARC && !!d && !d.lounge && !!d.plate && d.plate.w <= NARROW_CAB_PLATE_W; /* the arcade's narrow cabinet plate (122 px at g = 2; spec 102 FR-312): the only plate whose count is marked and whose name says the failed helpers; never a plate of another world, whatever its width (a default or cave desk's plate of the same width keeps FR-308's name) */
+  function helpWordsOf(a, d) { if (!(d && !d.strip && !d.kids && a.helpWords && a.helpers && a.helpers.length)) return ''; const u = isNarrowPlate(d) ? (a.helpUrgent | 0) : 0; return a.helpWords + (u ? ', ' + u + ' failed or waiting' : ''); } /* FR-308: the fallback plate's helper count, in the flat desk's words; on the narrow plate (no dot fits) also how many failed or wait (FR-312), nowhere else */
+  function labelOf(a, d) {
+    const w = d && d.lounge ? '' : X().ctxWords(a.ctx && a.ctx.pct), hw = helpWordsOf(a, d), l = String(a.label || ''), mw = a.moodWords ? ', ' + a.moodWords : '';
+    return l.endsWith(OPEN_WORDS) ? l.slice(0, -OPEN_WORDS.length) + mw + w + hw + OPEN_WORDS : l + mw + hw; /* the mood's words (FR-362), the context words, then the helpers' (". 6 helpers" stays one phrase) */
+  }
+  /* FR-326: a context event of one agent: its line and its plate's name, without a draw; the next draw writes the same */
+  function ctx(id, c, mood, moodWords) {
+    if (!CUR) return false;
+    const a = CUR.agents.get(id), d = CUR.desks.get(id); if (!a || !d) return false;
+    a.ctx = c || null;
+    const mo = d.lounge ? null : mood; /* FR-361: a lounge seat has no mood (its full draw carries none), so its name gains no mood words and asks no draw */
+    const old = a.mood, moved = !!mo && (!old || old.body !== mo.body || old.siren !== mo.siren); /* FR-360: the signs change only by a draw */
+    if (mo) { a.mood = mo; a.moodWords = moodWords || ''; }
+    const sc = CUR.ro.querySelector('.ro-screen[data-for="' + CSS.escape(id) + '"]'), pl = CUR.ro.querySelector('.ro-plate[data-id="' + CSS.escape(id) + '"]');
+    if (sc) ctxPaint(sc, a, d);
+    if (pl) attr(pl, 'aria-label', labelOf(a, d));
+    return moved ? 'mood' : true;
+  }
+  /* spec 097 FR-306..FR-309, FR-184 (issue #1139): one desk's helper strip of head figures. The container (key h:<id>) sits in the layout's strip box; each helper is one button (data-id: the app's own click opens its
+     Sub-agent activity view) kept by id, so a status change writes only the dot's class, the edge and the labels, never a node; the name is only in the accessible name and the tooltip (no tile). `+K` and
+     `Show fewer` are the one button the app's [data-more] handler folds. `a.subs`: the helpers in `orderedHelpers` order ({id,name,state,label,title,selected}); the picture is a person of the set, never the parent's
+     (`helperPerson`), cropped on the head by `headCrop`, from the seated rest picture (`SD + person-rest.webp`, the half-size file by `img`'s own rule). Opened, all helpers show in one scrolling row (a fixed height, FR-015). */
+  function helperStrip(chrome, d, a, k, who, ids, meta) {
+    const L = X(), st = d.strip, subs = a.subs, open = !!a.subsOpen && subs.length > st.shown;
+    const bx = el(chrome, 'h:' + k, 'div', 'ro-hstrip' + (open ? ' open' : ''));
+    box(bx, { x: st.x, y: st.y, w: st.w, h: st.h });
+    attr(bx, 'role', 'group'); attr(bx, 'aria-label', 'Helpers of ' + a.name);
+    setVar(bx, '--ro-hc', String(Math.max(1, st.cols)));
+    setVar(bx, '--ro-head', L.HEAD + 'px');
+    const anchor = chrome._k.get('rn:' + k) || chrome._k.get('n:' + k);
+    if (anchor && anchor.nextElementSibling !== bx && !bx.contains(document.activeElement)) anchor.after(bx);
+    if (!bx._b) bx._b = new Map();
+    const shown = open ? subs : subs.slice(0, st.shown), hidden = open ? [] : subs.slice(st.shown);
+    const want = [];
+    const seat = meta.seat || {};
+    for (const h of shown) {
+      let b = bx._b.get(h.id);
+      if (!b) {
+        b = document.createElement('button'); b.type = 'button'; bx._b.set(h.id, b);
+        b._pic = document.createElement('span'); b._pic.className = 'ro-hp'; b._pic.setAttribute('aria-hidden', 'true');
+        b._dot = document.createElement('span'); b._dot.setAttribute('aria-hidden', 'true');
+        b.append(b._pic, b._dot);
+      }
+      const cls = 'ro-hd st-' + h.state + (h.selected ? ' sel' : '');
+      if (b.className !== cls) b.className = cls;
+      const dc = dotClass(h.state); if (b._dot.className !== dc) b._dot.className = dc;
+      const hd = L.helperHead ? L.helperHead(h.id, who[a.id], meta) : null; /* spec 097 FR-370: the kid's face in a world with kids, else FR-307's adult of the set (never the parent) */
+      if (hd && !BAD.has((hd.world ? WD : SD) + hd.file)) {
+        const c = hd.crop, f = L.HEAD / c.s;
+        let im = b._img;
+        if (!im) { im = b._img = document.createElement('img'); b._pic.textContent = ''; b._pic.appendChild(im); }
+        sty(im, 'width', px(hd.w * f)); sty(im, 'left', px(-c.x * f)); sty(im, 'top', px(-c.y * f));
+        img(im, hd.file, !hd.world, hd.w * f);
+      } else {
+        if (b._img) { b._img = null; b._pic.textContent = ''; }
+        if (!b._pic.firstChild || b._pic.firstChild.className !== 'ro-hg') { b._pic.textContent = ''; const g = document.createElement('span'); g.className = 'ro-hg'; b._pic.appendChild(g); } /* FR-065: no picture, a neutral silhouette (CSS), never a letter of the name: the name is drawn nowhere */
+      }
+      dset(b, 'id', h.id); attr(b, 'aria-pressed', h.selected ? 'true' : 'false'); attr(b, 'aria-label', h.label); attr(b, 'title', h.title);
+      want.push(b);
+    }
+    for (const [id, b] of bx._b) if (!shown.some((h) => h.id === id)) { b.remove(); bx._b.delete(id); }
+    if (hidden.length || open) {
+      let m = bx._more;
+      if (!m) { m = bx._more = document.createElement('button'); m.type = 'button'; m.className = 'ro-hmore'; }
+      dset(m, 'more', a.id);
+      text(m, open ? 'Fewer' : '+' + hidden.length);
+      attr(m, 'aria-expanded', open ? 'true' : 'false'); attr(m, 'aria-label', open ? 'Show fewer helpers of ' + a.name : 'Show ' + hidden.length + ' more helpers of ' + a.name); attr(m, 'title', open ? 'Show fewer helpers' : hidden.map((h) => h.name).slice(0, 8).join(', ') + (hidden.length > 8 ? ', ...' : ''));
+      want.push(m);
+    } else if (bx._more) { bx._more.remove(); bx._more = null; }
+    let next = bx.firstChild;
+    for (const e of want) { if (e === next) next = next.nextSibling; else bx.insertBefore(e, next); }
+  }
+
+  /* spec 097 FR-368..FR-373 (#1642): one desk's helpers as clay-toy kids on its desk top (the big level). The group (key kz:<id>) lies over the desk top and lets the pointer through; each
+     kid is one button (data-id: the app's own click opens its Sub-agent activity view) kept by id, so a status change writes the picture, the classes, the box and the labels, never a node
+     (FR-184). The kid is the world's (`kidOf`, stable, nothing stored), its pose the state's (`kidPose`: idle holds done, a resting parent rests them all), its box `kidBox` (one scale per
+     kid, the sole on the feet line). The marks are CSS on the state class (thinking dots, the red !, an amber or red glow at the feet) and the status dot is `dotClass`'s (shape and colour);
+     nothing moves. The name is only in the accessible name and tooltip (`helperWords`, masked). `+K` is a toy block button with `data-kmore=<parent id>` (not the plate's data-id): app.js opens the parent's chat on its click and gives it the focus back after a redraw. */
+  function kidsOnDesk(chrome, d, a, k, meta, u) {
+    const L = X(), kz = d.kids, subs = a.subs, kids = meta.kids || {};
+    const shown = subs.slice(0, kz.shown), hidden = subs.slice(kz.shown);
+    const top = Math.min(...kz.places.map((p) => p.y), kz.more ? kz.more.y : Infinity), x0 = d.desk.x;
+    const gx = el(chrome, 'kz:' + k, 'div', 'ro-kids');
+    box(gx, { x: x0, y: top, w: d.desk.w, h: kz.feet - top });
+    attr(gx, 'role', 'group'); attr(gx, 'aria-label', 'Helpers of ' + a.name);
+    const anchor = chrome._k.get('rn:' + k) || chrome._k.get('n:' + k);
+    if (anchor && anchor.nextElementSibling !== gx && !gx.contains(document.activeElement)) anchor.after(gx); /* FR-309: plate, pencil, the kids, +K, the next desk */
+    if (!gx._b) gx._b = new Map();
+    const want = [], at = (e, r) => { sty(e, 'left', px(r.x)); sty(e, 'top', px(r.y)); sty(e, 'width', px(r.w)); sty(e, 'height', px(r.h)); };
+    shown.forEach((h, i) => {
+      let b = gx._b.get(h.id);
+      if (!b) {
+        b = document.createElement('button'); b.type = 'button'; gx._b.set(h.id, b);
+        b._im = document.createElement('img'); b._im.className = 'ro-kp';
+        b._dot = document.createElement('span'); b._dot.setAttribute('aria-hidden', 'true');
+        b.append(b._im, b._dot);
+      }
+      const kid = L.kidOf(h.id, kids), km = kids[kid], pose = L.kidPose(h.state, !!a.asleep), file = kid + '-' + pose + '.webp';
+      const r = L.kidBox(km, pose, kz.places[i], kz.feet, u);
+      at(b, { x: r.x - x0, y: r.y - top, w: r.w, h: r.h }); /* a pose swap is a still picture: no ease (FR-371) */
+      const bad = BAD.has(WD + file), cls = 'ro-kid st-' + h.state + (h.selected ? ' sel' : '') + (bad ? ' nopic' : '');
+      if (b.className !== cls) b.className = cls;
+      const dc = dotClass(h.state); if (b._dot.className !== dc) b._dot.className = dc;
+      if (!bad) img(b._im, file, false, r.w);
+      if (bad && !b._g) { b._g = document.createElement('span'); b._g.className = 'ro-hg'; b._g.setAttribute('aria-hidden', 'true'); b.insertBefore(b._g, b._dot); } /* FR-065: a neutral silhouette, never a letter */
+      else if (!bad && b._g) { b._g.remove(); b._g = null; }
+      dset(b, 'id', h.id); dset(b, 'kid', kid); dset(b, 'pose', pose);
+      attr(b, 'aria-pressed', h.selected ? 'true' : 'false'); attr(b, 'aria-label', h.label); attr(b, 'title', h.title);
+      want.push(b);
+    });
+    for (const [id, b] of gx._b) if (!shown.some((h) => h.id === id)) { b.remove(); gx._b.delete(id); }
+    if (kz.more && hidden.length) {
+      let m = gx._more;
+      if (!m) { m = gx._more = document.createElement('button'); m.type = 'button'; m.className = 'ro-kmore'; }
+      at(m, { x: kz.more.x - x0, y: kz.more.y - top, w: kz.more.w, h: kz.more.h });
+      dset(m, 'kmore', a.id); /* FR-370: the parent's chat, where its helpers are listed (app.js [data-kmore]); not data-id, which the plate has: a redraw gives focus back by attribute */
+      text(m, '+' + hidden.length);
+      attr(m, 'aria-label', hidden.length + ' more helper' + (hidden.length > 1 ? 's' : '') + ' of ' + a.name); attr(m, 'title', hidden.map((h) => h.name).slice(0, 8).join(', ') + (hidden.length > 8 ? ', ...' : ''));
+      want.push(m);
+    } else if (gx._more) { gx._more.remove(); gx._more = null; }
+    let next = gx.firstChild;
+    for (const e of want) { if (e === next) next = next.nextSibling; else gx.insertBefore(e, next); }
+  }
+
   /* FR-016, FR-184: the plate keeps its nodes on a status change: only the text and the dot that changed are written (a helper's list is rebuilt when it changes) */
-  function plateFill(pl, a, state) {
+  /* `strip`: the desk's helpers are drawn as head figures (spec 097 FR-306), so the plate keeps no +N and dots; they stay when the strip cannot be drawn (FR-308's last step, the arcade) */
+  function plateFill(pl, a, state, strip, narrow) {
     let P = pl._parts;
     if (!P) {
-      P = pl._parts = { l1: document.createElement('span'), nm: document.createElement('b'), rl: document.createElement('span'), l2: document.createElement('span'), dot: document.createElement('span'), tn: document.createTextNode(''), h: null, hs: '' };
+      P = pl._parts = { l1: document.createElement('span'), nm: document.createElement('b'), rl: document.createElement('span'), l2: document.createElement('span'), dot: document.createElement('span'), wd: document.createElement('span'), tk: document.createElement('span'), h: null, hs: '' };
       P.l1.className = 'ro-l1'; P.rl.className = 'ro-role'; P.l1.append(P.nm, P.rl);
-      P.l2.className = 'ro-l2'; P.dot.setAttribute('aria-hidden', 'true'); P.l2.append(P.dot, P.tn);
+      P.l2.className = 'ro-l2'; P.dot.setAttribute('aria-hidden', 'true'); P.wd.className = 'ro-wd'; P.tk.className = 'ro-tk'; P.l2.append(P.dot, P.wd, P.tk); /* the status word and the task are two runs: where the line is a flex row (the arcade's plate with helpers) only the task gives way */
       pl.textContent = ''; pl.append(P.l1, P.l2);
     }
     text(P.nm, a.name); text(P.rl, a.role);
-    const hs = a.helpers.join();
+    const hs = strip ? '' : a.helpers.join() + (narrow ? '|n' + (a.helpUrgent | 0) : '');
     if (P.hs !== hs) {
       P.hs = hs; if (P.h) { P.h.remove(); P.h = null; }
-      if (a.helpers.length) { P.h = document.createElement('span'); P.h.className = 'ro-help'; P.h.textContent = '+' + a.helpers.length + ' '; a.helpers.slice(0, 3).forEach((s) => P.h.insertAdjacentHTML('beforeend', dotHTML(s))); P.l1.appendChild(P.h); }
+      if (hs) { P.h = document.createElement('span'); P.h.className = 'ro-help'; const hc = document.createElement('span'); hc.className = 'ro-hc'; const urg = narrow ? (a.helpUrgent | 0) : 0; hc.textContent = '+' + a.helpers.length + (urg ? '' : ' '); if (urg) { const hm = document.createElement('span'); hm.className = 'ro-hm'; hm.setAttribute('aria-hidden', 'true'); hm.textContent = '!'; hc.appendChild(hm); } /* 102 FR-312: the marked count: "+3!" says a helper failed or waits; drawn only on the narrow cabinet's plate (CSS), where no dot fits */ P.h.appendChild(hc); a.helpers.slice(0, 3).forEach((s) => P.h.insertAdjacentHTML('beforeend', dotHTML(s))); P.l1.appendChild(P.h); }
     }
-    const dc = dotClass(state), line = ' ' + [a.word, a.task].filter(Boolean).join(' · ');
+    const dc = dotClass(state), word = a.word ? ' ' + a.word : '', task = a.task ? (a.word ? ' · ' : ' ') + a.task : ''; /* word + task read as before: ' Word · task' */
     if (P.dot.className !== dc) P.dot.className = dc;
-    if (P.tn.data !== line) P.tn.data = line;
+    if (P.wd.textContent !== word) P.wd.textContent = word;
+    if (P.tk.textContent !== task) P.tk.textContent = task;
   }
 
 
@@ -583,6 +862,7 @@
      the flat office's own sentence (word for word, textContent). The shared lobby above is the real one (the caller passes the places). */
   function drawEmpty(art, chrome, lay, meta, empty) {
     const W = lay.width, top = lay.lobbyH, H = lay.height - top;
+    if (lay.cabinet) { drawEmptyCabinets(art, chrome, lay, meta, empty); return; }
     const dw = Math.max(120, Math.min(W * 0.26, 340, (H - 60) / 0.7)), dh = dw * (meta.desk[1] / meta.desk[0]);
     const gap = (W - 3 * dw) / 4, y0 = top + Math.max(70, H * 0.42);
     for (let i = 0; i < 3; i++) {
@@ -601,19 +881,41 @@
     EMPTY_BOX = { x: (W - pw) / 2 - 4, y: top + 10, w: pw + 8, h: 64 }; /* the plate (two lines at most) is on the avoid list of the slips */
   }
 
+  /* spec 102 delta 2026-11-14 (T223): the arcade's empty office: the hall's floor and wall fill the area (the layout is the hall's, `lay.height` is the floor), the words card under the lane,
+     and three cabinets of the world (the layout's own scale, its own pictures, screens off) in one row below it, centred in what is left of the floor */
+  function drawEmptyCabinets(art, chrome, lay, meta, empty) {
+    const W = lay.width, top = lay.lobbyH, g = lay.g, cw = lay.cabinet.w, ch = lay.cabinet.h;
+    const pw = Math.min(560, W - 40), plateB = top + 14 + 48, gap = Math.max(g * 4, (W - 3 * cw) / 4), x0 = (W - 3 * cw - 2 * gap) / 2, y0 = Math.max(plateB + 8, plateB + (lay.height - plateB - ch - 8) / 2);
+    for (let i = 0; i < 3; i++) {
+      const x = x0 + i * (cw + gap);
+      const dc = el(art, 'ed:' + i, 'div', 'ro-desk ro-edesk ro-cab' + (i === 2 ? ' mir' : '')); box(dc, { x, y: y0, w: cw, h: ch }); attr(dc, 'aria-hidden', 'true');
+      cabinetOf(dc, meta, lay.cabinet, 'empty' + i, 'idle', i);
+      const mirrored = i === 2, gl = { x: x + (mirrored ? lay.cabinet.w / g - 5 - lay.cabinet.gw : 5) * g, y: y0 + 18 * g, w: lay.cabinet.gw * g, h: lay.cabinet.gh * g };
+      const sc = el(art, 'em:' + i, 'div', 'ro-screen ro-escreen st-idle off'); box(sc, { x: gl.x - 4 * g, y: gl.y - 4 * g, w: gl.w + 8 * g, h: gl.h + 8 * g }); attr(sc, 'aria-hidden', 'true');
+      if (!sc.firstChild) sc.innerHTML = '<div class="ro-bezel"><div class="ro-glass"></div></div><div class="ro-neck"></div><div class="ro-foot"></div>';
+      sc.firstChild.style.height = px(gl.h + 6);
+    }
+    const pl = el(chrome, 'ep', 'div', 'ro-eplate'); box(pl, { x: (W - pw) / 2, y: top + 14, w: pw });
+    pl.dataset.surface = 'empty-office'; pl.dataset.floorEmpty = empty.id || '';
+    text(pl, empty.text);
+    EMPTY_BOX = { x: (W - pw) / 2 - 4, y: top + 10, w: pw + 8, h: 64 };
+  }
+
   /* spec 097 FR-121, FR-122, FR-124: slips and a bubble. The words, buttons and their order come from the app (the cards' own); this draws them on
      the free spot nearest their door or desk (placeBox: never on a plate, a sign, a chair label or a cue; always under the lobby band, FR-110).
      A queue slip that has no room for its words becomes a one-line pill; a limit slip or bubble with no room is not drawn (the Bank's chip, the
      desk's plate and the top bar's Inbox button say it too). The buttons carry data-slipact; app.js clicks the card's own button. */
   function drawSlips(chrome, lay, slips) {
     const P = root.exports && root.exports.placeBox, A = root.exports && root.exports.slipAvoid;
+    const K = root.exports && root.exports.keptSpotInside;
     const want = [];
     if (slips && slips.queue) want.push('queue');
     if (slips && slips.limit) want.push('limit');
     for (const e of (slips && slips.elicit) || []) want.push('elicit:' + e.id);
-    if (!want.length || !P || !A) return;
+    if (!want.length || !P || !A || !K) return;
     const avoid = A(lay);
     if (EMPTY_BOX) avoid.push(EMPTY_BOX);
+    avoid.push(...MOOD_BOXES); /* FR-361: never over a trouble sign */
     /* with more than four agents the monitors are read from afar: a slip takes a spot clear of them, else a smaller variant (the pill); with big screens (four or fewer) it may sit over one */
     const desks = lay.zones.flatMap((z) => z.desks).concat(lay.lounge ? lay.lounge.desks : []), screens = desks.map((d) => d.screen);
     const HARD = lay.cabinet ? [...screens, ...desks.flatMap((d) => [d.desk, d.person]).filter(Boolean)] : []; /* what no slip may ever cover in the arcade */
@@ -634,14 +936,14 @@
       for (const v of order) {
         const sig = JSON.stringify([v, build.sig]);
         if (e._sig !== sig) { e._sig = sig; e._at = null; e.textContent = ''; build.fill(e, v); }
-        e.hidden = false;
+        e.hidden = false; dset(e, 'variant', v); /* spec 097 FR-358 (#1434): the variant's own CSS (the pill's auto width and one line) applies before the box is measured, not after the spot is chosen */
         if (e._at && e._v === v) { e.style.left = px(e._at.x); e.style.top = px(e._at.y); }
         else { e.style.left = '0px'; e.style.top = '0px'; }
         e.style.width = ''; e.style.height = '';
         const size = () => ({ w: Math.ceil(e.offsetWidth) + 2, h: Math.ceil(e.offsetHeight) + 2 });
         let r = size();
         const laneFree = () => lay.lane && v === 'pill' && !(e._at.y >= lay.lane.y && e._at.y + r.h <= lay.lane.y + lay.lane.h + 0.01) && P(r, avoid, lay.lane, anchor); /* a pill docked before its font loaded goes back to the lane */
-        if (e._at && e._v === v && e._at.w >= r.w && e._at.h >= r.h && !hits({ x: e._at.x, y: e._at.y, w: r.w, h: r.h }) && !laneFree() && e._at.x + r.w <= bounds.x + bounds.w && e._at.y + r.h <= bounds.y + bounds.h) { avoid.push({ x: e._at.x, y: e._at.y, w: r.w, h: r.h }); e.dataset.variant = v; return true; }
+        if (e._at && e._v === v && e._at.w >= r.w && e._at.h >= r.h && !hits({ x: e._at.x, y: e._at.y, w: r.w, h: r.h }) && !laneFree() && K(e._at, r, bounds)) { avoid.push({ x: e._at.x, y: e._at.y, w: r.w, h: r.h }); e.dataset.variant = v; return true; }
         for (let pass = 0; pass < 2; pass++) { /* the second pass re-places with the box it really has (a late font can widen the text) */
           const dock = () => P(r, avoid, { x: bounds.x, y: bounds.y + bounds.h - r.h, w: bounds.w, h: r.h }, anchor) || (lay.lane && P(r, HARD, lay.lane, anchor)) || P(r, HARD, bounds, anchor, 4) || { x: bounds.x + bounds.w - r.w, y: bounds.y + bounds.h - r.h, w: r.w, h: r.h }; /* last: over another slip or a sign, never a cabinet, screen or person while any such spot exists (pre-review of #1079) */
           const at = (lay.lane && v === 'pill' ? P(r, avoid, lay.lane, anchor) : null) || P(r, avoid.concat(softAvoid), bounds, anchor) || (lay.big || v === 'pill' ? P(r, avoid, bounds, anchor) : null) || (lay.cabinet && v === 'pill' ? dock() : null); /* a one-line pill may sit over a monitor when there is no other spot; in the arcade it docks at the floor's bottom edge, never hidden */
@@ -662,7 +964,7 @@
         sig: Q,
         fill: (e, v) => {
           e.setAttribute('role', 'group'); e.setAttribute('aria-label', Q.total + (Q.total === 1 ? ' request needs you' : ' requests need you'));
-          if (v === 'pill') { e.appendChild(btn(Q.total + (Q.total === 1 ? ' needs you' : ' need you') + ' \u00B7 Open the inbox', '', 'ro-pill', { slipact: 'inbox' })); return; }
+          if (v === 'pill') { const t = Q.total + (Q.total === 1 ? ' needs you' : ' need you') + ' \u00B7 Open the inbox'; e.appendChild(btn(t, t, 'ro-pill', { slipact: 'inbox' })); return; }
           const f = Q.first, h = document.createElement('p'); h.className = 'sl-h';
           const nm = document.createElement('b'); nm.textContent = f.name; h.appendChild(nm);
           const w = document.createElement('span'); w.textContent = ' ' + f.what + ' \u00B7 ' + f.folder; h.appendChild(w); e.appendChild(h);
@@ -680,10 +982,14 @@
     if (slips.limit) {
       const L = slips.limit;
       put('slip:limit', 'ro-slip ro-limit', {
-        sig: [L.id, L.name, L.who, L.text, L.actions, L.input && [L.input.label, L.input.min, L.input.step, L.input.value]],
+        sig: [lay.cabinet, L.id, L.name, L.who, L.text, L.actions, L.input && [L.input.label, L.input.min, L.input.step, L.input.value]],
         fill: (e, v) => {
           e.setAttribute('role', 'group'); e.setAttribute('aria-label', 'Spending limit reached');
-          if (v === 'pill') { e.appendChild(btn(L.name + ': Spending limit reached \u00B7 Show in chat', 'Open the chat', 'ro-pill', { slipact: 'open', slipid: L.id, slipfocus: 'limit' })); return; }
+          if (v === 'pill') { const sfx = ': Spending limit reached \u00B7 Show in chat', t = L.name + sfx, b = btn(t, t, 'ro-pill', /* spec 097 FR-359: the title is the whole text, for what the ellipsis cuts (the accessible name is the button's text) */ { slipact: 'open', slipid: L.id, slipfocus: 'limit' }); b.textContent = ''; const n = document.createElement('span'); n.className = 'ro-pn'; n.textContent = L.name; const x = document.createElement('span'); x.className = 'ro-ps'; x.textContent = sfx; b.appendChild(n); b.appendChild(x); /* FR-359: only the name span is cut by the ellipsis, the suffix stays whole */ e.appendChild(b);
+            /* spec 102 T395 (issue #1954): the arcade's one line also holds Remove limit, the card's own button (the same handler as the full slip's, no new channel); the amount field and Raise limit stay in the chat and the inbox, where a number can be read first */
+            const rm = lay.cabinet && L.actions.find((a) => a.label === 'Remove limit');
+            if (rm) { const r = btn(rm.label, rm.title, 'ro-pill', { slipact: 'limit', slipid: L.id, slipreq: L.req, slipidx: rm.idx }); r.className = 'ro-sbtn ro-rm'; /* the pill's own look (realoffice.css), underlined, so the arcade's chrome counts no new size */ r.setAttribute('aria-label', 'Remove limit: ' + L.name); e.appendChild(r); }
+            return; }
           e.appendChild(p('sl-h', L.who)); e.appendChild(p('sl-t', L.text));
           const row = document.createElement('div'); row.className = 'sl-act';
           if (L.input) { const i = document.createElement('input'); i.type = 'number'; i.className = 'limit-amt'; i.min = L.input.min; i.step = L.input.step; i.value = L.input.value; i.setAttribute('aria-label', L.input.label); row.appendChild(i); }
@@ -806,10 +1112,19 @@
     const added = fillRows(s.rows, shown);
     /* FR-033: the new line slides in, three steps, transform only; the text is already right, so a dropped frame costs nothing */
     if (added && s.painted && moving() && !s.away) s.lines.animate([{ transform: 'translateY(' + Math.min(added, 2) * f.lh + 'px)' }, { transform: 'none' }], { duration: 180, easing: 'steps(3, end)' });
-    if (data.caret && !s.caret) { s.caret = document.createElement('i'); s.caret.className = 'ro-caret'; s.box.appendChild(s.caret); const m = L.personMotion(id, 'typeA', d.state); setVar(s.caret, '--ro-per', '1.2s'); s.caretMs = m.offset; if (moving()) { clock(s.caret, m.offset); if (CUR && !CUR.pixelArt) onGrid(s.caret); }; }
-    else if (!data.caret && s.caret) { s.caret.remove(); s.caret = null; }
+    /* spec 008 FR-184: one caret element per screen, shown or hidden: a repaint after the throttle (FR-033) changes no node, so a status update adds or removes none (spec 102 FR-229);
+       shown again it is a new animation, so it takes its desk's clock again */
+    if (data.caret) {
+      const fresh = !s.caret;
+      if (fresh) { s.caret = document.createElement('i'); s.caret.className = 'ro-caret'; s.box.appendChild(s.caret); setVar(s.caret, '--ro-per', '1.2s'); }
+      if (fresh || s.caret.hidden) {
+        s.caret.hidden = false;
+        s.caretMs = L.personMotion(id, 'typeA', d.state).offset;
+        if (moving()) { clock(s.caret, s.caretMs); if (CUR && !CUR.pixelArt) onGrid(s.caret); }
+      }
+    } else if (s.caret && !s.caret.hidden) s.caret.hidden = true;
     s.painted = true;
-    if (ZOOM && ZOOM.id === id) fillZoom();
+    if (ZOOM && ZOOM.id === id) { const k = ZOOM.kh; fillZoom(); if (k !== ZOOM.kh) placeZoom(); }
   }
 
   /* FR-074: a window hidden or back; FR-181: desks scrolled away stand still and do not paint, and catch up once when they are back */
@@ -853,29 +1168,40 @@
 
   /* ---- FR-034: the zoom ---- */
   const ZOOM_W = [380, 480], ZOOM_HEAD = 44, ZOOM_LH = 17, ZOOM_ROWS = 12, ZOOM_MIN_ROWS = 4;
+  const ZWIDE = new Set(['Model', 'Now', 'Last tool', 'Usage', 'Changed']);
   function wireZoom(ro) {
     let wait = 0;
+    /* spec 097 FR-327: the agent a pointer is over: its monitor, person, desk (or lounge table) or name plate, never a visitor, chip or lobby plate */
+    const hid = (n) => { const t = n && n.closest && n.closest('.ro-screen, .ro-person, .ro-person2, .ro-rig, .ro-initials, .ro-marquee, .ro-desk, .ro-ltable, .ro-plate'); return t ? (t.classList.contains('ro-plate') ? t.dataset.id : t.dataset.for) || '' : ''; };
+    const arm = (id) => { clearTimeout(wait); ARMED = true; wait = setTimeout(() => { ARMED = false; if (ZOOM && ZOOM.held) return; openZoom(id, 'hover'); }, 120); }; /* a card held under a resting pointer is not replaced by a timer the layout armed (#1536) */
+    /* FR-328: the agent changed state under a resting pointer (it walked to the lounge): the browser's pointerout is not the person leaving; the next real move is */
+    ro.addEventListener('pointermove', (e) => {
+      PT = e.clientX + ',' + e.clientY;
+      if (ZOOM && ZOOM.held && ZOOM.held !== PT) { ZOOM.held = false; if (ZOOM.hover && hid(e.target) !== ZOOM.id) leaveZoom('hover'); } /* the browser repeats a move at the same place after the room changed: not the person moving (as QUIET_AT below) */
+    }, true);
+    ro.addEventListener('pointerleave', () => { if (ZOOM && ZOOM.held) { ZOOM.held = false; if (ZOOM.hover) leaveZoom('hover'); } });
     ro.addEventListener('pointermove', (e) => {
       if (!QUIET_POINTER) return;
       const at = e.clientX + ',' + e.clientY;
       if (!QUIET_AT) QUIET_AT = at;
       if (QUIET_AT === at) return;
       QUIET_POINTER = false;
-      const sc = e.target.closest && e.target.closest('.ro-screen');
-      if (sc && sc.dataset.for && e.pointerType !== 'touch' && DISMISSED !== sc.dataset.for) { clearTimeout(wait); ARMED = true; wait = setTimeout(() => { ARMED = false; openZoom(sc.dataset.for, 'hover'); }, 120); }
+      const id = hid(e.target);
+      if (id && e.pointerType !== 'touch' && DISMISSED !== id) arm(id);
     });
     ro.addEventListener('pointerover', (e) => {
-      const sc = e.target.closest && e.target.closest('.ro-screen');
+      const id = hid(e.target);
       if (QUIET_POINTER && !QUIET_AT) QUIET_AT = e.clientX + ',' + e.clientY;
-      if (QUIET_POINTER || !sc || e.pointerType === 'touch' || !sc.dataset.for) return;
-      if ((ZOOM && ZOOM.hover && ZOOM.id === sc.dataset.for) || DISMISSED === sc.dataset.for) return; /* Esc holds until the pointer has left */
-      clearTimeout(wait); ARMED = true; wait = setTimeout(() => { ARMED = false; openZoom(sc.dataset.for, 'hover'); }, 120); /* crossing the room opens nothing */
+      if (QUIET_POINTER || !id || e.pointerType === 'touch') return;
+      if ((ZOOM && ZOOM.hover && ZOOM.id === id) || DISMISSED === id) return; /* Esc holds until the pointer has left */
+      if (ZOOM && ZOOM.held && ZOOM.held === e.clientX + ',' + e.clientY) return; /* FR-328 (#1536): the layout put this agent under the held point, the pointer did not move: an over with no move arms nothing */
+      arm(id); /* crossing the room opens nothing */
     });
     ro.addEventListener('pointerout', (e) => {
-      const sc = e.target.closest && e.target.closest('.ro-screen');
-      if (!sc || (e.relatedTarget && sc.contains(e.relatedTarget))) return;
+      const id = hid(e.target);
+      if (!id || hid(e.relatedTarget) === id) return; /* still on the same agent's desk */
       clearTimeout(wait); ARMED = false; DISMISSED = '';
-      if (ZOOM && ZOOM.id === sc.dataset.for) leaveZoom('hover');
+      if (ZOOM && ZOOM.id === id && !ZOOM.held) leaveZoom('hover');
     });
     ro.addEventListener('focusin', (e) => { const p = e.target.closest && e.target.closest('.ro-plate'); if (p && !QUIET_FOCUS && p.matches(':focus-visible')) openZoom(p.dataset.id, 'focus'); });
     ro.addEventListener('focusout', (e) => { const p = e.target.closest && e.target.closest('.ro-plate'); if (p && ZOOM && ZOOM.id === p.dataset.id) leaveZoom('focus'); });
@@ -883,22 +1209,24 @@
   function zoomKey(e) {
     if (e.key !== 'Escape' || !ZOOM) return;
     if (hiddenNow()) { closeZoom(); return; } /* the office is covered: this Escape is for what covers it */
+    if (document.querySelector('#modeMenu,#modelMenu,#agentMenu,#ctxMenu')) return; /* FR-328: an open menu is above the card: this Escape closes the menu first (the card is not told apart from it; it goes with its hover or focus) */
     e.preventDefault(); e.stopPropagation(); DISMISSED = ZOOM.hover ? ZOOM.id : ''; closeZoom();
   }
   function openZoom(id, why) {
     if (!CUR || hiddenNow() || !CUR.desks.has(id) || !CUR.screenOf) return;
-    if (CUR.desks.get(id).state === 'asleep') return; /* FR-035: an asleep screen is off, nothing to read */
     if (!ZOOM || ZOOM.id !== id) {
       closeZoom();
       const p = document.createElement('div'); p.className = 'ro-zoom'; p.id = 'roZoom'; p.setAttribute('role', 'region');
-      p.innerHTML = '<div class="ro-zh"><b></b><span class="ro-zr"></span><span class="ro-zs"></span><span class="ro-zf"></span></div><div class="ro-zb"><div class="ro-zl"></div></div>';
+      p.innerHTML = '<div class="ro-zh"><b></b><span class="ro-zr"></span><span class="ro-zs"></span><span class="ro-zf"></span></div><div class="ro-zk"></div><div class="ro-zb"><div class="ro-zl"></div></div>';
       CUR.ro.appendChild(p);
       ZOOM = { id, hover: false, focus: false, panel: p, plate: CUR.ro.querySelector('.ro-plate[data-id="' + CSS.escape(id) + '"]') };
       if (ZOOM.plate) ZOOM.plate.setAttribute('aria-describedby', 'roZoom');
       document.addEventListener('keydown', zoomKey, true);
+      document.addEventListener('focusin', replaceZoom, true); document.addEventListener('focusout', replaceLater, true);
       addEventListener('blur', closeZoom);
+      addEventListener('focus', replaceZoom); /* FR-330: a slip focused by script while the window was in the background fired no focusin; the place is sought again when the window has the focus */
       const fl = CUR.ro.closest('#floor'); if (fl) { ZOOM.floor = fl; fl.addEventListener('scroll', closeZoom, { passive: true }); }
-      fillZoom(); placeZoom();
+      fillZoom(); if (!placeZoom()) return; /* FR-330: no place that leaves the focused slip uncovered: no card */
     }
     ZOOM[why] = true;
   }
@@ -909,39 +1237,74 @@
     z.panel.remove();
     if (z.plate) z.plate.removeAttribute('aria-describedby');
     document.removeEventListener('keydown', zoomKey, true);
+    document.removeEventListener('focusin', replaceZoom, true); document.removeEventListener('focusout', replaceLater, true);
     removeEventListener('blur', closeZoom);
+    removeEventListener('focus', replaceZoom);
     if (z.floor) z.floor.removeEventListener('scroll', closeZoom);
     for (const id of z.under || []) { const s = SCR.get(id); if (!s || !s.away) setOff(id, false); }
+    if (CUR && CUR.ro) for (const e of CUR.ro.querySelectorAll('.ro-slip[inert]')) e.removeAttribute('inert');
   }
   /* name, role, status, folder and the last lines, textContent only (FR-031, FR-034); a described region, not a live one */
   function fillZoom() {
     const a = CUR.agents.get(ZOOM.id), d = CUR.desks.get(ZOOM.id), p = ZOOM.panel;
     if (!a || !d) return;
     p.setAttribute('aria-label', 'Screen of ' + a.name);
-    p.dataset.state = d.state; p.dataset.for = ZOOM.id;
+    p.dataset.state = d.state; p.dataset.for = ZOOM.id; ZOOM.st = d.state;
     text(p.querySelector('.ro-zh b'), a.name); text(p.querySelector('.ro-zr'), a.role); text(p.querySelector('.ro-zs'), a.word); text(p.querySelector('.ro-zf'), a.folder);
-    const data = CUR.screenOf(ZOOM.id, d.state, a.word);
+    const data = CUR.screenOf(ZOOM.id, d.state, a.word, true); /* true: for the card (FR-328: an asleep agent's reply lines) */
     const host = p.querySelector('.ro-zl');
     fillRows(host, data.lines);
+    /* spec 097 FR-312: the facts, label and text, two to a line; textContent only */
+    const facts = (CUR.factsOf ? CUR.factsOf(ZOOM.id) : []).slice(0, 8), kb = p.querySelector('.ro-zk');
+    kb.textContent = '';
+    for (const [k, v] of facts) { const l = document.createElement('span'); l.className = k === 'Changed' ? 'ro-zi ro-zw ro-zc' : ZWIDE.has(k) ? 'ro-zi ro-zw' : 'ro-zi'; const kk = document.createElement('span'); kk.className = 'ro-zy'; text(kk, k); l.appendChild(kk); l.appendChild(document.createTextNode(' ')); const vv = document.createElement('span'); vv.className = 'ro-zv'; text(vv, v); l.appendChild(vv); kb.appendChild(l); }
+    const wide = facts.filter(([k]) => ZWIDE.has(k)).length; /* long ones take a whole line, cut with an ellipsis when too long (FR-313) */
+    const extra = facts.filter(([k, v]) => k === 'Changed' && Array.from(v).length + 8 > 54).length; /* FR-329: a Changed line wraps, so it takes a second row */
+    ZOOM.kh = facts.length ? (wide + extra + Math.ceil((facts.length - wide) / 2)) * ZOOM_LH + 9 : 0; /* .ro-zk: 4 px padding above and below, a 1 px rule */ kb.hidden = !facts.length;
     ZOOM.rows = data.lines.reduce((n, l) => n + Math.max(1, Math.ceil(Array.from(l.t).length / 52)), 0);
   }
   function placeZoom() {
     const ro = CUR.ro, o = ro.getBoundingClientRect(), fl = ro.closest('#floor'), f = fl ? fl.getBoundingClientRect() : o, d = CUR.desks.get(ZOOM.id);
     const near = (e) => { const b = e.getBoundingClientRect(); return { x: b.left - o.left, y: b.top - o.top, w: b.width, h: b.height }; };
-    const avoid = [d.screen, ...[...ro.querySelectorAll('.ro-plate:is(.st-waiting,.st-limit), .ro-lplate.wait, .ro-chip.wait')].map(near)];
+    const slipRects = [...ro.querySelectorAll('.ro-slip:not([hidden])')].map(near);
+    const avoid = [d.screen, ...[...ro.querySelectorAll('.ro-plate:is(.st-waiting,.st-limit), .ro-lplate.wait, .ro-chip.wait')].map(near), ...slipRects]; /* FR-330 (2026-11-08): a slip or bubble (FR-110) is avoided too; the card is painted above them (CSS) for when no free place is left */
     if (ZOOM.plate) avoid.push(near(ZOOM.plate));
     const view = { x: Math.max(0, f.left - o.left), y: Math.max(0, f.top - o.top), w: Math.min(f.right, o.right) - Math.max(f.left, o.left), h: Math.min(f.bottom, o.bottom) - Math.max(f.top, o.top) };
     const w = Math.max(ZOOM_W[0], Math.min(ZOOM_W[1], view.w * 0.34));
-    const rows = Math.max(ZOOM_MIN_ROWS, Math.min(ZOOM_ROWS, ZOOM.rows || 0));
-    const r = X().zoomRect(d.screen, avoid, view, { w, h: ZOOM_HEAD + rows * ZOOM_LH + 12, minH: ZOOM_HEAD + ZOOM_MIN_ROWS * ZOOM_LH + 12 });
+    const HEAD = ZOOM_HEAD + (ZOOM.kh || 0), rows = Math.max(ZOOM_MIN_ROWS, Math.min(ZOOM_ROWS, ZOOM.rows || 0));
+    const size = { w, h: HEAD + rows * ZOOM_LH + 12, minH: HEAD + ZOOM_MIN_ROWS * ZOOM_LH + 12 };
+    let r = X().zoomRect(d.screen, avoid, view, size);
+    /* FR-330 (2026-11-08, round 3 of #1313): the card is never over the slip that holds the keyboard focus (a click through the card, which takes no pointer events, would press a hidden button). That slip is the avoid list's first claim: when the place found covers it, the other slips are let go and the place is sought again; when none is left, no card */
+    const act = document.activeElement, fs = act && act.closest && act.closest('.ro-slip:not([hidden])');
+    if (fs && ro.contains(fs)) {
+      const fr = near(fs), hits = (q) => q.x < fr.x + fr.w && fr.x < q.x + q.w && q.y < fr.y + fr.h && fr.y < q.y + q.h;
+      if (hits(r)) {
+        r = X().zoomRect(d.screen, avoid.filter((a) => !slipRects.includes(a)).concat([fr]), view, size);
+        if (hits(r)) { closeZoom(); return false; }
+      }
+    }
     box(ZOOM.panel, r); ZOOM.panel.dataset.side = r.side;
-    setVar(ZOOM.panel, '--ro-zh', Math.max(1, Math.floor((r.h - ZOOM_HEAD - 8) / ZOOM_LH)) * ZOOM_LH + 'px');
+    setVar(ZOOM.panel, '--ro-zh', Math.max(1, Math.floor((r.h - HEAD - 8) / ZOOM_LH)) * ZOOM_LH + 'px');
     /* what the panel covers whole stands still until it closes */
     const under = [];
     for (const [id, de] of CUR.desks) if (id !== ZOOM.id && de.person && de.person.x >= r.x && de.person.x + de.person.w <= r.x + r.w && de.person.y >= r.y && de.person.y + de.person.h <= r.y + r.h) { under.push(id); setOff(id, true); }
     for (const id of ZOOM.under || []) if (!under.includes(id)) { const s = SCR.get(id); if (!s || !s.away) setOff(id, false); }
     ZOOM.under = under;
+    ZOOM.rect = r; coverSlips();
+    return true;
   }
+  /* FR-330: a slip the card still covers (no free place was left) takes no click or key while it is hidden under the card; the slip that holds the keyboard focus is never under it (placeZoom), so it needs no exception. The place is sought again when the focus moves */
+  function coverSlips() {
+    if (!ZOOM || !ZOOM.rect || !CUR || !CUR.ro) return;
+    const ro = CUR.ro, o = ro.getBoundingClientRect(), r = ZOOM.rect;
+    for (const e of ro.querySelectorAll('.ro-slip')) {
+      const q = e.getBoundingClientRect(), x = q.left - o.left, y = q.top - o.top;
+      const hit = !e.hidden && x < r.x + r.w && r.x < x + q.width && y < r.y + r.h && r.y < y + q.height;
+      if (hit) e.setAttribute('inert', ''); else e.removeAttribute('inert');
+    }
+  }
+  const replaceZoom = () => { if (ZOOM && CUR && CUR.desks.has(ZOOM.id)) placeZoom(); };
+  const replaceLater = () => setTimeout(replaceZoom, 0);
 
   /* Paco's review of #921 (art): a lobby place plate reads in full (never an ellipsis) when there is room: a plate wider than its
      slot grows to the right, then to the left, into free space only (up to the next plate on the same rows or the band's edge); no
@@ -954,7 +1317,7 @@
     const todo = [];
     for (const p of chrome.querySelectorAll(':scope > .ro-plate')) {
       const r = p.querySelector('.ro-role'); if (!r) continue;
-      const key = p.style.width + '|' + p.style.height + '|' + p._sig;
+      const key = p.style.width + '|' + p.style.height + '|' + p._sig + '|' + document.documentElement.dataset.roSheets; /* a world stylesheet that arrived restyles the role */
       if (p._rk === key) continue;
       p._rk = key; r.hidden = false; todo.push(r);
     }
@@ -1117,5 +1480,5 @@
   }
   /* spec 097 FR-186: work the room has put off on a timer (a screen's throttled repaint, FR-033; a redraw when a done tick ends): check-office-ops-real starts a measured update only when there is none, so no earlier update's deferred work is counted in it. Read only */
   const pending = () => { let screens = 0; for (const s of SCR.values()) if (s.timer) screens++; return { screens }; }; /* FR-236: no done tick to wait for any more */
-  root.DurbarRealOffice = { hoverState: () => ({ still: QUIET_POINTER, armed: ARMED }), pending, render, reset, leave, feed, resume, quietFocus, whereSize: () => WHERE.size, bad: () => [...BAD], resolve, stagger, personOf: (id) => (PEOPLE && has(PEOPLE, id) ? PEOPLE[id] : null) /* the chat's header draws the same person (spec 097 FR-106) */ }; /* resolve: for the driver's deterministic check */
+  root.DurbarRealOffice = { metaOf, hoverState: () => ({ still: QUIET_POINTER, armed: ARMED }), pending, render, reset, leave, feed, resume, quietFocus, ctx, whereSize: () => WHERE.size, bad: () => [...BAD], resolve, stagger, personOf: (id) => (PEOPLE && has(PEOPLE, id) ? PEOPLE[id] : null) /* the chat's header draws the same person (spec 097 FR-106) */ }; /* resolve: for the driver's deterministic check */
 })(typeof self !== 'undefined' ? self : this);

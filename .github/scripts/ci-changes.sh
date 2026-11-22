@@ -1,29 +1,31 @@
 #!/usr/bin/env bash
-# Spec 008 FR-104: which parts of CI a pull request needs, computed inside each job (there is no separate "What changed" job any
-# more: it made every other job wait for a second runner). Writes code=true|false and themes=true|false to $GITHUB_OUTPUT.
+# Spec 008 FR-104, FR-191: which parts of CI a pull request needs, computed inside each job (no separate "What changed" job in
+# ci.yml: it made every other job wait for a second runner). The decision is in ONE place, .github/scripts/ci-changes.js (read its
+# header): on a pull request it diffs the test merge commit (`git diff --name-only HEAD^1 HEAD`, fetch-depth 2) and writes
+# code, themes, ui and macos to $GITHUB_OUTPUT; on every other event all are true. Node is on every runner image before setup-node.
 #
-# On a pull request the checkout is GitHub's test merge commit with fetch-depth 2, so HEAD^1 is the base branch and
-# `git diff HEAD^1 HEAD` is exactly what the PR changes. Every other event (push to main, merge queue, schedule, by hand) runs
-# everything.
-#
-#   code=false   only docs/, specs/ or Markdown changed: the job's steps are skipped and the job passes (required checks report)
-#   themes=true  the look or the layout checks can change: the office job also runs theme geometry (spec 008 FR-031)
+# Review of PR #1349 (as spec-kit.yml's spec-numbers job, PR #1316): on a pull request the BASE branch's copy of the decision runs
+# (HEAD^1 of the test merge commit, reviewed on main), on the PR's checkout as data, so a PR that breaks ci-changes.js cannot skip its
+# own checks; when the base has no copy yet (the PR that adds it), everything runs. This wrapper itself is the PR's copy, like the
+# workflow files: CODEOWNERS review of .github/ guards those.
 set -euo pipefail
 out="${GITHUB_OUTPUT:-/dev/stdout}"
+all() { printf 'code=true\nthemes=true\nui=true\nmacos=true\n' >> "$out"; }
 if [ "${EVENT_NAME:-}" != "pull_request" ]; then
-  { echo "code=true"; echo "themes=true"; } >> "$out"
+  echo "${EVENT_NAME:-no event}: not a pull request, everything runs."
+  all
   exit 0
 fi
-files=$(git diff --name-only HEAD^1 HEAD)
-echo "$files"
-if printf '%s\n' "$files" | grep -qE '^(src/renderer/|scripts/check-office-overlap\.js|scripts/check-theme-geometry\.js|scripts/check-parallel\.js|scripts/fixtures/themes/|\.github/workflows/ci\.yml|\.github/scripts/ci-changes\.sh)'; then
-  echo "themes=true" >> "$out"
-else
-  echo "themes=false" >> "$out"
+# a relative folder in the checkout (no temp path to convert on the Windows runner's Git Bash); the diff compares commits, so an
+# untracked folder changes nothing, and it is removed on exit
+tmp=".ci-changes-base"
+rm -rf "$tmp"
+trap 'rm -rf "$tmp"' EXIT
+mkdir -p "$tmp/.github/scripts" "$tmp/scripts"
+if ! git show 'HEAD^1:.github/scripts/ci-changes.js' > "$tmp/.github/scripts/ci-changes.js" 2>/dev/null \
+  || ! git show 'HEAD^1:scripts/safe-print.js' > "$tmp/scripts/safe-print.js" 2>/dev/null; then
+  echo "The base branch has no .github/scripts/ci-changes.js yet (the PR that adds it): everything runs."
+  all
+  exit 0
 fi
-if printf '%s\n' "$files" | grep -qvE '^(docs/|specs/)|\.md$'; then
-  echo "code=true" >> "$out"
-else
-  echo "code=false" >> "$out"
-  echo "Docs, specs and Markdown only: build, test and office checks are skipped (the job passes)."
-fi
+node "$tmp/.github/scripts/ci-changes.js" --root .

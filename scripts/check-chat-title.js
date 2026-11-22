@@ -10,10 +10,10 @@
  *   2. a 480px panel: the title is cut (the row is really full) and nothing in the first row overlaps;
  *   3. (review on PR 796) a title far wider than the row (450 characters), wide and in a 480px panel: the title is cut and the buttons
  *      (`.actions`) stay on the title's row, inside the panel (spec 052 FR-095: the actions never move down).
- * It runs in the default theme, Retro (CHAT_TITLE_THEMES=,retro; `window.THEME.setTheme`).
+ * It runs in the default theme and the dark fixture theme (CHAT_TITLE_THEMES=,dark; `window.THEME.setTheme`; spec 102 T226: it took Retro's place).
  * A miss prints DRIVER FAILED (Electron still exits 0), so the npm script exits non-zero unless "all checks passed" is printed.
  */
-const { helpers, jsLiteral } = require('./driver-helpers');
+const { helpers, jsLiteral, CHECK_DARK, CHECK_DARK_QUERY } = require('./driver-helpers');
 const assert = require('assert');
 module.exports = async (ctx) => {
   const H = helpers(ctx);
@@ -29,11 +29,11 @@ module.exports = async (ctx) => {
       if(Math.min(a.right,b.right)-Math.max(a.left,b.left)>0.5&&Math.min(a.bottom,b.bottom)-Math.max(a.top,b.top)>0.5)over.push((kids[i].className||kids[i].id)+' x '+(kids[j].className||kids[j].id));}
     const act=top.querySelector('.actions'),ar=act&&R(act),pr=R(document.querySelector('#panel>.panel-in')); /* spec 005 FR-190: the chat column, right of the rail */
     return {idTop:Math.round(ir.top),actTop:ar?Math.round(ar.top):null,actRight:ar?Math.round(ar.right):null,panelRight:Math.round(pr.right),titleCut:cut(h),subCut:cut(sub),free:Math.round(stop-ir.right),w:Math.round(ir.width),ttl:(h.getAttribute('title')||''),text:h.textContent.length,over}})()`);
-  const THEMES = (process.env.CHAT_TITLE_THEMES || ',retro').split(',');
+  const THEMES = (process.env.CHAT_TITLE_THEMES || ',dark').split(',');
   for (const [w, h, theme] of [[1440, 900], [1280, 800]].flatMap(([a, b]) => THEMES.map((t) => [a, b, t]))) {
     const at = `${w}x${h}${theme ? ' ' + theme : ''}`;
     await H.load({ w, h, query: { simtitles: 'long' }, ready: 'fit' });
-    if (theme) { await js(`window.THEME.setTheme(${jsLiteral(theme)})`); await settle(); }
+    if (theme) { await js(`window.THEME.setTheme(${jsLiteral(theme === 'dark' ? CHECK_DARK : theme)})`); await settle(); }
     const o = await H.openSimAgent(`a=>!a.parent`, '#panelTitle');
     assert.ok(o.ok, `${at}: a chat is open: ${JSON.stringify({ id: o.id })}`);
     await settle();

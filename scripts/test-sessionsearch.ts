@@ -174,3 +174,59 @@ console.log('sessionsearch pin/hide tests passed');
 }
 console.log('sessionsearch locate/anchorKey tests passed');
 
+
+// ---- Spec 095 FR-040, issue 1904: a match's place in its word (whole word 0, word start 1, inside a word 2) ----
+{
+  const R = require(path.join(__dirname, '..', '..', 'src', 'renderer', 'sessionsearch.js')) as {
+    wordTier: (text: string, start: number, end: number) => number;
+    locateRanked: (text: string, query: string, max?: number) => Array<{ start: number; end: number; term: number; tier: number }>;
+    bestTiers: (text: string, query: string) => number[];
+  };
+  const best = (text: string, q: string): number => R.bestTiers(text, q)[0];
+  // the owner's case: a 3-letter acronym against the words that hold it
+  assert.strictEqual(best('el cambiado', 'BIA'), 2, 'rank: "bia" inside "cambiado" is in a word');
+  assert.strictEqual(best('lo que había', 'BIA'), 2, 'rank: "bia" inside "había" (folded) is in a word');
+  assert.strictEqual(best('Biarritz', 'BIA'), 1, 'rank: "bia" at the start of "Biarritz" is a word start');
+  assert.strictEqual(best('the BIA report', 'BIA'), 0, 'rank: the acronym itself is a whole word');
+  assert.strictEqual(best('BIA', 'bia'), 0, 'rank: the whole text is a whole word');
+  assert.strictEqual(best('cambiado, then (BIA).', 'BIA'), 0, 'rank: the best place counts, punctuation is a boundary');
+  assert.strictEqual(best('tion', 'tion'), 0, 'rank: a word of its own');
+  assert.strictEqual(best('action', 'tion'), 2, 'rank: the end of a word is inside it, not a start');
+  // accents folded as before: the range maps back to the original text
+  assert.strictEqual(best('Explicación del diseño', 'explicacion'), 0, 'rank: an accented word matched by its plain spelling');
+  assert.strictEqual(best('Explicacion', 'EXPLICACIÓN'), 0, 'rank: the query is folded too');
+  assert.strictEqual(best('explicácion y mas', 'explicacion'), 0, 'rank: a decomposed accent does not split the word');
+  assert.strictEqual(best('reexplicación', 'explicacion'), 2, 'rank: inside an accented word');
+  // digits are word characters, punctuation and _ are not
+  assert.strictEqual(best('v2024', '2024'), 2, 'rank: digits glue to the letters before them');
+  assert.strictEqual(best('issue 2024 fixed', '2024'), 0, 'rank: a number of its own');
+  assert.strictEqual(best('20245', '2024'), 1, 'rank: a number that starts a longer number');
+  assert.strictEqual(best('foo_bia_bar', 'bia'), 0, 'rank: an underscore is a boundary');
+  assert.strictEqual(best('see #1904 now', '#1904'), 0, 'rank: a word that begins with a symbol needs no boundary before it');
+  assert.strictEqual(best('c++ and c', 'c++'), 0, 'rank: a word that ends with a symbol needs none after it');
+  assert.strictEqual(best('c++x', 'c++'), 0, 'rank: the symbol side is a boundary by itself');
+  // non-Latin: Greek words are words, scripts without spaces have none to be inside
+  assert.strictEqual(best('ΚΑΛΗΜΕΡΑ κόσμε', 'κοσμε'), 0, 'rank: a Greek word, accents folded');
+  assert.strictEqual(best('καλημέρα', 'μερα'), 2, 'rank: inside a Greek word');
+  assert.strictEqual(best('καλημέρα', 'καλη'), 1, 'rank: the start of a Greek word');
+  assert.strictEqual(best('这是搜索测试', '搜索'), 0, 'rank: Han text has no word to be inside');
+  assert.strictEqual(best('我用BIA工具', 'bia'), 0, 'rank: a Latin word between Han characters is a whole word');
+  assert.strictEqual(best('テストです', 'スト'), 0, 'rank: Katakana has no word to be inside');
+  assert.strictEqual(best('abc搜索', 'abc'), 0, 'rank: a Latin word touching Han text');
+  assert.strictEqual(best('x😀bia😀y', 'bia'), 0, 'rank: an emoji is a boundary (an astral character before the match)');
+  // two words: each has its own best place; absent = 3
+  assert.deepStrictEqual(R.bestTiers('the BIA of cambiado', 'bia cambia'), [0, 1], 'rank: one tier per query word, in the order of terms()');
+  assert.deepStrictEqual(R.bestTiers('nothing', 'bia'), [3], 'rank: an absent word is 3');
+  assert.deepStrictEqual(R.bestTiers('x', ''), [], 'rank: a blank query has no word');
+  // locateRanked: the best first, every range is the one `locate` gives, the cap keeps the best
+  const long = 'cambiado '.repeat(80) + 'and BIA here';
+  const rr = R.locateRanked(long, 'bia', 3);
+  assert.deepStrictEqual(rr.map((r) => r.tier), [0, 2, 2], 'ranked: the whole word comes first even after 80 in-word hits, and the cap keeps the best');
+  assert.strictEqual(long.slice(rr[0].start, rr[0].end), 'BIA', 'ranked: the range maps back to the original text');
+  assert.deepStrictEqual(R.locateRanked('a Bía b', 'bia').map(({ start, end, term }) => ({ start, end, term })), locate('a Bía b', 'bia'), 'ranked: the same ranges as locate when there is one');
+  const loc = locate(long, 'bia', 200).map((r) => `${r.start}-${r.end}`).sort();
+  assert.deepStrictEqual(R.locateRanked(long, 'bia').map((r) => `${r.start}-${r.end}`).sort(), loc, 'ranked: no range is lost or invented');
+  assert.strictEqual(R.wordTier('', 0, 0), 0, 'wordTier: an empty text and range never throw');
+  assert.strictEqual(R.wordTier('abc', -5, 99), 0, 'wordTier: out of range offsets are cut to the text');
+}
+console.log('sessionsearch rank tests passed');
