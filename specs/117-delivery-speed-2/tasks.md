@@ -51,6 +51,12 @@
 - [ ] T019 `docs/review-checklist.md` line 75 "- [ ] **Slice size**: about 800 changed lines, pictures excluded." (11 words) becomes "- [ ] **One vertical slice**: ~800 changed lines, pictures excluded." (11 words; no other file points to *Slice size*, checked with `grep` 2026-11-22). **Word budget**: net 0, stays 2,447 of 2,450; no `docs/agent-notes.md` text; `.specify/templates/*` not edited (managed by `specify integration`) [FR-040]
 - [ ] T020 `ci:stats` reports FR-041's indicator (src share, PRs with no `src/` line) for the retro; never per person [FR-041]
 
+## P8: fast lane and the docs-only skip (2026-11-22 delta)
+
+- [x] T040 [P] `test-ci-changes.ts` first: the FR-387 guard (live files under `src/`, `scripts/`, `.github/`, rule text, site code, README, LICENSE, case tricks, odd paths, docs a suite names, an empty diff, no suite list: never `code=false`; allow-listed docs still skip) with fourteen mutants and four wrapper guard mutants, each failing at its own assert; then `ci-changes.js` (`DOCS_ALLOW`, `DOCS_DENY`, `PLAIN_PATH`, `docsOnly`) and the `ci-changes.sh` guard [FR-387]
+- [x] T041 `test-ci-changes.ts` cases for `fastSuites` (step file, relative and repo-relative literal, folder literal, new suite, changed suite line, docs table, nothing picked, list order, plain names) and `--suites` through the CLI and the wrapper; `ci-changes.js --suites`, `ci-changes.sh` passes its arguments; `scripts/fast-lane.js` and `test-fast-lane.ts` (list names only, picked files compiled, build only for `dist/` readers; workflow shape with 11 mutants); `.github/workflows/fast-lane.yml`; `test-electron-cache.ts` lists the job [FR-386]
+- [ ] T042 `real:` the lane's work time per OS from its own runs (setup through the last suite), in spec *Changes*; 7 days after landing, FR-001's jobs per PR head and queue wait beside E3/E4 [FR-386]
+
 ## Owner settings (O1)
 
 - [ ] T021 (after O1's written yes from the three owners, line by line as spec *O1, one line per check*) The owners apply the ruleset changes (an agent changes no repo setting); for the macOS line, if the owners choose to stop the PR job, a spec 008 delta reversing FR-135 and `macos-pr.yml` change in the same PR; record each answer in spec *Changes* [FR-015]

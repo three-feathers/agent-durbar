@@ -128,6 +128,7 @@ test:gitstatus
 test:officeops
 test:uisuite
 test:cichanges
+test:fastlane
 test:pathdirs
 test:officialinstall
 test:checknames
@@ -285,3 +286,4 @@ test:dangersites
 test:specnumbers
 test:prpreflight
 test:pencilpark
+test:arcade-wall-signs
