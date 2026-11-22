@@ -156,6 +156,11 @@ module.exports = async (ctx) => {
       });
       assert.strictEqual(await tipText(), expected('idle', await count('idle'), await on('idle')), `${tag}: the text follows the redraw: ${await tipText()}`);
       checkGeo(await geo('idle'), 'idle', `${tag} after redraw`);
+      // a pointer event on the empty floor while the pill is hovered (a redraw moves what is under a still pointer; Windows sends it): the floor has no hint here (one floor), so the pill keeps its tooltip
+      await js(`document.getElementById('floor').dispatchEvent(new PointerEvent('pointerover',{bubbles:true,pointerType:'mouse'}))`);
+      await H.settle();
+      await ok(shown, `${tag}: a pointer event on a floor with no hint leaves the pill's tooltip shown`);
+      checkGeo(await geo('idle'), 'idle', `${tag} after a pointer event on the floor`);
       await js(`(()=>{const s=document.getElementById('wsFilter');s.value='all';s.dispatchEvent(new Event('change'))})()`);
       await H.settle();
     }
