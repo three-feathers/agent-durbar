@@ -299,6 +299,12 @@ function joinedHidden(words: readonly string[], values: readonly string[], w: Ar
   });
   w.pieces += flat.length;
   const out: Array<Array<[number, number]>> = words.map(() => []);
+  // round 7: a joined text over the masks' input limit is read up to the limit, and every word with any character past it is masked whole, so no word
+  // is shown in part (a value split by the limit never shows its head); the window showed nothing past its own cut there either
+  if (flat.length > MASK_INPUT_MAX) {
+    for (let k = MASK_INPUT_MAX; k < flat.length; k++) if (word[k] >= 0 && !out[word[k]].length) out[word[k]].push([0, words[word[k]].length]);
+    flat = flat.slice(0, MASK_INPUT_MAX);
+  }
   const reads = [maskNoteText(flat, values).text, maskSecretCommand(flat), ...(/:\/\//.test(flat) ? [maskSecretUrl(flat)] : [])];
   for (const r of reads) {
     if (r === flat || !/\[redact/.test(r)) continue; // hides nothing

@@ -353,6 +353,39 @@ ok('LIST-CONT-MARK: a list word keeps its continuation mark when a joined readin
   assert.ok(!m.command[2].includes(A2) && !m.command[2].includes(B), 'LIST-CONT-MARK the values are masked');
   assert.ok(m.command[2].includes('\\\n'), `LIST-CONT-MARK the mark and its line break are kept: ${JSON.stringify(m.command[2]).replace(A2, 'A').replace(B, 'B')}`);
 });
+ok('R7: a list whose joined text is over the limit shows its first words like main, and no value in part', () => {
+  const word = (i: number): string => ['src/renderer/some/longer/folder/name/here', 'file' + String(i).padStart(4, '0') + '.js'].join(' '); // two pieces each
+  const base = Array.from({ length: 250 }, (_, i) => word(i)); // about 13,000 characters joined
+  // a first word of a length that puts the limit inside the SECOND piece of the word it splits (a word shown in part would show its first piece)
+  const lead = (d: number): string[] => ['p'.repeat(d), ...base];
+  const split = (ws: string[]): [number, number] => { let n = 0; for (let k = 0; k < ws.length; k++) { const s0 = n + (k ? 1 : 0); if (s0 + ws[k].length > R.MASK_INPUT_MAX) return [k, R.MASK_INPUT_MAX - s0]; n = s0 + ws[k].length; } return [-1, 0]; };
+  let d = 1; while (d < 60 && !(split(lead(d))[1] > base[0].indexOf(' ') + 1)) d++;
+  const harmless = lead(d);
+  assert.ok(harmless.join(',').length > R.MASK_INPUT_MAX, 'the joined text is over the limit');
+  const m = maskToolArgs({ command: harmless }) as { command: string[] };
+  assert.deepStrictEqual(m.command.slice(0, 200), harmless.slice(0, 200), 'R7-HEAD the first words before the limit are shown as written');
+  assert.ok(split(harmless)[1] > base[0].indexOf(' ') + 1, 'the limit falls inside the second piece of a word');
+  const allMasked = (x: string): boolean => x.split(/\s+/).every((p) => p === '[redacted]');
+  assert.ok(m.command.slice(-10).every(allMasked), 'R7-TAIL words past the limit are masked whole');
+  let k0 = 0; for (let n = 0; k0 < harmless.length; k0++) { n += harmless[k0].length + (k0 ? 1 : 0); if (n > R.MASK_INPUT_MAX) break; }
+  assert.ok(allMasked(m.command[k0]), `R7-SPLIT-WORD the word the limit splits is masked whole, never in part: ${m.command[k0]}`);
+  assert.strictEqual(m.command[k0 - 1], harmless[k0 - 1], 'R7-SPLIT-WORD the word before it is shown');
+  const V = ['Zq8Lm', '4Rt7Wx', '2Pk9Vn'].join(''); // an invented value
+  const pieces = (v: string): string[] => Array.from({ length: v.length - 3 }, (_, i) => v.slice(i, i + 4));
+  const at = (k: number): string[] => { const w = harmless.slice(); w.splice(k, 0, ['--pass', 'word'].join(''), V); return w; };
+  let straddle = 0; for (let k = 0, n = 0; k < harmless.length; k++) { n += harmless[k].length + 1; if (n + 11 > R.MASK_INPUT_MAX - 5) { straddle = k; break; } }
+  const cases: Array<[string, string[]]> = [['first part', at(5)], ['cut-off part', at(240)], ['straddling the limit', at(straddle)]];
+  for (const [name, words] of cases) {
+    const mm = maskToolArgs({ command: words });
+    assert.deepStrictEqual(pieces(V).filter((p) => JSON.stringify(mm).includes(p)), [], `R7-PART ${name}: no piece of the value in main's copy`);
+    for (const [sname, f] of Object.entries(SURFACES)) {
+      const raw = f('bash', { command: words }), masked = f('bash', mm);
+      const again = harmless.slice(0, 5).concat([V]).filter((x) => !raw.includes(x) && masked.includes(x));
+      assert.deepStrictEqual(again, [], `R7-DIFF ${name} ${sname}: nothing main hid shows`);
+      assert.deepStrictEqual(pieces(V).filter((p) => masked.includes(p)), [], `R7-PART ${name} ${sname}: no piece of the value shows`);
+    }
+  }
+});
 ok('NPM-WRAPPER: a shell wrapper\'s script split into words stays as written', () => {
   const words = ['npm', 'run', 'build', '&&', 'sh', '-c', '"L=\\$(mktemp);', 'DURBAR_SIM=15', 'electron', '.', '2>&1', '|', 'tee', '\\$L"'];
   assert.deepStrictEqual(maskToolArgs({ command: words }), { command: words }, 'NPM-WRAPPER harmless words unchanged');
