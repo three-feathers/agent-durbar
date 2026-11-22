@@ -17,6 +17,10 @@ const cc = require(path.join(ROOT, '.github', 'scripts', 'ci-changes.js')) as {
 interface Io { read(p: string): string | null; readBase(p: string): string | null; isFile(p: string): boolean; isDir(p: string): boolean }
 
 const real = cc.gitIo(ROOT);
+// Windows checks files out with CRLF: every text this test anchors on or mutates (ci-changes.sh, ci-changes.js) is normalised to LF
+// first (review of #2032: the wrapper anchors missed on windows-latest), and each such check also runs on a CRLF copy of the file
+const toLf = (t: string): string => t.replace(/\r\n?/g, '\n');
+const crlfCopy = (t: string): string => toLf(t).replace(/\n/g, '\r\n');
 /** The real head tree with some files replaced or added; the base is the head unless `base` says otherwise. */
 function io(head: Record<string, string> = {}, base: Record<string, string> = {}, gone: string[] = [], dirs: string[] = []): Io {
   return {
@@ -345,10 +349,12 @@ assert.strictEqual(cc.decide(['docs/zz-none.md', 'specs/999-none/spec.md'], io()
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const Module = require('module') as { new (id: string, parent: unknown): { filename: string; paths: string[]; exports: unknown; _compile(src: string, file: string): void }; _nodeModulePaths(dir: string): string[] };
   const file = path.join(ROOT, '.github', 'scripts', 'ci-changes.js');
-  const source = fs.readFileSync(file, 'utf8');
+  const sourceRaw = fs.readFileSync(file, 'utf8');
+  // the mutants run twice: on the checkout's text and on a CRLF copy, both normalised before any anchor is looked for
+  for (const [copy, source] of [['checkout', toLf(sourceRaw)], ['CRLF copy', toLf(crlfCopy(sourceRaw))]] as [string, string][]) {
   const variant = (from: string | RegExp, to: string): Cc => {
     const text = source.replace(from, to);
-    assert.notStrictEqual(text, source, `mutant anchor found: ${String(from)}`);
+    assert.notStrictEqual(text, source, `mutant anchor found (${copy}): ${String(from)}`);
     const m = new Module(file, null);
     m.filename = file; m.paths = Module._nodeModulePaths(path.dirname(file));
     m._compile(text, file);
@@ -374,7 +380,8 @@ assert.strictEqual(cc.decide(['docs/zz-none.md', 'specs/999-none/spec.md'], io()
   ];
   for (const [name, c, expect] of mutants) {
     const bad = skipProblems(c);
-    assert.ok(bad.some((b) => expect.test(b)), `mutant "${name}" dies at its own assert (got: ${bad.slice(0, 3).join('; ') || 'nothing'})`);
+    assert.ok(bad.some((b) => expect.test(b)), `mutant "${name}" (${copy}) dies at its own assert (got: ${bad.slice(0, 3).join('; ') || 'nothing'})`);
+  }
   }
 }
 
@@ -498,7 +505,8 @@ assert.strictEqual(cc.decide(['docs/zz-none.md', 'specs/999-none/spec.md'], io()
     fs.mkdirSync(path.join(silent, 'scripts'));
     fs.mkdirSync(path.join(silent, 'docs'));
     fs.copyFileSync(path.join(ROOT, 'scripts', 'safe-print.js'), path.join(silent, 'scripts', 'safe-print.js'));
-    const sh = fs.readFileSync(path.join(ROOT, '.github', 'scripts', 'ci-changes.sh'), 'utf8');
+    const shRaw = fs.readFileSync(path.join(ROOT, '.github', 'scripts', 'ci-changes.sh'), 'utf8');
+    const sh = toLf(shRaw);
     const g3 = (...a: string[]) => execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@example.invalid', '-c', 'commit.gpgsign=false', ...a], { cwd: silent, stdio: 'ignore', shell: false });
     g3('init', '-q');
     const out = (lines: string) => `require('fs').appendFileSync(process.env.GITHUB_OUTPUT, ${JSON.stringify(lines)});\n`;
@@ -521,7 +529,11 @@ assert.strictEqual(cc.decide(['docs/zz-none.md', 'specs/999-none/spec.md'], io()
     assert.strictEqual(withBase(out('code=false\nthemes=false\nui=false\nmacos=false\n'), sh), 'code=false\nthemes=false\nui=false\nmacos=false\n', 'a valid code=false passes through');
     const cond = `  && ! { [ "$(grep -c '^code=' "$out")" = 1 ] && grep -qxE 'code=(true|false)' "$out"; }; then\n`;
     const guard = /\nif \[ "\$\{1:-\}" != "--suites" \][\s\S]*?\n {2}all\nfi\n/;
-    assert.ok(sh.includes(cond) && guard.test(sh), 'mutant anchors: the wrapper guard and its exact-value condition');
+    /** The wrapper's anchors are found in this text, after `normalise`. */
+    const anchored = (raw: string, normalise: (t: string) => string = toLf) => { const t = normalise(raw); return t.includes(cond) && guard.test(t); };
+    assert.ok(anchored(shRaw), 'mutant anchors: the wrapper guard and its exact-value condition');
+    assert.ok(anchored(crlfCopy(shRaw)), 'mutant anchors: found in a CRLF copy of the wrapper too (normalised first)');
+    assert.ok(!anchored(crlfCopy(shRaw), (t) => t), 'mutant "normalisation stripped": on a CRLF copy the anchors are not found, so the normalisation is what finds them');
     const wrapperMutants: [string, string][] = [
       ['no guard', sh.replace(guard, '\n')],
       ['only that a code= line exists', sh.replace(cond, `  && ! grep -q '^code=' "$out"; then\n`)],
@@ -529,6 +541,7 @@ assert.strictEqual(cc.decide(['docs/zz-none.md', 'specs/999-none/spec.md'], io()
       ['a valid value anywhere, not exactly one line', sh.replace(cond, `  && ! grep -qxE 'code=(true|false)' "$out"; then\n`)],
     ];
     for (const [name, text] of wrapperMutants) {
+      assert.notStrictEqual(text, sh, `wrapper mutant "${name}": the text to change is there`);
       assert.ok(BASES.some(([, js]) => withBase(js, text) !== ALL), `wrapper mutant "${name}" dies at its own assert`);
     }
     assert.strictEqual(bash(fresh, 'push'), ALL, 'a push runs everything (the wrapper says so without the decision)');

@@ -41,7 +41,8 @@ assert.strictEqual(reads("require('../dist-scripts/x')"), false, 'dist-scripts i
 assert.strictEqual(reads("const distance = 1;"), false, 'a word starting with dist is not');
 
 // the workflow
-const wf = norm(fs.readFileSync(path.join(ROOT, '.github', 'workflows', 'fast-lane.yml'), 'utf8'));
+const wfRaw = fs.readFileSync(path.join(ROOT, '.github', 'workflows', 'fast-lane.yml'), 'utf8');
+const wf = norm(wfRaw);
 /** Every shell line of a workflow: each `run:` value and each line of a `run: |` block. No `${{ }}` may appear in one. */
 function runLines(text: string): string[] {
   const out: string[] = [];
@@ -73,6 +74,11 @@ function problems(text: string): string[] {
   return bad;
 }
 assert.deepStrictEqual(problems(wf), [], 'fast-lane.yml: advisory, three OSes, safe for fork PRs');
+// Windows checks files out with CRLF (review of #2032): the same check on a CRLF copy, normalised first, passes; without the
+// normalisation it does not, so the normalisation is what makes it pass there
+const crlf = (t: string) => norm(t).replace(/\n/g, '\r\n');
+assert.deepStrictEqual(problems(norm(crlf(wfRaw))), [], 'fast-lane.yml checks pass on a CRLF copy (normalised first)');
+assert.ok(problems(crlf(wfRaw)).length > 0, 'mutant "normalisation stripped": a raw CRLF copy fails the checks');
 const swap = (from: string | RegExp, to: string) => { const t = wf.replace(from, to); assert.notStrictEqual(t, wf, `mutant anchor found: ${String(from)}`); return t; };
 const mutants: [string, string, string][] = [
   ['pull_request_target', swap('on:\n  pull_request:\n', 'on:\n  pull_request_target:\n'), 'pull_request_target'],
