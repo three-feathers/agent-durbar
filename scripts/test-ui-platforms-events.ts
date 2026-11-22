@@ -16,6 +16,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 
 const FILE = path.join(__dirname, '..', '..', '.github', 'workflows', 'ui-platforms.yml');
+const RELEASE = path.join(__dirname, '..', '..', '.github', 'workflows', 'release.yml');
 const WORKFLOW = 'UI on three OSes';
 
 // ---- a small evaluator for GitHub expressions: literals, context paths, == != ! && || ( ), fromJSON(), format() ----
@@ -160,7 +161,30 @@ function shards(ls: string[], r: Run): string[] {
 }
 
 /** Every problem with the file, as labels; empty = fine. Each mutant below must produce exactly its own label. */
-export function problems(text: string): string[] {
+/** Paco's O3 condition (review of #2039): with main UI runs cancelling each other, release.yml must gate every job on the tagged
+ *  commit's UI run (open PR #2038: job `ui-gate` running scripts/release-ui-gate.js, every other job needing it directly or through
+ *  another job). Empty = the gate is there. */
+export function releaseGateProblems(releaseText: string): string[] {
+  const ls = strip(releaseText);
+  const jobsAt = ls.findIndex((l) => /^jobs:\s*$/.test(l));
+  if (jobsAt < 0) return ['release.yml has no jobs'];
+  const ids = ls.slice(jobsAt + 1).filter((l) => /^ {2}[\w-]+:\s*$/.test(l)).map((l) => l.trim().slice(0, -1));
+  const gate = block(ls, 'ui-gate', 2);
+  if (!gate || !gate.some((l) => /run:\s*node scripts\/release-ui-gate\.js\b/.test(l))) return ['release.yml has no ui-gate job running scripts/release-ui-gate.js'];
+  const needsOf = (id: string): string[] => (field(block(ls, id, 2), 'needs') || '').replace(/[[\]\s]/g, '').split(',').filter(Boolean);
+  const reaches = (id: string, seen = new Set<string>()): boolean => {
+    if (id === 'ui-gate') return true;
+    if (seen.has(id)) return false;
+    seen.add(id);
+    return needsOf(id).some((n) => reaches(n, seen));
+  };
+  const loose = ids.filter((id) => id !== 'ui-gate' && !reaches(id));
+  return loose.length ? [`release.yml jobs not behind ui-gate: ${loose.join(', ')}`] : [];
+}
+// a release.yml with #2038's gate, for the mutants of this file (the real one is checked on its own below)
+const GATED_RELEASE = 'jobs:\n  ui-gate:\n    steps:\n      - run: node scripts/release-ui-gate.js --sha "$SHA"\n  verify:\n    needs: ui-gate\n  build:\n    needs: verify\n  draft-release:\n    needs: [ui-gate, verify, build]\n';
+
+export function problems(text: string, releaseText: string = GATED_RELEASE): string[] {
   const ls = strip(text);
   const bad: string[] = [];
   // (a) pull requests: Linux always, Windows unless os_sensitive is exactly 'false'; other events never read it
@@ -185,6 +209,7 @@ export function problems(text: string): string[] {
   const [p1, p2, p3, m1, m2, s1, s2, d1, d2] = RUNS;
   if (group(m1) !== `${WORKFLOW}-ui-main` || group(m2) !== group(m1)) bad.push('main pushes do not share the group "<workflow>-ui-main"');
   if (!cancels(m1)) bad.push('main pushes do not cancel an older main UI run');
+  else for (const p of releaseGateProblems(releaseText)) bad.push(`main pushes cancel but ${p}`);
   if (group(p1) !== group(p2) || group(p1) === group(p3) || !group(p1).includes('42')) bad.push('pull request runs are not grouped per PR number');
   if (!cancels(p1)) bad.push('a superseded pull request run is not cancelled');
   for (const [a, b] of [[s1, s2], [d1, d2]]) {
@@ -203,12 +228,26 @@ export function problems(text: string): string[] {
   const early = body.match(/\bexit 0\b/g) || [];
   const uiFalse = /if \[ "\$UI_NEEDED" = "false" \]; then\n[^\n]*\n\s+exit 0\n\s+fi\n/.test(body + '\n');
   if (early.length !== 1 || !uiFalse) bad.push('"UI suite complete" passes early for something other than ui=false');
+  // review of #2039: without always() a failed shard makes the summary SKIP (a skipped check reads as passed); permissions: {} keeps it token-free
+  if (!/^\$\{\{\s*always\(\)\s*&&/.test((field(complete, 'if') || '').trim())) bad.push('"UI suite complete" does not run always()');
+  if (!(complete || []).some((l) => /^ {4}permissions:\s*\{\}\s*$/.test(l))) bad.push('"UI suite complete" does not have permissions: {}');
   const uiIf = field(block(ls, 'ui', 2), 'if') || '';
   if (/matrix\.os|windows|ubuntu/.test(uiIf)) bad.push('the shard job skips an OS by a job-level if (a skipped shard would read as absent)');
   return bad;
 }
 
 const real = fs.readFileSync(FILE, 'utf8');
+// Paco's O3 condition on the REAL release.yml: red until #2038 (the release UI gate) is on main; then this PR takes main in
+assert.deepStrictEqual(problems(real, fs.readFileSync(RELEASE, 'utf8')).filter((p) => p.startsWith('main pushes cancel but')), [], 'O3 order: main UI runs may cancel each other only when release.yml gates on the tagged commit\'s UI run (#2038)');
+assert.deepStrictEqual(releaseGateProblems(GATED_RELEASE), [], 'the gated fixture passes the release gate check');
+for (const [name, rel, want] of [
+  ['the gate job removed', GATED_RELEASE.replace(/ {2}ui-gate:\n[^]*?(?= {2}verify:)/, ''), 'release.yml has no ui-gate job running scripts/release-ui-gate.js'],
+  ['the gate runs something else', GATED_RELEASE.replace('release-ui-gate.js', 'release-notes.js'), 'release.yml has no ui-gate job running scripts/release-ui-gate.js'],
+  ['the draft no longer waits for the gate or verify', GATED_RELEASE.replace('needs: [ui-gate, verify, build]', 'needs: []'), 'release.yml jobs not behind ui-gate: draft-release'],
+  ['verify no longer needs the gate', GATED_RELEASE.replace('    needs: ui-gate\n', ''), 'release.yml jobs not behind ui-gate: verify, build'],
+] as Array<[string, string, string]>) {
+  assert.deepStrictEqual(problems(real, rel), [`main pushes cancel but ${want}`], `mutant is caught at its own assert: release.yml, ${name}`);
+}
 assert.deepStrictEqual(problems(real), [], 'ui-platforms.yml: Linux UI on PRs plus Windows when OS-sensitive (fail closed), main pushes collapse to the newest, schedule and dispatch never cancel, the summary needs every shard');
 
 // mutants: each must be reported with exactly its own label
@@ -237,6 +276,8 @@ const mutants: Array<[string, string, string[]]> = [
   ['main pushes do not cancel', swap(CANCEL, "cancel-in-progress: ${{ github.event_name == 'pull_request' }}"), ['main pushes do not cancel an older main UI run']],
   ['the summary drops the shard job from needs', swap('needs: [changes, ui]', 'needs: [changes]'), ['"UI suite complete" does not need the shard job and the decision']],
   ['the summary stops testing the shard result', swap('\n          test "$RESULT" = "success"', '\n          echo "$RESULT"'), ['"UI suite complete" does not fail unless every shard succeeded']],
+  ['the summary without always()', swap("if: ${{ always() && !github.event.pull_request.draft }}", "if: ${{ !github.event.pull_request.draft }}"), ['"UI suite complete" does not run always()']],
+  ['the summary with a token', swap('    permissions: {}\n', '    permissions:\n      contents: read\n'), ['"UI suite complete" does not have permissions: {}']],
   ['a shard lost on every OS', swap('shard: [1, 2, 3, 4]', 'shard: [1, 2, 3]'),
     ['a pull_request with os_sensitive=false does not run exactly the 4 Linux shards', 'a pull_request with os_sensitive=true does not run the 4 Linux and 4 Windows shards',
       'a pull_request with os_sensitive missing or not true/false does not run Windows (fail closed)', 'a main push (os_sensitive=false) does not run Linux and Windows, 4 shards each',

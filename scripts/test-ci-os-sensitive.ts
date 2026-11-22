@@ -27,7 +27,25 @@ const head: Record<string, string> = {
   'src/shared/via-helper.ts': "import { r } from './usesfs';\nexport const z = r;\n",
   'src/shared/node-prefix.ts': "const p = require('node:path');\nmodule.exports = p.join;\n",
   'src/shared/subpath.ts': "import { readFile } from 'fs/promises';\nexport { readFile };\n",
-  'src/shared/platform.ts': "export const win = process.platform === 'win32';\n",
+  'src/shared/platform.ts': "export const a = process.arch;\n",
+  // review of #2039: the other forms that branch on or depend on the OS
+  'src/shared/bracket.ts': "export const p = process['plat' + 'form'];\n",
+  'src/shared/destructure.ts': "const { versions: v } = process;\nexport default v;\n",
+  'src/shared/param.ts': "export const pick = (platform: string) => platform.length;\n",
+  'src/shared/win-word.ts': "export const w = (p: string) => p === 'win32';\n",
+  'src/shared/url-import.ts': "import { fileURLToPath } from 'url';\nexport { fileURLToPath };\n",
+  'src/shared/process-import.ts': "import proc from 'process';\nexport default proc;\n",
+  'src/shared/esm-star.ts': "import * as o from 'node:os';\nexport default o;\n",
+  'src/shared/var-require.ts': "const name = 'f' + 's';\nexport const m = require(name);\n",
+  'src/shared/var-import.ts': "export const load = (n: string) => import(n);\n",
+  'src/shared/env.ts': "export const home = process.env.HOME;\n",
+  'src/shared/dirname.ts': "export const here = __dirname;\n",
+  // drivers: judged by the platform lines only (they all read process.env, __dirname and path alike)
+  'scripts/shots-001-welcome.js': "const path = require('path');\nconst out = path.join(__dirname, 'x', process.env.UI_SUITE_OUT || '');\n",
+  'scripts/check-office-ops.js': "const os = require('os');\nconst tmp = os.tmpdir();\n",
+  'scripts/check-zz-plat.js': "const win = process.platform === 'win32';\n",
+  'scripts/check-zz-oscall.js': "const os = require('os');\nconst nl = os.EOL;\n",
+  'scripts/check-office-overlap.js': '// plain\n', 'scripts/check-Office-Overlap.js': '// plain\n', 'scripts/check-theme-geometry.js': '// plain\n', 'scripts/check-parallel.js': '// plain\n',
   'src/shared/json-import.ts': "const data = require('./data.json');\nexport default data;\n",
   'src/shared/outside.ts': "import { q } from '../../scripts/helper';\nexport default q;\n",
   'src/shared/fs-removed.ts': 'export const nothing = 1;\n',
@@ -57,9 +75,15 @@ const SENSITIVE: Array<[string, string]> = [
   ['docs/agent-setup/setup.sh', 'a shell script under docs'], ['src/renderer/x.ps1', 'a PowerShell script'], ['scripts/test-x.sh', 'a shell test'],
   // src/shared and src/adapters that use an OS module, or cannot be read
   ['src/shared/usesfs.ts', 'imports fs'], ['src/shared/via-helper.ts', 'imports a file that imports fs'], ['src/shared/node-prefix.ts', "requires 'node:path'"],
-  ['src/shared/subpath.ts', "imports 'fs/promises'"], ['src/shared/platform.ts', 'reads process.platform'], ['src/shared/json-import.ts', 'an import that resolves to no source file'],
+  ['src/shared/subpath.ts', "imports 'fs/promises'"], ['src/shared/platform.ts', 'reads process.arch'], ['src/shared/json-import.ts', 'an import that resolves to no source file'],
   ['src/shared/outside.ts', 'an import that leaves src/'], ['src/shared/fs-removed.ts', 'its base used fs'], ['src/shared/never-was.ts', 'unreadable on both sides'],
   ['src/shared/data.json', 'a non-source file in src/shared'],
+  ['src/shared/bracket.ts', 'process[...]'], ['src/shared/destructure.ts', 'a destructured process'], ['src/shared/param.ts', 'platform as a parameter'],
+  ['src/shared/win-word.ts', "the word 'win32'"], ['src/shared/url-import.ts', "imports 'url'"], ['src/shared/process-import.ts', "imports 'process'"],
+  ['src/shared/esm-star.ts', "import * from 'node:os'"], ['src/shared/var-require.ts', 'require of a variable'], ['src/shared/var-import.ts', 'import() of a variable'],
+  ['src/shared/env.ts', 'reads process.env'], ['src/shared/dirname.ts', 'uses __dirname'],
+  ['src/renderer/crew.js', 'Windows folder keys'], ['src/renderer/profileeditor.js', 'Windows same-path compare'], ['src/renderer/Crew.js', 'case: Crew.js'],
+  ['scripts/check-zz-plat.js', 'a driver reading process.platform'], ['scripts/check-zz-oscall.js', 'a driver reading os.EOL'], ['scripts/shots-zz-gone.js', 'a driver unreadable on both sides'],
   // case tricks (one folder on a case-insensitive checkout)
   ['Src/renderer/app.js', 'case: Src/'], ['src/Renderer/app.js', 'case: Renderer/'], ['SRC/main/x.ts', 'case: SRC/main'], ['Docs/a.md', 'case: Docs/'],
   ['src/renderer/KEYS.js', 'case: KEYS.js'], ['src/renderer/BrowserPane.js', 'case: BrowserPane.js'], ['scripts/Driver-Helpers.js', 'case: Driver-Helpers.js'], ['scripts/check-Office-Overlap.js', 'case: check-Office-Overlap.js'],
@@ -95,7 +119,7 @@ assert.deepStrictEqual(problems(cc), [], 'FR-012: os_sensitive is false only for
 // the real tree: the spec's named files, a real src/shared file that uses fs, and a renderer-only diff
 {
   const real = cc.gitIo(ROOT);
-  for (const f of ['src/main/appmenu.ts', 'src/renderer/keys.js', 'src/renderer/browserpane.js', 'src/shared/pathdirs.ts', 'src/preload/preload.ts', 'package.json']) {
+  for (const f of ['src/main/appmenu.ts', 'src/renderer/keys.js', 'src/renderer/browserpane.js', 'src/shared/pathdirs.ts', 'src/shared/harnesssetup.ts', 'src/shared/usagedoc.ts', 'src/renderer/crew.js', 'src/renderer/profileeditor.js', 'src/preload/preload.ts', 'package.json']) {
     assert.ok(fs.existsSync(path.join(ROOT, ...f.split('/'))), `the real tree has ${f}`);
     assert.strictEqual(cc.osSensitive([f], real), true, `real tree: ${f} is OS-sensitive`);
   }
@@ -118,6 +142,14 @@ const KEYS = '/^src\\/renderer\\/(keys|browserpane)\\.js$/i,';
 const FONTS = '/\\.(ttf|otf|woff2?|ttc)$/i,';
 const PLUMBING = '/^scripts\\/(driver-helpers|ui-suite|check-parallel|check-office-overlap|check-theme-geometry|check-mac-titlebar)\\.js$/i,';
 const SHELL = '/\\.(sh|ps1|cmd|bat)$/i,';
+const CREW = '/^src\\/renderer\\/(crew|profileeditor)\\.js$/i,';
+const BRACKET = '/\\bprocess\\s*(?:\\?\\.\\s*)?\\[|\\bprocess\\s*\\??\\.\\s*(?:platform|arch|getuid|getgid|umask)\\b/,';
+const DESTRUCT = '/\\}\\s*=\\s*(?:(?:globalThis|global|window)\\s*\\.\\s*)?process\\b/,';
+const WORDS = '/\\b(?:win32|darwin|platform|is_?mac|is_?win(?:dows)?)\\b/i,';
+const OSCALL = '/\\bos\\s*\\.\\s*(?:type|release|arch|EOL|version|userInfo|constants)\\b/,';
+const NONLIT = "/\\b(?:require|import)\\s*\\(\\s*[^'\"`\\s)]/,";
+const ENV = '/\\bprocess\\s*\\??\\.\\s*(?:env|cwd|execPath|kill|pid|versions)\\b/,';
+const DIRNAME = '/\\b__(?:dirname|filename)\\b/,';
 const mutants: Array<[string, Cc, RegExp]> = [
   ['all of src/ neutral', variant(NEUTRAL_RE, NEUTRAL_RE.replace('src\\/renderer\\/', 'src\\/')), /^"src\/main\/main\.ts" \(main process\) is neutral$/],
   ['any top-level file neutral', variant(NEUTRAL_RE, NEUTRAL_RE.replace('^[^/]+\\.md$', '^[^/]+$')), /^"package\.json" \(dependencies\) is neutral$/],
@@ -137,14 +169,28 @@ const mutants: Array<[string, Cc, RegExp]> = [
   ['an empty diff neutral', variant('return list.length === 0 || list.some', 'return list.some'), /^an empty diff is neutral$/],
   ['one neutral path is enough (every, not some)', variant('list.some((f) => osPath(f, io))', 'list.every((f) => osPath(f, io))'), /^"src\/main\/main\.ts" \(main process\) beside a doc is neutral$/],
   ['a non-list diff neutral', variant('const list = Array.isArray(files) ? files : [];', 'const list = Array.isArray(files) ? files : [files].filter(Boolean);'), /^a diff that is not a list is neutral$/],
-  ['src/shared not read', variant('if (OS_SHARED.test(f)) return sharedUsesOs(f, io);', 'if (OS_SHARED.test(f)) return false;'), /^"src\/shared\/usesfs\.ts" \(imports fs\) is neutral$/],
+  ['src/shared not read', variant('if (OS_SHARED.test(f)) return usesOs(f, io, true);', 'if (OS_SHARED.test(f)) return false;'), /^"src\/shared\/usesfs\.ts" \(imports fs\) is neutral$/],
   ['the base text not read', variant('const texts = [io.read(p), io.readBase(p)]', 'const texts = [io.read(p)]'), /^"src\/shared\/fs-removed\.ts" \(its base used fs\) is neutral$/],
   ['imports not followed', variant('        todo.push(hit);\n', '\n'), /^"src\/shared\/via-helper\.ts" \(imports a file that imports fs\) is neutral$/],
   ['an unresolved import allowed', variant('if (!hit) return true;', 'if (!hit) continue;'), /^"src\/shared\/json-import\.ts" \(an import that resolves to no source file\) is neutral$/],
   ['an import out of src/ allowed', variant("if (!rel.startsWith('src/')) return true;", "if (!rel.startsWith('src/')) continue;"), /^"src\/shared\/outside\.ts" \(an import that leaves src\/\) is neutral$/],
   ['node: prefix missed', variant("['\"`](?:node:)?(?:fs|", "['\"`](?:fs|"), /^"src\/shared\/node-prefix\.ts" \(requires 'node:path'\) is neutral$/],
   ['module subpaths missed', variant('(?:\\/[\\w/]*)?[\'"`]', '[\'"`]'), /^"src\/shared\/subpath\.ts" \(imports 'fs\/promises'\) is neutral$/],
-  ['process.platform missed', variant('\\bprocess\\s*\\.\\s*(?:platform|', '\\bprocess\\s*\\.\\s*(?:'), /^"src\/shared\/platform\.ts" \(reads process\.platform\) is neutral$/],
+  ['process fields missed', variant(BRACKET, BRACKET.replace('platform|arch|', 'platform|')), /^"src\/shared\/platform\.ts" \(reads process\.arch\) is neutral$/],
+  ['process[...] missed', variant(BRACKET, BRACKET.replace('\\bprocess\\s*(?:\\?\\.\\s*)?\\[|', '')), /^"src\/shared\/bracket\.ts" \(process\[\.\.\.\]\) is neutral$/],
+  ['destructuring missed', variant(DESTRUCT, '/$^/,'), /^"src\/shared\/destructure\.ts" \(a destructured process\) is neutral$/],
+  ['platform words missed', variant(WORDS, '/$^/,'), /^"src\/shared\/param\.ts" \(platform as a parameter\) is neutral$/],
+  ['win32 dropped from the words', variant(WORDS, WORDS.replace('win32|', '')), /^"src\/shared\/win-word\.ts" \(the word 'win32'\) is neutral$/],
+  ['os calls missed', variant(OSCALL, '/$^/,'), /^"scripts\/check-zz-oscall\.js" \(a driver reading os\.EOL\) is neutral$/],
+  ['url module missed', variant('|electron|url|module|process)', '|electron|module|process)'), /^"src\/shared\/url-import\.ts" \(imports 'url'\) is neutral$/],
+  ['process module missed', variant('|electron|url|module|process)', '|electron|url|module)'), /^"src\/shared\/process-import\.ts" \(imports 'process'\) is neutral$/],
+  ['non-literal require missed', variant(NONLIT, '/$^/,'), /^"src\/shared\/var-require\.ts" \(require of a variable\) is neutral$/],
+  ['process.env missed', variant(ENV, '/$^/,'), /^"src\/shared\/env\.ts" \(reads process\.env\) is neutral$/],
+  ['__dirname missed', variant(DIRNAME, '/$^/,'), /^"src\/shared\/dirname\.ts" \(uses __dirname\) is neutral$/],
+  ['crew.js and profileeditor.js dropped', variant(CREW, '/$^/i,'), /^"src\/renderer\/crew\.js" \(Windows folder keys\) is neutral$/],
+  ['crew line case-sensitive', variant(CREW, CREW.replace(/\/i,$/, '/,')), /^"src\/renderer\/Crew\.js" \(case: Crew\.js\) is neutral$/],
+  ['drivers not read', variant('if (OS_DRIVER.test(f)) return usesOs(f, io, false, OS_PLATFORM);', ''), /^"scripts\/check-zz-plat\.js" \(a driver reading process\.platform\) is neutral$/],
+  ['drivers judged by every OS_USE line (process.env, __dirname, path)', variant('return usesOs(f, io, false, OS_PLATFORM);', 'return usesOs(f, io, false);'), /^scripts\/shots-001-welcome\.js \(a driver\) is sensitive$/],
   ['unreadable on both sides allowed', variant('if (!texts.length) return true;', 'if (!texts.length) continue;'), /^"src\/shared\/never-was\.ts" \(unreadable on both sides\) is neutral$/],
   ['nothing neutral (Windows on every PR)', variant(NEUTRAL_RE, 'const OS_NEUTRAL = /$^/;'), /^src\/renderer\/app\.js \(a renderer module\) is sensitive$/],
 ];
@@ -197,14 +243,29 @@ if (haveBash) {
   const old = "require('fs').appendFileSync(process.env.GITHUB_OUTPUT, 'code=true\\nthemes=false\\nui=true\\nmacos=true\\n');\n";
   const says = (v: string) => `require('fs').appendFileSync(process.env.GITHUB_OUTPUT, 'code=true\\nthemes=false\\nui=true\\nmacos=true\\nos_sensitive=${v}\\n');\n`;
   const docs = { 'docs/a.md': 'x\n' };
-  assert.strictEqual(lastOs(bash(repoWith(old, docs))), 'os_sensitive=true', 'wrapper: a base copy that writes no os_sensitive line gets true');
-  for (const v of ['FALSE', 'False', 'false ', '', 'no', '0']) assert.strictEqual(lastOs(bash(repoWith(says(v), docs))), 'os_sensitive=true', `wrapper: os_sensitive=${JSON.stringify(v)} is not exact: true`);
-  assert.strictEqual(bash(repoWith(says('false'), docs)), 'code=true\nthemes=false\nui=true\nmacos=true\nos_sensitive=false\n', 'wrapper: an exact false is kept as it is (nothing appended)');
-  assert.strictEqual(bash(repoWith(says('true'), docs)), 'code=true\nthemes=false\nui=true\nmacos=true\nos_sensitive=true\n', 'wrapper: an exact true is kept as it is');
-  // mutant: without the guard, a base copy with no os_sensitive line leaves the output missing
-  const guard = /\n# spec 117 FR-012 \(T048\)[^]*?\nfi\n$/;
-  assert.ok(guard.test(wrapper), 'mutant anchor: the os_sensitive guard ends the wrapper');
-  assert.strictEqual(lastOs(bash(repoWith(old, docs, wrapper.replace(guard, '\n')))), null, 'mutant: without the guard the output has no os_sensitive (so the guard is what writes true)');
+  // review of #2039: every name is written EXACTLY ONCE; a name left out, repeated or inexact is written once as true
+  const once = (text: string): string[] => ['code', 'themes', 'ui', 'macos', 'os_sensitive'].filter((k) => text.split('\n').filter((l) => l.startsWith(`${k}=`)).length !== 1);
+  const outOld = bash(repoWith(old, docs));
+  assert.strictEqual(outOld, 'code=true\nthemes=false\nui=true\nmacos=true\nos_sensitive=true\n', 'wrapper: a base copy that writes no os_sensitive line gets true, once');
+  for (const v of ['FALSE', 'False', 'false ', '', 'no', '0']) {
+    const o = bash(repoWith(says(v), docs));
+    assert.ok(lastOs(o) === 'os_sensitive=true' && once(o).length === 0, `wrapper: os_sensitive=${JSON.stringify(v)} is not exact: true, written once (got ${JSON.stringify(o)})`);
+  }
+  const dup = "require('fs').appendFileSync(process.env.GITHUB_OUTPUT, 'code=false\\nthemes=false\\nui=false\\nmacos=false\\nos_sensitive=false\\nos_sensitive=false\\ncode=false\\n');\n";
+  assert.strictEqual(bash(repoWith(dup, docs)), 'code=true\nthemes=false\nui=false\nmacos=false\nos_sensitive=true\n', 'wrapper: a repeated name (code, os_sensitive) is written once as true; the others pass');
+  const silent = 'process.exit(0);\n';
+  assert.strictEqual(bash(repoWith(silent, docs)), 'code=true\nthemes=true\nui=true\nmacos=true\nos_sensitive=true\n', 'wrapper: a base copy that writes nothing: every name once, true');
+  assert.strictEqual(bash(repoWith(says('false'), docs)), 'code=true\nthemes=false\nui=true\nmacos=true\nos_sensitive=false\n', 'wrapper: an exact false is kept');
+  assert.strictEqual(bash(repoWith(says('true'), docs)), 'code=true\nthemes=false\nui=true\nmacos=true\nos_sensitive=true\n', 'wrapper: an exact true is kept');
+  // mutants: the raw output passed through unchanged (no once-only rule) leaves a missing name missing and a repeat repeated
+  const LOOP = /\nfor k in code themes ui macos os_sensitive; do\n[^]*?\ndone\n/;
+  assert.ok(LOOP.test(wrapper), 'mutant anchor: the once-only loop');
+  const passThrough = wrapper.replace(LOOP, '\ncat "$raw" >> "$out"\n');
+  assert.strictEqual(lastOs(bash(repoWith(old, docs, passThrough))), null, 'mutant: without the loop a base copy with no os_sensitive leaves it missing');
+  assert.deepStrictEqual(once(bash(repoWith(dup, docs, passThrough))), ['code', 'os_sensitive'], 'mutant: without the loop a repeated name is written twice');
+  const noExact = wrapper.replace('{ [ "$v" = true ] || [ "$v" = false ]; }', 'true');
+  assert.notStrictEqual(noExact, wrapper, 'mutant anchor: the exact-value test');
+  assert.strictEqual(lastOs(bash(repoWith(says('FALSE'), docs, noExact))), 'os_sensitive=FALSE', 'mutant: without the exact-value test FALSE passes (GitHub would read it as false)');
   // every other event: true from the wrapper itself
   for (const ev of ['push', 'merge_group', 'schedule', 'workflow_dispatch', '']) assert.strictEqual(lastOs(bash(repoWith(realDecision, docs), ev)), 'os_sensitive=true', `wrapper: ${ev || 'no event'} gives os_sensitive=true`);
   fs.rmSync(tmp, { recursive: true, force: true });

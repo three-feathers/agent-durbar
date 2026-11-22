@@ -21,7 +21,8 @@
  *                 version-only bump (FR-191)
  *   os_sensitive=true  the diff can behave differently on Windows: ui-platforms.yml runs its Windows UI shards on the pull request
  *                 (spec 117 FR-012, O2); false only when the diff is not empty and every path is on the OS-neutral list (fails
- *                 closed: osSensitive below). ci-changes.sh writes true when the decision wrote no exact true/false.
+ *                 closed: osSensitive below). ci-changes.sh writes each name once, true when the decision
+ *                 wrote it not exactly once or not exactly true/false.
  *
  * When in doubt a path counts (fail open toward running): an unknown top-level file or folder, a file under scripts/fixtures or
  * scripts/fakes, a non-source file in scripts/, a scripts/ path gone at head (deleted or renamed away), a scripts/ name the literal
@@ -241,27 +242,53 @@ function uiClosure(io) {
 // OS-neutral only when it is a plain path on the OS_NEUTRAL list below and on no OS_SENSITIVE line; every other path (the main
 // process, preload, build, packaging, dependencies, workflows and CI scripts, the driver plumbing, shell scripts, fonts, any unknown
 // or new path, an odd path) and an empty diff are os_sensitive. A src/shared or src/adapters file is neutral only when neither its base
-// nor its head text, nor any file it imports by a relative path (followed, base and head), uses an OS module (fs, path, os,
-// child_process, ...) or a process field that differs per OS; a file unreadable on both sides, or an import that resolves to nothing
-// in src/, counts. The neutral prefixes are lower case on purpose (`Src/renderer/x.js` is not on the list, and a case-insensitive
+// nor its head text, nor any file it imports by a relative path (followed, base and head), matches an OS_USE line (an OS module,
+// a non-literal require or import, a process field or bracket, a destructured process, a platform word, an os call, __dirname); a file
+// unreadable on both sides, or an import that resolves to nothing in src/, counts. A driver (scripts/check-* or scripts/shots-*) is
+// neutral only when neither its base nor its head text matches an OS_PLATFORM line (review of #2039: 24 drivers branch on the platform). The neutral prefixes are lower case on purpose (`Src/renderer/x.js` is not on the list, and a case-insensitive
 // checkout could make it another folder); the sensitive lines match in any case (`src/renderer/KEYS.js` is keys.js on Windows and
 // macOS). scripts/test-ci-os-sensitive.ts guards each line with a fixture and a mutant that dies at its own assert.
 const OS_NEUTRAL = /^(docs\/|specs\/|changelog\.d\/|src\/renderer\/|scripts\/fixtures\/|scripts\/(test|shots|check)-[\w.-]+\.(ts|js)$)|^[^/]+\.md$/;
 const OS_SENSITIVE = [
   /^src\/renderer\/(keys|browserpane)\.js$/i, // the platform's shortcut keys; the browser pane (a native view)
+  /^src\/renderer\/(crew|profileeditor)\.js$/i, // Windows path rules (folder keys, same-path compare)
   /\.(ttf|otf|woff2?|ttc)$/i, // fonts lay out differently per OS
   /^scripts\/(driver-helpers|ui-suite|check-parallel|check-office-overlap|check-theme-geometry|check-mac-titlebar)\.js$/i, // the UI run's plumbing and its font-sensitive layout checks
   /\.(sh|ps1|cmd|bat)$/i, // shell scripts
 ];
 const OS_SHARED = /^src\/(shared|adapters)\/[\w./-]+\.(ts|js)$/;
-// an OS module by import, require or dynamic import (with or without `node:`, any subpath), or a process field that differs per OS
-const OS_USE = /(?:\bfrom\s*|\brequire\s*\(\s*|\bimport\s*\(\s*|\bimport\s+)['"`](?:node:)?(?:fs|path|os|child_process|net|tls|dgram|worker_threads|cluster|readline|electron)(?:\/[\w/]*)?['"`]|\bprocess\s*\.\s*(?:platform|env|arch|cwd|execPath|kill|pid)\b/;
+const OS_DRIVER = /^scripts\/(check|shots)-[\w.-]+\.(ts|js)$/;
+// text that branches on the OS (review of #2039): the drivers are judged by these lines only, since nearly all of them read
+// process.env, __dirname and the path module the same way on every OS
+const OS_PLATFORM = [
+  // a process field that differs per OS, or any bracket access on process
+  /\bprocess\s*(?:\?\.\s*)?\[|\bprocess\s*\??\.\s*(?:platform|arch|getuid|getgid|umask)\b/,
+  // a destructured process: const { platform } = process
+  /\}\s*=\s*(?:(?:globalThis|global|window)\s*\.\s*)?process\b/,
+  // a platform word: win32, darwin, platform (a parameter too), isMac, IS_MAC, isWindows ...
+  /\b(?:win32|darwin|platform|is_?mac|is_?win(?:dows)?)\b/i,
+  // an os call that differs per OS
+  /\bos\s*\.\s*(?:type|release|arch|EOL|version|userInfo|constants)\b/,
+];
+// text that can behave differently per OS: src/shared and src/adapters files are judged by all of these
+const OS_USE = [
+  ...OS_PLATFORM,
+  // an OS module by import, require or dynamic import, with or without `node:`, any subpath
+  /(?:\bfrom\s*|\brequire\s*\(\s*|\bimport\s*\(\s*|\bimport\s+)['"`](?:node:)?(?:fs|path|os|child_process|net|tls|dgram|worker_threads|cluster|readline|electron|url|module|process)(?:\/[\w/]*)?['"`]/,
+  // a require or dynamic import whose argument is not a string literal (a module name in a variable)
+  /\b(?:require|import)\s*\(\s*[^'"`\s)]/,
+  // other process fields whose values differ per machine and OS
+  /\bprocess\s*\??\.\s*(?:env|cwd|execPath|kill|pid|versions)\b/,
+  // a path relative to the file itself
+  /\b__(?:dirname|filename)\b/,
+];
+const matchesAny = (list, t) => list.some((re) => re.test(t));
 // a relative import or require ('./x', '../y/z')
 const REL_IMPORT = /(?:\bfrom\s*|\brequire\s*\(\s*|\bimport\s*\(\s*|\bimport\s+)['"`](\.{1,2}\/[^'"`]*)['"`]/g;
 /** A plain git path: no backslash, no `.` or `..` or empty segment, no leading or trailing blank, no control character, not absolute. */
 const osPlainPath = (f) => typeof f === 'string' && f !== '' && f === f.trim() && !/[\\\u0000-\u001f\u007f]/.test(f) && f.split('/').every((seg) => seg !== '' && seg !== '.' && seg !== '..');
-/** Does a src/shared or src/adapters file (base or head, and what it imports by a relative path, followed) use an OS module? */
-function sharedUsesOs(f, io) {
+/** Does a file (base or head and, with `follow`, what it imports by a relative path, followed) match an OS_USE line? */
+function usesOs(f, io, follow, lines = OS_USE) {
   const seen = new Set(), todo = [f];
   const exists = (p) => io.read(p) != null || io.readBase(p) != null;
   while (todo.length) {
@@ -271,8 +298,8 @@ function sharedUsesOs(f, io) {
     const texts = [io.read(p), io.readBase(p)].filter((t) => t != null);
     if (!texts.length) return true; // unreadable on both sides
     for (const t of texts) {
-      if (OS_USE.test(t)) return true;
-      for (const m of t.matchAll(REL_IMPORT)) {
+      if (matchesAny(lines, t)) return true;
+      if (follow) for (const m of t.matchAll(REL_IMPORT)) {
         const rel = path.posix.normalize(path.posix.join(path.posix.dirname(p), m[1]));
         if (!rel.startsWith('src/')) return true; // leaves src/: cannot say
         const stem = rel.replace(/\.js$/, '');
@@ -288,7 +315,8 @@ function sharedUsesOs(f, io) {
 function osPath(f, io) {
   if (!osPlainPath(f)) return true;
   if (OS_SENSITIVE.some((re) => re.test(f))) return true;
-  if (OS_SHARED.test(f)) return sharedUsesOs(f, io);
+  if (OS_SHARED.test(f)) return usesOs(f, io, true);
+  if (OS_DRIVER.test(f)) return usesOs(f, io, false, OS_PLATFORM);
   return !OS_NEUTRAL.test(f);
 }
 /** The decision for a pull request: true unless the diff is not empty and every path is OS-neutral. */

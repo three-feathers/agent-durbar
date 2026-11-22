@@ -28,14 +28,19 @@ if ! git show 'HEAD^1:.github/scripts/ci-changes.js' > "$tmp/.github/scripts/ci-
   all
   exit 0
 fi
-node "$tmp/.github/scripts/ci-changes.js" --root .
-# spec 117 FR-012 (T048): fail closed. ui-platforms.yml skips the Windows UI shards of a pull request only on os_sensitive=false; a
-# base copy older than that output (main before this landed), one that writes nothing, or one whose last os_sensitive line is not
-# exactly `true` or `false` (`FALSE`, `false ` or empty: GitHub's == ignores case) gets os_sensitive=true appended (the last line wins).
-if [ "$out" != /dev/stdout ]; then
-  last="$(grep '^os_sensitive=' "$out" | tail -n 1 || true)"
-  if [ "$last" != "os_sensitive=true" ] && [ "$last" != "os_sensitive=false" ]; then
-    echo "The decision wrote no exact os_sensitive=true|false: the Windows UI shards run."
-    echo "os_sensitive=true" >> "$out"
+# spec 117 FR-012 (T048), review of #2039: fail closed and write each output name EXACTLY ONCE (GitHub does not document which line
+# wins when a name repeats). The base copy writes into a file in the temp folder; each name it wrote once with exactly `true` or
+# `false` is passed on, and any name it left out, repeated or wrote with another value (`FALSE`, `false `, empty; a base copy older
+# than os_sensitive, which is main until this lands) is written as true.
+raw="$tmp/decision-output"
+GITHUB_OUTPUT="$raw" node "$tmp/.github/scripts/ci-changes.js" --root .
+for k in code themes ui macos os_sensitive; do
+  n=0; v=""
+  if [ -f "$raw" ]; then n="$(grep -c "^$k=" "$raw" || true)"; v="$(grep "^$k=" "$raw" | head -n 1 | cut -d= -f2- || true)"; fi
+  if [ "$n" = 1 ] && { [ "$v" = true ] || [ "$v" = false ]; }; then
+    echo "$k=$v" >> "$out"
+  else
+    echo "The decision wrote no single exact $k=true|false: $k=true."
+    echo "$k=true" >> "$out"
   fi
-fi
+done
