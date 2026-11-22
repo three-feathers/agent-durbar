@@ -2165,5 +2165,5 @@ Issue #1930: on a local Linux xvfb run of `main` the hover-parking step of `chec
 
 **Look.** Omar now stands at the Bank in the Prehistoric set's `coffee` pose (a cup raised); the cave's set has no counter pose. `read:` owner art check owed (`read: owner-check`: is the cup at the Bank acceptable until a counter pose is drawn?). No picture of the set changed.
 
-**Not verified.** Windows and macOS; a real GPU; the Photo office at sizes other than the two.
+**Not verified.** Windows and macOS; a real GPU; the Photo office at sizes other than the two. `[KNOWN GAP]` The docs pictures of the office are not retaken: issue #2019 (Retake the docs pictures of the office after the text-fit changes).
 

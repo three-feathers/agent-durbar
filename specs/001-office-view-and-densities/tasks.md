@@ -291,5 +291,5 @@ Numbers taken: T167..T183. Each phase one small PR, after #950 and #959 land (#9
 - [x] T384 (FR-270..FR-272): docs: `changelog.d/001-room-heads.md`, `docs/features.md` line, feature-inventory row, `docs/agent-notes.md` line, pictures `docs/screenshots/1905-*`. Test: `npm run test:docsscripts`, `changelog:check` `[IMPLEMENTED]` 2026-11-19: changelog fragment, features.md, feature inventory; pictures `docs/screenshots/1905-*` read at both sizes
 ## 2026-11-22: a cut room name hides its path; the Postbox keeps its name (issues #2011, #2014)
 
-- [x] T441 [US2] Refs #2011, #2014 (spec delta 2026-11-22): `nameCut` (app.js) asks a split name's start and tail too (`textCut`); `places.js` `POST_NAMED` 180 and `POST_LONG` 240 (`lobbyFit().post.long` drives the folder in the Postbox lines). Test: `scripts/check-097-textfit.js` (in `ui-suite.js`), `test:places`; mutants `nameCut` box only, `POST_NAMED` 240, each killed
+- [x] T441 [US2] Refs #2011, #2014 (spec delta 2026-11-22): `nameCut` (app.js) asks a split name's start and tail too (`textCut`); `places.js` `POST_NAMED` 180 and `POST_LONG` 240 (`lobbyFit().post.long` drives the folder in the Postbox lines). Test: `scripts/check-097-textfit.js` (in `ui-suite.js`), `test:places`; mutants `nameCut` box only, `POST_NAMED` 240, each killed; `[KNOWN GAP]` docs pictures not retaken: #2019
 

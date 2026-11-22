@@ -440,5 +440,5 @@ Order: T327 (the owner's picture gate) before any code PR; T328, T329 (art, #164
 - [x] T398 [US2] Refs #1641 (spec delta 2026-11-20): the six Photo office kids' `owner-likeness-look: pending (Vikram)` in `worlds/photo/ASSETS.md` replaced by `likeness-check` with the owner's answer of 2026-11-20 10:15 UTC (option 1); no picture changed. Test: `test:realoffice-assets` (and, once spec 102 T396 lands, its likeness guard)
 ## 2026-11-22: a lobby chip keeps its whole name and its place (issues #2012, #2013)
 
-- [x] T440 [US2] Refs #2012, #2013 (spec delta 2026-11-22): `stagger()` writes the whole name back in its last resort; `POSE_FALLBACK` `counter` -> `coffee`, `type` -> `letter`; a figure-less visitor's chip keeps off the band's edge (`roLobby`). Test: `test:realoffice-layout`, `scripts/check-097-textfit.js` (`ui-suite.js`); mutants killed (no write-back, no fallback with the old `chipY`)
+- [x] T440 [US2] Refs #2012, #2013 (spec delta 2026-11-22): `stagger()` writes the whole name back in its last resort; `POSE_FALLBACK` `counter` -> `coffee`, `type` -> `letter`; a figure-less visitor's chip keeps off the band's edge (`roLobby`). Test: `test:realoffice-layout`, `scripts/check-097-textfit.js` (`ui-suite.js`); mutants killed (no write-back, no fallback with the old `chipY`); `[KNOWN GAP]` docs pictures not retaken: #2019
 
