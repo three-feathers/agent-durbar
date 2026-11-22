@@ -125,4 +125,4 @@
 
 ## 2026-11-22: PR preflight for authors (FR-384)
 
-- [x] T455 (FR-384) `scripts/pr-preflight.js` (and `scripts/pr-preflight.sh`), `npm run pr:preflight -- <N>`: twelve read-only checks of a PR before review; `docs/development.md`, the brief lines in `docs/agent-setup/`; changelog fragment. Test `test:prpreflight` (`scripts/test-pr-preflight.js`): a throwaway repository and fixture `gh` answers, a failing fixture per check, 35 mutants each killed at its own assert [FR-384]
+- [x] T455 (FR-384) `scripts/pr-preflight.js` (and `scripts/pr-preflight.sh`), `npm run pr:preflight -- <N>`: twelve read-only checks of a PR before review; `docs/development.md`, the brief lines in `docs/agent-setup/`; changelog fragment. Test `test:prpreflight` (`scripts/test-pr-preflight.js`): a throwaway repository and fixture `gh` answers, a failing fixture per check, 36 mutants each killed at its own assert (one: the default list is the repository loader) [FR-384]

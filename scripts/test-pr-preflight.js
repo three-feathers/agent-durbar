@@ -112,6 +112,9 @@ const has = (list, re) => list.some((t) => re.test(t));
   assert.ok(o.code === 1 && has(o.fails, /outside PR: author stranger/), 'PP-outside an outside author stops: ' + o.text);
   assert.strictEqual(o.calls.length, 1, 'PP-outside nothing beyond the author is read: ' + o.calls.join(' | '));
   assert.ok(!/Generated/.test(o.text), 'PP-outside the body is never printed');
+  // without an injected list, the repository's own list (scripts/trusted-authors.js) decides
+  const real = (author) => pp.preflight('7', { gh: fakeGh({ head: good, author }).gh, root: tmp, fetch: false }).lines;
+  assert.ok(has(real('stranger').map((l) => l.text), /outside PR/) && !has(real('vikramgorla').map((l) => l.text), /outside PR/), 'PP-outside the default trusted list is the repository loader');
   const k = run({ head: good, fork: true });
   assert.ok(k.code === 1 && has(k.fails, /from a fork/), 'PP-outside a fork PR stops: ' + k.text);
 }

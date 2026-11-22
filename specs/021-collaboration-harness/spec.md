@@ -800,7 +800,7 @@ PR #1232 (spec 095) was red with `FR-026, T026 and T027 are also in PR #1240`, b
 *Why:* a delivery-speed review of 2026-11-22 found 47 % of all reviews were rework (101 change requests and 38 re-approvals after a push). Many findings were checks a reviewer runs by hand (labels, signed commits, AI lines, a change hidden in a merge commit, a clashing spec number, a removed assert, a changed `npm` script) that the author did not have before asking. The coordinator ran them as a private script; this puts them in the repository.
 
 - **FR-384** `[IMPLEMENTED]` `test:` `npm run pr:preflight -- <N>` (`scripts/pr-preflight.js`, Node with argument arrays and no shell, so it runs on Windows, macOS and Linux; `scripts/pr-preflight.sh <N>` forwards to it) prints one `ok`, `NOTE` or `FAIL` line per check and exits 1 on any FAIL. It is read-only: `gh pr view`, `pulls/N/commits`, `gh pr checks` and git; its only local effect is the fetch (remote-tracking refs, and the PR head's objects without a ref). Authors run it before asking for review (`docs/development.md`, the agent brief template in `docs/agent-setup/`). The checks:
-  1. the PR is readable; an outside PR (author not in `scripts/trusted-authors.txt`, or a fork) stops after the author check and prints only the author and the link (FR-060);
+  1. the PR is readable; an outside PR (author not on the trusted list, read through `scripts/trusted-authors.js`, or a fork) stops after the author check and prints only the author and the link (FR-060);
   2. mergeable (`CONFLICTING` is a FAIL, `UNKNOWN` a NOTE);
   3. labels: exactly one type, at least one `area:*` and one `spec:*` (FR-045);
   4. and 5. no AI attribution line in the body or any commit message, every commit Verified (FR-061);

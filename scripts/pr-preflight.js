@@ -9,7 +9,7 @@
  * (refs/remotes/origin/*) are updated and the PR head's objects are downloaded WITHOUT a ref (--no-write-fetch-head).
  *
  * Each line is `ok ...`, `NOTE ...` (read it, not a blocker) or `FAIL ...`. Exit 0 no FAIL, 1 a FAIL, 2 wrong usage.
- *   1  PR readable; an outside PR (author not in scripts/trusted-authors.txt, or from a fork) stops here: author and link only (AGENTS.md)
+ *   1  PR readable; an outside PR (author not on the trusted list, scripts/trusted-authors.js, or from a fork) stops here: author and link only (AGENTS.md)
  *   2  mergeable (CONFLICTING = FAIL, UNKNOWN = NOTE)
  *   3  labels: exactly one type, at least one area:*, at least one spec:* (FR-045)
  *   4  no AI line in the PR body, 5 no AI trailer in any commit, every commit Verified (FR-061)
@@ -34,6 +34,7 @@ const path = require('path');
 const { execFileSync, spawnSync } = require('child_process');
 const { printable, emit } = require('./safe-print.js');
 const sn = require('./spec-numbers.js');
+const { trustedAuthors } = require('./trusted-authors.js'); // the one loader of the trusted list (FR-092)
 
 const TIMEOUT_MS = 120000;
 const MAX_BUFFER = 64 * 1024 * 1024;
@@ -62,10 +63,6 @@ function realGh(root) {
     const r = spawnSync('gh', args, { cwd: root, encoding: 'utf8', timeout: TIMEOUT_MS, maxBuffer: MAX_BUFFER, windowsHide: true });
     return { status: r.error ? -1 : r.status, stdout: r.stdout || '' };
   };
-}
-
-function readTrusted(file = path.join(__dirname, 'trusted-authors.txt')) {
-  return new Set(fs.readFileSync(file, 'utf8').split(/\r?\n/).map((l) => l.replace(/#.*$/, '').trim()).filter(Boolean));
 }
 
 const kindOf = (file) => (/\/tasks\.md$/.test(file) ? 'tasks' : 'spec');
@@ -224,7 +221,7 @@ function parseJsonLines(text) {
 function preflight(n, deps = {}) {
   const root = deps.root || path.join(__dirname, '..');
   const gh = deps.gh || realGh(root);
-  const trusted = deps.trusted || readTrusted();
+  const trusted = deps.trusted || trustedAuthors(path.join(__dirname, '..'));
   const lines = [];
   const add = (level, text) => lines.push({ level, text });
   const done = () => ({ lines, code: lines.some((l) => l.level === 'FAIL') ? 1 : 0 });
