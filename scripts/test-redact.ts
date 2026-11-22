@@ -209,6 +209,11 @@ for (const keep of ['ghp_short', 'see ghs_count', 'wei' + 'ghs_' + 'TotalWeightK
     const low = 'qwr' + 'tzp' + 'sdf' + 'ghj';
     assert.ok(!redact('API_' + 'KEY=' + v1 + b + low, {}).includes(low), `#1320 continuation: a continued second part with no digit is hidden (${bk})`);
   }
+  // a value over three lines: the middle line taken whole carries the join to the third
+  for (const b of ['\n', '\r\n']) {
+    const v3 = 'Hc6' + 'Jd7' + 'Ke8';
+    assert.ok(!redact('API_' + 'KEY=' + v1 + b + v2 + b + v3, {}).includes(v3), `#1320 continuation: the third line of a value is hidden (${JSON.stringify(b)})`);
+  }
   // the reading without the step reads as before (the reference of the union)
   assert.ok(withoutContinuation(() => redact('API_' + 'KEY=' + v1 + '\n' + v2, {})).includes(v2), '#1320 continuation: withoutContinuation reads as before the step');
   // the note and outgoing masks keep the union with the reading without the step: a text that reading hides whole stays hidden whole
@@ -217,6 +222,18 @@ for (const keep of ['ghp_short', 'see ghs_count', 'wei' + 'ghs_' + 'TotalWeightK
     for (const [sn, mask] of [['maskOutgoing', (x: string) => maskOutgoing(x).text], ['maskNoteText', (x: string) => maskNoteText(x).text]] as Array<[string, (x: string) => string]>) {
       assert.ok(!mask(t).includes('Rj' + 'S73'), `#1320 continuation: ${sn} keeps the union with the reading without the step: ${JSON.stringify(mask(t))}`);
     }
+  }
+  // the command mask keeps it too: a value after a blank line that the reading without the step hides stays hidden
+  {
+    const t = '--to' + 'ken=Kd4' + 'Xw8Mn2Pq7\n  Lp5Rv3' + 'Bt9Hw6\nuser@example.com\nto' + 'ken: gh' + 'p_Qa1Ws2Ed3\\\r\nRf4Tg5Yh6Uj7Ik8Ol9Pz0Xc1Vb2N"\nAPI_' + 'KEY=Zx9Cv8Bn7Mm6\n\nWq5' + 'Er4Ty\nPATH=/usr/bin\nBearer xo' + 'xb-123456789012-R\nTy7Ui8Op9As"';
+    assert.ok(!maskSecretCommand(t, {}).includes('Wq5' + 'Er4Ty'), `#1320 continuation: maskSecretCommand keeps the union with the reading without the step: ${JSON.stringify(maskSecretCommand(t, {}))}`);
+  }
+  // and the desk (`contBoth`): a word the desk's reading without the step hides (it reads this text without its Markdown) stays hidden
+  {
+    const t = 'to' + 'ken: Gk7' + 'Lm2Np9Qr4St6Uv\nWx3' + 'Yz8Ab5Cd1Ef\n--pass' + 'word xo' + 'xb-123456789012-Hj4Kl7Mn2Pq9Rs5Tv\n  Bw8' + 'Cx3Dy6Ez1Fa4Gb"';
+    const red = (x: string): string => redact(x, {});
+    const out = STc.maskRaw(t, red);
+    assert.deepStrictEqual(wordsShown(t, out, withoutContinuation(() => STc.maskRaw(t, red))), [], `#1320 continuation: desk maskRaw keeps the union with its reading without the step: ${JSON.stringify(out)}`);
   }
   // near misses, byte for byte: line breaks with no secret, short or ordinary next lines after a hidden value, two whole tokens on two lines (nothing new to hide)
   const tok1 = 'gh' + 'p_' + 'Zq3Wd8Kp2Lm5Rt7Yx4Bn6Hj9Fc1Vg0Ts3Qa8';
@@ -246,6 +263,9 @@ for (const keep of ['ghp_short', 'see ghs_count', 'wei' + 'ghs_' + 'TotalWeightK
     _contPassesForTest();
     maskSplitTokens('no break here, ' + tok1);
     assert.strictEqual(_contPassesForTest(), 0, '#1320 continuation work: a text without a line break is not read again');
+    // a plain break after text the rules do not hide joins nothing, so the text is not read again (the guard that spares the pass)
+    maskSplitTokens('x build\nRelease2024Notes y\r\nAb3Cd4Ef5Gh6 z');
+    assert.strictEqual(_contPassesForTest(), 0, '#1320 continuation work: plain breaks after text that is not hidden are not read again');
   }
   // the growth bound: a mask per short continued line would grow the output; such a stretch is masked as one
   for (const [k, x] of Object.entries({ lf: 'gh' + 'p_' + '\\\na'.repeat(4000), crlf: 'gh' + 'p_' + '\\\r\na'.repeat(3000), caret: 'gh' + 'p_' + '^\nab'.repeat(3000) })) {

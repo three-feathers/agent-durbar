@@ -1938,16 +1938,6 @@ const looseArgs = (a: string[]): string[] => (Array.isArray(a) ? a.map((x) => (t
 function maskArgsImpl(args: readonly string[], envIn: Env | undefined, cap: boolean): string[] {
   const a0 = (cap && Array.isArray(args) ? args.map(capped) : args) as string[];
   const env = snapshot(envIn);
-  // spec 012 FR-190: when the continuation reading hid anything inside, per argument the span-level union with the reading without it (as the shell readings below)
-  const c0n = contReads;
-  const h1 = argsShellAware(a0, env);
-  if (contOff || contReads === c0n) return h1;
-  const r1 = withoutContinuation(() => argsShellAware(a0, env));
-  return h1.length === r1.length && h1.length === a0.length
-    ? h1.map((x, i) => (typeof a0[i] === 'string' && x !== r1[i] ? unionMasks(a0[i], x, r1[i]) : x))
-    : keepShownWithin(h1.join('\u0000'), r1.join('\u0000')).split('\u0000');
-}
-function argsShellAware(a0: string[], env: Env): string[] {
   const n0 = shellReads;
   const head = argsSplitAware(a0, env);
   // review of PR 1824 (F2): when no `redact` call inside read a text differently with the shell readings, the reading without them is this one (not read again)
