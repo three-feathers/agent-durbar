@@ -14,10 +14,17 @@ import * as fs from 'fs';
 import * as path from 'path';
 
 const ROOT = path.join(__dirname, '..', '..');
-const read = (p: string) => fs.readFileSync(path.join(ROOT, p), 'utf8');
+/** Line endings normalised: a Windows checkout has CRLF (the files here are read as text and matched per line). */
+const norm = (t: string) => t.replace(/\r\n?/g, '\n');
+const read = (p: string) => norm(fs.readFileSync(path.join(ROOT, p), 'utf8'));
+
+// the workflow is parsed with js-yaml, as scripts/test-electron-cache.ts does (a transitive dependency; no devDependency is added)
+let yaml: { load: (s: string) => unknown } | undefined; try { yaml = require('js-yaml'); } catch { yaml = undefined; }
+assert.ok(yaml, 'js-yaml is missing: ci.yml cannot be parsed, so the guard cannot check it. Fix the install instead of skipping.');
 
 /** Names of the checks the spec records as required today: rows of the O1 table whose "Required today" cell starts with `yes`. */
-export function requiredFromSpec(spec: string): string[] {
+export function requiredFromSpec(raw: string): string[] {
+  const spec = norm(raw);
   const at = spec.indexOf('**O1, one line per check**');
   if (at < 0) return [];
   const names: string[] = [];
@@ -29,36 +36,46 @@ export function requiredFromSpec(spec: string): string[] {
   return names;
 }
 
-interface Job { id: string; name: string; text: string; steps: string[]; oses: string[] }
-/** The jobs of a workflow file: id, name, the text, the step blocks and the `os:` values of its matrix. */
+interface Step { [k: string]: unknown }
+interface Job { id: string; name: string; raw: Record<string, unknown>; steps: Step[]; oses: string[]; matrixError?: string }
+/** YAML shapes the guard does not read (it fails closed on them: a person must extend the guard, a workflow may not slip past it). */
+export function unsupportedShapes(wf: string): string[] {
+  const out: string[] = [];
+  const code = norm(wf).split('\n').filter((l) => !/^\s*#/.test(l));
+  if (code.some((l) => /(^|[:,\[{-]\s+)[&*][\w-]+/.test(l) || /^\s*<<\s*:/.test(l))) out.push('the workflow uses YAML anchors, aliases or merge keys (not read by this guard)');
+  if (code.some((l) => /^\s*-\s*[{[]/.test(l) || /^\s*(steps|jobs|include|strategy|matrix)\s*:\s*[{[]/.test(l))) out.push('the workflow uses flow style (braces or brackets) for jobs, steps or the matrix (not read by this guard)');
+  return out;
+}
+
+/** The jobs of a workflow file, from the parsed YAML. Throws (the guard fails) on a shape it does not understand. */
 export function readJobs(wf: string): Job[] {
-  const lines = wf.split('\n');
-  const start = lines.findIndex((l) => /^jobs:\s*$/.test(l));
-  if (start < 0) return [];
+  const doc = (yaml as { load: (s: string) => unknown }).load(norm(wf)) as { jobs?: Record<string, Record<string, unknown>> } | null;
+  const jobsRaw = doc && typeof doc === 'object' ? doc.jobs : undefined;
+  if (!jobsRaw || typeof jobsRaw !== 'object' || Array.isArray(jobsRaw)) throw new Error('the workflow has no `jobs:` mapping this guard can read');
   const jobs: Job[] = [];
-  let cur: string[] | null = null;
-  let id = '';
-  const flush = () => {
-    if (!cur) return;
-    const text = cur.join('\n');
-    const nameLine = cur.find((l) => /^ {4}name:/.test(l));
-    const name = nameLine ? nameLine.replace(/^ {4}name:\s*/, '').replace(/^["']|["']\s*$/g, '').trim() : id;
-    const steps: string[] = [];
-    let s: string[] | null = null;
-    for (const l of cur) {
-      if (/^ {6}- /.test(l)) { if (s) steps.push(s.join('\n')); s = [l]; } else if (s && (/^ {7,}/.test(l) || l.trim() === '' || /^ {0,6}#/.test(l))) s.push(l); else if (s && /^ {0,5}\S/.test(l)) { steps.push(s.join('\n')); s = null; }
+  for (const [id, raw] of Object.entries(jobsRaw)) {
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw new Error(`job ${id} is not a mapping`);
+    if (raw.uses !== undefined) throw new Error(`job ${id} calls a reusable workflow (uses:), which this guard does not read`);
+    const steps = raw.steps;
+    if (!Array.isArray(steps) || steps.some((x) => !x || typeof x !== 'object' || Array.isArray(x))) throw new Error(`job ${id} has no steps list this guard can read`);
+    const name = raw.name === undefined ? id : raw.name;
+    if (typeof name !== 'string') throw new Error(`job ${id} has a name that is not a string`);
+    const oses: string[] = [];
+    let matrixError: string | undefined;
+    const fail = (m: string) => { matrixError = matrixError || m; };
+    const matrix = (raw.strategy as { matrix?: unknown } | undefined)?.matrix;
+    if (matrix !== undefined) {
+      if (!matrix || typeof matrix !== 'object' || Array.isArray(matrix)) fail(`job ${id}: strategy.matrix is not a mapping (a computed matrix is not read by this guard)`);
+      const m = (matrix && typeof matrix === 'object' && !Array.isArray(matrix) ? matrix : {}) as Record<string, unknown>;
+      for (const k of Object.keys(m)) if (!['include', 'os'].includes(k)) fail(`job ${id}: strategy.matrix.${k} is not read by this guard (only include and os are; an exclude could remove an OS)`);
+      if (m.os !== undefined) { if (!Array.isArray(m.os) || m.os.some((o) => typeof o !== 'string')) fail(`job ${id}: matrix.os is not a list of strings`); else oses.push(...(m.os as string[])); }
+      if (m.include !== undefined) {
+        if (!Array.isArray(m.include) || m.include.some((e) => !e || typeof e !== 'object' || typeof (e as { os?: unknown }).os !== 'string')) fail(`job ${id}: matrix.include is not a list of mappings with a string os`);
+        else oses.push(...(m.include as { os: string }[]).map((e) => e.os));
+      }
     }
-    if (s) steps.push(s.join('\n'));
-    const oses = [...text.matchAll(/^\s+- os:\s*(\S+)/gm)].map((m) => m[1]);
-    jobs.push({ id, name, text, steps, oses });
-  };
-  for (const l of lines.slice(start + 1)) {
-    const m = /^ {2}([A-Za-z0-9_-]+):\s*$/.exec(l);
-    if (m) { flush(); id = m[1]; cur = []; continue; }
-    if (/^\S/.test(l)) break; // another top-level key ends `jobs:`
-    if (cur) cur.push(l);
+    jobs.push({ id, name, raw, steps: steps as Step[], oses, matrixError });
   }
-  flush();
   return jobs;
 }
 
@@ -68,7 +85,8 @@ export function jobNames(job: Job): string[] {
 }
 
 const MASK = /redact|mask/i;
-const FULL_NPM_TEST = /(^|\s|run:\s*)npm test\s*$/m;
+const RUNS_NPM_TEST = /\bnpm\s+test\b/;
+const runOf = (s: Step) => (typeof s.run === 'string' ? s.run : '');
 
 /** Every way the guard can fail, as sentences; empty when the rules hold. */
 export function problems(io: { ci: string; spec: string; suites: string; pkgScripts: Record<string, string> }): string[] {
@@ -86,20 +104,32 @@ export function problems(io: { ci: string; spec: string; suites: string; pkgScri
   }
   for (const n of suites) if (!io.pkgScripts[n]) out.push(`test-suites.txt names ${n}, which is not a package.json script`);
 
-  // the job that runs the whole list: plain `npm test`, under a required name on every OS
-  const full = readJobs(io.ci).filter((j) => j.steps.some((s) => FULL_NPM_TEST.test(s)));
+  // the job that runs the whole list: plain `npm test`, under a required name on every OS. Anything about the workflow this guard does not read is a problem
+  const shapes = unsupportedShapes(io.ci);
+  out.push(...shapes);
+  let jobs: Job[];
+  try { jobs = readJobs(io.ci); } catch (e) { out.push(`ci.yml is in a shape this guard does not understand: ${(e as Error).message}`); return out; }
+  if (shapes.length) return out;
+  const PLAIN_KEYS = ['if', 'env', 'run', 'name'];
+  for (const j of jobs) for (const s of j.steps) {
+    if (RUNS_NPM_TEST.test(runOf(s)) && runOf(s).trim() !== 'npm test') out.push(`job ${j.id} has a step whose run mentions \`npm test\` in a shape this guard does not understand (a filter, a chain or several lines): ${JSON.stringify(runOf(s))}`);
+  }
+  const full = jobs.filter((j) => j.steps.some((s) => runOf(s).trim() === 'npm test'));
   if (full.length !== 1) { out.push(`expected exactly one ci.yml job that runs plain \`npm test\`, found ${full.length}`); return out; }
   const job = full[0];
+  if (job.matrixError) { out.push(`ci.yml is in a shape this guard does not understand: ${job.matrixError}`); return out; }
   const names = jobNames(job);
   for (const n of names) if (!required.includes(n)) out.push(`the job that runs every suite is named "${n}", which is not a required check (required: ${required.join('; ')})`);
   for (const n of buildReq) if (!names.includes(n)) out.push(`required check "${n}" has no job running the suites: the matrix lacks that OS`);
-  const jobIf = /^ {4}if:\s*(.+)$/m.exec(job.text.split(/^ {4}steps:/m)[0]);
-  if (jobIf && jobIf[1].replace(/\s+/g, '') !== '${{!github.event.pull_request.draft}}') out.push(`the suite job has a condition other than "not a draft PR": ${jobIf[1]}`);
-  if (/^ {4}continue-on-error:/m.test(job.text.split(/^ {4}steps:/m)[0])) out.push('the suite job has continue-on-error');
-  const step = job.steps.find((s) => FULL_NPM_TEST.test(s)) as string;
-  if (/continue-on-error/.test(step)) out.push('the `npm test` step has continue-on-error');
-  const stepIf = /^\s*(?:- )?if:\s*(.+)$/m.exec(step);
-  if (stepIf && stepIf[1].replace(/\s+/g, '') !== "steps.changes.outputs.code=='true'") out.push(`the \`npm test\` step runs only under "${stepIf[1]}": a suite would be skipped on some OS (only the docs-only skip "steps.changes.outputs.code == 'true'" is allowed)`);
+  if (job.raw.if !== undefined && String(job.raw.if).replace(/\s+/g, '') !== '${{!github.event.pull_request.draft}}') out.push(`the suite job has a condition other than "not a draft PR": ${String(job.raw.if)}`);
+  if (job.raw['continue-on-error'] !== undefined) out.push('the suite job has continue-on-error');
+  const testSteps = job.steps.filter((s) => runOf(s).trim() === 'npm test');
+  if (testSteps.length !== 1) out.push(`the suite job has ${testSteps.length} \`npm test\` steps, expected 1`);
+  const step = testSteps[0];
+  if (step['continue-on-error'] !== undefined) out.push('the `npm test` step has continue-on-error');
+  for (const k of Object.keys(step)) if (!PLAIN_KEYS.includes(k) && k !== 'continue-on-error') out.push(`the \`npm test\` step has the key "${k}", which this guard does not understand (a working-directory or shell could change what runs)`);
+  const stepIf = step.if;
+  if (stepIf !== undefined && String(stepIf).replace(/\s+/g, '') !== "steps.changes.outputs.code=='true'") out.push(`the \`npm test\` step runs only under "${String(stepIf)}": a suite would be skipped on some OS (only the docs-only skip "steps.changes.outputs.code == 'true'" is allowed)`);
   return out;
 }
 
@@ -130,7 +160,7 @@ mutant('suite job renamed to an unrequired name', (io) => ({ ...io, ci: swap(io.
 mutant('suite job named without the OS', (io) => ({ ...io, ci: swap(io.ci, 'name: Build and test (${{ matrix.os }})', 'name: Build and test') }), /named "Build and test", which is not a required check/);
 mutant('Windows leaves the matrix', (io) => ({ ...io, ci: swap(io.ci, /\s+- os: windows-latest\n\s+runner: windows-latest\n\s+real: 'yes'/, '') }), /required check "Build and test \(windows-latest\)" has no job/);
 // `npm test` no longer runs the whole list, or not everywhere
-mutant('npm test with a name filter', (io) => ({ ...io, ci: swap(io.ci, /run: npm test\n/, 'run: npm test -- folders\n') }), /exactly one ci\.yml job that runs plain `npm test`, found 0/);
+mutant('npm test with a name filter', (io) => ({ ...io, ci: swap(io.ci, /run: npm test\n/, 'run: npm test -- folders\n') }), /mentions `npm test` in a shape this guard does not understand/);
 mutant('npm test step skipped on one OS', (io) => ({ ...io, ci: swap(io.ci, /      - if: steps\.changes\.outputs\.code == 'true'\n        env:\n          # spec 103/, "      - if: steps.changes.outputs.code == 'true' && matrix.os != 'windows-latest'\n        env:\n          # spec 103") }), /step runs only under/);
 mutant('npm test step continue-on-error', (io) => ({ ...io, ci: swap(io.ci, /(\n        run: npm test\n)/, '\n        continue-on-error: true$1') }), /`npm test` step has continue-on-error/);
 mutant('suite job continue-on-error', (io) => ({ ...io, ci: swap(io.ci, /(    runs-on: \$\{\{ matrix\.runner \}\}\n)/, '$1    continue-on-error: true\n') }), /suite job has continue-on-error/);
@@ -140,4 +170,30 @@ mutant('npm test is not the runner', (io) => ({ ...io, pkgScripts: { ...io.pkgSc
 mutant('the spec table loses a required row', (io) => ({ ...io, spec: swap(io.spec, '| Build and test (windows-latest) | yes |', '| Build and test (windows-latest) | no |') }), /records 2 required/);
 mutant('a listed suite that is not a script', (io) => ({ ...io, suites: io.suites + '\ntest:no-such-suite\n' }), /test:no-such-suite, which is not a package\.json script/);
 
-console.log(`ci required suites: ok (${live.suites.split('\n').filter((l) => /^test:/.test(l)).length} suites, ${maskSuites.length} masking, 15 mutants)`);
+// Windows checkouts have CRLF: the same files with CRLF endings pass the same rules and the same mutants die
+{
+  const crlf = (t: string) => t.replace(/\n/g, '\r\n');
+  assert.deepStrictEqual(problems({ ...live, ci: crlf(live.ci), spec: crlf(live.spec), suites: crlf(live.suites) }), [], 'CRLF files pass');
+  assert.deepStrictEqual(norm(crlf(live.ci)), live.ci, 'norm undoes CRLF');
+  assert.ok(problems({ ...live, ci: crlf(swap(live.ci, /run: npm test\n/, 'run: npm test -- folders\n')) }).length > 0, 'a CRLF mutant still dies');
+}
+
+// valid YAML shapes the guard does not read must FAIL, never pass (fail closed); each is a fixture and has its own message
+const BT_IF = '    if: ${{ !github.event.pull_request.draft }}\n    runs-on: ${{ matrix.runner }}\n';
+const LAST_STEP = '          PATH="$RUNNER_TEMP/art/bin:$PATH" DURBAR_REQUIRE_PILLOW=1 npm run test:realoffice-assets\n';
+mutant('job-level if placed after steps', (io) => ({ ...io, ci: swap(swap(io.ci, BT_IF, '    runs-on: ${{ matrix.runner }}\n'), LAST_STEP, LAST_STEP + "    if: ${{ github.event_name == 'push' }}\n") }), /condition other than "not a draft PR"/);
+mutant('job-level continue-on-error placed after steps', (io) => ({ ...io, ci: swap(io.ci, LAST_STEP, LAST_STEP + '    continue-on-error: true\n') }), /suite job has continue-on-error/);
+mutant('a step named npm test whose run is filtered', (io) => ({ ...io, ci: swap(io.ci, /        run: npm test\n/, '        name: npm test\n        run: npm test -- folders\n') }), /mentions `npm test` in a shape this guard does not understand/);
+mutant('a comment ending in npm test over a filtered run', (io) => ({ ...io, ci: swap(io.ci, /        run: npm test\n/, '        run: npm test -- folders # npm test\n') }), /mentions `npm test` in a shape/);
+mutant('a run block where a later command hides a failed npm test', (io) => ({ ...io, ci: swap(io.ci, /        run: npm test\n/, '        run: |\n          npm test\n          true\n') }), /mentions `npm test` in a shape/);
+mutant('npm test chained with || true', (io) => ({ ...io, ci: swap(io.ci, /        run: npm test\n/, '        run: npm test || true\n') }), /mentions `npm test` in a shape/);
+mutant('a folded multi-line run', (io) => ({ ...io, ci: swap(io.ci, /        run: npm test\n/, '        run: >-\n          npm test\n          -- folders\n') }), /mentions `npm test` in a shape/);
+mutant('a YAML anchor', (io) => ({ ...io, ci: swap(io.ci, 'fail-fast: false\n      matrix:', 'fail-fast: &ff false\n      matrix:') }), /anchors, aliases or merge keys/);
+mutant('a YAML alias', (io) => ({ ...io, ci: swap(swap(io.ci, 'fail-fast: false\n      matrix:', 'fail-fast: &ff false\n      matrix:'), "            real: 'yes'\n          - os: windows-latest", '            real: *ff\n          - os: windows-latest') }), /anchors, aliases or merge keys/);
+mutant('flow style steps', (io) => ({ ...io, ci: swap(io.ci, '    steps:\n      - name: macOS runs', '    steps:\n      - { run: echo hi }\n      - name: macOS runs') }), /flow style/);
+mutant('a matrix exclude drops Windows', (io) => ({ ...io, ci: swap(io.ci, '      matrix:\n        include:', '      matrix:\n        exclude:\n          - os: windows-latest\n        include:') }), /strategy\.matrix\.exclude is not read/);
+mutant('the npm test step runs in another folder', (io) => ({ ...io, ci: swap(io.ci, /        run: npm test\n/, '        working-directory: scripts\n        run: npm test\n') }), /has the key "working-directory"/);
+mutant('a computed matrix', (io) => ({ ...io, ci: swap(io.ci, '      matrix:\n        include:', '      matrix: ${{ fromJSON(needs.x.outputs.m) }}\n      zz:\n        include:') }), /strategy\.matrix is not a mapping/);
+mutant('a workflow that does not parse', (io) => ({ ...io, ci: io.ci + '\n  bad: [unclosed\n' }), /not understand/);
+
+console.log(`ci required suites: ok (${live.suites.split('\n').filter((l) => /^test:/.test(l)).length} suites, ${maskSuites.length} masking, 27 mutants)`);
