@@ -370,6 +370,22 @@ Found by a plan-only note of the Mac session; Paco's bot agreed in the team grou
 - **New spec item, FR-382 / T024:** split `app.js` into modules (not started, own spec needed, not designed).
 - **Dependencies.** Only the 021 FR-084 point 4 amendment wording (T008) and the 008 T130 tick (T007) wait for #1247 to land; T006 (test first) and the pure data part can be written against `main` today but merge after #1247 so T130 exists.
 
+### 2026-11-22: option C waits for vocabulary profiles (spec 102 *Changes 2026-11-22*, last entry; issue #1877; no new FR)
+
+Spec 102 T100's first step found that no built-in pack meets 102 FR-204 and FR-205 as written and none goes through the user-pack part table (evidence table in spec 102). FR-030's "`checkSet` on every built-in" holds through a vocabulary profile: one `checkSet`, user packs always on the user profile, built-ins on their declared 097 vocabulary, caps the same (spec 102 T100, T433, T434). T016's inventory (Mac session, plan-only, static reads, about plus or minus 10 %): 71 files, about 190 world-specific asserts.
+
+- **R1** built-in part files pass the part table and `checkSet` (about 32, new checks: the six validator tests never read a built-in; only `test-realoffice-assets.ts` does).
+- **R2** moment coverage per built-in (2).
+- **R3** the inventory's Worlds marker (0: `scripts/feature-inventory.js` already checks it).
+- **R4** picker card name, picture and label per world (about 16).
+- **R5** a missing required pose fails naming it (about 16, new).
+- **R6** the driver map: 34 `ui-suite` entries change only when they run (T018); `test-release-video.js` pins a second copy of the `DRIVER_WORLD` id list, replaced first.
+- **Stays** (about 124): built-in `world.css` rules (no blend or blur, own-folder URLs, the cave bezel), flag runtime, lazy load, plain-tile fallback, layout, contrast and accessibility asserts.
+- **`loft`**: listed by `test:momentsregistry` and `world-moments.json` with no pack folder; reported "no pack" (spec 102 OP-14 (c)).
+
+T016, T017 and T018 amended; T017 waits for 102 T100, T433 and T434.
+
+
 
 ### 2026-11-22: stop-gap, `build-test` `timeout-minutes` 25 to 45 (#1983)
 
