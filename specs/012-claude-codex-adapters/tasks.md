@@ -288,6 +288,9 @@ T133 verification (2026-10-25, review on #698): typecheck, build and the offline
   - Round 1 of the review of PR 1949 (2026-11-20), same task: `linkBoth` and `linkHits` in `src/renderer/safetext.js`; `matchPairs`, the joined-character gate, the written-cover rule and `_linkPassesForTest` in `src/shared/redact.ts`; the round-1 asserts in `scripts/test-safetext-links.ts` and its `labels` part (`test:safetext-links-labels`).
   - Round 2 of the review of PR 1949 (2026-11-20), same task: the gate's two joins (`gluedRun`, `LINK_VALUE_START`, `LINK_SEP` in `src/shared/redact.ts`) and their asserts in `scripts/test-safetext-links.ts`.
 
+## 2026-11-22: the question header and the automatic-answer question are masked (issue #1937)
+- [x] T428 (delta 2026-11-22, issue #1937) `src/renderer/app.js` (`showQuestion` header tag, `showAutoQuestion` paragraph through `safeMask`), `scripts/check-question-header-mask.js` + `scripts/ui-suite.js` [FR-065]
+
 ## Changes 2026-11-22 (masking batch: a value split across a line break after a secret name: issue #1320)
 
 - [x] T431 (2026-11-22, issue #1320) FR-190: `contSpans`, `withoutContinuation`, `contReads`, `_contWorkForTest` and `_contPassesForTest` in `src/shared/redact.ts` (the `whole` stretches of `maskSplitFirst`, the continuation reference of `maskKeepingMarkdown`, `maskCommandImpl`, `contReadCount`); `contBoth` in `src/renderer/safetext.js`; the `docs/safety.md` line and the changelog fragment; the `#1320 continuation` asserts in `scripts/test-redact.ts` and `#1320 continuation brain` in `scripts/test-brainstate.ts`; the line in `specs/012-claude-codex-adapters/secret-coverage.md`; mutants and a differential fuzz against `main` in the PR.

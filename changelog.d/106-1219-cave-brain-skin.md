@@ -1,1 +1,0 @@
-- **Brain view skin for the cave world** (spec 106): the brain wears the cave's parchment and earth colours with small round pebble points, in the same places and sizes as everywhere. It stays behind the off Brain view flag. Checked in the simulator at 1440x900 and 1280x800.

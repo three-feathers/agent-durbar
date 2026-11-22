@@ -8,6 +8,7 @@ import type { AgentAdapter, AgentEvent } from '../adapters/types';
 import type { SandboxHostView } from '../shared/api';
 import { outwardSandboxEvent, sandboxReason } from '../shared/sandbox';
 import { ANNOUNCE_APPS } from '../shared/credits';
+import { failText } from './ipcerror';
 
 export interface SandboxOpsDeps {
   /** The agent's adapter, or undefined for an unknown id. */
@@ -27,7 +28,6 @@ export function toWindowEvent(e: AgentEvent, outward: (e: AgentEvent) => AgentEv
 }
 
 export type OpResult = { ok: true; alwaysSaved?: false } | { ok: false; error: string };
-const errText = (e: unknown): string => sandboxReason(e instanceof Error ? e.message : String(e)) ?? 'Durbar could not do that.';
 const NO_NOTE = 'There is no OS sandbox note to answer for this session.';
 
 export function createSandboxOps(deps: SandboxOpsDeps) {
@@ -62,7 +62,7 @@ export function createSandboxOps(deps: SandboxOpsDeps) {
       try {
         await ad.continueWithoutSandbox(id, { always }); // the adapter refuses under the policy (FR-007d) and where Always is not offered
       } catch (err) {
-        return { ok: false, error: errText(err) };
+        return { ok: false, error: sandboxReason(failText(err, 'sandbox')) ?? 'Durbar could not do that.' };
       }
       // only after the adapter accepted; when the choice cannot be saved it is not in force (turning it on is rolled back), the window is told
       if (always && deps.store() && deps.store()!.setSandboxAlwaysContinue(ad.id, true).ok !== true) return { ok: true, alwaysSaved: false };

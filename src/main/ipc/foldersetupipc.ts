@@ -9,6 +9,7 @@ import type { FolderSetupDecision, FolderSetupItem, FolderSetupView, HookExplana
 import { scanFolderSetup } from '../foldersetup';
 import type { FolderSetupStore } from '../foldersetupstore';
 import { ipcHandle } from '../ipcguard';
+import { failText } from '../ipcerror';
 
 export interface FolderSetupDeps {
   store: () => FolderSetupStore | undefined;
@@ -97,7 +98,7 @@ export async function explain(deps: FolderSetupDeps, keyIn: unknown, idIn: unkno
     const cost = costText(r);
     return cost ? { ...out, cost } : out;
   } catch (e) {
-    return { ok: false, error: 'No AI explanation: ' + (e instanceof Error ? e.message : String(e)).slice(0, 160), by: ex.name };
+    return { ok: false, error: failText(e, 'folder setup explain', 'No AI explanation: something unexpected went wrong.').slice(0, 200), by: ex.name };
   }
 }
 
