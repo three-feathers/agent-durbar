@@ -38,11 +38,11 @@
 
 - [ ] T023 (with T015, same PR, same gates: T014 landed and O4's yes) `docs/agent-setup/README.md` *Sub-agents by size* (heading kept, it is a pointer target): the *Small* and *Medium* bullets become one *Light* bullet (`review-profile.js` says light: one `implementer`, diff read, CI record, no mutants or fuzz asked) and *Large or sensitive* becomes *Heavy* (everything `review-profile.js` does not call light, the list of FR-020); no net growth in words, counted in the PR (the file has no `rules:check` budget) [FR-022]
 
-## P6: world-pack contract suite (after 102 T100, #1877)
+## P6: world-pack contract suite (after 102 T100, T433 and T434, #1877)
 
-- [ ] T016 Inventory (in the PR): per-world assertions in `scripts/` that the contract suite replaces, by file [FR-030]
-- [ ] T017 `scripts/test-world-contract.ts`: every built-in pack through `worldpack.ts`, `checkSet`, `momentCoverage`, the feature-inventory row and the card check; a fixture pack missing a required pose fails naming it; the replaced per-world assertions removed in the same PR; spec 102 pointer delta [FR-030, FR-033]
-- [ ] T018 Driver map entries per world (`DRIVER_WORLD=<id>` entries run only when that world's files or the shared engine change) [FR-031]
+- [ ] T016 Inventory, committed in full in T017's PR: per-world assertions in `scripts/` that the contract suite replaces, by file. **Amended 2026-11-22** (spec *Changes 2026-11-22*, vocabulary profiles): the Mac session's plan-only read (71 files, about 190 world-specific asserts, about 66 replaceable, about 124 stay) sorted by rule R1..R6 of that entry [FR-030]
+- [ ] T017 `scripts/test-world-contract.ts`: every built-in pack through `worldpack.ts`, `checkSet`, `momentCoverage`, the feature-inventory row and the card check; a fixture pack missing a required pose fails naming it; the replaced per-world assertions removed in the same PR; spec 102 pointer delta . **Amended 2026-11-22:** after 102 T100, T433 and T434; built-ins go through `checkSet` and the part machinery with their declared vocabulary profiles, user fixtures with the user profile; R1 and R5 are new checks on built-ins, not moved asserts; a registry world with no pack (`loft`, 102 OP-14 (c)) is reported "no pack", not passed; `world.css` rules and the flag, lazy-load, plain-tile, layout, contrast and accessibility asserts stay where they are [FR-030, FR-033]
+- [ ] T018 Driver map entries per world (`DRIVER_WORLD=<id>` entries run only when that world's files or the shared engine change) ; first replaces the second copy of the `DRIVER_WORLD` id list pinned in `scripts/test-release-video.js` (R6) [FR-031]
 
 ## P7: slicing guidance
 
