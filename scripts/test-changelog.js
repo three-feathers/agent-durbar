@@ -659,7 +659,7 @@ assert.ok(cl.parseFragment('- x <!-- hidden -->\n').errors.some((e) => /HTML com
   assert.match(jobs.verify, /node scripts\/release-notes\.js --tag "\$TAG" --repo "\$REPO" --main-ref refs\/remotes\/origin\/main --out release-notes\.md/, 'verify runs the checks on the tagged commit');
   for (const j of ['ui-gate', 'verify', 'draft-release']) for (const l of jobs[j].split('\n').filter((x) => x.includes('${{'))) assert.match(l, /^ {10}(TAG|REPO|GH_TOKEN|GH_REPO|SHA): \$\{\{ github\.[a-z_]+ \}\}$|^ {6}(prerelease|latest): \$\{\{ steps\.notes\.outputs\.(prerelease|latest) \}\}$|^ {10}(PRERELEASE|LATEST): \$\{\{ needs\.verify\.outputs\.(prerelease|latest) \}\}$/, `${j}: an expression only as an env value, never inside a run script: ${l.trim()}`);
   assert.ok(!/^ {4}permissions:/m.test(jobs.build) && /^ {4}needs: verify$/m.test(jobs.build), 'build: read-only default, only after verify');
-  assert.match(jobs['draft-release'], /^ {4}needs: \[ui-gate, verify, build\]\n {4}permissions:\n {6}contents: write\n {6}id-token: write[^\n]*\n {6}attestations: write\n {4}steps:/m, 'draft-release alone may write and attest, after both');
+  assert.match(jobs['draft-release'], /^ {4}needs: \[ui-gate, verify, build\]\n {4}permissions:\n {6}contents: write\n {6}id-token: write[^\n]*\n {6}attestations: write\n {4}steps:/m, 'draft-release alone may write and attest, after the UI gate, verify and build');
   // spec 008 FR-132: build provenance for every asset, pinned by full SHA, only in the job that holds the files
   assert.match(jobs['draft-release'], /uses: actions\/attest-build-provenance@[0-9a-f]{40} # v[\d.]+\n {8}with:\n {10}subject-path: dist-artifacts\/\*\n/, 'draft-release attests every asset');
   const dr = jobs['draft-release'];

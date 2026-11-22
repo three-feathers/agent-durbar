@@ -4,29 +4,86 @@
  * Spec 117 FR-014 / T045: the release UI gate. release.yml's first job runs this; every other job needs it, so no package is
  * built or drafted unless the "UI on three OSes" workflow (ui-platforms.yml) finished green on exactly the tagged commit.
  *
- * Which runs count: runs of ui-platforms.yml in this repository whose head_sha is the tagged commit and whose event is a push on
- * main, a workflow_dispatch (any ref whose head is that commit, so the workflow file is the commit's own) or the nightly schedule.
- * A pull_request run never counts: it tests the PR merged into its base, not the commit itself.
- * The verdict is the LATEST counting run, by run_started_at (a re-run attempt moves it, so re-running a cancelled run makes that
- * attempt the verdict), then by the higher run id. An older green run does not outvote a newer red, cancelled or running one:
- * the newest result on the commit is what the gate trusts (fail closed), and a red run is fixed by re-running it, not hidden.
+ * Runs that can count: runs of ui-platforms.yml in this repository whose head_sha is the tagged commit and whose event is a push
+ * on main, a workflow_dispatch (any ref whose head is that commit, so the workflow file is the commit's own) or the nightly
+ * schedule. A pull_request run never counts: it tests the PR merged into its base, not the commit itself.
+ * WHICH of those runs, and which of their jobs, decide is ONE named policy, POLICY below (owner question on #2038, item 1: a red
+ * macOS shard of a nightly must not veto a green main push run unless the owners want it to). Each policy is tested on its own.
+ * Among the runs the policy counts, the LATEST decides, by run_started_at (a re-run attempt moves it), then the higher run id:
+ * an older green run does not outvote a newer red, cancelled or running one (fail closed).
  *   - no counting run yet: wait up to --not-found-minutes (a push run appears within a minute of the merge), then fail;
- *   - the latest is queued or running: wait up to --max-minutes in all, then fail;
- *   - the latest completed: pass only on conclusion "success"; "cancelled" (spec 117 O3: a newer merge cancelled it) and every
- *     other conclusion fail, each with what to do next.
- * API errors count as a wait; if they last until --max-minutes the gate fails, never passes.
+ *   - the latest is still running (for its deciding jobs): wait up to --max-minutes in all, then fail;
+ *   - it finished: pass only when it (or its deciding jobs) succeeded; cancelled and every other result fail.
+ * The printed remedy never suggests re-running a main push run (once spec 117 O3 lands, a re-run joins the ui-main group and
+ * cancels main's newest UI run): only a by-hand run on the tag, or tagging a newer green commit, then re-running the failed jobs
+ * of the release run (spec 021 FR-087 delta 2026-11-22).
+ * API answers: 5xx, 429 and network errors count as a wait (failing at --max-minutes, never passing); any other 4xx (401, 403,
+ * 404: a wrong repo, permission or workflow name) fails at once.
  *
  * CLI: node scripts/release-ui-gate.js --sha <40 hex> --repo <owner/name> --tag <v...> [--not-found-minutes 15]
  *      [--max-minutes 150] [--interval-seconds 60] [--summary <file>] [--runs-file <json>]
- * --runs-file decides once from a saved API answer ({"workflow_runs": [...]}) with no network (a dry run). Otherwise `gh api`
- * (GH_TOKEN from the job, actions: read) through execFileSync with an argument array: no shell. Prints run ids, events, states
- * and links only, never a run title (a commit message).
+ * Exit 0 pass, 1 fail, 2 bad input. --runs-file decides once from a saved API answer ({"workflow_runs": [...], "jobs":
+ * {"<run id>": [...]}}) with no network (a dry run). Otherwise `gh api` (GH_TOKEN from the job, actions: read) through
+ * execFileSync with an argument array: no shell. Prints run ids, events, states and links only, never a run title.
  */
 const fs = require('fs');
 const { execFileSync } = require('child_process');
 
 const WORKFLOW_FILE = 'ui-platforms.yml';
 const MIN = 60 * 1000;
+const SHARD = /^UI shard \((ubuntu|windows|macos)-latest \d+\/\d+\)$/;
+const DECISION_JOB = 'What the UI suite needs';
+
+function runState(r) {
+  if (r.status !== 'completed') return { state: 'running', detail: '' };
+  if (r.conclusion === 'success') return { state: 'success', detail: '' };
+  if (r.conclusion === 'cancelled') return { state: 'cancelled', detail: '' };
+  return { state: 'failed', detail: '' };
+}
+
+/** The Linux and Windows shards (and the decision job) of one run; macOS shards are not read. */
+function linuxWindowsState(r) {
+  const jobs = Array.isArray(r.jobs) ? r.jobs : null;
+  if (!jobs) return r.status !== 'completed' ? { state: 'running', detail: 'jobs not listed yet' } : { state: 'failed', detail: 'its jobs could not be read' };
+  const pick = jobs.filter((j) => j.name === DECISION_JOB || ((SHARD.exec(j.name) || [])[1] === 'ubuntu') || ((SHARD.exec(j.name) || [])[1] === 'windows'));
+  const has = (os) => jobs.some((j) => (SHARD.exec(j.name) || [])[1] === os);
+  if (pick.some((j) => j.status !== 'completed')) return { state: 'running', detail: 'Linux and Windows jobs' };
+  if (!has('ubuntu') || !has('windows') || !pick.some((j) => j.name === DECISION_JOB)) {
+    return r.status !== 'completed' ? { state: 'running', detail: 'jobs not listed yet' } : { state: 'failed', detail: 'a Linux or Windows shard or the decision job is missing' };
+  }
+  if (pick.every((j) => j.conclusion === 'success')) return { state: 'success', detail: 'Linux and Windows jobs' };
+  if (pick.some((j) => j.conclusion === 'cancelled')) return { state: 'cancelled', detail: 'a Linux or Windows job' };
+  return { state: 'failed', detail: 'a Linux or Windows job' };
+}
+
+const isMacJob = (j) => (SHARD.exec(j.name) || [])[1] === 'macos';
+const dispatchRedo = (o) => `gh workflow run ${WORKFLOW_FILE} --repo ${o.repo} --ref ${o.tag}`;
+
+/** Owner question #2038 item 1: which runs and jobs decide. One entry per option; POLICY names the one in force. */
+const POLICIES = {
+  // as first built: the latest push-on-main, by-hand or nightly run decides as a whole (macOS shards included)
+  'latest-run': {
+    needsJobs: false,
+    counts: () => true,
+    state: runState,
+    remedy: (o) => `Start a by-hand run on the tag (${dispatchRedo(o)}; it runs macOS too, and its whole result decides)`,
+  },
+  // option (a): the same runs, judged on their Linux and Windows shards and the decision job only
+  'linux-windows-jobs': {
+    needsJobs: true,
+    counts: () => true,
+    state: linuxWindowsState,
+    remedy: (o) => `Start a by-hand run on the tag (${dispatchRedo(o)}; only its Linux and Windows jobs decide)`,
+  },
+  // option (b): only main push runs, and by-hand runs that have no macOS job, decide, as a whole
+  'push-or-dispatch-without-macos': {
+    needsJobs: true,
+    counts: (r) => r.event === 'push' || (r.event === 'workflow_dispatch' && Array.isArray(r.jobs) && r.jobs.length > 0 && !r.jobs.some(isMacJob)),
+    state: runState,
+    remedy: () => 'A by-hand run counts only without macOS jobs (today\'s by-hand matrix has them), so tag a newer main commit whose main push UI run is green',
+  },
+};
+const POLICY = 'latest-run';
 
 function checkInputs(o) {
   const bad = [];
@@ -34,11 +91,15 @@ function checkInputs(o) {
   if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(String(o.repo))) bad.push('repo must be owner/name');
   if (!/^v[0-9A-Za-z.-]+$/.test(String(o.tag))) bad.push('tag must look like v1.2.3');
   if (!(Number(o.maxMs) > 0) || !(Number(o.notFoundMs) > 0) || Number(o.notFoundMs) > Number(o.maxMs)) bad.push('limits must be positive, not-found at most the whole wait');
+  if (o.policy !== undefined && !Object.prototype.hasOwnProperty.call(POLICIES, o.policy)) bad.push('unknown policy');
   return bad;
 }
 
 function runsPath(repo, sha) {
   return `repos/${repo}/actions/workflows/${WORKFLOW_FILE}/runs?head_sha=${sha}&per_page=100`;
+}
+function jobsPath(repo, id) {
+  return `repos/${repo}/actions/runs/${Number(id)}/jobs?filter=latest&per_page=100`;
 }
 
 function eligible(r, sha, repo) {
@@ -66,42 +127,68 @@ function describe(r) {
 function decide(runs, o) {
   const bad = checkInputs(o);
   if (bad.length) throw new Error(`release UI gate: bad input: ${bad.join('; ')}`);
+  const policy = POLICIES[o.policy || POLICY];
   const sha = String(o.sha).toLowerCase();
-  const redo = `gh workflow run ${WORKFLOW_FILE} --repo ${o.repo} --ref ${o.tag}`;
-  const after = 'When it is green, re-run this release run (gh run rerun <this run id> --failed), or tag a newer main commit whose UI run is green.';
-  const ok = (runs || []).filter((r) => eligible(r, sha, o.repo));
+  const after = 'When it is green, re-run only the failed jobs of this release run (gh run rerun <this release run id> --failed; spec 021 FR-087 delta 2026-11-22), or tag a newer main commit whose UI run is green. Never re-run a main push UI run: it would cancel main\'s newest UI run (spec 117 O3).';
+  const ok = (runs || []).filter((r) => eligible(r, sha, o.repo) && policy.counts(r));
   if (ok.length === 0) {
-    if (o.elapsedMs < o.notFoundMs) return { verdict: 'wait', reason: 'none-yet', message: `No "UI on three OSes" run for ${sha} yet; waiting.` };
-    return { verdict: 'fail', reason: 'none', message: `No "UI on three OSes" run (push on main, by hand or nightly) for ${sha} after ${Math.round(o.notFoundMs / MIN)} minutes. The workflow's paths filter may have skipped this commit, or the tag is not on a main push. Start one on the tag: ${redo}. ${after}` };
+    if (o.elapsedMs < o.notFoundMs) return { verdict: 'wait', reason: 'none-yet', message: `No deciding "UI on three OSes" run for ${sha} yet; waiting.` };
+    return { verdict: 'fail', reason: 'none', message: `No deciding "UI on three OSes" run for ${sha} after ${Math.round(o.notFoundMs / MIN)} minutes (the workflow's paths filter may have skipped this commit, or the tag is not on a main push). ${policy.remedy(o)}. ${after}` };
   }
   const latest = ok.slice().sort(newestFirst)[0];
-  if (latest.status !== 'completed') {
-    if (o.elapsedMs < o.maxMs) return { verdict: 'wait', reason: 'running', run: latest, message: `Waiting for ${describe(latest)}.` };
-    return { verdict: 'fail', reason: 'timeout', run: latest, message: `The UI run for ${sha} did not finish within ${Math.round(o.maxMs / MIN)} minutes: ${describe(latest)}. ${after}` };
+  const s = policy.state(latest);
+  const what = `${describe(latest)}${s.detail ? ` [${s.detail}]` : ''}`;
+  if (s.state === 'running') {
+    if (o.elapsedMs < o.maxMs) return { verdict: 'wait', reason: 'running', run: latest, message: `Waiting for ${what}.` };
+    return { verdict: 'fail', reason: 'timeout', run: latest, message: `The UI run for ${sha} did not finish within ${Math.round(o.maxMs / MIN)} minutes: ${what}. ${policy.remedy(o)}. ${after}` };
   }
-  if (latest.conclusion === 'success') return { verdict: 'pass', reason: 'success', run: latest, message: `The UI run for ${sha} is green: ${describe(latest)}.` };
-  if (latest.conclusion === 'cancelled') {
-    return { verdict: 'fail', reason: 'cancelled', run: latest, message: `The latest UI run for ${sha} was cancelled (spec 117 O3: a newer merge to main cancels the older main UI run): ${describe(latest)}. Re-run it (gh run rerun ${latest.id} --repo ${o.repo}) or start one on the tag (${redo}). ${after}` };
+  if (s.state === 'success') return { verdict: 'pass', reason: 'success', run: latest, message: `The UI run for ${sha} is green: ${what}.` };
+  if (s.state === 'cancelled') {
+    return { verdict: 'fail', reason: 'cancelled', run: latest, message: `The latest deciding UI run for ${sha} was cancelled: ${what}. A run is cancelled by a newer run in its concurrency group, a job time limit or a person; its page says which. ${policy.remedy(o)}. ${after}` };
   }
-  return { verdict: 'fail', reason: 'failed', run: latest, message: `The latest UI run for ${sha} did not pass: ${describe(latest)}. Fix it on main, or re-run it if the durbar-ci-rerun skill allows (gh run rerun ${latest.id} --repo ${o.repo}). ${after}` };
+  return { verdict: 'fail', reason: 'failed', run: latest, message: `The latest deciding UI run for ${sha} did not pass: ${what}. Fix the cause on main. ${policy.remedy(o)}. ${after}` };
+}
+
+/** "wait" for 5xx, 429 and errors with no HTTP status (network); "fatal" for every other HTTP 4xx (401, 403, 404, 422 ...). */
+function errorKind(message) {
+  const m = /HTTP (\d{3})/.exec(String(message));
+  if (!m) return 'wait';
+  const code = Number(m[1]);
+  return code === 429 || code >= 500 ? 'wait' : 'fatal';
+}
+
+/** The runs for the sha, with each counting run's latest-attempt jobs attached when the policy reads jobs. gh(path) -> JSON. */
+function fetchRuns(gh, o) {
+  const policy = POLICIES[o.policy || POLICY];
+  const data = gh(runsPath(o.repo, String(o.sha).toLowerCase()));
+  const runs = data.workflow_runs || [];
+  if (Number(data.total_count) > runs.length) throw new Error(`${data.total_count} runs for one commit, more than one page: not decided`);
+  if (policy.needsJobs) {
+    for (const r of runs.filter((x) => eligible(x, o.sha, o.repo)).sort(newestFirst).slice(0, 10)) {
+      r.jobs = (gh(jobsPath(o.repo, r.id)).jobs || []).map((j) => ({ name: j.name, status: j.status, conclusion: j.conclusion }));
+    }
+  }
+  return runs;
 }
 
 /** The wait loop. fetchRuns() returns the runs array or throws; sleep(ms) and now() are injected so tests need no clock. */
 async function poll(o) {
   const start = o.now();
-  let lastError = '';
   for (;;) {
     const elapsedMs = o.now() - start;
     let v;
     try {
       v = decide(o.fetchRuns(), { ...o, elapsedMs });
-      lastError = '';
     } catch (e) {
-      if (/bad input/.test(String(e && e.message))) throw e;
-      lastError = String((e && e.message) || e).split('\n')[0].slice(0, 200);
-      o.log(`API error (counted as a wait): ${lastError}`);
+      const msg = String((e && e.message) || e);
+      if (/bad input/.test(msg)) throw e;
+      const err = msg.replace(/\s+/g, ' ').trim().slice(0, 300);
+      if (errorKind(err) === 'fatal') {
+        return { verdict: 'fail', reason: 'api-fatal', message: `The GitHub API refused the request (${err}): a wrong repository, permission or workflow name does not get better by waiting.` };
+      }
+      o.log(`API error (counted as a wait): ${err}`);
       if (elapsedMs >= o.maxMs) {
-        return { verdict: 'fail', reason: 'api', message: `The GitHub API kept failing for ${Math.round(o.maxMs / MIN)} minutes (${lastError}); the gate does not pass without an answer.` };
+        return { verdict: 'fail', reason: 'api', message: `The GitHub API kept failing for ${Math.round(o.maxMs / MIN)} minutes (${err}); the gate does not pass without an answer.` };
       }
       v = { verdict: 'wait', reason: 'api', message: 'retrying' };
     }
@@ -116,6 +203,16 @@ function arg(argv, name, dflt) {
   return i >= 0 && i + 1 < argv.length ? argv[i + 1] : dflt;
 }
 
+/** gh api through an argument array (no shell); a failure carries gh's stderr, where the HTTP status is ("... (HTTP 404)"). */
+function ghApi(path, exec = execFileSync) {
+  try {
+    return JSON.parse(exec('gh', ['api', path], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }));
+  } catch (e) {
+    throw new Error(`${String((e && e.stderr) || '').trim()} ${String((e && e.message) || e).split('\n')[0]}`.trim());
+  }
+}
+
+/** Returns the exit code: 0 pass, 1 fail, 2 bad input. */
 async function main(argv) {
   const o = {
     sha: String(arg(argv, '--sha', '')).toLowerCase(),
@@ -132,28 +229,25 @@ async function main(argv) {
   let v;
   if (runsFile) {
     const data = JSON.parse(fs.readFileSync(runsFile, 'utf8'));
-    v = decide(data.workflow_runs || [], { ...o, elapsedMs: o.maxMs }); // a dry run decides as if every wait were over
+    const jobs = data.jobs || {};
+    const runs = (data.workflow_runs || []).map((r) => (jobs[r.id] ? { ...r, jobs: jobs[r.id] } : r));
+    v = decide(runs, { ...o, elapsedMs: o.maxMs }); // a dry run decides as if every wait were over
   } else {
     v = await poll({
       ...o,
-      fetchRuns: () => {
-        const data = JSON.parse(execFileSync('gh', ['api', runsPath(o.repo, o.sha)], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }));
-        const runs = data.workflow_runs || [];
-        if (Number(data.total_count) > runs.length) throw new Error(`${data.total_count} runs for one commit, more than one page: not decided`);
-        return runs;
-      },
+      fetchRuns: () => fetchRuns((p) => ghApi(p), o),
       sleep: (ms) => new Promise((r) => setTimeout(r, ms)),
       now: () => Date.now(),
       log: (s) => console.log(s),
     });
   }
-  const line = `${v.verdict === 'pass' ? 'PASS' : 'FAIL'} release UI gate (spec 117 FR-014): ${v.message}`;
+  const line = `${v.verdict === 'pass' ? 'PASS' : 'FAIL'} release UI gate (spec 117 FR-014, policy ${POLICY}): ${v.message}`;
   (v.verdict === 'pass' ? console.log : console.error)(line);
   if (summary) { try { fs.appendFileSync(summary, `### Release UI gate\n\n${line}\n`); } catch { /* summary is best effort */ } }
   return v.verdict === 'pass' ? 0 : 1;
 }
 
-module.exports = { WORKFLOW_FILE, checkInputs, runsPath, eligible, decide, poll };
+module.exports = { WORKFLOW_FILE, POLICY, POLICIES, checkInputs, runsPath, jobsPath, eligible, decide, errorKind, ghApi, fetchRuns, poll, main };
 
 if (require.main === module) {
   main(process.argv.slice(2)).then((code) => { process.exitCode = code; }, (e) => { console.error(`release UI gate: ${e && e.message}`); process.exitCode = 1; });
