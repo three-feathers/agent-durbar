@@ -26,6 +26,8 @@ if [ "$cmd" = install-filer ]; then
     esac
     shift
   done
+  # spec 021 FR-092: a copy in a folder named dist-scripts would read like a checkout's build folder; refuse it (the marker below pins the root too)
+  case "${dest%/}" in dist-scripts|*/dist-scripts) echo "weekly-test-audit: --dest must not be a folder named dist-scripts" >&2; exit 2 ;; esac
   root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
   cd "$root"
   if [ -n "$(git status --porcelain -- scripts src)" ]; then echo "weekly-test-audit: scripts/ or src/ has local changes; install from a clean, reviewed checkout of main" >&2; exit 1; fi
@@ -37,6 +39,7 @@ if [ "$cmd" = install-filer ]; then
   install -m 644 dist-scripts/src/shared/redact.js "$dest/src/shared/redact.js"
   install -m 644 scripts/trusted-authors.js "$dest/scripts/trusted-authors.js"   # spec 021 FR-092: the one parser of the list
   install -m 644 scripts/trusted-authors.txt "$dest/scripts/trusted-authors.txt"   # spec 021 FR-060: only the audit's own issues count as filed
+  printf 'installed by weekly-test-audit.sh install-filer (spec 021 FR-092): this folder is the root of the copy\n' > "$dest/weekly-audit-install.txt"; chmod 644 "$dest/weekly-audit-install.txt"
   echo "installed the filer from main at $(git rev-parse --short HEAD) to $dest"
   exit 0
 fi

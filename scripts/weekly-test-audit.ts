@@ -195,20 +195,31 @@ export type Gh = (args: string[]) => Promise<GhResult>;
 export type Outcome = { fp: string; title: string; file: string; status: 'filed' | 'would-file' | 'duplicate' | 'capped' | 'failed'; note?: string; url?: string };
 export type Summary = { mode: 'file' | 'dry-run'; dedupe: 'checked' | 'not checked'; outcomes: Outcome[]; error?: string };
 
+/** Written by `weekly-test-audit.sh install-filer` at the top of an installed copy: that folder is the copy's one root (spec 021 FR-092). */
+export const INSTALL_MARKER = 'weekly-audit-install.txt';
+
 /**
  * The accounts whose issues count as the audit's own (spec 021 FR-060, FR-092): read by the repo's one parser, `scripts/trusted-authors.js`,
- * from `scripts/trusted-authors.txt`: both beside this file's folder when installed by `install-filer`, or in the checkout's `scripts/` when
- * run from `dist-scripts/`. Logins are compared in lower case (GitHub logins are case-insensitive). Throws when the list is missing,
- * unreadable or empty, so a run never treats an outsider's issue as filed.
+ * from `scripts/trusted-authors.txt`: both beside this file's folder when installed by `install-filer` (which writes `INSTALL_MARKER` there),
+ * or in the checkout's `scripts/` when run from `dist-scripts/`. Logins are compared in lower case (GitHub logins are case-insensitive).
+ * Throws when the list is missing, unreadable, empty or not a list of logins, so a run never treats an outsider's issue as filed.
  */
 export function trustedAuthors(dir: string = __dirname): Set<string> {
-  // one root only, decided by where this file runs: the checkout (`dist-scripts/scripts`) or an installed copy (`<dest>/scripts`); never a second folder to fall back on
-  for (const root of [path.basename(path.dirname(dir)) === 'dist-scripts' ? path.join(dir, '..', '..') : path.join(dir, '..')]) {
+  // one root only: an installed copy (the marker beside its `scripts/`) is its own root, whatever its folder is called; else the checkout
+  // when run from `dist-scripts/scripts`; never a second folder to fall back on. install-filer also refuses a `dist-scripts` destination.
+  const installed = fs.existsSync(path.join(dir, '..', INSTALL_MARKER));
+  for (const root of [installed || path.basename(path.dirname(dir)) !== 'dist-scripts' ? path.join(dir, '..') : path.join(dir, '..', '..')]) {
     let set: Set<string>;
-    try { set = new Set(Array.from((require(path.join(root, 'scripts', 'trusted-authors.js')) as { trustedAuthors(r: string): Set<string> }).trustedAuthors(root), (l) => l.toLowerCase())); } catch { continue; }
+    try {
+      // only a Set or an array of single logins, each read back unchanged by the loader's own parser (a string would make each character a login)
+      const m = require(path.join(root, 'scripts', 'trusted-authors.js')) as { trustedAuthors(r: string): unknown; parseTrusted(t: string): string[] };
+      const r = m.trustedAuthors(root);
+      if (!(r instanceof Set || Array.isArray(r))) continue;
+      set = new Set(Array.from(r as Iterable<unknown>, (x) => { if (typeof x !== 'string' || JSON.stringify(m.parseTrusted(x)) !== JSON.stringify([x])) throw new Error('not a login'); return x.toLowerCase(); }));
+    } catch { continue; }
     if (set.size) return set;
   }
-  throw new Error('could not read scripts/trusted-authors.txt');
+  throw new Error('no trusted authors from scripts/trusted-authors.js (missing, unreadable, empty or not a list of logins)');
 }
 
 /**

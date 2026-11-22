@@ -115,7 +115,14 @@ export async function gate(d: CliDeps, a: Args): Promise<{ ok: true; sha: string
   const q = await d.exec('gh', ['api', 'graphql', '-f', `query=${GATE_QUERY(owner, name, a.pr)}`], { env: ghEnv(d.env), timeoutMs: 60_000 });
   if (q.code !== 0) return { ok: false, why: HUMAN('could not read the PR') };
   let trusted: string[];
-  try { trusted = Array.from((require(path.join(d.root, 'scripts', 'trusted-authors.js')) as { trustedAuthors(r: string): Set<string> }).trustedAuthors(d.root)); } catch { return { ok: false, why: HUMAN('the trusted list is missing') }; }
+  // only a Set or an array of single logins, each read back unchanged by the loader's own parser; a string, null, an object or an odd
+  // entry goes down the "missing" path (review of #1535: a string would make each character a login)
+  try {
+    const m = require(path.join(d.root, 'scripts', 'trusted-authors.js')) as { trustedAuthors(r: string): unknown; parseTrusted(t: string): string[] };
+    const r = m.trustedAuthors(d.root);
+    if (!(r instanceof Set || Array.isArray(r))) throw new Error('not a list');
+    trusted = Array.from(r as Iterable<unknown>, (x) => { if (typeof x !== 'string' || JSON.stringify(m.parseTrusted(x)) !== JSON.stringify([x])) throw new Error('not a login'); return x; });
+  } catch { return { ok: false, why: HUMAN('the trusted list is missing') }; }
   if (trusted.length === 0) return { ok: false, why: HUMAN('the trusted list is empty') };
   let facts;
   try { facts = factsFromGraphql(JSON.parse(q.stdout)); } catch { return { ok: false, why: HUMAN('could not read the PR\'s facts') }; }

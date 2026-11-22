@@ -702,6 +702,15 @@ async function checkCli(): Promise<void> {
         const g = await cli.gate(dep(), a('7', '--diff-only')); assert.ok(!g.ok && (src === null ? /cannot be resolved/ : src.includes('throw') ? /trusted list is missing/ : /trusted list is empty/).test((g as { why: string }).why), `a loader that ${why} refuses the gate for that reason: ${(g as { why?: string }).why}`);
         delete require.cache[f]; fs.writeFileSync(f, orig); fs.chmodSync(f, keep);
       }
+      // the real loader (its own parseTrusted kept) with trustedAuthors returning the wrong type: only a Set or an array of single logins passes (review of #1535)
+      const giving = (expr: string): string => `${orig}\nconst realTrusted = module.exports.trustedAuthors; module.exports.trustedAuthors = (r) => (${expr});\n`;
+      for (const [why, expr] of [['a string', "'vikramgorla'"], ['null', 'null'], ['an object', "({ vikramgorla: 1 })"], ['an array with a number', "['vikramgorla', 5]"], ['an array with a non-login', "['vikramgorla', 'bad login']"], ['an array with two logins in one entry', "['vikramgorla\\nfjcabello']"]] as const) {
+        delete require.cache[f]; fs.writeFileSync(f, giving(expr)); fs.chmodSync(f, keep);
+        const g = await cli.gate(dep(), a('7', '--diff-only')); assert.ok(!g.ok && /trusted list is missing/.test((g as { why: string }).why), `a loader returning ${why} refuses the gate: ${(g as { why?: string }).why}`);
+      }
+      delete require.cache[f]; fs.writeFileSync(f, giving('Array.from(realTrusted(r))')); fs.chmodSync(f, keep);
+      { const g = await cli.gate(dep(), a('7', '--diff-only')); assert.ok(g.ok, `a loader returning an array of logins passes: ${(g as { why?: string }).why}`); }
+      delete require.cache[f]; fs.writeFileSync(f, orig); fs.chmodSync(f, keep);
       const t = path.join(codeRoot, 'scripts', 'trusted-authors.txt'); const tk = fs.readFileSync(t, 'utf8'); delete require.cache[path.join(codeRoot, 'scripts', 'trusted-authors.js')]; fs.writeFileSync(t, '# nobody\n'); { const g = await cli.gate(dep(), a('7', '--diff-only')); assert.ok(!g.ok && /trusted list is empty/.test((g as { why: string }).why), 'an empty list refuses the gate for that reason'); } fs.writeFileSync(t, tk);
     }
     { const g = await cli.gate(dep(), a('7', '--diff-only')); assert.ok(g.ok, 'with every permission restored the gate passes again'); }
