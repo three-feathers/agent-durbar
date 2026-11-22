@@ -15,6 +15,7 @@ import type { AgentInfo } from '../src/shared/api';
 import type { PreviousSession } from '../src/adapters/history';
 import { CHANGE_TOOLS, READ_TOOLS } from '../src/main/mcp/tools';
 import { FakeClient, TestAdapter } from './fakes/copilot-sdk';
+import { ShownError } from '../src/shared/shownerror';
 
 const ROOT = path.resolve(__dirname, '..', '..');
 const UUID = (n: number): string => `a1b2c3d4-0000-4000-8000-${String(n).padStart(12, '0')}`;
@@ -133,7 +134,7 @@ async function main(): Promise<void> {
     // adapter error (the runtime lost it): passed on, nothing else changes
     const orig = r.ad.deleteSession!;
     r.ad.deleteSession = async () => {
-      throw new Error('session gone\nfrom disk');
+      throw new ShownError('session gone\nfrom disk');
     };
     r.store.markPrevious(abs('proj'), 'fake', UUID(1), 'pin');
     assert.deepStrictEqual(await r.sessions.delete('card-1', UUID(1)), { ok: false, error: 'session gone from disk' });
@@ -241,7 +242,9 @@ async function main(): Promise<void> {
     for (const f of guarded) assert.ok(!DELETE_WORDS.test(read(f)), `${f} has no path to delete a session`);
     // in src/main only src/main/ipc/previous.ts (the window's IPC, spec 045 FR-060) and prevsessions.ts name it; main.ts only passes the dependencies to it
     // simguard.ts (spec 010 FR-028) only names the capability flag for the simulator's stand-in, whose every member refuses
-    for (const f of walk('src/main')) if (!/src\/main\/(ipc\/previous|prevsessions|simguard)\.ts$/.test(f.replace(/\\/g, '/'))) assert.ok(!DELETE_WORDS.test(read(f)), `${f} does not reach the delete`);
+    // spec 095 (T021): the conversation search's scope takes only `openIdsOf` from prevsessions.ts (open sessions left out), and names no delete
+    for (const f of walk('src/main')) if (!/src\/main\/(ipc\/previous|prevsessions|simguard)\.ts$/.test(f.replace(/\\/g, '/'))) assert.ok(!DELETE_WORDS.test(/src\/main\/convscope\.ts$/.test(f.replace(/\\/g, '/')) ? read(f).replace("import { openIdsOf } from './prevsessions';", '') : read(f)), `${f} does not reach the delete`);
+    assert.ok(read('src/main/convscope.ts').includes("import { openIdsOf } from './prevsessions';"), 'the search scope imports only openIdsOf from prevsessions.ts');
     assert.ok(!/\.deleteSession\s*\(/.test(read('src/main/simguard.ts')), 'simguard.ts never calls deleteSession');
     // adapters: only the delete members themselves and the router helper
     for (const f of walk('src/adapters')) if (!/\/(copilot|codex|fake|router|types|capabilities)\.ts$/.test(f.replace(/\\/g, '/'))) assert.ok(!/\bdeleteSession\b/.test(read(f)), `${f} does not delete sessions`);

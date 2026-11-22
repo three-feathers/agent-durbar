@@ -40,7 +40,11 @@
   const openStr=raw=>{const t=String(raw==null?'':raw),i=Math.max(t.lastIndexOf('\x1b]'),t.lastIndexOf('\x1bP'),t.lastIndexOf('\x1b^'),t.lastIndexOf('\x1b_'),t.lastIndexOf('\x1bX'),t.lastIndexOf('\x90'),t.lastIndexOf('\x98'),t.lastIndexOf('\x9d'),t.lastIndexOf('\x9e'),t.lastIndexOf('\x9f'));return i>=0&&!/[\x07\x9c]|\x1b\\/.test(t.slice(i+1));};
   /* spec 097 FR-317 (issue #1284): a tool NAME is shown through the same mask as a label (MCP servers choose names). Control codes out first, then the mask;
      a name the mask changed in ANY way is shown as the generic word `tool`, never half hidden. No mask or a failing one: `tool` too. Every surface that shows a name calls this. */
+  /* spec 012 FR-181 (review of PR 1585, round 7): a tool name longer than this is the neutral word before any mask runs (fail closed); the longest real names are under 30 characters, and an
+     uncapped name was the one input that let a backslash-dense or `[redacted:`-dense text reach maskRaw at up to 1,000,000 characters (issue #1593) */
+  const TOOL_CAP=256;
   const toolName=(raw,mask)=>{const m=mask||{};try{if(typeof m.redact!=='function')return 'tool'; /* no mask: fail closed, as a label */
+    if(String(raw==null?'':raw).length>TOOL_CAP)return 'tool';
     if(openStr(raw))return 'tool'; /* an escape string left open at the end swallows what follows it, and what is shown would be the start of a token (ghp_ and four characters): fail closed (review of PR 1292) */
     const t=String(clearIn(raw==null?'':raw,m.redact)).trim();if(!t)return 'tool';
     const x=ST.maskRaw(t,m.redact);return x===t?t:'tool';}catch(e){return 'tool';}}; /* shown only when the mask left it exactly as it was: any change, a failed or cut mask ("[redaction failed]", the 1,000,000-character cut), a throw: `tool` */
@@ -81,7 +85,10 @@
   function permCore(raw,k,m){ /* {s, out} (out null: the mask gave nothing) for a text without control characters */
     const s=String(raw).replace(/\s+/g,' ').trim();if(!s)return {s:'',out:''};
     if(k==='shell'){const mm=/^(run )([\s\S]*)$/.exec(s),pre=mm?mm[1]:'',cmd=mm?mm[2]:s;if(!cmd)return {s,out:s};
-      const x=ST.maskLabel(cmd,'run',m);return {s,out:x?pre+x:null,lost:x?shellLost(cmd,x):false};}
+      /* spec 012 FR-184 (review of PR 1824, F1): the label read without the shell readings is checked too; a command that reading cannot match back (main's
+         card fell back there) stays lost, though the shell readings hide a run whole and so match */
+      if(typeof ST.maskLabelPair!=='function')return {s,out:null};
+      const p=ST.maskLabelPair(cmd,'run',m),x=p.text;return {s,out:x?pre+x:null,lost:x?shellLost(cmd,x)||(p.ref!==x&&(!p.ref||shellLost(cmd,p.ref))):false};}
     if(k==='tool'){const j=s.split(/( › |\s+)/).map((w,i)=>i%2||!w?w:toolName(w,m)).join('');const x=ST.maskLabel(j,'other',m);return {s,out:x||null};}
     const x=ST.maskLabel(s,'other',m);return {s,out:x||null};
   }
@@ -95,6 +102,7 @@
       const tail=t=>cut?{text:t.text,hidden:true,why:'cut'}:t, suf=cut?' ⟦cut⟧':'';
       if(!PCTRL_T.test(r0)){
         const c=permCore(r0,k,m);if(c.out===null)return fb('unchecked');if(c.lost)return fb('concealed');return tail(c.out===c.s?{text:c.out+suf,hidden:false}:{text:c.out+suf,hidden:true,why:'secret'});}
+      if(typeof ST.splitHides!=='function')return fb('unchecked');if(ST.splitHides(r0))return fb('concealed'); /* spec 012 FR-182: a token split by a line break with blanks around it, read on the text as written */
       for(const v of [stripAnsi(r0),introOut(r0),r0.replace(PCTRL,'')]){ /* a token the controls split: the mask must find nothing in any reading */
         const c=permCore(v,k,m);if(c.out===null)return fb('unchecked');if(c.out!==c.s)return fb('concealed');} /* a secret behind controls: no text, and the card offers no Allow */
       let mk=r0.replace(PCTRL,pmark),mcut=false;
@@ -209,6 +217,19 @@
        characters. No working mask: nothing (fail closed). `done` false: the word still arriving is held back, since half a token matches no shape.
        A text cut at KEEP loses its first word for the same reason. */
     const home=t=>{if(!mask.home)return t;const h=mask.home(t);return typeof h==='string'?h:'';};
+    /* spec 012 FR-187 (issue #1320, review of PR 1872): maskRaw undoes Markdown escapes, so a home folder written with a doubled backslash (a UNC path) has no home folder
+       form after it, and the home mask read only that output. When the text holds a home folder read in a normal form (escaped or entity slashes `\/`, `&#47;`, `&sol;` as
+       plain slashes, entity backslashes `&#92;`, `&#x5C;`, `&bsol;` as backslashes, backslash runs before `_` or `*` and `*` left out: tool output, HTML and escapes inside a user name), the home mask also reads that form FIRST.
+       The line shows (as the first reading, its spelling kept) when every word of it (letters and digits of its plain text) is a word of the home-first reading:
+       then it shows nothing that reading hides. The words, not the strings: maskRaw drops the home mask's `~` as a Markdown mark when it finds anything to mask, and
+       its Markdown path changes line marks and blanks. Otherwise, or when a reading fails, nothing (fail closed). No home folder in the normal form: one reading, as before. */
+    /* review of PR 1872, rounds 2 and 3: ONE pass over the text, so what one spelling turns into is never read again by another (`&#92;/` stays a backslash and a slash):
+       a backslash or a slash written as an HTML entity (with or without its `;`), an escaped slash, a backslash run before `_` or `*`, and `*` itself */
+    const NORM_SPELL=/&#0*92(?![0-9]);?|&#[xX]0*5[cC](?![0-9a-fA-F]);?|&bsol;|&#0*47(?![0-9]);?|&#[xX]0*2[fF](?![0-9a-fA-F]);?|&sol;|\\\/|\\+(?=[_*])|\*/g;
+    const normOne=m=>/^&#0*92|^&#[xX]0*5[cC]|^&bsol;/.test(m)?'\\':m[0]==='&'||m==='\\/'?'/':'';
+    const norm=t=>t.replace(NORM_SPELL,normOne), words=t=>plain(norm(t)).match(/[\p{L}\p{N}]+/gu)||[];
+    const covered=(a,b)=>{const w=new Set(words(b));return words(a).every(x=>w.has(x));};
+    const twoHomes=(t,f)=>{const a0=f(t),a=a0?home(a0):'';if(!a||!mask.home)return a;const n=norm(t),h=home(n);if(h===n)return a;if(!h)return '';const b0=f(h),b=b0?home(b0):'';return b&&covered(a,b)?a:'';};
     /* control codes out: as escapes, unless read the other way they leave a token, which must then be masked in that reading */
     const clear=raw=>clearIn(raw,mask.redact);
     const block=(raw,k,done)=>{
@@ -217,7 +238,7 @@
       if(t.length>=KEEP){t=t.slice(-KEEP);const m=/\s/.exec(t);t=m?t.slice(m.index+1):'';}
       t=clear(t);
       if(!done){let e=t.length;while(e>0&&!/\s/.test(t[e-1]))e--;t=t.slice(0,e);}
-      const m=home(ST.maskRaw(t,mask.redact));
+      const m=twoHomes(t,x=>ST.maskRaw(x,mask.redact));
       if(!m)return [];
       const out=[];
       for(const para of m.replace(/```[\s\S]*?(```|$)/g,' ').replace(HEAD,'').split(/\n+/)){
@@ -232,10 +253,7 @@
       try{let t=String(raw==null?'':raw);
         if(t.length>KEEP){t=t.slice(0,KEEP);const m=/\s\S*$/.exec(t.slice(-200));t=m?t.slice(0,t.length-200+m.index):'';}
         t=clear(t);
-        const m0=ST.maskRaw(t,mask.redact);if(!m0)return [];
-        const m1=mask.cmd(m0);if(typeof m1!=='string')return [];
-        const m2=mask.url(m1);if(typeof m2!=='string')return [];
-        const m=home(m2);if(!m)return [];
+        const m=twoHomes(t,x=>{const m0=ST.maskRaw(x,mask.redact);if(!m0)return '';const m1=mask.cmd(m0);if(typeof m1!=='string')return '';const m2=mask.url(m1);return typeof m2==='string'?m2:'';});if(!m)return [];
         const l=cutOf(plain(m.replace(/```[\s\S]*?(```|$)/g,' ')),SCREEN_CHARS);
         return l?[{k:k||'plain',t:l}]:[];}catch(e){return [];}};
     const logPush=(s,k,t,cid)=>{s.log.push({n:s.seq++,k,t,cid});if(s.log.length>SCREEN_LINES)s.log.splice(0,s.log.length-SCREEN_LINES);};

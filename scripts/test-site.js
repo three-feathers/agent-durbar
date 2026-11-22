@@ -91,7 +91,7 @@ for (const t of landing.themes) assert.ok(index.includes(`screenshots/${t.screen
 assert.strictEqual(landing.themes.length, 2, 'two themes (spec 035 FR-017)');
 for (const h of landing.harnesses) assert.ok(index.includes(`<h3>${h.name}</h3>`), `agent app ${h.name}`);
 for (const id of ['features', 'how', 'themes', 'apps', 'safety', 'download']) assert.ok(index.includes(`id="${id}"`), `landing section ${id}`);
-assert.ok(!/FR-\d|spec 0\d\d|spec \d{3}/i.test(index), 'no FR or spec numbers on the landing page');
+assert.ok(!site.LANDING_REF_RE.test(index), 'no FR or spec numbers on the landing page');
 assert.ok((index.match(/<section class="sec" id="new">[\s\S]*?<\/section>/) || [''])[0].split('<li>').length - 1 <= 5, "at most 5 bullets in What's new");
 
 // the docs page: the README sections, the feature grid, the gallery, the full release notes
@@ -333,5 +333,44 @@ assert.ok(talkSize - mp4s.reduce((n, f) => n + fs.statSync(path.join(talkDir, f)
 const total = size(out, path.join(out, 'talk'));
 // 8 MB since spec 050 FR-012 (2026-10-26): the linked screenshots are palette-compressed (the site was 15.5 MB with plain PNGs; FR-005 had 15 MB, FR-011 16 MB)
 assert.ok(total < 8 * 1024 * 1024, `site under 8 MB (is ${(total / 1048576).toFixed(1)} MB)`);
+// spec 050 FR-012 delta 2026-11-20 (issue #1169): the site serves only 1440x900 pictures; the 1280x800 copies stay in docs/.
+// Every picture a page names must exist in the built site (a missing one fails), and no 1280x800 picture is copied or named.
+const missingPictures = (dir) => {
+  const bad = [];
+  for (const name of ['index.html', 'docs.html']) {
+    const h = fs.readFileSync(path.join(dir, name), 'utf8');
+    for (const m of h.matchAll(/(?:src|href|content)="((?:[^"]*\/)?screenshots\/[^"]+)"/g)) {
+      const u = m[1].replace(/^https:\/\/three-feathers\.github\.io\/agent-durbar\//, '');
+      if (!fs.existsSync(path.join(dir, u))) bad.push(`${name}: ${u}`);
+    }
+  }
+  return bad;
+};
+assert.deepStrictEqual(missingPictures(out), [], 'every picture a page names is in the built site');
+assert.deepStrictEqual(fs.readdirSync(path.join(out, 'screenshots')).filter((f) => /-1280x800\./.test(f)), [], 'no 1280x800 picture is copied to the site');
+for (const name of ['index.html', 'docs.html']) assert.ok(!/-1280x800\./.test(fs.readFileSync(path.join(out, name), 'utf8')), `${name} names no 1280x800 picture`);
+{
+  // mutant: a picture removed from the built site is found by missingPictures
+  const mut = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-site-mut-'));
+  fs.cpSync(out, mut, { recursive: true });
+  const victim = fs.readdirSync(path.join(mut, 'screenshots'))[0];
+  fs.rmSync(path.join(mut, 'screenshots', victim));
+  assert.ok(missingPictures(mut).some((x) => x.endsWith(`screenshots/${victim}`)), 'a missing picture in the built site fails missingPictures');
+  fs.rmSync(mut, { recursive: true, force: true });
+  // the markdown rules: a link to a 1280x800 picture is its text, an image is its 1440x900 twin, or nothing when there is none
+  const md = site.makeMd('docs');
+  const before = site.copiedImages().size;
+  const html = md.parse('at 1280x800: [desk](screenshots/015-compacting-office-1280x800.png), ![x](screenshots/015-compacting-office-1280x800.png), ![y](screenshots/no-such-thing-1280x800.png)');
+  assert.ok(!/1280x800\.png/.test(html) && !/<a /.test(html), 'a 1280x800 link is plain text and no 1280x800 image is named');
+  assert.ok(html.includes('src="screenshots/015-compacting-office-1440x900.png"'), 'a 1280x800 image becomes its 1440x900 twin');
+  assert.ok(![...site.copiedImages()].some((r) => site.SHOT_1280.test(r)), 'no 1280x800 picture is queued for copying');
+  // a .jpg pair keeps its extension: the 1280x800 link is text, the image is the 1440x900 .jpg twin
+  const jpg = md.parse('[a](screenshots/052-follow-notice-chat-cave-1280x800.jpg) ![b](screenshots/052-follow-notice-chat-cave-1280x800.jpg) ![c](screenshots/no-such-thing-1280x800.jpg)');
+  assert.ok(!/1280x800\.jpg/.test(jpg) && !/<a /.test(jpg), 'a 1280x800 .jpg link is plain text and no 1280x800 .jpg image is named');
+  assert.ok(jpg.includes('src="screenshots/052-follow-notice-chat-cave-1440x900.jpg"'), 'a 1280x800 .jpg image becomes its 1440x900 .jpg twin');
+  assert.ok(![...site.copiedImages()].some((r) => /-1280x800\.(png|jpg|webp)$/.test(r)), 'no 1280x800 .jpg is queued for copying');
+  assert.ok(site.copiedImages().size >= before, 'the twin is queued');
+}
+
 fs.rmSync(out, { recursive: true, force: true });
 console.log(`site: ok (${attrCount} links and images on two pages, ${(total / 1048576).toFixed(1)} MB; ${talkPages.length} unlisted talk pages, ${(talkSize / 1048576).toFixed(1)} MB)`);

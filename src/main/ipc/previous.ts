@@ -9,7 +9,7 @@ import type { AdapterRegistry } from '../../adapters/registry';
 import type { AgentInfo, ResumeResult, VsChatListResult } from '../../shared/api';
 import { VSCODE_CHAT_FORMAT_NOTE, listChats, readChat, vscodeUserDirs } from '../../adapters/vscodeChat';
 import type { ChatFileRef, UserDir } from '../../adapters/vscodeChat';
-import { errText, resumeModeOp } from '../agentops';
+import { resumeModeOp } from '../agentops';
 import type { DevEnv } from '../devhooks';
 import type { FolderStore } from '../folders';
 import type { AgentStateTracker } from '../mcp/agentstate';
@@ -18,6 +18,7 @@ import type { PrevDeps } from '../prevsessions';
 import type { Scheduler } from '../schedules';
 import type { ActivityDecision } from '../../shared/activity';
 import type { AddWorkspace } from './types';
+import { failText } from '../ipcerror';
 
 export interface PreviousIpcDeps {
   /** Spec 080 FR-023: a replaced session's browser view and partition are destroyed. */
@@ -39,9 +40,16 @@ export interface PreviousIpcDeps {
   addWorkspace: AddWorkspace;
   /** Per agent: the VS Code chat files last listed (shared with the handlers that remove an agent). */
   vsChatRefs: Map<string, Map<string, ChatFileRef>>;
+  /** Spec 095 FR-026 (review N-R1): the folder's earlier sessions changed (a delete succeeded): the search drops its kept Codex titles. */
+  sessionsChanged?(): void;
+  /** Issue 1904 (FR-026): the panel lists this folder again (a Refresh): the search's kept lists of it are older than this one and go. */
+  folderListed?(folderKey: string): void;
   /** Spec 058 FR-067: replayed history with failed tool output masked (session secret values from main). */
   maskHistory<H extends { items: { type: string; failed?: boolean; output?: string }[] }>(id: string, h: H): H;
 }
+
+/** The VS Code `User` folders to look in (a test folder under `DURBAR_VSCODE_USER_DIR`); the conversation search uses the same (spec 095). */
+export const vsUserDirsOf = (dev: DevEnv): UserDir[] => (dev.DURBAR_VSCODE_USER_DIR ? [{ product: 'Test', dir: dev.DURBAR_VSCODE_USER_DIR }] : vscodeUserDirs());
 
 export function register(deps: PreviousIpcDeps): void {
   const { renameSessionOpFor, dev, agents, router, registry, agentState, wsKey, resumeIdFor, forgetOpenSession, logActivity, addWorkspace, vsChatRefs, maskHistory } = deps;
@@ -49,14 +57,14 @@ export function register(deps: PreviousIpcDeps): void {
   const scheduler = deps.getScheduler;
   // ---- Previous sessions of a folder (Copilot CLI/SDK store, resumable) and VS Code chat history (read-only) ----
   // The renderer only ever names an agent and an opaque id; folders and file paths are resolved here.
-  const vsUserDirs = (): UserDir[] =>
-    dev.DURBAR_VSCODE_USER_DIR ? [{ product: 'Test', dir: dev.DURBAR_VSCODE_USER_DIR }] : vscodeUserDirs();
+  const vsUserDirs = (): UserDir[] => vsUserDirsOf(dev);
 
   // Spec 006 FR-024..FR-032: the list, pin/hide and delete bodies live in prevsessions.ts. `sessions:delete` exists only here, on the
   // window's own IPC (ipcHandle): the MCP tools, remote control, schedules and agents have no path to it (scripts/test-prevsessions.ts).
-  const prevDeps: PrevDeps = { agents, router, get store() { return folderStore(); }, wsKey, resumeIdFor: (id) => resumeIdFor(id), appName: (a) => registry.get(a.adapterId)?.displayName ?? a.adapterId, log: (a, decision, action) => logActivity(a, decision, action) };
+  const prevDeps: PrevDeps = { agents, router, get store() { return folderStore(); }, wsKey, resumeIdFor: (id) => resumeIdFor(id), appName: (a) => registry.get(a.adapterId)?.displayName ?? a.adapterId, log: (a, decision, action) => logActivity(a, decision, action), changed: () => deps.sessionsChanged?.() };
   const prevSessions = new PrevSessions(prevDeps);
-  ipcHandle('sessions:listPrevious', (_e, id: unknown) => listPreviousOp(prevDeps, id));
+  const listed = (id: unknown): void => { const a = typeof id === 'string' ? agents.get(id) : undefined; if (a) try { deps.folderListed?.(wsKey(a)); } catch { /* a listener never fails the list */ } };
+  ipcHandle('sessions:listPrevious', (_e, id: unknown) => { listed(id); return listPreviousOp(prevDeps, id); });
   const renameSessionOp = renameSessionOpFor(() => openIdsOf(prevDeps));
   ipcHandle('sessions:rename', (_e, id: unknown, sessionId: unknown, name: unknown) => renameSessionOp(id, sessionId, name));
   ipcHandle('sessions:mark', (_e, id: unknown, src: unknown, sessionId: unknown, mark: unknown) => markOp(prevDeps, id, src, sessionId, mark));
@@ -101,13 +109,14 @@ export function register(deps: PreviousIpcDeps): void {
       if (prev.title && prev.title !== 'Untitled session') info.title = prev.title; // the list's title (name, else summary) until the runtime sends its own
       return { ok: true, agent: info, removedId, title: prev.title, history, ...(modeWas ? { modeWas } : {}) };
     } catch (err) {
-      return { ok: false, error: errText(err) };
+      return { ok: false, error: failText(err, 'previous sessions') };
     } finally {
       prevSessions.endResume(sessionId);
     }
   });
 
   ipcHandle('vschat:list', async (_e, id: unknown): Promise<VsChatListResult> => {
+    listed(id);
     const empty = { sessions: [], storesFound: 0, unreadable: 0, tooLarge: 0, formatNote: VSCODE_CHAT_FORMAT_NOTE };
     const a = typeof id === 'string' ? agents.get(id) : undefined;
     if (!a) return { ok: false, error: 'unknown agent', ...empty };
@@ -116,7 +125,7 @@ export function register(deps: PreviousIpcDeps): void {
       vsChatRefs.set(a.id, new Map(l.sessions.map((r) => [r.summary.key, r])));
       return { ok: true, sessions: l.sessions.map((r) => r.summary), ...marksFor(prevDeps, a, 'vscode', l.sessions.map((r) => r.summary.key)), storesFound: l.storesFound, unreadable: l.unreadable, tooLarge: l.tooLarge, formatNote: VSCODE_CHAT_FORMAT_NOTE };
     } catch (err) {
-      return { ok: false, error: errText(err), ...empty };
+      return { ok: false, error: failText(err, 'previous sessions'), ...empty };
     }
   });
 

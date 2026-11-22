@@ -12,9 +12,10 @@ import type { AdapterRouter } from '../adapters/router';
 import type { McpServerStatus } from '../adapters/types';
 import type { AgentInfo, McpOpenSignInResult, McpSignInStartResult } from '../shared/api';
 import { validSignInEnd } from '../adapters/eventguard';
-import { SIGN_IN_MIN_TTL_MS } from '../shared/mcp';
+import { SIGN_IN_MIN_TTL_MS, stepsHaveCommand } from '../shared/mcp';
 import { maskMcpError } from './mcpmask';
 import { BLOCK_STATES, canSignInAgainStatus, needsSignIn, validServerName } from './mcpsession';
+import { failText } from './ipcerror';
 
 /** FR-065: how long main keeps an address at most; the runtime's own listener ends on its own. FR-180: an entry with a `ttlMs` keeps its own, shorter limit. */
 export const SIGN_IN_TTL_MS = 10 * 60 * 1000;
@@ -308,10 +309,9 @@ export interface SignInDeps {
 
 const NOT_RUNNING = 'This session is not running. Send a message to start it, then sign in.';
 const UNKNOWN = 'Unknown agent or server.';
-const errText = (err: unknown): string => (err instanceof Error ? err.message : String(err));
 /** An error text for the window: every address is hidden (the runtime may quote the authorization address), then the usual MCP masks. */
 export function signInErrorText(err: unknown, secrets: readonly string[], fallback: string): string {
-  const s = errText(err).replace(/\b[a-z][a-z0-9+.-]{1,15}:\/\/\S+/gi, '[address hidden]');
+  const s = failText(err, 'mcp sign-in').replace(/\b[a-z][a-z0-9+.-]{1,15}:\/\/\S+/gi, '[address hidden]');
   return maskMcpError(s, secrets)?.trim() || fallback;
 }
 
@@ -367,7 +367,7 @@ export async function mcpSignInOp(d: SignInDeps, store: McpSignInStore, id: unkn
     if (r.kind === 'connected') {
       // FR-229 [KNOWN GAP: no real Claude Code or no-address Copilot run]: "connected" for a server Durbar knows needs a sign-in (the runtime read it
       // connected) means the app kept its old sign-in: not fixed, so the block stays and the person gets the steps
-      if (runtimeSaysFine) return { ok: false, manual: true, error: `${ad.displayName} says it is signed in. If calls still fail, use the terminal steps below.` };
+      if (runtimeSaysFine) return { ok: false, manual: true, error: `${ad.displayName} says it is signed in. If calls still fail, ${stepsHaveCommand(ad.capabilities.mcpSignInSteps) ? 'use the terminal steps below' : 'switch the server off for this session'}.` };
       return { ok: true, kind: 'connected' };
     }
     // the session may have ended while the runtime was working: nothing is held for a session that is gone

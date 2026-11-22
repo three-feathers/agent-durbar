@@ -44,6 +44,10 @@ export interface SessionSearchApi {
   fold(s: unknown): string;
   terms(q: string): string[];
   locate(text: unknown, query: string, max?: number): Array<{ start: number; end: number; term: number }>;
+  /** Issue 1904: `locate` with each range's place in its word (0 whole word, 1 word start, 2 inside), best first. */
+  locateRanked(text: unknown, query: string, max?: number): Array<{ start: number; end: number; term: number; tier: number }>;
+  /** Issue 1904: the best place of each query word in `text` (3: the word is not there). */
+  bestTiers(text: unknown, query: string): number[];
   anchorKey(t: unknown): string;
 }
 
@@ -97,7 +101,8 @@ export interface ScanPlan {
   platform?: NodeJS.Platform;
 }
 
-export type ReadOutcome = { ok: true; items: readonly HistoryItem[] } | { ok: false; reason: 'too-large' | 'unreadable' | 'missing' };
+/** `timeout` (issue 1904): the read did not answer within its own limit (`SEARCH_READ_MS`): skipped and counted. */
+export type ReadOutcome = { ok: true; items: readonly HistoryItem[] } | { ok: false; reason: 'too-large' | 'unreadable' | 'missing' | 'timeout' };
 
 export interface ScanHit {
   adapter: string;
@@ -113,6 +118,8 @@ export interface ScanHit {
   excerpts: Excerpt[];
   /** Hits not shown ("+N more"). */
   more: number;
+  /** Issue 1904 (FR-040): 0 every query word occurs as a whole word, 1 as a word start at worst, 2 inside a word at worst. */
+  rank: 0 | 1 | 2;
 }
 
 export interface ScanProgress {
@@ -133,6 +140,8 @@ export interface ScanNotes {
   notInstalled: string[];
   tooLarge: number;
   unreadable: number;
+  /** Issue 1904 (FR-022): sessions whose read did not answer within its own limit. */
+  slow: number;
   titleOnly: { count: number; apps: string[] };
   hidden: number;
   floorsOff: number;
@@ -202,7 +211,7 @@ function bounds(m: string, ms: number, me: number): [number, number] {
 }
 
 /** The excerpt text with its marks, from masked text only. */
-function excerptOf(search: SessionSearchApi, m: string, s: number, e: number, query: string): { text: string; marks: Array<[number, number]>; terms: Set<number> } {
+function excerptOf(search: SessionSearchApi, m: string, s: number, e: number, query: string): { text: string; marks: Array<[number, number]>; terms: Set<number>; tiers: Map<number, number> } {
   const text = (s > 0 ? '…' : '') + m.slice(s, e).replace(/\s+/g, ' ') + (e < m.length ? '…' : '');
   const marks: Array<[number, number]> = [];
   const terms = new Set<number>();
@@ -210,13 +219,15 @@ function excerptOf(search: SessionSearchApi, m: string, s: number, e: number, qu
     marks.push([r.start, r.end]);
     terms.add(r.term);
   }
-  return { text, marks, terms };
+  const tiers = new Map<number, number>();
+  search.bestTiers(text, query).forEach((t, i) => { if (terms.has(i)) tiers.set(i, t); });
+  return { text, marks, terms, tiers };
 }
 
 /** An excerpt of the masked text `m` for word `term`, cut at least `edgeGuard` characters inside an edge where raw context was left out. */
 function cutIn(search: SessionSearchApi, m: string, atStart: boolean, atEnd: boolean, term: number, query: string): ReturnType<typeof excerptOf> | 'grow' | undefined {
   let near = false;
-  for (const r of search.locate(m, query)) {
+  for (const r of search.locateRanked(m, query)) { // issue 1904: the word's best place first (whole word, word start, inside)
     if (r.term !== term) continue;
     if (r.end - r.start >= BUDGET.excerptChars - 2) {
       // a match longer than an excerpt (review of PR 1098): its start, cut on a code point, marked to the cut, then `…`
@@ -224,7 +235,7 @@ function cutIn(search: SessionSearchApi, m: string, atStart: boolean, atEnd: boo
       const [s, e] = bounds(m, r.start, r.end);
       const lead = s > 0 ? '…' : '';
       const body = m.slice(s, e); // at most excerptChars - 2, on a code point (`bounds`): with both marks, within excerptChars
-      return { text: lead + body + '…', marks: [[lead.length, lead.length + body.length]], terms: new Set([term]) };
+      return { text: lead + body + '…', marks: [[lead.length, lead.length + body.length]], terms: new Set([term]), tiers: new Map([[term, r.tier]]) };
     }
     const [s, e] = bounds(m, r.start, r.end);
     if ((!atStart && s < BUDGET.edgeGuard) || (!atEnd && e > m.length - BUDGET.edgeGuard)) { near = true; continue; }
@@ -232,6 +243,9 @@ function cutIn(search: SessionSearchApi, m: string, atStart: boolean, atEnd: boo
   }
   return near ? 'grow' : undefined; // 'grow': found only near an edge, a wider window may do; undefined: masked away (A2)
 }
+
+/** What the scan keeps beside an excerpt (never sent): the words it holds, the best place of each in its word, and the word it was built for. */
+type Ranked = { terms: Set<number>; tiers: Map<number, number>; tier: number; forTerm: number };
 
 const headOf = (search: SessionSearchApi, masked: string): string => [...search.anchorKey(masked)].slice(0, BUDGET.headChars).join('');
 
@@ -246,13 +260,13 @@ export function messageExcerpts(
   raw: string,
   query: string,
   o: { n: number; speaker: Speaker; values: readonly string[]; masker: Masker; search: SessionSearchApi; cutEnd?: boolean },
-): { excerpts: Array<Excerpt & { terms: Set<number> }>; confirmed: Set<number> } | undefined {
+): { excerpts: Array<Excerpt & Ranked>; confirmed: Set<number> } | undefined {
   const { search, masker } = o;
   const words = [...new Set(search.terms(query))];
   const f = search.fold(raw);
   if (!words.some((w) => f.includes(w))) return undefined;
   const confirmed = new Set<number>();
-  const out: Array<Excerpt & { terms: Set<number> }> = [];
+  const out: Array<Excerpt & Ranked> = [];
   const tries = new Map<number, number>();
   let spent = 0;
   const mask = (from: number, to: number, opt: { whole?: boolean; radius?: number }): MaskedWindow => {
@@ -276,7 +290,7 @@ export function messageExcerpts(
     return done(ok(wholeOf()));
   };
   let head: string | undefined;
-  for (const r of search.locate(raw, query, 64)) {
+  for (const r of search.locateRanked(raw, query, 64)) { // issue 1904: each word's best occurrence first, so the excerpt is the whole word before the in-word hit
     if (confirmed.has(r.term)) continue;
     const t = tries.get(r.term) ?? 0;
     if (t >= BUDGET.triesPerWord) continue;
@@ -287,7 +301,7 @@ export function messageExcerpts(
     // the head: the first 60 characters of the masked message's key, from a start window that reaches well past them (masks shrink text)
     head ??= grow(0, 0, (w) => (w.atEnd || w.text.length >= BUDGET.headChars + BUDGET.edgeGuard ? headOf(search, w.text) : 'grow')) ?? headOf(search, wholeOf().text); // a cut message: its start is far from the cut
     for (const x of ex.terms) confirmed.add(x);
-    out.push({ text: ex.text, marks: ex.marks, speaker: o.speaker, anchor: { n: o.n, head }, terms: ex.terms });
+    out.push({ text: ex.text, marks: ex.marks, speaker: o.speaker, anchor: { n: o.n, head }, terms: ex.terms, tiers: ex.tiers, tier: ex.tiers.get(r.term) ?? r.tier, forTerm: r.term });
   }
   return { excerpts: out, confirmed };
 }
@@ -296,7 +310,7 @@ export function messageExcerpts(
 export function orderPlan(plan: ScanPlan): { list: PlanSession[]; notes: ScanNotes } {
   const platform = plan.platform ?? process.platform;
   const notes: ScanNotes = {
-    searched: 0, folders: 0, notInstalled: [...new Set((plan.unavailable ?? []).map(String))], tooLarge: 0, unreadable: 0,
+    searched: 0, folders: 0, notInstalled: [...new Set((plan.unavailable ?? []).map(String))], tooLarge: 0, unreadable: 0, slow: 0,
     titleOnly: { count: 0, apps: [] }, hidden: 0, floorsOff: 0, capped: { sessions: false, perFolder: false, results: false }, timedOut: false, cut: 0, bounded: 0, maskFailed: 0,
   };
   const seen = new Set<string>();
@@ -328,18 +342,26 @@ export function orderPlan(plan: ScanPlan): { list: PlanSession[]; notes: ScanNot
   return { list, notes };
 }
 
+/** T022 (review of PR 1098): the longest a gated read may hold the gate; then it rejects and the next read runs (the hung one is left to end by itself). */
+export const READ_GATE_TIMEOUT_MS = 20_000;
+
 /**
- * One cross-scan gate for reads that start a process (an open Codex session's `thread/read`, FR-023): one read at a time across scans; a
- * read of the same key already in flight is shared, never started twice. The result is dropped as soon as the read settles (A1).
+ * One cross-scan gate for Codex calls (an open session's `thread/read`, a folder's `thread/list` probe; FR-023): one at a time across scans; a
+ * read of the same key already in flight is shared, never started twice. The result is dropped as soon as the read settles (A1). A read
+ * that does not settle within `timeoutMs` rejects (the scan counts its session as unreadable), so a hung `thread/read` cannot block the
+ * reads of later scans. `run`'s own `timeoutMs` replaces it for one call (a call that may take longer, such as a whole probe). `wait` is the
+ * timer (tests inject their own).
  */
-export function createReadGate<T>(): { run(key: string, fn: () => Promise<T>): Promise<T>; inFlight(): number } {
+export function createReadGate<T>(o: { timeoutMs?: number; wait?: (ms: number) => Promise<void> } = {}): { run(key: string, fn: () => Promise<T>, timeoutMs?: number): Promise<T>; inFlight(): number } {
+  const ms = o.timeoutMs ?? READ_GATE_TIMEOUT_MS;
+  const wait = o.wait ?? ((t: number) => new Promise<void>((r) => { const h = setTimeout(r, t); h.unref?.(); }));
   let tail: Promise<unknown> = Promise.resolve();
   const live = new Map<string, Promise<T>>();
   return {
-    run(key, fn) {
+    run(key, fn, timeoutMs) {
       const cur = live.get(key);
       if (cur) return cur;
-      const p = tail.then(() => fn());
+      const p = tail.then(() => Promise.race([fn(), wait(timeoutMs ?? ms).then((): never => { throw new Error('read timed out'); })]));
       tail = p.catch(() => undefined);
       live.set(key, p);
       const drop = (): void => { if (live.get(key) === p) live.delete(key); };
@@ -434,10 +456,15 @@ export function startScan(plan: ScanPlan, query: string, deps: ScanDeps): { canc
       }
       const titleMarks: Array<[number, number]> = [];
       const confirmed = new Set<number>();
-      if (title !== undefined) for (const r of deps.search.locate(title, query)) { titleMarks.push([r.start, r.end]); confirmed.add(r.term); }
+      const best = words.map(() => 3); // issue 1904: the best place of each word in the title or a shown message
+      if (title !== undefined) {
+        for (const r of deps.search.locate(title, query)) { titleMarks.push([r.start, r.end]); confirmed.add(r.term); }
+        deps.search.bestTiers(title, query).forEach((t, i) => { if (t < best[i]) best[i] = t; });
+      }
+      const rank = (): 0 | 1 | 2 => Math.min(2, Math.max(0, ...best)) as 0 | 1 | 2;
       const hit = (excerpts: Excerpt[], more: number): ScanHit => ({
         adapter: s.adapter, sessionId: s.sessionId, ...(s.agentId ? { agentId: s.agentId } : {}), group: s.group === 'office' ? 'office' : 'earlier',
-        app: s.app, folderName: s.folderName, title: title ?? 'Untitled session', titleMarks: title !== undefined ? titleMarks : [], time: s.time, excerpts, more,
+        app: s.app, folderName: s.folderName, title: title ?? 'Untitled session', titleMarks: title !== undefined ? titleMarks : [], time: s.time, excerpts, more, rank: rank(),
       });
       if (confirmed.size === words.length) return hit([], 0); // a title hit at once, before its messages are read
       if (s.content === 'title') return undefined;
@@ -453,11 +480,12 @@ export function startScan(plan: ScanPlan, query: string, deps: ScanDeps): { canc
       if (!r.ok) {
         if (r.reason === 'too-large') notes.tooLarge++;
         else if (r.reason === 'unreadable') notes.unreadable++;
+        else if (r.reason === 'timeout') notes.slow++; // issue 1904: skipped, counted, the scan goes on
         return undefined; // missing: the session ended or was deleted meanwhile
       }
-      const shown: Array<Excerpt & { terms: Set<number> }> = [];
-      const reserve: Array<Excerpt & { terms: Set<number> }> = [];
-      const shownWords = new Set<number>();
+      // issue 1904: the excerpts kept so far, at most `maxExcerpts` per word they were built for, the best place first (then the earliest message)
+      const pool: Array<Excerpt & Ranked> = [];
+      const better = (a: Excerpt & Ranked, b: Excerpt & Ranked): number => a.tier - b.tier || a.anchor.n - b.anchor.n;
       let total = 0;
       let n = -1;
       let cutHere = 0;
@@ -488,18 +516,27 @@ export function startScan(plan: ScanPlan, query: string, deps: ScanDeps): { canc
         for (const x of m.confirmed) confirmed.add(x);
         for (const e of m.excerpts) {
           total++;
-          if (shown.length < BUDGET.maxExcerpts && [...e.terms].some((w) => !shownWords.has(w))) {
-            shown.push(e);
-            for (const w of e.terms) shownWords.add(w);
-          } else if (reserve.length < BUDGET.maxExcerpts) reserve.push(e);
+          e.tiers.forEach((t, w) => { if (t < best[w]) best[w] = t; });
+          pool.push(e);
+          const same = pool.filter((x) => x.forTerm === e.forTerm).sort(better);
+          if (same.length > BUDGET.maxExcerpts) pool.splice(pool.indexOf(same[same.length - 1]), 1);
         }
       }
       if (cancelled || confirmed.size < words.length) {
         notes.cut += cutHere;
         return undefined;
       }
+      const shown: Array<Excerpt & Ranked> = [];
+      const reserve: Array<Excerpt & Ranked> = [];
+      const shownWords = new Set<number>();
+      for (const e of pool.sort(better)) {
+        if (shown.length < BUDGET.maxExcerpts && [...e.terms].some((w) => !shownWords.has(w))) {
+          shown.push(e);
+          for (const w of e.terms) shownWords.add(w);
+        } else reserve.push(e);
+      }
       const chosen = shown.concat(reserve).slice(0, BUDGET.maxExcerpts).sort((a, b) => a.anchor.n - b.anchor.n);
-      return hit(chosen.map(({ terms: _t, ...e }) => e), total - chosen.length);
+      return hit(chosen.map(({ terms: _t, tiers: _i, tier: _r, forTerm: _f, ...e }) => e), total - chosen.length);
     }
   }
 }

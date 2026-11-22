@@ -11,10 +11,15 @@
 #   - a PR GitHub cannot merge (conflicts): GitHub then runs only CodeQL, so the other checks look absent rather than red;
 #   - a PR whose file list (paginated files API, renames' old paths too, count equal to changed_files, under 3000) is unreadable or incomplete (spec 021 FR-091, #1422);
 #   - a PR that changes src/ without the Spec Kit gate and the Linux build-and-test check present and passing;
-#   - an open code-scanning alert on the PR's merge ref or head ref (a bot line comment can be carried forward after its alert is fixed);
+#   - an open code-scanning alert on the PR's merge ref, or on its head ref when the PR's base branch does not hold it too (FR-099, #1868: the head ref's
+#     analysis also lists main's alerts); a bot line comment can be carried forward after its alert is fixed;
 #   - a reviewer whose latest review is CHANGES_REQUESTED;
 #   - an unresolved, non-outdated review thread;
+#     durbar-samikshak[bot] (spec 103 FR-071, #1706) is read like a teammate: its issue comments, line comments, review bodies and unresolved threads are asks and its
+#     CHANGES_REQUESTED blocks; its APPROVED review is never an approval (never printed as "approved by"). Every other [bot]'s issue and line comments are skipped.
+#     Every unresolved thread blocks whoever opened it, bots included (GraphQL gives a Bot actor's login without "[bot]", so no login test could skip one).
 #   - a comment by someone else (PR comment, review body or line comment) newer than my own latest comment on the PR: read and answer it first.
+#     Exception (FR-097, #1910): a trusted reviewer's ask counts as answered when that reviewer's latest review is an APPROVED one submitted later than it.
 #     Exact status notes (a whole comment that is only `reviewing at <sha>` or `checks run at <sha>: ...` on one line, pattern in
 #     scripts/pr-status-note.re) are not counted as asks; they are printed apart under "status notes, not counted as asks:".
 #   - an outside PR (from a fork, or opened by an account outside scripts/trusted-authors.txt other than dependabot[bot]): a human decides;
@@ -147,12 +152,22 @@ if [ -n "$codeql_ok" ]; then
     codeql_ok=; codeql="$codeql(not exactly one CodeQL run from github-advanced-security, run $codeql_id of $head_sha)"
   fi
 fi
-# the open alerts on the merge and head refs, read as two numbers; an API error or a non-number blocks
-a_merge=$(gh api "repos/$R/code-scanning/alerts?ref=refs/pull/$p/merge&state=open" --jq length) && a_head=$(gh api "repos/$R/code-scanning/alerts?ref=refs/pull/$p/head&state=open" --jq length) && isnum "$a_merge" && isnum "$a_head" && alerts=$((a_merge + a_head)) || alerts="unread(code-scanning API)"
+# the open alerts on the merge and head refs, read as two numbers; an API error or a non-number blocks.
+# FR-099 (#1868): CodeQL on a PR's head ref lists main's alerts too, so a head-ref alert counts only when it is not also open on the PR's base branch
+# (same alert number; a fresh alert has a number main does not hold). The merge ref counts as before. A base branch name that is not plain, or an
+# unreadable base list, blocks (fail closed).
+a_merge=$(gh api "repos/$R/code-scanning/alerts?ref=refs/pull/$p/merge&state=open" --jq length) && isnum "$a_merge" || a_merge=
+case $pr_baseref in ''|*[!A-Za-z0-9._/-]*|*..*) a_base_nums=ERR;; *) a_base_nums=$(gh api --paginate "repos/$R/code-scanning/alerts?ref=refs/heads/$pr_baseref&state=open" --jq '.[].number') || a_base_nums=ERR;; esac
+a_head_nums=$(gh api --paginate "repos/$R/code-scanning/alerts?ref=refs/pull/$p/head&state=open" --jq '.[].number') || a_head_nums=ERR
+numlist() { [ -z "$1" ] || ! grep -qvE '^[0-9]+$' <<< "$1"; }
+if [ -n "$a_merge" ] && [ "$a_base_nums" != ERR ] && [ "$a_head_nums" != ERR ] && numlist "$a_base_nums" && numlist "$a_head_nums"; then
+  a_head=0; [ -z "$a_head_nums" ] || a_head=$(grep -cvxF -f <(printf '%s\n' "$a_base_nums") <<< "$a_head_nums")
+  alerts=$((a_merge + a_head))
+else alerts="unread(code-scanning API)"; fi
 # --paginate everywhere below: the REST lists return 30 items a page, and a long PR has more (spec 021 FR-055). --jq runs per page,
 # so the latest review per person is picked in the shell, across pages, not with jq's group_by
 changes=$(gh api --paginate repos/$R/pulls/$p/reviews --jq '.[]|select(.state!="COMMENTED" and .state!="PENDING")|"\(.user.login)\t\(.submitted_at)\t\(.state)"' | sort -k1,1 -k2,2 | awk -F'\t' -v me="$ME" '{last[$1]=$3} END{for(u in last) if(last[u]=="CHANGES_REQUESTED" && u!=me) printf "%s%s", (n++?",":""), u}')
-threads=$(gh api graphql -f query="query{repository(owner:\"$OWNER\",name:\"$NAME\"){pullRequest(number:$p){reviewThreads(first:100){nodes{isResolved isOutdated comments(first:1){nodes{author{login}}}}}}}}" --jq '[.data.repository.pullRequest.reviewThreads.nodes[]|select(.isResolved==false and .isOutdated==false and (.comments.nodes[0].author.login|test("\\[bot\\]$")|not))]|length')
+threads=$(gh api graphql -f query="query{repository(owner:\"$OWNER\",name:\"$NAME\"){pullRequest(number:$p){reviewThreads(first:100){nodes{isResolved isOutdated comments(first:1){nodes{author{__typename login}}}}}}}}" --jq '[.data.repository.pullRequest.reviewThreads.nodes[]|select(.isResolved==false and .isOutdated==false)]|length')
 # comments whose latest edit was by an outside account: their text is hidden below and they block (a human checks the edit)
 outside_edits=$(gh api graphql -f query="query{repository(owner:\"$OWNER\",name:\"$NAME\"){pullRequest(number:$p){comments(last:100){nodes{url editor{__typename login}}} reviews(last:100){nodes{url editor{__typename login}}} reviewThreads(last:100){nodes{comments(last:100){nodes{url editor{__typename login}}}}}}}}" --jq "$JQ_TRUST .data.repository.pullRequest|(.comments.nodes[], .reviews.nodes[], .reviewThreads.nodes[].comments.nodes[])|select(.editor != null and (.editor|who|trusted|not))|\"\(.url) edited by \(.editor|who)\"")
 EDITED_URLS=$(printf '%s\n' "$outside_edits" | awk '{print $1}'); trust_defs
@@ -160,11 +175,14 @@ EDITED_URLS=$(printf '%s\n' "$outside_edits" | awk '{print $1}'); trust_defs
 NOTE_RE=$(sed 's/\\/\\\\/g' "$(dirname "$0")/pr-status-note.re")
 NOTE="(.body|test(\"$NOTE_RE\"))"
 mine=$( { gh api --paginate repos/$R/issues/$p/comments --jq ".[]|select(.user.login==\"$ME\" and ($NOTE|not))|.created_at"; gh api --paginate repos/$R/pulls/$p/reviews --jq ".[]|select(.user.login==\"$ME\")|.submitted_at"; gh api --paginate repos/$R/pulls/$p/comments --jq ".[]|select(.user.login==\"$ME\")|.created_at"; } | sort | tail -1)
-newer=$( { gh api --paginate repos/$R/issues/$p/comments --jq "$JQ_TRUST .[]|select(.user.login!=\"$ME\" and (.user.login|test(\"\\\\[bot\\\\]\$\")|not) and (((.user.login|trusted) and $NOTE)|not))|\"\(.created_at) comment \(.user.login): \(shown_body)\""; gh api --paginate repos/$R/pulls/$p/reviews --jq "$JQ_TRUST .[]|select(.user.login!=\"$ME\" and .body!=\"\" and (.state!=\"APPROVED\" or (.user.login|trusted|not)))|\"\(.submitted_at) review(\(.state)) \(.user.login): \(shown_body)\""; gh api --paginate repos/$R/pulls/$p/comments --jq "$JQ_TRUST .[]|select(.user.login!=\"$ME\" and (.user.login|test(\"\\\\[bot\\\\]\$\")|not))|\"\(.created_at) line \(.user.login) \(.path): \(shown_body)\""; } | sort | awk -v m="$mine" '$1>m')
+newer=$( { gh api --paginate repos/$R/issues/$p/comments --jq "$JQ_TRUST .[]|select(.user.login!=\"$ME\" and ((.user.login|test(\"\\\\[bot\\\\]\$\")|not) or .user.login==\"durbar-samikshak[bot]\") and (((.user.login|trusted) and $NOTE)|not))|\"\(.created_at) comment \(.user.login): \(shown_body)\""; gh api --paginate repos/$R/pulls/$p/reviews --jq "$JQ_TRUST .[]|select(.user.login!=\"$ME\" and .body!=\"\" and (.state!=\"APPROVED\" or (.user.login|trusted|not) or (.user.login|test(\"\\\\[bot\\\\]\$\"))))|\"\(.submitted_at) review(\(.state)) \(.user.login): \(shown_body)\""; gh api --paginate repos/$R/pulls/$p/comments --jq "$JQ_TRUST .[]|select(.user.login!=\"$ME\" and ((.user.login|test(\"\\\\[bot\\\\]\$\")|not) or .user.login==\"durbar-samikshak[bot]\"))|\"\(.created_at) line \(.user.login) \(.path): \(shown_body)\""; } | sort | awk -v m="$mine" '$1>m')
+# FR-097 (#1910): an ask by a trusted reviewer R is answered when R's latest review is an APPROVED one later than the ask (scripts/pr-gate-answered.awk)
+rev_tsv=$(gh api --paginate repos/$R/pulls/$p/reviews --jq "$JQ_TRUST .[]|select(.state!=\"COMMENTED\" and .state!=\"PENDING\" and (.user.login|trusted) and (.user.login|test(\"\\\\[bot\\\\]\$\")|not))|\"\(.user.login)\t\(.submitted_at)\t\(.state)\"" | sort -k1,1 -k2,2)
+newer=$(printf '%s\n' "$newer" | awk -f "$(dirname "$0")/pr-gate-answered.awk" <(printf '%s\n' "$rev_tsv") -)
 notes=$( { gh api --paginate repos/$R/issues/$p/comments --jq "$JQ_TRUST .[]|select($NOTE and (.user.login|trusted))|\"\(.created_at) \(.user.login): \(.body|gsub(\"^\\\\s+\";\"\")|split(\"\\n\")[0])\""; } | sort)
 # approvals (spec 021, 2026-10-29 delta, issue #883): a trusted reviewer's latest review being APPROVED is printed on its own line and its
 # body is not an ask. A later comment or change request still counts (it is newer than my last answer, or it is the latest review state).
-approvals=$(gh api --paginate repos/$R/pulls/$p/reviews --jq "$JQ_TRUST .[]|select(.state!=\"COMMENTED\" and .state!=\"PENDING\" and (.user.login|trusted))|\"\(.user.login)\t\(.submitted_at)\t\(.state)\t\(.commit_id[0:8])\"" | sort -k1,1 -k2,2 | awk -F'\t' '{last[$1]=$0} END{for(u in last){split(last[u],f,"\t"); if(f[3]=="APPROVED") print "approved by: " f[1] " at " f[4] " (" f[2] ")"}}' | sort)
+approvals=$(gh api --paginate repos/$R/pulls/$p/reviews --jq "$JQ_TRUST .[]|select(.state!=\"COMMENTED\" and .state!=\"PENDING\" and (.user.login|trusted) and (.user.login|test(\"\\\\[bot\\\\]\$\")|not))|\"\(.user.login)\t\(.submitted_at)\t\(.state)\t\(.commit_id[0:8])\"" | sort -k1,1 -k2,2 | awk -F'\t' '{last[$1]=$0} END{for(u in last){split(last[u],f,"\t"); if(f[3]=="APPROVED") print "approved by: " f[1] " at " f[4] " (" f[2] ")"}}' | sort)
 [ -n "$approvals" ] && echo "$approvals"
 [ -n "$notes" ] && { echo "status notes, not counted as asks:"; echo "$notes"; }
 # FR-090: the head is read again after every head-dependent read (the check list, pr_line, the one file list for src/ and FR-089): a
@@ -173,7 +191,7 @@ head_now=$(gh api repos/$R/pulls/$p --jq .head.sha 2>/dev/null) || head_now=; ca
 [ -n "$head_sha" ] && [ "$head_now" = "$head_sha" ] || bad="$bad head-changed(read ${head_sha:-unread} first, ${head_now:-unread} at the end: a push during the gate, run it again)"
 if [ -n "$bad" ] || [ -z "$codeql_ok" ] || [ "$alerts" != "0" ] || [ -n "$changes" ] || [ "$threads" != "0" ] || [ -n "$newer" ] || [ -n "$outside_edits" ]; then
   echo "#$p not ready: checks=[$bad] codeql=$codeql alerts=$alerts changes_requested=[$changes] open_threads=$threads"
-  [ -n "$newer" ] && { echo "unanswered human comments (read, answer or fix, then rerun; an outside one goes to your human as its link):"; echo "$newer"; }
+  [ -n "$newer" ] && { echo "unanswered comments (read, answer or fix, then rerun; an outside one goes to your human as its link):"; echo "$newer"; }
   [ -n "$outside_edits" ] && { echo "comments last edited by an outside account (not shown, for a human):"; echo "$outside_edits"; }
   exit 1
 fi

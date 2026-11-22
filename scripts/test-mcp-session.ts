@@ -20,9 +20,11 @@ import type { AgentInfo } from '../src/shared/api';
 import { endSessionOp } from '../src/main/agentops';
 import { agentMcpReply, mcpRestartOp, mcpRestartSessionOp, restartReason, validServerName } from '../src/main/mcpsession';
 import { mcpHealthUpdate } from '../src/shared/mcphealth';
+import { stepsHaveCommand } from '../src/shared/mcp';
 import type { McpReplyInput, RestartDeps, RestartSessionDeps } from '../src/main/mcpsession';
 import { isMethodNotFound, sdkErrorText } from '../src/adapters/copilot';
 import { FakeClient, FakeCopilot } from './fakes/copilot-sdk';
+import { ShownError } from '../src/shared/shownerror';
 
 const info = (id: string): AgentInfo => ({ id, name: 'Ana', cwd: '/w', permMode: 'ask', model: 'auto' }) as AgentInfo;
 const routerOf = (ad: AgentAdapter | undefined) => ({ forAgent: () => ad });
@@ -60,6 +62,20 @@ async function main(): Promise<void> {
       };
       const r = agentMcpReply(base);
       const by = (n: string) => r.servers.find((x) => x.name === n)!;
+      // FR-246 (review of #1731): main's row flag `signInHasCommand` follows the adapter's steps text; without it Claude Code would lose its terminal-steps button silently
+      {
+        const mk = async (steps: string) => {
+          const adS = new FakeAdapter({ capabilities: { mcpStart: 'session', mcpToggleApplies: 'live', mcpSignIn: true, mcpSignInSteps: steps } });
+          const sidS = await adS.start({ workspace: ws, quiet: true });
+          const rS = agentMcpReply({ ...base, a: info(sidS), ad: adS, cli: [...base.cli, { name: 'signed-out', enabled: true }] });
+          return rS.servers.find((x) => x.name === 'signed-out')!;
+        };
+        const claudeLike = await mk('If Sign in is not available, run `claude mcp login {name}` in a terminal.');
+        assert.deepStrictEqual([claudeLike.signInHasCommand, /claude mcp login signed-out/.test(claudeLike.signInSteps ?? '')], [true, true], 'FR-246: a steps text with a command sets signInHasCommand (the terminal-steps button depends on it)');
+        const copilotLike = await mk('Sign in is not available for this server from Agent Durbar. Switch it off for this session if you do not need it.');
+        assert.strictEqual('signInHasCommand' in copilotLike, false, 'FR-246: a command-less note leaves the flag unset');
+        assert.ok(!!copilotLike.signInSteps, 'FR-246: the note itself is still sent');
+      }
       const json = JSON.stringify(r);
       assert.ok(!json.includes(secret), 'an extra\'s header value never reaches the window (FR-005)');
       assert.ok(!json.includes('ghp_abcdefghijklmnopqrstuvwxyz0123456789'), 'a ghp_ token is masked');
@@ -229,13 +245,13 @@ async function main(): Promise<void> {
 
       // a failed resume leaves the agent ended; the error is masked; a sign-in failure is marked
       calls.length = 0;
-      resumeError = new Error('Failed to authenticate. API Error: 401 OAuth access token is invalid.');
+      resumeError = new ShownError('Failed to authenticate. API Error: 401 OAuth access token is invalid.');
       const auth = await mcpRestartSessionOp(d, running, sid, false);
       assert.deepStrictEqual([auth.ok, auth.ended, auth.errorKind], [false, true, 'auth'], `sign-in failure (FR-027): ${JSON.stringify(auth)}`);
       assert.ok(!ad.isLive(sid), 'the agent stays ended, as after End session');
       assert.match((await mcpRestartSessionOp(d, running, sid, false)).error!, /not running/, 'an ended session is not restarted (a message resumes it)');
       await ad.start({ workspace: ws, sessionId: sid, quiet: true });
-      resumeError = new Error('spawn failed with TOKEN=sekret-value-42');
+      resumeError = new ShownError('spawn failed with TOKEN=sekret-value-42');
       const other = await mcpRestartSessionOp(d, running, sid, false);
       assert.deepStrictEqual([other.ok, other.ended, other.errorKind], [false, true, undefined], 'another error is not a sign-in error');
       assert.ok(other.error!.includes('[redacted]') && !other.error!.includes('sekret-value-42'), 'masked');
@@ -442,26 +458,26 @@ async function main(): Promise<void> {
       const mcpRpc = s.rpc.mcp as Record<string, unknown>;
       const realRestart = mcpRpc.restartServer;
       const rejectWith = (e: Error) => { mcpRpc.restartServer = async (x: unknown) => { s.calls.push({ name: 'mcp.restartServer', args: [x] }); throw e; }; };
-      rejectWith(Object.assign(new Error('Unhandled method session.mcp.restartServer'), { code: -32601 }));
+      rejectWith(Object.assign(new ShownError('Unhandled method session.mcp.restartServer'), { code: -32601 }));
       s.calls.length = 0;
       await ad.restartMcpServer(sid, 'notes');
       assert.deepStrictEqual(mcpCalls(), [['mcp.restartServer', { serverName: 'notes' }], ['mcp.disable', { serverName: 'notes' }], ['mcp.enable', { serverName: 'notes' }]], 'MethodNotFound: disable then enable, that server only');
-      rejectWith(new Error('Unhandled method session.mcp.restartServer')); // the text alone, as the SDK's own connect check reads it
+      rejectWith(new ShownError('Unhandled method session.mcp.restartServer')); // the text alone, as the SDK's own connect check reads it
       s.calls.length = 0;
       await ad.restartMcpServer(sid, 'notes');
       assert.deepStrictEqual(mcpCalls().map((c) => c[0]), ['mcp.restartServer', 'mcp.disable', 'mcp.enable'], '"Unhandled method" text: fallback');
       // any other failure is the restart's own: it is reported, the server is not switched off and on behind the user's back
-      rejectWith(new Error('MCP server notes failed to start: spawn ENOENT'));
+      rejectWith(new ShownError('MCP server notes failed to start: spawn ENOENT'));
       s.calls.length = 0;
       await assert.rejects(ad.restartMcpServer(sid, 'notes'), /spawn ENOENT/);
       assert.deepStrictEqual(mcpCalls().map((c) => c[0]), ['mcp.restartServer'], 'another error: no fallback');
       // real 2026-10-21 (T060, runtime 1.0.22): the SDK's own prefix is dropped, the runtime's reason is kept (and not a fallback)
-      rejectWith(Object.assign(new Error('Request session.mcp.restartServer failed with message: failed to spawn MCP server process: No such file or directory (os error 2)'), { code: -32603 }));
+      rejectWith(Object.assign(new ShownError('Request session.mcp.restartServer failed with message: failed to spawn MCP server process: No such file or directory (os error 2)'), { code: -32603 }));
       s.calls.length = 0;
       await assert.rejects(ad.restartMcpServer(sid, 'notes'), (e: Error) => e.message === 'failed to spawn MCP server process: No such file or directory (os error 2)');
       assert.deepStrictEqual(mcpCalls().map((c) => c[0]), ['mcp.restartServer'], 'a -32603 spawn failure: no fallback');
-      assert.strictEqual(sdkErrorText(new Error('plain reason')), 'plain reason');
-      assert.ok(!isMethodNotFound(new Error('timeout')) && !isMethodNotFound(undefined) && isMethodNotFound({ code: -32601 }));
+      assert.strictEqual(sdkErrorText(new ShownError('plain reason')), 'plain reason');
+      assert.ok(!isMethodNotFound(new ShownError('timeout')) && !isMethodNotFound(undefined) && isMethodNotFound({ code: -32601 }));
       // a runtime object without the method at all (an SDK older than 1.0.22's generated client)
       delete mcpRpc.restartServer;
       s.calls.length = 0;
@@ -473,12 +489,27 @@ async function main(): Promise<void> {
       assert.strictEqual(client.created.length, 1, 'no session was started by a restart');
       await ad.stop(sid);
     }
+    // ---- FR-246: the simulator's steps texts agree with the shared `stepsHaveCommand` (sim.ts has no imports and mirrors it with includes('`')) ----
+    {
+      const simSrc = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'renderer', 'sim.ts'), 'utf8');
+      const grab = (app: string): ((n: string) => string) => {
+        const m = new RegExp(app + ': \\{ steps: \\((n)?\\) => (.+?), note:').exec(simSrc);
+        assert.ok(m, 'sim.ts SIM_SIGN_IN has a ' + app + ' steps text');
+        return new Function('n', 'return ' + m![2]) as (n: string) => string;
+      };
+      assert.deepStrictEqual([stepsHaveCommand(grab('copilot')('x')), stepsHaveCommand(grab('claude')('x'))], [false, true], 'FR-246: the sim texts give the same answer as stepsHaveCommand (Copilot none, Claude one)');
+      assert.ok(simSrc.includes("signInHasCommand: true") && /steps\.includes\('`'\)/.test(simSrc), 'FR-246: the sim sets the flag from the same backtick test');
+    }
     // ---- Copilot startMcpSignIn on the fake SDK (FR-064, SC-012, T098) ----
     {
       const client = new FakeClient();
       const ad = new FakeCopilot(client);
       assert.deepStrictEqual([ad.capabilities.mcpSignIn, typeof ad.startMcpSignIn, typeof (ad as { cancelMcpSignIn?: unknown }).cancelMcpSignIn], [true, 'function', 'undefined'], 'Copilot: Sign in yes, a cancel call no (its cancelLogin is for owned logins only)');
-      assert.match(ad.capabilities.mcpSignInSteps ?? '', /`copilot`.*`\/mcp auth \{name\}`.*Restart session with these servers/, 'the manual route: copilot, then /mcp auth <name>');
+      {
+        const steps = ad.capabilities.mcpSignInSteps ?? '';
+        assert.ok(steps.length > 0 && !/`|\/mcp auth|copilot login|run copilot/i.test(steps), 'FR-246: the Copilot row has no CLI command (a CLI sign-in did not carry over): ' + steps);
+        assert.strictEqual(steps, "Sign in is not available for this server from Agent Durbar. Switch it off for this session if you do not need it.", 'FR-246: the owner-chosen note (2026-11-14), no CLI mention');
+      }
       const sid = await ad.start({ workspace: ws, quiet: true });
       const s = client.last;
       const oauth = () => s.calls.filter((c) => c.name.startsWith('mcp.oauth.')).map((c) => [c.name, ...c.args]);
@@ -503,10 +534,10 @@ async function main(): Promise<void> {
       s.loginAnswer = { authorizationUrl: 42 };
       await assert.rejects(ad.startMcpSignIn(sid, 'x'), /cannot read/, 'a non-string address is refused');
       // the runtime refuses: its reason, without the SDK prefix
-      s.loginFail = new Error('Request session.mcp.oauth.login failed with message: server x does not use OAuth');
+      s.loginFail = new ShownError('Request session.mcp.oauth.login failed with message: server x does not use OAuth');
       await assert.rejects(ad.startMcpSignIn(sid, 'x'), (e: Error) => e.message === 'server x does not use OAuth');
       // an older runtime: MethodNotFound, or no `oauth` object at all (no-method mode): a plain message, so main shows the terminal steps
-      s.loginFail = Object.assign(new Error('Unhandled method session.mcp.oauth.login'), { code: -32601 });
+      s.loginFail = Object.assign(new ShownError('Unhandled method session.mcp.oauth.login'), { code: -32601 });
       await assert.rejects(ad.startMcpSignIn(sid, 'x'), /cannot start a sign-in/);
       s.loginFail = undefined;
       delete (s.rpc.mcp as Record<string, unknown>).oauth;

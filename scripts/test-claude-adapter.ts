@@ -9,6 +9,8 @@ import * as os from 'os';
 import * as path from 'path';
 import { CLAUDE_AGENTS_FILE_MIN_VERSION, CLAUDE_PROMPT_FILE_MIN_VERSION, claudeLaunchFilesRefusal, CLAUDE_ENTRYPOINT, ClaudeAdapter, PRE_TOOL_USE_HOOK, budgetText, claudeArgs, claudeForwardsSubagentText, CLAUDE_FORWARD_SUBAGENT_MIN_VERSION, handoffArgs, oneShotArgs, parseHandoffOutput, claudeMdNodeIo, claudeMdPrompt, claudeModelFlag, claudeModelOptions, cliLaunchArgs, mcpConfigOf, permissionLikeOf, userContentOf } from '../src/adapters/claude';
 import { createCliTransport } from '../src/adapters/claudeTransport';
+import { failText } from '../src/main/ipcerror';
+import { ShownError } from '../src/shared/shownerror';
 import type { AgentEvent } from '../src/adapters/types';
 import { FakeClaudeChild, fakeSpawn, SANDBOX_HOST_OK } from './fakes/claude-cli';
 import { tmpDir } from './test-tmp';
@@ -642,6 +644,11 @@ async function main(): Promise<void> {
     await until('probe closed', () => (sp.children[0].ended || sp.children[0].killed.length ? true : undefined));
     await ad.listModelOptions();
     assert.strictEqual(probes, 1, 'cached');
+    // spec 030 FR-071 (issue #1909): `fresh` drops a settled cache (a probe that answered with no models is cached too), and two parallel fresh asks share one probe
+    await ad.listModelOptions({ fresh: true });
+    assert.strictEqual(probes, 2, 'fresh asks the CLI again');
+    await Promise.all([ad.listModelOptions({ fresh: true }), ad.listModelOptions({ fresh: true })]);
+    assert.strictEqual(probes, 3, 'two parallel fresh asks make one probe, not two');
     const none = new ClaudeAdapter({ autopilot: { wired: false }, sandboxFacts: SANDBOX_HOST_OK, claudePath: async () => undefined });
     assert.deepStrictEqual(await none.listModelOptions(), [], 'no claude: empty list');
     const sp2 = fakeSpawn();
@@ -673,13 +680,28 @@ async function main(): Promise<void> {
       assert.strictEqual(q.question, longQ, 'a 1,100-character question is not cut');
       assert.strictEqual(q.options[0].label, longL, 'a 280-character label is not cut');
       assert.strictEqual(q.options[0].description, longD, 'a 600-character description is not cut');
-      const [huge] = parseQuestions({ questions: [{ question: 'x'.repeat(5000), options: [{ label: 'y'.repeat(900), description: 'z'.repeat(3000) }] }] });
-      assert.strictEqual(huge.question.length, 2000, 'still bounded');
+      const [huge] = parseQuestions({ questions: [{ question: 'x'.repeat(25000), options: [{ label: 'y'.repeat(900), description: 'z'.repeat(3000) }] }] });
+      assert.strictEqual(huge.question.length, 20000, 'still bounded (spec 052 2026-11-20 delta, issue 1934: 20,000, was 2,000)');
       assert.strictEqual(huge.options[0].label.length, 300);
       assert.strictEqual(huge.options[0].description?.length, 1000);
+      // issue 1934: a question of 12,000 characters (6x the old bound) is whole; a longer one is cut at a space, never inside a word, and ends with an ellipsis
+      const w12 = 'alpha '.repeat(2000).trim();
+      assert.strictEqual(parseQuestions({ questions: [{ question: w12 }] })[0].question, w12, 'a 12,000-character question is not cut');
+      const secret = 'sk-test-' + 'AbCd1234'.repeat(40); // an invented value of 328 characters, no space inside
+      const lead = 'word '.repeat(3990); // 19,950 characters: the value straddles the 20,000 bound
+      const cut = parseQuestions({ questions: [{ question: lead + secret + ' tail' }] })[0].question;
+      assert.ok(cut.endsWith('…') && cut.length <= 20000, 'a text over the bound ends with an ellipsis within it');
+      assert.ok(!/sk-test-/.test(cut), 'a value that straddles the bound is dropped whole, not shown half (cut at the last space)');
+      assert.ok(/ word…$/.test(cut), 'the cut is at a space');
       const { parseElicitRequest } = await import('../src/shared/elicit');
       const el = parseElicitRequest({ message: 'm '.repeat(700).trim(), schema: { type: 'object', properties: { a: { type: 'string', title: 'T'.repeat(250), description: 'h'.repeat(900) } } } });
       assert.ok(el.ok && el.request.message.length === 1399 && !el.request.message.endsWith('…'), 'a 1,399-character elicitation message is not cut');
+      const bigM = parseElicitRequest({ message: 'beta '.repeat(2400).trim() });
+      assert.ok(bigM.ok && bigM.request.message.length === 11999 && !bigM.request.message.endsWith('…'), 'a 12,000-character elicitation message is not cut (issue 1934)');
+      const hugeM = parseElicitRequest({ message: ('gamma '.repeat(3325) + secret + ' tail') });
+      assert.ok(hugeM.ok && hugeM.request.message.endsWith('…') && hugeM.request.message.length <= 20000 && !/sk-test-/.test(hugeM.request.message) && / gamma…$/.test(hugeM.request.message), 'a longer message is cut at a space and a straddling value is dropped whole');
+      const fv = parseElicitRequest({ message: 'm', schema: { type: 'object', properties: { a: { type: 'string', default: 'v'.repeat(5000) } } } });
+      assert.ok(fv.ok && (fv.request.fields?.[0] as { default?: string }).default?.length === 2000, 'a field value stays bound at 2,000');
       assert.ok(el.ok && el.request.fields?.[0].title.length === 250 && el.request.fields[0].description?.length === 900, 'field title and help are not cut');
     }
 
@@ -811,6 +833,7 @@ async function main(): Promise<void> {
     const usageReqs: Record<string, unknown>[] = []; // spec 100 T013
     let usageMode: 'ok' | 'silent' | 'unknown' = 'ok';
     let usageReply: unknown = {};
+    let reconnectError: string | undefined; // spec 045 FR-066 (review of #1980): Claude Code refuses the reconnect
     sp.next = (c) => {
       c.onWrite = (o) => {
         if (o.type !== 'control_request') {
@@ -819,6 +842,7 @@ async function main(): Promise<void> {
         }
         const r = o.request as { subtype: string; serverName?: string };
         if (r.subtype.startsWith('mcp_')) reqs.push(r);
+        if (r.subtype === 'mcp_reconnect' && reconnectError) return void setTimeout(() => c.send({ type: 'control_response', response: { subtype: 'error', request_id: o.request_id, error: reconnectError } }), 0);
         if (r.subtype === 'mcp_reconnect') servers = servers.map((x) => (x.name === r.serverName ? { name: x.name, status: 'connected' } : x));
         if (r.subtype === 'get_context_usage') {
           usageReqs.push(r);
@@ -857,6 +881,12 @@ async function main(): Promise<void> {
     assert.ok(reqs.every((r) => r.subtype === 'mcp_reconnect' || r.subtype === 'mcp_status'), 'needs-auth: still only mcp_reconnect / mcp_status: ' + JSON.stringify(reqs));
     assert.ok(!reqs.some((r) => /authenticate|oauth|clear_auth/.test(String(r.subtype))), 'never a sign-in request');
     servers = servers.map((x) => (x.name === 'notes' ? { name: 'notes', status: 'connected' } : x));
+    // spec 045 FR-066 (review of #1980): Claude Code's own reason for a failed restart is a ShownError, so the window still shows it (masked)
+    reconnectError = 'Server not found: notes';
+    const why = await ad.restartMcpServer(sid, 'notes').then(() => undefined, (e: unknown) => e);
+    reconnectError = undefined;
+    assert.ok(why instanceof ShownError, 'a refused restart is a ShownError');
+    assert.strictEqual(failText(why, 'test'), 'Claude Code could not restart notes: Server not found: notes', "the window gets Claude Code's reason for a refused restart");
     await assert.rejects(ad.restartMcpServer('no-such', 'notes'), /not running/);
     // spec 069 FR-031: a server's tools come from the same mcp_status reply (documented McpServerStatus.tools)
     servers = servers.map((x) => (x.name === 'web' ? { ...x, tools: [{ name: 'fetch', description: 'Fetch a URL' }, { name: 'search' }] } : x)) as typeof servers;

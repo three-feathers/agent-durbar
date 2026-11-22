@@ -15,6 +15,8 @@ import type { FakeSession } from './fakes/copilot-sdk';
 import type { AgentAdapter } from '../src/adapters/types';
 import type { RemoteState } from '../src/shared/remote';
 import { REMOTE_NOT_STARTED } from '../src/adapters/copilot';
+import { IPC_FAILED } from '../src/main/ipcerror';
+import { ShownError } from '../src/shared/shownerror';
 
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-remote-'));
 const names = (s: FakeSession): string[] => s.calls.map((c) => c.name);
@@ -231,7 +233,11 @@ async function main(): Promise<void> {
     assert.deepStrictEqual(await ops.setRemote('a1', true), { ok: false, error: 'boom line' });
     const throwing = { capabilities: { remote: true }, isLive: () => true, setRemote: async () => { throw new Error('kaboom'); } } as unknown as AgentAdapter;
     const ops2 = createRemoteOps({ known: () => true, adapterOf: () => throwing, open: async () => undefined });
-    assert.deepStrictEqual(await ops2.setRemote('z', true), { ok: false, error: 'kaboom' });
+    // spec 045 FR-066: an unexpected throw gives the fixed text; the adapter's own words (a ShownError) are kept
+    assert.deepStrictEqual(await ops2.setRemote('z', true), { ok: false, error: IPC_FAILED });
+    const shown = { capabilities: { remote: true }, isLive: () => true, setRemote: async () => { throw new ShownError('Send a message first.'); } } as unknown as AgentAdapter;
+    const ops3 = createRemoteOps({ known: () => true, adapterOf: () => shown, open: async () => undefined });
+    assert.deepStrictEqual(await ops3.setRemote('z', true), { ok: false, error: 'Send a message first.' });
   }
 
   // ---- FR-011 (security review): native confirmation, never in Allow all, off on GitHub before the session goes, logged

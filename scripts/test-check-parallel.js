@@ -14,6 +14,13 @@ const { parseVmStat, darwinAvailable, makeAvailable, waitForMemory, main, jobs }
   assert.ok(jobs.filter((j) => /^arcade /.test(j.label)).every((j) => j.env.OFFICE_WORLD === 'retro' && j.env.OFFICE_VIEW === 'real'), 'every arcade job sets both OFFICE_VIEW=real and OFFICE_WORLD=retro');
 }
 
+/* spec 097 Changes 2026-11-14 (#1751): the Prehistoric cave is an offered world, so the office checks keep a cave run: the Real office view AND the cave world */
+{
+  const cave = jobs.filter((j) => j.env.OFFICE_VIEW === 'real' && j.env.OFFICE_WORLD === 'cave');
+  assert.ok(cave.length > 0 && cave.every((j) => /^cave \d+\/\d+$/.test(j.label)), `a cave job (OFFICE_VIEW=real, OFFICE_WORLD=cave) is in the office checks: ${JSON.stringify(jobs.map((j) => j.label))}`);
+  assert.ok(jobs.filter((j) => /^cave /.test(j.label)).every((j) => j.env.OFFICE_WORLD === 'cave' && j.env.OFFICE_VIEW === 'real'), 'every cave job sets both OFFICE_VIEW=real and OFFICE_WORLD=cave');
+}
+
 const SAMPLE_4K = `Mach Virtual Memory Statistics: (page size of 4096 bytes)
 Pages free:                               10000.
 Pages active:                            900000.
@@ -82,8 +89,10 @@ assert.strictEqual(makeAvailable({ ...base, platform: 'win32', readMeminfo: () =
   assert.ok(logs.some((l) => /warn .*100 MB/.test(l)), `a warning with the measured memory (${logs.join(' | ')})`);
   // worker 0 never waits for memory, however large the bound: one worker, low memory, a one-hour bound, the job runs at once
   stage = 'main, worker 0';
-  const t0 = Date.now(), ran0 = [];
-  const failed0 = await main({ ensure: () => true, runJob: async (j) => { ran0.push(j.label); return 'ok'; }, available: () => 1, jobs: [{ label: 'solo' }], workers: 1, log: () => {}, waitMaxMs: 3600 * 1000 });
-  assert.ok(failed0 === 0 && ran0.join() === 'solo' && Date.now() - t0 < 1000, `worker 0 ran at once (${Date.now() - t0} ms)`);
+  const ran0 = [];
+  let asked0 = 0; // worker 0 never looks at memory, so it never waits for it: counted by the memory reads, not by elapsed time (#1853)
+  // a hang is ended by this file's own 10 s watchdog (stage 'main, worker 0'); the property is `asked0 === 0`
+  const failed0 = await main({ ensure: () => true, runJob: async (j) => { ran0.push(j.label); return 'ok'; }, available: () => { asked0++; return 1; }, jobs: [{ label: 'solo' }], workers: 1, log: () => {}, waitMaxMs: 3600 * 1000 });
+  assert.ok(failed0 === 0 && ran0.join() === 'solo' && asked0 === 0, `worker 0 ran at once without reading the memory (${asked0} reads)`);
   console.log('check-parallel: vm_stat parse (4 KB and 16 KB pages, malformed, empty) and the bounded memory wait (spec 008 FR-125)');
 })().catch((e) => { console.error(e); process.exit(1); });

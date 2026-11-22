@@ -57,7 +57,7 @@ fs.mkdirSync(fx);
 // check runs, pages 1 and 2; checkruns.fail: the call fails after its pages), files.json and files2.json (pages 1 and 2 of the PR
 // files API: page 2 only with --paginate, as the real gh; absent = the call fails), pull.json (the PR: changed_files, head sha;
 // pull-later.json: what every read after the first returns, a push while the gate runs; pull-later.fail: those reads fail),
-// contents/<path> (a file at the head commit; absent = 404), alerts-merge.json / alerts-head.json (absent = the call fails);
+// contents/<path> (a file at the head commit; absent = 404), alerts-merge.json / alerts-head.json / alerts-main.json (the PR's base branch; head and main also page 2 as *2.json; absent = the call fails; FR-099);
 // the comment lists are empty and the PR is ours
 fs.writeFileSync(path.join(bin, 'gh'), `#!/bin/bash
 F="${fx}"; prog=.; prev=
@@ -73,6 +73,7 @@ case $ep in
   graphql) echo '{"data":{"repository":{"pullRequest":{"reviewThreads":{"nodes":[]},"comments":{"nodes":[]},"reviews":{"nodes":[]}}}}}' | jq -r "$prog"; exit;;
   repos/o/r/code-scanning/alerts?ref=refs/pull/1/merge*) f=alerts-merge;;
   repos/o/r/code-scanning/alerts?ref=refs/pull/1/head*) f=alerts-head;;
+  repos/o/r/code-scanning/alerts?ref=refs/heads/*) f=alerts-main;;
   repos/o/r/pulls/1) f=pull; { [ -f "$F/pull-later.json" ] || [ -f "$F/pull-later.fail" ]; } && { [ -f "$F/pull.seen" ] && f=pull-later; : > "$F/pull.seen"; };;
   repos/o/r/commits/*/check-runs*) f=checkruns;;
   repos/o/r/contents/*\?ref=${BASE}) c=\${ep#repos/o/r/contents/}; c=\${c%%\?ref=*}; [ -f "$F/base/$c" ] || { echo "fake gh: 404 $c" >&2; exit 1; }; jq -r "$prog" < "$F/base/$c"; exit;;
@@ -98,7 +99,7 @@ const set = (name: string, v: string | null): void => {
 type File = string | { filename: string; previous_filename: string };
 const LOCK = { lockfileVersion: 3, packages: { '': { dependencies: { x: '^1.0.0' } }, 'node_modules/x': { version: '1.0.1', resolved: 'https://registry.npmjs.org/x/-/x-1.0.1.tgz', integrity: 'sha512-AAAA' } } };
 const PKG = { name: 'prereview', scripts: { test: 'node test.js' }, dependencies: { x: '^1.0.0' } };
-const fixture = (o: { codeql?: string | null; checks?: boolean; files?: File[] | null; page2?: File[]; changed?: number; contents?: Record<string, unknown>; base?: Record<string, unknown>; baseRef?: string; author?: string; merge?: unknown[] | null; head?: unknown[] | null; runs?: string[] | null; runs2?: string[]; runId?: string; headSha?: string } = {}): void => {
+const fixture = (o: { codeql?: string | null; checks?: boolean; files?: File[] | null; page2?: File[]; changed?: number; contents?: Record<string, unknown>; base?: Record<string, unknown>; baseRef?: string; author?: string; merge?: unknown[] | null; head?: unknown[] | null; main?: unknown[] | null; head2?: unknown[]; main2?: unknown[]; runs?: string[] | null; runs2?: string[]; runId?: string; headSha?: string } = {}): void => {
   const codeql = o.codeql === undefined ? 'skipping' : o.codeql;
   set('checks.txt', o.checks === false ? null : OTHER + (codeql === null ? '' : `CodeQL\t${codeql}\t0\t${o.runId ?? 'https://github.com/o/r/runs/101'}\n`));
   const files = o.files ?? ['scripts/prereview/package-lock.json', 'scripts/prereview/package.json'];
@@ -122,6 +123,9 @@ const fixture = (o: { codeql?: string | null; checks?: boolean; files?: File[] |
   }
   set('alerts-merge.json', o.merge === null ? null : JSON.stringify(o.merge ?? []));
   set('alerts-head.json', o.head === null ? null : JSON.stringify(o.head ?? []));
+  set('alerts-main.json', o.main === null ? null : JSON.stringify(o.main ?? []));
+  set('alerts-head2.json', o.head2 ? JSON.stringify(o.head2) : null);
+  set('alerts-main2.json', o.main2 ? JSON.stringify(o.main2) : null);
   set('files.fail', null);
   set('pull-later.json', null);
   set('pull-later.fail', null);
@@ -172,6 +176,15 @@ const CASES: Record<string, Case> = {
   'no-codeql-check: no CodeQL check yet on a docs-only PR': N({ codeql: null, files: ['docs/a.md'] }, /codeql=missing /),
   'alert-merge: 1 alert on the merge ref': N({ merge: [{ number: 1 }] }, /alerts=1/),
   'alert-head: 1 alert on the head ref': N({ head: [{ number: 1 }] }, /alerts=1/),
+  // FR-099 (#1868): CodeQL on the head ref also lists main's open alerts: a head-ref alert counts only when main does not hold it too
+  'alert-main-on-head: main\'s own alert on the head ref does not block': R({ head: [{ number: 107 }], main: [{ number: 107 }] }),
+  'alert-new-and-main: a new head-ref alert beside main\'s counts once': N({ head: [{ number: 107 }, { number: 108 }], main: [{ number: 107 }] }, /alerts=1/),
+  'alert-merge-main: a merge-ref alert counts even when main holds it': N({ merge: [{ number: 107 }], main: [{ number: 107 }] }, /alerts=1/),
+  'alert-head-page2: a new alert on page 2 of the head ref counts': N({ head: [{ number: 107 }], main: [{ number: 107 }], head2: [{ number: 108 }] }, /alerts=1/),
+  'alert-main-page2: main\'s alert on page 2 of its list is subtracted': R({ head: [{ number: 107 }], main: [{ number: 1 }], main2: [{ number: 107 }] }),
+  'alert-main-unread: main\'s alerts cannot be read': N({ main: null }, /alerts=unread/),
+  'alert-main-number: a non-number in main\'s list': N({ head: [{ number: 1 }], main: [{ number: 'x' }] }, /alerts=unread/),
+  'alert-base-ref: a base branch name that is not plain': N({ baseRef: 'a;b' }, /alerts=unread/),
   'codeql-fail: a failing CodeQL on a lockfile-only PR': N({ codeql: 'fail' }, /codeql=fail /),
   'codeql-pending: a pending CodeQL': N({ codeql: 'pending' }, /codeql=pending /),
   'codeql-cancel: a cancelled CodeQL': N({ codeql: 'cancel' }, /codeql=cancel /),
@@ -290,7 +303,7 @@ try {
   // mutants: a copy of the gate next to copies of the files it sources; each must fail the case named
   const mdir = path.join(dir, 'mutant');
   fs.mkdirSync(mdir);
-  for (const f of ['trusted-lib.sh', 'trusted-authors.txt', 'pr-status-note.re']) fs.copyFileSync(path.join(SCRIPTS, f), path.join(mdir, f));
+  for (const f of ['trusted-lib.sh', 'trusted-authors.txt', 'pr-status-note.re', 'pr-gate-answered.awk']) fs.copyFileSync(path.join(SCRIPTS, f), path.join(mdir, f));
   const mutants: Array<[string, string, string, string]> = [
     ['a failing CodeQL treated as skipped', '[ "$codeql" = skipping ] &&', '{ [ "$codeql" = skipping ] || [ "$codeql" = fail ]; } &&', 'codeql-fail'],
     ['a missing CodeQL treated as skipped', '[ "$codeql" = skipping ] &&', '{ [ "$codeql" = skipping ] || [ "$codeql" = missing ]; } &&', 'no-codeql-check'],
@@ -335,7 +348,14 @@ try {
     ['the src/ check accepting a partly read list', `"P \\(.)") end') || src_files=ERR`, `"P \\(.)") end')`, 'src-partial'],
     ['the src/ check accepting an empty list', ' || [ -z "$src_files" ]', '', 'src-empty'],
     ['a control-character name not counted as src/', `grep -qE '^([FP] src/|C$)' <<< "$src_files"`, `grep -qE '^([FP] src/)' <<< "$src_files"`, 'src-ctrl'],
-    ['the alerts read without a number check', '&& isnum "$a_merge" && isnum "$a_head" ', '', 'alerts-empty'],
+    ['the merge count read without a number check', '[ -n "$a_merge" ] && ', '', 'alerts-empty'],
+    ['the head ref counted whole (main\'s alerts not subtracted)', `grep -cvxF -f <(printf '%s\\n' "$a_base_nums") <<< "$a_head_nums"`, 'grep -c . <<< "$a_head_nums"', 'alert-main-on-head'],
+    ['the merge ref left out of the sum', 'alerts=$((a_merge + a_head))', 'alerts=$a_head', 'alert-merge'],
+    ['main\'s list without --paginate', 'gh api --paginate "repos/$R/code-scanning/alerts?ref=refs/heads/', 'gh api "repos/$R/code-scanning/alerts?ref=refs/heads/', 'alert-main-page2'],
+    ['the head list without --paginate', 'gh api --paginate "repos/$R/code-scanning/alerts?ref=refs/pull/$p/head', 'gh api "repos/$R/code-scanning/alerts?ref=refs/pull/$p/head', 'alert-head-page2'],
+    ['a main read error ignored', '|| a_base_nums=ERR;; esac', '|| a_base_nums=;; esac', 'alert-main-unread'],
+    ['the main list not checked for numbers', "numlist() { [ -z \"$1\" ] || ! grep -qvE '^[0-9]+$' <<< \"$1\"; }", 'numlist() { true; }', 'alert-main-number'],
+    ['the base branch name not checked', "case $pr_baseref in ''|*[!A-Za-z0-9._/-]*|*..*) a_base_nums=ERR;;", "case $pr_baseref in 'zzzz') a_base_nums=ERR;;", 'alert-base-ref'],
   ];
   for (const [name, from, to, caught] of mutants) {
     assert.ok(gate.includes(from), `mutant "${name}": its anchor is in the gate`);

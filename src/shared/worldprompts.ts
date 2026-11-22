@@ -13,7 +13,7 @@ export const MAX_PROMPT_CHARS = 4000;
 export const MARK_OPEN = '<<<PLACE';
 export const MARK_CLOSE = 'PLACE>>>';
 /** FR-010, word for word in every prompt. */
-export const EXCLUSION_CLAUSE = 'Draw a real contemporary office with local materials, light and a view. Include no flag, national emblem, logo, text, lettering, religious building or symbol, landmark, stereotype or national caricature, and no arch, vault or arcade of any kind: every opening has a straight head. Show no real person and no person at all.';
+export const EXCLUSION_CLAUSE = 'Draw a real contemporary office with local materials, light and a view. Include no flag, national emblem, logo, text, lettering, religious building or symbol, landmark, stereotype or national caricature, and no arch, vault or architectural arcade of any kind: every opening has a straight head. Show no real person and no person at all.';
 export const NO_REAL_PERSON = 'no real person';
 
 const CONTROL_RE = /[\p{Cc}\u2028\u2029]/gu;

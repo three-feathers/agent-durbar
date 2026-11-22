@@ -257,3 +257,15 @@ Owner's decisions, Vikram, 2026-11-01, relayed by his coordinating agent. Stacke
 
 - **FR-081** **Amends FR-030, FR-031.** `desk-screen` gains an optional monitor picture with the same `screenRect` rules: app text as `textContent` on an opaque token surface, contrast from tokens, no text in art, the 097 FR-032 floor (spec 102 FR-220..FR-222). `screenRect` is then on the monitor, not the desk. The block count of FR-033 does not change. **FR-031's refusal of a layout value stands, with one exception:** `arrangement`, one id from a closed list checked by the validator (spec 102 FR-226). "Positions come from the layout engine" still holds: arrangements are engine code with tests, never a pack's positions. `room` also gains `focus`, a still picture placed by the engine (spec 102 FR-227).
 - **FR-082** **Block test.** FR-032's test covers the monitor and `arrangement` through the shared validator; a world's matrix row runs in the arrangement it names (spec 102 FR-229); a project world has no fall-back to rows at high counts (spec 102 FR-230).
+
+### 2026-11-19: the desk card's marker on Real office plates, `desk-card` is `code: present` (T011 in part; issue #1901; no new FR)
+
+Why: the feature inventory's parity rule (spec 021 FR-078) lets a row say `built` for a world only with a registry moment whose `code` is `present`; the Retro arcade flip (spec 102 T230, #1898) needs the Helpers row `built` for a shippable world, and no desk or helpers moment had its marker. A desk's helpers are drawn on its card (spec 097 FR-306: the strip under the plate, or the "+N and dots" inside the plate), so the desk card is their moment.
+
+- **Marker (FR-010, the mechanism the lounge seat already uses):** `realoffice.js` sets `data-surface="desk-card"` on every Real office desk plate and `"lounge"` on a lounge seat's (the same `dset(pl, 'surface', ...)` call). No style or behaviour reads the new value (the only rule naming a plate's surface is the lounge one).
+- **Registry:** `desk-card` `code: "present"`; its world-matrix scene turns Real office on (`officeview: real`), since the root is the Real office plate. The flat office's `.desk` carries no marker yet (T011's rest).
+- **Checks:** `check-097-helpers` asserts, in every world and size it runs (Photo office, cave, arcade; 1440x900, 1280x800), that every desk plate is `desk-card` (a lounge seat `lounge`) and every helpers' fallback sits in one; mutant: the marker removed fails at that assert ("every desk's plate is the desk card"). `world-matrix.js --worlds retro,photo,cave`: `desk-card` ok at both sizes. `test-feature-inventory`'s `code: present` mutant now uses `live-screen` (still planned).
+- **No visible change:** `check-097-helpers` pictures taken with and without the marker (simulator, Linux): the arcade at 1440x900 is pixel-identical; the Photo office at both sizes differs only by JPEG noise (at most 11 of 255) in one 25 px patch around a desk's mood badge, the same on a look.
+
+`[KNOWN GAP]` T011's other roots (the flat `.desk` and the rest of its list) stay open; Windows and macOS not run.
+

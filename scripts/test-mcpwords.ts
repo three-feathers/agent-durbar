@@ -1,5 +1,6 @@
 /** Spec 058 FR-001 / FR-006 (T113): the word, icon and hint of an MCP server's state. `npm run test:mcpwords`. No credits spent. */
 import * as assert from 'assert';
+import { assertCutFirst } from './hang-backstop';
 import * as path from 'path';
 import { maskMcpError } from '../src/main/mcpmask';
 import { maskHomePaths, maskSecretUrl, redact } from '../src/shared/redact';
@@ -126,9 +127,7 @@ assert.strictEqual(h({ status: 'pending', errorClass: 'auth' }), '');
 assert.strictEqual(h({ status: 'failed', errorClass: 'toString' }), '', 'a prototype name is not a class');
 assert.strictEqual(h({ status: 'failed', errorClass: 'not-found', error: 'x' }), h({ status: 'failed', errorClass: 'not-found' }), 'the class wins over the text');
 // a long hostile text is cheap
-const t0 = Date.now();
-h({ status: 'failed', error: 'a '.repeat(200000) + ';'.repeat(100000) });
-assert.ok(Date.now() - t0 < 500, 'a long text is read in linear time');
+assertCutFirst('hintFor reads only the first 2000 characters of the error text', 2000, () => { h({ status: 'failed', error: 'a '.repeat(200000) + ';'.repeat(100000) }); });
 
 // ---- Spec 058 FR-081 (T121): the live state of each server over the running chats, for Settings ----
 {

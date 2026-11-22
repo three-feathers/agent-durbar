@@ -37,7 +37,7 @@ import type { ElicitAnswer } from '../shared/elicit';
 import { codexMcpConfig, codexMcpServers, codexMcpState } from './codexMcp';
 import type { McpServerStatus } from './types';
 import { cleanSessionTitle } from './history';
-import type { HistoryResult, PreviousSession } from './history';
+import type { HistoryLimits, HistoryResult, PreviousSession } from './history';
 import type { ModelOption, ModelSwitchRequest, ModelSwitchResult } from '../shared/modelswitch';
 import type { SandboxHostView } from '../shared/api';
 import { CODEX_INITIALIZE_CAPABILITIES, codexSandboxHost, codexSandboxState, codexFileChanges, codexInstallRoot, codexModeSettings, codexPermission, codexProfileArgs, codexReadEnforceable, codexReply, codexSpawnPath, codexWorkspaceRoots } from './codexModes';
@@ -54,6 +54,7 @@ import type { HandoffResult } from './handoff';
 import { isObj } from '../shared/guards';
 import { codexAccount } from './accounts';
 import type { AccountIdentity } from '../shared/account';
+import { ShownError } from '../shared/shownerror';
 
 const CODEX_ID = 'codex';
 const CODEX_NAME = 'OpenAI Codex';
@@ -180,12 +181,12 @@ export function codexResumeCheck(res: unknown, o: { cwd: string; limited: boolea
     return win ? n.toLowerCase() : n;
   };
   const cwd = typeof r.cwd === 'string' ? r.cwd : isObj(r.thread) && typeof r.thread.cwd === 'string' ? r.thread.cwd : undefined;
-  if (cwd === undefined && o.required) throw new Error('Codex did not say which folder that session belongs to, so it is not resumed.');
-  if (cwd !== undefined && norm(cwd) !== norm(o.cwd)) throw new Error('That Codex session belongs to another folder, so it is not resumed here.');
+  if (cwd === undefined && o.required) throw new ShownError('Codex did not say which folder that session belongs to, so it is not resumed.');
+  if (cwd !== undefined && norm(cwd) !== norm(o.cwd)) throw new ShownError('That Codex session belongs to another folder, so it is not resumed here.');
   if (!o.limited) return;
   const sb = r.sandbox;
   const kind = typeof sb === 'string' ? sb : isObj(sb) && typeof sb.type === 'string' ? sb.type : undefined;
-  if (kind !== undefined && /danger|full|workspace.?write/i.test(kind)) throw new Error(`Codex resumed the session with a wider sandbox (${kind.slice(0, 40)}) than this mode allows, so it is not resumed.`);
+  if (kind !== undefined && /danger|full|workspace.?write/i.test(kind)) throw new ShownError(`Codex resumed the session with a wider sandbox (${kind.slice(0, 40)}) than this mode allows, so it is not resumed.`);
 }
 
 /** FR-148/FR-151: does an MCP elicitation ask for form fields or a URL flow (the question card), as opposed to a plain yes/no (the approval)? */
@@ -420,7 +421,7 @@ export class CodexAdapter implements AgentAdapter {
    */
   private async probe<T>(fn: (rpc: CodexRpc) => Promise<T>, onNotification: (method: string, params: unknown) => void = () => undefined): Promise<T> {
     const loc = await this.locate();
-    if (!loc?.path || isShim(loc.path) || isShim(this.spawnPath(loc.path))) throw new Error('Codex was not found on this computer.');
+    if (!loc?.path || isShim(loc.path) || isShim(this.spawnPath(loc.path))) throw new ShownError('Codex was not found on this computer.');
     const child = this.spawnChild(loc.path, os.tmpdir(), { onNotification, onRequest: async () => ({ error: { code: -32601, message: 'not handled in a probe' } }), onExit: () => undefined });
     try {
       await child.rpc.request('initialize', { clientInfo: { name: 'agent_durbar', title: 'Agent Durbar', version: this.appVersion }, capabilities: CODEX_INITIALIZE_CAPABILITIES });
@@ -446,12 +447,12 @@ export class CodexAdapter implements AgentAdapter {
       return await this.probe(async (rpc) => {
         const res = await rpc.request('thread/start', { cwd: dir, ephemeral: true, approvalPolicy: 'never', sandbox: 'read-only' });
         const threadId = isObj(res) && isObj(res.thread) && typeof res.thread.id === 'string' ? res.thread.id : undefined;
-        if (!threadId) throw new Error('Codex did not start a thread.');
+        if (!threadId) throw new ShownError('Codex did not start a thread.');
         await rpc.request('turn/start', { threadId, input: [{ type: 'text', text: prompt }], approvalPolicy: 'never' });
         let timer: NodeJS.Timeout | undefined;
         const t = await Promise.race([done, new Promise<string>((r) => (timer = setTimeout(() => r(text), 180_000)))]);
         clearTimeout(timer);
-        if (!t) throw new Error('Codex gave no answer.');
+        if (!t) throw new ShownError('Codex gave no answer.');
         return { text: t };
       }, onNote);
     } finally {
@@ -465,9 +466,9 @@ export class CodexAdapter implements AgentAdapter {
    * short-lived app-server (`probe`): no thread is started, no turn, no prompt. Codex refuses an empty name and an archived thread: thrown.
    */
   async renameSession(sessionId: string, name: string): Promise<void> {
-    if (!sessionIdOk('codex', sessionId)) throw new Error('That is not a session id.');
+    if (!sessionIdOk('codex', sessionId)) throw new ShownError('That is not a session id.');
     const text = name.trim();
-    if (!text) throw new Error('Codex needs a name.');
+    if (!text) throw new ShownError('Codex needs a name.');
     const live = [...this.sessions.values()].find((l) => l.threadId === sessionId);
     const set = (rpc: CodexRpc): Promise<unknown> => rpc.request('thread/name/set', { threadId: sessionId, name: text });
     if (live) await set(live.rpc);
@@ -486,18 +487,18 @@ export class CodexAdapter implements AgentAdapter {
    * adapter, by Durbar id or by thread id. An error from Codex is passed on.
    */
   async deleteSession(sessionId: string): Promise<void> {
-    if (!sessionIdOk('codex', sessionId)) throw new Error('That is not a session id.');
-    for (const [sid, live] of this.sessions) if (sid === sessionId || live.threadId === sessionId) throw new Error('That session is open. End it first.');
+    if (!sessionIdOk('codex', sessionId)) throw new ShownError('That is not a session id.');
+    for (const [sid, live] of this.sessions) if (sid === sessionId || live.threadId === sessionId) throw new ShownError('That session is open. End it first.');
     await this.probe((rpc) => rpc.request('thread/delete', { threadId: sessionId }));
   }
 
   /** FR-141: a session's prompts, answers, commands and file changes, for the chat replay after a resume. */
-  async history(sessionId: string): Promise<HistoryResult> {
+  async history(sessionId: string, limits?: Partial<HistoryLimits>): Promise<HistoryResult> {
     const live = this.sessions.get(sessionId);
     const threadId = live?.threadId ?? sessionId;
     const read = (rpc: CodexRpc): Promise<unknown> => rpc.request('thread/read', { threadId, includeTurns: true });
     const res = live ? await read(live.rpc) : await this.probe(read);
-    return codexHistory(isObj(res) ? res.thread : undefined);
+    return codexHistory(isObj(res) ? res.thread : undefined, limits); // spec 095 FR-024: `limits` only from the search
   }
 
   /**
@@ -608,18 +609,18 @@ export class CodexAdapter implements AgentAdapter {
   private async startReserved(options: StartOptions): Promise<string> {
     const named = options.sessionId;
     if (!named) return this.startInner(options, { cancelled: false });
-    if (this.sessions.has(named) || this.starting.has(named)) throw new Error(`Session ${named} is already running.`);
+    if (this.sessions.has(named) || this.starting.has(named)) throw new ShownError(`Session ${named} is already running.`);
     // a reopen compares the mode it wants with the one it got: a value that is no mode would never match (`startModeOf` opens it as Read-only), so it asks for Read-only; and a mode that keeps moving ends it
     const reopen = this.reopening.get(named);
     if (reopen) {
       if (!(this.capabilities.permissionModes as readonly unknown[]).includes(reopen.mode)) reopen.mode = 'read-only';
       const n = (this.reopenStarts.get(named) ?? 0) + 1;
       this.reopenStarts.set(named, n);
-      if (n > MAX_REOPENS) throw new Error('The permission mode kept changing while Codex reopened this session, so nothing was sent. Send the message again.');
+      if (n > MAX_REOPENS) throw new ShownError('The permission mode kept changing while Codex reopened this session, so nothing was sent. Send the message again.');
     }
     // FR-143: a session that ran before (End session, a crash, a mode relaunch) comes back by resuming its own thread
     const prior = this.known.has(named) ? this.threadOf.get(named) : undefined;
-    if (this.known.has(named) && !prior && options.resumeSessionId === undefined) throw new Error(`Session ${named} cannot be restarted.`);
+    if (this.known.has(named) && !prior && options.resumeSessionId === undefined) throw new ShownError(`Session ${named} cannot be restarted.`);
     if (prior && options.resumeSessionId === undefined) options = { ...options, resumeSessionId: prior };
     let release!: () => void;
     const token = { cancelled: false, done: new Promise<void>((r) => (release = r)) };
@@ -635,14 +636,14 @@ export class CodexAdapter implements AgentAdapter {
   private async startInner(options: StartOptions, token: { cancelled: boolean }): Promise<string> {
     const generation = this.generation;
     const cancelled = (): void => {
-      if (generation !== this.generation) throw new Error('Codex was shut down while the session was starting.');
-      if (token.cancelled) throw new Error(`Session ${options.sessionId} was stopped while starting.`);
+      if (generation !== this.generation) throw new ShownError('Codex was shut down while the session was starting.');
+      if (token.cancelled) throw new ShownError(`Session ${options.sessionId} was stopped while starting.`);
     };
     const mode = startModeOf(options);
-    if (!this.capabilities.permissionModes.includes(mode)) throw new Error(`Codex cannot run in ${mode} mode.`);
+    if (!this.capabilities.permissionModes.includes(mode)) throw new ShownError(`Codex cannot run in ${mode} mode.`);
     // FR-093: a known thread is resumed on a fresh child (below), never silently replaced by a new one.
     const resumeId = options.resumeSessionId;
-    if (resumeId !== undefined && !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(resumeId)) throw new Error('That is not a Codex session id.');
+    if (resumeId !== undefined && !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(resumeId)) throw new ShownError('That is not a Codex session id.');
     const { cwd, folders } = resolveWorkspaceCwd(options.workspace);
     const roots = codexWorkspaceRoots([cwd, ...folders], this.realpath);
     const limited = mode !== 'allow';
@@ -656,19 +657,19 @@ export class CodexAdapter implements AgentAdapter {
 
     const loc = await this.locate();
     cancelled();
-    if (!loc?.path) throw new Error('Codex was not found on this computer. Install the Codex CLI, then restart Durbar.');
+    if (!loc?.path) throw new ShownError('Codex was not found on this computer. Install the Codex CLI, then restart Durbar.');
     // A .cmd/.bat shim cannot carry the profile argument and cannot be spawned without a shell: refused in every mode (D4).
     // FR-162: the resolved path is checked too, since that is the file spawned.
-    if (isShim(loc.path) || isShim(this.spawnPath(loc.path))) throw new Error('Codex is launched through a .cmd launcher, which Durbar cannot run safely. Use the native codex.exe instead of the .cmd shim.');
-    if (limited && !roots.length) throw new Error(`Durbar has no folder it can limit Codex's reads to. Add the project folder itself, not a drive or filesystem root, or a folder Durbar can resolve.`);
+    if (isShim(loc.path) || isShim(this.spawnPath(loc.path))) throw new ShownError('Codex is launched through a .cmd launcher, which Durbar cannot run safely. Use the native codex.exe instead of the .cmd shim.');
+    if (limited && !roots.length) throw new ShownError(`Durbar has no folder it can limit Codex's reads to. Add the project folder itself, not a drive or filesystem root, or a folder Durbar can resolve.`);
 
-    if (limited && !realCwd) throw new Error(`Durbar cannot resolve the session folder (${path.basename(cwd)}), so it cannot confirm Codex reads only inside it. Check that the folder exists and Durbar can read it.`);
+    if (limited && !realCwd) throw new ShownError(`Durbar cannot resolve the session folder (${path.basename(cwd)}), so it cannot confirm Codex reads only inside it. Check that the folder exists and Durbar can read it.`);
 
     if (limited) {
       // The folder Codex works in must be one of the folders it may read (or inside one), after symlinks are resolved.
       const [cwdRoot] = codexWorkspaceRoots([cwd], this.realpath);
       if (!cwdRoot || !roots.some((r) => isInside(r, cwdRoot))) {
-        throw new Error(`The session folder (${path.basename(cwd)}) is not among the folders Durbar can limit Codex's reads to. Add the project folder itself, not a drive or filesystem root.`);
+        throw new ShownError(`The session folder (${path.basename(cwd)}) is not among the folders Durbar can limit Codex's reads to. Add the project folder itself, not a drive or filesystem root.`);
       }
     }
 
@@ -726,23 +727,23 @@ export class CodexAdapter implements AgentAdapter {
       } catch (e) {
         // Codex answered `initialize` with an error: it may not accept the experimental API. Read-only and Ask first need it.
         // Allow all does not, so it gets one more try on a fresh child (a connection is initialised once).
-        if (!isRpcError(e)) throw new Error(`Codex could not be started: ${reasonOf(e)}`);
+        if (!isRpcError(e)) throw new ShownError(`Codex could not be started: ${reasonOf(e)}`);
         if (limited) {
           const no = codexReadEnforceable({ version: loc.version, experimentalApi: false, platform: this.platform });
-          throw new Error(`${no.ok ? 'This Codex did not accept the experimental API.' : `${no.reason} ${no.advice}`}`);
+          throw new ShownError(`${no.ok ? 'This Codex did not accept the experimental API.' : `${no.reason} ${no.advice}`}`);
         }
         await this.closeChild(child);
         child = open();
         try {
           await handshake(child, false);
         } catch (e2) {
-          throw new Error(`Codex could not be started: ${reasonOf(e2)}`);
+          throw new ShownError(`Codex could not be started: ${reasonOf(e2)}`);
         }
       }
       cancelled();
       if (limited) {
         const ok = codexReadEnforceable({ version: loc.version, experimentalApi, platform: this.platform, elevatedSandbox: undefined });
-        if (!ok.ok) throw new Error(`${ok.reason} ${ok.advice}`);
+        if (!ok.ok) throw new ShownError(`${ok.reason} ${ok.advice}`);
       }
       live.rpc = child.rpc;
       live.exited = child.exited;
@@ -757,7 +758,7 @@ export class CodexAdapter implements AgentAdapter {
         try {
           stored = await child.rpc.request('thread/read', { threadId: resumeId, includeTurns: false });
         } catch (e) {
-          throw new Error(`That Codex session could not be found: ${reasonOf(e)}`);
+          throw new ShownError(`That Codex session could not be found: ${reasonOf(e)}`);
         }
         codexResumeCheck(isObj(stored) && isObj(stored.thread) ? { cwd: stored.thread.cwd } : {}, { cwd: (limited ? realCwd : cwd) as string, limited: false, realpath: this.realpath, required: true });
       }
@@ -768,12 +769,12 @@ export class CodexAdapter implements AgentAdapter {
           : await child.rpc.request('thread/start', threadParams);
       } catch (e) {
         // Never retried with a weaker setting (FR-087).
-        throw new Error(`Codex refused the session settings: ${reasonOf(e)}${linuxSandboxHint(reasonOf(e))}${macSandboxHint(reasonOf(e))}`);
+        throw new ShownError(`Codex refused the session settings: ${reasonOf(e)}${linuxSandboxHint(reasonOf(e))}${macSandboxHint(reasonOf(e))}`);
       }
       if (resumeId !== undefined) codexResumeCheck(started, { cwd: (limited ? realCwd : cwd) as string, limited, realpath: this.realpath });
       const thread = isObj(started) && isObj(started.thread) ? started.thread : undefined;
       const threadId = thread && typeof thread.id === 'string' && thread.id ? thread.id : undefined;
-      if (!threadId) throw new Error('Codex did not return a thread id.');
+      if (!threadId) throw new ShownError('Codex did not return a thread id.');
       live.threadId = threadId;
       cancelled();
       // spec 099 FR-053 (the mode-switch relaunch comes through here too): the goal lives on the thread, so it goes before anything can be sent; a failure fails the start
@@ -781,7 +782,7 @@ export class CodexAdapter implements AgentAdapter {
         try {
           goalFound = await this.clearThreadGoal(live);
         } catch (e) {
-          throw new Error(lineNotCleared(reasonOf(e)));
+          throw new ShownError(lineNotCleared(reasonOf(e)));
         }
       }
     } catch (e) {
@@ -799,7 +800,7 @@ export class CodexAdapter implements AgentAdapter {
     if (live.rpc.exited) {
       // The child died between the response and now: report it like any crash.
       this.sessions.delete(live.sid);
-      throw new Error('Codex stopped unexpectedly while starting.');
+      throw new ShownError('Codex stopped unexpectedly while starting.');
     }
     if (!options.quiet) this.emit(live.sid, { type: 'status', status: 'idle', intent: `Ready in ${cwd}` });
     if (goalFound) this.emit(live.sid, { type: 'status', status: 'idle', intent: LINE_CLOSED }); // FR-005
@@ -843,12 +844,12 @@ export class CodexAdapter implements AgentAdapter {
     let live = this.mustGet(sessionId);
     // spec 099: refusals first, so a refused message leaves everything as it was
     const on = live.auto?.on ? live.auto : undefined;
-    if (on && message.plan) throw new Error(AUTOPILOT_NO_PLAN);
+    if (on && message.plan) throw new ShownError(AUTOPILOT_NO_PLAN);
     const startsRun = !!on && !on.running;
-    if (startsRun && (live.turnId !== undefined || live.turnStarting)) throw new Error(AUTOPILOT_WAIT_TURN);
-    if (startsRun && message.attachments?.length) throw new Error(AUTOPILOT_TEXT_ONLY); // D10
+    if (startsRun && (live.turnId !== undefined || live.turnStarting)) throw new ShownError(AUTOPILOT_WAIT_TURN);
+    if (startsRun && message.attachments?.length) throw new ShownError(AUTOPILOT_TEXT_ONLY); // D10
     const goal = startsRun ? goalText(message.text, 'codex') : undefined;
-    if (goal && !goal.ok) throw new Error(goalRefusal(goal));
+    if (goal && !goal.ok) throw new ShownError(goalRefusal(goal));
     if (on) {
       hold.parked = { auto: on, stopped: false };
       this.parked.set(sessionId, hold.parked);
@@ -862,11 +863,11 @@ export class CodexAdapter implements AgentAdapter {
         let options = live.options;
         do {
           await this.stop(sessionId, true);
-          if (reopen.ended) throw new Error('This session was ended.');
+          if (reopen.ended) throw new ShownError('This session was ended.');
           await this.start({ ...options, permissionMode: reopen.mode, sessionId, resumeSessionId: undefined, quiet: true });
           live = this.mustGet(sessionId);
           options = live.options;
-          if (reopen.ended) throw new Error('This session was ended.');
+          if (reopen.ended) throw new ShownError('This session was ended.');
         } while (live.mode !== reopen.mode);
       } finally {
         this.reopening.delete(sessionId);
@@ -946,9 +947,9 @@ export class CodexAdapter implements AgentAdapter {
     }
     const live = this.mustGet(sessionId);
     if (settings === null) return this.autopilotOff(live, reason);
-    if (live.broker.getMode() !== 'allow') throw new Error(AUTOPILOT_NOT_ALLOW);
-    if (live.auto?.running) throw new Error(AUTOPILOT_ONE_RUN);
-    if (settings.cap !== undefined && !(typeof settings.cap === 'number' && Number.isInteger(settings.cap) && settings.cap > 0)) throw new Error('Invalid token cap.');
+    if (live.broker.getMode() !== 'allow') throw new ShownError(AUTOPILOT_NOT_ALLOW);
+    if (live.auto?.running) throw new ShownError(AUTOPILOT_ONE_RUN);
+    if (settings.cap !== undefined && !(typeof settings.cap === 'number' && Number.isInteger(settings.cap) && settings.cap > 0)) throw new ShownError('Invalid token cap.');
     this.adoptAutopilot(live, live.auto ?? this.newAutopilot(live)).turnOn(settings);
     this.autopilotUsed = true;
   }
@@ -1033,7 +1034,7 @@ export class CodexAdapter implements AgentAdapter {
     try {
       const r: unknown = await within(live.rpc.request('thread/goal/clear', { threadId: live.threadId, origin: 'user' }), this.autopilotTuning?.waitMs ?? CLEAR_WAIT_MS, 'Codex');
       const cleared = isObj(r) ? r.cleared : undefined;
-      if (typeof cleared !== 'boolean') throw new Error('Codex did not say whether the goal was cleared.');
+      if (typeof cleared !== 'boolean') throw new ShownError('Codex did not say whether the goal was cleared.');
       return cleared;
     } catch (e) {
       if (e instanceof CodexRpcError && e.code === -32601) return false;
@@ -1045,7 +1046,7 @@ export class CodexAdapter implements AgentAdapter {
 
   /** FR-012: `thread/goal/set` in place of `turn/start`, on the session's own thread (never a fork or an ephemeral one); it starts every turn by itself. */
   private async sendGoal(live: Live, auto: AutopilotState, objective: string): Promise<void> {
-    if (live.mode !== 'allow') throw new Error(AUTOPILOT_NOT_ALLOW); // goal turns take the thread's settings: the thread must have been opened in Allow all
+    if (live.mode !== 'allow') throw new ShownError(AUTOPILOT_NOT_ALLOW); // goal turns take the thread's settings: the thread must have been opened in Allow all
     live.expectAborted = false;
     live.goalTurnSeen = false;
     live.ownTurns = new Set();
@@ -1182,10 +1183,10 @@ export class CodexAdapter implements AgentAdapter {
 
   async handoffSummary(sessionId: string): Promise<HandoffResult> {
     const live = this.sessions.get(sessionId);
-    if (!live?.rpc || !live.threadId) throw new Error('Open the session first (send a message), then ask for a summary.');
+    if (!live?.rpc || !live.threadId) throw new ShownError('Open the session first (send a message), then ask for a summary.');
     const res = await live.rpc.request('thread/fork', { threadId: live.threadId, ephemeral: true, excludeTurns: true, approvalPolicy: 'never', sandbox: 'read-only', ...(live.model ? { model: live.model } : {}) });
     const forkId = isObj(res) && isObj(res.thread) && typeof res.thread.id === 'string' ? res.thread.id : undefined;
-    if (!forkId) throw new Error('Codex did not fork the conversation.');
+    if (!forkId) throw new ShownError('Codex did not fork the conversation.');
     const forks = (live.forks ??= new Map());
     let timer: NodeJS.Timeout | undefined;
     const text = new Promise<string>((resolve) => {
@@ -1350,7 +1351,7 @@ export class CodexAdapter implements AgentAdapter {
 
   private mustGet(sessionId: string): Live {
     const live = this.sessions.get(sessionId);
-    if (!live) throw new Error(`Unknown or stopped session: ${sessionId}`);
+    if (!live) throw new ShownError(`Unknown or stopped session: ${sessionId}`);
     return live;
   }
 
@@ -1699,13 +1700,13 @@ export class CodexAdapter implements AgentAdapter {
   /** Spec 069 FR-031: one server's tools from `mcpServerStatus/list` (the thread's own connection); `toolsError` is the failure. */
   async listMcpTools(sessionId: string, name: string): Promise<McpToolInfo[]> {
     const live = this.sessions.get(sessionId);
-    if (!live || !live.rpc || !live.threadId) throw new Error('This session is not running. Send a message to start it.');
+    if (!live || !live.rpc || !live.threadId) throw new ShownError('This session is not running. Send a message to start it.');
     const srv = await this.readMcpServer(live, name);
     if (isObj(srv)) {
-      if (typeof srv.toolsError === 'string' && srv.toolsError) throw new Error(srv.toolsError);
+      if (typeof srv.toolsError === 'string' && srv.toolsError) throw new ShownError(srv.toolsError);
       return normMcpTools(srv.tools);
     }
-    throw new Error(`${name} is not running in this session.`);
+    throw new ShownError(`${name} is not running in this session.`);
   }
 
   /**

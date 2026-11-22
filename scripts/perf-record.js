@@ -8,6 +8,7 @@
  */
 'use strict';
 const fs = require('fs');
+const { buildProblem } = require('./ensure-electron'); // spec 008 FR-211: one shared build check
 const os = require('os');
 const path = require('path');
 const { spawn, spawnSync } = require('child_process');
@@ -182,6 +183,7 @@ function runGroup(cmd, args, { cwd, env, timeoutMs }) {
 async function launch(electron, env, outFile, timeoutMs) {
   const args = ['.'];
   if (process.platform === 'linux') args.push('--no-sandbox');
+  if (/^[1-4]$/.test(process.env.PERF_DPR || '')) args.push('--force-device-scale-factor=' + process.env.PERF_DPR); // T162: a high-density screen on a 1x monitor (the record names the ratio it got)
   const e = { ...process.env, ...env, DURBAR_DRIVER: path.join(__dirname, 'check-perf.js'), PERF_OUT: outFile };
   const xvfb = process.platform === 'linux' && !process.env.DISPLAY;
   const r = xvfb ? await runGroup('xvfb-run', ['-a', electron, ...args], { cwd: ROOT, env: e, timeoutMs }) : await runGroup(electron, args, { cwd: ROOT, env: e, timeoutMs });
@@ -268,7 +270,8 @@ function writeRecord(file, record) {
 }
 
 async function recordAll(opts) {
-  if (!fs.existsSync(path.join(ROOT, 'dist', 'renderer', 'index.html'))) { console.error('dist/ missing: run npm run build first'); return 2; }
+  const noBuild = buildProblem();
+  if (noBuild) { console.error(noBuild); return 2; }
   const electron = require('electron');
   const work = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-perf-rec-'));
   try {

@@ -6,9 +6,14 @@
  *
  * It fails (exit 1) when an FR-, T- or Q- number that this branch ADDS in specs/NNN-*\/spec.md (FR, Q) or tasks.md (T), measured against
  * the merge-base with origin/main, is also (a) added by another open PR head, or (b) already defined on origin/main, in the SAME file
- * (numbers are per spec: two specs may use the same number). Exit 2: it could not check (no origin/main, a failed fetch, an unreadable PR list or
+ * (a same-file clash). Issue #1935: an id another head adds in a DIFFERENT existing spec's file of the same kind is a clash too (numbers are global since the
+ * FR-048c sequence); a spec that is new on main numbers from 001 and is not compared across files. Exit 2: it could not check (no origin/main, a failed fetch, an unreadable PR list or
  * file, no network); never a silent pass. The branch is `--head <sha>` (CI passes the PR head: HEAD there is a merge commit, and a number
  * that main took meanwhile would be hidden by the merge); a number defined twice in one file at HEAD, more often than on origin/main, is a clash too.
+ *
+ * `--dups` (offline, also run by `npm run specs:check` and the test): a number defined twice inside ONE spec.md / tasks.md fails, naming every
+ * line, for every spec folder, whether or not the branch touched it. Duplicates that were already there are listed in
+ * scripts/spec-duplicates-baseline.txt (a ratchet: a count may only go down); `--write-baseline` rewrites it. (issue #1553)
  *
  * A number is "added" only by a new DEFINITION line, never a mention (see parseDefinitions); a number that moved to another line in the
  * same file, or a line that was reworded, is not new (set difference of the definitions before and after).
@@ -43,12 +48,15 @@ function boldDefines(rest) {
   return /^\s/.test(rest);
 }
 
-/** Definition lines of a file as Map(id -> count). spec.md: FR and Q; tasks.md: T. Not tables, code fences, prose mentions, nested FR/Q bullets. */
-function definitionCounts(text, kind) {
+const TAG_PREFIX = /^((?:[-*]|\d+\.) )`\[[A-Z][A-Z ]*\]` /;
+/** Definition lines of a file as Map(id -> [line numbers]). spec.md: FR and Q; tasks.md: T. Not tables, code fences, prose mentions, nested FR/Q bullets. */
+function definitionLines(text, kind) {
   const ids = new Map();
-  const add = (id) => ids.set(id, (ids.get(id) || 0) + 1);
+  let lineNo = 0;
+  const add = (id) => { if (!ids.has(id)) ids.set(id, []); ids.get(id).push(lineNo); };
   let fence = false;
   for (const line of String(text || '').split(/\r?\n/)) {
+    lineNo++;
     if (/^\s*(```|~~~)/.test(line)) { fence = !fence; continue; }
     if (fence) continue;
     let m;
@@ -57,11 +65,17 @@ function definitionCounts(text, kind) {
       if ((m = line.match(/^\s*[-*] \[[ xX~-]\] (?:\*\*|~~)?(T\d+[a-z]?)(?![\w-])/))) add(m[1]);
     } else {
       // `- **FR-123**`, `- **FR-123.** text`, `- **FR-123 Read/write access.** text` and the column-0 paragraph `**FR-123** text` (specs 005, 012, 058)
-      if ((m = line.match(/^(?:[-*] )?\*\*(FR-\d+[a-z]?)((?:[^*]|\*(?!\*))*)\*\*/))) { if (boldDefines(m[2])) add(m[1]); }
-      else if ((m = line.match(/^(?:[-*]|\d+\.) (?:\*\*)?(Q\d+)(?![\w-])/))) add(m[1]);
+      // An evidence tag may stand before the id (`- \`[IMPLEMENTED]\` **FR-243 Title.** ...`, 18 lines in the specs; issue #1768): stripped here, one place for FR and Q
+      const body = line.replace(TAG_PREFIX, '$1');
+      if ((m = body.match(/^(?:[-*] )?\*\*(FR-\d+[a-z]?)((?:[^*]|\*(?!\*))*)\*\*/))) { if (boldDefines(m[2])) add(m[1]); }
+      else if ((m = body.match(/^(?:[-*]|\d+\.) (?:\*\*)?(Q\d+)(?![\w-])/))) add(m[1]);
     }
   }
   return ids;
+}
+/** The same as Map(id -> count). */
+function definitionCounts(text, kind) {
+  return new Map([...definitionLines(text, kind)].map(([id, lines]) => [id, lines.length]));
 }
 /** The ids a file defines (a Set). */
 const parseDefinitions = (text, kind) => new Set(definitionCounts(text, kind).keys());
@@ -72,12 +86,18 @@ const added = (before, after) => new Set([...after].filter((x) => !before.has(x)
  * Pure clash logic. branchAdds: Map(file -> Set(id)); main: Map(file -> Set(id defined on origin/main));
  * prs: [{ label, adds: Map(file -> Set(id)) }]  -> [{ file, id, with }] sorted
  */
-function findClashes({ branchAdds, main, prs, twice = [] }) {
-  const out = twice.map(({ file, id }) => ({ file, id, with: 'this branch itself (defined twice in the file; main took it too?)' }));
+function findClashes({ branchAdds, main, prs, twice = [], fresh = new Set() }) {
+  const out = twice.map(({ file, id, lines }) => ({ file, id, with: `this branch itself (defined twice in the file${lines ? `, lines ${lines.join(' and ')}` : ''}; main took it too?)` }));
   for (const [file, ids] of branchAdds) {
     for (const id of ids) {
       if ((main.get(file) || new Set()).has(id)) out.push({ file, id, with: 'origin/main (already defined there)' });
-      for (const pr of prs) if ((pr.adds.get(file) || new Set()).has(id)) out.push({ file, id, with: `${pr.label} (added there too)` });
+      for (const pr of prs) {
+        if ((pr.adds.get(file) || new Set()).has(id)) out.push({ file, id, with: `${pr.label} (added there too)` });
+        // Issue #1935: numbers run across specs (T375 in two specs is one clash). Other file of the same kind only; a spec that is new on main
+        // (this side or that) numbers from 001 on its own, so it is not compared across files.
+        if (fresh.has(file)) continue;
+        for (const [pf, pids] of pr.adds) if (pf !== file && kindOf(pf) === kindOf(file) && !fresh.has(pf) && pids.has(id)) out.push({ file, id, with: `${pr.label} (added there too, in ${printable(pf)}: numbers are global)` });
+      }
     }
   }
   return out.sort((a, b) => a.file.localeCompare(b.file) || a.id.localeCompare(b.id, undefined, { numeric: true }) || a.with.localeCompare(b.with));
@@ -132,6 +152,44 @@ function specFilesChanged(root, base, head) {
 }
 function definitionsAt(root, rev, file) { return parseDefinitions(show(root, rev, file), kindOf(file)); }
 function countsAt(root, rev, file) { return definitionCounts(show(root, rev, file), kindOf(file)); }
+function linesAt(root, rev, file) { return definitionLines(show(root, rev, file), kindOf(file)); }
+
+// ---------- one number defined twice inside one file (offline, whole tree; issue #1553) ----------
+const baselinePath = (root) => path.join(root, 'scripts', 'spec-duplicates-baseline.txt');
+/** Every spec.md / tasks.md under root/specs: [{ file, id, lines }] for each id defined more than once. Reads ALL spec folders. */
+function scanDuplicates(root) {
+  const out = [];
+  const dir = path.join(root, 'specs');
+  for (const d of fs.readdirSync(dir).sort()) {
+    for (const [name, kind] of [['spec.md', 'spec'], ['tasks.md', 'tasks']]) {
+      const f = path.join(dir, d, name);
+      if (!fs.existsSync(f)) continue;
+      for (const [id, lines] of definitionLines(fs.readFileSync(f, 'utf8'), kind)) if (lines.length > 1) out.push({ file: `specs/${d}/${name}`, id, lines });
+    }
+  }
+  return out;
+}
+/** baselineText: lines `file id count` (the duplicates that existed when this check was added; # comments). Returns problem lines:
+ * a duplicate that is not in the baseline or is more often than it, naming every line; a baseline entry that is now lower or gone (lower it). */
+function checkDuplicates(found, baselineText) {
+  const base = new Map();
+  for (const l of String(baselineText || '').split(/\r?\n/)) {
+    const m = l.match(/^(\S+) (\S+) (\d+)$/);
+    if (m) base.set(`${m[1]} ${m[2]}`, Number(m[3]));
+  }
+  const problems = [];
+  const seen = new Set();
+  for (const { file, id, lines } of found) {
+    const key = `${file} ${id}`; seen.add(key);
+    const allowed = base.get(key) || 1;
+    if (lines.length > allowed) problems.push(`${printable(file)}: ${id} is defined ${lines.length} times (lines ${lines.join(', ')})${allowed > 1 ? `; the baseline allows ${allowed}` : ''}`);
+    else if (lines.length < allowed) problems.push(`${printable(file)}: ${id} is now defined ${lines.length} times: lower its line in scripts/spec-duplicates-baseline.txt (node scripts/spec-numbers.js --write-baseline)`);
+  }
+  for (const [key, n] of base) if (!seen.has(key)) problems.push(`${printable(key.split(' ')[0])}: ${key.split(' ')[1]} is no longer duplicated (baseline said ${n}): remove its line from scripts/spec-duplicates-baseline.txt (node scripts/spec-numbers.js --write-baseline)`);
+  return problems;
+}
+const baselineOf = (found) => `# Spec numbers defined more than once in one file, as they were when scripts/spec-numbers.js --dups was added (issue #1553).\n# file id count. A new duplicate fails; fixing one means lowering or removing its line (--write-baseline). Never raise a count.\n${[...found].sort((a, b) => a.file.localeCompare(b.file) || a.id.localeCompare(b.id, undefined, { numeric: true })).map((f) => `${f.file} ${f.id} ${f.lines.length}`).join('\n')}\n`;
+
 
 function addsOf(root, base, head, files) {
   const m = new Map();
@@ -142,10 +200,36 @@ function addsOf(root, base, head, files) {
   return m;
 }
 
+/** Spec 021 FR-094: a PR stacked on this one, or one this one is stacked on, INHERITS numbers, it does not claim them again. self: { headRef, baseRef }
+ * (the branch's own PR, or the checked-out branch name); heads: [{ label, headRef, baseRef, sameRepo }] -> Map(label -> why), along the base chain in both directions.
+ * `main` is never a stack member; a PR from another repository (sameRepo not true) never is either, nor is a branch that is one. */
+function stackRelated(self, heads) {
+  const out = new Map();
+  if (!self) return out;
+  const skip = (r) => !r || r === 'main';
+  if (!self.sameRepo) return out; // a fork's branch name is the outsider's choice: it never joins a stack (unknown = not stacked)
+  let want = self.baseRef;
+  for (let i = 0; i < heads.length && !skip(want); i++) {
+    const h = heads.find((x) => x.headRef === want && x.sameRepo && !out.has(x.label));
+    if (!h) break;
+    out.set(h.label, 'this branch is stacked on it: inherited numbers'); want = h.baseRef;
+  }
+  const names = new Set(skip(self.headRef) ? [] : [self.headRef]);
+  for (let grew = true; grew;) {
+    grew = false;
+    for (const h of heads) {
+      if (out.has(h.label) || !h.sameRepo || skip(h.baseRef) || !names.has(h.baseRef)) continue;
+      out.set(h.label, 'stacked on this branch: inherited numbers'); grew = true;
+      if (!skip(h.headRef)) names.add(h.headRef);
+    }
+  }
+  return out;
+}
+
 /** -> { base, branchAdds, main, prs, skipped, twice } from the refs in the repository (no network). heads: [{ label, sha }]; headRev: the branch
  * (a sha; CI passes the PR head, because HEAD there is a merge commit with current main inside, where a number main took meanwhile would
  * vanish from "added"). Throws when anything cannot be read. */
-function collect(root, heads, headRev = 'HEAD') {
+function collect(root, heads, headRev = 'HEAD', self = null) {
   const base = gitq(root, ['merge-base', headRev, 'origin/main']);
   if (!base) throw new Error('no origin/main or no merge-base with it (shallow clone?): run `git fetch origin main` (CI: fetch-depth 0)');
   const files = specFilesChanged(root, base, headRev);
@@ -154,18 +238,25 @@ function collect(root, heads, headRev = 'HEAD') {
   // a number that main took after the merge-base and was merged into HEAD cleanly shows up as a second definition in the file
   const twice = [];
   for (const f of files) {
-    const here = countsAt(root, headRev, f), there = countsAt(root, 'origin/main', f);
-    for (const [id, n] of here) if (n > 1 && n > (there.get(id) || 0)) twice.push({ file: f, id });
+    const here = linesAt(root, headRev, f), there = countsAt(root, 'origin/main', f);
+    for (const [id, lines] of here) if (lines.length > 1 && lines.length > (there.get(id) || 0)) twice.push({ file: f, id, lines });
   }
   const prs = [], skipped = [], noBase = [];
+  const stacked = stackRelated(self, heads);
   for (const h of heads) {
     if (isAncestor(root, h.sha, headRev)) { skipped.push(`${h.label} (already in this branch)`); continue; }
     if (isAncestor(root, h.sha, 'origin/main')) { skipped.push(`${h.label} (merged)`); continue; }
-    const pbase = gitq(root, ['merge-base', h.sha, 'origin/main']);
+    // FR-094: a PR stacked with this branch (by base ref, or its history contains this head) is not skipped: only what it adds BEYOND the history
+    // it shares with this branch counts as its claim, so a number both take on their own is still a clash
+    const inStack = stacked.has(h.label) || isAncestor(root, headRev, h.sha);
+    const pbase = gitq(root, ['merge-base', h.sha, inStack ? headRev : 'origin/main']);
     if (!pbase) { noBase.push(h.label); continue; }
-    prs.push({ label: h.label, adds: addsOf(root, pbase, h.sha, files) });
+    // that head's OWN spec files, not only this branch's (issue #1935: a number taken in another spec is the same clash)
+    prs.push({ label: h.label, adds: addsOf(root, pbase, h.sha, [...new Set([...files, ...specFilesChanged(root, pbase, h.sha)])]) });
   }
-  return { base, branchAdds, main, prs, skipped, noBase, twice, files };
+  const fresh = new Set();
+  for (const f of new Set([...files, ...prs.flatMap((p) => [...p.adds.keys()])])) if (show(root, 'origin/main', f) === '') fresh.add(f);
+  return { base, branchAdds, main, prs, skipped, noBase, twice, files, fresh };
 }
 
 // ---------- open PR heads ----------
@@ -190,6 +281,7 @@ function ownerRepo(root) {
   const m = url.match(/github\.com[:/]([^/\s]+)\/([^/\s]+?)(?:\.git)?\/?$/);
   return m ? `${m[1]}/${m[2]}` : null;
 }
+const withRefs = (o, headRef, baseRef, sameRepo) => { if (headRef) o.headRef = headRef; if (baseRef) o.baseRef = baseRef; if (sameRepo === true) o.sameRepo = true; return o; };
 const GH_LIMIT = 500, REST_PAGES = 30;
 /** The open PRs over the public REST API, paged until a short page. A token that is invalid or expired answers 401/403 even for public data:
  * retry once without it. More than REST_PAGES full pages is "cannot tell" (null), never a silently cut list. */
@@ -198,7 +290,7 @@ async function restOpenPrs(repo, token, getJson = httpsJson) {
     const res = [];
     for (let page = 1; page <= REST_PAGES; page++) {
       const rows = await getJson(`https://api.github.com/repos/${repo}/pulls?state=open&per_page=100&page=${page}`, tok);
-      for (const r of rows) res.push({ number: r.number, sha: r.head && r.head.sha });
+      for (const r of rows) res.push(withRefs({ number: r.number, sha: r.head && r.head.sha }, r.head && r.head.ref, r.base && r.base.ref, !!(r.head && r.head.repo && r.base && r.base.repo && r.head.repo.full_name === r.base.repo.full_name)));
       if (rows.length < 100) return res;
     }
     throw new Error('more open PRs than the pages read');
@@ -212,9 +304,9 @@ async function restOpenPrs(repo, token, getJson = httpsJson) {
  * a word, so an answer that reaches GH_LIMIT is not trusted: the REST pages are read instead. deps: runCmd, getJson (tests). */
 async function openPrs(root, env = process.env, deps = {}) {
   try {
-    const out = (deps.runCmd || run)(root, 'gh', ['pr', 'list', '--state', 'open', '--limit', String(GH_LIMIT), '--json', 'number,headRefOid']);
+    const out = (deps.runCmd || run)(root, 'gh', ['pr', 'list', '--state', 'open', '--limit', String(GH_LIMIT), '--json', 'number,headRefOid,headRefName,baseRefName,isCrossRepository']);
     const rows = JSON.parse(out);
-    if (rows.length < GH_LIMIT) return rows.map((p) => ({ number: p.number, sha: p.headRefOid }));
+    if (rows.length < GH_LIMIT) return rows.map((p) => withRefs({ number: p.number, sha: p.headRefOid }, p.headRefName, p.baseRefName, p.isCrossRepository === false));
   } catch { /* no gh, or not logged in, or a bad token: the public API */ }
   const repo = ownerRepo(root);
   if (!repo) return null;
@@ -242,12 +334,22 @@ function report({ branchAdds, prs, skipped, noBase = [], base }, clashes) {
   return lines;
 }
 
+function dupsMain(argv, root) {
+  const found = scanDuplicates(root);
+  if (argv.includes('--write-baseline')) { fs.mkdirSync(path.dirname(baselinePath(root)), { recursive: true }); fs.writeFileSync(baselinePath(root), baselineOf(found)); emit(`specs:numbers: wrote ${found.length} baseline line(s)`); return 0; }
+  const problems = checkDuplicates(found, fs.existsSync(baselinePath(root)) ? fs.readFileSync(baselinePath(root), 'utf8') : '');
+  if (!problems.length) { emit(`specs:numbers --dups: ok, no number is defined twice in one file beyond the ${found.length} known (scripts/spec-duplicates-baseline.txt)`); return 0; }
+  emit(problems.map((p) => `  DUPLICATE ${p}`).join('\n') + '\nFix: give the second definition the next free number in that file (and every mention).');
+  return 1;
+}
+
 const argOf = (argv, name) => { const i = argv.indexOf(name); return i >= 0 ? argv[i + 1] : undefined; };
 
 /** deps.openPrs: a stand-in for the PR list (tests). Exit 0 ok, 1 clash, 2 could not check. */
 async function main(argv, env, deps = {}) {
   const say = (t) => emit(t);
   const root = argOf(argv, '--root') ? path.resolve(argOf(argv, '--root')) : path.join(__dirname, '..');
+  if (argv.includes('--dups') || argv.includes('--write-baseline')) return dupsMain(argv, root);
   const noFetch = argv.includes('--no-fetch');
   const exclude = String(argOf(argv, '--exclude') || env.PR_NUMBER || '');
   const headRev = String(argOf(argv, '--head') || env.PR_HEAD_SHA || 'HEAD');
@@ -263,13 +365,18 @@ async function main(argv, env, deps = {}) {
   if (prList) { const open = new Set(prList.map((p) => String(p.number))); heads = heads.filter((h) => open.has(h.number)); }
   if (!heads.length && !noFetch) say('specs:numbers: WARN no PR heads found; only origin/main was compared');
   let res;
-  try { res = collect(root, heads, headRev); } catch (e) { say(`specs:numbers: NOT CHECKED: ${firstLine(e)}`); return 2; }
+  // the branch's own PR (from the list) or, on a local run, the checked-out branch: its refs tell which open PRs are stacked with it
+  const own = prList && prList.find((p) => String(p.number) === exclude);
+  const refOf = new Map((prList || []).map((p) => [String(p.number), p]));
+  heads = heads.map((h) => ({ ...h, headRef: (refOf.get(h.number) || {}).headRef, baseRef: (refOf.get(h.number) || {}).baseRef, sameRepo: (refOf.get(h.number) || {}).sameRepo }));
+  const self = own ? { headRef: own.headRef, baseRef: own.baseRef, sameRepo: own.sameRepo } : { headRef: gitq(root, ['symbolic-ref', '--short', '-q', 'HEAD']) || undefined, sameRepo: true };
+  try { res = collect(root, heads, headRev, self); } catch (e) { say(`specs:numbers: NOT CHECKED: ${firstLine(e)}`); return 2; }
   const clashes = findClashes(res);
   say(report(res, clashes).join('\n'));
   return clashes.length ? 1 : 0;
 }
 
-module.exports = { openPrs, GH_LIMIT, parseDefinitions, definitionCounts, added, findClashes, scrub, collect, report, restOpenPrs, main, show, SPEC_FILE_RE };
+module.exports = { stackRelated, openPrs, GH_LIMIT, parseDefinitions, definitionCounts, definitionLines, scanDuplicates, checkDuplicates, added, findClashes, scrub, collect, report, restOpenPrs, main, show, SPEC_FILE_RE };
 
 if (require.main === module) {
   main(process.argv.slice(2), process.env).then((c) => process.exit(c), (e) => { emit(`specs:numbers: NOT CHECKED: ${firstLine(e)}`); process.exit(2); });

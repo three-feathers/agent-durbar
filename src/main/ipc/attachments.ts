@@ -6,6 +6,7 @@ import { ipcHandle } from '../ipcguard';
 import { kindOfFile, stageAttachment } from '../../shared/attachments';
 import type { PickedFile } from '../../shared/api';
 import type { DevEnv } from '../devhooks';
+import { failText } from '../ipcerror';
 
 export interface AttachmentsIpcDeps {
   dev: DevEnv;
@@ -51,7 +52,7 @@ export function register(deps: AttachmentsIpcDeps): void {
       pickedFiles.add(r.path);
       return { ok: true, file: { path: r.path, name: r.name, kind: r.kind, size: r.size } };
     } catch (err) {
-      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+      return { ok: false, error: failText(err, 'attachments') };
     }
   });
 }

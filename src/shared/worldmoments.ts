@@ -8,6 +8,7 @@ export const MOMENT_BLOCKS: Readonly<Record<string, readonly string[]>> = {
   lobby: ['fixture', 'person', 'light-slots'],
   'boss-bank-post-coffee': ['fixture', 'person', 'light-slots'],
   'desk-card': ['person', 'desk-screen', 'light-slots'],
+  helpers: ['person'],
   'desk-lights': ['light-slots', 'desk-screen'],
   'live-screen': ['desk-screen'],
   lounge: ['person', 'desk-screen', 'light-slots'],

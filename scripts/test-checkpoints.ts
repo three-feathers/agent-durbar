@@ -1,10 +1,11 @@
 /** Unit test (spec 065): CheckpointStore keeps, previews and restores an agent's file changes per turn, safely. Temp folders only. */
 import * as assert from 'assert';
+import { assertCpuUnder, assertCpuUnderAsync, loggingTimers, longestStringSeen, withBackstop } from './hang-backstop';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { CheckpointStore, unsafeTarget } from '../src/main/checkpoints';
-import { PermissionBroker } from '../src/adapters/permissions';
+import { PermissionBroker, WRITE_GUARD_MS } from '../src/adapters/permissions';
 import { tmpDir } from './test-tmp';
 
 const base = tmpDir('durbar-ckpt-test-');
@@ -176,10 +177,30 @@ async function brokerChecks(): Promise<void> {
   assert.strictEqual(seen.length, 0, 'the user denied: no guard');
   // a failing guard never fails the write; a hanging one is cut off after 2 s
   assert.strictEqual((await mk('allow', async () => { throw new Error('boom'); }).request({ kind: 'write', fileName: '/w/e.ts' })).kind, 'approve-once');
-  const t0 = Date.now();
-  assert.strictEqual((await mk('allow', () => slow).request({ kind: 'write', fileName: '/w/f.ts' })).kind, 'approve-once');
-  assert.ok(Date.now() - t0 < 3000, 'bounded');
+  const guarded = await loggingTimers(() => withBackstop(mk('allow', () => slow).request({ kind: 'write', fileName: '/w/f.ts' }), 'a hanging guard is cut off'), (d) => assert.deepStrictEqual(d.filter((x) => x !== 20_000), [WRITE_GUARD_MS], `a hanging guard is cut off by exactly one timer, WRITE_GUARD_MS (permissions.ts); timers: ${d.join(',')}`)); // the backstop's own 20 s timer is the only other one: a different 2 s timer would be a second entry
+  assert.strictEqual(guarded.kind, 'approve-once');
   release?.();
+  // the guard itself, without a real wait: a promise that never settles fails with its label at once when the injected timer fires; one that settles passes
+  await assert.rejects(withBackstop(new Promise<void>(() => undefined), 'probe', 20_000, (cb) => { cb(); return undefined; }), /probe: still pending after 20000 ms/, 'the hang guard fails a hung promise');
+  assert.strictEqual(await withBackstop(Promise.resolve(7), 'probe', 20_000, () => undefined), 7, 'and passes a promise that settles');
+  const fakeCpu = (us: number) => (p?: NodeJS.CpuUsage) => (p ? { user: us, system: 0 } : { user: 0, system: 0 });
+  let tick = 0n; const fakeClock = (stepNs: bigint) => () => (tick += stepNs); // the clock moves by the step at every reading: no real wait
+  assert.throws(() => assertCpuUnder('probe', 100, () => undefined, { usage: fakeCpu(5_000_000), hr: fakeClock(1n) }), /probe: 5000 ms CPU, limit 100 ms/, 'the CPU guard fails on a fake reading over its limit, no real work');
+  assert.strictEqual(assertCpuUnder('probe', 100, () => undefined, { usage: fakeCpu(1000), hr: fakeClock(1n) }), 1, 'and passes one under it');
+  assert.throws(() => assertCpuUnder('probe', 100, () => undefined, { usage: fakeCpu(1000), hr: fakeClock(30_000_000_000n) }), /wall-time backstop/, 'a blocking wait (little CPU, much wall time on the fake clock) fails the wall backstop');
+  assert.throws(() => assertCpuUnder('probe', 100, (() => Promise.resolve()) as () => void, { usage: fakeCpu(1000), hr: fakeClock(1n) }), /synchronous function/, 'an async function is refused');
+  assert.throws(() => assertCpuUnder('probe', 100, () => undefined, { usage: fakeCpu(5_000_000), hr: fakeClock(30_000_000_000n) }), /probe: 5000 ms CPU, limit 100 ms/, 'high CPU and high wall: the CPU cap is compared first, so it fails at its own text, not at the wall backstop');
+  await assert.rejects(assertCpuUnderAsync('probe', 100, async () => undefined, { usage: fakeCpu(5_000_000), hr: fakeClock(1n) }), /probe: 5000 ms CPU, limit 100 ms/, 'async: over the CPU cap fails at the cap');
+  await assert.rejects(assertCpuUnderAsync('probe', 100, async () => undefined, { usage: fakeCpu(5_000_000), hr: fakeClock(30_000_000_000n) }), /probe: 5000 ms CPU, limit 100 ms/, 'async: high CPU and high wall fails at the CPU cap first');
+  await assert.rejects(assertCpuUnderAsync('probe', 100, async () => undefined, { usage: fakeCpu(1000), hr: fakeClock(30_000_000_000n) }), /wall-time backstop/, 'async: little CPU, much wall (a blocking wait in the awaited step) fails the wall backstop');
+  assert.strictEqual(await assertCpuUnderAsync('probe', 100, async () => undefined, { usage: fakeCpu(1000), hr: fakeClock(1n) }), 1, 'async: under the cap passes');
+  const realTimeout = globalThis.setTimeout; let logged: number[] = [];
+  await assert.rejects(loggingTimers(async () => { setTimeout(() => undefined, 1).unref(); throw new Error('boom'); }, (d) => { logged = d; }), /boom/);
+  assert.ok(globalThis.setTimeout === realTimeout && logged.includes(1), 'loggingTimers puts setTimeout back when the function throws, and still runs its check on the delays seen');
+  assert.throws(() => longestStringSeen(() => { 'abc'.trim(); throw new Error('x'); }), /x/);
+  assert.ok(String.prototype.trim.toString().includes('[native code]') && RegExp.prototype.test.toString().includes('[native code]'), 'longestStringSeen puts the String and RegExp methods back when the function throws');
+  const seenLong = longestStringSeen(() => 'x'.repeat(50_000).trim().length + 'abc'.split('b').length);
+  assert.ok(seenLong.longest === 50_000 && seenLong.result === 50_002 && String.prototype.trim.toString().includes('[native code]'), 'longestStringSeen reports the longest scanned string and restores the hooks');
 }
 
 // ---- the words (src/renderer/checkpoints.js)
@@ -239,6 +260,31 @@ if (process.platform !== 'win32') {
   u = st2.undo(B, t);
   assert.ok(!u.ok, 'restore onto a link is refused');
   assert.strictEqual(r(path.join(out2, 'new.txt')), 'agent made this\n', 'the link target is untouched');
+  // (c2) spec 045 FR-066 (review of #1980): a parent swapped for a link DURING the undo (after the first file): the undo stops with its own
+  // reason, a ShownError, so the window's text (failText) still names the file and why
+  {
+    fs.unlinkSync(path.join(ws2, 'f.txt'));
+    w(path.join(ws2, 'a.txt'), 'a1\n');
+    w(path.join(ws2, 'sub', 'b.txt'), 'b1\n');
+    const tc = st2.beginTurn(B, r2);
+    st2.capture(B, r2, path.join(ws2, 'a.txt'));
+    st2.capture(B, r2, path.join(ws2, 'sub', 'b.txt'));
+    w(path.join(ws2, 'a.txt'), 'a2\n');
+    w(path.join(ws2, 'sub', 'b.txt'), 'b2\n');
+    st2.endTurn(B);
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const realFs = require('fs') as typeof fs;
+    const realWrite = realFs.writeFileSync;
+    let swapped = false;
+    realFs.writeFileSync = ((...a: Parameters<typeof fs.writeFileSync>) => { realWrite(...a); if (!swapped && String(a[0]).startsWith(ws2 + path.sep)) { swapped = true; swap(); } }) as typeof fs.writeFileSync;
+    let uc: ReturnType<typeof st2.undo>;
+    try { uc = st2.undo(B, tc); } finally { realFs.writeFileSync = realWrite; }
+    assert.ok(swapped, 'the swap happened during the undo');
+    assert.ok(!uc.ok && /^The undo stopped after 1 file: sub[\\/]b\.txt: a folder or file on its path is now a link\. /.test(uc.error ?? ''), 'the undo stop reason is the app\'s own words: ' + JSON.stringify(uc));
+    assert.deepStrictEqual(fs.readdirSync(out2).filter((n) => n !== 'new.txt'), [], 'nothing written outside');
+    unswap();
+    w(path.join(ws2, 'f.txt'), 'x\n');
+  }
   // (d) a clean case still works, and missing parents are recreated as real folders
   fs.unlinkSync(path.join(ws2, 'f.txt'));
   w(path.join(ws2, 'deep', 'x', 'y.txt'), 'deep\n');

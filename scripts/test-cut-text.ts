@@ -4,7 +4,7 @@ import fs from 'fs';
 import path from 'path';
 
 const R = path.join(__dirname, '..', '..', 'src', 'renderer');
-const { cutText, fitCut } = require(path.join(R, 'cuttext.js')) as { fitCut: (t: string, fits: (x: string) => boolean) => string; cutText: (t: unknown, max: number, o?: { wordBoundary?: boolean; trimPunct?: boolean }) => string };
+const { cutText, fitCut, nameTail } = require(path.join(R, 'cuttext.js')) as { nameTail: (n: unknown) => string; fitCut: (t: string, fits: (x: string) => boolean) => string; cutText: (t: unknown, max: number, o?: { wordBoundary?: boolean; trimPunct?: boolean }) => string };
 const len = (s: string) => Array.from(s).length;
 
 // fits: unchanged (whitespace collapsed); exactly max is not cut
@@ -66,6 +66,20 @@ assert.strictEqual(fitCut(full, at(9)), 'Message…');
 assert.ok(fitCut(full, at(18)).endsWith('…') && fitCut(full, at(18)) !== full);
 assert.strictEqual(fitCut(full, at(0)), '…', 'nothing fits: the ellipsis alone');
 assert.ok(!/[\ud800-\udbff](?![\udc00-\udfff])/.test(fitCut('😀'.repeat(30), at(9))), 'fitCut never splits an emoji');
+
+// nameTail (spec 001 FR-271, issue #1905): the end of a long folder name that stays when the name is cut in the middle
+for (const [name, tail] of [
+  ['iot-platform-form-2', 'form-2'], ['iot-platform-form-3', 'form-3'], ['itdse-ism-reports', 'reports'], ['itdse-ism-portal', 'portal'],
+  ['customer-reconciliation-batch-jobs', 'batch-jobs'], ['operations-weekly', 'weekly'], ['2026-07-budget', 'budget'],
+  ['abcdefghijklmnopqrst', 'mnopqrst'], ['x-averyverylongsegment', 'gsegment'], ['abcdefghijkl', ''], ['short', ''], ['', ''],
+] as const) assert.strictEqual(nameTail(name), tail, 'nameTail ' + JSON.stringify(name));
+assert.strictEqual(nameTail(null), '', 'nameTail of null');
+assert.strictEqual(nameTail('😀'.repeat(14)), '😀'.repeat(8), 'nameTail counts code points, never splits a pair');
+for (const n of ['iot-platform-form-2', 'customer-reconciliation-batch-jobs', 'a-b-c-d-e-f-g-h-i-j-k', 'x'.repeat(40)]) {
+  const t = nameTail(n);
+  assert.ok(n.endsWith(t) && len(t) >= 6 && len(t) <= 10 && len(n) > 12, 'tail of ' + n + ' is a 6..10 character suffix: ' + t);
+}
+assert.notStrictEqual(nameTail('iot-platform-form-2'), nameTail('iot-platform-form-3'), 'names that start alike end differently');
 
 // the three callers use it (static check), and none keeps its own slice-and-ellipsis
 const app = fs.readFileSync(path.join(R, 'app.js'), 'utf8'), att = fs.readFileSync(path.join(R, 'attention.js'), 'utf8');

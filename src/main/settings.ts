@@ -17,6 +17,7 @@ import type { CustomPlace, PlaceError, PlaceMap } from '../shared/places';
 import { migrateLegacyTheme, parseCharacters } from '../shared/characters';
 import { migrateRemovedTheme } from '../shared/themes';
 import type { CharacterChoice } from '../shared/characters';
+import { MAX_CHARACTER_PINS } from '../shared/charrules';
 
 /** Result of a custom-place call (spec 024 FR-020): the list and the map as they are now, whether the call worked or not. */
 export interface PlaceCallResult {
@@ -54,6 +55,7 @@ export class SettingsStore {
     const m = migrateLegacyTheme(this.s);
     // spec 035 FR-018: a removed built-in theme (Corporate, the courts) becomes Clean Office the same way; Characters is untouched
     const r = migrateRemovedTheme(m.settings);
+    // spec 102 Changes 2026-11-14 (T347): the Retro Pixel theme is kept (owner decision); nothing here moves its users
     if (m.changed || r.changed) {
       this.s = r.settings;
       this.save();
@@ -171,6 +173,32 @@ export class SettingsStore {
   /** Spec 052 FR-069 (issue #1182): *Motion*, on by default; only `false` is written, so a file of an older version means on. */
   get motion(): boolean {
     return this.s.motion !== false;
+  }
+
+  /** Spec 106 FR-060 (T426): *Brain view*, on by default; only `false` is written, so an unset value or an older file means on. */
+  get brainView(): boolean {
+    return this.s.brainView !== false;
+  }
+
+  setBrainView(v: unknown): Saved<boolean> {
+    if (typeof v !== 'boolean') return { ok: false, value: this.brainView };
+    const next: AppSettings = { ...this.s };
+    if (v) delete next.brainView;
+    else next.brainView = false;
+    return this.commit(next) ? { ok: true, value: v } : { ok: false, value: this.brainView };
+  }
+
+  /** Spec 106 FR-060 (T426): *Brain motion* Full / Calm / Still; Full is not written. */
+  get brainMotion(): 'full' | 'calm' | 'still' {
+    return this.s.brainMotion === 'calm' || this.s.brainMotion === 'still' ? this.s.brainMotion : 'full';
+  }
+
+  setBrainMotion(v: unknown): Saved<'full' | 'calm' | 'still'> {
+    if (v !== 'full' && v !== 'calm' && v !== 'still') return { ok: false, value: this.brainMotion };
+    const next: AppSettings = { ...this.s };
+    if (v === 'full') delete next.brainMotion;
+    else next.brainMotion = v;
+    return this.commit(next) ? { ok: true, value: v } : { ok: false, value: this.brainMotion };
   }
 
   /** Only a real boolean changes it. `ok` only when the write reached disk; `value` the one in force. */
@@ -353,6 +381,41 @@ export class SettingsStore {
     if (c === 'theme') delete next.characters;
     else next.characters = c;
     return this.commit(next) ? { ok: true, characters: c } : { ok: false, characters: this.characters };
+  }
+
+  /** Spec 096 FR-033: the pins to characters that still exist (`ids`, main's list); a pin to anything else is dropped on read. A copy. */
+  characterPinsOf(ids: readonly string[]): Record<string, string> {
+    return Object.fromEntries(Object.entries(this.s.characterPins ?? {}).filter(([, id]) => ids.includes(id)));
+  }
+
+  /** Spec 096 FR-033: set or (with `null`) clear one pin, at most 500. The caller checked the key and the id. False when it could not be kept. */
+  setCharacterPin(key: string, id: string | null): boolean {
+    const pins: Record<string, string> = Object.fromEntries(Object.entries(this.s.characterPins ?? {}));
+    if (id === null) delete pins[key];
+    else {
+      if (!Object.prototype.hasOwnProperty.call(pins, key) && Object.keys(pins).length >= MAX_CHARACTER_PINS) return false;
+      Object.defineProperty(pins, key, { value: id, enumerable: true, writable: true, configurable: true });
+    }
+    return this.commitPins(pins);
+  }
+
+  /** Spec 096 FR-033: deleting a character removes its pins. Returns how many went. */
+  removeCharacterPins(id: string): number {
+    const all = Object.entries(this.s.characterPins ?? {});
+    const keep = all.filter(([, v]) => v !== id);
+    if (keep.length === all.length) return 0;
+    return this.commitPins(Object.fromEntries(keep)) ? all.length - keep.length : 0;
+  }
+
+  private commitPins(pins: Record<string, string>): boolean {
+    const before = this.s;
+    const next: AppSettings = { ...this.s };
+    if (Object.keys(pins).length) next.characterPins = pins;
+    else delete next.characterPins;
+    this.s = next;
+    if (this.save()) return true;
+    this.s = before;
+    return false;
   }
 
   /** Place mapping (spec 024): MCP server name -> place id or `desk`. A copy, never the stored object. */

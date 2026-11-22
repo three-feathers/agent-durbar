@@ -85,11 +85,12 @@ async function main(): Promise<void> {
     const r = await detectBinary(CODEX_BINARY, e, x.exec);
     assert.strictEqual(r.state, 'ready');
     assert.strictEqual(x.calls[0].file, 'C:\\Windows\\System32\\cmd.exe', 'd: ComSpec');
-    assert.deepStrictEqual(x.calls[0].args, ['/d', '/s', '/c', `"${cmd}" --version`], 'd: four fixed args');
+    assert.deepStrictEqual(x.calls[0].args, ['/d', '/s', '/c', `""${cmd}" --version"`], 'd: four fixed args, the /c line in an outer pair (spec 009 FR-029)');
     assert.strictEqual(x.calls[0].verbatim, true, 'd: .cmd runs with verbatim arguments');
     const x2 = mkExec(ok('0.200.0'));
-    await detectBinary(CODEX_BINARY, mkEnv('win32', { PATH: 'C:\\npm' }, [cmd], 'C:\\u'), x2.exec);
-    assert.strictEqual(x2.calls[0].file, 'cmd.exe', 'd: default cmd.exe');
+    // spec 045 FR-065: no drive or UNC cmd.exe in the environment: nothing runs (no bare cmd.exe), the version stays unread
+    const r2 = await detectBinary(CODEX_BINARY, mkEnv('win32', { PATH: 'C:\\npm' }, [cmd], 'C:\\u'), x2.exec);
+    assert.deepStrictEqual([r2.state, x2.calls.length], ['unknown', 0], 'd: FR-065: no drive or UNC cmd.exe, no bare cmd.exe run');
     for (const bad of ['C:\\a&b', 'C:\\100%', 'C:\\a^b']) {
       const f = `${bad}\\codex.cmd`;
       const xb = mkExec(ok('0.200.0'));
@@ -301,7 +302,7 @@ async function main(): Promise<void> {
     const w = mkEnv('win32', { PATH: 'C:\\npm', ComSpec: 'C:\\Windows\\cmd.exe' }, ['C:\\npm\\claude.cmd'], 'C:\\Users\\u');
     const s4 = seq([ok('2.1.302'), out({ loggedIn: false })]);
     assert.strictEqual((await detectClaude(w, s4.exec)).state, 'not-signed-in');
-    assert.deepStrictEqual(s4.calls.map((c) => [c.file, c.args[c.args.length - 1], c.verbatim]), [['C:\\Windows\\cmd.exe', '"C:\\npm\\claude.cmd" --version', true], ['C:\\Windows\\cmd.exe', '"C:\\npm\\claude.cmd" auth status --json', true]]);
+    assert.deepStrictEqual(s4.calls.map((c) => [c.file, c.args[c.args.length - 1], c.verbatim]), [['C:\\Windows\\cmd.exe', '""C:\\npm\\claude.cmd" --version"', true], ['C:\\Windows\\cmd.exe', '""C:\\npm\\claude.cmd" auth status --json"', true]]);
   }
   // spec 012 FR-137: Codex's sign-in state from `codex login status` after the version (no prompt); only the phrase and exit code are read
   {
