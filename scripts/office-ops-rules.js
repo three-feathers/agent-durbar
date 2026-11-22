@@ -10,6 +10,8 @@ const LIMITS = {
   elementsRecalculated: 50, // T148, FR-185
   rendersPerStatus: 1, // T159, FR-184
   searchesPerStatus: 0, // a status change of one agent runs no layout search
+  searchesPerReorder: 0, // spec 001 delta 2026-11-22 (issue 2024): a desk that moves inside its room (waiting, then working) runs no layout search
+  probesPerReorder: 1, // the same: one probe of the layout it has (it was 18 to 21, a whole search)
   floorStyleReadsPerStatus: 1, // T159: `getComputedStyle(#floor)` once per render (it was twice)
   /* T156 (issue 1401), reads per status update of one agent, per size and agent count: measured 81 / 73 at 1440x900 (15 / 40 agents) and 77 / 60 at 1280x800 (97 / 85 and 89 / 72 before
      the lobby figures read the floor's scroll once); each limit is the measured median plus 2 (all 8 samples were equal, the median drops a render's outlier). The target is under 40 (owner reading 2026-11-13): lowered by each site's change */

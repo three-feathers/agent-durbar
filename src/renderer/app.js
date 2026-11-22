@@ -1692,7 +1692,23 @@ function growSearch(sizing,aw,ah,lo){
   GROW=0; setGrow(probe,0);
   return best;
 }
-let layoutKey='', layout=null, FIT_KEY='';
+let layoutKey='', layout=null, FIT_KEY='', layoutShape='';
+/* spec 001 delta 2026-11-22 (issue 2024): the layout key without the desks' order inside each room (the rooms keep theirs): which desks, not where */
+function layoutShapeKey(key){
+  const k=JSON.parse(key), rooms=k[k.length-1], byId=(x,y)=>x[0]<y[0]?-1:x[0]>y[0]?1:0;
+  k[k.length-1]=rooms.map(([id,mains,rolled,shut])=>[id,[...mains].sort(byId),[...rolled].sort(byId),shut]);
+  return JSON.stringify(k);
+}
+/* one probe of a layout the search chose, with today's desk order: it fits the floor and every header holds its parts without giving way (headsFit, the search's strict test) */
+function layoutHolds(sizing,aw,ah,L){
+  const probe=$('probe'); probe.style.width=aw+'px';
+  HCAP=L.hcap; HBOOST=new Map(L.boost); LIVE_SIDE=!!L.side; GROW=L.grow?1:0; HX=L.hx||0;
+  probe.dataset.d=L.d; probe.style.height='auto'; setGrow(probe,L.grow||0);
+  probeSet(probe,stageHTML(sizing,L.d,aw,L.cap));
+  const ok=probe.scrollHeight<=ah+1&&probe.scrollWidth<=aw+1&&headsFit(probe);
+  probe.innerHTML=''; probePrev=null; LIVE_SIDE=false; GROW=0; HX=0; setGrow(probe,0);
+  return ok;
+}
 let SIM_QUIET_HEADS=new Set(); /* spec 001 FR-023 (2026-10-23): simulator only (__durbarSimUi.quietHeads(['siren','aiu'])): room headers drawn without those parts, so a driver can lay the office out first and add them after, as a late siren or cost does */
 let HEAD_RETRY=''; /* the layout key and header contents of the last relayout made because a header no longer held its parts */
 /* spec 001 FR-026: what a new user needs before the first folder: sign in once (spec 052 FR-056: named by the AI account, not the app), add a folder (Read-only), or look around in the demo */
@@ -2089,8 +2105,13 @@ function renderOffice(){
   OPS.renders++;
   const sizing=lastSizing=sizingModel(model); /* what chooseLayout is given (the hook below reads it) */
   const key=JSON.stringify([aw,ah,FORCE_DENSITY,liveOn(),THEME.themeIdForCache(),lobbyOn(),floorTagsOn()&&floorsOnList().map(f=>f.id+':'+f.name),curFloorId(),allFloorsView(),sizing.map(m=>[m.r.id,m.mains.map(a=>[a.id,helpersOf(a).length,!!ui.expanded[a.id]]),(m.rolled||[]).map(x=>[x.a.id,x.k]),!!ui.expanded['shut:'+m.r.id]])]);
-  const reused=key===layoutKey&&!!layout; /* spec 097 FR-184: the last layout search still holds (same shape, width and height) */
+  let reused=key===layoutKey&&!!layout; /* spec 097 FR-184: the last layout search still holds (same shape, width and height) */
+  /* spec 001 delta 2026-11-22 (issue 2024): the same desks in another order (a desk that waits for you moves to the front of its room, and back) is one
+     probe of the layout it has, not a whole search: kept when it still fits with its headers holding, searched as before when not */
+  const shape=layoutShapeKey(key);
+  if(!reused&&layoutKey&&layout&&layout.fit&&shape===layoutShape&&layoutHolds(sizing,aw,ah,layout)){reused=true;layoutKey=key;}
   if(!reused){layout=chooseLayout(sizing,aw,ah);layoutKey=key;}
+  layoutShape=shape;
   HCAP=layout.hcap; HBOOST=new Map(layout.boost); LIVE_SIDE=!!layout.side; GROW=layout.grow?1:0; HX=layout.hx||0; /* a cached layout skips chooseLayout: restore the helper level too */
   const parts=stageParts(model,layout.d,aw,layout.cap);
   const fresh=stage.dataset.d!==layout.d||!!stage.querySelector('.empty');
