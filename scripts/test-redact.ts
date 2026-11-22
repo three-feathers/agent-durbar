@@ -3,7 +3,7 @@ import * as assert from 'assert';
 import * as fs from 'fs';
 import * as path from 'path';
 import { Worker } from 'worker_threads';
-import { MASK_INPUT_MAX, REDACT_MAX_CHARS, createDebugSink, _uncappedForTest, cut, maskSchemeSecrets, maskTokenShapes, maskTokenShapesUnguarded, maskSecretArgs, maskSecretCommand, maskHomePaths, maskSecretUrl, maskNoteText, maskOutgoing, maskGluedTail, maskSplitTokens, _breakCallsForTest, keepShownBy, _unionMasksForTest, withoutSplit, withoutShell, _shellRefsForTest, _shellPassesForTest, _shapePassesForTest, _runReadsForTest, ESC_RUN_SHELL_SOURCE, withoutLoose, maskLoose, _homeGuardReadsForTest, _homeGuardCharsForTest, _guardEdgeScanForTest, HOME_GUARD_WINDOW_FOR_TEST, _splitWorkForTest, withoutLinkSplit, redact, redactMarkdown, MARKDOWN_WORK, _markdownPassForTest, shQuote, splitCommand } from '../src/shared/redact';
+import { MASK_INPUT_MAX, REDACT_MAX_CHARS, createDebugSink, _uncappedForTest, cut, maskSchemeSecrets, maskTokenShapes, maskTokenShapesUnguarded, maskSecretArgs, maskSecretCommand, maskHomePaths, maskSecretUrl, maskNoteText, maskOutgoing, maskGluedTail, maskSplitTokens, _breakCallsForTest, keepShownBy, _unionMasksForTest, withoutSplit, withoutShell, _shellRefsForTest, _shellPassesForTest, _shapePassesForTest, _runReadsForTest, ESC_RUN_SHELL_SOURCE, withoutLoose, maskLoose, _homeGuardReadsForTest, _homeGuardCharsForTest, _guardEdgeScanForTest, HOME_GUARD_WINDOW_FOR_TEST, _splitWorkForTest, withoutLinkSplit, withoutContinuation, _contWorkForTest, _contPassesForTest, redact, redactMarkdown, MARKDOWN_WORK, _markdownPassForTest, shQuote, splitCommand } from '../src/shared/redact';
 
 import { assertLinearShape, assertWithinYardstick, cpuMs } from './redact-growth-lib';
 import './safetext-shared'; // the desk's maskRaw (src/renderer/safetext.js) reads the compiled redact.ts, for the FR-181 differential below
@@ -175,6 +175,86 @@ for (const keep of ['ghp_short', 'see ghs_count', 'wei' + 'ghs_' + 'TotalWeightK
   assertLinearShape('#1320 decoded: redact an entity with a long run of leading zeros', (x) => { redact(x, {}); }, (k) => 'gh' + 'p&#' + '0'.repeat(Math.max(1, k - 8)) + '39', 200_000);
   const unit = 'x gh' + 'p%5F' + ghBody + ' ';
   assertLinearShape('#1320 decoded: redact many decoded tokens', (x) => { redact(x, {}); }, (k) => unit.repeat(Math.ceil(k / unit.length)).slice(0, k), 200_000);
+}
+
+// spec 012 FR-190 (issue #1320): a value split across a line break (a shell line continuation, or a plain break right after text the rules hide) after a secret
+// name kept its second part readable. The split step reads the text once more with such breaks removed. Every value here is invented and built from pieces.
+{
+  const STc = require(path.join(__dirname, '..', '..', 'src', 'renderer', 'safetext.js')) as { maskRaw(t: string, r: (s: string) => string): string; excerpt(t: string, r: (s: string) => string): string };
+  const surfaces: Array<[string, (t: string) => string]> = [
+    ['redact', (t) => redact(t, {})],
+    ['maskSecretCommand', (t) => maskSecretCommand(t, {})],
+    ['maskSecretArgs', (t) => maskSecretArgs(t.split(' '), {}).join(' ')],
+    ['maskOutgoing', (t) => maskOutgoing(t).text],
+    ['maskNoteText', (t) => maskNoteText(t).text],
+    ['desk maskRaw', (t) => STc.maskRaw(t, (x) => redact(x, {}))],
+    ['desk excerpt', (t) => STc.excerpt(t, (x) => redact(x, {}))],
+  ];
+  const v1 = 'Qz7' + 'Wx4' + 'Lk9';
+  const v2 = 'Rt3' + 'Mn8' + 'Pb5';
+  const names = ['API_' + 'KEY=', '--to' + 'ken=', 'GH_' + 'TOKEN=', 'Authorization: ' + 'Bearer ', 'pass' + 'word=', 'DB_' + 'PASSWORD=', 'export OPENAI_' + 'API_KEY=', 'X-Api-' + 'Key: ', 'set GH_' + 'TOKEN=', 'client_' + 'secret=', 'to' + 'ken: '];
+  const breaks: Array<[string, string]> = [['backslash LF', '\\\n'], ['backslash CRLF', '\\\r\n'], ['caret CRLF', '^\r\n'], ['LF', '\n'], ['CRLF', '\r\n']];
+  // every word the reading without the step hides stays hidden with it (the head may hide more, never less)
+  const wordsShown = (t: string, head: string, ref: string): string[] => t.split(/[\s\\^]+/).filter((w) => w.length >= 3 && !ref.includes(w) && head.includes(w));
+  for (const n of names) for (const [bk, b] of breaks) for (const tail of ['', ' done', '\nnext step']) {
+    const t = n + v1 + b + v2 + tail;
+    for (const [sn, mask] of surfaces) {
+      const out = mask(t);
+      assert.ok(!out.includes(v1) && !out.includes(v2), `#1320 continuation: ${sn} hides both parts (${n.replace(/[A-Za-z_]+/g, 'n')} ${bk}${tail ? ' +' + tail.length : ''}): ${JSON.stringify(out)}`);
+      assert.deepStrictEqual(wordsShown(t, out, withoutContinuation(() => mask(t))), [], `#1320 continuation: ${sn} shows nothing the reading without the step hides (${bk})`);
+    }
+  }
+  // a continuation joins whatever follows it (a shell removes it), a second part with no digit too; a plain break only before a run that reads like a token's tail
+  for (const [bk, b] of breaks.slice(0, 3)) {
+    const low = 'qwr' + 'tzp' + 'sdf' + 'ghj';
+    assert.ok(!redact('API_' + 'KEY=' + v1 + b + low, {}).includes(low), `#1320 continuation: a continued second part with no digit is hidden (${bk})`);
+  }
+  // the reading without the step reads as before (the reference of the union)
+  assert.ok(withoutContinuation(() => redact('API_' + 'KEY=' + v1 + '\n' + v2, {})).includes(v2), '#1320 continuation: withoutContinuation reads as before the step');
+  // the note and outgoing masks keep the union with the reading without the step: a text that reading hides whole stays hidden whole
+  {
+    const t = 'cd src \\\n--pass' + 'word sk-' + 'proj-' + v1 + 'Ab^\r\n' + v2 + 'Cd4Ef5Gh6Jk7 \\\n--to' + 'ken=' + v1 + 'Lm\n' + 'Rj' + 'S73';
+    for (const [sn, mask] of [['maskOutgoing', (x: string) => maskOutgoing(x).text], ['maskNoteText', (x: string) => maskNoteText(x).text]] as Array<[string, (x: string) => string]>) {
+      assert.ok(!mask(t).includes('Rj' + 'S73'), `#1320 continuation: ${sn} keeps the union with the reading without the step: ${JSON.stringify(mask(t))}`);
+    }
+  }
+  // near misses, byte for byte: line breaks with no secret, short or ordinary next lines after a hidden value, two whole tokens on two lines (nothing new to hide)
+  const tok1 = 'gh' + 'p_' + 'Zq3Wd8Kp2Lm5Rt7Yx4Bn6Hj9Fc1Vg0Ts3Qa8';
+  const tok2 = 'gh' + 'p_' + 'Hj9Fc1Vg0Ts3Qa8Zq3Wd8Kp2Lm5Rt7Yx4Bn6';
+  for (const k of ['line one\nline two\r\nline 3', 'npm run build \\\n  --watch', 'cd src ^\r\n&& dir', 'echo done\\\nnext', 'v1.2.3\nv1.2.4\r\nREADME.md', 'a_b\\\nc_d', 'x=1 \\\ny=2']) {
+    assert.strictEqual(redact(k, {}), k, `#1320 continuation near miss stays: ${JSON.stringify(k)}`);
+    assert.strictEqual(maskSplitTokens(k), k, `#1320 continuation near miss stays (split step): ${JSON.stringify(k)}`);
+  }
+  for (const [t, want] of [
+    [`l1\n${tok1}\r\nl3`, 'l1\n[redacted]\r\nl3'],
+    ['pass' + 'word=' + v1 + '\nok2', 'pass' + 'word=[redacted]\nok2'],
+    ['API_' + 'KEY=' + v1 + '\nnpm test', 'API_' + 'KEY=[redacted]\nnpm test'],
+    ['to' + 'ken: ' + v1 + '\nAlternatively', 'to' + 'ken: [redacted]\nAlternatively'],
+  ] as Array<[string, string]>) assert.strictEqual(redact(t, {}), want, `#1320 continuation near miss: the next line stays (${JSON.stringify(want)})`);
+  for (const b of ['\n', '\r\n']) assert.strictEqual(maskSplitTokens(tok1 + b + tok2), tok1 + b + tok2, `#1320 continuation: two whole tokens on two lines add nothing to the split step (${JSON.stringify(b)})`);
+  // work counters, not wall time: one more mask pass at most per text, and the characters read are a fixed multiple of its length
+  {
+    const unit = 'API_' + 'KEY=' + v1 + '\\\n' + v2 + '\nx ' + tok1 + '\n' + v2 + 'Ab ';
+    for (const len of [1_000, 20_000, 200_000]) {
+      const x = unit.repeat(Math.ceil(len / unit.length)).slice(0, len);
+      _contWorkForTest(); _contPassesForTest();
+      maskSplitTokens(x);
+      const w = _contWorkForTest();
+      assert.ok(w > 0 && w <= 6 * x.length, `#1320 continuation work: ${w} characters read for ${x.length}`);
+      assert.strictEqual(_contPassesForTest(), 1, `#1320 continuation work: one mask pass for a text of ${x.length}`);
+    }
+    _contPassesForTest();
+    maskSplitTokens('no break here, ' + tok1);
+    assert.strictEqual(_contPassesForTest(), 0, '#1320 continuation work: a text without a line break is not read again');
+  }
+  // the growth bound: a mask per short continued line would grow the output; such a stretch is masked as one
+  for (const [k, x] of Object.entries({ lf: 'gh' + 'p_' + '\\\na'.repeat(4000), crlf: 'gh' + 'p_' + '\\\r\na'.repeat(3000), caret: 'gh' + 'p_' + '^\nab'.repeat(3000) })) {
+    const out = maskSplitTokens(x);
+    assert.ok(out.length <= x.length, `#1320 continuation growth (${k}): the split step's output is ${out.length} characters for ${x.length}`);
+  }
+  assertLinearShape('#1320 continuation: redact many continued values', (x) => { redact(x, {}); }, (k) => ('API_' + 'KEY=' + v1 + '\\\n' + v2 + '\n').repeat(Math.ceil(k / 30)).slice(0, k), 200_000);
+  assertLinearShape('#1320 continuation: redact one long continued value', (x) => { redact(x, {}); }, (k) => 'API_' + 'KEY=' + 'A1b\\\n'.repeat(Math.ceil(k / 5)).slice(0, k), 200_000);
+  assertLinearShape('#1320 continuation: redact a hidden value then many next lines', (x) => { redact(x, {}); }, (k) => 'to' + 'ken: ' + v1 + ('\n' + v2).repeat(Math.ceil(k / 10)).slice(0, k), 200_000);
 }
 
 // spec 012 FR-187 (issue #1320): a secret name glued to the end of a token is taken into the token's mask, so the value after it was no value of any name.

@@ -854,6 +854,62 @@ assert.strictEqual(sentenceOf(s), s.sentence);
   for (const [label, chunks, v] of regress) assert.ok(!showsAny(chunks, v), `#1320 brain round 3: a cut right after the token hides the value (${label})`);
 }
 
+// spec 012 FR-190 (issue #1320): a value split across a line break after a secret name, streamed in pieces at random cuts. The brain reads it with the shared step,
+// so it is checked against the reading without it (`withoutContinuation`, the reading as before) run on the same pieces: no state shows a piece of the value that
+// the reference state hides, the whole text hides it, and the runs that show a piece mid-stream only go down. Invented values built from pieces.
+{
+  const v1 = 'Qz7' + 'Wx4' + 'Lk9' + 'Tb2';
+  const v2 = 'Rt3' + 'Mn8' + 'Pb5' + 'Hc6';
+  const val = v1 + v2;
+  const ps = Array.from({ length: val.length - 3 }, (_x, i) => val.slice(i, i + 4));
+  const states = (chunks: string[]): string[] => {
+    let st = feed(fresh(), [{ type: 'user' }], 1);
+    const out: string[] = [];
+    for (const delta of [...chunks.map((d) => ({ type: 'thinking', delta: d })), start('bash', { command: 'ls' })]) { st = feed(st, [delta], 1); out.push(JSON.stringify(st)); }
+    return out;
+  };
+  let seed = 1320;
+  const rnd = (n: number): number => { seed = (Math.imul(seed, 1103515245) + 12345) >>> 0; return (seed >>> 8) % n; };
+  let runs = 0, headRuns = 0, refRuns = 0, headLast = 0, refLast = 0;
+  const more: string[] = [];
+  for (const n of ['API_' + 'KEY=', '--to' + 'ken=', 'GH_' + 'TOKEN=', 'Authorization: ' + 'Bearer ', 'DB_' + 'PASSWORD=', 'X-Api-' + 'Key: ']) {
+    for (const [bk, b] of [['backslash LF', '\\\n'], ['backslash CRLF', '\\\r\n'], ['caret CRLF', '^\r\n'], ['LF', '\n'], ['CRLF', '\r\n']]) {
+      const text = 'x ' + n + v1 + b + v2 + ' done';
+      const whole = states([text]);
+      assert.ok(!ps.some((p) => whole[whole.length - 1].includes(p)), `#1320 continuation brain: the whole text hides the value (${bk})`);
+      for (let k = 0; k < 30; k++) {
+        const cuts = new Set<number>();
+        const c = rnd(5);
+        while (cuts.size < c) cuts.add(1 + rnd(text.length - 1));
+        const pts = [0, ...[...cuts].sort((x, y) => x - y), text.length];
+        const chunks = pts.slice(1).map((q, i) => text.slice(pts[i], q));
+        const h = states(chunks);
+        const r = R.withoutContinuation(() => states(chunks));
+        runs++;
+        let hs = false, rs = false;
+        for (let i = 0; i < h.length; i++) {
+          const sh = ps.filter((p) => h[i].includes(p));
+          const sr = ps.filter((p) => r[i].includes(p));
+          if (sh.length) hs = true;
+          if (sr.length) rs = true;
+          if (sh.some((p) => !sr.includes(p))) more.push(`${bk} state ${i}`);
+        }
+        if (ps.some((p) => h[h.length - 1].includes(p))) headLast++;
+        if (ps.some((p) => r[r.length - 1].includes(p))) refLast++;
+        if (hs) headRuns++;
+        if (rs) refRuns++;
+      }
+    }
+  }
+  assert.strictEqual(runs, 6 * 5 * 30, '#1320 continuation brain: every random cut was fed');
+  assert.deepStrictEqual(more.slice(0, 3), [], `#1320 continuation brain: no state shows a piece the reading without the step hides (${more.length})`);
+  // a ratchet, not zero: a state that holds the first part and fewer than 8 letters and digits of the second keeps them readable until the next piece (FR-182's
+  // [KNOWN GAP]); the reading as before shows a piece in more runs
+  // after the next step too (a piece the brain kept before the step stays in its history, as on main)
+  assert.ok(headLast <= refLast, `#1320 continuation brain: after the next step no more runs show a piece than with the reading as before (${headLast}, before ${refLast})`);
+  assert.ok(headRuns < refRuns, `#1320 continuation brain: fewer runs show a piece than with the reading as before (${headRuns} of ${runs}, before ${refRuns})`);
+}
+
 // spec 012 FR-181 (issue #1541): an escaped token (`ghp\_<body>`) in a shell step's command, as a string and as an argument list, is hidden in the step target
 {
   const esc = 'ghp' + '\\_' + 'A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8';
