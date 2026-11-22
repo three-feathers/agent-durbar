@@ -280,4 +280,5 @@ test:picturebudget
 test:chargroups
 test:dangersites
 test:specnumbers
+test:prpreflight
 test:pencilpark

@@ -122,3 +122,7 @@
 ## 2026-11-20: gate head-ref alerts new against main (FR-099, issue #1868)
 
 - [x] T086 (FR-099) `scripts/pr-gate.sh`: the head ref's open alerts are read as numbers (`--paginate`) and those open on the base branch are subtracted; the merge ref count is unchanged; fail closed on any read error, non-number or odd base name. Test `test:prgatecodeql` (`scripts/test-pr-gate-codeql.ts`, fixtures only): `alert-main-on-head`, `alert-new-and-main`, `alert-merge-main`, `alert-head-page2`, `alert-main-page2`, `alert-main-unread`, `alert-main-number`, `alert-base-ref`; eight mutants (main's alerts not subtracted, merge ref left out, no `--paginate` on either list, a main read error ignored, no number check, no base-name check, the merge count unchecked), each dying at its named case.
+
+## 2026-11-22: PR preflight for authors (FR-384)
+
+- [x] T455 (FR-384) `scripts/pr-preflight.js` (and `scripts/pr-preflight.sh`), `npm run pr:preflight -- <N>`: twelve read-only checks of a PR before review; `docs/development.md`, the brief lines in `docs/agent-setup/`; changelog fragment. Test `test:prpreflight` (`scripts/test-pr-preflight.js`): a throwaway repository and fixture `gh` answers, a failing fixture per check, 35 mutants each killed at its own assert [FR-384]

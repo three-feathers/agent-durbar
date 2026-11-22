@@ -792,3 +792,27 @@ PR #1232 (spec 095) was red with `FR-026, T026 and T027 are also in PR #1240`, b
 - **FR-099** `[IMPLEMENTED]` `test:` The gate's alert count is the merge ref's open alerts plus the head ref's open alerts whose number is **not** open on the PR's base branch (`refs/heads/<base>`; an alert keeps one number across refs). The merge ref counts in full, as before. A new alert on the head ref still blocks, also when main has others. Both lists are read with `--paginate` as numbers; a read error, a non-number, a base branch name outside `A-Za-z0-9._/-` or an unreadable list gives `alerts=unread(code-scanning API)`, which blocks (fail closed). No rule text changes: this narrows how the existing "open alert on the merge or head ref" block of FR-035 reads (one line in the gate's header comment).
   - `[KNOWN GAP]` Not run against the live API (no network in the test, a fake `gh` with fixtures); that GitHub keeps an alert's number across refs is read from the REST docs and the 2026-11-18 observation on #1506, not re-measured. A head-ref alert that main holds under a different number (a rule that moved lines) still counts: a human reads it.
   - Numbers checked 2026-11-20 with `npm run specs:numbers`, open PRs and remote `021-*` branches: this takes FR-099 and T086.
+
+## Changes 2026-11-22
+
+### 2026-11-22: a PR preflight for authors, the first-time-right kit (FR-384)
+
+*Why:* a delivery-speed review of 2026-11-22 found 47 % of all reviews were rework (101 change requests and 38 re-approvals after a push). Many findings were checks a reviewer runs by hand (labels, signed commits, AI lines, a change hidden in a merge commit, a clashing spec number, a removed assert, a changed `npm` script) that the author did not have before asking. The coordinator ran them as a private script; this puts them in the repository.
+
+- **FR-384** `[IMPLEMENTED]` `test:` `npm run pr:preflight -- <N>` (`scripts/pr-preflight.js`, Node with argument arrays and no shell, so it runs on Windows, macOS and Linux; `scripts/pr-preflight.sh <N>` forwards to it) prints one `ok`, `NOTE` or `FAIL` line per check and exits 1 on any FAIL. It is read-only: `gh pr view`, `pulls/N/commits`, `gh pr checks` and git; its only local effect is the fetch (remote-tracking refs, and the PR head's objects without a ref). Authors run it before asking for review (`docs/development.md`, the agent brief template in `docs/agent-setup/`). The checks:
+  1. the PR is readable; an outside PR (author not in `scripts/trusted-authors.txt`, or a fork) stops after the author check and prints only the author and the link (FR-060);
+  2. mergeable (`CONFLICTING` is a FAIL, `UNKNOWN` a NOTE);
+  3. labels: exactly one type, at least one `area:*` and one `spec:*` (FR-045);
+  4. and 5. no AI attribution line in the body or any commit message, every commit Verified (FR-061);
+  6. each merge commit is merge-only: its tree is compared with `git merge-tree` of its two parents; a file the merge had to resolve is a NOTE (read the resolution), any other changed file a FAIL; a clean merge of `main` is a NOTE, "resolved nothing" (the proposed rule, merge `main` only on a conflict, red CI or a reviewer's request, is not rule text yet);
+  7. spec numbers the PR adds (definition lines, parsed by `scripts/spec-numbers.js`, reused: FR-031) against `origin/main` and every other remote head: the same file is a FAIL; in another spec file, FR numbers (all) and T numbers from T370 are global and a FAIL; a Q or a lower T counts per spec;
+  8. removed assert lines under `scripts/` are listed as a NOTE (each needs an equal or stricter replacement);
+  9. an `area:security` PR: no shape word (the list in the script) in the body or in added lines of `specs/`, `docs/`, `changelog.d/`; the place and the word are named;
+  10. `package.json`: no script removed or changed by the PR (merge-base to head, so a script `main` added later is not "removed");
+  11. size: under 100 changed lines a NOTE to batch, over 300 a NOTE to split;
+  12. the checks summary; a failing check is a FAIL.
+  - Nothing of the PR's text is printed except label names, the branch, file names, removed assert lines and check names, through `scripts/safe-print.js`; the body and the commit messages are matched, never printed.
+  - Replaces the coordinator's private prototype. Compared on three open PRs of ours (2026-11-22): the same verdicts, except where the prototype was wrong: it counted a ticked or reworded task line as an added number, and its assert pattern missed a removed line that starts with `assert`.
+  - FR-063 accounting: no rule text changes here. The one line for AGENTS.md (*Before you finish*: run `npm run pr:preflight -- <N>` before asking for review) is proposed in the PR, to be weighed against the word budget by the owners.
+  - `[KNOWN GAP]` `read:` the test drives a throwaway repository and an injected `gh` (no network); the live run was on Linux only, not on Windows or macOS. GitHub lists at most 250 commits of a PR (a NOTE says so). The number check compares remote branches, not fork PR heads (`specs:numbers` covers those in CI).
+  - Numbers checked 2026-11-22 against `main`, every remote head and the open PRs: this takes FR-384 (FR numbers are global) and T455.

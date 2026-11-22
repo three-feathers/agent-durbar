@@ -57,3 +57,10 @@ I: spec, plan and task first, in the same PR. III: no secret in the repo, logs o
 ## Delta: parity checklists tick themselves (FR-088, 2026-11-09)
 
 - An `issues` workflow, not a merge-skill step: it fires on every close, whoever closes the issue and however (a `Closes #N` merge, the merge queue, by hand), so nobody has to remember. Each run reconciles every tracker line with the live issue states instead of acting on the triggering issue, because GitHub cancels a pending run when a newer one queues in the same concurrency group; `workflow_dispatch` and a daily schedule are backstops. Pure text transform in `scripts/parity-tick.js` (unit-tested), GitHub calls in the same file through `gh` with `execFileSync`. Tracker numbers in `.github/parity-trackers.json` (CODEOWNERS). Existing capability (FR-031): `weekly-retro.yml` and `scripts/weekly-retro.js` are the pattern (same permission style, pinned checkout, `gh` without a shell); `scripts/trusted-authors.txt` is the trust list reused.
+
+## Delta: a PR preflight for authors (FR-384, 2026-11-22)
+
+- One Node script, not bash: the repo needs Windows parity, so `scripts/pr-preflight.js` calls `git` and `gh` with argument arrays (`execFileSync`, `spawnSync`, no shell); `scripts/pr-preflight.sh` only forwards to it. Reuse (FR-031): the spec-number parser and `collect` of `scripts/spec-numbers.js`, `scripts/safe-print.js` for every printed line, `scripts/trusted-authors.txt` for the author check.
+- `preflight(n, { gh, root, fetch, trusted })` takes `gh` as a function, so the test drives it with fixture answers and a throwaway repository (`git commit-tree` with a temporary index, no working tree), offline.
+- Merge-only: `git merge-tree --write-tree --name-only` gives the plain merge's tree and the conflicted paths; `git diff --name-only` against the merge commit names what changed beyond it.
+- **Constitution:** I (spec first, this PR); III (no PR text in a shell, nothing of the body printed, read-only); IV (no credits: `gh` reads only); VI (Node, no POSIX path or shell).
