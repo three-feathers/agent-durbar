@@ -263,3 +263,4 @@
 - [x] T400 (delta 2026-11-20, issue #1239) spec 008: the cause measured; `needFocus` takes `host: true`; the two `check-browser-tabs` entries are `focus: true` [FR-210]
 - [x] T401 (delta 2026-11-20, issue #1239) `scripts/driver-helpers.js` (`needFocus` host reading), `scripts/check-browser-tabs.js` (`host: true`), `scripts/ui-suite.js` (`focus: true`), `scripts/test-ui-suite.ts` (the cases) [FR-210]
 - [x] T432 (delta 2026-11-22, issue #1723) `scripts/ui-suite.js` (the three `check-097-kids` entries are `focus: true`), `scripts/test-ui-suite.ts` (the pinned list) [FR-210]
+- [x] T427 (delta 2026-11-22, issue #1239) `scripts/ui-suite.js` (the Flat and Photo entries of `check-080-browser-expand` are `focus: true`), `scripts/test-ui-suite.ts` (the pinned list) [FR-210]
