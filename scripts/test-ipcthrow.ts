@@ -182,7 +182,7 @@ async function main(): Promise<void> {
     }
     // the scans are not vacuous (their mutants): each shape is caught, the markers exempt, the masks are left alone
     for (const [sample, n] of [["return { ok: false, error: errText(err) };", 0], ["error: e instanceof Error ? e.message : String(e) }", 1], ["const why = 'x: ' + err.message;", 2], ["return { ok: false, error: String(err) };", 3], ["return { ok: false, error: `Could not do it: ${err}` };", 4], ["return { ok: false, error: 'x: ' + err };", 5], ["return { ok: false, error: 'Remote: ' + e };", 5], ["return { ok: false, error: err + ' (remote)' };", 5]] as const) {
-      assert.ok(RAW[n][0].test(sample) && scan(sample).length > 0, `the scan catches: ${sample}`);
+      assert.ok(RAW[n]?.[0].test(sample) === true && scan(sample).length > 0, `the scan catches: ${sample}`);
     }
     for (const sample of ["return { ok: false, error: 'x: ' + err };", "return { ok: false, error: 'Remote: ' + e };", "return { ok: false, error: err + ' (remote)' };", "return { ok: false, error: cleanUp(e) };", "      return { ok: false, error: `x ${e.message}` };", "error: `failed: ${err}`,", "r = { ok: false, error: reasonOf(err, 300) };"]) assert.ok(scanAll(sample).length > 0, `the error-value scan catches: ${sample}`);
     assert.deepStrictEqual(scan("const t = err.message; // FR-066: read, not shown"), [], 'the marker exempts a line');
