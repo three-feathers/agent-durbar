@@ -182,6 +182,8 @@ test:crew-assets
 test:realoffice-layout
 test:realoffice-assets
 test:roomorder
+test:memoryfolder
+test:memoryremote
 test:railorder
 test:composersize
 test:innerscroll
