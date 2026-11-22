@@ -29,7 +29,7 @@ function fixture(name) {
   g(base, 'init', '--bare', '-b', 'main', origin);
   g(base, 'clone', origin, main);
   write(path.join(main, 'a.txt'), 'a\n');
-  write(path.join(main, '.gitignore'), 'node_modules/\ndist/\n.env\n.claude/\n');
+  write(path.join(main, '.gitignore'), 'node_modules/\ndist/\n.env\n.claude/\nout/\nrelease/\nbuild/\n');
   g(main, 'add', '.');
   g(main, 'commit', '-m', 'init');
   g(main, 'push', 'origin', 'HEAD:main');
@@ -46,6 +46,7 @@ function fixture(name) {
     if (push === 'u') g(p, 'push', '-u', 'origin', branch);
     else if (push === 'plain') g(p, 'push', 'origin', branch);
     else if (push === 'other') g(p, 'push', '-u', 'origin', branch + ':other-name');
+    // push 'none': the caller pushes
     wts[branch] = p;
     return p;
   }
@@ -59,7 +60,15 @@ function fixture(name) {
   add('locked'); g(main, 'worktree', 'lock', wts.locked);
   write(path.join(add('ignored-env'), '.env'), 'SECRET=1\n');
   const ib = add('ignored-build');
-  write(path.join(ib, 'node_modules', 'x', 'i.js'), '1\n'); write(path.join(ib, 'dist', 'o.js'), '1\n');
+  write(path.join(ib, 'node_modules', 'x', 'i.js'), '1\n'); write(path.join(ib, 'dist', 'o.js'), '1\n'); write(path.join(ib, 'out', 'p.js'), '1\n');
+  write(path.join(add('ignored-deep'), 'notes', 'out', 'draft.md'), 'my notes\n');
+  write(path.join(add('ignored-release'), 'release', 'installer.txt'), 'key\n');
+  write(path.join(add('ignored-secret'), 'dist', '.env.local'), 'S=1\n');
+  write(path.join(add('deep-repo'), 'out', 'a', 'b', 'c', 'd', '.git'), 'gitdir: /nowhere\n');
+  add('other-remote', { push: 'none' });
+  g(main, 'remote', 'add', 'other', origin);
+  g(wts['other-remote'], 'push', '-u', 'other', 'other-remote');
+  add('late-commit'); add('late-branch'); add('late-dirty');
   add('outer');
   const inner = add('inner', { at: path.join(wts.outer, '.claude', 'worktrees', 'inner') });
   add('outer2'); write(path.join(wts.outer2, '.claude', 'x', '.git'), 'gitdir: /nowhere\n');
@@ -95,6 +104,8 @@ function check(modPath, tag) {
   const fx = fixture(tag + '-fx');
   const lines = [];
   const dry = mod.run({ apply: false, root: fx.main, cwd: fx.main, prState, log: (s) => lines.push(s) });
+  const rootLine = lines.find((l) => l.startsWith('new worktrees go under'));
+  assert.ok(rootLine && rootLine.includes(fx.main + '-worktrees'), tag + ': root: the root for new worktrees is printed');
   const row = (b) => dry.rows.find((r) => r.wt.branch === b || (b === 'detached' && !r.wt.branch));
   const is = (b, verdict, why, msg) => {
     assert.strictEqual(row(b).verdict, verdict, tag + ': ' + msg + ' (verdict ' + row(b).verdict + ': ' + row(b).why + ')');
@@ -118,12 +129,18 @@ function check(modPath, tag) {
   is('diff-upstream', 'look', /upstream/, 'an upstream with another name needs a look');
   is('no-upstream', 'look', /upstream/, 'a branch with no upstream needs a look');
   is('detached', 'look', /detached/, 'a detached HEAD needs a look');
+  is('ignored-deep', 'dirty', /ignored file.*notes\/out\/draft\.md/, 'an ignored notes/out/draft.md is data (the allow-list is top-level only)');
+  is('ignored-release', 'dirty', /ignored file.*release\/installer\.txt/, 'an ignored release/installer.txt is data (release is not an allowed folder)');
+  is('ignored-secret', 'dirty', /ignored file.*dist\/\.env\.local/, 'a .env inside an allowed dist/ is data');
+  is('deep-repo', 'look', /nested \.git: .*d[\\/]\.git/, 'a nested .git four levels down needs a look');
+  is('other-remote', 'look', /another remote|upstream/, 'an upstream on another remote needs a look');
+  assert.ok(!/upstream/.test(row('merged-clean').why), tag + ': merged-clean has the origin upstream');
   assert.ok(lines.some((l) => /finished but dirty: 1 file\b/.test(l)), tag + ': the dirty line says "finished but dirty: 1 file"');
   assert.ok(Object.values(fx.wts).every((p) => fs.existsSync(p)), tag + ': a dry run removes nothing');
   assert.ok(dry.reclaimable > 0, tag + ': the reclaimable total is counted');
 
   // guards that need a git or gh that fails, and the ones a real repo cannot show (bare, missing directory)
-  const wtOf = (b) => ({ path: fx.wts[b], head: 'h', branch: b, detached: false, locked: false, bare: false, prunable: false });
+  const wtOf = (b) => ({ path: fx.wts[b], head: g(fx.wts[b], 'rev-parse', 'HEAD').trim(), branch: b, detached: false, locked: false, bare: false, prunable: false });
   const ctxFor = (over, ps) => ({ prState: ps || (() => 'MERGED'), tryGit: stubGit(over), mainPath: fx.main, all: [] });
   const dirU = path.join(tmp, tag + '-unit'); fs.mkdirSync(dirU, { recursive: true });
   const synth = (over) => ({ path: dirU, head: 'h', branch: 'u', detached: false, locked: false, bare: false, prunable: false, ...over });
@@ -142,10 +159,29 @@ function check(modPath, tag) {
   assert.match(mod.classify(synth(), ctxFor({}, () => 'OPEN')).why, /open/, tag + ': unit: an open PR needs a look');
   assert.match(mod.classify(synth(), ctxFor({ 'rev-parse --verify': { ok: false, out: '' } }, () => 'CLOSED')).why, /not on origin/, tag + ': unit: closed and not on origin needs a look');
 
+  // operations in progress: one marker in the worktree's own git dir per kind git uses
+  const gdir = path.resolve(fx.wts['merged-clean'], g(fx.wts['merged-clean'], 'rev-parse', '--git-dir').trim());
+  const realCtx = { prState: () => 'MERGED', mainPath: fx.main, all: [] };
+  for (const name of ['MERGE_HEAD', 'REBASE_HEAD', 'CHERRY_PICK_HEAD', 'REVERT_HEAD', 'BISECT_LOG', 'sequencer', 'rebase-merge', 'rebase-apply']) {
+    const mk = path.join(gdir, name);
+    if (/^(sequencer|rebase-)/.test(name)) fs.mkdirSync(mk); else fs.writeFileSync(mk, 'x\n');
+    const why = mod.classify(wtOf('merged-clean'), realCtx).why;
+    fs.rmSync(mk, { recursive: true, force: true });
+    assert.ok(new RegExp(name).test(why), tag + ': progress: a ' + name + ' in progress needs a look (reason "' + why + '")');
+  }
+  assert.strictEqual(mod.classify(wtOf('merged-clean'), realCtx).verdict, 'removable', tag + ': progress: without a marker it is removable');
+  assert.match(mod.classify(synth(), ctxFor({ 'ls-files': { ok: false, out: '' } })).why, /ls-files failed/, tag + ': unit: a git ls-files error needs a look');
+
   // --apply on the same fixture; "flip" is merged at the first look and open at the re-check right before its removal
   const calls = {};
   const flip = (b) => { if (b !== 'flip') return prState(b); calls[b] = (calls[b] || 0) + 1; return calls[b] === 1 ? 'MERGED' : 'OPEN'; };
-  const ap = mod.run({ apply: true, root: fx.main, cwd: fx.main, prState: flip, log: () => {} });
+  const hooked = (wt) => {
+    if (wt.branch === 'late-commit') { write(path.join(wt.path, 'late.txt'), 'l\n'); g(wt.path, 'add', '.'); g(wt.path, 'commit', '-m', 'late'); }
+    if (wt.branch === 'late-branch') { g(wt.path, 'switch', '-c', 'late-branch-2'); }
+    if (wt.branch === 'late-dirty') write(path.join(wt.path, 'late.txt'), 'l\n');
+  };
+  const applyLines = [];
+  const ap = mod.run({ apply: true, root: fx.main, cwd: fx.main, prState: flip, beforeRemove: hooked, log: (x) => applyLines.push(x) });
   const w = fx.wts;
   assert.ok(!fs.existsSync(w['merged-clean']), tag + ': --apply removes merged-clean');
   assert.ok(!branches(fx.main).includes('merged-clean'), tag + ': --apply deletes the merged-clean branch');
@@ -156,6 +192,11 @@ function check(modPath, tag) {
   for (const k of ['merged-unpushed', 'no-pr', 'open-pr', 'unknown-pr', 'closed-gone', 'locked', 'outer2', 'mid-merge', 'diff-upstream', 'no-upstream', 'detached']) {
     assert.ok(fs.existsSync(w[k]), tag + ': --apply keeps ' + k);
   }
+  const lineOf = (b) => applyLines.find((l) => l.includes('[' + b + ']')) || '';
+  assert.ok(fs.existsSync(w['late-commit']) && /HEAD or branch moved/.test(lineOf('late-commit')), tag + ': late: a HEAD that moved before the removal is kept, "moved" (' + lineOf('late-commit').slice(-60) + ')');
+  assert.ok(fs.existsSync(w['late-branch']) && /HEAD or branch moved/.test(lineOf('late-branch')), tag + ': late: a branch that changed before the removal is kept, "moved"');
+  assert.ok(fs.existsSync(w['late-dirty']) && /changed since the check/.test(lineOf('late-dirty')), tag + ': late: a file that appeared before the removal keeps the worktree');
+  for (const k of ['ignored-deep', 'ignored-release', 'ignored-secret', 'deep-repo', 'other-remote']) assert.ok(fs.existsSync(w[k]), tag + ': --apply keeps ' + k);
   assert.ok(fs.existsSync(w.flip), tag + ': the state is checked again right before the removal (recheck)');
   assert.ok(!fs.existsSync(w.squashed), tag + ': a squash-merged worktree whose branch left origin is removed');
   assert.ok(branches(fx.main).includes('squashed'), tag + ': git branch -d refuses the squash-merged branch, so it is kept (never -D)');
@@ -163,14 +204,23 @@ function check(modPath, tag) {
 
   // the worktree it runs in is skipped
   const fs2 = fixture(tag + '-self');
-  const selfRes = mod.run({ apply: true, root: fs2.main, cwd: fs2.wts['merged-clean'], prState, log: () => {} });
+  const selfLines = [];
+  const selfRes = mod.run({ apply: true, root: fs2.main, cwd: fs2.wts['merged-clean'], prState, log: (x) => selfLines.push(x) });
+  assert.ok(selfLines.some((l) => l.startsWith('new worktrees go under') && l.includes(fs2.main + '-worktrees') && !l.includes('merged-clean')), tag + ': root: run from a linked worktree, the root still comes from the main checkout');
   assert.ok(fs.existsSync(fs2.wts['merged-clean']) && selfRes.rows.find((r) => r.wt.branch === 'merged-clean').verdict === 'skip', tag + ': self: the worktree it runs in is skipped, not removed');
+
+  const realGit = (args, cwd) => { try { return { ok: true, out: execFileSync('git', args, { cwd, env: ENV, encoding: 'utf8', timeout: 60000, stdio: ['ignore', 'pipe', 'pipe'] }) }; } catch (e) { return { ok: false, out: '', err: String(e.message) }; } };
+  const unreadLines = [];
+  const un = mod.run({ apply: true, root: fs2.main, cwd: fs2.main, prState, tryGit: (args, cwd) => (args[0] === 'symbolic-ref' ? { ok: false, out: '' } : realGit(args, cwd)), log: (x) => unreadLines.push(x) });
+  assert.ok(un.removed === 0 && unreadLines.some((l) => /HEAD or branch unreadable/.test(l)), tag + ': recheck: a HEAD or branch that cannot be read again keeps the worktree, "unreadable"');
 
   // through npm without `--`
   const fs3 = fixture(tag + '-npm');
-  const sp = spawnSync(process.execPath, [modPath, '--root', fs3.main], { cwd: fs3.main, env: { ...ENV, npm_config_apply: 'true' }, encoding: 'utf8', timeout: 60000 });
-  assert.match(sp.stderr, /WARNING.*npm.*--apply/, tag + ': npm: a bare --apply through npm warns loudly');
+  const sp = spawnSync(process.execPath, [modPath, '--root', fs3.main], { cwd: fs3.main, env: { ...ENV, npm_lifecycle_event: 'worktrees:clean' }, encoding: 'utf8', timeout: 60000 });
+  assert.match(sp.stderr, /NOTE: run through npm without --apply.*-- --apply/, tag + ': npm: run through npm without --apply, it says how to apply');
   assert.ok(fs.existsSync(fs3.wts['merged-clean']), tag + ': npm: it stays a dry run');
+  const sp2 = spawnSync(process.execPath, [modPath, '--apply', '--root', fs3.main], { cwd: fs3.main, env: { ...ENV, npm_lifecycle_event: 'worktrees:clean' }, encoding: 'utf8', timeout: 60000 });
+  assert.ok(!/NOTE: run through npm/.test(sp2.stderr) && /^worktrees:clean --apply/m.test(sp2.stdout), tag + ': npm: with --apply it applies and does not nag');
 
   ghCases(mod, tag);
   staticCheck(modPath, tag);
@@ -232,7 +282,7 @@ function parseCase() {
   const mod = require(SRC);
   const l = mod.parseWorktrees('worktree /a\nHEAD 1\nbranch refs/heads/main\n\nworktree /b\nHEAD 2\ndetached\n\nworktree /c\nHEAD 3\nbranch refs/heads/x/y\nlocked reason\n');
   assert.deepStrictEqual(l.map((w) => [w.path, w.branch, w.detached, w.locked]), [['/a', 'main', false, false], ['/b', null, true, false], ['/c', 'x/y', false, true]], 'parse: porcelain output');
-  assert.deepStrictEqual(mod.ignoredData('!! node_modules/\n!! dist/\n!! a/node_modules/\n!! x.tsbuildinfo\n!! .env\n!! notes/\n ! odd\n'), ['.env', 'notes/'], 'ignored: only non-rebuildable ignored entries are data');
+  assert.deepStrictEqual(mod.ignoredData(['dist/a.js', 'x.tsbuildinfo', '.env', 'notes/out/x.md', 'release/s.p12', 'dist/.env.local', 'dist/k.pem', 'out/a/b.js', 'a/x.tsbuildinfo', '']), ['.env', 'notes/out/x.md', 'release/s.p12', 'dist/.env.local', 'dist/k.pem', 'a/x.tsbuildinfo'], 'ignored: only non-rebuildable ignored entries are data');
 }
 
 check(SRC, 'real');
@@ -260,19 +310,37 @@ const MUTANTS = [
   ['status-error-ignored', "if (!st.ok) return { verdict: 'look', why: 'git status failed' };", '', /git status error/],
   ['rev-parse-error-ignored', "if (!gp.ok) return { verdict: 'look', why: 'git rev-parse failed' };", '', /failing rev-parse/],
   ['ignored-data-allowed', 'if (data.length > 0) return', 'if (false) return', /ignored \.env/],
-  ['rebuildable-empty', "new Set(['node_modules', 'dist', 'dist-scripts', 'out', 'release', 'build', '_site'])", 'new Set([])', /rebuildable|only non-rebuildable/],
-  ['ignored-flag-dropped', "'--untracked-files=all', '--ignored=matching'", "'--untracked-files=all'", /ignored \.env/],
+  ['rebuildable-empty', "new Set(['dist', 'dist-scripts', 'out', 'build', '_site'])", 'new Set([])', /rebuildable|only non-rebuildable/],
+  ['ignored-listing-dropped', "const data = ignoredData(ig.out.split('\\0'));", 'const data = [];', /ignored \.env|ignored file/],
+  ['allow-any-depth', 'REBUILDABLE_TOP.has(segs[0])', 'segs.some((x) => REBUILDABLE_TOP.has(x))', /notes\/out/],
+  ['allow-release', "new Set(['dist', 'dist-scripts', 'out', 'build', '_site'])", "new Set(['dist', 'dist-scripts', 'out', 'build', '_site', 'release'])", /release\/installer/],
+  ['secret-in-dist', ' && !SECRET_LIKE.test(p)', '', /\.env inside an allowed dist|only non-rebuildable/],
+  ['nested-depth-capped', 'const MAX_NESTED_DEPTH = 64;', 'const MAX_NESTED_DEPTH = 2;', /nested \.git four levels/],
+  ['ls-files-error-ignored', "if (!ig.ok) return { verdict: 'look', why: 'git ls-files failed' };", '', /ls-files error/],
+  ['head-moved-dropped', 'head.out.trim() !== wt.head || ', '', /HEAD that moved/],
+  ['branch-moved-dropped', ' || br.out.trim() !== wt.branch', '', /branch that changed/],
+  ['recheck-unreadable', "if (!head.ok || !br.ok) return { removed: false, note: 'changed since the check, kept: HEAD or branch unreadable' };", '', /unreadable/],
+  ['other-remote-ok', " || remote.out.trim() !== 'origin'", '', /another remote|upstream on another remote/],
+  ['progress-cherry', "'CHERRY_PICK_HEAD', ", '', /CHERRY_PICK_HEAD in progress/],
+  ['progress-rebase-head', "'REBASE_HEAD', ", '', /REBASE_HEAD in progress/],
+  ['progress-revert', "'REVERT_HEAD', ", '', /REVERT_HEAD in progress/],
+  ['progress-bisect', "'BISECT_LOG', ", '', /BISECT_LOG in progress/],
+  ['progress-sequencer', "'rebase-apply', 'sequencer']", "'rebase-apply']", /sequencer in progress/],
+  ['progress-rebase-merge', "'rebase-merge', ", '', /rebase-merge in progress/],
+  ['progress-rebase-apply', "'rebase-apply', 'sequencer']", "'sequencer']", /rebase-apply in progress/],
+  ['progress-merge-head', "['MERGE_HEAD', ", '[', /merge in progress|MERGE_HEAD in progress/],
+  ['root-from-cwd', "mainPath + '-worktrees'", "here + '-worktrees'", /root/],
   ['nested-worktree', 'if (inner) return', 'if (false) return', /holding another worktree/],
   ['nested-git', 'if (nested) return', 'if (false) return', /nested \.git/],
   ['in-progress-dropped', "if (fs.existsSync(p)) return { verdict: 'look', why: 'a ' + name", "if (false) return { verdict: 'look', why: 'a ' + name", /merge in progress|in-progress/],
   ['upstream-dropped', "if (!remote.ok || remote.out.trim() !== 'origin' || !merge.ok || merge.out.trim() !== 'refs/heads/' + wt.branch) {", 'if (false) {', /upstream/],
   ['upstream-name-dropped', "|| !merge.ok || merge.out.trim() !== 'refs/heads/' + wt.branch", '|| !merge.ok', /another name/],
-  ['recheck-dropped', "if (again.verdict !== 'removable') return", 'if (false) return', /checked again/],
+  ['recheck-dropped', "if (again.verdict !== 'removable') return", 'if (false) return', /checked again|keeps the worktree/],
   ['self-not-skipped', 'if (inside(here, wt.path)) {', 'if (false) {', /runs in is skipped/],
   ['force-double-quoted', "['worktree', 'remove', wt.path]", '["worktree", "remove", "-f", "-f", wt.path]', /static/],
   ['branch-force-D', "['branch', '-d', wt.branch]", "['branch', '-D', wt.branch]", /never -D|static/],
   ['dry-run-applies', "if (opts.apply) {\n        const res", "if (true) {\n        const res", /dry run removes nothing/],
-  ['npm-warning-dropped', "if (!apply && env && env.npm_config_apply", "if (false && env && env.npm_config_apply", /warns loudly/],
+  ['npm-note-dropped', 'if (!apply && env && env.npm_lifecycle_event)', 'if (false)', /says how to apply/],
   ['tmp-any', "/^durbar-site-[A-Za-z0-9._-]+$/]", "/^durbar-site-[A-Za-z0-9._-]+$/, /^tmp\\./]", /only old durbar/],
 ];
 let n = 0;

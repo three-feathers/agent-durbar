@@ -2,20 +2,22 @@
 /*
  * Spec 021 FR-100 (issue #1992): `npm run worktrees:clean -- --apply` lists, and with `--apply` removes, the linked git worktrees of THIS repo
  * that are finished. Every PR leaves one worktree (a node_modules copy, 200-900 MB); on 2026-11-22 35 of them filled a disk to 94%.
- * NOTE: through npm the flag needs `--`: `npm run worktrees:clean -- --apply` (without it npm eats the flag; this script then warns loudly and stays a dry run).
+ * NOTE: through npm the flag needs `--`: `npm run worktrees:clean -- --apply` (without it npm drops the flag; run through npm without --apply this script says so and stays a dry run).
  *
  * DRY RUN BY DEFAULT: without `--apply` nothing is changed. For each linked worktree (never the main checkout, never the one this runs in)
  * it is REMOVABLE only when ALL hold; anything else is "needs a look" or "finished but dirty" and is never deleted:
- *   - it is on a branch (not detached, not locked, not bare), its directory exists, and no other registered worktree or `.git` lives inside it;
+ *   - it is on a branch (not detached, not locked, not bare), its directory exists, and no other registered worktree and no `.git` at ANY depth
+ *     (node_modules aside) lives inside it;
  *   - no merge, rebase, cherry-pick, revert or bisect is in progress (MERGE_HEAD, REBASE_HEAD, rebase-merge, rebase-apply, CHERRY_PICK_HEAD,
  *     REVERT_HEAD, sequencer, BISECT_LOG; found with `git rev-parse --git-path`);
  *   - the branch has a PR in THIS repository (not a fork) whose head commit is the worktree's HEAD or a descendant of it (the branch name alone
  *     proves nothing: names get reused) and that PR is MERGED or CLOSED (no PR, an open PR, gh missing or failing = needs a look);
- *   - the working tree has no change at all: no tracked change, staged change or untracked file, and no IGNORED file except rebuildable ones
- *     (node_modules, dist, dist-scripts, out, release, build, _site, *.tsbuildinfo): a `.env`, local settings or notes that .gitignore hides count as dirty;
+ *   - the working tree has no change at all: no tracked change, staged change or untracked file, and no IGNORED file (every one listed, folders
+ *     expanded) except rebuildable ones: anything under node_modules, or under a TOP-LEVEL dist, dist-scripts, out, build or _site, or a root *.tsbuildinfo,
+ *     and even there never a `.env*`, key or certificate. A `.env`, local settings, notes, `notes/out/x.md` or `release/x.p12` count as dirty;
  *   - the branch's upstream is `origin/<same name>`, and no commit is missing on origin (`git log origin/<branch>..HEAD` is empty; an upstream
  *     origin no longer has is accepted only for a MERGED PR whose head matched, the branch having been deleted on merge).
- *   Removal: the state is checked AGAIN right before each removal; then `git worktree remove <path>` WITHOUT --force, then `git branch -d <branch>`
+ *   Removal: the HEAD, the branch and the whole state are read AGAIN right before each removal; then `git worktree remove <path>` WITHOUT --force, then `git branch -d <branch>`
  *   (never -D), then `git worktree prune`.
  * It reports the disk each worktree uses and the total reclaimable. git runs through execFile with argument arrays (no shell, no user string in a
  * command line); the PR comes from `gh pr list --head <branch> --state all --json state,headRefOid,isCrossRepository`.
@@ -36,7 +38,9 @@ const GIT_TIMEOUT_MS = 60000;
 const TMP_PATTERNS = [/^durbar-ui-shots-[A-Za-z0-9._-]+$/, /^durbar-site-[A-Za-z0-9._-]+$/];
 const TMP_MAX_AGE_MS = 2 * 24 * 3600 * 1000;
 // Ignored paths that a build recreates. Anything else ignored (.env, local settings, notes) is the owner's data.
-const REBUILDABLE = new Set(['node_modules', 'dist', 'dist-scripts', 'out', 'release', 'build', '_site']);
+const REBUILDABLE_TOP = new Set(['dist', 'dist-scripts', 'out', 'build', '_site']);
+const SECRET_LIKE = /(^|\/)(\.env[^/]*|[^/]*\.(p12|pfx|pem|key|crt|cer|jks|keystore|asc|gpg))$/i;
+const MAX_NESTED_DEPTH = 64;
 const IN_PROGRESS = ['MERGE_HEAD', 'REBASE_HEAD', 'CHERRY_PICK_HEAD', 'REVERT_HEAD', 'BISECT_LOG', 'rebase-merge', 'rebase-apply', 'sequencer'];
 
 function git(args, cwd) {
@@ -86,16 +90,19 @@ function dirSize(dir) {
   return total;
 }
 
-/** A `.git` entry below dir (not dir's own), looked for up to `depth` levels, skipping node_modules and the .git of dir itself. */
-function findNestedGit(dir, depth) {
-  let entries;
-  try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { return null; }
-  for (const e of entries) {
-    if (e.name === '.git') { if (depth < 4) return path.join(dir, e.name); continue; }
-    if (e.name === 'node_modules' || !e.isDirectory()) continue;
-    if (depth <= 1) continue;
-    const hit = findNestedGit(path.join(dir, e.name), depth - 1);
-    if (hit) return hit;
+/** A `.git` entry anywhere below dir (not dir's own), skipping node_modules and links. A tree deeper than MAX_NESTED_DEPTH counts as a hit. */
+function findNestedGit(root) {
+  const stack = [[root, 0]];
+  while (stack.length) {
+    const [dir, depth] = stack.pop();
+    if (depth > MAX_NESTED_DEPTH) return dir + ' (deeper than ' + MAX_NESTED_DEPTH + ' levels)';
+    let entries;
+    try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { continue; }
+    for (const e of entries) {
+      if (e.name === '.git') { if (dir !== root) return path.join(dir, e.name); continue; }
+      if (e.name === 'node_modules' || !e.isDirectory()) continue;
+      stack.push([path.join(dir, e.name), depth + 1]);
+    }
   }
   return null;
 }
@@ -130,15 +137,14 @@ function inside(child, parent) {
   return rel === '' || (!rel.startsWith('..') && !path.isAbsolute(rel));
 }
 
-/** Ignored entries of a `git status --porcelain --ignored=matching` that are not rebuildable. */
-function ignoredData(statusOut) {
+/** Ignored files (paths relative to the worktree, folders expanded) that are not rebuildable. node_modules is not listed by the caller. */
+function ignoredData(paths) {
   const keep = [];
-  for (const l of statusOut.split(/\r?\n/)) {
-    if (!l.startsWith('!! ')) continue;
-    const p = l.slice(3).replace(/^"|"$/g, '');
-    const segs = p.split('/').filter(Boolean);
-    if (segs.some((s) => REBUILDABLE.has(s)) || /\.tsbuildinfo$/.test(p)) continue;
-    keep.push(p);
+  for (const p of paths) {
+    if (!p) continue;
+    const segs = p.split('/');
+    const rebuildable = (segs.length > 1 && REBUILDABLE_TOP.has(segs[0]) && !SECRET_LIKE.test(p)) || (segs.length === 1 && /\.tsbuildinfo$/.test(p));
+    if (!rebuildable) keep.push(p);
   }
   return keep;
 }
@@ -157,7 +163,7 @@ function classify(wt, ctx) {
   if (!fs.existsSync(wt.path)) return { verdict: 'look', why: 'directory missing (git worktree prune clears the record)' };
   const inner = (ctx.all || []).find((o) => o.path !== wt.path && inside(o.path, wt.path));
   if (inner) return { verdict: 'look', why: 'contains worktree ' + inner.path };
-  const nested = findNestedGit(wt.path, 4);
+  const nested = findNestedGit(wt.path);
   if (nested) return { verdict: 'look', why: 'contains a nested .git: ' + nested };
   for (const name of IN_PROGRESS) {
     const gp = tg(['rev-parse', '--git-path', name], wt.path);
@@ -169,11 +175,13 @@ function classify(wt, ctx) {
   if (state === 'NONE') return { verdict: 'look', why: 'no PR of this repository matches this branch and HEAD' };
   if (state === 'OPEN') return { verdict: 'look', why: 'PR is open' };
   if (state !== 'MERGED' && state !== 'CLOSED') return { verdict: 'look', why: 'PR state unknown' };
-  const st = tg(['status', '--porcelain', '--untracked-files=all', '--ignored=matching'], wt.path);
+  const st = tg(['status', '--porcelain', '--untracked-files=all'], wt.path);
   if (!st.ok) return { verdict: 'look', why: 'git status failed' };
   const lines = st.out.split(/\r?\n/).filter((l) => l.length > 0);
-  const changed = lines.filter((l) => !l.startsWith('!! ') && !(l === '?? node_modules' && isLink(path.join(wt.path, 'node_modules')))).length;
-  const data = ignoredData(st.out);
+  const changed = lines.filter((l) => !(l === '?? node_modules' && isLink(path.join(wt.path, 'node_modules')))).length;
+  const ig = tg(['ls-files', '-z', '--others', '--ignored', '--exclude-standard', '--', '.', ':(exclude)node_modules', ':(exclude,glob)**/node_modules/**'], wt.path);
+  if (!ig.ok) return { verdict: 'look', why: 'git ls-files failed' };
+  const data = ignoredData(ig.out.split('\0'));
   if (changed > 0) return { verdict: 'dirty', why: 'finished but dirty: ' + changed + ' file' + (changed === 1 ? '' : 's') };
   if (data.length > 0) return { verdict: 'dirty', why: 'finished but holds ' + data.length + ' ignored file' + (data.length === 1 ? '' : 's') + ' that are not rebuildable: ' + data.slice(0, 3).join(', ') };
   const remote = tg(['config', '--get', 'branch.' + wt.branch + '.remote'], mainPath);
@@ -194,9 +202,15 @@ function classify(wt, ctx) {
 
 function isLink(p) { try { return fs.lstatSync(p).isSymbolicLink(); } catch { return false; } }
 
-/** Remove one removable worktree: check again, `worktree remove` (no --force), `branch -d` (never -D), `worktree prune`. Returns { removed, note }. */
+/** Remove one removable worktree: read HEAD and branch again and check everything again, `worktree remove` (no --force), `branch -d` (never -D), `worktree prune`. */
 function removeOne(wt, mainPath, ctx) {
-  const again = classify(wt, ctx);
+  if (ctx.beforeRemove) ctx.beforeRemove(wt);
+  const tg = ctx.tryGit || tryGit;
+  const head = tg(['rev-parse', 'HEAD'], wt.path);
+  const br = tg(['symbolic-ref', '--short', '-q', 'HEAD'], wt.path);
+  if (!head.ok || !br.ok) return { removed: false, note: 'changed since the check, kept: HEAD or branch unreadable' };
+  if (head.out.trim() !== wt.head || br.out.trim() !== wt.branch) return { removed: false, note: 'changed since the check, kept: HEAD or branch moved' };
+  const again = classify({ ...wt, head: head.out.trim(), branch: br.out.trim() }, ctx);
   if (again.verdict !== 'removable') return { removed: false, note: 'changed since the check, kept: ' + again.why };
   const r = tryGit(['worktree', 'remove', wt.path], mainPath);
   if (!r.ok) return { removed: false, note: 'git worktree remove refused: ' + r.err };
@@ -240,7 +254,7 @@ function run(opts) {
   if (all.length === 0) throw new Error('git worktree list is empty');
   const mainPath = all[0].path;
   const here = opts.cwd || process.cwd();
-  const ctx = { prState: opts.prState || ((b, sha) => ghPrState(b, sha, mainPath)), tryGit: opts.tryGit || tryGit, mainPath, all };
+  const ctx = { prState: opts.prState || ((b, sha) => ghPrState(b, sha, mainPath)), tryGit: opts.tryGit || tryGit, mainPath, all, beforeRemove: opts.beforeRemove };
   const rows = [];
   for (const wt of all.slice(1)) {
     if (inside(here, wt.path)) { rows.push({ wt, verdict: 'skip', why: 'the worktree this runs in', bytes: 0 }); continue; }
@@ -251,6 +265,7 @@ function run(opts) {
   let reclaimable = 0;
   let removed = 0;
   log((opts.apply ? 'worktrees:clean --apply' : 'worktrees:clean (dry run: nothing is changed; `npm run worktrees:clean -- --apply` removes the REMOVABLE ones)') + ', ' + rows.length + ' linked worktree' + (rows.length === 1 ? '' : 's'));
+  log('new worktrees go under (from the MAIN checkout, never from where you stand): ' + mainPath + '-worktrees' + path.sep + 'NNN-slug');
   for (const r of rows) {
     const label = { removable: 'REMOVABLE', dirty: 'DIRTY    ', look: 'NEEDS A LOOK', skip: 'SKIPPED  ' }[r.verdict];
     let line = label + '  ' + fmt(r.bytes).padStart(9) + '  ' + r.wt.path + '  [' + (r.wt.branch || 'detached') + ']  ' + r.why;
@@ -289,9 +304,10 @@ function main(argv, env) {
     else if (argv[i] === '--root' && argv[i + 1]) root = argv[++i];
     else { process.stderr.write('usage: node scripts/worktrees-clean.js [--apply] [--tmp] [--root D]   (through npm: npm run worktrees:clean -- --apply)\n'); return 2; }
   }
-  // `npm run worktrees:clean --apply` (no `--`): npm keeps the flag for itself and sets npm_config_apply. Never apply on that; say so loudly.
-  if (!apply && env && env.npm_config_apply && env.npm_config_apply !== 'false') {
-    process.stderr.write('WARNING: you ran this through npm without `--`, so npm ate --apply. Nothing will be removed. Use: npm run worktrees:clean -- --apply\n');
+  // Through npm, `npm run worktrees:clean --apply` (no `--`) never reaches this script: npm keeps the flag. We cannot see that it was dropped, but we can
+  // see that we run under npm without --apply, and say how to apply.
+  if (!apply && env && env.npm_lifecycle_event) {
+    process.stderr.write('NOTE: run through npm without --apply, so this is a dry run. To remove: npm run worktrees:clean -- --apply (the `--` is needed; npm drops a bare --apply).\n');
   }
   try { run({ apply, tmp, root }); } catch (e) { process.stderr.write('worktrees:clean: ' + e.message + '\n'); return 2; }
   return 0;
