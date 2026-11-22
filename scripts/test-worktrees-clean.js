@@ -151,7 +151,8 @@ function check(modPath, tag, o) {
   };
   const work = { git: mod.stats.git - w0.git, stat: mod.stats.stat - w0.stat, worktrees: dry.rows.length };
   if (!o.only) WORK.real = work;
-  assert.ok(!dry.rows.some((r) => r.wt.path === fx.main), tag + ': the main checkout is never in the loop');
+  // git prints forward slashes (and long names) on Windows: compare real directories, never strings
+  assert.ok(!dry.rows.some((r) => sameDir(r.wt.path, fx.main)), tag + ': the main checkout is never in the loop ' + JSON.stringify({ main: fx.main, rows: dry.rows.map((r) => r.wt.path) }));
   is('merged-clean', 'removable', null, 'merged-clean is removable');
   is('merged-dirty', 'dirty', /finished but dirty: 1 file\b/, 'a merged but dirty worktree is listed dirty');
   is('merged-unpushed', 'look', /commits origin does not have/, 'an unpushed commit needs a look');
