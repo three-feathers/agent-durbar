@@ -28,13 +28,15 @@
 
 - [ ] T011 `run-tests.js` writes per-suite CPU and wall seconds to the job summary; test in `test-run-tests` (or the existing runner test) on a fake suite list [FR-017]
 - [ ] T012 Longest-first order for the five heavy suites inside the job; measure 7 days; if Windows p90 > 15 min, a 2-way Windows split behind one summary job named `Build and test (windows-latest)` (no ruleset change); every suite, the masking suites included, stays under a required name; same suite list and assertion count before and after, printed in the PR; Closes #1983 only when SC-003 holds [FR-018]
-- [ ] T022 (with T012, before any split lands) Guard test `scripts/test-ci-required-suites.ts`: every suite in `test-suites.txt`, and by name every redact or mask suite, runs in a job whose name is in the ruleset's required list as recorded in the spec (or a summary job carrying that name); the summary job fails on a failed, skipped or cancelled shard and on a suite-list mismatch. Mutants: a masking suite moved to an unrequired job, a summary that ignores `skipped`, one that ignores `cancelled`, a dropped suite: each fails [FR-018]
+- [ ] T022 (with T012, before any split lands) Guard test `scripts/test-ci-required-suites.ts`: every suite in `test-suites.txt`, and by name every redact or mask suite, runs in a job whose name is in the ruleset's required list as recorded in the spec (or a summary job carrying that name); the summary job fails on a failed, skipped or cancelled shard and on a suite-list mismatch, and the summary job itself carries `if: ${{ !cancelled() }}` (or `always()`) so that a failed shard cannot skip it (GitHub counts a skipped required check as passing). Mutants: a masking suite moved to an unrequired job, a summary that ignores `skipped`, one that ignores `cancelled`, the summary's `if:` removed, a dropped suite: each fails [FR-018]
 
 ## P5: review profile
 
 - [ ] T013 `scripts/test-review-profile.ts` first: an unlisted file under each of `src/main`, `src/shared`, `src/preload`, `src/adapters`, `scripts/*trusted*`, `scripts/*.sh`, `.github` is `heavy`; `src/main/ipc/x.ts`, `src/main/convmask.ts`, `src/shared/url.ts`, `scripts/gh-trusted.sh`, `scripts/pr-gate.sh`, `scripts/safe-print.js` each `heavy`; a renderer line adding `innerHTML` or editing an escape helper `heavy`; rename into and out of a heavy path, a heavy deletion, an unreadable diff `heavy`; docs-only and CSS-only `light`; mutants (light list widened to `src/**`, rename ignored, sink rule dropped) fail [FR-020, FR-021]
 - [ ] T014 `scripts/review-profile.js`; `ci-changes.js` output `profile`; PR template line for the profile [FR-020, FR-021]
-- [ ] T015 After O4's written yes from the three owners: the *Sub-agents by size* line body exactly as spec O4, name kept. **Word budget**: the replaced words are named in spec O4; 34 out, 34 in, net 0 in `docs/rules/review-rounds.md` on `main` and on #1247's head (`rules:check`). A spec 021 *Changes* pointer (FR-063 accounting). No `docs/review-checklist.md` text (it is at 2,447 of 2,450) [FR-022, FR-023]
+- [ ] T015 After T014 has landed (the line names `review-profile.js`) and O4's written yes from the three owners: the *Sub-agents by size* line body exactly as spec O4, name kept. **Word budget**: the replaced words are named in spec O4; 34 out, 34 in, net 0 in `docs/rules/review-rounds.md` on `main` and on #1247's head (`rules:check`). A spec 021 *Changes* pointer (FR-063 accounting). No `docs/review-checklist.md` text (it is at 2,447 of 2,450) [FR-022, FR-023]
+
+- [ ] T023 (with T015, same PR, same gates: T014 landed and O4's yes) `docs/agent-setup/README.md` *Sub-agents by size* (heading kept, it is a pointer target): the *Small* and *Medium* bullets become one *Light* bullet (`review-profile.js` says light: one `implementer`, diff read, CI record, no mutants or fuzz asked) and *Large or sensitive* becomes *Heavy* (everything `review-profile.js` does not call light, the list of FR-020); no net growth in words, counted in the PR (the file has no `rules:check` budget) [FR-022]
 
 ## P6: world-pack contract suite (after 102 T100, #1877)
 
@@ -44,7 +46,7 @@
 
 ## P7: slicing guidance
 
-- [ ] T019 `docs/review-checklist.md` line 75 "- [ ] **Slice size**: about 800 changed lines, pictures excluded." (11 words) becomes "- [ ] **Slice size**: one vertical slice per PR, ~800 lines without pictures." (14 words). **Word budget**: +3, 2,447 to 2,450 of 2,450; no `docs/agent-notes.md` text; `.specify/templates/*` not edited (managed by `specify integration`) [FR-040]
+- [ ] T019 `docs/review-checklist.md` line 75 "- [ ] **Slice size**: about 800 changed lines, pictures excluded." (11 words) becomes "- [ ] **One vertical slice**: ~800 changed lines, pictures excluded." (11 words; no other file points to *Slice size*, checked with `grep` 2026-11-22). **Word budget**: net 0, stays 2,447 of 2,450; no `docs/agent-notes.md` text; `.specify/templates/*` not edited (managed by `specify integration`) [FR-040]
 - [ ] T020 `ci:stats` reports FR-041's indicator (src share, PRs with no `src/` line) for the retro; never per person [FR-041]
 
 ## Owner settings (O1)
