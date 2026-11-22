@@ -137,6 +137,8 @@
     "specs:check": "node scripts/specs-index.js --check && node scripts/spec-numbers.js --dups",
     "rules:check": "node scripts/rules-check.js",
     "test:weeklyretro": "node scripts/test-weekly-retro.js",
+    "test:cistats": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-ci-stats.js",
+    "ci:stats": "node scripts/ci-stats.js",
     "test:paritytick": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-parity-tick.js",
     "test:chargroups": "node scripts/test-character-groups.js",
     "groups:build": "python3 -I scripts/build-character-groups.py --write",

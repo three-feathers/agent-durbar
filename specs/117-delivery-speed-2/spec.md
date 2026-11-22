@@ -4,14 +4,14 @@
 group: 046
 title: Delivery speed 2 (owner 2026-11-22): measured CI and review cost per PR; lighter review profile for UI/feature PRs (never for masking, IPC, secrets, permissions, user files); Linux-first CI by diff on top of 021 FR-084 / 008 T130; Windows npm test split (#1983); world packs with one contract suite; bigger feature slices
 status: draft
-note: only the spec is merged; #2005, #2008, #2004 open; O5 no and O6 not now (owner 2026-11-22); O1..O4 open (coordinator's picks to confirm)
+note: merged: the spec, T002, T003 (#2005); #2008, #2004 open; O5 no and O6 not now (owner 2026-11-22); O1..O4 open (coordinator's picks to confirm)
 -->
 
 **Feature Branch**: `117-delivery-speed-2` (spec, plan, tasks only); build branches `117-pN-slug`, one per rollout step
 
 **Created**: 2026-11-22
 
-**Status**: Draft. Merged from this spec so far: the spec itself, nothing else. Open (not merged): #2005 (T002, T003, CI stats), #2008 (T004, concurrency test), #2004 (T011 suite times in the job summary, T012 first half heavy five first, T022 required-suites guard). O5 (paid runners: no) and O6 (separate repos: not now) are decided by the owner (2026-11-22); O1..O4 are open (*Owner decisions*).
+**Status**: Draft. Merged from this spec so far: the spec itself and T002, T003 (#2005, CI stats). Open (not merged): #2008 (T004, concurrency test), #2004 (T011 suite times in the job summary, T012 first half heavy five first, T022 required-suites guard). O5 (paid runners: no) and O6 (separate repos: not now) are decided by the owner (2026-11-22); O1..O4 are open (*Owner decisions*).
 
 **Input**: Owner request (Vikram, team chat, 2026-11-22 09:06-09:11 UTC, relayed by his coordinating agent): another agent's audit says the pace has massively slowed and we write more test fixes and docs than code. Coordinator's figures from `main` (first-parent merges, lines added; code = `src/` non-test, tests = `scripts/` checks, docs = `specs/` and `docs/`): W43 353 PRs, 50k / 64k / 32k; W44 149, 14k / 25k / 14k; W45 218, 20k / 49k / 11k; W46 235, 11k / 33k / 8k; W47 so far 140, 5k / 14k / 4k (with a 40 h outage). Vikram: "Implement all your recommendations": **A** a lighter review profile for UI/feature PRs; **B** CI by diff for real and fewer jobs per PR; **C** worlds and characters as data packs with one contract suite in core; **D** bigger feature slices; **E** measure and fix CI (issue #1983). He also asked about separate repos for worlds and characters; the coordinator advised packages in this repo first (a repo in the same organization shares the same concurrency cap).
 
@@ -43,6 +43,8 @@ CI is owned by spec 008 and the team rules by spec 021; 021 FR-084 (draft #1247)
 - **PRs**: the last 100 merged PRs (merged 2026-11-17T12:59Z .. 2026-11-22T01:21Z), chosen from the 200 most recently updated merged PRs. Lines added per file class: code = `src/` except test files; tests = `scripts/**` (of which `test-*`, `check-*`, `shots-*`, `ui-*`, `fuzz*` are 7,019 of 8,243 lines; the rest is tooling); docs = `specs/`, `docs/`, `changelog.d/`, root `*.md`; other = the rest. No PR had over 100 files (no truncation).
 
 **Limits.** `[KNOWN GAP]` Spec Kit, Project site, Nightly watch and CodeQL jobs are sampled, so concurrency figures are a lower bound; a job's `created_at` for a job behind `needs:` may be when the run was created, which inflates its queue wait a little. `[KNOWN GAP]` Whether a Windows-only or macOS-only failure was a real platform bug or a flake is not measured (it needs log reading per failure). `[KNOWN GAP]` Review "rounds" are approximated by the count of review objects (a comment-only review counts). `[KNOWN GAP]` 95 of the 100 PRs are authored by `vikramgorla`'s account (agents of more than one side push from it), so per-side numbers are not measurable from authors. The 40 h outage in W47 is inside the run window (low-load hours pull medians down).
+
+**Later `ci:stats` run (2026-11-22, `read:` from the PR #2005 comments; the command lands in #2005).** One real `npm run ci:stats` run 2026-11-22 14:00-14:33 CET (4,207 runs, 10,656 jobs) gave the same picture within about 5 % (UI-shard share of runner minutes 68.4 % PR / 68.2 % push against 70 % / 70 %; queue wait and the code/tests/docs split close) and two figures that differ, both kept beside the hand measurement above: minutes with at least 10 jobs queued **24.4 %** (hand: 18.8 %; a different, busier week, so the two are not the same window); jobs that ran per PR head p50 **15** (hand: 12; the script counts every non-skipped job and has no 15 s floor, so the definitions differ). Neither run is marked the more reliable one: the comment gives the window and counting reasons, not a ranking. `[KNOWN GAP]` No FR or target changes: FR-016 and FR-012 use absolute thresholds and quote 18.8 % and 12 only as "today".
 
 ### E1. The runner pool is saturated, and the UI suite is most of the load
 
@@ -328,7 +330,7 @@ The coordinator's suggested first step (concurrency groups and `cancel-in-progre
 
 ### 2026-11-22: status after Paco's review of #2004
 
-Only the spec is merged. Open and not merged: #2005 (T002, T003), #2008 (T004), #2004 (T011, T012 first half, T022). Review fixes in #2004: the guard parses the workflow with js-yaml and fails closed on shapes it does not read, reads CRLF files, the summary is written as each suite ends, the CPU temp folder is removed on signals, forks and Electron children are not counted (stated).
+Merged: the spec and #2005 (T002, T003). Open and not merged: #2008 (T004), #2004 (T011, T012 first half, T022). Review fixes in #2004: the guard parses the workflow with js-yaml and fails closed on shapes it does not read, reads CRLF files, the summary is written as each suite ends, the CPU temp folder is removed on signals, forks and Electron children are not counted (stated).
 
 ### 2026-11-22: created (owner request, Vikram, team chat 09:06-09:11 UTC)
 
