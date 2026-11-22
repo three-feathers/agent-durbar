@@ -414,20 +414,47 @@ export function createEarlyTitles(query: string, d: Pick<ScanDeps, 'masker' | 's
   const emitted = new Set<string>();
   const seen = new Set<string>();
   const groups = { office: 0, earlier: 0 };
+  const times = new Map<string, number[]>(); // review of PR 1972: per folder, the times of the earlier sessions seen so far (what `orderPlan` ranks)
+  let planned = 0; // sessions seen so far that `orderPlan` keeps, in arrival order (office first, then folder by folder)
   return {
     emitted,
     groups,
     add(sessions) {
       if (!words.length) return;
+      // the plan's order within this call: office first, then each folder's sessions newest first (`orderPlan`), so the caps below drop what the plan drops
+      const office: PlanSession[] = [];
+      const byFolder = new Map<string, PlanSession[]>();
+      for (const s of sessions) {
+        if (!s || s.helper || s.floorOff || s.hidden) continue; // the same left-outs as `orderPlan`, which counts them
+        if (s.group === 'office') { office.push(s); continue; }
+        const fk = normDir(String(s.folderKey), d.platform ?? process.platform);
+        if (!byFolder.has(fk)) byFolder.set(fk, []);
+        byFolder.get(fk)!.push(s);
+      }
+      const ordered = [...office];
+      for (const [, ss] of byFolder) ordered.push(...ss.map((s, i) => ({ s, i })).sort((x, y) => (y.s.time || 0) - (x.s.time || 0) || x.i - y.i).map((x) => x.s));
       const out: ScanHit[] = [];
       let looked = 0;
-      for (const s of sessions) {
-        if (!s || s.helper || s.floorOff || s.hidden || emitted.size >= BUDGET.maxResults) continue; // the same left-outs as `orderPlan`, which counts them
+      for (const s of ordered) {
+        if (emitted.size >= BUDGET.maxResults) break;
         if (looked >= BUDGET.maxSessions) break; // bounded work per call: the rest is left to `startScan`'s title pass (not marked seen)
         const k = sessionKey(s, d.platform);
         if (seen.has(k)) continue;
         seen.add(k);
         looked++;
+        // the caps of `orderPlan` (FR-022): 200 earlier sessions per folder, 400 in all; a session it would drop gets no row here
+        let inPlan = true;
+        if (s.group !== 'office') {
+          const fk = normDir(String(s.folderKey), d.platform ?? process.platform);
+          const ts = times.get(fk) ?? [];
+          times.set(fk, ts);
+          const rank = ts.filter((t) => t >= (s.time || 0)).length;
+          ts.push(s.time || 0);
+          inPlan = rank < BUDGET.perFolder;
+        }
+        if (inPlan && planned >= BUDGET.maxSessions) inPlan = false;
+        if (!inPlan) continue;
+        planned++;
         let t: ReturnType<typeof titleOf>;
         try { t = titleOf(s, query, d, d.values(s), words.length); } catch { continue; }
         if (t.failed || t.confirmed.size < words.length) continue;
@@ -504,7 +531,7 @@ export function startScan(plan: ScanPlan, query: string, deps: ScanDeps): { canc
       while (queue.length && !cancelled) flush();
       if (!cancelled && !flushes) deps.emit({ hits: [], progress: { ...progress }, groups: { ...groups } }); // the first batch tells the window the plan's total
       for (const s of list) {
-        if (emitted.size >= BUDGET.maxResults && !emitted.has(keyOf(s))) { stopped = true; break; }
+        if (emitted.size >= BUDGET.maxResults && !emitted.has(keyOf(s))) continue; // no row can be added: not read, not counted as searched (the rows already shown still get their excerpts)
         await tick();
         if (halt()) break;
         const hit = await session(s);
@@ -514,7 +541,7 @@ export function startScan(plan: ScanPlan, query: string, deps: ScanDeps): { canc
         if (!hit) continue;
         queue.push(hit);
         const k = keyOf(s);
-        if (!emitted.has(k)) { emitted.add(k); groups[hit.group]++; if (emitted.size >= BUDGET.maxResults) { notes.capped.results = true; stopped = true; } }
+        if (!emitted.has(k)) { emitted.add(k); groups[hit.group]++; if (emitted.size >= BUDGET.maxResults) notes.capped.results = true; }
       }
       while (queue.length && !cancelled) {
         const wait = BUDGET.batchMs - (deps.now() - lastFlush);

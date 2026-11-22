@@ -11,7 +11,7 @@ import { MaskBudgetError, createMasker } from '../src/main/convmask';
 import { SEARCH_HISTORY_LIMITS, SEARCH_MAX_TEXT_CHARS, cut as readerCut } from '../src/adapters/history';
 import type { Masker } from '../src/main/convmask';
 import { BUDGET, createEarlyTitles, createReadGate, messageExcerpts, orderPlan, rendererScript, startScan } from '../src/main/convsearch';
-import type { PlanSession, ReadOutcome, ScanBatch, ScanDeps, ScanEnd, SessionSearchApi } from '../src/main/convsearch';
+import type { PlanSession, ReadOutcome, ScanBatch, ScanHit, ScanDeps, ScanEnd, SessionSearchApi } from '../src/main/convsearch';
 
 process.exitCode = 1;
 const ROOT = ((): string => {
@@ -625,16 +625,127 @@ async function main(): Promise<void> {
       assert.ok(end.notes.capped.results, 'and the end state says so');
       assert.ok(h.reads.every((id) => ids.has(id)), `${earlyN} early: no session without a row is read after the limit`);
     }
-    // the early pass looks at a bounded number of sessions per call; the title pass finds the rest
+    // the early pass looks at a bounded number of sessions per call
     sid = 0;
     const many = Array.from({ length: 1000 }, (_x, i) => sess({ sessionId: `m${i}`, title: i === 900 ? 'invoice late' : `other ${i}`, folderKey: i === 900 ? '/g0' : `/g${i % 7}`, time: i === 900 ? 99_999 : 1000 - i }));
     const h2 = harness({});
     const early2 = createEarlyTitles('invoice', { masker: h2.deps.masker, search: S, values: h2.deps.values, emit: h2.deps.emit });
     early2.add(many);
     assert.ok(h2.work.masks <= BUDGET.maxSessions, `a call masks at most ${BUDGET.maxSessions} titles (${h2.work.masks})`);
-    assert.strictEqual(early2.emitted.size, 0);
+    // review of PR 1972: the call takes its sessions in the plan's order, so the newest of a folder is within the bound wherever it is listed, and the scan does not send it again
+    assert.deepStrictEqual([...early2.emitted].map((k) => k.split('\0')[2]), ['m900'], 'the plan\'s newest session is found within the bound, wherever it is listed');
     await startScan({ sessions: many }, 'invoice', { ...h2.deps, early: early2 }).done;
-    assert.ok(hitsOf(h2).some((x) => x.sessionId === 'm900'), 'a title past the bound is found by the scan\'s own title pass');
+    assert.strictEqual(hitsOf(h2).filter((x) => x.sessionId === 'm900').length, 1, 'and its row is sent once');
+  }
+
+  // ---- review of PR 1972, finding 1: the early title pass keeps the plan's order and caps (200 earlier per folder, 400 in all), so old sessions the plan drops never take the result slots
+  {
+    const lastRows = (h: Harness): Map<string, ScanHit> => new Map(hitsOf(h).map((x) => [x.sessionId, x] as const));
+    // two folders of 250 title matches, listed oldest first (a listing is in no plan order); content matches too
+    sid = 0;
+    const mk = (f: string, n: number, base: number): PlanSession[] => Array.from({ length: n }, (_x, i) => sess({ sessionId: `${f}-${i}`, title: `invoice ${f} ${i}`, folderKey: `/${f}`, time: base + i }));
+    const f0 = mk('a', 250, 1000);
+    const f1 = mk('b', 250, 9000);
+    const items: Record<string, HistoryItem[]> = {};
+    for (const x of [...f0, ...f1]) items[x.sessionId] = [u('the invoice is here')];
+    const all = [...f0, ...f1];
+    // the plan: folder a first (first seen), its newest 200 are a-50..a-249; 400 in all, the results stop at 200
+    const want = new Set(Array.from({ length: BUDGET.perFolder }, (_x, i) => `a-${50 + i}`));
+    for (const [what, calls] of [['one call', [all]], ['a call per folder', [f0, f1]]] as const) {
+      const h = harness(items);
+      const early = createEarlyTitles('invoice', { masker: h.deps.masker, search: S, values: h.deps.values, emit: h.deps.emit });
+      for (const c of calls) early.add(c);
+      const end = await startScan({ sessions: all }, 'invoice', { ...h.deps, early }).done;
+      const rows = lastRows(h);
+      assert.deepStrictEqual([...rows.keys()].sort(), [...want].sort(), `${what}: the 200 rows are the plan's newest 200 (office first, folder order, newest first), none the plan drops`);
+      assert.ok(end.notes.capped.results, `${what}: the end state says the results are capped`);
+      assert.ok(end.notes.searched > 0, `${what}: "Searched N" is not 0 while 200 rows show`);
+      assert.strictEqual(end.notes.searched, h.reads.length, `${what}: "Searched N" is exactly the sessions the scan went into (${end.notes.searched} / ${h.reads.length} reads)`);
+      assert.ok(h.reads.every((id) => want.has(id)), `${what}: only sessions with a row are read once the limit is reached`);
+      // finding 2: every shown row gets its excerpts, also after the limit
+      assert.ok([...rows.values()].every((x) => x.excerpts.length === 1), `${what}: every title row got its excerpts`);
+    }
+    // old title matches the plan drops do not push out the newer sessions whose content matches: the newest 100 match by content only
+    {
+      sid = 0;
+      const folder = Array.from({ length: 300 }, (_x, i) => sess({ sessionId: `m-${i}`, title: i >= 200 ? `other ${i}` : `invoice ${i}`, folderKey: '/m', time: 1000 + i }));
+      const its: Record<string, HistoryItem[]> = {};
+      for (const x of folder) its[x.sessionId] = [u('the invoice is here')];
+      const h = harness(its);
+      const early = createEarlyTitles('invoice', { masker: h.deps.masker, search: S, values: h.deps.values, emit: h.deps.emit });
+      early.add(folder); // oldest first, as a listing may come
+      const end = await startScan({ sessions: folder }, 'invoice', { ...h.deps, early }).done;
+      const rows = lastRows(h);
+      assert.deepStrictEqual([...rows.keys()].sort(), Array.from({ length: 200 }, (_x, i) => `m-${100 + i}`).sort(), 'the rows are the plan\'s newest 200: m-100..m-299, not the old title matches m-0..m-99');
+      assert.ok([...rows.values()].every((x) => x.excerpts.length >= 1), 'each of them has its excerpts');
+      assert.strictEqual(end.notes.searched, 200, '"Searched N" is the 200 sessions read, not 0');
+      assert.strictEqual(h.reads.length, 200);
+    }
+    // the 400 cap: folders a and b (content matches only) fill the plan; folder c, past it, has 200 title matches that must not take the slots
+    {
+      sid = 0;
+      const fold = (f: string, title: (i: number) => string): PlanSession[] => Array.from({ length: 200 }, (_x, i) => sess({ sessionId: `${f}-${i}`, title: title(i), folderKey: `/${f}`, time: 1000 + i }));
+      const fa = fold('a', (i) => `other ${i}`);
+      const fb = fold('b', (i) => `other ${i}`);
+      const fc = fold('c', (i) => `invoice ${i}`);
+      const its: Record<string, HistoryItem[]> = {};
+      for (const x of [...fa, ...fb, ...fc]) its[x.sessionId] = [u('the invoice is here')];
+      const h = harness(its);
+      const early = createEarlyTitles('invoice', { masker: h.deps.masker, search: S, values: h.deps.values, emit: h.deps.emit });
+      early.add(fa); early.add(fb); early.add(fc);
+      assert.strictEqual(early.emitted.size, 0, 'folder c is past the plan\'s 400: no early row');
+      await startScan({ sessions: [...fa, ...fb, ...fc] }, 'invoice', { ...h.deps, early }).done;
+      assert.deepStrictEqual([...lastRows(h).keys()].sort(), fa.map((x) => x.sessionId).sort(), 'the 200 rows are folder a (first in the plan)');
+    }
+    // once the limit is reached, a session without a row does not stop the scan: the rows after it still get their excerpts (finding 2), and it is not read or counted
+    {
+      sid = 0;
+      const fa = Array.from({ length: 200 }, (_x, i) => sess({ sessionId: `n-${i}`, title: i === 199 ? 'nothing' : `invoice ${i}`, folderKey: '/na', time: 1000 + i })); // n-199: the newest, no match anywhere
+      const fb = [sess({ sessionId: 'nb', title: 'invoice b', folderKey: '/nb', time: 1 })];
+      const its: Record<string, HistoryItem[]> = {};
+      for (const x of [...fa, ...fb]) its[x.sessionId] = [u(x.sessionId === 'n-199' ? 'no match here' : 'the invoice is here')];
+      const h = harness(its);
+      const early = createEarlyTitles('invoice', { masker: h.deps.masker, search: S, values: h.deps.values, emit: h.deps.emit });
+      early.add(fa); early.add(fb);
+      assert.strictEqual(early.emitted.size, BUDGET.maxResults, 'the early rows fill the limit: 199 + 1');
+      const end = await startScan({ sessions: [...fa, ...fb] }, 'invoice', { ...h.deps, early }).done;
+      const rows = lastRows(h);
+      assert.ok([...rows.values()].every((x) => x.excerpts.length === 1), 'every shown row got its excerpts, after the session without a row too');
+      assert.ok(!h.reads.includes('n-199'), 'the session without a row is not read');
+      assert.strictEqual(end.notes.searched, BUDGET.maxResults, '"Searched N" counts the 200 sessions read');
+    }
+    // the early pass alone: nothing past the folder cap
+    sid = 0;
+    const h2 = harness({});
+    const e2 = createEarlyTitles('invoice', { masker: h2.deps.masker, search: S, values: h2.deps.values, emit: h2.deps.emit });
+    e2.add(mk('a', 250, 1000).slice(0, 220));
+    const ids2 = new Set([...e2.emitted].map((k) => k.split('\0')[2]));
+    assert.strictEqual(ids2.size, BUDGET.perFolder, 'the early pass alone keeps the folder\'s newest 200 of 220');
+    assert.ok(Array.from({ length: 20 }, (_x, i) => `a-${i}`).every((id) => !ids2.has(id)), 'a-0..a-19 (the 20 oldest of 220) are the ones left out');
+    // the 400 cap: three folders of 200; folder c is past it
+    sid = 0;
+    const h3 = harness({});
+    const e3 = createEarlyTitles('invoice', { masker: h3.deps.masker, search: S, values: h3.deps.values, emit: h3.deps.emit });
+    e3.add([...mk('a', 100, 1000), ...mk('b', 100, 1000)]);
+    e3.add(mk('c', 100, 1000));
+    assert.strictEqual(e3.emitted.size, 200, 'the results limit holds');
+  }
+
+  // ---- review of PR 1972, finding 3: a title row whose read then fails or times out stays shown, and the failure is counted as for any session
+  {
+    for (const [reason, field] of [['unreadable', 'unreadable'], ['timeout', 'slow'], ['too-large', 'tooLarge'], ['throws', 'unreadable']] as const) {
+      sid = 0;
+      const h = harness({ t1: reason === 'throws' ? [] : { ok: false, reason } });
+      if (reason === 'throws') { const ok = h.deps.read; h.deps.read = async (x, stop) => { if (x.sessionId === 't1') throw new Error('reader broke'); return ok(x, stop); }; }
+      const end = await run(h, [sess({ sessionId: 't1', title: 'invoice notes' }), sess({ sessionId: 't2', title: 'other' })], 'invoice');
+      const rows = hitsOf(h).filter((x) => x.sessionId === 't1');
+      assert.strictEqual(rows.length, 1, `${reason}: the title row stays, once, with no excerpts`);
+      assert.strictEqual(rows[0].excerpts.length, 0);
+      assert.strictEqual((end.notes as unknown as Record<string, number>)[field], 1, `${reason}: counted as ${field}`);
+      assert.strictEqual(end.failed, false, `${reason}: the scan goes on`);
+      assert.strictEqual(end.notes.searched, 2, `${reason}: both sessions are counted as searched`);
+      assert.deepStrictEqual(h.batches[h.batches.length - 1].groups, { office: 0, earlier: 1 }, `${reason}: the row counts once`);
+    }
   }
 
   console.log('convsearch tests passed');

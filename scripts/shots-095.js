@@ -19,6 +19,7 @@
  *   FR-050  a mark has a non-colour cue and readable contrast in Clean Office and Retro; Real office: the same box and results;
  *           reduced motion: the jump's outline without its fade
  *   FR-052  rows never overlap, an excerpt is at most two lines, the list scrolls inside its area
+ *   FR-053  the running sign is a static arc under `prefers-reduced-motion` (emulated) and Motion off, `aria-busy` right in both
  *   1904    `simsearch=listing`: "Listing sessions in N of M folders…" with Stop, never "0 of 0 sessions"; whole words first at the end
  * Screenshots: 095-search-{results,jump,searching,listing}-<w>x<h>.png
  */
@@ -409,6 +410,39 @@ module.exports = async (ctx) => {
       const st = await js(`(()=>{const b=document.querySelector('#chat .bubble.nt-found'),cs=getComputedStyle(b);return {anim:cs.animationName,outline:cs.outlineStyle};})()`);
       assert.ok(st.anim === 'none' && st.outline === 'solid', `reduced motion: an outline, no fade: ${JSON.stringify(st)}`);
     } finally { await dbg.sendCommand('Emulation.setEmulatedMedia', { features: [] }).catch(() => undefined); }
+  }
+  // ---- FR-053: the running sign stays still under reduced motion and with Motion off, and aria-busy stays right (T422) ----
+  {
+    const dbg = ctx.win.webContents.debugger;
+    if (!dbg.isAttached()) dbg.attach('1.3');
+    const sign = () => js(`(()=>{const sp=document.querySelector('#list .cs-state.running .cs-spin'),wr=document.querySelector('#list .cs-wrap');return sp&&wr?{anim:getComputedStyle(sp).animationName,busy:wr.getAttribute('aria-busy'),w:sp.getBoundingClientRect().width,txt:document.querySelector('#list .cs-state.running').textContent.trim()}:null;})()`);
+    const ended = (msg) => ok(`!document.querySelector('#list .cs-spin')&&!document.querySelector('#list .cs-wrap').hasAttribute('aria-busy')`, msg);
+    const stop = async (msg) => { await js(`document.getElementById('csStop').click()`); await ended(msg); };
+    try {
+      // (a) prefers-reduced-motion: reduce
+      await dbg.sendCommand('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'reduce' }] });
+      await H.load({ w: 1280, h: 800, query: { simsearch: 'slow' }, focus: true });
+      await H.calm();
+      assert.ok(await js(`matchMedia('(prefers-reduced-motion: reduce)').matches`), 'FR-053: reduced motion is emulated');
+      await typeQuery('registry');
+      await ok(`!!document.querySelector('#list .cs-state.running .cs-spin')`, 'FR-053 reduced motion: the sign is there while it scans');
+      const r = await sign();
+      assert.ok(r && r.anim === 'none' && r.busy === 'true' && r.w > 0 && r.txt.length > 0, `FR-053 reduced motion: a static arc, aria-busy true, the text stays: ${JSON.stringify(r)}`);
+      await stop('FR-053 reduced motion: the sign and aria-busy go at the end');
+    } finally { await dbg.sendCommand('Emulation.setEmulatedMedia', { features: [] }).catch(() => undefined); }
+    // (b) Settings > Motion off (no media emulation): the same, and the sign turns again when Motion is on
+    await H.load({ w: 1280, h: 800, query: { simsearch: 'slow' }, focus: true });
+    await H.calm();
+    assert.ok(!(await js(`matchMedia('(prefers-reduced-motion: reduce)').matches`)), 'FR-053: reduced motion is not emulated for the Motion check');
+    await typeQuery('registry');
+    await ok(`!!document.querySelector('#list .cs-state.running .cs-spin')`, 'FR-053: the sign is there while it scans');
+    const on = await sign();
+    assert.ok(on && on.anim === 'bspin' && on.busy === 'true', `FR-053: with Motion on the arc turns: ${JSON.stringify(on)}`);
+    await js(`document.documentElement.setAttribute('data-motion-off','')`);
+    const off = await sign();
+    assert.ok(off && off.anim === 'none' && off.busy === 'true' && off.w > 0 && off.txt.length > 0, `FR-053 Motion off: a static arc, aria-busy true, the text stays: ${JSON.stringify(off)}`);
+    await stop('FR-053 Motion off: the sign and aria-busy go at the end');
+    await js(`document.documentElement.removeAttribute('data-motion-off')`);
   }
   console.log('[095] search conversations: all checks passed');
 };
