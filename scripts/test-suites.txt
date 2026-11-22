@@ -87,6 +87,7 @@ test:grantlabel
 test:floors
 test:mood
 test:retry
+test:review-profile
 test:compaction
 test:attention
 test:theme
@@ -133,6 +134,7 @@ test:checknames
 test:platforms
 test:checkpoints
 test:ipcchannels
+test:ipcthrow
 test:planmode
 test:probe
 test:logo-assets
@@ -162,6 +164,7 @@ test:modelchoice
 test:mcphealth
 test:globals
 test:runtests
+test:ci-required-suites
 test:runtestsreal
 test:theme-tokens
 test:slashcommands
@@ -185,6 +188,7 @@ test:realoffice-layout
 test:realoffice-assets
 test:roomorder
 test:railorder
+test:railsort
 test:composersize
 test:innerscroll
 test:ctxbreakdown
@@ -233,6 +237,7 @@ test:electroncache
 test:claudecliunit
 test:rules
 test:weeklyretro
+test:cistats
 test:docsscripts
 test:citypecheck
 test:worldmatrix
@@ -277,4 +282,5 @@ test:picturebudget
 test:chargroups
 test:dangersites
 test:specnumbers
+test:prpreflight
 test:pencilpark

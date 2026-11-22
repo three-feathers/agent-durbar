@@ -178,7 +178,7 @@ export function createCodexRpc(o: CodexRpcOptions): CodexRpc {
           .finally(() => { inFlight--; })
           .then(
             (out) => respond(id, out && typeof out === 'object' ? out : { error: { code: -32603, message: 'invalid handler result' } }),
-            (e: unknown) => respond(id, { error: { code: -32603, message: e instanceof Error ? e.message : 'request handler failed' } }),
+            (e: unknown) => respond(id, { error: { code: -32603, message: e instanceof Error ? e.message : 'request handler failed' } }), // FR-066: read, not shown (the answer goes to Codex, not the window)
           );
       } else {
         try {
@@ -271,7 +271,7 @@ export function createCodexRpc(o: CodexRpcOptions): CodexRpc {
   // 'error' after a successful spawn (failed kill, failed write) is not an exit: keep the child killable.
   child?.on('error', (err) => {
     if (child && child.pid === undefined) handleExit(null, null, `codex app-server failed: ${err.message}`);
-    else debug(`child error: ${err.message}`);
+    else debug(`child error: ${err.message}`); // FR-066: read, not shown (debug log)
   });
 
   return {
