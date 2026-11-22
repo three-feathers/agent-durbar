@@ -47,7 +47,8 @@ jobs:
     if: ${{ !github.event.pull_request.draft }}
     runs-on: ${{ matrix.runner }}
     # spec 008 FR-195: was 20; Windows takes up to 10 min and npm ci may wait out an Electron download outage (about 12 min)
-    timeout-minutes: 25
+    # spec 117 T025 stop-gap: was 25; Windows and macOS were cut at the limit with no assert failing (#1983); the shard split (T012) replaces this
+    timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
