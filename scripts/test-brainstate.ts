@@ -873,7 +873,7 @@ assert.strictEqual(sentenceOf(s), s.sentence);
   let runs = 0, headRuns = 0, refRuns = 0, headLast = 0, refLast = 0;
   const more: string[] = [];
   for (const n of ['API_' + 'KEY=', '--to' + 'ken=', 'GH_' + 'TOKEN=', 'Authorization: ' + 'Bearer ', 'DB_' + 'PASSWORD=', 'X-Api-' + 'Key: ']) {
-    for (const [bk, b] of [['backslash LF', '\\\n'], ['backslash CRLF', '\\\r\n'], ['caret CRLF', '^\r\n'], ['LF', '\n'], ['CRLF', '\r\n']]) {
+    for (const [bk, b] of [['form 1', '\\\n'], ['form 2', '\\\r\n'], ['form 3', '^\r\n'], ['form 4', '\n'], ['form 5', '\r\n']]) {
       const text = 'x ' + n + v1 + b + v2 + ' done';
       const whole = states([text]);
       assert.ok(!ps.some((p) => whole[whole.length - 1].includes(p)), `#1320 continuation brain: the whole text hides the value (${bk})`);
@@ -903,8 +903,7 @@ assert.strictEqual(sentenceOf(s), s.sentence);
   }
   assert.strictEqual(runs, 6 * 5 * 30, '#1320 continuation brain: every random cut was fed');
   assert.deepStrictEqual(more.slice(0, 3), [], `#1320 continuation brain: no state shows a piece the reading without the step hides (${more.length})`);
-  // a ratchet, not zero: a state that holds the first part and fewer than 8 letters and digits of the second keeps them readable until the next piece (FR-182's
-  // [KNOWN GAP]); the reading as before shows a piece in more runs
+  // a ratchet, not zero: mid-stream a state can still show part of the value for a moment (FR-182's [KNOWN GAP]); the reading as before shows one in more runs
   // after the next step too (a piece the brain kept before the step stays in its history, as on main)
   assert.ok(headLast <= refLast, `#1320 continuation brain: after the next step no more runs show a piece than with the reading as before (${headLast}, before ${refLast})`);
   assert.ok(headRuns < refRuns, `#1320 continuation brain: fewer runs show a piece than with the reading as before (${headRuns} of ${runs}, before ${refRuns})`);
