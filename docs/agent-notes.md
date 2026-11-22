@@ -6,22 +6,22 @@ Each entry: **what** (bold), why, how to apply, evidence (`real:`, `read:`, `tes
 
 ## Shell, git and processes
 
-- **`pkill -f` / `pgrep -f` match their own shell**. Select by field (`ps -eo pid,args | awk ...`) or keep the PIDs you started (2026-10-20).
+- **Finished worktrees pile up**: create them under `~/.cache/durbar-wt`; after your PR merges run `npm run worktrees:clean --apply` (FR-100).
+- **`pkill -f` / `pgrep -f` match their own shell**. Select by field (`ps -eo pid,args | awk ...`) or keep the PIDs you started.
 - **Plain Node 22.18+ can `require()` an erasable `src/shared/*.ts`** (no `enum`, `namespace`, parameter properties): a no-build script can reuse `redact.ts`; wrap it, fail closed on a throw; `process.features.typescript` tells a test (spec 008 FR-122, `real:` Node 22.23).
-- **`npm test -- --bail`** stops at the first failure (not under `CI`), not for final runs (spec 008 FR-115).
+- **`npm test -- --bail`** stops at the first failure (not under `CI`), not for final runs.
 - **systemd user units do not sandbox on an Ubuntu 24.04 VPS** (`apparmor_restrict_unprivileged_userns=1`): `InaccessiblePaths`, `ProtectHome`, `PrivateUsers` drop silently. Probe a setting with `systemd-run --user --wait --pipe -p <x> cat <file>`; use a separate unix user for isolation (FR-058, `real:` systemd 255).
-- **The Write tool turns a ` ` escape into the raw character**, so `tsc` fails; write them with a Python edit, check with `perl -ne 'print if /[^\x00-\x7f]/'` (2026-10-25, `real:`).
+- **The Write tool turns a ` ` escape into the raw character**, so `tsc` fails; write them with a Python edit, check with `perl -ne 'print if /[^\x00-\x7f]/'`.
 - **A lock "check, then act" needs a short `wx` guard and an owner token**: re-check under the guard; write or unlink only while the token is yours; move a stale guard aside and check identity (never `lstat` then `unlink`). Test with an injected fs swapping the lock between calls; it narrows the race, not closes it (spec 083 FR-008, `test-notesstore.ts`).
 - **Capture `child_process` functions at call time, not at load**: a function grabbed at module load bypasses the simulator's seal and test spies; pass a wrapper that reads `child_process.execFile` when called (spec 081, `test:simguard`).
 - **Sealing a Node built-in works only on the real module object**: patch `require('child_process')` (`import x = require(...)`, not `import * as`: its `__importStar` copy has getters only; patch `require('fs')` to fake an fs call, PR #489); TS's CommonJS output reads `child_process_1.execFile` at call time, so the seal reaches `src/` (spec 010 FR-030, `test-simguard` §5). `test:ipcchannels` bans `ipcMain` and `.ipc` outside `ipcguard.ts`.
 - **git rerere can replay a stale resolution and silently drop a rule** (no markers; it twice dropped `.mode-menu` from `styles.css`). After "Resolved ... using previous resolution", rebuild each file with `git merge-file -p ours base theirs` and diff it, or `git rerere forget <file>` during the conflict (PRs #488, #511, `real:`).
 - **Your branch against another open PR**: `diff <(git merge-tree --write-tree --name-only origin/main B | grep ^CONFLICT | sort) <(git merge-tree --write-tree --name-only HEAD B | grep ^CONFLICT | sort)`; empty means you add no conflict for them (spec 074, `real:`).
-- **`node_modules/` in `.gitignore` misses a symlink** (2026-11-05: a worktree's link got committed): use `node_modules`; stage by name.
-- **Union-merged `CHANGELOG.md`, `README.md` or `tasks.md` conflicts can duplicate rows**: count rows per id after resolving.
-- **`scripts/changelog.js` acts on the repository it lives in**: running another checkout's copy edits *that* checkout. Pass `--root "$(git rev-parse --show-toplevel)"` and check `git status` after (#650, `real:`).
+- **`node_modules/` in `.gitignore` misses a symlink** (2026-11-05): use `node_modules`; stage by name; after a union merge of `CHANGELOG.md`, `README.md` or `tasks.md` count rows per id.
+- **`scripts/changelog.js` acts on the repository it lives in**: running another checkout's copy edits *that* checkout. Pass `--root "$(git rev-parse --show-toplevel)"` and check `git status` after (#650).
 - **Release refs: full names and `versionsort.suffix`**: `origin/main` can resolve to a tag `refs/tags/origin/main`; require `refs/...` and `git show-ref --verify`; sort tags with `git -c versionsort.suffix=- tag --sort=-v:refname` (#648, `test:changelog`).
 - **A workflow cannot usefully open the fold PR with `GITHUB_TOKEN`**: its pushes and PRs start no `pull_request`/`merge_group` runs and Actions-created PRs need a repo setting: open the fold PR by hand from the tag (spec 008 FR-120, `read:` GitHub docs).
-- **macOS adds `__CF_USER_TEXT_ENCODING` to every child's env**: ignore it in env allow-list tests (`test-weekly-audit.ts`); only `main` CI shows it (FR-106) (#765, `real:`).
+- **macOS adds `__CF_USER_TEXT_ENCODING` to every child's env**: ignore it in env allow-list tests (`test-weekly-audit.ts`); only `main` CI shows it (#765).
 - **A copy of `process.env` is a plain object**: on Windows its PATH key is `Path`, so `copy.PATH` is `undefined`; look keys up case-insensitively (#722, `real:` Windows CI).
 - **A GUI-launched macOS app has `PATH=/usr/bin:/bin:/usr/sbin:/sbin`**: an npm (nvm, fnm, Volta, Homebrew) starting `#!/usr/bin/env node` exits 127. Run npm children with `pathWithToolDir` from a `posixTrusted` folder, from the found path before `realpath`; map 127/ENOENT to a clear message (spec 081 FR-042, `test:updatecheck`; not seen on a real Mac).
 - **winget.exe and Store apps are App Execution Aliases**: `fs.statSync` throws EACCES on them and `realpath` leads to an unrunnable folder. Use `statIsFile` and `isAppAlias` in `src/adapters/detect.ts` (spec 060 FR-010, `read:` node-which#157).
@@ -47,7 +47,7 @@ Each entry: **what** (bold), why, how to apply, evidence (`real:`, `read:`, `tes
 ## CI, review and merge
 
 - **GitHub logins differ by API**: GraphQL gives a bot without `[bot]` (`github-actions`, `__typename: "Bot"`), REST with it; `gh pr view --json author` says `app/dependabot`, and `gh pr list` and `gh issue list` show the Actions bot as `app/github-actions` (2026-11-02): the same account as `github-actions[bot]`. The latest editor is GraphQL `editor` only. `who` in `scripts/trusted-lib.sh` handles it (FR-060, `test-trusted-content.ts`).
-- **Wait until every check has settled**: some workflows add checks later, so "none pending" right after a push can be a false green. Wait ~90 s quiet; require the CodeQL check itself (2026-10-20).
+- **Wait until every check has settled**: some workflows add checks later, so "none pending" right after a push can be a false green. Wait ~90 s quiet; require the CodeQL check itself.
 - **Bot line comments and alerts drift apart**: GitHub keeps a CodeQL line comment after the alert is fixed, and an empty alert list can hide a fresh comment. Gate on `code-scanning/alerts?ref=refs/pull/<N>/merge` and `/head`, compare a comment's `commit_id` with the head, read `alerts/<n>/instances` (PR #388).
 - **Every push dismisses approvals and `main` moves fast**: batch docs-only edits into one push, ask for re-approval only once CI is green on the new head (PRs #369, #377).
 - **CI speed**: the ruleset does not require up-to-date branches, so merge `main` only on a real conflict; GitHub ignores `merge=union` drivers. A required workflow must run on `merge_group`; a `concurrency` key on `pull_request.number` needs `|| github.ref` (spec 008 FR-098..FR-102).

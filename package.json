@@ -143,6 +143,8 @@
     "test:dangersites": "node scripts/test-danger-sites.js",
     "test:specnumbers": "node scripts/test-spec-numbers.js",
     "specs:numbers": "node scripts/spec-numbers.js",
+    "worktrees:clean": "node scripts/worktrees-clean.js",
+    "test:worktreesclean": "node scripts/test-worktrees-clean.js",
     "test:rules": "node scripts/test-rules-check.js && node scripts/rules-check.js",
     "test:themegen": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-themegen.js",
     "test:updatecheck": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-updatecheck.js",

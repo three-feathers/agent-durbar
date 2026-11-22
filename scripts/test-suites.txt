@@ -277,4 +277,5 @@ test:picturebudget
 test:chargroups
 test:dangersites
 test:specnumbers
+test:worktreesclean
 test:pencilpark

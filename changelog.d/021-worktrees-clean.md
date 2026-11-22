@@ -1,0 +1,1 @@
+- **Finished worktrees can be cleaned** (spec 021): `npm run worktrees:clean` lists the git worktrees of finished PRs and how much disk they use; `--apply` removes only clean ones whose PR is merged or closed with nothing unpushed. Dry run by default; checked with a temp-repo test and its mutants, not on macOS or Windows.
