@@ -1330,11 +1330,12 @@
      wide exists. Returns the plate's left and width. */
   /* spec 102 (issue 2009, 2026-11-22): the wall picture's neon signs (the world's `wallSigns`, in the picture's own grid pixels) as boxes in the chrome's pixels: the wall is the lobby's
      background at the lobby's height, repeated across, so a sign's box is its grid box times height / picture height, once for each repeat. A name chip or place plate never stands on one. */
+  const SIGN_PAD = 1;
   function signRects(chrome) {
     const sg = CUR && CUR.signs, lob = chrome.parentNode.querySelector('.ro-art > .ro-lobby'); if (!sg || !lob) return [];
     const cr = chrome.getBoundingClientRect(), lr = lob.getBoundingClientRect(), k = lob.clientHeight / sg.size[1], tile = sg.size[0] * k, out = [], ox = lr.left + lob.clientLeft - cr.left, oy = lr.top + lob.clientTop - cr.top; /* the picture is sized and placed by the padding box */
     if (!(k > 0)) return out;
-    for (let t = 0; t * tile < lob.clientWidth; t++) for (const q of sg.list) out.push({ x0: ox + t * tile + q.x * k, x1: ox + t * tile + (q.x + q.w) * k, y0: oy + q.y * k, y1: oy + (q.y + q.h) * k });
+    for (let t = 0; t * tile < lob.clientWidth; t++) for (const q of sg.list) out.push({ x0: ox + t * tile + q.x * k - SIGN_PAD, x1: ox + t * tile + (q.x + q.w) * k + SIGN_PAD, y0: oy + q.y * k - SIGN_PAD, y1: oy + (q.y + q.h) * k + SIGN_PAD }); /* SIGN_PAD: the scaled picture bleeds a pixel past its grid box */
     return out;
   }
   function clearOfHeads(chrome, W, L0, need, y0, y1, done) {

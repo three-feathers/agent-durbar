@@ -281,3 +281,4 @@ test:chargroups
 test:dangersites
 test:specnumbers
 test:pencilpark
+test:arcade-wall-signs
