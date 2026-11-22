@@ -14,6 +14,7 @@ import { normMcpTools } from './mcptools';
 import type { AgentAdapter, AgentEvent, AgentMessage, AutopilotEnd, AutopilotSettings, CompactResult, LimitAction, McpSignInResult, McpToolInfo, ModelOption, ModelSwitchRequest, ModelSwitchResult, PermissionMode, StartOptions, UsageEvent } from './types';
 import { cleanVendorStats } from './vendorstats';
 import type { HistoryResult, PreviousSession } from './history';
+import { ShownError } from '../shared/shownerror';
 
 export type OptionalMember =
   | 'interrupt' | 'resolvePermission' | 'revokeGrant' | 'revokeCall' | 'setCap' | 'resolveLimit' | 'setMcpEnabled' | 'setModel'
@@ -185,7 +186,7 @@ export class FakeAdapter implements AgentAdapter {
     if (caps.caps) {
       this.setCap = async (sid, credits) => {
         this.mustGet(sid);
-        if (credits !== null && !(credits > 0 && Number.isFinite(credits))) throw new Error('Invalid credit cap.');
+        if (credits !== null && !(credits > 0 && Number.isFinite(credits))) throw new ShownError('Invalid credit cap.');
         this.emit(sid, { type: 'limit', phase: 'changed', maxAiCredits: credits });
       };
       this.resolveLimit = async (sid, requestId, action) => {
@@ -197,16 +198,16 @@ export class FakeAdapter implements AgentAdapter {
     if (caps.mcpRestart) {
       this.restartMcpServer = async (sid, name, opts) => {
         this.restartCalls.push({ sessionId: sid, name, ...(opts?.auto === true ? { auto: true } : {}) });
-        if (!this.sessions.has(sid)) throw new Error('This session is not running. Send a message to start it.');
-        if (this.failRestart !== undefined) throw new Error(this.failRestart);
+        if (!this.sessions.has(sid)) throw new ShownError('This session is not running. Send a message to start it.');
+        if (this.failRestart !== undefined) throw new ShownError(this.failRestart);
         this.emit(sid, { type: 'mcp', servers: [{ name, status: 'connected' }] });
       };
     }
     if (caps.mcpTools) {
       this.listMcpTools = async (sid, name) => {
-        if (!this.sessions.has(sid)) throw new Error('This session is not running. Send a message to start it.');
-        if (this.failTools !== undefined) throw new Error(this.failTools);
-        if (!(name in this.toolsByServer)) throw new Error(`${name} is not running in this session.`);
+        if (!this.sessions.has(sid)) throw new ShownError('This session is not running. Send a message to start it.');
+        if (this.failTools !== undefined) throw new ShownError(this.failTools);
+        if (!(name in this.toolsByServer)) throw new ShownError(`${name} is not running in this session.`);
         return normMcpTools(this.toolsByServer[name]);
       };
     }
@@ -226,7 +227,7 @@ export class FakeAdapter implements AgentAdapter {
           this.refreshOpts.push(opts);
           if (this.refreshDelay === Infinity) return new Promise<void>(() => undefined);
           if (this.refreshDelay) await new Promise((r) => setTimeout(r, this.refreshDelay));
-          if (this.refreshFail) throw new Error(this.refreshFail);
+          if (this.refreshFail) throw new ShownError(this.refreshFail);
           const c = this.connectOnRefresh;
           if (c && this.refreshCalls >= c.at) this.emit(sid, { type: 'mcp', servers: [{ name: c.name, status: 'connected' }] });
           const f = this.endOnRefresh;
@@ -244,7 +245,7 @@ export class FakeAdapter implements AgentAdapter {
     if (caps.renameSession) {
       this.renameSession = async (sid, name) => {
         this.renameCalls.push({ sessionId: sid, name });
-        if (this.failRename !== undefined) throw new Error(this.failRename);
+        if (this.failRename !== undefined) throw new ShownError(this.failRename);
       };
     }
     if (caps.sessionStats) this.sessionStats = async (sid) => { this.mustGet(sid); const a = typeof this.statsAnswer === 'function' ? await (this.statsAnswer as () => unknown)() : this.statsAnswer; return cleanVendorStats(a); };
@@ -260,16 +261,16 @@ export class FakeAdapter implements AgentAdapter {
     if (caps.deleteSession) {
       this.deleteSession = async (sid) => {
         this.deleteCalls.push(sid);
-        if (this.sessions.has(sid)) throw new Error('That session is open.');
+        if (this.sessions.has(sid)) throw new ShownError('That session is open.');
         const at = this.previous.findIndex((p) => p.id === sid);
-        if (at < 0) throw new Error('Session not found.');
+        if (at < 0) throw new ShownError('Session not found.');
         this.previous.splice(at, 1);
       };
     }
     if (caps.autopilot) {
       this.setAutopilot = async (sid, settings, reason) => {
         const s = this.mustGet(sid);
-        if (settings !== null && s.broker.getMode() !== 'allow') throw new Error('Autopilot runs only in Allow all.');
+        if (settings !== null && s.broker.getMode() !== 'allow') throw new ShownError('Autopilot runs only in Allow all.');
         this.autopilotCalls.push({ sessionId: sid, settings, ...(reason ? { reason } : {}) });
       };
     }
@@ -282,7 +283,7 @@ export class FakeAdapter implements AgentAdapter {
 
   async start(options: StartOptions): Promise<string> {
     const mode = startModeOf(options);
-    if (!this.capabilities.permissionModes.includes(mode)) throw new Error(`The ${this.displayName} adapter does not support the ${mode} permission mode.`);
+    if (!this.capabilities.permissionModes.includes(mode)) throw new ShownError(`The ${this.displayName} adapter does not support the ${mode} permission mode.`);
     const sid = options.resumeSessionId ?? options.sessionId ?? `fake-${++this.counter}`;
     const blocked = mcpToolBlockList(options.disabledMcpTools); // spec 069 FR-063
     const broker = new PermissionBroker({
@@ -415,7 +416,7 @@ export class FakeAdapter implements AgentAdapter {
 
   private mustGet(sessionId: string): FakeSession {
     const s = this.sessions.get(sessionId);
-    if (!s) throw new Error(`Unknown or stopped session: ${sessionId}`);
+    if (!s) throw new ShownError(`Unknown or stopped session: ${sessionId}`);
     return s;
   }
 

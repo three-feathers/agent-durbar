@@ -58,7 +58,7 @@ function isThenable(v: unknown): v is PromiseLike<unknown> {
   return typeof v === 'object' && v !== null && typeof (v as { then?: unknown }).then === 'function';
 }
 function failure(id: string | number, e: unknown): JsonRpcResponse {
-  if (e instanceof McpError) return errorResponse(id, e.code, e.message);
+  if (e instanceof McpError) return errorResponse(id, e.code, e.message); // FR-066: read, not shown
   return errorResponse(id, ERR_INTERNAL, 'Internal error');
 }
 

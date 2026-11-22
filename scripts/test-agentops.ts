@@ -10,6 +10,7 @@ import type { AgentMessage } from '../src/adapters/types';
 import type { OpsDeps } from '../src/main/agentops';
 import type { SavedFolder } from '../src/main/folders';
 import type { AgentInfo, PermMode } from '../src/shared/api';
+import { ShownError } from '../src/shared/shownerror';
 
 const WS = path.join(os.tmpdir(), 'durbar-agentops-ws');
 
@@ -116,7 +117,7 @@ async function main(): Promise<void> {
     await full.stop('f');
     // an adapter error becomes { ok: false, error }
     await full.start({ workspace: WS, sessionId: 'f', quiet: true });
-    full.setCap = async () => { throw new Error('boom'); };
+    full.setCap = async () => { throw new ShownError('boom'); };
     assert.deepStrictEqual(await setCapOp(deps(), 'f', 90), { ok: false, error: 'boom' }, 'b: an adapter error is returned, nothing saved');
     assert.strictEqual(f.maxAiCredits, 60);
   }
@@ -177,7 +178,7 @@ async function main(): Promise<void> {
     assert.deepStrictEqual([...(off.get('b') ?? [])], [], 'd: switching on removes it from off');
     await full.start({ workspace: WS, sessionId: 'f', quiet: true });
     assert.deepStrictEqual(await setMcpOp(deps(), off, 'f', 'srv', false), { ok: true }, 'd: a full fake applies it live');
-    full.setMcpEnabled = async () => { throw new Error('not part of this session'); };
+    full.setMcpEnabled = async () => { throw new ShownError('not part of this session'); };
     const e = await setMcpOp(deps(), off, 'f', 'srv2', false);
     assert.strictEqual(e.ok, true, 'd: a live apply error is still saved');
     assert.match(e.error ?? '', /^Saved for this agent\..*not part of this session.*applies at the next start\.$/, 'd: the apply error message');
@@ -217,7 +218,7 @@ async function main(): Promise<void> {
     assert.deepStrictEqual(asked, ['s1:/review 42'], 'f: the adapter is asked with the agent id and the typed text');
     assert.deepStrictEqual(await sendWithSlash(ok, 's1', { text: 'hi' }), {}, 'f: no expansion, no slash');
     assert.deepStrictEqual(sent.pop(), { text: 'hi' }, 'f: the typed text is sent');
-    const bad = ad(async () => { throw new Error('disk gone'); });
+    const bad = ad(async () => { throw new ShownError('disk gone'); });
     assert.deepStrictEqual(await sendWithSlash(bad, 's1', { text: '/review 1' }), {}, 'f: a rejected expansion is not an error');
     assert.deepStrictEqual(sent.pop(), { text: '/review 1' }, 'f: a rejected expansion sends the typed text');
     assert.deepStrictEqual(await sendWithSlash(ad(), 's1', { text: '/review 1' }), {}, 'f: an adapter without expansion sends as typed');
@@ -230,7 +231,7 @@ async function main(): Promise<void> {
     const capped = ad(async () => ({ text: 'NOT SENT', where: 'p.md', asTyped: true as const, note: 'Not expanded: too big.' }));
     assert.deepStrictEqual(await sendWithSlash(capped, 's1', { text: '/p huge' }), { slashNote: 'Not expanded: too big.' }, 'f: asTyped gives only the note');
     assert.deepStrictEqual(sent.pop(), { text: '/p huge' }, 'f: asTyped sends the typed line');
-    const failing = { send: async () => { throw new Error('send failed'); }, expandSlashCommand: async () => ({ text: 'X', where: 'w' }) };
+    const failing = { send: async () => { throw new ShownError('send failed'); }, expandSlashCommand: async () => ({ text: 'X', where: 'w' }) };
     await assert.rejects(sendWithSlash(failing, 's1', { text: '/review' }), /send failed/, 'f: a failed send still rejects (sendOp reports it)');
   }
   // (g) answerQuestionOp (spec 052 FR-178, issue 689): the answer reaches the adapter as given; a long question's key is kept; nothing usable is refused, never a skip
@@ -245,7 +246,7 @@ async function main(): Promise<void> {
     assert.deepStrictEqual(got.pop(), ['g1', 'r1', { [longQ]: 'my own' }], 'g: the answer to a question over 300 characters reaches the adapter');
     assert.deepStrictEqual(answerQuestionOp(d, 'g1', 'r2', null), { ok: true });
     assert.deepStrictEqual(got.pop(), ['g1', 'r2', null], 'g: null is a skip');
-    for (const bad of [{ q: '' }, { q: '   ' }, {}, 'text', 5, undefined, { [`${'x'.repeat(2001)}`]: 'a' }]) {
+    for (const bad of [{ q: '' }, { q: '   ' }, {}, 'text', 5, undefined, { [`${'x'.repeat(20001)}`]: 'a' }]) {
       assert.strictEqual(answerQuestionOp(d, 'g1', 'r3', bad).ok, false, 'g: refused: ' + JSON.stringify(bad)?.slice(0, 30));
     }
     assert.strictEqual(got.length, 0, 'g: a refused answer never reaches the adapter as a skip');

@@ -543,3 +543,6 @@ Owner request (Vikram, 2026-11-13): see the browser big, make it small before go
 | SC-009 | T040 |
 | SC-010 | T021 |
 | SC-011 | T024 |
+
+## 2026-11-20: the owner accepts the macOS dialog stall (issue #1415)
+- [x] T425 (delta 2026-11-20, issue #1415) spec 080: option 2 recorded (native dialogs kept, stall accepted, no hold built), what the agent sees from the code, the measured cost, issue #1982 for a real hold; no code change [FR-025d]

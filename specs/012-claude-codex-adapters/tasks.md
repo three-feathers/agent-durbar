@@ -281,3 +281,12 @@ T133 verification (2026-10-25, review on #698): typecheck, build and the offline
 ## Changes 2026-11-11 (adversarial growth baseline: issue #1519)
 
 - [x] T160 (2026-11-11, issue #1519) FR-080, extends T138: `assertLinearGrowth` `retryReps` (16-run baseline on a retry), `reps` and an untimed 4 KB warm-up in the adversarial, masks and R12 worker scripts; fake-clock test and a worker-level quadratic mutant (fake clock, no real timing) in `scripts/test-redact-growth.ts`. The R12 worker has its own cases in the `hashtable` part (workers on a fake clock, no real timing): `reps` mean per run (kills removing the loop or the `/reps` division), a linear worker that does no work for a one-run baseline passes only through the 16-run retry baseline (kills the call site not passing `retryReps`), and a quadratic worker still fails. Not run on Windows.
+
+## Changes 2026-11-20 (masking batch: a token split by link or image markup on the plain-text surfaces: issue #1940)
+
+- [x] T177 (2026-11-20, issue #1940) FR-189: `maskLinkSplitTokens`, `withoutLinkSplit` and `_linkWorkForTest` in `src/shared/redact.ts`; the desk's `linkFirst` in `both2` and `maskLabel1` (`src/renderer/safetext.js`); the new suite `scripts/test-safetext-links.ts` (with `scripts/safetext-1593-corpus.ts`, the `#1593 differential`'s texts, shared with `scripts/test-safetext.ts`, which now checks them with the step off); the line in `specs/012-claude-codex-adapters/secret-coverage.md`; mutants and a differential fuzz against `main` in the PR.
+  - Round 1 of the review of PR 1949 (2026-11-20), same task: `linkBoth` and `linkHits` in `src/renderer/safetext.js`; `matchPairs`, the joined-character gate, the written-cover rule and `_linkPassesForTest` in `src/shared/redact.ts`; the round-1 asserts in `scripts/test-safetext-links.ts` and its `labels` part (`test:safetext-links-labels`).
+  - Round 2 of the review of PR 1949 (2026-11-20), same task: the gate's two joins (`gluedRun`, `LINK_VALUE_START`, `LINK_SEP` in `src/shared/redact.ts`) and their asserts in `scripts/test-safetext-links.ts`.
+
+## 2026-11-22: the question header and the automatic-answer question are masked (issue #1937)
+- [x] T428 (delta 2026-11-22, issue #1937) `src/renderer/app.js` (`showQuestion` header tag, `showAutoQuestion` paragraph through `safeMask`), `scripts/check-question-header-mask.js` + `scripts/ui-suite.js` [FR-065]

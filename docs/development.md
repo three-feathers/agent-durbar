@@ -9,6 +9,7 @@ npm ci
 npm run typecheck && npm run build && npm test   # unit suites in parallel (~20 s); `npm test -- folders` filters; `npm test -- --bail` (or `TEST_BAIL=1`) stops at the first failing suite, for iterating, and the final run still runs everything
 npm start                 # the app, with the harnesses you have installed and signed in
 DURBAR_SIM=15 npm start   # 15 simulated agents: no sessions, no AI credits (main refuses every call that could reach a real agent app)
+DURBAR_SIM=15 DURBAR_BRAIN=0 npm start   # spec 106 T426: Brain view is on by default (Settings > Brain view); DURBAR_BRAIN=0 or 1 overrides it for one development run, never saved
 npm run test:claudecli    # opt-in, not in `npm test`: the flags Durbar's Claude adapter can send against every installed Claude Code CLI's `--help` (~/.local/share/claude/versions/*, `claude` on PATH, or DURBAR_CLAUDE_BINS=path:path); only `--version` and `--help`, no session, no credits
 DURBAR_CLAUDE_BIN=/abs/path/claude npm start   # dev/test only: use that Claude Code file first (absolute path to an existing file; ignored in a packaged build; prints a warning)
 npm run check:perf -- --record perf.json   # spec 097 T145: records frame, CPU, memory and switch rows for flat and Real office at 15 and 40 agents (simulator, no credits, no asserts; pure Node, runs on macOS and Windows; `--gpu` adds the real-GPU A/B rows, `--quick` is a smoke, `--only real-15`); the record names the OS, pixel ratio and `gpu_compositing`

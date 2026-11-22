@@ -1,21 +1,51 @@
-/* Spec 106 T005: the temporary floating host of the brain (off by default). One scoped block, `bv-` names only; nothing here styles the rest of the app.
-   Sizes come from the app's own classes and tokens (`.btn`, `--radius`, inherited text) so the size ratchet of spec 070 does not grow; T006's dock replaces this file. */
-.bv{position:fixed;right:12px;bottom:12px;z-index:30;width:264px;box-sizing:border-box;padding:calc(var(--radius)/2);border:1px solid #3b4357;border-radius:var(--radius);background:#161b26;color:#e7ebf3;font:inherit}
-.bv-head{display:flex;align-items:center;gap:inherit}
-.bv-title{flex:1}
+/* Spec 106 T006: the chat's right rail (the dock on top, Your door under it) and the dock. One scoped block, `brail-` and `bv-` names only; nothing here styles the rest of the app.
+   Loaded with Brain view (FR-105). Sizes come from the app's tokens (`--t4-size` is 12 px, FR-097; `--s-*`, `--r-*`) so the size ratchet of spec 070 does not grow. */
+#panel>.brail{flex:0 0 360px;width:360px;box-sizing:border-box;display:flex;flex-direction:column;gap:var(--s-2);min-height:0;padding:var(--s-2);border-left:1px solid var(--line);background:var(--surface);font-size:var(--t4-size)}
+body.brain-rail-off #panel>.brail{display:none}
+body.browser-big #panel>.brail{display:none} /* the in-app browser expanded to fill the window (spec 080 FR-134) */
+.brail-slot{flex:0 0 auto;min-height:0;display:flex;flex-direction:column}
+.brail.door-empty .brail-slot{max-height:60%}
+.brail-door{flex:1 1 auto;min-height:0;display:flex;flex-direction:column;gap:var(--s-1)}
+.brail-dh{display:flex;align-items:center;gap:var(--s-2)}
+.brail-dh h2{flex:1;margin:0;font-size:var(--t3-size)}
+.brail-n{display:inline-block;min-width:1.6em;text-align:center;border-radius:var(--r-sm);background:var(--surface-2);border:1px solid var(--line-2)}
+.brail-dl{flex:1 1 auto;min-height:0;overflow:auto;margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:var(--s-1)}
+.brail-dl>li{min-width:0}
+.brail-dl button{min-width:0;overflow-wrap:anywhere;display:flex;flex-direction:column;align-items:stretch;width:100%;box-sizing:border-box;text-align:start;padding:var(--s-1) var(--s-2);border:1px solid var(--line-2);border-radius:var(--r-sm);background:var(--surface-2);color:var(--ink);font:inherit;cursor:pointer}
+.brail-dl button:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
+.brail-age{color:var(--ink-2)}
+.brail-req{color:var(--ink-2);overflow-wrap:anywhere;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.brail-none{color:var(--ink-2)}
+/* the dock: transparent brain on a calm dark panel (owner 2026-11-06: no shadow) */
+.bv{box-sizing:border-box;display:flex;flex-direction:column;gap:var(--s-1);min-height:0;padding:var(--s-2);border:1px solid #3b4357;border-radius:var(--r-md);background:#161b26;color:#e7ebf3;font-size:var(--t4-size)}
+.bv.is-empty{visibility:hidden}
+.brail-slot>.bv{max-height:100%;overflow-y:auto} /* with Latest steps open in a capped slot, the dock scrolls inside its own box, never onto the rail */
+.bv p{margin:0}
+.bv-head{display:flex;align-items:center;gap:var(--s-1)}
+.bv-title{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .bv .btn{font-size:inherit;background:#232a3a;color:#e7ebf3;border-color:#3b4357}
-.bv .btn:focus-visible{outline:3px solid #ffffff;outline-offset:2px}
+.bv .btn:focus-visible,.bv-steps>button:focus-visible{outline:3px solid #ffffff;outline-offset:2px}
 .bv .btn[aria-disabled=true]{opacity:.75;cursor:default}
-.bv-canvas{display:block;margin:0 auto}
-.bv-lobe{display:block}
-.bv-sentence{margin:0}
-.bv-card{padding:calc(var(--radius)/3);border-radius:calc(var(--radius)/2);background:#232a3a;min-height:4em}
-.bv-c1{display:block}.bv-c2,.bv-c3{overflow-wrap:anywhere}
-.bv.is-folded .bv-body{display:none}
-@media (forced-colors:active){.bv .btn{background:ButtonFace;color:ButtonText;border-color:ButtonText}.bv{border-color:CanvasText;background:Canvas;color:CanvasText}.bv-card{background:Canvas;border:1px solid CanvasText}}
-.bv.is-empty{display:none}
-/* the floating box is for the office only: over a chat it would sit on the composer, over Settings or List view on their controls (no overlap, Calm UI) */
-body.panel-open .bv,body.screen-open .bv,body.list-mode .bv{display:none}
+/* compact (Your door has items): the brain beside the card, the area a fixed height so the legend never moves Your door (FR-014, FR-031) */
+.bv-body{position:relative;height:12.75em;min-height:0}
+.bv-pic{display:flex;gap:var(--s-2);align-items:flex-start;height:100%}
+.bv-pic[hidden]{display:none}
+.bv-canvas{flex:none;display:block}
+.bv-card{flex:1;min-width:0;max-height:100%;overflow:hidden;box-sizing:border-box;padding:var(--s-1) var(--s-2);border-radius:var(--r-sm);background:#232a3a}
+.bv-lobe,.bv-c1{display:block}
+.bv-c2,.bv-c3{overflow-wrap:anywhere;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.bv-legend{position:absolute;inset:0;overflow:auto}
+.bv-lt{display:block}
+.bv-lg{margin:0;padding:0;list-style:none;display:grid;grid-template-columns:1fr 1fr;column-gap:var(--s-2)}
+.bv-sym{display:inline-block;min-width:1.4em}
+/* roomy (Your door empty): the brain above the card at the rail's width */
+.bv.is-roomy .bv-body{height:auto}
+.bv.is-roomy .bv-pic{flex-direction:column;align-items:stretch;height:auto}
+.bv.is-roomy .bv-legend{position:static}
+.bv-steps{min-height:0}
+.bv-steps>button{display:block;width:100%;text-align:start;padding:0;border:0;background:none;color:inherit;font:inherit;cursor:pointer}
+.bv-list{margin:0;padding-inline-start:var(--s-5);max-height:8em;overflow:auto}
+@media (forced-colors:active){.bv .btn{background:ButtonFace;color:ButtonText;border-color:ButtonText}.bv{border-color:CanvasText;background:Canvas;color:CanvasText}.bv-card{background:Canvas;border:1px solid CanvasText}.brail-dl button{border-color:ButtonText}}
 /* Spec 106 FR-110 (T020): the Retro arcade skin: the world's own mono display font and square frame. Colours, shape and font only: no width, height, margin, padding or font-size here (070 D2).
    The frame is the world's hard shadow token (a shadow takes no room), so the 1 px border and every size stay those of the neutral skin. */
 html[data-world="retro"][data-ui="retro"] .bv{font-family:var(--ui-display);border-color:var(--line);border-radius:0;background:var(--surface);color:var(--ink);box-shadow:var(--shadow-pop)}

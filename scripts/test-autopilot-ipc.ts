@@ -27,6 +27,7 @@ import { readCopilotOrgPolicy } from '../src/adapters/copilotOrgPolicy';
 import { claudeHistoryFromText } from '../src/adapters/claudeHistory';
 import { folderFingerprint, GIT_TIMEOUT_MS } from '../src/main/gitstatus';
 import { Scheduler } from '../src/main/schedules';
+import { ShownError } from '../src/shared/shownerror';
 
 type R = Record<string, unknown>;
 const AP = { capUnit: 'aiu' as const, attachments: true, planApproval: true, verified: false, capMin: 30 };
@@ -241,7 +242,7 @@ async function main(): Promise<void> {
     assert.strictEqual(x.a.permMode, 'ask');
     assert.deepStrictEqual(onCalls(x), []);
     const y = await office({ mode: 'ask' });
-    y.fake.setAutopilot = async () => { throw new Error('the app said no'); };
+    y.fake.setAutopilot = async () => { throw new ShownError('the app said no'); };
     const ry = await turnOn(y);
     assert.strictEqual(ry.ok, false);
     assert.strictEqual(y.a.permMode, 'allow', 'FR-002: mode changed and Autopilot failed: stays in Allow all');
@@ -256,7 +257,7 @@ async function main(): Promise<void> {
     assert.match(String((await turnOn(x)).error), /Blocked by policy/);
     assert.deepStrictEqual(x.asked, []);
     assert.strictEqual(x.a.permMode, 'ask');
-    const y = await office({ org: async () => { throw new Error('read failed'); } });
+    const y = await office({ org: async () => { throw new ShownError('read failed'); } });
     assert.strictEqual((await turnOn(y)).error, ORG_UNREAD);
     assert.deepStrictEqual(y.asked, []);
     let n = 0;
@@ -266,7 +267,7 @@ async function main(): Promise<void> {
     assert.deepStrictEqual(onCalls(z), []);
     const cache = (p: unknown) => new OrgPolicyCache({ ids: () => ['c'], adapter: () => ({ displayName: 'C', readOrgPolicy: p as () => never }) });
     assert.strictEqual(await cache(() => emptyOrgPolicy('C')).autopilotRefusal('c'), undefined, 'no policy: free');
-    assert.match(String(await cache(() => { throw new Error('x'); }).autopilotRefusal('c')), /could not read/, 'a read that throws refuses here, where Allow all only advises');
+    assert.match(String(await cache(() => { throw new ShownError('x'); }).autopilotRefusal('c')), /could not read/, 'a read that throws refuses here, where Allow all only advises');
     assert.match(String(await cache(() => wholeOrgPolicy('C', [], ['bad'], 'doubt')).autopilotRefusal('c')), /could not read/);
     assert.match(String(await cache(() => wholeOrgPolicy('C', [], ['bad'], 'fatal')).autopilotRefusal('c')), /blocked too/);
     assert.match(String(await cache(() => ({ ...emptyOrgPolicy('C'), found: true, modes: { allow: 'blocked' } })).autopilotRefusal('c')), /blocked too/);
@@ -276,7 +277,7 @@ async function main(): Promise<void> {
     assert.match(String(await cache(() => ({ ...emptyOrgPolicy('C'), unreadable: true })).autopilotRefusal('c')), /could not read/, 'unreadable, and nothing found');
     assert.strictEqual(await new OrgPolicyCache({ ids: () => ['c'], adapter: () => ({ displayName: 'C', readOrgPolicy: () => wholeOrgPolicy('C', [], ['bad'], 'doubt') }) }).refusal('c', { mode: 'allow' }), undefined, 'Allow all itself is unchanged: advice');
     assert.strictEqual((await readCopilotOrgPolicy(undefined, () => emptyOrgPolicy('C'))).runtimeUnread, 'none');
-    assert.strictEqual((await readCopilotOrgPolicy({ rpc: { managedSettings: { resolve: async () => { throw new Error('x'); } } } } as never, () => emptyOrgPolicy('C'))).runtimeUnread, 'failed');
+    assert.strictEqual((await readCopilotOrgPolicy({ rpc: { managedSettings: { resolve: async () => { throw new ShownError('x'); } } } } as never, () => emptyOrgPolicy('C'))).runtimeUnread, 'failed');
   }
 
   // ---- T039, FR-007: never with remote control, both directions ----
@@ -402,7 +403,7 @@ async function main(): Promise<void> {
     // a stop that fails fails closed
     const w = await office();
     await turnOn(w);
-    w.fake.setAutopilot = async () => { throw new Error('dead child'); };
+    w.fake.setAutopilot = async () => { throw new ShownError('dead child'); };
     const rw = await w.ops.off(w.id);
     assert.strictEqual(rw.ok, true);
     assert.strictEqual(w.a.autopilot, undefined);
@@ -449,7 +450,7 @@ async function main(): Promise<void> {
     // a failed interrupt on Autopilot ends the session
     const w = await office();
     await turnOn(w);
-    w.fake.interrupt = async () => { throw new Error('no answer'); };
+    w.fake.interrupt = async () => { throw new ShownError('no answer'); };
     const rw = await w.call('agents:stop', w.id);
     assert.match(String(rw?.error), /could not confirm/);
     assert.strictEqual(w.fake.isLive(w.id), false);
@@ -596,7 +597,7 @@ async function main(): Promise<void> {
     await until(() => x.fake.autopilotCalls.some((c) => c.reason === 'no-progress'));
     assert.strictEqual(x.a.autopilot, undefined);
     // a change resets the count; a read that fails is not "unchanged"
-    const seq: Array<string | undefined | Error> = ['a', 'a', 'b', 'b', new Error('git'), 'b', 'b', 'c'];
+    const seq: Array<string | undefined | Error> = ['a', 'a', 'b', 'b', new ShownError('git'), 'b', 'b', 'c'];
     const y = await office({ fingerprint: async () => { const v = seq.shift(); if (v instanceof Error) throw v; return v; } });
     await turnOn(y);
     y.emit({ type: 'autopilot', phase: 'started', runId: 'r1', n: 0, limit: 9 });
@@ -632,9 +633,9 @@ async function main(): Promise<void> {
     const f1 = await folderFingerprint('/f', exec as never);
     assert.ok(typeof f1 === 'string' && f1.length === 64);
     assert.ok(calls.every((c) => c.includes('status') || c.includes('diff') || c.includes('rev-parse')), 'read-only');
-    assert.strictEqual(await folderFingerprint('/f', (async () => { throw new Error('fatal: not a git repository (or any of the parent directories): .git'); }) as never), null);
-    await assert.rejects(folderFingerprint('/f', (async () => { throw new Error('timeout'); }) as never), /timeout/, 'a status that failed is not "not git": it is not known');
-    await assert.rejects(folderFingerprint('/f', (async (a: string[]) => { if (a.includes('diff')) throw new Error('too big'); return '## main\0'; }) as never));
+    assert.strictEqual(await folderFingerprint('/f', (async () => { throw new ShownError('fatal: not a git repository (or any of the parent directories): .git'); }) as never), null);
+    await assert.rejects(folderFingerprint('/f', (async () => { throw new ShownError('timeout'); }) as never), /timeout/, 'a status that failed is not "not git": it is not known');
+    await assert.rejects(folderFingerprint('/f', (async (a: string[]) => { if (a.includes('diff')) throw new ShownError('too big'); return '## main\0'; }) as never));
     // the real runner and real git: no fake could see that the runner refuses an option
     const scratch = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-099-fp-')));
     try {
@@ -727,7 +728,7 @@ async function main(): Promise<void> {
     // finding 5a: main waits for a refusal that comes later than the call began, up to toldWaitMs (a wait of 0 ms would answer CHANGED)
     const h3 = await office({ toldWaitMs: 400 });
     let go3: () => void = () => undefined;
-    h3.fake.setAutopilot = async (_s, c): Promise<void> => { if (c) { await new Promise<void>((res) => { go3 = res; }); await sleep(40); throw new Error(COPILOT_TURN_ON_STOPPED); } };
+    h3.fake.setAutopilot = async (_s, c): Promise<void> => { if (c) { await new Promise<void>((res) => { go3 = res; }); await sleep(40); throw new ShownError(COPILOT_TURN_ON_STOPPED); } };
     const p3 = turnOn(h3);
     await until(() => onHold(go3));
     void h3.call('agents:stop', h3.id);
@@ -737,7 +738,7 @@ async function main(): Promise<void> {
     const before = timers();
     const h4 = await office({ toldWaitMs: 50_000, setupWaitMs: 40_000 });
     let go4: () => void = () => undefined;
-    h4.fake.setAutopilot = async (_s, c): Promise<void> => { if (c) { await new Promise<void>((res) => { go4 = res; }); throw new Error('The session is not running.'); } };
+    h4.fake.setAutopilot = async (_s, c): Promise<void> => { if (c) { await new Promise<void>((res) => { go4 = res; }); throw new ShownError('The session is not running.'); } };
     const p4 = turnOn(h4);
     await until(() => onHold(go4));
     void h4.call('agents:stop', h4.id);
@@ -804,7 +805,7 @@ async function main(): Promise<void> {
       const b5 = await office();
       let go5: () => void = () => undefined;
       const words = how === 'agents:end' ? 'The session is not running.' : COPILOT_TURN_ON_STOPPED;
-      b5.fake.setAutopilot = async (_s, c) => { if (c) { await new Promise<void>((res) => { go5 = res; }); throw new Error(words); } };
+      b5.fake.setAutopilot = async (_s, c) => { if (c) { await new Promise<void>((res) => { go5 = res; }); throw new ShownError(words); } };
       const p5 = turnOn(b5);
       await until(() => onHold(go5));
       void b5.call(how, b5.id);
@@ -819,7 +820,7 @@ async function main(): Promise<void> {
       if (how === 'agents:end') {
         const b6 = await office();
         let go6: () => void = () => undefined;
-        b6.fake.setAutopilot = async (_s, c) => { if (c) await new Promise<void>((res) => { go6 = res; }); else throw new Error('The session is not running.'); };
+        b6.fake.setAutopilot = async (_s, c) => { if (c) await new Promise<void>((res) => { go6 = res; }); else throw new ShownError('The session is not running.'); };
         const p6 = turnOn(b6);
         await until(() => onHold(go6));
         void b6.call(how, b6.id);
@@ -878,14 +879,14 @@ async function main(): Promise<void> {
     const token = 'ghp_' + 'abcDEF123'.repeat(5);
     for (const pad of [190, 280, 295]) {
       const x = await office({ mode: 'ask' });
-      x.fake.setAutopilot = async () => { throw new Error('x'.repeat(pad) + ' ' + token + ' end'); };
+      x.fake.setAutopilot = async () => { throw new ShownError('x'.repeat(pad) + ' ' + token + ' end'); };
       const r = await turnOn(x);
       assert.ok(!/ghp_|abcDEF/.test(String(r.error)), `refused: ${pad}`);
       assert.ok(String(r.error).length <= 300);
       assert.ok(!/ghp_|abcDEF/.test(x.says.join()), `the chat line: ${pad}`);
       const y = await office();
       await turnOn(y);
-      y.fake.setAutopilot = async () => { throw new Error('y'.repeat(pad) + ' ' + token); };
+      y.fake.setAutopilot = async () => { throw new ShownError('y'.repeat(pad) + ' ' + token); };
       const ry = await y.ops.off(y.id);
       assert.ok(!/ghp_|abcDEF/.test(String(ry.note)), `the note: ${pad}`);
     }

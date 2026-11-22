@@ -725,7 +725,7 @@ interface SimOptions {
   /** Spec 012 FR-130: the first Claude agent (or the first agent) asks a question (page address `simquestion=1`). */
   /** Spec 052 FR-141 (issue #367): the first agent has eight session grants with long names (page address `simgrants=many`). */
   grants?: 'many' | 'stuck'; /* 'stuck': revokes are accepted but never remove anything (a failed revoke) */
-  question?: boolean | 'long' | 'compact'; /* 'long' (spec 052 FR-140): a long question text and long option labels and descriptions (FR-160); 'compact' (FR-162, FR-163): a short question, then six compactions in a row while it waits */
+  question?: boolean | 'long' | 'compact' | 'markdown'; /* 'long' (spec 052 FR-140): a long question text and long option labels and descriptions (FR-160); 'compact' (FR-162, FR-163): a short question, then six compactions in a row while it waits */
   /** Spec 012 FR-151: an MCP server asks one agent for input: a small form (`simelicit=1`) or an https page to open (`simelicit=url`). */
   elicit?: string;
   /** Spec 033: names of floors that start switched off. */
@@ -1435,6 +1435,9 @@ const planMcpSignInRefresh = (i: SignInPlanInput): SignInPlan => {
             { label: 'Change everything at once, including the saved preferences and the themes, and fix what breaks afterwards; this is the fastest way to a consistent screen, but every theme, every window size and every platform has to be checked again in the same pull request before anyone can merge it' },
             { label: 'Short' } ] },
           { question: 'Which of the supercalifragilisticexpialidocious_configuration_option_names_that_are_unbroken_strings should stay?', header: 'Options', multiSelect: true, options: [{ label: 'an_option_label_without_any_space_that_is_much_longer_than_the_card_is_wide_in_any_window_size_and_keeps_going_with_more_words_joined_by_underscores_so_it_cannot_break_at_a_space_at_all' }, { label: 'Keep all of them' }] },
+        ] : opts.question === 'markdown' ? [
+          /* spec 052 (2026-11-19 delta, issue #1927, T378): a question written in Markdown (bold, a numbered list, a code span, a link, an arrow, raw HTML) with an invented token built from pieces, which the card masks before it renders */
+          { question: '**Which plan should I follow?**\n\n1. **Small:** change `settings.ts` first -> then the office\n2. **Large:** every theme at once\n3. Read [the notes](https://example.com/notes) and the token ' + 'ghp_' + 'A1b2C3d4E5f6G7h8I9j0K1l2M3n4' + ' stays hidden <b>not bold</b>\n\nTell me which one.', header: 'Plan', multiSelect: false, options: [{ label: 'Small' }, { label: 'Large' }] },
         ] : [
           { question: 'Which colour should the focus ring use?', header: 'Focus ring', multiSelect: false, options: [{ label: 'Sage', description: 'The calm green of the office walls' }, { label: 'Blue', description: 'Matches the links' }] },
           { question: 'Which screens should get it first?', header: 'Screens', multiSelect: true, options: [{ label: 'Office' }, { label: 'Chat' }, { label: 'Settings' }] },
@@ -1465,7 +1468,8 @@ const planMcpSignInRefresh = (i: SignInPlanInput): SignInPlan => {
         ];
         simE = { s, requestId: 'e-' + s.info.id, fields: url ? [] : fields, ...(url ? { url: 'https://auth.example.com/device?code=DURBAR-1234' } : {}) };
         s.state = 'waiting';
-        const message = url ? 'Sign in to the deploy service to continue.' : 'Where should this deploy go?';
+        const md = opts.elicit === 'md'; // spec 052 (2026-11-20 delta, issue #1934, T423): a Markdown message of about 6,000 characters (over the old 2,000 cut) with an invented token built from pieces
+        const message = md ? '**Where should this deploy go?**\n\n1. **Staging:** safe, resets at night\n2. **Production:** needs the ticket in `settings.ts`\n3. Read [the runbook](https://example.com/runbook) and the token ' + 'ghp_' + 'A1b2C3d4E5f6G7h8I9j0K1l2M3n4' + ' stays hidden <b>not bold</b>\n\n' + 'Details of the release, line by line. '.repeat(160) + '\n\nLAST-LINE-OF-THE-MESSAGE' : url ? 'Sign in to the deploy service to continue.' : 'Where should this deploy go?';
         emit({ type: 'question', sessionId: s.info.id, timestamp: now(), phase: 'asked', requestId: simE.requestId, questions: [{ question: message, header: 'deploy-mcp', multiSelect: false, options: [] }],
           elicitation: url
             ? { message, source: 'deploy-mcp', url: simE.url, host: 'auth.example.com' }
@@ -2687,6 +2691,7 @@ const planMcpSignInRefresh = (i: SignInPlanInput): SignInPlan => {
     let notifyNeedsMe = false; /* spec 052 FR-059: off in the demo until you turn it on */
     let breakResume: 'auto' | 'ask' = 'auto'; /* spec 068 FR-006 */
     let chatLinksIn: 'session' | 'system' = 'session'; /* spec 080 FR-031 */
+    let brainView = true, brainMotion: 'full' | 'calm' | 'still' = 'full'; /* spec 106 FR-060 (T426): kept for the page */
     const PLACE_CHOICES = ['library', 'software', 'terminal', 'web', 'other', 'desk'];
     /* spec 024 FR-018..FR-020: custom places in memory, with the rules of src/shared/places.ts repeated here (the renderer bundle cannot import
        it; scripts/test-places.ts runs both on the same cases and compares them). */
@@ -2817,10 +2822,12 @@ const planMcpSignInRefresh = (i: SignInPlanInput): SignInPlan => {
       ...simCharacters_,
       usageTotals: async () => ({ ok: true, since: savedSince, office: saved.office, folders: saved.folders }),
       usageResetTotals: async () => { savedSince = new Date().toISOString(); saved = { office: zero, folders: [] }; return { ok: true, since: savedSince, office: zero, folders: [] }; },
-      getSettings: async () => ({ mcpSignInRefresh: simSignIn.on, diagnostics: simDiagnostics, mcpWarnLevels: simMcpLevels, defaultMaxAiCredits: defaultCap, placeMap: { ...placeMap }, customPlaces: customPlaces.map((p) => ({ ...p })), seriousMode, motion, stillHighlights, autoFollowWork, notifyNeedsMe, breakResume, chatLinksIn, ...(simTheme ? { theme: simTheme } : {}), characters: simCharacters, characterPins: simPins(), about: { name: 'Agent Durbar', version: `${(globalThis as unknown as { DurbarAppVersion?: string }).DurbarAppVersion ?? 'dev'} (simulator)`, owner: 'Three Feathers', copyright: 'Copyright (c) 2026 Three Feathers contributors', website: 'https://github.com/three-feathers/agent-durbar', contributors: [{ label: 'vikramgorla', url: 'https://github.com/vikramgorla' }, { label: 'fjcabello', url: 'https://github.com/fjcabello' }, { label: 'rubenlupi', url: 'https://github.com/rubenlupi' }] } /* sample data, real values come from src/shared/about.ts */ }),
+      getSettings: async () => ({ mcpSignInRefresh: simSignIn.on, diagnostics: simDiagnostics, mcpWarnLevels: simMcpLevels, defaultMaxAiCredits: defaultCap, placeMap: { ...placeMap }, customPlaces: customPlaces.map((p) => ({ ...p })), seriousMode, motion, brainView, brainMotion, stillHighlights, autoFollowWork, notifyNeedsMe, breakResume, chatLinksIn, ...(simTheme ? { theme: simTheme } : {}), characters: simCharacters, characterPins: simPins(), about: { name: 'Agent Durbar', version: `${(globalThis as unknown as { DurbarAppVersion?: string }).DurbarAppVersion ?? 'dev'} (simulator)`, owner: 'Three Feathers', copyright: 'Copyright (c) 2026 Three Feathers contributors', website: 'https://github.com/three-feathers/agent-durbar', contributors: [{ label: 'vikramgorla', url: 'https://github.com/vikramgorla' }, { label: 'fjcabello', url: 'https://github.com/fjcabello' }, { label: 'rubenlupi', url: 'https://github.com/rubenlupi' }] } /* sample data, real values come from src/shared/about.ts */ }),
       setDefaultCap: async (c) => { defaultCap = c !== null && c >= 30 ? Math.round(c * 100) / 100 : undefined; return { ok: true, defaultMaxAiCredits: defaultCap }; },
       setSeriousMode: async (on) => { if (typeof on === 'boolean') seriousMode = on; return { ok: true, seriousMode }; },
       setMotion: async (on) => { if (typeof on !== 'boolean') return { ok: false, motion }; motion = on; return { ok: true, motion }; },
+      setBrainView: async (on) => { if (typeof on !== 'boolean') return { ok: false, brainView }; brainView = on; return { ok: true, brainView }; },
+      setBrainMotion: async (v) => { if (v !== 'full' && v !== 'calm' && v !== 'still') return { ok: false, brainMotion }; brainMotion = v; return { ok: true, brainMotion }; },
       setStillHighlights: async (on) => { if (typeof on !== 'boolean') return { ok: false, stillHighlights }; stillHighlights = on; return { ok: true, stillHighlights }; },
       setAutoFollowWork: async (on) => { if (typeof on !== 'boolean') return { ok: false, autoFollowWork }; autoFollowWork = on; return { ok: true, autoFollowWork }; },
       setNotifyNeedsMe: async (on) => { if (typeof on === 'boolean') notifyNeedsMe = on; return { ok: true, notifyNeedsMe }; },

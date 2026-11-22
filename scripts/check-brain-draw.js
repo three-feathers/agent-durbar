@@ -1,9 +1,10 @@
 /*
- * Spec 106 T005 (P1 G2 first slice): the brain on its temporary floating host, in the simulator, at both sizes with 15 agents. No credits.
+ * Spec 106 T005 (P1 G2 first slice), moved to T006's dock (2026-11-20): the brain in the open chat's right rail, in the simulator, at both sizes with 15 agents. No credits.
+ * The dock's own layout (placement, Your door, legend, collapse, worlds) is check-brain-dock; this driver keeps the drawing checks.
  * In ui-suite.js; `node scripts/ui-suite.js --only check-brain-draw`. It fails (exit 1) when:
- *   - the flag is off (the default) and anything of Brain view loads, or a `.bv` exists (FR-105);
+ *   - Brain view is off (`?brain=0`, the run override of Settings > Brain view, T426) and anything of Brain view loads, or a `.bv` exists (FR-105);
  *   - with `?brain=1`: no brain after an event; a canary token in a command reaches any text of the host, its labels or its canvas alternative (FR-021, FR-085);
- *   - a text of the host is under 12 px (FR-097); the host moves a desk (the office layout must be unchanged); the canvas is not decorative or not drawn;
+ *   - a text of the dock is under 12 px (FR-097); the dock moves a desk (the office layout must be unchanged after the chat closes) or shows in the office; the canvas is not decorative or not drawn;
  *   - a step does not change the picture; a failed step is not drawn as a cross (the cross is checked in the unit test; here the picture must differ);
  *   - a loop is left running when nothing happens (FR-103); a frame draws more points than the largest lit lobe (FR-102);
  *   - Still (the button, by keyboard) or reduced motion (emulated) starts an animation frame loop (SC-004); a hidden page draws a frame; forced colours keep it still.
@@ -11,7 +12,6 @@
  *   - the Retro arcade skin (spec 106 FR-110..FR-112, T020; checked at both sizes, labels "arcade skin: ..."): on only in the arcade world (Flat and the Photo office stay neutral);
  *     points drawn as squares, never discs; the box's font is the arcade's display font; palette read from the arcade's tokens and different from the neutral one;
  *     and the geometry is IDENTICAL to the neutral skin: the same points (count and positions), the canvas size, the box's width and corner, every text size, and the masked texts.
- * Reported, not asserted: how many desks the floating host covers (it is fixed at the corner until T006's dock; the covering is why it stays off by default).
  * Screenshots: <SHOTS_OUT>/106-brain-<state>-<w>x<h>.png
  */
 const os = require('os');
@@ -30,7 +30,7 @@ module.exports = async (ctx) => {
   const wc = () => ctx.win.webContents;
   const must = async (expr, what, ms = 15000) => {
     const ok = await H.until(expr, ms);
-    if (!ok) console.log('[106-brain] page state: ' + JSON.stringify(await js(`({flag:window.__durbarSimUi.brain.flag,load:window.__durbarSimUi.brain.state()+' '+window.__durbarSimUi.brain.why(),queued:window.__durbarSimUi.brain.queued(),host:!!document.querySelector('.bv'),txt:(document.querySelector('.bv')||{innerText:''}).innerText.slice(0,160),tags:0,errs:window.__errs,mods:['GLYPHS','WAITING_CARD','relPath','sentenceFor','officeTag','cardLines','currentStep'].map(k=>k in window.exports?1:0).join('')})`)));
+    if (!ok) console.log('[106-brain] page state: ' + JSON.stringify(await js(`({on:window.__durbarSimUi.brain.on(),load:window.__durbarSimUi.brain.state()+' '+window.__durbarSimUi.brain.why(),queued:window.__durbarSimUi.brain.queued(),host:!!document.querySelector('.bv'),txt:(document.querySelector('.bv')||{innerText:''}).innerText.slice(0,160),tags:0,errs:window.__errs,mods:['GLYPHS','WAITING_CARD','relPath','sentenceFor','officeTag','cardLines','currentStep'].map(k=>k in window.exports?1:0).join('')})`)));
     assert.ok(ok, 'timed out waiting for ' + what);
   };
   const dbg = () => { const d = wc().debugger; if (!d.isAttached()) d.attach('1.3'); return d; };
@@ -38,6 +38,22 @@ module.exports = async (ctx) => {
   const emit = (e) => js(`void window.__durbarSimEmit(Object.assign({timestamp:Date.now()},${jsLiteral(e)}));0`);
   const stats = () => js(`window.__durbarSimUi.brain.host().stats()`);
   const calmDown = async () => { await H.until(`window.__durbarSimUi.brain.host()&&!window.__durbarSimUi.brain.host().stats().loopRunning`, 8000); };
+  const SELA = (x) => `document.querySelector('#stage .desk[data-id="'+CSS.escape(${jsLiteral(x)})+'"],#stage .ro-plate[data-id="'+CSS.escape(${jsLiteral(x)})+'"]')`;
+  const openChat = async (x) => { await js(`(()=>{const d=${SELA(x)};if(d)d.click();})()`); await must(`document.body.classList.contains('panel-open')&&!!document.querySelector('#brainRail .bv')`, 'the chat and its dock'); };
+  /* Settings > Brain motion (T426): back to the office, the select, close, the same chat again */
+  const brainMotion = async (v) => {
+    const cur = await js(`(window.__durbarSimUi.brain.host()||{shown:()=>null}).shown()`);
+    await js(`document.getElementById('backBtn').click()`);
+    await must(`!document.body.classList.contains('panel-open')`, 'the office');
+    await js(`document.getElementById('settingsBtn').click()`);
+    await must(`!!document.getElementById('brainMotionSel')`, 'Settings > Brain motion');
+    await js(`(()=>{const e=document.getElementById('brainMotionSel');e.value=${jsLiteral(v)};e.dispatchEvent(new Event('change',{bubbles:true}));})()`);
+    await must(`/Brain motion is /.test(document.getElementById('brainMoMsg').textContent)`, 'saved: ' + v);
+    await js(`document.getElementById('scrClose').click()`);
+    await must(`!document.getElementById('brainMotionSel')`, 'Settings closed');
+    if (cur) await openChat(cur);
+    await js(`document.activeElement&&document.activeElement.blur&&document.activeElement.blur()`);
+  };
   const DESKS = `[...document.querySelectorAll('#stage .desk[data-id]')].map(d=>{const r=d.getBoundingClientRect();return [d.dataset.id,Math.round(r.left),Math.round(r.top),Math.round(r.width),Math.round(r.height)].join(':')})`;
   /* setEmulatedMedia replaces the whole list: always both features, so neither falls back to the machine's own value (the Windows runner reports reduced motion) */
   const motionAllowed = () => media([{ name: 'prefers-reduced-motion', value: 'no-preference' }, { name: 'forced-colors', value: 'none' }]);
@@ -45,24 +61,24 @@ module.exports = async (ctx) => {
 
   for (const [w, h] of SIZES) {
     const tag = `${w}x${h}`;
-    // ---- off by default: nothing loads, nothing shows (FR-105)
-    await H.load({ w, h });
+    // ---- off: nothing loads, nothing shows (FR-105); Brain view is on by default since T426, so the run override turns it off here
+    await H.load({ w, h, query: { brain: '0' } });
     const id = await js(`document.querySelector('#stage .desk[data-id]').dataset.id`);
     assert.ok(id, 'an agent');
     await emit({ type: 'toolCall', sessionId: id, callId: 'off-1', tool: 'bash', phase: 'start', args: { command: 'npm test' } });
     await new Promise((r) => setTimeout(r, 600));
-    assert.strictEqual(await js(`!!document.querySelector('.bv')`), false, 'off by default: no brain on the page');
-    assert.strictEqual(await js(`document.querySelectorAll('script[src*=brain],link[href*=brain]').length>0`), false, 'off by default: no Brain view file is loaded (FR-105)');
+    assert.strictEqual(await js(`!!document.querySelector('.bv')`), false, 'off: no brain on the page');
+    assert.strictEqual(await js(`document.querySelectorAll('script[src*=brain],link[href*=brain]').length>0`), false, 'off: no Brain view file is loaded (FR-105)');
     await emit({ type: 'toolCall', sessionId: id, callId: 'off-1', tool: 'bash', phase: 'complete', output: 'ok' });
 
     // ---- no masking, no brain (fail closed): with the redact module "missing" the loader gives up and shows nothing
-    await H.load({ w, h, query: { brain: '1', noredact: '1' } });
+    await H.load({ w, h, query: { noredact: '1' } });
     await emit({ type: 'toolCall', sessionId: id, callId: 'nr-1', tool: 'bash', phase: 'start', args: { command: 'npm test' } });
     await must(`window.__durbarSimUi.brain.state()==='failed'&&window.__durbarSimUi.brain.why()==='no mask'`, 'the brain refuses to start without masking');
     assert.strictEqual(await js(`!!document.querySelector('.bv')`), false, 'no masking, no brain: nothing is shown');
 
     // ---- on: the layout is unchanged, the brain follows the agent
-    await H.load({ w, h, query: { brain: '1' } });
+    await H.load({ w, h });
     // the OS may take the focus from a driver (three run at a time): an unfocused page draws Still, which would make the "no loop" checks below pass for any code
     assert.ok(await H.focusPage({ emulate: 'first' }), `the page has the focus (real or emulated) before the Full checks at ${tag}`);
     // the first size's reduced-motion and forced-colours steps changed the emulated media, and focusPage may detach the debugger (which clears it): allow motion again
@@ -70,6 +86,7 @@ module.exports = async (ctx) => {
     const before = await js(DESKS);
     assert.strictEqual(before.length, 15, '15 desks');
     await js(`window.__errs=[];addEventListener('error',e=>window.__errs.push(String(e.message)+' '+String(e.filename).split('/').pop()));0`);
+    await openChat(id);
     const cmd = `curl -H "Authorization: Bearer ${CANARY}" https://example.test/x`;
     await emit({ type: 'toolCall', sessionId: id, callId: 'b-1', tool: 'bash', phase: 'start', args: { command: cmd } });
     await must(`!!document.querySelector('.bv .bv-c1')&&/running/.test(document.querySelector('.bv .bv-c1').textContent)`, 'the card of a running command');
@@ -78,7 +95,7 @@ module.exports = async (ctx) => {
     const why = full ? null : await js(`({mode:window.__durbarSimUi.brain.host().draw.mode(),degraded:window.__durbarSimUi.brain.host().stats().degraded,hasFocus:document.hasFocus(),reduce:matchMedia('(prefers-reduced-motion: reduce)').matches,forced:matchMedia('(forced-colors: active)').matches})`);
     assert.ok(full, 'the brain is in Full (the page has focus), so the Still checks below test something at ' + tag + ': ' + JSON.stringify(why));
     assert.ok((await stats()).loops >= 1, 'a step in Full ran an animation loop');
-    assert.deepStrictEqual(await js(DESKS), before, 'the floating brain moves no desk');
+    assert.ok(await js(`!!document.querySelector('#brainRail #brainSlot .bv')`), 'the brain is in the chat\'s right rail (T006)');
     const everything = await js(`document.querySelector('.bv').outerHTML+'|'+document.querySelector('.bv').innerText+'|'+document.querySelector('.bv canvas').toDataURL().length`);
     assert.ok(!everything.includes(CANARY) && !everything.includes('ghp_'), 'a token in a command reaches no text of the brain (FR-021)');
     assert.ok((await js(`document.querySelector('.bv-lobe').textContent`)).startsWith('Shell, cerebellum'), 'the lobe is also text');
@@ -89,8 +106,6 @@ module.exports = async (ctx) => {
     const lit = (cv) => js(`(()=>{const c=document.querySelector('.bv canvas'),d=c.getContext('2d').getImageData(0,0,c.width,c.height).data;let n=0,s=0;for(let i=3;i<d.length;i+=4){if(d[i]>0){n++;s+=d[i-3]*3+d[i-2]*7+d[i-1]*11;}}return {n,s};})()`);
     const shell = await lit();
     assert.ok(shell.n > 1500, 'the brain is drawn: ' + shell.n + ' lit pixels');
-    const covered = await js(`(()=>{const b=document.querySelector('.bv').getBoundingClientRect();return [...document.querySelectorAll('#stage .desk[data-id]')].filter(d=>{const r=d.getBoundingClientRect();return r.left<b.right&&r.right>b.left&&r.top<b.bottom&&r.bottom>b.top;}).length;})()`);
-    console.log(`[106-brain] ${tag}: the floating host covers ${covered} of 15 desks (reported; T006's dock replaces it)`);
     await H.shot(path.join(OUT, `106-brain-running-${tag}.png`), { prep: 'calm' });
 
     // ---- a second tool lights another lobe and changes the picture; idle is free
@@ -117,11 +132,9 @@ module.exports = async (ctx) => {
     await calmDown();
     await H.shot(path.join(OUT, `106-brain-failed-${tag}.png`), { prep: 'calm' });
 
-    // ---- Still by keyboard: no animation frame loop (SC-004)
-    await js(`document.querySelector('.bv [data-bv=motion]').focus();0`);
-    await H.key('Return'); // Full -> Calm
-    await H.key('Return'); // Calm -> Still
-    await must(`/Still/.test(document.querySelector('.bv [data-bv=motion]').textContent)`, 'Still by keyboard');
+    // ---- Still from Settings > Brain motion (T426): no animation frame loop (SC-004)
+    await brainMotion('still');
+    await must(`window.__durbarSimUi.brain.host().draw.mode()==='still'`, 'Still from Settings');
     s = await stats(); const loops = s.loops, fr = s.frames;
     await emit({ type: 'toolCall', sessionId: id, callId: 'b-4', tool: 'grep', phase: 'start', args: { pattern: 'x' } });
     await must(`/Read/.test(document.querySelector('.bv-lobe').textContent)`, 'a step under Still');
@@ -132,7 +145,7 @@ module.exports = async (ctx) => {
     assert.strictEqual(s.loopRunning, false);
     await H.shot(path.join(OUT, `106-brain-still-${tag}.png`), { prep: 'calm' });
     // back to Full for the next checks
-    await H.key('Return'); await must(`/Full/.test(document.querySelector('.bv [data-bv=motion]').textContent)`, 'Full again');
+    await brainMotion('full'); await must(`window.__durbarSimUi.brain.host().draw.mode()==='full'`, 'Full again');
 
     // ---- hidden: nothing draws (the page is told it is hidden; a real hidden window cannot be made under xvfb); shown: one frame
     await js(`Object.defineProperty(document,'hidden',{get:()=>true,configurable:true});document.dispatchEvent(new Event('visibilitychange'));0`);
@@ -148,8 +161,7 @@ module.exports = async (ctx) => {
 
     // ---- reduced motion (emulated): forced Still, the button says why
     await media([{ name: 'prefers-reduced-motion', value: 'reduce' }]);
-    await must(`/system/.test(document.querySelector('.bv [data-bv=motion]').textContent)`, 'the button says reduced motion decides');
-    assert.strictEqual(await js(`document.querySelector('.bv [data-bv=motion]').getAttribute('aria-disabled')`), 'true');
+    await must(`window.__durbarSimUi.brain.host().draw.mode()==='still'&&window.__durbarSimUi.brain.host().bySystem()`, 'reduced motion decides: Still');
     s = await stats(); const rl = s.loops;
     await emit({ type: 'toolCall', sessionId: id, callId: 'b-6', tool: 'fetch', phase: 'start', args: { url: 'https://example.test/' } });
     await must(`/Web/.test(document.querySelector('.bv-lobe').textContent)`, 'a step under reduced motion');
@@ -161,25 +173,31 @@ module.exports = async (ctx) => {
     await media([{ name: 'forced-colors', value: 'active' }]);
     await must(`window.__durbarSimUi.brain.host().draw.mode()==='still'`, 'forced colours draw Still');
     assert.ok((await lit()).n > 1000, 'forced colours: still drawn');
-    await must(`/Still/.test(document.querySelector('.bv [data-bv=motion]').textContent)&&/system/.test(document.querySelector('.bv [data-bv=motion]').textContent)`, 'forced colours: the Motion button says Still (system), not Full');
-    assert.strictEqual(await js(`document.querySelector('.bv [data-bv=motion]').getAttribute('aria-disabled')`), 'true', 'forced colours: the Motion button is aria-disabled');
+    assert.ok(await js(`window.__durbarSimUi.brain.host().bySystem()`), 'forced colours: the system decides (Settings says so)');
     await H.shot(path.join(OUT, `106-brain-forced-${tag}.png`), { prep: 'calm' });
     await media([{ name: 'forced-colors', value: 'none' }]);
-    // ---- no overlap with the chat: the floating box is for the office only; with a chat open it is hidden and the composer is not under it
-    assert.ok(await H.focusPage({ emulate: 'first' }), `the page has the focus before the chat opens at ${tag}`);
-    const opened = await H.openSimAgent(`a=>a.id===${jsLiteral(id)}`, '#msgInput');
-    assert.ok(opened.ok, 'the chat opens: ' + JSON.stringify(opened.seen));
+    // ---- no overlap with the composer: the dock is in the right rail, beside the chat, never over the message box or Send
     const under = await js(`(()=>{const out=[];for(const sel of ['#msgInput','#sendBtn','.composer']){const e=document.querySelector(sel);if(!e)continue;const r=e.getBoundingClientRect();if(!r.width)continue;
       for(const [fx,fy] of [[0.5,0.5],[0.1,0.5],[0.9,0.5],[0.5,0.2],[0.5,0.8]]){const h=document.elementFromPoint(r.left+r.width*fx,r.top+r.height*fy);if(h&&h.closest('.bv'))out.push(sel+'@'+fx+','+fy);}}
       const b=document.querySelector('.bv').getBoundingClientRect();return {out,w:b.width,composer:!!document.querySelector('.composer')};})()`);
     assert.ok(under.composer, 'the composer exists');
-    assert.deepStrictEqual(under.out, [], 'FR-105: the brain box is not over the composer, the message box or Send at ' + tag);
-    assert.strictEqual(under.w, 0, 'with a chat open the floating box takes no room at all (' + tag + ')');
+    assert.deepStrictEqual(under.out, [], 'the dock is not over the composer, the message box or Send at ' + tag);
+    assert.ok(under.w > 0, 'with a chat open the dock is shown (' + tag + ')');
+    // ---- back in the office: no brain there (T011/T012), the desks where they were, nothing drawn
+    await js(`document.getElementById('backBtn').click()`);
+    await must(`!document.body.classList.contains('panel-open')`, 'back in the office');
+    assert.deepStrictEqual(await js(DESKS), before, 'the dock moves no desk');
+    assert.strictEqual(await js(`[...document.querySelectorAll('.bv')].some(b=>b.getClientRects().length&&b.getBoundingClientRect().width>0)`), false, 'no brain is shown in the office (the floating host is gone)');
+    const ff = (await stats()).frames;
+    await emit({ type: 'toolCall', sessionId: id, callId: 'b-7', tool: 'view', phase: 'start', args: { path: 'b.ts' } });
+    await new Promise((r) => setTimeout(r, 600));
+    assert.strictEqual((await stats()).frames, ff, 'in the office the dock draws nothing');
 
     // ---- the Retro arcade skin (FR-110..FR-112): colours, point shape and font only; never sizes, placements or masking (070 D2)
     const measure = async (query, label) => {
-      await H.load({ w, h, query: { brain: '1', ...query }, ready: query.officeview ? `!!document.querySelector('#stage .ro[data-world]')` : undefined });
+      await H.load({ w, h, query: { ...query }, ready: query.officeview ? `!!document.querySelector('#stage .ro[data-world]')` : undefined });
       await H.focusPage({ emulate: 'first' });
+      await openChat(id);
       await emit({ type: 'toolCall', sessionId: id, callId: 'sk-1', tool: 'bash', phase: 'start', args: { command: cmd } });
       await must(`!!document.querySelector('.bv .bv-c1')&&/running/.test(document.querySelector('.bv .bv-c1').textContent)`, 'the card of a running command (' + label + ')');
       await calmDown();

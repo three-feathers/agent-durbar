@@ -188,11 +188,16 @@ PRs, gates and line-count goals: `plan.md`. Each PR measures on `main` first and
 ## 2026-11-19 (second entry): the open chat says that the reply failed (issue #1917)
 - [x] T256 [US1] `failedTurn` flag on the agent (set by an `error` status, cleared by a `working` status) read by `syncRunState` in `app.js`: a turn that ends after an error says "Reply failed" (Stop still says "Stopped", else "Reply finished"); `scripts/check-005-announce-failed.js` (in `ui-suite.js`), mutants `ANNOUNCE_FAIL_MUTANT=finished|always|sticky` [FR-038]
 
+## 2026-11-20: a tool chip masks the call's arguments (issue #1974)
+- [x] T424 [US1] (FR-342): every feed of `makeChip` (`tTool` start and argument update, `replayHistory`, the VS Code transcript, demo turns) masks the argument once through `chipArg` (the task line's `STX.maskLabel` with `TOOLMASK`, whole argument before the cut, both readings joined by `keepShownBy`; an adapter-cut label drops its last run first; unchanged text exactly as before; fail closed); `scripts/check-toolchip-mask.js` (in `ui-suite.js`) with canaries, work counter, a 3,000-item harmless differential and near-miss pins; mutants each fail at their own assert. Test: `sim:` `check-toolchip-mask` `[IMPLEMENTED]`
+
 ## 2026-11-19 (third entry): the agent rail says which folder (issue #1905)
 - [x] T383 [US1] (FR-340): rail group heads and rows give the masked folder path through `DurbarTip` (native `title` removed); equal group names show their nearest differing parent (`DurbarRail.parentNames`, pure); `scripts/check-005-rail-folder.js` (in `ui-suite.js`) with its mutants; `check-rail` follows the tooltip. Test: `sim:` `check-005-rail-folder`, `check-rail`, `test:railorder` `[IMPLEMENTED]` 2026-11-19: `check-005-rail-folder`; mutants title, nosuffix, nofocus, raw die; `check-rail` takes the first Escape for the tooltip
 
 ## 2026-11-19 (third entry): a failed turn keeps showing the error (issue #1919)
 - [x] T257 [US1] the `idle` that ends a turn with `failedTurn` set leaves the state Error (no Done, no unread mark, no finished announcement); `scripts/check-005-failed-state.js` (in `ui-suite.js`), mutants `FAILED_STATE_MUTANT=done|always` [FR-245]
+- [x] T384 Rail sort (#1961): the Sort menu in the rail top row with five choices (no Longest waiting: the default has it), order inside folders and of folders, remembered choice, first-seen time (`durbar.railBorn`) that survives a restart; pure order function with a unit test; rail screenshots at 1440x900 and 1280x800 [FR-341]
+
 
 ## 2026-11-19 (fourth entry): an error ends the turn in the chat (issue #1920)
 - [x] T258 [US1] the general `error` status clears `worked` (the sign-in one already did): Send, not Stop and the spinner; the `idle` that follows keeps Error while the agent is in the error state (FR-245 amended); `scripts/check-005-error-ends-turn.js` (in `ui-suite.js`), mutants `ERROR_TURN_MUTANT=busy|idle` [FR-246]

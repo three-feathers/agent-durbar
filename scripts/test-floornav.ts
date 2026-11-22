@@ -25,6 +25,7 @@ const N = require(path.join(R, 'floornav.js')) as {
   keyEligible(e: Ev, t: unknown, s?: Scroll, o?: Open): 'next' | 'prev' | null;
   announceText(f: unknown, n: unknown, m: unknown): string;
   place(f: unknown, id: string): { n: number; m: number } | null;
+  floorHint(f: unknown, id: string, here: boolean, words: string): string;
   viewOf(v: unknown): 'all' | 'one';
   readView(store: () => Store | null): 'all' | 'one';
   writeView(store: () => Store | null, v: unknown): boolean;
@@ -191,6 +192,18 @@ eq(N.edgeSummary([{ pos: 'above', counts: c1 }, { pos: 'in', counts: c2 }, { pos
 eq(N.edgeSummary([{ pos: 'in', counts: c1 }]), { up: null, down: null }, 'every badge in view: no edge row');
 eq(N.edgeSummary(null), { up: null, down: null }, 'nothing: no edge row');
 
+// ---- the floor hint (spec 092 FR-085) ----
+const hf = [{ id: 'a', name: 'Client A', on: true }, { id: 'b', name: 'Off floor', on: false }, { id: 'c', name: 'Client C', on: true }, { id: 'd', name: 'Client D', on: true }];
+eq(N.floorHint(hf, 'c', false, ''), 'Client C, floor 2 of 3', 'the hint is name, floor n of m, n counting only the floors that are on (the lift number)');
+eq(N.floorHint(hf, 'a', false, ''), 'Client A, floor 1 of 3', 'floor 1 is the bottom one');
+eq(N.floorHint(hf, 'd', true, ''), 'Client D, floor 3 of 3 (you are here)', 'the current floor adds (you are here)');
+eq(N.floorHint(hf, 'd', true, '2 waiting'), 'Client D, floor 3 of 3 (you are here)\n2 waiting', 'the attention words go on the next line');
+eq(N.floorHint(hf, 'c', false, '1 error'), 'Client C, floor 2 of 3\n1 error', 'words without (you are here)');
+eq(N.floorHint(hf, 'b', false, ''), '', 'a floor that is off has no hint');
+eq(N.floorHint(hf, 'zz', false, ''), '', 'an unknown floor has no hint');
+eq(N.floorHint(fl('a !b'), 'a', true, 'x'), '', 'one floor on: no hint (no lift)');
+eq(N.floorHint(null, 'a', false, ''), '', 'no floors: no hint');
+
 // ---- the page is wired to the rules (source checks) ----
 const app = fs.readFileSync(path.join(R, 'app.js'), 'utf8');
 const html = fs.readFileSync(path.join(R, 'index.html'), 'utf8');
@@ -213,5 +226,8 @@ ok(/if\(!model\.length&&oneFloorView\(\)&&/.test(app), 'the empty-floor line is 
 ok(/role="toolbar" aria-label="Floors" aria-orientation="vertical"/.test(html), 'the lift is a vertical toolbar named Floors (FR-006)');
 const shared = fs.readFileSync(path.join(ROOT, 'src', 'shared', 'floors.ts'), 'utf8');
 ok(!/floornav|curFloor|durbar\.floor\b/i.test(shared), 'src/shared/floors.ts is unchanged by the floor screens');
+
+ok(/FN\.floorHint\(FLOORS\.floors,f\.id,!all&&f\.id===cur,/.test(app), 'the lift button tooltip is floorHint, (you are here) only when not in the All view (FR-085 b)');
+ok(/selector:'#stage \.room\[data-room\]'[^\n]*at:'pointer'/.test(app) && /selector:'#floor'[^\n]*at:'pointer'/.test(app), 'the two floor-hint binds exist and anchor the tip at the pointer; what they show and hide is checked by shots-092-lift');
 
 console.log(`floornav tests: ${n} checks ok`);

@@ -6,6 +6,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { emptyDoc, recordEvent, sanitizeDoc } from '../shared/toolusage';
 import type { UsageDoc } from '../shared/toolusage';
+import { failText } from './ipcerror';
 
 const MAX_FILE = 2 * 1024 * 1024;
 
@@ -78,7 +79,7 @@ export class UsageStore {
       this.lastError = undefined;
     } catch (err) {
       this.removeTmp();
-      this.lastError = err instanceof Error ? err.message.slice(0, 160) : 'write failed';
+      this.lastError = failText(err, 'usage store', 'write failed').slice(0, 160);
     }
   }
 

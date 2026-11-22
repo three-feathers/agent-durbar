@@ -161,7 +161,7 @@ function pageChecks(): void {
   // every text the Autopilot code puts in innerHTML goes through esc
   const code = part('/* ---------------- spec 099: Autopilot in the window', 'function closeModeMenu(){');
   const q = /\bq\.question\b/g;
-  assert.ok(q.test(code) && /p\.textContent=String\(q&&q\.question/.test(code), 'the question is textContent');
+  assert.ok(q.test(code) && /p\.textContent=safeMask\(String\(q&&q\.question/.test(code), 'the question is textContent');
   assert.ok(!/innerHTML\s*=\s*[^I]/.test(code), 'one innerHTML, for an icon: ' + (code.match(/innerHTML\s*=\s*.{0,40}/g) ?? []).join());
   assert.ok(/n\.textContent=t;tChips/.test(code), 'the chat lines are text');
   assert.ok(/w\.textContent=APW\.endLine/.test(code), 'the end card is text');
