@@ -39,7 +39,7 @@
      (`except`: the buttons and parts that carry a title), and on the keyboard focus of any control in it */
   const find=(t,kb)=>{
     if(!t||!t.closest)return null;
-    for(const b of binds){const el=t.closest(b.selector); if(el&&b.root.contains(el)&&(kb||!b.except||!(t.closest(b.except)&&el.contains(t.closest(b.except)))))return {el,get:b.text};}
+    for(const b of binds){if(kb&&b.at==='pointer')continue; /* `at:'pointer'` = a hover-only tip (the floor's hint): keyboard focus never shows it */ const el=t.closest(b.selector); if(el&&b.root.contains(el)&&(kb||!b.except||!(t.closest(b.except)&&el.contains(t.closest(b.except)))))return {el,get:b.text,at:b.at};}
     return null;
   };
   function ensure(){
@@ -55,8 +55,8 @@
     if(cur){describe(cur.el,false);cur=null;}
     if(tip)tip.hidden=true;
   }
-  function put(el,d){
-    const r=el.getBoundingClientRect(), de=document.documentElement;
+  function put(el,d,f){
+    const r=f&&f.at==='pointer'&&f.pt?f.pt:el.getBoundingClientRect(), de=document.documentElement;
     d.style.left='0px'; d.style.top='0px';
     const p=place(r,{w:d.offsetWidth,h:d.offsetHeight},{w:de.clientWidth,h:de.clientHeight});
     d.style.left=p.x+'px'; d.style.top=p.y+'px';
@@ -67,7 +67,7 @@
     const d=ensure();
     if(cur&&cur.el!==f.el)describe(cur.el,false);
     d.hidden=false; if(d.textContent!==t)d.textContent=t;
-    cur=f; describe(f.el,true); put(f.el,d);
+    cur=f; describe(f.el,true); put(f.el,d,f);
   }
   function update(){
     const f=hov||foc;
@@ -78,6 +78,8 @@
   function refresh(){
     if(!cur)return;
     if(!cur.el.isConnected||(hov&&!hov.el.isConnected&&!foc)){hov=foc=null;hide();return;}
+    /* a redraw by morphHTML copies the attributes of the new markup, which has no aria-describedby: the element that stays keeps its place but loses the link to the tooltip, so it is put back here (an attribute write, no layout read; issue 1989) */
+    if(tip&&!tip.hidden)describe(cur.el,true);
     /* the same words on the same element: nothing to say and nothing to measure (placing the box reads the layout; a status update must add no layout reads, spec 097 FR-186; the box already stands where its element is, and a scroll or a resize hides it) */
     if(tip&&!tip.hidden&&cur.get(cur.el)===tip.textContent)return;
     show(cur);
@@ -87,9 +89,11 @@
     if(wired)return; wired=true;
     document.addEventListener('pointerover',e=>{
       if(e.pointerType==='touch')return;
-      const f=find(e.target);
+      let f=find(e.target);
+      if(f&&f.at==='pointer'&&!f.get(f.el))f=null; /* a wide hover-only bind with nothing to say here (the floor, no hint): the tip of the part the pointer came from stays, as before the bind existed */
       if(!f){if(hov&&hov.el.contains(e.target)){hov=null;update();}return;} /* onto a part with its own tooltip (`except`): this one steps back */
       if(hov&&hov.el===f.el)return;
+      if(f.at==='pointer')f.pt={left:e.clientX,right:e.clientX,top:e.clientY-2,bottom:e.clientY+14}; /* a wide element (the empty floor): the tip stands at the pointer, not under the element */
       hov=f; update();
     },true);
     document.addEventListener('pointerout',e=>{
@@ -117,7 +121,7 @@
   /* `text(el)` returns the tooltip text for an element that matches `selector` inside `rootEl` ('' for none) */
   function bind(rootEl,o){
     if(!rootEl||!o||!o.selector||typeof o.text!=='function')return;
-    if(!binds.some(b=>b.root===rootEl&&b.selector===o.selector))binds.push({root:rootEl,selector:o.selector,text:o.text,except:o.except||''});
+    if(!binds.some(b=>b.root===rootEl&&b.selector===o.selector))binds.push({root:rootEl,selector:o.selector,text:o.text,except:o.except||'',at:o.at||''});
     wire();
   }
   return {statusText,place,bind,refresh,hide,GAP,MARGIN};
