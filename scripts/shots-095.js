@@ -430,19 +430,23 @@ module.exports = async (ctx) => {
       assert.ok(r && r.anim === 'none' && r.busy === 'true' && r.w > 0 && r.txt.length > 0, `FR-053 reduced motion: a static arc, aria-busy true, the text stays: ${JSON.stringify(r)}`);
       await stop('FR-053 reduced motion: the sign and aria-busy go at the end');
     } finally { await dbg.sendCommand('Emulation.setEmulatedMedia', { features: [] }).catch(() => undefined); }
-    // (b) Settings > Motion off (no media emulation): the same, and the sign turns again when Motion is on
-    await H.load({ w: 1280, h: 800, query: { simsearch: 'slow' }, focus: true });
-    await H.calm();
-    assert.ok(!(await js(`matchMedia('(prefers-reduced-motion: reduce)').matches`)), 'FR-053: reduced motion is not emulated for the Motion check');
-    await typeQuery('registry');
-    await ok(`!!document.querySelector('#list .cs-state.running .cs-spin')`, 'FR-053: the sign is there while it scans');
-    const on = await sign();
-    assert.ok(on && on.anim === 'bspin' && on.busy === 'true', `FR-053: with Motion on the arc turns: ${JSON.stringify(on)}`);
-    await js(`document.documentElement.setAttribute('data-motion-off','')`);
-    const off = await sign();
-    assert.ok(off && off.anim === 'none' && off.busy === 'true' && off.w > 0 && off.txt.length > 0, `FR-053 Motion off: a static arc, aria-busy true, the text stays: ${JSON.stringify(off)}`);
-    await stop('FR-053 Motion off: the sign and aria-busy go at the end');
-    await js(`document.documentElement.removeAttribute('data-motion-off')`);
+    // (b) Settings > Motion off, with the system's motion preference forced to "no preference": clearing the emulation falls back to the
+    // system's own setting, and the Windows runner reports reduced motion by itself (as the jump check above notes), so it is set, not cleared
+    try {
+      await dbg.sendCommand('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'no-preference' }] });
+      await H.load({ w: 1280, h: 800, query: { simsearch: 'slow' }, focus: true });
+      await H.calm();
+      assert.ok(!(await js(`matchMedia('(prefers-reduced-motion: reduce)').matches`)), 'FR-053: the emulated no-preference took effect for the Motion check');
+      await typeQuery('registry');
+      await ok(`!!document.querySelector('#list .cs-state.running .cs-spin')`, 'FR-053: the sign is there while it scans');
+      const on = await sign();
+      assert.ok(on && on.anim === 'bspin' && on.busy === 'true', `FR-053: with Motion on the arc turns: ${JSON.stringify(on)}`);
+      await js(`document.documentElement.setAttribute('data-motion-off','')`);
+      const off = await sign();
+      assert.ok(off && off.anim === 'none' && off.busy === 'true' && off.w > 0 && off.txt.length > 0, `FR-053 Motion off: a static arc, aria-busy true, the text stays: ${JSON.stringify(off)}`);
+      await stop('FR-053 Motion off: the sign and aria-busy go at the end');
+      await js(`document.documentElement.removeAttribute('data-motion-off')`);
+    } finally { await dbg.sendCommand('Emulation.setEmulatedMedia', { features: [] }).catch(() => undefined); }
   }
   console.log('[095] search conversations: all checks passed');
 };
