@@ -146,11 +146,15 @@ function report({ runs, jobs, prs, fromMs, toMs, days }) {
 
 /** The real `gh`: an argument array, no shell. Never prints stderr (it could echo request details). */
 function ghJson(args) {
-  try {
-    return JSON.parse(execFileSync('gh', args, { encoding: 'utf8', maxBuffer: 256 * 1024 * 1024, stdio: ['ignore', 'pipe', 'pipe'] }));
-  } catch (e) {
-    throw new Error(`gh ${args[0]} failed (exit ${e && e.status})`);
+  let last;
+  for (let attempt = 0; attempt < 3; attempt++) { // a transient 5xx or network error is retried
+    try {
+      return JSON.parse(execFileSync('gh', args, { encoding: 'utf8', maxBuffer: 256 * 1024 * 1024, stdio: ['ignore', 'pipe', 'pipe'] }));
+    } catch (e) {
+      last = e;
+    }
   }
+  throw new Error(`gh ${args[0]} ${args[0] === 'api' && args[3] ? String(args[3]).replace(/\d+/g, 'N') : ''} failed (exit ${last && last.status})`);
 }
 const REPO_RE = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
 
