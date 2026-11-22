@@ -19,6 +19,7 @@ const rt = require(path.join(__dirname, '..', '..', 'scripts', 'run-tests.js')) 
   formatSummary: (times: { name: string; wall: number; cpu: number | null }[], o?: Record<string, unknown>) => string;
   readCpuSeconds: (file: string) => number | null;
   makeCpuDir: (o?: Record<string, unknown>) => string | null;
+  startMain: (o: Record<string, unknown>) => Promise<void>;
 };
 
 type Fake = EventEmitter & { pid: number; stdout: EventEmitter; stderr: EventEmitter; file: string };
@@ -348,6 +349,16 @@ const d = rt.makeCpuDir({ tmpdir: ${JSON.stringify(base)} }); console.log(d); se
     const r = spawnSync(process.execPath, ['--require', preload, parent], { env: { ...process.env, DURBAR_CPU_FILE: file }, encoding: 'utf8' });
     assert.strictEqual(r.status, 0);
     assert.strictEqual(fs.readFileSync(file, 'utf8').split('\n').filter(Boolean).length, 1, 'a fork() child is not counted: only the step\'s own process reports');
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+  // startMain (what the command line runs) hands the CPU folder to the run: the summary row of a real step has a CPU number, not n/a
+  {
+    const dir = fs.mkdtempSync(path.join(require('os').tmpdir(), 'rt-start-'));
+    const okJs = path.join(dir, 'ok.js'); fs.writeFileSync(okJs, 'let x = 0; for (let i = 0; i < 3e6; i++) x += Math.sqrt(i);');
+    const summary = path.join(dir, 'summary.md');
+    await rt.startMain({ suites: [{ name: 'viastart', steps: [[okJs]] }], jobs: 1, bail: true, env: { ...process.env, GITHUB_STEP_SUMMARY: summary } });
+    const row = fs.readFileSync(summary, 'utf8').split('\n').find((l) => l.startsWith('| viastart |')) || '';
+    assert.ok(/^\d+\.\d$/.test((row.split('|')[3] || '').trim()), `startMain passes the CPU folder, so the row has CPU seconds: ${row}`);
     fs.rmSync(dir, { recursive: true, force: true });
   }
   // spec 117 FR-018: the heavy suites start first, longest first; the same suites run (nothing added, nothing dropped, the rest keep list order)

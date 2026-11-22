@@ -10,13 +10,15 @@
  * form but the plain one) is a problem, never a pass. For the one job that runs `npm test` it asserts: the name is a required check on every OS;
  * each matrix entry runs on the OS it names (runner = os, real = 'yes'; macOS only the reviewed FR-106 expressions); the `changes` step is the
  * reviewed script under the reviewed condition; no `defaults`, no job or workflow `env`, no step that writes GITHUB_ENV or GITHUB_PATH, and only
- * reviewed env keys on the `npm test` step; the `npm test` step is the real command under no condition but the reviewed one. The summary-job
+ * reviewed env keys on the `npm test` step; every step before `npm test` is a reviewed shape (checkout, setup-node, npm-ci and its own steps, the
+ * reviewed run lines: an allow-list, so github-script, an unknown or local action or a run built at run time is refused); the `npm test` step is the real command under no condition but the reviewed one. The summary-job
  * rules of T022 (a failed, skipped or cancelled shard; `if: !cancelled()`) land with the Windows split, if it is ever needed: there is no
  * summary job today.
  */
 import * as assert from 'assert';
 import * as fs from 'fs';
 import * as path from 'path';
+import * as crypto from 'crypto';
 
 const ROOT = path.join(__dirname, '..', '..');
 /** Line endings normalised: a Windows checkout has CRLF (the files here are read as text and matched per line). */
@@ -101,8 +103,58 @@ const ENV_KEYS = ['PREREVIEW_REQUIRE_REAL_SDK'];
 const RUNS_NPM_TEST = /\bnpm\s+test\b/;
 const runOf = (s: Step) => (typeof s.run === 'string' ? s.run : '');
 
+
+// The steps before `npm test` are pinned to reviewed shapes: a step that can set the job's environment (GITHUB_ENV or GITHUB_PATH by any means,
+// github-script, a local action, a name built at run time) must not slip in. Anything not listed here is a problem (fail closed): to add a
+// step, review it and add its exact shape here. Run steps are matched exactly; actions by name and commit; the local npm-ci action is read too.
+const STEP_KEYS = ['name', 'id', 'if', 'uses', 'with', 'run', 'env', 'shell'];
+const USES: Record<string, string[]> = {
+  'actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1': ['fetch-depth'],
+  'actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1': ['node-version', 'cache'],
+  './.github/actions/npm-ci': [],
+};
+const RUNS = ['bash .github/scripts/ci-changes.sh', 'npm ci --ignore-scripts --no-audit --no-fund --prefix scripts/prereview', 'npm run build'];
+const ECHO_ONLY = /^(echo "[^"$`\\]*" \| tee -a "\$GITHUB_STEP_SUMMARY"\n?)+$/; // the macOS notice: prints and appends to the job summary only
+const NPM_CI_RUNS = ['node scripts/electron-cache.js plan', 'node scripts/electron-cache.js seed'];
+const NPM_CI_LOOP_SHA256 = '8e497dba0fbf55c032372ee3df9405c2525df90696bbe85c4764a6393c2deb40'; // the npm ci retry loop, reviewed 2026-11-22
+const NPM_CI_USES = ['actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9'];
+
+function preStepProblem(s: Step): string | null {
+  const bad = (why: string) => `a step before \`npm test\` is not a reviewed shape (${why}): ${JSON.stringify(s.uses ?? runOf(s).slice(0, 50))}`;
+  for (const k of Object.keys(s)) if (!STEP_KEYS.includes(k)) return bad(`key "${k}"`);
+  if (s.shell !== undefined && s.shell !== 'bash') return bad('shell is not bash');
+  if (s.env !== undefined && JSON.stringify(Object.keys(s.env as object)) !== '["EVENT_NAME"]') return bad('env keys');
+  if (s.uses !== undefined) {
+    const allowed = USES[String(s.uses)];
+    if (!allowed || s.run !== undefined) return bad('an action that is not on the reviewed list');
+    for (const k of Object.keys((s.with as object) || {})) if (!allowed.includes(k)) return bad(`with.${k}`);
+    return null;
+  }
+  const r = runOf(s).trim();
+  if (RUNS.includes(r) || ECHO_ONLY.test(r)) return null;
+  return bad('a run that is not on the reviewed list');
+}
+/** The local npm-ci action is composite steps the job runs before `npm test`: pinned the same way. */
+function npmCiProblems(text: string): string[] {
+  let doc: { runs?: { using?: string; steps?: Step[] } };
+  try { doc = (yaml as { load: (s: string) => unknown }).load(norm(text)) as typeof doc; } catch (e) { return [`.github/actions/npm-ci/action.yml does not parse: ${(e as Error).message}`]; }
+  const steps = doc?.runs?.steps;
+  if (doc?.runs?.using !== 'composite' || !Array.isArray(steps)) return ['.github/actions/npm-ci/action.yml is not a composite action this guard reads'];
+  const out: string[] = [];
+  for (const s of steps) {
+    const why = (w: string) => out.push(`the npm-ci action has a step that is not a reviewed shape (${w}): ${JSON.stringify(s.uses ?? runOf(s).slice(0, 50))}`);
+    for (const k of Object.keys(s)) if (!['id', 'shell', 'run', 'uses', 'with', 'env'].includes(k)) why(`key "${k}"`);
+    if (s.uses !== undefined) { if (!NPM_CI_USES.includes(String(s.uses))) why('an action that is not on the reviewed list'); continue; }
+    const r = runOf(s).trim();
+    if (NPM_CI_RUNS.includes(r)) continue;
+    if (crypto.createHash('sha256').update(r).digest('hex') === NPM_CI_LOOP_SHA256) continue;
+    why('a run that is not on the reviewed list: the npm ci retry loop is pinned by hash, so review the change and update NPM_CI_LOOP_SHA256');
+  }
+  return out;
+}
+
 /** Every way the guard can fail, as sentences; empty when the rules hold. */
-export function problems(io: { ci: string; spec: string; suites: string; pkgScripts: Record<string, string> }): string[] {
+export function problems(io: { ci: string; npmci: string; spec: string; suites: string; pkgScripts: Record<string, string> }): string[] {
   const out: string[] = [];
   const required = requiredFromSpec(io.spec);
   const buildReq = required.filter((n) => n.startsWith('Build and test ('));
@@ -156,6 +208,8 @@ export function problems(io: { ci: string; spec: string; suites: string; pkgScri
   else for (const k of Object.keys(ch)) if (!['id', 'if', 'shell', 'env', 'run'].includes(k) || (k === 'shell' && ch.shell !== 'bash') || (k === 'env' && JSON.stringify(Object.keys(ch.env as object)) !== '["EVENT_NAME"]')) out.push(`the \`changes\` step has the unreviewed key "${k}"`);
   const testAt = job.steps.findIndex((s) => runOf(s).trim() === 'npm test');
   for (const s of job.steps.slice(0, testAt)) if (/GITHUB_ENV|GITHUB_PATH/.test(runOf(s))) out.push(`a step before \`npm test\` writes GITHUB_ENV or GITHUB_PATH (it can change what \`npm test\` runs): ${JSON.stringify(runOf(s).slice(0, 60))}`);
+  for (const s of job.steps.slice(0, testAt)) { const w = preStepProblem(s); if (w) out.push(w); }
+  out.push(...npmCiProblems(io.npmci));
   const names = jobNames(job);
   for (const n of names) if (!required.includes(n)) out.push(`the job that runs every suite is named "${n}", which is not a required check (required: ${required.join('; ')})`);
   for (const n of buildReq) if (!names.includes(n)) out.push(`required check "${n}" has no job running the suites: the matrix lacks that OS`);
@@ -172,7 +226,7 @@ export function problems(io: { ci: string; spec: string; suites: string; pkgScri
   return out;
 }
 
-const live = { ci: read('.github/workflows/ci.yml'), spec: read('specs/117-delivery-speed-2/spec.md'), suites: read('scripts/test-suites.txt'), pkgScripts: JSON.parse(read('package.json')).scripts as Record<string, string> };
+const live = { ci: read('.github/workflows/ci.yml'), npmci: read('.github/actions/npm-ci/action.yml'), spec: read('specs/117-delivery-speed-2/spec.md'), suites: read('scripts/test-suites.txt'), pkgScripts: JSON.parse(read('package.json')).scripts as Record<string, string> };
 
 // the real repo passes
 assert.deepStrictEqual(problems(live), [], 'ci.yml, test-suites.txt and the spec agree: every suite runs in a required job');
@@ -257,4 +311,23 @@ mutant('NODE_OPTIONS on the npm test step', (io) => ({ ...io, ci: swap(io.ci, ' 
 mutant('a step before npm test writes GITHUB_ENV', (io) => ({ ...io, ci: swap(io.ci, "      - if: steps.changes.outputs.code == 'true'\n        run: npm run build\n", "      - run: echo NODE_OPTIONS=--require=./x.js >> \"$GITHUB_ENV\"\n      - if: steps.changes.outputs.code == 'true'\n        run: npm run build\n") }), /writes GITHUB_ENV or GITHUB_PATH/);
 mutant('the npm test step is an echo', (io) => ({ ...io, ci: swap(io.ci, NT, '        run: echo npm test\n') }), /mentions `npm test` in a shape this guard does not understand/);
 
-console.log(`ci required suites: ok (${live.suites.split('\n').filter((l) => /^test:/.test(l)).length} suites, ${maskSuites.length} masking, 44 mutants)`);
+// the steps before npm test are pinned: nothing else may set the job's environment
+const BUILD = "      - if: steps.changes.outputs.code == 'true'\n        run: npm run build\n";
+const pre = (step: string) => (io: typeof live) => ({ ...io, ci: swap(io.ci, BUILD, step + BUILD) });
+mutant('a step before npm test writes GITHUB_PATH', pre('      - run: echo "$PWD/evil" >> "$GITHUB_PATH"\n'), /writes GITHUB_ENV or GITHUB_PATH/);
+mutant('github-script exports a variable', pre("      - uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea\n        with:\n          script: core.exportVariable('NODE_OPTIONS', '--require ./x.js')\n"), /an action that is not on the reviewed list/);
+mutant('a local action before npm test', pre('      - uses: ./.github/actions/evil\n'), /an action that is not on the reviewed list/);
+mutant('a GITHUB_ENV name built at run time', pre('      - run: |\n          n=GITHUB_E; echo "NODE_OPTIONS=--require ./x.js" >> "${!n}"\n'), /a run that is not on the reviewed list/);
+mutant('checkout with an extra input', (io) => ({ ...io, ci: swap(io.ci, '          fetch-depth: 2\n', '          fetch-depth: 2\n          path: elsewhere\n') }), /with\.path/);
+mutant('setup-node at another commit', (io) => ({ ...io, ci: swap(io.ci, 'actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1', 'actions/setup-node@0000000000000000000000000000000000000000') }), /an action that is not on the reviewed list/);
+mutant('the macOS notice also writes GITHUB_ENV', (io) => ({ ...io, ci: swap(io.ci, 'tee -a "$GITHUB_STEP_SUMMARY"\n          echo "It runs', 'tee -a "$GITHUB_STEP_SUMMARY"\n          echo NODE_OPTIONS=x >> "$GITHUB_ENV"\n          echo "It runs') }), /writes GITHUB_ENV or GITHUB_PATH/);
+mutant('a pre-test step with a shell override', pre('      - shell: pwsh\n        run: npm run build\n'), /shell is not bash/);
+mutant('the changes step with another shell', (io) => ({ ...io, ci: swap(io.ci, '        shell: bash\n        env:\n          EVENT_NAME', '        shell: pwsh\n        env:\n          EVENT_NAME') }), /`changes` step has the unreviewed key "shell"/);
+mutant('the changes step with an extra env key', (io) => ({ ...io, ci: swap(io.ci, '          EVENT_NAME: ${{ github.event_name }}\n        run: bash .github/scripts/ci-changes.sh', '          EVENT_NAME: ${{ github.event_name }}\n          NODE_OPTIONS: --require ./x.js\n        run: bash .github/scripts/ci-changes.sh') }), /`changes` step has the unreviewed key "env"/);
+// the local npm-ci action runs before npm test: pinned too
+mutant('npm-ci gains a step that writes GITHUB_ENV', (io) => ({ ...io, npmci: io.npmci + '    - shell: bash\n      run: echo NODE_OPTIONS=x >> "$GITHUB_ENV"\n' }), /the npm-ci action has a step that is not a reviewed shape/);
+mutant('npm-ci retry loop edited', (io) => ({ ...io, npmci: swap(io.npmci, '        tries=$(( ${#waits[@]} + 1 ))\n', '        tries=$(( ${#waits[@]} + 1 ))\n        echo NODE_OPTIONS=x >> "$GITHUB_ENV"\n') }), /npm ci retry loop is pinned by hash/);
+mutant('npm-ci uses another action', (io) => ({ ...io, npmci: swap(io.npmci, 'actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9', 'actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea') }), /npm-ci action has a step that is not a reviewed shape \(an action/);
+mutant('npm-ci is not a composite action', (io) => ({ ...io, npmci: swap(io.npmci, 'using: composite', 'using: node22') }), /not a composite action/);
+
+console.log(`ci required suites: ok (${live.suites.split('\n').filter((l) => /^test:/.test(l)).length} suites, ${maskSuites.length} masking, 58 mutants)`);
