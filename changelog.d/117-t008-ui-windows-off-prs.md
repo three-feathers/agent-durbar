@@ -1,0 +1,1 @@
+- **Fewer UI runs per pull request** (CI, spec 117): pull requests run the UI checks on Linux only (Windows unit tests still run on every PR); Windows UI runs on `main`, nightly and by hand (`gh workflow run ui-platforms.yml --ref <branch>`), and a newer merge to `main` cancels the older `main` UI run while nightly and by-hand runs always finish; guarded by `test:uievents`.
