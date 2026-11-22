@@ -1,0 +1,1 @@
+- **The Browser tab's Expand check runs alone in the UI suite** (test tooling, spec 008): two of its three entries no longer share the desktop with other windows (#1239).

@@ -262,3 +262,4 @@
 - [x] T397 (delta 2026-11-20, issues #1954, #1946) `scripts/release-video.js` (the lounge scene's comment: one selector for both worlds), `scripts/test-release-video.js`: `--world retro` with the `lounge` scene is accepted and the scene has no world branch.
 - [x] T400 (delta 2026-11-20, issue #1239) spec 008: the cause measured; `needFocus` takes `host: true`; the two `check-browser-tabs` entries are `focus: true` [FR-210]
 - [x] T401 (delta 2026-11-20, issue #1239) `scripts/driver-helpers.js` (`needFocus` host reading), `scripts/check-browser-tabs.js` (`host: true`), `scripts/ui-suite.js` (`focus: true`), `scripts/test-ui-suite.ts` (the cases) [FR-210]
+- [x] T426 (delta 2026-11-22, issue #1239) `scripts/ui-suite.js` (the Flat and Photo entries of `check-080-browser-expand` are `focus: true`), `scripts/test-ui-suite.ts` (the pinned list) [FR-210]
