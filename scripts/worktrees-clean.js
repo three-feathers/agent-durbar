@@ -179,7 +179,9 @@ function classify(wt, ctx) {
   // one git call answers for every marker: one line per --git-path, in order
   const gp = tg(['rev-parse', ...IN_PROGRESS.flatMap((name) => ['--git-path', name])], wt.path);
   if (!gp.ok) return { verdict: 'look', why: 'git rev-parse failed' };
-  const gpLines = gp.out.split(/\r?\n/);
+  const gpLines = gp.out.replace(/\s+$/, '').split(/\r?\n/);
+  // fail closed: anything but exactly one non-empty line per marker is an answer we cannot trust
+  if (gpLines.length !== IN_PROGRESS.length || gpLines.some((l) => l.trim() === '')) return { verdict: 'look', why: 'git rev-parse answered ' + gpLines.length + ' lines for ' + IN_PROGRESS.length + ' markers' };
   for (let i = 0; i < IN_PROGRESS.length; i++) {
     if (gpLines[i] && fs.existsSync(path.resolve(wt.path, gpLines[i].trim()))) return { verdict: 'look', why: 'a ' + IN_PROGRESS[i] + ' is in progress' };
   }

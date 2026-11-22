@@ -116,12 +116,14 @@ function fixture(name, only) {
 const STATES = { 'open-pr': 'OPEN', 'unknown-pr': 'UNKNOWN', 'no-pr': 'NONE', inner: 'OPEN', 'closed-gone': 'CLOSED', main: 'MERGED' };
 const prState = (b) => (typeof b !== 'string' ? 'MERGED' : STATES[b] || 'MERGED'); // a detached HEAD has no branch: a careless script would see MERGED
 
+// One answer line per --git-path name, the way git gives them.
+const markerLines = (args) => args.filter((a, i) => args[i - 1] === '--git-path').map((nm) => 'no-such-' + nm);
 // A stand-in for git for the unit cases: every answer is "fine and empty", so only the guard under test can say "look".
 function stubGit(over) {
   return (args) => {
     const key = args.join(' ');
-    for (const k of Object.keys(over || {})) if (key.startsWith(k)) return over[k];
-    if (args[0] === 'rev-parse' && args[1] === '--git-path') return { ok: true, out: 'no-such-' + args[2] + '\n' };
+    for (const k of Object.keys(over || {})) if (key.startsWith(k)) return typeof over[k] === 'function' ? over[k](args) : over[k];
+    if (args[0] === 'rev-parse' && args[1] === '--git-path') return { ok: true, out: markerLines(args).join('\n') + '\n' };
     if (args[0] === 'config' && args[2].endsWith('.remote')) return { ok: true, out: 'origin\n' };
     if (args[0] === 'config' && args[2].endsWith('.merge')) return { ok: true, out: 'refs/heads/' + args[2].split('.')[1] + '\n' };
     if (args[0] === 'rev-parse' && args[1] === '--verify') return { ok: true, out: 'x\n' };
@@ -200,7 +202,12 @@ function check(modPath, tag, o) {
   assert.match(mod.classify(synth(), ctxFor({ status: { ok: false, out: '' } })).why, /status failed/, tag + ': unit: a git status error needs a look');
   assert.match(mod.classify(synth(), ctxFor({ log: { ok: false, out: '' } })).why, /compare/, tag + ': unit: a git log error needs a look');
   write(path.join(dirU, 'MERGE_HEAD'), 'x\n');
-  assert.match(mod.classify(synth(), ctxFor({ 'rev-parse --git-path MERGE_HEAD': { ok: true, out: 'MERGE_HEAD\n' } })).why, /in progress/, tag + ': unit: an in-progress operation needs a look');
+  assert.match(mod.classify(synth(), ctxFor({ 'rev-parse --git-path MERGE_HEAD': (args) => ({ ok: true, out: ['MERGE_HEAD', ...markerLines(args).slice(1)].join('\n') + '\n' }) })).why, /in progress/, tag + ': unit: an in-progress operation needs a look');
+  const shortAnswers = { 'fewer lines': (args) => ({ ok: true, out: markerLines(args).slice(0, 3).join('\n') + '\n' }), 'no output': () => ({ ok: true, out: '' }), 'an empty line': (args) => ({ ok: true, out: markerLines(args).map((l, i) => (i === 2 ? '' : l)).join('\n') + '\n' }), 'one line too many': (args) => ({ ok: true, out: markerLines(args).concat('extra').join('\n') + '\n' }) };
+  for (const [what, fn] of Object.entries(shortAnswers)) {
+    const r = mod.classify(synth(), ctxFor({ 'rev-parse --git-path': fn }));
+    assert.ok(r.verdict === 'look' && /git rev-parse answered/.test(r.why), tag + ': unit: git rev-parse with ' + what + ' is never read as "nothing in progress" (fail closed) ' + JSON.stringify(r));
+  }
   assert.match(mod.classify(synth(), ctxFor({ 'rev-parse --git-path': { ok: false, out: '' } })).why, /rev-parse failed/, tag + ': unit: a failing rev-parse needs a look');
   assert.match(mod.classify(synth(), ctxFor({}, () => 'UNKNOWN')).why, /unknown/, tag + ': unit: UNKNOWN needs a look');
   assert.match(mod.classify(synth(), ctxFor({}, () => 'NONE')).why, /no PR/, tag + ': unit: no PR needs a look');
@@ -401,6 +408,7 @@ const MUTANTS = [
   ['root-from-cwd', "newWorktreeRoot(mainPath) + path.sep", "newWorktreeRoot(here) + path.sep", /root/],
   ['nested-worktree', 'if (inner) return', 'if (false) return', /holding another worktree/],
   ['nested-git', 'if (nested) return', 'if (false) return', /nested \.git/],
+  ['markers-length-unchecked', "if (gpLines.length !== IN_PROGRESS.length || gpLines.some((l) => l.trim() === '')) return", 'if (false) return', /fail closed/],
   ['in-progress-dropped', "if (gpLines[i] && fs.existsSync(path.resolve(wt.path, gpLines[i].trim()))) return", "if (false) return", /merge in progress|in-progress/],
   ['upstream-dropped', "if (!remote.ok || remote.out.trim() !== 'origin' || !merge.ok || merge.out.trim() !== 'refs/heads/' + wt.branch) {", 'if (false) {', /upstream/],
   ['upstream-name-dropped', "|| !merge.ok || merge.out.trim() !== 'refs/heads/' + wt.branch", '|| !merge.ok', /another name/],
