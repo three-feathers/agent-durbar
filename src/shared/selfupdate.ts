@@ -4,7 +4,7 @@
  * (T009, T010) does the requests and keeps the state. Everything from the network or the settings file is `unknown` here and
  * fails closed: a value that is not exactly what is expected is dropped, never repaired.
  */
-import { maskHomePaths, redact } from './redact';
+import { cut, maskHomePaths, redact, unhide } from './redact';
 import { parseVersionField } from './versionfield';
 
 // ---------------------------------------------------------------------------------------------------------------------
@@ -56,7 +56,8 @@ const ASSET_NAME_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,199}$/;
 
 export interface FeedAsset { name: string; size: number; url: string }
 export interface FeedRelease { tag: string; version: string; publishedAt: string; htmlUrl: string; body: string; assets: FeedAsset[] }
-export interface Feed { releases: FeedRelease[]; full: boolean }
+/** `dropped`: stable versions of entries that failed the schema; `unplaced`: an entry whose version could not be read (FR-009: never safe). */
+export interface Feed { releases: FeedRelease[]; full: boolean; dropped: string[]; unplaced: boolean }
 
 /** The response itself (FR-007): 200 only (a 3xx, also a renamed repository, is refused), JSON, within the cap. */
 export function feedResponseOk(r: { status: unknown; contentType: unknown; bytes: unknown }): boolean {
@@ -65,12 +66,23 @@ export function feedResponseOk(r: { status: unknown; contentType: unknown; bytes
 }
 
 const isObj = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
-/** UTF-8 size, without encoding when the length alone decides (a UTF-16 unit is 1 to 3 bytes). */
-const utf8Bytes = (s: string): number => (s.length * 3 <= MAX_BODY_BYTES || s.length > MAX_BODY_BYTES ? s.length : new TextEncoder().encode(s).length);
+/** UTF-8 size as TextEncoder writes it (a lone surrogate is 3 bytes), counted without encoding. */
+export function utf8Bytes(s: string): number {
+  let n = 0;
+  for (let i = 0; i < s.length; i++) {
+    const c = s.charCodeAt(i);
+    if (c < 0x80) n += 1;
+    else if (c < 0x800) n += 2;
+    else if (c >= 0xd800 && c <= 0xdbff && i + 1 < s.length && (s.charCodeAt(i + 1) & 0xfc00) === 0xdc00) { n += 4; i++; }
+    else n += 3;
+  }
+  return n;
+}
+const ISO_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?(?:Z|[+-]\d{2}:\d{2})$/;
 
 /** An https://github.com URL exactly as written (no normalising), no userinfo, port, query or fragment, path `/<slug><rest>`. */
 function githubUrlOk(raw: unknown, slug: string, rest: string): raw is string {
-  if (typeof raw !== 'string' || raw.length > 2048) return false;
+  if (typeof raw !== 'string' || raw.length > 2048 || raw.includes('?') || raw.includes('#')) return false;
   let u: URL;
   try { u = new URL(raw); } catch { return false; }
   if (u.href !== raw || u.protocol !== 'https:' || u.host !== 'github.com' || u.username || u.password || u.port || u.search || u.hash) return false;
@@ -91,9 +103,9 @@ function readRelease(e: Record<string, unknown>, slug: string): (FeedRelease & {
   if (typeof tag !== 'string' || !tag.startsWith('v')) return undefined;
   const version = parseVersionField(tag);
   if (!version || typeof draft !== 'boolean' || typeof prerelease !== 'boolean') return undefined;
-  if (typeof at !== 'string' || at.length > 64 || Number.isNaN(Date.parse(at))) return undefined;
+  if (typeof at !== 'string' || !ISO_RE.test(at) || Number.isNaN(Date.parse(at))) return undefined;
   if (!githubUrlOk(html, slug, `/releases/tag/${tag}`)) return undefined;
-  if (!(body === null || (typeof body === 'string' && utf8Bytes(body) <= MAX_BODY_BYTES))) return undefined;
+  if (!(body === null || (typeof body === 'string' && body.length <= MAX_BODY_BYTES && utf8Bytes(body) <= MAX_BODY_BYTES))) return undefined;
   if (!Array.isArray(assets) || assets.length > MAX_ASSETS) return undefined;
   const list = assets.map((a) => readAsset(a, slug, tag));
   if (list.some((a) => !a)) return undefined;
@@ -106,21 +118,27 @@ export function validateFeed(json: unknown, slug: unknown): Feed | undefined {
   if (!s || !Array.isArray(json) || json.length > FEED_PER_PAGE) return undefined;
   const seen = new Set<string>();
   const out: FeedRelease[] = [];
+  const dropped: string[] = [];
+  let unplaced = false;
   for (const e of json) {
-    if (!isObj(e)) continue;
+    if (!isObj(e)) { unplaced = true; continue; }
     if (typeof e.tag_name === 'string') {
       const key = parseVersionField(e.tag_name)?.replace(/(^|\.)0+(?=\d)/g, '$1') ?? e.tag_name;
       if (seen.has(key)) return undefined;
       seen.add(key);
     }
     const r = readRelease(e, s);
-    if (r && !r.skip) {
-      const { skip: _skip, ...rel } = r;
-      out.push(rel);
+    if (r) {
+      const { skip, ...rel } = r;
+      if (!skip) out.push(rel);
+    } else if (e.draft !== true && e.prerelease !== true) {
+      const v = typeof e.tag_name === 'string' && e.tag_name.startsWith('v') ? parseVersionField(e.tag_name) : undefined;
+      if (v === undefined) unplaced = true;
+      else if (!v.includes('-')) dropped.push(v);
     }
   }
   out.sort((a, b) => cmpVersion(b.version, a.version));
-  return { releases: out, full: json.length === FEED_PER_PAGE };
+  return { releases: out, full: json.length === FEED_PER_PAGE, dropped, unplaced };
 }
 
 // ---------------------------------------------------------------------------------------------------------------------
@@ -137,19 +155,22 @@ export function cmpVersion(a: string, b: string): number {
   return pa === pb ? 0 : pa ? -1 : 1;
 }
 
-export interface TargetPick { target?: FeedRelease; between: FeedRelease[]; installedNewer: boolean; gap: boolean }
+/** `missing`: dropped versions inside the range; `unplaced` copies the feed's; either makes a gap (FR-009). */
+export interface TargetPick { target?: FeedRelease; between: FeedRelease[]; installedNewer: boolean; gap: boolean; missing: string[]; unplaced: boolean }
 
 /** The newest stable release above `running`, the releases in between (newest first), and whether the page shows the whole way. */
 export function pickTarget(running: unknown, feed: Feed): TargetPick {
   const run = parseVersionField(running);
-  const none = { between: [], installedNewer: false, gap: false };
+  const none = { between: [], installedNewer: false, gap: false, missing: [], unplaced: false };
   if (!run || feed.releases.length === 0) return none;
   const newest = feed.releases[0];
   if (cmpVersion(run, newest.version) >= 0) return { ...none, installedNewer: cmpVersion(run, newest.version) > 0 };
   const between = feed.releases.filter((r) => cmpVersion(run, r.version) < 0);
   const oldest = feed.releases[feed.releases.length - 1];
   const listed = feed.releases.some((r) => cmpVersion(r.version, run) === 0);
-  return { target: newest, between, installedNewer: false, gap: !listed && (feed.full || cmpVersion(run, oldest.version) < 0) };
+  const missing = feed.dropped.filter((v) => cmpVersion(run, v) < 0 && cmpVersion(v, newest.version) <= 0);
+  const gap = (!listed && (feed.full || cmpVersion(run, oldest.version) < 0)) || missing.length > 0 || feed.unplaced;
+  return { target: newest, between, installedNewer: false, gap, missing, unplaced: feed.unplaced };
 }
 
 /** Per version, from the target tag's `releases.json` (FR-026, parsed by T008); undefined = missing or invalid. */
@@ -165,7 +186,7 @@ export function isBreaking(running: unknown, pick: TargetPick, marks: ReleaseMar
   if (marks) {
     for (const [v, m] of marks) if (m.breaking && cmpVersion(run, v) < 0 && cmpVersion(v, pick.target.version) <= 0) return 'breaking';
   }
-  const covered = !!marks && pick.between.every((r) => marks.has(r.version));
+  const covered = !!marks && !pick.unplaced && pick.between.every((r) => marks.has(r.version)) && pick.missing.every((v) => marks.has(v));
   if (covered) return 'no';
   return pick.gap ? 'breaking' : 'unknown';
 }
@@ -175,25 +196,43 @@ export function isBreaking(running: unknown, pick: TargetPick, marks: ReleaseMar
 
 export const NOTE_MAX = 8 * 1024;
 export const DIALOG_NOTES_MAX = 64 * 1024;
-// C0 controls but tab and newline, DEL, C1, and the invisible or direction-changing marks
-const HIDDEN_RE = /[\u0000-\u0008\u000B-\u001F\u007F-\u009F\u00AD\u061C\u115F\u1160\u180E\u200B-\u200F\u2028-\u202E\u2060-\u206F\uFEFF\uFFF9-\uFFFB]/g;
+const TRUNCATED_BYTES = ' [truncated]'.length;
 
-/** A release body as plain text: hidden characters removed, secrets and home folders masked, then clipped to `max` characters. */
-export function notesText(body: unknown, max = NOTE_MAX): { text: string; clipped: boolean } {
-  if (typeof body !== 'string') return { text: '', clipped: false };
-  // bound the work first, far past `max`, so a value that crosses this first cut is cut away again below
-  const s = maskHomePaths(redact(body.slice(0, max * 4 + 256).replace(/\r\n?/g, '\n').replace(HIDDEN_RE, '')));
-  if (s.length <= max) return { text: s, clipped: body.length > max * 4 + 256 };
-  const end = /[\uD800-\uDBFF]/.test(s[max - 1]) ? max - 1 : max;
-  return { text: s.slice(0, end), clipped: true };
+/** `s` cut to at most `max` UTF-8 bytes with redact.ts's `cut` (no half token, no half surrogate pair, a marker at the end). */
+function clipBytes(s: string, max: number): string {
+  let bytes = 0;
+  let n = 0;
+  const room = max - TRUNCATED_BYTES;
+  if (room <= 0) return '';
+  while (n < s.length) {
+    const step = utf8Bytes(s.slice(n, n + 2)) === 4 ? 2 : 1;
+    const b = utf8Bytes(s.slice(n, n + step));
+    if (bytes + b > room) break;
+    bytes += b;
+    n += step;
+  }
+  return cut(s, n);
 }
 
-/** Every release's notes for the dialog, newest first, the whole at most 64 KiB (FR-010). */
+/**
+ * A release body as plain text (FR-010): the WHOLE body is unhidden (redact.ts `HIDDEN_CHARS`), redacted and home-masked first, and
+ * only then clipped to `max` UTF-8 bytes, so no cut can leave part of a value unmasked (spec 012: never cut before masking). A body
+ * over the feed's 1 MiB cap is not shown at all.
+ */
+export function notesText(body: unknown, max = NOTE_MAX): { text: string; clipped: boolean } {
+  if (typeof body !== 'string') return { text: '', clipped: false };
+  if (body.length > MAX_BODY_BYTES || utf8Bytes(body) > MAX_BODY_BYTES) return { text: '', clipped: true };
+  const s = maskHomePaths(redact(unhide(body.replace(/\r\n?/g, '\n'))));
+  if (utf8Bytes(s) <= max) return { text: s, clipped: false };
+  return { text: clipBytes(s, max), clipped: true };
+}
+
+/** Every release's notes for the dialog, newest first, the whole at most 64 KiB of UTF-8 (FR-010). */
 export function dialogNotes(releases: readonly FeedRelease[]): { version: string; text: string; clipped: boolean }[] {
   let left = DIALOG_NOTES_MAX;
   return releases.map((r) => {
     const n = notesText(r.body, Math.min(NOTE_MAX, left));
-    left -= n.text.length;
+    left -= utf8Bytes(n.text);
     return { version: r.version, ...n };
   });
 }
@@ -236,7 +275,8 @@ export type SelfPolicy = { state: 'none' } | { state: 'unreadable' } | { state: 
 
 /** FR-005: `off`, an unknown mode or an unreadable policy hide the feature; a `feedUrl` other than a github.com repository blocks the check. */
 export function selfPolicyView(p: SelfPolicy | undefined): { hidden: boolean; blocked: boolean; feedSlug?: string } {
-  if (!p || p.state === 'none') return { hidden: false, blocked: false };
+  if (!p) return { hidden: true, blocked: true };
+  if (p.state === 'none') return { hidden: false, blocked: false };
   if (p.state !== 'ok') return { hidden: true, blocked: true };
   const mode = p.updatesMode;
   if (!(mode === undefined || mode === 'notify' || mode === 'auto')) return { hidden: true, blocked: true };

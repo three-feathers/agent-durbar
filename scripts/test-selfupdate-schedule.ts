@@ -23,6 +23,9 @@ assert.strictEqual(selfCheckOn(ci({ simulator: true, selfCheck: true })), false,
 // Policy (FR-005)
 assert.strictEqual(selfCheckOn(ci({ policy: { state: 'ok', updatesMode: 'off' } })), false, 'updates.mode off stops it');
 assert.strictEqual(selfCheckOn(ci({ policy: { state: 'unreadable' } })), false, 'an unreadable policy fails closed');
+assert.strictEqual(selfCheckOn(ci({ policy: undefined })), false, 'a missing policy fails closed (review on PR 2037, item 7)');
+assert.strictEqual(manualCheckAllowed(ci({ policy: undefined })), false, 'no Check now without a policy answer');
+assert.deepStrictEqual(selfPolicyView({ state: 'later' } as unknown as Parameters<typeof selfPolicyView>[0]), { hidden: true, blocked: true }, 'an unknown policy state fails closed');
 assert.strictEqual(selfCheckOn(ci({ policy: { state: 'ok', updatesMode: 'sometimes' } })), false, 'an unknown mode fails closed');
 assert.strictEqual(selfCheckOn(ci({ policy: { state: 'ok', updatesMode: 'notify' } })), true, 'notify allows the check');
 assert.deepStrictEqual(selfPolicyView({ state: 'ok', feedUrl: 'https://github.com/acme/durbar' }), { hidden: false, blocked: false, feedSlug: 'acme/durbar' }, 'a github.com feedUrl sets the source');
@@ -79,5 +82,6 @@ assert.strictEqual(snoozeState(T0, '0.1.29', ['0.1.29', T0 + DAY_MS]), 'show', '
 assert.strictEqual(snoozeState(T0, '0.1.29', undefined, '0.1.29'), 'skipped', 'a skipped version is hidden');
 assert.strictEqual(snoozeState(T0, '0.1.29', undefined, 'v0.1.29'), 'skipped', 'a skip saved with v counts');
 assert.strictEqual(snoozeState(T0, '0.1.30', undefined, '0.1.29'), 'show', 'a newer release after a skip is shown');
+assert.strictEqual(snoozeState(T0, '0.1.28', undefined, '0.1.29'), 'skipped', 'skip also hides an older version');
 assert.strictEqual(snoozeState(T0, '0.1.29', undefined, { version: '0.1.29' }), 'show', 'a bad skip is ignored');
 console.log('selfupdate-schedule: ok');
