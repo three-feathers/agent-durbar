@@ -960,6 +960,24 @@ assert.strictEqual(sentenceOf(s), s.sentence);
     }
   }
   assert.ok(refHides >= 24, `#1320 continuation brain target: the reading without the step hides the last line in the review's combinations (${refHides})`);
+  // review of PR 2001, round 3: the step's program word is read from the whole target kept the same way (the cut target is pinned above). With redact's masks no text
+  // was found where the program word differs (about 8,000 composed texts), so it is pinned with a mask whose reading with the step on shows a continued value's piece
+  // as the first word and whose reading without it hides it (the brain takes any mask; `BrainMask`)
+  {
+    const piece = 'Qz7' + 'Wx4' + 'Lk9';
+    let off = false;
+    const pm: BrainMask = {
+      ...mask,
+      withoutContinuation: <T,>(fn: () => T): T => { const was = off; off = true; try { return fn(); } finally { off = was; } },
+      maskSecretCommand: () => (off ? '[redacted] make' : piece + ' make'),
+    };
+    let st = brainState(initBrain('Ada', pm), { type: 'user' }, ++clock, pm);
+    st = brainState(st, start('bash', { command: 'API_' + 'KEY=' + piece.slice(0, 5) + '\n' + piece.slice(5) + ' make' }), ++clock, pm);
+    const step = currentStep(st);
+    assert.ok(step && step.target !== '', '#1320 continuation brain target: the stub command has a target');
+    assert.ok(!step!.program.includes(piece.slice(0, 6)), `#1320 continuation brain target: the program word shows no piece the reading without the step hides: ${JSON.stringify(step!.program)}`);
+    assert.ok(!step!.target.includes(piece.slice(0, 6)), `#1320 continuation brain target: the stub target shows no piece the reading without the step hides: ${JSON.stringify(step!.target)}`);
+  }
   // the URL target takes the same union: redact's URL mask reads no value across the break before the brain's pass (no text of the review regresses there), so it is
   // pinned with a mask whose URL mask reads the text as the command mask does (the brain takes any mask; `BrainMask`)
   {
