@@ -4,14 +4,14 @@
 group: 046
 title: Delivery speed 2 (owner 2026-11-22): measured CI and review cost per PR; lighter review profile for UI/feature PRs (never for masking, IPC, secrets, permissions, user files); Linux-first CI by diff on top of 021 FR-084 / 008 T130; Windows npm test split (#1983); world packs with one contract suite; bigger feature slices
 status: draft
-note: spec, plan, tasks and the 2026-11-22 measurements only; nothing built; owner decisions O1..O6 open
+note: spec, plan, tasks and the 2026-11-22 measurements only; nothing built; O5 no and O6 not now (owner 2026-11-22); O1..O4 open (coordinator's picks to confirm)
 -->
 
 **Feature Branch**: `117-delivery-speed-2` (spec, plan, tasks only); build branches `117-pN-slug`, one per rollout step
 
 **Created**: 2026-11-22
 
-**Status**: Draft. Nothing built. Owner decisions O1..O6 (*Owner decisions*) are open.
+**Status**: Draft. Nothing built. O5 (paid runners: no) and O6 (separate repos: not now) are decided by the owner (2026-11-22); O1..O4 are open (*Owner decisions*).
 
 **Input**: Owner request (Vikram, team chat, 2026-11-22 09:06-09:11 UTC, relayed by his coordinating agent): another agent's audit says the pace has massively slowed and we write more test fixes and docs than code. Coordinator's figures from `main` (first-parent merges, lines added; code = `src/` non-test, tests = `scripts/` checks, docs = `specs/` and `docs/`): W43 353 PRs, 50k / 64k / 32k; W44 149, 14k / 25k / 14k; W45 218, 20k / 49k / 11k; W46 235, 11k / 33k / 8k; W47 so far 140, 5k / 14k / 4k (with a 40 h outage). Vikram: "Implement all your recommendations": **A** a lighter review profile for UI/feature PRs; **B** CI by diff for real and fewer jobs per PR; **C** worlds and characters as data packs with one contract suite in core; **D** bigger feature slices; **E** measure and fix CI (issue #1983). He also asked about separate repos for worlds and characters; the coordinator advised packages in this repo first (a repo in the same organization shares the same concurrency cap).
 
@@ -28,10 +28,10 @@ CI is owned by spec 008 and the team rules by spec 021; 021 FR-084 (draft #1247)
 | One concurrency group per PR, `cancel-in-progress` on `pull_request` | 008 FR-107; every PR workflow (table E2) | audits it, adds a guard (FR-010); does not re-decide it |
 | `code` / `ui` / `themes` / `macos` decision, base-branch copy, fail open | 008 FR-104, FR-191; `.github/scripts/ci-changes.js` | extends the same file (one decision), never a second decider |
 | macOS not on PR / merge queue (Linux stub for the required name) | 008 FR-106 | O1 asks whether the path-filtered real macOS PR job (FR-135) stays |
-| File-to-driver map, touched drivers only, unmapped file = all, missing driver fails, nightly and `main` full | 021 FR-084 point 4, tasks 021 T063 = 008 T130 (draft #1247) | builds on it: FR-011..FR-013 are only the delta (Linux-first, Windows by map, `main` collapse) |
+| File-to-driver map, touched drivers only, unmapped file = all, missing driver fails, nightly and `main` full | 021 FR-084 point 4, tasks 021 T063 = 008 T130 (draft #1247) | builds on it: FR-011..FR-014 are only the delta; FR-012 (Linux-first, Windows by map) and FR-014 (`main` collapse) **amend** point 4 and say so |
 | 3 open PRs per side, thin slices behind a default-off flag | 021 FR-084 point 3 (#1247) | D (FR-040) is consistent: one complete vertical slice per PR, not a stack of layer PRs |
 | `npm run dora` weekly delivery numbers | 021 FR-084 point 6, T064 (#1247) | FR-001's CI numbers feed the same retro; `dora` stays the delivery-number script |
-| "Sensitive" list (secrets, user files, IPC, redaction, permissions, spending) | `docs/rules/review-rounds.md` *Sub-agents by size* (FR-038) | A reuses this list as the heavy profile (FR-020) |
+| "Sensitive" list (secrets, user files, IPC, redaction, permissions, spending) | `docs/rules/review-rounds.md` *Sub-agents by size* (FR-038) | A keeps this line's name and load clause and rewrites its body (O4); heavy is everything not on an explicit light list (FR-020) |
 | Set format and `checkSet`, shared with `worldpack.ts` | 102 T100 (issue #1877), FR-204..FR-206 | C builds the contract suite on it (FR-030) |
 
 ## Evidence (measured 2026-11-22)
@@ -172,9 +172,9 @@ An agent opens a PR that changes one renderer feature and its driver. CI runs th
 
 ### User Story 2 - Security-relevant PRs keep the full standard (Priority: P1)
 
-A PR touching masking, IPC, secrets, permissions, user-file writes, shell spawn or spending is always `heavy`, whatever else it touches, and the classifier fails closed (unknown or unreadable = heavy).
+A PR is `light` only when every path is on FR-020's explicit light list; anything else (masking, IPC, secrets, permissions, user-file writes, shell spawn, spending, the prompt-injection tooling, any unlisted path) is `heavy`, whatever else it touches; an unreadable diff is heavy.
 
-**Independent Test**: `test-review-profile.ts` table: each heavy path alone and mixed with UI files gives `heavy`; a rename into or out of a heavy path is `heavy`; a mutant that drops one heavy pattern fails.
+**Independent Test**: `test-review-profile.ts` (FR-021): an unlisted file under `src/main`, `src/shared`, `src/preload`, `scripts/*trusted*` or `.github` is heavy; `src/main/ipc/x.ts` is heavy; mutants widening the light list fail.
 
 ### User Story 3 - Windows `npm test` finishes with margin (Priority: P2)
 
@@ -212,34 +212,34 @@ Adding or changing a world touches its pack folder and its own small test; the c
 
 - **FR-010** Guard: a check in `npm test` (`test-workflow-concurrency.ts`) reads every `.github/workflows/*.yml` with a `pull_request` trigger and fails unless it has a `concurrency` group keyed on the PR number and `cancel-in-progress` true for `pull_request`. Today all pass (E2); the guard keeps it so.
 - **FR-011** The driver map of 008 T130 lives in the one decider, `.github/scripts/ci-changes.js` (new output `drivers=<names>|all`), never a second file that decides. The map is derived where possible (the closure FR-191 already computes) and hand-listed only for renderer files to drivers. Conditions of 021 FR-084 point 4 hold: an unmapped file runs all drivers; a driver missing from the map fails a check.
-- **FR-012** Linux first. On a pull request, `UI on three OSes` runs the mapped drivers on Linux. Windows UI shards run on a PR only when the map marks a touched file `os-sensitive` (process, path, shell, font, packaging, window chrome; the `macos-pr.yml` path list is the starting set) or someone runs the full matrix by hand on the branch (`gh workflow run ui-platforms.yml --ref <branch>`, which exists today; no new label, since AGENTS.md *Labels* allows no new family) (O2). Pushes to `main`, nightly and by-hand runs keep the full three-OS matrix (021 FR-084). **Target**: a UI feature PR touching ≤3 drivers starts ≤7 jobs (E3 today: 12) and ≤60 runner minutes per head (today p50 170).
+- **FR-012** Linux first. On a pull request, `UI on three OSes` runs the mapped drivers on Linux. Windows UI shards run on a PR only when the map marks a touched file `os-sensitive` (process, path, shell, font, packaging, window chrome; the `macos-pr.yml` path list is the starting set) or someone runs the full matrix by hand on the branch (`gh workflow run ui-platforms.yml --ref <branch>`, which exists today; no new label, since AGENTS.md *Labels* allows no new family) (O2). The full three-OS matrix still runs nightly, by hand, and on `main` pushes (on the newest one only once FR-014 lands). **Amends 021 FR-084 point 4** (#1247, draft head `c49411191`): point 4 shards the three-OS UI job and runs the touched drivers on every OS; FR-012 runs them on Linux only unless a touched file is OS-sensitive. FR-063 accounting: it replaces point 4's "shards the three-OS UI job" for PRs; nothing else in point 4 changes (map, fail-open, missing-driver check). **Target**: a UI feature PR touching ≤3 drivers starts ≤7 jobs (E3 today: 12) and ≤60 runner minutes per head (today p50 170).
 - **FR-013** Shard count follows the work: with `drivers` not `all`, the Linux UI job runs the mapped drivers in one job when their recorded time sum is under 15 minutes, else in `ceil(sum/15)` shards (time-balanced as FR-183 does); the "UI suite complete" job keeps one stable name.
-- **FR-014** `main` pushes (O3, owner decision): proposal: UI runs on `main` share one group `ui-main` with `cancel-in-progress: true`, so a newer merge cancels the older `main` UI run (the newest commit is tested; a release tags a commit whose run finished green, which `release.yml` already checks). This reverses FR-107's "main runs always finish" for the UI workflow only (#286); CI on `main` keeps finishing every run. Today's cost: 126 runs × 8 shards in 7 days (E1).
-- **FR-015** Every-PR baseline (Paco's proposal, O1): Linux Build and test (its `npm test` includes `rules:check` and `changelog:check`), Spec Kit gate, Office layout check, CodeQL, and the Spec Kit workflow's "Spec numbers and picture budget" job (it runs on every PR today but is not in the required list). Which macOS and Windows legs stay required: O1, with E4 and E5 as the evidence.
+- **FR-014** `main` pushes (O3, owner decision): proposal: UI runs on `main` share one group `ui-main` with `cancel-in-progress: true`, so a newer merge cancels the older `main` UI run (the newest commit is tested; a release tags a commit whose run finished green, which `release.yml` already checks). This reverses FR-107's "main runs always finish" for the UI workflow only (#286); CI on `main` keeps finishing every run. Today's cost: 126 runs × 8 shards in 7 days (E1). **Amends 021 FR-084 point 4** ("Nightly runs and `main` keep the full three-OS matrix"): `main` keeps the full matrix for the newest push, not every push; nightly is unchanged. FR-063 accounting: it replaces "`main` keeps the full three-OS matrix" with "the newest `main` push keeps the full three-OS matrix"; it also replaces 008 FR-107's "main runs always finish" for `ui-platforms.yml` only. The merge queue does not gain the UI suite (O3).
+- **FR-015** Every-PR baseline (Paco's proposal): Linux Build and test (its `npm test` includes `rules:check` and `changelog:check`), Spec Kit gate, Office layout check, CodeQL, and the Spec Kit workflow's "Spec numbers and picture budget" job. Each currently required check and each candidate is a line of O1 with a keep/change proposal; nothing in the ruleset changes without O1's written yes (T021).
 - **FR-016** **Targets** (measured with FR-001 over 7 days, weekdays and weekends): PR job queue wait p90 ≤ 8 min (today 22.0); minutes with ≥10 queued ≤ 5 % (today 18.8 %); UI-shard share of PR runner minutes ≤ 40 % (today 70 %); merge-queue CI run created-to-done p90 ≤ 25 min (today 36).
 
 ### E (continued): Windows `npm test` (#1983)
 
 - **FR-017** Measure first, with work counters (agent-notes: CPU time, not wall time): `scripts/run-tests.js` writes each suite's CPU and wall seconds to the job summary on every OS.
-- **FR-018** The five suites #1983 names run in their own CI job (`Build and test (heavy suites, <os>)`) on Linux and Windows in parallel with the rest, or are split into time-balanced shards inside `run-tests.js`, whichever keeps the job count lower per E3 (decided in the plan: a split inside the job first, a separate job only if the split misses the target). No suite is dropped, no assertion weakened, the 25-minute limit is not raised first (#1983). **Target**: Windows Build and test p90 ≤ 15 min (today 20.1), zero limit cancels in 7 days (today 4).
+- **FR-018** Every suite, the masking and redaction suites above all, **stays under a required check name** (`Build and test (<os>)`) on every OS it runs on today. First, inside the same job, `run-tests.js` starts the five heavy suites #1983 names first (longest first). Only if that misses the target, the Windows leg splits into time-balanced shards whose summary job carries the required name `Build and test (windows-latest)` and fails when any shard failed, was skipped or was cancelled, or when the union of the shards' suite lists differs from `test-suites.txt`. A non-required job for any suite is not allowed; moving one there would be an O1 change. No suite is dropped, no assertion weakened, the 25-minute limit is not raised first (#1983). Guard: T022. **Target**: Windows Build and test p90 ≤ 15 min (today 20.1), zero limit cancels in 7 days (today 4).
 
 ### A: review profile by risk
 
-- **FR-020** Two profiles. **Heavy**: any change to masking or redaction, IPC (main/preload channels, `src/preload/**`, IPC handlers), secrets or tokens, permissions and approval, **anything that writes user files** (Paco's side), shell or process spawn, spending or credits, CI workflows that hold secrets. Heavy keeps today's standard: analyst, implementer, reviewer (*Sub-agents by size*), mutants and differential fuzz (`scripts/fuzz/` once 021 T061 lands), Opus-class reviewer. **Light**: everything else (renderer UI, features, docs, checks, tooling): one implementer, review = whole-diff read against the checklist, CI record at the head sha, screenshots at both sizes for UI; no mutant or fuzz is asked. Constitution I and III stay non-negotiable: **the light profile never applies to masking, IPC, secrets, permissions or user-file writes**, whatever the PR's size or label.
-- **FR-021** `scripts/review-profile.js <base> <head>` prints `heavy` or `light` and the paths that made it heavy, from a pattern list in one file; unknown, unreadable, renamed-into or renamed-out-of a heavy path = heavy (fail closed). `ci-changes.js` emits the same result as output `profile` (one decision), so the PR's checks page shows it. Tests: `test-review-profile.ts` table and mutants (a dropped pattern, a rename, a mixed PR each fail).
-- **FR-022** The rule text is an owner proposal (*Owner decisions* O4): exact words below, in `docs/rules/review-rounds.md`, replacing the *Sub-agents by size* line. Until the owners say yes, nothing changes in how PRs are reviewed.
+- **FR-020** Two profiles. **Light is an explicit list; everything else is heavy** (fail closed). **Light** paths: `specs/**`, `changelog.d/**`, `docs/**` except `docs/rules/**` and `docs/agent-setup/**`, `README.md`, `CHANGELOG.md`; raster pictures, audio and fonts (`.png`, `.webp`, `.jpg`, `.gif`, `.mp3`, `.ogg`, `.woff2`; not `.svg`); `src/renderer/**/*.css`; `src/renderer/**/*.{js,html}` **only when** no added or removed line touches an HTML sink or escape (`innerHTML`, `outerHTML`, `insertAdjacentHTML`, `document.write`, `srcdoc`, `href`/`src` from data, an escape or mask helper such as `esc*`, `safeMask`, `mask*`); simulator UI drivers and shots (`scripts/check-*.js`, `scripts/shots-*.js`, `scripts/ui-suite.js`) and `scripts/test-*.ts`, **only when** every `src/` file they load is itself light and the name has none of `redact`, `mask`, `trust`, `permiss`, `url`, `path`, `ipc`, `token`, `secret`, `fuzz`, `gate`, `claim`, `safe-print`, `spawn`, `shell`, `credit`, `spend`. **Heavy** is everything else, which includes (named so nobody reads them as light): masking or redaction, IPC (`src/main/ipc/**`, `src/preload/**`, every handler), secrets and tokens (`mcptoken.ts`, `*mask.ts`), trust and permissions (`agenttrust.ts`, `src/adapters/permissions.ts`), links and paths (`src/shared/url.ts`, `browserurl.ts`, `contactlinks.ts`, `mcp/paths.ts`), **anything that writes user files** (Paco's side), shell or process spawn, spending or credits, the prompt-injection tooling (`scripts/gh-trusted.sh`, `pr-gate.sh`, `trusted-authors.txt`, `claim.sh`, `safe-print.js`), `.github/**`, `package.json`, `package-lock.json`, `build/**`, `AGENTS.md`, `CLAUDE.md`, `docs/rules/**`, every other `src/main`, `src/shared`, `src/adapters`, `scripts/*.sh` file, any `.svg`, any path not listed. Measured against the last 100 merged PRs with the path list alone (no content rule; an upper bound): 47 would be light, 53 heavy. Heavy keeps today's standard: analyst, implementer, reviewer (*Sub-agents by size*), mutants and differential fuzz (`scripts/fuzz/` once 021 T061 lands), Opus-class reviewer. **Light**: one implementer, review = whole-diff read against the checklist, CI record at the head sha, screenshots at both sizes for UI; no mutant or fuzz is asked. Constitution I and III stay non-negotiable: **the light profile never applies to masking, IPC, secrets, permissions or user-file writes**, whatever the PR's size or label.
+- **FR-021** `scripts/review-profile.js <base> <head>` prints `heavy` or `light` and every path that is not on the light list, from one list in one file; a path not on the light list, an unreadable diff, a rename into or out of a heavy path, a deletion of a heavy file and a renderer line touching a sink or escape are heavy (fail closed). `ci-changes.js` emits the same result as output `profile` (one decision), so the PR's checks page shows it. Tests: `test-review-profile.ts` table: an unlisted file under each of `src/main`, `src/shared`, `src/preload`, `src/adapters`, `scripts/*trusted*`, `scripts/*.sh`, `.github` is heavy; `src/main/ipc/x.ts` is heavy; a renderer line adding `innerHTML` is heavy; a mixed light and heavy PR is heavy; a docs-only and a CSS-only PR are light. Mutants: widening the light list to `src/**`, ignoring renames, dropping the sink rule, each fail.
+- **FR-022** The rule text is an owner proposal (*Owner decisions* O4): exact words below, in `docs/rules/review-rounds.md`, rewriting the body of the *Sub-agents by size* line and keeping its name (three pointers use it). Until the owners say yes, nothing changes in how PRs are reviewed.
 - **FR-023** **Target**: light-profile PRs with `enhancement`: review objects p50 ≤ 1 (today 2) and created-to-merged p50 ≤ 3 h (today 5.3). Heavy-profile PRs: no target on rounds (quality first).
 
 ### C: worlds and characters as data packs, one contract suite
 
 - **FR-030** One contract suite, `npm run test:world-contract`, iterates every built-in pack (worlds and character sets) and runs, per pack, the checks every world must pass: `worldpack.ts` manifest rules, `checkSet` (102 T100, FR-204..FR-206), `momentCoverage` against `docs/experience/world-moments.json`, the feature-inventory parity row (FR-078), the catalogue card. It reuses those functions; it adds no second rule. It replaces per-world copies of the same assertions where they exist (named per world in the plan's inventory).
 - **FR-031** Each world keeps only its own small test for what is unique to it. World UI drivers run as one parameterised driver per behaviour (`DRIVER_WORLD=<id>`, as the 21 `retro` and 1 `cave` entries of `ui-suite.js` do today), and the driver map (FR-011) runs a world's entries only when the diff touches that world's pack or the shared world engine.
-- **FR-032** Blocked on 102 T100 (issue #1877, `checkSet`). Packages in this repo first; a separate repository is out of scope until the pack interface has had no breaking change for 4 weeks (O6), because a repo in the same organization shares the same 20-job cap and adds a second CI to keep green.
+- **FR-032** Blocked on 102 T100 (issue #1877, `checkSet`). Packages in this repo; a separate repository is not now (owner, O6, 2026-11-22), because a repo in the same organization shares the same 20-job cap and adds a second CI to keep green.
 - **FR-033** **Target**: a PR that adds or changes one world touches no core check file other than the registry, and runs ≤ its own drivers plus the contract suite on PR CI.
 
 ### D: bigger feature slices
 
-- **FR-040** A UI feature is planned as **one vertical slice per PR** (UI, logic, driver, docs together, behind a default-off flag when unfinished, per 021 FR-084 point 3), not a stack of layer PRs; a spec's tasks group into phases that are one PR each (as spec 113 does). Fixes to checks a feature PR breaks are made in that PR, not a follow-up PR. This is planning guidance in `.specify/templates/tasks-template.md` and `docs/review-checklist.md` (guidance files), not new rule text.
+- **FR-040** A UI feature is planned as **one vertical slice per PR** (UI, logic, driver, docs together, behind a default-off flag when unfinished, per 021 FR-084 point 3), not a stack of layer PRs; a spec's tasks group into phases that are one PR each (as spec 113 does). Fixes to checks a feature PR breaks are made in that PR, not a follow-up PR. This is planning guidance, not new rule text: `.specify/templates/*` are managed by `specify integration` (`.specify/integrations/speckit.manifest.json` hashes them), so the guidance goes into `docs/review-checklist.md`'s *Slice size* line, word-neutral (T019).
 - **FR-041** **Target** (indicator, never a gate, never per person): in the last 100 merged PRs, `src/` lines are ≥ 35 % of added lines (today 21 %) and PRs adding no `src/` line are ≤ 40 (today 55). Measured by FR-001 for the retro.
 
 ### Key Entities
@@ -248,16 +248,34 @@ Adding or changing a world touches its pack folder and its own small test; the c
 - **Review profile**: `heavy` | `light` with the paths that decided it.
 - **Pack**: a folder with a manifest that `worldpack.ts` reads; checked by the contract suite.
 
-## Owner decisions (open; each needs a written yes from the owners named)
+## Owner decisions
 
-| # | Decision | Who | Evidence | Recommendation |
+**Recorded** (Vikram, team chat, 2026-11-22 09:31 UTC, posted on #1995): "No paid runners, everything else which allows us to go fast not compromising quality." **O5 paid runners: NO. O6 separate repos: not now.** O1..O4 delegated to that criterion; the coordinator's proposed picks are on #1995 for Paco and Ruben to confirm, because they are settings and rule text that need all three owners. Until then O1..O4 are open, and each task they gate waits for a written yes.
+
+| # | Decision | Who | Evidence | Spec's recommendation | Coordinator's pick (#1995, to confirm) |
+|---|---|---|---|---|---|
+| O1 | Required checks (ruleset = repo setting); one line per check below | Vikram, Paco, Ruben (Ruben answers in the group) | E4, E5 | see table O1 | see table O1 |
+| O2 | Windows UI shards on PRs only by map (`os-sensitive`) or a by-hand full run; amends 021 FR-084 point 4 | three owners | E5: Windows UI caught 4 of 273; E1: Windows UI shards are 33 % of all runner time | yes | yes |
+| O3 | `main` UI runs collapse to the newest (FR-014), amending 021 FR-084 point 4 and 008 FR-107; no UI in the merge queue | three owners | E1: 126 `main` UI runs, p90 100 min; the queue runs no UI today | yes; full matrix stays nightly and on the newest `main` push; **not** in the merge queue (5 entries × 8+ shards against a 60-min timeout) | yes |
+| O4 | Review profile rule text (FR-022) | three owners | E6 | the words below | yes |
+| O5 | Paid runners or plan | owner (money) | E1 | not proposed | **NO** (owner, 2026-11-22) |
+| O6 | Separate repos for worlds/characters | owners | FR-032 | not now | **not now** (owner, 2026-11-22) |
+
+**O1, one line per check** (required list read from the `main` ruleset on 2026-11-22):
+
+| Check | Required today | Cost (E4) / catch (E5) | Spec's proposal | Coordinator's pick |
 |---|---|---|---|---|
-| O1 | Required checks: keep `Build and test (windows-latest)` required on PRs? keep the path-filtered real macOS PR job (FR-135)? add CodeQL to the required list (Paco's baseline)? Ruleset = repo setting | Vikram, Paco, Ruben (Ruben answers in the group) | E4, E5: Windows B&T p50 15.7 / p90 20.1, caught 10 of 498 runs Linux missed; macOS PR job p50 15.0, caught 0 of 241; required list today: Spec Kit gate, B&T ×3, Office layout | Keep Windows B&T required (constitution VI, 2 % catch) and split it (FR-018); stop the macOS PR job on PRs (macOS on every `main` push and nightly stays); add CodeQL as required only if its PR run is reliable (`[KNOWN GAP]` its PR success rate not measured) |
-| O2 | Windows UI shards on PRs only by map (`os-sensitive`) or a by-hand full run | owners | E5: Windows UI caught 4 of 273; E1: Windows UI shards are 33 % of all runner time | yes |
-| O3 | `main` UI runs collapse to the newest (FR-014), reversing FR-107/#286 for UI only; full 3-OS UI in the merge queue instead? | owners | E1: 126 `main` UI runs, p90 100 min; the queue runs no UI today | collapse on `main` + nightly; **not** in the merge queue (5 entries × 8+ shards would block the queue under the 60-min timeout) |
-| O4 | Review profile rule text (FR-022) | three owners | E6 | the words below |
-| O5 | Runner capacity (paid larger runners or a paid plan) | owners (money) | E1 | not proposed: B first, then re-measure |
-| O6 | Separate repos for worlds/characters | owners | FR-032 | not before the pack interface is stable 4 weeks |
+| Spec Kit gate | yes | 0.2 min | keep | keep |
+| Build and test (ubuntu-latest) | yes | p50 12.1 / p90 16.2 min | keep | keep |
+| Build and test (windows-latest) | yes | p50 15.7 / p90 20.1; caught 10 of 498 Linux missed | keep; split per FR-018 under the same name | keep |
+| Build and test (macos-latest) | yes (a Linux stub on PRs and in the queue, 008 FR-106) | 0.1 min stub; real on `main`: 149 runs, 0 failures | keep as is | keep as is |
+| Office layout check (xvfb) | yes | p50 5.3 min | keep | keep |
+| CodeQL (javascript-typescript, actions) | no | p50 9.7 min on `main`; `[KNOWN GAP]` PR success rate not measured | add as required after 7 days of FR-001 show its PR runs reliable | add |
+| Spec numbers and picture budget (Spec Kit workflow) | no | p50 0.5 min | add as required | add (as "specs checks") |
+| UI suite complete (UI on three OSes) | no | 70 % of runner time | stay not required (FR-012 makes it cheaper first) | not required unless the change touches what it tests |
+| macOS build and test (path-filtered, 008 FR-135) | no, but runs on matching PRs | p50 15.0 min; caught 0 of 241 Linux missed | stop it on PRs; macOS stays on every `main` push and nightly. **This reverses spec 008 FR-135** (owner decision 2026-10-29) and needs its own written yes and a spec 008 delta | **keep** (FR-135 stays) |
+
+Every change in this table is applied by an owner (repo settings) after the written yes (T021); an agent changes no ruleset.
 
 **O4, exact words.** In `docs/rules/review-rounds.md`, replace the line
 
@@ -265,13 +283,14 @@ Adding or changing a world touches its pack folder and its own small test; the c
 
 with
 
-> - **Review by risk** (FR-038; `review-profile.js`; unsure = heavy): heavy (masking, IPC, secrets, permissions, user-file writes, shell, spending): analyst, implementer, reviewer, mutants, fuzz; else one implementer, diff read, CI record. ≤2 heavy per machine.
+> - **Sub-agents by size** (FR-038): `review-profile.js` light = implementer, diff read, CI record; heavy (masking, IPC, secrets, permissions, user-file writes, spending) = analyst, implementer, reviewer, mutants, fuzz. Two heavy agents per machine at most.
 
-Word count (`scripts/rules-check.js` counts whitespace-separated words): old line 34, new line 34, **net 0**, so it fits on `main` today (`review-rounds.md` 664 of 680) and after #1247 (614 of 680; the shared cap AGENTS.md + `docs/rules/` stays at 3,524 of #1247's 3,525). #1247 does not edit this line, so the two do not conflict. AGENTS.md is not changed. FR-063 (one rule in, one rule out): it replaces *Sub-agents by size*; "small = one smaller-model agent" and "medium = implementer that mutation-checks" become "else one implementer, diff read, CI record" (that is the change: no mutants or fuzz asked of a light PR); the sensitive list stays and gains "user-file writes" (was "user files") and "shell" (Paco's side; shell spawn was already a non-negotiable in AGENTS.md). Screenshots for UI stay required by constitution VII and *Before you finish*, so the line does not repeat them. Until `review-profile.js` exists, the author applies the same list by hand.
+Word count (`scripts/rules-check.js` counts whitespace-separated words): old line 34, new line 34, **net 0**. The line keeps its name, so its three pointers stay valid (`docs/rules/review-rounds.md` *One full review*, `docs/agent-setup/README.md` *Sub-agents by size*, spec 103's "at most 2 heavy agents"), and keeps "Two heavy agents per machine at most" word for word. **Words replaced**: "small = one smaller-model agent; medium = implementer that mutation-checks; sensitive (secrets, user files, IPC, redaction, permissions, spending) = analyst, implementer, reviewer." become "`review-profile.js` light = implementer, diff read, CI record; heavy (masking, IPC, secrets, permissions, user-file writes, spending) = analyst, implementer, reviewer, mutants, fuzz." (that is the change: no mutants or fuzz asked of a light PR; "redaction" is said as "masking"; "user files" becomes "user-file writes"; heavy is whatever `review-profile.js` does not call light, so the list in brackets names examples, not the boundary). **Budget, relative to #1247** (draft, head `c49411191`, its trim table pending Paco's yes): on `main` today `review-rounds.md` is 664 of 680 and the line fits. With #1247's head merged onto `main` (measured 2026-11-22 with `node scripts/rules-check.js`), AGENTS.md is 2,012 of 2,000, `review-rounds.md` 678 of 680 and AGENTS.md + `docs/rules/` 3,602 of 3,525: #1247 must trim before it lands whatever this spec does. This proposal adds 0 words on either base, so it does not make #1247's trim larger. #1247 does not edit this line. AGENTS.md is not changed. FR-063 (one rule in, one rule out): it rewrites FR-038's line in place and adds no rule. Screenshots for UI stay required by constitution VII and *Before you finish*. Until `review-profile.js` exists, the author applies FR-020's light list by hand, and anything not on it is heavy.
 
 ## Not decided
 
 - Whether Windows UI shards still run in full on `main` pushes when O3 collapses them (proposal: yes, newest commit only).
+- The exact sink and escape pattern list of FR-020's renderer content rule (the plan proposes; a reviewer from another side checks it).
 - The `os-sensitive` list beyond the `macos-pr.yml` starting set (the plan proposes; a reviewer from another side checks it).
 - Whether a light-profile PR still needs a second-side approval when its author's side has no reviewer free (today's rules apply; unchanged here).
 - Character sets: whether they become packs in the same contract suite in the first step or after worlds (plan proposes after).
@@ -292,10 +311,11 @@ Word count (`scripts/rules-check.js` counts whitespace-separated words): old lin
 | P1 | `ci:stats` script + concurrency guard | FR-001, FR-002, FR-010 | nothing (no workflow behaviour change) |
 | P2 | driver map + Linux-first UI on PRs | FR-011..FR-013 | #1247 landed (008 T130 defined there); O2 for the Windows part (Linux part can land first) |
 | P3 | `main` UI collapse | FR-014 | O3 |
-| P4 | Windows `npm test` split (#1983) | FR-017, FR-018 | nothing (no limit change) |
-| P5 | review profile script, then the rule text | FR-020..FR-023 | script: nothing; rule: O4 (word-neutral, does not wait for #1247) |
+| P4 | Windows `npm test` split (#1983) | FR-017, FR-018 | nothing (no limit change, every suite stays under the required name) |
+| P5 | review profile script, then the rule text | FR-020..FR-023 | script: nothing; rule: O4 (word-neutral on `main` and on #1247's head) |
 | P6 | world-pack contract suite | FR-030..FR-033 | 102 T100 (#1877) |
-| P7 | slicing guidance in templates and checklist | FR-040, FR-041 | nothing (guidance) |
+| P7 | slicing guidance in the checklist | FR-040, FR-041 | nothing (guidance, word-neutral) |
+| O1 | ruleset changes | FR-015 | O1's written yes; applied by an owner (T021) |
 
 The coordinator's suggested first step (concurrency groups and `cancel-in-progress`) is already built for every PR workflow (E2); P1's guard is all that is left of it, so P2 (the UI shards, 70 % of runner time) is the first step that cuts load.
 
@@ -309,4 +329,14 @@ The coordinator's suggested first step (concurrency groups and `cancel-in-progre
 
 ### 2026-11-22: created (owner request, Vikram, team chat 09:06-09:11 UTC)
 
-Spec, plan, tasks and the measurements above. Paco's input (heavy list adds user-file writes; build B on 021 T063 / 008 T130; baseline checks; macOS/Windows legs as an owner decision with cost and benefit) and Ruben's (audit every workflow's concurrency; required checks are an owner call) are folded in. Nothing built.
+Spec, plan, tasks and the measurements above (at `4c962b39b`). Paco's input (heavy list adds user-file writes; build B on 021 T063 / 008 T130; baseline checks; macOS/Windows legs as an owner decision with cost and benefit) and Ruben's (audit every workflow's concurrency; required checks are an owner call) are folded in. Nothing built.
+
+### 2026-11-22: Paco's review of #1995 (CHANGES_REQUESTED, six findings) and the owner's answer
+
+- FR-020/FR-021: the light profile is an explicit list and everything else is heavy (it missed `src/main/ipc/*.ts`, the mask, trust, permission, URL and path modules and the prompt-injection tooling); test sketch with unlisted paths under `src/main`, `src/shared`, `src/preload`, `scripts/*trusted*`, `.github`.
+- O4: word accounting redone against `main` and #1247's head `c49411191`; the line keeps its name (three pointers) and "Two heavy agents per machine at most"; the exact words replaced are named.
+- FR-012 and FR-014 are named as amendments of 021 FR-084 point 4, with FR-063 accounting; the full matrix still runs nightly, by hand and on the newest `main` push.
+- FR-018: every suite, the masking suites above all, stays under the required name; no non-required job; summary job fails on a failed, skipped or cancelled shard; guard T022.
+- O1: one line per required check and candidate; the macOS item is marked as reversing 008 FR-135; ruleset changes gated on T021.
+- T015, T019: word budgets named (checklist line rewritten word-neutral; no agent-notes text).
+- Owner (Vikram, 2026-11-22 09:31 UTC): O5 NO, O6 not now; O1..O4 delegated to "faster without losing quality", coordinator's picks recorded beside the spec's for Paco and Ruben to confirm.

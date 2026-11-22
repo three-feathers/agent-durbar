@@ -17,23 +17,24 @@
 
 - [ ] T006 `test-ci-changes.ts` cases first: `drivers` for a renderer-only diff, `all` for an unmapped file, a driver missing from the map fails, `os_sensitive` for a `src/main` file, every non-PR event gives `all` and `true` [FR-011, FR-012]
 - [ ] T007 `.github/scripts/ci-drivers.json` and `ci-changes.js` outputs `drivers`, `os_sensitive` (base-branch copy decides, as FR-191); implements 008 T130's map in the same PR and ticks it there [FR-011]
-- [ ] T008 `ui-platforms.yml`: Linux shards from the mapped drivers' recorded times (`ceil(sum/15)`), Windows shards only with `os_sensitive` (needs O2's yes; until then Windows keeps today's shards), "UI suite complete" unchanged; `ui-suite.js --only` if missing. Spec 008 pointer delta. `read:` 7-day `ci:stats` after landing in spec *Changes* [FR-012, FR-013, FR-016]
+- [ ] T008 `ui-platforms.yml`: Linux shards from the mapped drivers' recorded times (`ceil(sum/15)`), Windows shards only with `os_sensitive` (needs O2's yes; until then Windows keeps today's shards), "UI suite complete" unchanged; `ui-suite.js --only` if missing. Spec 008 pointer delta and a spec 021 *Changes* line naming the amendment of FR-084 point 4 (FR-063 accounting as spec FR-012). `read:` 7-day `ci:stats` after landing in spec *Changes* [FR-012, FR-013, FR-016]
 - [ ] T009 `docs/development.md` (CI section): the by-hand full run (`gh workflow run ui-platforms.yml --ref <branch>`) for a PR whose risk the map does not see [FR-012]
 
 ## P3: `main` UI collapse (after O3)
 
-- [ ] T010 `ui-platforms.yml` push group `ui-main` with `cancel-in-progress: true`; schedule and dispatch unchanged; spec 008 delta reversing FR-107 for this workflow; `read:` `release.yml`'s green-run check named in the delta [FR-014]
+- [ ] T010 (after O3's written yes) `ui-platforms.yml` push group `ui-main` with `cancel-in-progress: true`; schedule and dispatch unchanged; spec 008 delta reversing FR-107 for this workflow and a spec 021 *Changes* line amending FR-084 point 4 ("`main` keeps the full three-OS matrix" becomes "the newest `main` push keeps it"); `read:` `release.yml`'s green-run check named in the delta [FR-014]
 
 ## P4: Windows `npm test` (#1983)
 
 - [ ] T011 `run-tests.js` writes per-suite CPU and wall seconds to the job summary; test in `test-run-tests` (or the existing runner test) on a fake suite list [FR-017]
-- [ ] T012 Longest-first order for the five heavy suites inside the job; measure 7 days; if Windows p90 > 15 min, a 2-way Windows split behind one summary job named `Build and test (windows-latest)` (no ruleset change); same suite list and assertion count before and after, printed in the PR; Closes #1983 only when SC-003 holds [FR-018]
+- [ ] T012 Longest-first order for the five heavy suites inside the job; measure 7 days; if Windows p90 > 15 min, a 2-way Windows split behind one summary job named `Build and test (windows-latest)` (no ruleset change); every suite, the masking suites included, stays under a required name; same suite list and assertion count before and after, printed in the PR; Closes #1983 only when SC-003 holds [FR-018]
+- [ ] T022 (with T012, before any split lands) Guard test `scripts/test-ci-required-suites.ts`: every suite in `test-suites.txt`, and by name every redact or mask suite, runs in a job whose name is in the ruleset's required list as recorded in the spec (or a summary job carrying that name); the summary job fails on a failed, skipped or cancelled shard and on a suite-list mismatch. Mutants: a masking suite moved to an unrequired job, a summary that ignores `skipped`, one that ignores `cancelled`, a dropped suite: each fails [FR-018]
 
 ## P5: review profile
 
-- [ ] T013 `scripts/test-review-profile.ts` first: every heavy pattern alone and mixed with UI files gives `heavy`; rename into and out of a heavy path, a deletion, an unreadable diff give `heavy`; a docs/renderer-only diff gives `light`; mutants (one pattern dropped, rename ignored) fail [FR-021]
+- [ ] T013 `scripts/test-review-profile.ts` first: an unlisted file under each of `src/main`, `src/shared`, `src/preload`, `src/adapters`, `scripts/*trusted*`, `scripts/*.sh`, `.github` is `heavy`; `src/main/ipc/x.ts`, `src/main/convmask.ts`, `src/shared/url.ts`, `scripts/gh-trusted.sh`, `scripts/pr-gate.sh`, `scripts/safe-print.js` each `heavy`; a renderer line adding `innerHTML` or editing an escape helper `heavy`; rename into and out of a heavy path, a heavy deletion, an unreadable diff `heavy`; docs-only and CSS-only `light`; mutants (light list widened to `src/**`, rename ignored, sink rule dropped) fail [FR-020, FR-021]
 - [ ] T014 `scripts/review-profile.js`; `ci-changes.js` output `profile`; PR template line for the profile [FR-020, FR-021]
-- [ ] T015 After O4's written yes from the three owners: the `review-rounds.md` line exactly as spec O4 (net 0 words, `rules:check`), a spec 021 *Changes* pointer (FR-063 accounting), `docs/review-checklist.md` light/heavy note [FR-022, FR-023]
+- [ ] T015 After O4's written yes from the three owners: the *Sub-agents by size* line body exactly as spec O4, name kept. **Word budget**: the replaced words are named in spec O4; 34 out, 34 in, net 0 in `docs/rules/review-rounds.md` on `main` and on #1247's head (`rules:check`). A spec 021 *Changes* pointer (FR-063 accounting). No `docs/review-checklist.md` text (it is at 2,447 of 2,450) [FR-022, FR-023]
 
 ## P6: world-pack contract suite (after 102 T100, #1877)
 
@@ -43,5 +44,9 @@
 
 ## P7: slicing guidance
 
-- [ ] T019 `read:` whether `.specify/templates/tasks-template.md` is managed by `specify integration`; write FR-040's guidance there if not, else in `docs/review-checklist.md` and `docs/agent-notes.md` within their budgets [FR-040]
+- [ ] T019 `docs/review-checklist.md` line 75 "- [ ] **Slice size**: about 800 changed lines, pictures excluded." (11 words) becomes "- [ ] **Slice size**: one vertical slice per PR, ~800 lines without pictures." (14 words). **Word budget**: +3, 2,447 to 2,450 of 2,450; no `docs/agent-notes.md` text; `.specify/templates/*` not edited (managed by `specify integration`) [FR-040]
 - [ ] T020 `ci:stats` reports FR-041's indicator (src share, PRs with no `src/` line) for the retro; never per person [FR-041]
+
+## Owner settings (O1)
+
+- [ ] T021 (after O1's written yes from the three owners, line by line as spec *O1, one line per check*) The owners apply the ruleset changes (an agent changes no repo setting); for the macOS line, if the owners choose to stop the PR job, a spec 008 delta reversing FR-135 and `macos-pr.yml` change in the same PR; record each answer in spec *Changes* [FR-015]

@@ -51,12 +51,12 @@ Measure first (`npm run ci:stats`), then cut the one big cost: the UI shards are
 ### P4: Windows `npm test` split (FR-017, FR-018, #1983)
 
 - `run-tests.js` records CPU and wall seconds per suite into `$GITHUB_STEP_SUMMARY` (all OSes).
-- First try: start the five heavy suites first (longest-processing-time order) inside the same job, so they do not end the job alone; measure. If p90 is still over 15 min, split `npm test` into two time-balanced halves as a 2-entry matrix on Windows only (`TEST_SHARD=1/2`), keeping one required name through a summary job, like "UI suite complete". The required check name `Build and test (windows-latest)` must keep reporting (ruleset): the summary job takes that name; no ruleset change.
+- First try: start the five heavy suites first (longest-processing-time order) inside the same job, so they do not end the job alone; measure. If p90 is still over 15 min, split `npm test` into two time-balanced halves as a 2-entry matrix on Windows only (`TEST_SHARD=1/2`). The summary job takes the required name `Build and test (windows-latest)` (no ruleset change) and fails when a shard failed, was skipped or was cancelled, or when the shards' suite lists together differ from `test-suites.txt` (so a suite cannot fall out). Masking and redaction suites never move to a job without a required name (FR-018); Linux and the macOS leg keep their single job. Guard test with mutants: T022.
 - The heavy suites' own cost (redact fuzz loops) is left to their owner spec (012) unless the counters show a single hot loop; then a spec 012 delta first.
 
 ### P5: review profile (FR-020..FR-023)
 
-- `scripts/review-profile.js`: one pattern list (`src/shared/redact*`, `src/main/**/ipc*`, `src/preload/**`, permission broker files, files that call `fs.write*`/`rename`/`rm` in `src/main`, `src/main/**/spawn*`/`child_process` users, spending/credits modules, `.github/workflows/*` with `secrets.`), read by `ci-changes.js` as output `profile`. A `git diff --name-status -M` read; R/D/A on a heavy path is heavy; unknown = heavy.
+- `scripts/review-profile.js`: one **light** list (FR-020's paths and the two content rules: renderer lines touching an HTML sink or escape helper, and tests or drivers loading a non-light `src/` file or carrying a security word in the name); every path not on it is heavy. Read by `ci-changes.js` as output `profile`. Input: `git diff --name-status -M` plus `git diff -U0` for the renderer content rule; R/D on a heavy path is heavy; an unreadable diff is heavy. Sink patterns proposed: `innerHTML`, `outerHTML`, `insertAdjacentHTML`, `document.write`, `srcdoc`, `setAttribute('href'|'src'`, `.href =`, `.src =`, and calls or definitions of `esc*`, `safeMask`, `mask*`.
 - `test-review-profile.ts` table plus mutants. PR template line: "Profile (`review-profile.js`): heavy/light". Rule text only after O4.
 
 ### P6: world-pack contract suite (FR-030..FR-033), after 102 T100
@@ -67,7 +67,7 @@ Measure first (`npm run ci:stats`), then cut the one big cost: the UI shards are
 
 ### P7: slicing guidance (FR-040, FR-041)
 
-- `.specify/templates/tasks-template.md` is managed by `specify integration`? `read:` before editing: if managed, the guidance goes to `docs/review-checklist.md` and `docs/agent-notes.md` only (guidance files, budgets apply).
+- `.specify/templates/*` are managed by `specify integration` (hashes in `.specify/integrations/speckit.manifest.json`, `read:` 2026-11-22), so they are not edited. The guidance is one word-neutral rewrite of `docs/review-checklist.md`'s *Slice size* line (T019); `docs/agent-notes.md` gets nothing (4,597 of 4,600).
 
 ## Complexity tracking
 
