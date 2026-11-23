@@ -13,6 +13,7 @@
  *     is free (the whole name stays in the chip's title);
  *   - (#2013) a visitor's name chip touches the lobby band's bottom edge or the first folder sign (the room frame line), or stands off its place;
  *   - (#2014) (Flat) the Postbox tile has no visible name ("Postbox" or the theme's word) at its minimum width, or the name is cut;
+ *   - (#2018, #2041) (Flat) a place name in the lobby row cut while another tile has free width, or a people chip of fewer than 3 letters (whole names shorter than that excepted);
  *   - a text under 10.5 px in what it reads, or the office scrolls.
  * Mutants (edit the file, `npm run build`, run, `git checkout -- <file>`; each must fail its assert):
  *   cutchild   in app.js nameCut() drop the two `.rn-h`/`.rn-t` lines          -> "a cut name hides its path" (Flat 1440x900)
@@ -20,6 +21,8 @@
  *   nofigure   in realoffice-layout.ts roLobby() put back `chipY = Lb - CHIP_H` for a visitor without a figure   -> "name chips stay clear of the frame line"
  *   nokey      in realoffice.js fitSigns() take `'|' + sg._sc.textContent` out of the key   -> "a sign whose counts grew is measured again" (photo 1440x900)
  *   postnamed  in places.js set POST_NAMED back to 240                       -> "the Postbox tile shows its name"
+ *   noshare    in places.js lobbyShare() return null at its top                -> "a place name is whole while the row has room" (Flat, both sizes)
+ *   twoletters in places.js shortName() cut to 2 (`cutText(name,2,`)            -> "a people chip shows 3 letters or the whole name"
  */
 const os = require('os');
 const fs = require('fs');
@@ -65,6 +68,22 @@ module.exports = async (ctx) => {
     if (wq === null) {
       const pb = await js(`(()=>{const p=document.querySelector('#stage .place.postbox'),n=p&&p.querySelector('.pn');return {named:!!n&&n.getClientRects().length>0,cut:!!n&&n.scrollWidth>n.clientWidth+0.5,w:p?p.getBoundingClientRect().width:0}})()`);
       if (!pb.named || pb.cut) bad(`${tag}: the Postbox tile shows its name, whole: ${JSON.stringify(pb)} (#2014)`);
+      /* (#2018, #2041) the row of places shares its width by need: a place name is whole while the row has free width (a tile whose content leaves 8 px or more of its width unused),
+         and a people chip never reads as fewer than 3 letters plus the ellipsis unless the whole name is shorter; the whole name is in the chip's title and label */
+      const row = await js(`(()=>{const R=[...document.querySelectorAll('#stage .lobby .place:not(.postbox)')].filter(p=>p.getClientRects().length).map(p=>{const n=p.querySelector('.pn'),pb=p.getBoundingClientRect(),cs=getComputedStyle(p),inner=pb.width-parseFloat(cs.paddingLeft)-parseFloat(cs.paddingRight)-2,used=n?[...p.querySelectorAll('.plh>*')].reduce((t,e)=>t+e.getBoundingClientRect().width,0)+7*(p.querySelectorAll('.plh>*').length-1):0,fs=n?parseFloat(getComputedStyle(n).fontSize):99;
+        const r=document.createRange();if(n)r.selectNodeContents(n);
+        return {id:p.dataset.place,full:n?n.textContent:'',cut:!!n&&(n.scrollWidth>n.clientWidth+0.5||r.getBoundingClientRect().width>n.clientWidth+0.5),slack:p.dataset.place==='boss'||p.classList.contains('postbox')?0:inner-used,font:fs,
+          chips:[...p.querySelectorAll('.pv:not(.pv-more)')].map(c=>{const t=c.querySelector('.pv-n');return {shown:t?t.textContent:'',cut:!!t&&t.scrollWidth>t.clientWidth+0.5,title:c.title||'',label:c.getAttribute('aria-label')||c.title||''}})};});
+        return {tiles:R,slackMax:Math.max(0,...R.filter(t=>!t.chips.length&&!/^(boss|coffee|bank)$/.test(t.id)).map(t=>t.slack))}})()`);
+      for (const t of row.tiles) {
+        if (t.font < 10.5) bad(`${tag}: lobby text under 10.5 px: ${t.font}`);
+        if (t.cut && row.slackMax >= 8) bad(`${tag}: a place name is whole while the row has room: "${t.full}" is cut and a tile beside it has ${row.slackMax.toFixed(0)} px unused (#2018, #2041)`);
+        for (const c of t.chips) {
+          const m = c.title.match(/^(\S+)/); const name = m ? m[1] : '';
+          if (c.shown.replace(/…$/, '').length < 3 && c.shown !== name) bad(`${tag}: a people chip shows 3 letters or the whole name: "${c.shown}" at ${t.id} (#2018)`);
+          if (!c.label.includes(name)) bad(`${tag}: a people chip has the whole name in its label: ${name}`);
+        }
+      }
     } else {
       const chips = await js(`(()=>{const ro=document.querySelector('#stage .ro'),o=ro.getBoundingClientRect(),R=e=>{const b=e.getBoundingClientRect();return {x0:b.left-o.left,x1:b.right-o.left,y0:b.top-o.top,y1:b.bottom-o.top}};
         const top=Math.min(...[...ro.querySelectorAll('.ro-sign')].filter(e=>e.getClientRects().length).map(e=>R(e).y0));
