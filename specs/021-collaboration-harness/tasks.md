@@ -136,3 +136,7 @@
 ## 2026-11-22: PR preflight for authors (FR-384)
 
 - [x] T455 (FR-384) `scripts/pr-preflight.js` (and `scripts/pr-preflight.sh`), `npm run pr:preflight -- <N>`: twelve read-only checks of a PR before review; `docs/development.md`, the brief lines in `docs/agent-setup/`; changelog fragment. Test `test:prpreflight` (`scripts/test-pr-preflight.js`): a throwaway repository and fixture `gh` answers, a failing fixture per check, 37 mutants each killed at its own assert (incl. the default trusted list, the specs:numbers rule, net-new shape words) [FR-384]
+
+## 2026-11-23: specs:numbers sees branches without a PR and worktrees (FR-085 delta)
+
+- [x] T511 (FR-085) `scripts/spec-numbers.js`: `--wide` (the npm script's argument) adds remote heads (`git ls-remote`) and worktree branches, skips the leftover of a closed, unmerged PR as a NOTE, exit 2 when a list or a PR state cannot be read; `scripts/pr-preflight.js` check 7 reuses it; tests in `scripts/test-spec-numbers.js` and `scripts/test-pr-preflight.js` (a clash from a branch without a PR, from two worktrees, a dead branch skipped, a moved tip counted, an unreadable state exit 2, the CI call without `--wide`); `docs/development.md`; changelog fragment [FR-085]
