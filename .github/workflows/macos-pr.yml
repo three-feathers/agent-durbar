@@ -61,7 +61,4 @@ jobs:
       - if: steps.changes.outputs.macos == 'true'
         run: npm run build
       - if: steps.changes.outputs.macos == 'true'
-        env:
-          # spec 117 T500: the runners have 4 vCPU, the default is CPUs minus one (3 jobs)
-          TEST_JOBS: 4
         run: npm test

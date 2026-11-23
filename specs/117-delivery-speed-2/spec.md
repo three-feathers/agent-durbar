@@ -426,6 +426,6 @@ FR-018 says the 25-minute limit is not raised first. The queue is blocked now (#
 - The wrapper accepts only exactly one `code=true` or `code=false` line; anything else (empty, another value, two lines) is replaced by "everything runs".
 - The allow list is narrowed: Markdown only under `specs/` and `docs/`, two named root files (`CHANGELOG.md`, `CONTRIBUTING.md`); `SECURITY.md`, scripts, SVGs, pictures and `CODEOWNERS` run everything. `changelog.d/` is off the list (a fragment always runs everything), and the text above now says so.
 
-### 2026-11-23: TEST_JOBS 4 on the part jobs (delivery-speed review)
+### 2026-11-23: TEST_JOBS 4 on the ubuntu and windows parts (delivery-speed review; Paco's review of #2030)
 
-- FR-017: `scripts/run-tests.js` defaults to CPUs minus one (3 jobs on a 4 vCPU runner). The `npm test` step of each part job in `ci.yml` and of `macos-pr.yml` sets `TEST_JOBS: 4`; the guard (T022) lists it as a reviewed env key that must be `4`, with a mutant. Task T500 measures it against the #2031 runs and over 20 runs; revert if flakes rise (wall-time-sensitive UI suites first).
+- FR-017: `scripts/run-tests.js` defaults to CPUs minus one. The ubuntu and windows part jobs have 4 vCPU (the #2031 run's logs print "3 at a time"), so their `npm test` step sets `TEST_JOBS: 4`. macOS is left at the default (its logs show 2 and 4 at a time, the runner size varies; 4 could oversubscribe), as is `macos-pr.yml`. The guard (T022) requires `TEST_JOBS: 4` on ubuntu and windows and forbids it on macOS, with a removal mutant and a macOS mutant. T500 measures it; revert if flakes rise (wall-time-sensitive UI suites first).

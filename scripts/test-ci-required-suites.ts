@@ -231,7 +231,9 @@ export function problems(io: { ci: string; npmci: string; spec: string; suites: 
     for (const k of Object.keys(step)) if (!PLAIN_KEYS.includes(k) && k !== 'continue-on-error') out.push(`${tag}: the \`npm test\` step has the key "${k}", which this guard does not understand (a working-directory or shell could change what runs)`);
     const env = (step.env || {}) as Record<string, unknown>;
     for (const k of Object.keys(env)) if (!ENV_KEYS.includes(k)) out.push(`${tag}: the \`npm test\` step sets env "${k}", which is not a reviewed key (${ENV_KEYS.join(', ')}): it could change what runs`);
-    if (env.TEST_JOBS !== undefined && flat(env.TEST_JOBS) !== '4') out.push(`${tag}: TEST_JOBS is ${JSON.stringify(env.TEST_JOBS)}, expected 4 (the part runners have 4 vCPU; another count changes the load the suites were timed under)`);
+    // spec 117 T500: 4 vCPU on the ubuntu and windows parts (run-tests.js printed "3 at a time" there); the macOS runner size varies (2 and 4 at a time seen), so it keeps the default
+    if (osName === 'macos-latest') { if (env.TEST_JOBS !== undefined) out.push(`${tag}: TEST_JOBS is set; the macOS runner size varies, so it keeps the default job count`); }
+    else if (flat(env.TEST_JOBS) !== '4') out.push(`${tag}: TEST_JOBS is ${JSON.stringify(env.TEST_JOBS)}, expected 4 (a 4 vCPU runner; the default runs 3 jobs, another count changes the load the suites were timed under)`);
     if (flat(env.TEST_SHARD) !== `\${{matrix.shard}}/${n}`) out.push(`${tag}: TEST_SHARD is ${JSON.stringify(env.TEST_SHARD)}, expected "\${{ matrix.shard }}/${n}" (the matrix has ${n} parts): a part count that differs from the matrix drops suites`);
     if (osName === 'ubuntu-latest' && env.PREREVIEW_REQUIRE_REAL_SDK !== '1') out.push(`${tag}: PREREVIEW_REQUIRE_REAL_SDK is not '1' (test:prereview would skip its real-SDK test on Linux)`);
     const stepIf = step.if;
@@ -384,6 +386,8 @@ mutant('job-level defaults working-directory', (io) => ({ ...io, ci: swap(io.ci,
 mutant('workflow-level defaults', (io) => ({ ...io, ci: swap(io.ci, /^jobs:\n/m, 'defaults:\n  run:\n    working-directory: scripts\njobs:\n') }), /top-level `defaults`/);
 mutant('workflow-level env', (io) => ({ ...io, ci: swap(io.ci, /^jobs:\n/m, 'env:\n  NODE_OPTIONS: --max-old-space-size=1\njobs:\n') }), /top-level `env`/);
 mutant('job-level env NODE_OPTIONS', (io) => ({ ...io, ci: swap(io.ci, W_RUNS_ON, W_RUNS_ON + '    env:\n      NODE_OPTIONS: --require ./x.js\n') }), /test-windows\) has job-level `env`/);
+mutant('TEST_JOBS removed from a part', (io) => ({ ...io, ci: swap(io.ci, /(  test-windows:[\s\S]*?)          # spec 117 T500[^\n]*\n          TEST_JOBS: 4\n/, '$1') }), /test-windows\): TEST_JOBS is undefined/);
+mutant('TEST_JOBS set on macOS', (io) => ({ ...io, ci: swap(io.ci, /(  test-macos:[\s\S]*?TEST_SHARD: [^\n]*\n)/, '$1          TEST_JOBS: 4\n') }), /test-macos\): TEST_JOBS is set/);
 mutant('TEST_JOBS set to another count', (io) => ({ ...io, ci: swap(io.ci, '          TEST_JOBS: 4', '          TEST_JOBS: 64') }), /TEST_JOBS is 64, expected 4/);
 mutant('NODE_OPTIONS on the npm test step', (io) => ({ ...io, ci: swap(io.ci, "          PREREVIEW_REQUIRE_REAL_SDK: '1'", "          NODE_OPTIONS: --require ./x.js\n          PREREVIEW_REQUIRE_REAL_SDK: '1'") }), /sets env "NODE_OPTIONS"/);
 mutant('a step before npm test writes GITHUB_ENV', (io) => ({ ...io, ci: swap(io.ci, "      - if: steps.changes.outputs.code == 'true'\n        run: npm run build\n", "      - run: echo NODE_OPTIONS=--require=./x.js >> \"$GITHUB_ENV\"\n      - if: steps.changes.outputs.code == 'true'\n        run: npm run build\n") }), /writes GITHUB_ENV or GITHUB_PATH/);
