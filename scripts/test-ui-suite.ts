@@ -930,22 +930,50 @@ console.log('ui-suite: check-parallel and ui-suite install Electron once before 
     // head start, driver weights x 0.94 x 1.10 slow night, 1 s per driver, 170 s setup/geometry/upload, npm ci's 720 s of retries, 5 % margin)
     const lim = text.match(/^ {4}timeout-minutes: \$\{\{ matrix\.os == 'macos-latest' && (\d+) \|\| (\d+) \}\}$/m);
     assert.ok(lim, 'the shard job limit is "matrix.os == \'macos-latest\' && <macOS> || <others>"');
-    assert.deepStrictEqual([Number(lim[1]), Number(lim[2])], [70, 45], 'macOS shards have 70 minutes, Linux and Windows 45');
+    assert.deepStrictEqual([Number(lim[1]), Number(lim[2])], [75, 45], 'macOS shards have 75 minutes, Linux and Windows 45');
     {
       const B = require(path.join(ROOT, 'scripts', 'ui-shard-budget.js')) as {
         macosBudget: (o: { n: number; times: Record<string, number>; limitMin: number; retrySecs: number; drivers?: unknown[] }) => { shards: number[]; worst: number; need: number; allowed: number; ok: boolean };
         macosLimitMin: (o: { n: number; times: Record<string, number>; retrySecs: number; drivers?: unknown[] }) => number;
         macosShardSecs: (o: { n: number; times: Record<string, number>; drivers?: unknown[] }) => number[];
         npmCiRetrySecs: (w: number[]) => number; actionRetryWaits: (t: string) => number[]; untimedWeight: (t: Record<string, number>) => number;
+        parseRetryWaits: (t: string) => { waits: number[]; steps: number };
+        macosLimitCheck: (o: { n: number; times: Record<string, number>; limitMin: number; retrySecs: number; drivers?: unknown[] }) => { ask: number; need: number; allowed: number; headroom: number; problems: string[]; warning: string };
+        CAP_MIN: number; LIMIT_SLACK_MIN: number; WARN_HEADROOM_SECS: number;
       };
       const retrySecs = B.npmCiRetrySecs(B.actionRetryWaits(fs.readFileSync(path.join(ROOT, '.github', 'actions', 'npm-ci', 'action.yml'), 'utf8')));
       assert.strictEqual(retrySecs, 720, 'npm ci retries: waits 30+120+300 s and a 90 s failed try before each');
       const limitMin = Number(lim[1]);
-      // growth guard: the slowest macOS shard plus npm ci's retries fits the limit less 5 %, and the limit is exactly what the estimate asks for
-      // (one source: a PR that adds enough drivers, or a timing refresh, that moves it gets the shard count or the limit to set)
+      // growth guard (coordinator decision 2026-11-23, review round 2 of PR 2071): the workflow's macOS limit is at least what the estimate asks
+      // for and at most 5 minutes above it; above 80 minutes the answer is another macOS shard; under 120 s of room a warning line, not a failure
+      assert.deepStrictEqual([B.CAP_MIN, B.LIMIT_SLACK_MIN, B.WARN_HEADROOM_SECS], [80, 5, 120], 'cap 80 min, slack 5 min, warning under 120 s');
+      const chk = B.macosLimitCheck({ n, times, limitMin, retrySecs });
+      assert.deepStrictEqual(chk.problems, [], chk.problems.join('; ') + ' (scripts/ui-shard-budget.js, spec 008 delta 2026-11-23)');
+      if (chk.warning) console.log('ui-suite shards: ' + chk.warning);
       const real = B.macosBudget({ n, times, limitMin, retrySecs });
-      assert.ok(real.ok, `the slowest macOS UI shard is estimated at ${real.worst} s (shards: ${real.shards.join(', ')}) + ${retrySecs} s of npm ci retries = ${real.need} s, above ${real.allowed} s (the ${limitMin}-minute limit less 5 %): add a macOS shard or raise the limit (scripts/ui-shard-budget.js, spec 008 delta 2026-11-23)`);
-      assert.strictEqual(limitMin, B.macosLimitMin({ n, times, retrySecs }), `the macOS limit in ui-platforms.yml (${limitMin}) is not what scripts/ui-shard-budget.js asks for (${B.macosLimitMin({ n, times, retrySecs })}): set it, or change the macOS shard count`);
+      assert.ok(real.ok, `the slowest macOS UI shard: ${real.worst} s + ${retrySecs} s npm ci = ${real.need} s, above ${real.allowed} s`);
+      // red cases on the real timings: the limit below the ask, more than 5 minutes above it, and an ask above the cap
+      assert.ok(B.macosLimitCheck({ n, times, limitMin: chk.ask - 5, retrySecs }).problems.some((x) => /is below the \d+ minutes the estimate asks for/.test(x)), 'a limit below the ask fails');
+      assert.ok(B.macosLimitCheck({ n, times, limitMin: chk.ask + 10, retrySecs }).problems.some((x) => /more than 5 minutes above/.test(x)), 'a limit more than 5 minutes above the ask fails');
+      assert.deepStrictEqual(B.macosLimitCheck({ n, times, limitMin: chk.ask + 5, retrySecs }).problems, [], 'the ask + 5 is still fine');
+      const x140 = Object.fromEntries(Object.entries(times).map(([k, v]) => [k, typeof v === 'number' ? v * 1.4 : v]));
+      const capped = B.macosLimitCheck({ n, times: x140, limitMin: 90, retrySecs });
+      assert.ok(capped.ask > 80 && capped.problems.some((x) => /above the 80-minute cap: add a macOS shard/.test(x)), `an ask above 80 minutes fails with "add a macOS shard" (asked ${capped.ask})`);
+      const tight = B.macosLimitCheck({ n, times, limitMin: chk.ask, retrySecs });
+      assert.ok(tight.headroom < 120 ? /^warning: only -?\d+ s of room/.test(tight.warning) : tight.warning === '', `the warning follows the room (${tight.headroom} s at ${chk.ask} minutes)`);
+      assert.strictEqual(B.macosLimitCheck({ n, times, limitMin: 200, retrySecs }).warning, '', 'no warning with room to spare');
+      // fixture: the warning by hand (need 2732 s; 48 minutes allow 2736 s: 4 s of room)
+      assert.match(B.macosLimitCheck({ n: 2, times: { 'zz-a': 1000, 'zz-b': 100, 'zz-c': 40, 'zz-d': 60 }, limitMin: 48, retrySecs: 720, drivers: [{ name: 'zz-a' }, { name: 'zz-b' }, { name: 'zz-c' }, { name: 'zz-u' }] }).warning, /^warning: only 4 s of room under the 48-minute macOS limit/);
+      // the parser of the npm ci waits is linear (review round 2: the old regex was exponential on a block with no default line): it counts
+      // the lines it looked at, fails closed with its reason, and 240 lines cost at most ten times what 24 cost
+      const noDefault = (k: number): string => '\n  retry-waits:\n' + '      x\n'.repeat(k);
+      const stepsOf = (t: string): number => { try { B.parseRetryWaits(t); } catch (e) { assert.match((e as Error).message, /retry-waits has no default line/); return (e as { steps: number }).steps; } assert.fail('a block with no default line must throw'); };
+      const s24 = stepsOf(noDefault(24)), s240 = stepsOf(noDefault(240));
+      assert.ok(s24 <= 30 && s240 <= 10 * s24, `the parser looks at each line once (24 lines: ${s24} steps, 240 lines: ${s240})`);
+      assert.throws(() => B.parseRetryWaits('inputs:\n  args:\n'), /no retry-waits input/, 'no retry-waits input fails closed');
+      assert.throws(() => B.parseRetryWaits('\n  retry-waits:\n    default: "30 120"\n'), /no default line/, 'a double-quoted default is not guessed');
+      assert.throws(() => B.parseRetryWaits('\n  retry-waits:\n    description: x\n  other:\n    default: \'5\'\n'), /no default line/, 'another input\'s default is never taken for retry-waits');
+      assert.deepStrictEqual(B.parseRetryWaits('x:\r\n  retry-waits:\r\n    description: >-\r\n      text\r\n    default: \'30 120 300\'\r\n').waits, [30, 120, 300], 'CRLF parses');
       // the reviewer's mutants of PR 2071 must trip the guard: every time x 1.25, and one more driver of 1,500 s
       const x125 = Object.fromEntries(Object.entries(times).map(([k, v]) => [k, typeof v === 'number' ? v * 1.25 : v]));
       assert.ok(!B.macosBudget({ n, times: x125, limitMin, retrySecs }).ok, 'guard: every driver 25 % slower trips it');

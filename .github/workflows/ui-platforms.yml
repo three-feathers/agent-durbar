@@ -90,8 +90,9 @@ jobs:
     # cancelled at 80 with drivers left): FR-182 split its drivers over three jobs of 45. Spec 008 delta 2026-11-23: three shards were cut at 45
     # six nights in a row with a third of the drivers never started (260 drivers, about 9,650 s one by one on macOS). macOS runs four shards; its
     # limit is what scripts/ui-shard-budget.js asks for (the slowest shard at a slow night, 1.10 x its median, plus setup, geometry, upload
-    # and 12 min of npm ci retries, then 5 % margin): 70; test:uisuite fails when the two differ. Linux and Windows end in 15-22 min and keep 45
-    timeout-minutes: ${{ matrix.os == 'macos-latest' && 70 || 45 }}
+    # and 12 min of npm ci retries, then 5 % margin) asks for 70; the limit may sit up to 5 min above that, never below, and above 80 the answer
+    # is another macOS shard (test:uisuite; coordinator decision 2026-11-23): 75 leaves room for about 24 new drivers. Linux and Windows keep 45
+    timeout-minutes: ${{ matrix.os == 'macos-latest' && 75 || 45 }}
     strategy:
       fail-fast: false
       matrix:
