@@ -378,7 +378,7 @@ router.onEvent((e) => {
 /** One activity row for agent `a` (spec 052 FR-071): names, the folder's base name, the adapter's display name and a short summary. */
 const logActivity = (a: AgentInfo, decision: ActivityDecision, action: string, mode: string = a.permMode, kind?: string): void => {
   // the action is masked as the chat masks a permission request (spec 012 FR-175, issue #1295): the command mask, tool names, escape-split tokens
-  activityStore?.record({ agent: a.alias || a.label || a.name, folder: folderNameOf(a), app: registry.get(a.adapterId)?.displayName ?? a.adapterId, mode, action: maskActivityAction(action, kind), decision });
+  activityStore?.record({ agent: a.alias || a.label || a.name, folder: folderNameOf(a), path: a.workspaceFile || a.cwd, app: registry.get(a.adapterId)?.displayName ?? a.adapterId, mode, action: maskActivityAction(action, kind), decision });
 };
 // The answer to a permission request, or an automatic approval (Allow all, a session permission), arrives as a `permission` event;
 // it is logged here, in main, so the window cannot add or change rows. Pending requests, plain reads and stopped sessions are not logged.
@@ -1074,6 +1074,7 @@ function createWindow(): void {
     if (simClock.query) query.simclock = simClock.query; // spec 001 FR-084: a pinned page clock for screenshots
   }
   if (dev.DURBAR_DOOR === '1') query.door = '1'; // spec 052 FR-191: Your door (the Needs you panel) is behind a flag until the owner's look
+  if (dev.DURBAR_HD_PEOPLE === '1') query.hdpeople = '1'; // spec 102 FR-399: the Retro arcade's HD person set, off by default until the owner approves the finished set
   if (dev.DURBAR_BRAIN === '1' || dev.DURBAR_BRAIN === '0') query.brain = dev.DURBAR_BRAIN; // spec 106 T426: a run override of Settings > Brain view (development runs only), never saved
   win.on('focus', () => win?.flashFrame(false)); // spec 052 FR-059: the taskbar flash stops when you come back
   {

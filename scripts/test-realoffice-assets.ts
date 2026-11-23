@@ -18,6 +18,8 @@ const RO = path.join(ROOT, 'src', 'renderer', 'realoffice');
 export const CAPS = { person: 80 * 1024, fixture: 120 * 1024, desk: 60 * 1024, floor: 40 * 1024, wall: 120 * 1024, monitor: 30 * 1024, glow: 20 * 1024, welcome: 150 * 1024, focus: 120 * 1024, total: 10 * 1024 * 1024 };
 /** spec 102 FR-213: all shipped art (every world and every set) at most this many bytes */
 export const SHIPPED_MAX = 30 * 1024 * 1024;
+/** spec 102 FR-393, FR-394, FR-397, FR-403 (issue #2055; owner 2026-11-23 14:59 UTC, FINE): the HD person set's limits */
+export const HD_PALETTE = 48, HD_ORPHAN_MAX = 0.06, HD_PERSON_MAX = 450 * 1024, HD_HEAD = [0.27, 0.31], HD_HEAD_W = 36;
 export const PERSON_MAX_H = 640;
 const KEYS = ['files', 'source', 'tool', 'date', 'made by', 'approved by', 'reference', 'prompt', 'cut', 'licence'];
 const CLAUSE = /fictional and must not resemble any real or famous person; no real person, celebrity, brand, logo or franchise is named/;
@@ -220,7 +222,7 @@ const readPack = (kind: string, id: string): { files: Map<string, Buffer>; md: s
   const meta = kind === 'worlds' ? 'world.json' : 'set.json';
   for (const f of fs.readdirSync(dir)) {
     if (f.endsWith('.webp')) files.set(f, fs.readFileSync(path.join(dir, f)));
-    else assert.ok(f === meta || f === 'ASSETS.md' || (kind === 'worlds' && f === 'world.css'), `only pictures, ${meta}${kind === 'worlds' ? ', world.css' : ''} and ASSETS.md in ${kind}/${id}: ${f}`);
+    else assert.ok(f === meta || f === 'ASSETS.md' || (kind === 'worlds' && f === 'world.css') || (kind === 'sets' && id === 'retro' && f === 'hd'), `only pictures, ${meta}${kind === 'worlds' ? ', world.css' : ''} and ASSETS.md in ${kind}/${id} (and the Retro set's hd/, spec 102 FR-391): ${f}`);
   }
   return { files, md: fs.readFileSync(path.join(dir, 'ASSETS.md'), 'utf8'), json: JSON.parse(fs.readFileSync(path.join(dir, meta), 'utf8')) };
 };
@@ -548,6 +550,80 @@ if (worldIds.includes('retro')) {
   }
 }
 
+// ---- spec 102 FR-391..FR-398 (issue #2055): the HD person set (sets/retro/hd/, `set.json` `hd`): every frame named, its size, lossless, inside its place; one palette, no speckle, the budget ----
+{
+  const dir = path.join(RO, 'sets', 'retro', 'hd'), sj = JSON.parse(fs.readFileSync(path.join(RO, 'sets', 'retro', 'set.json'), 'utf8')) as { hd: { scales: number[]; people: Record<string, Record<string, Record<string, number[]>>> } };
+  const POSES = ['typeA', 'typeB', 'waveA', 'waveB', 'think', 'rest', 'type', 'book', 'knock', 'letter', 'counter', 'runA', 'runB', 'face-book', 'face-coffee', 'face-knock', 'face-letter', 'face-runA', 'face-runB', 'sit'];
+  const SEAT = new Set(POSES.slice(0, 6)), tallest = (p: string): number => (SEAT.has(p) ? 80 : p === 'sit' ? 72 : 72); /* grid px: a seated bust's canvas, a standing figure (FR-256) */
+  assert.deepStrictEqual(sj.hd.scales, [4, 3, 2], 'FR-391: the authored scales, the master first');
+  const named = new Set<string>(); let bytes = 0;
+  for (const [pid, poses] of Object.entries(sj.hd.people)) {
+    assert.deepStrictEqual(Object.keys(poses).sort(), [...POSES].sort(), `${pid}: all 20 frames in HD`);
+    let own = 0;
+    for (const [pose, at] of Object.entries(poses)) for (const s of sj.hd.scales) {
+      const f = `${pid}-${pose}@${s}.webp`, v = at[String(s)], b = fs.readFileSync(path.join(dir, f)), info = webpInfo(b);
+      named.add(f); own += b.length;
+      assert.deepStrictEqual(info.chunks.filter((c) => c !== 'VP8X'), ['VP8L'], `${f}: lossless (FR-391)`);
+      assert.deepStrictEqual([info.width, info.height], v.slice(0, 2), `${f}: the size set.json gives`);
+      assert.ok(v[1] <= tallest(pose) * s && v[0] <= (pose === 'sit' ? 36 : SEAT.has(pose) ? 80 : 48) * s, `${f}: ${v[0]}x${v[1]} fits its place at scale ${s} (FR-392)`);
+      if (s < 4) assert.ok(Math.abs(v[1] - (at['4'][1] * s) / 4) <= 1, `${f}: the same share of its shown height as the 288 frame (${at['4'][1]} px) (FR-391)`);
+      const [x, y, w, h] = v.slice(2);
+      assert.ok(x >= 0 && y >= 0 && x + w <= v[0] && y + h <= v[1] && w >= 4 * s && h >= 4 * s, `${f}: faceBox inside the frame (FR-395)`);
+    }
+    bytes += own;
+  }
+  assert.deepStrictEqual(fs.readdirSync(dir).sort(), [...named].sort(), 'hd/ holds exactly the frames set.json names');
+  const amd = fs.readFileSync(path.join(RO, 'sets', 'retro', 'ASSETS.md'), 'utf8').replace(/\r\n/g, '\n');
+  for (const pid of Object.keys(sj.hd.people)) { /* FR-398: provenance per person: tool, date, reference, prompt, fictional, the owner's look */
+    const m = new RegExp(`\\n#### hd-${pid}\\n([\\s\\S]*?)(?=\\n#{2,4} |$)`).exec(amd), body = m ? m[1] : '';
+    for (const k of ['files', 'source', 'tool', 'date', 'made by', 'approved by', 'reference', 'prompt', 'licence', 'fictional', 'likeness-check']) assert.ok(new RegExp(`\\n- ${k}: \\S`).test(body), `ASSETS.md hd-${pid}: "${k}" (FR-398)`);
+  }
+  const people = Object.keys(sj.hd.people).length;
+  console.log(`HD people: ${people} people, ${named.size} frames, ${(bytes / 1024).toFixed(1)} KB, ${(bytes / people / 1024).toFixed(1)} KB a person`);
+  assert.ok(bytes / people <= HD_PERSON_MAX, `FR-397: ${(bytes / people / 1024).toFixed(1)} KB a person, over ${HD_PERSON_MAX / 1024} KB`);
+  const have = spawnSync('python3', ['-I', '-c', 'import PIL'], { encoding: 'utf8' });
+  if (have.error || have.status !== 0) {
+    if (process.env.DURBAR_REQUIRE_PILLOW) assert.fail('python3 with Pillow is required here (DURBAR_REQUIRE_PILLOW) and is missing: the HD palette and speckle check (FR-393, FR-394) cannot run');
+    console.log('HD palette and speckle check skipped: needs python3 with Pillow (not on this machine)');
+  } else {
+    const tool = path.join(ROOT, 'scripts', 'check-arcade-hd.py');
+    type Row = { name: string; opaque: number; alphas: number[]; orphans: number; lone: number; edge: number; head: [number, number] };
+    const measure = (files: string[]): { rows: Row[]; palette: number; rgba: number } => {
+      const r = spawnSync('python3', ['-I', tool, ...files], { encoding: 'utf8', maxBuffer: 16 * 1024 * 1024 });
+      assert.strictEqual(r.status, 0, 'check-arcade-hd.py: ' + r.stderr);
+      const ls = r.stdout.trim().split('\n').map((l) => JSON.parse(l));
+      return { rows: ls.slice(0, -1), ...ls[ls.length - 1] };
+    };
+    /* FR-403's crisp rules, one list each, so a planted frame fails at its own rule and passes the others */
+    type M = ReturnType<typeof measure>;
+    const crisp = {
+      palette: (m: M): string[] => (m.palette > HD_PALETTE ? [`${m.palette} opaque colours, at most ${HD_PALETTE}`] : []),
+      alpha: (m: M): string[] => m.rows.filter((r) => r.alphas.some((a) => a !== 0 && a !== 255)).map((r) => `${r.name}: alpha ${r.alphas.join(',')}`),
+      outline: (m: M): string[] => m.rows.filter((r) => r.edge !== 1).map((r) => `${r.name}: ${r.edge} outline colours`),
+      speckle: (m: M): string[] => m.rows.filter((r) => r.orphans / r.opaque > HD_ORPHAN_MAX || r.lone > 0).map((r) => `${r.name}: ${r.orphans} orphans of ${r.opaque} (${((100 * r.orphans) / r.opaque).toFixed(2)} %), ${r.lone} lone`),
+    };
+    const files = [...named].sort().map((f) => path.join(dir, f)), all = measure(files);
+    for (const [rule, f] of Object.entries(crisp)) assert.deepStrictEqual(f(all), [], `FR-403: the ${rule} rule holds on every HD frame`);
+    /* FR-402: a standing person's head, on the front frames at 144 px (the 15-agent size) */
+    const heads = all.rows.filter((r) => /-face-[a-z]+(?:A|B)?@2\.webp$/.test(r.name));
+    assert.ok(heads.length >= 6 * Object.keys(sj.hd.people).length, `FR-402: the front frames at 144 are measured (${heads.length})`);
+    for (const r of heads) assert.ok(r.head[0] >= HD_HEAD[0] && r.head[0] <= HD_HEAD[1] && r.head[1] >= HD_HEAD_W, `FR-402: ${r.name}: head ${r.head[0]} of the height, ${r.head[1]} px wide (${HD_HEAD.join('..')}, at least ${HD_HEAD_W} px)`);
+    console.log(`HD heads at 144: ${Math.min(...heads.map((r) => r.head[0]))}..${Math.max(...heads.map((r) => r.head[0]))} of the height, ${Math.min(...heads.map((r) => r.head[1]))}..${Math.max(...heads.map((r) => r.head[1]))} px wide`);
+    const worst = Math.max(...all.rows.map((r) => r.orphans / r.opaque));
+    console.log(`HD palette ${all.palette} colours, worst orphan share ${(100 * worst).toFixed(2)} % (limit ${(100 * HD_ORPHAN_MAX).toFixed(1)} %)`);
+    const tmp = fs.mkdtempSync(path.join(require('os').tmpdir(), 'durbar-hd-'));
+    try {
+      for (const [plant, rule] of [['--speckle', 'speckle'], ['--alpha', 'alpha'], ['--colour', 'palette'], ['--edge', 'outline']] as const) {
+        const planted = path.join(tmp, `p08-type@4${plant}.webp`);
+        assert.strictEqual(spawnSync('python3', ['-I', tool, plant, path.join(dir, 'p08-type@4.webp'), planted], { encoding: 'utf8' }).status, 0, `the planted frame (${plant}) is written`);
+        const red = measure(rule === 'palette' ? [...files, planted] : [planted]);
+        assert.ok(crisp[rule](red).length > 0, `red (${plant}): the ${rule} rule fails`);
+        if (plant !== '--speckle') for (const other of Object.keys(crisp) as Array<keyof typeof crisp>) if (other !== rule) assert.deepStrictEqual(crisp[other](red), [], `red (${plant}): only the ${rule} rule fails, not ${other}`);
+      }
+    } finally { fs.rmSync(tmp, { recursive: true, force: true }); }
+  }
+}
+
 // ---- packaging (FR-060, FR-061, T012): the build ships each pack's pictures and its script, never ASSETS.md or the JSON; the CSP is unchanged ----
 const copy = fs.readFileSync(path.join(ROOT, 'scripts', 'copy-assets.js'), 'utf8').replace(/\r\n/g, '\n');
 assert.ok(/'worlds', 'world', 'DurbarRealOfficeWorlds'/.test(copy) && /'sets', 'set', 'DurbarRealOfficeSets'/.test(copy), 'copy-assets.js copies realoffice/worlds and realoffice/sets');
@@ -555,6 +631,7 @@ if (fs.existsSync(path.join(ROOT, 'dist', 'renderer', 'index.html'))) {
   for (const [kind, json, global] of [['worlds', 'world', 'DurbarRealOfficeWorlds'], ['sets', 'set', 'DurbarRealOfficeSets']]) for (const id of dirs(kind)) {
     const src = readPack(kind, id), out = path.join(ROOT, 'dist', 'renderer', 'realoffice', kind, id);
     const extra = kind === 'worlds' && fs.existsSync(path.join(RO, kind, id, 'world.css')) ? ['world.css'] : [];
+    if (kind === 'sets' && fs.existsSync(path.join(RO, kind, id, 'hd'))) { extra.push('hd'); assert.deepStrictEqual(fs.readdirSync(path.join(out, 'hd')).sort(), fs.readdirSync(path.join(RO, kind, id, 'hd')).filter((f) => f.endsWith('.webp')).sort(), `dist ${kind}/${id}/hd holds exactly the HD frames (spec 102 FR-391)`); }
     assert.deepStrictEqual(fs.readdirSync(out).sort(), [...src.files.keys(), json + '.js', ...extra].sort(), `dist ${kind}/${id} holds exactly the pictures and ${json}.js: no ASSETS.md, no ${json}.json`);
     const m = new RegExp(`self\\.${global}\\[\"${id}\"\\]=(\\{.*\\});\\s*$`).exec(fs.readFileSync(path.join(out, json + '.js'), 'utf8').replace(/\r\n/g, '\n'));
     assert.ok(m, `${json}.js sets self.${global}[${id}]`);
