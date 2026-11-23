@@ -934,7 +934,7 @@ T181's Mac run above has no idle CPU row; that run's idle CPU rows are in spec 0
 
 **Not verified.** Windows and macOS runs of the driver (CI covers Windows). `check-needs-panel`'s failure on #2031 (after focus goes to a desk and back, A answers nothing) and `check-097-textfit`'s on #2017 are other causes, not this one: neither waits on a render count.
 
-## Changes 2026-11-23: the lobby row shares its width by need; a people chip is never two letters (bugs, issues #2018 and #2041, the same defect; T470; amends FR-036, FR-039; no new FR)
+## Changes 2026-11-23: the lobby row shares its width by need; a people chip is never two letters (bugs, issues #2018 and #2041, the same defect; T474; amends FR-036, FR-039; no new FR)
 
 **Defect.** Found by a visual check of `main` (simulator, 15 agents, Linux, xvfb, Flat office, both sizes). In the row of places the built-in name "Software library" is cut to "Softwa…" (a 118 px tile, its name needs 101 px beside the icon and the count) though the "Web" tile beside it uses 44 px of its 118 for the name and the rest is empty. The people chips of the tiles in initials mode read "Ad", "Jo", "Ke", "Le": two letters, which read as a name cut to nothing (FR-036's initials).
 
