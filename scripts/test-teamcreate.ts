@@ -789,6 +789,13 @@ section('main', () => {
   const create = src.slice(src.indexOf('create: {'), src.indexOf('resolveTarget: (t)', src.indexOf('create: {')));
   ok(/\bexists: pathExists,/.test(create) && /import \{[^}]*\bpathExists\b[^}]*\} from '\.\/teamops'/.test(src), 'the wiring asks the real folder check (pathExists), not a stub');
   ok(/build: addLazyMember/.test(create) && !/ensureLive|startGuardOp|\.start\(/.test(create), 'the wiring builds with addLazyMember and starts nothing');
+  // T011 wiring (the 8-member cap, the rollback, the key-to-count of the target, the names written with the record): none of it can run without Electron
+  ok(/room: \(key\) => \{[^\n]*\bcount: f\?\.team\?\.members\.length \?\? 0,[^\n]*\bsavedCap: f\?\.maxAiCredits,[^\n]*\bteam: f\?\.team,[^\n]*\bknown: f !== undefined,[^\n]*\bsessionNames: f\?\.sessionNames\?\.map/.test(create), 'room(): the count is the saved record\'s member count (the cap of 8), with the saved limit, team, known and names');
+  ok(/rollback: \(key, previous, previousNames, removeRoom\) => !!folderStore && folderStore\.restoreTeamRecord\(key, previous, previousNames, removeRoom\),/.test(create), 'rollback hands the record, the names and the flag to restoreTeamRecord in its own order');
+  ok(/restoreTeamRecord\(workspace: string, previous: unknown, previousNames: unknown, removeRoom: boolean\)/.test(fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'main', 'folders.ts'), 'utf8')), 'restoreTeamRecord takes (key, previous, previousNames, removeRoom), the order main.ts calls it in');
+  ok(/commit: \(key, team, infos\) => !!folderStore && folderStore\.setTeamRecord\(key, team, infos\.map\(\(i\) => \(\{ src: i\.adapterId \?\? DEFAULT_ADAPTER, id: i\.id, name: i\.alias \?\? '' \}\)\)\),/.test(create), 'commit writes each member as { src: its adapter (default when none), id, name: its alias or empty }');
+  const target = src.slice(src.indexOf('resolveTarget: (t)'), src.indexOf('pick: async', src.indexOf('resolveTarget: (t)')));
+  ok(/teamCount: \(key\) => folderStore\?\.get\(key\)\?\.team\?\.members\.length \?\? 0,/.test(target), 'resolveTarget counts the target room\'s members from the saved record');
 });
 
 // ---------------------------------------------------------------------------------------------------------------- run
