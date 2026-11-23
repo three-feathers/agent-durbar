@@ -31,9 +31,11 @@ const P = require(path.join(__dirname, '..', '..', 'src', 'renderer', 'places.js
   allPlaces: (custom?: unknown) => { id: string; name: string; icon?: string }[];
   isChoice: (v: unknown, customIds?: unknown) => boolean;
   chipsIn: (tileW: unknown) => { named: number; initials: number };
+  lobbyShare: (tile: unknown, items: unknown) => number[] | null;
+  shortName: (name: unknown) => string;
   lobbyFit: (aw: unknown, places: unknown, addButton: unknown, post?: unknown) => Record<'boss' | 'coffee' | 'bank' | 'post', { width: number; named: boolean; wait?: boolean; long?: boolean; chips: { named: number; initials: number } } | null> & { tile: number; tileNamed: boolean; caps: { named: number; initials: number } };
   lobbyOrder: (ids: unknown, post?: unknown) => string[];
-  initialSpots: (tileW: unknown, count: unknown) => { shown: number; more: number };
+  initialSpots: (tileW: unknown, count: unknown, pad?: unknown) => { shown: number; more: number };
   postNext: (s: unknown, pausedAll: unknown) => { s: { id: string }; t: number }[];
   lettersToday: (s: unknown, pausedAll: unknown, now: unknown, ruleNext?: unknown) => number;
   postMissed: (s: unknown) => number;
@@ -552,11 +554,32 @@ assert.deepStrictEqual(cleanPlaceName('__proto__'), { ok: true, name: '__proto__
   assert.strictEqual(v.dropPlace(cid(1)), false); assert.strictEqual(v.dropPlace('library'), false);
 }
 
+// spec 001 FR-039 (delta 2026-11-23, issues 2018 and 2041): the row of places shares its width by need; a people chip is never two letters
+{
+  const sum = (a: number[]) => a.reduce((t, x) => t + x, 0);
+  // the 1280x800 row: 5 tiles of 118; Web (74) gives, Software library (161) needs more, Other tools (118) is as it is
+  const items = [{ need: 90, give: false }, { need: 161, give: false }, { need: 100, give: false }, { need: 74, give: true }, { need: 118, give: true }];
+  const w = P.lobbyShare(118, items)!;
+  assert.deepStrictEqual(w, [118, 161, 118, 74, 118], 'Software library gets what Web does not use, whole');
+  assert.ok(sum(w) <= 118 * 5, 'never over the row');
+  assert.deepStrictEqual(P.lobbyShare(116.9, [{ need: 117, give: false }, { need: 117, give: false }]), [117, 116], 'the fractions of the equal tile are part of the spare');
+  assert.strictEqual(P.lobbyShare(118, items.map((i) => ({ ...i, give: false }))), null, 'nobody gives: nothing moves');
+  assert.strictEqual(P.lobbyShare(118, [{ need: 90, give: true }, { need: 118, give: false }]), null, 'nobody needs more: nothing moves, box for box');
+  const two = P.lobbyShare(118, [{ need: 200, give: false }, { need: 190, give: false }, { need: 60, give: true }])!;
+  assert.deepStrictEqual(two.map((x) => x > 118), [true, true, false], 'two tiles share one spare');
+  assert.ok(sum(two) <= 354 && two[2] === 60 && two[0] <= 200 && two[1] <= 190 && Math.abs(two[0] - two[1]) <= 6, 'an equal part at a time: ' + two);
+  assert.ok(P.lobbyShare(118, [{ need: 140, give: false }, { need: 20, give: true }])![0] === 140, 'a tile never gets more than it needs');
+  assert.ok(P.lobbyShare(118, [{ need: 300, give: false }, { need: 20, give: true }])!.every((x, i) => i === 1 ? x === 20 : x === 216), 'all the spare goes to the one that needs it');
+  for (const bad of [null, undefined, [], 'x']) assert.strictEqual(P.lobbyShare(118, bad), null, 'never throws: ' + String(bad));
+  for (const t of [0, -3, NaN, 'x']) assert.strictEqual(P.lobbyShare(t, items), null, 'never throws: ' + String(t));
+  assert.deepStrictEqual(['Omar', 'Ada Lovelace', 'Kenji', 'Elif', 'Jo', '', null, 'Bartholomew'].map((n) => P.shortName(n)), ['Omar', 'Ada…', 'Ken…', 'Elif', 'Jo', '', '', 'Bar…'], 'a chip is 4 letters, or 3 and the ellipsis; never two');
+  for (const n of ['Amélie', '\u{1F468}\u200d\u{1F4BB}coder', 'Zoë Ng']) assert.ok(Array.from(P.shortName(n).replace('…', '')).length >= 3 || Array.from(n).length <= 3, 'at least 3 letters: ' + n);
+}
 // spec 001 FR-036: visitor entries per tile: names when everyone fits by name or two named entries fit, else initials; 0..6 / 1..6
 {
-  // chipsIn(w): one tile w px wide (lobbyFit gives the widths); exact capacity boundaries: 20 px padding, 92/46 px entries, 6 px apart
+  // chipsIn(w): one tile w px wide (lobbyFit gives the widths); exact capacity boundaries: 20 px padding, 92/54 px entries, 6 px apart
   assert.deepStrictEqual([111, 112, 209, 210].map((w) => P.chipsIn(w).named), [0, 1, 1, 2], 'named entries: boundaries at 112 and 210 px');
-  assert.deepStrictEqual([117, 118, 169, 170].map((w) => P.chipsIn(w).initials), [1, 2, 2, 3], 'initials: boundaries at 118 (TILE_MIN) and 170 px');
+  assert.deepStrictEqual([133, 134, 193, 194].map((w) => P.chipsIn(w).initials), [1, 2, 2, 3], 'initials (a figure and a name of 4 letters, issue 2018): boundaries at 134 and 194 px');
   assert.deepStrictEqual(P.chipsIn(99999), { named: 6, initials: 6 }, 'at most 6');
   for (const w of [0, -5, NaN, undefined, 'x', null]) {
     const r = P.chipsIn(w);
@@ -569,7 +592,7 @@ assert.deepStrictEqual(cleanPlaceName('__proto__'), { ok: true, name: '__proto__
   assert.deepStrictEqual(f(2, 4, 5), { mode: 'named', slots: 2 }, 'two named entries fit: names and +N');
   assert.deepStrictEqual(f(0, 1, 1), { mode: 'initials', slots: 1 }, 'no named entry fits');
   assert.deepStrictEqual(f(2, 4, 0), { mode: 'named', slots: 2 }, 'nobody there');
-  assert.deepStrictEqual(P.chipsIn(200), { named: 1, initials: 3 }, 'a 200 px tile: one named entry or three initials');
+  assert.deepStrictEqual(P.chipsIn(196), { named: 1, initials: 3 }, 'a 196 px tile: one named entry or three short names');
   assert.deepStrictEqual(['Omar', 'Ada Lovelace', '  ', '', null, 'émile zola', 'X'].map((n) => P.initialsOf(n)), ['Om', 'AL', '', '', '', 'ÉZ', 'X']);
 }
 
@@ -579,12 +602,12 @@ assert.deepStrictEqual(cleanPlaceName('__proto__'), { ok: true, name: '__proto__
   for (const aw of [1100, 1248, 1408, 1900]) for (const n of [5, 6, 7, 8]) for (const post of [true, false]) {
     const f = P.lobbyFit(aw, n, n < 8, post);
     assert.ok(Math.abs(sum(f, n, n < 8) - aw) < 1, `the row fills the lobby exactly (${aw}, ${n}, ${post}): ${sum(f, n, n < 8)}`);
-    assert.ok(f.boss!.width >= 190 && f.boss!.width <= 230 && f.coffee!.width >= 96 && f.bank!.width >= 96, `within the bounds (${aw}, ${n})`);
+    assert.ok(f.boss!.width >= 194 && f.boss!.width <= 230 && f.coffee!.width >= 96 && f.bank!.width >= 96, `within the bounds (${aw}, ${n})`);
     assert.strictEqual(f.post === null, !post, 'no Postbox when it is not shown');
-    if (f.boss!.width > 190) assert.ok(f.tile >= 117.5, `the special tiles shrink before a place gets under two entries (${aw}, ${n}): ${f.tile}`);
+    if (f.boss!.width > 194) assert.ok(f.tile >= 117.5, `the special tiles shrink before a place gets under two entries (${aw}, ${n}): ${f.tile}`);
   }
   const wide = P.lobbyFit(1408, 5, true), narrow = P.lobbyFit(1248, 5, true);
-  assert.ok(!wide.coffee!.named && wide.post!.named && wide.caps.initials >= 2, '1440x900: the Postbox named, the corner icon only (its name would be cut), two entries per place');
+  assert.ok(!wide.coffee!.named && wide.post!.named && wide.caps.initials >= 1, '1440x900: the Postbox named, the corner icon only (its name would be cut), one entry and +N per place');
   assert.ok(P.lobbyFit(1600, 5, true).coffee!.named, 'a wider window names the corner');
   assert.ok(!narrow.coffee!.named && narrow.post!.named && !narrow.post!.long && narrow.boss!.chips.initials >= 3, '1280x800: icon-only corner, the Postbox keeps its name (issue #2014; the folder in its lines only from 240 px), the Boss keeps three entries');
   assert.ok(wide.post!.long && P.lobbyFit(1900, 5, true).post!.long, 'the folder shows in the Postbox lines at 246 px and wider');
@@ -596,9 +619,10 @@ assert.deepStrictEqual(cleanPlaceName('__proto__'), { ok: true, name: '__proto__
   assert.strictEqual(P.lobbyOrder([...five, 'c-1', 'c-2', 'c-3']).indexOf('boss'), 6, 'eight places: the Boss is the 7th of 12');
   assert.deepStrictEqual(P.lobbyOrder(null), ['boss', 'coffee', 'bank', 'postbox']);
   assert.deepStrictEqual(P.initialSpots(96, 1), { shown: 1, more: 0 });
-  assert.deepStrictEqual(P.initialSpots(96, 2), { shown: 1, more: 1 }, 'one figure and +1, not only +2');
-  assert.deepStrictEqual(P.initialSpots(190, 3), { shown: 3, more: 0 }, 'the Boss at 1280x800 shows a queue of three');
-  assert.deepStrictEqual(P.initialSpots(190, 6), { shown: 2, more: 4 });
+  assert.deepStrictEqual(P.initialSpots(96, 2, 12), { shown: 1, more: 1 }, 'a snug 96 px tile (6 px padding) holds an entry and +1');
+  assert.deepStrictEqual(P.initialSpots(96, 2), { shown: 0, more: 2 }, 'with the usual 20 px padding a 96 px tile holds only +N');
+  assert.deepStrictEqual(P.initialSpots(194, 3), { shown: 3, more: 0 }, 'the Boss at 1280x800 shows a queue of three');
+  assert.deepStrictEqual(P.initialSpots(194, 6), { shown: 2, more: 4 });
   assert.deepStrictEqual(P.initialSpots(30, 3), { shown: 0, more: 3 }, 'nothing fits: only +N');
   assert.deepStrictEqual(P.initialSpots(200, 0), { shown: 0, more: 0 });
 }
@@ -609,8 +633,8 @@ assert.deepStrictEqual(cleanPlaceName('__proto__'), { ok: true, name: '__proto__
   // 900x480 and 1000x480 (the lobby is the window less 32 px padding less 16): as before, box for box
   const f640wait = () => P.lobbyFit(592, 5, true).boss!.wait;
   const f900 = P.lobbyFit(868, 5, true), f1000 = P.lobbyFit(968, 5, true);
-  assert.deepStrictEqual(W(f900), [190, 96, 96, 180], '900 px: the minimums, as before');
-  assert.ok(Math.abs(f900.tile - 41.6) < 0.1 && Math.abs(f1000.tile - 61.6) < 0.1, `900 and 1000 px: the places are as wide as before (${f900.tile}, ${f1000.tile})`);
+  assert.deepStrictEqual(W(f900), [194, 96, 96, 180], '900 px: the minimums, as before');
+  assert.ok(Math.abs(f900.tile - 40.8) < 0.1 && Math.abs(f1000.tile - 60.8) < 0.1, `900 and 1000 px: the places are as wide as FR-039 leaves them with the Boss at 194 (${f900.tile}, ${f1000.tile})`);
   assert.ok(!f900.tileNamed && f1000.tileNamed, 'a 42 px place shows its icon only; a 62 px one keeps its (cut) name');
   assert.ok(f900.boss!.wait && !f640wait(), 'the Boss shows its wait while it is 150 px or more; narrower, the wait is only in the label');
   assert.ok(f900.bank!.named && f900.bank!.chips.initials >= 1, 'the Bank keeps its name from 96 px');
@@ -619,10 +643,10 @@ assert.deepStrictEqual(cleanPlaceName('__proto__'), { ok: true, name: '__proto__
   for (let aw = 1100; aw >= 592; aw -= 4) {
     const f = P.lobbyFit(aw, 5, true);
     assert.ok(Math.abs(sum(f, 5, true) - aw) < 1, `the row fills the lobby (${aw}): ${sum(f, 5, true)}`);
-    assert.ok(aw >= 868 ? f.tile >= 41.5 : f.tile >= 28 - 1e-6, `a place is at least 28 px wide down to the window minimum (${aw}): ${f.tile}`);
+    assert.ok(aw >= 868 ? f.tile >= 40.7 : f.tile >= 28 - 1e-6, `a place is at least 28 px wide down to the window minimum (${aw}): ${f.tile}`);
     const w = W(f);
     assert.ok(w[0] >= 96 && w[1] >= 60 && w[2] >= 60 && w[3] >= 132, `never under the hard minimums (${aw}): ${w}`);
-    if (aw >= 868) assert.ok(w[0] >= 190 && w[1] >= 96 && w[2] >= 96 && w[3] >= 180, `the FR-039 minimums hold while the window allows (${aw}): ${w}`);
+    if (aw >= 868) assert.ok(w[0] >= 194 && w[1] >= 96 && w[2] >= 96 && w[3] >= 180, `the FR-039 minimums hold while the window allows (${aw}): ${w}`);
     if (prev) assert.ok(w.every((x, i) => x <= prev![i]), `a narrower window never widens a special tile (${aw})`);
     prev = w;
   }

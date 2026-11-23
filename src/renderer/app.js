@@ -481,28 +481,49 @@ const visitorWords=(a,v,cut)=>{const C=cut?DurbarCutText.cutText:(t=>String(t)),
 /* A place tile's title: at most 4 names (each cut), then "and N more", then the longest wait at the Boss; one line, well under 300 characters */
 const placeTip=(pid,ids,wait)=>{const C=DurbarCutText.cutText,nm=ids.slice(0,4).map(id=>C(byId(id).name,30)),more=ids.length-nm.length;
   return `${placeLabelFull(pid)}: ${nm.length?nm.join(', ')+(more?` and ${more} more`:''):'nobody'}${wait?'. Longest wait '+wait:''}`;};
+/* spec 001 FR-039 (delta 2026-11-23, issues 2018, 2041): the width of each place name as the lobby draws it (one hidden tile of the lobby's own markup, so the theme's font, case and
+   spacing count), then DurbarPlaces.lobbyShare gives the places whose name does not fit in an equal tile what the empty ones do not use. {placeId: px} or null (nobody needs more). */
+let LOBBY_M=null;
+function lobbyShares(all,fit){
+  const D=window.DurbarPlaces, rest=all.filter(p=>p.id!==D.BOSS&&p.id!==D.COFFEE&&p.id!==D.BANK&&p.id!==D.POSTBOX);
+  if(!rest.length||!document.body)return null;
+  if(!LOBBY_M||!LOBBY_M.isConnected){
+    LOBBY_M=document.createElement('div');LOBBY_M.className='lobby';LOBBY_M.setAttribute('aria-hidden','true');
+    LOBBY_M.style.cssText='position:fixed;left:-9999px;top:0;visibility:hidden;pointer-events:none;flex:none;width:auto';
+    LOBBY_M.innerHTML='<div class="place" style="flex:none;width:max-content"><span class="plh"><span class="pic" style="width:18px"></span><span class="pn" style="flex:none"></span><span class="pc">0</span></span></div>';
+    document.body.appendChild(LOBBY_M);
+  }
+  const pl=LOBBY_M.firstChild, pn=pl.querySelector('.pn'), pc=pl.querySelector('.pc');
+  const items=rest.map(p=>{const ids=placeVisitors(p.id);pn.textContent=placeLabel(p.id);pc.textContent=String(ids.length);pc.style.display=ids.length?'':'none';
+    return {id:p.id,need:pl.getBoundingClientRect().width,give:!ids.length};});
+  const w=D.lobbyShare(fit.tile,items);
+  return w?Object.fromEntries(items.map((i,k)=>[i.id,w[k]])):null;
+}
 function lobbyHTML(aw){
   if(!lobbyOn())return '';
   const D=window.DurbarPlaces, all=lobbyPlaces(), add=canAddPlace(), fit=D.lobbyFit(aw,D.allPlaces(CUSTOM).length,add,postShown());
+  const share=fit.tileNamed?lobbyShares(all,fit):null;
   const own={[D.BOSS]:fit.boss,[D.COFFEE]:fit.coffee,[D.BANK]:fit.bank,[D.POSTBOX]:fit.post}; /* FR-039: the fixed tiles' own widths */
   return `<section class="lobby" data-key="lobby" aria-label="${esc(wordOf('lobby-label'))}">${all.map(p=>{
     const box=own[p.id]||null, cf=p.id===D.COFFEE, boss=p.id===D.BOSS, bank=p.id===D.BANK;
     if(p.id===D.POSTBOX)return postboxHTML(p,box);
-    const named=box?box.named:fit.tileNamed, sty=box?` style="flex:0 0 ${box.width}px"`:'';
-    const caps=box?box.chips:fit.caps, ids=placeVisitors(p.id);
+    const ids=placeVisitors(p.id), tw=box?box.width:(share&&share[p.id])||fit.tile; /* the tile's own width: a special tile's, or its share of the row by need (spec 001 FR-039, delta 2026-11-23) */
+    const snug=!!box&&(cf||bank)&&box.width<D.SNUG_W; /* the corner and the Bank at their minimum: 6 px of side padding, so a short-name entry and "+N" fit in 96 px (spec 001 delta 2026-11-23) */
+    const named=box?box.named:tw>=56, sty=box?` style="flex:0 0 ${box.width}px"`:share&&share[p.id]?` style="flex:0 0 ${share[p.id]}px"`:'';
+    const caps=box?box.chips:share&&share[p.id]?D.chipsIn(tw):fit.caps;
     /* the Boss shows as many of its queue as it can: names only when everyone there fits by name, else initials (FR-034) */
     const {mode,slots:cap}=boss&&ids.length>caps.named?{mode:'initials',slots:caps.initials}:D.chipsFor(caps,ids.length);
-    const sp=mode==='initials'?D.initialSpots(box?box.width:fit.tile,ids.length):D.layoutSpots(ids.length,cap), who=ids.map(id=>{const a=byId(id);return visitorWords(a,VISITS.at(id));});
+    const sp=mode==='initials'?D.initialSpots(tw,ids.length,snug?12:20):D.layoutSpots(ids.length,cap), who=ids.map(id=>{const a=byId(id);return visitorWords(a,VISITS.at(id));});
     const go=boss||bank||cf; /* FR-034/FR-035: an entry at the Boss or the Bank opens that chat at its request; spec 068 FR-019 (owner 2026-10-23): so does one in the coffee corner */
     const chips=ids.slice(0,sp.shown).map((id,i)=>{const a=byId(id),v=VISITS.at(id),w=visitorWords(a,v),t=visitorWords(a,v,true),k=boss&&v?v.label:'';
-      const inner=`<span class="slot on" data-slot="${i}"></span><span class="pv-t">${mode==='named'?`<b class="pv-n">${esc(a.name)}</b><small class="pv-a">${esc(v?visitDoing(a,v):'')}</small>`:`<b class="pv-n pv-i">${esc(D.initialsOf(a.name))}</b>`}</span>`;
+      const inner=`<span class="slot on" data-slot="${i}"></span><span class="pv-t">${mode==='named'?`<b class="pv-n">${esc(a.name)}</b><small class="pv-a">${esc(v?visitDoing(a,v):'')}</small>`:`<b class="pv-n pv-i">${esc(D.shortName(a.name))}</b>`}</span>`;
       const hint=cf?'. Open the chat; right-click for Retry now.':'. Open the chat.', kh=cf?' aria-keyshortcuts="Shift+F10"':''; /* FR-020: the coffee entry's menu */
       return go?`<button type="button" class="pv pv-go" data-key="pv:${esc(id)}" data-visitor="${esc(id)}" data-pvopen="${esc(id)}"${cf?` data-coffeeid="${esc(id)}"`:''}${k?` data-ask="${k}"`:''}${kh} title="${esc(t+hint)}" aria-label="${esc(w+hint)}">${inner}</button>`
         :`<span class="pv" data-key="pv:${esc(id)}" data-visitor="${esc(id)}" title="${esc(t)}">${inner}</span>`;}).join('');
     const more=sp.more?`<button class="pv pv-more" type="button" data-key="pv-more:${esc(p.id)}" data-placemore="${esc(p.id)}" aria-haspopup="menu" title="${sp.more} more here. Open the list." aria-label="${sp.more} more at ${esc(placeLabelFull(p.id))}: ${esc(ids.slice(sp.shown).map(id=>byId(id).name).join(', '))}"><span class="slot more" data-slot="${sp.shown}">+${sp.more}</span>${mode==='named'?'<span class="pv-t"><b class="pv-n">more</b></span>':''}</button>`:'';
     const wait=boss&&ids.length?bossWait(ids[0]):''; /* FR-034: the longest wait, in the header */
     const label=`${placeLabelFull(p.id)}: ${who.length?who.join(cf||bank?', ':'; '):'nobody'}${wait?'. Longest wait '+wait:''}`; /* the accessible name: everyone there, in full (the title is placeTip) */
-    return `<div class="place${ids.length?' busy':''}${cf?' coffee':''}${boss?' boss':''}${bank?' bank':''}${named?'':' unnamed'}${box||named?'':' compact'}"${sty} data-key="place:${p.id}" data-place="${p.id}"${reorderablePlace(p.id)?' data-reo="1"':''} data-chips="${mode}" tabindex="-1" role="group" title="${esc(placeTip(p.id,ids,wait))}" aria-label="${esc(label)}"><span class="plh">${placeIcon(p)}${named?`<span class="pn">${esc(placeLabel(p.id))}</span>`:''}${wait&&(!boss||box.wait)?`<span class="bw" aria-hidden="true">${esc(wait)}</span>`:''}${ids.length&&(box||named)?`<span class="pc" aria-hidden="true">${ids.length}</span>`:''}</span><span class="prow" aria-hidden="${ids.length?'false':'true'}">${ids.length?chips+more:'<span class="pv-none">nobody</span>'}</span></div>`;
+    return `<div class="place${ids.length?' busy':''}${cf?' coffee':''}${boss?' boss':''}${bank?' bank':''}${snug?' snug':''}${named?'':' unnamed'}${box||named?'':' compact'}"${sty} data-key="place:${p.id}" data-place="${p.id}"${reorderablePlace(p.id)?' data-reo="1"':''} data-chips="${mode}" tabindex="-1" role="group" title="${esc(placeTip(p.id,ids,wait))}" aria-label="${esc(label)}"><span class="plh">${placeIcon(p)}${named?`<span class="pn">${esc(placeLabel(p.id))}</span>`:''}${wait&&(!boss||box.wait)?`<span class="bw" aria-hidden="true">${esc(wait)}</span>`:''}${ids.length&&(box||named)?`<span class="pc" aria-hidden="true">${ids.length}</span>`:''}</span><span class="prow" aria-hidden="${ids.length?'false':'true'}">${ids.length?chips+more:'<span class="pv-none">nobody</span>'}</span></div>`;
   }).join('')}${add?'<button class="place-add" type="button" data-key="place-add" title="Add a place" aria-label="Add a place">+</button>':''}${lobbyArt()}</section>`;
 }
 /* spec 001 FR-038: the Postbox: the next three scheduled runs, the letters still due today, a flag for a missed or failed last run. A button:

@@ -1289,11 +1289,12 @@ body.browser-big #panel .bpane :is(.bstrip,.bbar,.bstat){padding-left:var(--s-4)
 .place .pc{margin-left:auto;flex:none;font-size:11.5px;font-weight:650;color:var(--ink-2);font-variant-numeric:tabular-nums}
 .place .prow{flex:none;display:flex;align-items:center;gap:6px;min-width:0;height:28px;overflow:hidden}
 .place .pv{flex:1 1 0;max-width:170px;min-width:0;display:flex;align-items:center;gap:5px;height:28px}
-.place[data-chips="initials"] .pv{flex:0 0 46px;gap:2px} /* 22px for two letters ("Om" at 11px bold is about 20px) */
+.place[data-chips="initials"] .pv{flex:0 0 54px;gap:1px} /* spec 001 (delta 2026-11-23): the figure (22) and a name cut to 4 letters ("Ken…", "Omar": 30px at 11px bold; a wider one is cut by the ellipsis); never two letters */
 .place[data-chips="initials"] .pv-more{flex:0 0 auto} /* spec 001 FR-039: "+N" is a bare circle in this mode (initialSpots counts it as 22 px) */
 .place .pv .slot{flex:none}
 .place .pv-t{display:flex;flex-direction:column;justify-content:center;min-width:0;line-height:13px}
 .place .pv-n{font-size:11px;font-weight:650;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.place .pv-i{font-size:10.5px} /* spec 001 (delta 2026-11-23): "Omar" is 29.6 px at 10.5px bold, inside the 31 px an entry's name has in a 54 px entry (a very wide name such as "Mmm…" is still cut by the ellipsis) */
 .place .pv-a{font-size:10.5px;color:var(--ink-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .place .pv-none{font-size:11px;color:var(--muted)}
 .place .pv-more{padding:0;border:0;background:none;font:inherit;color:inherit;cursor:pointer;text-align:left;border-radius:8px}
@@ -1306,6 +1307,7 @@ body.browser-big #panel .bpane :is(.bstrip,.bbar,.bstat){padding-left:var(--s-4)
 .place .pv-go:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
 .place .bw{margin-left:auto;flex:none;font-size:10.5px;font-weight:600;color:var(--amber-ink);white-space:nowrap}
 .place .bw+.pc{margin-left:0}
+.place.snug{padding-left:6px;padding-right:6px} /* spec 001 delta 2026-11-23: the corner and the Bank under 110 px: an entry (54) and the "+N" circle (22) with their gap fit in 96 px */
 .place.compact{padding-left:2px;padding-right:2px} /* issue #737 (spec 001 FR-189): a place under 56 px shows its icon (the name is in the tooltip and the label) and the "+N" circle, which already counts everyone there (the count is not drawn); 2 px of padding keeps both inside a 28 px tile */
 .place.compact .plh,.place.compact .prow{justify-content:center}
 .place.boss.busy{border-color:color-mix(in srgb,var(--c-waiting) 55%,var(--line));background:color-mix(in srgb,var(--c-waiting) 10%,var(--raised))}
