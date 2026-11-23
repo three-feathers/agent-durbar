@@ -483,19 +483,25 @@ const placeTip=(pid,ids,wait)=>{const C=DurbarCutText.cutText,nm=ids.slice(0,4).
   return `${placeLabelFull(pid)}: ${nm.length?nm.join(', ')+(more?` and ${more} more`:''):'nobody'}${wait?'. Longest wait '+wait:''}`;};
 /* spec 001 FR-039 (delta 2026-11-23, issues 2018, 2041): the width of each place name as the lobby draws it (one hidden tile of the lobby's own markup, so the theme's font, case and
    spacing count), then DurbarPlaces.lobbyShare gives the places whose name does not fit in an equal tile what the empty ones do not use. {placeId: px} or null (nobody needs more). */
-let LOBBY_M=null;
+let LOBBY_M=null, LOBBY_CTX=null;
 function lobbyShares(all,fit){
   const D=window.DurbarPlaces, rest=all.filter(p=>p.id!==D.BOSS&&p.id!==D.COFFEE&&p.id!==D.BANK&&p.id!==D.POSTBOX);
   if(!rest.length||!document.body)return null;
-  if(!LOBBY_M||!LOBBY_M.isConnected){
+  if(!LOBBY_M||!LOBBY_M.isConnected){ /* one hidden tile of the lobby's own markup: its computed type is the theme's (read by style, never by layout: a status update must not add layout reads, check-office-ops) */
     LOBBY_M=document.createElement('div');LOBBY_M.className='lobby';LOBBY_M.setAttribute('aria-hidden','true');
     LOBBY_M.style.cssText='position:fixed;left:-9999px;top:0;visibility:hidden;pointer-events:none;flex:none;width:auto';
-    LOBBY_M.innerHTML='<div class="place" style="flex:none;width:max-content"><span class="plh"><span class="pic" style="width:18px"></span><span class="pn" style="flex:none"></span><span class="pc">0</span></span></div>';
+    LOBBY_M.innerHTML='<div class="place"><span class="plh"><span class="pn"></span><span class="pc"></span></span></div>';
     document.body.appendChild(LOBBY_M);
   }
-  const pl=LOBBY_M.firstChild, pn=pl.querySelector('.pn'), pc=pl.querySelector('.pc');
-  const items=rest.map(p=>{const ids=placeVisitors(p.id);pn.textContent=placeLabel(p.id);pc.textContent=String(ids.length);pc.style.display=ids.length?'':'none';
-    return {id:p.id,need:pl.getBoundingClientRect().width,give:!ids.length};});
+  if(!LOBBY_CTX)LOBBY_CTX=document.createElement('canvas').getContext('2d');
+  const pl=LOBBY_M.firstChild, pn=pl.querySelector('.pn'), pc=pl.querySelector('.pc'), cs=getComputedStyle(pn), cp=getComputedStyle(pc), cl=getComputedStyle(pl);
+  const frame=parseFloat(cl.paddingLeft)+parseFloat(cl.paddingRight)+parseFloat(cl.borderLeftWidth)+parseFloat(cl.borderRightWidth)+18+7; /* padding, border, the 18 px icon and its gap */
+  const ls=parseFloat(cs.letterSpacing)||0, up=cs.textTransform==='uppercase';
+  const font=c=>c.fontStyle+' '+c.fontWeight+' '+c.fontSize+' '+c.fontFamily;
+  const items=rest.map(p=>{const ids=placeVisitors(p.id), t=up?placeLabel(p.id).toUpperCase():placeLabel(p.id);
+    LOBBY_CTX.font=font(cs); let need=frame+LOBBY_CTX.measureText(t).width+ls*Array.from(t).length;
+    if(ids.length){LOBBY_CTX.font=font(cp);need+=7+LOBBY_CTX.measureText(String(ids.length)).width;}
+    return {id:p.id,need,give:!ids.length};});
   const w=D.lobbyShare(fit.tile,items);
   return w?Object.fromEntries(items.map((i,k)=>[i.id,w[k]])):null;
 }
