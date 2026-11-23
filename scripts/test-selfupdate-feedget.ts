@@ -77,7 +77,7 @@ async function main(): Promise<void> {
     ['a fragment', LIST + '#x'],
     ['a trailing slash', LIST.replace('releases?', 'releases/?')],
     ['a dot segment', LIST.replace('/releases', '/x/../releases')],
-    ['an encoded slash', LIST.replace(SLUG, SLUG.replace('/', '%2F'))],
+    ['an encoded slash', LIST.replace(SLUG, SLUG.replaceAll('/', '%2F'))],
     ['a leading space', ' ' + LIST],
   ];
   for (const [what, u] of refusedList) assert.strictEqual(feedAllowed(u, SLUG), undefined, 'list refused: ' + what);
