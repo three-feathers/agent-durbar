@@ -382,6 +382,23 @@ export function standHeight(meta: RealMeta, person: string): number {
   return Math.max(1, (f - t) * h);
 }
 
+/** spec 102 FR-392: the authored scale `s` and the whole number `n` of device px per file px for `dev` device px per grid px: the largest s x n not over `dev`
+ *  (a tie takes the larger s, the finer art; s 1 only when no other fits); null when no authored scale fits (the old frame is drawn) */
+export function hdPick(dev: number, scales: ReadonlyArray<number>): { s: number; n: number } | null {
+  let best: { s: number; n: number } | null = null;
+  const use = scales.some((s) => s > 1 && dev + 1e-6 >= s) ? scales.filter((s) => s > 1) : scales; /* the lobby's 72 file (s 1) only where no larger one fits: never blown up */
+  for (const s of use) { const n = Math.floor(dev / s + 1e-6); if (n >= 1 && (!best || s * n > best.s * best.n || (s * n === best.s * best.n && s > best.s))) best = { s, n }; }
+  return best;
+}
+/** spec 102 FR-391, FR-392: the HD frame of `pid` in `pose` at grid scale `g` and ratio `dpr`, in CSS px (whole device px), with its face box; null without one (the old frame is drawn) */
+export function hdFrame(hd: HdSet | undefined, pid: string, pose: string, g: number, dpr = 1): { file: string; w: number; h: number; face: Rect } | null {
+  const fr = hd && roOwn(hd.people, pid) && roOwn(hd.people[pid], pose) ? hd.people[pid][pose] : null;
+  const pk = fr ? hdPick(g * dpr, hd!.scales.filter((s) => roOwn(fr, String(s)))) : null;
+  if (!fr || !pk) return null;
+  const [w, h, fx, fy, fw, fh] = fr[String(pk.s)], k = (v: number): number => (v * pk.n) / dpr;
+  return { file: `hd/${pid}-${pose}@${pk.s}.webp`, w: k(w), h: k(h), face: { x: k(fx), y: k(fy), w: k(fw), h: k(fh) } };
+}
+
 /** Owner 2026-10-31 09:03 (spec 097 delta): one fixture per place, never two; a place's width grows with the people standing there and
  *  an empty place shrinks to a compact fixture. `fixtures` are the fixtures' widths at full scale, `counts` the visitors per place,
  *  `vw` a standing person's width. Steps, each only while the row is wider than W: (1) empty places draw their fixture smaller, down
@@ -483,7 +500,10 @@ function roLobby(meta: RealMeta, places: RealPlace[], W: number, Lb: number): { 
         /* the two running pictures have their own canvases: each in its own box, the feet on one spot, so changing picture moves no foot */
         const b = fb ? (() => { const w = st.poses[fb][0] * k, h = st.poses[fb][1] * k; return { x: px(cx - ft(st.foot && roOwn(st.foot, fb) ? st.foot[fb] : sp.foot) * w), y: px(frontY - (st.feet && roOwn(st.feet, fb) ? st.feet[fb] : sp.feet) * h), w, h }; })() : null;
         fig = { x: px(cx - ft(sp.foot) * fw2), y: px(frontY - sp.feet * fh2), w: fw2, h: fh2, file: `${v.person}-${sp.pose}.webp`, fileB: fb ? `${v.person}-${fb}.webp` : null, b, pose: sp.pose, feetY: frontY, faces, mir };
-        const headY = fig.y + sp.top * fh2;
+        /* spec 102 FR-406 (issue 2055): behind the switch, the HD frame of the same pose at the same whole scale, its feet on the same spot (the HD frames end at the soles) */
+        const hv = snap && meta.pixelPeople !== false && meta.hdPeople ? hdFrame(meta.hdPeople, String(v.person), sp.pose, k, dpr) : null, hb = hv && fb ? hdFrame(meta.hdPeople, String(v.person), fb, k, dpr) : null;
+        if (hv && (!fb || hb)) fig = { ...fig, x: px(cx - hv.w / 2), y: px(frontY - hv.h), w: hv.w, h: hv.h, file: hv.file, fileB: hb ? hb.file : null, b: hb ? { x: px(cx - hb.w / 2), y: px(frontY - hb.h), w: hb.w, h: hb.h } : null };
+        const headY = hv && (!fb || hb) ? fig.y : fig.y + sp.top * fh2;
         face = { x: cx - 0.065 * nearPx, y: headY, w: 0.13 * nearPx, h: 0.13 * nearPx };
         /* a soft elliptical contact shadow on the floor, centred on the foot line, a little wider than the stance */
         const sw = 0.36 * nearPx, shH = Math.max(5, 0.045 * nearPx);
