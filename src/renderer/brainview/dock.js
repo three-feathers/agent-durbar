@@ -103,10 +103,10 @@
     }
     /* each word's spot, measured bold (the lit weight) once per width, skin and font, so the lit word never shifts the others */
     function layoutLabels(){
-      if(!P||!labsEl.getClientRects||!labsEl.getClientRects().length)return; /* not laid out (hidden, or a test page): later */
+      const br=labsEl.parentNode; if(!P||!br||!br.getClientRects||!br.getClientRects().length)return; /* the picture is not laid out (hidden, or a test page): later; the list itself may be hidden by a failed fit */
       const cs=win.getComputedStyle?win.getComputedStyle(labsEl):null, sz=draw.size(), key=sz.w+'|'+skinId+'|'+(cs?cs.fontFamily+cs.fontSize:'');
       if(key===labKey)return;
-      labsEl.classList.add('is-measure'); const sizes={}, anchors={};
+      labsEl.hidden=false; labsEl.classList.add('is-measure'); const sizes={}, anchors={}; /* shown to be measured (same task: no frame sees it) */
       labs.forEach((li,i)=>{const g=LABEL_ORDER[i];li.style.width='';sizes[g]={w:Math.ceil(li.offsetWidth),h:Math.ceil(li.offsetHeight)};anchors[g]=P.ANCHORS[S.GLYPHS[g].lobe];});
       labsEl.classList.remove('is-measure');
       if(!sizes.think.w)return;
