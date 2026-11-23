@@ -277,6 +277,42 @@ const run = async (ctx, reqs) => {
   }
   };
 
+  /* spec 102 FR-406 made complete (issue 2055): the places a page load does not reach, with the switch on: the hover card (it draws no person; a request it made would show),
+     a chat (the rail and the header portrait) and the inbox; the lounge and a lobby visitor are on the page */
+  const hdWalk = async () => {
+    await loadArcade(1440, 900, 15, { simfreeze: '1' });
+    const reach = await js(`({lounge:document.querySelectorAll('#stage .ro-plate.lounge').length,visitors:document.querySelectorAll('#stage img.ro-visitor').length})`);
+    console.log('[102-arcade] FR-406 walk reaches', JSON.stringify(reach));
+    assert.ok(reach.lounge > 0 && reach.visitors > 0, 'FR-406: the walk reaches a lounge seat and a lobby visitor: ' + JSON.stringify(reach));
+    await noOld('FR-406 walk, 15 agents with the lounge and the lobby');
+    const c = await js(`(()=>{const r=document.querySelector('#stage .ro-plate:not(.lounge)').getBoundingClientRect();return {x:Math.round(r.left+r.width/2),y:Math.round(r.top+r.height/2)}})()`);
+    ctx.win.webContents.sendInputEvent({ type: 'mouseMove', x: c.x, y: c.y });
+    await must(`!!document.getElementById('roZoom')`, 'the hover card', 4000);
+    await noOld('FR-406 walk, the hover card');
+    ctx.win.webContents.sendInputEvent({ type: 'mouseMove', x: 2, y: 2 });
+    const id = await js(`window.__durbarSimUi.agents().filter(a=>!a.parent)[0].id`);
+    await js(`window.__durbarSimUi.crew.openPanel(${jsLiteral(id)})`);
+    await must(`!!document.querySelector('#roPortrait img')&&document.querySelectorAll('#stripList .sav img').length>0`, 'the chat header portrait and the rail\'s faces');
+    await noOld('FR-406 walk, a chat');
+    await js(`document.getElementById('backBtn').click()`);
+    await js(`document.getElementById('inboxBtn').click()`);
+    await must(`!!document.querySelector('#inboxDlg .inbox-dlg')`, 'the inbox');
+    await noOld('FR-406 walk, the inbox');
+    await js(`document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));0`);
+    /* Your door (its own flag, `door=1`): it opens at the start with agents waiting, its faces are the 24 px avatars */
+    await loadArcade(1440, 900, 15, { simfreeze: '1', door: '1' });
+    await must(`document.querySelectorAll('#doorFaces img').length>0`, 'Your door\'s faces', 10000);
+    await noOld('FR-406 walk, Your door');
+    };
+  /* review of #2074 (Paco, item 1): CI runs the "no old file" check: the `hd` entry of ui-suite turns the switch on and runs the size cases (3 and 15 agents at both sizes) and the walk alone */
+  if (process.env.ARCADE_CASES === 'hd') {
+    assert.ok(HD_ON, 'ARCADE_CASES=hd needs the HD switch (DURBAR_HD_PEOPLE=1)');
+    for (const [w, h] of SIZES) for (const n of [3, 15]) { await loadArcade(w, h, n, { simfreeze: '1' }); await must(PICS, 'the pictures'); await noOld(`${n} agents at ${w}x${h}`); }
+    await hdWalk();
+    console.log('[102-arcade] ran the HD cases only (ARCADE_CASES=hd): 3 and 15 agents at ' + SIZES.map(([w, h]) => w + 'x' + h).join(', ') + ', the hover card, a chat, the inbox, Your door: no old person file fetched or shown');
+    return;
+  }
+
   if (process.env.ARCADE_CASES === 'narrow') { /* test only: the wide-font entry runs the narrow cases alone */
     for (const [w, h] of SIZES) await narrowCases(w, h);
     await narrowTail();
@@ -649,33 +685,7 @@ const run = async (ctx, reqs) => {
   await must(`document.documentElement.dataset.world===undefined&&document.documentElement.dataset.ui===undefined`, 'the flat office: no world, the theme\'s UI style');
   assert.strictEqual(await js(`document.documentElement.dataset.dark===undefined`), true, 'leaving: the theme\'s light page');
 
-  /* spec 102 FR-406 made complete (issue 2055): the places a page load does not reach, with the switch on: the hover card (it draws no person; a request it made would show),
-     a chat (the rail and the header portrait) and the inbox; the lounge and a lobby visitor are on the page */
-  if (HD_ON) {
-    await loadArcade(1440, 900, 15, { simfreeze: '1' });
-    const reach = await js(`({lounge:document.querySelectorAll('#stage .ro-plate.lounge').length,visitors:document.querySelectorAll('#stage img.ro-visitor').length})`);
-    console.log('[102-arcade] FR-406 walk reaches', JSON.stringify(reach));
-    assert.ok(reach.lounge > 0 && reach.visitors > 0, 'FR-406: the walk reaches a lounge seat and a lobby visitor: ' + JSON.stringify(reach));
-    await noOld('FR-406 walk, 15 agents with the lounge and the lobby');
-    const c = await js(`(()=>{const r=document.querySelector('#stage .ro-plate:not(.lounge)').getBoundingClientRect();return {x:Math.round(r.left+r.width/2),y:Math.round(r.top+r.height/2)}})()`);
-    ctx.win.webContents.sendInputEvent({ type: 'mouseMove', x: c.x, y: c.y });
-    await must(`!!document.getElementById('roZoom')`, 'the hover card', 4000);
-    await noOld('FR-406 walk, the hover card');
-    ctx.win.webContents.sendInputEvent({ type: 'mouseMove', x: 2, y: 2 });
-    const id = await js(`window.__durbarSimUi.agents().filter(a=>!a.parent)[0].id`);
-    await js(`window.__durbarSimUi.crew.openPanel(${jsLiteral(id)})`);
-    await must(`!!document.querySelector('#roPortrait img')&&document.querySelectorAll('#stripList .sav img').length>0`, 'the chat header portrait and the rail\'s faces');
-    await noOld('FR-406 walk, a chat');
-    await js(`document.getElementById('backBtn').click()`);
-    await js(`document.getElementById('inboxBtn').click()`);
-    await must(`!!document.querySelector('#inboxDlg .inbox-dlg')`, 'the inbox');
-    await noOld('FR-406 walk, the inbox');
-    await js(`document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));0`);
-    /* Your door (its own flag, `door=1`): it opens at the start with agents waiting, its faces are the 24 px avatars */
-    await loadArcade(1440, 900, 15, { simfreeze: '1', door: '1' });
-    await must(`document.querySelectorAll('#doorFaces img').length>0`, 'Your door\'s faces', 10000);
-    await noOld('FR-406 walk, Your door');
-  }
+  if (HD_ON) await hdWalk();
   console.log('[102-arcade] PASS');
 };
 

@@ -19,7 +19,7 @@ export const CAPS = { person: 80 * 1024, fixture: 120 * 1024, desk: 60 * 1024, f
 /** spec 102 FR-213: all shipped art (every world and every set) at most this many bytes */
 export const SHIPPED_MAX = 30 * 1024 * 1024;
 /** spec 102 FR-393, FR-394, FR-397, FR-403 (issue #2055; owner 2026-11-23 14:59 UTC, FINE): the HD person set's limits */
-export const HD_PALETTE = 96, HD_HUE_DE = 15, HD_ORPHAN_MAX = 0.06, HD_ORPHAN_MAX_72 = 0.12, HD_PERSON_MAX = 450 * 1024, HD_HEAD = [0.27, 0.36], HD_HEAD_W = 36, HD_TILE_EDGE = 3, HD_TILE_FEAT = 15; /* FR-402: the crown is the top of the hair: a bun, an afro, a quiff or a hood measures taller than 0.31; the face is never enlarged for it */
+export const HD_PALETTE = 96, HD_HUE_DE = 15, HD_ORPHAN_MAX = 0.06, HD_ORPHAN_MAX_72 = 0.12, HD_PERSON_MAX = 450 * 1024, HD_FILE_MAX = 300 * 1024, HD_HEAD = [0.27, 0.36], HD_HEAD_W = 36, HD_TILE_EDGE = 3, HD_TILE_FEAT = 15; /* FR-402: the crown is the top of the hair: a bun, an afro, a quiff or a hood measures taller than 0.31; the face is never enlarged for it */
 export const PERSON_MAX_H = 640;
 const KEYS = ['files', 'source', 'tool', 'date', 'made by', 'approved by', 'reference', 'prompt', 'cut', 'licence'];
 const CLAUSE = /fictional and must not resemble any real or famous person; no real person, celebrity, brand, logo or franchise is named/;
@@ -591,6 +591,12 @@ if (worldIds.includes('retro')) {
   const people = Object.keys(sj.hd.people).length;
   console.log(`HD people: ${people} people, ${named.size} frames, ${(bytes / 1024).toFixed(1)} KB, ${(bytes / people / 1024).toFixed(1)} KB a person`);
   assert.ok(bytes / people <= HD_PERSON_MAX, `FR-397: ${(bytes / people / 1024).toFixed(1)} KB a person, over ${HD_PERSON_MAX / 1024} KB`);
+  /* FR-397 (review of #2074, item 2): each picture at most HD_FILE_MAX (the repo's picture budget), not only the average; a planted file over it fails at this rule */
+  const overFile = (sizes: ReadonlyArray<[string, number]>): string[] => sizes.filter(([, n]) => n > HD_FILE_MAX).map(([f, n]) => `${f}: ${n} bytes, over ${HD_FILE_MAX / 1024} KB`);
+  const hdSizes = fs.readdirSync(dir).map((f): [string, number] => [f, fs.statSync(path.join(dir, f)).size]);
+  assert.deepStrictEqual(overFile(hdSizes), [], 'FR-397: every HD picture at most 300 KB');
+  assert.deepStrictEqual(overFile([...hdSizes, ['p01-type@4.webp (planted)', HD_FILE_MAX + 1]]), [`p01-type@4.webp (planted): ${HD_FILE_MAX + 1} bytes, over 300 KB`], 'red: a planted picture one byte over 300 KB fails the per-file rule');
+  console.log(`HD largest picture: ${Math.max(...hdSizes.map(([, n]) => n))} bytes (limit ${HD_FILE_MAX})`);
   const have = spawnSync('python3', ['-I', '-c', 'import PIL'], { encoding: 'utf8' });
   if (have.error || have.status !== 0) {
     if (process.env.DURBAR_REQUIRE_PILLOW) assert.fail('python3 with Pillow is required here (DURBAR_REQUIRE_PILLOW) and is missing: the HD palette and speckle check (FR-393, FR-394) cannot run');
