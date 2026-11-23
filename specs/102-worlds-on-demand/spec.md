@@ -2475,7 +2475,7 @@ All sets keep FR-204's caps: no frame over 80 KB (largest 54 KB, Office), none o
 
 **Tasks:** T100 (amended), T433, T434 (new), T224 (amended); spec 117 T016, T017 (amended).
 
-## Changes 2026-11-23: the Retro arcade's people as one HD sprite set, behind an off switch; the pilot (FR-391..FR-406; T466..T473; issue #2055, tracker #1404; amends FR-254 for the HD set)
+## Changes 2026-11-23: the Retro arcade's people as one HD sprite set, behind an off switch; the pilot (FR-391..FR-408; T466..T473; issue #2055, tracker #1404; amends FR-254 for the HD set)
 
 **Owner decisions** (Vikram, Telegram, 2026-11-23, recorded on issue #2055):
 - **13:07 UTC, style B.** The arcade's people look dull and not like one set. Of two sample sheets he chose style B: an HD sprite set, people 288 px tall at 1440x900, one art pixel per screen pixel, one shared palette, pixel-clean edges, a rim light. Plan: this spec, the engine behind an off switch and a **pilot** of 3 people x 20 frames; his look at the pilot; the other 12 people in batches; his approval of the finished set; then the switch goes on and the old person art goes, in full.
@@ -2506,7 +2506,9 @@ All sets keep FR-204's caps: no frame over 80 KB (largest 54 KB, Office), none o
   - At ratio 2: `g` 2 draws the 288 frame at one device px per file px; `g` 3 and 4 draw 216 and 288 at 2 x 2.
   - At 1.25 and 1.5: `g` 2.4 (3 device px) draws 216; 3.2 and 3.333 draw 288; `g` 2 at 1.25 (2.5) draws 144 at 1 device px (80 %); `g` 3 at 1.5 (4.5) draws 288 (89 %). At a fractional `D` the art never covers its whole place: written down, not a defect.
   - A frame wider than the place (`PW x g`) is never drawn; the old frame is, so no person is ever cut (owner 2026-11-03). The asset test refuses such a frame.
-- **FR-393** **One palette of at most 48 colours** (owner, 14:59 UTC: FINE) for every opaque pixel of every HD frame of every person, the outline and the rim included.
+- **FR-393** **One palette of at most 96 colours** for every opaque pixel of every HD frame and tile of every person, the outline and the rim included.
+  - The palette is **built once from all 15 people's sources together**, after every sheet exists; it is never grown person by person, so an early person does not shift when a later one arrives.
+  - *Changed 2026-11-23* (coordinator, under the owner's standing delegation; the owner approves the finished set): the pilot's 48 colours (owner, 14:59 UTC: FINE, chosen on 3 people) were too few for 11 different outfits. A mint cardigan turned light blue and a blue quiff went grey, the "dull" the owner asked to end, and the worst frame reached 5.99 % orphans. The first description of style B said about 96. The pilot's three people at 48 and at 96 are compared on a sheet, orphan shares included (see *Measured*).
 - **FR-394** **No speckle, measured.** An *orphan* is an opaque pixel none of whose four neighbours has its colour; a *lone* pixel has no opaque neighbour. Per frame: **no lone pixel**, and **orphans at most 6 % of the opaque pixels**: the final pilot measures at most 5.1 %; the owner's style-B sample measures 4.5 to 4.9 %. The cleanup keeps a high-contrast single pixel (a catch-light, a pupil) and merges low-contrast noise.
 - **FR-395** **`faceBox` per frame and scale**: the head's own box, taken from the head layer of FR-402 and carried through each size's snap. It is stored in `hd`, used as the person's `vis` box at a cabinet and mirrored with the picture, and the asset test keeps it inside its frame. The layout's own face box (`face`, `FACE_GRID x g`, FR-229's 24 px floor) is unchanged.
 - **FR-396** **The rim light is part of the art; there is no floor shadow in the art.** The pipeline bakes a 1-px cyan rim on the pixel inside the outline on the art's right (the side every standing frame faces, `facing: "right"`), over the upper 90 % of the figure. After the engine's mirror, the rim is always on the cabinet's side.
@@ -2534,7 +2536,7 @@ All sets keep FR-204's caps: no frame over 80 KB (largest 54 KB, Office), none o
   - Else it goes beside the head inside the person's place: away from the cabinet first, then on the cabinet's side.
   - Where the place is too narrow for both, it goes under the chin.
   - It is never over the face box. An error keeps its badge at the glass's corner. The old frames keep today's place: the switch off is byte for byte today's hall.
-- **FR-402** **Head size** (owner, 14:27 UTC: "bigger heads"). A standing HD person's head, crown to neck, is **0.27 to 0.31 of the figure's height** (up to 0.36 for a person whose hair is the crown: p03's afro and p05's quiff; their heads are never enlarged for the hair: `k` is at least 1), and the head is **at least 36 px wide at the 144 px size**.
+- **FR-402** **Head size** (owner, 14:27 UTC: "bigger heads"). A standing HD person's head, crown to neck, is **0.27 to 0.36 of the figure's height**: the pipeline aims at 0.29, and the crown is the top of the hair, so a bun, an afro, a quiff or a hood measures taller (up to 0.35 measured). The face is never shrunk for the hair: `k` is at least 1. and the head is **at least 36 px wide at the 144 px size**.
   - Measuring rule: the neck is the narrowest run through the head's centre column between 14 % and 36 % of the height; the head's width is its widest run above the neck.
   - How: the image model draws heads at about 0.20 even when asked for 0.30. So the pipeline enlarges the head **on the source, before the palette and the snap**. Everything above the neck, within the head's own columns, is scaled by `k` about the neck centre and laid over the body. A raised fist, a mug or a book above the neck is drawn back over the bigger head where it was. The figure is then fitted back to its shown height.
   - `k` is chosen per sheet from the median head share of its standing figures, aiming at 0.29. Seated busts are close-ups and keep their head (`k` = 1).
@@ -2549,6 +2551,7 @@ All sets keep FR-204's caps: no frame over 80 KB (largest 54 KB, Office), none o
   - Why Pillow and not Node: Node has no WebP decoder, so the frame hashes of FR-326 already work this way. CI's art step runs the test with Pillow required (`DURBAR_REQUIRE_PILLOW`).
 - **FR-404** **The pilot's people keep their details across poses and sizes.** p08 keeps his glasses in every front frame and the beanie in every frame; p12 keeps the beard and the apron; p04 keeps the bob and the pleated skirt. Read on a contact sheet of the 60 frames at each size before every hand-over; this is not machine-checked.
 
+- **FR-408** **Each person keeps their own colours.** At build time the four largest colour groups of each person's front reading frame are read from the **source** (hair, top, bottom, skin; the near-black outline group left out) and stored in `set.json` `hd.ref`. Every one of them must be within **12 (CIE76 ΔE)** of a colour that covers at least 2 % of the shipped `face-book@4` frame (`test:realoffice-assets`). A hand-edited or re-coloured frame fails, with a red case: a frame with its colours turned round.
 - **FR-405** **Seated busts ship as avatar tiles, not as frames** (coordinator, 2026-11-23, under the owner's standing delegation; the owner sees it at the finished set). In the arcade a seated bust is only ever a face in a circle: `roFace0` (`app.js`) crops the `SEAT_POSE` bust (`typeA`, `think`, `waveA`, `rest`) for the rail rows (22 CSS px), Your door (24), the inbox header (26), the inbox rows and the chat portrait (32). A bust shrunk by the browser into such a circle is the soft look the owner rejected (14:27 UTC).
   - So each person ships **tiles**: the face, square, snapped natively from the bust source at 22, 24, 26, 32, 44, 48, 52 and 64 px (each circle and twice it for a 2x screen), for the four poses `SEAT_POSE` asks for: `hd/<pid>-<pose>-t<size>.webp`, listed in `set.json` `hd.tiles`.
   - The tiles use the same palette and alpha rule. Their edge is a cut through the body, so the one-outline rule applies to whole figures only.
@@ -2556,6 +2559,11 @@ All sets keep FR-204's caps: no frame over 80 KB (largest 54 KB, Office), none o
   - The full busts (288/216/144) are not shipped. A test proves no bust is drawn larger than a 32 px avatar in the arcade (`shots-102-arcade`).
   - Flat's heads (`crew.js` `HEAD_FRAME`, crops of this set's old `typeA`, `waveA` and `rest` files) are not changed: Flat keeps the old busts until the owner decides otherwise.
   - `[KNOWN GAP]` at ratios 1.25 and 1.5 no tile is exact: the browser scales the 2x tile.
+- **FR-407** **Every person is equally readable as an avatar** (coordinator, 2026-11-23, after batch 1: the person with the dark afro was almost a dark blob at 22 px). Each tile is measured against the darkest avatar circle of the arcade (`#1e1a36`, `--surface-2`; the rail's `#262044` is lighter). Measuring and checking are done by `check-arcade-hd.py` and `test:realoffice-assets`:
+  - **the silhouette's edge**: the better median contrast of the outline ring and the ring inside it, at least **3:1**;
+  - **the features** (eyes, brows, mouth: small dark clusters of the face area, against the most common warm colour, the skin): at least **15 L\*** below the skin. It is measured where such clusters show; a face looking down or with closed eyes may have none, but every person's waving face must have them.
+  - The build applies one decision per person, so a person never changes between poses: a person whose tiles fail the edge rule gets the lit-edge colour (the standing frames' rim) on the outline of all their tiles. Features too close to the skin take the darkest palette colour. Skin tones are never changed.
+  - Red case: the lit edge taken off the typing tiles fails the rule.
 - **FR-406** **No silent fallback for an HD person.** An HD person's frame for every pose a state can ask for, at every authored scale, and every tile of every person in `hd.tiles` exist, or a test fails (`test-realoffice-aisles.ts`, `test-realoffice-assets.ts`). After the flip (T472), a requested HD frame or tile that is missing fails a test; it is never drawn as old art.
 
 *Tests*:
@@ -2577,4 +2585,4 @@ All sets keep FR-204's caps: no frame over 80 KB (largest 54 KB, Office), none o
 - While the switch is on, the lounge stool, the lobby, the zoom and Flat's heads still draw the old frames (FR-391).
 - The other 12 people are still the old art (T470).
 
-**Numbers** (`npm run specs:numbers`, `origin/main` and the open PR heads, 2026-11-23): FR-391..FR-406, T466..T473; no Q.
+**Numbers** (`npm run specs:numbers`, `origin/main` and the open PR heads, 2026-11-23): FR-391..FR-408, T466..T473; no Q.

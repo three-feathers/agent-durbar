@@ -304,7 +304,7 @@ None.
 
 ## HD set (spec 102 FR-391..FR-406, issue #2055): behind the off switch
 
-Owner decisions (Vikram, Telegram, 2026-11-23): style B at 13:07 UTC; bigger heads and crisp pixels at 14:27 UTC; "FINE" at 14:59 UTC. Seated busts ship as avatar tiles only (FR-405, coordinator 2026-11-23). Files in `hd/`: `<pid>-<pose>@<s>.webp` (the 14 standing and stool frames, `s` 4, 3, 2: 288, 216, 144 px) and `<pid>-<pose>-t<size>.webp` (avatar tiles of `typeA`, `think`, `waveA`, `rest` at 22, 24, 26, 32, 44, 48, 52, 64 px). Drawn only with `DURBAR_HD_PEOPLE=1`. One pipeline for every picture: `build5.py` (art cache, SHA-256 `44e430cf4c9d91851d33574347641ef985554a1024df5be6655f81e644d6ec1e`): chroma key, connected parts, the head enlarged on the source to about 0.29 of the figure (FR-402; `k` at least 1), one 48-colour palette for every person, every size snapped natively (FR-391), orphan cleanup, one outline colour, a 1-px cyan rim, alpha 0 or 255; every picture is then checked against the repo's secret mask (`maskcheck.js`) and re-encoded losslessly until it passes (#2062). Sheets by `gen2.py`, `gen3.py` and `gen5.py` (art cache, SHA-256 `8b7ae6cb5e71b4abe7eb9b749121b7d07267158db5b66f05e118c7f8d623ae06` for the last), one `codex exec` at a time.
+Owner decisions (Vikram, Telegram, 2026-11-23): style B at 13:07 UTC; bigger heads and crisp pixels at 14:27 UTC; "FINE" at 14:59 UTC. Seated busts ship as avatar tiles only (FR-405, coordinator 2026-11-23). Files in `hd/`: `<pid>-<pose>@<s>.webp` (the 14 standing and stool frames, `s` 4, 3, 2: 288, 216, 144 px) and `<pid>-<pose>-t<size>.webp` (avatar tiles of `typeA`, `think`, `waveA`, `rest` at 22, 24, 26, 32, 44, 48, 52, 64 px). Drawn only with `DURBAR_HD_PEOPLE=1`. One pipeline for every picture: `build5.py` (art cache, SHA-256 `36541ddf8314388ec1da6196947cf2eb1b3f4e951e2ac863f210e23c4bec0a4d`): chroma key, connected parts, the head enlarged on the source to about 0.29 of the figure (FR-402; `k` at least 1), one 48-colour palette for every person, every size snapped natively (FR-391), orphan cleanup, one outline colour, a 1-px cyan rim, alpha 0 or 255; every picture is then checked against the repo's secret mask (`maskcheck.js`) and re-encoded losslessly until it passes (#2062). Sheets by `gen2.py`, `gen3.py` and `gen5.py` (art cache, SHA-256 `8b7ae6cb5e71b4abe7eb9b749121b7d07267158db5b66f05e118c7f8d623ae06` for the last), one `codex exec` at a time.
 
 #### hd-p08
 
@@ -406,6 +406,66 @@ Owner decisions (Vikram, Telegram, 2026-11-23): style B at 13:07 UTC; bigger hea
 - approved by: pending (Vikram): the finished set, spec 102 FR-400 (b)
 - reference: the final pilot's p04 frames at 2x (style and proportions only, a different person) and the person's own old frames (`face-book`, `book`, `typeA`) at 6x on chroma green (who the person is)
 - prompt: prompt class "crisp HD sprite sheet, big head" (each sheet's full text is `prompt.txt` beside it in the art cache): the poses of the sheet, then the character line: a skater-cool intern: a tall spiky blue quiff, small sunglasses pushed up on the forehead, red jacket over a white tee, dark trousers, white sneakers, brown skin, a cheeky smirk; about 3 heads tall; crisp pixel art, 2 or 3 shade steps per material, a dark 1-px outline, about 48 colours, no anti-aliasing, gradients, dithering or glow, on flat #00FF00; fictional, no real or famous person, no brand or franchise character, no text or logos
+- cut: connected parts of the keyed sheet; every shown size and every tile snapped on its own; no picture is scaled by the browser
+- licence: MIT
+- fictional: This person is fictional and must not resemble any real or famous person; no real person, celebrity, brand, logo or franchise is named.
+- likeness-check: pending (Vikram)
+
+#### hd-p06
+
+- files: the 14 standing and stool frames of p06 at scales 4, 3 and 2, and 32 avatar tiles (named in `set.json` `hd.people.p06` and `hd.tiles`)
+- source: four Codex sheets: `p06-B2` (seven from behind), `p06-F2` (six front poses and the stool), `p06-S1` and `p06-S2` (seated: the avatar tiles); a first `p06-B` and `p06-F` came out in the old chibi proportions and are not used
+- tool: Codex image generation (`codex exec`, codex-cli 0.163.0, on the owner's ChatGPT plan), then `build5.py`
+- date: 2026-11-23
+- made by: Vikram's agent (Claude Code)
+- approved by: pending (Vikram): the finished set, spec 102 FR-400 (b)
+- reference: the final pilot's p04 frames at 2x (style and proportions only, a different person) and the person's own old frames (`face-book`, `book`, `typeA`) at 6x on chroma green (who the person is)
+- prompt: prompt class "crisp HD sprite sheet, big head" (each sheet's full text is `prompt.txt` beside it in the art cache): the poses of the sheet, then the character line: a calm planner: black hair in a bun held by two little pins, mint cardigan, plum trousers, brown shoes, light skin, round cheeks, a gentle smile; about 3 heads tall; crisp pixel art, 2 or 3 shade steps per material, a dark 1-px outline, about 48 colours, no anti-aliasing, gradients, dithering or glow, on flat #00FF00; fictional, no real or famous person, no brand or franchise character, no text or logos
+- cut: connected parts of the keyed sheet; every shown size and every tile snapped on its own; no picture is scaled by the browser
+- licence: MIT
+- fictional: This person is fictional and must not resemble any real or famous person; no real person, celebrity, brand, logo or franchise is named.
+- likeness-check: pending (Vikram)
+
+#### hd-p07
+
+- files: the 14 standing and stool frames of p07 at scales 4, 3 and 2, and 32 avatar tiles (named in `set.json` `hd.people.p07` and `hd.tiles`)
+- source: four Codex sheets: `p07-B2` (seven from behind), `p07-F2` (six front poses and the stool), `p07-S1` and `p07-S2` (seated: the avatar tiles); a first `p07-B` and `p07-F` came out in the old chibi proportions and are not used
+- tool: Codex image generation (`codex exec`, codex-cli 0.163.0, on the owner's ChatGPT plan), then `build5.py`
+- date: 2026-11-23
+- made by: Vikram's agent (Claude Code)
+- approved by: pending (Vikram): the finished set, spec 102 FR-400 (b)
+- reference: the final pilot's p04 frames at 2x (style and proportions only, a different person) and the person's own old frames (`face-book`, `book`, `typeA`) at 6x on chroma green (who the person is)
+- prompt: prompt class "crisp HD sprite sheet, big head" (each sheet's full text is `prompt.txt` beside it in the art cache): the poses of the sheet, then the character line: a sunny accountant: long wavy blonde hair with a small flower hairclip, pink shirt, blue jeans, brown shoes, light skin, a bright smile; about 3 heads tall; crisp pixel art, 2 or 3 shade steps per material, a dark 1-px outline, about 48 colours, no anti-aliasing, gradients, dithering or glow, on flat #00FF00; fictional, no real or famous person, no brand or franchise character, no text or logos
+- cut: connected parts of the keyed sheet; every shown size and every tile snapped on its own; no picture is scaled by the browser
+- licence: MIT
+- fictional: This person is fictional and must not resemble any real or famous person; no real person, celebrity, brand, logo or franchise is named.
+- likeness-check: pending (Vikram)
+
+#### hd-p09
+
+- files: the 14 standing and stool frames of p09 at scales 4, 3 and 2, and 32 avatar tiles (named in `set.json` `hd.people.p09` and `hd.tiles`)
+- source: four Codex sheets: `p09-B2` (seven from behind), `p09-F2` (six front poses and the stool), `p09-S1` and `p09-S2` (seated: the avatar tiles); a first `p09-B` and `p09-F` came out in the old chibi proportions and are not used
+- tool: Codex image generation (`codex exec`, codex-cli 0.163.0, on the owner's ChatGPT plan), then `build5.py`
+- date: 2026-11-23
+- made by: Vikram's agent (Claude Code)
+- approved by: pending (Vikram): the finished set, spec 102 FR-400 (b)
+- reference: the final pilot's p04 frames at 2x (style and proportions only, a different person) and the person's own old frames (`face-book`, `book`, `typeA`) at 6x on chroma green (who the person is)
+- prompt: prompt class "crisp HD sprite sheet, big head" (each sheet's full text is `prompt.txt` beside it in the art cache): the poses of the sheet, then the character line: a night-shift engineer in a big rounded yellow rain jacket with the hood up (from behind the hood is one big smooth rounded shape), navy trousers, black boots with yellow soles, warm medium-brown skin, light freckles, a gentle grin; about 3 heads tall; crisp pixel art, 2 or 3 shade steps per material, a dark 1-px outline, about 48 colours, no anti-aliasing, gradients, dithering or glow, on flat #00FF00; fictional, no real or famous person, no brand or franchise character, no text or logos
+- cut: connected parts of the keyed sheet; every shown size and every tile snapped on its own; no picture is scaled by the browser
+- licence: MIT
+- fictional: This person is fictional and must not resemble any real or famous person; no real person, celebrity, brand, logo or franchise is named.
+- likeness-check: pending (Vikram)
+
+#### hd-p10
+
+- files: the 14 standing and stool frames of p10 at scales 4, 3 and 2, and 32 avatar tiles (named in `set.json` `hd.people.p10` and `hd.tiles`)
+- source: four Codex sheets: `p10-B2` (seven from behind), `p10-F2` (six front poses and the stool), `p10-S1` and `p10-S2` (seated: the avatar tiles); a first `p10-B` and `p10-F` came out in the old chibi proportions and are not used
+- tool: Codex image generation (`codex exec`, codex-cli 0.163.0, on the owner's ChatGPT plan), then `build5.py`
+- date: 2026-11-23
+- made by: Vikram's agent (Claude Code)
+- approved by: pending (Vikram): the finished set, spec 102 FR-400 (b)
+- reference: the final pilot's p04 frames at 2x (style and proportions only, a different person) and the person's own old frames (`face-book`, `book`, `typeA`) at 6x on chroma green (who the person is)
+- prompt: prompt class "crisp HD sprite sheet, big head" (each sheet's full text is `prompt.txt` beside it in the art cache): the poses of the sheet, then the character line: a playful tester: two tall high pigtails tied with round red hair ties, an oversized teal cardigan hanging below the hips over a cream shirt, grey shorts over striped tights, plain white sneakers, light skin with rosy cheeks, a bright gap-toothed smile; about 3 heads tall; crisp pixel art, 2 or 3 shade steps per material, a dark 1-px outline, about 48 colours, no anti-aliasing, gradients, dithering or glow, on flat #00FF00; fictional, no real or famous person, no brand or franchise character, no text or logos
 - cut: connected parts of the keyed sheet; every shown size and every tile snapped on its own; no picture is scaled by the browser
 - licence: MIT
 - fictional: This person is fictional and must not resemble any real or famous person; no real person, celebrity, brand, logo or franchise is named.

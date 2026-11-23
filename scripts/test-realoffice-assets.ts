@@ -19,7 +19,7 @@ export const CAPS = { person: 80 * 1024, fixture: 120 * 1024, desk: 60 * 1024, f
 /** spec 102 FR-213: all shipped art (every world and every set) at most this many bytes */
 export const SHIPPED_MAX = 30 * 1024 * 1024;
 /** spec 102 FR-393, FR-394, FR-397, FR-403 (issue #2055; owner 2026-11-23 14:59 UTC, FINE): the HD person set's limits */
-export const HD_PALETTE = 48, HD_ORPHAN_MAX = 0.06, HD_PERSON_MAX = 450 * 1024, HD_HEAD = [0.27, 0.31], HD_HEAD_W = 36, HD_HEAD_HAIR = 0.36, HD_BIG_HAIR = new Set(['p03', 'p05']); /* FR-402: a big afro or quiff is the crown, so the head measures taller; the face is not enlarged for it */
+export const HD_PALETTE = 96, HD_HUE_DE = 12, HD_ORPHAN_MAX = 0.06, HD_PERSON_MAX = 450 * 1024, HD_HEAD = [0.27, 0.36], HD_HEAD_W = 36, HD_TILE_EDGE = 3, HD_TILE_FEAT = 15; /* FR-402: the crown is the top of the hair: a bun, an afro, a quiff or a hood measures taller than 0.31; the face is never enlarged for it */
 export const PERSON_MAX_H = 640;
 const KEYS = ['files', 'source', 'tool', 'date', 'made by', 'approved by', 'reference', 'prompt', 'cut', 'licence'];
 const CLAUSE = /fictional and must not resemble any real or famous person; no real person, celebrity, brand, logo or franchise is named/;
@@ -552,7 +552,7 @@ if (worldIds.includes('retro')) {
 
 // ---- spec 102 FR-391..FR-398 (issue #2055): the HD person set (sets/retro/hd/, `set.json` `hd`): every frame named, its size, lossless, inside its place; one palette, no speckle, the budget ----
 {
-  const dir = path.join(RO, 'sets', 'retro', 'hd'), sj = JSON.parse(fs.readFileSync(path.join(RO, 'sets', 'retro', 'set.json'), 'utf8')) as { hd: { scales: number[]; people: Record<string, Record<string, Record<string, number[]>>>; tiles?: { sizes: number[]; poses: string[]; people: string[] } } };
+  const dir = path.join(RO, 'sets', 'retro', 'hd'), sj = JSON.parse(fs.readFileSync(path.join(RO, 'sets', 'retro', 'set.json'), 'utf8')) as { hd: { scales: number[]; people: Record<string, Record<string, Record<string, number[]>>>; tiles?: { sizes: number[]; poses: string[]; people: string[] }; ref?: Record<string, number[][]> } };
   /* FR-405: the six seated busts ship only as avatar tiles; the 14 standing and stool frames at three sizes */
   const POSES = ['type', 'book', 'knock', 'letter', 'counter', 'runA', 'runB', 'face-book', 'face-coffee', 'face-knock', 'face-letter', 'face-runA', 'face-runB', 'sit'];
   const SEAT = new Set<string>(), tallest = (p: string): number => (SEAT.has(p) ? 80 : p === 'sit' ? 72 : 72); /* grid px: a seated bust's canvas, a standing figure (FR-256) */
@@ -597,7 +597,7 @@ if (worldIds.includes('retro')) {
     console.log('HD palette and speckle check skipped: needs python3 with Pillow (not on this machine)');
   } else {
     const tool = path.join(ROOT, 'scripts', 'check-arcade-hd.py');
-    type Row = { name: string; opaque: number; alphas: number[]; orphans: number; lone: number; edge: number; head: [number, number] };
+    type Row = { name: string; opaque: number; alphas: number[]; orphans: number; lone: number; edge: number; head: [number, number]; tile: [number, number | null] | null; top: number[][] | null };
     const measure = (files: string[]): { rows: Row[]; palette: number; rgba: number } => {
       const r = spawnSync('python3', ['-I', tool, ...files], { encoding: 'utf8', maxBuffer: 16 * 1024 * 1024 });
       assert.strictEqual(r.status, 0, 'check-arcade-hd.py: ' + r.stderr);
@@ -617,15 +617,37 @@ if (worldIds.includes('retro')) {
     /* FR-405: the tiles share the palette and the alpha rule (their edge is a cut through the body, so the one-outline rule is for whole figures) */
     const tl = measure([...files, ...[...tileNames].sort().map((f) => path.join(dir, f))]);
     assert.deepStrictEqual([crisp.palette(tl), crisp.alpha(tl)], [[], []], 'FR-405: the tiles share the one palette, alpha 0 or 255');
+    /* FR-407: every person equally readable as an avatar on the darkest avatar circle (#1e1a36): the silhouette's edge at least 3:1, the features at least 15 L* below the skin */
+    const legible = (rows: Row[]): string[] => rows.filter((r) => r.tile && (r.tile[0] < HD_TILE_EDGE || (r.tile[1] !== null && r.tile[1] < HD_TILE_FEAT))).map((r) => `${r.name}: edge ${r.tile![0]}:1, features ${r.tile![1]} L*`);
+    const tiles = tl.rows.filter((r) => r.tile);
+    assert.deepStrictEqual(legible(tiles), [], 'FR-407: every avatar tile is legible on the darkest avatar circle');
+    for (const pid of T.people) assert.ok(tiles.some((r) => r.name.startsWith(pid + '-waveA-') && r.tile![1] !== null), `FR-407: ${pid}'s waving face has measured features`);
+    const darkest = tiles.slice().sort((a, b) => a.tile![0] - b.tile![0])[0];
+    console.log(`HD tiles: ${tiles.length}, edge at least ${darkest.tile![0]}:1, features at least ${Math.min(...tiles.filter((r) => r.tile![1] !== null).map((r) => r.tile![1] as number))} L*`);
     /* FR-402: a standing person's head, on the front frames at 144 px (the 15-agent size) */
     const heads = all.rows.filter((r) => /-face-[a-z]+(?:A|B)?@2\.webp$/.test(r.name));
     assert.ok(heads.length >= 6 * Object.keys(sj.hd.people).length, `FR-402: the front frames at 144 are measured (${heads.length})`);
-    for (const r of heads) assert.ok(r.head[0] >= HD_HEAD[0] && r.head[0] <= (HD_BIG_HAIR.has(r.name.slice(0, 3)) ? HD_HEAD_HAIR : HD_HEAD[1]) && r.head[1] >= HD_HEAD_W, `FR-402: ${r.name}: head ${r.head[0]} of the height, ${r.head[1]} px wide (${HD_HEAD.join('..')}, at least ${HD_HEAD_W} px)`);
+    for (const r of heads) assert.ok(r.head[0] >= HD_HEAD[0] && r.head[0] <= HD_HEAD[1] && r.head[1] >= HD_HEAD_W, `FR-402: ${r.name}: head ${r.head[0]} of the height, ${r.head[1]} px wide (${HD_HEAD.join('..')}, at least ${HD_HEAD_W} px)`);
     console.log(`HD heads at 144: ${Math.min(...heads.map((r) => r.head[0]))}..${Math.max(...heads.map((r) => r.head[0]))} of the height, ${Math.min(...heads.map((r) => r.head[1]))}..${Math.max(...heads.map((r) => r.head[1]))} px wide`);
+    /* FR-408: each person keeps their own colours: every reference colour of the source (set.json hd.ref) is within HD_HUE_DE (CIE76) of a colour covering at least 2 % of the front reading frame */
+    const lab = (c: number[]): number[] => { const f = (v: number): number => { v /= 255; return v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; }; const [r, g, b] = c.map(f), x = (r * 0.4124 + g * 0.3576 + b * 0.1805) / 0.95047, y = r * 0.2126 + g * 0.7152 + b * 0.0722, z = (r * 0.0193 + g * 0.1192 + b * 0.9505) / 1.08883, t = (v: number): number => (v > 0.008856 ? Math.cbrt(v) : 7.787 * v + 16 / 116); return [116 * t(y) - 16, 500 * (t(x) - t(y)), 200 * (t(y) - t(z))]; };
+    const de = (a: number[], b: number[]): number => { const p = lab(a), q = lab(b); return Math.hypot(p[0] - q[0], p[1] - q[1], p[2] - q[2]); };
+    const hue = (rows: Row[]): string[] => Object.entries(sj.hd.ref || {}).flatMap(([pid, refs]) => { const r = rows.find((x) => x.name === `${pid}-face-book@4.webp`); if (!r || !r.top) return []; return refs.filter((c) => Math.min(...r.top!.map((t) => de(c, t.slice(0, 3)))) > HD_HUE_DE).map((c) => `${pid}: rgb(${c.join(',')}) is gone`); });
+    assert.ok(sj.hd.ref && Object.keys(sj.hd.ref).sort().join() === Object.keys(sj.hd.people).sort().join(), 'FR-408: a colour reference for every HD person');
+    assert.deepStrictEqual(hue(all.rows), [], 'FR-408: every person keeps their own colours');
     const worst = Math.max(...all.rows.map((r) => r.orphans / r.opaque));
     console.log(`HD palette ${all.palette} colours, worst orphan share ${(100 * worst).toFixed(2)} % (limit ${(100 * HD_ORPHAN_MAX).toFixed(1)} %)`);
     const tmp = fs.mkdtempSync(path.join(require('os').tmpdir(), 'durbar-hd-'));
     try {
+      { /* FR-408 red case: a front frame with its colours turned round */
+        const pid = Object.keys(sj.hd.people)[0], f = path.join(tmp, `${pid}-face-book@4.webp`);
+        assert.strictEqual(spawnSync('python3', ['-I', tool, '--hue', path.join(dir, `${pid}-face-book@4.webp`), f], { encoding: 'utf8' }).status, 0, 'the planted frame (--hue) is written');
+        assert.ok(hue(measure([f]).rows).length > 0, 'red (--hue): a person whose colours moved fails');
+      }
+      { /* FR-407 red case: the lit edge taken off every person's typing tile at 22 px: the darkest of them is no longer legible */
+        const planted = T.people.map((p) => { const f = path.join(tmp, `norim-${p}.webp`); assert.strictEqual(spawnSync('python3', ['-I', tool, '--norim', path.join(dir, `${p}-typeA-t22.webp`), f], { encoding: 'utf8' }).status, 0, 'the planted tile (--norim) is written'); return f; });
+        assert.ok(legible(measure(planted).rows).length >= 1, 'red (--norim): without the lit edge the darkest person\'s avatar is not legible');
+      }
       for (const [plant, rule] of [['--speckle', 'speckle'], ['--alpha', 'alpha'], ['--colour', 'palette'], ['--edge', 'outline']] as const) {
         const planted = path.join(tmp, `p08-type@4${plant}.webp`);
         assert.strictEqual(spawnSync('python3', ['-I', tool, plant, path.join(dir, 'p08-type@4.webp'), planted], { encoding: 'utf8' }).status, 0, `the planted frame (${plant}) is written`);
