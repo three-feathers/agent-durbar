@@ -561,8 +561,8 @@ function roStation(meta: RealMeta, a: RealAgent, sx: number, y: number, Sw: numb
     let k = u / m.bodyH, top = headY - m.headTop * k;
     const hp = m.head ? [pose, ...(roOwn(POSE_FRAME_B, pose) ? [POSE_FRAME_B[pose]] : [])].map((p) => (m.head && roOwn(m.head, p) ? m.head[p] : null)).filter((v): v is [number, number, number, number] => !!v) : [];
     const hTop = hp.length ? Math.min(...hp.map((v) => v[1])) : 0;
-    if (hp.length && big) { /* the big level: the tallest pose stays HEAD_CLEAR below the screen's glass; where it would not, the figure yields (smaller, its bottom kept) */
-      const gb = y + STRIP + scrH - 7, bottom = top + m.h * k; /* the glass's bottom edge at the big level (the screen below: top y + STRIP + 6, sh = scrH - 10, the glass 3 inside it) */
+    if (hp.length) { /* the tallest pose stays HEAD_CLEAR below the row's sign strip, and at the big level below the screen's glass; where it would not, the figure yields (smaller, its bottom kept) */
+      const gb = big ? Math.max(y + STRIP, y + STRIP + scrH - 7) : y + STRIP, bottom = top + m.h * k; /* the glass's bottom edge at the big level (the screen: top y + STRIP + 6, sh = scrH - 10, the glass 3 inside it) */
       if (top + hTop * k < gb + HEAD_CLEAR) { k = Math.min(k, (bottom - gb - HEAD_CLEAR) / (m.h - hTop)); top = bottom - m.h * k; }
     }
     const w = m.w * k, h = m.h * k;

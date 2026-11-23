@@ -6,7 +6,7 @@ import * as path from 'path';
 import { placeBox, portraitCrop, PORTRAIT_SIDE, slipAvoid, NOTE_PAPER, NOTE_PAPER_DEFAULT, NOTE_INK, notePaper, screenFit, screenFor, personMotion, zoomRect, realLayout, lobbyWidths, sortDesks, deskOrder, deskBase, assignPeople, standPose, standHeight, POSE_FRAME_B, lobbyRange, PERSON_M, DOOR_M, FRONT_DEPTH, NEAR_SCALE, CHIP_H, U_MIN, U_MAX, U_MAX_BIG, FACE_U, PLATE_H, PLATE_H_ASK, STRIP,
   type RealModel, type RealMeta, type RealAgent, type RealState, type Rect, type Layout } from '../src/shared/realoffice-layout';
 import { signMin, lobbyBand, lobbyScale, visitorScale, snapDevice, devStep, HEAD, HEAD_FACE, HELP_FACE_MIN, HELP_GAP, helpH, helpCols, helpShown, headCrop, helperPerson } from '../src/shared/realoffice-layout';
-import { DOTS_BOX, DOTS_CLEAR, HEAD_CLEAR } from '../src/shared/realoffice-layout';
+import { DOTS_BOX, DOTS_CLEAR, HEAD_CLEAR, STRIP as STRIP_H } from '../src/shared/realoffice-layout';
 import { layoutFor } from '../src/shared/realoffice-arrangements';
 import { KID_U, KID_CAP, BIG_MAX, kidScale, kidBox, kidPose, kidHeadCrop, kidOf, helperHead, type KidMeta, type DeskBox } from '../src/shared/realoffice-layout';
 import { createHash } from 'crypto';
@@ -582,8 +582,9 @@ assert.ok(Object.values(META.stand).some((s) => Object.values(s.foot as Record<s
           for (const d of [...n.zones.flatMap((z) => z.desks), ...(n.lounge ? n.lounge.desks : [])]) {
             const b = od.get(d.id); if (!b || !b.person || !d.person) continue;
             const dp = d.person as { y: number; w: number; h: number; pid: string; pose: string }, hb = (rs.hd as { busts: Record<string, { w: number; head: Record<string, number[]> }> }).busts[dp.pid], gl = (d as { glass?: Rect }).glass;
-            const yielded = !!n.big && !!gl && !!hb && !!hb.head[dp.pose] && Math.abs(dp.y + Math.min(...[dp.pose, ({ typeA: 'typeB', waveA: 'waveB' } as Record<string, string>)[dp.pose]].filter((q) => q && hb.head[q]).map((q) => hb.head[q][1])) * (dp.w / hb.w) - (gl.y + gl.h) - HEAD_CLEAR) < 0.5 && dp.h < b.person.h; /* the height rule yields to the glass gap (FR-409) */
-            if (yielded) YIELD.add(`${w} ${dp.pid}`);
+            const limit = (d as unknown as { slot: Rect }).slot.y + STRIP_H, lim = n.big && gl ? Math.max(limit, gl.y + gl.h) : limit; /* the row's sign strip, and at the big level the screen's glass */
+            const yielded = !!hb && !!hb.head[dp.pose] && Math.abs(dp.y + Math.min(...[dp.pose, ({ typeA: 'typeB', waveA: 'waveB' } as Record<string, string>)[dp.pose]].filter((q) => q && hb.head[q]).map((q) => hb.head[q][1])) * (dp.w / hb.w) - lim - HEAD_CLEAR) < 0.5 && dp.h < b.person.h; /* the height rule yields to the gap (FR-409) */
+            if (yielded) YIELD.add(`${dp.pid} ${n.big ? 'big' : k}`);
             else if (Math.abs(d.person.h / b.person.h - 1) > TOL) out.push(`${tag} ${w} ${W}x${H} ${k}: ${d.id} figure ${d.person.h.toFixed(1)} px, the old set's ${b.person.h.toFixed(1)} px`);
           }
           for (const d of n.lounge ? n.lounge.desks : []) { const b = od.get(d.id) as { plate: Rect } | undefined; if (b && d.plate.w < b.plate.w - 0.5) out.push(`${tag} ${w} ${W}x${H} ${k}: lounge card ${d.id} ${d.plate.w.toFixed(1)} px, the old set's ${b.plate.w.toFixed(1)} px`); }
@@ -591,7 +592,7 @@ assert.ok(Object.values(META.stand).some((s) => Object.values(s.foot as Record<s
         return out;
       };
       assert.deepStrictEqual(check(rs, 'HD'), [], 'T472: in the rows worlds the HD figure is as tall as the old one (3 %) and the lounge card no narrower');
-      assert.deepStrictEqual([...YIELD].sort(), ['cave p09', 'cave p12', 'photo p09', 'photo p12'], 'T472: only p09 and p12 yield their height to the glass gap at the big level');
+      assert.deepStrictEqual([...YIELD].sort(), ['p04 15', 'p08 15', 'p09 15', 'p09 big', 'p11 15', 'p12 15', 'p12 big', 'p15 15'], 'T472: only these people yield height to the sign strip or the glass (by level)');
       const hd = rs.hd as { busts: Record<string, { bodyH: number; headTop: number; h: number }>; loungeW: number };
       const canvasScaled = { ...rs, hd: { ...hd, busts: Object.fromEntries(Object.entries(hd.busts).map(([k, v]) => [k, { ...v, bodyH: v.h, headTop: 0 }])) } }; /* mutant: scaled on the canvas, not on the figure */
       assert.ok(check(canvasScaled, 'red').some((x) => / figure /.test(x)), 'red: a set scaled on its canvas (not its figure) draws a smaller person and fails');
