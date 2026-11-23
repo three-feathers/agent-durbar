@@ -403,6 +403,16 @@ try {
       }
     }
     fs.rmSync(dir, { recursive: true, force: true });
+    // owner decision 2026-11-23 (#2060 item 11): rows now hold the full path, so ONLY the local window (IPC list), the user's own Export buttons and the store itself may read them;
+    // a diagnostics bundle, issue report, MCP answer or agent prompt that starts reading rows must add its own `~` masking and be added here on purpose
+    {
+      const allowed = new Set(['src/main/ipc/activity.ts', 'src/main/main.ts', 'src/main/activitystore.ts', 'src/shared/activity.ts', 'src/shared/api.ts', 'src/preload/preload.ts', 'src/renderer/sim.ts', 'src/renderer/screens.js', 'src/renderer/activitytable.js']);
+      const root = path.join(__dirname, '..', '..');
+      const hits: string[] = [];
+      const walk = (d: string): void => { for (const n of fs.readdirSync(path.join(root, d))) { const rel = `${d}/${n}`; if (fs.statSync(path.join(root, rel)).isDirectory()) walk(rel); else if (/\.(ts|js)$/.test(n) && /activityStore|activityList|activity:list|ActivityRow|activity\.json|activityCsv|activityJson/.test(fs.readFileSync(path.join(root, rel), 'utf8'))) hits.push(rel); } };
+      walk('src');
+      assert.deepStrictEqual(hits.filter((h) => !allowed.has(h)), [], 'no other source reads activity rows (diagnostics, issue report, MCP, agent text)');
+    }
     console.log('activity tests passed');
   })().catch((e) => { console.error(e); process.exit(1); });
 } catch (e) {
