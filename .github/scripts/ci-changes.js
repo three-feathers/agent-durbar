@@ -357,7 +357,7 @@ function literalTargets(src, io) {
   }
   return c.bySrc.get(src);
 }
-function fastSuites(files, io) {
+function fastSuites(files, io, info = {}) {
   const changed = new Set(files.filter(Boolean));
   const names = suiteNames(io.read(SUITE_LIST));
   const baseNames = new Set(suiteNames(io.readBase(SUITE_LIST)));
@@ -370,7 +370,15 @@ function fastSuites(files, io) {
   // by dozens of tests for one file each, and a new fixture there picked 23 suites (#2037). The docs-only skip still counts every
   // folder (docsOnly, fail closed); only the advisory lane narrows.
   const small = (dir) => (typeof io.countUnder === 'function' ? io.countUnder(dir) : 0) <= FOLDER_MAX;
-  const hit = (r) => r && (r.endsWith('/') ? small(r) && [...byLiteral].some((f) => f.startsWith(r)) : byLiteral.has(r));
+  info.capped = new Set(); // big folders a changed file sits in: named so the job summary can say why nothing was picked
+  const hit = (r) => {
+    if (!r) return false;
+    if (!r.endsWith('/')) return byLiteral.has(r);
+    if (![...byLiteral].some((f) => f.startsWith(r))) return false;
+    if (small(r)) return true;
+    info.capped.add(r);
+    return false;
+  };
   const direct = new Set(), byName = new Set();
   for (const name of names) {
     const cmd = scripts[name];
@@ -421,11 +429,15 @@ function main(env = process.env, argv = process.argv.slice(2)) {
   const root = at >= 0 && argv[at + 1] ? path.resolve(argv[at + 1]) : path.join(__dirname, '..', '..');
   const changedFiles = () => execFileSync('git', ['diff', '--name-only', '--no-renames', '-z', 'HEAD^1', 'HEAD'], { cwd: root, encoding: 'utf8', shell: false, maxBuffer: 64 * 1024 * 1024 }).split('\0').filter(Boolean);
   if (argv.includes('--suites')) { // spec 117 FR-386: the fast lane's suites only (the other outputs are not written)
-    const suites = env.EVENT_NAME === 'pull_request' ? fastSuites(changedFiles(), gitIo(root)) : [];
+    const info = {};
+    const suites = env.EVENT_NAME === 'pull_request' ? fastSuites(changedFiles(), gitIo(root), info) : [];
+    const capped = [...(info.capped || [])];
+    if (capped.length) console.log(`fast lane: ${capped.length} folder(s) named by tests hold more than ${FOLDER_MAX} files, so they pick nothing: ${capped.map(printable).join(' ')}`);
     if (env.EVENT_NAME !== 'pull_request') console.log(`${env.EVENT_NAME || 'no event'}: the fast lane runs on pull requests only.`);
     else console.log(suites.length ? `fast lane: ${suites.length} suite(s): ${suites.join(' ')}` : 'fast lane: no suite is touched by this diff.');
     out('fast', 'yes');
     out('suites', suites.join(' '));
+    if (capped.length) out('capped', String(capped.length)); // only when a big folder was skipped (the usual output stays two lines)
     return;
   }
   let r;

@@ -17,7 +17,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { spawnSync } = require('child_process');
-const { readSuiteList, loadSuites, runSuites } = require('./run-tests');
+const { readSuiteList, loadSuites, runSuites, summaryHeader, summaryRow, formatSummary } = require('./run-tests');
 const { printable } = require('./safe-print');
 
 const ROOT = path.join(__dirname, '..');
@@ -37,11 +37,17 @@ function pickSuites(names, pkg, list = readSuiteList()) {
 const HEAVY_S = 120;
 const BUDGET_S = 480;
 const DEADLINE_MS = 300 * 1000;
-function readTimes() { try { return JSON.parse(fs.readFileSync(path.join(__dirname, 'test-suite-timings.json'), 'utf8')); } catch { return {}; } }
-/** Which named suites run, by recorded time: { run, tooSlow, overBudget, seconds } (names, in the given order). */
+/** The recorded times, or null when the file is missing, unreadable or holds no number (the plan then fails closed). */
+function readTimes(text) {
+  try { const j = JSON.parse(text === undefined ? fs.readFileSync(path.join(__dirname, 'test-suite-timings.json'), 'utf8') : text); return j && typeof j === 'object' && !Array.isArray(j) ? j : null; } catch { return null; }
+}
+/** Which named suites run, by recorded time: { run, tooSlow, overBudget, seconds, broken } (names, in the given order). With no readable
+ *  time at all (a missing or broken timings file) nothing runs: every suite is left to Build and test and `broken` says why (review of
+ *  #2049: a broken file must never make every suite free). A suite missing from a readable file counts as the median. */
 function planSuites(names, times = readTimes(), { heavy = HEAVY_S, budget = BUDGET_S } = {}) {
-  const known = Object.values(times).filter((v) => Number.isFinite(v)).sort((a, b) => a - b);
-  const median = known.length ? known[Math.floor(known.length / 2)] : 0;
+  const known = Object.values(times || {}).filter((v) => Number.isFinite(v)).sort((a, b) => a - b);
+  if (!known.length) return { run: [], tooSlow: [...names], overBudget: [], seconds: 0, broken: true };
+  const median = known[Math.floor(known.length / 2)];
   const t = (n) => (Number.isFinite(times[n]) ? times[n] : median);
   const run = [], tooSlow = [], overBudget = [];
   let seconds = 0;
@@ -50,21 +56,51 @@ function planSuites(names, times = readTimes(), { heavy = HEAVY_S, budget = BUDG
     else if (seconds + t(n) > budget) overBudget.push(n);
     else { run.push(n); seconds += t(n); }
   }
-  return { run, tooSlow, overBudget, seconds: Math.round(seconds) };
+  return { run, tooSlow, overBudget, seconds: Math.round(seconds), broken: false };
 }
+/** From the decider's names to what runs: every asked name must be a suite (the ones left out too), then the plan, then the suites
+ *  of the plan's run list only. The one path `main` takes, so the plan cannot be bypassed. */
+function prepareRun(asked, pkg, times = readTimes(), list = readSuiteList()) {
+  pickSuites(asked, pkg, list);
+  const plan = planSuites([...new Set(asked)], times);
+  return { plan, suites: plan.run.length ? pickSuites(plan.run, pkg, list) : [] };
+}
+/** The job summary lines for a plan (also printed). */
+function planLines(plan, asked) {
+  const out = [];
+  if (plan.broken) out.push(`the timings file (scripts/test-suite-timings.json) is missing or unreadable: the lane runs nothing; Build and test runs all ${asked} picked suite(s)`);
+  else if (!plan.run.length) out.push(`${asked} suite(s) picked, all over the time limits: left to Build and test`);
+  else out.push(`${plan.run.length} of ${asked} picked suite(s), ${plan.seconds} s recorded (budget ${BUDGET_S} s): ${plan.run.join(' ')}`);
+  if (!plan.broken && plan.tooSlow.length) out.push(`left to Build and test, recorded over ${HEAVY_S} s: ${plan.tooSlow.join(' ')}`);
+  if (plan.overBudget.length) out.push(`left to Build and test, over the time budget: ${plan.overBudget.join(' ')}`);
+  return out;
+}
+const SIGNALS = [['SIGINT', 2], ['SIGTERM', 15], ['SIGHUP', 1]];
 /** Run the suites with a wall-clock deadline. Children are spawned detached (bail mode of run-tests.js), so a stop takes each suite's
- *  whole process tree (POSIX process group; Windows taskkill /T): nothing is left running. Resolves to { code, note }: 1 when a suite
- *  failed, 0 when all passed or when the deadline stopped the rest (advisory: those run in Build and test). Injectable for tests. */
-async function runLane({ suites, jobs, deadlineMs = DEADLINE_MS, run = runSuites, setTimer = setTimeout, clearTimer = clearTimeout }) {
+ *  whole process tree (POSIX process group; Windows taskkill /T): nothing is left running. SIGINT, SIGTERM and SIGHUP stop them the same
+ *  way (the handlers are removed when the run ends) and give 128 + the signal number. Resolves to { code, note, times }: 1 when a suite
+ *  failed, 0 when all passed or when the deadline stopped the rest (advisory: those run in Build and test; the note names them).
+ *  `onSuite` gets each finished suite (the summary rows). Everything outside is injectable for tests. */
+async function runLane({ suites, jobs, deadlineMs = DEADLINE_MS, run = runSuites, setTimer = setTimeout, clearTimer = clearTimeout, proc = process, onSuite = () => {} }) {
   const ctl = {};
-  let late = false;
+  let late = false, signalled = 0;
+  const finished = new Set();
+  const handlers = SIGNALS.map(([sig, n]) => { const h = () => { if (!signalled) signalled = 128 + n; if (ctl.abort) ctl.abort(); }; proc.on(sig, h); return [sig, h]; });
   const timer = setTimer(() => { late = true; if (ctl.abort) ctl.abort(); }, deadlineMs);
-  const r = await run({ suites, jobs, bail: true, ctl });
-  clearTimer(timer);
-  const failed = (r.failed || []).filter(Boolean);
-  if (failed.length) return { code: 1, note: `failed: ${failed.join(' ')}` };
-  if (late) return { code: 0, note: `deadline of ${Math.round(deadlineMs / 1000)} s reached: the suites still running were stopped (advisory; Build and test runs them)` };
-  return { code: 0, note: 'all passed' };
+  let r;
+  try {
+    r = await run({ suites, jobs, bail: true, ctl, onSuite: (t) => { finished.add(t.name); try { onSuite(t); } catch { /* the summary is optional */ } } });
+  } finally {
+    clearTimer(timer);
+    for (const [sig, h] of handlers) proc.removeListener(sig, h);
+  }
+  const times = (r && r.times) || [];
+  const failed = ((r && r.failed) || []).filter(Boolean);
+  const rest = suites.map((x) => x.name).filter((n) => !finished.has(n));
+  if (signalled) return { code: signalled, note: `stopped by a signal: the running suites were stopped; not finished: ${rest.join(' ') || 'none'}`, times };
+  if (failed.length) return { code: 1, note: `failed: ${failed.join(' ')}`, times };
+  if (late) return { code: 0, note: `deadline of ${Math.round(deadlineMs / 1000)} s reached: ${finished.size} suite(s) finished; stopped or not started (Build and test runs them): ${rest.join(' ') || 'none'}`, times };
+  return { code: 0, note: 'all passed', times };
 }
 
 /** The TypeScript sources of the suites' steps (dist-scripts/X.js is X.ts). */
@@ -102,13 +138,9 @@ function main() {
   const summary = (line) => { console.log(line); if (process.env.GITHUB_STEP_SUMMARY) try { fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, line + '\n'); } catch { /* no summary */ } };
   if (!asked.length) { console.log('fast lane: no suite to run'); return; }
   const pkg = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8'));
-  pickSuites(asked, pkg); // every asked name must be a suite, the ones left out too
-  const plan = planSuites([...new Set(asked)]);
-  summary(`Fast lane (${process.platform}): ${plan.run.length} of ${asked.length} picked suite(s), ${plan.seconds} s recorded (budget ${BUDGET_S} s): ${plan.run.join(' ') || 'none'}`);
-  if (plan.tooSlow.length) summary(`left to Build and test, recorded over ${HEAVY_S} s: ${plan.tooSlow.join(' ')}`);
-  if (plan.overBudget.length) summary(`left to Build and test, over the time budget: ${plan.overBudget.join(' ')}`);
-  if (!plan.run.length) return;
-  const suites = pickSuites(plan.run, pkg);
+  const { plan, suites } = prepareRun(asked, pkg);
+  for (const line of planLines(plan, new Set(asked).size)) summary(`Fast lane (${process.platform}): ${line}`);
+  if (!suites.length) return;
   const times = [];
   const phase = (label, fn) => { const t = Date.now(); const ok = fn(); times.push(`${label} ${((Date.now() - t) / 1000).toFixed(1)} s`); return ok; };
   const tsc = (args) => spawnSync(process.execPath, [require.resolve('typescript/bin/tsc'), ...args], { cwd: ROOT, stdio: 'inherit', shell: false }).status === 0;
@@ -127,11 +159,14 @@ function main() {
   }
   const t0 = Date.now();
   const jobs = Math.max(1, Number(process.env.TEST_JOBS) || Math.min(os.cpus().length, 8));
-  runLane({ suites, jobs }).then(({ code, note }) => {
+  const put = (text) => { if (process.env.GITHUB_STEP_SUMMARY) try { fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, text); } catch { /* no summary */ } };
+  put('\n' + summaryHeader(suites.length, { jobs })); // spec 117 FR-017: one row per suite as it ends, then the slowest suites
+  runLane({ suites, jobs, onSuite: (t) => put(summaryRow(t)) }).then(({ code, note, times: suiteTimes }) => {
+    if (suiteTimes.length) put('\n' + formatSummary(suiteTimes, { jobs, top: 10 }).replace('### Suite times', '### Slowest suites') + '\n');
     summary(`${times.join('; ')}${times.length ? '; ' : ''}suites ${((Date.now() - t0) / 1000).toFixed(1)} s; ${note}`);
     process.exit(code);
   });
 }
 
-module.exports = { pickSuites, tsSources, fastTsconfig, needsBuild, READS_DIST, planSuites, runLane, HEAVY_S, BUDGET_S, DEADLINE_MS };
+module.exports = { pickSuites, tsSources, fastTsconfig, needsBuild, READS_DIST, readTimes, planSuites, prepareRun, planLines, runLane, SIGNALS, HEAVY_S, BUDGET_S, DEADLINE_MS };
 if (require.main === module) main();

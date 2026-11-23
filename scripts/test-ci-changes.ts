@@ -301,7 +301,7 @@ const fakeFiles: Record<string, string> = {
   'scripts/test-y.ts': "path.join(__dirname, '../docs/zzfolder');\n",
   'docs/named.md': 'x', LICENSE: 'x',
 };
-const fakeIo: Io = { read: (p) => (p in fakeFiles ? fakeFiles[p] : null), readBase: (p) => (p in fakeFiles ? fakeFiles[p] : null), isFile: (p) => p in fakeFiles, isDir: (p) => p === 'docs/zzfolder' };
+const fakeIo: Io = { read: (p) => (p in fakeFiles ? fakeFiles[p] : null), readBase: (p) => (p in fakeFiles ? fakeFiles[p] : null), isFile: (p) => p in fakeFiles, isDir: (p) => p === 'docs/zzfolder', countUnder: () => 100 }; // a big folder: the docs skip still counts it (FR-390)
 const emptyIo: Io = { read: () => null, readBase: () => null, isFile: () => false, isDir: () => false };
 const walk = (rel: string): string[] => {
   const out: string[] = [];
@@ -377,6 +377,7 @@ assert.strictEqual(cc.decide(['docs/zz-none.md', 'specs/999-none/spec.md'], io()
     ['odd paths not refused', variant(/const PLAIN_PATH = [^\n]*\n/, 'const PLAIN_PATH = () => true;\n'), /docs\/\.\.\/src\/x\.md alone takes/],
     ['an empty diff allowed', variant('if (!list.length || !list.every', 'if (!list.every'), /an empty diff takes/],
     ['a missing suite list allowed', variant('if (!names.length) return false;', 'if (!names.length) return true;'), /no suite list takes/],
+    ['the docs skip ignores big folders, as the lane does', variant("for (const r of literalTargets(src, io)) if (r.endsWith('/') ? list.some(", "for (const r of literalTargets(src, io)) if (r.endsWith('/') ? (typeof io.countUnder === 'function' ? io.countUnder(r) : 0) <= FOLDER_MAX && list.some("), /docs\/zzfolder\/new\.md alone takes/],
     ['docs a suite names allowed', variant('for (const name of names) for (const src of stepSources(scripts[name])) {', 'for (const name of []) for (const src of stepSources(scripts[name])) {'), /docs\/named\.md alone takes/],
     ['docs only when one file is docs (some, not every)', variant('!list.every((f) => DOCS.test(f))', '!list.some((f) => DOCS.test(f))'), /with a doc takes the docs-only skip/],
   ];
@@ -434,7 +435,9 @@ assert.strictEqual(cc.decide(['docs/zz-none.md', 'specs/999-none/spec.md'], io()
         'scripts/test-w.js': "path.join(__dirname, 'zzbig'); require('./lib');\n", 'scripts/test-x.js': '//\n', 'scripts/lib.js': '//\n',
       };
       const tiny: Io = { read: (q) => (q in tf ? tf[q] : null), readBase: (q) => (q in tf ? tf[q] : null), isFile: (q) => q in tf, isDir: (q) => q === 'scripts/zzbig', countUnder: () => 41 };
-      assert.deepStrictEqual(cc.fastSuites(['scripts/zzbig/a.json'], tiny), [], 'a file in a 41-file folder a test names picks nothing');
+      const info: { capped?: Set<string> } = {};
+      assert.deepStrictEqual((cc.fastSuites as (f: string[], io: Io, i: object) => string[])(['scripts/zzbig/a.json'], tiny, info), [], 'a file in a 41-file folder a test names picks nothing');
+      assert.deepStrictEqual([...(info.capped || [])], ['scripts/zzbig/'], 'and the big folder is named, so the summary says why nothing was picked');
       assert.deepStrictEqual(cc.fastSuites(['scripts/zzbig/a.json'], { ...tiny, countUnder: () => 40 }), ['test:w'], 'a 40-file folder still picks');
       assert.deepStrictEqual(cc.fastSuites(['scripts/lib.js', 'scripts/test-x.js'], tiny), ['test:x', 'test:w'], 'the directly changed suite comes first');
       const noCap = variant("const small = (dir) => (typeof io.countUnder === 'function' ? io.countUnder(dir) : 0) <= FOLDER_MAX;", 'const small = () => true;');

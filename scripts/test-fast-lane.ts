@@ -7,6 +7,7 @@
 import * as assert from 'assert';
 import * as fs from 'fs';
 import * as path from 'path';
+import { EventEmitter } from 'events';
 
 const ROOT = path.join(__dirname, '..', '..');
 // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -17,9 +18,14 @@ const fl = require(path.join(ROOT, 'scripts', 'fast-lane.js')) as {
   needsBuild: (suites: { name: string; steps: string[][] }[], read?: (p: string) => string) => boolean;
 };
 type Plan = { run: string[]; tooSlow: string[]; overBudget: string[]; seconds: number };
+type RunOpts = { bail: boolean; ctl: { abort?: () => void }; onSuite?: (t: { name: string; wall: number; cpu: null }) => void };
+type Proc = { on(sig: string, h: () => void): unknown; removeListener(sig: string, h: () => void): unknown };
 type Lane = {
-  planSuites: (names: string[], times?: Record<string, unknown>, o?: { heavy?: number; budget?: number }) => Plan;
-  runLane: (o: { suites: unknown[]; jobs: number; deadlineMs?: number; run?: (o: { bail: boolean; ctl: { abort?: () => void } }) => Promise<{ failed: string[] }>; setTimer?: (f: () => void, ms: number) => unknown; clearTimer?: (t: unknown) => void }) => Promise<{ code: number; note: string }>;
+  planSuites: (names: string[], times?: Record<string, unknown> | null, o?: { heavy?: number; budget?: number }) => Plan & { broken: boolean };
+  readTimes: (text?: string) => Record<string, unknown> | null;
+  prepareRun: (asked: string[], pkg: { scripts: Record<string, string> }, times?: Record<string, unknown> | null, list?: string[]) => { plan: Plan; suites: { name: string }[] };
+  planLines: (plan: Plan & { broken: boolean }, asked: number) => string[];
+  runLane: (o: { suites: { name: string }[]; jobs: number; deadlineMs?: number; run?: (o: RunOpts) => Promise<{ failed: string[]; times?: unknown[] }>; setTimer?: (f: () => void, ms: number) => unknown; clearTimer?: (t: unknown) => void; proc?: Proc; onSuite?: (t: { name: string }) => void }) => Promise<{ code: number; note: string; times: unknown[] }>;
   HEAVY_S: number; BUDGET_S: number; DEADLINE_MS: number;
 };
 const norm = (t: string) => t.replace(/\r\n?/g, '\n');
@@ -70,21 +76,55 @@ assert.strictEqual(reads("const distance = 1;"), false, 'a word starting with di
     if (m !== 150) bad.push(`a suite with no recorded time does not count as the median (got ${m} s)`);
     const live = l.planSuites(['test:runtime-redact', 'test:redact-monotone', 'test:cichanges']);
     if (live.run.join(' ') !== 'test:cichanges' || live.tooSlow.length !== 2) bad.push('with the live timings the heavy redact suites still run');
-    // the deadline: a fake run that only ends when stopped; the stop must come from ctl.abort, children must be detached (bail)
-    let detached = false, stopped = false;
-    let finish: (v: { failed: string[] }) => void = () => {};
-    const hang = (o: { bail: boolean; ctl: { abort?: () => void } }) => new Promise<{ failed: string[] }>((resolve) => { finish = resolve; detached = o.bail; o.ctl.abort = () => { stopped = true; resolve({ failed: [] }); }; });
+    // broken or missing timings fail closed: nothing runs (review of #2049: never "every suite is free")
+    for (const [what, tm] of [['missing', null], ['empty', {}], ['without numbers', { _note: 'x' }], ['unparsable', l.readTimes('{ broken')]] as [string, Record<string, unknown> | null][]) {
+      let b2: (Plan & { broken: boolean }) | null = null;
+      try { b2 = l.planSuites(['test:runtime-redact', 'test:a'], tm); } catch (e) { bad.push(`a ${what} timings file still runs suites (it threw: ${(e as Error).message})`); continue; }
+      if (b2.run.length || !b2.broken) bad.push(`a ${what} timings file still runs suites (got ${b2.run.join(' ')})`);
+    }
+    // main's one path: asked -> plan -> the plan's suites only
+    const fpkg = { scripts: Object.fromEntries(['test:a', 'test:b', 'test:c', 'test:d', 'test:e'].map((n) => [n, `node scripts/${n.slice(5)}.js`])) };
+    const prep = l.prepareRun(['test:c', 'test:a', 'test:b', 'test:d', 'test:e'], fpkg, times, ['test:a', 'test:b', 'test:c', 'test:d', 'test:e']);
+    const want = l.planSuites(['test:c', 'test:a', 'test:b', 'test:d', 'test:e'], times).run;
+    if (prep.suites.map((x) => x.name).join(' ') !== want.join(' ')) bad.push(`prepareRun does not run exactly the plan's suites (got ${prep.suites.map((x) => x.name).join(' ')}, plan ${want.join(' ')})`);
+    const none = l.planLines({ run: [], tooSlow: ['test:x'], overBudget: ['test:y'], seconds: 0, broken: false }, 2)[0] || '';
+    if (!/2 suite\(s\) picked, all over the time limits: left to Build and test/.test(none)) bad.push(`the all-over-budget text is wrong (got ${none})`);
+    // the deadline, on a fake runner and a fake clock: one suite finishes, the other runs until stopped
+    const suites2 = [{ name: 'test:a' }, { name: 'test:b' }];
+    let detached = false, stopped = false, delay = -1, finish: (v: { failed: string[] }) => void = () => {};
+    const seen: string[] = [];
+    const hang = (o: RunOpts) => new Promise<{ failed: string[] }>((resolve) => {
+      finish = resolve; detached = o.bail;
+      if (o.onSuite) o.onSuite({ name: 'test:a', wall: 1, cpu: null });
+      o.ctl.abort = () => { stopped = true; resolve({ failed: [] }); };
+    });
     const timers: (() => void)[] = [];
-    const pending = l.runLane({ suites: [], jobs: 1, run: hang, setTimer: (f) => { timers.push(f); return 1; }, clearTimer: () => {} });
+    const proc1 = new EventEmitter();
+    const pending = l.runLane({ suites: suites2, jobs: 1, deadlineMs: 1234, run: hang, proc: proc1, onSuite: (t) => seen.push(t.name), setTimer: (f, ms) => { delay = ms; timers.push(f); return 1; }, clearTimer: () => {} });
     for (const f of timers) f();
     finish({ failed: [] }); // a lane that did not stop its suites would wait here for ever: end the fake run so the check can report it
     const late = await pending;
+    if (delay !== 1234) bad.push(`the deadline timer is not set to deadlineMs (got ${delay} ms)`);
     if (!stopped) bad.push('the deadline does not stop the running suites');
     if (!detached) bad.push('suites are not spawned detached, so a stop would leave their child processes');
     if (late.code !== 0 || !/deadline/.test(late.note)) bad.push(`the deadline does not end the lane green with a note (got ${late.code} ${late.note})`);
-    const fail = await l.runLane({ suites: [], jobs: 1, run: async () => ({ failed: ['test:x'] }), setTimer: () => 1, clearTimer: () => {} });
+    if (!/test:b/.test(late.note) || /not started[^:]*:.*test:a/.test(late.note)) bad.push(`the deadline note does not name the suites stopped or not started (got ${late.note})`);
+    if (seen.join(' ') !== 'test:a') bad.push('finished suites do not reach onSuite (the summary rows)');
+    // a signal stops the suites the same way, gives 128 + n, and the handlers are removed afterwards (no leak across calls)
+    let sigStopped = false;
+    const proc2 = new EventEmitter();
+    const sigRun = (o: RunOpts) => new Promise<{ failed: string[] }>((resolve) => { o.ctl.abort = () => { sigStopped = true; resolve({ failed: [] }); }; setImmediate(() => { proc2.emit('SIGTERM'); resolve({ failed: [] }); }); });
+    const sig = await l.runLane({ suites: suites2, jobs: 1, run: sigRun, proc: proc2, setTimer: () => 1, clearTimer: () => {} });
+    if (!sigStopped) bad.push('SIGTERM does not stop the running suites');
+    if (sig.code !== 143) bad.push(`SIGTERM does not give 143 (got ${sig.code})`);
+    for (const p2 of [proc1, proc2]) for (const n of ['SIGINT', 'SIGTERM', 'SIGHUP']) if (p2.listenerCount(n) !== 0) bad.push(`the ${n} handler is left installed after the run`);
+    let installed = 0;
+    const proc3 = new EventEmitter();
+    await l.runLane({ suites: [], jobs: 1, proc: proc3, run: async () => { installed = ['SIGINT', 'SIGTERM', 'SIGHUP'].filter((n) => proc3.listenerCount(n) === 1).length; return { failed: [] }; }, setTimer: () => 1, clearTimer: () => {} });
+    if (installed !== 3) bad.push(`SIGINT, SIGTERM and SIGHUP are not all handled while the suites run (${installed} of 3)`);
+    const fail = await l.runLane({ suites: [], jobs: 1, proc: new EventEmitter(), run: async () => ({ failed: ['test:x'] }), setTimer: () => 1, clearTimer: () => {} });
     if (fail.code !== 1) bad.push('a failing suite does not fail the lane');
-    const ok = await l.runLane({ suites: [], jobs: 1, run: async () => ({ failed: [] }), setTimer: () => 1, clearTimer: () => {} });
+    const ok = await l.runLane({ suites: [], jobs: 1, proc: new EventEmitter(), run: async () => ({ failed: [] }), setTimer: () => 1, clearTimer: () => {} });
     if (ok.code !== 0 || ok.note !== 'all passed') bad.push('a clean run is not green');
     return bad;
   }
@@ -101,12 +141,48 @@ assert.strictEqual(reads("const distance = 1;"), false, 'a word starting with di
         ['the plan stops at the first suite that does not fit', swap('else if (seconds + t(n) > budget) overBudget.push(n);', 'else if (seconds + t(n) > budget || overBudget.length) overBudget.push(n);'), /given order within the budget/],
         ['a heavy limit of 600 s', swap('const HEAVY_S = 120;', 'const HEAVY_S = 600;'), /limits above the spec/],
         ['no stop at the deadline', swap('late = true; if (ctl.abort) ctl.abort();', 'late = true;'), /does not stop the running suites/],
-        ['children not detached', swap('const r = await run({ suites, jobs, bail: true, ctl });', 'const r = await run({ suites, jobs, bail: false, ctl });'), /not spawned detached/],
+        ['children not detached', swap('bail: true, ctl,', 'bail: false, ctl,'), /not spawned detached/],
+        ['the deadline at ten times its delay', swap('}, deadlineMs);', '}, deadlineMs * 10);'), /not set to deadlineMs/],
+        ['no signal handlers', swap('proc.on(sig, h);', 'void sig;'), /not all handled/],
+        ['signal handlers left installed', swap('proc.removeListener(sig, h);', 'void h;'), /left installed/],
+        ['a signal exits 0', swap('if (!signalled) signalled = 128 + n;', 'if (!signalled) signalled = 0;'), /SIGTERM does not give 143/],
+        ['the deadline note names no suite', swap("stopped or not started (Build and test runs them): ${rest.join(' ') || 'none'}", 'some were stopped'), /does not name the suites/],
+        ['no summary rows', swap('try { onSuite(t); } catch', 'try { void t; } catch'), /do not reach onSuite/],
+        ['a broken timings file makes every suite free', swap('if (!known.length) return { run: [], tooSlow: [...names], overBudget: [], seconds: 0, broken: true };', ''), /timings file still runs suites/],
+        ['main runs what was asked, not the plan', swap('suites: plan.run.length ? pickSuites(plan.run, pkg, list) : []', 'suites: pickSuites([...new Set(asked)], pkg, list)'), /exactly the plan's suites/],
+        ['the all-over-budget text', swap("suite(s) picked, all over the time limits: left to Build and test", 'no suite is touched'), /all-over-budget text/],
         ['the deadline is red', swap("if (late) return { code: 0, note:", "if (late) return { code: 1, note:"), /does not end the lane green/],
         ['a failure is green', swap("if (failed.length) return { code: 1,", "if (failed.length) return { code: 0,"), /failing suite does not fail/],
       ];
       for (const [name, l, expect] of mutants) { const bad = await laneProblems(l); assert.ok(bad.some((b) => expect.test(b)), `mutant "${name}" (${copy}) dies at its own assert (got: ${bad.join('; ') || 'nothing'})`); }
     }
+    // one real run (review of #2049): a suite that sleeps and starts a grandchild, a 1.5 s deadline, the real runner. The lane ends green
+    // within seconds, names the suite, and neither the suite nor its grandchild is left running (process group / taskkill /T).
+    const os = require('os') as typeof import('os');
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'fast-lane-'));
+    const pidFile = path.join(tmp, 'grandchild.pid');
+    const code = `const c=require('child_process').spawn(process.execPath,['-e','setTimeout(()=>{},60000)'],{stdio:'ignore'});require('fs').writeFileSync(${JSON.stringify(pidFile)},String(c.pid));setTimeout(()=>{},60000);`;
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const rt = require(path.join(ROOT, 'scripts', 'run-tests.js')) as { runSuites: (o: Record<string, unknown>) => Promise<{ failed: string[]; times: unknown[] }> };
+    const { spawn } = require('child_process') as typeof import('child_process');
+    const pids: number[] = [];
+    const t0 = Date.now();
+    const real = await load(toLf(raw)).runLane({
+      suites: [{ name: 'test:sleep', steps: [['-e', code]] } as unknown as { name: string }], jobs: 1, deadlineMs: 1500,
+      run: (o) => rt.runSuites({ ...o, spawnFn: (cmd: string, args: string[], opts: object) => { const c = spawn(cmd, args, opts); if (c.pid) pids.push(c.pid); return c; } }),
+    });
+    const took = Date.now() - t0;
+    assert.ok(real.code === 0 && /deadline/.test(real.note) && /test:sleep/.test(real.note), `a real run past the deadline ends green and names the suite (got ${real.code} ${real.note})`);
+    assert.ok(took < 15000, `the real run ends soon after its deadline (took ${took} ms)`);
+    const alive = (pid: number) => { try { process.kill(pid, 0); return true; } catch { return false; } };
+    let gc = 0;
+    for (let i = 0; i < 50 && !fs.existsSync(pidFile); i++) await new Promise((r) => setTimeout(r, 100));
+    if (fs.existsSync(pidFile)) gc = Number(fs.readFileSync(pidFile, 'utf8'));
+    assert.ok(gc > 0, 'the sleeping suite started its grandchild');
+    for (let i = 0; i < 50 && (pids.some(alive) || alive(gc)); i++) await new Promise((r) => setTimeout(r, 100));
+    assert.ok(pids.length === 1 && !alive(pids[0]), 'the suite process is stopped');
+    assert.ok(!alive(gc), 'the grandchild is stopped too (the whole tree)');
+    fs.rmSync(tmp, { recursive: true, force: true });
   };
   laneDone = run();
 }
@@ -169,4 +245,4 @@ for (const [name, text, expect] of mutants) assert.ok(problems(text).includes(ex
 const spec = norm(fs.readFileSync(path.join(ROOT, 'specs', '117-delivery-speed-2', 'spec.md'), 'utf8'));
 const required = spec.split('\n').filter((l) => /^\| [^|]+ \| yes\b/.test(l)).map((l) => l.split('|')[1].trim());
 assert.ok(required.includes('Build and test (windows-latest)') && !required.some((n) => /fast lane/i.test(n)), 'no Fast lane check is required (the lane is advisory)');
-laneDone.then(() => { process.exitCode = 0; console.log(`fast-lane: ok (${mutants.length} workflow mutants, 9 FR-390 mutants on two copies caught)`); }, (e) => { console.error(e); process.exitCode = 1; });
+laneDone.then(() => { process.exitCode = 0; console.log(`fast-lane: ok (${mutants.length} workflow mutants, the FR-390 mutants on two copies and a real deadline run caught)`); }, (e) => { console.error(e); process.exitCode = 1; });
