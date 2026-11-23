@@ -185,6 +185,20 @@ export function hdPlace(hf: { w: number; h: number; face: Rect }, place: Rect, p
   return { box, vis, cue: x !== undefined ? { x, y } : { x: Math.min(place.x + place.w - half, Math.max(place.x + half, vis.x + vis.w / 2)), y: vis.y + vis.h + 2 } };
 }
 
+/** spec 102 FR-401 (owner decision 2026-11-23 14:59 UTC): an HD person's status badge stands above the head wherever the floor is free there: 2 px over the head box, clear of every
+ *  folder sign, storey tag, cabinet, plate and other person, inside the floor under the lobby lane. Else it keeps `hdPlace`'s answer (beside the head, then under the chin). */
+export function hdBadgesUp(lay: Layout): void {
+  const hit = (a: Rect, c: Rect): boolean => a.x < c.x + c.w && c.x < a.x + a.w && a.y < c.y + c.h && c.y < a.y + a.h;
+  const desks = lay.zones.flatMap((z) => z.desks), top = lay.lobbyH + AISLE_LANE;
+  const blocks: Rect[] = [...lay.zones.map((z) => z.sign), ...(lay.storeys || []).flatMap((b) => (b.slab ? [b.tag, b.slab] : [b.tag])), ...desks.flatMap((d) => [d.desk, d.plate]), ...(lay.lounge ? lay.lounge.desks.flatMap((d) => [d.desk, d.plate, ...(d.person ? [d.person] : [])]) : [])];
+  for (const d of desks) {
+    const p = d.person;
+    if (!p || !p.file.startsWith('hd/') || d.away || d.state === 'error' || !d.cue) continue;
+    const c = { x: p.vis.x + p.vis.w / 2, y: p.vis.y - 2 - CUE_BOX.h }, box = { x: c.x - CUE_BOX.w / 2, y: c.y, w: CUE_BOX.w, h: CUE_BOX.h };
+    if (box.y >= top && box.x >= 0 && box.x + box.w <= lay.width && !blocks.some((r) => hit(box, r)) && !desks.some((o) => o !== d && o.person && hit(box, o.person))) d.cue = c;
+  }
+}
+
 /** an empty place's note stands where the person would, beside the glass and never over its text: `x` is the note's centre */
 function aisleNote(gl: Rect, face: 'left' | 'right', g: number): { x: number; y: number; s: number } {
   const s = g <= 3 ? 66 : 22 * g; /* 66 px up to g = 3 (relayed review: outsized tickets); above, it grows with the art (relayed, 2026-11-03) */
@@ -455,6 +469,7 @@ export function aislesLayout(model: RealModel, view: { w: number; h: number }, m
      the zone's own left edge is under the same sign. A horizontal rule (floors on rows of their own) is in the gap and never meets one. */
   const hitR = (a: Rect, c: Rect): boolean => a.x < c.x + c.w && c.x < a.x + a.w && a.y < c.y + c.h && c.y < a.y + a.h;
   for (const b of bands) if (b.slab && b.slab.w <= 2 && (zones.some((z) => hitR(b.slab!, z.sign)) || bands.some((o) => hitR(b.slab!, o.tag) || (o !== b && o.slab && hitR(b.slab!, o.slab))) || (lay.lounge ? lay.lounge.desks.some((d) => hitR(b.slab!, d.slot) || hitR(b.slab!, d.plate)) : false))) b.slab = null;
+  if (meta.hdPeople) hdBadgesUp(lay); /* FR-401 (owner 2026-11-23 14:59 UTC): above the head wherever the floor is free there */
   return lay;
 }
 

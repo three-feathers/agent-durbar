@@ -1194,6 +1194,10 @@ for (const world of ['photo', 'cave']) {
     }
   }
   assert.ok(hdDrawn >= 18, `the HD frames were drawn (${hdDrawn})`);
+  { /* FR-392 (owner 2026-11-23 14:59 UTC): with 1 or 2 agents `g` is 5 and the 288 frame is drawn 1:1 (80 % of the place): no fourth size is authored */
+    const one = aislesLayout(pick(1), { w: 1440, h: ROOM.h900 }, { ...META, hdPeople: HD }, SIGNS(4)), d = one.zones[0].desks[0];
+    assert.deepStrictEqual([one.g, d.person!.file.endsWith('@4.webp'), d.person!.h], [5, true, HD.people[d.person!.pid][d.person!.pose]['4'][1]], '1 agent: g 5 draws the 288 frame at 1:1');
+  }
   /* FR-392: the size rule: the largest s x n not over g x dpr, a tie to the larger s */
   for (const [dev, s, n] of [[2, 2, 1], [3, 3, 1], [4, 4, 1], [5, 4, 1], [6, 3, 2], [8, 4, 2], [2.5, 2, 1], [4.5, 4, 1], [6.25, 3, 2], [1.5, 0, 0]]) {
     const r = hdPick(dev, [4, 3, 2]);
@@ -1211,15 +1215,28 @@ for (const world of ['photo', 'cave']) {
     assert.ok(!inter(bx, vis, 0), `${tag}: the status badge ${JSON.stringify(bx)} covers the face ${JSON.stringify(vis)}`);
     assert.ok(bx.x >= place.x - 1e-6 && bx.x + bx.w <= place.x + place.w + 1e-6 && bx.y >= rowTop + AISLE_SIGN_H - 1e-6, `${tag}: the status badge stays in the place, under the sign strip`);
   };
-  let badges = 0;
+  /* in a hall: clear of the face, of every sign, storey tag, cabinet, plate and other person, inside the floor; above the head where that is free (owner 2026-11-23 14:59 UTC) */
+  const hallOk = (L: Layout, d: DeskBox, tag: string): boolean => {
+    const bx = badge(d.cue as { x: number; y: number }), p = d.person!, all = L.zones.flatMap((z) => z.desks);
+    assert.ok(!inter(bx, p.vis, 0), `${tag}: the status badge ${JSON.stringify(bx)} covers the face ${JSON.stringify(p.vis)}`);
+    const hitBy = [...L.zones.map((z) => ['sign ' + z.id, z.sign] as [string, Rect]), ...(L.storeys || []).map((b) => ['tag ' + b.id, b.tag] as [string, Rect]), ...all.flatMap((o) => [['cabinet ' + o.id, o.desk], ['plate ' + o.id, o.plate], ...(o !== d && o.person ? [['person ' + o.id, o.person]] : [])] as Array<[string, Rect]>)].filter(([, r]) => inter(bx, r, 0));
+    assert.deepStrictEqual(hitBy.map(([nm]) => nm), [], `${tag}: the status badge ${JSON.stringify(bx)} lies on something`);
+    assert.ok(bx.y >= L.lobbyH && bx.x >= 0 && bx.x + bx.w <= L.width, `${tag}: the status badge stays on the floor`);
+    /* where the floor over the head is free, the badge stands there (FR-401, owner 2026-11-23 14:59 UTC) */
+    const up = badge({ x: p.vis.x + p.vis.w / 2, y: p.vis.y - 2 - CUE_BOX.h });
+    const free = up.y >= L.lobbyH + 20 && up.x >= 0 && up.x + up.w <= L.width && ![...L.zones.map((z) => z.sign), ...(L.storeys || []).flatMap((b) => [b.tag, ...(b.slab ? [b.slab] : [])]), ...all.flatMap((o) => [o.desk, o.plate, ...(o !== d && o.person ? [o.person] : [])])].some((r) => inter(up, r, 0));
+    if (free) assert.deepStrictEqual(bx, up, `${tag}: the floor over the head is free, so the badge stands there`);
+    return bx.y + bx.h <= p.vis.y;
+  };
+  let badges = 0, above = 0;
   const places: Record<number, DeskBox[]> = {};
-  for (const [n, W, H] of [[3, 1440, ROOM.h900], [3, 1280, ROOM.h800], [15, 1440, ROOM.h900]] as [number, number, number][]) for (let r = 0; r < STATES.length; r++) {
+  for (const [n, W, H] of [[3, 1440, ROOM.h900], [3, 1280, ROOM.h800], [15, 1440, ROOM.h900], [15, 1280, ROOM.h800]] as [number, number, number][]) for (let r = 0; r < STATES.length; r++) {
     const m = pick(n); m.folders.flatMap((f) => f.agents).forEach((a, i) => { a.state = STATES[(i + r) % STATES.length]; a.person = ['p08', 'p12', 'p04'][(i + r) % 3]; });
     const L = aislesLayout(m, { w: W, h: H }, { ...META, hdPeople: HD }, SIGNS(4)), g = L.g as number;
     for (const d of L.zones.flatMap((z) => z.desks)) {
       (places[g] = places[g] || []).push(d);
       if (!d.person || !d.person.file.startsWith('hd/') || d.state === 'error') continue;
-      badgeOk(d.cue as { x: number; y: number }, d.person.vis, d.stand as Rect, d.slot.y, `${n} agents at ${W}x${H}, ${d.person.pid} ${d.state} (${d.facing})`); badges++;
+      if (hallOk(L, d, `${n} agents at ${W}x${H}, ${d.person.pid} ${d.state} (${d.facing})`)) above++; badges++;
     }
   }
   for (const g of [4, 3, 2]) for (const [pid, poses] of Object.entries(HD.people)) for (const pose of Object.keys(poses)) for (const d of places[g].filter((x, i, all) => all.findIndex((y) => y.facing === x.facing) === i)) {
@@ -1228,7 +1245,8 @@ for (const world of ['photo', 'cave']) {
     badgeOk(at.cue, at.vis, d.stand as Rect, d.slot.y, `${pid}-${pose} at g ${g} (${d.facing})`); badges++;
   }
   assert.ok(badges >= 300, `the badge was checked (${badges})`);
-  console.log(`arcade HD people: ${hdDrawn} HD frames placed, off = unchanged in ${cases2.length} halls, ${badges} badges clear of the face`);
+  assert.ok(above >= 10, `FR-401: the badge stands above the head where the floor is free (${above} of the hall's badges)`);
+  console.log(`arcade HD people: ${hdDrawn} HD frames placed, off = unchanged in ${cases2.length} halls, ${badges} badges clear of the face, ${above} above the head`);
 }
 
 console.log(`aisles tests passed (${cases} layouts)`);
