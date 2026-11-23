@@ -267,6 +267,7 @@
     "test:schedules": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-schedules.js && node dist-scripts/scripts/test-schedules-runs.js",
     "test:security": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-wincmd.js",
     "test:selfupdate-feed": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-selfupdate-feed.js",
+    "test:selfupdate-feedget": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-selfupdate-feedget.js",
     "test:selfupdate-installtype": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-selfupdate-installtype.js",
     "test:selfupdate-notes": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-selfupdate-notes.js",
     "test:selfupdate-repo": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-selfupdate-repo.js",

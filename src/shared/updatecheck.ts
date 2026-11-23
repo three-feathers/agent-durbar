@@ -351,7 +351,8 @@ export const LOOKUPS: Readonly<Record<SetupKind, readonly Lookup[]>> = Object.fr
     { url: 'https://downloads.claude.ai/claude-code-releases/latest', method: 'GET', mode: 'text', maxBytes: 64 },
   ],
 });
-const REDIRECTS = [301, 302, 303, 307, 308];
+/** The redirect statuses (also spec 118 T009, `makeFeedGet`). */
+export const REDIRECTS: readonly number[] = [301, 302, 303, 307, 308];
 
 /** True when a URL is exactly one of the allow-listed lookups (the network layer refuses everything else). */
 export const lookupAllowed = (url: string): boolean => Object.values(LOOKUPS).some((l) => l.some((x) => x.url === url));
