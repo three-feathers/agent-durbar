@@ -25,7 +25,7 @@ const T = require(path.join(__dirname, '..', '..', 'src', 'renderer', 'activityt
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-activity-'));
 const file = path.join(dir, 'activity.json');
 const noTimer = { setTimer: () => 1, clearTimer: () => undefined };
-const base = { agent: 'Ana', folder: '/home/u/work/web-shop', app: 'GitHub Copilot', mode: 'ask', action: 'Edit src/a.ts', decision: 'allowed-once' as const };
+const base = { agent: 'Ana', folder: '/home/u/work/web-shop', path: '/home/u/work/web-shop', app: 'GitHub Copilot', mode: 'ask', action: 'Edit src/a.ts', decision: 'allowed-once' as const };
 
 try {
   // only the listed fields are stored; the folder is a base name; extra keys (prompt, output, ...) are dropped
@@ -34,8 +34,20 @@ try {
     const r = st.record({ ...base, prompt: 'secret prompt', reply: 'model reply', output: 'tool output', content: 'file body' });
     assert.ok(r);
     assert.deepStrictEqual(Object.keys(r!).sort(), [...ACTIVITY_FIELDS].sort(), 'a row has exactly the listed fields');
-    assert.strictEqual(r!.folder, 'web-shop', 'folder base name, not the full path');
+    assert.strictEqual(r!.folder, 'web-shop', 'folder keeps the base name (the short label)');
+    assert.strictEqual(r!.path, '/home/u/work/web-shop', 'owner decision 2026-11-23 (#2060 item 11): the full path as written, no ~ and no user name hidden');
     assert.strictEqual(sanitizeActivityRow({ ...base, t: new Date().toISOString(), folder: 'C:\\Users\\u\\proj\\' })!.folder, 'proj', 'Windows path: base name');
+    {
+      const at = (path: unknown) => sanitizeActivityRow({ ...base, t: new Date().toISOString(), path }, {})!.path;
+      assert.strictEqual(at('C:\\Users\\Ana\\clients\\acme\\app\\'), 'C:\\Users\\Ana\\clients\\acme\\app\\', 'owner decision 2026-11-23: a Windows drive path as written');
+      assert.strictEqual(at('\\\\srv\\share\\proj'), '\\\\srv\\share\\proj', 'owner decision 2026-11-23: a UNC path as written');
+      assert.strictEqual(at('/Users/vikram/Projects/app'), '/Users/vikram/Projects/app', 'no ~ replacement');
+      assert.strictEqual(at(undefined), '', 'an older row has no path');
+      assert.strictEqual(at('/a/' + 'x'.repeat(500)).length, 400, 'cut at 400');
+      const tok = 'ghp' + '_' + 'A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8';
+      const masked = at(`/home/u/${tok}/app`);
+      assert.ok(!masked.includes(tok) && masked.includes('/app') && masked.startsWith('/home/u/'), `a token-shaped segment of a path is still masked, the rest is kept: ${masked}`);
+    }
     // spec 012 FR-181 (issue #1541): the row's last redact() hides an escaped token (`ghp\_<body>`), so the log and its export never hold it
     assert.strictEqual(sanitizeActivityRow({ ...base, t: new Date().toISOString(), action: 'echo ' + 'ghp' + '\\_' + 'A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8' }, {})!.action, 'echo [redacted]', '#1541 activity: the row hides an escaped token');
     // review of PR 1585: an escaped rest glued to a mask (an env value's named marker, or a plain mask) is hidden by the row's last redact() too
@@ -48,7 +60,8 @@ try {
     }
     st.flush();
     const disk = fs.readFileSync(file, 'utf8');
-    for (const bad of ['secret prompt', 'model reply', 'tool output', 'file body', '/home/u']) assert.ok(!disk.includes(bad), `not on disk: ${bad}`);
+    for (const bad of ['secret prompt', 'model reply', 'tool output', 'file body']) assert.ok(!disk.includes(bad), `not on disk: ${bad}`);
+    assert.ok(JSON.parse(disk).rows?.[0]?.path === '/home/u/work/web-shop' || disk.includes('"path": "/home/u/work/web-shop"') || disk.includes('"path":"/home/u/work/web-shop"'), 'owner decision 2026-11-23 (#2060 item 11): the full path is stored, as written (it was "not on disk: /home/u")');
     const back = new ActivityStore(file, { ...noTimer, env: {} });
     back.load();
     assert.strictEqual(back.list().length, 1, 'reloaded');
@@ -107,11 +120,11 @@ try {
     assert.strictEqual(csvCell('=HYPERLINK("http://x")'), `"'=HYPERLINK(""http://x"")"`);
     for (const c of ['=', '+', '-', '@']) assert.strictEqual(csvCell(`${c}1+1`)[0], "'", `formula guard for ${c}`);
     assert.strictEqual(csvCell('\tx')[0], "'");
-    const rows: ActivityRow[] = [{ t: '2026-10-20T10:00:00.000Z', agent: '=cmd|"/c calc"!A1', folder: 'f', app: 'GitHub Copilot', mode: 'ask', action: '@SUM(1,2)', decision: 'denied' }];
+    const rows: ActivityRow[] = [{ t: '2026-10-20T10:00:00.000Z', agent: '=cmd|"/c calc"!A1', folder: 'f', path: '=C:/a,b/"c"\nd', app: 'GitHub Copilot', mode: 'ask', action: '@SUM(1,2)', decision: 'denied' }];
     const csv = activityCsv(rows);
     const lines = csv.trimEnd().split('\r\n');
-    assert.strictEqual(lines[0], 't,agent,folder,app,mode,action,decision');
-    assert.strictEqual(lines[1], `2026-10-20T10:00:00.000Z,"'=cmd|""/c calc""!A1",f,GitHub Copilot,ask,"'@SUM(1,2)",denied`);
+    assert.strictEqual(lines[0], 't,agent,folder,path,app,mode,action,decision');
+    assert.strictEqual(lines[1], `2026-10-20T10:00:00.000Z,"'=cmd|""/c calc""!A1",f,"'=C:/a,b/""c""\nd",GitHub Copilot,ask,"'@SUM(1,2)",denied`);
     const json = JSON.parse(activityJson(rows)) as ActivityRow[];
     assert.deepStrictEqual(Object.keys(json[0]), [...ACTIVITY_FIELDS]);
   }
@@ -235,6 +248,16 @@ try {
     const html = T.tableHtml([{ t: '2026-10-20T10:00:00Z', agent: '<img src=x onerror=alert(1)>', folder: 'f', app: 'a', mode: 'allow', action: '"><script>', decision: 'auto-allow-all' }], esc);
     assert.ok(!html.includes('<img') && !html.includes('<script>'), 'escaped');
     assert.ok(html.includes('Automatic (Allow all)') && html.includes('Allow all'));
+    {
+      // owner decision 2026-11-23 (#2060 item 11): the Folder cell shows the full path; too long, it is cut in the middle; title and aria-label hold all of it
+      const short = '/home/ana/clients/acme/app', long = '/home/ana/clients/acme/' + 'deep/'.repeat(20) + 'app';
+      const cell = (row: Record<string, unknown>): string => T.tableHtml([{ t: '2026-10-20T10:00:00Z', agent: 'a', app: 'a', mode: 'ask', action: 'x', decision: 'denied', ...row }], esc);
+      const h1 = cell({ folder: 'app', path: short });
+      assert.ok(h1.includes(`title="${short}" aria-label="${short}">${short}</td>`), 'the full path, as written, in the cell, the title and the accessible name');
+      const h2 = cell({ folder: 'app', path: long });
+      assert.ok(h2.includes(`title="${long}" aria-label="${long}">/home/ana/clients/a`) && h2.includes('…') && h2.includes('/deep/app</td>'), 'a long path is cut in the middle, the whole path stays in the title');
+      assert.ok(cell({ folder: 'app' }).includes('title="app" aria-label="app">app</td>'), 'an older row (no path) shows its base name');
+    }
     assert.deepStrictEqual(Object.values(T.DECISION_WORDS), ['Allowed once by you', 'Allowed for the session', 'Denied', 'Automatic (Allow all)', 'Automatic (session permission)', 'Mode changed', 'Limit changed', 'Remote control on', 'Remote control off', 'Session deleted', 'MCP restart', 'Loop started', 'Loop pass', 'Loop pass skipped', 'Loop on hold', 'Loop ended', 'Autopilot on', 'Autopilot ended', 'Autopilot off']);
     assert.deepStrictEqual(Object.keys(T.DECISION_WORDS), [...ACTIVITY_DECISIONS], 'one plain word per decision, in the same order');
 

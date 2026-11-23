@@ -25,6 +25,16 @@
     if(o.trimPunct)head=head.replace(/[\s.,;:!?-]+$/,'');
     return head+'…';
   }
+  /* A path cut in the MIDDLE (spec 052 FR-071, 2026-11-23): at most `max` code points including the "…"; one third from the start (the drive or the first folders), the rest from the end (the file or folder name stays readable). The whole text when it fits; '' for max < 1. */
+  function midCut(text,max){
+    const s=String(text==null?'':text).replace(/\s+/g,' ').trim(), m=Math.floor(Number(max));
+    if(!(m>=1))return '';
+    const cps=Array.from(s);
+    if(cps.length<=m)return s;
+    if(m<3)return '…'.slice(0,m);
+    const head=Math.floor((m-1)/3), tail=m-1-head;
+    return cps.slice(0,head).join('')+'…'+cps.slice(cps.length-tail).join('');
+  }
   /* The longest cut of `full` that fits (spec 052 FR-174): `fits(text)` says whether a text fits; the whole text plus "…" when that fits, else the largest code-point count whose cutText fits (binary search, fits is monotone). */
   function fitCut(full,fits){
     const whole=full+'…';if(fits(whole))return whole;
@@ -65,5 +75,5 @@
     if(it._gBase!==base){it._gBase=base;it._gMax=len;}else if(len>it._gMax)it._gMax=len;
     return base+'|'+it._gMax;
   }
-  return {cutText,fitCut,nameTail,fitBatch,growKey};
+  return {cutText,midCut,fitCut,nameTail,fitBatch,growKey};
 })());

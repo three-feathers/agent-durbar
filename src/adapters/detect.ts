@@ -137,13 +137,11 @@ export function displayPath(file: string, env: Pick<DetectEnv, 'platform' | 'hom
 }
 
 /**
- * The "Found at" line of a card (spec 081 FR-042: "Found at codex" was not a path): `displayPath`, but a system path such as
- * /opt/homebrew/bin/codex is shown in full (it names no person); a path inside another person's folder (/Users, /home, \\Users\\) stays the file name.
+ * The "Found at" line of a card (spec 081 FR-042, amended 2026-11-23, owner decision: a path is not a secret): the executable's path as written, with no `~` and no user name hidden.
+ * `displayPath` (the `~` form) still builds the "cannot run it safely" hint.
  */
-export function displayWhere(file: string, env: Pick<DetectEnv, 'platform' | 'homedir'>): string {
-  const shown = displayPath(file, env);
-  if (shown !== pathFor(env.platform).basename(file)) return shown;
-  return pathFor(env.platform).isAbsolute(file) && !/(^|[\\/])(users|home)([\\/]|$)/i.test(file) ? file : shown;
+export function displayWhere(file: string, _env?: Pick<DetectEnv, 'platform' | 'homedir'>): string {
+  return file;
 }
 
 /** Candidate file paths in search order: configured path, PATH entries, known install folders. */
@@ -425,7 +423,7 @@ export function nodeDetectEnv(): DetectEnv {
   };
 }
 
-/** Adds where the app was found, safe to show (`~/…` or only the file name, never the user name: `displayPath`). */
+/** Adds where the app was found: its full path as written (`displayWhere`, spec 081 FR-042, amended 2026-11-23). */
 export const withWhere = (r: DetectResult & { path?: string }, env: DetectEnv): DetectResult => {
   const { path: p, ...rest } = r;
   return p ? { ...rest, where: displayWhere(p, env) } : rest;

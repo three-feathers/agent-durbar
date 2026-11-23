@@ -714,14 +714,15 @@ const bodyOf = (text: string | Buffer, status = 200) => (r: FakeReq) => { const 
     assert.strictEqual((withWhere({ state: 'ready', version: '1', hint: '', path: '/opt/homebrew/bin/codex' } as never, { platform: 'darwin', homedir: '/Users/v', env: {}, isFile: () => true }) as { where?: string }).where, '/opt/homebrew/bin/codex');
   }
   {
-    // FR-042: "Found at" is a path (a system path in full, ~/ under home, only the name inside another person's folder)
+    // FR-042 (amended 2026-11-23, owner decision, #2060 item 11): "Found at" is the full path as written: under home, in another person's folder, Windows drive
     const e = { platform: 'darwin' as const, homedir: '/Users/vikram' };
     assert.strictEqual(displayWhere('/opt/homebrew/bin/codex', e), '/opt/homebrew/bin/codex');
-    assert.strictEqual(displayWhere('/Users/vikram/.nvm/bin/codex', e), '~/.nvm/bin/codex');
-    assert.strictEqual(displayWhere('/Users/other/bin/codex', e), 'codex');
-    assert.strictEqual(displayWhere('/home/other/bin/codex', { platform: 'linux', homedir: '/home/me' }), 'codex');
+    assert.strictEqual(displayWhere('/Users/vikram/.nvm/bin/codex', e), '/Users/vikram/.nvm/bin/codex', 'no ~ replacement');
+    assert.strictEqual(displayWhere('/Users/other/bin/codex', e), '/Users/other/bin/codex', 'another folder is not cut to the file name');
+    assert.strictEqual(displayWhere('/home/other/bin/codex', { platform: 'linux', homedir: '/home/me' }), '/home/other/bin/codex');
     assert.strictEqual(displayWhere('C:\\Program Files\\nodejs\\codex.cmd', { platform: 'win32', homedir: 'C:\\Users\\a' }), 'C:\\Program Files\\nodejs\\codex.cmd');
-    assert.strictEqual(displayWhere('C:\\Users\\b\\codex.cmd', { platform: 'win32', homedir: 'C:\\Users\\a' }), 'codex.cmd');
+    assert.strictEqual(displayWhere('C:\\Users\\b\\codex.cmd', { platform: 'win32', homedir: 'C:\\Users\\a' }), 'C:\\Users\\b\\codex.cmd');
+    assert.strictEqual(displayWhere('D:\\tools\\Users\\codex.exe', { platform: 'win32', homedir: 'C:\\Users\\a' }), 'D:\\tools\\Users\\codex.exe', 'D:\\tools under a Users folder');
   }
   {
     // the timeout (30 s in the app, injected here) ends a check that never answers
