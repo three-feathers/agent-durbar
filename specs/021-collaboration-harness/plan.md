@@ -64,3 +64,9 @@ I: spec, plan and task first, in the same PR. III: no secret in the repo, logs o
 - `preflight(n, { gh, root, fetch, trusted })` takes `gh` as a function, so the test drives it with fixture answers and a throwaway repository (`git commit-tree` with a temporary index, no working tree), offline.
 - Merge-only: `git merge-tree --write-tree --name-only` gives the plain merge's tree and the conflicted paths; `git diff --name-only` against the merge commit names what changed beyond it.
 - **Constitution:** I (spec first, this PR); III (no PR text in a shell, nothing of the body printed, read-only); IV (no credits: `gh` reads only); VI (Node, no POSIX path or shell).
+
+## Delta: delivery speed rule text and the no-shared-append-points proposal (FR-383, 2026-11-23)
+
+- **Only decided words land:** *Review-ready* and *PR size* in `docs/rules/review-rounds.md` (three owners, records on #2029), spec 117 O4's line word for word (three owners, records on #1995), the FR-087 job-limit case in the `durbar-ci-rerun` skill (Vikram, #1983). No other rule sentence is reworded or trimmed; the budgets hold (AGENTS.md 1,999 of 2,000, `review-rounds.md` 679 of 680, total 3,522 of 3,525).
+- **D1 order, if decided:** readers before writers. T448 and T451 change nothing for anyone and may land before the answer; T486 (fold, CI half, AGENTS.md step 1) only after the three owners' yes and after FR-086's CI half (T071). Reuse: `changelog.js`'s name rule and fold pattern, `scripts/fragments.js`, `spec-numbers.js`'s definition parser, the `durbar-fold` skill; one assemble function serves `specs:view` and `specs:fold`.
+- **Constitution:** I (spec, plan and tasks first in this PR); III (no secret; the planned CI half needs no token and prints PR paths through `safe-print.js`); IV (no credits); VI (plain Node, LF reads, lower-case names, code-unit sort); VIII (gaps written as `[KNOWN GAP]`).
