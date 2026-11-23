@@ -73,7 +73,7 @@ Every fact is tagged: `read:` (documentation or code read, not run), `real:` (ru
 ## R7 Masking outgoing text (D10, FR-033)
 
 - Reuse 083 FR-005's order: known values (`secretValuesFor`, `src/main/mcpipc.ts:82`; `extraSecretValues`, `src/main/mcp/readtools.ts:47`), then `redact` (`src/shared/redact.ts:149`), then `redactMarkdown` token runs (`:171`). One function `maskOutgoing` beside `maskNoteText` (if 083 lands first, one shared core).
-- *(Replaced 2026-11-23 by the owner, issue #2060 item 12: warn, do not limit; spec *Changes*.)* ~~Block instead of mask-and-send~~: a message with `[redacted]` in it is confusing for the person who gets it, which is why masking is never done silently. Now the user sees what the mask changed and chooses each time: *Use the masked text*, *Send anyway* or *Back*. A block also stopped harmless text the mask changes, and the message goes to a person and a channel the user picked.
+- *(Replaced 2026-11-23 by the owner, issue #2060 item 12: warn, do not limit; spec *Changes*.)* ~~Block instead of mask-and-send~~: a message with `[redacted]` in it is confusing for the person who gets it, which is why masking is never done silently. Now the user sees what the mask changed and chooses each time: *Use the masked text*, *Send anyway* (option C only, confirmed again in a box main shows) or *Back*; option A, whose text also reaches the agent's model provider, has no *Send anyway* until owner question Q6 is answered. A block also stopped harmless text the mask changes, and the message goes to a person and a channel the user picked.
 - Mask in the window for the live check (`DurbarSafeText`) and again in main before the send; main is the one that decides.
 
 ## R8 Teams import (D12, FR-070..FR-073)
