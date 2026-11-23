@@ -231,6 +231,7 @@ test:schedhist
 test:updatecheck
 test:selfupdate-repo
 test:selfupdate-feed
+test:selfupdate-feedget
 test:selfupdate-notes
 test:selfupdate-installtype
 test:selfupdate-schedule
