@@ -48,13 +48,15 @@
     return (len<=10?cps.slice(start):cps.slice(-8)).join('');
   }
   /* One layout per render (Paco's review of #2017): a fit that clears a mark on each item and measures it in the same loop forces a reflow per item.
-     Three passes: (1) `clear(item)` on all, (2) `isCut(item)` on all (reads only), (3) `mark(item)` where cut. */
-  function fitBatch(items,clear,isCut,mark){
-    const list=Array.from(items);
+     Three passes: (1) `clear(item)` on all, (2) `isCut(item)` on all (reads only), (3) `mark(item)` where cut. With `key(item)`, an item whose key is the one
+     it was last measured at keeps its mark and costs no read (a status update that changes neither its text nor its width); returns the items measured. */
+  function fitBatch(items,clear,isCut,mark,key){
+    const list=Array.from(items).filter(it=>!key||it._fitKey!==key(it));
     for(const it of list)clear(it);
     const cut=list.filter(it=>isCut(it));
     for(const it of cut)mark(it);
-    return cut;
+    if(key)for(const it of list)it._fitKey=key(it);
+    return list;
   }
   return {cutText,fitCut,nameTail,fitBatch};
 })());

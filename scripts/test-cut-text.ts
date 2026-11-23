@@ -4,7 +4,7 @@ import fs from 'fs';
 import path from 'path';
 
 const R = path.join(__dirname, '..', '..', 'src', 'renderer');
-const { cutText, fitCut, nameTail, fitBatch } = require(path.join(R, 'cuttext.js')) as { fitBatch: (items: unknown[], clear: (i: never) => void, isCut: (i: never) => boolean, mark: (i: never) => void) => unknown[]; nameTail: (n: unknown) => string; fitCut: (t: string, fits: (x: string) => boolean) => string; cutText: (t: unknown, max: number, o?: { wordBoundary?: boolean; trimPunct?: boolean }) => string };
+const { cutText, fitCut, nameTail, fitBatch } = require(path.join(R, 'cuttext.js')) as { fitBatch: (items: unknown[], clear: (i: never) => void, isCut: (i: never) => boolean, mark: (i: never) => void, key?: (i: never) => unknown) => unknown[]; nameTail: (n: unknown) => string; fitCut: (t: string, fits: (x: string) => boolean) => string; cutText: (t: unknown, max: number, o?: { wordBoundary?: boolean; trimPunct?: boolean }) => string };
 const len = (s: string) => Array.from(s).length;
 
 // fits: unchanged (whitespace collapsed); exactly max is not cut
@@ -105,8 +105,25 @@ assert.match(fs.readFileSync(path.join(__dirname, '..', '..', 'scripts', 'copy-a
   const interleaved = run((signs, c, k, m) => { for (const s of signs) { c(s); if (k(s)) m(s); } });
   assert.strictEqual(interleaved.reflows, 15, 'the guard sees the interleaved loop (the mutant): 15 reflows');
   assert.strictEqual(fitBatch([], () => {}, () => true, () => {}).length, 0);
+  // the cache (a status event reads nothing): a key unchanged = 0 reads and the mark stays; a changed key = exactly that item's read
+  {
+    type It = Sign & { id: number; w: number; txt: string };
+    const items: It[] = Array.from({ length: 15 }, (_, i) => ({ id: i, cls: false, wide: i % 3 === 0, w: 800, txt: 'n' + i }));
+    let reads = 0;
+    const go = (W: number) => fitBatch(items, ((s: It) => { s.cls = false; }) as never, ((s: It) => { reads++; return s.wide; }) as never, ((s: It) => { s.cls = true; }) as never, ((s: It) => s.txt + '|' + W) as never);
+    go(800); assert.strictEqual(reads, 15, 'first render measures every sign once');
+    reads = 0; for (let k = 0; k < 10; k++) go(800);
+    assert.strictEqual(reads, 0, 'ten status events with the same text and width: 0 reads, got ' + reads + ' (a measure on every event?)');
+    assert.strictEqual(items.filter((s) => s.cls).length, 5, 'the kept marks stay');
+    items[4].txt = 'renamed'; reads = 0; go(800);
+    assert.strictEqual(reads, 1, 'one changed text: exactly one read, got ' + reads);
+    reads = 0; go(700);
+    assert.strictEqual(reads, 15, 'a width change measures every sign once, got ' + reads);
+    assert.strictEqual(items.filter((s) => s.cls).length, 5, 'marks after the width change');
+  }
   const ro = fs.readFileSync(path.join(R, 'realoffice.js'), 'utf8');
-  assert.match(ro, /DurbarCutText\.fitBatch\(signs,/, 'fitSigns goes through fitBatch');
+  assert.match(ro, /DurbarCutText\.fitBatch\(signs,[\s\S]*sg\._sig \+ '\|' \+ W/, 'fitSigns goes through fitBatch, keyed on the sign text and the layout width');
+  assert.match(ro, /classList\.toggle\('nopath', !!sg\._nop\)/, 'the kept result is put back after el() rewrites the class');
   assert.ok(!/for \(const sg of chrome\.querySelectorAll\('\.ro-sign'\)\) \{\s*if \(!sg\._b/.test(ro), 'fitSigns has no per-sign loop');
 }
 
