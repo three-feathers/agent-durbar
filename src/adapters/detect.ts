@@ -138,10 +138,10 @@ export function displayPath(file: string, env: Pick<DetectEnv, 'platform' | 'hom
 
 /**
  * The "Found at" line of a card (spec 081 FR-042, amended 2026-11-23, owner decision: a path is not a secret): the executable's path as written, with no `~` and no user name hidden.
- * `displayPath` (the `~` form) still builds the "cannot run it safely" hint.
+ * The shared mask still runs on it. `displayPath` (the `~` form) still builds the "cannot run it safely" hint.
  */
 export function displayWhere(file: string, _env?: Pick<DetectEnv, 'platform' | 'homedir'>): string {
-  return file;
+  return redact(file); // as written, but a token-shaped segment of the path (a folder named after a token) is still hidden
 }
 
 /** Candidate file paths in search order: configured path, PATH entries, known install folders. */

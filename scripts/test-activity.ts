@@ -58,10 +58,22 @@ try {
         assert.ok(!got.replace(/\\/g, '').includes(REST.slice(10, 18)) && !got.includes(V), `#1585 activity: an escaped rest after a mask is hidden (${what}): ${got}`);
       }
     }
+    {
+      // review of PR 2067 (finding 1): the folder NAME is masked like the path (it was not, before this PR): the screen, the tooltip, the accessible name, the stored row, the CSV and the JSON
+      const tok = 'ghp' + '_' + 'A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8';
+      const st2 = new ActivityStore(path.join(dir, 'tok.json'), { ...noTimer, env: {} });
+      const r2 = st2.record({ ...base, folder: `/home/u/${tok}`, path: `/home/u/${tok}` })!;
+      assert.deepStrictEqual([r2.folder, r2.path], ['[redacted]', '/home/u/[redacted]'], 'the stored row: both folder texts masked, the rest as written');
+      st2.flush();
+      const esc = (x: string): string => String(x).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c] as string);
+      const html2 = T.tableHtml(st2.list(), esc);
+      for (const [what, text] of [['the stored file', fs.readFileSync(path.join(dir, 'tok.json'), 'utf8')], ['the CSV', activityCsv(st2.all())], ['the JSON', activityJson(st2.all())], ['the screen, tooltip and accessible name', html2]] as const) assert.ok(!text.includes(tok) && !text.includes(tok.slice(4, 20)), `a token in a folder name is hidden in ${what}`);
+      assert.ok(html2.includes('title="/home/u/[redacted]" aria-label="/home/u/[redacted]">/home/u/[redacted]</td>'), 'the cell, its title and its accessible name show the masked path');
+    }
     st.flush();
     const disk = fs.readFileSync(file, 'utf8');
     for (const bad of ['secret prompt', 'model reply', 'tool output', 'file body']) assert.ok(!disk.includes(bad), `not on disk: ${bad}`);
-    assert.ok(JSON.parse(disk).rows?.[0]?.path === '/home/u/work/web-shop' || disk.includes('"path": "/home/u/work/web-shop"') || disk.includes('"path":"/home/u/work/web-shop"'), 'owner decision 2026-11-23 (#2060 item 11): the full path is stored, as written (it was "not on disk: /home/u")');
+    assert.deepStrictEqual(JSON.parse(disk).rows[0], { t: r!.t, agent: 'Ana', folder: 'web-shop', path: '/home/u/work/web-shop', app: 'GitHub Copilot', mode: 'ask', action: 'Edit src/a.ts', decision: 'allowed-once' }, 'owner decision 2026-11-23 (#2060 item 11): the stored row is exactly this, the full path included (it was "not on disk: /home/u")');
     const back = new ActivityStore(file, { ...noTimer, env: {} });
     back.load();
     assert.strictEqual(back.list().length, 1, 'reloaded');
@@ -404,14 +416,42 @@ try {
     }
     fs.rmSync(dir, { recursive: true, force: true });
     // owner decision 2026-11-23 (#2060 item 11): rows now hold the full path, so ONLY the local window (IPC list), the user's own Export buttons and the store itself may read them;
-    // a diagnostics bundle, issue report, MCP answer or agent prompt that starts reading rows must add its own `~` masking and be added here on purpose
+    // a diagnostics bundle, issue report, MCP answer or agent prompt that starts reading rows must add its own `~` masking and be added to `ALLOWED` on purpose.
+    // Review of PR 2067 (finding 3): matched case-insensitively, by MODULE (an import, a re-export, a require or a dynamic import of `activitystore` or `shared/activity`, resolved from the importing file, whatever
+    // the identifier is called), and closed: any such file not on the list fails. `[KNOWN GAP]`: a file that reaches rows by a path built at run time (a computed module name) is not seen.
     {
-      const allowed = new Set(['src/main/ipc/activity.ts', 'src/main/main.ts', 'src/main/activitystore.ts', 'src/shared/activity.ts', 'src/shared/api.ts', 'src/preload/preload.ts', 'src/renderer/sim.ts', 'src/renderer/screens.js', 'src/renderer/activitytable.js']);
+      const ALLOWED = new Set(['src/main/ipc/activity.ts', 'src/main/main.ts', 'src/main/activitystore.ts', 'src/shared/activity.ts', 'src/shared/api.ts', 'src/preload/preload.ts', 'src/renderer/sim.ts', 'src/renderer/screens.js', 'src/renderer/activitytable.js',
+        // writers: these import only the `ActivityDecision` type or build a row to record; none reads stored rows
+        'src/main/ipc/previous.ts', 'src/main/ipc/remote.ts', 'src/main/loopwiring.ts']);
+      const MODULES = ['src/main/activitystore', 'src/shared/activity'];
+      const NAMES = /activitystore|activitylist|activity:list|activityrow|activity\.json|activitycsv|activityjson/i;
+      const SPEC = /(?:\bfrom\s*|\bimport\s*\(\s*|\brequire\s*\(\s*|\bimport\s*)['"]([^'"]+)['"]/g;
+      const touches = (rel: string, text: string): boolean => {
+        if (NAMES.test(text)) return true;
+        for (const m of text.matchAll(SPEC)) {
+          if (!m[1].startsWith('.')) continue;
+          const target = path.posix.normalize(path.posix.join(path.posix.dirname(rel), m[1])).replace(/\.(ts|js)$/, '');
+          if (MODULES.includes(target)) return true;
+        }
+        return false;
+      };
+      // the reviewer's two bypasses and a few more: the guard must catch each
+      const fixtures: Record<string, string> = {
+        'src/main/a.ts': "import { ActivityStore as S } from './activitystore';\nexport const f = (s: unknown) => (s as any)['list']();",
+        'src/main/b.ts': "const s = (globalThis as any).x; const rows = s.ACTIVITYSTORE.list();",
+        'src/main/c.ts': "export * from './activitystore';",
+        'src/shared/d.ts': "import * as A from './activity'; A.activityCsv([]);",
+        'src/main/e.ts': "const m = require('../shared/activity.js');",
+        'src/main/f.ts': "const m = await import('./activitystore');",
+        'src/main/ipc/g.ts': "export { ActivityStore } from '../activitystore';",
+      };
+      for (const [rel, text] of Object.entries(fixtures)) assert.ok(touches(rel, text), `the guard catches ${rel}`);
+      assert.ok(!touches('src/main/h.ts', "import { x } from './activitymask'; import { y } from '../shared/activityother';"), 'and does not flag a different module');
       const root = path.join(__dirname, '..', '..');
       const hits: string[] = [];
-      const walk = (d: string): void => { for (const n of fs.readdirSync(path.join(root, d))) { const rel = `${d}/${n}`; if (fs.statSync(path.join(root, rel)).isDirectory()) walk(rel); else if (/\.(ts|js)$/.test(n) && /activityStore|activityList|activity:list|ActivityRow|activity\.json|activityCsv|activityJson/.test(fs.readFileSync(path.join(root, rel), 'utf8'))) hits.push(rel); } };
+      const walk = (d: string): void => { for (const n of fs.readdirSync(path.join(root, d))) { const rel = `${d}/${n}`; if (fs.statSync(path.join(root, rel)).isDirectory()) walk(rel); else if (/\.(ts|js)$/.test(n) && touches(rel, fs.readFileSync(path.join(root, rel), 'utf8'))) hits.push(rel); } };
       walk('src');
-      assert.deepStrictEqual(hits.filter((h) => !allowed.has(h)), [], 'no other source reads activity rows (diagnostics, issue report, MCP, agent text)');
+      assert.deepStrictEqual(hits.filter((h) => !ALLOWED.has(h)), [], 'no other source reads activity rows (diagnostics, issue report, MCP, agent text)');
     }
     console.log('activity tests passed');
   })().catch((e) => { console.error(e); process.exit(1); });

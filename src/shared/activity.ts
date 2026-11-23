@@ -46,6 +46,11 @@ function oneLine(v: unknown, n: number): string {
   return s.replace(/[\u0000-\u001f\u007f]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, n);
 }
 
+/** One line of a folder text: bounded read, the shared mask (`redact()`: a token-shaped segment becomes `[redacted]`, the rest stays as written), then cut to `n`: a cut at `n` first could leave the start of a token. */
+function maskedLine(v: unknown, n: number, env?: Record<string, string | undefined>): string {
+  return oneLine(redact(oneLine(typeof v === 'string' ? cut(v, ACTIVITY_ACTION_READ_MAX) : '', Infinity), env), n);
+}
+
 /** The folder's base name: the part after the last slash or backslash. */
 export function baseName(p: unknown): string {
   const s = typeof p === 'string' ? p.replace(/[\\/]+$/, '') : '';
@@ -65,8 +70,8 @@ export function sanitizeActivityRow(raw: unknown, env?: Record<string, string | 
   return {
     t,
     agent: oneLine(r.agent, NAME_MAX),
-    folder: oneLine(baseName(r.folder), NAME_MAX),
-    path: oneLine(redact(oneLine(typeof r.path === 'string' ? cut(r.path, ACTIVITY_ACTION_READ_MAX) : '', Infinity), env), ACTIVITY_PATH_MAX), // as written; mask, then cut (like the action)
+    folder: maskedLine(baseName(r.folder), NAME_MAX, env), // the base name is masked too (a token-named folder; it was not before 2026-11-23)
+    path: maskedLine(typeof r.path === 'string' ? r.path : '', ACTIVITY_PATH_MAX, env), // as written; mask, then cut (like the action)
     app: oneLine(r.app, NAME_MAX),
     mode: oneLine(r.mode, 16),
     action: oneLine(redact(oneLine(cut(typeof r.action === 'string' ? r.action : r.action == null ? '' : String(r.action), ACTIVITY_ACTION_READ_MAX), Infinity), env), ACTIVITY_ACTION_MAX), // mask, then cut: a cut at 2,000 first could leave the start of a token (spec 012 FR-175); the read is bounded by `cut`, which ends before a token

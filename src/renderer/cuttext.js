@@ -25,15 +25,38 @@
     if(o.trimPunct)head=head.replace(/[\s.,;:!?-]+$/,'');
     return head+'…';
   }
-  /* A path cut in the MIDDLE (spec 052 FR-071, 2026-11-23): at most `max` code points including the "…"; one third from the start (the drive or the first folders), the rest from the end (the file or folder name stays readable). The whole text when it fits; '' for max < 1. */
-  function midCut(text,max){
+  /* Grapheme clusters of `s` (spec 052 FR-071 review): Intl.Segmenter when the runtime has it (current Electron does); `noSeg` forces the fallback, which never splits a surrogate pair,
+     a base and its combining marks or variation selectors, a ZWJ sequence (an emoji family), a skin-tone modifier or a flag (two regional indicators). */
+  const ZWJ='\u200D', MOD=/^[\u{1F3FB}-\u{1F3FF}]$/u, EXT=/^[\p{M}\u{FE00}-\u{FE0F}\u{E0020}-\u{E007F}]$/u;
+  function graphemes(s,noSeg){
+    s=String(s==null?'':s);
+    if(!noSeg&&typeof Intl!=='undefined'&&Intl.Segmenter){try{return Array.from(new Intl.Segmenter(undefined,{granularity:'grapheme'}).segment(s),x=>x.segment);}catch(e){/* fall through */}}
+    const cps=Array.from(s),out=[];
+    for(let i=0;i<cps.length;i++){
+      const c=cps[i],last=out.length?out[out.length-1]:'',lastCp=last?Array.from(last).pop():'';
+      if(out.length&&(EXT.test(c)||MOD.test(c)||c===ZWJ||lastCp===ZWJ||(RI.test(c)&&RI.test(lastCp)&&Array.from(last).filter(x=>RI.test(x)).length%2===1)))out[out.length-1]=last+c;
+      else out.push(c);
+    }
+    return out;
+  }
+  /* A path cut in the MIDDLE (spec 052 FR-071, 2026-11-23): at most `max` characters including the "…", counted in graphemes; one third from the start (the drive or the first folders), the rest from the end (the file or folder name stays readable). A cut never lands inside a grapheme (a combining mark, a ZWJ emoji, a flag) or inside a mask placeholder ("[redacted]", "[redacted:NAME]"): that is one unit as wide as its text. The whole text when it fits; '' for max < 1. */
+  const PLACEHOLDER=/\[redacted(?::[^\]\s]{1,40})?\]/g;
+  function midCut(text,max,noSeg){
     const s=String(text==null?'':text).replace(/\s+/g,' ').trim(), m=Math.floor(Number(max));
     if(!(m>=1))return '';
-    const cps=Array.from(s);
-    if(cps.length<=m)return s;
+    const units=[];let at=0,mm;
+    PLACEHOLDER.lastIndex=0;
+    const plain=t=>{for(const g of graphemes(t,noSeg))units.push({s:g,w:1});};
+    while((mm=PLACEHOLDER.exec(s))){plain(s.slice(at,mm.index));units.push({s:mm[0],w:Array.from(mm[0]).length});at=mm.index+mm[0].length;}
+    plain(s.slice(at));
+    const total=units.reduce((n,u)=>n+u.w,0);
+    if(total<=m)return s;
     if(m<3)return '…'.slice(0,m);
     const head=Math.floor((m-1)/3), tail=m-1-head;
-    return cps.slice(0,head).join('')+'…'+cps.slice(cps.length-tail).join('');
+    let h='',hw=0,t='',tw=0,i=0,k=units.length-1;
+    while(i<units.length&&hw+units[i].w<=head){h+=units[i].s;hw+=units[i].w;i++;}
+    while(k>=i&&tw+units[k].w<=tail){t=units[k].s+t;tw+=units[k].w;k--;}
+    return h+'…'+t;
   }
   /* The longest cut of `full` that fits (spec 052 FR-174): `fits(text)` says whether a text fits; the whole text plus "…" when that fits, else the largest code-point count whose cutText fits (binary search, fits is monotone). */
   function fitCut(full,fits){
@@ -75,5 +98,5 @@
     if(it._gBase!==base){it._gBase=base;it._gMax=len;}else if(len>it._gMax)it._gMax=len;
     return base+'|'+it._gMax;
   }
-  return {cutText,midCut,fitCut,nameTail,fitBatch,growKey};
+  return {cutText,midCut,graphemes,fitCut,nameTail,fitBatch,growKey};
 })());

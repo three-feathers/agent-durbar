@@ -723,6 +723,10 @@ const bodyOf = (text: string | Buffer, status = 200) => (r: FakeReq) => { const 
     assert.strictEqual(displayWhere('C:\\Program Files\\nodejs\\codex.cmd', { platform: 'win32', homedir: 'C:\\Users\\a' }), 'C:\\Program Files\\nodejs\\codex.cmd');
     assert.strictEqual(displayWhere('C:\\Users\\b\\codex.cmd', { platform: 'win32', homedir: 'C:\\Users\\a' }), 'C:\\Users\\b\\codex.cmd');
     assert.strictEqual(displayWhere('D:\\tools\\Users\\codex.exe', { platform: 'win32', homedir: 'C:\\Users\\a' }), 'D:\\tools\\Users\\codex.exe', 'D:\\tools under a Users folder');
+    // review of PR 2067 (finding 2): the shared mask still runs: a folder named after a token is hidden, the rest of the path is as written
+    const tok = 'ghp' + '_' + 'A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8';
+    assert.strictEqual(displayWhere(`/Users/other/${tok}/bin/codex`, e), '/Users/other/[redacted]/bin/codex', 'a token-named folder is masked');
+    assert.strictEqual(displayWhere(`C:\\Users\\b\\${tok}\\codex.cmd`, { platform: 'win32', homedir: 'C:\\Users\\a' }), 'C:\\Users\\b\\[redacted]', 'Windows: the shared mask reads the text glued after a token by a backslash as the token\'s escaped rest and hides it too (over-masking, never under-masking)');
   }
   {
     // the timeout (30 s in the app, injected here) ends a check that never answers
