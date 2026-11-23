@@ -32,13 +32,17 @@
     try{return d.toLocaleString(undefined,{year:'numeric',month:'short',day:'numeric',hour:'2-digit',minute:'2-digit',second:'2-digit'});}
     catch(e){return d.toISOString();}
   }
+  /* The Folder cell (spec 052 FR-071, 2026-11-23): the full path as written (an older row has only its base name); in the cell it is cut in the middle at PATH_SHOWN characters, whole in the title and the accessible name. */
+  const PATH_SHOWN=60;
+  const folderFull=r=>str(r.path)||str(r.folder);
+  const folderShown=r=>{const f=folderFull(r),C=(typeof DurbarCutText!=='undefined'&&DurbarCutText)||(typeof require==='function'?require('./cuttext.js'):null);return C?C.midCut(f,PATH_SHOWN):f;};
   /* rows: newest first, as activity:list returns them. */
   function tableHtml(rows,esc){
     const list=Array.isArray(rows)?rows.filter(r=>r&&typeof r==='object'):[];
     if(!list.length)return `<p class="scr-empty">${esc(EMPTY)}</p>`;
     const head='<thead><tr><th scope="col">Time</th><th scope="col">Agent</th><th scope="col">Folder</th><th scope="col">App</th><th scope="col">Mode</th><th scope="col">Action</th><th scope="col">Decision</th></tr></thead>';
-    const row=r=>`<tr class="act-${esc(str(r.decision))}"><td class="act-t" title="${esc(str(r.t))}">${esc(timeText(r.t))}</td><td class="act-w" title="${esc(str(r.agent))}">${esc(str(r.agent))}</td><td class="act-w" title="${esc(str(r.folder))}">${esc(str(r.folder))}</td><td class="act-s">${esc(str(r.app))}</td><td class="act-s">${esc(modeWord(r.mode))}</td><td class="act-a" title="${esc(str(r.action))}">${esc(str(r.action))}</td><td class="act-s">${esc(decisionWord(r.decision))}</td></tr>`;
+    const row=r=>`<tr class="act-${esc(str(r.decision))}"><td class="act-t" title="${esc(str(r.t))}">${esc(timeText(r.t))}</td><td class="act-w" title="${esc(str(r.agent))}">${esc(str(r.agent))}</td><td class="act-w act-p" title="${esc(folderFull(r))}" aria-label="${esc(folderFull(r))}">${esc(folderShown(r))}</td><td class="act-s">${esc(str(r.app))}</td><td class="act-s">${esc(modeWord(r.mode))}</td><td class="act-a" title="${esc(str(r.action))}">${esc(str(r.action))}</td><td class="act-s">${esc(decisionWord(r.decision))}</td></tr>`;
     return `<table class="ttab act">${head}<tbody>${list.map(row).join('')}</tbody></table>`;
   }
-  return {DECISION_WORDS,MODE_WORDS,NOTE,EMPTY,decisionWord,modeWord,timeText,tableHtml};
+  return {PATH_SHOWN,folderFull,folderShown,DECISION_WORDS,MODE_WORDS,NOTE,EMPTY,decisionWord,modeWord,timeText,tableHtml};
 })());
