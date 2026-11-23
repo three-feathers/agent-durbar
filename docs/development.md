@@ -51,6 +51,8 @@ npm run groups:build     # offline, needs python3 + Pillow 11.3.0 (CI's pin: oth
 - `src/adapters` (Copilot, Claude Code and Codex adapters, the permission broker), `src/shared`;
 - `scripts/` (tests and screenshot drivers), `specs/` (Spec Kit specs), `docs/`.
 
+**`releases.json`** (spec 118 FR-026): one entry per released version at the repository root, `{"breaking", "notes", "action"}`, added by the version PR; Durbar's update notice reads it from the release's tag, never from `main`, and a version without an entry, or an invalid file, shows as *Breaking: unknown*. `npm test` checks that the file is valid; `npm run releases:check -- --version X.Y.Z [--ref <tag>]` also checks the entry (on a tag or commit with `--ref`). The update source a build follows is baked at build time into `dist/main/updatesource.json` (`DURBAR_UPDATE_REPO`, else `GITHUB_REPOSITORY`, else `package.json` `repository`; an unparseable value stops the build), so a fork's release build follows the fork.
+
 **Adding a test suite** (spec 021 FR-086): add its `"test:<name>"` script to `package.json` in its sorted place among the other `test:*` scripts (plain code-unit order, not locale; `npm run fragments:fix` sorts them, and `npm test` fails with the first misplaced key when they are out of order), so two PRs collide only when their names sort next to each other. Then add `test:<name>` to `scripts/test-suites.txt` on its own line in the middle of the list, not at the end (two PRs appending at the end conflict).
 
 ## How we work
