@@ -25,7 +25,7 @@ const os = require('os');
 const fs = require('fs');
 const path = require('path');
 const assert = require('assert');
-const { helpers } = require('./driver-helpers');
+const { helpers, jsLiteral } = require('./driver-helpers');
 
 const SIZES = [[1440, 900], [1280, 800]];
 const WORLDS = [['flat', null], ['photo', {}], ['cave', { worldflags: 'cave', world: 'cave' }], ['retro', { worldflags: 'retro', world: 'retro' }]];
@@ -86,8 +86,8 @@ module.exports = async (ctx) => {
       let grownSeen = 0;
       for (const id of plates.slice(0, 10)) {
         const before = await scs();
-        await js(`window.__durbarSimEmit({type:'status',sessionId:${JSON.stringify(id)},timestamp:Date.now(),status:'error'})`);
-        await H.until(`(document.querySelector('#stage .ro-plate[data-id="'+CSS.escape(${JSON.stringify(id)})+'"]')||{dataset:{}}).dataset.state!=='working'`, 8000);
+        await js(`window.__durbarSimEmit({type:'status',sessionId:${jsLiteral(id)},timestamp:Date.now(),status:'error'})`);
+        await H.until(`(document.querySelector('#stage .ro-plate[data-id="'+CSS.escape(${jsLiteral(id)})+'"]')||{dataset:{}}).dataset.state!=='working'`, 8000);
         await ctx.sleep(500);
         const after = await scs();
         for (const k of Object.keys(after)) if (before[k] && after[k][0].length > before[k][0].length) { grownSeen++; if (!after[k][1]) bad(`${tag}: a sign whose counts grew is measured again and drops its path (count text key): ${k}`); }
