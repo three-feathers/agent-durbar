@@ -1113,23 +1113,23 @@
     "2026-11-22": {
       "models": {
         "claude-sonnet-5-5": {
-          "input": 12776,
-          "output": 221387,
-          "cacheRead": 84480072,
-          "cacheCreation": 1067331,
-          "costUsd": 14.076104700000007,
+          "input": 36005,
+          "output": 1182421,
+          "cacheRead": 623748138,
+          "cacheCreation": 9298587,
+          "costUsd": 101.00702779999988,
           "bySource": {
             "main": {
-              "tokens": 64290410,
-              "costUsd": 9.376465400000004
+              "tokens": 470884472,
+              "costUsd": 61.58281649999997
             },
             "subagent": {
-              "tokens": 11317536,
-              "costUsd": 3.6114875
+              "tokens": 145208008,
+              "costUsd": 37.38617259999999
             },
             "auxiliary": {
-              "tokens": 10173620,
-              "costUsd": 1.0881518
+              "tokens": 18172671,
+              "costUsd": 2.0380387000000004
             },
             "other": {
               "tokens": 0,
@@ -1138,19 +1138,19 @@
           }
         },
         "claude-opus-5-5": {
-          "input": 1244,
-          "output": 299229,
-          "cacheRead": 86387610,
-          "cacheCreation": 2399672,
-          "costUsd": 35.265438,
+          "input": 5566,
+          "output": 1648039,
+          "cacheRead": 455604228,
+          "cacheCreation": 22440852,
+          "costUsd": 236.3081495999999,
           "bySource": {
             "main": {
               "tokens": 0,
               "costUsd": 0
             },
             "subagent": {
-              "tokens": 89087755,
-              "costUsd": 35.265438
+              "tokens": 479698685,
+              "costUsd": 236.3081495999999
             },
             "auxiliary": {
               "tokens": 0,
@@ -1163,11 +1163,11 @@
           }
         },
         "claude-haiku-5-5": {
-          "input": 657868,
-          "output": 45397,
+          "input": 3772593,
+          "output": 264491,
           "cacheRead": 0,
           "cacheCreation": 0,
-          "costUsd": 0.08848529999999998,
+          "costUsd": 0.5095048000000002,
           "bySource": {
             "main": {
               "tokens": 0,
@@ -1178,8 +1178,112 @@
               "costUsd": 0
             },
             "auxiliary": {
-              "tokens": 703265,
-              "costUsd": 0.08848529999999998
+              "tokens": 4037084,
+              "costUsd": 0.5095048000000002
+            },
+            "other": {
+              "tokens": 0,
+              "costUsd": 0
+            }
+          }
+        },
+        "claude-fable-5-2": {
+          "input": 3176,
+          "output": 122698,
+          "cacheRead": 23320958,
+          "cacheCreation": 1907385,
+          "costUsd": 38.83071960000001,
+          "bySource": {
+            "main": {
+              "tokens": 13193247,
+              "costUsd": 30.6161698
+            },
+            "subagent": {
+              "tokens": 6836931,
+              "costUsd": 7.0611528
+            },
+            "auxiliary": {
+              "tokens": 5324039,
+              "costUsd": 1.153397
+            },
+            "other": {
+              "tokens": 0,
+              "costUsd": 0
+            }
+          }
+        }
+      }
+    },
+    "2026-11-23": {
+      "models": {
+        "claude-sonnet-5-5": {
+          "input": 4372,
+          "output": 62369,
+          "cacheRead": 56655396,
+          "cacheCreation": 319572,
+          "costUsd": 7.2212055999999984,
+          "bySource": {
+            "main": {
+              "tokens": 46367104,
+              "costUsd": 5.2887447
+            },
+            "subagent": {
+              "tokens": 5344207,
+              "costUsd": 1.3784351000000001
+            },
+            "auxiliary": {
+              "tokens": 5330398,
+              "costUsd": 0.5540258
+            },
+            "other": {
+              "tokens": 0,
+              "costUsd": 0
+            }
+          }
+        },
+        "claude-opus-5-5": {
+          "input": 522,
+          "output": 113298,
+          "cacheRead": 37030240,
+          "cacheCreation": 1891713,
+          "costUsd": 19.132661000000002,
+          "bySource": {
+            "main": {
+              "tokens": 0,
+              "costUsd": 0
+            },
+            "subagent": {
+              "tokens": 39035773,
+              "costUsd": 19.132661000000002
+            },
+            "auxiliary": {
+              "tokens": 0,
+              "costUsd": 0
+            },
+            "other": {
+              "tokens": 0,
+              "costUsd": 0
+            }
+          }
+        },
+        "claude-haiku-5-5": {
+          "input": 252124,
+          "output": 17754,
+          "cacheRead": 0,
+          "cacheCreation": 0,
+          "costUsd": 0.034089400000000006,
+          "bySource": {
+            "main": {
+              "tokens": 0,
+              "costUsd": 0
+            },
+            "subagent": {
+              "tokens": 0,
+              "costUsd": 0
+            },
+            "auxiliary": {
+              "tokens": 269878,
+              "costUsd": 0.034089400000000006
             },
             "other": {
               "tokens": 0,

@@ -1,0 +1,1 @@
+- **CI runs the unit suites in two parallel parts per system** (spec 117): `npm test` on Linux, Windows and macOS is split by recorded time into two jobs, and the required "Build and test" checks pass only when both parts passed, so a slow runner no longer hits the 25-minute job limit. Every suite still runs once per system; `npm test -- --shard 1/2` runs one part locally.

@@ -90,3 +90,23 @@ function page(states: Record<string, string>) {
   await assert.rejects(old.drawn(`window.__durbarSimEmit({type:'status',sessionId:"sim-4",timestamp:Date.now(),status:"working"})`), /the office drew after/, 'the old step waits for a draw that never comes');
   console.log('test-office-ops: ok');
 })().catch((e) => { console.error(e); process.exit(1); });
+
+// a read through a Range is a layout read too (Paco on #2017: dropping scrollWidth for a Range rect hid a read from the counter): both counters wrap Range.prototype
+// beside Element.prototype. Mutant: take Range.prototype out of either file and this fails.
+{
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const fs = require('fs') as typeof import('fs');
+  for (const f of ['check-office-ops.js', 'check-office-ops-real.js']) {
+    const src = fs.readFileSync(path.join(ROOT, 'scripts', f), 'utf8');
+    const line = src.split('\n').find((l) => l.includes("'getBoundingClientRect','getClientRects'")) || '';
+    assert.ok(/\[Element\.prototype,Range\.prototype\]/.test(line), f + ': the counter wraps getBoundingClientRect and getClientRects of Range too');
+    // run the wrapped loop on fake prototypes: a Range read counts
+    const body = line.trim();
+    const O = { on: true, reads: 0 }; const bump = () => { if (O.on) O.reads++; };
+    class FakeElement { getBoundingClientRect() { return 1; } getClientRects() { return 1; } }
+    class FakeRange { getBoundingClientRect() { return 1; } getClientRects() { return 1; } }
+    new Function('bump', 'Element', 'Range', body)(bump, FakeElement, FakeRange);
+    new FakeRange().getBoundingClientRect(); new FakeRange().getClientRects(); new FakeElement().getBoundingClientRect();
+    assert.strictEqual(O.reads, 3, f + ': a Range read and an Element read are counted (3), got ' + O.reads);
+  }
+}

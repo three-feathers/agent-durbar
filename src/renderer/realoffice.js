@@ -657,8 +657,25 @@
       if (!zd || hiddenNow()) closeZoom(); /* FR-328: an asleep agent's card stays (its glass is dark, the card has its reply) */
       else { if (ZOOM.st !== zd.state) { fillZoom(); ZOOM.held = PT || '?'; } placeZoom(); } /* FR-328 (2026-11-08): the card follows the agent's state as its facts do (FR-315): asleep or back, it is filled again, not left with the old tool log */
     }
+    fitSigns(chrome, lay.width);
     settle(chrome, lay.width);
     return lay;
+  }
+
+  /* spec 001 FR-037, FR-179 and spec 097 FR-023 (issue 2011): the path gives way before the name. The CSS shrinks the path 1000 times faster than the
+     name, which still loses a fraction of a pixel to an ellipsis ("command-cen…") when a font is wider than the layout measured (the DejaVu faces of a CI
+     runner); a sign whose name is cut then drops its path (`.nopath`; the folder stays in the sign's tip), as the Flat office's `fitHead` does. */
+  function fitSigns(chrome, W) {
+    const cut = (e) => { const cs = getComputedStyle(e), box = e.getBoundingClientRect().width; if (e.scrollWidth > Math.round(box - parseFloat(cs.borderLeftWidth) - parseFloat(cs.borderRightWidth)) + 0.5) return true; const r = document.createRange(); r.selectNodeContents(e); return r.getBoundingClientRect().width > box - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight) - parseFloat(cs.borderLeftWidth) - parseFloat(cs.borderRightWidth) + 0.01; }; /* one box read, one scroll read, one text range read per element */
+    if (!root.DurbarCutText) return;
+    const parts = (sg) => sg._b.querySelectorAll(':scope > .rn-h, :scope > .rn-t');
+    const hid = document.hidden || document.body.classList.contains('panel-open'); /* under a chat nothing is laid out: what it measures there is not remembered (as the lobby's signature) */
+    const signs = [...chrome.querySelectorAll('.ro-sign')].filter((sg) => sg._b && sg.querySelector(':scope > .ro-path'));
+    root.DurbarCutText.fitBatch(signs, (sg) => { sg._nop = false; sg.classList.remove('nopath'); },
+      (sg) => !sg.classList.contains('short') && [sg._b, ...parts(sg)].some(cut),
+      (sg) => { sg._nop = true; sg.classList.add('nopath'); },
+      (sg) => hid ? NaN : root.DurbarCutText.growKey(sg, sg._sig + '|' + W + '|' + sg.classList.contains('short'), sg._sc.textContent.length)); /* three passes, one layout per render; a sign is measured again only when its text or the layout width changed or its counts and cost text grew longer than any measured (growKey), so most status updates read nothing */
+    for (const sg of signs) sg.classList.toggle('nopath', !!sg._nop); /* el() writes the class again each render: the kept result is put back (a write only) */
   }
 
   /* FR-018, FR-184: the folder sign keeps its nodes: only the counts and the cost change on a status update, and the + and the room menu keep the focus */
@@ -1481,7 +1498,7 @@
         if (pick || k > g.length - 2) continue;
         c.dataset.full = nm; text(n, g.slice(0, k).join('') + '\u2026'); pick = best() || withPush();
       }
-      if (!pick) { const w = c.getBoundingClientRect().width, l = x0 - w / 2; let dx = 0; for (let i = 0; i < 40; i++) { const hl = hitList(l + dx, l + dx + w, base); if (!hl.length) break; dx = Math.max(...hl.map(([, b]) => b)) + 2 - l; } pick = { t: base, dx, l, w }; }
+      if (!pick) { if (c.dataset.full) { text(n, c.dataset.full); delete c.dataset.full; } /* spec 097 FR-023 (issue 2012): no spot even for a short form: the whole name, slid right, not "Ro…" for "Rosa" */ const w = c.getBoundingClientRect().width, l = x0 - w / 2; let dx = 0; for (let i = 0; i < 40; i++) { const hl = hitList(l + dx, l + dx + w, base); if (!hl.length) break; dx = Math.max(...hl.map(([, b]) => b)) + 2 - l; } pick = { t: base, dx, l, w }; }
       const ent = [pick.l + pick.dx, pick.l + pick.dx + pick.w, pick.t, pick.t + h];
       placed.push(ent); chipsPlaced.push({ c, l: pick.l + pick.dx, w: pick.w, t: pick.t, h, x0, ent });
       c.style.top = px(pick.t); c.style.left = px(x0 + pick.dx); c._w = pick.w;
