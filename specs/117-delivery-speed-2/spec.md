@@ -427,7 +427,7 @@ FR-018 says the 25-minute limit is not raised first. The queue is blocked now (#
 - The wrapper accepts only exactly one `code=true` or `code=false` line; anything else (empty, another value, two lines) is replaced by "everything runs".
 - The allow list is narrowed: Markdown only under `specs/` and `docs/`, two named root files (`CHANGELOG.md`, `CONTRIBUTING.md`); `SECURITY.md`, scripts, SVGs, pictures and `CODEOWNERS` run everything. `changelog.d/` is off the list (a fragment always runs everything), and the text above now says so.
 
-### 2026-11-23: bug, the fast lane timed out (FR-390, T050, T051)
+### 2026-11-23: bug, the fast lane timed out (FR-390, T076, T077)
 
 - **Seen** (job logs read 2026-11-23): #2002 at `61ee8f4c8` picked 62 suites (it changes `src/shared/redact.ts`), among them `test:runtime-redact` (378 s on ubuntu, 455 s on Windows) and the three `test:redact-monotone*` suites (about 250 s each, 380 s on Windows); ubuntu, Windows and macOS were cut at 10 minutes. #2037 at `c085aa7be` picked 33 suites: its new `scripts/fixtures/selfupdate/` file matched every test naming the `scripts/fixtures` folder (23 suites, the heavy redact ones included); Windows was cut at 10 minutes, ubuntu passed in 262 s of suites. The runner's "Cleaning up orphan processes" step stopped the suites left running.
 - **Cause.** No time bound in the lane (FR-386 said a widely imported module "is slower, capped by the 10-minute job limit", and a cut job is red), and the folder rule took shared folders.
