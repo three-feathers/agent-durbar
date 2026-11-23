@@ -422,7 +422,8 @@ const NAMED_IN_QUERY = named('[?&]', '#');
  */
 const SEG = String.raw`[^${STOP}$*/]`;
 const B64C = '[A-Za-z0-9+/=]';
-const SEG_KEY = String.raw`(?=[A-Za-z0-9])(?:(?=${B64C}{40})(?=[A-Za-z0-9+=]{1,127}\/[A-Za-z0-9+=])(?=${B64C}{0,128}[A-Z])(?=${B64C}{0,128}[a-z])(?=${B64C}{0,128}[0-9])[A-Za-z0-9+=](?:[A-Za-z0-9+=]|\/(?=[A-Za-z0-9+=]))*|(?!${NOT_A_VALUE_SEG})(?:(?=${SEG}{8})(?=${SEG}{0,128}[0-9])|(?=${SEG}{20})(?=[A-Za-z_.-]{0,128}[+=~@!#^*?]))${SEG}+)(?=[\\/])`;
+// the plain rule's other branch (a long value with a symbol) needs no copy here: such a value is never read as a path, so the named rules already hide it with its path
+const SEG_KEY = String.raw`(?=[A-Za-z0-9])(?:(?=${B64C}{40})(?=[A-Za-z0-9+=]{1,127}\/[A-Za-z0-9+=])(?=${B64C}{0,128}[A-Z])(?=${B64C}{0,128}[a-z])(?=${B64C}{0,128}[0-9])[A-Za-z0-9+=](?:[A-Za-z0-9+=]|\/(?=[A-Za-z0-9+=]))*|(?!${NOT_A_VALUE_SEG})(?=${SEG}{8})(?=${SEG}{0,128}[0-9])${SEG}+)(?=[\\/])`;
 const SEG_SHORT = String.raw`(?=${SEG}{4,7}[\\/])(?!${NOT_SHORT_SEG})(?=${SEG}{0,6}[0-9])(?=${SEG}{0,6}[A-Za-z])${SEG}+(?=[\\/])`;
 const NO_MATCH = /(?!)/g;
 /** The replacement of the value passes (FR-198): the value goes, the separator and the path after it stay. */
