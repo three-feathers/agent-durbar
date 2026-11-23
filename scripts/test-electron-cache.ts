@@ -245,9 +245,13 @@ async function main(): Promise<void> {
     'fast-lane.yml:fast': 3, // spec 117 FR-386: the target, no run yet
     'installed-app.yml:installed': 10.2, 'macos-pr.yml:macos-test': 23.8, /* measured 2026-11-23, spec 117 T078 (was 8.8) */ 'mac-titlebar-pr.yml:mac-titlebar': 6, // estimate, no run yet (FR-200)
     'mcp-oauth-real.yml:check': 1.1, 'packaged-check.yml:check': 1.6,
-    'release.yml:build': 14.4, 'ui-platforms.yml:ui': 22.7, 'world-matrix.yml:subset': 2.1,
+    'release.yml:build': 14.4, 'ui-platforms.yml:ui': 22.7, 'world-matrix.yml:subset': 2.1, // ui: Linux and Windows shards; macOS below
     'world-matrix.yml:weekly': 25, // estimate: no weekly run among the last 40 runs of the workflow
   };
+  // a job whose limit is per OS ("matrix.os == '<os>' && <n> || <m>"): that OS's typical minutes. spec 008 delta 2026-11-23 (issue 2070): a macOS UI
+  // shard of four, estimated from the six nightly runs of 2026-11-18..23 (the slowest shard: about 2,680 s of drivers at their medians + 160 s for
+  // setup, theme geometry and upload + 100 s between drivers; 54 min with every driver at its slowest of the six runs)
+  const TYPICAL_MIN_OS: Record<string, Record<string, number>> = { 'ui-platforms.yml:ui': { 'macos-latest': 49 } };
   // spec 117 T078: the path-filtered macOS job keeps exactly the stop-gap limit (45, as ci.yml build-test) until T025 lowers both
   const STOPGAP = 45;
   // The one check: throws unless macos-test has exactly the stop-gap limit as a number. The pin and its mutants both call it.
@@ -274,7 +278,7 @@ async function main(): Promise<void> {
     assert.throws(() => checkMacosLimit(mutant), /macos-test/, `mutant ${name} must fail the pin`);
   }
   const FAILED_TRY_MIN = 1.5;
-  type Job = { 'timeout-minutes'?: number; steps?: { uses?: string; with?: Record<string, string> }[] };
+  type Job = { 'timeout-minutes'?: number | string; steps?: { uses?: string; with?: Record<string, string> }[] };
   const defaultWaits = ((yaml.load(action) as { inputs: Record<string, { default: string }> }).inputs['retry-waits'].default).split(/\s+/).map(Number);
   const budgets: string[] = [];
   for (const f of fs.readdirSync(wfDir).filter((n) => /\.ya?ml$/.test(n))) {
@@ -289,8 +293,16 @@ async function main(): Promise<void> {
         const waits = raw === undefined ? defaultWaits : String(raw).split(/\s+/).map(Number);
         assert.ok(waits.length > 0 && waits.every((w) => Number.isInteger(w) && w >= 0), `${name}: retry-waits are whole seconds`);
         const budget = waits.reduce((a, b) => a + b, 0) / 60 + waits.length * FAILED_TRY_MIN;
-        const limit = Number(job['timeout-minutes']);
-        assert.ok(TYPICAL_MIN[name] + budget <= limit, `${name}: ${TYPICAL_MIN[name]} min of work + ${budget.toFixed(1)} min of npm ci retries is more than timeout-minutes ${limit}`);
+        const rawLimit = job['timeout-minutes'] as unknown;
+        const perOs = typeof rawLimit === 'string' ? /^\$\{\{ matrix\.os == '([\w-]+)' && (\d+) \|\| (\d+) \}\}$/.exec(rawLimit) : null;
+        const limits: Array<[string, number, number]> = perOs
+          ? [[`${name} (${perOs[1]})`, (TYPICAL_MIN_OS[name] || {})[perOs[1]], Number(perOs[2])], [`${name} (other OSes)`, TYPICAL_MIN[name], Number(perOs[3])]]
+          : [[name, TYPICAL_MIN[name], Number(rawLimit)]];
+        if (perOs) assert.ok(Number.isFinite(limits[0][1]), `${name} has a limit for ${perOs[1]}: add its typical minutes to TYPICAL_MIN_OS`);
+        for (const [label, typical, limit] of limits) {
+          assert.ok(Number.isFinite(limit), `${label}: timeout-minutes is a number or "matrix.os == '<os>' && <n> || <m>", got ${JSON.stringify(rawLimit)}`);
+          assert.ok(typical + budget <= limit, `${label}: ${typical} min of work + ${budget.toFixed(1)} min of npm ci retries is more than timeout-minutes ${limit}`);
+        }
         budgets.push(name);
       }
     }

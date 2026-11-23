@@ -819,17 +819,18 @@ async function retries(): Promise<void> {
   const tmp = fs.mkdtempSync(path.join(require('os').tmpdir(), 'ui-suite-retry-'));
   const summary = path.join(tmp, 'summary.md');
   const env = { ...process.env }, log = console.log, was = process.exitCode;
-  const go = async (results: boolean[], retry: string): Promise<{ code: unknown; out: string; runs: number; sum: string }> => {
+  const go = async (results: boolean[], retry: string): Promise<{ code: unknown; out: string; runs: number; sum: string; before: string[] }> => {
     fs.writeFileSync(summary, '');
     process.env.UI_SUITE_RETRY = retry; process.env.UI_SUITE_JOBS = '1'; process.env.UI_SUITE_OUT = tmp; process.env.GITHUB_STEP_SUMMARY = summary;
     process.exitCode = 0;
     const lines: string[] = []; console.log = (...a: unknown[]) => { lines.push(a.join(' ')); };
     let runs = 0;
+    const before: string[] = []; // spec 008 delta 2026-11-23 (T493): the line printed last when each run starts
     try {
-      await main({ ensure: () => true, argv: ['--only', DRIVERS[0].name], run: async () => { const ok = results[runs++]; return { ok, secs: 0, why: ok ? '' : 'broken', log: '' }; } });
+      await main({ ensure: () => true, argv: ['--only', DRIVERS[0].name], run: async () => { before.push(lines[lines.length - 1] || ''); const ok = results[runs++]; return { ok, secs: 0, why: ok ? '' : 'broken', log: '' }; } });
     } finally { console.log = log; }
     const code = process.exitCode; process.exitCode = was;
-    return { code, out: lines.join('\n'), runs, sum: fs.readFileSync(summary, 'utf8') };
+    return { code, out: lines.join('\n'), runs, sum: fs.readFileSync(summary, 'utf8'), before };
   };
   try {
     const twice = await go([false, false], '1');
@@ -837,6 +838,11 @@ async function retries(): Promise<void> {
     assert.strictEqual(twice.runs, 2, 'one retry, not more');
     assert.ok(!/FLAKY/.test(twice.out + twice.sum), 'failing twice is not FLAKY');
     assert.ok(new RegExp('failed: ' + name).test(twice.out), 'and it is named: ' + twice.out.slice(-200));
+    // a job cut at its limit shows the running driver: its start line is out before it runs, with no result line yet (issue 2070)
+    const esc = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    assert.ok(new RegExp(`^  start ${esc} \\(\\d+ s into the suite\\)$`).test(twice.before[0]), 'the start line is printed before the driver runs: ' + twice.before[0]);
+    assert.ok(new RegExp(`^  start retry ${esc} \\(\\d+ s into the suite\\)$`).test(twice.before[1]), 'and before its retry: ' + twice.before[1]);
+    assert.ok(twice.out.indexOf(`  start ${name} (`) < twice.out.indexOf(`FAIL ${name}`), 'start comes before the result line');
     const once = await go([false, true], '1');
     assert.strictEqual(once.code, 0, 'a pass on retry passes the job');
     assert.ok(/FLAKY \(passed only on retry\)/.test(once.out), 'FLAKY on the final line');
@@ -860,11 +866,12 @@ console.log('ui-suite: check-parallel and ui-suite install Electron once before 
 
 // ---- spec 008 FR-182 (issue 839): --shard i/n takes every n-th driver; n shards are disjoint and together hold every driver ----
 {
-  const { shard, DRIVERS } = require(SUITE) as { shard: (l: unknown[], s?: string, t?: Record<string, number>) => unknown[]; DRIVERS: unknown[] };
+  const { shard, DRIVERS, SHARD1_HEAD_START_SECS } = require(SUITE) as { shard: (l: unknown[], s?: string, t?: Record<string, number>, p?: string) => unknown[]; DRIVERS: unknown[]; SHARD1_HEAD_START_SECS: { darwin: number; other: number } };
   const times = JSON.parse(fs.readFileSync(path.join(ROOT, 'scripts', 'ui-suite-timings.json'), 'utf8')) as Record<string, number>;
-  const names = (DRIVERS as Array<{ name: string }>).map((d) => d.name);
+  // spec 008 delta 2026-11-23 (T493): an entry is a driver's label (a variant such as "check-unread retro") or its name
+  const names = (DRIVERS as Array<{ name: string; label?: string }>).flatMap((d) => [d.name, d.label || d.name]);
   assert.ok(Object.keys(times).filter((k) => !k.startsWith('_')).every((k) => names.includes(k)), 'the timing file names only drivers that exist (refresh it when one is renamed)');
-  const wt = (d: { name: string }): number => times[d.name] ?? 0;
+  const wt = (d: { name: string; label?: string }): number => times[d.label || ''] ?? times[d.name] ?? 0;
   for (const n of [1, 2, 3, 4, 5]) {
     const parts = Array.from({ length: n }, (_, i) => shard(DRIVERS, `${i + 1}/${n}`) as Array<{ name: string }>);
     const all = parts.flat();
@@ -886,6 +893,21 @@ console.log('ui-suite: check-parallel and ui-suite install Electron once before 
     assert.strictEqual(got.flat().length, 3, 'drivers without a timing are all placed once');
     assert.deepStrictEqual(shard(DRIVERS, '1/2', {}), shard(DRIVERS, '1/2', {}), 'no timing file: still deterministic');
   }
+  // spec 008 delta 2026-11-23 (T493): shard 1's head start is per OS (macOS runs the office layout and the Mac title bar there: 586 s measured)
+  {
+    assert.deepStrictEqual(SHARD1_HEAD_START_SECS, { darwin: 600, other: 240 }, 'head start: 600 s on macOS, 240 s elsewhere');
+    const a = { name: 'zz-a' }, b = { name: 'zz-b' }, t = { 'zz-a': 300, 'zz-b': 300 };
+    assert.deepStrictEqual(shard([a, b], '1/2', t, 'linux'), [b], 'linux: shard 1 (240 s ahead) still takes one 300 s driver');
+    assert.deepStrictEqual(shard([a, b], '1/2', t, 'win32'), [b], 'win32: the same 240 s');
+    assert.deepStrictEqual(shard([a, b], '1/2', t, 'darwin'), [], 'darwin: shard 1 (600 s ahead) takes neither');
+    assert.deepStrictEqual(shard([a, b], '2/2', t, 'darwin'), [a, b], 'darwin: both go to shard 2');
+    // a driver's weight is its label's entry first, then its name's
+    const v = { name: 'zz-x', label: 'zz-x retro' }, x = { name: 'zz-x' }, y = { name: 'zz-y' };
+    const tl = { 'zz-x': 10, 'zz-x retro': 1000, 'zz-y': 500 };
+    assert.deepStrictEqual(shard([v, x, y], '2/2', tl, 'linux'), [v], 'the variant weighs its own 1000 s (by its name it would weigh 10)');
+    assert.deepStrictEqual(shard([v, x, y], '1/2', tl, 'linux'), [x, y], 'and the rest share shard 1');
+    assert.deepStrictEqual(shard([v, x, y], '2/2', { 'zz-x': 10, 'zz-y': 500 }, 'linux'), [y], 'without a label entry the variant weighs its name\'s');
+  }
   assert.deepStrictEqual(shard(DRIVERS, undefined), DRIVERS, 'no shard: the whole list');
   for (const bad of ['0/3', '4/3', '3', 'a/b', '1/0']) assert.throws(() => shard(DRIVERS, bad), /--shard wants i\/n/, `"${bad}" is refused`);
   // review on #1257: the workflow's matrix, denominators and excludes agree (plain text; no YAML parser is a dependency)
@@ -897,13 +919,28 @@ console.log('ui-suite: check-parallel and ui-suite install Electron once before 
     assert.ok(m, 'the matrix has a shard list');
     const list = m[1].split(',').map((x) => Number(x.trim()));
     const n = list.length;
-    assert.strictEqual(n, 4, 'Linux and Windows run 4 shards');
+    // spec 008 delta 2026-11-23 (issue 2070): macOS runs 4 shards too (3 were cut at 45 minutes six nights in a row with a third of the drivers never started)
+    assert.strictEqual(n, 4, 'every OS runs 4 shards');
     assert.deepStrictEqual(list, Array.from({ length: n }, (_, i) => i + 1), 'the matrix shard list is exactly 1..n');
-    assert.ok(/UI_SUITE_SHARD: \$\{\{ format\('\{0\}\/\{1\}', matrix\.shard, matrix\.os == 'macos-latest' && 3 \|\| 4\) \}\}/.test(text), 'UI_SUITE_SHARD is i/n with n = 3 on macOS, 4 elsewhere');
-    assert.ok(/name: UI shard \(\$\{\{ matrix\.os \}\} \$\{\{ matrix\.shard \}\}\/\$\{\{ matrix\.os == 'macos-latest' && 3 \|\| 4 \}\}\)/.test(text), 'the job name shows i/n with the same denominators');
+    assert.ok(text.includes(`UI_SUITE_SHARD: \${{ format('{0}/${n}', matrix.shard) }}`), `UI_SUITE_SHARD is i/${n}, the length of the shard list, on every OS`);
+    assert.ok(text.includes(`name: UI shard (\${{ matrix.os }} \${{ matrix.shard }}/${n})`), 'the job name shows i/n with the same denominator');
     assert.ok(/name: ui-shots-\$\{\{ matrix\.os \}\}-\$\{\{ matrix\.shard \}\}/.test(text), 'artifacts are named per shard');
-    const ex = [...text.matchAll(/-\s*\{\s*os:\s*([\w-]+),\s*shard:\s*(\d+)\s*\}/g)].map((x) => `${x[1]}:${x[2]}`);
-    assert.deepStrictEqual(ex, ['macos-latest:4'], 'only macOS skips shard 4 (it runs 3)');
+    assert.ok(!/^\s+exclude:/m.test(text) && !/-\s*\{\s*os:\s*[\w-]+,\s*shard:\s*\d+\s*\}/.test(text), 'no OS skips a shard (macOS no longer runs 3)');
+    // the limits (delta 2026-11-23): macOS 65 minutes from its measured shards (about 49 min, 54 at every driver's slowest of six runs, + 12 min npm ci retries), the others 45
+    const lim = text.match(/^ {4}timeout-minutes: \$\{\{ matrix\.os == 'macos-latest' && (\d+) \|\| (\d+) \}\}$/m);
+    assert.ok(lim, 'the shard job limit is "matrix.os == \'macos-latest\' && <macOS> || <others>"');
+    assert.deepStrictEqual([Number(lim[1]), Number(lim[2])], [65, 45], 'macOS shards have 65 minutes, Linux and Windows 45');
+    // growth guard (delta 2026-11-23): the slowest macOS shard estimated from the committed timings (Linux and Windows means, about 8 % above
+    // macOS) plus shard 1's head start and 160 s per job (setup, theme geometry, upload) stays under 90 % of the macOS limit. A PR that adds
+    // enough drivers to cross it gets the macOS shard count or a timing refresh to fix, before a nightly is cut at its limit.
+    {
+      const median = (() => { const v = Object.entries(times).filter(([k, x]) => !k.startsWith('_') && Number.isFinite(x)).map(([, x]) => x).sort((a, b) => a - b); return v[Math.floor(v.length / 2)]; })();
+      const est = Array.from({ length: n }, (_, i) => (shard(DRIVERS, `${i + 1}/${n}`, times, 'darwin') as Array<{ name: string; label?: string }>)
+        .reduce((a, d) => a + (times[d.label || ''] ?? times[d.name] ?? median), (i === 0 ? SHARD1_HEAD_START_SECS.darwin : 0) + 160));
+      const budget = 0.9 * Number(lim[1]) * 60;
+      const worst = Math.max(...est);
+      assert.ok(worst <= budget, `the slowest macOS UI shard is estimated at ${Math.round(worst)} s (shards: ${est.map(Math.round).join(', ')}), above 90 % of the macOS limit (${budget} s): add a macOS shard or refresh scripts/ui-suite-timings.json (spec 008 delta 2026-11-23)`);
+    }
     // FR-183: one aggregate job, named UI suite complete, needs the shards, fails unless all passed, and runs even when a shard failed
     {
       const at = text.indexOf('  complete:');
