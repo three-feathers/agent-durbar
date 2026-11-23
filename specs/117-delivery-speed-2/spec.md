@@ -462,3 +462,9 @@ FR-018 says the 25-minute limit is not raised first. The queue is blocked now (#
 - **Follow-up (T079, not built).** Split the job into two parts and set `TEST_JOBS` (the macOS runner has 2 to 4 cores, #2030); T025 then lowers both limits. Evidence: 8 of 12 runs over 20 min.
 - **Not verified.** The new macOS duration distribution until runs on the 45 limit are measured; no real macOS run in this PR beyond its own path-filtered job.
 
+### 2026-11-23: bug, the fast lane's compile differed from the full one (#2052; T080)
+
+- **Seen** (job log read 2026-11-23): on #2052 at `04549335b` all three Fast lane jobs failed at "compile 40 test file(s)" with TS2345 in `scripts/demo-oauth-mcp.ts` ("`import("http").IncomingMessage` is not assignable to `import("http").IncomingMessage`"), while the required Build and test jobs compiled the same head cleanly.
+- **Cause.** `fast-lane.js` wrote its temporary tsconfig (which extends `tsconfig.scripts.json` and lists the picked files) under the OS temp folder. TypeScript looks for automatic types (`node_modules/@types`) from the config's own folder upwards; from the temp folder it found none, so `node` types came in through imports, and Electron's nested copy (`node_modules/electron/node_modules/@types/node`) was loaded beside the root one: two `http` modules (`tsc --listFiles`: two `@types/node/http.d.ts` from the temp folder, one from the repo).
+- **Fix.** The temporary config is written in a folder inside the repository root (`.fast-lane-*/`, git-ignored, removed after the compile), so type resolution is the full compile's; same `tsconfig.scripts.json` options, no type loosened. `test-fast-lane.ts` lists the program of a picked set that imports `demo-oauth-mcp.ts` (`tsc --listFilesOnly`, no type check) and asserts one `@types/node` copy, the root one, as in the full project; the mutant that writes the config under the OS temp folder dies at that assert.
+
