@@ -714,14 +714,19 @@ const bodyOf = (text: string | Buffer, status = 200) => (r: FakeReq) => { const 
     assert.strictEqual((withWhere({ state: 'ready', version: '1', hint: '', path: '/opt/homebrew/bin/codex' } as never, { platform: 'darwin', homedir: '/Users/v', env: {}, isFile: () => true }) as { where?: string }).where, '/opt/homebrew/bin/codex');
   }
   {
-    // FR-042: "Found at" is a path (a system path in full, ~/ under home, only the name inside another person's folder)
+    // FR-042 (amended 2026-11-23, owner decision, #2060 item 11): "Found at" is the full path as written: under home, in another person's folder, Windows drive
     const e = { platform: 'darwin' as const, homedir: '/Users/vikram' };
     assert.strictEqual(displayWhere('/opt/homebrew/bin/codex', e), '/opt/homebrew/bin/codex');
-    assert.strictEqual(displayWhere('/Users/vikram/.nvm/bin/codex', e), '~/.nvm/bin/codex');
-    assert.strictEqual(displayWhere('/Users/other/bin/codex', e), 'codex');
-    assert.strictEqual(displayWhere('/home/other/bin/codex', { platform: 'linux', homedir: '/home/me' }), 'codex');
+    assert.strictEqual(displayWhere('/Users/vikram/.nvm/bin/codex', e), '/Users/vikram/.nvm/bin/codex', 'no ~ replacement');
+    assert.strictEqual(displayWhere('/Users/other/bin/codex', e), '/Users/other/bin/codex', 'another folder is not cut to the file name');
+    assert.strictEqual(displayWhere('/home/other/bin/codex', { platform: 'linux', homedir: '/home/me' }), '/home/other/bin/codex');
     assert.strictEqual(displayWhere('C:\\Program Files\\nodejs\\codex.cmd', { platform: 'win32', homedir: 'C:\\Users\\a' }), 'C:\\Program Files\\nodejs\\codex.cmd');
-    assert.strictEqual(displayWhere('C:\\Users\\b\\codex.cmd', { platform: 'win32', homedir: 'C:\\Users\\a' }), 'codex.cmd');
+    assert.strictEqual(displayWhere('C:\\Users\\b\\codex.cmd', { platform: 'win32', homedir: 'C:\\Users\\a' }), 'C:\\Users\\b\\codex.cmd');
+    assert.strictEqual(displayWhere('D:\\tools\\Users\\codex.exe', { platform: 'win32', homedir: 'C:\\Users\\a' }), 'D:\\tools\\Users\\codex.exe', 'D:\\tools under a Users folder');
+    // review of PR 2067 (finding 2): the shared mask still runs: a folder named after a token is hidden, the rest of the path is as written
+    const tok = 'ghp' + '_' + 'A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8';
+    assert.strictEqual(displayWhere(`/Users/other/${tok}/bin/codex`, e), '/Users/other/[redacted]/bin/codex', 'a token-named folder is masked');
+    assert.strictEqual(displayWhere(`C:\\Users\\b\\${tok}\\codex.cmd`, { platform: 'win32', homedir: 'C:\\Users\\a' }), 'C:\\Users\\b\\[redacted]', 'Windows: the shared mask reads the text glued after a token by a backslash as the token\'s escaped rest and hides it too (over-masking, never under-masking)');
   }
   {
     // the timeout (30 s in the app, injected here) ends a check that never answers
