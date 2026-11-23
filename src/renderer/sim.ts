@@ -1875,13 +1875,13 @@ const planMcpSignInRefresh = (i: SignInPlanInput): SignInPlan => {
     const simActivity: ActivityRow[] = (() => {
       const t = (minAgo: number): string => new Date(Date.now() - minAgo * 60_000).toISOString();
       return [
-        { t: t(42), agent: 'Ana', folder: 'web-shop', app: 'GitHub Copilot', mode: 'ask', action: 'Edit src/cart.ts', decision: 'allowed-once' },
-        { t: t(37), agent: 'Ana', folder: 'web-shop', app: 'GitHub Copilot', mode: 'ask', action: 'Run npm test', decision: 'allowed-session' },
-        { t: t(31), agent: 'Ana', folder: 'web-shop', app: 'GitHub Copilot', mode: 'ask', action: 'Run npm test', decision: 'auto-session-grant' },
-        { t: t(25), agent: 'Ben', folder: 'api', app: 'GitHub Copilot', mode: 'ask', action: 'Fetch https://example.invalid/docs', decision: 'denied' },
-        { t: t(18), agent: 'Ben', folder: 'api', app: 'GitHub Copilot', mode: 'allow', action: 'Ask first to Allow all', decision: 'mode-change' },
-        { t: t(12), agent: 'Ben', folder: 'api', app: 'GitHub Copilot', mode: 'allow', action: 'Edit server/routes.ts', decision: 'auto-allow-all' },
-        { t: t(6), agent: 'Ben', folder: 'api', app: 'GitHub Copilot', mode: 'allow', action: 'Spending limit set to 300 AI credits', decision: 'limit-change' },
+        { t: t(42), agent: 'Ana', folder: 'web-shop', path: '/home/ana/clients/acme/web-shop', app: 'GitHub Copilot', mode: 'ask', action: 'Edit src/cart.ts', decision: 'allowed-once' },
+        { t: t(37), agent: 'Ana', folder: 'web-shop', path: '/home/ana/clients/acme/web-shop', app: 'GitHub Copilot', mode: 'ask', action: 'Run npm test', decision: 'allowed-session' },
+        { t: t(31), agent: 'Ana', folder: 'web-shop', path: '/home/ana/clients/acme/web-shop', app: 'GitHub Copilot', mode: 'ask', action: 'Run npm test', decision: 'auto-session-grant' },
+        { t: t(25), agent: 'Ben', folder: 'api', path: 'D:\\clients\\acme\\services\\payments\\backend\\api', app: 'GitHub Copilot', mode: 'ask', action: 'Fetch https://example.invalid/docs', decision: 'denied' },
+        { t: t(18), agent: 'Ben', folder: 'api', path: 'D:\\clients\\acme\\services\\payments\\backend\\api', app: 'GitHub Copilot', mode: 'allow', action: 'Ask first to Allow all', decision: 'mode-change' },
+        { t: t(12), agent: 'Ben', folder: 'api', path: 'D:\\clients\\acme\\services\\payments\\backend\\api', app: 'GitHub Copilot', mode: 'allow', action: 'Edit server/routes.ts', decision: 'auto-allow-all' },
+        { t: t(6), agent: 'Ben', folder: 'api', path: 'D:\\clients\\acme\\services\\payments\\backend\\api', app: 'GitHub Copilot', mode: 'allow', action: 'Spending limit set to 300 AI credits', decision: 'limit-change' },
       ] as ActivityRow[];
     })();
     /**
@@ -1942,7 +1942,7 @@ const planMcpSignInRefresh = (i: SignInPlanInput): SignInPlan => {
     /* the driver goes on from a `simaphold` */
     (window as unknown as { __durbarSimApGo?: (id: string) => void }).__durbarSimApGo = (id) => { const f = simApHeld.get(id); simApHeld.delete(id); f?.(); };
     const simLog = (s: SimAgent, decision: ActivityRow['decision'], action: string, mode: string = s.info.permMode): void => {
-      simActivity.push({ t: new Date().toISOString(), agent: s.info.label || s.info.name, folder: s.info.cwd.split(/[\\/]/).pop() || s.info.name, app: SIM_APP[s.info.adapterId ?? 'copilot'] ?? String(s.info.adapterId), mode, action: action.slice(0, 160), decision });
+      simActivity.push({ t: new Date().toISOString(), agent: s.info.label || s.info.name, folder: s.info.cwd.split(/[\\/]/).pop() || s.info.name, path: s.info.cwd, app: SIM_APP[s.info.adapterId ?? 'copilot'] ?? String(s.info.adapterId), mode, action: action.slice(0, 160), decision });
       if (simActivity.length > 5000) simActivity.splice(0, simActivity.length - 5000);
     };
     /** Like the real broker: auto-approve under a session grant, otherwise leave the request pending. */
@@ -3511,7 +3511,7 @@ const planMcpSignInRefresh = (i: SignInPlanInput): SignInPlan => {
           ? { id: 'claude', displayName: 'Claude Code', state: 'not-installed', hint: 'Install Claude Code, then choose Check again.', capabilities: { ...copilotCaps, caps: false, mcpToggle: false, remote: false } }
           : { id: 'claude', displayName: 'Claude Code', state: 'ready', version: 'sim', where: '~/.local/bin/claude', capabilities: { ...copilotCaps, caps: false, mcpToggle: false, remote: false } },
         // spec 060 FR-003: found through a version manager's folder (nvm), shown as where it was found
-        simKindsParam === 'ready' ? { id: 'codex', displayName: 'Codex', state: 'ready', version: 'sim', where: '~/.nvm/versions/node/v22.3.0/bin/codex', capabilities: { ...copilotCaps, caps: false, mcpToggle: false, remote: false } } : { id: 'codex', displayName: 'Codex', state: 'too-old', version: '0.9.0', hint: 'Update Codex to 1.0 or newer, then choose Check again.', where: '~/.nvm/versions/node/v22.3.0/bin/codex', capabilities: { ...copilotCaps, imageGen: true, interrupt: false, history: false, permissionModes: ['read-only'], remote: false } },      ] as AdapterInfo[] : []),
+        simKindsParam === 'ready' ? { id: 'codex', displayName: 'Codex', state: 'ready', version: 'sim', where: '/home/ana/.nvm/versions/node/v22.3.0/bin/codex', capabilities: { ...copilotCaps, caps: false, mcpToggle: false, remote: false } } : { id: 'codex', displayName: 'Codex', state: 'too-old', version: '0.9.0', hint: 'Update Codex to 1.0 or newer, then choose Check again.', where: '/home/ana/.nvm/versions/node/v22.3.0/bin/codex', capabilities: { ...copilotCaps, imageGen: true, interrupt: false, history: false, permissionModes: ['read-only'], remote: false } },      ] as AdapterInfo[] : []),
       ...(mixed ? SIM_MIXED_KINDS : []),
     ];
     const notReady = (adapterId: string): string | undefined => {
