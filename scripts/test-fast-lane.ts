@@ -196,14 +196,15 @@ assert.strictEqual(reads("const distance = 1;"), false, 'a word starting with di
     const os = require('os') as typeof import('os');
     const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'fast-lane-'));
     const pidFile = path.join(tmp, 'grandchild.pid');
-    const code = `const c=require('child_process').spawn(process.execPath,['-e','setTimeout(()=>{},60000)'],{stdio:'ignore'});require('fs').writeFileSync(${JSON.stringify(pidFile)},String(c.pid));setTimeout(()=>{},60000);`;
+    // fixed code; the pid file's path arrives as an argument (process.argv[1] under -e), never spliced into the source (CodeQL #113)
+    const code = "const c=require('child_process').spawn(process.execPath,['-e','setTimeout(()=>{},60000)'],{stdio:'ignore'});require('fs').writeFileSync(process.argv[1],String(c.pid));setTimeout(()=>{},60000);";
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     const rt = require(path.join(ROOT, 'scripts', 'run-tests.js')) as { runSuites: (o: Record<string, unknown>) => Promise<{ failed: string[]; times: unknown[] }> };
     const { spawn } = require('child_process') as typeof import('child_process');
     const pids: number[] = [];
     const t0 = Date.now();
     const real = await load(toLf(raw)).runLane({
-      suites: [{ name: 'test:sleep', steps: [['-e', code]] } as unknown as { name: string }], jobs: 1, deadlineMs: 1500,
+      suites: [{ name: 'test:sleep', steps: [['-e', code, pidFile]] } as unknown as { name: string }], jobs: 1, deadlineMs: 1500,
       // the lane's own spawn (it tracks taskkill on Windows) stays in the chain; only the suite's own node process is recorded
       run: (o) => rt.runSuites({ ...o, spawnFn: (cmd: string, args: string[], opts: object) => { const c = (o.spawnFn || spawn)(cmd, args, opts) as import('child_process').ChildProcess; if (cmd === process.execPath && c.pid) pids.push(c.pid); return c; } }),
     });
@@ -227,7 +228,8 @@ assert.strictEqual(reads("const distance = 1;"), false, 'a word starting with di
       suites: [{ name: 'test:sleep', steps: [['-e', 'setTimeout(()=>{},60000)']] } as unknown as { name: string }], jobs: 1, deadlineMs: 1000,
       spawnFn: (cmd: string, args: string[], opts: object) => {
         cmds.push(path.basename(cmd));
-        if (cmd === 'taskkill') return spawn(process.execPath, ['-e', `try{process.kill(${Number(args[1])},'SIGKILL')}catch(e){}`], { stdio: 'ignore' });
+        // the stand-in taskkill: fixed code, the pid as an argument (taskkill's /PID value), never spliced into the source
+        if (cmd === 'taskkill') return spawn(process.execPath, ['-e', "try{process.kill(Number(process.argv[1]),'SIGKILL')}catch(e){}", String(Number(args[1]))], { stdio: 'ignore' });
         return spawn(cmd, args, opts);
       },
       run: (o) => rt.runSuites({ ...o, platform: 'win32', spawnFn: (cmd: string, args: string[], opts: object) => { const c = (o.spawnFn || spawn)(cmd, args, opts) as import('child_process').ChildProcess; if (cmd === process.execPath && c.pid) wpids.push(c.pid); return c; } }),
