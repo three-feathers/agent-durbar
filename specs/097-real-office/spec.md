@@ -2153,3 +2153,51 @@ Issue #1930: on a local Linux xvfb run of `main` the hover-parking step of `chec
 - **The owner's answer (FR-068).** Vikram, Telegram, 2026-11-20 10:15 UTC, option 1: "does not look like a real person", on the contact sheet of the six clay-toy helper kids (6 kids x 7 states, the 42 pictures on `main`, nothing redrawn). Each kid's section of `src/renderer/realoffice/worlds/photo/ASSETS.md` now has `likeness-check` with that answer in place of `owner-likeness-look: pending (Vikram)`, which the kids had carried since 2026-11-12 while the Photo office was offered.
 - **Why now.** Spec 102 T396 (PR #1957, review by Paco) adds a guard to `test:realoffice-assets`: a world that is offered may not ship a sheet with `owner-likeness-look: pending`. It found these six kids; this change records the answer so the guard passes. No picture, number or other text changes.
 
+
+## Changes 2026-11-22: the recorder's idle read waits for the load tail to end and stops its own frame loop (issue #2023; no FR or task number taken; test tooling only, no `src/` change)
+
+Issue #2023 reported Real office idle CPU at 10.8 % of one core at 1280x800 against 3.3 % at 1440x900 (15 agents, device pixel ratio 2 forced, Apple M4, PR #2020's T162 Mac half above). A scratch probe (not committed; same machine, simulator, 15 agents, `simfreeze=1` as the recorder runs it, CPU every 6 s for 48 s after load, 3 launches per case) did not find a size effect. It found two faults in how `check-perf.js --record` reads idle CPU:
+
+- **It reads too early.** After a load the GPU and renderer processes stay busy for about 15 s (first 6 s: 3.7 to 11 % at both sizes), then fall to a flat level. The idle read (15 s) starts about 5 s after load, behind a DOM-count settle that does not see this tail. That is why the ranges were wide (1440x900: 3.3 to 10.3) and why the first A/B base reading was 2 to 2.5 times the last.
+- **It measures itself.** The page instruments (`INST`) keep a `requestAnimationFrame` loop running for the frame rows. During an idle read it forces 60 main-thread frames a second (60 style recalcs a second where the page alone has none) and adds about 1 point of one core in the renderer.
+
+Settled, 30 to 48 s after load, median of 3 launches [min-max], % of one core: page alone 1.0 [0.9-2.4] at 1280x800 and 1.6 [1.0-2.4] at 1440x900; with the recorder's loop 2.1 [1.2-2.1] and 2.3 [2.1-5.3]. One animation runs at both sizes (a screen's breathing glow; the people hold still under `simfreeze=1`). With people moving (`romotion=1`, 23 animations) settled idle is 2.3 to 2.6 % at both sizes and about 0.1 % with every animation off. Hiding the lights moved nothing at 1280x800 (2.3 against 2.4). So the idle CPU rows of 2026-11-22 above overstate. They are kept there, **superseded: measured too early**, and the size gap they show is not reproduced.
+
+**Change (`scripts/perf-record.js`, `scripts/perf-record-driver.js`).** Before each idle CPU read (visible idle, and each idle row of the GPU A/B), the driver (1) pauses the instruments' frame loop and resumes it after the read, and (2) waits until CPU has settled: samples of 3 s each until the last 3 lie within a band (spread at most 0.5 points or 25 % of their median, whichever is larger), at most 60 s. The rule is a pure helper (`cpuSettled`, `settleCpu`) with the sampler passed in. A read whose wait reached the cap is still taken and says so (`settle.settled: false`, the samples), it is never dropped. The idle rows record the wait (`settle`) and how many loop frames ran during the read (`loopFrames`, 0 expected). `PERF_W` and `PERF_H` set the window (default 1440x900, as before), so 1280x800 needs no local change. Every other row, the order of the phases and the frame instruments are unchanged.
+
+`test:` `test:perfrecord`: the settle rule on fake samples (a tail-shaped series is not settled until its flat end; a flat series settles at once; the cap ends a series that never settles, with `settled: false`); `settleCpu` takes its idle read only after the tail. A patched copy of `settleCpu` that skips the wait fails at its own labelled assert.
+
+**Not verified.** Windows, Linux, a non-Apple GPU, a real Retina panel, 40 agents, real sessions and the packaged app. The re-recorded rows (both sizes, flat and Real office) are in PR text, not here, until the owner decides the `real:` rows (FR-189).
+
+## Changes 2026-11-22: T162's Mac half, numbers for the owner (issue #1879; no FR or task number taken; nothing ticked)
+
+Spec delta only, no `src/` change. Machine, method, the forced ratio and what was not verified are in spec 001 *2026-11-22: T181's Mac run*; that delta also has the start and status-update rows. In short: Apple M4, real GPU (`gpu_compositing: enabled`), simulator only, 0 AI credits, `check-perf.js --record --gpu`, 15 agents, device pixel ratio 2 forced on a 1x monitor, `main` at `722a48a8e`. Values are median [min-max], n = runs. CPU is percent of one core (Electron's `percentCPUUsage` times 10, the 10 cores). Memory is the working set of all processes. **T162 stays open:** the Windows or Linux integrated-GPU laptop has not run. Whether the `real:` rows and FR-182's list are confirmed or moved is the owner's decision (FR-189, FR-179), not made here.
+
+| Row (15 agents, DPR 2) | Flat 1440x900 | Flat 1280x800 | Real 1440x900 | Real 1280x800 |
+|---|---|---|---|---|
+| Idle CPU, visible, total (GPU process) | 15.4 [14.5-24.4] (4.2) n=3 | 17.4 [16.3-31.1] (5.0) n=3 | 3.3 [3.3-10.3] (1.2) n=5 | 10.8 [9.6-12.1] (4.0) n=5 |
+| Idle CPU, hidden | 1.1 [1.1-1.2] | 0.9 [0.2-2.9] | 1.2 [0.1-1.3] | 2.2 [0.3-2.3] |
+| Frames at 10x activity: fps; p95 ms | 59.9; 17.9 [17.7-20.8] | 59.8; 18.8 [17.8-20.4] | 59.9; 17.8 [17.6-19.3] | 59.1; 20.8 [20.2-21.3] |
+| Retina memory, settled, working set MB; JS heap MB | 696 [673-744]; 35.6 | 765 [745-818]; 37.8 | 905 [858-940]; 29.8 | 925 [809-950]; 29.8 |
+| Raster proxy: decoded / shown picture MB (ratio) | no pictures | no pictures | 3.9 / 1.0 (3.72) | 3.1 / 0.9 (3.52) |
+| Scrolling | no office scroll in any run (`counts.scrolls` 0), so no row | same | same | same |
+
+**A/B in Real office** (3 launches per size; one window, styles switched in order: base, blur off, blend off, lights off, animations off, shadows off, base again; idle CPU over 10 s, total (GPU process)). The first base reading came right after load and is 2 to 2.5 times the last. So only the second base is a fair baseline, and gaps smaller than that are not told apart.
+
+| Variant | 1440x900 | 1280x800 |
+|---|---|---|
+| base (first; last) | 4.8 (1.7); 2.3 [2.3-5.6] (0.7) | 15.0 (5.5); 5.9 [5.8-6.6] (1.8) |
+| blur off (`backdrop-filter: none`) | 2.3 [1.2-2.3] (0.6) | 5.5 [5.2-5.7] (1.7) |
+| lamps' blend off (`mix-blend-mode: normal`) | 1.9 [1.3-2.0] (0.5) | 6.2 [5.1-7.3] (1.6) |
+| lights off (`.ro-lights`, `.ro-amb` hidden) | 1.4 [1.0-1.5] (0.4) | 3.5 [3.4-3.6] (1.1) |
+| animations off | 1.4 [1.0-1.5] (0.4) | 3.5 [3.5-4.8] (1.1) |
+| shadows off | 3.7 [3.7-3.7] (1.5) | 13.1 [13.0-13.9] (5.0) |
+| Dialog over 10x activity, blur on / off: fps; p95 ms; CPU (6 samples each) | 59.7 / 59.8; 18.2 / 17.8; 30.6 / 27.5 | 59.0 / 59.2; 20.0 / 20.0; 42.0 / 42.6 |
+
+**What it says** (this Mac only, a forced ratio of 2). (1) Idle CPU, real GPU (the `real:` row: at most 5 % of a core at 15 agents in Real office): 3.3 at 1440x900 is under it, 10.8 at 1280x800 is over it. Why the smaller window costs more was not looked into. (2) Blur: switching it off moves neither idle CPU nor the dialog's frames by more than the noise. rAF frames do not see GPU time, so FR-182's "2 ms a frame" test is not answered directly. Nothing here argues for moving a selector off the allow list, but that is the owner's call. (3) Lamps: turning their blend off moved nothing measurable. Hiding the lights, or stopping the animations, roughly halves idle CPU (2.3 to 1.4, 5.9 to 3.5). (4) Scrolling: at 15 agents the office never scrolls (Calm UI), so the scrolling row (40 agents) is not measured. (5) Memory: these are working sets, so the PSS rows ("PSS over flat at most 40 MB") are neither confirmed nor moved. The working set in Real office is 160 to 210 MB over flat, and the JS heap is 6 to 8 MB under flat.
+
+**Not verified.** `[KNOWN GAP]` The integrated-GPU Windows or Linux laptop (the other half of T162), a real Retina panel, 40 agents (where scrolling and the 40-agent rows live), raster time itself (the picture bytes and the GPU-process CPU are proxies; a trace was not taken), real sessions and the packaged app.
+
+## Changes 2026-11-22: correction, the T162 Mac half idle CPU rows are overstated (issue #2023; no FR or task number taken)
+
+The idle CPU rows of *T162's Mac half* above (the table's "Idle CPU, visible" row, and the A/B idle rows) are **superseded: measured too early**. They were read about 5 s after load, inside a load tail of about 15 s, with the recorder's own rAF loop running (about 1 point). Issue #2023's premise, that Real office at 1280x800 costs more than at 1440x900 and over the 5 % budget, is therefore **not shown**. PR #2035 (spec delta *the recorder's idle read waits for the load tail to end*) fixes the read. Re-recorded after it (same machine, DPR 2, 15 agents, 3 runs, median [min-max], % of one core): Real office 1440x900 0.31 [0.29-0.40], 1280x800 0.25 [0.13-0.26]; flat 3.48 [3.37-3.52] and 1.66 [1.39-1.69]. A/B idle after: base 0.30 / 0.42, lights off 0.02 / 0.02, animations off 0.02 / 0.01 (1280 / 1440). The old method in the same session gave Real 1.18 and 1.12, flat 3.64 and 3.48, so this table's 3.3, 10.8, 15.4 and 17.4 were not reproduced even by it; why is not known. The other rows stand. Whether the `real:` idle row is confirmed stays the owner's call (FR-189).
