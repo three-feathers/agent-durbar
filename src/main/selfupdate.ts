@@ -5,7 +5,7 @@
  * of the version-only IPC channels come with the second part of T010. Not wired into main.ts yet (dead code, tested). No Electron import:
  * `scripts/test-selfupdate-checker.ts` runs it.
  */
-import { cadenceDue, decodeUtf8Strict, feedUrl, isBreaking, manualCheckAllowed, parseReleasesJson, pickTarget, releasesJsonUrl, selfCheckOn, selfPolicyView, snoozeState, validateFeed } from '../shared/selfupdate';
+import { cadenceDue, decodeUtf8Strict, feedUrl, isBreaking, manualCheckAllowed, parseReleasesJson, pickTarget, releasesJsonUrl, selfCheckOn, selfPolicyView, snoozeState, validateFeed, parseUpdatesPatch } from '../shared/selfupdate';
 import type { Breaking, CadenceInput, Feed, ReleaseMarks, SelfPolicy, SelfUpdateSettings, SourceOrigin, UpdateSource } from '../shared/selfupdate';
 import type { FeedFailure, FeedGet, FeedTimer } from './netget';
 
@@ -141,7 +141,8 @@ export class SelfUpdater {
     this.result = { at, ...r };
     const store = this.d.store();
     const latest = r.feed ? r.feed.releases[0]?.version : store?.updates.lastCheck?.latest;
-    store?.setUpdates({ lastCheck: latest === undefined ? { at } : { at, latest } });
+    // a patch with a bad field is refused whole (FR-021): a feed version the strict rule does not take (leading zeros) is left out, the time kept
+    store?.setUpdates({ lastCheck: latest !== undefined && parseUpdatesPatch({ lastCheck: { at, latest } }) ? { at, latest } : { at } });
   }
 
   view(): SelfUpdateView {

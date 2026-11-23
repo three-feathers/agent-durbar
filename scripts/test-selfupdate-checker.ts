@@ -158,6 +158,9 @@ async function main(): Promise<void> {
     assert.strictEqual((await bom.u.checkNow()).reason, 'feed-invalid', 'FR-008: a byte-order mark refuses the feed');
     const other = rig({ script: (u) => (u === LIST ? ok(feedBytes('evil/repo')) : NO) });
     assert.strictEqual((await other.u.checkNow()).reason, 'feed-invalid', 'FR-008: another repository\'s releases refuse the feed');
+    const zeros = rig({ script: (u) => (u === LIST ? ok(feedBytes(SLUG, ['0.1.030', '0.1.28'])) : NO) });
+    await zeros.u.checkNow();
+    assert.deepStrictEqual(zeros.store.updates.lastCheck, { at: T0 }, 'result: a latest the strict rule refuses is left out, the check time still written');
     const same = rig({ running: '0.1.29', script: standard });
     assert.strictEqual((await same.u.checkNow()).state, 'up-to-date', 'result: up to date');
     const newer = rig({ running: '0.2.0', script: standard });
