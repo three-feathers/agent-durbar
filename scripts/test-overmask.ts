@@ -138,4 +138,28 @@ eq(changed.secret, 0, 'FR-196 differential: no code-shaped or secret-flag value 
 for (const c of CLASSES) ok(changed[c] > 0 && changed[c] === total[c], `FR-196 differential: every text of class ${c} changes`);
 eq(Object.values(changed).reduce((x, y) => x + y, 0), CLASSES.reduce((x, c) => x + changed[c], 0), 'FR-196 differential: the total equals the sum of the listed classes');
 
+// issue #2062: a Resend-shaped key (`re_<8>_<24>`) after `-` or `_` is base64url, not a key; anywhere else it is masked as before. Counted against the shape as
+// written before the fix (the reference below), on the bare mask and on `redact`, per context class: only the `-` and `_` class may change. A key glued
+// after a letter or digit is not a key on `main` either (#1329, unchanged; checked locally against `main`'s compiled file: only the `-` and `_` contexts differ)
+{
+  const REF = /re_[A-Za-z0-9]{8}_[A-Za-z0-9]{24}/;
+  const AN = LOW + UP + DIG;
+  const ctx: Record<string, (k: string) => string> = { start: (k) => k, space: (k) => 'use ' + k, quote: (k) => `"${k}"`, eq: (k) => 'RESEND_KEY=' + k, colon: (k) => 'resend: ' + k,
+    line: (k) => 'a\n' + k, paren: (k) => '(' + k + ')', comma: (k) => 'a,' + k, slash: (k) => 'x/' + k, plus: (k) => 'x+' + k, dot: (k) => 'x.' + k, dash: (k) => 'x-' + k, underscore: (k) => 'x_' + k };
+  const shownRe: Record<string, number> = {}, totalRe: Record<string, number> = {};
+  for (let i = 0; i < 300; i++) {
+    const key = 're_' + from(AN, 8) + '_' + from(AN, 24);
+    for (const [c, f] of Object.entries(ctx)) {
+      const t = f(key); totalRe[c] = (totalRe[c] || 0) + 1;
+      const refHid = REF.test(t); // the shape before the fix matched the key in every context
+      const shown = R.maskBareTokenShapes(t, '[R]').includes(key.slice(3)) || R.redact(t).includes(key.slice(3));
+      if (refHid && shown) shownRe[c] = (shownRe[c] || 0) + 1;
+    }
+  }
+  console.log(`test-overmask #2062: shown per context ${JSON.stringify(shownRe)} of ${JSON.stringify(totalRe)}`);
+  const LISTED = ['dash', 'underscore'];
+  for (const c of LISTED) eq(shownRe[c], totalRe[c], `#2062 differential: every key after ${c === 'dash' ? '-' : '_'} reads as base64url (shown)`);
+  eq(Object.values(shownRe).reduce((x, y) => x + y, 0), LISTED.reduce((x, c) => x + (shownRe[c] || 0), 0), '#2062 differential: no key is shown outside the - and _ class (the total equals their sum)');
+}
+
 console.log(`test-overmask: ${n} asserts passed`);

@@ -93,7 +93,7 @@ const PREFIXED = [
   // package registries
   String.raw`npm_[A-Za-z0-9]{36,}|pypi-Ag${dg(W, 50)}|rubygems_[a-f0-9]{48}|CLOJARS_[A-Za-z0-9]{60}|dckr_pat_${dg(W, 20)}`, // npm, PyPI, RubyGems, Clojars, Docker
   // chat and mail (Slack, Discord, Telegram tokens: their own shapes below)
-  String.raw`SG\.${dg('[A-Za-z0-9_.=-]', 40)}|(?<![-_])key-[a-f0-9]{32}${NOT_AFTER}|[a-f0-9]{32}-us[0-9]{1,2}${NOT_AFTER}|xkeysib-[a-f0-9]{64}-[A-Za-z0-9]{16}|re_[A-Za-z0-9]{8}_[A-Za-z0-9]{24}|[0-9]{15,16}(?:\||%7[Cc])${W}{27,40}${NOT_AFTER}`, // SendGrid, Mailgun, Mailchimp, Brevo, Resend, Facebook
+  String.raw`SG\.${dg('[A-Za-z0-9_.=-]', 40)}|(?<![-_])key-[a-f0-9]{32}${NOT_AFTER}|[a-f0-9]{32}-us[0-9]{1,2}${NOT_AFTER}|xkeysib-[a-f0-9]{64}-[A-Za-z0-9]{16}|(?<![-_])re_[A-Za-z0-9]{8}_[A-Za-z0-9]{24}|[0-9]{15,16}(?:\||%7[Cc])${W}{27,40}${NOT_AFTER}`, // `re_` after `-` or `_` is base64url, as the two-letter rule says (spec 012, issue #2062). SendGrid, Mailgun, Mailchimp, Brevo, Resend, Facebook
   // payment
   String.raw`(?:sk|rk)_(?:live|test|prod)_(?=[A-Za-z]{0,128}[0-9])[A-Za-z0-9]{16,}|whsec_[A-Za-z0-9]{24,}|sq0(?:atp|csp)-${dg(W, 22)}|rzp_(?:live|test)_[A-Za-z0-9]{14,}|FLWSECK(?:_TEST)?-[A-Za-z0-9]{12,}(?:-X)?|access-(?:sandbox|development|production)-[a-f0-9-]{36}|shp(?:at|ca|pa|ss)_[A-Fa-f0-9]{32}|pdl_(?:live|sdbx)_${dg('[A-Za-z0-9_]', 20)}|duffel_(?:test|live)_[A-Za-z0-9_=-]{43}`, // Stripe, Square, Razorpay, Flutterwave, Plaid, Shopify, Paddle, Duffel
   // developer tools

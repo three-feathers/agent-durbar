@@ -865,4 +865,15 @@ for (const [start, more] of [['AK' + 'IA' + up(16), 'A'], ['AK' + 'IA' + up(16),
 // The mechanism behind it, with made-up base64: not after `/` or `+`, and not when more base64 follows
 for (const t of ['ab/' + 'EA' + 'AA' + an(70) + '/cd', 'ab+' + 'EA' + 'AA' + an(70), 'EA' + 'AA' + an(70) + '/cd', 'ab/' + 'EA' + 'AC' + an(120) + '+x', 'ab/' + 'AB' + 'SK' + an(120), '/AI' + 'za' + an(35), '+S' + 'K' + hex(32), 'SK' + hex(32) + '/', '-' + 'EA' + 'AA' + an(70), '_' + 'EA' + 'AA' + an(70), 'A'.repeat(22) + 'B' + an(100), an(76) + '\n' + 'EA' + 'AA' + an(72) + '\n' + an(76), 'EA' + 'AA' + an(72) + '\n' + an(76), an(76) + '\\n' + 'EA' + 'AA' + an(72)]) assert.strictEqual(redact(t, {}), t, `base64 stays: ${t.slice(0, 16)}…`);
 
+// spec 012 FR-196 delta, issue #2062 (the two-letter rule, beside `hf_` and `r8_`; found by test-redact-images on an arcade picture, spec 102 #2056): Resend's `re_` key is masked on its own, but not after `-` or `_`, where base64url holds it by chance
+{
+  const key = 're' + '_' + an(8) + '_' + an(24);
+  // still masked (issue #2062): after `=` and `:`, on its own, at the line start, after a space and a quote, on the bare mask and on `redact`
+  for (const [ctx, t] of [['after =', 'RESEND=' + key], ['after :', 'resend:' + key], ['on its own', key], ['line start', 'x\n' + key], ['after a space', 'key ' + key], ['after a quote', '"' + key + '"']]) {
+    assert.ok(!maskBareTokenShapes(t, '[R]').includes(key.slice(3)), `#2062: a Resend key is still masked ${ctx} (bare)`);
+    assert.ok(!redact(t, {}).includes(key.slice(3)), `#2062: a Resend key is still masked ${ctx} (redact)`);
+  }
+  // not a key after `-` or `_`: base64url holds that run by chance (the two-letter rule)
+  for (const lead of ['-', '_']) assert.strictEqual(maskBareTokenShapes('x' + lead + key, '[R]'), 'x' + lead + key, `#2062: re_ after ${lead} is base64url, not a key`);
+}
 console.log(`redact shapes: all checks passed (${count} samples, ${STAYS.length} that stay)`);
