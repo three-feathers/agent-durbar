@@ -248,10 +248,13 @@ async function main(): Promise<void> {
     'release.yml:build': 14.4, 'ui-platforms.yml:ui': 22.7, 'world-matrix.yml:subset': 2.1, // ui: Linux and Windows shards; macOS below
     'world-matrix.yml:weekly': 25, // estimate: no weekly run among the last 40 runs of the workflow
   };
-  // a job whose limit is per OS ("matrix.os == '<os>' && <n> || <m>"): that OS's typical minutes. spec 008 delta 2026-11-23 (issue 2070): a macOS UI
-  // shard of four, estimated from the six nightly runs of 2026-11-18..23 (the slowest shard: about 2,680 s of drivers at their medians + 160 s for
-  // setup, theme geometry and upload + 100 s between drivers; 54 min with every driver at its slowest of the six runs)
-  const TYPICAL_MIN_OS: Record<string, Record<string, number>> = { 'ui-platforms.yml:ui': { 'macos-latest': 49 } };
+  // a job whose limit is per OS ("matrix.os == '<os>' && <n> || <m>"): that OS's typical minutes. spec 008 delta 2026-11-23 (issue 2070, review of
+  // PR 2071): a macOS UI shard is the one estimate of scripts/ui-shard-budget.js (its slowest shard at the committed timings and the workflow's
+  // shard count), so this figure grows with the suite instead of staying a written number
+  const uiShardCount = (() => { const m = fs.readFileSync(path.join(wfDir, 'ui-platforms.yml'), 'utf8').replace(/\r\n/g, '\n').match(/^\s+shard:\s*\[([^\]]*)\]\s*$/m); assert.ok(m, 'ui-platforms.yml has a shard list'); return m[1].split(',').length; })();
+  const uiTimes = JSON.parse(fs.readFileSync(path.join(root, 'scripts', 'ui-suite-timings.json'), 'utf8')) as Record<string, number>;
+  const macShards = (require(path.join(root, 'scripts', 'ui-shard-budget.js')) as { macosShardSecs: (o: { n: number; times: Record<string, number> }) => number[] }).macosShardSecs({ n: uiShardCount, times: uiTimes });
+  const TYPICAL_MIN_OS: Record<string, Record<string, number>> = { 'ui-platforms.yml:ui': { 'macos-latest': Math.max(...macShards) / 60 } };
   // spec 117 T078: the path-filtered macOS job keeps exactly the stop-gap limit (45, as ci.yml build-test) until T025 lowers both
   const STOPGAP = 45;
   // The one check: throws unless macos-test has exactly the stop-gap limit as a number. The pin and its mutants both call it.

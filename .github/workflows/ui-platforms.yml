@@ -88,10 +88,10 @@ jobs:
     runs-on: ${{ matrix.os }}
     # FR-131 gave macOS 80 minutes (one driver at a time, UI_SUITE_JOBS=1); it outgrew that too (nightly run 42205363015,
     # cancelled at 80 with drivers left): FR-182 split its drivers over three jobs of 45. Spec 008 delta 2026-11-23: three shards were cut at 45
-    # six nights in a row with a third of the drivers never started (260 drivers, about 9,650 s one by one on macOS); four macOS shards measure
-    # about 49 min each (54 with every driver at its slowest of six runs), so macOS gets 65: 20 % over that slowest case, and room for npm ci's
-    # retries (12 min, test-electron-cache.ts) over the 49; Linux and Windows end in 15-22 min and keep 45
-    timeout-minutes: ${{ matrix.os == 'macos-latest' && 65 || 45 }}
+    # six nights in a row with a third of the drivers never started (260 drivers, about 9,650 s one by one on macOS). macOS runs four shards; its
+    # limit is what scripts/ui-shard-budget.js asks for (the slowest shard at a slow night, 1.10 x its median, plus setup, geometry, upload
+    # and 12 min of npm ci retries, then 5 % margin): 70; test:uisuite fails when the two differ. Linux and Windows end in 15-22 min and keep 45
+    timeout-minutes: ${{ matrix.os == 'macos-latest' && 70 || 45 }}
     strategy:
       fail-fast: false
       matrix:
