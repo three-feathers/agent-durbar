@@ -136,3 +136,7 @@
 ## 2026-11-22: PR preflight for authors (FR-384)
 
 - [x] T455 (FR-384) `scripts/pr-preflight.js` (and `scripts/pr-preflight.sh`), `npm run pr:preflight -- <N>`: twelve read-only checks of a PR before review; `docs/development.md`, the brief lines in `docs/agent-setup/`; changelog fragment. Test `test:prpreflight` (`scripts/test-pr-preflight.js`): a throwaway repository and fixture `gh` answers, a failing fixture per check, 37 mutants each killed at its own assert (incl. the default trusted list, the specs:numbers rule, net-new shape words) [FR-384]
+
+## 2026-11-23: the merge gate holds a draft and wants every required check passed (FR-420)
+
+- [ ] T510 (FR-420) `scripts/pr-gate.sh`: block a draft (and an unreadable draft state); read the required check names from `.github/ruleset-main.json` and want each exactly `pass` on every PR (an unreadable list blocks); header updated. Tests: `scripts/test-pr-gate-codeql.ts` (draft, missing draft field, required names skipping, a spec-only PR with the five passed, an unreadable or empty ruleset, mutants), `scripts/test-trusted-content.ts` (fixtures carry the five names and `draft: false`); changelog fragment.
