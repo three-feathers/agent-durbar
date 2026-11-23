@@ -14,7 +14,10 @@
  *   - Latest steps does not say "N steps this turn" and list the steps as text (FR-025);
  *   - a text of the rail is under 12 px (FR-097), or a canary token in a command reaches any text, title or label of the rail (FR-021);
  *   - Collapse does not hide the rail and give the chat its width back, or the header's Brain button does not bring it back (FR-031);
- *   - the skin is not the world's (neutral in Flat and the Photo office, arcade, cave).
+ *   - the skin is not the world's (neutral in Flat and the Photo office, arcade, cave);
+ *   - the seven lobe words (FR-134..FR-136, T477) are not all visible inside the picture, two of them or one and the lit marker intersect, the lit word is not
+ *     the current step's (bold, framed in the caption chip's colour), a word animates, the lines line does not name the trail's cap, or focus, hover, the arrow keys
+ *     and Esc do not show, move and close the tooltip with the lobe's sentence and its count, inside the picture; compact and roomy.
  * Screenshots (looked at by the author): <SHOTS_OUT>/106-dock-<world>-<state>-<w>x<h>.png
  */
 const os = require('os');
@@ -50,6 +53,40 @@ module.exports = async (ctx) => {
   const doorCount = () => js(`({rail:(document.querySelector('#railDoor b')||{}).textContent,dock:(document.getElementById('brailDoorN')||{}).textContent,rows:document.querySelectorAll('#brailDoorL [data-door]').length})`);
   const visibleIn = (sel, w, h) => js(`(()=>{const e=document.querySelector(${jsLiteral(sel)});if(!e||!e.getClientRects().length)return false;const r=e.getBoundingClientRect();return r.top>=0&&r.left>=0&&r.bottom<=${h}&&r.right<=${w}&&r.width>0&&r.height>0;})()`);
   const small = () => js(`[...document.querySelectorAll('#brainRail, #brainRail *')].filter(e=>e.getClientRects().length&&[...e.childNodes].some(n=>n.nodeType===3&&n.textContent.trim())).map(e=>[e.className||e.tagName,parseFloat(getComputedStyle(e).fontSize)]).filter(x=>x[1]<12)`);
+  /* FR-134..FR-136: the lobe words, as rects from the page; the lit marker from points.js's anchor (draw.js draws it there, 5 px and its line) */
+  const labelIssues = () => js(`(()=>{const out=[],cv=document.querySelector('#brainRail .bv canvas').getBoundingClientRect(),L=[...document.querySelectorAll('#brainRail .bv-lab')],R=L.map(l=>l.getBoundingClientRect()),hit=(a,b)=>a.left<b.right&&b.left<a.right&&a.top<b.bottom&&b.top<a.bottom;
+    if(L.length!==7)out.push('labels '+L.length);
+    L.forEach((l,i)=>{const r=R[i],cs=getComputedStyle(l),g=l.dataset.g;if(!r.width||!r.height||cs.visibility==='hidden'||document.querySelector('#brainRail .bv-labs').hidden)out.push(g+' not shown');
+      if(r.left<cv.left-0.5||r.top<cv.top-0.5||r.right>cv.right+0.5||r.bottom>cv.bottom+0.5)out.push(g+' outside the picture');
+      if(parseFloat(cs.fontSize)<12)out.push(g+' '+cs.fontSize);if(cs.transitionDuration.split(',').some(d=>parseFloat(d)>0)||cs.animationName!=='none')out.push(g+' animates');
+      for(let j=i+1;j<L.length;j++)if(hit(r,R[j]))out.push(g+' overlaps '+L[j].dataset.g);});
+    const lit=L.filter(l=>l.classList.contains('is-lit'));
+    if(lit.length===1){const a=window.DurbarBrainPoints.ANCHORS[lit[0].dataset.lobe],x=cv.left+a.x*cv.width,y=cv.top+a.y*cv.height,m={left:x-6.5,top:y-6.5,right:x+6.5,bottom:y+6.5};R.forEach((r,i)=>{if(hit(r,m))out.push(L[i].dataset.g+' on the lit marker');});
+      const cs=getComputedStyle(lit[0]),chip=getComputedStyle(document.querySelector('#brainRail .bv-lobe'),'::before').backgroundColor;if(parseInt(cs.fontWeight,10)<600)out.push('lit not bold');if(cs.borderTopColor!==chip)out.push('lit frame '+cs.borderTopColor+' vs chip '+chip);}
+    return {out,lit:lit.map(l=>l.textContent.split(':')[0]),lines:(document.querySelector('#brainRail .bv-lines')||{}).textContent};})()`);
+  const tipOf = () => js(`(()=>{const t=document.querySelector('#brainRail .bv-tip');if(!t||t.hidden||!t.getClientRects().length)return null;const r=t.getBoundingClientRect(),cv=document.querySelector('#brainRail .bv canvas').getBoundingClientRect();return {text:t.textContent,inside:r.left>=cv.left-0.5&&r.right<=cv.right+0.5&&r.top>=cv.top-0.5&&r.bottom<=cv.bottom+0.5,focus:(document.activeElement&&document.activeElement.dataset||{}).g||''};})()`);
+  const checkLabels = async (tag, litWord, shellMin) => {
+    const li = await labelIssues();
+    assert.deepStrictEqual(li.out, [], `the lobe words in ${tag}: ${li.out.join('; ')}`);
+    assert.deepStrictEqual(li.lit, [litWord], `the lit word is ${litWord} in ${tag}`);
+    assert.strictEqual(li.lines, 'Lines: the last 24 steps, newest brightest', `the lines line in ${tag}`);
+    await js(`document.querySelector('#brainRail .bv-lab[data-g=shell]').focus()`);
+    const t1 = await tipOf();
+    const n1 = t1 && /^Shell: Running a command, or any other tool\. (No|\d+) steps? this turn\.$/.exec(t1.text);
+    assert.ok(t1 && t1.inside && n1 && (n1[1] === 'No' ? 0 : Number(n1[1])) >= shellMin, `focus on Shell: its tooltip inside the picture with the turn's count in ${tag}: ${JSON.stringify(t1)}`);
+    await js(`document.activeElement.dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowRight',bubbles:true}))`);
+    const t2 = await tipOf();
+    assert.ok(t2 && t2.focus === 'web' && t2.text.startsWith('Web: Fetching a web page or searching the web.'), `ArrowRight: the next word (Web) and its tooltip in ${tag}: ${JSON.stringify(t2)}`);
+    await js(`document.activeElement.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}))`);
+    assert.strictEqual(await tipOf(), null, `Esc closes the tooltip in ${tag}`);
+    assert.ok(await js(`document.body.classList.contains('panel-open')`), `Esc on a tooltip leaves the chat open in ${tag}`);
+    await js(`(()=>{const a=document.activeElement;if(a&&a.blur)a.blur();document.querySelector('#brainRail .bv-lab[data-g=think]').dispatchEvent(new MouseEvent('mouseenter'));return 0;})()`);
+    const t3 = await tipOf();
+    assert.ok(t3 && t3.inside && t3.text === 'Think: Thinking between tools: never a tool step.', `hover on Think: its tooltip in ${tag}: ${JSON.stringify(t3)}`);
+    await js(`document.querySelector('#brainRail .bv-lab[data-g=think]').dispatchEvent(new MouseEvent('mouseleave'))`);
+    assert.strictEqual(await tipOf(), null, `the tooltip goes with the pointer in ${tag}`);
+    assert.strictEqual(await js(`[...document.querySelectorAll('#brainRail .bv-lab')].filter(l=>l.tabIndex===0).length`), 1, `one tab stop for the seven words in ${tag}`);
+  };
   const pageScroll = () => js(`document.scrollingElement.scrollWidth>innerWidth||document.scrollingElement.scrollHeight>innerHeight`);
 
   const settingsSwitch = async (on) => {
@@ -155,6 +192,9 @@ module.exports = async (ctx) => {
       assert.strictEqual(await js(`document.querySelector('#brainRail .bv').getAttribute('aria-label')`), 'Brain view, ' + name, `the region is named for the open chat's agent in ${tag}`);
       assert.strictEqual(await js(`document.querySelector('#brainRail .bv canvas').getAttribute('aria-hidden')`), 'true', 'the canvas is decorative');
       assert.ok((await js(`document.querySelector('#brainRail .bv-lobe').textContent`)).startsWith('Shell, cerebellum'), 'the lobe is text');
+      await checkLabels(tag + ' compact', 'Shell', 2);
+      const lnB = await box('#brainRail .bv-lines'), stB = await box('#brainRail [data-bv=steps]');
+      assert.ok(lnB && stB && lnB.b <= stB.t, `the lines line stays above Latest steps in ${tag}: ${JSON.stringify(lnB)} ${JSON.stringify(stB)}`);
       const steps = await js(`({sum:document.querySelector('#brainRail .bv-sum').textContent,rows:[...document.querySelectorAll('#brainRail .bv-list li')].map(l=>l.textContent)})`);
       assert.ok(steps.rows.length === Math.min(24, Number(steps.sum.split(' ')[0])) && steps.rows.some((r) => /Read · .*registry\.ts · done/.test(r)), `Latest steps lists the turn's steps as text: ${JSON.stringify(steps)}`);
       assert.deepStrictEqual(await small(), [], `every text of the rail is at least 12 px in ${tag} (FR-097)`);
@@ -236,6 +276,7 @@ module.exports = async (ctx) => {
       assert.ok(cv.cw >= cv.bw - 40, `empty: the brain takes the rail's width (${JSON.stringify(cv)}) in ${tag}`);
       assert.ok(await visibleIn('#brainRail .bv', w, h), `empty: the whole dock is inside the window in ${tag}`);
       assert.deepStrictEqual(await small(), [], `empty: every text is at least 12 px in ${tag}`);
+      await checkLabels(tag + ' roomy', 'Edit', 0);
       assert.strictEqual(await pageScroll(), false, `empty: no page scroll in ${tag}`);
       await H.shot(path.join(OUT, `106-dock-${world.id}-roomy-${w}x${h}.png`), { prep: 'calm', tag: '106-dock' });
       await js(`document.querySelector('#brainRail [data-bv=legend]').click()`);
