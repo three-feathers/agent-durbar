@@ -141,6 +141,7 @@ test:probe
 test:logo-assets
 test:autofollow
 test:announcemask
+test:livemask
 test:openwith
 test:liveact
 test:lookalike
@@ -165,6 +166,7 @@ test:modelchoice
 test:mcphealth
 test:globals
 test:runtests
+test:ci-shards
 test:ci-required-suites
 test:runtestsreal
 test:theme-tokens
@@ -289,6 +291,7 @@ test:picturebudget
 test:chargroups
 test:dangersites
 test:specnumbers
+test:worktreesclean
 test:prpreflight
 test:pencilpark
 test:arcade-wall-signs

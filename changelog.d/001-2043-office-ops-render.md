@@ -1,1 +1,0 @@
-- **Office check no longer fails by chance** (spec 001, issue #2043): the operation-count check of the flat office waited for a redraw after a status that changed nothing, and passed only when a timer happened to redraw; it now waits only when the status really changes. No change to the app.
