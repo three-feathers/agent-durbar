@@ -12,6 +12,8 @@ import * as path from 'path';
 import { execFileSync } from 'child_process';
 
 const ROOT = path.join(__dirname, '..', '..');
+// a Windows checkout may have CRLF line ends: the mutant anchors are written with \n
+const source0 = (): string => fs.readFileSync(path.join(ROOT, '.github', 'scripts', 'ci-changes.js'), 'utf8').replace(/\r\n/g, '\n');
 const FILE = path.join(ROOT, '.github', 'scripts', 'ci-changes.js');
 interface Io { read(p: string): string | null; readBase(p: string): string | null; isFile(p: string): boolean; isDir(p: string): boolean }
 type Cc = { osSensitive: (files: unknown, io: Io) => boolean; gitIo: (root: string) => Io };
@@ -40,6 +42,12 @@ const head: Record<string, string> = {
   'src/shared/var-import.ts': "export const load = (n: string) => import(n);\n",
   'src/shared/env.ts': "export const home = process.env.HOME;\n",
   'src/shared/dirname.ts': "export const here = __dirname;\n",
+  // review of #2039, round 2: a bare '.' or '..' import is the folder's index (as Node resolves it)
+  'src/shared/index.ts': "import * as fs from 'fs';\nexport const x = fs;\n",
+  'src/shared/sub/up.ts': "import { x } from '..';\nexport default x;\n",
+  'src/shared/sub/index.ts': "export const t = 1;\nexport const plat = process.arch;\n",
+  'src/shared/sub/here.ts': "export * from '.';\n",
+  'src/adapters/sub/noindex.ts': "import { y } from '..';\nexport default y;\n",
   // drivers: judged by the platform lines only (they all read process.env, __dirname and path alike)
   'scripts/shots-001-welcome.js': "const path = require('path');\nconst out = path.join(__dirname, 'x', process.env.UI_SUITE_OUT || '');\n",
   'scripts/check-office-ops.js': "const os = require('os');\nconst tmp = os.tmpdir();\n",
@@ -82,6 +90,8 @@ const SENSITIVE: Array<[string, string]> = [
   ['src/shared/win-word.ts', "the word 'win32'"], ['src/shared/url-import.ts', "imports 'url'"], ['src/shared/process-import.ts', "imports 'process'"],
   ['src/shared/esm-star.ts', "import * from 'node:os'"], ['src/shared/var-require.ts', 'require of a variable'], ['src/shared/var-import.ts', 'import() of a variable'],
   ['src/shared/env.ts', 'reads process.env'], ['src/shared/dirname.ts', 'uses __dirname'],
+  ['src/shared/sub/up.ts', "imports '..' (whose index uses fs)"], ['src/shared/sub/here.ts', "imports '.' (whose index reads process.arch)"],
+  ['src/adapters/sub/noindex.ts', "imports '..' with no index there"],
   ['src/renderer/crew.js', 'Windows folder keys'], ['src/renderer/profileeditor.js', 'Windows same-path compare'], ['src/renderer/Crew.js', 'case: Crew.js'],
   ['scripts/check-zz-plat.js', 'a driver reading process.platform'], ['scripts/check-zz-oscall.js', 'a driver reading os.EOL'], ['scripts/shots-zz-gone.js', 'a driver unreadable on both sides'],
   // case tricks (one folder on a case-insensitive checkout)
@@ -126,11 +136,30 @@ assert.deepStrictEqual(problems(cc), [], 'FR-012: os_sensitive is false only for
   assert.strictEqual(cc.osSensitive(['src/renderer/app.js', 'src/renderer/styles.css', 'scripts/shots-001-welcome.js', 'docs/development.md'], real), false, 'real tree: a renderer feature with its driver and docs is not OS-sensitive');
 }
 
+// ---- review of #2039, round 2: docs/development.md's os_sensitive sentence names what the code decides ----
+/** What the doc sentence leaves out; the sensitive renderer files are read from the decision's own OS_SENSITIVE line. */
+function docProblems(doc: string, decision: string): string[] {
+  const at = doc.indexOf('On a pull request the Windows UI shards run only when');
+  if (at < 0) return ['docs/development.md has no os_sensitive sentence'];
+  const text = doc.slice(at, doc.indexOf('do not start them', at));
+  const m = /\^src\\\/renderer\\\/\(([\w|]+)\)\\\.js\$\/i, \/\/ Windows path rules/.exec(decision);
+  const renderer = ['keys.js', 'browserpane.js', ...(m ? m[1].split('|').map((n) => `${n}.js`) : ['(renderer line not found)'])];
+  const words = [...renderer, '`process.env`', '`__dirname`', '`process[...]`', 'a destructured `process`', '`url`', 'a `require` or `import()` of a variable', 'an `os` call',
+    '`win32`', '`isMac`', '`scripts/check-*`, `scripts/shots-*`', 'a bare `.` or `..`', '`app.js` and `sim.ts`'];
+  return words.filter((w) => !text.includes(w)).map((w) => `the docs sentence does not name ${w}`);
+}
+{
+  const doc = fs.readFileSync(path.join(ROOT, 'docs', 'development.md'), 'utf8');
+  assert.deepStrictEqual(docProblems(doc, source0()), [], 'docs/development.md describes the os_sensitive rule the code applies');
+  assert.deepStrictEqual(docProblems(doc.replace(', `crew.js` or `profileeditor.js`', ''), source0()), ['the docs sentence does not name crew.js', 'the docs sentence does not name profileeditor.js'], 'mutant: the round-1 doc sentence (no crew.js, profileeditor.js) is caught');
+  assert.deepStrictEqual(docProblems(doc, source0().replace('(crew|profileeditor)', '(crew|profileeditor|zzpane)')), ['the docs sentence does not name zzpane.js'], 'mutant: a renderer file added to the code but not the doc is caught');
+}
+
 // ---- mutants of the decision: each dies at its own assert ----
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const Module = require('module') as { new (id: string, parent: unknown): { filename: string; paths: string[]; exports: unknown; _compile(src: string, file: string): void }; _nodeModulePaths(dir: string): string[] };
 // a Windows checkout may have CRLF line ends: the mutant anchors are written with \n
-const source = fs.readFileSync(FILE, 'utf8').replace(/\r\n/g, '\n');
+const source = source0();
 function variant(from: string, to: string): Cc {
   assert.strictEqual(source.split(from).length - 1, 1, `mutant anchor occurs once: ${from}`);
   const m = new Module(FILE, null);
@@ -187,6 +216,7 @@ const mutants: Array<[string, Cc, RegExp]> = [
   ['process module missed', variant('|electron|url|module|process)', '|electron|url|module)'), /^"src\/shared\/process-import\.ts" \(imports 'process'\) is neutral$/],
   ['non-literal require missed', variant(NONLIT, '/$^/,'), /^"src\/shared\/var-require\.ts" \(require of a variable\) is neutral$/],
   ['process.env missed', variant(ENV, '/$^/,'), /^"src\/shared\/env\.ts" \(reads process\.env\) is neutral$/],
+  ['a bare . or .. import not followed (round-1 capture)', variant("['\"`](\\.{1,2}(?:\\/[^'\"`]*)?)['\"`]/g;", "['\"`](\\.{1,2}\\/[^'\"`]*)['\"`]/g;"), /^"src\/shared\/sub\/up\.ts" \(imports '\.\.' \(whose index uses fs\)\) is neutral$/],
   ['__dirname missed', variant(DIRNAME, '/$^/,'), /^"src\/shared\/dirname\.ts" \(uses __dirname\) is neutral$/],
   ['crew.js and profileeditor.js dropped', variant(CREW, '/$^/i,'), /^"src\/renderer\/crew\.js" \(Windows folder keys\) is neutral$/],
   ['crew line case-sensitive', variant(CREW, CREW.replace(/\/i,$/, '/,')), /^"src\/renderer\/Crew\.js" \(case: Crew\.js\) is neutral$/],

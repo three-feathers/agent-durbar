@@ -299,8 +299,8 @@ const OS_USE = [
   /\b__(?:dirname|filename)\b/,
 ];
 const matchesAny = (list, t) => list.some((re) => re.test(t));
-// a relative import or require ('./x', '../y/z')
-const REL_IMPORT = /(?:\bfrom\s*|\brequire\s*\(\s*|\bimport\s*\(\s*|\bimport\s+)['"`](\.{1,2}\/[^'"`]*)['"`]/g;
+// a relative import or require ('./x', '../y/z', and a bare '.' or '..': the folder's index, as Node resolves it; review of #2039, round 2)
+const REL_IMPORT = /(?:\bfrom\s*|\brequire\s*\(\s*|\bimport\s*\(\s*|\bimport\s+)['"`](\.{1,2}(?:\/[^'"`]*)?)['"`]/g;
 /** Does a file (base or head and, with `follow`, what it imports by a relative path, followed) match an OS_USE line? */
 function usesOs(f, io, follow, lines = OS_USE) {
   const seen = new Set(), todo = [f];
