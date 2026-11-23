@@ -98,7 +98,7 @@ module.exports = async (ctx) => {
     assert.ok(await js(`!!document.querySelector('#brainRail #brainSlot .bv')`), 'the brain is in the chat\'s right rail (T006)');
     const everything = await js(`document.querySelector('.bv').outerHTML+'|'+document.querySelector('.bv').innerText+'|'+document.querySelector('.bv canvas').toDataURL().length`);
     assert.ok(!everything.includes(CANARY) && !everything.includes('ghp_'), 'a token in a command reaches no text of the brain (FR-021)');
-    assert.ok((await js(`document.querySelector('.bv-lobe').textContent`)).startsWith('Shell, cerebellum'), 'the lobe is also text');
+    assert.ok((await js(`document.querySelector('.bv-lobe').textContent`)) === 'Shell', 'the lobe is also text (the tool word)');
     assert.strictEqual(await js(`document.querySelector('.bv canvas').getAttribute('aria-hidden')`), 'true', 'the canvas is decorative; its meaning is text');
     assert.ok((await js(`document.querySelector('.bv').getAttribute('aria-label')`)).startsWith('Brain view, '), 'the region is named');
     const small = await js(`[...document.querySelectorAll('.bv, .bv *')].filter(e=>[...e.childNodes].some(n=>n.nodeType===3&&n.textContent.trim())).map(e=>parseFloat(getComputedStyle(e).fontSize)).filter(s=>s<12)`);

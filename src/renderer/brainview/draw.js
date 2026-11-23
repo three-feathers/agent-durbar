@@ -16,6 +16,7 @@
   const LOBE_COLORS={frontal:'#e0a458',occipital:'#6fb7d6',parietal:'#9bc86a',cerebellum:'#d97a7a',temporal:'#b08ad8',stem:'#7ed0b6',port:'#e8d36a'};
   const FORCED={point:'CanvasText',lit:'Highlight',line:'CanvasText'};
   const PT={office:1.4,dock:1.6,front:2};
+  const MARKER={r:5,line:1.5}; /* the lit lobe's marker in CSS px: radius and line width (FR-016); dock.js keeps its words clear of it (FR-134) */
 
   function create(o){
     const canvas=o.canvas, host=o.host, size=o.size||'dock';
@@ -81,7 +82,7 @@
         ctx.globalAlpha=1;ctx.fillStyle=forced?FORCED.lit:colors[view.lobe];
         for(let k=0;k<reach;k++){const i=idx[k];pointAt(ctx,set0.xs[i]*canvas.width,set0.ys[i]*canvas.height,s*1.4);pts++;}
         /* the marker says the state by shape (FR-016): running a ring, done a filled disc, failed a cross */
-        const m=5*dpr;ctx.lineWidth=Math.max(1.5,1.5*dpr);ctx.strokeStyle=forced?FORCED.lit:skin.marker;ctx.fillStyle=forced?FORCED.lit:colors[view.lobe];
+        const m=MARKER.r*dpr;ctx.lineWidth=Math.max(MARKER.line,MARKER.line*dpr);ctx.strokeStyle=forced?FORCED.lit:skin.marker;ctx.fillStyle=forced?FORCED.lit:colors[view.lobe];
         ctx.beginPath();
         if(view.state==='failed'){ctx.moveTo(cx-m,cy-m);ctx.lineTo(cx+m,cy+m);ctx.moveTo(cx+m,cy-m);ctx.lineTo(cx-m,cy+m);ctx.stroke();}
         else if(view.state==='running'){ctx.arc(cx,cy,m,0,6.2832);ctx.stroke();}
@@ -158,5 +159,5 @@
     };
     return api;
   }
-  return {create,TRAIL_MAX,BURST_MS,BLOOM_MS,BLOOM_ALPHA_MAX,BUDGET_MS,OVER_LIMIT,LOBE_COLORS};
+  return {create,MARKER,TRAIL_MAX,BURST_MS,BLOOM_MS,BLOOM_ALPHA_MAX,BUDGET_MS,OVER_LIMIT,LOBE_COLORS};
 })());
