@@ -6,7 +6,7 @@ This file is rule text, part of [AGENTS.md](../../AGENTS.md) (FR-082): read it b
 
 (FR-047..FR-049)
 - **Adversarial self-review** of the real diff with [the checklist](../../docs/review-checklist.md).
-- **Review-ready** (FR-048e): merged with `origin/main` and mergeable (`pr-gate.sh`), acceptance criteria and edge cases in the spec or issue, `npm run changelog:check` and `specs:check` run, CI read for the head sha only, adversarial cases for risky parsing or security. Never reduce CI, platform or security coverage.
+- **Review-ready** (FR-048e): mergeable (`pr-gate.sh`; merge `origin/main` only for a conflict, red CI or a reviewer's ask), acceptance criteria and edge cases in the spec or issue, `npm run changelog:check` and `specs:check` run, CI read for the head sha only, adversarial cases for risky parsing or security. Never reduce CI, platform or security coverage.
 - **Batch** fixes per push; state each round's delta.
 - **Timing** (FR-048b, FR-063): drivers wait with `until()`, never a fixed sleep or single read; no wall-clock ratio asserts; split a CI suite over ~30 s.
 - **Learn every round** (FR-049): reviewer and author add new mistakes to the checklist (pitfalls to agent-notes). Start each round with `git pull --ff-only origin main` and re-read changed rule files.
@@ -26,7 +26,8 @@ This file is rule text, part of [AGENTS.md](../../AGENTS.md) (FR-082): read it b
 ## Pace and load
 
 - **Land before building** (FR-039): open PRs follow machine capacity (CPU, RAM, disk, one Electron), in FR-081 order, to cut the backlog; PR limit: AGENTS.md *Delivery speed*. Capacity as read in spec 021 *Changes 2026-11-08*. Masking hardening: one batched PR a day; a confirmed leak lands alone at once. Vikram's side: Codex and spec 103 pre-reviews, findings fixed, before teammate review.
-- **Sub-agents by size** (FR-038): small = one smaller-model agent; medium = implementer that mutation-checks; sensitive (secrets, user files, IPC, redaction, permissions, spending) = analyst, implementer, reviewer. Two heavy agents per machine at most.
+- **PR size** (FR-383): ~100-300 lines (heavy profile too); spec delta as first commit; any security fix alone, at once.
+- **Sub-agents by size** (FR-038): `review-profile.js` light = implementer, diff read, CI record; heavy (masking, IPC, secrets, permissions, user-file writes, spending) = analyst, implementer, reviewer, mutants, fuzz. Two heavy agents per machine at most.
 - **Weekly retro** (FR-063): each side posts its retro, blind first, on the week's "Weekly retro" issue the same day; whoever finishes first merges them; owner decisions: one batched message.
 - **Fuzz, CI, mockups** (FR-084): run `scripts/fuzz/` before a security-relevant PR's first push, reviewers reuse it (T061). PR CI runs only the touched UI drivers (unmapped file: all; a check fails on an unmapped driver); nightly and `main` run all (T063). Mockups: 3 rounds before the spec, then iterate in the app behind a flag.
 - **Daily release** (FR-064): when `main` has new fragments, agents publish a daily stable release unasked.
