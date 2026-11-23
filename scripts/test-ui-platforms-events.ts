@@ -1,5 +1,5 @@
 /**
- * Guard (spec 117 FR-012 / O2, T049; FR-014 / O3, T010): what `ui-platforms.yml` ("UI on three OSes") runs per event.
+ * Guard (spec 117 FR-012 / O2, T403; FR-014 / O3, T010): what `ui-platforms.yml` ("UI on three OSes") runs per event.
  *   (a) on pull_request the matrix holds the 4 Linux shards, plus the 4 Windows shards unless the decision's `os_sensitive` output is
  *       'false' (missing or any other value runs Windows: fail closed), never macOS; main pushes run Linux and Windows and schedule
  *       and dispatch all three OSes whatever `os_sensitive` says; the decision job passes `os_sensitive` on;

@@ -9,7 +9,7 @@ name: UI on three OSes
 # macOS only nightly and by hand (`gh workflow run ui-platforms.yml --ref <branch>`); a nightly failure opens or updates an issue
 # (nightly-watch.yml). Pushes to main run Linux and Windows; pull requests run Linux, and Windows only when OS-sensitive (next paragraph).
 #
-# Spec 117 FR-012 / O2 (owner decision, Vikram 2026-11-22, with Paco's variant; T049): on a pull request the Windows UI shards run
+# Spec 117 FR-012 / O2 (owner decision, Vikram 2026-11-22, with Paco's variant; T403): on a pull request the Windows UI shards run
 # only when `os_sensitive` from .github/scripts/ci-changes.js (the one decision, the base branch's copy) is not exactly 'false': a
 # change to the main process, preload, build, packaging, dependencies, CI files, the driver plumbing, a font, a shell script, an
 # OS-using src/shared or src/adapters file or any unknown path starts them (fail closed). Otherwise they run after the merge (main

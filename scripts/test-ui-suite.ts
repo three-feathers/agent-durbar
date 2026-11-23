@@ -332,7 +332,7 @@ const wf = fs.readFileSync(path.join(WF, 'ui-platforms.yml'), 'utf8');
 for (const os of ['ubuntu-latest', 'macos-latest', 'windows-latest']) assert.ok(wf.includes(os), `the workflow runs on ${os}`);
 for (const step of ['check-theme-geometry.js', 'check-office-overlap.js', 'check-mac-titlebar.js', 'ui-suite.js']) assert.ok(wf.includes(step), `the workflow runs ${step}`);
 assert.ok(!/part:/.test(wf) && !/OFFICE_SHARD/.test(wf), 'one job per OS: the office layout runs whole, no parts');
-// spec 117 FR-012 / O2 (T049): Windows UI shards on a pull request only with os_sensitive; the per-event matrix is evaluated in test:uievents
+// spec 117 FR-012 / O2 (T403): Windows UI shards on a pull request only with os_sensitive; the per-event matrix is evaluated in test:uievents
 assert.ok(wf.includes(`os: \${{ fromJSON((github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && '["ubuntu-latest","macos-latest","windows-latest"]' || (github.event_name == 'pull_request' && needs.changes.outputs.os_sensitive == 'false') && '["ubuntu-latest"]' || '["ubuntu-latest","windows-latest"]') }}`), 'macOS UI checks only nightly and by hand; Windows on a PR only when OS-sensitive');
 assert.ok(/^ {2}schedule:/m.test(wf), 'ui-platforms.yml runs nightly');
 // FR-191: a cheap decision job; the shards need it and run only on ui=true; "UI suite complete" passes when ui=false, fails when the decision failed

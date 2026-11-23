@@ -1,5 +1,5 @@
 /**
- * Unit test (spec 117 FR-012, O2; T048): the `os_sensitive` output of .github/scripts/ci-changes.js, which decides whether a pull
+ * Unit test (spec 117 FR-012, O2; T402): the `os_sensitive` output of .github/scripts/ci-changes.js, which decides whether a pull
  * request's diff starts the Windows UI shards of ui-platforms.yml. It FAILS CLOSED: only a plain path on the OS-neutral list that no
  * OS-sensitive line names is neutral, an empty diff is sensitive, and the base branch's copy decides (ci-changes.sh), with a missing or
  * inexact output read as true. Each rule has a fixture here and a mutant (a changed copy of ci-changes.js or ci-changes.sh) that dies at

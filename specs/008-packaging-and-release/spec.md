@@ -1226,7 +1226,7 @@ Follow-up of the 2026-11-20 delta above (PR #1970's proposal for the other focus
 
 `release.yml`'s new first job `ui-gate` refuses a tag unless the latest *UI on three OSes* run of exactly the tagged commit finished green; `verify`, `build` and `draft-release` run only after it. Rules, limits and evidence: spec 117 *Changes* 2026-11-22 *the release UI gate*. No FR here changes; the release checks of FR-117..FR-132 are kept as they are.
 
-### 2026-11-22: Windows UI shards on a pull request only when `os_sensitive`, and `main` UI runs collapse to the newest (spec 117 FR-012 / O2, FR-014 / O3; T048, T049, T010)
+### 2026-11-22: Windows UI shards on a pull request only when `os_sensitive`, and `main` UI runs collapse to the newest (spec 117 FR-012 / O2, FR-014 / O3; T402, T403, T010)
 
 Owner decision (Vikram, team chat, 2026-11-22 17:56 UTC, with Paco's variant): O2 and O3 yes, agreed by the three owners 2026-11-23 (recorded on spec 117's #1995); O3 on Paco's condition that `release.yml` requires the tagged commit's UI run green (#2038, T045, on `main` since 2026-11-23), guarded by `test:uievents`. Supersedes draft PR #2033's simple form (no Windows UI on any PR).
 
