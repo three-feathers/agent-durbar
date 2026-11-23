@@ -227,8 +227,9 @@ jobs:
       CHECK_SHARDS: '3'
       CHECK_JOBS: '3'
       CHECK_MOTION: '1'
-      # FR-111 (owner decision 2026-10-22): theme geometry checks the dark fixture theme (spec 102 T226, it took Retro's place) on pull requests and queue entries, every theme otherwise
-      CHECK_ALL_THEMES: ${{ (github.event_name == 'pull_request' || github.event_name == 'merge_group') && '0' || '1' }}
+      # spec 035 FR-414 (d), amends 008 FR-111: theme geometry checks every theme whenever it runs; on a pull request it runs only when the
+      # look or its checks can change (the `themes` decision of ci-changes.js). The dark fixture alone let PR #2057's lobby change through
+      CHECK_ALL_THEMES: '1'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

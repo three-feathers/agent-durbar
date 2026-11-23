@@ -60,7 +60,7 @@ const DOCS = { test: (f) => PLAIN_PATH(f) && DOCS_ALLOW.test(f) && !DOCS_DENY.te
 // for `ui` and `macos` only (FR-191, unchanged): documentation and Markdown outside the always-UI folders do not start the UI suite, even when
 // they run Build and test (a suite reads them)
 const UI_DOCS = /^(docs\/|specs\/|changelog\.d\/)|\.md$|^LICENSE$/;
-const THEMES = /^(src\/renderer\/|scripts\/check-office-overlap\.js|scripts\/check-theme-geometry\.js|scripts\/check-parallel\.js|scripts\/fixtures\/themes\/|\.github\/workflows\/ci\.yml|\.github\/scripts\/ci-changes\.(sh|js))/;
+const THEMES = /^(src\/renderer\/|scripts\/check-office-overlap\.js|scripts\/check-theme-geometry\.js|scripts\/driver-helpers\.js|scripts\/check-parallel\.js|scripts\/fixtures\/themes\/|\.github\/workflows\/ci\.yml|\.github\/scripts\/ci-changes\.(sh|js))/;
 // always UI: the app, the CI plumbing the UI and office runs use, the UI workflow and this decision itself
 const ALWAYS_UI = /^(src\/|scripts\/fixtures\/|scripts\/fakes\/|\.github\/actions\/|\.github\/workflows\/(ui-platforms|ci)\.yml$|\.github\/scripts\/ci-changes\.(sh|js)$)/;
 // scripts/ files of these kinds count only when the closure names them; any other kind there counts always (fail open)

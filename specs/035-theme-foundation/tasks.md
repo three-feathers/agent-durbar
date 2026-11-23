@@ -43,3 +43,4 @@ All in one PR (spec 021 FR-068), built after T053 of spec 021 (the same PR).
 ## Changes 2026-11-24: theme geometry compares like with like (issue #2075)
 
 - [x] T505 `scripts/check-theme-geometry.js`: a theme with words is compared with Clean Office given the same words, and the page is drawn again in the neutral font before measuring (the `+N more` chip opened in it). Test: `test:uisuite` pin with a mutant; `CHECK_ALL_THEMES=1 node scripts/check-theme-geometry.js` 49 of 49 on Linux (DejaVu and Noto); four CSS red cases and two check mutants fail at the geometry assert [FR-414]
+- [x] T506 CI's office job checks every theme whenever it runs theme geometry (`CHECK_ALL_THEMES: '1'`), and `scripts/driver-helpers.js` joins the `themes` decision; needs the owner's yes (amends spec 008 FR-111), splittable from T505. Test: `test:uisuite` and `test:cichanges` (a mutant dropping `driver-helpers.js` fails it) [FR-414]

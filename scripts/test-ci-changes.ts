@@ -283,6 +283,8 @@ assert.strictEqual(d(['scripts/usage-lib.js']).code, true, 'a script change stil
 assert.strictEqual(d(['package.json'], versionBump).code, true, 'a version bump still builds and tests (unit tests read the version)');
 assert.strictEqual(d(['src/renderer/styles.css']).themes, true, 'a renderer change runs theme geometry');
 assert.strictEqual(d(['src/main/main.ts']).themes, false, 'a main-process change does not');
+assert.strictEqual(d(['scripts/driver-helpers.js']).themes, true, 'the driver helpers theme geometry loads its pages with run it (spec 035 FR-414 (d))');
+assert.strictEqual(d(['scripts/fixtures/themes/pink-studio.json']).themes, true, 'a theme fixture runs theme geometry');
 // macos: only docs and a version-only bump skip the macOS pull-request job
 assert.strictEqual(d(['package.json', 'package-lock.json', 'CHANGELOG.md', 'changelog.d/x.md'], versionBump).macos, false, 'a release bump skips the macOS PR job');
 assert.strictEqual(d(['package.json', 'src/main/main.ts'], versionBump).macos, true, 'a bump with code runs it');

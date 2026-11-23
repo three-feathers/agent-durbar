@@ -410,7 +410,8 @@ const watched = ((/workflows: \[(.*)\]/.exec(watch) || [])[1] || '').split(',').
 const wfNames = new Set(fs.readdirSync(WF).filter((f) => f.endsWith('.yml')).map((f) => (/^name: (.*)$/m.exec(fs.readFileSync(path.join(WF, f), 'utf8')) || [])[1]));
 for (const w of ['CI', 'UI on three OSes', 'Installed app', 'Packaged check', 'Install check', 'E2E real accounts', 'Electron cache warmer']) assert.ok(watched.includes(w) && wfNames.has(w), `nightly-watch.yml watches "${w}" (a real workflow name)`);
 // FR-111 (owner decision 2026-10-22; Retro replaced by the dark fixture, spec 102 T226): theme layout checks run Clean Office and the dark fixture on pull requests, every theme elsewhere
-assert.ok(office.includes(`CHECK_ALL_THEMES: \${{ (github.event_name == 'pull_request' || github.event_name == 'merge_group') && '0' || '1' }}`) && wf.includes(`CHECK_ALL_THEMES: \${{ github.event_name == 'pull_request' && '0' || '1' }}`), 'every theme on main, nightly and by hand');
+// spec 035 FR-414 (d) (amends FR-111 for ci.yml's office job): every theme whenever theme geometry runs there; the UI workflow keeps FR-111
+assert.ok(office.includes(`CHECK_ALL_THEMES: '1'`) && !/CHECK_ALL_THEMES: \$\{\{/.test(office) && wf.includes(`CHECK_ALL_THEMES: \${{ github.event_name == 'pull_request' && '0' || '1' }}`), 'every theme on main, nightly and by hand');
 const geo = fs.readFileSync(path.join(ROOT, 'scripts', 'check-theme-geometry.js'), 'utf8');
 assert.ok(/process\.env\.CHECK_ALL_THEMES === '1' \? ALL_THEMES : 'dark'/.test(geo) && /const ALL_THEMES = 'dark,user,pink-studio'/.test(geo), 'check-theme-geometry: the dark fixture by default, all with CHECK_ALL_THEMES=1 (spec 102 T226)');
 // spec 035 FR-414: like with like: a theme with words against Clean Office given the same words (nothing else), the page drawn again in the forced font before measuring
