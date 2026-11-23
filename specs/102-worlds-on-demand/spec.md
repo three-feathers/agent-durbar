@@ -2560,7 +2560,7 @@ All sets keep FR-204's caps: no frame over 80 KB (largest 54 KB, Office), none o
   - The full busts (288/216/144) are not shipped. A test proves no bust is drawn larger than a 32 px avatar in the arcade (`shots-102-arcade`).
   - Flat's heads (`crew.js` `HEAD_FRAME`, crops of this set's old `typeA`, `waveA` and `rest` files) are not changed: Flat keeps the old busts until the flip (T472), where it takes the tiles (owner, 2026-11-23 20:12 UTC).
   - `[KNOWN GAP]` at ratios 1.25 and 1.5 no tile is exact: the browser scales the 2x tile.
-- **FR-407** **Every person is equally readable as an avatar** (coordinator, 2026-11-23, after batch 1: the person with the dark afro was almost a dark blob at 22 px). Each tile is measured against the darkest avatar circle of the arcade (`#1e1a36`, `--surface-2`; the rail's `#262044` is lighter). Measuring and checking are done by `check-arcade-hd.py` and `test:realoffice-assets`:
+- **FR-407** **Every person is equally readable as an avatar** (coordinator, 2026-11-23, after batch 1: the person with the dark afro was almost a dark blob at 22 px). Each tile is measured against every avatar circle of the arcade, and the weaker result counts: `#1e1a36` (`--surface-2`: Your door, the inbox header) and the rail's `#262044` (review of #2074: measured only on the darkest circle, the red-bob person's resting face was 2.99:1 on the rail). Measuring and checking are done by `check-arcade-hd.py` and `test:realoffice-assets`:
   - **the silhouette's edge**: the better median contrast of the outline ring and the ring inside it, at least **3:1**;
   - **the features** (eyes, brows, mouth: small dark clusters of the face area, against the most common warm colour, the skin): at least **15 L\*** below the skin. It is measured where such clusters show; a face looking down or with closed eyes may have none, but every person's waving face must have them.
   - The build applies one decision per person, so a person never changes between poses: a person whose tiles fail the edge rule gets the lit-edge colour (the standing frames' rim) on the outline of all their tiles. Features too close to the skin take the darkest palette colour. Skin tones are never changed.
@@ -2587,7 +2587,7 @@ All sets keep FR-204's caps: no frame over 80 KB (largest 54 KB, Office), none o
 - **Files:** 15 people, 630 frames (14 standing and stool frames x 3 sizes) and 480 avatar tiles (4 poses x 8 sizes). **1987 KB** in all, about 132 KB a person.
 - **Palette:** 96 colours, alpha 0 and 255 only, one outline colour in every frame. Orphans at most 5.73 % of a frame.
 - **Heads at 144:** 0.28 to 0.35 of the figure, 36 to 54 px wide.
-- **Tiles:** every edge at least 3.04:1, every feature at least 15.2 L* below the skin. Nine people carry the lit edge (p01, p02, p03, p05, p06, p08, p10, p11, p14).
+- **Tiles:** every edge at least 5.51:1 on both arcade circles, every feature at least 15.2 L* below the skin. Eleven people carry the lit edge (p01, p02, p03, p04, p05, p06, p08, p10, p11, p13, p14); p04 and p13 gained it when the rail's lighter circle was measured too.
 - **Colours:** every reference colour is within ΔE 15 of a colour covering at least 1 % of the front frame. The tolerance is 15, not the 12 first tried: a reference is the average of a 6-group median cut of the source, which can blend two neighbouring shades (p04's skin and blouse came to 13).
 - **48 against 96 on the pilot's three people** (12 frames each at 288 and 144):
   - Orphans: at most 4.40 % at 48 and 3.78 % at 96; mean 2.80 % and 2.75 %.

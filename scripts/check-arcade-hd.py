@@ -11,7 +11,7 @@ import json, os, re, sys
 from PIL import Image
 
 
-AV_BG = (30, 26, 54)   # FR-407: the darkest avatar circle of the arcade (--surface-2 of the retro theme)
+AV_BGS = ((30, 26, 54), (38, 32, 68))   # FR-407: every avatar circle of the arcade: --surface-2 of the retro theme (door, inbox header) and the rail's #262044; a dark figure is weakest on the lighter one
 
 
 def rel_lum(c):
@@ -42,7 +42,7 @@ def legibility(px, opaque, w, h):
         return [j for j, ok in ((i - w, y > 0), (i + w, y < h - 1), (i - 1, x > 0), (i + 1, x < w - 1)) if ok]
     ring = {i for i in range(len(px)) if opaque[i] and any(not opaque[j] for j in nbs(i))}
     inner = {j for i in ring for j in nbs(i) if opaque[j] and j not in ring}
-    edge = max(median([ratio(px[i], AV_BG) for i in ring]), median([ratio(px[i], AV_BG) for i in inner]))
+    edge = min(max(median([ratio(px[i], bg) for i in ring]), median([ratio(px[i], bg) for i in inner])) for bg in AV_BGS)
     region = [i for i in range(len(px)) if opaque[i] and i not in ring and int(0.3 * h) <= i // w < int(0.75 * h) and int(0.25 * w) <= i % w < int(0.75 * w)]
     if not region:
         return [round(edge, 2), None]
