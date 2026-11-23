@@ -234,6 +234,7 @@ test:selfupdate-feed
 test:selfupdate-notes
 test:selfupdate-installtype
 test:selfupdate-schedule
+test:releases-json
 test:sessionsummary
 test:helpercard
 test:weeklyaudit
