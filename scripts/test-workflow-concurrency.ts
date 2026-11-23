@@ -39,7 +39,7 @@ export function concurrencyProblems(text: string): string[] {
 }
 
 const files = fs.readdirSync(DIR).filter((f) => /\.ya?ml$/.test(f)).sort();
-const read = (f: string): string => fs.readFileSync(path.join(DIR, f), 'utf8');
+const read = (f: string): string => fs.readFileSync(path.join(DIR, f), 'utf8').replace(/\r\n/g, '\n');
 const prFiles = files.filter((f) => prTriggered(read(f)));
 assert.ok(prFiles.length >= 8, `the guard sees the pull_request workflows (found ${prFiles.length})`);
 for (const never of ['e2e-real.yml', 'mcp-oauth-real.yml']) assert.ok(!prFiles.includes(never), `${never} says "never on pull_request" in a comment only: not a trigger`);
@@ -58,7 +58,15 @@ const mutants: Record<string, string> = {
 };
 assert.notStrictEqual(mutants['no concurrency block'], base, 'the block-removal mutant changed the file');
 for (const [name, text] of Object.entries(mutants)) assert.ok(prTriggered(text) && concurrencyProblems(text).length > 0, `mutant is caught: ${name}`);
+// the same mutants on a CRLF copy (Windows checkouts): the guard must read it the same way and still catch them
+for (const [name, text] of Object.entries(mutants)) assert.ok(concurrencyProblems(text.replace(/\n/g, '\r\n')).length > 0, `CRLF mutant is caught: ${name}`);
+assert.deepStrictEqual(concurrencyProblems(base.replace(/\n/g, '\r\n')), [], 'the CRLF copy of ui-platforms.yml passes');
+// fast-lane.yml (spec 117 FR-010, PR-number group) is covered by the loop above and must stay in it; its own mutant is caught too
+assert.ok(prFiles.includes('fast-lane.yml'), 'fast-lane.yml is PR-triggered and checked');
+const fast = read('fast-lane.yml');
+assert.ok(concurrencyProblems(fast.replace(/cancel-in-progress:.*\n/, 'cancel-in-progress: false\n')).length > 0, 'mutant is caught: fast-lane.yml cancel-in-progress false');
+assert.ok(concurrencyProblems(fast.replace(/group:.*\n/, 'group: ${{ github.workflow }}\n')).length > 0, 'mutant is caught: fast-lane.yml group without the PR number');
 // a comment line naming pull_request is not a trigger
 assert.ok(!prTriggered('# on pull_request\non:\n  workflow_dispatch:\n'), 'a comment is not a trigger');
 assert.ok(prTriggered('on:\n  pull_request:\n    types: [opened]\n'), 'a pull_request key is a trigger');
-console.log(`[workflow-concurrency] ok: ${prFiles.length} PR workflows, 4 mutants caught`);
+console.log(`[workflow-concurrency] ok: ${prFiles.length} PR workflows, 4 mutants caught (LF and CRLF), fast-lane covered`);
