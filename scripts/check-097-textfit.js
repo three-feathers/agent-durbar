@@ -18,6 +18,7 @@
  *   cutchild   in app.js nameCut() drop the two `.rn-h`/`.rn-t` lines          -> "a cut name hides its path" (Flat 1440x900)
  *   chipcut    in realoffice.js stagger() drop the `c.dataset.full` restore in the last-resort branch -> "name chips are whole"
  *   nofigure   in realoffice-layout.ts roLobby() put back `chipY = Lb - CHIP_H` for a visitor without a figure   -> "name chips stay clear of the frame line"
+ *   nokey      in realoffice.js fitSigns() take `'|' + sg._sc.textContent` out of the key   -> "a sign whose counts changed is measured again" (photo 1440x900)
  *   postnamed  in places.js set POST_NAMED back to 240                       -> "the Postbox tile shows its name"
  */
 const os = require('os');
@@ -74,6 +75,24 @@ module.exports = async (ctx) => {
         if (c.shown !== c.name && !c.title.includes(c.name)) bad(`${tag}: a cut chip has its whole name in its title: ${c.name}`);
         if (c.r.y1 > chips.top - 2) bad(`${tag}: name chips stay clear of the frame line: ${c.name} bottom ${c.r.y1.toFixed(1)}, first sign top ${chips.top.toFixed(1)} (#2013)`);
       }
+    }
+    if (world === 'photo' && w === 1440) {
+      /* the fit key holds the sign's counts and cost text (review of #2017): under the DejaVu faces forced, with the counts' side made wide enough to cut every name, a status
+         update that changes a sign's counts text must measure that sign again and drop its path (`nopath`); a key without the count text leaves it as it was (mutant `nokey`) */
+      await js(`(()=>{const s=document.createElement('style');s.id='tf-dejavu';s.textContent='.ro-sign,.ro-sign b{font-family:"DejaVu Sans"!important}.ro-sign .ro-path{font-family:"DejaVu Sans Mono"!important}.ro-sign .ro-sc{margin-left:300px!important}';document.head.appendChild(s)})()`);
+      const scs = () => js(`Object.fromEntries([...document.querySelectorAll('#stage .ro-sign:not(.ro-stag):not(.short)')].filter(e=>e.querySelector('.ro-path')).map(e=>[e.dataset.folder,[e.querySelector('.ro-sc').textContent,e.classList.contains('nopath')]]))`);
+      const before = await scs();
+      const pl = await js(`(()=>{const p=[...document.querySelectorAll('#stage .ro-plate')].find(x=>x.dataset.state==='working'||x.dataset.state==='idle');return p&&{id:p.dataset.id,st:p.dataset.state}})()`);
+      assert.ok(pl, `${tag}: an agent whose status can change`);
+      const to = pl.st === 'working' ? 'idle' : 'working';
+      await js(`window.__durbarSimEmit({type:'status',sessionId:${JSON.stringify(pl.id)},timestamp:Date.now(),status:${JSON.stringify(to)}})`);
+      await H.until(`(document.querySelector('#stage .ro-plate[data-id="'+CSS.escape(${JSON.stringify(pl.id)})+'"]')||{dataset:{}}).dataset.state!==${JSON.stringify(pl.st)}`, 8000);
+      await ctx.sleep(600);
+      const after = await scs();
+      const changed = Object.keys(after).filter((k) => before[k] && before[k][0] !== after[k][0]);
+      assert.ok(changed.length >= 1, `${tag}: a status update changed a sign's counts (${JSON.stringify(before)} -> ${JSON.stringify(after)})`);
+      for (const k of changed) if (!after[k][1]) bad(`${tag}: a sign whose counts changed is measured again and drops its path (count text key): ${k}`);
+      await js(`document.getElementById('tf-dejavu').remove()`);
     }
     const scroll = await js(`(()=>{const f=document.getElementById('floor');return f.scrollHeight-f.clientHeight>1})()`);
     if (scroll) bad(`${tag}: the office scrolls`);

@@ -666,14 +666,14 @@
      name, which still loses a fraction of a pixel to an ellipsis ("command-cen…") when a font is wider than the layout measured (the DejaVu faces of a CI
      runner); a sign whose name is cut then drops its path (`.nopath`; the folder stays in the sign's tip), as the Flat office's `fitHead` does. */
   function fitSigns(chrome, W) {
-    const cut = (e) => { if (e.scrollWidth > e.clientWidth + 0.5) return true; const cs = getComputedStyle(e), r = document.createRange(); r.selectNodeContents(e); return r.getBoundingClientRect().width > e.getBoundingClientRect().width - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight) + 0.01; };
+    const cut = (e) => { const cs = getComputedStyle(e), r = document.createRange(); r.selectNodeContents(e); return r.getBoundingClientRect().width > e.getBoundingClientRect().width - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight) + 0.01; };
     if (!root.DurbarCutText) return;
     const hid = document.hidden || document.body.classList.contains('panel-open'); /* under a chat nothing is laid out: what it measures there is not remembered (as the lobby's signature) */
     const signs = [...chrome.querySelectorAll('.ro-sign')].filter((sg) => sg._b && sg.querySelector(':scope > .ro-path'));
     root.DurbarCutText.fitBatch(signs, (sg) => { sg._nop = false; sg.classList.remove('nopath'); },
       (sg) => !sg.classList.contains('short') && [sg._b, ...sg._b.querySelectorAll(':scope > .rn-h, :scope > .rn-t')].some(cut),
       (sg) => { sg._nop = true; sg.classList.add('nopath'); },
-      (sg) => hid ? NaN : sg._sig + '|' + W + '|' + sg.classList.contains('short')); /* three passes, one layout per render; a sign is measured again only when its text or the layout width changed, so a status update reads nothing */
+      (sg) => hid ? NaN : sg._sig + '|' + W + '|' + sg.classList.contains('short') + '|' + sg._sc.textContent); /* three passes, one layout per render; a sign is measured again only when its text or the layout width changed, so a status update reads nothing */
     for (const sg of signs) sg.classList.toggle('nopath', !!sg._nop); /* el() writes the class again each render: the kept result is put back (a write only) */
   }
 

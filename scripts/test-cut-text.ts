@@ -107,22 +107,27 @@ assert.match(fs.readFileSync(path.join(__dirname, '..', '..', 'scripts', 'copy-a
   assert.strictEqual(fitBatch([], () => {}, () => true, () => {}).length, 0);
   // the cache (a status event reads nothing): a key unchanged = 0 reads and the mark stays; a changed key = exactly that item's read
   {
-    type It = Sign & { id: number; w: number; txt: string };
-    const items: It[] = Array.from({ length: 15 }, (_, i) => ({ id: i, cls: false, wide: i % 3 === 0, w: 800, txt: 'n' + i }));
+    type It = Sign & { id: number; w: number; txt: string; sc: string };
+    const items: It[] = Array.from({ length: 15 }, (_, i) => ({ id: i, cls: false, wide: i % 3 === 0, w: 800, txt: 'n' + i, sc: '9' }));
     let reads = 0;
-    const go = (W: number) => fitBatch(items, ((s: It) => { s.cls = false; }) as never, ((s: It) => { reads++; return s.wide; }) as never, ((s: It) => { s.cls = true; }) as never, ((s: It) => s.txt + '|' + W) as never);
+    const go = (W: number) => fitBatch(items, ((s: It) => { s.cls = false; }) as never, ((s: It) => { reads++; return s.wide; }) as never, ((s: It) => { s.cls = true; }) as never, ((s: It) => s.txt + '|' + W + '|' + s.sc) as never);
     go(800); assert.strictEqual(reads, 15, 'first render measures every sign once');
     reads = 0; for (let k = 0; k < 10; k++) go(800);
     assert.strictEqual(reads, 0, 'ten status events with the same text and width: 0 reads, got ' + reads + ' (a measure on every event?)');
     assert.strictEqual(items.filter((s) => s.cls).length, 5, 'the kept marks stay');
     items[4].txt = 'renamed'; reads = 0; go(800);
     assert.strictEqual(reads, 1, 'one changed text: exactly one read, got ' + reads);
+    items[7].sc = '10'; reads = 0; go(800);
+    assert.strictEqual(reads, 1, 'a count 9 to 10 on one sign: exactly that sign is read again, got ' + reads);
+    items[7].sc = '10'; reads = 0; go(800);
+    assert.strictEqual(reads, 0, 'the same count again: 0 reads');
     reads = 0; go(700);
     assert.strictEqual(reads, 15, 'a width change measures every sign once, got ' + reads);
     assert.strictEqual(items.filter((s) => s.cls).length, 5, 'marks after the width change');
   }
   const ro = fs.readFileSync(path.join(R, 'realoffice.js'), 'utf8');
   assert.match(ro, /DurbarCutText\.fitBatch\(signs,[\s\S]*sg\._sig \+ '\|' \+ W/, 'fitSigns goes through fitBatch, keyed on the sign text and the layout width');
+  assert.match(ro, /sg\._sig \+ '\|' \+ W \+ '\|' \+ sg\.classList\.contains\('short'\) \+ '\|' \+ sg\._sc\.textContent/, 'the fit key holds the counts and cost text (a count 9 to 10 can cut the name)');
   assert.match(ro, /classList\.toggle\('nopath', !!sg\._nop\)/, 'the kept result is put back after el() rewrites the class');
   assert.ok(!/for \(const sg of chrome\.querySelectorAll\('\.ro-sign'\)\) \{\s*if \(!sg\._b/.test(ro), 'fitSigns has no per-sign loop');
 }
