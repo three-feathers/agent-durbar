@@ -250,13 +250,28 @@ async function main(): Promise<void> {
   };
   // spec 117 T078: the path-filtered macOS job keeps exactly the stop-gap limit (45, as ci.yml build-test) until T025 lowers both
   const STOPGAP = 45;
-  const macosLimit = (text: string): number => Number((yaml.load(text.replace(/\r\n/g, '\n')) as { jobs: Record<string, Job> }).jobs['macos-test']['timeout-minutes']);
+  // The one check: throws unless macos-test has exactly the stop-gap limit as a number. The pin and its mutants both call it.
+  const checkMacosLimit = (text: string): void => {
+    const doc = yaml.load(text.replace(/\r\n/g, '\n')) as { jobs?: Record<string, Job> };
+    const jobs = doc.jobs || {};
+    assert.ok('macos-test' in jobs, 'macos-pr.yml has the job macos-test');
+    assert.strictEqual(jobs['macos-test']['timeout-minutes'], STOPGAP, `macos-pr.yml macos-test timeout-minutes must be the stop-gap number ${STOPGAP}`);
+  };
   const macosText = fs.readFileSync(path.join(wfDir, 'macos-pr.yml'), 'utf8').replace(/\r\n/g, '\n');
-  assert.strictEqual(macosLimit(macosText), STOPGAP, `macos-pr.yml macos-test timeout-minutes must be the stop-gap ${STOPGAP}`);
-  for (const bad of [25, 46]) {
-    const mutant = macosText.replace(/^(\s+timeout-minutes:) \d+$/m, `$1 ${bad}`);
-    assert.notStrictEqual(mutant, macosText, 'the mutant changed the limit');
-    assert.notStrictEqual(macosLimit(mutant), STOPGAP, `mutant: limit ${bad} must not pass the pin`);
+  checkMacosLimit(macosText);
+  const limitLine = /^(\s+)timeout-minutes: 45$/m;
+  assert.ok(limitLine.test(macosText), 'the limit line is found for the mutants');
+  const mutants: Record<string, string> = {
+    'limit 25': macosText.replace(limitLine, '$1timeout-minutes: 25'),
+    'limit 46': macosText.replace(limitLine, '$1timeout-minutes: 46'),
+    'key removed': macosText.replace(limitLine, '$1# removed'),
+    'quoted number': macosText.replace(limitLine, "$1timeout-minutes: '45'"),
+    'comment only': macosText.replace(limitLine, '$1# timeout-minutes: 45'),
+    'on another job': macosText.replace(limitLine, '$1# moved') + '  other:\n    runs-on: macos-latest\n    timeout-minutes: 45\n',
+  };
+  for (const [name, mutant] of Object.entries(mutants)) {
+    assert.notStrictEqual(mutant, macosText, `mutant ${name} changed the text`);
+    assert.throws(() => checkMacosLimit(mutant), /macos-test/, `mutant ${name} must fail the pin`);
   }
   const FAILED_TRY_MIN = 1.5;
   type Job = { 'timeout-minutes'?: number; steps?: { uses?: string; with?: Record<string, string> }[] };
