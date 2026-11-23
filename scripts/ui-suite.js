@@ -221,6 +221,7 @@ const DRIVERS = [
   { name: 'measure-102-dpr' }, // spec 102 T204: the arcade floor's art scale in device pixels at the ratio UI_SUITE_DPR gives
   { name: 'shots-102-arcade' }, // spec 102 RA3: the Retro arcade behind its flag: only its files, cabinets, marquee, no overlap at 3, 4, 8 and 15 at both sizes
   { name: 'shots-102-arcade', label: 'shots-102-arcade wide font', env: { ARCADE_FONT: 'wide', ARCADE_CASES: 'narrow' } }, // spec 102 FR-312 (round 5 of #1599, issue #1574): the narrow plate's cases alone (ARCADE_CASES=narrow) in a font wider than macOS's (Verdana, else DejaVu Sans; the run fails if neither is installed), so the geometry is not tuned to one font
+  { name: 'shots-102-arcade', label: 'shots-102-arcade hd', env: { DURBAR_HD_PEOPLE: '1', ARCADE_CASES: 'hd' } }, // spec 102 FR-406 (review of #2074): the HD person set behind its switch: no old person file fetched or shown in the arcade (size cases and the walk)
   { name: 'shots-097-moments' }, // spec 097 FR-118..FR-129: the nine world moments (first run, empty office, asleep at the desk, walk, inbox, limit, elicitation, coffee, jumps) in the Photo office and the cave
   { name: 'shots-097-moments', label: 'shots-097-moments cave', env: { MOMENTS_WORLDS: 'cave' } }, // the same nine moments in the Prehistoric cave (its flag is the simulator's page address)
   { name: 'shots-097-moments', label: 'shots-097-moments retro', env: { MOMENTS_WORLDS: 'retro' } }, // spec 102 FR-264: the same nine moments in the Retro arcade (its flag is the simulator's page address)
