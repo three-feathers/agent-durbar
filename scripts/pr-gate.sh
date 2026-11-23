@@ -1,7 +1,8 @@
 #!/bin/bash
 # scripts/pr-gate.sh <PR> [--wait]: may this PR be merged? (AGENTS.md, "Read every review and comment before a merge"). Prints the
-# verdict and exits 0 (ready) or 1 (not yet: why, and the unanswered comments). It never merges. Needs `gh` (signed in) and bash.
-# --wait: first wait until no check is pending, still none after 90 s (later workflows register their checks after the first ones end).
+# verdict and exits 0 (ready) or 1 (not yet: why, and the unanswered comments). It never merges. Needs `gh` (signed in), bash and Node.
+# --wait: first wait until no check is pending, still none after 90 s (later workflows register their checks after the first ones end). `gh pr checks`
+# exits 8 while a check is pending and 1 when one failed or the read failed: only 8 or a pending line keeps the wait going (FR-420).
 # Blocks (prints why, exits 1) on:
 #   - a draft PR, or one whose draft state cannot be read (spec 021 FR-420);
 #   - a required check that is not exactly pass, on every PR: the names are the required_status_checks of .github/ruleset-main.json, read with
@@ -38,7 +39,7 @@ case $p in ''|*[!0-9]*) echo "usage: scripts/pr-gate.sh <PR number> [--wait]"; e
 . "$(dirname "$0")/trusted-lib.sh" || exit 2
 pend() { gh pr checks $p 2>/dev/null | awk -F'\t' '$2=="pending"' | grep -q .; }
 while [ "$2" = "--wait" ]; do
-  until gh pr checks $p >/dev/null 2>&1 && ! pend; do sleep 30; done
+  until gh pr checks $p >/dev/null 2>&1; [ $? != 8 ] && ! pend; do sleep 30; done
   sleep 90
   pend || break
 done
@@ -66,13 +67,14 @@ if [ "$src_files" = ERR ] || [ -z "$src_files" ] || [ "$(grep -cE '^(F |C$)' <<<
   bad="$bad src-check-unreadable(the PR's file list is incomplete or unreadable: a human checks the changed files)"
 fi
 # FR-420: every required check of the ruleset record must be listed and exactly pass (every line of its name), on every PR; the names
-# are read from the file, never written here. A missing, empty or unreadable list, or a name with a tab or line break, blocks.
+# are read from the file, never written here. A missing, empty or unreadable list, or a name that is not a string, is empty or holds a tab or
+# line break, blocks. awk gets the name through the environment, not -v (which would turn a backslash sequence into another character).
 required=$(node -e 'const r=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")),n=[];for(const x of r.rules||[])if(x&&x.type==="required_status_checks")for(const c of (x.parameters||{}).required_status_checks||[])n.push(c&&c.context);if(!n.length||n.some((s)=>typeof s!=="string"||!/^[^\t\r\n]+$/.test(s)))process.exit(1);process.stdout.write(n.join("\n")+"\n")' "$(dirname "$0")/../.github/ruleset-main.json" 2>/dev/null) || required=
 if [ -z "$required" ]; then
   bad="$bad required-unread(.github/ruleset-main.json: no required check names)"
 else
   while IFS= read -r need; do
-    printf '%s\n' "$checks_out" | awk -F'\t' -v n="$need" '$1==n{f=1; if($2!="pass") b=1} END{exit !(f && !b)}' || bad="$bad missing:$need"
+    printf '%s\n' "$checks_out" | need="$need" awk -F'\t' '$1==ENVIRON["need"]{f=1; if($2!="pass") b=1} END{exit !(f && !b)}' || bad="$bad missing:$need"
   done <<< "$required"
 fi
 # owner hold (FR-079): labels, then the owners' latest hold-or-lift comment; only its date and link are printed, never its text
@@ -198,6 +200,7 @@ head_now=$(gh api repos/$R/pulls/$p --jq .head.sha 2>/dev/null) || head_now=; ca
 [ -n "$head_sha" ] && [ "$head_now" = "$head_sha" ] || bad="$bad head-changed(read ${head_sha:-unread} first, ${head_now:-unread} at the end: a push during the gate, run it again)"
 if [ -n "$bad" ] || [ -z "$codeql_ok" ] || [ "$alerts" != "0" ] || [ -n "$changes" ] || [ "$threads" != "0" ] || [ -n "$newer" ] || [ -n "$outside_edits" ]; then
   echo "#$p not ready: checks=[$bad] codeql=$codeql alerts=$alerts changes_requested=[$changes] open_threads=$threads"
+  [ "$pr_draft" = true ] && echo "a draft: CI runs its jobs only after the ready mark, so draft(...) and missing:<required name> are expected now; any other reason is not"
   [ -n "$newer" ] && { echo "unanswered comments (read, answer or fix, then rerun; an outside one goes to your human as its link):"; echo "$newer"; }
   [ -n "$outside_edits" ] && { echo "comments last edited by an outside account (not shown, for a human):"; echo "$outside_edits"; }
   exit 1
