@@ -140,11 +140,17 @@ for (const [what, nm] of NAMES) {
 }
 // 4. a value split across markup: the joined reading hides it (union with the per-node reading)
 {
-  const t = pg.toast('Not written: --password <b>' + PW + '</b> was refused.');
+  const t = pg.toast('Not written: password=<b>' + PW + '</b> was refused.');
   ok(!(t.textContent || '').includes(PW), 'FR-195 a value split across markup is hidden by the joined reading');
-  eq(pg.ref('Not written: --password ' + PW + ' was refused.')!.includes(PW), false, 'FR-195 (control) main\'s announcement hides the joined value');
+  eq(pg.ref('Not written: password=' + PW + ' was refused.')!.includes(PW), false, 'FR-195 (control) main\'s announcement hides the joined value');
   const t2 = pg.toast('<b>' + GHP.slice(0, 20) + '</b>' + GHP.slice(20) + ' done');
   ok(!(t2.textContent || '').includes(BODY.slice(0, 12)), 'FR-195 a token split by markup is hidden by the joined reading');
+}
+// 4b. the union: a word the joined reading of the text as built hides (a line with a secret and an escape is hidden whole) is never shown
+{
+  const t = pg.toast(escH('--password ' + PW) + ' <b>' + escH(P('gh', 'p\\_') + BODY) + '</b>');
+  eq(pg.ref('--password ' + PW + ' ' + P('gh', 'p\\_') + BODY), '[redacted]', 'FR-195 (control) main\'s announcement hides the whole line');
+  ok(!(t.textContent || '').includes(PW), 'FR-195 union: a word the joined reading hides is not shown');
 }
 // 5. labels: title and aria-label are masked too
 {
@@ -161,6 +167,8 @@ for (const [what, nm] of NAMES) {
     ok(!el.hidden && !!el.querySelector('[data-ml="close"]'), `FR-195 MCP strip (${open ? 'list open' : 'one line'}): it is shown with its buttons`);
     ok(/MCP problem needs attention/.test(el.textContent || ''), `FR-195 MCP strip (${open ? 'list open' : 'one line'}): its fixed words are kept`);
   }
+  const sp = pg.mcp([{ key: 'k3', name: P('gh', 'p\\_') + BODY, where: '', reason: '--password ' + PW, fix: 'Sign in', kind: 'file' }], true);
+  ok(!(sp.textContent || '').includes(PW), 'FR-195 MCP strip: a list item is read as one text too (the union)');
   const el = pg.mcp([{ key: 'k2', name: 'github', where: 'Copilot', reason: 'not signed in', fix: 'Sign in', kind: 'file' }], true);
   ok(/: github\./.test(el.textContent || '') && /not signed in\. Sign in/.test(el.textContent || ''), 'FR-195 MCP strip: a benign entry is kept');
 }
@@ -210,11 +218,10 @@ for (const mode of [false, 'noredact', 'throws', 'failed'] as Mode[]) {
     const got = pg.toast(html).textContent || '';
     texts++;
     const words = (s: string): string[] => s.split(/\s+/).filter((w) => w.length >= 4);
-    const refW = new Set(words(ref as string)), gotW = new Set(words(got));
     for (const w of words(plain)) {
       if (WORDS.includes(w)) continue; // a fixed word can show elsewhere in the same text
-      if (!refW.has(w)) { mainWordsHidden++; if (got.includes(w)) mainHidShown++; }
-      else if (!gotW.has(w)) newOnlyHidden++;
+      if (!(ref as string).includes(w)) { mainWordsHidden++; if (got.includes(w)) { mainHidShown++; if (process.env.LIVEMASK_DEBUG && mainHidShown < 6) console.log(JSON.stringify({ w, plain, ref, got })); } }
+      else if (!got.includes(w)) newOnlyHidden++;
     }
   }
   eq(mainHidShown, 0, `FR-195 differential fuzz: words main's announcement hides and the toast shows = 0 (${texts} texts, ${mainWordsHidden} words hidden by main)`);
