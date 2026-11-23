@@ -187,6 +187,97 @@ async function main(): Promise<void> {
     assert.strictEqual(j.calls.filter((c) => c.url === LIST).length, 2, 'concurrency: after 60 s Check now asks again');
   }
 
+  // ---- review of PR 2073 -------------------------------------------------------------------------------------------
+  {
+    // (1) off and on in the same tick: the aborted check is not joined; a fresh one starts and its result is stored
+    const r = rig();
+    r.u.start(); await settle();
+    r.u.setSelfCheck(false);
+    r.u.setSelfCheck(true);
+    await settle();
+    assert.strictEqual(r.calls.filter((c) => c.url === LIST).length, 2, 'review 1: off and on in the same tick starts a fresh request (the aborted one is not joined)');
+    assert.ok(r.calls[0].signal?.aborted && !r.calls[1].signal?.aborted, 'review 1: the first request is aborted, the fresh one is not');
+    r.calls[0].answer({ ok: false, reason: 'aborted' });
+    r.calls[1].answer(ok(feedBytes())); await settle(); await settle();
+    r.calls[2]?.answer(NO); await settle(); await settle();
+    assert.strictEqual(r.u.view().target, '0.1.29', 'review 1: the fresh check result is stored');
+
+    // (2) the source changes mid-check: the answer is dropped, never shown under the new name, and a fresh check starts
+    const m = rig({ script: (u) => (u.includes('org-b/') && u.includes('/releases?') ? ok(feedBytes('org-b/durbar', ['0.1.27'])) : u.includes('org-b/') ? NO : undefined) });
+    m.policy.p = { state: 'ok', feedUrl: 'https://github.com/org-a/durbar' };
+    m.u.start(); await settle();
+    assert.strictEqual(m.calls[0]?.slug, 'org-a/durbar', 'review 2: the check runs for the source in force');
+    m.policy.p = { state: 'ok', feedUrl: 'https://github.com/org-b/durbar' };
+    m.calls[0].answer(ok(feedBytes('org-a/durbar'))); await settle(); await settle(); await settle();
+    assert.deepStrictEqual(m.calls.map((c) => c.slug), ['org-a/durbar', 'org-b/durbar'], 'review 2: a source change drops the answer and a fresh check starts for the new source');
+    const mv = m.u.view();
+    assert.deepStrictEqual([mv.source, mv.state, mv.target], ['org-b/durbar', 'up-to-date', undefined], 'review 2: the old repository\'s update is never shown under the new name');
+
+    const done = rig({ script: (u) => (u.includes('org-a/') && u.includes('/releases?') ? ok(feedBytes('org-a/durbar')) : NO) });
+    done.policy.p = { state: 'ok', feedUrl: 'https://github.com/org-a/durbar' };
+    assert.strictEqual((await done.u.checkNow()).target, '0.1.29', 'review 2: a finished check for org-a');
+    done.policy.p = { state: 'ok', feedUrl: 'https://github.com/org-b/durbar' };
+    assert.deepStrictEqual([done.u.view().state, done.u.view().target], ['none', undefined], 'review 2: a kept result is never shown once the source changed');
+
+    // (3) finish writes exactly { lastCheck }, on every path
+    const patches: unknown[] = [];
+    const recorder = (base: SelfUpdateStore): SelfUpdateStore => ({ get updates() { return base.updates; }, setUpdates: (p) => { patches.push(p); return base.setUpdates(p); } });
+    const s1 = rig({ settings: { updates: { selfCheck: false, lastCheck: { at: T0 - 2 * DAY_MS, latest: '0.1.28' } } }, script: standard });
+    const st1 = recorder(s1.store);
+    (s1.u as unknown as { d: SelfUpdateDeps }).d.store = () => st1;
+    await s1.u.checkNow();
+    assert.deepStrictEqual(patches, [{ lastCheck: { at: T0, latest: '0.1.29' } }], 'review 3: a successful check writes exactly { lastCheck }');
+    assert.strictEqual(s1.store.updates.selfCheck, false, 'review 3: the switch stays off after a check');
+    patches.length = 0;
+    s1.clock.t += MANUAL_GAP_MS;
+    (s1.u as unknown as { d: SelfUpdateDeps }).d.get = async () => ({ ok: false, reason: 'timeout' });
+    await s1.u.checkNow();
+    assert.deepStrictEqual(patches, [{ lastCheck: { at: T0 + MANUAL_GAP_MS, latest: '0.1.29' } }], 'review 3: a failed check writes exactly { lastCheck } with the last known version');
+    patches.length = 0;
+    s1.clock.t += MANUAL_GAP_MS;
+    (s1.u as unknown as { d: SelfUpdateDeps }).d.get = async (u) => (u === LIST ? ok(feedBytes(SLUG, ['0.1.030'])) : NO);
+    await s1.u.checkNow();
+    assert.deepStrictEqual(patches, [{ lastCheck: { at: T0 + 2 * MANUAL_GAP_MS } }], 'review 3: a version the strict rule refuses: exactly { lastCheck } with the time only');
+
+    // (4) an aborted Check now whose answer still arrives: nothing stored, the caller sees no result, the next one works
+    const a = rig({ settings: { updates: { selfCheck: false } }, script: (u) => (u === LIST ? undefined : NO) });
+    const pending = a.u.checkNow(); await settle();
+    a.u.setSelfCheck(false);
+    a.calls[0].answer(ok(feedBytes())); await settle();
+    assert.deepStrictEqual([(await pending).state, a.store.updates.lastCheck], ['none', undefined], 'review 4: an aborted Check now stores nothing, even when its answer arrives');
+    const n0 = a.calls.length;
+    const next = a.u.checkNow(); await settle();
+    a.calls[n0].answer(ok(feedBytes()));
+    assert.strictEqual((await next).target, '0.1.29', 'review 4: the next Check now works');
+
+    // (5) switched off between the list and releases.json: no result stored
+    const b = rig({ script: (u) => (u === LIST ? ok(feedBytes()) : undefined) });
+    b.u.start(); await settle(); await settle();
+    assert.strictEqual(b.calls[1]?.url, RAW29, 'review 5: the releases.json read is running');
+    b.policy.p = { state: 'ok', updatesMode: 'off' };
+    b.calls[1].answer({ ok: true, kind: 'releases', bytes: Buffer.from('{}') }); await settle();
+    b.policy.p = { state: 'none' };
+    assert.strictEqual(b.u.view().state, 'none', 'review 5: a policy turned off between the two requests stores no result');
+
+    // (6) releases.json is decoded strictly: invalid UTF-8 inside a note makes it unreadable (Breaking: unknown)
+    const notes = JSON.stringify({ schema: 1, versions: { '0.1.28': { breaking: false, notes: 'AAAA', action: '' }, '0.1.29': { breaking: false, notes: 'n', action: '' } } });
+    const [pre, post] = notes.split('AAAA');
+    const badUtf8 = Buffer.concat([Buffer.from(pre), Buffer.from([0xff]), Buffer.from(post)]);
+    for (const [bytes, what] of [[badUtf8, 'invalid UTF-8'], [Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), Buffer.from(notes.replace('AAAA', 'n'))]), 'a byte-order mark']] as [Buffer, string][]) {
+      const d = rig({ script: (u) => (u === LIST ? ok(feedBytes()) : { ok: true, kind: 'releases', bytes }) });
+      assert.strictEqual((await d.u.checkNow()).breaking, 'unknown', `review 6: releases.json with ${what} is refused (Breaking: unknown)`);
+    }
+
+    // (7) the 60 s window does not hold when the clock went back, and an unplaced entry is never "up to date"
+    const c = rig({ script: standard });
+    await c.u.checkNow();
+    c.clock.t -= 10_000;
+    await c.u.checkNow();
+    assert.strictEqual(c.calls.filter((x) => x.url === LIST).length, 2, 'review 7: a clock set back opens the 60 s window again (no stale answer)');
+    const un = rig({ script: (u) => (u === LIST ? ok(Buffer.from('[7]')) : NO) });
+    assert.strictEqual((await un.u.checkNow()).reason, 'feed-invalid', 'review 7: a page with only an unplaced entry is feed-invalid, not up to date');
+  }
+
   exit.done();
   console.log('selfupdate-checker: ok');
 }
