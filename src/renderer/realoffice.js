@@ -667,11 +667,11 @@
      runner); a sign whose name is cut then drops its path (`.nopath`; the folder stays in the sign's tip), as the Flat office's `fitHead` does. */
   function fitSigns(chrome) {
     const cut = (e) => { if (e.scrollWidth > e.clientWidth + 0.5) return true; const cs = getComputedStyle(e), r = document.createRange(); r.selectNodeContents(e); return r.getBoundingClientRect().width > e.getBoundingClientRect().width - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight) + 0.01; };
-    for (const sg of chrome.querySelectorAll('.ro-sign')) {
-      if (!sg._b || !sg.querySelector(':scope > .ro-path')) continue;
-      sg.classList.remove('nopath');
-      if (!sg.classList.contains('short') && [sg._b, ...sg._b.querySelectorAll(':scope > .rn-h, :scope > .rn-t')].some(cut)) sg.classList.add('nopath');
-    }
+    if (!root.DurbarCutText) return;
+    const signs = [...chrome.querySelectorAll('.ro-sign')].filter((sg) => sg._b && sg.querySelector(':scope > .ro-path'));
+    root.DurbarCutText.fitBatch(signs, (sg) => sg.classList.remove('nopath'),
+      (sg) => !sg.classList.contains('short') && [sg._b, ...sg._b.querySelectorAll(':scope > .rn-h, :scope > .rn-t')].some(cut),
+      (sg) => sg.classList.add('nopath')); /* three passes, one layout per render (not a reflow per sign) */
   }
 
   /* FR-018, FR-184: the folder sign keeps its nodes: only the counts and the cost change on a status update, and the + and the room menu keep the focus */

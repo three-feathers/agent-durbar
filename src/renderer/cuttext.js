@@ -47,5 +47,14 @@
     const len=start<0?Infinity:cps.length-start;
     return (len<=10?cps.slice(start):cps.slice(-8)).join('');
   }
-  return {cutText,fitCut,nameTail};
+  /* One layout per render (Paco's review of #2017): a fit that clears a mark on each item and measures it in the same loop forces a reflow per item.
+     Three passes: (1) `clear(item)` on all, (2) `isCut(item)` on all (reads only), (3) `mark(item)` where cut. */
+  function fitBatch(items,clear,isCut,mark){
+    const list=Array.from(items);
+    for(const it of list)clear(it);
+    const cut=list.filter(it=>isCut(it));
+    for(const it of cut)mark(it);
+    return cut;
+  }
+  return {cutText,fitCut,nameTail,fitBatch};
 })());

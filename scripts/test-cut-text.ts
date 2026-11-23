@@ -4,7 +4,7 @@ import fs from 'fs';
 import path from 'path';
 
 const R = path.join(__dirname, '..', '..', 'src', 'renderer');
-const { cutText, fitCut, nameTail } = require(path.join(R, 'cuttext.js')) as { nameTail: (n: unknown) => string; fitCut: (t: string, fits: (x: string) => boolean) => string; cutText: (t: unknown, max: number, o?: { wordBoundary?: boolean; trimPunct?: boolean }) => string };
+const { cutText, fitCut, nameTail, fitBatch } = require(path.join(R, 'cuttext.js')) as { fitBatch: (items: unknown[], clear: (i: never) => void, isCut: (i: never) => boolean, mark: (i: never) => void) => unknown[]; nameTail: (n: unknown) => string; fitCut: (t: string, fits: (x: string) => boolean) => string; cutText: (t: unknown, max: number, o?: { wordBoundary?: boolean; trimPunct?: boolean }) => string };
 const len = (s: string) => Array.from(s).length;
 
 // fits: unchanged (whitespace collapsed); exactly max is not cut
@@ -88,5 +88,26 @@ assert.match(att, /CUT\.cutText\(/);
 for (const [n, src] of [['app.js', app], ['attention.js', att]] as const) assert.ok(!/\.slice\([^)]*\)\s*\+\s*'…'/.test(src), n + ' has its own slice-and-ellipsis');
 assert.match(fs.readFileSync(path.join(R, 'index.html'), 'utf8'), /<script src="cuttext\.js"><\/script>[\s\S]*<script src="app\.js">/);
 assert.match(fs.readFileSync(path.join(__dirname, '..', '..', 'scripts', 'copy-assets.js'), 'utf8'), /'cuttext\.js'/);
+
+// fitBatch (#2017, Paco's review): N signs cost ONE layout, not one reflow per sign. A fake DOM counts "read after write": a write (class change) dirties the layout, a read
+// while dirty is a forced reflow. Mutant: the interleaved loop (clear and measure per item) must read 15 reflows, so this assert would fail on it.
+{
+  type Sign = { cls: boolean; wide: boolean };
+  const mk = (n: number): Sign[] => Array.from({ length: n }, (_, i) => ({ cls: true, wide: i % 3 === 0 }));
+  const run = (fit: (signs: Sign[], clear: (s: Sign) => void, isCut: (s: Sign) => boolean, mark: (s: Sign) => void) => void) => {
+    let dirty = false, reflows = 0; const signs = mk(15);
+    fit(signs, (s) => { s.cls = false; dirty = true; }, (s) => { if (dirty) { reflows++; dirty = false; } return s.wide; }, (s) => { s.cls = true; dirty = true; });
+    return { reflows, marked: signs.filter((s) => s.cls).length };
+  };
+  const batched = run((signs, c, k, m) => { fitBatch(signs, c as never, k as never, m as never); });
+  assert.strictEqual(batched.reflows, 1, 'fitBatch: 15 signs, one layout read after the writes, got ' + batched.reflows + ' (a reflow per sign?)');
+  assert.strictEqual(batched.marked, 5, 'fitBatch marks exactly the cut signs');
+  const interleaved = run((signs, c, k, m) => { for (const s of signs) { c(s); if (k(s)) m(s); } });
+  assert.strictEqual(interleaved.reflows, 15, 'the guard sees the interleaved loop (the mutant): 15 reflows');
+  assert.strictEqual(fitBatch([], () => {}, () => true, () => {}).length, 0);
+  const ro = fs.readFileSync(path.join(R, 'realoffice.js'), 'utf8');
+  assert.match(ro, /DurbarCutText\.fitBatch\(signs,/, 'fitSigns goes through fitBatch');
+  assert.ok(!/for \(const sg of chrome\.querySelectorAll\('\.ro-sign'\)\) \{\s*if \(!sg\._b/.test(ro), 'fitSigns has no per-sign loop');
+}
 
 console.log('[cuttext] all checks passed');
