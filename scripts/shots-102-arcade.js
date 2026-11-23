@@ -276,6 +276,33 @@ const run = async (ctx, reqs) => {
   }
   };
 
+  /* spec 102 FR-406 made complete (issue 2055): the places a page load does not reach, with the switch on: the hover card (it draws no person; a request it made would show),
+     a chat (the rail and the header portrait) and the inbox; the lounge and a lobby visitor are on the page */
+  const hdWalk = async () => {
+    await loadArcade(1440, 900, 15, { simfreeze: '1' });
+    const reach = await js(`({lounge:document.querySelectorAll('#stage .ro-plate.lounge').length,visitors:document.querySelectorAll('#stage img.ro-visitor').length})`);
+    console.log('[102-arcade] FR-406 walk reaches', JSON.stringify(reach));
+    assert.ok(reach.lounge > 0 && reach.visitors > 0, 'FR-406: the walk reaches a lounge seat and a lobby visitor: ' + JSON.stringify(reach));
+    await noOld('FR-406 walk, 15 agents with the lounge and the lobby');
+    const c = await js(`(()=>{const r=document.querySelector('#stage .ro-plate:not(.lounge)').getBoundingClientRect();return {x:Math.round(r.left+r.width/2),y:Math.round(r.top+r.height/2)}})()`);
+    ctx.win.webContents.sendInputEvent({ type: 'mouseMove', x: c.x, y: c.y });
+    await must(`!!document.getElementById('roZoom')`, 'the hover card', 4000);
+    await noOld('FR-406 walk, the hover card');
+    ctx.win.webContents.sendInputEvent({ type: 'mouseMove', x: 2, y: 2 });
+    const id = await js(`window.__durbarSimUi.agents().filter(a=>!a.parent)[0].id`);
+    await js(`window.__durbarSimUi.crew.openPanel(${jsLiteral(id)})`);
+    await must(`!!document.querySelector('#roPortrait img')&&document.querySelectorAll('#stripList .sav img').length>0`, 'the chat header portrait and the rail\'s faces');
+    await noOld('FR-406 walk, a chat');
+    await js(`document.getElementById('backBtn').click()`);
+    await js(`document.getElementById('inboxBtn').click()`);
+    await must(`!!document.querySelector('#inboxDlg .inbox-dlg')`, 'the inbox');
+    await noOld('FR-406 walk, the inbox');
+    await js(`document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));0`);
+    /* Your door (its own flag, `door=1`): it opens at the start with agents waiting, its faces are the 24 px avatars */
+    await loadArcade(1440, 900, 15, { simfreeze: '1', door: '1' });
+    await must(`document.querySelectorAll('#doorFaces img').length>0`, 'Your door\'s faces', 10000);
+    await noOld('FR-406 walk, Your door');
+    };
   if (process.env.ARCADE_CASES === 'narrow') { /* test only: the wide-font entry runs the narrow cases alone */
     for (const [w, h] of SIZES) await narrowCases(w, h);
     await narrowTail();
@@ -648,33 +675,7 @@ const run = async (ctx, reqs) => {
   await must(`document.documentElement.dataset.world===undefined&&document.documentElement.dataset.ui===undefined`, 'the flat office: no world, the theme\'s UI style');
   assert.strictEqual(await js(`document.documentElement.dataset.dark===undefined`), true, 'leaving: the theme\'s light page');
 
-  /* spec 102 FR-406 made complete (issue 2055): the places a page load does not reach, with the switch on: the hover card (it draws no person; a request it made would show),
-     a chat (the rail and the header portrait) and the inbox; the lounge and a lobby visitor are on the page */
-  {
-    await loadArcade(1440, 900, 15, { simfreeze: '1' });
-    const reach = await js(`({lounge:document.querySelectorAll('#stage .ro-plate.lounge').length,visitors:document.querySelectorAll('#stage img.ro-visitor').length})`);
-    console.log('[102-arcade] FR-406 walk reaches', JSON.stringify(reach));
-    assert.ok(reach.lounge > 0 && reach.visitors > 0, 'FR-406: the walk reaches a lounge seat and a lobby visitor: ' + JSON.stringify(reach));
-    await noOld('FR-406 walk, 15 agents with the lounge and the lobby');
-    const c = await js(`(()=>{const r=document.querySelector('#stage .ro-plate:not(.lounge)').getBoundingClientRect();return {x:Math.round(r.left+r.width/2),y:Math.round(r.top+r.height/2)}})()`);
-    ctx.win.webContents.sendInputEvent({ type: 'mouseMove', x: c.x, y: c.y });
-    await must(`!!document.getElementById('roZoom')`, 'the hover card', 4000);
-    await noOld('FR-406 walk, the hover card');
-    ctx.win.webContents.sendInputEvent({ type: 'mouseMove', x: 2, y: 2 });
-    const id = await js(`window.__durbarSimUi.agents().filter(a=>!a.parent)[0].id`);
-    await js(`window.__durbarSimUi.crew.openPanel(${jsLiteral(id)})`);
-    await must(`!!document.querySelector('#roPortrait img')&&document.querySelectorAll('#stripList .sav img').length>0`, 'the chat header portrait and the rail\'s faces');
-    await noOld('FR-406 walk, a chat');
-    await js(`document.getElementById('backBtn').click()`);
-    await js(`document.getElementById('inboxBtn').click()`);
-    await must(`!!document.querySelector('#inboxDlg .inbox-dlg')`, 'the inbox');
-    await noOld('FR-406 walk, the inbox');
-    await js(`document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));0`);
-    /* Your door (its own flag, `door=1`): it opens at the start with agents waiting, its faces are the 24 px avatars */
-    await loadArcade(1440, 900, 15, { simfreeze: '1', door: '1' });
-    await must(`document.querySelectorAll('#doorFaces img').length>0`, 'Your door\'s faces', 10000);
-    await noOld('FR-406 walk, Your door');
-  }
+  await hdWalk(); /* spec 102 T472: no switch any more: the walk always runs */
   /* spec 102 T472 (owner 2026-11-23 20:12 UTC: one set everywhere): no world asks for an old Retro pixel picture: the Photo office and the cave draw the HD busts and the 288 standing
      frames, the flat office the HD bust crops and the avatar tiles, in a light theme and a dark one */
   for (const world of ['photo', 'cave']) {
@@ -684,13 +685,14 @@ const run = async (ctx, reqs) => {
     assert.ok(await js(`[...document.querySelectorAll('#stage .ro-person')].some(i=>(i.getAttribute('src')||'').includes('/sets/retro/hd/'))`), world + ': the Retro pixel people drawn from the HD busts');
     await noOld('T472, ' + world + ' with the Retro pixel people');
   }
-  for (const theme of [null, 'retro']) {
+  const DARK = JSON.parse(fs.readFileSync(path.join(__dirname, 'fixtures', 'themes', 'check-dark.json'), 'utf8')); /* a dark theme: its own light-or-dark avatar background picks the tile (FR-410) */
+  for (const theme of [null, DARK]) {
     reqs.clear();
     await H.load({ w: 1440, h: 900, query: { officeview: 'flat', simfreeze: '1', characters: 'pixel', sim: '15' }, ready: `!!document.querySelector('#floor')`, settle: false });
-    if (theme) await js(`window.THEME.setTheme(${jsLiteral(theme)});0`);
+    if (theme) await js(`window.THEME.setTheme(${JSON.stringify(theme)});0`);
     await ctx.sleep(1500);
-    assert.ok(await js(`[...document.querySelectorAll('image')].some(i=>(i.getAttribute('href')||'').includes('/sets/retro/hd/'))`), 'the flat office draws the HD heads (' + (theme || 'default theme') + ')');
-    await noOld('T472, the flat office (' + (theme || 'default theme') + ')');
+    assert.ok(await js(`[...document.querySelectorAll('image')].some(i=>(i.getAttribute('href')||'').includes('/sets/retro/hd/'))`), 'the flat office draws the HD heads (' + (theme ? 'dark theme' : 'default theme') + ')');
+    await noOld('T472, the flat office (' + (theme ? 'dark theme' : 'default theme') + ')');
   }
   console.log('[102-arcade] PASS');
 };
