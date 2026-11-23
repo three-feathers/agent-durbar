@@ -1222,3 +1222,6 @@ Follow-up of the 2026-11-20 delta above (PR #1970's proposal for the other focus
 
 `[KNOWN GAP]` Windows and Linux are not measured for this driver (CI's runners have other focus behaviour); one run alone, not several, on the Mac; what else was running on the Mac during the four-window runs was not checked.
 
+### 2026-11-22: `release.yml` waits for the tagged commit's green UI run (pointer; spec 117 FR-014, T045)
+
+`release.yml`'s new first job `ui-gate` refuses a tag unless the latest *UI on three OSes* run of exactly the tagged commit finished green; `verify`, `build` and `draft-release` run only after it. Rules, limits and evidence: spec 117 *Changes* 2026-11-22 *the release UI gate*. No FR here changes; the release checks of FR-117..FR-132 are kept as they are.

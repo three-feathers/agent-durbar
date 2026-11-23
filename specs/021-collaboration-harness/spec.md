@@ -860,3 +860,10 @@ PR #1232 (spec 095) was red with `FR-026, T026 and T027 are also in PR #1240`, b
   - FR-063 accounting: no rule text changes here. The one line for AGENTS.md (*Before you finish*: run `npm run pr:preflight -- <N>` before asking for review) is proposed in the PR, to be weighed against the word budget by the owners.
   - `[KNOWN GAP]` `read:` the test drives a throwaway repository and an injected `gh` (no network); the live run was on Linux only, not on Windows or macOS. GitHub lists at most 250 commits of a PR (a NOTE says so). The number check compares remote branches, not fork PR heads (`specs:numbers` covers those in CI).
   - Numbers checked 2026-11-22 against `main`, every remote head and the open PRs: this takes FR-384 (FR numbers are global) and T455.
+
+### 2026-11-22: FR-087 rerun practice, one more case: a `release.yml` run stopped only by the UI gate (spec 117 FR-014, T045; #2038)
+
+Asked by Paco in his review of #2038 (2026-11-22, item 5): the gate's message suggests re-running the release run, which FR-087's list did not cover.
+- **FR-087 delta** `read:` A `release.yml` run whose **only** failed job is the UI gate (*UI run green on the tagged commit*) may have its failed jobs re-run (`gh run rerun <release run id> --failed`) once the tagged commit's *UI on three OSes* run is green, normally a by-hand run on the tag (`gh workflow run ui-platforms.yml --ref <tag>`); or a newer green commit is tagged instead. A `main` push UI run is **never** re-run for this: under spec 117 O3 a re-run joins the `ui-main` group and cancels `main`'s newest UI run. Every other release failure follows FR-087 as before. Such a re-run starts no AI agent (no credits). Written in `durbar-release` step 9 and `durbar-ci-rerun` step 3.
+- FR-063 accounting: this widens a practice recorded in this FR; no rule file (`AGENTS.md`, `docs/rules/`) changes, so nothing is replaced. The owners' acceptance beyond Paco's request is not recorded here.
+

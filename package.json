@@ -240,6 +240,7 @@
     "test:redact-monotone-c": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-redact-monotone.js c",
     "test:releasenodeps": "node scripts/test-release-nodeps.js",
     "test:releases-json": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-releases-json.js",
+    "test:releaseuigate": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-release-ui-gate.js",
     "test:releasevideo": "node scripts/test-release-video.js",
     "test:remote": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-remote.js",
     "test:renameadapters": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-rename-adapters.js",
