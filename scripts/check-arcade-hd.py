@@ -173,6 +173,21 @@ if sys.argv[1:2] in (['--speckle'], ['--alpha'], ['--colour'], ['--edge'], ['--n
     im.save(sys.argv[3], 'WEBP', lossless=True, exact=True)
     sys.exit(0)
 
+if sys.argv[1:2] == ['--heads']:   # spec 102 T472: for each frame `set.json` names (argv[2]; its pictures in argv[3] or the `hd` folder beside it), the opaque pixels from its top down to its face box's bottom must lie inside the face box (the head, hair and hood included)
+    sj = json.load(open(sys.argv[2]))['hd']; d = sys.argv[3] if len(sys.argv) > 3 else os.path.join(os.path.dirname(sys.argv[2]), 'hd'); bad = []
+    for pid, poses in sorted(sj['people'].items()):
+        for pose, sc in sorted(poses.items()):
+            for s, v in sorted(sc.items()):
+                _, _, fx, fy, fw, fh = v; a = Image.open(os.path.join(d, f'{pid}-{pose}@{s}.webp')).getchannel('A'); px = a.load(); w, h = a.size
+                out = sum(1 for y in range(min(h, fy + fh)) for x in range(w) if px[x, y] > 0 and not (fx <= x < fx + fw and fy <= y))
+                if out: bad.append(f'{pid}-{pose}@{s}: {out} head pixels outside the face box')
+    for pid, b in sorted(sj.get('busts', {}).items()):   # and every bust's measured head (T472): the opaque pixels down to its bottom lie inside it
+        for pose, (hx, hy, hw, hh) in sorted(b.get('head', {}).items()):
+            a = Image.open(os.path.join(d, f'{pid}-{pose}@4.webp')).getchannel('A'); px = a.load(); w, h = a.size
+            out = sum(1 for y in range(min(h, hy + hh)) for x in range(w) if px[x, y] > 0 and not (hx <= x < hx + hw and hy <= y))
+            if out: bad.append(f'{pid}-{pose}@4 (bust): {out} head pixels outside its head box')
+    print(json.dumps({'heads': bad})); sys.exit(0)
+
 pal, semi = set(), set()
 for f in sys.argv[1:]:
     row, rgb, s = measure(f)

@@ -673,6 +673,15 @@ if (worldIds.includes('retro')) {
         const planted = T.people.flatMap((p) => T.poses.map((q) => { const f = path.join(tmp, `norim-${p}-${q}-t22.webp`); assert.strictEqual(spawnSync('python3', ['-I', tool, '--norim', path.join(dir, `${p}-${q}-t22.webp`), f], { encoding: 'utf8' }).status, 0, 'the planted tile (--norim) is written'); return f; }));
         assert.ok(legible(measure(planted).rows).length >= 1, 'red (--norim): without the lit edge the darkest person\'s avatar is not legible');
       }
+      { /* T472 (coordinator's look at F1): every frame's face box holds its whole head (hair, hood, a cap, a raised hand at head height), so FR-401's badge, which keeps clear of the face box, keeps clear of the head; red: the boxes cut 10 px lower */
+        const heads = (setPath: string): string[] => { const r = spawnSync('python3', ['-I', tool, '--heads', setPath, dir], { encoding: 'utf8', maxBuffer: 16 * 1024 * 1024 }); assert.strictEqual(r.status, 0, 'check-arcade-hd.py --heads: ' + r.stderr); return JSON.parse(r.stdout).heads; };
+        assert.deepStrictEqual(heads(path.join(RO, 'sets', 'retro', 'set.json')), [], 'T472: every HD frame\'s face box, and every bust\'s head box, holds its head');
+        const low = JSON.parse(fs.readFileSync(path.join(RO, 'sets', 'retro', 'set.json'), 'utf8'));
+        for (const poses of Object.values(low.hd.people) as Array<Record<string, Record<string, number[]>>>) for (const sc of Object.values(poses)) for (const v of Object.values(sc)) { v[3] += 10; v[5] = Math.max(1, v[5] - 10); }
+        for (const b of Object.values(low.hd.busts) as Array<{ head: Record<string, number[]> }>) for (const v of Object.values(b.head)) { v[1] += 10; v[3] = Math.max(1, v[3] - 10); }
+        fs.writeFileSync(path.join(tmp, 'low-set.json'), JSON.stringify(low));
+        assert.ok(heads(path.join(tmp, 'low-set.json')).length > 0, 'red: face boxes cut below the hair fail the head rule');
+      }
       { /* T472 (FR-410) red case: a lit-edge tile drawn on a light surface: copied as its own light variant, the light backgrounds cannot read it */
         const planted = (T.light || []).map((p) => { const f = path.join(tmp, `lit-${p}-typeA-t22l.webp`); fs.copyFileSync(path.join(dir, `${p}-typeA-t22.webp`), f); return f; });
         assert.ok(planted.length > 0 && legible(measure(planted).rows).length >= 1, 'red (lit edge on a light surface): a lit-edge tile is not legible on Flat\'s light avatar background');

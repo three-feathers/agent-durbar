@@ -17,7 +17,9 @@ export interface RealPlace { id: string; custom?: boolean; visitors: RealVisitor
 /** `keepRooms`: the person saved a room order for this floor (spec 097 FR-353, owner Q31): the rooms stand in rows in that order, left to right, top to bottom, even if the picture is a little smaller */
 /** `restW`: the measured width in px of the tag "Resting" (same font as `RealFloor.w`) */
 export interface RealModel { folders: RealFolder[]; places: RealPlace[]; keepRooms?: boolean; restW?: number }
-export interface SeatMeta { w: number; h: number; headTop: number; bodyH: number; hand: number }
+export interface SeatMeta { w: number; h: number; headTop: number; bodyH: number; hand: number; head?: Record<string, [number, number, number, number]> }
+/** spec 102 T472: the gap a head-anchored mark (dots, the ask bubble) keeps from an HD head, and an HD head from the screen glass above it at the big level, px */
+export const HEAD_CLEAR = 4;
 /** `feet` and `top`: per pose, the lowest and highest opaque row as a share of the picture's height, measured from its alpha (owner 2026-10-31 10:19) */
 export interface StandMeta { figH: number; poses: Record<string, [number, number]>; feet?: Record<string, number>; top?: Record<string, number>; foot?: Record<string, number> }
 /* `foot`: per pose, the horizontal centre of the planted feet as a share of the picture's width (spec 097 FR-191): the figure stands on it,
@@ -533,6 +535,16 @@ function roNote(px: number, sx: number, slotW: number, sl: number, deskY: number
   return { x: Math.min(x, sx + slotW - s / 2 - 2), y: deskY - s + 4, s };
 }
 
+/** spec 102 T472: a head-anchored mark (its box `w` wide and `h` tall, `dy` from its anchor to its top) moved off an HD head (`head`), HEAD_CLEAR away: to the head's right
+ *  while it ends before `right`, else above the head (not above `minY`); unchanged when it is clear or there is no HD head */
+function clearHead(at: { x: number; y: number }, w: number, dy: number, head: Rect | null, right: number, h = 24, minY = -Infinity, left = -Infinity): { x: number; y: number } {
+  if (!head) return at;
+  const hit = (p: { x: number; y: number }): boolean => p.x < head.x + head.w + HEAD_CLEAR && head.x - HEAD_CLEAR < p.x + w && p.y + dy < head.y + head.h + HEAD_CLEAR && head.y - HEAD_CLEAR < p.y + dy + h;
+  if (!hit(at)) return at;
+  const tries = [{ x: head.x + head.w + HEAD_CLEAR, y: at.y }, { x: at.x, y: Math.max(minY - dy, head.y - HEAD_CLEAR - h - dy) }, { x: head.x - HEAD_CLEAR - w, y: at.y }];
+  return tries.find((p) => p.x + w <= right && p.x >= left && !hit(p)) || tries[1];
+}
+
 /** FR-013, FR-016, FR-017, FR-036, FR-038: one desk (roStation) in a slot. */
 function roStation(meta: RealMeta, a: RealAgent, sx: number, y: number, Sw: number, u: number, g: Geom, big: boolean, scrH: number, hr = 0, hh = 0): DeskBox {
   const narrow = roNarrow(a);
@@ -544,8 +556,17 @@ function roStation(meta: RealMeta, a: RealAgent, sx: number, y: number, Sw: numb
   const px = big ? sx + slotW / 2 : sx + 0.05 * Sw + 0.42 * u;
   let person: DeskBox['person'] = null, face: Rect | null = null;
   const pose = SEAT_POSE[a.state];
+  let headR: Rect | null = null; /* spec 102 T472: an HD bust's head (its opaque top down to the chin), as drawn: what the dots and the bubble keep clear of */
   if (m && pose && !narrow) {
-    const k = u / m.bodyH, w = m.w * k, h = m.h * k, top = headY - m.headTop * k;
+    let k = u / m.bodyH, top = headY - m.headTop * k;
+    const hp = m.head ? [pose, ...(roOwn(POSE_FRAME_B, pose) ? [POSE_FRAME_B[pose]] : [])].map((p) => (m.head && roOwn(m.head, p) ? m.head[p] : null)).filter((v): v is [number, number, number, number] => !!v) : [];
+    const hTop = hp.length ? Math.min(...hp.map((v) => v[1])) : 0;
+    if (hp.length && big) { /* the big level: the tallest pose stays HEAD_CLEAR below the screen's glass; where it would not, the figure yields (smaller, its bottom kept) */
+      const gb = y + STRIP + scrH - 7, bottom = top + m.h * k; /* the glass's bottom edge at the big level (the screen below: top y + STRIP + 6, sh = scrH - 10, the glass 3 inside it) */
+      if (top + hTop * k < gb + HEAD_CLEAR) { k = Math.min(k, (bottom - gb - HEAD_CLEAR) / (m.h - hTop)); top = bottom - m.h * k; }
+    }
+    const w = m.w * k, h = m.h * k;
+    if (hp.length) { const x0 = Math.min(...hp.map((v) => v[0])), x1 = Math.max(...hp.map((v) => v[0] + v[2])), y1 = Math.max(...hp.map((v) => v[1] + v[3])); headR = { x: px - w / 2 + x0 * k, y: top + hTop * k, w: (x1 - x0) * k, h: (y1 - hTop) * k }; }
     person = { x: px - w / 2, y: top, w, h, file: seatFile(meta, String(a.person), pose), fileB: roOwn(POSE_FRAME_B, pose) ? seatFile(meta, String(a.person), POSE_FRAME_B[pose]) : null, pose, pid: String(a.person),
       vis: { x: Math.max(sx, Math.min(px - 0.3 * u, sx + slotW - 0.6 * u)), y: headY, w: Math.min(0.6 * u, slotW), h: Math.max(0, deskY - headY) } }; /* the head and shoulders: the monitor may cover a shoulder edge, never the face */
     face = { x: px - FACE_U * u * 0.4, y: headY, w: FACE_U * u * 0.8, h: FACE_U * u };
@@ -571,11 +592,11 @@ function roStation(meta: RealMeta, a: RealAgent, sx: number, y: number, Sw: numb
     id: a.id, state: a.state, narrow, slot: { x: sx, y, w: slotW, h: 0 }, desk, plate, screen, glass, person, face, ...(strip ? { strip } : {}), ...(kz ? { kids: kz } : {}),
     away, /* the note on the desk, where the person would sit */
     lamp: { x: sx + 0.02 * slotW, y: Math.max(y + STRIP, headY - 0.35 * u), w: 0.96 * slotW, h: deskY + dh * 0.5 - Math.max(y + STRIP, headY - 0.35 * u) },
-    bubble: person && roNeedsYou(a.state) ? { x: px + 0.2 * u - 6, y: headY - 0.04 * u } : null,
+    bubble: person && roNeedsYou(a.state) ? clearHead({ x: px + 0.2 * u - 6, y: headY - 0.04 * u }, 24, -24, headR, sx + slotW, 24, y + STRIP, sx) : null,
     bang: a.state === 'error' ? { x: sr - 10, y: screen.y - 8 } : null,
     /* FR-038 (spec 097 delta 2026-11-15, T350): the dots never rise into the row's sign strip (the folder sign stands at y + 1, 20 px tall), in every world and arrangement: a tall person (the cave's seat, hand 0.88) put them under the sign.
        Below the big level they also end before the screen's glass (its text): moved down, they would have reached its corner. At the big level the person sits in front of the big screen by design. */
-    dots: person && a.state === 'thinking' ? { x: big ? px + 0.2 * u : Math.min(px + 0.1 * u, glass.x - DOTS_BOX.w - DOTS_CLEAR), y: Math.max(headY + (big ? 0.12 : -0.13) * u, y + STRIP + DOTS_CLEAR) } : null,
+    dots: person && a.state === 'thinking' ? clearHead({ x: big ? px + 0.2 * u : Math.min(px + 0.1 * u, glass.x - DOTS_BOX.w - DOTS_CLEAR), y: Math.max(headY + (big ? 0.12 : -0.13) * u, y + STRIP + DOTS_CLEAR) }, DOTS_BOX.w, 0, headR, big || Math.max(headY + (big ? 0.12 : -0.13) * u, y + STRIP + DOTS_CLEAR) + DOTS_BOX.h <= glass.y - DOTS_CLEAR ? sx + slotW - 4 : glass.x - DOTS_CLEAR, DOTS_BOX.h, y + STRIP + DOTS_CLEAR, sx) /* beside the head they may pass over the screen's top when they stay above its glass (its text) */ : null,
     call: { x: sx + slotW - 16, y: deskY + 0.05 * dh },
   };
 }
