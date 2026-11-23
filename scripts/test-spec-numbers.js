@@ -380,6 +380,73 @@ try {
     r = cli(x); assert.strictEqual(r.status, 1, 'a tagged FR on another open head is a clash: ' + r.stdout + r.stderr);
     assert.match(r.stdout, /specs\/003-c\/spec\.md: FR-243 is also in PR #1487/); assert.match(r.stdout, /specs\/003-c\/spec\.md: Q9 is also in PR #1487/); }
 
+  // ---- --wide (spec 021 FR-085 delta 2026-11-23): remote branches without a PR, worktree branches, dead branches
+  { const sd = repo(); G(sd, 'update-ref', 'refs/remotes/origin/main', 'HEAD');
+    const branchOff = (name, ...nums) => { G(sd, 'checkout', '-q', '-b', name, 'main'); write(sd, 'specs/001-a/tasks.md', T('001', '002', '003', ...nums)); return commit(sd, name); };
+    const nopr = branchOff('nopr', '020'), dead = branchOff('deadpr', '030'), mergedTip = branchOff('mergedbr', '040');
+    G(sd, 'checkout', '-q', 'main'); G(sd, 'merge', '-q', '--ff-only', 'mergedbr'); G(sd, 'update-ref', 'refs/remotes/origin/main', 'HEAD');
+    const org = path.join(tmp, 'wide-origin.git'); G(tmp, 'init', '-q', '--bare', org);
+    G(sd, 'push', '-q', org, 'main', 'nopr', 'deadpr'); G(sd, 'remote', 'add', 'origin', org);
+    G(org, 'update-ref', 'refs/heads/gh-readonly-queue/main/pr-1-x', nopr); // a merge-queue branch is never a head
+    const wt1 = path.join(tmp, 'wt1'), wt2 = path.join(tmp, 'wt2');
+    G(sd, 'worktree', 'add', '-q', '-b', 'wtone', wt1, 'main'); write(wt1, 'specs/001-a/tasks.md', T('001', '002', '003', '040', '050')); commit(wt1, 'wt one');
+    G(sd, 'worktree', 'add', '-q', '-b', 'wttwo', wt2, 'main'); write(wt2, 'specs/001-a/tasks.md', T('001', '002', '003', '040', '060')); commit(wt2, 'wt two');
+    G(sd, 'checkout', '-q', '-b', 'mine', 'main');
+    write(sd, 'specs/001-a/tasks.md', T('001', '002', '003', '040', '020', '030', '050', '060')); commit(sd, 'mine');
+    const rows = (sha, over = {}) => [{ headRefOid: sha, mergedAt: null, state: 'CLOSED', isCrossRepository: false, ...over }];
+    const state = (over = {}) => (name) => (name in over ? over[name] : []);
+    const via = async (argv, deps = {}) => { const out = []; const lg = console.log; console.log = (x) => out.push(String(x)); let code;
+      try { code = await sn.main(['--root', sd, ...argv], {}, { openPrs: async () => [], ...deps }); } finally { console.log = lg; } return { code, out: out.join('\n') }; };
+    // the lists
+    assert.ok(sn.worktreeHeads(sd).some((h) => h.name === 'wtone' && /^[0-9a-f]{40}$/.test(h.sha)), 'worktreeHeads lists a worktree branch with its tip');
+    assert.deepStrictEqual(sn.liveRemoteHeads(sd).map((h) => h.name).sort(), ['deadpr', 'gh-readonly-queue/main/pr-1-x', 'main', 'nopr'], 'liveRemoteHeads reads git ls-remote');
+    const brokenRemote = repo(); G(brokenRemote, 'remote', 'add', 'origin', path.join(tmp, 'does-not-exist.git'));
+    assert.throws(() => sn.liveRemoteHeads(brokenRemote), 'WIDE-lsremote a failing ls-remote throws (exit 2), never an empty list');
+    // pure: what is left out
+    const hh = sn.wideHeads(sd, { remote: [{ name: 'main', sha: nopr }, { name: 'mine', sha: nopr }, { name: 'HEAD', sha: nopr }, { name: 'gh-readonly-queue/main/x', sha: nopr }, { name: 'open1', sha: dead }, { name: 'open2', sha: nopr }, { name: 'free', sha: mergedTip }], worktrees: [{ name: 'free2', sha: mergedTip }, { name: 'wtopen', sha: nopr }], open: [{ sha: dead, headRef: 'x' }, { sha: '0'.repeat(40), headRef: 'open2' }, { sha: '1'.repeat(40), headRef: 'wtopen' }], selfRef: 'mine' });
+    assert.deepStrictEqual(hh.map((h) => h.name), ['free'], 'main, HEAD, this branch, queue branches, open PR heads (by name or tip) and a worktree twin of a remote head are left out');
+    // 1: remote branch without a PR, worktree branches, a dead branch, live remote list
+    let r = await via(['--wide'], { branchState: state() });
+    assert.strictEqual(r.code, 1, r.out);
+    assert.match(r.out, /T020 is also in branch nopr, tip \d{4}-\d\d-\d\d \(added there too\)/, 'WIDE-remote a remote branch with no PR holds a number: a clash naming the branch and its tip date');
+    assert.match(r.out, /T050 is also in worktree wtone, tip \d{4}-\d\d-\d\d/, 'WIDE-worktree a worktree branch holds a number: a clash');
+    assert.match(r.out, /T060 is also in worktree wttwo/, 'WIDE-worktree-two the second worktree is a clash too');
+    assert.match(r.out, /T030 is also in branch deadpr/, 'a branch whose PR state says live (open or none) holds its numbers');
+    // 2: closed and unmerged at that tip: skipped, NOTE
+    r = await via(['--wide'], { branchState: state({ deadpr: rows(dead) }) });
+    assert.match(r.out, /NOTE skipped branch deadpr, tip \d{4}-\d\d-\d\d: its PR is closed and not merged/, 'WIDE-dead a closed, unmerged PR leaves a NOTE');
+    assert.doesNotMatch(r.out, /T030 is also/, 'WIDE-dead its numbers are free');
+    assert.match(r.out, /T020 is also in branch nopr/, 'the other clashes stay');
+    // 3: the branch moved after its PR closed, a merged PR, a fork PR: counted
+    for (const [why, over] of [['the tip moved on', rows('f'.repeat(40))], ['it was merged', rows(dead, { state: 'MERGED', mergedAt: '2026-11-01T00:00:00Z' })], ['an open PR', rows(dead, { state: 'OPEN' })], ['a fork PR of that name', rows(dead, { isCrossRepository: true })], ['no PR', []]]) {
+      r = await via(['--wide'], { branchState: state({ deadpr: over }) });
+      assert.match(r.out, /T030 is also in branch deadpr/, `WIDE-dead-tip ${why}: its numbers are still held`);
+    }
+    // 4: the PR state cannot be read: exit 2, never a pass
+    r = await via(['--wide'], { branchState: state({ nopr: null }) });
+    assert.strictEqual(r.code, 2, 'WIDE-unread an unreadable PR state is exit 2: ' + r.out);
+    assert.match(r.out, /NOT CHECKED: could not read the PR state of branch nopr/);
+    assert.doesNotMatch(r.out, /ok, no clash/);
+    // 5: no --wide (the CI invocation): open PR heads only; no remote branch, no worktree, no PR state is read
+    r = await via([], { branchState: () => { throw new Error('the narrow run must not ask'); } });
+    assert.strictEqual(r.code, 0, 'WIDE-ci without --wide the branches and worktrees are not compared: ' + r.out);
+    assert.doesNotMatch(r.out, /nopr|wtone|--wide/);
+    // 6: --no-fetch --wide reads the remote-tracking refs, offline
+    G(sd, 'fetch', '-q', 'origin', '+refs/heads/*:refs/remotes/origin/*');
+    r = await via(['--wide', '--no-fetch'], { branchState: state() });
+    assert.match(r.out, /T020 is also in branch nopr/, 'WIDE-nofetch the remote-tracking refs are the list');
+    assert.match(r.out, /--wide: \d+ remote branch\(es\)/);
+    // 7: a branch name is printed through printable (no workflow command)
+    assert.ok(sn.wideHeads(sd, { remote: [{ name: 'a::error::x', sha: nopr }], dates: false })[0].label.includes(': :error: :x'), 'WIDE-print a head name is made printable');
+  }
+  // the CI invocation never has --wide (open PR heads only), and `npm run specs:numbers` has it
+  { const wfText = fs.readFileSync(path.join(__dirname, '..', '.github', 'workflows', 'spec-kit.yml'), 'utf8');
+    const calls = wfText.split(/\r?\n/).filter((l) => /^\s*(?!#).*node base\/scripts\/spec-numbers\.js/.test(l));
+    assert.strictEqual(calls.length, 1, 'WIDE-ci-pin one call of spec-numbers.js in the workflow');
+    assert.doesNotMatch(calls[0], /--wide/, 'WIDE-ci-pin CI compares open PR heads only: its call has no --wide');
+    const pkg = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package.json'), 'utf8'));
+    assert.match(pkg.scripts['specs:numbers'], /spec-numbers\.js --wide$/, 'WIDE-npm `npm run specs:numbers` compares the wide list'); }
+
   // the workflow keeps the token away from PR code (mutant: remove any of these and this fails)
   // a Windows checkout has CRLF line ends (core.autocrlf): the shape checks read the workflow with LF only, and a CRLF copy must give the same jobs
   const wfRaw = fs.readFileSync(path.join(__dirname, '..', '.github', 'workflows', 'spec-kit.yml'), 'utf8');

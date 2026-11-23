@@ -74,6 +74,7 @@ function fakeGh(fx) {
       return { status: 0, stdout: JSON.stringify({ headRefOid: fx.head, headRefName: fx.branch || '001-good', baseRefName: 'main', mergeable: fx.mergeable || 'MERGEABLE', labels: (fx.labels || ['task', 'area:harness', 'spec:021']).map((name) => ({ name })), body: fx.body || 'Closes #1. Agent used: Claude Code.', isDraft: false, additions: fx.additions == null ? 150 : fx.additions, deletions: 0 }) };
     }
     if (args[0] === 'api') return { status: 0, stdout: (fx.commits || commitsOf(fx.head)).map((c) => JSON.stringify(c)).join('\n') + '\n' };
+    if (args[0] === 'pr' && args[1] === 'list') return fx.branchState ? fx.branchState(args[2]) : { status: 0, stdout: '[]' };
     if (args[0] === 'pr' && args[1] === 'checks') return { status: fx.checksStatus || 0, stdout: JSON.stringify(fx.checks || [{ name: 'Build and test', bucket: 'pass' }]) };
     throw new Error('unexpected gh call ' + args.join(' '));
   };
@@ -184,11 +185,18 @@ const has = (list, re) => list.some((t) => re.test(t));
   assert.ok(has(run({ head: fr2, branch: '001-fr2' }).fails, /FR-030 \(specs\/002-b\/spec\.md\) is also in origin\/main/), 'PP-numbers-main a number main defines in the same file fails');
   G(['update-ref', '-d', 'refs/remotes/origin/001-fr']);
   // another remote head adds FR-600 in 002-b and T501 in 001-a
-  mk([base], { 'specs/002-b/spec.md': '# B\n- **FR-020** two\n- **FR-600** other\n', 'specs/001-a/tasks.md': '# A\n- [ ] T380 one\n- [ ] T501 other\n', 'specs/002-b/tasks.md': '# B\n- [ ] T040 two\n- [ ] T041 other\n' }, 'other', { ref: 'refs/remotes/origin/002-other' });
+  const otherSha = mk([base], { 'specs/002-b/spec.md': '# B\n- **FR-020** two\n- **FR-600** other\n', 'specs/001-a/tasks.md': '# A\n- [ ] T380 one\n- [ ] T501 other\n', 'specs/002-b/tasks.md': '# B\n- [ ] T040 two\n- [ ] T041 other\n' }, 'other', { ref: 'refs/remotes/origin/002-other' });
   const mineN = mk([base], { 'specs/001-a/spec.md': '# A\n- **FR-010** one\n- **FR-600** mine\n', 'specs/001-a/tasks.md': '# A\n- [ ] T380 one\n- [ ] T501 mine\n' }, 'mine');
   const n = run({ head: mineN, branch: '001-mine' });
   assert.ok(has(n.fails, /FR-600 \(specs\/001-a\/spec\.md\) is also in origin\/002-other \(added there too, in specs\/002-b\/spec\.md/), 'PP-numbers-global a global FR on another head in another spec fails: ' + n.text);
   assert.ok(has(n.fails, /T501 \(specs\/001-a\/tasks\.md\) is also in origin\/002-other \(added there too\)$/), 'PP-numbers-same the same number in the same file on another head fails: ' + n.text);
+  // that branch is the leftover of a closed, unmerged PR (its tip is the PR's head): not a clash, a NOTE (the same rule as specs:numbers --wide)
+  const closedAtTip = (sha) => (a) => ({ status: 0, stdout: JSON.stringify([{ headRefOid: sha, mergedAt: null, state: 'CLOSED', isCrossRepository: false }]) });
+  const dead = run({ head: mineN, branch: '001-mine', branchState: closedAtTip(otherSha) });
+  assert.ok(!has(dead.fails, /FR-600|T501/), 'PP-numbers-dead a branch of a closed, unmerged PR holds no number: ' + dead.text);
+  assert.ok(has(dead.notes, /^skipped origin\/002-other: its PR is closed and not merged/), 'PP-numbers-dead-note it is named as a NOTE: ' + dead.text);
+  assert.ok(has(run({ head: mineN, branch: '001-mine', branchState: closedAtTip('e'.repeat(40)) }).fails, /T501/), 'PP-numbers-dead-tip a closed PR at another tip is a live branch');
+  assert.ok(has(run({ head: mineN, branch: '001-mine', branchState: () => ({ status: 1, stdout: '' }) }).fails, /numbers: not checked \(could not read the PR state of branch 002-other/), 'PP-numbers-unread an unreadable PR state is a FAIL, not a pass');
   G(['update-ref', '-d', 'refs/remotes/origin/002-other']);
 }
 

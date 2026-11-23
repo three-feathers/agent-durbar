@@ -27,7 +27,13 @@
  * of secret-looking variables; plus src/shared/redact.ts when the build is there) before it is shown, and only the first line of a failure
  * is printed. Everything from a PR (paths) goes through scripts/safe-print.js (no `::` or `##[` workflow command, no newline).
  *
- *   node scripts/spec-numbers.js [--no-fetch] [--exclude N] [--head SHA] [--root D]     --no-fetch: use the refs already there (refs/remotes/pr/*)
+ * `--wide` (what `npm run specs:numbers` passes; spec 021 FR-085 delta 2026-11-23): besides the open PR heads, also the remote branches that have no open PR
+ * (`git ls-remote --heads origin`, names as argv, never in a shell string) and the branches checked out in this machine's worktrees
+ * (`git worktree list --porcelain`). A head whose PR is closed and not merged, at that very tip, is skipped and printed as a NOTE (read with
+ * `gh pr list --head=<name> --state all --json headRefOid,mergedAt,state,isCrossRepository`: head ref names, shas and merged state, never a title), asked only for a
+ * branch that would clash. Not read = exit 2. CI (`spec-kit.yml`) runs without --wide: open PR heads only.
+ *
+ *   node scripts/spec-numbers.js [--wide] [--no-fetch] [--exclude N] [--head SHA] [--root D]     --no-fetch: use the refs already there (refs/remotes/pr/*, refs/remotes/origin/*)
  */
 'use strict';
 const fs = require('fs');
@@ -323,10 +329,80 @@ function headsFromRefs(root) {
   return out.split('\n').filter(Boolean).map((l) => { const [n, sha] = l.split(' '); return { label: `PR #${n}`, sha, number: n }; });
 }
 
-function report({ branchAdds, prs, skipped, noBase = [], base }, clashes) {
+// ---------- the wide list: branches without an open PR, and worktrees (spec 021 FR-085 delta 2026-11-23) ----------
+const QUEUE_PREFIX = 'gh-readonly-queue/';
+/** [{ name, sha }] of the heads on the remote, live. Throws when it cannot be read (exit 2, never an empty list that reads as "nothing there"). */
+function liveRemoteHeads(root) {
+  const out = run(root, 'git', ['ls-remote', '--heads', 'origin']);
+  const heads = out.split('\n').filter(Boolean).map((l) => { const m = l.match(/^([0-9a-f]{40})\trefs\/heads\/(.+)$/); if (!m) throw new Error('git ls-remote gave a line that is not a head'); return { sha: m[1], name: m[2] }; });
+  if (!heads.some((h) => h.name === 'main')) throw new Error('git ls-remote did not list main');
+  return heads;
+}
+/** One fetch of every head, then each sha must be here; throws when not. */
+function fetchRemoteHeads(root, heads) {
+  run(root, 'git', ['fetch', '--quiet', '--no-tags', '--no-write-fetch-head', 'origin', '+refs/heads/*:refs/remotes/origin/*']);
+  for (const h of heads) { try { run(root, 'git', ['cat-file', '-e', `${h.sha}^{commit}`]); } catch { throw new Error('a remote head could not be fetched'); } }
+}
+/** The same list from the refs already here (--no-fetch, and pr-preflight, which fetched them). */
+function trackedRemoteHeads(root) {
+  return (gitq(root, ['for-each-ref', '--format=%(refname:strip=3) %(objectname)', 'refs/remotes/origin']) || '').split('\n').filter(Boolean).map((x) => { const [name, sha] = x.split(' '); return { name, sha }; });
+}
+/** [{ name, sha }]: the branches checked out in this repository's worktrees (their local tips). Throws when git cannot list them. */
+function worktreeHeads(root) {
+  const out = [];
+  for (const block of run(root, 'git', ['worktree', 'list', '--porcelain']).split(/\n\n+/)) {
+    const sha = (block.match(/^HEAD ([0-9a-f]{40})$/m) || [])[1], ref = (block.match(/^branch refs\/heads\/(.+)$/m) || [])[1];
+    if (sha && ref) out.push({ name: ref, sha });
+  }
+  return out;
+}
+/** Pure but for the date: the heads to compare besides the open PR heads. remote, worktrees: [{ name, sha }]; open: [{ sha, headRef }] (the open PR heads, compared already);
+ * selfRef: this branch's name. Left out: HEAD, main, this branch, merge-queue branches, an open PR's head (by name or tip), a worktree branch that is a remote head
+ * (same tip) or has an open PR. opts.prefix: label start (default `branch `); opts.dates: add `, tip YYYY-MM-DD` (git's committer date). */
+function wideHeads(root, { remote = [], worktrees = [], open = [], selfRef, prefix = 'branch ', dates = true }) {
+  const openNames = new Set(open.map((o) => o.headRef).filter(Boolean)), openShas = new Set(open.map((o) => o.sha));
+  const skip = (h) => !h.name || h.name === 'HEAD' || h.name === 'main' || h.name === selfRef || h.name.startsWith(QUEUE_PREFIX);
+  const label = (kind, h) => `${kind}${printable(h.name)}${dates ? `, tip ${gitq(root, ['log', '-1', '--format=%cs', h.sha]) || '?'}` : ''}`;
+  const out = remote.filter((h) => !skip(h) && !openNames.has(h.name) && !openShas.has(h.sha))
+    .map((h) => ({ label: label(prefix, h), sha: h.sha, name: h.name, headRef: h.name, sameRepo: true, wide: true }));
+  for (const h of worktrees) {
+    if (skip(h) || openNames.has(h.name) || openShas.has(h.sha) || remote.some((r) => r.sha === h.sha)) continue;
+    out.push({ label: label('worktree ', h), sha: h.sha, name: h.name, headRef: h.name, sameRepo: true, wide: true });
+  }
+  return out;
+}
+/** The PR state of a branch by `gh` (sync): [{ headRefOid, mergedAt, state, isCrossRepository }] or null when it cannot be read. */
+function ghBranchState(root) {
+  return (name) => {
+    try { const rows = JSON.parse(run(root, 'gh', ['pr', 'list', `--head=${name}`, '--state', 'all', '--json', 'headRefOid,mergedAt,state,isCrossRepository'], { timeout: 60000 })); return Array.isArray(rows) ? rows : null; } catch { return null; }
+  };
+}
+/** collect + findClashes, and then a second look at each wide head that clashes: its PR (lookup(name) -> rows or null) is closed and not merged
+ * at that tip -> the head is left out and named in notes. A lookup that fails THROWS (exit 2): a clash is never dropped without knowing. */
+function resolveWide(root, heads, headRev, self, lookup) {
+  let list = heads;
+  const notes = [];
+  for (;;) {
+    const res = collect(root, list, headRev, self);
+    const clashes = findClashes(res);
+    const gone = [];
+    for (const h of list.filter((x) => x.wide && clashes.some((c) => c.with.startsWith(`${x.label} (added there too`)))) {
+      const rows = lookup(h.name);
+      if (!rows) throw new Error(`could not read the PR state of branch ${h.name} (gh pr list failed; it is needed to tell a dead branch from a live one)`);
+      if (rows.some((p) => p.state === 'CLOSED' && !p.mergedAt && p.isCrossRepository === false && p.headRefOid === h.sha)) gone.push(h);
+    }
+    if (!gone.length) return { res, clashes, notes };
+    for (const h of gone) notes.push(`NOTE skipped ${h.label}: its PR is closed and not merged, so its numbers are free`);
+    list = list.filter((x) => !gone.includes(x));
+  }
+}
+
+function report({ branchAdds, prs, skipped, noBase = [], base }, clashes, notes = [], wideCount = null) {
   const lines = [];
   const n = [...branchAdds.values()].reduce((a, s) => a + s.size, 0);
   lines.push(`specs:numbers: ${n} number(s) added since ${base.slice(0, 9)}, checked against origin/main and ${prs.length} other open PR head(s)${skipped.length ? ` (${skipped.length} skipped: already in this branch or merged)` : ''}`);
+  if (wideCount !== null) lines.push(`specs:numbers: --wide: ${wideCount} remote branch(es) without an open PR and worktree branch(es) were in the list too`);
+  for (const t of notes) lines.push(`specs:numbers: ${t}`);
   if (noBase.length) lines.push(`specs:numbers: WARN not compared (no common history with origin/main): ${noBase.join(', ')}`);
   if (!clashes.length) { lines.push('specs:numbers: ok, no clash'); return lines; }
   for (const c of clashes) lines.push(`  CLASH ${printable(c.file)}: ${c.id} is also in ${c.with}`);
@@ -351,6 +427,7 @@ async function main(argv, env, deps = {}) {
   const root = argOf(argv, '--root') ? path.resolve(argOf(argv, '--root')) : path.join(__dirname, '..');
   if (argv.includes('--dups') || argv.includes('--write-baseline')) return dupsMain(argv, root);
   const noFetch = argv.includes('--no-fetch');
+  const wide = argv.includes('--wide');
   const exclude = String(argOf(argv, '--exclude') || env.PR_NUMBER || '');
   const headRev = String(argOf(argv, '--head') || env.PR_HEAD_SHA || 'HEAD');
   if (headRev !== 'HEAD' && !/^[0-9a-f]{40}$/i.test(headRev)) { say('specs:numbers: NOT CHECKED: --head / PR_HEAD_SHA must be a full 40-character commit sha'); return 2; }
@@ -364,19 +441,26 @@ async function main(argv, env, deps = {}) {
   let heads = headsFromRefs(root).filter((h) => h.number !== exclude);
   if (prList) { const open = new Set(prList.map((p) => String(p.number))); heads = heads.filter((h) => open.has(h.number)); }
   if (!heads.length && !noFetch) say('specs:numbers: WARN no PR heads found; only origin/main was compared');
-  let res;
+  let res, clashes, notes = [], wideCount = null;
   // the branch's own PR (from the list) or, on a local run, the checked-out branch: its refs tell which open PRs are stacked with it
   const own = prList && prList.find((p) => String(p.number) === exclude);
   const refOf = new Map((prList || []).map((p) => [String(p.number), p]));
   heads = heads.map((h) => ({ ...h, headRef: (refOf.get(h.number) || {}).headRef, baseRef: (refOf.get(h.number) || {}).baseRef, sameRepo: (refOf.get(h.number) || {}).sameRepo }));
   const self = own ? { headRef: own.headRef, baseRef: own.baseRef, sameRepo: own.sameRepo } : { headRef: gitq(root, ['symbolic-ref', '--short', '-q', 'HEAD']) || undefined, sameRepo: true };
-  try { res = collect(root, heads, headRev, self); } catch (e) { say(`specs:numbers: NOT CHECKED: ${firstLine(e)}`); return 2; }
-  const clashes = findClashes(res);
-  say(report(res, clashes).join('\n'));
+  try {
+    if (wide) {
+      const remote = noFetch ? trackedRemoteHeads(root) : liveRemoteHeads(root);
+      if (!noFetch) fetchRemoteHeads(root, remote);
+      const extra = wideHeads(root, { remote, worktrees: worktreeHeads(root), open: heads.map((h) => ({ sha: h.sha, headRef: h.headRef })), selfRef: self.headRef });
+      wideCount = extra.length;
+      ({ res, clashes, notes } = resolveWide(root, heads.concat(extra), headRev, self, deps.branchState || ghBranchState(root)));
+    } else { res = collect(root, heads, headRev, self); clashes = findClashes(res); }
+  } catch (e) { say(`specs:numbers: NOT CHECKED: ${firstLine(e)}`); return 2; }
+  say(report(res, clashes, notes, wideCount).join('\n'));
   return clashes.length ? 1 : 0;
 }
 
-module.exports = { stackRelated, openPrs, GH_LIMIT, parseDefinitions, definitionCounts, definitionLines, scanDuplicates, checkDuplicates, added, findClashes, scrub, collect, report, restOpenPrs, main, show, SPEC_FILE_RE };
+module.exports = { wideHeads, resolveWide, liveRemoteHeads, trackedRemoteHeads, worktreeHeads, ghBranchState, stackRelated, openPrs, GH_LIMIT, parseDefinitions, definitionCounts, definitionLines, scanDuplicates, checkDuplicates, added, findClashes, scrub, collect, report, restOpenPrs, main, show, SPEC_FILE_RE };
 
 if (require.main === module) {
   main(process.argv.slice(2), process.env).then((c) => process.exit(c), (e) => { emit(`specs:numbers: NOT CHECKED: ${firstLine(e)}`); process.exit(2); });

@@ -362,7 +362,7 @@
     "releases:check": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/releases-check.js",
     "ci:stats": "node scripts/ci-stats.js",
     "groups:build": "python3 -I scripts/build-character-groups.py --write",
-    "specs:numbers": "node scripts/spec-numbers.js",
+    "specs:numbers": "node scripts/spec-numbers.js --wide",
     "worktrees:clean": "node scripts/worktrees-clean.js",
     "pr:preflight": "node scripts/pr-preflight.js",
     "site": "node scripts/build-site.js",
