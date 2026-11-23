@@ -319,6 +319,7 @@
     "test:vscodechat": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-vscodechat.js",
     "test:weeklyaudit": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-weekly-audit.js",
     "test:weeklyretro": "node scripts/test-weekly-retro.js",
+    "test:workflowconcurrency": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-workflow-concurrency.js",
     "test:worktreesclean": "node scripts/test-worktrees-clean.js",
     "test:world-catalogue": "node scripts/test-world-catalogue.js",
     "test:world-contact-sheet": "node scripts/test-world-contact-sheet.js",
