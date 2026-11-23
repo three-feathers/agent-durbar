@@ -568,6 +568,32 @@ assert.ok(Object.values(META.stand).some((s) => Object.values(s.foot as Record<s
       }
       console.log(`T472 rows walk: ${n} pictures, every one an HD bust or frame`);
     }
+    { // spec 102 T472 (coordinator's look at F1): no world shrinks for the HD set: the visible figure as tall as the old set's, the lounge card no narrower
+      const TOL = 0.03; /* the figure's height on screen within 3 % of the old set's: the HD busts' seat numbers are fitted to the old figures, rounding stays far below this */
+      const rs = sj('retro') as Record<string, unknown>, oldSet = { ...rs, hd: undefined } as unknown;
+      type L2 = { zones: { desks: { id: string; person: { h: number; pid: string } | null }[] }[]; lounge?: { desks: { id: string; plate: Rect; person: { h: number } | null }[] } };
+      const check = (hdSet: unknown, tag: string): string[] => {
+        const out: string[] = [];
+        for (const w of ['photo', 'cave']) for (const [W, H] of SIZES.slice(0, 2)) for (const k of [3, 15]) for (let r = 0; r < 15; r += 3) {
+          const m = model(k, k > 4 ? 4 : 1, { away: false }); m.folders.flatMap((f) => f.agents).forEach((a, i) => { a.person = PEOPLE[(i + r) % 15]; if (i === 1 || i === 2) a.lounge = true; });
+          const o = realLayout(m, { w: W, h: H }, metaOf(wj(w), oldSet) as unknown as RealMeta) as unknown as L2, n = realLayout(m, { w: W, h: H }, metaOf(wj(w), hdSet) as unknown as RealMeta) as unknown as L2;
+          const od = new Map([...o.zones.flatMap((z) => z.desks), ...(o.lounge ? o.lounge.desks : [])].map((d) => [d.id, d] as const));
+          for (const d of [...n.zones.flatMap((z) => z.desks), ...(n.lounge ? n.lounge.desks : [])]) {
+            const b = od.get(d.id); if (!b || !b.person || !d.person) continue;
+            if (Math.abs(d.person.h / b.person.h - 1) > TOL) out.push(`${tag} ${w} ${W}x${H} ${k}: ${d.id} figure ${d.person.h.toFixed(1)} px, the old set's ${b.person.h.toFixed(1)} px`);
+          }
+          for (const d of n.lounge ? n.lounge.desks : []) { const b = od.get(d.id) as { plate: Rect } | undefined; if (b && d.plate.w < b.plate.w - 0.5) out.push(`${tag} ${w} ${W}x${H} ${k}: lounge card ${d.id} ${d.plate.w.toFixed(1)} px, the old set's ${b.plate.w.toFixed(1)} px`); }
+        }
+        return out;
+      };
+      assert.deepStrictEqual(check(rs, 'HD'), [], 'T472: in the rows worlds the HD figure is as tall as the old one (3 %) and the lounge card no narrower');
+      const hd = rs.hd as { busts: Record<string, { bodyH: number; headTop: number; h: number }>; loungeW: number };
+      const canvasScaled = { ...rs, hd: { ...hd, busts: Object.fromEntries(Object.entries(hd.busts).map(([k, v]) => [k, { ...v, bodyH: v.h, headTop: 0 }])) } }; /* mutant: scaled on the canvas, not on the figure */
+      assert.ok(check(canvasScaled, 'red').some((x) => / figure /.test(x)), 'red: a set scaled on its canvas (not its figure) draws a smaller person and fails');
+      const narrow = { ...rs, hd: { ...hd, loungeW: 0 } }; /* mutant: the seat follows the HD canvas */
+      assert.ok(check(narrow, 'red').some((x) => /lounge card/.test(x)), 'red: a lounge seat that follows the HD canvas is narrower and fails');
+      console.log('T472 no shrink: figures within 3 % of the old set, lounge cards no narrower, at 3 and 15 agents in the Photo office and the cave');
+    }
     // T296 (FR-326): the Retro pixel set has its own seen-from-behind running frames, so the Terminal visitor draws `runA`/`runB`, not the `letter` fallback
     const st = sj('retro').stand as Record<string, { poses: Record<string, number[]> }>;
     for (const id of Object.keys(st)) { assert.ok('runA' in st[id].poses && 'runB' in st[id].poses, `${id}: runA and runB are in the stand poses (T296)`); assert.ok('letter' in st[id].poses, `${id}: letter stays (the other places)`); const f = (st[id] as unknown as { foot: Record<string, number> }).foot; for (const q of ['runA', 'runB']) assert.ok(f[q] > 0.3 && f[q] < 0.7, `${id} ${q}: the head-anchored foot share is near the standing frames'`); }

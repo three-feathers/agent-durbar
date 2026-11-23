@@ -48,7 +48,7 @@ export interface RealMeta {
   hdPeople?: HdSet;
 }
 /** spec 102 FR-391: per person, pose and authored scale `s` (file px per grid px): the file's width and height and its face box (x, y, w, h), all in file px */
-export interface HdSet { scales: number[]; people: Record<string, Record<string, Record<string, [number, number, number, number, number, number]>>>; busts?: Record<string, SeatMeta> }
+export interface HdSet { scales: number[]; people: Record<string, Record<string, Record<string, [number, number, number, number, number, number]>>>; busts?: Record<string, SeatMeta>; loungeW?: number }
 /** spec 102 T472 (owner 2026-11-23 20:11 UTC): the seated people of a set: its HD busts (one size, the largest, drawn as each world scales its people) when it has them, else its `seat` */
 export const seatsOf = (meta: Pick<RealMeta, 'seat' | 'hdPeople'>): Record<string, SeatMeta> => (meta.hdPeople && meta.hdPeople.busts) || meta.seat || {};
 /** the file of a seated pose, in the set's folder: the HD bust (`hd/<pid>-<pose>@4.webp`) or the set's own picture */
@@ -802,7 +802,7 @@ export const LOUNGE_U = 84, LOUNGE_SHOW = 0.68, LOUNGE_TABLE = 0.62, LOUNGE_GAP 
 /** FR-247: the seat width and the row height, from every person of the set (not only the ones seated now), so a seat never changes size with who sits there */
 export function loungeSeat(meta: RealMeta): { w: number; h: number; above: number; pw: number } {
   const seats = Object.values(seatsOf(meta));
-  const pw = Math.max(0.8 * LOUNGE_U, ...seats.map((m) => (m.w / m.bodyH) * LOUNGE_U)), ph = Math.max(1.2 * LOUNGE_U, ...seats.map((m) => (m.h / m.bodyH) * LOUNGE_U));
+  const pw = Math.max(0.8 * LOUNGE_U, ...seats.map((m) => (m.w / m.bodyH) * LOUNGE_U), ((meta.hdPeople && meta.hdPeople.loungeW) || 0) * LOUNGE_U), /* spec 102 T472: an HD set keeps the seat width its old pictures gave (`loungeW`, in body heights), so a role that fitted still fits */ ph = Math.max(1.2 * LOUNGE_U, ...seats.map((m) => (m.h / m.bodyH) * LOUNGE_U));
   const above = Math.ceil(ph * LOUNGE_SHOW);
   return { w: Math.ceil(0.86 * pw + LOUNGE_TABLE * LOUNGE_U + LOUNGE_GAP), h: LOUNGE_PAD + above + PLATE_H_ASK + LOUNGE_PAD, above, pw };
 }
