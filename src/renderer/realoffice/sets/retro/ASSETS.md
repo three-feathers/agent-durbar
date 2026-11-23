@@ -302,3 +302,51 @@ Fifteen invented pixel-art people, each with 20 Real office frames: six seated b
 
 None.
 
+## HD set (spec 102 FR-391..FR-398, issue #2055): the pilot, behind the off switch
+
+Style B of the owner's second sample sheet (Vikram, Telegram, 2026-11-23 13:07 UTC). Files in `hd/`: `<pid>-<pose>@<s>.webp`, lossless, `s` = file px per grid px (4 the master, 3 and 2 made offline from it). Drawn only with `DURBAR_HD_PEOPLE=1`. One pipeline for every frame: `build_hd.py` (art cache, SHA-256 `77e585df9a0cdf562d1274ae405d27c494671af24b9e3f32a4112bc5a3a8e484`): chroma key and despill, figures cut as connected parts, one scale per sheet (the tallest standing figure 288 px, a bust 320), premultiplied area downsample, a darker outline, the cyan and magenta rim (FR-396), one 96-colour palette over every frame of every person, orphan cleanup (FR-394), the floor shadow, faceBox per frame. The sheets were made by `gen.py` (art cache, SHA-256 `f8060a3297417c16d8020a027d4612b1fc58c0330b98457443b2a028151195f5`), one `codex exec` at a time.
+
+#### hd-p08
+
+- files: the 20 poses of p08 at scales 4, 3 and 2 (60 files, named in `set.json` `hd.people.p08`)
+- source: four Codex sheets: `p08-F` (six front poses and `sit` on a stool), `p08-B` (seven from behind), `p08-S1` (`typeA`, `typeB`, `think`) and `p08-S2` (`waveA`, `waveB`, `rest`); a person's poses on one sheet
+- tool: Codex image generation (`codex exec`, codex-cli 0.163.0, on the owner's ChatGPT plan), then `build_hd.py`
+- date: 2026-11-23
+- made by: Vikram's agent (Claude Code)
+- approved by: pending (Vikram): the pilot checkpoint, spec 102 FR-400 (a)
+- reference: the owner's approved style-B sample figure `cap` (sample sheet 2, column B) at 3x on chroma green; the same run's `F` sheet for the B, S1 and S2 sheets
+- prompt: prompt class "HD sprite sheet" (each sheet's full text is `prompt.txt` beside it in the art cache): the poses of the sheet, then the character line: a young man: grey knit beanie, short brown hair, light-tan skin, thin round glasses, short stubble beard, olive-green canvas jacket, dark trousers, black boots; style: high-definition pixel-art game sprites, about 4.5 heads tall, about 96 colours, a darker tinted outline, hard edges, no rim light or glow (the pipeline adds them), on flat #00FF00; fictional, no real or famous person, no brand or franchise character, no text, letters, numbers or logos
+- cut: connected parts of the keyed sheet; no picture is scaled by the browser; 13 Codex runs for the pilot (one six-bust sheet of p08 was replaced by S1 and S2 and is not used)
+- licence: MIT
+- fictional: This person is fictional and must not resemble any real or famous person; no real person, celebrity, brand, logo or franchise is named.
+- likeness-check: pending (Vikram)
+
+#### hd-p12
+
+- files: the 20 poses of p12 at scales 4, 3 and 2 (60 files, named in `set.json` `hd.people.p12`)
+- source: four Codex sheets: `p12-F` (six front poses and `sit` on a stool), `p12-B` (seven from behind), `p12-S1` (`typeA`, `typeB`, `think`) and `p12-S2` (`waveA`, `waveB`, `rest`); a person's poses on one sheet
+- tool: Codex image generation (`codex exec`, codex-cli 0.163.0, on the owner's ChatGPT plan), then `build_hd.py`
+- date: 2026-11-23
+- made by: Vikram's agent (Claude Code)
+- approved by: pending (Vikram): the pilot checkpoint, spec 102 FR-400 (a)
+- reference: the owner's approved style-B sample figure `beard` (sample sheet 2, column B) at 3x on chroma green; the same run's `F` sheet for the B, S1 and S2 sheets
+- prompt: prompt class "HD sprite sheet" (each sheet's full text is `prompt.txt` beside it in the art cache): the poses of the sheet, then the character line: a jolly bald man: big round ginger-red beard, forest-green apron with two front pockets over a cream shirt with rolled sleeves, brown trousers, brown boots; style: high-definition pixel-art game sprites, about 4.5 heads tall, about 96 colours, a darker tinted outline, hard edges, no rim light or glow (the pipeline adds them), on flat #00FF00; fictional, no real or famous person, no brand or franchise character, no text, letters, numbers or logos
+- cut: connected parts of the keyed sheet; no picture is scaled by the browser; 13 Codex runs for the pilot (one six-bust sheet of p08 was replaced by S1 and S2 and is not used)
+- licence: MIT
+- fictional: This person is fictional and must not resemble any real or famous person; no real person, celebrity, brand, logo or franchise is named.
+- likeness-check: pending (Vikram)
+
+#### hd-p04
+
+- files: the 20 poses of p04 at scales 4, 3 and 2 (60 files, named in `set.json` `hd.people.p04`)
+- source: four Codex sheets: `p04-F` (six front poses and `sit` on a stool), `p04-B` (seven from behind), `p04-S1` (`typeA`, `typeB`, `think`) and `p04-S2` (`waveA`, `waveB`, `rest`); a person's poses on one sheet
+- tool: Codex image generation (`codex exec`, codex-cli 0.163.0, on the owner's ChatGPT plan), then `build_hd.py`
+- date: 2026-11-23
+- made by: Vikram's agent (Claude Code)
+- approved by: pending (Vikram): the pilot checkpoint, spec 102 FR-400 (a)
+- reference: the owner's approved style-B sample figure `reader` (sample sheet 2, column B) at 3x on chroma green; the same run's `F` sheet for the B, S1 and S2 sheets
+- prompt: prompt class "HD sprite sheet" (each sheet's full text is `prompt.txt` beside it in the art cache): the poses of the sheet, then the character line: a young woman: red bob with a fringe, white blouse, royal-blue knee-length pleated skirt, dark tights, red shoes; style: high-definition pixel-art game sprites, about 4.5 heads tall, about 96 colours, a darker tinted outline, hard edges, no rim light or glow (the pipeline adds them), on flat #00FF00; fictional, no real or famous person, no brand or franchise character, no text, letters, numbers or logos
+- cut: connected parts of the keyed sheet; no picture is scaled by the browser; 13 Codex runs for the pilot (one six-bust sheet of p08 was replaced by S1 and S2 and is not used)
+- licence: MIT
+- fictional: This person is fictional and must not resemble any real or famous person; no real person, celebrity, brand, logo or franchise is named.
+- likeness-check: pending (Vikram)
