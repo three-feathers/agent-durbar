@@ -321,6 +321,36 @@ export function snoozeState(now: number, version: string, snooze: unknown, skip?
   return 'show';
 }
 
+/** FR-021 (T010): the `updates` object of the settings file, each key only in its exact shape. */
+export interface SelfUpdateSettings { selfCheck?: boolean; source?: string; snooze?: { version: string; until: number }; skip?: string; lastCheck?: { at: number; latest?: string } }
+
+/** An own data property's value: a getter is never run, an inherited or `__proto__`-set value never read. */
+const own = (o: object, k: string): unknown => {
+  const d = Object.getOwnPropertyDescriptor(o, k);
+  return d && 'value' in d ? d.value : undefined;
+};
+const stableVersion = (v: unknown): v is string => typeof v === 'string' && VERSION_KEY_RE.test(v);
+const time = (v: unknown): v is number => typeof v === 'number' && Number.isSafeInteger(v) && v >= 0;
+
+/** FR-021, validated on read: unknown keys dropped, a key of the wrong type absent, the slug only in its parsed form; undefined when nothing is left. */
+export function parseUpdatesSettings(v: unknown): SelfUpdateSettings | undefined {
+  if (!isObj(v)) return undefined;
+  const out: SelfUpdateSettings = {};
+  const selfCheck = own(v, 'selfCheck');
+  if (typeof selfCheck === 'boolean') out.selfCheck = selfCheck;
+  const source = own(v, 'source');
+  if (typeof source === 'string' && parseRepoSlug(source) === source) out.source = source;
+  const snooze = own(v, 'snooze');
+  const [sv, su] = isObj(snooze) ? [own(snooze, 'version'), own(snooze, 'until')] : [];
+  if (stableVersion(sv) && time(su)) out.snooze = { version: sv, until: su };
+  const skip = own(v, 'skip');
+  if (stableVersion(skip)) out.skip = skip;
+  const last = own(v, 'lastCheck');
+  const [at, latest] = isObj(last) ? [own(last, 'at'), own(last, 'latest')] : [];
+  if (time(at)) out.lastCheck = stableVersion(latest) ? { at, latest } : { at };
+  return Object.keys(out).length ? out : undefined;
+}
+
 // ---------------------------------------------------------------------------------------------------------------------
 // Strict JSON files: `releases.json` (FR-026) and the baked `updatesource.json` (FR-001)
 

@@ -168,7 +168,7 @@ async function main(): Promise<void> {
   for (const a of [viaError.a, brief(viaThrow)]) {
     assert.deepStrictEqual(a, { ok: false, reason: 'network' }, "a network error is the code 'network', not its text");
   }
-  assert.deepStrictEqual([...FEED_FAILURES].sort(), ['content-type', 'network', 'not-allowed', 'redirect', 'status', 'timeout', 'too-large'], 'the closed set of failure codes');
+  assert.deepStrictEqual([...FEED_FAILURES].sort(), ['aborted', 'content-type', 'network', 'not-allowed', 'redirect', 'status', 'timeout', 'too-large'], 'the closed set of failure codes');
 
   // a response stream error after the headers is 'network' at once, not a timeout (review of #2058)
   {
@@ -180,6 +180,30 @@ async function main(): Promise<void> {
     for (let i = 0; i < 5; i++) await new Promise((r) => setImmediate(r));
     assert.deepStrictEqual(got, { ok: false, reason: 'network' }, "a response error mid-body is 'network' at once, with no timer fired");
     assert.ok(n.reqs[0].aborted, 'the failed response is aborted');
+  }
+
+  // FR-004 (T010): switching the check off mid-request aborts it; an aborted signal creates no request object
+  {
+    const before = netWith(answer(200, '[]'));
+    const ac0 = new AbortController();
+    ac0.abort();
+    const pending = <T>(q: Promise<T>): Promise<T | 'pending'> => Promise.race([q, new Promise<'pending'>((r) => setImmediate(() => setImmediate(() => r('pending'))))]);
+    assert.deepStrictEqual(await pending(makeFeedGet(before.factory)(LIST, SLUG, ac0.signal)), { ok: false, reason: 'aborted' }, 'abort: an aborted signal answers aborted');
+    assert.strictEqual(before.reqs.length, 0, 'abort: an aborted signal creates no request object');
+    const n = netWith(() => { /* never answers */ });
+    const ac = new AbortController();
+    let cleared = 0;
+    const p = makeFeedGet(n.factory, { set: () => 1, clear: () => { cleared++; } })(LIST, SLUG, ac.signal);
+    await new Promise((r) => setImmediate(r));
+    ac.abort();
+    assert.deepStrictEqual(await pending(p), { ok: false, reason: 'aborted' }, 'abort: an abort during the request answers aborted');
+    assert.ok(n.reqs[0].aborted, 'abort: the request object is aborted');
+    assert.strictEqual(cleared, 1, 'abort: the time limit is cleared');
+    const done = netWith(answer(200, '[]'));
+    const ac2 = new AbortController();
+    const r = await makeFeedGet(done.factory)(LIST, SLUG, ac2.signal);
+    ac2.abort();
+    assert.ok(r.ok, 'abort: an abort after the answer changes nothing');
   }
 
   // FR-004: 10 s limit, on a fake timer
