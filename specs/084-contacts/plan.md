@@ -4,7 +4,7 @@
 
 ## Summary
 
-Main gets a small global contacts store (one JSON file and a send log in `<userData>/contacts/`, 0600, atomic writes, masked notes) and a window-only IPC module that takes ids only. A pure link builder makes Teams, email, Slack and Telegram links from stored contacts (allow-listed prefixes, a 2,000-character cap), and main opens them with `shell.openExternal` after the user confirms an `askDialog` preview that blocks text that looks like a secret. The window adds Settings > Contacts, a Contacts drawer in the chat (sharing spec 083's drawer frame), an `@` picker reusing the `/` list, and a recipient chip that turns Send into *Preview*. Later phases add option A (a send recipe, a single-use broker ticket, and a message-tool hold in every mode), the Teams import through the same ticket path, and drafting with `generateText`.
+Main gets a small global contacts store (one JSON file and a send log in `<userData>/contacts/`, 0600, atomic writes, masked notes) and a window-only IPC module that takes ids only. A pure link builder makes Teams, email, Slack and Telegram links from stored contacts (allow-listed prefixes, a 2,000-character cap), and main opens them with `shell.openExternal` after the user confirms an `askDialog` preview that warns about text that looks like a secret and lets the user choose the masked text, *Send anyway* or *Back* (FR-033, changed 2026-11-23). The window adds Settings > Contacts, a Contacts drawer in the chat (sharing spec 083's drawer frame), an `@` picker reusing the `/` list, and a recipient chip that turns Send into *Preview*. Later phases add option A (a send recipe, a single-use broker ticket, and a message-tool hold in every mode), the Teams import through the same ticket path, and drafting with `generateText`.
 
 ## Technical Context
 
@@ -34,7 +34,7 @@ Main gets a small global contacts store (one JSON file and a send log in `<userD
 | --- | --- |
 | I Spec Kit | This spec, plan and tasks first; deltas in 005 (chat panel, composer), 003/018 (broker message tools, tickets), 073 (`@` trigger), 083 (shared drawer frame), 080 (a note that FR-024 is unchanged) (T001). |
 | II Adapters are plug-ins | Contacts code knows no vendor: links are by channel kind; option A uses normalized `permission`, `toolCall` and `mcp` events and a capability flag `mcpCallArgs`; adapters only pass `args` on `PermissionLike`. |
-| III Safe, no secrets | FX1..FX5: a preview made in main with *Cancel* focused before every send; a single-use `previewId` and a trusted `input-event` within 1 s for every send, and a 5 per minute / 30 per hour limit (D18, FR-083, FR-084); only the app window reaches `contacts:*` (not remote control, schedules, the MCP server or the session browser); the secret check in window and main, no override; tickets are single-use, in memory, exact, and **never made in Read-only**, so Read-only still denies every MCP call (D9: option A and the import are not offered there; option C opens a link and calls no tool); message tools never auto-approved, Allow all included; no Durbar MCP client (no tokens); main builds URLs that must start with an entry of `CONTACT_LINK_ALLOWLIST`; no shell; 0600 store; Durbar's logs hold no message text or message-tool arguments (FX5 as narrowed, FR-082). |
+| III Safe, no secrets | FX1..FX5: a preview made in main with *Cancel* focused before every send; a single-use `previewId` and a trusted `input-event` within 1 s for every send, and a 5 per minute / 30 per hour limit (D18, FR-083, FR-084); only the app window reaches `contacts:*` (not remote control, schedules, the MCP server or the session browser); the secret check in window and main, a warning whose *Send anyway* main accepts only for that `previewId` with a trusted click (FR-033, 2026-11-23); tickets are single-use, in memory, exact, and **never made in Read-only**, so Read-only still denies every MCP call (D9: option A and the import are not offered there; option C opens a link and calls no tool); message tools never auto-approved, Allow all included; no Durbar MCP client (no tokens); main builds URLs that must start with an entry of `CONTACT_LINK_ALLOWLIST`; no shell; 0600 store; Durbar's logs hold no message text or message-tool arguments (FX5 as narrowed, FR-082). |
 | IV No credits | C, store and UI need none; A, import and drafting are user-pressed, one reply each, said on the button; every test uses the simulator, `FakeAdapter` and stubbed openers (FR-086, SC-007). |
 | V Calm UI | Drawer inside the panel; nothing on the office floor; 10.5px; icon plus words (no emoji, D13); keyboard and names; chip fits 480px; 15 agents at both sizes (FR-087). |
 | VI Parity | One URL cap on every OS (D7); `shell.openExternal` everywhere; Linux handler gaps written as `[KNOWN GAP]`. |
@@ -67,7 +67,7 @@ No violation; no Complexity Tracking entry. If the owner answers yes to Q4 (opti
 
 ```text
 { "version": 1, "entries": [ { "at": "ISO UTC", "contactId": "p-…", "name": "≤ 80", "kind": "teams|…",
-  "via": "link|link-copy|mcp", "outcome": "opened|open-failed|sent|failed|not-sent|blocked-secret", "chars": 0 } ] }
+  "via": "link|link-copy|mcp", "outcome": "opened|open-failed|sent|failed|not-sent|secret-unconfirmed", "chars": 0, "anyway": false } ] }
 ```
 
 No text, digest, address or session id (FR-081).

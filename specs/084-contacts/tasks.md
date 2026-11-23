@@ -58,6 +58,10 @@ description: "Tasks for spec 084: contacts, and sending the message box to a per
   - AC2: every token shape of `test-redact`'s corpus planted in a message, inside Markdown and split by `**` or a backtick, gives `changed: true`.
   - AC3: plain text with `release_notes`, emails and issue numbers gives `changed: false`.
   - AC4: if 083's `maskNoteText` exists, both share one core (a test calls both on the corpus and compares); `redact.ts` still has no imports.
+- [ ] T488 [P] The warning's list of changes, before T014 (spec delta 2026-11-23, issue #2060 item 12: warn, do not block). [FR-033, D10]
+  - AC1: today the doc comment on `maskOutgoing` in `src/shared/redact.ts` still says `changed` "blocks the send (no override)" (`[KNOWN GAP]` until this task); it is changed to say that `changed` opens FR-033's warning (*Use the masked text*, *Send anyway*, *Back*).
+  - AC2: `maskOutgoing` (or one function beside it on the same core, so the two never disagree) also returns the changes: for each masked span its line and a kind from one table of plain names (token shapes of `redact`, a known value of the folder or session, a token run across Markdown marks); a span with no name gives *looks like a secret*. The returned names and lines carry no part of the secret (a test plants every corpus shape and checks that no secret character reaches the list).
+  - AC3: `text` and `changed` are byte-for-byte what they are today (the corpus, the walker and the fuzz suites of T012 pass unchanged); `maskNoteText` and `teamtemplate.ts`'s use are unchanged.
 - [ ] T013 Store `src/main/contactsstore.ts`. [FR-001, FR-007, FR-008, FR-081]
   - AC1: creates `contacts/` 0700 and files 0600 on POSIX (checked with `stat` in a temp `userData`); atomic `wx` temp + rename.
   - AC2: two stores on one file: an outside change is re-read and merged by `id` before a write; a stale `rev` is refused (1,000 random operations, no lost or resurrected contact).
@@ -66,8 +70,8 @@ description: "Tasks for spec 084: contacts, and sending the message box to a per
   - AC5: notes are stored masked (a planted token never reaches the file). A note that masking makes longer than 1,000 characters is refused with a reason, never cut.
 - [ ] T014 IPC `src/main/ipc/contacts.ts`, preload and `src/shared/api.ts` types (MVP channels). [FR-085, FR-040, FR-033, FR-046]
   - AC1: `contacts:list/save/delete/star/move/preview/open/log/clearLog/export/deleteAll` registered with `fromApp`; `test-ipcchannels` lists them.
-  - AC2: `contacts:preview` takes ids and text only, looks up the agent (a main chat, not a helper), runs `maskOutgoing` with that chat's known values (a text over 4,000 characters is refused before it is masked, so one check stays near 45 ms at worst; review of PR 1236) and refuses `blocked: secret` when changed, builds the link with T011 and returns a `previewId` bound to contact, channel, recipient, text and URL; `contacts:open(previewId)` opens exactly that URL, and the injected opener is called only with a result that starts with a `CONTACT_LINK_ALLOWLIST` entry.
-  - AC3: Slack and `copyOnly` write the masked final text to the injected clipboard before opening.
+  - AC2: `contacts:preview` takes ids and text only, looks up the agent (a main chat, not a helper), runs `maskOutgoing` with that chat's known values (a text over 4,000 characters is refused before it is masked, so one check stays near 45 ms at worst; review of PR 1236) and, when changed, returns the masked text and the list of changes (line, kind; T488) with the preview instead of refusing it (FR-033, 2026-11-23), builds the link with T011 and returns a `previewId` bound to contact, channel, recipient, text and URL; `contacts:open(previewId)` opens exactly that URL, refuses `secret-unconfirmed` when the text masks differently and the call has no `anyway: true` (a test with and without it, and one where `anyway` comes for another `previewId`), and the injected opener is called only with a result that starts with a `CONTACT_LINK_ALLOWLIST` entry.
+  - AC3: Slack and `copyOnly` write the confirmed final text (masked, or as written after *Send anyway*) to the injected clipboard before opening.
   - AC4: an opener rejection gives `outcome: 'open-failed'` and a log entry; the error text returned is a fixed sentence.
   - AC5: under `DURBAR_SIM` the opener and clipboard are recording stubs; a test proves `shell.openExternal` and `clipboard.writeText` are not called (spy on the injected real ones).
   - AC6: `app:openExternal` is unchanged (a test still refuses `mailto:`, `slack:` and `msteams:` there).
@@ -106,7 +110,7 @@ description: "Tasks for spec 084: contacts, and sending the message box to a per
   - AC5: with `simcontacts=many` the filter stays under 50 ms renderer CPU time (SC-005).
 - [ ] T023 [US1] The preview and the C send. [FR-030..FR-034, FR-040..FR-046]
   - AC1: `askDialog` `size: 'l'` with title, channel line, how line per kind, editable text (≤ 4,000), the confirming button per kind drawn `primary warn` so *Cancel* has the focus; Esc cancels.
-  - AC2: the live secret check disables the confirming button with FR-033's sentence and offers *Use the masked text*; a test where the window skips the check gets `blocked: secret` from main.
+  - AC2: the live secret check disables the confirming button and shows FR-033's warning (each change's line, masked part and kind) with *Use the masked text*, *Send anyway* and *Back*, focus on *Back*, nothing pre-chosen; *Send anyway* sends the text as written and an edit afterwards asks again; a test where the window skips the check gets `secret-unconfirmed` from main; no `alert()`, `confirm()` or `prompt()` (in-page dialog only). (Changed 2026-11-23, issue #2060 item 12.)
   - AC3: the encoded-length counter; over 2,000 the button becomes *Copy the text and open the chat*.
   - AC4: email shows *Subject:* and *Body:* as built; Slack says the text is copied.
   - AC5: after a confirmed open the box is emptied, the chip removed, focus in the box; on *Cancel* both stay.
@@ -176,7 +180,7 @@ description: "Tasks for spec 084: contacts, and sending the message box to a per
   - AC3: unit test with a fake `generateText`; zero credits.
 - [ ] T051 [US6] The preview's draft button. [FR-060, FR-061]
   - AC1: *Ask <app> to write it (1 prompt)*; *Writing…* while it runs, confirming button disabled; *Undo* back to the brief.
-  - AC2: a draft with a secret shape is blocked by FR-033 like typed text (driver with a fake draft).
+  - AC2: a draft with a secret shape gets FR-033's warning like typed text (driver with a fake draft).
 
 ## Phase 6: Docs and converge
 
@@ -191,7 +195,7 @@ description: "Tasks for spec 084: contacts, and sending the message box to a per
 
 ## Dependencies
 
-- T018 after T010 and T011. T010..T017 before Phase 2; T017 after T014. T011, T012 before T014. T016 before T022. T020 before T021's *Manage contacts…*.
+- T018 after T010 and T011. T010..T017 before Phase 2; T017 after T014. T011, T012, T488 before T014. T016 before T022. T020 before T021's *Manage contacts…*.
 - T030, T031 before T033; T032 before T033; T034 before T035.
 - T017 before T023, T033, T041 and T050. T033 before T041; T040 before T041.
 - T014 before T050.
