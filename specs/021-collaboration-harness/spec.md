@@ -867,6 +867,14 @@ Asked by Paco in his review of #2038 (2026-11-22, item 5): the gate's message su
 - **FR-087 delta** `read:` A `release.yml` run whose **only** failed job is the UI gate (*UI run green on the tagged commit*) may have its failed jobs re-run (`gh run rerun <release run id> --failed`) once the tagged commit's *UI on three OSes* run is green, normally a by-hand run on the tag (`gh workflow run ui-platforms.yml --ref <tag>`); or a newer green commit is tagged instead. A `main` push UI run is **never** re-run for this: under spec 117 O3 a re-run joins the `ui-main` group and cancels `main`'s newest UI run. Every other release failure follows FR-087 as before. Such a re-run starts no AI agent (no credits). Written in `durbar-release` step 9 and `durbar-ci-rerun` step 3.
 - FR-063 accounting: this widens a practice recorded in this FR; no rule file (`AGENTS.md`, `docs/rules/`) changes, so nothing is replaced. The owners' acceptance beyond Paco's request is not recorded here.
 
+### 2026-11-23: FR-084 point 4 amended by spec 117 FR-012 (O2) and FR-014 (O3); agreed by the three owners
+
+O2 and O3 of spec 117 were agreed by the three owners (Vikram, Paco, Ruben) on 2026-11-23, recorded on #1995; built in #2039 (spec 117 T402, T403, T010), with Paco's condition for O3, the release UI gate (spec 117 T045, #2038), on `main` since 2026-11-23.
+
+- **Point 4, amended** (of FR-084). "shards the three-OS UI job" (for pull requests) becomes: a pull request runs the UI shards on Linux, and on Windows only when `.github/scripts/ci-changes.js` says `os_sensitive=true` (a touched file that can behave differently on Windows; it fails closed: any unknown path counts) or someone runs the full matrix by hand on the branch (`gh workflow run ui-platforms.yml --ref <branch>`). "Nightly runs and `main` keep the full three-OS matrix" becomes: nightly and by-hand runs keep the full three-OS matrix; the **newest** `main` push keeps its full Linux and Windows run (a newer merge cancels the older `main` UI run), and a release tags only a commit whose UI run finished green (`release.yml`'s `ui-gate`).
+- **Unchanged:** the file-to-driver map, "a file not in the map runs the full set" and the missing-driver check (Ruben's conditions); the map is still spec 008 T130 / spec 117 T006-T008, not built.
+- **One rule in, one rule out** (FR-063; as spec 117 FR-012 and FR-014 say): it replaces point 4's "shards the three-OS UI job" for pull requests and "`main` keeps the full three-OS matrix" with "the newest `main` push keeps it"; it also replaces 008 FR-107's "main runs always finish" for `ui-platforms.yml` only (spec 008 *Changes*, 2026-11-22). No rule file (`AGENTS.md`, `docs/rules/`) changes.
+
 ## Changes 2026-11-23
 
 ### 2026-11-23: delivery speed rule text: merge `main` only for a reason, PR size, review profile, a job cut at its limit; no shared append points proposed (FR-383)

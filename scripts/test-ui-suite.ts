@@ -332,12 +332,13 @@ const wf = fs.readFileSync(path.join(WF, 'ui-platforms.yml'), 'utf8');
 for (const os of ['ubuntu-latest', 'macos-latest', 'windows-latest']) assert.ok(wf.includes(os), `the workflow runs on ${os}`);
 for (const step of ['check-theme-geometry.js', 'check-office-overlap.js', 'check-mac-titlebar.js', 'ui-suite.js']) assert.ok(wf.includes(step), `the workflow runs ${step}`);
 assert.ok(!/part:/.test(wf) && !/OFFICE_SHARD/.test(wf), 'one job per OS: the office layout runs whole, no parts');
-assert.ok(wf.includes(`os: \${{ fromJSON((github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && '["ubuntu-latest","macos-latest","windows-latest"]' || '["ubuntu-latest","windows-latest"]') }}`), 'macOS UI checks only nightly and by hand');
+// spec 117 FR-012 / O2 (T403): Windows UI shards on a pull request only with os_sensitive; the per-event matrix is evaluated in test:uievents
+assert.ok(wf.includes(`os: \${{ fromJSON((github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && '["ubuntu-latest","macos-latest","windows-latest"]' || (github.event_name == 'pull_request' && needs.changes.outputs.os_sensitive == 'false') && '["ubuntu-latest"]' || '["ubuntu-latest","windows-latest"]') }}`), 'macOS UI checks only nightly and by hand; Windows on a PR only when OS-sensitive');
 assert.ok(/^ {2}schedule:/m.test(wf), 'ui-platforms.yml runs nightly');
 // FR-191: a cheap decision job; the shards need it and run only on ui=true; "UI suite complete" passes when ui=false, fails when the decision failed
 {
   const uj = jobsOf(wf);
-  assert.ok(uj.changes && uj.changes.includes('bash .github/scripts/ci-changes.sh') && uj.changes.includes('fetch-depth: 2') && uj.changes.includes('ui: ${{ steps.changes.outputs.ui }}'), 'ui-platforms.yml: a changes job outputs ui');
+  assert.ok(uj.changes && uj.changes.includes('bash .github/scripts/ci-changes.sh') && uj.changes.includes('fetch-depth: 2') && uj.changes.includes('ui: ${{ steps.changes.outputs.ui }}') && uj.changes.includes('os_sensitive: ${{ steps.changes.outputs.os_sensitive }}'), 'ui-platforms.yml: a changes job outputs ui and os_sensitive');
   assert.ok(uj.ui.includes('needs: changes') && uj.ui.includes("if: ${{ !github.event.pull_request.draft && needs.changes.outputs.ui == 'true' }}"), 'the UI shards run only when ui=true');
   const c = uj.complete;
   assert.ok(c.includes('needs: [changes, ui]') && c.includes('CHANGES: ${{ needs.changes.result }}') && c.includes('UI_NEEDED: ${{ needs.changes.outputs.ui }}'), 'UI suite complete reads the decision');
@@ -356,7 +357,9 @@ for (const f of ['ci.yml', 'ui-platforms.yml', 'spec-kit.yml', 'install-check.ym
   assert.ok(/^ {2}pull_request:\r?\n {4}types: \[[^\]]*ready_for_review\]/m.test(y), `${f}: runs again when a draft is marked ready`);
   const jobs = jobsOf(y);
   for (const [id, body] of Object.entries(jobs)) if (!/^ {4}needs:/m.test(body)) assert.ok(/^ {4}if: (.*!github\.event\.pull_request\.draft|github\.event_name == 'workflow_dispatch' && )/m.test(body), `${f} ${id}: skipped on a draft (or never on a PR)`);
-  assert.ok(/group: \$\{\{ github\.workflow \}\}-\$\{\{ github\.event\.pull_request\.number \|\| github\.(run_id|ref) \}\}/.test(y) && /cancel-in-progress: \$\{\{ github\.event_name == 'pull_request' \}\}/.test(y), `${f}: one concurrency group per PR, cancelling only PR runs`);
+  // spec 117 FR-014 / O3 (T010): ui-platforms.yml's main pushes share one cancelling group; its events are evaluated in test:uievents
+  if (f === 'ui-platforms.yml') assert.ok(y.includes("group: ${{ github.workflow }}-${{ github.event_name == 'push' && 'ui-main' || github.event.pull_request.number || github.run_id }}") && y.includes("cancel-in-progress: ${{ github.event_name == 'pull_request' || github.event_name == 'push' }}"), `${f}: one group per PR and one for main pushes, cancelling PR and main-push runs only`);
+  else assert.ok(/group: \$\{\{ github\.workflow \}\}-\$\{\{ github\.event\.pull_request\.number \|\| github\.(run_id|ref) \}\}/.test(y) && /cancel-in-progress: \$\{\{ github\.event_name == 'pull_request' \}\}/.test(y), `${f}: one concurrency group per PR, cancelling only PR runs`);
 }
 // FR-135: the real macOS build and test runs on a pull request only for platform-sensitive paths (GitHub's `paths:` filter), never
 // as a required check (the ruleset keeps the FR-106 stub), and uses no secrets and no pull_request_target

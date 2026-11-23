@@ -5,8 +5,8 @@ import * as crypto from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
 import { realLayout, layoutOrFlat, signMin, signWidth, sortDesks, storeyRuns, storeyTagW, STOREY_GAP, STOREY_U_LOSS, type RealFloor, type RealMeta, type RealModel, type RealAgent, type RealState, type Rect, type Layout, type DeskBox } from '../src/shared/realoffice-layout';
-import { screenFit } from '../src/shared/realoffice-layout';
-import { deviceScales, aisleStatus, aislesLayout, AISLES_DEPTH, placeResting, layoutFor, aisleTabOrder, aisleFace, FACE_FLOOR, AISLE_SIGN_MIN_W, AISLE_PLATE_H, ARRANGEMENTS } from '../src/shared/realoffice-arrangements';
+import { screenFit, type HdSet } from '../src/shared/realoffice-layout';
+import { AISLE_SIGN_H, CUE_BOX, hdFrame, hdPick, hdPlace, deviceScales, aisleStatus, aislesLayout, AISLES_DEPTH, placeResting, layoutFor, aisleTabOrder, aisleFace, FACE_FLOOR, AISLE_SIGN_MIN_W, AISLE_PLATE_H, ARRANGEMENTS } from '../src/shared/realoffice-arrangements';
 
 process.exitCode = 1;
 const ROOT = (() => { let d = __dirname; while (!fs.existsSync(path.join(d, 'package.json'))) d = path.dirname(d); return d; })();
@@ -1162,6 +1162,91 @@ for (const world of ['photo', 'cave']) {
     assert.ok(glass(4, 1695, h) < 128 && glass(4, 1696, h) >= 128, `4 agents (1248x${h} floor): the glass is 128 px or more from 1696 px across (448 short)`);
   }
   console.log('arcade 1280x800 limits pinned: strip from 786 px (697 given), glass.h from 1276 (3 agents) and 1696 (4) px across (1248 given)');
+}
+
+/* spec 102 FR-391, FR-392, FR-399 (issue #2055): the HD person set. Off (no `hdPeople`, the set's own `hd` block in META) the hall is byte for byte the hall without the
+   block, with the old file names. On: the authored size and whole number per ratio, the frame inside its place on whole device px, the face from the frame, the others unchanged. */
+{
+  const HD = (META as unknown as { hd?: HdSet }).hd;
+  assert.ok(HD && Object.keys(HD.people).length >= 3, 'set.json carries the HD set (the pilot: p08, p12, p04)');
+  const bare = { ...META } as Record<string, unknown>; delete bare.hd;
+  const cases2: Array<[number, number, number, number]> = [[3, 1440, ROOM.h900, 1], [3, 1280, ROOM.h800, 1], [15, 1440, ROOM.h900, 1], [15, 1280, ROOM.h800, 1], [3, 1440, ROOM.h900, 2], [3, 1440, ROOM.h900, 1.25], [15, 1280, ROOM.h800, 1.5]];
+  const pick = (n: number): RealModel => { const m = model(n, n > 4 ? 4 : 1); const ps = ['p08', 'p12', 'p04']; m.folders.flatMap((f) => f.agents).forEach((a, i) => { a.away = null; if (i < 3) a.person = ps[i]; }); return m; };
+  let hdDrawn = 0;
+  for (const [n, W, H, dpr] of cases2) {
+    const off = aislesLayout(pick(n), { w: W, h: H }, { ...META, dpr }, SIGNS(4)), tag = `${n} agents at ${W}x${H}, ratio ${dpr}`;
+    assert.strictEqual(JSON.stringify(off), JSON.stringify(aislesLayout(pick(n), { w: W, h: H }, { ...bare, dpr } as unknown as RealMeta, SIGNS(4))), `${tag}: off, the set's hd block changes nothing`);
+    assert.ok(off.zones.flatMap((z) => z.desks).every((d) => !d.person || !d.person.file.startsWith('hd/')), `${tag}: off, only the old frames`);
+    const on = aislesLayout(pick(n), { w: W, h: H }, { ...META, dpr, hdPeople: HD }, SIGNS(4)), g = on.g as number;
+    assert.deepStrictEqual(problems(on, W, n, dpr), [], `${tag}: on, the hall has no problem`);
+    assert.deepStrictEqual([on.g, on.height, on.zones.map((z) => z.box)], [off.g, off.height, off.zones.map((z) => z.box)], `${tag}: on, the same plan`);
+    const od = new Map(off.zones.flatMap((z) => z.desks).map((d) => [d.id, d] as const));
+    for (const d of on.zones.flatMap((z) => z.desks)) {
+      if (!d.person) continue;
+      const p = d.person, o = od.get(d.id)!.person, hf = hdFrame(HD, p.pid, p.pose, g, dpr);
+      if (!hf) { assert.deepStrictEqual(p, o, `${tag}: ${d.id} without an HD frame is unchanged`); continue; }
+      hdDrawn++;
+      assert.strictEqual(p.file, hf.file, `${tag}: ${d.id} draws its HD frame`);
+      for (const v of [p.x, p.y, p.w, p.h]) assert.ok(Math.abs(v * dpr - Math.round(v * dpr)) < 1e-6, `${tag}: ${d.id} on whole device px (${v})`);
+      assert.ok(inside(p, d.stand as Rect, 0.01) && Math.abs(p.y + p.h - d.plate.y) < 1e-6, `${tag}: ${d.id} inside its place, feet on the plate`);
+      assert.ok(inside(p.vis, p, 0.01) && p.vis.h > 8, `${tag}: ${d.id}'s face is inside the frame`);
+      assert.ok(Math.abs(p.vis.x - (d.facing === 'right' ? p.x + p.w - hf.face.x - hf.face.w : p.x + hf.face.x)) < 1e-6, `${tag}: ${d.id}'s face box mirrors with the picture (facing ${d.facing})`);
+    }
+  }
+  assert.ok(hdDrawn >= 18, `the HD frames were drawn (${hdDrawn})`);
+  { /* FR-392 (owner 2026-11-23 14:59 UTC): with 1 or 2 agents `g` is 5 and the 288 frame is drawn 1:1 (80 % of the place): no fourth size is authored */
+    const one = aislesLayout(pick(1), { w: 1440, h: ROOM.h900 }, { ...META, hdPeople: HD }, SIGNS(4)), d = one.zones[0].desks[0];
+    assert.deepStrictEqual([one.g, d.person!.file.endsWith('@4.webp'), d.person!.h], [5, true, HD.people[d.person!.pid][d.person!.pose]['4'][1]], '1 agent: g 5 draws the 288 frame at 1:1');
+  }
+  /* FR-392: the size rule: the largest s x n not over g x dpr, a tie to the larger s */
+  for (const [dev, s, n] of [[2, 2, 1], [3, 3, 1], [4, 4, 1], [5, 4, 1], [6, 3, 2], [8, 4, 2], [2.5, 2, 1], [4.5, 4, 1], [6.25, 3, 2], [1.5, 0, 0]]) {
+    const r = hdPick(dev, [4, 3, 2]);
+    assert.deepStrictEqual(r ? [r.s, r.n] : [0, 0], [s, n], `hdPick(${dev}): s ${s}, n ${n}`);
+  }
+  /* a frame wider than the place falls back to the old frame (never cut, FR-392) */
+  const wide = { scales: [4, 3, 2], people: { p08: Object.fromEntries(['type', 'book', 'knock', 'face-knock', 'face-coffee', 'face-book', 'sit'].map((q) => [q, { 4: [400, 288, 0, 0, 40, 40], 3: [300, 216, 0, 0, 30, 30], 2: [200, 144, 0, 0, 20, 20] }])) } } as unknown as HdSet;
+  const w3 = aislesLayout(pick(3), { w: 1440, h: ROOM.h900 }, { ...META, hdPeople: wide }, SIGNS(4)), o3 = aislesLayout(pick(3), { w: 1440, h: ROOM.h900 }, META, SIGNS(4));
+  assert.strictEqual(JSON.stringify(w3), JSON.stringify(o3), 'an HD frame wider than its place is not drawn: the old frame stays');
+  /* FR-401 (review of #2056): the status badge never covers an HD face. At a cabinet, every state x the pilot people x both sides at g 4, 3 and 2; then every one of the 20 frames
+     of each pilot person at each scale, both ways round, in a real place of that scale. The badge (CUE_BOX, centred on cue.x) is clear of the face, inside the place, under the sign strip */
+  const badge = (c: { x: number; y: number }): Rect => ({ x: c.x - CUE_BOX.w / 2, y: c.y, w: CUE_BOX.w, h: CUE_BOX.h });
+  const badgeOk = (c: { x: number; y: number }, vis: Rect, place: Rect, rowTop: number, tag: string): void => {
+    const bx = badge(c);
+    assert.ok(!inter(bx, vis, 0), `${tag}: the status badge ${JSON.stringify(bx)} covers the face ${JSON.stringify(vis)}`);
+    assert.ok(bx.x >= place.x - 1e-6 && bx.x + bx.w <= place.x + place.w + 1e-6 && bx.y >= rowTop + AISLE_SIGN_H - 1e-6, `${tag}: the status badge stays in the place, under the sign strip`);
+  };
+  /* in a hall: clear of the face, of every sign, storey tag, cabinet, plate and other person, inside the floor; above the head where that is free (owner 2026-11-23 14:59 UTC) */
+  const hallOk = (L: Layout, d: DeskBox, tag: string): boolean => {
+    const bx = badge(d.cue as { x: number; y: number }), p = d.person!, all = L.zones.flatMap((z) => z.desks);
+    assert.ok(!inter(bx, p.vis, 0), `${tag}: the status badge ${JSON.stringify(bx)} covers the face ${JSON.stringify(p.vis)}`);
+    const hitBy = [...L.zones.map((z) => ['sign ' + z.id, z.sign] as [string, Rect]), ...(L.storeys || []).map((b) => ['tag ' + b.id, b.tag] as [string, Rect]), ...all.flatMap((o) => [['cabinet ' + o.id, o.desk], ['plate ' + o.id, o.plate], ...(o !== d && o.person ? [['person ' + o.id, o.person]] : [])] as Array<[string, Rect]>)].filter(([, r]) => inter(bx, r, 0));
+    assert.deepStrictEqual(hitBy.map(([nm]) => nm), [], `${tag}: the status badge ${JSON.stringify(bx)} lies on something`);
+    assert.ok(bx.y >= L.lobbyH && bx.x >= 0 && bx.x + bx.w <= L.width, `${tag}: the status badge stays on the floor`);
+    /* where the floor over the head is free, the badge stands there (FR-401, owner 2026-11-23 14:59 UTC) */
+    const up = badge({ x: p.vis.x + p.vis.w / 2, y: p.vis.y - 2 - CUE_BOX.h });
+    const free = up.y >= L.lobbyH + 20 && up.x >= 0 && up.x + up.w <= L.width && ![...L.zones.map((z) => z.sign), ...(L.storeys || []).flatMap((b) => [b.tag, ...(b.slab ? [b.slab] : [])]), ...all.flatMap((o) => [o.desk, o.plate, ...(o !== d && o.person ? [o.person] : [])])].some((r) => inter(up, r, 0));
+    if (free) assert.deepStrictEqual(bx, up, `${tag}: the floor over the head is free, so the badge stands there`);
+    return bx.y + bx.h <= p.vis.y;
+  };
+  let badges = 0, above = 0;
+  const places: Record<number, DeskBox[]> = {};
+  for (const [n, W, H] of [[3, 1440, ROOM.h900], [3, 1280, ROOM.h800], [15, 1440, ROOM.h900], [15, 1280, ROOM.h800]] as [number, number, number][]) for (let r = 0; r < STATES.length; r++) {
+    const m = pick(n); m.folders.flatMap((f) => f.agents).forEach((a, i) => { a.state = STATES[(i + r) % STATES.length]; a.person = ['p08', 'p12', 'p04'][(i + r) % 3]; });
+    const L = aislesLayout(m, { w: W, h: H }, { ...META, hdPeople: HD }, SIGNS(4)), g = L.g as number;
+    for (const d of L.zones.flatMap((z) => z.desks)) {
+      (places[g] = places[g] || []).push(d);
+      if (!d.person || !d.person.file.startsWith('hd/') || d.state === 'error') continue;
+      if (hallOk(L, d, `${n} agents at ${W}x${H}, ${d.person.pid} ${d.state} (${d.facing})`)) above++; badges++;
+    }
+  }
+  for (const g of [4, 3, 2]) for (const [pid, poses] of Object.entries(HD.people)) for (const pose of Object.keys(poses)) for (const d of places[g].filter((x, i, all) => all.findIndex((y) => y.facing === x.facing) === i)) {
+    const hf = hdFrame(HD, pid, pose, g)!, side = d.facing === 'right', at = hdPlace(hf, d.stand as Rect, d.plate.y, side, d.slot.y, side, Math.floor);
+    if (hf.w > (d.stand as Rect).w) continue; /* never drawn (the old frame is), see above */
+    badgeOk(at.cue, at.vis, d.stand as Rect, d.slot.y, `${pid}-${pose} at g ${g} (${d.facing})`); badges++;
+  }
+  assert.ok(badges >= 300, `the badge was checked (${badges})`);
+  assert.ok(above >= 10, `FR-401: the badge stands above the head where the floor is free (${above} of the hall's badges)`);
+  console.log(`arcade HD people: ${hdDrawn} HD frames placed, off = unchanged in ${cases2.length} halls, ${badges} badges clear of the face, ${above} above the head`);
 }
 
 console.log(`aisles tests passed (${cases} layouts)`);
