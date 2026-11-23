@@ -428,4 +428,4 @@ FR-018 says the 25-minute limit is not raised first. The queue is blocked now (#
 
 ### 2026-11-23: TEST_JOBS 4 on the part jobs (delivery-speed review)
 
-- FR-017: `scripts/run-tests.js` defaults to CPUs minus one (3 jobs on a 4 vCPU runner). The `npm test` step of each part job in `ci.yml` and of `macos-pr.yml` sets `TEST_JOBS: 4`; the guard (T022) lists it as a reviewed env key that must be `4`, with a mutant. Task T070 measures it against the #2031 runs and over 20 runs; revert if flakes rise (wall-time-sensitive UI suites first).
+- FR-017: `scripts/run-tests.js` defaults to CPUs minus one (3 jobs on a 4 vCPU runner). The `npm test` step of each part job in `ci.yml` and of `macos-pr.yml` sets `TEST_JOBS: 4`; the guard (T022) lists it as a reviewed env key that must be `4`, with a mutant. Task T500 measures it against the #2031 runs and over 20 runs; revert if flakes rise (wall-time-sensitive UI suites first).

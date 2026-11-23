@@ -86,7 +86,7 @@ jobs:
       - if: steps.changes.outputs.code == 'true'
         env:
           TEST_SHARD: ${{ matrix.shard }}/2
-          # spec 117 T070: the part jobs have 4 vCPU; the default is CPUs minus one (3 jobs)
+          # spec 117 T500: the part jobs have 4 vCPU; the default is CPUs minus one (3 jobs)
           TEST_JOBS: 4
           # spec 103: on Linux test:prereview must run the real-SDK test, never skip it (the install step above)
           PREREVIEW_REQUIRE_REAL_SDK: '1'
@@ -131,7 +131,7 @@ jobs:
       - if: steps.changes.outputs.code == 'true'
         env:
           TEST_SHARD: ${{ matrix.shard }}/2
-          # spec 117 T070: the part jobs have 4 vCPU; the default is CPUs minus one (3 jobs)
+          # spec 117 T500: the part jobs have 4 vCPU; the default is CPUs minus one (3 jobs)
           TEST_JOBS: 4
         run: npm test
 
@@ -166,7 +166,7 @@ jobs:
       - if: steps.changes.outputs.code == 'true'
         env:
           TEST_SHARD: ${{ matrix.shard }}/2
-          # spec 117 T070: the part jobs have 4 vCPU; the default is CPUs minus one (3 jobs)
+          # spec 117 T500: the part jobs have 4 vCPU; the default is CPUs minus one (3 jobs)
           TEST_JOBS: 4
         run: npm test
 
