@@ -86,6 +86,8 @@ jobs:
       - if: steps.changes.outputs.code == 'true'
         env:
           TEST_SHARD: ${{ matrix.shard }}/2
+          # spec 117 T500: 4 vCPU here (run-tests.js printed "3 at a time"); not on macOS, whose runner size varies
+          TEST_JOBS: 4
           # spec 103: on Linux test:prereview must run the real-SDK test, never skip it (the install step above)
           PREREVIEW_REQUIRE_REAL_SDK: '1'
         run: npm test
@@ -129,6 +131,8 @@ jobs:
       - if: steps.changes.outputs.code == 'true'
         env:
           TEST_SHARD: ${{ matrix.shard }}/2
+          # spec 117 T500: 4 vCPU here (run-tests.js printed "3 at a time"); not on macOS, whose runner size varies
+          TEST_JOBS: 4
         run: npm test
 
   # FR-106: no macOS runner on pull requests or merge queue entries (the summary reports for macOS there); every other event runs the real macOS parts

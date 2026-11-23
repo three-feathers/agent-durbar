@@ -31,7 +31,7 @@ const P = require(path.join(__dirname, '..', '..', 'src', 'renderer', 'places.js
   allPlaces: (custom?: unknown) => { id: string; name: string; icon?: string }[];
   isChoice: (v: unknown, customIds?: unknown) => boolean;
   chipsIn: (tileW: unknown) => { named: number; initials: number };
-  lobbyFit: (aw: unknown, places: unknown, addButton: unknown, post?: unknown) => Record<'boss' | 'coffee' | 'bank' | 'post', { width: number; named: boolean; wait?: boolean; chips: { named: number; initials: number } } | null> & { tile: number; tileNamed: boolean; caps: { named: number; initials: number } };
+  lobbyFit: (aw: unknown, places: unknown, addButton: unknown, post?: unknown) => Record<'boss' | 'coffee' | 'bank' | 'post', { width: number; named: boolean; wait?: boolean; long?: boolean; chips: { named: number; initials: number } } | null> & { tile: number; tileNamed: boolean; caps: { named: number; initials: number } };
   lobbyOrder: (ids: unknown, post?: unknown) => string[];
   initialSpots: (tileW: unknown, count: unknown) => { shown: number; more: number };
   postNext: (s: unknown, pausedAll: unknown) => { s: { id: string }; t: number }[];
@@ -586,7 +586,8 @@ assert.deepStrictEqual(cleanPlaceName('__proto__'), { ok: true, name: '__proto__
   const wide = P.lobbyFit(1408, 5, true), narrow = P.lobbyFit(1248, 5, true);
   assert.ok(!wide.coffee!.named && wide.post!.named && wide.caps.initials >= 2, '1440x900: the Postbox named, the corner icon only (its name would be cut), two entries per place');
   assert.ok(P.lobbyFit(1600, 5, true).coffee!.named, 'a wider window names the corner');
-  assert.ok(!narrow.coffee!.named && !narrow.post!.named && narrow.boss!.chips.initials >= 3, '1280x800: icon-only corner, the Boss keeps three entries');
+  assert.ok(!narrow.coffee!.named && narrow.post!.named && !narrow.post!.long && narrow.boss!.chips.initials >= 3, '1280x800: icon-only corner, the Postbox keeps its name (issue #2014; the folder in its lines only from 240 px), the Boss keeps three entries');
+  assert.ok(wide.post!.long && P.lobbyFit(1900, 5, true).post!.long, 'the folder shows in the Postbox lines at 246 px and wider');
   assert.ok(P.lobbyFit(2400, 5, true).boss!.width === 230 && P.lobbyFit(2400, 5, true).tile > 118, 'a wide window: preferred widths');
   for (const [aw, n] of [[0, 5], [NaN, 'x'], [-1, -1]] as [unknown, unknown][]) { const f = P.lobbyFit(aw, n, false); assert.ok(f.tile >= 0 && f.boss!.width > 0, 'never throws or goes negative'); }
   const five = ['library', 'software', 'terminal', 'web', 'other'];

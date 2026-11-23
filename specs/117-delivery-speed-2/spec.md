@@ -427,6 +427,10 @@ FR-018 says the 25-minute limit is not raised first. The queue is blocked now (#
 - The wrapper accepts only exactly one `code=true` or `code=false` line; anything else (empty, another value, two lines) is replaced by "everything runs".
 - The allow list is narrowed: Markdown only under `specs/` and `docs/`, two named root files (`CHANGELOG.md`, `CONTRIBUTING.md`); `SECURITY.md`, scripts, SVGs, pictures and `CODEOWNERS` run everything. `changelog.d/` is off the list (a fragment always runs everything), and the text above now says so.
 
+### 2026-11-23: TEST_JOBS 4 on the ubuntu and windows parts (delivery-speed review; Paco's review of #2030)
+
+- FR-017: `scripts/run-tests.js` defaults to CPUs minus one. The ubuntu and windows part jobs have 4 vCPU (the #2031 run's logs print "3 at a time"), so their `npm test` step sets `TEST_JOBS: 4`. macOS is left at the default (its logs show 2 and 4 at a time, the runner size varies; 4 could oversubscribe), as is `macos-pr.yml`. The guard (T022) requires `TEST_JOBS: 4` on ubuntu and windows and forbids it on macOS, with a removal mutant and a macOS mutant. T500 measures it; revert if flakes rise (wall-time-sensitive UI suites first).
+
 ### 2026-11-23: bug, the fast lane timed out (FR-390, T076, T077)
 
 - **Seen** (job logs read 2026-11-23): #2002 at `61ee8f4c8` picked 62 suites (it changes `src/shared/redact.ts`), among them `test:runtime-redact` (378 s on ubuntu, 455 s on Windows) and the three `test:redact-monotone*` suites (about 250 s each, 380 s on Windows); ubuntu, Windows and macOS were cut at 10 minutes. #2037 at `c085aa7be` picked 33 suites: its new `scripts/fixtures/selfupdate/` file matched every test naming the `scripts/fixtures` folder (23 suites, the heavy redact ones included); Windows was cut at 10 minutes, ubuntu passed in 262 s of suites. The runner's "Cleaning up orphan processes" step stopped the suites left running.
@@ -449,4 +453,3 @@ FR-018 says the 25-minute limit is not raised first. The queue is blocked now (#
 - The broken-timings summary line is tested.
 - `main` is a thin wrapper around `laneMain`, which runs only the suites `prepareRun` returns and nothing on an empty plan (tested, two mutants).
 - `capped=1` is tested through the CLI and the wrapper on a 41-file folder, and the workflow's summary line for it is checked.
-

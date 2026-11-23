@@ -47,5 +47,23 @@
     const len=start<0?Infinity:cps.length-start;
     return (len<=10?cps.slice(start):cps.slice(-8)).join('');
   }
-  return {cutText,fitCut,nameTail};
+  /* One layout per render (Paco's review of #2017): a fit that clears a mark on each item and measures it in the same loop forces a reflow per item.
+     Three passes: (1) `clear(item)` on all, (2) `isCut(item)` on all (reads only), (3) `mark(item)` where cut. With `key(item)`, an item whose key is the one
+     it was last measured at keeps its mark and costs no read (a status update that changes neither its text nor its width); returns the items measured. */
+  function fitBatch(items,clear,isCut,mark,key){
+    const list=Array.from(items).filter(it=>!key||it._fitKey!==key(it));
+    for(const it of list)clear(it);
+    const cut=list.filter(it=>isCut(it));
+    for(const it of cut)mark(it);
+    if(key)for(const it of list)it._fitKey=key(it);
+    return list;
+  }
+  /* A fit key for a row whose neighbours can grow (the counts and cost beside a folder name): `base` is what resets it (text, width, form), `len` the neighbour's text length.
+     The key holds the longest `len` seen since the base last changed: a neighbour that grows past it measures again, one that shrinks or comes back to a length already
+     measured cannot cut the name any more than it did, and costs no read. */
+  function growKey(it,base,len){
+    if(it._gBase!==base){it._gBase=base;it._gMax=len;}else if(len>it._gMax)it._gMax=len;
+    return base+'|'+it._gMax;
+  }
+  return {cutText,fitCut,nameTail,fitBatch,growKey};
 })());
