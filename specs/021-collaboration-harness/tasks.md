@@ -61,6 +61,12 @@
 - [x] T059 (2026-11-05, #1190) `scripts/pr-gate.sh` matches hold and lift phrases as whole words (`\b`): "the condition holds" is no hold. Test: `npm run test:trustedcontent` with two mutants [FR-083]
 - [x] T060 (Vikram's decision 2026-11-04 08:42 UTC) AGENTS.md *Priority order* bullet in *Claim, label, branch*: bugs, existing-world parity, Retro world, new features, other worlds; FR-039 and FR-043 still apply [FR-081]
 - [x] T058 (Vikram's decision 2026-11-04 23:18 UTC, option A) Split AGENTS.md into a core and `docs/rules/*.md` task files, moved word for word; `scripts/rules-check.js` per-file budgets, core cap 2,000, shared cap 3,500, every task file linked from AGENTS.md and headed as rule text; references, `CODEOWNERS`, `labels-backfill.ts` updated. Test: `npm run test:rules` with five mutants, the one-off verbatim check with three [FR-082]
+- [ ] T061 (owner decision 2026-11-07, FR-084 point 1) Build the shared fuzz harness under `scripts/fuzz/`: secret masking, links, paths, hidden characters; probe sets from the reviews of #1226, #1235, #1236, #1243, #1245 and #1246; `npm test` runs it on a fixed seed, builders and reviewers run it by hand [FR-084]
+- [ ] T062 (FR-084 point 2) `scripts/claim.sh --expire`: release a review claim with no review and no ETA comment after 4 h; run in each sweep (`docs/agent-setup/` loops template); `test-claim.ts` with mutants [FR-084]
+- [ ] T063 (FR-084 point 4; owned by spec 008, task T130 there) CI by diff: a file-to-driver map, PR CI runs only the touched UI drivers, sharded three-OS UI job; unmapped file runs all; a check fails when a driver is missing from the map; nightly and `main` keep the full matrix [FR-084]
+- [ ] T064 (FR-084 point 6) `npm run dora`: weekly deployment frequency, lead time, change failure rate and time to restore for the retro (the DORA rule of `incident-triage.md`: never rank people); used by `weekly-retro.js` [FR-084]
+- [x] T065 (FR-084, Vikram and Ruben agreed 2026-11-07, Paco 2026-11-21) AGENTS.md *Delivery speed* bullet and the `review-rounds.md` lines for points 1-6; `rules:check` budget [FR-084]
+
 
 ## 2026-11-08: a picture budget and a spec-number check (FR-085)
 
@@ -122,3 +128,7 @@
 ## 2026-11-20: gate head-ref alerts new against main (FR-099, issue #1868)
 
 - [x] T086 (FR-099) `scripts/pr-gate.sh`: the head ref's open alerts are read as numbers (`--paginate`) and those open on the base branch are subtracted; the merge ref count is unchanged; fail closed on any read error, non-number or odd base name. Test `test:prgatecodeql` (`scripts/test-pr-gate-codeql.ts`, fixtures only): `alert-main-on-head`, `alert-new-and-main`, `alert-merge-main`, `alert-head-page2`, `alert-main-page2`, `alert-main-unread`, `alert-main-number`, `alert-base-ref`; eight mutants (main's alerts not subtracted, merge ref left out, no `--paginate` on either list, a main read error ignored, no number check, no base-name check, the merge count unchecked), each dying at its named case.
+
+## 2026-11-22: PR preflight for authors (FR-384)
+
+- [x] T455 (FR-384) `scripts/pr-preflight.js` (and `scripts/pr-preflight.sh`), `npm run pr:preflight -- <N>`: twelve read-only checks of a PR before review; `docs/development.md`, the brief lines in `docs/agent-setup/`; changelog fragment. Test `test:prpreflight` (`scripts/test-pr-preflight.js`): a throwaway repository and fixture `gh` answers, a failing fixture per check, 37 mutants each killed at its own assert (incl. the default trusted list, the specs:numbers rule, net-new shape words) [FR-384]

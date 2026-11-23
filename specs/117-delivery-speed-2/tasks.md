@@ -40,16 +40,22 @@
 
 - [ ] T023 (with T015, same PR, same gates: T014 landed and O4's yes) `docs/agent-setup/README.md` *Sub-agents by size* (heading kept, it is a pointer target): the *Small* and *Medium* bullets become one *Light* bullet (`review-profile.js` says light: one `implementer`, diff read, CI record, no mutants or fuzz asked) and *Large or sensitive* becomes *Heavy* (everything `review-profile.js` does not call light, the list of FR-020); no net growth in words, counted in the PR (the file has no `rules:check` budget) [FR-022]
 
-## P6: world-pack contract suite (after 102 T100, #1877)
+## P6: world-pack contract suite (after 102 T100, T433 and T434, #1877)
 
-- [ ] T016 Inventory (in the PR): per-world assertions in `scripts/` that the contract suite replaces, by file [FR-030]
-- [ ] T017 `scripts/test-world-contract.ts`: every built-in pack through `worldpack.ts`, `checkSet`, `momentCoverage`, the feature-inventory row and the card check; a fixture pack missing a required pose fails naming it; the replaced per-world assertions removed in the same PR; spec 102 pointer delta [FR-030, FR-033]
-- [ ] T018 Driver map entries per world (`DRIVER_WORLD=<id>` entries run only when that world's files or the shared engine change) [FR-031]
+- [ ] T016 Inventory, committed in full in T017's PR: per-world assertions in `scripts/` that the contract suite replaces, by file. **Amended 2026-11-22** (spec *Changes 2026-11-22*, vocabulary profiles): the Mac session's plan-only read (71 files, about 190 world-specific asserts, about 66 replaceable, about 124 stay) sorted by rule R1..R6 of that entry [FR-030]
+- [ ] T017 `scripts/test-world-contract.ts`: every built-in pack through `worldpack.ts`, `checkSet`, `momentCoverage`, the feature-inventory row and the card check; a fixture pack missing a required pose fails naming it; the replaced per-world assertions removed in the same PR; spec 102 pointer delta . **Amended 2026-11-22:** after 102 T100, T433 and T434; built-ins go through `checkSet` and the part machinery with their declared vocabulary profiles, user fixtures with the user profile; R1 and R5 are new checks on built-ins, not moved asserts; a registry world with no pack (`loft`, 102 OP-14 (c)) is reported "no pack", not passed; `world.css` rules and the flag, lazy-load, plain-tile, layout, contrast and accessibility asserts stay where they are [FR-030, FR-033]
+- [ ] T018 Driver map entries per world (`DRIVER_WORLD=<id>` entries run only when that world's files or the shared engine change) ; first replaces the second copy of the `DRIVER_WORLD` id list pinned in `scripts/test-release-video.js` (R6) [FR-031]
 
 ## P7: slicing guidance
 
 - [ ] T019 `docs/review-checklist.md` line 75 "- [ ] **Slice size**: about 800 changed lines, pictures excluded." (11 words) becomes "- [ ] **One vertical slice**: ~800 changed lines, pictures excluded." (11 words; no other file points to *Slice size*, checked with `grep` 2026-11-22). **Word budget**: net 0, stays 2,447 of 2,450; no `docs/agent-notes.md` text; `.specify/templates/*` not edited (managed by `specify integration`) [FR-040]
 - [ ] T020 `ci:stats` reports FR-041's indicator (src share, PRs with no `src/` line) for the retro; never per person [FR-041]
+
+## P8: fast lane and the docs-only skip (2026-11-22 delta)
+
+- [x] T040 [P] `test-ci-changes.ts` first: the FR-387 guard (live files under `src/`, `scripts/`, `.github/`, rule text, site code, README, LICENSE, case tricks, odd paths, docs a suite names, an empty diff, no suite list: never `code=false`; allow-listed docs still skip) with fourteen mutants and four wrapper guard mutants, each failing at its own assert; then `ci-changes.js` (`DOCS_ALLOW`, `DOCS_DENY`, `PLAIN_PATH`, `docsOnly`) and the `ci-changes.sh` guard [FR-387]
+- [x] T041 `test-ci-changes.ts` cases for `fastSuites` (step file, relative and repo-relative literal, folder literal, new suite, changed suite line, docs table, nothing picked, list order, plain names) and `--suites` through the CLI and the wrapper; `ci-changes.js --suites`, `ci-changes.sh` passes its arguments; `scripts/fast-lane.js` and `test-fast-lane.ts` (list names only, picked files compiled, build only for `dist/` readers; workflow shape with 11 mutants); `.github/workflows/fast-lane.yml`; `test-electron-cache.ts` lists the job [FR-386]
+- [ ] T042 `real:` the lane's work time per OS from its own runs (setup through the last suite), in spec *Changes*; 7 days after landing, FR-001's jobs per PR head and queue wait beside E3/E4 [FR-386]
 
 ## Owner settings (O1)
 
