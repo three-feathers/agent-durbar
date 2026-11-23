@@ -114,7 +114,7 @@ for (const [t, why] of [
 ] as [string, string][]) assert.strictEqual(parseUpdateSourceFile(t), undefined, 'baked file refused: ' + why);
 for (const v of [undefined, null, 1, {}, Buffer.from(okFile)]) assert.strictEqual(parseUpdateSourceFile(v), undefined, 'baked file of type ' + typeof v + ' refused');
 
-// ---- the release job summary (T028 runs it) ----
+// ---- the release job summary (T054 runs it) ----
 assert.strictEqual(us.summaryText({ slug: 'three-feathers/agent-durbar', origin: 'ci' }, PKG, parseRepoSlug, sameRepo), '- **Update source**: `three-feathers/agent-durbar` (origin `ci`)\n', 'the official build: no warning');
 assert.match(us.summaryText({ slug: 'ravi/durbar', origin: 'ci' }, PKG, parseRepoSlug, sameRepo), /\*\*Warning\*\*: the update source differs from package\.json `repository` \(`three-feathers\/agent-durbar`\)/, 'a source other than package.json: a warning');
 assert.match(us.summaryText(undefined, PKG, parseRepoSlug, sameRepo), /none .*never checks/, 'no baked file: said so');

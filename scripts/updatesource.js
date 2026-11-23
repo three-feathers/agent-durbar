@@ -2,7 +2,7 @@
 // the app reads only that file (src/main/updatesource.ts), never the environment or package.json. The repository parser is injected (the
 // compiled `parseRepoSlug` of src/shared/selfupdate.ts), so this file and its test use the one strict parser.
 //
-//   node scripts/updatesource.js --summary <updatesource.json>   one Markdown line for a job summary (T028), after `npm run build`
+//   node scripts/updatesource.js --summary <updatesource.json>   one Markdown line for a job summary (T054), after `npm run build`
 'use strict';
 const fs = require('fs');
 const path = require('path');

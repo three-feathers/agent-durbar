@@ -3,7 +3,7 @@
  *   no arguments           the working tree's releases.json is valid (run by `npm test`, test:releases-json)
  *   --version X.Y.Z        ... and has an entry for that version
  *   --ref R --version X    the same, on the file of commit or tag R (`git cat-file blob R:releases.json`), never the tree:
- *                          what release.yml's verify job runs on the tagged commit (T028)
+ *                          what release.yml's verify job runs on the tagged commit (T054)
  * Exit 0 ok, 1 with one line on stderr. The file's text is never printed. git runs with an argument array, no shell.
  */
 import { execFileSync } from 'child_process';
