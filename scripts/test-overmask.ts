@@ -1,5 +1,5 @@
 /**
- * Spec 012 FR-196 (issue #1981): two closed lists keep a harmless word readable where a secret name's rule hid it, on every shared mask
+ * Spec 012 FR-196 (issue #1981; owner decisions of 2026-11-23, #2060 items 8 and 9): closed lists keep a harmless word readable where a secret name's rule hid it, on every shared mask
  * (`redact`, `maskSecretCommand`, `maskSecretArgs`, `maskSecretUrl`, `maskOutgoing`, `maskNoteText`) and on the task line's label mask
  * (`DurbarSafeText.maskLabel`, the chip and Copy). Labelled asserts per class, near misses that stay hidden, and a differential against the
  * reading with FR-196 off (`_withoutOvermaskNarrowForTest`, which reads as `main` did): only the listed classes change, counted per class.
@@ -30,18 +30,22 @@ const hidden = (t: string, part: string, m: string): void => {
   ok(!r.cmd.includes(part) && !r.taskRun.includes(part), `${m} (command and task line)`);
   eq(r, off(() => all(t)), `${m} (every surface reads as before FR-196)`);
 };
+/** Hidden on every surface (not only as before FR-196): the sign-in cases. */
+const hiddenEvery = (t: string, part: string, m: string): void => { for (const [k, v] of Object.entries(all(t))) ok(!v.includes(part), `${m} (${k})`); hidden(t, part, m); };
 
 // pieces (no secret-shaped literal in the source)
 const pw = ['PASS', 'WORD'].join('');
 const tok = ['to', 'ken'].join('');
 const gh = ['gh', 'p_'].join('') + 'A1b2C3d4'.repeat(4) + 'E5f6';
 
-// class (a): a long flag whose first word is `show` takes no next word as its value
+// class (a): a long flag whose first word is `show` or `no` takes no next word as its value (`no`: owner decision 2026-11-23, #2060 item 9)
 shown('git log --show-signature -3', 'FR-196 a: --show-signature then a count');
 shown('git log --show-signature HEAD~3', 'FR-196 a: --show-signature then a revision');
 shown(`gh auth status --show-${tok} -h example.test`, 'FR-196 a: --show-<name> then a host flag');
-hidden('tool --no-auth build4x7q', 'build4x7q', 'FR-196 a stays: a --no- flag hides the next word (the pinned fail-safe)');
-hidden('git log --no-show-signature -n 5', '-n 5', 'FR-196 a stays: a --no- lead is not in the list');
+shown('tool --no-auth build4x7q', 'FR-196 a (owner decision 2026-11-23, #2060 item 9): a negated flag takes no value');
+shown('git log --no-show-signature -n 5', 'FR-196 a: --no-show-signature then a short flag');
+shown('claude --no-session-persistence -p hi', 'FR-196 a: a negated flag then the next flag');
+hidden(`tool --no-${tok}=build4x7q`, 'build4x7q', 'FR-196 a stays: the = form of a negated flag hides its value');
 // near misses: hidden as before
 hidden(`tool --${tok} build4x7q`, 'build4x7q', 'FR-196 a stays: a plain secret flag hides the next word');
 hidden(`tool --show-${tok}=build4x7q`, 'build4x7q', 'FR-196 a stays: the = form of a switch flag hides its value');
@@ -52,9 +56,20 @@ hidden(`tool -no-${tok} build4x7q`, 'build4x7q', 'FR-196 a stays: one dash is no
 hidden(`tool --known-${tok} build4x7q`, 'build4x7q', 'FR-196 a stays: a lead that holds no');
 hidden(`tool --no-auth ${gh}`, gh.slice(4, 14), 'FR-196 a stays: a token after a switch flag is hidden by its own shape');
 
-// not narrowed (`[KNOWN GAP]` of #1981): an OAuth state or code query value stays hidden whatever it holds (pinned in test-redact.ts)
-hidden('gh api repos/o/r/pulls?state=open&per_page=50', 'state=open', 'FR-196 not narrowed: ?state=open stays hidden');
-hidden('open https://example.test/cb?code=python', 'code=python', 'FR-196 not narrowed: ?code=<word> stays hidden');
+// class (b): an OAuth state value that is a whole lower-case word of 1 to 7 letters, in a link with no code parameter (owner decision 2026-11-23, #2060 item 8)
+shown('gh api repos/o/r/pulls?state=open&per_page=50', 'FR-196 b: ?state=open in an API path');
+shown('curl https://api.example.test/repos/o/r/issues?state=closed', 'FR-196 b: ?state=closed in a URL');
+shown('open https://example.test/q?a=1&State=all#top', 'FR-196 b: the name in any case, before a fragment');
+shown('see https://example.test/?state=open and https://example.test/cb?x=1', 'FR-196 b: a code-free link next to another link');
+for (const [v, why] of [['Open', 'a capital'], ['open1', 'a digit'], ['abcdefgh', '8 letters'], ['in_prog', 'an underscore'], ['a-b', 'a hyphen'], ['op%65n', 'a percent escape'], ['ab.cd', 'a dot']]) {
+  hidden(`open https://example.test/cb?state=${v}&x=1`, `state=${v}`, `FR-196 b stays: a state value with ${why}`);
+}
+hiddenEvery('open https://example.test/cb?code=python', 'python', 'FR-196 b stays: an authorization code is hidden whatever its value (review on PR #630)');
+hiddenEvery('open https://example.test/cb?code=zq9x&state=open', 'state=open', 'FR-196 b stays: a state word in a sign-in callback (code before it)');
+hiddenEvery('open https://example.test/cb?state=open&code=zq9x', 'state=open', 'FR-196 b stays: a state word in a sign-in callback (code after it)');
+hiddenEvery('open https://example.test/cb?state=open#code=zq9x', 'state=open', 'FR-196 b stays: a code in the fragment');
+hidden('open https://example.test/cb?redirect=x%26state%3Dopen%26code%3Dzq9x', '%3Dopen', 'FR-196 b stays: an encoded callback');
+hiddenEvery('?CODE=abc&State=def', 'State=def', 'FR-196 b stays: the name in any case next to a code (test-redact any case)');
 
 // class (c): a switch word as the whole value of a secret name
 shown('ssh -o PasswordAuthentication=no host', 'FR-196 c: an ssh option set to no');
@@ -63,6 +78,17 @@ shown(`tool --pass${'word'}=no`, 'FR-196 c: --password=no');
 shown(`${pw}=YES make`, 'FR-196 c: any case');
 for (const v of ['nope', 'no1', 'yesterday', 'offline', 'truex', '"no"', 'no-way', 'on2', 'Off9x']) hidden(`${pw}=${v} make`, `=${v}`, `FR-196 c stays: ${v} is not a whole switch word`);
 hidden(`tool --pass${'word'}=nope`, 'nope', 'FR-196 c stays: --password=nope');
+
+// the reading with the step off is main's (also checked locally against main's compiled file)
+eq(off(() => R.redact('see https://example.test/?state=open')), 'see https://example.test/?state=[redacted]', 'FR-196 step off: a state word is hidden, as on main');
+eq(off(() => R.maskSecretArgs(['--no-auth', 'value', 'PASSWORD=no'])), ['--no-auth', '[redacted]', 'PASSWORD=[redacted]'], 'FR-196 step off: the flag and value rules read as on main');
+
+// growth: the link scan reads each character of a run at most twice, however many state values the run holds (a work counter, not a clock)
+for (const k of [100, 2000]) {
+  const t = 'https://example.test/r?' + 'state=open&'.repeat(k) + 'x=1 ' + 'y'.repeat(k);
+  R._stateScanForTest(); R.redact(t); const work = R._stateScanForTest();
+  ok(work > 0 && work <= 2 * t.length, `FR-196 b growth: the link scan is linear (${k} values, ${work} reads for ${t.length} characters)`);
+}
 
 // differential: FR-196 on vs off (as main), counted per class; nothing outside the listed classes may change
 let seed = 20261124;
@@ -79,11 +105,11 @@ const codeShaped = (): string => {
     default: return from(LOW, 2 + rnd(5)) + '-_.'[rnd(3)] + from(LOW, 2 + rnd(5)); // letters with a symbol
   }
 };
-const SECRET_FLAGS = ['--no-auth', '--no-show-signature', '--token', '--password', '--api-key', '--client-secret', '--auth', '--show-token=', '--no-auth=', '--shown-token', '--known-password'];
+const SECRET_FLAGS = ['--token', '--password', '--api-key', '--client-secret', '--auth', '--show-token=', '--no-auth=', '--shown-token', '--known-password'];
 const SECRET_NAMES = [pw, 'API_KEY', 'CLIENT_SECRET', 'PasswordAuthentication', 'DB_PASS'];
-const CLASSES = ['a', 'c'] as const;
-const changed: Record<string, number> = { a: 0, c: 0, secret: 0 };
-const total: Record<string, number> = { a: 0, c: 0, secret: 0 };
+const CLASSES = ['a', 'b', 'c'] as const;
+const changed: Record<string, number> = { a: 0, b: 0, c: 0, secret: 0 };
+const total: Record<string, number> = { a: 0, b: 0, c: 0, secret: 0 };
 const corpus: { cls: string; t: string }[] = [];
 for (let i = 0; i < 400; i++) {
   const v = codeShaped();
@@ -91,8 +117,11 @@ for (let i = 0; i < 400; i++) {
   const f = SECRET_FLAGS[rnd(SECRET_FLAGS.length)];
   corpus.push({ cls: 'secret', t: f.endsWith('=') ? `tool ${f}${v}` : `tool ${f} ${v}` });
   corpus.push({ cls: 'secret', t: `${SECRET_NAMES[rnd(SECRET_NAMES.length)]}=${v} make` });
-  corpus.push({ cls: 'a', t: `git log --${['show', 'Show', 'SHOW'][rnd(3)]}-${['signature', 'token', 'auth', 'password'][rnd(4)]} ${['-3', '-n', 'HEAD~2', 'main', 'src'][rnd(5)]}` });
-  corpus.push({ cls: 'secret', t: `curl https://api.example.test/r?${['state', 'code', 'State'][rnd(3)]}=${from(LOW, 1 + rnd(7))}` });
+  corpus.push({ cls: 'a', t: `git log --${['show', 'Show', 'SHOW', 'no', 'No'][rnd(5)]}-${['signature', 'token', 'auth', 'password'][rnd(4)]} ${['-3', '-n', 'HEAD~2', 'main', 'src'][rnd(5)]}` });
+  corpus.push({ cls: 'b', t: `curl https://api.example.test/r?${['state', 'State', 'STATE'][rnd(3)]}=${from(LOW, 1 + rnd(7))}&page=2` });
+  const w = from(LOW, 1 + rnd(7)), c = codeShaped();
+  corpus.push({ cls: 'secret', t: rnd(2) ? `curl https://api.example.test/cb?code=${c}&state=${w}` : `curl https://api.example.test/cb?state=${w}&code=${c}` });
+  corpus.push({ cls: 'secret', t: `curl https://api.example.test/r?code=${w}` });
   corpus.push({ cls: 'c', t: `${SECRET_NAMES[rnd(SECRET_NAMES.length)]}=${['yes', 'no', 'true', 'false', 'on', 'off', 'No', 'TRUE'][rnd(8)]} make` });
 }
 for (const { cls, t } of corpus) {

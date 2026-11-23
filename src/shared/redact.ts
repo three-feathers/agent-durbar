@@ -510,18 +510,41 @@ function maskCookies(s: string, mask: string): string {
 /** A password in a command-shaped rule: ends at shell syntax, and at brackets, so `curl -u a:b(curl) x` shows `(curl)`. `Bearer x` is not one: its own shape takes the value too (in a note, even after a mark). */
 const CMD_VALUE = String.raw`(?![Bb][Ee][Aa][Rr][Ee][Rr]\s)(?:[^\s"'|;&\`$()<>]|\$(?![({]))+`;
 /*
- * Spec 012 FR-196 (issue #1981): two closed lists that keep a harmless word readable where a secret name's rule hid it. Each is read on a WHOLE
- * value or name word only (a value that starts with or holds a listed word is hidden as before), so they can only show a word, never part of a value.
- * The OAuth `state` and `code` query values stay hidden whatever they hold (pinned: review on PR #630 and `test-redact.ts`'s `any case`).
+ * Spec 012 FR-196 (issue #1981, owner decisions of 2026-11-23 in #2060 items 8 and 9): closed lists that keep a harmless word readable where a secret
+ * name's rule hid it. Each is read on a WHOLE value or name word only (a value that starts with or holds a listed word is hidden as before), so they can
+ * only show a word, never part of a value. An OAuth `code` value stays hidden whatever it holds (review on PR #630).
  */
 /** A plain switch word as the whole value of a secret name (`PasswordAuthentication=no`), any case. */
 const SWITCH_VALUES = new Set(['yes', 'no', 'true', 'false', 'on', 'off']);
-/** The first word of a long flag that names a display, not a value (`--show-signature`): it takes no next word as its value. `no` is not in it: `--no-<name> <word>` stays hidden (FR-053's pinned fail-safe). */
-const SWITCH_FLAG_LEADS = new Set(['show']);
+/** The first word of a long flag that names a display or a negation, not a value (`--show-signature`, `--no-auth`): it takes no next word as its value (`no`: owner decision 2026-11-23, #2060 item 9). */
+const SWITCH_FLAG_LEADS = new Set(['show', 'no']);
 const switchFlag = (name: string): boolean => { if (!narrowOn) return false; const m = /^--([A-Za-z]+)-[A-Za-z]/.exec(name); return !!m && SWITCH_FLAG_LEADS.has(m[1].toLowerCase()); };
 const switchValue = (v: string): boolean => narrowOn && SWITCH_VALUES.has(v.toLowerCase());
 /** FR-196's switch: on in the app; off only inside `_withoutOvermaskNarrowForTest`, which reads as before FR-196 for the differential. */
 let narrowOn = true;
+/**
+ * The OAuth `state` value of a link (`OAUTH_STATE`; before FR-196 it was in the rule above): hidden, but for a whole lower-case word of 1 to 7 letters a-z
+ * (`STATE_WORD`, a filter word such as `open`) in a link that holds no `code` parameter (a sign-in callback carries both: there both stay hidden;
+ * #2060 item 8). The link is the run of the text around the match up to a blank, a quote or an angle bracket; each run is read once per call (`linkHasCode`).
+ */
+const OAUTH_STATE = /((?:[?&#;]|%(?:3[Ff]|26|23|3[Bb]))[Ss][Tt][Aa][Tt][Ee](?:=|%3[Dd]))([^&;#\s"'\\<>]+)/g;
+const STATE_WORD = /^[a-z]{1,7}$/;
+const LINK_CODE = /(?:[?&#;]|%(?:3[Ff]|26|23|3[Bb]))[Cc][Oo][Dd][Ee](?:=|%3[Dd])/;
+const LINK_STOP = /[\s"'<>]/;
+let stateScan = 0;
+/** Characters the link scan of `maskOAuthState` read since the last call (the growth check of FR-196). */
+export const _stateScanForTest = (): number => { const n = stateScan; stateScan = 0; return n; };
+function maskOAuthState(text: string, mask: string): string {
+  // matches come left to right and runs do not overlap (each ends at a stop character), so the last run is kept and a scan never goes back past it: linear
+  let ra = -1, rb = -1, rc = false, scanned = 0;
+  const linkHasCode = (at: number): boolean => {
+    if (at >= ra && at < rb) return rc;
+    let a = at; while (a > scanned && !LINK_STOP.test(text[a - 1])) { a--; stateScan++; }
+    let b = at; while (b < text.length && !LINK_STOP.test(text[b])) { b++; stateScan++; }
+    ra = a; rb = b; scanned = b; rc = LINK_CODE.test(text.slice(a, b)); return rc;
+  };
+  return text.replace(OAUTH_STATE, (m: string, keep: string, v: string, at: number) => (narrowOn && STATE_WORD.test(v) && !linkHasCode(at) ? m : keep + mask));
+}
 export function _withoutOvermaskNarrowForTest<T>(f: () => T): T { const was = narrowOn; narrowOn = false; try { return f(); } finally { narrowOn = was; } }
 const HELD_PATTERNS: RegExp[] = [
   // `Bearer: <value>` (a colon after the scheme word, as in hand-written headers): 8 or more characters with a digit, so `Bearer: configuration` stays
@@ -534,7 +557,7 @@ const HELD_PATTERNS: RegExp[] = [
   // OAuth and signed-URL values in a URL's query or fragment (an authorization address, a loopback callback, a presigned link), also percent-encoded inside
   // another URL; the names are not secret-looking, so the token shapes miss them (review on #635: a CLI's stderr reaches the debug sink).
   // A fixed separator and name, then a value that stops at the next separator: no tail, so linear.
-  /((?:[?&#;]|%(?:3[Ff]|26|23|3[Bb]))(?:code|state|code_verifier|code_challenge|id_token|access_token|refresh_token|client_secret|sig|x-amz-signature|x-amz-security-token|x-goog-signature)(?:=|%3[Dd]))[^&;#\s"'\\<>]+/gi,
+  /((?:[?&#;]|%(?:3[Ff]|26|23|3[Bb]))(?:code|code_verifier|code_challenge|id_token|access_token|refresh_token|client_secret|sig|x-amz-signature|x-amz-security-token|x-goog-signature)(?:=|%3[Dd]))[^&;#\s"'\\<>]+/gi,
 ];
 
 /** Rules added by T137, after `HELD_SHAPES`. */
@@ -637,6 +660,7 @@ function maskShapes(text: string, mask: string, guard: boolean): string {
   // A function, so `$&` or `$1` in the mask stays literal; group 1, when a pattern has one, is what names the secret and stays.
   const replaced = (m: RegExp[]): void => { for (const p of m) out = out.replace(p, (_m: string, keep?: unknown) => (typeof keep === 'string' ? keep : '') + mask); };
   replaced(HELD_PATTERNS);
+  out = maskOAuthState(out, mask); // the last rule of `HELD_PATTERNS` before FR-196, in the same place
   out = maskList(out, mask, guard, HELD_SHAPES);
   replaced(PATTERNS);
   out = maskCookies(out, mask);
@@ -665,7 +689,7 @@ export function maskBareTokenShapes(text: string, mask: string): string {
   return maskBare(text, mask, true);
 }
 /** Test only: every pattern's source, for the check that none nests quantifiers (`scripts/test-redact-shapes.ts`). */
-export const _maskSourcesForTest = (): string[] => [...HELD_PATTERNS, ...PATTERNS, ...[...HELD_SHAPES, ...TOKEN_SHAPES].flatMap((t) => (typeof t === 'function' ? [] : t instanceof RegExp ? [t] : [t.re])), PREFIXED_AT, PREFIXED_NEXT, JWT_AT, NAMED_IN_QUERY, NAMED_SECRET, NAMED_PHRASE, NAMED_PHRASE_MASKED, NAMED_MASKED_REST, NAMED_SHORT, MASK_THEN_VALUE, MASK_THEN_QUOTED, COOKIE_HEAD].map((r) => r.source);
+export const _maskSourcesForTest = (): string[] => [...HELD_PATTERNS, OAUTH_STATE, ...PATTERNS, ...[...HELD_SHAPES, ...TOKEN_SHAPES].flatMap((t) => (typeof t === 'function' ? [] : t instanceof RegExp ? [t] : [t.re])), PREFIXED_AT, PREFIXED_NEXT, JWT_AT, NAMED_IN_QUERY, NAMED_SECRET, NAMED_PHRASE, NAMED_PHRASE_MASKED, NAMED_MASKED_REST, NAMED_SHORT, MASK_THEN_VALUE, MASK_THEN_QUOTED, COOKIE_HEAD].map((r) => r.source);
 /** Test only: the same without the marker guard, to prove the guard never changes the result. */
 export function maskTokenShapesUnguarded(text: string, mask: string): string {
   return maskLoose(maskShapes(text, mask, false), mask, false);
@@ -2186,6 +2210,14 @@ const oauthParam = (name: string): boolean => {
   return OAUTH_PARAMS.has(n.toLowerCase());
 };
 
+/** FR-196 (#2060 item 8): a `state` (the name percent-decoded, any case) whose value is a `STATE_WORD`. A link that holds a `code` parameter is left to
+    `redact`, which the URL rules end with: `maskOAuthState` hides the state there (one test of the link, not two). */
+const harmlessState = (name: string, v: string): boolean => {
+  if (!narrowOn || !STATE_WORD.test(v)) return false;
+  let n = name; if (n.includes('%')) { try { n = decodeURIComponent(n); } catch { return false; } }
+  return n.toLowerCase() === 'state';
+};
+
 const UNC_SEG = String.raw`[^\\/\s"'<>|:;,*?]{1,128}`;
 const UNC_SEP = String.raw`(?:\\{1,2}|\/)`;
 // spec 097 FR-311 delta 2026-11-08 (review of PR #1322): the lead is any run of two or more `\` (an odd count, `\\\server`, showed the name once
@@ -2324,7 +2356,7 @@ export function maskSecretUrl(url: unknown, envIn?: Env): string {
   const rules = (x: string): string => {
     let s = x;
     s = s.replace(/([a-z][a-z0-9+.-]{1,20}:\/\/)[^/?#\s]{0,2000}@/gi, '$1' + MASK + '@');
-    s = s.replace(/([?&;#])([^=&;#?\s]{1,100})=([^&;#\s]*)/g, (m, sep: string, name: string) => (secretFlag(name) || oauthParam(name) ? `${sep}${name}=${MASK}` : m));
+    s = s.replace(/([?&;#])([^=&;#?\s]{1,100})=([^&;#\s]*)/g, (m, sep: string, name: string, v: string) => (secretFlag(name) || (oauthParam(name) && !harmlessState(name, v)) ? `${sep}${name}=${MASK}` : m));
     s = s.replace(/(\/bot\d{1,20}:)[^/?#\s]+/gi, '$1' + MASK);
     s = s.replace(/(hooks\.slack\.com\/services\/[^/?#\s]+\/[^/?#\s]+\/)[^/?#\s]+/gi, '$1' + MASK);
     s = s.replace(/(\/api(?:\/v\d{1,3})?\/webhooks\/[^/?#\s]+\/)[^/?#\s]+/gi, '$1' + MASK);
