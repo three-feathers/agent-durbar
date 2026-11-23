@@ -1,0 +1,1 @@
+- **Copy details on error messages** (spec 045): every error message now has a *Copy details* button that copies the message as shown, secrets still masked, with the app version and the system, ready for a bug report. Checked in the simulator at 1440x900 and 1280x800 (`check-error-text`).

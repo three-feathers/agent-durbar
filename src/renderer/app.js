@@ -989,7 +989,21 @@ let toastRO=null;
 function mountToast(t){liveMask(t,[t.classList.contains('with-act')&&t.firstElementChild||t]); /* spec 012 FR-195: every toast is masked before it is shown (and read out: #toasts is a live region) */const box=$('toasts');placeToasts();box.appendChild(t);
   if(window.ResizeObserver){if(!toastRO)toastRO=new ResizeObserver(placeToasts);toastRO.disconnect();for(const e of [document.querySelector('#panel .composer'),$('answerBar'),$('panel')])if(e)toastRO.observe(e);} /* the composer grows with a long message, the answer bar appears and goes */}
 window.addEventListener('resize',placeToasts);
-function toast(html,ms){const t=document.createElement('div');t.className='toast';t.innerHTML=html;mountToast(t);holdTimer(t,ms||3200,()=>{t.style.transition='opacity .3s';t.style.opacity='0';setTimeout(()=>t.remove(),320)});return t;}
+function toast(html,ms){const t=document.createElement('div');t.className='toast';t.innerHTML=html;mountToast(t);holdTimer(t,ms||3200,()=>{t.style.transition='opacity .3s';t.style.opacity='0';setTimeout(()=>t.remove(),320)});Promise.resolve().then(()=>{if(t.classList.contains('err')&&!t.dataset.noCopy)errCopy(t);});return t;}
+/* spec 045 FR-067 (owner decision 2026-11-23): an error toast (a toast marked err) gets Copy details: the text as shown, masked once more, and the app version and OS.
+   The window never has the raw error, so it can never copy it; a text the mask cannot check copies nothing. */
+function errCopy(t){
+  const s=document.createElement('span');while(t.firstChild)s.appendChild(t.firstChild);t.appendChild(s);t.classList.add('with-act');
+  const b=document.createElement('button');b.type='button';b.className='toast-act';b.textContent='Copy details';t.appendChild(b);
+  b.onclick=async()=>{
+    const text=liveText(s.textContent.replace(/\s+/g,' ').trim()),api=window.agentDurbar||{};
+    const no=()=>{const f=toast('Could not copy the details.',3000);f.dataset.noCopy='1';f.classList.add('err');};
+    if(!text||text==='[not checked]'){no();return;}
+    let v='';try{v=String(await api.version())||'';}catch(e){v='';}
+    const os={win32:'Windows',darwin:'macOS',linux:'Linux'}[api.platform]||'';
+    try{await navigator.clipboard.writeText(text+'\nAgent Durbar'+(v?' '+v:'')+(os?' on '+os:''));b.textContent='Copied';}catch(e){no();}
+  };
+}
 /* spec 052 FR-047: a button that awaits a bridge call shows it is busy: disabled + aria-busy, same width, the given label, and a 12px spinner
    after 150ms (none under reduced motion: the label alone). Returns done(), which restores the button. busy(null) is a no-op. */
 const reducedMotion=()=>{try{return matchMedia('(prefers-reduced-motion: reduce)').matches;}catch(e){return false;}};
