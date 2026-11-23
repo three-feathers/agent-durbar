@@ -945,7 +945,7 @@ function placeToasts(){const box=$('toasts');if(!box)return;let top=innerHeight;
   const pi=document.body.classList.contains('panel-open')&&document.querySelector('#panel>.panel-in'),pl=pi&&pi.getClientRects().length?Math.round(pi.getBoundingClientRect().left):0;
   box.style.setProperty('--toast-l',(pl+16)+'px');}
 let toastRO=null;
-function mountToast(t){const box=$('toasts');placeToasts();box.appendChild(t);
+function mountToast(t){liveMask(t,[t.classList.contains('with-act')&&t.firstElementChild||t]); /* spec 012 FR-195: every toast is masked before it is shown (and read out: #toasts is a live region) */const box=$('toasts');placeToasts();box.appendChild(t);
   if(window.ResizeObserver){if(!toastRO)toastRO=new ResizeObserver(placeToasts);toastRO.disconnect();for(const e of [document.querySelector('#panel .composer'),$('answerBar'),$('panel')])if(e)toastRO.observe(e);} /* the composer grows with a long message, the answer bar appears and goes */}
 window.addEventListener('resize',placeToasts);
 function toast(html,ms){const t=document.createElement('div');t.className='toast';t.innerHTML=html;mountToast(t);holdTimer(t,ms||3200,()=>{t.style.transition='opacity .3s';t.style.opacity='0';setTimeout(()=>t.remove(),320)});return t;}
@@ -4748,7 +4748,7 @@ function renderRestoreStrip(){
   el.innerHTML='<span class="ns-ic" aria-hidden="true">!</span><span class="ns-t"></span><span class="ns-act"><button class="btn primary" type="button" data-ns="ask">Make it ask me first</button><button class="btn" type="button" data-ns="keep">Keep as it is</button></span>';
   const names=rooms.map(r=>r.name).join(', ');
   el.querySelector('.ns-t').textContent=rooms.length===1?'One folder ('+names+') lets agents change files without asking.':rooms.length+' folders ('+names+') let agents change files without asking.';
-  el.hidden=false;
+  stripMask(el);el.hidden=false;
   el.querySelector('[data-ns="keep"]').onclick=()=>{el.dataset.kept='1';renderRestoreStrip();scheduleRender();};
   el.querySelector('[data-ns="ask"]').onclick=async()=>{
     const bad=[];
@@ -4901,6 +4901,10 @@ const ANN_UNCHECKED='A line was not read out: Durbar could not check it for secr
 function annHome(s){const R=window.DurbarRedact,c=R&&typeof R.unhide==='function'?R.unhide(s):s;let w=s,h=homeMask(s);if(typeof c==='string'&&c!==s){const hc=homeMask(c);if(hc!==c){w=c;h=hc;}} /* the copy without hidden characters, when it holds a home folder */if(typeof h!=='string'||!STX||typeof STX.unesc!=='function')return h;const u=STX.unesc(w),hu=homeMask(u);return typeof hu!=='string'||hu===u||STX.unesc(h)===hu?h:'[redacted]';} /* review of PR 1484: a home folder whose name holds a Markdown escape (/home/a\_b) is cut short by the home mask as written; when the escape-undone copy holds a home folder and masks to something else, the part is said as [redacted] (never with its escapes undone, as annPart) */
 function annPart(t){const s=String(t==null?'':t);if(!s)return '';const h=annHome(s);if(typeof h!=='string'||!h)return null;const m=deskMask(h);if(typeof m!=='string'||!m||m.includes('[redaction failed]')||!STX||typeof STX.unesc!=='function')return null;const u=STX.unesc(h);return m===u?h:u===h?m:'[redacted]';}
 function annMask(t){try{let out='';for(const p of Array.isArray(t)?t:[t]){const o=p&&typeof p==='object',x=annPart(o?p.text:p);if(x===null)return ANN_UNCHECKED;out+=o&&p.max>0?DurbarCutText.cutText(x,p.max):x;}return out.trim()?out:'';}catch(e){return ANN_UNCHECKED;}} /* a part {text,max} is masked, then cut (the MCP request's message) */
+/* spec 012 FR-195 (issue 1419): a built toast or notice strip, masked in place with annPart (FR-178): each text node, title and aria-label; then each block read once more as one joined text (a value split across markup): the masked block is masked again as one text, and every piece of it that the joined reading of the text as built hides is masked (keepShownBy, the union; '[redacted]' without it). Fails closed: '[not checked]', never the text. Nothing is cut before the mask. */
+function liveText(s){try{const m=annPart(s);return typeof m==='string'&&(m||!s)?m:'[not checked]';}catch(e){return '[not checked]';}} /* FR-195: one text through annPart, '[not checked]' when it cannot be checked */
+function liveMask(root,blocks){const NC='[not checked]',one=liveText;if(!root)return root;const bl=(blocks||[]).filter(Boolean),orig=bl.map(b=>b.textContent||'');let ns=[];try{const w=(root.ownerDocument||document).createTreeWalker(root,4);while(w.nextNode())ns.push(w.currentNode);}catch(e){root.textContent=NC;return root;}for(const t of ns)if(t.nodeValue&&t.nodeValue.trim())t.nodeValue=one(t.nodeValue);for(const e of [root,...root.querySelectorAll('[title],[aria-label]')])for(const k of ['title','aria-label']){const v=e.getAttribute(k);if(v&&v.trim())e.setAttribute(k,one(v));}bl.forEach((b,i)=>{const j0=orig[i];if(!j0.trim())return;const jp=b.textContent,mJ=one(j0);if(mJ===NC){b.textContent=NC;return;}let f=one(jp);if(mJ!==j0){const R=window.DurbarRedact;try{f=R&&typeof R.keepShownBy==='function'?R.keepShownBy(f,mJ):'[redacted]';}catch(e){f='[redacted]';}if(typeof f!=='string'||!f)f='[redacted]';} /* a piece the joined reading of the text as built hides is never shown (the shared piece-level union, FR-182) */if(f!==jp)b.textContent=f;});return root;}
+function stripMask(el){return liveMask(el,[...el.querySelectorAll('.ns-t,.aw-w')]);} /* FR-195: a notice strip's text and list items */
 function announce(text,prio){const el=$('srAnnounce');if(!el||!text)return;const said=annMask(text);if(!said)return;const p=prio||0;if(announceT&&p<announceP)return;clearTimeout(announceT);announceP=p;el.textContent='';announceT=setTimeout(()=>{announceT=0;announceP=0;el.textContent=said.slice(0,300);},60);}
 
 /* ---- spec 052 FR-191..FR-196 (T196, T197): Your door, the Needs you queue as a panel beside the office. It reuses paintInbox() for the rows (the
@@ -5361,7 +5365,7 @@ function afRender(){
   const fid=AFT.ids()[0], fa=fid&&byId(fid);
   const text=AF.statusText({paused:AF_PAUSED,held:AF_HOLD,heldCount:AFT.pendingList().length,followed:AFT.size,office:!cur,name:fa&&fa.name,hiddenName:fa&&!afCanOpen(fid)?fa.name:''});
   const set=(id,t)=>{const n=$(id);if(n&&n.textContent!==t)n.textContent=t;};
-  set('afText',text);set('afPos','Attention: '+pt);
+  set('afText',liveText(text)); /* spec 012 FR-195: the followed agent's name through the same mask */set('afPos','Attention: '+pt);
   el.classList.toggle('paused',AF_PAUSED);
   const empty=!ids.length, np=pos.index>=0?(pos.index+1)+' of '+pos.count:pos.count+(pos.count===1?' needs you':' need you');
   const lab=(w,k)=>w+' in attention queue'+(empty?'. Nothing needs you; goes back to the office':'. '+np)+' ('+k+')';
@@ -5742,7 +5746,7 @@ function paintCrashStrip(focusSel){
     '<button class="btn" type="button" data-cr="pick" aria-expanded="'+(crashSt.pick?'true':'false')+'" aria-controls="crashList">Pick…</button>'+
     '<button class="btn" type="button" data-cr="close">Dismiss</button></span>'+
     (crashSt.pick?'<span class="aw-list cr-list" id="crashList" role="list" aria-label="Interrupted sessions">'+left.map(i=>'<span class="aw-it" role="listitem"><span class="aw-w"><b>'+esc(i.folderName)+'</b><small>'+esc(i.adapterId)+'</small></span><button class="btn" type="button" data-crrow="'+esc(i.id)+'">Resume</button></span>').join('')+'</span>':'');
-  el.hidden=false;
+  stripMask(el);el.hidden=false;
   const all=el.querySelector('[data-cr="all"]');
   el.querySelector('[data-cr="close"]').onclick=()=>{crashSt.items=[];paintCrashStrip();};
   el.querySelector('[data-cr="pick"]').onclick=()=>{crashSt.pick=!crashSt.pick;paintCrashStrip(crashSt.pick?'[data-crrow]':'[data-cr="pick"]');};
@@ -5772,7 +5776,7 @@ async function renderAwayStrip(){
     (briefW?' <span class="aw-brief" title="'+esc(SSUM.briefingTip)+'">'+esc(briefW)+'</span>':'')+
     '</span>'+(missed.length?'<span class="aw-list">'+missed.map(m=>'<span class="aw-it" data-sched="'+esc(m.id)+'"><span class="aw-w"><b>'+esc(m.folderName)+'</b>: “'+esc(safeExcerpt(m.prompt,80,''))+'”'+(m.repeats?' <small>(runs again as planned)</small>':'')+'</span>'+(bridge.runScheduleNow?'<button class="btn" type="button" data-awrun="'+esc(m.id)+'">Run missed now</button>':'')+'</span>').join('')+'</span>':'')+
     '<span class="ns-act"><button class="btn" type="button" data-aw="close">Dismiss</button></span>';
-  el.hidden=false;
+  stripMask(el);el.hidden=false;
   el.querySelector('[data-aw="close"]').onclick=()=>{el.hidden=true;el.innerHTML='';if(bridge.dismissSinceAway)bridge.dismissSinceAway().catch(()=>{});scheduleRender();};
   el.querySelectorAll('[data-awrun]').forEach(b=>b.onclick=async()=>{
     const done=busy(b,'Sending…');let r;
@@ -5814,7 +5818,7 @@ function paintMcpStrip(){
     '<span class="ns-act"><button class="btn" type="button" data-ml="list" aria-expanded="'+(mcpL.open?'true':'false')+'" aria-controls="mcpList">'+(mcpL.open?'Hide list':'List…')+'</button><button class="btn" type="button" data-ml="settings">Open MCP settings</button><button class="btn" type="button" data-ml="close">Dismiss</button></span>'+
     (mcpL.open?'<span class="aw-list ml-list" id="mcpList" role="list" aria-label="MCP servers that need attention">'+shown.map(f=>'<span class="aw-it" role="listitem" data-mlk="'+esc(f.key)+'"><span class="aw-w ml-w"><b>'+esc(f.name)+'</b> <small>'+esc(f.where||'')+'</small>: '+esc(f.reason)+'. '+esc(f.fix)+'</span><button class="btn" type="button" data-mlshow="'+esc(f.key)+'" aria-label="'+esc('Show '+f.name+(f.where?' ('+f.where+')':''))+'">Show</button></span>').join('')+
     (more?'<span class="aw-it" role="listitem"><span class="aw-w">and '+more+' more in Settings &gt; MCP servers.</span></span>':'')+'</span>':'');
-  el.hidden=false;
+  stripMask(el);el.hidden=false;
   el.querySelector('[data-ml="close"]').onclick=()=>{mcpL.closed=true;paintMcpStrip();};
   el.querySelector('[data-ml="list"]').onclick=()=>{mcpL.open=!mcpL.open;paintMcpStrip();const b=el.querySelector('[data-ml="list"]');if(b)focusIn(b,{reveal:false});};
   el.querySelector('[data-ml="settings"]').onclick=()=>window.DurbarScreens.openSettings('mcp');

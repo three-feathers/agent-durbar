@@ -8,6 +8,7 @@
  *   npm test -- folders claude   only suites whose name contains one of the words
  *   npm test -- --bail           (or TEST_BAIL=1) stop at the first failing suite, for iterating; the default still runs everything
  *   npm run test:serial          (--serial) one suite after another, same list
+ *   npm test -- --shard 1/2      (or TEST_SHARD=1/2) part 1 of 2 of the list, split by recorded time (spec 117 FR-018: CI runs each part as its own job)
  *
  * With --bail no new suite starts after the first failure and the running ones are stopped (POSIX: the suite's whole process group;
  * Windows: `taskkill /T /F` on its tree), so no Electron or Xvfb is left behind. The final run, PR CI and the merge queue run everything.
@@ -20,17 +21,53 @@ const fs = require('fs');
 const { spawn, spawnSync } = require('child_process');
 const os = require('os');
 const path = require('path');
+const { parseShardSpec, medianOf, timeParts } = require('./time-shard');
 
 const ROOT = path.join(__dirname, '..');
 const TSC_PREFIX = /^tsc -p tsconfig\.scripts\.json\s*&&\s*/;
 
 // spec 008 FR-115: `--bail` or TEST_BAIL=1 (anything but empty, 0, false); the other arguments are name filters
 // Under CI (CI set, not empty/0/false) the flag is ignored: CI always runs everything (ignoredBail says so, the caller prints a line).
+// The value after `--shard` is not a filter (parseShard reads it).
 const truthy = (v) => !['', '0', 'false'].includes(String(v || '').toLowerCase());
 function parseArgs(argv, env) {
   const asked = argv.includes('--bail') || truthy(env.TEST_BAIL);
   const ci = truthy(env.CI);
-  return { bail: asked && !ci, ignoredBail: asked && ci, filters: argv.filter((a) => !a.startsWith('-')) };
+  return { bail: asked && !ci, ignoredBail: asked && ci, filters: argv.filter((a, k) => !a.startsWith('-') && argv[k - 1] !== '--shard') };
+}
+
+// spec 117 FR-018 (#1983): `--shard i/n` (or `--shard=i/n`, or TEST_SHARD=i/n; the flag wins) runs part i of n. A bare `--shard` is refused, never
+// "every suite"; an empty or unset TEST_SHARD means the whole list. Returns the spec string, or '' for the whole list.
+function parseShard(argv, env) {
+  const k = argv.findIndex((a) => a === '--shard' || a.startsWith('--shard='));
+  if (k < 0) return String(env.TEST_SHARD || '');
+  const v = argv[k] === '--shard' ? argv[k + 1] : argv[k].slice('--shard='.length);
+  if (!v || v.startsWith('-')) throw new Error('run-tests: --shard wants a value i/n (1 <= i <= n), got none');
+  return v;
+}
+
+// scripts/test-suite-timings.json: recorded seconds per suite, only to balance the parts; a suite with no entry counts as the median
+const SUITE_TIMES = path.join(__dirname, 'test-suite-timings.json');
+function readSuiteTimes(text = fs.readFileSync(SUITE_TIMES, 'utf8')) { return JSON.parse(text); }
+
+// Part i of n of the suite names, by recorded time (scripts/time-shard.js, the split ui-suite.js uses too): the heavy redact suites land in different
+// parts. Before returning, every part is computed and checked: each name of the list is in exactly one part and no part is empty, so a suite cannot
+// fall out of CI between the shard jobs (a failed check fails the shard job, and with it the required "Build and test (<os>)" summary). `split` is
+// injectable so scripts/test-run-tests.ts can prove the check catches a split that drops or repeats a suite. No spec: the whole list.
+function shardNames(names, spec, times = readSuiteTimes(), split = timeParts) {
+  if (!spec) return { names, parts: [names] };
+  const { i, n } = parseShardSpec(spec, 'run-tests');
+  const median = medianOf(times);
+  const w = (name) => (Number.isFinite(times[name]) ? times[name] : median);
+  const parts = split(names, n, w);
+  const where = new Map(names.map((x) => [x, 0]));
+  for (const p of parts) for (const x of p) {
+    if (!where.has(x)) throw new Error(`run-tests: the split put ${x} in a part, but it is not in test-suites.txt`);
+    where.set(x, where.get(x) + 1);
+  }
+  for (const [x, c] of where) if (c !== 1) throw new Error(`run-tests: ${x} is in ${c} of the ${n} parts, expected exactly 1: the parts must hold every suite once`);
+  if (parts.length !== n || parts.some((p) => !p.length)) throw new Error(`run-tests: --shard ${spec} needs ${n} parts that each hold a suite`);
+  return { names: parts[i - 1], parts, seconds: parts.map((p) => Math.round(p.reduce((a, x) => a + w(x), 0))) };
 }
 
 // scripts/test-suites.txt: one `test:*` script name per line; blank lines and `#` comments are ignored; a name twice is an error
@@ -60,6 +97,16 @@ function loadSuites(pkg, filters, names = readSuiteList()) {
       for (const s of steps) if (s[0] !== 'node') throw new Error(`${name}: only "node <file>" steps are supported here, got "${s.join(' ')}"`);
       return { name, steps: steps.map((s) => s.slice(1)) };
     });
+}
+
+// What a command line runs: the part `--shard`/TEST_SHARD names (of the whole list, so every job of a CI run splits the same list), then the name
+// filters inside it. `note` is the line printed for a part (its count, and that every suite is in exactly one part). Throws on a bad shard value.
+function selectSuites(pkg, argv, env, names = readSuiteList(), times = readSuiteTimes()) {
+  const spec = parseShard(argv, env);
+  const part = shardNames(names, spec, times);
+  const suites = loadSuites(pkg, parseArgs(argv, env).filters, part.names);
+  const note = spec ? `shard ${spec}: ${part.names.length} of ${names.length} suites; every suite is in exactly one of the ${part.parts.length} parts (suites per part: ${part.parts.map((p) => p.length).join(', ')}; recorded seconds per part: ${part.seconds.join(', ')})` : '';
+  return { suites, part, note };
 }
 
 // spec 117 FR-018 (#1983): the five heaviest suites, longest first (Windows seconds in #1983: 507, 338, about 300 each). They start first so the
@@ -249,14 +296,15 @@ function runMain({ suites, jobs, bail, t0 = Date.now(), exit = process.exit, run
   });
 }
 
-module.exports = { suiteTmpEnv, leftBehind, parseArgs, readSuiteList, unlistedSuites, NOT_SUITES, loadSuites, stopChild, runSuites, runMain, startMain, HEAVY_FIRST, orderSuites, formatSummary, readCpuSeconds, makeCpuDir };
+module.exports = { suiteTmpEnv, leftBehind, parseArgs, parseShard, readSuiteTimes, shardNames, selectSuites, readSuiteList, unlistedSuites, NOT_SUITES, loadSuites, stopChild, runSuites, runMain, startMain, HEAVY_FIRST, orderSuites, formatSummary, readCpuSeconds, makeCpuDir };
 
 if (require.main === module) {
   const { ensureElectron } = require('./ensure-electron');
   const pkg = require(path.join(ROOT, 'package.json'));
-  const { bail, ignoredBail, filters } = parseArgs(process.argv.slice(2), process.env);
+  const { bail, ignoredBail } = parseArgs(process.argv.slice(2), process.env);
   if (ignoredBail) console.log('--bail ignored under CI: running every suite');
-  const suites = orderSuites(loadSuites(pkg, filters));
+  let suites;
+  try { const sel = selectSuites(pkg, process.argv.slice(2), process.env); suites = orderSuites(sel.suites); if (sel.note) console.log(sel.note); } catch (e) { console.error(e.message); process.exit(2); }
 
   const t0 = Date.now();
   const tsc = spawnSync(process.execPath, [require.resolve('typescript/bin/tsc'), '-p', 'tsconfig.scripts.json'], { cwd: ROOT, stdio: 'inherit' });
