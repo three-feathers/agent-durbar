@@ -510,7 +510,7 @@ function lobbyHTML(aw){
 function postboxHTML(p,box){
   let S;try{S=SCHED;}catch(e){S={pausedAll:false,schedules:[]};} /* SCHED is declared further down */
   const D=window.DurbarPlaces, paused=!!S.pausedAll, list=S.schedules||[], next=D.postNext(list,paused).slice(0,3);
-  const today=D.lettersToday(list,paused,Date.now(),(window.DurbarSchedTemplates||{}).nextRuleRun), miss=D.postMissed(list), named=!box||box.named;
+  const today=D.lettersToday(list,paused,Date.now(),(window.DurbarSchedTemplates||{}).nextRuleRun), miss=D.postMissed(list), named=!box||box.named, long=!box||box.long;
   const line=x=>{const room=ROOMS.find(r=>folderKeyOf(r)===x.s.folder), fold=room?room.name:(String(x.s.folder||'').split(/[\\/]/).filter(Boolean).pop()||'');
     return {short:clock(x.t)+' · '+safeExcerpt(x.s.prompt,60,''), full:clock(x.t)+' · '+fold+' · '+safeExcerpt(x.s.prompt,200,''), long:clock(x.t)+' · '+fold+' · '+safeExcerpt(x.s.prompt,60,'')};};
   const ls=next.map(line), empty=paused?'All paused':'No letters';
@@ -518,7 +518,7 @@ function postboxHTML(p,box){
   const label=`${placeLabelFull(p.id)}: ${sum}. ${ls.length?'Next: '+ls.map(l=>l.full).join('; '):empty}. Open Settings > Schedules.`;
   return `<button type="button" class="place postbox${miss?' flagged':''}${named?'':' unnamed'}" style="flex:0 0 ${box?box.width:200}px" data-key="place:${p.id}" data-place="${p.id}" data-post="1" title="${esc(label)}" aria-label="${esc(label)}">`
     +`<span class="pb-l"><span class="plh">${placeIcon(p)}${named?`<span class="pn">${esc(placeLabel(p.id))}</span>`:''}</span><span class="pb-n">${esc(today?today+' today':'none today')}</span>${miss?`<span class="pb-flag" aria-hidden="true">${miss} missed</span>`:''}</span>`
-    +`<span class="pb-r" aria-hidden="true">${ls.length?ls.map(l=>`<span class="pb-line">${esc(named?l.long:l.short)}</span>`).join(''):`<span class="pb-line pb-none">${esc(empty)}</span>`}</span></button>`;
+    +`<span class="pb-r" aria-hidden="true">${ls.length?ls.map(l=>`<span class="pb-line">${esc(long?l.long:l.short)}</span>`).join(''):`<span class="pb-line pb-none">${esc(empty)}</span>`}</span></button>`;
 }
 /* spec 001 FR-034/FR-035: open an agent's chat with its pending request (question, permission or spending limit) in view and focused,
    like the answer bar's "show" */
@@ -2211,10 +2211,16 @@ const ROOM_NAME_CH=8;
 let NAME_CTX=null;
 /* the name's text is wider than its box, even by a fraction of a pixel (then the browser draws an ellipsis; scrollWidth is a whole number and counts the padding, so it misses it: a name 0.03px short lost two letters in the 1280x800 office) */
 const nameRoom=(n,cs)=>n.getBoundingClientRect().width-parseFloat(cs.paddingLeft)-parseFloat(cs.paddingRight)-parseFloat(cs.borderLeftWidth)-parseFloat(cs.borderRightWidth); /* the text's room, not rounded (clientWidth is a whole number) */
+function textCut(n){
+  const cs=getComputedStyle(n),box=n.getBoundingClientRect().width,room=box-parseFloat(cs.paddingLeft)-parseFloat(cs.paddingRight)-parseFloat(cs.borderLeftWidth)-parseFloat(cs.borderRightWidth); /* one box read (clientWidth is that box, rounded, minus its borders) */
+  if(n.scrollWidth>Math.round(box-parseFloat(cs.borderLeftWidth)-parseFloat(cs.borderRightWidth))+0.5)return true;
+  const r=document.createRange(); r.selectNodeContents(n);
+  return r.getBoundingClientRect().width>room+0.01;
+}
+/* spec 001 FR-179 (issue 2011): a split name (FR-271) is a flex box of its start and its tail, and the start is what gives way: the box itself holds
+   (its children shrink inside it), so each part is asked too, or a start cut by a fraction of a pixel ("swissc… tract-ai") kept the path beside it */
 function nameCut(n){
-  if(n.scrollWidth>n.clientWidth+0.5)return true;
-  const cs=getComputedStyle(n),r=document.createRange(); r.selectNodeContents(n);
-  return r.getBoundingClientRect().width>nameRoom(n,cs)+0.01;
+  return textCut(n)||[...n.querySelectorAll(':scope>.rn-h,:scope>.rn-t')].some(textCut);
 }
 function nameSqueezed(hd){
   const n=hd.querySelector('.room-name'); if(!n||!n.getClientRects().length||!nameCut(n))return false;
