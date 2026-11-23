@@ -55,6 +55,7 @@ test:handoff
 test:brainstate
 test:brainloop
 test:brainsurface
+test:toolargs-mask
 test:toolusage
 test:usagestore
 test:about
