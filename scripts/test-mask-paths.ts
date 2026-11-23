@@ -66,7 +66,7 @@ for (const [fam, s] of TOKENS) for (const lead of ['x-', 'x_', '/a-', '/a_']) fo
 
 // 2. a named value with a path glued after it: the value goes, the path stays
 const VALUE_CTX: Record<string, (nv: string) => string> = {
-  'a backslash path': (nv) => nv + '\\a.txt', 'a slash path': (nv) => nv + '/a.txt', 'a quoted Windows path': (nv) => "open 'C:\\srv\\" + nv + "\\a.txt'",
+  'a Windows path glued': (nv) => nv + '\\a.txt', 'a POSIX path glued': (nv) => nv + '/a.txt', 'a quoted Windows path': (nv) => "open 'C:\\srv\\" + nv + "\\a.txt'",
   'a POSIX path': (nv) => 'open /srv/' + nv + '/sub/a.txt', 'a trailing slash': (nv) => nv + '/', // hidden with its slash, as before T492
 };
 for (const [fam, name, v] of NAMED) for (const [ctx, f] of Object.entries(VALUE_CTX)) {
