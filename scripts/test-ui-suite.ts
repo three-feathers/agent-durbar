@@ -413,6 +413,9 @@ for (const w of ['CI', 'UI on three OSes', 'Installed app', 'Packaged check', 'I
 assert.ok(office.includes(`CHECK_ALL_THEMES: \${{ (github.event_name == 'pull_request' || github.event_name == 'merge_group') && '0' || '1' }}`) && wf.includes(`CHECK_ALL_THEMES: \${{ github.event_name == 'pull_request' && '0' || '1' }}`), 'every theme on main, nightly and by hand');
 const geo = fs.readFileSync(path.join(ROOT, 'scripts', 'check-theme-geometry.js'), 'utf8');
 assert.ok(/process\.env\.CHECK_ALL_THEMES === '1' \? ALL_THEMES : 'dark'/.test(geo) && /const ALL_THEMES = 'dark,user,pink-studio'/.test(geo), 'check-theme-geometry: the dark fixture by default, all with CHECK_ALL_THEMES=1 (spec 102 T226)');
+// spec 035 FR-414: like with like: a theme with words against Clean Office given the same words (nothing else), the page drawn again in the forced font before measuring
+assert.ok(/extends: 'clean-office', ui: 'clean', scene: 'office', tokens: \{\}, words: p\.words \}/.test(geo) && /const refOf = \(theme\) => \(packs\[`ref:\$\{theme\}`\] \? `ref:\$\{theme\}` : 'clean-office'\);/.test(geo)
+  && /ref\[`\$\{refOf\(theme\)\} \$\{sim\}-\$\{w\}`\]/.test(geo) && /u\.paint\(\); u\.settleNow\(\);/.test(geo), 'check-theme-geometry: a worded theme is compared with Clean Office given its words, drawn again in the forced font (spec 035 FR-414)');
 assert.ok(/const THEMES = \[\['clean', \{ theme: 'clean' \}\], \['dark', CHECK_DARK_QUERY\]\];/.test(fs.readFileSync(path.join(ROOT, 'scripts', 'shots-052-addleft.js'), 'utf8')), 'shots-052-addleft: Clean Office and the dark fixture theme (spec 102 T226)');
 // review of PR #1276 (A): the dark jobs say so (CHECK_EXPECT_DARK=1), so the driver demands the dark fixture whatever its file is called; both job definitions are pinned here
 const par = fs.readFileSync(path.join(ROOT, 'scripts', 'check-parallel.js'), 'utf8');

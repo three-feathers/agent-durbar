@@ -7,7 +7,8 @@
  *   1. geometry: with display text neutralised for the measurement (one font family, weight, case and letter spacing; a theme
  *      may pick its own display font), the box of every element of the office, the lobby and the top bar (SVG art excluded) and
  *      the font size of every text element must equal Clean Office's, within 0.5px. This catches any size, padding, border,
- *      gap or font-size change;
+ *      gap or font-size change. The page is drawn again in that font before measuring (spec 035 FR-414: the lobby sizes a place from its name in
+ *      the font it draws), and a theme with `words` (spec 036) is compared with Clean Office given the same words, so only its CSS can differ;
  *   2. real fonts: the office check's own rules (overlap, clipping, room headers, text at least 10.5px) on the same layouts in
  *      the theme's own fonts, where a wider display font could push header parts. Motion is reduced; a few seconds per theme.
  *
@@ -41,14 +42,23 @@ const ALL_THEMES = 'dark,user,pink-studio';
 const THEMES = (process.env.GEOMETRY_THEMES || (process.env.CHECK_ALL_THEMES === '1' ? ALL_THEMES : 'dark')).split(',').map((s) => s.trim()).filter(Boolean);
 
 /* runs in the page: the box of EVERY element of the office, the lobby and the top bar (SVG art inside excluded: scene kits draw
-   their own), keyed by order and class, plus the font size of each text element; the DOM must be the same in every theme */
-function measure(sel) {
-  const out = {};
+   their own), keyed by order and class, plus the font size of each text element; the DOM must be the same in every theme.
+   `stay`: true leaves the forced font on after measuring (the `+N more` chip is then opened in it), 'off' only takes it away */
+function measure(sel, stay) {
+  /* spec 035 FR-010 (delta 2026-11-23): since spec 001's lobby share by need, the page sizes a lobby place from its name measured in the font it draws.
+     So the page is drawn again in the forced font before measuring, and again in its own fonts after (a theme's display font is its own; its sizes are not) */
+  const redraw = () => { const u = window.__durbarSimUi; if (u && u.paint) { u.paint(); u.settleNow(); } if (window.DurbarFit) window.DurbarFit(); };
+  let st = document.getElementById('geo-neutral');
+  if (stay === 'off') { if (st) { st.remove(); redraw(); } return null; }
   if (window.__durbarSimUi) window.__durbarSimUi.settleNow(); /* spec 008 FR-113: a frame still queued is drawn before measuring */
-  const st = document.createElement('style');
-  st.textContent = '#stage *, .lobby *, header *, #list *, [data-geo="scr"] *{font-family:sans-serif!important;font-weight:400!important;font-style:normal!important;letter-spacing:normal!important;text-transform:none!important;word-spacing:normal!important;font-variant:normal!important;font-feature-settings:normal!important;font-stretch:normal!important}';
-  document.head.appendChild(st);
-  if (window.DurbarFit) window.DurbarFit(); /* fit the usage lines and room headers in the forced font, as the app does in its own */
+  if (!st) {
+    st = document.createElement('style');
+    st.id = 'geo-neutral';
+    st.textContent = '#stage *, .lobby *, header *, #list *, [data-geo="scr"] *{font-family:sans-serif!important;font-weight:400!important;font-style:normal!important;letter-spacing:normal!important;text-transform:none!important;word-spacing:normal!important;font-variant:normal!important;font-feature-settings:normal!important;font-stretch:normal!important}';
+    document.head.appendChild(st);
+  }
+  redraw(); /* the lobby share, the usage lines and room headers fitted in the forced font, as the app does in its own */
+  const out = {};
   const els = [...document.querySelectorAll(sel || '#stage, #stage *, .lobby, .lobby *, header, header *')].filter((e) => !e.closest('svg') && e.getClientRects().length
     /* spec 059: the rename pencil (button.ren) is anchored to the END OF THE NAME'S TEXT (placeRen), like a label: a theme's own font moves it, so its position is text-dependent and not a layout box. Its size and overlaps are checked by check:office. */
     && !e.closest('.ren'));
@@ -58,14 +68,20 @@ function measure(sel) {
     out[key] = [b.left, b.top, b.width, b.height].map((v) => Math.round(v * 10) / 10);
     if (!e.children.length && e.textContent.trim()) out[key].push(parseFloat(getComputedStyle(e).fontSize));
   });
-  st.remove();
-  if (window.DurbarFit) window.DurbarFit();
+  if (stay !== true) { st.remove(); redraw(); }
   return out;
 }
 
 async function driver(ctx) {
   const H = helpers(ctx); // spec 008 FR-097: shared plumbing
   const packs = Object.fromEntries(Object.entries(FIXTURES).map(([k, f]) => [k, JSON.parse(fs.readFileSync(path.join(ROOT, 'scripts', 'fixtures', 'themes', f), 'utf8'))]));
+  /* spec 035 FR-010 (delta 2026-11-23): a theme's words (spec 036: room and place names) are its own, and since spec 001's lobby share by need a place's
+     width follows its name. So a theme with words is compared with Clean Office given the SAME words: a user pack that extends Clean Office and sets
+     nothing else (no token, no art, the clean UI style). A theme without words is compared with Clean Office itself, as before. */
+  for (const [k, p] of Object.entries(packs)) {
+    if (p.words && Object.keys(p.words).length) packs[`ref:${k}`] = { id: `geometry-ref-${p.id}`, name: 'Geometry reference', author: 'Agent Durbar tests', version: '1.0', extends: 'clean-office', ui: 'clean', scene: 'office', tokens: {}, words: p.words };
+  }
+  const refOf = (theme) => (packs[`ref:${theme}`] ? `ref:${theme}` : 'clean-office');
   const query = (theme, sim) => {
     const q = { sim: String(sim), simfreeze: '1', ...(SIM_QUERY[sim] || {}) };
     if (packs[theme]) { q.theme = packs[theme].id; q.usertheme = JSON.stringify(packs[theme]); } else q.theme = theme;
@@ -103,9 +119,12 @@ async function driver(ctx) {
     }
     // the theme's real fonts: the office check's own overlap, clipping, header and font-size rules on this layout
     const real = [await ctx.js(`(${pageCheck.toString()})(false, 5)`)];
+    /* the `+N more` chip is looked for and opened in the forced font (spec 035 delta 2026-11-23): which helpers a strip shows follows the font it is drawn in */
+    await ctx.js(`(${measure.toString()})(null, true)`);
     const more = await ctx.js(`(()=>{const m=document.querySelector('#stage .more[aria-expanded="false"]');if(!m)return false;m.click();return true})()`);
     let expanded = null;
     if (more) { await ctx.sleep(300); expanded = await ctx.js(`(${measure.toString()})()`); real.push(await ctx.js(`(${pageCheck.toString()})(true, 5)`)); }
+    else await ctx.js(`(${measure.toString()})(null, 'off')`);
     return { base, expanded, real: real.flatMap((r) => r.problems) };
   };
   const diff = (a, b, wordy) => {
@@ -122,17 +141,17 @@ async function driver(ctx) {
   };
   let failed = 0, total = 0;
   const ref = {};
-  for (const sim of SIMS) for (const [w, h] of SIZES) ref[`${sim}-${w}`] = await snap('clean-office', sim, w, h);
+  for (const base of new Set(THEMES.map(refOf))) for (const sim of SIMS) for (const [w, h] of SIZES) ref[`${base} ${sim}-${w}`] = await snap(base, sim, w, h);
   for (const theme of THEMES) {
     for (const sim of SIMS) for (const [w, h] of SIZES) {
-      const r = ref[`${sim}-${w}`], t = await snap(theme, sim, w, h);
+      const r = ref[`${refOf(theme)} ${sim}-${w}`], t = await snap(theme, sim, w, h);
       total++;
       if (t.real.length) { failed++; console.log(`FAIL ${theme} sim${sim}-${w}x${h} real fonts: ${t.real.slice(0, 6).join('; ')}`); }
       else console.log(`  ok   ${theme} sim${sim}-${w}x${h} real fonts: office checks pass`);
       for (const part of ['base', 'expanded']) {
         if (!r[part] && !t[part]) continue;
         total++;
-        const d = r[part] && t[part] ? diff(r[part], t[part]) : [`${part}: present in only one of them`];
+        const d = r[part] && t[part] ? diff(r[part], t[part]) : [`${part}: only in ${r[part] ? 'the reference' : 'the theme'}`];
         const label = `${theme} sim${sim}-${w}x${h}${part === 'expanded' ? ' +expanded' : ''}`;
         if (d.length) { failed++; console.log(`FAIL ${label}: ${d.length} differences: ${d.slice(0, 8).join('; ')}${d.length > 8 ? ' ...' : ''}`); }
         else console.log(`  ok   ${label} (${Object.keys(r[part]).length} boxes and fonts)`);
