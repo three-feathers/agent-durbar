@@ -296,7 +296,7 @@ function runMain({ suites, jobs, bail, t0 = Date.now(), exit = process.exit, run
   });
 }
 
-module.exports = { suiteTmpEnv, leftBehind, parseArgs, parseShard, readSuiteTimes, shardNames, selectSuites, readSuiteList, unlistedSuites, NOT_SUITES, loadSuites, stopChild, runSuites, runMain, startMain, HEAVY_FIRST, orderSuites, formatSummary, readCpuSeconds, makeCpuDir };
+module.exports = { summaryHeader, summaryRow, suiteTmpEnv, leftBehind, parseArgs, parseShard, readSuiteTimes, shardNames, selectSuites, readSuiteList, unlistedSuites, NOT_SUITES, loadSuites, stopChild, runSuites, runMain, startMain, HEAVY_FIRST, orderSuites, formatSummary, readCpuSeconds, makeCpuDir };
 
 if (require.main === module) {
   const { ensureElectron } = require('./ensure-electron');
