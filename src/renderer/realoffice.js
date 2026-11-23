@@ -349,16 +349,18 @@
 
   /* The numbers one scene is drawn with: the world's furniture numbers with the set's people numbers. Spec 102 FR-323: `pixelArt` is the WORLD's (grid snap, screen box,
      smoothing of the room), whatever the set; the set's own `pixelArt` only says how its people are drawn (`pixelPeople`, spec 097 T247: a crew's hi-res people in a pixel world are scaled to its people). */
-  function metaOf(worldMeta, setMeta) {
+  /* spec 102 FR-399 (issue 2055): `hd` is the HD person set's off-by-default switch (DURBAR_HD_PEOPLE=1, never in Settings); off, the layout never sees the set's `hd` block */
+  function metaOf(worldMeta, setMeta, hd) {
     const meta = Object.assign({}, worldMeta, setMeta);
     meta.pixelArt = !!(worldMeta && worldMeta.pixelArt);
     meta.pixelPeople = !!(setMeta && setMeta.pixelArt);
+    delete meta.hd; if (hd && setMeta && setMeta.hd) meta.hdPeople = setMeta.hd;
     return meta;
   }
   /**
    * Draw the office into `stage`. `model`: {folders:[{id,name,path,cost,counts:[{state,n,word}],newSess,menu,agents:[{id,name,role,
    * state,word,task,label,tip,selected,away,awayLabel,helpers:[state],helpWords}]}], places:[{id,label,custom,post,title,go,visitors:[{id,name,
-   * needsYou,title}]}]}; `view`: {w,h}; `opts`: {still, world, set, rand, remember, onArt}. Returns the layout (for the app's checks).
+   * needsYou,title}]}]}; `view`: {w,h}; `opts`: {still, world, set, rand, remember, onArt, hd}. Returns the layout (for the app's checks).
    */
   /* spec 102 delta 2026-11-14 (review of #1741): a storey tag's text width in the sign's own 12 px bold, in the font of this machine (a canvas measure; the layout adds the padding). Cached by font and text; null when it cannot be measured (the layout then takes 8 px a letter) */
   let TAGCV = null;
@@ -376,7 +378,7 @@
     WD = 'realoffice/worlds/' + world + '/'; SD = 'realoffice/sets/' + set + '/';
     if (SET_SHOWN !== set) { SET_SHOWN = set; PEOPLE = null; SEEN.clear(); } /* the people belong to a set: switching sets draws its own, kept apart */
     WPX = root.DurbarRealOfficeWorlds[world].px || {}; SPX = root.DurbarRealOfficeSets[set].px || {};
-    const meta = metaOf(root.DurbarRealOfficeWorlds[world], root.DurbarRealOfficeSets[set]);
+    const meta = metaOf(root.DurbarRealOfficeWorlds[world], root.DurbarRealOfficeSets[set], !!opts.hd);
     onArt = opts.onArt || null;
     PIXEL = !!meta.pixelArt;
     meta.dpr = root.devicePixelRatio || 1; FRAC = PIXEL && Math.abs(meta.dpr - Math.round(meta.dpr)) > 1e-9; /* spec 102 FR-255 (T204): the lobby's pictures sit on whole device pixels at any ratio */

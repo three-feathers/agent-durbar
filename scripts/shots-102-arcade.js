@@ -5,7 +5,7 @@
  * It fails (exit 1) when:
  *   - (since the flip, spec 102 T230) a stored choice does not draw the arcade or it is not offered;
  *   - the flag is open and the night room's files (wall-night, floor-night) are not fetched, or the day room's (wall, floor, welcome) are, seen in a session request log (T218, SC-023);
- *   - the flag is open and a file of another world or set is asked for, a picture fails, or the art is not at one integer scale with the nearest pixel (FR-255);
+ *   - the flag is open and a file of another world or set is asked for, a picture fails, or the art is not at one integer scale with the nearest pixel (FR-255; spec 102 FR-392: an HD person is a whole number of device px per file px instead);
  *   - at 3, 4, 8 and 15 agents, 1440x900 and 1280x800: plates, signs, marquees, cues, chips or fixtures overlap, text is under 10.5 px or a marquee under 12 px,
  *     the office scrolls at 15, or Tab does not follow the seats (FR-229, FR-256, SC-022);
  *   - a screen or marquee shows markup from a hostile name or output, a text sits in a mirrored element, anything is skewed, or a text's contrast is under 4.5:1 (FR-257, FR-258);
@@ -309,7 +309,7 @@ const run = async (ctx, reqs) => {
     await must(PICS, 'the pictures, after the room is ready'); /* spec 102 T282: a picture still loading is not a failed one; a failed one is complete with no size */
     assert.deepStrictEqual(await js(`[...document.querySelectorAll('#stage .ro img')].filter(i=>i.complete&&!i.naturalWidth).map(i=>i.getAttribute('src'))`), [], tag + ': every picture loads');
     const art = await js(`(()=>{const L=window.__durbarSimUi.realLayout(),g=L.g,ro=document.querySelector('#stage .ro').getBoundingClientRect(),off=[];
-      for(const e of document.querySelectorAll('#stage .ro-person,#stage .ro-cab')){const b=e.getBoundingClientRect(),x=b.left-ro.left,y=b.top-ro.top;if(Math.abs(b.width/g-Math.round(b.width/g))>0.01)off.push(e.className+' w '+b.width);if(e.classList.contains('ro-cab')&&Math.abs(x/g-Math.round(x/g))>0.01)off.push('cab x '+x);}
+      for(const e of document.querySelectorAll('#stage .ro-person,#stage .ro-cab')){const b=e.getBoundingClientRect(),x=b.left-ro.left,y=b.top-ro.top;if((e.getAttribute('src')||'').includes('/hd/')){const n=b.width*devicePixelRatio/e.naturalWidth;if(n<1-0.01||Math.abs(n-Math.round(n))>0.01)off.push('hd person '+e.getAttribute('src')+' '+b.width+' for '+e.naturalWidth);continue;}if(Math.abs(b.width/g-Math.round(b.width/g))>0.01)off.push(e.className+' w '+b.width);if(e.classList.contains('ro-cab')&&Math.abs(x/g-Math.round(x/g))>0.01)off.push('cab x '+x);}
       const px=getComputedStyle(document.querySelector('#stage .ro-person,#stage .ro-visitor')).imageRendering,cab=getComputedStyle(document.querySelector('#stage .ro-cab')).imageRendering;
       return {g,off,px,cab,scroll:!!L.scroll,fh:document.getElementById('floor').scrollHeight-document.getElementById('floor').clientHeight,scan:[...document.querySelectorAll('#stage *')].filter(e=>/skew/.test(e.style.transform||'')||/matrix\\([^)]*\\)/.test(getComputedStyle(e).transform)&&(()=>{const m=getComputedStyle(e).transform.match(/[-\\d.]+/g).map(Number);return Math.abs(m[0]*m[2]+m[1]*m[3])>1e-3;})()).length,mirrorText:[...document.querySelectorAll('#stage .mir')].filter(e=>e.textContent.trim()).length};})()`);
     console.log('[102-arcade]', tag, JSON.stringify({ g: art.g, scroll: art.scroll }));

@@ -311,6 +311,18 @@ The other 17 cells are the same shared code, in tokens, or a `person`, `fixture`
 
 **Risks.** See the Changes entry: a built-in profile must never widen a user zip (no profile parameter on untrusted paths, a refusal test for every built-in-only name, a mutant); a data file next to a pack may trip asset listings (fallback: one table under `src/shared/`); a built-in set cannot be shared as-is (`[KNOWN GAP]` until OP-14 (b)).
 
+## Delta 2026-11-23: the Retro arcade's HD person set (FR-391..FR-404; T466..T473; issue #2055)
+
+**Reused (spec 021 FR-031).** The arcade's person box in `aislesLayout` (`aislePose`, `dFloor`, the place `PW x g`), `metaOf` in `realoffice.js` (the one place world and set numbers meet), the `DURBAR_DOOR` pattern for an off switch (`devEnv` query key, a constant in `app.js`; spec 052 FR-191), `copy-assets.js`'s set copy, `test-realoffice-assets.ts`'s Pillow-backed checks (`frame-hashes.py`, `DURBAR_REQUIRE_PILLOW` in CI's art step) and the Codex image runs already approved for art (memory `codex-image-generation`, spec 102 *Changes 2026-11-13*).
+
+**Shape.** `hdPick(D, scales)` and `hdFrame(hd, pid, pose, g, dpr)` in `realoffice-arrangements.ts`, pure; `RealMeta.hdPeople` (the switch hands it over); `set.json` `hd`; `sets/retro/hd/*.webp`; `scripts/check-arcade-hd.py` measures, the limits live in the TS test. The art pipeline (`build4.py`: head step, one palette, native snap per size) stays in the art cache, as the old sets' snap scripts did (`ASSETS.md` names it and its hash).
+
+**Order.** PR 1 (this): spec, engine behind the switch, the pilot art (T466..T469). Then the owner's look (T469), the 12 others in batches (T470), his approval (T471), the flip with the full removal (T472). T473 (the cabinets' finish) waits for him.
+
+**Cost.** Codex image runs on the owner's ChatGPT plan, no API credits: 13 (pilot 1), 12 (the samples for the 14:27 decision), 12 (the final pilot's missing poses). The 12 other people: about 4 sheets a person, at most 6. Code: simulator and the touched suites.
+
+**Risks.** Off must be exactly today: guarded by the pinned arcade hash and a byte-for-byte test. A frame wider than its place: refused by the asset test and never drawn. The budget (FR-397) and the faces at 144 px (FR-400) are owner questions at the pilot look.
+
 ## Done when
 
 Tasks ticked, `/speckit.converge` run, SC-001..SC-018 read, README *Safety model* lists the new connection, and `real:` rows recorded or left as `[KNOWN GAP]`.
