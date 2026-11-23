@@ -17,7 +17,8 @@
  *   - the skin is not the world's (neutral in Flat and the Photo office, arcade, cave);
  *   - the seven lobe words (FR-134..FR-136, T477) are not all visible inside the picture, two of them or one and the lit marker intersect, the lit word is not
  *     the current step's (bold, framed in the caption chip's colour), a word animates, the lines line does not name the trail's cap, or focus, hover, the arrow keys
- *     and Esc do not show, move and close the tooltip with the lobe's sentence and its count, inside the picture; compact and roomy.
+ *     and Esc do not show, move and close the tooltip with the lobe's sentence and its count, inside the picture; a word is under 4.5:1 on its chip (over the dock and over
+ *     its own lobe's colour) or the lit frame under 3:1 on the dock, from the resolved colours; compact and roomy.
  * Screenshots (looked at by the author): <SHOTS_OUT>/106-dock-<world>-<state>-<w>x<h>.png
  */
 const os = require('os');
@@ -62,12 +63,21 @@ module.exports = async (ctx) => {
       for(let j=i+1;j<L.length;j++)if(hit(r,R[j]))out.push(g+' overlaps '+L[j].dataset.g);});
     const lit=L.filter(l=>l.classList.contains('is-lit'));
     if(lit.length===1){const a=window.DurbarBrainPoints.ANCHORS[lit[0].dataset.lobe],x=cv.left+a.x*cv.width,y=cv.top+a.y*cv.height,m={left:x-6.5,top:y-6.5,right:x+6.5,bottom:y+6.5};R.forEach((r,i)=>{if(hit(r,m))out.push(L[i].dataset.g+' on the lit marker');});
-      const cs=getComputedStyle(lit[0]),chip=getComputedStyle(document.querySelector('#brainRail .bv-lobe'),'::before').backgroundColor;if(parseInt(cs.fontWeight,10)<600)out.push('lit not bold');if(cs.borderTopColor!==chip)out.push('lit frame '+cs.borderTopColor+' vs chip '+chip);}
-    return {out,lit:lit.map(l=>l.textContent.split(':')[0]),lines:(document.querySelector('#brainRail .bv-lines')||{}).textContent};})()`);
+      const cs=getComputedStyle(lit[0]),fr=getComputedStyle(lit[0],'::after').borderTopColor,chip=getComputedStyle(document.querySelector('#brainRail .bv-lobe'),'::before').backgroundColor;if(parseInt(cs.fontWeight,10)<600)out.push('lit not bold');if(fr!==chip)out.push('lit frame '+fr+' vs chip '+chip);}
+    /* contrast from the resolved colours (review of PR 2061, FR-097): each word on its chip (the chip composited over the dock and, the worst case, over its own lobe's colour) at 4.5:1; the lit frame on the dock at 3:1 */
+    const col=(c)=>{const t=String(c),n=(t.match(/-?[\\d.]+/g)||[]).map(Number);if(/^color\\(srgb/.test(t))return {c:n.slice(0,3).map(v=>v*255),a:n.length>3?n[3]:1};return {c:n.slice(0,3),a:n.length>3?n[3]:1};},
+      over=(f,b)=>f.c.map((v,i)=>v*f.a+b[i]*(1-f.a)),lum=(a)=>{const f=a.map(v=>{v/=255;return v<=0.03928?v/12.92:Math.pow((v+0.055)/1.055,2.4)});return 0.2126*f[0]+0.7152*f[1]+0.0722*f[2];},
+      ratio=(a,b)=>{const x=lum(a),y=lum(b);return (Math.max(x,y)+0.05)/(Math.min(x,y)+0.05);},hex=(h)=>{h=h.trim();h=h.length===4?'#'+[...h.slice(1)].map(x=>x+x).join(''):h;return [1,3,5].map(k=>parseInt(h.slice(k,k+2),16));};
+    const dock=col(getComputedStyle(document.querySelector('#brainRail .bv')).backgroundColor).c, LC=window.__durbarSimUi.brain.host().draw.colors(), cr={};
+    L.forEach((l)=>{const cs=getComputedStyle(l),ink=col(cs.color).c,chip=col(cs.backgroundColor),lc=LC[l.dataset.lobe],lobe=/^\\s*#/.test(lc)?hex(lc):col(lc).c,g=l.dataset.g;
+      const r=Math.min(ratio(ink,over(chip,dock)),ratio(ink,over(chip,over({c:lobe,a:1},dock))));cr[g]=Math.round(r*10)/10;if(r<4.5)out.push(g+' text '+r.toFixed(2)+':1 on its chip');
+      if(l.classList.contains('is-lit')){const b=ratio(col(getComputedStyle(l,'::after').borderTopColor).c,dock);cr[g+' frame']=Math.round(b*10)/10;if(b<3)out.push(g+' frame '+b.toFixed(2)+':1 on the dock');}});
+    return {out,cr,lit:lit.map(l=>l.textContent.split(':')[0]),lines:(document.querySelector('#brainRail .bv-lines')||{}).textContent};})()`);
   const tipOf = () => js(`(()=>{const t=document.querySelector('#brainRail .bv-tip');if(!t||t.hidden||!t.getClientRects().length)return null;const r=t.getBoundingClientRect(),cv=document.querySelector('#brainRail .bv canvas').getBoundingClientRect();return {text:t.textContent,inside:r.left>=cv.left-0.5&&r.right<=cv.right+0.5&&r.top>=cv.top-0.5&&r.bottom<=cv.bottom+0.5,focus:(document.activeElement&&document.activeElement.dataset||{}).g||''};})()`);
   const checkLabels = async (tag, litWord, shellMin) => {
     const li = await labelIssues();
     assert.deepStrictEqual(li.out, [], `the lobe words in ${tag}: ${li.out.join('; ')}`);
+    console.log(`[106-dock] ${tag}: lobe word contrast ${JSON.stringify(li.cr)}`);
     assert.deepStrictEqual(li.lit, [litWord], `the lit word is ${litWord} in ${tag}`);
     assert.strictEqual(li.lines, 'Lines: the last 24 steps, newest brightest', `the lines line in ${tag}`);
     await js(`document.querySelector('#brainRail .bv-lab[data-g=shell]').focus()`);
@@ -86,6 +96,7 @@ module.exports = async (ctx) => {
     await js(`document.querySelector('#brainRail .bv-lab[data-g=think]').dispatchEvent(new MouseEvent('mouseleave'))`);
     assert.strictEqual(await tipOf(), null, `the tooltip goes with the pointer in ${tag}`);
     assert.strictEqual(await js(`[...document.querySelectorAll('#brainRail .bv-lab')].filter(l=>l.tabIndex===0).length`), 1, `one tab stop for the seven words in ${tag}`);
+    assert.ok(/^Shell: back, low\. Running a command, or any other tool\. /.test(await js(`document.querySelector('#brainRail .bv-lab[data-g=shell]').getAttribute('aria-label')`)), `the Shell word's accessible name says where and what in ${tag}`);
   };
   const pageScroll = () => js(`document.scrollingElement.scrollWidth>innerWidth||document.scrollingElement.scrollHeight>innerHeight`);
 

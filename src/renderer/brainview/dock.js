@@ -19,7 +19,8 @@
   /* FR-136: how many of the turn's kept steps went to each lobe (glyph and lobe are one to one) */
   function lobeCounts(S,s){const c={};for(const g of LABEL_ORDER)c[g]=0;for(const st of s.turn?s.turn.steps:[])if(c[st.glyph]!=null)c[st.glyph]++;return c;}
   const LABEL_ORDER=['think','read','edit','shell','web','mcp','you']; /* the legend's order, the labels' reading and arrow-key order */
-  const MARK_R=7, LABEL_GAP=2; /* draw.js's marker: a 5 px ring and its 1.5 px line, rounded up; the air kept between a marker and a word */
+  const DRW=(typeof module==='object'&&module.exports)?require('./draw.js'):(typeof self!=='undefined'?self:globalThis).DurbarBrainDraw;
+  const MARK_R=Math.ceil(DRW.MARKER.r+DRW.MARKER.line), LABEL_GAP=2; /* draw.js's own marker (ring and its whole line, rounded up: 7 px) and the air kept between a marker and a word */
   /* FR-134: one spot per word beside its lobe's anchor, none on a marker (any lobe's: the lit one moves), another word or outside the W x H picture;
      of the sets that fit, the one nearest the anchors. Pure: sizes {glyph:{w,h}} and anchors {glyph:{x,y}} (0..1) in, {glyph:{l,t,r,b}} or null out */
   function placeLabels(W,H,sizes,anchors){
@@ -84,8 +85,7 @@
     const q=(c)=>el.querySelector(c), canvas=q('.bv-canvas');
     /* FR-134..FR-136: the seven words over the picture, one tab stop (roving), the arrow keys between them, the tooltip on hover or focus */
     const labsEl=q('.bv-labs'), tip=q('.bv-tip'), P=win.DurbarBrainPoints; let lastView=null, labKey='', tipG=null, focusG='think';
-    const labs=LABEL_ORDER.map((g)=>{const li=doc.createElement('li');li.className='bv-lab';li.setAttribute('data-g',g);li.setAttribute('data-lobe',S.GLYPHS[g].lobe);li.setAttribute('tabindex','-1');li.textContent=S.GLYPHS[g].word;
-      const sr=doc.createElement('span');sr.className='sr-only';li.appendChild(sr);li.sr=sr;labsEl.appendChild(li);
+    const labs=LABEL_ORDER.map((g)=>{const li=doc.createElement('li');li.className='bv-lab';li.setAttribute('data-g',g);li.setAttribute('data-lobe',S.GLYPHS[g].lobe);li.setAttribute('tabindex','-1');li.textContent=S.GLYPHS[g].word;labsEl.appendChild(li);
       li.addEventListener('mouseenter',()=>showTip(g));li.addEventListener('mouseleave',()=>{if(doc.activeElement!==li)showTip(null);});
       li.addEventListener('focus',()=>{focusG=g;roving();showTip(g);});li.addEventListener('blur',()=>showTip(null));return li;});
     q('.bv-lines').textContent=linesText(S);
@@ -104,18 +104,20 @@
     /* each word's spot, measured bold (the lit weight) once per width, skin and font, so the lit word never shifts the others */
     function layoutLabels(){
       const br=labsEl.parentNode; if(!P||!br||!br.getClientRects||!br.getClientRects().length)return; /* the picture is not laid out (hidden, or a test page): later; the list itself may be hidden by a failed fit */
-      const cs=win.getComputedStyle?win.getComputedStyle(labsEl):null, sz=draw.size(), key=sz.w+'|'+skinId+'|'+(cs?cs.fontFamily+cs.fontSize:'');
+      const cs=win.getComputedStyle?win.getComputedStyle(labsEl):null, sz=draw.size(), o=br.getBoundingClientRect(), dpr=win.devicePixelRatio||1;
+      const fx=(o.left*dpr-Math.round(o.left*dpr))/dpr, fy=(o.top*dpr-Math.round(o.top*dpr))/dpr; /* the picture's offset from whole device pixels: words on whole pixels, so a word's edge pixels are its chip, never half the picture */
+      const key=sz.w+'|'+skinId+'|'+(cs?cs.fontFamily+cs.fontSize:'')+'|'+fx.toFixed(2)+','+fy.toFixed(2);
       if(key===labKey)return;
       labsEl.hidden=false; labsEl.classList.add('is-measure'); const sizes={}, anchors={}; /* shown to be measured (same task: no frame sees it) */
       labs.forEach((li,i)=>{const g=LABEL_ORDER[i];li.style.width='';sizes[g]={w:Math.ceil(li.offsetWidth),h:Math.ceil(li.offsetHeight)};anchors[g]=P.ANCHORS[S.GLYPHS[g].lobe];});
       labsEl.classList.remove('is-measure');
       if(!sizes.think.w)return;
       const at=placeLabels(sz.w,sz.h,sizes,anchors); labKey=key; labsEl.hidden=!at; /* no set fits (a very large font): the caption and the legend still say it */
-      if(at)labs.forEach((li,i)=>{const r=at[LABEL_ORDER[i]];li.style.left=r.l+'px';li.style.top=r.t+'px';li.style.width=(r.r-r.l)+'px';});
+      if(at)labs.forEach((li,i)=>{const r=at[LABEL_ORDER[i]];li.style.left=(r.l-fx)+'px';li.style.top=(r.t-fy)+'px';li.style.width=(r.r-r.l)+'px';});
     }
     function paintLabels(v){
       lastView=v; layoutLabels();
-      labs.forEach((li,i)=>{const g=LABEL_ORDER[i];li.classList.toggle('is-lit',g===v.glyph);li.sr.textContent=': '+tipText(S,g,v.counts,v.folded);});
+      labs.forEach((li,i)=>{const g=LABEL_ORDER[i];li.classList.toggle('is-lit',g===v.glyph);li.setAttribute('aria-label',S.GLYPHS[g].word+': '+tipText(S,g,v.counts,v.folded));});
       const c=v.lobe?draw.colors()[v.lobe]:''; el.style.setProperty('--bv-lit',c||'transparent'); el.classList.toggle('is-lit',!!c);
       if(v.glyph&&!(doc.activeElement&&labsEl.contains&&labsEl.contains(doc.activeElement))){focusG=v.glyph;roving();} /* the one tab stop is the lit word, unless the person is moving between words */
       if(tipG)showTip(tipG);

@@ -620,6 +620,10 @@ console.log('braindraw: page load ok');
     assert.deepStrictEqual(H.LABEL_ORDER, Object.keys(BS.GLYPHS), 'the seven words, in the glyph table\'s order');
     // 12 px bold advance widths of CI's fonts (DejaVu Sans Bold, and DejaVu Sans Mono Bold: the arcade's display font on Linux), plus 2 px padding and 1 px border a side
     const FONTS: Record<string, Record<string, number>> = { sans: { think: 37.4, read: 34.1, edit: 26.6, shell: 33.5, web: 29.5, mcp: 29.5, you: 24.4 }, mono: { think: 36.1, read: 28.9, edit: 28.9, shell: 36.1, web: 21.7, mcp: 21.7, you: 21.7 } };
+    // the marker as draw.js draws it (review of PR 2061: never dock.js's own number, or a smaller clearance would test itself): the ring's radius and its whole line
+    assert.deepStrictEqual(D.MARKER, { r: 5, line: 1.5 }, 'draw.js\'s marker: a 5 px ring with a 1.5 px line (FR-016)');
+    const MARK = D.MARKER.r + D.MARKER.line;
+    assert.ok(H.MARK_R >= MARK && H.MARK_R >= 7, `dock.js keeps its words at least the marker's ${MARK} px from an anchor (MARK_R ${H.MARK_R})`);
     const hit = (a: { l: number; t: number; r: number; b: number }, b: typeof a): boolean => a.l < b.r && b.l < a.r && a.t < b.b && b.t < a.b;
     for (const [font, adv] of Object.entries(FONTS)) for (const grow of [1, 1.1]) for (const W of [H.W_COMPACT, 240, 325]) {
       const Hh = Math.round(W / P.ASPECT), sizes: Record<string, { w: number; h: number }> = {};
@@ -631,7 +635,7 @@ console.log('braindraw: page load ok');
         const r = at[g];
         assert.ok(r.l >= 0 && r.t >= 0 && r.r <= W && r.b <= Hh, `${g} inside the picture box, ${tag}: ${JSON.stringify(r)}`);
         assert.ok(r.r - r.l >= sizes[g].w - 1 && r.b - r.t === 17, `${g} keeps its measured size, ${tag}`);
-        for (const m of gs) { const a = ANCH[m], k = H.MARK_R; assert.ok(!hit(r, { l: a.x * W - k, t: a.y * Hh - k, r: a.x * W + k, b: a.y * Hh + k }), `${g} is not on ${m}'s marker, ${tag}`); }
+        for (const m of gs) { const a = ANCH[m], k = MARK; assert.ok(!hit(r, { l: a.x * W - k, t: a.y * Hh - k, r: a.x * W + k, b: a.y * Hh + k }), `${g} is not on ${m}'s marker, ${tag}`); }
         for (const o of gs) if (o !== g) assert.ok(!hit(r, at[o]), `${g} and ${o} do not overlap, ${tag}`);
         const a = ANCH[g], cx = (r.l + r.r) / 2 - a.x * W, cy = (r.t + r.b) / 2 - a.y * Hh;
         assert.ok(Math.abs(cx) <= sizes[g].w && Math.abs(cy) <= 17 + H.MARK_R + H.LABEL_GAP, `${g} sits beside its own lobe, ${tag}`);
@@ -654,14 +658,14 @@ console.log('braindraw: page load ok');
     assert.strictEqual(H.tipText(BS, 'think', c, 0), 'front. Thinking between tools: never a tool step.', 'Think is never a step: no count');
     // one source (FR-014): the legend's words and the words on the picture are GLYPHS'
     const p = page(() => 'Ada'); p.host.feed('a', 'Ada', p.ev(1)); p.flush();
-    const labs = p.host.labels() as { textContent: string; classes: Set<string>; attrs: Record<string, string>; sr: { textContent: string } }[];
+    const labs = p.host.labels() as { textContent: string; classes: Set<string>; attrs: Record<string, string>;  }[];
     const words = H.LABEL_ORDER.map((g: string) => BS.GLYPHS[g].word);
     assert.deepStrictEqual(labs.map((l) => l.textContent), words, 'the labels are GLYPHS\' words');
     assert.deepStrictEqual(H.legendRows(BS).slice(0, 7).map((r: { word: string }) => r.word), words, 'the legend says the same words, in the same order');
     // the lit word and the one tab stop; every other word in the reading order; the count in each item's text
     assert.deepStrictEqual(labs.map((l) => l.classes.has('is-lit')), H.LABEL_ORDER.map((g: string) => g === 'shell'), 'the lit word is the current step\'s (Shell)');
     assert.deepStrictEqual(labs.map((l) => l.attrs.tabindex), H.LABEL_ORDER.map((g: string) => (g === 'shell' ? '0' : '-1')), 'one tab stop: the lit word');
-    assert.strictEqual(labs[3].sr.textContent, ': back, low. Running a command, or any other tool. 1 step this turn.', 'the screen reader text of a word: its sentence and count');
+    assert.strictEqual(labs[3].attrs['aria-label'], 'Shell: back, low. Running a command, or any other tool. 1 step this turn.', 'the screen reader text of a word: its sentence and count');
     assert.ok(String((p.host.el.attrs as Record<string, string>)['style--bv-lit']).startsWith('#'), 'the lit colour reaches the caption chip and the frame');
     assert.strictEqual(txt(p.host, '.bv-lines'), H.linesText(BS), 'the dock shows the lines line');
     assert.strictEqual(txt(p.host, '.bv-lobe'), 'Shell', 'the caption names the tool only, no anatomical word (2026-11-23)');

@@ -35,9 +35,11 @@ body.browser-big #panel>.brail{display:none} /* the in-app browser expanded to f
 .bv-fig{flex:none;display:flex;flex-direction:column;gap:var(--s-1);width:min-content} /* the lines line wraps at the picture's width */
 .bv-brain{position:relative;align-self:flex-start}
 .bv-labs{position:absolute;inset:0;margin:0;padding:0;list-style:none}
-.bv-lab{position:absolute;box-sizing:border-box;padding:0 calc(var(--s-1) / 2);border:1px solid transparent;border-radius:var(--r-sm);line-height:var(--t1-lh);white-space:nowrap;text-align:center;background:color-mix(in srgb,var(--bv-bg) 85%,transparent);cursor:default}
+.bv-lab{position:absolute;box-sizing:border-box;padding:0 calc(var(--s-1) / 2);border:1px solid transparent;line-height:var(--t1-lh);white-space:nowrap;text-align:center;background:color-mix(in srgb,var(--bv-bg) 85%,transparent);cursor:default}
 .bv-lab.is-lit,.bv-labs.is-measure .bv-lab{font-weight:var(--t1-weight)}
-.bv-lab.is-lit{border-color:var(--bv-lit);background:var(--bv-bg)}
+.bv-lab{outline:1px solid color-mix(in srgb,var(--bv-bg) 85%,transparent)} /* the chip reaches 1 px past the box: a word's text box is as tall as the box, so its edge pixels stay the chip (check-097-chat-contrast) */
+.bv-lab.is-lit{background:var(--bv-bg);outline-color:var(--bv-bg)}
+.bv-lab.is-lit::after{content:'';position:absolute;inset:calc(var(--s-1) / -2);border:1px solid var(--bv-lit);pointer-events:none} /* the lit frame, just outside that 1 px */
 .bv-lab:focus-visible{outline:3px solid currentColor;outline-offset:1px}
 .bv-tip{position:absolute;left:0;right:0;top:0;z-index:1;box-sizing:border-box;padding:var(--s-1) var(--s-2);border:1px solid currentColor;border-radius:var(--r-sm);background:var(--bv-bg)}
 .bv-tip.is-low{top:auto;bottom:0}
@@ -57,7 +59,7 @@ body.browser-big #panel>.brail{display:none} /* the in-app browser expanded to f
 .bv-steps{min-height:0}
 .bv-steps>button{display:block;width:100%;text-align:start;padding:0;border:0;background:none;color:inherit;font:inherit;cursor:pointer}
 .bv-list{margin:0;padding-inline-start:var(--s-5);max-height:8em;overflow:auto}
-@media (forced-colors:active){.bv .btn{background:ButtonFace;color:ButtonText;border-color:ButtonText}.bv{border-color:CanvasText;background:Canvas;color:CanvasText}.bv-card{background:Canvas;border:1px solid CanvasText}.bv-lab,.bv-tip{background:Canvas;color:CanvasText}.bv-lab.is-lit{border-color:Highlight}.bv.is-lit .bv-lobe::before{background:Highlight}.brail-dl button{border-color:ButtonText}}
+@media (forced-colors:active){.bv .btn{background:ButtonFace;color:ButtonText;border-color:ButtonText}.bv{border-color:CanvasText;background:Canvas;color:CanvasText}.bv-card{background:Canvas;border:1px solid CanvasText}.bv-lab,.bv-tip{background:Canvas;color:CanvasText}.bv-lab.is-lit::after{border-color:Highlight}.bv.is-lit .bv-lobe::before{background:Highlight}.brail-dl button{border-color:ButtonText}}
 /* Spec 106 FR-110 (T020): the Retro arcade skin: the world's own mono display font and square frame. Colours, shape and font only: no width, height, margin, padding or font-size here (070 D2).
    The frame is the world's hard shadow token (a shadow takes no room), so the 1 px border and every size stay those of the neutral skin. */
 html[data-world="retro"][data-ui="retro"] .bv{font-family:var(--ui-display);border-color:var(--line);border-radius:0;--bv-bg:var(--surface);background:var(--bv-bg);color:var(--ink);box-shadow:var(--shadow-pop)}
