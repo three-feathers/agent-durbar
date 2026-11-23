@@ -509,23 +509,17 @@ function maskCookies(s: string, mask: string): string {
 }
 /** A password in a command-shaped rule: ends at shell syntax, and at brackets, so `curl -u a:b(curl) x` shows `(curl)`. `Bearer x` is not one: its own shape takes the value too (in a note, even after a mark). */
 const CMD_VALUE = String.raw`(?![Bb][Ee][Aa][Rr][Ee][Rr]\s)(?:[^\s"'|;&\`$()<>]|\$(?![({]))+`;
-/**
- * Spec 012 FR-196 (issue #1981): three closed lists that keep a harmless word readable where a secret name's rule hid it. Each is read on a WHOLE
- * value only (a value that starts with or holds a listed word is hidden as before), so they can only show a word, never part of a value.
- * `OAUTH_WORD_SRC`: the value of an OAuth `state` or `code` query name made of 1 to 10 lower-case letters a-z and nothing else (`?state=open`):
- * real authorization codes and states are random and longer, with digits, capitals or symbols.
+/*
+ * Spec 012 FR-196 (issue #1981): two closed lists that keep a harmless word readable where a secret name's rule hid it. Each is read on a WHOLE
+ * value or name word only (a value that starts with or holds a listed word is hidden as before), so they can only show a word, never part of a value.
+ * The OAuth `state` and `code` query values stay hidden whatever they hold (pinned: review on PR #630 and `test-redact.ts`'s `any case`).
  */
-const OAUTH_WORD_SRC = '[a-z]{1,10}';
-const OAUTH_WORD = new RegExp(`^${OAUTH_WORD_SRC}$`);
 /** A plain switch word as the whole value of a secret name (`PasswordAuthentication=no`), any case. */
 const SWITCH_VALUES = new Set(['yes', 'no', 'true', 'false', 'on', 'off']);
-/** The first word of a long flag that names an action or a negation, not a value (`--show-signature`, `--no-auth`): it takes no next word as its value. */
-const SWITCH_FLAG_LEADS = new Set(['no', 'show']);
+/** The first word of a long flag that names a display, not a value (`--show-signature`): it takes no next word as its value. `no` is not in it: `--no-<name> <word>` stays hidden (FR-053's pinned fail-safe). */
+const SWITCH_FLAG_LEADS = new Set(['show']);
 const switchFlag = (name: string): boolean => { if (!narrowOn) return false; const m = /^--([A-Za-z]+)-[A-Za-z]/.exec(name); return !!m && SWITCH_FLAG_LEADS.has(m[1].toLowerCase()); };
 const switchValue = (v: string): boolean => narrowOn && SWITCH_VALUES.has(v.toLowerCase());
-/** The OAuth pair's value, but a lower-case word of `OAUTH_WORD_SRC` read whole; `OAUTH_PAIR_MAIN` is the rule as before FR-196 (the step off, for the differential test). */
-const OAUTH_PAIR = new RegExp(String.raw`((?:[?&#;]|%(?:3[Ff]|26|23|3[Bb]))(?:${ci('code')}|${ci('state')})(?:=|%3[Dd]))(?!${OAUTH_WORD_SRC}(?![^&;#\s"'\\<>]))[^&;#\s"'\\<>]+`, 'g');
-const OAUTH_PAIR_MAIN = new RegExp(String.raw`((?:[?&#;]|%(?:3[Ff]|26|23|3[Bb]))(?:${ci('code')}|${ci('state')})(?:=|%3[Dd]))[^&;#\s"'\\<>]+`, 'g');
 /** FR-196's switch: on in the app; off only inside `_withoutOvermaskNarrowForTest`, which reads as before FR-196 for the differential. */
 let narrowOn = true;
 export function _withoutOvermaskNarrowForTest<T>(f: () => T): T { const was = narrowOn; narrowOn = false; try { return f(); } finally { narrowOn = was; } }
@@ -540,12 +534,8 @@ const HELD_PATTERNS: RegExp[] = [
   // OAuth and signed-URL values in a URL's query or fragment (an authorization address, a loopback callback, a presigned link), also percent-encoded inside
   // another URL; the names are not secret-looking, so the token shapes miss them (review on #635: a CLI's stderr reaches the debug sink).
   // A fixed separator and name, then a value that stops at the next separator: no tail, so linear.
-  // spec 012 FR-196 (issue #1981): `code` and `state` have their own rule (`OAUTH_PAIR`, no `i` flag, so the kept word is lower case only)
-  OAUTH_PAIR,
-  /((?:[?&#;]|%(?:3[Ff]|26|23|3[Bb]))(?:code_verifier|code_challenge|id_token|access_token|refresh_token|client_secret|sig|x-amz-signature|x-amz-security-token|x-goog-signature)(?:=|%3[Dd]))[^&;#\s"'\\<>]+/gi,
+  /((?:[?&#;]|%(?:3[Ff]|26|23|3[Bb]))(?:code|state|code_verifier|code_challenge|id_token|access_token|refresh_token|client_secret|sig|x-amz-signature|x-amz-security-token|x-goog-signature)(?:=|%3[Dd]))[^&;#\s"'\\<>]+/gi,
 ];
-
-const HELD_PATTERNS_MAIN = HELD_PATTERNS.map((r) => (r === OAUTH_PAIR ? OAUTH_PAIR_MAIN : r));
 
 /** Rules added by T137, after `HELD_SHAPES`. */
 const PATTERNS: RegExp[] = [
@@ -646,7 +636,7 @@ function maskShapes(text: string, mask: string, guard: boolean): string {
   let out = text;
   // A function, so `$&` or `$1` in the mask stays literal; group 1, when a pattern has one, is what names the secret and stays.
   const replaced = (m: RegExp[]): void => { for (const p of m) out = out.replace(p, (_m: string, keep?: unknown) => (typeof keep === 'string' ? keep : '') + mask); };
-  replaced(narrowOn ? HELD_PATTERNS : HELD_PATTERNS_MAIN);
+  replaced(HELD_PATTERNS);
   out = maskList(out, mask, guard, HELD_SHAPES);
   replaced(PATTERNS);
   out = maskCookies(out, mask);
@@ -2196,9 +2186,6 @@ const oauthParam = (name: string): boolean => {
   return OAUTH_PARAMS.has(n.toLowerCase());
 };
 
-/** FR-196: the value of `state` or `code` (the name percent-decoded, any case) is a lower-case word of `OAUTH_WORD`, read whole. */
-const oauthWord = (name: string, v: string): boolean => { if (!narrowOn) return false; let n = name; if (n.includes('%')) { try { n = decodeURIComponent(n); } catch { return false; } } n = n.toLowerCase(); return (n === 'state' || n === 'code') && OAUTH_WORD.test(v); };
-
 const UNC_SEG = String.raw`[^\\/\s"'<>|:;,*?]{1,128}`;
 const UNC_SEP = String.raw`(?:\\{1,2}|\/)`;
 // spec 097 FR-311 delta 2026-11-08 (review of PR #1322): the lead is any run of two or more `\` (an odd count, `\\\server`, showed the name once
@@ -2337,7 +2324,7 @@ export function maskSecretUrl(url: unknown, envIn?: Env): string {
   const rules = (x: string): string => {
     let s = x;
     s = s.replace(/([a-z][a-z0-9+.-]{1,20}:\/\/)[^/?#\s]{0,2000}@/gi, '$1' + MASK + '@');
-    s = s.replace(/([?&;#])([^=&;#?\s]{1,100})=([^&;#\s]*)/g, (m, sep: string, name: string, v: string) => (secretFlag(name) || (oauthParam(name) && !oauthWord(name, v)) ? `${sep}${name}=${MASK}` : m));
+    s = s.replace(/([?&;#])([^=&;#?\s]{1,100})=([^&;#\s]*)/g, (m, sep: string, name: string) => (secretFlag(name) || oauthParam(name) ? `${sep}${name}=${MASK}` : m));
     s = s.replace(/(\/bot\d{1,20}:)[^/?#\s]+/gi, '$1' + MASK);
     s = s.replace(/(hooks\.slack\.com\/services\/[^/?#\s]+\/[^/?#\s]+\/)[^/?#\s]+/gi, '$1' + MASK);
     s = s.replace(/(\/api(?:\/v\d{1,3})?\/webhooks\/[^/?#\s]+\/)[^/?#\s]+/gi, '$1' + MASK);

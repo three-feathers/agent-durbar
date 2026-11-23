@@ -1,5 +1,5 @@
 /**
- * Spec 012 FR-196 (issue #1981): three closed lists keep a harmless word readable where a secret name's rule hid it, on every shared mask
+ * Spec 012 FR-196 (issue #1981): two closed lists keep a harmless word readable where a secret name's rule hid it, on every shared mask
  * (`redact`, `maskSecretCommand`, `maskSecretArgs`, `maskSecretUrl`, `maskOutgoing`, `maskNoteText`) and on the task line's label mask
  * (`DurbarSafeText.maskLabel`, the chip and Copy). Labelled asserts per class, near misses that stay hidden, and a differential against the
  * reading with FR-196 off (`_withoutOvermaskNarrowForTest`, which reads as `main` did): only the listed classes change, counted per class.
@@ -36,12 +36,12 @@ const pw = ['PASS', 'WORD'].join('');
 const tok = ['to', 'ken'].join('');
 const gh = ['gh', 'p_'].join('') + 'A1b2C3d4'.repeat(4) + 'E5f6';
 
-// class (a): a long flag whose first word is `no` or `show` takes no next word as its value
+// class (a): a long flag whose first word is `show` takes no next word as its value
 shown('git log --show-signature -3', 'FR-196 a: --show-signature then a count');
-shown('git log --no-show-signature -n 5', 'FR-196 a: --no-show-signature then a short flag');
 shown('git log --show-signature HEAD~3', 'FR-196 a: --show-signature then a revision');
 shown(`gh auth status --show-${tok} -h example.test`, 'FR-196 a: --show-<name> then a host flag');
-shown('tool --no-auth build', 'FR-196 a: --no-auth then a word');
+hidden('tool --no-auth build4x7q', 'build4x7q', 'FR-196 a stays: a --no- flag hides the next word (the pinned fail-safe)');
+hidden('git log --no-show-signature -n 5', '-n 5', 'FR-196 a stays: a --no- lead is not in the list');
 // near misses: hidden as before
 hidden(`tool --${tok} build4x7q`, 'build4x7q', 'FR-196 a stays: a plain secret flag hides the next word');
 hidden(`tool --show-${tok}=build4x7q`, 'build4x7q', 'FR-196 a stays: the = form of a switch flag hides its value');
@@ -52,16 +52,9 @@ hidden(`tool -no-${tok} build4x7q`, 'build4x7q', 'FR-196 a stays: one dash is no
 hidden(`tool --known-${tok} build4x7q`, 'build4x7q', 'FR-196 a stays: a lead that holds no');
 hidden(`tool --no-auth ${gh}`, gh.slice(4, 14), 'FR-196 a stays: a token after a switch flag is hidden by its own shape');
 
-// class (b): an OAuth state or code query value of 1 to 10 lower-case letters a-z
-shown('gh api repos/o/r/pulls?state=open&per_page=50', 'FR-196 b: ?state=open in an API path');
-shown('curl https://api.example.test/repos/o/r/issues?state=closed', 'FR-196 b: ?state=closed in a URL');
-shown('open https://example.test/cb?code=python', 'FR-196 b: ?code=<word>');
-shown('open https://example.test/q?a=1&state=all#top', 'FR-196 b: &state=all before a fragment');
-for (const [v, why] of [['Open', 'a capital'], ['open1', 'a digit'], ['abcdefghijk', '11 letters'], ['in_progress', 'an underscore'], ['a-b', 'a hyphen'], ['op%65n', 'a percent escape'], ['ab.cd', 'a dot']]) {
-  hidden(`open https://example.test/cb?state=${v}&x=1`, `state=${v}`, `FR-196 b stays: a value with ${why}`);
-  hidden(`open https://example.test/cb?code=${v}`, `code=${v}`, `FR-196 b stays: a code with ${why}`);
-}
-hidden('open https://example.test/cb?redirect=x%26state%3Dopenx%20y', 'openx%20y', 'FR-196 b stays: an encoded pair whose value goes on');
+// not narrowed (`[KNOWN GAP]` of #1981): an OAuth state or code query value stays hidden whatever it holds (pinned in test-redact.ts)
+hidden('gh api repos/o/r/pulls?state=open&per_page=50', 'state=open', 'FR-196 not narrowed: ?state=open stays hidden');
+hidden('open https://example.test/cb?code=python', 'code=python', 'FR-196 not narrowed: ?code=<word> stays hidden');
 
 // class (c): a switch word as the whole value of a secret name
 shown('ssh -o PasswordAuthentication=no host', 'FR-196 c: an ssh option set to no');
@@ -73,7 +66,7 @@ hidden(`tool --pass${'word'}=nope`, 'nope', 'FR-196 c stays: --password=nope');
 
 // differential: FR-196 on vs off (as main), counted per class; nothing outside the listed classes may change
 let seed = 20261124;
-const rnd = (k: number): number => { seed = (seed * 1103515245 + 12345) & 0x7fffffff; return seed % k; };
+const rnd = (k: number): number => { seed = (Math.imul(seed, 1103515245) + 12345) & 0x7fffffff; return seed % k; };
 const from = (a: string, len: number): string => { let s = ''; for (let i = 0; i < len; i++) s += a[rnd(a.length)]; return s; };
 const LOW = 'abcdefghijklmnopqrstuvwxyz', UP = LOW.toUpperCase(), DIG = '0123456789', HEX = DIG + 'abcdef', B64U = LOW + UP + DIG + '-_';
 const codeShaped = (): string => {
@@ -82,15 +75,15 @@ const codeShaped = (): string => {
     case 1: return from(B64U, 16 + rnd(40)); // base64url
     case 2: return from(LOW, 3 + rnd(8)) + from(DIG, 1 + rnd(3)) + from(LOW, rnd(6)); // digit-bearing
     case 3: return from(LOW, 1 + rnd(6)) + from(UP, 1) + from(LOW, rnd(8)); // mixed case
-    case 4: return from(LOW, 11 + rnd(30)); // letters only, longer than the cap
+    case 4: return from(LOW, 8 + rnd(30)); // letters only
     default: return from(LOW, 2 + rnd(5)) + '-_.'[rnd(3)] + from(LOW, 2 + rnd(5)); // letters with a symbol
   }
 };
-const SECRET_FLAGS = ['--token', '--password', '--api-key', '--client-secret', '--auth', '--show-token=', '--no-auth=', '--shown-token', '--known-password'];
+const SECRET_FLAGS = ['--no-auth', '--no-show-signature', '--token', '--password', '--api-key', '--client-secret', '--auth', '--show-token=', '--no-auth=', '--shown-token', '--known-password'];
 const SECRET_NAMES = [pw, 'API_KEY', 'CLIENT_SECRET', 'PasswordAuthentication', 'DB_PASS'];
-const CLASSES = ['a', 'b', 'c'] as const;
-const changed: Record<string, number> = { a: 0, b: 0, c: 0, secret: 0 };
-const total: Record<string, number> = { a: 0, b: 0, c: 0, secret: 0 };
+const CLASSES = ['a', 'c'] as const;
+const changed: Record<string, number> = { a: 0, c: 0, secret: 0 };
+const total: Record<string, number> = { a: 0, c: 0, secret: 0 };
 const corpus: { cls: string; t: string }[] = [];
 for (let i = 0; i < 400; i++) {
   const v = codeShaped();
@@ -98,8 +91,8 @@ for (let i = 0; i < 400; i++) {
   const f = SECRET_FLAGS[rnd(SECRET_FLAGS.length)];
   corpus.push({ cls: 'secret', t: f.endsWith('=') ? `tool ${f}${v}` : `tool ${f} ${v}` });
   corpus.push({ cls: 'secret', t: `${SECRET_NAMES[rnd(SECRET_NAMES.length)]}=${v} make` });
-  corpus.push({ cls: 'a', t: `git log --${['no', 'show', 'No', 'SHOW'][rnd(4)]}-${['signature', 'token', 'auth', 'password'][rnd(4)]} ${['-3', '-n', 'HEAD~2', 'main', 'src'][rnd(5)]}` });
-  corpus.push({ cls: 'b', t: `curl https://api.example.test/r?${['state', 'code'][rnd(2)]}=${from(LOW, 1 + rnd(10))}` });
+  corpus.push({ cls: 'a', t: `git log --${['show', 'Show', 'SHOW'][rnd(3)]}-${['signature', 'token', 'auth', 'password'][rnd(4)]} ${['-3', '-n', 'HEAD~2', 'main', 'src'][rnd(5)]}` });
+  corpus.push({ cls: 'secret', t: `curl https://api.example.test/r?${['state', 'code', 'State'][rnd(3)]}=${from(LOW, 1 + rnd(7))}` });
   corpus.push({ cls: 'c', t: `${SECRET_NAMES[rnd(SECRET_NAMES.length)]}=${['yes', 'no', 'true', 'false', 'on', 'off', 'No', 'TRUE'][rnd(8)]} make` });
 }
 for (const { cls, t } of corpus) {
