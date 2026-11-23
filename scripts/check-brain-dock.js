@@ -96,7 +96,16 @@ module.exports = async (ctx) => {
     await js(`document.querySelector('#brainRail .bv-lab[data-g=think]').dispatchEvent(new MouseEvent('mouseleave'))`);
     assert.strictEqual(await tipOf(), null, `the tooltip goes with the pointer in ${tag}`);
     assert.strictEqual(await js(`[...document.querySelectorAll('#brainRail .bv-lab')].filter(l=>l.tabIndex===0).length`), 1, `one tab stop for the seven words in ${tag}`);
-    assert.ok(/^Shell: back, low\. Running a command, or any other tool\. /.test(await js(`document.querySelector('#brainRail .bv-lab[data-g=shell]').getAttribute('aria-label')`)), `the Shell word's accessible name says where and what in ${tag}`);
+    // the words' semantics (review of PR 2061, round 2): a real list; each item named by its visible word; ONE description outside the picture, never painted
+    const sem = await js(`(()=>{const u=document.querySelector('#brainRail .bv-labs'),L=[...u.querySelectorAll('.bv-lab')],d=document.getElementById('bvLabDesc');document.querySelector('#brainRail .bv-lab[data-g=shell]').focus();
+      return {role:u.getAttribute('role'),names:L.map(l=>l.hasAttribute('aria-label')||l.hasAttribute('aria-labelledby')?'renamed':l.textContent),desc:L.map(l=>l.getAttribute('aria-describedby')),text:d&&d.textContent,inPic:!!(d&&d.closest('.bv-brain')),boxes:d?d.getClientRects().length:-1};})()`);
+    assert.strictEqual(sem.role, 'list', `the words are a list (role=list: a list-style:none list keeps its semantics) in ${tag}`);
+    assert.deepStrictEqual(sem.names, ['Think', 'Read', 'Edit', 'Shell', 'Web', 'MCP', 'You'], `each word's accessible name is its visible word in ${tag}`);
+    assert.ok(sem.desc.every((d) => d === 'bvLabDesc'), `every word is described by the one description in ${tag}`);
+    assert.ok(/^Shell: back, low\. Running a command, or any other tool\. (No|\d+) steps? this turn\.$/.test(sem.text), `the description is the focused word's place, sentence and count in ${tag}: ${sem.text}`);
+    assert.ok(!sem.inPic && sem.boxes === 0, `the description is outside the picture and never painted (no text spills into the picture) in ${tag}: ${JSON.stringify(sem)}`);
+    await js(`document.activeElement.dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowRight',bubbles:true}));document.activeElement.blur();0`);
+    assert.ok((await js(`document.getElementById('bvLabDesc').textContent`)).startsWith('Web: low side. Fetching a web page'), `the description follows the focus (ArrowRight to Web) in ${tag}`);
   };
   const pageScroll = () => js(`document.scrollingElement.scrollWidth>innerWidth||document.scrollingElement.scrollHeight>innerHeight`);
 

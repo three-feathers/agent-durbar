@@ -665,7 +665,8 @@ console.log('braindraw: page load ok');
     // the lit word and the one tab stop; every other word in the reading order; the count in each item's text
     assert.deepStrictEqual(labs.map((l) => l.classes.has('is-lit')), H.LABEL_ORDER.map((g: string) => g === 'shell'), 'the lit word is the current step\'s (Shell)');
     assert.deepStrictEqual(labs.map((l) => l.attrs.tabindex), H.LABEL_ORDER.map((g: string) => (g === 'shell' ? '0' : '-1')), 'one tab stop: the lit word');
-    assert.strictEqual(labs[3].attrs['aria-label'], 'Shell: back, low. Running a command, or any other tool. 1 step this turn.', 'the screen reader text of a word: its sentence and count');
+    assert.ok(labs.every((l) => l.attrs['aria-label'] === undefined && l.attrs['aria-describedby'] === 'bvLabDesc'), 'each word is named by its own text and described by the one description');
+    assert.strictEqual(txt(p.host, '.bv-desc'), 'Shell: back, low. Running a command, or any other tool. 1 step this turn.', 'the description: the lit word\'s place, sentence and count');
     assert.ok(String((p.host.el.attrs as Record<string, string>)['style--bv-lit']).startsWith('#'), 'the lit colour reaches the caption chip and the frame');
     assert.strictEqual(txt(p.host, '.bv-lines'), H.linesText(BS), 'the dock shows the lines line');
     assert.strictEqual(txt(p.host, '.bv-lobe'), 'Shell', 'the caption names the tool only, no anatomical word (2026-11-23)');

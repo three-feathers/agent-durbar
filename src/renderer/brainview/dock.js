@@ -79,16 +79,18 @@
     const el=doc.createElement('section'); el.className='bv'; el.setAttribute('role','region'); el.setAttribute('aria-label','Brain view');
     el.innerHTML='<div class="bv-head"><strong class="bv-title">Brain</strong><button type="button" class="btn" data-bv="legend" aria-expanded="false" aria-controls="bvLegend">Legend</button></div>'+
       '<p class="bv-cost"></p><p class="bv-sentence"></p>'+
-      '<div class="bv-body"><div class="bv-pic"><div class="bv-fig"><div class="bv-brain"><canvas class="bv-canvas" aria-hidden="true"></canvas><ul class="bv-labs" aria-label="Lobes of the picture"></ul><div class="bv-tip" aria-hidden="true" hidden></div></div><p class="bv-lines"></p></div><div class="bv-card"><strong class="bv-lobe"></strong><strong class="bv-c1"></strong><div class="bv-c2"></div><div class="bv-c3"></div></div></div>'+
+      '<div class="bv-body"><div class="bv-pic"><div class="bv-fig"><div class="bv-brain"><canvas class="bv-canvas" aria-hidden="true"></canvas><ul class="bv-labs" role="list" aria-label="Lobes of the picture"></ul><div class="bv-tip" aria-hidden="true" hidden></div></div><p class="bv-lines"></p><p class="bv-desc" id="bvLabDesc" hidden></p></div><div class="bv-card"><strong class="bv-lobe"></strong><strong class="bv-c1"></strong><div class="bv-c2"></div><div class="bv-c3"></div></div></div>'+
       '<div class="bv-legend" id="bvLegend" hidden></div></div>'+
       '<div class="bv-steps"><button type="button" data-bv="steps" aria-expanded="false" aria-controls="bvSteps"><span aria-hidden="true">▸ </span><span class="bv-sum"></span></button><ol class="bv-list" id="bvSteps" hidden></ol></div>';
     const q=(c)=>el.querySelector(c), canvas=q('.bv-canvas');
     /* FR-134..FR-136: the seven words over the picture, one tab stop (roving), the arrow keys between them, the tooltip on hover or focus */
-    const labsEl=q('.bv-labs'), tip=q('.bv-tip'), P=win.DurbarBrainPoints; let lastView=null, labKey='', tipG=null, focusG='think';
-    const labs=LABEL_ORDER.map((g)=>{const li=doc.createElement('li');li.className='bv-lab';li.setAttribute('data-g',g);li.setAttribute('data-lobe',S.GLYPHS[g].lobe);li.setAttribute('tabindex','-1');li.textContent=S.GLYPHS[g].word;labsEl.appendChild(li);
+    const labsEl=q('.bv-labs'), tip=q('.bv-tip'), desc=q('.bv-desc'), P=win.DurbarBrainPoints; let lastView=null, labKey='', tipG=null, focusG='think';
+    const labs=LABEL_ORDER.map((g)=>{const li=doc.createElement('li');li.className='bv-lab';li.setAttribute('data-g',g);li.setAttribute('data-lobe',S.GLYPHS[g].lobe);li.setAttribute('tabindex','-1');li.setAttribute('aria-describedby','bvLabDesc');li.textContent=S.GLYPHS[g].word;labsEl.appendChild(li);
       li.addEventListener('mouseenter',()=>showTip(g));li.addEventListener('mouseleave',()=>{if(doc.activeElement!==li)showTip(null);});
-      li.addEventListener('focus',()=>{focusG=g;roving();showTip(g);});li.addEventListener('blur',()=>showTip(null));return li;});
+      li.addEventListener('focus',()=>{focusG=g;roving();describe();showTip(g);});li.addEventListener('blur',()=>showTip(null));return li;});
     q('.bv-lines').textContent=linesText(S);
+    /* the focused word's (else the lit one's) place, sentence and count: ONE description outside the picture, never painted (hidden), read through aria-describedby; the word stays the item's name */
+    function describe(){const v=lastView||{};desc.textContent=S.GLYPHS[focusG].word+': '+tipText(S,focusG,v.counts,v.folded);}
     function roving(){labs.forEach((li,i)=>li.setAttribute('tabindex',LABEL_ORDER[i]===focusG?'0':'-1'));}
     labsEl.addEventListener('keydown',(e)=>{
       const i=LABEL_ORDER.indexOf(focusG), n=LABEL_ORDER.length, k=e.key;
@@ -117,10 +119,10 @@
     }
     function paintLabels(v){
       lastView=v; layoutLabels();
-      labs.forEach((li,i)=>{const g=LABEL_ORDER[i];li.classList.toggle('is-lit',g===v.glyph);li.setAttribute('aria-label',S.GLYPHS[g].word+': '+tipText(S,g,v.counts,v.folded));});
+      labs.forEach((li,i)=>{const g=LABEL_ORDER[i];li.classList.toggle('is-lit',g===v.glyph);});
       const c=v.lobe?draw.colors()[v.lobe]:''; el.style.setProperty('--bv-lit',c||'transparent'); el.classList.toggle('is-lit',!!c);
       if(v.glyph&&!(doc.activeElement&&labsEl.contains&&labsEl.contains(doc.activeElement))){focusG=v.glyph;roving();} /* the one tab stop is the lit word, unless the person is moving between words */
-      if(tipG)showTip(tipG);
+      describe(); if(tipG)showTip(tipG);
     }
     /* the skin follows the shown world (FR-110): html[data-world], the world's own tokens read from the page; no skin file means the neutral palette */
     const SKN=win.DurbarBrainSkins, rootEl=doc.documentElement;
