@@ -147,6 +147,7 @@
     "test:labelsbackfill": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-labels-backfill.js",
     "test:liveact": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-liveact.js",
     "test:livehead": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-livehead.js",
+    "test:livemask": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-live-mask.js",
     "test:logo-assets": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-logo-assets.js",
     "test:lookalike": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-lookalike.js",
     "test:loops": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-loops.js",
