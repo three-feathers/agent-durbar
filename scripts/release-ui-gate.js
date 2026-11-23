@@ -18,8 +18,8 @@
  * The printed remedy never suggests re-running a main push run (once spec 117 O3 lands, a re-run joins the ui-main group and
  * cancels main's newest UI run): only a by-hand run on the tag, or tagging a newer green commit, then re-running the failed jobs
  * of the release run (spec 021 FR-087 delta 2026-11-22).
- * API answers: 5xx, 429 and network errors count as a wait (failing at --max-minutes, never passing); any other 4xx (401, 403,
- * 404: a wrong repo, permission or workflow name) fails at once.
+ * API answers: 5xx, 429, a rate-limit 403 and network errors count as a wait (failing at --max-minutes, never passing); any other
+ * 4xx (401, a permission 403, 404: a wrong repo, permission or workflow name) fails at once.
  *
  * CLI: node scripts/release-ui-gate.js --sha <40 hex> --repo <owner/name> --tag <v...> [--not-found-minutes 15]
  *      [--max-minutes 150] [--interval-seconds 60] [--summary <file>] [--runs-file <json>]
@@ -32,7 +32,7 @@ const { execFileSync } = require('child_process');
 
 const WORKFLOW_FILE = 'ui-platforms.yml';
 const MIN = 60 * 1000;
-const SHARD = /^UI shard \((ubuntu|windows|macos)-latest \d+\/\d+\)$/;
+const SHARD = /^UI shard \((ubuntu|windows|macos)-latest (\d+)\/(\d+)\)$/;
 const DECISION_JOB = 'What the UI suite needs';
 
 function runState(r) {
@@ -42,14 +42,28 @@ function runState(r) {
   return { state: 'failed', detail: '' };
 }
 
-/** The Linux and Windows shards (and the decision job) of one run; macOS shards are not read. */
+/** Shards 1..n of one OS, each exactly once, all with the same n (a missing or doubled shard is not a complete set). */
+function completeSet(list) {
+  if (list.length === 0) return false;
+  const n = list[0].n;
+  if (list.some((x) => x.n !== n)) return false;
+  const ks = list.map((x) => x.k).sort((a, b) => a - b);
+  return ks.length === n && ks.every((k, i) => k === i + 1);
+}
+
+/** The Linux and Windows shards (every one the run defines) and the decision job of one run; macOS shards are not read. */
 function linuxWindowsState(r) {
   const jobs = Array.isArray(r.jobs) ? r.jobs : null;
   if (!jobs) return r.status !== 'completed' ? { state: 'running', detail: 'jobs not listed yet' } : { state: 'failed', detail: 'its jobs could not be read' };
-  const pick = jobs.filter((j) => j.name === DECISION_JOB || ((SHARD.exec(j.name) || [])[1] === 'ubuntu') || ((SHARD.exec(j.name) || [])[1] === 'windows'));
-  const has = (os) => jobs.some((j) => (SHARD.exec(j.name) || [])[1] === os);
+  const decision = jobs.filter((j) => j.name === DECISION_JOB);
+  const shards = { ubuntu: [], windows: [] };
+  for (const j of jobs) {
+    const m = SHARD.exec(j.name);
+    if (m && m[1] !== 'macos') shards[m[1]].push({ k: Number(m[2]), n: Number(m[3]), j });
+  }
+  const pick = [...decision, ...shards.ubuntu.map((x) => x.j), ...shards.windows.map((x) => x.j)];
   if (pick.some((j) => j.status !== 'completed')) return { state: 'running', detail: 'Linux and Windows jobs' };
-  if (!has('ubuntu') || !has('windows') || !pick.some((j) => j.name === DECISION_JOB)) {
+  if (decision.length !== 1 || !completeSet(shards.ubuntu) || !completeSet(shards.windows)) {
     return r.status !== 'completed' ? { state: 'running', detail: 'jobs not listed yet' } : { state: 'failed', detail: 'a Linux or Windows shard or the decision job is missing' };
   }
   if (pick.every((j) => j.conclusion === 'success')) return { state: 'success', detail: 'Linux and Windows jobs' };
@@ -74,7 +88,7 @@ const POLICIES = {
     needsJobs: true,
     counts: () => true,
     state: linuxWindowsState,
-    remedy: (o) => `Start a by-hand UI run on the tag (${dispatchRedo(o)}; only its Linux and Windows jobs decide)`,
+    remedy: (o) => `Start a by-hand UI run at this exact commit (${dispatchRedo(o)}; only its Linux and Windows jobs decide)`,
   },
   // option (b): only main push runs, and by-hand runs that have no macOS job, decide, as a whole
   'push-or-dispatch-without-macos': {
@@ -135,7 +149,7 @@ function decide(runs, o) {
   const ok = (runs || []).filter((r) => eligible(r, sha, o.repo) && policy.counts(r));
   if (ok.length === 0) {
     if (o.elapsedMs < o.notFoundMs) return { verdict: 'wait', reason: 'none-yet', message: `No deciding "UI on three OSes" run for ${sha} yet; waiting.` };
-    return { verdict: 'fail', reason: 'none', message: `No deciding "UI on three OSes" run for ${sha} after ${Math.round(o.notFoundMs / MIN)} minutes (the workflow's paths filter may have skipped this commit, or the tag is not on a main push). ${policy.remedy(o)}. ${after}` };
+    return { verdict: 'fail', reason: 'none', message: `No deciding "UI on three OSes" run for ${sha} after ${Math.round(o.notFoundMs / MIN)} minutes. Likely: the merge queue pushed this commit together with a newer one, and GitHub starts a push run only for the newest commit of a push (v0.1.28); or the workflow's paths filter skipped it; or the tag is not on a main push. ${policy.remedy(o)}. ${after}` };
   }
   const latest = ok.slice().sort(newestFirst)[0];
   const s = policy.state(latest);
@@ -151,11 +165,12 @@ function decide(runs, o) {
   return { verdict: 'fail', reason: 'failed', run: latest, message: `The latest deciding UI run for ${sha} did not pass: ${what}. Fix the cause on main. ${policy.remedy(o)}. ${after}` };
 }
 
-/** "wait" for 5xx, 429 and errors with no HTTP status (network); "fatal" for every other HTTP 4xx (401, 403, 404, 422 ...). */
+/** "wait" for 5xx, 429, a rate-limit 403 and errors with no HTTP status (network); "fatal" for every other 4xx (401, 403, 404, 422 ...). */
 function errorKind(message) {
   const m = /HTTP (\d{3})/.exec(String(message));
   if (!m) return 'wait';
   const code = Number(m[1]);
+  if (code === 403 && /rate limit/i.test(String(message))) return 'wait'; // primary and secondary rate limits answer 403
   return code === 429 || code >= 500 ? 'wait' : 'fatal';
 }
 
@@ -167,7 +182,17 @@ function fetchRuns(gh, o) {
   if (Number(data.total_count) > runs.length) throw new Error(`${data.total_count} runs for one commit, more than one page: not decided`);
   if (policy.needsJobs) {
     for (const r of runs.filter((x) => eligible(x, o.sha, o.repo)).sort(newestFirst).slice(0, 10)) {
-      r.jobs = (gh(jobsPath(o.repo, r.id)).jobs || []).map((j) => ({ name: j.name, status: j.status, conclusion: j.conclusion }));
+      const all = [];
+      let total = 0;
+      for (let page = 1; page <= 10; page++) {
+        const d = gh(`${jobsPath(o.repo, r.id)}&page=${page}`);
+        total = Number(d.total_count) || 0;
+        const got = d.jobs || [];
+        all.push(...got);
+        if (got.length === 0 || all.length >= total) break;
+      }
+      if (all.length < total) throw new Error(`run ${r.id}: ${total} jobs, ${all.length} listed: not decided`);
+      r.jobs = all.map((j) => ({ name: j.name, status: j.status, conclusion: j.conclusion }));
     }
   }
   return runs;

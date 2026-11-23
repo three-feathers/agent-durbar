@@ -10,6 +10,10 @@ import * as os from 'os';
 import * as path from 'path';
 import { spawnSync } from 'child_process';
 
+// js-yaml is a transitive dependency already used by the workflow guards (FR-031: reuse, no new devDependency)
+let yaml: { load: (s: string) => unknown } | undefined; try { yaml = require('js-yaml'); } catch { yaml = undefined; }
+assert.ok(yaml, 'js-yaml is missing: release.yml cannot be parsed, so the guard cannot check it. Fix the install instead of skipping.');
+
 const ROOT = path.resolve(__dirname, '..', '..');
 const GATE = path.join(ROOT, 'scripts', 'release-ui-gate.js');
 /** Text as LF: a Windows checkout (core.autocrlf) has CRLF, and `.` in a regex stops at `\r` (the shebang strip failed there). */
@@ -67,13 +71,13 @@ function jobs3(over: Record<string, string> = {}, oses = ['ubuntu', 'windows', '
 const RERUN_UI = /gh run rerun \d/;
 
 /** Run the CLI on a temporary copy of `src`; returns the exit status. */
-function cli(dir: string, src: string, runs: Run[], extra: string[] = []): number | null {
+function cli(dir: string, src: string, runs: Run[], extra: string[] = []): { status: number | null; out: string } {
   const file = path.join(dir, 'gate.js');
   fs.writeFileSync(file, src);
   const data = path.join(dir, 'runs.json');
   fs.writeFileSync(data, JSON.stringify({ total_count: runs.length, workflow_runs: runs }));
   const r = spawnSync(process.execPath, [file, '--sha', SHA, '--repo', REPO, '--tag', 'v0.1.15', '--runs-file', data, ...extra], { encoding: 'utf8', timeout: 30000 });
-  return r.status;
+  return { status: r.status, out: `${r.stdout}${r.stderr}` };
 }
 
 /** Every rule as fixture cases with labelled asserts; a mutant must make exactly its own label throw first. */
@@ -122,6 +126,7 @@ async function suite(src: string, dir: string): Promise<void> {
   const none = is([], 15, 'fail', 'none', 'R3 no run after the not-found limit: fail');
   is([run({ head_sha: OTHER }), run({ event: 'pull_request' })], 20, 'fail', 'none', 'R3 only runs that do not count: no run');
   assert.ok(none.message.includes('gh workflow run ui-platforms.yml') && none.message.includes('--ref v0.1.15'), 'R3 the no-run message names the dispatch command on the tag');
+  assert.ok(/merge queue pushed this commit together with a newer one/.test(none.message), 'R3 the no-run message names the merge-queue cause');
 
   // R4 the latest counting run (by run_started_at, then id) is the verdict; it must be completed
   is([run({ status: 'in_progress', conclusion: null })], 30, 'wait', 'running', 'R4 a running run: wait');
@@ -160,6 +165,11 @@ async function suite(src: string, dir: string): Promise<void> {
   t = 0;
   const v3 = await g.poll({ ...opts(0, 'latest-run'), fetchRuns: () => { throw new Error('gh: Server Error (HTTP 500)'); }, sleep: async (ms: number) => { t += ms; }, now: () => t, intervalMs: MIN, log: () => undefined });
   assert.strictEqual(`${v3.verdict}/${v3.reason}`, 'fail/api', 'R6 an API that always fails ends in a failure, never a pass');
+  assert.ok(t >= 150 * MIN && t <= 151 * MIN, 'R6 an always-failing API stops at maxMs');
+  t = 0;
+  let rethrown = '';
+  try { await g.poll({ ...opts(0, 'latest-run'), sha: 'nope', fetchRuns: () => [], sleep: async (ms: number) => { t += ms; }, now: () => t, intervalMs: MIN, log: () => undefined }); } catch (e) { rethrown = (e as Error).message; }
+  assert.ok(/bad input/.test(rethrown) && t === 0, 'R6 poll rethrows bad input at once');
 
   // R7 API error kinds: 401, 403, 404 and other 4xx fail at once; 429, 5xx and network errors wait
   assert.strictEqual(g.errorKind('gh: Not Found (HTTP 404)'), 'fatal', 'R7 404 fails at once');
@@ -167,6 +177,8 @@ async function suite(src: string, dir: string): Promise<void> {
   assert.strictEqual(g.errorKind('gh: Resource not accessible by integration (HTTP 403)'), 'fatal', 'R7 403 fails at once');
   assert.strictEqual(g.errorKind('gh: Validation Failed (HTTP 422)'), 'fatal', 'R7 422 fails at once');
   assert.strictEqual(g.errorKind('gh: API rate limit exceeded (HTTP 429)'), 'wait', 'R7 429 waits');
+  assert.strictEqual(g.errorKind('gh: API rate limit exceeded for installation ID 1. (HTTP 403)'), 'wait', 'R7 a 403 rate limit waits');
+  assert.strictEqual(g.errorKind('gh: You have exceeded a secondary rate limit. Please wait a few minutes. (HTTP 403)'), 'wait', 'R7 a 403 secondary rate limit waits');
   assert.strictEqual(g.errorKind('gh: Bad Gateway (HTTP 502)'), 'wait', 'R7 502 waits');
   assert.strictEqual(g.errorKind('dial tcp: connection reset by peer'), 'wait', 'R7 a network error waits');
   t = 0;
@@ -190,7 +202,15 @@ async function suite(src: string, dir: string): Promise<void> {
   is([run({ event: 'schedule', status: 'in_progress', conclusion: null, jobs: jobs3({ 'UI shard (windows-latest 4/4)': 'running' }) })], 30, 'wait', 'running', 'R8a a running Windows shard: wait', A);
   is([run({ event: 'schedule', status: 'in_progress', conclusion: null, jobs: jobs3({ 'UI shard (macos-latest 1/3)': 'running' }) })], 30, 'pass', 'success', 'R8a Linux and Windows done and green while macOS runs: pass', A);
   is([run({ jobs: jobs3({}, ['ubuntu']) })], 0, 'fail', 'failed', 'R8a no Windows shard fails', A);
+  is([run({ jobs: jobs3({}, ['windows']) })], 0, 'fail', 'failed', 'R8a no Linux shard fails', A);
+  is([run({ jobs: jobs3().filter((j) => j.name !== 'UI shard (windows-latest 3/4)') })], 0, 'fail', 'failed', 'R8a windows 3/4 missing fails', A);
+  is([run({ jobs: jobs3().filter((j) => j.name !== 'UI shard (windows-latest 4/4)') })], 0, 'fail', 'failed', 'R8a windows 4/4 missing fails', A);
+  is([run({ jobs: [...jobs3().filter((j) => j.name !== 'UI shard (windows-latest 4/4)'), job('UI shard (windows-latest 4/5)')] })], 0, 'fail', 'failed', 'R8a shards with two different counts fail', A);
+  is([run({ jobs: [...jobs3().filter((j) => j.name !== 'UI shard (ubuntu-latest 4/4)'), job('UI shard (ubuntu-latest 1/4)')] })], 0, 'fail', 'failed', 'R8a a doubled shard does not stand in for a missing one', A);
+  is([run({ jobs: jobs3({ 'UI shard (ubuntu-latest 2/4)': 'skipped' }) })], 0, 'fail', 'failed', 'R8a a skipped Linux shard fails', A);
+  is([run({ jobs: jobs3({ 'UI shard (windows-latest 2/4)': 'neutral' }) })], 0, 'fail', 'failed', 'R8a a neutral Windows shard fails', A);
   is([run({ jobs: jobs3({}, ['ubuntu', 'windows']).filter((j) => j.name !== 'What the UI suite needs') })], 0, 'fail', 'failed', 'R8a a missing decision job fails', A);
+  is([run({ jobs: [...jobs3(), job('What the UI suite needs')] })], 0, 'fail', 'failed', 'R8a two decision jobs fail', A);
   is([run({ jobs: jobs3({ 'What the UI suite needs': 'failure' }, ['ubuntu', 'windows']) })], 0, 'fail', 'failed', 'R8a a red decision job fails', A);
   is([run({})], 0, 'fail', 'failed', 'R8a jobs not read fails', A);
   is([run({ status: 'in_progress', conclusion: null, jobs: [job('What the UI suite needs')] })], 30, 'wait', 'running', 'R8a shards not listed yet: wait', A);
@@ -198,7 +218,7 @@ async function suite(src: string, dir: string): Promise<void> {
   is([run({ run_started_at: '2026-11-22T09:00:00Z', jobs: jobs3() }), run({ event: 'schedule', run_started_at: '2026-11-22T11:00:00Z', conclusion: 'failure', jobs: jobs3({ 'UI shard (windows-latest 2/4)': 'failure' }) })], 0, 'fail', 'failed', 'R8a a newer run red on Windows outvotes an older green one', A);
   const aNone = is([], 20, 'fail', 'none', 'R8a no run: fail', A);
   const aCan = is([run({ jobs: jobs3({ 'UI shard (ubuntu-latest 2/4)': 'cancelled' }) })], 0, 'fail', 'cancelled', 'R8a cancelled', A);
-  for (const m of [aNone.message, aCan.message]) assert.ok(m.includes('Start a by-hand UI run on the tag (gh workflow run ui-platforms.yml --repo three-feathers/agent-durbar --ref v0.1.15') && !RERUN_UI.test(m), 'R8a the remedy is a by-hand UI run on the tag, never a UI re-run');
+  for (const m of [aNone.message, aCan.message]) assert.ok(m.includes('Start a by-hand UI run at this exact commit (gh workflow run ui-platforms.yml --repo three-feathers/agent-durbar --ref v0.1.15') && !RERUN_UI.test(m), 'R8a the remedy is a by-hand UI run on the tag, never a UI re-run');
   // decide with no policy named uses the one in force
   const dflt = g.decide([greenPush(), macRedNightly()], opts(0));
   assert.strictEqual(`${dflt.verdict}/${dflt.reason}`, 'pass/success', 'R8 decide with no policy named uses the policy in force (a red macOS nightly does not veto)');
@@ -220,11 +240,26 @@ async function suite(src: string, dir: string): Promise<void> {
   g.fetchRuns(fake, opts(0, 'latest-run'));
   assert.ok(calls.length === 1, 'R8 fetchRuns reads no jobs for latest-run');
   assert.throws(() => g.fetchRuns(() => ({ total_count: 101, workflow_runs: [run({})] }), opts(0)), /more than one page/, 'R8 more runs than one page: not decided');
+  const many = Array.from({ length: 150 }, (_, i) => job(`extra ${i}`));
+  const paged = (short: boolean) => (p: string): any => {
+    if (!p.includes('/jobs?')) return { total_count: 1, workflow_runs: [run({ id: 9 })] };
+    const page = Number((/&page=(\d+)/.exec(p) || [])[1]);
+    const slice = short && page === 2 ? [] : many.slice((page - 1) * 100, page * 100);
+    return { total_count: 150, jobs: slice };
+  };
+  let pr: Run[] | null = null;
+  try { pr = g.fetchRuns(paged(false), opts(0, A)); } catch { pr = null; }
+  assert.strictEqual(pr ? pr[0].jobs.length : 0, 150, 'R8 fetchRuns pages through all jobs');
+  let shortErr = '';
+  try { g.fetchRuns(paged(true), opts(0, A)); } catch (e) { shortErr = (e as Error).message; }
+  assert.ok(/150 jobs, 100 listed/.test(shortErr), 'R8 a short jobs answer is not decided');
 
   // R9 the CLI exit code: 0 pass, 1 fail, 2 bad input (release.yml relies on it)
-  assert.strictEqual(cli(dir, src, [run({ jobs: jobs3() })]), 0, 'R9 the CLI exits 0 on a green run');
-  assert.strictEqual(cli(dir, src, [run({ conclusion: 'failure', jobs: jobs3({ 'UI shard (ubuntu-latest 1/4)': 'failure' }) })]), 1, 'R9 the CLI exits 1 on a red run');
-  assert.strictEqual(cli(dir, src, [run({ jobs: jobs3() })], ['--max-minutes', '0']), 2, 'R9 the CLI exits 2 on bad input');
+  assert.strictEqual(cli(dir, src, [run({ jobs: jobs3() })]).status, 0, 'R9 the CLI exits 0 on a green run');
+  assert.strictEqual(cli(dir, src, [run({ conclusion: 'failure', jobs: jobs3({ 'UI shard (ubuntu-latest 1/4)': 'failure' }) })]).status, 1, 'R9 the CLI exits 1 on a red run');
+  assert.strictEqual(cli(dir, src, [run({ jobs: jobs3() })], ['--max-minutes', '0']).status, 2, 'R9 the CLI exits 2 on bad input');
+  const dry = cli(dir, src, []);
+  assert.ok(dry.status === 1 && dry.out.includes('after 15 minutes'), 'R9 a dry run with no run decides as if every wait were over (exit 1, the no-run message)');
 }
 
 const mutants: Array<[string, string, string, string]> = [
@@ -259,13 +294,28 @@ const mutants: Array<[string, string, string, string]> = [
   ['R7 loop ignores fatal', "if (errorKind(err) === 'fatal')", 'if (false)', 'R7 the loop stops at once on a 404'],
   ['R7 stderr dropped', "throw new Error(`${String((e && e.stderr) || '').trim()} ", "throw new Error(`", 'R7 a gh failure carries the HTTP status from stderr'],
   ['R0 another policy in force', "const POLICY = 'linux-windows-jobs';", "const POLICY = 'latest-run';", 'R0 the policy in force is linux-windows-jobs (owner pick 2026-11-23)'],
-  ['R8a remedy without the dispatch', "remedy: (o) => `Start a by-hand UI run on the tag (${dispatchRedo(o)}; only its Linux and Windows jobs decide)`,", "remedy: () => 'Re-run the UI run',", 'R8a the remedy is a by-hand UI run on the tag, never a UI re-run'],
-  ['R8a macOS read', "|| ((SHARD.exec(j.name) || [])[1] === 'windows'));", "|| ((SHARD.exec(j.name) || [])[1] === 'windows') || ((SHARD.exec(j.name) || [])[1] === 'macos'));", 'R8a a red macOS shard does not veto'],
-  ['R8a Linux not read', "|| ((SHARD.exec(j.name) || [])[1] === 'ubuntu')", '', 'R8a a red Linux shard fails'],
-  ['R8a missing Windows passes', "!has('windows') || ", '', 'R8a no Windows shard fails'],
-  ['R8a decision job not required', " || !pick.some((j) => j.name === DECISION_JOB)", '', 'R8a a missing decision job fails'],
+  ['R8a remedy without the dispatch', "remedy: (o) => `Start a by-hand UI run at this exact commit (${dispatchRedo(o)}; only its Linux and Windows jobs decide)`,", "remedy: () => 'Re-run the UI run',", 'R8a the remedy is a by-hand UI run on the tag, never a UI re-run'],
+  ['R8a macOS read', "const pick = [...decision, ...shards.ubuntu.map((x) => x.j), ...shards.windows.map((x) => x.j)];", "const pick = [...decision, ...shards.ubuntu.map((x) => x.j), ...shards.windows.map((x) => x.j), ...jobs.filter((j) => isMacJob(j))];", 'R8a a red macOS shard does not veto'],
+  ['R8a Linux not read', "const pick = [...decision, ...shards.ubuntu.map((x) => x.j), ", "const pick = [...decision, ", 'R8a a red Linux shard fails'],
+  ['R8a missing Windows passes', "!completeSet(shards.windows)", 'false', 'R8a no Windows shard fails'],
+  ['R8a missing Linux passes', "!completeSet(shards.ubuntu) || ", '', 'R8a no Linux shard fails'],
+  ['R8a one shard is enough', "return ks.length === n && ks.every((k, i) => k === i + 1);", 'return true;', 'R8a windows 3/4 missing fails'],
+  ['R8a shard count not checked', "return ks.length === n && ", 'return ', 'R8a windows 4/4 missing fails'],
+  ['R8a mixed counts', "if (list.some((x) => x.n !== n)) return false;", '', 'R8a shards with two different counts fail'],
+  ['R8a decision job not required', "decision.length !== 1 || ", '', 'R8a a missing decision job fails'],
+  ['R8a two decision jobs', "decision.length !== 1 || ", 'decision.length === 0 || ', 'R8a two decision jobs fail'],
+  ['R8a skipped counts as green', "if (pick.every((j) => j.conclusion === 'success'))", "if (pick.every((j) => j.conclusion === 'success' || j.conclusion === 'skipped'))", 'R8a a skipped Linux shard fails'],
+  ['R8a neutral counts as green', "if (pick.every((j) => j.conclusion === 'success'))", "if (pick.every((j) => j.conclusion === 'success' || j.conclusion === 'neutral'))", 'R8a a neutral Windows shard fails'],
   ['R8a unread jobs pass', "{ state: 'failed', detail: 'its jobs could not be read' }", "{ state: 'success', detail: 'its jobs could not be read' }", 'R8a jobs not read fails'],
   ['R8a running shard ignored', "if (pick.some((j) => j.status !== 'completed')) return { state: 'running', detail: 'Linux and Windows jobs' };", '', 'R8a a running Windows shard: wait'],
+  ['R8 jobs not paged', 'for (let page = 1; page <= 10; page++) {', 'for (let page = 1; page <= 1; page++) {', 'R8 fetchRuns pages through all jobs'],
+  ['R8 short jobs answer decided', 'if (all.length < total) throw', 'if (false) throw', 'R8 a short jobs answer is not decided'],
+  ['R7 403 rate limit fatal', "if (code === 403 && /rate limit/i.test(String(message))) return 'wait';", '', 'R7 a 403 rate limit waits'],
+  ['R7 every 403 waits', "/rate limit/i.test(String(message))", 'true', 'R7 403 fails at once'],
+  ['R6 API errors wait 10x', 'if (elapsedMs >= o.maxMs) {', 'if (elapsedMs >= o.maxMs * 10) {', 'R6 an always-failing API stops at maxMs'],
+  ['R6 bad input swallowed', 'if (/bad input/.test(msg)) throw e;', '', 'R6 poll rethrows bad input at once'],
+  ['R9 dry run at elapsed 0', 'decide(runs, { ...o, elapsedMs: o.maxMs });', 'decide(runs, { ...o, elapsedMs: 0 });', 'R9 a dry run with no run decides'],
+  ['R3 merge queue cause dropped', 'Likely: the merge queue pushed this commit together with a newer one, and GitHub starts a push run only for the newest commit of a push (v0.1.28); or ', 'Likely: ', 'R3 the no-run message names the merge-queue cause'],
   ['R8b nightly counts', "counts: (r) => r.event === 'push' ||", "counts: (r) => r.event === 'push' || r.event === 'schedule' ||", 'R8b a newer red nightly does not count'],
   ['R8b macOS dispatch counts', ' && !r.jobs.some(isMacJob)', '', 'R8b a by-hand run with macOS jobs does not count'],
   ['R8 jobs never fetched', 'if (policy.needsJobs) {', 'if (false) {', 'R8 fetchRuns attaches jobs when the policy reads them'],
@@ -317,10 +367,28 @@ export function wiringProblems(raw: string, norm: (t: string) => string = lf): s
     const n = needs(job);
     if (!n) bad.push(`${job} needs nothing (it could start before the gate)`);
   }
-  // a failed gate must stop everything: no job or step may run anyway (if: always() / !cancelled()) or swallow a failure
-  const code = text.split('\n').filter((l) => !/^\s*#/.test(l)).join('\n');
-  if (/^\s*(- )?continue-on-error\s*:/m.test(code)) bad.push('continue-on-error in release.yml (a failed gate would not stop the release)');
-  if (/^\s*(- )?if\s*:/m.test(code)) bad.push('an if: in release.yml (a job or step could run after a failed gate)');
+  // a failed gate must stop everything: no job or step may run anyway (if: always() / !cancelled()) or swallow a failure. Read from
+  // the parsed YAML (js-yaml, as test-ci-required-suites.ts and test-electron-cache.ts do), so a quoted key cannot slip past.
+  let doc: any = null;
+  try { doc = (yaml as { load: (t: string) => unknown }).load(text); } catch { doc = null; }
+  if (!doc || typeof doc !== 'object' || !doc.jobs || typeof doc.jobs !== 'object') { bad.push('release.yml does not parse as a workflow with jobs'); return bad; }
+  if (Object.keys(doc.jobs)[0] !== 'ui-gate') bad.push('ui-gate is not the first job (parsed)');
+  const coe: string[] = [];
+  const ifs: string[] = [];
+  for (const [id, j] of Object.entries<any>(doc.jobs)) {
+    if (j && Object.prototype.hasOwnProperty.call(j, 'continue-on-error')) coe.push(id);
+    if (j && Object.prototype.hasOwnProperty.call(j, 'if')) ifs.push(id);
+    for (const [i, st] of ((j && j.steps) || []).entries()) {
+      if (st && Object.prototype.hasOwnProperty.call(st, 'continue-on-error')) coe.push(`${id} step ${i + 1}`);
+      if (st && Object.prototype.hasOwnProperty.call(st, 'if')) ifs.push(`${id} step ${i + 1}`);
+    }
+  }
+  if (coe.length) bad.push(`continue-on-error in release.yml (a failed gate would not stop the release): ${coe.join(', ')}`);
+  if (ifs.length) bad.push(`an if: in release.yml (a job or step could run after a failed gate): ${ifs.join(', ')}`);
+  const gp = doc.jobs['ui-gate'] && doc.jobs['ui-gate'].permissions;
+  if (JSON.stringify(gp) !== JSON.stringify({ contents: 'read', actions: 'read' })) bad.push('ui-gate permissions (parsed) are not exactly contents: read, actions: read');
+  const gateRuns = ((doc.jobs['ui-gate'] && doc.jobs['ui-gate'].steps) || []).filter((st: any) => st && typeof st.run === 'string').map((st: any) => st.run.trim());
+  if (gateRuns.length !== 1 || gateRuns[0] !== RUN_LINE.trim().replace(/^run: /, '')) bad.push('ui-gate run line is not exactly the gate command (parsed)');
   // the top-level permissions stay read-only
   if (!/\npermissions:\n {2}contents: read\n\n/.test(text)) bad.push('top-level permissions are no longer contents: read only');
   return bad;
@@ -365,6 +433,9 @@ export function wiringProblems(raw: string, norm: (t: string) => string = lf): s
       ['if: always() on the gate step', swap('      - name: The latest UI run for the tagged commit finished green\n', '      - name: The latest UI run for the tagged commit finished green\n        if: always()\n'), 'an if: in release.yml'],
       ['if: always() on verify', swap('    needs: ui-gate\n', '    needs: ui-gate\n    if: always()\n'), 'an if: in release.yml'],
       ['if: always() on build', swap('    needs: verify\n', '    needs: verify\n    if: ${{ !cancelled() }}\n'), 'an if: in release.yml'],
+      ['quoted continue-on-error on the gate job', swap('    timeout-minutes: 160\n', "    timeout-minutes: 160\n    'continue-on-error': true\n"), 'continue-on-error in release.yml'],
+      ['quoted if on build', swap('    needs: verify\n', '    needs: verify\n    "if": always()\n'), 'an if: in release.yml'],
+      ['flow-style step with continue-on-error', swap('      - name: The latest UI run for the tagged commit finished green\n', '      - { name: noop, run: "true", continue-on-error: true }\n      - name: The latest UI run for the tagged commit finished green\n'), 'continue-on-error in release.yml'],
       ['verify without the gate', swap('    needs: ui-gate\n', ''), 'verify does not need ui-gate'],
       ['draft-release without the gate', swap('needs: [ui-gate, verify, build]', 'needs: [verify, build]'), 'draft-release does not need ui-gate'],
       ['short timeout', swap('    timeout-minutes: 160\n', '    timeout-minutes: 60\n'), 'ui-gate timeout-minutes'],
