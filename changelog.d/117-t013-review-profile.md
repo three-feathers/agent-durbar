@@ -1,1 +1,0 @@
-- **The review profile script** (test tooling, spec 117 T013/T014): `node scripts/review-profile.js <base> <head>` prints `heavy` or `light` for a change; light is one explicit list and everything else, an empty or unreadable diff included, is heavy.
