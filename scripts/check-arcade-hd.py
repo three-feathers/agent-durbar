@@ -11,6 +11,8 @@ import json, os, re, sys
 from PIL import Image
 
 
+DESK_WALLS = ((212, 190, 168), (122, 98, 76))   # spec 102 T472: the Photo office's and the cave's desk walls, where a seated bust is drawn
+RIM = (90, 225, 255)   # the standing frames' 1-px lit edge
 LIGHT_BGS = ((0xe7, 0xee, 0xe8), (0xef, 0xe3, 0xd0), (0xec, 0xdc, 0xc0), (0xe0, 0xea, 0xd2))   # spec 102 T472 (FR-410): Flat's light avatar backgrounds (--avatar-bg of the light themes), where an `l` tile is drawn
 AV_BGS = ((30, 26, 54), (38, 32, 68))   # FR-407: every avatar circle of the arcade: --surface-2 of the retro theme (door, inbox header) and the rail's #262044; a dark figure is weakest on the lighter one
 
@@ -98,6 +100,9 @@ def measure(path):
             orph += 1
     semi = {p for p in px if 0 < p[3] < 255}
     tile = None
+    bust = None
+    if re.search(r'-(typeA|typeB|think|waveA|waveB|rest)@4\.webp$', path):   # T472: a seated bust: rim pixels (none allowed) and its edge on the desk walls
+        bust = [sum(1 for i, p in enumerate(px) if opaque[i] and p[:3] == RIM), legibility([p[:3] for p in px], opaque, w, h, DESK_WALLS)[0]]
     topc = None
     if path.endswith('-face-book@4.webp'):   # FR-408: the colours that cover at least 1 % of the front reading frame
         cnt = {}
@@ -139,10 +144,10 @@ def measure(path):
                 end = y
             neck = max(neck, end + 1)
     head = [round((neck - top) / fh, 3), max(run(y) for y in range(top, neck))]
-    return {'name': os.path.basename(path), 'w': w, 'h': h, 'opaque': sum(opaque), 'colours': len(rgb), 'alphas': sorted(alphas), 'orphans': orph, 'lone': lone, 'edge': len(edge), 'head': head, 'tile': tile, 'top': topc}, rgb, semi
+    return {'name': os.path.basename(path), 'w': w, 'h': h, 'opaque': sum(opaque), 'colours': len(rgb), 'alphas': sorted(alphas), 'orphans': orph, 'lone': lone, 'edge': len(edge), 'head': head, 'tile': tile, 'bust': bust, 'top': topc}, rgb, semi
 
 
-if sys.argv[1:2] in (['--speckle'], ['--alpha'], ['--colour'], ['--edge'], ['--norim'], ['--hue']):
+if sys.argv[1:2] in (['--speckle'], ['--alpha'], ['--colour'], ['--edge'], ['--norim'], ['--hue'], ['--rim']):
     im = Image.open(sys.argv[2]).convert('RGBA')
     px = list(im.getdata())
     w, h = im.size
@@ -161,6 +166,10 @@ if sys.argv[1:2] in (['--speckle'], ['--alpha'], ['--colour'], ['--edge'], ['--n
             px[i] = (1 + n, 254 - n, 127, 255)
     elif sys.argv[1] == '--hue':   # every colour's channels turned round: the person's own colours are gone
         px = [(p[1], p[2], p[0], p[3]) if p[3] else p for p in px]
+    elif sys.argv[1] == '--rim':   # T472 red case: the lit edge put back on a bust: the pixel inside the outline on the figure's right, upper 90 %
+        for y in range(int(h * 0.9)):
+            row = [x for x in range(w) if px[y * w + x][3]]
+            if len(row) > 2: px[y * w + row[-1] - 1] = RIM + (255,)
     elif sys.argv[1] == '--norim':   # the lit edge of a tile taken off: its outline ring becomes the darkest colour of the tile
         ring = [i for i, p in enumerate(px) if p[3] and (i % w in (0, w - 1) or i < w or i >= len(px) - w or not all(px[j][3] for j in (i - 1, i + 1, i - w, i + w)))]
         dark = min((p for p in px if p[3]), key=lambda p: p[0] + p[1] + p[2])

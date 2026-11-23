@@ -125,7 +125,7 @@
     p01: { pic: [270, 320], working: [2, 0, 244], waiting: [0, 0, 266], resting: [0, 0, 248] },
     p02: { pic: [280, 320], working: [18, 0, 225], waiting: [16, 0, 229], resting: [16, 0, 228] },
     p03: { pic: [247, 320], working: [0, 0, 247], waiting: [0, 0, 247], resting: [0, 0, 247] },
-    p04: { pic: [254, 320], working: [33, 0, 182], waiting: [38, 0, 172], resting: [39, 0, 171] },
+    p04: { pic: [255, 320], working: [33, 0, 182], waiting: [38, 0, 172], resting: [39, 0, 171] },
     p05: { pic: [256, 320], working: [8, 0, 209], waiting: [8, 0, 208], resting: [26, 0, 171] },
     p06: { pic: [224, 320], working: [8, 0, 178], waiting: [9, 0, 179], resting: [9, 0, 178] },
     p07: { pic: [258, 320], working: [38, 0, 166], waiting: [30, 0, 181], resting: [25, 0, 189] },

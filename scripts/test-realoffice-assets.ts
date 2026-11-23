@@ -19,7 +19,7 @@ export const CAPS = { person: 80 * 1024, fixture: 120 * 1024, desk: 60 * 1024, f
 /** spec 102 FR-213: all shipped art (every world and every set) at most this many bytes */
 export const SHIPPED_MAX = 30 * 1024 * 1024;
 /** spec 102 FR-393, FR-394, FR-397, FR-403 (issue #2055; owner 2026-11-23 14:59 UTC, FINE): the HD person set's limits */
-export const HD_PALETTE = 96, HD_HUE_DE = 15, HD_ORPHAN_MAX = 0.06, HD_ORPHAN_MAX_72 = 0.12, HD_PERSON_MAX = 450 * 1024, HD_FILE_MAX = 300 * 1024, HD_HEAD = [0.27, 0.36], HD_HEAD_W = 36, HD_TILE_EDGE = 3, HD_TILE_FEAT = 15; /* FR-402: the crown is the top of the hair: a bun, an afro, a quiff or a hood measures taller than 0.31; the face is never enlarged for it */
+export const HD_PALETTE = 96, HD_HUE_DE = 15, HD_ORPHAN_MAX = 0.06, HD_ORPHAN_MAX_72 = 0.12, HD_PERSON_MAX = 450 * 1024, HD_FILE_MAX = 300 * 1024, HD_HEAD = [0.27, 0.36], HD_HEAD_W = 36, HD_TILE_EDGE = 3, HD_TILE_FEAT = 15, HD_BUST_EDGE = 3.25; /* T472: the busts on the Photo office and cave desk walls, measured 3.28:1 at the lowest (2026-11-24) */ /* FR-402: the crown is the top of the hair: a bun, an afro, a quiff or a hood measures taller than 0.31; the face is never enlarged for it */
 export const PERSON_MAX_H = 640;
 const KEYS = ['files', 'source', 'tool', 'date', 'made by', 'approved by', 'reference', 'prompt', 'cut', 'licence'];
 const CLAUSE = /fictional and must not resemble any real or famous person; no real person, celebrity, brand, logo or franchise is named/;
@@ -588,13 +588,13 @@ if (worldIds.includes('retro')) {
     }
   }
   /* spec 102 T472 (FR-409): the six seated busts of every person, one size (s 4), on one canvas per person, whose seat numbers set.json gives */
-  const BUSTS = ['typeA', 'typeB', 'think', 'waveA', 'waveB', 'rest'];
+  const BUSTS = ['typeA', 'typeB', 'think', 'waveA', 'waveB', 'rest'], bustNames = new Set<string>();
   assert.deepStrictEqual(Object.keys(sj.hd.busts || {}).sort(), Object.keys(sj.hd.people).sort(), 'FR-409: every HD person has busts');
   for (const [pid, b] of Object.entries(sj.hd.busts || {})) {
     assert.ok(b.h === 320 && b.w > 0 && b.w <= 320 && b.headTop >= 0 && b.bodyH === b.h - b.headTop && b.hand > 0 && b.hand < 1, `FR-409: ${pid}: the bust canvas and its seat numbers`);
     for (const pose of BUSTS) {
       const f = `${pid}-${pose}@4.webp`, bf = fs.readFileSync(path.join(dir, f)), i = webpInfo(bf);
-      tileNames.add(f); bytes += bf.length;
+      tileNames.add(f); bustNames.add(f); bytes += bf.length;
       assert.deepStrictEqual([i.width, i.height, i.chunks.filter((c) => c !== 'VP8X').join()], [b.w, b.h, 'VP8L'], `${f}: the person's bust canvas, lossless`);
     }
   }
@@ -619,7 +619,7 @@ if (worldIds.includes('retro')) {
     console.log('HD palette and speckle check skipped: needs python3 with Pillow (not on this machine)');
   } else {
     const tool = path.join(ROOT, 'scripts', 'check-arcade-hd.py');
-    type Row = { name: string; opaque: number; alphas: number[]; orphans: number; lone: number; edge: number; head: [number, number]; tile: [number, number | null] | null; top: number[][] | null };
+    type Row = { name: string; opaque: number; alphas: number[]; orphans: number; lone: number; edge: number; head: [number, number]; tile: [number, number | null] | null; bust: [number, number] | null; top: number[][] | null };
     const measure = (files: string[]): { rows: Row[]; palette: number; rgba: number } => {
       const r = spawnSync('python3', ['-I', tool, ...files], { encoding: 'utf8', maxBuffer: 16 * 1024 * 1024 });
       assert.strictEqual(r.status, 0, 'check-arcade-hd.py: ' + r.stderr);
@@ -634,7 +634,7 @@ if (worldIds.includes('retro')) {
       outline: (m: M): string[] => m.rows.filter((r) => r.edge !== 1).map((r) => `${r.name}: ${r.edge} outline colours`),
       speckle: (m: M): string[] => m.rows.filter((r) => r.orphans / r.opaque > (/@1\.webp$/.test(r.name) ? HD_ORPHAN_MAX_72 : HD_ORPHAN_MAX) || r.lone > 0) /* FR-406: at 72 px an eye or a button is one pixel, so the lobby's s 1 frames allow 12 % (the old 72 px frames: 29 % median, 52 % worst) */.map((r) => `${r.name}: ${r.orphans} orphans of ${r.opaque} (${((100 * r.orphans) / r.opaque).toFixed(2)} %), ${r.lone} lone`),
     };
-    const files = [...named].sort().map((f) => path.join(dir, f)), all = measure(files);
+    const files = [...named, ...bustNames].sort().map((f) => path.join(dir, f)), all = measure(files); /* T472: the busts follow the frames' rules too */
     for (const [rule, f] of Object.entries(crisp)) assert.deepStrictEqual(f(all), [], `FR-403: the ${rule} rule holds on every HD frame`);
     /* FR-405: the tiles share the palette and the alpha rule (their edge is a cut through the body, so the one-outline rule is for whole figures) */
     const tl = measure([...files, ...[...tileNames].sort().map((f) => path.join(dir, f))]);
@@ -672,6 +672,17 @@ if (worldIds.includes('retro')) {
       { /* FR-407 red case: the lit edge taken off every tile at 22 px: the darkest of them is no longer legible */
         const planted = T.people.flatMap((p) => T.poses.map((q) => { const f = path.join(tmp, `norim-${p}-${q}-t22.webp`); assert.strictEqual(spawnSync('python3', ['-I', tool, '--norim', path.join(dir, `${p}-${q}-t22.webp`), f], { encoding: 'utf8' }).status, 0, 'the planted tile (--norim) is written'); return f; }));
         assert.ok(legible(measure(planted).rows).length >= 1, 'red (--norim): without the lit edge the darkest person\'s avatar is not legible');
+      }
+      { /* T472 (coordinator's decision): a bust carries no rim; on both desk walls its edge reads at least HD_BUST_EDGE; red: the rim put back */
+        const busts = all.rows.filter((r) => r.bust);
+        assert.ok(busts.length === 90, `T472: 90 busts measured (${busts.length})`);
+        assert.deepStrictEqual(busts.filter((r) => r.bust![0] > 0).map((r) => `${r.name}: ${r.bust![0]} rim pixels`), [], 'T472: no bust carries the rim');
+        const lowest = Math.min(...busts.map((r) => r.bust![1]));
+        assert.ok(lowest >= HD_BUST_EDGE, `T472: every bust's edge at least ${HD_BUST_EDGE}:1 on the Photo office's and the cave's desk walls (lowest ${lowest}:1)`);
+        console.log(`HD busts: no rim, edge on the desk walls at least ${lowest}:1 (floor ${HD_BUST_EDGE})`);
+        const planted = path.join(tmp, 'p09-think@4.webp');
+        assert.strictEqual(spawnSync('python3', ['-I', tool, '--rim', path.join(dir, 'p09-think@4.webp'), planted], { encoding: 'utf8' }).status, 0, 'the planted bust (--rim) is written');
+        assert.ok(measure([planted]).rows[0].bust![0] > 0, 'red (--rim): a bust with the rim put back fails');
       }
       { /* T472 (coordinator's look at F1): every frame's face box holds its whole head (hair, hood, a cap, a raised hand at head height), so FR-401's badge, which keeps clear of the face box, keeps clear of the head; red: the boxes cut 10 px lower */
         const heads = (setPath: string): string[] => { const r = spawnSync('python3', ['-I', tool, '--heads', setPath, dir], { encoding: 'utf8', maxBuffer: 16 * 1024 * 1024 }); assert.strictEqual(r.status, 0, 'check-arcade-hd.py --heads: ' + r.stderr); return JSON.parse(r.stdout).heads; };
