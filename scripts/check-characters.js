@@ -266,11 +266,11 @@ module.exports = async (ctx) => {
     assert.strictEqual(await H.js(`window.THEME.characters()`), 'pixel', `${tag}: a saved Retro pixel is kept`);
     if (MUTANT === 'skipflat') await H.js(`window.THEME.setCharacters('theme');window.__durbarSimUi.render();true`); /* the theme's own figures drawn */
     if (MUTANT === 'smooth') await H.js(`document.querySelectorAll('svg.crew-head image.px').forEach(i=>i.style.imageRendering='auto')`);
-    /* spec 102 FR-203, T390: Flat draws the Retro pixel heads: the crew kit, a head crop of the set's seated bust on every desk, nearest-neighbour, ids with the prefix */
+    /* spec 102 FR-203, T390, T472: Flat draws the Retro pixel heads: the crew kit, a head crop of the set's seated HD bust on every desk, nearest-neighbour, ids with the prefix */
     assert.strictEqual(await H.js(`window.THEME.sceneKit()`), 'crew', `${tag}: a saved Retro pixel draws the crew kit's heads in Flat`);
     const dFlat = await desks();
     await must(dFlat.n >= 12 && dFlat.by.crew === dFlat.n && dFlat.heads === dFlat.n && dFlat.anyPic === 0, `${tag}: a saved Retro pixel draws a Retro pixel head on every desk in Flat, no Cheeky portrait (${JSON.stringify(dFlat)})`);
-    const sharp = await H.js(`(()=>{const im=[...document.querySelectorAll('#stage svg.crew-head image')].filter(i=>i.getClientRects().length);return {n:im.length,px:im.filter(i=>getComputedStyle(i).imageRendering==='pixelated').length,hrefs:[...new Set(im.map(i=>i.getAttribute('href').replace(/p\\d\\d-/,'p..-')))],sets:im.every(i=>/^realoffice\\/sets\\/retro\\/p\\d\\d-(typeA|waveA|rest)\\.webp$/.test(i.getAttribute('href')))}})()`);
+    const sharp = await H.js(`(()=>{const im=[...document.querySelectorAll('#stage svg.crew-head image')].filter(i=>i.getClientRects().length);return {n:im.length,px:im.filter(i=>getComputedStyle(i).imageRendering==='pixelated').length,hrefs:[...new Set(im.map(i=>i.getAttribute('href').replace(/p\\d\\d-/,'p..-')))],sets:im.every(i=>/^realoffice\\/sets\\/retro\\/hd\\/p\\d\\d-(typeA|waveA|rest)@4\\.webp$/.test(i.getAttribute('href')))}})()`);
     await must(sharp.n >= 10 && sharp.px === sharp.n && sharp.sets, `${tag}: T390: every Retro pixel head is scaled nearest (image-rendering: pixelated) and is a frame of the set's folder, no copy (${JSON.stringify(sharp)})`);
     await openSettings();
     assert.strictEqual(await H.js(`document.getElementById('chNote').textContent`), '', `${tag}: in Flat a saved Retro pixel shows no line (T390: Flat draws its heads)`);

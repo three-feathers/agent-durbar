@@ -304,11 +304,11 @@ None.
 
 ## HD set (spec 102 FR-391..FR-406, issue #2055): behind the off switch
 
-Owner decisions (Vikram, Telegram, 2026-11-23): style B at 13:07 UTC; bigger heads and crisp pixels at 14:27 UTC; "FINE" at 14:59 UTC. Seated busts ship as avatar tiles only (FR-405, coordinator 2026-11-23). Files in `hd/`: `<pid>-<pose>@<s>.webp` (the 14 standing and stool frames, `s` 4, 3, 2, 1: 288, 216, 144 px, and 72 px for the lobby) and `<pid>-<pose>-t<size>.webp` (avatar tiles of `typeA`, `think`, `waveA`, `rest` at 22, 24, 26, 32, 44, 48, 52, 64 px). Drawn only with `DURBAR_HD_PEOPLE=1`. One pipeline for every picture: `build5.py` (art cache, SHA-256 `741db3e85117204eaf9a72a19d8b4115bcfa2282c4b1598b4baa80bfa1e79bb9`): chroma key, connected parts, the head enlarged on the source to about 0.29 of the figure (FR-402; `k` at least 1), one 48-colour palette for every person, every size snapped natively (FR-391), orphan cleanup, one outline colour, a 1-px cyan rim, alpha 0 or 255; every picture is then checked against the repo's secret mask (`maskcheck.js`) and re-encoded losslessly until it passes (#2062). Sheets by `gen2.py`, `gen3.py` and `gen5.py` (art cache, SHA-256 `8b7ae6cb5e71b4abe7eb9b749121b7d07267158db5b66f05e118c7f8d623ae06` for the last), one `codex exec` at a time.
+Owner decisions (Vikram, Telegram, 2026-11-23): style B at 13:07 UTC; bigger heads and crisp pixels at 14:27 UTC; "FINE" at 14:59 UTC. Seated busts ship as avatar tiles only (FR-405, coordinator 2026-11-23). Files in `hd/`: `<pid>-<pose>@<s>.webp` (the 14 standing and stool frames, `s` 4, 3, 2, 1: 288, 216, 144 px, and 72 px for the lobby) and `<pid>-<pose>-t<size>.webp` (avatar tiles of `typeA`, `think`, `waveA`, `rest` at 22, 24, 26, 32, 44, 48, 52, 64 px; `-t<size>l.webp`: the light-surface variant without the lit edge, for the people who carry it), and `<pid>-<pose>@4.webp` for the six seated busts (`typeA`, `typeB`, `think`, `waveA`, `waveB`, `rest`, 320 px tall, one canvas a person: the rows worlds and Flat's heads). Drawn everywhere since the flip (spec 102 T472). One pipeline for every picture: `build5.py` (art cache, SHA-256 `f37ceef24eaf6dc8bf26659e6c73fb853a36369d2fe5078fc13de6e345cabb87`): chroma key, connected parts, the head enlarged on the source to about 0.29 of the figure (FR-402; `k` at least 1), one 48-colour palette for every person, every size snapped natively (FR-391), orphan cleanup, one outline colour, a 1-px cyan rim, alpha 0 or 255; every picture is then checked against the repo's secret mask (`maskcheck.js`) and re-encoded losslessly until it passes (#2062). Sheets by `gen2.py`, `gen3.py` and `gen5.py` (art cache, SHA-256 `8b7ae6cb5e71b4abe7eb9b749121b7d07267158db5b66f05e118c7f8d623ae06` for the last), one `codex exec` at a time.
 
 #### hd-p08
 
-- files: the 14 standing and stool frames of p08 at scales 4, 3, 2 and 1, and 32 avatar tiles (named in `set.json` `hd.people.p08` and `hd.tiles`)
+- files: the 14 standing and stool frames of p08 at scales 4, 3, 2 and 1, the six seated busts at 320 px, and 32 avatar tiles with their 32 light-surface variants (named in `set.json` `hd.people.{pid}`, `hd.busts.{pid}` and `hd.tiles`)
 - source: five Codex sheets: `V1b-p08`, `p08-B2`, `p08-F2` (standing and the stool), `p08-S1`, `p08-S2` (seated: the avatar tiles)
 - tool: Codex image generation (`codex exec`, codex-cli 0.163.0, on the owner's ChatGPT plan), then `build5.py`
 - date: 2026-11-23
@@ -323,7 +323,7 @@ Owner decisions (Vikram, Telegram, 2026-11-23): style B at 13:07 UTC; bigger hea
 
 #### hd-p12
 
-- files: the 14 standing and stool frames of p12 at scales 4, 3, 2 and 1, and 32 avatar tiles (named in `set.json` `hd.people.p12` and `hd.tiles`)
+- files: the 14 standing and stool frames of p12 at scales 4, 3, 2 and 1, the six seated busts at 320 px, and 32 avatar tiles (named in `set.json` `hd.people.{pid}`, `hd.busts.{pid}` and `hd.tiles`)
 - source: five Codex sheets: `V1b-p12`, `p12-B2`, `p12-F2` (standing and the stool), `p12-S1`, `p12-S2` (seated: the avatar tiles)
 - tool: Codex image generation (`codex exec`, codex-cli 0.163.0, on the owner's ChatGPT plan), then `build5.py`
 - date: 2026-11-23
@@ -338,7 +338,7 @@ Owner decisions (Vikram, Telegram, 2026-11-23): style B at 13:07 UTC; bigger hea
 
 #### hd-p04
 
-- files: the 14 standing and stool frames of p04 at scales 4, 3, 2 and 1, and 32 avatar tiles (named in `set.json` `hd.people.p04` and `hd.tiles`)
+- files: the 14 standing and stool frames of p04 at scales 4, 3, 2 and 1, the six seated busts at 320 px, and 32 avatar tiles with their 32 light-surface variants (named in `set.json` `hd.people.{pid}`, `hd.busts.{pid}` and `hd.tiles`)
 - source: five Codex sheets: `V1b-p04`, `p04-B2`, `p04-F2` (standing and the stool), `p04-S1`, `p04-S2` (seated: the avatar tiles)
 - tool: Codex image generation (`codex exec`, codex-cli 0.163.0, on the owner's ChatGPT plan), then `build5.py`
 - date: 2026-11-23
@@ -353,7 +353,7 @@ Owner decisions (Vikram, Telegram, 2026-11-23): style B at 13:07 UTC; bigger hea
 
 #### hd-p01
 
-- files: the 14 standing and stool frames of p01 at scales 4, 3, 2 and 1, and 32 avatar tiles (named in `set.json` `hd.people.p01` and `hd.tiles`)
+- files: the 14 standing and stool frames of p01 at scales 4, 3, 2 and 1, the six seated busts at 320 px, and 32 avatar tiles with their 32 light-surface variants (named in `set.json` `hd.people.{pid}`, `hd.busts.{pid}` and `hd.tiles`)
 - source: four Codex sheets: `p01-B2` (seven from behind), `p01-F2` (six front poses and the stool), `p01-S1` and `p01-S2` (seated: the avatar tiles); a first `p01-B` and `p01-F` came out in the old chibi proportions and are not used
 - tool: Codex image generation (`codex exec`, codex-cli 0.163.0, on the owner's ChatGPT plan), then `build5.py`
 - date: 2026-11-23
@@ -368,7 +368,7 @@ Owner decisions (Vikram, Telegram, 2026-11-23): style B at 13:07 UTC; bigger hea
 
 #### hd-p02
 
-- files: the 14 standing and stool frames of p02 at scales 4, 3, 2 and 1, and 32 avatar tiles (named in `set.json` `hd.people.p02` and `hd.tiles`)
+- files: the 14 standing and stool frames of p02 at scales 4, 3, 2 and 1, the six seated busts at 320 px, and 32 avatar tiles with their 32 light-surface variants (named in `set.json` `hd.people.{pid}`, `hd.busts.{pid}` and `hd.tiles`)
 - source: four Codex sheets: `p02-B2` (seven from behind), `p02-F2` (six front poses and the stool), `p02-S1` and `p02-S2` (seated: the avatar tiles); a first `p02-B` and `p02-F` came out in the old chibi proportions and are not used
 - tool: Codex image generation (`codex exec`, codex-cli 0.163.0, on the owner's ChatGPT plan), then `build5.py`
 - date: 2026-11-23
@@ -383,7 +383,7 @@ Owner decisions (Vikram, Telegram, 2026-11-23): style B at 13:07 UTC; bigger hea
 
 #### hd-p03
 
-- files: the 14 standing and stool frames of p03 at scales 4, 3, 2 and 1, and 32 avatar tiles (named in `set.json` `hd.people.p03` and `hd.tiles`)
+- files: the 14 standing and stool frames of p03 at scales 4, 3, 2 and 1, the six seated busts at 320 px, and 32 avatar tiles with their 32 light-surface variants (named in `set.json` `hd.people.{pid}`, `hd.busts.{pid}` and `hd.tiles`)
 - source: four Codex sheets: `p03-B2` (seven from behind), `p03-F2` (six front poses and the stool), `p03-S1` and `p03-S2` (seated: the avatar tiles); a first `p03-B` and `p03-F` came out in the old chibi proportions and are not used
 - tool: Codex image generation (`codex exec`, codex-cli 0.163.0, on the owner's ChatGPT plan), then `build5.py`
 - date: 2026-11-23
@@ -398,7 +398,7 @@ Owner decisions (Vikram, Telegram, 2026-11-23): style B at 13:07 UTC; bigger hea
 
 #### hd-p05
 
-- files: the 14 standing and stool frames of p05 at scales 4, 3, 2 and 1, and 32 avatar tiles (named in `set.json` `hd.people.p05` and `hd.tiles`)
+- files: the 14 standing and stool frames of p05 at scales 4, 3, 2 and 1, the six seated busts at 320 px, and 32 avatar tiles with their 32 light-surface variants (named in `set.json` `hd.people.{pid}`, `hd.busts.{pid}` and `hd.tiles`)
 - source: four Codex sheets: `p05-B2` (seven from behind), `p05-F2` (six front poses and the stool), `p05-S1` and `p05-S2` (seated: the avatar tiles); a first `p05-B` and `p05-F` came out in the old chibi proportions and are not used
 - tool: Codex image generation (`codex exec`, codex-cli 0.163.0, on the owner's ChatGPT plan), then `build5.py`
 - date: 2026-11-23
@@ -413,7 +413,7 @@ Owner decisions (Vikram, Telegram, 2026-11-23): style B at 13:07 UTC; bigger hea
 
 #### hd-p06
 
-- files: the 14 standing and stool frames of p06 at scales 4, 3, 2 and 1, and 32 avatar tiles (named in `set.json` `hd.people.p06` and `hd.tiles`)
+- files: the 14 standing and stool frames of p06 at scales 4, 3, 2 and 1, the six seated busts at 320 px, and 32 avatar tiles with their 32 light-surface variants (named in `set.json` `hd.people.{pid}`, `hd.busts.{pid}` and `hd.tiles`)
 - source: four Codex sheets: `p06-B2` (seven from behind), `p06-F2` (six front poses and the stool), `p06-S1` and `p06-S2` (seated: the avatar tiles); a first `p06-B` and `p06-F` came out in the old chibi proportions and are not used
 - tool: Codex image generation (`codex exec`, codex-cli 0.163.0, on the owner's ChatGPT plan), then `build5.py`
 - date: 2026-11-23
@@ -428,7 +428,7 @@ Owner decisions (Vikram, Telegram, 2026-11-23): style B at 13:07 UTC; bigger hea
 
 #### hd-p07
 
-- files: the 14 standing and stool frames of p07 at scales 4, 3, 2 and 1, and 32 avatar tiles (named in `set.json` `hd.people.p07` and `hd.tiles`)
+- files: the 14 standing and stool frames of p07 at scales 4, 3, 2 and 1, the six seated busts at 320 px, and 32 avatar tiles (named in `set.json` `hd.people.{pid}`, `hd.busts.{pid}` and `hd.tiles`)
 - source: four Codex sheets: `p07-B2` (seven from behind), `p07-F2` (six front poses and the stool), `p07-S1` and `p07-S2` (seated: the avatar tiles); a first `p07-B` and `p07-F` came out in the old chibi proportions and are not used
 - tool: Codex image generation (`codex exec`, codex-cli 0.163.0, on the owner's ChatGPT plan), then `build5.py`
 - date: 2026-11-23
@@ -443,7 +443,7 @@ Owner decisions (Vikram, Telegram, 2026-11-23): style B at 13:07 UTC; bigger hea
 
 #### hd-p09
 
-- files: the 14 standing and stool frames of p09 at scales 4, 3, 2 and 1, and 32 avatar tiles (named in `set.json` `hd.people.p09` and `hd.tiles`)
+- files: the 14 standing and stool frames of p09 at scales 4, 3, 2 and 1, the six seated busts at 320 px, and 32 avatar tiles (named in `set.json` `hd.people.{pid}`, `hd.busts.{pid}` and `hd.tiles`)
 - source: four Codex sheets: `p09-B2` (seven from behind), `p09-F2` (six front poses and the stool), `p09-S1` and `p09-S2` (seated: the avatar tiles); a first `p09-B` and `p09-F` came out in the old chibi proportions and are not used
 - tool: Codex image generation (`codex exec`, codex-cli 0.163.0, on the owner's ChatGPT plan), then `build5.py`
 - date: 2026-11-23
@@ -458,7 +458,7 @@ Owner decisions (Vikram, Telegram, 2026-11-23): style B at 13:07 UTC; bigger hea
 
 #### hd-p10
 
-- files: the 14 standing and stool frames of p10 at scales 4, 3, 2 and 1, and 32 avatar tiles (named in `set.json` `hd.people.p10` and `hd.tiles`)
+- files: the 14 standing and stool frames of p10 at scales 4, 3, 2 and 1, the six seated busts at 320 px, and 32 avatar tiles with their 32 light-surface variants (named in `set.json` `hd.people.{pid}`, `hd.busts.{pid}` and `hd.tiles`)
 - source: four Codex sheets: `p10-B2` (seven from behind), `p10-F2` (six front poses and the stool), `p10-S1` and `p10-S2` (seated: the avatar tiles); a first `p10-B` and `p10-F` came out in the old chibi proportions and are not used
 - tool: Codex image generation (`codex exec`, codex-cli 0.163.0, on the owner's ChatGPT plan), then `build5.py`
 - date: 2026-11-23
@@ -473,7 +473,7 @@ Owner decisions (Vikram, Telegram, 2026-11-23): style B at 13:07 UTC; bigger hea
 
 #### hd-p11
 
-- files: the 14 standing and stool frames of p11 at scales 4, 3, 2 and 1, and 32 avatar tiles (named in `set.json` `hd.people.p11` and `hd.tiles`)
+- files: the 14 standing and stool frames of p11 at scales 4, 3, 2 and 1, the six seated busts at 320 px, and 32 avatar tiles with their 32 light-surface variants (named in `set.json` `hd.people.{pid}`, `hd.busts.{pid}` and `hd.tiles`)
 - source: four Codex sheets: `p11-B2` (seven from behind), `p11-F2` (six front poses and the stool), `p11-S1` and `p11-S2` (seated: the avatar tiles); a first `p11-B` and `p11-F` came out in the old chibi proportions and are not used
 - tool: Codex image generation (`codex exec`, codex-cli 0.163.0, on the owner's ChatGPT plan), then `build5.py`
 - date: 2026-11-23
@@ -488,7 +488,7 @@ Owner decisions (Vikram, Telegram, 2026-11-23): style B at 13:07 UTC; bigger hea
 
 #### hd-p13
 
-- files: the 14 standing and stool frames of p13 at scales 4, 3, 2 and 1, and 32 avatar tiles (named in `set.json` `hd.people.p13` and `hd.tiles`)
+- files: the 14 standing and stool frames of p13 at scales 4, 3, 2 and 1, the six seated busts at 320 px, and 32 avatar tiles with their 32 light-surface variants (named in `set.json` `hd.people.{pid}`, `hd.busts.{pid}` and `hd.tiles`)
 - source: four Codex sheets: `p13-B2` (seven from behind), `p13-F2` (six front poses and the stool), `p13-S1` and `p13-S2` (seated: the avatar tiles); a first `p13-B` and `p13-F` came out in the old chibi proportions and are not used
 - tool: Codex image generation (`codex exec`, codex-cli 0.163.0, on the owner's ChatGPT plan), then `build5.py`
 - date: 2026-11-23
@@ -503,7 +503,7 @@ Owner decisions (Vikram, Telegram, 2026-11-23): style B at 13:07 UTC; bigger hea
 
 #### hd-p14
 
-- files: the 14 standing and stool frames of p14 at scales 4, 3, 2 and 1, and 32 avatar tiles (named in `set.json` `hd.people.p14` and `hd.tiles`)
+- files: the 14 standing and stool frames of p14 at scales 4, 3, 2 and 1, the six seated busts at 320 px, and 32 avatar tiles with their 32 light-surface variants (named in `set.json` `hd.people.{pid}`, `hd.busts.{pid}` and `hd.tiles`)
 - source: four Codex sheets: `p14-B2` (seven from behind), `p14-F2` (six front poses and the stool), `p14-S1` and `p14-S2` (seated: the avatar tiles); a first `p14-B` and `p14-F` came out in the old chibi proportions and are not used
 - tool: Codex image generation (`codex exec`, codex-cli 0.163.0, on the owner's ChatGPT plan), then `build5.py`
 - date: 2026-11-23
@@ -518,7 +518,7 @@ Owner decisions (Vikram, Telegram, 2026-11-23): style B at 13:07 UTC; bigger hea
 
 #### hd-p15
 
-- files: the 14 standing and stool frames of p15 at scales 4, 3, 2 and 1, and 32 avatar tiles (named in `set.json` `hd.people.p15` and `hd.tiles`)
+- files: the 14 standing and stool frames of p15 at scales 4, 3, 2 and 1, the six seated busts at 320 px, and 32 avatar tiles (named in `set.json` `hd.people.{pid}`, `hd.busts.{pid}` and `hd.tiles`)
 - source: four Codex sheets: `p15-B2` (seven from behind), `p15-F2` (six front poses and the stool), `p15-S1` and `p15-S2` (seated: the avatar tiles); a first `p15-B` and `p15-F` came out in the old chibi proportions and are not used
 - tool: Codex image generation (`codex exec`, codex-cli 0.163.0, on the owner's ChatGPT plan), then `build5.py`
 - date: 2026-11-23

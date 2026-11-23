@@ -16,6 +16,7 @@ const C = require(path.join(__dirname, '..', '..', 'src', 'renderer', 'crew.js')
   POSES: string[]; BOX: { x: number; y: number; w: number; h: number }; PX_PER_UNIT: number; FACE: Record<string, Record<string, number[]>>; FACE_W: number; FACE_H: number; faceBox: (id: string, pose: string) => number[] | null; viewBox: (id: string, pose: string, use?: string) => string | null;
   registerOwn: (l: unknown) => string[]; ownName: (id: string) => string; ownRev: (id: string) => string; folderKey: (p: string, platform: string) => string; pinKey: (i: unknown, platform: string) => string | null; pinCrew: (m: Record<string, string>, s: { id: string; key: string }[], pins: Record<string, string>, ids: string[], bad?: Set<string>) => Record<string, string>; viewBoxAt: (f: number[], use?: string) => string;
   HEADS: Record<string, Record<string, Record<string, number[]>>>; HEAD_FRAME: Record<string, string>; HEAD_BOX: { x: number; y: number; s: number }; FLAT_SETS: Record<string, { set: string; prefix: string; sharp: boolean }>; FLAT_IDS: Record<string, string[]>; head: (id: string, pose: string) => { href: string; pic: number[]; crop: number[]; box: { x: number; y: number; s: number }; sharp: boolean } | null;
+  TILE_SIZES: number[]; TILE_LIGHT: Set<string>; tile: (id: string, pose: string, px: number, dpr?: number, light?: boolean) => { href: string; pic: number[]; crop: number[] } | null;
   poseFor: (st: string) => string; file: (id: string, pose: string) => string; files: (ids?: string[]) => string[]; usable: (id: unknown, bad?: Set<string>) => boolean;
 };
 
@@ -356,14 +357,15 @@ assert.deepStrictEqual(Object.keys(C.FACE).sort(), [...C.ALL_IDS].sort(), 'a fac
     return out;
   };
   for (const set of ['retro', 'office']) {
-    const dir = path.join(SETS, set), seat = JSON.parse(fs.readFileSync(path.join(dir, 'set.json'), 'utf8')).seat as Record<string, unknown>;
+    const sj = JSON.parse(fs.readFileSync(path.join(SETS, set, 'set.json'), 'utf8')), hdB = set === 'retro' && sj.hd && sj.hd.busts; /* spec 102 T472: Retro pixel's heads are crops of its HD busts */
+    const dir = path.join(SETS, set), seat = (hdB || sj.seat) as Record<string, unknown>;
     const people = Object.keys(seat).sort();
     assert.strictEqual(people.length, 15, `${set}: 15 people`);
     assert.deepStrictEqual(Object.keys(C.HEADS[set]).sort(), people, `${set}: a crop entry for every person of the set, none more`);
     const sizes: Record<string, number[]> = {};
     for (const p of people) {
       for (const pose of C.POSES) {
-        const buf = fs.readFileSync(path.join(dir, `${p}-${C.HEAD_FRAME[pose]}.webp`)), i = webpInfo(buf);
+        const buf = fs.readFileSync(path.join(dir, hdB ? `hd/${p}-${C.HEAD_FRAME[pose]}@4.webp` : `${p}-${C.HEAD_FRAME[pose]}.webp`)), i = webpInfo(buf);
         if (pose === 'working') sizes[p] = [i.width, i.height]; else assert.deepStrictEqual([i.width, i.height], sizes[p], `${set} ${p}: the three frames have one size`);
       }
     }
@@ -382,13 +384,24 @@ assert.deepStrictEqual(Object.keys(C.FACE).sort(), [...C.ALL_IDS].sort(), 'a fac
   assert.deepStrictEqual(ri, Array.from({ length: 15 }, (_, i) => `retro-p${String(i + 1).padStart(2, '0')}`), 'Retro pixel: retro-p01..retro-p15');
   assert.ok(ri.every((id) => !C.ALL_IDS.includes(id)), 'no clash with the crews');
   assert.strictEqual(C.storeKey('pixel'), 'durbar.crew.pixel', 'its own saved map');
-  assert.strictEqual(C.file('retro-p03', 'waiting'), 'realoffice/sets/retro/p03-waveA.webp', 'the Real office file, no copy');
+  assert.strictEqual(C.file('retro-p03', 'waiting'), 'realoffice/sets/retro/hd/p03-waveA@4.webp', 'the Real office file (the HD bust, spec 102 T472), no copy');
   assert.deepStrictEqual(C.files(ri).length, 45, '45 pictures to load, all in the set folder');
   assert.ok(C.files(ri).every((f) => fs.existsSync(path.join(__dirname, '..', '..', 'src', 'renderer', f))), 'every file exists where the set keeps it (no copy, no new file)');
   assert.ok(ri.every((id) => C.usable(id)) && !C.usable('retro-p16') && !C.usable('p01'), 'usable: the 15 ids of the set only');
   const hd = C.head('retro-p05', 'resting');
-  assert.ok(hd && hd.sharp === true && hd.href === 'realoffice/sets/retro/p05-rest.webp' && hd.crop.length === 3 && hd.box.s === C.HEAD_BOX.s, 'the head of a Retro pixel person: sharp, its own picture and crop');
+  assert.ok(hd && hd.sharp === true && hd.href === 'realoffice/sets/retro/hd/p05-rest@4.webp' && hd.crop.length === 3 && hd.box.s === C.HEAD_BOX.s, 'the head of a Retro pixel person: sharp, its own picture and crop');
   assert.strictEqual(C.head('punk', 'working'), null, 'a crew character has no head crop: its portrait is drawn');
+  { /* spec 102 T472 (FR-410): a round avatar of a tile size draws that tile 1:1, the device-px tile at ratio 2, the light-surface variant for the people with the lit edge */
+    const rj = JSON.parse(fs.readFileSync(path.join(SETS, 'retro', 'set.json'), 'utf8')).hd.tiles as { sizes: number[]; light: string[] };
+    assert.deepStrictEqual(C.TILE_SIZES, rj.sizes, 'the tile sizes are the set\'s');
+    assert.deepStrictEqual([...C.TILE_LIGHT].sort(), [...rj.light].sort(), 'the light-surface people are the set\'s');
+    const t = (id: string, px: number, dpr: number, light: boolean): string | null => { const r = C.tile(id, 'working', px, dpr, light); return r ? r.href.replace('realoffice/sets/retro/hd/', '') : null; };
+    assert.deepStrictEqual([t('retro-p05', 22, 1, false), t('retro-p05', 22, 2, false), t('retro-p05', 22, 2, true), t('retro-p07', 32, 1, true), t('retro-p05', 40, 1, false), t('office-p05', 22, 1, false)],
+      ['p05-typeA-t22.webp', 'p05-typeA-t44.webp', 'p05-typeA-t44l.webp', 'p07-typeA-t32.webp', null, null], 'tile: its size, twice it at 2x, the light variant only for a lit-edge person, none at an untiled size or for Office people');
+    for (const id of ri) for (const pose of C.POSES) for (const S of C.TILE_SIZES) for (const light of [false, true]) {
+      const r = C.tile(id, pose, S, 1, light); assert.ok(r && fs.existsSync(path.join(__dirname, '..', '..', 'src', 'renderer', r.href)), `${id} ${pose} ${S}${light ? ' light' : ''}: the tile exists`);
+    }
+  }
   // Office people (T391): the same, smooth, their own ids, file and key
   const oi = C.idsFor('office');
   assert.deepStrictEqual(oi, Array.from({ length: 15 }, (_, i) => `office-p${String(i + 1).padStart(2, '0')}`), 'Office people: office-p01..office-p15');

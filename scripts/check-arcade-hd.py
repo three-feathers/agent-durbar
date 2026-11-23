@@ -11,6 +11,9 @@ import json, os, re, sys
 from PIL import Image
 
 
+DESK_WALLS = ((212, 190, 168), (122, 98, 76))   # spec 102 T472: the Photo office's and the cave's desk walls, where a seated bust is drawn
+RIM = (90, 225, 255)   # the standing frames' 1-px lit edge
+LIGHT_BGS = ((0xe7, 0xee, 0xe8), (0xef, 0xe3, 0xd0), (0xec, 0xdc, 0xc0), (0xe0, 0xea, 0xd2))   # spec 102 T472 (FR-410): Flat's light avatar backgrounds (--avatar-bg of the light themes), where an `l` tile is drawn
 AV_BGS = ((30, 26, 54), (38, 32, 68))   # FR-407: every avatar circle of the arcade: --surface-2 of the retro theme (door, inbox header) and the rail's #262044; a dark figure is weakest on the lighter one
 
 
@@ -35,14 +38,14 @@ def median(v):
     return v[len(v) // 2] if v else 0
 
 
-def legibility(px, opaque, w, h):
+def legibility(px, opaque, w, h, bgs=None):
     """[the silhouette's edge contrast on the circle (the better median of the outline ring and the ring inside it), the features' L* step below the skin (None: no feature found)]"""
     def nbs(i):
         y, x = divmod(i, w)
         return [j for j, ok in ((i - w, y > 0), (i + w, y < h - 1), (i - 1, x > 0), (i + 1, x < w - 1)) if ok]
     ring = {i for i in range(len(px)) if opaque[i] and any(not opaque[j] for j in nbs(i))}
     inner = {j for i in ring for j in nbs(i) if opaque[j] and j not in ring}
-    edge = min(max(median([ratio(px[i], bg) for i in ring]), median([ratio(px[i], bg) for i in inner])) for bg in AV_BGS)
+    edge = min(max(median([ratio(px[i], bg) for i in ring]), median([ratio(px[i], bg) for i in inner])) for bg in (bgs or AV_BGS))
     region = [i for i in range(len(px)) if opaque[i] and i not in ring and int(0.3 * h) <= i // w < int(0.75 * h) and int(0.25 * w) <= i % w < int(0.75 * w)]
     if not region:
         return [round(edge, 2), None]
@@ -97,6 +100,9 @@ def measure(path):
             orph += 1
     semi = {p for p in px if 0 < p[3] < 255}
     tile = None
+    bust = None
+    if re.search(r'-(typeA|typeB|think|waveA|waveB|rest)@4\.webp$', path):   # T472: a seated bust: rim pixels (none allowed) and its edge on the desk walls
+        bust = [sum(1 for i, p in enumerate(px) if opaque[i] and p[:3] == RIM), legibility([p[:3] for p in px], opaque, w, h, DESK_WALLS)[0]]
     topc = None
     if path.endswith('-face-book@4.webp'):   # FR-408: the colours that cover at least 1 % of the front reading frame
         cnt = {}
@@ -105,8 +111,10 @@ def measure(path):
                 cnt[p[:3]] = cnt.get(p[:3], 0) + 1
         n = sum(cnt.values())
         topc = [list(c) + [round(k / n, 3)] for c, k in sorted(cnt.items(), key=lambda t: -t[1]) if k / n >= 0.01]
-    if re.search(r'-t\d+\.webp$', path):   # FR-407: an avatar tile on the darkest avatar circle
-        tile = legibility(px, opaque, w, h)
+    if re.search(r'-t\d+\.webp$', path):   # FR-407: an avatar tile on every avatar circle of the arcade (and Flat's dark one is darker still)
+        tile = legibility(px, opaque, w, h, AV_BGS + ((0x1b, 0x27, 0x1d),) + (() if os.path.exists(path[:-5] + 'l.webp') else LIGHT_BGS))   # without a light variant it is drawn on light backgrounds too
+    elif re.search(r'-t\d+l\.webp$', path):   # T472 (FR-410): a light-surface tile on every light avatar background
+        tile = legibility(px, opaque, w, h, LIGHT_BGS)
     # FR-402: crown to neck over the figure's height, and the head's width: the neck is the narrowest run through the head's centre column between 14 % and 36 % of the height
     rows = [y for y in range(h) if any(opaque[y * w:(y + 1) * w])]
     top, fh = rows[0], rows[-1] - rows[0] + 1
@@ -136,10 +144,10 @@ def measure(path):
                 end = y
             neck = max(neck, end + 1)
     head = [round((neck - top) / fh, 3), max(run(y) for y in range(top, neck))]
-    return {'name': os.path.basename(path), 'w': w, 'h': h, 'opaque': sum(opaque), 'colours': len(rgb), 'alphas': sorted(alphas), 'orphans': orph, 'lone': lone, 'edge': len(edge), 'head': head, 'tile': tile, 'top': topc}, rgb, semi
+    return {'name': os.path.basename(path), 'w': w, 'h': h, 'opaque': sum(opaque), 'colours': len(rgb), 'alphas': sorted(alphas), 'orphans': orph, 'lone': lone, 'edge': len(edge), 'head': head, 'tile': tile, 'bust': bust, 'top': topc}, rgb, semi
 
 
-if sys.argv[1:2] in (['--speckle'], ['--alpha'], ['--colour'], ['--edge'], ['--norim'], ['--hue']):
+if sys.argv[1:2] in (['--speckle'], ['--alpha'], ['--colour'], ['--edge'], ['--norim'], ['--hue'], ['--rim']):
     im = Image.open(sys.argv[2]).convert('RGBA')
     px = list(im.getdata())
     w, h = im.size
@@ -158,6 +166,10 @@ if sys.argv[1:2] in (['--speckle'], ['--alpha'], ['--colour'], ['--edge'], ['--n
             px[i] = (1 + n, 254 - n, 127, 255)
     elif sys.argv[1] == '--hue':   # every colour's channels turned round: the person's own colours are gone
         px = [(p[1], p[2], p[0], p[3]) if p[3] else p for p in px]
+    elif sys.argv[1] == '--rim':   # T472 red case: the lit edge put back on a bust: the pixel inside the outline on the figure's right, upper 90 %
+        for y in range(int(h * 0.9)):
+            row = [x for x in range(w) if px[y * w + x][3]]
+            if len(row) > 2: px[y * w + row[-1] - 1] = RIM + (255,)
     elif sys.argv[1] == '--norim':   # the lit edge of a tile taken off: its outline ring becomes the darkest colour of the tile
         ring = [i for i, p in enumerate(px) if p[3] and (i % w in (0, w - 1) or i < w or i >= len(px) - w or not all(px[j][3] for j in (i - 1, i + 1, i - w, i + w)))]
         dark = min((p for p in px if p[3]), key=lambda p: p[0] + p[1] + p[2])
@@ -169,6 +181,21 @@ if sys.argv[1:2] in (['--speckle'], ['--alpha'], ['--colour'], ['--edge'], ['--n
     im.putdata(px)
     im.save(sys.argv[3], 'WEBP', lossless=True, exact=True)
     sys.exit(0)
+
+if sys.argv[1:2] == ['--heads']:   # spec 102 T472: for each frame `set.json` names (argv[2]; its pictures in argv[3] or the `hd` folder beside it), the opaque pixels from its top down to its face box's bottom must lie inside the face box (the head, hair and hood included)
+    sj = json.load(open(sys.argv[2]))['hd']; d = sys.argv[3] if len(sys.argv) > 3 else os.path.join(os.path.dirname(sys.argv[2]), 'hd'); bad = []
+    for pid, poses in sorted(sj['people'].items()):
+        for pose, sc in sorted(poses.items()):
+            for s, v in sorted(sc.items()):
+                _, _, fx, fy, fw, fh = v; a = Image.open(os.path.join(d, f'{pid}-{pose}@{s}.webp')).getchannel('A'); px = a.load(); w, h = a.size
+                out = sum(1 for y in range(min(h, fy + fh)) for x in range(w) if px[x, y] > 0 and not (fx <= x < fx + fw and fy <= y))
+                if out: bad.append(f'{pid}-{pose}@{s}: {out} head pixels outside the face box')
+    for pid, b in sorted(sj.get('busts', {}).items()):   # and every bust's measured head (T472): the opaque pixels down to its bottom lie inside it
+        for pose, (hx, hy, hw, hh) in sorted(b.get('head', {}).items()):
+            a = Image.open(os.path.join(d, f'{pid}-{pose}@4.webp')).getchannel('A'); px = a.load(); w, h = a.size
+            out = sum(1 for y in range(min(h, hy + hh)) for x in range(w) if px[x, y] > 0 and not (hx <= x < hx + hw and hy <= y))
+            if out: bad.append(f'{pid}-{pose}@4 (bust): {out} head pixels outside its head box')
+    print(json.dumps({'heads': bad})); sys.exit(0)
 
 pal, semi = set(), set()
 for f in sys.argv[1:]:
