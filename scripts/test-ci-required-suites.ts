@@ -104,7 +104,7 @@ export function jobNames(job: Job): string[] {
 }
 
 const MASK = /redact|mask/i;
-const ENV_KEYS = ['PREREVIEW_REQUIRE_REAL_SDK', 'TEST_SHARD'];
+const ENV_KEYS = ['PREREVIEW_REQUIRE_REAL_SDK', 'TEST_SHARD', 'TEST_JOBS'];
 const DRAFT_IF = '${{!github.event.pull_request.draft}}';
 const MAC_IF = "${{!github.event.pull_request.draft&&github.event_name!='pull_request'&&github.event_name!='merge_group'}}"; // FR-106: macOS parts never on PRs or queue entries
 const RUNS_NPM_TEST = /\bnpm\s+test\b/;
@@ -231,6 +231,9 @@ export function problems(io: { ci: string; npmci: string; spec: string; suites: 
     for (const k of Object.keys(step)) if (!PLAIN_KEYS.includes(k) && k !== 'continue-on-error') out.push(`${tag}: the \`npm test\` step has the key "${k}", which this guard does not understand (a working-directory or shell could change what runs)`);
     const env = (step.env || {}) as Record<string, unknown>;
     for (const k of Object.keys(env)) if (!ENV_KEYS.includes(k)) out.push(`${tag}: the \`npm test\` step sets env "${k}", which is not a reviewed key (${ENV_KEYS.join(', ')}): it could change what runs`);
+    // spec 117 T500: 4 vCPU on the ubuntu and windows parts (run-tests.js printed "3 at a time" there); the macOS runner size varies (2 and 4 at a time seen), so it keeps the default
+    if (osName === 'macos-latest') { if (env.TEST_JOBS !== undefined) out.push(`${tag}: TEST_JOBS is set; the macOS runner size varies, so it keeps the default job count`); }
+    else if (flat(env.TEST_JOBS) !== '4') out.push(`${tag}: TEST_JOBS is ${JSON.stringify(env.TEST_JOBS)}, expected 4 (a 4 vCPU runner; the default runs 3 jobs, another count changes the load the suites were timed under)`);
     if (flat(env.TEST_SHARD) !== `\${{matrix.shard}}/${n}`) out.push(`${tag}: TEST_SHARD is ${JSON.stringify(env.TEST_SHARD)}, expected "\${{ matrix.shard }}/${n}" (the matrix has ${n} parts): a part count that differs from the matrix drops suites`);
     if (osName === 'ubuntu-latest' && env.PREREVIEW_REQUIRE_REAL_SDK !== '1') out.push(`${tag}: PREREVIEW_REQUIRE_REAL_SDK is not '1' (test:prereview would skip its real-SDK test on Linux)`);
     const stepIf = step.if;
@@ -331,7 +334,7 @@ mutant('a part on an OS no check names', (io) => ({ ...io, ci: swap(io.ci, 'runs
 mutant('only part 1 in the matrix, TEST_SHARD still /2', (io) => ({ ...io, ci: swap(io.ci, /(  test-windows:[\s\S]*?shard: )\[1, 2\]/, '$1[1]') }), /test-windows\): TEST_SHARD is "\$\{\{ matrix\.shard \}\}\/2", expected "\$\{\{ matrix\.shard \}\}\/1"/);
 mutant('a third part, TEST_SHARD still /2', (io) => ({ ...io, ci: swap(io.ci, /(  test-ubuntu:[\s\S]*?shard: )\[1, 2\]/, '$1[1, 2, 3]') }), /test-ubuntu\): TEST_SHARD is .* expected "\$\{\{ matrix\.shard \}\}\/3"/);
 mutant('a gap in the parts', (io) => ({ ...io, ci: swap(io.ci, /(  test-macos:[\s\S]*?shard: )\[1, 2\]/, '$1[1, 3]') }), /matrix\.shard is \[1,3\], expected/);
-mutant('TEST_SHARD removed (every part runs everything, or nothing is split)', (io) => ({ ...io, ci: swap(io.ci, /(  test-windows:[\s\S]*?)        env:\n          TEST_SHARD: [^\n]*\n/, '$1') }), /test-windows\): TEST_SHARD is undefined/);
+mutant('TEST_SHARD removed (every part runs everything, or nothing is split)', (io) => ({ ...io, ci: swap(io.ci, /(  test-windows:[\s\S]*?)        env:\n          TEST_SHARD: [^\n]*\n(?:          # spec 117 T500[^\n]*\n          TEST_JOBS: 4\n)?/, '$1') }), /test-windows\): TEST_SHARD is undefined/);
 mutant('a part with fail-fast', (io) => ({ ...io, ci: swap(io.ci, /(  test-windows:[\s\S]*?fail-fast: )false/, '$1true') }), /test-windows\): fail-fast is not false/);
 mutant('a part with a container', (io) => ({ ...io, ci: swap(io.ci, /(  test-windows:\n)/, '$1    container: node:22\n') }), /has the job key "container"/);
 mutant('the macOS parts also on pull requests', (io) => ({ ...io, ci: swap(io.ci, " && github.event_name != 'pull_request' && github.event_name != 'merge_group' }}", ' }}') }), /macos-latest part job \(test-macos\) has a condition other than the reviewed one \(FR-106/);
@@ -383,6 +386,9 @@ mutant('job-level defaults working-directory', (io) => ({ ...io, ci: swap(io.ci,
 mutant('workflow-level defaults', (io) => ({ ...io, ci: swap(io.ci, /^jobs:\n/m, 'defaults:\n  run:\n    working-directory: scripts\njobs:\n') }), /top-level `defaults`/);
 mutant('workflow-level env', (io) => ({ ...io, ci: swap(io.ci, /^jobs:\n/m, 'env:\n  NODE_OPTIONS: --max-old-space-size=1\njobs:\n') }), /top-level `env`/);
 mutant('job-level env NODE_OPTIONS', (io) => ({ ...io, ci: swap(io.ci, W_RUNS_ON, W_RUNS_ON + '    env:\n      NODE_OPTIONS: --require ./x.js\n') }), /test-windows\) has job-level `env`/);
+mutant('TEST_JOBS removed from a part', (io) => ({ ...io, ci: swap(io.ci, /(  test-windows:[\s\S]*?)          # spec 117 T500[^\n]*\n          TEST_JOBS: 4\n/, '$1') }), /test-windows\): TEST_JOBS is undefined/);
+mutant('TEST_JOBS set on macOS', (io) => ({ ...io, ci: swap(io.ci, /(  test-macos:[\s\S]*?TEST_SHARD: [^\n]*\n)/, '$1          TEST_JOBS: 4\n') }), /test-macos\): TEST_JOBS is set/);
+mutant('TEST_JOBS set to another count', (io) => ({ ...io, ci: swap(io.ci, '          TEST_JOBS: 4', '          TEST_JOBS: 64') }), /TEST_JOBS is 64, expected 4/);
 mutant('NODE_OPTIONS on the npm test step', (io) => ({ ...io, ci: swap(io.ci, "          PREREVIEW_REQUIRE_REAL_SDK: '1'", "          NODE_OPTIONS: --require ./x.js\n          PREREVIEW_REQUIRE_REAL_SDK: '1'") }), /sets env "NODE_OPTIONS"/);
 mutant('a step before npm test writes GITHUB_ENV', (io) => ({ ...io, ci: swap(io.ci, "      - if: steps.changes.outputs.code == 'true'\n        run: npm run build\n", "      - run: echo NODE_OPTIONS=--require=./x.js >> \"$GITHUB_ENV\"\n      - if: steps.changes.outputs.code == 'true'\n        run: npm run build\n") }), /writes GITHUB_ENV or GITHUB_PATH/);
 

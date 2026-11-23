@@ -77,11 +77,13 @@ export function problems(ci: string, ruleset: string): string[] {
     for (const s0 of (j.steps || []).slice(0, at)) if (/GITHUB_ENV|GITHUB_PATH/.test(String(s0.run || ''))) out.push(`${id}: a step before npm test writes GITHUB_ENV or GITHUB_PATH (it can change what npm test runs)`);
     for (const k of Object.keys(t)) if (!['if', 'env', 'run', 'name'].includes(k)) out.push(`${id}: the npm test step has the key "${k}", which this test does not allow`);
     const envKeys = Object.keys((t.env || {}) as object).sort();
-    const wantKeys = id === 'test-ubuntu' ? ['PREREVIEW_REQUIRE_REAL_SDK', 'TEST_SHARD'] : ['TEST_SHARD'];
+    // spec 117 T500: TEST_JOBS 4 on the 4 vCPU ubuntu and windows parts; absent on macOS (its runner size varies); same rule as test-ci-required-suites
+    const wantKeys = id === 'test-ubuntu' ? ['PREREVIEW_REQUIRE_REAL_SDK', 'TEST_JOBS', 'TEST_SHARD'] : id === 'test-windows' ? ['TEST_JOBS', 'TEST_SHARD'] : ['TEST_SHARD'];
     if (JSON.stringify(envKeys) !== JSON.stringify(wantKeys)) out.push(`${id}: the npm test step's env keys are ${JSON.stringify(envKeys)}, expected ${JSON.stringify(wantKeys)} (another key could change what runs)`);
     if (id === 'test-ubuntu' && ((t.env || {}) as Record<string, unknown>).PREREVIEW_REQUIRE_REAL_SDK !== '1') out.push(`${id}: PREREVIEW_REQUIRE_REAL_SDK is not '1' (test:prereview would skip the real-SDK test)`);
     if (!(j.steps || []).slice(0, at).some((s) => s.run === 'npm run build')) out.push(`${id}: no \`npm run build\` before \`npm test\` (the suites read dist/; spec 008 FR-193)`);
     const env = (t.env || {}) as Record<string, unknown>;
+    if (id !== 'test-macos' && flat(env.TEST_JOBS) !== '4') out.push(`${id}: TEST_JOBS is ${JSON.stringify(env.TEST_JOBS)}, expected 4 (a 4 vCPU runner)`);
     if (flat(env.TEST_SHARD) !== `\${{matrix.shard}}/${n}`) out.push(`${id}: TEST_SHARD is ${JSON.stringify(env.TEST_SHARD)}, expected "\${{ matrix.shard }}/${n}" (the matrix has ${n} parts): a part count that differs from the matrix drops suites`);
     if (t.if !== undefined && flat(t.if) !== "steps.changes.outputs.code=='true'") out.push(`${id}: the npm test step runs only under "${String(t.if)}"`);
     if (t['continue-on-error'] !== undefined) out.push(`${id}: the npm test step has continue-on-error`);
@@ -146,7 +148,10 @@ mutant('the Windows changes step only in part 1 (part 2 green with no suites)', 
 mutant('the changes step writes code=false', (ci) => swap(ci, /(  test-macos:[\s\S]*?)run: bash \.github\/scripts\/ci-changes\.sh/, '$1run: echo code=false >> "$GITHUB_OUTPUT"'), /test-macos: the `changes` step is not the reviewed one/);
 mutant('the changes step gets another env key', (ci) => swap(ci, /(  test-ubuntu:[\s\S]*?          EVENT_NAME: \$\{\{ github\.event_name \}\}\n)/, '$1          FORCE: x\n'), /test-ubuntu: the `changes` step is not the reviewed one/);
 mutant('an extra env key on the npm test step', (ci) => swap(ci, /(  test-windows:[\s\S]*?          TEST_SHARD: [^\n]*\n)/, '$1          NODE_OPTIONS: --require ./x.js\n'), /test-windows: the npm test step's env keys are/);
-mutant('Ubuntu loses PREREVIEW_REQUIRE_REAL_SDK', (ci) => swap(ci, /          # spec 103: on Linux test:prereview[^\n]*\n          PREREVIEW_REQUIRE_REAL_SDK: '1'\n/, ''), /test-ubuntu: the npm test step's env keys are \["TEST_SHARD"\]/);
+mutant('Ubuntu loses PREREVIEW_REQUIRE_REAL_SDK', (ci) => swap(ci, /          # spec 103: on Linux test:prereview[^\n]*\n          PREREVIEW_REQUIRE_REAL_SDK: '1'\n/, ''), /test-ubuntu: the npm test step's env keys are \["TEST_JOBS","TEST_SHARD"\]/);
+mutant('TEST_JOBS removed from a part', (ci) => swap(ci, /(  test-windows:[\s\S]*?)          # spec 117 T500[^\n]*\n          TEST_JOBS: 4\n/, '$1'), /test-windows: the npm test step's env keys are/);
+mutant('TEST_JOBS set on macOS', (ci) => swap(ci, /(  test-macos:[\s\S]*?TEST_SHARD: [^\n]*\n)/, '$1          TEST_JOBS: 4\n'), /test-macos: the npm test step's env keys are/);
+mutant('TEST_JOBS 64 on a part', (ci) => swap(ci, '          TEST_JOBS: 4', '          TEST_JOBS: 64'), /TEST_JOBS is "?64"?, expected 4/);
 mutant('PREREVIEW_REQUIRE_REAL_SDK off', (ci) => swap(ci, "PREREVIEW_REQUIRE_REAL_SDK: '1'", "PREREVIEW_REQUIRE_REAL_SDK: ''"), /PREREVIEW_REQUIRE_REAL_SDK is not '1'/);
 mutant('job-level env on a part', (ci) => swap(ci, /(  test-windows:\n    name: [^\n]*\n)/, '$1    env:\n      NODE_OPTIONS: --require ./x.js\n'), /test-windows has the job key "env"/);
 mutant('job-level defaults on a part', (ci) => swap(ci, /(  test-macos:\n    name: [^\n]*\n)/, '$1    defaults:\n      run:\n        working-directory: scripts\n'), /test-macos has the job key "defaults"/);
