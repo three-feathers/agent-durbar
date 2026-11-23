@@ -148,9 +148,7 @@ export function hostOfRemote(url: string): string {
   const end = s.search(/[/\\?#;\s]/);
   let auth = end === -1 ? s : s.slice(0, end);
   if (end !== -1) {
-    const rest = s.slice(end);
-    const q = rest.search(/[?#]/);
-    if ((q === -1 ? rest : rest.slice(0, q)).includes('@')) return UNKNOWN_HOST;
+    if (s.indexOf('@', end) !== -1) return UNKNOWN_HOST; // user info can hide after the cut (`https://secret#x@host`): any `@` there
   }
   auth = auth.slice(auth.lastIndexOf('@') + 1);
   let host: string;
@@ -209,6 +207,7 @@ export function remoteHosts(configText: string): RemoteAnswer {
   for (let i = 0; i < lines.length; i++) {
     let line = noCr(lines[i]);
     for (let j = 0; j < MAX_JOIN && continues(line) && i + 1 < lines.length; j++) line = line.slice(0, -1) + noCr(lines[++i]);
+    if (continues(line) && i + 1 < lines.length) doubt = true; // still continuing at the cap: the line is not complete, so no answer from it
     const h = /^\s*\[\s*([A-Za-z0-9.-]+)(?:\s+"(?:[^"\\]|\\.)*")?\s*\](.*)$/.exec(line);
     if (h) {
       const name = h[1].toLowerCase();

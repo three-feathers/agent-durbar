@@ -51,8 +51,36 @@ for (const [u, want] of [
   assert.ok(!h.includes(SECRET), 'no secret in the host: ' + u);
 }
 // the @ rule counts only before the first ? or #
-assert.strictEqual(hostOfRemote('https://host.example.invalid/x?mail=a@b'), 'host.example.invalid');
-assert.strictEqual(hostOfRemote('https://host.example.invalid?mail=a@b'), 'host.example.invalid');
+// any @ after the authority cut answers (unknown host), also after a ? or #
+assert.strictEqual(hostOfRemote('https://host.example.invalid/x?mail=a@b'), '(unknown host)');
+assert.strictEqual(hostOfRemote('https://host.example.invalid?mail=a@b'), '(unknown host)');
+for (const u of [`https://${SECRET}#x@host.example.invalid/`, `https://${SECRET}?x@host.example.invalid/`, `${SECRET}#@host.example.invalid:x`, `${SECRET}?@host.example.invalid:x`]) {
+  assert.strictEqual(hostOfRemote(u), '(unknown host)', u);
+}
+for (const line of [`"https://${SECRET}#x"@host.example.invalid/x`, `https://${SECRET}"#"@host.example.invalid/x`]) {
+  const r = remoteHosts(`[remote "o"]\n\turl = ${line}\n`);
+  assert.deepStrictEqual(r, { kind: 'remote', hosts: ['(unknown host)'], rewritten: false }, line);
+}
+// property: whatever sits between a secret and a later @, the secret is never a reported host
+{
+  const delims = ['', '#', '?', ';', '/', '\\', ' ', '\t', ':', '%2F', '%40', '"', '\u202e', '..', '@'];
+  let n = 0;
+  for (const d1 of delims) for (const d2 of delims) for (const make of [(m: string) => `https://${SECRET}${m}@host.example.invalid/y`, (m: string) => `${SECRET}${m}@host.example.invalid:y`, (m: string) => `ssh://u:${SECRET}${m}@host.example.invalid`]) {
+    const u = make(`${d1}x${d2}`);
+    n++;
+    assert.ok(!hostOfRemote(u).includes(SECRET), 'host: ' + JSON.stringify(u));
+    if (!/["\\\n\r]/.test(u)) assert.ok(!JSON.stringify(remoteHosts(`[remote "o"]\n\turl = "${u}"\n`)).includes(SECRET), 'config: ' + JSON.stringify(u));
+  }
+  assert.ok(n > 600);
+}
+// 33 continuations between the secret and the @: the line is not complete, so nothing is reported from it
+{
+  const long = `[remote "o"]\n\turl = https://${SECRET}\\\n` + '\\\n'.repeat(32) + '@host.example.invalid/x\n';
+  assert.deepStrictEqual(remoteHosts(long), { kind: 'unknown' }, '33 continuations');
+  const ok = `[remote "o"]\n\turl = https://${SECRET}\\\n` + '\\\n'.repeat(30) + '@host.example.invalid/x\n';
+  assert.deepStrictEqual(remoteHosts(ok), { kind: 'remote', hosts: ['host.example.invalid'], rewritten: false }, '31 continuations still join');
+  assert.ok(!JSON.stringify(remoteHosts(long)).includes(SECRET));
+}
 // a backslash continuation joins the next line; an even run does not
 assert.deepStrictEqual(hosts(`[remote "o"]\n\turl = https://${SECRET}\\\n@host.example.invalid/x\n`), ['host.example.invalid']);
 assert.deepStrictEqual(hosts(`[remote "o"]\r\n\turl = https://${SECRET}\\\r\n@host.example.invalid/x\r\n`), ['host.example.invalid'], 'CRLF continuation');
