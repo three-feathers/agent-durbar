@@ -197,12 +197,38 @@ function checkDuplicates(found, baselineText) {
 const baselineOf = (found) => `# Spec numbers defined more than once in one file, as they were when scripts/spec-numbers.js --dups was added (issue #1553).\n# file id count. A new duplicate fails; fixing one means lowering or removing its line (--write-baseline). Never raise a count.\n${[...found].sort((a, b) => a.file.localeCompare(b.file) || a.id.localeCompare(b.id, undefined, { numeric: true })).map((f) => `${f.file} ${f.id} ${f.lines.length}`).join('\n')}\n`;
 
 
+/** The text of several files at several revisions in ONE git call (`git cat-file --batch`; one process per file was 1,000 calls on a 90-branch run).
+ * pairs: [{ rev, file }] -> [text]; a file missing at that revision is ''; any other failure THROWS, as `show` does. A path with a line break goes through `show`. */
+function showMany(root, pairs) {
+  const ok = pairs.map((p) => !/[\r\n]/.test(p.file) && !/[\r\n]/.test(p.rev));
+  const out = pairs.map(() => '');
+  const idx = pairs.map((_, i) => i).filter((i) => ok[i]);
+  if (idx.length) {
+    const buf = run(root, 'git', ['cat-file', '--batch'], { input: idx.map((i) => `${pairs[i].rev}:${pairs[i].file}\n`).join(''), encoding: null, stdio: ['pipe', 'pipe', 'pipe'] });
+    let pos = 0;
+    for (const i of idx) {
+      const nl = buf.indexOf(10, pos);
+      if (nl < 0) throw new Error('git cat-file gave a short answer');
+      const header = buf.toString('utf8', pos, nl);
+      pos = nl + 1;
+      if (/ missing$/.test(header)) continue;
+      const m = header.match(/^[0-9a-f]{40,64} (\w+) (\d+)$/);
+      if (!m || m[1] !== 'blob') throw new Error('git cat-file gave an unexpected header');
+      const size = Number(m[2]);
+      out[i] = buf.toString('utf8', pos, pos + size);
+      pos += size + 1;
+    }
+  }
+  pairs.forEach((p, i) => { if (!ok[i]) out[i] = show(root, p.rev, p.file); });
+  return out;
+}
 function addsOf(root, base, head, files) {
   const m = new Map();
-  for (const f of files) {
-    const a = added(definitionsAt(root, base, f), definitionsAt(root, head, f));
+  const texts = showMany(root, files.flatMap((f) => [{ rev: base, file: f }, { rev: head, file: f }]));
+  files.forEach((f, i) => {
+    const a = added(parseDefinitions(texts[2 * i], kindOf(f)), parseDefinitions(texts[2 * i + 1], kindOf(f)));
     if (a.size) m.set(f, a);
-  }
+  });
   return m;
 }
 
@@ -258,7 +284,8 @@ function collect(root, heads, headRev = 'HEAD', self = null) {
     const pbase = gitq(root, ['merge-base', h.sha, inStack ? headRev : 'origin/main']);
     if (!pbase) { noBase.push(h.label); continue; }
     // that head's OWN spec files, not only this branch's (issue #1935: a number taken in another spec is the same clash)
-    prs.push({ label: h.label, adds: addsOf(root, pbase, h.sha, [...new Set([...files, ...specFilesChanged(root, pbase, h.sha)])]) });
+    // only a file the head changed can hold an addition (the same text at both ends adds nothing), so the branch's own files are not read again for every head
+    prs.push({ label: h.label, adds: addsOf(root, pbase, h.sha, specFilesChanged(root, pbase, h.sha)) });
   }
   const fresh = new Set();
   for (const f of new Set([...files, ...prs.flatMap((p) => [...p.adds.keys()])])) if (show(root, 'origin/main', f) === '') fresh.add(f);
@@ -362,7 +389,10 @@ function worktreeHeads(root) {
 function wideHeads(root, { remote = [], worktrees = [], open = [], selfRef, prefix = 'branch ', dates = true }) {
   const openNames = new Set(open.map((o) => o.headRef).filter(Boolean)), openShas = new Set(open.map((o) => o.sha));
   const skip = (h) => !h.name || h.name === 'HEAD' || h.name === 'main' || h.name === selfRef || h.name.startsWith(QUEUE_PREFIX);
-  const label = (kind, h) => `${kind}${printable(h.name)}${dates ? `, tip ${gitq(root, ['log', '-1', '--format=%cs', h.sha]) || '?'}` : ''}`;
+  // the tip dates of every candidate in one call (one process per head was 0.7 s on 90 heads)
+  const day = new Map();
+  if (dates) for (const l of (gitq(root, ['log', '--no-walk=unsorted', '--format=%H %cs', ...new Set([...remote, ...worktrees].map((h) => h.sha))]) || '').split('\n')) { const [sha, d] = l.split(' '); if (d) day.set(sha, d); }
+  const label = (kind, h) => `${kind}${printable(h.name)}${dates ? `, tip ${day.get(h.sha) || '?'}` : ''}`;
   const out = remote.filter((h) => !skip(h) && !openNames.has(h.name) && !openShas.has(h.sha))
     .map((h) => ({ label: label(prefix, h), sha: h.sha, name: h.name, headRef: h.name, sameRepo: true, wide: true }));
   for (const h of worktrees) {
