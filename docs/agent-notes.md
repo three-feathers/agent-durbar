@@ -55,7 +55,7 @@ Each entry: **what** (bold), why, how to apply, evidence (`real:`, `read:`, `tes
 - **Labels are read from the event payload**: re-running an old run does not see a new label; push or save the description.
 - **A branch-only workflow cannot be dispatched**: its file must be on `main` first, then `gh workflow run <file> --ref <branch>` (#483).
 - **Stacked PRs: GitHub's native stacks** (`gh extension install github/gh-stack`, `gh stack link <bottom> ... <top>`): merging a lower PR retargets the rest; merge bottom-up, same repo only. A stacked PR gets no CodeQL until retargeted to `main` (2026-10-21).
-- **No macOS on PRs** (#722, 008 delta 2026-11-23): `macos-latest` check is a stub; Mac-only breaks show on `main`/nightly: fix first.
+- **macOS on PRs is a stub** (#722, 008 delta 2026-11-23): Mac-only breaks show on `main`/nightly: fix first.
 
 ## Simulator and drivers
 
