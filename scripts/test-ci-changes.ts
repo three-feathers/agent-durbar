@@ -477,7 +477,7 @@ assert.strictEqual(cc.decide(['docs/zz-none.md', 'specs/999-none/spec.md'], io()
     execFileSync(process.execPath, [path.join(repo, '.github', 'scripts', 'ci-changes.js'), ...args], { cwd: repo, env: { ...process.env, EVENT_NAME: ev, GITHUB_OUTPUT: outFile }, stdio: 'ignore', shell: false });
     return fs.readFileSync(outFile, 'utf8');
   };
-  assert.strictEqual(run('pull_request'), 'code=false\nthemes=false\nui=false\nmacos=false\n', 'pull_request: the diff of HEAD^1..HEAD decides (docs only: nothing)');
+  assert.strictEqual(run('pull_request'), 'code=false\nthemes=false\nui=false\nmacos=false\nos_sensitive=false\n', 'pull_request: the diff of HEAD^1..HEAD decides (docs only: nothing)');
   // spec 117 FR-386: --suites writes only the fast lane's two outputs (a docs change no suite names: none picked)
   assert.strictEqual(run('pull_request', ['--suites']), 'fast=yes\nsuites=\n', '--suites: only fast and suites');
   // a changed step file picks its suite on a pull request, and nothing on any other event (review of #2032: the lane is PR-only)
@@ -510,8 +510,8 @@ assert.strictEqual(cc.decide(['docs/zz-none.md', 'specs/999-none/spec.md'], io()
       assert.strictEqual(fs.readFileSync(outFile, 'utf8'), 'fast=yes\nsuites=\ncapped=1\n', 'the wrapper (base copy) writes capped=1 too');
     }
   }
-  for (const ev of ['push', 'merge_group', 'schedule', 'workflow_dispatch', '']) assert.strictEqual(run(ev), 'code=true\nthemes=true\nui=true\nmacos=true\n', `${ev || 'no event'}: everything runs`);
-  const ALL = 'code=true\nthemes=true\nui=true\nmacos=true\n';
+  for (const ev of ['push', 'merge_group', 'schedule', 'workflow_dispatch', '']) assert.strictEqual(run(ev), 'code=true\nthemes=true\nui=true\nmacos=true\nos_sensitive=true\n', `${ev || 'no event'}: everything runs`);
+  const ALL = 'code=true\nthemes=true\nui=true\nmacos=true\nos_sensitive=true\n';
   // finding 3: a file name with a newline and `::` is printed escaped, so it cannot start a workflow command (POSIX: Windows forbids the name)
   if (process.platform !== 'win32') {
     fs.writeFileSync(path.join(repo, 'scripts', 'x\n::warning::injected ##[error]y.txt'), 'x');
@@ -532,13 +532,13 @@ assert.strictEqual(cc.decide(['docs/zz-none.md', 'specs/999-none/spec.md'], io()
     // a tooling script the closure does not name, present at head: the base copy, run with --root on the checkout, says ui=false
     fs.writeFileSync(path.join(repo, 'scripts', 'tool.js'), 'module.exports = 1;\n');
     git('add', '-A'); git('commit', '-q', '-m', 'a tooling script');
-    assert.strictEqual(bash(repo, 'pull_request'), 'code=true\nthemes=false\nui=false\nmacos=true\n', 'the wrapper decides on the PR checkout (--root): a tooling script is not UI');
+    assert.strictEqual(bash(repo, 'pull_request'), 'code=true\nthemes=false\nui=false\nmacos=true\nos_sensitive=true\n', 'the wrapper decides on the PR checkout (--root): a tooling script is not UI');
     assert.strictEqual(bash(repo, 'pull_request', ['--suites']), 'fast=yes\nsuites=\n', 'the wrapper passes --suites to the base copy (spec 117 FR-386)');
     // a committed .ci-changes-base/ is cleared first: its package.json saying "type":"module" would make the copied decision fail
     fs.mkdirSync(path.join(repo, '.ci-changes-base'));
     fs.writeFileSync(path.join(repo, '.ci-changes-base', 'package.json'), '{"type":"module"}\n');
     git('add', '-A'); git('commit', '-q', '-m', 'a planted base folder');
-    assert.strictEqual(bash(repo, 'pull_request'), 'code=true\nthemes=false\nui=true\nmacos=true\n', 'a committed .ci-changes-base/ is cleared before the base copy runs');
+    assert.strictEqual(bash(repo, 'pull_request'), 'code=true\nthemes=false\nui=true\nmacos=true\nos_sensitive=true\n', 'a committed .ci-changes-base/ is cleared before the base copy runs');
     const broken = "require('fs').appendFileSync(process.env.GITHUB_OUTPUT, 'code=true\\nthemes=false\\nui=false\\nmacos=false\\n');\n";
     fs.mkdirSync(path.join(repo, 'src'), { recursive: true });
     fs.writeFileSync(path.join(repo, 'src', 'app.js'), 'x');
@@ -572,6 +572,10 @@ assert.strictEqual(cc.decide(['docs/zz-none.md', 'specs/999-none/spec.md'], io()
       ['writes code= empty', out('code=\nthemes=false\nui=false\nmacos=false\n')],
       ['writes code=maybe', out('code=maybe\nthemes=false\nui=false\nmacos=false\n')],
       ['writes two code lines', out('code=false\ncode=true\nthemes=false\nui=false\nmacos=false\n')],
+      // spec 117 FR-012 (review of #2039): every decision name, os_sensitive too, exactly once and exact; else everything runs
+      ['writes no os_sensitive (a base older than it)', out('code=false\nthemes=false\nui=false\nmacos=false\n')],
+      ['writes os_sensitive=FALSE', out('code=false\nthemes=false\nui=false\nmacos=false\nos_sensitive=FALSE\n')],
+      ['writes two os_sensitive lines', out('code=false\nthemes=false\nui=false\nmacos=false\nos_sensitive=false\nos_sensitive=false\n')],
     ];
     /** The wrapper's output with this base decision (committed as HEAD^1) and a docs commit on top. */
     const withBase = (js: string, wrapper: string) => {
@@ -583,19 +587,19 @@ assert.strictEqual(cc.decide(['docs/zz-none.md', 'specs/999-none/spec.md'], io()
       return bash(silent, 'pull_request');
     };
     for (const [name, js] of BASES) assert.strictEqual(withBase(js, sh), ALL, `a base decision that ${name}: the wrapper writes everything runs`);
-    assert.strictEqual(withBase(out('code=false\nthemes=false\nui=false\nmacos=false\n'), sh), 'code=false\nthemes=false\nui=false\nmacos=false\n', 'a valid code=false passes through');
-    const cond = `  && ! { [ "$(grep -c '^code=' "$out")" = 1 ] && grep -qxE 'code=(true|false)' "$out"; }; then\n`;
-    const guard = /\nif \[ "\$\{1:-\}" != "--suites" \][\s\S]*?\n {2}all\nfi\n/;
+    assert.strictEqual(withBase(out('code=false\nthemes=false\nui=false\nmacos=false\nos_sensitive=false\n'), sh), 'code=false\nthemes=false\nui=false\nmacos=false\nos_sensitive=false\n', 'a valid decision passes through, each name once');
+    const cond = `  if [ "$n" != 1 ] || { [ "$v" != true ] && [ "$v" != false ]; }; then\n`;
+    const guard = /\nlines=""\nfor k in code themes ui macos os_sensitive; do\n[\s\S]*?\ndone\nprintf '%s' "\$lines" >> "\$out"\n/;
     /** The wrapper's anchors are found in this text, after `normalise`. */
     const anchored = (raw: string, normalise: (t: string) => string = toLf) => { const t = normalise(raw); return t.includes(cond) && guard.test(t); };
     assert.ok(anchored(shRaw), 'mutant anchors: the wrapper guard and its exact-value condition');
     assert.ok(anchored(crlfCopy(shRaw)), 'mutant anchors: found in a CRLF copy of the wrapper too (normalised first)');
     assert.ok(!anchored(crlfCopy(shRaw), (t) => t), 'mutant "normalisation stripped": on a CRLF copy the anchors are not found, so the normalisation is what finds them');
     const wrapperMutants: [string, string][] = [
-      ['no guard', sh.replace(guard, '\n')],
-      ['only that a code= line exists', sh.replace(cond, `  && ! grep -q '^code=' "$out"; then\n`)],
-      ['any one code= line', sh.replace(cond, `  && ! [ "$(grep -c '^code=' "$out")" = 1 ]; then\n`)],
-      ['a valid value anywhere, not exactly one line', sh.replace(cond, `  && ! grep -qxE 'code=(true|false)' "$out"; then\n`)],
+      ['no guard (the raw output passed on)', sh.replace(guard, '\nif [ -f "$raw" ]; then cat "$raw" >> "$out"; fi\n')],
+      ['only that a line exists', sh.replace(cond, `  if [ "$n" = 0 ]; then\n`)],
+      ['any one line', sh.replace(cond, `  if [ "$n" != 1 ]; then\n`)],
+      ['a valid value, not exactly one line', sh.replace(cond, `  if { [ "$v" != true ] && [ "$v" != false ]; }; then\n`)],
     ];
     for (const [name, text] of wrapperMutants) {
       assert.notStrictEqual(text, sh, `wrapper mutant "${name}": the text to change is there`);

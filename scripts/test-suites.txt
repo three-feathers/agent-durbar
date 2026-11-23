@@ -130,6 +130,8 @@ test:gitstatus
 test:officeops
 test:uisuite
 test:cichanges
+test:ciossensitive
+test:uievents
 test:workflowconcurrency
 test:fastlane
 test:pathdirs
@@ -235,7 +237,9 @@ test:selfupdate-feed
 test:selfupdate-feedget
 test:selfupdate-notes
 test:selfupdate-installtype
+test:selfupdate-checker
 test:selfupdate-schedule
+test:selfupdate-settings
 test:releases-json
 test:sessionsummary
 test:helpercard
