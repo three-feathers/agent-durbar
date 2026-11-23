@@ -18,14 +18,15 @@ const fl = require(path.join(ROOT, 'scripts', 'fast-lane.js')) as {
   needsBuild: (suites: { name: string; steps: string[][] }[], read?: (p: string) => string) => boolean;
 };
 type Plan = { run: string[]; tooSlow: string[]; overBudget: string[]; seconds: number };
-type RunOpts = { bail: boolean; ctl: { abort?: () => void }; onSuite?: (t: { name: string; wall: number; cpu: null }) => void };
+type RunOpts = { bail: boolean; ctl: { abort?: () => void }; onSuite?: (t: { name: string; wall: number; cpu: null }) => void; spawnFn?: (cmd: string, args: string[], opts: object) => unknown };
 type Proc = { on(sig: string, h: () => void): unknown; removeListener(sig: string, h: () => void): unknown };
 type Lane = {
   planSuites: (names: string[], times?: Record<string, unknown> | null, o?: { heavy?: number; budget?: number }) => Plan & { broken: boolean };
   readTimes: (text?: string) => Record<string, unknown> | null;
   prepareRun: (asked: string[], pkg: { scripts: Record<string, string> }, times?: Record<string, unknown> | null, list?: string[]) => { plan: Plan; suites: { name: string }[] };
   planLines: (plan: Plan & { broken: boolean }, asked: number) => string[];
-  runLane: (o: { suites: { name: string }[]; jobs: number; deadlineMs?: number; run?: (o: RunOpts) => Promise<{ failed: string[]; times?: unknown[] }>; setTimer?: (f: () => void, ms: number) => unknown; clearTimer?: (t: unknown) => void; proc?: Proc; onSuite?: (t: { name: string }) => void }) => Promise<{ code: number; note: string; times: unknown[] }>;
+  runLane: (o: { suites: { name: string }[]; jobs: number; deadlineMs?: number; run?: (o: RunOpts) => Promise<{ failed: string[]; times?: unknown[] }>; setTimer?: (f: () => void, ms: number) => unknown; clearTimer?: (t: unknown) => void; proc?: Proc; onSuite?: (t: { name: string }) => void; spawnFn?: (cmd: string, args: string[], opts: object) => unknown }) => Promise<{ code: number; note: string; times: unknown[] }>;
+  laneMain: (o: { asked: string[]; pkg: { scripts: Record<string, string> }; files?: (s: { name: string }[]) => { ok: boolean; phases: string[] }; lane?: (o: { suites: { name: string }[]; jobs: number; onSuite: (t: unknown) => void }) => Promise<{ code: number; note: string; times: unknown[] }>; summary?: (l: string) => void; put?: (t: string) => void }) => Promise<number>;
   HEAVY_S: number; BUDGET_S: number; DEADLINE_MS: number;
 };
 const norm = (t: string) => t.replace(/\r\n?/g, '\n');
@@ -87,6 +88,18 @@ assert.strictEqual(reads("const distance = 1;"), false, 'a word starting with di
     const prep = l.prepareRun(['test:c', 'test:a', 'test:b', 'test:d', 'test:e'], fpkg, times, ['test:a', 'test:b', 'test:c', 'test:d', 'test:e']);
     const want = l.planSuites(['test:c', 'test:a', 'test:b', 'test:d', 'test:e'], times).run;
     if (prep.suites.map((x) => x.name).join(' ') !== want.join(' ')) bad.push(`prepareRun does not run exactly the plan's suites (got ${prep.suites.map((x) => x.name).join(' ')}, plan ${want.join(' ')})`);
+    const brokenLine = l.planLines({ run: [], tooSlow: ['test:x'], overBudget: [], seconds: 0, broken: true }, 1)[0] || '';
+    if (!/timings file .* is missing or unreadable: the lane runs nothing/.test(brokenLine)) bad.push(`the broken-timings summary line is wrong (got ${brokenLine})`);
+    // laneMain, main's one path: only the suites prepareRun returns run, and with none nothing is prepared or run (real list and timings)
+    const ran: string[][] = [], prepared: string[][] = [];
+    const lm = (asked: string[]) => l.laneMain({ asked, pkg, files: (x) => { prepared.push(x.map((y) => y.name)); return { ok: true, phases: [] }; }, lane: async (o) => { ran.push(o.suites.map((y) => y.name)); return { code: 0, note: 'all passed', times: [] }; } });
+    try {
+      await lm(['test:cichanges', 'test:runtime-redact']);
+      if (ran.length !== 1 || ran[0].join(' ') !== 'test:cichanges') bad.push(`laneMain does not run exactly the plan's suites (got ${JSON.stringify(ran)})`);
+      ran.length = 0; prepared.length = 0;
+      await lm(['test:runtime-redact']);
+      if (ran.length || prepared.length) bad.push(`laneMain prepares or runs something when the plan is empty (got ${JSON.stringify({ ran, prepared })})`);
+    } catch (e) { bad.push(`laneMain does not run exactly the plan's suites (it threw: ${(e as Error).message})`); }
     const none = l.planLines({ run: [], tooSlow: ['test:x'], overBudget: ['test:y'], seconds: 0, broken: false }, 2)[0] || '';
     if (!/2 suite\(s\) picked, all over the time limits: left to Build and test/.test(none)) bad.push(`the all-over-budget text is wrong (got ${none})`);
     // the deadline, on a fake runner and a fake clock: one suite finishes, the other runs until stopped
@@ -122,6 +135,22 @@ assert.strictEqual(reads("const distance = 1;"), false, 'a word starting with di
     const proc3 = new EventEmitter();
     await l.runLane({ suites: [], jobs: 1, proc: proc3, run: async () => { installed = ['SIGINT', 'SIGTERM', 'SIGHUP'].filter((n) => proc3.listenerCount(n) === 1).length; return { failed: [] }; }, setTimer: () => 1, clearTimer: () => {} });
     if (installed !== 3) bad.push(`SIGINT, SIGTERM and SIGHUP are not all handled while the suites run (${installed} of 3)`);
+    // Windows stops a suite with `taskkill /T /F`, a process of its own: the lane waits for it to exit before it returns (review of
+    // #2049: the lane returned while the tree was still being killed); one that has already exited does not hold it up
+    const killer = Object.assign(new EventEmitter(), { exitCode: null as number | null, signalCode: null });
+    let returned = false;
+    const killRun = async (o: RunOpts) => { if (o.spawnFn) o.spawnFn('taskkill', ['/PID', '1', '/T', '/F'], {}); return { failed: [] }; };
+    const pk = l.runLane({ suites: [], jobs: 1, proc: new EventEmitter(), run: killRun, spawnFn: () => killer, setTimer: () => 1, clearTimer: () => {} }).then(() => { returned = true; });
+    await new Promise((r) => setImmediate(r));
+    if (returned) bad.push('the lane returns before taskkill has exited');
+    killer.exitCode = 0; killer.emit('close', 0);
+    await Promise.race([pk, new Promise((r) => setTimeout(r, 1000))]);
+    if (!returned) bad.push('the lane does not return once taskkill has exited');
+    const gone = { exitCode: 0, signalCode: null, once: () => gone };
+    let back = false;
+    const pg = l.runLane({ suites: [], jobs: 1, proc: new EventEmitter(), run: killRun, spawnFn: () => gone, setTimer: () => 1, clearTimer: () => {} }).then(() => { back = true; });
+    await Promise.race([pg, new Promise((r) => setTimeout(r, 1000))]);
+    if (!back) bad.push('a taskkill that has already exited holds the lane up');
     const fail = await l.runLane({ suites: [], jobs: 1, proc: new EventEmitter(), run: async () => ({ failed: ['test:x'] }), setTimer: () => 1, clearTimer: () => {} });
     if (fail.code !== 1) bad.push('a failing suite does not fail the lane');
     const ok = await l.runLane({ suites: [], jobs: 1, proc: new EventEmitter(), run: async () => ({ failed: [] }), setTimer: () => 1, clearTimer: () => {} });
@@ -152,6 +181,12 @@ assert.strictEqual(reads("const distance = 1;"), false, 'a word starting with di
         ['main runs what was asked, not the plan', swap('suites: plan.run.length ? pickSuites(plan.run, pkg, list) : []', 'suites: pickSuites([...new Set(asked)], pkg, list)'), /exactly the plan's suites/],
         ['the all-over-budget text', swap("suite(s) picked, all over the time limits: left to Build and test", 'no suite is touched'), /all-over-budget text/],
         ['the deadline is red', swap("if (late) return { code: 0, note:", "if (late) return { code: 1, note:"), /does not end the lane green/],
+        ['no wait for taskkill', swap('await waitForExit(killers, killWaitMs, setTimer, clearTimer);', ''), /returns before taskkill has exited/],
+        ['taskkill not tracked', swap('killers.push(c);', 'void c;'), /returns before taskkill has exited/],
+        ['an exited taskkill waited for', swap('c && c.exitCode === null && c.signalCode == null', 'c'), /already exited holds the lane up/],
+        ['the broken-timings line dropped', swap('if (plan.broken) out.push(', 'if (false) out.push('), /broken-timings summary line/],
+        ['main bypasses the plan', swap('const { plan, suites } = prepare(asked, pkg);', 'const { plan } = prepare(asked, pkg); const suites = pickSuites([...new Set(asked)], pkg);'), /laneMain does not run exactly the plan/],
+        ['main runs on an empty plan', swap('if (!suites.length) return 0;', ''), /laneMain prepares or runs something when the plan is empty/],
         ['a failure is green', swap("if (failed.length) return { code: 1,", "if (failed.length) return { code: 0,"), /failing suite does not fail/],
       ];
       for (const [name, l, expect] of mutants) { const bad = await laneProblems(l); assert.ok(bad.some((b) => expect.test(b)), `mutant "${name}" (${copy}) dies at its own assert (got: ${bad.join('; ') || 'nothing'})`); }
@@ -169,7 +204,8 @@ assert.strictEqual(reads("const distance = 1;"), false, 'a word starting with di
     const t0 = Date.now();
     const real = await load(toLf(raw)).runLane({
       suites: [{ name: 'test:sleep', steps: [['-e', code]] } as unknown as { name: string }], jobs: 1, deadlineMs: 1500,
-      run: (o) => rt.runSuites({ ...o, spawnFn: (cmd: string, args: string[], opts: object) => { const c = spawn(cmd, args, opts); if (c.pid) pids.push(c.pid); return c; } }),
+      // the lane's own spawn (it tracks taskkill on Windows) stays in the chain; only the suite's own node process is recorded
+      run: (o) => rt.runSuites({ ...o, spawnFn: (cmd: string, args: string[], opts: object) => { const c = (o.spawnFn || spawn)(cmd, args, opts) as import('child_process').ChildProcess; if (cmd === process.execPath && c.pid) pids.push(c.pid); return c; } }),
     });
     const took = Date.now() - t0;
     assert.ok(real.code === 0 && /deadline/.test(real.note) && /test:sleep/.test(real.note), `a real run past the deadline ends green and names the suite (got ${real.code} ${real.note})`);
@@ -179,9 +215,27 @@ assert.strictEqual(reads("const distance = 1;"), false, 'a word starting with di
     for (let i = 0; i < 50 && !fs.existsSync(pidFile); i++) await new Promise((r) => setTimeout(r, 100));
     if (fs.existsSync(pidFile)) gc = Number(fs.readFileSync(pidFile, 'utf8'));
     assert.ok(gc > 0, 'the sleeping suite started its grandchild');
-    for (let i = 0; i < 50 && (pids.some(alive) || alive(gc)); i++) await new Promise((r) => setTimeout(r, 100));
-    assert.ok(pids.length === 1 && !alive(pids[0]), 'the suite process is stopped');
+    for (let i = 0; i < 100 && (pids.some(alive) || alive(gc)); i++) await new Promise((r) => setTimeout(r, 50)); // bounded: 5 s
+    assert.strictEqual(pids.length, 1, 'one suite process was started (taskkill is not counted)');
+    assert.ok(!alive(pids[0]), 'the suite process is stopped');
     assert.ok(!alive(gc), 'the grandchild is stopped too (the whole tree)');
+    // the win32 path, emulated here on every OS (review of #2049: on Windows the test counted taskkill as a suite): run-tests.js stops
+    // the suite through `taskkill` with the same spawn, here a stand-in that kills the pid. Only the suite's node process is a suite;
+    // the lane waits for the stand-in to exit; the suite is gone.
+    const wpids: number[] = [], cmds: string[] = [];
+    const w = await load(toLf(raw)).runLane({
+      suites: [{ name: 'test:sleep', steps: [['-e', 'setTimeout(()=>{},60000)']] } as unknown as { name: string }], jobs: 1, deadlineMs: 1000,
+      spawnFn: (cmd: string, args: string[], opts: object) => {
+        cmds.push(path.basename(cmd));
+        if (cmd === 'taskkill') return spawn(process.execPath, ['-e', `try{process.kill(${Number(args[1])},'SIGKILL')}catch(e){}`], { stdio: 'ignore' });
+        return spawn(cmd, args, opts);
+      },
+      run: (o) => rt.runSuites({ ...o, platform: 'win32', spawnFn: (cmd: string, args: string[], opts: object) => { const c = (o.spawnFn || spawn)(cmd, args, opts) as import('child_process').ChildProcess; if (cmd === process.execPath && c.pid) wpids.push(c.pid); return c; } }),
+    });
+    assert.ok(cmds.includes('taskkill'), `the emulated win32 stop goes through taskkill (spawned: ${cmds.join(' ')})`);
+    assert.strictEqual(wpids.length, 1, 'win32: only the suite node process is counted, not taskkill');
+    for (let i = 0; i < 100 && alive(wpids[0]); i++) await new Promise((r) => setTimeout(r, 50));
+    assert.ok(!alive(wpids[0]) && w.code === 0 && /test:sleep/.test(w.note), `win32: the suite is stopped and the lane ends green naming it (got ${w.code} ${w.note})`);
     fs.rmSync(tmp, { recursive: true, force: true });
   };
   laneDone = run();
@@ -216,6 +270,7 @@ function problems(text: string): string[] {
   if (runLines(code).some((l) => l.includes('${{'))) bad.push('a value from the PR in a shell string');
   if (!/FAST_SUITES: \$\{\{ steps\.pick\.outputs\.suites \}\}\n\s+run: node scripts\/fast-lane\.js\n/.test(code)) bad.push('the suites do not reach the runner through env');
   if (/continue-on-error/.test(code)) bad.push('continue-on-error hides a red lane');
+  if (!/CAPPED: \$\{\{ steps\.changes\.outputs\.capped \|\| steps\.own\.outputs\.capped \}\}/.test(code) || !/if \[ -z "\$suites" \] && \[ -n "\$CAPPED" \]; then echo "No npm test suite picked: [^"]*more than 40 files/.test(code)) bad.push('the summary does not say when a big folder was the only link (capped)');
   const m = /timeout-minutes: (\d+)/.exec(code);
   if (!m || Number(m[1]) > 10) bad.push('no timeout of at most 10 minutes');
   return bad;
@@ -238,7 +293,8 @@ const mutants: [string, string, string][] = [
   ["the PR's copy decides", swap('run: bash .github/scripts/ci-changes.sh --suites\n', 'run: node .github/scripts/ci-changes.js --suites\n'), 'the base copy of the one decision does not pick'],
   ['suites in the shell string', swap('run: node scripts/fast-lane.js\n', 'run: node scripts/fast-lane.js ${{ steps.pick.outputs.suites }}\n'), 'a value from the PR in a shell string'],
   ['continue-on-error', swap('        run: node scripts/fast-lane.js\n', '        continue-on-error: true\n        run: node scripts/fast-lane.js\n'), 'continue-on-error hides a red lane'],
-  ['a long timeout', swap(/timeout-minutes: \d+/, 'timeout-minutes: 25'), 'no timeout of at most 10 minutes'],
+  ['no capped summary line', swap(/ {10}if \[ -z "\$suites" \] && \[ -n "\$CAPPED" \][^\n]*\n {10}elif/, '          if'), 'the summary does not say when a big folder was the only link (capped)'],
+    ['a long timeout', swap(/timeout-minutes: \d+/, 'timeout-minutes: 25'), 'no timeout of at most 10 minutes'],
 ];
 for (const [name, text, expect] of mutants) assert.ok(problems(text).includes(expect), `mutant "${name}" dies at its own assert (got: ${problems(text).join('; ') || 'nothing'})`);
 // advisory: the lane's check names are not in the required list the spec records (spec 117 O1 table)

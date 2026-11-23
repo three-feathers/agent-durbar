@@ -16,7 +16,7 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { spawnSync } = require('child_process');
+const { spawn, spawnSync } = require('child_process');
 const { readSuiteList, loadSuites, runSuites, summaryHeader, summaryRow, formatSummary } = require('./run-tests');
 const { printable } = require('./safe-print');
 
@@ -76,24 +76,41 @@ function planLines(plan, asked) {
   return out;
 }
 const SIGNALS = [['SIGINT', 2], ['SIGTERM', 15], ['SIGHUP', 1]];
+const KILL_WAIT_MS = 10000;
+/** Resolves when every child has exited (one already gone counts at once; an error counts as exited), or after `ms`. */
+function waitForExit(children, ms, setTimer = setTimeout, clearTimer = clearTimeout) {
+  const open = children.filter((c) => c && c.exitCode === null && c.signalCode == null);
+  if (!open.length) return Promise.resolve();
+  return new Promise((resolve) => {
+    let left = open.length;
+    const t = setTimer(resolve, ms);
+    const done = () => { if (--left === 0) { clearTimer(t); resolve(); } };
+    for (const c of open) { let once = false; const end = () => { if (!once) { once = true; done(); } }; c.once('close', end); c.once('error', end); }
+  });
+}
 /** Run the suites with a wall-clock deadline. Children are spawned detached (bail mode of run-tests.js), so a stop takes each suite's
  *  whole process tree (POSIX process group; Windows taskkill /T): nothing is left running. SIGINT, SIGTERM and SIGHUP stop them the same
  *  way (the handlers are removed when the run ends) and give 128 + the signal number. Resolves to { code, note, times }: 1 when a suite
  *  failed, 0 when all passed or when the deadline stopped the rest (advisory: those run in Build and test; the note names them).
  *  `onSuite` gets each finished suite (the summary rows). Everything outside is injectable for tests. */
-async function runLane({ suites, jobs, deadlineMs = DEADLINE_MS, run = runSuites, setTimer = setTimeout, clearTimer = clearTimeout, proc = process, onSuite = () => {} }) {
+async function runLane({ suites, jobs, deadlineMs = DEADLINE_MS, run = runSuites, setTimer = setTimeout, clearTimer = clearTimeout, proc = process, onSuite = () => {}, spawnFn = spawn, killWaitMs = KILL_WAIT_MS }) {
   const ctl = {};
+  // Windows: a stop is `taskkill /PID n /T /F`, a process of its own that run-tests.js does not wait for (review of #2049: the lane
+  // returned while taskkill was still killing the tree). Every taskkill started here is awaited (bounded) before the lane returns.
+  const killers = [];
+  const spawnTracked = (cmd, args, opts) => { const c = spawnFn(cmd, args, opts); if (/^taskkill(\.exe)?$/i.test(path.basename(String(cmd)))) killers.push(c); return c; };
   let late = false, signalled = 0;
   const finished = new Set();
   const handlers = SIGNALS.map(([sig, n]) => { const h = () => { if (!signalled) signalled = 128 + n; if (ctl.abort) ctl.abort(); }; proc.on(sig, h); return [sig, h]; });
   const timer = setTimer(() => { late = true; if (ctl.abort) ctl.abort(); }, deadlineMs);
   let r;
   try {
-    r = await run({ suites, jobs, bail: true, ctl, onSuite: (t) => { finished.add(t.name); try { onSuite(t); } catch { /* the summary is optional */ } } });
+    r = await run({ suites, jobs, bail: true, ctl, spawnFn: spawnTracked, onSuite: (t) => { finished.add(t.name); try { onSuite(t); } catch { /* the summary is optional */ } } });
   } finally {
     clearTimer(timer);
     for (const [sig, h] of handlers) proc.removeListener(sig, h);
   }
+  await waitForExit(killers, killWaitMs, setTimer, clearTimer);
   const times = (r && r.times) || [];
   const failed = ((r && r.failed) || []).filter(Boolean);
   const rest = suites.map((x) => x.name).filter((n) => !finished.has(n));
@@ -133,40 +150,50 @@ function needsBuild(suites, read = (p) => { try { return fs.readFileSync(path.jo
   }));
 }
 
-function main() {
-  const asked = (process.argv.slice(2).length ? process.argv.slice(2) : String(process.env.FAST_SUITES || '').split(/\s+/)).filter(Boolean);
-  const summary = (line) => { console.log(line); if (process.env.GITHUB_STEP_SUMMARY) try { fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, line + '\n'); } catch { /* no summary */ } };
-  if (!asked.length) { console.log('fast lane: no suite to run'); return; }
-  const pkg = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8'));
-  const { plan, suites } = prepareRun(asked, pkg);
-  for (const line of planLines(plan, new Set(asked).size)) summary(`Fast lane (${process.platform}): ${line}`);
-  if (!suites.length) return;
-  const times = [];
-  const phase = (label, fn) => { const t = Date.now(); const ok = fn(); times.push(`${label} ${((Date.now() - t) / 1000).toFixed(1)} s`); return ok; };
+/** Prepare the run: compile the picked test files, build the app when a step file reads dist/, fetch Electron for the suites that need it.
+ *  Returns { ok, phases } (phase labels with seconds, for the summary). */
+function prepareFiles(suites) {
+  const phases = [];
+  const phase = (label, fn) => { const t = Date.now(); const ok = fn(); phases.push(`${label} ${((Date.now() - t) / 1000).toFixed(1)} s`); return ok; };
   const tsc = (args) => spawnSync(process.execPath, [require.resolve('typescript/bin/tsc'), ...args], { cwd: ROOT, stdio: 'inherit', shell: false }).status === 0;
   const sources = tsSources(suites);
   if (sources.length) {
     const cfg = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'fast-lane-')), 'tsconfig.json');
     fs.writeFileSync(cfg, JSON.stringify(fastTsconfig(sources), null, 2));
-    if (!phase(`compile ${sources.length} test file(s)`, () => tsc(['-p', cfg]))) process.exit(1);
+    if (!phase(`compile ${sources.length} test file(s)`, () => tsc(['-p', cfg]))) return { ok: false, phases };
   }
-  if (needsBuild(suites)) {
-    if (!phase('build the app', () => tsc(['-p', 'tsconfig.json']) && spawnSync(process.execPath, ['scripts/copy-assets.js'], { cwd: ROOT, stdio: 'inherit', shell: false }).status === 0)) process.exit(1);
-  }
+  if (needsBuild(suites) && !phase('build the app', () => tsc(['-p', 'tsconfig.json']) && spawnSync(process.execPath, ['scripts/copy-assets.js'], { cwd: ROOT, stdio: 'inherit', shell: false }).status === 0)) return { ok: false, phases };
   if (suites.some((s) => /checkfuses|macos/.test(s.name))) {
     const { ensureElectron } = require('./ensure-electron');
     phase('fetch Electron', () => ensureElectron());
   }
-  const t0 = Date.now();
-  const jobs = Math.max(1, Number(process.env.TEST_JOBS) || Math.min(os.cpus().length, 8));
-  const put = (text) => { if (process.env.GITHUB_STEP_SUMMARY) try { fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, text); } catch { /* no summary */ } };
+  return { ok: true, phases };
+}
+/** The lane from the decider's names to an exit code, on ONE path (review of #2049): the suites that run are only the ones
+ *  `prepare` (prepareRun) returns; with none, nothing is prepared or run. Everything outside is injected, so the test drives it. */
+async function laneMain({ asked, pkg, prepare = prepareRun, files = prepareFiles, lane = runLane, summary = () => {}, put = () => {}, jobs = 1, platform = process.platform, now = Date.now }) {
+  if (!asked.length) { summary('fast lane: no suite to run'); return 0; }
+  const { plan, suites } = prepare(asked, pkg);
+  for (const line of planLines(plan, new Set(asked).size)) summary(`Fast lane (${platform}): ${line}`);
+  if (!suites.length) return 0;
+  const prep = files(suites);
+  if (!prep.ok) { summary(`${prep.phases.join('; ')}: the test files did not compile or build`); return 1; }
+  const t0 = now();
   put('\n' + summaryHeader(suites.length, { jobs })); // spec 117 FR-017: one row per suite as it ends, then the slowest suites
-  runLane({ suites, jobs, onSuite: (t) => put(summaryRow(t)) }).then(({ code, note, times: suiteTimes }) => {
-    if (suiteTimes.length) put('\n' + formatSummary(suiteTimes, { jobs, top: 10 }).replace('### Suite times', '### Slowest suites') + '\n');
-    summary(`${times.join('; ')}${times.length ? '; ' : ''}suites ${((Date.now() - t0) / 1000).toFixed(1)} s; ${note}`);
-    process.exit(code);
-  });
+  const { code, note, times } = await lane({ suites, jobs, onSuite: (t) => put(summaryRow(t)) });
+  if (times.length) put('\n' + formatSummary(times, { jobs, top: 10 }).replace('### Suite times', '### Slowest suites') + '\n');
+  summary(`${prep.phases.join('; ')}${prep.phases.length ? '; ' : ''}suites ${((now() - t0) / 1000).toFixed(1)} s; ${note}`);
+  return code;
 }
 
-module.exports = { pickSuites, tsSources, fastTsconfig, needsBuild, READS_DIST, readTimes, planSuites, prepareRun, planLines, runLane, SIGNALS, HEAVY_S, BUDGET_S, DEADLINE_MS };
+function main() {
+  const asked = (process.argv.slice(2).length ? process.argv.slice(2) : String(process.env.FAST_SUITES || '').split(/\s+/)).filter(Boolean);
+  const put = (text) => { if (process.env.GITHUB_STEP_SUMMARY) try { fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, text); } catch { /* no summary */ } };
+  const summary = (line) => { console.log(line); put(line + '\n'); };
+  const pkg = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8'));
+  const jobs = Math.max(1, Number(process.env.TEST_JOBS) || Math.min(os.cpus().length, 8));
+  laneMain({ asked, pkg, summary, put, jobs }).then((code) => process.exit(code), (e) => { console.error(e && e.message ? printable(e.message) : e); process.exit(1); });
+}
+
+module.exports = { laneMain, prepareFiles, pickSuites, tsSources, fastTsconfig, needsBuild, READS_DIST, readTimes, planSuites, prepareRun, planLines, runLane, waitForExit, SIGNALS, HEAVY_S, BUDGET_S, DEADLINE_MS };
 if (require.main === module) main();

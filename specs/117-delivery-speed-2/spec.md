@@ -443,3 +443,10 @@ FR-018 says the 25-minute limit is not raised first. The queue is blocked now (#
 - 6: the summary says when a big folder was the only link and when every pick was over the limits.
 - Not built: a separate "small base" for heads with no suites of their own. Both reported heads changed sources and fixtures (the base picked big lists from real links); a head with no own change picks nothing already, so the time plan and the folder cap are the whole fix.
 
+### 2026-11-23: Paco's round 2 on #2049 (four findings)
+
+- The Windows failure was the test: its pid list counted the `taskkill` that run-tests.js starts through the same spawn. Only the suite's node process is counted now, and an emulated win32 run (a stand-in `taskkill`) runs on every OS. `runLane` also waits (bounded, 10 s) for any `taskkill` it started to exit before it returns.
+- The broken-timings summary line is tested.
+- `main` is a thin wrapper around `laneMain`, which runs only the suites `prepareRun` returns and nothing on an empty plan (tested, two mutants).
+- `capped=1` is tested through the CLI and the wrapper on a 41-file folder, and the workflow's summary line for it is checked.
+

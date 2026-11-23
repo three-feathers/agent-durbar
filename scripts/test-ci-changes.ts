@@ -485,6 +485,31 @@ assert.strictEqual(cc.decide(['docs/zz-none.md', 'specs/999-none/spec.md'], io()
   git('add', '-A'); git('commit', '-q', '-m', 'a test changes');
   assert.strictEqual(run('pull_request', ['--suites']), 'fast=yes\nsuites=test:x\n', '--suites on a pull request picks the changed suite');
   for (const ev of ['push', 'merge_group', 'schedule', 'workflow_dispatch', '']) assert.strictEqual(run(ev, ['--suites']), 'fast=yes\nsuites=\n', `--suites on ${ev || 'no event'}: the lane runs on pull requests only`);
+  // spec 117 FR-390 (review of #2049): a change in a big folder (more than 40 files) that only a folder literal names picks nothing and
+  // writes `capped=1`, through the CLI and through the wrapper (the base copy); the mutant without that output line loses it
+  fs.mkdirSync(path.join(repo, 'scripts', 'big'));
+  for (let i = 0; i < 41; i++) fs.writeFileSync(path.join(repo, 'scripts', 'big', `f${i}.txt`), 'x');
+  fs.writeFileSync(path.join(repo, 'scripts', 'test-x.js'), "require('path').join(__dirname, 'big');\n");
+  git('add', '-A'); git('commit', '-q', '-m', 'a big folder a test names');
+  fs.writeFileSync(path.join(repo, 'scripts', 'big', 'new.txt'), 'x');
+  git('add', '-A'); git('commit', '-q', '-m', 'a file in the big folder');
+  assert.strictEqual(run('pull_request', ['--suites']), 'fast=yes\nsuites=\ncapped=1\n', '--suites: a big folder picks nothing and says so (capped=1)');
+  {
+    const jsPath = path.join(repo, '.github', 'scripts', 'ci-changes.js');
+    const js = fs.readFileSync(jsPath, 'utf8');
+    const line = "    if (capped.length) out('capped', String(capped.length));";
+    assert.ok(js.includes(line), 'mutant anchor: the capped output line');
+    fs.writeFileSync(jsPath, js.replace(line, ''));
+    assert.strictEqual(run('pull_request', ['--suites']), 'fast=yes\nsuites=\n', 'mutant "no capped output" dies: the line is gone');
+    fs.writeFileSync(jsPath, js);
+    let canBash = true;
+    try { execFileSync('bash', ['-c', 'exit 0'], { stdio: 'ignore', shell: false }); } catch { canBash = false; }
+    if (canBash) {
+      const outFile = path.join(tmp, 'sh-capped');
+      execFileSync('bash', [path.join('.github', 'scripts', 'ci-changes.sh'), '--suites'], { cwd: repo, env: { ...process.env, EVENT_NAME: 'pull_request', GITHUB_OUTPUT: outFile }, stdio: 'ignore', shell: false });
+      assert.strictEqual(fs.readFileSync(outFile, 'utf8'), 'fast=yes\nsuites=\ncapped=1\n', 'the wrapper (base copy) writes capped=1 too');
+    }
+  }
   for (const ev of ['push', 'merge_group', 'schedule', 'workflow_dispatch', '']) assert.strictEqual(run(ev), 'code=true\nthemes=true\nui=true\nmacos=true\n', `${ev || 'no event'}: everything runs`);
   const ALL = 'code=true\nthemes=true\nui=true\nmacos=true\n';
   // finding 3: a file name with a newline and `::` is printed escaped, so it cannot start a workflow command (POSIX: Windows forbids the name)
