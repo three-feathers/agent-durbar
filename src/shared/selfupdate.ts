@@ -324,10 +324,12 @@ export function snoozeState(now: number, version: string, snooze: unknown, skip?
 /** FR-021 (T010): the `updates` object of the settings file, each key only in its exact shape. */
 export interface SelfUpdateSettings { selfCheck?: boolean; source?: string; snooze?: { version: string; until: number }; skip?: string; lastCheck?: { at: number; latest?: string } }
 
-/** An own data property's value: a getter is never run, an inherited or `__proto__`-set value never read. */
+/** An own enumerable data property: plain data, as JSON makes it (a getter, a hidden or an inherited property is not). */
+const plainData = (d: PropertyDescriptor | undefined): d is PropertyDescriptor => d !== undefined && 'value' in d && d.enumerable === true;
+/** An own enumerable data property's value: a getter is never run, a non-enumerable, inherited or `__proto__`-set value never read. */
 const own = (o: object, k: string): unknown => {
   const d = Object.getOwnPropertyDescriptor(o, k);
-  return d && 'value' in d ? d.value : undefined;
+  return plainData(d) ? d.value : undefined;
 };
 const stableVersion = (v: unknown): v is string => typeof v === 'string' && VERSION_KEY_RE.test(v);
 const time = (v: unknown): v is number => typeof v === 'number' && Number.isSafeInteger(v) && v >= 0;
@@ -352,10 +354,11 @@ export function parseUpdatesSettings(v: unknown): SelfUpdateSettings | undefined
 }
 
 const UPDATE_KEYS: readonly string[] = ['selfCheck', 'source', 'snooze', 'skip', 'lastCheck'];
-/** Only own string-keyed data properties, each named in `allowed` (no symbol, no accessor); a throwing proxy is refused. */
+/** Only own string-keyed enumerable data properties, each named in `allowed` (no symbol, no accessor, no hidden key); a throwing proxy is refused.
+ * So the keys checked here are exactly `Object.keys(o)`, the list the value loop walks (review of PR 2064, round 2). */
 const onlyDataKeys = (o: object, allowed: readonly string[]): boolean => {
   try {
-    return Reflect.ownKeys(o).every((k) => typeof k === 'string' && allowed.includes(k) && 'value' in (Object.getOwnPropertyDescriptor(o, k) ?? {}));
+    return Reflect.ownKeys(o).every((k) => typeof k === 'string' && allowed.includes(k) && plainData(Object.getOwnPropertyDescriptor(o, k)));
   } catch { return false; }
 };
 

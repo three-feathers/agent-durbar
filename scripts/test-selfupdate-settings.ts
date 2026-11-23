@@ -51,6 +51,7 @@ try {
   assert.strictEqual(gets, 0, 'FR-021: a getter is never run');
   assert.strictEqual(p(JSON.parse('{"__proto__":{"selfCheck":false},"evil":1}') as unknown), undefined, 'FR-021: a "__proto__" key and unknown keys give nothing');
   assert.strictEqual(p(Object.create({ selfCheck: false }) as unknown), undefined, 'FR-021: an inherited value is never read');
+  assert.strictEqual(p(Object.defineProperty({}, 'selfCheck', { value: false, enumerable: false })), undefined, 'FR-021: a hidden (non-enumerable) value is never read');
 
   // the whole settings file: a hostile updates object never stops the rest from loading
   const s = parseSettings(JSON.stringify({ seriousMode: true, updates: { selfCheck: 'no', source: 'https://evil.example/a/b', snooze: [1], skip: { x: 1 }, lastCheck: 'x', extra: 'y' } }));
@@ -72,7 +73,11 @@ try {
     [{ selfCheck: 'yes' }, 'selfCheck as a string'], [{ selfCheck: 1 }, 'selfCheck as a number'], [{ source: 'https://github.com/ravi/durbar' }, 'source as a URL'],
     [{ skip: '../x' }, 'skip as a path'], [{ snooze: { version: '0.1.30-rc.1', until: T0 } }, 'a pre-release snooze'], [{ snooze: { version: '0.1.30', until: T0, x: 1 } }, 'a snooze with an extra key'],
     [{ lastCheck: { at: T0, latest: 'x' } }, 'a lastCheck with a bad latest'], [{ skip: '0.1.30', selfCheck: 'on' }, 'a good field with a bad one'], [{ evil: 1 }, 'an unknown key'],
-    [JSON.parse('{"__proto__":{"selfCheck":true}}'), 'a __proto__ key'], [Object.defineProperty({}, 'skip', { enumerable: true, get: () => '0.1.30' }), 'a getter'], [['selfCheck'], 'an array'], [null, 'null'],
+    [JSON.parse('{"__proto__":{"selfCheck":true}}'), 'a __proto__ key'],
+    [Object.defineProperty({ skip: '0.1.30' }, 'source', { value: 'https://evil.example/a/b', enumerable: false }), 'a hidden (non-enumerable) bad key beside a good one'],
+    [Object.defineProperty({}, 'skip', { value: '0.1.30', enumerable: false }), 'a hidden (non-enumerable) good key'],
+    [{ skip: '0.1.30', [Symbol('selfCheck')]: true }, 'a symbol key'],
+    [{ snooze: Object.defineProperty({ version: '0.1.30', until: T0 }, 'x', { value: 1, enumerable: false }) }, 'a hidden key inside snooze'], [Object.defineProperty({}, 'skip', { enumerable: true, get: () => '0.1.30' }), 'a getter'], [['selfCheck'], 'an array'], [null, 'null'],
   ];
   for (const [patch, what] of bad) {
     assert.strictEqual(st.setUpdates(patch as never), false, `FR-021: ${what} refuses the whole patch`);
