@@ -1,0 +1,1 @@
+- **UI check shards are balanced from fresh timings** (spec 008): the recorded seconds per check that split the UI suite into shards are refreshed from six nightly runs and now include every variant of a check, so the Linux, Windows and macOS shards end closer together.
