@@ -430,7 +430,7 @@ function resolveWide(root, heads, headRev, self, lookup) {
 function report({ branchAdds, prs, skipped, noBase = [], base }, clashes, notes = [], wideCount = null) {
   const lines = [];
   const n = [...branchAdds.values()].reduce((a, s) => a + s.size, 0);
-  lines.push(`specs:numbers: ${n} number(s) added since ${base.slice(0, 9)}, checked against origin/main and ${prs.length} other open PR head(s)${skipped.length ? ` (${skipped.length} skipped: already in this branch or merged)` : ''}`);
+  lines.push(`specs:numbers: ${n} number(s) added since ${base.slice(0, 9)}, checked against origin/main and ${prs.length} other ${wideCount === null ? 'open PR ' : ''}head(s)${skipped.length ? ` (${skipped.length} skipped: already in this branch or merged)` : ''}`);
   if (wideCount !== null) lines.push(`specs:numbers: --wide: ${wideCount} remote branch(es) without an open PR and worktree branch(es) were in the list too`);
   for (const t of notes) lines.push(`specs:numbers: ${t}`);
   if (noBase.length) lines.push(`specs:numbers: WARN not compared (no common history with origin/main): ${noBase.join(', ')}`);
