@@ -49,11 +49,13 @@ for (const f of prFiles) assert.deepStrictEqual(concurrencyProblems(read(f)), []
 const base = read('ui-platforms.yml');
 assert.ok(prFiles.includes('ui-platforms.yml'), 'ui-platforms.yml is PR-triggered');
 const swap = (from: string, to: string): string => { assert.strictEqual(base.split(from).length - 1, 1, `mutant anchor once: ${from}`); return base.replace(from, () => to); };
-const grp = '${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}';
+// spec 117 FR-014 / O3 (T010, #2039): main pushes share 'ui-main'; the PR part of the group and the cancel are unchanged
+const grp = "${{ github.workflow }}-${{ github.event_name == 'push' && 'ui-main' || github.event.pull_request.number || github.run_id }}";
+const cancelLine = "cancel-in-progress: ${{ github.event_name == 'pull_request' || github.event_name == 'push' }}";
 const mutants: Record<string, string> = {
   'group without the PR number': swap(`group: ${grp}`, 'group: ${{ github.workflow }}-${{ github.ref }}'),
-  'cancel-in-progress false': swap("cancel-in-progress: ${{ github.event_name == 'pull_request' }}", 'cancel-in-progress: false'),
-  'cancel-in-progress not tied to pull_request': swap("cancel-in-progress: ${{ github.event_name == 'pull_request' }}", "cancel-in-progress: ${{ github.event_name == 'push' }}"),
+  'cancel-in-progress false': swap(cancelLine, 'cancel-in-progress: false'),
+  'cancel-in-progress not tied to pull_request': swap(cancelLine, "cancel-in-progress: ${{ github.event_name == 'push' }}"),
   'no concurrency block': base.replace(/\nconcurrency:[\s\S]*?\n(?=\S)/, '\n'),
 };
 assert.notStrictEqual(mutants['no concurrency block'], base, 'the block-removal mutant changed the file');

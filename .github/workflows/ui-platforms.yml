@@ -7,7 +7,14 @@ name: UI on three OSes
 #
 # Spec 008 FR-108 (owner decision 2026-10-22): ONE job per OS, except macOS in three shards (FR-182, owner decision 2026-11-07) (the 3 jobs per OS of FR-100 cost more queue than they saved), and
 # macOS only nightly and by hand (`gh workflow run ui-platforms.yml --ref <branch>`); a nightly failure opens or updates an issue
-# (nightly-watch.yml). Pull requests and pushes to main run Linux and Windows.
+# (nightly-watch.yml). Pushes to main run Linux and Windows; pull requests run Linux, and Windows only when OS-sensitive (next paragraph).
+#
+# Spec 117 FR-012 / O2 (owner decision, Vikram 2026-11-22, with Paco's variant; T403): on a pull request the Windows UI shards run
+# only when `os_sensitive` from .github/scripts/ci-changes.js (the one decision, the base branch's copy) is not exactly 'false': a
+# change to the main process, preload, build, packaging, dependencies, CI files, the driver plumbing, a font, a shell script, an
+# OS-using src/shared or src/adapters file or any unknown path starts them (fail closed). Otherwise they run after the merge (main
+# push), nightly and by hand (`gh workflow run ui-platforms.yml --ref <branch>` runs all three OSes on a PR's branch). The Linux UI
+# shards run on every PR that needs the UI suite; ci.yml's Windows "Build and test" still runs every unit test on every PR.
 #
 # Spec 008 FR-191 (owner decision, Vikram 2026-11-08): on a pull request the shards run only when something the app, its build or
 # the UI drivers use changed (`ui` from .github/scripts/ci-changes.js, the one decision; `paths:` below is only a coarse prefilter).
@@ -46,9 +53,12 @@ permissions:
   contents: read
 
 concurrency:
-  # FR-107: superseded PR runs are cancelled; main, nightly and by-hand runs each have their own group and always finish (#286)
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  # FR-107: superseded PR runs are cancelled. Spec 117 FR-014 / O3 (owner decision, Vikram 2026-11-22, T010) reverses FR-107's "main
+  # runs always finish" for this workflow only: every main push shares the group "UI on three OSes-ui-main", so a newer merge cancels
+  # the older main UI run and only the newest main push finishes its full matrix. Nightly and by-hand runs keep their own group
+  # (github.run_id) and are never cancelled.
+  group: ${{ github.workflow }}-${{ github.event_name == 'push' && 'ui-main' || github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' || github.event_name == 'push' }}
 
 jobs:
   # FR-191: a cheap Linux job decides (seconds); the shards wait for it. Every event but pull_request says ui=true.
@@ -59,6 +69,7 @@ jobs:
     timeout-minutes: 5
     outputs:
       ui: ${{ steps.changes.outputs.ui }}
+      os_sensitive: ${{ steps.changes.outputs.os_sensitive }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -81,8 +92,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # FR-108: macOS nightly and by hand only
-        os: ${{ fromJSON((github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && '["ubuntu-latest","macos-latest","windows-latest"]' || '["ubuntu-latest","windows-latest"]') }}
+        # FR-108: macOS nightly and by hand only; spec 117 FR-012 / O2: on a pull request Windows only unless os_sensitive is 'false'
+        # (missing or any other value runs Windows: fail closed)
+        os: ${{ fromJSON((github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && '["ubuntu-latest","macos-latest","windows-latest"]' || (github.event_name == 'pull_request' && needs.changes.outputs.os_sensitive == 'false') && '["ubuntu-latest"]' || '["ubuntu-latest","windows-latest"]') }}
         # FR-183: shard i of 4 runs a time-balanced quarter of the drivers (scripts/ui-suite.js --shard); macOS keeps 3 (FR-182)
         shard: [1, 2, 3, 4]
         exclude:
@@ -141,7 +153,9 @@ jobs:
   # FR-183: the one stable name for the whole UI suite: green only when every shard of every OS passed. A skipped (draft) or cancelled
   # shard is not a pass. Branch protection can require this job instead of the shards. FR-191: when the decision said ui=false (a
   # pull request that changes nothing the UI run uses) the shards are skipped on purpose and this job passes, saying so; a failed or
-  # cancelled decision job is a failure.
+  # cancelled decision job is a failure. Spec 117 O2: on a pull request with os_sensitive=false the matrix holds only the Linux shards,
+  # so `needs.ui.result` is theirs alone: an intentionally absent Windows shard cannot block the PR, a Windows shard that ran and
+  # failed or was cancelled fails it, and any failed, cancelled or skipped Linux shard still fails it.
   complete:
     name: UI suite complete
     if: ${{ always() && !github.event.pull_request.draft }}
@@ -154,12 +168,16 @@ jobs:
         env:
           CHANGES: ${{ needs.changes.result }}
           UI_NEEDED: ${{ needs.changes.outputs.ui }}
+          OS_SENSITIVE: ${{ needs.changes.outputs.os_sensitive }}
           RESULT: ${{ needs.ui.result }}
         run: |
-          echo "Decision: $CHANGES (ui=$UI_NEEDED); UI shards: $RESULT"
+          echo "Decision: $CHANGES (ui=$UI_NEEDED, os_sensitive=$OS_SENSITIVE); UI shards: $RESULT"
           test "$CHANGES" = "success"
           if [ "$UI_NEEDED" = "false" ]; then
             echo "Nothing the app, its build or the UI drivers use changed: the UI shards did not run (spec 008 FR-191)." | tee -a "$GITHUB_STEP_SUMMARY"
             exit 0
+          fi
+          if [ "$GITHUB_EVENT_NAME" = "pull_request" ] && [ "$OS_SENSITIVE" = "false" ]; then
+            echo "No OS-sensitive path changed: the Windows UI shards did not run on this pull request; they run after the merge, nightly and by hand (spec 117 FR-012)." | tee -a "$GITHUB_STEP_SUMMARY"
           fi
           test "$RESULT" = "success"
