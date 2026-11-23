@@ -106,8 +106,21 @@ const PREFIXED = [
  * such starts cannot fail over and over: that is what keeps it linear. The bearer must hold a `%` too, which base64 never does.
  */
 const LINE_BREAK = String.raw`(?:\\[nr]|[\r\n]){1,2}`;
-const NOT_B64_AFTER = String.raw`(?![A-Za-z0-9+/=])(?!${LINE_BREAK}[A-Za-z0-9+/=]{40})`;
-const B64_START = String.raw`(?:(?<![A-Za-z0-9+/_-])|${PCT_BOUNDED})(?<![A-Za-z0-9+/=]{40}${LINE_BREAK})`;
+/**
+ * Spec 012 (2026-11-23, T492): a `/` is a path or URL separator, not base64, when the run of path characters around it is short: back to the text's start or
+ * a character no path or base64 run holds (a blank, a quote, `:`, `?`, ...) within `PATH_RUN` characters before it, and, after a token, on to such a
+ * character within `PATH_RUN` characters after it. Base64 data is one long run, so inside it neither holds but within its first or last `PATH_RUN`
+ * characters, where a family's prefix and its non-base64 end must both fall. Each test is bounded, so the work per position is bounded (linear).
+ */
+const PATH_RUN = 128;
+const PATH_CH = '[A-Za-z0-9+/=._-]';
+const PATH_START = String.raw`(?<=\/)(?<=(?:^|[^A-Za-z0-9+/=._-])${PATH_CH}{0,${PATH_RUN}})`;
+const PATH_END = String.raw`(?=\/${PATH_CH}{0,${PATH_RUN}}(?![A-Za-z0-9+/=._-]))`;
+const NOT_B64_AFTER = String.raw`(?:(?![A-Za-z0-9+/=])|${PATH_END})(?!${LINE_BREAK}[A-Za-z0-9+/=]{40})`;
+const B64_START = String.raw`(?:(?<![A-Za-z0-9+/_-])|${PCT_BOUNDED}|${PATH_START})(?<![A-Za-z0-9+/=]{40}${LINE_BREAK})`;
+/** The two boundaries as before T492, for the step-off reading of the differential test only (`_withoutPathContextsForTest`). */
+const NOT_B64_AFTER_BEFORE = String.raw`(?![A-Za-z0-9+/=])(?!${LINE_BREAK}[A-Za-z0-9+/=]{40})`;
+const B64_START_BEFORE = String.raw`(?:(?<![A-Za-z0-9+/_-])|${PCT_BOUNDED})(?<![A-Za-z0-9+/=]{40}${LINE_BREAK})`;
 const B64_PREFIXED = [
   String.raw`ABSK[A-Za-z0-9+/]{100,}={0,2}`, // Amazon Bedrock, long-lived
   String.raw`AIza${W}{35}(?![_-])`, // Google API key (Gemini too)
@@ -285,16 +298,25 @@ export function withoutLoose<T>(fn: () => T): T {
   looseOff = true;
   try { return fn(); } finally { looseOff = false; }
 }
+const B64_RULE = new RegExp(`(?=[A-Za-z0-9])${B64_START}(?:${B64_PREFIXED})${NOT_B64_AFTER}`, 'g');
+const GOOG_RULE = new RegExp(`(?=[A-Za-z0-9])${B64_START}GOOG1[A-Z0-9]{40,}(?:(?![A-Z0-9+/=])|${PATH_END})(?!${LINE_BREAK}[A-Za-z0-9+/=]{40})`, 'g');
+const B64_RULE_BEFORE = new RegExp(`(?=[A-Za-z0-9])${B64_START_BEFORE}(?:${B64_PREFIXED})${NOT_B64_AFTER_BEFORE}`, 'g');
+const GOOG_RULE_BEFORE = new RegExp(`(?=[A-Za-z0-9])${B64_START_BEFORE}GOOG1[A-Z0-9]{40,}(?![A-Z0-9+/=])(?!${LINE_BREAK}[A-Za-z0-9+/=]{40})`, 'g');
+/** T492's switch: on in the app; off only inside `_withoutPathContextsForTest`, which reads as before T492 (the differential test). */
+let pathOn = true;
+export function _withoutPathContextsForTest<T>(f: () => T): T { const was = pathOn; pathOn = false; try { return f(); } finally { pathOn = was; } }
 const TOKEN_SHAPES: Array<RegExp | Guarded | ((s: string, mask: string) => string)> = [
   maskPrefixedGlued,
-  new RegExp(`(?=[A-Za-z0-9])${B64_START}(?:${B64_PREFIXED})${NOT_B64_AFTER}`, 'g'),
+  B64_RULE,
   // Google storage HMAC: its body is upper case and digits only, so it ends at any other character, a letter included (a second token glued to it starts in lower case: issue #1237)
-  new RegExp(`(?=[A-Za-z0-9])${B64_START}GOOG1[A-Z0-9]{40,}(?![A-Z0-9+/=])(?!${LINE_BREAK}[A-Za-z0-9+/=]{40})`, 'g'),
+  GOOG_RULE,
   /sk-ant-[A-Za-z0-9_-]{8,}/g, // no start: a key glued to a letter (`xsk-ant-…`) is still a key (from spec 103's `maskAll`)
   guarded(shape(String.raw`xox[os]-[0-9]{1,20}-[0-9]{1,20}-[0-9]{1,20}-[A-Fa-f0-9]{8,}`), /xox[os]-[0-9]/), // the legacy four-part Slack form (a plain `xoxo-…` is a hug: stays)
   // Microsoft Teams incoming webhook: the host stays, the path is the secret.
   guarded(new RegExp(String.raw`(?<=${ci('.webhook.office.com')}${HOSTX}${SL2}${ci('webhookb2')}${SL2})[A-Za-z0-9@_-]{20,}(?:(?:${SL})[A-Za-z0-9@_-]{1,128}){0,4}`, 'g'), /webhook\.office\.com/i),
 ];
+const TOKEN_SHAPES_BEFORE = TOKEN_SHAPES.map((r) => (r === B64_RULE ? B64_RULE_BEFORE : r === GOOG_RULE ? GOOG_RULE_BEFORE : r));
+const tokenShapes = (): typeof TOKEN_SHAPES => (pathOn ? TOKEN_SHAPES : TOKEN_SHAPES_BEFORE);
 
 /** A private key block in any spelling (PEM, OpenSSH, encrypted, PGP; lower case, runs of spaces): to its END line or, cut off, to the end of the text (the first match takes the rest, so no rescan). A PUBLIC block does not match. */
 const KEY_BLOCK = /-----BEGIN[\sA-Z0-9_-]{0,100}?PRIVATE\s{1,8}KEY(?:\s{1,8}BLOCK)?-----[\s\S]*?(?:-----END[\sA-Z0-9_-]{0,100}?PRIVATE\s{1,8}KEY(?:\s{1,8}BLOCK)?-----|$)/gi;
@@ -374,6 +396,15 @@ const PHRASE_TAIL = `(?:${PHRASE_WORD}){0,8}`; // optional: a required tail fail
  */
 const named = (before: string, extra: string, names = SECRET_NAMES, short = false, tail = ''): RegExp => new RegExp(String.raw`(${before}${names}${Q_END}\s{0,8}(?::=|=>|[:=]|%3[DdAa])\s{0,8}${Q_VALUE})(?:${SLASH_B64}|(?!\/|${NOT_A_VALUE})(?:(?=${NV}{8})(?=${NV}{0,128}[0-9])|(?=${NV}{20})(?=[A-Za-z_.-]{0,128}[+=~@!#^*?])${short ? `|${SHORT_VALUE}` : ''})${short ? `|(?=${KEY_START})` : ''})${valueBody(extra)}${tail}`, 'g');
 const NAMED_IN_QUERY = named('[?&]', '#');
+/**
+ * Spec 012 (2026-11-23, T492): a named value with a path glued after it (`<name>=<value>\<path>` or `/<path>`). `NOT_A_VALUE` reads the whole as a path
+ * (`keys/server_2026.pem` is one), so `NAMED_SECRET` leaves it. This pass runs after it and hides the first segment alone, up to the `\` or `/`, when that
+ * segment reads as a key by itself: 8 or more characters with an upper-case letter, a lower-case letter and a digit, or 16 or more lower-case hex
+ * characters with a letter and a digit. The path after it stays as written; a word-like or lower-case folder name (`keys`, `server_2026`) stays too.
+ */
+const SEG = String.raw`[^${STOP}$*/]`;
+const NO_MATCH = /(?!)/g;
+const NAMED_SEGMENT = new RegExp(String.raw`(${SECRET_NAMES}${Q_END}\s{0,8}(?::=|=>|[:=]|%3[DdAa])\s{0,8}${Q_VALUE})(?=[A-Za-z0-9])(?:(?=${SEG}{8})(?=${SEG}{0,128}[A-Z])(?=${SEG}{0,128}[a-z])(?=${SEG}{0,128}[0-9])|(?=[0-9a-f]{16,}[\\/])(?=[0-9a-f]{0,64}[0-9])(?=[0-9a-f]{0,64}[a-f]))${SEG}+(?=[\\/])`, 'g');
 const NAMED_SECRET = named('', '', SECRET_NAMES, false);
 /** A password with several words is its own pass so that `NAMED_SECRET` sees the rest as a mask. */
 const NAMED_PHRASE = named('', '', PASSWORD_NAMES, true, PHRASE_TAIL);
@@ -553,7 +584,7 @@ function maskList(text: string, mask: string, guard: boolean, list: ReadonlyArra
 }
 /** Only the token shapes. */
 function maskBare(text: string, mask: string, guard: boolean): string {
-  return maskList(maskList(text, mask, guard, HELD_SHAPES), mask, guard, TOKEN_SHAPES);
+  return maskList(maskList(text, mask, guard, HELD_SHAPES), mask, guard, tokenShapes());
 }
 
 /** Characters a glued second token is made of, and the ones it may start with (`sk-` body swallowing `glpat` leaves `-<body>`; `glpat-` swallowing `sha256` leaves `~<body>`; a body swallowing the start of a base64 token such as `ABSK` stops at its first `/` or `+`: pre-review of PR 1317). */
@@ -626,13 +657,13 @@ function maskShapes(text: string, mask: string, guard: boolean): string {
   out = maskList(out, mask, guard, HELD_SHAPES);
   replaced(PATTERNS);
   out = maskCookies(out, mask);
-  out = maskList(out, mask, guard, TOKEN_SHAPES);
+  out = maskList(out, mask, guard, tokenShapes());
   // The named-secret rules before the glued rest: a mask glued to a secret name (`<token>-dbpassword: "V"`) must not fold the name into the mask first, or the value after it is no value of any name (review of PR 1317, Ruben).
   // A value with its own shape is gone whole by now (a named-secret value stops at `\`, which would leave the tail of `token=123456\u003A…`).
   const value = (m: string, keep: string): string => { const v = m.slice(keep.length); const i = closerAt(v); return keep + mask + (i < 0 ? '' : v.slice(i)); };
   // the rest glued to a mask joins it (`keep` ends with the mask, so nothing is added but a closing bracket of one opened before the name); first, so it sees only the masks of earlier pieces and passes, never the `#` a query mask of this pass stops at
   const rest = (m: string, keep: string): string => { const v = m.slice(keep.length); const i = closerAt(v); return keep + (i < 0 ? '' : v.slice(i)); };
-  return maskGluedRest(out.replace(NAMED_MASKED_REST, rest).replace(NAMED_IN_QUERY, value).replace(NAMED_PHRASE_MASKED, value).replace(NAMED_PHRASE, value).replace(NAMED_SHORT, value).replace(NAMED_SECRET, value), mask);
+  return maskGluedRest(out.replace(NAMED_MASKED_REST, rest).replace(NAMED_IN_QUERY, value).replace(NAMED_PHRASE_MASKED, value).replace(NAMED_PHRASE, value).replace(NAMED_SHORT, value).replace(NAMED_SECRET, value).replace(pathOn ? NAMED_SEGMENT : NO_MATCH, value), mask);
 }
 
 /** The one key-shape mask (FR-031): replaces every key block, secret header, URL credential, named secret and bare token shape with `mask` (a JWT's leading underscores and words stay). `redact` adds the env values and the cut. Linear. */
@@ -651,7 +682,7 @@ export function maskBareTokenShapes(text: string, mask: string): string {
   return maskBare(text, mask, true);
 }
 /** Test only: every pattern's source, for the check that none nests quantifiers (`scripts/test-redact-shapes.ts`). */
-export const _maskSourcesForTest = (): string[] => [...HELD_PATTERNS, ...PATTERNS, ...[...HELD_SHAPES, ...TOKEN_SHAPES].flatMap((t) => (typeof t === 'function' ? [] : t instanceof RegExp ? [t] : [t.re])), PREFIXED_AT, PREFIXED_NEXT, JWT_AT, NAMED_IN_QUERY, NAMED_SECRET, NAMED_PHRASE, NAMED_PHRASE_MASKED, NAMED_MASKED_REST, NAMED_SHORT, MASK_THEN_VALUE, MASK_THEN_QUOTED, COOKIE_HEAD].map((r) => r.source);
+export const _maskSourcesForTest = (): string[] => [...HELD_PATTERNS, ...PATTERNS, NAMED_SEGMENT, ...[...HELD_SHAPES, ...TOKEN_SHAPES].flatMap((t) => (typeof t === 'function' ? [] : t instanceof RegExp ? [t] : [t.re])), PREFIXED_AT, PREFIXED_NEXT, JWT_AT, NAMED_IN_QUERY, NAMED_SECRET, NAMED_PHRASE, NAMED_PHRASE_MASKED, NAMED_MASKED_REST, NAMED_SHORT, MASK_THEN_VALUE, MASK_THEN_QUOTED, COOKIE_HEAD].map((r) => r.source);
 /** Test only: the same without the marker guard, to prove the guard never changes the result. */
 export function maskTokenShapesUnguarded(text: string, mask: string): string {
   return maskLoose(maskShapes(text, mask, false), mask, false);
