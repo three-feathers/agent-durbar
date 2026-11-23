@@ -72,17 +72,17 @@ module.exports = async (ctx) => {
     assert.strictEqual(li.lines, 'Lines: the last 24 steps, newest brightest', `the lines line in ${tag}`);
     await js(`document.querySelector('#brainRail .bv-lab[data-g=shell]').focus()`);
     const t1 = await tipOf();
-    const n1 = t1 && /^Shell: Running a command, or any other tool\. (No|\d+) steps? this turn\.$/.exec(t1.text);
+    const n1 = t1 && /^Shell: back, low\. Running a command, or any other tool\. (No|\d+) steps? this turn\.$/.exec(t1.text);
     assert.ok(t1 && t1.inside && n1 && (n1[1] === 'No' ? 0 : Number(n1[1])) >= shellMin, `focus on Shell: its tooltip inside the picture with the turn's count in ${tag}: ${JSON.stringify(t1)}`);
     await js(`document.activeElement.dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowRight',bubbles:true}))`);
     const t2 = await tipOf();
-    assert.ok(t2 && t2.focus === 'web' && t2.text.startsWith('Web: Fetching a web page or searching the web.'), `ArrowRight: the next word (Web) and its tooltip in ${tag}: ${JSON.stringify(t2)}`);
+    assert.ok(t2 && t2.focus === 'web' && t2.text.startsWith('Web: low side. Fetching a web page or searching the web.'), `ArrowRight: the next word (Web) and its tooltip in ${tag}: ${JSON.stringify(t2)}`);
     await js(`document.activeElement.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}))`);
     assert.strictEqual(await tipOf(), null, `Esc closes the tooltip in ${tag}`);
     assert.ok(await js(`document.body.classList.contains('panel-open')`), `Esc on a tooltip leaves the chat open in ${tag}`);
     await js(`(()=>{const a=document.activeElement;if(a&&a.blur)a.blur();document.querySelector('#brainRail .bv-lab[data-g=think]').dispatchEvent(new MouseEvent('mouseenter'));return 0;})()`);
     const t3 = await tipOf();
-    assert.ok(t3 && t3.inside && t3.text === 'Think: Thinking between tools: never a tool step.', `hover on Think: its tooltip in ${tag}: ${JSON.stringify(t3)}`);
+    assert.ok(t3 && t3.inside && t3.text === 'Think: front. Thinking between tools: never a tool step.', `hover on Think: its tooltip in ${tag}: ${JSON.stringify(t3)}`);
     await js(`document.querySelector('#brainRail .bv-lab[data-g=think]').dispatchEvent(new MouseEvent('mouseleave'))`);
     assert.strictEqual(await tipOf(), null, `the tooltip goes with the pointer in ${tag}`);
     assert.strictEqual(await js(`[...document.querySelectorAll('#brainRail .bv-lab')].filter(l=>l.tabIndex===0).length`), 1, `one tab stop for the seven words in ${tag}`);
@@ -191,7 +191,7 @@ module.exports = async (ctx) => {
       // the region and its text (FR-090 basics)
       assert.strictEqual(await js(`document.querySelector('#brainRail .bv').getAttribute('aria-label')`), 'Brain view, ' + name, `the region is named for the open chat's agent in ${tag}`);
       assert.strictEqual(await js(`document.querySelector('#brainRail .bv canvas').getAttribute('aria-hidden')`), 'true', 'the canvas is decorative');
-      assert.ok((await js(`document.querySelector('#brainRail .bv-lobe').textContent`)).startsWith('Shell, cerebellum'), 'the lobe is text');
+      assert.ok((await js(`document.querySelector('#brainRail .bv-lobe').textContent`)) === 'Shell', 'the lobe is text: the tool word only');
       await checkLabels(tag + ' compact', 'Shell', 2);
       const lnB = await box('#brainRail .bv-lines'), stB = await box('#brainRail [data-bv=steps]');
       assert.ok(lnB && stB && lnB.b <= stB.t, `the lines line stays above Latest steps in ${tag}: ${JSON.stringify(lnB)} ${JSON.stringify(stB)}`);

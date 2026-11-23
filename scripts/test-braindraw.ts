@@ -648,10 +648,10 @@ console.log('braindraw: page load ok');
     const c = H.lobeCounts(BS, s);
     assert.deepStrictEqual(c, { think: 0, read: 1, edit: 0, shell: 2, web: 1, mcp: 1, you: 0 }, 'FR-136: the steps of this turn per lobe');
     assert.deepStrictEqual(H.viewOf(BS, s, 'a').counts, c, 'the view carries the counts (no new IPC)');
-    assert.strictEqual(H.tipText(BS, 'shell', c, 0), 'Running a command, or any other tool. 2 steps this turn.', 'the tooltip: the sentence and the count');
-    assert.strictEqual(H.tipText(BS, 'edit', c, 0), 'Editing, writing or creating files. No steps this turn.', 'no step: said in words');
-    assert.strictEqual(H.tipText(BS, 'read', c, 3), `Reading, listing or searching files. 1 step this turn (of the last ${BS.STEP_CAP}).`, 'folded steps: the count says which steps it counts');
-    assert.strictEqual(H.tipText(BS, 'think', c, 0), 'Thinking between tools: never a tool step.', 'Think is never a step: no count');
+    assert.strictEqual(H.tipText(BS, 'shell', c, 0), 'back, low. Running a command, or any other tool. 2 steps this turn.', 'the tooltip: the sentence and the count');
+    assert.strictEqual(H.tipText(BS, 'edit', c, 0), 'top. Editing, writing or creating files. No steps this turn.', 'no step: said in words');
+    assert.strictEqual(H.tipText(BS, 'read', c, 3), `back. Reading, listing or searching files. 1 step this turn (of the last ${BS.STEP_CAP}).`, 'folded steps: the count says which steps it counts');
+    assert.strictEqual(H.tipText(BS, 'think', c, 0), 'front. Thinking between tools: never a tool step.', 'Think is never a step: no count');
     // one source (FR-014): the legend's words and the words on the picture are GLYPHS'
     const p = page(() => 'Ada'); p.host.feed('a', 'Ada', p.ev(1)); p.flush();
     const labs = p.host.labels() as { textContent: string; classes: Set<string>; attrs: Record<string, string>; sr: { textContent: string } }[];
@@ -661,9 +661,10 @@ console.log('braindraw: page load ok');
     // the lit word and the one tab stop; every other word in the reading order; the count in each item's text
     assert.deepStrictEqual(labs.map((l) => l.classes.has('is-lit')), H.LABEL_ORDER.map((g: string) => g === 'shell'), 'the lit word is the current step\'s (Shell)');
     assert.deepStrictEqual(labs.map((l) => l.attrs.tabindex), H.LABEL_ORDER.map((g: string) => (g === 'shell' ? '0' : '-1')), 'one tab stop: the lit word');
-    assert.strictEqual(labs[3].sr.textContent, ': Running a command, or any other tool. 1 step this turn.', 'the screen reader text of a word: its sentence and count');
+    assert.strictEqual(labs[3].sr.textContent, ': back, low. Running a command, or any other tool. 1 step this turn.', 'the screen reader text of a word: its sentence and count');
     assert.ok(String((p.host.el.attrs as Record<string, string>)['style--bv-lit']).startsWith('#'), 'the lit colour reaches the caption chip and the frame');
     assert.strictEqual(txt(p.host, '.bv-lines'), H.linesText(BS), 'the dock shows the lines line');
+    assert.strictEqual(txt(p.host, '.bv-lobe'), 'Shell', 'the caption names the tool only, no anatomical word (2026-11-23)');
     // no label size or motion of its own: the dock's 12 px (FR-097) and nothing that animates (Still holds)
     const css = readSrc(path.join(DIR, 'brain.css')), labCss = (css.match(/\.bv-lab[^{]*\{[^}]*\}/g) || []).join('\n');
     assert.ok(labCss.length > 0 && !/font-size|transition|animation/.test(labCss), 'the words take the dock\'s font size and never animate: ' + labCss);

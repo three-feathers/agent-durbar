@@ -44,14 +44,14 @@
     const out={};for(const g of gs)out[g]={l:Math.round(best[g].l),t:Math.round(best[g].t),r:Math.round(best[g].r),b:Math.round(best[g].b)};
     return out;
   }
-  /* FR-136: the tooltip, constants only: the lobe's sentence and its count this turn */
+  /* FR-136: the tooltip, constants only: where the lobe is, its sentence and its count this turn */
   function tipText(S,g,counts,folded){
     const n=(counts&&counts[g])||0;
-    return S.GLYPHS[g].means+(g==='think'?'':' '+(n?n+(n===1?' step':' steps'):'No steps')+' this turn'+(folded?' (of the last '+S.STEP_CAP+')':'')+'.');
+    return S.GLYPHS[g].place+'. '+S.GLYPHS[g].means+(g==='think'?'':' '+(n?n+(n===1?' step':' steps'):'No steps')+' this turn'+(folded?' (of the last '+S.STEP_CAP+')':'')+'.');
   }
   /* FR-135: what the lines are, with FR-040's own cap */
   const linesText=(S)=>'Lines: the last '+S.TRAIL_MAX+' steps, newest brightest';
-  function lobeText(S,s){const g=s.act&&s.act.glyph;return g?S.GLYPHS[g].word+', '+S.GLYPHS[g].lobeWord:'At rest';}
+  function lobeText(S,s){const g=s.act&&s.act.glyph;return g?S.GLYPHS[g].word:'At rest';} /* the tool word only (2026-11-23); the place is in each lobe word's tooltip and screen-reader text */
   /* the region's name carries the agent's name: through the same name masking as every other surface (FR-021, FR-085) */
   function regionLabel(SF,nm,ctx){return 'Brain view, '+SF.orbName(String(nm==null?'':nm),ctx);}
   /* FR-025: "3 steps this turn · 12 earlier" and the newest steps as text (the trail's text equivalent), from turnMapLine only */
