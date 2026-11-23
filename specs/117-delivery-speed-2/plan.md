@@ -75,6 +75,11 @@ Measure first (`npm run ci:stats`), then cut the one big cost: the UI shards are
 - `fast-lane.yml` (one job, three-OS matrix): checkout (`fetch-depth: 2`, no kept credential), `ci-changes.sh --suites` (base copy), the PR's copy only when the base has no `fast` output, then setup-node, `npm-ci` (one 30 s retry) and `node scripts/fast-lane.js` only when a suite was picked.
 - `scripts/fast-lane.js`: a temporary tsconfig extending `tsconfig.scripts.json` with the picked test files and every other `scripts/test-*.ts` excluded (about 10 s instead of about 36 s locally), `tsc -p tsconfig.json` and `copy-assets.js` only when a step file reads `dist/`, `ensureElectron` for `checkfuses`/`macos` suites, then `runMain`; phase times to the job summary.
 
+### FR-390: the fast lane stays fast (bug, 2026-11-23)
+
+- `ci-changes.js`: `FOLDER_MAX = 40` (a folder literal over it picks nothing in the lane; `gitIo.countUnder` counts, capped); the lane's list puts direct picks first.
+- `fast-lane.js`: `planSuites` (heavy over 120 s out, 480 s budget in the given order, median for a missing time, from `scripts/test-suite-timings.json`), `runLane` (300 s deadline, `run-tests.js`'s `runSuites` in bail mode so children are detached and `ctl.abort` stops each process tree; the deadline is green with a note, a failure red).
+
 ## Complexity tracking
 
 No new dependency, one decider kept. One new workflow file, `fast-lane.yml` (P8): a ci.yml job would fall under FR-018's guard of the required `npm test` job (T022) and collide with the Windows shard work (T012).

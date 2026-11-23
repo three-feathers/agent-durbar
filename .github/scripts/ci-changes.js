@@ -310,6 +310,7 @@ function decide(files, io) {
 //   - a docs path its check reads changed (FAST_DOC_SUITES: the docs gates of a docs-only PR).
 // Picking fewer than the full run is safe here because the lane decides nothing else: the required jobs still run every suite.
 const SUITE_LIST = 'scripts/test-suites.txt';
+const FOLDER_MAX = 40; // spec 117 FR-390: a folder literal with more files than this picks no suite in the fast lane
 const SUITE_NAME = /^test:[\w:.+-]+$/;
 // rule text needs no row: rules-check.js names 'AGENTS.md' and 'docs/rules', so the literal rule picks test:rules
 const FAST_DOC_SUITES = [
@@ -365,18 +366,23 @@ function fastSuites(files, io) {
   // package.json, its lock and the suite list are named by dozens of tests (the version, the scripts): they pick by the rules
   // above (a new or changed suite line), not by literal, or every dependency bump would pick a third of the list
   const byLiteral = new Set([...changed].filter((f) => !PKG.includes(f) && f !== SUITE_LIST));
-  const hit = (r) => r && (r.endsWith('/') ? [...byLiteral].some((f) => f.startsWith(r)) : byLiteral.has(r));
-  const picked = new Set();
+  // spec 117 FR-390: a folder literal picks only when the folder is small; `scripts/fixtures` (84 files) or `src/shared` (74) is named
+  // by dozens of tests for one file each, and a new fixture there picked 23 suites (#2037). The docs-only skip still counts every
+  // folder (docsOnly, fail closed); only the advisory lane narrows.
+  const small = (dir) => (typeof io.countUnder === 'function' ? io.countUnder(dir) : 0) <= FOLDER_MAX;
+  const hit = (r) => r && (r.endsWith('/') ? small(r) && [...byLiteral].some((f) => f.startsWith(r)) : byLiteral.has(r));
+  const direct = new Set(), byName = new Set();
   for (const name of names) {
     const cmd = scripts[name];
     if (typeof cmd !== 'string') continue;
-    if (!baseNames.has(name) || baseScripts[name] !== cmd) { picked.add(name); continue; }
-    for (const src of stepSources(cmd)) {
-      if (changed.has(src) || [...literalTargets(src, io)].some(hit)) { picked.add(name); break; }
-    }
+    if (!baseNames.has(name) || baseScripts[name] !== cmd) { direct.add(name); continue; }
+    const srcs = stepSources(cmd);
+    if (srcs.some((src) => changed.has(src))) { direct.add(name); continue; }
+    if (srcs.some((src) => [...literalTargets(src, io)].some(hit))) byName.add(name);
   }
-  for (const f of changed) for (const [re, name] of FAST_DOC_SUITES) if (re.test(f) && names.includes(name)) picked.add(name);
-  return names.filter((n) => picked.has(n));
+  for (const f of changed) for (const [re, name] of FAST_DOC_SUITES) if (re.test(f) && names.includes(name)) byName.add(name);
+  // the suites whose own file or list line changed come first (fast-lane.js keeps that order when it has to leave some out)
+  return [...names.filter((n) => direct.has(n)), ...names.filter((n) => byName.has(n) && !direct.has(n))];
 }
 
 /** The real tree: the checkout (head) and HEAD^1 (base). scripts/ is listed once, so a literal costs a set lookup, not a stat. */
@@ -397,6 +403,14 @@ function gitIo(root) {
     read: (p) => { if (!cache.has(p)) { let t = null; try { t = fs.readFileSync(abs(p), 'utf8'); } catch { /* missing */ } cache.set(p, t); } return cache.get(p); },
     isFile: (p) => (p.startsWith('scripts/') ? files.has(p) : (() => { try { return fs.statSync(abs(p)).isFile(); } catch { return false; } })()),
     isDir: (p) => (p.startsWith('scripts/') ? dirs.has(p) : (() => { try { return fs.statSync(abs(p)).isDirectory(); } catch { return false; } })()),
+    // files under a folder (ending in /), counted up to one past FOLDER_MAX: scripts/ from the listing, any other folder by a walk
+    countUnder: (dir) => {
+      if (dir.startsWith('scripts/')) { let n = 0; for (const f of files) if (f.startsWith(dir) && ++n > FOLDER_MAX) break; return n; }
+      let n = 0;
+      const count = (rel) => { let ents = []; try { ents = fs.readdirSync(abs(rel), { withFileTypes: true }); } catch { return; } for (const e of ents) { if (n > FOLDER_MAX) return; if (e.isDirectory()) { if (e.name !== 'node_modules') count(`${rel}/${e.name}`); } else n++; } };
+      count(dir.replace(/\/$/, ''));
+      return n;
+    },
     readBase: (p) => { try { return execFileSync('git', ['show', `HEAD^1:${p}`], { cwd: root, encoding: 'utf8', shell: false, stdio: ['ignore', 'pipe', 'ignore'], maxBuffer: 64 * 1024 * 1024 }); } catch { return null; } },
   };
 }
@@ -430,5 +444,5 @@ function main(env = process.env, argv = process.argv.slice(2)) {
   for (const k of ['code', 'themes', 'ui', 'macos']) out(k, r[k]);
 }
 
-module.exports = { decide, uiClosure, versionOnly, gitIo, npmTargets, reachedNpm, workflowCommands, fastSuites, suiteNames, stepSources, DOCS };
+module.exports = { FOLDER_MAX, decide, uiClosure, versionOnly, gitIo, npmTargets, reachedNpm, workflowCommands, fastSuites, suiteNames, stepSources, DOCS };
 if (require.main === module) main();

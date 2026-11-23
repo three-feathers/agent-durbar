@@ -10,11 +10,12 @@ import * as path from 'path';
 const ROOT = path.join(__dirname, '..', '..');
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const cc = require(path.join(ROOT, '.github', 'scripts', 'ci-changes.js')) as {
+  fastSuites: (files: string[], io: Io) => string[];
   decide: (files: string[], io: Io) => { code: boolean; themes: boolean; ui: boolean; macos: boolean };
   npmTargets: (line: string) => { names: string[]; opaque: boolean };
   gitIo: (root: string) => Io;
 };
-interface Io { read(p: string): string | null; readBase(p: string): string | null; isFile(p: string): boolean; isDir(p: string): boolean }
+interface Io { read(p: string): string | null; readBase(p: string): string | null; isFile(p: string): boolean; isDir(p: string): boolean; countUnder?(d: string): number }
 
 const real = cc.gitIo(ROOT);
 // Windows checks files out with CRLF: every text this test anchors on or mutates (ci-changes.sh, ci-changes.js) is normalised to LF
@@ -28,6 +29,7 @@ function io(head: Record<string, string> = {}, base: Record<string, string> = {}
     readBase: (p) => (p in base ? base[p] : real.read(p)),
     isFile: (p) => !gone.includes(p) && (p in head || real.isFile(p)),
     isDir: (p) => dirs.includes(p) || real.isDir(p),
+    countUnder: (d: string) => (real as unknown as { countUnder(d: string): number }).countUnder(d),
   };
 }
 const pkgText = fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8');
@@ -398,6 +400,11 @@ assert.strictEqual(cc.decide(['docs/zz-none.md', 'specs/999-none/spec.md'], io()
   assert.ok(fast(['scripts/run-tests.js']).includes('test:runtests'), 'a file a test loads by a relative literal (./run-tests) runs that test');
   assert.ok(fast(['src/shared/redact.ts']).includes('test:runtime-redact'), 'a src file a test imports (../src/shared/redact) runs that test');
   assert.ok(fast(['scripts/prereview/prompts/system.md']).includes('test:prereview'), 'a file inside a folder a test names (scripts/prereview) runs that test');
+  // spec 117 FR-390: a folder literal picks only when the folder is small (at most FOLDER_MAX files); a new fixture under the shared
+  // scripts/fixtures (84 files) no longer picks every test that names that folder (#2037: 23 suites, the heavy redact ones included)
+  assert.ok((cc as unknown as { FOLDER_MAX: number }).FOLDER_MAX <= 40, 'FOLDER_MAX is at most 40 (spec)');
+  const viaFixtures = fast(['scripts/fixtures/zz-new/x.json']);
+  assert.ok(!viaFixtures.includes('test:redact-monotone') && viaFixtures.length < 5, `a new file in the big scripts/fixtures folder picks almost nothing (got ${viaFixtures.join(' ')})`);
   assert.ok(fast(['.github/scripts/ci-changes.js']).includes('test:cichanges'), 'a repo-relative path a test names runs that test');
   assert.deepStrictEqual(fast(['specs/999-none/spec.md']), ['test:specsindex'], 'a spec change runs the specs index check (docs table)');
   assert.ok(fast(['AGENTS.md']).includes('test:rules') && fast(['docs/rules/zz-new.md']).includes('test:rules'), 'rule text, even a new rule file, runs the word budget check (rules-check.js names AGENTS.md and docs/rules)');
@@ -414,6 +421,28 @@ assert.strictEqual(cc.decide(['docs/zz-none.md', 'specs/999-none/spec.md'], io()
   assert.ok(fast(['scripts/test-suites.txt'], io({}, { 'scripts/test-suites.txt': baseList })).includes('test:cichanges'), 'a suite new on the list runs');
   const basePkg = JSON.stringify({ ...pkg, scripts: { ...pkg.scripts, 'test:cichanges': pkg.scripts['test:cichanges'] + ' && node scripts/x.js' } });
   assert.ok(fast(['package.json'], io({}, { 'package.json': basePkg })).includes('test:cichanges'), 'a suite whose package.json line changed runs');
+  {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const Module = require('module') as { new (id: string, parent: unknown): { filename: string; paths: string[]; exports: unknown; _compile(src: string, file: string): void }; _nodeModulePaths(dir: string): string[] };
+    const file = path.join(ROOT, '.github', 'scripts', 'ci-changes.js');
+    for (const [copy, text] of [['checkout', toLf(fs.readFileSync(file, 'utf8'))], ['CRLF copy', toLf(crlfCopy(fs.readFileSync(file, 'utf8')))]] as [string, string][]) {
+      const variant = (from: string, to: string): Fs => { assert.ok(text.includes(from), `mutant anchor found (${copy}): ${from}`); const m = new Module(file, null); m.filename = file; m.paths = Module._nodeModulePaths(path.dirname(file)); m._compile(text.replace(from, () => to), file); return m.exports as Fs; };
+      // a tiny tree: test:w names the big folder scripts/zzbig (41 files) and the file scripts/lib.js; test:x is its own changed file
+      const tf: Record<string, string> = {
+        'scripts/test-suites.txt': 'test:w\ntest:x\n',
+        'package.json': JSON.stringify({ scripts: { 'test:w': 'node scripts/test-w.js', 'test:x': 'node scripts/test-x.js' } }),
+        'scripts/test-w.js': "path.join(__dirname, 'zzbig'); require('./lib');\n", 'scripts/test-x.js': '//\n', 'scripts/lib.js': '//\n',
+      };
+      const tiny: Io = { read: (q) => (q in tf ? tf[q] : null), readBase: (q) => (q in tf ? tf[q] : null), isFile: (q) => q in tf, isDir: (q) => q === 'scripts/zzbig', countUnder: () => 41 };
+      assert.deepStrictEqual(cc.fastSuites(['scripts/zzbig/a.json'], tiny), [], 'a file in a 41-file folder a test names picks nothing');
+      assert.deepStrictEqual(cc.fastSuites(['scripts/zzbig/a.json'], { ...tiny, countUnder: () => 40 }), ['test:w'], 'a 40-file folder still picks');
+      assert.deepStrictEqual(cc.fastSuites(['scripts/lib.js', 'scripts/test-x.js'], tiny), ['test:x', 'test:w'], 'the directly changed suite comes first');
+      const noCap = variant("const small = (dir) => (typeof io.countUnder === 'function' ? io.countUnder(dir) : 0) <= FOLDER_MAX;", 'const small = () => true;');
+      assert.deepStrictEqual(noCap.fastSuites(['scripts/zzbig/a.json'], tiny), ['test:w'], `mutant "no folder cap" (${copy}) dies: the big folder picks again`);
+      const listOrder = variant('return [...names.filter((n) => direct.has(n)), ...names.filter((n) => byName.has(n) && !direct.has(n))];', 'return names.filter((n) => direct.has(n) || byName.has(n));');
+      assert.deepStrictEqual(listOrder.fastSuites(['scripts/lib.js', 'scripts/test-x.js'], tiny), ['test:w', 'test:x'], `mutant "list order, not direct first" (${copy}) dies`);
+    }
+  }
   // a hostile name on the list is never output (the output is one line of plain names)
   assert.ok(!fast(['scripts/test-suites.txt'], io({ 'scripts/test-suites.txt': listText + '\ntest:x\nsuites=y\n' }, { 'scripts/test-suites.txt': listText })).some((n) => /[=\s]/.test(n)), 'names are plain');
 }
