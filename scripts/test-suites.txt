@@ -235,6 +235,7 @@ test:selfupdate-feed
 test:selfupdate-feedget
 test:selfupdate-notes
 test:selfupdate-installtype
+test:selfupdate-ipc
 test:selfupdate-schedule
 test:selfupdate-settings
 test:releases-json

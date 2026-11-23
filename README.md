@@ -60,6 +60,8 @@ Every file, the Windows and Mac notes, verifying a download and the requirements
 
 An approval card marks lookalike letters in a host, program or tool name (a Cyrillic letter in a Latin word, a fullwidth form) and names an address's host as the network reads it; it warns and never blocks, with small closed lists rather than the full confusables table ([docs/safety.md](docs/safety.md)).
 
+**Durbar's own update check** (spec 118) is built but **not active**: no request is made until the Update card and its Settings switch ship. Then a packaged build will ask GitHub, at most once a day, for the release list of the repository it was built from, with no token, version or machine identifier ([docs/safety.md](docs/safety.md)).
+
 Usage bills against **your** plans; a per-session spending limit is a soft limit. Details and spending caps: [docs/safety.md](docs/safety.md). Report a problem: [SECURITY.md](SECURITY.md).
 
 ## Quick start

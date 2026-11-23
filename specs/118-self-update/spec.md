@@ -4,14 +4,14 @@
 group: 046
 title: Durbar's own update (owner request 2026-11-22, "like Duniya, including forks"): a daily check of the GitHub releases of the repository the build came from, an Update card with the release notes as plain text and a breaking-changes card, snooze and skip, a checked download (SHA256SUMS.txt) the person opens; in-place apply per OS later (Windows NSIS and Linux AppImage unsigned, macOS only after signing)
 status: building
-note: P1, P2 (T007, T008), T009 built, no behaviour change; release.yml wiring T076 after #2038; D1..D7 answered; phase 2 barred (no signature now)
+note: P1, P2, T009, T010 built, not active until T014 (no request); release.yml wiring T076 after #2038; D1..D7 answered; phase 2 barred
 -->
 
 **Feature Branch**: `118-self-update` (spec, plan and tasks only). The build is one small PR per task group (P1..P6 in [tasks.md](tasks.md)).
 
 **Created**: 2026-11-22
 
-**Status**: Building. P1, the pure core (T002..T006, `src/shared/selfupdate.ts`), and P2, the build-time update source and `releases.json` (T007, T008; the `release.yml` wiring is T076, after #2038), are built, and so is the first piece of P3, the feed request (T009, `makeFeedGet` in `src/main/netget.ts`); they change no behaviour: nothing calls them yet, no request is made, no dependency is added. All seven owner decisions D1..D7 are answered (Vikram, team chat (Telegram) 2026-11-22, 14:39 to 14:45 UTC); phase 1 is the whole build for now, and phase 2 stays barred until a signature scheme exists (D3).
+**Status**: Building. P1, the pure core (T002..T006, `src/shared/selfupdate.ts`), and P2, the build-time update source and `releases.json` (T007, T008; the `release.yml` wiring is T076, after #2038), are built, and so is the first piece of P3, the feed request (T009, `makeFeedGet` in `src/main/netget.ts`); they change no behaviour: nothing calls them yet, no request is made, no dependency is added. So is T010, the main checker (`src/main/selfupdate.ts`) and its four IPC channels: built and tested, not started before T014. All seven owner decisions D1..D7 are answered (Vikram, team chat (Telegram) 2026-11-22, 14:39 to 14:45 UTC); phase 1 is the whole build for now, and phase 2 stays barred until a signature scheme exists (D3).
 
 **Input**: Owner request (Vikram, team chat, 2026-11-22 14:18 UTC, relayed by his coordinating agent): "Can we implement auto update like what duniya does including making it work for forks? https://github.com/vikramgorla/duniya".
 
