@@ -13,7 +13,13 @@ function world(platform: MemoryFlavor['platform'], home: string, userData: strin
   const w: World = { flavor: { path: platform === 'win32' ? path.win32 : path.posix, platform }, links: {}, files: new Set(), broken: new Set(), ctx: undefined as never };
   w.ctx = {
     home, userData, officeFolders: office, env,
-    realpath: (p) => { if (w.broken.has(p)) throw new Error('ENOENT'); return w.links[p] ?? p; },
+    // like the real one: a link anywhere on the way is resolved
+    realpath: (p) => {
+      if (w.broken.has(p)) throw new Error('ENOENT');
+      const sep = w.flavor.path.sep;
+      for (const [k, v] of Object.entries(w.links)) if (p === k || p.startsWith(k + sep)) return v + p.slice(k.length);
+      return p;
+    },
     lstat: (p) => { if (w.broken.has(p)) throw new Error('EACCES'); return { isDirectory: () => !w.files.has(p) }; },
   };
   return w;
@@ -50,6 +56,11 @@ table('win32', win, [
   ['\\\\host.example.invalid\\share\\x', 'unc'], ['//host.example.invalid/share', 'unc'], ['\\\\?\\C:\\Users\\ana\\notes', 'unc'], ['\\\\.\\C:\\x', 'unc'],
   ['C:\\Users\\ana\\netlink', 'unc'],
   ['C:\\Users\\ana\\a.txt', 'not-folder'], ['C:\\Users\\ana\\gone', 'unreadable'],
+  // alternate data streams and names Windows trims (`.ssh.` is `.ssh`)
+  ['C:\\Users\\ana\\.ssh::$INDEX_ALLOCATION', 'not-absolute'], ['C:\\Users\\ana\\.ssh:x', 'not-absolute'], ['C:\\Users\\ana\\notes:x', 'not-absolute'],
+  ['C:\\Users\\ana\\.ssh.', 'not-absolute'], ['C:\\Users\\ana\\.ssh ', 'not-absolute'], ['C:\\Users\\ana\\foo.\\bar', 'not-absolute'], ['C:\\Users\\ana\\.ssh. \\x', 'not-absolute'],
+  ['C:\\Users\\ana\\.local\\share\\keyrings', 'secret-location'],
+  ['C:\\Users\\ana\\..\\ana\\notes', 'ok'],
 ]);
 // a drive-relative candidate must not be resolved against the cwd or a link target
 assert.strictEqual(run(win, 'C:foo').ok, false);
@@ -75,6 +86,28 @@ table('linux', lin, [
   ['relative/dir', 'not-absolute'], ['C:\\x', 'not-absolute'], ['/home/ana/a\0b', 'not-absolute'],
   ['/home/ana/a.txt', 'not-folder'], ['/home/ana/gone', 'unreadable'],
 ]);
+// ~/.local/share is always refused: with an absolute XDG_DATA_HOME, a relative one, or none
+for (const xdgDataHome of ['/data/ana', 'relative/data', '', undefined]) {
+  const w = world('linux', '/home/ana', '/home/ana/.local/share/Durbar', [], { xdgDataHome });
+  table('xdg ' + String(xdgDataHome), w, [['/home/ana/.local/share/keyrings', 'secret-location'], ['/home/ana/.local/share/x/y', 'secret-location'], ['/home/ana/.local/bin', 'ok']]);
+}
+{
+  const w = world('linux', '/home/ana', '/home/ana/.local/share/Durbar', [], { xdgDataHome: 'relative/data', xdgConfigHome: 'rel/conf' });
+  table('relative xdg is ignored, not trusted', w, [['/home/ana/relative/data', 'ok'], ['/home/ana/rel/conf', 'ok'], ['/relative/data', 'ok']]);
+}
+// the listed side is a link: its real target counts too
+{
+  const w = world('linux', '/home/ana', '/home/ana/.local/share/Durbar', ['/work/proj2'], {});
+  w.links['/home/ana/.ssh'] = '/home/ana/dotfiles/ssh';
+  w.links['/work/proj2'] = '/mnt/real/proj2';
+  table('listed side is a link', w, [
+    ['/home/ana/dotfiles', 'secret-location'], ['/home/ana/dotfiles/ssh', 'secret-location'], ['/home/ana/dotfiles/other', 'ok'],
+    ['/mnt/real', 'office-folder'], ['/mnt/real/proj2/x', 'office-folder'], ['/mnt/real/other', 'ok'],
+  ]);
+  const h = world('linux', '/home/ana', '/home/ana/.local/share/Durbar', [], {});
+  h.links['/home/ana'] = '/mnt/homes/ana'; // the home folder itself is a link
+  table('home is a link', h, [['/mnt/homes/ana', 'home'], ['/mnt/homes/ana/.ssh', 'secret-location'], ['/mnt/homes/ana/.config/x', 'secret-location'], ['/mnt/homes', 'app-data'], ['/mnt/homes/ana/notes', 'ok'], ['/home/ana', 'home']]);
+}
 // no XDG variables set: the default data folder is still refused
 const lin2 = world('linux', '/home/ana', '/home/ana/.local/share/Durbar', []);
 table('linux default xdg', lin2, [['/home/ana/.local/share/x', 'secret-location'], ['/home/ana/.local', 'app-data'], ['/home/ana/.local/bin', 'ok']]);

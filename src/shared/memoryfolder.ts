@@ -50,12 +50,15 @@ const refuse = (reason: MemoryRefusal): MemoryFolderCheck => ({ ok: false, reaso
 const HOME_SECRETS = ['.ssh', '.aws', '.gnupg', '.kube', '.docker', '.config', '.npmrc'];
 const AGENT_APPS = ['.copilot', '.claude', '.codex'];
 
-/** Rule 1 on the text alone: UNC (`\\server`), device (`\\?\`, `\\.\`), drive-relative (`C:foo`), rooted with no drive, relative. */
+/** Rule 1 on the text alone: a stream (`:` after the drive), a name ending in a dot or space, UNC (`\\server`), device (`\\?\`, `\\.\`), drive-relative (`C:foo`), rooted with no drive, relative. */
 function badShape(p: string, f: MemoryFlavor): MemoryRefusal | undefined {
   if (typeof p !== 'string' || p === '' || p.includes('\0')) return 'not-absolute';
   if (f.platform === 'win32') {
     if (/^[\\/]{2}/.test(p)) return 'unc';
     if (!/^[A-Za-z]:[\\/]/.test(p)) return 'not-absolute';
+    if (p.indexOf(':', 2) !== -1) return 'not-absolute'; // an alternate data stream: `.ssh::$INDEX_ALLOCATION`, `.ssh:x`
+    // Windows drops a trailing dot or space from a name, so `.ssh.` is `.ssh`
+    if (p.split(/[\\/]/).some((c) => c !== '.' && c !== '..' && /[. ]$/.test(c))) return 'not-absolute';
     return undefined;
   }
   return f.path.isAbsolute(p) ? undefined : 'not-absolute';
@@ -104,7 +107,9 @@ export function checkMemoryFolder(candidate: string, ctx: MemoryFolderCtx, flavo
   const e = ctx.env ?? {};
   if (flavor.platform === 'win32') secrets.push(p.join(ctx.home, 'AppData'), e.appData ?? '', e.localAppData ?? '');
   if (flavor.platform === 'darwin') secrets.push(p.join(ctx.home, 'Library'));
-  if (flavor.platform === 'linux') secrets.push(e.xdgConfigHome ?? '', e.xdgDataHome || p.join(ctx.home, '.local', 'share'));
+  // `~/.local/share` always (a relative or unset XDG_DATA_HOME does not replace it); the variables count only when absolute (`forms` drops others)
+  secrets.push(p.join(ctx.home, '.local', 'share'));
+  if (flavor.platform === 'linux') secrets.push(e.xdgConfigHome ?? '', e.xdgDataHome ?? '');
   if (hits(secrets.filter((s) => s !== ''))) return refuse('secret-location');
 
   try { if (!ctx.lstat(real).isDirectory()) return refuse('not-folder'); } catch { return refuse('unreadable'); }
@@ -113,34 +118,65 @@ export function checkMemoryFolder(candidate: string, ctx: MemoryFolderCtx, flavo
 
 // ---- the git remote (FR-051, FR-055) ----
 
-/** `remote`: at least one remote (`hosts` may be empty when none has a `url`); `none`: a readable config with no remote; `unknown`: could not check. */
+/** `remote`: at least one remote (`hosts` may be empty when none has a `url`); `none`: this folder's own `.git/config` names no remote (global and system git config, `.git/remotes` and `config.worktree` are not read here: spec KNOWN GAP); `unknown`: could not check. */
 export type RemoteAnswer = { kind: 'remote'; hosts: string[]; rewritten: boolean } | { kind: 'none' } | { kind: 'unknown' };
 export const MAX_GIT_CONFIG = 64 * 1024;
 const MAX_HOSTS = 8;
 const HOST_CUT = 64;
 
-/** The host of a remote URL: scheme, user info (and any token in it), port and path dropped first; then masked and cut. */
+/** `(unknown host)` is the answer whenever the text is not plainly a host. */
+const UNKNOWN_HOST = '(unknown host)';
+const LOCAL = '(a folder on this computer)';
+
+/**
+ * The host of a remote URL. The authority ends at the first `/ \ ? # ;` or white space (cut, nothing after it is read); user info is
+ * dropped; the port is dropped; the rest must be `[A-Za-z0-9._~-]+` or a bracketed IPv6, else `(unknown host)`. An `@` between the
+ * authority and the first `?` or `#` (`https://secret/x@host/y`) also answers `(unknown host)`: the secret would sit where a host sits.
+ * Then masked and cut.
+ */
 export function hostOfRemote(url: string): string {
   let s = url.trim();
-  let host: string;
   const scheme = /^([A-Za-z][A-Za-z0-9+.-]*):\/\//.exec(s);
   if (scheme) {
-    if (scheme[1].toLowerCase() === 'file') return '(a folder on this computer)';
+    if (scheme[1].toLowerCase() === 'file') return LOCAL;
     s = s.slice(scheme[0].length);
   } else {
     const colon = s.indexOf(':');
     const sl = s.search(/[/\\]/);
-    if (/^[A-Za-z]:[\\/]/.test(s) || colon === -1 || (sl !== -1 && sl < colon)) return '(a folder on this computer)';
+    if (/^[A-Za-z]:[\\/]/.test(s) || colon === -1 || (sl !== -1 && sl < colon)) return LOCAL;
   }
-  const slash = s.search(/[/\\]/);
-  let auth = slash === -1 ? s : s.slice(0, slash);
+  const end = s.search(/[/\\?#;\s]/);
+  let auth = end === -1 ? s : s.slice(0, end);
+  if (end !== -1) {
+    const rest = s.slice(end);
+    const q = rest.search(/[?#]/);
+    if ((q === -1 ? rest : rest.slice(0, q)).includes('@')) return UNKNOWN_HOST;
+  }
   auth = auth.slice(auth.lastIndexOf('@') + 1);
-  if (auth.startsWith('[')) { const c = auth.indexOf(']'); host = c === -1 ? auth : auth.slice(0, c + 1); }
-  else host = auth.split(':')[0];
-  host = host.replace(/[\u0000-\u001f\u007f-\u009f\u200b-\u200f\u202a-\u202e\u2066-\u2069]/g, '');
-  if (host === '') return '(unknown host)';
+  let host: string;
+  if (auth.startsWith('[')) { const c = auth.indexOf(']'); host = c === -1 ? auth : auth.slice(0, c + 1); if (!/^\[[0-9A-Fa-f:.]+\]$/.test(host)) return UNKNOWN_HOST; }
+  else { host = auth.split(':')[0]; if (!/^[A-Za-z0-9._~-]+$/.test(host)) return UNKNOWN_HOST; }
   return cut(maskTokenShapes(host, '[hidden]'), HOST_CUT);
 }
+
+/** Git's own reading of a value: `"` toggles quotes, `\"` `\\` `\n` `\t` `\b` decode, `#` or `;` outside quotes starts a comment, outer blanks go. */
+function configValue(raw: string): string {
+  let out = '';
+  let quoted = false;
+  for (let i = 0; i < raw.length; i++) {
+    const c = raw[i];
+    if (c === '\\' && i + 1 < raw.length) {
+      const n = raw[++i];
+      out += n === 'n' ? '\n' : n === 't' ? '\t' : n === 'b' ? '\b' : n === '"' || n === '\\' ? n : '\\' + n; // unknown escapes stay as written
+    } else if (c === '"') quoted = !quoted;
+    else if (!quoted && (c === '#' || c === ';')) break;
+    else out += c;
+  }
+  return out.trim();
+}
+/** A line that ends in an odd number of backslashes continues on the next one. */
+const continues = (line: string): boolean => { let n = 0; for (let i = line.length - 1; i >= 0 && line[i] === '\\'; i--) n++; return n % 2 === 1; };
+const MAX_JOIN = 32;
 
 /**
  * The remotes a `.git/config` names. Tolerant: only `url =` lines inside `[remote "..."]` sections give a host; an `include` or
@@ -154,29 +190,34 @@ export function remoteHosts(configText: string): RemoteAnswer {
   let remotes = 0;
   let rewritten = false;
   let section = '';
+  let doubt = false;
   const key = (line: string): void => {
     const m = /^\s*([A-Za-z][A-Za-z0-9-]*)\s*=\s*(.*?)\s*$/.exec(line);
-    if (!m) return;
+    if (!m) {
+      if (section === 'extensions' && /^\s*worktreeconfig\s*(?:[#;].*)?$/i.test(line)) doubt = true; // no `=` means true
+      return;
+    }
     const name = m[1].toLowerCase();
     if (/^(push)?insteadof$/.test(name)) rewritten = true;
+    if (section === 'extensions' && name === 'worktreeconfig' && !/^(false|no|off|0)$/i.test(configValue(m[2]))) doubt = true;
     if (section === 'remote' && name === 'url') {
-      let v = m[2];
-      if (v.startsWith('"')) { const q = v.indexOf('"', 1); v = q === -1 ? v.slice(1) : v.slice(1, q); }
-      else v = v.replace(/\s[#;].*$/, '');
-      const h = hostOfRemote(v);
+      const h = hostOfRemote(configValue(m[2]));
       if (!hosts.includes(h) && hosts.length < MAX_HOSTS) hosts.push(h);
     }
   };
-  for (const raw of lines) {
-    const line = raw.endsWith('\r') ? raw.slice(0, -1) : raw;
+  const noCr = (s: string): string => (s.endsWith('\r') ? s.slice(0, -1) : s);
+  for (let i = 0; i < lines.length; i++) {
+    let line = noCr(lines[i]);
+    for (let j = 0; j < MAX_JOIN && continues(line) && i + 1 < lines.length; j++) line = line.slice(0, -1) + noCr(lines[++i]);
     const h = /^\s*\[\s*([A-Za-z0-9.-]+)(?:\s+"(?:[^"\\]|\\.)*")?\s*\](.*)$/.exec(line);
     if (h) {
       const name = h[1].toLowerCase();
       if (name === 'include' || name === 'includeif') return { kind: 'unknown' };
-      section = name === 'remote' || name.startsWith('remote.') ? 'remote' : name === 'url' || name.startsWith('url.') ? 'url' : 'other';
+      section = name === 'extensions' ? 'extensions' : name === 'remote' || name.startsWith('remote.') ? 'remote' : name === 'url' || name.startsWith('url.') ? 'url' : 'other';
       if (section === 'remote') remotes++;
       key(h[2]);
     } else key(line);
   }
+  if (doubt) return { kind: 'unknown' };
   return remotes > 0 ? { kind: 'remote', hosts, rewritten } : { kind: 'none' };
 }

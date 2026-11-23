@@ -26,6 +26,46 @@ assert.deepStrictEqual(hosts(cfg('C:\\repos\\x')), ['(a folder on this computer)
 assert.deepStrictEqual(hosts(cfg('../x')), ['(a folder on this computer)']);
 assert.deepStrictEqual(hosts(cfg('file:///srv/x')), ['(a folder on this computer)']);
 assert.deepStrictEqual(hosts(cfg('"https://host.example.invalid/x" # c')), ['host.example.invalid']);
+// the authority is cut at / \\ ? # ; or white space; anything else in a host answers (unknown host)
+for (const [u, want] of [
+  [`https://host.example.invalid#${SECRET}`, 'host.example.invalid'],
+  [`https://host.example.invalid;${SECRET}`, 'host.example.invalid'],
+  [`https://host.example.invalid?${SECRET}`, 'host.example.invalid'],
+  [`https://host.example.invalid?access_token=${SECRET}`, 'host.example.invalid'],
+  [`https://host.example.invalid%2F${SECRET}`, '(unknown host)'],
+  [`https://host.example.invalid%40${SECRET}/x`, '(unknown host)'],
+  [`git@host.example.invalid?${SECRET}:x`, 'host.example.invalid'],
+  [`https://user:S@host.example.invalid\tfoo/x`, 'host.example.invalid'],
+  [`https://host.example.invalid\\${SECRET}`, 'host.example.invalid'],
+  [`https://${SECRET}/x@host.example.invalid/y`, '(unknown host)'],
+  [`https://${SECRET}/x@host.example.invalid`, '(unknown host)'],
+  [`https://${SECRET} x@host.example.invalid/y`, '(unknown host)'],
+  [`https://ho st.example.invalid/y`, 'ho'],
+  [`https://host.example.invalid:80${SECRET}/y`, 'host.example.invalid'],
+  [`https://[::1%25${SECRET}]/y`, '(unknown host)'],
+  [`https://ho"st.example.invalid/y`, '(unknown host)'],
+  [`https://ünï.example.invalid/y`, '(unknown host)'],
+] as Array<[string, string]>) {
+  const h = hostOfRemote(u);
+  assert.strictEqual(h, want, u);
+  assert.ok(!h.includes(SECRET), 'no secret in the host: ' + u);
+}
+// the @ rule counts only before the first ? or #
+assert.strictEqual(hostOfRemote('https://host.example.invalid/x?mail=a@b'), 'host.example.invalid');
+assert.strictEqual(hostOfRemote('https://host.example.invalid?mail=a@b'), 'host.example.invalid');
+// a backslash continuation joins the next line; an even run does not
+assert.deepStrictEqual(hosts(`[remote "o"]\n\turl = https://${SECRET}\\\n@host.example.invalid/x\n`), ['host.example.invalid']);
+assert.deepStrictEqual(hosts(`[remote "o"]\r\n\turl = https://${SECRET}\\\r\n@host.example.invalid/x\r\n`), ['host.example.invalid'], 'CRLF continuation');
+assert.deepStrictEqual(hosts(`[remote "o"]\n\turl = https://host.example.invalid/x\\\\\n\tfetch = x\n`), ['host.example.invalid'], 'two backslashes do not continue');
+assert.strictEqual(remoteHosts(`[remote "o"]\n\turl = a\\\n`.repeat(2000)).kind, 'remote', 'many continuations stay bounded');
+// escapes in a quoted value: \" is a quote, \\ a backslash
+assert.deepStrictEqual(hosts(cfg(`"https://${SECRET}\\"@host.example.invalid/x"`)), ['host.example.invalid']);
+assert.deepStrictEqual(hosts(cfg(`"https://host.example.invalid/a\\\\" # c`)), ['host.example.invalid']);
+assert.deepStrictEqual(hosts(cfg(`https://host.example.invalid/x#${SECRET}`)), ['host.example.invalid'], 'git reads # as a comment');
+// worktreeConfig: remotes may live in config.worktree
+for (const t of ['[extensions]\n\tworktreeConfig = true\n', '[extensions]\n\tworktreeconfig\n', '[extensions] WORKTREECONFIG = yes\n', cfg('https://h.example.invalid/x') + '[extensions]\n\tworktreeConfig = 1\n']) assert.deepStrictEqual(remoteHosts(t), { kind: 'unknown' }, t);
+assert.deepStrictEqual(remoteHosts('[extensions]\n\tworktreeConfig = false\n'), { kind: 'none' });
+assert.deepStrictEqual(remoteHosts('[core]\n\tworktreeConfig = true\n'), { kind: 'none' }, 'only the extensions section');
 assert.deepStrictEqual(hosts(cfg('https://host.example.invalid/x ; comment')), ['host.example.invalid']);
 assert.deepStrictEqual(hosts(cfg('https://host.example.invalid/x').replace(/\n/g, '\r\n')), ['host.example.invalid'], 'CRLF');
 assert.deepStrictEqual(hosts('[remote "a"] url = https://one.example.invalid/x\n[remote "b"]\nurl = https://two.example.invalid/y\n[remote "c"]\nurl = https://one.example.invalid/z\n'), ['one.example.invalid', 'two.example.invalid']);
@@ -52,7 +92,7 @@ assert.deepStrictEqual(remoteHosts('[remote "o"]\n\tfetch = x\n'), { kind: 'remo
   assert.ok(!h.includes(tok), h);
   const long = hostOfRemote('https://' + 'a'.repeat(300) + '.example.invalid/x');
   assert.ok(long.length <= 80 && long.length < 300, String(long.length));
-  assert.strictEqual(hostOfRemote('https://ho\u202est\u0007.example.invalid/x'), 'host.example.invalid', 'control and bidi characters dropped');
+  assert.strictEqual(hostOfRemote('https://ho\u202est\u0007.example.invalid/x'), '(unknown host)', 'control and bidi characters: not a host');
   assert.strictEqual(hostOfRemote('https://@/x'), '(unknown host)');
 }
 // no user info or token anywhere in the answer
@@ -67,7 +107,7 @@ assert.ok(!JSON.stringify(remoteHosts(cfg(`https://user:${SECRET}@host.example.i
 }
 
 // ---- the main-side read on a fake file system ----
-type Node = { t: 'file'; data: string } | { t: 'dir' } | { t: 'link'; to: string } | { t: 'fifo' } | { t: 'denied' };
+type Node = { t: 'file'; data: string } | { t: 'dir' } | { t: 'dirlink' } | { t: 'filelink'; data: string } | { t: 'link'; to: string } | { t: 'fifo' } | { t: 'denied' };
 const NOFOLLOW = 0x100;
 const K = { O_RDONLY: 0, O_NOFOLLOW: NOFOLLOW };
 const J = path.posix.join;
@@ -86,7 +126,7 @@ function fakeFs(tree: Record<string, Node>, log: string[] = []): GitProbeFs {
       const n = look(p, false);
       if (!n) return err('ENOENT');
       if (n.t === 'denied') return err('EACCES');
-      return { isDirectory: () => n.t === 'dir', isSymbolicLink: () => n.t === 'link' };
+      return { isDirectory: () => n.t === 'dir' || n.t === 'dirlink', isFile: () => n.t === 'file' || n.t === 'fifo' || n.t === 'filelink', isSymbolicLink: () => n.t === 'link' || n.t === 'dirlink' || n.t === 'filelink' };
     },
     openSync: (p, flags) => {
       log.push('open ' + p);
@@ -94,7 +134,8 @@ function fakeFs(tree: Record<string, Node>, log: string[] = []): GitProbeFs {
       if (raw && raw.t === 'link' && (flags & NOFOLLOW)) return err('ELOOP');
       const n = look(p, true);
       if (!n) return err('ENOENT');
-      if (n.t === 'denied' || n.t === 'dir' || n.t === 'link') return err('EACCES');
+      if (n.t === 'denied' || n.t === 'dir' || n.t === 'dirlink' || n.t === 'link') return err('EACCES');
+      if (n.t === 'filelink') { fds.set(next, { t: 'file', data: n.data }); return next++; } // the open would work: only the lstat refuses
       fds.set(next, n);
       return next++;
     },
@@ -130,13 +171,22 @@ assert.deepStrictEqual(ask({ [GIT]: { t: 'dir' }, [CFG]: { t: 'file', data: '[in
 // a FIFO and a symlink as the config
 assert.deepStrictEqual(ask({ [GIT]: { t: 'dir' }, [CFG]: { t: 'fifo' } }), UNKNOWN, 'FIFO');
 assert.deepStrictEqual(ask({ [GIT]: { t: 'dir' }, [CFG]: { t: 'link', to: '/other/config' }, '/other/config': { t: 'file', data: good } }), UNKNOWN, 'symlink');
-// without O_NOFOLLOW the fake follows the link: the flag is what refuses it
-assert.strictEqual(ask({ [GIT]: { t: 'dir' }, [CFG]: { t: 'link', to: '/other/config' }, '/other/config': { t: 'file', data: good } }, { O_RDONLY: 0 }).kind, 'remote', 'without O_NOFOLLOW the fake follows: proves the flag is what refuses');
+// Windows has no O_NOFOLLOW: the link is still refused, by the lstat before the open
+assert.deepStrictEqual(ask({ [GIT]: { t: 'dir' }, [CFG]: { t: 'link', to: '/other/config' }, '/other/config': { t: 'file', data: good } }, { O_RDONLY: 0 }), UNKNOWN, 'symlink, no O_NOFOLLOW');
+assert.deepStrictEqual(ask({ [GIT]: { t: 'dir' }, [CFG]: { t: 'fifo' } }, { O_RDONLY: 0 }), UNKNOWN, 'FIFO, no O_NOFOLLOW');
+// a config that lstat reports as a link whatever else it says (a Windows junction or reparse point)
+assert.deepStrictEqual(ask({ [GIT]: { t: 'dir' }, [CFG]: { t: 'filelink', data: good } }), UNKNOWN, 'config link');
+// a .git that is both a folder and a link (a junction) is not trusted
+assert.deepStrictEqual(ask({ [GIT]: { t: 'dirlink' }, [CFG]: { t: 'file', data: good } }), UNKNOWN, '.git folder link');
+// remotes may also live in .git/remotes or .git/branches (names only; nothing is listed)
+for (const old of ['remotes', 'branches']) for (const n of [{ t: 'dir' }, { t: 'file', data: '' }, { t: 'denied' }] as Node[]) {
+  assert.deepStrictEqual(ask({ [GIT]: { t: 'dir' }, [CFG]: { t: 'file', data: '[core]\n' }, [J(GIT, old)]: n }), UNKNOWN, old + ' ' + n.t);
+}
 // only these paths are touched: .git and .git/config
 {
   const log: string[] = [];
   memoryGitRemote(fakeFs({ [GIT]: { t: 'dir' }, [CFG]: { t: 'file', data: good } }, log), K, J, MEM);
-  assert.deepStrictEqual(log, ['lstat ' + GIT, 'open ' + CFG]);
+  assert.deepStrictEqual(log, ['lstat ' + GIT, 'lstat ' + J(GIT, 'remotes'), 'lstat ' + J(GIT, 'branches'), 'lstat ' + CFG, 'open ' + CFG]);
 }
 // source: no process, no network (FR-012)
 {
