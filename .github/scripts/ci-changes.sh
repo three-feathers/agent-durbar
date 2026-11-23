@@ -28,4 +28,14 @@ if ! git show 'HEAD^1:.github/scripts/ci-changes.js' > "$tmp/.github/scripts/ci-
   all
   exit 0
 fi
-node "$tmp/.github/scripts/ci-changes.js" --root .
+# arguments pass through: `--suites` asks for the fast lane's suites only (spec 117 FR-386, fast-lane.yml)
+node "$tmp/.github/scripts/ci-changes.js" --root . "$@"
+# spec 117 FR-387 (reviews of #2032): fail closed. Unless the decision wrote exactly one `code=` line and it is `code=true` or
+# `code=false` (a base copy that exits 0 silently, or writes `code=` empty or anything else), the jobs' `code == 'true'` could read a
+# wrong value: the output is replaced by "everything runs". (--suites writes only the fast lane's outputs.)
+if [ "${1:-}" != "--suites" ] && [ "$out" != /dev/stdout ] \
+  && ! { [ "$(grep -c '^code=' "$out")" = 1 ] && grep -qxE 'code=(true|false)' "$out"; }; then
+  echo "The decision wrote no valid code= line: everything runs."
+  : > "$out"
+  all
+fi

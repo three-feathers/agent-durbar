@@ -2185,3 +2185,36 @@ Settled, 30 to 48 s after load, median of 3 launches [min-max], % of one core: p
 **Not verified.** Windows, Linux, a non-Apple GPU, a real Retina panel, 40 agents, real sessions and the packaged app. The re-recorded rows (both sizes, flat and Real office) are in PR text, not here, until the owner decides the `real:` rows (FR-189).
 
 **Delta 2026-11-23 (found by CI on #2017, issue #2011 in the Real office signs).** `check-097-textfit` failed in CI in all six Real-office cases: "command-center" cut, its path still shown. Cause: the runner's wider fonts (DejaVu Sans and Sans Mono; reproduced here by forcing them) make the sign's content wider than the layout measured, and the sign's flex gives the name a thousandth of the overflow (path shrink 1000, name 1), so the name lost a fraction of a pixel to an ellipsis while the path was still drawn. Fix: `fitSigns()` after each render gives a sign whose name (or a part of a split name) is cut the class `nopath`, which hides the path (the sign's tip keeps it), as the Flat `fitHead` does (spec 001 FR-037). `sim:` `check-097-textfit` passes with the default fonts and with DejaVu forced on the signs; it failed with DejaVu before the fix. `[KNOWN GAP]` the driver itself runs in the default fonts only (CI's fonts exercise the same path).
+
+## Changes 2026-11-22: T162's Mac half, numbers for the owner (issue #1879; no FR or task number taken; nothing ticked)
+
+Spec delta only, no `src/` change. Machine, method, the forced ratio and what was not verified are in spec 001 *2026-11-22: T181's Mac run*; that delta also has the start and status-update rows. In short: Apple M4, real GPU (`gpu_compositing: enabled`), simulator only, 0 AI credits, `check-perf.js --record --gpu`, 15 agents, device pixel ratio 2 forced on a 1x monitor, `main` at `722a48a8e`. Values are median [min-max], n = runs. CPU is percent of one core (Electron's `percentCPUUsage` times 10, the 10 cores). Memory is the working set of all processes. **T162 stays open:** the Windows or Linux integrated-GPU laptop has not run. Whether the `real:` rows and FR-182's list are confirmed or moved is the owner's decision (FR-189, FR-179), not made here.
+
+| Row (15 agents, DPR 2) | Flat 1440x900 | Flat 1280x800 | Real 1440x900 | Real 1280x800 |
+|---|---|---|---|---|
+| Idle CPU, visible, total (GPU process) | 15.4 [14.5-24.4] (4.2) n=3 | 17.4 [16.3-31.1] (5.0) n=3 | 3.3 [3.3-10.3] (1.2) n=5 | 10.8 [9.6-12.1] (4.0) n=5 |
+| Idle CPU, hidden | 1.1 [1.1-1.2] | 0.9 [0.2-2.9] | 1.2 [0.1-1.3] | 2.2 [0.3-2.3] |
+| Frames at 10x activity: fps; p95 ms | 59.9; 17.9 [17.7-20.8] | 59.8; 18.8 [17.8-20.4] | 59.9; 17.8 [17.6-19.3] | 59.1; 20.8 [20.2-21.3] |
+| Retina memory, settled, working set MB; JS heap MB | 696 [673-744]; 35.6 | 765 [745-818]; 37.8 | 905 [858-940]; 29.8 | 925 [809-950]; 29.8 |
+| Raster proxy: decoded / shown picture MB (ratio) | no pictures | no pictures | 3.9 / 1.0 (3.72) | 3.1 / 0.9 (3.52) |
+| Scrolling | no office scroll in any run (`counts.scrolls` 0), so no row | same | same | same |
+
+**A/B in Real office** (3 launches per size; one window, styles switched in order: base, blur off, blend off, lights off, animations off, shadows off, base again; idle CPU over 10 s, total (GPU process)). The first base reading came right after load and is 2 to 2.5 times the last. So only the second base is a fair baseline, and gaps smaller than that are not told apart.
+
+| Variant | 1440x900 | 1280x800 |
+|---|---|---|
+| base (first; last) | 4.8 (1.7); 2.3 [2.3-5.6] (0.7) | 15.0 (5.5); 5.9 [5.8-6.6] (1.8) |
+| blur off (`backdrop-filter: none`) | 2.3 [1.2-2.3] (0.6) | 5.5 [5.2-5.7] (1.7) |
+| lamps' blend off (`mix-blend-mode: normal`) | 1.9 [1.3-2.0] (0.5) | 6.2 [5.1-7.3] (1.6) |
+| lights off (`.ro-lights`, `.ro-amb` hidden) | 1.4 [1.0-1.5] (0.4) | 3.5 [3.4-3.6] (1.1) |
+| animations off | 1.4 [1.0-1.5] (0.4) | 3.5 [3.5-4.8] (1.1) |
+| shadows off | 3.7 [3.7-3.7] (1.5) | 13.1 [13.0-13.9] (5.0) |
+| Dialog over 10x activity, blur on / off: fps; p95 ms; CPU (6 samples each) | 59.7 / 59.8; 18.2 / 17.8; 30.6 / 27.5 | 59.0 / 59.2; 20.0 / 20.0; 42.0 / 42.6 |
+
+**What it says** (this Mac only, a forced ratio of 2). (1) Idle CPU, real GPU (the `real:` row: at most 5 % of a core at 15 agents in Real office): 3.3 at 1440x900 is under it, 10.8 at 1280x800 is over it. Why the smaller window costs more was not looked into. (2) Blur: switching it off moves neither idle CPU nor the dialog's frames by more than the noise. rAF frames do not see GPU time, so FR-182's "2 ms a frame" test is not answered directly. Nothing here argues for moving a selector off the allow list, but that is the owner's call. (3) Lamps: turning their blend off moved nothing measurable. Hiding the lights, or stopping the animations, roughly halves idle CPU (2.3 to 1.4, 5.9 to 3.5). (4) Scrolling: at 15 agents the office never scrolls (Calm UI), so the scrolling row (40 agents) is not measured. (5) Memory: these are working sets, so the PSS rows ("PSS over flat at most 40 MB") are neither confirmed nor moved. The working set in Real office is 160 to 210 MB over flat, and the JS heap is 6 to 8 MB under flat.
+
+**Not verified.** `[KNOWN GAP]` The integrated-GPU Windows or Linux laptop (the other half of T162), a real Retina panel, 40 agents (where scrolling and the 40-agent rows live), raster time itself (the picture bytes and the GPU-process CPU are proxies; a trace was not taken), real sessions and the packaged app.
+
+## Changes 2026-11-22: correction, the T162 Mac half idle CPU rows are overstated (issue #2023; no FR or task number taken)
+
+The idle CPU rows of *T162's Mac half* above (the table's "Idle CPU, visible" row, and the A/B idle rows) are **superseded: measured too early**. They were read about 5 s after load, inside a load tail of about 15 s, with the recorder's own rAF loop running (about 1 point). Issue #2023's premise, that Real office at 1280x800 costs more than at 1440x900 and over the 5 % budget, is therefore **not shown**. PR #2035 (spec delta *the recorder's idle read waits for the load tail to end*) fixes the read. Re-recorded after it (same machine, DPR 2, 15 agents, 3 runs, median [min-max], % of one core): Real office 1440x900 0.31 [0.29-0.40], 1280x800 0.25 [0.13-0.26]; flat 3.48 [3.37-3.52] and 1.66 [1.39-1.69]. A/B idle after: base 0.30 / 0.42, lights off 0.02 / 0.02, animations off 0.02 / 0.01 (1280 / 1440). The old method in the same session gave Real 1.18 and 1.12, flat 3.64 and 3.48, so this table's 3.3, 10.8, 15.4 and 17.4 were not reproduced even by it; why is not known. The other rows stand. Whether the `real:` idle row is confirmed stays the owner's call (FR-189).

@@ -1,0 +1,1 @@
+- **PR preflight for authors** (spec 021): `npm run pr:preflight -- <N>` runs the reviewer's checks on a pull request before review is asked: labels, signed commits, no AI lines, merge commits that only merge, spec numbers against every branch, removed asserts, package scripts, size and the CI summary. Read-only; tested offline on a throwaway repository with mutants.

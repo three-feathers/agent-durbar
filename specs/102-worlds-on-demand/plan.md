@@ -293,6 +293,24 @@ The other 17 cells are the same shared code, in tokens, or a `person`, `fixture`
 
 **Risks.** The value `retro` is stored in users' files once the flag opens (C1, a proposal; main's T227 writes `pixel` today, so T344 changes the code and reads a legacy `pixel` back). The Photo office's look with pixel people is a style choice (FR-208): pictures are looked at, not judged against the Photo style. Uneven pixels stay FR-255's gap (C7). Generated running frames may not hold a person's look: the per-picture approval is the gate, and the fallback stays meanwhile.
 
+## Delta 2026-11-22: vocabulary profiles for `checkSet` (T100, T433, T434, T224; issue #1877)
+
+**Status:** plan only, a proposal for review (spec *Changes 2026-11-22*, last entry). No `src/` change in this PR. OP-14 is open; T100, T433 and T434 do not wait for it.
+
+**Reused (spec 021 FR-031).** `worldpack.ts`: `partProblem` and `pictureHeader` (caps, alpha, size), `readAnchors`, the `world.json` reader with `MANIFEST_BYTES` and `hasDuplicateKeys`, `MANIFEST_FIELDS`, `PART_TABLE`, `validateWorldZip` and `validateWorldFiles` (entry count, name and traversal rules from `worldzip.ts`). `worldmoments.ts`'s `momentCoverage` is not touched. No second rule table: a profile holds names only, the rules and caps stay where they are.
+
+**Shape.**
+- `type SetProfile = { personId, poses, aliases, halfSuffix, extraPerPerson, setFields, anchorFrom }`, every field a closed list or a pattern taken from code; no cap field exists in the type.
+- `USER_SET_PROFILE` (frozen) and `BUILTIN_VOCABULARY` (the superset built-in profiles may pick from, one line per name with its reason) in `worldpack.ts`.
+- `checkSet(files, profile)` returns per person `full` or the missing poses and anchors, and the set's `level`. Built-in profiles are read from `vocabulary.json` next to each pack by a function the contract suite calls; the untrusted entry points have no profile parameter.
+- Worlds (T434) get the same split: `WorldProfile` with fields and files; the user one is today's `MANIFEST_FIELDS` and `PART_TABLE`.
+
+**Order.** T100 (user profile, test first, hostile set) then T433 and T434 in parallel, then spec 117 T017 (with T016's inventory committed in its PR). T224 waits for OP-14 (a).
+
+**Cost.** Code only: 0 AI credits, simulator and `npm test`.
+
+**Risks.** See the Changes entry: a built-in profile must never widen a user zip (no profile parameter on untrusted paths, a refusal test for every built-in-only name, a mutant); a data file next to a pack may trip asset listings (fallback: one table under `src/shared/`); a built-in set cannot be shared as-is (`[KNOWN GAP]` until OP-14 (b)).
+
 ## Done when
 
 Tasks ticked, `/speckit.converge` run, SC-001..SC-018 read, README *Safety model* lists the new connection, and `real:` rows recorded or left as `[KNOWN GAP]`.

@@ -295,6 +295,8 @@ FIXTURES = ['library', 'software', 'terminal', 'web', 'boss', 'coffee', 'bank', 
 
 # ---------------------------------------------------------------------------------------------------------------- room: wall and floor, day and night
 WALL_W, WALL_H, SHADOW = 720, 112, 6
+# the four neon signs wall() draws (grid px of the 720 x 118 wall, tube and halo): the renderer keeps name chips and place plates off them (spec 102 T445, issue #2009)
+WALL_SIGNS = [dict(id='bolt', x=200, y=10, w=15, h=23), dict(id='star', x=291, y=8, w=23, h=22), dict(id='sign', x=407, y=10, w=23, h=17), dict(id='heart', x=508, y=5, w=21, h=22)]
 def wall(day):
     c = C(WALL_W, WALL_H + SHADOW); R = c.R; w, band = WALL_W, WALL_H
     R('#bfae84' if day else '#141b3d', 0, 0, w, band)
@@ -609,7 +611,7 @@ def write_world(repo):
     total += save(glow().im, f'{W}/glow.webp'); total += save(console().im, f'{W}/desk.webp'); total += save(welcome().im, f'{W}/welcome.webp')
     meta = dict(formatVersion=1, id='retro', name='Retro arcade', defaultSet='retro', pixelArt=True, storeys=True, arrangement='aisles', css='world.css', wall='wall.webp', floorTile=[24, 24],
                 night=dict(wall='wall-night.webp', floor='floor-night.webp'), welcome='welcome.webp', monitor=mon, glow=dict(file='glow.webp', cells=STATES, cell=[56, 15]),
-                desk=[40, 22], fixtures=fx, fixtureTop=ftop, floorLine=FL, wallSize=[WALL_W, WALL_H + SHADOW], bandRows=WALL_H)
+                desk=[40, 22], fixtures=fx, fixtureTop=ftop, floorLine=FL, wallSize=[WALL_W, WALL_H + SHADOW], bandRows=WALL_H, wallSigns=WALL_SIGNS)
     with open(os.path.join(W, 'world.json'), 'w') as f: f.write(json.dumps(meta, indent=1, sort_keys=True) + '\n')
     return meta, total
 

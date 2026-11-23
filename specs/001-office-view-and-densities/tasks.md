@@ -293,3 +293,7 @@ Numbers taken: T167..T183. Each phase one small PR, after #950 and #959 land (#9
 
 - [x] T441 [US2] Refs #2011, #2014 (spec delta 2026-11-22): `nameCut` (app.js) asks a split name's start and tail too (`textCut`); `places.js` `POST_NAMED` 180 and `POST_LONG` 240 (`lobbyFit().post.long` drives the folder in the Postbox lines). Test: `scripts/check-097-textfit.js` (in `ui-suite.js`), `test:places`; mutants `nameCut` box only, `POST_NAMED` 240, each killed; `[KNOWN GAP]` docs pictures not retaken: #2019
 
+
+
+## 2026-11-22: the desk-order check's draw wait (issue #2043)
+- [x] T456 (delta 2026-11-22, issue #2043): `toStatus` / `statusDraws` in `scripts/office-ops-rules.js`; `check-office-ops` waits for a draw only when a status changes the state (four steps); `test:officeops` fake-page cases and two mutants; spec delta, `changelog.d/001-2043-office-ops-render.md`. Test: `npm run test:officeops`, `node scripts/ui-suite.js --only check-office-ops` 5 runs
