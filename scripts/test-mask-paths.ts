@@ -47,6 +47,16 @@ for (const [fam, s] of TOKENS) for (const [ctx, f] of Object.entries(TOKEN_CTX))
   for (const [m, g] of Object.entries(MASKS)) ok(!g(t).includes(tail(s)), `T492 token, ${fam}, ${ctx}: hidden (${m})`);
   ok(!R.maskBareTokenShapes(t, '[s]').includes(tail(s)), `T492 token, ${fam}, ${ctx}: hidden (bare)`);
 }
+// a token cut by markup or a hidden character, after a separator: the split step rejoins it with the path boundaries on (review of PR 2072, item 1)
+{
+  const CUTS: Record<string, string> = { tag: '<b></b>', comment: '<!---->', zwsp: '\u200b', zwj: '\u200d', soft: '\u00ad' };
+  const shown: Record<string, number> = {};
+  for (const [fam, s] of TOKENS) for (const [c, x] of Object.entries(CUTS)) for (const at of [6, 18]) for (const pre of ['open srv/', 'a/', 'https://h.test/p/']) {
+    const t = pre + s.slice(0, at) + x + s.slice(at);
+    for (const [m, g] of Object.entries(MASKS)) { const hid = !g(t).includes(tail(s)); ok(hid, `T492 split token, ${fam}, cut by ${c}, after a separator: hidden (${m})`); if (!hid) shown[c] = (shown[c] || 0) + 1; }
+  }
+  eq(Object.keys(shown).length, 0, 'T492 split token after a separator: none shown (counted per cut)');
+}
 // the path around it stays
 eq(R.redact('/srv/' + TOKENS[1][1] + '/a.txt', {}), '/srv/[redacted]/a.txt', 'T492 token: the folders around a hidden segment stay');
 
@@ -136,10 +146,11 @@ for (const [m, g] of Object.entries(MASKS)) for (const zw of ['\u200b', '\u200d'
   ok(!g(t).includes('E6gH9jK2'), `T492 value with a hidden character, path: hidden (${m}, ${JSON.stringify(zw)})`);
 }
 // harmless values that are paths stay as they were (near misses, also as before T492)
-for (const t of ['pass' + 'word=keys/server_2026.pem', 'tok' + 'en=server_2026/key.pem', 'tok' + 'en=config2025/aws.json', 'pass' + 'word=./secrets/db.txt', 'pass' + 'word=C:\\keys\\a.pem',
-  'tok' + 'en=src/foo1', 'api_' + 'key=$HOME/.netrc', 'tok' + 'en=Config/a.json', 'tok' + 'en=abcdef0123/x', 'tok' + 'en=' + 'ABCDEFGH/x',
+// (each is shown by `main`'s plain context too, so the glued-path context keeps it: the consistency rule below)
+for (const t of ['pass' + 'word=keys/server_2026.pem', 'tok' + 'en=server_2026/key.pem', 'pass' + 'word=./secrets/db.txt', 'pass' + 'word=C:\\keys\\a.pem',
+  'tok' + 'en=src/foo1', 'api_' + 'key=$HOME/.netrc', 'tok' + 'en=Config/a.json', 'tok' + 'en=' + 'ABCDEFGH/x',
   // with a file name after them, so `main` read them as a path and showed them (the near miss is then a real one)
-  'tok' + 'en=MyConfig/x.json', 'tok' + 'en=BUILD2026/x.json', 'tok' + 'en=Ab1/x.json', 'tok' + 'en=1234567890123456/x.json', 'tok' + 'en=deadbeefcafebabe/x.json', 'pw' + 'd=v1.2/x.json', 'api_' + 'key=sha256/x.json']) {
+  'tok' + 'en=MyConfig/x.json', 'tok' + 'en=Ab1/x.json', 'tok' + 'en=deadbeefcafebabe/x.json', 'pw' + 'd=v1.2/x.json', 'api_' + 'key=sha256/x.json', 'tok' + 'en=reset-flow-v2/x.json']) {
   for (const [m, g] of Object.entries(MASKS)) eq(g(t), off(() => g(t)), `T492 stays as before: ${t.split('=')[1]} (${m})`);
 }
 
@@ -177,11 +188,25 @@ for (const t of ['pass' + 'word=keys/server_2026.pem', 'tok' + 'en=server_2026/k
     unc: () => '\\\\' + pick(['nas01', 'fs', 'build01']) + '\\' + Array.from({ length: 1 + rnd(4) }, seg).join('\\'),
     url: () => 'https://' + pick(['github.com', 'cdn.example.com', 'registry.npmjs.org', 'storage.example.com']) + '/' + Array.from({ length: 1 + rnd(5) }, seg).join('/') + (rnd(2) ? '?' + pick(['page=2', 'ref=main']) : ''),
     gitObject: () => '.git/objects/' + from(HEX, 2) + '/' + from(HEX, 38),
-    namedPath: () => pick(['pass' + 'word', 'tok' + 'en', 'api_' + 'key', 'sec' + 'ret', 'credentials']) + pick(['=', ': ']) + pick(['keys/server_2026.pem', './secrets/db.txt', '/run/secrets/db', '~/.aws/credentials', 'C:\\keys\\a.pem', 'src/config/' + word(), 'config2025/aws.json', '$HOME/.netrc']),
+    namedPath: () => pick(['pass' + 'word', 'tok' + 'en', 'api_' + 'key', 'sec' + 'ret', 'credentials']) + pick(['=', ': ']) + pick(['keys/server_2026.pem', './secrets/db.txt', '/run/secrets/db', '~/.aws/credentials', 'C:\\keys\\a.pem', 'src/config/' + word(), '$HOME/.netrc']),
     base64: () => from(B64, 20 + rnd(200)) + pick(['', '=', '==']),
     wrappedBase64: () => Array.from({ length: 2 + rnd(4) }, () => from(B64, 76)).join(pick(['\n', '\r\n'])),
     base64url: () => from(B64U, 20 + rnd(200)),
     dataUri: () => 'data:image/png;base64,' + from(B64, 40 + rnd(300)) + '==',
+    // review of PR 2072, items 2 and 3: the reviewer's harmless classes, generated here
+    doubleSeparatorHex: () => pick(['items/', 'cache/', 'https://h.test/a/']) + '1//0' + from(HEX, 30 + rnd(12)) + pick(['', '/x', '?q=1']),
+    gitPack: () => '.git/objects/pack/pack-' + from(HEX, 40) + pick(['.pack', '.idx']),
+    uuidDir: () => '/var/lib/x/' + [8, 4, 4, 4, 12].map((k) => from(HEX, k)).join('-') + '/data',
+    npmCacache: () => '~/.npm/_cacache/content-v2/sha512/' + from(HEX, 2) + '/' + from(HEX, 2) + '/' + from(HEX, 124),
+    npmIndex: () => '~/.npm/_cacache/index-v5/' + from(HEX, 2) + '/' + from(HEX, 2) + '/' + from(HEX, 60),
+    appDataGuid: () => pick(['C:\\Users\\x\\AppData\\Local\\Temp\\', 'C:/Users/x/AppData/Local/Temp/']) + '{' + [8, 4, 4, 4, 12].map((k) => from(HEX + 'ABCDEF', k)).join('-') + '}',
+    pnpmHash: () => 'node_modules/.pnpm/' + pick(['react@18.3.1', 'lodash@4.17.21']) + '_' + from(LOW + DIG, 26) + '/node_modules',
+    dockerOverlay: () => '/var/lib/docker/overlay2/' + from(HEX, 64) + pick(['/diff', '/merged', '/work']),
+    nixStore: () => '/nix/store/' + from('0123456789abcdfghijklmnpqrsvwxyz', 32) + '-' + pick(['nodejs-20.11.1', 'glibc-2.38']),
+    webpackAsset: () => '/static/js/' + pick(['main', 'vendor', 'chunk']) + '.' + from(HEX, 8 + rnd(12)) + '.js',
+    s3Key: () => 's3://bucket/' + from(LOW + DIG, 8) + '/' + from(B64U, 22) + '/' + file(),
+    camelFolder: () => '/srv/' + pick(['Project', 'Config', 'Release', 'Acme', 'Game']) + pick(['Alpha', 'Build', 'Data', '']) + pick(['2025', 'V2', '64', 'Q3']) + '/' + file(),
+    afterNameLower: () => pick(['tok' + 'en', 'pass' + 'word']) + '=' + pick(['keys', 'certs', 'secrets', 'config']) + '/' + file(),
   };
   const newly: Record<string, number> = {}, total: Record<string, number> = {};
   for (const [c, g] of Object.entries(CLASSES)) for (let i = 0; i < 1500; i++) {
@@ -191,6 +216,8 @@ for (const t of ['pass' + 'word=keys/server_2026.pem', 'tok' + 'en=server_2026/k
   // the one class FR-198 hides on purpose (listed in the spec): after a secret name, a first folder that reads as a key (mixed case and a digit, long hex,
   // or 4 to 7 characters with a letter and a digit after a short name); generated here so it is counted, never left to chance
   const LISTED: Record<string, () => string> = {
+    // a UUID after a secret-holding name is hidden in the plain context on main (some services issue UUIDs as keys), so it is in the glued-path context too
+    afterNameUuid: () => pick(['tok' + 'en', 'pass' + 'word']) + '=' + [8, 4, 4, 4, 12].map((k) => from(HEX, k)).join('-') + '/' + file(),
     namedKeyFolder: () => pick(['tok' + 'en', 'api_' + 'key', 'sec' + 'ret', 'pass' + 'word']) + '=' + pick([from(UP, 2) + from(LOW, 4) + from(DIG, 2), from(LOW, 3) + from(UP, 3) + from(DIG, 3), from(HEX, 16 + rnd(8)).replace(/^[0-9]/, 'a') + '1']) + '/' + file(),
   };
   for (const [c, g] of Object.entries(LISTED)) for (let i = 0; i < 500; i++) {
@@ -200,6 +227,56 @@ for (const t of ['pass' + 'word=keys/server_2026.pem', 'tok' + 'en=server_2026/k
   console.log(`test-mask-paths: harmless texts newly changed per class ${JSON.stringify(newly)} of ${JSON.stringify(total)}`);
   for (const c of Object.keys(CLASSES)) eq(newly[c] || 0, 0, `T492 differential: no ${c} text is newly hidden (0)`);
   eq(Object.values(newly).reduce((x, y) => x + y, 0), Object.keys(LISTED).reduce((x, c) => x + (newly[c] || 0), 0), 'T492 differential: the total newly hidden equals the listed class');
+}
+
+// 5. the rule of the second context (review of PR 2072, item 2): after a secret-holding name, a value with a path glued after it is hidden exactly when the
+// same name and value without the path are hidden by `main` (the plain context); counted per value class, 0 differences asserted
+{
+  let seed = 7; // mulberry32
+  const rnd = (k: number): number => { seed = (seed + 0x6d2b79f5) | 0; let x = Math.imul(seed ^ (seed >>> 15), 1 | seed); x = (x + Math.imul(x ^ (x >>> 7), 61 | x)) ^ x; return Math.floor((((x ^ (x >>> 14)) >>> 0) / 4294967296) * k); };
+  const from = (a: string, k: number): string => { let o = ''; for (let i = 0; i < k; i++) o += a[rnd(a.length)]; return o; };
+  const pick = <T>(a: T[]): T => a[rnd(a.length)];
+  const LOW = 'abcdefghijklmnopqrstuvwxyz', UP = LOW.toUpperCase(), DIG = '0123456789', HEX = '0123456789abcdef';
+  const WORDS = ['Project', 'Config', 'Build', 'Release', 'Alpha', 'Server', 'Data', 'Acme', 'Game', 'Summer', 'Dragon'];
+  const VALUES: Record<string, () => string> = {
+    camelFolder: () => pick(WORDS) + pick(WORDS) + pick(['2025', 'V2', '64', 'Q3']), random: () => from(LOW + UP + DIG, 8 + rnd(30)),
+    handMade: () => pick(WORDS) + String(rnd(10000)) + pick(['', '!', '#']), lowerDigits: () => from(LOW, 4 + rnd(6)) + from(DIG, 1 + rnd(4)),
+    lowerWord: () => pick(['keys', 'certs', 'config', 'secrets', 'reset-flow-v2']), hex: () => from(HEX, 16 + rnd(30)), short: () => from(LOW + UP, 2 + rnd(2)) + from(DIG, 1 + rnd(2)),
+    upperDigits: () => from(UP, 4) + from(DIG, 4), symbols: () => from(LOW + UP, 12) + pick(['!', '#', '^', '*', '?']) + from(LOW + UP, 10), base64Slashes: () => from(LOW + UP + DIG, 15) + '/' + from(LOW + UP + DIG, 10) + '/' + from(LOW + UP + DIG, 15),
+  };
+  const NAMES = ['pass' + 'word', 'tok' + 'en', 'api_' + 'key', 'sec' + 'ret', 'pw' + 'd', 'Account' + 'Key'];
+  const diff: Record<string, number> = {};
+  for (const [c, g] of Object.entries(VALUES)) for (let i = 0; i < 400; i++) {
+    const v = g(), nm = pick(NAMES);
+    for (const [m, f] of Object.entries(MASKS)) {
+      if (m === 'command') continue; // the command mask reads words and flags, not this free-text form
+      const plain = !off(() => f(nm + '=' + v)).includes(v), glued = !f(nm + '=' + v + '/' + pick(['server.pem', 'a.txt', 'sub/x.json'])).includes(v);
+      if (plain !== glued) diff[c] = (diff[c] || 0) + 1;
+    }
+  }
+  console.log(`test-mask-paths: consistency differences per value class ${JSON.stringify(diff)}`);
+  eq(Object.keys(diff).length, 0, 'T492 rule: the glued-path context hides a value exactly when the plain context on main does (0 differences)');
+  // names that say they hold a location are not secret-holding names: their paths read as before
+  const LOC = ['tok' + 'en_file', 'pass' + 'word_file', 'sec' + 'ret_path', 'api_' + 'key_file', 'private_key_path', 'ssh_key_dir', 'cert_folder'];
+  let locNew = 0;
+  for (let i = 0; i < 600; i++) {
+    const t = pick(LOC) + '=' + pick(Object.values(VALUES))() + '/' + pick(['server.pem', 'a.txt']);
+    for (const f of Object.values(MASKS)) if (f(t) !== off(() => f(t))) { locNew++; break; }
+  }
+  eq(locNew, 0, 'T492 rule: a path after a location-saying name reads as before (0 newly hidden)');
+}
+
+// 6. work on path-dense text (review of PR 2072, item 5): the family heads are checked before the bounded look-behind, so the head costs at most 8 times
+// the reading without the path boundaries on adversarial path-dense text (CPU time, the best of three runs; typical text is near 1x)
+{
+  const cpu = (f: () => void): number => { let best = Infinity; for (let i = 0; i < 3; i++) { const c = process.cpuUsage(); f(); const d = process.cpuUsage(c); best = Math.min(best, d.user + d.system); } return best; };
+  const fill = (u: string, k: number): string => u.repeat(Math.ceil(k / u.length)).slice(0, k);
+  for (const [k, u] of Object.entries({ slashes: 'a/', heads: '/AI' + 'za', refresh: '1/' + '/0', longRuns: '/' + 'abcdefgh'.repeat(16) + 'a', named: 'pass' + 'word=aB3dE6gH9jK2/' })) {
+    const t = fill(u, 200_000);
+    const r1 = cpu(() => R.redact(t, {})) / Math.max(1, cpu(() => off(() => R.redact(t, {}))));
+    const r2 = cpu(() => R.maskBareTokenShapes(t, '[s]')) / Math.max(1, cpu(() => off(() => R.maskBareTokenShapes(t, '[s]'))));
+    ok(r1 <= 8 && r2 <= 8, `T492 work: path-dense ${k} costs at most 8 times the reading without the path boundaries (redact ${r1.toFixed(1)}x, bare ${r2.toFixed(1)}x)`);
+  }
 }
 
 // 4. work: the new boundaries are bounded look-arounds and the segment pass is anchored at a name; their adversarial runs are in
