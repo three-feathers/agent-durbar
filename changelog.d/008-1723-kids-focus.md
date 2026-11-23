@@ -1,1 +1,0 @@
-- **The kids check runs alone in the UI suite** (test tooling, spec 008): its three entries no longer share the desktop with other windows (#1723).
