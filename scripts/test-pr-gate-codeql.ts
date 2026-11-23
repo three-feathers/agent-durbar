@@ -37,6 +37,9 @@ for (const [read, what] of [['repos/$R/pulls/$p/files', 'the one file list (src/
 assert.ok(prLineAt < gate.indexOf('src_files=$(gh api --paginate') && prLineAt < gate.indexOf('only_nocode; then'), 'the file list is read after pr_line');
 assert.ok(!gate.includes('--json files') && !/--jq \.changed_files/.test(gate) && gate.includes('src_total=$pr_total;'), 'changed_files comes from pr_line only (FR-091), no gh pr view file list');
 assert.ok(gate.includes('files=$src_files;'), 'only_nocode reuses the one file list (FR-031)');
+// FR-420: a draft blocks, and the required names come from the ruleset record, never a list in the gate
+assert.ok(gate.includes('$(dirname "$0")/../.github/ruleset-main.json') && !gate.includes("'Build and test (ubuntu-latest)'"), 'the gate reads the required names from .github/ruleset-main.json');
+assert.ok(gate.indexOf('read -r pr_total head_sha pr_base pr_baseref pr_author pr_draft outside_pr') > prLineAt, 'the draft state comes from the one PR read (FR-090)');
 assert.ok(headNowAt > 0 && headNowAt < verdictAt && gate.slice(headNowAt, verdictAt).split('\n').length <= 4, 'the head is read again just before the verdict');
 
 const bash = process.platform === 'win32' ? null : spawnSync('bash', ['-c', 'command -v jq'], { encoding: 'utf8' });
@@ -90,7 +93,15 @@ exit 0
 `, { mode: 0o755 });
 const env = { ...process.env, PATH: `${bin}${path.delimiter}${process.env.PATH}` };
 
-const OTHER = 'Build and test (ubuntu-latest)\tpass\t1m\thttps://x\nSpec Kit gate\tpass\t1m\thttps://x\n';
+// the required names of the ruleset record (FR-420); a copy of the file sits where each gate copy looks for it (<gate dir>/../.github)
+const RULESET = path.join(ROOT, '.github', 'ruleset-main.json');
+const REQUIRED: string[] = (JSON.parse(fs.readFileSync(RULESET, 'utf8')) as { rules: Array<{ type: string; parameters?: { required_status_checks?: Array<{ context: string }> } }> }).rules
+  .filter((r) => r.type === 'required_status_checks').flatMap((r) => (r.parameters?.required_status_checks ?? []).map((c) => c.context));
+assert.strictEqual(REQUIRED.length, 5, 'the ruleset record names five required checks');
+const listed = (state: string): string => REQUIRED.map((n) => `${n}\t${state}\t1m\thttps://x\n`).join('');
+const OTHER = listed('pass');
+fs.mkdirSync(path.join(dir, '.github'));
+fs.copyFileSync(RULESET, path.join(dir, '.github', 'ruleset-main.json'));
 const set = (name: string, v: string | null): void => {
   const f = path.join(fx, name);
   if (v === null) fs.rmSync(f, { force: true });
@@ -99,14 +110,14 @@ const set = (name: string, v: string | null): void => {
 type File = string | { filename: string; previous_filename: string };
 const LOCK = { lockfileVersion: 3, packages: { '': { dependencies: { x: '^1.0.0' } }, 'node_modules/x': { version: '1.0.1', resolved: 'https://registry.npmjs.org/x/-/x-1.0.1.tgz', integrity: 'sha512-AAAA' } } };
 const PKG = { name: 'prereview', scripts: { test: 'node test.js' }, dependencies: { x: '^1.0.0' } };
-const fixture = (o: { codeql?: string | null; checks?: boolean; files?: File[] | null; page2?: File[]; changed?: number; contents?: Record<string, unknown>; base?: Record<string, unknown>; baseRef?: string; author?: string; merge?: unknown[] | null; head?: unknown[] | null; main?: unknown[] | null; head2?: unknown[]; main2?: unknown[]; runs?: string[] | null; runs2?: string[]; runId?: string; headSha?: string } = {}): void => {
+const fixture = (o: { codeql?: string | null; checks?: boolean; files?: File[] | null; page2?: File[]; changed?: number; contents?: Record<string, unknown>; base?: Record<string, unknown>; baseRef?: string; author?: string; merge?: unknown[] | null; head?: unknown[] | null; main?: unknown[] | null; head2?: unknown[]; main2?: unknown[]; runs?: string[] | null; runs2?: string[]; runId?: string; headSha?: string; draft?: boolean | null } = {}): void => {
   const codeql = o.codeql === undefined ? 'skipping' : o.codeql;
   set('checks.txt', o.checks === false ? null : OTHER + (codeql === null ? '' : `CodeQL\t${codeql}\t0\t${o.runId ?? 'https://github.com/o/r/runs/101'}\n`));
   const files = o.files ?? ['scripts/prereview/package-lock.json', 'scripts/prereview/package.json'];
   const page = (l: File[]): string => JSON.stringify(l.map((f) => (typeof f === 'string' ? { filename: f } : f)));
   set('files.json', o.files === null ? null : page(files));
   set('files2.json', o.page2 ? page(o.page2) : null);
-  set('pull.json', JSON.stringify({ user: { login: o.author ?? 'dependabot[bot]' }, head: { sha: o.headSha ?? SHA, repo: { full_name: 'o/r' } }, base: { sha: BASE, ref: o.baseRef ?? 'main', repo: { full_name: 'o/r' } }, changed_files: o.changed ?? files.length + (o.page2 ?? []).length }));
+  set('pull.json', JSON.stringify({ user: { login: o.author ?? 'dependabot[bot]' }, head: { sha: o.headSha ?? SHA, repo: { full_name: 'o/r' } }, base: { sha: BASE, ref: o.baseRef ?? 'main', repo: { full_name: 'o/r' } }, changed_files: o.changed ?? files.length + (o.page2 ?? []).length, ...(o.draft === null ? {} : { draft: o.draft ?? false }) }));
   fs.rmSync(path.join(fx, 'contents'), { recursive: true, force: true });
   fs.rmSync(path.join(fx, 'base'), { recursive: true, force: true });
   // the base commit has the same dependency files as the default head, unless a case says otherwise (null: not on the base)
@@ -280,16 +291,39 @@ const CASES: Record<string, Case> = {
     notReady(g, l, new RegExp(`head-changed\\(read ${SHA} first, c{40} at the end`));
   },
   'head-unread: the final head read fails': N({ codeql: 'pass', files: ['docs/a.md'] }, /head-changed\(read a{40} first, unread at the end/, () => set('pull-later.fail', '')),
-  // the src/ check at the top of the gate (FR-091, #1422): CodeQL passed and the gates absent, so only src/ makes it block
-  'src-page2: src/a.ts on the second page of the file list': N({ codeql: 'pass', files: ['docs/a.md'], page2: ['src/a.ts'] }, /missing:Spec Kit gate/, noGates),
-  'src-rename: a src/*.ts file renamed to a .md': N({ codeql: 'pass', files: [{ filename: 'docs/a.md', previous_filename: 'src/main/a.ts' }] }, /missing:Spec Kit gate/, noGates),
-  'src-docs-only: docs only, the src gates not needed': (g, l) => { fixture({ codeql: 'pass', files: ['docs/a.md'], page2: ['docs/b.md'] }); noGates(); ready(g, l); },
+  // the file list must be read whole (FR-091, #1422); since FR-420 the required checks are wanted on every PR, not only one that changes src/
+  'src-page2: src/a.ts on the second page of the file list, read whole': R({ codeql: 'pass', files: ['docs/a.md'], page2: ['src/a.ts'] }),
+  'src-docs-only: docs only, the required checks absent': N({ codeql: 'pass', files: ['docs/a.md'], page2: ['docs/b.md'] }, /missing:Spec Kit gate/, noGates),
+  // FR-420: a draft is never ready; every required name exactly pass on every PR; the ruleset record must be readable
+  'draft: a green draft': N({ codeql: 'pass', files: ['src/main/a.ts'], draft: true }, /checks=\[ draft\(mark it ready first\)\]/),
+  'draft-missing: no draft field in the PR read': N({ codeql: 'pass', files: ['src/main/a.ts'], draft: null }, /draft-unread/),
+  'required-skipping: a ready docs-only PR whose required checks are skipping': (g, l) => {
+    fixture({ codeql: 'pass', files: ['docs/a.md'], author: 'vikramgorla' });
+    set('checks.txt', `${listed('skipping')}CodeQL\tpass\t0\thttps://github.com/o/r/runs/101\n`);
+    const r = run(g);
+    assert.ok(r.code === 1 && REQUIRED.every((n) => r.out.includes(`missing:${n}`)), `${l}: not ready, every required name missing\n${r.out}`);
+  },
+  'required-twice: a required name listed passed and skipping': N({ codeql: 'pass', files: ['docs/a.md'] }, /missing:Office layout check \(xvfb\)/, () => set('checks.txt', `${OTHER}Office layout check (xvfb)\tskipping\t0\thttps://x\nCodeQL\tpass\t0\thttps://github.com/o/r/runs/101\n`)),
+  'spec-only: a spec-only PR with the five required checks passed': R({ files: ['specs/021-x/spec.md', 'specs/021-x/tasks.md'], author: 'vikramgorla' }),
+  'ruleset-missing: no ruleset record beside the gate': (g, l) => {
+    const d = path.join(dir, 'no-ruleset', 'scripts');
+    fs.mkdirSync(d, { recursive: true });
+    for (const f of ['trusted-lib.sh', 'trusted-authors.txt', 'pr-status-note.re', 'pr-gate-answered.awk']) fs.copyFileSync(path.join(SCRIPTS, f), path.join(d, f));
+    fs.copyFileSync(g, path.join(d, 'pr-gate.sh'));
+    fs.rmSync(path.join(dir, 'no-ruleset', '.github'), { recursive: true, force: true });
+    fixture({ codeql: 'pass', files: ['src/main/a.ts'] });
+    notReady(path.join(d, 'pr-gate.sh'), `${l}: missing`, /required-unread/);
+    fs.mkdirSync(path.join(dir, 'no-ruleset', '.github'));
+    fs.writeFileSync(path.join(dir, 'no-ruleset', '.github', 'ruleset-main.json'), JSON.stringify({ rules: [{ type: 'pull_request' }] }));
+    notReady(path.join(d, 'pr-gate.sh'), `${l}: no required names`, /required-unread/);
+    fs.writeFileSync(path.join(dir, 'no-ruleset', '.github', 'ruleset-main.json'), '{ not json');
+    notReady(path.join(d, 'pr-gate.sh'), `${l}: unreadable`, /required-unread/);
+  },
   'src-count: the API lists fewer files than the PR changed': N({ codeql: 'pass', files: ['docs/a.md'], changed: 2 }, /src-check-unreadable/),
   'src-cap: 3000 files, where the files API stops': N({ codeql: 'pass', files: Array.from({ length: 3000 }, (_, i) => `docs/f${i}.md`) }, /src-check-unreadable/),
   'src-error: the file list cannot be read': N({ codeql: 'pass', files: null }, /src-check-unreadable/),
   'src-partial: the file list fails after its first page': N({ codeql: 'pass', files: ['docs/a.md'] }, /src-check-unreadable/, () => set('files.fail', '')),
   'src-empty: the files API lists no file (changed_files 0)': N({ codeql: 'pass', files: [], changed: 0 }, /src-check-unreadable/),
-  'src-ctrl: a file name with a newline counts as src/': N({ codeql: 'pass', files: ['src/a\n.ts'] }, /missing:Spec Kit gate/, noGates),
   'checks-error: the check list cannot be read': N({ checks: false }, /codeql=missing /),
 };
 const runCase = (g: string, name: string): void => {
@@ -341,13 +375,11 @@ try {
     ['the final head re-check removed', '[ -n "$head_sha" ] && [ "$head_now" = "$head_sha" ] || bad=', 'true || bad=', 'head-moved'],
     ['the final head read error ignored', '--jq .head.sha 2>/dev/null) || head_now=;', '--jq .head.sha 2>/dev/null) || head_now=$head_sha;', 'head-unread'],
     ['the src/ check without --paginate', 'src_files=$(gh api --paginate', 'src_files=$(gh api', 'src-page2'],
-    ['the src/ check ignoring a rename\'s old path', ', (.previous_filename // empty|"P \\(.)")', '', 'src-rename'],
     ['the src/ check without the count comparison', ' || [ "$(grep -cE \'^(F |C$)\' <<< "$src_files")" != "$src_total" ]', '', 'src-count'],
     ['the src/ check without the 3000 cap', ' || [ "$src_total" -ge 3000 ]', '', 'src-cap'],
     ['the src/ check blocking on nothing', 'if [ "$src_files" = ERR ] || [ -z "$src_files" ] || [ "$(grep -cE \'^(F |C$)\' <<< "$src_files")" != "$src_total" ] || [ "$src_total" -ge 3000 ]; then', 'if false; then', 'src-error'],
     ['the src/ check accepting a partly read list', `"P \\(.)") end') || src_files=ERR`, `"P \\(.)") end')`, 'src-partial'],
     ['the src/ check accepting an empty list', ' || [ -z "$src_files" ]', '', 'src-empty'],
-    ['a control-character name not counted as src/', `grep -qE '^([FP] src/|C$)' <<< "$src_files"`, `grep -qE '^([FP] src/)' <<< "$src_files"`, 'src-ctrl'],
     ['the merge count read without a number check', '[ -n "$a_merge" ] && ', '', 'alerts-empty'],
     ['the head ref counted whole (main\'s alerts not subtracted)', `grep -cvxF -f <(printf '%s\\n' "$a_base_nums") <<< "$a_head_nums"`, 'grep -c . <<< "$a_head_nums"', 'alert-main-on-head'],
     ['the merge ref left out of the sum', 'alerts=$((a_merge + a_head))', 'alerts=$a_head', 'alert-merge'],
@@ -355,6 +387,12 @@ try {
     ['the head list without --paginate', 'gh api --paginate "repos/$R/code-scanning/alerts?ref=refs/pull/$p/head', 'gh api "repos/$R/code-scanning/alerts?ref=refs/pull/$p/head', 'alert-head-page2'],
     ['a main read error ignored', '|| a_base_nums=ERR;; esac', '|| a_base_nums=;; esac', 'alert-main-unread'],
     ['the main list not checked for numbers', "numlist() { [ -z \"$1\" ] || ! grep -qvE '^[0-9]+$' <<< \"$1\"; }", 'numlist() { true; }', 'alert-main-number'],
+    ['the draft test removed', 'true) bad="$bad draft(mark it ready first)";;', 'true) ;;', 'draft'],
+    ['a missing draft field accepted', `*) bad="$bad draft-unread(the PR's draft state cannot be read)";;`, '*) ;;', 'draft-missing'],
+    ['skipping accepted for a required name', 'if($2!="pass") b=1', 'if($2!="pass" && $2!="skipping") b=1', 'required-skipping'],
+    ['one passed line enough for a required name', 'END{exit !(f && !b)}', 'END{exit !f}', 'required-twice'],
+    ['the required names asked only when src/ changes', 'while IFS= read -r need; do', `grep -qE '^([FP] src/|C$)' <<< "$src_files" && while IFS= read -r need; do`, 'src-docs-only'],
+    ['an unreadable ruleset record accepted', 'if [ -z "$required" ]; then', 'if false; then', 'ruleset-missing'],
     ['the base branch name not checked', "case $pr_baseref in ''|*[!A-Za-z0-9._/-]*|*..*) a_base_nums=ERR;;", "case $pr_baseref in 'zzzz') a_base_nums=ERR;;", 'alert-base-ref'],
   ];
   for (const [name, from, to, caught] of mutants) {

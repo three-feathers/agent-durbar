@@ -1,16 +1,17 @@
 #!/bin/bash
 # scripts/pr-gate.sh <PR> [--wait]: may this PR be merged? (AGENTS.md, "Read every review and comment before a merge"). Prints the
 # verdict and exits 0 (ready) or 1 (not yet: why, and the unanswered comments). It never merges. Needs `gh` (signed in) and bash.
-# --wait: first wait until no check is pending, still none after 90 s.
-# Waits until no check is pending, still none after 90 s (later workflows register their checks after the first ones end).
+# --wait: first wait until no check is pending, still none after 90 s (later workflows register their checks after the first ones end).
 # Blocks (prints why, exits 1) on:
+#   - a draft PR, or one whose draft state cannot be read (spec 021 FR-420);
+#   - a required check that is not exactly pass, on every PR: the names are the required_status_checks of .github/ruleset-main.json, read with
+#     Node; a missing, empty or unreadable list blocks (FR-420). Every line of a required name must be pass; skipping counts only for other checks;
 #   - a check that is not pass/skipping, or CodeQL not passed; a CodeQL check GitHub skipped on a PR that changes no analysed file counts as
 #     passed only when every changed file is on the no-code list in nocode() and the alerts are 0 (spec 021 FR-089, #1420);
 #   - a CodeQL check that is not exactly one check run from the github-advanced-security app, the run its line links (spec 021 FR-090, #1425);
 #   - a head commit that changed while the gate ran (read with the PR, read again before the verdict; FR-090): the file lists follow the live head;
 #   - a PR GitHub cannot merge (conflicts): GitHub then runs only CodeQL, so the other checks look absent rather than red;
 #   - a PR whose file list (paginated files API, renames' old paths too, count equal to changed_files, under 3000) is unreadable or incomplete (spec 021 FR-091, #1422);
-#   - a PR that changes src/ without the Spec Kit gate and the Linux build-and-test check present and passing;
 #   - an open code-scanning alert on the PR's merge ref, or on its head ref when the PR's base branch does not hold it too (FR-099, #1868: the head ref's
 #     analysis also lists main's alerts); a bot line comment can be carried forward after its alert is fixed;
 #   - a reviewer whose latest review is CHANGES_REQUESTED;
@@ -48,25 +49,31 @@ bad=$(printf '%s\n' "$checks_out" | awk -F'\t' 'NF && $2!="pass" && $2!="skippin
 for _ in 1 2 3 4 5 6; do mergeable=$(gh pr view $p --json mergeable -q .mergeable); [ "$mergeable" = UNKNOWN ] || break; sleep 10; done
 [ "$mergeable" = MERGEABLE ] || bad="$bad mergeable=$mergeable(merge main first)"
 # an outside PR: from a fork, or by an account outside the trusted list (dependabot[bot]: its metadata is ours, its body is not read)
-# the PR is read once (FR-090): changed_files, head and base sha, base branch, author, then the outside verdict (empty for a trusted PR)
-pr_line=$(gh api repos/$R/pulls/$p --jq "$JQ_TRUST \"\(.changed_files) \(.head.sha) \(.base.sha) \(.base.ref) \(.user.login) \" + (if (.head.repo.full_name // \"\") != .base.repo.full_name then \"fork:\(.head.repo.full_name // \"deleted\")\" elif (.user.login|trusted) or .user.login == \"dependabot[bot]\" then \"\" else \"author:\(.user.login)\" end)")
-read -r pr_total head_sha pr_base pr_baseref pr_author outside_pr <<< "$pr_line"
+# the PR is read once (FR-090): changed_files, head and base sha, base branch, author, draft, then the outside verdict (empty for a trusted PR)
+pr_line=$(gh api repos/$R/pulls/$p --jq "$JQ_TRUST \"\(.changed_files) \(.head.sha) \(.base.sha) \(.base.ref) \(.user.login) \(.draft) \" + (if (.head.repo.full_name // \"\") != .base.repo.full_name then \"fork:\(.head.repo.full_name // \"deleted\")\" elif (.user.login|trusted) or .user.login == \"dependabot[bot]\" then \"\" else \"author:\(.user.login)\" end)")
+read -r pr_total head_sha pr_base pr_baseref pr_author pr_draft outside_pr <<< "$pr_line"
+# FR-420: a draft is never ready; a missing field ("null") or a failed read blocks too
+case $pr_draft in false) ;; true) bad="$bad draft(mark it ready first)";; *) bad="$bad draft-unread(the PR's draft state cannot be read)";; esac
 case $head_sha in *[!0-9a-f]*|'') head_sha=;; esac; [ ${#head_sha} = 40 ] || head_sha=
 [ -n "$outside_pr" ] && bad="$bad outside-pr($outside_pr: a human decides, no checkout or run)"
 # the file lists follow the live head, not $head_sha: they are read after pr_line, and the head is read again before the verdict (FR-090)
-# the PR's file list, read once (FR-091, #1422; FR-031) for the src/ check and FR-089's only_nocode: the paginated files API, a renamed file's
+# the PR's file list, read once (FR-091, #1422; FR-031) for FR-089's only_nocode: the paginated files API, a renamed file's
 # old path too ("P"), a name with a control character as "C" (a newline would split it). The listed count (F and C lines) must equal pr_line's
 # changed_files and be under 3000 (the API stops there without an error); a read error, an empty list or any doubt blocks.
 src_files=$(gh api --paginate "repos/$R/pulls/$p/files" --jq '.[]|if ([.filename, (.previous_filename // empty)]|any(test("[\\x00-\\x1f\\x7f]"))) then "C" else "F \(.filename)", (.previous_filename // empty|"P \(.)") end') || src_files=ERR
 src_total=$pr_total; case $src_total in ''|*[!0-9]*) src_files=ERR;; esac
 if [ "$src_files" = ERR ] || [ -z "$src_files" ] || [ "$(grep -cE '^(F |C$)' <<< "$src_files")" != "$src_total" ] || [ "$src_total" -ge 3000 ]; then
-  bad="$bad src-check-unreadable(the PR's file list is incomplete or unreadable: a human checks whether it changes src/)"
+  bad="$bad src-check-unreadable(the PR's file list is incomplete or unreadable: a human checks the changed files)"
 fi
-# a control-character name counts as src/ (it cannot be checked); an unreadable list blocks above
-if grep -qE '^([FP] src/|C$)' <<< "$src_files"; then
-  for need in 'Spec Kit gate' 'Build and test (ubuntu-latest)'; do
-    printf '%s\n' "$checks_out" | awk -F'\t' -v n="$need" '$1==n && $2=="pass"{f=1} END{exit !f}' || bad="$bad missing:$need"
-  done
+# FR-420: every required check of the ruleset record must be listed and exactly pass (every line of its name), on every PR; the names
+# are read from the file, never written here. A missing, empty or unreadable list, or a name with a tab or line break, blocks.
+required=$(node -e 'const r=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")),n=[];for(const x of r.rules||[])if(x&&x.type==="required_status_checks")for(const c of (x.parameters||{}).required_status_checks||[])n.push(c&&c.context);if(!n.length||n.some((s)=>typeof s!=="string"||!/^[^\t\r\n]+$/.test(s)))process.exit(1);process.stdout.write(n.join("\n")+"\n")' "$(dirname "$0")/../.github/ruleset-main.json" 2>/dev/null) || required=
+if [ -z "$required" ]; then
+  bad="$bad required-unread(.github/ruleset-main.json: no required check names)"
+else
+  while IFS= read -r need; do
+    printf '%s\n' "$checks_out" | awk -F'\t' -v n="$need" '$1==n{f=1; if($2!="pass") b=1} END{exit !(f && !b)}' || bad="$bad missing:$need"
+  done <<< "$required"
 fi
 # owner hold (FR-079): labels, then the owners' latest hold-or-lift comment; only its date and link are printed, never its text
 for l in $(gh pr view $p --json labels -q '.labels[].name'); do case $l in status:blocked|needs-owner-approval) bad="$bad owner-hold(label $l: not mergeable until an owner removes it)";; esac; done
@@ -185,7 +192,7 @@ notes=$( { gh api --paginate repos/$R/issues/$p/comments --jq "$JQ_TRUST .[]|sel
 approvals=$(gh api --paginate repos/$R/pulls/$p/reviews --jq "$JQ_TRUST .[]|select(.state!=\"COMMENTED\" and .state!=\"PENDING\" and (.user.login|trusted) and (.user.login|test(\"\\\\[bot\\\\]\$\")|not))|\"\(.user.login)\t\(.submitted_at)\t\(.state)\t\(.commit_id[0:8])\"" | sort -k1,1 -k2,2 | awk -F'\t' '{last[$1]=$0} END{for(u in last){split(last[u],f,"\t"); if(f[3]=="APPROVED") print "approved by: " f[1] " at " f[4] " (" f[2] ")"}}' | sort)
 [ -n "$approvals" ] && echo "$approvals"
 [ -n "$notes" ] && { echo "status notes, not counted as asks:"; echo "$notes"; }
-# FR-090: the head is read again after every head-dependent read (the check list, pr_line, the one file list for src/ and FR-089): a
+# FR-090: the head is read again after every head-dependent read (the check list, pr_line, the one file list for FR-089 and FR-091): a
 # push since pr_line blocks, so "ready at <sha>" never rests on another commit's file lists. Any new list read goes above this line.
 head_now=$(gh api repos/$R/pulls/$p --jq .head.sha 2>/dev/null) || head_now=; case $head_now in *[!0-9a-f]*) head_now=not-a-sha;; esac
 [ -n "$head_sha" ] && [ "$head_now" = "$head_sha" ] || bad="$bad head-changed(read ${head_sha:-unread} first, ${head_now:-unread} at the end: a push during the gate, run it again)"
