@@ -8,11 +8,11 @@
 
 ## P1: pure core (no behaviour change; depends on P0)
 
-- [ ] T002 [P] `scripts/test-selfupdate-repo.ts` first, with the plan's mutants, then `parseRepoSlug`, `sameRepo` in `src/shared/selfupdate.ts` [FR-001, FR-003]
-- [ ] T003 [P] `scripts/test-selfupdate-feed.ts` first, fixtures in `scripts/fixtures/selfupdate/` (a real-shaped release list written by hand from GitHub's documented fields, a renamed-repo 301, another repo's `html_url`, 500 entries, 10 MB body), then `validateFeed`, `pickTarget`, `isBreaking` [FR-007, FR-008, FR-009]
-- [ ] T004 [P] `scripts/test-selfupdate-notes.ts` first, then `notesText` [FR-010]
-- [ ] T005 [P] `scripts/test-selfupdate-installtype.ts` first, then `installType`, `assetFor` against spec 008's `artifactName` patterns [FR-012]
-- [ ] T006 `scripts/test-selfupdate-schedule.ts` first, then `cadenceDue`, `snoozeState` (simulated clock; switch, policy, `local` origin, dev run; default on per D2 = A; no timer armed when off; switching off mid-check aborts it) [FR-004, FR-005, FR-016, SC-001] *(D5 = B, decided)*
+- [x] T002 [P] `scripts/test-selfupdate-repo.ts` first, with the plan's mutants, then `parseRepoSlug`, `sameRepo` in `src/shared/selfupdate.ts` [FR-001, FR-003]
+- [x] T003 [P] `scripts/test-selfupdate-feed.ts` first, fixtures in `scripts/fixtures/selfupdate/` (a real-shaped release list written by hand from GitHub's documented fields, a renamed-repo 301, another repo's `html_url`, 500 entries, 10 MB body), then `validateFeed`, `pickTarget`, `isBreaking` [FR-007, FR-008, FR-009]
+- [x] T004 [P] `scripts/test-selfupdate-notes.ts` first, then `notesText` [FR-010]
+- [x] T005 [P] `scripts/test-selfupdate-installtype.ts` first, then `installType`, `assetFor` against spec 008's `artifactName` patterns [FR-012]
+- [x] T006 `scripts/test-selfupdate-schedule.ts` first, then `cadenceDue`, `snoozeState` (simulated clock; switch, policy, `local` origin, dev run; default on per D2 = A; no timer armed when off; switching off mid-check aborts it) [FR-004, FR-005, FR-016, SC-001] *(D5 = B, decided)*
 
 ## P2: build source and breaking marker (depends on P1)
 

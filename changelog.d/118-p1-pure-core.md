@@ -1,0 +1,1 @@
+- **Self-update groundwork** (spec 118): the checks behind Durbar's own update notice (which repository a build follows, which releases count, which download fits this computer, when to look again) are written and tested offline. Nothing reaches the network yet and nothing changes for you.

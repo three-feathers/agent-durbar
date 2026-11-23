@@ -453,3 +453,12 @@ FR-018 says the 25-minute limit is not raised first. The queue is blocked now (#
 - The broken-timings summary line is tested.
 - `main` is a thin wrapper around `laneMain`, which runs only the suites `prepareRun` returns and nothing on an empty plan (tested, two mutants).
 - `capped=1` is tested through the CLI and the wrapper on a 41-file folder, and the workflow's summary line for it is checked.
+
+### 2026-11-23: bug, the path-filtered macOS job hit its 25-minute limit (T078, T079)
+
+- **Seen.** #2002 at `0731cca70`: *macOS build and test (path-filtered)* ("macOS on pull requests", `macos-pr.yml`, spec 008 FR-135) was cut by "exceeded the maximum execution time of 25m0s" with every other check green. A job timeout cannot be rerun (spec 021 FR-087), so the remedy was a new head: a lost round. The T025 stop-gap (2026-11-22) raised only `ci.yml` `build-test`; `macos-pr.yml` still had 25.
+- **Measured** (job start to completion, `gh run view --json jobs`, last 12 finished jobs on pull requests 2026-11-23, logs read as data): 23.8, 22.6, 20.4, 20.0, 18.7, 20.2, 21.2, 20.8, 17.0, 21.6, 18.9 (a real failure, not a cut), 21.4 min. 8 of 12 ran over 20 min, median 20.8, max 23.8: the job runs within a minute or two of the limit, so any slow runner day cuts it. The estimate in `test-electron-cache.ts` (8.8 min) was stale.
+- **Fix (stop-gap, T078).** `macos-pr.yml` `macos-test` `timeout-minutes` 25 to 45, same comment style as `ci.yml`. No suite, name or job structure changes. `test-electron-cache.ts` pins the limit at exactly 45 (a limit of 25 or above 45 fails at its own assert: a pinned stop-gap, to be lowered by T025 with the guard) and `TYPICAL_MIN` for the job is 23.8, so the npm-ci retry budget check (item 10) is honest.
+- **Follow-up (T079, not built).** Split the job into two parts and set `TEST_JOBS` (the macOS runner has 2 to 4 cores, #2030); T025 then lowers both limits. Evidence: 8 of 12 runs over 20 min.
+- **Not verified.** The new macOS duration distribution until runs on the 45 limit are measured; no real macOS run in this PR beyond its own path-filtered job.
+
