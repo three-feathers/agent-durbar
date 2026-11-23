@@ -977,8 +977,10 @@ console.log('ui-suite: check-parallel and ui-suite install Electron once before 
       // the reviewer's mutants of PR 2071 must trip the guard: every time x 1.25, and one more driver of 1,500 s
       const x125 = Object.fromEntries(Object.entries(times).map(([k, v]) => [k, typeof v === 'number' ? v * 1.25 : v]));
       assert.ok(!B.macosBudget({ n, times: x125, limitMin, retrySecs }).ok, 'guard: every driver 25 % slower trips it');
-      const heavy = { name: 'zz-heavy-1500' };
-      assert.ok(!B.macosBudget({ n, times: { ...times, 'zz-heavy-1500': 1500 }, limitMin, retrySecs, drivers: [...(DRIVERS as unknown[]), heavy] }).ok, 'guard: one more driver of 1,500 s trips it');
+      // one more driver of 3,000 s: the split spreads it over the four shards (about 800 s each, above the room); at the 75-minute limit a
+      // 1,500 s driver spreads to about 400 s a shard and may fit (review round 2 of PR 2071 set that room on purpose)
+      const heavy = { name: 'zz-heavy-3000' };
+      assert.ok(!B.macosBudget({ n, times: { ...times, 'zz-heavy-3000': 3000 }, limitMin, retrySecs, drivers: [...(DRIVERS as unknown[]), heavy] }).ok, 'guard: one more driver of 3,000 s trips it');
       // each term of the sum, by hand (a fixture): shard 1 = [b, c, u]: ((100 + 40 + u 1000) x 0.94 + 600) x 1.1 + 3 x 1 + 170 = 2012;
       // shard 2 = [a]: 1000 x 0.94 x 1.1 + 1 + 170 = 1205. u is untimed: max(mean 300, 75th percentile 1000) = 1000 (the split itself uses the median, 100).
       // Dropping any term (the 0.94, the 1.10, the per-driver second, the 170 s, the head start, the untimed weight) changes these numbers.
