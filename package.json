@@ -78,6 +78,7 @@
     "test:checkparallel": "node scripts/test-check-parallel.js",
     "test:checkpoints": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-checkpoints.js",
     "test:ci-required-suites": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-ci-required-suites.js",
+    "test:ci-shards": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-ci-shards.js",
     "test:cichanges": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-ci-changes.js",
     "test:cistats": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-ci-stats.js",
     "test:citypecheck": "node scripts/test-ci-typecheck.js",

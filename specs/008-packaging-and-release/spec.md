@@ -162,6 +162,10 @@ Retired spec numbers, never to be reused for a new spec (`specs:check` and `--ad
 
 ## Changes
 
+### 2026-11-22: FR-104 exception for the npm test parts (spec 117 FR-018 delta)
+
+FR-104's "no `needs:`" gets one exception: `ci.yml` runs `npm test` in 2 parts per OS (`test-ubuntu`, `test-windows`, `test-macos`) and the required checks `Build and test (<os>)` are short Linux summary jobs that `needs` them (they fail on a failed, cancelled or skipped part). The parts start at once, like every other job. FR-106 is unchanged in effect: no macOS runner on pull requests or merge queue entries, the summary reports for macOS there. FR-193 holds in each part (build, no typecheck). Owner and evidence: spec 117 *Changes* 2026-11-22.
+
 ### 2026-11-07: PR CI runs the UI drivers the diff touches (owner decision, spec 021 FR-084 point 4; task T130)
 
 *Why:* faster delivery. Rule only here; not built. PR CI runs only the UI drivers a diff touches (file-to-driver map), the three-OS UI job is sharded; a file not in the map runs the full set, and a check fails if a driver is missing from the map (Ruben's conditions). Nightly runs and `main` keep the full three-OS matrix. `[KNOWN GAP]` until T130.

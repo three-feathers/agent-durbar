@@ -6,7 +6,7 @@ Build, test and run from source; the npm scripts; the spec-driven way of working
 
 ```bash
 npm ci
-npm run typecheck && npm run build && npm test   # unit suites in parallel (~20 s); `npm test -- folders` filters; `npm test -- --bail` (or `TEST_BAIL=1`) stops at the first failing suite, for iterating, and the final run still runs everything
+npm run typecheck && npm run build && npm test   # unit suites in parallel (~20 s); `npm test -- folders` filters; `npm test -- --bail` (or `TEST_BAIL=1`) stops at the first failing suite, for iterating, and the final run still runs everything; `npm test -- --shard 1/2` (or `TEST_SHARD=1/2`) runs part 1 of 2, split by the recorded seconds in `scripts/test-suite-timings.json`, as CI's parallel part jobs do (spec 117 FR-018)
 npm start                 # the app, with the harnesses you have installed and signed in
 DURBAR_SIM=15 npm start   # 15 simulated agents: no sessions, no AI credits (main refuses every call that could reach a real agent app)
 DURBAR_SIM=15 DURBAR_BRAIN=0 npm start   # spec 106 T426: Brain view is on by default (Settings > Brain view); DURBAR_BRAIN=0 or 1 overrides it for one development run, never saved

@@ -166,6 +166,7 @@ test:modelchoice
 test:mcphealth
 test:globals
 test:runtests
+test:ci-shards
 test:ci-required-suites
 test:runtestsreal
 test:theme-tokens

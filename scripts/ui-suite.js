@@ -26,6 +26,7 @@ const fs = require('fs');
 const os = require('os');
 const { spawn, spawnSync } = require('child_process');
 const { ensureElectron, buildProblem } = require('./ensure-electron');
+const { parseShardSpec, medianOf, timeParts } = require('./time-shard'); // the one greedy split by recorded time, shared with run-tests.js (spec 117 FR-018)
 
 const ROOT = path.join(__dirname, '..');
 const SIM = { DURBAR_SIM: '15', DURBAR_SIM_FREEZE: '1' };
@@ -357,26 +358,15 @@ function timings() {
 const SHARD1_HEAD_START_SECS = 240;
 
 /** Spec 008 FR-182 (issue #839), FR-183: shard `i/n` (1-based) is a greedy split by recorded duration: drivers from the slowest down, each to the
- *  shard with the least time so far (ties: the lower shard, then the suite's order), shard 1 starting with SHARD1_HEAD_START_SECS. Each shard
+ *  shard with the least time so far (ties: the lower shard, then the suite's order), shard 1 starting with SHARD1_HEAD_START_SECS (scripts/time-shard.js). Each shard
  *  runs its drivers in the suite's order. n shards are disjoint and together hold every driver of `list`; the result depends only on `list`
  *  and the committed timing file. No spec: the whole list. */
 function shard(list, spec, times = timings()) {
   if (spec === undefined || spec === '') return list;
-  const m = String(spec).match(/^(\d+)\/(\d+)$/);
-  const i = m ? Number(m[1]) : 0, n = m ? Number(m[2]) : 0;
-  if (!m || n < 1 || i < 1 || i > n) throw new Error(`ui-suite: --shard wants i/n with 1 <= i <= n, got "${spec}"`);
-  const known = Object.entries(times).filter(([k, v]) => !k.startsWith('_') && Number.isFinite(v)).map(([, v]) => v).sort((x, y) => x - y);
-  const median = known.length ? known[Math.floor(known.length / 2)] : 1;
+  const { i, n } = parseShardSpec(spec, 'ui-suite');
+  const median = medianOf(times);
   const w = (d) => { const v = times[d.name]; return Number.isFinite(v) ? v : median; };
-  const load = Array.from({ length: n }, (_, k) => (k === 0 && n > 1 ? SHARD1_HEAD_START_SECS : 0));
-  const mine = new Set();
-  list.map((d, k) => ({ d, k })).sort((x, y) => w(y.d) - w(x.d) || x.k - y.k).forEach(({ d }) => {
-    let best = 0;
-    for (let b = 1; b < n; b++) if (load[b] < load[best]) best = b;
-    load[best] += w(d);
-    if (best === i - 1) mine.add(d);
-  });
-  return list.filter((d) => mine.has(d));
+  return timeParts(list, n, w, n > 1 ? [SHARD1_HEAD_START_SECS] : [])[i - 1];
 }
 
 /** Spec 008 FR-210: do the drivers' windows share one desktop, and so one OS window focus? True on macOS, Windows and Linux with a display;
