@@ -30,12 +30,13 @@ const P = require(path.join(__dirname, '..', '..', 'src', 'renderer', 'places.js
   placeName: (id: string, custom?: unknown) => string;
   allPlaces: (custom?: unknown) => { id: string; name: string; icon?: string }[];
   isChoice: (v: unknown, customIds?: unknown) => boolean;
-  chipsIn: (tileW: unknown) => { named: number; initials: number };
+  chipsIn: (tileW: unknown, iw?: unknown) => { named: number; initials: number };
   lobbyShare: (tile: unknown, items: unknown) => number[] | null;
   shortName: (name: unknown) => string;
-  lobbyFit: (aw: unknown, places: unknown, addButton: unknown, post?: unknown) => Record<'boss' | 'coffee' | 'bank' | 'post', { width: number; named: boolean; wait?: boolean; long?: boolean; chips: { named: number; initials: number } } | null> & { tile: number; tileNamed: boolean; caps: { named: number; initials: number } };
+  chipsNeed: (mode: string, shown: number, more: number, iw?: number) => number;
+  lobbyFit: (aw: unknown, places: unknown, addButton: unknown, post?: unknown, iw?: unknown) => Record<'boss' | 'coffee' | 'bank' | 'post', { width: number; named: boolean; wait?: boolean; long?: boolean; chips: { named: number; initials: number } } | null> & { tile: number; tileNamed: boolean; caps: { named: number; initials: number } };
   lobbyOrder: (ids: unknown, post?: unknown) => string[];
-  initialSpots: (tileW: unknown, count: unknown, pad?: unknown) => { shown: number; more: number };
+  initialSpots: (tileW: unknown, count: unknown, pad?: unknown, iw?: unknown) => { shown: number; more: number };
   postNext: (s: unknown, pausedAll: unknown) => { s: { id: string }; t: number }[];
   lettersToday: (s: unknown, pausedAll: unknown, now: unknown, ruleNext?: unknown) => number;
   postMissed: (s: unknown) => number;
@@ -623,6 +624,12 @@ assert.deepStrictEqual(cleanPlaceName('__proto__'), { ok: true, name: '__proto__
   assert.deepStrictEqual(P.initialSpots(96, 2), { shown: 0, more: 2 }, 'with the usual 20 px padding a 96 px tile holds only +N');
   assert.deepStrictEqual(P.initialSpots(194, 3), { shown: 3, more: 0 }, 'the Boss at 1280x800 shows a queue of three');
   assert.deepStrictEqual(P.initialSpots(194, 6), { shown: 2, more: 4 });
+  // a wide face (the page measures its short names, DejaVu: 60 px an entry): the minimums that hold three entries and an entry with "+N" follow, the default is as before
+  const wideFit = P.lobbyFit(1248, 5, true, true, 60);
+  assert.ok(wideFit.boss!.width >= 212 && wideFit.coffee!.width >= 100 && wideFit.bank!.width >= 100 && wideFit.boss!.chips.initials >= 3, 'a 60 px entry: the Boss keeps three, the corner and the Bank an entry and +N');
+  assert.deepStrictEqual(P.lobbyFit(1248, 5, true, true, 54), P.lobbyFit(1248, 5, true), 'the default entry width changes nothing');
+  assert.deepStrictEqual([P.chipsNeed('named', 1, 0), P.chipsNeed('named', 1, 3), P.chipsNeed('initials', 2, 0), P.chipsNeed('initials', 1, 1), P.chipsNeed('initials', 0, 0), P.chipsNeed('initials', 1, 1, 60)], [112, 210, 134, 102, 0, 108], 'the width a tile needs for the entries it shows');
+  assert.deepStrictEqual(P.initialSpots(100, 2, 12, 60), { shown: 1, more: 1 });
   assert.deepStrictEqual(P.initialSpots(30, 3), { shown: 0, more: 3 }, 'nothing fits: only +N');
   assert.deepStrictEqual(P.initialSpots(200, 0), { shown: 0, more: 0 });
 }

@@ -201,10 +201,16 @@
      becomes "+N"); else initials. */
   const NAMED_W=92, INIT_W=54, CHIP_GAP=6, TILE_PAD=20; /* INIT_W: figure 22, gap 2, a name cut to 4 letters in about 30 px (issue 2018: never two letters) */
   /* chipsIn(w) = the capacities of one tile `w` px wide (lobbyFit's widths; tileSlots/tileChips were removed in the review on #511) */
-  function chipsIn(tileW){
+  /* the width a tile needs for the entries it shows now (delta 2026-11-23): lets a busy tile give back what its own entries do not use. `iw` = the width of one short-name entry (INIT_W; the page measures it in its own font) */
+  function chipsNeed(mode,shown,more,iw){
+    const e=iw>0?iw:INIT_W;
+    if(mode==='named'){const u=shown+(more?1:0);return u?TILE_PAD+u*NAMED_W+(u-1)*CHIP_GAP:0;}
+    return shown||more?TILE_PAD+shown*e+Math.max(0,shown-1)*CHIP_GAP+(more?(shown?CHIP_GAP:0)+22:0):0;
+  }
+  function chipsIn(tileW,iw){
     const inner=(Number(tileW)||0)-TILE_PAD;
     const fit=w=>Math.max(0,Math.min(6,Math.floor((inner+CHIP_GAP)/(w+CHIP_GAP))));
-    return {named:fit(NAMED_W),initials:Math.max(1,fit(INIT_W))};
+    return {named:fit(NAMED_W),initials:Math.max(1,fit(iw>0?iw:INIT_W))};
   }
 
   /* Spec 001 FR-039: widths in the lobby row. The Boss, coffee corner, Bank and Postbox (`post`: false when it is not shown, the demo) have
@@ -216,21 +222,22 @@
      the other places are TILE_FLOOR wide (icon and a 22 px "+N" circle between 2 px of padding and the border). A place under PLACE_NAMED shows its icon
      only (its name stays in the tooltip and the label); the Bank does under BANK_NAMED, and the Boss drops the wait from its header under BOSS_WAIT (the wait stays in its tooltip and label). Wide enough windows never reach this: the widths above are unchanged. */
   const SNUG_W=110, SPECIAL_HARD={boss:96,coffee:60,bank:60,post:132}, TILE_FLOOR=28, PLACE_NAMED=56, BANK_NAMED=96, BOSS_WAIT=150;
-  function lobbyFit(aw,places,addButton,post){
+  function lobbyFit(aw,places,addButton,post,iw){
+    const I=iw>INIT_W?iw:INIT_W, SW={...SPECIAL_W,boss:[230,Math.max(194,3*I+32)],coffee:[160,Math.max(96,I+40)],bank:[130,Math.max(96,I+40)]}; /* a wider short name (a wide font) widens the minimums that hold three entries, or an entry and "+N" (delta 2026-11-23) */
     const n=Math.max(1,Math.floor(Number(places)||0)), width=Number(aw)>0?Number(aw):800, withPost=post!==false;
-    const keys=Object.keys(SPECIAL_W).filter(k=>withPost||k!=='post');
+    const keys=Object.keys(SW).filter(k=>withPost||k!=='post');
     const gaps=8*(n+keys.length-1)+(addButton?26+8:0), avail=width-gaps;
-    const pref=keys.reduce((t,k)=>t+SPECIAL_W[k][0],0), slack=keys.reduce((t,k)=>t+SPECIAL_W[k][0]-SPECIAL_W[k][1],0);
+    const pref=keys.reduce((t,k)=>t+SW[k][0],0), slack=keys.reduce((t,k)=>t+SW[k][0]-SW[k][1],0);
     const need=Math.max(0,TILE_MIN*n-(avail-pref)), f=slack>0?Math.min(1,need/slack):0;
-    const w={}; keys.forEach(k=>{w[k]=Math.floor(SPECIAL_W[k][0]-f*(SPECIAL_W[k][0]-SPECIAL_W[k][1]));});
+    const w={}; keys.forEach(k=>{w[k]=Math.floor(SW[k][0]-f*(SW[k][0]-SW[k][1]));});
     let tile=Math.max(0,(avail-keys.reduce((t,k)=>t+w[k],0))/n);
     if(tile<TILE_FLOOR){ /* issue #737: below about 1000 px the minimums leave the places a sliver; the four shrink on, toward SPECIAL_HARD, until a place holds its icon and one "+N" circle */
-      const mins=keys.reduce((t,k)=>t+SPECIAL_W[k][1],0), hard=keys.reduce((t,k)=>t+SPECIAL_HARD[k],0), g=mins>hard?Math.min(1,Math.max(0,TILE_FLOOR*n-(avail-mins))/(mins-hard)):0;
-      keys.forEach(k=>{w[k]=Math.floor(SPECIAL_W[k][1]-g*(SPECIAL_W[k][1]-SPECIAL_HARD[k]));});
+      const mins=keys.reduce((t,k)=>t+SW[k][1],0), hard=keys.reduce((t,k)=>t+SPECIAL_HARD[k],0), g=mins>hard?Math.min(1,Math.max(0,TILE_FLOOR*n-(avail-mins))/(mins-hard)):0;
+      keys.forEach(k=>{w[k]=Math.floor(SW[k][1]-g*(SW[k][1]-SPECIAL_HARD[k]));});
       tile=Math.max(0,(avail-keys.reduce((t,k)=>t+w[k],0))/n);
     }
-    const box=(k,named)=>w[k]===undefined?null:{width:w[k],named,chips:chipsIn(w[k])};
-    return {boss:w.boss===undefined?null:{...box('boss',true),wait:w.boss>=BOSS_WAIT},coffee:box('coffee',w.coffee>=COFFEE_NAMED),bank:box('bank',w.bank>=BANK_NAMED),post:w.post===undefined?null:{...box('post',w.post>=POST_NAMED),long:w.post>=POST_LONG},tile,tileNamed:tile>=PLACE_NAMED,caps:chipsIn(tile)};
+    const box=(k,named)=>w[k]===undefined?null:{width:w[k],named,chips:chipsIn(w[k],I)};
+    return {boss:w.boss===undefined?null:{...box('boss',true),wait:w.boss>=BOSS_WAIT},coffee:box('coffee',w.coffee>=COFFEE_NAMED),bank:box('bank',w.bank>=BANK_NAMED),post:w.post===undefined?null:{...box('post',w.post>=POST_NAMED),long:w.post>=POST_LONG},tile,tileNamed:tile>=PLACE_NAMED,caps:chipsIn(tile,I)};
   }
   /* Spec 001 FR-039 (delta 2026-11-23, issues 2018 and 2041): the row of places shares its width by need. `tile` = the equal width lobbyFit gives; `items` = [{need, give}]
      per place: `need` = the px its content wants (icon, whole name, count), `give` = nobody is there, so it may go down to its need. A tile that gives keeps its need
@@ -291,10 +298,11 @@
 
   /* Spec 001 FR-036/FR-039: how many initials entries a tile `tileW` px wide shows for `count` visitors. Everyone when they all fit; else
      as many as fit beside the "+N" (a bare 22 px circle in this mode), so a 96 px tile shows one figure and "+1" rather than only "+2". */
-  function initialSpots(tileW,count,pad){
+  function initialSpots(tileW,count,pad,iw){
     const n=Math.max(0,Math.floor(Number(count)||0)), inner=(Number(tileW)||0)-(pad>=0?pad:TILE_PAD); /* `pad`: a snug tile (SNUG_W) has 6 px of side padding, 12 in all */
-    if(n*(INIT_W+CHIP_GAP)-CHIP_GAP<=inner)return {shown:n,more:0};
-    const shown=Math.max(0,Math.min(n-1,Math.floor((inner-22)/(INIT_W+CHIP_GAP))));
+    const e=iw>0?iw:INIT_W;
+    if(n*(e+CHIP_GAP)-CHIP_GAP<=inner)return {shown:n,more:0};
+    const shown=Math.max(0,Math.min(n-1,Math.floor((inner-22)/(e+CHIP_GAP))));
     return {shown,more:n-shown};
   }
   /* {mode:'named'|'initials', slots} for a tile with `visitors` people, from chipsIn()'s capacities */
@@ -311,5 +319,5 @@
     return w.length>1?(c(w[0])[0]+c(w[w.length-1])[0]).toUpperCase():c(w[0]).slice(0,2).join('');
   }
 
-  return {PLACES,IDS,COFFEE,BOSS,BANK,POSTBOX,SPECIAL,SNUG_W,lobbyFit,lobbyShare,shortName,lobbyOrder,initialSpots,postNext,lettersToday,postMissed,allPlaces,placeName,isChoice,chipsIn,chipsFor,initialsOf,classify,canonicalServer,placeRows,mergePlaceNames,placeSaves,defaultServerPlace,toolLabel,createVisits,layoutSpots};
+  return {PLACES,IDS,COFFEE,BOSS,BANK,POSTBOX,SPECIAL,SNUG_W,lobbyFit,lobbyShare,chipsNeed,shortName,lobbyOrder,initialSpots,postNext,lettersToday,postMissed,allPlaces,placeName,isChoice,chipsIn,chipsFor,initialsOf,classify,canonicalServer,placeRows,mergePlaceNames,placeSaves,defaultServerPlace,toolLabel,createVisits,layoutSpots};
 })());
