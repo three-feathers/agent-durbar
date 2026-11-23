@@ -46,12 +46,22 @@ async function main(): Promise<void> {
     assert.strictEqual(r.calls.length, calls, 'FR-024: no forged call made a request');
     await refused(() => selfUpdateHandlers(() => undefined).get(), 'a call before the checker exists');
 
+    const patches: unknown[] = [];
+    const real = r.store;
+    (r.u as unknown as { d: { store(): unknown } }).d.store = () => ({ get updates() { return real.updates; }, setUpdates: (p: never) => { patches.push(p); return real.setUpdates(p); } });
     const s = h.snooze('0.1.29') as { ok: boolean; update: SelfUpdateView };
     assert.deepStrictEqual(r.store.updates.snooze, { version: '0.1.29', until: T0 + SNOOZE_MS }, 'FR-016: snooze saves version + 7 days');
     assert.ok(s.ok && s.update.notice === 'snoozed', 'FR-016: the view says snoozed');
     const k = h.skip('0.1.29') as { ok: boolean; update: SelfUpdateView };
     assert.ok(k.ok && r.store.updates.skip === '0.1.29' && k.update.notice === 'skipped', 'FR-016: skip saves the version and the view says skipped');
     assert.strictEqual((h.get() as SelfUpdateView).target, '0.1.29', 'FR-024: get answers the view');
+    assert.deepStrictEqual(patches, [{ snooze: { version: '0.1.29', until: T0 + SNOOZE_MS } }, { skip: '0.1.29' }], 'FR-016: snooze and skip each write exactly their one key');
+
+    // a version of the old source is refused once the source changed (the twin of review item 2 of PR 2073)
+    r.policy.p = { state: 'ok', feedUrl: 'https://github.com/org-b/durbar' };
+    await assert.rejects(async () => h.skip('0.1.28'), (e: Error) => e.message === SELFUPDATE_REFUSED, 'FR-024: after a source change, a version of the old feed is refused');
+    assert.strictEqual(patches.length, 2, 'FR-024: the refused call writes nothing');
+    r.policy.p = { state: 'none' };
 
     // the IPC module wires exactly these four channels to these handlers, through ipcHandle
     const src = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'main', 'ipc', 'selfupdate.ts'), 'utf8').replace(/\r\n/g, '\n');

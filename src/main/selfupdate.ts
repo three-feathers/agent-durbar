@@ -160,7 +160,7 @@ export class SelfUpdater {
 
   /** Is `v` exactly a version of main's last validated feed (FR-024)? */
   hasVersion(v: string): boolean {
-    return this.result?.feed?.releases.some((r) => r.version === v) === true;
+    return this.current()?.feed?.releases.some((r) => r.version === v) === true; // the feed of the source in force only (review of PR 2073)
   }
 
   snooze(version: string): { ok: boolean; update: SelfUpdateView } {

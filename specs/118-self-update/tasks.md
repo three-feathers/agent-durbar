@@ -30,7 +30,7 @@
 
 ## P4: Update card and dialog (depends on P3)
 
-- [ ] T014 (adds `selfUpdater.start()` in `main.ts` with the switch, flipping the T010 *inert* assert) Settings > About card and More menu (⋯) line, one toast per version (`announceRule`), dialog with breaking card and tick box, snooze, skip; `textContent` only [FR-011, FR-016, FR-002]
+- [ ] T014 (adds `selfUpdater.start()` in `main.ts` with the switch, flipping the T010 *inert* assert, and a `refresh()` on resume from sleep, so a wall-clock jump does not wait up to 24 h: review of #2073) Settings > About card and More menu (⋯) line, one toast per version (`announceRule`), dialog with breaking card and tick box, snooze, skip; `textContent` only [FR-011, FR-016, FR-002]
 - [ ] T015 UI driver `selfupdate-dialog` (SC-004 hostile body, breaking tick gate, snooze/skip), screenshots at 1440x900 and 1280x800 with `DURBAR_SIM=15` [FR-011, SC-004]
 - [ ] T016 Docs: `docs/install.md` *Updates* and *For forks*, the checksum-limit text of FR-022 in `docs/install.md` and `docs/safety.md`, the macOS *Open Anyway* step (after the Mac session checks it), the privacy list of FR-006, README *Safety model*, `docs/safety.md`, `docs/features.md`, `docs/feature-inventory.md`, changelog fragment [FR-006, FR-022]
 
