@@ -39,8 +39,8 @@ Measure first (`npm run ci:stats`), then cut the one big cost: the UI shards are
 ### P2: driver map and Linux-first UI (FR-011..FR-013), on 008 T130
 
 - Wait for #1247 so 008 T130 is defined; P2 implements T130 and this spec's delta in one PR (one vertical slice).
-- Map data: `.github/scripts/ci-drivers.json` read only by `ci-changes.js` (renderer path pattern → driver names; `os_sensitive` patterns, starting from `macos-pr.yml`'s path list). Drivers named but missing from `DRIVERS`, or `DRIVERS` entries not reachable from any pattern or from `all`, fail `test-ci-changes.ts` (021 FR-084's condition).
-- `ci-changes.js` outputs `drivers=all|name,name` and `os_sensitive=true|false`; on any event but `pull_request`, `drivers=all` and `os_sensitive=true` (unchanged full runs).
+- One decider (2026-11-22 delta): the map is a const inside `.github/scripts/ci-changes.js`; no `ci-drivers.json`. Rules in order: core paths (src/main, preload, shared, adapters, app.js, index.html, styles, sim.ts, build, package, CI files, driver helpers) select ALL; else a driver's own `scripts/` closure, `dist/src` literals in a driver, world names, then the reviewed renderer-module-to-drivers table; an unknown path selects ALL. A guard in `test-ci-changes.ts` fails when a `DRIVERS` entry or a renderer module is in any rule's gap. `os_sensitive`: src/main, preload, build, packaging, dependencies, appmenu.ts, keys.js, browserpane.js, and a shared/adapters file using path, fs, os or child_process.
+- `ci-changes.js` outputs `drivers=all|name,name` and `os_sensitive=true|false` (as above); on any event but `pull_request`, `drivers=all` and `os_sensitive=true` (unchanged full runs).
 - `ui-platforms.yml`: the matrix comes from the `changes` job's output (`fromJSON`): Linux shards = `ceil(sum/15 min)` of the mapped drivers' recorded times (time table already used by `--shard`); Windows only when `os_sensitive` (a by-hand `workflow_dispatch` run stays the full matrix, as today; no label, AGENTS.md *Labels* allows no new family). `ui-suite.js --only <names>` (exists? if not, added) runs the subset. "UI suite complete" keeps its name.
 - Risk: a renderer file wrongly mapped to too few drivers; mitigations: fail open on unmapped files, full runs on `main` and nightly, the map reviewed by another side.
 
@@ -51,7 +51,7 @@ Measure first (`npm run ci:stats`), then cut the one big cost: the UI shards are
 ### P4: Windows `npm test` split (FR-017, FR-018, #1983)
 
 - `run-tests.js` records CPU and wall seconds per suite into `$GITHUB_STEP_SUMMARY` (all OSes).
-- First try: start the five heavy suites first (longest-processing-time order) inside the same job, so they do not end the job alone; measure. If p90 is still over 15 min, split `npm test` into two time-balanced halves as a 2-entry matrix on Windows only (`TEST_SHARD=1/2`). The summary job takes the required name `Build and test (windows-latest)` (no ruleset change) and fails when a shard failed, was skipped or was cancelled, or when the shards' suite lists together differ from `test-suites.txt` (so a suite cannot fall out). Masking and redaction suites never move to a job without a required name (FR-018); Linux and the macOS leg keep their single job. Guard test with mutants: T022.
+- First try: start the five heavy suites first (longest-processing-time order) inside the same job, so they do not end the job alone; measure. If p90 is still over 15 min, split `npm test` into two time-balanced halves as a 2-entry matrix on Windows only (`TEST_SHARD=1/2`). The summary job takes the required name `Build and test (windows-latest)` (no ruleset change) and fails when a shard failed, was skipped or was cancelled, or when the shards' suite lists together differ from `test-suites.txt` (so a suite cannot fall out). Masking and redaction suites never move to a job without a required name (FR-018); Linux and the macOS leg keep their single job. Guard test with mutants: T022. *Delta 2026-11-22*: brought forward without the 7-day wait and on all three OSes (Linux and macOS took up to 20 and 22 min too): 2 parts per OS (`TEST_SHARD`), one `Build and test (<os>)` summary per OS; spec *Changes*.
 - The heavy suites' own cost (redact fuzz loops) is left to their owner spec (012) unless the counters show a single hot loop; then a spec 012 delta first.
 
 ### P5: review profile (FR-020..FR-023)
@@ -69,6 +69,17 @@ Measure first (`npm run ci:stats`), then cut the one big cost: the UI shards are
 
 - `.specify/templates/*` are managed by `specify integration` (hashes in `.specify/integrations/speckit.manifest.json`, `read:` 2026-11-22), so they are not edited. The guidance is one word-neutral rewrite of `docs/review-checklist.md`'s *Slice size* line (T019); `docs/agent-notes.md` gets nothing (4,597 of 4,600).
 
+### P8: fast lane and the docs-only skip (FR-386, FR-387), 2026-11-22 delta
+
+- `ci-changes.js`: `docsOnly`: a plain-path check, an allow list (`DOCS_ALLOW`: Markdown under `specs/` and `docs/`, `CHANGELOG.md`, `CONTRIBUTING.md`; lower case) minus a deny list (`DOCS_DENY`: `docs/rules/`, `docs/agent-setup/`, `docs/site/`; any case), and no suite naming a path (the same `literalTargets` the fast lane uses); `ci-changes.sh` replaces the output with everything unless exactly one `code=true|false` line was written; `fastSuites(files, io)` and the `--suites` mode (writes `fast=yes` and `suites=<names>` only, so the existing outputs and their tests stay as they are). The literal targets of each step file are read once per tree (a `WeakMap` cache), so the decision takes about a second.
+- `fast-lane.yml` (one job, three-OS matrix): checkout (`fetch-depth: 2`, no kept credential), `ci-changes.sh --suites` (base copy), the PR's copy only when the base has no `fast` output, then setup-node, `npm-ci` (one 30 s retry) and `node scripts/fast-lane.js` only when a suite was picked.
+- `scripts/fast-lane.js`: a temporary tsconfig extending `tsconfig.scripts.json` with the picked test files and every other `scripts/test-*.ts` excluded (about 10 s instead of about 36 s locally), `tsc -p tsconfig.json` and `copy-assets.js` only when a step file reads `dist/`, `ensureElectron` for `checkfuses`/`macos` suites, then `runMain`; phase times to the job summary.
+
+### FR-390: the fast lane stays fast (bug, 2026-11-23)
+
+- `ci-changes.js`: `FOLDER_MAX = 40` (a folder literal over it picks nothing in the lane; `gitIo.countUnder` counts, capped); the lane's list puts direct picks first.
+- `fast-lane.js`: `planSuites` (heavy over 120 s out, 480 s budget in the given order, median for a missing time, from `scripts/test-suite-timings.json`), `runLane` (300 s deadline, `run-tests.js`'s `runSuites` in bail mode so children are detached and `ctl.abort` stops each process tree; the deadline is green with a note, a failure red).
+
 ## Complexity tracking
 
-None: no new dependency, no new workflow file except jobs inside existing ones, one decider kept.
+No new dependency, one decider kept. One new workflow file, `fast-lane.yml` (P8): a ci.yml job would fall under FR-018's guard of the required `npm test` job (T022) and collide with the Windows shard work (T012).

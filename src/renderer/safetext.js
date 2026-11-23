@@ -138,6 +138,13 @@
   const linkBoth=(raw,fn)=>{const n0=linkHits,h=fn();if(h==null||h===''||linkHits===n0)return h;
     if(!SH||typeof SH.withoutLinkSplit!=='function')throw new Error('no withoutLinkSplit');const r=SH.withoutLinkSplit(fn);if(r==null||r==='')return r;if(h===r)return h;
     if(String(raw==null?'':raw).includes('[redacted:')||h.includes('[redacted:')||r.includes('[redacted:'))return null;return keep(h,r);};
+  /* spec 012 FR-190 (issue #1320): a surface during which the shared continuation reading hid anything (the shared contReadCount moved) is read again with it off
+     (the shared withoutContinuation: the desk as before FR-190); when that reading fails closed (null or ''), so does the surface, and otherwise nothing it hides
+     shows (keep). A text that holds an open `[redacted:` and reads differently fails closed, as linkBoth. Throws without the shared module (callers fail closed) */
+  const contCount=()=>{if(!SH||typeof SH.contReadCount!=='function')throw new Error('no contReadCount');const n=SH.contReadCount();if(typeof n!=='number')throw new Error('count');return n;};
+  const contBoth=(raw,fn)=>{const n0=contCount(),h=fn();if(h==null||h===''||contCount()===n0)return h;
+    if(typeof SH.withoutContinuation!=='function')throw new Error('no withoutContinuation');const r=SH.withoutContinuation(fn);if(r==null||r==='')return r;if(h===r)return h;
+    if(String(raw==null?'':raw).includes('[redacted:')||h.includes('[redacted:')||r.includes('[redacted:'))return null;return keep(h,r);};
   /* spec 012 FR-184 (issue #1543): a line continuation (a backslash, or cmd's caret, before a line break) inside a token is joined by the shell, but plainKeep makes the break a blank
      (`\ `, a literal blank to the shell), and PowerShell's `u{…} escape, whose backtick plainKeep removes as Markdown; a text with one is masked as written first
      (redact reads them), as maskRaw0 does for a backslash */
@@ -179,8 +186,8 @@
     if(h==null||h===''||!SHELL_GATE.test(s)||(shellCount()===n0&&deskShell===d0&&!lineCont(s)))return {v:h,r:h};
     let r;asBefore=true;try{r=noShell(fn);}finally{asBefore=false;}if(r==null||r==='')return {v:r,r};return {v:h===r?h:keep(h,r),r};};
   const shellBoth=(raw,fn)=>shellPair(raw,fn).v;
-  const maskPlain=(raw,redact,codeWord)=>{try{return linkBoth(raw,()=>shellBoth(raw,()=>maskPlain1(raw,redact,codeWord)));}catch(e){return null;}};
-  const maskRaw=(raw,redact)=>{try{const m=lz(()=>linkBoth(raw,()=>shellBoth(raw,()=>maskRaw1(raw,redact))));return m==null?'':m;}catch(e){return '';}};
+  const maskPlain=(raw,redact,codeWord)=>{try{return contBoth(raw,()=>linkBoth(raw,()=>shellBoth(raw,()=>maskPlain1(raw,redact,codeWord))));}catch(e){return null;}};
+  const maskRaw=(raw,redact)=>{try{const m=lz(()=>contBoth(raw,()=>linkBoth(raw,()=>shellBoth(raw,()=>maskRaw1(raw,redact)))));return m==null?'':m;}catch(e){return '';}};
   /* raw agent text -> masked, plain, at most n characters (no n: not cut). '' when masking is not possible. */
   const excerpt=(raw,redact,n,codeWord)=>{const p=plainLz(()=>maskPlain(String(raw==null?'':raw),redact,codeWord));if(p===null)return '';return n==null?p:cutter(p,n);};
   /* a tool label masked the way the live readout (LIVEACT) masks it: a command by maskSecretCommand, a URL by maskSecretUrl, anything else by redact.
@@ -222,11 +229,11 @@
       const sf=splitFirst(s);if(sf===s&&unhide(s)===s&&linkMasked(s)===s)return ref; /* round 9: the split step on the label once, shared with the reading below */
       const h=escMask(s,t=>{const go=(x,u)=>u(x,one,c=>c,'');if(t.length>DESK_SPLIT_MAX){const r=old(()=>go(t,unhid));return r==null?'':r;}const m=both2(t,t===s?sf:splitFirst(t),go);return m==null?'':m;});
       return h?keep(h,ref):'';}catch(e){return '';}};
-  const maskLabel=(raw,kind,mask)=>{try{const m=lz(()=>linkBoth(raw,()=>shellBoth(raw,()=>maskLabel1(raw,kind,mask))));return m==null?'':m;}catch(e){return '';}};
+  const maskLabel=(raw,kind,mask)=>{try{const m=lz(()=>contBoth(raw,()=>linkBoth(raw,()=>shellBoth(raw,()=>maskLabel1(raw,kind,mask)))));return m==null?'':m;}catch(e){return '';}};
   /* spec 012 FR-184 (review of PR 1824, F1): the label and its reading without the shell readings ({text, ref}; ref is text when it was not read again; '' for
      both on a failure). The permission card checks both: a command the reading as before cannot match back to what runs stays lost (as on main) */
   /* review of PR 1949 (F1): the pair's text goes through linkBoth too; its ref is the last reading's (with the link step off when it was read again) */
-  const maskLabelPair=(raw,kind,mask)=>{try{let r0='';const v=noLoose(()=>linkBoth(raw,()=>{const q=shellPair(raw,()=>maskLabel1(raw,kind,mask));r0=q.r;return q.v;}));const p={v,r:r0};const t=p.v||'';return t?{text:looseText(t),ref:looseText(p.r||'')}:{text:'',ref:''};}catch(e){return {text:'',ref:''};}};
+  const maskLabelPair=(raw,kind,mask)=>{try{let r0='';const v=noLoose(()=>contBoth(raw,()=>linkBoth(raw,()=>{const q=shellPair(raw,()=>maskLabel1(raw,kind,mask));r0=q.r;return q.v;})));const p={v,r:r0};const t=p.v||'';return t?{text:looseText(t),ref:looseText(p.r||'')}:{text:'',ref:''};}catch(e){return {text:'',ref:''};}};
   /* the wrapper the page uses: fallback words and the "is masking possible" flag */
   function create(o){
     const red=o&&typeof o.redact==='function'?o.redact:null, cut=o&&typeof o.cut==='function'?o.cut:cutter;

@@ -276,16 +276,18 @@ const jobsOf = (y: string): Record<string, string> => {
   return out;
 };
 const ciJobs = jobsOf(ci);
-// FR-104: no separate "What changed" job, and no job waits for another one in a pull request
-assert.ok(!ciJobs.changes && !/needs:/.test(ci), 'ci.yml: no changes job and no needs (each job decides what to run itself)');
-for (const j of ['build-test', 'office-check']) assert.ok(ciJobs[j] && ciJobs[j].includes('bash .github/scripts/ci-changes.sh') && ciJobs[j].includes('fetch-depth: 2'), `ci.yml ${j} works out what changed inline`);
+// FR-104: no separate "What changed" job, and no job waits for another one in a pull request; the one exception (spec 117 FR-018) is the short
+// "Build and test (<os>)" summary, which waits for the npm test parts (the parts themselves start at once)
+const PARTS = ['test-ubuntu', 'test-windows', 'test-macos'];
+assert.ok(!ciJobs.changes && Object.entries(ciJobs).every(([id, body]) => !/needs:/.test(body) || (id === 'build-test' && body.includes('needs: [test-ubuntu, test-windows, test-macos]'))), 'ci.yml: no changes job, and no needs except the Build and test summary on its parts');
+for (const j of [...PARTS, 'office-check']) assert.ok(ciJobs[j] && ciJobs[j].includes('bash .github/scripts/ci-changes.sh') && ciJobs[j].includes('fetch-depth: 2'), `ci.yml ${j} works out what changed inline`);
 const changesSh = fs.readFileSync(path.join(ROOT, '.github', 'scripts', 'ci-changes.sh'), 'utf8');
 const changes = fs.readFileSync(path.join(ROOT, '.github', 'scripts', 'ci-changes.js'), 'utf8');
 assert.ok(changesSh.includes("git show 'HEAD^1:.github/scripts/ci-changes.js'") && changesSh.includes('node "$tmp/.github/scripts/ci-changes.js" --root .'), 'ci-changes.sh runs the base copy of the one decision, ci-changes.js (FR-191; test:cichanges runs it)');
 assert.ok(changes.includes("['diff', '--name-only', '--no-renames', '-z', 'HEAD^1', 'HEAD']") && changes.includes("env.EVENT_NAME !== 'pull_request'"), 'ci-changes.js: diff of the test merge commit on PRs, everything on other events (test:cichanges runs it)');
 // FR-191: on a pull request the office job's steps (office layout and, since FR-194, package smoke) follow `ui`; Build and test keeps `code`
 assert.ok(!ciJobs['office-check'].includes("outputs.code == 'true'") && ciJobs['office-check'].includes("steps.changes.outputs.ui == 'true'"), 'ci.yml office-check runs its steps only when ui=true');
-assert.ok(ciJobs['build-test'].includes("steps.changes.outputs.code == 'true'") && !ciJobs['build-test'].includes('outputs.ui'), 'ci.yml Build and test still runs on every code change');
+for (const j of PARTS) assert.ok(ciJobs[j].includes("steps.changes.outputs.code == 'true'") && !ciJobs[j].includes('outputs.ui'), `ci.yml ${j} (Build and test parts) still runs on every code change`);
 // the required check names of the main ruleset still report on every pull request
 for (const name of ['name: Build and test (${{ matrix.os }})', 'name: Office layout check (xvfb)']) assert.ok(ci.includes(name), `ci.yml keeps the required check ${name}`);
 // FR-194: packaging is a step of the office job (the old required check "Package smoke (unpacked Linux app)" is gone), runs even when
@@ -316,9 +318,11 @@ for (const f of fs.readdirSync(WF).filter((x) => /\.ya?ml$/.test(x))) {
   if (yaml) assert.doesNotThrow(() => (yaml as { load: (s: string) => unknown }).load(txt), `${f} is not valid YAML`);
 }
 const bt = ciJobs['build-test'];
-for (const os of ['ubuntu-latest', 'windows-latest', 'macos-latest']) assert.ok(bt.includes(`- os: ${os}`), `Build and test reports for ${os}`);
-// FR-106: macOS is a report-only Linux job on pull requests and merge queue entries, the real build and test on every other event
-assert.ok(bt.includes(`runner: \${{ (github.event_name == 'pull_request' || github.event_name == 'merge_group') && 'ubuntu-latest' || 'macos-latest' }}`) && bt.includes(`real: \${{ (github.event_name == 'pull_request' || github.event_name == 'merge_group') && 'no' || 'yes' }}`), 'macOS build and test: Linux report on PR and queue, real macOS otherwise');
+assert.ok(bt.includes('os: [ubuntu-latest, windows-latest, macos-latest]'), 'Build and test reports for ubuntu, windows and macos');
+// FR-106: on pull requests and merge queue entries no macOS part runs and the Linux summary reports for macOS; the real macOS parts run on every other event
+// (spec 117 FR-018; scripts/test-ci-shards.ts runs the summary's script for every result)
+assert.ok(ciJobs['test-macos'].includes("if: ${{ !github.event.pull_request.draft && github.event_name != 'pull_request' && github.event_name != 'merge_group' }}") && ciJobs['test-macos'].includes('runs-on: macos-latest'), 'macOS parts: real macOS, never on PR or queue');
+assert.ok(bt.includes('macOS build and test does not run on pull requests or merge queue entries (spec 008 FR-106') && bt.includes('runs-on: ubuntu-latest'), 'the Linux summary says where macOS runs');
 assert.ok(/^ {2}schedule:/m.test(ci) && /^ {2}push:\r?\n {4}branches: \[main\]/m.test(ci), 'ci.yml runs nightly and on pushes to main (where macOS really runs)');
 // FR-105: one office job runs theme geometry and the whole office layout in parallel parts
 const office = ciJobs['office-check'];
@@ -994,7 +998,7 @@ console.log('ui-suite: check-parallel and ui-suite install Electron once before 
     const suite = require(SUITE) as { main: (o: unknown) => Promise<void>; DRIVERS: { name: string; label?: string; focus?: boolean }[]; sharedDesktop: (p: string, e: Record<string, string>) => boolean };
     const label = (d: { name: string; label?: string }): string => d.label || d.name;
     const flagged = suite.DRIVERS.filter((d) => d.focus).map(label).sort();
-    assert.deepStrictEqual(flagged, ['check-001-room-heads', 'check-080-browser-expand', 'check-080-browser-expand photo', 'check-097-drag-cancel', 'check-097-hover-card', 'check-brain-draw', 'check-browser-tabs', 'check-browser-tabs 1280', 'shots-097-screens', 'shots-097-screens retro'], 'the focus entries are the ones with a failure on record (#1498, #1408, #1282, #1239: check-browser-tabs failed on a Mac with the OS focus elsewhere; check-080-browser-expand (Flat, Photo) failed 2 of 2 at four windows at once on a Mac and passed alone; check-brain-draw failed its Full-mode assert on windows-latest shard 2/4, both tries); check-097-drag-cancel is focus-sensitive by design: its held drags end on a real OS blur from a neighbour window (issue 1550)');
+    assert.deepStrictEqual(flagged, ['check-001-room-heads', 'check-080-browser-expand', 'check-080-browser-expand photo', 'check-097-drag-cancel', 'check-097-hover-card', 'check-097-kids', 'check-097-kids cave', 'check-097-kids retro', 'check-brain-draw', 'check-browser-tabs', 'check-browser-tabs 1280', 'shots-097-screens', 'shots-097-screens retro'], 'the focus entries are the ones with a failure on record (#1498, #1408, #1282, #1239, #1723: check-097-kids failed its "+K" focus-ring assert with hasFocus false at four windows at once on a Mac and passed alone; check-browser-tabs failed on a Mac with the OS focus elsewhere; check-080-browser-expand (Flat, Photo) failed 2 of 2 at four windows at once on a Mac and passed alone; check-brain-draw failed its Full-mode assert on windows-latest shard 2/4, both tries); check-097-drag-cancel is focus-sensitive by design: its held drags end on a real OS blur from a neighbour window (issue 1550)');
     assert.deepStrictEqual([['darwin', {}], ['win32', {}], ['linux', {}], ['linux', { DISPLAY: ':0' }], ['linux', { DISPLAY: ':0', UI_SUITE_XVFB: '1' }]].map(([p, e]) => suite.sharedDesktop(p as string, e as Record<string, string>)), [true, true, false, true, false], 'windows share a desktop on macOS, Windows and Linux with a display; not under xvfb');
     assert.deepStrictEqual([['1'], ['1.25'], ['1.5'], ['2'], ['x'], ['']].map(([d]) => suite.sharedDesktop('linux', { DISPLAY: ':0', UI_SUITE_DPR: d })), [true, false, false, false, true, true], 'FR-273 (issue 1914): a forced ratio above 1 never runs on the desktop (a small display clamps the window); 1, none and a bad value keep it');
     assert.strictEqual(suite.sharedDesktop('darwin', { UI_SUITE_DPR: '2' }), true, 'FR-273: macOS has no virtual display, the forced ratio runs there');

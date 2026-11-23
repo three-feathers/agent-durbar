@@ -29,3 +29,5 @@ specs/INDEX.md
 
 # Python bytecode from scripts/build-arcade-*.py (one was committed by mistake, 2026-11-03)
 __pycache__/
+# spec 117: the fast lane's temporary tsconfig folder (scripts/fast-lane.js), removed after each compile
+.fast-lane-*/

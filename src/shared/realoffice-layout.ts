@@ -196,7 +196,7 @@ export const BIG_MAX = 4;
 export const BIG_ROWS = 8;
 /** FR-024: visitors' activity pose per place, and the fallback when a person has no picture for it. */
 export const FX_POSE: Record<string, string> = { library: 'book', software: 'book', terminal: 'runA', web: 'type', boss: 'knock', coffee: 'counter', bank: 'counter', postbox: 'letter', other: 'type' };
-export const POSE_FALLBACK: Record<string, string> = { wait: 'letter', runA: 'letter' };
+export const POSE_FALLBACK: Record<string, string> = { wait: 'letter', runA: 'letter', counter: 'coffee', type: 'letter' }; /* spec 097 FR-024 (issue 2013): a set without the counter or the typing pose (Prehistoric has `coffee` and `letter`) still stands its visitor at the Bank, the coffee corner, the Web and Other tools */
 /** FR-070: the second frame of each two-frame pose. Owner 2026-10-31 ("make a real running pose", replacing the treadmill): the
  *  Terminal visitor jogs in place, runA and runB. */
 export const POSE_FRAME_B: Record<string, string> = { typeA: 'typeB', waveA: 'waveB', runA: 'runB' };
@@ -466,7 +466,7 @@ function roLobby(meta: RealMeta, places: RealPlace[], W: number, Lb: number): { 
       const cx = x + fw - 0.3 * vw + vw / 2 + j * al.step;
       const sp = standPose(meta, v.person, p.id, !!p.custom);
       let fig: VisitorBox['fig'] = null, face: Rect | null = null, shadow: Rect | null = null;
-      let chipY = Lb - CHIP_H;
+      let chipY = Math.max(0, frontY - CHIP_GAP - CHIP_H); /* spec 097 FR-024 (issue 2013): a visitor with no figure keeps its chip on the floor strip, never on the band's bottom edge (the folder frame line) */
       if (sp) {
         /* the feet (the picture's lowest opaque row) stand on the front floor plane, in front of the fixture; one scale per person,
            from its upright 'letter' pose, NEAR_SCALE larger than at the wall line. */

@@ -174,7 +174,8 @@
 .ro-sign b{font-size:12px;overflow:hidden;text-overflow:ellipsis;flex:0 1 auto;min-width:3ch}
 .ro-sign b:has(>.rn-t){display:flex}.ro-sign b>.rn-h{flex:0 1000000 auto;min-width:0;overflow:hidden;text-overflow:ellipsis}.ro-sign b>.rn-t{flex:0 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis} /* spec 001 FR-271: a long folder name keeps its end when it is cut */
 .ro-sign .ro-path{font:10.5px ui-monospace,"Cascadia Mono",Menlo,Consolas,monospace;color:var(--muted);overflow:hidden;text-overflow:ellipsis;min-width:0;flex:0 1000 auto} /* the path gives way long before the name (a font wider than measured, #1079 on Linux) */
-.ro-sc{display:flex;gap:6px;align-items:center;flex:none}
+.ro-sc{display:flex;gap:6px;align-items:center;flex:none;font-variant-numeric:tabular-nums} /* the counts and the cost (inherited): a same-length text is as wide as any other, so the fit key (growKey) can hold their length */
+.ro-sign.nopath .ro-path{display:none} /* its name is cut: the path goes first (fitSigns; spec 001 FR-037) */
 .ro-sign.short :is(.ro-path,.ro-cost){display:none} /* the sign's shortest form: name, counts, + and menu; path and cost on the name's hover (FR-256; FR-356, bug #1392: a room too narrow for the whole sign, in every world) */
 .ro-cnt{display:inline-flex;gap:3px;align-items:center}
 .ro-cost{font-weight:600}

@@ -56,6 +56,8 @@ export interface ScopeDeps {
   wait?(ms: number): Promise<void>;
   /** Issue 1904 (FR-015): folders whose listings are over, of all the plan's folders; called at the start (0) and after each folder. */
   onListing?(done: number, total: number): void;
+  /** Spec 095 FR-054: the sessions the plan holds so far, for the title pass: the open ones first, then what each listing step added; `values` masks a session's title. */
+  onSessions?(sessions: readonly PlanSession[], values: (s: PlanSession) => readonly string[]): void;
   readClaude?: typeof readClaudeHistoryStream;
   listChats?: typeof listChats;
   readChat?: typeof readChat;
@@ -141,6 +143,7 @@ const text = (v: unknown): string => (typeof v === 'string' ? v : '');
 
 /** The plan and its readers. `stop` is asked between folders (a newer search makes this one moot). */
 export async function buildScope(d: ScopeDeps, stop: () => boolean = () => false): Promise<Scope> {
+  const values = (s: PlanSession): readonly string[] => scanSecretValues(d.values, { folderKey: s.folderKey, agentId: s.agentId, open: s.group === 'office' });
   const sources = new WeakMap<PlanSession, Source>();
   const sessions: PlanSession[] = [];
   const unavailable = new Set<string>();
@@ -204,12 +207,20 @@ export async function buildScope(d: ScopeDeps, stop: () => boolean = () => false
   for (const [k, a] of firstOf) left.set(d.wsKey(a), (left.get(d.wsKey(a)) ?? 0) + 1);
   let foldersDone = 0;
   const report = (): void => { try { d.onListing?.(foldersDone, left.size); } catch { /* a progress callback never stops the plan */ } };
+  let told = 0;
+  const tellSessions = (): void => { // FR-054: what was added since the last call
+    const added = sessions.slice(told);
+    told = sessions.length;
+    if (added.length) try { d.onSessions?.(added, values); } catch { /* a progress callback never stops the plan */ }
+  };
+  tellSessions(); // the open sessions: their titles are known before any listing
   report();
   let previous: string | undefined;
   const finished = (): void => {
     if (previous === undefined) return;
     const n = (left.get(previous) ?? 1) - 1;
     left.set(previous, n);
+    tellSessions(); // each step's sessions (`finished` also runs once after the loop)
     if (n === 0) { foldersDone++; report(); }
     previous = undefined;
   };
@@ -332,7 +343,6 @@ export async function buildScope(d: ScopeDeps, stop: () => boolean = () => false
     over = true;
     return { ok: false, reason: 'timeout' };
   };
-  const values = (s: PlanSession): readonly string[] => scanSecretValues(d.values, { folderKey: s.folderKey, agentId: s.agentId, open: s.group === 'office' });
   // owner answer D: the open agents' session values are left out of the mask while the vault would prompt (`scanSecretValues`): said
   let mcpValuesLocked = true;
   try { mcpValuesLocked = !d.values.noPrompt(); } catch { /* unknown: said as locked */ }

@@ -163,6 +163,8 @@
 - [x] T127 (2026-11-05, issue #1162): the simulator's About version from `package.json` through a generated `appversion.js`; `test:simversion`; release steps no longer list `sim.ts` [FR-179]
 - [x] T128 Issue #839 (FR-180): `check-inbox-safety` and `check-answer-safety` press the Mac keys; `check-answer-safety` waits for the card before scrolling; `shots-097-realoffice` measures the glass at `prefers-reduced-transparency: no-preference`; `check-characters` reports the app state on a crew-step timeout (cause not found yet)
 - [x] T129 Issue #1214: the release clip's step captions use `{step}`, numbered 1..n by position in the clip; test and mutant in `test:releasevideo` [FR-171] (spec delta 2026-11-06)
+- [ ] T130 (owner decision 2026-11-07, spec 021 FR-084 point 4, 021 T063) CI by diff: a file-to-driver map; PR CI runs only the UI drivers the diff touches and shards the three-OS UI job; a file not in the map runs the full set; a check fails if a driver is missing from the map; nightly and `main` keep the full three-OS matrix
+
 - [x] T135 (2026-11-07, owner: the v0.1.12 clip showed v0.1.11's scenes): `refs` on every scene and a default taken from the release's fragments and CHANGELOG section instead of `DEFAULT_SCENES`; scenes `lounge`, `railwidth`, `signin`, `notesource`; `test:releasevideo` with ten mutants; v0.1.12 re-filmed and its assets replaced [FR-183] (spec delta 2026-11-07)
 
 ## 2026-11-07: the Build cost report (owner request; FR-181)
@@ -262,4 +264,5 @@
 - [x] T397 (delta 2026-11-20, issues #1954, #1946) `scripts/release-video.js` (the lounge scene's comment: one selector for both worlds), `scripts/test-release-video.js`: `--world retro` with the `lounge` scene is accepted and the scene has no world branch.
 - [x] T400 (delta 2026-11-20, issue #1239) spec 008: the cause measured; `needFocus` takes `host: true`; the two `check-browser-tabs` entries are `focus: true` [FR-210]
 - [x] T401 (delta 2026-11-20, issue #1239) `scripts/driver-helpers.js` (`needFocus` host reading), `scripts/check-browser-tabs.js` (`host: true`), `scripts/ui-suite.js` (`focus: true`), `scripts/test-ui-suite.ts` (the cases) [FR-210]
+- [x] T432 (delta 2026-11-22, issue #1723) `scripts/ui-suite.js` (the three `check-097-kids` entries are `focus: true`), `scripts/test-ui-suite.ts` (the pinned list) [FR-210]
 - [x] T427 (delta 2026-11-22, issue #1239) `scripts/ui-suite.js` (the Flat and Photo entries of `check-080-browser-expand` are `focus: true`), `scripts/test-ui-suite.ts` (the pinned list) [FR-210]

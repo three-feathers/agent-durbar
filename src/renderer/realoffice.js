@@ -429,7 +429,7 @@
     if (ZOOM && !ZOOM.panel.isConnected) closeZoom();
     const sized = view.w + 'x' + view.h, sameSize = !!CUR && CUR.sized === sized && !!CUR.painted;
     const wasLive = CUR && CUR.ro === ro ? CUR.live : undefined;
-    CUR = { pixelArt: !!meta.pixelArt, ro, live: opts.live, screenOf: opts.screenOf || null, factsOf: opts.factsOf || null, sized, still: !!opts.still, hold: !!opts.hold, desks: new Map(lay.zones.flatMap((z) => z.desks.map((d) => [d.id, d])).concat(lay.lounge ? lay.lounge.desks.map((d) => [d.id, d]) : [])), agents: new Map(model.folders.flatMap((f) => f.agents.map((a) => [a.id, { ...a, folder: f.name }]))), drawn, scroll: !!lay.scroll };
+    CUR = { pixelArt: !!meta.pixelArt, signs: Array.isArray(meta.wallSigns) && Array.isArray(meta.wallSize) ? { list: meta.wallSigns, size: meta.wallSize } : null, ro, live: opts.live, screenOf: opts.screenOf || null, factsOf: opts.factsOf || null, sized, still: !!opts.still, hold: !!opts.hold, desks: new Map(lay.zones.flatMap((z) => z.desks.map((d) => [d.id, d])).concat(lay.lounge ? lay.lounge.desks.map((d) => [d.id, d]) : [])), agents: new Map(model.folders.flatMap((f) => f.agents.map((a) => [a.id, { ...a, folder: f.name }]))), drawn, scroll: !!lay.scroll };
     SLIDE = sameSize && moving() && !hiddenNow();
     CUR.painted = true;
     ro.classList.toggle('paused', hiddenNow()); if (hiddenNow()) finishMoves(ro);
@@ -657,8 +657,25 @@
       if (!zd || hiddenNow()) closeZoom(); /* FR-328: an asleep agent's card stays (its glass is dark, the card has its reply) */
       else { if (ZOOM.st !== zd.state) { fillZoom(); ZOOM.held = PT || '?'; } placeZoom(); } /* FR-328 (2026-11-08): the card follows the agent's state as its facts do (FR-315): asleep or back, it is filled again, not left with the old tool log */
     }
+    fitSigns(chrome, lay.width);
     settle(chrome, lay.width);
     return lay;
+  }
+
+  /* spec 001 FR-037, FR-179 and spec 097 FR-023 (issue 2011): the path gives way before the name. The CSS shrinks the path 1000 times faster than the
+     name, which still loses a fraction of a pixel to an ellipsis ("command-cen…") when a font is wider than the layout measured (the DejaVu faces of a CI
+     runner); a sign whose name is cut then drops its path (`.nopath`; the folder stays in the sign's tip), as the Flat office's `fitHead` does. */
+  function fitSigns(chrome, W) {
+    const cut = (e) => { const cs = getComputedStyle(e), box = e.getBoundingClientRect().width; if (e.scrollWidth > Math.round(box - parseFloat(cs.borderLeftWidth) - parseFloat(cs.borderRightWidth)) + 0.5) return true; const r = document.createRange(); r.selectNodeContents(e); return r.getBoundingClientRect().width > box - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight) - parseFloat(cs.borderLeftWidth) - parseFloat(cs.borderRightWidth) + 0.01; }; /* one box read, one scroll read, one text range read per element */
+    if (!root.DurbarCutText) return;
+    const parts = (sg) => sg._b.querySelectorAll(':scope > .rn-h, :scope > .rn-t');
+    const hid = document.hidden || document.body.classList.contains('panel-open'); /* under a chat nothing is laid out: what it measures there is not remembered (as the lobby's signature) */
+    const signs = [...chrome.querySelectorAll('.ro-sign')].filter((sg) => sg._b && sg.querySelector(':scope > .ro-path'));
+    root.DurbarCutText.fitBatch(signs, (sg) => { sg._nop = false; sg.classList.remove('nopath'); },
+      (sg) => !sg.classList.contains('short') && [sg._b, ...parts(sg)].some(cut),
+      (sg) => { sg._nop = true; sg.classList.add('nopath'); },
+      (sg) => hid ? NaN : root.DurbarCutText.growKey(sg, sg._sig + '|' + W + '|' + sg.classList.contains('short'), sg._sc.textContent.length)); /* three passes, one layout per render; a sign is measured again only when its text or the layout width changed or its counts and cost text grew longer than any measured (growKey), so most status updates read nothing */
+    for (const sg of signs) sg.classList.toggle('nopath', !!sg._nop); /* el() writes the class again each render: the kept result is put back (a write only) */
   }
 
   /* FR-018, FR-184: the folder sign keeps its nodes: only the counts and the cost change on a status update, and the + and the room menu keep the focus */
@@ -1324,6 +1341,44 @@
     const w = todo.map((r) => r.getBoundingClientRect().width);
     todo.forEach((r, i) => { r.hidden = w[i] < ROLE_MIN; });
   }
+  /* spec 102 (issue 2009, Changes 2026-11-22): the head of a standing visitor is the middle half of its picture's width and the top 30 % of its height; a place plate in
+     a pixel world is taken to the free place nearest where the layout put it (`L0`) that is `need` wide, on its rows `y0..y1` clear of every head and of the plates
+     already placed (`done`, with a 2 px gap); with no place that wide it is narrowed to the widest free one (the plate's own ellipsis), at least 44 px while one that
+     wide exists. Returns the plate's left and width. */
+  /* spec 102 (issue 2009, 2026-11-22): the wall picture's neon signs (the world's `wallSigns`, in the picture's own grid pixels) as boxes in the chrome's pixels: the wall is the lobby's
+     background at the lobby's height, repeated across, so a sign's box is its grid box times height / picture height, once for each repeat. A name chip or place plate never stands on one. */
+  const SIGN_PAD = 1;
+  function signRects(chrome) {
+    const sg = CUR && CUR.signs, lob = chrome.parentNode.querySelector('.ro-art > .ro-lobby'); if (!sg || !lob) return [];
+    const cr = chrome.getBoundingClientRect(), lr = lob.getBoundingClientRect(), k = lob.clientHeight / sg.size[1], tile = sg.size[0] * k, out = [], ox = lr.left + lob.clientLeft - cr.left, oy = lr.top + lob.clientTop - cr.top; /* the picture is sized and placed by the padding box */
+    if (!(k > 0)) return out;
+    for (let t = 0; t * tile < lob.clientWidth; t++) for (const q of sg.list) out.push({ x0: ox + t * tile + q.x * k - SIGN_PAD, x1: ox + t * tile + (q.x + q.w) * k + SIGN_PAD, y0: oy + q.y * k - SIGN_PAD, y1: oy + (q.y + q.h) * k + SIGN_PAD }); /* SIGN_PAD: the scaled picture bleeds a pixel past its grid box */
+    return out;
+  }
+  function clearOfHeads(chrome, W, L0, need, y0, y1, done) {
+    const cr = chrome.getBoundingClientRect(), GAP2 = 2, signs = signRects(chrome), heads = [];
+    for (const v of chrome.parentNode.querySelectorAll('.ro-art > .ro-visitor, .ro-art > .ro-visitor2')) {
+      const r = v.getBoundingClientRect(); if (!r.width) continue;
+      const top = r.top - cr.top; heads.push({ x0: r.left - cr.left + 0.25 * r.width, x1: r.right - cr.left - 0.25 * r.width, y0: top, y1: top + 0.3 * r.height });
+    }
+    /* the plate may also stand a few px lower, under a sign (the plate's row 0, then each lower step that clears a sign it would touch), at 3 px of cost per px: the nearest place wins */
+    const dys = [0];
+    for (const q of signs) if (q.y0 < y1 && y0 < q.y1) { const d = Math.ceil(q.y1 - y0) + 1; if (d <= 10 && !dys.includes(d)) dys.push(d); }
+    let pick = null, narrow = null;
+    for (const dy of dys) {
+      const a0 = y0 + dy, a1 = y1 + dy, block = [];
+      for (const q of [...heads, ...done, ...signs]) if (q.y0 < a1 && a0 < q.y1) block.push([q.x0 - GAP2, q.x1 + GAP2]);
+      block.sort((p, q) => p[0] - q[0]);
+      const free = []; let at = 0;
+      for (const [x0, x1] of block) { if (x0 > at) free.push([at, x0]); at = Math.max(at, x1); }
+      if (at < W) free.push([at, W]);
+      for (const [x0, x1] of free) if (x1 - x0 >= need - 0.01) { const l = Math.min(Math.max(L0, x0), x1 - need), cost = Math.abs(l - L0) + 3 * dy; if (!pick || cost < pick.cost) pick = { l, w: need, dy, cost }; }
+      if (!narrow) narrow = free;
+    }
+    if (pick) return pick;
+    const free = narrow || [], wide = free.filter(([x0, x1]) => x1 - x0 >= 44).sort((p, q) => (q[1] - q[0]) - (p[1] - p[0]) || Math.abs(p[0] - L0) - Math.abs(q[0] - L0))[0] || free.sort((p, q) => (q[1] - q[0]) - (p[1] - p[0]))[0];
+    return wide ? { l: wide[0], w: Math.max(1, wide[1] - wide[0]), dy: 0 } : { l: L0, w: need, dy: 0 };
+  }
   function fitPlates(chrome, W) {
     const pl = [...chrome.querySelectorAll(':scope > .ro-lplate')].sort((a, b) => a.offsetLeft - b.offsetLeft);
     const done = [];
@@ -1332,6 +1387,15 @@
       p.style.maxWidth = 'none'; const need = p.getBoundingClientRect().width + 1; p.style.maxWidth = px(base); /* fractional, plus a pixel: a text 0.4 px wider than its box still gets the ellipsis */
       const y0 = p.offsetTop, y1 = y0 + p.offsetHeight;
       const rows = (q) => q.y0 < y1 && y0 < q.y1;
+      if (PIXEL) { /* spec 102 (issue 2009): in a pixel world a place plate never covers a visitor's head or a wall sign */
+        const spot = clearOfHeads(chrome, W, L0, need, y0, y1, done.filter(rows));
+        p.style.left = px(spot.l); p.style.maxWidth = px(spot.w);
+        if (spot.dy) { p.style.top = px((parseFloat(p.style.top) || 0) + spot.dy); }
+        const rr = p.getBoundingClientRect(), cr = chrome.getBoundingClientRect();
+        p._w = rr.width;
+        done.push({ x0: rr.left - cr.left, x1: rr.right - cr.left, y0: y0 + (spot.dy || 0), y1: y1 + (spot.dy || 0) });
+        continue;
+      }
       if (need > base) {
         const mine = done.filter(rows), others = pl.filter((q) => q !== p && !done.includes(q)).map((q) => ({ x0: parseFloat(q.style.left) || 0, y0: q.offsetTop, y1: q.offsetTop + q.offsetHeight })).filter(rows);
         const lo = Math.max(0, ...mine.map((q) => q.x1 + 2)), hi = Math.min(W, ...others.filter((q) => q.x0 >= L0).map((q) => q.x0 - 2));
@@ -1372,6 +1436,7 @@
     /* the place plates are there first: a chip never covers one */
     const cr = chrome.getBoundingClientRect(); /* fractional boxes: a rounded offsetLeft hides half a pixel of overlap */
     const placed = [...chrome.querySelectorAll(':scope > .ro-lplate')].map((e) => { const r = e.getBoundingClientRect(); return [r.left - cr.left, r.right - cr.left, r.top - cr.top, r.bottom - cr.top]; });
+    for (const q of signRects(chrome)) placed.push([q.x0, q.x1, q.y0, q.y1]); /* a wall sign is fixed too: a chip never stands on one (issue 2009) */
     const plates = placed.slice(), chipsPlaced = []; /* plates stay fixed; a placed chip may move left to make room (pushLeft) */
     const band = W || chrome.clientWidth || 1e9;
     for (const c of chips) {
@@ -1383,11 +1448,11 @@
       /* Paco's review of #921: names while there is room. Every spot within 64 px left or right on up to three levels is tried, the
          least move first (a level costs 12 px); only when none is free do the initials try the same, then (a crowd with no room) the
          initials move right until they touch nobody */
-      const best = () => {
+      const best = (reach = 64) => {
         const w = c.getBoundingClientRect().width, l = x0 - w / 2; let pick = null;
         for (let k = 0; k < 3; k++) {
           const t = base - 18 * k; if (t < 0 && k > 0) break;
-          for (let d = 0; d <= 64; d += 2) for (const dx of d ? [d, -d] : [0]) {
+          for (let d = 0; d <= reach; d += 2) for (const dx of d ? [d, -d] : [0]) {
             if (l + dx < 0 || l + dx + w > band || hits(l + dx, l + dx + w, t)) continue;
             const score = d + 12 * k; if (!pick || score < pick.score) pick = { score, t, dx, l, w };
           }
@@ -1407,11 +1472,11 @@
         }
         return moves;
       };
-      const withPush = () => {
+      const withPush = (reach = 64) => {
         const w = c.getBoundingClientRect().width, l = x0 - w / 2; let found = null;
         for (let k = 0; k < 3; k++) {
           const t = base - 18 * k; if (t < 0 && k > 0) break;
-          for (let d = 0; d <= 64; d += 2) for (const dx of d ? [d, -d] : [0]) {
+          for (let d = 0; d <= reach; d += 2) for (const dx of d ? [d, -d] : [0]) {
             const L = l + dx;
             if (L < 0 || L + w > band || plates.some(([a, b, y0, y1]) => a < L + w + GAPC && L < b + GAPC && y0 < t + h && t < y1)) continue;
             const moves = pushLeft(L, t); if (!moves) continue;
@@ -1425,13 +1490,15 @@
         return found;
       };
       let pick = best() || withPush();
+      /* spec 102 (issue 2009, 2026-11-22): in a pixel world a name is never cut while a free spot exists farther along the row (up to 160 px from its person): the wall's signs and plates take room, and a shortened name ("Le\u2026") is the worse of the two */
+      if (!pick && PIXEL) pick = best(160) || withPush(160);
       /* no free spot for the whole name: a shorter one (its first letters and "…", from 6 down to 2), never bare initials (Paco, #921) */
       const nm = c.dataset.name || '', n = c.querySelector('.ro-cn'), g = Array.from(nm);
       for (const k of [6, 5, 4, 3, 2]) {
         if (pick || k > g.length - 2) continue;
         c.dataset.full = nm; text(n, g.slice(0, k).join('') + '\u2026'); pick = best() || withPush();
       }
-      if (!pick) { const w = c.getBoundingClientRect().width, l = x0 - w / 2; let dx = 0; for (let i = 0; i < 40; i++) { const hl = hitList(l + dx, l + dx + w, base); if (!hl.length) break; dx = Math.max(...hl.map(([, b]) => b)) + 2 - l; } pick = { t: base, dx, l, w }; }
+      if (!pick) { if (c.dataset.full) { text(n, c.dataset.full); delete c.dataset.full; } /* spec 097 FR-023 (issue 2012): no spot even for a short form: the whole name, slid right, not "Ro…" for "Rosa" */ const w = c.getBoundingClientRect().width, l = x0 - w / 2; let dx = 0; for (let i = 0; i < 40; i++) { const hl = hitList(l + dx, l + dx + w, base); if (!hl.length) break; dx = Math.max(...hl.map(([, b]) => b)) + 2 - l; } pick = { t: base, dx, l, w }; }
       const ent = [pick.l + pick.dx, pick.l + pick.dx + pick.w, pick.t, pick.t + h];
       placed.push(ent); chipsPlaced.push({ c, l: pick.l + pick.dx, w: pick.w, t: pick.t, h, x0, ent });
       c.style.top = px(pick.t); c.style.left = px(x0 + pick.dx); c._w = pick.w;
@@ -1445,7 +1512,7 @@
     const cr = chrome.getBoundingClientRect(), rel = (e) => { const r = e.getBoundingClientRect(); return { x0: r.left - cr.left, x1: r.right - cr.left, y0: r.top - cr.top, y1: r.bottom - cr.top }; };
     const chips = [...chrome.querySelectorAll(':scope > .ro-chip')].sort((a, b) => a.getBoundingClientRect().left - b.getBoundingClientRect().left);
     for (let pass = 0; pass < 4; pass++) {
-      const placed = [...chrome.querySelectorAll(':scope > .ro-lplate')].map(rel);
+      const placed = [...chrome.querySelectorAll(':scope > .ro-lplate')].map(rel).concat(signRects(chrome));
       let moved = false;
       for (const c of chips) {
         const r = rel(c), hit = placed.filter((q) => q.x0 < r.x1 - 0.3 && r.x0 < q.x1 - 0.3 && q.y0 < r.y1 - 0.3 && r.y0 < q.y1 - 0.3);

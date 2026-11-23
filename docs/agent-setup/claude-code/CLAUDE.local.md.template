@@ -6,7 +6,7 @@
 
 ## Workflow here
 - Spec Kit before code: `/speckit-specify` or a dated delta under `## Changes`, then plan, tasks and analyze, then implement and converge. The analyst writes specs under `specs/NNN-*`; the implementer does one `Tnnn`.
-- One worktree per issue: `git worktree add ../durbar-NNN-slug -b NNN-slug origin/main`.
+- One worktree per issue, all under ONE root next to your checkout (not a cache folder, not `~`: it works in cmd too): run it FROM THE MAIN CHECKOUT (from inside a linked worktree `..` nests the root; `npm run worktrees:clean` prints the right root): `git worktree add ../<repo>-worktrees/NNN-slug -b NNN-slug origin/main`, then `git push -u origin NNN-slug` (the cleaner needs the upstream). Remove yours after your PR merges: `npm run worktrees:clean -- --apply` (the `--` matters; a dry run without `--apply`). Worktrees in an old root are found too.
 - Checks: `npm run typecheck && npm run build && npm test`. For UI, the simulator (`DURBAR_SIM=15`) and `npm run check:office` at 1440x900 and 1280x800.
 - No real Copilot/Claude/Codex sessions, no `npm run smoke` or `scripts/capture-raw.ts`, without asking me and stating the cost.
 
@@ -17,7 +17,7 @@
 - **Analyst only when there are real decisions to make**; a clear bug goes straight to the implementer.
 - **At most 2 heavy agents at a time** on a small machine (4 cores). Queue the rest. Electron always under `flock -o … timeout N`.
 - **Keep the same implementer** for every fix round of one PR (it keeps its context).
-- **Short, concrete briefs**: the risks to check, "read CI for the sha" (AGENTS.md *Test once*), mutations and probes only.
+- **Short, concrete briefs**: the risks to check, "read CI for the sha" (AGENTS.md *Test once*), mutations and probes only; for an open PR, "run `npm run pr:preflight -- <N>` before asking for review; fix every FAIL".
 - **Model per task**: a smaller model for small implementations, the top model for security/design reviews and large work.
 
 ## Accounts

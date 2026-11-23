@@ -1,1 +1,0 @@
-- **The question card's header tag and an automatic answer's question text are masked like the rest of the card** (spec 012, #1937).
