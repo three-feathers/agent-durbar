@@ -316,6 +316,9 @@ const run = async (ctx, reqs) => {
     const dprNow = await js('devicePixelRatio'); /* FR-255 (T204): an integer at a whole ratio; at 1.25 and 1.5, a whole number of device px (the next one up where it fits, else as it was) */
     assert.ok(art.g >= 2 && (Number.isInteger(art.g) || (!Number.isInteger(dprNow) && Math.abs(art.g * dprNow - Math.round(art.g * dprNow)) < 1e-6)), tag + ': an integer scale (a whole number of device px at 1.25 and 1.5): ' + art.g);
     assert.deepStrictEqual(art.off, [], tag + ': the art on the grid');
+    /* spec 102 FR-405: a seated bust is only ever a face in a small circle in the arcade (the largest avatar is 32 CSS px): never drawn as a bust */
+    const busts = await js(`[...document.querySelectorAll('img')].filter(i=>/-(typeA|typeB|waveA|waveB|think|rest)(-t\\d+)?\\.webp/.test(i.getAttribute('src')||'')).map(i=>{let c=i.parentElement;while(c&&getComputedStyle(c).overflow!=='hidden')c=c.parentElement;const r=(c||i).getBoundingClientRect();return r.width>0?Math.round(Math.max(r.width,r.height)):0;}).filter(w=>w>32)`);
+    assert.deepStrictEqual(busts, [], tag + ': no seated bust is drawn larger than a 32 px avatar');
     /* spec 102 FR-255 (owner 2026-11-04, #1104): the lobby too: every fixture and visitor at a whole scale, on a whole device pixel */
     const lobby = await js(`(()=>{const d=devicePixelRatio,off=[],tol=Number.isInteger(d)?0.01:Math.max(0.01,d/64+0.001);let n=0; /* tol: 0.01 at a whole ratio; at 1.25 and 1.5 the engine keeps a position in 1/64 CSS px, which is up to d/64 device px (T204) */
       for(const i of document.querySelectorAll('#stage img.ro-fx,#stage img.ro-visitor')){if(i.hidden||!i.getClientRects().length||!i.naturalWidth)continue;n++;const b=i.getBoundingClientRect(),s=b.width*d/i.naturalWidth,s2=b.height*d/i.naturalHeight,x=b.left*d;

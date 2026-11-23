@@ -88,7 +88,7 @@ function crewPreloadOne(id,pose){
 /* the open chat's header avatar and the inbox rows are drawn once, not by renderAll: when a character falls back, redraw just those avatars (no rebuild, so focus stays) */
 function crewRefreshAvatars(){
   const sel=typeof ui!=='undefined'&&byId(ui.selected), ph=document.querySelector('#panelHead .avatar'); if(sel&&ph)ph.innerHTML=avatar(sel);
-  document.querySelectorAll('.inbox-row[data-id] .ib-av').forEach(av=>{const a=byId(av.closest('.inbox-row').dataset.id);if(a)av.innerHTML=avatar(a);});
+  document.querySelectorAll('.inbox-row[data-id] .ib-av').forEach(av=>{const a=byId(av.closest('.inbox-row').dataset.id);if(a)av.innerHTML=avatar(a,undefined,undefined,32);});
 }
 /* the map was built for another agents array or another Characters value (each crew keeps its own saved map) */
 const crewStale=()=>CREW_FOR!==agents||CREW_CH!==crewChoice();
@@ -912,19 +912,27 @@ function roFace0(a){
   const ok=/^[a-z0-9-]{1,24}$/.test(pp.set)&&/^[a-z0-9-]{1,24}$/.test(pp.world);
   const file=ok&&person&&/^[a-z0-9-]{1,24}$/.test(person)?'realoffice/sets/'+pp.set+'/'+person+'-'+(v?'rest':pose)+'.webp':''; /* a visit does not change who the agent is: away, the same person at rest */
   const sm=(packMeta('sets',pp.set)||{}).seat, seatM=sm&&person&&Object.prototype.hasOwnProperty.call(sm,person)?sm[person]:null, crop=seatM&&E.portraitCrop?E.portraitCrop(seatM):null;
-  return {ls,file,seatM,crop,pp,person,v};
+  const hdT=HD_PEOPLE_ON&&pack0(pp.set)&&person?roTile(pp.set,person,v?'rest':pose):''; /* spec 102 FR-405 (issue 2055): the HD set's avatar tiles, behind its switch */
+  return {ls,file,seatM,crop,pp,person,v,tile:hdT};
 }
+const pack0=set=>/^[a-z0-9-]{1,24}$/.test(set||'');
+/* spec 102 FR-405: the base path of a person's avatar tile in a pose ('' when the set has none): the file is base + the drawn size in device px + '.webp' */
+function roTile(set,person,pose){const t=((packMeta('sets',set)||{}).hd||{}).tiles;return t&&Array.isArray(t.people)&&t.people.includes(person)&&Array.isArray(t.poses)&&t.poses.includes(pose)&&/^[a-z0-9-]{1,24}$/.test(person)?'realoffice/sets/'+set+'/hd/'+person+'-'+pose+'-t':'';}
+/* the tile for a circle of px CSS px: the exact size, and twice it for a 2x screen; null when the set has no tile of that size (the old crop is drawn) */
+function roTileImg(f,px){const t=f&&f.tile&&((packMeta('sets',f.pp.set)||{}).hd||{}).tiles;if(!t||!px||!t.sizes.includes(px))return null;
+  const two=t.sizes.includes(2*px)?` srcset="${esc(f.tile+px)}.webp 1x, ${esc(f.tile+2*px)}.webp 2x"`:'';
+  return `<span class="ro-face" style="position:relative;display:block;width:100%;height:100%;overflow:hidden;border-radius:50%"><img alt="" draggable="false" src="${esc(f.tile+px)}.webp"${two} style="display:block;width:100%;height:100%;image-rendering:pixelated"></span>`;}
 const roFaceImg=f=>{
   const st=f.crop&&f.seatM?`width:${f.seatM.w/f.crop.s*100}%;left:${-f.crop.x/f.crop.s*100}%;top:${-f.crop.y/f.crop.s*100}%`:'width:100%';
   return `<span class="ro-face" style="position:relative;display:block;width:100%;height:100%;overflow:hidden;border-radius:50%"><img alt="" draggable="false" src="${esc(f.file)}" style="position:absolute;display:block;max-width:none;height:auto;${st}"></span>`;
 };
 /* what picture an agent has right now, as a short key: tests and the redraw compare it (the same for every place that shows the face) */
 function faceKey(a){
-  const f=roFace(a); if(f)return f.file||'initial|'+Array.from(String(a.name||'?'))[0].toUpperCase();
+  const f=roFace(a); if(f)return (f.tile||f.file)||'initial|'+Array.from(String(a.name||'?'))[0].toUpperCase();
   const kit=THEME.sceneKit(); return kit+'|'+(kit==='crew'?crewOf(a):'')+'|'+JSON.stringify(a.look||'');
 }
-function avatar(a,view,ov){
-  if(!ov){const rf=roFace(a);if(rf)return rf.file?roFaceImg(rf):`<span class="ro-face ro-ini" style="display:flex;align-items:center;justify-content:center;width:100%;height:100%;border-radius:50%;font-weight:600;font-size:12px;background:var(--surface-2);color:var(--ink)">${esc(Array.from(String(a.name||'?'))[0].toUpperCase())}</span>`;} /* away: the initial, as the header */
+function avatar(a,view,ov,px){
+  if(!ov){const rf=roFace(a);if(rf)return rf.file?(roTileImg(rf,px)||roFaceImg(rf)):`<span class="ro-face ro-ini" style="display:flex;align-items:center;justify-content:center;width:100%;height:100%;border-radius:50%;font-weight:600;font-size:12px;background:var(--surface-2);color:var(--ink)">${esc(Array.from(String(a.name||'?'))[0].toUpperCase())}</span>`;} /* away: the initial, as the header */
   const k=themedLook(a.look);
   const kit=(ov&&ov.kit)||THEME.sceneKit(), cr=kit==='crew'?(ov&&ov.crew!==undefined?ov.crew:crewOf(a)):'';
   if(kit!=='office'&&window.DurbarScenes){const v=window.DurbarScenes.avatar(kit,a,{k,T:T_,shade,reduced:REDUCED,art:kitArt(),crew:cr,crewFb:kit==='crew'&&CREW_BAD.has(cr),view});if(v)return v;}
@@ -2852,7 +2860,7 @@ function syncChatHeader(){
   if(!on){if(port0)port0.remove();return;}
   const f=roFace(a), pp=f.pp, v=f.v, ls=f.ls, file=f.file, pack=/^[a-z0-9-]{1,24}$/.test(pp.set)&&/^[a-z0-9-]{1,24}$/.test(pp.world); /* the one picker (issue 1193) */
   const lt=E.lightFor(ls,{still:REDUCED||!MOTION||STILL_HL}), words=E.lampWords(lt);
-  const key=[a.id,ls,words,file,stWord(a),v?v.place:'',helpersOf(a).length,pp.world,pp.set].join('|');
+  const key=[a.id,ls,words,file,f.tile,stWord(a),v?v.place:'',helpersOf(a).length,pp.world,pp.set].join('|');
   /* the header portrait: the person's head and shoulders in a ring that carries the lamp's colour, with the status dot */
   let port=port0; const top=p.querySelector('.ph-top');
   if(top&&(!port||port._k!==key)){
@@ -2860,7 +2868,9 @@ function syncChatHeader(){
     port=document.createElement('span');port.id='roPortrait';port.className='ro-portrait';port.setAttribute('aria-hidden','true');port._k=key;
     port.dataset.lamp=lt.lamp;port.dataset.tint=lt.tint; /* spec 097 FR-236: the ring follows the screen tint */
     port.dataset.face=faceKey(a);
-    if(file&&pack){const clip=document.createElement('span');clip.className='rp-clip';const im=document.createElement('img');im.alt='';im.draggable=false;im.src=file;
+    const tl=roTileImg(f,32);
+    if(tl){const clip=document.createElement('span');clip.className='rp-clip';clip.innerHTML=tl;port.appendChild(clip);} /* spec 102 FR-405: the HD tile, 1:1 */
+    else if(file&&pack){const clip=document.createElement('span');clip.className='rp-clip';const im=document.createElement('img');im.alt='';im.draggable=false;im.src=file;
       if(f.crop&&f.seatM){im.style.width=(f.seatM.w/f.crop.s*100)+'%';im.style.left=(-f.crop.x/f.crop.s*100)+'%';im.style.top=(-f.crop.y/f.crop.s*100)+'%';} /* the face fills the circle: the data of the layout's face box */
       clip.appendChild(im);port.appendChild(clip);}
     else{const t=document.createElement('b');t.className='rp-ini';t.textContent=Array.from(String(a.name||'?'))[0].toUpperCase();port.appendChild(t);} /* away or no picture: the initial, as the office's disc */
@@ -4993,7 +5003,7 @@ function doorAfterPaint(list){
   const p=$('needsPanel'); if(!p)return;
   const n=list.length;
   $('doorLine').textContent=n?n+' outside your door, oldest first':'Nobody outside your door.';
-  $('doorFaces').innerHTML=list.slice(0,8).map(a=>'<span class="door-face" data-face="'+esc(faceKey(a))+'">'+avatar(a)+'</span>').join('')+(n>8?'<span class="door-more">+'+(n-8)+'</span>':'');
+  $('doorFaces').innerHTML=list.slice(0,8).map(a=>'<span class="door-face" data-face="'+esc(faceKey(a))+'">'+avatar(a,undefined,undefined,24)+'</span>').join('')+(n>8?'<span class="door-more">+'+(n-8)+'</span>':'');
   p.dataset.sig=doorSig(list);
   clearTimeout(DOOR_CLEAR);DOOR_CLEAR=0;
   if(!n&&p.dataset.auto==='1')DOOR_CLEAR=setTimeout(()=>{DOOR_CLEAR=0;if($('needsPanel')&&!needsMeOrder().length)closeDoor(false);},2000); /* Q-NY-13: opened by itself and emptied, All clear for about 2 s */
@@ -5047,7 +5057,7 @@ function openInbox(focusId){
   {const wd=document.documentElement.dataset.world;
     if(officeView()==='real'&&/^[a-z0-9-]{1,24}$/.test(wd||'')){
       const hd=document.createElement('div');hd.className='ib-world';hd.dataset.surface='inbox';hd.setAttribute('aria-hidden','true');
-      hd.innerHTML='<img class="ibw-door" alt="" src="realoffice/worlds/'+wd+'/fx-boss.webp"><span class="ibw-faces">'+needsMeOrder().slice(0,4).map(a=>'<span class="ibw-face" data-face="'+esc(faceKey(a))+'">'+avatar(a)+'</span>').join('')+'</span>';
+      hd.innerHTML='<img class="ibw-door" alt="" src="realoffice/worlds/'+wd+'/fx-boss.webp"><span class="ibw-faces">'+needsMeOrder().slice(0,4).map(a=>'<span class="ibw-face" data-face="'+esc(faceKey(a))+'">'+avatar(a,undefined,undefined,26)+'</span>').join('')+'</span>';
       const dl=d.querySelector('.inbox-dlg');dl.insertBefore(hd,dl.firstChild);
     }}
   document.body.appendChild(d);
@@ -5105,7 +5115,7 @@ function paintInbox(focusIndex){
     const door=DOOR_ON&&!!$('needsPanel'), rq=card?reqOf(card):'', isLimit=!!card&&card.classList.contains('limit'), isCoffee=door&&!!card&&card.classList.contains('coffee'); /* FR-206: the request this row was painted for; FR-207: a limit row has its own amount and no letter key */
     const st=vis(a), q=card&&card.classList.contains('question'), what=card?(q?'asks':card.classList.contains('limit')?'reached its spending limit':card.classList.contains('coffee')?'is on a '+coffeeWord().toLowerCase():'needs your OK'):(st==='error'?'has an error':a.limit?'reached its limit':LABELS[st]||st);
     row.setAttribute('aria-labelledby','ibh'+i);row.dataset.id=a.id;row.dataset.name=a.name;if(door)row.dataset.rq=rq;if(door&&isLimit)row.classList.add('is-limit');
-    row.innerHTML='<div class="ib-av" aria-hidden="true" data-face="'+esc(faceKey(a))+'">'+avatar(a)+'</div><div class="ib-main"><div class="ib-top"><h4 class="ib-h" id="ibh'+i+'" tabindex="-1"><b class="ib-n"></b> <span class="ib-sub"><span class="ib-w"></span> <span class="ib-f"></span> <span class="ib-wait"></span></span></h4></div><p class="ib-t" id="ibt'+i+'"></p><div class="ib-act"></div></div>';
+    row.innerHTML='<div class="ib-av" aria-hidden="true" data-face="'+esc(faceKey(a))+'">'+avatar(a,undefined,undefined,32)+'</div><div class="ib-main"><div class="ib-top"><h4 class="ib-h" id="ibh'+i+'" tabindex="-1"><b class="ib-n"></b> <span class="ib-sub"><span class="ib-w"></span> <span class="ib-f"></span> <span class="ib-wait"></span></span></h4></div><p class="ib-t" id="ibt'+i+'"></p><div class="ib-act"></div></div>';
     row.querySelector('.ib-h b').textContent=a.name;row.querySelector('.ib-h b').title=a.name;row.querySelector('.ib-w').textContent=what;row.querySelector('.ib-f').textContent='· '+roomOf(a).name;row.querySelector('.ib-f').title=roomOf(a).name; /* spec 052 FR-170: the name is its own line, the rest wraps below it */
     {const t=NEED_SINCE.get(a.id);row.querySelector('.ib-wait').textContent=t!=null?'· '+ATT.waitLabel(Date.now()-t):'';} /* FR-061 */
     const text=card?requestText(card):(taskOf(a)||''), long=door&&!!card&&!isLimit&&text.length>REQ_TEXT_MAX; /* FR-199 (Q-NY-11): over FR-060's 480 characters a row only reads the request's start and offers Open */
@@ -8382,7 +8392,7 @@ function railReq(x){const c=x.live||chats[x.id]?pendingCardOf(x):null;return c?r
 const railFolderLine=x=>{const r=roomOf(x),p=r?pathTip(deskMask(showPath(r.path))):'';return p?'\n'+esc('Folder: '+p):'';};
 function railRow(x,root,now){
   const st=pillSt(x),attn=st==='waiting'||st==='error'||st==='failing'||st==='retrying', sel=x.id===root, tall=needsMe(x); /* spec 052 FR-092: Failing here too; spec 034 FR-018: Retrying */
-  const head=`<span class="sav" data-face="${esc(faceKey(x))}">${avatar(x)}</span>`, name=`<b>${esc(x.name)}${draftHTML(x)}${unreadHTML(x)}${dialogHTML(x)}</b>`;
+  const head=`<span class="sav" data-face="${esc(faceKey(x))}">${avatar(x,undefined,undefined,22)}</span>`, name=`<b>${esc(x.name)}${draftHTML(x)}${unreadHTML(x)}${dialogHTML(x)}</b>`;
   const cls=`sitem st-${st}${attn?' attn':''}${tall?' tall':''}${sel?' sel':''}`, key=`data-sw="${esc(x.id)}" data-key="sw:${esc(x.id)}" aria-current="${sel}"`, who=`${esc(x.name)}${chatNoWords(x)}${draftWords(x)}${unreadWords(x)}`, no=chatNoOf(x)?'C'+chatNoOf(x)+' · ':'';
   if(!tall)return `<button class="${cls}" type="button" ${key} data-tip="${no}${esc(x.name)} · ${esc(stWord(x,true))}: ${esc(taskText(x))}${railFolderLine(x)}" aria-label="${who}, ${esc(stWord(x,true))}. Open chat.">${head}<span class="stx">${name}</span><span class="sst"><span class="dot ${st}"></span><span class="sw">${esc(stWord(x,true))}</span></span></button>`;
   const req=SHORT(railReq(x),200); /* masked first (requestText), then cut: tooltips stay within 300 characters (spec 052 FR-171) */

@@ -19,7 +19,7 @@ export const CAPS = { person: 80 * 1024, fixture: 120 * 1024, desk: 60 * 1024, f
 /** spec 102 FR-213: all shipped art (every world and every set) at most this many bytes */
 export const SHIPPED_MAX = 30 * 1024 * 1024;
 /** spec 102 FR-393, FR-394, FR-397, FR-403 (issue #2055; owner 2026-11-23 14:59 UTC, FINE): the HD person set's limits */
-export const HD_PALETTE = 48, HD_ORPHAN_MAX = 0.06, HD_PERSON_MAX = 450 * 1024, HD_HEAD = [0.27, 0.31], HD_HEAD_W = 36;
+export const HD_PALETTE = 48, HD_ORPHAN_MAX = 0.06, HD_PERSON_MAX = 450 * 1024, HD_HEAD = [0.27, 0.31], HD_HEAD_W = 36, HD_HEAD_HAIR = 0.36, HD_BIG_HAIR = new Set(['p03', 'p05']); /* FR-402: a big afro or quiff is the crown, so the head measures taller; the face is not enlarged for it */
 export const PERSON_MAX_H = 640;
 const KEYS = ['files', 'source', 'tool', 'date', 'made by', 'approved by', 'reference', 'prompt', 'cut', 'licence'];
 const CLAUSE = /fictional and must not resemble any real or famous person; no real person, celebrity, brand, logo or franchise is named/;
@@ -552,13 +552,14 @@ if (worldIds.includes('retro')) {
 
 // ---- spec 102 FR-391..FR-398 (issue #2055): the HD person set (sets/retro/hd/, `set.json` `hd`): every frame named, its size, lossless, inside its place; one palette, no speckle, the budget ----
 {
-  const dir = path.join(RO, 'sets', 'retro', 'hd'), sj = JSON.parse(fs.readFileSync(path.join(RO, 'sets', 'retro', 'set.json'), 'utf8')) as { hd: { scales: number[]; people: Record<string, Record<string, Record<string, number[]>>> } };
-  const POSES = ['typeA', 'typeB', 'waveA', 'waveB', 'think', 'rest', 'type', 'book', 'knock', 'letter', 'counter', 'runA', 'runB', 'face-book', 'face-coffee', 'face-knock', 'face-letter', 'face-runA', 'face-runB', 'sit'];
-  const SEAT = new Set(POSES.slice(0, 6)), tallest = (p: string): number => (SEAT.has(p) ? 80 : p === 'sit' ? 72 : 72); /* grid px: a seated bust's canvas, a standing figure (FR-256) */
+  const dir = path.join(RO, 'sets', 'retro', 'hd'), sj = JSON.parse(fs.readFileSync(path.join(RO, 'sets', 'retro', 'set.json'), 'utf8')) as { hd: { scales: number[]; people: Record<string, Record<string, Record<string, number[]>>>; tiles?: { sizes: number[]; poses: string[]; people: string[] } } };
+  /* FR-405: the six seated busts ship only as avatar tiles; the 14 standing and stool frames at three sizes */
+  const POSES = ['type', 'book', 'knock', 'letter', 'counter', 'runA', 'runB', 'face-book', 'face-coffee', 'face-knock', 'face-letter', 'face-runA', 'face-runB', 'sit'];
+  const SEAT = new Set<string>(), tallest = (p: string): number => (SEAT.has(p) ? 80 : p === 'sit' ? 72 : 72); /* grid px: a seated bust's canvas, a standing figure (FR-256) */
   assert.deepStrictEqual(sj.hd.scales, [4, 3, 2], 'FR-391: the authored scales, the master first');
   const named = new Set<string>(); let bytes = 0;
   for (const [pid, poses] of Object.entries(sj.hd.people)) {
-    assert.deepStrictEqual(Object.keys(poses).sort(), [...POSES].sort(), `${pid}: all 20 frames in HD`);
+    assert.deepStrictEqual(Object.keys(poses).sort(), [...POSES].sort(), `${pid}: all 14 standing and stool frames in HD`);
     let own = 0;
     for (const [pose, at] of Object.entries(poses)) for (const s of sj.hd.scales) {
       const f = `${pid}-${pose}@${s}.webp`, v = at[String(s)], b = fs.readFileSync(path.join(dir, f)), info = webpInfo(b);
@@ -572,7 +573,16 @@ if (worldIds.includes('retro')) {
     }
     bytes += own;
   }
-  assert.deepStrictEqual(fs.readdirSync(dir).sort(), [...named].sort(), 'hd/ holds exactly the frames set.json names');
+  /* FR-405: every person of the set has an avatar tile per pose SEAT_POSE can ask for, at every drawn avatar size (CSS px and twice it), square, lossless */
+  const T = sj.hd.tiles!, tileNames = new Set<string>();
+  assert.ok(T && T.sizes.join() === '22,24,26,32,44,48,52,64' && [...T.poses].sort().join() === 'rest,think,typeA,waveA', 'FR-405: the tile sizes and poses');
+  assert.deepStrictEqual([...T.people].sort(), Object.keys(sj.hd.people).sort(), 'FR-405: every HD person has tiles');
+  for (const pid of T.people) for (const pose of T.poses) for (const S of T.sizes) {
+    const f = `${pid}-${pose}-t${S}.webp`, b = fs.readFileSync(path.join(dir, f)), info = webpInfo(b);
+    tileNames.add(f); bytes += b.length;
+    assert.deepStrictEqual([info.width, info.height, info.chunks.filter((c) => c !== 'VP8X').join()], [S, S, 'VP8L'], `${f}: ${S} x ${S}, lossless`);
+  }
+  assert.deepStrictEqual(fs.readdirSync(dir).sort(), [...named, ...tileNames].sort(), 'hd/ holds exactly the frames and tiles set.json names');
   const amd = fs.readFileSync(path.join(RO, 'sets', 'retro', 'ASSETS.md'), 'utf8').replace(/\r\n/g, '\n');
   for (const pid of Object.keys(sj.hd.people)) { /* FR-398: provenance per person: tool, date, reference, prompt, fictional, the owner's look */
     const m = new RegExp(`\\n#### hd-${pid}\\n([\\s\\S]*?)(?=\\n#{2,4} |$)`).exec(amd), body = m ? m[1] : '';
@@ -604,10 +614,13 @@ if (worldIds.includes('retro')) {
     };
     const files = [...named].sort().map((f) => path.join(dir, f)), all = measure(files);
     for (const [rule, f] of Object.entries(crisp)) assert.deepStrictEqual(f(all), [], `FR-403: the ${rule} rule holds on every HD frame`);
+    /* FR-405: the tiles share the palette and the alpha rule (their edge is a cut through the body, so the one-outline rule is for whole figures) */
+    const tl = measure([...files, ...[...tileNames].sort().map((f) => path.join(dir, f))]);
+    assert.deepStrictEqual([crisp.palette(tl), crisp.alpha(tl)], [[], []], 'FR-405: the tiles share the one palette, alpha 0 or 255');
     /* FR-402: a standing person's head, on the front frames at 144 px (the 15-agent size) */
     const heads = all.rows.filter((r) => /-face-[a-z]+(?:A|B)?@2\.webp$/.test(r.name));
     assert.ok(heads.length >= 6 * Object.keys(sj.hd.people).length, `FR-402: the front frames at 144 are measured (${heads.length})`);
-    for (const r of heads) assert.ok(r.head[0] >= HD_HEAD[0] && r.head[0] <= HD_HEAD[1] && r.head[1] >= HD_HEAD_W, `FR-402: ${r.name}: head ${r.head[0]} of the height, ${r.head[1]} px wide (${HD_HEAD.join('..')}, at least ${HD_HEAD_W} px)`);
+    for (const r of heads) assert.ok(r.head[0] >= HD_HEAD[0] && r.head[0] <= (HD_BIG_HAIR.has(r.name.slice(0, 3)) ? HD_HEAD_HAIR : HD_HEAD[1]) && r.head[1] >= HD_HEAD_W, `FR-402: ${r.name}: head ${r.head[0]} of the height, ${r.head[1]} px wide (${HD_HEAD.join('..')}, at least ${HD_HEAD_W} px)`);
     console.log(`HD heads at 144: ${Math.min(...heads.map((r) => r.head[0]))}..${Math.max(...heads.map((r) => r.head[0]))} of the height, ${Math.min(...heads.map((r) => r.head[1]))}..${Math.max(...heads.map((r) => r.head[1]))} px wide`);
     const worst = Math.max(...all.rows.map((r) => r.orphans / r.opaque));
     console.log(`HD palette ${all.palette} colours, worst orphan share ${(100 * worst).toFixed(2)} % (limit ${(100 * HD_ORPHAN_MAX).toFixed(1)} %)`);

@@ -1194,6 +1194,11 @@ for (const world of ['photo', 'cave']) {
     }
   }
   assert.ok(hdDrawn >= 18, `the HD frames were drawn (${hdDrawn})`);
+  /* FR-406: an HD person never falls back to an old frame at a cabinet: every pose a state can ask for (with its fallbacks) has its HD frame at every authored scale */
+  for (const pid of Object.keys(HD.people)) for (const st of STATES) for (const g of [2, 3, 4]) {
+    const L = aislesLayout({ folders: [{ id: 'f0', agents: [{ id: 'a0', state: st, person: pid, away: null }] }], places: [] }, { w: 1440, h: ROOM.h900 }, { ...META, hdPeople: HD }, SIGNS(1)), d = L.zones[0].desks[0];
+    assert.ok(d.person && d.person.file.startsWith('hd/') && hdFrame(HD, pid, d.person.pose, g), `FR-406: ${pid} ${st}: an HD frame, never the old one (g ${g})`);
+  }
   { /* FR-392 (owner 2026-11-23 14:59 UTC): with 1 or 2 agents `g` is 5 and the 288 frame is drawn 1:1 (80 % of the place): no fourth size is authored */
     const one = aislesLayout(pick(1), { w: 1440, h: ROOM.h900 }, { ...META, hdPeople: HD }, SIGNS(4)), d = one.zones[0].desks[0];
     assert.deepStrictEqual([one.g, d.person!.file.endsWith('@4.webp'), d.person!.h], [5, true, HD.people[d.person!.pid][d.person!.pose]['4'][1]], '1 agent: g 5 draws the 288 frame at 1:1');

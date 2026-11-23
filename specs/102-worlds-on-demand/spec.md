@@ -2475,7 +2475,7 @@ All sets keep FR-204's caps: no frame over 80 KB (largest 54 KB, Office), none o
 
 **Tasks:** T100 (amended), T433, T434 (new), T224 (amended); spec 117 T016, T017 (amended).
 
-## Changes 2026-11-23: the Retro arcade's people as one HD sprite set, behind an off switch; the pilot (FR-391..FR-404; T466..T473; issue #2055, tracker #1404; amends FR-254 for the HD set)
+## Changes 2026-11-23: the Retro arcade's people as one HD sprite set, behind an off switch; the pilot (FR-391..FR-406; T466..T473; issue #2055, tracker #1404; amends FR-254 for the HD set)
 
 **Owner decisions** (Vikram, Telegram, 2026-11-23, recorded on issue #2055):
 - **13:07 UTC, style B.** The arcade's people look dull and not like one set. Of two sample sheets he chose style B: an HD sprite set, people 288 px tall at 1440x900, one art pixel per screen pixel, one shared palette, pixel-clean edges, a rim light. Plan: this spec, the engine behind an off switch and a **pilot** of 3 people x 20 frames; his look at the pilot; the other 12 people in batches; his approval of the finished set; then the switch goes on and the old person art goes, in full.
@@ -2534,7 +2534,7 @@ All sets keep FR-204's caps: no frame over 80 KB (largest 54 KB, Office), none o
   - Else it goes beside the head inside the person's place: away from the cabinet first, then on the cabinet's side.
   - Where the place is too narrow for both, it goes under the chin.
   - It is never over the face box. An error keeps its badge at the glass's corner. The old frames keep today's place: the switch off is byte for byte today's hall.
-- **FR-402** **Head size** (owner, 14:27 UTC: "bigger heads"). A standing HD person's head, crown to neck, is **0.27 to 0.31 of the figure's height**, and the head is **at least 36 px wide at the 144 px size**.
+- **FR-402** **Head size** (owner, 14:27 UTC: "bigger heads"). A standing HD person's head, crown to neck, is **0.27 to 0.31 of the figure's height** (up to 0.36 for a person whose hair is the crown: p03's afro and p05's quiff; their heads are never enlarged for the hair: `k` is at least 1), and the head is **at least 36 px wide at the 144 px size**.
   - Measuring rule: the neck is the narrowest run through the head's centre column between 14 % and 36 % of the height; the head's width is its widest run above the neck.
   - How: the image model draws heads at about 0.20 even when asked for 0.30. So the pipeline enlarges the head **on the source, before the palette and the snap**. Everything above the neck, within the head's own columns, is scaled by `k` about the neck centre and laid over the body. A raised fist, a mug or a book above the neck is drawn back over the bigger head where it was. The figure is then fitted back to its shown height.
   - `k` is chosen per sheet from the median head share of its standing figures, aiming at 0.29. Seated busts are close-ups and keep their head (`k` = 1).
@@ -2548,6 +2548,15 @@ All sets keep FR-204's caps: no frame over 80 KB (largest 54 KB, Office), none o
   Each rule has a red case: a frame with one half-transparent pixel, a frame with a 49th colour and an orphan-heavy frame each fail at their own rule and pass the others.
   - Why Pillow and not Node: Node has no WebP decoder, so the frame hashes of FR-326 already work this way. CI's art step runs the test with Pillow required (`DURBAR_REQUIRE_PILLOW`).
 - **FR-404** **The pilot's people keep their details across poses and sizes.** p08 keeps his glasses in every front frame and the beanie in every frame; p12 keeps the beard and the apron; p04 keeps the bob and the pleated skirt. Read on a contact sheet of the 60 frames at each size before every hand-over; this is not machine-checked.
+
+- **FR-405** **Seated busts ship as avatar tiles, not as frames** (coordinator, 2026-11-23, under the owner's standing delegation; the owner sees it at the finished set). In the arcade a seated bust is only ever a face in a circle: `roFace0` (`app.js`) crops the `SEAT_POSE` bust (`typeA`, `think`, `waveA`, `rest`) for the rail rows (22 CSS px), Your door (24), the inbox header (26), the inbox rows and the chat portrait (32). A bust shrunk by the browser into such a circle is the soft look the owner rejected (14:27 UTC).
+  - So each person ships **tiles**: the face, square, snapped natively from the bust source at 22, 24, 26, 32, 44, 48, 52 and 64 px (each circle and twice it for a 2x screen), for the four poses `SEAT_POSE` asks for: `hd/<pid>-<pose>-t<size>.webp`, listed in `set.json` `hd.tiles`.
+  - The tiles use the same palette and alpha rule. Their edge is a cut through the body, so the one-outline rule applies to whole figures only.
+  - Behind the switch, `avatar(a, view, ov, px)` and the chat portrait draw the tile of their own size 1:1, with the 2x tile in `srcset`. A size without a tile keeps today's crop.
+  - The full busts (288/216/144) are not shipped. A test proves no bust is drawn larger than a 32 px avatar in the arcade (`shots-102-arcade`).
+  - Flat's heads (`crew.js` `HEAD_FRAME`, crops of this set's old `typeA`, `waveA` and `rest` files) are not changed: Flat keeps the old busts until the owner decides otherwise.
+  - `[KNOWN GAP]` at ratios 1.25 and 1.5 no tile is exact: the browser scales the 2x tile.
+- **FR-406** **No silent fallback for an HD person.** An HD person's frame for every pose a state can ask for, at every authored scale, and every tile of every person in `hd.tiles` exist, or a test fails (`test-realoffice-aisles.ts`, `test-realoffice-assets.ts`). After the flip (T472), a requested HD frame or tile that is missing fails a test; it is never drawn as old art.
 
 *Tests*:
 - `test-realoffice-aisles.ts`:
@@ -2568,4 +2577,4 @@ All sets keep FR-204's caps: no frame over 80 KB (largest 54 KB, Office), none o
 - While the switch is on, the lounge stool, the lobby, the zoom and Flat's heads still draw the old frames (FR-391).
 - The other 12 people are still the old art (T470).
 
-**Numbers** (`npm run specs:numbers`, `origin/main` and the open PR heads, 2026-11-23): FR-391..FR-404, T466..T473; no Q.
+**Numbers** (`npm run specs:numbers`, `origin/main` and the open PR heads, 2026-11-23): FR-391..FR-406, T466..T473; no Q.
