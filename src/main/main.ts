@@ -126,6 +126,11 @@ import childProcess = require('child_process');
 import { initSimGuard, simRefusedChannels } from './ipcguard';
 import { OrgPolicyCache } from './orgpolicy';
 import { register as registerOrgPolicyIpc } from './ipc/orgpolicy';
+import { register as registerSelfUpdateIpc } from './ipc/selfupdate';
+import { SelfUpdater, realSelfUpdateTimer } from './selfupdate';
+import { loadUpdateSource } from './updatesource';
+import { updatePolicy } from './updatepolicy';
+import { electronRequestFactory, makeFeedGet } from './netget';
 import { markSignedOut, withSignIn } from './authcheck';
 import type { SignInAnswer } from './authcheck';
 import { SettingsStore } from './settings';
@@ -170,6 +175,8 @@ let folderSetupStore: FolderSetupStore | undefined; // spec 061
 let folderStore: FolderStore | undefined;
 /** Global settings (default credit cap, spec 011), created when the app is ready. */
 let settingsStore: SettingsStore | undefined;
+/** Spec 118 T010: Durbar's own update check, created with the settings store. */
+let selfUpdater: SelfUpdater | undefined;
 /** Global MCP servers (spec 019), created when the app is ready (needs userData and safeStorage). */
 let mcpStore: McpStore | undefined;
 let mcpCostStore: McpCostStore | undefined;
@@ -941,6 +948,7 @@ registerTeamsIpc({
   }))),
 });
 registerOrgPolicyIpc({ view: () => orgPolicies.view() });
+registerSelfUpdateIpc({ getSelfUpdater: () => selfUpdater }); // spec 118 FR-024: version-only channels
 registerAdaptersIpc({ adaptersList });
 const sandboxOps = registerSandboxIpc({ agents, router, getSettingsStore: () => settingsStore, readyAdapterIds }); // spec 087
 router.onEvent((e) => sandboxOps.onEvent(e)); // spec 087 FR-007a: Continue only answers a note main forwarded
@@ -1106,7 +1114,7 @@ function createWindow(): void {
   // review on #721: a reload (or a crash) of the window drops any open-sessions dialog, so a lock waiting for its answer is released
   win.webContents.on('did-start-navigation', (d) => { if (d.isMainFrame && !d.isSameDocument) harnessIpc.releaseAsking(); });
   win.webContents.on('render-process-gone', () => harnessIpc.releaseAsking());
-  win.webContents.once('did-finish-load', () => { void adaptersList(false).then(() => harnessIpc.checker.scheduleStart()).catch(() => undefined); });
+  win.webContents.once('did-finish-load', () => { void adaptersList(false).then(() => { harnessIpc.checker.scheduleStart(); selfUpdater?.start(); }).catch(() => undefined); }); // spec 118 FR-004: after the office and the start-up detection
   void win.loadFile(INDEX_HTML, { query });
   // Dev: DURBAR_SHOT=/tmp/out.png [DURBAR_SHOT_SIZE=1280x800] [DURBAR_SHOT_CLICK=sim-1] saves a screenshot and quits.
   const shot = dev.DURBAR_SHOT;
@@ -1154,6 +1162,8 @@ app.whenReady().then(() => {
   folderStore = new FolderStore(path.join(app.getPath('userData'), 'durbar-folders.json'));
   settingsStore = new SettingsStore(path.join(app.getPath('userData'), 'durbar-settings.json'));
   settingsStore.load();
+  // spec 118 FR-004: packaged builds only, never the simulator; the request only through makeFeedGet (FR-007), the policy read each time (FR-005)
+  selfUpdater = new SelfUpdater({ packaged: app.isPackaged, simulator: SIMULATOR, source: loadUpdateSource(), running: app.getVersion(), policy: updatePolicy, store: () => settingsStore, get: makeFeedGet(electronRequestFactory()), now: Date.now, timer: realSelfUpdateTimer });
   /* Dev/test theme seed (spec 036 FR-005): DURBAR_THEME=<id> makes the office open on that theme for the per-theme checks; invalid ids fall back in the renderer. */
   if (dev.DURBAR_THEME) runTheme = parseThemeId(dev.DURBAR_THEME);
   mcpStore = new McpStore(path.join(app.getPath('userData'), 'durbar-mcp.json'), safeStorageCodec);

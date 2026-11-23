@@ -168,7 +168,7 @@ async function main(): Promise<void> {
   for (const a of [viaError.a, brief(viaThrow)]) {
     assert.deepStrictEqual(a, { ok: false, reason: 'network' }, "a network error is the code 'network', not its text");
   }
-  assert.deepStrictEqual([...FEED_FAILURES].sort(), ['content-type', 'network', 'not-allowed', 'redirect', 'status', 'timeout', 'too-large'], 'the closed set of failure codes');
+  assert.deepStrictEqual([...FEED_FAILURES].sort(), ['aborted', 'content-type', 'network', 'not-allowed', 'redirect', 'status', 'timeout', 'too-large'], 'the closed set of failure codes');
 
   // a response stream error after the headers is 'network' at once, not a timeout (review of #2058)
   {
