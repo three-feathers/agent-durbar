@@ -80,7 +80,28 @@ async function main(): Promise<void> {
     const mainSrc = stripComments(fs.readFileSync(path.join(root, 'src', 'main', 'main.ts'), 'utf8').replace(/\r\n/g, '\n'));
     assert.ok(/selfUpdater = new SelfUpdater\(/.test(mainSrc) && /registerSelfUpdateIpc\(/.test(mainSrc), 'inert: main.ts creates the checker and registers its channels');
     // T014 flips this assert when it adds the start call together with the visible switch and card
-    assert.ok(!mainSrc.split('\n').some((l) => /selfUpdater/.test(l) && /\bstart\b/.test(l)), 'inert: main.ts does not start the checker before T014 (no request in a packaged build)');
+    // review of PR 2082, item 1: nothing but these lines may name the checker in main.ts (T014 adds its start call and changes this list)
+    const uses = mainSrc.split('\n').filter((l) => /\bselfUpdater\b/.test(l)).map((l) => l.trim());
+    assert.ok(!uses.some((l) => /\bstart\b/.test(l)), 'inert: main.ts does not start the checker before T014 (no request in a packaged build)');
+    assert.ok(!uses.some((l) => /\bcheckNow\b/.test(l)), 'inert: main.ts never calls Check now (no request in a packaged build)');
+    assert.ok(!uses.some((l) => /\b(refresh|setSelfCheck|on|once|addListener)\b/.test(l)), 'inert: main.ts hooks the checker to no event or refresh');
+    assert.deepStrictEqual(uses.map((l) => l.replace(/\(\{ packaged: .*\}\);$/, '({ ... });')), [
+      'let selfUpdater: SelfUpdater | undefined;',
+      'registerSelfUpdateIpc({ getSelfUpdater: () => selfUpdater });',
+      'selfUpdater = new SelfUpdater({ ... });',
+    ], 'inert: main.ts names the checker only on its three known lines (declaration, channel registration, creation)');
+    assert.ok(/^\s*selfUpdater = new SelfUpdater\(\{ packaged: app\.isPackaged, simulator: SIMULATOR, source: loadUpdateSource\(\), running: app\.getVersion\(\), policy: updatePolicy, store: \(\) => settingsStore, get: makeFeedGet\(electronRequestFactory\(\)\), now: Date\.now, timer: realSelfUpdateTimer \}\);$/m.test(mainSrc), 'inert: the creation line is exactly the known one');
+
+    // review of PR 2082, item 2: every ipcRenderer call in the preloads names a literal channel; no passthrough of a channel from the page
+    for (const f of fs.readdirSync(path.join(root, 'src', 'preload')).filter((x) => x.endsWith('.ts'))) {
+      const pre = stripComments(fs.readFileSync(path.join(root, 'src', 'preload', f), 'utf8').replace(/\r\n/g, '\n'));
+      const all = [...pre.matchAll(/\bipcRenderer\b/g)].length;
+      const imports = [...pre.matchAll(/import \{[^}]*\bipcRenderer\b[^}]*\} from 'electron';/g)].length;
+      const literal = [...pre.matchAll(/\bipcRenderer\.(invoke|send|sendSync|on|once|removeListener|removeAllListeners|postMessage)\(\s*'[^']+'/g)].length;
+      const helper = [...pre.matchAll(/\bipcRenderer\.(on|removeListener)\(channel, h\)/g)].length; // the one `sub(channel, cb)` helper
+      assert.strictEqual(all, imports + literal + helper, `inert: ${f} calls ipcRenderer only with a literal channel (no computed channel, no passthrough)`);
+      assert.ok(![...pre.matchAll(/\bsub(?:<[^>]*>)?\(\s*([^'\s<])/g)].length, `inert: ${f} subscribes only to literal channels`);
+    }
   }
 
   exit.done();
