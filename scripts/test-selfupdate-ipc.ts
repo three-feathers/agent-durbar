@@ -1,0 +1,109 @@
+/**
+ * Spec 118 T010 (FR-016, FR-024): the four version-only IPC channels of Durbar's own update check (`selfUpdateHandlers` in
+ * `src/main/selfupdate.ts`, wired by `src/main/ipc/selfupdate.ts`), forged arguments on every channel, and the inert wiring until T014
+ * (the preload names no channel, main.ts never starts the checker). `npm run test:selfupdate-ipc`. No Electron, no network (`selfupdate-rig.ts`).
+ */
+import * as assert from 'assert';
+import * as fs from 'fs';
+import * as path from 'path';
+import { selfUpdateHandlers, SELFUPDATE_REFUSED } from '../src/main/selfupdate';
+import type { SelfUpdateView } from '../src/main/selfupdate';
+import { SNOOZE_MS } from '../src/shared/selfupdate';
+import { preloadChannels, stripComments } from './ipc-channel-list';
+import { guardExit, rig, standard, LIST, SLUG, T0 } from './selfupdate-rig';
+
+const exit = guardExit('selfupdate-ipc');
+
+async function main(): Promise<void> {
+  // ---- FR-024: forged arguments on every channel -------------------------------------------------------------------
+  {
+    const r = rig({ script: standard });
+    const h = selfUpdateHandlers(() => r.u);
+    const refused = async (f: () => unknown, what: string): Promise<void> => {
+      const before = [r.calls.length, fs.existsSync(r.file) ? fs.readFileSync(r.file, 'utf8') : '', JSON.stringify(r.u.view())];
+      await assert.rejects(async () => f(), (e: Error) => e.message === SELFUPDATE_REFUSED, `FR-024: ${what} is refused with the fixed text`);
+      assert.deepStrictEqual([r.calls.length, fs.existsSync(r.file) ? fs.readFileSync(r.file, 'utf8') : '', JSON.stringify(r.u.view())], before, `FR-024: ${what}: no request, no settings write, no change`);
+    };
+    await refused(() => h.snooze('0.1.29'), 'snooze before any check (no feed in memory)');
+    await h.check();
+    const calls = r.calls.length;
+    let gets = 0;
+    const forged: [unknown, string][] = [
+      ['0.1.99', 'a version not in the feed'], ['v0.1.29', 'the tag form'], [LIST, 'a URL'], ['../../etc/passwd', 'a path'], ['..\\..\\x', 'a Windows path'], [SLUG, 'a slug'],
+      ['0.1.29\u0000', 'a version with a NUL'], ['0.1.29 ', 'a version with a space'], ['9'.repeat(1_000_000), 'a huge string'], [{ version: '0.1.29' }, 'an object'], [['0.1.29'], 'an array'],
+      [Object.defineProperty({}, 'toString', { get: () => { gets++; return () => '0.1.29'; } }), 'an object with a getter'], [JSON.parse('{"__proto__":{"version":"0.1.29"}}'), 'a __proto__ object'],
+      [new String('0.1.29'), 'a String object'], [129, 'a number'], [null, 'null'], [undefined, 'undefined'],
+    ];
+    for (const name of ['snooze', 'skip'] as const) {
+      for (const [arg, what] of forged) await refused(() => h[name](arg), `${name}(${what})`);
+      await refused(() => h[name](), `${name}() with no argument`);
+      await refused(() => h[name]('0.1.29', 'x'), `${name} with an extra argument`);
+    }
+    for (const name of ['get', 'check'] as const) {
+      for (const [arg, what] of forged) await refused(() => h[name](arg), `${name}(${what})`);
+    }
+    assert.strictEqual(gets, 0, 'FR-024: a getter on a forged argument is never run');
+    assert.strictEqual(r.calls.length, calls, 'FR-024: no forged call made a request');
+    await refused(() => selfUpdateHandlers(() => undefined).get(), 'a call before the checker exists');
+
+    const patches: unknown[] = [];
+    const real = r.store;
+    (r.u as unknown as { d: { store(): unknown } }).d.store = () => ({ get updates() { return real.updates; }, setUpdates: (p: never) => { patches.push(p); return real.setUpdates(p); } });
+    const s = h.snooze('0.1.29') as { ok: boolean; update: SelfUpdateView };
+    assert.deepStrictEqual(r.store.updates.snooze, { version: '0.1.29', until: T0 + SNOOZE_MS }, 'FR-016: snooze saves version + 7 days');
+    assert.ok(s.ok && s.update.notice === 'snoozed', 'FR-016: the view says snoozed');
+    const k = h.skip('0.1.29') as { ok: boolean; update: SelfUpdateView };
+    assert.ok(k.ok && r.store.updates.skip === '0.1.29' && k.update.notice === 'skipped', 'FR-016: skip saves the version and the view says skipped');
+    assert.strictEqual((h.get() as SelfUpdateView).target, '0.1.29', 'FR-024: get answers the view');
+    assert.deepStrictEqual(patches, [{ snooze: { version: '0.1.29', until: T0 + SNOOZE_MS } }, { skip: '0.1.29' }], 'FR-016: snooze and skip each write exactly their one key');
+
+    // a version of the old source is refused once the source changed (the twin of review item 2 of PR 2073)
+    r.policy.p = { state: 'ok', feedUrl: 'https://github.com/org-b/durbar' };
+    await assert.rejects(async () => h.skip('0.1.28'), (e: Error) => e.message === SELFUPDATE_REFUSED, 'FR-024: after a source change, a version of the old feed is refused');
+    assert.strictEqual(patches.length, 2, 'FR-024: the refused call writes nothing');
+    r.policy.p = { state: 'none' };
+
+    // the IPC module wires exactly these four channels to these handlers, through ipcHandle
+    const src = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'main', 'ipc', 'selfupdate.ts'), 'utf8').replace(/\r\n/g, '\n');
+    const regs = [...src.matchAll(/ipcHandle\('([^']+)', \(_e, \.\.\.a: unknown\[\]\) => h\.(\w+)\(\.\.\.a\)\);/g)].map((m) => `${m[1]}=${m[2]}`);
+    assert.deepStrictEqual(regs, ['selfupdate:get=get', 'selfupdate:check=check', 'selfupdate:snooze=snooze', 'selfupdate:skip=skip'], 'FR-024: four channels, each to its own handler, every argument passed to the validator');
+    assert.strictEqual((src.match(/ipcHandle\(/g) ?? []).length, 4, 'FR-024: no other channel in the module');
+  }
+
+  // ---- not active until T014: nothing in the window can call the channels, and main.ts never starts the checker ----------
+  {
+    const root = path.join(__dirname, '..', '..');
+    assert.deepStrictEqual([...preloadChannels().all].filter((c) => c.startsWith('selfupdate:')), [], 'inert: the preload calls no selfupdate channel (the window API comes with T014)');
+    assert.ok(!/selfupdate/i.test(stripComments(fs.readFileSync(path.join(root, 'src', 'preload', 'preload.ts'), 'utf8'))), 'inert: the preload names no selfupdate channel in any form');
+    const mainSrc = stripComments(fs.readFileSync(path.join(root, 'src', 'main', 'main.ts'), 'utf8').replace(/\r\n/g, '\n'));
+    assert.ok(/selfUpdater = new SelfUpdater\(/.test(mainSrc) && /registerSelfUpdateIpc\(/.test(mainSrc), 'inert: main.ts creates the checker and registers its channels');
+    // T014 flips this assert when it adds the start call together with the visible switch and card
+    // review of PR 2082, item 1: nothing but these lines may name the checker in main.ts (T014 adds its start call and changes this list)
+    const uses = mainSrc.split('\n').filter((l) => /\bselfUpdater\b/.test(l)).map((l) => l.trim());
+    assert.ok(!uses.some((l) => /\bstart\b/.test(l)), 'inert: main.ts does not start the checker before T014 (no request in a packaged build)');
+    assert.ok(!uses.some((l) => /\bcheckNow\b/.test(l)), 'inert: main.ts never calls Check now (no request in a packaged build)');
+    assert.ok(!uses.some((l) => /\b(refresh|setSelfCheck|on|once|addListener)\b/.test(l)), 'inert: main.ts hooks the checker to no event or refresh');
+    assert.deepStrictEqual(uses.map((l) => l.replace(/\(\{ packaged: .*\}\);$/, '({ ... });')), [
+      'let selfUpdater: SelfUpdater | undefined;',
+      'registerSelfUpdateIpc({ getSelfUpdater: () => selfUpdater });',
+      'selfUpdater = new SelfUpdater({ ... });',
+    ], 'inert: main.ts names the checker only on its three known lines (declaration, channel registration, creation)');
+    assert.ok(/^\s*selfUpdater = new SelfUpdater\(\{ packaged: app\.isPackaged, simulator: SIMULATOR, source: loadUpdateSource\(\), running: app\.getVersion\(\), policy: updatePolicy, store: \(\) => settingsStore, get: makeFeedGet\(electronRequestFactory\(\)\), now: Date\.now, timer: realSelfUpdateTimer \}\);$/m.test(mainSrc), 'inert: the creation line is exactly the known one');
+
+    // review of PR 2082, item 2: every ipcRenderer call in the preloads names a literal channel; no passthrough of a channel from the page
+    for (const f of fs.readdirSync(path.join(root, 'src', 'preload')).filter((x) => x.endsWith('.ts'))) {
+      const pre = stripComments(fs.readFileSync(path.join(root, 'src', 'preload', f), 'utf8').replace(/\r\n/g, '\n'));
+      const all = [...pre.matchAll(/\bipcRenderer\b/g)].length;
+      const imports = [...pre.matchAll(/import \{[^}]*\bipcRenderer\b[^}]*\} from 'electron';/g)].length;
+      const literal = [...pre.matchAll(/\bipcRenderer\.(invoke|send|sendSync|on|once|removeListener|removeAllListeners|postMessage)\(\s*'[^']+'/g)].length;
+      const helper = [...pre.matchAll(/\bipcRenderer\.(on|removeListener)\(channel, h\)/g)].length; // the one `sub(channel, cb)` helper
+      assert.strictEqual(all, imports + literal + helper, `inert: ${f} calls ipcRenderer only with a literal channel (no computed channel, no passthrough)`);
+      assert.ok(![...pre.matchAll(/\bsub(?:<[^>]*>)?\(\s*([^'\s<])/g)].length, `inert: ${f} subscribes only to literal channels`);
+    }
+  }
+
+  exit.done();
+  console.log('selfupdate-ipc: ok');
+}
+
+main().catch((e) => { console.error(e); process.exit(1); });
