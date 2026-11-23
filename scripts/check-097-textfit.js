@@ -81,6 +81,9 @@ module.exports = async (ctx) => {
          update that changes a sign's counts text must measure that sign again and drop its path (`nopath`); a key without the count text leaves it as it was (mutant `nokey`) */
       await js(`(()=>{const s=document.createElement('style');s.id='tf-dejavu';s.textContent='.ro-sign,.ro-sign b{font-family:"DejaVu Sans"!important}.ro-sign .ro-path{font-family:"DejaVu Sans Mono"!important}.ro-sign .ro-sc{margin-left:300px!important}';document.head.appendChild(s)})()`);
       const scs = () => js(`Object.fromEntries([...document.querySelectorAll('#stage .ro-sign:not(.ro-stag):not(.short)')].filter(e=>e.querySelector('.ro-path')).map(e=>[e.dataset.folder,[e.querySelector('.ro-sc').textContent,e.classList.contains('nopath')]]))`);
+      /* the fit key holds the counts text by length: same-length texts must be as wide (tabular figures; DejaVu's own digits are already tabular, so the width itself cannot tell, the rule is asserted) */
+      const tab = await js(`[...document.querySelectorAll('#stage .ro-sign .ro-sc')].map(e=>getComputedStyle(e).fontVariantNumeric)`);
+      if (!tab.length || tab.some((v) => !/tabular-nums/.test(v))) bad(`${tag}: the counts and the cost have tabular figures (${JSON.stringify(tab)})`);
       /* a status update that makes a sign's counts text LONGER (a state with no pill yet gets one) measures that sign again: it must drop its path; a shorter or equal text costs no read (growKey) */
       const plates = await js(`[...document.querySelectorAll('#stage .ro-plate')].filter(x=>x.dataset.state==='working').map(x=>x.dataset.id)`);
       let grownSeen = 0;

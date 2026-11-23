@@ -132,6 +132,8 @@ assert.match(fs.readFileSync(path.join(__dirname, '..', '..', 'scripts', 'copy-a
   const ro = fs.readFileSync(path.join(R, 'realoffice.js'), 'utf8');
   assert.match(ro, /DurbarCutText\.fitBatch\(signs,[\s\S]*sg\._sig \+ '\|' \+ W/, 'fitSigns goes through fitBatch, keyed on the sign text and the layout width');
   assert.match(ro, /growKey\(sg, sg\._sig \+ '\|' \+ W \+ '\|' \+ sg\.classList\.contains\('short'\), sg\._sc\.textContent\.length\)/, 'the fit key holds the length of the counts and cost text (a count 9 to 10 can cut the name)');
+  const roCss = fs.readFileSync(path.join(R, 'realoffice.css'), 'utf8');
+  assert.match(roCss, /\.ro-sc\{[^}]*font-variant-numeric:\s*tabular-nums/, '.ro-sc (the counts and the cost the fit key holds by length) has tabular figures: 11 and 88 are as wide');
   assert.match(ro, /classList\.toggle\('nopath', !!sg\._nop\)/, 'the kept result is put back after el() rewrites the class');
   assert.ok(!/for \(const sg of chrome\.querySelectorAll\('\.ro-sign'\)\) \{\s*if \(!sg\._b/.test(ro), 'fitSigns has no per-sign loop');
 }
