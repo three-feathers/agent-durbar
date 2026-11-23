@@ -144,6 +144,7 @@ test:logo-assets
 test:autofollow
 test:announcemask
 test:livemask
+test:overmask
 test:openwith
 test:liveact
 test:lookalike

@@ -296,4 +296,45 @@ for (const mode of [false, 'noredact', 'throws', 'failed'] as Mode[]) {
   console.log(`test-live-mask fuzz: ${texts} texts (${cut} values cut by markup), ${mainHid} pieces main hides, ${mainHidShown} of them shown, ${newOnlyHidden} pieces hidden only by the toast (over-masking vs main's announcement)`);
 }
 
+// spec 012 FR-197 (issue #1999): the chat's header name, its tooltip, the chat's `aria-label` and the composer's label and placeholder show a session's
+// name only through `liveText`. The page's own definitions, in a context with the masks above; the source checks read a CRLF copy too.
+const HEAD_DEFS = (src: string): string => {
+  const L = src.replace(/\r\n/g, '\n').split('\n'), one = (h: string): string => { const l = L.filter((x) => x.startsWith(h)); assert.strictEqual(l.length, 1, h); return l[0]; };
+  const i = L.findIndex((x) => x.startsWith('function paintPanelTitle(')), j = L.findIndex((x, k) => k > i && x === '}');
+  return [one('const nameShown='), one('const panelTipOf='), one('const panelTitleHTML='), ...L.slice(i, j + 1)].join('\n');
+};
+eq(HEAD_DEFS(app.replace(/\n/g, '\r\n')), HEAD_DEFS(app), 'FR-197 the header definitions read the same from a CRLF copy');
+const headPage = (mode: boolean) => {
+  const dom = new JSDOM('<!doctype html><body><h2 id="panelTitle"><button class="ttl-btn"></button></h2><h2 id="plain"></h2></body>');
+  const ctx = vm.createContext({ window: { DurbarRedact: mode ? shared : undefined, DurbarSafeText: require(path.join(R_DIR, 'safetext.js')) },
+    DurbarCutText: require(path.join(R_DIR, 'cuttext.js')), document: dom.window.document, NO_REDACT: !mode,
+    SN: () => ({ nameTip: (alias: string, title: string) => alias || title || '' }), titleRenameable: (a: { ren?: boolean }) => !!a.ren, ICON: () => '<svg></svg>' });
+  vm.runInContext(['const homeMask=', 'const deskMask=', 'const SHORT=', 'const RED=', 'const STX=', 'const SAFE=', 'const safeExcerpt=', 'const esc=', 'function annHome(', 'function annPart(', 'function liveText('].map(line).join('\n')
+    + '\n' + HEAD_DEFS(app) + '\nthis.nameShown=nameShown;this.panelTipOf=panelTipOf;this.panelTitleHTML=panelTitleHTML;this.paintPanelTitle=paintPanelTitle;', ctx);
+  return { doc: dom.window.document, C: ctx as unknown as { nameShown(a: object): string; panelTipOf(a: object): string; panelTitleHTML(a: object): string; paintPanelTitle(a: object, h: Element): void } };
+};
+{
+  const { doc, C } = headPage(true);
+  for (const [what, nm] of NAMES) {
+    const a = { name: nm, alias: '', title: nm, ren: true };
+    hides(C.nameShown(a), `FR-197 nameShown, ${what}`);
+    hides(C.panelTipOf(a), `FR-197 header tooltip, ${what}`);
+    hides(C.panelTitleHTML(a), `FR-197 header title HTML, ${what}`);
+    hides(C.panelTitleHTML({ ...a, ren: false }), `FR-197 header title HTML (not renameable), ${what}`);
+    const h = doc.getElementById('panelTitle') as HTMLElement; C.paintPanelTitle(a, h); hides(shown(h), `FR-197 paintPanelTitle, ${what}`);
+    const h2 = doc.getElementById('plain') as HTMLElement; C.paintPanelTitle({ ...a, ren: false }, h2); hides(shown(h2), `FR-197 paintPanelTitle (not renameable), ${what}`);
+  }
+  eq(C.nameShown({ name: 'Noor · fix the build' }), 'Noor · fix the build', 'FR-197 a benign name reads as written');
+  eq(C.panelTipOf({ name: 'Noor', alias: 'Noor', ren: true }), 'Noor Click or press F2 to rename.', 'FR-197 a benign tooltip reads as before');
+  eq(headPage(false).C.nameShown({ name: 'Noor ' + GHP }), '[not checked]', 'FR-197 fails closed with no mask module');
+}
+// every site that put a session's name into the header, the chat's label or the composer reads nameShown (source check, LF and CRLF copies)
+for (const [form, src] of [['LF', app], ['CRLF', app.replace(/\n/g, '\r\n')]] as const) {
+  const t = src.replace(/\r\n/g, '\n');
+  ok(t.includes('aria-label="Chat with ${esc(nameShown(a))}"') && t.includes("c.setAttribute('aria-label','Chat with '+nameShown(a))"), `FR-197 the chat's label reads nameShown (${form})`);
+  ok(t.includes('placeholder="Message ${esc(nameShown(a))}…" aria-label="Message ${esc(nameShown(a))}"') && t.includes("mi.setAttribute('aria-label','Message '+nameShown(a))") && t.includes("APW.placeholder(app):'Message '+nameShown(a)"), `FR-197 the composer reads nameShown (${form})`);
+  ok(t.includes('aria-label="${esc(nameShown(a))}"'), `FR-197 the header's label reads nameShown (${form})`);
+  ok(!/(?:Chat with |Message |Rename session )(?:\$\{esc\(a\.name\)\}|'\+a\.name)/.test(t), `FR-197 no header, chat or composer label reads a.name as written (${form})`);
+}
+
 void stripsByBehaviour().then(() => console.log(`test-live-mask: ${n} asserts passed`), (e) => { console.error(e); process.exit(1); });

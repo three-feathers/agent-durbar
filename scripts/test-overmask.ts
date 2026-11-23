@@ -1,0 +1,119 @@
+/**
+ * Spec 012 FR-196 (issue #1981): three closed lists keep a harmless word readable where a secret name's rule hid it, on every shared mask
+ * (`redact`, `maskSecretCommand`, `maskSecretArgs`, `maskSecretUrl`, `maskOutgoing`, `maskNoteText`) and on the task line's label mask
+ * (`DurbarSafeText.maskLabel`, the chip and Copy). Labelled asserts per class, near misses that stay hidden, and a differential against the
+ * reading with FR-196 off (`_withoutOvermaskNarrowForTest`, which reads as `main` did): only the listed classes change, counted per class.
+ * Fake values only, built from short pieces and a seeded generator at run time. `npm run test:overmask`. No credits spent.
+ */
+import './safetext-shared';
+import assert from 'assert';
+import path from 'path';
+import * as R from '../src/shared/redact';
+
+let n = 0;
+const ok = (c: unknown, m: string): void => { assert.ok(c, m); n++; };
+const eq = (a: unknown, b: unknown, m: string): void => { assert.deepStrictEqual(a, b, m); n++; };
+const S = require(path.join(__dirname, '..', '..', 'src', 'renderer', 'safetext.js')) as {
+  maskLabel(raw: unknown, kind: string, mask: unknown): string }; // the shared module is handed in by ./safetext-shared
+const TOOLMASK = { redact: (t: string) => R.redact(t), cmd: (t: string) => R.maskSecretCommand(t), url: (t: string) => R.maskSecretUrl(t) };
+const off = <T>(f: () => T): T => R._withoutOvermaskNarrowForTest(f);
+const H = '[redacted]';
+
+/** Every surface a command line reaches, as one record. */
+const all = (t: string): Record<string, string> => ({
+  cmd: R.maskSecretCommand(t), args: R.maskSecretArgs(t.split(' ')).join(' '), redact: R.redact(t), url: R.maskSecretUrl(t),
+  outgoing: R.maskOutgoing(t).text, note: R.maskNoteText(t).text, taskRun: S.maskLabel(t, 'run', TOOLMASK), taskFetch: S.maskLabel(t, 'fetch', TOOLMASK),
+});
+const shown = (t: string, m: string): void => { const r = all(t); for (const [k, v] of Object.entries(r)) eq(v, t, `${m} (${k})`); };
+const hidden = (t: string, part: string, m: string): void => {
+  const r = all(t);
+  ok(!r.cmd.includes(part) && !r.taskRun.includes(part), `${m} (command and task line)`);
+  eq(r, off(() => all(t)), `${m} (every surface reads as before FR-196)`);
+};
+
+// pieces (no secret-shaped literal in the source)
+const pw = ['PASS', 'WORD'].join('');
+const tok = ['to', 'ken'].join('');
+const gh = ['gh', 'p_'].join('') + 'A1b2C3d4'.repeat(4) + 'E5f6';
+
+// class (a): a long flag whose first word is `no` or `show` takes no next word as its value
+shown('git log --show-signature -3', 'FR-196 a: --show-signature then a count');
+shown('git log --no-show-signature -n 5', 'FR-196 a: --no-show-signature then a short flag');
+shown('git log --show-signature HEAD~3', 'FR-196 a: --show-signature then a revision');
+shown(`gh auth status --show-${tok} -h example.test`, 'FR-196 a: --show-<name> then a host flag');
+shown('tool --no-auth build', 'FR-196 a: --no-auth then a word');
+// near misses: hidden as before
+hidden(`tool --${tok} build4x7q`, 'build4x7q', 'FR-196 a stays: a plain secret flag hides the next word');
+hidden(`tool --show-${tok}=build4x7q`, 'build4x7q', 'FR-196 a stays: the = form of a switch flag hides its value');
+hidden(`tool --shown-${tok} build4x7q`, 'build4x7q', 'FR-196 a stays: a lead that only starts with show');
+hidden(`tool --snow-${tok} build4x7q`, 'build4x7q', 'FR-196 a stays: a lead near show');
+hidden(`tool --no${tok} build4x7q`, 'build4x7q', 'FR-196 a stays: no hyphen after no');
+hidden(`tool -no-${tok} build4x7q`, 'build4x7q', 'FR-196 a stays: one dash is not a long flag');
+hidden(`tool --known-${tok} build4x7q`, 'build4x7q', 'FR-196 a stays: a lead that holds no');
+hidden(`tool --no-auth ${gh}`, gh.slice(4, 14), 'FR-196 a stays: a token after a switch flag is hidden by its own shape');
+
+// class (b): an OAuth state or code query value of 1 to 10 lower-case letters a-z
+shown('gh api repos/o/r/pulls?state=open&per_page=50', 'FR-196 b: ?state=open in an API path');
+shown('curl https://api.example.test/repos/o/r/issues?state=closed', 'FR-196 b: ?state=closed in a URL');
+shown('open https://example.test/cb?code=python', 'FR-196 b: ?code=<word>');
+shown('open https://example.test/q?a=1&state=all#top', 'FR-196 b: &state=all before a fragment');
+for (const [v, why] of [['Open', 'a capital'], ['open1', 'a digit'], ['abcdefghijk', '11 letters'], ['in_progress', 'an underscore'], ['a-b', 'a hyphen'], ['op%65n', 'a percent escape'], ['ab.cd', 'a dot']]) {
+  hidden(`open https://example.test/cb?state=${v}&x=1`, `state=${v}`, `FR-196 b stays: a value with ${why}`);
+  hidden(`open https://example.test/cb?code=${v}`, `code=${v}`, `FR-196 b stays: a code with ${why}`);
+}
+hidden('open https://example.test/cb?redirect=x%26state%3Dopenx%20y', 'openx%20y', 'FR-196 b stays: an encoded pair whose value goes on');
+
+// class (c): a switch word as the whole value of a secret name
+shown('ssh -o PasswordAuthentication=no host', 'FR-196 c: an ssh option set to no');
+shown(`${pw}=false npm test`, 'FR-196 c: NAME=false');
+shown(`tool --pass${'word'}=no`, 'FR-196 c: --password=no');
+shown(`${pw}=YES make`, 'FR-196 c: any case');
+for (const v of ['nope', 'no1', 'yesterday', 'offline', 'truex', '"no"', 'no-way', 'on2', 'Off9x']) hidden(`${pw}=${v} make`, `=${v}`, `FR-196 c stays: ${v} is not a whole switch word`);
+hidden(`tool --pass${'word'}=nope`, 'nope', 'FR-196 c stays: --password=nope');
+
+// differential: FR-196 on vs off (as main), counted per class; nothing outside the listed classes may change
+let seed = 20261124;
+const rnd = (k: number): number => { seed = (seed * 1103515245 + 12345) & 0x7fffffff; return seed % k; };
+const from = (a: string, len: number): string => { let s = ''; for (let i = 0; i < len; i++) s += a[rnd(a.length)]; return s; };
+const LOW = 'abcdefghijklmnopqrstuvwxyz', UP = LOW.toUpperCase(), DIG = '0123456789', HEX = DIG + 'abcdef', B64U = LOW + UP + DIG + '-_';
+const codeShaped = (): string => {
+  switch (rnd(6)) {
+    case 0: return from(HEX, 16 + rnd(25)); // hex
+    case 1: return from(B64U, 16 + rnd(40)); // base64url
+    case 2: return from(LOW, 3 + rnd(8)) + from(DIG, 1 + rnd(3)) + from(LOW, rnd(6)); // digit-bearing
+    case 3: return from(LOW, 1 + rnd(6)) + from(UP, 1) + from(LOW, rnd(8)); // mixed case
+    case 4: return from(LOW, 11 + rnd(30)); // letters only, longer than the cap
+    default: return from(LOW, 2 + rnd(5)) + '-_.'[rnd(3)] + from(LOW, 2 + rnd(5)); // letters with a symbol
+  }
+};
+const SECRET_FLAGS = ['--token', '--password', '--api-key', '--client-secret', '--auth', '--show-token=', '--no-auth=', '--shown-token', '--known-password'];
+const SECRET_NAMES = [pw, 'API_KEY', 'CLIENT_SECRET', 'PasswordAuthentication', 'DB_PASS'];
+const CLASSES = ['a', 'b', 'c'] as const;
+const changed: Record<string, number> = { a: 0, b: 0, c: 0, secret: 0 };
+const total: Record<string, number> = { a: 0, b: 0, c: 0, secret: 0 };
+const corpus: { cls: string; t: string }[] = [];
+for (let i = 0; i < 400; i++) {
+  const v = codeShaped();
+  corpus.push({ cls: 'secret', t: `open https://example.test/cb?${['state', 'code', 'State', 'CODE'][rnd(4)]}=${v}&x=1` });
+  const f = SECRET_FLAGS[rnd(SECRET_FLAGS.length)];
+  corpus.push({ cls: 'secret', t: f.endsWith('=') ? `tool ${f}${v}` : `tool ${f} ${v}` });
+  corpus.push({ cls: 'secret', t: `${SECRET_NAMES[rnd(SECRET_NAMES.length)]}=${v} make` });
+  corpus.push({ cls: 'a', t: `git log --${['no', 'show', 'No', 'SHOW'][rnd(4)]}-${['signature', 'token', 'auth', 'password'][rnd(4)]} ${['-3', '-n', 'HEAD~2', 'main', 'src'][rnd(5)]}` });
+  corpus.push({ cls: 'b', t: `curl https://api.example.test/r?${['state', 'code'][rnd(2)]}=${from(LOW, 1 + rnd(10))}` });
+  corpus.push({ cls: 'c', t: `${SECRET_NAMES[rnd(SECRET_NAMES.length)]}=${['yes', 'no', 'true', 'false', 'on', 'off', 'No', 'TRUE'][rnd(8)]} make` });
+}
+for (const { cls, t } of corpus) {
+  total[cls]++;
+  const a = all(t), b = off(() => all(t));
+  if (JSON.stringify(a) !== JSON.stringify(b)) {
+    changed[cls]++;
+    // a change only ever shows: what FR-196 on shows is the text as written on the command surfaces
+    ok(a.cmd === t || a.cmd.length >= b.cmd.length, `FR-196 differential: a change only shows text (${cls})`);
+  }
+}
+console.log(`test-overmask differential: changed per class ${JSON.stringify(changed)} of ${JSON.stringify(total)}`);
+eq(changed.secret, 0, 'FR-196 differential: no code-shaped or secret-flag value main hides is shown (0)');
+for (const c of CLASSES) ok(changed[c] > 0 && changed[c] === total[c], `FR-196 differential: every text of class ${c} changes`);
+eq(Object.values(changed).reduce((x, y) => x + y, 0), CLASSES.reduce((x, c) => x + changed[c], 0), 'FR-196 differential: the total equals the sum of the listed classes');
+
+console.log(`test-overmask: ${n} asserts passed`);
