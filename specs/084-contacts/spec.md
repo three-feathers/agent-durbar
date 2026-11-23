@@ -334,7 +334,7 @@ Paco's notes say "short, in English, no greetings". I type "tell paco 669 is rea
 
 *Decided by:* the owner (Vikram), issue #2060 item 12 ("ok on all 12", 2026-11-23; Paco and Ruben informed the same day, the change does not wait for them), applying the owner rule of 2026-10-31 "warn, do not limit", recorded in spec 072 *Changes* (2026-11-01) and reused by spec 110 FR-036. Security must not make the app unusable: real secrets stay masked wherever text leaves the machine to a place the user did not choose, and a limit on the user's own choice is a warning with an override. Before this, a message the mask changed could not be sent at all, and the only way out (*Use the masked text*) also broke harmless text the mask changes, such as a link with a filter word.
 
-*Changed* (spec not built; T012's `maskOutgoing` is the only code):
+*Changed* (spec not built; T012's `maskOutgoing` is the only code of this rule):
 
 - D10: a warning, not a block; the user chooses each time.
 - FR-033: the warning lists what the mask changed (line, the part masked, the kind in plain words); *Use the masked text*, *Send anyway* (the text as written) or *Back*, nothing pre-chosen, never remembered; main refuses `secret-unconfirmed` unless the call carries `anyway: true` for that `previewId` with a trusted click. Before: "There is no override", refusal `blocked: secret`.
