@@ -27,13 +27,17 @@
  * of secret-looking variables; plus src/shared/redact.ts when the build is there) before it is shown, and only the first line of a failure
  * is printed. Everything from a PR (paths) goes through scripts/safe-print.js (no `::` or `##[` workflow command, no newline).
  *
- * `--wide` (what `npm run specs:numbers` passes; spec 021 FR-085 delta 2026-11-23): besides the open PR heads, also the remote branches that have no open PR
+ * The list is chosen by the arguments, not by package.json: with NO head given (no `--head`, no PR_HEAD_SHA: the local `npm run specs:numbers`) it is the
+ * wide list; with `--head` or PR_HEAD_SHA set (the CI call: `--root pr` and PR_HEAD_SHA, PR_NUMBER in the environment) it is the open PR heads only. `--wide`
+ * forces the wide list and `--narrow` the open PR list, with or without a head; both together is exit 2. (A machine that has PR_HEAD_SHA set gets the
+ * open PR list unless it passes `--wide`.)
+ * Wide (spec 021 FR-085 delta 2026-11-23): besides the open PR heads, also the remote branches that have no open PR
  * (`git ls-remote --heads origin`, names as argv, never in a shell string) and the branches checked out in this machine's worktrees
  * (`git worktree list --porcelain`). A head whose PR is closed and not merged, at that very tip, is skipped and printed as a NOTE (read with
  * `gh pr list --head=<name> --state all --json headRefOid,mergedAt,state,isCrossRepository`: head ref names, shas and merged state, never a title), asked only for a
- * branch that would clash. Not read = exit 2. CI (`spec-kit.yml`) runs without --wide: open PR heads only.
+ * branch that would clash. Not read = exit 2.
  *
- *   node scripts/spec-numbers.js [--wide] [--no-fetch] [--exclude N] [--head SHA] [--root D]     --no-fetch: use the refs already there (refs/remotes/pr/*, refs/remotes/origin/*)
+ *   node scripts/spec-numbers.js [--wide | --narrow] [--no-fetch] [--exclude N] [--head SHA] [--root D]     --no-fetch: use the refs already there (refs/remotes/pr/*, refs/remotes/origin/*)
  */
 'use strict';
 const fs = require('fs');
@@ -453,7 +457,10 @@ async function main(argv, env, deps = {}) {
   const root = argOf(argv, '--root') ? path.resolve(argOf(argv, '--root')) : path.join(__dirname, '..');
   if (argv.includes('--dups') || argv.includes('--write-baseline')) return dupsMain(argv, root);
   const noFetch = argv.includes('--no-fetch');
-  const wide = argv.includes('--wide');
+  if (argv.includes('--wide') && argv.includes('--narrow')) { say('specs:numbers: NOT CHECKED: --wide and --narrow together; pass one'); return 2; }
+  // no head given at all (the local `npm run specs:numbers`): the wide list; a head given by --head or PR_HEAD_SHA (the CI call): open PR heads only; --wide / --narrow decide either way
+  const headGiven = !!(argOf(argv, '--head') || env.PR_HEAD_SHA);
+  const wide = argv.includes('--wide') || (!argv.includes('--narrow') && !headGiven);
   const exclude = String(argOf(argv, '--exclude') || env.PR_NUMBER || '');
   const headRev = String(argOf(argv, '--head') || env.PR_HEAD_SHA || 'HEAD');
   if (headRev !== 'HEAD' && !/^[0-9a-f]{40}$/i.test(headRev)) { say('specs:numbers: NOT CHECKED: --head / PR_HEAD_SHA must be a full 40-character commit sha'); return 2; }

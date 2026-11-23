@@ -452,10 +452,28 @@ try {
     assert.strictEqual(r.code, 2, 'WIDE-unread an unreadable PR state is exit 2: ' + r.out);
     assert.match(r.out, /NOT CHECKED: could not read the PR state of branch nopr/);
     assert.doesNotMatch(r.out, /ok, no clash/);
-    // 5: no --wide (the CI invocation): open PR heads only; no remote branch, no worktree, no PR state is read
-    r = await via([], { branchState: () => { throw new Error('the narrow run must not ask'); } });
-    assert.strictEqual(r.code, 0, 'WIDE-ci without --wide the branches and worktrees are not compared: ' + r.out);
+    // 5: which list (spec 021 FR-085 delta): a head given = open PR heads only (the CI call: PR_HEAD_SHA and PR_NUMBER in the environment, no --head flag; and the --head form); no head = wide; --wide / --narrow force
+    const noAsk = { branchState: () => { throw new Error('the narrow run must not ask'); }, remoteHeads: () => { throw new Error('the narrow run must not list remote heads'); }, worktrees: () => { throw new Error('the narrow run must not list worktrees'); } };
+    const tip = G(sd, 'rev-parse', 'HEAD');
+    const viaEnv = async (argv, env, deps = {}) => { const out = []; const lg = console.log; console.log = (x) => out.push(String(x)); let code;
+      try { code = await sn.main(['--root', sd, ...argv], env, { openPrs: async () => [], ...deps }); } finally { console.log = lg; } return { code, out: out.join('\n') }; };
+    r = await viaEnv([], { PR_HEAD_SHA: tip, PR_NUMBER: '4242' }, noAsk);
+    assert.strictEqual(r.code, 0, 'WIDE-ci-env the CI call (PR_HEAD_SHA and PR_NUMBER, no --head) compares open PR heads only: ' + r.out);
     assert.doesNotMatch(r.out, /nopr|wtone|--wide/);
+    r = await viaEnv(['--head', tip], {}, noAsk);
+    assert.strictEqual(r.code, 0, 'WIDE-ci-head the --head form compares open PR heads only: ' + r.out);
+    assert.doesNotMatch(r.out, /nopr|wtone|--wide/);
+    r = await viaEnv([], {}, { branchState: state() });
+    assert.strictEqual(r.code, 1, 'WIDE-default-nohead a run with no head given compares the wide list: ' + r.out);
+    assert.match(r.out, /T020 is also in branch nopr/, 'WIDE-default-nohead the no-head run sees the branch without a PR');
+    r = await viaEnv(['--narrow'], {}, noAsk);
+    assert.strictEqual(r.code, 0, 'WIDE-narrow-flag --narrow without a head compares open PR heads only: ' + r.out);
+    r = await viaEnv(['--wide', '--head', tip], {}, { branchState: state() });
+    assert.match(r.out, /T020 is also in branch nopr/, 'WIDE-wide-flag-head --wide with --head compares the wide list');
+    r = await viaEnv(['--wide'], { PR_HEAD_SHA: tip }, { branchState: state() });
+    assert.match(r.out, /T020 is also in branch nopr/, 'WIDE-wide-flag-env --wide with PR_HEAD_SHA compares the wide list');
+    r = await viaEnv(['--wide', '--narrow'], {}, noAsk);
+    assert.strictEqual(r.code, 2, 'WIDE-both-flags --wide with --narrow is exit 2: ' + r.out);
     // 6: --no-fetch --wide reads the remote-tracking refs, offline
     G(sd, 'fetch', '-q', 'origin', '+refs/heads/*:refs/remotes/origin/*');
     r = await via(['--wide', '--no-fetch'], { branchState: state() });
@@ -464,13 +482,14 @@ try {
     // 7: a branch name is printed through printable (no workflow command)
     assert.ok(sn.wideHeads(sd, { remote: [{ name: 'a::error::x', sha: nopr }], dates: false })[0].label.includes(': :error: :x'), 'WIDE-print a head name is made printable');
   }
-  // the CI invocation never has --wide (open PR heads only), and `npm run specs:numbers` has it
+  // the CI invocation: one call, with --root and no --head or --wide flag; the head comes from PR_HEAD_SHA in the step's environment; package.json's script is the bare call
   { const wfText = fs.readFileSync(path.join(__dirname, '..', '.github', 'workflows', 'spec-kit.yml'), 'utf8');
     const calls = wfText.split(/\r?\n/).filter((l) => /^\s*(?!#).*node base\/scripts\/spec-numbers\.js/.test(l));
     assert.strictEqual(calls.length, 1, 'WIDE-ci-pin one call of spec-numbers.js in the workflow');
-    assert.doesNotMatch(calls[0], /--wide/, 'WIDE-ci-pin CI compares open PR heads only: its call has no --wide');
+    assert.doesNotMatch(calls[0], /--wide|--head/, 'WIDE-ci-pin the CI call has no --wide and no --head flag (the head is PR_HEAD_SHA)');
+    assert.match(wfText, /PR_HEAD_SHA: \$\{\{ github\.event\.pull_request\.head\.sha \}\}/, 'WIDE-ci-pin-env the CI step sets PR_HEAD_SHA: that is what makes its list the open PR heads');
     const pkg = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package.json'), 'utf8'));
-    assert.match(pkg.scripts['specs:numbers'], /spec-numbers\.js --wide$/, 'WIDE-npm `npm run specs:numbers` compares the wide list'); }
+    assert.match(pkg.scripts['specs:numbers'], /^node scripts\/spec-numbers\.js$/, 'WIDE-npm the npm script is the bare call: no head, so the wide list'); }
 
   // the workflow keeps the token away from PR code (mutant: remove any of these and this fails)
   // a Windows checkout has CRLF line ends (core.autocrlf): the shape checks read the workflow with LF only, and a CRLF copy must give the same jobs
