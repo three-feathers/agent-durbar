@@ -284,7 +284,9 @@ Adding or changing a world touches its pack folder and its own small test; the c
 | UI suite complete (UI on three OSes) | no | 70 % of runner time | stay not required (FR-012 makes it cheaper first) | not required unless the change touches what it tests |
 | macOS build and test (path-filtered, 008 FR-135) | no, but runs on matching PRs | p50 15.0 min; caught 0 of 241 Linux missed | stop it on PRs; macOS stays on every `main` push and nightly. **This reverses spec 008 FR-135** (owner decision 2026-10-29) and needs its own written yes and a spec 008 delta | was **keep**; **decided 2026-11-23: stop** (see below) |
 
-**The macOS row, decided 2026-11-23**: stop the macOS jobs on pull requests. Vikram: stop (team chat 2026-11-23 16:09 UTC, on #1995: "macOS - 1 as Ruben proposed considering data on how many did it catch (0), go"); Ruben: stop (2026-11-23 13:23 UTC); Paco: keep (2026-11-22), his answer to the new decision is asked. Paco's answer on the day of writing: *pending* (the coordinator records it here, with date and channel, before T479..T481 merge). No ruleset line changes: the path-filtered jobs were never required. Spec 008 delta 2026-11-23; built by T479..T481.
+**The macOS row, decided 2026-11-23**: stop the macOS jobs on pull requests. Vikram: stop (team chat 2026-11-23 16:09 UTC, on #1995: "macOS - 1 as Ruben proposed considering data on how many did it catch (0), go"); Ruben: stop (2026-11-23 13:23 UTC); Paco: keep (2026-11-22), "until macOS tests run in the merge queue or nightly"; that condition is met (macOS build and test runs nightly and on every `main` push, 008 FR-106). His answer to the new decision was asked on 2026-11-23.
+
+Paco's answer: *pending* (the coordinator records it here, with date and channel, before T479..T481 merge). No ruleset line changes: the path-filtered jobs were never required. Spec 008 delta 2026-11-23; built by T479..T481.
 
 Every change in this table is applied by an owner (repo settings) after the written yes (T021); an agent changes no ruleset.
 
