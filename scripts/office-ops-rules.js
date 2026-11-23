@@ -10,6 +10,8 @@ const LIMITS = {
   elementsRecalculated: 50, // T148, FR-185
   rendersPerStatus: 1, // T159, FR-184
   searchesPerStatus: 0, // a status change of one agent runs no layout search
+  searchesPerReorder: 0, // spec 001 delta 2026-11-22 (issue 2024): a desk that moves inside its room (waiting, then working) runs no layout search
+  probesPerReorder: 1, // the same: one probe of the layout it has (it was 18 to 21, a whole search)
   floorStyleReadsPerStatus: 1, // T159: `getComputedStyle(#floor)` once per render (it was twice)
   /* T156 (issue 1401), reads per status update of one agent, per size and agent count: measured 81 / 73 at 1440x900 (15 / 40 agents) and 77 / 60 at 1280x800 (97 / 85 and 89 / 72 before
      the lobby figures read the floor's scroll once); each limit is the measured median plus 2 (all 8 samples were equal, the median drops a render's outlier). The target is under 40 (owner reading 2026-11-13): lowered by each site's change */
@@ -73,4 +75,24 @@ function judge(rows, limits = LIMITS, known = KNOWN_FAILURES, minimums = MINIMUM
   return { failed, notes };
 }
 
-module.exports = { LIMITS, MINIMUMS, KNOWN_FAILURES, judge, limitOf };
+/* spec 001 delta 2026-11-22 (issue 2043, T456): a status event that leaves the desk's state as it is draws nothing: `setState` (app.js) redraws only a change, and
+   'working' keeps an agent that already works or thinks as it is, 'needs-permission' one that already waits. The driver's "make it work first" step waited for a
+   draw after such an event (sim-4 was already working in every run), so it passed only when an unrelated timer's render fell inside its 8 s (about half the
+   runs). `statusDraws` says whether the event changes the state; `toStatus` waits for a draw only then, and otherwise sends the event and checks the state. */
+const STAYS = { working: ['working', 'thinking'], 'needs-permission': ['waiting'] };
+function statusDraws(state, status) {
+  return !(STAYS[status] || []).includes(state);
+}
+/** `js(code)` runs page code; `drawn(code)` runs it and waits for one more render. Returns true when it waited for a draw. */
+async function toStatus(js, drawn, id, status) {
+  const lit = JSON.stringify(id), stateOf = `(window.__durbarSimUi.agents().find(a=>a.id===${lit})||{}).state`;
+  const action = `window.__durbarSimEmit({type:'status',sessionId:${lit},timestamp:Date.now(),status:${JSON.stringify(status)}})`;
+  const state = await js(stateOf);
+  if (statusDraws(state, status)) { await drawn(action); return true; }
+  await js(action);
+  const after = await js(stateOf);
+  if (after !== state) throw new Error(`${id}: ${status} was to leave its state ${state} as it is, and it is ${after}`);
+  return false;
+}
+
+module.exports = { LIMITS, MINIMUMS, KNOWN_FAILURES, judge, limitOf, statusDraws, toStatus };

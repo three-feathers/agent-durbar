@@ -19,6 +19,7 @@
  *   FR-050  a mark has a non-colour cue and readable contrast in Clean Office and Retro; Real office: the same box and results;
  *           reduced motion: the jump's outline without its fade
  *   FR-052  rows never overlap, an excerpt is at most two lines, the list scrolls inside its area
+ *   FR-053  the running sign is a static arc under `prefers-reduced-motion` (emulated) and Motion off, `aria-busy` right in both
  *   1904    `simsearch=listing`: "Listing sessions in N of M folders…" with Stop, never "0 of 0 sessions"; whole words first at the end
  * Screenshots: 095-search-{results,jump,searching,listing}-<w>x<h>.png
  */
@@ -255,9 +256,12 @@ module.exports = async (ctx) => {
     await typeQuery('registry');
     await ok(`/^Searching, \\d+ of \\d+ sessions$/.test((document.querySelector('#list .cs-st')||{}).textContent||'')&&!!document.getElementById('csStop')`, `${w}: "Searching, N of M sessions" with Stop`);
     await ok(`(window.__durbarSimUi?1:1)&&document.querySelector('#list .cs-st').textContent!=='Searching, 0 of 0 sessions'`, `${w}: the progress moves`);
+    // spec 095 FR-053: the running sign is there while it scans and gone at the end
+    await ok(`!!document.querySelector('#list .cs-state.running .cs-spin')&&document.querySelector('#list .cs-wrap').getAttribute('aria-busy')==='true'`, `${w}: the running sign and aria-busy while it scans`);
     await shot('searching', w, h, { prep: 'calm' });
     await js(`document.getElementById('csStop').click()`);
     await ok(`(document.querySelector('#list .cs-notes')||{}).textContent==='Stopped.'&&!document.getElementById('csStop')`, `${w}: Stop says "Stopped."`);
+    await ok(`!document.querySelector('#list .cs-spin')&&!document.querySelector('#list .cs-wrap').hasAttribute('aria-busy')`, `${w}: the sign and aria-busy are gone at the end`);
     assert.strictEqual(await count('__csCancels'), 1, `${w}: Stop cancels main's scan once (review of PR 1240, R3)`);
     await ok(`document.activeElement&&document.activeElement.id==='convSearch'`, `${w}: and the focus goes back to the box`);
 
@@ -405,6 +409,43 @@ module.exports = async (ctx) => {
       await ok(`!!document.querySelector('#chat .bubble.nt-found')`, 'reduced motion: the message is marked');
       const st = await js(`(()=>{const b=document.querySelector('#chat .bubble.nt-found'),cs=getComputedStyle(b);return {anim:cs.animationName,outline:cs.outlineStyle};})()`);
       assert.ok(st.anim === 'none' && st.outline === 'solid', `reduced motion: an outline, no fade: ${JSON.stringify(st)}`);
+    } finally { await dbg.sendCommand('Emulation.setEmulatedMedia', { features: [] }).catch(() => undefined); }
+  }
+  // ---- FR-053: the running sign stays still under reduced motion and with Motion off, and aria-busy stays right (T422) ----
+  {
+    const dbg = ctx.win.webContents.debugger;
+    if (!dbg.isAttached()) dbg.attach('1.3');
+    const sign = () => js(`(()=>{const sp=document.querySelector('#list .cs-state.running .cs-spin'),wr=document.querySelector('#list .cs-wrap');return sp&&wr?{anim:getComputedStyle(sp).animationName,busy:wr.getAttribute('aria-busy'),w:sp.getBoundingClientRect().width,txt:document.querySelector('#list .cs-state.running').textContent.trim()}:null;})()`);
+    const ended = (msg) => ok(`!document.querySelector('#list .cs-spin')&&!document.querySelector('#list .cs-wrap').hasAttribute('aria-busy')`, msg);
+    const stop = async (msg) => { await js(`document.getElementById('csStop').click()`); await ended(msg); };
+    try {
+      // (a) prefers-reduced-motion: reduce
+      await dbg.sendCommand('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'reduce' }] });
+      await H.load({ w: 1280, h: 800, query: { simsearch: 'slow' }, focus: true });
+      await H.calm();
+      assert.ok(await js(`matchMedia('(prefers-reduced-motion: reduce)').matches`), 'FR-053: reduced motion is emulated');
+      await typeQuery('registry');
+      await ok(`!!document.querySelector('#list .cs-state.running .cs-spin')`, 'FR-053 reduced motion: the sign is there while it scans');
+      const r = await sign();
+      assert.ok(r && r.anim === 'none' && r.busy === 'true' && r.w > 0 && r.txt.length > 0, `FR-053 reduced motion: a static arc, aria-busy true, the text stays: ${JSON.stringify(r)}`);
+      await stop('FR-053 reduced motion: the sign and aria-busy go at the end');
+    } finally { await dbg.sendCommand('Emulation.setEmulatedMedia', { features: [] }).catch(() => undefined); }
+    // (b) Settings > Motion off, with the system's motion preference forced to "no preference": clearing the emulation falls back to the
+    // system's own setting, and the Windows runner reports reduced motion by itself (as the jump check above notes), so it is set, not cleared
+    try {
+      await dbg.sendCommand('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'no-preference' }] });
+      await H.load({ w: 1280, h: 800, query: { simsearch: 'slow' }, focus: true });
+      await H.calm();
+      assert.ok(!(await js(`matchMedia('(prefers-reduced-motion: reduce)').matches`)), 'FR-053: the emulated no-preference took effect for the Motion check');
+      await typeQuery('registry');
+      await ok(`!!document.querySelector('#list .cs-state.running .cs-spin')`, 'FR-053: the sign is there while it scans');
+      const on = await sign();
+      assert.ok(on && on.anim === 'bspin' && on.busy === 'true', `FR-053: with Motion on the arc turns: ${JSON.stringify(on)}`);
+      await js(`document.documentElement.setAttribute('data-motion-off','')`);
+      const off = await sign();
+      assert.ok(off && off.anim === 'none' && off.busy === 'true' && off.w > 0 && off.txt.length > 0, `FR-053 Motion off: a static arc, aria-busy true, the text stays: ${JSON.stringify(off)}`);
+      await stop('FR-053 Motion off: the sign and aria-busy go at the end');
+      await js(`document.documentElement.removeAttribute('data-motion-off')`);
     } finally { await dbg.sendCommand('Emulation.setEmulatedMedia', { features: [] }).catch(() => undefined); }
   }
   console.log('[095] search conversations: all checks passed');
