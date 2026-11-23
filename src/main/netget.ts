@@ -10,7 +10,7 @@
  */
 import * as https from 'https';
 import type { HttpGet, HttpResponse } from './officialinstall';
-import { lookupAllowed } from '../shared/updatecheck';
+import { lookupAllowed, REDIRECTS } from '../shared/updatecheck';
 import type { LookupGet } from '../shared/updatecheck';
 import { ShownError } from '../shared/shownerror';
 import { feedResponseOk, feedUrl, parseRepoSlug, releasesJsonUrl, MAX_FEED_BYTES, MAX_RELEASES_JSON_BYTES } from '../shared/selfupdate';
@@ -31,7 +31,7 @@ export interface NetResponseLike {
   on(ev: 'end', cb: () => void): unknown;
   on(ev: 'error', cb: (err: Error) => void): unknown;
 }
-export interface NetRequestOptions { method: 'GET' | 'HEAD'; url: string; redirect: 'manual'; credentials: 'omit'; useSessionCookies: false }
+export interface NetRequestOptions { method: 'GET' | 'HEAD'; url: string; redirect: 'manual'; credentials: 'omit'; useSessionCookies: false; cache?: 'no-store' }
 export type NetRequestFactory = (o: NetRequestOptions) => NetRequestLike;
 
 /** The real factory: `net.request` on the default session. Electron is loaded when a request is made, so tests can import this file. */
@@ -128,8 +128,8 @@ export const FEED_HEADERS: Readonly<Record<string, string>> = { ...FIXED_HEADERS
 const realTimer: FeedTimer = { set: (cb, ms) => setTimeout(cb, ms), clear: (h) => clearTimeout(h as ReturnType<typeof setTimeout>) };
 
 /**
- * Spec 118 FR-007, FR-009, FR-025 (T009): one GET of a `feedAllowed` address, built like `makeLookupGet` (same factory options,
- * redirect event read and aborted, never followed) but with its own allow-list, caps and answer. 200 only; the list must say
+ * Spec 118 FR-007, FR-009, FR-025 (T009): one GET of a `feedAllowed` address, built like `makeLookupGet` (same factory options plus
+ * `cache: 'no-store'`, redirect event read and aborted, never followed) but with its own allow-list, caps and answer. 200 only; the list must say
  * `application/json` (FR-007; `feedResponseOk` again at the end); the body is counted while it arrives and the request aborted past
  * the cap (2 MiB list, 256 KiB `releases.json`). Never rejects: every failure is a `FeedFailure` code. Nothing reads the environment.
  */
@@ -150,7 +150,8 @@ export function makeFeedGet(factory: NetRequestFactory, timer: FeedTimer = realT
       const fail = (reason: FeedFailure) => (): void => done({ ok: false, reason });
       const handle = timer.set(fail('timeout'), timeoutMs);
       try {
-        req = factory({ method: 'GET', url, redirect: 'manual', credentials: 'omit', useSessionCookies: false });
+        // no-store: Chromium's HTTP cache outlives a restart; a cached 301 or list must never answer a check (review of #2058)
+        req = factory({ method: 'GET', url, redirect: 'manual', credentials: 'omit', useSessionCookies: false, cache: 'no-store' });
       } catch { fail('network')(); return; }
       for (const [k, v] of Object.entries(kind === 'list' ? FEED_HEADERS : FIXED_HEADERS)) req.setHeader(k, v);
       req.on('redirect', fail('redirect'));
@@ -158,8 +159,8 @@ export function makeFeedGet(factory: NetRequestFactory, timer: FeedTimer = realT
         if (settled) return;
         const ct = res.headers['content-type'];
         const contentType = typeof ct === 'string' ? ct : undefined;
-        if (res.statusCode >= 300 && res.statusCode < 400) { fail('redirect')(); return; }
-        if (res.statusCode !== 200) { fail('status')(); return; }
+        if (REDIRECTS.includes(res.statusCode)) { fail('redirect')(); return; }
+        if (res.statusCode !== 200) { fail('status')(); return; } // also 300, 304 (no validators are sent), 305, 306
         if (kind === 'list' && !feedResponseOk({ status: 200, contentType, bytes: 0 })) { fail('content-type')(); return; }
         const parts: Buffer[] = [];
         let n = 0;
