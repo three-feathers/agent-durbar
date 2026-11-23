@@ -56,7 +56,8 @@ const bin = path.join(dir, 'bin');
 const fx = path.join(dir, 'fx');
 fs.mkdirSync(bin);
 fs.mkdirSync(fx);
-// fixtures: checks.txt (tab-separated `gh pr checks` lines; absent = the call fails), checkruns.json and checkruns2.json (the head commit's
+// fixtures: checks.txt (tab-separated `gh pr checks` lines; absent = the call fails; checks.<n>.txt: what the n-th call prints instead, counted in
+// checks.n; checks.exit0: the call exits 0 whatever it lists, else 1 on a fail line and 8 on a pending line, as gh 2.100.0 does), checkruns.json and checkruns2.json (the head commit's
 // check runs, pages 1 and 2; checkruns.fail: the call fails after its pages), files.json and files2.json (pages 1 and 2 of the PR
 // files API: page 2 only with --paginate, as the real gh; absent = the call fails), pull.json (the PR: changed_files, head sha;
 // pull-later.json: what every read after the first returns, a push while the gate runs; pull-later.fail: those reads fail),
@@ -68,7 +69,9 @@ for a in "$@"; do { [ "$prev" = --jq ] || [ "$prev" = -q ]; } && prog=$a; prev=$
 ep=; for a in "$@"; do case $a in repos/*|graphql|user) ep=$a; break;; esac; done
 case "$1 $2" in
   "repo view") echo '{"nameWithOwner":"o/r"}' | jq -r "$prog"; exit;;
-  "pr checks") [ -f "$F/checks.txt" ] || { echo "fake gh: checks failed" >&2; exit 1; }; cat "$F/checks.txt"; awk -F'\\t' '$2=="fail"{f=1} $2=="pending"{w=1} END{exit f ? 1 : (w ? 8 : 0)}' "$F/checks.txt"; exit;;
+  "pr checks") n=$(( $(cat "$F/checks.n" 2>/dev/null || echo 0) + 1 )); echo $n > "$F/checks.n"; c="$F/checks.txt"; [ -f "$F/checks.$n.txt" ] && c="$F/checks.$n.txt"
+    [ -f "$c" ] || { echo "fake gh: checks failed" >&2; exit 1; }; cat "$c"; [ -f "$F/checks.exit0" ] && exit 0
+    awk -F'\\t' '$2=="fail"{f=1} $2=="pending"{w=1} END{exit f ? 1 : (w ? 8 : 0)}' "$c"; exit;;
   "pr view") echo '{"mergeable":"MERGEABLE","files":[{"path":"package-lock.json"}],"labels":[]}' | jq -r "$prog"; exit;;
 esac
 case $ep in
@@ -142,20 +145,30 @@ const fixture = (o: { codeql?: string | null; checks?: boolean; files?: File[] |
   set('pull-later.fail', null);
   set('pull.seen', null);
   set('checkruns.fail', null);
+  for (const f of fs.readdirSync(fx)) if (/^checks\.(\d+\.txt|n|exit0)$/.test(f) || f.startsWith('sleep.')) fs.rmSync(path.join(fx, f));
   // the head commit's check runs, "name@slug" or "name@slug#id" (id 101 by default, the run the CodeQL line links): by default one CodeQL
   // run from GitHub's code-scanning app (null: the call fails)
   const runs = (l: string[]): string => JSON.stringify({ check_runs: l.map((x) => { const [name, rest] = x.split('@'); const [slug, id] = rest.split('#'); return { name, id: Number(id ?? 101), app: { slug } }; }) });
   set('checkruns.json', o.runs === null ? null : runs(o.runs ?? ['CodeQL@github-advanced-security', 'Spec Kit gate@github-actions']));
   set('checkruns2.json', o.runs2 ? runs(o.runs2) : null);
 };
-// a fake sleep for --wait (it returns at once), on the PATH only for the cases that pass --wait
+// a fake sleep for --wait (it returns at once), on the PATH only for the cases that pass --wait: it writes its seconds to sleep.log, and after
+// SLEEP_CAP calls (more than the gate's bound of 240 rounds allows) it writes sleep.over and stops the gate, so a gate without the bound fails a
+// case's own count assert instead of hanging until a time limit
+const SLEEP_CAP = 400;
 const waitBin = path.join(dir, 'waitbin');
 fs.mkdirSync(waitBin);
-fs.writeFileSync(path.join(waitBin, 'sleep'), '#!/bin/bash\nexit 0\n', { mode: 0o755 });
+fs.writeFileSync(path.join(waitBin, 'sleep'), `#!/bin/bash
+echo "$1" >> "${fx}/sleep.log"
+[ "$(wc -l < "${fx}/sleep.log")" -gt ${SLEEP_CAP} ] && { : > "${fx}/sleep.over"; kill -TERM $PPID; exit 1; }
+exit 0
+`, { mode: 0o755 });
+const sleeps = (): string[] => { try { return fs.readFileSync(path.join(fx, 'sleep.log'), 'utf8').split('\n').filter(Boolean); } catch { return []; } };
+const waitRun = (g: string): { code: number | null; out: string } => { gateArgs = ['--wait']; try { return run(g); } finally { gateArgs = []; } };
 let gateArgs: string[] = [];
 const run = (gatePath: string): { code: number | null; out: string } => {
   const wait = gateArgs.includes('--wait');
-  const r = spawnSync('bash', [gatePath, '1', ...gateArgs], { env: wait ? { ...env, PATH: `${waitBin}${path.delimiter}${env.PATH}` } : env, encoding: 'utf8', timeout: wait ? 15000 : 60000 });
+  const r = spawnSync('bash', [gatePath, '1', ...gateArgs], { env: wait ? { ...env, PATH: `${waitBin}${path.delimiter}${env.PATH}` } : env, encoding: 'utf8', timeout: wait ? 90000 : 60000 });
   assert.ok(!/fake gh: no fixture/.test(r.stderr), r.stderr);
   return { code: r.status, out: r.stdout + r.stderr };
 };
@@ -348,8 +361,43 @@ const CASES: Record<string, Case> = {
   'wait-failed: --wait on a PR with a failed check': (g, l) => {
     fixture({ codeql: 'pass', files: ['src/main/a.ts'] });
     set('checks.txt', `${OTHER.replace('Spec Kit gate\tpass', 'Spec Kit gate\tfail')}CodeQL\tpass\t0\thttps://github.com/o/r/runs/101\n`);
-    gateArgs = ['--wait'];
-    try { notReady(g, l, /Spec Kit gate=fail .*missing:Spec Kit gate/); } finally { gateArgs = []; }
+    const r = waitRun(g);
+    assert.ok(sleeps().join(' ') === '90' && !r.out.includes('wait-deadline'), `${l}: the failed check ends the wait at once (only the 90 s pause), got ${sleeps().length} sleeps [${sleeps().slice(0, 4).join(' ')}]\n${r.out}`);
+    assert.ok(r.code === 1 && r.out.includes('#1 not ready') && /Spec Kit gate=fail .*missing:Spec Kit gate/.test(r.out), `${l}: not ready\n${r.out}`);
+  },
+  // the bound: a check pending for ever ends the wait after 240 rounds of 30 s (7200 s), and the verdict says so
+  'wait-deadline: --wait on a check that stays pending for ever': (g, l) => {
+    fixture({ codeql: 'pass', files: ['src/main/a.ts'] });
+    set('checks.txt', `${OTHER.replace('Spec Kit gate\tpass', 'Spec Kit gate\tpending')}CodeQL\tpass\t0\thttps://github.com/o/r/runs/101\n`);
+    const r = waitRun(g);
+    const s = sleeps();
+    assert.ok(!fs.existsSync(path.join(fx, 'sleep.over')) && s.length === 240 && s.every((x) => x === '30'), `${l}: the wait stops at its own bound (240 sleeps of 30 s), got ${s.length} sleeps\n${r.out}`);
+    assert.ok(r.code === 1 && r.out.includes('#1 not ready') && /wait-deadline\(/.test(r.out) && /Spec Kit gate=pending/.test(r.out), `${l}: not ready, wait-deadline\n${r.out}`);
+  },
+  // exact names: "<name> part 1/2" and "part 2/2" passed do not stand for "<name>"
+  'required-prefix: only "<required name> part 1/2" and "part 2/2" listed, both passed': N({ codeql: 'pass', files: ['src/main/a.ts'] }, /missing:Build and test \(ubuntu-latest\)/, () => set('checks.txt', `${OTHER.replace('Build and test (ubuntu-latest)\tpass\t1m\thttps://x\n', 'Build and test (ubuntu-latest) part 1/2\tpass\t1m\thttps://x\nBuild and test (ubuntu-latest) part 2/2\tpass\t1m\thttps://x\n')}CodeQL\tpass\t0\thttps://github.com/o/r/runs/101\n`)),
+  // a pending line while gh exits 0: the gate waits on it (one 30 s round) before the 90 s pause, then reads the passed list
+  'wait-pending-line: --wait, gh exits 0 but a line says pending': (g, l) => {
+    fixture({ codeql: 'pass', files: ['src/main/a.ts'] });
+    const pending = `${OTHER}CodeQL\tpending\t0\thttps://github.com/o/r/runs/101\n`;
+    set('checks.1.txt', pending);
+    set('checks.2.txt', pending);
+    set('checks.exit0', '');
+    const r = waitRun(g);
+    assert.ok(sleeps().join(' ') === '30 90', `${l}: a 30 s round on the pending line before the 90 s pause, got [${sleeps().join(' ')}]\n${r.out}`);
+    assert.ok(r.code === 0 && r.out.includes('ready to merge'), `${l}: ready\n${r.out}`);
+  },
+  // the second look: a check that shows as pending only after the 90 s pause is waited for, not read as the verdict
+  'wait-second-look: --wait, a check pending only in the look after the 90 s pause': (g, l) => {
+    fixture({ codeql: 'pass', files: ['src/main/a.ts'] });
+    const late = (st: string): string => `${OTHER}Late check\t${st}\t0\thttps://x\nCodeQL\tpass\t0\thttps://github.com/o/r/runs/101\n`;
+    set('checks.txt', late('pass'));
+    set('checks.1.txt', `${OTHER}CodeQL\tpass\t0\thttps://github.com/o/r/runs/101\n`);
+    set('checks.2.txt', `${OTHER}CodeQL\tpass\t0\thttps://github.com/o/r/runs/101\n`);
+    set('checks.3.txt', late('pending'));
+    set('checks.4.txt', late('pending'));
+    const r = waitRun(g);
+    assert.ok(r.code === 0 && r.out.includes('ready to merge'), `${l}: ready (waited for the late check)\n${r.out}`);
   },
   'src-count: the API lists fewer files than the PR changed': N({ codeql: 'pass', files: ['docs/a.md'], changed: 2 }, /src-check-unreadable/),
   'src-cap: 3000 files, where the files API stops': N({ codeql: 'pass', files: Array.from({ length: 3000 }, (_, i) => `docs/f${i}.md`) }, /src-check-unreadable/),
@@ -370,7 +418,8 @@ try {
   const mdir = path.join(dir, 'mutant');
   fs.mkdirSync(mdir);
   for (const f of ['trusted-lib.sh', 'trusted-authors.txt', 'pr-status-note.re', 'pr-gate-answered.awk']) fs.copyFileSync(path.join(SCRIPTS, f), path.join(mdir, f));
-  const mutants: Array<[string, string, string, string]> = [
+  // an optional fifth field names the assert the mutant must fail at, when a case holds more than one
+  const mutants: Array<[string, string, string, string, string?]> = [
     ['a failing CodeQL treated as skipped', '[ "$codeql" = skipping ] &&', '{ [ "$codeql" = skipping ] || [ "$codeql" = fail ]; } &&', 'codeql-fail'],
     ['a missing CodeQL treated as skipped', '[ "$codeql" = skipping ] &&', '{ [ "$codeql" = skipping ] || [ "$codeql" = missing ]; } &&', 'no-codeql-check'],
     ['the file filter removed', 'nocode "$f" || return 1', 'true', 'skipped-with-src'],
@@ -427,17 +476,23 @@ try {
     ['an unreadable ruleset record accepted (no reason added)', 'bad="$bad required-unread(.github/ruleset-main.json: no required check names)"', ':', 'ruleset-missing'],
     ['the name check removed', 'if(!n.length||n.some((s)=>typeof s!=="string"||!/^[^\\t\\r\\n]+$/.test(s)))process.exit(1);', 'if(!n.length)process.exit(1);', 'ruleset-bad-name'],
     ['the required name passed to awk with -v', `need="$need" awk -F'\\t' '$1==ENVIRON["need"]`, `awk -F'\\t' -v n="$need" '$1==n`, 'required-backslash'],
-    ['the wait going on after a failed check', 'until gh pr checks $p >/dev/null 2>&1; [ $? != 8 ] && ! pend; do', 'until gh pr checks $p >/dev/null 2>&1 && ! pend; do', 'wait-failed'],
+    ['the wait going on after a failed check', 'until gh pr checks $p >/dev/null 2>&1; [ $? != 8 ] && ! pend; do', 'until gh pr checks $p >/dev/null 2>&1 && ! pend; do', 'wait-failed', 'the failed check ends the wait at once'],
+    ['--wait without its bound', 'wait_more() { [ "$waited" -lt 240 ] || { wait_cut=1; return 1; }; }', 'wait_more() { true; }', 'wait-deadline', 'the wait stops at its own bound'],
+    ['the wait-deadline reason not added', '[ -n "$wait_cut" ] && bad=', 'false && bad=', 'wait-deadline', 'not ready, wait-deadline'],
+    ['a required name matched by prefix', `need="$need" awk -F'\\t' '$1==ENVIRON["need"]`, `need="$need" awk -F'\\t' 'index($1,ENVIRON["need"])==1`, 'required-prefix'],
+    ['the pending-line test removed from the wait', '[ $? != 8 ] && ! pend; do', '[ $? != 8 ]; do', 'wait-pending-line'],
+    ['the second look after the 90 s pause removed', '  pend || break\n', '  break\n', 'wait-second-look'],
     ['the draft line removed', '[ "$pr_draft" = true ] && echo "a draft:', 'false && echo "a draft:', 'draft'],
     ['the base branch name not checked', "case $pr_baseref in ''|*[!A-Za-z0-9._/-]*|*..*) a_base_nums=ERR;;", "case $pr_baseref in 'zzzz') a_base_nums=ERR;;", 'alert-base-ref'],
   ];
-  for (const [name, from, to, caught] of mutants) {
+  for (const [name, from, to, caught, at] of mutants) {
     assert.ok(gate.includes(from), `mutant "${name}": its anchor is in the gate`);
     const m = path.join(mdir, 'pr-gate.sh');
     fs.writeFileSync(m, gate.split(from).join(to), { mode: 0o755 });
     let msg = '';
     try { runCase(m, caught); } catch (e) { msg = (e as Error).message; }
-    assert.ok(msg.startsWith(`CASE ${caught}:`), `mutant "${name}" is caught by CASE ${caught}, got: ${msg.split('\n')[0] || 'no failure'}`);
+    assert.ok(msg.startsWith(`CASE ${caught}:`) && (!at || msg.split('\n')[0].includes(at)), `mutant "${name}" is caught by CASE ${caught}${at ? ` at "${at}"` : ''}, got: ${msg.split('\n')[0] || 'no failure'}`);
+    if (process.env.DURBAR_MUTANT_LOG) console.log(`mutant "${name}": ${msg.split('\n')[0]}`);
   }
 } finally {
   fs.rmSync(dir, { recursive: true, force: true });

@@ -3,6 +3,8 @@
 # verdict and exits 0 (ready) or 1 (not yet: why, and the unanswered comments). It never merges. Needs `gh` (signed in), bash and Node.
 # --wait: first wait until no check is pending, still none after 90 s (later workflows register their checks after the first ones end). `gh pr checks`
 # exits 8 while a check is pending and 1 when one failed or the read failed: only 8 or a pending line keeps the wait going (FR-420).
+# The wait is bounded (FR-420, round 2): at most 240 rounds of 30 s, the 90 s pause counting as 3, so about two hours in all; then the gate stops
+# waiting and goes on to its verdict, which blocks with wait-deadline (a check is still pending: a job without a runner, a workflow stuck waiting).
 # Blocks (prints why, exits 1) on:
 #   - a draft PR, or one whose draft state cannot be read (spec 021 FR-420);
 #   - a required check that is not exactly pass, on every PR: the names are the required_status_checks of .github/ruleset-main.json, read with
@@ -38,14 +40,18 @@ p=$1; R=$(gh repo view --json nameWithOwner -q .nameWithOwner); OWNER=${R%%/*}; 
 case $p in ''|*[!0-9]*) echo "usage: scripts/pr-gate.sh <PR number> [--wait]"; exit 2;; esac
 . "$(dirname "$0")/trusted-lib.sh" || exit 2
 pend() { gh pr checks $p 2>/dev/null | awk -F'\t' '$2=="pending"' | grep -q .; }
+waited=0; wait_cut=
+wait_more() { [ "$waited" -lt 240 ] || { wait_cut=1; return 1; }; }
 while [ "$2" = "--wait" ]; do
-  until gh pr checks $p >/dev/null 2>&1; [ $? != 8 ] && ! pend; do sleep 30; done
-  sleep 90
+  until gh pr checks $p >/dev/null 2>&1; [ $? != 8 ] && ! pend; do wait_more || break 2; sleep 30; waited=$((waited + 1)); done
+  sleep 90; waited=$((waited + 3))
   pend || break
+  wait_more || break
 done
 # the check list is read once, before the PR's head sha (FR-090): a push in between gives the CodeQL line another run than the head's
 checks_out=$(gh pr checks $p)
 bad=$(printf '%s\n' "$checks_out" | awk -F'\t' 'NF && $2!="pass" && $2!="skipping"{print $1"="$2}' | tr '\n' ' ')
+[ -n "$wait_cut" ] && bad="$bad wait-deadline(a check still pending after about 2 h of --wait: a human looks why)"
 # GitHub computes mergeability lazily: UNKNOWN means "ask again shortly"
 for _ in 1 2 3 4 5 6; do mergeable=$(gh pr view $p --json mergeable -q .mergeable); [ "$mergeable" = UNKNOWN ] || break; sleep 10; done
 [ "$mergeable" = MERGEABLE ] || bad="$bad mergeable=$mergeable(merge main first)"
