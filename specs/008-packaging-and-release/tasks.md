@@ -266,3 +266,5 @@
 - [x] T401 (delta 2026-11-20, issue #1239) `scripts/driver-helpers.js` (`needFocus` host reading), `scripts/check-browser-tabs.js` (`host: true`), `scripts/ui-suite.js` (`focus: true`), `scripts/test-ui-suite.ts` (the cases) [FR-210]
 - [x] T432 (delta 2026-11-22, issue #1723) `scripts/ui-suite.js` (the three `check-097-kids` entries are `focus: true`), `scripts/test-ui-suite.ts` (the pinned list) [FR-210]
 - [x] T427 (delta 2026-11-22, issue #1239) `scripts/ui-suite.js` (the Flat and Photo entries of `check-080-browser-expand` are `focus: true`), `scripts/test-ui-suite.ts` (the pinned list) [FR-210]
+- [ ] T493 (delta 2026-11-23, issue #2070) `scripts/ui-suite.js`: a start line per driver and per retry, shard 1's head start per OS (600 s on darwin), a driver's weight from its label's timing entry first; `scripts/test-ui-suite.ts`: the cases [FR-182, FR-189]
+- [ ] T494 (delta 2026-11-23, issue #2070) `.github/workflows/ui-platforms.yml`: four macOS shards, 60-minute macOS limit; `scripts/test-ui-suite.ts`, `scripts/test-ui-platforms-events.ts`: the pins and the growth guard [FR-182]
