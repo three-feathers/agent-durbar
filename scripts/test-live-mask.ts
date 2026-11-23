@@ -55,17 +55,17 @@ const FROZEN_MAIN: string[] = [
   "function annPart(t){const s=String(t==null?'':t);if(!s)return '';const h=annHome(s);if(typeof h!=='string'||!h)return null;const m=deskMask(h);if(typeof m!=='string'||!m||m.includes('[redaction failed]')||!STX||typeof STX.unesc!=='function')return null;const u=STX.unesc(h);return m===u?h:u===h?m:'[redacted]';}",
 ];
 
-type Mode = boolean | 'throws' | 'failed' | 'noredact' | 'nokeep';
+type Mode = boolean | 'throws' | 'failed' | 'noredact' | 'nokeep' | 'emptykeep';
 type Page = { doc: Document; toast(html: string): HTMLElement; toastActions(html: string, labels: string[]): HTMLElement;
   liveMask(root: Element, blocks: Element[]): Element; mcp(items: Record<string, string>[], open: boolean): HTMLElement; ref(t: string): string | null;
-  restore(folder: string): HTMLElement; crash(folder: string): HTMLElement; away(folder: string, prompt: string): Promise<HTMLElement>; follow(name: string): HTMLElement };
+  restore(folder: string): HTMLElement; crash(folder: string): HTMLElement; away(folder: string, prompt: string): Promise<HTMLElement>; follow(name: string): HTMLElement; followReal(name: string, hidden: boolean): HTMLElement };
 // what the strips' stubs hand out (the away strip's main reply, the followed agent's name)
-const STRIP: { away: unknown; follow: string } = { away: null, follow: '' };
+const STRIP: { away: unknown; follow: string; hidden: boolean } = { away: null, follow: '', hidden: false };
 const page = (mode: Mode): Page => {
   const dom = new JSDOM('<!doctype html><body><div id="toasts"></div>' + ['mcpStrip', 'restoreStrip', 'crashStrip', 'awayStrip', 'followStrip'].map((i) => `<div id="${i}" hidden></div>`).join('') + '</body>');
   const doc = dom.window.document;
   const R = mode === 'throws' ? { ...shared, maskHomePaths: () => { throw new Error('boom'); } }
-    : mode === 'failed' ? { ...shared, maskHomePaths: () => '[redaction failed]' } : mode === 'nokeep' ? { ...shared, keepShownBy: undefined } : mode ? shared : undefined;
+    : mode === 'failed' ? { ...shared, maskHomePaths: () => '[redaction failed]' } : mode === 'nokeep' ? { ...shared, keepShownBy: undefined } : mode === 'emptykeep' ? { ...shared, keepShownBy: () => '' } : mode ? shared : undefined;
   const base = {
     window: { DurbarRedact: R, DurbarSafeText: require(path.join(R_DIR, 'safetext.js')), DurbarScreens: { openSettings() {} } },
     DurbarCutText: require(path.join(R_DIR, 'cuttext.js')),
@@ -78,7 +78,7 @@ const page = (mode: Mode): Page => {
     mcpL: { closed: false, open: false, items: new Map() }, liveById: (id: string) => ({ id, info: { resumeLast: true } }),
     agents: [] as unknown[], roomOf: (a: { room: { id: string; name: string } }) => a.room, ui: {}, updatePanelHeader() {}, busy: () => () => {},
     bridge: { sinceAway: async () => STRIP.away, runScheduleNow: async () => ({ ok: true }) }, demoOn: false, SSUM: null,
-    AF_ON: true, AF_PAUSED: false, AF_HOLD: '', afLive: () => [], afPanelId: () => null, byId: (id: string) => ({ id, name: STRIP.follow }), afCanOpen: () => true,
+    AF_ON: true, AF_PAUSED: false, AF_HOLD: '', afLive: () => [], afPanelId: () => null, byId: (id: string) => ({ id, name: STRIP.follow }), afCanOpen: () => !STRIP.hidden,
     afGo() {}, afSetPaused() {},
     AF: { position: () => ({ index: -1, count: 0 }), positionText: () => 'none', statusText: (o: { name?: string }) => 'Following ' + (o.name || '') + '.' },
     AFT: { ids: () => ['f1'], pendingList: () => [], size: 1 } });
@@ -100,6 +100,11 @@ const page = (mode: Mode): Page => {
       (ctx as unknown as { paintCrashStrip(): void }).paintCrashStrip(); return doc.getElementById('crashStrip') as HTMLElement; },
     async away(folder, prompt) { STRIP.away = { awayMs: 3600000, missed: [{ id: 's1', folderName: folder, prompt }] }; await (ctx as unknown as { renderAwayStrip(): Promise<void> }).renderAwayStrip(); return doc.getElementById('awayStrip') as HTMLElement; },
     follow(name) { STRIP.follow = name; (ctx as unknown as { afRender(): void }).afRender(); return doc.getElementById('followStrip') as HTMLElement; },
+    followReal(name, hidden) { // the real DurbarAutoFollow.statusText (its hidden-folder branch when `hidden`), then back to the stub
+      const C2 = ctx as unknown as { AF: unknown; afRender(): void }, stub = C2.AF, real = require(path.join(R_DIR, 'autofollow.js'));
+      C2.AF = { ...(stub as object), statusText: real.statusText }; STRIP.follow = name; STRIP.hidden = hidden;
+      try { C2.afRender(); } finally { C2.AF = stub; STRIP.hidden = false; }
+      return doc.getElementById('followStrip') as HTMLElement; },
   };
 };
 const escH = (s: string): string => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c] as string));
@@ -175,6 +180,8 @@ for (const [what, nm] of NAMES) {
 }
 // 4c. without the shared piece-level union the block fails closed
 {
+  const e = page('emptykeep').toast('Not written: password=<b>' + PW + '</b> was refused.');
+  eq(e.textContent, '[redacted]', 'FR-195 keepShownBy giving an empty text: the block is hidden whole, never left empty');
   const t = page('nokeep').toast('Not written: password=<b>' + PW + '</b> was refused.');
   eq(t.textContent, '[redacted]', 'FR-195 no keepShownBy: the block is hidden whole');
 }
@@ -216,6 +223,11 @@ async function stripsByBehaviour(): Promise<void> {
   }
   eq(pg.restore('web-app').querySelector('.ns-t')!.textContent, 'One folder (web-app) lets agents change files without asking.', 'FR-195 restore strip: a benign name is kept');
   eq(pg.follow('Noor').querySelector('#afText')!.textContent, 'Following Noor.', 'FR-195 Auto-follow strip: a benign name is kept');
+  for (const [what, nm] of NAMES) {
+    const h = pg.followReal(nm, true);
+    hides(shown(h), `FR-195 Auto-follow strip, the real hidden-folder words, ${what}`);
+  }
+  eq(pg.followReal('Noor', true).querySelector('#afText')!.textContent, 'Auto-follow on. Noor is working in a hidden folder.', 'FR-195 Auto-follow strip: the real hidden-folder words with a benign name');
 }
 // 7. fails closed: no mask module, ?noredact=1, a throw, the module's own failure text
 for (const mode of [false, 'noredact', 'throws', 'failed'] as Mode[]) {
