@@ -8,7 +8,8 @@
  * before its handler runs, so neither the window nor a driver's page script can reach a real agent app or the real profile.
  * FR-029: this is the only file in src/ that may use `ipcMain` or `webContents.ipc` (`test:ipcchannels`). FR-031: the mode is main's.
  *
- * Spec 045 FR-066 (issue #1682): every `ipcHandle` handler runs inside `answer`, so an unexpected throw reaches the window only as `IPC_FAILED`.
+ * Spec 045 FR-066 (issue #1682; changed 2026-11-23): every `ipcHandle` handler runs inside `answer`, so a throw reaches the window only as `failText`'s
+ * text (its message, masked, one line); the sender and simulator refusals above it keep their fixed words and never pass through it.
  */
 import { redact } from '../shared/redact';
 import { failText } from './ipcerror';
@@ -64,8 +65,8 @@ export { IPC_FAILED } from './ipcerror';
 
 /**
  * Spec 045 FR-066: runs one handler. A value or a promise comes back as it is; a throw or a rejection gets a new `Error` whose message is
- * `failText` (`ipcerror.ts`: a `ShownError`'s own text masked, else `IPC_FAILED`, the real error logged in main, masked). The thrown value itself,
- * its stack, its fields and its cause never cross: a thrown value may carry a token, a path or session data.
+ * `failText` (`ipcerror.ts`: an `Error`'s own message masked and cut, else `IPC_FAILED`; the real error logged in main, masked). The thrown value
+ * itself, its stack, its fields and its cause never cross: a thrown value may carry a token or session data.
  */
 export function answer(channel: string, run: () => unknown): unknown {
   const fail = (err: unknown): never => { throw new Error(failText(err, `"${channel}"`)); };

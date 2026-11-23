@@ -1,16 +1,20 @@
 /**
- * Spec 045 FR-066 (issue #1682, T025): every `ipcHandle` channel answers an unexpected throw with one fixed text, and the real error is logged in
- * main only, masked. Driven through the real `ipcguard` on a stand-in `electron`. `npm run test:ipcthrow`. No Electron, no network, no credits.
+ * Spec 045 FR-066 (issue #1682, T025; changed 2026-11-23 by the owner's decision, #2060 item 1, T490): every `ipcHandle` channel answers a throw
+ * with the error's own message made safe for the screen (`failText`: masked, one line, cut), and the real error is logged in main only, masked.
+ * Driven through the real `ipcguard` on a stand-in `electron`. `npm run test:ipcthrow`. No Electron, no network, no credits.
  *
- *  1. a thrown Error whose message, fields and cause carry an invented token and path: the window gets `IPC_FAILED`, nothing else;
- *  2. a thrown non-Error value (a string, an object, null) and an async rejection: the same;
+ *  1. a thrown Error whose message, fields and cause carry an invented token and path: the window gets the message with the path and the token
+ *     masked; nothing of the fields, the cause or the stack;
+ *  2. a thrown non-Error value (a string, an object, null): the fixed `IPC_FAILED`; an async rejection with an Error: as 1.;
  *  3. a `ShownError` (an adapter's or main's own words) keeps its text, masked again; a real adapter refusal and the start guard's refusal pass;
  *  4. the main log line names the channel and the error, through `redact` (no token);
  *  5. a value or a resolved promise comes back unchanged; the sender check and the simulator refusal keep their own texts;
  *  6. `ipcHandle` runs every handler through `answer` (read from its source), and `ipcguard.ts` is still the only file that touches `ipcMain`
  *     (that scan and its own mutants are `test:ipcchannels`);
- *  7. a handler that catches and returns `{ ok: false, error }` goes through `failText` (`ipcerror.ts`): the same rules, its own fixed fallback,
- *     a home path in a `ShownError` masked; real handlers (`openWithOp`-style ops) return neither the token nor the path;
+ *  7. a handler that catches and returns `{ ok: false, error }` goes through `failText` (`ipcerror.ts`): the same rules, its own fixed fallback
+ *     only when there is no message, paths as written; the cut, one line, stack frames and the app folder out, Windows paths; real handlers
+ *     (`openWithOp`-style ops) return the path and never the token;
+ *  7b. the differential: error messages with every token family of `redact` (`redact-families.ts`) in several contexts: 0 visible, per family;
  *  8. no file in src/main uses a caught error's own text outside `ipcerror.ts` (a scan of the source, with its own mutants), unless the line
  *     says `FR-066: read, not shown` (a classification or a log line that is masked).
  */
@@ -44,12 +48,26 @@ async function main(): Promise<void> {
     const token = ['g', 'hp', '_'].join('') + 'aB3dE6gH9k'.repeat(4).slice(0, 36);
     const where = path.join(os.homedir(), ['inv', 'ented'].join(''), ['sess', 'ion'].join('') + '.json');
     const marker = ['boom', 'marker'].join('-');
+    const causeMark = ['cause', 'marker'].join('-');
+    const fieldMark = ['field', 'marker'].join('-');
     const frame = { url: pathToFileURL(path.join(__dirname, '..', 'src', 'renderer', 'index.html')).href };
     const win = { senderFrame: frame, sender: { mainFrame: frame } };
 
     /** What the window would see: the handler's value, or the message of the error it throws or rejects with (all Electron sends). */
     const ask = async (ch: string): Promise<{ value?: unknown; message?: string; error?: unknown }> => {
       try { return { value: await handlers.get(ch)!(win) }; } catch (err) { return { error: err, message: (err as Error).message }; }
+    };
+    const OWNER = 'owner decision 2026-11-23 (#2060 item 1)';
+    /** The window sees the error's own words, masked: the path shown, the token gone, nothing of the fields, the cause or the stack. */
+    const shownOnly = (r: { message?: string; error?: unknown }, what: string): void => {
+      const e = r.error as Record<string, unknown>;
+      assert.ok(e instanceof Error && !(e instanceof ShownError), `${what}: a plain new Error`);
+      assert.deepStrictEqual(Object.keys(e), [], `${what}: no own fields cross`);
+      assert.strictEqual(e.cause, undefined, `${what}: no cause crosses`);
+      assert.ok(r.message!.includes(marker) && r.message!.includes(where), `${what}: ${OWNER}: the window shows the real error and its path (got ${JSON.stringify(r.message)})`);
+      const all = `${String(e.message)} ${String(e.stack)}`;
+      for (const bad of [token, causeMark, fieldMark]) assert.ok(!all.includes(bad), `${what}: ${bad === token ? 'the token' : bad} never reaches the window`);
+      assert.ok(r.message!.includes('[redacted'), `${what}: the mask stands in the token's place`);
     };
     const onlyFixed = (r: { message?: string; error?: unknown }, what: string): void => {
       assert.strictEqual(r.message, IPC_FAILED, `${what}: the window sees only the fixed text (got ${JSON.stringify(r.message)})`);
@@ -66,10 +84,11 @@ async function main(): Promise<void> {
       const err = new Error(`${marker}: could not read ${where} with ${token}`) as Error & Record<string, unknown>;
       err.path = where;
       err.token = token;
-      (err as { cause?: unknown }).cause = new Error(token);
+      err.note = fieldMark;
+      (err as { cause?: unknown }).cause = new Error(`${causeMark} ${token}`);
       throw err;
     });
-    onlyFixed(await ask('t:throwError'), 'a thrown Error');
+    shownOnly(await ask('t:throwError'), 'a thrown Error');
     const line = logged.find((l) => l.includes('"t:throwError"'));
     assert.ok(line, 'main logs the failed channel by name');
     assert.ok(line!.includes(marker), 'the main log line carries the real error');
@@ -85,7 +104,7 @@ async function main(): Promise<void> {
     ipcHandle('t:throwBadToString', () => { throw { toString: () => { throw new Error(token); } }; });
     onlyFixed(await ask('t:throwBadToString'), 'a thrown value whose toString throws');
     ipcHandle('t:reject', async () => { await Promise.resolve(); throw new Error(`${marker} ${where} ${token}`); });
-    onlyFixed(await ask('t:reject'), 'an async rejection');
+    shownOnly(await ask('t:reject'), 'an async rejection');
     ipcHandle('t:rejectValue', () => Promise.reject(`${marker} ${token}`));
     onlyFixed(await ask('t:rejectValue'), 'a rejected promise with a string');
     assert.ok(logged.some((l) => l.includes('"t:reject"') && l.includes(marker) && !l.includes(token)), 'an async rejection is logged in main, masked');
@@ -115,7 +134,9 @@ async function main(): Promise<void> {
     ipcHandle('t:undef', () => undefined);
     assert.strictEqual((await ask('t:undef')).value, undefined, 'undefined stays undefined');
     const other = { url: 'https://example.invalid/' };
-    assert.throws(() => handlers.get('t:value')!({ senderFrame: other, sender: { mainFrame: other } }), /refused a call that did not come from its own window/, 'the sender refusal keeps its text');
+    const beforeRefusal = logged.length;
+    assert.throws(() => handlers.get('t:value')!({ senderFrame: other, sender: { mainFrame: other } }, `${token} ${where}`), (err: Error) => err.message === 'Agent Durbar refused a call that did not come from its own window.', `${OWNER}: a forged-sender refusal still shows exactly its constant text`);
+    assert.strictEqual(logged.length, beforeRefusal, `${OWNER}: a refusal never passes through failText (no main log line, nothing of the call echoed)`);
 
     // 6. the wiring: the handler inside ipcHandle runs through answer (a mutant calling fn directly fails 1. above too)
     const src = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'main', 'ipcguard.ts'), 'utf8');
@@ -127,15 +148,39 @@ async function main(): Promise<void> {
     const { failText } = require('../src/main/ipcerror') as typeof import('../src/main/ipcerror');
     const before = logged.length;
     const raw = Object.assign(new Error(`${marker}: could not read ${where} with ${token}`), { path: where });
-    assert.strictEqual(failText(raw, 'test'), IPC_FAILED, 'failText: a plain Error gives IPC_FAILED');
+    const rawShown = failText(raw, 'test');
+    assert.ok(rawShown.startsWith(`${marker}: could not read ${where} with [redacted`) && !rawShown.includes(token), `failText: ${OWNER}: a plain Error gives its own words, path shown, token masked (got ${JSON.stringify(rawShown)})`);
     assert.strictEqual(failText(`${token} ${where}`, 'test'), IPC_FAILED, 'failText: a thrown string gives IPC_FAILED');
-    assert.strictEqual(failText(raw, 'test', 'Could not start it.'), 'Could not start it.', "failText: a plain Error gives the caller's fixed fallback");
+    assert.strictEqual(failText(raw, 'test', 'Could not start it.'), rawShown, `failText: ${OWNER}: an Error's words come before the caller's fixed fallback`);
     assert.ok(logged.length === before + 3 && logged.slice(before).every((l) => l.includes('[ipc] test failed') && !l.includes(token)), 'failText logs one masked main line per error');
+    assert.strictEqual(failText(new Error(''), 'test', 'Could not start it.'), 'Could not start it.', "failText: an Error with no message gives the caller's fixed fallback");
+    assert.strictEqual(failText(new Error(' \n\t '), 'test'), IPC_FAILED, 'failText: a blank message gives IPC_FAILED');
+    assert.strictEqual(failText(Object.defineProperty(new Error('x'), 'message', { get: () => { throw new Error(token); } }), 'test'), IPC_FAILED, 'failText: a message that cannot be read gives IPC_FAILED');
+    assert.strictEqual(failText(new Error(`[redaction failed] ${where}`), 'test'), IPC_FAILED, 'failText: fail closed: when the mask reports a failure, the fixed text');
     assert.ok(logged[before].includes(marker), "failText's log line carries the real error");
     assert.strictEqual(failText(new ShownError('That session is open. End it first.'), 'test', 'x'), 'That session is open. End it first.', 'failText: a ShownError keeps its words');
     const shownMixed = failText(new ShownError(`Codex refused the settings: ${where} ${token}`), 'test');
     assert.ok(shownMixed.startsWith('Codex refused the settings: ') && !shownMixed.includes(token), `failText: a ShownError is masked for tokens (got ${JSON.stringify(shownMixed)})`);
-    assert.ok(!shownMixed.includes(os.homedir()) && shownMixed.includes(path.join('~', ['inv', 'ented'].join(''))), `failText: a ShownError's home path is masked (got ${JSON.stringify(shownMixed)})`);
+    assert.ok(shownMixed.includes(where), `failText: ${OWNER}: a ShownError's path is shown as written (got ${JSON.stringify(shownMixed)})`);
+    // FR-066 as changed: the words a person needs, and nothing more
+    const enoent = Object.assign(new Error("ENOENT: no such file or directory, open '/srv/projects/q3/plan.txt'"), { code: 'ENOENT', errno: -2 });
+    assert.strictEqual(failText(enoent, 'test'), "ENOENT: no such file or directory, open '/srv/projects/q3/plan.txt'", `${OWNER}: a thrown ENOENT with a path shows the path`);
+    for (const p of ['C:\\Users\\alice\\proj\\a b.txt', '\\\\nas01\\projects\\q3\\plan.docx', 'D:/work/x.json']) {
+      assert.strictEqual(failText(new Error(`EPERM: operation not permitted, open '${p}'`), 'test'), `EPERM: operation not permitted, open '${p}'`, `${OWNER}: a Windows path (${p}) is shown as written`);
+    }
+    const markup = failText(new Error('<img src=x onerror=alert(1)>\r\n<b>bold</b>\u0000\u001b[31m\u2028end\u202e'), 'test');
+    assert.strictEqual(markup, '<img src=x onerror=alert(1)> <b>bold</b> [31m end', `${OWNER}: a message with markup is one plain line of text (no control, line break or direction character)`);
+    const long = failText(new Error('could not parse the answer: ' + 'word '.repeat(1000)), 'test');
+    const more = /… (\d+) more characters$/.exec(long);
+    assert.ok(more && long.length <= 400 + 30, `${OWNER}: a 5,000-character message is cut at 400 characters with the count (got ${long.length} characters)`);
+    assert.strictEqual(long.length - more![0].length + Number(more![1]), ('could not parse the answer: ' + 'word '.repeat(1000)).trim().length, 'the count is exactly the characters left out');
+    const huge = failText(new Error('x '.repeat(30_000)), 'test');
+    assert.ok(/… \d+ more characters$/.test(huge) && huge.length <= 430, 'a message over the read limit is cut with the count too');
+    const framed = failText(new Error('the tool failed: exit 2\n    at run (/build/agent/src/main/x.ts:10:5)\n    at async Promise.all (index 0)\n    at node:internal/process/task_queues:95:5\n    at new Thing (<anonymous>)'), 'test');
+    assert.ok(framed.startsWith('the tool failed: exit 2') && !framed.includes('/build/') && !framed.includes('task_queues') && !framed.includes('Promise.all') && !framed.includes('anonymous'), `stack frames inside a message never reach the window (got ${JSON.stringify(framed)})`);
+    const appDir = path.resolve(__dirname, '..');
+    const own = failText(new Error(`Cannot find module '${path.join(appDir, 'src', 'main', 'gone.js')}'`), 'test');
+    assert.ok(!own.includes(appDir) && own.includes('[app folder]'), `the app's own folder never reaches the window (got ${JSON.stringify(own)})`);
     // a real op that catches and returns: the open-with op on a launcher that throws an error carrying a token and a path
     const { openWith } = require('../src/main/openwith') as typeof import('../src/main/openwith');
     const dir = { isDirectory: () => true, isFile: () => false, isSymbolicLink: () => false };
@@ -143,7 +188,52 @@ async function main(): Promise<void> {
       platform: 'linux', launchEnv: {} as never, lstat: () => dir, realpath: (x) => x, reveal: () => undefined, start: async () => ({ ok: true }),
       openPath: async () => { throw Object.assign(new Error(`${marker} EACCES ${where} ${token}`), { path: where }); },
     });
-    assert.deepStrictEqual(ow, { ok: false, error: IPC_FAILED }, `a real handler that catches and returns gives IPC_FAILED (got ${JSON.stringify(ow)})`);
+    assert.ok(ow.ok === false && typeof ow.error === 'string' && ow.error.includes(`EACCES ${where}`) && !ow.error.includes(token) && !('path' in ow), `${OWNER}: a real handler that catches and returns gives the error and its path, never the token (got ${JSON.stringify(ow)})`);
+
+    // 7b. the differential: every token family of the shared mask, planted in error messages written the ways errors are written; 0 visible
+    const { FAMILIES } = require('./redact-families') as typeof import('./redact-families');
+    const envName = ['DURBAR', 'TEST', 'API', 'KEY'].join('_');
+    const envValue = ['ev', 'Q7w', 'Z2x', 'P9k', 'M4n', 'B8v', 'C1'].join('');
+    process.env[envName] = envValue;
+    const families: Record<string, string[]> = { ...FAMILIES, envValue: [envValue] };
+    const CONTEXTS: Array<(s: string) => string> = [
+      (s) => `request failed: ${s}`,
+      (s) => `EACCES: permission denied, open '${s}'`,
+      (s) => `EPERM: operation not permitted, open 'C:\\srv\\${s}'`,
+      (s) => `Command failed: tool --flag\nstderr: ${s}\n    at run (/build/x.js:1:2)`,
+      (s) => `failed\r\n${s}\r\nretry`,
+      (s) => `failed\t${s}\u0000 more`,
+      (s) => `<b>${s}</b>`,
+      (s) => `${'pad '.repeat(80)}${s}`,
+    ];
+    /** The last characters of the secret itself, as `test-redact-shapes.ts` reads them (a URL credential's host is not secret). */
+    const bodyOf = (x: string): string => x.replace(/@host\.example.*$|\/getMe$| https:\/\/h$|" h$|[\\"}]+$/, '').slice(-8);
+    const visible: Record<string, number> = {};
+    let total = 0;
+    for (const [family, samples] of Object.entries(families)) {
+      visible[family] = 0;
+      for (const sample of samples) {
+        const body = bodyOf(sample);
+        for (const ctxOf of CONTEXTS) {
+          total++;
+          const out = failText(new Error(ctxOf(sample)), 'differential');
+          if (out.includes(body) || out.includes(body.replace(/\s+/g, ' '))) visible[family]++;
+        }
+      }
+    }
+    // [KNOWN GAP] of the shared mask, not of this change (reported for the masking batch): a token written as a path segment right after `/` is not
+    // hidden for some families (a path-segment rule keeps paths readable). Pinned, so a change either way is seen here.
+    const afterSlash = Object.entries(FAMILIES).flatMap(([family, samples]) => samples.filter((x) => failText(new Error(`open '/srv/x/${x}'`), 'differential').includes(bodyOf(x))).map(() => family));
+    assert.ok(afterSlash.length <= 18, `the known after-slash limit does not grow (${afterSlash.length}: ${[...new Set(afterSlash)].join(', ')})`);
+    // [KNOWN GAP] of the shared mask, the same: a named value with a backslash glued after it (`C:\srv\password=<value>\a.txt`) is not hidden
+    const gluedSlash = FAMILIES.named.filter((x) => failText(new Error(`open 'C:\\srv\\${x}\\a.txt'`), 'differential').includes(bodyOf(x)));
+    assert.ok(gluedSlash.length <= 12, `the known glued-backslash limit does not grow (${gluedSlash.length} named values)`);
+    delete process.env[envName];
+    const leaked = Object.entries(visible).filter(([, n]) => n > 0);
+    assert.deepStrictEqual(leaked, [], `the differential: no secret of any family is visible (per family: ${JSON.stringify(Object.fromEntries(leaked))})`);
+    const expected = Object.values(families).reduce((n, v) => n + v.length, 0) * CONTEXTS.length;
+    assert.ok(total === expected && Object.keys(families).length >= 40 && total >= 1500, `the differential ran every family in every context (${Object.keys(families).length} families, ${total} messages)`);
+    console.log(`test:ipcthrow differential: ${Object.keys(families).length} families, ${total} error messages, 0 secrets visible`);
 
     // 8. the scans (review of #1980, items 1, 2, 7). A line may be exempt only with an honest marker: `FR-066: read, not shown` (a classification,
     // a re-throw, a masked log line) or `FR-066: shown masked` / `FR-066: shown only as` (shown after its own masks, said how).
