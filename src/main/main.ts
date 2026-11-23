@@ -92,7 +92,7 @@ import { navigationAllowed, permissionAllowed } from './hardening';
 import type { ChatFileRef } from '../adapters/vscodeChat';
 import { McpStore } from './mcpstore';
 import { AgentStateTracker } from './mcp/agentstate';
-import { maskMcpEvent, maskMcpHistory } from './mcpmask';
+import { createToolArgsMasker, maskMcpEvent, maskMcpHistory } from './mcpmask';
 import { savedMcpOff } from './mcpsavedoff';
 import { registerMcpIpc, safeStorageCodec } from './mcpipc';
 import { MCP_SIGNIN_REFRESH_DEFAULT } from './mcpsigninrefresh';
@@ -283,7 +283,9 @@ const toRenderer = (channel: string, payload: unknown): void => {
 
 /** An MCP status event carries server error text: masked here, once, before the window sees it (spec 019 FR-021). */
 /** Spec 019 FR-022: the masked copy of an `mcp` event, built once per event; every path out of main (window, debug sink) uses it. */
-const outward = (e: AgentEvent): AgentEvent => maskMcpEvent(e, e.type === 'mcp' || (e.type === 'toolCall' && ((e.phase !== 'start' && e.mcpServer) || e.edit)) ? mcp.secretValuesFor(e.sessionId) : []); // spec 005 FR-024: edits too
+/** Spec 005 FR-342 (main half): masks a call's arguments once per arguments object and stops at once for a call that went over the budget. */
+const toolArgsMasker = createToolArgsMasker();
+const outward = (e: AgentEvent): AgentEvent => maskMcpEvent(e, e.type === 'mcp' || (e.type === 'toolCall' && ((e.phase !== 'start' && e.mcpServer) || e.edit || e.args !== undefined)) ? mcp.secretValuesFor(e.sessionId) : [], toolArgsMasker); // spec 005 FR-024: edits too; FR-342: arguments too
 /**
  * Spec 099: main's Autopilot. `AUTOPILOT_WIRED` is false, so in the default build it refuses to turn on and no surface offers it (spec *Changes*, Phase 3 gate).
  * The other half is the test-only switch, which a packaged build cannot open.
@@ -854,11 +856,11 @@ const convListings = new Map<string, Promise<unknown>>(); // FR-022: the folder 
 let convMatcher: { masker: ReturnType<typeof createMasker>; search: SessionSearchApi } | undefined;
 const convSearch = registerConvSearchIpc({
   hasSessions: () => agents.size > 0,
-  scope: (stop, keptLists, onListing) => buildScope({
+  scope: (stop, keptLists, onListing, onSessions) => buildScope({
     agents, router, store: folderStore, wsKey, resumeIdFor, appName: (id) => registry.get(id)?.displayName ?? id, vsUserDirs: () => vsUserDirsOf(dev),
     rememberChat: (agentId, ref) => { const m = vsChatRefs.get(agentId) ?? new Map<string, ChatFileRef>(); m.set(ref.summary.key, ref); vsChatRefs.set(agentId, m); }, // FR-012: View opens it
     values: { knownSecretValues: (key) => mcpStore?.knownSecretValues(key) ?? [], noPrompt: () => !mcpStore || mcpStore.noPrompt(), secretValuesFor: (id) => mcp.secretValuesFor(id), copilotValuesFor: (id) => mcp.copilotValuesFor(id) },
-    gate: convGate, keptLists, listings: convListings, onListing, // FR-026: the box session's Codex titles, memory only
+    gate: convGate, keptLists, listings: convListings, onListing, onSessions, // FR-026: the box session's Codex titles, memory only
   }, stop),
   matcher: () => (convMatcher ??= { masker: createMasker({ unhide: (s) => rendererScript<{ unhide(s: string): string }>('safetext.js').unhide(s) }), search: rendererScript<SessionSearchApi>('sessionsearch.js') }),
 });

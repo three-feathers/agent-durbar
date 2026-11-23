@@ -126,6 +126,19 @@ function report({ runs, jobs, prs, fromMs, toMs, days }) {
   L.push('', 'Duration, minutes (p50 / p90), success or failure, by job name:');
   const done = jobs.filter((j) => (j.conclusion === 'success' || j.conclusion === 'failure') && duration(j) !== null);
   for (const [k, g] of group(done, (j) => j.name)) L.push(`  ${k}: n=${g.length} ${pair(g.map(duration))}`);
+  // spec 117 FR-018, SC-003: since the split, "Build and test (<os>)" is a seconds-long summary job; the npm test time of a run is its LONGEST part
+  // ("Build and test (<os>) part i/n"), counted only when every part of that run finished (success or failure); a part cancelled (the 25-min limit) is counted apart
+  L.push('', 'npm test per OS (SC-003): longest part per run, minutes (p50 / p90); parts cancelled:');
+  const PART = /^Build and test \(([\w.-]+)\) part (\d+)\/(\d+)$/;
+  const parts = jobs.filter((j) => PART.test(j.name || ''));
+  for (const [osName, g] of group(parts, (j) => PART.exec(j.name)[1])) {
+    const longest = [];
+    for (const [, rj] of group(g, (j) => `${j.run_id}#${j.run_attempt || 1}`)) {
+      const n = Number(PART.exec(rj[0].name)[3]);
+      if (rj.length === n && rj.every((j) => (j.conclusion === 'success' || j.conclusion === 'failure') && duration(j) !== null)) longest.push(Math.max(...rj.map(duration)));
+    }
+    L.push(`  ${osName}: runs=${longest.length} ${pair(longest)}; parts cancelled ${g.filter((j) => j.conclusion === 'cancelled').length}`);
+  }
   const pj = jobs.filter((j) => (runById.get(j.run_id) || {}).event === 'pull_request');
   const pjMin = pj.reduce((s, j) => s + (duration(j) || 0), 0);
   const cancelled = pj.filter((j) => j.conclusion === 'cancelled').reduce((s, j) => s + (duration(j) || 0), 0);

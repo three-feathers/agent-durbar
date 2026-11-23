@@ -510,7 +510,7 @@ function lobbyHTML(aw){
 function postboxHTML(p,box){
   let S;try{S=SCHED;}catch(e){S={pausedAll:false,schedules:[]};} /* SCHED is declared further down */
   const D=window.DurbarPlaces, paused=!!S.pausedAll, list=S.schedules||[], next=D.postNext(list,paused).slice(0,3);
-  const today=D.lettersToday(list,paused,Date.now(),(window.DurbarSchedTemplates||{}).nextRuleRun), miss=D.postMissed(list), named=!box||box.named;
+  const today=D.lettersToday(list,paused,Date.now(),(window.DurbarSchedTemplates||{}).nextRuleRun), miss=D.postMissed(list), named=!box||box.named, long=!box||box.long;
   const line=x=>{const room=ROOMS.find(r=>folderKeyOf(r)===x.s.folder), fold=room?room.name:(String(x.s.folder||'').split(/[\\/]/).filter(Boolean).pop()||'');
     return {short:clock(x.t)+' · '+safeExcerpt(x.s.prompt,60,''), full:clock(x.t)+' · '+fold+' · '+safeExcerpt(x.s.prompt,200,''), long:clock(x.t)+' · '+fold+' · '+safeExcerpt(x.s.prompt,60,'')};};
   const ls=next.map(line), empty=paused?'All paused':'No letters';
@@ -518,7 +518,7 @@ function postboxHTML(p,box){
   const label=`${placeLabelFull(p.id)}: ${sum}. ${ls.length?'Next: '+ls.map(l=>l.full).join('; '):empty}. Open Settings > Schedules.`;
   return `<button type="button" class="place postbox${miss?' flagged':''}${named?'':' unnamed'}" style="flex:0 0 ${box?box.width:200}px" data-key="place:${p.id}" data-place="${p.id}" data-post="1" title="${esc(label)}" aria-label="${esc(label)}">`
     +`<span class="pb-l"><span class="plh">${placeIcon(p)}${named?`<span class="pn">${esc(placeLabel(p.id))}</span>`:''}</span><span class="pb-n">${esc(today?today+' today':'none today')}</span>${miss?`<span class="pb-flag" aria-hidden="true">${miss} missed</span>`:''}</span>`
-    +`<span class="pb-r" aria-hidden="true">${ls.length?ls.map(l=>`<span class="pb-line">${esc(named?l.long:l.short)}</span>`).join(''):`<span class="pb-line pb-none">${esc(empty)}</span>`}</span></button>`;
+    +`<span class="pb-r" aria-hidden="true">${ls.length?ls.map(l=>`<span class="pb-line">${esc(long?l.long:l.short)}</span>`).join(''):`<span class="pb-line pb-none">${esc(empty)}</span>`}</span></button>`;
 }
 /* spec 001 FR-034/FR-035: open an agent's chat with its pending request (question, permission or spending limit) in view and focused,
    like the answer bar's "show" */
@@ -945,7 +945,7 @@ function placeToasts(){const box=$('toasts');if(!box)return;let top=innerHeight;
   const pi=document.body.classList.contains('panel-open')&&document.querySelector('#panel>.panel-in'),pl=pi&&pi.getClientRects().length?Math.round(pi.getBoundingClientRect().left):0;
   box.style.setProperty('--toast-l',(pl+16)+'px');}
 let toastRO=null;
-function mountToast(t){const box=$('toasts');placeToasts();box.appendChild(t);
+function mountToast(t){liveMask(t,[t.classList.contains('with-act')&&t.firstElementChild||t]); /* spec 012 FR-195: every toast is masked before it is shown (and read out: #toasts is a live region) */const box=$('toasts');placeToasts();box.appendChild(t);
   if(window.ResizeObserver){if(!toastRO)toastRO=new ResizeObserver(placeToasts);toastRO.disconnect();for(const e of [document.querySelector('#panel .composer'),$('answerBar'),$('panel')])if(e)toastRO.observe(e);} /* the composer grows with a long message, the answer bar appears and goes */}
 window.addEventListener('resize',placeToasts);
 function toast(html,ms){const t=document.createElement('div');t.className='toast';t.innerHTML=html;mountToast(t);holdTimer(t,ms||3200,()=>{t.style.transition='opacity .3s';t.style.opacity='0';setTimeout(()=>t.remove(),320)});return t;}
@@ -1692,7 +1692,23 @@ function growSearch(sizing,aw,ah,lo){
   GROW=0; setGrow(probe,0);
   return best;
 }
-let layoutKey='', layout=null, FIT_KEY='';
+let layoutKey='', layout=null, FIT_KEY='', layoutShape='';
+/* spec 001 delta 2026-11-22 (issue 2024): the layout key without the desks' order inside each room (the rooms keep theirs): which desks, not where */
+function layoutShapeKey(key){
+  const k=JSON.parse(key), rooms=k[k.length-1], byId=(x,y)=>x[0]<y[0]?-1:x[0]>y[0]?1:0;
+  k[k.length-1]=rooms.map(([id,mains,rolled,shut])=>[id,[...mains].sort(byId),[...rolled].sort(byId),shut]);
+  return JSON.stringify(k);
+}
+/* one probe of a layout the search chose, with today's desk order: it fits the floor and every header holds its parts without giving way (headsFit, the search's strict test) */
+function layoutHolds(sizing,aw,ah,L){
+  const probe=$('probe'); probe.style.width=aw+'px';
+  HCAP=L.hcap; HBOOST=new Map(L.boost); LIVE_SIDE=!!L.side; GROW=L.grow?1:0; HX=L.hx||0;
+  probe.dataset.d=L.d; probe.style.height='auto'; setGrow(probe,L.grow||0);
+  probeSet(probe,stageHTML(sizing,L.d,aw,L.cap));
+  const ok=probe.scrollHeight<=ah+1&&probe.scrollWidth<=aw+1&&headsFit(probe);
+  probe.innerHTML=''; probePrev=null; LIVE_SIDE=false; GROW=0; HX=0; setGrow(probe,0);
+  return ok;
+}
 let SIM_QUIET_HEADS=new Set(); /* spec 001 FR-023 (2026-10-23): simulator only (__durbarSimUi.quietHeads(['siren','aiu'])): room headers drawn without those parts, so a driver can lay the office out first and add them after, as a late siren or cost does */
 let HEAD_RETRY=''; /* the layout key and header contents of the last relayout made because a header no longer held its parts */
 /* spec 001 FR-026: what a new user needs before the first folder: sign in once (spec 052 FR-056: named by the AI account, not the app), add a folder (Read-only), or look around in the demo */
@@ -2089,8 +2105,13 @@ function renderOffice(){
   OPS.renders++;
   const sizing=lastSizing=sizingModel(model); /* what chooseLayout is given (the hook below reads it) */
   const key=JSON.stringify([aw,ah,FORCE_DENSITY,liveOn(),THEME.themeIdForCache(),lobbyOn(),floorTagsOn()&&floorsOnList().map(f=>f.id+':'+f.name),curFloorId(),allFloorsView(),sizing.map(m=>[m.r.id,m.mains.map(a=>[a.id,helpersOf(a).length,!!ui.expanded[a.id]]),(m.rolled||[]).map(x=>[x.a.id,x.k]),!!ui.expanded['shut:'+m.r.id]])]);
-  const reused=key===layoutKey&&!!layout; /* spec 097 FR-184: the last layout search still holds (same shape, width and height) */
+  let reused=key===layoutKey&&!!layout; /* spec 097 FR-184: the last layout search still holds (same shape, width and height) */
+  /* spec 001 delta 2026-11-22 (issue 2024): the same desks in another order (a desk that waits for you moves to the front of its room, and back) is one
+     probe of the layout it has, not a whole search: kept when it still fits with its headers holding, searched as before when not */
+  const shape=layoutShapeKey(key);
+  if(!reused&&layoutKey&&layout&&layout.fit&&shape===layoutShape&&layoutHolds(sizing,aw,ah,layout)){reused=true;layoutKey=key;}
   if(!reused){layout=chooseLayout(sizing,aw,ah);layoutKey=key;}
+  layoutShape=shape;
   HCAP=layout.hcap; HBOOST=new Map(layout.boost); LIVE_SIDE=!!layout.side; GROW=layout.grow?1:0; HX=layout.hx||0; /* a cached layout skips chooseLayout: restore the helper level too */
   const parts=stageParts(model,layout.d,aw,layout.cap);
   const fresh=stage.dataset.d!==layout.d||!!stage.querySelector('.empty');
@@ -2190,10 +2211,16 @@ const ROOM_NAME_CH=8;
 let NAME_CTX=null;
 /* the name's text is wider than its box, even by a fraction of a pixel (then the browser draws an ellipsis; scrollWidth is a whole number and counts the padding, so it misses it: a name 0.03px short lost two letters in the 1280x800 office) */
 const nameRoom=(n,cs)=>n.getBoundingClientRect().width-parseFloat(cs.paddingLeft)-parseFloat(cs.paddingRight)-parseFloat(cs.borderLeftWidth)-parseFloat(cs.borderRightWidth); /* the text's room, not rounded (clientWidth is a whole number) */
+function textCut(n){
+  const cs=getComputedStyle(n),box=n.getBoundingClientRect().width,room=box-parseFloat(cs.paddingLeft)-parseFloat(cs.paddingRight)-parseFloat(cs.borderLeftWidth)-parseFloat(cs.borderRightWidth); /* one box read (clientWidth is that box, rounded, minus its borders) */
+  if(n.scrollWidth>Math.round(box-parseFloat(cs.borderLeftWidth)-parseFloat(cs.borderRightWidth))+0.5)return true;
+  const r=document.createRange(); r.selectNodeContents(n);
+  return r.getBoundingClientRect().width>room+0.01;
+}
+/* spec 001 FR-179 (issue 2011): a split name (FR-271) is a flex box of its start and its tail, and the start is what gives way: the box itself holds
+   (its children shrink inside it), so each part is asked too, or a start cut by a fraction of a pixel ("swissc… tract-ai") kept the path beside it */
 function nameCut(n){
-  if(n.scrollWidth>n.clientWidth+0.5)return true;
-  const cs=getComputedStyle(n),r=document.createRange(); r.selectNodeContents(n);
-  return r.getBoundingClientRect().width>nameRoom(n,cs)+0.01;
+  return textCut(n)||[...n.querySelectorAll(':scope>.rn-h,:scope>.rn-t')].some(textCut);
 }
 function nameSqueezed(hd){
   const n=hd.querySelector('.room-name'); if(!n||!n.getClientRects().length||!nameCut(n))return false;
@@ -2381,7 +2408,8 @@ function renderConvResults(){
     const on=CS.sort&&CS.sort.key===k,dir=on?(CS.sort.dir==='asc'?'ascending':'descending'):'none';
     return `<span role="columnheader" aria-sort="${dir}"${k==='folder'?' class="lfold"':k==='ago'?' class="num"':''}><button type="button" class="lsort" data-cssort="${k}" data-csf="sort-${k}" title="Sort the results by ${esc(t.toLowerCase())}">${esc(t)}<span class="sarr" aria-hidden="true">${on?(CS.sort.dir==='asc'?'▲':'▼'):'↕'}</span></button></span>`;}).join('');
   const scanning=!!st&&!st.done;
-  const state=st?`<div class="cs-state"><span class="cs-st">${esc(CSU.stateText(st))}</span>${scanning&&CS.id?'<button class="btn sm" type="button" id="csStop" data-csf="stop">Stop</button>':''}</div>`:'';
+  const spin='<svg class="cs-spin" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><path d="M8 2.2a5.8 5.8 0 1 1-5.8 5.8"/></svg>'; /* spec 095 FR-053: the running sign, from the start to the end of the scan */
+  const state=st?`<div class="cs-state${scanning?' running':''}">${scanning?spin:''}<span class="cs-st">${esc(CSU.stateText(st))}</span>${scanning&&CS.id?'<button class="btn sm" type="button" id="csStop" data-csf="stop">Stop</button>':''}</div>`:'';
   const notes=st&&st.done?CSU.notesText(st):'';
   const ex=(h,k)=>h.excerpts&&h.excerpts.length?`<div class="cs-exs">${h.excerpts.map((x,i)=>`<button type="button" data-csk="${esc(k)}" data-csx="${i}" data-csf="${esc(k)}#${i}" title="${h.group==='office'?'Open the chat at this message':h.adapter==='vscode'?'View this chat at this message':'Resume this session at this message'}">${CSU.excerptHTML(x,esc)}</button>`).join('')}${CSU.moreOf(h)?`<span class="cs-more">+${CSU.moreOf(h)} more</span>`:''}</div>`:'';
   const officeRow=h=>{
@@ -2395,7 +2423,7 @@ function renderConvResults(){
     return `<div class="cs-hit" data-csk="${esc(k)}"><div class="lrow cs-prow"><span class="lname"><span class="lnm" title="${esc(h.title)}">${CSU.markedHTML(h.title,h.titleMarks,esc)}</span></span><span class="lcell" title="${esc(h.app)}">${esc(h.app)}</span><span class="lcell lrole">${view?'VS Code chat':'Earlier session'}</span><span class="lcell mono lfold" title="${esc(h.folderName)}">${esc(h.folderName)}</span><span class="lcell"></span><span class="lcell num"${agoL?` title="Last active ${esc(agoL)}"`:''}>${esc(ago)}</span><span class="lcell num"></span><span><button class="btn sm" type="button" data-csact="1" data-csk="${esc(k)}" data-csnav="1" data-csf="${esc(k)}" aria-label="${esc(act+': '+CSU.accName(h))}">${act}</button></span></div>${ex(h,k)}</div>`;};
   const group=(g,title,list,row)=>list.length?`<div class="cs-ghead" role="heading" aria-level="3">${esc(title)} <span>· ${list.length===1?'1 session':list.length+' sessions'}</span></div>${list.map(row).join('')}`:'';
   const none=st&&st.done&&!CSU.count(st)&&!st.failed?`<div class="empty">No conversation matches “${esc(CS.q.trim())}”.</div>`:'';
-  L.innerHTML=`<div class="list-wrap cs-wrap" role="group" aria-label="Search results" data-sort="${CS.sort?CS.sort.key:''}"><div class="lrow lhead" role="row">${head}</div>${state}${notes?`<div class="cs-notes">${esc(notes)}</div>`:''}${group('office','In the office',view.office,officeRow)}${group('earlier','Earlier sessions',view.earlier,earlierRow)}${none}</div>`;
+  L.innerHTML=`<div class="list-wrap cs-wrap" role="group" aria-label="Search results"${scanning?' aria-busy="true"':''} data-sort="${CS.sort?CS.sort.key:''}"><div class="lrow lhead" role="row">${head}</div>${state}${notes?`<div class="cs-notes">${esc(notes)}</div>`:''}${group('office','In the office',view.office,officeRow)}${group('earlier','Earlier sessions',view.earlier,earlierRow)}${none}</div>`;
   L.scrollTop=scrollTop;
   if(fk){const n=[...L.querySelectorAll('[data-csf]')].find(x=>x.dataset.csf===fk);if(n&&document.activeElement!==n)n.focus({preventScroll:true});}
 }
@@ -4726,7 +4754,7 @@ function renderRestoreStrip(){
   el.innerHTML='<span class="ns-ic" aria-hidden="true">!</span><span class="ns-t"></span><span class="ns-act"><button class="btn primary" type="button" data-ns="ask">Make it ask me first</button><button class="btn" type="button" data-ns="keep">Keep as it is</button></span>';
   const names=rooms.map(r=>r.name).join(', ');
   el.querySelector('.ns-t').textContent=rooms.length===1?'One folder ('+names+') lets agents change files without asking.':rooms.length+' folders ('+names+') let agents change files without asking.';
-  el.hidden=false;
+  stripMask(el);el.hidden=false;
   el.querySelector('[data-ns="keep"]').onclick=()=>{el.dataset.kept='1';renderRestoreStrip();scheduleRender();};
   el.querySelector('[data-ns="ask"]').onclick=async()=>{
     const bad=[];
@@ -4879,6 +4907,10 @@ const ANN_UNCHECKED='A line was not read out: Durbar could not check it for secr
 function annHome(s){const R=window.DurbarRedact,c=R&&typeof R.unhide==='function'?R.unhide(s):s;let w=s,h=homeMask(s);if(typeof c==='string'&&c!==s){const hc=homeMask(c);if(hc!==c){w=c;h=hc;}} /* the copy without hidden characters, when it holds a home folder */if(typeof h!=='string'||!STX||typeof STX.unesc!=='function')return h;const u=STX.unesc(w),hu=homeMask(u);return typeof hu!=='string'||hu===u||STX.unesc(h)===hu?h:'[redacted]';} /* review of PR 1484: a home folder whose name holds a Markdown escape (/home/a\_b) is cut short by the home mask as written; when the escape-undone copy holds a home folder and masks to something else, the part is said as [redacted] (never with its escapes undone, as annPart) */
 function annPart(t){const s=String(t==null?'':t);if(!s)return '';const h=annHome(s);if(typeof h!=='string'||!h)return null;const m=deskMask(h);if(typeof m!=='string'||!m||m.includes('[redaction failed]')||!STX||typeof STX.unesc!=='function')return null;const u=STX.unesc(h);return m===u?h:u===h?m:'[redacted]';}
 function annMask(t){try{let out='';for(const p of Array.isArray(t)?t:[t]){const o=p&&typeof p==='object',x=annPart(o?p.text:p);if(x===null)return ANN_UNCHECKED;out+=o&&p.max>0?DurbarCutText.cutText(x,p.max):x;}return out.trim()?out:'';}catch(e){return ANN_UNCHECKED;}} /* a part {text,max} is masked, then cut (the MCP request's message) */
+/* spec 012 FR-195 (issue 1419): a built toast or notice strip, masked in place with annPart (FR-178): each text node, title and aria-label; then each block read once more as one joined text (a value split across markup): the masked block is masked again as one text, and every piece of it that the joined reading of the text as built hides is masked (keepShownBy, the union; '[redacted]' without it). Fails closed: '[not checked]', never the text. Nothing is cut before the mask. */
+function liveText(s){try{const m=annPart(s);return typeof m==='string'&&(m||!s)?m:'[not checked]';}catch(e){return '[not checked]';}} /* FR-195: one text through annPart, '[not checked]' when it cannot be checked */
+function liveMask(root,blocks){const NC='[not checked]',one=liveText;if(!root)return root;const bl=(blocks||[]).filter(Boolean),orig=bl.map(b=>b.textContent||'');let ns=[];try{const w=(root.ownerDocument||document).createTreeWalker(root,4);while(w.nextNode())ns.push(w.currentNode);}catch(e){root.textContent=NC;return root;}for(const t of ns)if(t.nodeValue&&t.nodeValue.trim())t.nodeValue=one(t.nodeValue);for(const e of [root,...root.querySelectorAll('[title],[aria-label]')])for(const k of ['title','aria-label']){const v=e.getAttribute(k);if(v&&v.trim())e.setAttribute(k,one(v));}bl.forEach((b,i)=>{const j0=orig[i];if(!j0.trim())return;const jp=b.textContent,mJ=one(j0);if(mJ===NC){b.textContent=NC;return;}let f=one(jp);if(mJ!==j0){const R=window.DurbarRedact;try{f=R&&typeof R.keepShownBy==='function'?R.keepShownBy(f,mJ):'[redacted]';}catch(e){f='[redacted]';}if(typeof f!=='string'||!f)f='[redacted]';} /* a piece the joined reading of the text as built hides is never shown (the shared piece-level union, FR-182) */if(f!==jp)b.textContent=f;});return root;}
+function stripMask(el){return liveMask(el,[...el.querySelectorAll('.ns-t,.aw-w')]);} /* FR-195: a notice strip's text and list items */
 function announce(text,prio){const el=$('srAnnounce');if(!el||!text)return;const said=annMask(text);if(!said)return;const p=prio||0;if(announceT&&p<announceP)return;clearTimeout(announceT);announceP=p;el.textContent='';announceT=setTimeout(()=>{announceT=0;announceP=0;el.textContent=said.slice(0,300);},60);}
 
 /* ---- spec 052 FR-191..FR-196 (T196, T197): Your door, the Needs you queue as a panel beside the office. It reuses paintInbox() for the rows (the
@@ -5339,7 +5371,7 @@ function afRender(){
   const fid=AFT.ids()[0], fa=fid&&byId(fid);
   const text=AF.statusText({paused:AF_PAUSED,held:AF_HOLD,heldCount:AFT.pendingList().length,followed:AFT.size,office:!cur,name:fa&&fa.name,hiddenName:fa&&!afCanOpen(fid)?fa.name:''});
   const set=(id,t)=>{const n=$(id);if(n&&n.textContent!==t)n.textContent=t;};
-  set('afText',text);set('afPos','Attention: '+pt);
+  set('afText',liveText(text)); /* spec 012 FR-195: the followed agent's name through the same mask */set('afPos','Attention: '+pt);
   el.classList.toggle('paused',AF_PAUSED);
   const empty=!ids.length, np=pos.index>=0?(pos.index+1)+' of '+pos.count:pos.count+(pos.count===1?' needs you':' need you');
   const lab=(w,k)=>w+' in attention queue'+(empty?'. Nothing needs you; goes back to the office':'. '+np)+' ('+k+')';
@@ -5720,7 +5752,7 @@ function paintCrashStrip(focusSel){
     '<button class="btn" type="button" data-cr="pick" aria-expanded="'+(crashSt.pick?'true':'false')+'" aria-controls="crashList">Pick…</button>'+
     '<button class="btn" type="button" data-cr="close">Dismiss</button></span>'+
     (crashSt.pick?'<span class="aw-list cr-list" id="crashList" role="list" aria-label="Interrupted sessions">'+left.map(i=>'<span class="aw-it" role="listitem"><span class="aw-w"><b>'+esc(i.folderName)+'</b><small>'+esc(i.adapterId)+'</small></span><button class="btn" type="button" data-crrow="'+esc(i.id)+'">Resume</button></span>').join('')+'</span>':'');
-  el.hidden=false;
+  stripMask(el);el.hidden=false;
   const all=el.querySelector('[data-cr="all"]');
   el.querySelector('[data-cr="close"]').onclick=()=>{crashSt.items=[];paintCrashStrip();};
   el.querySelector('[data-cr="pick"]').onclick=()=>{crashSt.pick=!crashSt.pick;paintCrashStrip(crashSt.pick?'[data-crrow]':'[data-cr="pick"]');};
@@ -5750,7 +5782,7 @@ async function renderAwayStrip(){
     (briefW?' <span class="aw-brief" title="'+esc(SSUM.briefingTip)+'">'+esc(briefW)+'</span>':'')+
     '</span>'+(missed.length?'<span class="aw-list">'+missed.map(m=>'<span class="aw-it" data-sched="'+esc(m.id)+'"><span class="aw-w"><b>'+esc(m.folderName)+'</b>: “'+esc(safeExcerpt(m.prompt,80,''))+'”'+(m.repeats?' <small>(runs again as planned)</small>':'')+'</span>'+(bridge.runScheduleNow?'<button class="btn" type="button" data-awrun="'+esc(m.id)+'">Run missed now</button>':'')+'</span>').join('')+'</span>':'')+
     '<span class="ns-act"><button class="btn" type="button" data-aw="close">Dismiss</button></span>';
-  el.hidden=false;
+  stripMask(el);el.hidden=false;
   el.querySelector('[data-aw="close"]').onclick=()=>{el.hidden=true;el.innerHTML='';if(bridge.dismissSinceAway)bridge.dismissSinceAway().catch(()=>{});scheduleRender();};
   el.querySelectorAll('[data-awrun]').forEach(b=>b.onclick=async()=>{
     const done=busy(b,'Sending…');let r;
@@ -5792,7 +5824,7 @@ function paintMcpStrip(){
     '<span class="ns-act"><button class="btn" type="button" data-ml="list" aria-expanded="'+(mcpL.open?'true':'false')+'" aria-controls="mcpList">'+(mcpL.open?'Hide list':'List…')+'</button><button class="btn" type="button" data-ml="settings">Open MCP settings</button><button class="btn" type="button" data-ml="close">Dismiss</button></span>'+
     (mcpL.open?'<span class="aw-list ml-list" id="mcpList" role="list" aria-label="MCP servers that need attention">'+shown.map(f=>'<span class="aw-it" role="listitem" data-mlk="'+esc(f.key)+'"><span class="aw-w ml-w"><b>'+esc(f.name)+'</b> <small>'+esc(f.where||'')+'</small>: '+esc(f.reason)+'. '+esc(f.fix)+'</span><button class="btn" type="button" data-mlshow="'+esc(f.key)+'" aria-label="'+esc('Show '+f.name+(f.where?' ('+f.where+')':''))+'">Show</button></span>').join('')+
     (more?'<span class="aw-it" role="listitem"><span class="aw-w">and '+more+' more in Settings &gt; MCP servers.</span></span>':'')+'</span>':'');
-  el.hidden=false;
+  stripMask(el);el.hidden=false;
   el.querySelector('[data-ml="close"]').onclick=()=>{mcpL.closed=true;paintMcpStrip();};
   el.querySelector('[data-ml="list"]').onclick=()=>{mcpL.open=!mcpL.open;paintMcpStrip();const b=el.querySelector('[data-ml="list"]');if(b)focusIn(b,{reveal:false});};
   el.querySelector('[data-ml="settings"]').onclick=()=>window.DurbarScreens.openSettings('mcp');

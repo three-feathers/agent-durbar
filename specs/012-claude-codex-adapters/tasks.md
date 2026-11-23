@@ -290,3 +290,11 @@ T133 verification (2026-10-25, review on #698): typecheck, build and the offline
 
 ## 2026-11-22: the question header and the automatic-answer question are masked (issue #1937)
 - [x] T428 (delta 2026-11-22, issue #1937) `src/renderer/app.js` (`showQuestion` header tag, `showAutoQuestion` paragraph through `safeMask`), `scripts/check-question-header-mask.js` + `scripts/ui-suite.js` [FR-065]
+
+## Changes 2026-11-22 (masking batch: a value split across a line break after a secret name: issue #1320)
+
+- [x] T431 (2026-11-22, issue #1320) FR-190: `contSpans`, `withoutContinuation`, `contReads`, `_contWorkForTest` and `_contPassesForTest` in `src/shared/redact.ts` (the `whole` stretches of `maskSplitFirst`, the continuation reference of `maskKeepingMarkdown`, `maskCommandImpl`, `contReadCount`); `contBoth` in `src/renderer/safetext.js`; the reference stream with the step off in `src/shared/brainstate.ts` (`cref`, `decodeKept`; review of PR 2001); the joined command reading (`SHELL_CONT`), the counted middle-line scan (`_contScanForTest`) and the token-head join (`TOKEN_HEAD`, `tokenHeadBefore`) (review of PR 2001, rounds 1 and 2); the counted shell-joined reading and the step target's union in `src/shared/brainstate.ts` (`contKept`; review of PR 2001, round 2); the `docs/safety.md` line and the changelog fragment; the `#1320 continuation` asserts in `scripts/test-redact.ts` and `#1320 continuation brain` in `scripts/test-brainstate.ts`; the line in `specs/012-claude-codex-adapters/secret-coverage.md`; mutants and a differential fuzz against `main` in the PR.
+
+## Changes 2026-11-23 (masking batch: toasts and the notice strips: issue #1419)
+
+- [x] T457 (2026-11-23, issue #1419) FR-195: `liveMask` in `src/renderer/app.js`, and `liveText`, called by `mountToast`, by `renderRestoreStrip`, `paintCrashStrip`, `renderAwayStrip` and `paintMcpStrip`, and by `afRender` (review of PR 2046); `scripts/test-live-mask.ts` (`npm run test:livemask`, in `scripts/test-suites.txt`); the line in `specs/012-claude-codex-adapters/secret-coverage.md`; the changelog fragment; mutants and a differential fuzz against `main` in the PR.

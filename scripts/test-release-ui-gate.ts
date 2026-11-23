@@ -79,14 +79,15 @@ function cli(dir: string, src: string, runs: Run[], extra: string[] = []): numbe
 /** Every rule as fixture cases with labelled asserts; a mutant must make exactly its own label throw first. */
 async function suite(src: string, dir: string): Promise<void> {
   const g = load(src);
-  const is = (runs: Run[], min: number, verdict: string, reason: string, label: string, policy?: string): Verdict => {
+  const is = (runs: Run[], min: number, verdict: string, reason: string, label: string, policy = 'latest-run'): Verdict => {
     const v = g.decide(runs, opts(min, policy));
     assert.strictEqual(`${v.verdict}/${v.reason}`, `${verdict}/${reason}`, label);
     return v;
   };
 
-  // R0 the policy in force (R2-R6 below are written for it)
-  assert.strictEqual(g.POLICY, 'latest-run', 'R0 the policy in force is latest-run until the owners answer #2038 item 1');
+  // R0 the policy in force: owner pick (a), Vikram 2026-11-23 (#2038 item 1, recorded on #1995). R2-R6 test the machinery every
+  // policy shares on run-level fixtures (policy latest-run); R8 tests each policy's own verdicts, (a) in full.
+  assert.strictEqual(g.POLICY, 'linux-windows-jobs', 'R0 the policy in force is linux-windows-jobs (owner pick 2026-11-23)');
 
   // R1 inputs: a 40-hex sha, an owner/name repo, a v* tag, limits that make sense, a known policy
   assert.deepStrictEqual(g.checkInputs(opts(0)), [], 'R1 good inputs pass');
@@ -148,16 +149,16 @@ async function suite(src: string, dir: string): Promise<void> {
   let t = 0;
   const seq: Array<Run[] | Error> = [[], new Error('gh: Server Error (HTTP 502)'), [run({ status: 'in_progress', conclusion: null })], [run({})]];
   const logs: string[] = [];
-  const v = await g.poll({ ...opts(0), fetchRuns: () => { const s = seq.shift(); if (s instanceof Error) throw s; return s; }, sleep: async (ms: number) => { t += ms; }, now: () => t, intervalMs: MIN, log: (s: string) => logs.push(s) });
+  const v = await g.poll({ ...opts(0, 'latest-run'), fetchRuns: () => { const s = seq.shift(); if (s instanceof Error) throw s; return s; }, sleep: async (ms: number) => { t += ms; }, now: () => t, intervalMs: MIN, log: (s: string) => logs.push(s) });
   assert.strictEqual(`${v.verdict}/${v.reason}`, 'pass/success', 'R6 the loop waits through no-run, an API error and a running run, then passes');
   assert.strictEqual(t, 3 * MIN, 'R6 the loop slept once per wait');
   assert.ok(logs.some((l) => l.includes('API error')), 'R6 the API error is logged');
   t = 0;
-  const v2 = await g.poll({ ...opts(0), fetchRuns: () => [run({ status: 'in_progress', conclusion: null })], sleep: async (ms: number) => { t += ms; }, now: () => t, intervalMs: MIN, log: () => undefined });
+  const v2 = await g.poll({ ...opts(0, 'latest-run'), fetchRuns: () => [run({ status: 'in_progress', conclusion: null })], sleep: async (ms: number) => { t += ms; }, now: () => t, intervalMs: MIN, log: () => undefined });
   assert.strictEqual(`${v2.verdict}/${v2.reason}`, 'fail/timeout', 'R6 a run that never ends fails at the limit');
   assert.ok(t >= 150 * MIN && t <= 151 * MIN, 'R6 the loop stops at maxMs');
   t = 0;
-  const v3 = await g.poll({ ...opts(0), fetchRuns: () => { throw new Error('gh: Server Error (HTTP 500)'); }, sleep: async (ms: number) => { t += ms; }, now: () => t, intervalMs: MIN, log: () => undefined });
+  const v3 = await g.poll({ ...opts(0, 'latest-run'), fetchRuns: () => { throw new Error('gh: Server Error (HTTP 500)'); }, sleep: async (ms: number) => { t += ms; }, now: () => t, intervalMs: MIN, log: () => undefined });
   assert.strictEqual(`${v3.verdict}/${v3.reason}`, 'fail/api', 'R6 an API that always fails ends in a failure, never a pass');
 
   // R7 API error kinds: 401, 403, 404 and other 4xx fail at once; 429, 5xx and network errors wait
@@ -193,6 +194,14 @@ async function suite(src: string, dir: string): Promise<void> {
   is([run({ jobs: jobs3({ 'What the UI suite needs': 'failure' }, ['ubuntu', 'windows']) })], 0, 'fail', 'failed', 'R8a a red decision job fails', A);
   is([run({})], 0, 'fail', 'failed', 'R8a jobs not read fails', A);
   is([run({ status: 'in_progress', conclusion: null, jobs: [job('What the UI suite needs')] })], 30, 'wait', 'running', 'R8a shards not listed yet: wait', A);
+  is([run({ status: 'in_progress', conclusion: null, jobs: jobs3({ 'UI shard (ubuntu-latest 1/4)': 'running' }) })], 150, 'fail', 'timeout', 'R8a still running at the wait limit: fail', A);
+  is([run({ run_started_at: '2026-11-22T09:00:00Z', jobs: jobs3() }), run({ event: 'schedule', run_started_at: '2026-11-22T11:00:00Z', conclusion: 'failure', jobs: jobs3({ 'UI shard (windows-latest 2/4)': 'failure' }) })], 0, 'fail', 'failed', 'R8a a newer run red on Windows outvotes an older green one', A);
+  const aNone = is([], 20, 'fail', 'none', 'R8a no run: fail', A);
+  const aCan = is([run({ jobs: jobs3({ 'UI shard (ubuntu-latest 2/4)': 'cancelled' }) })], 0, 'fail', 'cancelled', 'R8a cancelled', A);
+  for (const m of [aNone.message, aCan.message]) assert.ok(m.includes('Start a by-hand UI run on the tag (gh workflow run ui-platforms.yml --repo three-feathers/agent-durbar --ref v0.1.15') && !RERUN_UI.test(m), 'R8a the remedy is a by-hand UI run on the tag, never a UI re-run');
+  // decide with no policy named uses the one in force
+  const dflt = g.decide([greenPush(), macRedNightly()], opts(0));
+  assert.strictEqual(`${dflt.verdict}/${dflt.reason}`, 'pass/success', 'R8 decide with no policy named uses the policy in force (a red macOS nightly does not veto)');
   // (b) push-or-dispatch-without-macos
   const B = 'push-or-dispatch-without-macos';
   is([greenPush(), macRedNightly()], 0, 'pass', 'success', 'R8b a newer red nightly does not count', B);
@@ -213,9 +222,9 @@ async function suite(src: string, dir: string): Promise<void> {
   assert.throws(() => g.fetchRuns(() => ({ total_count: 101, workflow_runs: [run({})] }), opts(0)), /more than one page/, 'R8 more runs than one page: not decided');
 
   // R9 the CLI exit code: 0 pass, 1 fail, 2 bad input (release.yml relies on it)
-  assert.strictEqual(cli(dir, src, [run({})]), 0, 'R9 the CLI exits 0 on a green run');
-  assert.strictEqual(cli(dir, src, [run({ conclusion: 'failure' })]), 1, 'R9 the CLI exits 1 on a red run');
-  assert.strictEqual(cli(dir, src, [run({})], ['--max-minutes', '0']), 2, 'R9 the CLI exits 2 on bad input');
+  assert.strictEqual(cli(dir, src, [run({ jobs: jobs3() })]), 0, 'R9 the CLI exits 0 on a green run');
+  assert.strictEqual(cli(dir, src, [run({ conclusion: 'failure', jobs: jobs3({ 'UI shard (ubuntu-latest 1/4)': 'failure' }) })]), 1, 'R9 the CLI exits 1 on a red run');
+  assert.strictEqual(cli(dir, src, [run({ jobs: jobs3() })], ['--max-minutes', '0']), 2, 'R9 the CLI exits 2 on bad input');
 }
 
 const mutants: Array<[string, string, string, string]> = [
@@ -249,7 +258,8 @@ const mutants: Array<[string, string, string, string]> = [
   ['R7 429 fatal', 'return code === 429 || code >= 500', 'return code >= 500', 'R7 429 waits'],
   ['R7 loop ignores fatal', "if (errorKind(err) === 'fatal')", 'if (false)', 'R7 the loop stops at once on a 404'],
   ['R7 stderr dropped', "throw new Error(`${String((e && e.stderr) || '').trim()} ", "throw new Error(`", 'R7 a gh failure carries the HTTP status from stderr'],
-  ['R8 another policy in force', "const POLICY = 'latest-run';", "const POLICY = 'linux-windows-jobs';", 'R0 the policy in force is latest-run until the owners answer #2038 item 1'],
+  ['R0 another policy in force', "const POLICY = 'linux-windows-jobs';", "const POLICY = 'latest-run';", 'R0 the policy in force is linux-windows-jobs (owner pick 2026-11-23)'],
+  ['R8a remedy without the dispatch', "remedy: (o) => `Start a by-hand UI run on the tag (${dispatchRedo(o)}; only its Linux and Windows jobs decide)`,", "remedy: () => 'Re-run the UI run',", 'R8a the remedy is a by-hand UI run on the tag, never a UI re-run'],
   ['R8a macOS read', "|| ((SHARD.exec(j.name) || [])[1] === 'windows'));", "|| ((SHARD.exec(j.name) || [])[1] === 'windows') || ((SHARD.exec(j.name) || [])[1] === 'macos'));", 'R8a a red macOS shard does not veto'],
   ['R8a Linux not read', "|| ((SHARD.exec(j.name) || [])[1] === 'ubuntu')", '', 'R8a a red Linux shard fails'],
   ['R8a missing Windows passes', "!has('windows') || ", '', 'R8a no Windows shard fails'],

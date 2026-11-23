@@ -7,8 +7,9 @@
  * Runs that can count: runs of ui-platforms.yml in this repository whose head_sha is the tagged commit and whose event is a push
  * on main, a workflow_dispatch (any ref whose head is that commit, so the workflow file is the commit's own) or the nightly
  * schedule. A pull_request run never counts: it tests the PR merged into its base, not the commit itself.
- * WHICH of those runs, and which of their jobs, decide is ONE named policy, POLICY below (owner question on #2038, item 1: a red
- * macOS shard of a nightly must not veto a green main push run unless the owners want it to). Each policy is tested on its own.
+ * WHICH of those runs, and which of their jobs, decide is ONE named policy, POLICY below. In force: 'linux-windows-jobs' (owner
+ * pick, Vikram 2026-11-23, #2038 item 1, recorded on #1995): every counting run is judged on its Linux and Windows UI shards and
+ * the decision job only, so a red macOS shard of a nightly or by-hand run never vetoes a release. The other options stay tested.
  * Among the runs the policy counts, the LATEST decides, by run_started_at (a re-run attempt moves it), then the higher run id:
  * an older green run does not outvote a newer red, cancelled or running one (fail closed).
  *   - no counting run yet: wait up to --not-found-minutes (a push run appears within a minute of the merge), then fail;
@@ -68,12 +69,12 @@ const POLICIES = {
     state: runState,
     remedy: (o) => `Start a by-hand run on the tag (${dispatchRedo(o)}; it runs macOS too, and its whole result decides)`,
   },
-  // option (a): the same runs, judged on their Linux and Windows shards and the decision job only
+  // option (a), IN FORCE: the same runs, judged on their Linux and Windows shards and the decision job only
   'linux-windows-jobs': {
     needsJobs: true,
     counts: () => true,
     state: linuxWindowsState,
-    remedy: (o) => `Start a by-hand run on the tag (${dispatchRedo(o)}; only its Linux and Windows jobs decide)`,
+    remedy: (o) => `Start a by-hand UI run on the tag (${dispatchRedo(o)}; only its Linux and Windows jobs decide)`,
   },
   // option (b): only main push runs, and by-hand runs that have no macOS job, decide, as a whole
   'push-or-dispatch-without-macos': {
@@ -83,7 +84,8 @@ const POLICIES = {
     remedy: () => 'A by-hand run counts only without macOS jobs (today\'s by-hand matrix has them), so tag a newer main commit whose main push UI run is green',
   },
 };
-const POLICY = 'latest-run';
+// owner pick, Vikram 2026-11-23 (option (a), recorded on #1995): a red macOS shard never vetoes a release
+const POLICY = 'linux-windows-jobs';
 
 function checkInputs(o) {
   const bad = [];

@@ -7,7 +7,7 @@ const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
-const { median, medianOf, runsOf, loadFlag, validateRecord, parseArgs, buildRecord, writeRecord, runGroup, scrub, scrubDeep, oneLine, nonFinite, PHASE_ENV, SCHEMA, LIMITS } = require('./perf-record.js');
+const { median, medianOf, runsOf, loadFlag, validateRecord, parseArgs, buildRecord, writeRecord, runGroup, scrub, scrubDeep, oneLine, nonFinite, PHASE_ENV, SCHEMA, LIMITS, SETTLE, cpuSettled, settleCpu } = require('./perf-record.js');
 
 assert.strictEqual(median([3, 1, 2]), 2);
 assert.strictEqual(median([1, 2, 3, 10]), 2.5);
@@ -236,4 +236,29 @@ for (const f of ['perf-record.js', 'perf-record-driver.js']) {
   assert.ok(!/require\('assert'\)|shell:\s*true|execSync\(/.test(src), `${f} asserts nothing and spawns no shell`);
   assert.ok(!/\/home\/|\/proc\/self|python/.test(src.replace(/\/proc\/\$\{m\.pid\}[^`]*/g, '')), `${f} has no private path and no Python`);
 }
-groupTests().then(() => console.log('perf-record: ok'), (e) => { console.error(e); process.exit(1); });
+
+/* ---- issue #2023: idle CPU is read after the load tail, never inside it (fake samples; no Electron, no timing) ---- */
+async function settleTests() {
+  // a tail as measured after a Real office load (Apple M4, DPR 2, 6 s samples): busy for about 15 s, then flat near 1 % of one core
+  const TAIL = [11.05, 5.0, 3.2, 2.1, 1.0, 0.95, 1.05, 0.93, 1.02, 0.97];
+  const feed = (arr) => { let i = 0; return { next: async () => arr[Math.min(i++, arr.length - 1)], taken: () => i }; };
+  assert.strictEqual(cpuSettled([11.05, 5.0, 3.2]), false, '2023-rule: a falling tail is not settled');
+  assert.strictEqual(cpuSettled([1.0, 0.95, 1.05]), true, '2023-rule: three samples within 0.5 points are settled');
+  assert.strictEqual(cpuSettled([10, 11, 12]), true, '2023-rule: a busy but steady page is settled (25 % of the median)');
+  assert.strictEqual(cpuSettled([1, 1]), false, '2023-rule: fewer than n samples are never settled');
+  assert.strictEqual(cpuSettled([1, NaN, 1]), false, '2023-rule: a sample that is not a number is not settled');
+  // the read the driver takes is the sample after the wait (idleRead: settleCpu, then cpuOver)
+  const f = feed(TAIL);
+  const st = await settleCpu(f.next);
+  const read = await f.next();
+  assert.ok(st.settled && read <= 1.5, `2023-tail: the idle read comes after the load tail (read ${read}, waited ${st.waitedSamples} samples)`);
+  assert.strictEqual(st.waitedSamples, 7, '2023-tail: the wait is 7 samples on this tail (the work counter)');
+  const flat = feed([1, 1.1, 0.9, 5]);
+  assert.strictEqual((await settleCpu(flat.next)).waitedSamples, SETTLE.n, '2023-flat: a settled page waits only n samples');
+  const never = await settleCpu(feed([1, 4, 1, 4, 1, 4, 1, 4, 1, 4, 1, 4, 1, 4, 1, 4, 1, 4, 1, 4, 1, 4, 1, 4]).next);
+  assert.ok(!never.settled && never.waitedSamples === SETTLE.cap && /did not settle/.test(never.note), '2023-cap: a page that never settles ends at the cap and says so');
+  // the driver wires it: both idle reads go through idleRead, which pauses the instruments' frame loop
+  const drv = fs.readFileSync(path.join(__dirname, 'perf-record-driver.js'), 'utf8');
+  assert.ok(/R\.idleVisible = await idleRead\(/.test(drv) && /out\.ab\.idle\[k\] = await idleRead\(/.test(drv) && /__P\.pause\(\)[\s\S]{0,400}settleCpu\(/.test(drv), '2023-wire: the idle reads wait for CPU to settle with the frame loop paused');
+}
+settleTests().then(groupTests).then(() => console.log('perf-record: ok'), (e) => { console.error(e); process.exit(1); });

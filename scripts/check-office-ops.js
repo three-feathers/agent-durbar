@@ -25,7 +25,7 @@ const path = require('path');
 const assert = require('assert');
 const { contentTracing } = require('electron');
 const { helpers, waits, jsLiteral } = require('./driver-helpers');
-const { judge } = require('./office-ops-rules');
+const { judge, toStatus } = require('./office-ops-rules');
 
 const MAX_CHANGES = 10; // spec 097 T158: SVG animations step at under 10 changes a second (per animation)
 const ANIM_MUTANT = process.env.OPS_ANIM_MUTANT || '';
@@ -76,7 +76,7 @@ const INSTRUMENT = `(()=>{ if(window.__ops)return; const O=window.__ops={on:fals
   const bump=()=>{if(O.on)O.reads++;};
   for(const prop of ['offsetWidth','offsetHeight','offsetTop','offsetLeft','clientWidth','clientHeight','clientTop','clientLeft','scrollHeight','scrollWidth','scrollTop','scrollLeft'])
     for(const proto of [HTMLElement.prototype,Element.prototype]){const d=Object.getOwnPropertyDescriptor(proto,prop);if(d&&d.get)Object.defineProperty(proto,prop,{...d,get(){bump();return d.get.call(this);}});}
-  for(const m of ['getBoundingClientRect','getClientRects']){const f=Element.prototype[m];Element.prototype[m]=function(){bump();return f.apply(this,arguments);};}
+  for(const P of [Element.prototype,Range.prototype])for(const m of ['getBoundingClientRect','getClientRects']){const f=P[m];P[m]=function(){bump();return f.apply(this,arguments);};}
   const g=window.getComputedStyle;window.getComputedStyle=function(e){if(O.on&&e&&e.id==='floor')O.gcsFloor++;return g.apply(this,arguments);};
   O.start=()=>{O.reads=0;O.gcsFloor=0;O.base=window.__durbarSimUi.ops();O.on=true;};
   O.stop=()=>{O.on=false;const n=window.__durbarSimUi.ops();return {reads:O.reads,renders:n.renders-O.base.renders,searches:n.searches-O.base.searches,gcsFloor:O.gcsFloor};};
@@ -216,7 +216,7 @@ module.exports = async (ctx) => {
     const ids = await js(`window.__durbarSimUi.agents().filter(a=>!a.parent).map(a=>a.id)`);
     const id = ids[3];
     const emit = (st) => `window.__durbarSimEmit({type:'status',sessionId:${jsLiteral(id)},timestamp:Date.now(),status:${jsLiteral(st)}})`;
-    await drawn(emit('working')); // so that every change below is a real change of one agent's status
+    await toStatus(js, drawn, id, 'working'); // so that every change below is a real change of one agent's status (a draw is waited for only when it changes: issue 2043)
     const per = { renders: [], searches: [], reads: [], gcsFloor: [] }, leaks = [], due = [];
     for (let i = 0; i < 8; i++) {
       /* a settled window (#1195, 3 renders once in 8 on Linux CI, 3 of 10 runs under a CPU load): the previous update's visit (a desk walking to a place starts, or ends, on the
@@ -251,12 +251,41 @@ module.exports = async (ctx) => {
     rows[`floorStyleReadsPerStatus@${n}`] = med(per.gcsFloor);
     rows[`readsPerStatus@${n}`] = med(per.reads);
 
+    /* spec 001 delta 2026-11-22 (issue 2024): a desk that moves inside its room (it waits for you: to the front; it works again: back) is the same desks in
+       another order. That re-ran the whole layout search (18 to 21 probes, about 3000 layout reads, 65 to 76 ms of the 79 ms p95 at DPR 2); now it is one probe of the
+       layout it has. Asserted where the office fits (15 agents always; a scrolling office searches as before). The order must really change, or the row tests nothing */
+    const fits = await js(`document.getElementById('stage').dataset.fit==='ok'`);
+    if (n === 15) assert.ok(fits, `${n} agents: the office fits at 1440x900, so the desk-order case is asserted`);
+    if (fits) {
+      const mover = await js(`(()=>{for(const r of document.querySelectorAll('#stage .room')){const d=[...r.querySelectorAll('.desk[data-id]')].map(e=>e.dataset.id).filter(x=>/^sim-\\d+$/.test(x));if(d.length>=3)return d[d.length-1];}return null;})()`);
+      assert.ok(mover, `${n} agents: a room with three desks or more`);
+      const place = `(()=>{const e=document.querySelector('#stage .desk[data-id=${jsLiteral(mover)}]');const r=e&&e.closest('.room');return r?[...r.querySelectorAll('.desk[data-id]')].indexOf(e):-1;})()`;
+      const emitM = (st) => `window.__durbarSimEmit({type:'status',sessionId:${jsLiteral(mover)},timestamp:Date.now(),status:${jsLiteral(st)}})`;
+      await toStatus(js, drawn, mover, 'working'); // issue 2043: the mover is often already working (sim-4, the agent of the loop above), and an unchanged state draws nothing
+      const reorder = { searches: [], probes: [], moved: [] };
+      for (let i = 0; i < 4; i++) {
+        for (const st of ['needs-permission', 'working']) {
+          assert.ok(await until(`window.__durbarSimUi.visitsSettled()&&window.__durbarSimUi.settleNow()`, 15000), `${n} agents: the office settled before reorder ${i} ${st}`);
+          await js(TWO_FRAMES);
+          const at0 = await js(place), o0 = await js(`window.__durbarSimUi.ops()`);
+          await drawn(emitM(st));
+          const o1 = await js(`window.__durbarSimUi.ops()`), at1 = await js(place);
+          reorder.searches.push(o1.searches - o0.searches); reorder.probes.push(o1.probes - o0.probes); reorder.moved.push(at0 !== at1 ? 1 : 0);
+        }
+      }
+      console.log('[ops]', n, 'agents, desk moves in its room (8): searches', reorder.searches.join(','), 'probes', reorder.probes.join(','), 'moved', reorder.moved.join(','));
+      assert.ok(reorder.moved.every((m) => m === 1), `${n} agents: every waiting or working status moved ${mover} inside its room (${reorder.moved}), so the reorder is real`);
+      assert.ok(reorder.searches.every((s) => s === 0), `${n} agents: a desk that moves inside its room runs no layout search (searches ${reorder.searches}, probes ${reorder.probes})`);
+      rows[`searchesPerReorder@${n}`] = Math.max(...reorder.searches);
+      rows[`probesPerReorder@${n}`] = Math.max(...reorder.probes);
+    }
+
     /* one live paint (spec 001 FR-028, review of #1138): a thinking delta rewrites one desk's live line without a render. Its layout reads, through the
        pencils' frame (two frames waited), must not grow with the pencils of the room: the line's height is read, the names only when it changed */
     const lid = await js(`(()=>{const e=document.querySelector('#stage .desk[data-id] [data-live]');return e&&e.dataset.live;})()`);
     assert.ok(lid, `${n} agents: a desk has a live line`);
     const liveLine = `document.querySelector('#stage [data-live=${jsLiteral(lid)}]')`;
-    await drawn(emit('working').split(id).join(lid)); // working, so that the deltas below change no status
+    await toStatus(js, drawn, lid, 'working'); // working, so that the deltas below change no status
     const live = { reads: [], renders: [] };
     for (let i = 0; i < 8; i++) {
       const word = `Ops step ${i} checked`;
@@ -277,7 +306,7 @@ module.exports = async (ctx) => {
     await js(INSTRUMENT);
     const ids80 = await js(`window.__durbarSimUi.agents().filter(a=>!a.parent).map(a=>a.id)`);
     const emit80 = (st) => `window.__durbarSimEmit({type:'status',sessionId:${jsLiteral(ids80[3])},timestamp:Date.now(),status:${jsLiteral(st)}})`;
-    await drawn(emit80('working'));
+    await toStatus(js, drawn, ids80[3], 'working');
     const per80 = { renders: [], searches: [], reads: [] };
     for (let i = 0; i < 8; i++) {
       assert.ok(await until(`window.__durbarSimUi.visitsSettled()&&window.__durbarSimUi.settleNow()`, 15000), `${n} agents at 1280x800: the office settled before update ${i}`);

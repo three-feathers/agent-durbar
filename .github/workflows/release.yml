@@ -12,7 +12,8 @@ name: Release
 # Test builds (spec 008 FR-121..FR-124): a tag vX.Y.Z[-alpha|beta|rc.N]-test.M may be on any branch; package.json must be the tag
 # without -test.M. Its draft is titled "(test build)", its notes list the commits not on main (masked), and nothing is folded.
 # UI gate (spec 117 FR-014, T045): the first job, ui-gate, waits for the "UI on three OSes" run (ui-platforms.yml) of exactly the
-# tagged commit and fails unless the latest one finished green; every other job needs it. A test tag on a branch needs a by-hand
+# tagged commit and fails unless the latest one is green on its Linux and Windows UI jobs (macOS not read: owner pick 2026-11-23);
+# every other job needs it. A test tag on a branch needs a by-hand
 # run on the tag first (gh workflow run ui-platforms.yml --ref <tag>). Rules and messages: scripts/release-ui-gate.js.
 on:
   push:
