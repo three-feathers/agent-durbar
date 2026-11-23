@@ -238,6 +238,25 @@ assert.strictEqual(reads("const distance = 1;"), false, 'a word starting with di
     assert.strictEqual(wpids.length, 1, 'win32: only the suite node process is counted, not taskkill');
     for (let i = 0; i < 100 && alive(wpids[0]); i++) await new Promise((r) => setTimeout(r, 50));
     assert.ok(!alive(wpids[0]) && w.code === 0 && /test:sleep/.test(w.note), `win32: the suite is stopped and the lane ends green naming it (got ${w.code} ${w.note})`);
+    // spec 117 T080 (bug on #2052): the lane's temporary tsconfig resolves types like the full compile. A picked set that imports
+    // demo-oauth-mcp.ts lists one @types/node copy, the root one, as the full project does (tsc --listFilesOnly: no type check, fast);
+    // the mutant that writes the config under the OS temp folder loads Electron's nested copy too and dies here.
+    const tscBin = require.resolve('typescript/bin/tsc', { paths: [ROOT] });
+    const { execFileSync } = require('child_process') as typeof import('child_process');
+    const nodeModules = fs.realpathSync(path.join(ROOT, 'node_modules')); // paths relative to it (a linked node_modules resolves elsewhere)
+    const nodeTypes = (cfgFile: string) => execFileSync(process.execPath, [tscBin, '-p', cfgFile, '--listFilesOnly'], { cwd: ROOT, encoding: 'utf8', shell: false, maxBuffer: 64 * 1024 * 1024 })
+      .split(/\r?\n/).map((f) => f.replace(/\\/g, '/')).filter((f) => /\/@types\/node\/http\.d\.ts$/.test(f)).map((f) => path.relative(nodeModules, f).replace(/\\/g, '/')).sort();
+    const full = nodeTypes(path.join(ROOT, 'tsconfig.scripts.json'));
+    assert.deepStrictEqual(full, ['@types/node/http.d.ts'], `the full scripts project loads one @types/node, the root one (got ${full.join(', ')})`);
+    type W = { writeFastTsconfig: (src: string[], root?: string) => { file: string; remove: () => void } };
+    const picked = (w: W) => { const c = w.writeFastTsconfig(['scripts/test-demo-oauth-mcp.ts']); try { return { types: nodeTypes(c.file), file: c.file }; } finally { c.remove(); } };
+    const real2 = picked(load(toLf(raw)) as unknown as W);
+    assert.deepStrictEqual(real2.types, full, `the lane's compile of a picked set loads the same @types/node as the full compile (got ${real2.types.join(', ')})`);
+    assert.ok(!path.relative(ROOT, real2.file).startsWith('..') && !fs.existsSync(path.dirname(real2.file)), 'the temporary config sits inside the repository and is removed after');
+    const tmpFrom = 'fs.mkdtempSync(path.join(root, \'.fast-lane-\'))';
+    for (const text of [toLf(raw), toLf(crlf(raw))]) assert.ok(text.includes(tmpFrom), 'mutant anchor: the config folder inside the repository');
+    const inTemp = picked(load(toLf(raw).replace(tmpFrom, () => "fs.mkdtempSync(path.join(require('os').tmpdir(), 'fast-lane-'))")) as unknown as W);
+    assert.notDeepStrictEqual(inTemp.types, full, `mutant "config in the OS temp folder" dies: it loads other @types/node files (got ${inTemp.types.join(', ')})`);
     fs.rmSync(tmp, { recursive: true, force: true });
   };
   laneDone = run();
