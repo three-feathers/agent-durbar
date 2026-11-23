@@ -2,7 +2,7 @@
 # Spec 008 FR-104, FR-191: which parts of CI a pull request needs, computed inside each job (no separate "What changed" job in
 # ci.yml: it made every other job wait for a second runner). The decision is in ONE place, .github/scripts/ci-changes.js (read its
 # header): on a pull request it diffs the test merge commit (`git diff --name-only HEAD^1 HEAD`, fetch-depth 2) and writes
-# code, themes, ui and macos to $GITHUB_OUTPUT; on every other event all are true. Node is on every runner image before setup-node.
+# code, themes, ui and os_sensitive to $GITHUB_OUTPUT; on every other event all are true. Node is on every runner image before setup-node.
 #
 # Review of PR #1349 (as spec-kit.yml's spec-numbers job, PR #1316): on a pull request the BASE branch's copy of the decision runs
 # (HEAD^1 of the test merge commit, reviewed on main), on the PR's checkout as data, so a PR that breaks ci-changes.js cannot skip its
@@ -10,7 +10,7 @@
 # workflow files: CODEOWNERS review of .github/ guards those.
 set -euo pipefail
 out="${GITHUB_OUTPUT:-/dev/stdout}"
-all() { printf 'code=true\nthemes=true\nui=true\nmacos=true\nos_sensitive=true\n' >> "$out"; }
+all() { printf 'code=true\nthemes=true\nui=true\nos_sensitive=true\n' >> "$out"; }
 if [ "${EVENT_NAME:-}" != "pull_request" ]; then
   echo "${EVENT_NAME:-no event}: not a pull request, everything runs."
   all
@@ -30,7 +30,7 @@ if ! git show 'HEAD^1:.github/scripts/ci-changes.js' > "$tmp/.github/scripts/ci-
 fi
 # spec 117 FR-012 (T402) and FR-387, reviews of #2032 and #2039: fail closed and write each decision output EXACTLY ONCE (GitHub does
 # not document which line wins when a name repeats). The base copy writes into a file in the temp folder; each of code, themes, ui,
-# macos, os_sensitive must be written once with exactly `true` or `false`; when any is left out (a base copy that exits 0 silently,
+# os_sensitive must be written once with exactly `true` or `false`; when any is left out (a base copy that exits 0 silently,
 # or one older than os_sensitive), repeated or written with another value (`FALSE`, `false `, empty), everything runs (all true).
 # Arguments pass through: `--suites` asks for the fast lane's outputs only (spec 117 FR-386, fast-lane.yml, advisory), passed on as written.
 raw="$tmp/decision-output"
@@ -40,7 +40,7 @@ if [ "${1:-}" = "--suites" ]; then
   exit 0
 fi
 lines=""
-for k in code themes ui macos os_sensitive; do
+for k in code themes ui os_sensitive; do
   n=0; v=""
   if [ -f "$raw" ]; then n="$(grep -c "^$k=" "$raw" || true)"; v="$(grep "^$k=" "$raw" | head -n 1 | cut -d= -f2- || true)"; fi
   if [ "$n" != 1 ] || { [ "$v" != true ] && [ "$v" != false ]; }; then

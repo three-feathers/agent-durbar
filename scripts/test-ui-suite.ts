@@ -352,7 +352,7 @@ for (const [f, y] of [['ci.yml', ci], ['spec-kit.yml', sk]]) assert.ok(/^ {2}mer
 // FR-109: the Spec Kit gate re-runs on description edits (Spec-Exempt line), not on label changes
 assert.ok(/types: \[opened, synchronize, reopened, edited, ready_for_review\]/.test(sk) && !/types: \[[^\]]*labeled/.test(sk), 'spec-kit.yml: edited yes, labeled/unlabeled no');
 // FR-107: pull request workflows skip drafts, run again when marked ready, and cancel superseded runs, never runs on main
-for (const f of ['ci.yml', 'ui-platforms.yml', 'spec-kit.yml', 'install-check.yml', 'installed-app.yml', 'packaged-check.yml', 'pages.yml', 'macos-pr.yml', 'mac-titlebar-pr.yml']) {
+for (const f of ['ci.yml', 'ui-platforms.yml', 'spec-kit.yml', 'install-check.yml', 'installed-app.yml', 'packaged-check.yml', 'pages.yml']) {
   const y = fs.readFileSync(path.join(WF, f), 'utf8');
   assert.ok(/^ {2}pull_request:\r?\n {4}types: \[[^\]]*ready_for_review\]/m.test(y), `${f}: runs again when a draft is marked ready`);
   const jobs = jobsOf(y);
@@ -361,41 +361,20 @@ for (const f of ['ci.yml', 'ui-platforms.yml', 'spec-kit.yml', 'install-check.ym
   if (f === 'ui-platforms.yml') assert.ok(y.includes("group: ${{ github.workflow }}-${{ github.event_name == 'push' && 'ui-main' || github.event.pull_request.number || github.run_id }}") && y.includes("cancel-in-progress: ${{ github.event_name == 'pull_request' || github.event_name == 'push' }}"), `${f}: one group per PR and one for main pushes, cancelling PR and main-push runs only`);
   else assert.ok(/group: \$\{\{ github\.workflow \}\}-\$\{\{ github\.event\.pull_request\.number \|\| github\.(run_id|ref) \}\}/.test(y) && /cancel-in-progress: \$\{\{ github\.event_name == 'pull_request' \}\}/.test(y), `${f}: one concurrency group per PR, cancelling only PR runs`);
 }
-// FR-135: the real macOS build and test runs on a pull request only for platform-sensitive paths (GitHub's `paths:` filter), never
-// as a required check (the ruleset keeps the FR-106 stub), and uses no secrets and no pull_request_target
-const mp = fs.readFileSync(path.join(WF, 'macos-pr.yml'), 'utf8');
-const mpPaths = (mp.match(/^ {4}paths:\r?\n((?: {6}- '[^']+'\r?\n)+)/m)?.[1] ?? '').split(/\r?\n/).map((l) => l.replace(/^ {6}- '|'$/g, '')).filter(Boolean);
-for (const p of ['src/main/**', 'src/adapters/**', 'src/shared/**', 'src/preload/**', 'scripts/fakes/**', 'scripts/run-tests.js', 'scripts/test-*', 'scripts/*.sh', 'package.json', 'package-lock.json']) assert.ok(mpPaths.includes(p), `macos-pr.yml filters on ${p}`);
-assert.ok(!mpPaths.some((p) => p.startsWith('src/renderer') || p.startsWith('docs') || p.startsWith('specs')), 'macos-pr.yml: UI, docs and specs do not start macOS');
-assert.ok(/runs-on: macos-latest/.test(mp) && mp.includes('npm test') && !/pull_request_target|secrets\./.test(mp) && !/^ {2}push:|schedule:/m.test(mp), 'macos-pr.yml: real macOS npm test on pull requests only, no secrets');
-assert.ok(!/name: Build and test/.test(mp), 'macos-pr.yml does not reuse a required check name');
-{ // FR-191: the macOS job's first step decides; every later step runs only on macos=true (docs and a version-only bump skip them)
-  const mj = jobsOf(mp)['macos-test'];
-  const steps = mj.slice(mj.indexOf('steps:')).split(/\n {6}- /).slice(1);
-  assert.ok(mj.includes('fetch-depth: 2') && steps[1].includes('id: changes') && steps[1].includes('bash .github/scripts/ci-changes.sh'), 'macos-pr.yml: checkout, then the decision');
-  assert.ok(steps.length >= 6 && steps.slice(2).every((st) => st.startsWith("if: steps.changes.outputs.macos == 'true'")), 'macos-pr.yml: every step after the decision needs macos=true');
-}
-// FR-200: the Mac title bar check on a pull request that changes the renderer's CSS: its own workflow (`paths:` is workflow-level),
-// that check only, no secrets, not required; the filter is matched here the way GitHub does (glob over the changed paths)
+// FR-135 and FR-200, reversed by the spec 008 delta 2026-11-23 (spec 117 O1): both macOS workflows run by hand only, never on a pull
+// request (test:ci-macos-off-prs checks every workflow); macos-pr.yml runs the whole build and test, mac-titlebar-pr.yml that one check
 {
+  const strip = (y: string) => y.replace(/#.*$/gm, '');
+  const mp = fs.readFileSync(path.join(WF, 'macos-pr.yml'), 'utf8');
   const mt = fs.readFileSync(path.join(WF, 'mac-titlebar-pr.yml'), 'utf8');
-  const paths = (mt.match(/^ {4}paths:\r?\n((?: {6}- '[^']+'\r?\n)+)/m)?.[1] ?? '').split(/\r?\n/).map((l) => l.replace(/^ {6}- '|'$/g, '')).filter(Boolean);
-  const globRe = (g: string) => new RegExp('^' + g.replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*\*\//g, '\u0001').replace(/\*\*/g, '\u0002').replace(/\*/g, '[^/]*').replace(/\u0001/g, '(?:.*/)?').replace(/\u0002/g, '.*') + '$');
-  const matches = (ps: string[], files: string[]) => files.some((f) => ps.some((g) => globRe(g).test(f)));
-  const sel = (ps: string[]) => ({
-    css: matches(ps, ['src/renderer/styles.css']), nested: matches(ps, ['src/renderer/realoffice/sets/x.css']), own: matches(ps, ['scripts/check-mac-titlebar.js']),
-    docs: matches(ps, ['docs/collaboration.md', 'specs/008-packaging-and-release/spec.md', 'README.md']), js: matches(ps, ['src/renderer/app.js']), main: matches(ps, ['src/main/main.ts']),
-  });
-  assert.deepStrictEqual(sel(paths), { css: true, nested: true, own: true, docs: false, js: false, main: false }, 'mac-titlebar-pr.yml: a CSS or check change matches; docs, specs, renderer JS and main do not');
-  // mutants: a filter that also takes docs, and one that lost the CSS glob, are told apart
-  assert.strictEqual(sel([...paths, 'docs/**']).docs, true, 'mutant: docs/** added is seen');
-  assert.strictEqual(sel(paths.filter((p) => !p.endsWith('.css'))).css, false, 'mutant: without the CSS glob a CSS change no longer matches');
-  assert.ok(paths.every((p) => !/^(src\/main|src\/adapters|src\/shared|src\/preload|package)/.test(p)), 'mac-titlebar-pr.yml: no main-process path');
-  assert.ok(/runs-on: macos-latest/.test(mt) && mt.includes('node scripts/check-mac-titlebar.js') && !/npm test|ui-suite|check-office/.test(mt.replace(/#.*$/gm, '')), 'mac-titlebar-pr.yml: the Mac title bar check only');
-  assert.ok(!/pull_request_target|secrets\./.test(mt.replace(/#.*$/gm, '')) && !/^ {2}(push|schedule|merge_group|workflow_dispatch):/m.test(mt), 'mac-titlebar-pr.yml: pull requests only, no secrets');
-  assert.ok(/permissions:\r?\n {2}contents: read\r?\n/.test(mt) && !/name: Build and test/.test(mt), 'mac-titlebar-pr.yml: contents: read, no required check name');
-  for (const a of mt.match(/uses: [^\s]+@[0-9a-f]{40}/g) ?? []) assert.ok(mp.includes(a) || a.includes('./'), `mac-titlebar-pr.yml: ${a} is an action pin macos-pr.yml already uses`);
-  assert.ok(!/uses: [^.\s][^\s]*@(?![0-9a-f]{40})/.test(mt), 'mac-titlebar-pr.yml: every action is pinned to a commit');
+  for (const [f, y] of [['macos-pr.yml', mp], ['mac-titlebar-pr.yml', mt]]) {
+    assert.ok(/^on:\r?\n {2}workflow_dispatch:\r?\n\r?\n?permissions:/m.test(strip(y)) && !/^ {2}(pull_request|pull_request_target|merge_group|push|schedule|workflow_run):/m.test(strip(y)), `${f}: by hand only (workflow_dispatch, no other trigger)`);
+    assert.ok(/permissions:\r?\n {2}contents: read\r?\n/.test(y) && !/secrets\./.test(strip(y)) && !/name: Build and test/.test(y) && /runs-on: macos-latest/.test(y), `${f}: macOS, contents: read, no secrets, no required check name`);
+    assert.ok(!/uses: [^.\s][^\s]*@(?![0-9a-f]{40})/.test(y), `${f}: every action is pinned to a commit`);
+  }
+  const mj = jobsOf(mp)['macos-test'];
+  assert.ok(mj && !/^\s+(- )?if:/m.test(mj) && !/ci-changes/.test(mj) && /- run: npm run build\r?\n\s+- run: npm test\s*$/.test(mj), 'macos-pr.yml: no condition and no decision step: a by-hand run builds and runs the whole npm test');
+  assert.ok(mt.includes('node scripts/check-mac-titlebar.js') && !/npm test|ui-suite|check-office/.test(strip(mt)), 'mac-titlebar-pr.yml: the Mac title bar check only');
 }
 // FR-106: macOS runs on pull requests nowhere (installed app, packaged check and install check too) and nightly failures are reported
 for (const f of ['installed-app.yml', 'packaged-check.yml']) {

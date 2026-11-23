@@ -232,7 +232,7 @@ if (haveBash) {
   // a renderer-only PR: the real base copy says false
   assert.strictEqual(lastOs(bash(repoWith(realDecision, { 'src/renderer/app.js': '// app, changed\n' }))), 'os_sensitive=false', 'wrapper: a renderer-only pull request is not OS-sensitive');
   // the PR edits the decision to always say false and changes src/main: the base copy runs, so true
-  const liar = "require('fs').appendFileSync(process.env.GITHUB_OUTPUT, 'code=true\\nthemes=false\\nui=true\\nmacos=true\\nos_sensitive=false\\n');\n";
+  const liar = "require('fs').appendFileSync(process.env.GITHUB_OUTPUT, 'code=true\\nthemes=false\\nui=true\\nos_sensitive=false\\n');\n";
   const edited = repoWith(realDecision, { '.github/scripts/ci-changes.js': liar, 'src/main/main.ts': '// main\n' });
   assert.strictEqual(lastOs(bash(edited)), 'os_sensitive=true', 'wrapper: a PR that edits ci-changes.js to say false still gets the base decision (true)');
   // mutant: a wrapper that runs the PR's own copy is fooled
@@ -241,21 +241,21 @@ if (haveBash) {
   const prCopy = repoWith(realDecision, { '.github/scripts/ci-changes.js': liar, 'src/main/main.ts': '// main\n' }, wrapper.replace(RUN_BASE, 'node .github/scripts/ci-changes.js --root .'));
   assert.strictEqual(lastOs(bash(prCopy)), 'os_sensitive=false', 'mutant: a wrapper running the PR copy says false (so running the base copy is what keeps it true)');
   // a base copy older than the output (it writes the four old lines only), or one whose value is not exact: true is appended
-  const old = "require('fs').appendFileSync(process.env.GITHUB_OUTPUT, 'code=true\\nthemes=false\\nui=true\\nmacos=true\\n');\n";
-  const says = (v: string) => `require('fs').appendFileSync(process.env.GITHUB_OUTPUT, 'code=true\\nthemes=false\\nui=true\\nmacos=true\\nos_sensitive=${v}\\n');\n`;
+  const old = "require('fs').appendFileSync(process.env.GITHUB_OUTPUT, 'code=true\\nthemes=false\\nui=true\\n');\n";
+  const says = (v: string) => `require('fs').appendFileSync(process.env.GITHUB_OUTPUT, 'code=true\\nthemes=false\\nui=true\\nos_sensitive=${v}\\n');\n`;
   const docs = { 'docs/a.md': 'x\n' };
   // reviews of #2032 and #2039: every decision name is written EXACTLY ONCE; when the base copy left one out, repeated it or wrote
   // another value, everything runs (all five true, once each)
-  const ALL5 = 'code=true\nthemes=true\nui=true\nmacos=true\nos_sensitive=true\n';
-  assert.strictEqual(bash(repoWith(old, docs)), ALL5, 'wrapper: a base copy that writes no os_sensitive line: everything runs');
-  for (const v of ['FALSE', 'False', 'false ', '', 'no', '0']) assert.strictEqual(bash(repoWith(says(v), docs)), ALL5, `wrapper: os_sensitive=${JSON.stringify(v)} is not exact: everything runs`);
-  const dup = "require('fs').appendFileSync(process.env.GITHUB_OUTPUT, 'code=false\\nthemes=false\\nui=false\\nmacos=false\\nos_sensitive=false\\nos_sensitive=false\\n');\n";
-  assert.strictEqual(bash(repoWith(dup, docs)), ALL5, 'wrapper: a repeated os_sensitive line: everything runs, each name once');
-  assert.strictEqual(bash(repoWith('process.exit(0);\n', docs)), ALL5, 'wrapper: a base copy that writes nothing: everything runs');
-  assert.strictEqual(bash(repoWith(says('false'), docs)), 'code=true\nthemes=false\nui=true\nmacos=true\nos_sensitive=false\n', 'wrapper: an exact false is kept');
-  assert.strictEqual(bash(repoWith(says('true'), docs)), 'code=true\nthemes=false\nui=true\nmacos=true\nos_sensitive=true\n', 'wrapper: an exact true is kept');
+  const ALL4 = 'code=true\nthemes=true\nui=true\nos_sensitive=true\n';
+  assert.strictEqual(bash(repoWith(old, docs)), ALL4, 'wrapper: a base copy that writes no os_sensitive line: everything runs');
+  for (const v of ['FALSE', 'False', 'false ', '', 'no', '0']) assert.strictEqual(bash(repoWith(says(v), docs)), ALL4, `wrapper: os_sensitive=${JSON.stringify(v)} is not exact: everything runs`);
+  const dup = "require('fs').appendFileSync(process.env.GITHUB_OUTPUT, 'code=false\\nthemes=false\\nui=false\\nos_sensitive=false\\nos_sensitive=false\\n');\n";
+  assert.strictEqual(bash(repoWith(dup, docs)), ALL4, 'wrapper: a repeated os_sensitive line: everything runs, each name once');
+  assert.strictEqual(bash(repoWith('process.exit(0);\n', docs)), ALL4, 'wrapper: a base copy that writes nothing: everything runs');
+  assert.strictEqual(bash(repoWith(says('false'), docs)), 'code=true\nthemes=false\nui=true\nos_sensitive=false\n', 'wrapper: an exact false is kept');
+  assert.strictEqual(bash(repoWith(says('true'), docs)), 'code=true\nthemes=false\nui=true\nos_sensitive=true\n', 'wrapper: an exact true is kept');
   // mutants: the raw output passed through (no once-only rule) leaves a missing name missing and a repeat repeated; no exact test lets FALSE through
-  const LOOP = /\nlines=""\nfor k in code themes ui macos os_sensitive; do\n[^]*?\ndone\nprintf '%s' "\$lines" >> "\$out"\n/;
+  const LOOP = /\nlines=""\nfor k in code themes ui os_sensitive; do\n[^]*?\ndone\nprintf '%s' "\$lines" >> "\$out"\n/;
   assert.ok(LOOP.test(wrapper), 'mutant anchor: the once-only loop');
   const passThrough = wrapper.replace(LOOP, '\ncat "$raw" >> "$out"\n');
   assert.strictEqual(lastOs(bash(repoWith(old, docs, passThrough))), null, 'mutant: without the loop a base copy with no os_sensitive leaves it missing');

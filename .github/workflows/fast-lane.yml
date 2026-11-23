@@ -1,7 +1,7 @@
 name: Fast lane
 
-# Spec 117 FR-386 (owner order, Vikram 2026-11-22: faster delivery without losing quality). On each pull request, on all three OSes,
-# run ONLY the `npm test` suites the diff touches, so a Windows- or macOS-only failure (CRLF, 8.3 short paths, /private/var realpath)
+# Spec 117 FR-386 (owner order, Vikram 2026-11-22: faster delivery without losing quality). On each pull request, on Linux and Windows,
+# run ONLY the `npm test` suites the diff touches, so a Windows-only failure (CRLF, 8.3 short paths)
 # shows in a few minutes instead of at the end of a 14-25 minute Build and test leg, one bug per round. ADVISORY: not a required
 # check, and it decides nothing else; the required jobs in ci.yml still run every suite, and the merge queue runs everything.
 # Which suites: .github/scripts/ci-changes.js `--suites`, the one decision, run as the BASE branch's copy by ci-changes.sh (when the
@@ -33,7 +33,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
+        # macOS left the lane (spec 008 delta 2026-11-23, spec 117 O1): no macOS runner on pull requests
+        os: [ubuntu-latest, windows-latest]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

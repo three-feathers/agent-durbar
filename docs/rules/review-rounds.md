@@ -16,7 +16,7 @@ This file is rule text, part of [AGENTS.md](../../AGENTS.md) (FR-082): read it b
 
 (FR-036)
 - **CI is the source of truth**: reviewers read `gh pr checks` for the head sha, not re-run suites.
-- Locally run only what CI cannot prove, once: your own mutations, probes, security checks, Windows/macOS-only paths, drivers not in CI. PR CI runs real macOS only for platform-sensitive paths (FR-135), else a stub (FR-106): write "not verified on macOS".
+- Locally run only what CI cannot prove, once: your own mutations, probes, security checks, Windows/macOS-only paths, drivers not in CI. PR CI runs no macOS (FR-106 stub; macos-pr.yml by hand): write "not verified on macOS".
 - Post one-line `checks run at <sha>: …` after checks (what you ran); a reviewer only for checks CI cannot run. `reviewing at <sha>` is optional. Cite the source of results you did not produce. `pr-gate.sh` treats exactly these as status, anything more as an ask.
 - The record holds only for its sha, except a main merge with unchanged patch id through the merge queue; `--admin` waits for CI on the new head.
 - **Rounds** (FR-042): one list per round in chat, in landing order; claim what you review. Skip a PR assigned to another unless an owner asks or its claim is expired (AGENTS.md *Delivery speed*).

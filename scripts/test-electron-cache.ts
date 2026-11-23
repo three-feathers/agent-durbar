@@ -248,7 +248,8 @@ async function main(): Promise<void> {
     'release.yml:build': 14.4, 'ui-platforms.yml:ui': 22.7, 'world-matrix.yml:subset': 2.1,
     'world-matrix.yml:weekly': 25, // estimate: no weekly run among the last 40 runs of the workflow
   };
-  // spec 117 T078: the path-filtered macOS job keeps exactly the stop-gap limit (45, as ci.yml build-test) until T025 lowers both
+  // spec 117 T078: macos-pr.yml keeps exactly the stop-gap limit (45); since the O1 macOS row (2026-11-23) it runs by hand only and
+  // keeps 45 for that run (T079 obsolete, T025 lowers ci.yml only)
   const STOPGAP = 45;
   // The one check: throws unless macos-test has exactly the stop-gap limit as a number. The pin and its mutants both call it.
   const checkMacosLimit = (text: string): void => {
