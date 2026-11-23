@@ -38,8 +38,9 @@ const block = (head: string): string => {
 const twoLines = (head: string): string => { const i = LINES.findIndex((x) => x.startsWith(head)); assert.ok(i >= 0, head); return LINES[i] + '\n' + LINES[i + 1]; };
 
 const DEFS = ['const homeMask=', 'const helperMask=', 'const deskMask=', 'const SHORT=', 'const RED=', 'const STX=', 'const SAFE=',
-  'const safeExcerpt=', 'const esc=', 'function annHome(', 'function annPart(', 'function liveMask(', 'function stripMask(', 'function toast('].map(line).join('\n')
-  + '\n' + twoLines('function mountToast(') + '\n' + block('function toastActions(') + '\n' + block('function paintMcpStrip(');
+  'const safeExcerpt=', 'const esc=', 'function annHome(', 'function annPart(', 'function liveText(', 'function liveMask(', 'function stripMask(', 'function toast('].map(line).join('\n')
+  + '\n' + twoLines('function mountToast(') + '\n' + block('function toastActions(') + '\n' + block('function paintMcpStrip(') + '\n' + block('function renderRestoreStrip(') + '\n' + ['const crashSt=', 'const crashLeft='].map(line).join('\n')
+  + '\n' + block('function paintCrashStrip(') + '\n' + twoLines('const awayWords=') + '\n' + block('async function renderAwayStrip(') + '\n' + block('function afRender(');
 
 // main's announcement mask on 2026-11-23 (ee96eefb3), frozen: the reference of the differential fuzz below
 const FROZEN_MAIN: string[] = [
@@ -54,14 +55,17 @@ const FROZEN_MAIN: string[] = [
   "function annPart(t){const s=String(t==null?'':t);if(!s)return '';const h=annHome(s);if(typeof h!=='string'||!h)return null;const m=deskMask(h);if(typeof m!=='string'||!m||m.includes('[redaction failed]')||!STX||typeof STX.unesc!=='function')return null;const u=STX.unesc(h);return m===u?h:u===h?m:'[redacted]';}",
 ];
 
-type Mode = boolean | 'throws' | 'failed' | 'noredact';
+type Mode = boolean | 'throws' | 'failed' | 'noredact' | 'nokeep';
 type Page = { doc: Document; toast(html: string): HTMLElement; toastActions(html: string, labels: string[]): HTMLElement;
-  liveMask(root: Element, blocks: Element[]): Element; mcp(items: Record<string, string>[], open: boolean): HTMLElement; ref(t: string): string | null };
+  liveMask(root: Element, blocks: Element[]): Element; mcp(items: Record<string, string>[], open: boolean): HTMLElement; ref(t: string): string | null;
+  restore(folder: string): HTMLElement; crash(folder: string): HTMLElement; away(folder: string, prompt: string): Promise<HTMLElement>; follow(name: string): HTMLElement };
+// what the strips' stubs hand out (the away strip's main reply, the followed agent's name)
+const STRIP: { away: unknown; follow: string } = { away: null, follow: '' };
 const page = (mode: Mode): Page => {
-  const dom = new JSDOM('<!doctype html><body><div id="toasts"></div><div id="mcpStrip" hidden></div></body>');
+  const dom = new JSDOM('<!doctype html><body><div id="toasts"></div>' + ['mcpStrip', 'restoreStrip', 'crashStrip', 'awayStrip', 'followStrip'].map((i) => `<div id="${i}" hidden></div>`).join('') + '</body>');
   const doc = dom.window.document;
   const R = mode === 'throws' ? { ...shared, maskHomePaths: () => { throw new Error('boom'); } }
-    : mode === 'failed' ? { ...shared, maskHomePaths: () => '[redaction failed]' } : mode ? shared : undefined;
+    : mode === 'failed' ? { ...shared, maskHomePaths: () => '[redaction failed]' } : mode === 'nokeep' ? { ...shared, keepShownBy: undefined } : mode ? shared : undefined;
   const base = {
     window: { DurbarRedact: R, DurbarSafeText: require(path.join(R_DIR, 'safetext.js')), DurbarScreens: { openSettings() {} } },
     DurbarCutText: require(path.join(R_DIR, 'cuttext.js')),
@@ -71,8 +75,14 @@ const page = (mode: Mode): Page => {
     setTimeout: () => 1, clearTimeout: () => {},
   };
   const ctx = vm.createContext({ ...base, placeToasts() {}, holdTimer() {}, scheduleRender() {}, focusIn() {}, ResizeObserver: undefined,
-    mcpL: { closed: false, open: false, items: new Map() }, liveById() { return null; } });
-  vm.runInContext(DEFS + '\nthis.toast=toast;this.toastActions=toastActions;this.liveMask=liveMask;this.paintMcpStrip=paintMcpStrip;', ctx);
+    mcpL: { closed: false, open: false, items: new Map() }, liveById: (id: string) => ({ id, info: { resumeLast: true } }),
+    agents: [] as unknown[], roomOf: (a: { room: { id: string; name: string } }) => a.room, ui: {}, updatePanelHeader() {}, busy: () => () => {},
+    bridge: { sinceAway: async () => STRIP.away, runScheduleNow: async () => ({ ok: true }) }, demoOn: false, SSUM: null,
+    AF_ON: true, AF_PAUSED: false, AF_HOLD: '', afLive: () => [], afPanelId: () => null, byId: (id: string) => ({ id, name: STRIP.follow }), afCanOpen: () => true,
+    afGo() {}, afSetPaused() {},
+    AF: { position: () => ({ index: -1, count: 0 }), positionText: () => 'none', statusText: (o: { name?: string }) => 'Following ' + (o.name || '') + '.' },
+    AFT: { ids: () => ['f1'], pendingList: () => [], size: 1 } });
+  vm.runInContext(DEFS + '\nthis.toast=toast;this.toastActions=toastActions;this.liveMask=liveMask;this.paintMcpStrip=paintMcpStrip;this.renderRestoreStrip=renderRestoreStrip;this.paintCrashStrip=paintCrashStrip;this.renderAwayStrip=renderAwayStrip;this.afRender=afRender;this.crashSt=crashSt;', ctx);
   const refCtx = vm.createContext({ ...base, window: { ...base.window, DurbarRedact: mode ? shared : undefined }, NO_REDACT: !mode });
   vm.runInContext(FROZEN_MAIN.join('\n') + '\nthis.annPart=annPart;', refCtx);
   const C = ctx as unknown as { toast(h: string, ms?: number): HTMLElement; toastActions(h: string, a: { label: string; onClick(): void }[], ms?: number): HTMLElement;
@@ -84,6 +94,12 @@ const page = (mode: Mode): Page => {
     liveMask: (r, b) => C.liveMask(r, b),
     mcp(items, open) { C.mcpL.items = new Map(items.map((f) => [f.key, f])); C.mcpL.open = open; C.mcpL.closed = false; C.paintMcpStrip(); return doc.getElementById('mcpStrip') as HTMLElement; },
     ref: (t) => (refCtx as unknown as { annPart(t: string): string | null }).annPart(t),
+    restore(folder) { (ctx as unknown as { agents: unknown[] }).agents = [{ id: 'a1', live: true, info: { permMode: 'allow', permRestored: true }, room: { id: 'r1', name: folder } }];
+      const el = doc.getElementById('restoreStrip') as HTMLElement; delete el.dataset.kept; (ctx as unknown as { renderRestoreStrip(): void }).renderRestoreStrip(); return el; },
+    crash(folder) { const cs = (ctx as unknown as { crashSt: { items: unknown[]; pick: boolean; missing: number } }).crashSt; cs.items = [{ id: 'c1', folderName: folder, adapterId: 'claude' }]; cs.pick = true; cs.missing = 0;
+      (ctx as unknown as { paintCrashStrip(): void }).paintCrashStrip(); return doc.getElementById('crashStrip') as HTMLElement; },
+    async away(folder, prompt) { STRIP.away = { awayMs: 3600000, missed: [{ id: 's1', folderName: folder, prompt }] }; await (ctx as unknown as { renderAwayStrip(): Promise<void> }).renderAwayStrip(); return doc.getElementById('awayStrip') as HTMLElement; },
+    follow(name) { STRIP.follow = name; (ctx as unknown as { afRender(): void }).afRender(); return doc.getElementById('followStrip') as HTMLElement; },
   };
 };
 const escH = (s: string): string => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c] as string));
@@ -152,6 +168,16 @@ for (const [what, nm] of NAMES) {
   eq(pg.ref('--password ' + PW + ' ' + P('gh', 'p\\_') + BODY), '[redacted]', 'FR-195 (control) main\'s announcement hides the whole line');
   ok(!(t.textContent || '').includes(PW), 'FR-195 union: a word the joined reading hides is not shown');
 }
+// 4b2. piece level: a value cut by markup where one side is masked alone keeps no piece of the other side that the joined reading hides
+{
+  const t = pg.toast('Saved in <b>/home/' + P('zqxus') + '</b>' + P('ername') + '/r.');
+  ok(!(t.textContent || '').includes(P('erna')), 'FR-195 piece level: no piece of a value cut by markup is shown');
+}
+// 4c. without the shared piece-level union the block fails closed
+{
+  const t = page('nokeep').toast('Not written: password=<b>' + PW + '</b> was refused.');
+  eq(t.textContent, '[redacted]', 'FR-195 no keepShownBy: the block is hidden whole');
+}
 // 5. labels: title and aria-label are masked too
 {
   const t = pg.toast('<span title="' + escH('fix ' + GHP) + '" aria-label="' + escH('/home/' + USER + '/repo') + '">Saved.</span>');
@@ -171,6 +197,25 @@ for (const [what, nm] of NAMES) {
   ok(!(sp.textContent || '').includes(PW), 'FR-195 MCP strip: a list item is read as one text too (the union)');
   const el = pg.mcp([{ key: 'k2', name: 'github', where: 'Copilot', reason: 'not signed in', fix: 'Sign in', kind: 'file' }], true);
   ok(/: github\./.test(el.textContent || '') && /not signed in\. Sign in/.test(el.textContent || ''), 'FR-195 MCP strip: a benign entry is kept');
+}
+// 6b. the restore, interrupted-sessions, away and Auto-follow strips, each built by its own function, with a hostile folder or agent name
+async function stripsByBehaviour(): Promise<void> {
+  for (const [what, nm] of NAMES) {
+    const r = pg.restore(nm);
+    hides(shown(r), `FR-195 restore strip, ${what}`);
+    ok(!r.hidden && /lets agents change files without asking|^\[redacted\]$/.test(r.querySelector('.ns-t')!.textContent || ''), `FR-195 restore strip, ${what}: shown with its fixed words`);
+    const c = pg.crash(nm);
+    hides(shown(c), `FR-195 crash strip, ${what}`);
+    ok(!c.hidden && !!c.querySelector('[data-crrow]'), `FR-195 crash strip, ${what}: shown with its Pick list`);
+    const a = await pg.away(nm, 'check the build');
+    hides(shown(a), `FR-195 away strip, ${what}`);
+    ok(!a.hidden && /Since you were away/.test(a.textContent || ''), `FR-195 away strip, ${what}: shown with its fixed words`);
+    const f = pg.follow(nm);
+    hides(shown(f), `FR-195 Auto-follow strip, ${what}`);
+    ok(!f.hidden && /^Following |^\[redacted\]$/.test(f.querySelector('#afText')!.textContent || ''), `FR-195 Auto-follow strip, ${what}: shown with its fixed words`);
+  }
+  eq(pg.restore('web-app').querySelector('.ns-t')!.textContent, 'One folder (web-app) lets agents change files without asking.', 'FR-195 restore strip: a benign name is kept');
+  eq(pg.follow('Noor').querySelector('#afText')!.textContent, 'Following Noor.', 'FR-195 Auto-follow strip: a benign name is kept');
 }
 // 7. fails closed: no mask module, ?noredact=1, a throw, the module's own failure text
 for (const mode of [false, 'noredact', 'throws', 'failed'] as Mode[]) {
@@ -192,11 +237,13 @@ for (const mode of [false, 'noredact', 'throws', 'failed'] as Mode[]) {
     const b = block(head), i = b.indexOf('stripMask(el)'), lastSet = Math.max(b.lastIndexOf("el.innerHTML='<"), b.lastIndexOf(".textContent=rooms"));
     ok(i > 0 && i > lastSet, `FR-195 ${fn} masks the strip after it is built`);
     ok(i < b.indexOf('el.hidden=false'), `FR-195 ${fn} masks the strip before it is shown`);
+    const after = b.slice(i, b.indexOf('onclick', i) < 0 ? b.length : b.indexOf('onclick', i));
+    ok(!/innerHTML|textContent|insertAdjacent|setAttribute\('(title|aria-label)'/.test(after), `FR-195 ${fn} writes no text or label after stripMask`);
   }
 }
 
-// 9. differential fuzz against main's announcement mask (frozen above): no word main hides in a line is shown by the toast of that line.
-// A fixed seed and a work counter (texts built), never wall time.
+// 9. differential fuzz against main's announcement mask (frozen above), PIECE level: no 4-character piece of a value that main's reading of the line
+// hides is shown by the toast of that line, also when markup cuts the value at a random point. A fixed seed and a work counter, never wall time.
 {
   let seed = 0x1419;
   const rnd = (k: number): number => { seed = (seed * 1103515245 + 12345) >>> 0; return seed % k; };
@@ -205,28 +252,36 @@ for (const mode of [false, 'noredact', 'throws', 'failed'] as Mode[]) {
     'echo', 'done.', 'path', '(backup', 'file)', 'error', 'ENOENT', 'Copilot', 'Claude', 'Codex', 'grep', '-r', 'TODO', 'src/', 'x=1'];
   const SECRETS = [GHP, SK, '/home/' + USER + '/r', '/Users/' + USER, 'C:\\Users\\' + USER + '\\a', '\\\\h\\s\\' + USER, P('gh', 'p\\_') + BODY,
     '--password ' + PW, 'token=' + PW, '/ho\u200bme/' + USER + '/x', 'Authorization: Bearer ' + P('eyJhbG', 'ciOiJI', 'UzI1Ni', 'J9xyzA')];
-  let texts = 0, mainHidShown = 0, mainWordsHidden = 0, newOnlyHidden = 0;
-  for (let i = 0; i < 600; i++) {
-    const parts: string[] = [];
+  const FIXED = WORDS.join(' ') + ' [redacted] [not checked] ~';
+  const TAGS = ['b', 'code', 'small', 'i'];
+  let texts = 0, mainHid = 0, mainHidShown = 0, newOnlyHidden = 0, cut = 0;
+  for (let i = 0; i < 1500; i++) {
+    const parts: string[] = [], secrets: string[] = [];
     const k = 2 + rnd(8);
-    for (let j = 0; j < k; j++) parts.push(rnd(4) === 0 ? pick(SECRETS) : pick(WORDS));
+    for (let j = 0; j < k; j++) { const sec = rnd(3) === 0; const p = sec ? pick(SECRETS) : pick(WORDS); parts.push(p); if (sec) secrets.push(p); }
     const plain = parts.join(' ');
-    // the same text as a toast, with some parts in markup (bold, code) as the call sites build them
-    const html = parts.map((p) => { const e = escH(p); const r = rnd(5); return r === 0 ? '<b>' + e + '</b>' : r === 1 ? '<code>' + e + '</code>' : e; }).join(' ');
+    // the same text as a toast: some parts in markup, and some values cut by markup at a random point (as a name next to fixed words can be)
+    const html = parts.map((p) => {
+      const r = rnd(6), tg = pick(TAGS);
+      if (r <= 1 && p.length > 2) { const at = 1 + rnd(p.length - 1); cut++; return r === 0 ? `<${tg}>` + escH(p.slice(0, at)) + `</${tg}>` + escH(p.slice(at)) : escH(p.slice(0, at)) + `<${tg}>` + escH(p.slice(at)) + `</${tg}>`; }
+      return r === 2 ? `<${tg}>` + escH(p) + `</${tg}>` : escH(p);
+    }).join(' ');
     const ref = pg.ref(plain);
     assert.ok(typeof ref === 'string', 'the frozen reference masks');
     const got = pg.toast(html).textContent || '';
     texts++;
-    const words = (s: string): string[] => s.split(/\s+/).filter((w) => w.length >= 4);
-    for (const w of words(plain)) {
-      if (WORDS.includes(w)) continue; // a fixed word can show elsewhere in the same text
-      if (!(ref as string).includes(w)) { mainWordsHidden++; if (got.includes(w)) { mainHidShown++; if (process.env.LIVEMASK_DEBUG && mainHidShown < 6) console.log(JSON.stringify({ w, plain, ref, got })); } }
-      else if (!got.includes(w)) newOnlyHidden++;
+    const seen = new Set<string>();
+    for (const sec of secrets) for (let q = 0; q + 4 <= sec.length; q++) {
+      const pc = sec.slice(q, q + 4);
+      if (/\s/.test(pc) || seen.has(pc) || FIXED.includes(pc)) continue;
+      seen.add(pc);
+      if (!(ref as string).includes(pc)) { mainHid++; if (got.includes(pc)) { mainHidShown++; if (process.env.LIVEMASK_DEBUG && mainHidShown < 6) console.log(JSON.stringify({ pc, plain, ref, got })); } }
+      else if (!got.includes(pc)) newOnlyHidden++;
     }
   }
-  eq(mainHidShown, 0, `FR-195 differential fuzz: words main's announcement hides and the toast shows = 0 (${texts} texts, ${mainWordsHidden} words hidden by main)`);
-  ok(mainWordsHidden > 100, 'FR-195 differential fuzz: the fuzz exercises hidden words');
-  console.log(`test-live-mask fuzz: ${texts} texts, ${mainWordsHidden} words main hides, ${mainHidShown} of them shown, ${newOnlyHidden} words hidden only by the toast (over-masking vs main's announcement)`);
+  eq(mainHidShown, 0, `FR-195 differential fuzz: pieces main's announcement hides and the toast shows = 0 (${texts} texts, ${mainHid} pieces hidden by main)`);
+  ok(mainHid > 1000 && cut > 500, 'FR-195 differential fuzz: the fuzz exercises hidden pieces and values cut by markup');
+  console.log(`test-live-mask fuzz: ${texts} texts (${cut} values cut by markup), ${mainHid} pieces main hides, ${mainHidShown} of them shown, ${newOnlyHidden} pieces hidden only by the toast (over-masking vs main's announcement)`);
 }
 
-console.log(`test-live-mask: ${n} asserts passed`);
+void stripsByBehaviour().then(() => console.log(`test-live-mask: ${n} asserts passed`), (e) => { console.error(e); process.exit(1); });

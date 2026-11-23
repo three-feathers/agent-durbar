@@ -297,4 +297,4 @@ T133 verification (2026-10-25, review on #698): typecheck, build and the offline
 
 ## Changes 2026-11-23 (masking batch: toasts and the notice strips: issue #1419)
 
-- [x] T457 (2026-11-23, issue #1419) FR-195: `liveMask` in `src/renderer/app.js`, called by `mountToast` and by `renderRestoreStrip`, `paintCrashStrip`, `renderAwayStrip` and `paintMcpStrip`; `scripts/test-live-mask.ts` (`npm run test:livemask`, in `scripts/test-suites.txt`); the line in `specs/012-claude-codex-adapters/secret-coverage.md`; the changelog fragment; mutants and a differential fuzz against `main` in the PR.
+- [x] T457 (2026-11-23, issue #1419) FR-195: `liveMask` in `src/renderer/app.js`, and `liveText`, called by `mountToast`, by `renderRestoreStrip`, `paintCrashStrip`, `renderAwayStrip` and `paintMcpStrip`, and by `afRender` (review of PR 2046); `scripts/test-live-mask.ts` (`npm run test:livemask`, in `scripts/test-suites.txt`); the line in `specs/012-claude-codex-adapters/secret-coverage.md`; the changelog fragment; mutants and a differential fuzz against `main` in the PR.
