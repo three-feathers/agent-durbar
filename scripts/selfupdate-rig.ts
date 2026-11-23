@@ -66,9 +66,12 @@ export const fire = async (r: Rig): Promise<void> => {
 };
 export const standard = (url: string): FeedAnswer | undefined => (url === LIST ? ok(feedBytes()) : url === RAW29 ? { ok: true, kind: 'releases', bytes: RELEASES_OK } : undefined);
 
-/** A request nobody answers would let node exit 0 with the test half run: `done()` at the end, else the exit is a failure. */
+/** A request nobody answers would let node exit 0 with the test half run: `done()` at the end, else the exit is a failure. The temp folder is removed on every exit, a failed assert included. */
 export function guardExit(name: string): { done(): void } {
   let finished = false;
-  process.on('exit', (code) => { if (code === 0 && !finished) { console.error(`${name}: the test stopped before its end (an answer never came)`); process.exitCode = 1; } });
-  return { done: () => { finished = true; fs.rmSync(tmp, { recursive: true, force: true }); } };
+  process.on('exit', (code) => {
+    try { fs.rmSync(tmp, { recursive: true, force: true }); } catch { /* best effort: the temp folder goes whatever the exit code */ }
+    if (code === 0 && !finished) { console.error(`${name}: the test stopped before its end (an answer never came)`); process.exitCode = 1; }
+  });
+  return { done: () => { finished = true; } };
 }

@@ -41,7 +41,7 @@ export interface SelfUpdateView {
   state: 'none' | 'up-to-date' | 'newer' | 'update' | 'failed';
   target?: string; versions?: string[]; breaking?: Breaking; gap?: boolean; notice?: 'show' | 'snoozed' | 'skipped'; reason?: SelfUpdateReason;
 }
-interface Result { at: number; failed?: SelfUpdateReason; feed?: Feed; target?: string; versions?: string[]; newer?: boolean; breaking?: Breaking; gap?: boolean; marks?: ReleaseMarks }
+interface Result { at: number; slug: string; failed?: SelfUpdateReason; feed?: Feed; target?: string; versions?: string[]; newer?: boolean; breaking?: Breaking; gap?: boolean; marks?: ReleaseMarks }
 
 /** *Check now* within this time of the last finished check answers the kept result (no loop a window could drive). */
 export const MANUAL_GAP_MS = 60_000;
@@ -54,15 +54,21 @@ export class SelfUpdater {
   private abort: AbortController | undefined;
   private handle: unknown;
   private started = false;
+  /** A check dropped because its source changed: a fresh one is considered when it settles. */
+  private moved = false;
 
   constructor(private readonly d: SelfUpdateDeps) {}
 
   private input(): CadenceInput {
     const u = this.d.store()?.updates ?? {};
-    return { now: this.d.now(), packaged: this.d.packaged, simulator: this.d.simulator, origin: this.d.source?.origin, selfCheck: u.selfCheck, policy: this.d.policy(), lastCheckAt: this.result?.at ?? u.lastCheck?.at };
+    return { now: this.d.now(), packaged: this.d.packaged, simulator: this.d.simulator, origin: this.d.source?.origin, selfCheck: u.selfCheck, policy: this.d.policy(), lastCheckAt: this.current()?.at ?? u.lastCheck?.at };
   }
   private slug(): string | undefined {
     return selfPolicyView(this.d.policy()).feedSlug ?? this.d.source?.slug;
+  }
+  /** The kept result, only for the source in force now: another repository's result is never shown under this name. */
+  private current(): Result | undefined {
+    return this.result !== undefined && this.result.slug === this.slug() ? this.result : undefined;
   }
 
   /** After the office is shown and the start-up detection is done (main.ts, with spec 081's start check). */
@@ -94,7 +100,8 @@ export class SelfUpdater {
   /** *Check now*: allowed with the switch off (FR-004), joins a running check, answers the kept result within `MANUAL_GAP_MS`. */
   async checkNow(): Promise<SelfUpdateView> {
     const i = this.input();
-    const recent = this.result !== undefined && i.now >= this.result.at && i.now - this.result.at < MANUAL_GAP_MS;
+    const r = this.current();
+    const recent = r !== undefined && i.now >= r.at && i.now - r.at < MANUAL_GAP_MS;
     if (manualCheckAllowed(i) && (this.inflight || !recent)) {
       await this.run(true);
       this.refresh();
@@ -103,8 +110,11 @@ export class SelfUpdater {
   }
 
   private run(manual: boolean): Promise<void> {
-    if (this.inflight) return this.inflight;
-    const p: Promise<void> = this.check(manual).finally(() => { if (this.inflight === p) { this.inflight = undefined; this.abort = undefined; } });
+    if (this.inflight && !this.abort?.signal.aborted) return this.inflight; // an aborted check is never joined: a fresh one starts
+    const p: Promise<void> = this.check(manual).finally(() => {
+      if (this.inflight === p) { this.inflight = undefined; this.abort = undefined; }
+      if (this.moved) { this.moved = false; this.refresh(); }
+    });
     this.inflight = p;
     return p;
   }
@@ -116,16 +126,17 @@ export class SelfUpdater {
     if (!slug || !url || !allowed()) return;
     const ac = new AbortController();
     this.abort = ac;
-    const live = (): boolean => !ac.signal.aborted && allowed();
+    const moved = (): boolean => this.slug() !== slug && (this.moved = true);
+    const live = (): boolean => !ac.signal.aborted && allowed() && !moved();
     const list = await this.d.get(url, slug, ac.signal);
     if (!live()) return;
-    if (!list.ok) { if (list.reason !== 'aborted') this.finish({ failed: list.reason }); return; }
+    if (!list.ok) { if (list.reason !== 'aborted') this.finish({ slug, failed: list.reason }); return; }
     const text = decodeUtf8Strict(list.bytes); // fatal UTF-8, a byte-order mark kept (so JSON.parse refuses it)
     let json: unknown;
     try { json = text === undefined ? undefined : JSON.parse(text); } catch { json = undefined; }
     const feed = validateFeed(json, slug);
     // a page whose every stable entry failed the schema is not "up to date": it is a feed that could not be read
-    if (!feed || (feed.releases.length === 0 && (feed.dropped.length > 0 || feed.unplaced))) { this.finish({ failed: 'feed-invalid' }); return; }
+    if (!feed || (feed.releases.length === 0 && (feed.dropped.length > 0 || feed.unplaced))) { this.finish({ slug, failed: 'feed-invalid' }); return; }
     const pick = pickTarget(this.d.running, feed);
     const raw = pick.target && releasesJsonUrl(slug, pick.target.tag);
     let marks: ReleaseMarks | undefined;
@@ -134,7 +145,7 @@ export class SelfUpdater {
       if (!live()) return;
       marks = r.ok ? parseReleasesJson(decodeUtf8Strict(r.bytes)) : undefined;
     }
-    this.finish({ feed, target: pick.target?.version, versions: pick.between.map((r) => r.version), newer: pick.installedNewer, breaking: pick.target ? isBreaking(this.d.running, pick, marks) : undefined, gap: pick.gap, marks });
+    this.finish({ slug, feed, target: pick.target?.version, versions: pick.between.map((r) => r.version), newer: pick.installedNewer, breaking: pick.target ? isBreaking(this.d.running, pick, marks) : undefined, gap: pick.gap, marks });
   }
 
   /** Every check that ended is recorded (no retry loop, FR-004); `latest` only from a valid feed, else the last known one stays. */
@@ -168,7 +179,7 @@ export class SelfUpdater {
     const base = { shown: false, blocked: pv.blocked, canCheck: manualCheckAllowed(i), dailyCheck: selfCheckOn(i), checking: this.inflight !== undefined, running: this.d.running, state: 'none' as SelfUpdateView['state'] };
     if (pv.hidden || !i.packaged || i.simulator || !this.d.source) return base;
     const u = this.d.store()?.updates ?? {};
-    const r = this.result;
+    const r = this.current();
     const v: SelfUpdateView = { ...base, shown: true, origin: this.d.source.origin };
     if (!pv.blocked) { v.source = this.slug(); v.sourceBy = pv.feedSlug ? 'organization' : 'built-in'; }
     const checkedAt = r?.at ?? u.lastCheck?.at;
