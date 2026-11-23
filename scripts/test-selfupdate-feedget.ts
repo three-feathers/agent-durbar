@@ -111,7 +111,9 @@ async function main(): Promise<void> {
     assert.ok(a.ok && a.kind === 'list', 'a 200 JSON list is read');
     assert.ok(a.ok && validateFeed(JSON.parse(decodeUtf8Strict(a.bytes) ?? ''), SLUG), 'the bytes reach the pure validator unchanged');
     assert.strictEqual(n.reqs.length, 1, 'one request');
-    assert.deepStrictEqual(n.reqs[0].opts, { method: 'GET', url: LIST, redirect: 'manual', credentials: 'omit', useSessionCookies: false }, 'GET, manual redirects, no credentials, no session cookies');
+    assert.strictEqual(n.reqs[0].opts.cache, 'no-store', 'no HTTP cache: a cached redirect or list never answers a check');
+    assert.deepStrictEqual(n.reqs[0].opts, { method: 'GET', url: LIST, redirect: 'manual', credentials: 'omit', useSessionCookies: false, cache: 'no-store' }, 'GET, manual redirects, no credentials, no session cookies');
+    assert.ok(!Object.keys(n.reqs[0].headers).some((k) => /^if-/i.test(k)), 'no validators (If-None-Match, If-Modified-Since): a 304 is never asked for');
     assert.deepStrictEqual(n.reqs[0].headers, { ...FIXED_HEADERS, Accept: 'application/vnd.github+json' }, 'exactly the FR-006 headers on the list');
   }
   {
@@ -129,7 +131,8 @@ async function main(): Promise<void> {
     assert.deepStrictEqual(a, { ok: false, reason: 'redirect' }, 'a redirect event is refused, never followed');
     assert.ok(n.reqs[0].aborted, 'the redirected request is aborted');
   }
-  assert.deepStrictEqual((await get(answer(302, '[]'))).a, { ok: false, reason: 'redirect' }, 'a 3xx response is refused');
+  for (const s of [301, 302, 303, 307, 308]) assert.deepStrictEqual((await get(answer(s, '[]'))).a, { ok: false, reason: 'redirect' }, 'a redirect response is refused: ' + s);
+  for (const s of [300, 304, 305, 306]) assert.deepStrictEqual((await get(answer(s, '[]'))).a, { ok: false, reason: 'status' }, 'a 3xx that is not a redirect is an unexpected status: ' + s);
   for (const s of [203, 204, 404, 500]) assert.deepStrictEqual((await get(answer(s, '[]'))).a, { ok: false, reason: 'status' }, 'only 200: ' + s);
   for (const h of [{ 'content-type': 'text/html' }, {}] as Record<string, string>[]) assert.deepStrictEqual((await get(answer(200, '[]', h))).a, { ok: false, reason: 'content-type' }, 'the list must be application/json: ' + JSON.stringify(h));
 
@@ -166,6 +169,18 @@ async function main(): Promise<void> {
     assert.deepStrictEqual(a, { ok: false, reason: 'network' }, "a network error is the code 'network', not its text");
   }
   assert.deepStrictEqual([...FEED_FAILURES].sort(), ['content-type', 'network', 'not-allowed', 'redirect', 'status', 'timeout', 'too-large'], 'the closed set of failure codes');
+
+  // a response stream error after the headers is 'network' at once, not a timeout (review of #2058)
+  {
+    const timers: (() => void)[] = [];
+    const fake: FeedTimer = { set: (cb) => { timers.push(cb); return timers.length; }, clear: () => undefined };
+    let got: FeedAnswer | undefined;
+    const n = netWith((r) => { const res = new FakeRes(200, JSON_CT); r.emit('response', res); res.emit('data', Buffer.from('[')); if (res.listenerCount('error') > 0) res.emit('error', new Error(secret)); });
+    void makeFeedGet(n.factory, fake)(LIST, SLUG).then((a) => { got = a; });
+    for (let i = 0; i < 5; i++) await new Promise((r) => setImmediate(r));
+    assert.deepStrictEqual(got, { ok: false, reason: 'network' }, "a response error mid-body is 'network' at once, with no timer fired");
+    assert.ok(n.reqs[0].aborted, 'the failed response is aborted');
+  }
 
   // FR-004: 10 s limit, on a fake timer
   {
