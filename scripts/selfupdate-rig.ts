@@ -28,7 +28,7 @@ export interface Call { url: string; slug: string; signal?: AbortSignal; answer(
 export interface Rig { u: SelfUpdater; calls: Call[]; timers: Map<number, { cb: () => void; ms: number }>; clock: { t: number }; store: SettingsStore; file: string; policy: { p: SelfPolicy | undefined } }
 
 /** A checker on a temp settings file; `auto` answers each request at once from `script` (else the test answers it). */
-export function rig(o: { packaged?: boolean; simulator?: boolean; origin?: 'env' | 'ci' | 'local' | null; settings?: unknown; script?: (url: string) => FeedAnswer | undefined; running?: string; store?: SelfUpdateStore } = {}): Rig {
+export function rig(o: { packaged?: boolean; simulator?: boolean; origin?: 'env' | 'ci' | 'local' | null; settings?: unknown; script?: (url: string) => FeedAnswer | undefined; running?: string; store?: SelfUpdateStore; confirm?: SelfUpdateDeps['confirm'] } = {}): Rig {
   const file = path.join(tmp, `s${files++}.json`);
   if (o.settings !== undefined) fs.writeFileSync(file, JSON.stringify(o.settings));
   const store = new SettingsStore(file);
@@ -54,6 +54,7 @@ export function rig(o: { packaged?: boolean; simulator?: boolean; origin?: 'env'
     }),
     now: () => clock.t,
     timer,
+    ...(o.confirm ? { confirm: o.confirm } : {}),
   };
   return { u: new SelfUpdater(deps), calls, timers, clock, store, file, policy };
 }
