@@ -359,8 +359,8 @@ function headsFromRefs(root) {
 // ---------- the wide list: branches without an open PR, and worktrees (spec 021 FR-085 delta 2026-11-23) ----------
 const QUEUE_PREFIX = 'gh-readonly-queue/';
 /** [{ name, sha }] of the heads on the remote, live. Throws when it cannot be read (exit 2, never an empty list that reads as "nothing there"). */
-function liveRemoteHeads(root) {
-  const out = run(root, 'git', ['ls-remote', '--heads', 'origin']);
+function liveRemoteHeads(root, runCmd = run) {
+  const out = runCmd(root, 'git', ['ls-remote', '--heads', 'origin']);
   const heads = out.split('\n').filter(Boolean).map((l) => { const m = l.match(/^([0-9a-f]{40})\trefs\/heads\/(.+)$/); if (!m) throw new Error('git ls-remote gave a line that is not a head'); return { sha: m[1], name: m[2] }; });
   if (!heads.some((h) => h.name === 'main')) throw new Error('git ls-remote did not list main');
   return heads;
@@ -383,11 +383,11 @@ function worktreeHeads(root) {
   }
   return out;
 }
-/** Pure but for the date: the heads to compare besides the open PR heads. remote, worktrees: [{ name, sha }]; open: [{ sha, headRef }] (the open PR heads, compared already);
- * selfRef: this branch's name. Left out: HEAD, main, this branch, merge-queue branches, an open PR's head (by name or tip), a worktree branch that is a remote head
+/** Pure but for the date: the heads to compare besides the open PR heads. remote, worktrees: [{ name, sha }]; open: [{ sha, headRef, sameRepo }] (the open PR heads, compared already);
+ * selfRef: this branch's name. Left out: HEAD, main, this branch, merge-queue branches, an open PR's head (by tip; by name only when that PR is from this repository: a fork's branch name is the outsider's choice and must not hide ours), a worktree branch that is a remote head
  * (same tip) or has an open PR. opts.prefix: label start (default `branch `); opts.dates: add `, tip YYYY-MM-DD` (git's committer date). */
 function wideHeads(root, { remote = [], worktrees = [], open = [], selfRef, prefix = 'branch ', dates = true }) {
-  const openNames = new Set(open.map((o) => o.headRef).filter(Boolean)), openShas = new Set(open.map((o) => o.sha));
+  const openNames = new Set(open.filter((o) => o.sameRepo === true).map((o) => o.headRef).filter(Boolean)), openShas = new Set(open.map((o) => o.sha));
   const skip = (h) => !h.name || h.name === 'HEAD' || h.name === 'main' || h.name === selfRef || h.name.startsWith(QUEUE_PREFIX);
   // the tip dates of every candidate in one call (one process per head was 0.7 s on 90 heads)
   const day = new Map();
@@ -410,21 +410,17 @@ function ghBranchState(root) {
 /** collect + findClashes, and then a second look at each wide head that clashes: its PR (lookup(name) -> rows or null) is closed and not merged
  * at that tip -> the head is left out and named in notes. A lookup that fails THROWS (exit 2): a clash is never dropped without knowing. */
 function resolveWide(root, heads, headRev, self, lookup) {
-  let list = heads;
+  const res = collect(root, heads, headRev, self); // once: findClashes is pure on res, so a dead branch is dropped from res.prs and the clashes are found again
+  let clashes = findClashes(res);
   const notes = [];
-  for (;;) {
-    const res = collect(root, list, headRev, self);
-    const clashes = findClashes(res);
-    const gone = [];
-    for (const h of list.filter((x) => x.wide && clashes.some((c) => c.with.startsWith(`${x.label} (added there too`)))) {
-      const rows = lookup(h.name);
-      if (!rows) throw new Error(`could not read the PR state of branch ${h.name} (gh pr list failed; it is needed to tell a dead branch from a live one)`);
-      if (rows.some((p) => p.state === 'CLOSED' && !p.mergedAt && p.isCrossRepository === false && p.headRefOid === h.sha)) gone.push(h);
-    }
-    if (!gone.length) return { res, clashes, notes };
-    for (const h of gone) notes.push(`NOTE skipped ${h.label}: its PR is closed and not merged, so its numbers are free`);
-    list = list.filter((x) => !gone.includes(x));
+  const gone = new Set();
+  for (const h of heads.filter((x) => x.wide && clashes.some((c) => c.with.startsWith(`${x.label} (added there too`)))) {
+    const rows = lookup(h.name);
+    if (!rows) throw new Error(`could not read the PR state of branch ${h.name} (gh pr list failed; it is needed to tell a dead branch from a live one)`);
+    if (rows.some((p) => p.state === 'CLOSED' && !p.mergedAt && p.isCrossRepository === false && p.headRefOid === h.sha)) { gone.add(h.label); notes.push(`NOTE skipped ${h.label}: its PR is closed and not merged, so its numbers are free`); }
   }
+  if (gone.size) { res.prs = res.prs.filter((p) => !gone.has(p.label)); clashes = findClashes(res); }
+  return { res, clashes, notes };
 }
 
 function report({ branchAdds, prs, skipped, noBase = [], base }, clashes, notes = [], wideCount = null) {
@@ -479,9 +475,9 @@ async function main(argv, env, deps = {}) {
   const self = own ? { headRef: own.headRef, baseRef: own.baseRef, sameRepo: own.sameRepo } : { headRef: gitq(root, ['symbolic-ref', '--short', '-q', 'HEAD']) || undefined, sameRepo: true };
   try {
     if (wide) {
-      const remote = noFetch ? trackedRemoteHeads(root) : liveRemoteHeads(root);
+      const remote = noFetch ? trackedRemoteHeads(root) : (deps.remoteHeads || liveRemoteHeads)(root);
       if (!noFetch) fetchRemoteHeads(root, remote);
-      const extra = wideHeads(root, { remote, worktrees: worktreeHeads(root), open: heads.map((h) => ({ sha: h.sha, headRef: h.headRef })), selfRef: self.headRef });
+      const extra = wideHeads(root, { remote, worktrees: (deps.worktrees || worktreeHeads)(root), open: heads.map((h) => ({ sha: h.sha, headRef: h.headRef, sameRepo: h.sameRepo })), selfRef: self.headRef });
       wideCount = extra.length;
       ({ res, clashes, notes } = resolveWide(root, heads.concat(extra), headRev, self, deps.branchState || ghBranchState(root)));
     } else { res = collect(root, heads, headRev, self); clashes = findClashes(res); }

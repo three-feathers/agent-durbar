@@ -245,16 +245,16 @@ function preflight(n, deps = {}) {
 
   // 7. numbers
   try {
-    // the same list and the same dead-branch rule as `npm run specs:numbers --wide` (FR-031): remote-tracking heads (just fetched) and worktree branches;
+    // the same list and the same dead-branch rule as `npm run specs:numbers --wide` (FR-031): the heads the remote lists now (git ls-remote; stale remote-tracking refs of deleted branches are not compared; --no-fetch has only the tracked refs) and worktree branches;
     // a branch whose PR is closed and not merged, at its tip, is skipped when it would clash (its PR state is read with the `gh` of this run)
-    const heads = sn.wideHeads(root, { remote: sn.trackedRemoteHeads(root), worktrees: sn.worktreeHeads(root), selfRef: branch, prefix: 'origin/', dates: false });
+    const heads = sn.wideHeads(root, { remote: deps.liveHeads ? deps.liveHeads(root) : deps.fetch !== false ? sn.liveRemoteHeads(root) : sn.trackedRemoteHeads(root), worktrees: sn.worktreeHeads(root), selfRef: branch, prefix: 'origin/', dates: false });
     const lookup = (name) => { const r = gh(['pr', 'list', `--head=${name}`, '--state', 'all', '--json', 'headRefOid,mergedAt,state,isCrossRepository']); try { if (r.status !== 0) return null; const rows = JSON.parse(r.stdout); return Array.isArray(rows) ? rows : null; } catch { return null; } };
     const { res, clashes, notes } = sn.resolveWide(root, heads, head, { headRef: branch, baseRef: pr.baseRefName, sameRepo: true }, lookup);
     for (const t of notes) add('NOTE', t.replace(/^NOTE /, ''));
     const found = numberFindings(clashes);
     const addedIds = [...res.branchAdds.values()].flatMap((s) => [...s]);
     for (const f of found) add(f.level, f.text);
-    if (!found.some((f) => f.level === 'FAIL')) add('ok', `numbers: ${addedIds.length ? addedIds.join(' ') : 'none added'}; checked against origin/main and ${res.prs.length} other remote head(s)`);
+    if (!found.some((f) => f.level === 'FAIL')) add('ok', `numbers: ${addedIds.length ? addedIds.join(' ') : 'none added'}; checked against origin/main and ${res.prs.length} other head(s) (remote branches and worktree branches)`);
   } catch (e) { add('FAIL', `numbers: not checked (${printable(String(e.message || e).split('\n')[0])})`); }
 
   // 8. removed asserts

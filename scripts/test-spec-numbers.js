@@ -384,9 +384,10 @@ try {
   { const sd = repo(); G(sd, 'update-ref', 'refs/remotes/origin/main', 'HEAD');
     const branchOff = (name, ...nums) => { G(sd, 'checkout', '-q', '-b', name, 'main'); write(sd, 'specs/001-a/tasks.md', T('001', '002', '003', ...nums)); return commit(sd, name); };
     const nopr = branchOff('nopr', '020'), dead = branchOff('deadpr', '030'), mergedTip = branchOff('mergedbr', '040');
+    G(sd, 'checkout', '-q', '-b', 'quiet', 'main'); write(sd, 'README.md', 'quiet\n'); commit(sd, 'quiet'); // a branch that adds no number: it never clashes, so its PR is never looked up
     G(sd, 'checkout', '-q', 'main'); G(sd, 'merge', '-q', '--ff-only', 'mergedbr'); G(sd, 'update-ref', 'refs/remotes/origin/main', 'HEAD');
     const org = path.join(tmp, 'wide-origin.git'); G(tmp, 'init', '-q', '--bare', org);
-    G(sd, 'push', '-q', org, 'main', 'nopr', 'deadpr'); G(sd, 'remote', 'add', 'origin', org);
+    G(sd, 'push', '-q', org, 'main', 'nopr', 'deadpr', 'quiet'); G(sd, 'remote', 'add', 'origin', org);
     G(org, 'update-ref', 'refs/heads/gh-readonly-queue/main/pr-1-x', nopr); // a merge-queue branch is never a head
     const wt1 = path.join(tmp, 'wt1'), wt2 = path.join(tmp, 'wt2');
     G(sd, 'worktree', 'add', '-q', '-b', 'wtone', wt1, 'main'); write(wt1, 'specs/001-a/tasks.md', T('001', '002', '003', '040', '050')); commit(wt1, 'wt one');
@@ -394,17 +395,41 @@ try {
     G(sd, 'checkout', '-q', '-b', 'mine', 'main');
     write(sd, 'specs/001-a/tasks.md', T('001', '002', '003', '040', '020', '030', '050', '060')); commit(sd, 'mine');
     const rows = (sha, over = {}) => [{ headRefOid: sha, mergedAt: null, state: 'CLOSED', isCrossRepository: false, ...over }];
-    const state = (over = {}) => (name) => (name in over ? over[name] : []);
+    const state = (over = {}) => (name) => { if (name === 'quiet') throw new Error('WIDE-lookup-clash-only asked about a branch that clashes with nothing'); return name in over ? over[name] : []; };
     const via = async (argv, deps = {}) => { const out = []; const lg = console.log; console.log = (x) => out.push(String(x)); let code;
       try { code = await sn.main(['--root', sd, ...argv], {}, { openPrs: async () => [], ...deps }); } finally { console.log = lg; } return { code, out: out.join('\n') }; };
     // the lists
     assert.ok(sn.worktreeHeads(sd).some((h) => h.name === 'wtone' && /^[0-9a-f]{40}$/.test(h.sha)), 'worktreeHeads lists a worktree branch with its tip');
-    assert.deepStrictEqual(sn.liveRemoteHeads(sd).map((h) => h.name).sort(), ['deadpr', 'gh-readonly-queue/main/pr-1-x', 'main', 'nopr'], 'liveRemoteHeads reads git ls-remote');
+    assert.deepStrictEqual(sn.liveRemoteHeads(sd).map((h) => h.name).sort(), ['deadpr', 'gh-readonly-queue/main/pr-1-x', 'main', 'nopr', 'quiet'], 'liveRemoteHeads reads git ls-remote');
     const brokenRemote = repo(); G(brokenRemote, 'remote', 'add', 'origin', path.join(tmp, 'does-not-exist.git'));
     assert.throws(() => sn.liveRemoteHeads(brokenRemote), 'WIDE-lsremote a failing ls-remote throws (exit 2), never an empty list');
+    assert.throws(() => sn.liveRemoteHeads(sd, () => `${nopr}\trefs/heads/nopr\n`), /did not list main/, 'WIDE-lsremote-main an answer without main is not trusted');
+    assert.throws(() => sn.liveRemoteHeads(sd, () => 'garbage\n'), /not a head/, 'WIDE-lsremote-line a line that is not a head throws');
+    assert.throws(() => sn.worktreeHeads(path.join(tmp, 'no-such-repo')), 'WIDE-worktree-throws a failing `git worktree list` throws (exit 2), never an empty list');
     // pure: what is left out
-    const hh = sn.wideHeads(sd, { remote: [{ name: 'main', sha: nopr }, { name: 'mine', sha: nopr }, { name: 'HEAD', sha: nopr }, { name: 'gh-readonly-queue/main/x', sha: nopr }, { name: 'open1', sha: dead }, { name: 'open2', sha: nopr }, { name: 'free', sha: mergedTip }], worktrees: [{ name: 'free2', sha: mergedTip }, { name: 'wtopen', sha: nopr }], open: [{ sha: dead, headRef: 'x' }, { sha: '0'.repeat(40), headRef: 'open2' }, { sha: '1'.repeat(40), headRef: 'wtopen' }], selfRef: 'mine' });
+    const hh = sn.wideHeads(sd, { remote: [{ name: 'main', sha: nopr }, { name: 'mine', sha: nopr }, { name: 'HEAD', sha: nopr }, { name: 'gh-readonly-queue/main/x', sha: nopr }, { name: 'open1', sha: dead }, { name: 'open2', sha: nopr }, { name: 'free', sha: mergedTip }], worktrees: [{ name: 'free2', sha: mergedTip }, { name: 'wtopen', sha: nopr }], open: [{ sha: dead, headRef: 'x', sameRepo: true }, { sha: '0'.repeat(40), headRef: 'open2', sameRepo: true }, { sha: '1'.repeat(40), headRef: 'wtopen', sameRepo: true }], selfRef: 'mine' });
     assert.deepStrictEqual(hh.map((h) => h.name), ['free'], 'main, HEAD, this branch, queue branches, open PR heads (by name or tip) and a worktree twin of a remote head are left out');
+    // a fork PR named like one of our branches does not hide it (by name only a PR of this repository counts); by tip any PR counts
+    { const fk = sn.wideHeads(sd, { remote: [{ name: 'nopr', sha: nopr }], worktrees: [{ name: 'wtone', sha: dead }], open: [{ sha: '2'.repeat(40), headRef: 'nopr', sameRepo: false }, { sha: '3'.repeat(40), headRef: 'wtone', sameRepo: false }], selfRef: 'mine', dates: false });
+      assert.deepStrictEqual(fk.map((h) => h.name), ['nopr', 'wtone'], 'WIDE-fork a fork PR of the same name leaves the remote branch and the worktree branch in the list');
+      const own = sn.wideHeads(sd, { remote: [{ name: 'nopr', sha: nopr }], worktrees: [{ name: 'wtone', sha: dead }], open: [{ sha: '2'.repeat(40), headRef: 'nopr', sameRepo: true }, { sha: '3'.repeat(40), headRef: 'wtone', sameRepo: true }], selfRef: 'mine', dates: false });
+      assert.deepStrictEqual(own, [], 'WIDE-own-pr a PR of this repository by that name leaves them out');
+      const bySha = sn.wideHeads(sd, { remote: [{ name: 'nopr', sha: nopr }], open: [{ sha: nopr, headRef: 'other', sameRepo: false }], selfRef: 'mine', dates: false });
+      assert.deepStrictEqual(bySha, [], 'WIDE-fork-sha the tip of any open PR is that PR\'s tip: compared already'); }
+    // main(): the lists that cannot be read are exit 2, never a pass
+    for (const [why, deps, re] of [['ls-remote fails', { remoteHeads: () => { throw new Error('ls-remote broke'); } }, /NOT CHECKED: ls-remote broke/], ['a head was never fetched', { remoteHeads: () => [...sn.liveRemoteHeads(sd), { name: 'ghost', sha: '9'.repeat(40) }] }, /NOT CHECKED: a remote head could not be fetched/], ['worktree list fails', { worktrees: () => { throw new Error('worktree list broke'); } }, /NOT CHECKED: worktree list broke/]]) {
+      const x = await via(['--wide'], { branchState: state(), ...deps });
+      assert.strictEqual(x.code, 2, `WIDE-exit2 ${why}: exit 2: ${x.out}`);
+      assert.match(x.out, re, `WIDE-exit2 ${why}: says NOT CHECKED`);
+      assert.doesNotMatch(x.out, /ok, no clash/);
+    }
+    // through main(): the open PR list's refs reach the wide list (a PR of this repository named nopr hides the branch; a fork PR named nopr does not)
+    { G(org, 'update-ref', 'refs/pull/99/head', G(sd, 'rev-parse', 'quiet'));
+      const pr99 = (extra) => async () => [{ number: 99, sha: G(sd, 'rev-parse', 'quiet'), headRef: 'nopr', baseRef: 'main', ...extra }];
+      const t1 = await via(['--wide'], { branchState: state(), openPrs: pr99({ sameRepo: true }) });
+      assert.doesNotMatch(t1.out, /T020 is also in branch nopr/, 'WIDE-main-own an open PR of this repository named like the branch: it is that PR, compared as PR #99: ' + t1.out);
+      const t2 = await via(['--wide'], { branchState: state(), openPrs: pr99({}) });
+      assert.match(t2.out, /T020 is also in branch nopr/, 'WIDE-main-fork a fork PR named like the branch does not hide it: ' + t2.out); }
     // 1: remote branch without a PR, worktree branches, a dead branch, live remote list
     let r = await via(['--wide'], { branchState: state() });
     assert.strictEqual(r.code, 1, r.out);

@@ -197,6 +197,33 @@ const has = (list, re) => list.some((t) => re.test(t));
   assert.ok(has(dead.notes, /^skipped origin\/002-other: its PR is closed and not merged/), 'PP-numbers-dead-note it is named as a NOTE: ' + dead.text);
   assert.ok(has(run({ head: mineN, branch: '001-mine', branchState: closedAtTip('e'.repeat(40)) }).fails, /T501/), 'PP-numbers-dead-tip a closed PR at another tip is a live branch');
   assert.ok(has(run({ head: mineN, branch: '001-mine', branchState: () => ({ status: 1, stdout: '' }) }).fails, /numbers: not checked \(could not read the PR state of branch 002-other/), 'PP-numbers-unread an unreadable PR state is a FAIL, not a pass');
+  // the ok line counts remote branches and worktree branches, and says so
+  assert.ok(has(run({ head: good, branch: '001-good' }).lines.map((l) => l.text), /numbers: FR-500 T500; checked against origin\/main and \d+ other head\(s\) \(remote branches and worktree branches\)/), 'PP-numbers-wording the ok line does not call worktree branches remote heads');
+  // fetch mode compares the heads the remote lists NOW: a remote-tracking ref of a deleted branch is not compared
+  { const liveNames = (names) => () => names.map((name) => ({ name, sha: G(['rev-parse', `refs/remotes/origin/${name}`]) }));
+    const f = (liveHeads) => { const g = fakeGh({ head: mineN, branch: '001-mine' }); const r = pp.preflight('7', { gh: g.gh, root: tmp, fetch: false, trusted: TRUSTED, liveHeads }); return pp.format(r.lines) + '\n' + r.lines.filter((l) => l.level === 'FAIL').length; };
+    assert.match(f(liveNames(['002-other'])), /T501 .* is also in origin\/002-other/, 'PP-live-listed a head the remote lists is compared');
+    assert.doesNotMatch(f(liveNames([])), /002-other/, 'PP-live-stale a tracked ref that the remote no longer lists is not compared'); }
+  // the real fetch mode (no liveHeads stand-in): a throwaway remote with main, 002-other and the PR's head; the clone keeps a stale tracked ref of a deleted branch
+  { const org = path.join(tmp, 'pp-org.git'), cl = path.join(tmp, 'pp-clone');
+    const Gx = (dir, args) => gitRun(dir, ['-c', 'commit.gpgsign=false', ...args], { env: ENV }).trim();
+    fs.mkdirSync(org); Gx(org, ['init', '-q', '--bare', '-b', 'main']);
+    Gx(tmp, ['push', '-q', org, `${main2}:refs/heads/main`, `${otherSha}:refs/heads/002-other`, `${mineN}:refs/pull/7/head`]);
+    Gx(tmp, ['clone', '-q', org, cl]);
+    Gx(cl, ['update-ref', 'refs/remotes/origin/002-stale', otherSha]);
+    const g = fakeGh({ head: mineN, branch: '001-mine' });
+    const r = pp.preflight('7', { gh: g.gh, root: cl, trusted: TRUSTED });
+    const text = pp.format(r.lines);
+    assert.ok(/is also in origin\/002-other/.test(text), 'PP-live-fetch fetch mode compares a head the remote lists: ' + text);
+    assert.ok(!/origin\/002-stale/.test(text), 'PP-live-fetch-stale fetch mode does not compare a remote-tracking ref of a branch the remote no longer lists: ' + text); }
+  // a worktree branch holds a number: a FAIL
+  { const wt = path.join(os.tmpdir(), `pp-wt-${process.pid}`);
+    try {
+      const wtSha = mk([base], { 'specs/001-a/tasks.md': '# A\n- [ ] T380 one\n- [ ] T501 worktree\n' }, 'wt');
+      G(['worktree', 'add', '-q', '-b', 'pp-wt-branch', wt, wtSha]);
+      const w = run({ head: mineN, branch: '001-mine' });
+      assert.ok(has(w.fails, /T501 \(specs\/001-a\/tasks\.md\) is also in worktree pp-wt-branch/), 'PP-numbers-worktree a worktree branch holds a number: ' + w.text);
+    } finally { try { G(['worktree', 'remove', '--force', wt]); } catch { /* gone */ } try { G(['branch', '-D', 'pp-wt-branch']); } catch { /* gone */ } } }
   G(['update-ref', '-d', 'refs/remotes/origin/002-other']);
 }
 
