@@ -181,6 +181,7 @@
     "test:safetext-links-labels": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-safetext-links.js labels",
     "test:autofollow": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-autofollow.js",
     "test:announcemask": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-announce-mask.js",
+    "test:livemask": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-live-mask.js",
     "test:unread": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-unread.js",
     "test:tooltip": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-tooltip.js",
     "test:shutters": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-shutters.js",

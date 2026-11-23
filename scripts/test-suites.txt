@@ -141,6 +141,7 @@ test:probe
 test:logo-assets
 test:autofollow
 test:announcemask
+test:livemask
 test:openwith
 test:liveact
 test:lookalike
