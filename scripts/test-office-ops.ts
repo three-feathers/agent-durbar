@@ -105,7 +105,7 @@ function page(states: Record<string, string>) {
     const O = { on: true, reads: 0 }; const bump = () => { if (O.on) O.reads++; };
     class FakeElement { getBoundingClientRect() { return 1; } getClientRects() { return 1; } }
     class FakeRange { getBoundingClientRect() { return 1; } getClientRects() { return 1; } }
-    new Function('bump', 'Element', 'Range', body.replace(/Element\.prototype,Range\.prototype/, 'Element.prototype,Range.prototype'))(bump, FakeElement, FakeRange);
+    new Function('bump', 'Element', 'Range', body)(bump, FakeElement, FakeRange);
     new FakeRange().getBoundingClientRect(); new FakeRange().getClientRects(); new FakeElement().getBoundingClientRect();
     assert.strictEqual(O.reads, 3, f + ': a Range read and an Element read are counted (3), got ' + O.reads);
   }
