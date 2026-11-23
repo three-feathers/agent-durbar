@@ -44,7 +44,11 @@ export interface RealMeta {
   /** spec 097 FR-368..FR-371 (#1641, #1642): the world's helper kids (the Photo office's clay-toy kids), in shipped pixels: per kid the standing reference figure's `bodyH`, `w`, `h`,
    *  `headTop` and `face` box, every pose's size and the widest pose; absent in a world without kid art (the head row keeps FR-307's adults) */
   kids?: Record<string, KidMeta>;
+  /** spec 102 FR-391, FR-399 (issue #2055): the HD person set, handed over only while its off-by-default switch is on (`metaOf`); a set's own `hd` block is never read directly */
+  hdPeople?: HdSet;
 }
+/** spec 102 FR-391: per person, pose and authored scale `s` (file px per grid px): the file's width and height and its face box (x, y, w, h), all in file px */
+export interface HdSet { scales: number[]; people: Record<string, Record<string, Record<string, [number, number, number, number, number, number]>>> }
 export interface KidMeta { ref: string; bodyH: number; w: number; h: number; headTop: number; face: [number, number, number, number]; poses: Record<string, [number, number]>; widest: string }
 /** spec 097 FR-368..FR-373: a desk's kid zone: the feet line, the place width, the places nearest the person first (left span, then right), how many show as kids, and the `+K` block (or null) */
 export interface KidZone { feet: number; place: number; places: Rect[]; shown: number; more: Rect | null }

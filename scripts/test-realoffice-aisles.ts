@@ -5,8 +5,8 @@ import * as crypto from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
 import { realLayout, layoutOrFlat, signMin, signWidth, sortDesks, storeyRuns, storeyTagW, STOREY_GAP, STOREY_U_LOSS, type RealFloor, type RealMeta, type RealModel, type RealAgent, type RealState, type Rect, type Layout, type DeskBox } from '../src/shared/realoffice-layout';
-import { screenFit } from '../src/shared/realoffice-layout';
-import { deviceScales, aisleStatus, aislesLayout, AISLES_DEPTH, placeResting, layoutFor, aisleTabOrder, aisleFace, FACE_FLOOR, AISLE_SIGN_MIN_W, AISLE_PLATE_H, ARRANGEMENTS } from '../src/shared/realoffice-arrangements';
+import { screenFit, type HdSet } from '../src/shared/realoffice-layout';
+import { hdFrame, hdPick, deviceScales, aisleStatus, aislesLayout, AISLES_DEPTH, placeResting, layoutFor, aisleTabOrder, aisleFace, FACE_FLOOR, AISLE_SIGN_MIN_W, AISLE_PLATE_H, ARRANGEMENTS } from '../src/shared/realoffice-arrangements';
 
 process.exitCode = 1;
 const ROOT = (() => { let d = __dirname; while (!fs.existsSync(path.join(d, 'package.json'))) d = path.dirname(d); return d; })();
@@ -1162,6 +1162,47 @@ for (const world of ['photo', 'cave']) {
     assert.ok(glass(4, 1695, h) < 128 && glass(4, 1696, h) >= 128, `4 agents (1248x${h} floor): the glass is 128 px or more from 1696 px across (448 short)`);
   }
   console.log('arcade 1280x800 limits pinned: strip from 786 px (697 given), glass.h from 1276 (3 agents) and 1696 (4) px across (1248 given)');
+}
+
+/* spec 102 FR-391, FR-392, FR-399 (issue #2055): the HD person set. Off (no `hdPeople`, the set's own `hd` block in META) the hall is byte for byte the hall without the
+   block, with the old file names. On: the authored size and whole number per ratio, the frame inside its place on whole device px, the face from the frame, the others unchanged. */
+{
+  const HD = (META as unknown as { hd?: HdSet }).hd;
+  assert.ok(HD && Object.keys(HD.people).length >= 3, 'set.json carries the HD set (the pilot: p08, p12, p04)');
+  const bare = { ...META } as Record<string, unknown>; delete bare.hd;
+  const cases2: Array<[number, number, number, number]> = [[3, 1440, ROOM.h900, 1], [3, 1280, ROOM.h800, 1], [15, 1440, ROOM.h900, 1], [15, 1280, ROOM.h800, 1], [3, 1440, ROOM.h900, 2], [3, 1440, ROOM.h900, 1.25], [15, 1280, ROOM.h800, 1.5]];
+  const pick = (n: number): RealModel => { const m = model(n, n > 4 ? 4 : 1); const ps = ['p08', 'p12', 'p04']; m.folders.flatMap((f) => f.agents).forEach((a, i) => { a.away = null; if (i < 3) a.person = ps[i]; }); return m; };
+  let hdDrawn = 0;
+  for (const [n, W, H, dpr] of cases2) {
+    const off = aislesLayout(pick(n), { w: W, h: H }, { ...META, dpr }, SIGNS(4)), tag = `${n} agents at ${W}x${H}, ratio ${dpr}`;
+    assert.strictEqual(JSON.stringify(off), JSON.stringify(aislesLayout(pick(n), { w: W, h: H }, { ...bare, dpr } as unknown as RealMeta, SIGNS(4))), `${tag}: off, the set's hd block changes nothing`);
+    assert.ok(off.zones.flatMap((z) => z.desks).every((d) => !d.person || !d.person.file.startsWith('hd/')), `${tag}: off, only the old frames`);
+    const on = aislesLayout(pick(n), { w: W, h: H }, { ...META, dpr, hdPeople: HD }, SIGNS(4)), g = on.g as number;
+    assert.deepStrictEqual(problems(on, W, n, dpr), [], `${tag}: on, the hall has no problem`);
+    assert.deepStrictEqual([on.g, on.height, on.zones.map((z) => z.box)], [off.g, off.height, off.zones.map((z) => z.box)], `${tag}: on, the same plan`);
+    const od = new Map(off.zones.flatMap((z) => z.desks).map((d) => [d.id, d] as const));
+    for (const d of on.zones.flatMap((z) => z.desks)) {
+      if (!d.person) continue;
+      const p = d.person, o = od.get(d.id)!.person, hf = hdFrame(HD, p.pid, p.pose, g, dpr);
+      if (!hf) { assert.deepStrictEqual(p, o, `${tag}: ${d.id} without an HD frame is unchanged`); continue; }
+      hdDrawn++;
+      assert.strictEqual(p.file, hf.file, `${tag}: ${d.id} draws its HD frame`);
+      for (const v of [p.x, p.y, p.w, p.h]) assert.ok(Math.abs(v * dpr - Math.round(v * dpr)) < 1e-6, `${tag}: ${d.id} on whole device px (${v})`);
+      assert.ok(inside(p, d.stand as Rect, 0.01) && Math.abs(p.y + p.h - d.plate.y) < 1e-6, `${tag}: ${d.id} inside its place, feet on the plate`);
+      assert.ok(inside(p.vis, p, 0.01) && p.vis.h > 8, `${tag}: ${d.id}'s face is inside the frame`);
+    }
+  }
+  assert.ok(hdDrawn >= 18, `the HD frames were drawn (${hdDrawn})`);
+  /* FR-392: the size rule: the largest s x n not over g x dpr, a tie to the larger s */
+  for (const [dev, s, n] of [[2, 2, 1], [3, 3, 1], [4, 4, 1], [5, 4, 1], [6, 3, 2], [8, 4, 2], [2.5, 2, 1], [4.5, 4, 1], [6.25, 3, 2], [1.5, 0, 0]]) {
+    const r = hdPick(dev, [4, 3, 2]);
+    assert.deepStrictEqual(r ? [r.s, r.n] : [0, 0], [s, n], `hdPick(${dev}): s ${s}, n ${n}`);
+  }
+  /* a frame wider than the place falls back to the old frame (never cut, FR-392) */
+  const wide = { scales: [4, 3, 2], people: { p08: Object.fromEntries(['type', 'book', 'knock', 'face-knock', 'face-coffee', 'face-book', 'sit'].map((q) => [q, { 4: [400, 288, 0, 0, 40, 40], 3: [300, 216, 0, 0, 30, 30], 2: [200, 144, 0, 0, 20, 20] }])) } } as unknown as HdSet;
+  const w3 = aislesLayout(pick(3), { w: 1440, h: ROOM.h900 }, { ...META, hdPeople: wide }, SIGNS(4)), o3 = aislesLayout(pick(3), { w: 1440, h: ROOM.h900 }, META, SIGNS(4));
+  assert.strictEqual(JSON.stringify(w3), JSON.stringify(o3), 'an HD frame wider than its place is not drawn: the old frame stays');
+  console.log(`arcade HD people: ${hdDrawn} HD frames placed, off = unchanged in ${cases2.length} halls`);
 }
 
 console.log(`aisles tests passed (${cases} layouts)`);

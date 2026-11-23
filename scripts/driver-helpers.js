@@ -385,6 +385,7 @@ function helpers(ctx) {
     try { clock = new URL(wc().getURL()).searchParams.get('simclock'); } catch { clock = null; }
     const query = { sim: '15', simfreeze: '1', ...(clock && /^\d{1,15}$/.test(clock) ? { simclock: clock } : {}), ...(o.fastVisits ? { simvisits: 'fast' } : {}), ...(o.query || {}) };
     for (const k of Object.keys(query)) if (query[k] === undefined) delete query[k];
+    if (process.env.DURBAR_HD_PEOPLE === '1' && !('hdpeople' in query)) query.hdpeople = '1'; // spec 102 FR-399: a run with the HD person switch keeps it on its reloads
     const arcade = DRIVER_WORLD === 'retro' && query.officeview === 'real'; // spec 102 T283: the Real office loads draw the arcade
     if (arcade) Object.assign(query, { worldflags: 'retro', world: 'retro' });
     const cave = DRIVER_WORLD === 'cave' && query.officeview === 'real'; // spec 097 FR-377: the Real office loads draw the Prehistoric cave
