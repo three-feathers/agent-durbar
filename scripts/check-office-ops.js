@@ -25,7 +25,7 @@ const path = require('path');
 const assert = require('assert');
 const { contentTracing } = require('electron');
 const { helpers, waits, jsLiteral } = require('./driver-helpers');
-const { judge } = require('./office-ops-rules');
+const { judge, toStatus } = require('./office-ops-rules');
 
 const MAX_CHANGES = 10; // spec 097 T158: SVG animations step at under 10 changes a second (per animation)
 const ANIM_MUTANT = process.env.OPS_ANIM_MUTANT || '';
@@ -76,7 +76,7 @@ const INSTRUMENT = `(()=>{ if(window.__ops)return; const O=window.__ops={on:fals
   const bump=()=>{if(O.on)O.reads++;};
   for(const prop of ['offsetWidth','offsetHeight','offsetTop','offsetLeft','clientWidth','clientHeight','clientTop','clientLeft','scrollHeight','scrollWidth','scrollTop','scrollLeft'])
     for(const proto of [HTMLElement.prototype,Element.prototype]){const d=Object.getOwnPropertyDescriptor(proto,prop);if(d&&d.get)Object.defineProperty(proto,prop,{...d,get(){bump();return d.get.call(this);}});}
-  for(const m of ['getBoundingClientRect','getClientRects']){const f=Element.prototype[m];Element.prototype[m]=function(){bump();return f.apply(this,arguments);};}
+  for(const P of [Element.prototype,Range.prototype])for(const m of ['getBoundingClientRect','getClientRects']){const f=P[m];P[m]=function(){bump();return f.apply(this,arguments);};}
   const g=window.getComputedStyle;window.getComputedStyle=function(e){if(O.on&&e&&e.id==='floor')O.gcsFloor++;return g.apply(this,arguments);};
   O.start=()=>{O.reads=0;O.gcsFloor=0;O.base=window.__durbarSimUi.ops();O.on=true;};
   O.stop=()=>{O.on=false;const n=window.__durbarSimUi.ops();return {reads:O.reads,renders:n.renders-O.base.renders,searches:n.searches-O.base.searches,gcsFloor:O.gcsFloor};};
@@ -216,7 +216,7 @@ module.exports = async (ctx) => {
     const ids = await js(`window.__durbarSimUi.agents().filter(a=>!a.parent).map(a=>a.id)`);
     const id = ids[3];
     const emit = (st) => `window.__durbarSimEmit({type:'status',sessionId:${jsLiteral(id)},timestamp:Date.now(),status:${jsLiteral(st)}})`;
-    await drawn(emit('working')); // so that every change below is a real change of one agent's status
+    await toStatus(js, drawn, id, 'working'); // so that every change below is a real change of one agent's status (a draw is waited for only when it changes: issue 2043)
     const per = { renders: [], searches: [], reads: [], gcsFloor: [] }, leaks = [], due = [];
     for (let i = 0; i < 8; i++) {
       /* a settled window (#1195, 3 renders once in 8 on Linux CI, 3 of 10 runs under a CPU load): the previous update's visit (a desk walking to a place starts, or ends, on the
@@ -261,7 +261,7 @@ module.exports = async (ctx) => {
       assert.ok(mover, `${n} agents: a room with three desks or more`);
       const place = `(()=>{const e=document.querySelector('#stage .desk[data-id=${jsLiteral(mover)}]');const r=e&&e.closest('.room');return r?[...r.querySelectorAll('.desk[data-id]')].indexOf(e):-1;})()`;
       const emitM = (st) => `window.__durbarSimEmit({type:'status',sessionId:${jsLiteral(mover)},timestamp:Date.now(),status:${jsLiteral(st)}})`;
-      await drawn(emitM('working'));
+      await toStatus(js, drawn, mover, 'working'); // issue 2043: the mover is often already working (sim-4, the agent of the loop above), and an unchanged state draws nothing
       const reorder = { searches: [], probes: [], moved: [] };
       for (let i = 0; i < 4; i++) {
         for (const st of ['needs-permission', 'working']) {
@@ -285,7 +285,7 @@ module.exports = async (ctx) => {
     const lid = await js(`(()=>{const e=document.querySelector('#stage .desk[data-id] [data-live]');return e&&e.dataset.live;})()`);
     assert.ok(lid, `${n} agents: a desk has a live line`);
     const liveLine = `document.querySelector('#stage [data-live=${jsLiteral(lid)}]')`;
-    await drawn(emit('working').split(id).join(lid)); // working, so that the deltas below change no status
+    await toStatus(js, drawn, lid, 'working'); // working, so that the deltas below change no status
     const live = { reads: [], renders: [] };
     for (let i = 0; i < 8; i++) {
       const word = `Ops step ${i} checked`;
@@ -306,7 +306,7 @@ module.exports = async (ctx) => {
     await js(INSTRUMENT);
     const ids80 = await js(`window.__durbarSimUi.agents().filter(a=>!a.parent).map(a=>a.id)`);
     const emit80 = (st) => `window.__durbarSimEmit({type:'status',sessionId:${jsLiteral(ids80[3])},timestamp:Date.now(),status:${jsLiteral(st)}})`;
-    await drawn(emit80('working'));
+    await toStatus(js, drawn, ids80[3], 'working');
     const per80 = { renders: [], searches: [], reads: [] };
     for (let i = 0; i < 8; i++) {
       assert.ok(await until(`window.__durbarSimUi.visitsSettled()&&window.__durbarSimUi.settleNow()`, 15000), `${n} agents at 1280x800: the office settled before update ${i}`);

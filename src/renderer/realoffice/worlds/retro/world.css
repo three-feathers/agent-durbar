@@ -160,3 +160,6 @@ html[data-world="retro"] .panel-in{animation:arc-chat-on .2s steps(4) 1}
 html[data-world="retro"] .note.elicit{border:3px solid var(--sel-border);border-radius:0;box-shadow:var(--shadow-pop)}
 html[data-world="retro"] .note.elicit>b{font-family:var(--ui-display);text-transform:uppercase;letter-spacing:.04em}
 html[data-world="retro"] .note.elicit :is(.q-opt,.q-other,.q-field input,.q-field select,.q-field textarea,.btn){border-radius:0}
+
+/* spec 102 T446 (issue 2010): the open chat's message box has ONE outline in the arcade. The box (.inbox) shows the focus ring (its :focus-within border and shadow); the focused textarea inside it took the page's :focus-visible halo (the red second tone, 097/052 FR-052) as a second box that stopped before the Send button */
+html[data-world="retro"] .inbox textarea:focus-visible{box-shadow:none}

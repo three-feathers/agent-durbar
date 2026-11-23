@@ -1,5 +1,5 @@
 # The suites `npm test` runs (scripts/run-tests.js), one `npm run` script name per line, in the order `npm run test:serial` runs them.
-# Add a new suite on its own line in the middle of the list, not at the end (two PRs appending at the end conflict). Blank lines and # comments are ignored.
+# Where a new suite goes: docs/development.md, Adding a test suite. Blank lines and # comments are ignored.
 test:safetext
 test:safetext-links
 test:safetext-links-labels
@@ -46,6 +46,7 @@ test:blogcheck
 test:compressshots
 test:changelog
 test:releasenodeps
+test:releaseuigate
 test:releasevideo
 test:usage
 test:specsindex
@@ -55,6 +56,7 @@ test:handoff
 test:brainstate
 test:brainloop
 test:brainsurface
+test:toolargs-mask
 test:toolusage
 test:usagestore
 test:about
@@ -130,6 +132,7 @@ test:uisuite
 test:cichanges
 test:ciossensitive
 test:uievents
+test:workflowconcurrency
 test:fastlane
 test:pathdirs
 test:officialinstall
@@ -143,6 +146,7 @@ test:probe
 test:logo-assets
 test:autofollow
 test:announcemask
+test:livemask
 test:openwith
 test:liveact
 test:lookalike
@@ -167,6 +171,7 @@ test:modelchoice
 test:mcphealth
 test:globals
 test:runtests
+test:ci-shards
 test:ci-required-suites
 test:runtestsreal
 test:theme-tokens
@@ -227,6 +232,12 @@ test:inlinename
 test:schedtop
 test:schedhist
 test:updatecheck
+test:selfupdate-repo
+test:selfupdate-feed
+test:selfupdate-notes
+test:selfupdate-installtype
+test:selfupdate-schedule
+test:releases-json
 test:sessionsummary
 test:helpercard
 test:weeklyaudit
@@ -239,6 +250,7 @@ test:supplychain
 test:electroncache
 test:claudecliunit
 test:rules
+test:fragments
 test:weeklyretro
 test:cistats
 test:docsscripts
@@ -285,5 +297,7 @@ test:picturebudget
 test:chargroups
 test:dangersites
 test:specnumbers
+test:worktreesclean
 test:prpreflight
 test:pencilpark
+test:arcade-wall-signs

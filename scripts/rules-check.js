@@ -38,7 +38,7 @@ const BUDGETS = {
 
 const RULES_DIR = 'docs/rules';
 const RULE_HEADER = 'This file is rule text, part of [AGENTS.md](../../AGENTS.md)';
-const TOTAL_CAP = 3500; // AGENTS.md + docs/rules/*.md: the split may not grow the rule text past this
+const TOTAL_CAP = 3525; // 3500 until FR-084 (2026-11-07); AGENTS.md + docs/rules/*.md: the split may not grow the rule text past this
 
 function countWords(text) {
   const m = String(text).match(/\S+/g);

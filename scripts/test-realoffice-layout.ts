@@ -362,6 +362,21 @@ assert.ok(Object.values(META.stand).some((s) => Object.values(s.foot as Record<s
   assert.strictEqual(standPose(META, 'nobody', 'library', false), null);
   assert.strictEqual(standPose(META, '__proto__', 'library', false), null, 'own keys only');
 }
+// ---- spec 097 FR-024 (issue #2013): a set with only the coffee and letter poses (Prehistoric) stands its Bank, coffee corner, Web and Other tools visitors; one with no pose at all keeps its chip off the frame line ----
+{
+  const few = JSON.parse(JSON.stringify(META)) as RealMeta; for (const pid of Object.keys(few.stand)) for (const p of ['counter', 'type', 'typeA', 'typeB']) delete few.stand[pid].poses[p];
+  assert.strictEqual(standPose(few, 'p01', 'bank', false), null, 'no counter picture and no coffee one: no figure');
+  const prehistoric = JSON.parse(JSON.stringify(few)) as RealMeta; for (const pid of Object.keys(prehistoric.stand)) prehistoric.stand[pid].poses.coffee = prehistoric.stand[pid].poses.letter;
+  assert.strictEqual(standPose(prehistoric, 'p01', 'bank', false)?.pose, 'coffee', 'a set with `coffee` and no `counter`: Omar stands at the Bank in the coffee pose (the cave lost him, #2013)');
+  assert.strictEqual(standPose(prehistoric, 'p01', 'coffee', false)?.pose, 'coffee', 'the coffee corner too');
+  assert.strictEqual(standPose(prehistoric, 'p01', 'web', false)?.pose, 'letter', 'Web: letter when there is no typing picture');
+  for (const [W, H] of SIZES) {
+    const m = model(15, 4); m.places[6].visitors = [{ id: 'b0', person: 'nobody-in-this-set', needsYou: false }];
+    const L = realLayout(m, { w: W, h: H }, META), v = L.fixtures.flatMap((f) => f.visitors).find((x) => x.id === 'b0')!;
+    assert.ok(!v.fig, 'a visitor whose person has no sheet has no figure');
+    assert.ok(v.chip.y + CHIP_H <= L.lobbyH - 2, `${W}: a chip without a figure ends above the band's bottom edge (the folder frame line): ${(v.chip.y + CHIP_H).toFixed(1)} of ${L.lobbyH}`);
+  }
+}
 
 // ---- FR-191: visitors face their fixture; the pictures face left, so every visitor stands to the right of its fixture ----
 {

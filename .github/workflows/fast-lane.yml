@@ -57,10 +57,12 @@ jobs:
           FAST: ${{ steps.changes.outputs.fast }}
           BASE_SUITES: ${{ steps.changes.outputs.suites }}
           OWN_SUITES: ${{ steps.own.outputs.suites }}
+          CAPPED: ${{ steps.changes.outputs.capped || steps.own.outputs.capped }}
         run: |
           if [ "$FAST" = yes ]; then suites="$BASE_SUITES"; else suites="$OWN_SUITES"; fi
           printf 'suites=%s\n' "$suites" | head -n 1 >> "$GITHUB_OUTPUT"
-          if [ -z "$suites" ]; then echo "No npm test suite is touched by this diff: nothing to run (the required jobs run everything)." >> "$GITHUB_STEP_SUMMARY"; fi
+          if [ -z "$suites" ] && [ -n "$CAPPED" ]; then echo "No npm test suite picked: the only tests naming the changed files name a folder of more than 40 files, which picks nothing (spec 117 FR-390); the required jobs run everything." >> "$GITHUB_STEP_SUMMARY"
+          elif [ -z "$suites" ]; then echo "No npm test suite is touched by this diff: nothing to run (the required jobs run everything)." >> "$GITHUB_STEP_SUMMARY"; fi
       - if: steps.pick.outputs.suites != ''
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:

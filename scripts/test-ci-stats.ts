@@ -135,4 +135,17 @@ const uiJobs = [mkJob(1, 'UI shard (ubuntu-latest 1/4)', 'ubuntu-latest', 0, 1, 
 const uiText = (cs as any).report({ runs: uiRuns, jobs: uiJobs, prs: [], fromMs: from, toMs: from + 3600000, days: 1 }).join('\n');
 assert.ok(/Share of pull_request runner minutes in the UI shards \(UI on three OSes\): 75 % \(30 of 40;/.test(uiText), uiText);
 
+// spec 117 SC-003: npm test time per OS is the longest part of each run (both parts finished); the seconds-long summary job is not it; a cancelled part is counted
+{
+  const runs = [1, 2, 3].map((id) => ({ id, name: 'CI', event: 'pull_request' }));
+  const W = 'windows-latest';
+  const jobs = [
+    mkJob(1, 'Build and test (windows-latest) part 1/2', W, 0, 1, 9), mkJob(1, 'Build and test (windows-latest) part 2/2', W, 0, 1, 13), mkJob(1, 'Build and test (windows-latest)', 'ubuntu-latest', 13, 13, 13.1),
+    mkJob(2, 'Build and test (windows-latest) part 1/2', W, 0, 1, 7), mkJob(2, 'Build and test (windows-latest) part 2/2', W, 0, 2, 6, 'failure'),
+    mkJob(3, 'Build and test (windows-latest) part 1/2', W, 0, 1, 26, 'cancelled'), mkJob(3, 'Build and test (windows-latest) part 2/2', W, 0, 1, 12),
+  ];
+  const text = (cs as any).report({ runs, jobs, prs: [], fromMs: from, toMs: from + 3600000, days: 1 }).join('\n');
+  assert.ok(/npm test per OS \(SC-003\): longest part per run/.test(text) && /^ {2}windows-latest: runs=2 6 \/ 12; parts cancelled 1$/m.test(text), text);
+}
+
 console.log('ci-stats tests passed');

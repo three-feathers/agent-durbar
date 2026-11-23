@@ -3,7 +3,7 @@
  * At 15 and 40 agents, 1440x900, device pixel ratio 1 (emulated, so that every OS counts the same; FR-183 says what Retina does):
  *   - one status event of one agent through the normal path (`__durbarSimEmit`), waited for with until(), the median of 8 (simulator visits run on the wall clock, so
  *     a single reading can hold another agent's walk), each started only when nothing is put off (DurbarRealOffice.pending(): no screen repaint, FR-033; spec 097 FR-236 removed the done tick's timed
- *     redraw) and the lobby is settled, so no earlier update's deferred work lands in it: renders, layout reads (offset*, client*, scroll*, getBoundingClientRect, getClientRects), nodes added or removed
+ *     redraw) and the lobby is settled, so no earlier update's deferred work lands in it: renders, layout reads (offset*, client*, scroll*, getBoundingClientRect, getClientRects, on an Element or a Range), nodes added or removed
  *     and attribute writes in #stage (a MutationObserver; the state's own cues, a "?", "!", the thinking dots and a folder's count of a new state, are not "nodes rewritten");
  *   - topbarResizes: no part of the top bar changes size in those updates (a count's pill keeps its width with proportional figures too, as on the Windows runner's font);
  *   - elements recalculated by one text change (`UpdateLayoutTree.elementCount` of one short contentTracing, a count; animations off for the trace);
@@ -73,7 +73,7 @@ const INSTRUMENT = `(()=>{ if(window.__ops)return; const O=window.__ops={on:fals
   const bump=()=>{if(!O.on)return;O.reads++;const f=String(new Error().stack||'').split('\\n').slice(3,5).map(x=>x.trim().replace(/^.*\\/([^/]+:\\d+):\\d+\\)?$/,'$1')).join(' < ');O.by[f]=(O.by[f]||0)+1;};
   for(const prop of ['offsetWidth','offsetHeight','offsetTop','offsetLeft','clientWidth','clientHeight','clientTop','clientLeft','scrollHeight','scrollWidth','scrollTop','scrollLeft'])
     for(const proto of [HTMLElement.prototype,Element.prototype]){const d=Object.getOwnPropertyDescriptor(proto,prop);if(d&&d.get)Object.defineProperty(proto,prop,{...d,get(){bump();return d.get.call(this);}});}
-  for(const m of ['getBoundingClientRect','getClientRects']){const f=Element.prototype[m];Element.prototype[m]=function(){bump();return f.apply(this,arguments);};}
+  for(const P of [Element.prototype,Range.prototype])for(const m of ['getBoundingClientRect','getClientRects']){const f=P[m];P[m]=function(){bump();return f.apply(this,arguments);};}
   const R=window.DurbarRealOffice,r=R.render;R.render=function(){if(O.on)O.renders++;return r.apply(this,arguments);};
   const take=(l)=>{if(!O.on)return;for(const m of l){if(m.type==='attributes'){O.attrs++;const k=(m.target.className&&String(m.target.className).split(' ')[0]||m.target.tagName)+'.'+m.attributeName;O.seen[k]=(O.seen[k]||0)+1;}else for(const n of [...m.addedNodes,...m.removedNodes])if(!(n.classList&&CUE.test(n.className))){O.nodes++;const k='node:'+(n.className&&String(n.className).split(' ')[0]||n.nodeName)+' in '+(m.target.className&&String(m.target.className).split(' ')[0]||m.target.nodeName);O.seen[k]=(O.seen[k]||0)+1;}}};
   const mo=new MutationObserver(take);mo.observe(document.getElementById('stage'),{subtree:true,childList:true,attributes:true});

@@ -26,6 +26,7 @@ const fs = require('fs');
 const os = require('os');
 const { spawn, spawnSync } = require('child_process');
 const { ensureElectron, buildProblem } = require('./ensure-electron');
+const { parseShardSpec, medianOf, timeParts } = require('./time-shard'); // the one greedy split by recorded time, shared with run-tests.js (spec 117 FR-018)
 
 const ROOT = path.join(__dirname, '..');
 const SIM = { DURBAR_SIM: '15', DURBAR_SIM_FREEZE: '1' };
@@ -233,6 +234,7 @@ const DRIVERS = [
   { name: 'check-097-letter', label: 'check-097-letter retro', env: { DRIVER_WORLD: 'retro' } }, // the same in the Retro arcade
   { name: 'check-097-letter', label: 'check-097-letter cave', env: { DRIVER_WORLD: 'cave' } }, // the same in the Prehistoric cave (spec 097 FR-377: one of the three Real office worlds)
   { name: 'check-097-order' }, // spec 097 FR-345..FR-348 (#1152): rooms, desks and places rearranged in Real office by key and folder menu on spec 033's one order; the flat order shows, both sizes; FR-366 (#1571): a tie among those that need you keeps the office order (flat, Photo, arcade)
+  { name: 'check-102-arcade-labels' }, // spec 102 T445, T446 (issues #2009, #2010): the arcade's name chips and place plates stand on no wall sign and touch no visitor's head; the open chat's message box has one outline (1440x900 and 1280x800, 15 agents)
   { name: 'check-102-arcade-menu' }, // spec 102 T317 (issue #1399): the folder menu on an arcade sign: Move earlier / later say the room keeps its place (spec 097 FR-354); the signs do not move and nothing is saved
   { name: 'check-097-drag' }, // spec 097 FR-352..FR-355 (#1152, Q30..Q33): drag a plate or folder sign in Real office (Photo, cave, arcade), the lobby by chip button and the +N menu, on the one saved order; both sizes
   { name: 'check-097-drag-cancel', focus: true }, // spec 097 FR-352 (issue 1550): focus: true because its held drags end on a real OS blur from a neighbour window, which is what it tests. A drag in Real office ends on a window blur, a wheel, a scroll, Escape and pointercancel: nothing lifted, nothing saved; a later drag works; Photo office and arcade, both sizes
@@ -251,6 +253,7 @@ const DRIVERS = [
   { name: 'check-097-hover-card', label: 'check-097-hover-card retro', env: { DRIVER_WORLD: 'retro' } }, // spec 102 T283 (issue #1399): the same driver in the arcade
   { name: 'check-097-lounge' }, // spec 097 FR-246..FR-249 (#1220): finished, read agents sit in the lounge row in the Photo office and the arcade, unread keeps the desk, the ease back, reduced motion, both sizes
   { name: 'check-097-trouble-signs' }, // spec 097 FR-360..FR-362 (#1171): the sweat drop, horns and ring, and siren on the desks Open office marks, clear of face, plate and monitor, Serious mode, both sizes
+  { name: 'check-097-textfit' }, // spec 001 FR-038, FR-039, FR-179 and spec 097 FR-023 (#2011..#2014): a cut name hides its path first, a lobby chip is whole and off the frame line, the Flat Postbox shows its name; four worlds, both sizes
   { name: 'check-097-world-look' }, // spec 097 FR-350, FR-351 (#1153): a world keeps its own colours whatever theme is picked, and the arcade's drop overlay reads
   { name: 'shots-097-cave' }, // spec 097 phase 4: the Prehistoric cave behind its flag (World row, its set, any set in any world, no blend)
   { name: 'shots-001-lobby' }, // spec 001 FR-034..FR-040: Boss queue, Bank, Postbox and its letter, who is at a place (simsched in its own query)
@@ -356,26 +359,15 @@ function timings() {
 const SHARD1_HEAD_START_SECS = 240;
 
 /** Spec 008 FR-182 (issue #839), FR-183: shard `i/n` (1-based) is a greedy split by recorded duration: drivers from the slowest down, each to the
- *  shard with the least time so far (ties: the lower shard, then the suite's order), shard 1 starting with SHARD1_HEAD_START_SECS. Each shard
+ *  shard with the least time so far (ties: the lower shard, then the suite's order), shard 1 starting with SHARD1_HEAD_START_SECS (scripts/time-shard.js). Each shard
  *  runs its drivers in the suite's order. n shards are disjoint and together hold every driver of `list`; the result depends only on `list`
  *  and the committed timing file. No spec: the whole list. */
 function shard(list, spec, times = timings()) {
   if (spec === undefined || spec === '') return list;
-  const m = String(spec).match(/^(\d+)\/(\d+)$/);
-  const i = m ? Number(m[1]) : 0, n = m ? Number(m[2]) : 0;
-  if (!m || n < 1 || i < 1 || i > n) throw new Error(`ui-suite: --shard wants i/n with 1 <= i <= n, got "${spec}"`);
-  const known = Object.entries(times).filter(([k, v]) => !k.startsWith('_') && Number.isFinite(v)).map(([, v]) => v).sort((x, y) => x - y);
-  const median = known.length ? known[Math.floor(known.length / 2)] : 1;
+  const { i, n } = parseShardSpec(spec, 'ui-suite');
+  const median = medianOf(times);
   const w = (d) => { const v = times[d.name]; return Number.isFinite(v) ? v : median; };
-  const load = Array.from({ length: n }, (_, k) => (k === 0 && n > 1 ? SHARD1_HEAD_START_SECS : 0));
-  const mine = new Set();
-  list.map((d, k) => ({ d, k })).sort((x, y) => w(y.d) - w(x.d) || x.k - y.k).forEach(({ d }) => {
-    let best = 0;
-    for (let b = 1; b < n; b++) if (load[b] < load[best]) best = b;
-    load[best] += w(d);
-    if (best === i - 1) mine.add(d);
-  });
-  return list.filter((d) => mine.has(d));
+  return timeParts(list, n, w, n > 1 ? [SHARD1_HEAD_START_SECS] : [])[i - 1];
 }
 
 /** Spec 008 FR-210: do the drivers' windows share one desktop, and so one OS window focus? True on macOS, Windows and Linux with a display;
