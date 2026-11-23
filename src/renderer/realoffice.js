@@ -657,8 +657,21 @@
       if (!zd || hiddenNow()) closeZoom(); /* FR-328: an asleep agent's card stays (its glass is dark, the card has its reply) */
       else { if (ZOOM.st !== zd.state) { fillZoom(); ZOOM.held = PT || '?'; } placeZoom(); } /* FR-328 (2026-11-08): the card follows the agent's state as its facts do (FR-315): asleep or back, it is filled again, not left with the old tool log */
     }
+    fitSigns(chrome);
     settle(chrome, lay.width);
     return lay;
+  }
+
+  /* spec 001 FR-037, FR-179 and spec 097 FR-023 (issue 2011): the path gives way before the name. The CSS shrinks the path 1000 times faster than the
+     name, which still loses a fraction of a pixel to an ellipsis ("command-cen…") when a font is wider than the layout measured (the DejaVu faces of a CI
+     runner); a sign whose name is cut then drops its path (`.nopath`; the folder stays in the sign's tip), as the Flat office's `fitHead` does. */
+  function fitSigns(chrome) {
+    const cut = (e) => { if (e.scrollWidth > e.clientWidth + 0.5) return true; const cs = getComputedStyle(e), r = document.createRange(); r.selectNodeContents(e); return r.getBoundingClientRect().width > e.getBoundingClientRect().width - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight) + 0.01; };
+    for (const sg of chrome.querySelectorAll('.ro-sign')) {
+      if (!sg._b || !sg.querySelector(':scope > .ro-path')) continue;
+      sg.classList.remove('nopath');
+      if (!sg.classList.contains('short') && [sg._b, ...sg._b.querySelectorAll(':scope > .rn-h, :scope > .rn-t')].some(cut)) sg.classList.add('nopath');
+    }
   }
 
   /* FR-018, FR-184: the folder sign keeps its nodes: only the counts and the cost change on a status update, and the + and the room menu keep the focus */
