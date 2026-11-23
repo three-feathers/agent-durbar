@@ -19,4 +19,3 @@ area:harness	c5def5	Collaboration harness (agents, templates, labels, board)
 docs-n/a	cfd3d7	PR with no docs impact (like a "Docs: n/a <reason>" line); only silences the warning-only Docs check
 area:security	c5def5	Security: secrets, redaction, shell, permissions hardening, scanning findings
 area:schedules	c5def5	Scheduled prompts and self-paced loops
-spec:113	0e8a16	Spec 113: chat-list-filter
