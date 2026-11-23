@@ -18,7 +18,7 @@ import { migrateLegacyTheme, parseCharacters } from '../shared/characters';
 import { migrateRemovedTheme } from '../shared/themes';
 import type { CharacterChoice } from '../shared/characters';
 import { MAX_CHARACTER_PINS } from '../shared/charrules';
-import { parseUpdatesSettings } from '../shared/selfupdate';
+import { parseUpdatesPatch, parseUpdatesSettings } from '../shared/selfupdate';
 import type { SelfUpdateSettings } from '../shared/selfupdate';
 
 /** Result of a custom-place call (spec 024 FR-020): the list and the map as they are now, whether the call worked or not. */
@@ -298,19 +298,30 @@ export class SettingsStore {
     return this.commit(next) ? { ok: true, value: v } : { ok: false, value: this.breakResume };
   }
 
-  /** Spec 118 FR-021 (T010): Durbar's own update keys as validated on read; a copy. */
+  /** Spec 118 FR-021 (T010): Durbar's own update keys as validated on read; a deep copy, so no change to it reaches the store. */
   get updates(): SelfUpdateSettings {
-    return { ...(this.s.updates ?? {}) };
+    return parseUpdatesSettings(this.s.updates) ?? {};
   }
 
-  /** Merges `patch` (an `undefined` value removes its key) and validates the whole again; what does not pass is not written. Bookkeeping and
-   * the safe direction stay in force for this run when the write fails (`isUnsaved('updates')`); turning the daily check on is rolled back. */
+  /**
+   * Spec 118 FR-021: the patch is validated first (`parseUpdatesPatch`): one bad field refuses it all (false; nothing changes in memory or on disk).
+   * A valid patch merges only the fields it names (`undefined` removes one). A failed write restores the exact previous value, except a switch
+   * from on to off, which stays in force for this run (`isUnsaved('updates')`): the safe direction.
+   */
   setUpdates(patch: Partial<SelfUpdateSettings>): boolean {
-    const u = parseUpdatesSettings({ ...(this.s.updates ?? {}), ...patch });
+    const p = parseUpdatesPatch(patch);
+    if (!p) return false;
+    const prev = this.s.updates;
+    const merged = parseUpdatesSettings({ ...(prev ?? {}), ...p });
     const next: AppSettings = { ...this.s };
-    if (u) next.updates = u;
+    if (merged) next.updates = merged;
     else delete next.updates;
-    return this.commit(next, patch.selfCheck === true ? undefined : 'updates');
+    if (this.commit(next)) return true;
+    if (prev?.selfCheck !== false && merged?.selfCheck === false) {
+      this.s = { ...this.s, updates: { ...(prev ?? {}), selfCheck: false } };
+      this.kept.add('updates');
+    }
+    return false;
   }
 
   /** Spec 081 FR-022 (Q6 = A): the agent-app update check at start is on by default; only `false` is written. */

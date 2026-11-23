@@ -9,6 +9,7 @@ import * as path from 'path';
 import { SettingsStore } from '../src/main/settings';
 import { parseSettings } from '../src/shared/credits';
 import { parseUpdatesSettings } from '../src/shared/selfupdate';
+import type { SelfUpdateSettings } from '../src/shared/selfupdate';
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-selfupdate-settings-'));
 const T0 = 1_800_000_000_000;
@@ -27,6 +28,12 @@ try {
   assert.strictEqual(p({ skip: 'v0.1.29' }), undefined, 'FR-021 skip: the tag form is absent');
   assert.strictEqual(p({ skip: '01.1.29' }), undefined, 'FR-021 skip: a leading zero is absent');
   assert.deepStrictEqual(p({ skip: '0.1.29' }), { skip: '0.1.29' }, 'FR-021 skip: a version is kept');
+  for (const [bad, what] of [['0.1.29-alpha.1', 'a pre-release'], ['../x', 'a path'], ['v0.1.29', 'the tag form'], ['01.1.29', 'a leading zero'], ['0.1', 'two parts'], [129, 'a number'], [{}, 'an object']] as [unknown, string][]) {
+    assert.strictEqual(p({ snooze: { version: bad, until: T0 } }), undefined, `FR-021 snooze.version: ${what} is absent`);
+  }
+  for (const [bad, what] of [[NaN, 'NaN'], [Infinity, 'Infinity'], [-1, 'a negative time'], [1e20, 'a time past the safe integers']] as [number, string][]) {
+    assert.strictEqual(p({ snooze: { version: '0.1.29', until: bad } }), undefined, `FR-021 snooze.until: ${what} is absent`);
+  }
   assert.strictEqual(p({ snooze: { version: '0.1.29', until: '9' } }), undefined, 'FR-021 snooze: a string time is absent');
   assert.strictEqual(p({ snooze: { version: '0.1.29', until: 1.5 } }), undefined, 'FR-021 snooze: a fractional time is absent');
   assert.deepStrictEqual(p({ snooze: { version: '0.1.29', until: T0, x: 1 } }), { snooze: { version: '0.1.29', until: T0 } }, 'FR-021 snooze: kept, extra keys dropped');
@@ -50,32 +57,69 @@ try {
   assert.deepStrictEqual(s, { seriousMode: true }, 'FR-021: a hostile updates object is dropped as a whole, the other settings load');
   assert.deepStrictEqual(parseSettings('{"updates": {"selfCheck": false, "skip": "0.1.28"}}'), { updates: { selfCheck: false, skip: '0.1.28' } }, 'FR-021: valid keys load');
 
-  // the store: validated writes, atomic through the existing commit
+  // the store: the patch is validated first; one bad field refuses it all and changes nothing (review of PR 2064, item 1)
   const file = path.join(tmp, 'durbar-settings.json');
   fs.writeFileSync(file, JSON.stringify({ seriousMode: true, updates: 'off' }));
   const st = new SettingsStore(file);
   st.load();
   assert.deepStrictEqual(st.updates, {}, 'FR-021: a string updates value is absent, the store loads');
-  assert.ok(st.setUpdates({ skip: '0.1.28' }), 'FR-021: a valid patch is written');
+  const full = { selfCheck: false, source: 'ravi/durbar', snooze: { version: '0.1.29', until: T0 }, skip: '0.1.28', lastCheck: { at: T0, latest: '0.1.29' } };
+  assert.ok(st.setUpdates(full), 'FR-021: a valid patch is written');
   const saved = JSON.parse(fs.readFileSync(file, 'utf8')) as { updates?: unknown; seriousMode?: unknown };
-  assert.deepStrictEqual([saved.updates, saved.seriousMode], [{ skip: '0.1.28' }, true], 'FR-021: setUpdates writes through the settings store, the other settings kept');
-  st.setUpdates({ skip: '../x' });
-  assert.strictEqual((JSON.parse(fs.readFileSync(file, 'utf8')) as { updates?: unknown }).updates, undefined, 'FR-021: a patch that fails validation is not written');
-  st.setUpdates({ selfCheck: false, lastCheck: { at: T0, latest: '0.1.29' } });
-  st.setUpdates({ lastCheck: undefined });
-  assert.deepStrictEqual(st.updates, { selfCheck: false }, 'FR-021: an undefined value removes its key, the others stay');
+  assert.deepStrictEqual([saved.updates, saved.seriousMode], [full, true], 'FR-021: setUpdates writes through the settings store, the other settings kept');
+  const bytes = fs.readFileSync(file);
+  const bad: [unknown, string][] = [
+    [{ selfCheck: 'yes' }, 'selfCheck as a string'], [{ selfCheck: 1 }, 'selfCheck as a number'], [{ source: 'https://github.com/ravi/durbar' }, 'source as a URL'],
+    [{ skip: '../x' }, 'skip as a path'], [{ snooze: { version: '0.1.30-rc.1', until: T0 } }, 'a pre-release snooze'], [{ snooze: { version: '0.1.30', until: T0, x: 1 } }, 'a snooze with an extra key'],
+    [{ lastCheck: { at: T0, latest: 'x' } }, 'a lastCheck with a bad latest'], [{ skip: '0.1.30', selfCheck: 'on' }, 'a good field with a bad one'], [{ evil: 1 }, 'an unknown key'],
+    [JSON.parse('{"__proto__":{"selfCheck":true}}'), 'a __proto__ key'], [Object.defineProperty({}, 'skip', { enumerable: true, get: () => '0.1.30' }), 'a getter'], [['selfCheck'], 'an array'], [null, 'null'],
+  ];
+  for (const [patch, what] of bad) {
+    assert.strictEqual(st.setUpdates(patch as never), false, `FR-021: ${what} refuses the whole patch`);
+    assert.deepStrictEqual(st.updates, full, `FR-021: ${what} changes nothing in memory`);
+    assert.ok(fs.readFileSync(file).equals(bytes), `FR-021: ${what} changes nothing on disk (byte for byte)`);
+  }
+  assert.ok(st.setUpdates({ skip: '0.1.30', lastCheck: undefined }), 'FR-021: a valid patch with a removal is written');
+  assert.deepStrictEqual(st.updates, { selfCheck: false, source: 'ravi/durbar', snooze: { version: '0.1.29', until: T0 }, skip: '0.1.30' }, 'FR-021: only the named fields change, undefined removes one');
+
+  // the getter is a deep copy: no change to it, at any level, reaches the store (item 3)
   const copy = st.updates;
   copy.selfCheck = true;
-  assert.strictEqual(st.updates.selfCheck, false, 'FR-021: the getter gives a copy');
+  (copy.snooze as { until: number }).until = 9;
+  (copy.snooze as { version: string }).version = '../x';
+  copy.skip = 'x';
+  assert.deepStrictEqual(st.updates, { selfCheck: false, source: 'ravi/durbar', snooze: { version: '0.1.29', until: T0 }, skip: '0.1.30' }, 'FR-021: the getter gives a deep copy');
+  st.setUpdates({ lastCheck: { at: T0 } });
+  const read = (x: SettingsStore): SelfUpdateSettings => x.updates; // not narrowed by the deepStrictEqual above
+  const lc = read(st);
+  (lc.lastCheck as { at: number }).at = -5;
+  assert.strictEqual(read(st).lastCheck?.at, T0, 'FR-021: a nested lastCheck change does not reach the store');
 
-  // a failed write: the safe direction stays in force for this run, turning the check on is rolled back
-  const ro = new SettingsStore(path.join(tmp, 'missing-dir-file', 'x', 'durbar-settings.json'));
-  ro.load();
-  fs.writeFileSync(path.join(tmp, 'missing-dir-file'), 'a file where the folder should be');
-  assert.strictEqual(ro.setUpdates({ selfCheck: false }), false, 'FR-021: the write fails');
-  assert.ok(ro.updates.selfCheck === false && ro.isUnsaved('updates'), 'FR-021: switching off stays in force for this run when it cannot be saved');
-  assert.strictEqual(ro.setUpdates({ selfCheck: true }), false, 'FR-021: the write fails again');
-  assert.strictEqual(ro.updates.selfCheck, false, 'FR-021: switching on is rolled back when it cannot be saved');
+  // a failed write restores the exact previous value for every field; only on -> off stays in force (item 2)
+  const failing = (start: object): SettingsStore => {
+    const f = path.join(tmp, `fail-${Math.random().toString(36).slice(2)}.json`);
+    fs.writeFileSync(f, JSON.stringify({ updates: start }));
+    const s2 = new SettingsStore(f);
+    s2.load();
+    (s2 as unknown as { save(): boolean }).save = () => false; // an injected failing write
+    return s2;
+  };
+  const start = { selfCheck: false, source: 'ravi/durbar', snooze: { version: '0.1.29', until: T0 }, skip: '0.1.28', lastCheck: { at: T0, latest: '0.1.29' } };
+  const patches: [object, string][] = [
+    [{ selfCheck: true }, 'selfCheck on'], [{ selfCheck: undefined }, 'selfCheck removed (the default, on)'], [{ source: 'other/repo' }, 'source'], [{ source: undefined }, 'source removed'],
+    [{ snooze: { version: '0.1.30', until: T0 + 1 } }, 'snooze'], [{ skip: '0.1.30' }, 'skip'], [{ lastCheck: { at: T0 + 1 } }, 'lastCheck'], [{ snooze: undefined, skip: undefined, lastCheck: undefined }, 'every bookkeeping field removed'],
+  ];
+  for (const [patch, what] of patches) {
+    const s2 = failing(start);
+    assert.strictEqual(s2.setUpdates(patch), false, `FR-021: ${what}: the write fails`);
+    assert.deepStrictEqual(s2.updates, start, `FR-021: ${what}: a failed write restores the exact previous value`);
+  }
+  const on = failing({ skip: '0.1.28' });
+  assert.strictEqual(on.setUpdates({ selfCheck: false, skip: '0.1.30' }), false, 'FR-021: switching off: the write fails');
+  assert.ok(on.updates.selfCheck === false && on.updates.skip === '0.1.28' && on.isUnsaved('updates'), 'FR-021: switching off stays in force for this run when it cannot be saved, the rest is restored');
+  const failed = failing({ selfCheck: false });
+  failed.setUpdates({ selfCheck: false });
+  assert.strictEqual(failed.isUnsaved('updates'), false, 'FR-021: an unchanged off is not marked unsaved');
   console.log('selfupdate-settings: ok');
 } finally {
   fs.rmSync(tmp, { recursive: true, force: true });

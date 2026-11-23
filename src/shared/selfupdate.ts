@@ -351,6 +351,32 @@ export function parseUpdatesSettings(v: unknown): SelfUpdateSettings | undefined
   return Object.keys(out).length ? out : undefined;
 }
 
+const UPDATE_KEYS: readonly string[] = ['selfCheck', 'source', 'snooze', 'skip', 'lastCheck'];
+/** Only own string-keyed data properties, each named in `allowed` (no symbol, no accessor); a throwing proxy is refused. */
+const onlyDataKeys = (o: object, allowed: readonly string[]): boolean => {
+  try {
+    return Reflect.ownKeys(o).every((k) => typeof k === 'string' && allowed.includes(k) && 'value' in (Object.getOwnPropertyDescriptor(o, k) ?? {}));
+  } catch { return false; }
+};
+
+/**
+ * FR-021, for a write (review of PR 2064): the patch is checked BEFORE any merge. Every key must be one of the five, as an own data property;
+ * its value is `undefined` (remove that key) or passes the read rule exactly (a nested object with no extra or dropped part). Any failure
+ * refuses the whole patch (undefined), so a bad value can never erase a stored one.
+ */
+export function parseUpdatesPatch(patch: unknown): Partial<SelfUpdateSettings> | undefined {
+  if (!isObj(patch) || !onlyDataKeys(patch, UPDATE_KEYS)) return undefined;
+  const out: Record<string, unknown> = {};
+  for (const k of Object.keys(patch)) {
+    const v = own(patch, k);
+    if (v === undefined) { out[k] = undefined; continue; }
+    const got = (parseUpdatesSettings({ [k]: v }) as Record<string, unknown> | undefined)?.[k];
+    if (got === undefined || (isObj(v) && !onlyDataKeys(v, Object.keys(got as object)))) return undefined;
+    out[k] = got;
+  }
+  return out as Partial<SelfUpdateSettings>;
+}
+
 // ---------------------------------------------------------------------------------------------------------------------
 // Strict JSON files: `releases.json` (FR-026) and the baked `updatesource.json` (FR-001)
 
