@@ -550,12 +550,23 @@ assert.ok(Object.values(META.stand).some((s) => Object.values(s.foot as Record<s
     assert.deepStrictEqual([metaOf(wj('retro'), sj('office')).pixelArt, metaOf(wj('retro'), sj('office')).pixelPeople], [true, false], 'FR-323: the arcade keeps its rules with a photo set (097 T247)');
     assert.deepStrictEqual([metaOf(wj('retro'), sj('retro')).pixelArt, metaOf(wj('retro'), sj('retro')).pixelPeople], [true, true], 'the arcade with its own people');
     assert.deepStrictEqual([metaOf(wj('cave'), sj('retro')).pixelArt, metaOf(wj('cave'), sj('retro')).pixelPeople], [false, true], 'the cave with Retro pixel people: the cave rules');
-    { // spec 102 FR-399 (issue #2055): the HD set reaches the layout only with the switch on; off, neither its block nor `hdPeople` is in the numbers
-      const m3 = metaOf as (w: unknown, s: unknown, hd?: boolean) => Record<string, unknown>, rs = sj('retro'), hdSet = rs.hd;
+    { // spec 102 FR-399, T472 (issue #2055): no switch since the flip: a set's HD block always reaches the layout as `hdPeople`, in every world, and the raw `hd` key never does
+      const rs = sj('retro'), hdSet = rs.hd;
       assert.ok(hdSet, 'the Retro pixel set carries its HD block');
-      for (const off of [m3(wj('retro'), sj('retro')), m3(wj('retro'), sj('retro'), false)]) assert.ok(!('hdPeople' in off) && !('hd' in off), 'the switch off: no HD set in the layout\'s numbers');
-      assert.strictEqual(m3(wj('retro'), rs, true).hdPeople, hdSet, 'the switch on: the set\'s HD block is handed over');
-      assert.ok(!('hdPeople' in m3(wj('photo'), sj('office'), true)), 'the switch on with a set without an HD block: nothing');
+      for (const w of ['retro', 'photo', 'cave']) { const m = metaOf(wj(w), rs) as unknown as Record<string, unknown>; assert.ok(m.hdPeople === hdSet && !('hd' in m), `${w} with Retro pixel people: the HD set is handed over`); }
+      assert.ok(!('hdPeople' in (metaOf(wj('photo'), sj('office')) as unknown as Record<string, unknown>)), 'a set without an HD block: nothing');
+    }
+    { // spec 102 T472 (FR-409): the rows worlds with the Retro pixel people draw only the HD set: every desk bust (and its second frame), every lounge seat and every lobby visitor, both sizes, 3 and 15 agents, every person
+      let n = 0;
+      for (const w of ['photo', 'cave']) for (const [W, H] of SIZES) for (const k of [3, 15]) for (let r = 0; r < 15; r += 5) {
+        const m = model(k, k > 4 ? 4 : 1); m.folders.flatMap((f) => f.agents).forEach((a, i) => { a.person = PEOPLE[(i + r) % 15]; if (i === 1) a.lounge = true; });
+        m.places = m.places.map((p, i) => ({ ...p, visitors: [{ id: 'v' + i, person: PEOPLE[(i + r + 7) % 15], needsYou: false }] }));
+        const L = realLayout(m, { w: W, h: H }, metaOf(wj(w), sj('retro')) as unknown as RealMeta) as unknown as { zones: { desks: { person: { file: string; fileB: string | null } | null }[] }[]; lounge?: { desks: { person: { file: string } | null }[] }; fixtures: { visitors: { fig: { file: string; fileB: string | null } | null }[] }[] };
+        const files = [...L.zones.flatMap((z) => z.desks), ...(L.lounge ? L.lounge.desks : [])].flatMap((d) => (d.person ? [d.person.file, (d.person as { fileB?: string | null }).fileB] : [])).concat(L.fixtures.flatMap((f) => f.visitors).flatMap((v) => (v.fig ? [v.fig.file, v.fig.fileB] : []))).filter((f): f is string => !!f);
+        assert.ok(files.length > 0, `${w} ${W}x${H} ${k}: people drawn`);
+        for (const f of files) { n++; assert.ok(/^hd\/p\d\d-[a-zA-Z-]+@4\.webp$/.test(f), `T472: ${w} ${W}x${H}, ${k} agents: ${f} is not an HD file`); }
+      }
+      console.log(`T472 rows walk: ${n} pictures, every one an HD bust or frame`);
     }
     // T296 (FR-326): the Retro pixel set has its own seen-from-behind running frames, so the Terminal visitor draws `runA`/`runB`, not the `letter` fallback
     const st = sj('retro').stand as Record<string, { poses: Record<string, number[]> }>;

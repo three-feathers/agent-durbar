@@ -552,7 +552,7 @@ if (worldIds.includes('retro')) {
 
 // ---- spec 102 FR-391..FR-398 (issue #2055): the HD person set (sets/retro/hd/, `set.json` `hd`): every frame named, its size, lossless, inside its place; one palette, no speckle, the budget ----
 {
-  const dir = path.join(RO, 'sets', 'retro', 'hd'), sj = JSON.parse(fs.readFileSync(path.join(RO, 'sets', 'retro', 'set.json'), 'utf8')) as { hd: { scales: number[]; people: Record<string, Record<string, Record<string, number[]>>>; tiles?: { sizes: number[]; poses: string[]; people: string[] }; ref?: Record<string, number[][]>; k?: Record<string, Record<string, number>> } };
+  const dir = path.join(RO, 'sets', 'retro', 'hd'), sj = JSON.parse(fs.readFileSync(path.join(RO, 'sets', 'retro', 'set.json'), 'utf8')) as { hd: { scales: number[]; people: Record<string, Record<string, Record<string, number[]>>>; tiles?: { sizes: number[]; poses: string[]; people: string[]; light?: string[] }; busts?: Record<string, { w: number; h: number; headTop: number; bodyH: number; hand: number }>; ref?: Record<string, number[][]>; k?: Record<string, Record<string, number>> } };
   /* FR-405: the six seated busts ship only as avatar tiles; the 14 standing and stool frames at four sizes (FR-406: s 1 for the lobby) */
   const POSES = ['type', 'book', 'knock', 'letter', 'counter', 'runA', 'runB', 'face-book', 'face-coffee', 'face-knock', 'face-letter', 'face-runA', 'face-runB', 'sit'];
   const SEAT = new Set<string>(), tallest = (p: string): number => (SEAT.has(p) ? 80 : p === 'sit' ? 72 : 72); /* grid px: a seated bust's canvas, a standing figure (FR-256) */
@@ -581,6 +581,22 @@ if (worldIds.includes('retro')) {
     const f = `${pid}-${pose}-t${S}.webp`, b = fs.readFileSync(path.join(dir, f)), info = webpInfo(b);
     tileNames.add(f); bytes += b.length;
     assert.deepStrictEqual([info.width, info.height, info.chunks.filter((c) => c !== 'VP8X').join()], [S, S, 'VP8L'], `${f}: ${S} x ${S}, lossless`);
+    if ((T.light || []).includes(pid)) { /* spec 102 T472 (FR-410): the light-surface variant of a lit-edge person, the same size */
+      const fl = `${pid}-${pose}-t${S}l.webp`, bl = fs.readFileSync(path.join(dir, fl)), il = webpInfo(bl);
+      tileNames.add(fl); bytes += bl.length;
+      assert.deepStrictEqual([il.width, il.height, il.chunks.filter((c) => c !== 'VP8X').join()], [S, S, 'VP8L'], `${fl}: ${S} x ${S}, lossless`);
+    }
+  }
+  /* spec 102 T472 (FR-409): the six seated busts of every person, one size (s 4), on one canvas per person, whose seat numbers set.json gives */
+  const BUSTS = ['typeA', 'typeB', 'think', 'waveA', 'waveB', 'rest'];
+  assert.deepStrictEqual(Object.keys(sj.hd.busts || {}).sort(), Object.keys(sj.hd.people).sort(), 'FR-409: every HD person has busts');
+  for (const [pid, b] of Object.entries(sj.hd.busts || {})) {
+    assert.ok(b.h === 320 && b.w > 0 && b.w <= 320 && b.headTop >= 0 && b.bodyH === b.h - b.headTop && b.hand > 0 && b.hand < 1, `FR-409: ${pid}: the bust canvas and its seat numbers`);
+    for (const pose of BUSTS) {
+      const f = `${pid}-${pose}@4.webp`, bf = fs.readFileSync(path.join(dir, f)), i = webpInfo(bf);
+      tileNames.add(f); bytes += bf.length;
+      assert.deepStrictEqual([i.width, i.height, i.chunks.filter((c) => c !== 'VP8X').join()], [b.w, b.h, 'VP8L'], `${f}: the person's bust canvas, lossless`);
+    }
   }
   assert.deepStrictEqual(fs.readdirSync(dir).sort(), [...named, ...tileNames].sort(), 'hd/ holds exactly the frames and tiles set.json names');
   const amd = fs.readFileSync(path.join(RO, 'sets', 'retro', 'ASSETS.md'), 'utf8').replace(/\r\n/g, '\n');
@@ -650,6 +666,10 @@ if (worldIds.includes('retro')) {
       { /* FR-407 red case: the lit edge taken off every tile at 22 px: the darkest of them is no longer legible */
         const planted = T.people.flatMap((p) => T.poses.map((q) => { const f = path.join(tmp, `norim-${p}-${q}-t22.webp`); assert.strictEqual(spawnSync('python3', ['-I', tool, '--norim', path.join(dir, `${p}-${q}-t22.webp`), f], { encoding: 'utf8' }).status, 0, 'the planted tile (--norim) is written'); return f; }));
         assert.ok(legible(measure(planted).rows).length >= 1, 'red (--norim): without the lit edge the darkest person\'s avatar is not legible');
+      }
+      { /* T472 (FR-410) red case: a lit-edge tile drawn on a light surface: copied as its own light variant, the light backgrounds cannot read it */
+        const planted = (T.light || []).map((p) => { const f = path.join(tmp, `lit-${p}-typeA-t22l.webp`); fs.copyFileSync(path.join(dir, `${p}-typeA-t22.webp`), f); return f; });
+        assert.ok(planted.length > 0 && legible(measure(planted).rows).length >= 1, 'red (lit edge on a light surface): a lit-edge tile is not legible on Flat\'s light avatar background');
       }
       for (const [plant, rule] of [['--speckle', 'speckle'], ['--alpha', 'alpha'], ['--colour', 'palette'], ['--edge', 'outline']] as const) {
         const planted = path.join(tmp, `p08-type@4${plant}.webp`);

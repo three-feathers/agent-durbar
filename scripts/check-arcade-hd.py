@@ -11,6 +11,7 @@ import json, os, re, sys
 from PIL import Image
 
 
+LIGHT_BGS = ((0xe7, 0xee, 0xe8), (0xef, 0xe3, 0xd0), (0xec, 0xdc, 0xc0), (0xe0, 0xea, 0xd2))   # spec 102 T472 (FR-410): Flat's light avatar backgrounds (--avatar-bg of the light themes), where an `l` tile is drawn
 AV_BGS = ((30, 26, 54), (38, 32, 68))   # FR-407: every avatar circle of the arcade: --surface-2 of the retro theme (door, inbox header) and the rail's #262044; a dark figure is weakest on the lighter one
 
 
@@ -35,14 +36,14 @@ def median(v):
     return v[len(v) // 2] if v else 0
 
 
-def legibility(px, opaque, w, h):
+def legibility(px, opaque, w, h, bgs=None):
     """[the silhouette's edge contrast on the circle (the better median of the outline ring and the ring inside it), the features' L* step below the skin (None: no feature found)]"""
     def nbs(i):
         y, x = divmod(i, w)
         return [j for j, ok in ((i - w, y > 0), (i + w, y < h - 1), (i - 1, x > 0), (i + 1, x < w - 1)) if ok]
     ring = {i for i in range(len(px)) if opaque[i] and any(not opaque[j] for j in nbs(i))}
     inner = {j for i in ring for j in nbs(i) if opaque[j] and j not in ring}
-    edge = min(max(median([ratio(px[i], bg) for i in ring]), median([ratio(px[i], bg) for i in inner])) for bg in AV_BGS)
+    edge = min(max(median([ratio(px[i], bg) for i in ring]), median([ratio(px[i], bg) for i in inner])) for bg in (bgs or AV_BGS))
     region = [i for i in range(len(px)) if opaque[i] and i not in ring and int(0.3 * h) <= i // w < int(0.75 * h) and int(0.25 * w) <= i % w < int(0.75 * w)]
     if not region:
         return [round(edge, 2), None]
@@ -105,8 +106,10 @@ def measure(path):
                 cnt[p[:3]] = cnt.get(p[:3], 0) + 1
         n = sum(cnt.values())
         topc = [list(c) + [round(k / n, 3)] for c, k in sorted(cnt.items(), key=lambda t: -t[1]) if k / n >= 0.01]
-    if re.search(r'-t\d+\.webp$', path):   # FR-407: an avatar tile on the darkest avatar circle
-        tile = legibility(px, opaque, w, h)
+    if re.search(r'-t\d+\.webp$', path):   # FR-407: an avatar tile on every avatar circle of the arcade (and Flat's dark one is darker still)
+        tile = legibility(px, opaque, w, h, AV_BGS + ((0x1b, 0x27, 0x1d),) + (() if os.path.exists(path[:-5] + 'l.webp') else LIGHT_BGS))   # without a light variant it is drawn on light backgrounds too
+    elif re.search(r'-t\d+l\.webp$', path):   # T472 (FR-410): a light-surface tile on every light avatar background
+        tile = legibility(px, opaque, w, h, LIGHT_BGS)
     # FR-402: crown to neck over the figure's height, and the head's width: the neck is the narrowest run through the head's centre column between 14 % and 36 % of the height
     rows = [y for y in range(h) if any(opaque[y * w:(y + 1) * w])]
     top, fh = rows[0], rows[-1] - rows[0] + 1
