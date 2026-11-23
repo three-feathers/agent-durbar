@@ -2536,7 +2536,7 @@ All sets keep FR-204's caps: no frame over 80 KB (largest 54 KB, Office), none o
   - Else it goes beside the head inside the person's place: away from the cabinet first, then on the cabinet's side.
   - Where the place is too narrow for both, it goes under the chin.
   - It is never over the face box. An error keeps its badge at the glass's corner. The old frames keep today's place: the switch off is byte for byte today's hall.
-- **FR-402** **Head size** (owner, 14:27 UTC: "bigger heads"). A standing HD person's head, crown to neck, is **0.27 to 0.36 of the figure's height**: the pipeline aims at 0.29, and the crown is the top of the hair, so a bun, an afro, a quiff or a hood measures taller (up to 0.35 measured). The face is never shrunk for the hair: `k` is at least 1. and the head is **at least 36 px wide at the 144 px size**.
+- **FR-402** **Head size** (owner, 14:27 UTC: "bigger heads"). A standing HD person's head, crown to neck, is **0.27 to 0.36 of the figure's height**: the pipeline aims at 0.29, and the crown is the top of the hair, so a bun, an afro, a quiff or a hood measures taller (up to 0.35 measured). The face is never shrunk for the hair: `k` is at least 1, and `k` is raised where needed so that the head is at least 36 px wide at 144 px (a slim face under a top-knot). Each sheet's `k` is recorded in `set.json` `hd.k`, and the test holds 1 ≤ `k` ≤ 2. Where long hair over the shoulders hides the neck (the narrowest row is above 0.2 of the height), the chin is where the first run of face skin under the crown ends, both in the build's face box and in the check's measure. and the head is **at least 36 px wide at the 144 px size**.
   - Measuring rule: the neck is the narrowest run through the head's centre column between 14 % and 36 % of the height; the head's width is its widest run above the neck.
   - How: the image model draws heads at about 0.20 even when asked for 0.30. So the pipeline enlarges the head **on the source, before the palette and the snap**. Everything above the neck, within the head's own columns, is scaled by `k` about the neck centre and laid over the body. A raised fist, a mug or a book above the neck is drawn back over the bigger head where it was. The figure is then fitted back to its shown height.
   - `k` is chosen per sheet from the median head share of its standing figures, aiming at 0.29. Seated busts are close-ups and keep their head (`k` = 1).
@@ -2579,10 +2579,22 @@ All sets keep FR-204's caps: no frame over 80 KB (largest 54 KB, Office), none o
 
 *Measured* (final pilot, this PR; `test:realoffice-assets`, `check-arcade-hd.py`, Pillow): 3 people x 20 frames x 3 sizes = 180 files, **712 KB** (p08 246 KB, p12 267 KB, p04 200 KB; the 288 frames 358 KB, the 216 frames 230 KB, the 144 frames 123 KB). **48 colours** over all 180 files, alpha only 0 and 255, one outline colour in every frame. **Orphans at most 5.1 %** of a frame, no lone pixel. **Heads** on the 18 front frames at 144: **0.28 to 0.30** of the figure's height, **38 to 54 px** wide (the first pilot: 0.15 to 0.19, 25 to 30 px). `k` per sheet 1.13 to 1.72. **Generations:** 12 for the final pilot's missing poses (4 sheets a person), plus the 3 big-head sheets of the samples (pilot 2); the rounds before were 13 (pilot 1) and 9 unused sample runs. **Badge**: in the hall checks (3 agents at both sizes and 15 at both sizes, all states) 504 badges are clear of every face, sign, cabinet, plate and other person, and 140 stand above the head.
 
+
+*Measured, the full set* (local batch branch, 2026-11-23; `test:realoffice-assets` with Pillow, `check-arcade-hd.py`):
+- **Files:** 15 people, 630 frames (14 standing and stool frames x 3 sizes) and 480 avatar tiles (4 poses x 8 sizes). **1987 KB** in all, about 132 KB a person.
+- **Palette:** 96 colours, alpha 0 and 255 only, one outline colour in every frame. Orphans at most 5.73 % of a frame.
+- **Heads at 144:** 0.28 to 0.35 of the figure, 36 to 54 px wide.
+- **Tiles:** every edge at least 3.04:1, every feature at least 15.2 L* below the skin. Nine people carry the lit edge (p01, p02, p03, p05, p06, p08, p10, p11, p14).
+- **Colours:** every reference colour is within ΔE 15 of a colour covering at least 1 % of the front frame. The tolerance is 15, not the 12 first tried: a reference is the average of a 6-group median cut of the source, which can blend two neighbouring shades (p04's skin and blouse came to 13).
+- **48 against 96 on the pilot's three people** (12 frames each at 288 and 144):
+  - Orphans: at most 4.40 % at 48 and 3.78 % at 96; mean 2.80 % and 2.75 %.
+  - Raising the 144 px cleanup threshold (keep 130 instead of 90) took the worst frame of the whole set from 6.74 % to 5.73 %.
+  - Visible on the comparison sheet: p08's grey beanie shows its source's mauve tint at 96 colours.
+- **Generations:** 24 (batch 1: 6 a person, two standing sheets redone after they came out in the old chibi proportions), 16 (batch 2), 16 (batches 3 and 4).
 `[KNOWN GAP]`:
 - Not looked at on a real 1.25 or 1.5 screen (the rule is tested, the look is not).
 - macOS and Windows not run; no real session.
 - While the switch is on, the lounge stool, the lobby, the zoom and Flat's heads still draw the old frames (FR-391).
-- The other 12 people are still the old art (T470).
+- The lounge stool, the lobby, the zoom and Flat's heads draw the old frames until the flip (T472).
 
 **Numbers** (`npm run specs:numbers`, `origin/main` and the open PR heads, 2026-11-23): FR-391..FR-408, T466..T473; no Q.

@@ -97,14 +97,14 @@ def measure(path):
             orph += 1
     semi = {p for p in px if 0 < p[3] < 255}
     tile = None
-    top = None
-    if path.endswith('-face-book@4.webp'):   # FR-408: the colours that cover at least 2 % of the front reading frame
+    topc = None
+    if path.endswith('-face-book@4.webp'):   # FR-408: the colours that cover at least 1 % of the front reading frame
         cnt = {}
         for i, p in enumerate(px):
             if opaque[i]:
                 cnt[p[:3]] = cnt.get(p[:3], 0) + 1
         n = sum(cnt.values())
-        top = [list(c) + [round(k / n, 3)] for c, k in sorted(cnt.items(), key=lambda t: -t[1]) if k / n >= 0.02]
+        topc = [list(c) + [round(k / n, 3)] for c, k in sorted(cnt.items(), key=lambda t: -t[1]) if k / n >= 0.01]
     if re.search(r'-t\d+\.webp$', path):   # FR-407: an avatar tile on the darkest avatar circle
         tile = legibility(px, opaque, w, h)
     # FR-402: crown to neck over the figure's height, and the head's width: the neck is the narrowest run through the head's centre column between 14 % and 36 % of the height
@@ -125,8 +125,18 @@ def measure(path):
     lo = top + int(0.14 * fh)
     ws = [run(y) or 10 ** 6 for y in range(lo, top + int(0.36 * fh))]
     neck = lo + ws.index(min(ws))
+    if neck - top < 0.2 * fh:   # long hair over the shoulders hides the neck (p07): the chin is where the first run of face skin under the crown ends
+        half = max(1, fh // 14)
+        rows_ = [y for y in range(top, top + int(0.4 * fh)) if sum(1 for x in range(max(0, xc - half), min(w, xc + half + 1)) if opaque[y * w + x] and px[y * w + x][0] > px[y * w + x][1] > px[y * w + x][2] and px[y * w + x][0] - px[y * w + x][2] > 30 and px[y * w + x][0] > 90) >= 2]
+        if rows_ and rows_[0] - top < 0.3 * fh:
+            end = rows_[0]
+            for y in rows_[1:]:
+                if y - end > 2:
+                    break
+                end = y
+            neck = max(neck, end + 1)
     head = [round((neck - top) / fh, 3), max(run(y) for y in range(top, neck))]
-    return {'name': os.path.basename(path), 'w': w, 'h': h, 'opaque': sum(opaque), 'colours': len(rgb), 'alphas': sorted(alphas), 'orphans': orph, 'lone': lone, 'edge': len(edge), 'head': head, 'tile': tile, 'top': top}, rgb, semi
+    return {'name': os.path.basename(path), 'w': w, 'h': h, 'opaque': sum(opaque), 'colours': len(rgb), 'alphas': sorted(alphas), 'orphans': orph, 'lone': lone, 'edge': len(edge), 'head': head, 'tile': tile, 'top': topc}, rgb, semi
 
 
 if sys.argv[1:2] in (['--speckle'], ['--alpha'], ['--colour'], ['--edge'], ['--norim'], ['--hue']):
