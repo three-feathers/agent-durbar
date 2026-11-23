@@ -59,27 +59,31 @@ const us = require(path.join(__dirname, '..', '..', 'scripts', 'updatesource.js'
 const PKG = { repository: { type: 'git', url: 'git+https://github.com/three-feathers/agent-durbar.git' } };
 const resolve = (env: Record<string, string | undefined>, pkg: unknown = PKG): Src => us.resolveUpdateSource(env, pkg, parseRepoSlug);
 const fails = (env: Record<string, string | undefined>, pkg: unknown, why: string): void => assert.throws(() => resolve(env, pkg), /not a GitHub owner\/name/, 'the build stops: ' + why);
-assert.deepStrictEqual(resolve({ DURBAR_UPDATE_REPO: 'ravi/durbar', GITHUB_REPOSITORY: 'other/repo' }), { slug: 'ravi/durbar', origin: 'env' }, 'DURBAR_UPDATE_REPO comes first');
-assert.deepStrictEqual(resolve({ GITHUB_REPOSITORY: 'ravi/durbar' }), { slug: 'ravi/durbar', origin: 'ci' }, 'a fork build names the fork (SC-003)');
+assert.deepStrictEqual(resolve({ DURBAR_UPDATE_REPO: 'ravi/durbar', GITHUB_ACTIONS: 'true', GITHUB_REPOSITORY: 'other/repo' }), { slug: 'ravi/durbar', origin: 'env' }, 'DURBAR_UPDATE_REPO comes first');
+assert.deepStrictEqual(resolve({ GITHUB_ACTIONS: 'true', GITHUB_REPOSITORY: 'ravi/durbar' }), { slug: 'ravi/durbar', origin: 'ci' }, 'a fork build names the fork (SC-003)');
+// review of #2052: GITHUB_REPOSITORY counts only inside Actions; a stale variable in a developer's shell never claims origin ci
+assert.deepStrictEqual(resolve({ GITHUB_REPOSITORY: 'ravi/durbar' }), { slug: 'three-feathers/agent-durbar', origin: 'local' }, 'GITHUB_REPOSITORY outside Actions is ignored');
+for (const a of ['false', 'TRUE', '1', 'yes', '', ' true']) assert.deepStrictEqual(resolve({ GITHUB_ACTIONS: a, GITHUB_REPOSITORY: 'ravi/durbar' }), { slug: 'three-feathers/agent-durbar', origin: 'local' }, 'GITHUB_ACTIONS=' + JSON.stringify(a) + ' is not Actions');
+assert.deepStrictEqual(resolve(Object.assign(Object.create({ GITHUB_ACTIONS: 'true' }), { GITHUB_REPOSITORY: 'ravi/durbar' })), { slug: 'three-feathers/agent-durbar', origin: 'local' }, 'an inherited GITHUB_ACTIONS does not count');
 assert.deepStrictEqual(resolve({}), { slug: 'three-feathers/agent-durbar', origin: 'local' }, 'package.json last, git+ dropped');
-assert.deepStrictEqual(resolve({ DURBAR_UPDATE_REPO: '', GITHUB_REPOSITORY: 'ravi/durbar' }), { slug: 'ravi/durbar', origin: 'ci' }, 'an empty value counts as unset');
-assert.deepStrictEqual(resolve({ GITHUB_REPOSITORY: '' }), { slug: 'three-feathers/agent-durbar', origin: 'local' }, 'an empty GITHUB_REPOSITORY counts as unset');
+assert.deepStrictEqual(resolve({ DURBAR_UPDATE_REPO: '', GITHUB_ACTIONS: 'true', GITHUB_REPOSITORY: 'ravi/durbar' }), { slug: 'ravi/durbar', origin: 'ci' }, 'an empty value counts as unset');
+assert.deepStrictEqual(resolve({ GITHUB_ACTIONS: 'true', GITHUB_REPOSITORY: '' }), { slug: 'three-feathers/agent-durbar', origin: 'local' }, 'an empty GITHUB_REPOSITORY counts as unset');
 assert.deepStrictEqual(resolve({}, { repository: 'ravi/durbar' }), { slug: 'ravi/durbar', origin: 'local' }, 'a string repository');
 assert.deepStrictEqual(resolve({}, { repository: { url: 'https://github.com/ravi/durbar' } }), { slug: 'ravi/durbar', origin: 'local' }, 'a plain https url');
 const real = JSON.parse(fs.readFileSync(path.join(__dirname, '..', '..', 'package.json'), 'utf8'));
 assert.deepStrictEqual(resolve({}, real), { slug: 'three-feathers/agent-durbar', origin: 'local' }, 'this repository\'s package.json resolves');
 for (const v of ['evil.com/x', 'a/b/c', 'https://github.com.evil/a/b', '\u0430/b', 'a/b?x', 'https://u:p@github.com/a/b', 'https://github.com:8443/a/b', ' a/b', 'a/..', 'git+https://github.com/a/b']) {
-  fails({ DURBAR_UPDATE_REPO: v, GITHUB_REPOSITORY: 'ravi/durbar' }, PKG, 'DURBAR_UPDATE_REPO ' + JSON.stringify(v) + ' (no fallback)');
-  fails({ GITHUB_REPOSITORY: v }, PKG, 'GITHUB_REPOSITORY ' + JSON.stringify(v) + ' (no fallback)');
+  fails({ DURBAR_UPDATE_REPO: v, GITHUB_ACTIONS: 'true', GITHUB_REPOSITORY: 'ravi/durbar' }, PKG, 'DURBAR_UPDATE_REPO ' + JSON.stringify(v) + ' (no fallback)');
+  fails({ GITHUB_ACTIONS: 'true', GITHUB_REPOSITORY: v }, PKG, 'GITHUB_REPOSITORY ' + JSON.stringify(v) + ' (no fallback)');
 }
-for (const pkg of [{}, { repository: null }, { repository: ['a/b'] }, { repository: { url: 42 } }, { repository: { url: 'git+ssh://git@github.com/a/b.git' } }, { repository: { url: 'git+git+https://github.com/a/b' } }, { repository: { url: 'git+https://github.com.evil/a/b' } }, { repository: { url: 'git+https://github.com/a/b/c' } }, null, 'a/b']) fails({}, pkg, 'package.json ' + JSON.stringify(pkg));
+for (const pkg of [{}, { repository: null }, { repository: ['a/b'] }, { repository: { url: 42 } }, { repository: { url: 'git+ssh://git@github.com/a/b.git' } }, { repository: { url: 'git+git+https://github.com/a/b' } }, { repository: { url: 'git+https://github.com.evil/a/b' } }, { repository: { url: 'git+https://github.com/a/b/c' } }, { repository: { url: 'git+a/b' } }, { repository: { url: 'git+github:a/b' } }, { repository: 'git+a/b' }, { repository: { url: 'git+http://github.com/a/b' } }, { repository: { url: 'GIT+https://github.com/a/b' } }, null, 'a/b']) fails({}, pkg, 'package.json ' + JSON.stringify(pkg));
 
 // ---- the baked file and the run-time reader: env is ignored at run time ----
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-updsrc-'));
 const saved = { a: process.env.DURBAR_UPDATE_REPO, b: process.env.GITHUB_REPOSITORY };
 try {
   const dir = path.join(tmp, 'dist', 'main');
-  const wrote = us.writeUpdateSource(path.join(dir, 'updatesource.json'), { GITHUB_REPOSITORY: 'Ravi/Durbar' }, PKG, parseRepoSlug);
+  const wrote = us.writeUpdateSource(path.join(dir, 'updatesource.json'), { GITHUB_ACTIONS: 'true', GITHUB_REPOSITORY: 'Ravi/Durbar' }, PKG, parseRepoSlug);
   assert.deepStrictEqual(wrote, { slug: 'Ravi/Durbar', origin: 'ci' }, 'what copy-assets writes');
   assert.strictEqual(fs.readFileSync(path.join(dir, 'updatesource.json'), 'utf8'), '{"slug":"Ravi/Durbar","origin":"ci"}\n', 'the file is exactly slug and origin');
   const reads: string[] = [];
@@ -92,6 +96,9 @@ try {
   assert.strictEqual(loadUpdateSource(path.join(tmp, 'nowhere')), undefined, 'no file: no source');
   fs.writeFileSync(path.join(dir, 'updatesource.json'), Buffer.from([0x7b, 0xff, 0x7d]));
   assert.strictEqual(loadUpdateSource(dir), undefined, 'not UTF-8: no source');
+  fs.writeFileSync(path.join(dir, 'updatesource.json'), Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), Buffer.from('{"slug":"ravi/durbar","origin":"ci"}')]));
+  assert.strictEqual(loadUpdateSource(dir), undefined, 'a byte-order mark: no source (the decoder keeps it, the parser refuses it)');
+  assert.deepStrictEqual(loadUpdateSource(dir, () => Buffer.from('{"slug":"ravi/durbar","origin":"ci"}')), { slug: 'ravi/durbar', origin: 'ci' }, 'fixture: the same bytes without the mark load');
   fs.writeFileSync(path.join(dir, 'updatesource.json'), '{"slug":"a/b","origin":"ci"}' + ' '.repeat(2000));
   assert.strictEqual(loadUpdateSource(dir), undefined, 'over 1 KiB: no source');
 } finally {

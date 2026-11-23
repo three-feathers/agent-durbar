@@ -5,7 +5,7 @@
  */
 import * as fs from 'fs';
 import * as path from 'path';
-import { parseUpdateSourceFile, MAX_UPDATE_SOURCE_BYTES } from '../shared/selfupdate';
+import { decodeUtf8Strict, parseUpdateSourceFile, MAX_UPDATE_SOURCE_BYTES } from '../shared/selfupdate';
 import type { UpdateSource } from '../shared/selfupdate';
 
 export const UPDATE_SOURCE_FILE = 'updatesource.json';
@@ -14,7 +14,5 @@ export function loadUpdateSource(dir: string = __dirname, read: (file: string) =
   let bytes: Buffer;
   try { bytes = read(path.join(dir, UPDATE_SOURCE_FILE)); } catch { return undefined; }
   if (bytes.length > MAX_UPDATE_SOURCE_BYTES) return undefined;
-  let text: string;
-  try { text = new TextDecoder('utf-8', { fatal: true }).decode(bytes); } catch { return undefined; }
-  return parseUpdateSourceFile(text);
+  return parseUpdateSourceFile(decodeUtf8Strict(bytes));
 }

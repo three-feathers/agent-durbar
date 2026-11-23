@@ -9,7 +9,7 @@
 import { execFileSync } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
-import { parseReleasesJson, MAX_RELEASES_JSON_BYTES } from '../src/shared/selfupdate';
+import { decodeUtf8Strict, parseReleasesJson, MAX_RELEASES_JSON_BYTES } from '../src/shared/selfupdate';
 
 const VERSION_RE = /^(?:0|[1-9]\d{0,8})\.(?:0|[1-9]\d{0,8})\.(?:0|[1-9]\d{0,8})$/;
 /** A tag, branch or commit name: no option (`-`), no revision syntax (`:`, `..`, `@{`, `^`, `~`), no space. */
@@ -24,34 +24,48 @@ export function checkReleases(text: string, version?: string): string | undefine
   return undefined;
 }
 
-const utf8 = (b: Buffer): string | undefined => { try { return new TextDecoder('utf-8', { fatal: true }).decode(b); } catch { return undefined; } };
+/** What main() touches, injectable so a test can count the git calls (a refused ref must never reach git). */
+export interface CheckDeps {
+  git: (args: string[]) => Buffer;
+  lstat: (file: string) => fs.Stats;
+  read: (file: string) => Buffer;
+  cwd: string;
+}
+const realDeps = (): CheckDeps => ({
+  git: (args) => execFileSync('git', args, { maxBuffer: 2 * MAX_RELEASES_JSON_BYTES, stdio: ['ignore', 'pipe', 'ignore'], windowsHide: true }),
+  lstat: (f) => fs.lstatSync(f),
+  read: (f) => fs.readFileSync(f),
+  cwd: process.cwd(),
+});
 
-function main(argv: string[]): string | undefined {
+export const REF_REFUSED = 'releases:check: --ref must be a tag, branch or commit name';
+export const NOT_REGULAR = 'releases:check: releases.json is not a regular file within 256 KiB (a link or a folder is refused)';
+
+export function main(argv: string[], deps: CheckDeps = realDeps()): string | undefined {
   let version: string | undefined;
   let ref: string | undefined;
   for (let i = 0; i < argv.length; i += 2) {
     const [k, v] = [argv[i], argv[i + 1]];
     if (v === undefined) return `releases:check: ${k} wants a value`;
-    if (k === '--version' && version === undefined) version = v;
-    else if (k === '--ref' && ref === undefined) ref = v;
+    if ((k === '--version' && version !== undefined) || (k === '--ref' && ref !== undefined)) return `releases:check: ${k} is given twice`;
+    if (k === '--version') version = v;
+    else if (k === '--ref') ref = v;
     else return `releases:check: unknown argument ${JSON.stringify(k.slice(0, 40))}`;
   }
   let bytes: Buffer;
   if (ref !== undefined) {
     if (version === undefined) return 'releases:check: --ref needs --version';
-    if (!REF_RE.test(ref) || ref.includes('..')) return 'releases:check: --ref must be a tag, branch or commit name';
-    try {
-      bytes = execFileSync('git', ['cat-file', 'blob', ref + ':releases.json'], { maxBuffer: 2 * MAX_RELEASES_JSON_BYTES, stdio: ['ignore', 'pipe', 'ignore'], windowsHide: true });
-    } catch { return `releases:check: no releases.json at ${ref}`; }
+    if (!REF_RE.test(ref) || ref.includes('..')) return REF_REFUSED;
+    try { bytes = deps.git(['cat-file', 'blob', ref + ':releases.json']); } catch { return `releases:check: no releases.json at ${ref}`; }
   } else {
-    const file = path.join(process.cwd(), 'releases.json');
+    const file = path.join(deps.cwd, 'releases.json');
     try {
-      const st = fs.lstatSync(file);
-      if (!st.isFile() || st.size > MAX_RELEASES_JSON_BYTES) return 'releases:check: releases.json is not a regular file within 256 KiB';
-      bytes = fs.readFileSync(file);
+      const st = deps.lstat(file); // lstat: a symlink is not followed, it is refused (fail closed)
+      if (!st.isFile() || st.size > MAX_RELEASES_JSON_BYTES) return NOT_REGULAR;
+      bytes = deps.read(file);
     } catch { return 'releases:check: no releases.json in this folder'; }
   }
-  const text = utf8(bytes);
+  const text = decodeUtf8Strict(bytes);
   return text === undefined ? 'releases:check: releases.json is not UTF-8' : checkReleases(text, version);
 }
 

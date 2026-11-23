@@ -9,6 +9,9 @@ const path = require('path');
 
 // An environment value: unset or empty = not given; anything else must parse, and a value that does not fails the build (no fallback).
 const given = (env, k) => Object.prototype.hasOwnProperty.call(env, k) && env[k] !== undefined && env[k] !== '';
+// GITHUB_REPOSITORY counts only inside a GitHub Actions run (GITHUB_ACTIONS=true): a stale variable in a developer's shell never makes a hand
+// build claim origin `ci` (review of #2052); such a build is `local`, so its daily check is off by default.
+const inActions = (env) => Object.prototype.hasOwnProperty.call(env, 'GITHUB_ACTIONS') && env.GITHUB_ACTIONS === 'true';
 
 /** The package.json `repository` as npm writes it: a string, or `{url}`; exactly one leading `git+` is npm's normal form and is dropped. */
 function packageRepo(pkg) {
@@ -18,10 +21,10 @@ function packageRepo(pkg) {
   return raw.startsWith('git+https://') ? raw.slice(4) : raw;
 }
 
-/** FR-001 order: DURBAR_UPDATE_REPO (origin env) > GITHUB_REPOSITORY (ci) > package.json repository (local). Throws when the chosen one does not parse. */
+/** FR-001 order: DURBAR_UPDATE_REPO (origin env) > GITHUB_REPOSITORY inside Actions (ci) > package.json repository (local). Throws when the chosen one does not parse. */
 function resolveUpdateSource(env, pkg, parse) {
   const pick = given(env, 'DURBAR_UPDATE_REPO') ? ['DURBAR_UPDATE_REPO', env.DURBAR_UPDATE_REPO, 'env']
-    : given(env, 'GITHUB_REPOSITORY') ? ['GITHUB_REPOSITORY', env.GITHUB_REPOSITORY, 'ci']
+    : inActions(env) && given(env, 'GITHUB_REPOSITORY') ? ['GITHUB_REPOSITORY', env.GITHUB_REPOSITORY, 'ci']
     : ['package.json repository', packageRepo(pkg), 'local'];
   const slug = parse(pick[1]);
   if (!slug) throw new Error(`updatesource: ${pick[0]} is not a GitHub owner/name (spec 118 FR-001); the build stops`);

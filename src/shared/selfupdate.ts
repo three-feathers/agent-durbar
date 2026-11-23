@@ -324,8 +324,8 @@ export function snoozeState(now: number, version: string, snooze: unknown, skip?
 // ---------------------------------------------------------------------------------------------------------------------
 // Strict JSON files: `releases.json` (FR-026) and the baked `updatesource.json` (FR-001)
 
-/** Valid JSON whose objects, at any depth, repeat no key (decoded: `"a"` and `"a"` are one key); JSON.parse alone keeps the last. */
-function strictJson(text: string): unknown {
+/** Valid JSON whose objects, at any depth, repeat no key (decoded: `"a"` and `"\u0061"` are one key); JSON.parse alone keeps the last. Else undefined. */
+export function parseStrictJson(text: string): unknown {
   let value: unknown;
   try { value = JSON.parse(text); } catch { return undefined; }
   const stack: { keys: Set<string> | null; expectKey: boolean }[] = [];
@@ -333,7 +333,7 @@ function strictJson(text: string): unknown {
     const c = text[i];
     if (c === '"') {
       let j = i + 1;
-      while (text[j] !== '"') j += text[j] === '\\' ? 2 : 1;
+      while (j < text.length && text[j] !== '"') j += text[j] === '\\' ? 2 : 1;
       const top = stack[stack.length - 1];
       if (top?.keys && top.expectKey) {
         const key = JSON.parse(text.slice(i, j + 1)) as string;
@@ -354,6 +354,11 @@ const exactKeys = (o: Record<string, unknown>, keys: readonly string[]): boolean
   return k.length === keys.length && keys.every((x) => Object.prototype.hasOwnProperty.call(o, x));
 };
 
+/** UTF-8 bytes to text, or undefined when they are not UTF-8. A byte-order mark is KEPT (`ignoreBOM`), so the strict parsers refuse it. */
+export function decodeUtf8Strict(bytes: Uint8Array): string | undefined {
+  try { return new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(bytes); } catch { return undefined; }
+}
+
 export const MAX_RELEASES_JSON_BYTES = 256 * 1024;
 export const MAX_RELEASES_JSON_VERSIONS = 500;
 export const RELEASE_TEXT_MAX = 500;
@@ -373,7 +378,7 @@ export interface ReleaseNote { breaking: boolean; notes: string; action: string 
 /** FR-026: the text of a `releases.json`, per version; undefined when anything is not exactly as specified (FR-009: *Breaking: unknown*). */
 export function parseReleasesJson(text: unknown): ReadonlyMap<string, ReleaseNote> | undefined {
   if (typeof text !== 'string' || text.length > MAX_RELEASES_JSON_BYTES || utf8Bytes(text) > MAX_RELEASES_JSON_BYTES) return undefined;
-  const doc = strictJson(text);
+  const doc = parseStrictJson(text);
   if (!isObj(doc) || !exactKeys(doc, ['schema', 'versions']) || doc.schema !== 1 || !isObj(doc.versions)) return undefined;
   const keys = Object.keys(doc.versions);
   if (keys.length > MAX_RELEASES_JSON_VERSIONS) return undefined;
@@ -401,7 +406,7 @@ const ORIGINS: readonly string[] = ['env', 'ci', 'local'];
 /** FR-001: the baked `dist/main/updatesource.json`, exactly `{slug, origin}` with the slug in its parsed form; anything else = no source. */
 export function parseUpdateSourceFile(text: unknown): UpdateSource | undefined {
   if (typeof text !== 'string' || utf8Bytes(text) > MAX_UPDATE_SOURCE_BYTES) return undefined;
-  const doc = strictJson(text);
+  const doc = parseStrictJson(text);
   if (!isObj(doc) || !exactKeys(doc, ['slug', 'origin'])) return undefined;
   const { slug, origin } = doc;
   if (typeof slug !== 'string' || parseRepoSlug(slug) !== slug || typeof origin !== 'string' || !ORIGINS.includes(origin)) return undefined;
