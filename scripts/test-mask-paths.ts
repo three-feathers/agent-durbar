@@ -74,7 +74,8 @@ eq(R.redact('/srv/' + TOKENS[1][1] + '/a.txt', {}), '/srv/[redacted]/a.txt', 'T4
   for (const [fam, s] of TOKENS) for (const nl of ['\n', '\r\n']) {
     const t = line + nl + 'ab/' + s + '/cd' + nl + line;
     // the command mask reads a command as words, not lines, so there such a line is a word with a short run: masked, the over-masking the spec lists
-    for (const [m, g] of Object.entries(MASKS)) if (m !== 'command') eq(g(t), off(() => g(t)), `T492 stays: a ${fam} shape inside a wrapped base64 line reads as before (${m})`);
+    // as written, not only as the step-off reading: a mutant that turned the path boundaries on in the line-break readings for both readings left them equal (review of PR 2072, round 2)
+    for (const [m, g] of Object.entries(MASKS)) if (m !== 'command') eq(g(t), t, `T492 stays: a ${fam} shape inside a wrapped base64 line reads as written (${m})`);
   }
 }
 // a block's first or last line: only one side of the shape has a long line next to it, and that side's guard alone keeps it as data
@@ -83,8 +84,8 @@ eq(R.redact('/srv/' + TOKENS[1][1] + '/a.txt', {}), '/srv/[redacted]/a.txt', 'T4
   for (const [fam, s] of TOKENS) {
     const last = line + '\n' + 'ab/' + s + '/cd', first = 'ab/' + s + '/cd' + '\n' + line;
     for (const [m, g] of Object.entries(MASKS)) if (m !== 'command') {
-      eq(g(last), off(() => g(last)), `T492 stays: a ${fam} shape on a wrapped block's last line reads as before (${m})`);
-      eq(g(first), off(() => g(first)), `T492 stays: a ${fam} shape on a wrapped block's first line reads as before (${m})`);
+      eq(g(last), last, `T492 stays: a ${fam} shape on a wrapped block's last line reads as written (${m})`);
+      eq(g(first), first, `T492 stays: a ${fam} shape on a wrapped block's first line reads as written (${m})`);
     }
   }
 }
