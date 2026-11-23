@@ -8,7 +8,7 @@ const THEME=window.THEME; /* theme packs (specs 035-040): tokens, words, motion;
 const T_=n=>THEME.token(n);
 const wordOf=k=>THEME.word(k);
 const qs = new URLSearchParams(location.search);
-/* spec 102 FR-399 (issue #2055): the Retro arcade's HD person set, off by default and not in Settings until the owner approves the finished set; ?hdpeople=1 (DURBAR_HD_PEOPLE=1, development runs) turns it on for one run */
+/* spec 102 FR-399 (issue 2055): the Retro arcade's HD person set, off by default and not in Settings until the owner approves the finished set; ?hdpeople=1 (DURBAR_HD_PEOPLE=1, development runs) turns it on for one run */
 const HD_PEOPLE_ON=qs.get('hdpeople')==='1';
 /* spec 052 FR-176 (issue 638): focus and scroll into view never move the page; innerscroll.js. No bare focus() or scrollIntoView here
    (test:innerscroll checks it): a plain focus() also scrolled html (overflow:hidden), which hid the chat header. */

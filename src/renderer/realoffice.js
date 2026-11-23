@@ -349,7 +349,7 @@
 
   /* The numbers one scene is drawn with: the world's furniture numbers with the set's people numbers. Spec 102 FR-323: `pixelArt` is the WORLD's (grid snap, screen box,
      smoothing of the room), whatever the set; the set's own `pixelArt` only says how its people are drawn (`pixelPeople`, spec 097 T247: a crew's hi-res people in a pixel world are scaled to its people). */
-  /* spec 102 FR-399 (issue #2055): `hd` is the HD person set's off-by-default switch (DURBAR_HD_PEOPLE=1, never in Settings); off, the layout never sees the set's `hd` block */
+  /* spec 102 FR-399 (issue 2055): `hd` is the HD person set's off-by-default switch (DURBAR_HD_PEOPLE=1, never in Settings); off, the layout never sees the set's `hd` block */
   function metaOf(worldMeta, setMeta, hd) {
     const meta = Object.assign({}, worldMeta, setMeta);
     meta.pixelArt = !!(worldMeta && worldMeta.pixelArt);

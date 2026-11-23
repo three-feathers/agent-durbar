@@ -169,6 +169,21 @@ export function hdFrame(hd: HdSet | undefined, pid: string, pose: string, g: num
   const [w, h, fx, fy, fw, fh] = fr[String(pk.s)], k = (v: number): number => (v * pk.n) / dpr;
   return { file: `hd/${pid}-${pose}@${pk.s}.webp`, w: k(w), h: k(h), face: { x: k(fx), y: k(fy), w: k(fw), h: k(fh) } };
 }
+/** the status badge (`.ro-cue`, retro world.css: 12 px monospace, at most 3 characters, 4 px padding, 16 px line: 29.6 x 16), the box the layout keeps clear for it; `x` is its centre */
+export const CUE_BOX = { w: 32, h: 16 } as const;
+/** spec 102 FR-401 (review of #2056): an HD person in its place (`place`, feet on `plateY`), drawn mirrored when `mirrored`: the picture box, the face box as drawn, and the status
+ *  badge clear of the face: above the head (2 px clear) when that stays under the row's sign strip (`rowTop`), else beside the head (away from the cabinet first) inside the place, else under the chin */
+export function hdPlace(hf: { w: number; h: number; face: Rect }, place: Rect, plateY: number, mirrored: boolean, rowTop: number, awayRight: boolean, floorTo: (v: number) => number): { box: Rect; vis: Rect; cue: { x: number; y: number } } {
+  const box = { x: place.x + floorTo((place.w - hf.w) / 2), y: plateY - hf.h, w: hf.w, h: hf.h };
+  const vis = { x: box.x + (mirrored ? hf.w - hf.face.x - hf.face.w : hf.face.x), y: box.y + hf.face.y, w: hf.face.w, h: hf.face.h };
+  const up = vis.y - 2 - CUE_BOX.h, half = CUE_BOX.w / 2;
+  if (up >= rowTop + AISLE_SIGN_H) return { box, vis, cue: { x: vis.x + vis.w / 2, y: up } };
+  const y = Math.max(rowTop + AISLE_SIGN_H, vis.y), away = awayRight ? vis.x + vis.w + 2 + half : vis.x - 2 - half, near = awayRight ? vis.x - 2 - half : vis.x + vis.w + 2 + half;
+  const fits = (x: number): boolean => x - half >= place.x - 1e-6 && x + half <= place.x + place.w + 1e-6;
+  /* beside the head, away from the cabinet, then on the cabinet's side; where the place is too narrow for both (9 to 15 agents), under the chin: the face stays whole */
+  const x = [away, near].find(fits);
+  return { box, vis, cue: x !== undefined ? { x, y } : { x: Math.min(place.x + place.w - half, Math.max(place.x + half, vis.x + vis.w / 2)), y: vis.y + vis.h + 2 } };
+}
 
 /** an empty place's note stands where the person would, beside the glass and never over its text: `x` is the note's centre */
 function aisleNote(gl: Rect, face: 'left' | 'right', g: number): { x: number; y: number; s: number } {
@@ -325,15 +340,15 @@ export function aislesLayout(model: RealModel, view: { w: number; h: number }, m
         const faceS = FACE_GRID * g, gl = { x: b.cab.x + (mirrored ? cab.w - 5 - plan.gw : 5) * g, y: b.cab.y + 18 * g, w: plan.gw * g, h: plan.gh * g };
         const fr = a.person != null && !a.away ? aislePose(meta, String(a.person), a.state as RealState) : null;
         const hf = fr && meta.hdPeople ? hdFrame(meta.hdPeople, String(a.person), fr.pose, g, meta.dpr || 1) : null, hd = hf && hf.w <= pw ? hf : null; /* FR-392: an HD frame wider than the place is never drawn (the old one is) */
-        const hx = hd ? px + dFloor((pw - hd.w) / 2) : 0;
+        const hp = hd ? hdPlace(hd, { x: px, y: py, w: pw, h: ph }, plateY, mirrored, b.top, b.face === 'right', dFloor) : null; /* FR-401: the person mirrors with the cabinet (`facing`), the badge clear of the face */
         const d: DeskBox = {
           id: a.id, state: a.state as RealState, narrow: false, slot: b.slot, desk: { ...b.cab, full: cabH },
           plate: { x: b.cab.x, y: plateY, w: cabW, h: AISLE_PLATE_H }, screen: { x: gl.x - 4 * g, y: gl.y - 4 * g, w: gl.w + 8 * g, h: gl.h + 8 * g }, glass: gl,
-          person: hd && fr ? { x: hx, y: plateY - hd.h, w: hd.w, h: hd.h, file: hd.file, fileB: null, pose: fr.pose, pid: String(a.person), vis: { x: hx + hd.face.x, y: plateY - hd.h + hd.face.y, w: hd.face.w, h: hd.face.h } } : fr ? { x: px + dFloor((pw - fr.w * g) / 2), y: plateY - fr.h * g, w: fr.w * g, h: fr.h * g, file: `${a.person}-${fr.pose}.webp`, fileB: null, pose: fr.pose, pid: String(a.person), vis: { x: px + dFloor((pw - faceS) / 2), y: py, w: faceS, h: faceS } } : null,
+          person: hd && hp && fr ? { ...hp.box, file: hd.file, fileB: null, pose: fr.pose, pid: String(a.person), vis: hp.vis } : fr ? { x: px + dFloor((pw - fr.w * g) / 2), y: plateY - fr.h * g, w: fr.w * g, h: fr.h * g, file: `${a.person}-${fr.pose}.webp`, fileB: null, pose: fr.pose, pid: String(a.person), vis: { x: px + dFloor((pw - faceS) / 2), y: py, w: faceS, h: faceS } } : null,
           face: { x: px + dFloor((pw - faceS) / 2), y: py + 4 * g, w: faceS, h: faceS },
           away: a.away ? aisleNote(gl, b.face, g) : null,
           lamp: { x: b.cab.x - 4 * g, y: b.cab.y - 4 * g, w: cabW + 8 * g, h: cabH + 8 * g },
-          cue: a.away || a.state === 'error' ? { x: gl.x + gl.w - 4 * g, y: gl.y - 4 * g } : { x: px + pw / 2, y: Math.max(py + 2 * g, b.cab.y + 12 * g) }, bubble: null, bang: null, /* inside the cabinet's height: a sign may lie above it */
+          cue: a.away || a.state === 'error' ? { x: gl.x + gl.w - 4 * g, y: gl.y - 4 * g } : hp ? hp.cue : { x: px + pw / 2, y: Math.max(py + 2 * g, b.cab.y + 12 * g) }, bubble: null, bang: null, /* inside the cabinet's height: a sign may lie above it */
           dots: null, call: { x: b.cab.x + cabW - 16, y: plateY + 4 },
           ...(sh && (a.helpers || 0) > 0 ? { strip: { x: b.cab.x, y: plateY + AISLE_PLATE_H + 2, w: cabW, h: sh - 2, rows: 1, cols: helpCols(cabW), shown: helpShown(cabW, 1, a.helpers as number) } } : {}),
           marquee: { x: b.cab.x + (mirrored ? cab.w - 3 - (cab.w - 17 + 10 - 6) : 3) * g, y: b.cab.y + 2 * g, w: (cab.w - 17 + 10 - 6) * g, h: 9 * g }, stand: { x: px, y: py, w: pw, h: ph }, facing: b.face, body: k <= 4 ? n : (pk.at[n][1] + 2 * pk.at[n][0]) % 4, /* 4 or fewer: all different; more: column + 2 x row, so a seat differs from the ones beside, above, below and diagonal in the staggered rows (the zigzag was tried and removed, spec 102) */

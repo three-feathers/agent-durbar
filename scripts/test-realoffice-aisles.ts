@@ -6,7 +6,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { realLayout, layoutOrFlat, signMin, signWidth, sortDesks, storeyRuns, storeyTagW, STOREY_GAP, STOREY_U_LOSS, type RealFloor, type RealMeta, type RealModel, type RealAgent, type RealState, type Rect, type Layout, type DeskBox } from '../src/shared/realoffice-layout';
 import { screenFit, type HdSet } from '../src/shared/realoffice-layout';
-import { hdFrame, hdPick, deviceScales, aisleStatus, aislesLayout, AISLES_DEPTH, placeResting, layoutFor, aisleTabOrder, aisleFace, FACE_FLOOR, AISLE_SIGN_MIN_W, AISLE_PLATE_H, ARRANGEMENTS } from '../src/shared/realoffice-arrangements';
+import { AISLE_SIGN_H, CUE_BOX, hdFrame, hdPick, hdPlace, deviceScales, aisleStatus, aislesLayout, AISLES_DEPTH, placeResting, layoutFor, aisleTabOrder, aisleFace, FACE_FLOOR, AISLE_SIGN_MIN_W, AISLE_PLATE_H, ARRANGEMENTS } from '../src/shared/realoffice-arrangements';
 
 process.exitCode = 1;
 const ROOT = (() => { let d = __dirname; while (!fs.existsSync(path.join(d, 'package.json'))) d = path.dirname(d); return d; })();
@@ -1190,6 +1190,7 @@ for (const world of ['photo', 'cave']) {
       for (const v of [p.x, p.y, p.w, p.h]) assert.ok(Math.abs(v * dpr - Math.round(v * dpr)) < 1e-6, `${tag}: ${d.id} on whole device px (${v})`);
       assert.ok(inside(p, d.stand as Rect, 0.01) && Math.abs(p.y + p.h - d.plate.y) < 1e-6, `${tag}: ${d.id} inside its place, feet on the plate`);
       assert.ok(inside(p.vis, p, 0.01) && p.vis.h > 8, `${tag}: ${d.id}'s face is inside the frame`);
+      assert.ok(Math.abs(p.vis.x - (d.facing === 'right' ? p.x + p.w - hf.face.x - hf.face.w : p.x + hf.face.x)) < 1e-6, `${tag}: ${d.id}'s face box mirrors with the picture (facing ${d.facing})`);
     }
   }
   assert.ok(hdDrawn >= 18, `the HD frames were drawn (${hdDrawn})`);
@@ -1202,7 +1203,32 @@ for (const world of ['photo', 'cave']) {
   const wide = { scales: [4, 3, 2], people: { p08: Object.fromEntries(['type', 'book', 'knock', 'face-knock', 'face-coffee', 'face-book', 'sit'].map((q) => [q, { 4: [400, 288, 0, 0, 40, 40], 3: [300, 216, 0, 0, 30, 30], 2: [200, 144, 0, 0, 20, 20] }])) } } as unknown as HdSet;
   const w3 = aislesLayout(pick(3), { w: 1440, h: ROOM.h900 }, { ...META, hdPeople: wide }, SIGNS(4)), o3 = aislesLayout(pick(3), { w: 1440, h: ROOM.h900 }, META, SIGNS(4));
   assert.strictEqual(JSON.stringify(w3), JSON.stringify(o3), 'an HD frame wider than its place is not drawn: the old frame stays');
-  console.log(`arcade HD people: ${hdDrawn} HD frames placed, off = unchanged in ${cases2.length} halls`);
+  /* FR-401 (review of #2056): the status badge never covers an HD face. At a cabinet, every state x the pilot people x both sides at g 4, 3 and 2; then every one of the 20 frames
+     of each pilot person at each scale, both ways round, in a real place of that scale. The badge (CUE_BOX, centred on cue.x) is clear of the face, inside the place, under the sign strip */
+  const badge = (c: { x: number; y: number }): Rect => ({ x: c.x - CUE_BOX.w / 2, y: c.y, w: CUE_BOX.w, h: CUE_BOX.h });
+  const badgeOk = (c: { x: number; y: number }, vis: Rect, place: Rect, rowTop: number, tag: string): void => {
+    const bx = badge(c);
+    assert.ok(!inter(bx, vis, 0), `${tag}: the status badge ${JSON.stringify(bx)} covers the face ${JSON.stringify(vis)}`);
+    assert.ok(bx.x >= place.x - 1e-6 && bx.x + bx.w <= place.x + place.w + 1e-6 && bx.y >= rowTop + AISLE_SIGN_H - 1e-6, `${tag}: the status badge stays in the place, under the sign strip`);
+  };
+  let badges = 0;
+  const places: Record<number, DeskBox[]> = {};
+  for (const [n, W, H] of [[3, 1440, ROOM.h900], [3, 1280, ROOM.h800], [15, 1440, ROOM.h900]] as [number, number, number][]) for (let r = 0; r < STATES.length; r++) {
+    const m = pick(n); m.folders.flatMap((f) => f.agents).forEach((a, i) => { a.state = STATES[(i + r) % STATES.length]; a.person = ['p08', 'p12', 'p04'][(i + r) % 3]; });
+    const L = aislesLayout(m, { w: W, h: H }, { ...META, hdPeople: HD }, SIGNS(4)), g = L.g as number;
+    for (const d of L.zones.flatMap((z) => z.desks)) {
+      (places[g] = places[g] || []).push(d);
+      if (!d.person || !d.person.file.startsWith('hd/') || d.state === 'error') continue;
+      badgeOk(d.cue as { x: number; y: number }, d.person.vis, d.stand as Rect, d.slot.y, `${n} agents at ${W}x${H}, ${d.person.pid} ${d.state} (${d.facing})`); badges++;
+    }
+  }
+  for (const g of [4, 3, 2]) for (const [pid, poses] of Object.entries(HD.people)) for (const pose of Object.keys(poses)) for (const d of places[g].filter((x, i, all) => all.findIndex((y) => y.facing === x.facing) === i)) {
+    const hf = hdFrame(HD, pid, pose, g)!, side = d.facing === 'right', at = hdPlace(hf, d.stand as Rect, d.plate.y, side, d.slot.y, side, Math.floor);
+    if (hf.w > (d.stand as Rect).w) continue; /* never drawn (the old frame is), see above */
+    badgeOk(at.cue, at.vis, d.stand as Rect, d.slot.y, `${pid}-${pose} at g ${g} (${d.facing})`); badges++;
+  }
+  assert.ok(badges >= 300, `the badge was checked (${badges})`);
+  console.log(`arcade HD people: ${hdDrawn} HD frames placed, off = unchanged in ${cases2.length} halls, ${badges} badges clear of the face`);
 }
 
 console.log(`aisles tests passed (${cases} layouts)`);
