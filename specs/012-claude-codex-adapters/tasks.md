@@ -301,4 +301,4 @@ T133 verification (2026-10-25, review on #698): typecheck, build and the offline
 
 ## Changes 2026-11-24 (masking batch: task line over-masking and the chat's header labels: issues #1981, #1999)
 
-- [x] T470 (2026-11-24, issues #1981, #1999) FR-196: `SWITCH_FLAG_LEADS`, `SWITCH_VALUES`, `OAUTH_WORD_SRC`, `OAUTH_PAIR`, `oauthWord` and `_withoutOvermaskNarrowForTest` in `src/shared/redact.ts`; `scripts/test-overmask.ts` (`npm run test:overmask`, in `scripts/test-suites.txt`). FR-197: `nameShown` in `src/renderer/app.js`, the `FR-197` asserts in `scripts/test-live-mask.ts`; the lines in `specs/012-claude-codex-adapters/secret-coverage.md`; the changelog fragment; mutants in the PR.
+- [x] T470 (2026-11-24, issues #1981, #1999) FR-196: `SWITCH_FLAG_LEADS`, `SWITCH_VALUES`, `switchFlag`, `switchValue` and `_withoutOvermaskNarrowForTest` in `src/shared/redact.ts`; `scripts/test-overmask.ts` (`npm run test:overmask`, in `scripts/test-suites.txt`). FR-197: `nameShown` in `src/renderer/app.js`, the `FR-197` asserts in `scripts/test-live-mask.ts`; the lines in `specs/012-claude-codex-adapters/secret-coverage.md`; the changelog fragment; mutants in the PR.
