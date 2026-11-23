@@ -3,9 +3,10 @@ import { shell } from 'electron';
 import { fromAppFrame as fromApp, ipcHandle } from '../ipcguard';
 import type { AdapterRouter } from '../../adapters/router';
 import type { AgentInfo } from '../../shared/api';
-import { answerQuestionOp, errText } from '../agentops';
+import { answerQuestionOp } from '../agentops';
 import { checkElicitAnswer, elicitHttpsUrl } from '../../shared/elicit';
 import type { createElicitTracker } from '../../shared/elicit';
+import { failText } from '../ipcerror';
 
 export interface QuestionsIpcDeps {
   agents: Map<string, AgentInfo>;
@@ -55,7 +56,7 @@ export function register(deps: QuestionsIpcDeps): void {
       await ad.resolvePlan(a.id, requestId, parsed);
       return { ok: true };
     } catch (err) {
-      return { ok: false, error: errText(err) };
+      return { ok: false, error: failText(err, 'questions') };
     }
   });
 }

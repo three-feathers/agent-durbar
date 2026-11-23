@@ -7,8 +7,11 @@
  * Spec 010 FR-023 (2026-10-22): in simulator mode (`DURBAR_SIM`) every channel except `SIM_OPEN_CHANNELS` is refused here too,
  * before its handler runs, so neither the window nor a driver's page script can reach a real agent app or the real profile.
  * FR-029: this is the only file in src/ that may use `ipcMain` or `webContents.ipc` (`test:ipcchannels`). FR-031: the mode is main's.
+ *
+ * Spec 045 FR-066 (issue #1682): every `ipcHandle` handler runs inside `answer`, so an unexpected throw reaches the window only as `IPC_FAILED`.
  */
 import { redact } from '../shared/redact';
+import { failText } from './ipcerror';
 import { ipcMain } from 'electron';
 import type { IpcMainEvent, IpcMainInvokeEvent } from 'electron';
 import * as path from 'path';
@@ -53,8 +56,22 @@ export function ipcHandle<A extends unknown[]>(channel: string, fn: (e: IpcMainI
   ipcMain.handle(channel, (e, ...args) => {
     if (!fromAppFrame(e)) throw new Error('Agent Durbar refused a call that did not come from its own window.');
     if (!simAllows(channel)) throw new Error(simRefusal(channel));
-    return fn(e, ...(args as A));
+    return answer(channel, () => fn(e, ...(args as A)));
   });
+}
+
+export { IPC_FAILED } from './ipcerror';
+
+/**
+ * Spec 045 FR-066: runs one handler. A value or a promise comes back as it is; a throw or a rejection gets a new `Error` whose message is
+ * `failText` (`ipcerror.ts`: a `ShownError`'s own text masked, else `IPC_FAILED`, the real error logged in main, masked). The thrown value itself,
+ * its stack, its fields and its cause never cross: a thrown value may carry a token, a path or session data.
+ */
+export function answer(channel: string, run: () => unknown): unknown {
+  const fail = (err: unknown): never => { throw new Error(failText(err, `"${channel}"`)); };
+  let out: unknown;
+  try { out = run(); } catch (err) { return fail(err); }
+  return out !== null && typeof out === 'object' && typeof (out as { then?: unknown }).then === 'function' ? Promise.resolve(out).catch(fail) : out;
 }
 
 /** `ipcMain.on` with the sender check: a message from anywhere else is dropped (and, under the simulator, any channel not open). */

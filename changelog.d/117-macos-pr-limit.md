@@ -1,0 +1,1 @@
+- **The macOS check on pull requests no longer hits the job limit** (spec 117): the path-filtered "macOS build and test" job runs 20 to 24 minutes and was cut at its 25-minute limit on busy days, costing a new head each time. Its limit is now 45 minutes, as for the other test jobs, until the job is split in two.

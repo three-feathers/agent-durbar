@@ -93,7 +93,7 @@ import { navigationAllowed, permissionAllowed } from './hardening';
 import type { ChatFileRef } from '../adapters/vscodeChat';
 import { McpStore } from './mcpstore';
 import { AgentStateTracker } from './mcp/agentstate';
-import { maskMcpEvent, maskMcpHistory } from './mcpmask';
+import { createToolArgsMasker, maskMcpEvent, maskMcpHistory } from './mcpmask';
 import { savedMcpOff } from './mcpsavedoff';
 import { registerMcpIpc, safeStorageCodec } from './mcpipc';
 import { MCP_SIGNIN_REFRESH_DEFAULT } from './mcpsigninrefresh';
@@ -141,6 +141,8 @@ import { profileDir } from './profiledir';
 import { simClockSetup } from './simclock';
 import { debugSwitchesToRemove } from './debugguard';
 import { aumidToSet } from './aumid';
+import { ShownError } from '../shared/shownerror';
+import { failText } from './ipcerror';
 
 // Spec 008 FR-038: no DevTools endpoint in a packaged build. No fuse covers these switches; removing them before ready is shown to work on the packed Linux app (npm run check:fuses-launch).
 for (const sw of debugSwitchesToRemove(app.isPackaged)) app.commandLine.removeSwitch(sw);
@@ -282,7 +284,9 @@ const toRenderer = (channel: string, payload: unknown): void => {
 
 /** An MCP status event carries server error text: masked here, once, before the window sees it (spec 019 FR-021). */
 /** Spec 019 FR-022: the masked copy of an `mcp` event, built once per event; every path out of main (window, debug sink) uses it. */
-const outward = (e: AgentEvent): AgentEvent => maskMcpEvent(e, e.type === 'mcp' || (e.type === 'toolCall' && ((e.phase !== 'start' && e.mcpServer) || e.edit)) ? mcp.secretValuesFor(e.sessionId) : []); // spec 005 FR-024: edits too
+/** Spec 005 FR-342 (main half): masks a call's arguments once per arguments object and stops at once for a call that went over the budget. */
+const toolArgsMasker = createToolArgsMasker();
+const outward = (e: AgentEvent): AgentEvent => maskMcpEvent(e, e.type === 'mcp' || (e.type === 'toolCall' && ((e.phase !== 'start' && e.mcpServer) || e.edit || e.args !== undefined)) ? mcp.secretValuesFor(e.sessionId) : [], toolArgsMasker); // spec 005 FR-024: edits too; FR-342: arguments too
 /**
  * Spec 099: main's Autopilot. `AUTOPILOT_WIRED` is false, so in the default build it refuses to turn on and no surface offers it (spec *Changes*, Phase 3 gate).
  * The other half is the test-only switch, which a packaged build cannot open.
@@ -467,10 +471,10 @@ async function addWorkspace(
   const effort = asEffort(opts.effort);
   const wsr = resolveWorkspaceCwd(workspace);
   const picked = adapterForAdd(opts.adapterId, (() => { const f = folderStore?.get(wsr.workspaceFile ?? wsr.cwd); return f ? adapterOf(f) : undefined; })(), (i) => registry.has(i), registry.defaultId, opts.readyIds && ((i) => opts.readyIds!.has(i)));
-  if ('error' in picked) throw new Error(picked.error); // nothing started, nothing written
+  if ('error' in picked) throw new ShownError(picked.error); // nothing started, nothing written
   const adapterId = picked.id;
   const blocked = updateBlocks(adapterId, false); // a new session is never live yet
-  if (blocked) throw new Error(blocked); // spec 081 FR-013: nothing starts while its app updates
+  if (blocked) throw new ShownError(blocked); // spec 081 FR-013: nothing starts while its app updates
   const ad = router.instance(adapterId);
   const draft = infoFor(workspace, permMode, '', model, effort, {}, ad);
   // Cap: explicit choice (null = none) > the folder's saved cap > the global default (spec 011); a dollar cap only when chosen (FR-150).
@@ -502,7 +506,7 @@ async function ensureLive(a: AgentInfo, opts: { quiet?: boolean } = {}): Promise
   if (!ad) throw new Error('unknown agent');
   if (ad.isLive(a.id)) return;
   const blocked = updateBlocks(router.adapterIdOf(a.id) ?? a.adapterId, ad.isLive(a.id)); // spec 081 FR-013: a resume is a start too; a session that is still open is not touched
-  if (blocked) throw new Error(blocked);
+  if (blocked) throw new ShownError(blocked);
   let p = starting.get(a.id);
   if (!p) {
     p = (async () => {
@@ -537,7 +541,7 @@ async function addMany(paths: string[], permMode: PermMode, opts: SessionOptions
       if (have) { existing.push({ id: have.id, name: have.name, floor: folderStore?.floorOfFolder(wsKey(have)) ?? have.floor ?? GROUND }); continue; }
       added.push(await addWorkspace(p, permMode, { model: opts.model, effort: opts.effort, persist: opts.persist, maxAiCredits: opts.maxAiCredits, floor: opts.floor, adapterId: opts.adapterId, readyIds }));
     } catch (err) {
-      errors.push(`${path.basename(p)}: ${err instanceof Error ? err.message : String(err)}`);
+      errors.push(`${path.basename(p)}: ${failText(err, 'add folder')}`);
     }
   }
   // Spec 006 FR-016 (issue #170): a calm line for a folder that is the home folder, a parent of it, or a root.
@@ -643,7 +647,7 @@ async function sendOp(id: string, text: string, attachments: PickedFile[], ad: A
     noteLastSession(agents.get(id));
     return slash ? { ok: true, slash, ...(slashNote ? { slashNote } : {}) } : { ok: true };
   } catch (err) {
-    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    return { ok: false, error: failText(err, '"agents:send"') };
   }
 }
 
@@ -871,11 +875,11 @@ const convListings = new Map<string, Promise<unknown>>(); // FR-022: the folder 
 let convMatcher: { masker: ReturnType<typeof createMasker>; search: SessionSearchApi } | undefined;
 const convSearch = registerConvSearchIpc({
   hasSessions: () => agents.size > 0,
-  scope: (stop, keptLists, onListing) => buildScope({
+  scope: (stop, keptLists, onListing, onSessions) => buildScope({
     agents, router, store: folderStore, wsKey, resumeIdFor, appName: (id) => registry.get(id)?.displayName ?? id, vsUserDirs: () => vsUserDirsOf(dev),
     rememberChat: (agentId, ref) => { const m = vsChatRefs.get(agentId) ?? new Map<string, ChatFileRef>(); m.set(ref.summary.key, ref); vsChatRefs.set(agentId, m); }, // FR-012: View opens it
     values: { knownSecretValues: (key) => mcpStore?.knownSecretValues(key) ?? [], noPrompt: () => !mcpStore || mcpStore.noPrompt(), secretValuesFor: (id) => mcp.secretValuesFor(id), copilotValuesFor: (id) => mcp.copilotValuesFor(id) },
-    gate: convGate, keptLists, listings: convListings, onListing, // FR-026: the box session's Codex titles, memory only
+    gate: convGate, keptLists, listings: convListings, onListing, onSessions, // FR-026: the box session's Codex titles, memory only
   }, stop),
   matcher: () => (convMatcher ??= { masker: createMasker({ unhide: (s) => rendererScript<{ unhide(s: string): string }>('safetext.js').unhide(s) }), search: rendererScript<SessionSearchApi>('sessionsearch.js') }),
 });
@@ -1092,7 +1096,7 @@ function createWindow(): void {
     if (simClock.query) query.simclock = simClock.query; // spec 001 FR-084: a pinned page clock for screenshots
   }
   if (dev.DURBAR_DOOR === '1') query.door = '1'; // spec 052 FR-191: Your door (the Needs you panel) is behind a flag until the owner's look
-  if (dev.DURBAR_BRAIN === '1') query.brain = '1'; // spec 106 T006: Brain view's dock is behind the preview flag until T009's Settings switch
+  if (dev.DURBAR_BRAIN === '1' || dev.DURBAR_BRAIN === '0') query.brain = dev.DURBAR_BRAIN; // spec 106 T426: a run override of Settings > Brain view (development runs only), never saved
   win.on('focus', () => win?.flashFrame(false)); // spec 052 FR-059: the taskbar flash stops when you come back
   {
     // spec 052 FR-085 / FR-087 / FR-090: on macOS closing the window hides it (the agents keep running; ⌘Q quits);
@@ -1241,7 +1245,7 @@ app.whenReady().then(() => {
       sessionOf: (key) => [...agents.keys()].find((id) => resumeIdFor(id) === key),
       scheduleExists: (id) => !!id && !!scheduler?.doc.schedules.some((x) => x.id === id),
       release: (run) => (scheduler ? scheduler.releaseDoorRun(run.scheduleId, run.prompt) : Promise.resolve('failed' as const)),
-      persist: (doc) => { try { saveHeld(dfile, doc); } catch (err) { console.warn('[held] could not save', redact(err instanceof Error ? err.message : err)); } },
+      persist: (doc) => { try { saveHeld(dfile, doc); } catch (err) { console.warn('[held] could not save', redact(err instanceof Error ? err.message : err)); } }, // FR-066: read, not shown
       discardBad: () => discardAside(dfile),
       changed: () => toRenderer('heldmig:changed', heldBefore?.list()),
       stopped: (agentId, why) => toRenderer('heldmig:stopped', { id: agentId, why }),
@@ -1298,7 +1302,7 @@ app.whenReady().then(() => {
       const driver = require(dev.DURBAR_DRIVER as string) as (c: typeof ctx) => Promise<void>;
       // spec 008 FR-090: a failing driver exits 1, so CI on every OS sees it without reading the log
       let failed = false;
-      void driver(ctx).catch((err) => { failed = true; console.error('DRIVER FAILED', redact(err instanceof Error ? err.stack ?? err.message : err)); }).finally(() => void router.disposeAll().finally(() => app.exit(failed ? 1 : 0)));
+      void driver(ctx).catch((err) => { failed = true; console.error('DRIVER FAILED', redact(err instanceof Error ? err.stack ?? err.message : err)); }).finally(() => void router.disposeAll().finally(() => app.exit(failed ? 1 : 0))); // FR-066: read, not shown
     });
   }
   // macOS: a click on the Dock icon brings back the hidden window (FR-085), or opens a new one

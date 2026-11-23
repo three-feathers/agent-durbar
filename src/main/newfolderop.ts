@@ -22,6 +22,7 @@ import { CONTROL_RE, HIDDEN_RE } from '../shared/names';
 import { validMode } from './agentops';
 import { readUserSshCommand, runGitCreate } from './gitstatus';
 import type { GitCreateDeps, GitCreateHandle, GitCreateRequest } from './gitstatus';
+import { failText } from './ipcerror';
 
 /** A parent pick is valid this long (FR-005). */
 export const PARENT_TOKEN_MS = 10 * 60 * 1000;
@@ -354,7 +355,7 @@ export function createNewFolderOp(d: NewFolderDeps) {
       try {
         added = await d.addMany([target], validMode(mode), opts);
       } catch (e) {
-        added = { ok: false, agents: [], error: e instanceof Error ? e.message : String(e) };
+        added = { ok: false, agents: [], error: failText(e, 'new folder') };
       }
       // Spec 033 FR-090: main found the folder already in the office (a stale agent with the same real path) and started nothing. The folder
       // made here stays as it is: nothing is removed for this case.

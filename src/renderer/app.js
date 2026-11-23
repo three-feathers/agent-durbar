@@ -290,10 +290,10 @@ let SERIOUS=false; /* Serious mode (Settings): no mood drawings at all */
 function markSerious(){document.documentElement.toggleAttribute('data-serious',SERIOUS);}
 /* spec 052 FR-069 (changed 2026-11-05, issue 1182): looping animation stops under the system's reduced motion or with Settings > Motion off (styles.css, html[data-motion-off]); Serious mode no longer stops it */
 let MOTION=true;
-function markMotion(){document.documentElement.toggleAttribute('data-motion-off',!MOTION);}
+function markMotion(){document.documentElement.toggleAttribute('data-motion-off',!MOTION);if(typeof brainMotionSync==='function')brainMotionSync();} /* spec 106 FR-060: Motion off makes the brain Still */
 /* spec 001 FR-192 (WCAG 2.2.2): Settings > Still highlights (no motion): the desk glow and the New badge stay, the person and the badge do not move (styles.css, html[data-still-highlights]) */
 let STILL_HL=false;
-function markStillHl(){document.documentElement.toggleAttribute('data-still-highlights',STILL_HL);}
+function markStillHl(){document.documentElement.toggleAttribute('data-still-highlights',STILL_HL);if(typeof brainMotionSync==='function')brainMotionSync();} /* spec 106 FR-060: so do Still highlights */
 /* Spec 052 FR-031 (removed 2026-11-02): the Simple / Expert switch is gone and Expert is the only behaviour. A value stored by the old switch is dropped once. */
 try{localStorage.removeItem('durbar.detail');}catch(e){}
 /* spec 052 FR-099 (round 10): Spacing, Comfortable or Compact. Compact tightens the chrome only (chat, screens, dialogs, inbox); the top bar,
@@ -481,28 +481,69 @@ const visitorWords=(a,v,cut)=>{const C=cut?DurbarCutText.cutText:(t=>String(t)),
 /* A place tile's title: at most 4 names (each cut), then "and N more", then the longest wait at the Boss; one line, well under 300 characters */
 const placeTip=(pid,ids,wait)=>{const C=DurbarCutText.cutText,nm=ids.slice(0,4).map(id=>C(byId(id).name,30)),more=ids.length-nm.length;
   return `${placeLabelFull(pid)}: ${nm.length?nm.join(', ')+(more?` and ${more} more`:''):'nobody'}${wait?'. Longest wait '+wait:''}`;};
+/* spec 001 FR-039 (delta 2026-11-23, issues 2018, 2041): the width of each place name as the lobby draws it (one hidden tile of the lobby's own markup, so the theme's font, case and
+   spacing count), then DurbarPlaces.lobbyShare gives the places whose name does not fit in an equal tile what the empty ones do not use. {placeId: px} or null (nobody needs more). */
+let LOBBY_M=null, LOBBY_CTX=null;
+function lobbyMeasure(){
+  if(!document.body)return false;
+  if(!LOBBY_M||!LOBBY_M.isConnected){ /* one hidden tile of the lobby's own markup: its computed type is the theme's (read by style, never by layout: a status update must not add layout reads, check-office-ops) */
+    LOBBY_M=document.createElement('div');LOBBY_M.className='lobby';LOBBY_M.setAttribute('aria-hidden','true');
+    LOBBY_M.style.cssText='position:fixed;left:-9999px;top:0;visibility:hidden;pointer-events:none;flex:none;width:auto';
+    LOBBY_M.innerHTML='<div class="place" data-chips="initials"><span class="plh"><span class="pn"></span><span class="pc"></span></span><span class="prow"><span class="pv"><span class="pv-t"><b class="pv-n pv-i"></b></span></span></span></div>';
+    document.body.appendChild(LOBBY_M);
+  }
+  if(!LOBBY_CTX)LOBBY_CTX=document.createElement('canvas').getContext('2d');
+  return true;
+}
+/* the width of one short-name entry (figure 22, gap 1, the widest short name in this font), never under DurbarPlaces' INIT_W: a wide face (DejaVu) gets a wider entry, the layout follows */
+function lobbyInitW(){
+  const D=window.DurbarPlaces; if(!lobbyMeasure())return 0;
+  const b=LOBBY_M.querySelector('.pv-i'), cs=getComputedStyle(b);
+  LOBBY_CTX.font=cs.fontStyle+' '+cs.fontWeight+' '+cs.fontSize+' '+cs.fontFamily;
+  let m=0; for(const a of agents){const w=LOBBY_CTX.measureText(D.shortName(a.name)).width; if(w>m)m=w;}
+  return Math.ceil(23+m+1);
+}
+function lobbyShares(all,fit,iw){
+  const D=window.DurbarPlaces, rest=all.filter(p=>p.id!==D.BOSS&&p.id!==D.COFFEE&&p.id!==D.BANK&&p.id!==D.POSTBOX);
+  if(!rest.length||!lobbyMeasure())return null;
+  const pl=LOBBY_M.firstChild, pn=pl.querySelector('.pn'), pc=pl.querySelector('.pc'), cs=getComputedStyle(pn), cp=getComputedStyle(pc), cl=getComputedStyle(pl);
+  const frame=parseFloat(cl.paddingLeft)+parseFloat(cl.paddingRight)+parseFloat(cl.borderLeftWidth)+parseFloat(cl.borderRightWidth)+18+7; /* padding, border, the 18 px icon and its gap */
+  const ls=parseFloat(cs.letterSpacing)||0, up=cs.textTransform==='uppercase';
+  const font=c=>c.fontStyle+' '+c.fontWeight+' '+c.fontSize+' '+c.fontFamily;
+  const items=rest.map(p=>{const ids=placeVisitors(p.id), t=up?placeLabel(p.id).toUpperCase():placeLabel(p.id);
+    LOBBY_CTX.font=font(cs); let need=frame+LOBBY_CTX.measureText(t).width+ls*Array.from(t).length;
+    if(ids.length){LOBBY_CTX.font=font(cp);need+=7+LOBBY_CTX.measureText(String(ids.length)).width;
+      const {mode,slots}=D.chipsFor(fit.caps,ids.length), sp=mode==='initials'?D.initialSpots(fit.tile,ids.length,20,iw):D.layoutSpots(ids.length,slots);
+      need=Math.max(need,D.chipsNeed(mode,sp.shown,sp.more,iw));} /* a busy tile gives back what its name and its entries do not use */
+    return {id:p.id,need,give:true};});
+  const w=D.lobbyShare(fit.tile,items);
+  return w?Object.fromEntries(items.map((i,k)=>[i.id,w[k]])):null;
+}
 function lobbyHTML(aw){
   if(!lobbyOn())return '';
-  const D=window.DurbarPlaces, all=lobbyPlaces(), add=canAddPlace(), fit=D.lobbyFit(aw,D.allPlaces(CUSTOM).length,add,postShown());
+  const D=window.DurbarPlaces, all=lobbyPlaces(), add=canAddPlace(), iw=lobbyInitW(), fit=D.lobbyFit(aw,D.allPlaces(CUSTOM).length,add,postShown(),iw);
+  const share=fit.tileNamed?lobbyShares(all,fit,iw):null;
   const own={[D.BOSS]:fit.boss,[D.COFFEE]:fit.coffee,[D.BANK]:fit.bank,[D.POSTBOX]:fit.post}; /* FR-039: the fixed tiles' own widths */
-  return `<section class="lobby" data-key="lobby" aria-label="${esc(wordOf('lobby-label'))}">${all.map(p=>{
+  return `<section class="lobby" data-key="lobby"${iw>54?` style="--iw:${iw}px"`:''} aria-label="${esc(wordOf('lobby-label'))}">${all.map(p=>{
     const box=own[p.id]||null, cf=p.id===D.COFFEE, boss=p.id===D.BOSS, bank=p.id===D.BANK;
     if(p.id===D.POSTBOX)return postboxHTML(p,box);
-    const named=box?box.named:fit.tileNamed, sty=box?` style="flex:0 0 ${box.width}px"`:'';
-    const caps=box?box.chips:fit.caps, ids=placeVisitors(p.id);
+    const ids=placeVisitors(p.id), tw=box?box.width:(share&&share[p.id])||fit.tile; /* the tile's own width: a special tile's, or its share of the row by need (spec 001 FR-039, delta 2026-11-23) */
+    const snug=!!box&&(cf||bank)&&box.width<D.SNUG_W; /* the corner and the Bank at their minimum: 6 px of side padding, so a short-name entry and "+N" fit in 96 px (spec 001 delta 2026-11-23) */
+    const named=box?box.named:tw>=56, sty=box?` style="flex:0 0 ${box.width}px"`:share&&share[p.id]?` style="flex:0 0 ${share[p.id]}px"`:'';
+    const caps=box?box.chips:share&&share[p.id]?D.chipsIn(tw,iw):fit.caps;
     /* the Boss shows as many of its queue as it can: names only when everyone there fits by name, else initials (FR-034) */
     const {mode,slots:cap}=boss&&ids.length>caps.named?{mode:'initials',slots:caps.initials}:D.chipsFor(caps,ids.length);
-    const sp=mode==='initials'?D.initialSpots(box?box.width:fit.tile,ids.length):D.layoutSpots(ids.length,cap), who=ids.map(id=>{const a=byId(id);return visitorWords(a,VISITS.at(id));});
+    const sp=mode==='initials'?D.initialSpots(tw,ids.length,snug?12:20,iw):D.layoutSpots(ids.length,cap), who=ids.map(id=>{const a=byId(id);return visitorWords(a,VISITS.at(id));});
     const go=boss||bank||cf; /* FR-034/FR-035: an entry at the Boss or the Bank opens that chat at its request; spec 068 FR-019 (owner 2026-10-23): so does one in the coffee corner */
     const chips=ids.slice(0,sp.shown).map((id,i)=>{const a=byId(id),v=VISITS.at(id),w=visitorWords(a,v),t=visitorWords(a,v,true),k=boss&&v?v.label:'';
-      const inner=`<span class="slot on" data-slot="${i}"></span><span class="pv-t">${mode==='named'?`<b class="pv-n">${esc(a.name)}</b><small class="pv-a">${esc(v?visitDoing(a,v):'')}</small>`:`<b class="pv-n pv-i">${esc(D.initialsOf(a.name))}</b>`}</span>`;
+      const inner=`<span class="slot on" data-slot="${i}"></span><span class="pv-t">${mode==='named'?`<b class="pv-n">${esc(a.name)}</b><small class="pv-a">${esc(v?visitDoing(a,v):'')}</small>`:`<b class="pv-n pv-i">${esc(D.shortName(a.name))}</b>`}</span>`;
       const hint=cf?'. Open the chat; right-click for Retry now.':'. Open the chat.', kh=cf?' aria-keyshortcuts="Shift+F10"':''; /* FR-020: the coffee entry's menu */
       return go?`<button type="button" class="pv pv-go" data-key="pv:${esc(id)}" data-visitor="${esc(id)}" data-pvopen="${esc(id)}"${cf?` data-coffeeid="${esc(id)}"`:''}${k?` data-ask="${k}"`:''}${kh} title="${esc(t+hint)}" aria-label="${esc(w+hint)}">${inner}</button>`
         :`<span class="pv" data-key="pv:${esc(id)}" data-visitor="${esc(id)}" title="${esc(t)}">${inner}</span>`;}).join('');
     const more=sp.more?`<button class="pv pv-more" type="button" data-key="pv-more:${esc(p.id)}" data-placemore="${esc(p.id)}" aria-haspopup="menu" title="${sp.more} more here. Open the list." aria-label="${sp.more} more at ${esc(placeLabelFull(p.id))}: ${esc(ids.slice(sp.shown).map(id=>byId(id).name).join(', '))}"><span class="slot more" data-slot="${sp.shown}">+${sp.more}</span>${mode==='named'?'<span class="pv-t"><b class="pv-n">more</b></span>':''}</button>`:'';
     const wait=boss&&ids.length?bossWait(ids[0]):''; /* FR-034: the longest wait, in the header */
     const label=`${placeLabelFull(p.id)}: ${who.length?who.join(cf||bank?', ':'; '):'nobody'}${wait?'. Longest wait '+wait:''}`; /* the accessible name: everyone there, in full (the title is placeTip) */
-    return `<div class="place${ids.length?' busy':''}${cf?' coffee':''}${boss?' boss':''}${bank?' bank':''}${named?'':' unnamed'}${box||named?'':' compact'}"${sty} data-key="place:${p.id}" data-place="${p.id}"${reorderablePlace(p.id)?' data-reo="1"':''} data-chips="${mode}" tabindex="-1" role="group" title="${esc(placeTip(p.id,ids,wait))}" aria-label="${esc(label)}"><span class="plh">${placeIcon(p)}${named?`<span class="pn">${esc(placeLabel(p.id))}</span>`:''}${wait&&(!boss||box.wait)?`<span class="bw" aria-hidden="true">${esc(wait)}</span>`:''}${ids.length&&(box||named)?`<span class="pc" aria-hidden="true">${ids.length}</span>`:''}</span><span class="prow" aria-hidden="${ids.length?'false':'true'}">${ids.length?chips+more:'<span class="pv-none">nobody</span>'}</span></div>`;
+    return `<div class="place${ids.length?' busy':''}${cf?' coffee':''}${boss?' boss':''}${bank?' bank':''}${snug?' snug':''}${named?'':' unnamed'}${box||named?'':' compact'}"${sty} data-key="place:${p.id}" data-place="${p.id}"${reorderablePlace(p.id)?' data-reo="1"':''} data-chips="${mode}" tabindex="-1" role="group" title="${esc(placeTip(p.id,ids,wait))}" aria-label="${esc(label)}"><span class="plh">${placeIcon(p)}${named?`<span class="pn">${esc(placeLabel(p.id))}</span>`:''}${wait&&(!boss||box.wait)?`<span class="bw" aria-hidden="true">${esc(wait)}</span>`:''}${ids.length&&(box||named)?`<span class="pc" aria-hidden="true">${ids.length}</span>`:''}</span><span class="prow" aria-hidden="${ids.length?'false':'true'}">${ids.length?chips+more:'<span class="pv-none">nobody</span>'}</span></div>`;
   }).join('')}${add?'<button class="place-add" type="button" data-key="place-add" title="Add a place" aria-label="Add a place">+</button>':''}${lobbyArt()}</section>`;
 }
 /* spec 001 FR-038: the Postbox: the next three scheduled runs, the letters still due today, a flag for a missed or failed last run. A button:
@@ -510,7 +551,7 @@ function lobbyHTML(aw){
 function postboxHTML(p,box){
   let S;try{S=SCHED;}catch(e){S={pausedAll:false,schedules:[]};} /* SCHED is declared further down */
   const D=window.DurbarPlaces, paused=!!S.pausedAll, list=S.schedules||[], next=D.postNext(list,paused).slice(0,3);
-  const today=D.lettersToday(list,paused,Date.now(),(window.DurbarSchedTemplates||{}).nextRuleRun), miss=D.postMissed(list), named=!box||box.named;
+  const today=D.lettersToday(list,paused,Date.now(),(window.DurbarSchedTemplates||{}).nextRuleRun), miss=D.postMissed(list), named=!box||box.named, long=!box||box.long;
   const line=x=>{const room=ROOMS.find(r=>folderKeyOf(r)===x.s.folder), fold=room?room.name:(String(x.s.folder||'').split(/[\\/]/).filter(Boolean).pop()||'');
     return {short:clock(x.t)+' · '+safeExcerpt(x.s.prompt,60,''), full:clock(x.t)+' · '+fold+' · '+safeExcerpt(x.s.prompt,200,''), long:clock(x.t)+' · '+fold+' · '+safeExcerpt(x.s.prompt,60,'')};};
   const ls=next.map(line), empty=paused?'All paused':'No letters';
@@ -518,7 +559,7 @@ function postboxHTML(p,box){
   const label=`${placeLabelFull(p.id)}: ${sum}. ${ls.length?'Next: '+ls.map(l=>l.full).join('; '):empty}. Open Settings > Schedules.`;
   return `<button type="button" class="place postbox${miss?' flagged':''}${named?'':' unnamed'}" style="flex:0 0 ${box?box.width:200}px" data-key="place:${p.id}" data-place="${p.id}" data-post="1" title="${esc(label)}" aria-label="${esc(label)}">`
     +`<span class="pb-l"><span class="plh">${placeIcon(p)}${named?`<span class="pn">${esc(placeLabel(p.id))}</span>`:''}</span><span class="pb-n">${esc(today?today+' today':'none today')}</span>${miss?`<span class="pb-flag" aria-hidden="true">${miss} missed</span>`:''}</span>`
-    +`<span class="pb-r" aria-hidden="true">${ls.length?ls.map(l=>`<span class="pb-line">${esc(named?l.long:l.short)}</span>`).join(''):`<span class="pb-line pb-none">${esc(empty)}</span>`}</span></button>`;
+    +`<span class="pb-r" aria-hidden="true">${ls.length?ls.map(l=>`<span class="pb-line">${esc(long?l.long:l.short)}</span>`).join(''):`<span class="pb-line pb-none">${esc(empty)}</span>`}</span></button>`;
 }
 /* spec 001 FR-034/FR-035: open an agent's chat with its pending request (question, permission or spending limit) in view and focused,
    like the answer bar's "show" */
@@ -706,6 +747,8 @@ function roomAiu(r){const f=folderOfRoom(r.id),t=LEDGER.room(r.id,f&&f.key),usd=
 /* spec 052 FR-076: one word per status on every screen (pills, list, header, palette, counters); longer phrases only in sentences */
 const LABELS={working:'Working',thinking:'Thinking',waiting:'Waiting',idle:'Idle',error:'Error',done:'Done',limit:'Limit reached',asleep:'Asleep'}; /* limit and asleep too: a state with no label of its own never reads "undefined" (relayed, 2026-11-03) */
 const vis = a => a.paused ? 'idle' : a.state;
+/* the status pill's and the status filter's "Working": working or thinking (a paused agent reads idle); Retrying, Failing and Compacting are overlays on these states, so they count as working only while the state is */
+const isWorkingVis = a => { const s = vis(a); return s==='working'||s==='thinking'; };
 const label = (a,short) => a.paused ? 'Paused' : (a.label || LABELS[a.state] || '');
 /* spec 052 FR-062: Working (or Thinking) while its recent tool calls failed in a row (the mood's "dizzy" streak) reads "Failing", in the waiting
    colours (.st-failing); the card keeps its is-working look and its place in the status filters. Main agents only (the tracker's scope). */
@@ -943,7 +986,7 @@ function placeToasts(){const box=$('toasts');if(!box)return;let top=innerHeight;
   const pi=document.body.classList.contains('panel-open')&&document.querySelector('#panel>.panel-in'),pl=pi&&pi.getClientRects().length?Math.round(pi.getBoundingClientRect().left):0;
   box.style.setProperty('--toast-l',(pl+16)+'px');}
 let toastRO=null;
-function mountToast(t){const box=$('toasts');placeToasts();box.appendChild(t);
+function mountToast(t){liveMask(t,[t.classList.contains('with-act')&&t.firstElementChild||t]); /* spec 012 FR-195: every toast is masked before it is shown (and read out: #toasts is a live region) */const box=$('toasts');placeToasts();box.appendChild(t);
   if(window.ResizeObserver){if(!toastRO)toastRO=new ResizeObserver(placeToasts);toastRO.disconnect();for(const e of [document.querySelector('#panel .composer'),$('answerBar'),$('panel')])if(e)toastRO.observe(e);} /* the composer grows with a long message, the answer bar appears and goes */}
 window.addEventListener('resize',placeToasts);
 function toast(html,ms){const t=document.createElement('div');t.className='toast';t.innerHTML=html;mountToast(t);holdTimer(t,ms||3200,()=>{t.style.transition='opacity .3s';t.style.opacity='0';setTimeout(()=>t.remove(),320)});return t;}
@@ -985,7 +1028,7 @@ function renderFilter(){
   sel.value=ui.ws;
   fitTopbar(); /* the narrow value is reapplied to the new options */
 }
-const matchStatus = a => !ui.status || ((ui.status==='working')?['working','thinking'].includes(vis(a)):vis(a)===ui.status);
+const matchStatus = a => !ui.status || ((ui.status==='working')?isWorkingVis(a):vis(a)===ui.status);
 /* spec 001 FR-180 (issue 790): while a status pill filters, say so. The office and List show "Showing only <state> · N hidden · Show all"
    (Show all is the pill's own toggle) so a finished session the filter hides never looks lost. N counts the main sessions the office or the list
    would show without the pill (same folder, workspace and floor rules), not helpers. */
@@ -1690,7 +1733,23 @@ function growSearch(sizing,aw,ah,lo){
   GROW=0; setGrow(probe,0);
   return best;
 }
-let layoutKey='', layout=null, FIT_KEY='';
+let layoutKey='', layout=null, FIT_KEY='', layoutShape='';
+/* spec 001 delta 2026-11-22 (issue 2024): the layout key without the desks' order inside each room (the rooms keep theirs): which desks, not where */
+function layoutShapeKey(key){
+  const k=JSON.parse(key), rooms=k[k.length-1], byId=(x,y)=>x[0]<y[0]?-1:x[0]>y[0]?1:0;
+  k[k.length-1]=rooms.map(([id,mains,rolled,shut])=>[id,[...mains].sort(byId),[...rolled].sort(byId),shut]);
+  return JSON.stringify(k);
+}
+/* one probe of a layout the search chose, with today's desk order: it fits the floor and every header holds its parts without giving way (headsFit, the search's strict test) */
+function layoutHolds(sizing,aw,ah,L){
+  const probe=$('probe'); probe.style.width=aw+'px';
+  HCAP=L.hcap; HBOOST=new Map(L.boost); LIVE_SIDE=!!L.side; GROW=L.grow?1:0; HX=L.hx||0;
+  probe.dataset.d=L.d; probe.style.height='auto'; setGrow(probe,L.grow||0);
+  probeSet(probe,stageHTML(sizing,L.d,aw,L.cap));
+  const ok=probe.scrollHeight<=ah+1&&probe.scrollWidth<=aw+1&&headsFit(probe);
+  probe.innerHTML=''; probePrev=null; LIVE_SIDE=false; GROW=0; HX=0; setGrow(probe,0);
+  return ok;
+}
 let SIM_QUIET_HEADS=new Set(); /* spec 001 FR-023 (2026-10-23): simulator only (__durbarSimUi.quietHeads(['siren','aiu'])): room headers drawn without those parts, so a driver can lay the office out first and add them after, as a late siren or cost does */
 let HEAD_RETRY=''; /* the layout key and header contents of the last relayout made because a header no longer held its parts */
 /* spec 001 FR-026: what a new user needs before the first folder: sign in once (spec 052 FR-056: named by the AI account, not the app), add a folder (Read-only), or look around in the demo */
@@ -2087,8 +2146,13 @@ function renderOffice(){
   OPS.renders++;
   const sizing=lastSizing=sizingModel(model); /* what chooseLayout is given (the hook below reads it) */
   const key=JSON.stringify([aw,ah,FORCE_DENSITY,liveOn(),THEME.themeIdForCache(),lobbyOn(),floorTagsOn()&&floorsOnList().map(f=>f.id+':'+f.name),curFloorId(),allFloorsView(),sizing.map(m=>[m.r.id,m.mains.map(a=>[a.id,helpersOf(a).length,!!ui.expanded[a.id]]),(m.rolled||[]).map(x=>[x.a.id,x.k]),!!ui.expanded['shut:'+m.r.id]])]);
-  const reused=key===layoutKey&&!!layout; /* spec 097 FR-184: the last layout search still holds (same shape, width and height) */
+  let reused=key===layoutKey&&!!layout; /* spec 097 FR-184: the last layout search still holds (same shape, width and height) */
+  /* spec 001 delta 2026-11-22 (issue 2024): the same desks in another order (a desk that waits for you moves to the front of its room, and back) is one
+     probe of the layout it has, not a whole search: kept when it still fits with its headers holding, searched as before when not */
+  const shape=layoutShapeKey(key);
+  if(!reused&&layoutKey&&layout&&layout.fit&&shape===layoutShape&&layoutHolds(sizing,aw,ah,layout)){reused=true;layoutKey=key;}
   if(!reused){layout=chooseLayout(sizing,aw,ah);layoutKey=key;}
+  layoutShape=shape;
   HCAP=layout.hcap; HBOOST=new Map(layout.boost); LIVE_SIDE=!!layout.side; GROW=layout.grow?1:0; HX=layout.hx||0; /* a cached layout skips chooseLayout: restore the helper level too */
   const parts=stageParts(model,layout.d,aw,layout.cap);
   const fresh=stage.dataset.d!==layout.d||!!stage.querySelector('.empty');
@@ -2188,10 +2252,16 @@ const ROOM_NAME_CH=8;
 let NAME_CTX=null;
 /* the name's text is wider than its box, even by a fraction of a pixel (then the browser draws an ellipsis; scrollWidth is a whole number and counts the padding, so it misses it: a name 0.03px short lost two letters in the 1280x800 office) */
 const nameRoom=(n,cs)=>n.getBoundingClientRect().width-parseFloat(cs.paddingLeft)-parseFloat(cs.paddingRight)-parseFloat(cs.borderLeftWidth)-parseFloat(cs.borderRightWidth); /* the text's room, not rounded (clientWidth is a whole number) */
+function textCut(n){
+  const cs=getComputedStyle(n),box=n.getBoundingClientRect().width,room=box-parseFloat(cs.paddingLeft)-parseFloat(cs.paddingRight)-parseFloat(cs.borderLeftWidth)-parseFloat(cs.borderRightWidth); /* one box read (clientWidth is that box, rounded, minus its borders) */
+  if(n.scrollWidth>Math.round(box-parseFloat(cs.borderLeftWidth)-parseFloat(cs.borderRightWidth))+0.5)return true;
+  const r=document.createRange(); r.selectNodeContents(n);
+  return r.getBoundingClientRect().width>room+0.01;
+}
+/* spec 001 FR-179 (issue 2011): a split name (FR-271) is a flex box of its start and its tail, and the start is what gives way: the box itself holds
+   (its children shrink inside it), so each part is asked too, or a start cut by a fraction of a pixel ("swissc… tract-ai") kept the path beside it */
 function nameCut(n){
-  if(n.scrollWidth>n.clientWidth+0.5)return true;
-  const cs=getComputedStyle(n),r=document.createRange(); r.selectNodeContents(n);
-  return r.getBoundingClientRect().width>nameRoom(n,cs)+0.01;
+  return textCut(n)||[...n.querySelectorAll(':scope>.rn-h,:scope>.rn-t')].some(textCut);
 }
 function nameSqueezed(hd){
   const n=hd.querySelector('.room-name'); if(!n||!n.getClientRects().length||!nameCut(n))return false;
@@ -2379,7 +2449,8 @@ function renderConvResults(){
     const on=CS.sort&&CS.sort.key===k,dir=on?(CS.sort.dir==='asc'?'ascending':'descending'):'none';
     return `<span role="columnheader" aria-sort="${dir}"${k==='folder'?' class="lfold"':k==='ago'?' class="num"':''}><button type="button" class="lsort" data-cssort="${k}" data-csf="sort-${k}" title="Sort the results by ${esc(t.toLowerCase())}">${esc(t)}<span class="sarr" aria-hidden="true">${on?(CS.sort.dir==='asc'?'▲':'▼'):'↕'}</span></button></span>`;}).join('');
   const scanning=!!st&&!st.done;
-  const state=st?`<div class="cs-state"><span class="cs-st">${esc(CSU.stateText(st))}</span>${scanning&&CS.id?'<button class="btn sm" type="button" id="csStop" data-csf="stop">Stop</button>':''}</div>`:'';
+  const spin='<svg class="cs-spin" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><path d="M8 2.2a5.8 5.8 0 1 1-5.8 5.8"/></svg>'; /* spec 095 FR-053: the running sign, from the start to the end of the scan */
+  const state=st?`<div class="cs-state${scanning?' running':''}">${scanning?spin:''}<span class="cs-st">${esc(CSU.stateText(st))}</span>${scanning&&CS.id?'<button class="btn sm" type="button" id="csStop" data-csf="stop">Stop</button>':''}</div>`:'';
   const notes=st&&st.done?CSU.notesText(st):'';
   const ex=(h,k)=>h.excerpts&&h.excerpts.length?`<div class="cs-exs">${h.excerpts.map((x,i)=>`<button type="button" data-csk="${esc(k)}" data-csx="${i}" data-csf="${esc(k)}#${i}" title="${h.group==='office'?'Open the chat at this message':h.adapter==='vscode'?'View this chat at this message':'Resume this session at this message'}">${CSU.excerptHTML(x,esc)}</button>`).join('')}${CSU.moreOf(h)?`<span class="cs-more">+${CSU.moreOf(h)} more</span>`:''}</div>`:'';
   const officeRow=h=>{
@@ -2393,7 +2464,7 @@ function renderConvResults(){
     return `<div class="cs-hit" data-csk="${esc(k)}"><div class="lrow cs-prow"><span class="lname"><span class="lnm" title="${esc(h.title)}">${CSU.markedHTML(h.title,h.titleMarks,esc)}</span></span><span class="lcell" title="${esc(h.app)}">${esc(h.app)}</span><span class="lcell lrole">${view?'VS Code chat':'Earlier session'}</span><span class="lcell mono lfold" title="${esc(h.folderName)}">${esc(h.folderName)}</span><span class="lcell"></span><span class="lcell num"${agoL?` title="Last active ${esc(agoL)}"`:''}>${esc(ago)}</span><span class="lcell num"></span><span><button class="btn sm" type="button" data-csact="1" data-csk="${esc(k)}" data-csnav="1" data-csf="${esc(k)}" aria-label="${esc(act+': '+CSU.accName(h))}">${act}</button></span></div>${ex(h,k)}</div>`;};
   const group=(g,title,list,row)=>list.length?`<div class="cs-ghead" role="heading" aria-level="3">${esc(title)} <span>· ${list.length===1?'1 session':list.length+' sessions'}</span></div>${list.map(row).join('')}`:'';
   const none=st&&st.done&&!CSU.count(st)&&!st.failed?`<div class="empty">No conversation matches “${esc(CS.q.trim())}”.</div>`:'';
-  L.innerHTML=`<div class="list-wrap cs-wrap" role="group" aria-label="Search results" data-sort="${CS.sort?CS.sort.key:''}"><div class="lrow lhead" role="row">${head}</div>${state}${notes?`<div class="cs-notes">${esc(notes)}</div>`:''}${group('office','In the office',view.office,officeRow)}${group('earlier','Earlier sessions',view.earlier,earlierRow)}${none}</div>`;
+  L.innerHTML=`<div class="list-wrap cs-wrap" role="group" aria-label="Search results"${scanning?' aria-busy="true"':''} data-sort="${CS.sort?CS.sort.key:''}"><div class="lrow lhead" role="row">${head}</div>${state}${notes?`<div class="cs-notes">${esc(notes)}</div>`:''}${group('office','In the office',view.office,officeRow)}${group('earlier','Earlier sessions',view.earlier,earlierRow)}${none}</div>`;
   L.scrollTop=scrollTop;
   if(fk){const n=[...L.querySelectorAll('[data-csf]')].find(x=>x.dataset.csf===fk);if(n&&document.activeElement!==n)n.focus({preventScroll:true});}
 }
@@ -3146,6 +3217,7 @@ function openPanel(id,focus){
   if(window.ResizeObserver){if(chatBoxRO)chatBoxRO.disconnect();let h0=-1;chatBoxRO=new ResizeObserver(()=>{const h=chatEl.clientHeight;if(h0>=0&&h!==h0&&chatEl.isConnected&&chatEl.dataset.pin!=='0')chatEl.scrollTop=chatEl.scrollHeight;h0=h;});chatBoxRO.observe(chatEl);} /* spec 005 FR-243: the box got shorter (an answer bar, the coffee bar, the message box) or taller: a chat at the end stays there; only down, only with the pin on (FR-214); the content's growth is stickyFlush's */
   $('panel').querySelector('.panel-in').classList.toggle('helper-ro',!!(a.live&&a.parent)); /* spec 097 Changes 2026-11-04 (issue 1140): not 'ro', the Real office root's class, whose floor picture and corners it took */
   $('backBtn').onclick=closePanel;
+  { const sb=$('railSortBtn'); if(sb){ sb.onclick=()=>document.getElementById('railSortMenu')?closeRailSortMenu(true):openRailSortMenu(); sb.onkeydown=e=>{if(e.key==='ArrowDown'){e.preventDefault();openRailSortMenu();}}; } } /* spec 005 FR-341 */
   refreshFolderStatus(a); /* spec 063: branch and changed files on the folder chip */
   if(a.live)wireOpenWith(a);else $('vscodeBtn').onclick=()=>toast('Would run <code>code '+esc(room.path)+'</code>',3800);
   if(a.live)$('pauseBtn').hidden=true;
@@ -4723,7 +4795,7 @@ function renderRestoreStrip(){
   el.innerHTML='<span class="ns-ic" aria-hidden="true">!</span><span class="ns-t"></span><span class="ns-act"><button class="btn primary" type="button" data-ns="ask">Make it ask me first</button><button class="btn" type="button" data-ns="keep">Keep as it is</button></span>';
   const names=rooms.map(r=>r.name).join(', ');
   el.querySelector('.ns-t').textContent=rooms.length===1?'One folder ('+names+') lets agents change files without asking.':rooms.length+' folders ('+names+') let agents change files without asking.';
-  el.hidden=false;
+  stripMask(el);el.hidden=false;
   el.querySelector('[data-ns="keep"]').onclick=()=>{el.dataset.kept='1';renderRestoreStrip();scheduleRender();};
   el.querySelector('[data-ns="ask"]').onclick=async()=>{
     const bad=[];
@@ -4876,6 +4948,10 @@ const ANN_UNCHECKED='A line was not read out: Durbar could not check it for secr
 function annHome(s){const R=window.DurbarRedact,c=R&&typeof R.unhide==='function'?R.unhide(s):s;let w=s,h=homeMask(s);if(typeof c==='string'&&c!==s){const hc=homeMask(c);if(hc!==c){w=c;h=hc;}} /* the copy without hidden characters, when it holds a home folder */if(typeof h!=='string'||!STX||typeof STX.unesc!=='function')return h;const u=STX.unesc(w),hu=homeMask(u);return typeof hu!=='string'||hu===u||STX.unesc(h)===hu?h:'[redacted]';} /* review of PR 1484: a home folder whose name holds a Markdown escape (/home/a\_b) is cut short by the home mask as written; when the escape-undone copy holds a home folder and masks to something else, the part is said as [redacted] (never with its escapes undone, as annPart) */
 function annPart(t){const s=String(t==null?'':t);if(!s)return '';const h=annHome(s);if(typeof h!=='string'||!h)return null;const m=deskMask(h);if(typeof m!=='string'||!m||m.includes('[redaction failed]')||!STX||typeof STX.unesc!=='function')return null;const u=STX.unesc(h);return m===u?h:u===h?m:'[redacted]';}
 function annMask(t){try{let out='';for(const p of Array.isArray(t)?t:[t]){const o=p&&typeof p==='object',x=annPart(o?p.text:p);if(x===null)return ANN_UNCHECKED;out+=o&&p.max>0?DurbarCutText.cutText(x,p.max):x;}return out.trim()?out:'';}catch(e){return ANN_UNCHECKED;}} /* a part {text,max} is masked, then cut (the MCP request's message) */
+/* spec 012 FR-195 (issue 1419): a built toast or notice strip, masked in place with annPart (FR-178): each text node, title and aria-label; then each block read once more as one joined text (a value split across markup): the masked block is masked again as one text, and every piece of it that the joined reading of the text as built hides is masked (keepShownBy, the union; '[redacted]' without it). Fails closed: '[not checked]', never the text. Nothing is cut before the mask. */
+function liveText(s){try{const m=annPart(s);return typeof m==='string'&&(m||!s)?m:'[not checked]';}catch(e){return '[not checked]';}} /* FR-195: one text through annPart, '[not checked]' when it cannot be checked */
+function liveMask(root,blocks){const NC='[not checked]',one=liveText;if(!root)return root;const bl=(blocks||[]).filter(Boolean),orig=bl.map(b=>b.textContent||'');let ns=[];try{const w=(root.ownerDocument||document).createTreeWalker(root,4);while(w.nextNode())ns.push(w.currentNode);}catch(e){root.textContent=NC;return root;}for(const t of ns)if(t.nodeValue&&t.nodeValue.trim())t.nodeValue=one(t.nodeValue);for(const e of [root,...root.querySelectorAll('[title],[aria-label]')])for(const k of ['title','aria-label']){const v=e.getAttribute(k);if(v&&v.trim())e.setAttribute(k,one(v));}bl.forEach((b,i)=>{const j0=orig[i];if(!j0.trim())return;const jp=b.textContent,mJ=one(j0);if(mJ===NC){b.textContent=NC;return;}let f=one(jp);if(mJ!==j0){const R=window.DurbarRedact;try{f=R&&typeof R.keepShownBy==='function'?R.keepShownBy(f,mJ):'[redacted]';}catch(e){f='[redacted]';}if(typeof f!=='string'||!f)f='[redacted]';} /* a piece the joined reading of the text as built hides is never shown (the shared piece-level union, FR-182) */if(f!==jp)b.textContent=f;});return root;}
+function stripMask(el){return liveMask(el,[...el.querySelectorAll('.ns-t,.aw-w')]);} /* FR-195: a notice strip's text and list items */
 function announce(text,prio){const el=$('srAnnounce');if(!el||!text)return;const said=annMask(text);if(!said)return;const p=prio||0;if(announceT&&p<announceP)return;clearTimeout(announceT);announceP=p;el.textContent='';announceT=setTimeout(()=>{announceT=0;announceP=0;el.textContent=said.slice(0,300);},60);}
 
 /* ---- spec 052 FR-191..FR-196 (T196, T197): Your door, the Needs you queue as a panel beside the office. It reuses paintInbox() for the rows (the
@@ -4898,6 +4974,7 @@ function doorGeom(){
 }
 function doorPlace(p){const g=doorGeom();p.style.top=g.top+'px';p.style.maxHeight=g.maxH+'px';p.style.width=g.full?'auto':g.w+'px';p.style.right=g.right+'px';p.style.left=g.full?'0':'auto';}
 window.addEventListener('resize',()=>{const p=$('needsPanel');if(p)doorPlace(p);});
+window.addEventListener('resize',()=>{if(document.body.classList.contains('panel-open')&&brainOn())brainRailSync();}); /* spec 106 T426: the narrow-window rule follows the window */
 /* FR-202, FR-203: it never opens by itself over a dialog, a menu, Settings or Tools, a chat, a narrow window, or the key the person is on */
 function doorHeld(){
   if(ui.selected||modalOpen()||document.querySelector('.dlg-ov')||innerWidth<900)return true;
@@ -5335,7 +5412,7 @@ function afRender(){
   const fid=AFT.ids()[0], fa=fid&&byId(fid);
   const text=AF.statusText({paused:AF_PAUSED,held:AF_HOLD,heldCount:AFT.pendingList().length,followed:AFT.size,office:!cur,name:fa&&fa.name,hiddenName:fa&&!afCanOpen(fid)?fa.name:''});
   const set=(id,t)=>{const n=$(id);if(n&&n.textContent!==t)n.textContent=t;};
-  set('afText',text);set('afPos','Attention: '+pt);
+  set('afText',liveText(text)); /* spec 012 FR-195: the followed agent's name through the same mask */set('afPos','Attention: '+pt);
   el.classList.toggle('paused',AF_PAUSED);
   const empty=!ids.length, np=pos.index>=0?(pos.index+1)+' of '+pos.count:pos.count+(pos.count===1?' needs you':' need you');
   const lab=(w,k)=>w+' in attention queue'+(empty?'. Nothing needs you; goes back to the office':'. '+np)+' ('+k+')';
@@ -5716,7 +5793,7 @@ function paintCrashStrip(focusSel){
     '<button class="btn" type="button" data-cr="pick" aria-expanded="'+(crashSt.pick?'true':'false')+'" aria-controls="crashList">Pick…</button>'+
     '<button class="btn" type="button" data-cr="close">Dismiss</button></span>'+
     (crashSt.pick?'<span class="aw-list cr-list" id="crashList" role="list" aria-label="Interrupted sessions">'+left.map(i=>'<span class="aw-it" role="listitem"><span class="aw-w"><b>'+esc(i.folderName)+'</b><small>'+esc(i.adapterId)+'</small></span><button class="btn" type="button" data-crrow="'+esc(i.id)+'">Resume</button></span>').join('')+'</span>':'');
-  el.hidden=false;
+  stripMask(el);el.hidden=false;
   const all=el.querySelector('[data-cr="all"]');
   el.querySelector('[data-cr="close"]').onclick=()=>{crashSt.items=[];paintCrashStrip();};
   el.querySelector('[data-cr="pick"]').onclick=()=>{crashSt.pick=!crashSt.pick;paintCrashStrip(crashSt.pick?'[data-crrow]':'[data-cr="pick"]');};
@@ -5746,7 +5823,7 @@ async function renderAwayStrip(){
     (briefW?' <span class="aw-brief" title="'+esc(SSUM.briefingTip)+'">'+esc(briefW)+'</span>':'')+
     '</span>'+(missed.length?'<span class="aw-list">'+missed.map(m=>'<span class="aw-it" data-sched="'+esc(m.id)+'"><span class="aw-w"><b>'+esc(m.folderName)+'</b>: “'+esc(safeExcerpt(m.prompt,80,''))+'”'+(m.repeats?' <small>(runs again as planned)</small>':'')+'</span>'+(bridge.runScheduleNow?'<button class="btn" type="button" data-awrun="'+esc(m.id)+'">Run missed now</button>':'')+'</span>').join('')+'</span>':'')+
     '<span class="ns-act"><button class="btn" type="button" data-aw="close">Dismiss</button></span>';
-  el.hidden=false;
+  stripMask(el);el.hidden=false;
   el.querySelector('[data-aw="close"]').onclick=()=>{el.hidden=true;el.innerHTML='';if(bridge.dismissSinceAway)bridge.dismissSinceAway().catch(()=>{});scheduleRender();};
   el.querySelectorAll('[data-awrun]').forEach(b=>b.onclick=async()=>{
     const done=busy(b,'Sending…');let r;
@@ -5788,7 +5865,7 @@ function paintMcpStrip(){
     '<span class="ns-act"><button class="btn" type="button" data-ml="list" aria-expanded="'+(mcpL.open?'true':'false')+'" aria-controls="mcpList">'+(mcpL.open?'Hide list':'List…')+'</button><button class="btn" type="button" data-ml="settings">Open MCP settings</button><button class="btn" type="button" data-ml="close">Dismiss</button></span>'+
     (mcpL.open?'<span class="aw-list ml-list" id="mcpList" role="list" aria-label="MCP servers that need attention">'+shown.map(f=>'<span class="aw-it" role="listitem" data-mlk="'+esc(f.key)+'"><span class="aw-w ml-w"><b>'+esc(f.name)+'</b> <small>'+esc(f.where||'')+'</small>: '+esc(f.reason)+'. '+esc(f.fix)+'</span><button class="btn" type="button" data-mlshow="'+esc(f.key)+'" aria-label="'+esc('Show '+f.name+(f.where?' ('+f.where+')':''))+'">Show</button></span>').join('')+
     (more?'<span class="aw-it" role="listitem"><span class="aw-w">and '+more+' more in Settings &gt; MCP servers.</span></span>':'')+'</span>':'');
-  el.hidden=false;
+  stripMask(el);el.hidden=false;
   el.querySelector('[data-ml="close"]').onclick=()=>{mcpL.closed=true;paintMcpStrip();};
   el.querySelector('[data-ml="list"]').onclick=()=>{mcpL.open=!mcpL.open;paintMcpStrip();const b=el.querySelector('[data-ml="list"]');if(b)focusIn(b,{reveal:false});};
   el.querySelector('[data-ml="settings"]').onclick=()=>window.DurbarScreens.openSettings('mcp');
@@ -7254,7 +7331,7 @@ function showQuestion(a,e){
     /* spec 052 (2026-11-19 delta, issue 1927, T378): the question's Markdown is rendered by the chat's own safe renderer (DurbarMD: raw HTML is text, links keep the chat's click handling),
        after the text is masked: the rendered output never holds an unmasked value. The answer is still keyed by the agent's own question text. */
     const qt=document.createElement('div');qt.className='q-text md';
-    if(q.header){const h=document.createElement('span');h.className='tag';h.textContent=q.header;qt.appendChild(h);}
+    if(q.header){const h=document.createElement('span');h.className='tag';h.textContent=safeMask(String(q.header));qt.appendChild(h);} /* spec 012 (2026-11-22 delta, issue 1937): the header is agent text: masked like the question */
     const qb=document.createElement('div');qb.className='q-md';qb.innerHTML=qMdHTML(q.question);qt.appendChild(qb);box.appendChild(qt);
     const qPlain=qb.textContent.replace(/\s+/g,' ').trim(); /* the words a screen reader says, without the Markdown marks; masked like the card (never the raw question) */
     const opts=document.createElement('div');opts.className='q-opts';opts.setAttribute('role',q.multiSelect?'group':'radiogroup');opts.setAttribute('aria-label',qPlain);
@@ -7786,12 +7863,19 @@ function onAgentRenamed(e){
   a.alias=typeof e.alias==='string'&&e.alias?e.alias:undefined;
   repaintName(a);
 }
-/* spec 106 T006 (delta 2026-11-20): Brain view's dock at the top of the chat's right rail, above a Your door section. Behind the preview flag until T009's
-   Settings switch (localStorage durbar.brainPreview = "on"; ?brain=1, which main sets from DURBAR_BRAIN=1 in a development run, as DURBAR_DOOR).
-   Loaded on first use (FR-105) from files that are not in index.html: the stylesheet first, so the rail is never drawn unstyled; events that arrive while
-   it loads wait in a short queue. Off: nothing loads and the chat is unchanged. */
-const BRAIN_PREVIEW=(()=>{try{return qs.get('brain')==='1'||localStorage.getItem('durbar.brainPreview')==='on';}catch(e){return false;}})();
+/* spec 106 T006, T426 (deltas 2026-11-20): Brain view's dock at the top of the chat's right rail, above a Your door section. On by default: Settings > Brain view
+   (`brainView` through setting() in main; unknown until settings:get answers, which means on). ?brain=0|1 is a run override only (the simulator's drivers;
+   main sets it from DURBAR_BRAIN=0|1 in a development run), never saved. Loaded on first use (FR-105) from files that are not in index.html: the stylesheet
+   first, so the rail is never drawn unstyled; events that arrive while it loads wait in a short queue. Off: nothing loads and the chat keeps its width. */
+const BRAIN_OVERRIDE=qs.get('brain')==='1'?true:qs.get('brain')==='0'?false:null;
+let BRAIN_SET=true, BRAIN_MOTION_SET='full', BRAIN_LOWPOWER=false, BRAIN_NARROW_OPEN=false;
+const brainOn=()=>BRAIN_OVERRIDE!==null?BRAIN_OVERRIDE:BRAIN_SET;
+const BRAIN_NARROW_W=1100; /* under this window width the rail starts collapsed, not saved (T426) */
 let BRAIN_H=null, BRAIN_STATE='idle', BRAIN_WHY='', BRAIN_RAIL_OFF=null, BRAIN_EMPTY=null; const BRAIN_Q=[];
+/* FR-060: Settings > Brain motion, forced Still by Still highlights, Motion off or a low battery (reduced motion and forced colours: the dock itself) */
+function brainMotionSync(){if(!BRAIN_H)return;BRAIN_H.setMotion(BRAIN_MOTION_SET);BRAIN_H.setForceStill(STILL_HL||!MOTION||BRAIN_LOWPOWER);}
+/* FR-104: a low battery (not charging, under 20 %) from the renderer's own Battery Status API; missing or refused: nothing is assumed */
+function brainBattery(){try{if(!navigator.getBattery)return;navigator.getBattery().then(b=>{const f=()=>{BRAIN_LOWPOWER=!!b&&b.charging===false&&typeof b.level==='number'&&b.level<0.2;brainMotionSync();};f();b.addEventListener('chargingchange',f);b.addEventListener('levelchange',f);}).catch(()=>{});}catch(e){/* no API: nothing assumed */}}
 function brainLoad(){
   if(BRAIN_STATE!=='idle'&&BRAIN_STATE!=='waiting')return;
   BRAIN_STATE='loading';
@@ -7801,10 +7885,10 @@ function brainLoad(){
       const R=window.DurbarRedact,U=window.DurbarUsage,C=window.DurbarCost;
       if(NO_REDACT||!R||typeof R.redact!=='function'||!U||!C){BRAIN_STATE='failed';BRAIN_WHY='no mask';BRAIN_Q.length=0;return;} /* no masking, no brain */
       const mask=Object.assign({},R,{units:{validNano:U.validNano,AIU_USD:C.AIU_USD,money:C.money,creditsWord:'AIU',estimateWord:'Claude (est.)'}});
-      BRAIN_H=window.DurbarBrainDock.start({mask,now:()=>Date.now(),name:id=>{const a=liveById(id)||byId(id);return a?a.name:'Agent';},folder:id=>{const a=byId(id),r=a&&roomOf(a);return r?r.path:undefined;}});
+      BRAIN_H=window.DurbarBrainDock.start({mask,motion:BRAIN_MOTION_SET,now:()=>Date.now(),name:id=>{const a=liveById(id)||byId(id);return a?a.name:'Agent';},folder:id=>{const a=byId(id),r=a&&roomOf(a);return r?r.path:undefined;}});
       BRAIN_STATE=BRAIN_H?'ready':'failed';if(!BRAIN_H)BRAIN_WHY='dock refused';
       BRAIN_Q.splice(0).forEach(x=>{if(BRAIN_H)BRAIN_H.feed(x[0],x[1],x[2]);});
-      brainRailSync();
+      brainMotionSync(); brainBattery(); brainRailSync();
       return;
     }
     const sc=document.createElement('script');sc.src=files[i];sc.onload=()=>next(i+1);sc.onerror=()=>{BRAIN_STATE='failed';BRAIN_WHY='script '+files[i];BRAIN_Q.length=0;};document.head.appendChild(sc);
@@ -7813,9 +7897,9 @@ function brainLoad(){
   lk.onload=()=>next(0); lk.onerror=()=>{BRAIN_STATE='failed';BRAIN_WHY='style';BRAIN_Q.length=0;};
   document.head.appendChild(lk);
 }
-function brainStart(){if(!BRAIN_PREVIEW||BRAIN_STATE!=='idle')return;BRAIN_STATE='waiting';if(document.readyState==='complete')brainLoad();else window.addEventListener('load',brainLoad,{once:true});}
+function brainStart(){if(!brainOn()||BRAIN_STATE!=='idle')return;BRAIN_STATE='waiting';if(document.readyState==='complete')brainLoad();else window.addEventListener('load',brainLoad,{once:true});}
 function brainFeed(a,e){
-  if(!BRAIN_PREVIEW||BRAIN_STATE==='failed')return;
+  if(!brainOn()||BRAIN_STATE==='failed')return;
   if(BRAIN_H)BRAIN_H.feed(a.id,a.name,e);else{BRAIN_Q.push([a.id,a.name,e]);if(BRAIN_Q.length>500)BRAIN_Q.shift(); /* while it loads, the newest 500 events are kept (a step's end beats its start) */brainStart();}
 }
 /* FR-031: the rail's collapse is kept as the agent rail keeps its folds (005 FR-196: only when rememberOn(); `railstore=1` for drivers) */
@@ -7826,14 +7910,18 @@ function brainRailHTML(){
     +'<ul class="brail-dl" id="brailDoorL" aria-label="Who needs you"></ul></section></aside>';
 }
 function brainRailCollapse(off){
-  BRAIN_RAIL_OFF=!!off; if(railRemember()){try{if(off)localStorage.setItem('durbar.brainRail','collapsed');else localStorage.removeItem('durbar.brainRail');}catch(e){/* kept for this run */}}
+  BRAIN_RAIL_OFF=!!off; BRAIN_NARROW_OPEN=!off; /* in a narrow window the Brain button opens it for this window */ if(railRemember()){try{if(off)localStorage.setItem('durbar.brainRail','collapsed');else localStorage.removeItem('durbar.brainRail');}catch(e){/* kept for this run */}}
   brainRailSync();
   const f=off?$('brainBack'):$('brailHide'); if(f&&f.getClientRects().length)focusIn(f);
 }
 /* the rail with a chat open: built after openPanel's innerHTML (which drops it), the dock moved into it, the open chat's agent shown (a helper's chat: its parent, FR-007) */
 function brainRailSync(){
-  if(!BRAIN_PREVIEW)return;
-  const open=document.body.classList.contains('panel-open')&&!!ui.selected&&!!byId(ui.selected), off=open&&brainRailOff();
+  if(!brainOn()){ /* turned off (Settings): the rail and its button go, the chat gets its width back; nothing more is drawn */
+    document.body.classList.remove('brain-rail-off');const r0=$('brainRail'),b0=$('brainBack');if(r0)r0.remove();if(b0)b0.remove();
+    if(BRAIN_H){BRAIN_H.unmount();BRAIN_H.show(null);}return;
+  }
+  const narrow=window.innerWidth<BRAIN_NARROW_W&&!BRAIN_NARROW_OPEN;
+  const open=document.body.classList.contains('panel-open')&&!!ui.selected&&!!byId(ui.selected), off=open&&(brainRailOff()||narrow);
   document.body.classList.toggle('brain-rail-off',off);
   if(!open){if(BRAIN_H){BRAIN_H.unmount();BRAIN_H.show(null);}return;}
   if(!BRAIN_H){brainStart();return;}
@@ -7857,7 +7945,7 @@ function brainDoorPaint(){
   if(l.dataset.sig!==sig){
     const fa=document.activeElement, fk=fa&&l.contains(fa)&&fa.dataset?fa.dataset.door:null;
     l.dataset.sig=sig;
-    l.innerHTML=rows.length?rows.map(x=>`<li><button class="btn" type="button" data-door="${esc(x.id)}" aria-label="${esc(x.name)}, ${esc(x.said)}: ${esc(x.req)}. Open Needs you."><span class="brail-who"><b>${esc(x.name)}</b> <span class="brail-age">${esc(x.age)}</span></span><span class="brail-req">${esc(x.req)}</span></button></li>`).join(''):'<li class="brail-none">Nobody needs you now.</li>';
+    l.innerHTML=rows.length?rows.map(x=>`<li><button type="button" data-door="${esc(x.id)}" aria-label="${esc(x.name)}, ${esc(x.said)}: ${esc(x.req)}. Open Needs you."><span class="brail-who"><b>${esc(x.name)}</b> <span class="brail-age">${esc(x.age)}</span></span><span class="brail-req">${esc(x.req)}</span></button></li>`).join(''):'<li class="brail-none">Nobody needs you now.</li>';
     if(fk){const b=l.querySelector('[data-door="'+CSS.escape(fk)+'"]');if(b)focusIn(b);}
   }
   const empty=!rows.length;
@@ -8260,15 +8348,65 @@ function toggleFold(roomId){
   const f=railFolds(); if(f.has(r.path))f.delete(r.path); else f.add(r.path);
   saveFolds(); renderStrip();
 }
+/* spec 005 FR-341 (issue 1961): the rail's sort choice, kept like the collapsed folders (railRemember(); the simulator with railstore=1) */
+let RAIL_SORT=null;
+function railSort(){
+  if(RAIL_SORT===null){RAIL_SORT=RAIL.DEFAULT_SORT;if(railRemember()){try{RAIL_SORT=RAIL.loadSort(localStorage.getItem(RAIL.SORT_KEY));}catch(e){RAIL_SORT=RAIL.DEFAULT_SORT;}}}
+  return RAIL_SORT;
+}
+function setRailSort(k){
+  RAIL_SORT=RAIL.loadSort(k);
+  if(railRemember()){try{if(RAIL_SORT===RAIL.DEFAULT_SORT)localStorage.removeItem(RAIL.SORT_KEY);else localStorage.setItem(RAIL.SORT_KEY,RAIL_SORT);}catch(e){/* storage off: kept for this run */}}
+  const b=$('railSortBtn');if(b){const t='Sort conversations: '+RAIL.sortLabel(RAIL_SORT);b.setAttribute('aria-label',t);b.title=t;}
+  renderStrip();
+}
+/* the creation time of a session: Durbar has none, so the time this computer first saw its id (durbar.railBorn, ids and times only, kept as
+   the chat numbers are: rememberOn(), the simulator with railstore=1, never the demo; ids that are gone are dropped once the list has loaded).
+   Sessions that existed before FR-341 shipped all read "first seen" on that day (a [KNOWN GAP] in the spec) */
+let RAIL_BORN=null, RAIL_BORN_SAVED;
+function railBornSync(list){
+  if(RAIL_BORN===null){RAIL_BORN={};if(!demoOn&&railRemember()){try{RAIL_BORN=RAIL.loadBorn(localStorage.getItem(RAIL.BORN_KEY));}catch(e){RAIL_BORN={};}}}
+  const ids=list.map(x=>x.id), next=RAIL.stampBorn(RAIL_BORN,ids,Date.now());
+  RAIL_BORN=next;
+  if(demoOn||!railRemember())return;
+  /* pruning uses every main session, not only the shown floors, so a hidden floor's sessions keep their time; the value is written only when it
+     differs from the last one written (a render runs on every event while a chat is open) */
+  try{const v=RAIL.bornJSON(RAIL_BORN,agents.filter(x=>!x.parent).map(x=>x.id),agentsListed);
+    if(v!==RAIL_BORN_SAVED){RAIL_BORN_SAVED=v;if(v===null)localStorage.removeItem(RAIL.BORN_KEY);else localStorage.setItem(RAIL.BORN_KEY,v);}}catch(e){/* storage off: kept for this run */}
+}
+const railCreated=x=>(RAIL_BORN||{})[x.id];
+function closeRailSortMenu(back){
+  const m=document.getElementById('railSortMenu');if(m)m.remove();
+  document.removeEventListener('mousedown',railSortOutside,true);
+  const b=$('railSortBtn');if(b){b.setAttribute('aria-expanded','false');if(back)focusIn(b);}
+}
+function railSortOutside(e){const m=document.getElementById('railSortMenu');if(m&&!m.contains(e.target)&&!e.target.closest('#railSortBtn'))closeRailSortMenu(false);}
+/* the existing popup pattern of the chat's profile and model menus (role=menu, menuitemradio, placeMenu); one choice is checked */
+function openRailSortMenu(){
+  const b=$('railSortBtn');if(!b)return;
+  closeRailSortMenu(false);closeCtxMenu();closeModeMenu();closeModelMenu();closeAgentMenu();
+  const cur=railSort(),m=document.createElement('div');m.id='railSortMenu';m.className='mode-menu model-menu';m.setAttribute('role','menu');m.setAttribute('aria-label','Sort conversations');
+  m.innerHTML=RAIL.SORTS.map(([k,t])=>`<button type="button" role="menuitemradio" aria-checked="${k===cur}" data-rsort="${k}"><span class="mt"><b>${esc(t)}</b></span></button>`).join('');
+  document.body.appendChild(m);
+  const r=b.getBoundingClientRect();placeMenu(m,r.left,r.bottom+6,b);
+  b.setAttribute('aria-expanded','true');document.addEventListener('mousedown',railSortOutside,true);
+  m.addEventListener('click',e=>{const i=e.target.closest('[data-rsort]');if(!i)return;closeRailSortMenu(true);setRailSort(i.dataset.rsort);});
+  m.addEventListener('keydown',e=>{const it=[...m.querySelectorAll('button')],i=it.indexOf(document.activeElement);
+    if(e.key==='ArrowDown'){e.preventDefault();focusIn(it[(i+1)%it.length]);}else if(e.key==='ArrowUp'){e.preventDefault();focusIn(it[(i+it.length-1)%it.length]);}
+    else if(e.key==='Home'){e.preventDefault();focusIn(it[0]);}else if(e.key==='End'){e.preventDefault();focusIn(it[it.length-1]);}
+    else if(e.key==='Escape'||e.key==='Tab'){e.preventDefault();e.stopPropagation();closeRailSortMenu(true);}});
+  focusIn(m.querySelector('[aria-checked="true"]')||m.querySelector('button'));
+}
 function railGroups(){
   needsMeOrder(); /* NEED_SINCE for whoever needs you now */
   const rank=new Map(roomsInOrder().map((r,i)=>[r.id,i]));
   const list=agents.filter(x=>!x.parent&&roomShown(roomOf(x)));
-  return RAIL.group(list.map((x,i)=>({id:x.id,room:x.room,rank:rank.get(x.room),needs:needsMe(x),since:NEED_SINCE.get(x.id),prio:prio(x),i})));
+  railBornSync(list);
+  return RAIL.group(list.map((x,i)=>({id:x.id,room:x.room,rank:rank.get(x.room),needs:needsMe(x),working:isWorkingVis(x),since:NEED_SINCE.get(x.id),created:railCreated(x),prio:prio(x),i})),railSort());
 }
 function railHTML(){
   const ib=$('inboxBtn');
-  return `<nav class="rail" aria-label="Agents"><h2 class="sr-only">Agents</h2><div class="rail-top"><button class="btn back" id="backBtn" type="button" title="Back to the office (Esc)">${ICON('back')}<span>Office</span></button><!-- spec 005 FR-190: R2 (T127) puts the Plan | List switch here, R3 (T116) the collapse button --></div>
+  return `<nav class="rail" aria-label="Agents"><h2 class="sr-only">Agents</h2><div class="rail-top"><button class="btn back" id="backBtn" type="button" title="Back to the office (Esc)">${ICON('back')}<span>Office</span></button><button class="btn sm" id="railSortBtn" type="button" aria-haspopup="menu" aria-expanded="false" aria-label="Sort conversations: ${esc(RAIL.sortLabel(railSort()))}" title="Sort conversations: ${esc(RAIL.sortLabel(railSort()))}">Sort<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6l4 4 4-4"/></svg></button><!-- spec 005 FR-190: R2 (T127) puts the Plan | List switch here, R3 (T116) the collapse button --></div>
    <div class="rail-door"><button class="btn sm" id="railDoor" type="button" aria-haspopup="dialog" title="${esc(ib?ib.title:'Needs you')}"${ib&&ib.getAttribute('aria-keyshortcuts')?` aria-keyshortcuts="${esc(ib.getAttribute('aria-keyshortcuts'))}"`:''}>${ALERT_ICON}<span>Your door</span><b>0</b></button><!-- spec 052 FR-219: the red lock goes beside it (T223) --></div>
    <div class="rail-list" id="stripList"></div><div class="rgrip" id="railGrip" role="separator" aria-orientation="vertical" aria-label="Resize the agent list" aria-controls="stripList" tabindex="0" title="Drag to resize the agent list. Double-click to go back to the default width."></div></nav>`;
 }
@@ -8294,7 +8432,7 @@ function renderRailDoor(){
   const n=needsMeOrder().length;
   b.classList.toggle('attn',n>0); const c=b.querySelector('b'); if(c&&c.textContent!==String(n))c.textContent=String(n);
   b.setAttribute('aria-label','Your door: '+(n?n+(n===1?' agent needs':' agents need')+' you':'nobody needs you')+'. Open Needs you.');
-  if(BRAIN_PREVIEW)brainDoorPaint(); /* spec 106 T006: the right rail's Your door section counts the same */
+  if(brainOn())brainDoorPaint(); /* spec 106 T006: the right rail's Your door section counts the same */
 }
 let railTick=0;
 function renderStrip(){
@@ -8419,7 +8557,7 @@ function showAutoQuestion(a,e){
   const t=ensureTurn(a),qs=(e.questions||[]).slice(0,4);
   const n=document.createElement('div');n.className='note ap-question';n.setAttribute('role','group');n.setAttribute('aria-label','Question from the agent');
   const head=document.createElement('b');head.textContent=e.elicitation?'Declined (Autopilot)':'Decided by itself (Autopilot)';n.appendChild(head);
-  qs.forEach(q=>{const p=document.createElement('p');p.className='q-text';p.textContent=String(q&&q.question||'');n.appendChild(p);});
+  qs.forEach(q=>{const p=document.createElement('p');p.className='q-text';p.textContent=safeMask(String(q&&q.question||''));n.appendChild(p);});
   tChips(t.T).appendChild(n);stickyScroll(liveChat(a));
 }
 function closeModeMenu(){const m=document.getElementById('modeMenu');if(m){m.remove();const c=$('modeChip');if(c)c.setAttribute('aria-expanded','false');document.querySelectorAll('[data-act="ro-ask"][aria-expanded="true"]').forEach(b=>b.setAttribute('aria-expanded','false'));}}
@@ -10551,7 +10689,7 @@ if(bridge){
   window.DurbarScreens.init({afterClose:officeOwed,handover:{ /* spec 011 FR-088: a near-limit card offers the existing dialog for a live session; found again by id at the click */
     sessions:(kind)=>agents.filter(a=>a.live&&!a.parent&&(a.info&&a.info.adapterId||'copilot')===kind&&canHandover(a)).slice(0,3).map(a=>({id:a.id,name:a.name})),
     open:(id,to)=>{const a=byId(id);if(!a||!a.live||!canHandover(a))return false;newSession(a,{summary:true,handover:true,to});return true;}
-  },autoFollow:{get:()=>AF_ON,set:v=>setAutoFollowOn(v)},shutters:{get:()=>SHUT_PREF,set:setShutOn,usable:()=>!!SHUT},view:{get:officeView,set:setOfficeView,note:()=>roPeople().note&&officeView()==='real'?roPeople().note:'',world:{get:()=>roPeople().world,set:setRoWorld,list:roWorlds,defaultSet:()=>roPeople().setName}},navKey:{text:navKeyText,textOf:c=>keyText(NAV.comboParts(c)),defText:()=>keyText(NAV.comboParts(NAV.DEFAULT_COMBO)),isDefault:()=>NAV.sameCombo(NAV_KEY,NAV.DEFAULT_COMBO),set:setNavKey,recording:on=>{navRecording=!!on;},fromEvent:e=>NAV.comboFromEvent(e,IS_MAC),clash:c=>NAV.sameCombo(c,SEARCH_KEY)&&!NAV.sameCombo(SEARCH_KEY,NAV.SEARCH_COMBO)?'Already used for Search conversations.':NAV.clashOf(c,IS_MAC)},searchKey:bridge&&bridge.convSearchStart?{text:searchKeyText,textOf:c=>keyText(NAV.comboParts(c)),defText:()=>keyText(NAV.comboParts(NAV.SEARCH_COMBO)),isDefault:()=>NAV.sameCombo(SEARCH_KEY,NAV.SEARCH_COMBO),bound:searchKeyBound,set:setSearchKey,recording:on=>{navRecording=!!on;},fromEvent:e=>NAV.comboFromEvent(e,IS_MAC),clash:c=>NAV.searchClashOf(c,IS_MAC,NAV_KEY)}:null,roomName:id=>{const r=ROOMS.find(x=>x.id===id);return r?r.name:String(id||'');},refreshKinds:()=>loadKinds(true),setAccounts,density:{get:()=>DENSITY,set:setDensity},liveAct:{get:()=>LIVE_PREF,set:setLiveOn,usable:()=>!!LIVEACT},bridge,stats:STATS,esc,mask:safeMask,toast,announce,floors:{on:()=>floorsLive(),render:()=>renderFloorsSettings()},sched:{on:()=>!!bridge.listSchedules&&!demoOn,render:()=>renderSchedSettings()},onSettings:v=>{APP_SETTINGS=v||{};},onUsageReset,isSerious:()=>SERIOUS,isNotify:()=>NOTIFY,setNotify:on=>{NOTIFY=!!on;},breakResume:()=>BREAK_RESUME,setBreakResume:v=>{BREAK_RESUME=v==='ask'?'ask':'auto';},chatLinksIn:()=>CHAT_LINKS,setChatLinksIn:v=>{CHAT_LINKS=v==='system'?'system':'session';},setSerious:on=>{SERIOUS=!!on;markSerious();scheduleRender();},isMotion:()=>MOTION,setMotion:on=>{MOTION=!!on;markMotion();scheduleRender();},isStillHl:()=>STILL_HL,setStillHl:on=>{STILL_HL=!!on;markStillHl();scheduleRender();},usageSince:()=>LEDGER.since(),usageOffice:()=>LEDGER.office(),costData,usageError:()=>usageSaveError,
+  },autoFollow:{get:()=>AF_ON,set:v=>setAutoFollowOn(v)},shutters:{get:()=>SHUT_PREF,set:setShutOn,usable:()=>!!SHUT},view:{get:officeView,set:setOfficeView,note:()=>roPeople().note&&officeView()==='real'?roPeople().note:'',world:{get:()=>roPeople().world,set:setRoWorld,list:roWorlds,defaultSet:()=>roPeople().setName}},navKey:{text:navKeyText,textOf:c=>keyText(NAV.comboParts(c)),defText:()=>keyText(NAV.comboParts(NAV.DEFAULT_COMBO)),isDefault:()=>NAV.sameCombo(NAV_KEY,NAV.DEFAULT_COMBO),set:setNavKey,recording:on=>{navRecording=!!on;},fromEvent:e=>NAV.comboFromEvent(e,IS_MAC),clash:c=>NAV.sameCombo(c,SEARCH_KEY)&&!NAV.sameCombo(SEARCH_KEY,NAV.SEARCH_COMBO)?'Already used for Search conversations.':NAV.clashOf(c,IS_MAC)},searchKey:bridge&&bridge.convSearchStart?{text:searchKeyText,textOf:c=>keyText(NAV.comboParts(c)),defText:()=>keyText(NAV.comboParts(NAV.SEARCH_COMBO)),isDefault:()=>NAV.sameCombo(SEARCH_KEY,NAV.SEARCH_COMBO),bound:searchKeyBound,set:setSearchKey,recording:on=>{navRecording=!!on;},fromEvent:e=>NAV.comboFromEvent(e,IS_MAC),clash:c=>NAV.searchClashOf(c,IS_MAC,NAV_KEY)}:null,roomName:id=>{const r=ROOMS.find(x=>x.id===id);return r?r.name:String(id||'');},refreshKinds:()=>loadKinds(true),setAccounts,density:{get:()=>DENSITY,set:setDensity},liveAct:{get:()=>LIVE_PREF,set:setLiveOn,usable:()=>!!LIVEACT},bridge,stats:STATS,esc,mask:safeMask,toast,announce,floors:{on:()=>floorsLive(),render:()=>renderFloorsSettings()},sched:{on:()=>!!bridge.listSchedules&&!demoOn,render:()=>renderSchedSettings()},onSettings:v=>{APP_SETTINGS=v||{};},onUsageReset,isSerious:()=>SERIOUS,isNotify:()=>NOTIFY,setNotify:on=>{NOTIFY=!!on;},breakResume:()=>BREAK_RESUME,setBreakResume:v=>{BREAK_RESUME=v==='ask'?'ask':'auto';},chatLinksIn:()=>CHAT_LINKS,setChatLinksIn:v=>{CHAT_LINKS=v==='system'?'system':'session';},setSerious:on=>{SERIOUS=!!on;markSerious();scheduleRender();},isMotion:()=>MOTION,setMotion:on=>{MOTION=!!on;markMotion();scheduleRender();},brainView:{on:()=>BRAIN_SET,override:()=>BRAIN_OVERRIDE,set:on=>{BRAIN_SET=!!on;brainRailSync();},motion:()=>BRAIN_MOTION_SET,setMotion:m=>{BRAIN_MOTION_SET=m==='calm'||m==='still'?m:'full';brainMotionSync();},forced:()=>{const sys=window.matchMedia&&(matchMedia('(prefers-reduced-motion: reduce)').matches||matchMedia('(forced-colors: active)').matches);return sys?'your system (reduced motion or forced colours)':STILL_HL?'Still highlights':!MOTION?'Motion off':BRAIN_LOWPOWER?'a low battery':'';}}, /* spec 106 T426: Settings > Brain view */isStillHl:()=>STILL_HL,setStillHl:on=>{STILL_HL=!!on;markStillHl();scheduleRender();},usageSince:()=>LEDGER.since(),usageOffice:()=>LEDGER.office(),costData,usageError:()=>usageSaveError,
     places:window.DurbarPlaces,customPlaces:()=>CUSTOM,placeMap:()=>PLACE_MAP,placeLabel,setCustomPlaces,placeServers:()=>[...SEEN_SERVERS],setPlaceMap:m=>{PLACE_MAP=(m&&typeof m==='object')?m:{};scheduleRender();},
     applyTheme,
     applyCharacters,charPreview, /* spec 077 FR-068 */
@@ -10628,7 +10766,7 @@ if(bridge){
     }).catch(()=>apply());}else apply();
   };
   if(bridge.getOrder)bridge.getOrder().then(d=>{ORDER=RO.sanitize(d);scheduleRender();}).catch(()=>{}); /* issue 677: a failed or corrupt read keeps the automatic order */
-  if(bridge.getSettings)bridge.getSettings().then(v=>{APP_SETTINGS=v||{};PLACE_MAP=(v&&v.placeMap)||{};CUSTOM=(v&&Array.isArray(v.customPlaces))?v.customPlaces:[];SERIOUS=!!(v&&v.seriousMode);markSerious();STILL_HL=!!(v&&v.stillHighlights);markStillHl();MOTION=!(v&&v.motion===false);markMotion();setAutoFollowOn(!!(v&&v.autoFollowWork===true));NOTIFY=!!(v&&v.notifyNeedsMe!==false);BREAK_RESUME=v&&v.breakResume==='ask'?'ask':'auto';CHAT_LINKS=v&&v.chatLinksIn==='system'?'system':'session';themeBoot(v);}).catch(()=>{});
+  if(bridge.getSettings)bridge.getSettings().then(v=>{APP_SETTINGS=v||{};PLACE_MAP=(v&&v.placeMap)||{};CUSTOM=(v&&Array.isArray(v.customPlaces))?v.customPlaces:[];SERIOUS=!!(v&&v.seriousMode);markSerious();STILL_HL=!!(v&&v.stillHighlights);markStillHl();MOTION=!(v&&v.motion===false);markMotion();setAutoFollowOn(!!(v&&v.autoFollowWork===true));NOTIFY=!!(v&&v.notifyNeedsMe!==false);BREAK_RESUME=v&&v.breakResume==='ask'?'ask':'auto';CHAT_LINKS=v&&v.chatLinksIn==='system'?'system':'session';BRAIN_SET=!(v&&v.brainView===false);BRAIN_MOTION_SET=v&&(v.brainMotion==='calm'||v.brainMotion==='still')?v.brainMotion:'full';brainMotionSync();brainRailSync();themeBoot(v);}).catch(()=>{});
   setInterval(()=>{if(VISITS.tick())scheduleRender();},250);
   setInterval(coffeeTick,SIM_BREAK?1000:5000); /* spec 068: resume, ask or remind when a break is due */
   agents=LIVE.agents; ROOMS=LIVE.rooms;
@@ -10643,7 +10781,7 @@ if(pendingOpen&&demoOn){openPanel(pendingOpen,false);pendingOpen=null;}
 const settleNow=()=>{if(!agentsListed||!window.__durbarSimReplayed||baselineQueued||baselineAsking)return false;if(renderQueued){renderQueued=false;renderAll();}return true;};
 /* simulator drivers load with simfreeze=1: the desk glow then holds still (FR-178: the geometry and screenshot checks measure boxes, so no zoom may be mid-way); the unread driver opts back in with hlmotion=1 to test the motion itself */
 if(SIM&&qs.get('simfreeze')==='1'&&qs.get('hlmotion')!=='1')document.documentElement.classList.add('hl-still');
-if(SIM)window.__durbarSimUi={chipArg:(t,r)=>chipArg(t,r),cutLabel:(t,l)=>cutLabel(t,l),chipMasks:()=>CHIP_MASKS,replay:(id,items)=>{replayHistory(byId(id),{items},'test');return true;},vsView:(id,tr)=>viewVs(byId(id),'sim-vs',null,()=>Promise.resolve({ok:true,transcript:tr})).then(()=>true),demoTurn:(id,tools)=>{const a=byId(id);return playTurn(getChat(a),a,{think:'',tools,reply:''});},taskLabel:(t,l)=>safeToolLabel(t,String(l).replace(/\s+/g,' ').slice(0,400),100000),chipEl:(id,callId)=>{const a=byId(id),c=a&&a.turn&&a.turn.T&&a.turn.T.chipEls[callId];return c?c.el:null;}, /* spec 005 FR-342: check-toolchip-mask runs its harmless corpus through the chip's own mask and counts its calls */qMdHTML,qSafeMask:t=>safeMask(t),qNames:()=>Object.keys(Q_NAMED).map(k=>k+'='+Q_NAMED[k]), /* spec 052 (issue 1927): check-question-markdown renders a question built from invented pieces through the card's own renderer */brain:{host:()=>BRAIN_H,state:()=>BRAIN_STATE,why:()=>BRAIN_WHY,flag:BRAIN_PREVIEW,queued:()=>BRAIN_Q.length}, /* spec 106 T006: check-brain-draw and check-brain-dock read the dock's frame counts */announce,renderRestoreStrip,afArrivalPrio,afTracker:{ids:()=>AFT.ids(),pending:()=>AFT.pendingList().map(v=>v.id+'|'+v.kind),quiet:()=>AFT.isQuiet,follow:id=>AFT.follow(id)}, /* spec 005 FR-237: drivers only: what Auto-follow follows, holds and whether it is quiet; follow() makes an agent followed without a hand open (which would drop the others, spec 052 FR-185) */ afNotice:{ms:v=>{AF_NOTICE_MS=Math.max(100,Number(v)||3000);return AF_NOTICE_MS;},on:v=>{setAutoFollowOn(!!v);return AF_ON;},shown:()=>!!AF_NOTICE}, /* spec 052 FR-239: drivers only: the notice's length, Auto-follow without Settings */swapCardOptions:id=>{const c=byId(id)&&pendingCardOf(byId(id));if(!c)return 0;const os=[...c.querySelectorAll('.q-opt')];os.forEach(b=>b.replaceWith(b.cloneNode(true)));return os.length;}, /* spec 052 FR-197: the live card rebuilds its options (the card stays, the old buttons are gone); a driver checks that a row's old option answers nothing */
+if(SIM)window.__durbarSimUi={chipArg:(t,r)=>chipArg(t,r),cutLabel:(t,l)=>cutLabel(t,l),chipMasks:()=>CHIP_MASKS,replay:(id,items)=>{replayHistory(byId(id),{items},'test');return true;},vsView:(id,tr)=>viewVs(byId(id),'sim-vs',null,()=>Promise.resolve({ok:true,transcript:tr})).then(()=>true),demoTurn:(id,tools)=>{const a=byId(id);return playTurn(getChat(a),a,{think:'',tools,reply:''});},taskLabel:(t,l)=>safeToolLabel(t,String(l).replace(/\s+/g,' ').slice(0,400),100000),chipEl:(id,callId)=>{const a=byId(id),c=a&&a.turn&&a.turn.T&&a.turn.T.chipEls[callId];return c?c.el:null;}, /* spec 005 FR-342: check-toolchip-mask runs its harmless corpus through the chip's own mask and counts its calls */qMdHTML,qSafeMask:t=>safeMask(t),qNames:()=>Object.keys(Q_NAMED).map(k=>k+'='+Q_NAMED[k]), /* spec 052 (issue 1927): check-question-markdown renders a question built from invented pieces through the card's own renderer */brain:{host:()=>BRAIN_H,state:()=>BRAIN_STATE,why:()=>BRAIN_WHY,on:()=>brainOn(),override:BRAIN_OVERRIDE,queued:()=>BRAIN_Q.length}, /* spec 106 T006: check-brain-draw and check-brain-dock read the dock's frame counts */announce,renderRestoreStrip,afArrivalPrio,afTracker:{ids:()=>AFT.ids(),pending:()=>AFT.pendingList().map(v=>v.id+'|'+v.kind),quiet:()=>AFT.isQuiet,follow:id=>AFT.follow(id)}, /* spec 005 FR-237: drivers only: what Auto-follow follows, holds and whether it is quiet; follow() makes an agent followed without a hand open (which would drop the others, spec 052 FR-185) */ afNotice:{ms:v=>{AF_NOTICE_MS=Math.max(100,Number(v)||3000);return AF_NOTICE_MS;},on:v=>{setAutoFollowOn(!!v);return AF_ON;},shown:()=>!!AF_NOTICE}, /* spec 052 FR-239: drivers only: the notice's length, Auto-follow without Settings */swapCardOptions:id=>{const c=byId(id)&&pendingCardOf(byId(id));if(!c)return 0;const os=[...c.querySelectorAll('.q-opt')];os.forEach(b=>b.replaceWith(b.cloneNode(true)));return os.length;}, /* spec 052 FR-197: the live card rebuilds its options (the card stays, the old buttons are gone); a driver checks that a row's old option answers nothing */
   chatTrimNow:()=>chatTrimPending(false), /* spec 005 FR-238: trim the chats waiting for a frame now (a burst with no frame between) */
   hiddenTrimTimer:()=>({on:!!hiddenTrimT,ms:TRIM_HIDDEN_MS}),
   helperState:(id,st)=>{const h=agents.find(x=>x.id===id&&x.parent);if(!h||!['working','thinking','waiting','error','limit','done','idle'].includes(st))return false;h.state=st==='limit'?'waiting':st;h.limit=st==='limit';h.paused=false;layoutKey='';renderAll();return true;}, /* spec 097 T335 (issue 1642): drivers only: a helper's state the simulator never sends (waiting, limit), for the kids on the desk */

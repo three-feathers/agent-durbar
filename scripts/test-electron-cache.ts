@@ -239,12 +239,40 @@ async function main(): Promise<void> {
   // Typical: the longest successful run among the last 15 of each workflow (gh run list/view, 2026-11-09), across its matrix.
   // Budget: the job's waits plus one failed npm ci try before each wait (an outage fails a try in about a minute; 1.5 allowed).
   const TYPICAL_MIN: Record<string, number> = {
-    'ci.yml:build-test': 9.8, 'ci.yml:office-check': 5.2, 'ci.yml:theme-shard': 3.0, 'e2e-real.yml:e2e': 2.5, 'install-check.yml:install': 4.4,
-    'installed-app.yml:installed': 10.2, 'macos-pr.yml:macos-test': 8.8, 'mac-titlebar-pr.yml:mac-titlebar': 6, // estimate, no run yet (FR-200)
+    // spec 117 FR-018: npm test in 2 parts per OS (the summary job build-test installs nothing): the longest part measured in #2031's CI runs
+    // (runs 45046540637, 45051166871, 45068796423); macOS is an estimate (its parts run on main pushes only)
+    'ci.yml:test-ubuntu': 11, 'ci.yml:test-windows': 14.1, 'ci.yml:test-macos': 10, 'ci.yml:office-check': 5.2, 'ci.yml:theme-shard': 3.0, 'e2e-real.yml:e2e': 2.5, 'install-check.yml:install': 4.4,
+    'fast-lane.yml:fast': 3, // spec 117 FR-386: the target, no run yet
+    'installed-app.yml:installed': 10.2, 'macos-pr.yml:macos-test': 23.8, /* measured 2026-11-23, spec 117 T078 (was 8.8) */ 'mac-titlebar-pr.yml:mac-titlebar': 6, // estimate, no run yet (FR-200)
     'mcp-oauth-real.yml:check': 1.1, 'packaged-check.yml:check': 1.6,
     'release.yml:build': 14.4, 'ui-platforms.yml:ui': 22.7, 'world-matrix.yml:subset': 2.1,
     'world-matrix.yml:weekly': 25, // estimate: no weekly run among the last 40 runs of the workflow
   };
+  // spec 117 T078: the path-filtered macOS job keeps exactly the stop-gap limit (45, as ci.yml build-test) until T025 lowers both
+  const STOPGAP = 45;
+  // The one check: throws unless macos-test has exactly the stop-gap limit as a number. The pin and its mutants both call it.
+  const checkMacosLimit = (text: string): void => {
+    const doc = yaml.load(text.replace(/\r\n/g, '\n')) as { jobs?: Record<string, Job> };
+    const jobs = doc.jobs || {};
+    assert.ok('macos-test' in jobs, 'macos-pr.yml has the job macos-test');
+    assert.strictEqual(jobs['macos-test']['timeout-minutes'], STOPGAP, `macos-pr.yml macos-test timeout-minutes must be the stop-gap number ${STOPGAP}`);
+  };
+  const macosText = fs.readFileSync(path.join(wfDir, 'macos-pr.yml'), 'utf8').replace(/\r\n/g, '\n');
+  checkMacosLimit(macosText);
+  const limitLine = /^(\s+)timeout-minutes: 45$/m;
+  assert.ok(limitLine.test(macosText), 'the limit line is found for the mutants');
+  const mutants: Record<string, string> = {
+    'limit 25': macosText.replace(limitLine, '$1timeout-minutes: 25'),
+    'limit 46': macosText.replace(limitLine, '$1timeout-minutes: 46'),
+    'key removed': macosText.replace(limitLine, '$1# removed'),
+    'quoted number': macosText.replace(limitLine, "$1timeout-minutes: '45'"),
+    'comment only': macosText.replace(limitLine, '$1# timeout-minutes: 45'),
+    'on another job': macosText.replace(limitLine, '$1# moved') + '  other:\n    runs-on: macos-latest\n    timeout-minutes: 45\n',
+  };
+  for (const [name, mutant] of Object.entries(mutants)) {
+    assert.notStrictEqual(mutant, macosText, `mutant ${name} changed the text`);
+    assert.throws(() => checkMacosLimit(mutant), /macos-test/, `mutant ${name} must fail the pin`);
+  }
   const FAILED_TRY_MIN = 1.5;
   type Job = { 'timeout-minutes'?: number; steps?: { uses?: string; with?: Record<string, string> }[] };
   const defaultWaits = ((yaml.load(action) as { inputs: Record<string, { default: string }> }).inputs['retry-waits'].default).split(/\s+/).map(Number);

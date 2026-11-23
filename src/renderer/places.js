@@ -199,39 +199,70 @@
      activity) takes about 92px, an initials entry 46px, 6px apart, inside 20px of padding. Returns how many of each fit (1..6 each; 0 named
      when not even one fits). chipsFor() picks per tile: names when every visitor fits by name, or when two or more named entries fit (the last
      becomes "+N"); else initials. */
-  const NAMED_W=92, INIT_W=46, CHIP_GAP=6, TILE_PAD=20;
+  const NAMED_W=92, INIT_W=54, CHIP_GAP=6, TILE_PAD=20; /* INIT_W: figure 22, gap 2, a name cut to 4 letters in about 30 px (issue 2018: never two letters) */
   /* chipsIn(w) = the capacities of one tile `w` px wide (lobbyFit's widths; tileSlots/tileChips were removed in the review on #511) */
-  function chipsIn(tileW){
+  /* the width a tile needs for the entries it shows now (delta 2026-11-23): lets a busy tile give back what its own entries do not use. `iw` = the width of one short-name entry (INIT_W; the page measures it in its own font) */
+  function chipsNeed(mode,shown,more,iw){
+    const e=iw>0?iw:INIT_W;
+    if(mode==='named'){const u=shown+(more?1:0);return u?TILE_PAD+u*NAMED_W+(u-1)*CHIP_GAP:0;}
+    return shown||more?TILE_PAD+shown*e+Math.max(0,shown-1)*CHIP_GAP+(more?(shown?CHIP_GAP:0)+22:0):0;
+  }
+  function chipsIn(tileW,iw){
     const inner=(Number(tileW)||0)-TILE_PAD;
     const fit=w=>Math.max(0,Math.min(6,Math.floor((inner+CHIP_GAP)/(w+CHIP_GAP))));
-    return {named:fit(NAMED_W),initials:Math.max(1,fit(INIT_W))};
+    return {named:fit(NAMED_W),initials:Math.max(1,fit(iw>0?iw:INIT_W))};
   }
 
   /* Spec 001 FR-039: widths in the lobby row. The Boss, coffee corner, Bank and Postbox (`post`: false when it is not shown, the demo) have
      their own widths; the `places` other tiles share the rest. Start from the preferred widths and shrink the special tiles together,
      proportionally, toward their minimums until every other tile is at least TILE_MIN (two initials entries) wide. Returns
      {boss, coffee, bank, post: {width, named, chips} | null, tile, caps} (caps = the other tiles' entry capacity). */
-  const SPECIAL_W={boss:[230,190],coffee:[160,96],bank:[130,96],post:[280,180]}, TILE_MIN=118, COFFEE_NAMED=148, POST_NAMED=240;
+  const SPECIAL_W={boss:[230,194],coffee:[160,96],bank:[130,96],post:[280,180]}, TILE_MIN=118, COFFEE_NAMED=148, POST_NAMED=180, POST_LONG=240; /* spec 001 FR-039 (issue 2014): the Postbox shows its name from its minimum width (180); the folder in its lines from 240 */
   /* issue #737 (spec 001 FR-189): below the minimums above (a window under about 1000 px wide) the four shrink further, toward SPECIAL_HARD, only until
      the other places are TILE_FLOOR wide (icon and a 22 px "+N" circle between 2 px of padding and the border). A place under PLACE_NAMED shows its icon
      only (its name stays in the tooltip and the label); the Bank does under BANK_NAMED, and the Boss drops the wait from its header under BOSS_WAIT (the wait stays in its tooltip and label). Wide enough windows never reach this: the widths above are unchanged. */
-  const SPECIAL_HARD={boss:96,coffee:60,bank:60,post:132}, TILE_FLOOR=28, PLACE_NAMED=56, BANK_NAMED=96, BOSS_WAIT=150;
-  function lobbyFit(aw,places,addButton,post){
+  const SNUG_W=110, SPECIAL_HARD={boss:96,coffee:60,bank:60,post:132}, TILE_FLOOR=28, PLACE_NAMED=56, BANK_NAMED=96, BOSS_WAIT=150;
+  function lobbyFit(aw,places,addButton,post,iw){
+    const I=iw>INIT_W?iw:INIT_W, SW={...SPECIAL_W,boss:[230,Math.max(194,3*I+32)],coffee:[160,Math.max(96,I+40)],bank:[130,Math.max(96,I+40)]}; /* a wider short name (a wide font) widens the minimums that hold three entries, or an entry and "+N" (delta 2026-11-23) */
     const n=Math.max(1,Math.floor(Number(places)||0)), width=Number(aw)>0?Number(aw):800, withPost=post!==false;
-    const keys=Object.keys(SPECIAL_W).filter(k=>withPost||k!=='post');
+    const keys=Object.keys(SW).filter(k=>withPost||k!=='post');
     const gaps=8*(n+keys.length-1)+(addButton?26+8:0), avail=width-gaps;
-    const pref=keys.reduce((t,k)=>t+SPECIAL_W[k][0],0), slack=keys.reduce((t,k)=>t+SPECIAL_W[k][0]-SPECIAL_W[k][1],0);
+    const pref=keys.reduce((t,k)=>t+SW[k][0],0), slack=keys.reduce((t,k)=>t+SW[k][0]-SW[k][1],0);
     const need=Math.max(0,TILE_MIN*n-(avail-pref)), f=slack>0?Math.min(1,need/slack):0;
-    const w={}; keys.forEach(k=>{w[k]=Math.floor(SPECIAL_W[k][0]-f*(SPECIAL_W[k][0]-SPECIAL_W[k][1]));});
+    const w={}; keys.forEach(k=>{w[k]=Math.floor(SW[k][0]-f*(SW[k][0]-SW[k][1]));});
     let tile=Math.max(0,(avail-keys.reduce((t,k)=>t+w[k],0))/n);
     if(tile<TILE_FLOOR){ /* issue #737: below about 1000 px the minimums leave the places a sliver; the four shrink on, toward SPECIAL_HARD, until a place holds its icon and one "+N" circle */
-      const mins=keys.reduce((t,k)=>t+SPECIAL_W[k][1],0), hard=keys.reduce((t,k)=>t+SPECIAL_HARD[k],0), g=mins>hard?Math.min(1,Math.max(0,TILE_FLOOR*n-(avail-mins))/(mins-hard)):0;
-      keys.forEach(k=>{w[k]=Math.floor(SPECIAL_W[k][1]-g*(SPECIAL_W[k][1]-SPECIAL_HARD[k]));});
+      const mins=keys.reduce((t,k)=>t+SW[k][1],0), hard=keys.reduce((t,k)=>t+SPECIAL_HARD[k],0), g=mins>hard?Math.min(1,Math.max(0,TILE_FLOOR*n-(avail-mins))/(mins-hard)):0;
+      keys.forEach(k=>{w[k]=Math.floor(SW[k][1]-g*(SW[k][1]-SPECIAL_HARD[k]));});
       tile=Math.max(0,(avail-keys.reduce((t,k)=>t+w[k],0))/n);
     }
-    const box=(k,named)=>w[k]===undefined?null:{width:w[k],named,chips:chipsIn(w[k])};
-    return {boss:w.boss===undefined?null:{...box('boss',true),wait:w.boss>=BOSS_WAIT},coffee:box('coffee',w.coffee>=COFFEE_NAMED),bank:box('bank',w.bank>=BANK_NAMED),post:box('post',w.post>=POST_NAMED),tile,tileNamed:tile>=PLACE_NAMED,caps:chipsIn(tile)};
+    const box=(k,named)=>w[k]===undefined?null:{width:w[k],named,chips:chipsIn(w[k],I)};
+    return {boss:w.boss===undefined?null:{...box('boss',true),wait:w.boss>=BOSS_WAIT},coffee:box('coffee',w.coffee>=COFFEE_NAMED),bank:box('bank',w.bank>=BANK_NAMED),post:w.post===undefined?null:{...box('post',w.post>=POST_NAMED),long:w.post>=POST_LONG},tile,tileNamed:tile>=PLACE_NAMED,caps:chipsIn(tile,I)};
   }
+  /* Spec 001 FR-039 (delta 2026-11-23, issues 2018 and 2041): the row of places shares its width by need. `tile` = the equal width lobbyFit gives; `items` = [{need, give}]
+     per place: `need` = the px its content wants (icon, whole name, count), `give` = nobody is there, so it may go down to its need. A tile that gives keeps its need
+     (at most `tile`); the spare goes to the tiles whose need is above `tile`, an equal part at a time, each up to its need. Returns the widths (whole px, their sum never
+     over the row, items.length*tile) or null when nobody needs more, so a roomy row is laid out box for box as before. */
+  function lobbyShare(tile,items){
+    const t=Math.floor(Number(tile)||0), list=Array.isArray(items)?items:[];
+    if(t<=0||!list.length)return null;
+    const need=list.map(i=>Math.max(0,Math.ceil(Number(i&&i.need)||0)));
+    const w=list.map((i,k)=>i&&i.give?Math.min(t,need[k]):t);
+    let spare=Math.floor(Number(tile)*list.length+1e-6)-w.reduce((a,b)=>a+b,0); /* the whole row, the fractions of the equal tile included */
+    if(spare<=0)return null;
+    let open=list.map((_,k)=>k).filter(k=>need[k]>w[k]);
+    if(!open.length)return null;
+    while(spare>0&&open.length){
+      const part=Math.floor(spare/open.length)||1;
+      for(const k of open){const g=Math.min(part,need[k]-w[k],spare);w[k]+=g;spare-=g;if(spare<=0)break;}
+      open=open.filter(k=>w[k]<need[k]);
+    }
+    return w;
+  }
+  /* A visitor entry that cannot show the whole name (initials mode, FR-036): the name cut to 4 letters at a word end with an ellipsis, so never fewer than 3 letters plus the
+     ellipsis unless the whole name is shorter (delta 2026-11-23). */
+  const cutter=()=>typeof module==='object'&&module.exports?require('./cuttext.js'):window.DurbarCutText;
+  function shortName(name){return cutter().cutText(name,4,{wordBoundary:true});}
   /* Spec 001 FR-039: the lobby's tile order: the places, the Boss inserted at the middle of the whole row, then the coffee corner, the Bank
      and the Postbox (when shown). `ids` = the places' ids in their order. */
   function lobbyOrder(ids,post){
@@ -267,10 +298,11 @@
 
   /* Spec 001 FR-036/FR-039: how many initials entries a tile `tileW` px wide shows for `count` visitors. Everyone when they all fit; else
      as many as fit beside the "+N" (a bare 22 px circle in this mode), so a 96 px tile shows one figure and "+1" rather than only "+2". */
-  function initialSpots(tileW,count){
-    const n=Math.max(0,Math.floor(Number(count)||0)), inner=(Number(tileW)||0)-TILE_PAD;
-    if(n*(INIT_W+CHIP_GAP)-CHIP_GAP<=inner)return {shown:n,more:0};
-    const shown=Math.max(0,Math.min(n-1,Math.floor((inner-22)/(INIT_W+CHIP_GAP))));
+  function initialSpots(tileW,count,pad,iw){
+    const n=Math.max(0,Math.floor(Number(count)||0)), inner=(Number(tileW)||0)-(pad>=0?pad:TILE_PAD); /* `pad`: a snug tile (SNUG_W) has 6 px of side padding, 12 in all */
+    const e=iw>0?iw:INIT_W;
+    if(n*(e+CHIP_GAP)-CHIP_GAP<=inner)return {shown:n,more:0};
+    const shown=Math.max(0,Math.min(n-1,Math.floor((inner-22)/(e+CHIP_GAP))));
     return {shown,more:n-shown};
   }
   /* {mode:'named'|'initials', slots} for a tile with `visitors` people, from chipsIn()'s capacities */
@@ -287,5 +319,5 @@
     return w.length>1?(c(w[0])[0]+c(w[w.length-1])[0]).toUpperCase():c(w[0]).slice(0,2).join('');
   }
 
-  return {PLACES,IDS,COFFEE,BOSS,BANK,POSTBOX,SPECIAL,lobbyFit,lobbyOrder,initialSpots,postNext,lettersToday,postMissed,allPlaces,placeName,isChoice,chipsIn,chipsFor,initialsOf,classify,canonicalServer,placeRows,mergePlaceNames,placeSaves,defaultServerPlace,toolLabel,createVisits,layoutSpots};
+  return {PLACES,IDS,COFFEE,BOSS,BANK,POSTBOX,SPECIAL,SNUG_W,lobbyFit,lobbyShare,chipsNeed,shortName,lobbyOrder,initialSpots,postNext,lettersToday,postMissed,allPlaces,placeName,isChoice,chipsIn,chipsFor,initialsOf,classify,canonicalServer,placeRows,mergePlaceNames,placeSaves,defaultServerPlace,toolLabel,createVisits,layoutSpots};
 })());

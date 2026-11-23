@@ -11,6 +11,10 @@ name: Release
 # into CHANGELOG.md is a normal doc-only PR afterwards (changelog.d/README.md).
 # Test builds (spec 008 FR-121..FR-124): a tag vX.Y.Z[-alpha|beta|rc.N]-test.M may be on any branch; package.json must be the tag
 # without -test.M. Its draft is titled "(test build)", its notes list the commits not on main (masked), and nothing is folded.
+# UI gate (spec 117 FR-014, T045): the first job, ui-gate, waits for the "UI on three OSes" run (ui-platforms.yml) of exactly the
+# tagged commit and fails unless the latest one is green on its Linux and Windows UI jobs (macOS not read: owner pick 2026-11-23);
+# every other job needs it. A test tag on a branch needs a by-hand
+# run on the tag first (gh workflow run ui-platforms.yml --ref <tag>). Rules and messages: scripts/release-ui-gate.js.
 on:
   push:
     tags: ['v*']
@@ -23,8 +27,33 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  ui-gate:
+    name: UI run green on the tagged commit
+    runs-on: ubuntu-latest
+    # waits up to 150 minutes for the UI run (main UI runs took up to ~100 min p90 on 2026-11-22, spec 117 E1), plus a margin
+    timeout-minutes: 160
+    permissions:
+      contents: read # checkout of the tag for scripts/release-ui-gate.js
+      actions: read # list the ui-platforms.yml runs for the tagged commit; nothing else
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+      # Plain Node and gh: no dependency install. Values reach the script only through quoted env, never as an expression inside run (AGENTS.md).
+      - name: The latest UI run for the tagged commit finished green
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ github.sha }}
+          REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+        run: node scripts/release-ui-gate.js --sha "$SHA" --repo "$REPO" --tag "$TAG" --not-found-minutes 15 --max-minutes 150 --summary "$GITHUB_STEP_SUMMARY"
+
   verify:
     name: Check the tag and write the release notes
+    needs: ui-gate
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -111,7 +140,7 @@ jobs:
     name: Draft release
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    needs: [verify, build]
+    needs: [ui-gate, verify, build]
     permissions:
       contents: write
       id-token: write # spec 008 FR-132: build provenance attestations (this job only)

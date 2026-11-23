@@ -19,9 +19,9 @@ import type { McpHealthMark } from '../shared/mcphealth';
 import type { McpCallClass } from '../shared/mcpcall';
 import { isTokenRefusal, isTokenServer, unsetVars } from './mcptoken';
 import type { TokenEntry } from './mcptoken';
+import { failText } from './ipcerror';
 
 const NOT_RUNNING = 'This session is not running. Send a message to start it.';
-const errText = (err: unknown): string => (err instanceof Error ? err.message : String(err));
 /** A server name as main accepts it from the window: 1-64 characters (spec 058 FR-021). */
 export const validServerName = (name: unknown): name is string => typeof name === 'string' && name.length > 0 && name.length <= 64;
 
@@ -221,7 +221,7 @@ export function mcpRestartOp(d: RestartDeps, running: Map<string, Promise<McpRes
       if (opts.auto !== true) d.log?.(a, `MCP server ${name} restarted`);
       return { ok: true };
     } catch (err) {
-      return { ok: false, error: maskMcpError(errText(err), d.secrets(a.id)) ?? 'Could not restart it.' };
+      return { ok: false, error: maskMcpError(failText(err, 'mcp session'), d.secrets(a.id)) ?? 'Could not restart it.' };
     }
   })();
   running.set(key, p);
@@ -313,13 +313,13 @@ export async function mcpRestartSessionOp(d: RestartSessionDeps, running: Set<st
     try {
       await d.endSession(a.id);
     } catch (err) {
-      return { ok: false, error: maskMcpError(errText(err), d.secrets(a.id)) ?? 'Could not end the session.' };
+      return { ok: false, error: maskMcpError(failText(err, 'mcp session'), d.secrets(a.id)) ?? 'Could not end the session.' };
     }
     try {
       await d.resume(a);
     } catch (err) {
       const auth = isAuthError(err); // the window shows spec 012 FR-157's sign-in card and marks the app signed out
-      return { ok: false, ended: true, error: maskMcpError(errText(err), d.secrets(a.id)) ?? 'Could not resume the session.', ...(auth ? { errorKind: 'auth' as const } : {}) };
+      return { ok: false, ended: true, error: maskMcpError(failText(err, 'mcp session'), d.secrets(a.id)) ?? 'Could not resume the session.', ...(auth ? { errorKind: 'auth' as const } : {}) };
     }
     d.log?.(a, why === 'sandbox' ? 'Session restarted without the OS sandbox' : 'Session restarted with the current MCP servers');
     return { ok: true };

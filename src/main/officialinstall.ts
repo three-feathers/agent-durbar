@@ -7,6 +7,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import type { OfficialScript } from '../shared/harnesssetup';
+import { ShownError } from '../shared/shownerror';
 
 export const MAX_SCRIPT_BYTES = 1024 * 1024;
 export const MAX_REDIRECTS = 3;
@@ -41,22 +42,22 @@ export function looksLikeScript(body: Buffer, ext: '.sh' | '.ps1', contentType?:
 export async function downloadScript(script: OfficialScript, ext: '.sh' | '.ps1', deps: { get: HttpGet; tmpdir?: string }): Promise<{ file: string; dir: string }> {
   const get = deps.get;
   let url = script.url;
-  if (!allowedScriptUrl(script, url)) throw new Error('That installer address is not allowed.');
+  if (!allowedScriptUrl(script, url)) throw new ShownError('That installer address is not allowed.');
   let res: HttpResponse | undefined;
   for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {
     res = await get(url, { timeoutMs: SCRIPT_TIMEOUT_MS, maxBytes: MAX_SCRIPT_BYTES });
     if (res.status >= 300 && res.status < 400) {
-      if (!res.location || hop === MAX_REDIRECTS) throw new Error('The installer address redirected too often.');
+      if (!res.location || hop === MAX_REDIRECTS) throw new ShownError('The installer address redirected too often.');
       const next = new URL(res.location, url).href;
-      if (!allowedScriptUrl(script, next)) throw new Error(`The installer redirected to a host that is not the vendor's (${new URL(next).hostname}); not downloaded.`);
+      if (!allowedScriptUrl(script, next)) throw new ShownError(`The installer redirected to a host that is not the vendor's (${new URL(next).hostname}); not downloaded.`);
       url = next;
       continue;
     }
     break;
   }
-  if (!res || res.status !== 200) throw new Error(`The installer could not be downloaded (HTTP ${res?.status ?? '?'}).`);
-  if (res.body.length === 0 || res.body.length > MAX_SCRIPT_BYTES) throw new Error('The installer file was empty or too large.');
-  if (!looksLikeScript(res.body, ext, res.contentType)) throw new Error("What came back is not the vendor's install script (it looks like a web page); nothing was run. Try again later, or use the vendor's page.");
+  if (!res || res.status !== 200) throw new ShownError(`The installer could not be downloaded (HTTP ${res?.status ?? '?'}).`);
+  if (res.body.length === 0 || res.body.length > MAX_SCRIPT_BYTES) throw new ShownError('The installer file was empty or too large.');
+  if (!looksLikeScript(res.body, ext, res.contentType)) throw new ShownError("What came back is not the vendor's install script (it looks like a web page); nothing was run. Try again later, or use the vendor's page.");
   const dir = fs.mkdtempSync(path.join(deps.tmpdir ?? os.tmpdir(), 'durbar-install-'));
   fs.chmodSync(dir, 0o700);
   const file = path.join(dir, 'install' + ext);

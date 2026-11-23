@@ -5,6 +5,7 @@
 import type { AgentAdapter } from '../adapters/types';
 import { allowedRemoteUrl, cleanRemoteError } from '../shared/remote';
 import type { RemoteState } from '../shared/remote';
+import { failText } from './ipcerror';
 
 export interface RemoteOpsDeps {
   /** The agent exists in this window's office. */
@@ -54,7 +55,7 @@ export function createRemoteOps(deps: RemoteOpsDeps) {
         try {
           r = await ad.setRemote(id, on);
         } catch (err) {
-          r = { ok: false, error: cleanRemoteError(err) };
+          r = { ok: false, error: failText(err, 'remote control') };
         }
         const late = on && r?.ok && r.on === true && raised(id);
         if (late) {

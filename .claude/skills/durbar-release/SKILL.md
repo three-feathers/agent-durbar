@@ -18,14 +18,14 @@ Only the daily patch release needs no owner OK; any other tag does ([AGENTS.md](
 ## Version PR
 
 4. Branch `008-release-vX-Y-Z` (no dots) in a new worktree from `origin/main`.
-5. `npm version X.Y.Z --no-git-tag-version` (only `package.json` and `package-lock.json` change), plus one row in [spec 008's Release table](../../../specs/008-packaging-and-release/spec.md#release-table).
+5. `npm version X.Y.Z --no-git-tag-version` (`package.json` and `package-lock.json`), plus one row in [spec 008's Release table](../../../specs/008-packaging-and-release/spec.md#release-table), plus the version's entry in `releases.json` (`breaking`, `notes`, `action`; rules in [changelog.d/README.md](../../../changelog.d/README.md), spec 118 FR-026); check with `npm run releases:check -- --version X.Y.Z`.
 6. PR, review, merge as any PR ([docs/rules/merge-mechanics.md](../../../docs/rules/merge-mechanics.md); `scripts/pr-gate.sh <N>` right before).
 
 ## Tag and draft
 
 7. Optional dry run on the merge commit: `node scripts/release-notes.js --tag vX.Y.Z --repo three-feathers/agent-durbar --out ../notes.md --title-out ../title.txt`.
-8. Annotated tag on that `main` commit: `git tag -a vX.Y.Z -m "vX.Y.Z" <sha> && git push origin vX.Y.Z`.
-9. Wait for `release.yml` (`gh run list --workflow release.yml --limit 1`, then `gh run watch <id>`). A red run: use the `durbar-ci-rerun` skill.
+8. `release.yml` first waits for that commit's *UI on three OSes* run and refuses the tag unless its Linux and Windows UI jobs are green (spec 117 FR-014; macOS is not read): check it first with `gh run list --workflow ui-platforms.yml --commit <sha>`; no run listed (the merge queue pushed this commit together with a later one, as for v0.1.28): start one by hand on a branch or tag at that commit (`gh workflow run ui-platforms.yml --ref <ref>`) and tag after it is green. Never re-run a `main` push UI run (it would cancel `main`'s newest UI run, spec 117 O3). Annotated tag on that `main` commit: `git tag -a vX.Y.Z -m "vX.Y.Z" <sha> && git push origin vX.Y.Z`.
+9. Wait for `release.yml` (`gh run list --workflow release.yml --limit 1`, then `gh run watch <id>`). A red run: use the `durbar-ci-rerun` skill. If only the job *UI run green on the tagged commit* failed: start a by-hand UI run on the tag (`gh workflow run ui-platforms.yml --ref vX.Y.Z`) or tag a newer green commit; once that run is green, re-run only the release run's failed jobs (`gh run rerun <release run id> --failed`; spec 021 FR-087 delta 2026-11-22).
 10. Check the draft: every asset, `SHA256SUMS.txt`, the notes (`gh release view vX.Y.Z`).
 
 ## Clip (never holds a release)

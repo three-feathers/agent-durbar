@@ -292,7 +292,7 @@ export function registerMcpIpc(deps: {
         await ad.listMcpTools(agentId, name);
         return 'ok';
       } catch (err) {
-        return isCheckUnauthorized(err instanceof Error ? err.message : String(err)) ? 'unauthorized' : 'error'; // the narrow signal, not the wide word (FR-225)
+        return isCheckUnauthorized(err instanceof Error ? err.message : String(err)) ? 'unauthorized' : 'error'; // FR-066: read, not shown; the narrow signal, not the wide word (FR-225)
       }
     },
     view: (agentId) => {

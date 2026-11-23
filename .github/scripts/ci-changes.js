@@ -11,7 +11,8 @@
  * and by hand.) On a pull request ci-changes.sh runs the BASE branch's copy of this file (HEAD^1's, reviewed on main) with
  * `--root <checkout>`, so a PR's own edit of the decision cannot skip its own checks; with no base copy everything runs.
  *
- *   code=false    only docs/, specs/ or Markdown changed: build, test, office and package jobs pass without running (FR-104)
+ *   code=false    every changed path is on the docs allow list and no test suite names one (spec 117 FR-387, DOCS_ALLOW
+ *                 below): build, test, office and package jobs pass without running (FR-104); the merge queue runs them all
  *   themes=true   the look or the layout checks can change: the office job also runs theme geometry (FR-031)
  *   ui=true       something the app, its build, its packaging or the simulator UI drivers use changed (FR-191): the UI suite
  *                 (ui-platforms.yml), the office layout job and package smoke run. False for tooling, report and unit-test
@@ -39,7 +40,22 @@ const { execFileSync } = require('child_process');
 // runs the BASE branch's copy of this file and of safe-print.js, so both sit at the same relative place in the temp copy
 const { printable } = require(path.join(__dirname, '..', '..', 'scripts', 'safe-print.js'));
 
-const DOCS = /^(docs\/|specs\/|changelog\.d\/)|\.md$|^LICENSE$/;
+// spec 117 FR-387 (reviews of #2032): the docs-only skip FAILS CLOSED. A path may take it only when it is on this small ALLOW list, in
+// plain form, AND no `npm test` suite names it (docsOnly below); everything else, any unknown path, an odd path and an empty diff run
+// everything. Allowed: Markdown under specs/ and docs/ (only `.md`: never a script, picture, SVG or CODEOWNERS there), except
+// docs/rules/ (rule text, test:rules), docs/agent-setup/ and docs/site/ (the public site), and two named root files, CHANGELOG.md and
+// CONTRIBUTING.md (not SECURITY.md, README.md, AGENTS.md, CLAUDE.md, LICENSE). changelog.d/ is not on the list: changelog.js reads
+// every fragment, so a fragment runs everything. The prefixes are lower case on purpose (`Docs/x.md`, `Src/x.md` are not on the list,
+// and a case-insensitive checkout could make them the real folders); the exclusions match in any case (`docs/RULES/x.md` is
+// docs/rules on Windows and macOS). scripts/test-ci-changes.ts guards each part with a fixture and a mutant.
+const DOCS_ALLOW = /^(specs|docs)\/.+\.md$|^(CHANGELOG|CONTRIBUTING)\.md$/;
+const DOCS_DENY = /^docs\/(rules|agent-setup|site)\//i; // root files need no entry: only the two named ones are allowed
+// a plain git path: no backslash, no `.` or `..` or empty segment, no leading or trailing blank, no control character, not absolute
+const PLAIN_PATH = (f) => typeof f === 'string' && f !== '' && f === f.trim() && !/[\\\u0000-\u001f\u007f]/.test(f) && f.split('/').every((seg) => seg !== '' && seg !== '.' && seg !== '..');
+const DOCS = { test: (f) => PLAIN_PATH(f) && DOCS_ALLOW.test(f) && !DOCS_DENY.test(f) };
+// for `ui` and `macos` only (FR-191, unchanged): documentation and Markdown outside the always-UI folders do not start the UI suite, even when
+// they run Build and test (a suite reads them)
+const UI_DOCS = /^(docs\/|specs\/|changelog\.d\/)|\.md$|^LICENSE$/;
 const THEMES = /^(src\/renderer\/|scripts\/check-office-overlap\.js|scripts\/check-theme-geometry\.js|scripts\/check-parallel\.js|scripts\/fixtures\/themes\/|\.github\/workflows\/ci\.yml|\.github\/scripts\/ci-changes\.(sh|js))/;
 // always UI: the app, the CI plumbing the UI and office runs use, the UI workflow and this decision itself
 const ALWAYS_UI = /^(src\/|scripts\/fixtures\/|scripts\/fakes\/|\.github\/actions\/|\.github\/workflows\/(ui-platforms|ci)\.yml$|\.github\/scripts\/ci-changes\.(sh|js)$)/;
@@ -250,22 +266,131 @@ function uiPath(f, io, closure) {
     if (!io.isFile(f) || !PLAIN_NAME.test(f)) return true;
     return !SOURCE.test(f);
   }
-  if (DOCS.test(f) || f.startsWith('.github/')) return false;
+  if (UI_DOCS.test(f) || f.startsWith('.github/')) return false;
   return true; // build/, tsconfig*.json, root dotfiles, anything new
 }
 
 /** The decision for a pull request's changed files. `io` reads the head tree (read, isFile, isDir) and the base (readBase). */
+/** True only when the diff may take the docs-only skip: not empty, every path on the allow list, and no suite names any of them
+ *  (by a literal in a step file, as the fast lane reads them: a suite that reads a doc must run when it changes). An unreadable suite
+ *  list counts as "named" (fail closed). */
+function docsOnly(list, io) {
+  if (!list.length || !list.every((f) => DOCS.test(f))) return false;
+  const names = suiteNames(io.read(SUITE_LIST));
+  if (!names.length) return false;
+  const scripts = (parseJson(io.read('package.json')) || {}).scripts || {};
+  const changed = new Set(list);
+  for (const name of names) for (const src of stepSources(scripts[name])) {
+    for (const r of literalTargets(src, io)) if (r.endsWith('/') ? list.some((f) => f.startsWith(r)) : changed.has(r)) return false;
+  }
+  return true;
+}
+
 function decide(files, io) {
-  const list = files.filter(Boolean);
-  const code = list.some((f) => !DOCS.test(f));
+  const list = files.filter((f) => f !== '');
+  const code = !docsOnly(list, io);
   const themes = list.some((f) => THEMES.test(f));
   let ui = false;
   if (code) {
     const closure = uiClosure(io);
     ui = list.some((f) => uiPath(f, io, closure));
   }
-  const macos = list.some((f) => !DOCS.test(f) && !(PKG.includes(f) && versionOnly(f, io)));
+  // macos (FR-191, unchanged): only docs and a version-only bump skip the path-filtered macOS job, which code still gates elsewhere
+  const macos = list.some((f) => !UI_DOCS.test(f) && !(PKG.includes(f) && versionOnly(f, io)));
   return { code, themes, ui, macos };
+}
+
+// ---- spec 117 FR-386: the fast lane (fast-lane.yml, advisory, never a required check). `--suites` writes `fast=yes` and
+// `suites=<names>`: the `npm test` suites (scripts/test-suites.txt) this PR's diff touches, so each OS hears about a platform bug in
+// minutes, before its full Build and test leg ends. Derived, not hand-listed, except the docs table below. A suite is picked when:
+//   - it is new in the list, or its package.json line changed;
+//   - one of its step files changed (`node dist-scripts/scripts/test-x.js` is scripts/test-x.ts; `node scripts/x.js` is itself);
+//   - a step file names a changed file (not package.json, its lock or the list) by a string literal, one level deep (`'../src/shared/api'`, `'./fakes/x'`, `'scripts/x.sh'`,
+//     relative to the step file or to the repo root, resolved as node does), or names a folder at least two levels deep that holds one;
+//   - a docs path its check reads changed (FAST_DOC_SUITES: the docs gates of a docs-only PR).
+// Picking fewer than the full run is safe here because the lane decides nothing else: the required jobs still run every suite.
+const SUITE_LIST = 'scripts/test-suites.txt';
+const FOLDER_MAX = 40; // spec 117 FR-390: a folder literal with more files than this picks no suite in the fast lane
+const SUITE_NAME = /^test:[\w:.+-]+$/;
+// rule text needs no row: rules-check.js names 'AGENTS.md' and 'docs/rules', so the literal rule picks test:rules
+const FAST_DOC_SUITES = [
+  [/^specs\//, 'test:specsindex'],
+  [/^changelog\.d\/|^CHANGELOG\.md$/, 'test:changelog'],
+];
+/** The suite names of a test-suites.txt text (as scripts/run-tests.js reads it); names that are not plain `test:*` are dropped. */
+function suiteNames(text) {
+  return String(text || '').split(/\r?\n/).map((l) => l.replace(/#.*$/, '').trim()).filter((n) => SUITE_NAME.test(n));
+}
+/** The source files of a suite's `node <file>` steps: a compiled dist-scripts/X.js is X.ts. */
+function stepSources(cmd) {
+  return String(cmd || '').replace(/^tsc -p tsconfig\.scripts\.json\s*&&\s*/, '').split('&&')
+    .map((c) => c.trim().split(/\s+/)).filter((t) => t[0] === 'node' && t[1]).map((t) => t[1].replace(/^dist-scripts\/(.+)\.js$/, '$1.ts'));
+}
+/** The file or folder (ending in /) a literal names from `dir`, or from the repo root; null when it names neither. */
+function resolveLiteral(lit, dir, io) {
+  if (!lit || lit.startsWith('/')) return null;
+  // a bare word ('fs', 'fixtures') names a neighbour of the step file or, exactly, a file at the repo root ('LICENSE', review of
+  // #2032); only a literal with `/` or `.` is resolved from the root with extensions
+  if (!/[./]/.test(lit) && io.isFile(lit)) return lit;
+  for (const base of /[./]/.test(lit) ? [dir, ''] : [dir]) {
+    const rel = path.posix.normalize(base ? path.posix.join(base, lit) : lit);
+    if (!rel || rel === '.' || rel.startsWith('..')) continue;
+    for (const ext of RESOLVE) if (io.isFile(rel + ext)) return rel + ext;
+    if (rel.split('/').length >= 2 && io.isDir(rel)) return rel.replace(/\/?$/, '/');
+  }
+  return null;
+}
+/** The fast-lane suites for a pull request's changed files, in list order. */
+const fastTargetCache = new WeakMap(); // io -> step file -> the files and folders its literals name (the tree does not change in a run)
+/** The files and folders (ending in /) a step file names by literal, read once per tree. */
+function literalTargets(src, io) {
+  if (!fastTargetCache.has(io)) {
+    const memo = (fn) => { const m = new Map(); return (p) => { if (!m.has(p)) m.set(p, fn(p)); return m.get(p); }; };
+    fastTargetCache.set(io, { io: { ...io, isFile: memo(io.isFile), isDir: memo(io.isDir) }, bySrc: new Map() }); // a literal recurs in many files
+  }
+  const c = fastTargetCache.get(io);
+  if (!c.bySrc.has(src)) {
+    const out = new Set();
+    const text = CODE.test(src) ? io.read(src) : null;
+    if (text != null) for (const m of text.matchAll(LITERAL)) { const r = resolveLiteral(m[2], path.posix.dirname(src), c.io); if (r) out.add(r); }
+    c.bySrc.set(src, out);
+  }
+  return c.bySrc.get(src);
+}
+function fastSuites(files, io, info = {}) {
+  const changed = new Set(files.filter(Boolean));
+  const names = suiteNames(io.read(SUITE_LIST));
+  const baseNames = new Set(suiteNames(io.readBase(SUITE_LIST)));
+  const scripts = (parseJson(io.read('package.json')) || {}).scripts || {};
+  const baseScripts = (parseJson(io.readBase('package.json')) || {}).scripts || {};
+  // package.json, its lock and the suite list are named by dozens of tests (the version, the scripts): they pick by the rules
+  // above (a new or changed suite line), not by literal, or every dependency bump would pick a third of the list
+  const byLiteral = new Set([...changed].filter((f) => !PKG.includes(f) && f !== SUITE_LIST));
+  // spec 117 FR-390: a folder literal picks only when the folder is small; `scripts/fixtures` (84 files) or `src/shared` (74) is named
+  // by dozens of tests for one file each, and a new fixture there picked 23 suites (#2037). The docs-only skip still counts every
+  // folder (docsOnly, fail closed); only the advisory lane narrows.
+  const small = (dir) => (typeof io.countUnder === 'function' ? io.countUnder(dir) : 0) <= FOLDER_MAX;
+  info.capped = new Set(); // big folders a changed file sits in: named so the job summary can say why nothing was picked
+  const hit = (r) => {
+    if (!r) return false;
+    if (!r.endsWith('/')) return byLiteral.has(r);
+    if (![...byLiteral].some((f) => f.startsWith(r))) return false;
+    if (small(r)) return true;
+    info.capped.add(r);
+    return false;
+  };
+  const direct = new Set(), byName = new Set();
+  for (const name of names) {
+    const cmd = scripts[name];
+    if (typeof cmd !== 'string') continue;
+    if (!baseNames.has(name) || baseScripts[name] !== cmd) { direct.add(name); continue; }
+    const srcs = stepSources(cmd);
+    if (srcs.some((src) => changed.has(src))) { direct.add(name); continue; }
+    if (srcs.some((src) => [...literalTargets(src, io)].some(hit))) byName.add(name);
+  }
+  for (const f of changed) for (const [re, name] of FAST_DOC_SUITES) if (re.test(f) && names.includes(name)) byName.add(name);
+  // the suites whose own file or list line changed come first (fast-lane.js keeps that order when it has to leave some out)
+  return [...names.filter((n) => direct.has(n)), ...names.filter((n) => byName.has(n) && !direct.has(n))];
 }
 
 /** The real tree: the checkout (head) and HEAD^1 (base). scripts/ is listed once, so a literal costs a set lookup, not a stat. */
@@ -286,21 +411,42 @@ function gitIo(root) {
     read: (p) => { if (!cache.has(p)) { let t = null; try { t = fs.readFileSync(abs(p), 'utf8'); } catch { /* missing */ } cache.set(p, t); } return cache.get(p); },
     isFile: (p) => (p.startsWith('scripts/') ? files.has(p) : (() => { try { return fs.statSync(abs(p)).isFile(); } catch { return false; } })()),
     isDir: (p) => (p.startsWith('scripts/') ? dirs.has(p) : (() => { try { return fs.statSync(abs(p)).isDirectory(); } catch { return false; } })()),
+    // files under a folder (ending in /), counted up to one past FOLDER_MAX: scripts/ from the listing, any other folder by a walk
+    countUnder: (dir) => {
+      if (dir.startsWith('scripts/')) { let n = 0; for (const f of files) if (f.startsWith(dir) && ++n > FOLDER_MAX) break; return n; }
+      let n = 0;
+      const count = (rel) => { let ents = []; try { ents = fs.readdirSync(abs(rel), { withFileTypes: true }); } catch { return; } for (const e of ents) { if (n > FOLDER_MAX) return; if (e.isDirectory()) { if (e.name !== 'node_modules') count(`${rel}/${e.name}`); } else n++; } };
+      count(dir.replace(/\/$/, ''));
+      return n;
+    },
     readBase: (p) => { try { return execFileSync('git', ['show', `HEAD^1:${p}`], { cwd: root, encoding: 'utf8', shell: false, stdio: ['ignore', 'pipe', 'ignore'], maxBuffer: 64 * 1024 * 1024 }); } catch { return null; } },
   };
 }
 
 function main(env = process.env, argv = process.argv.slice(2)) {
   const out = (k, v) => { if (env.GITHUB_OUTPUT) fs.appendFileSync(env.GITHUB_OUTPUT, `${k}=${v}\n`); else console.log(`${k}=${v}`); };
+  const at = argv.indexOf('--root');
+  const root = at >= 0 && argv[at + 1] ? path.resolve(argv[at + 1]) : path.join(__dirname, '..', '..');
+  const changedFiles = () => execFileSync('git', ['diff', '--name-only', '--no-renames', '-z', 'HEAD^1', 'HEAD'], { cwd: root, encoding: 'utf8', shell: false, maxBuffer: 64 * 1024 * 1024 }).split('\0').filter(Boolean);
+  if (argv.includes('--suites')) { // spec 117 FR-386: the fast lane's suites only (the other outputs are not written)
+    const info = {};
+    const suites = env.EVENT_NAME === 'pull_request' ? fastSuites(changedFiles(), gitIo(root), info) : [];
+    const capped = [...(info.capped || [])];
+    if (capped.length) console.log(`fast lane: ${capped.length} folder(s) named by tests hold more than ${FOLDER_MAX} files, so they pick nothing: ${capped.map(printable).join(' ')}`);
+    if (env.EVENT_NAME !== 'pull_request') console.log(`${env.EVENT_NAME || 'no event'}: the fast lane runs on pull requests only.`);
+    else console.log(suites.length ? `fast lane: ${suites.length} suite(s): ${suites.join(' ')}` : 'fast lane: no suite is touched by this diff.');
+    out('fast', 'yes');
+    out('suites', suites.join(' '));
+    if (capped.length) out('capped', String(capped.length)); // only when a big folder was skipped (the usual output stays two lines)
+    return;
+  }
   let r;
   if (env.EVENT_NAME !== 'pull_request') {
     r = { code: true, themes: true, ui: true, macos: true };
     console.log(`${env.EVENT_NAME || 'no event'}: not a pull request, everything runs.`);
   } else {
     // --root <checkout>: the workflow runs the base copy of this file from a temp folder on the PR's checkout
-    const at = argv.indexOf('--root');
-    const root = at >= 0 && argv[at + 1] ? path.resolve(argv[at + 1]) : path.join(__dirname, '..', '..');
-    const files = execFileSync('git', ['diff', '--name-only', '--no-renames', '-z', 'HEAD^1', 'HEAD'], { cwd: root, encoding: 'utf8', shell: false, maxBuffer: 64 * 1024 * 1024 }).split('\0').filter(Boolean);
+    const files = changedFiles();
     for (const f of files) console.log(printable(f)); // a name may hold a newline or `::`: never a workflow command
     r = decide(files, gitIo(root));
     if (!r.code) console.log('Docs, specs and Markdown only: build, test and office checks are skipped (the job passes).');
@@ -310,5 +456,5 @@ function main(env = process.env, argv = process.argv.slice(2)) {
   for (const k of ['code', 'themes', 'ui', 'macos']) out(k, r[k]);
 }
 
-module.exports = { decide, uiClosure, versionOnly, gitIo, npmTargets, reachedNpm, workflowCommands };
+module.exports = { FOLDER_MAX, decide, uiClosure, versionOnly, gitIo, npmTargets, reachedNpm, workflowCommands, fastSuites, suiteNames, stepSources, DOCS };
 if (require.main === module) main();

@@ -11,6 +11,7 @@ import { checkFolder, fileManagerHint, listTargets, openInFirstEditor, openWith,
 import type { Deps, OwnedAgent } from '../src/main/openwith';
 import type { LaunchEnv, LaunchPlan } from '../src/main/vscode';
 import { EDITIONS, EDITOR_NOT_FOUND, planEdition, spawnPlan } from '../src/main/vscode';
+import { IPC_FAILED } from '../src/main/ipcerror';
 
 const launchEnv = (platform: NodeJS.Platform, files: string[], vars: NodeJS.ProcessEnv = {}, homedir = '/home/a'): LaunchEnv => ({ platform, env: vars, homedir, isFile: (p) => files.includes(p) });
 const LINUX_ALL = ['/usr/bin/code', '/usr/bin/code-insiders', '/usr/bin/codium'];
@@ -242,7 +243,7 @@ process.exitCode = 1; // a promise that never settles must not pass (checklist);
     assert.match(src, /'agents:openInVSCode', \(e, id: unknown\) => \(fromApp\(e\) \? openInFirstEditor\(ownedOf\(id\), owDeps\(\)\)/, 'the channel takes the guarded path');
   }
   { const res = await openWith({ cwd: dir }, 'folder', mk(NONE(), rec(), { openPath: async () => 'Failed to open path' })); assert.deepStrictEqual([res.ok, res.error], [false, 'Failed to open path']); }
-  { const res = await openWith({ cwd: dir }, 'folder', mk(NONE(), rec(), { openPath: async () => { throw new Error('boom'); } })); assert.deepStrictEqual([res.ok, res.error], [false, 'boom']); }
+  { const res = await openWith({ cwd: dir }, 'folder', mk(NONE(), rec(), { openPath: async () => { throw new Error('boom'); } })); assert.deepStrictEqual([res.ok, res.error], [false, IPC_FAILED], 'an unexpected throw of the opener gives the fixed text (spec 045 FR-066)'); }
 
   // ---- review of #976 (2026-11-03): guards each with a test that fails when the guard goes ----
   // the NUL guard answers itself (without it the real lstat throws and the answer is "no longer exists"; a made-up path would pass)

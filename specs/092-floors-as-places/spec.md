@@ -244,6 +244,13 @@ The slide is short and soft. It never blocks input and never hides a waiting age
 
 ## Changes
 
+### 2026-11-22: the pill tooltip check is steady again (bug #1989, T052)
+
+*Report* (own finding, 2026-11-22): `check-status-tooltip` fails at "after redraw" and "after a pointer event on the floor" (the pill loses `aria-describedby`) on Windows CI and on a loaded Linux machine, on main since #1987 (FR-085). Expected: a status pill hovered by the pointer keeps its tooltip and its description through a top-bar redraw and through pointer events on the floor, every run.
+
+- **Fix at the cause**: the tooltip's pointer state (`hov`, `describe`) must follow the element actually under the pointer after a redraw, and the floor's hover-only binds (FR-085) must never take or drop the tip of a part the pointer is not on. The driver is not loosened: its waits use `until()`, not fixed sleeps.
+- **Evidence** (2026-11-22): the cause is not the floor binds or `hov`: `renderStats` redraws the pills through `morphHTML`, whose `syncAttrs` (`app.js`) removes every attribute the new markup lacks, so each redraw wiped the `aria-describedby` that `tooltip.js` had set on the pill that stays; `refresh()` then returned early because the words were the same, so the tooltip stayed shown with the pill unlinked. The simulator redraws the counts on its own clock, so the driver read it unlinked whenever a redraw fell in its wait (always under load; #1987's extra step only widened the window). Fix: `refresh()` puts `aria-describedby` back on every redraw while the tip is shown (an attribute write, no layout read, so spec 097 FR-186 holds). Repro without load: `scripts/test-tooltip.ts` (jsdom, same-words redraw); mutant: remove the line and it fails with *a redraw with the same words keeps the pill described*. `check-status-tooltip` on Linux under `xvfb-run`: before the fix 8 of 10 runs failed, after it 10 of 10 passed; `shots-092-lift`, `test:floornav`, `test:uisuite`, `test:tooltip` pass. Not run on Windows CI.
+
 ### 2026-11-20: a hint says which floor the pointer is on (issue #1958, FR-085, T051)
 
 Owner request (Ruben, 2026-11-20): hovering a floor should say which floor it is. He chose both parts below. Details decided by the coordinator under Ruben's delegation.

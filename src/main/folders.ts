@@ -19,6 +19,7 @@ import type { SessionNameEntry } from '../shared/sessionname';
 import { markIdOk, markSrcOk } from '../shared/sessionid';
 import { LIMITS as TEAM_LIMITS, MEMBER_ID_RE, checkMember } from '../shared/teamtemplate';
 import type { TeamCap } from '../shared/teamtemplate';
+import { ShownError } from '../shared/shownerror';
 
 export type SavedPermMode = 'read-only' | 'ask' | 'allow';
 
@@ -451,7 +452,7 @@ export class FolderStore {
   /** Replaces the saved order with the cleaned document; the cleaned copy is returned (what was kept). Throws when the file could not be written: the order is kept for this run, and the caller says so. */
   setOrder(raw: unknown): OrderDoc {
     this.orderDoc = parseOrder(raw);
-    if (!this.save()) throw new Error('The order could not be saved.');
+    if (!this.save()) throw new ShownError('The order could not be saved.');
     return this.order();
   }
 
