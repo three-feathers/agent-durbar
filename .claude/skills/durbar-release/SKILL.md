@@ -18,7 +18,7 @@ Only the daily patch release needs no owner OK; any other tag does ([AGENTS.md](
 ## Version PR
 
 4. Branch `008-release-vX-Y-Z` (no dots) in a new worktree from `origin/main`.
-5. `npm version X.Y.Z --no-git-tag-version` (only `package.json` and `package-lock.json` change), plus one row in [spec 008's Release table](../../../specs/008-packaging-and-release/spec.md#release-table).
+5. `npm version X.Y.Z --no-git-tag-version` (`package.json` and `package-lock.json`), plus one row in [spec 008's Release table](../../../specs/008-packaging-and-release/spec.md#release-table), plus the version's entry in `releases.json` (`breaking`, `notes`, `action`; rules in [changelog.d/README.md](../../../changelog.d/README.md), spec 118 FR-026); check with `npm run releases:check -- --version X.Y.Z`.
 6. PR, review, merge as any PR ([docs/rules/merge-mechanics.md](../../../docs/rules/merge-mechanics.md); `scripts/pr-gate.sh <N>` right before).
 
 ## Tag and draft

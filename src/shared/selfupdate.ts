@@ -173,7 +173,7 @@ export function pickTarget(running: unknown, feed: Feed): TargetPick {
   return { target: newest, between, installedNewer: false, gap, missing, unplaced: feed.unplaced };
 }
 
-/** Per version, from the target tag's `releases.json` (FR-026, parsed by T008); undefined = missing or invalid. */
+/** Per version, from the target tag's `releases.json` (`parseReleasesJson`, FR-026); undefined = missing or invalid. */
 export type ReleaseMarks = ReadonlyMap<string, { breaking: boolean }>;
 export type Breaking = 'breaking' | 'unknown' | 'no';
 
@@ -319,4 +319,96 @@ export function snoozeState(now: number, version: string, snooze: unknown, skip?
     if (snooze.until > now && snooze.until <= now + SNOOZE_MS) return 'snoozed';
   }
   return 'show';
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
+// Strict JSON files: `releases.json` (FR-026) and the baked `updatesource.json` (FR-001)
+
+/** Valid JSON whose objects, at any depth, repeat no key (decoded: `"a"` and `"\u0061"` are one key); JSON.parse alone keeps the last. Else undefined. */
+export function parseStrictJson(text: string): unknown {
+  let value: unknown;
+  try { value = JSON.parse(text); } catch { return undefined; }
+  const stack: { keys: Set<string> | null; expectKey: boolean }[] = [];
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (c === '"') {
+      let j = i + 1;
+      while (j < text.length && text[j] !== '"') j += text[j] === '\\' ? 2 : 1;
+      const top = stack[stack.length - 1];
+      if (top?.keys && top.expectKey) {
+        const key = JSON.parse(text.slice(i, j + 1)) as string;
+        if (top.keys.has(key)) return undefined;
+        top.keys.add(key);
+        top.expectKey = false;
+      }
+      i = j;
+    } else if (c === '{') stack.push({ keys: new Set(), expectKey: true });
+    else if (c === '[') stack.push({ keys: null, expectKey: false });
+    else if (c === '}' || c === ']') stack.pop();
+    else if (c === ',') { const top = stack[stack.length - 1]; if (top?.keys) top.expectKey = true; }
+  }
+  return value;
+}
+const exactKeys = (o: Record<string, unknown>, keys: readonly string[]): boolean => {
+  const k = Object.keys(o);
+  return k.length === keys.length && keys.every((x) => Object.prototype.hasOwnProperty.call(o, x));
+};
+
+/** UTF-8 bytes to text, or undefined when they are not UTF-8. A byte-order mark is KEPT (`ignoreBOM`), so the strict parsers refuse it. */
+export function decodeUtf8Strict(bytes: Uint8Array): string | undefined {
+  try { return new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(bytes); } catch { return undefined; }
+}
+
+export const MAX_RELEASES_JSON_BYTES = 256 * 1024;
+export const MAX_RELEASES_JSON_VERSIONS = 500;
+export const RELEASE_TEXT_MAX = 500;
+const PART = '(?:0|[1-9]\\d{0,8})';
+const VERSION_KEY_RE = new RegExp(`^${PART}\\.${PART}\\.${PART}$`);
+const RELEASE_TAG_RE = new RegExp(`^v${PART}\\.${PART}\\.${PART}$`);
+/** Plain text (FR-026): no `<`, no control, format (bidi, zero-width), surrogate, line or paragraph separator characters. */
+const PLAIN_RE = /^[^<\p{Cc}\p{Cf}\p{Cs}\p{Zl}\p{Zp}]*$/u;
+const plain = (v: unknown, min: number): v is string => {
+  if (typeof v !== 'string' || v.length > RELEASE_TEXT_MAX * 2 || !PLAIN_RE.test(v)) return false;
+  const n = [...v].length;
+  return n >= min && n <= RELEASE_TEXT_MAX;
+};
+
+export interface ReleaseNote { breaking: boolean; notes: string; action: string }
+
+/** FR-026: the text of a `releases.json`, per version; undefined when anything is not exactly as specified (FR-009: *Breaking: unknown*). */
+export function parseReleasesJson(text: unknown): ReadonlyMap<string, ReleaseNote> | undefined {
+  if (typeof text !== 'string' || text.length > MAX_RELEASES_JSON_BYTES || utf8Bytes(text) > MAX_RELEASES_JSON_BYTES) return undefined;
+  const doc = parseStrictJson(text);
+  if (!isObj(doc) || !exactKeys(doc, ['schema', 'versions']) || doc.schema !== 1 || !isObj(doc.versions)) return undefined;
+  const keys = Object.keys(doc.versions);
+  if (keys.length > MAX_RELEASES_JSON_VERSIONS) return undefined;
+  const out = new Map<string, ReleaseNote>();
+  for (const v of keys) {
+    const e = doc.versions[v];
+    if (!VERSION_KEY_RE.test(v) || !isObj(e) || !exactKeys(e, ['breaking', 'notes', 'action'])) return undefined;
+    const { breaking, notes, action } = e;
+    if (typeof breaking !== 'boolean' || !plain(notes, 1) || !plain(action, breaking ? 1 : 0)) return undefined;
+    out.set(v, { breaking, notes, action });
+  }
+  return out;
+}
+
+/** FR-007, FR-009: the one raw-file URL, for a parsed slug and a stable `vMAJOR.MINOR.PATCH` tag (main's own validated feed); else undefined. */
+export function releasesJsonUrl(slug: unknown, tag: unknown): string | undefined {
+  const s = parseRepoSlug(slug);
+  return s && typeof tag === 'string' && RELEASE_TAG_RE.test(tag) ? `https://raw.githubusercontent.com/${s}/${tag}/releases.json` : undefined;
+}
+
+export const MAX_UPDATE_SOURCE_BYTES = 1024;
+export interface UpdateSource { slug: string; origin: SourceOrigin }
+const ORIGINS: readonly string[] = ['env', 'ci', 'local'];
+
+/** FR-001: the baked `dist/main/updatesource.json`, exactly `{slug, origin}` with the slug in its parsed form; anything else = no source. */
+export function parseUpdateSourceFile(text: unknown): UpdateSource | undefined {
+  if (typeof text !== 'string' || utf8Bytes(text) > MAX_UPDATE_SOURCE_BYTES) return undefined;
+  const doc = parseStrictJson(text);
+  if (!isObj(doc) || !exactKeys(doc, ['slug', 'origin'])) return undefined;
+  const { slug, origin } = doc;
+  if (typeof slug !== 'string' || parseRepoSlug(slug) !== slug || typeof origin !== 'string' || !ORIGINS.includes(origin)) return undefined;
+  return { slug, origin: origin as SourceOrigin };
 }
