@@ -2212,9 +2212,10 @@ let NAME_CTX=null;
 /* the name's text is wider than its box, even by a fraction of a pixel (then the browser draws an ellipsis; scrollWidth is a whole number and counts the padding, so it misses it: a name 0.03px short lost two letters in the 1280x800 office) */
 const nameRoom=(n,cs)=>n.getBoundingClientRect().width-parseFloat(cs.paddingLeft)-parseFloat(cs.paddingRight)-parseFloat(cs.borderLeftWidth)-parseFloat(cs.borderRightWidth); /* the text's room, not rounded (clientWidth is a whole number) */
 function textCut(n){
-  if(n.scrollWidth>n.clientWidth+0.5)return true;
-  const cs=getComputedStyle(n),r=document.createRange(); r.selectNodeContents(n);
-  return r.getBoundingClientRect().width>nameRoom(n,cs)+0.01;
+  const cs=getComputedStyle(n),box=n.getBoundingClientRect().width,room=box-parseFloat(cs.paddingLeft)-parseFloat(cs.paddingRight)-parseFloat(cs.borderLeftWidth)-parseFloat(cs.borderRightWidth); /* one box read (clientWidth is that box, rounded, minus its borders) */
+  if(n.scrollWidth>Math.round(box-parseFloat(cs.borderLeftWidth)-parseFloat(cs.borderRightWidth))+0.5)return true;
+  const r=document.createRange(); r.selectNodeContents(n);
+  return r.getBoundingClientRect().width>room+0.01;
 }
 /* spec 001 FR-179 (issue 2011): a split name (FR-271) is a flex box of its start and its tail, and the start is what gives way: the box itself holds
    (its children shrink inside it), so each part is asked too, or a start cut by a fraction of a pixel ("swissc… tract-ai") kept the path beside it */

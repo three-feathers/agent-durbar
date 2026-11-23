@@ -18,7 +18,7 @@
  *   cutchild   in app.js nameCut() drop the two `.rn-h`/`.rn-t` lines          -> "a cut name hides its path" (Flat 1440x900)
  *   chipcut    in realoffice.js stagger() drop the `c.dataset.full` restore in the last-resort branch -> "name chips are whole"
  *   nofigure   in realoffice-layout.ts roLobby() put back `chipY = Lb - CHIP_H` for a visitor without a figure   -> "name chips stay clear of the frame line"
- *   nokey      in realoffice.js fitSigns() take `'|' + sg._sc.textContent` out of the key   -> "a sign whose counts changed is measured again" (photo 1440x900)
+ *   nokey      in realoffice.js fitSigns() take `'|' + sg._sc.textContent` out of the key   -> "a sign whose counts grew is measured again" (photo 1440x900)
  *   postnamed  in places.js set POST_NAMED back to 240                       -> "the Postbox tile shows its name"
  */
 const os = require('os');
@@ -81,17 +81,19 @@ module.exports = async (ctx) => {
          update that changes a sign's counts text must measure that sign again and drop its path (`nopath`); a key without the count text leaves it as it was (mutant `nokey`) */
       await js(`(()=>{const s=document.createElement('style');s.id='tf-dejavu';s.textContent='.ro-sign,.ro-sign b{font-family:"DejaVu Sans"!important}.ro-sign .ro-path{font-family:"DejaVu Sans Mono"!important}.ro-sign .ro-sc{margin-left:300px!important}';document.head.appendChild(s)})()`);
       const scs = () => js(`Object.fromEntries([...document.querySelectorAll('#stage .ro-sign:not(.ro-stag):not(.short)')].filter(e=>e.querySelector('.ro-path')).map(e=>[e.dataset.folder,[e.querySelector('.ro-sc').textContent,e.classList.contains('nopath')]]))`);
-      const before = await scs();
-      const pl = await js(`(()=>{const p=[...document.querySelectorAll('#stage .ro-plate')].find(x=>x.dataset.state==='working'||x.dataset.state==='idle');return p&&{id:p.dataset.id,st:p.dataset.state}})()`);
-      assert.ok(pl, `${tag}: an agent whose status can change`);
-      const to = pl.st === 'working' ? 'idle' : 'working';
-      await js(`window.__durbarSimEmit({type:'status',sessionId:${JSON.stringify(pl.id)},timestamp:Date.now(),status:${JSON.stringify(to)}})`);
-      await H.until(`(document.querySelector('#stage .ro-plate[data-id="'+CSS.escape(${JSON.stringify(pl.id)})+'"]')||{dataset:{}}).dataset.state!==${JSON.stringify(pl.st)}`, 8000);
-      await ctx.sleep(600);
-      const after = await scs();
-      const changed = Object.keys(after).filter((k) => before[k] && before[k][0] !== after[k][0]);
-      assert.ok(changed.length >= 1, `${tag}: a status update changed a sign's counts (${JSON.stringify(before)} -> ${JSON.stringify(after)})`);
-      for (const k of changed) if (!after[k][1]) bad(`${tag}: a sign whose counts changed is measured again and drops its path (count text key): ${k}`);
+      /* a status update that makes a sign's counts text LONGER (a state with no pill yet gets one) measures that sign again: it must drop its path; a shorter or equal text costs no read (growKey) */
+      const plates = await js(`[...document.querySelectorAll('#stage .ro-plate')].filter(x=>x.dataset.state==='working').map(x=>x.dataset.id)`);
+      let grownSeen = 0;
+      for (const id of plates.slice(0, 10)) {
+        const before = await scs();
+        await js(`window.__durbarSimEmit({type:'status',sessionId:${JSON.stringify(id)},timestamp:Date.now(),status:'error'})`);
+        await H.until(`(document.querySelector('#stage .ro-plate[data-id="'+CSS.escape(${JSON.stringify(id)})+'"]')||{dataset:{}}).dataset.state!=='working'`, 8000);
+        await ctx.sleep(500);
+        const after = await scs();
+        for (const k of Object.keys(after)) if (before[k] && after[k][0].length > before[k][0].length) { grownSeen++; if (!after[k][1]) bad(`${tag}: a sign whose counts grew is measured again and drops its path (count text key): ${k}`); }
+        if (grownSeen) break;
+      }
+      assert.ok(grownSeen >= 1, `${tag}: a status update made a sign's counts text longer`);
       await js(`document.getElementById('tf-dejavu').remove()`);
     }
     const scroll = await js(`(()=>{const f=document.getElementById('floor');return f.scrollHeight-f.clientHeight>1})()`);

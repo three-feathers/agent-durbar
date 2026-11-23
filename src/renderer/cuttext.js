@@ -58,5 +58,12 @@
     if(key)for(const it of list)it._fitKey=key(it);
     return list;
   }
-  return {cutText,fitCut,nameTail,fitBatch};
+  /* A fit key for a row whose neighbours can grow (the counts and cost beside a folder name): `base` is what resets it (text, width, form), `len` the neighbour's text length.
+     The key holds the longest `len` seen since the base last changed: a neighbour that grows past it measures again, one that shrinks or comes back to a length already
+     measured cannot cut the name any more than it did, and costs no read. */
+  function growKey(it,base,len){
+    if(it._gBase!==base){it._gBase=base;it._gMax=len;}else if(len>it._gMax)it._gMax=len;
+    return base+'|'+it._gMax;
+  }
+  return {cutText,fitCut,nameTail,fitBatch,growKey};
 })());
