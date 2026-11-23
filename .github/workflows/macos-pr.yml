@@ -41,7 +41,8 @@ jobs:
     if: ${{ !github.event.pull_request.draft }}
     runs-on: macos-latest
     # spec 008 FR-195: was 20; up to 9 min of work plus up to about 12 min of npm ci retries in an Electron download outage
-    timeout-minutes: 25
+    # spec 117 T025 stop-gap (T078): was 25; the job was cut at the limit with no assert failing (#1983, #2002, 8 of 12 runs over 20 min); the split (T079) replaces this
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

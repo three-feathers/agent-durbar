@@ -152,15 +152,26 @@ function needsBuild(suites, read = (p) => { try { return fs.readFileSync(path.jo
 
 /** Prepare the run: compile the picked test files, build the app when a step file reads dist/, fetch Electron for the suites that need it.
  *  Returns { ok, phases } (phase labels with seconds, for the summary). */
+/** Write the temporary tsconfig for these test files in a folder INSIDE the repository root (a `.fast-lane-` folder, git-ignored), never the
+ *  OS temp folder (spec 117, bug on #2052): TypeScript finds automatic types (node_modules/@types) from the config's folder upwards, so
+ *  from the temp folder it found none and loaded Electron's nested @types/node beside the root one (two `http` modules, TS2345 that the
+ *  full compile does not have). Returns { file, remove }. */
+function writeFastTsconfig(sources, root = ROOT) {
+  const dir = fs.mkdtempSync(path.join(root, '.fast-lane-'));
+  const file = path.join(dir, 'tsconfig.json');
+  fs.writeFileSync(file, JSON.stringify(fastTsconfig(sources, root), null, 2));
+  return { file, remove: () => { try { fs.rmSync(dir, { recursive: true, force: true }); } catch { /* left for git clean; ignored */ } } };
+}
 function prepareFiles(suites) {
   const phases = [];
   const phase = (label, fn) => { const t = Date.now(); const ok = fn(); phases.push(`${label} ${((Date.now() - t) / 1000).toFixed(1)} s`); return ok; };
   const tsc = (args) => spawnSync(process.execPath, [require.resolve('typescript/bin/tsc'), ...args], { cwd: ROOT, stdio: 'inherit', shell: false }).status === 0;
   const sources = tsSources(suites);
   if (sources.length) {
-    const cfg = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'fast-lane-')), 'tsconfig.json');
-    fs.writeFileSync(cfg, JSON.stringify(fastTsconfig(sources), null, 2));
-    if (!phase(`compile ${sources.length} test file(s)`, () => tsc(['-p', cfg]))) return { ok: false, phases };
+    const cfg = writeFastTsconfig(sources);
+    let ok = false;
+    try { ok = phase(`compile ${sources.length} test file(s)`, () => tsc(['-p', cfg.file])); } finally { cfg.remove(); }
+    if (!ok) return { ok: false, phases };
   }
   if (needsBuild(suites) && !phase('build the app', () => tsc(['-p', 'tsconfig.json']) && spawnSync(process.execPath, ['scripts/copy-assets.js'], { cwd: ROOT, stdio: 'inherit', shell: false }).status === 0)) return { ok: false, phases };
   if (suites.some((s) => /checkfuses|macos/.test(s.name))) {
@@ -195,5 +206,5 @@ function main() {
   laneMain({ asked, pkg, summary, put, jobs }).then((code) => process.exit(code), (e) => { console.error(e && e.message ? printable(e.message) : e); process.exit(1); });
 }
 
-module.exports = { laneMain, prepareFiles, pickSuites, tsSources, fastTsconfig, needsBuild, READS_DIST, readTimes, planSuites, prepareRun, planLines, runLane, waitForExit, SIGNALS, HEAVY_S, BUDGET_S, DEADLINE_MS };
+module.exports = { laneMain, prepareFiles, writeFastTsconfig, pickSuites, tsSources, fastTsconfig, needsBuild, READS_DIST, readTimes, planSuites, prepareRun, planLines, runLane, waitForExit, SIGNALS, HEAVY_S, BUDGET_S, DEADLINE_MS };
 if (require.main === module) main();
