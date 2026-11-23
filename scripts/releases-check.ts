@@ -38,6 +38,9 @@ const realDeps = (): CheckDeps => ({
   cwd: process.cwd(),
 });
 
+/** Spec 008 FR-119 delta 2026-11-23: only a test build (`X.Y.Z-test.M`) needs no `releases.json` entry; any other pre-release does. */
+export const entryExempt = (version: string): boolean => /^\d{1,9}\.\d{1,9}\.\d{1,9}(?:-[0-9A-Za-z.-]+)?-test\.\d+$/.test(version);
+
 export const REF_REFUSED = 'releases:check: --ref must be a tag, branch or commit name';
 export const NOT_REGULAR = 'releases:check: releases.json is not a regular file within 256 KiB (a link or a folder is refused)';
 

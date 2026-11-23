@@ -10,7 +10,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { decodeUtf8Strict, isBreaking, parseStrictJson, parseReleasesJson, pickTarget, releasesJsonUrl, MAX_RELEASES_JSON_BYTES } from '../src/shared/selfupdate';
 import type { Feed, FeedRelease } from '../src/shared/selfupdate';
-import { checkReleases, main as checkMain, NOT_REGULAR, REF_REFUSED } from './releases-check';
+import { checkReleases, entryExempt, main as checkMain, NOT_REGULAR, REF_REFUSED } from './releases-check';
 import type { CheckDeps } from './releases-check';
 
 const ROOT = path.join(__dirname, '..', '..');
@@ -149,7 +149,10 @@ assert.strictEqual(checkReleases(tree), undefined, 'the repository root releases
 const pkgVersion = (JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8')) as { version: string }).version;
 // spec 008 FR-119 delta 2026-11-23: the version PR adds the new version's entry, so the tree always has one for package.json's version
 // (a pre-release test build, `-test.M`, is exempt: it is no release)
-assert.ok(parseReleasesJson(tree)?.has(pkgVersion) || /-/.test(pkgVersion), 'releases.json has an entry for the version in package.json (the version PR adds it)');
+assert.ok(parseReleasesJson(tree)?.has(pkgVersion) || entryExempt(pkgVersion), 'releases.json has an entry for the version in package.json (the version PR adds it)');
+assert.strictEqual(entryExempt('0.1.29-test.2'), true, 'a -test.M build is exempt');
+assert.strictEqual(entryExempt('0.1.0-alpha.3-test.1'), true, 'a test build of a pre-release is exempt');
+for (const v of ['0.1.29-rc.1', '0.1.29-alpha.1', '0.1.29-test', '0.1.29-test.x', '0.1.29-testing.1', '0.1.29', '0.1.29-test.1 ']) assert.strictEqual(entryExempt(v), false, 'not exempt: ' + JSON.stringify(v));
 
 // ---- decoding: strict UTF-8, a byte-order mark kept so the parsers refuse it ----
 const bom = Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), Buffer.from(JSON.stringify(base()))]);
