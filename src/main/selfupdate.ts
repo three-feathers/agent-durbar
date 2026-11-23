@@ -2,11 +2,13 @@
  * Spec 118 T010 (FR-004, FR-005, FR-006, FR-021, FR-024): Durbar's own update checker in main. The scheduler (the pure `cadenceDue`,
  * an injected clock and timer, at most one timer and only while the daily check is on), the request (only through `makeFeedGet`, for
  * the policy's or the baked slug), the result (in memory; only `updates.lastCheck`, versions and a time, is written) and the handlers
- * of the version-only IPC channels come with the second part of T010. Not wired into main.ts yet (dead code, tested). No Electron import:
- * `scripts/test-selfupdate-checker.ts` runs it.
+ * of the version-only IPC channels (`ipc/selfupdate.ts` wires them; main.ts does not start the checker before T014). No Electron import:
+ * `scripts/test-selfupdate-checker.ts` and `scripts/test-selfupdate-ipc.ts` run it.
  */
-import { cadenceDue, decodeUtf8Strict, feedUrl, isBreaking, manualCheckAllowed, parseReleasesJson, pickTarget, releasesJsonUrl, selfCheckOn, selfPolicyView, snoozeState, validateFeed } from '../shared/selfupdate';
+import { cadenceDue, decodeUtf8Strict, feedUrl, isBreaking, manualCheckAllowed, parseReleasesJson, pickTarget, releasesJsonUrl, selfCheckOn, selfPolicyView, snoozeState, validateFeed, SNOOZE_MS } from '../shared/selfupdate';
 import type { Breaking, CadenceInput, Feed, ReleaseMarks, SelfPolicy, SelfUpdateSettings, SourceOrigin, UpdateSource } from '../shared/selfupdate';
+import { MAX_VERSION_LENGTH } from '../shared/versionfield';
+import { ShownError } from '../shared/shownerror';
 import type { FeedFailure, FeedGet, FeedTimer } from './netget';
 
 /** The settings store as the checker needs it (`SettingsStore` is one). */
@@ -144,6 +146,21 @@ export class SelfUpdater {
     store?.setUpdates({ lastCheck: latest === undefined ? { at } : { at, latest } });
   }
 
+  /** Is `v` exactly a version of main's last validated feed (FR-024)? */
+  hasVersion(v: string): boolean {
+    return this.result?.feed?.releases.some((r) => r.version === v) === true;
+  }
+
+  snooze(version: string): { ok: boolean; update: SelfUpdateView } {
+    const ok = this.d.store()?.setUpdates({ snooze: { version, until: this.d.now() + SNOOZE_MS } }) ?? false;
+    return { ok, update: this.view() };
+  }
+
+  skip(version: string): { ok: boolean; update: SelfUpdateView } {
+    const ok = this.d.store()?.setUpdates({ skip: version }) ?? false;
+    return { ok, update: this.view() };
+  }
+
   view(): SelfUpdateView {
     const i = this.input();
     const pv = selfPolicyView(i.policy);
@@ -162,4 +179,31 @@ export class SelfUpdater {
     else if (r) v.state = r.newer ? 'newer' : 'up-to-date';
     return v;
   }
+}
+
+/** The one refusal text of every forged call (FR-024): no echo of what was sent. */
+export const SELFUPDATE_REFUSED = 'Agent Durbar refused this update request.';
+const refuse = (): never => { throw new ShownError(SELFUPDATE_REFUSED); };
+
+/**
+ * FR-024: the handlers of `selfupdate:get`, `check`, `snooze(version)`, `skip(version)`. A channel that takes nothing refuses any argument; a
+ * version channel takes exactly one string of at most 64 characters equal to a version of main's last validated feed. Nothing is read from
+ * an argument before its type is checked, so a getter never runs.
+ */
+export function selfUpdateHandlers(checker: () => SelfUpdater | undefined) {
+  const none = (a: unknown[]): SelfUpdater => {
+    const c = checker();
+    return c && a.length === 0 ? c : refuse();
+  };
+  const version = (a: unknown[]): [SelfUpdater, string] => {
+    const c = checker();
+    const v = a[0];
+    return c && a.length === 1 && typeof v === 'string' && v.length <= MAX_VERSION_LENGTH && c.hasVersion(v) ? [c, v] : refuse();
+  };
+  return {
+    get: (...a: unknown[]) => none(a).view(),
+    check: (...a: unknown[]) => none(a).checkNow(),
+    snooze: (...a: unknown[]) => { const [c, v] = version(a); return c.snooze(v); },
+    skip: (...a: unknown[]) => { const [c, v] = version(a); return c.skip(v); },
+  };
 }

@@ -23,14 +23,14 @@
 ## P3: main checker (depends on P2)
 
 - [x] T009 `makeFeedGet` and `feedAllowed` in `src/main/netget.ts` beside (not inside) `makeLookupGet`/`lookupAllowed`; tests for a look-alike host, another slug, a query added, a 3xx, a body over 2 MiB, no `Authorization` header [FR-007, FR-025] (#2058; `test:` `scripts/test-selfupdate-feedget.ts`)
-- [ ] T010 `scripts/test-selfupdate-ipc.ts` first (forged arguments on every channel), then `src/main/selfupdate.ts`: scheduler, request, in-memory result, `updates.*` settings keys validated on read, version-only IPC channels through the IPC guard (`test:ipcchannels`), `updatePolicy()` hook; packaged builds only [FR-004, FR-005, FR-006, FR-021, FR-024]
+- [x] T010 `scripts/test-selfupdate-ipc.ts` first (forged arguments on every channel), then `src/main/selfupdate.ts`: scheduler, request, in-memory result, `updates.*` settings keys validated on read, version-only IPC channels through the IPC guard (`test:ipcchannels`), `updatePolicy()` hook; packaged builds only [FR-004, FR-005, FR-006, FR-021, FR-024] (three PRs: settings keys and abort, the checker, the four channels get, check, snooze, skip; not started before T014; `test:` `scripts/test-selfupdate-settings.ts`, `scripts/test-selfupdate-checker.ts`, `scripts/test-selfupdate-ipc.ts`)
 - [ ] T011 (D4 = override allowed, decided) Source override in main: read-first, native confirmation with the trust warning text of FR-003, *Use the built-in source*; the hand-edited-settings `[KNOWN GAP]` in `docs/safety.md` [FR-002, FR-003] 
 - [ ] T012 Simulator canned feed (up to date, update, breaking, mismatch) answering the same IPC [FR-020, SC-005]
 - [ ] T013 Spec 076 dated delta: FR-174 `auto` means "apply allowed with consent", `feedUrl` GitHub-only in this version [FR-005]
 
 ## P4: Update card and dialog (depends on P3)
 
-- [ ] T014 Settings > About card and More menu (⋯) line, one toast per version (`announceRule`), dialog with breaking card and tick box, snooze, skip; `textContent` only [FR-011, FR-016, FR-002]
+- [ ] T014 (adds `selfUpdater.start()` in `main.ts` with the switch, flipping the T010 *inert* assert) Settings > About card and More menu (⋯) line, one toast per version (`announceRule`), dialog with breaking card and tick box, snooze, skip; `textContent` only [FR-011, FR-016, FR-002]
 - [ ] T015 UI driver `selfupdate-dialog` (SC-004 hostile body, breaking tick gate, snooze/skip), screenshots at 1440x900 and 1280x800 with `DURBAR_SIM=15` [FR-011, SC-004]
 - [ ] T016 Docs: `docs/install.md` *Updates* and *For forks*, the checksum-limit text of FR-022 in `docs/install.md` and `docs/safety.md`, the macOS *Open Anyway* step (after the Mac session checks it), the privacy list of FR-006, README *Safety model*, `docs/safety.md`, `docs/features.md`, `docs/feature-inventory.md`, changelog fragment [FR-006, FR-022]
 

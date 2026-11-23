@@ -270,6 +270,7 @@
     "test:selfupdate-feed": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-selfupdate-feed.js",
     "test:selfupdate-feedget": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-selfupdate-feedget.js",
     "test:selfupdate-installtype": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-selfupdate-installtype.js",
+    "test:selfupdate-ipc": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-selfupdate-ipc.js",
     "test:selfupdate-notes": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-selfupdate-notes.js",
     "test:selfupdate-repo": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-selfupdate-repo.js",
     "test:selfupdate-schedule": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-selfupdate-schedule.js",
