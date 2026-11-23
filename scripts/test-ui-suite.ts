@@ -926,20 +926,41 @@ console.log('ui-suite: check-parallel and ui-suite install Electron once before 
     assert.ok(text.includes(`name: UI shard (\${{ matrix.os }} \${{ matrix.shard }}/${n})`), 'the job name shows i/n with the same denominator');
     assert.ok(/name: ui-shots-\$\{\{ matrix\.os \}\}-\$\{\{ matrix\.shard \}\}/.test(text), 'artifacts are named per shard');
     assert.ok(!/^\s+exclude:/m.test(text) && !/-\s*\{\s*os:\s*[\w-]+,\s*shard:\s*\d+\s*\}/.test(text), 'no OS skips a shard (macOS no longer runs 3)');
-    // the limits (delta 2026-11-23): macOS 65 minutes from its measured shards (about 49 min, 54 at every driver's slowest of six runs, + 12 min npm ci retries), the others 45
+    // the limits (delta 2026-11-23, review of PR 2071): the macOS limit is the one estimate of scripts/ui-shard-budget.js (measured terms:
+    // head start, driver weights x 0.94 x 1.10 slow night, 1 s per driver, 170 s setup/geometry/upload, npm ci's 720 s of retries, 5 % margin)
     const lim = text.match(/^ {4}timeout-minutes: \$\{\{ matrix\.os == 'macos-latest' && (\d+) \|\| (\d+) \}\}$/m);
     assert.ok(lim, 'the shard job limit is "matrix.os == \'macos-latest\' && <macOS> || <others>"');
-    assert.deepStrictEqual([Number(lim[1]), Number(lim[2])], [65, 45], 'macOS shards have 65 minutes, Linux and Windows 45');
-    // growth guard (delta 2026-11-23): the slowest macOS shard estimated from the committed timings (Linux and Windows means, about 8 % above
-    // macOS) plus shard 1's head start and 160 s per job (setup, theme geometry, upload) stays under 90 % of the macOS limit. A PR that adds
-    // enough drivers to cross it gets the macOS shard count or a timing refresh to fix, before a nightly is cut at its limit.
+    assert.deepStrictEqual([Number(lim[1]), Number(lim[2])], [70, 45], 'macOS shards have 70 minutes, Linux and Windows 45');
     {
-      const median = (() => { const v = Object.entries(times).filter(([k, x]) => !k.startsWith('_') && Number.isFinite(x)).map(([, x]) => x).sort((a, b) => a - b); return v[Math.floor(v.length / 2)]; })();
-      const est = Array.from({ length: n }, (_, i) => (shard(DRIVERS, `${i + 1}/${n}`, times, 'darwin') as Array<{ name: string; label?: string }>)
-        .reduce((a, d) => a + (times[d.label || ''] ?? times[d.name] ?? median), (i === 0 ? SHARD1_HEAD_START_SECS.darwin : 0) + 160));
-      const budget = 0.9 * Number(lim[1]) * 60;
-      const worst = Math.max(...est);
-      assert.ok(worst <= budget, `the slowest macOS UI shard is estimated at ${Math.round(worst)} s (shards: ${est.map(Math.round).join(', ')}), above 90 % of the macOS limit (${budget} s): add a macOS shard or refresh scripts/ui-suite-timings.json (spec 008 delta 2026-11-23)`);
+      const B = require(path.join(ROOT, 'scripts', 'ui-shard-budget.js')) as {
+        macosBudget: (o: { n: number; times: Record<string, number>; limitMin: number; retrySecs: number; drivers?: unknown[] }) => { shards: number[]; worst: number; need: number; allowed: number; ok: boolean };
+        macosLimitMin: (o: { n: number; times: Record<string, number>; retrySecs: number; drivers?: unknown[] }) => number;
+        macosShardSecs: (o: { n: number; times: Record<string, number>; drivers?: unknown[] }) => number[];
+        npmCiRetrySecs: (w: number[]) => number; actionRetryWaits: (t: string) => number[]; untimedWeight: (t: Record<string, number>) => number;
+      };
+      const retrySecs = B.npmCiRetrySecs(B.actionRetryWaits(fs.readFileSync(path.join(ROOT, '.github', 'actions', 'npm-ci', 'action.yml'), 'utf8')));
+      assert.strictEqual(retrySecs, 720, 'npm ci retries: waits 30+120+300 s and a 90 s failed try before each');
+      const limitMin = Number(lim[1]);
+      // growth guard: the slowest macOS shard plus npm ci's retries fits the limit less 5 %, and the limit is exactly what the estimate asks for
+      // (one source: a PR that adds enough drivers, or a timing refresh, that moves it gets the shard count or the limit to set)
+      const real = B.macosBudget({ n, times, limitMin, retrySecs });
+      assert.ok(real.ok, `the slowest macOS UI shard is estimated at ${real.worst} s (shards: ${real.shards.join(', ')}) + ${retrySecs} s of npm ci retries = ${real.need} s, above ${real.allowed} s (the ${limitMin}-minute limit less 5 %): add a macOS shard or raise the limit (scripts/ui-shard-budget.js, spec 008 delta 2026-11-23)`);
+      assert.strictEqual(limitMin, B.macosLimitMin({ n, times, retrySecs }), `the macOS limit in ui-platforms.yml (${limitMin}) is not what scripts/ui-shard-budget.js asks for (${B.macosLimitMin({ n, times, retrySecs })}): set it, or change the macOS shard count`);
+      // the reviewer's mutants of PR 2071 must trip the guard: every time x 1.25, and one more driver of 1,500 s
+      const x125 = Object.fromEntries(Object.entries(times).map(([k, v]) => [k, typeof v === 'number' ? v * 1.25 : v]));
+      assert.ok(!B.macosBudget({ n, times: x125, limitMin, retrySecs }).ok, 'guard: every driver 25 % slower trips it');
+      const heavy = { name: 'zz-heavy-1500' };
+      assert.ok(!B.macosBudget({ n, times: { ...times, 'zz-heavy-1500': 1500 }, limitMin, retrySecs, drivers: [...(DRIVERS as unknown[]), heavy] }).ok, 'guard: one more driver of 1,500 s trips it');
+      // each term of the sum, by hand (a fixture): shard 1 = [b, c, u]: ((100 + 40 + u 1000) x 0.94 + 600) x 1.1 + 3 x 1 + 170 = 2012;
+      // shard 2 = [a]: 1000 x 0.94 x 1.1 + 1 + 170 = 1205. u is untimed: max(mean 300, 75th percentile 1000) = 1000 (the split itself uses the median, 100).
+      // Dropping any term (the 0.94, the 1.10, the per-driver second, the 170 s, the head start, the untimed weight) changes these numbers.
+      const fx = [{ name: 'zz-a' }, { name: 'zz-b' }, { name: 'zz-c' }, { name: 'zz-u' }], ft = { 'zz-a': 1000, 'zz-b': 100, 'zz-c': 40, 'zz-d': 60 };
+      assert.strictEqual(B.untimedWeight(ft), 1000, 'an untimed driver weighs max(mean, 75th percentile) of the timed ones');
+      assert.deepStrictEqual(B.macosShardSecs({ n: 2, times: ft, drivers: fx }), [2012, 1205], 'the estimate sums every measured term');
+      const fb = B.macosBudget({ n: 2, times: ft, limitMin: 48, retrySecs: 720, drivers: fx });
+      assert.deepStrictEqual([fb.need, fb.allowed, fb.ok], [2732, 2736, true], 'need = slowest shard + npm ci retries; allowed = limit x 0.95');
+      assert.strictEqual(B.macosBudget({ n: 2, times: ft, limitMin: 47, retrySecs: 720, drivers: fx }).ok, false, 'one minute less does not fit');
+      assert.strictEqual(B.macosLimitMin({ n: 2, times: ft, retrySecs: 720, drivers: fx }), 50, 'the limit asked for: 2732 / 0.95 = 48 min, rounded up to 50');
     }
     // FR-183: one aggregate job, named UI suite complete, needs the shards, fails unless all passed, and runs even when a shard failed
     {
