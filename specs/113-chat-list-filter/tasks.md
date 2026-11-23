@@ -49,6 +49,18 @@
 - [ ] T028 `npm run typecheck && npm run build && npm test` once at the final `checks run at <sha>`.
 - [ ] T029 `/speckit.converge`: FR tags (`[IMPLEMENTED]` with `test:`/`sim:`, or `[KNOWN GAP]`), specs-index status, tasks ticked.
 
+## P6: Recent order (FR-040..FR-045)
+
+- [ ] T031 `DurbarRail.recent(items)` in `src/renderer/railorder.js` with unit tests (FR-041), mutant "order by agent time" fails.
+- [ ] T032 `youAt` stamped on your sends; load/save helper for `durbar.railYouAt` (cap 500, unknown ids, bad JSON), only with `railRemember()` and not in demo; a failed send does not stamp; a future value reads as now; checks that a session resumed by `wake` keeps its `a.id` (and a restored one after a restart), and records the result in FR-042 (FR-042).
+- [ ] T033 The Folders | Recent control (`.seg`, its own row under the field) in the filter row; fit measured at 180 px, 1440x900 and 1280x800 and `check-rail`'s scroll limit measured again; order kept in `durbar.railOrder` (FR-040, FR-044).
+- [ ] T034 `renderStrip` paints the flat Recent list with the folder name per row, `parent/name` for same-name folders, every new text through `safeMask` before `esc()` (FR-043); the filter applies; folds untouched.
+- [ ] T035 Driver cases in `check-rail-filter` for FR-040..FR-045 and SC-005 (including keyboard-only fold and unfold of the group), both sizes, every world, `railstore=1`.
+- [ ] T036 Screenshots `113-rail-recent-{1440x900,1280x800}.png`; docs rows (feature inventory, features.md, changelog fragment) extended.
+- [ ] T038 The "Not used since Durbar started" folded group and the per-row age in Recent; main's `startedAt` (`main.ts:1183`, not exposed today) added as a field of `AppSettingsView`, the answer of `getSettings()` (no new channel, not `sinceAway()`), the preload and `src/shared/api.ts` types, `test:ipcchannels` unchanged (FR-045); unit cases (`test:railorder`) and the `check-rail-filter` cases of T035 for FR-045.
+- [ ] T039 Spec 005 pointer delta in the P6 PR: FR-194's "a row moves only when a status changes, never with time" says that in *Recent* your own send also moves a row (spec 113 FR-041).
+- [ ] T037 `npm run typecheck && npm run build && npm test` once at the final `checks run at <sha>` of P6.
+
 ## Checks a person does (not CI)
 
-- [ ] T030 `[KNOWN GAP]` until done: VoiceOver and NVDA read the field, the count, the no-match line and the search row; the shortcut on a real Mac keyboard. No AI credits needed.
+- [ ] T030 `[KNOWN GAP]` until done: VoiceOver and NVDA read the field, the count, the no-match line and the search row; the shortcut on a real Mac keyboard; and, for P6, the Folders | Recent control's pressed state, the folded group's heading (`aria-expanded` and count) and the folder text in a row's accessible name. No AI credits needed.

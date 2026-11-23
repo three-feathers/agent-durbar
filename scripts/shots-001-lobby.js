@@ -112,7 +112,7 @@ module.exports = async (ctx) => {
       const first = boss.pv[0];
       await js(`document.querySelector('#stage .place.boss .pv[data-pvopen]').click()`);
       await H.until(`document.body.classList.contains('panel-open')`);
-      assert.strictEqual(await H.text('#panelTitle', 'textContent'), first.n.length > 2 ? first.n : await nameOf(first.id), `${w}: the entry opens that agent's chat`);
+      assert.strictEqual(await H.text('#panelTitle', 'textContent'), await nameOf(first.id), `${w}: the entry opens that agent's chat`);
       const inView = await H.until(`(()=>{const c=[...document.querySelectorAll('#chat .note.perm:not(.settled)')][0],ch=document.getElementById('chat');if(!c)return false;const r=c.getBoundingClientRect(),b=ch.getBoundingClientRect();return r.top>=b.top-2&&r.top<b.bottom&&(document.activeElement===c||c.contains(document.activeElement))})()`, 3000);
       assert.ok(inView, `${w}: the request is in view and focused`);
       await H.shot(path.join(OUT, `001-lobby-boss-chat-${w}x${h}.png`), { prep: 'calm' });

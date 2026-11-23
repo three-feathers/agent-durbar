@@ -162,6 +162,10 @@ Retired spec numbers, never to be reused for a new spec (`specs:check` and `--ad
 
 ## Changes
 
+### 2026-11-23: FR-119 and FR-179, the version PR also adds the `releases.json` entry (spec 118 FR-026)
+
+The version PR of FR-119 changes `package.json`, `package-lock.json` and `releases.json`: it adds the new version's entry (`breaking`, `notes`, `action`; spec 118 FR-026). `npm test` (`test:releases-json`) fails while the file has no entry for the version in `package.json` (a `-test.M` pre-release is exempt), so the version PR cannot land without it. FR-179's "a release bump edits only `package.json` and `package-lock.json`" reads with this file added. The tag-time check in `verify` comes with spec 118 T076 (after #2038). The steps are in `changelog.d/README.md` and the `durbar-release` skill.
+
 ### 2026-11-22: FR-104 exception for the npm test parts (spec 117 FR-018 delta)
 
 FR-104's "no `needs:`" gets one exception: `ci.yml` runs `npm test` in 2 parts per OS (`test-ubuntu`, `test-windows`, `test-macos`) and the required checks `Build and test (<os>)` are short Linux summary jobs that `needs` them (they fail on a failed, cancelled or skipped part). The parts start at once, like every other job. FR-106 is unchanged in effect: no macOS runner on pull requests or merge queue entries, the summary reports for macOS there. FR-193 holds in each part (build, no typecheck). Owner and evidence: spec 117 *Changes* 2026-11-22.
@@ -1218,3 +1222,6 @@ Follow-up of the 2026-11-20 delta above (PR #1970's proposal for the other focus
 
 `[KNOWN GAP]` Windows and Linux are not measured for this driver (CI's runners have other focus behaviour); one run alone, not several, on the Mac; what else was running on the Mac during the four-window runs was not checked.
 
+### 2026-11-22: `release.yml` waits for the tagged commit's green UI run (pointer; spec 117 FR-014, T045)
+
+`release.yml`'s new first job `ui-gate` refuses a tag unless the latest *UI on three OSes* run of exactly the tagged commit finished green; `verify`, `build` and `draft-release` run only after it. Rules, limits and evidence: spec 117 *Changes* 2026-11-22 *the release UI gate*. No FR here changes; the release checks of FR-117..FR-132 are kept as they are.

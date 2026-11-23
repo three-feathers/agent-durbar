@@ -51,6 +51,12 @@ if (fs.existsSync(path.join(srcDir, 'brainview'))) {
 }
 // spec 008 FR-179: the app version for the simulator's About label (sim.ts cannot import, and the page's CSP has no connect-src), so a release bump edits package.json only.
 fs.writeFileSync(path.join(outDir, 'appversion.js'), require('./appversion').appVersionScript(require(path.join(root, 'package.json')).version));
+// spec 118 FR-001 (T007): the update source this build follows (a fork's release build names the fork); the app reads only this file at run time.
+// An unparseable source stops the build. Needs `tsc` to have run (the one strict parser, dist/shared/selfupdate.js).
+{
+  const baked = require('./updatesource').writeUpdateSource(path.join(root, 'dist', 'main', 'updatesource.json'), process.env, require(path.join(root, 'package.json')), require(path.join(root, 'dist', 'shared', 'selfupdate.js')).parseRepoSlug);
+  console.log(`update source -> dist/main/updatesource.json: ${baked.slug} (${baked.origin})`);
+}
 // spec 111 T008: the shared team-template validator for the page (the simulator's fake of `teams:*` uses the very code main's store uses, so the form never
 // learns a rule the store refuses). The compiled CommonJS modules of dist/shared are wrapped, with their relative requires resolved inside one closure, into
 // one script that sets self.DurbarTeamCheck = {checkTeamTemplate, copyName, CHANGED_TEXT, MEMBER_ID_RE, nameKey, LIMITS}; the page's shared `self.exports` is not touched. Needs `tsc` to have run.
