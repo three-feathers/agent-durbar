@@ -22,7 +22,7 @@
 
 ## P3: main checker (depends on P2)
 
-- [x] T009 `makeFeedGet` and `feedAllowed` in `src/main/netget.ts` beside (not inside) `makeLookupGet`/`lookupAllowed`; tests for a look-alike host, another slug, a query added, a 3xx, a body over 2 MiB, no `Authorization` header [FR-007, FR-025] (branch `118-t009-feed-get`; `test:` `scripts/test-selfupdate-feedget.ts`)
+- [x] T009 `makeFeedGet` and `feedAllowed` in `src/main/netget.ts` beside (not inside) `makeLookupGet`/`lookupAllowed`; tests for a look-alike host, another slug, a query added, a 3xx, a body over 2 MiB, no `Authorization` header [FR-007, FR-025] (#2058; `test:` `scripts/test-selfupdate-feedget.ts`)
 - [ ] T010 `scripts/test-selfupdate-ipc.ts` first (forged arguments on every channel), then `src/main/selfupdate.ts`: scheduler, request, in-memory result, `updates.*` settings keys validated on read, version-only IPC channels through the IPC guard (`test:ipcchannels`), `updatePolicy()` hook; packaged builds only [FR-004, FR-005, FR-006, FR-021, FR-024]
 - [ ] T011 (D4 = override allowed, decided) Source override in main: read-first, native confirmation with the trust warning text of FR-003, *Use the built-in source*; the hand-edited-settings `[KNOWN GAP]` in `docs/safety.md` [FR-002, FR-003] 
 - [ ] T012 Simulator canned feed (up to date, update, breaking, mismatch) answering the same IPC [FR-020, SC-005]
