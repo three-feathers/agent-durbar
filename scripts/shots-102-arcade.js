@@ -46,6 +46,15 @@ const run = async (ctx, reqs) => {
   /* spec 102 T218 (SC-023): a session request log, as in check-097-crews.js: what the page really requests (a file:// page cannot report its own requests).
      The arcade's room is the night pair; the day pair (wall.webp, floor.webp) and welcome.webp must never be fetched. */
   const roomFetched = (name) => [...reqs.values()].filter((e) => new RegExp('/realoffice/worlds/retro/' + name + '\\.webp(\\?|#|$)').test(e.url));
+  /* spec 102 FR-406 made complete (issue 2055): with the HD switch on, no old file of the set's people is asked for or shown anywhere in the arcade (cabinet, lounge stool,
+     lobby visitor, avatars in the rail, the chat header, the inbox and the door; the helper strip draws the world's kids). The request log and every picture on the page */
+  const HD_ON = process.env.DURBAR_HD_PEOPLE === '1', OLD = /\/realoffice\/sets\/retro\/p\d\d-[^/?#]*\.webp/;
+  const noOld = async (tag) => {
+    if (!HD_ON) return;
+    const shown = await js(`[...document.querySelectorAll('img,image,source')].flatMap(i=>[i.getAttribute('src'),i.getAttribute('srcset'),i.getAttribute('href')]).filter(Boolean).flatMap(v=>v.split(/,\\s*/)).map(v=>v.trim().split(' ')[0]).map(v=>new URL(v,location.href).href)`);
+    const old = [...[...reqs.values()].map((e) => e.url), ...shown.map((u) => decodeURIComponent(u))].filter((u) => OLD.test(u));
+    assert.deepStrictEqual([...new Set(old)], [], tag + ': FR-406: with the switch on, no old picture of the set\'s people is fetched or shown');
+  };
   const loadArcade = async (w, h, n, query = {}) => {
     reqs.clear();
     await H.load({ w, h, query: { officeview: 'real', ...ARCADE, sim: String(n), ...query }, ready: REAL, settle: false });
@@ -308,6 +317,7 @@ const run = async (ctx, reqs) => {
     for (const f of ['wall', 'floor', 'welcome']) assert.deepStrictEqual(roomFetched(f).map((e) => e.url), [], tag + ': the day room\'s files are never fetched: ' + f + '.webp');
     await must(PICS, 'the pictures, after the room is ready'); /* spec 102 T282: a picture still loading is not a failed one; a failed one is complete with no size */
     assert.deepStrictEqual(await js(`[...document.querySelectorAll('#stage .ro img')].filter(i=>i.complete&&!i.naturalWidth).map(i=>i.getAttribute('src'))`), [], tag + ': every picture loads');
+    await noOld(tag);
     const art = await js(`(()=>{const L=window.__durbarSimUi.realLayout(),g=L.g,ro=document.querySelector('#stage .ro').getBoundingClientRect(),off=[];
       for(const e of document.querySelectorAll('#stage .ro-person,#stage .ro-cab')){const b=e.getBoundingClientRect(),x=b.left-ro.left,y=b.top-ro.top;if((e.getAttribute('src')||'').includes('/hd/')){const n=b.width*devicePixelRatio/e.naturalWidth;if(n<1-0.01||Math.abs(n-Math.round(n))>0.01)off.push('hd person '+e.getAttribute('src')+' '+b.width+' for '+e.naturalWidth);continue;}if(Math.abs(b.width/g-Math.round(b.width/g))>0.01)off.push(e.className+' w '+b.width);if(e.classList.contains('ro-cab')&&Math.abs(x/g-Math.round(x/g))>0.01)off.push('cab x '+x);}
       const px=getComputedStyle(document.querySelector('#stage .ro-person,#stage .ro-visitor')).imageRendering,cab=getComputedStyle(document.querySelector('#stage .ro-cab')).imageRendering;
@@ -639,6 +649,33 @@ const run = async (ctx, reqs) => {
   await must(`document.documentElement.dataset.world===undefined&&document.documentElement.dataset.ui===undefined`, 'the flat office: no world, the theme\'s UI style');
   assert.strictEqual(await js(`document.documentElement.dataset.dark===undefined`), true, 'leaving: the theme\'s light page');
 
+  /* spec 102 FR-406 made complete (issue 2055): the places a page load does not reach, with the switch on: the hover card (it draws no person; a request it made would show),
+     a chat (the rail and the header portrait) and the inbox; the lounge and a lobby visitor are on the page */
+  if (HD_ON) {
+    await loadArcade(1440, 900, 15, { simfreeze: '1' });
+    const reach = await js(`({lounge:document.querySelectorAll('#stage .ro-plate.lounge').length,visitors:document.querySelectorAll('#stage img.ro-visitor').length})`);
+    console.log('[102-arcade] FR-406 walk reaches', JSON.stringify(reach));
+    assert.ok(reach.lounge > 0 && reach.visitors > 0, 'FR-406: the walk reaches a lounge seat and a lobby visitor: ' + JSON.stringify(reach));
+    await noOld('FR-406 walk, 15 agents with the lounge and the lobby');
+    const c = await js(`(()=>{const r=document.querySelector('#stage .ro-plate:not(.lounge)').getBoundingClientRect();return {x:Math.round(r.left+r.width/2),y:Math.round(r.top+r.height/2)}})()`);
+    ctx.win.webContents.sendInputEvent({ type: 'mouseMove', x: c.x, y: c.y });
+    await must(`!!document.getElementById('roZoom')`, 'the hover card', 4000);
+    await noOld('FR-406 walk, the hover card');
+    ctx.win.webContents.sendInputEvent({ type: 'mouseMove', x: 2, y: 2 });
+    const id = await js(`window.__durbarSimUi.agents().filter(a=>!a.parent)[0].id`);
+    await js(`window.__durbarSimUi.crew.openPanel(${jsLiteral(id)})`);
+    await must(`!!document.querySelector('#roPortrait img')&&document.querySelectorAll('#stripList .sav img').length>0`, 'the chat header portrait and the rail\'s faces');
+    await noOld('FR-406 walk, a chat');
+    await js(`document.getElementById('backBtn').click()`);
+    await js(`document.getElementById('inboxBtn').click()`);
+    await must(`!!document.querySelector('#inboxDlg .inbox-dlg')`, 'the inbox');
+    await noOld('FR-406 walk, the inbox');
+    await js(`document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));0`);
+    /* Your door (its own flag, `door=1`): it opens at the start with agents waiting, its faces are the 24 px avatars */
+    await loadArcade(1440, 900, 15, { simfreeze: '1', door: '1' });
+    await must(`document.querySelectorAll('#doorFaces img').length>0`, 'Your door\'s faces', 10000);
+    await noOld('FR-406 walk, Your door');
+  }
   console.log('[102-arcade] PASS');
 };
 

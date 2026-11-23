@@ -19,7 +19,7 @@ export const CAPS = { person: 80 * 1024, fixture: 120 * 1024, desk: 60 * 1024, f
 /** spec 102 FR-213: all shipped art (every world and every set) at most this many bytes */
 export const SHIPPED_MAX = 30 * 1024 * 1024;
 /** spec 102 FR-393, FR-394, FR-397, FR-403 (issue #2055; owner 2026-11-23 14:59 UTC, FINE): the HD person set's limits */
-export const HD_PALETTE = 96, HD_HUE_DE = 15, HD_ORPHAN_MAX = 0.06, HD_PERSON_MAX = 450 * 1024, HD_HEAD = [0.27, 0.36], HD_HEAD_W = 36, HD_TILE_EDGE = 3, HD_TILE_FEAT = 15; /* FR-402: the crown is the top of the hair: a bun, an afro, a quiff or a hood measures taller than 0.31; the face is never enlarged for it */
+export const HD_PALETTE = 96, HD_HUE_DE = 15, HD_ORPHAN_MAX = 0.06, HD_ORPHAN_MAX_72 = 0.12, HD_PERSON_MAX = 450 * 1024, HD_HEAD = [0.27, 0.36], HD_HEAD_W = 36, HD_TILE_EDGE = 3, HD_TILE_FEAT = 15; /* FR-402: the crown is the top of the hair: a bun, an afro, a quiff or a hood measures taller than 0.31; the face is never enlarged for it */
 export const PERSON_MAX_H = 640;
 const KEYS = ['files', 'source', 'tool', 'date', 'made by', 'approved by', 'reference', 'prompt', 'cut', 'licence'];
 const CLAUSE = /fictional and must not resemble any real or famous person; no real person, celebrity, brand, logo or franchise is named/;
@@ -553,10 +553,10 @@ if (worldIds.includes('retro')) {
 // ---- spec 102 FR-391..FR-398 (issue #2055): the HD person set (sets/retro/hd/, `set.json` `hd`): every frame named, its size, lossless, inside its place; one palette, no speckle, the budget ----
 {
   const dir = path.join(RO, 'sets', 'retro', 'hd'), sj = JSON.parse(fs.readFileSync(path.join(RO, 'sets', 'retro', 'set.json'), 'utf8')) as { hd: { scales: number[]; people: Record<string, Record<string, Record<string, number[]>>>; tiles?: { sizes: number[]; poses: string[]; people: string[] }; ref?: Record<string, number[][]>; k?: Record<string, Record<string, number>> } };
-  /* FR-405: the six seated busts ship only as avatar tiles; the 14 standing and stool frames at three sizes */
+  /* FR-405: the six seated busts ship only as avatar tiles; the 14 standing and stool frames at four sizes (FR-406: s 1 for the lobby) */
   const POSES = ['type', 'book', 'knock', 'letter', 'counter', 'runA', 'runB', 'face-book', 'face-coffee', 'face-knock', 'face-letter', 'face-runA', 'face-runB', 'sit'];
   const SEAT = new Set<string>(), tallest = (p: string): number => (SEAT.has(p) ? 80 : p === 'sit' ? 72 : 72); /* grid px: a seated bust's canvas, a standing figure (FR-256) */
-  assert.deepStrictEqual(sj.hd.scales, [4, 3, 2], 'FR-391: the authored scales, the master first');
+  assert.deepStrictEqual(sj.hd.scales, [4, 3, 2, 1], 'FR-391, FR-406: the authored scales, the master first; s 1 (72) for the lobby');
   const named = new Set<string>(); let bytes = 0;
   for (const [pid, poses] of Object.entries(sj.hd.people)) {
     assert.deepStrictEqual(Object.keys(poses).sort(), [...POSES].sort(), `${pid}: all 14 standing and stool frames in HD`);
@@ -610,7 +610,7 @@ if (worldIds.includes('retro')) {
       palette: (m: M): string[] => (m.palette > HD_PALETTE ? [`${m.palette} opaque colours, at most ${HD_PALETTE}`] : []),
       alpha: (m: M): string[] => m.rows.filter((r) => r.alphas.some((a) => a !== 0 && a !== 255)).map((r) => `${r.name}: alpha ${r.alphas.join(',')}`),
       outline: (m: M): string[] => m.rows.filter((r) => r.edge !== 1).map((r) => `${r.name}: ${r.edge} outline colours`),
-      speckle: (m: M): string[] => m.rows.filter((r) => r.orphans / r.opaque > HD_ORPHAN_MAX || r.lone > 0).map((r) => `${r.name}: ${r.orphans} orphans of ${r.opaque} (${((100 * r.orphans) / r.opaque).toFixed(2)} %), ${r.lone} lone`),
+      speckle: (m: M): string[] => m.rows.filter((r) => r.orphans / r.opaque > (/@1\.webp$/.test(r.name) ? HD_ORPHAN_MAX_72 : HD_ORPHAN_MAX) || r.lone > 0) /* FR-406: at 72 px an eye or a button is one pixel, so the lobby's s 1 frames allow 12 % (the old 72 px frames: 29 % median, 52 % worst) */.map((r) => `${r.name}: ${r.orphans} orphans of ${r.opaque} (${((100 * r.orphans) / r.opaque).toFixed(2)} %), ${r.lone} lone`),
     };
     const files = [...named].sort().map((f) => path.join(dir, f)), all = measure(files);
     for (const [rule, f] of Object.entries(crisp)) assert.deepStrictEqual(f(all), [], `FR-403: the ${rule} rule holds on every HD frame`);
@@ -638,8 +638,8 @@ if (worldIds.includes('retro')) {
     assert.ok(sj.hd.k && Object.keys(sj.hd.k).sort().join() === Object.keys(sj.hd.people).sort().join(), 'FR-402: the head step is recorded for every HD person');
     for (const [pid, ks] of Object.entries(sj.hd.k!)) for (const [sheet, k] of Object.entries(ks)) assert.ok(k >= 1 && k <= 2, `FR-402: ${pid} ${sheet}: k ${k} (a face is never shrunk; at most doubled)`);
     assert.deepStrictEqual(hue(all.rows), [], 'FR-408: every person keeps their own colours');
-    const worst = Math.max(...all.rows.map((r) => r.orphans / r.opaque));
-    console.log(`HD palette ${all.palette} colours, worst orphan share ${(100 * worst).toFixed(2)} % (limit ${(100 * HD_ORPHAN_MAX).toFixed(1)} %)`);
+    const worstOf = (one: boolean): number => Math.max(...all.rows.filter((r) => /@1\.webp$/.test(r.name) === one).map((r) => r.orphans / r.opaque));
+    console.log(`HD palette ${all.palette} colours, worst orphan share ${(100 * worstOf(false)).toFixed(2)} % (limit ${(100 * HD_ORPHAN_MAX).toFixed(1)} %), at 72 px ${(100 * worstOf(true)).toFixed(2)} % (limit ${(100 * HD_ORPHAN_MAX_72).toFixed(1)} %)`);
     const tmp = fs.mkdtempSync(path.join(require('os').tmpdir(), 'durbar-hd-'));
     try {
       { /* FR-408 red case: a front frame with its colours turned round */

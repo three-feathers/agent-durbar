@@ -2497,9 +2497,10 @@ All sets keep FR-204's caps: no frame over 80 KB (largest 54 KB, Office), none o
 
   **Each size is snapped on its own from the generated source**: the source is quantised once, at full resolution, to the shared palette (FR-393), and every file pixel then takes the most common palette colour of its block of the source. No size is a resample of another pixel-art size, and none is scaled by the browser. This replaces the first pilot's rule, in which the smaller sizes were shrunk from the 288 master (owner, 14:27 UTC).
   - Files: `sets/retro/hd/<pid>-<pose>@<s>.webp`, lossless (VP8L), the same 20 poses as the old set.
-  - `set.json` gains `hd`: `{ "scales": [4, 3, 2], "people": { pid: { pose: { s: [w, h, fx, fy, fw, fh] } } } }`, in file px: the size and the face box.
+  - `set.json` gains `hd`: `{ "scales": [4, 3, 2, 1], "people": { pid: { pose: { s: [w, h, fx, fy, fw, fh] } } } }`, in file px: the size and the face box.
   - The build copies `hd/` with the set (`copy-assets.js`).
-  - While the switch is on, the arcade draws a person's HD frame **at a cabinet**. The lobby visitors, the lounge stool, the zoom, other worlds' `rows` and Flat's heads keep the old frames until the flip (FR-400 (c)). A person without HD frames keeps the old ones (the pilot has 3 of 15).
+  - While the switch is on, the arcade draws only HD art of its people: the cabinet, the lounge stool (`sit`), the lobby visitor (its pose and second running frame, at the visitor's own whole scale, feet on the same spot) and every avatar (FR-405); see FR-406. Other worlds' `rows` and Flat's heads keep the old frames (FR-405).
+  - A fourth size, **s 1 (72 px)**, is snapped the same way for the lobby, where a visitor stands at scale 1. It is drawn only where no larger file fits (`hdPick`), so a hall never blows it up.
   - Amends FR-254 for this set: one file pixel per **device** pixel times a whole number, not one per grid pixel.
 - **FR-392** **The size at any ratio.** With `D = g x devicePixelRatio` device px per grid px, the engine draws the authored scale `s` with the largest whole `n >= 1` such that `s x n <= D`, maximising `s x n` (a tie takes the larger `s`, the finer art). One file px is then `n` device px, the frame is `w x n / dpr` CSS px wide, on whole device px, with its feet on the plate.
   - At ratio 1: `g` 2, 3 and 4 draw 144, 216 and 288 exactly. `g` 5 (1 or 2 agents) draws the 288 frame 1:1, at 80 % of the place: no fourth size is authored, because 1 or 2 agents leave the hall mostly empty and a 360 px set would add a third more files (decision of the agent under FR-400 (a); tested).
@@ -2528,8 +2529,8 @@ All sets keep FR-204's caps: no frame over 80 KB (largest 54 KB, Office), none o
   - Off, the layout never sees the block: the hall is byte for byte the hall without it (the pinned arcade hash and a test), and every asset path is an old one.
 - **FR-400** **Gates and known consequences.**
   - (a) **Pilot checkpoints**: simulator pictures with the switch on go to the owner before any batch. Done three times (13:07, 14:27, 14:59 UTC). The final pilot's pictures are the record.
-  - (b) **The finished set** (15 people, all frames, every check above) is approved by the owner before the switch goes on.
-  - (c) **The flip** draws the HD frames everywhere the Retro pixel set is drawn (lobby, lounge, zoom, `rows`, Flat heads) and turns the switch's default on. It then **removes the old person frames fully: files, `set.json` keys, `ASSETS.md` sections, code, docs and tests** (owner rule 2026-10-31).
+  - (b) **The finished set** (15 people, all frames, every check above) is approved by the owner before the switch goes on. **Approved**: Vikram, Telegram, 2026-11-23 20:11 UTC (option 1: it goes in, is switched on for everyone, and the old arcade pictures are removed), recorded on issue #2055.
+  - (c) **The flip** turns the switch's default on (the arcade already draws only HD art behind it, FR-406); other worlds' `rows` follow. **Flat's heads** (owner, Telegram 2026-11-23 20:12 UTC, option 1, recorded on #2055): Flat shows the new faces too, one set everywhere; the old pictures of these 15 people are removed completely at the flip. It then **removes the old person frames fully: files, `set.json` keys, `ASSETS.md` sections, code, docs and tests** (owner rule 2026-10-31).
   - (d) **People have finer pixels than the cabinets.** A person's art pixel is one screen pixel; a cabinet's is `g`. Whether the cabinets are redrawn in the same finish is the owner's call, not decided (issue #2055).
 - **FR-401** **The status badge never covers an HD face.** It was found in the review of #2056: the `?` sat on the reader's mouth. The owner refined the rule at 14:59 UTC: above the head where there is room.
   - With an HD frame at a cabinet, the badge (`.ro-cue`, kept as a 32 x 16 box) stands **above the head**, 2 px clear, wherever the floor there is free of every folder sign, storey tag, cabinet, plate and other person (`hdBadgesUp`, after the signs have their final widths).
@@ -2557,7 +2558,7 @@ All sets keep FR-204's caps: no frame over 80 KB (largest 54 KB, Office), none o
   - The tiles use the same palette and alpha rule. Their edge is a cut through the body, so the one-outline rule applies to whole figures only.
   - Behind the switch, `avatar(a, view, ov, px)` and the chat portrait draw the tile of their own size 1:1, with the 2x tile in `srcset`. A size without a tile keeps today's crop.
   - The full busts (288/216/144) are not shipped. A test proves no bust is drawn larger than a 32 px avatar in the arcade (`shots-102-arcade`).
-  - Flat's heads (`crew.js` `HEAD_FRAME`, crops of this set's old `typeA`, `waveA` and `rest` files) are not changed: Flat keeps the old busts until the owner decides otherwise.
+  - Flat's heads (`crew.js` `HEAD_FRAME`, crops of this set's old `typeA`, `waveA` and `rest` files) are not changed: Flat keeps the old busts until the flip (T472), where it takes the tiles (owner, 2026-11-23 20:12 UTC).
   - `[KNOWN GAP]` at ratios 1.25 and 1.5 no tile is exact: the browser scales the 2x tile.
 - **FR-407** **Every person is equally readable as an avatar** (coordinator, 2026-11-23, after batch 1: the person with the dark afro was almost a dark blob at 22 px). Each tile is measured against the darkest avatar circle of the arcade (`#1e1a36`, `--surface-2`; the rail's `#262044` is lighter). Measuring and checking are done by `check-arcade-hd.py` and `test:realoffice-assets`:
   - **the silhouette's edge**: the better median contrast of the outline ring and the ring inside it, at least **3:1**;
@@ -2565,6 +2566,8 @@ All sets keep FR-204's caps: no frame over 80 KB (largest 54 KB, Office), none o
   - The build applies one decision per person, so a person never changes between poses: a person whose tiles fail the edge rule gets the lit-edge colour (the standing frames' rim) on the outline of all their tiles. Features too close to the skin take the darkest palette colour. Skin tones are never changed.
   - Red case: the lit edge taken off the typing tiles fails the rule.
 - **FR-406** **No silent fallback for an HD person.** An HD person's frame for every pose a state can ask for, at every authored scale, and every tile of every person in `hd.tiles` exist, or a test fails (`test-realoffice-aisles.ts`, `test-realoffice-assets.ts`). After the flip (T472), a requested HD frame or tile that is missing fails a test; it is never drawn as old art.
+  - **Made complete** (coordinator, 2026-11-23): with the switch on, no old picture of the set's people is drawn anywhere in the arcade. The places, listed from the code: the cabinet (`aislesLayout`), the lounge stool (`aisleSeat`), the lobby visitor (`roLobby`), the avatars (`roFace0`: rail, chat header, inbox, door, inbox header; FR-405 tiles), including the panel's `.avatar`, hidden in the Real office but still loaded, which now asks for its 32 px tile (the walk found it). The helper strip draws the world's kids (`helperHead`, spec 097 FR-370), and the hover card draws no person. With the switch off, all of it is byte for byte as before.
+  - Tests: `test-realoffice-aisles.ts` walks the cabinet, lounge and visitor of all 15 people at both sizes and both ratios with 3 and 15 agents, and fails on any old file. `shots-102-arcade` with the switch on fails if the page fetches or shows an old person file, at every case and after the hover card, a chat, the inbox and Your door (`door=1`).
 
 *Tests*:
 - `test-realoffice-aisles.ts`:
@@ -2594,7 +2597,6 @@ All sets keep FR-204's caps: no frame over 80 KB (largest 54 KB, Office), none o
 `[KNOWN GAP]`:
 - Not looked at on a real 1.25 or 1.5 screen (the rule is tested, the look is not).
 - macOS and Windows not run; no real session.
-- While the switch is on, the lounge stool, the lobby, the zoom and Flat's heads still draw the old frames (FR-391).
-- The lounge stool, the lobby, the zoom and Flat's heads draw the old frames until the flip (T472).
+- Flat's heads and other worlds' `rows` draw the old frames until the flip (T472).
 
-**Numbers** (`npm run specs:numbers`, `origin/main` and the open PR heads, 2026-11-23): FR-391..FR-408, T466..T473; no Q.
+**Numbers** (`npm run specs:numbers`, `origin/main` and the open PR heads, 2026-11-23): FR-391..FR-408, T466..T473, T501; no Q.
