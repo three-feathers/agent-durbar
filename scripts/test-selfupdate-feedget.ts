@@ -6,7 +6,7 @@
 import * as assert from 'assert';
 import { spawnSync } from 'child_process';
 import { randomBytes } from 'crypto';
-import { EventEmitter } from 'events';
+import { EventEmitter, getEventListeners } from 'events';
 import * as fs from 'fs';
 import * as path from 'path';
 import { feedAllowed, makeFeedGet, FEED_FAILURES, FEED_TIMEOUT_MS, FIXED_HEADERS } from '../src/main/netget';
@@ -202,8 +202,18 @@ async function main(): Promise<void> {
     const done = netWith(answer(200, '[]'));
     const ac2 = new AbortController();
     const r = await makeFeedGet(done.factory)(LIST, SLUG, ac2.signal);
+    assert.strictEqual(getEventListeners(ac2.signal, 'abort').length, 0, 'abort: no listener is left after a finished request (review of PR 2064, item 4)');
     ac2.abort();
     assert.ok(r.ok, 'abort: an abort after the answer changes nothing');
+    // the listener is removed on every kind of answer (review of PR 2064, item 4)
+    const listeners = (sig: AbortSignal): number => getEventListeners(sig, 'abort').length;
+    assert.strictEqual(listeners(ac.signal), 0, 'abort: no listener is left after an aborted request');
+    const ac3 = new AbortController();
+    const refused = await makeFeedGet(netWith(answer(200, '[]')).factory)('https://evil.example/x', SLUG, ac3.signal);
+    assert.ok(!refused.ok && listeners(ac3.signal) === 0, 'abort: no listener is left after a refused address');
+    const shared = new AbortController();
+    for (const [status, body] of [[200, '[]'], [404, ''], [301, '']] as [number, string][]) await makeFeedGet(netWith(answer(status, body)).factory)(LIST, SLUG, shared.signal);
+    assert.strictEqual(listeners(shared.signal), 0, 'abort: no listener is left after several requests on one signal (ok, a status, a redirect)');
   }
 
   // FR-004: 10 s limit, on a fake timer

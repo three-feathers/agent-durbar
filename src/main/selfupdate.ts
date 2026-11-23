@@ -5,7 +5,7 @@
  * of the version-only IPC channels (`ipc/selfupdate.ts` wires them; main.ts does not start the checker before T014). No Electron import:
  * `scripts/test-selfupdate-checker.ts` and `scripts/test-selfupdate-ipc.ts` run it.
  */
-import { cadenceDue, decodeUtf8Strict, feedUrl, isBreaking, manualCheckAllowed, parseReleasesJson, pickTarget, releasesJsonUrl, selfCheckOn, selfPolicyView, snoozeState, validateFeed, SNOOZE_MS } from '../shared/selfupdate';
+import { cadenceDue, decodeUtf8Strict, feedUrl, isBreaking, manualCheckAllowed, parseReleasesJson, pickTarget, releasesJsonUrl, selfCheckOn, selfPolicyView, snoozeState, validateFeed, parseUpdatesPatch, SNOOZE_MS } from '../shared/selfupdate';
 import type { Breaking, CadenceInput, Feed, ReleaseMarks, SelfPolicy, SelfUpdateSettings, SourceOrigin, UpdateSource } from '../shared/selfupdate';
 import { MAX_VERSION_LENGTH } from '../shared/versionfield';
 import { ShownError } from '../shared/shownerror';
@@ -143,7 +143,8 @@ export class SelfUpdater {
     this.result = { at, ...r };
     const store = this.d.store();
     const latest = r.feed ? r.feed.releases[0]?.version : store?.updates.lastCheck?.latest;
-    store?.setUpdates({ lastCheck: latest === undefined ? { at } : { at, latest } });
+    // a patch with a bad field is refused whole (FR-021): a feed version the strict rule does not take (leading zeros) is left out, the time kept
+    store?.setUpdates({ lastCheck: latest !== undefined && parseUpdatesPatch({ lastCheck: { at, latest } }) ? { at, latest } : { at } });
   }
 
   /** Is `v` exactly a version of main's last validated feed (FR-024)? */
