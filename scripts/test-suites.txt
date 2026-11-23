@@ -1,5 +1,5 @@
 # The suites `npm test` runs (scripts/run-tests.js), one `npm run` script name per line, in the order `npm run test:serial` runs them.
-# Add a new suite on its own line in the middle of the list, not at the end (two PRs appending at the end conflict). Blank lines and # comments are ignored.
+# Where a new suite goes: docs/development.md, Adding a test suite. Blank lines and # comments are ignored.
 test:safetext
 test:safetext-links
 test:safetext-links-labels
@@ -88,6 +88,7 @@ test:grantlabel
 test:floors
 test:mood
 test:retry
+test:review-profile
 test:compaction
 test:attention
 test:theme
@@ -128,12 +129,14 @@ test:gitstatus
 test:officeops
 test:uisuite
 test:cichanges
+test:fastlane
 test:pathdirs
 test:officialinstall
 test:checknames
 test:platforms
 test:checkpoints
 test:ipcchannels
+test:ipcthrow
 test:planmode
 test:probe
 test:logo-assets
@@ -163,6 +166,7 @@ test:modelchoice
 test:mcphealth
 test:globals
 test:runtests
+test:ci-required-suites
 test:runtestsreal
 test:theme-tokens
 test:slashcommands
@@ -234,7 +238,9 @@ test:supplychain
 test:electroncache
 test:claudecliunit
 test:rules
+test:fragments
 test:weeklyretro
+test:cistats
 test:docsscripts
 test:citypecheck
 test:worldmatrix
@@ -279,4 +285,6 @@ test:picturebudget
 test:chargroups
 test:dangersites
 test:specnumbers
+test:prpreflight
 test:pencilpark
+test:arcade-wall-signs

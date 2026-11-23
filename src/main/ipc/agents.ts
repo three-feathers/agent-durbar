@@ -6,7 +6,7 @@ import { historyOf } from '../../adapters/router';
 import type { AddResult, AgentInfo, PickedFile, ResumeResult, SessionOptions } from '../../shared/api';
 import { parseAmount, parseCapIn } from '../../shared/credits';
 import { revokeCallFor, revokeGrantFor } from '../../adapters/permissions';
-import { endSessionOp, errText, sessionOptsOf, setCapOp, setModeOp, stopTurnOp, validMode } from '../agentops';
+import { endSessionOp, sessionOptsOf, setCapOp, setModeOp, stopTurnOp, validMode } from '../agentops';
 import type { OpsDeps } from '../agentops';
 import { folderGitStatus } from '../gitstatus';
 import type { GitStatus } from '../gitstatus';
@@ -22,6 +22,7 @@ import type { createRemoteOps } from '../remoteops';
 import type { Scheduler } from '../schedules';
 import { listTargets, openInFirstEditor, openWith, ownedAgent, realDeps } from '../openwith';
 import type { AddWorkspace, EnsureLive, SendOp } from './types';
+import { failText } from '../ipcerror';
 
 export interface AgentsIpcDeps {
   /** Spec 080 FR-023: the session's browser view and partition are destroyed when it ends or is removed. */
@@ -176,7 +177,7 @@ export function register(deps: AgentsIpcDeps): void {
       const agent = await addWorkspace(wsKey(a), mode, { model: typeof o.model === 'string' ? o.model.slice(0, 100) : picked !== undefined && picked !== router.adapterIdOf(a.id) ? undefined : a.model, effort: asEffort(o.effort) ?? undefined, maxAiCredits: o.maxAiCredits === null ? null : parseAmount(o.maxAiCredits), adapterId: picked ?? router.adapterIdOf(a.id), readyIds });
       return { ok: true, agent };
     } catch (err) {
-      return { ok: false, error: errText(err) };
+      return { ok: false, error: failText(err, 'agents') };
     }
   });
   ipcHandle('agents:setCap', async (_e, id: unknown, credits: unknown) => {
@@ -195,7 +196,7 @@ export function register(deps: AgentsIpcDeps): void {
       await ad.resolveLimit?.(a.id, requestId, action);
       return { ok: true };
     } catch (err) {
-      return { ok: false, error: errText(err) };
+      return { ok: false, error: failText(err, 'agents') };
     }
   });
   // spec 099 FR-004: from Durbar's own window only; never MCP, remote control or a schedule. Validated, confirmed and refused in `autopilotops.ts`
@@ -246,7 +247,7 @@ export function register(deps: AgentsIpcDeps): void {
     try {
       await ensureLive(a);
     } catch (err) {
-      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+      return { ok: false, error: failText(err, 'agents') };
     }
     const c = continued.get(a.id);
     continued.delete(a.id);

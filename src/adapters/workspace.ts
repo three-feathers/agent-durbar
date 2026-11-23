@@ -1,5 +1,6 @@
 import * as fs from 'fs';
 import * as path from 'path';
+import { ShownError } from '../shared/shownerror';
 
 /** Strip // and /* *\/ comments and trailing commas (VS Code files are JSONC), respecting strings. */
 function parseJsonc(text: string): unknown {
@@ -47,8 +48,8 @@ export function resolveWorkspaceCwd(workspace: string): { cwd: string; folders: 
   if (st.isDirectory()) return { cwd: abs, folders: [abs] };
   if (abs.endsWith('.code-workspace')) {
     const folders = readCodeWorkspaceFolders(abs);
-    if (!folders.length) throw new Error(`No folders in workspace file: ${abs}`);
+    if (!folders.length) throw new ShownError(`No folders in workspace file: ${abs}`);
     return { cwd: folders[0], folders, workspaceFile: abs };
   }
-  throw new Error(`Not a folder or .code-workspace file: ${abs}`);
+  throw new ShownError(`Not a folder or .code-workspace file: ${abs}`);
 }

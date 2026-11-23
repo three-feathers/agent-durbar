@@ -15,6 +15,7 @@ import { validSignInEnd } from '../adapters/eventguard';
 import { SIGN_IN_MIN_TTL_MS, stepsHaveCommand } from '../shared/mcp';
 import { maskMcpError } from './mcpmask';
 import { BLOCK_STATES, canSignInAgainStatus, needsSignIn, validServerName } from './mcpsession';
+import { failText } from './ipcerror';
 
 /** FR-065: how long main keeps an address at most; the runtime's own listener ends on its own. FR-180: an entry with a `ttlMs` keeps its own, shorter limit. */
 export const SIGN_IN_TTL_MS = 10 * 60 * 1000;
@@ -308,10 +309,9 @@ export interface SignInDeps {
 
 const NOT_RUNNING = 'This session is not running. Send a message to start it, then sign in.';
 const UNKNOWN = 'Unknown agent or server.';
-const errText = (err: unknown): string => (err instanceof Error ? err.message : String(err));
 /** An error text for the window: every address is hidden (the runtime may quote the authorization address), then the usual MCP masks. */
 export function signInErrorText(err: unknown, secrets: readonly string[], fallback: string): string {
-  const s = errText(err).replace(/\b[a-z][a-z0-9+.-]{1,15}:\/\/\S+/gi, '[address hidden]');
+  const s = failText(err, 'mcp sign-in').replace(/\b[a-z][a-z0-9+.-]{1,15}:\/\/\S+/gi, '[address hidden]');
   return maskMcpError(s, secrets)?.trim() || fallback;
 }
 

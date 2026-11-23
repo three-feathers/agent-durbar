@@ -139,6 +139,30 @@ try {
     for (const bad of ['{"motion":true}', '{"motion":"false"}', '{"motion":0}', '{"motion":null}']) assert.deepStrictEqual(parseSettings(bad), {}, 'only false is kept: ' + bad);
   }
 
+  // spec 106 FR-060 (T426): Brain view is on by default (an unset value or an older file means on; only false is written); Brain motion Full is not written
+  {
+    const f5 = path.join(dir, 'brain', 'durbar-settings.json');
+    fs.mkdirSync(path.dirname(f5), { recursive: true });
+    fs.writeFileSync(f5, JSON.stringify({ version: 1, motion: false }));
+    const b = new SettingsStore(f5); b.load();
+    assert.strictEqual(b.brainView, true, 'a file without the key: Brain view on');
+    assert.strictEqual(b.brainMotion, 'full', 'and Brain motion Full');
+    assert.deepStrictEqual(b.setBrainView(false), { ok: true, value: false });
+    assert.strictEqual(JSON.parse(fs.readFileSync(f5, 'utf8')).brainView, false, 'off is written as false');
+    assert.strictEqual(b.motion, false, 'Brain view leaves Motion alone');
+    for (const junk of ['no', 0, 1, null, undefined, {}, [], 'false']) assert.deepStrictEqual(b.setBrainView(junk), { ok: false, value: false }, 'only a boolean changes Brain view: ' + String(junk));
+    assert.deepStrictEqual(b.setBrainMotion('still'), { ok: true, value: 'still' });
+    for (const junk of ['Still', 'fast', '', 0, null, undefined, {}, true]) assert.deepStrictEqual(b.setBrainMotion(junk), { ok: false, value: 'still' }, 'only full, calm or still: ' + String(junk));
+    const b2 = new SettingsStore(f5); b2.load();
+    assert.ok(b2.brainView === false && b2.brainMotion === 'still', 'both kept after a restart');
+    assert.deepStrictEqual(b2.setBrainView(true), { ok: true, value: true });
+    assert.deepStrictEqual(b2.setBrainMotion('full'), { ok: true, value: 'full' });
+    const raw = JSON.parse(fs.readFileSync(f5, 'utf8'));
+    assert.ok(!('brainView' in raw) && !('brainMotion' in raw), 'on and Full are not written');
+    assert.deepStrictEqual(parseSettings('{"brainView":false,"brainMotion":"calm"}'), { brainView: false, brainMotion: 'calm' });
+    for (const bad of ['{"brainView":true}', '{"brainView":"false"}', '{"brainView":0}', '{"brainMotion":"full"}', '{"brainMotion":"fast"}', '{"brainMotion":1}']) assert.deepStrictEqual(parseSettings(bad), {}, 'only off and Calm/Still are kept: ' + bad);
+  }
+
   // ---- spec 024 FR-018..FR-020 (issue #115): custom places ----
   {
     const realFs = require('fs') as typeof fs; // the store reads fs at call time, so patching the real module is seen by it

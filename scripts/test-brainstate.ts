@@ -854,6 +854,202 @@ assert.strictEqual(sentenceOf(s), s.sentence);
   for (const [label, chunks, v] of regress) assert.ok(!showsAny(chunks, v), `#1320 brain round 3: a cut right after the token hides the value (${label})`);
 }
 
+// spec 012 FR-190 (issue #1320): a value split across a line break after a secret name, streamed in pieces at random cuts. The brain reads it with the shared step,
+// so it is checked against the reading without it (`withoutContinuation`, the reading as before) run on the same pieces: no state shows a piece of the value that
+// the reference state hides, the whole text hides it, and the runs that show a piece mid-stream only go down. Invented values built from pieces.
+{
+  const v1 = 'Qz7' + 'Wx4' + 'Lk9' + 'Tb2';
+  const v2 = 'Rt3' + 'Mn8' + 'Pb5' + 'Hc6';
+  const val = v1 + v2;
+  const ps = Array.from({ length: val.length - 3 }, (_x, i) => val.slice(i, i + 4));
+  const states = (chunks: string[]): string[] => {
+    let st = feed(fresh(), [{ type: 'user' }], 1);
+    const out: string[] = [];
+    // the reference streams kept beside a stream (`ref`, `cref`: the readings with a step off, as on main) are left out: they are what the state is compared with
+    for (const delta of [...chunks.map((d) => ({ type: 'thinking', delta: d })), start('bash', { command: 'ls' })]) { st = feed(st, [delta], 1); out.push(JSON.stringify(st, (k, v) => (k === 'ref' || k === 'cref' ? undefined : v))); }
+    return out;
+  };
+  let seed = 1320;
+  const rnd = (n: number): number => { seed = (Math.imul(seed, 1103515245) + 12345) >>> 0; return (seed >>> 8) % n; };
+  let runs = 0, headRuns = 0, refRuns = 0, headLast = 0, refLast = 0;
+  const more: string[] = [];
+  for (const n of ['API_' + 'KEY=', '--to' + 'ken=', 'GH_' + 'TOKEN=', 'Authorization: ' + 'Bearer ', 'DB_' + 'PASSWORD=', 'X-Api-' + 'Key: ']) {
+    for (const [bk, b] of [['form 1', '\\\n'], ['form 2', '\\\r\n'], ['form 3', '^\r\n'], ['form 4', '\n'], ['form 5', '\r\n']]) {
+      const text = 'x ' + n + v1 + b + v2 + ' done';
+      const whole = states([text]);
+      assert.ok(!ps.some((p) => whole[whole.length - 1].includes(p)), `#1320 continuation brain: the whole text hides the value (${bk})`);
+      for (let k = 0; k < 30; k++) {
+        const cuts = new Set<number>();
+        const c = rnd(5);
+        while (cuts.size < c) cuts.add(1 + rnd(text.length - 1));
+        const pts = [0, ...[...cuts].sort((x, y) => x - y), text.length];
+        const chunks = pts.slice(1).map((q, i) => text.slice(pts[i], q));
+        const h = states(chunks);
+        const r = R.withoutContinuation(() => states(chunks));
+        runs++;
+        let hs = false, rs = false;
+        for (let i = 0; i < h.length; i++) {
+          const sh = ps.filter((p) => h[i].includes(p));
+          const sr = ps.filter((p) => r[i].includes(p));
+          if (sh.length) hs = true;
+          if (sr.length) rs = true;
+          if (sh.some((p) => !sr.includes(p))) more.push(`${bk} state ${i}`);
+        }
+        if (ps.some((p) => h[h.length - 1].includes(p))) headLast++;
+        if (ps.some((p) => r[r.length - 1].includes(p))) refLast++;
+        if (hs) headRuns++;
+        if (rs) refRuns++;
+      }
+    }
+  }
+  // review of PR 2001: streams of other shapes, cut at up to 8 places (a reference stream with the step off now runs beside the brain's own once a piece holds a line
+  // break), and two streams of the review: no state shows a word the same state with the step off hides
+  const U = String.fromCharCode(0x202e);
+  // a piece of 5 characters of an invented value (the views pick their lines differently, so a word around a mask is no measure; the value's pieces are)
+  const piecesOf = (vals: string[]): string[] => vals.flatMap((v) => Array.from({ length: Math.max(0, v.length - 4) }, (_x, i) => v.slice(i, i + 5)));
+  const lockStep = (chunks: string[], label: string, vals: string[]): void => {
+    const h = states(chunks);
+    const r = R.withoutContinuation(() => states(chunks));
+    const vp = piecesOf(vals);
+    for (let i = 0; i < h.length; i++) {
+      const extra = vp.filter((p) => h[i].includes(p) && !r[i].includes(p));
+      assert.deepStrictEqual(extra, [], `#1320 continuation brain: state ${i} shows no piece of a value the reading without the step hides (${label})`);
+    }
+  };
+  lockStep(['> ' + 'To' + 'ken ' + '4du65', 'mcCAwO\\\r\nOsSuKbLNmTbszQ\\\r\nk\\\r\n', 'l3wo8', 'v', 'WMw\r\n2. Second item'], 'review stream 1', ['4du65' + 'mcCAwO', 'OsSuKbLNmTbszQ', 'l3wo8' + 'vWMw']);
+  lockStep(['``', '`\n' + 'pass' + 'word', '=R1siWe' + U, '^\nQxlBLv' + U + '^\n', 'H6JaLk1s7d8hk/K3SnLoRwqxs4V', 'Ow='], 'review stream 2', ['R1siWe', 'QxlBLv', 'H6JaLk1s7d8hk', 'K3SnLoRwqxs4VOw']);
+  const shapes = ['> ' + 'To' + 'ken ' + v1 + '\\\r\n' + v2 + '\\\r\nk\\\r\n' + v1.toLowerCase() + '\r\n2. Second item', '``\n' + 'pass' + 'word=' + v1 + U + '^\n' + v2 + U + '^\n' + v1 + v2 + '/K3', 'x API_' + 'KEY=' + v1 + '\n' + v2 + '\n' + v1 + '\n- next', 'Bearer ' + v1 + '\r' + v2 + ' done'];
+  for (const [si, text] of shapes.entries()) for (let k = 0; k < 40; k++) {
+    const cuts = new Set<number>();
+    const c = 1 + rnd(8);
+    while (cuts.size < c) cuts.add(1 + rnd(text.length - 1));
+    const pts = [0, ...[...cuts].sort((x, y) => x - y), text.length];
+    lockStep(pts.slice(1).map((q, i) => text.slice(pts[i], q)), `shape ${si}, run ${k}`, [v1, v2, v1.toLowerCase()]);
+  }
+  assert.strictEqual(runs, 6 * 5 * 30, '#1320 continuation brain: every random cut was fed');
+  assert.deepStrictEqual(more.slice(0, 3), [], `#1320 continuation brain: no state shows a piece the reading without the step hides (${more.length})`);
+  // a ratchet, not zero: mid-stream a state can still show part of the value for a moment (FR-182's [KNOWN GAP]); the reading as before shows one in more runs
+  // after the next step too (a piece the brain kept before the step stays in its history, as on main)
+  assert.ok(headLast <= refLast, `#1320 continuation brain: after the next step no more runs show a piece than with the reading as before (${headLast}, before ${refLast})`);
+  assert.ok(headRuns < refRuns, `#1320 continuation brain: fewer runs show a piece than with the reading as before (${headRuns} of ${runs}, before ${refRuns})`);
+}
+
+// spec 012 FR-190 (review of PR 2001, round 2): a step target (command, URL, query) is masked twice (the shared mask, then the brain's own pass). With the step on, the
+// first mask already hides a value's middle line, so the second pass no longer read mask, middle and a short last line as one value, and the last line showed where
+// the reading as before hid it. The target is masked once more with the step off and shows nothing that reading hides (the brain's own `contBoth`), cut as the
+// view cuts it. Invented values, built from pieces.
+{
+  const targetOf = (tool: string, args: unknown): string => {
+    const st = feed(fresh(), [{ type: 'user' }, start(tool, args)], 1);
+    return currentStep(st)?.target ?? '';
+  };
+  const kinds: Array<[string, string, string]> = [['bash', 'command', 'command'], ['web_fetch', 'url', 'URL'], ['grep', 'pattern', 'query']];
+  let refHides = 0;
+  for (const n of ['PGPASS' + 'WORD=', 'API_' + 'KEY=', 'pass' + 'word: ']) for (const [bk, b] of [['form 1', '\r'], ['form 2', '\n'], ['form 3', '\r\n']]) {
+    for (const last of ['U6H' + '=', 'U6Hb' + '2k=', 'U6Hb' + '2kQ', 'zz' + '9']) {
+      const t = n + 'q9F8' + 'eDK6' + b + 'aV8za' + 'A5TaQ' + 'aGVR+4' + 'IO/Uu' + b + last;
+      const w = last.replace(/=$/, '');
+      for (const [tool, key, kn] of kinds) {
+        const ref = R.withoutContinuation(() => targetOf(tool, { [key]: t }));
+        const out = targetOf(tool, { [key]: t });
+        assert.ok(out !== '', `#1320 continuation brain target: the ${kn} target is not empty (${bk})`);
+        if (ref.includes(w)) continue;
+        refHides++;
+        assert.ok(!out.includes(w), `#1320 continuation brain target: the ${kn} target shows no short last line the reading without the step hides (${bk}, ${w.length}): ${JSON.stringify(out)}`);
+      }
+    }
+  }
+  assert.ok(refHides >= 24, `#1320 continuation brain target: the reading without the step hides the last line in the review's combinations (${refHides})`);
+  // review of PR 2001, round 3: the step's program word is read from the whole target kept the same way (the cut target is pinned above). With redact's masks no text
+  // was found where the program word differs (about 8,000 composed texts), so it is pinned with a mask whose reading with the step on shows a continued value's piece
+  // as the first word and whose reading without it hides it (the brain takes any mask; `BrainMask`)
+  {
+    const piece = 'Qz7' + 'Wx4' + 'Lk9';
+    let off = false;
+    const pm: BrainMask = {
+      ...mask,
+      withoutContinuation: <T,>(fn: () => T): T => { const was = off; off = true; try { return fn(); } finally { off = was; } },
+      maskSecretCommand: () => (off ? '[redacted] make' : piece + ' make'),
+    };
+    let st = brainState(initBrain('Ada', pm), { type: 'user' }, ++clock, pm);
+    st = brainState(st, start('bash', { command: 'API_' + 'KEY=' + piece.slice(0, 5) + '\n' + piece.slice(5) + ' make' }), ++clock, pm);
+    const step = currentStep(st);
+    assert.ok(step && step.target !== '', '#1320 continuation brain target: the stub command has a target');
+    assert.ok(!step!.program.includes(piece.slice(0, 6)), `#1320 continuation brain target: the program word shows no piece the reading without the step hides: ${JSON.stringify(step!.program)}`);
+    assert.ok(!step!.target.includes(piece.slice(0, 6)), `#1320 continuation brain target: the stub target shows no piece the reading without the step hides: ${JSON.stringify(step!.target)}`);
+  }
+  // the URL target takes the same union: redact's URL mask reads no value across the break before the brain's pass (no text of the review regresses there), so it is
+  // pinned with a mask whose URL mask reads the text as the command mask does (the brain takes any mask; `BrainMask`)
+  {
+    const um: BrainMask = { ...mask, maskSecretUrl: (u: unknown) => R.maskSecretCommand(u) };
+    const urlTarget = (u: string): string => {
+      let st = brainState(initBrain('Ada', um), { type: 'user' }, ++clock, um);
+      st = brainState(st, start('web_fetch', { url: u }), ++clock, um);
+      return currentStep(st)?.target ?? '';
+    };
+    for (const [bk, b] of [['form 1', '\r'], ['form 2', '\n'], ['form 3', '\r\n']]) {
+      const t = 'PGPASS' + 'WORD=' + 'q9F8' + 'eDK6' + b + 'aV8za' + 'A5TaQ' + 'aGVR+4' + 'IO/Uu' + b + 'U6Hb' + '2kQ';
+      const ref = R.withoutContinuation(() => urlTarget(t));
+      assert.ok(!ref.includes('U6Hb'), `#1320 continuation brain target: the reading without the step hides the URL's last line (${bk})`);
+      assert.ok(!urlTarget(t).includes('U6Hb'), `#1320 continuation brain target: the URL target shows no short last line the reading without the step hides (${bk}): ${JSON.stringify(urlTarget(t))}`);
+    }
+  }
+  // composed texts of the review on the command target (invented values, built from pieces): no listed piece shows; the one that hides more reaches further into a
+  // long command, so the cut target shows nothing the reading without the step leaves out of its own cut either
+  const rows: Array<[string, string]> = [
+    [['Run: T', 'oken g', '\u202e\\\u000d\u000av5', 'fMbDMi', 'Ns\u202e\\\u000d\u000a', '++xxB8', '1Og3D/', 'oMIAlX', 'vMj0mg', '" expo', 'rt e\u200b\\', '\u000d\u000ayJy3', 'dd7dI6', 'gwoSjU', '\u200b\\\u000d\u000aB4', 'JYv0.e', 'yJWjUh', 'q9Kf6A', 'pUHVwP', 'vOPVkA', 'HeLmM7', '1h.-Yy', 'gxnCEl', '\u200b\\\u000d\u000aa4', '6U_vw7', 'gFQWKU', 'HgJ5BW', 'p" && ', 'xoxb-0', '\u200b`\u000a134', '904208', '\u200b`\u000a96-', 'IZvUUV', 'p\u200b`\u000amv', 'jvilSh', 'B4WFxh', 'F2e\u000d\u000a2', '. Seco', 'nd ite', 'm Run:', ' s\u000a\u2060- ', 'k-proj', '-UR4Hn', 'GyAHVQ', 'xRrNnh', 'zntTbY', 'QCN\u000a\u2060-', ' c\u000a\u2060- ', 'cL2xdK', 'CRfbc5', 't \\\u000a  ', '--watc', 'h'].join(''), 'vjvi jvil vilS ilSh lShB ShB4 hB4W B4WF 4WFx WFxh FxhF xhF2 hF2e proj UR4H R4Hn 4HnG HnGy nGyA GyAH yAHV AHVQ HVQx VQxR QxRr xRrN RrNn rNnh'],
+    [['x eyJP', '2B^\u000d\u000a\u00ad', '> itfB', 'hGDa^\u000d', '\u000a\u00ad> KU', 'poK25e', 'B.eyJL', 'hvxfPP', 'vY4jUn', 'X5L9Q5', 'fUcXJ6', 'WTkow.', 't0LSYx', 'rSoSeN', 'p2QAm3', 'smsyf9', 'HDU_^\u000d', '\u000a\u00ad> CG', ' \\\u000a  -', '-watch', '\u000acurl ', '-H "?a', 'ccess_', 'token=', 'KMSXDV', 'OVROJG', 'MXXQWW', '\\\u000d  XE', 'IC\u000amys', 'ql -u ', 'root -', 'p21\u202e`\u000a', '338492', '53\u202e`\u000a8', '73170\u000a', '``` \\\u000a', '--toke', 'n _36b', '\u202e\u2029> 82', 'VJNeKu', '\u202e\u2029> u7', '1\u202e\u2029> 1', ' \\\u000a  -', '-watch'].join(''), '3170 82VJ 2VJN VJNe JNeK NeKu'],
+    [['1. git', 'hub_pa', 't_Lwne', '^\u000d\u000aedg', 'XBqPbq', 'TPsSha', 'dme_X5', '58yqYZ', '3sC94M', 'WYzVKx', 'SV86Kc', 'Jcl9xu', '5vxE1K', 'mC6Uee', '0aNXON', 'ao8moh', 'IAR &&', ' -p035', 'a035\\\u000d', '> b3e6', 'f51301', '79b4e4', 'c90ffe', 'a8fd89', '935\\\u000d>', ' f9bf5', 'b3\u000a\u000aok', ' expor', 't clie', 'nt_sec', 'ret=73', '41519d', 'c9588\\', '\u000d> 74f', '471ee4', '91\\\u000d> ', '0" \\\u000a-', '-token', '=62f\u00ad^', '\u000d\u000a- 98', 'b15c04', '3\u00ad^\u000d\u000a-', ' 0d\u00ad^\u000d', '\u000a- 3ee', 'eb33f8', 'eab6b1', 'f05273', ' done'].join(''), '1f05 f052 0527 5273'],
+    [['curl -', 'H "mys', 'ql -u ', 'root -', 'p711\u2060^', '\u000d\u000a\u200d   ', ' 65e8a', 'f8922c', '19a6c\u2060', '^\u000d\u000a\u200d  ', '  c225', '77b\u2060^\u000d', '\u000a\u200d    ', '966e44', '872fc1', 'e1ca\u000a`', '``\u000d\u000ax ', '$env:G', 'H_TOKE', 'N="DOF', '\u00ad\u000aXAOH', 'KXUGNX', 'BWYK\u00ad\u000a', 'OBVC\u000an', 'ext st', 'ep \\\u000ac', 'url -H', ' "$env', ':GH_TO', 'KEN="8', '4\ufeff`\u000a> ', '45\ufeff`\u000a>', ' 8\ufeff`\u000a>', ' 93921', '97'].join(''), '9392 3921 9219 2197'],
+    [['> ey\u200b\\', '\u000d\u000aJf85', 'yjBRfE', 'VYaaDs', '2\u200b\\\u000d\u000ao', '\u200b\\\u000d\u000aBK', 'r.eyJL', '9xJLnP', 'RmSbaZ', 'hF1fiB', 'DuUDHw', 'whyIW.', '_etMK7', 'ts68AH', 'bASa4h', 'Oge8hX', 'Zt250Q', ' \\\u000a  -', '-watch', '\u000a1. se', 't GH_T', 'OKEN=8', 'ac\u00ad\u000d\u000d\u000a', '  0\u00ad\u000d\u000d', '\u000a  9db', '2d94b2', 'a372c\u00ad', '\u000d\u000d\u000a  4', '1aa266', '1a21d8', '1898e7', '356 x ', 'AKIAHU', 'DLUKV\u200d', '\u000a\u000a\u202eUGG', 'ZZJE5W'].join(''), 'GZZJ ZZJE ZJE5 JE5W'],
+    [['Token ', '205bd1', '`\u000a> ad', '`\u000a> 84', 'f714e5', '2e428e', 'cce04d', '`\u000a> 1f', '61d8f6', ' done;', ' expor', 't --to', 'ken=ql', 'dwh\u200d\u2028-', ' ohwmn', '\u200d\u2028- df', 'a\u200d\u2028- a', '\u000d\u000a2. S', 'econd ', 'item\u000a\u000a', 'echo p', 'asswor', 'd: nf4', 'eZIq69', 'Nt4BqM', 'zPbU`\u000d', '\u000a\u0009IUcR', 'T7oPwy', '8Z6jU`', '\u000d\u000a\u0009=\u000an', 'ext st', 'ep\u000d\u000a- ', 'token:', ' pyyi4', 'cs3i\\\u000a', '\u200d  3kd', 'u542xy', '\\\u000a\u200d  h', 'kbgfg0', '5\u000anext', ' step'].join(''), 'hkbg kbgf'],
+    [['ghp_Ki', 'kZ61NK', 'og5LAL', 'nFhNtJ', '5xFrYO', '4X2gXK', '^\u000a- HP', 'Q8 don', 'e\u000a\u000aech', 'o secr', 'et=DSQ', 'ZKPQTZ', 'WEEF\u000d\u200d', '\u0009FKDQE', 'H\u000a\u000aok\u000a', '\u000aexpor', 't eyJV', '87BLQ6', 'cjQP9y', 'G2Hjxj', 'u.ey\u2060^', '\u000d\u000a> J6', 'SVwldd', 'SbeFVZ', '0iPDDR', 'NFEMaK', 'M3J9t.', '7jmFmn', 'Qx4XJ4', 'tAr\u2060^\u000d', '\u000a> GDu', 'T\u2060^\u000d\u000a>', ' H0tcm', '9IkRaM', '\u000a\u000aok\u000a\u000a', '```\u000ae\u202e', '^\u000d\u000a- y', 'JDz2Wp', 'DwNxXL', 'QIdmLe', 'v9z.ey', 'JVuza2', 'Wz8a4B', '2VbNjJ', 'frxlAG', 'rglVpn', 'v.kzFW', 'sXXmA9', '8EcvOd', '86rdc\u202e', '^\u000d\u000a- q', 'sw3LwC', 'Ko'].join(''), 'qsw3 sw3L w3Lw 3LwC LwCK wCKo'],
+    [['x "api', '_key":', ' "5474', '1\u200b`\u000d\u000a>', ' 26307', '25\u200b`\u000d\u000a', '> 0948', '\u000anext ', 'step &', '& echo', ' PGPAS', 'SWORD=', 'YNGMR\u202e', '\u2028XXYGE', 'SDXEW ', '\\\u000a  --', 'watch\u000a', 'echo e', 'yJ4geC', 'vw5\ufeff\\\u000d', '\u000aNZO5P', 'v87keI', 'sk.eyJ', 'wgkEHV', '\ufeff\\\u000d\u000aoH', 'KUEAOB', 'eqZ3qA', 'XFOvtJ', 'ej2Z.P', 'c61Ptd', 'gAB_Dt', 'yLZjdu', 'gueTSZ', 'RosyR ', 'done\u000d\u000a', 'Run: g', '\u0085- lpa', 't-99SC', 'MP2u1Y', 'rPUErx', 'F-zf"'].join(''), 'lpat 99SC 9SCM SCMP CMP2 MP2u P2u1 2u1Y u1Yr 1YrP YrPU rPUE PUEr UErx ErxF'],
+    [['```\u000amy', 'sql -u', ' root ', '-pBW\ufeff\u2028', '> HMK\ufeff', '\u2028> MD\ufeff', '\u2028> LWC', 'IIMQPH', '"; - a', 'ws_sec', 'ret_ac', 'cess_k', 'ey = 4', 'f28b4b', 'a\u00ad\\\u000d\u200b9', 'a92ab8', 'b94334', '1744d0', 'b8693b', '60a89f', 'acd202', 'c7\u000anex', 't step', ' && - ', 'github', '_pat_Z', 'jYxfL2', '7C\u200b\u000d\u200b ', '   G8q', 'IEw60N', 'T0rk_U', 'q\u200b\u000d\u200b  ', '  Cc3Y', 'CvXG0z', '\u200b\u000d\u200b   ', ' dil73', 'gT8bBc', 'IplD3g', 'WVTBP0', 'd1FHGi', 'ugvE93', 'WW6ztI', '3fhlbf'].join(''), '8bBc bBcI BcIp cIpl IplD plD3 lD3g D3gW 3gWV gWVT WVTB VTBP TBP0 BP0d P0d1 0d1F d1FH 1FHG FHGi HGiu Giug iugv ugvE gvE9 vE93 E93W 93WW 3WW6 WW6z W6zt'],
+    [['echo G', 'H_TOKE', 'N=099^', '\u000a66524', '03^\u000a51', '8\u000a\u000aok\u000d', '\u000aexpor', 't gith', 'ub_pat', '_pEhqm', 'M5ylkU', 'KnbY\\\u000a', '  mo6w', 'QnP_91', '3cAIEW', 'ohMdOd', 'EFiMTK', 'lODyrc', 'yjsdp0', 'J3wNte', 'ynITyW', 'xTXUYU', 'oZDQkp', '\\\u000a  GG', '4 \\\u000a  ', '--watc', 'h\u000atoke', 'n: 67f', 'fc\u200b\u000a\u202e-', ' 757a\u200b', '\u000a\u202e- 3a', 'ac884e', '\u200b\u000a\u202e- 2', 'c1b" &', '& Toke', 'n 07\u202e\\', '\u000a1105\u202e', '\\\u000a01\u202e\\', '\u000a36013', '536859', '59 \\\u000a ', ' --wat', 'ch'].join(''), '3601 6013 0135 1353 3536 5368 3685 6859 8595 5959'],
+    [['export', ' secre', 't=GB\ufeff\\', '\u000at\ufeff\\\u000aa', 'ShvrsJ', '9pB1kx', '9gwfMH', 'sPZmmc', '\ufeff\\\u000aR5o', 'jg8_Ay', 'q27 \\\u000a', '  --wa', 'tch\u000d\u000a>', ' --tok', 'en=Mr4', 'VbW\u200d`\u000a', '> 22Tb', 'rnAWCj', 'ujpn\u200d`', '\u000a> odK', '\u200d`\u000a> v', '7\u000a\u000aok\u000a', '> --pa', 'ssword', ' f3511', 'c\u200d\u000d\u000a3c', '56fe5f', '63e14 ', 'done c', 'url -H', ' "xo\ufeff\u2029', '\u0009xb-76', '655674', '9986-y', 'dpbxcu', 'vjUJZj', 'j4Q1An', 'SZhlP\u000a', '\u000aok'].join(''), '7665 6655 6556 5567 5674 6749 7499 4998 9986 ydpb dpbx pbxc bxcu'],
+    [['1. API', '_KEY=Y', 'WQAL\\\u000a', '> DPLO', 'DGCDJB', 'QWBW \\', '\u000a  --w', 'atch x', ' ghp_b', 'bm\u000d   ', ' DrGjq', 'yt7Wqg', 'vWaC2y', 'jgK1f\u000d', '    IR', 'efqSXz', 'BIc"\u000d\u000a', 'sk-pro', 'j-vdy\\', '\u000a\u202e> JZ', 'qobi8k', 'fHfCDE', 'edxVGS', 'W2j9di', 'B60Wrk', 'FOuY9\u000a', '\u000aok\u000a1.', ' g\u202e\\\u000d\u000a', '\u0009ithub', '_pat_D', 'SeGk0g', 'vO7unU', 'FcA1uR', 'IV6_HI', 'e7kzlE', 'VhoVNc', '0T2jYa', 'NNDKuo', '6zX2w\u202e', '\\\u000d\u000a\u00099Y', 'eWk19C', 'TsLYoY', '8B8PV9', '0hBtkf', 'O6 \\\u000a ', ' --wat', 'ch'].join(''), '9YeW YeWk eWk1 Wk19 k19C 19CT 9CTs CTsL TsLY sLYo LYoY YoY8 oY8B Y8B8 8B8P B8PV 8PV9 PV90 V90h 90hB 0hBt hBtk Btkf tkfO kfO6'],
+    [['Run: A', 'PI_KEY', '=CzPVk', '\u200d^\u000a  n', 'LO9\u200d^\u000a', '  s895', '8u-DUs', 's8\u000ax s', 'et GH_', 'TOKEN=', '5XS\ufeff\\\u000d', 'iPqdn0', 'VHrTU9', 'x5mj5S', '6rYiKx', 'Vp49Ek', 'Rj"\u000d\u000a-', ' AKIAS', 'XAR\\\u000a>', ' K2UJB', '\\\u000a> CO', 'UU2K5"', '\u000a- git', 'hub_pa', 't_o9EJ', 'KF0qhA', 't2POdQ', '25mlpk', '_xzQvx', 'mir\\\u000d\u000a', '\u00ad> q9A', 'cTVtOO', 'I8RlsQ', 'XIGWiL', 'pYbuD8', 'eyIb\\\u000d', '\u000a\u00ad> eN', 'n90hxP', 'C3S2Ui', 'GAuYK1', '"'].join(''), 'hxPC xPC3 PC3S C3S2 3S2U S2Ui 2UiG UiGA iGAu GAuY AuYK uYK1'],
+    [['export', ' API_K', 'EY=uXd', 'J7o\\\u000d\u000a', '- J/Rz', 'Mm8UR4', 'HnGy\\\u000d', '\u000a- AH=', ' \\\u000aRun', ': ghp_', '4ijamB', 'kf\u00ad`\u000d\u000a', 'hw\u00ad`\u000d\u000a', 'Q19V6h', 'jhDFi7', 'rK0V\u00ad`', '\u000d\u000ay5Ib', 'ZIeEBb', ' Run: ', 'x\u200b\u2029oxb', '-67447', '\u200b\u20295259', '968-W\u200b', '\u2029xuFV2', '4OjRJJ', 'WiiB2l', 'RJCXGZ', ' \\\u000a  -', '-watch', ' \\\u000ax x', 'oxb-68', '87\ufeff\u000a\u000a1', '973309', '8-DuXY', 'r1stm1', 'YjMllM', 'lWmLCE', 't4\u000anex', 't step'].join(''), '1YjM YjMl jMll MllM llMl lMlW MlWm'],
+    [['1. AKI', 'AEM\u200b^\u000d', '\u000a> BDL', 'Y7ACMJ', 'KTEM6 ', 'done\u000d\u000a', '```\u000aPG', 'PASSWO', 'RD=n52', 'qug003', 'efg5y1', 'o2hix4', '7sr\\\u000a-', ' o0"\u000ax', ' expor', 't OPEN', 'AI_API', '_KEY=6', '\u2060^\u000a\u0009A9', '0\u2060^\u000a\u0009E', 'zf3UU\u2060', '^\u000a\u0009gqz', 'b\u000a```\u000d', '\u000aeyJm6', 'ivGxVV', 'OjT7Sp', 'U6oKqq', '.eyJUC', 'QhhgVm', '2Ygcly', 'i9xmgj', 'H2PpHy', '\u2060\\\u000d\u000a  ', 'lqFl.e', 'UH5PXS', 'KDZVXU', 'FLtfIy', 'YANEjT', 'C-czR\u000d', '\u000a2. Se', 'cond i', 'tem'].join(''), 'VXUF XUFL UFLt FLtf LtfI tfIy fIyY IyYA yYAN YANE ANEj NEjT EjTC'],
+    [['```\u000aey', 'JQjDKr', 'QSP\u202e^\u000a', '\u2060  8o7', '6AvBuv', 'y\u202e^\u000a\u2060 ', ' V3.ey', 'JQSkxL', '7hqipX', 'OX9fbA', 'qRM1Kd', '19PofM', 'i.CDSE', '6xu5ND', 'DXn1d7', '0CHAf\u202e', '^\u000a\u2060  n', 'PDVg_h', 'Co" &&', ' > glp', 'at-\u200d\\\u000a', 'HJY2Ic', 'zX\u200d\\\u000aM', 'uG0tqM', '\u200d\\\u000aaI9', 'DV\u000anex', 't step', '; expo', 'rt OPE', 'NAI_AP', 'I_KEY=', 'ca0\u200b\u000d\u000d', '\u000a64468', 'c\u200b\u000d\u000d\u000a5', '97e950', '7e6f3e', '\u000a\u000aok'].join(''), '597e 97e9 7e95 e950 9507 507e 07e6 7e6f e6f3 6f3e'],
+    [['github', '_pat_x', 'Fa\u200b`\u000a>', ' E4nDP', '1\u200b`\u000a> ', 'ocq7cj', 'lR0Psp', 'R_vuOR', 'ZXvr9m', 'G4uk3h', 'PdzNIT', 'STOpqj', '3GzWzI', 'TAVVQD', 'Mulec3', 'oqpXmP', 'E\u200b`\u000a> ', '1zKMWp', '\u000a``` &', '& echo', ' sk\u202e^\u000a', '-proj-', 'UgNUFG', '9__\u202e^\u000a', 'lEZOaO', 'f-AGNa', '1ZfvTz', 'RJ3Aez', '8r\u202e^\u000aD', '7_h8\u000an', 'ext st', 'ep exp', 'ort "a', 'pi_key', '": "mV', 'Uy\u200b\u2028  ', '  DV0i', 'EoPDI6', 'igp2oG', 'EJf\u200b\u2028 ', '   7 d', 'one\u000a\u000aR', 'un: X-', 'Api-Ke', 'y: C\u000d\u000d', '\u000a\u0009AOK\u000d', '\u000d\u000a\u0009UCO', 'Y\u000d\u000d\u000a\u0009M', 'JXXGF\u000a', '```'].join(''), 'mVUy'],
+    [['echo A', 'PI_KEY', '=Ly`\u000a-', ' CCdk7', 'CIhbCY', '`\u000a- CO', '9Zm4 \\', '\u000a- "ap', 'i_key"', ': "y2p', 'ZbGon8', 'AuUiAm', 'eYi-\u200b\\', '\u000d\u000a\u200b_rB', 'gzn654', 'Y5 \\\u000a ', ' --wat', 'ch && ', 'x --pa', 'ssword', ' 9rwfy', '\u200b\u000dfiID', 'D5A\u200b\u000d6', 'P\u200b\u000duRL', 'Inb do', 'ne && ', 'sk-\u202e\u000d\u000a', '\ufeff  pro', 'j-Mnvn', 'qLsmF5', '9O6eer', 'llKJi\u202e', '\u000d\u000a\ufeff  8', '-zMN22', 'AF\u202e\u000d\u000a\ufeff', '  teaQ', 'g22ZLL', ' \\\u000a  -', '-watch'].join(''), 'aQg2 Qg22'],
+    [['Run: a', 'ws_sec', 'ret_ac', 'cess_k', 'ey = 7', '722215', '31\u202e^\u000d\u000a', '025129', '75706\u000d', '\u000a2. Se', 'cond i', 'tem; g', 'lpat\u2060\u000a', '\u000a    -', 'kQ5Qqo', 'HM_\u2060\u000a\u000a', '    b5', 'B9VL7B', 'C\u2060\u000a\u000a  ', '  4F c', 'url -H', ' "gith', 'ub_pat', '_5C0da', 'a6XcNS', '2\u202e^\u000a- ', 'zlcYQC', 'Vt6k_S', 'iDWKsI', 'FlHHyV', 'CyX7H8', 'C9oKeq', 'I4MyQM', 'En\u202e^\u000a-', ' vn0hj', 'EpKwfh', 'K0mf8a', 'Y8UX\u202e^', '\u000a- MiB', '14\u000a\u000aok'].join(''), 'MiB1 iB14'],
+    [['PGPASS', 'WORD=U', 'rMMV6l', '\ufeff\u2028    ', '7ul92b', '5u4" c', 'url -H', ' "--pa', 'ssword', ' DRk-\ufeff', '\u000aXk6Um', 'pRqtqH', 'qo06\u000a`', '``; ec', 'ho gi^', '\u000d\u000a\u200b  t', 'hub_pa', 't_csci', '2aQup3', 'GNQAow', 'yxuuF3', '_uKhX8', '^\u000d\u000a\u200b  ', 'fXrY54', '1nEQfR', 'vn8snf', 'V3Qj^\u000d', '\u000a\u200b  fr', 'JM4moT', 'YH9eEa', 'BVEzZJ', '3l1Hjd', 'TPewI3', '" gith', 'ub_pat', '_Bb9nE', '5FSQje', 'nwZnwg', 'aT1Kr_', 'WcBAKG', 'kP2SMd', 'woFlE1', 'Zj0GEX', 'ALt0gS', '75Nps\u200d', '\u2029- yIt', '0RtLIJ', 'gvtzmO', 'RlnDtL', 'YgA"'].join(''), 'It0R t0Rt 0RtL RtLI tLIJ LIJg IJgv Jgvt gvtz vtzm tzmO zmOR mORl ORln RlnD lnDt nDtL DtLY tLYg LYgA'],
+    [['echo A', 'PI_KEY', '=3QmSz', '+z534t', 'a`\u000d\u000a/L', 'xiGDb9', 'JrHW`\u000d', '\u000aE don', 'e; x g', 'ithub_', 'pat_Gt', 'a\u00ad^\u000ajH', 'YXAZSx', '2JRyRE', 'A300F_', 'aybBc5', 'EfF6uk', 'LT3fkI', 'ZjoTTr', 'F8g50p', '0dNhrE', '\u00ad^\u000a14M', 'AdssUD', 'iT1ZTh', 'vB3xwY', 'xg\u000a\u000aok', ' && ex', 'port s', 'k\u000a\u000a\u2060-p', 'roj-d0', '27iyyN', 'Ur\u000a\u000a\u2060y', '4RLyIy', '-tJWwg', 'GXMGM\u000a', '\u000a\u2060S_dn', 'j0fimZ', 'JL"'].join(''), 'dnj0 nj0f j0fi 0fim fimZ imZJ mZJL'],
+    [['1. xox', 'b-6305', '132901', '97-gO\u202e', '\\\u000ddXvl', 'FdsyMw', '6DlXZ7', 'R6\u202e\\\u000dL', '4Py"\u000ax', ' ghp_X', '4JWGxy', 'iZ\\\u000d  ', 'gop365', 'kVHEOA', 'N3pFOg', 'Zpi\\\u000d ', ' T1d\\\u000d', '  veu\u000a', '\u000ax $en', 'v:GH_T', 'OKEN="', '5M4Ud8', 'fh35l\u000d', '\u000aDTv \\', '\u000a- git', 'hub_pa', 't_V\u202e^\u000d', '\u000a> 2a3', 'haCbKy', 'w74JsI', 'ppU2YY', '_JHOum', '4T0Aes', 'l7vzgZ', 'a0rlt6', 'CzYqiY', '6si2OY', 'GvXLsv', 'vov6QH', 'NCAU5E', 'Eksava', ' \\\u000a  -', '-watch'].join(''), 'XLsv Lsvv svvo'],
+    [['> eyJE', 'ttlMsN', 'NLhzxS', '8oGAtn', '\u202e\\\u000d\u000a\u2060N', '.eyJNL', 'xs5KVO', 'V8RPGB', 'mFURk1', 'tinea5', 'iwZQ.w', 'Z16pw5', 'ziYMzp', 'vZ2IPN', '6LVT5A', 'cZwxC ', '\\\u000a  --', 'watch ', '\\\u000a1. A', 'KIA4SJ', 'GRF`\u000d\u000a', '\u200d33P7N', 'V`\u000d\u000a\u200dT', 'M2`\u000d\u000a\u200d', '7 done', ' 1. se', 'cret=0', 'hQIQTi', 'hwe/\u2060`', '\u000ahQOA0', 'rvEG+\u2060', '`\u000aM\u2060`\u000a', '= \\\u000a  ', '--watc', 'h\u000a\u000a--p', 'asswor', 'd 1089', '686\u200d^\u000d', '\u000a> 084', '42\u200d^\u000d\u000a', '> 620\u200d', '^\u000d\u000a> 5', '158"'].join(''), '5158'],
+    [['> eyJ\u00ad', '\\\u000dG0gr', 'HYwc4B', 'gGqAbn', 'zhOT.e', 'yJEqJp', '1OSJAA', 'OI4U8q', 'GsujRl', 'ylTWjG', 'kV.\u00ad\\\u000d', '58u-DU', 'ssIwDk', '0L_Czi', 'riwxVf', 'Y0HWXn', '\u000a```\u000a-', ' eyJ5G', 'EvCYe7', '5t6PwU', '7z3Yq0', '.eyJ6r', 'xtCpEW', 'ctIVwm', 'ezhQIW', 'AQEd9h', 'dJac.2', 'csA_qn', 'U5mJUC', '9ON\u202e\u000a\u000a', '0b0Lss', '1aFbOF', 'dW"\u000ax ', 'ghp_vV', 'YMqIlb', 's6xq4S', 'kt\ufeff`\u000aB', 'a9kHWK', 'SiJqz1', 'xQ73PS', 'h \\\u000aX-', 'Api-Ke', 'y: 74\u200d', '\u000d\u000d\u000a- 8', '\u200d\u000d\u000d\u000a- ', '22092\u200d', '\u000d\u000d\u000a- 6', '19809\u000a', 'next s', 'tep'].join(''), '2209 2092 6198 1980 9809'],
+    [['export', ' token', ': Uckp', '5x12Uo', 'REBv1e', 'bwdR/Y', 'EpJTnx', '\u000aVMC2+', 'wRFhrP', 'nap6rE', '=\u000anext', ' step ', '\\\u000acurl', ' -H ""', 'api_ke', 'y": "x', 'QKRMY1', 'uQ5VaJ', 'QZTC4s', 'TJP5Wo', 'vtar1z', 'Zg85Q\u000d', '\u000a\u0009Rip7', 'LB\u000aRun', ': API_', 'KEY=hd', '157\u202e^\u000d', '\u000avt60t', 'ipxx13', 'upzc6t', 'lwq1 \\', '\u000a  --w', 'atch\u000d\u000a', 'echo g', 'ithub_', 'p\u00ad^\u000a  ', '  at_i', 'Ya3hqM', 'GiZAU2', 'efjJN2', 'Ty0_H5', 'tI4tMQ', 'sYGgmG', 'UkwBvr', 'GP10V4', 'CpFgcC', 'fems2s', 'LcShRa', 'Lc14ez', 'lbs8jw', 'HLs\u000a``', '`'].join(''), 'I4tM 4tMQ tMQs MQsY QsYG sYGg YGgm GgmG gmGU mGUk GUkw UkwB kwBv wBvr BvrG vrGP rGP1 GP10 P10V'],
+    [['curl -', 'H "xox', 'b-6636', '8427\u200b\u000a', '\u000a  400', '9-60jv', 'QtPRqA', 'YbMlXy', 'IO5FPp', 'cY \\\u000a ', ' --wat', 'ch && ', 'Run: g', 'hp_\u200d\\\u000a', '\u2060xdo8B', 'xNLZ7c', 'y0qk\u200d\\', '\u000a\u2060DXLj', 'bTSnIp', 'uN4X5\u200d', '\\\u000a\u2060wvU', 'Fsj do', 'ne\u000a\u000aex', 'port -', '-token', ' ZUTCL', 'DOUSL\u0085', '- NTPU', 'OFVWV\u0085', '- FD\u0085-', ' FG Ru', 'n: "ap', 'i_key"', ': "pAa', 'Y38vLp', 'x\ufeff\u000d\u000d\u000a-', ' tF7r\ufeff', '\u000d\u000d\u000a- x', 'y0'].join(''), 'tF7r'],
+    [['export', ' expor', 't OPEN', 'AI_API', '_KEY=8', '737\u000a- ', '405886', '66\u000d\u000a2.', ' Secon', 'd item', ' && --', 'passwo', 'rd yRw', 'whNAi\u000a', 'iXYgQc', '03IIP\u000a', 'zmH\u000amf', 'GE1JDs', '476rrC', 'H==\u000d\u000ax', ' eyJoa', 'FtZmtW', '0hfZyI', 'ecbjDE', '.eyJr0', '82ZEJe', 'Q0H92K', '\\\u000a\u0009Cus', 'QV\\\u000a\u0009D', 'pjtgKs', 'aUEl.-', 'rId6NI', 'mRSBYv', '4_QA5O', 'pvS5Bq', '_\\\u000a\u0009Ny', 'a7 \\\u000a ', ' --wat', 'ch\u000d\u000acu', 'rl -H ', '"sk-pr', 'oj-loy', '^\u000a\ufeff74-', 'IK9VeR', '-LeMI6', '^\u000a\ufeff12n', '_PMn1X', 'KT66s4', 'okuicB', 'L'].join(''), 'Nya7'],
+    [['```\u000a?a', 'ccess_', 'token=', 'P0zt\u2060\\', '\u000d\u000a\u200b> D', 'gf3w2R', 'giS1ll', 'Q5CELH', 'zMgM0J', 'rzAHIq', 'URSb==', ' \\\u000a  -', '-watch', ' \\\u000aexp', 'ort -p', 'v92mmo', 'ogn\u202e\\\u000d', '\u000a\ufeff\u0009unk', 't250i5', '\u202e\\\u000d\u000a\ufeff\u0009', 'etsns3', 'cgh2h\u202e', '\\\u000d\u000a\ufeff\u00093', '\u000d\u000a2. S', 'econd ', 'item\u000a\u000a', '```\u000a--', 'token=', 'dykuwv', 'loq`\u000d\u000a', '\u2060    z', 'yagkn`', '\u000d\u000a\u2060   ', ' dsrq\u000a', 'export', ' AKIA\u2060', '\u000a\ufeffNIZI', 'QK6W2M', 'IKXJC7', '\u000d\u000a2. S', 'econd ', 'item'].join(''), 'NIZI IZIQ ZIQK'],
+    [['echo p', 'asswor', 'd=qEJz', '\u200d\\\u000a- k', 'ZEo8sK', 'x8aHJw', '8ntmxV', 'ZoT\u200d\\\u000a', '- -JDA', 'O5DRxk', '8 done', '\u000d\u000aRun:', ' GH_TO', 'KEN=76', 'd5c\\\u000d\u2060', '065be7', 'f1bdf9', '5\u000a```;', ' 1. se', 'cret=4', '27\u2028350', '995796', '35663\u000a', '\u000aok\u000d\u000ae', 'xport ', 'sk-pro', 'j-GqVe', '44sNYu', '\u202e`\u000awJU', 'ItvWBv', 'bKWCpe', 'Dx08EJ', 'ZRVW0I', 'xkh'].join(''), '8EJZ EJZR JZRV ZRVW RVW0 VW0I W0Ix 0Ixk Ixkh'],
+    [['--toke', 'n 316d', 'de\u202e\u2029cf', '60\u202e\u202983', 'b3678\u000a', 'next s', 'tep \\\u000a', 'echo e', 'yJvMek', 'd6LC0M', 'Bzkk0G', '6IzH.e', 'yJ\u2028hHx', 'uE0SUC', 'Rs9YRO', 'PIIrOD', 'cVutoQ', 'juT.zG', 'dV\u2028uzx', 'Gev6ty', '4DlVIa', 'MybJ82', 'vcSM-\u000d', '\u000aexpor', 't secr', 'et=td9', 'yhzdst', 'o4\u200b\\\u000du', '\u200b\\\u000d6a8', ' done;', ' x git', 'hub_pa', 't_HEEz', 'RoYxLC', 'Xr1ADi', '3t40Dr', '_jL\u200d\u000d\u000d', '\u000a> isJ', 'LJ9O5Z', '5d2e4Y', 'VcBxA\u200d', '\u000d\u000d\u000a> M', 'sHz0hR', '3dVPxp', 'NnDMcu', 'noctsz', 'D8wp3F', 'Cx9hVx', ' \\\u000a  -', '-watch'].join(''), '8wp3 wp3F p3FC 3FCx FCx9 Cx9h x9hV 9hVx'],
+    [['ey\ufeff\\\u000aJ', 'he598k', 'Q9N3J6', 'ea3mbF', 'lS.eyJ', 'PARfHC', 'mfRFt1', 'rQkqYc', 'R\ufeff\\\u000a7j', 'JrxAPW', 'ToB.Ez', '105cXC', 'PK_DAJ', 'IiJkQN', 'mox\ufeff\\\u000a', 'tShIxL', 'a\u000a```;', ' curl ', '-H "To', 'ken LR', '40\\\u000d  ', 'RI\\\u000d  ', 'paBzj5', 'INyuST', 'iU\\\u000d  ', 'K\u000a\u000a- c', 'lient_', 'secret', '=8dPZo', 'pvg6fV', '\u00ad`\u000a2o\u00ad', '`\u000atQ0Q', 'VEXWyt', 'zYmU\u000a`', '``\u000a\u000a1.', ' "api_', 'key": ', '"thuxs', 'kftnw`', '\u000d\u000a> el', 'giiqc`', '\u000d\u000a> am', 'uyk`\u000d\u000a', '> g \\\u000a', '  --wa', 'tch'].join(''), 'thux huxs uxsk xskf skft kftn ftnw elgi lgii giiq iiqc amuy muyk'],
+    [['github', '_pat_s', 'ipNHDy', '0I3EPN', 'zQp0dD', 'NyE_zh', '33tBCY', 'Gs\u200b\u000d\u000d\u000a', '- iZ7d', 'HNdOl2', 'BUX\u200b\u000d\u000d', '\u000a- yN1', 'qBQBcz', 'eVve1Q', 'qn\u200b\u000d\u000d\u000a', '- aED6', 'GrnSZy', '9F6kmV', 'Ll5\u000d\u000a2', '. Seco', 'nd ite', 'm\u000a\u000agit', 'hub_pa', 't_G3e3', 'v9dy9w', 'my9eGO', 'dqDXZl', '_zfJ99', 'uIX8pt', 'dTbSJh', '0uZfSS', 'RgiKbU', '\u00ad^\u000d\u000aj6', 'G5Pu\u00ad^', '\u000d\u000aQ6uJ', 'diQUQl', 'uAqAHB', 'ZdAFAu', 'Xd \\\u000a ', ' --wat', 'ch\u000a\u000aRu', 'n: eyJ', 'eKGCzn', '18r3cx', 'QqD\u00ad^\u000a', '\ufeff> Tok', 'sr.eyJ', 'yaiCqL', 'eWrTod', 'EreMvH', 'Fu8Nyr', 'ZgJj7b', '.gv5fM', 'bDMiNs', '--xxB8', '1Og3D_', 'oMIAlX', 'v done'].join(''), 'MvHF vHFu HFu8 Fu8N u8Ny 8Nyr NyrZ yrZg rZgJ ZgJj gJj7 Jj7b'],
+    [['1. tok', 'en: dd', 'd8\u000a> 1', 'ac3fb4', '84c13\u000a', '> b8f0', '2c9a34', '\u000anext ', 'step; ', '- gith', 'ub_pat', '_\u00ad\\\u000ajd', 'fScC4q', 'yf\u00ad\\\u000aM', '5itibA', 'yxaPy_', 'PKD6aL', 'CTTsZP', 'c5Z0QJ', 'IncMXz', 'lUwao\u00ad', '\\\u000aDV2W', 'xiUyel', 'rgHkvI', 'SM8LAV', 'DdsRP9', 'iv\u000anex', 't step', '\u000a\u000aclie', 'nt_sec', 'ret=4\u200b', '^\u000d\u000a\u00094\u200b', '^\u000d\u000a\u000962', '586932', '03 don', 'e'].join(''), '6258 2586 5869 8693 6932 9320 3203'],
+    [['curl -', 'H "exp', 'ort OP', 'ENAI_A', 'PI_KEY', '=6d05a', '7c7a03', 'c32121', 'a\u202e\u000a\u000a\u00092', '3031cb', 'bc9fcc', '58\u202e\u000a\u000a\u0009', '30e1b3', 'e8\u202e\u000a\u000a\u0009', '2 \\\u000a  ', '--watc', 'h\u000acurl', ' -H "x', 'oxb-83', '80865\u200b', '\u000d- 459', '74-J\u200b\u000d', '- Dpi5', 'eOUK\u200b\u000d', '- o6o2', '61zi1c', 'skq03\u000a', '\u000aok; `', '``\u000aeyJ', 'y5IPFM', 'Ehj3RY', 'c5d1rK', 'Pl.eyJ', 'fNIoyo', 'nq\\\u000d\u00ad-', ' h7mI6', 'jT4BZf', '7RPbXx', 'L9\\\u000d\u00ad-', ' g8e.t', '88rWR9', 'qix_78', 'Z\\\u000d\u00ad- ', 'N5RF0B', 'NwAvcX', '8fp2 \\', '\u000a  --w', 'atch'].join(''), 'N5RF 5RF0 RF0B'],
+    [['- eyJD', 'lpC6x0', 'zSpNpZ', 'YRikmJ', 'i.eyJ0', 'WXyJf1', '5Tz\\\u000d\u000a', '\u202e- 9zd', 'uYpkp3', 'tf70RJ', 'UQfZW.', '8JYwY7', 'qJ4GHJ', 'Y2IczX', 'MuG0tq', 'MaI9DV', '\u000a\u000aok \\', '\u000a> --p', 'asswor', 'd goui', '\u200d\\\u000d  q', 'qoqmwh', '\u200d\\\u000d  r', 'nc\u000a> -', '-token', ' eoosr', 'gyp\u00ad\\\u000d', '- xy\u00ad\\', '\u000d- vkt', 'e\u00ad\\\u000d- ', 'unbp\u000a\u000a', 'ok; ?a', 'ccess_', 'token=', 'cvzkyh', 'uiuf\u000a\u000a', '\u202e\u0009lhmh', 'c \\\u000a  ', '--watc', 'h'].join(''), 'lhmh hmhc'],
+    [['```\u000amy', 'sql -u', ' root ', '-p5\u2060\u000a\u000a', 'C0oOME', 'co\u2060\u000a\u000aB', '\u000a```\u000d\u000a', '- "api', '_key":', ' "U0w4', 'rscT\u2028\u2060', '  nKb\u2028', '\u2060  qTq', 'Y59nA8', 've/v2r', 'BNdqxT', 'x2=; A', 'uthori', 'zation', ': Bear', 'er 4\u200b^', '\u000a\u200b> Lv', 'iCaahB', 'tM7u8O', 'Fszey0', '3PeQsy', 'co\u200b^\u000a\u200b', '> fXXz', 'rwM\u000ane', 'xt ste', 'p\u000d\u000a> p', 'asswor', 'd: di\u2028', '    tk', '\u2028    n', 'sgnuph', 'orhovz', 'w'].join(''), 'nsgn sgnu gnup nuph upho phor horh orho rhov hovz ovzw'],
+    [['- --to', 'ken=jk', 'xe\u202e\u2028xa', 'ntsror', 'wtkz" ', '&& Run', ': gith', 'ub_pat', '_XLqbe', 'zjMYa7', 'XfNOq1', 'b2H\u200b\\\u000d', '\u000a19_lM', 'SLiBeL', 'r3vW9U', 'Gq9eyq', 'hydFR7', 'hnVFjc', 'gvqfbh', 'z3KTby', 'edjMur', 'w2ENaB', 'eIN\u000d\u000a2', '. Seco', 'nd ite', 'm\u000d\u000ax s', 'et GH_', 'TOKEN=', '7gKA2T', 'hbHIjW', 'KtN`\u000a\u00ad', '_a`\u000a\u00ads', 'bg8" \\', '\u000a--pas', 'sword ', 'L\u200d\u2028   ', ' O9s89', '58u-DU', 'ssIwDk', '0L_Czi', 'r\u200d\u2028   ', ' iwxVf', 'Y0HWX\u200d', '\u2028    n', 'O1\u000a```'].join(''), 'O9s8 9s89 s895 8958 958u DUss UssI ssIw sIwD IwDk wDk0 Dk0L Czir iwxV wxVf xVfY VfY0 fY0H Y0HW 0HWX'],
+    [['Run: g', 'ithub_', 'pat_ue', 'NkFHou', '1nzO3V', 'dvbSDd', 'Ki_9GD', 'oVjEgY', 'tTMlMe', '1eCqQV', '0qkx\u200d^', '\u000ayYTf4', 'jB5egC', 'TYhXkW', '4TTL3e', '8SlGtD', '5k\u200d^\u000aP', '0B"\u000acu', 'rl -H ', '"ghp_o', 'M2i\u00ad^\u000a', '> zBbP', 'DZgtCx', 'EBePnq', 'joNYfY', 'hP2zqw', '5Gep\u000an', 'ext st', 'ep Run', ': API_', 'KEY=HN', 'BBACBP', '\ufeff`\u000a\u200bE\ufeff', '`\u000a\u200bHHP', 'VWOPO\ufeff', '`\u000a\u200bD\u000d\u000a', '- gith', 'ub_pat', '_9YtL5', 'TLDbRr', 'EU1I5l', 'R\u202e`\u000a\u0009H', 'BgB_h2', 'etlywR', 'SyEP0h', 'iAVtYW', '\u202e`\u000a\u00096q', 'L9Oa2u', 'JEeIgP', '9hZ6\u202e`', '\u000a\u0009RcOx', 'txAaxW', 'gAu8Iw', 'eIciT ', 'done'].join(''), 'RSyE SyEP yEP0 EP0h P0hi 0hiA hiAV iAVt AVtY VtYW'],
+    [['"api_k', 'ey": "', 'iiuzak', '23iiv5', 'kf`\u000a  ', '  xh`\u000a', '    4c', '4\u000anext', ' step ', 'echo m', 'ysql -', 'u root', ' -p0s3', 'HR^\u000aG^', '\u000aLuHp^', '\u000a1C do', 'ne\u000d\u000agh', 'p_v7tx', 'S\u000d    ', '3anKBa', 'bT4\u000d  ', '  byZ0', '7g\u000d   ', ' ZTePS', 'w3iEja', '2hpAD\u000d', '\u000a2. Se', 'cond i', 'tem x ', 'sk-pro', 'j-jRuv', 'pXtkw\u200d', '\u000a\u2060    ', 'dkVWNP', 'P1Upeq', 'evOQWd', 'qFpv_j', 'DhZHQ\u200d', '\u000a\u2060    ', 'u\u200d\u000a\u2060  ', '  D"'].join(''), 'jDhZ DhZH hZHQ'],
+    [['```\u000acl', 'ient_s', 'ecret=', '8344\u200b\\', '\u000d20412', '473463', ' \\\u000aAut', 'horiza', 'tion: ', 'Bearer', ' LXLHM', 'KZNRNO', '\u00ad\u000d\u000d\u000a\u2060R', 'NBZIYY', 'IR\u000d\u000a2.', ' Secon', 'd item', ' && x ', 'aws_se', 'cret_a', 'ccess_', 'key = ', '577339', '1244^\u000a', '    70', '8\u000d\u000a2. ', 'Second', ' item;', ' expor', 't pass', 'word=x', 'fp\u202e\u000a\u000a\u0009', 'avngyb', 'ybif d', 'one'].join(''), 'gyby ybyb bybi ybif'],
+  ];
+  for (const [k, [t, list]] of rows.entries()) {
+    const out = targetOf('bash', { command: t });
+    assert.ok(out !== '', `#1320 continuation brain target: the command target is not empty (row ${k})`);
+    const ref = R.withoutContinuation(() => targetOf('bash', { command: t }));
+    const ps = list.split(' ');
+    assert.deepStrictEqual(ps.filter((p) => ref.includes(p)), [], `#1320 continuation brain target: the reading without the step shows none of the row's pieces (row ${k})`);
+    assert.deepStrictEqual(ps.filter((p) => out.includes(p)), [], `#1320 continuation brain target: the command target shows no piece the reading without the step leaves out (row ${k}): ${JSON.stringify(out)}`);
+  }
+  // a target without a line break, or one the step changes nothing in, reads as before
+  for (const c of ['npm test', 'git log --oneline -5\nls', 'API_' + 'KEY=' + 'Qz7Wx4Lk9Rt3Mn8 make']) assert.strictEqual(targetOf('bash', { command: c }), R.withoutContinuation(() => targetOf('bash', { command: c })), `#1320 continuation brain target near miss: ${JSON.stringify(c)}`);
+}
+
 // spec 012 FR-181 (issue #1541): an escaped token (`ghp\_<body>`) in a shell step's command, as a string and as an argument list, is hidden in the step target
 {
   const esc = 'ghp' + '\\_' + 'A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8';

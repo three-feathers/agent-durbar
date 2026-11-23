@@ -11,6 +11,8 @@ import { answerTooLong, MAX_ANSWER, readAnswerPayload } from '../adapters/questi
 import type { AgentInfo, PermMode, SessionOptions } from '../shared/api';
 import { adapterOf, modeForSession } from './folders';
 import type { FolderStore, SavedFolder } from './folders';
+import { ShownError } from '../shared/shownerror';
+import { failText } from './ipcerror';
 
 export interface OpsDeps {
   agents: Map<string, AgentInfo>;
@@ -35,7 +37,6 @@ const MODE_WORDS: Record<PermMode, string> = { 'read-only': 'Read-only', ask: 'A
 
 const NO_INTERRUPT = 'This agent cannot stop a running turn. End the session instead.';
 const NO_LIVE_SETTING = 'This agent cannot change that setting while its session is running. Start a new session with it.';
-export const errText = (err: unknown): string => (err instanceof Error ? err.message : String(err));
 export const validMode = (m: unknown): PermMode => (m === 'ask' || m === 'allow' ? m : 'read-only');
 /**
  * The window's options for a folder it adds (floor, agent app, model, effort, cap), read the same way for Add existing
@@ -108,7 +109,7 @@ export async function setCapOp(d: OpsDeps, id: unknown, credits: unknown): Promi
     d.log?.(a, 'limit-change', cap === undefined ? 'Spending limit removed' : `Spending limit set to ${usd ? `$${cap.toFixed(2)}` : `${cap} AI credits`}`);
     return { ok: true, maxAiCredits: cap };
   } catch (err) {
-    return { ok: false, error: errText(err) };
+    return { ok: false, error: failText(err, 'agents') };
   }
 }
 
@@ -165,7 +166,7 @@ export async function setMcpOp(d: OpsDeps, off: Map<string, Set<string>>, id: un
     return { ok: true };
   } catch (err) {
     // e.g. a server that was not part of this session at start: it comes in with the next start
-    return { ok: true, error: `Saved for this agent. The running session could not apply it now (${trunc(err instanceof Error ? err.message : err, 120)}); it applies at the next start.` };
+    return { ok: true, error: `Saved for this agent. The running session could not apply it now (${trunc(failText(err, 'mcp toggle', 'it was not accepted'), 120)}); it applies at the next start.` };
   }
 }
 
@@ -238,7 +239,7 @@ export function startModeOf(o: Pick<StartOptions, 'permissionMode' | 'allow' | '
 export async function startGuardOp(d: StartGuardDeps, ad: Pick<AgentAdapter, 'id' | 'start'>, opts: StartOptions): Promise<{ result: string; note?: string }> {
   const ask = { mode: startModeOf(opts), model: opts.model ?? '' };
   const no = await d.refusal(ad.id, ask);
-  if (no) throw new Error(no);
+  if (no) throw new ShownError(no);
   const note = await d.advice?.(ad.id, ask);
   const result = await ad.start(opts);
   if (note) d.onNote?.(note, result);
@@ -320,20 +321,20 @@ export async function scheduledSendOp(d: ScheduledSendDeps, prompt: string, s: {
   // review of PR #1080 (item 4): a gate that throws never loses the run: the prompt goes
   if (d.gate && (await Promise.resolve().then(() => d.gate?.(a.id)).catch(() => 'go' as const)) === 'stopped') {
     d.agentState.noteNotSent?.(a.id);
-    throw new Error('Not sent: stopped while MCP sign-ins were reconnecting.');
+    throw new ShownError('Not sent: stopped while MCP sign-ins were reconnecting.');
   }
   try {
     await d.ensureLive(a);
     if (d.stillWanted && !d.stillWanted()) {
       d.agentState.noteNotSent?.(a.id); // not an error: the agent is ready again
-      throw new Error(NOT_SENT_STOPPED);
+      throw new ShownError(NOT_SENT_STOPPED);
     }
     d.toWindow('agent:event', { type: 'user', sessionId: a.id, timestamp: d.now(), text: prompt });
     d.toWindow('schedule:ran', { agentId: a.id, scheduleId: s.id, every: s.every, at: s.at, rule: s.rule });
     await ad.send(a.id, { text: prompt });
     d.noteLastSession(a);
   } catch (err) {
-    if (!(err instanceof Error && err.message === NOT_SENT_STOPPED)) d.agentState.noteSendFailed(a.id);
+    if (!(err instanceof Error && err.message === NOT_SENT_STOPPED)) d.agentState.noteSendFailed(a.id); // FR-066: read, not shown
     throw err;
   }
   return a.id;

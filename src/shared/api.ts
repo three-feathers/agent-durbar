@@ -215,6 +215,9 @@ export interface AppSettingsView {
   seriousMode?: boolean;
   /** spec 052 FR-069: Settings > Motion; absent or true means on */
   motion?: boolean;
+  /** Spec 106 FR-060 (T426). */
+  brainView?: boolean;
+  brainMotion?: 'full' | 'calm' | 'still';
   /** Spec 001 FR-192: desk highlights keep the glow and the New badge but no motion. */
   stillHighlights?: boolean;
   /** Auto-follow work (spec 052 FR-182): off by default. */
@@ -1091,6 +1094,8 @@ export interface DurbarApi {
   setSeriousMode?(on: boolean): Promise<{ ok: boolean; seriousMode?: boolean }>;
   /** Turn Still highlights (no motion) on or off (spec 001 FR-192). */
   setMotion?(on: boolean): Promise<{ ok: boolean; motion?: boolean }>;
+  setBrainView?(on: boolean): Promise<{ ok: boolean; brainView?: boolean }>;
+  setBrainMotion?(v: 'full' | 'calm' | 'still'): Promise<{ ok: boolean; brainMotion?: 'full' | 'calm' | 'still' }>;
   setStillHighlights?(on: boolean): Promise<{ ok: boolean; stillHighlights?: boolean }>;
   /** Turn Auto-follow work on or off (spec 052 FR-182). `ok: false` (nothing changed, the value in force is returned as `autoFollowWork`) for a value that is not a boolean or a save that failed; no `error` text. */
   setAutoFollowWork?(on: boolean): Promise<{ ok: boolean; autoFollowWork?: boolean; unsaved?: true }>;

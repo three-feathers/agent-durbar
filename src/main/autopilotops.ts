@@ -13,8 +13,10 @@ import type { AgentEvent, AutopilotEnd, AutopilotEvent, AutopilotSettings } from
 import type { AgentInfo, PermMode } from '../shared/api';
 import { HIDDEN_ALL_RE } from '../shared/names';
 import { redact } from '../shared/redact';
-import { errText, setModeOp } from './agentops';
+import { setModeOp } from './agentops';
 import type { OpsDeps } from './agentops';
+import { failText } from './ipcerror';
+import { ShownError } from '../shared/shownerror';
 
 type Unit = 'aiu' | 'usd' | 'tokens';
 export type AutopilotResult = { ok: boolean; error?: string; cancelled?: true; mode?: PermMode; autopilot?: AgentInfo['autopilot']; pending?: number; note?: string };
@@ -200,21 +202,21 @@ export function createAutopilotOps(d: AutopilotOpsDeps) {
   const limited = <T>(t: Turning, p: Promise<T>, ms: number): Promise<T> => {
     let timer: ReturnType<typeof setTimeout> | undefined;
     p.catch(() => undefined);
-    return Promise.race([p, t.released, new Promise<never>((_r, rej) => { timer = setTimeout(() => rej(new Error(TOOK_TOO_LONG)), ms); })]).finally(() => clearTimeout(timer));
+    return Promise.race([p, t.released, new Promise<never>((_r, rej) => { timer = setTimeout(() => rej(new ShownError(TOOK_TOO_LONG)), ms); })]).finally(() => clearTimeout(timer));
   };
 
   /** A call that must answer within `ms`: rejects with TOOK_TOO_LONG after it, and leaves no timer behind. */
   const settleWithin = <T>(p: Promise<T>, ms: number): Promise<T> => {
     let timer: ReturnType<typeof setTimeout> | undefined;
     p.catch(() => undefined);
-    return Promise.race([p, new Promise<never>((_r, rej) => { timer = setTimeout(() => rej(new Error(TOOK_TOO_LONG)), ms); })]).finally(() => clearTimeout(timer));
+    return Promise.race([p, new Promise<never>((_r, rej) => { timer = setTimeout(() => rej(new ShownError(TOOK_TOO_LONG)), ms); })]).finally(() => clearTimeout(timer));
   };
 
   /** FR-059: the adapter's refusal text of a call, if it settles within `ms`; undefined when it answered ok or not in time. */
   const toldText = (p: Promise<unknown>, ms: number): Promise<string | undefined> => {
     let timer: ReturnType<typeof setTimeout> | undefined;
     const late = new Promise<undefined>((res) => { timer = setTimeout(() => res(undefined), ms); });
-    return Promise.race([p.then(() => undefined, (e: unknown) => maskedLine(errText(e), 300)), late]).finally(() => clearTimeout(timer));
+    return Promise.race([p.then(() => undefined, (e: unknown) => maskedLine(failText(e, 'autopilot'), 300)), late]).finally(() => clearTimeout(timer));
   };
 
   /** FR-054: the stop could not be confirmed. A known state whatever happens: Allow all, no Autopilot, the session's process gone. */
@@ -236,7 +238,7 @@ export function createAutopilotOps(d: AutopilotOpsDeps) {
     const stopped = (async () => ad.setAutopilot?.(a.id, null, reason))(); // the adapter's own sync part runs here, before anything else
     return stopped.then(() => ({ ok: true, mode: a.permMode }), async (err: unknown) => {
       await failClosed(a);
-      return { ok: true, mode: a.permMode, note: maskedLine(errText(err), 200) };
+      return { ok: true, mode: a.permMode, note: maskedLine(failText(err, 'autopilot'), 200) };
     });
   };
 
@@ -321,8 +323,8 @@ export function createAutopilotOps(d: AutopilotOpsDeps) {
           return { ...refuse(told ?? CHANGED), mode: a.permMode };
         }
         void backOff();
-        if (mode !== 'allow') say(a, `Autopilot did not start, and this session and its folder stay in Allow all: ${maskedLine(errText(err), 200)}`, true);
-        return { ...refuse(maskedLine(errText(err), 300)), mode: a.permMode };
+        if (mode !== 'allow') say(a, `Autopilot did not start, and this session and its folder stay in Allow all: ${maskedLine(failText(err, 'autopilot'), 200)}`, true);
+        return { ...refuse(maskedLine(failText(err, 'autopilot'), 300)), mode: a.permMode };
       }
       // the truth after the last await: a Stop, an End, remote control, a mode change, or a run the guard stopped: Autopilot is not on, and the answer says so
       if (t.stopped || turning.get(a.id) !== t || d.remoteOn(a.id) || a.permMode !== 'allow' || d.agents.get(a.id) !== a || !ad.isLive(a.id)) {
@@ -336,7 +338,7 @@ export function createAutopilotOps(d: AutopilotOpsDeps) {
       return { ok: true, mode: a.permMode, autopilot: a.autopilot, ...(pending ? { pending } : {}) };
     } catch (err) {
       if (err === RELEASED) return { ...refuse(CHANGED), mode: a.permMode };
-      return { ...refuse(maskedLine(errText(err), 300)), mode: a.permMode };
+      return { ...refuse(maskedLine(failText(err, 'autopilot'), 300)), mode: a.permMode };
     } finally {
       if (turning.get(a.id) === t) turning.delete(a.id);
     }

@@ -1,0 +1,1 @@
+- **CI cost numbers** (spec 117): `npm run ci:stats [--days N]` prints queue wait, durations, queued minutes, runs per PR and the code/tests/docs split of merged PRs from GitHub metadata only (never a title or body); offline test in `npm test`, real run not yet compared with the spec tables.
