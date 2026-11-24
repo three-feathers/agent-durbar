@@ -377,20 +377,41 @@ ok('IPC the channel checks the owner frame and answers the store\'s result, neve
 // ---- T504 (PR 2, the window side) replaced PR 1's NO-CALLER-YET guard with the strong form: the window calls the channel in exactly one
 // place, the chip's Copy (`copyChipArg` in app.js), and the simulator's stand-in in sim.ts answers for main; no other window file names it.
 // Still not a security boundary (main enforces the owner frame, the ids and the ask rule): it pins the one intended caller.
-ok('CALLERS the window calls copyToolArg only from the chip\'s Copy; the simulator\'s stand-in answers for main', () => {
-  const callers: string[] = [];
+ok('CALLERS the window names copyToolArg only in the chip\'s Copy and the simulator\'s stand-in, a known number of times (a guard, not a boundary)', () => {
+  // every mention of the channel's name per file under src/renderer, comments stripped: block comments (/* ... */) and lines whose first
+  // non-blank characters are //; the name inside a string or a property counts. A name built at run time ('copy' + 'ToolArg') is not seen
+  // here: check-005-chip-copy counts the stand-in's requests per click (none before any click, exactly one per Copy) for that.
+  const mentions: Record<string, number> = {};
   const walk = (dir: string): void => {
     for (const d of fs.readdirSync(dir, { withFileTypes: true })) {
       const f = path.join(dir, d.name);
       if (d.isDirectory()) walk(f);
-      else if (/\.(js|ts|html)$/.test(d.name) && fs.readFileSync(f, 'utf8').includes('copyToolArg')) callers.push(path.relative(ROOT, f).split(path.sep).join('/'));
+      else if (/\.(js|ts|html)$/.test(d.name)) {
+        const code = fs.readFileSync(f, 'utf8').replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/[^\n]*$/gm, '');
+        const n = (code.match(/copyToolArg/g) || []).length;
+        if (n) mentions[path.relative(ROOT, f).split(path.sep).join('/')] = n;
+      }
     }
   };
   walk(path.join(ROOT, 'src', 'renderer'));
-  assert.deepStrictEqual(callers.sort(), ['src/renderer/app.js', 'src/renderer/sim.ts'], 'CALLERS only app.js and the simulator name copyToolArg');
+  assert.deepStrictEqual(mentions, { 'src/renderer/app.js': 2, 'src/renderer/sim.ts': 1 }, `CALLERS the name's mentions per file (app.js: the guard and the call; sim.ts: the stand-in): ${JSON.stringify(mentions)}`);
   const app = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'app.js'), 'utf8');
-  assert.deepStrictEqual(app.match(/bridge\.copyToolArg\(/g), ['bridge.copyToolArg('], 'CALLERS app.js sends the request in one place (copyChipArg)');
-  assert.ok(/bridge\.copyToolArg\(cp\.sid,cp\.callId,ok\)/.test(app), 'CALLERS the request carries the session id, the call id and the confirm only');
+  assert.ok(/typeof bridge\.copyToolArg==='function'\?await bridge\.copyToolArg\(cp\.sid,cp\.callId,ok\)/.test(app), 'CALLERS the one call carries the session id, the call id and the confirm only');
+});
+
+ok('SIM-BOUND the stand-in keeps at most 2,000 calls like main, the oldest dropped first (an unbounded map grew the page heap)', () => {
+  const sim = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'sim.ts'), 'utf8');
+  const m = /^\s*const simToolCopyKeep = \(m: [^)]*\): void => (\{[^\n]*\});$/m.exec(sim);
+  assert.ok(m, 'SIM-BOUND sim.ts defines simToolCopyKeep on one line');
+  const keep = new Function('m', 'k', 'v', m[1]) as (m: Map<string, unknown>, k: string, v: unknown) => void;
+  const map = new Map<string, unknown>();
+  for (let i = 0; i < 2500; i++) keep(map, 'k' + i, { text: 'v' + i, masked: false });
+  assert.strictEqual(map.size, TOOL_COPY_CALLS_MAX, `SIM-BOUND the stand-in holds main's bound (${map.size})`);
+  assert.ok(!map.has('k0') && !map.has('k499') && map.has('k500') && map.has('k2499'), 'SIM-BOUND the oldest went first');
+  keep(map, 'k500', { text: 'again', masked: false });
+  keep(map, 'new', { text: 'n', masked: false });
+  assert.ok(map.has('k500') && !map.has('k501'), 'SIM-BOUND a value seen again counts as the newest');
+  assert.ok(/simToolCopyKeep\(simToolCopies, id, /.test(sim) && !/simToolCopies\.set\(/.test(sim), 'SIM-BOUND every value goes in through simToolCopyKeep');
 });
 
 // ---- every path that removes or replaces a session forgets its values; End keeps them (the chat and its chips stay on screen). The real

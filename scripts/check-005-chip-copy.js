@@ -19,6 +19,8 @@
  *     (NO-CONFIRM-FLAG-FALSE); main answering `ask` to an unconfirmed request (its value masked after the window's hint, the stand-in's
  *     `mark`) opens the same confirm, Cancel copies nothing, Copy anyway copies (ASK-RETRY). The stand-in logs only `confirmed` and the answer.
  *   - no page overflow with the confirm open. Screenshots (OUT or the temp folder): 005-chip-copy-confirm-<w>x<h>-<light|dark>.png.
+ * Review of #2100: no request before any click (CALLS-AT-LOAD) and exactly one per Copy (PER-CLICK); a refused Copy (`unknown`, `failed`)
+ * writes nothing more and says why (REFUSED-UNKNOWN, REFUSED-FAILED); main's flag going back down drops the question (HINT-DOWN).
  * Source mutants run by hand at build time (T504): the confirm skipped when masked dies at CONFIRM-MASKED; the window ignoring main's flag at
  * ASK-FIRST-MAIN; the window ignoring an `ask` answer at ASK-RETRY.
  */
@@ -36,6 +38,9 @@ const PLAIN = 'for f in src/*.ts; do\n  wc -l "$f"\ndone';
 const FLAGGED = 'git status --short\n  && git log -1 --oneline';
 const UNFLAGGED = 'ls -la src\n  | head -5';
 const LATE = 'npm run build\n  && npm test';
+const GONE = 'git fetch origin\n  && git status';
+const FAILS = 'du -sh src\n  | sort -h';
+const DOWN = 'node -v\n  && npm -v';
 const SIZES = [[1440, 900], [1280, 800]];
 
 module.exports = async (ctx) => {
@@ -60,7 +65,9 @@ module.exports = async (ctx) => {
       await js(`window.__durbarSimUi.crew.openPanel(${jsLiteral(id)})`);
       await ok(`document.body.classList.contains('panel-open')&&!!document.getElementById('chat')`, `${tag}: the chat is open`, 10000);
       /* the page's clipboard, read back (the simulator's stand-in writes with it) */
-      await js(`window.__clip=[];navigator.clipboard.writeText=t=>{window.__clip.push(String(t));return Promise.resolve();};true`);
+      await js(`window.__clip=[];window.__clipTry=0;window.__clipFail=false;navigator.clipboard.writeText=t=>{window.__clipTry++;if(window.__clipFail)return Promise.reject(new Error('busy'));window.__clip.push(String(t));return Promise.resolve();};true`);
+      // review of #2100: nothing calls the stand-in before any click (a caller by a built name, at load, would)
+      assert.strictEqual(await js(`window.__durbarSimToolCopy.calls.length`), 0, `${tag}: CALLS-AT-LOAD no request reached the stand-in before any click`);
 
       // the masked chip and the plain chip, both opened
       await emit({ type: 'toolCall', sessionId: id, callId: 'cc-m', tool: 'bash', phase: 'start', args: { command: MASKED, description: 'Fetch the items' } });
@@ -74,6 +81,7 @@ module.exports = async (ctx) => {
       // nothing masked: Copy copies at once, the real text with its line breaks, no confirm
       await js(`__cc(${jsLiteral(id)},'cc-p').querySelector('.cp-cmd').click()`);
       await ok(`window.__clip.length===1`, `${tag}: COPY-PLAIN Copy on the plain chip copies`);
+      assert.deepStrictEqual(await js(`window.__durbarSimToolCopy.calls.slice()`), [{ confirmed: false, answer: 'ok' }], `${tag}: PER-CLICK one Copy on the plain chip, exactly one unconfirmed request`);
       assert.ok(!(await js(`!!__ccd()`)), `${tag}: NO-CONFIRM-PLAIN no question when nothing was masked`);
       assert.deepStrictEqual(await clips(), [PLAIN], `${tag}: COPY-PLAIN the real text, line breaks kept`);
 
@@ -111,6 +119,7 @@ module.exports = async (ctx) => {
       await ok(`!!__ccd()`, `${tag}: the confirm a third time`);
       await js(`[...__ccd().querySelectorAll('.dbtn button')].find(b=>b.textContent==='Copy anyway').click()`);
       await ok(`window.__clip.length===2`, `${tag}: COPY-REAL Copy anyway copies`);
+      assert.deepStrictEqual(await js(`window.__durbarSimToolCopy.calls.slice(1)`), [{ confirmed: true, answer: 'ok' }], `${tag}: PER-CLICK Cancel and Escape sent nothing; Copy anyway sent exactly one confirmed request`);
       assert.strictEqual((await clips())[1], MASKED, `${tag}: COPY-REAL the clipboard gets the real text with its line breaks`);
       await ok(`__cc(${jsLiteral(id)},'cc-m').querySelector('.cp-cmd').textContent==='Copied ✓'`, `${tag}: the button says Copied`);
       assert.ok(!leak(await js(`__cc(${jsLiteral(id)},'cc-m').outerHTML`)), `${tag}: CHIP-STAYS-MASKED the chip shows no value after the copy`);
@@ -152,6 +161,43 @@ module.exports = async (ctx) => {
       await ok(`window.__clip.length===5`, `${tag}: ASK-RETRY Copy anyway copies`);
       assert.strictEqual((await clips())[4], LATE, `${tag}: ASK-RETRY the text main holds`);
       assert.deepStrictEqual((await calls()).slice(-1), [{ confirmed: true, answer: 'ok' }], `${tag}: ASK-RETRY the second request is confirmed`);
+      // review of #2100: a refused Copy copies nothing (no fallback to the masked text) and says why in plain words
+      const lastToast = () => js(`(()=>{const t=[...document.querySelectorAll('#toasts .toast')].pop();return t?t.textContent:''})()`);
+      const tries = () => js(`window.__clipTry`);
+      await emit({ type: 'toolCall', sessionId: id, callId: 'cc-u', tool: 'bash', phase: 'start', args: { command: GONE }, argsMasked: false });
+      await emit({ type: 'toolCall', sessionId: id, callId: 'cc-f', tool: 'bash', phase: 'start', args: { command: FAILS }, argsMasked: false });
+      for (const c of ['cc-u', 'cc-f']) {
+        await ok(`!!__cc(${jsLiteral(id)},${jsLiteral(c)})`, `${tag}: chip ${c} is in the chat`);
+        await js(`(()=>{const c=__cc(${jsLiteral(id)},${jsLiteral(c)});if(!c.classList.contains('open'))c.click();c.scrollIntoView({block:'center'});return true;})()`);
+        await ok(`__cc(${jsLiteral(id)},${jsLiteral(c)}).classList.contains('open')&&!!__cc(${jsLiteral(id)},${jsLiteral(c)}).querySelector('.cp-cmd')`, `${tag}: chip ${c} is open with Copy`);
+      }
+      assert.ok(await js(`window.__durbarSimToolCopy.forget(${jsLiteral(id)},'cc-u')`), `${tag}: the stand-in let cc-u go`);
+      let t0 = await tries(), n1 = (await calls()).length;
+      await copyOn('cc-u');
+      await ok(`(()=>{const t=[...document.querySelectorAll('#toasts .toast')].pop();return !!t&&/no longer holds/.test(t.textContent)})()`, `${tag}: REFUSED-UNKNOWN the toast says why`);
+      assert.strictEqual(await lastToast(), 'Could not copy: Durbar no longer holds this command (copy it from the chat or the agent app).', `${tag}: REFUSED-UNKNOWN the toast's words`);
+      assert.strictEqual((await tries()) - t0, 0, `${tag}: REFUSED-UNKNOWN nothing was written to the clipboard (no fallback to the masked text)`);
+      assert.deepStrictEqual((await calls()).slice(n1), [{ confirmed: false, answer: 'unknown' }], `${tag}: REFUSED-UNKNOWN exactly one request, answered unknown`);
+      await js(`window.__clipFail=true;true`);
+      t0 = await tries(); n1 = (await calls()).length;
+      await copyOn('cc-f');
+      await ok(`(()=>{const t=[...document.querySelectorAll('#toasts .toast')].pop();return !!t&&t.textContent==='Could not copy to the clipboard.'})()`, `${tag}: REFUSED-FAILED the toast says the clipboard failed`);
+      assert.strictEqual((await tries()) - t0, 1, `${tag}: REFUSED-FAILED only the stand-in's own write was tried (no second write of the masked text)`);
+      assert.deepStrictEqual((await calls()).slice(n1), [{ confirmed: false, answer: 'failed' }], `${tag}: REFUSED-FAILED exactly one request, answered failed`);
+      await js(`window.__clipFail=false;true`);
+      assert.strictEqual((await clips()).length, 5, `${tag}: REFUSED nothing reached the clipboard`);
+      // review of #2100: the hint goes back down: main's flag says masked, a later update says not masked: Copy copies at once
+      await emit({ type: 'toolCall', sessionId: id, callId: 'cc-d', tool: 'bash', phase: 'start', args: { command: DOWN }, argsMasked: true });
+      await emit({ type: 'toolCall', sessionId: id, callId: 'cc-d', tool: 'bash', phase: 'update', args: { command: DOWN }, argsMasked: false });
+      await ok(`!!__cc(${jsLiteral(id)},'cc-d')`, `${tag}: chip cc-d is in the chat`);
+      await js(`(()=>{const c=__cc(${jsLiteral(id)},'cc-d');if(!c.classList.contains('open'))c.click();c.scrollIntoView({block:'center'});return true;})()`);
+      await ok(`__cc(${jsLiteral(id)},'cc-d').classList.contains('open')&&!!__cc(${jsLiteral(id)},'cc-d').querySelector('.cp-cmd')`, `${tag}: chip cc-d is open with Copy`);
+      n1 = (await calls()).length;
+      await copyOn('cc-d');
+      await ok(`window.__clip.length===6`, `${tag}: HINT-DOWN the update said nothing is masked: Copy copies`);
+      assert.ok(!(await js(`!!__ccd()`)), `${tag}: HINT-DOWN no question once the hint went back down`);
+      assert.strictEqual((await clips())[5], DOWN, `${tag}: HINT-DOWN the text`);
+      assert.deepStrictEqual((await calls()).slice(n1), [{ confirmed: false, answer: 'ok' }], `${tag}: HINT-DOWN exactly one unconfirmed request`);
       console.log(`[chip-copy] ${tag}: plain copies at once; masked asks (Cancel, Escape, Copy anyway); the real text copied; main's flag and ask answer honoured`);
     }
   }
