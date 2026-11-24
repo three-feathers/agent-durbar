@@ -11,13 +11,18 @@
  * a masked value without `confirmed === true` answers `ask` and writes nothing (ASK-MAIN); `forget` drops a removed session's values (STALE)
  * and is wired where main forgets a removed session (FORGET-WIRE). Review round 2: every path that removes or replaces a session (Remove
  * session, Remove folder, Resume with replace) forgets its values on the real handlers, and End keeps them (FORGET-REMOVE, FORGET-FOLDER,
- * FORGET-REPLACE, END-KEEPS). T504 (the window side) flipped PR 1's INERT pin: the chip's Copy is the one caller (CALLERS).
+ * FORGET-REPLACE, END-KEEPS). T504 (the window side) replaced PR 1's NO-CALLER-YET guard with the strong form: the chip's Copy is the
+ * one caller (CALLERS). Review of PR 2099: the argument is chosen on the masked copy (PICK-MASKED); ids of the app's shapes when
+ * storing and copying (ID-STORE, ID-SHAPE); no read across sessions (KEY-UNAMBIGUOUS, STORED-IDS, CROSS-SESSION, PROTO-IDS); eviction
+ * stops on an empty map (GUARD-EMPTY, BUDGET-ONE); a model fuzz with small bounds (FUZZ).
  */
 import * as assert from 'assert';
 import * as fs from 'fs';
 import * as path from 'path';
 import { createToolArgsMasker, maskMcpEvent } from '../src/main/mcpmask';
-import { TOOL_COPY_CALLS_MAX, TOOL_COPY_MAX_CHARS, TOOL_COPY_TOTAL_MAX, createToolArgCopies, toolArgKey } from '../src/main/toolargcopy';
+import * as vm from 'vm';
+import { TOOL_COPY_CALLS_MAX, TOOL_COPY_MAX_CHARS, TOOL_COPY_TOTAL_MAX, createToolArgCopies, keptFor, toolArgKey, toolCopyKey } from '../src/main/toolargcopy';
+import type { Kept } from '../src/main/toolargcopy';
 import type { AgentEvent } from '../src/adapters/types';
 
 const ROOT = path.join(__dirname, '..', '..');
@@ -166,7 +171,7 @@ ok('ASK-MAIN only confirmed === true lets a masked value out; a plain value need
 ok('STALE a removed session\'s values are dropped; other sessions keep theirs', () => {
   const { writes, store } = fake();
   for (const [sid, cid] of [['s1', 'a'], ['s1', 'b'], ['s2', 'a']]) { const e = ev({ command: 'echo ' + sid + cid }, { sessionId: sid, callId: cid }); store.see(e, outward(e)); }
-  assert.strictEqual(store.size().calls, 3);
+  assert.strictEqual(store.size().calls, 3, 'KEYS-APART the same call id in two sessions is kept twice');
   store.forget('s1');
   assert.deepStrictEqual(store.copy('s1', 'a'), { ok: false, reason: 'unknown' }, 'STALE the removed session\'s call is unknown');
   assert.deepStrictEqual(store.copy('s1', 'b'), { ok: false, reason: 'unknown' }, 'STALE');
@@ -175,6 +180,143 @@ ok('STALE a removed session\'s values are dropped; other sessions keep theirs', 
   assert.deepStrictEqual(writes, ['echo s2a']);
   store.forget(''); store.forget(5 as unknown as string);
   assert.strictEqual(store.size().calls, 1, 'a malformed id forgets nothing');
+});
+
+// ---- review of PR 2099, item 1: the argument is chosen on the window's masked copy, not on the raw arguments
+ok('PICK-MASKED the kept text is the one the chip shows, chosen on the masked copy', () => {
+  const { writes, store } = fake();
+  const raw = ev({ path: 'p/'.repeat(10_000), command: 'ls' });
+  const out = outward(raw) as Ev;
+  assert.strictEqual((out.args as Record<string, unknown>).path, '', 'main\'s mask sends the over-long path empty (the chip shows the command)');
+  store.see(raw, out);
+  assert.deepStrictEqual(store.copy('s1', 'c1', true), { ok: true });
+  assert.deepStrictEqual(writes, ['ls'], 'PICK-MASKED Copy writes what the chip shows (ls), not the raw arguments\' first value');
+});
+
+// ---- review of PR 2099, items 2 and 4: ids of the app's shapes, checked when storing and when copying
+const idEv = (sessionId: string, callId: string, command = 'echo hi'): Ev => ev({ command }, { sessionId, callId });
+ok('ID-STORE an id over its length is never kept; the longest allowed ids are', () => {
+  const { store } = fake();
+  for (const [sid, cid, what] of [['s'.repeat(600), 'c1', '600-character session'], ['s1', 'c'.repeat(600), '600-character call'], ['s'.repeat(129), 'c1', '129-character session'], ['s1', 'c'.repeat(257), '257-character call']]) {
+    const e = idEv(sid, cid);
+    store.see(e, outward(e));
+    assert.deepStrictEqual(store.size(), { calls: 0, chars: 0 }, `ID-STORE ${what}: nothing kept`);
+  }
+  const ok1 = idEv('s'.repeat(128), 'c'.repeat(256));
+  store.see(ok1, outward(ok1));
+  assert.strictEqual(store.size().calls, 1, 'ID-STORE a 128-character session id and a 256-character call id are kept');
+  assert.deepStrictEqual(store.copy('s'.repeat(128), 'c'.repeat(256)), { ok: true });
+});
+ok('ID-SHAPE ids holding a NUL, a newline or other characters outside the shape are neither kept nor looked up', () => {
+  const { writes, store } = fake();
+  const bad = ['a\u0000b', 'a\nb', 'a b', 'a/b', 'é', '‮', 'a"b', '[1]'];
+  for (const b of bad) {
+    for (const [sid, cid] of [[b, 'c1'], ['s1', b]]) { const e = idEv(sid, cid); store.see(e, outward(e)); }
+  }
+  assert.deepStrictEqual(store.size(), { calls: 0, chars: 0 }, 'ID-SHAPE nothing kept for an id of the wrong shape');
+  const good = idEv('s1', 'c1');
+  store.see(good, outward(good));
+  for (const b of bad) {
+    assert.deepStrictEqual(store.copy(b, 'c1'), { ok: false, reason: 'unknown' }, `ID-SHAPE session ${JSON.stringify(b)}`);
+    assert.deepStrictEqual(store.copy('s1', b), { ok: false, reason: 'unknown' }, `ID-SHAPE call ${JSON.stringify(b)}`);
+  }
+  for (const v of [1, 1n, true, null, undefined, {}, [], ['s1'], { toString: () => 's1' }, new String('s1')]) {
+    assert.deepStrictEqual(store.copy(v, 'c1'), { ok: false, reason: 'unknown' }, `ID-SHAPE a ${typeof v} session id`);
+    assert.deepStrictEqual(store.copy('s1', v), { ok: false, reason: 'unknown' }, `ID-SHAPE a ${typeof v} call id`);
+  }
+  assert.deepStrictEqual(writes, [], 'ID-SHAPE nothing written');
+});
+ok('KEY-UNAMBIGUOUS two different pairs of ids never share a key, whatever they hold', () => {
+  const pairs: [string, string][] = [['A\u0000x', 'y'], ['A', 'x\u0000y'], ['A', 'xy'], ['Ax', 'y'], ['A,', 'x'], ['A', ',x'], ['A"', 'x'], ['A', '"x'], ['A\\', 'x'], ['A', '\\x']];
+  const keys = new Map<string, string>();
+  for (const [a, b] of pairs) {
+    const k = toolCopyKey(a, b);
+    assert.ok(!keys.has(k), `KEY-UNAMBIGUOUS ${JSON.stringify([a, b])} and ${keys.get(k)} share a key`);
+    keys.set(k, JSON.stringify([a, b]));
+  }
+});
+ok('STORED-IDS a lookup answers only the value stored for exactly these ids', () => {
+  const v = (sid: string, callId: string): Kept => ({ sid, callId, text: 'x', masked: false });
+  const m = new Map<string, Kept>([[toolCopyKey('A', 'x'), v('B', 'x')], [toolCopyKey('C', 'y'), v('C', 'z')], [toolCopyKey('D', 'w'), v('D', 'w')]]);
+  assert.strictEqual(keptFor(m, 'A', 'x'), undefined, 'STORED-IDS an entry of another session under this key is not answered');
+  assert.strictEqual(keptFor(m, 'C', 'y'), undefined, 'STORED-IDS an entry of another call under this key is not answered');
+  assert.strictEqual(keptFor(m, 'D', 'w')?.text, 'x', 'the exact entry is');
+});
+ok('CROSS-SESSION ids built to reach another session\'s value answer unknown (the reviewer\'s probe and its variants)', () => {
+  const { writes, store } = fake();
+  for (const [sid, cid] of [['A', 'x'], ['A', 'x\u0000y'], ['Ax', 'y'], ['s1', 'c']]) { const e = idEv(sid, cid, `value of ${sid}/${cid}`.replace(/\u0000/g, '0')); store.see(e, outward(e)); }
+  for (const [sid, cid, what] of [['A\u0000x', 'y', 'session holding the old separator'], ['A', 'x\u0000y', 'call holding the old separator'], ['A', 'x\u0000', 'call with a trailing NUL'], ['A', 'xy', 'a call joined from two'], ['s', '1c', 'a prefix of the session'], ['s1', 'c1', 'a longer call id'], ['s1', '', 'an empty call id']]) {
+    assert.deepStrictEqual(store.copy(sid, cid, true), { ok: false, reason: 'unknown' }, `CROSS-SESSION ${what}`);
+  }
+  assert.deepStrictEqual(store.copy('Ax', 'y', true), { ok: true });
+  assert.deepStrictEqual(writes, ['value of Ax/y'], 'CROSS-SESSION only the exact pair is written');
+});
+ok('PROTO-IDS __proto__, constructor and toString as ids reach only their own value; nothing is polluted', () => {
+  const { writes, store } = fake();
+  const names = ['__proto__', 'constructor', 'toString', 'hasOwnProperty'];
+  for (const a of names) for (const b of names) { const e = idEv(a, b, `${a}.${b}`); store.see(e, outward(e)); }
+  for (const a of names) for (const b of names) assert.deepStrictEqual(store.copy(a, b), { ok: true }, `PROTO-IDS ${a}/${b}`);
+  assert.deepStrictEqual(writes, names.flatMap((a) => names.map((b) => `${a}.${b}`)), 'PROTO-IDS each pair writes its own value');
+  assert.deepStrictEqual(store.copy('__proto__', 'x'), { ok: false, reason: 'unknown' });
+  assert.strictEqual(({} as Record<string, unknown>).polluted, undefined);
+  assert.strictEqual(Object.getPrototypeOf({}), Object.prototype, 'PROTO-IDS the object prototype is untouched');
+});
+
+// ---- review of PR 2099, item 5: eviction stops on an empty map
+ok('BUDGET-ONE a value larger than the whole budget (small test bounds) is dropped at once; no loop, no throw', () => {
+  const writes: string[] = [];
+  const store = createToolArgCopies({ write: (t) => { writes.push(t); }, limits: { calls: 5, total: 10, maxChars: 40 } });
+  const e = idEv('s1', 'c1', 'x'.repeat(30));
+  store.see(e, e);
+  assert.deepStrictEqual(store.size(), { calls: 0, chars: 0 }, 'BUDGET-ONE nothing kept, the count back to 0');
+  assert.deepStrictEqual(store.copy('s1', 'c1'), { ok: false, reason: 'unknown' });
+});
+ok('GUARD-EMPTY with the count wrong and nothing left to drop, eviction stops (run under a time limit)', () => {
+  const { store } = fake();
+  store.testSkew(TOOL_COPY_TOTAL_MAX + 1);
+  const e = idEv('s1', 'c1');
+  let err: unknown;
+  try { vm.runInNewContext('run()', { run: () => store.see(e, outward(e)) }, { timeout: 2000 }); } catch (x) { err = x; }
+  assert.ok(!err, `GUARD-EMPTY eviction stops on an empty map (${String(err)})`);
+  assert.strictEqual(store.size().calls, 0, 'the only value went, and the loop ended');
+});
+ok('FUZZ a model of the store with small bounds agrees at every step (answers, writes, counts)', () => {
+  const L = { calls: 5, total: 100, maxChars: 40 };
+  const writes: string[] = [];
+  const store = createToolArgCopies({ write: (t) => { writes.push(t); }, limits: L });
+  type M = { sid: string; cid: string; text: string | null; masked: boolean };
+  let model: M[] = [];
+  const mchars = (): number => model.reduce((n, m) => n + (m.text?.length ?? 0), 0);
+  const okS = (v: string): boolean => /^[A-Za-z0-9._:-]{1,128}$/.test(v), okC = (v: string): boolean => /^[A-Za-z0-9._:-]{1,256}$/.test(v);
+  const SIDS = ['s1', 's2', '__proto__', 's\u00001', '', 'x'.repeat(129)], CIDS = ['a', 'b', 'c', 'a\u0000b', '\n', 'constructor'];
+  let seed = 20261124;
+  const rnd = (n: number): number => { seed = (seed * 1103515245 + 12345) % 2147483648; return seed % n; };
+  const mwrites: string[] = [];
+  for (let step = 0; step < 20_000; step++) {
+    const op = rnd(10), sid = SIDS[rnd(SIDS.length)], cid = CIDS[rnd(CIDS.length)];
+    if (op < 7) {
+      const text = 'v'.repeat(rnd(60)) + step, masked = rnd(2) === 1;
+      const raw = idEv(sid, cid, text), out = masked ? idEv(sid, cid, '[masked]') : raw;
+      store.see(raw, out);
+      if (okS(sid) && okC(cid)) {
+        model = model.filter((m) => !(m.sid === sid && m.cid === cid));
+        model.push({ sid, cid, text: text.length > L.maxChars ? null : text, masked });
+        while (model.length > 0 && (model.length > L.calls || mchars() > L.total)) model.shift();
+      }
+    } else if (op < 9) {
+      const confirmed = [true, false, undefined, 'true'][rnd(4)];
+      const got = store.copy(sid, cid, confirmed);
+      const m = okS(sid) && okC(cid) ? model.find((x) => x.sid === sid && x.cid === cid) : undefined;
+      const want = !m ? { ok: false, reason: 'unknown' } : m.text === null ? { ok: false, reason: 'too-long' } : m.masked && confirmed !== true ? { ok: false, reason: 'ask' } : { ok: true };
+      if (want.ok) mwrites.push(m!.text as string);
+      assert.deepStrictEqual(got, want, `FUZZ step ${step}: copy(${JSON.stringify(sid)}, ${JSON.stringify(cid)}, ${String(confirmed)})`);
+    } else {
+      store.forget(sid);
+      if (okS(sid)) model = model.filter((m) => m.sid !== sid);
+    }
+    assert.deepStrictEqual(store.size(), { calls: model.length, chars: mchars() }, `FUZZ step ${step}: the counts`);
+  }
+  assert.deepStrictEqual(writes, mwrites, 'FUZZ the same writes');
 });
 
 ok('ADAPTER an adapter\'s own argsMasked never reaches the window; other events pass unchanged', () => {
@@ -203,8 +345,9 @@ ok('IPC the channel checks the owner frame and answers the store\'s result, neve
   assert.ok(!keep, 'NO-LOG the store has no log call');
 });
 
-// ---- T504 (PR 2, the window side) flipped the INERT pin of PR 1: the window calls the channel in exactly one place, the chip's Copy
-// (`copyChipArg` in app.js), and the simulator's stand-in in sim.ts answers for main; no other window file names it
+// ---- T504 (PR 2, the window side) replaced PR 1's NO-CALLER-YET guard with the strong form: the window calls the channel in exactly one
+// place, the chip's Copy (`copyChipArg` in app.js), and the simulator's stand-in in sim.ts answers for main; no other window file names it.
+// Still not a security boundary (main enforces the owner frame, the ids and the ask rule): it pins the one intended caller.
 ok('CALLERS the window calls copyToolArg only from the chip\'s Copy; the simulator\'s stand-in answers for main', () => {
   const callers: string[] = [];
   const walk = (dir: string): void => {
