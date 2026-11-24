@@ -410,4 +410,77 @@ for (const [form, t] of [['LF', app], ['CRLF', app.replace(/\n/g, '\r\n')]] as c
   ok((app.match(/menuLabel\(/g) || []).length >= 5, 'FR-197 the mode, profile and model menus and the context-window dialog use menuLabel');
 }
 
+// round 3 of the review of PR 2098: the schedule dialog's agent hint, repainted when its target is set again, reads nameShown (the page's own line, run)
+{
+  const one5 = (h: string): string => { const l = LINES.filter((x) => x.startsWith(h)); assert.strictEqual(l.length, 1, h); return l[0]; };
+  const hint = LINES.filter((x) => x.includes("$('scToHint').textContent="));
+  eq(hint.length, 1, 'FR-197 one line repaints the schedule hint');
+  const dom = new JSDOM('<!doctype html><body><p id="scToHint"></p></body>');
+  const doc = dom.window.document;
+  const ctx = vm.createContext({ window: { DurbarRedact: shared, DurbarSafeText: require(path.join(R_DIR, 'safetext.js')) }, DurbarCutText: require(path.join(R_DIR, 'cuttext.js')), NO_REDACT: false,
+    $: (id: string) => doc.getElementById(id) });
+  vm.runInContext(['const homeMask=', 'const deskMask=', 'const SHORT=', 'const RED=', 'const STX=', 'const SAFE=', 'const safeExcerpt=', 'function annHome(', 'function annPart(', 'function liveText(', 'const nameShown='].map(one5).join('\n')
+    + '\nthis.paintHint=tgt=>{' + hint[0] + '};', ctx);
+  const paintHint = (ctx as unknown as { paintHint(t: object | null): void }).paintHint;
+  for (const [what, nm] of NAMES) { paintHint({ id: 's1', name: nm }); hides(shown(doc.getElementById('scToHint') as Element), `FR-197 the schedule hint's repaint is masked, ${what}`); }
+  paintHint({ id: 's1', name: 'Noor' });
+  eq([doc.getElementById('scToHint')!.textContent, doc.getElementById('scToHint')!.getAttribute('title')], ['Noor', 'Noor'], 'FR-197 a benign schedule hint reads as written');
+}
+
+// round 3 of the review of PR 2098: the sink table. SINK finds every read of a session's name in app.js (the `name` field of the names the page gives a
+// session, or a call of nameShown or menuLabel); each read is counted under its enclosing top-level definition ('after X' for a top-level statement after
+// definition X). The table holds, per definition: m = masked on the line (the line goes through a mask or a masking sink), v = masked by a sink a later
+// line passes it to (a toast, an announcement, the caller's mask, the helper card's own mask), g = shown as written, by gap class (each class is named in
+// the spec's FR-197 gap list), o = shows nothing or is not a session's name (a sort key, a width, a comparison, a write, a cache key, a comment, the rename
+// field, a profile's, model's, MCP server's, template's or file's name, or data a listed site reads again). A read the table does not hold, a count that
+// changes or a listed definition that is gone fails: a new site must be masked or named.
+{
+  type Row = { m?: number; v?: number; g?: Record<string, number>; o?: number };
+  const GAP_CLASSES = ['chat-header', 'message-line', 'chat-note', 'dialog', 'schedules', 'palette', 'desk', 'places', 'helpers', 'rows', 'follow', 'views'];
+  const TABLE: Record<string, Row> = {
+    deskTip: { m: 1, g: { desk: 1 } }, visitorWords: { g: { places: 2 } }, placeTip: { g: { places: 1 } }, lobbyInitW: { o: 1 }, lobbyHTML: { g: { places: 3 } },
+    openPlaceMenu: { g: { places: 1 } }, openCoffeeMenu: { m: 3 }, faceKey: { o: 1 }, avatar: { g: { desk: 1 } }, moreHTML: { g: { helpers: 1 } },
+    helperHTML: { m: 1, g: { helpers: 1 } }, helperWords: { v: 2 }, helperTileHTML: { m: 1, g: { helpers: 1 } }, helperCardHTML: { v: 1, g: { helpers: 1 } },
+    cardHTML: { g: { desk: 2 } }, renBtn: { g: { desk: 2 } }, unitHTML: { g: { desk: 2 } }, restHTML: { g: { desk: 3 } }, shuttersHTML: { g: { desk: 1 } },
+    heldGroups: { o: 1 }, heldNotice: { g: { rows: 1 } }, heldSettingsHTML: { g: { rows: 1 } }, realModel: { g: { views: 5 } }, realSlips: { g: { views: 6 } },
+    LVAL: { o: 1 }, listRow0: { g: { rows: 3 } }, renderConvResults: { o: 1 }, newAgentMsg: { g: { 'message-line': 1 } }, sendMessage: { m: 1 },
+    syncChatHeader: { m: 1 }, wireAnswerBar: { m: 4 }, noteCompleted: { m: 1 }, noteFailed: { m: 1 }, markRead: { m: 1 }, nameShown: { m: 1 }, menuLabel: { m: 1 },
+    typingIndicator: { m: 1 }, panelTipOf: { m: 1 }, panelTitleHTML: { m: 1 }, paintPanelTitle: { m: 1 }, openPanel: { m: 7, g: { 'chat-header': 1 } },
+    noteRowHTML: { g: { views: 1 } }, nsPaint: { g: { views: 1 } }, openCtxMenu: { m: 1 }, reoStepModel: { v: 1 }, 'after resetOrder': { m: 4 },
+    renderRestoreStrip: { v: 1 }, attentionItems: { g: { views: 1 } }, paintInbox: { m: 3, v: 1, g: { rows: 2 } }, afLeaveChat: { m: 1 }, afOnAccepted: { g: { follow: 1 } },
+    afDeliver: { m: 2 }, afRender: { g: { follow: 2 } }, afGo: { m: 1 }, palAll: { g: { palette: 1 } }, navSnap: { g: { palette: 1 } }, navOpen: { m: 1 },
+    sendToSeveral: { v: 2, g: { palette: 1, follow: 1 } }, endAllSessions: { v: 1 }, 'after openBrowserMenu': { m: 1, g: { views: 1 } }, mcpReLine: { o: 10 }, edDiff: { o: 1 },
+    ensureTurn: { g: { 'message-line': 1 } }, openCapDialog: { m: 1, g: { dialog: 1 } }, showLimit: { m: 2 }, showPlan: { m: 2 }, showQuestion: { m: 1 },
+    showElicitation: { m: 1 }, startCoffee: { m: 1 }, paintCoffeeBar: { m: 1 }, showPerm: { m: 1 }, roAskAfterSwitch: { m: 1 }, updateCtxChip: { o: 1 },
+    repaintName: { m: 2, o: 1 }, brainLoad: { g: { views: 1 } }, brainFeed: { g: { views: 2 } }, brainDoorPaint: { m: 1 }, apComposer: { m: 1 },
+    autopilotFlow: { m: 1, g: { dialog: 1 } }, openModeMenu: { m: 1 }, cardOp: { g: { dialog: 2 } }, renameSessionUi: { o: 1 }, changeModeInner: { m: 1, g: { dialog: 2 } },
+    pendLabel: { o: 1 }, openAgentMenu: { m: 1, o: 2 }, openModelMenu: { m: 1 }, chooseModelInner: { o: 3, g: { dialog: 1 } }, chooseAutoTierInner: { g: { dialog: 1 } },
+    sendModelChange: { m: 3, v: 1 }, cancelPendingInner: { m: 1, o: 1 }, onModelEvent: { m: 1 }, onAutoTierFailed: { m: 1 }, compactDialog: { g: { dialog: 1 } },
+    remotePalItems: { g: { palette: 2 } }, remoteOn: { m: 2 }, remoteOff: { m: 1 }, remoteLinkDialog: { g: { dialog: 1 } }, handoverPalItems: { g: { palette: 1 } },
+    newSession: { o: 1, g: { dialog: 2 } }, reviewHandoff: { g: { dialog: 1 } }, schedLine: { g: { schedules: 2 } }, histName: { g: { schedules: 1 } },
+    openSchedules: { m: 4, o: 5 }, 'after HELD_STOP_WHY': { m: 1, g: { 'chat-note': 1 } }, startSessionEdit: { o: 1 }, replayHistory: { g: { 'message-line': 1 } },
+    addFloorNote: { g: { views: 1 } }, 'after pendingOpen': { g: { palette: 1 } },
+  };
+  const SINK = /(?:\(byId\([^()]*\)\|\|\{name:'\w+'\}\)|byId\([^()]*\)|\b(?:first|x)\.a|\bs\.target|(?<![\w$.])(?:a|ag|h|p|t|g|parent|who|last|fa|tgt))\.name\b|(?<![\w$.])(?:nameShown|menuLabel)\(/g;
+  const MASKED_LINE = /(?<![\w$.])(?:nameShown|menuLabel|liveText|deskMask|helperMask|maskLabel|announce|toast|toastAction)\(/;
+  const DEF = /^(?:async\s+)?function\s*\*?\s*([\w$]+)|^(?:const|let|var)\s+([\w$]+)/;
+  for (const [form, t] of [['LF', app], ['CRLF', app.replace(/\n/g, '\r\n')]] as const) {
+    const L = t.split(/\r?\n/);
+    const defOf = (i: number): string => { let top = false; for (let j = i; j >= 0; j--) { const x = L[j]; if (!/^\S/.test(x) || /^(?:\/\*|\*|\/\/|[}\])])/.test(x)) continue; const d = DEF.exec(x); if (d) return (top ? 'after ' : '') + (d[1] || d[2]); top = true; } return '?'; };
+    const found: Record<string, { all: number; onMasked: number }> = {};
+    L.forEach((x, i) => { const c = (x.match(SINK) || []).length; if (!c) return; const k = defOf(i); const f = (found[k] = found[k] || { all: 0, onMasked: 0 }); f.all += c; if (MASKED_LINE.test(x)) f.onMasked += c; });
+    for (const k of Object.keys(found)) ok(k in TABLE, `FR-197 sink table: the session-name reads in ${k} are listed as masked, a named gap or not shown (${form})`);
+    for (const [k, r] of Object.entries(TABLE)) {
+      const g = Object.entries(r.g || {});
+      for (const [c] of g) ok(GAP_CLASSES.includes(c), `FR-197 sink table: ${k} names a known gap class ${c}`);
+      const want = (r.m || 0) + (r.v || 0) + (r.o || 0) + g.reduce((s, [, x]) => s + x, 0);
+      eq(found[k] ? found[k].all : 0, want, `FR-197 sink table: ${k} holds ${want} session-name reads (${form})`);
+      ok(!r.m || (found[k] && found[k].onMasked >= r.m), `FR-197 sink table: the ${r.m || 0} masked reads in ${k} are on lines that go through a mask (${form})`);
+    }
+  }
+  // the pattern finds what it should: a raw read added to a masked definition, or a new definition with one, fails the table
+  const probe = (src: string): number => (src.match(SINK) || []).length;
+  eq([probe("x.textContent=a.name;"), probe("t=byId(id).name"), probe("(byId(k)||{name:'Desk'}).name"), probe('esc(nameShown(a))'), probe('a.profile.name'), probe('r.name'), probe('data.name')], [1, 1, 1, 1, 0, 0, 0], 'FR-197 sink table: the pattern reads a session name, not a profile, folder or other name');
+}
+
 void stripsByBehaviour().then(() => console.log(`test-live-mask: ${n} asserts passed`), (e) => { console.error(e); process.exit(1); });
