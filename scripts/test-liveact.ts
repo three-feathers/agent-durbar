@@ -988,7 +988,7 @@ for (const st of ['idle', 'needs-permission', 'error', 'stopped']) {
   for (const [label, t] of shares) for (const [nm, out] of [['block', all(f.block(t, 'reply'))], ['strict', all(f.strict(t, 'err'))]] as const)
     ok(/^see (?:\\{1,2}|&#x5C;&#x5C;)fs01(?:\\{1,2}|&#x5C;)share(?:\\{1,2}|&#x5C;)zq/.test(out) && out.includes(user) && out.endsWith('notes done.'), `FR-435 monitor: ${nm} shows ${label} whole: ${out}`);
   for (const [nm, out] of [['block', all(f.block('see ' + bs + bs + 'fs01' + bs + 'share' + bs + tok0 + bs + 'notes done.', 'reply'))], ['strict', all(f.strict('see ' + bs + bs + 'fs01' + bs + 'share' + bs + tok0 + bs + 'notes done.', 'err'))]] as const)
-    ok(out.includes('fs01') && !out.includes(tok0.slice(4, 14)), `FR-435 monitor: ${nm} hides a token folder in a UNC path: ${out}`);
+    ok(!out.includes(tok0.slice(4, 14)), `FR-435 monitor: ${nm} hides a token folder in a UNC path (the place keeps the old hiding; the two readings then differ and the line shows nothing, FR-187): ${out}`);
   // a home folder both readings agree on is still shown (shortened), and a text with no home folder is read as before
   const plainHome = 'see /home/' + user + '/notes done.';
   ok(all(f.block(plainHome, 'reply')).includes('notes done.') && !all(f.block(plainHome, 'reply')).includes(user), '#1320 monitor: a plain home folder still shows its line, shortened');

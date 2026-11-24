@@ -17,7 +17,7 @@ const BEARER = 'Bearer abcdef1234567890XYZ';
   const share = 'spawn ' + B + B + 'fs01' + B + 'homes' + B + 'zedq' + B + 'bin' + B + 'mcp.exe ENOENT';
   assert.strictEqual(maskMcpError(share), share, 'FR-435 maskMcpError keeps a share path whole (server, share, folders)');
   const out = maskMcpError('spawn ' + B + B + 'fs01' + B + 'homes' + B + GH + B + 'mcp.exe ENOENT') as string;
-  assert.ok(!out.includes(GH.slice(4, 16)) && out.startsWith('spawn ' + B + B + 'fs01' + B + 'homes' + B), 'FR-435 maskMcpError hides a key folder inside a share path and keeps the rest: ' + out);
+  assert.ok(!out.includes(GH.slice(4, 16)) && out.endsWith('mcp.exe ENOENT'), 'FR-435 maskMcpError hides a key folder inside a share path (the place keeps the old hiding): ' + out);
 }
 
 // planted secrets are gone
