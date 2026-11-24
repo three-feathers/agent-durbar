@@ -75,7 +75,7 @@ module.exports = async (ctx) => {
         return {id:p.dataset.place,full:n?n.textContent:'',cut:!!n&&(n.scrollWidth>n.clientWidth||r.getBoundingClientRect().width>n.getBoundingClientRect().width+0.05),slack:p.dataset.place==='boss'||p.classList.contains('postbox')?0:inner-used,font:fs,
           chips:[...p.querySelectorAll('.pv:not(.pv-more)')].map(c=>{const t=c.querySelector('.pv-n');return {shown:t?t.textContent:'',cut:!!t&&t.scrollWidth>t.clientWidth+0.5,title:c.title||'',label:c.getAttribute('aria-label')||c.title||''}})};});
         const bo=document.querySelector('#stage .lobby .place.boss'),iw=parseFloat(((document.querySelector('#stage .lobby')||{}).style||{}).getPropertyValue('--iw'))||54;
-        return {tiles:R,bossGive:bo?Math.floor(bo.getBoundingClientRect().width)-Math.max(194,3*iw+32):0,slackMax:Math.max(0,...R.filter(t=>!t.chips.length&&!/^(boss|coffee|bank)$/.test(t.id)).map(t=>t.slack))}})()`);
+        return {tiles:R,bossGive:bo?Math.floor(bo.getBoundingClientRect().width)-window.DurbarPlaces.bossMin(iw):0,slackMax:Math.max(0,...R.filter(t=>!t.chips.length&&!/^(boss|coffee|bank)$/.test(t.id)).map(t=>t.slack))}})()`);
       for (const t of row.tiles) {
         if (t.font < 10.5) bad(`${tag}: lobby text under 10.5 px: ${t.font}`);
         if (t.cut && row.bossGive >= 1) bad(`${tag}: a place name is whole while the Boss tile can still give: "${t.full}" is cut and the Boss is ${row.bossGive} px above its minimum (#2078)`);

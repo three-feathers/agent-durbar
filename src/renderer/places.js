@@ -222,8 +222,10 @@
      the other places are TILE_FLOOR wide (icon and a 22 px "+N" circle between 2 px of padding and the border). A place under PLACE_NAMED shows its icon
      only (its name stays in the tooltip and the label); the Bank does under BANK_NAMED, and the Boss drops the wait from its header under BOSS_WAIT (the wait stays in its tooltip and label). Wide enough windows never reach this: the widths above are unchanged. */
   const SNUG_W=110, SPECIAL_HARD={boss:96,coffee:60,bank:60,post:132}, TILE_FLOOR=28, PLACE_NAMED=56, BANK_NAMED=96, BOSS_WAIT=150;
+  /* the Boss tile's minimum width: three short-name entries and padding, never under 194 (one source: lobbyFit and check-097-textfit read it here, issue 2078) */
+  const bossMin=iw=>Math.max(194,3*(iw>INIT_W?iw:INIT_W)+32);
   function lobbyFit(aw,places,addButton,post,iw,extra){
-    const I=iw>INIT_W?iw:INIT_W, SW={...SPECIAL_W,boss:[230,Math.max(194,3*I+32)],coffee:[160,Math.max(96,I+40)],bank:[130,Math.max(96,I+40)]}; /* a wider short name (a wide font) widens the minimums that hold three entries, or an entry and "+N" (delta 2026-11-23) */
+    const I=iw>INIT_W?iw:INIT_W, SW={...SPECIAL_W,boss:[230,bossMin(I)],coffee:[160,Math.max(96,I+40)],bank:[130,Math.max(96,I+40)]}; /* a wider short name (a wide font) widens the minimums that hold three entries, or an entry and "+N" (delta 2026-11-23) */
     const n=Math.max(1,Math.floor(Number(places)||0)), width=Number(aw)>0?Number(aw):800, withPost=post!==false;
     const keys=Object.keys(SW).filter(k=>withPost||k!=='post');
     const gaps=8*(n+keys.length-1)+(addButton?26+8:0), avail=width-gaps;
@@ -319,5 +321,5 @@
     return w.length>1?(c(w[0])[0]+c(w[w.length-1])[0]).toUpperCase():c(w[0]).slice(0,2).join('');
   }
 
-  return {PLACES,IDS,COFFEE,BOSS,BANK,POSTBOX,SPECIAL,SNUG_W,lobbyFit,lobbyShare,chipsNeed,shortName,lobbyOrder,initialSpots,postNext,lettersToday,postMissed,allPlaces,placeName,isChoice,chipsIn,chipsFor,initialsOf,classify,canonicalServer,placeRows,mergePlaceNames,placeSaves,defaultServerPlace,toolLabel,createVisits,layoutSpots};
+  return {PLACES,IDS,COFFEE,BOSS,BANK,POSTBOX,SPECIAL,SNUG_W,lobbyFit,bossMin,lobbyShare,chipsNeed,shortName,lobbyOrder,initialSpots,postNext,lettersToday,postMissed,allPlaces,placeName,isChoice,chipsIn,chipsFor,initialsOf,classify,canonicalServer,placeRows,mergePlaceNames,placeSaves,defaultServerPlace,toolLabel,createVisits,layoutSpots};
 })());
