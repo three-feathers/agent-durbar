@@ -134,21 +134,27 @@ function builtRedact() {
   }
   return redactTs;
 }
-// A value of a secret-looking NAME is masked only from this length on (a 6-character word such as `branch`, the value of GITHUB_REF_TYPE in Actions, is not a secret and turned
-// the word "branch" into *** in every message); tokens and long secrets are far above it and also have their shapes below.
-const SECRET_MIN_LEN = 8;
-// GitHub's documented non-secret context variables (their names start with GITHUB_ like GITHUB_TOKEN does): never masked by name, so "pull_request" or the repository name stay readable.
-// GITHUB_TOKEN, GITHUB_PAT and the like are not here and stay masked.
-const PUBLIC_CONTEXT = /^GITHUB_(ACTIONS|ACTOR|ACTOR_ID|API_URL|BASE_REF|EVENT_NAME|GRAPHQL_URL|HEAD_REF|JOB|REF|REF_NAME|REF_PROTECTED|REF_TYPE|REPOSITORY|REPOSITORY_ID|REPOSITORY_OWNER|REPOSITORY_OWNER_ID|RETENTION_DAYS|RUN_ATTEMPT|RUN_ID|RUN_NUMBER|SERVER_URL|SHA|TRIGGERING_ACTOR|WORKFLOW|WORKFLOW_REF|WORKFLOW_SHA|WORKSPACE)$/;
+// GitHub's default environment variables that are paths, names, numbers, URLs or flags, never secrets (docs.github.com, Actions > Reference > Variables,
+// "Default environment variables", read 2026-11-24, which says none of them holds a token). Their NAMES start with GITHUB_ like GITHUB_TOKEN's, so SECRET_NAME matches them:
+// in Actions GITHUB_REF_TYPE is `branch`, and masking its value turned the word "branch" into *** in every message. Exempt by name, nothing else: GITHUB_TOKEN is NOT here.
+const PUBLIC_CONTEXT_NAMES = ['GITHUB_ACTION', 'GITHUB_ACTION_PATH', 'GITHUB_ACTION_REPOSITORY', 'GITHUB_ACTIONS', 'GITHUB_ACTOR', 'GITHUB_ACTOR_ID', 'GITHUB_API_URL', 'GITHUB_ARTIFACTS', 'GITHUB_ARTIFACTS_LIST',
+  'GITHUB_BASE_REF', 'GITHUB_ENV', 'GITHUB_EVENT_NAME', 'GITHUB_EVENT_PATH', 'GITHUB_GRAPHQL_URL', 'GITHUB_HEAD_REF', 'GITHUB_JOB', 'GITHUB_OUTPUT', 'GITHUB_PATH', 'GITHUB_REF', 'GITHUB_REF_NAME', 'GITHUB_REF_PROTECTED',
+  'GITHUB_REF_TYPE', 'GITHUB_REPOSITORY', 'GITHUB_REPOSITORY_ID', 'GITHUB_REPOSITORY_OWNER', 'GITHUB_REPOSITORY_OWNER_ID', 'GITHUB_RETENTION_DAYS', 'GITHUB_RUN_ATTEMPT', 'GITHUB_RUN_ID', 'GITHUB_RUN_NUMBER',
+  'GITHUB_SERVER_URL', 'GITHUB_SHA', 'GITHUB_STEP_SUMMARY', 'GITHUB_TRIGGERING_ACTOR', 'GITHUB_WORKFLOW', 'GITHUB_WORKFLOW_REF', 'GITHUB_WORKFLOW_SHA', 'GITHUB_WORKSPACE'];
+const PUBLIC_CONTEXT = new Set(PUBLIC_CONTEXT_NAMES);
 function scrub(text, env = process.env, { useBuilt = true } = {}) {
   let s = String(text);
-  for (const [k, v] of Object.entries(env)) if (v && v.length >= SECRET_MIN_LEN && SECRET_NAME.test(k) && !PUBLIC_CONTEXT.test(k)) s = s.split(v).join('***');
+  for (const [k, v] of Object.entries(env)) if (v && v.length >= 6 && SECRET_NAME.test(k) && !PUBLIC_CONTEXT.has(k)) s = s.split(v).join('***');
   s = s.replace(/(\w+:\/\/)[^/@\s]+@/g, '$1***@');
   for (const re of TOKEN_SHAPES) s = s.replace(re, (m, g1) => (/^(Bearer|Basic)$/i.test(g1 || '') ? `${g1} ***` : '***'));
   const red = useBuilt && builtRedact();
-  if (red) { try { s = red(s, env); } catch { /* the floor above already ran */ } }
+  // src/shared/redact.ts masks env values by name and by length itself (a 20+ character value without a blank, such as a workspace path): GitHub's default context variables are taken out of the env it gets,
+  // or the built run (CI's `npm test`) masks a repository slug or a path that the run above left alone
+  if (red) { try { s = red(s, Object.fromEntries(Object.entries(env).filter(([k]) => !PUBLIC_CONTEXT.has(k)))); } catch { /* the floor above already ran */ } }
   return s;
 }
+/** Text from git or gh (a branch name, a path, an error line) for output: the token scrub, then safe-print. */
+const safe = (t) => printable(scrub(String(t)));
 const firstLine = (e) => printable(scrub(String((e && (e.stderr || e.message)) || e).trim().split('\n')[0]).slice(0, 300));
 
 // ---------- git ----------
@@ -402,7 +408,7 @@ function wideHeads(root, { remote = [], worktrees = [], open = [], selfRef, pref
   // the tip dates of every candidate in one call (one process per head was 0.7 s on 90 heads)
   const day = new Map();
   if (dates) for (const l of (gitq(root, ['log', '--no-walk=unsorted', '--format=%H %cs', ...new Set([...remote, ...worktrees].map((h) => h.sha))]) || '').split('\n')) { const [sha, d] = l.split(' '); if (d) day.set(sha, d); }
-  const label = (kind, h) => `${kind}${printable(h.name)}${dates ? `, tip ${day.get(h.sha) || '?'}` : ''}`;
+  const label = (kind, h) => `${kind}${safe(h.name)}${dates ? `, tip ${day.get(h.sha) || '?'}` : ''}`;
   const out = remote.filter((h) => !skip(h) && !openNames.has(h.name) && !openShas.has(h.sha))
     .map((h) => ({ label: label(prefix, h), sha: h.sha, name: h.name, headRef: h.name, sameRepo: true, wide: true }));
   for (const h of worktrees) {
@@ -441,7 +447,7 @@ function report({ branchAdds, prs, skipped, noBase = [], base }, clashes, notes 
   for (const t of notes) lines.push(`specs:numbers: ${t}`);
   if (noBase.length) lines.push(`specs:numbers: WARN not compared (no common history with origin/main): ${noBase.join(', ')}`);
   if (!clashes.length) { lines.push('specs:numbers: ok, no clash'); return lines; }
-  for (const c of clashes) lines.push(`  CLASH ${printable(c.file)}: ${c.id} is also in ${c.with}`);
+  for (const c of clashes) lines.push(`  CLASH ${safe(c.file)}: ${c.id} is also in ${c.with}`);
   lines.push('Fix: take the next free number in that file (check origin/main and the open PR heads again), renumber your lines and every mention, then re-run.');
   return lines;
 }
@@ -501,7 +507,7 @@ async function main(argv, env, deps = {}) {
   return clashes.length ? 1 : 0;
 }
 
-module.exports = { wideHeads, resolveWide, liveRemoteHeads, trackedRemoteHeads, worktreeHeads, ghBranchState, stackRelated, openPrs, GH_LIMIT, parseDefinitions, definitionCounts, definitionLines, scanDuplicates, checkDuplicates, added, findClashes, scrub, collect, report, restOpenPrs, main, show, SPEC_FILE_RE };
+module.exports = { PUBLIC_CONTEXT_NAMES, safe, wideHeads, resolveWide, liveRemoteHeads, trackedRemoteHeads, worktreeHeads, ghBranchState, stackRelated, openPrs, GH_LIMIT, parseDefinitions, definitionCounts, definitionLines, scanDuplicates, checkDuplicates, added, findClashes, scrub, collect, report, restOpenPrs, main, show, SPEC_FILE_RE };
 
 if (require.main === module) {
   main(process.argv.slice(2), process.env).then((c) => process.exit(c), (e) => { emit(`specs:numbers: NOT CHECKED: ${firstLine(e)}`); process.exit(2); });

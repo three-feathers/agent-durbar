@@ -199,6 +199,13 @@ const has = (list, re) => list.some((t) => re.test(t));
   assert.ok(has(dead.notes, /^skipped origin\/002-other: its PR is closed and not merged/), 'PP-numbers-dead-note it is named as a NOTE: ' + dead.text);
   assert.ok(has(run({ head: mineN, branch: '001-mine', branchState: closedAtTip('e'.repeat(40)) }).fails, /T501/), 'PP-numbers-dead-tip a closed PR at another tip is a live branch');
   assert.ok(has(run({ head: mineN, branch: '001-mine', branchState: () => ({ status: 1, stdout: '' }) }).fails, /numbers: not checked \(could not read the PR state of branch 002-other/), 'PP-numbers-unread an unreadable PR state is a FAIL, not a pass');
+  // an error text of git or gh that carries a token-shaped value is printed scrubbed (and a workflow command neutralised)
+  { const t = 'ghp_' + 'A1b2C3d4E5f6G7h8I9j0';
+    const g = fakeGh({ head: mineN, branch: '001-mine' });
+    const r = pp.preflight('7', { gh: g.gh, root: tmp, fetch: false, trusted: TRUSTED, liveHeads: () => { throw new Error(`fatal: https://user:${t}@x failed ${t}\n::error::second line`); } });
+    const f = r.lines.filter((l) => l.level === 'FAIL').map((l) => l.text).join('\n');
+    assert.ok(/numbers: not checked \(fatal: /.test(f) && !f.includes(t) && !f.includes('ghp_'), 'PP-numbers-scrub a token in an error text is not printed: ' + f); }
+  assert.ok(!pp.numberFindings([{ file: 'specs/ghp_' + 'A1b2C3d4E5f6G7h8I9j0/tasks.md', id: 'T1', with: 'x' }])[0].text.includes('ghp_'), 'PP-numbers-scrub-file a token-shaped path in a clash line is masked');
   // a head with no base with origin/main was not compared: a FAIL, never ok (a branch pushed between the fetch and the ls-remote)
   { mk([], { 'specs/001-a/tasks.md': '# A\n- [ ] T380 one\n' }, 'orphan', { ref: 'refs/remotes/origin/003-orphan' });
     const o = run({ head: good, branch: '001-good' });

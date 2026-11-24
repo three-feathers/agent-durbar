@@ -68,7 +68,7 @@ function realGh(root) {
 /** The clash lines for the numbers a PR adds: exactly the rule of `npm run specs:numbers` (its findClashes, reused, FR-031: same file vs
  * origin/main or another head, another spec file of the same kind vs another head, FR-098), never a stricter one of its own. */
 function numberFindings(clashes) {
-  return clashes.map((c) => ({ level: 'FAIL', text: `number ${c.id} (${printable(c.file)}) is also in ${c.with}` }));
+  return clashes.map((c) => ({ level: 'FAIL', text: `number ${c.id} (${sn.safe(c.file)}) is also in ${c.with}` }));
 }
 
 /** Pure: label check. -> { level, text } */
@@ -257,7 +257,7 @@ function preflight(n, deps = {}) {
     const addedIds = [...res.branchAdds.values()].flatMap((s) => [...s]);
     for (const f of found) add(f.level, f.text);
     if (!found.some((f) => f.level === 'FAIL')) add('ok', `numbers: ${addedIds.length ? addedIds.join(' ') : 'none added'}; checked against origin/main and ${res.prs.length} other head(s) (remote branches and worktree branches)`);
-  } catch (e) { add('FAIL', `numbers: not checked (${printable(String(e.message || e).split('\n')[0])})`); }
+  } catch (e) { add('FAIL', `numbers: not checked (${sn.safe(String(e.message || e).split('\n')[0])})`); }
 
   // 8. removed asserts
   const a = assertChanges(gitq(root, ['diff', base, head, '--', 'scripts']) || '');

@@ -119,13 +119,33 @@ for (const t of ['my_ghp_ABCDEF1234567890', '_ghp_ABCDEF1234567890_', '__ghp_ABC
 }
 assert.ok(!sn.scrub('x eyJhbGciOiJI.eyJzdWIiOiIx.abcdef end', {}).includes('eyJhbGci'));
 assert.strictEqual(sn.scrub('has MyValue99 inside', { MY_API_KEY: 'MyValue99', PLAIN: 'zzzzzzzz' }), 'has *** inside');
-// the CI environment must not change a message: short values and GitHub's public context variables are not masked, tokens and long secrets still are
+// the CI environment must not change a message: GitHub's default context variables are never masked by name; every other secret-looking value stays masked, short ones too (main's minimum is 6)
 assert.strictEqual(sn.scrub('a branch named x', { GITHUB_REF_TYPE: 'branch' }), 'a branch named x', 'SCRUB-ctx GITHUB_REF_TYPE=branch does not turn the word branch into ***');
 assert.strictEqual(sn.scrub('event pull_request here', { GITHUB_EVENT_NAME: 'pull_request' }), 'event pull_request here', 'SCRUB-ctx-long a public context variable is never masked by name');
-assert.strictEqual(sn.scrub('a branch named x', { MY_TOKEN: 'branch' }), 'a branch named x', 'SCRUB-floor a value under 8 characters of a secret-looking name is not masked');
+// every name of GitHub's documented default list (docs.github.com, Variables > Default environment variables, 2026-11-24): never masked, whatever its value
+for (const name of ['GITHUB_ACTION', 'GITHUB_ACTION_PATH', 'GITHUB_ACTION_REPOSITORY', 'GITHUB_ACTIONS', 'GITHUB_ACTOR', 'GITHUB_ACTOR_ID', 'GITHUB_API_URL', 'GITHUB_ARTIFACTS', 'GITHUB_ARTIFACTS_LIST', 'GITHUB_BASE_REF', 'GITHUB_ENV', 'GITHUB_EVENT_NAME', 'GITHUB_EVENT_PATH', 'GITHUB_GRAPHQL_URL', 'GITHUB_HEAD_REF', 'GITHUB_JOB', 'GITHUB_OUTPUT', 'GITHUB_PATH', 'GITHUB_REF', 'GITHUB_REF_NAME', 'GITHUB_REF_PROTECTED', 'GITHUB_REF_TYPE', 'GITHUB_REPOSITORY', 'GITHUB_REPOSITORY_ID', 'GITHUB_REPOSITORY_OWNER', 'GITHUB_REPOSITORY_OWNER_ID', 'GITHUB_RETENTION_DAYS', 'GITHUB_RUN_ATTEMPT', 'GITHUB_RUN_ID', 'GITHUB_RUN_NUMBER', 'GITHUB_SERVER_URL', 'GITHUB_SHA', 'GITHUB_STEP_SUMMARY', 'GITHUB_TRIGGERING_ACTOR', 'GITHUB_WORKFLOW', 'GITHUB_WORKFLOW_REF', 'GITHUB_WORKFLOW_SHA', 'GITHUB_WORKSPACE']) {
+  assert.strictEqual(sn.scrub('v pubvalue1 w', { [name]: 'pubvalue1' }), 'v pubvalue1 w', `SCRUB-ctx-list ${name} is never masked by name`);
+  assert.ok(sn.PUBLIC_CONTEXT_NAMES.includes(name), `SCRUB-ctx-const ${name} is in the constant`);
+}
+// the REAL shapes of the public variables on a runner (a long workspace path, a repository slug, a ref with a slash and digits, a 40-hex sha, a URL, a long event path), with and without the built redact.ts of `npm test`
+{ const real = { GITHUB_WORKSPACE: '/home/runner/work/agent-durbar/agent-durbar', GITHUB_REPOSITORY: 'three-feathers/agent-durbar', GITHUB_REF_NAME: '2084/merge', GITHUB_REF: 'refs/pull/2084/merge', GITHUB_SHA: '0123456789abcdef0123456789abcdef01234567',
+    GITHUB_SERVER_URL: 'https://github.com', GITHUB_EVENT_PATH: '/home/runner/work/_temp/_github_workflow/event.json', GITHUB_WORKFLOW_REF: 'three-feathers/agent-durbar/.github/workflows/ci.yml@refs/pull/2084/merge',
+    GITHUB_EVENT_NAME: 'pull_request', GITHUB_REF_TYPE: 'branch', GITHUB_ACTOR: 'vikramgorla', GITHUB_STEP_SUMMARY: '/home/runner/work/_temp/_runner_file_commands/step_summary_0a1b2c3d-1111-2222-3333-444455556666' };
+  const text = Object.values(real).join(' | ');
+  for (const useBuilt of [true, false]) assert.strictEqual(sn.scrub(text, real, { useBuilt }), text, `SCRUB-real the real shapes of the public variables are printed as they are (useBuilt ${useBuilt})`); }
+assert.strictEqual(sn.PUBLIC_CONTEXT_NAMES.length, 38, 'SCRUB-ctx-count the list is exactly the documented 38 GITHUB_ names');
+assert.ok(!sn.PUBLIC_CONTEXT_NAMES.includes('GITHUB_TOKEN'), 'SCRUB-ctx-token GITHUB_TOKEN is not public');
+assert.strictEqual(sn.scrub('otp 123456 end', { NPM_CONFIG_OTP: '123456', NPM_X: 'zz' }), 'otp *** end', 'SCRUB-floor a 6-digit OTP stays masked (main\'s minimum is 6, not more)');
+assert.strictEqual(sn.scrub('pw s3cr3t end', { DB_PASSWORD: 's3cr3t' }), 'pw *** end', 'SCRUB-floor-pw a 6-character password value stays masked');
+assert.strictEqual(sn.scrub('t abcdefg end', { GITHUB_TOKEN: 'abcdefg' }), 't *** end', 'SCRUB-floor-token a 7-character GITHUB_TOKEN stays masked');
+assert.strictEqual(sn.scrub('x abc12 y', { MY_TOKEN: 'abc12' }), 'x abc12 y', 'SCRUB-min a value under 6 characters is not masked (as on main)');
 assert.strictEqual(sn.scrub('x tok123456 y', { MY_TOKEN: 'tok123456' }), 'x *** y', 'SCRUB-long a long value of a secret-looking name is masked');
-assert.strictEqual(sn.scrub('x abcdefgh12345678 y', { GITHUB_TOKEN: 'abcdefgh12345678' }), 'x *** y', 'SCRUB-ghtoken GITHUB_TOKEN stays masked');
 assert.strictEqual(sn.scrub('x abcdefgh12345678 y', { GITHUB_REF_NAME_X: 'abcdefgh12345678' }), 'x *** y', 'SCRUB-prefix another GITHUB_ name (not on the public list) stays masked');
+// text from git or gh is printed through the scrub and safe-print
+assert.ok(!sn.report({ branchAdds: new Map(), prs: [], skipped: [], base: 'abcdefghi' }, [{ file: 'specs/ghp_' + 'A1b2C3d4E5f6G7h8I9j0/tasks.md', id: 'T1', with: 'x' }]).join('\n').includes('ghp_'), 'SCRUB-clash-file a token-shaped path in a clash line is masked');
+assert.strictEqual(sn.scrub('v pubvalue1 w', { GITHUB_ENV: 'pubvalue1' }, { useBuilt: true }), 'v pubvalue1 w', 'SCRUB-built the built redact does not mask a public variable either');
+assert.strictEqual(sn.safe('boom ghp_' + 'A1b2C3d4E5f6G7h8I9j0 and a::error::x'), 'boom *** and a: :error: :x', 'SCRUB-safe a token shape and a workflow command in git text are neutralised');
+assert.ok(sn.wideHeads('.', { remote: [{ name: 'ghp_' + 'A1b2C3d4E5f6G7h8I9j0', sha: 'a'.repeat(40) }], dates: false })[0].label.endsWith('***'), 'SCRUB-label a token-shaped branch name is masked in its label');
 assert.ok(!sn.scrub('x ghp_' + 'A1b2C3d4E5f6G7h8I9j0 y', { GITHUB_REF_TYPE: 'branch' }).includes('ghp_'), 'SCRUB-shape a token shape is masked whatever the environment holds');
 
 // ---- git repos, --no-fetch
