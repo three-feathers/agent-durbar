@@ -57,6 +57,8 @@ export interface AgentsIpcDeps {
   mcpSecrets(id: string): string[];
   /** Spec 087 FR-007a: an ended or removed session's open sandbox note is forgotten (main's one-shot Continue). */
   forgetSandboxNote?(id: string): void;
+  /** Spec 005 FR-411: drop main's kept tool-call values of a removed session. */
+  forgetToolCopies?(id: string): void;
   /** Spec 099: main's Autopilot; its gate is inside (`enabled`). */
   autopilot: Pick<AutopilotOps, 'setAutopilot' | 'forget' | 'stopSeen'>;
   /** Spec 052 activity log row for Restart session (spec 058 FR-022). */
@@ -232,6 +234,7 @@ export function register(deps: AgentsIpcDeps): void {
     finals.drop(a.id);
     deps.profileFreshness?.forget(a.id); // spec 043 FR-041
     deps.forgetSandboxNote?.(a.id); // spec 087
+    deps.forgetToolCopies?.(a.id); // spec 005 FR-411
     deps.browserGone?.(a.id); // spec 080 FR-023
     agents.delete(a.id);
     agentState.remove(a.id);

@@ -867,4 +867,26 @@ for (const [start, more] of [['AK' + 'IA' + up(16), 'A'], ['AK' + 'IA' + up(16),
 const B64RUN = an(200);
 for (const t of [B64RUN + '/' + 'EA' + 'AA' + an(70) + '/' + B64RUN, 'ab+' + 'EA' + 'AA' + an(70), 'EA' + 'AA' + an(70) + '/' + B64RUN, 'ab/' + 'EA' + 'AC' + an(120) + '+x', B64RUN + '/' + 'AB' + 'SK' + an(120), B64RUN + '/AI' + 'za' + an(35), '+S' + 'K' + hex(32), 'SK' + hex(32) + '/' + B64RUN, '-' + 'EA' + 'AA' + an(70), '_' + 'EA' + 'AA' + an(70), 'A'.repeat(22) + 'B' + an(100), an(76) + '\n' + 'EA' + 'AA' + an(72) + '\n' + an(76), 'EA' + 'AA' + an(72) + '\n' + an(76), an(76) + '\\n' + 'EA' + 'AA' + an(72)]) assert.strictEqual(redact(t, {}), t, `base64 stays: ${t.slice(0, 16)}…`);
 
+// spec 012 FR-196 delta, issue #2062 (a long-run guard, review of PR 2098; first written as the two-letter rule beside `hf_` and `r8_`; found by test-redact-images on an arcade picture, spec 102 #2056): Resend's `re_` key is masked on its own, but not after `-` or `_`, where base64url holds it by chance
+{
+  const key = 're' + '_' + an(8) + '_' + an(24);
+  // still masked (issue #2062): after `=` and `:`, on its own, at the line start, after a space and a quote, on the bare mask and on `redact`
+  for (const [ctx, t] of [['after =', 'RESEND=' + key], ['after :', 'resend:' + key], ['on its own', key], ['line start', 'x\n' + key], ['after a space', 'key ' + key], ['after a quote', '"' + key + '"']]) {
+    assert.ok(!maskBareTokenShapes(t, '[R]').includes(key.slice(3)), `#2062: a Resend key is still masked ${ctx} (bare)`);
+    assert.ok(!redact(t, {}).includes(key.slice(3)), `#2062: a Resend key is still masked ${ctx} (redact)`);
+  }
+  // not a key after `-` or `_` deep in a long base64url run: picture data holds that run by chance (the two-letter rule)
+  const b64u = an(70);
+  // the run's bound, both sides: 64 characters of picture data before the separator read as data, 63 do not (a key)
+  for (const lead of ['-', '_']) {
+    assert.strictEqual(maskBareTokenShapes(an(64) + lead + key, '[R]'), an(64) + lead + key, `#2062: a run of exactly the bound before ${lead} reads as data`);
+    assert.ok(!maskBareTokenShapes(an(63) + lead + key, '[R]').includes(key.slice(3)), `#2062: a run one short of the bound before ${lead} is a key`);
+  }
+  for (const lead of ['-', '_']) assert.strictEqual(maskBareTokenShapes(b64u + lead + key, '[R]'), b64u + lead + key, `#2062: re_ after ${lead} in a long base64url run is data, not a key`);
+  // review of PR 2098: after a short word joined by `-` or `_` it is a key (a name glued before it), on the bare mask and on `redact`
+  for (const lead of ['-', '_']) for (const word of ['x', 'MY_RESEND', 'api' + lead + 'key']) {
+    assert.ok(!maskBareTokenShapes(word + lead + key, '[R]').includes(key.slice(3)), `#2062: a key glued after a short word and ${lead} is masked (bare)`);
+    assert.ok(!redact(word + lead + key, {}).includes(key.slice(3)), `#2062: a key glued after a short word and ${lead} is masked (redact)`);
+  }
+}
 console.log(`redact shapes: all checks passed (${count} samples, ${STAYS.length} that stay)`);

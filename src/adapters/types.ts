@@ -263,6 +263,8 @@ export interface ToolCallEvent extends BaseEvent {
   mcpAuth?: true;
   /** Spec 058 FR-193 (issue #841): set by `maskMcpEvent` (never by an adapter) on a failed MCP call whose masked output reads like an organization access policy refusal. A word only. */
   mcpCall?: 'policy';
+  /** Spec 005 FR-411: set by main (never by an adapter) on the window's copy of an event with `args`: whether main's masking changed the argument the chip shows. A yes/no only. */
+  argsMasked?: boolean;
 }
 
 export interface SubagentEvent extends BaseEvent {
