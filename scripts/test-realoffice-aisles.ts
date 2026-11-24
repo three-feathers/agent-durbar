@@ -542,6 +542,58 @@ console.log(`floor covered with 4 or fewer: ${covs.join('; ')}`);
   assert.strictEqual(got, '96499daf120667dfbddcd5ad7d04fc2110c903f9ec75103e637ad82203361963', 'the Retro pixel set lays out differently than before the crews were wired');
 }
 
+/* spec 102 T502 (review of #2106): the arcade does not move. A digest per hall, from the shipped data, for a sample: 1, 3, 8 and 15 agents (every state, two in the lounge from 8, three
+   lobby visitors), the measured rooms and the 1408/1248 floors, ratio 1 and 2. The digests were taken on the T502 data, which drew the same 1792 halls as the set before T502 (the one-off
+   comparison in the spec delta of 2026-11-24); a moved hall is named here. AISLES_DIGESTS=print prints the list to re-take on purpose. */
+{
+  const hallOf = (n: number, W: number, H: number, dpr: number): Layout => {
+    const m = model(n, Math.min(4, n), STATES, n >= 8 ? 2 : 0);
+    m.places[0].visitors.push({ id: 'v0', person: PEOPLE[3], needsYou: false } as never); m.places[2].visitors.push({ id: 'v1', person: PEOPLE[8], needsYou: true } as never); m.places[6].visitors.push({ id: 'v2', person: PEOPLE[12], needsYou: false } as never);
+    return aislesLayout(m, { w: W, h: H }, { ...META, dpr }, SIGNS(Math.min(4, n)));
+  };
+  const got: Record<string, string> = {};
+  for (const n of [1, 3, 8, 15]) for (const [W, H] of [[1440, ROOM.h900], [1280, ROOM.h800], [1408, ROOM.h900], [1248, ROOM.h800]]) for (const dpr of [1, 2]) got[`${n}@${W}x${H}r${dpr}`] = crypto.createHash('sha256').update(JSON.stringify(hallOf(n, W, H, dpr))).digest('hex').slice(0, 16);
+  if (process.env.AISLES_DIGESTS === 'print') console.log(JSON.stringify(got, null, 1));
+  const PINNED: Record<string, string> = {
+    '1@1440x797r1': '78f5ef2cd9161cbb',
+    '1@1440x797r2': '026df6d711f75d47',
+    '1@1280x697r1': 'f9d23c4b0bd83a0c',
+    '1@1280x697r2': 'e1f4a4e983245caf',
+    '1@1408x797r1': 'e9fd99d3cb6d6030',
+    '1@1408x797r2': 'ec0116d6e86035b7',
+    '1@1248x697r1': '58c6dedea33dcc59',
+    '1@1248x697r2': 'aa47139105eb5e8d',
+    '3@1440x797r1': 'de510c665ecc1214',
+    '3@1440x797r2': '49f7d543a778aad8',
+    '3@1280x697r1': 'f70eda27ca183831',
+    '3@1280x697r2': 'df3fca203e40bd75',
+    '3@1408x797r1': '6c6024410198d4d9',
+    '3@1408x797r2': 'fd2c42e46e03615c',
+    '3@1248x697r1': 'b829c458e281ea1d',
+    '3@1248x697r2': 'd72b36b8d2327d40',
+    '8@1440x797r1': 'd4f261eeed07b34b',
+    '8@1440x797r2': '99f1588b5954c160',
+    '8@1280x697r1': 'bc02f5b7abc9a202',
+    '8@1280x697r2': 'b95cbf34cfd638af',
+    '8@1408x797r1': '0ce987323d78cb3d',
+    '8@1408x797r2': '72da281e9e14a1e2',
+    '8@1248x697r1': '8bb879141b9caa09',
+    '8@1248x697r2': 'db4672a9683dc1b0',
+    '15@1440x797r1': 'fb82d782860eebf8',
+    '15@1440x797r2': 'e2321ed3910b4d82',
+    '15@1280x697r1': '7486e344ed02497d',
+    '15@1280x697r2': '1de1172d39f33431',
+    '15@1408x797r1': 'ceffb3ec4fbd9480',
+    '15@1408x797r2': 'e6e09504c7884e2e',
+    '15@1248x697r1': '39581647f348c005',
+    '15@1248x697r2': 'da8b22d657ac2413',
+  };
+  const moved = Object.keys(got).filter((k) => got[k] !== PINNED[k]);
+  assert.strictEqual(Object.keys(PINNED).length, 32, 'the 32 pinned halls');
+  assert.deepStrictEqual(moved, [], `the arcade moved in ${moved.length} of 32 halls: ${moved.join(', ')}`);
+  console.log('arcade halls: 32 of 32 digests unchanged');
+}
+
 /* spec 097 FR-335, T247: the width cap, checked directly (the cut check above has about 6 grid px of slack). For a set that is not pixel art, the widest frame a person can show at a cabinet,
    times the scale the layout used, is at most AISLE_PW_MAX (48 grid px). The widest frame is found here, not by the layout: every standing person, every pose a cabinet shows (the state's frame,
    else the next that exists), the seat frame excluded. A synthetic set whose widest frame belongs to a LATER person guards a width taken from the first person only. */

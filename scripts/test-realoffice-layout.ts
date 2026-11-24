@@ -571,7 +571,10 @@ assert.ok(Object.values(META.stand).some((s) => Object.values(s.foot as Record<s
     }
     { // spec 102 T472 (coordinator's look at F1): no world shrinks for the HD set: the visible figure as tall as the old set's, the lounge card no narrower
       const TOL = 0.03; /* the figure's height on screen within 3 % of the old set's: the HD busts' seat numbers are fitted to the old figures, rounding stays far below this */
-      const rs = sj('retro') as Record<string, unknown>, oldSet = { ...rs, hd: undefined, hdPeople: undefined, seat: (JSON.parse(fs.readFileSync(path.join(ROOT, 'scripts', 'fixtures', 'retro-old-seat.json'), 'utf8')) as { seat: unknown }).seat } as unknown; /* spec 102 T502: the first pictures' seat numbers, kept as a fixture: the sizes the owner approved */
+      /* review of #2106: the approved sizes cannot change unnoticed: the fixture's bytes are pinned (LF on every OS, .gitattributes) */
+      const OLD_SEAT = fs.readFileSync(path.join(ROOT, 'scripts', 'fixtures', 'retro-old-seat.json'));
+      assert.strictEqual(createHash('sha256').update(OLD_SEAT).digest('hex'), '7ecdc5dbbd507b7059ea5b8d13393dd7468220c63a8ebfc5a84dd98b59a4700e', 'scripts/fixtures/retro-old-seat.json is the old seat numbers as approved (sha256)');
+      const rs = sj('retro') as Record<string, unknown>, oldSet = { ...rs, hd: undefined, hdPeople: undefined, seat: (JSON.parse(OLD_SEAT.toString('utf8')) as { seat: unknown }).seat } as unknown; /* spec 102 T502: the first pictures' seat numbers, kept as a fixture: the sizes the owner approved */
       type L2 = { big?: boolean; zones: { desks: { id: string; glass: Rect; person: { y: number; w: number; h: number; pid: string; pose: string } | null }[] }[]; lounge?: { desks: { id: string; plate: Rect; person: { h: number } | null }[] } };
       const YIELD = new Set<string>(), SHRINK: Record<string, number> = {};
       const check = (hdSet: unknown, tag: string): string[] => {

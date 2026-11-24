@@ -1,13 +1,13 @@
 /** Spec 102 FR-227, FR-256 (T202, T203, T205): where the people sit. `rows` is `realLayout`, untouched; `aisles` is the Retro arcade hall:
  *  staggered aisles of cabinets in an integer pixel scale `g`. Pure, no DOM, nothing draws it yet (RA3). The numbers marked "provisional"
- *  come from the mockup and the art by eye and are replaced by measured ones (T201's `faceBox`, T207's frame sizes). */
+ *  come from the mockup and the art by eye and are replaced by measured ones (the HD set's face boxes and `hd.stand` sizes, measured on its frames; spec 102 T502). */
 import { hdFrame, hdOnly, seatsOf, standOf, devStep, lobbyBand, lobbyRange, loungeRows, realLayout, rowGeom, deskStation, shownDesks, signWidth, signMin, signShortMin, CHIP_KINDS, splitLounge, BIG_MAX, helpH, helpCols, helpShown, FACE_U, PW, SR, PAD, ZGAP, STRIP, U_MAX, type DeskBox, type Layout, type RealAgent, type RealMeta, type RealModel, type RealState, type Rect, type ZoneBox, STOREY_GAP, STOREY_TAG_MIN, storeyRuns, storeyTagW, type StoreyBand } from './realoffice-layout';
 
 export const ARRANGEMENTS = ['rows', 'circle', 'aisles'] as const;
 export type Arrangement = (typeof ARRANGEMENTS)[number];
 export const isArrangement = (v: unknown): v is Arrangement => typeof v === 'string' && (ARRANGEMENTS as readonly string[]).includes(v);
 
-/** FR-256: a person at their cabinet is 72 grid pixels tall and 34 wide (provisional: the art's reduced size), the face 19 from crown to chin (the smallest of the 15 people, measured by `build-arcade-pack.py` into `faceBox`; RA1 had 24 by eye) */
+/** FR-256: a person at their cabinet is 72 grid pixels tall and 34 wide (provisional: the art's reduced size), the face 19 from crown to chin (the smallest face of the first Retro pixel pictures; the HD set's smallest s 1 face is 20, held by test-realoffice-assets; RA1 had 24 by eye) */
 export const AISLE_PERSON = { w: 34, h: 72 } as const;
 /** the floor between a cabinet and the person beside it, in grid px: no person is ever cut by a cabinet or a screen (owner, 2026-11-03) */
 export const AISLE_GAP = 2;

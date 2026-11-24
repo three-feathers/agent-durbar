@@ -432,6 +432,28 @@ if (worldIds.includes('retro')) {
       assert.ok(e.feet[pose] > 0.9 && e.feet[pose] <= 1 && e.top[pose] >= 0 && e.top[pose] < 0.2 && e.foot[pose] > 0.2 && e.foot[pose] < 0.8, `${pid} ${pose}: feet, top and foot are measured shares`);
     }
   }
+  /* review of #2106: hd.stand's `top` and `feet` are the pixels' (the generator that measured them is gone): the first opaque row and the row under the last one of each s 1 frame, as shares of
+     its height, to 4 places. Needs Pillow (as the frame checks below): skipped with a message, a failure where DURBAR_REQUIRE_PILLOW is set. */
+  const standRowsProblems = (stand: typeof HS, rows: Record<string, [number, number]>): string[] => Object.entries(stand).flatMap(([pid, e]) => Object.keys(e.poses).flatMap((pose) => {
+    const r = rows[`${pid}-${pose}`], want = r ? [Math.round(r[0] * 1e4) / 1e4, Math.round(r[1] * 1e4) / 1e4] : null;
+    return !want ? [`${pid} ${pose}: no s 1 frame measured`] : want[0] !== e.top[pose] || want[1] !== e.feet[pose] ? [`${pid} ${pose}: hd.stand top/feet ${e.top[pose]}/${e.feet[pose]}, the pixels ${want[0]}/${want[1]}`] : [];
+  }));
+  const pil = spawnSync('python3', ['-I', '-c', 'import PIL'], { encoding: 'utf8' });
+  if (pil.error || pil.status !== 0) {
+    if (process.env.DURBAR_REQUIRE_PILLOW) assert.fail('python3 with Pillow is required here (DURBAR_REQUIRE_PILLOW) and is missing: hd.stand cannot be tied to the pixels');
+    console.log('hd.stand pixel check skipped: needs python3 with Pillow (not on this machine)');
+  } else {
+    const hdd = path.join(RO, 'sets', 'retro', 'hd'), files = Object.entries(HS).flatMap(([pid, e]) => Object.keys(e.poses).map((pose) => path.join(hdd, `${pid}-${pose}@1.webp`)));
+    const py = 'import sys, json\nfrom PIL import Image\nfor f in sys.argv[1:]:\n  im = Image.open(f).convert("RGBA"); b = im.getchannel("A").getbbox()\n  print(json.dumps([f, b[1] / im.height, b[3] / im.height]))';
+    const r = spawnSync('python3', ['-I', '-c', py, ...files], { encoding: 'utf8', maxBuffer: 4 * 1024 * 1024 });
+    assert.strictEqual(r.status, 0, 'measuring the s 1 frames: ' + r.stderr);
+    const rows: Record<string, [number, number]> = {};
+    for (const l of r.stdout.trim().split('\n')) { const [f, t, b] = JSON.parse(l) as [string, number, number]; rows[path.basename(f).replace(/@1\.webp$/, '')] = [t, b]; }
+    assert.strictEqual(Object.keys(rows).length, 210, 'the 210 s 1 frames measured');
+    assert.deepStrictEqual(standRowsProblems(HS, rows), [], 'hd.stand top and feet are the s 1 frames\' opaque rows');
+    const off = JSON.parse(JSON.stringify(HS)) as typeof HS; off.p03.top.knock += 1 / 72;
+    assert.ok(standRowsProblems(off, rows).some((x) => /^p03 knock: hd\.stand top\/feet/.test(x)), 'red: a frame\'s top one pixel off is caught');
+  }
   assert.strictEqual(sj.hd.placeW, 46, 'hd.placeW keeps the arcade place width the owner approved (46 grid px; from the HD frames alone it would be 40)');
   const heights = Object.entries(HP).map(([pid, f]) => { const v = f['face-book']['1']; assert.ok(v[5] > 8, `${pid}: the s 1 face-book face box`); return v[5]; });
   assert.ok(Math.min(...heights) >= FACE_GRID, `the smallest HD face at s 1 (${Math.min(...heights)} px of the 72 px figure) is at least the layout's FACE_GRID (${FACE_GRID}): the layout never promises more than the art has`);
