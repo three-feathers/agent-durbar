@@ -8,7 +8,7 @@
 - [ ] T546 Owners' rule line: no new masking work, no daily masking batch, spec 119 paused (a one-line `AGENTS.md` change by the owners, naming the rule it replaces, FR-063). [section 5 stage 0]
 - [ ] T547 Each stage PR (1 to 5) keeps the two advisory fixes untouched (#1383: `claudeMdPrompt`, `claudeMdNodeIo`, `notPath`; #1416: `agents:selectProfile`, `readAgentFile`, `hashAgentFile`, `shownSha`, `AgentTrustStore`, `claudeAgentOfBytes`, `listClaudeAgents`, `claudeAgentDirs`, `linkedInProject`, `linkedBelow` and the confirmation paths) and runs `test-agentconfirm.ts`, `test-adapter-contract.ts`, `test-claude-adapter.ts` and `test-agentprofiles.ts` green; a stage that edits `test-claude-adapter.ts` changes only its masking asserts. [FR-452]
 - [ ] T548 Constitution amendment PR with `/speckit.constitution` (principle III, version 1.2.0 to 1.3.0, Sync Impact Report), text of spec section 4. [section 4]
-- [ ] T549 Answers to Q42, Q43, Q44 and Q45 written into the spec; FR-442 and the amendment follow Q45. [section 6]
+- [ ] T549 Answers to Q43 and Q44 written into the spec, and the other two owners' agreement to Vikram's answers to Q42 and Q45 (option 1 each, 2026-11-24). [section 6]
 
 ## Stage 1: no agent text in logs, saved state or outbound sinks (depends on stage 0)
 

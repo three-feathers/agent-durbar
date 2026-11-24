@@ -6,7 +6,7 @@
 
 ## Summary
 
-First make the five places that keep or send agent text carry none (stage 1: the activity log rows, main's stderr lines, the `DURBAR_LOG` debug log, the Durbar MCP read tools, the loop pace reason in `schedules.json`), proven by planted-marker tests, one per sink with its own mutant (unit tests for main-side sinks, a fake transport for adapter stderr, a window driver for the screen). The Undo copies wait for Q45. Only then delete the masks, outside in: the window (stage 2), main's shown text (stage 3), the shared library and its tests (stage 4), then docs and spec deltas (stage 5). Each stage is one PR; each keeps `npm test` green and the marker test passing.
+First make the five places that keep or send agent text carry none (stage 1: the activity log rows, main's stderr lines, the `DURBAR_LOG` debug log, the Durbar MCP read tools, the loop pace reason in `schedules.json`), proven by planted-marker tests, one per sink with its own mutant (unit tests for main-side sinks, a fake transport for adapter stderr, a window driver for the screen). The Undo copies stay as one named exception (Q45, answered by Vikram). Only then delete the masks, outside in: the window (stage 2), main's shown text (stage 3), the shared library and its tests (stage 4), then docs and spec deltas (stage 5). Each stage is one PR; each keeps `npm test` green and the marker test passing.
 
 ## Technical context
 
@@ -27,7 +27,7 @@ First make the five places that keep or send agent text carry none (stage 1: the
 | V Calm UI | Nothing new on screen; fewer `[redacted]` words. |
 | VI Parity | No path or shell change; the marker test runs in `npm test` on all three OSes. |
 | VII Quality gates | The marker tests are written first in stage 1; each sink has its own mutant that writes the marker into it and must fail at that sink's own assert. |
-| VIII Honest limits | OS handling of stderr, screen sharing, the Undo copies (Q45) and what `DURBAR_SIM_MAIN` reaches are written as limits (spec section 6). The two published advisories are not about masking; their structural fixes and tests stay (FR-452). |
+| VIII Honest limits | OS handling of stderr, screen sharing, the Undo copies (named exception, Q45) and what `DURBAR_SIM_MAIN` reaches are written as limits (spec section 6). The two published advisories are not about masking; their structural fixes and tests stay (FR-452). |
 
 ## Design decisions
 
