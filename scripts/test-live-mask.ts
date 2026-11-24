@@ -447,7 +447,7 @@ for (const [form, t] of [['LF', app], ['CRLF', app.replace(/\n/g, '\r\n')]] as c
     folder: "a folder's name", floor: "a floor's name", file: "a file's or path's name", attribute: "an HTML attribute's name", theme: "a theme's name", world: "a world's name",
     crew: "a character set's or character's name", mcp: "an MCP server's name", profile: "a profile's name", model: "a model's name", app: "an agent app's name",
     service: "a remote-control service's name", template: "a schedule template's name", field: "a form field's name", slash: "a slash command's name",
-    helper: "a sub-agent's name, masked by helperMask where it is shown", label: "Durbar's own words", selector: 'a CSS class in a selector string',
+    helper: "a sub-agent's name, masked by helperMask where it is shown", label: "Durbar's own words", selector: 'a CSS class in a selector string', cssclass: 'a CSS class name in markup', column: "a list column's key, read through the sort keys",
     data: 'a session name copied into data that a listed site reads again', rename: 'the rename field, which opens with the name as written (your own edit)',
     write: 'a write, not a read', compare: 'a comparison', sortkey: 'a sort key', width: 'a text width', cachekey: 'a cache key', comment: 'a comment',
   };
@@ -457,12 +457,12 @@ for (const [form, t] of [['LF', app], ['CRLF', app.replace(/\n/g, '\r\n')]] as c
     lobbyInitW: { x: { width: 1 } }, lobbyHTML: { g: { places: 3 } }, postboxHTML: { x: { folder: 1 } }, openPlaceMenu: { g: { places: 1 }, x: { folder: 1, floor: 1 } },
     openCoffeeMenu: { m: 3 }, faceKey: { x: { cachekey: 1 } }, avatar: { g: { desk: 1 } }, renderFilter: { x: { folder: 1 } }, moreHTML: { g: { helpers: 1 } },
     helperHTML: { m: 1, g: { helpers: 1 } }, helperWords: { v: 2 }, helperTileHTML: { m: 1, g: { helpers: 1 } }, helperCardHTML: { v: 2, g: { helpers: 1 } },
-    cardHTML: { g: { desk: 2 }, x: { profile: 1 } }, renBtn: { g: { desk: 2 } }, renFolderBtn: { x: { folder: 2 } }, unitHTML: { g: { desk: 2 }, x: { profile: 1 } },
+    cardHTML: { g: { desk: 2 }, x: { profile: 1, cssclass: 1 } }, renBtn: { g: { desk: 2 } }, renFolderBtn: { x: { folder: 2 } }, unitHTML: { g: { desk: 2 }, x: { profile: 1, cssclass: 1 } },
     restHTML: { g: { desk: 3 }, x: { profile: 1 } }, shuttersHTML: { g: { desk: 1 }, x: { folder: 3 } }, heldGroups: { x: { data: 1 } }, heldNotice: { g: { rows: 1 } },
     heldSettingsHTML: { g: { rows: 1 } }, folderOfRoom: { x: { folder: 1 } }, roomSchedChip: { x: { folder: 1 } }, headTip: { x: { folder: 1, floor: 1 } },
     roomHTML: { x: { folder: 8 } }, syncAttrs: { x: { attribute: 6 } }, roPeople: { x: { crew: 1 } }, roWorlds: { x: { world: 1 } }, realSubs: { v: 1 }, roFloor: { x: { floor: 1 } },
     realModel: { g: { views: 5 }, x: { folder: 1, profile: 1 } }, realSlips: { g: { views: 6 }, x: { folder: 1, profile: 1 } }, renderOffice: { x: { floor: 2 } },
-    LVAL: { x: { sortkey: 2 } }, listRow0: { g: { rows: 3 }, x: { folder: 3 } }, renderConvResults: { x: { compare: 1 } }, newAgentMsg: { g: { 'message-line': 1 } },
+    LCOLS: { x: { column: 1 } }, CS_COLS: { x: { column: 1 } }, LVAL: { x: { sortkey: 2 } }, listRow0: { g: { rows: 3 }, x: { folder: 3 } }, renderConvResults: { x: { compare: 1 } }, newAgentMsg: { g: { 'message-line': 1 } },
     addUserMsg: { x: { file: 2 } }, sendMessage: { m: 1, x: { file: 1 } }, gate: { x: { file: 2 } }, addPicked: { x: { file: 1 } }, addFiles: { x: { file: 3 } },
     renderAttached: { x: { file: 3 } }, syncChatHeader: { m: 1 }, wireAnswerBar: { m: 4 }, noteCompleted: { m: 1 }, noteFailed: { m: 1 }, markRead: { m: 1 },
     nameShown: { m: 1 }, menuLabel: { m: 1 }, typingIndicator: { m: 1 }, panelTipOf: { m: 1 }, panelTitleHTML: { m: 1 }, paintPanelTitle: { m: 1 }, cvKey: { x: { attribute: 1 } },
@@ -497,15 +497,15 @@ for (const [form, t] of [['LF', app], ['CRLF', app.replace(/\n/g, '\r\n')]] as c
     applyAddResult: { x: { folder: 1 } }, addFloorNote: { m: 1, v: 4, x: { data: 2, floor: 1 } }, NEWFOLDER: { x: { floor: 1 } },
     'after pendingOpen': { g: { palette: 1, views: 1 }, x: { folder: 3 } }, 'after settleNow': { g: { views: 1 }, x: { crew: 1, folder: 1 } },
   };
-  const SINK = /\.\s*name\b|\[\s*(['"`])name\1\s*\]|\{[^{}]*?(?<![\w$.'"])name\b(?=\s*[,}:=])[^{}]*\}(?=\s*(?:=(?![=>])|\)\s*(?:=>|\{)|\s+of\b))|(?<![\w$.])(?:nameShown|menuLabel)\(/g;
+  const SINK = /\.\s*name\b|\[\s*(['"`])name\1\s*\]|(['"`])name\2(?!\s*:)|\{[^{}]*?(?<![\w$.'"])name\b(?=\s*[,}:=])[^{}]*\}(?=\s*(?:=(?![=>])|\)\s*(?:=>|\{)|\s+of\b))|(?<![\w$.])(?:nameShown|menuLabel)\(/g;
   const MASKED_LINE = /(?<![\w$.])(?:nameShown|menuLabel|liveText|deskMask|helperMask|maskLabel|announce|toast|toastAction)\(/;
   const DEF = /^(?:async\s+)?function\s*\*?\s*([\w$]+)|^(?:const|let|var)\s+([\w$]+)/;
   // the pattern flags each form of a read (fixtures), and not a longer word or a literal key
   const flags = (src: string): number => (src.match(SINK) || []).length;
   for (const fx of ['x.name', 'x?.name', "x['name']", 'x["name"]', '`${x.name}`', 'agent.name', 'byId(id).name', 'const {name}=a', 'const {id,name:n}=a', 'let { name } = a',
-    '({name})=>name', 'function f({name}){', 'for(const {name} of list)', 'nameShown(a)', "menuLabel('Profile for ',a)"])
+    '({name})=>name', 'function f({name}){', 'for(const {name} of list)', "Reflect.get(x,'name')", "const k='name';a[k]", 'nameShown(a)', "menuLabel('Profile for ',a)"])
     ok(flags(fx) >= 1, `FR-197 sink table: the pattern flags the form ${fx}`);
-  for (const fx of ['a.names', 'a.nameTip(x)', 'getName()', "'name'", 'f({name:1});', 'x.rename'])
+  for (const fx of ['a.names', 'a.nameTip(x)', 'getName()', "'names'", 'f({name:1});', "f({'name':1});", 'x.rename'])
     eq(flags(fx), 0, `FR-197 sink table: the pattern does not flag ${fx}`);
   for (const [form, t] of [['LF', app], ['CRLF', app.replace(/\n/g, '\r\n')]] as const) {
     const L = t.split(/\r?\n/);
@@ -521,6 +521,19 @@ for (const [form, t] of [['LF', app], ['CRLF', app.replace(/\n/g, '\r\n')]] as c
       eq(found[k] ? found[k].all : 0, want, `FR-197 sink table: ${k} holds ${want} name reads (${form})`);
       ok(!r.m || (found[k] && found[k].onMasked >= r.m), `FR-197 sink table: the ${r.m || 0} masked reads in ${k} are on lines that go through a mask (${form})`);
     }
+  }
+  // forms a static scan cannot reach ([KNOWN GAP]; none used in app.js today, held by this table: a new use would have to enter it). Each is named,
+  // with these words, in spec 012's FR-197 delta (round 5 of the review of PR 2098):
+  //   a key built from parts at run time (a computed key such as 'na'+'me');
+  //   a session object's values or entries read as a whole (Object.values, Object.entries);
+  //   a session object turned into text as a whole (JSON.stringify);
+  //   a new caller of a listed raw renderer that passes it a session name from a new place.
+  const STATIC_GAPS = ['a key built from parts at run time', "a session object's values or entries read as a whole", 'a session object turned into text as a whole',
+    'a new caller of a listed raw renderer that passes it a session name from a new place'];
+  {
+    const specTxt = fs.readFileSync(path.join(__dirname, '..', '..', 'specs', '012-claude-codex-adapters', 'spec.md'), 'utf8');
+    for (const g of STATIC_GAPS) ok(specTxt.includes(g), `FR-197 the spec names the form a static scan cannot reach: ${g}`);
+    ok(specTxt.includes('none used today, held by this table: a new use would have to enter it'), 'FR-197 the spec says the unreachable forms are unused today');
   }
   // every gap class the table uses is named in both lists, and the two lists name the same classes (round 4: the rail rows had dropped out of the spec's)
   const listOf = (file: string): string[] => {
