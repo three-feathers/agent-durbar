@@ -5,7 +5,7 @@
 import type { AdapterRouter } from '../adapters/router';
 import type { AgentAdapter, AgentMessage, StartOptions } from '../adapters/types';
 import { LINE_UNCONFIRMED } from '../adapters/autopilotHost';
-import { ASSISTED_NOT_ASK, ASSISTED_NOT_RUNNING, ASSISTED_OFF_ROW, ASSISTED_ON_ROW, ASSISTED_POLICY_LINE, ASSISTED_REMOTE, ASSISTED_UNSUPPORTED_LINE, NO_ASSISTED } from '../adapters/assistedLines';
+import { ASSISTED_NOT_ASK, ASSISTED_NOT_RUNNING, ASSISTED_OFF_ROW, ASSISTED_ON_ROW, ASSISTED_POLICY_LINE, ASSISTED_REMOTE, ASSISTED_UNSUPPORTED_LINE, ASSISTED_UNVERIFIED, NO_ASSISTED } from '../adapters/assistedLines';
 import { interruptOf, refusesLive, setCapOf, setMcpEnabledOf, setPermModeOf } from '../adapters/router';
 import { parseAmount, parseCapIn } from '../shared/credits';
 import { answerTooLong, MAX_ANSWER, readAnswerPayload } from '../adapters/questions';
@@ -104,6 +104,7 @@ export async function setModeAssistedOp(d: OpsDeps, id: unknown, mode: unknown, 
     if (was) d.log?.(a, 'mode-change', ASSISTED_OFF_ROW);
     return { ok: true, mode: a.permMode, pending: 0, assisted: false };
   }
+  if (ad.capabilities.assistedApproval.verified !== true) return { ok: false, error: ASSISTED_UNVERIFIED }; // C8: a real session only after the real check (the simulator answers in the window)
   if (validMode(mode) !== 'ask' || a.permMode !== 'ask' || a.autopilot) return { ok: false, error: ASSISTED_NOT_ASK };
   if (d.remoteOn?.(a.id)) return { ok: false, error: ASSISTED_REMOTE };
   const no = d.orgAssistedRefusal?.(a);

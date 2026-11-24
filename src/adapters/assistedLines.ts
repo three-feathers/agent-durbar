@@ -13,6 +13,8 @@ export const ASSISTED_UNSUPPORTED_LINE = "Copilot did not turn on its reviewer, 
 export const ASSISTED_REMOTE = 'Stop remote control first: assisted approvals and remote control from GitHub are never on together.';
 /** FR-120: Ask first only. */
 export const ASSISTED_NOT_ASK = "Copilot's reviewer works in Ask first only. Switch to Ask first, then turn it on.";
+/** C8: the real check (T056) has not passed for this app (`assistedApproval.verified` is false): main never turns it on. */
+export const ASSISTED_UNVERIFIED = "Copilot's reviewer has not been checked on a real session yet, so Agent Durbar does not turn it on.";
 /** FR-121: the switch is set on a running session (FR-129: never saved). */
 export const ASSISTED_NOT_RUNNING = "Send a message first so the session is running, then turn on Copilot's reviewer.";
 /** FR-122: the activity log's `mode-change` rows. */

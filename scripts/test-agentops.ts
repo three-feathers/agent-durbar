@@ -6,7 +6,7 @@ import { FakeAdapter } from '../src/adapters/fake';
 import { ALL_OPTIONAL as ALL } from './test-adapter-contract';
 import { MAX_ANSWER } from '../src/shared/answerlimits';
 import { answerQuestionOp, restorable, resumeModeOp, sendWithSlash, setCapOp, setMcpOp, setModeAssistedOp, setModeOp, stopTurnOp } from '../src/main/agentops';
-import { ASSISTED_NOT_ASK, ASSISTED_NOT_RUNNING, ASSISTED_POLICY_LINE, ASSISTED_REMOTE, ASSISTED_UNSUPPORTED_LINE, NO_ASSISTED } from '../src/adapters/assistedLines';
+import { ASSISTED_NOT_ASK, ASSISTED_NOT_RUNNING, ASSISTED_POLICY_LINE, ASSISTED_REMOTE, ASSISTED_UNSUPPORTED_LINE, ASSISTED_UNVERIFIED, NO_ASSISTED } from '../src/adapters/assistedLines';
 import type { AgentAdapter } from '../src/adapters/types';
 import type { AgentMessage } from '../src/adapters/types';
 import type { OpsDeps } from '../src/main/agentops';
@@ -273,8 +273,9 @@ async function main(): Promise<void> {
     const asked: Array<[string, unknown]> = [];
     let answer: { on: boolean; reason?: 'policy' | 'unsupported' | 'not-ask' } = { on: true };
     let live = true;
+    let verified = true;
     const stub = (withCap: boolean): AgentAdapter => ({
-      capabilities: withCap ? { assistedApproval: { verified: false } } : {},
+      capabilities: withCap ? { assistedApproval: { verified } } : {},
       isLive: () => live,
       setPermMode: (_id: string, m: string) => { asked.push(['mode', m]); return { pending: 0 }; },
       setAssisted: async (_id: string, on: boolean) => { asked.push(['assisted', on]); return on ? answer : { on: false }; },
@@ -327,6 +328,15 @@ async function main(): Promise<void> {
     live = false;
     assert.deepStrictEqual(await setModeAssistedOp(d, 'c', 'ask', { assisted: true }), { ok: false, error: ASSISTED_NOT_RUNNING }, 'a session that is not running');
     live = true;
+    // review finding 1 (C8): main refuses a turn-on while the app's capability is not verified (a real Copilot session today); off still works
+    verified = false;
+    const unv = stub(true);
+    const u = mkA('u', unv);
+    assert.deepStrictEqual(await setModeAssistedOp(d, 'u', 'ask', { assisted: true }), { ok: false, error: ASSISTED_UNVERIFIED }, 'C8: not verified: refused in main');
+    assert.strictEqual(u.assisted, undefined);
+    assert.deepStrictEqual(await setModeAssistedOp(d, 'u', 'ask', { assisted: false }), { ok: true, mode: 'ask', pending: 0, assisted: false }, 'C8: off is always allowed');
+    verified = true;
+    asked.length = 0;
     mkA('cl', stub(false));
     assert.deepStrictEqual(await setModeAssistedOp(d, 'cl', 'ask', { assisted: true }), { ok: false, error: NO_ASSISTED }, 'FR-121: Claude Code and Codex: not supported');
     assert.deepStrictEqual(asked.slice(), [], 'nothing was asked of an adapter');
