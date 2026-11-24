@@ -7678,6 +7678,7 @@ function showPerm(a,p){
   if(p.state==='pending'&&hwhy){const hp=document.createElement('p');hp.className='pscope phid';hp.textContent=PERM_WHY[hwhy]+hgrant;n.appendChild(hp);} /* also a card with no grant (a bare tool name): the line says what is hidden */ /* spec 097 FR-318: what a grant covers stays truthful when a part is hidden */
   const look=p.state==='pending'&&!permBlind(hwhy)?lookLine(sumS,keyS||scopeS,broadS):''; /* spec 003 FR-118: a blind card shows no text, so no lookalike line; the whole key, not the cut label (a token cut in it is no longer a token the mask knows: fix round 2) */
   if(look){const lp=document.createElement('p');lp.className='pscope plook';lp.textContent=look;n.appendChild(lp);} /* warn, never block (owner decision 1): no button changes for it */
+  if(p.state==='pending'&&typeof p.review==='string'&&Object.prototype.hasOwnProperty.call(AS_REVIEW,p.review)){const jp=document.createElement('p');jp.className='pscope pjudge';jp.textContent=AS_REVIEW[p.review];n.appendChild(jp);} /* spec 003 FR-130: why the app's reviewer left it to you, from a fixed table */
   const st=n.querySelector('.pstate');
   if(p.state==='denied'){ /* spec 003 FR-094: with the button the text no longer repeats the suggestion */
     st.innerHTML=roAskHint(a,n)?' <i>(denied: this agent is in Read-only)</i>':' <i>(denied: this agent is in Read-only. Switch it to Ask first to be asked instead)</i>';
@@ -7965,7 +7966,7 @@ function brainDoorPaint(){
 function onLiveEvent(e){
   const a=liveById(e.sessionId); if(!a)return;
   if(e.type==='permission'&&e.permission)whyNote(a,e.permission); /* spec 003 FR-099: why a call ran without asking, for its tool card's tag */
-  if(e.type==='permission'&&e.permission&&(e.permission.via==='policy'||e.permission.via==='quiet'))return; /* spec 052 FR-071: an Allow all approval is for the activity log in main, no card; a quiet read is only for the tag */
+  if(e.type==='permission'&&e.permission&&(e.permission.via==='policy'||e.permission.via==='quiet'||e.permission.via==='app-review'))return; /* spec 052 FR-071: an Allow all approval is for the activity log in main, no card; a quiet read is only for the tag; spec 003 FR-124: so is the app reviewer's approval */
   a.lastEventAt=Date.now(); /* spec 052 FR-062: last activity (when it arrived here; a helper's event counts for its main agent) */
   feedStats(a,e);
   liveFeed(a,e); /* spec 001 FR-028 */
@@ -7985,6 +7986,8 @@ function onLiveEvent(e){
   }
   if(e.type==='title'){if(!e.agentId)applyTitle(a,e.title);return;}
   if(e.type==='sandbox'){if(!e.agentId)onSandbox(a,e);return;} /* spec 087 */
+  if(e.type==='assisted'){if(!e.agentId)onAssisted(a,e);return;} /* spec 003 FR-127 */
+  if(e.type==='status'&&e.status==='stopped'&&!e.agentId&&a.info&&a.info.assisted)a.info.assisted=undefined; /* spec 003 FR-129: an ended session comes back without it */
   if(e.type==='agentSchedule'){if(!e.agentId)onAgentSchedule(a,e);return;}
   if(e.type==='subagent')return onSubagent(a,e);
   onRetry(a,e); /* spec 034 FR-018/FR-019: before the switch, so an error after a retry already knows it gave up */
@@ -8475,7 +8478,8 @@ function modeChipHTML(a){if(a.info.autopilot)return apChipHTML(a);const m=a.info
   const sr=canSbxRestart(a), sw=sbxWord(a),sbx=sw&&!sr?`<span class="mode-sbx sbx-${esc(a.info.sandbox.state)}" data-sbx="${esc(a.info.sandbox.state)}" title="${esc(sbxTip(a))}"> · ${esc(sw)}</span>`:'';
   const sbtn=sr?`<button class="mode-sbx mode-sbx-btn sbx-${esc(a.info.sandbox.state)}" id="sbxRestartBtn" type="button" data-act="sbxRestart" data-sbx="${esc(a.info.sandbox.state)}"${a.sbxRestarting?' aria-disabled="true"':''} aria-label="${esc(sw+'. Restart without the sandbox…')}" title="${esc(sbxRestartTip(a))}">${esc(sw)}</button>`:'';
   if(!feat(a,'modes'))return `<span class="modechip${m==='allow'?' modebadge':''}" title="Set when the session starts">${esc(MODE_NAME[m]+fr)}${sbx}</span>${sbtn}`; /* spec 052 FR-065 */
-  return `<button class="mode-chip mode-${m}" id="modeChip" type="button" aria-haspopup="menu" aria-expanded="false" title="Permission mode: ${esc(MODE_NAME[m])}${rs?(a.info.permFrom==='session'?' (restored: the mode you last chose for this session)':' (restored from your last run)'):''}. Click to change."><span class="mi">${MODE_IC[m]}</span><span>${esc(MODE_NAME[m]+fr)}${sbx}</span>${rs?'<span class="mode-restored">restored</span>':''}${ICON('chev')}</button>${sbtn}`;}
+  const nm=m==='ask'&&asOn(a)?AS_CHIP:MODE_NAME[m]; /* spec 003 FR-120 (C4): Ask first with the app's reviewer on */
+  return `<button class="mode-chip mode-${m}${nm!==MODE_NAME[m]?' mode-review':''}" id="modeChip" type="button" aria-haspopup="menu" aria-expanded="false" title="Permission mode: ${esc(nm)}${rs?(a.info.permFrom==='session'?' (restored: the mode you last chose for this session)':' (restored from your last run)'):''}. Click to change."><span class="mi">${MODE_IC[m]}</span><span>${esc(nm+fr)}${sbx}</span>${rs?'<span class="mode-restored">restored</span>':''}${ICON('chev')}</button>${sbtn}`;}
 /* the chip and its sandbox button are repainted together (the button is the chip's next sibling) */
 function setModeChip(c,a){const o=$('sbxRestartBtn');if(o)o.remove();c.outerHTML=modeChipHTML(a);}
 /* spec 087 FR-022/FR-022a: the pure rule (sandboxtext.js) on this agent's state, mode and app capabilities; the existing Restart session flow and channel */
@@ -8571,6 +8575,44 @@ function showAutoQuestion(a,e){
   qs.forEach(q=>{const p=document.createElement('p');p.className='q-text';p.textContent=safeMask(String(q&&q.question||''));n.appendChild(p);});
   tChips(t.T).appendChild(n);stickyScroll(liveChat(a));
 }
+/* ---------------- spec 003 FR-120..FR-131: the agent app's reviewer (Copilot's assisted approvals) inside Ask first. The page follows main:
+   it approves nothing itself; the words are fixed (never the reviewer's text) ---------------- */
+const AS_CHIP='Ask first + review';
+const AS_POLICY="Your organization turned off Copilot's assisted approvals. This session stays in Ask first.";
+const AS_REMOTE='Stop remote control first: assisted approvals and remote control from GitHub are never on together.';
+const AS_REVIEW={declined:"Copilot's reviewer did not approve this.",never:'Copilot never auto-approves this kind.',undecided:"Copilot's reviewer could not decide."}; /* FR-130 (C4) */
+const asCap=a=>{const c=capsFor(a).assistedApproval;return c&&typeof c==='object'?c:null;};
+/* C8: a real session shows it only once the real check passed (`verified`); the simulator always does */
+const asOffered=a=>!!(a&&a.info&&!a.parent&&bridge.setPermMode&&asCap(a)&&(SIM||asCap(a).verified===true));
+const asOn=a=>!!(a&&a.info&&a.info.assisted&&a.info.assisted.on===true);
+const orgAssisted=kind=>{const v=ORG[kind||defaultKind()||'copilot'],x=v&&v.assisted;return x&&typeof x.why==='string'?{why:x.why,refuse:x.refuse===true}:null;};
+function asMenuItem(a){if(!asOffered(a)||a.info.permMode!=='ask'||a.info.autopilot)return '';
+  const app=kindWord(a.info.adapterId),o=orgAssisted(a.info.adapterId),on=asOn(a);
+  const why=on?'':o&&o.refuse?o.why+'.':a.remote?AS_REMOTE:''; /* FR-127, FR-126: disabled with the reason; turning off is always possible */
+  /* FR-131 (C7): the cost sentence, no number */
+  const help=app+"'s reviewer looks at each request first and approves the ones it judges safe, once; Durbar asks you about the rest. Each request it reviews is a model call on your "+app+' account (gpt-5.5 by default) and may use AI credits.';
+  const small=why||(o?o.why:'Each review is a model call on your '+app+' account; it may use AI credits.');
+  return `<button type="button" role="menuitemcheckbox" aria-checked="${on}" data-act="assisted" class="mm-assisted${why?' mm-org':''}"${why?' aria-disabled="true"':''} title="${esc(why||help)}"><span class="mt"><b>${esc('Let '+app+"'s reviewer approve safe requests")}</b><small>${esc(small)}</small></span><span class="ck">${on?'\u2713':''}</span></button>`;}
+/* FR-122: one call to main (agents:setMode with opts.assisted); main's answer is what the chip shows */
+async function assistedToggle(a,anchor){
+  if(!a||a.asAsking||!bridge.setPermMode)return;
+  const want=!asOn(a);a.asAsking=true;
+  let res;try{res=await bridge.setPermMode(a.id,'ask',{assisted:want});}catch(e){res={ok:false,error:String(e&&e.message||e)};}
+  a.asAsking=false;
+  if(byId(a.id)!==a)return;
+  if(res&&res.ok)a.info.assisted=res.assisted===true?{on:true}:undefined;
+  else{a.info.assisted=undefined;addNote(liveChat(a),esc(safeMask(String(res&&res.error||'unknown error'))),true);}
+  apRepaint(a);
+  if(res&&res.ok){announce(asOn(a)?AS_CHIP+': the reviewer approves safe requests from the next one.':'Ask first: the reviewer is off.');toast(esc(a.name)+': <b>'+esc(asOn(a)?AS_CHIP:MODE_NAME.ask)+'</b> from the next request.',4200);}
+  refocusAnchor(anchor);
+}
+/* FR-127: the reviewer went off without the user asking (policy, a fallback, a reconnect): one fixed note for the policy; the runtime's words are never shown */
+function onAssisted(a,e){
+  if(!a.info)return;
+  a.info.assisted=e.assisted&&e.assisted.on===true?{on:true}:undefined;
+  if(e.reason==='policy')addNote(liveChat(a),esc(AS_POLICY));
+  apRepaint(a);
+}
 function closeModeMenu(){const m=document.getElementById('modeMenu');if(m){m.remove();const c=$('modeChip');if(c)c.setAttribute('aria-expanded','false');document.querySelectorAll('[data-act="ro-ask"][aria-expanded="true"]').forEach(b=>b.setAttribute('aria-expanded','false'));}}
 function openModeMenu(a0,x,y,anchor,o){ /* o.modesOnly (spec 003 FR-095): the three modes and the note, without Model, Plan first, folder setup or card actions */
   const a=liveRoot(a0); if(!a||!a.live)return false;
@@ -8586,10 +8628,10 @@ function openModeMenu(a0,x,y,anchor,o){ /* o.modesOnly (spec 003 FR-095): the th
   const m=document.createElement('div');m.id='modeMenu';m.className='mode-menu';m.setAttribute('role','menu');m.setAttribute('aria-label',(hasOps?'Actions for ':'Permission mode for ')+a.name);
   m.innerHTML=(hasMode?['read-only','ask','allow'].filter(k=>feat(a,'modeList',k)).map(k=>{const o=orgMode(a.info.adapterId,k),w=o?o.why:''; /* spec 076 FR-202: blocked: disabled, the reason as its text; advice (FR-201): the words, still selectable */
     const isOn=a.info.permMode===k&&!a.info.autopilot; /* spec 099 FR-056: on Autopilot the check mark is on Autopilot, not on Allow all */
-    return `<button type="button" role="menuitemradio" aria-checked="${isOn}" data-mode="${k}" class="mm-${k}${w?(o.refuse?' mm-org':' mm-orgdoubt'):''}"${o&&o.refuse?' aria-disabled="true"':''} title="${esc(w||MODE_HELP[k])}"><span class="mi">${MODE_IC[k]}</span><span class="mt"><b>${MODE_NAME[k]}</b><small>${esc(w||MODE_SHORT[k])}</small></span><span class="ck">${isOn?'✓':''}</span></button>`;}).join('')+(only?'':apMenuItem(a))+(canSbxRestart(a)&&!onCard?`<button type="button" role="menuitem" data-act="sbxRestart" class="mm-sbxrestart"${a.sbxRestarting?' aria-disabled="true"':''} title="${esc(sbxRestartTip(a))}"><span class="mt"><b>Restart without the sandbox</b><small>Keeps this conversation; a new session in Allow all</small></span></button>`:'')+(!only&&bridge.setModel&&a.info?`<button type="button" role="menuitem" data-act="model" class="mm-model"><span class="mt"><b>Model and context…</b><small>${esc(modelLabel(a.info).text)}</small></span></button>`:'')+(!only&&capsFor(a)&&capsFor(a).planMode&&!a0.parent?`<button type="button" role="menuitemcheckbox" aria-checked="${!!a.planNext}" data-act="planNext" class="mm-plan"><span class="mt"><b>Plan first (next message)</b><small>It plans first; you approve before it acts.</small></span><span class="ck">${a.planNext?'✓':''}</span></button>`:'')+(!only&&bridge.folderSetupScan&&window.DurbarFolderSetup&&a.info?`<button type="button" role="menuitem" data-act="foldersetup" class="mm-fsetup"><span class="mt"><b>This folder\u2019s setup…</b><small>${a.info.folderRules?'Its own hooks or allow rules are on':'Hooks, rules and MCP servers in its files'}</small></span></button>`:'')+`<p class="mm-note">Applies from the next request. The session keeps running.</p>`+(sbxWord(a)?`<p class="mm-note mm-sbx"><b>${esc(sbxWord(a))}.</b> ${esc(sbxDetails(a))}</p>`:''):'')+(hasOps?`<div class="mm-sep" role="separator"></div>`+(canRead?`<button type="button" role="menuitem" data-op="read" class="mm-read"><span class="mt"><b>Mark as read</b><small>Clears \u201cNew\u201d without opening the chat</small></span></button>`:'')+(canRen?`<button type="button" role="menuitem" data-op="rename" class="mm-rename" title="Give this session a short name"><span class="mt"><b>Rename…</b><small>A short name for this session</small></span></button>`:'')+(ops.stop?`<button type="button" role="menuitem" data-op="stop" class="mm-stop"${ops.stop.disabled?` aria-disabled="true" aria-describedby="mmStopWhy" title="${esc(ops.stop.reason)}"`:''}><span class="mt"><b>Stop</b><small${ops.stop.disabled?' id="mmStopWhy"':''}>${esc(ops.stop.disabled?ops.stop.reason:'Stops this reply. The agent stays open.')}</small></span></button>`:'')+(ops.end&&bridge.end?`<button type="button" role="menuitem" data-op="end" class="mm-end mm-danger"><span class="mt"><b>End session</b><small>Send a message to pick up where you left off.</small></span></button>`:''):'');
+    return `<button type="button" role="menuitemradio" aria-checked="${isOn}" data-mode="${k}" class="mm-${k}${w?(o.refuse?' mm-org':' mm-orgdoubt'):''}"${o&&o.refuse?' aria-disabled="true"':''} title="${esc(w||MODE_HELP[k])}"><span class="mi">${MODE_IC[k]}</span><span class="mt"><b>${MODE_NAME[k]}</b><small>${esc(w||MODE_SHORT[k])}</small></span><span class="ck">${isOn?'✓':''}</span></button>`;}).join('')+asMenuItem(a)+(only?'':apMenuItem(a))+(canSbxRestart(a)&&!onCard?`<button type="button" role="menuitem" data-act="sbxRestart" class="mm-sbxrestart"${a.sbxRestarting?' aria-disabled="true"':''} title="${esc(sbxRestartTip(a))}"><span class="mt"><b>Restart without the sandbox</b><small>Keeps this conversation; a new session in Allow all</small></span></button>`:'')+(!only&&bridge.setModel&&a.info?`<button type="button" role="menuitem" data-act="model" class="mm-model"><span class="mt"><b>Model and context…</b><small>${esc(modelLabel(a.info).text)}</small></span></button>`:'')+(!only&&capsFor(a)&&capsFor(a).planMode&&!a0.parent?`<button type="button" role="menuitemcheckbox" aria-checked="${!!a.planNext}" data-act="planNext" class="mm-plan"><span class="mt"><b>Plan first (next message)</b><small>It plans first; you approve before it acts.</small></span><span class="ck">${a.planNext?'✓':''}</span></button>`:'')+(!only&&bridge.folderSetupScan&&window.DurbarFolderSetup&&a.info?`<button type="button" role="menuitem" data-act="foldersetup" class="mm-fsetup"><span class="mt"><b>This folder\u2019s setup…</b><small>${a.info.folderRules?'Its own hooks or allow rules are on':'Hooks, rules and MCP servers in its files'}</small></span></button>`:'')+`<p class="mm-note">Applies from the next request. The session keeps running.</p>`+(sbxWord(a)?`<p class="mm-note mm-sbx"><b>${esc(sbxWord(a))}.</b> ${esc(sbxDetails(a))}</p>`:''):'')+(hasOps?`<div class="mm-sep" role="separator"></div>`+(canRead?`<button type="button" role="menuitem" data-op="read" class="mm-read"><span class="mt"><b>Mark as read</b><small>Clears \u201cNew\u201d without opening the chat</small></span></button>`:'')+(canRen?`<button type="button" role="menuitem" data-op="rename" class="mm-rename" title="Give this session a short name"><span class="mt"><b>Rename…</b><small>A short name for this session</small></span></button>`:'')+(ops.stop?`<button type="button" role="menuitem" data-op="stop" class="mm-stop"${ops.stop.disabled?` aria-disabled="true" aria-describedby="mmStopWhy" title="${esc(ops.stop.reason)}"`:''}><span class="mt"><b>Stop</b><small${ops.stop.disabled?' id="mmStopWhy"':''}>${esc(ops.stop.disabled?ops.stop.reason:'Stops this reply. The agent stays open.')}</small></span></button>`:'')+(ops.end&&bridge.end?`<button type="button" role="menuitem" data-op="end" class="mm-end mm-danger"><span class="mt"><b>End session</b><small>Send a message to pick up where you left off.</small></span></button>`:''):'');
   document.body.appendChild(m);
   const {px,py}=placeMenu(m,x,y,anchor); /* spec 005 FR-037: above a toolbar chip */
-  m.addEventListener('click',e=>{const ap=e.target.closest('[data-act="autopilot"]');if(ap){if(ap.getAttribute('aria-disabled')==='true')return;closeModeMenu();if(!a.info.autopilot)void autopilotFlow(a,anchor);return;}const pn=e.target.closest('[data-act="planNext"]');if(pn){a.planNext=!a.planNext;closeModeMenu();renderAttached();announce(a.planNext?'The next message asks for a plan first.':'Plan first is off.');const mi=$('msgInput');if(mi)focusIn(mi);return;}const g=e.target.closest('[data-act="model"]');if(g){closeModeMenu();openModelMenu(a,px,py,anchor);return;}if(e.target.closest('[data-act="foldersetup"]')){closeModeMenu();window.DurbarFolderSetup.openFor(a.info);return;}const sr=e.target.closest('[data-act="sbxRestart"]');if(sr){if(sr.getAttribute('aria-disabled')==='true')return;closeModeMenu();restartWithoutSandbox(a,anchor);return;}const o=e.target.closest('[data-op]');if(o){if(o.getAttribute('aria-disabled')==='true')return;closeModeMenu();cardOp(a,o.dataset.op,anchor);return;}const b=e.target.closest('[data-mode]');if(!b||b.getAttribute('aria-disabled')==='true')return;closeModeMenu();changeMode(a,b.dataset.mode,anchor);});
+  m.addEventListener('click',e=>{const asb=e.target.closest('[data-act="assisted"]');if(asb){if(asb.getAttribute('aria-disabled')==='true')return;closeModeMenu();void assistedToggle(a,anchor);return;}const ap=e.target.closest('[data-act="autopilot"]');if(ap){if(ap.getAttribute('aria-disabled')==='true')return;closeModeMenu();if(!a.info.autopilot)void autopilotFlow(a,anchor);return;}const pn=e.target.closest('[data-act="planNext"]');if(pn){a.planNext=!a.planNext;closeModeMenu();renderAttached();announce(a.planNext?'The next message asks for a plan first.':'Plan first is off.');const mi=$('msgInput');if(mi)focusIn(mi);return;}const g=e.target.closest('[data-act="model"]');if(g){closeModeMenu();openModelMenu(a,px,py,anchor);return;}if(e.target.closest('[data-act="foldersetup"]')){closeModeMenu();window.DurbarFolderSetup.openFor(a.info);return;}const sr=e.target.closest('[data-act="sbxRestart"]');if(sr){if(sr.getAttribute('aria-disabled')==='true')return;closeModeMenu();restartWithoutSandbox(a,anchor);return;}const o=e.target.closest('[data-op]');if(o){if(o.getAttribute('aria-disabled')==='true')return;closeModeMenu();cardOp(a,o.dataset.op,anchor);return;}const b=e.target.closest('[data-mode]');if(!b||b.getAttribute('aria-disabled')==='true')return;closeModeMenu();changeMode(a,b.dataset.mode,anchor);});
   m.addEventListener('keydown',e=>{const it=[...m.querySelectorAll('[data-mode],[data-act],[data-op]')],i=it.indexOf(document.activeElement);
     if(e.key==='ArrowDown'){e.preventDefault();focusIn(it[(i+1)%it.length]);}else if(e.key==='ArrowUp'){e.preventDefault();focusIn(it[(i+it.length-1)%it.length]);}
     else if(e.key==='Escape'||e.key==='Tab'){e.preventDefault();e.stopPropagation();closeModeMenu();if(anchor&&anchor.focus&&document.contains(anchor))focusIn(anchor);}});
@@ -8696,7 +8738,7 @@ async function changeModeInner(a,mode,anchor){
   const res=await bridge.setPermMode(a.id,mode,opts).catch(e=>({ok:false,error:String(e&&e.message||e)}));
   if(onAp){a.info.autopilot=undefined;apRepaint(a);}
   if(!res||!res.ok){toast('Could not change the mode: '+esc((res&&res.error)||'unknown error'),5000);return;}
-  a.info.permMode=mode; a.info.permRestored=undefined; a.info.permFrom=undefined; a.role=roleFor(a.info); roAskAfterSwitch(a,mode,anchor);
+  a.info.permMode=mode; a.info.permRestored=undefined; a.info.permFrom=undefined; if(mode!=='ask')a.info.assisted=undefined; /* spec 003 FR-126: main turned the reviewer off with the switch */ a.role=roleFor(a.info); roAskAfterSwitch(a,mode,anchor);
   if(opts.clearGrants)setGrants(a,[]);
   renderRestoreStrip();
   toast(esc(a.name)+': <b>'+esc(MODE_NAME[mode])+(capsFor(a).permModeSwitch==='next-message'?'</b>. Applies from the next message.':'</b> from the next request.')+(mode==='allow'?' Everything runs without asking.':''),4200);
