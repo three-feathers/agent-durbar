@@ -54,13 +54,13 @@ shown('git log --no-show-signature -n 5', 'FR-196 a: --no-show-signature then a 
 shown('claude --no-session-persistence -p hi', 'FR-196 a: a negated flag then the next flag');
 hidden(`tool --no-${tok}=build4x7q`, 'build4x7q', 'FR-196 a stays: the = form of a negated flag hides its value');
 // near misses: hidden as before
-hidden(`tool --${tok} build4x7q`, 'build4x7q', 'FR-196 a stays: a plain secret flag hides the next word');
+hidden(`tool --${tok} build`, ' build', 'FR-196 a stays: a plain secret flag hides the next word, even a plain word (a lead near a listed one, below, too)');
 hidden(`tool --show-${tok}=build4x7q`, 'build4x7q', 'FR-196 a stays: the = form of a switch flag hides its value');
-hidden(`tool --shown-${tok} build4x7q`, 'build4x7q', 'FR-196 a stays: a lead that only starts with show');
-hidden(`tool --snow-${tok} build4x7q`, 'build4x7q', 'FR-196 a stays: a lead near show');
-hidden(`tool --no${tok} build4x7q`, 'build4x7q', 'FR-196 a stays: no hyphen after no');
-hidden(`tool -no-${tok} build4x7q`, 'build4x7q', 'FR-196 a stays: one dash is not a long flag');
-hidden(`tool --known-${tok} build4x7q`, 'build4x7q', 'FR-196 a stays: a lead that holds no');
+hidden(`tool --shown-${tok} build`, ' build', 'FR-196 a stays: a lead that only starts with show');
+hidden(`tool --snow-${tok} build`, ' build', 'FR-196 a stays: a lead near show');
+hidden(`tool --no${tok} build`, ' build', 'FR-196 a stays: no hyphen after no');
+hidden(`tool -no-${tok} build`, ' build', 'FR-196 a stays: one dash is not a long flag');
+hidden(`tool --known-${tok} build`, ' build', 'FR-196 a stays: a lead that holds no');
 hidden(`tool --no-auth ${gh}`, gh.slice(4, 14), 'FR-196 a stays: a token after a switch flag is hidden by its own shape');
 
 // class (b): an OAuth state value that is a whole lower-case word of 1 to 7 letters, in a link with no code parameter (owner decision 2026-11-23, #2060 item 8)
