@@ -56,14 +56,14 @@
 
 ## 2026-11-24: Copilot's assisted approvals inside Ask first (issue #2105, FR-120..FR-133)
 
-Waits for the owner's answers to Q1..Q8 of the spec delta. One task per issue; tests first in each.
+Decided in the delta's Clarifications C1..C8 (2026-11-24). One task per issue; tests first in each. T056 waits for the owner's separate OK.
 
 - [ ] T048 [FR-121, FR-133] `AdapterCapabilities.assistedApproval?` and optional `AgentAdapter.setAssisted?`; `AgentInfo.assisted?`; `eventguard` accepts only `{on:true}`; Claude Code and Codex leave it unset (test: capabilities and eventguard).
-- [ ] T049 [FR-124, FR-132] Broker: `PermissionLike.appReview`, the branch after session grants, approve once, `auto` event with `app/classifier`, `Decision.by`; tests for every row of the order, Read-only and outside reads ignoring a verdict, nothing remembered, write guard still called (`scripts/test-permissions.ts`).
+- [ ] T049 [FR-124, FR-132] Broker: `PermissionLike.appReview`, the branch after session grants, approve once, `auto` event with `app/classifier`, `Decision.by`; the lookalike gate in the adapter (a finding or a failed check gives no `appReview`, C5); tests for every row of the order, Read-only and outside reads ignoring a verdict, a lookalike request getting a card, nothing remembered, write guard still called (`scripts/test-permissions.ts`).
 - [ ] T050 [FR-123, FR-125, FR-128] Copilot adapter: `setAssisted` via `permissions.setMode` in `bounded()`, believes only the returned `mode`; the verdict and managed marker normalized into `appReview`; attributed result; `getMode` reset after create and resume; fake-session tests incl. an old runtime with no RPC.
 - [ ] T051 [FR-127] Copilot fallbacks: `permissions_changed` not asked for and `managed_settings_enforced` (`assisted_approval`) turn it off, one fixed note and log row; runtime text never shown; tests in `scripts/test-events.ts`.
 - [ ] T052 [FR-122, FR-126] `setModeOp` `opts.assisted` validation, refusal for adapters without the capability, outside Ask first and with remote control; Read-only, Allow all and Autopilot turn it off first; one `mode-change` row (`scripts/test-agentops.ts`).
 - [ ] T053 [FR-127] Organization policy: `disableAssistedPermissionsMode` from the raw layer in `copilotOrgPolicyFromResolve`, `orgRefusal`/`orgMode` for the switch; tests in `scripts/test-orgpolicy.ts`.
-- [ ] T054 [FR-120, FR-130, FR-131] Window: the menu item (Ask first only), chip word, help line with the cost sentence, fixed verdict lines on pending cards; simulator verdicts and policy fallback; driver in `scripts/ui-suite.js` at 1440x900 and 1280x800.
+- [ ] T054 [FR-120, FR-130, FR-131] Window: the menu item (Ask first only), chip word, help line with the cost sentence, fixed verdict lines on pending cards; simulator verdicts and policy fallback; the switch hidden on real Copilot while `verified` is false (C8); driver in `scripts/ui-suite.js` at 1440x900 and 1280x800.
 - [ ] T055 [FR-120..FR-133] Docs and converge: README *Safety model*, `docs/safety.md`, changelog fragment, `docs/agent-apps.md` facts, spec index; mutation checks listed in the plan.
 - [ ] T056 [FR-131, `real:` (a)..(c)] Real check, only with the owner's written OK and the stated cost: one tiny Ask first prompt on Copilot with the switch on; record whether `onPermissionRequest` is called for a judge-approved call, the usage and the resume behaviour; set `verified` from the result.
