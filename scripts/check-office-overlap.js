@@ -446,10 +446,16 @@ async function driver(ctx) {
         try { await ctx.waitFor(crewOn, 8000); } catch (e) { /* reported below */ }
         if (!(await ctx.js(crewOn))) throw new Error(`characters ${wantChars}: the desks on screen do not draw the crew kit`);
       }
-      if (wantChars === 'pixel') { /* spec 102 T472 (review of #2086): Retro pixel's HD heads stay inside their desk (calm UI: 15 agents, both sizes, light and dark); OFFICE_MUTANT=pixelbig blows them up 3x and must fail here */
-        if (process.env.OFFICE_MUTANT === 'pixelbig') await ctx.js(`(()=>{const s=document.createElement('style');s.textContent='#stage svg.scene,#stage svg.crew-head{overflow:visible!important}#stage svg.crew-head image{transform:scale(3);transform-origin:50% 50%}';document.head.appendChild(s);return 1})()`);
-        const heads = await ctx.js(`(()=>{const out=[];let n=0;for(const im of document.querySelectorAll('#stage .desk svg.crew-head image')){if(!im.getClientRects().length)continue;n++;const h=im.closest('svg.crew-head').getBoundingClientRect(),i=im.getBoundingClientRect(),d=im.closest('.desk').getBoundingClientRect();const v={x:Math.max(h.left,i.left),y:Math.max(h.top,i.top),r:Math.min(h.right,i.right),b:Math.min(h.bottom,i.bottom)};if(!/sets\\/retro\\/hd\\//.test(im.getAttribute('href')||''))out.push('not an HD head: '+im.getAttribute('href'));else if(i.width>h.width*1.5||v.x<d.left-0.5||v.y<d.top-0.5||v.r>d.right+0.5||v.b>d.bottom+0.5)out.push('a head leaves its desk: '+JSON.stringify({head:[i.left,i.top,i.width,i.height].map(Math.round),desk:[d.left,d.top,d.width,d.height].map(Math.round)}));}return {n,out};})()`);
-        if (!heads.n) throw new Error('characters pixel: no Retro pixel head on a desk');
+      if (wantChars === 'pixel') { /* spec 102 T472 (review of #2086): Retro pixel's HD heads overlap no other desk and no other head (calm UI: 15 agents, both sizes, light and dark), on top of this check's own rules; OFFICE_MUTANT=pixelbig draws the desk scenes 3x and must fail here */
+        if (process.env.OFFICE_MUTANT === 'pixelbig') await ctx.js(`(()=>{const s=document.createElement('style');s.textContent='#stage .desk svg.scene{transform:scale(3);transform-origin:50% 50%}';document.head.appendChild(s);return 1})()`);
+        const heads = await ctx.js(`(()=>{const out=[];let n=0;const desks=[...document.querySelectorAll('#stage .desk')].filter(d=>d.getClientRects().length).map(d=>({d,r:d.getBoundingClientRect()}));const seen=[];const hit=(a,b)=>a.x<b.right-0.5&&b.left<a.r-0.5&&a.y<b.bottom-0.5&&b.top<a.b-0.5;
+          for(const im of document.querySelectorAll('#stage .desk svg.crew-head image')){if(!im.getClientRects().length)continue;n++;const h=im.closest('svg.crew-head').getBoundingClientRect(),i=im.getBoundingClientRect(),sc=(im.closest('svg.scene')||im.closest('svg')).getBoundingClientRect(),own=im.closest('.desk');
+            const v={x:Math.max(h.left,i.left,sc.left),y:Math.max(h.top,i.top,sc.top),r:Math.min(h.right,i.right,sc.right),b:Math.min(h.bottom,i.bottom,sc.bottom)}; /* the head as drawn: clipped by its own box and its scene */
+            if(!/sets\\/retro\\/hd\\//.test(im.getAttribute('href')||''))out.push('not an HD head: '+im.getAttribute('href'));
+            for(const o of desks)if(o.d!==own&&!o.d.contains(own)&&!own.contains(o.d)&&hit(v,o.r))out.push('a head over another desk: '+JSON.stringify({head:[v.x,v.y,v.r-v.x,v.b-v.y].map(Math.round),desk:[o.r.left,o.r.top,o.r.width,o.r.height].map(Math.round)}));
+            for(const w of seen)if(hit(v,{left:w.x,top:w.y,right:w.r,bottom:w.b}))out.push('two heads overlap');seen.push(v);}
+          return {n,out,scenes:[...document.querySelectorAll('#stage .desk svg.scene')].filter(x=>x.getClientRects().length).length};})()`);
+        if (heads.scenes && !heads.n) throw new Error('characters pixel: desk scenes on screen but no Retro pixel head on a desk'); /* none when every room is closed */
         if (heads.out.length) throw new Error('characters pixel: ' + heads.out.slice(0, 3).join('; '));
       }
     }
