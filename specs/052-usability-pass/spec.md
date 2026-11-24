@@ -112,7 +112,7 @@ Four reviewers worked from 17 simulator screenshots: the office at 1440x900 and 
 
 - **Found** (issue #1668, three CI sightings on unrelated PRs): `check-needs-panel` sometimes saw `A answers []` with focus on the row's heading. A local loop (20 runs, 60 presses) and a forced run showed why: the driver's `answered` step pressed `A` 18 to 182 ms after the focused row's rise guard ran out, and a press inside the guard is dropped by design (FR-198, 400 ms after the panel opened, `src/renderer/app.js` `run`). A driver race, not an app bug; the app is unchanged.
 - **The driver** now waits (at most 5 s) for the focused row's `data-armed` to be `"1"` before it presses an answer key, checks that the row it waited for is the focused one, and asserts that the row is armed at the key press; on failure it prints the panel's state (the answers seen, `document.hasFocus()`, the focused element, every row with its guard). A new step places a row under the pointer (guarded, FR-198) and answers it through the same wait, so a press that does not wait fails every time, not by timing luck; door2's existing step 6a keeps pinning that a press inside the guard answers nothing.
-- **Open question for the owners** (number to be given): a press dropped by the rise guard gives no feedback at all; nothing changes until the owners decide.
+- **Q39, open question for the owners:** a press dropped by the rise guard gives no feedback at all; nothing changes until the owners decide.
 
 ### 2026-11-13: a screen header fits a narrow window (FR-138, bug, issue #1635)
 
