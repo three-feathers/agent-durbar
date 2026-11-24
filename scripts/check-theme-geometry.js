@@ -4,7 +4,8 @@
  * the same: for each theme, at 1440x900 and 1280x800 with 15 and 12 simulated agents and a sparse office with expanded helper cards (spec 001
  * FR-094; three agents in one room, two helpers each) (and again with a `+N more` chip
  * expanded):
- *   1. geometry: with display text neutralised for the measurement (one font family, weight, case and letter spacing; a theme
+ *   1. geometry: with display text neutralised for the measurement (one font family, weight, style, case, letter and word spacing,
+ *      variant, features and stretch; a theme
  *      may pick its own display font), the box of every element of the office, the lobby and the top bar (SVG art excluded) and
  *      the font size of every text element must equal Clean Office's, within 0.5px. This catches any size, padding, border,
  *      gap or font-size change. The page is drawn again in that font before measuring (spec 035 FR-414: the lobby sizes a place from its name in
@@ -46,8 +47,14 @@ const THEMES = (process.env.GEOMETRY_THEMES || (process.env.CHECK_ALL_THEMES ===
    `stay`: true leaves the forced font on after measuring (the `+N more` chip is then opened in it), 'off' only takes it away */
 function measure(sel, stay) {
   /* spec 035 FR-414 (delta 2026-11-24): since spec 001's lobby share by need, the page sizes a lobby place from its name measured in the font it draws.
-     So the page is drawn again in the forced font before measuring, and again in its own fonts after (a theme's display font is its own; its sizes are not) */
-  const redraw = () => { const u = window.__durbarSimUi; if (u && u.paint) { u.paint(); u.settleNow(); } if (window.DurbarFit) window.DurbarFit(); };
+     So the page is laid out again in the forced font before measuring, and again in its own fonts after (a theme's display font is its own; its sizes are not).
+     Every page here is a simulator page: without its paint hook the relayout would silently not happen, so the check stops instead */
+  const redraw = () => {
+    const u = window.__durbarSimUi;
+    if (!u || typeof u.paint !== 'function' || typeof u.settleNow !== 'function') throw new Error('check-theme-geometry: the simulator hooks paint and settleNow are missing (window.__durbarSimUi), so the page cannot be laid out again in the neutral font (spec 035 FR-414)');
+    u.paint(); u.settleNow();
+    if (window.DurbarFit) window.DurbarFit();
+  };
   let st = document.getElementById('geo-neutral');
   if (stay === 'off') { if (st) { st.remove(); redraw(); } return null; }
   if (window.__durbarSimUi) window.__durbarSimUi.settleNow(); /* spec 008 FR-113: a frame still queued is drawn before measuring */
