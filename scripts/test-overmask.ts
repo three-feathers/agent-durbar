@@ -110,6 +110,11 @@ for (const f of ['--show-' + tok, '--no-auth']) {
   const envVal = 'zqxwvutsrqpo';
   ok(!R.maskSecretArgs(['tool', f, envVal], { [pw + '_X']: envVal }).join(' ').includes(envVal), `FR-196 a: a plain word after ${f.slice(0, 6)}… still passes the known-value rule`);
 }
+// round 2 of the review of PR 2098: a key-shaped word that starts with a slash after such a flag stays hidden; a path there stays shown
+for (const f of ['--show-' + tok, '--no-auth']) {
+  for (const w of ['/' + 'aB3dE6gH9jK2mN5pQ8sT', '/' + 'QWxhZGRp' + 'bjpvcGVu9xZ']) ok(!R.maskSecretArgs(['tool', f, w]).join(' ').includes(w.slice(1)) && !R.maskSecretCommand(`tool ${f} ${w}`).includes(w.slice(1)), `FR-196 a stays: a key-shaped word led by a slash after ${f.slice(0, 6)}… is hidden`);
+  for (const w of ['/usr/local', '/build2026', '/Config2025', '/srv/app/Release', '/x86_64', '/node18', '/buildrelease2026x01']) eq(R.maskSecretArgs(['tool', f, w]).join(' '), `tool ${f} ${w}`, `FR-196 a: a path after ${f.slice(0, 6)}… is shown: ${w}`);
+}
 // the separators the switch values are read after: an equals sign glued to the name, or a flag's own equals sign; a spaced equals sign or a colon reads as before
 for (const t of [`${pw} =no make`, `tool --pass${'word'}:no`]) for (const [k, v] of Object.entries(all(t))) eq(v, off(() => all(t))[k], `FR-196 c: another separator reads as before: ${t.replace(pw, 'NAME')} (${k})`);
 // one argument that holds a spaced equals sign (a quoted word) reads as before too

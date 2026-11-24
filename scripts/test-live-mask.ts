@@ -336,7 +336,9 @@ for (const [form, t] of [['LF', app], ['CRLF', app.replace(/\n/g, '\r\n')]] as c
   ok(t.includes('aria-label="${esc(nameShown(a))}"'), `FR-197 the header's label reads nameShown (${form})`);
   ok(!/(?:Chat with |Message |Rename session )(?:\$\{esc\(a\.name\)\}|'\+a\.name)/.test(t), `FR-197 no header, chat or composer label reads a.name as written (${form})`);
   // round-3 pre-review of PR 2098: every line that builds one of the sites holds no raw name at all, whatever form a revert takes
-  for (const key of ['id="panelTitle"', 'id="chat" role="log"', 'id="msgInput"', "mi.setAttribute('aria-label','Message '", "coffeeWord()+(left", "it('open','Open chat'", 'm.appendChild(typingIndicator(a))', 'const typingIndicator=', 'const panelTitleHTML=']) {
+  for (const key of ['id="panelTitle"', 'id="chat" role="log"', 'id="msgInput"', "mi.setAttribute('aria-label','Message '", "coffeeWord()+(left", "it('open','Open chat'", 'm.appendChild(typingIndicator(a))', 'const typingIndicator=', 'const panelTitleHTML=',
+    // round 2 of the review of PR 2098: every other place in the chat panel and its menus that labels a session by name
+    "menuLabel(hasOps?'Actions for ':'Permission mode for '", "menuLabel('Profile for '", "menuLabel('Model and context for '", "menuLabel('Context window of '", "'. Ask '+nameShown(a)+' to try again", "const nm=bar.querySelector('.ab-n');nm.textContent=", 'const rename=()=>{const nm=bar.querySelector', 'id="scToHint"', 'rows=list.map(x=>({id:x.id,name:', ".sub-name').textContent=", "t.className='rp-ini'"]) {
     const lines = t.split(/\r?\n/).filter((l) => l.includes(key));
     ok(lines.length >= 1 && lines.every((l) => !/\ba\.name\b/.test(l)), `FR-197 the line that builds ${key.slice(0, 24)} holds no raw name (${form})`);
   }
@@ -394,6 +396,18 @@ for (const [form, t] of [['LF', app], ['CRLF', app.replace(/\n/g, '\r\n')]] as c
   eq(doc.getElementById('modeMenu')!.getAttribute('aria-label'), 'Noor: coffee break', 'FR-197 a benign coffee-break menu label reads as written');
   eq(C3.typingIndicator({ name: 'Noor' }).getAttribute('aria-label'), 'Noor is working', 'FR-197 a benign typing indicator label reads as written');
   ok(app.includes('m.appendChild(typingIndicator(a));') && !/aria-label',a\.name\+' is working'/.test(app), 'FR-197 a played turn builds its typing indicator through typingIndicator');
+}
+
+// round 2 of the review of PR 2098: the menus and dialogs about one session label it through menuLabel (the permission-mode or actions menu, the profile and
+// model menus, the context-window dialog); run the page's own definition
+{
+  const one4 = (h: string): string => { const l = LINES.filter((x) => x.startsWith(h)); assert.strictEqual(l.length, 1, h); return l[0]; };
+  const ctx = vm.createContext({ window: { DurbarRedact: shared, DurbarSafeText: require(path.join(R_DIR, 'safetext.js')) }, DurbarCutText: require(path.join(R_DIR, 'cuttext.js')), NO_REDACT: false });
+  vm.runInContext(['const homeMask=', 'const deskMask=', 'const SHORT=', 'const RED=', 'const STX=', 'const SAFE=', 'const safeExcerpt=', 'function annHome(', 'function annPart(', 'function liveText(', 'const nameShown=', 'const menuLabel='].map(one4).join('\n') + '\nthis.menuLabel=menuLabel;', ctx);
+  const ML = (ctx as unknown as { menuLabel(p: string, a: object): string }).menuLabel;
+  for (const [what, nm] of NAMES) for (const pre of ['Actions for ', 'Permission mode for ', 'Profile for ', 'Model and context for ', 'Context window of ']) hides(ML(pre, { name: nm }), `FR-197 a session menu's label is masked (${pre.trim()}), ${what}`);
+  eq(ML('Permission mode for ', { name: 'Noor' }), 'Permission mode for Noor', 'FR-197 a benign session menu label reads as written');
+  ok((app.match(/menuLabel\(/g) || []).length >= 5, 'FR-197 the mode, profile and model menus and the context-window dialog use menuLabel');
 }
 
 void stripsByBehaviour().then(() => console.log(`test-live-mask: ${n} asserts passed`), (e) => { console.error(e); process.exit(1); });
