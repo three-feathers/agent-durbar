@@ -729,7 +729,7 @@ ok('FR-070 (issue #1639): the Copilot CLI list\'s header and env values mask a C
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     (require('../src/main/ipcguard') as typeof import('../src/main/ipcguard')).initSimGuard(false);
     // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const { redact, maskSecretUrl, maskHomePaths } = require('../src/shared/redact') as typeof import('../src/shared/redact');
+    const { redact, maskSecretUrl, maskHomePathsOutbound } = require('../src/shared/redact') as typeof import('../src/shared/redact');
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     const W = require(path.join(__dirname, '..', '..', 'src', 'renderer', 'mcpwords.js')) as { diagnostics: (o: unknown, mask: (t: string) => string) => string };
     // Invented values with no token shape and no secret name next to them: only the session's value list can hide them.
@@ -826,7 +826,7 @@ ok('FR-070 (issue #1639): the Copilot CLI list\'s header and env values mask a C
     const reply = (handlers.get('agents:mcp') as (e: unknown, id: unknown) => { servers: { name: string; error?: string }[] })({ senderFrame: frame, sender: { mainFrame: frame } }, 'p1');
     const rows = reply.servers.filter((x) => x.name === 'remote' || x.name === 'local');
     assert.strictEqual(rows.length, 2, `both Copilot-list rows are in the reply: ${JSON.stringify(reply.servers.map((x) => x.name))}`);
-    const rendererMask = (t: string): string => maskHomePaths(maskSecretUrl(t));
+    const rendererMask = (t: string): string => maskHomePathsOutbound(maskSecretUrl(t)); // what screens.js passes (spec 012 FR-435)
     for (const r of rows) {
       assert.ok(typeof r.error === 'string' && r.error.includes('[redacted]'), `FR-070 Details: ${r.name}'s error is there, masked: ${r.error}`);
       assert.ok(!r.error?.includes(HDR), `FR-070 Details header: ${r.name}'s error does not show the header value`);

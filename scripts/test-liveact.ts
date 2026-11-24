@@ -346,13 +346,17 @@ for (const st of ['idle', 'needs-permission', 'error', 'stopped']) {
   ok(!/\x1b/.test((f.of('s') as NonNullable<Readout>).tool), 'the tool name is cleared too');
   eq(L.phrase({ kind: 'read', tool: 'read', label: '/tmp/ghp_A1b2C3d4E5\x1b[0mf6G7h8I9j0K1l2M3n4' }, { ...hm }), 'Reading /tmp/[redacted]', 'phrase itself clears its input (the lobby place text calls it directly)');
   // a long path whose user name straddles the 160-character cut: no start of the name shows
-  for (const label of ['x'.repeat(130) + ' C:\\Users\\Alex Example\\proj\\a.txt', 'y'.repeat(140) + ' /home/alexexample/proj/a.txt', 'z'.repeat(120) + ' \\\\fs1.example.invalid\\share\\alexexample\\proj\\a.txt']) {
+  for (const label of ['x'.repeat(130) + ' C:\\Users\\Alex Example\\proj\\a.txt', 'y'.repeat(140) + ' /home/alexexample/proj/a.txt']) {
     f = F();
     f.onEvent('s', ev({ type: 'toolCall', phase: 'start', tool: 'read', callId: 'c', args: {} }), { kind: 'read', label });
     const t = (f.of('s') as NonNullable<Readout>).tool;
     ok(!/Alex|Exampl|alexe|alex|fs1|share/.test(t.slice(-40)) && !/Users|home\//.test(t), 'home folder masked before the cut: ' + t);
     eq(all(f.screen('s')), t, 'the monitor line agrees: ' + t);
   }
+  // spec 012 FR-435 (issue #2060 item 2): a network share path is shown whole in the tool fact (server, share, folders, file name); a token in it is hidden
+  for (const p of ['\\\\fs1.example.invalid\\share\\alexexample\\proj\\a.txt', '\\\\fs01\\c$\\logs\\app.log', '//fs01/homes/alexexample/a.txt', 'smb://fs01/projects/teamA/a.txt', 'file://fs01/projects/a.txt', '/Volumes/projects/teamA/a.txt'])
+    eq(L.phrase({ kind: 'read', tool: 'read', label: p }, { ...hm }), (/^[a-z]+:\/\//.test(p) ? 'Opening ' : 'Reading ') + p, 'FR-435 the tool fact shows a share path whole: ' + p);
+  ok(!L.phrase({ kind: 'read', tool: 'read', label: '\\\\fs01\\share\\ghp_A1b2C3d4E5f6G7h8I9j0K1l2M3n4\\a.txt' }, { ...hm }).includes('A1b2C3d4'), 'FR-435 a token folder in a share path stays hidden in the tool fact (the label rule hides the whole label, as before)');
   eq(L.phrase({ kind: 'read', label: 'w'.repeat(140) + ' /home/alexexample/x' }, { ...hm }), L.phrase({ kind: 'read', label: 'w'.repeat(140) + ' /home/alexexample/x' }, { ...hm }), 'phrase is pure');
   ok(!/alex/.test(L.phrase({ kind: 'read', label: 'w'.repeat(142) + ' /home/alexexample/x' }, { ...hm })), 'phrase itself masks home before it cuts (the cut falls inside the name)');
   // Windows backslashes stay as they are: one mask, no unescape
@@ -964,10 +968,9 @@ for (const st of ['idle', 'needs-permission', 'error', 'stopped']) {
   const f = L.create({ mask: hm }) as unknown as { block(raw: string, k?: string): { k: string; t: string }[]; strict(raw: string, k?: string): { k: string; t: string }[] };
   const user = 'zq' + 'mor' + 'vel';
   const bs = '\\';
+  const tok0 = 'gh' + 'p_' + 'Zq3' + 'x'.repeat(16) + 'K9m' + 'p'.repeat(14);
   const all = (ls: { t: string }[]) => ls.map((l) => l.t).join('\n');
   const cases: Array<[string, string]> = [
-    ['a UNC home written plainly', 'see ' + bs + bs + 'fs01' + bs + 'share' + bs + user + bs + 'notes done.'],
-    ['a UNC home with doubled escapes', 'see ' + bs.repeat(4) + 'fs01' + bs.repeat(2) + 'share' + bs.repeat(2) + user + bs.repeat(2) + 'notes done.'],
     ['an escape inside the user name', 'see /home/zq' + bs + '_' + user.slice(2) + '/notes done.'],
     ['a Windows home in Markdown', 'see C:' + bs + bs + 'Users' + bs + bs + user + bs + bs + 'notes done.'],
   ];
@@ -975,6 +978,17 @@ for (const st of ['idle', 'needs-permission', 'error', 'stopped']) {
     ok(!all(f.block(t, 'reply')).includes(user.slice(2)), `#1320 monitor: block hides the user name (${label}): ${all(f.block(t, 'reply'))}`);
     ok(!all(f.strict(t, 'err')).includes(user.slice(2)), `#1320 monitor: strict hides the user name (${label}): ${all(f.strict(t, 'err'))}`);
   }
+  // spec 012 FR-435 (issue #2060 item 2): a UNC path, in the forms FR-187 read, is shown on the monitor with its server, share and folders (the reading after
+  // the escapes are undone shows one backslash of a doubled one, as Markdown reads it); a token folder in it stays hidden
+  const shares: Array<[string, string]> = [
+    ['a UNC path written plainly', 'see ' + bs + bs + 'fs01' + bs + 'share' + bs + user + bs + 'notes done.'],
+    ['a UNC path with doubled escapes', 'see ' + bs.repeat(4) + 'fs01' + bs.repeat(2) + 'share' + bs.repeat(2) + user + bs.repeat(2) + 'notes done.'],
+    ['a UNC path in hex entity backslashes', 'see &#x5C;&#x5C;fs01&#x5C;share&#x5C;' + user + '&#x5C;notes done.'],
+  ];
+  for (const [label, t] of shares) for (const [nm, out] of [['block', all(f.block(t, 'reply'))], ['strict', all(f.strict(t, 'err'))]] as const)
+    ok(/^see (?:\\{1,2}|&#x5C;&#x5C;)fs01(?:\\{1,2}|&#x5C;)share(?:\\{1,2}|&#x5C;)zq/.test(out) && out.includes(user) && out.endsWith('notes done.'), `FR-435 monitor: ${nm} shows ${label} whole: ${out}`);
+  for (const [nm, out] of [['block', all(f.block('see ' + bs + bs + 'fs01' + bs + 'share' + bs + tok0 + bs + 'notes done.', 'reply'))], ['strict', all(f.strict('see ' + bs + bs + 'fs01' + bs + 'share' + bs + tok0 + bs + 'notes done.', 'err'))]] as const)
+    ok(out.includes('fs01') && !out.includes(tok0.slice(4, 14)), `FR-435 monitor: ${nm} hides a token folder in a UNC path: ${out}`);
   // a home folder both readings agree on is still shown (shortened), and a text with no home folder is read as before
   const plainHome = 'see /home/' + user + '/notes done.';
   ok(all(f.block(plainHome, 'reply')).includes('notes done.') && !all(f.block(plainHome, 'reply')).includes(user), '#1320 monitor: a plain home folder still shows its line, shortened');
@@ -997,11 +1011,9 @@ for (const st of ['idle', 'needs-permission', 'error', 'stopped']) {
     ['named entity slashes', 'see &sol;home&sol;' + user + '&sol;notes done.'],
     // review of PR 1872, round 2: a backslash written as an HTML entity, in a Windows and a UNC home folder
     ['entity backslashes, Windows', 'see C:&#92;Users&#92;' + user + '&#92;notes done.'],
-    ['hex entity backslashes, UNC', 'see &#x5C;&#x5C;fs01&#x5C;share&#x5C;' + user + '&#x5C;notes done.'],
     ['named entity backslashes, Windows', 'see C:&bsol;Users&bsol;' + user + '&bsol;notes done.'],
     // round 3: the same entities without their closing semicolon
     ['entity backslashes without a semicolon, Windows', 'see C:&#92Users&#92' + user + '&#92notes done.'],
-    ['hex entity backslashes without a semicolon, UNC', 'see &#x5C&#x5Cnas&#x5Cshare&#x5C' + user + '&#x5Cnotes done.'],
     // round 4: entity slashes without their semicolon
     ['entity slashes without a semicolon', 'see &#47home&#47' + user + '&#47notes done.'],
     ['hex entity slashes without a semicolon', 'see &#x2fhome&#x2f' + user + '&#x2fnotes done.'],

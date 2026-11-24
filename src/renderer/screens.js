@@ -1470,8 +1470,9 @@
   /* FR-093: built from the reply only and passed through the shared redact() again (DurbarRedact); nothing is copied if that fails */
   async function copyDiagnostics(server,x,app,appVersion){
     const W=window.DurbarMcpWords, R=window.DurbarRedact;
-    /* the shared masking main uses (redact.ts): URL parts and OAuth values, token shapes, env values, then home folders to `~` */
-    const mask=R&&typeof R.redact==='function'&&typeof R.maskSecretUrl==='function'&&typeof R.maskHomePaths==='function'?(t=>R.maskHomePaths(R.maskSecretUrl(t))):null;
+    /* the shared masking main uses (redact.ts): URL parts and OAuth values, token shapes, env values, then home folders to `~`; text for an issue report
+       leaves the machine, so a network share path loses its host, share and next folder too (spec 012 FR-435: maskHomePathsOutbound) */
+    const mask=R&&typeof R.redact==='function'&&typeof R.maskSecretUrl==='function'&&typeof R.maskHomePathsOutbound==='function'?(t=>R.maskHomePathsOutbound(R.maskSecretUrl(t))):null;
     const text=W&&W.diagnostics?W.diagnostics({server,entry:x,app,appVersion},mask):'';
     if(!text){X.toast('Could not mask the diagnostics, so nothing was copied.',4200).classList.add('err');return;}
     await copyText(text,'Copied the diagnostics of '+esc(server)+' (masked).');

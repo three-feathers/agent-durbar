@@ -2397,11 +2397,23 @@ function homeGuarded(s: string, re: RegExp): string {
 /**
  * Home folders in free text become `~` (review on PR #630: a copied error must not carry the user name): `/home/<user>`,
  * `/Users/<user>`, `<drive>:\Users\<user>` (also with `/` or doubled `\\` as in JSON), and the given home folders themselves
- * (`HOME`, `USERPROFILE` of this process by default). A user name with spaces is covered when a separator follows it. A UNC path
- * (`\\server\share\user`, with any run of two or more `\`; with `//` only on a bare host and a home-share name, `//server/homes/user`, never in a `src=`, `href=` or `url(`): its host, share and next folder.
- * Bounded; never throws.
+ * (`HOME`, `USERPROFILE` of this process by default). A user name with spaces is covered when a separator follows it.
+ * Spec 012 FR-435 (owner decision 2026-11-23, issue #2060 item 2): a network share path (`\\server\share\folder\file`, `//server/homes/user/x`,
+ * `smb://`, `file://`) is shown whole on the person's own screen; only `maskHomePathsOutbound` (text that leaves the machine) hides its host,
+ * share and next folder. Secrets inside a share path are left to `redact` and the URL masks, as before. Bounded; never throws.
  */
 export function maskHomePaths(text: unknown, homes?: readonly (string | undefined)[]): string {
+  return homeMaskImpl(text, homes, false);
+}
+/**
+ * `maskHomePaths` for text that leaves the machine (spec 012 FR-435; today the MCP *Copy diagnostics* text for an issue report): as on the screen, and
+ * a UNC path (`\\server\share\user`, with any run of two or more `\`; with `//` only on a bare host and a home-share name, `//server/homes/user`,
+ * never in a `src=`, `href=` or `url(`) loses its host, share and next folder to `~`. Bounded; never throws.
+ */
+export function maskHomePathsOutbound(text: unknown, homes?: readonly (string | undefined)[]): string {
+  return homeMaskImpl(text, homes, true);
+}
+function homeMaskImpl(text: unknown, homes: readonly (string | undefined)[] | undefined, shares: boolean): string {
   try {
     let s = typeof text === 'string' ? text : text == null ? '' : String(text);
     const env = (globalThis as { process?: { env?: Env } }).process?.env ?? {};
@@ -2411,8 +2423,9 @@ export function maskHomePaths(text: unknown, homes?: readonly (string | undefine
       for (const v of new Set([h, JSON.stringify(h).slice(1, -1)])) s = s.replace(new RegExp(v.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + String.raw`(?![^\\/\s"'<>|:;,*?])`, 'g'), '~');
     }
     s = s.replace(/(?<![A-Za-z0-9_.~-])(?:\/(?:home|Users)\/|[A-Za-z]:(?:\\{1,2}|\/)Users(?:\\{1,2}|\/))(?:[^\\/\r\n"'<>|:;,*?]{1,128}(?=[\\/])|[^\\/\s"'<>|:;,*?]{1,128})/g, '~');
-    // a UNC path (`\\server\share\user\...`, or doubled as in JSON): where the user name sits is not known, so host, share and the next folder become `~`
-    s = s.replace(UNC_HOME, '~').replace(UNC_FWD_HOME, '~');
+    // text that leaves the machine only (FR-435): a UNC path (`\\server\share\user\...`, or doubled as in JSON): where the user name sits is not known,
+    // so host, share and the next folder become `~`
+    if (shares) s = s.replace(UNC_HOME, '~').replace(UNC_FWD_HOME, '~');
     // spec 012 FR-185 (issue #1329): more spellings, each only where it removes nothing `redact` hides in the text (review of PR 1832, F1: a surface that masks
     // the home first must not lose the characters a split token's reading needs, so its head would show)
     for (const re of HOME_MORE) s = homeGuarded(s, re);

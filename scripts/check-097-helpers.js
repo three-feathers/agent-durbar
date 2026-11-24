@@ -10,15 +10,15 @@
  *   Two mask mutants change the source (the masks are closures the page cannot reach): edit src/renderer/app.js, `npm run build`, run this driver, then undo the edit. Each must fail:
  *     unmask: `const roHelperMask=helperMask;` -> `const roHelperMask=t=>t;` (the strip's own mask removed). It fails on ESC_TOKEN, a token written `ghp\\_...` (two backslashes):
  *             intake's one unescape leaves `ghp\_...`, which no token shape matches, so only the strip's mask (a second unescape, then redact) hides it.
- *     order:  `const helperMask=t=>deskMask(homeMask(t));` -> `const helperMask=t=>homeMask(deskMask(t));` (the desk mask before the home mask, the order before the review of
- *             PR #1322). It fails on UNC: the desk mask's unescape turns `\\fs01\homes\zed_q` into `\fs01\homes\zed_q`, no longer a UNC path, so `zed_q` shows.
+ *     (The `order` mutant of the review of PR #1322 failed on a UNC home; spec 012 FR-435 shows a network share path whole on screen, so the UNC values below carry a
+ *     token folder instead and that mutant has nothing left to show here.)
  *
  * In the Photo office, the cave and the Retro arcade (15 agents, simhelpers=6, plus 5 more helpers on the first desk through the event path, one of them hostile, so it overflows)
  * at 1440x900 and 1280x800 (the arcade draws heads at 1440x900 only and keeps "+N" at 1280x800) it fails (exit 1) when:
  *   - the layout scrolls or its desk face is under the SC-002 ratchet (31 px);
  *   - a desk with helpers has no strip, or a shown helper is not a button (data-id) with its picture loaded (naturalWidth), the person helperPerson gives (never the parent's) cropped as headCrop says,
  *     a status dot, and its name and "helper of <parent>" in its accessible name and tooltip;
- *   - a head's face is under 24 px, the dot's colour is not the status token's, a visible name tile or a letter is drawn, or a token, a home path (POSIX, a UNC path with `\\` and with `//`),
+ *   - a head's face is under 24 px, the dot's colour is not the status token's, a visible name tile or a letter is drawn, or a token (also as a folder of a UNC path with `\\` and with `//`), a home path,
  *     a doubly escaped token or a link planted in a helper's name and task (through the subagent event, as an agent app reports it) reaches an accessible name, a tooltip or the "+K" tooltip;
  *   - the strip is not right after its plate and pencil in the Tab order, the "+K" text is under 10.5 px, a strip or a head overlaps a plate, screen, sign, another strip or leaves its slot;
  *   - a helper's status change adds or removes any node under the office (statusNodes), replaces the head's node, repaints no dot, does not change the accessible name and tooltip, or moves any box;
@@ -43,13 +43,15 @@ const FACE_FLOOR = 31; /* SC-002's ratchet, desk face */
 const HEAD_FACE_MIN = 24; /* a helper's face, FR-307 */
 const EXTRA = 4; /* helpers added to the first desk through the event path, and one hostile one: 6 + 4 + 1 = 11, more than any strip holds */
 const TOKEN = 'ghp_' + 'a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8';
-/* made-up hostile values (spec 097 FR-311 delta 2026-11-08, review of PR #1322): a UNC home (two real backslashes), its forward-slash form, and a token whose `_` is escaped twice */
-const UNC = '\\\\fs01\\homes\\zed_q\\notes.txt';
-const UNC_FWD = '//fs02/homes/yuki_m/notes.txt';
+/* made-up hostile values (spec 097 FR-311 delta 2026-11-08, review of PR #1322): a UNC path (two real backslashes) and its forward-slash form, each with a token for a
+   folder (spec 012 FR-435: a share path itself is shown whole on screen), and a token whose `_` is escaped twice */
+const UNC_TOK_TAIL = 'Zx1Cv2Bn3Mm4Lk5Jh6Gf7Dd8Ss9Aa0Pp1Oo2';
+const UNC = '\\\\fs01\\homes\\ghp_' + UNC_TOK_TAIL + '\\notes.txt';
+const UNC_FWD = '//fs02/homes/ghp_' + UNC_TOK_TAIL + '/notes.txt';
 const TOKEN2_TAIL = 'Q9w8E7r6T5y4U3i2O1p0A9s8D7f6G5h4J3k2';
 const ESC_TOKEN = 'ghp\\\\_' + TOKEN2_TAIL;
 const HOSTILE = `Hx ${TOKEN} /Users/alice/.ssh/id_rsa ${UNC} ${UNC_FWD} ${ESC_TOKEN} [click](https://evil.example/x)`;
-const RAW = [TOKEN, '/Users/alice', 'evil.example', 'zed_q', 'fs01', 'yuki_m', 'fs02', TOKEN2_TAIL];
+const RAW = [TOKEN, '/Users/alice', 'evil.example', UNC_TOK_TAIL.slice(0, 12), TOKEN2_TAIL];
 
 module.exports = async (ctx) => {
   const OUT = process.env.SHOTS_OUT || fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-097-helpers-'));

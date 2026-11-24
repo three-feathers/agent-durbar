@@ -3,7 +3,9 @@ import * as assert from 'assert';
 import { assertCutFirst } from './hang-backstop';
 import * as path from 'path';
 import { maskMcpError } from '../src/main/mcpmask';
-import { maskHomePaths, maskSecretUrl, redact } from '../src/shared/redact';
+import * as fs from 'fs';
+import * as shared from '../src/shared/redact';
+import { maskHomePathsOutbound, maskSecretUrl, redact } from '../src/shared/redact';
 
 interface Words {
   signInPressNote: (name: unknown, row: unknown, err?: unknown, live?: boolean) => string;
@@ -280,7 +282,7 @@ assertCutFirst('hintFor reads only the first 2000 characters of the error text',
 // ---- Review on PR #630: home paths, OAuth values, any-case bearer, mask before cut, bidi marks, 401 is not a crash ----
 {
   const TOKEN = 'ghp_' + 'Q7m2Kx9Lp4Rt8Vw1Yz6Bn3Cd5Fg0Hj2Mk4Ns';
-  const pageMask = (t: string) => maskHomePaths(maskSecretUrl(t)); // what screens.js passes (DurbarRedact)
+  const pageMask = (t: string) => maskHomePathsOutbound(maskSecretUrl(t)); // what screens.js passes (DurbarRedact; spec 012 FR-435: the outbound home mask)
   // item 9: an error that was NOT masked in main (the simulator's path): diagnostics still mask it, field by field
   const raw = W.diagnostics({ server: 's', entry: { status: 'failed', error: `boom ${TOKEN} end` } }, redact);
   assert.ok(raw && !raw.includes(TOKEN) && !raw.includes(TOKEN.slice(4, 16)), 'an unmasked token in the error is masked by the copy itself');
@@ -291,6 +293,22 @@ assertCutFirst('hintFor reads only the first 2000 characters of the error text',
   assert.match(String(home), /spawn ~\/\.local\/bin\/markitdown-mcp ENOENT; ~\\AppData\\npx\.cmd is not recognized; ~\/x/);
   const d2 = W.diagnostics({ server: 'm', entry: { status: 'failed', error: 'spawn /home/alice/bin/x ENOENT', transport: 'C:\\Users\\Bob Smith\\t' } }, pageMask);
   assert.ok(!/alice|Bob|Smith/.test(d2), 'the page mask replaces them too: ' + d2);
+  // spec 012 FR-435 (issue #2060 item 2): the diagnostics text leaves the machine (an issue report), so it keeps the share path masking the screen dropped.
+  // `copyDiagnostics`'s own mask line from screens.js, run with the compiled shared mask: a UNC server, share and next folder are not in the copy
+  {
+    const scr = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'renderer', 'screens.js'), 'utf8');
+    const body = scr.slice(scr.indexOf('async function copyDiagnostics('));
+    const line = (body.match(/^\s*const mask=.*$/m) || [''])[0];
+    assert.ok(line.includes('maskSecretUrl'), 'FR-435 copyDiagnostics has its mask line: ' + line.trim().slice(0, 80));
+    const mask = new Function('R', line + '\nreturn mask;')(shared) as ((t: string) => string) | null;
+    assert.ok(typeof mask === 'function', 'FR-435 copyDiagnostics builds a mask from the shared module');
+    const B = '\\';
+    for (const p of [B + B + 'fs01' + B + 'homes' + B + 'zedq' + B + 'mcp.log', '//fs01/homes/zedq/mcp.log']) {
+      const d = W.diagnostics({ server: 's', entry: { status: 'failed', error: 'spawn ' + p + ' ENOENT' } }, mask);
+      assert.ok(d && !/fs01|homes|zedq/.test(d) && d.includes('mcp.log ENOENT'), 'FR-435 the diagnostics copy hides a share path\'s host, share and next folder: ' + d.split('\n').pop());
+    }
+    assert.strictEqual(shared.maskHomePaths(B + B + 'fs01' + B + 'homes' + B + 'zedq' + B + 'mcp.log'), B + B + 'fs01' + B + 'homes' + B + 'zedq' + B + 'mcp.log', 'FR-435 (control) the screen mask shows it whole');
+  }
   // item 3: OAuth code/state/id_token/refresh_token and a lowercase bearer
   const oauth = maskMcpError('callback https://x.test/cb?code=AbC123xyz&state=st4te99&ok=1#id_token=abc.def&refresh_token=r3fr3sh timeout; bearer abcdefgh12345678');
   for (const v of ['AbC123xyz', 'st4te99', 'abc.def', 'r3fr3sh', 'abcdefgh12345678']) assert.ok(oauth && !oauth.includes(v), 'masked: ' + v + ' in ' + oauth);
