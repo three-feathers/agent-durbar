@@ -57,6 +57,7 @@ test:brainstate
 test:brainloop
 test:brainsurface
 test:toolargs-mask
+test:toolargcopy
 test:toolusage
 test:usagestore
 test:about
@@ -130,6 +131,8 @@ test:gitstatus
 test:officeops
 test:uisuite
 test:cichanges
+test:ciossensitive
+test:uievents
 test:workflowconcurrency
 test:fastlane
 test:pathdirs
@@ -145,6 +148,8 @@ test:logo-assets
 test:autofollow
 test:announcemask
 test:livemask
+test:overmask
+test:maskpaths
 test:openwith
 test:liveact
 test:lookalike
@@ -235,7 +240,10 @@ test:selfupdate-feed
 test:selfupdate-feedget
 test:selfupdate-notes
 test:selfupdate-installtype
+test:selfupdate-checker
+test:selfupdate-ipc
 test:selfupdate-schedule
+test:selfupdate-settings
 test:releases-json
 test:sessionsummary
 test:helpercard

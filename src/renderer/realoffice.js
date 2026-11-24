@@ -349,16 +349,18 @@
 
   /* The numbers one scene is drawn with: the world's furniture numbers with the set's people numbers. Spec 102 FR-323: `pixelArt` is the WORLD's (grid snap, screen box,
      smoothing of the room), whatever the set; the set's own `pixelArt` only says how its people are drawn (`pixelPeople`, spec 097 T247: a crew's hi-res people in a pixel world are scaled to its people). */
+  /* spec 102 FR-399, T472 (issue 2055): a set's HD block reaches the layout as `hdPeople` (the flip: no switch) */
   function metaOf(worldMeta, setMeta) {
     const meta = Object.assign({}, worldMeta, setMeta);
     meta.pixelArt = !!(worldMeta && worldMeta.pixelArt);
     meta.pixelPeople = !!(setMeta && setMeta.pixelArt);
+    delete meta.hd; if (setMeta && setMeta.hd) meta.hdPeople = setMeta.hd;
     return meta;
   }
   /**
    * Draw the office into `stage`. `model`: {folders:[{id,name,path,cost,counts:[{state,n,word}],newSess,menu,agents:[{id,name,role,
    * state,word,task,label,tip,selected,away,awayLabel,helpers:[state],helpWords}]}], places:[{id,label,custom,post,title,go,visitors:[{id,name,
-   * needsYou,title}]}]}; `view`: {w,h}; `opts`: {still, world, set, rand, remember, onArt}. Returns the layout (for the app's checks).
+   * needsYou,title}]}]}; `view`: {w,h}; `opts`: {still, world, set, rand, remember, onArt, hd}. Returns the layout (for the app's checks).
    */
   /* spec 102 delta 2026-11-14 (review of #1741): a storey tag's text width in the sign's own 12 px bold, in the font of this machine (a canvas measure; the layout adds the padding). Cached by font and text; null when it cannot be measured (the layout then takes 8 px a letter) */
   let TAGCV = null;
@@ -380,9 +382,9 @@
     onArt = opts.onArt || null;
     PIXEL = !!meta.pixelArt;
     meta.dpr = root.devicePixelRatio || 1; FRAC = PIXEL && Math.abs(meta.dpr - Math.round(meta.dpr)) > 1e-9; /* spec 102 FR-255 (T204): the lobby's pictures sit on whole device pixels at any ratio */
-    const ids = Object.keys(meta.seat).sort();
+    const ids = Object.keys(L.seatsOf(meta)).sort();
     const who = people(model, ids, opts.rand, !!opts.remember);
-    const seatOk = (p) => !!p && !['typeA', 'think', 'waveA', 'rest'].some((f) => BAD.has(SD + p + '-' + f + '.webp'));
+    const seatOk = (p) => !!p && !['typeA', 'think', 'waveA', 'rest'].some((f) => BAD.has(SD + L.seatFile(meta, p, f))); /* spec 102 T472: the set's HD busts when it has them */
     const tagW = model.folders.some((f) => f.floor) ? tagMeasure(stage) : null; /* review of #1741: the storey tags are sized from the text as this machine draws it */
     const engine = {
       keepRooms: !!model.keepRooms, /* spec 097 FR-353: a saved room order is kept in the rows */

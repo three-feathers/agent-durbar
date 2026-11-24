@@ -1,0 +1,1 @@
+- **A keyboard tip comes back when you return to the window** (spec 092, spec 001 FR-270): tab to a room head (its tip shows), switch to another window and come back, and the tip shows again instead of staying hidden until you move the focus. The floors check now says when the window lost its focus.

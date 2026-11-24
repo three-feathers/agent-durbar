@@ -17,7 +17,9 @@ export interface RealPlace { id: string; custom?: boolean; visitors: RealVisitor
 /** `keepRooms`: the person saved a room order for this floor (spec 097 FR-353, owner Q31): the rooms stand in rows in that order, left to right, top to bottom, even if the picture is a little smaller */
 /** `restW`: the measured width in px of the tag "Resting" (same font as `RealFloor.w`) */
 export interface RealModel { folders: RealFolder[]; places: RealPlace[]; keepRooms?: boolean; restW?: number }
-export interface SeatMeta { w: number; h: number; headTop: number; bodyH: number; hand: number }
+export interface SeatMeta { w: number; h: number; headTop: number; bodyH: number; hand: number; head?: Record<string, [number, number, number, number]> }
+/** spec 102 T472: the gap a head-anchored mark (dots, the ask bubble) keeps from an HD head, and an HD head from the screen glass above it at the big level, px */
+export const HEAD_CLEAR = 4;
 /** `feet` and `top`: per pose, the lowest and highest opaque row as a share of the picture's height, measured from its alpha (owner 2026-10-31 10:19) */
 export interface StandMeta { figH: number; poses: Record<string, [number, number]>; feet?: Record<string, number>; top?: Record<string, number>; foot?: Record<string, number> }
 /* `foot`: per pose, the horizontal centre of the planted feet as a share of the picture's width (spec 097 FR-191): the figure stands on it,
@@ -44,7 +46,16 @@ export interface RealMeta {
   /** spec 097 FR-368..FR-371 (#1641, #1642): the world's helper kids (the Photo office's clay-toy kids), in shipped pixels: per kid the standing reference figure's `bodyH`, `w`, `h`,
    *  `headTop` and `face` box, every pose's size and the widest pose; absent in a world without kid art (the head row keeps FR-307's adults) */
   kids?: Record<string, KidMeta>;
+  /** spec 102 FR-391, FR-399 (issue #2055): the HD person set, handed over only while its off-by-default switch is on (`metaOf`); a set's own `hd` block is never read directly */
+  hdPeople?: HdSet;
 }
+/** spec 102 FR-391: per person, pose and authored scale `s` (file px per grid px): the file's width and height and its face box (x, y, w, h), all in file px */
+export interface HdSet { scales: number[]; people: Record<string, Record<string, Record<string, [number, number, number, number, number, number]>>>; busts?: Record<string, SeatMeta>; loungeW?: number }
+/** spec 102 T472 (owner 2026-11-23 20:11 UTC): the seated people of a set: its HD busts (one size, the largest, drawn as each world scales its people) when it has them, else its `seat` */
+export const seatsOf = (meta: Pick<RealMeta, 'seat' | 'hdPeople'>): Record<string, SeatMeta> => (meta.hdPeople && meta.hdPeople.busts) || meta.seat || {};
+/** the file of a seated pose, in the set's folder: the HD bust (`hd/<pid>-<pose>@4.webp`) or the set's own picture */
+export const seatFile = (meta: Pick<RealMeta, 'hdPeople'>, pid: string, pose: string): string => (meta.hdPeople && meta.hdPeople.busts && roOwnB(meta.hdPeople.busts, pid) ? `hd/${pid}-${pose}@4.webp` : `${pid}-${pose}.webp`);
+const roOwnB = (o: object, k: string): boolean => Object.prototype.hasOwnProperty.call(o, k);
 export interface KidMeta { ref: string; bodyH: number; w: number; h: number; headTop: number; face: [number, number, number, number]; poses: Record<string, [number, number]>; widest: string }
 /** spec 097 FR-368..FR-373: a desk's kid zone: the feet line, the place width, the places nearest the person first (left span, then right), how many show as kids, and the `+K` block (or null) */
 export interface KidZone { feet: number; place: number; places: Rect[]; shown: number; more: Rect | null }
@@ -161,13 +172,13 @@ export function kidHeadCrop(kid: KidMeta): { x: number; y: number; s: number } {
 export const kidOf = (helperId: string, kids: Record<string, KidMeta>): string | null => helperPerson(helperId, null, Object.keys(kids).sort());
 /** FR-307, FR-370: the one answer for a helper head's picture: the kid's face (the world's `<kid>-<ref>.webp`) in a world with kids, else an adult of the set
  *  (never the parent) cropped by `headCrop` from `<person>-rest.webp`; `w` is the picture's width in its pixels, `world` says which folder it is in */
-export function helperHead(helperId: string, parentPerson: string | null | undefined, meta: Pick<RealMeta, 'seat' | 'kids'>): { file: string; world: boolean; w: number; crop: { x: number; y: number; s: number } } | null {
+export function helperHead(helperId: string, parentPerson: string | null | undefined, meta: Pick<RealMeta, 'seat' | 'kids' | 'hdPeople'>): { file: string; world: boolean; w: number; crop: { x: number; y: number; s: number } } | null {
   if (meta.kids && Object.keys(meta.kids).length) {
     const id = kidOf(helperId, meta.kids) as string, k = meta.kids[id];
     return { file: `${id}-${k.ref}.webp`, world: true, w: k.w, crop: kidHeadCrop(k) };
   }
-  const seat = meta.seat || {}, p = helperPerson(helperId, parentPerson, Object.keys(seat).sort());
-  return p && roOwn(seat, p) ? { file: `${p}-rest.webp`, world: false, w: seat[p].w, crop: headCrop(seat[p]) } : null;
+  const seat = seatsOf(meta), p = helperPerson(helperId, parentPerson, Object.keys(seat).sort());
+  return p && roOwn(seat, p) ? { file: seatFile(meta, p, 'rest'), world: false, w: seat[p].w, crop: headCrop(seat[p]) } : null;
 }
 /** FR-368, FR-369, FR-373: the kid zone of one desk at the big level: two spans on the desk top beside the centre (the person's head and shoulders, the away post-it, or where the
  *  person would sit), the places nearest the centre first (left span, then right), as many kids as fit up to `KID_CAP`, then `+K` in the next place; null when no kid fits (plan A4) */
@@ -218,7 +229,7 @@ const roNeedsYou = (s: RealState): boolean => s === 'waiting' || s === 'limit';
 /** An empty seat: the agent is away in the lobby (a post-it says where). An asleep agent is not away: it rests at its desk in the dark (FR-120, FR-129). */
 const roNarrow = (a: RealAgent): boolean => !!a.away;
 /* Spec 097 FR-246 (owner 2026-11-06, issue #1220): the asleep desk's 0.62 width of the 2026-11-02 ruling is gone: an asleep agent sits in the lounge row, so every desk is full width */
-const roSeatOf = (meta: RealMeta, a: RealAgent): SeatMeta | null => (a.person && roOwn(meta.seat, a.person) ? meta.seat[a.person] : null);
+const roSeatOf = (meta: RealMeta, a: RealAgent): SeatMeta | null => { const seat = seatsOf(meta); return a.person && roOwn(seat, a.person) ? seat[a.person] : null; };
 
 /** FR-022: a zone's desks in status order; ties keep the model's order. */
 export function sortDesks(agents: readonly RealAgent[]): RealAgent[] {
@@ -378,6 +389,23 @@ export function standHeight(meta: RealMeta, person: string): number {
   return Math.max(1, (f - t) * h);
 }
 
+/** spec 102 FR-392: the authored scale `s` and the whole number `n` of device px per file px for `dev` device px per grid px: the largest s x n not over `dev`
+ *  (a tie takes the larger s, the finer art; s 1 only when no other fits); null when no authored scale fits (the old frame is drawn) */
+export function hdPick(dev: number, scales: ReadonlyArray<number>): { s: number; n: number } | null {
+  let best: { s: number; n: number } | null = null;
+  const use = scales.some((s) => s > 1 && dev + 1e-6 >= s) ? scales.filter((s) => s > 1) : scales; /* the lobby's 72 file (s 1) only where no larger one fits: never blown up */
+  for (const s of use) { const n = Math.floor(dev / s + 1e-6); if (n >= 1 && (!best || s * n > best.s * best.n || (s * n === best.s * best.n && s > best.s))) best = { s, n }; }
+  return best;
+}
+/** spec 102 FR-391, FR-392: the HD frame of `pid` in `pose` at grid scale `g` and ratio `dpr`, in CSS px (whole device px), with its face box; null without one (the old frame is drawn) */
+export function hdFrame(hd: HdSet | undefined, pid: string, pose: string, g: number, dpr = 1): { file: string; w: number; h: number; face: Rect } | null {
+  const fr = hd && roOwn(hd.people, pid) && roOwn(hd.people[pid], pose) ? hd.people[pid][pose] : null;
+  const pk = fr ? hdPick(g * dpr, hd!.scales.filter((s) => roOwn(fr, String(s)))) : null;
+  if (!fr || !pk) return null;
+  const [w, h, fx, fy, fw, fh] = fr[String(pk.s)], k = (v: number): number => (v * pk.n) / dpr;
+  return { file: `hd/${pid}-${pose}@${pk.s}.webp`, w: k(w), h: k(h), face: { x: k(fx), y: k(fy), w: k(fw), h: k(fh) } };
+}
+
 /** Owner 2026-10-31 09:03 (spec 097 delta): one fixture per place, never two; a place's width grows with the people standing there and
  *  an empty place shrinks to a compact fixture. `fixtures` are the fixtures' widths at full scale, `counts` the visitors per place,
  *  `vw` a standing person's width. Steps, each only while the row is wider than W: (1) empty places draw their fixture smaller, down
@@ -479,7 +507,12 @@ function roLobby(meta: RealMeta, places: RealPlace[], W: number, Lb: number): { 
         /* the two running pictures have their own canvases: each in its own box, the feet on one spot, so changing picture moves no foot */
         const b = fb ? (() => { const w = st.poses[fb][0] * k, h = st.poses[fb][1] * k; return { x: px(cx - ft(st.foot && roOwn(st.foot, fb) ? st.foot[fb] : sp.foot) * w), y: px(frontY - (st.feet && roOwn(st.feet, fb) ? st.feet[fb] : sp.feet) * h), w, h }; })() : null;
         fig = { x: px(cx - ft(sp.foot) * fw2), y: px(frontY - sp.feet * fh2), w: fw2, h: fh2, file: `${v.person}-${sp.pose}.webp`, fileB: fb ? `${v.person}-${fb}.webp` : null, b, pose: sp.pose, feetY: frontY, faces, mir };
-        const headY = fig.y + sp.top * fh2;
+        /* spec 102 FR-406 (issue 2055): behind the switch, the HD frame of the same pose at the same whole scale, its feet on the same spot (the HD frames end at the soles) */
+        const hd4 = (pose: string): { file: string; w: number; h: number } | null => { const f = meta.hdPeople && roOwn(meta.hdPeople.people, String(v.person)) && roOwn(meta.hdPeople.people[String(v.person)], pose) ? meta.hdPeople.people[String(v.person)][pose]['4'] : null; return f ? { file: `hd/${v.person}-${pose}@4.webp`, w: (f[0] * k) / 4, h: (f[1] * k) / 4 } : null; }; /* T472: a world that scales people smoothly draws the 288 frame (s 4 is four times the old grid) */
+        const pixelHd = snap && meta.pixelPeople !== false;
+        const hv = !meta.hdPeople ? null : pixelHd ? hdFrame(meta.hdPeople, String(v.person), sp.pose, k, dpr) : snap ? null : hd4(sp.pose), hb = hv && fb ? (pixelHd ? hdFrame(meta.hdPeople, String(v.person), fb, k, dpr) : hd4(fb)) : null;
+        if (hv && (!fb || hb)) fig = { ...fig, x: px(cx - hv.w / 2), y: px(frontY - hv.h), w: hv.w, h: hv.h, file: hv.file, fileB: hb ? hb.file : null, b: hb ? { x: px(cx - hb.w / 2), y: px(frontY - hb.h), w: hb.w, h: hb.h } : null };
+        const headY = hv && (!fb || hb) ? fig.y : fig.y + sp.top * fh2;
         face = { x: cx - 0.065 * nearPx, y: headY, w: 0.13 * nearPx, h: 0.13 * nearPx };
         /* a soft elliptical contact shadow on the floor, centred on the foot line, a little wider than the stance */
         const sw = 0.36 * nearPx, shH = Math.max(5, 0.045 * nearPx);
@@ -502,6 +535,16 @@ function roNote(px: number, sx: number, slotW: number, sl: number, deskY: number
   return { x: Math.min(x, sx + slotW - s / 2 - 2), y: deskY - s + 4, s };
 }
 
+/** spec 102 T472: a head-anchored mark (its box `w` wide and `h` tall, `dy` from its anchor to its top) moved off an HD head (`head`), HEAD_CLEAR away: to the head's right
+ *  while it ends before `right`, else above the head (not above `minY`); unchanged when it is clear or there is no HD head */
+function clearHead(at: { x: number; y: number }, w: number, dy: number, head: Rect | null, right: number, h = 24, minY = -Infinity, left = -Infinity): { x: number; y: number } {
+  if (!head) return at;
+  const hit = (p: { x: number; y: number }): boolean => p.x < head.x + head.w + HEAD_CLEAR && head.x - HEAD_CLEAR < p.x + w && p.y + dy < head.y + head.h + HEAD_CLEAR && head.y - HEAD_CLEAR < p.y + dy + h;
+  if (!hit(at)) return at;
+  const tries = [{ x: head.x + head.w + HEAD_CLEAR, y: at.y }, { x: at.x, y: Math.max(minY - dy, head.y - HEAD_CLEAR - h - dy) }, { x: head.x - HEAD_CLEAR - w, y: at.y }];
+  return tries.find((p) => p.x + w <= right && p.x >= left && !hit(p)) || tries[1];
+}
+
 /** FR-013, FR-016, FR-017, FR-036, FR-038: one desk (roStation) in a slot. */
 function roStation(meta: RealMeta, a: RealAgent, sx: number, y: number, Sw: number, u: number, g: Geom, big: boolean, scrH: number, hr = 0, hh = 0): DeskBox {
   const narrow = roNarrow(a);
@@ -513,9 +556,18 @@ function roStation(meta: RealMeta, a: RealAgent, sx: number, y: number, Sw: numb
   const px = big ? sx + slotW / 2 : sx + 0.05 * Sw + 0.42 * u;
   let person: DeskBox['person'] = null, face: Rect | null = null;
   const pose = SEAT_POSE[a.state];
+  let headR: Rect | null = null; /* spec 102 T472: an HD bust's head (its opaque top down to the chin), as drawn: what the dots and the bubble keep clear of */
   if (m && pose && !narrow) {
-    const k = u / m.bodyH, w = m.w * k, h = m.h * k, top = headY - m.headTop * k;
-    person = { x: px - w / 2, y: top, w, h, file: `${a.person}-${pose}.webp`, fileB: roOwn(POSE_FRAME_B, pose) ? `${a.person}-${POSE_FRAME_B[pose]}.webp` : null, pose, pid: String(a.person),
+    let k = u / m.bodyH, top = headY - m.headTop * k;
+    const hp = m.head ? [pose, ...(roOwn(POSE_FRAME_B, pose) ? [POSE_FRAME_B[pose]] : [])].map((p) => (m.head && roOwn(m.head, p) ? m.head[p] : null)).filter((v): v is [number, number, number, number] => !!v) : [];
+    const hTop = hp.length ? Math.min(...hp.map((v) => v[1])) : 0;
+    if (hp.length) { /* the tallest pose stays HEAD_CLEAR below the row's sign strip, and at the big level below the screen's glass; where it would not, the figure yields (smaller, its bottom kept) */
+      const gb = big ? Math.max(y + STRIP, y + STRIP + scrH - 7) : y + STRIP, bottom = top + m.h * k; /* the glass's bottom edge at the big level (the screen: top y + STRIP + 6, sh = scrH - 10, the glass 3 inside it) */
+      if (top + hTop * k < gb + HEAD_CLEAR) { k = Math.min(k, (bottom - gb - HEAD_CLEAR) / (m.h - hTop)); top = bottom - m.h * k; }
+    }
+    const w = m.w * k, h = m.h * k;
+    if (hp.length) { const x0 = Math.min(...hp.map((v) => v[0])), x1 = Math.max(...hp.map((v) => v[0] + v[2])), y1 = Math.max(...hp.map((v) => v[1] + v[3])); headR = { x: px - w / 2 + x0 * k, y: top + hTop * k, w: (x1 - x0) * k, h: (y1 - hTop) * k }; }
+    person = { x: px - w / 2, y: top, w, h, file: seatFile(meta, String(a.person), pose), fileB: roOwn(POSE_FRAME_B, pose) ? seatFile(meta, String(a.person), POSE_FRAME_B[pose]) : null, pose, pid: String(a.person),
       vis: { x: Math.max(sx, Math.min(px - 0.3 * u, sx + slotW - 0.6 * u)), y: headY, w: Math.min(0.6 * u, slotW), h: Math.max(0, deskY - headY) } }; /* the head and shoulders: the monitor may cover a shoulder edge, never the face */
     face = { x: px - FACE_U * u * 0.4, y: headY, w: FACE_U * u * 0.8, h: FACE_U * u };
   }
@@ -540,11 +592,11 @@ function roStation(meta: RealMeta, a: RealAgent, sx: number, y: number, Sw: numb
     id: a.id, state: a.state, narrow, slot: { x: sx, y, w: slotW, h: 0 }, desk, plate, screen, glass, person, face, ...(strip ? { strip } : {}), ...(kz ? { kids: kz } : {}),
     away, /* the note on the desk, where the person would sit */
     lamp: { x: sx + 0.02 * slotW, y: Math.max(y + STRIP, headY - 0.35 * u), w: 0.96 * slotW, h: deskY + dh * 0.5 - Math.max(y + STRIP, headY - 0.35 * u) },
-    bubble: person && roNeedsYou(a.state) ? { x: px + 0.2 * u - 6, y: headY - 0.04 * u } : null,
+    bubble: person && roNeedsYou(a.state) ? clearHead({ x: px + 0.2 * u - 6, y: headY - 0.04 * u }, 24, -24, headR, sx + slotW, 24, y + STRIP, sx) : null,
     bang: a.state === 'error' ? { x: sr - 10, y: screen.y - 8 } : null,
     /* FR-038 (spec 097 delta 2026-11-15, T350): the dots never rise into the row's sign strip (the folder sign stands at y + 1, 20 px tall), in every world and arrangement: a tall person (the cave's seat, hand 0.88) put them under the sign.
        Below the big level they also end before the screen's glass (its text): moved down, they would have reached its corner. At the big level the person sits in front of the big screen by design. */
-    dots: person && a.state === 'thinking' ? { x: big ? px + 0.2 * u : Math.min(px + 0.1 * u, glass.x - DOTS_BOX.w - DOTS_CLEAR), y: Math.max(headY + (big ? 0.12 : -0.13) * u, y + STRIP + DOTS_CLEAR) } : null,
+    dots: person && a.state === 'thinking' ? clearHead({ x: big ? px + 0.2 * u : Math.min(px + 0.1 * u, glass.x - DOTS_BOX.w - DOTS_CLEAR), y: Math.max(headY + (big ? 0.12 : -0.13) * u, y + STRIP + DOTS_CLEAR) }, DOTS_BOX.w, 0, headR, big || Math.max(headY + (big ? 0.12 : -0.13) * u, y + STRIP + DOTS_CLEAR) + DOTS_BOX.h <= glass.y - DOTS_CLEAR ? sx + slotW - 4 : glass.x - DOTS_CLEAR, DOTS_BOX.h, y + STRIP + DOTS_CLEAR, sx) /* beside the head they may pass over the screen's top when they stay above its glass (its text) */ : null,
     call: { x: sx + slotW - 16, y: deskY + 0.05 * dh },
   };
 }
@@ -770,8 +822,8 @@ export function splitLounge(model: RealModel): { desks: RealFolder[]; lounge: Re
 export const LOUNGE_U = 84, LOUNGE_SHOW = 0.68, LOUNGE_TABLE = 0.62, LOUNGE_GAP = 6, LOUNGE_PAD = 6;
 /** FR-247: the seat width and the row height, from every person of the set (not only the ones seated now), so a seat never changes size with who sits there */
 export function loungeSeat(meta: RealMeta): { w: number; h: number; above: number; pw: number } {
-  const seats = Object.values(meta.seat || {});
-  const pw = Math.max(0.8 * LOUNGE_U, ...seats.map((m) => (m.w / m.bodyH) * LOUNGE_U)), ph = Math.max(1.2 * LOUNGE_U, ...seats.map((m) => (m.h / m.bodyH) * LOUNGE_U));
+  const seats = Object.values(seatsOf(meta));
+  const pw = Math.max(0.8 * LOUNGE_U, ...seats.map((m) => (m.w / m.bodyH) * LOUNGE_U), ((meta.hdPeople && meta.hdPeople.loungeW) || 0) * LOUNGE_U), /* spec 102 T472: an HD set keeps the seat width its old pictures gave (`loungeW`, in body heights), so a role that fitted still fits */ ph = Math.max(1.2 * LOUNGE_U, ...seats.map((m) => (m.h / m.bodyH) * LOUNGE_U));
   const above = Math.ceil(ph * LOUNGE_SHOW);
   return { w: Math.ceil(0.86 * pw + LOUNGE_TABLE * LOUNGE_U + LOUNGE_GAP), h: LOUNGE_PAD + above + PLATE_H_ASK + LOUNGE_PAD, above, pw };
 }
@@ -786,7 +838,7 @@ export function loungeRows(meta: RealMeta, agents: readonly RealAgent[], W: numb
     const px = sx + 2 + S.pw / 2; /* the person's centre: at the seat's left, the small desk at its right */
     if (m) {
       const k = LOUNGE_U / m.bodyH, w = m.w * k, h = m.h * k, pt = plateY - LOUNGE_SHOW * h, headY = pt + m.headTop * k;
-      person = { x: px - w / 2, y: pt, w, h, file: `${a.person}-${pose}.webp`, fileB: null, pose, pid: String(a.person), vis: { x: px - 0.3 * LOUNGE_U, y: headY, w: 0.6 * LOUNGE_U, h: Math.max(0, plateY - headY) } };
+      person = { x: px - w / 2, y: pt, w, h, file: seatFile(meta, String(a.person), pose), fileB: null, pose, pid: String(a.person), vis: { x: px - 0.3 * LOUNGE_U, y: headY, w: 0.6 * LOUNGE_U, h: Math.max(0, plateY - headY) } };
       face = { x: px - FACE_U * LOUNGE_U * 0.4, y: headY, w: FACE_U * LOUNGE_U * 0.8, h: FACE_U * LOUNGE_U };
     } else face = { x: px - FACE_U * LOUNGE_U * 0.4, y: plateY - 0.62 * LOUNGE_U, w: FACE_U * LOUNGE_U * 0.8, h: FACE_U * LOUNGE_U }; /* no picture: the initials go where the face would be (FR-065) */
     /* the small desk stands on the floor behind the plate's top edge; the monitor on it, its foot on the desktop */

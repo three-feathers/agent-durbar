@@ -436,7 +436,7 @@ export function announceRule(r: CheckResult, announced: Announced, settingsVisib
 export type UpdatePolicy =
   | { state: 'none' }
   | { state: 'unreadable' }
-  | { state: 'ok'; allowInAppInstall?: unknown; featureAgentAppUpdateCheck?: unknown; updatesMode?: unknown; max?: Partial<Record<SetupKind, string>> };
+  | { state: 'ok'; allowInAppInstall?: unknown; featureAgentAppUpdateCheck?: unknown; updatesMode?: unknown; feedUrl?: unknown; max?: Partial<Record<SetupKind, string>> }; // feedUrl: spec 118 FR-005 (T010)
 
 export interface PolicyView {
   /** The whole check is hidden and nothing is contacted (`features.agentAppUpdateCheck: false`, `updates.mode: "off"`). */

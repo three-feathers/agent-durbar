@@ -6,7 +6,7 @@
 import * as assert from 'assert';
 import { spawnSync } from 'child_process';
 import { randomBytes } from 'crypto';
-import { EventEmitter } from 'events';
+import { EventEmitter, getEventListeners } from 'events';
 import * as fs from 'fs';
 import * as path from 'path';
 import { feedAllowed, makeFeedGet, FEED_FAILURES, FEED_TIMEOUT_MS, FIXED_HEADERS } from '../src/main/netget';
@@ -168,7 +168,7 @@ async function main(): Promise<void> {
   for (const a of [viaError.a, brief(viaThrow)]) {
     assert.deepStrictEqual(a, { ok: false, reason: 'network' }, "a network error is the code 'network', not its text");
   }
-  assert.deepStrictEqual([...FEED_FAILURES].sort(), ['content-type', 'network', 'not-allowed', 'redirect', 'status', 'timeout', 'too-large'], 'the closed set of failure codes');
+  assert.deepStrictEqual([...FEED_FAILURES].sort(), ['aborted', 'content-type', 'network', 'not-allowed', 'redirect', 'status', 'timeout', 'too-large'], 'the closed set of failure codes');
 
   // a response stream error after the headers is 'network' at once, not a timeout (review of #2058)
   {
@@ -180,6 +180,40 @@ async function main(): Promise<void> {
     for (let i = 0; i < 5; i++) await new Promise((r) => setImmediate(r));
     assert.deepStrictEqual(got, { ok: false, reason: 'network' }, "a response error mid-body is 'network' at once, with no timer fired");
     assert.ok(n.reqs[0].aborted, 'the failed response is aborted');
+  }
+
+  // FR-004 (T010): switching the check off mid-request aborts it; an aborted signal creates no request object
+  {
+    const before = netWith(answer(200, '[]'));
+    const ac0 = new AbortController();
+    ac0.abort();
+    const pending = <T>(q: Promise<T>): Promise<T | 'pending'> => Promise.race([q, new Promise<'pending'>((r) => setImmediate(() => setImmediate(() => r('pending'))))]);
+    assert.deepStrictEqual(await pending(makeFeedGet(before.factory)(LIST, SLUG, ac0.signal)), { ok: false, reason: 'aborted' }, 'abort: an aborted signal answers aborted');
+    assert.strictEqual(before.reqs.length, 0, 'abort: an aborted signal creates no request object');
+    const n = netWith(() => { /* never answers */ });
+    const ac = new AbortController();
+    let cleared = 0;
+    const p = makeFeedGet(n.factory, { set: () => 1, clear: () => { cleared++; } })(LIST, SLUG, ac.signal);
+    await new Promise((r) => setImmediate(r));
+    ac.abort();
+    assert.deepStrictEqual(await pending(p), { ok: false, reason: 'aborted' }, 'abort: an abort during the request answers aborted');
+    assert.ok(n.reqs[0].aborted, 'abort: the request object is aborted');
+    assert.strictEqual(cleared, 1, 'abort: the time limit is cleared');
+    const done = netWith(answer(200, '[]'));
+    const ac2 = new AbortController();
+    const r = await makeFeedGet(done.factory)(LIST, SLUG, ac2.signal);
+    assert.strictEqual(getEventListeners(ac2.signal, 'abort').length, 0, 'abort: no listener is left after a finished request (review of PR 2064, item 4)');
+    ac2.abort();
+    assert.ok(r.ok, 'abort: an abort after the answer changes nothing');
+    // the listener is removed on every kind of answer (review of PR 2064, item 4)
+    const listeners = (sig: AbortSignal): number => getEventListeners(sig, 'abort').length;
+    assert.strictEqual(listeners(ac.signal), 0, 'abort: no listener is left after an aborted request');
+    const ac3 = new AbortController();
+    const refused = await makeFeedGet(netWith(answer(200, '[]')).factory)('https://evil.example/x', SLUG, ac3.signal);
+    assert.ok(!refused.ok && listeners(ac3.signal) === 0, 'abort: no listener is left after a refused address');
+    const shared = new AbortController();
+    for (const [status, body] of [[200, '[]'], [404, ''], [301, '']] as [number, string][]) await makeFeedGet(netWith(answer(status, body)).factory)(LIST, SLUG, shared.signal);
+    assert.strictEqual(listeners(shared.signal), 0, 'abort: no listener is left after several requests on one signal (ok, a status, a redirect)');
   }
 
   // FR-004: 10 s limit, on a fake timer

@@ -412,7 +412,7 @@ console.log('braindraw: page load ok');
   function fakeEl(): Record<string, unknown> {
     const kids = new Map<string, Record<string, unknown>>(), classes = new Set<string>(), attrs: Record<string, string> = {}, listeners: Record<string, Fn[]> = {};
     const e: Record<string, unknown> = {
-      className: '', textContent: '', innerHTML: '', style: {}, width: 0, height: 0, attrs, listeners, classes,
+      className: '', textContent: '', innerHTML: '', style: { setProperty: (k: string, v: string) => { attrs['style' + k] = v; } }, width: 0, height: 0, attrs, listeners, classes,
       setAttribute: (k: string, v: unknown) => { attrs[k] = String(v); }, getAttribute: (k: string) => attrs[k],
       addEventListener: (k: string, f: Fn) => { (listeners[k] = listeners[k] || []).push(f); }, appendChild: () => undefined,
       classList: { toggle: (c: string, on: boolean) => { if (on) classes.add(c); else classes.delete(c); }, add: (c: string) => classes.add(c), remove: (c: string) => classes.delete(c), contains: (c: string) => classes.has(c) },
@@ -613,6 +613,66 @@ console.log('braindraw: page load ok');
     assert.ok(p.host.draw.mode() === 'still' && p.host.bySystem(), 'forced colours F1: Still, set by the system');
     p.mqForced.matches = false; p.mqForced.listeners.forEach((f) => f());
     assert.strictEqual(p.host.draw.mode(), 'calm', 'forced colours end: the Settings choice again');
+  }
+  // FR-134..FR-136 (T476, owner 2026-11-23): the lobe words on the picture, the lit word, the lines line, the tooltip's count
+  {
+    const ANCH: Record<string, { x: number; y: number }> = {}; for (const g of H.LABEL_ORDER) ANCH[g] = P.ANCHORS[BS.GLYPHS[g].lobe];
+    assert.deepStrictEqual(H.LABEL_ORDER, Object.keys(BS.GLYPHS), 'the seven words, in the glyph table\'s order');
+    // 12 px bold advance widths of CI's fonts (DejaVu Sans Bold, and DejaVu Sans Mono Bold: the arcade's display font on Linux), plus 2 px padding and 1 px border a side
+    const FONTS: Record<string, Record<string, number>> = { sans: { think: 37.4, read: 34.1, edit: 26.6, shell: 33.5, web: 29.5, mcp: 29.5, you: 24.4 }, mono: { think: 36.1, read: 28.9, edit: 28.9, shell: 36.1, web: 21.7, mcp: 21.7, you: 21.7 } };
+    // the marker as draw.js draws it (review of PR 2061: never dock.js's own number, or a smaller clearance would test itself): the ring's radius and its whole line
+    assert.deepStrictEqual(D.MARKER, { r: 5, line: 1.5 }, 'draw.js\'s marker: a 5 px ring with a 1.5 px line (FR-016)');
+    const MARK = D.MARKER.r + D.MARKER.line;
+    assert.ok(H.MARK_R >= MARK && H.MARK_R >= 7, `dock.js keeps its words at least the marker's ${MARK} px from an anchor (MARK_R ${H.MARK_R})`);
+    const hit = (a: { l: number; t: number; r: number; b: number }, b: typeof a): boolean => a.l < b.r && b.l < a.r && a.t < b.b && b.t < a.b;
+    for (const [font, adv] of Object.entries(FONTS)) for (const grow of [1, 1.1]) for (const W of [H.W_COMPACT, 240, 325]) {
+      const Hh = Math.round(W / P.ASPECT), sizes: Record<string, { w: number; h: number }> = {};
+      for (const g of H.LABEL_ORDER) sizes[g] = { w: Math.ceil(adv[g] * grow) + 6, h: 17 };
+      const at = H.placeLabels(W, Hh, sizes, ANCH), tag = `${font} x${grow} at ${W}x${Hh}`;
+      assert.ok(at, `FR-134: the seven words fit the picture, ${tag}`);
+      const gs = Object.keys(at); assert.strictEqual(gs.length, 7, `seven words placed, ${tag}`);
+      for (const g of gs) {
+        const r = at[g];
+        assert.ok(r.l >= 0 && r.t >= 0 && r.r <= W && r.b <= Hh, `${g} inside the picture box, ${tag}: ${JSON.stringify(r)}`);
+        assert.ok(r.r - r.l >= sizes[g].w - 1 && r.b - r.t === 17, `${g} keeps its measured size, ${tag}`);
+        for (const m of gs) { const a = ANCH[m], k = MARK; assert.ok(!hit(r, { l: a.x * W - k, t: a.y * Hh - k, r: a.x * W + k, b: a.y * Hh + k }), `${g} is not on ${m}'s marker, ${tag}`); }
+        for (const o of gs) if (o !== g) assert.ok(!hit(r, at[o]), `${g} and ${o} do not overlap, ${tag}`);
+        const a = ANCH[g], cx = (r.l + r.r) / 2 - a.x * W, cy = (r.t + r.b) / 2 - a.y * Hh;
+        assert.ok(Math.abs(cx) <= sizes[g].w && Math.abs(cy) <= 17 + H.MARK_R + H.LABEL_GAP, `${g} sits beside its own lobe, ${tag}`);
+      }
+    }
+    assert.strictEqual(H.placeLabels(80, 53, Object.fromEntries(H.LABEL_ORDER.map((g: string) => [g, { w: 70, h: 17 }])), ANCH), null, 'no set fits: null (the words are hidden, never piled up)');
+    // FR-135: the lines line names FR-040's own cap
+    assert.strictEqual(H.linesText(BS), `Lines: the last ${TRAIL_MAX} steps, newest brightest`, 'FR-135: the lines line, with TRAIL_MAX');
+    // FR-136: counts per lobe over the turn's kept steps; the tooltip's sentence and count; Think is never a step
+    let s = BS.initBrain('Ada', mask);
+    const T: [string, Record<string, unknown>][] = [['bash', { command: 'ls' }], ['view', { path: 'a.ts' }], ['bash', { command: 'npm test' }], ['fetch', { url: 'https://example.test/' }]];
+    T.forEach(([tool, args], i) => { s = BS.brainState(s, { type: 'toolCall', sessionId: 'a', callId: 'n' + i, tool, args, phase: 'start', timestamp: i + 1 }, i + 1, mask); });
+    s = BS.brainState(s, { type: 'toolCall', sessionId: 'a', callId: 'm1', tool: 'list_channels', mcpServer: 'teams', args: {}, phase: 'start', timestamp: 9 }, 9, mask);
+    const c = H.lobeCounts(BS, s);
+    assert.deepStrictEqual(c, { think: 0, read: 1, edit: 0, shell: 2, web: 1, mcp: 1, you: 0 }, 'FR-136: the steps of this turn per lobe');
+    assert.deepStrictEqual(H.viewOf(BS, s, 'a').counts, c, 'the view carries the counts (no new IPC)');
+    assert.strictEqual(H.tipText(BS, 'shell', c, 0), 'back, low. Running a command, or any other tool. 2 steps this turn.', 'the tooltip: the sentence and the count');
+    assert.strictEqual(H.tipText(BS, 'edit', c, 0), 'top. Editing, writing or creating files. No steps this turn.', 'no step: said in words');
+    assert.strictEqual(H.tipText(BS, 'read', c, 3), `back. Reading, listing or searching files. 1 step this turn (of the last ${BS.STEP_CAP}).`, 'folded steps: the count says which steps it counts');
+    assert.strictEqual(H.tipText(BS, 'think', c, 0), 'front. Thinking between tools: never a tool step.', 'Think is never a step: no count');
+    // one source (FR-014): the legend's words and the words on the picture are GLYPHS'
+    const p = page(() => 'Ada'); p.host.feed('a', 'Ada', p.ev(1)); p.flush();
+    const labs = p.host.labels() as { textContent: string; classes: Set<string>; attrs: Record<string, string>;  }[];
+    const words = H.LABEL_ORDER.map((g: string) => BS.GLYPHS[g].word);
+    assert.deepStrictEqual(labs.map((l) => l.textContent), words, 'the labels are GLYPHS\' words');
+    assert.deepStrictEqual(H.legendRows(BS).slice(0, 7).map((r: { word: string }) => r.word), words, 'the legend says the same words, in the same order');
+    // the lit word and the one tab stop; every other word in the reading order; the count in each item's text
+    assert.deepStrictEqual(labs.map((l) => l.classes.has('is-lit')), H.LABEL_ORDER.map((g: string) => g === 'shell'), 'the lit word is the current step\'s (Shell)');
+    assert.deepStrictEqual(labs.map((l) => l.attrs.tabindex), H.LABEL_ORDER.map((g: string) => (g === 'shell' ? '0' : '-1')), 'one tab stop: the lit word');
+    assert.ok(labs.every((l) => l.attrs['aria-label'] === undefined && l.attrs['aria-describedby'] === 'bvLabDesc'), 'each word is named by its own text and described by the one description');
+    assert.strictEqual(txt(p.host, '.bv-desc'), 'Shell: back, low. Running a command, or any other tool. 1 step this turn.', 'the description: the lit word\'s place, sentence and count');
+    assert.ok(String((p.host.el.attrs as Record<string, string>)['style--bv-lit']).startsWith('#'), 'the lit colour reaches the caption chip and the frame');
+    assert.strictEqual(txt(p.host, '.bv-lines'), H.linesText(BS), 'the dock shows the lines line');
+    assert.strictEqual(txt(p.host, '.bv-lobe'), 'Shell', 'the caption names the tool only, no anatomical word (2026-11-23)');
+    // no label size or motion of its own: the dock's 12 px (FR-097) and nothing that animates (Still holds)
+    const css = readSrc(path.join(DIR, 'brain.css')), labCss = (css.match(/\.bv-lab[^{]*\{[^}]*\}/g) || []).join('\n');
+    assert.ok(labCss.length > 0 && !/font-size|transition|animation/.test(labCss), 'the words take the dock\'s font size and never animate: ' + labCss);
   }
   // the live world switch (G1): flipping html[data-world] repaints the brain with no reload; the data-world observer is what does it
   {

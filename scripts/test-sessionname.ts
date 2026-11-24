@@ -99,7 +99,25 @@ const src = (p: string): string => fs.readFileSync(path.join(root, p), 'utf8').r
   assert.ok(/toast\(esc\(\(out&&out\.error\)/.test(app) && /toast\(esc\(out\.note\)/.test(app), 'rename toasts are escaped');
   // spec 059 FR-020, FR-022 (issue 636): the rename pencil and the chat title button label themselves through esc(); the inline field writes text only;
   // the dialog and the field share ONE submit part per kind (one bridge call site each, so the two ways in cannot drift)
-  assert.ok(/aria-label="Rename \$\{esc\(a\.name\)\}"/.test(app) && /aria-label="Rename session \$\{esc\(a\.name\)\}"/.test(app), 'the pencil and the title button labels are escaped');
+  assert.ok(/aria-label="Rename \$\{esc\(a\.name\)\}"/.test(app), 'the pencil label is escaped');
+  // spec 012 FR-197: the title button's label and text come from the masked name (`nameShown`), so its source no longer reads `esc(a.name)`; run the page's own
+  // definitions instead: a name with markup characters and a secret-shaped part comes out escaped and masked (a name made of pieces, never a real key)
+  {
+    const vm = require('vm') as typeof import('vm');
+    const shared = require(path.join(__dirname, '..', 'src', 'shared', 'redact.js'));
+    const R_DIR = path.join(__dirname, '..', '..', 'src', 'renderer');
+    const ST = require(path.join(R_DIR, 'safetext.js')); ST.useShared(shared);
+    const L = app.replace(/\r\n/g, '\n').split('\n');
+    const one = (h: string): string => { const l = L.filter((x) => x.startsWith(h)); assert.strictEqual(l.length, 1, h); return l[0]; };
+    const defs = ['const homeMask=', 'const deskMask=', 'const SHORT=', 'const RED=', 'const STX=', 'const SAFE=', 'const safeExcerpt=', 'const esc=', 'function annHome(', 'function annPart(', 'function liveText(', 'const nameShown=', 'const panelTitleHTML='].map(one).join('\n');
+    const ctx = vm.createContext({ window: { DurbarRedact: shared, DurbarSafeText: ST }, DurbarCutText: require(path.join(R_DIR, 'cuttext.js')), NO_REDACT: false, titleRenameable: () => true, ICON: () => '' });
+    vm.runInContext(defs + '\nthis.panelTitleHTML=panelTitleHTML;', ctx);
+    const body = 'A1b2C3' + 'd4E5f6' + 'G7h8I9' + 'j0K1l2' + 'M3n4O5' + 'p6Q7r8';
+    const html = (ctx as unknown as { panelTitleHTML(a: object): string }).panelTitleHTML({ name: 'Fix <b>"bug"</b> & ' + 'gh' + 'p_' + body });
+    const inside = html.replace(/<\/?(?:button|span)\b[^>]*>/g, ''); // the page's own tags; what is left is the name as it reaches the page
+    assert.ok(!inside.includes('<') && !inside.includes('>') && !/&(?!amp;|lt;|gt;|quot;|#39;)/.test(inside), 'the title button label and text are escaped (behaviour)');
+    assert.ok(!html.includes(body.slice(0, 12)) && html.includes('&lt;b&gt;'), 'the title button label and text are masked and keep the rest of the name (behaviour)');
+  }
   assert.ok(!/innerHTML|insertAdjacentHTML|outerHTML/.test(src('src/renderer/inlinename.js')), 'the inline field never builds HTML');
   assert.strictEqual((app.match(/bridge\.renameSession\(/g) || []).length, 1, 'one bridge.renameSession call site');
   assert.strictEqual((app.match(/bridge\.renameFolder\(/g) || []).length, 1, 'one bridge.renameFolder call site');

@@ -321,6 +321,65 @@ export function snoozeState(now: number, version: string, snooze: unknown, skip?
   return 'show';
 }
 
+/** FR-021 (T010): the `updates` object of the settings file, each key only in its exact shape. */
+export interface SelfUpdateSettings { selfCheck?: boolean; source?: string; snooze?: { version: string; until: number }; skip?: string; lastCheck?: { at: number; latest?: string } }
+
+/** An own enumerable data property: plain data, as JSON makes it (a getter, a hidden or an inherited property is not). */
+const plainData = (d: PropertyDescriptor | undefined): d is PropertyDescriptor => d !== undefined && 'value' in d && d.enumerable === true;
+/** An own enumerable data property's value: a getter is never run, a non-enumerable, inherited or `__proto__`-set value never read. */
+const own = (o: object, k: string): unknown => {
+  const d = Object.getOwnPropertyDescriptor(o, k);
+  return plainData(d) ? d.value : undefined;
+};
+const stableVersion = (v: unknown): v is string => typeof v === 'string' && VERSION_KEY_RE.test(v);
+const time = (v: unknown): v is number => typeof v === 'number' && Number.isSafeInteger(v) && v >= 0;
+
+/** FR-021, validated on read: unknown keys dropped, a key of the wrong type absent, the slug only in its parsed form; undefined when nothing is left. */
+export function parseUpdatesSettings(v: unknown): SelfUpdateSettings | undefined {
+  if (!isObj(v)) return undefined;
+  const out: SelfUpdateSettings = {};
+  const selfCheck = own(v, 'selfCheck');
+  if (typeof selfCheck === 'boolean') out.selfCheck = selfCheck;
+  const source = own(v, 'source');
+  if (typeof source === 'string' && parseRepoSlug(source) === source) out.source = source;
+  const snooze = own(v, 'snooze');
+  const [sv, su] = isObj(snooze) ? [own(snooze, 'version'), own(snooze, 'until')] : [];
+  if (stableVersion(sv) && time(su)) out.snooze = { version: sv, until: su };
+  const skip = own(v, 'skip');
+  if (stableVersion(skip)) out.skip = skip;
+  const last = own(v, 'lastCheck');
+  const [at, latest] = isObj(last) ? [own(last, 'at'), own(last, 'latest')] : [];
+  if (time(at)) out.lastCheck = stableVersion(latest) ? { at, latest } : { at };
+  return Object.keys(out).length ? out : undefined;
+}
+
+const UPDATE_KEYS: readonly string[] = ['selfCheck', 'source', 'snooze', 'skip', 'lastCheck'];
+/** Only own string-keyed enumerable data properties, each named in `allowed` (no symbol, no accessor, no hidden key); a throwing proxy is refused.
+ * So the keys checked here are exactly `Object.keys(o)`, the list the value loop walks (review of PR 2064, round 2). */
+const onlyDataKeys = (o: object, allowed: readonly string[]): boolean => {
+  try {
+    return Reflect.ownKeys(o).every((k) => typeof k === 'string' && allowed.includes(k) && plainData(Object.getOwnPropertyDescriptor(o, k)));
+  } catch { return false; }
+};
+
+/**
+ * FR-021, for a write (review of PR 2064): the patch is checked BEFORE any merge. Every key must be one of the five, as an own data property;
+ * its value is `undefined` (remove that key) or passes the read rule exactly (a nested object with no extra or dropped part). Any failure
+ * refuses the whole patch (undefined), so a bad value can never erase a stored one.
+ */
+export function parseUpdatesPatch(patch: unknown): Partial<SelfUpdateSettings> | undefined {
+  if (!isObj(patch) || !onlyDataKeys(patch, UPDATE_KEYS)) return undefined;
+  const out: Record<string, unknown> = {};
+  for (const k of Object.keys(patch)) {
+    const v = own(patch, k);
+    if (v === undefined) { out[k] = undefined; continue; }
+    const got = (parseUpdatesSettings({ [k]: v }) as Record<string, unknown> | undefined)?.[k];
+    if (got === undefined || (isObj(v) && !onlyDataKeys(v, Object.keys(got as object)))) return undefined;
+    out[k] = got;
+  }
+  return out as Partial<SelfUpdateSettings>;
+}
+
 // ---------------------------------------------------------------------------------------------------------------------
 // Strict JSON files: `releases.json` (FR-026) and the baked `updatesource.json` (FR-001)
 

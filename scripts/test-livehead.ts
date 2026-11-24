@@ -22,6 +22,8 @@ const COVERED: Array<{ key: string; alt: string; what: string; sample: string }>
   { key: '[^\\r\\n\\\\\\`^;&|]', alt: 'mysql', what: 'mysql -p', sample: 'mysql -u r -pab1' },
   { key: '\\[redacted\\]', alt: '%3[DdAa]', what: 'named phrase after a mask', sample: 'password=abc' }, // FR-170 item 6: `contrase(?:n|ñ)a` in the lookbehind, covered by the name alternative
   { key: '[^()\\r\\n]{0,128}', alt: '%3[DdAa]', what: 'named secret', sample: 'password=abc' },
+  { key: '{0,128}[A-Z])(?=', alt: '%3[DdAa]', what: 'named value before a path (FR-198: the same name and separator head)', sample: 'password=abc' },
+  { key: '{4,7}[\\\\/])(?!', alt: '%3[DdAa]', what: 'short named value before a path (FR-198: the same name and separator head)', sample: 'password=abc' },
 ];
 const used = new Set<string>();
 /** Each source with a window must hold a list entry's key; returns how many sources have a window. */

@@ -129,7 +129,9 @@ const RUN_REASONS: RunReason[] = ['no-agent', 'send-error', ...END_REASONS];
 /** Spec 044 FR-037: a skip that repeats with the same outcome and session is one entry with a count. */
 const FOLDS: Outcome[] = ['skipped-busy', 'skipped-paused', 'held', 'skipped-door-full', 'skipped-review'];
 const LASTASK_SOURCES = ['agent', 'default', 'clamped'];
-const ID_RE = /^[A-Za-z0-9._:-]{1,128}$/;
+/** The shape of a Durbar session id (a UUID, an agent app's own session id, the simulator's `sim-N`); spec 005 FR-411 reuses it. */
+export const SESSION_ID_RE = /^[A-Za-z0-9._:-]{1,128}$/;
+const ID_RE = SESSION_ID_RE;
 const AGENT_RE = /^[A-Za-z0-9._-]{1,32}$/;
 /** FR-017: cap ranges per unit (AI credits, dollars). */
 export const CAP_RANGE: Record<CapUnit, [number, number]> = { aiu: [0.01, 1_000_000], usd: [0.01, 10_000] };

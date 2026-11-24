@@ -3,6 +3,8 @@
  * `permissions.requireOsSandbox` so far, so this answers `none` and only the user's switch applies (`[KNOWN GAP]`, issue #1125). When 076's reader
  * lands, this one function returns its `allowInAppInstall`, `features.agentAppUpdateCheck`, `updates.mode` and `agentApps.versions.<app>.max`,
  * and `unreadable` for a policy that is present but cannot be read (the start check then does not run: fail closed).
+ * Spec 118 FR-005 (T010): Durbar's own update check reads the same answer (`updates.mode`, and `updates.feedUrl` as `feedUrl`) through
+ * `selfPolicyView`, again before each request and when each answer arrives.
  */
 import type { UpdatePolicy } from '../shared/updatecheck';
 

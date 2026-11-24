@@ -1,1 +1,0 @@
-- **Releases wait for a green UI run** (spec 117 FR-014): a release tag is built only after the *UI on three OSes* run of exactly that commit is green on Linux and Windows; a cancelled or red run is replaced by a by-hand run on the tag first. Checked by `test:releaseuigate` and read-only on the last five release commits.
