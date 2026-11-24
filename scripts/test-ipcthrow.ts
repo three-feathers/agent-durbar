@@ -241,20 +241,19 @@ async function main(): Promise<void> {
         }
       }
     }
-    // review of #2108, finding 5: the second pass. A zero-width space or a soft hyphen inside each secret (12 characters before its end): 0 visible
+    // review of #2108, finding 5: the second pass. A zero-width space or a soft hyphen inside each secret (near its start, in its middle, 12 characters before its end): 0 visible
     const hiddenVisible: string[] = [];
     let hiddenTotal = 0;
     for (const [family, samples] of Object.entries(families)) for (const sample of samples) {
       if (sample.length < 24) continue;
-      for (const ch of ['\u200b', '\u00ad']) {
+      for (const ch of ['\u200b', '\u00ad']) for (const at of [2, 5, 9, Math.floor(sample.length / 2), sample.length - 12]) {
         hiddenTotal++;
-        const at = sample.length - 12;
         const out = failText(new Error(`request failed: ${sample.slice(0, at)}${ch}${sample.slice(at)}`), 'differential');
-        if (out.includes(bodyOf(sample))) hiddenVisible.push(family);
+        if (out.includes(bodyOf(sample))) hiddenVisible.push(`${family}@${at}`);
       }
     }
     assert.deepStrictEqual(hiddenVisible, [], `finding 5: a hidden character inside a secret never leaves part of it on screen (the second pass; ${hiddenTotal} messages)`);
-    assert.ok(hiddenTotal >= 400, `finding 5: the hidden-character differential ran (${hiddenTotal} messages)`);
+    assert.ok(hiddenTotal >= 2000, `finding 5: the hidden-character differential ran (${hiddenTotal} messages)`);
     delete process.env[envName];
     const leaked = Object.entries(visible).filter(([, n]) => n > 0);
     assert.deepStrictEqual(leaked, [], `the differential: no secret of any family is visible (per family: ${JSON.stringify(Object.fromEntries(leaked))})`);
