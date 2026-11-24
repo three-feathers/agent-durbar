@@ -8,7 +8,7 @@
 - [ ] T546 Owners' rule line: no new masking work, no daily masking batch, spec 119 paused (a one-line `AGENTS.md` change by the owners, naming the rule it replaces, FR-063). [section 5 stage 0]
 - [ ] T547 Each stage PR (1 to 5) keeps the two advisory fixes untouched (#1383: `claudeMdPrompt`, `claudeMdNodeIo`, `notPath`; #1416: `agents:selectProfile`, `readAgentFile`, `hashAgentFile`, `shownSha`, `AgentTrustStore`, `claudeAgentOfBytes`, `listClaudeAgents`, `claudeAgentDirs`, `linkedInProject`, `linkedBelow` and the confirmation paths) and runs `test-agentconfirm.ts`, `test-adapter-contract.ts`, `test-claude-adapter.ts` and `test-agentprofiles.ts` green; a stage that edits `test-claude-adapter.ts` changes only its masking asserts. [FR-452]
 - [ ] T548 Constitution amendment PR with `/speckit.constitution` (principle III, version 1.2.0 to 1.3.0, Sync Impact Report), text of spec section 4. [section 4]
-- [ ] T549 Answers to Q43 and Q44 written into the spec, and the other two owners' agreement to Vikram's answers to Q42 and Q45 (option 1 each, 2026-11-24). [section 6]
+- [ ] T549 Paco's and Ruben's written agreement on the decision and on Vikram's answers to Q42 to Q45 (all option 1, 2026-11-24), recorded in the spec. [section 6]
 
 ## Stage 1: no agent text in logs, saved state or outbound sinks (depends on stage 0)
 
@@ -39,7 +39,7 @@
 
 ## Stage 5: docs and spec status (depends on stage 4)
 
-- [ ] T565 docs/safety.md: the one line of FR-451 and the list of what is kept and never written; docs/features.md, README, docs/agent-notes.md masking lines. [FR-451]
+- [ ] T565 docs/safety.md and README: the one plain line of FR-451 (Q44 option 1); docs/safety.md's list of what is kept and never written; docs/features.md, README and docs/agent-notes.md masking lines. [FR-451]
 - [ ] T566 Dated deltas in specs 012, 041, 052, 084, 105, 005, 045, 058, 083 and 119 (status `superseded` for 119 and spec 012's masking FRs). [section 5 stage 5]
-- [ ] T567 Changelog fragment telling users, as Q44 decides. [Q44]
+- [ ] T567 Changelog fragment telling users (release notes, no in-app notice: Q44 option 1). [FR-451]
 - [ ] T568 `/speckit.converge`: this spec's status and evidence tags match what was built. [all]

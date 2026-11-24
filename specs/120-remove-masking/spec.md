@@ -4,7 +4,7 @@
 group: 046
 title: Remove masking as app functionality (proposal, 2026-11-24): the screen shows what the agent sent; Durbar keeps agent text out of its own logs, saved state and anything that leaves the machine by structure, not by masking; options A, B, C, inventory, the principle III clarification and a staged deletion plan
 status: draft
-note: proposal only; nothing changes until all three owners agree in writing; Q42 and Q45 answered by Vikram (option 1 each), the other owners to agree; Q43, Q44 open; facts checked by Paco's side (review of PR 2121)
+note: proposal only; nothing changes until all three owners agree in writing; the owner Vikram has answered Q42 to Q45 (all option 1); Paco and Ruben still have to agree in writing on the decision and on Q42 to Q45; facts checked by Paco's side (review of PR 2121)
 -->
 
 **Feature Branch**: `120-remove-masking` (spec, plan and tasks only).
@@ -154,7 +154,7 @@ There is no chat channel, issue-report form or telemetry in the app (`git grep` 
 - **FR-444** A main-process log line names a fixed place, an error class name and a code, never an error message, stack text or path from an agent app or the system. One named exception: a test driver's own failure (`DURBAR_DRIVER`, never in a packaged build without `DURBAR_DEV=1`) prints the driver's stack, which CI needs; drivers run on simulated agents only.
 - **FR-445** The `DURBAR_LOG` debug log records event kinds, ids, phases, lengths and codes, never a text field, argument, output or stderr text.
 - **FR-446** The Durbar MCP read tools return an MCP server's name, transport, on/off and health, never its command, arguments or URL.
-- **FR-447** Notes, exports and Copy hold what the person sees, unmasked; each is a user action. The project notes switch says that the file goes into the project folder and may be pushed with it.
+- **FR-447** Notes, exports and Copy hold what the person sees, unmasked; each is a user action, not an exception to FR-442. *Copy diagnostics* and *Copy details* copy what the screen shows, the agent app's own error message included (Q43 option 1). The project notes switch says that the file goes into the project folder and may be pushed with it.
 - **FR-448** Text the person sends to an agent app (a message, a team brief, a hook explanation request) is not masked or blocked. Spec 084's send check becomes moot.
 - **FR-449** Values Durbar itself holds that are secret by their field (an MCP server's environment or header value the person entered) are never sent to the window, a log or another agent: the window gets "set" or "not set". This is structure, not text masking, and it stays.
 - **FR-450** **The planted-marker tests** (`npm test`, 0 credits). A unique invented value, made at run time with a random body (never a committed shape), is fed in as each kind of agent output: reply, thinking, tool name, tool arguments, tool output, a command, a URL, an agent-chosen session title, a loop pace line (`next` and `stop` reasons), a question, a permission summary, an MCP error, an agent app's error and its stderr. **Each sink has its own test and its own mutant**: a mutant that writes the marker into that sink must make the run fail at that sink's own named assert (not at a shared one). Where each sink is reached, because the window simulator (`DURBAR_SIM`) never reaches main and the scheduler does not start under it (`main.ts:1275`):
@@ -171,7 +171,7 @@ There is no chat channel, issue-report form or telemetry in the app (`git grep` 
   | the screen, Copy, exports | window driver under `DURBAR_SIM`: the marker is shown where the agent sent it; Copy and export hold exactly what is shown |
   | end to end through main | `DURBAR_SIM_MAIN` with `FakeAdapter` (`src/main/mcp/simmain.ts`), where its events reach the router; `[KNOWN GAP]` not checked which sinks it reaches, so it adds to the unit tests and never replaces them |
 
-- **FR-451** docs/safety.md says in one line: **"The screen shows what the agent sent; do not share your screen with secrets on it."** and lists, without "masked", what Durbar keeps and what it never writes.
+- **FR-451** Existing users are told by the release notes (a changelog fragment) and one plain line in docs/safety.md and in the README, no in-app notice (Q44 option 1); the texts are written in stage 5. docs/safety.md says in one line: **"The screen shows what the agent sent; do not share your screen with secrets on it."** and lists, without "masked", what Durbar keeps and what it never writes.
 - **FR-453** The loop's saved state keeps the pace minutes and its source (`agent`, `default`, `clamped`) and Durbar's fixed end words ("Stopped by the agent"), never the agent's reason; the window may show this run's reason from memory.
 
 ## 4. The constitution III amendment (proposed text; the constitution file is not edited in this PR)
@@ -208,7 +208,7 @@ Line counts: `wc -l` of the files a stage deletes, plus the call lines of sectio
 | 2 | Window masks go: `safetext.js` (260), the renderer call sites (~25 call lines, ~400 mention lines), the FR-197 sink table `test-live-mask.ts` (552), the window drivers `check-done-desk-mask.js`, `check-toolchip-mask.js`, `check-console-mask.js`, `check-question-header-mask.js` (710), `test-safetext*.ts` and corpora (603), `test-announce-mask.ts` (260) | ~2,800 deleted |
 | 3 | Main-side shown-text masks go: `convmask.ts` (227), `mcpmask.ts` (440), `activitymask.ts` (41), ~90 call lines in main, MCP, notes, brain view, adapters; `test-convmask.ts`, `test-mcp-errormask.ts`, `test-toolargs-mask.ts`, `test-mask-paths.ts`, `test-notesmask.ts`, `test-overmask.ts` (1,568); asserts in the 85 mixed test files | ~2,600 |
 | 4 | `redact.ts` (3,681) goes; the kept helpers move to a small text module; `test-redact*.ts`, growth and held libraries, `redact-main-ref.ts`, `test-maskoutgoing*.ts`, `sandbox-real-mask.ts` (7,934) | ~11,600 deleted |
-| 5 | Docs and spec status: dated deltas in specs 012, 041, 052, 084, 105 (and 005, 045, 058, 083, 119, which also name the mask), docs/safety.md (FR-451), docs/features.md (14 masking lines), README (1), docs/agent-notes.md (8), changelog fragment telling users | ~200 |
+| 5 | Docs and spec status: dated deltas in specs 012, 041, 052, 084, 105 (and 005, 045, 058, 083, 119, which also name the mask), docs/safety.md and README: the one line of FR-451 (Q44), docs/features.md (14 masking lines), README's masking line (1), docs/agent-notes.md (8), changelog fragment telling users | ~200 |
 
 **Tests that must stay after every stage:** the planted-marker test (FR-450); the advisory fixes' tests (`test-agentconfirm.ts`, `test-agentprofiles.ts`, `test-adapter-contract.ts`, and the #1383 and #1416 asserts of `test-claude-adapter.ts`, FR-452); the invisible-character tests (`unhide`); the environment-hygiene tests (`secretFlag`, `envVarName`); spec 041 FR-012's read-tool tests; FR-449's "set / not set" tests.
 
@@ -225,9 +225,11 @@ Line counts: `wc -l` of the files a stage deletes, plus the call lines of sectio
 
 ### Open questions for the owners (plain words)
 
+The owner Vikram has answered Q42 to Q45 (all option 1); Paco and Ruben still have to agree in writing on the decision and on Q42 to Q45.
+
 - **Q42** The activity log today keeps the command or tool request (first 160 characters, masked) across restarts. Option 1: keep only the kind of request, the tool name and the length (no command or URL text); the live chat still shows what was asked while the app runs. Option 2: keep the full request as today (local saved state, so FR-442 would need an exception). **Answered by the owner Vikram, 2026-11-24 (option 1); the other two owners still to agree in writing.** FR-443 uses option 1 as the proposed default.
-- **Q43** May *Copy diagnostics* or *Copy details* include the agent app's own error text, as shown on screen, when the person presses it? (This spec says yes: it is the person's action and copies what they see.)
-- **Q44** Who tells existing users, and how: a changelog line plus the docs/safety.md line in the release that ships stage 2, or also a one-time note in the app?
+- **Q43** May *Copy diagnostics* (the MCP error copy) or *Copy details* (#2060 item 1) include the agent app's own error text, as shown on screen, when the person presses it? Option 1: yes, it copies what the person sees; their copy, their choice to paste it. Option 2: only Durbar's own facts (versions, OS, counts, codes). **Answered by the owner Vikram, 2026-11-24 (option 1); the other two owners still to agree in writing.** FR-447 uses option 1.
+- **Q44** Who tells existing users, and how? Option 1: the release notes (changelog) plus one plain line in docs/safety.md and the README ("the screen shows what the agent sent; do not share your screen with secrets on it"), no in-app popup. Option 2: also a one-time notice in the app. **Answered by the owner Vikram, 2026-11-24 (option 1); the other two owners still to agree in writing.** FR-451 uses option 1.
 - **Q45** Undo keeps copies of the files an agent edits (`checkpoints/` in userData: private, bounded, emptied at the next start, so a crash leaves them until then). Either (a) keep them as a **named exception** in FR-442 and the amendment ("copies for Undo, local, emptied at the next start, a feature the person sees"): no code cost, Undo works as today; or (b) Undo keeps only **hashes and paths**: no file content on disk, but Undo can then only tell that a file changed, not put it back, so spec 065's Undo is lost (or would need git, which spec 065 avoids). Which one? **Answered by the owner Vikram, 2026-11-24 (option 1; reason: local data like the agent apps' sessions); the other two owners still to agree in writing.** FR-442 and the amendment use option 1.
 
 ## 7. What is not decided
