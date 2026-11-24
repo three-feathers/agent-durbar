@@ -2620,3 +2620,39 @@ All sets keep FR-204's caps: no frame over 80 KB (largest 54 KB, Office), none o
 - Flat's heads and other worlds' `rows` draw the old frames until the flip (T472).
 
 **Numbers** (`npm run specs:numbers`, `origin/main` and the open PR heads, 2026-11-23): FR-391..FR-408, T466..T473, T501; no Q.
+
+## Changes 2026-11-24: the first Retro pixel pictures removed; the arcade and the lobby read the HD numbers (T502; FR-406; issue #2055, tracker #1404; amends FR-254, FR-256 for the Retro pixel set; no new FR)
+
+After the flip (T472) nothing drew the first Retro pixel pictures. The owner's rule (2026-10-31: a removal takes the files, the code, the tests and the docs) and his word on #2055 (2026-11-23 20:11 UTC: "the old arcade pictures are removed") make T502 the clean-up.
+
+- **Removed:**
+  - The 300 pictures at the top of `sets/retro/` (15 people x 20 frames, 0.33 MB). Their provenance stays in the git history; `ASSETS.md` keeps one removal record.
+  - The `set.json` keys `seat`, `stand` and `faceBox`.
+  - The people part of `scripts/build-arcade-pack.py` (it now draws only the arcade world), and `scripts/build-arcade-sleep.py`.
+- **The numbers move into the HD block:**
+  - `hd.stand`: for each person, the size, `feet`, `top` and `foot` of every HD frame, measured on its 72 px (s 1) frame, with `figH` 72. The lobby (the visitor's scale and pose) and the arcade (place width, pose choice) read it through `standOf`. A set with its own `stand` (Office people, the crews) keeps it.
+  - `foot` of the running frames (`runA`, `runB`, `face-runA`, `face-runB`) uses the old builder's rule: the head's mean x over the top 40 % of the figure, so a stride does not move the head.
+  - `hd.placeW` 46: the arcade's place width. Measured on the HD frames alone it would be 40, which changes the hall: g moves at 8 agents at 1280x800 and the face check at 8 and 15 agents fails. The value keeps the hall the owner approved.
+- **No old name for an HD person** (FR-406, made exact): a set that has an `hd` block and no `stand` of its own (`hdOnly`) never names an old file. When an HD frame cannot be drawn (too wide for its place, or missing), the cabinet, the lounge stool and the lobby visitor show no picture: the initials, or the name chip for a visitor. Before T502 they drew the old frame. The shipped set has every frame, so this path is only a guard. The general old-frame path stays for sets without an HD block.
+- **The arcade is unchanged.** I compared the old `set.json` (with its `hd` block) against the new one in 1792 halls: 1 to 15 agents, 4 window sizes, ratio 1 and 2, every state, visitors and the lounge. 0 differ. I also took and looked at simulator pictures before and after (see the PR).
+- **Finding (rows worlds, not the arcade):** in the Photo office and cave lobbies, a Retro pixel visitor's height comes from the upright `letter` frame. That frame was 71 px for six people (p04, p05, p08, p09, p11, p13) and is 72 px in HD. Those six visitors are 1.4 % taller (71 to 72 file px at the same scale), and 1344 of the same 1792 halls differ in the lobby. The arcade's lobby uses whole scales and does not move.
+- **Re-pinned numbers, old to new:**
+  - `test-realoffice-aisles.ts`, the arcade layout hash: `7c469f199d1ea68917bf09721a2bf96362a5b18a6a40c91d6cada1e5c3cf2349` to `96499daf120667dfbddcd5ad7d04fc2110c903f9ec75103e637ad82203361963`. The old hash was taken with the test's set read without its HD block: the old-frame hall, which nobody draws since the flip. The new hash is the hall the app draws, equal to the shipped one (the 1792-hall check above).
+  - `test-realoffice-layout.ts`, FR-308 `PIN.retro` (rows worlds with the Retro pixel set): `886f06deb0437597d1d9cf90b6596472eff6b4a9c37a4292f4d914ddda23ea02` to `72fa38c8bb385011e46819568164ad7ca2e88b95314e854b68079dabd0549d42`. This is the visitor finding above.
+  - `test-realoffice-aisles.ts`, "ratio 1 and 2 byte-identical": now compares the hall without its people. The HD file is chosen per ratio (FR-392), so the people's boxes differ by ratio. Before T502 the whole layout was identical.
+  - `test-realoffice-aisles.ts`, the 7-hall switch-off equality ("off, the set's hd block changes nothing", "only the old frames", "the same plan", "without an HD frame is unchanged") is removed. There is no switch-off hall any more. The new check is that every drawn person has its HD frame.
+  - `test-realoffice-aisles.ts`, "an HD frame wider than its place": it used to say the old frame stays. Now the person shows no picture and no old file is named; the same check is added for the lounge stool and the lobby visitor.
+  - `test-realoffice-layout.ts`, mirrored Retro visitors: they used to stand on the old frame's measured foot centre. Now an HD visitor stands centred on its spot (its frames are centred on the feet).
+  - `test-realoffice-layout.ts`, FR-255 lobby whole scales: the scale is now the HD frame's px per file px (`hd.people`), not the old `stand` size.
+  - `test-realoffice-layout.ts`, the T472 busts against the old sizes: the old `seat` numbers are kept as `scripts/fixtures/retro-old-seat.json`, so the HD busts are still held to the figure sizes and the lounge width the owner approved.
+  - `test-realoffice-assets.ts`, the set:
+    - "300 frames" is now 0 pictures at the top of the folder, no `seat`/`stand`/`faceBox`, and `hd.stand` complete and equal to the s 1 frame sizes.
+    - The FACE_GRID check reads the s 1 HD face boxes: the smallest is 20 px (the old `faceBox` smallest was 19), against FACE_GRID 19.
+    - The FR-326 reuse and mirror check runs on the 210 s 1 HD frames, with its four planted mutants.
+    - The removal-record rule accepts a replacement under `hd/` with an `@` scale.
+  - Every `hd.stand` size against the old `stand` (210 frames; for example `letter`: p01 39x72 to 33x72, p04 41x71 to 30x72) is listed in full in the PR body. Widths are smaller because the HD frames are cut to the figure.
+- **Docs pictures** (owner rule 2026-10-31) are retaken with `npm run shots:docs` in a second commit, which can be split into its own PR.
+
+`[KNOWN GAP]`: Linux only, simulator only, no real session. The rows-world visitor change has not been shown to the owner.
+
+**Numbers:** T502 only; no new FR or Q.
