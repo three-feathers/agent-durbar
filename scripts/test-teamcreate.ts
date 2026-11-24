@@ -608,9 +608,10 @@ section('folders', async () => {
     const secret = 'ghp' + '_' + 'A1b2C3d4'.repeat(5);
     const masked = parseTeamRecord(badRec({ brief: 'use ' + secret + ' now' }));
     ok(!JSON.stringify(masked ?? '').includes(secret), 'a token in the brief never comes back as it was');
-    // the session ids of a member are checked when READ: a path, an id that starts with `-` and a repeat are dropped, the good ones stay in order
-    const sess = parseTeamRecord(badRec({ sessions: [{ id: '../x' }, { id: '-a' }, { id: 'ok1' }, { id: 'ok1', briefSent: true }, { id: 'a b' }, { id: 5 }, { id: 'ok2', briefSent: true }] }));
-    eq(sess?.members[0].sessions, [{ id: 'ok1' }, { id: 'ok2', briefSent: true }], 'read: `../x`, `-a`, a space, a number and a repeated id are dropped');
+    // the session ids of a member are checked when READ with the strict `sessionIdOk` (letters, digits, `_`, `-`; at most 100): a path, a drive letter, a dot, a colon, a leading `-`, a space, a number, a 101-character id and a repeat are dropped
+    const longId = 'a'.repeat(101);
+    const sess = parseTeamRecord(badRec({ sessions: [{ id: '../x' }, { id: 'a/../x' }, { id: 'a/../../x' }, { id: 'C:/x' }, { id: 'a..b' }, { id: 'x:y' }, { id: '-a' }, { id: longId }, { id: 'ok1' }, { id: 'ok1', briefSent: true }, { id: 'a b' }, { id: 5 }, { id: 'ok_2-x', briefSent: true }, { id: 'a'.repeat(100) }] }));
+    eq(sess?.members[0].sessions, [{ id: 'ok1' }, { id: 'ok_2-x', briefSent: true }, { id: 'a'.repeat(100) }], 'read: paths, `C:/x`, dots, a colon, `-a`, a space, a number, 101 characters and a repeat are dropped; the good ids (100 characters too) stay')
     // the template names of the record are cleaned when READ: a bidi control or a token never comes back as it was
     const tok = 'team ' + secret;
     const tn = parseTeamRecord({ ...badRec({}), templates: ['Fine', 'Ev\u202Eil', tok, 'Fine'] })!.templates;
@@ -883,7 +884,9 @@ section('main', () => {
     { name: 'a non-boolean sendBrief is read as true', from: "if (typeof o.sendBrief !== 'boolean')\n        return undefined;", to: 'if (false)\n        return undefined;', section: 'folders', file: 'folders' },
     { name: 'a restore does not put the older names back', from: 'cur.sessionNames = parseSessionNames(previousNames);', to: 'cur.sessionNames = (cur.sessionNames ?? []).filter((x) => !/^agent-/.test(x.id));', section: 'realstore', file: 'folders' },
     { name: 'a restore keeps the new record', from: 'if (prev)\n            cur.team = prev;\n        else\n            delete cur.team;', to: '', section: 'folders', file: 'folders' },
-    { name: 'a session id is not checked when read', from: "exports.SESSION_NAME_ID.test(x.id) && !sessions.some", to: 'true && !sessions.some', section: 'folders', file: 'folders' },
+    { name: 'a session id is checked with the loose rule of the names (`/`, `.`, `:` pass)', from: "(0, sessionid_1.sessionIdOk)(typeof o.app === 'string' ? o.app : undefined, x.id)", to: 'exports.SESSION_NAME_ID.test(x.id)', section: 'folders', file: 'folders' },
+    { name: 'a session id is not checked when read', from: "(0, sessionid_1.sessionIdOk)(typeof o.app === 'string' ? o.app : undefined, x.id)", to: 'true', section: 'folders', file: 'folders' },
+    { name: 'a session id has no length bound in the parser path (a 101-character id is cut to 100 and kept)', from: "(0, sessionid_1.sessionIdOk)(typeof o.app === 'string' ? o.app : undefined, x.id) && !sessions.some((y) => y.id === x.id))\n                sessions.push({ id: x.id,", to: "(0, sessionid_1.sessionIdOk)(typeof o.app === 'string' ? o.app : undefined, x.id.slice(0, 100)) && !sessions.some((y) => y.id === x.id))\n                sessions.push({ id: x.id.slice(0, 100),", section: 'folders', file: 'folders' },
     { name: 'a repeated session id is kept', from: ' && !sessions.some((y) => y.id === x.id))', to: ')', section: 'folders', file: 'folders' },
     { name: 'a template name of the record is not cleaned when read', from: 'const n = (0, names_1.cleanDisplayName)(t, 60);', to: 'const n = typeof t === \'string\' ? t : undefined;', section: 'folders', file: 'folders' },
     { name: 'a restore leaves the created room', from: 'if (removeRoom && !prev)', to: 'if (false)', section: 'folders', file: 'folders' },

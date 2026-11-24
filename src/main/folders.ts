@@ -16,7 +16,7 @@ import { emptyOrder, parseOrder } from '../shared/roomorder';
 import type { OrderDoc } from '../shared/roomorder';
 import { cleanDisplayName, nameError, MAX_FOLDER_LABEL } from '../shared/names';
 import type { SessionNameEntry } from '../shared/sessionname';
-import { markIdOk, markSrcOk } from '../shared/sessionid';
+import { markIdOk, markSrcOk, sessionIdOk } from '../shared/sessionid';
 import { LIMITS as TEAM_LIMITS, MEMBER_ID_RE, checkMember } from '../shared/teamtemplate';
 import type { TeamCap } from '../shared/teamtemplate';
 import { ShownError } from '../shared/shownerror';
@@ -321,7 +321,7 @@ function parseTeamMember(v: unknown): TeamRecordMember | undefined {
   if (Array.isArray(o.sessions)) {
     for (const s of o.sessions.slice(0, 50)) {
       const x = s && typeof s === 'object' ? (s as Record<string, unknown>) : undefined;
-      if (x && typeof x.id === 'string' && SESSION_NAME_ID.test(x.id) && !sessions.some((y) => y.id === x.id)) sessions.push({ id: x.id, ...(x.briefSent === true ? { briefSent: true as const } : {}) });
+      if (x && typeof x.id === 'string' && sessionIdOk(typeof o.app === 'string' ? o.app : undefined, x.id) && !sessions.some((y) => y.id === x.id)) sessions.push({ id: x.id, ...(x.briefSent === true ? { briefSent: true as const } : {}) });
     }
   }
   // the same check the template store runs on every read of team-templates.json (FR-031, level `own`): hidden characters, lone surrogates, unmasked
