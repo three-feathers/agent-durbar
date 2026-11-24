@@ -8,8 +8,6 @@ const THEME=window.THEME; /* theme packs (specs 035-040): tokens, words, motion;
 const T_=n=>THEME.token(n);
 const wordOf=k=>THEME.word(k);
 const qs = new URLSearchParams(location.search);
-/* spec 102 FR-399 (issue 2055): the Retro arcade's HD person set, off by default and not in Settings until the owner approves the finished set; ?hdpeople=1 (DURBAR_HD_PEOPLE=1, development runs) turns it on for one run */
-const HD_PEOPLE_ON=qs.get('hdpeople')==='1';
 /* spec 052 FR-176 (issue 638): focus and scroll into view never move the page; innerscroll.js. No bare focus() or scrollIntoView here
    (test:innerscroll checks it): a plain focus() also scrolled html (overflow:hidden), which hid the chat header. */
 const SCROLL=window.DurbarScroll;
@@ -953,9 +951,10 @@ function roFace0(a){
   const ls=E.lightState(isFailing(a)?'failing':isRetrying(a)?'retrying':isCompacting(a)?'compacting':vis(a),{limit:!!a.limit,paused:!!a.paused,asleep:old});
   const pose=(E.SEAT_POSE||{})[ls]||'rest';
   const ok=/^[a-z0-9-]{1,24}$/.test(pp.set)&&/^[a-z0-9-]{1,24}$/.test(pp.world);
-  const file=ok&&person&&/^[a-z0-9-]{1,24}$/.test(person)?'realoffice/sets/'+pp.set+'/'+person+'-'+(v?'rest':pose)+'.webp':''; /* a visit does not change who the agent is: away, the same person at rest */
-  const sm=(packMeta('sets',pp.set)||{}).seat, seatM=sm&&person&&Object.prototype.hasOwnProperty.call(sm,person)?sm[person]:null, crop=seatM&&E.portraitCrop?E.portraitCrop(seatM):null;
-  const hdT=HD_PEOPLE_ON&&pack0(pp.set)&&person?roTile(pp.set,person,v?'rest':pose):''; /* spec 102 FR-405 (issue 2055): the HD set's avatar tiles, behind its switch */
+  const pm=packMeta('sets',pp.set)||{}, busts=pm.hd&&pm.hd.busts&&person&&Object.prototype.hasOwnProperty.call(pm.hd.busts,person); /* spec 102 T472: a set's HD busts when it has them */
+  const file=ok&&person&&/^[a-z0-9-]{1,24}$/.test(person)?'realoffice/sets/'+pp.set+'/'+(busts?'hd/':'')+person+'-'+(v?'rest':pose)+(busts?'@4':'')+'.webp':''; /* a visit does not change who the agent is: away, the same person at rest */
+  const sm=busts?pm.hd.busts:pm.seat, seatM=sm&&person&&Object.prototype.hasOwnProperty.call(sm,person)?sm[person]:null, crop=seatM&&E.portraitCrop?E.portraitCrop(seatM):null;
+  const hdT=pack0(pp.set)&&person?roTile(pp.set,person,v?'rest':pose):''; /* spec 102 FR-405 (issue 2055): the HD set's avatar tiles */
   return {ls,file,seatM,crop,pp,person,v,tile:hdT};
 }
 const pack0=set=>/^[a-z0-9-]{1,24}$/.test(set||'');
@@ -978,7 +977,7 @@ function avatar(a,view,ov,px){
   if(!ov){const rf=roFace(a);if(rf)return rf.file?(roTileImg(rf,px)||roFaceImg(rf)):`<span class="ro-face ro-ini" style="display:flex;align-items:center;justify-content:center;width:100%;height:100%;border-radius:50%;font-weight:600;font-size:12px;background:var(--surface-2);color:var(--ink)">${esc(Array.from(String(a.name||'?'))[0].toUpperCase())}</span>`;} /* away: the initial, as the header */
   const k=themedLook(a.look);
   const kit=(ov&&ov.kit)||THEME.sceneKit(), cr=kit==='crew'?(ov&&ov.crew!==undefined?ov.crew:crewOf(a)):'';
-  if(kit!=='office'&&window.DurbarScenes){const v=window.DurbarScenes.avatar(kit,a,{k,T:T_,shade,reduced:REDUCED,art:kitArt(),crew:cr,crewFb:kit==='crew'&&CREW_BAD.has(cr),view});if(v)return v;}
+  if(kit!=='office'&&window.DurbarScenes){const v=window.DurbarScenes.avatar(kit,a,{k,T:T_,shade,reduced:REDUCED,art:kitArt(),crew:cr,crewFb:kit==='crew'&&CREW_BAD.has(cr),view,px,dpr:window.devicePixelRatio||1});if(v)return v;}
   return `<svg viewBox="50 20 48 48" width="100%" height="100%" aria-hidden="true" focusable="false">${k.style==='long'?`<path d="M59.5 44a14.5 14.5 0 0 1 29 0v19q0 4-4 4h-21q-4 0-4-4z" fill="${k.hair}"/>`:''}<path d="M55 99V77q0-14 14-14h10q14 0 14 14v22z" fill="${k.shirt}"/><rect x="70" y="53" width="8" height="10" rx="3" fill="${shade(k.skin,-.08)}"/>${charArt('body')}<circle cx="74" cy="44" r="12.5" fill="${k.skin}"/>${hairFront(k.style,k.hair)}${charArt('head')}<circle cx="71.7" cy="45.4" r="1.35" fill="${T_('--face-dark')}"/><circle cx="79.7" cy="45.4" r="1.35" fill="${T_('--face-dark')}"/><path d="M71 51.6q3 2 6 0" fill="none" stroke="${T_('--mouth')}" stroke-width="1.3" stroke-linecap="round"/></svg>`;
 }
 const PLANT=()=>'<svg class="room-plant" width="26" height="30" viewBox="0 0 26 30" aria-hidden="true" focusable="false">'+THEME.slot('plant')+'</svg>';
@@ -2046,7 +2045,7 @@ function renderReal(stage,floor,aw,ah,model,empty){
   if(stage.dataset.d!=='real'){stage.dataset.d='real';stage.textContent='';}
   layoutKey='';GROW=0;setGrow(stage,0);spreadOffice(stage,false);stagePrev=null;
   const fcs=getComputedStyle(floor), lendPad=(parseFloat(fcs.paddingBottom)||0)+Math.max(0,(parseFloat(fcs.paddingTop)||0)-(floor.classList.contains('has-fnote')?parseFloat(fcs.getPropertyValue('--fnote-keep'))||0:0)); /* what #floor.ro-tight gives up (styles.css) */
-  RO_LAST=window.DurbarRealOffice.render(stage,Object.assign(realModel(model),empty?{empty}:{}),{w:aw,h:ah},{live:liveOn(),still:REDUCED||!MOTION||STILL_HL,hold:roFrozen(),screenOf:realScreen,factsOf:realFacts,world:pp.world,set:pp.set,hd:HD_PEOPLE_ON,remember:rememberOn(), /* FR-071: Settings > Motion (still above) stops the people */
+  RO_LAST=window.DurbarRealOffice.render(stage,Object.assign(realModel(model),empty?{empty}:{}),{w:aw,h:ah},{live:liveOn(),still:REDUCED||!MOTION||STILL_HL,hold:roFrozen(),screenOf:realScreen,factsOf:realFacts,world:pp.world,set:pp.set,remember:rememberOn(), /* FR-071: Settings > Motion (still above) stops the people */
     rand:CREW&&(SIM||!rememberOn())?CREW.seededRand:Math.random,onArt:()=>scheduleRender(),lend:lendPad}); /* spec 102 delta 2026-11-11: the arcade hall may take the floor's padding rather than scroll */
   floor.classList.toggle('ro-tight',!!RO_LAST.lent);
   stage.style.width=aw+'px';stage.style.height=RO_LAST.height+'px';

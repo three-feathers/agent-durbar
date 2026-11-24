@@ -74,6 +74,7 @@ function fakeGh(fx) {
       return { status: 0, stdout: JSON.stringify({ headRefOid: fx.head, headRefName: fx.branch || '001-good', baseRefName: 'main', mergeable: fx.mergeable || 'MERGEABLE', labels: (fx.labels || ['task', 'area:harness', 'spec:021']).map((name) => ({ name })), body: fx.body || 'Closes #1. Agent used: Claude Code.', isDraft: false, additions: fx.additions == null ? 150 : fx.additions, deletions: 0 }) };
     }
     if (args[0] === 'api') return { status: 0, stdout: (fx.commits || commitsOf(fx.head)).map((c) => JSON.stringify(c)).join('\n') + '\n' };
+    if (args[0] === 'pr' && args[1] === 'list') return fx.branchState ? fx.branchState(args[2]) : { status: 0, stdout: '[]' };
     if (args[0] === 'pr' && args[1] === 'checks') return { status: fx.checksStatus || 0, stdout: JSON.stringify(fx.checks || [{ name: 'Build and test', bucket: 'pass' }]) };
     throw new Error('unexpected gh call ' + args.join(' '));
   };
@@ -103,6 +104,8 @@ const has = (list, re) => list.some((t) => re.test(t));
   const calls = [];
   const r = pp.preflight('7; rm -rf x', { gh: (a) => { calls.push(a); return { status: 1, stdout: '' }; }, root: tmp, fetch: false, trusted: TRUSTED });
   assert.ok(r.code === 2 && calls.length === 0, 'PP-usage a non-number is refused before any call: ' + pp.format(r.lines));
+  const r0 = pp.preflight('0', { gh: (x) => { calls.push(x); return { status: 1, stdout: '' }; }, root: tmp, fetch: false, trusted: TRUSTED });
+  assert.ok(r0.code === 2 && calls.length === 0, 'PP-usage-zero PR number 0 is refused before any call');
 }
 
 // ---- 1 readable, ours
@@ -184,11 +187,58 @@ const has = (list, re) => list.some((t) => re.test(t));
   assert.ok(has(run({ head: fr2, branch: '001-fr2' }).fails, /FR-030 \(specs\/002-b\/spec\.md\) is also in origin\/main/), 'PP-numbers-main a number main defines in the same file fails');
   G(['update-ref', '-d', 'refs/remotes/origin/001-fr']);
   // another remote head adds FR-600 in 002-b and T501 in 001-a
-  mk([base], { 'specs/002-b/spec.md': '# B\n- **FR-020** two\n- **FR-600** other\n', 'specs/001-a/tasks.md': '# A\n- [ ] T380 one\n- [ ] T501 other\n', 'specs/002-b/tasks.md': '# B\n- [ ] T040 two\n- [ ] T041 other\n' }, 'other', { ref: 'refs/remotes/origin/002-other' });
+  const otherSha = mk([base], { 'specs/002-b/spec.md': '# B\n- **FR-020** two\n- **FR-600** other\n', 'specs/001-a/tasks.md': '# A\n- [ ] T380 one\n- [ ] T501 other\n', 'specs/002-b/tasks.md': '# B\n- [ ] T040 two\n- [ ] T041 other\n' }, 'other', { ref: 'refs/remotes/origin/002-other' });
   const mineN = mk([base], { 'specs/001-a/spec.md': '# A\n- **FR-010** one\n- **FR-600** mine\n', 'specs/001-a/tasks.md': '# A\n- [ ] T380 one\n- [ ] T501 mine\n' }, 'mine');
   const n = run({ head: mineN, branch: '001-mine' });
   assert.ok(has(n.fails, /FR-600 \(specs\/001-a\/spec\.md\) is also in origin\/002-other \(added there too, in specs\/002-b\/spec\.md/), 'PP-numbers-global a global FR on another head in another spec fails: ' + n.text);
   assert.ok(has(n.fails, /T501 \(specs\/001-a\/tasks\.md\) is also in origin\/002-other \(added there too\)$/), 'PP-numbers-same the same number in the same file on another head fails: ' + n.text);
+  // that branch is the leftover of a closed, unmerged PR (its tip is the PR's head): not a clash, a NOTE (the same rule as specs:numbers --wide)
+  const closedAtTip = (sha) => (a) => ({ status: 0, stdout: JSON.stringify([{ headRefOid: sha, mergedAt: null, state: 'CLOSED', isCrossRepository: false }]) });
+  const dead = run({ head: mineN, branch: '001-mine', branchState: closedAtTip(otherSha) });
+  assert.ok(!has(dead.fails, /FR-600|T501/), 'PP-numbers-dead a branch of a closed, unmerged PR holds no number: ' + dead.text);
+  assert.ok(has(dead.notes, /^skipped origin\/002-other: its PR is closed and not merged/), 'PP-numbers-dead-note it is named as a NOTE: ' + dead.text);
+  assert.ok(has(run({ head: mineN, branch: '001-mine', branchState: closedAtTip('e'.repeat(40)) }).fails, /T501/), 'PP-numbers-dead-tip a closed PR at another tip is a live branch');
+  assert.ok(has(run({ head: mineN, branch: '001-mine', branchState: () => ({ status: 1, stdout: '' }) }).fails, /numbers: not checked \(could not read the PR state of branch 002-other/), 'PP-numbers-unread an unreadable PR state is a FAIL, not a pass');
+  // an error text of git or gh that carries a token-shaped value is printed scrubbed (and a workflow command neutralised)
+  { const t = 'ghp_' + 'A1b2C3d4E5f6G7h8I9j0';
+    const g = fakeGh({ head: mineN, branch: '001-mine' });
+    const r = pp.preflight('7', { gh: g.gh, root: tmp, fetch: false, trusted: TRUSTED, liveHeads: () => { throw new Error(`fatal: https://user:${t}@x failed ${t}\n::error::second line`); } });
+    const f = r.lines.filter((l) => l.level === 'FAIL').map((l) => l.text).join('\n');
+    assert.ok(/numbers: not checked \(fatal: /.test(f) && !f.includes(t) && !f.includes('ghp_'), 'PP-numbers-scrub a token in an error text is not printed: ' + f); }
+  assert.ok(!pp.numberFindings([{ file: 'specs/ghp_' + 'A1b2C3d4E5f6G7h8I9j0/tasks.md', id: 'T1', with: 'x' }])[0].text.includes('ghp_'), 'PP-numbers-scrub-file a token-shaped path in a clash line is masked');
+  // a head with no base with origin/main was not compared: a FAIL, never ok (a branch pushed between the fetch and the ls-remote)
+  { mk([], { 'specs/001-a/tasks.md': '# A\n- [ ] T380 one\n' }, 'orphan', { ref: 'refs/remotes/origin/003-orphan' });
+    const o = run({ head: good, branch: '001-good' });
+    assert.ok(has(o.fails, /numbers: not checked \(no base with origin\/main for origin\/003-orphan/), 'PP-numbers-nobase a head with no base is a FAIL, not ok: ' + o.text);
+    assert.ok(!has(o.lines.map((l) => l.text), /^numbers: FR-500/), 'PP-numbers-nobase-ok no ok line for numbers when a head was not compared');
+    G(['update-ref', '-d', 'refs/remotes/origin/003-orphan']); }
+  // the ok line counts remote branches and worktree branches, and says so
+  assert.ok(has(run({ head: good, branch: '001-good' }).lines.map((l) => l.text), /numbers: FR-500 T500; checked against origin\/main and \d+ other head\(s\) \(remote branches and worktree branches\)/), 'PP-numbers-wording the ok line does not call worktree branches remote heads');
+  // fetch mode compares the heads the remote lists NOW: a remote-tracking ref of a deleted branch is not compared
+  { const liveNames = (names) => () => names.map((name) => ({ name, sha: G(['rev-parse', `refs/remotes/origin/${name}`]) }));
+    const f = (liveHeads) => { const g = fakeGh({ head: mineN, branch: '001-mine' }); const r = pp.preflight('7', { gh: g.gh, root: tmp, fetch: false, trusted: TRUSTED, liveHeads }); return pp.format(r.lines) + '\n' + r.lines.filter((l) => l.level === 'FAIL').length; };
+    assert.match(f(liveNames(['002-other'])), /T501 .* is also in origin\/002-other/, 'PP-live-listed a head the remote lists is compared');
+    assert.doesNotMatch(f(liveNames([])), /002-other/, 'PP-live-stale a tracked ref that the remote no longer lists is not compared'); }
+  // the real fetch mode (no liveHeads stand-in): a throwaway remote with main, 002-other and the PR's head; the clone keeps a stale tracked ref of a deleted branch
+  { const org = path.join(tmp, 'pp-org.git'), cl = path.join(tmp, 'pp-clone');
+    const Gx = (dir, args) => gitRun(dir, ['-c', 'commit.gpgsign=false', ...args], { env: ENV }).trim();
+    fs.mkdirSync(org); Gx(org, ['init', '-q', '--bare', '-b', 'main']);
+    Gx(tmp, ['push', '-q', org, `${main2}:refs/heads/main`, `${otherSha}:refs/heads/002-other`, `${mineN}:refs/pull/7/head`]);
+    Gx(tmp, ['clone', '-q', org, cl]);
+    Gx(cl, ['update-ref', 'refs/remotes/origin/002-stale', otherSha]);
+    const g = fakeGh({ head: mineN, branch: '001-mine' });
+    const r = pp.preflight('7', { gh: g.gh, root: cl, trusted: TRUSTED });
+    const text = pp.format(r.lines);
+    assert.ok(/is also in origin\/002-other/.test(text), 'PP-live-fetch fetch mode compares a head the remote lists: ' + text);
+    assert.ok(!/origin\/002-stale/.test(text), 'PP-live-fetch-stale fetch mode does not compare a remote-tracking ref of a branch the remote no longer lists: ' + text); }
+  // a worktree branch holds a number: a FAIL
+  { const wt = path.join(os.tmpdir(), `pp-wt-${process.pid}`);
+    try {
+      const wtSha = mk([base], { 'specs/001-a/tasks.md': '# A\n- [ ] T380 one\n- [ ] T501 worktree\n' }, 'wt');
+      G(['worktree', 'add', '-q', '-b', 'pp-wt-branch', wt, wtSha]);
+      const w = run({ head: mineN, branch: '001-mine' });
+      assert.ok(has(w.fails, /T501 \(specs\/001-a\/tasks\.md\) is also in worktree pp-wt-branch/), 'PP-numbers-worktree a worktree branch holds a number: ' + w.text);
+    } finally { try { G(['worktree', 'remove', '--force', wt]); } catch { /* gone */ } try { G(['branch', '-D', 'pp-wt-branch']); } catch { /* gone */ } } }
   G(['update-ref', '-d', 'refs/remotes/origin/002-other']);
 }
 
@@ -220,6 +270,8 @@ const has = (list, re) => list.some((t) => re.test(t));
   const pk = mk([base], { 'package.json': PKG({ a: 'node a2.js', d: 'node d.js' }) }, 'pk');
   const r = run({ head: pk, branch: '001-pk' });
   assert.ok(has(r.fails, /package\.json scripts: \+1, removed \[b\], changed \[a\]/), 'PP-package a removed and a changed script fail: ' + r.text);
+  const ch = mk([base], { 'package.json': PKG({ a: 'node a2.js', b: 'node b.js' }) }, 'pk ch');
+  assert.ok(has(run({ head: ch, branch: '001-pk' }).fails, /package\.json scripts: \+0, removed \[\], changed \[a\]/), 'PP-package-changed a changed script alone fails (check 10)');
   const ok = mk([base], { 'package.json': PKG({ a: 'node a.js', b: 'node b.js', e: 'node e.js' }) }, 'pk ok');
   assert.ok(!has(run({ head: ok, branch: '001-pk' }).fails, /package/), 'PP-package an added script is fine');
 }

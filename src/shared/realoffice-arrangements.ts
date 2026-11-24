@@ -1,7 +1,7 @@
 /** Spec 102 FR-227, FR-256 (T202, T203, T205): where the people sit. `rows` is `realLayout`, untouched; `aisles` is the Retro arcade hall:
  *  staggered aisles of cabinets in an integer pixel scale `g`. Pure, no DOM, nothing draws it yet (RA3). The numbers marked "provisional"
  *  come from the mockup and the art by eye and are replaced by measured ones (T201's `faceBox`, T207's frame sizes). */
-import { hdFrame, devStep, lobbyBand, lobbyRange, loungeRows, realLayout, rowGeom, deskStation, shownDesks, signWidth, signMin, signShortMin, CHIP_KINDS, splitLounge, BIG_MAX, helpH, helpCols, helpShown, FACE_U, PW, SR, PAD, ZGAP, STRIP, U_MAX, type DeskBox, type Layout, type RealAgent, type RealMeta, type RealModel, type RealState, type Rect, type ZoneBox, STOREY_GAP, STOREY_TAG_MIN, storeyRuns, storeyTagW, type StoreyBand } from './realoffice-layout';
+import { hdFrame, seatsOf, devStep, lobbyBand, lobbyRange, loungeRows, realLayout, rowGeom, deskStation, shownDesks, signWidth, signMin, signShortMin, CHIP_KINDS, splitLounge, BIG_MAX, helpH, helpCols, helpShown, FACE_U, PW, SR, PAD, ZGAP, STRIP, U_MAX, type DeskBox, type Layout, type RealAgent, type RealMeta, type RealModel, type RealState, type Rect, type ZoneBox, STOREY_GAP, STOREY_TAG_MIN, storeyRuns, storeyTagW, type StoreyBand } from './realoffice-layout';
 
 export const ARRANGEMENTS = ['rows', 'circle', 'aisles'] as const;
 export type Arrangement = (typeof ARRANGEMENTS)[number];
@@ -146,7 +146,7 @@ const gridPx = (v: number, k: number): number => k === 1 ? v : Math.max(1, Math.
 /** the frame a person shows at a cabinet and its size in grid pixels, or null when the set has neither (then the initials, FR-065) */
 function aislePose(meta: RealMeta, pid: string, state: RealState): { pose: string; w: number; h: number } | null {
   const pose = AISLE_POSE[state];
-  if (pose === 'rest') { const m = own(meta.seat, pid) ? meta.seat[pid] : null; return m ? { pose, w: m.w, h: m.h } : null; }
+  if (pose === 'rest') { const seat = seatsOf(meta), m = own(seat, pid) ? seat[pid] : null; return m ? { pose, w: m.w, h: m.h } : null; }
   const st = own(meta.stand, pid) ? meta.stand[pid] : null;
   if (!st) return null;
   const k = aisleK(meta, st);

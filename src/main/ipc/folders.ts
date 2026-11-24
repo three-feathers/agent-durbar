@@ -11,6 +11,8 @@ import { NATIVE_CANCELLED, type NotesOps } from '../notesops';
 export interface FoldersIpcDeps {
   /** Spec 087 FR-007a: a removed session's open sandbox note is forgotten (main's one-shot Continue). */
   forgetSandboxNote?(id: string): void;
+  /** Spec 005 FR-411: drop main's kept tool-call values of a removed session. */
+  forgetToolCopies?(id: string): void;
   /** Spec 080 FR-023: each removed session's browser view and partition are destroyed. */
   browserGone?(id: string): void;
   agents: Map<string, AgentInfo>;
@@ -75,6 +77,7 @@ export function register(deps: FoldersIpcDeps): void {
       router.unbind(rid);
       deps.browserGone?.(rid); // spec 080 FR-023
       deps.forgetSandboxNote?.(rid); // spec 087
+      deps.forgetToolCopies?.(rid); // spec 005 FR-411
       agents.delete(rid);
       agentState.remove(rid);
       vsChatRefs.delete(rid);

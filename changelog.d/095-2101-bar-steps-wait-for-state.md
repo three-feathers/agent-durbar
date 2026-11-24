@@ -1,0 +1,1 @@
+- **A flaky top-bar test now waits for the bar** (spec 095, tests only): the search-field check no longer reads the top bar after a fixed half second; it waits for the bar to settle and, if a hidden mark really stays, fails and says which element.
