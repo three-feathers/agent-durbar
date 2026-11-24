@@ -238,6 +238,7 @@ module.exports = async (ctx) => {
     assert.ok(fit.cards.length >= 2 && fit.cards.some((c) => c.settled), `${w}: a "→ resumed" card and the live card: ${JSON.stringify(fit.cards)}`);
     for (const c of fit.cards) assert.ok(c.spare <= 4, `${w}: a coffee card is as tall as its content (${c.h} px, ${c.spare} px empty; at most 4): ${JSON.stringify(fit)}`);
     assert.ok(fit.above && fit.above.spare <= 24 && fit.worst <= 24, `${w}: no empty box above the live coffee card (at most 24 px empty): ${JSON.stringify(fit)}`);
+    await H.shot(path.join(OUT, `068-coffee-reopened-${w}x${h}.png`), { prep: 'calm' }); // FR-415: the reopened long chat, "→ resumed" and live cards at their text's height
     await closeChat(w);
     await ctx.sleep(300);
   }
