@@ -57,6 +57,7 @@ test:brainstate
 test:brainloop
 test:brainsurface
 test:toolargs-mask
+test:toolargcopy
 test:toolusage
 test:usagestore
 test:about
