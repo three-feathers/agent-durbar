@@ -1,0 +1,110 @@
+{
+ "_comment": "spec 102 T502: the seat numbers of the Retro pixel people's first pictures (removed 2026-11-24), kept only so test-realoffice-layout can hold the HD busts to the figure sizes and lounge width the owner approved",
+ "seat": {
+  "p01": {
+   "bodyH": 77,
+   "h": 79,
+   "hand": 0.88,
+   "headTop": 2,
+   "w": 80
+  },
+  "p02": {
+   "bodyH": 78,
+   "h": 80,
+   "hand": 0.88,
+   "headTop": 2,
+   "w": 79
+  },
+  "p03": {
+   "bodyH": 79,
+   "h": 79,
+   "hand": 0.88,
+   "headTop": 0,
+   "w": 78
+  },
+  "p04": {
+   "bodyH": 77,
+   "h": 80,
+   "hand": 0.88,
+   "headTop": 3,
+   "w": 80
+  },
+  "p05": {
+   "bodyH": 78,
+   "h": 78,
+   "hand": 0.88,
+   "headTop": 0,
+   "w": 64
+  },
+  "p06": {
+   "bodyH": 77,
+   "h": 79,
+   "hand": 0.88,
+   "headTop": 2,
+   "w": 65
+  },
+  "p07": {
+   "bodyH": 80,
+   "h": 80,
+   "hand": 0.88,
+   "headTop": 0,
+   "w": 72
+  },
+  "p08": {
+   "bodyH": 77,
+   "h": 80,
+   "hand": 0.88,
+   "headTop": 3,
+   "w": 78
+  },
+  "p09": {
+   "bodyH": 78,
+   "h": 86,
+   "hand": 0.88,
+   "headTop": 8,
+   "w": 87
+  },
+  "p10": {
+   "bodyH": 78,
+   "h": 79,
+   "hand": 0.88,
+   "headTop": 1,
+   "w": 66
+  },
+  "p11": {
+   "bodyH": 77,
+   "h": 80,
+   "hand": 0.88,
+   "headTop": 3,
+   "w": 83
+  },
+  "p12": {
+   "bodyH": 77,
+   "h": 89,
+   "hand": 0.88,
+   "headTop": 12,
+   "w": 88
+  },
+  "p13": {
+   "bodyH": 79,
+   "h": 79,
+   "hand": 0.88,
+   "headTop": 0,
+   "w": 61
+  },
+  "p14": {
+   "bodyH": 77,
+   "h": 79,
+   "hand": 0.88,
+   "headTop": 2,
+   "w": 80
+  },
+  "p15": {
+   "bodyH": 78,
+   "h": 81,
+   "hand": 0.88,
+   "headTop": 3,
+   "w": 71
+  }
+ }
+}

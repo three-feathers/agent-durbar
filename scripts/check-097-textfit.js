@@ -72,11 +72,13 @@ module.exports = async (ctx) => {
          and a people chip never reads as fewer than 3 letters plus the ellipsis unless the whole name is shorter; the whole name is in the chip's title and label */
       const row = await js(`(()=>{const R=[...document.querySelectorAll('#stage .lobby .place:not(.postbox)')].filter(p=>p.getClientRects().length).map(p=>{const n=p.querySelector('.pn'),pb=p.getBoundingClientRect(),cs=getComputedStyle(p),inner=pb.width-parseFloat(cs.paddingLeft)-parseFloat(cs.paddingRight)-2,used=n?[...p.querySelectorAll('.plh>*')].reduce((t,e)=>t+e.getBoundingClientRect().width,0)+7*(p.querySelectorAll('.plh>*').length-1):0,fs=n?parseFloat(getComputedStyle(n).fontSize):99;
         const r=document.createRange();if(n)r.selectNodeContents(n);
-        return {id:p.dataset.place,full:n?n.textContent:'',cut:!!n&&(n.scrollWidth>n.clientWidth+0.5||r.getBoundingClientRect().width>n.clientWidth+0.5),slack:p.dataset.place==='boss'||p.classList.contains('postbox')?0:inner-used,font:fs,
+        return {id:p.dataset.place,full:n?n.textContent:'',cut:!!n&&(n.scrollWidth>n.clientWidth||r.getBoundingClientRect().width>n.getBoundingClientRect().width+0.05),slack:p.dataset.place==='boss'||p.classList.contains('postbox')?0:inner-used,font:fs,
           chips:[...p.querySelectorAll('.pv:not(.pv-more)')].map(c=>{const t=c.querySelector('.pv-n');return {shown:t?t.textContent:'',cut:!!t&&t.scrollWidth>t.clientWidth+0.5,title:c.title||'',label:c.getAttribute('aria-label')||c.title||''}})};});
-        return {tiles:R,slackMax:Math.max(0,...R.filter(t=>!t.chips.length&&!/^(boss|coffee|bank)$/.test(t.id)).map(t=>t.slack))}})()`);
+        const bo=document.querySelector('#stage .lobby .place.boss'),iw=parseFloat(((document.querySelector('#stage .lobby')||{}).style||{}).getPropertyValue('--iw'))||54;
+        return {tiles:R,bossGive:bo?Math.floor(bo.getBoundingClientRect().width)-window.DurbarPlaces.bossMin(iw):0,slackMax:Math.max(0,...R.filter(t=>!t.chips.length&&!/^(boss|coffee|bank)$/.test(t.id)).map(t=>t.slack))}})()`);
       for (const t of row.tiles) {
         if (t.font < 10.5) bad(`${tag}: lobby text under 10.5 px: ${t.font}`);
+        if (t.cut && row.bossGive >= 1) bad(`${tag}: a place name is whole while the Boss tile can still give: "${t.full}" is cut and the Boss is ${row.bossGive} px above its minimum (#2078)`);
         if (t.cut && row.slackMax >= 8) bad(`${tag}: a place name is whole while the row has room: "${t.full}" is cut and a tile beside it has ${row.slackMax.toFixed(0)} px unused (#2018, #2041)`);
         for (const c of t.chips) {
           const m = c.title.match(/^(\S+)/); const name = m ? m[1] : '';

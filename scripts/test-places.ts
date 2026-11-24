@@ -31,10 +31,11 @@ const P = require(path.join(__dirname, '..', '..', 'src', 'renderer', 'places.js
   allPlaces: (custom?: unknown) => { id: string; name: string; icon?: string }[];
   isChoice: (v: unknown, customIds?: unknown) => boolean;
   chipsIn: (tileW: unknown, iw?: unknown) => { named: number; initials: number };
+  bossMin: (iw?: unknown) => number;
   lobbyShare: (tile: unknown, items: unknown) => number[] | null;
   shortName: (name: unknown) => string;
   chipsNeed: (mode: string, shown: number, more: number, iw?: number) => number;
-  lobbyFit: (aw: unknown, places: unknown, addButton: unknown, post?: unknown, iw?: unknown) => Record<'boss' | 'coffee' | 'bank' | 'post', { width: number; named: boolean; wait?: boolean; long?: boolean; chips: { named: number; initials: number } } | null> & { tile: number; tileNamed: boolean; caps: { named: number; initials: number } };
+  lobbyFit: (aw: unknown, places: unknown, addButton: unknown, post?: unknown, iw?: unknown, extra?: unknown) => Record<'boss' | 'coffee' | 'bank' | 'post', { width: number; named: boolean; wait?: boolean; long?: boolean; chips: { named: number; initials: number } } | null> & { tile: number; tileNamed: boolean; caps: { named: number; initials: number } };
   lobbyOrder: (ids: unknown, post?: unknown) => string[];
   initialSpots: (tileW: unknown, count: unknown, pad?: unknown, iw?: unknown) => { shown: number; more: number };
   postNext: (s: unknown, pausedAll: unknown) => { s: { id: string }; t: number }[];
@@ -628,6 +629,16 @@ assert.deepStrictEqual(cleanPlaceName('__proto__'), { ok: true, name: '__proto__
   const wideFit = P.lobbyFit(1248, 5, true, true, 60);
   assert.ok(wideFit.boss!.width >= 212 && wideFit.coffee!.width >= 100 && wideFit.bank!.width >= 100 && wideFit.boss!.chips.initials >= 3, 'a 60 px entry: the Boss keeps three, the corner and the Bank an entry and +N');
   assert.deepStrictEqual(P.lobbyFit(1248, 5, true, true, 54), P.lobbyFit(1248, 5, true), 'the default entry width changes nothing');
+  // issue #2078 (T495): `extra` = px the places' names still lack; the four fixed tiles give it, toward their minimums, so a place tile grows by extra/n; never under a minimum; no extra changes nothing
+  const x0 = P.lobbyFit(1352, 5, true), x1 = P.lobbyFit(1352, 5, true, true, 54, 10);
+  assert.deepStrictEqual(P.lobbyFit(1352, 5, true, true, 54, 0), x0, 'extra 0 changes nothing');
+  assert.ok(x1.tile >= x0.tile + 1 && x1.boss!.width <= x0.boss!.width && x1.boss!.width >= 194 && x1.post!.width >= 180, 'extra 10: the places grow, the fixed tiles give and keep their minimums');
+  assert.deepStrictEqual(P.lobbyFit(1352, 5, true, true, 54, -4), x0, 'a negative extra is ignored');
+  // the Boss minimum has one source: bossMin(iw) is what lobbyFit shrinks the Boss to (check-097-textfit reads it too)
+  assert.deepStrictEqual([P.bossMin(), P.bossMin(54), P.bossMin(60), P.bossMin(40)], [194, 194, 212, 194], 'bossMin: 194 or three entries and 32 px');
+  for (const iw of [54, 60, 70]) assert.strictEqual(P.lobbyFit(900, 5, true, true, iw).boss!.width >= P.bossMin(iw), true, 'the Boss is never under bossMin(' + iw + ')');
+  assert.strictEqual(P.lobbyFit(1248, 5, true, true, 54).boss!.width, P.bossMin(54), 'a narrow row: the Boss stands at bossMin');
+  assert.deepStrictEqual(P.lobbyFit(1248, 5, true, true, 54, 10), P.lobbyFit(1248, 5, true), 'every fixed tile at its minimum: nothing more to give');
   assert.deepStrictEqual([P.chipsNeed('named', 1, 0), P.chipsNeed('named', 1, 3), P.chipsNeed('initials', 2, 0), P.chipsNeed('initials', 1, 1), P.chipsNeed('initials', 0, 0), P.chipsNeed('initials', 1, 1, 60)], [112, 210, 134, 102, 0, 108], 'the width a tile needs for the entries it shows');
   assert.deepStrictEqual(P.initialSpots(100, 2, 12, 60), { shown: 1, more: 1 });
   assert.deepStrictEqual(P.initialSpots(30, 3), { shown: 0, more: 3 }, 'nothing fits: only +N');
