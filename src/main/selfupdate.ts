@@ -6,6 +6,7 @@
  * `scripts/test-selfupdate-checker.ts` and `scripts/test-selfupdate-ipc.ts` run it.
  */
 import { cadenceDue, decodeUtf8Strict, feedUrl, isBreaking, manualCheckAllowed, parseReleasesJson, pickTarget, releasesJsonUrl, selfCheckOn, selfPolicyView, snoozeState, validateFeed, parseUpdatesPatch, parseRepoSlug, sameRepo, SNOOZE_MS } from '../shared/selfupdate';
+import { redact } from '../shared/redact';
 import type { Breaking, CadenceInput, Feed, ReleaseMarks, SelfPolicy, SelfUpdateSettings, SourceOrigin, UpdateSource } from '../shared/selfupdate';
 import { MAX_VERSION_LENGTH } from '../shared/versionfield';
 import { ShownError } from '../shared/shownerror';
@@ -184,9 +185,14 @@ export class SelfUpdater {
    */
   async setSource(slug: string): Promise<{ ok: boolean; reason?: SourceRefusal; update: SelfUpdateView }> {
     const answer = (ok: boolean, reason?: SourceRefusal) => ({ ok, ...(reason ? { reason } : {}), update: this.view() });
-    const i = this.input();
-    if (selfPolicyView(i.policy).feedSlug) return answer(false, 'locked');
-    if (!manualCheckAllowed(i) || !this.d.source || !this.d.confirm) return answer(false, 'not-allowed');
+    // asked before the read, again after it (no dialog when it would be refused) and again after the dialog, right before the save
+    const blocked = (): SourceRefusal | undefined => {
+      const i = this.input();
+      if (selfPolicyView(i.policy).feedSlug) return 'locked';
+      return !manualCheckAllowed(i) || !this.d.source || !this.d.confirm ? 'not-allowed' : undefined;
+    };
+    const first = blocked();
+    if (first) return answer(false, first);
     if (sameRepo(slug, this.slug())) return answer(true);
     if (this.sourcing) return answer(false, 'busy');
     this.sourcing = true;
@@ -199,13 +205,20 @@ export class SelfUpdater {
       try { json = text === undefined ? undefined : JSON.parse(text); } catch { json = undefined; }
       const feed = validateFeed(json, slug);
       if (!feed || (feed.releases.length === 0 && (feed.dropped.length > 0 || feed.unplaced))) return answer(false, 'feed-invalid');
+      const afterRead = blocked();
+      if (afterRead || !this.d.source || !this.d.confirm) return answer(false, afterRead ?? 'not-allowed');
       const builtIn = this.d.source.slug;
-      const yes = await this.d.confirm({
-        message: `Get Durbar updates from ${slug}?`,
-        detail: `Updates will then come from a repository you chose. Updates from ${slug} are made by whoever controls that GitHub repository, not by the makers of this build (${builtIn}). Durbar can only check that a download matches that repository's own list. Only switch to a repository you trust.`,
-        ok: 'Use this source',
-      });
+      let yes: boolean;
+      try {
+        yes = await this.d.confirm({
+          message: `Get Durbar updates from ${slug}?`,
+          detail: `Updates will then come from a repository you chose. Updates from ${slug} are made by whoever controls that GitHub repository, not by the makers of this build (${builtIn}). Durbar can only check that a download matches that repository's own list. Only switch to a repository you trust.`,
+          ok: 'Use this source',
+        });
+      } catch { return answer(false, 'dialog-failed'); } // a dialog that fails is no yes
       if (!yes) return answer(false, 'declined');
+      const afterDialog = blocked();
+      if (afterDialog) return answer(false, afterDialog);
       const saved = this.d.store()?.setUpdates({ source: slug, lastCheck: undefined }) ?? false;
       this.refresh();
       return answer(saved, saved ? undefined : 'unsaved');
@@ -242,7 +255,7 @@ export class SelfUpdater {
 }
 
 /** T011: what a refused source change answers: closed codes, never the text that was sent. */
-export type SourceRefusal = 'locked' | 'not-allowed' | 'busy' | 'declined' | 'unsaved' | SelfUpdateReason;
+export type SourceRefusal = 'locked' | 'not-allowed' | 'busy' | 'declined' | 'dialog-failed' | 'unsaved' | SelfUpdateReason;
 /** T011: the free text of `setSource` is capped before it is parsed. */
 export const SOURCE_TEXT_MAX = 200;
 
@@ -275,7 +288,8 @@ export function selfUpdateHandlers(checker: () => SelfUpdater | undefined) {
       const c = checker();
       const v = a[0];
       const slug = c && a.length === 1 && typeof v === 'string' && v.length <= SOURCE_TEXT_MAX ? parseRepoSlug(v) : undefined;
-      return slug && c ? c.setSource(slug) : refuse();
+      // a pair the shared mask would change (token-shaped) is refused like text that does not parse: no request, nothing shown or saved
+      return slug && c && redact(slug) === slug ? c.setSource(slug) : refuse();
     },
     useBuiltInSource: (...a: unknown[]) => none(a).useBuiltInSource(),
   };
