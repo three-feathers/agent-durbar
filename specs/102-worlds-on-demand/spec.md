@@ -2651,7 +2651,7 @@ After the flip (T472) nothing drew the first Retro pixel pictures. The owner's r
     - The FR-326 reuse and mirror check runs on the 210 s 1 HD frames, with its four planted mutants.
     - The removal-record rule accepts a replacement under `hd/` with an `@` scale.
   - Every `hd.stand` size against the old `stand` (210 frames; for example `letter`: p01 39x72 to 33x72, p04 41x71 to 30x72) is listed in full in the PR body. Widths are smaller because the HD frames are cut to the figure.
-- **Docs pictures** (owner rule 2026-10-31) are retaken with `npm run shots:docs` in a second commit, which can be split into its own PR.
+- **Docs pictures** (owner rule 2026-10-31): `npm run shots:docs` retakes the world previews (`retro.webp` drew the first pictures) in a separate commit, which can be split into its own PR. Its Retro-themed Flat pictures (`001-lobby-*-retro`, `035-retro`) show Flat's own crew and are not changed. `[KNOWN GAP]` The arcade pictures in `docs/screenshots` taken before the flip (`052-*-arcade`, `070-retro-att-chips`, `077-characters-cheeky-retro`, `097-*-arcade`, `102-arcade-*` and others) come from drivers that `shots:docs` does not run, so they still show the first pictures. Retaking them needs those drivers added to `shots:docs` (an owner rule forbids hand-copying), which is left to a follow-up.
 
 `[KNOWN GAP]`: Linux only, simulator only, no real session. The rows-world visitor change has not been shown to the owner.
 
