@@ -1313,13 +1313,16 @@ const planMcpSignInRefresh = (i: SignInPlanInput): SignInPlan => {
     /* spec 005 FR-411: the simulator's stand-in for main's `toolargcopy.ts` (this file cannot import main code): the raw text of the argument each
        chip shows (the window's `toolArg` choice), per session and call, so Copy has a real value to write; main's bounds are not copied (a test page).
        `masked` stands for main's flag: the `argsMasked` the emitted event carries (the simulator has no main mask in the path) */
+    /* the same pair key as main's `toolCopyKey` (src/main/toolargcopy.ts), copied because this file cannot import main code; test:toolargcopy
+       SIM-KEY checks that the two agree and that every lookup here goes through it */
+    const simToolCopyKey = (sessionId: string, callId: string): string => JSON.stringify([sessionId, callId]);
     const simToolCopies = new Map<string, { text: string; masked: boolean }>();
     /* for the driver: whether each request was confirmed and its answer word (never the text); `mark` makes a kept value masked, as a newer
        update main already masked while the window still holds the old hint */
     const simToolCopyLog: { confirmed: boolean; answer: string }[] = [];
     (window as unknown as { __durbarSimToolCopy?: unknown }).__durbarSimToolCopy = {
       calls: simToolCopyLog,
-      mark: (sessionId: string, callId: string): boolean => { const v = simToolCopies.get(sessionId + '\u0000' + callId); if (v) v.masked = true; return !!v; },
+      mark: (sessionId: string, callId: string): boolean => { const v = simToolCopies.get(simToolCopyKey(sessionId, callId)); if (v) v.masked = true; return !!v; },
     };
     const simToolArgKey = (args: unknown): string | undefined => {
       if (!args || typeof args !== 'object') return undefined;
@@ -1329,7 +1332,7 @@ const planMcpSignInRefresh = (i: SignInPlanInput): SignInPlan => {
       return undefined;
     };
     const emit = (e: AgentEvent): void => {
-      if (e.type === 'toolCall' && e.args !== undefined) { const k = simToolArgKey(e.args), v = k === undefined ? undefined : (e.args as Record<string, unknown>)[k]; const id = e.sessionId + '\u0000' + e.callId; if (typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean') simToolCopies.set(id, { text: String(v), masked: e.argsMasked === true }); else simToolCopies.delete(id); }
+      if (e.type === 'toolCall' && e.args !== undefined) { const k = simToolArgKey(e.args), v = k === undefined ? undefined : (e.args as Record<string, unknown>)[k]; const id = simToolCopyKey(e.sessionId, e.callId); if (typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean') simToolCopies.set(id, { text: String(v), masked: e.argsMasked === true }); else simToolCopies.delete(id); }
       /* like main, which keeps the runtime's list before the window hears of it: the reply a listener asks for at once sees this event (spec 058 FR-094) */
       if (e.type === 'status' && e.status === 'stopped') { const q = sims.find((x) => x.info.id === e.sessionId); if (q) q.mcpHealth = undefined; }
       if (e.type === 'mcp') { const q = sims.find((x) => x.info.id === e.sessionId); if (q) { for (const m of e.servers) if (m.status === 'connected' && q.mcpLive?.some((o) => o.name === m.name && o.status !== 'connected')) q.mcpCalls?.delete(m.name); /* main's McpCallTracker.onServers: back to connected drops the class */ q.mcpLive = e.servers; q.mcpHealth = simHealth(q.mcpHealth, e.servers); if (!selfMcp) { q.mcpReported = e.servers; q.mcpAppOff = new Set(e.servers.filter((m) => m.status === 'disabled' && !q.mcpOff?.has(m.name)).map((m) => m.name)); } } }
@@ -4335,7 +4338,7 @@ const planMcpSignInRefresh = (i: SignInPlanInput): SignInPlan => {
       /* spec 005 FR-411: main's `agents:copyToolArg` answers, the page's clipboard standing in for Electron's; never the text */
       copyToolArg: async (sessionId: string, callId: string, confirmed?: boolean): Promise<{ ok: true } | { ok: false; reason: 'unknown' | 'too-long' | 'ask' | 'failed' }> => {
         const answer = async (): Promise<{ ok: true } | { ok: false; reason: 'unknown' | 'too-long' | 'ask' | 'failed' }> => {
-          const v = typeof sessionId === 'string' && typeof callId === 'string' ? simToolCopies.get(sessionId + '\u0000' + callId) : undefined;
+          const v = typeof sessionId === 'string' && typeof callId === 'string' ? simToolCopies.get(simToolCopyKey(sessionId, callId)) : undefined;
           if (v === undefined) return { ok: false, reason: 'unknown' };
           if (v.text.length > 100000) return { ok: false, reason: 'too-long' };
           if (v.masked && confirmed !== true) return { ok: false, reason: 'ask' };

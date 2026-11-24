@@ -250,6 +250,20 @@ ok('STORE-BOTH two pairs a naive join would merge are kept apart: each Copy writ
     }
   }
 });
+ok('SIM-KEY the simulator\'s stand-in builds its keys exactly like main, and every lookup there goes through that one helper', () => {
+  const sim = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'sim.ts'), 'utf8');
+  const m = /^\s*const simToolCopyKey = \(sessionId: string, callId: string\): string => ([^\n]*);$/m.exec(sim);
+  assert.ok(m, 'SIM-KEY sim.ts defines simToolCopyKey on one line');
+  const simKey = new Function('sessionId', 'callId', `return (${m[1]});`) as (a: string, b: string) => string;
+  const pairs: [string, string][] = [['A\u0000x', 'y'], ['A', 'x\u0000y'], ['s1', 'c1'], ['a:b', 'c'], ['a', 'b:c'], ['sim-2', 'cc-m'], ['__proto__', 'constructor']];
+  for (const [a, b] of pairs) assert.strictEqual(simKey(a, b), toolCopyKey(a, b), `SIM-KEY the stand-in and main agree on ${JSON.stringify([a, b])}`);
+  assert.notStrictEqual(simKey('A\u0000x', 'y'), simKey('A', 'x\u0000y'), 'SIM-KEY a pair a NUL-join would confuse stays apart in the stand-in');
+  const uses = sim.match(/simToolCopies\.(?:get|set|delete)\(([^,)]*(?:\([^)]*\))?)/g) || [];
+  assert.ok(uses.length >= 4, `SIM-KEY the stand-in's lookups found (${uses.length})`);
+  for (const u of uses) assert.ok(/simToolCopies\.(?:get|set|delete)\((?:simToolCopyKey\(|id\b)/.test(u), `SIM-KEY every lookup uses simToolCopyKey: ${u}`);
+  assert.ok(/const id = simToolCopyKey\(e\.sessionId, e\.callId\);/.test(sim), 'SIM-KEY the emitted event\'s key comes from simToolCopyKey');
+  assert.ok(!/simToolCop[^\n]*'\\u0000'/.test(sim), 'SIM-KEY no NUL-joined key is left in the stand-in');
+});
 ok('STORED-IDS a lookup answers only the value stored for exactly these ids', () => {
   const v = (sid: string, callId: string): Kept => ({ sid, callId, text: 'x', masked: false });
   const m = new Map<string, Kept>([[toolCopyKey('A', 'x'), v('B', 'x')], [toolCopyKey('C', 'y'), v('C', 'z')], [toolCopyKey('D', 'w'), v('D', 'w')]]);
