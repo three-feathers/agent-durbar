@@ -48,7 +48,7 @@ module.exports = async (ctx) => {
     await H.calm();
     // ---- FR-120: not for Claude Code or Codex, not in Read-only or Allow all ----
     for (const [kind, mode] of [['claude', 'ask'], ['codex', 'ask'], ['copilot', 'read-only'], ['copilot', 'allow']]) {
-      const any = await js(`!!window.__durbarSimUi.agents().find(${pick(kind, mode)})`);
+      const any = await js('!!window.__durbarSimUi.agents().find(' + pick(kind, mode) + ')'); // page code built here, not data
       if (!any) continue;
       const o = await H.openSimAgent(pick(kind, mode), '#modeChip');
       assert.ok(o.ok, `${w}: open a ${kind} agent in ${mode} ${jsLiteral(o.seen)}`);
