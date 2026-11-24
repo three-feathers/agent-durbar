@@ -62,7 +62,7 @@ export class ActivityStore {
   }
 
   /** Add one row (time = now). Fields beyond the row's own are dropped; returns the stored row, or undefined when refused. */
-  record(row: Omit<ActivityRow, 't'> & Record<string, unknown>): ActivityRow | undefined {
+  record(row: Omit<ActivityRow, 't' | 'path'> & { path?: string } & Record<string, unknown>): ActivityRow | undefined {
     const clean = sanitizeActivityRow({ ...row, t: this.now().toISOString() }, this.env);
     if (!clean) return undefined;
     appendCapped(this.rows, clean, this.max);

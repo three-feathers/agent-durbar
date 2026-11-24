@@ -5,9 +5,16 @@ name: UI on three OSes
 # and every assertion-bearing driver (`scripts/ui-suite.js`). Screenshots are uploaded per OS. Simulator only: no account, no
 # agent session, no credits. Not a required check (making it required is a repo setting: the owner's call).
 #
-# Spec 008 FR-108 (owner decision 2026-10-22): ONE job per OS, except macOS in three shards (FR-182, owner decision 2026-11-07) (the 3 jobs per OS of FR-100 cost more queue than they saved), and
+# Spec 008 FR-108 (owner decision 2026-10-22): ONE job per OS, now four shards on every OS (FR-182, FR-183; macOS four since the delta of 2026-11-23) (the 3 jobs per OS of FR-100 cost more queue than they saved), and
 # macOS only nightly and by hand (`gh workflow run ui-platforms.yml --ref <branch>`); a nightly failure opens or updates an issue
-# (nightly-watch.yml). Pull requests and pushes to main run Linux and Windows.
+# (nightly-watch.yml). Pushes to main run Linux and Windows; pull requests run Linux, and Windows only when OS-sensitive (next paragraph).
+#
+# Spec 117 FR-012 / O2 (owner decision, Vikram 2026-11-22, with Paco's variant; T403): on a pull request the Windows UI shards run
+# only when `os_sensitive` from .github/scripts/ci-changes.js (the one decision, the base branch's copy) is not exactly 'false': a
+# change to the main process, preload, build, packaging, dependencies, CI files, the driver plumbing, a font, a shell script, an
+# OS-using src/shared or src/adapters file or any unknown path starts them (fail closed). Otherwise they run after the merge (main
+# push), nightly and by hand (`gh workflow run ui-platforms.yml --ref <branch>` runs all three OSes on a PR's branch). The Linux UI
+# shards run on every PR that needs the UI suite; ci.yml's Windows "Build and test" still runs every unit test on every PR.
 #
 # Spec 008 FR-191 (owner decision, Vikram 2026-11-08): on a pull request the shards run only when something the app, its build or
 # the UI drivers use changed (`ui` from .github/scripts/ci-changes.js, the one decision; `paths:` below is only a coarse prefilter).
@@ -46,9 +53,12 @@ permissions:
   contents: read
 
 concurrency:
-  # FR-107: superseded PR runs are cancelled; main, nightly and by-hand runs each have their own group and always finish (#286)
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  # FR-107: superseded PR runs are cancelled. Spec 117 FR-014 / O3 (owner decision, Vikram 2026-11-22, T010) reverses FR-107's "main
+  # runs always finish" for this workflow only: every main push shares the group "UI on three OSes-ui-main", so a newer merge cancels
+  # the older main UI run and only the newest main push finishes its full matrix. Nightly and by-hand runs keep their own group
+  # (github.run_id) and are never cancelled.
+  group: ${{ github.workflow }}-${{ github.event_name == 'push' && 'ui-main' || github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' || github.event_name == 'push' }}
 
 jobs:
   # FR-191: a cheap Linux job decides (seconds); the shards wait for it. Every event but pull_request says ui=true.
@@ -59,6 +69,7 @@ jobs:
     timeout-minutes: 5
     outputs:
       ui: ${{ steps.changes.outputs.ui }}
+      os_sensitive: ${{ steps.changes.outputs.os_sensitive }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -69,24 +80,27 @@ jobs:
         run: bash .github/scripts/ci-changes.sh
 
   ui:
-    # spec 008 FR-182, FR-183: every OS runs the drivers in shards (Linux and Windows 4, macOS 3), named "UI shard (ubuntu-latest 1/4)" etc.;
+    # spec 008 FR-182, FR-183: every OS runs the drivers in 4 shards, named "UI shard (ubuntu-latest 1/4)" etc.;
     # the job "UI suite complete" below needs all of them and is the one name to require
-    name: UI shard (${{ matrix.os }} ${{ matrix.shard }}/${{ matrix.os == 'macos-latest' && 3 || 4 }})
+    name: UI shard (${{ matrix.os }} ${{ matrix.shard }}/4)
     needs: changes
     if: ${{ !github.event.pull_request.draft && needs.changes.outputs.ui == 'true' }}
     runs-on: ${{ matrix.os }}
     # FR-131 gave macOS 80 minutes (one driver at a time, UI_SUITE_JOBS=1); it outgrew that too (nightly run 42205363015,
-    # cancelled at 80 with drivers left): FR-182 splits its drivers over three jobs instead, each about a third, so 45 for all
-    timeout-minutes: 45
+    # cancelled at 80 with drivers left): FR-182 split its drivers over three jobs of 45. Spec 008 delta 2026-11-23: three shards were cut at 45
+    # six nights in a row with a third of the drivers never started (260 drivers, about 9,650 s one by one on macOS). macOS runs four shards; its
+    # limit is what scripts/ui-shard-budget.js asks for (the slowest shard at a slow night, 1.10 x its median, plus setup, geometry, upload
+    # and 12 min of npm ci retries, then 5 % margin) asks for 70; the limit may sit up to 5 min above that, never below, and above 80 the answer
+    # is another macOS shard (test:uisuite; coordinator decision 2026-11-23): 75 leaves room for about 24 new drivers. Linux and Windows keep 45
+    timeout-minutes: ${{ matrix.os == 'macos-latest' && 75 || 45 }}
     strategy:
       fail-fast: false
       matrix:
-        # FR-108: macOS nightly and by hand only
-        os: ${{ fromJSON((github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && '["ubuntu-latest","macos-latest","windows-latest"]' || '["ubuntu-latest","windows-latest"]') }}
-        # FR-183: shard i of 4 runs a time-balanced quarter of the drivers (scripts/ui-suite.js --shard); macOS keeps 3 (FR-182)
+        # FR-108: macOS nightly and by hand only; spec 117 FR-012 / O2: on a pull request Windows only unless os_sensitive is 'false'
+        # (missing or any other value runs Windows: fail closed)
+        os: ${{ fromJSON((github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && '["ubuntu-latest","macos-latest","windows-latest"]' || (github.event_name == 'pull_request' && needs.changes.outputs.os_sensitive == 'false') && '["ubuntu-latest"]' || '["ubuntu-latest","windows-latest"]') }}
+        # FR-183: shard i of 4 runs a time-balanced quarter of the drivers (scripts/ui-suite.js --shard); macOS too since 2026-11-23 (FR-182)
         shard: [1, 2, 3, 4]
-        exclude:
-          - { os: macos-latest, shard: 4 }
     env:
       UI_SUITE_OUT: ${{ github.workspace }}/ui-shots
       # fast checks: drivers in parallel (measured 2026-10-20 on Linux: 18/18 in 222 s at 3, against about 560 s one by one)
@@ -94,8 +108,8 @@ jobs:
       UI_SUITE_JOBS: ${{ matrix.os == 'macos-latest' && '1' || '3' }}
       # Windows: 3 drivers on one shared desktop lose real input now and then (spec 008 FR-138): one retry, alone, reported as FLAKY; a second failure stays a failure
       UI_SUITE_RETRY: ${{ matrix.os != 'ubuntu-latest' && '1' || '0' }}
-      # FR-182, FR-183: shard i of n
-      UI_SUITE_SHARD: ${{ format('{0}/{1}', matrix.shard, matrix.os == 'macos-latest' && 3 || 4) }}
+      # FR-182, FR-183: shard i of 4 (the length of the shard list above)
+      UI_SUITE_SHARD: ${{ format('{0}/4', matrix.shard) }}
       # FR-111 (owner decision 2026-10-22): theme geometry and shots-052-addleft check Clean Office and Retro on pull requests,
       # every built-in theme on main, nightly and by hand
       CHECK_ALL_THEMES: ${{ github.event_name == 'pull_request' && '0' || '1' }}
@@ -112,9 +126,9 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y xvfb
       - uses: ./.github/actions/npm-ci
       - run: npm run build
-      # Theme geometry runs first in every job, macOS shards 2 and 3 included: the first Electron on a fresh Linux runner failed its
+      # Theme geometry runs first in every job, every shard included: the first Electron on a fresh Linux runner failed its
       # first frame capture when a driver was first (shots-001-welcome, UnknownVizError, PR #507); after geometry it passes. Whether a
-      # fresh macOS runner has the same problem is unknown, so shards 2 and 3 do not risk it (geometry is fast).
+      # fresh macOS runner has the same problem is unknown, so shards 2 to 4 do not risk it (geometry is fast).
       # FR-182, FR-183: the office layout and the Mac title bar run once per OS, in shard 1 (which gets fewer drivers to make up for it)
       - name: Theme geometry
         run: node scripts/check-theme-geometry.js
@@ -141,7 +155,9 @@ jobs:
   # FR-183: the one stable name for the whole UI suite: green only when every shard of every OS passed. A skipped (draft) or cancelled
   # shard is not a pass. Branch protection can require this job instead of the shards. FR-191: when the decision said ui=false (a
   # pull request that changes nothing the UI run uses) the shards are skipped on purpose and this job passes, saying so; a failed or
-  # cancelled decision job is a failure.
+  # cancelled decision job is a failure. Spec 117 O2: on a pull request with os_sensitive=false the matrix holds only the Linux shards,
+  # so `needs.ui.result` is theirs alone: an intentionally absent Windows shard cannot block the PR, a Windows shard that ran and
+  # failed or was cancelled fails it, and any failed, cancelled or skipped Linux shard still fails it.
   complete:
     name: UI suite complete
     if: ${{ always() && !github.event.pull_request.draft }}
@@ -154,12 +170,16 @@ jobs:
         env:
           CHANGES: ${{ needs.changes.result }}
           UI_NEEDED: ${{ needs.changes.outputs.ui }}
+          OS_SENSITIVE: ${{ needs.changes.outputs.os_sensitive }}
           RESULT: ${{ needs.ui.result }}
         run: |
-          echo "Decision: $CHANGES (ui=$UI_NEEDED); UI shards: $RESULT"
+          echo "Decision: $CHANGES (ui=$UI_NEEDED, os_sensitive=$OS_SENSITIVE); UI shards: $RESULT"
           test "$CHANGES" = "success"
           if [ "$UI_NEEDED" = "false" ]; then
             echo "Nothing the app, its build or the UI drivers use changed: the UI shards did not run (spec 008 FR-191)." | tee -a "$GITHUB_STEP_SUMMARY"
             exit 0
+          fi
+          if [ "$GITHUB_EVENT_NAME" = "pull_request" ] && [ "$OS_SENSITIVE" = "false" ]; then
+            echo "No OS-sensitive path changed: the Windows UI shards did not run on this pull request; they run after the merge, nightly and by hand (spec 117 FR-012)." | tee -a "$GITHUB_STEP_SUMMARY"
           fi
           test "$RESULT" = "success"

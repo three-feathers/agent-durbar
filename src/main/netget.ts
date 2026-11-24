@@ -10,9 +10,10 @@
  */
 import * as https from 'https';
 import type { HttpGet, HttpResponse } from './officialinstall';
-import { lookupAllowed } from '../shared/updatecheck';
+import { lookupAllowed, REDIRECTS } from '../shared/updatecheck';
 import type { LookupGet } from '../shared/updatecheck';
 import { ShownError } from '../shared/shownerror';
+import { feedResponseOk, feedUrl, parseRepoSlug, releasesJsonUrl, MAX_FEED_BYTES, MAX_RELEASES_JSON_BYTES } from '../shared/selfupdate';
 
 /** The part of Electron's `ClientRequest` this file uses. */
 export interface NetRequestLike {
@@ -30,7 +31,7 @@ export interface NetResponseLike {
   on(ev: 'end', cb: () => void): unknown;
   on(ev: 'error', cb: (err: Error) => void): unknown;
 }
-export interface NetRequestOptions { method: 'GET' | 'HEAD'; url: string; redirect: 'manual'; credentials: 'omit'; useSessionCookies: false }
+export interface NetRequestOptions { method: 'GET' | 'HEAD'; url: string; redirect: 'manual'; credentials: 'omit'; useSessionCookies: false; cache?: 'no-store' }
 export type NetRequestFactory = (o: NetRequestOptions) => NetRequestLike;
 
 /** The real factory: `net.request` on the default session. Electron is loaded when a request is made, so tests can import this file. */
@@ -93,6 +94,94 @@ export function makeLookupGet(factory: NetRequestFactory): LookupGet {
         res.on('error', (e) => done(() => reject(e)));
       });
       req.on('error', (e) => done(() => reject(e)));
+      req.end();
+    });
+}
+
+/**
+ * Spec 118 FR-007, FR-009 (T009): the only two addresses Durbar's own update check reads, for the build's source `slug`: the
+ * release list (`feedUrl`) and a stable tag's `releases.json` (`releasesJsonUrl`). Exact string equality with the URL those pure
+ * builders make, so any other host, spelling, port, userinfo, slug, tag, query or fragment is refused. Not `lookupAllowed`.
+ */
+export type FeedKind = 'list' | 'releases';
+export function feedAllowed(url: unknown, slug: unknown): FeedKind | undefined {
+  const s = parseRepoSlug(slug);
+  if (!s || typeof url !== 'string') return undefined;
+  if (url === feedUrl(s)) return 'list';
+  const head = `https://raw.githubusercontent.com/${s}/`;
+  const tail = '/releases.json';
+  if (url.startsWith(head) && url.endsWith(tail) && releasesJsonUrl(s, url.slice(head.length, url.length - tail.length)) === url) return 'releases';
+  return undefined;
+}
+
+/** FR-025: what a failed feed read reports. A closed set of codes: never a URL, header, token, path or the network's own text. */
+export const FEED_FAILURES = ['not-allowed', 'redirect', 'status', 'content-type', 'too-large', 'timeout', 'network', 'aborted'] as const;
+export type FeedFailure = typeof FEED_FAILURES[number];
+export type FeedAnswer = { ok: true; kind: FeedKind; bytes: Buffer } | { ok: false; reason: FeedFailure };
+/** `signal` (T010): turning the check off mid-request aborts it and answers `aborted`. */
+export type FeedGet = (url: string, slug: string, signal?: AbortSignal) => Promise<FeedAnswer>;
+export interface FeedTimer { set(cb: () => void, ms: number): unknown; clear(handle: unknown): void }
+/** FR-004: one request, 10 s limit. */
+export const FEED_TIMEOUT_MS = 10_000;
+const FEED_CAP: Readonly<Record<FeedKind, number>> = { list: MAX_FEED_BYTES, releases: MAX_RELEASES_JSON_BYTES };
+/** FR-006: the list request asks for GitHub's JSON; the raw `releases.json` keeps the fixed headers. No `Authorization`, no cookie. */
+export const FEED_HEADERS: Readonly<Record<string, string>> = { ...FIXED_HEADERS, 'Accept': 'application/vnd.github+json' };
+const realTimer: FeedTimer = { set: (cb, ms) => setTimeout(cb, ms), clear: (h) => clearTimeout(h as ReturnType<typeof setTimeout>) };
+
+/**
+ * Spec 118 FR-007, FR-009, FR-025 (T009): one GET of a `feedAllowed` address, built like `makeLookupGet` (same factory options plus
+ * `cache: 'no-store'`, redirect event read and aborted, never followed) but with its own allow-list, caps and answer. 200 only; the list must say
+ * `application/json` (FR-007; `feedResponseOk` again at the end); the body is counted while it arrives and the request aborted past
+ * the cap (2 MiB list, 256 KiB `releases.json`). Never rejects: every failure is a `FeedFailure` code. Nothing reads the environment.
+ */
+export function makeFeedGet(factory: NetRequestFactory, timer: FeedTimer = realTimer, timeoutMs = FEED_TIMEOUT_MS): FeedGet {
+  return (url, slug, signal) =>
+    new Promise<FeedAnswer>((resolve) => {
+      const kind = feedAllowed(url, slug);
+      if (!kind) { resolve({ ok: false, reason: 'not-allowed' }); return; }
+      if (signal?.aborted) { resolve({ ok: false, reason: 'aborted' }); return; } // no request object at all
+      let settled = false;
+      let req: NetRequestLike | undefined;
+      const onAbort = (): void => done({ ok: false, reason: 'aborted' });
+      const done = (a: FeedAnswer): void => {
+        if (settled) return;
+        settled = true;
+        timer.clear(handle);
+        signal?.removeEventListener('abort', onAbort);
+        resolve(a);
+        try { req?.abort(); } catch { /* already finished */ }
+      };
+      const fail = (reason: FeedFailure) => (): void => done({ ok: false, reason });
+      const handle = timer.set(fail('timeout'), timeoutMs);
+      signal?.addEventListener('abort', onAbort, { once: true });
+      try {
+        // no-store: Chromium's HTTP cache outlives a restart; a cached 301 or list must never answer a check (review of #2058)
+        req = factory({ method: 'GET', url, redirect: 'manual', credentials: 'omit', useSessionCookies: false, cache: 'no-store' });
+      } catch { fail('network')(); return; }
+      for (const [k, v] of Object.entries(kind === 'list' ? FEED_HEADERS : FIXED_HEADERS)) req.setHeader(k, v);
+      req.on('redirect', fail('redirect'));
+      req.on('response', (res) => {
+        if (settled) return;
+        const ct = res.headers['content-type'];
+        const contentType = typeof ct === 'string' ? ct : undefined;
+        if (REDIRECTS.includes(res.statusCode)) { fail('redirect')(); return; }
+        if (res.statusCode !== 200) { fail('status')(); return; } // also 300, 304 (no validators are sent), 305, 306
+        if (kind === 'list' && !feedResponseOk({ status: 200, contentType, bytes: 0 })) { fail('content-type')(); return; }
+        const parts: Buffer[] = [];
+        let n = 0;
+        res.on('data', (c) => {
+          if (settled) return;
+          n += c.length;
+          if (n > FEED_CAP[kind]) { fail('too-large')(); return; }
+          parts.push(c);
+        });
+        res.on('end', () => {
+          if (kind === 'list' && !feedResponseOk({ status: res.statusCode, contentType, bytes: n })) { fail('too-large')(); return; }
+          done({ ok: true, kind, bytes: Buffer.concat(parts) });
+        });
+        res.on('error', fail('network'));
+      });
+      req.on('error', fail('network'));
       req.end();
     });
 }

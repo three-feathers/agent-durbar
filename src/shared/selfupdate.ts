@@ -173,7 +173,7 @@ export function pickTarget(running: unknown, feed: Feed): TargetPick {
   return { target: newest, between, installedNewer: false, gap, missing, unplaced: feed.unplaced };
 }
 
-/** Per version, from the target tag's `releases.json` (FR-026, parsed by T008); undefined = missing or invalid. */
+/** Per version, from the target tag's `releases.json` (`parseReleasesJson`, FR-026); undefined = missing or invalid. */
 export type ReleaseMarks = ReadonlyMap<string, { breaking: boolean }>;
 export type Breaking = 'breaking' | 'unknown' | 'no';
 
@@ -319,4 +319,155 @@ export function snoozeState(now: number, version: string, snooze: unknown, skip?
     if (snooze.until > now && snooze.until <= now + SNOOZE_MS) return 'snoozed';
   }
   return 'show';
+}
+
+/** FR-021 (T010): the `updates` object of the settings file, each key only in its exact shape. */
+export interface SelfUpdateSettings { selfCheck?: boolean; source?: string; snooze?: { version: string; until: number }; skip?: string; lastCheck?: { at: number; latest?: string } }
+
+/** An own enumerable data property: plain data, as JSON makes it (a getter, a hidden or an inherited property is not). */
+const plainData = (d: PropertyDescriptor | undefined): d is PropertyDescriptor => d !== undefined && 'value' in d && d.enumerable === true;
+/** An own enumerable data property's value: a getter is never run, a non-enumerable, inherited or `__proto__`-set value never read. */
+const own = (o: object, k: string): unknown => {
+  const d = Object.getOwnPropertyDescriptor(o, k);
+  return plainData(d) ? d.value : undefined;
+};
+const stableVersion = (v: unknown): v is string => typeof v === 'string' && VERSION_KEY_RE.test(v);
+const time = (v: unknown): v is number => typeof v === 'number' && Number.isSafeInteger(v) && v >= 0;
+
+/** FR-021, validated on read: unknown keys dropped, a key of the wrong type absent, the slug only in its parsed form; undefined when nothing is left. */
+export function parseUpdatesSettings(v: unknown): SelfUpdateSettings | undefined {
+  if (!isObj(v)) return undefined;
+  const out: SelfUpdateSettings = {};
+  const selfCheck = own(v, 'selfCheck');
+  if (typeof selfCheck === 'boolean') out.selfCheck = selfCheck;
+  const source = own(v, 'source');
+  if (typeof source === 'string' && parseRepoSlug(source) === source) out.source = source;
+  const snooze = own(v, 'snooze');
+  const [sv, su] = isObj(snooze) ? [own(snooze, 'version'), own(snooze, 'until')] : [];
+  if (stableVersion(sv) && time(su)) out.snooze = { version: sv, until: su };
+  const skip = own(v, 'skip');
+  if (stableVersion(skip)) out.skip = skip;
+  const last = own(v, 'lastCheck');
+  const [at, latest] = isObj(last) ? [own(last, 'at'), own(last, 'latest')] : [];
+  if (time(at)) out.lastCheck = stableVersion(latest) ? { at, latest } : { at };
+  return Object.keys(out).length ? out : undefined;
+}
+
+const UPDATE_KEYS: readonly string[] = ['selfCheck', 'source', 'snooze', 'skip', 'lastCheck'];
+/** Only own string-keyed enumerable data properties, each named in `allowed` (no symbol, no accessor, no hidden key); a throwing proxy is refused.
+ * So the keys checked here are exactly `Object.keys(o)`, the list the value loop walks (review of PR 2064, round 2). */
+const onlyDataKeys = (o: object, allowed: readonly string[]): boolean => {
+  try {
+    return Reflect.ownKeys(o).every((k) => typeof k === 'string' && allowed.includes(k) && plainData(Object.getOwnPropertyDescriptor(o, k)));
+  } catch { return false; }
+};
+
+/**
+ * FR-021, for a write (review of PR 2064): the patch is checked BEFORE any merge. Every key must be one of the five, as an own data property;
+ * its value is `undefined` (remove that key) or passes the read rule exactly (a nested object with no extra or dropped part). Any failure
+ * refuses the whole patch (undefined), so a bad value can never erase a stored one.
+ */
+export function parseUpdatesPatch(patch: unknown): Partial<SelfUpdateSettings> | undefined {
+  if (!isObj(patch) || !onlyDataKeys(patch, UPDATE_KEYS)) return undefined;
+  const out: Record<string, unknown> = {};
+  for (const k of Object.keys(patch)) {
+    const v = own(patch, k);
+    if (v === undefined) { out[k] = undefined; continue; }
+    const got = (parseUpdatesSettings({ [k]: v }) as Record<string, unknown> | undefined)?.[k];
+    if (got === undefined || (isObj(v) && !onlyDataKeys(v, Object.keys(got as object)))) return undefined;
+    out[k] = got;
+  }
+  return out as Partial<SelfUpdateSettings>;
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
+// Strict JSON files: `releases.json` (FR-026) and the baked `updatesource.json` (FR-001)
+
+/** Valid JSON whose objects, at any depth, repeat no key (decoded: `"a"` and `"\u0061"` are one key); JSON.parse alone keeps the last. Else undefined. */
+export function parseStrictJson(text: string): unknown {
+  let value: unknown;
+  try { value = JSON.parse(text); } catch { return undefined; }
+  const stack: { keys: Set<string> | null; expectKey: boolean }[] = [];
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (c === '"') {
+      let j = i + 1;
+      while (j < text.length && text[j] !== '"') j += text[j] === '\\' ? 2 : 1;
+      const top = stack[stack.length - 1];
+      if (top?.keys && top.expectKey) {
+        const key = JSON.parse(text.slice(i, j + 1)) as string;
+        if (top.keys.has(key)) return undefined;
+        top.keys.add(key);
+        top.expectKey = false;
+      }
+      i = j;
+    } else if (c === '{') stack.push({ keys: new Set(), expectKey: true });
+    else if (c === '[') stack.push({ keys: null, expectKey: false });
+    else if (c === '}' || c === ']') stack.pop();
+    else if (c === ',') { const top = stack[stack.length - 1]; if (top?.keys) top.expectKey = true; }
+  }
+  return value;
+}
+const exactKeys = (o: Record<string, unknown>, keys: readonly string[]): boolean => {
+  const k = Object.keys(o);
+  return k.length === keys.length && keys.every((x) => Object.prototype.hasOwnProperty.call(o, x));
+};
+
+/** UTF-8 bytes to text, or undefined when they are not UTF-8. A byte-order mark is KEPT (`ignoreBOM`), so the strict parsers refuse it. */
+export function decodeUtf8Strict(bytes: Uint8Array): string | undefined {
+  try { return new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(bytes); } catch { return undefined; }
+}
+
+export const MAX_RELEASES_JSON_BYTES = 256 * 1024;
+export const MAX_RELEASES_JSON_VERSIONS = 500;
+export const RELEASE_TEXT_MAX = 500;
+const PART = '(?:0|[1-9]\\d{0,8})';
+const VERSION_KEY_RE = new RegExp(`^${PART}\\.${PART}\\.${PART}$`);
+const RELEASE_TAG_RE = new RegExp(`^v${PART}\\.${PART}\\.${PART}$`);
+/** Plain text (FR-026): no `<`, no control, format (bidi, zero-width), surrogate, line or paragraph separator characters. */
+const PLAIN_RE = /^[^<\p{Cc}\p{Cf}\p{Cs}\p{Zl}\p{Zp}]*$/u;
+const plain = (v: unknown, min: number): v is string => {
+  if (typeof v !== 'string' || v.length > RELEASE_TEXT_MAX * 2 || !PLAIN_RE.test(v)) return false;
+  const n = [...v].length;
+  return n >= min && n <= RELEASE_TEXT_MAX;
+};
+
+export interface ReleaseNote { breaking: boolean; notes: string; action: string }
+
+/** FR-026: the text of a `releases.json`, per version; undefined when anything is not exactly as specified (FR-009: *Breaking: unknown*). */
+export function parseReleasesJson(text: unknown): ReadonlyMap<string, ReleaseNote> | undefined {
+  if (typeof text !== 'string' || text.length > MAX_RELEASES_JSON_BYTES || utf8Bytes(text) > MAX_RELEASES_JSON_BYTES) return undefined;
+  const doc = parseStrictJson(text);
+  if (!isObj(doc) || !exactKeys(doc, ['schema', 'versions']) || doc.schema !== 1 || !isObj(doc.versions)) return undefined;
+  const keys = Object.keys(doc.versions);
+  if (keys.length > MAX_RELEASES_JSON_VERSIONS) return undefined;
+  const out = new Map<string, ReleaseNote>();
+  for (const v of keys) {
+    const e = doc.versions[v];
+    if (!VERSION_KEY_RE.test(v) || !isObj(e) || !exactKeys(e, ['breaking', 'notes', 'action'])) return undefined;
+    const { breaking, notes, action } = e;
+    if (typeof breaking !== 'boolean' || !plain(notes, 1) || !plain(action, breaking ? 1 : 0)) return undefined;
+    out.set(v, { breaking, notes, action });
+  }
+  return out;
+}
+
+/** FR-007, FR-009: the one raw-file URL, for a parsed slug and a stable `vMAJOR.MINOR.PATCH` tag (main's own validated feed); else undefined. */
+export function releasesJsonUrl(slug: unknown, tag: unknown): string | undefined {
+  const s = parseRepoSlug(slug);
+  return s && typeof tag === 'string' && RELEASE_TAG_RE.test(tag) ? `https://raw.githubusercontent.com/${s}/${tag}/releases.json` : undefined;
+}
+
+export const MAX_UPDATE_SOURCE_BYTES = 1024;
+export interface UpdateSource { slug: string; origin: SourceOrigin }
+const ORIGINS: readonly string[] = ['env', 'ci', 'local'];
+
+/** FR-001: the baked `dist/main/updatesource.json`, exactly `{slug, origin}` with the slug in its parsed form; anything else = no source. */
+export function parseUpdateSourceFile(text: unknown): UpdateSource | undefined {
+  if (typeof text !== 'string' || utf8Bytes(text) > MAX_UPDATE_SOURCE_BYTES) return undefined;
+  const doc = parseStrictJson(text);
+  if (!isObj(doc) || !exactKeys(doc, ['slug', 'origin'])) return undefined;
+  const { slug, origin } = doc;
+  if (typeof slug !== 'string' || parseRepoSlug(slug) !== slug || typeof origin !== 'string' || !ORIGINS.includes(origin)) return undefined;
+  return { slug, origin: origin as SourceOrigin };
 }

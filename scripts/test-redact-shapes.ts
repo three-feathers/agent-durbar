@@ -406,7 +406,7 @@ for (const [start, more] of [['AK' + 'IA' + up(16), 'A'], ['AK' + 'IA' + up(16),
   // Every sample of every bare-token family, twice and three times back to back: one mask, nothing readable. A family added to FAMILIES is covered by this loop.
   const CONTEXT = new Set(['authorization', 'cookie', 'cookieQuoted', 'curlUser', 'urlCredential', 'copilotTid', 'queryValue', 'named', 'netrc', 'bearer', 'jwt', 'keyBlock', 'slackHook', 'discordHook', 'teamsHook', 'telegram', 'discordBot', 'slackLegacy', 'skAntGlued']);
   /** `[KNOWN GAP]` (spec 012 FR-169): shapes whose body has a fixed length and must END on a character that is not a letter or digit (`NOT_AFTER`, `NOT_B64_AFTER`), so a glued run is not a token at all. The loop checks each stays unmasked, so a fix that covers one fails here until it leaves the list. */
-  const GLUE_GAP = new Set(['AKIAAB3D', 'ASIAAB3D', 'ABIAAB3D', 'ACCAAB3D', 'A3TAAB3D', 'ABSKaB3d', 'AIzaaB3d', 'aB38Q~aB', '_a.8Q~aB', '~ab8Q~aB', '.ab8Q~aB', '1//0aB3d', 'oy2a3b6c', 'cioaB3dE', '4b1daB3d', 'dapi0a1b', 'cmVmdaB3', 'key-0a1b', '0a1b2c3d', 'SK0a1b2c', '12345678', 'ico-aB3d', 'API-AB3D', 'EAAAaB3d']);
+  const GLUE_GAP = new Set(['AKIAAB3D', 'ASIAAB3D', 'ABIAAB3D', 'ACCAAB3D', 'A3TAAB3D', 'ABSKaB3d', 'AIzaaB3d', 'aB38Q~aB', '_a.8Q~aB', '~ab8Q~aB', '.ab8Q~aB', 'oy2a3b6c', 'cioaB3dE', '4b1daB3d', 'dapi0a1b', 'cmVmdaB3', 'key-0a1b', '0a1b2c3d', 'SK0a1b2c', '12345678', 'ico-aB3d', 'API-AB3D', 'EAAAaB3d']);
   let glueTested = 0;
   for (const [family, samples] of Object.entries(FAMILIES)) {
     if (CONTEXT.has(family)) continue;
@@ -513,7 +513,7 @@ for (const [start, more] of [['AK' + 'IA' + up(16), 'A'], ['AK' + 'IA' + up(16),
     // pre-review of PR 1317: the GOOG1 rule has the base64 list's start and line-break rules (each asserted alone: remove one and its own line fails)
     {
       const g1 = 'GO' + 'OG1' + up(44);
-      assert.strictEqual(redact('ab/' + g1, {}), 'ab/' + g1, '#1237: GOOG1 after a / is base64 text, not a key (the start rule)');
+      assert.strictEqual(redact(an(200) + '/' + g1, {}), an(200) + '/' + g1, '#1237: GOOG1 after a / in a long base64 run is base64 text, not a key (the start rule; FR-198: a short path segment is masked)');
       assert.strictEqual(redact(an(76) + '\n' + g1 + '\n' + an(76), {}), an(76) + '\n' + g1 + '\n' + an(76), '#1237: GOOG1 as one line of a wrapped base64 block stays (the line-break rules)');
       assert.strictEqual(redact(g1 + '\n' + an(76), {}), g1 + '\n' + an(76), '#1237: GOOG1 before a base64 line stays (the line-break lookahead)');
       assert.strictEqual(redact(an(76) + '\n' + g1, {}), an(76) + '\n' + g1, '#1237: GOOG1 after a base64 line stays (the line-break lookbehind)');
@@ -863,7 +863,9 @@ for (const [start, more] of [['AK' + 'IA' + up(16), 'A'], ['AK' + 'IA' + up(16),
   assert.strictEqual(redact(u, {}), u.length > REDACT_MAX_CHARS ? redact(u.slice(0, REDACT_MAX_CHARS), {}) : u, 'build/icon.png as a data URL');
 }
 // The mechanism behind it, with made-up base64: not after `/` or `+`, and not when more base64 follows
-for (const t of ['ab/' + 'EA' + 'AA' + an(70) + '/cd', 'ab+' + 'EA' + 'AA' + an(70), 'EA' + 'AA' + an(70) + '/cd', 'ab/' + 'EA' + 'AC' + an(120) + '+x', 'ab/' + 'AB' + 'SK' + an(120), '/AI' + 'za' + an(35), '+S' + 'K' + hex(32), 'SK' + hex(32) + '/', '-' + 'EA' + 'AA' + an(70), '_' + 'EA' + 'AA' + an(70), 'A'.repeat(22) + 'B' + an(100), an(76) + '\n' + 'EA' + 'AA' + an(72) + '\n' + an(76), 'EA' + 'AA' + an(72) + '\n' + an(76), an(76) + '\\n' + 'EA' + 'AA' + an(72)]) assert.strictEqual(redact(t, {}), t, `base64 stays: ${t.slice(0, 16)}…`);
+// spec 012 FR-198 (T492): a slash with only a short run of path characters around it is a path separator, so the slash cases read inside a long base64 run (`B64RUN`); their short forms are paths and are masked (scripts/test-mask-paths.ts)
+const B64RUN = an(200);
+for (const t of [B64RUN + '/' + 'EA' + 'AA' + an(70) + '/' + B64RUN, 'ab+' + 'EA' + 'AA' + an(70), 'EA' + 'AA' + an(70) + '/' + B64RUN, 'ab/' + 'EA' + 'AC' + an(120) + '+x', B64RUN + '/' + 'AB' + 'SK' + an(120), B64RUN + '/AI' + 'za' + an(35), '+S' + 'K' + hex(32), 'SK' + hex(32) + '/' + B64RUN, '-' + 'EA' + 'AA' + an(70), '_' + 'EA' + 'AA' + an(70), 'A'.repeat(22) + 'B' + an(100), an(76) + '\n' + 'EA' + 'AA' + an(72) + '\n' + an(76), 'EA' + 'AA' + an(72) + '\n' + an(76), an(76) + '\\n' + 'EA' + 'AA' + an(72)]) assert.strictEqual(redact(t, {}), t, `base64 stays: ${t.slice(0, 16)}…`);
 
 // spec 012 FR-196 delta, issue #2062 (the two-letter rule, beside `hf_` and `r8_`; found by test-redact-images on an arcade picture, spec 102 #2056): Resend's `re_` key is masked on its own, but not after `-` or `_`, where base64url holds it by chance
 {

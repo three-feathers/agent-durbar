@@ -43,8 +43,8 @@ module.exports = async (ctx) => {
       /* spec 001 FR-039 (2026-10-22): the corner's width and name come from places.js lobbyFit (named from 148 px, never a cut name) */
       if (o.fit.coffee.named) assert.strictEqual(o.name, 'Coffee corner'); else assert.ok(!o.named, `${w} ${n}: icon only where the corner is narrow`);
       assert.ok(/^Coffee corner: /.test(o.label), o.label);
-      /* spec 001 FR-036: visitor entries instead of slots; the other places keep room for two visitors (initials), the corner shows a figure */
-      if (w === 1440) assert.ok(o.fit.caps.initials >= 2, `${w} ${n}: every other tile keeps room for two visitors: ${JSON.stringify(o.fit.caps)}`);
+      /* spec 001 FR-036: visitor entries instead of slots; the other places keep room for one entry and "+N" (a short name takes 54 px, spec 001 delta 2026-11-23), the corner shows a figure */
+      if (w === 1440) assert.ok(o.fit.caps.initials >= 1, `${w} ${n}: every other tile keeps room for a visitor: ${JSON.stringify(o.fit.caps)}`);
       assert.ok(o.cfFigures >= 1, `${w} ${n}: the coffee corner shows at least one visitor, not only "+N"`);
       assert.strictEqual(o.tiles, 9, `${w} ${n}: five places, the Boss, the coffee corner, the Bank and the Postbox`);
       assert.ok(o.inLobby, `${w} ${n}: the tiles fit the lobby`);

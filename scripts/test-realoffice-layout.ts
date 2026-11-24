@@ -550,6 +550,13 @@ assert.ok(Object.values(META.stand).some((s) => Object.values(s.foot as Record<s
     assert.deepStrictEqual([metaOf(wj('retro'), sj('office')).pixelArt, metaOf(wj('retro'), sj('office')).pixelPeople], [true, false], 'FR-323: the arcade keeps its rules with a photo set (097 T247)');
     assert.deepStrictEqual([metaOf(wj('retro'), sj('retro')).pixelArt, metaOf(wj('retro'), sj('retro')).pixelPeople], [true, true], 'the arcade with its own people');
     assert.deepStrictEqual([metaOf(wj('cave'), sj('retro')).pixelArt, metaOf(wj('cave'), sj('retro')).pixelPeople], [false, true], 'the cave with Retro pixel people: the cave rules');
+    { // spec 102 FR-399 (issue #2055): the HD set reaches the layout only with the switch on; off, neither its block nor `hdPeople` is in the numbers
+      const m3 = metaOf as (w: unknown, s: unknown, hd?: boolean) => Record<string, unknown>, rs = sj('retro'), hdSet = rs.hd;
+      assert.ok(hdSet, 'the Retro pixel set carries its HD block');
+      for (const off of [m3(wj('retro'), sj('retro')), m3(wj('retro'), sj('retro'), false)]) assert.ok(!('hdPeople' in off) && !('hd' in off), 'the switch off: no HD set in the layout\'s numbers');
+      assert.strictEqual(m3(wj('retro'), rs, true).hdPeople, hdSet, 'the switch on: the set\'s HD block is handed over');
+      assert.ok(!('hdPeople' in m3(wj('photo'), sj('office'), true)), 'the switch on with a set without an HD block: nothing');
+    }
     // T296 (FR-326): the Retro pixel set has its own seen-from-behind running frames, so the Terminal visitor draws `runA`/`runB`, not the `letter` fallback
     const st = sj('retro').stand as Record<string, { poses: Record<string, number[]> }>;
     for (const id of Object.keys(st)) { assert.ok('runA' in st[id].poses && 'runB' in st[id].poses, `${id}: runA and runB are in the stand poses (T296)`); assert.ok('letter' in st[id].poses, `${id}: letter stays (the other places)`); const f = (st[id] as unknown as { foot: Record<string, number> }).foot; for (const q of ['runA', 'runB']) assert.ok(f[q] > 0.3 && f[q] < 0.7, `${id} ${q}: the head-anchored foot share is near the standing frames'`); }
