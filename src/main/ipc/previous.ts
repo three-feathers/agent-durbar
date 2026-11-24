@@ -23,6 +23,8 @@ import { failText } from '../ipcerror';
 export interface PreviousIpcDeps {
   /** Spec 080 FR-023: a replaced session's browser view and partition are destroyed. */
   browserGone?(id: string): void;
+  /** Spec 005 FR-411: drop main's kept tool-call values of a session that Resume with replace removes. */
+  forgetToolCopies?(id: string): void;
   /** Spec 059: the rename operation, built in main.ts; it is given the ids open in the office. */
   renameSessionOpFor(openIds: () => ReadonlySet<string>): (id: unknown, sessionId: unknown, name: unknown) => unknown;
   dev: DevEnv;
@@ -102,6 +104,7 @@ export function register(deps: PreviousIpcDeps): void {
         await ad.stop(removedId);
         router.unbind(removedId);
         deps.browserGone?.(removedId); // spec 080 FR-023
+        deps.forgetToolCopies?.(removedId); // spec 005 FR-411
         agents.delete(removedId);
         agentState.remove(removedId);
         scheduler()?.sessionsChanged(); // spec 044 FR-014: a schedule for the replaced session pauses
