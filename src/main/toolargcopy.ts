@@ -6,6 +6,7 @@
  */
 import type { AgentEvent } from '../adapters/types';
 import { SESSION_ID_RE } from './schedules';
+import { MASK_INPUT_MAX } from '../shared/redact';
 
 /** The keys the chip reads first, in order (`toolArg` in `src/renderer/app.js`; `test:toolargcopy` pins the two together). */
 const ARG_KEYS = ['path', 'pattern', 'command', 'url', 'query', 'file_path'] as const;
@@ -86,8 +87,10 @@ export function createToolArgCopies(deps: { write(text: string): void; limits?: 
     while (kept.size > 0 && (kept.size > CALLS || chars > TOTAL)) drop(kept.keys().next().value as string); // stops on an empty map, whatever the count says
   };
   return {
-    see(raw, out) {
-      if (raw.type !== 'toolCall' || out.type !== 'toolCall') return out;
+    see(raw, out0) {
+      if (raw.type !== 'toolCall' || out0.type !== 'toolCall') return out0;
+      let out = out0;
+      if (out.argsLong !== undefined) { out = { ...out }; delete out.argsLong; } // spec 005 FR-438: main's word only, as `argsMasked`
       if (raw.args === undefined || !validSession(raw.sessionId) || !validCall(raw.callId)) {
         if (out.argsMasked === undefined) return out;
         const rest = { ...out }; // main's word only: an adapter's own `argsMasked` never reaches the window
@@ -107,7 +110,9 @@ export function createToolArgCopies(deps: { write(text: string): void; limits?: 
       const mv = (out.args as Record<string, unknown>)[key as string];
       const masked = mv !== rv;
       keep(k, { sid: raw.sessionId, callId: raw.callId, text: text.length > MAX ? null : text, masked });
-      return { ...out, argsMasked: masked };
+      /* spec 005 FR-438: main sent this argument empty because the masks do not take its length (FR-342 main half): the window gets the length, a number only */
+      const long = typeof rv === 'string' && mv === '' && rv.length > MASK_INPUT_MAX ? rv.length : 0;
+      return long ? { ...out, argsMasked: masked, argsLong: long } : { ...out, argsMasked: masked };
     },
     copy(sessionId, callId, confirmed) {
       if (!validSession(sessionId) || !validCall(callId)) return { ok: false, reason: 'unknown' };

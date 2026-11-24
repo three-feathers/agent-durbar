@@ -1337,6 +1337,22 @@ const planMcpSignInRefresh = (i: SignInPlanInput): SignInPlan => {
       for (const k of Object.keys(o)) if (typeof o[k] === 'string') return k;
       return undefined;
     };
+    /* spec 005 FR-438: main's rule for the window's copy of a tool call (FR-342 main half, `toolArgCopies.see`), since the simulator's events skip
+       main: a text argument longer than the masks take arrives empty, and when the argument the chip shows (the window's `toolArg` choice, on the
+       emptied copy) is one of them, `argsLong` carries its length; a caller's own `argsLong` is dropped (main's word only) */
+    const simLongArgs = (e: Extract<AgentEvent, { type: 'toolCall' }>): AgentEvent => {
+      const { argsLong: _drop, ...rest } = e;
+      const raw = rest.args;
+      if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return rest;
+      const lim = Number((window as unknown as { DurbarRedact?: { MASK_INPUT_MAX?: number } }).DurbarRedact?.MASK_INPUT_MAX) || 12288;
+      const r = raw as Record<string, unknown>, out: Record<string, unknown> = {};
+      let cut = false;
+      for (const k of Object.keys(r)) { const v = r[k]; if (typeof v === 'string' && v.length > lim) { out[k] = ''; cut = true; } else out[k] = v; }
+      if (!cut) return rest;
+      const key = simToolArgKey(out);
+      const rv = key === undefined ? undefined : r[key];
+      return typeof rv === 'string' && out[key as string] === '' && rv.length > lim ? { ...rest, args: out, argsLong: rv.length } : { ...rest, args: out };
+    };
     const emit = (e: AgentEvent): void => {
       if (e.type === 'toolCall' && e.args !== undefined) { const k = simToolArgKey(e.args), v = k === undefined ? undefined : (e.args as Record<string, unknown>)[k]; const id = simToolCopyKey(e.sessionId, e.callId); if (typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean') simToolCopyKeep(simToolCopies, id, { text: String(v), masked: e.argsMasked === true }); else simToolCopies.delete(id); }
       /* like main, which keeps the runtime's list before the window hears of it: the reply a listener asks for at once sees this event (spec 058 FR-094) */
@@ -1350,6 +1366,7 @@ const planMcpSignInRefresh = (i: SignInPlanInput): SignInPlan => {
       }
       if (e.type === 'status' && e.status === 'stopped') { const q = sims.find((x) => x.info.id === e.sessionId); if (q) q.mcpCalls = undefined; }
       if (e.type === 'toolCall' && e.phase === 'failed' && e.mcpServer && simCallClass(e.output) === 'policy') e = { ...e, mcpCall: 'policy' }; // FR-193: like maskMcpEvent, the word only
+      if (e.type === 'toolCall') e = simLongArgs(e); // spec 005 FR-438: like main, an over-limit argument arrives empty with its length
       listeners.forEach((l) => l(e));
       simSchedHook?.(e);
       if (e.type === 'status' && !e.agentId && (e.status === 'idle' || e.status === 'error' || e.status === 'stopped')) simSignIn?.last.set(e.sessionId, simSignIn.mono()); // spec 058 FR-205: the last response
