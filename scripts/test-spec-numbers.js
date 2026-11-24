@@ -443,7 +443,7 @@ try {
     assert.doesNotMatch(r.out, /T030 is also/, 'WIDE-dead its numbers are free');
     assert.match(r.out, /T020 is also in branch nopr/, 'the other clashes stay');
     // 3: the branch moved after its PR closed, a merged PR, a fork PR: counted
-    for (const [why, over] of [['the tip moved on', rows('f'.repeat(40))], ['it was merged', rows(dead, { state: 'MERGED', mergedAt: '2026-11-01T00:00:00Z' })], ['an open PR', rows(dead, { state: 'OPEN' })], ['a fork PR of that name', rows(dead, { isCrossRepository: true })], ['no PR', []]]) {
+    for (const [why, over] of [['the tip moved on', rows('f'.repeat(40))], ['it was merged', rows(dead, { state: 'MERGED', mergedAt: '2026-11-01T00:00:00Z' })], ['closed with a merge date', rows(dead, { mergedAt: '2026-11-01T00:00:00Z' })], ['an open PR', rows(dead, { state: 'OPEN' })], ['a fork PR of that name', rows(dead, { isCrossRepository: true })], ['no PR', []]]) {
       r = await via(['--wide'], { branchState: state({ deadpr: over }) });
       assert.match(r.out, /T030 is also in branch deadpr/, `WIDE-dead-tip ${why}: its numbers are still held`);
     }
@@ -474,6 +474,10 @@ try {
     assert.match(r.out, /T020 is also in branch nopr/, 'WIDE-wide-flag-env --wide with PR_HEAD_SHA compares the wide list');
     r = await viaEnv(['--wide', '--narrow'], {}, noAsk);
     assert.strictEqual(r.code, 2, 'WIDE-both-flags --wide with --narrow is exit 2: ' + r.out);
+    assert.match(r.out, /--wide and --narrow together/, 'WIDE-both-flags-say it says why (not another failure): ' + r.out);
+    // the checked-out branch of this run is never compared with itself, also when a worktree lists it under another tip
+    r = await viaEnv([], {}, { branchState: state(), worktrees: () => [...sn.worktreeHeads(sd), { name: 'mine', sha: sn.worktreeHeads(sd).find((h) => h.name === 'wtone').sha }] });
+    assert.doesNotMatch(r.out, /worktree mine/, 'WIDE-self-main main() leaves this branch out of the wide list: ' + r.out);
     // 6: --no-fetch --wide reads the remote-tracking refs, offline
     G(sd, 'fetch', '-q', 'origin', '+refs/heads/*:refs/remotes/origin/*');
     r = await via(['--wide', '--no-fetch'], { branchState: state() });

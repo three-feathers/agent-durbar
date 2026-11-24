@@ -104,6 +104,8 @@ const has = (list, re) => list.some((t) => re.test(t));
   const calls = [];
   const r = pp.preflight('7; rm -rf x', { gh: (a) => { calls.push(a); return { status: 1, stdout: '' }; }, root: tmp, fetch: false, trusted: TRUSTED });
   assert.ok(r.code === 2 && calls.length === 0, 'PP-usage a non-number is refused before any call: ' + pp.format(r.lines));
+  const r0 = pp.preflight('0', { gh: (x) => { calls.push(x); return { status: 1, stdout: '' }; }, root: tmp, fetch: false, trusted: TRUSTED });
+  assert.ok(r0.code === 2 && calls.length === 0, 'PP-usage-zero PR number 0 is refused before any call');
 }
 
 // ---- 1 readable, ours
@@ -255,6 +257,8 @@ const has = (list, re) => list.some((t) => re.test(t));
   const pk = mk([base], { 'package.json': PKG({ a: 'node a2.js', d: 'node d.js' }) }, 'pk');
   const r = run({ head: pk, branch: '001-pk' });
   assert.ok(has(r.fails, /package\.json scripts: \+1, removed \[b\], changed \[a\]/), 'PP-package a removed and a changed script fail: ' + r.text);
+  const ch = mk([base], { 'package.json': PKG({ a: 'node a2.js', b: 'node b.js' }) }, 'pk ch');
+  assert.ok(has(run({ head: ch, branch: '001-pk' }).fails, /package\.json scripts: \+0, removed \[\], changed \[a\]/), 'PP-package-changed a changed script alone fails (check 10)');
   const ok = mk([base], { 'package.json': PKG({ a: 'node a.js', b: 'node b.js', e: 'node e.js' }) }, 'pk ok');
   assert.ok(!has(run({ head: ok, branch: '001-pk' }).fails, /package/), 'PP-package an added script is fine');
 }
