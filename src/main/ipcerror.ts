@@ -24,16 +24,20 @@ const FRAME = /^[ \t]+at [^\n]*(?::\d+:\d+\)?|\((?:native|<anonymous>|index \d+)
 const APP_DIRS = [path.resolve(__dirname, '..', '..'), (process as { resourcesPath?: string }).resourcesPath].filter((d): d is string => typeof d === 'string' && d.length > 3);
 const escRe = (s: string): string => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 const APP_DIR_RE = new RegExp(APP_DIRS.map((d) => escRe(d).replace(/\\\\|\//g, '[\\\\/]')).join('|') || '(?!)', process.platform === 'linux' ? 'g' : 'gi');
+/** The app folder's stand-in while the masks run (written `[app folder]` after them). */
+const APP_WORD = 'DurbarAppFolder';
 const cutText = (s: string, max: number): string => cut(s, max).replace(/ \[truncated\]$/, '');
 
 /** An error message made safe for the screen (see the file comment), or undefined when there is none or the mask failed. */
 export function shownText(message: unknown): string | undefined {
   if (typeof message !== 'string' || !message.trim()) return undefined;
   const read = message.length > READ_MAX ? cutText(message, READ_MAX) : message;
-  let s = redact(read.replace(FRAME, '').replace(APP_DIR_RE, '[app folder]'));
-  if (s.includes(FAILED)) return undefined;
-  s = redact(unhide(s.replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]+/g, ' ')).replace(/\s+/g, ' ').trim());
+  // the app folder becomes one word with no space or bracket before the mask, so a value after a name is never split there (review of #2108)
+  const first = redact(read.replace(FRAME, '').replace(APP_DIR_RE, APP_WORD));
+  // the second pass masks a secret a hidden character had split; its result carries the first pass's `[redaction failed]`, so one check covers both
+  let s = redact(unhide(first.replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]+/g, ' ')).replace(/\s+/g, ' ').trim());
   if (!s || s.includes(FAILED)) return undefined;
+  s = s.split(APP_WORD).join('[app folder]');
   if (s.length <= SHOWN_MAX && read === message) return s;
   const head = cutText(s, SHOWN_MAX);
   return `${head}… ${s.length - head.length + message.length - read.length} more characters`;
