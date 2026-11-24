@@ -4,7 +4,7 @@
 group: 046
 title: Remove masking as app functionality (proposal, 2026-11-24): the screen shows what the agent sent; Durbar keeps agent text out of its own logs, saved state and anything that leaves the machine by structure, not by masking; options A, B, C, inventory, the principle III clarification and a staged deletion plan
 status: draft
-note: proposal only; nothing changes until all three owners agree in writing; Q42-Q45 open; facts checked by Paco's side (review of PR 2121)
+note: proposal only; nothing changes until all three owners agree in writing; Q42 answered by Vikram (option 1), the other owners to agree; Q43-Q45 open; facts checked by Paco's side (review of PR 2121)
 -->
 
 **Feature Branch**: `120-remove-masking` (spec, plan and tasks only).
@@ -146,11 +146,11 @@ There is no chat channel, issue-report form or telemetry in the app (`git grep` 
 - **FR-441** The window shows agent text as the agent app sent it, with invisible and control characters still made visible (spoofing guard, kept). No surface masks secret-shaped text.
 - **FR-442** Durbar writes no agent text (replies, thinking, tool arguments or output, commands, URLs, file contents, an agent app's error text, the agent's pace reason) to its own logs, saved state or anything that leaves the machine, except (a) by an explicit user action (a Copy button, an export, *Save to notes*, sending a message, a switch that says what it writes) and (b) the Undo copies of edited files, pending Q45.
 - **FR-443** The activity log, per row kind (`ACTIVITY_DECISIONS`, `src/shared/activity.ts:18`; producers read at each call):
-  - permission rows (`allowed-once`, `allowed-session`, `denied`, `auto-allow-all`, `auto-session-grant`; `main.ts:394`): the request kind and the program or tool name only (the first word of a command, a tool's name, a URL's host), never the request text;
+  - permission rows (`allowed-once`, `allowed-session`, `denied`, `auto-allow-all`, `auto-session-grant`; `main.ts:394`): the kind of request, the tool name (an MCP or custom tool's name; a command or a URL gives no name, only its kind) and the request's length in characters; never command or URL text (Q42 option 1, the proposed default);
   - `loop-pass`, `loop-end` (`loopwiring.ts:86-97`): Durbar's fixed words and numbers; never the agent's reason (E5); `loop-start`, `loop-skip`, `loop-hold`: fixed words and numbers, as today;
   - `mode-change` (`agentops.ts:76`, `ipc/previous.ts:92`), `limit-change` (`agentops.ts:109`), `remote-on`/`remote-off` (`ipc/remote.ts:41`), `autopilot-on`/`-end`/`-off` (`autopilotops.ts:190,335,463`), `session-deleted` (`prevsessions.ts:162`): Durbar's fixed words, mode names, numbers, an app name, a short session id; kept as today;
   - `mcp-restart` (`main.ts:240`, `mcpsigninrefresh.ts:762,1093`): fixed words and the MCP server's configured name; kept as today;
-  - every row keeps time, agent, folder, app and mode. The window may show this run's full request text from memory (Q42). An older row's stored action text is rewritten to the new form on the first read after the change.
+  - every row keeps time, agent, folder, app and mode. The live chat still shows what was asked while the app runs (Q42). An older row's stored action text is rewritten to the new form on the first read after the change.
 - **FR-444** A main-process log line names a fixed place, an error class name and a code, never an error message, stack text or path from an agent app or the system. One named exception: a test driver's own failure (`DURBAR_DRIVER`, never in a packaged build without `DURBAR_DEV=1`) prints the driver's stack, which CI needs; drivers run on simulated agents only.
 - **FR-445** The `DURBAR_LOG` debug log records event kinds, ids, phases, lengths and codes, never a text field, argument, output or stderr text.
 - **FR-446** The Durbar MCP read tools return an MCP server's name, transport, on/off and health, never its command, arguments or URL.
@@ -225,7 +225,7 @@ Line counts: `wc -l` of the files a stage deletes, plus the call lines of sectio
 
 ### Open questions for the owners (plain words)
 
-- **Q42** The activity log today keeps the command or tool request (first 160 characters, masked) across restarts. Under C it would keep only the program or tool name and the decision, and show the full request only for this run. Is that right, or should the full request be kept as it is today (it is local saved state, so FR-442 would need an exception)?
+- **Q42** The activity log today keeps the command or tool request (first 160 characters, masked) across restarts. Option 1: keep only the kind of request, the tool name and the length (no command or URL text); the live chat still shows what was asked while the app runs. Option 2: keep the full request as today (local saved state, so FR-442 would need an exception). **Answered by the owner Vikram, 2026-11-24 (option 1); the other two owners still to agree in writing.** FR-443 uses option 1 as the proposed default.
 - **Q43** May *Copy diagnostics* or *Copy details* include the agent app's own error text, as shown on screen, when the person presses it? (This spec says yes: it is the person's action and copies what they see.)
 - **Q44** Who tells existing users, and how: a changelog line plus the docs/safety.md line in the release that ships stage 2, or also a one-time note in the app?
 - **Q45** Undo keeps copies of the files an agent edits (`checkpoints/` in userData: private, bounded, emptied at the next start, so a crash leaves them until then). Either (a) keep them as a **named exception** in FR-442 and the amendment ("copies for Undo, local, emptied at the next start, a feature the person sees"): no code cost, Undo works as today; or (b) Undo keeps only **hashes and paths**: no file content on disk, but Undo can then only tell that a file changed, not put it back, so spec 065's Undo is lost (or would need git, which spec 065 avoids). Which one?

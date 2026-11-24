@@ -14,7 +14,7 @@
 
 - [ ] T550 Planted-marker unit tests first, one per main-side sink with its own mutant (a mutant that writes the marker into that sink fails at that sink's own assert): `activity.json` for every row kind, `schedules.json`, stderr (`failText`, the save error), the `DURBAR_LOG` sink, the crash marker, usage and away-summary stores, the Durbar MCP read tools; marker kinds of FR-450 including tool name, session title and the loop pace line. [FR-450]
 - [ ] T551 Fake-transport test of the Claude and Codex exit handlers (stderr carrying the marker, debug lines captured); window driver under `DURBAR_SIM` for the screen, Copy and export; a `DURBAR_SIM_MAIN` pass where it reaches, listed as extra. [FR-441, FR-447, FR-450]
-- [ ] T552 Activity rows per kind as FR-443 lists (permission rows: kind and program or tool name; loop rows without the agent's reason; the other kinds as today); this run's full text from memory; old rows rewritten on read; `test-activity.ts` updated. [FR-443]
+- [ ] T552 Activity rows per kind as FR-443 lists (permission rows: kind of request, tool name and length, never command or URL text, Q42 option 1; loop rows without the agent's reason; the other kinds as today); the live chat shows what was asked; old rows rewritten on read; `test-activity.ts` updated. [FR-443]
 - [ ] T553 `failText` and the other main log lines: place, class name, code only; the test driver's own failure stack is the named exception. [FR-444]
 - [ ] T554 `DURBAR_LOG` records kinds, ids, phases, lengths and codes; adapters' debug lines lose stderr text. [FR-445]
 - [ ] T555 Durbar MCP read tools return name, transport, on/off and health of MCP servers; spec 041 delta. [FR-446]
