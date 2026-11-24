@@ -17,6 +17,9 @@
  *     start's label by the note (LONG-UPDATE);
  *   - layout: the note's text is at least 10.5px, inside its chip, clear of the status word, kept whole, and the status word whole too; a chip with a note is as high as one
  *     without; the chat does not scroll sideways.
+ *   - review of PR 2119: bad argsLong values (NaN, infinities, fractions, strings, objects, at or under 12,288, past MAX_SAFE_INTEGER) sent to
+ *     the chip's own chipArgs and makeChip give no note (LONG-VALID); an argument main's mask makes longer than the window's cap gives a note
+ *     whose counts add up to the masked length and a plain count at the end of the open box (CUT-COUNT).
  * Screenshots (OUT or the temp folder): 005-long-args-<w>x<h>.png (closed chips) and 005-long-args-open-<w>x<h>.png (the straddling chip open).
  */
 const assert = require('assert');
@@ -116,6 +119,31 @@ module.exports = async (ctx) => {
       assert.ok(await until(`(window.__durbarSimUi.chipEl(${jsLiteral(ID)},${jsLiteral(cid)}).querySelector('.argmore')||{}).textContent===${jsLiteral(longText(20000))}`, 3000), `LONG-UPDATE ${tag}: an update with an over-limit argument names its length`);
       const v = await read(cid);
       assert.ok(v.code === '' && v.pre === null, `LONG-UPDATE ${tag}: the start's label is gone`);
+    }
+
+    // ---- review of PR 2119, finding 1: the window trusts argsLong only as a finite integer over MASK_INPUT_MAX (LONG-VALID); the simulator's own
+    // event path strips the field, so the values go straight to the chip's own chipArgs and makeChip through the simulator-only hook
+    {
+      const r = await js(`(()=>{const f=window.__durbarSimUi.chipNoteOf;const bad=[NaN,Infinity,-Infinity,-1,0,1.5,12288.5,'20000',null,undefined,1e21,1e300,300,12288,Number.MAX_SAFE_INTEGER+1,2**53,{valueOf(){return 20000;}},[20000],true];
+        return {bad:bad.map((v,i)=>{const o=f({tool:'bash',args:{command:''},argsLong:v});return {i,long:String(o.long),note:String(o.note),title:String(o.title)};}),good:f({tool:'bash',args:{command:''},argsLong:12289})};})()`);
+      for (const b of r.bad) assert.ok(b.long === '0' && b.note === '' && !/characters\)/.test(b.title), `LONG-VALID ${tag}: bad argsLong value #${b.i} is ignored (no note): ${JSON.stringify(b)}`);
+      assert.strictEqual(r.good.note, longText(12289), `${tag}: a valid argsLong (12,289) still names its length`);
+    }
+    // ---- review of PR 2119, finding 2: main's mask can make an argument longer than the window's cap; what the cap leaves out is counted (CUT-COUNT)
+    {
+      const M = require(path.join(__dirname, '..', 'dist', 'main', 'mcpmask.js'));
+      const unit = j(' --pass', 'word zq');
+      let raw = 'env'; while (raw.length + unit.length <= 12283) raw += unit;
+      const masked = M.maskToolArgs({ command: raw }).command; // what main sends the window for this call
+      assert.ok(raw.length <= 12288 && masked.length > 12288, `${tag}: the invented run masks longer than the window's cap (${raw.length} -> ${masked.length})`);
+      const o = await js(`window.__durbarSimUi.chipNoteOf(${jsLiteral({ tool: 'bash', args: { command: masked } })})`);
+      const m = /^([\d,]+) more characters \(([\d,]+) not shown\)$/.exec(o.note);
+      assert.ok(m, `CUT-COUNT ${tag}: the note says what the cap leaves out: ${JSON.stringify(o.note)}`);
+      const more = Number(m[1].replace(/,/g, '')), cut = Number(m[2].replace(/,/g, ''));
+      assert.strictEqual(400 + more + cut, masked.length, `CUT-COUNT ${tag}: 400 on the line + ${more} in the box + ${cut} not shown = the masked length`);
+      assert.strictEqual(400 + more, o.full, `${tag}: the box holds the line and the ${more} more`);
+      assert.strictEqual(o.cutLine, `${fmt(cut)} more characters not shown.`, `CUT-COUNT ${tag}: the open box ends with the plain count`);
+      assert.ok(o.title.includes(`(${o.note})`), `${tag}: the tooltip says it too`);
     }
 
     // ---- layout: three fresh chips (short, more, too long) are the newest, so they are shown

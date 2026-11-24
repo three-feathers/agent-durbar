@@ -2657,20 +2657,20 @@ const OUT_SHOWN=20000, OUT_KEEP=1000000;
 const fmtDur=ms=>ms<1000?Math.round(ms)+' ms':ms<60000?(ms/1000).toFixed(1)+' s':Math.floor(ms/60000)+' min '+Math.round(ms%60000/1000)+' s';
 /* spec 005 FR-438: the note after the line: how many characters of the masked argument the line leaves out (the chip itself opens the rest, in
    its open command box), or, for an argument main sent empty, its length; text only, never a second button inside the chip's button */
-const chipNote=(more,long,cmd)=>long>0?'Arguments too long to show ('+long.toLocaleString('en-US')+' characters)':more>0&&cmd?more.toLocaleString('en-US')+' more character'+(more===1?'':'s'):'';
-function makeChip({tool,kind,label,res,state,output,full,ms,more:argMore,long:argLong}){
+const chipNote=(more,long,cmd,cut)=>long>0?'Arguments too long to show ('+long.toLocaleString('en-US')+' characters)':(more>0||cut>0)&&cmd?more.toLocaleString('en-US')+' more character'+(more===1?'':'s')+(cut>0?' ('+cut.toLocaleString('en-US')+' not shown)':''):'';
+function makeChip({tool,kind,label,res,state,output,full,ms,more:argMore,long:argLong,cut:argCut}){
   const k=kind||toolKind(tool), name=TOOLNAME[tool]||shownTool(tool);
   const el=document.createElement('div');
   el.className='chip'+(state==='failed'||state==='fail'?' fail':state==='run'?' run':'');
   el.setAttribute('role','button');el.tabIndex=0;el.setAttribute('aria-expanded','false');
   const out=output==null?'':String(output).slice(0,OUT_KEEP), detail=out&&out!==res?out:'', cmd=full&&String(full).trim()?String(full):'';
-  const note=chipNote(Number(argMore)||0,label?0:Number(argLong)||0,cmd);
+  const cutN=cmd&&Number(argCut)>0?Number(argCut):0, note=chipNote(Number(argMore)||0,label?0:Number(argLong)||0,cmd,cutN);
   el.title=name+': '+label+(label&&note?' \u2026 ('+note+')':note)+(res?' ('+res+')':'');
   const dur=typeof ms==='number'&&Number.isFinite(ms)&&ms>0?fmtDur(ms):'';
   if(detail)el.classList.add('has-detail');
   if(cmd)el.classList.add('has-cmd');
   const more=detail.length>OUT_SHOWN;
-  el.innerHTML=`${ICON(k)||ICON('tool')}<b>${esc(name)}</b><code>${esc(label)}</code>${note?`<span class="argmore">${esc(note)}</span>`:''}${res?`<span class="res">${el.className.includes('fail')?'Failed: ':''}${esc(res)}</span>`:''}${cmd||dur||detail?`<span class="xbody">${cmd?`<span class="cmdbox"><pre class="cmd">${esc(cmd)}</pre><button type="button" class="cp-btn cp-cmd" aria-label="Copy the command" title="Copy the command">Copy</button></span>`:''}${dur||(state==='failed'&&res)?`<span class="xmeta">${state==='failed'?'Failed':'Done'}${dur?' · took '+esc(dur):''}</span>`:''}${detail?`<pre class="detail">${esc(more?detail.slice(0,OUT_SHOWN):detail)}</pre>${more?`<button type="button" class="xall">Show all (${detail.length.toLocaleString('en-US')} characters)</button>`:''}`:''}</span>`:''}`;
+  el.innerHTML=`${ICON(k)||ICON('tool')}<b>${esc(name)}</b><code>${esc(label)}</code>${note?`<span class="argmore">${esc(note)}</span>`:''}${res?`<span class="res">${el.className.includes('fail')?'Failed: ':''}${esc(res)}</span>`:''}${cmd||dur||detail?`<span class="xbody">${cmd?`<span class="cmdbox"><pre class="cmd">${esc(cmd)}</pre><button type="button" class="cp-btn cp-cmd" aria-label="Copy the command" title="Copy the command">Copy</button></span>${cutN?`<span class="xmeta argcut">${esc(cutN.toLocaleString('en-US'))} more character${cutN===1?'':'s'} not shown.</span>`:''}`:''}${dur||(state==='failed'&&res)?`<span class="xmeta">${state==='failed'?'Failed':'Done'}${dur?' · took '+esc(dur):''}</span>`:''}${detail?`<pre class="detail">${esc(more?detail.slice(0,OUT_SHOWN):detail)}</pre>${more?`<button type="button" class="xall">Show all (${detail.length.toLocaleString('en-US')} characters)</button>`:''}`:''}</span>`:''}`;
   if(more)el._out=detail;
   return el;
 }
@@ -6610,15 +6610,15 @@ function tIntent(T,txt){
 }
 function tTool(T,e){
   const box=tChips(T);
-  if(e.phase==='start'){const {label,full:cmd,more,long,ask}=chipArgs(e);const el=makeChip({tool:e.tool,label,full:cmd,more,long,res:'running',state:'run'});addChip(box,el);
-    const c=T.chipEls[e.callId]={el,tool:e.tool,label,cmd,more,long,t0:e.timestamp,seen:Date.now(),box,T,state:'run',res:'running',output:'',ms:null,edit:e.edit||null};
+  if(e.phase==='start'){const {label,full:cmd,more,cut,long,ask}=chipArgs(e);const el=makeChip({tool:e.tool,label,full:cmd,more,cut,long,res:'running',state:'run'});addChip(box,el);
+    const c=T.chipEls[e.callId]={el,tool:e.tool,label,cmd,more,cut,long,t0:e.timestamp,seen:Date.now(),box,T,state:'run',res:'running',output:'',ms:null,edit:e.edit||null};
     c.cp={sid:e.sessionId,callId:e.callId,ask,rec:c};el._cp=c.cp; /* spec 005 FR-411: what Copy asks main for (ids only) */
     if(c.edit)edPaint(c);
     tAct(T,e.callId,c);}
   else{const c=T.chipEls[e.callId];if(c){
     /* spec 005 FR-019: an update may bring the whole arguments (a call that started from its streamed arguments) and the edit so far */
     if(e.edit)c.edit=e.edit;
-    if(e.args!==undefined){const {label:l,full:f,more:mo,long:lg,ask}=chipArgs(e);if(l){c.label=l;c.more=mo;c.long=0;}if(f)c.cmd=f;if(lg){c.label='';c.cmd='';c.more=0;c.long=lg;}if(c.cp)c.cp.ask=ask;} /* spec 005 FR-342: masked like the start; FR-411: main keeps these latest arguments; FR-438: an over-limit argument replaces the old one by its length */
+    if(e.args!==undefined){const {label:l,full:f,more:mo,cut:ct,long:lg,ask}=chipArgs(e);if(l){c.label=l;c.more=mo;c.cut=ct;c.long=0;}if(f)c.cmd=f;if(lg){c.label='';c.cmd='';c.more=0;c.cut=0;c.long=lg;}if(c.cp)c.cp.ask=ask;} /* spec 005 FR-342: masked like the start; FR-411: main keeps these latest arguments; FR-438: an over-limit argument replaces the old one by its length */
     if(e.phase!=='update'||e.output!=null){const full=String(e.output||''),done=e.phase!=='update';
       c.ms=done&&typeof c.t0==='number'&&typeof e.timestamp==='number'?e.timestamp-c.t0:null; /* spec 052 FR-063: duration from the start and end events' times */
       c.res=done?SHORT(full||(e.phase==='complete'?'ok':'failed'),60):'running';c.output=full;c.state=!done?'run':e.phase==='failed'?'failed':'ok';
@@ -6706,7 +6706,7 @@ function mcpNotSent(a,chat,text,fromComposer){
   scheduleRender();
 }
 function chipRepaint(c){
-  const el=makeChip({tool:c.tool,label:c.label,full:c.cmd,more:c.more,long:c.long,ms:c.ms,res:c.res,output:c.output,state:c.state});
+  const el=makeChip({tool:c.tool,label:c.label,full:c.cmd,more:c.more,cut:c.cut,long:c.long,ms:c.ms,res:c.res,output:c.output,state:c.state});
   if(c.cp)el._cp=c.cp; /* spec 005 FR-411 */
   el.style.animation='none'; /* a repaint is not a new call: no pop (FR-021, no jank while the arguments stream) */
   if(c.el.classList.contains('open')){el.classList.add('open');el.setAttribute('aria-expanded','true');}
@@ -7173,9 +7173,11 @@ function chipArg(tool,raw){
   if(s.length>cap){const b=s.slice(0,cap+1).search(/\s\S*$/);s=b>0?s.slice(0,b):'';if(!s.trim())return {label:'',full:'',hid:true};}
   const flat=s.replace(/\s+/g,' '), k=toolKind(tool), m1=STX?STX.maskLabel(s,k,TOOLMASK):'', m2=flat===s?m1:STX?STX.maskLabel(flat,k,TOOLMASK):'';
   if(!m1||!m2)return {label:'',full:'',hid:true};
-  const t=flat.trim();if(m1===t&&m2===t)return {label:flat.slice(0,400),full:s.slice(0,OUT_SHOWN),hid:s!==s0,more:Math.max(0,flat.length-400)}; /* spec 005 FR-411: `hid`, something was hidden or cut (Copy then asks first) */
+  /* spec 005 FR-438: more = the masked one-line text past the line's 400 that the open box shows, counted after the mask; cut = what the caps leave out
+     (the characters not read past MASK_INPUT_MAX, as received, and the masked ones past OUT_SHOWN): counted, never dropped without a word */
+  const unread=s0.length-s.length, t=flat.trim();if(m1===t&&m2===t)return {label:flat.slice(0,400),full:s.slice(0,OUT_SHOWN),hid:s!==s0,more:Math.max(0,Math.min(flat.length,OUT_SHOWN)-400),cut:unread+Math.max(0,flat.length-OUT_SHOWN)}; /* spec 005 FR-411: `hid`, something was hidden or cut (Copy then asks first) */
   let m='';try{m=m1===m2?m1:RED.keepShownBy(m1,m2);}catch(e){m='';}if(typeof m!=='string'||!m)return {label:'',full:'',hid:true};
-  return {label:m.slice(0,400),full:m.slice(0,OUT_SHOWN),hid:true,more:Math.max(0,m.length-400)}; /* spec 005 FR-438: more = the masked one-line text past the line's 400, counted after the mask */
+  return {label:m.slice(0,400),full:m.slice(0,OUT_SHOWN),hid:true,more:Math.max(0,Math.min(m.length,OUT_SHOWN)-400),cut:unread+Math.max(0,m.length-OUT_SHOWN)};
 }
 /* a label an adapter already cut (a replayed history item: 300 characters, Codex 200 and "…"; the VS Code transcript: 300 or 200 with "…"): the cut may
    fall inside a secret, whose head the masks no longer know, so a label the adapter cut (exactly 300 characters, or ending in "…") loses its last run
@@ -7185,7 +7187,7 @@ const cutLabel=(tool,l)=>{let x=String(l==null?'':l);if(x.length===300||(x.lengt
 /* spec 005 FR-411: `ask`, Copy asks first (the chip's own mask hid or cut something, or main says its mask changed it). FR-438: `more` (the line
    leaves out that many characters of the masked argument; not for an edit's file label) and `long` (main sent the argument empty because the masks
    do not take its length: main's `argsLong`, a number only) */
-const chipArgs=e=>{const a=chipArg(e.tool,toolArg(e.args)),f=editLabel(e),n=e.argsLong,lg=typeof n==='number'&&Number.isSafeInteger(n)&&n>0?n:0;return {label:f?chipArg(e.tool,f).label:a.label,full:a.full,more:f?0:a.more||0,long:f||a.label?0:lg,ask:a.hid||e.argsMasked===true};};
+const chipArgs=e=>{const a=chipArg(e.tool,toolArg(e.args)),f=editLabel(e),n=e.argsLong,lg=Number.isSafeInteger(n)&&n>((RED&&Number(RED.MASK_INPUT_MAX))||12288)?n:0;return {label:f?chipArg(e.tool,f).label:a.label,full:a.full,more:f?0:a.more||0,cut:f?0:a.cut||0,long:f||a.label?0:lg,ask:a.hid||e.argsMasked===true};}; /* FR-438: argsLong only as a finite integer over MASK_INPUT_MAX, else ignored */
 /* ---------------- AI-credit cap: chip, dialog, limit reached (spec 011) ---------------- */
 let APP_SETTINGS={};
 function capChipHTML(a){
@@ -10828,7 +10830,7 @@ if(pendingOpen&&demoOn){openPanel(pendingOpen,false);pendingOpen=null;}
 const settleNow=()=>{if(!agentsListed||!window.__durbarSimReplayed||baselineQueued||baselineAsking)return false;if(renderQueued){renderQueued=false;renderAll();}return true;};
 /* simulator drivers load with simfreeze=1: the desk glow then holds still (FR-178: the geometry and screenshot checks measure boxes, so no zoom may be mid-way); the unread driver opts back in with hlmotion=1 to test the motion itself */
 if(SIM&&qs.get('simfreeze')==='1'&&qs.get('hlmotion')!=='1')document.documentElement.classList.add('hl-still');
-if(SIM)window.__durbarSimUi={chipArg:(t,r)=>chipArg(t,r),cutLabel:(t,l)=>cutLabel(t,l),chipMasks:()=>CHIP_MASKS,replay:(id,items)=>{replayHistory(byId(id),{items},'test');return true;},vsView:(id,tr)=>viewVs(byId(id),'sim-vs',null,()=>Promise.resolve({ok:true,transcript:tr})).then(()=>true),demoTurn:(id,tools)=>{const a=byId(id);return playTurn(getChat(a),a,{think:'',tools,reply:''});},taskLabel:(t,l)=>safeToolLabel(t,String(l).replace(/\s+/g,' ').slice(0,400),100000),chipEl:(id,callId)=>{const a=byId(id),c=a&&a.turn&&a.turn.T&&a.turn.T.chipEls[callId];return c?c.el:null;}, /* spec 005 FR-342: check-toolchip-mask runs its harmless corpus through the chip's own mask and counts its calls */qMdHTML,qSafeMask:t=>safeMask(t),qNames:()=>Object.keys(Q_NAMED).map(k=>k+'='+Q_NAMED[k]), /* spec 052 (issue 1927): check-question-markdown renders a question built from invented pieces through the card's own renderer */brain:{host:()=>BRAIN_H,state:()=>BRAIN_STATE,why:()=>BRAIN_WHY,on:()=>brainOn(),override:BRAIN_OVERRIDE,queued:()=>BRAIN_Q.length}, /* spec 106 T006: check-brain-draw and check-brain-dock read the dock's frame counts */announce,renderRestoreStrip,afArrivalPrio,afTracker:{ids:()=>AFT.ids(),pending:()=>AFT.pendingList().map(v=>v.id+'|'+v.kind),quiet:()=>AFT.isQuiet,follow:id=>AFT.follow(id)}, /* spec 005 FR-237: drivers only: what Auto-follow follows, holds and whether it is quiet; follow() makes an agent followed without a hand open (which would drop the others, spec 052 FR-185) */ afNotice:{ms:v=>{AF_NOTICE_MS=Math.max(100,Number(v)||3000);return AF_NOTICE_MS;},on:v=>{setAutoFollowOn(!!v);return AF_ON;},shown:()=>!!AF_NOTICE}, /* spec 052 FR-239: drivers only: the notice's length, Auto-follow without Settings */swapCardOptions:id=>{const c=byId(id)&&pendingCardOf(byId(id));if(!c)return 0;const os=[...c.querySelectorAll('.q-opt')];os.forEach(b=>b.replaceWith(b.cloneNode(true)));return os.length;}, /* spec 052 FR-197: the live card rebuilds its options (the card stays, the old buttons are gone); a driver checks that a row's old option answers nothing */
+if(SIM)window.__durbarSimUi={chipArg:(t,r)=>chipArg(t,r),chipNoteOf:e=>{const a=chipArgs(e),el=makeChip({tool:e.tool,label:a.label,full:a.full,more:a.more,cut:a.cut,long:a.long}),n=el.querySelector('.argmore'),x=el.querySelector('.argcut');return {long:a.long,note:n?n.textContent:'',cutLine:x?x.textContent:'',title:el.title,full:a.full.length};}, /* spec 005 FR-438 (review of PR 2119): check-005-long-args sends bad argsLong values straight to the chip's own chipArgs and makeChip */cutLabel:(t,l)=>cutLabel(t,l),chipMasks:()=>CHIP_MASKS,replay:(id,items)=>{replayHistory(byId(id),{items},'test');return true;},vsView:(id,tr)=>viewVs(byId(id),'sim-vs',null,()=>Promise.resolve({ok:true,transcript:tr})).then(()=>true),demoTurn:(id,tools)=>{const a=byId(id);return playTurn(getChat(a),a,{think:'',tools,reply:''});},taskLabel:(t,l)=>safeToolLabel(t,String(l).replace(/\s+/g,' ').slice(0,400),100000),chipEl:(id,callId)=>{const a=byId(id),c=a&&a.turn&&a.turn.T&&a.turn.T.chipEls[callId];return c?c.el:null;}, /* spec 005 FR-342: check-toolchip-mask runs its harmless corpus through the chip's own mask and counts its calls */qMdHTML,qSafeMask:t=>safeMask(t),qNames:()=>Object.keys(Q_NAMED).map(k=>k+'='+Q_NAMED[k]), /* spec 052 (issue 1927): check-question-markdown renders a question built from invented pieces through the card's own renderer */brain:{host:()=>BRAIN_H,state:()=>BRAIN_STATE,why:()=>BRAIN_WHY,on:()=>brainOn(),override:BRAIN_OVERRIDE,queued:()=>BRAIN_Q.length}, /* spec 106 T006: check-brain-draw and check-brain-dock read the dock's frame counts */announce,renderRestoreStrip,afArrivalPrio,afTracker:{ids:()=>AFT.ids(),pending:()=>AFT.pendingList().map(v=>v.id+'|'+v.kind),quiet:()=>AFT.isQuiet,follow:id=>AFT.follow(id)}, /* spec 005 FR-237: drivers only: what Auto-follow follows, holds and whether it is quiet; follow() makes an agent followed without a hand open (which would drop the others, spec 052 FR-185) */ afNotice:{ms:v=>{AF_NOTICE_MS=Math.max(100,Number(v)||3000);return AF_NOTICE_MS;},on:v=>{setAutoFollowOn(!!v);return AF_ON;},shown:()=>!!AF_NOTICE}, /* spec 052 FR-239: drivers only: the notice's length, Auto-follow without Settings */swapCardOptions:id=>{const c=byId(id)&&pendingCardOf(byId(id));if(!c)return 0;const os=[...c.querySelectorAll('.q-opt')];os.forEach(b=>b.replaceWith(b.cloneNode(true)));return os.length;}, /* spec 052 FR-197: the live card rebuilds its options (the card stays, the old buttons are gone); a driver checks that a row's old option answers nothing */
   chatTrimNow:()=>chatTrimPending(false), /* spec 005 FR-238: trim the chats waiting for a frame now (a burst with no frame between) */
   hiddenTrimTimer:()=>({on:!!hiddenTrimT,ms:TRIM_HIDDEN_MS}),
   helperState:(id,st)=>{const h=agents.find(x=>x.id===id&&x.parent);if(!h||!['working','thinking','waiting','error','limit','done','idle'].includes(st))return false;h.state=st==='limit'?'waiting':st;h.limit=st==='limit';h.paused=false;layoutKey='';renderAll();return true;}, /* spec 097 T335 (issue 1642): drivers only: a helper's state the simulator never sends (waiting, limit), for the kids on the desk */
