@@ -413,6 +413,34 @@ for (const w of ['CI', 'UI on three OSes', 'Installed app', 'Packaged check', 'I
 assert.ok(office.includes(`CHECK_ALL_THEMES: \${{ (github.event_name == 'pull_request' || github.event_name == 'merge_group') && '0' || '1' }}`) && wf.includes(`CHECK_ALL_THEMES: \${{ github.event_name == 'pull_request' && '0' || '1' }}`), 'every theme on main, nightly and by hand');
 const geo = fs.readFileSync(path.join(ROOT, 'scripts', 'check-theme-geometry.js'), 'utf8');
 assert.ok(/process\.env\.CHECK_ALL_THEMES === '1' \? ALL_THEMES : 'dark'/.test(geo) && /const ALL_THEMES = 'dark,user,pink-studio'/.test(geo), 'check-theme-geometry: the dark fixture by default, all with CHECK_ALL_THEMES=1 (spec 102 T226)');
+// spec 035 FR-414: like with like: a theme with words against Clean Office given the same words (nothing else), the page drawn again in the forced font before measuring
+assert.ok(/extends: 'clean-office', ui: 'clean', scene: 'office', tokens: \{\}, words: p\.words \}/.test(geo) && /const refOf = \(theme\) => \(packs\[`ref:\$\{theme\}`\] \? `ref:\$\{theme\}` : 'clean-office'\);/.test(geo)
+  && /ref\[`\$\{refOf\(theme\)\} \$\{sim\}-\$\{w\}`\]/.test(geo) && /u\.paint\(\); u\.settleNow\(\);/.test(geo), 'check-theme-geometry: a worded theme is compared with Clean Office given its words, drawn again in the forced font (spec 035 FR-414)');
+// review of #2091: the pins cover the calls themselves, not only the helper (PR runs check only the dark fixture, so a lost relayout went red only on main).
+// Line ends are \r?\n as in the pins above: a Windows checkout has CRLF; each pin is also run on an LF and a CRLF copy of the same source.
+const GEO_PINS: Array<[RegExp, string]> = [
+  [/for \(const \[k, p\] of Object\.entries\(packs\)\) \{\r?\n    if \(p\.words && Object\.keys\(p\.words\)\.length\) packs\[`ref:\$\{k\}`\] = /, 'every theme with words gets its words reference (spec 035 FR-414 (a))'],
+  [/if \(!u \|\| typeof u\.paint !== 'function' \|\| typeof u\.settleNow !== 'function'\) throw new Error\(/, 'the relayout throws when the simulator paint hook is missing (spec 035 FR-414 (b))'],
+  [/the simulator never became steady[^\r\n]*\r?\n    await needHooks\(/, 'every page is checked for the paint hook before it is measured, with a clear message (spec 035 FR-414 (b))'],
+  [/throw new Error\(`world \$\{world\}: not shown`\);\r?\n      await needHooks\(/, 'every world page is checked for the paint hook before it is measured (spec 035 FR-414 (b))'],
+  [/typeof window\.__durbarSimUi\.paint==='function'/, 'the driver hook check reads the paint hook (spec 035 FR-414 (b))'],
+  [/document\.head\.appendChild\(st\);\r?\n  \}\r?\n  redraw\(\);[^\r\n]*\r?\n  const out = \{\};/, 'measure lays the page out again in the neutral font before it measures (spec 035 FR-414 (b))'],
+  [/await ctx\.js\(`\(\$\{measure\.toString\(\)\}\)\(null, true\)`\);\r?\n    const more = /, 'the +N more chip is looked for in the neutral font (spec 035 FR-414 (b))'],
+];
+for (const [ends, src] of [['as checked out', geo], ['LF', geo.replace(/\r\n/g, '\n')], ['CRLF', geo.replace(/\r?\n/g, '\r\n')]] as const) {
+  for (const [re, what] of GEO_PINS) assert.ok(re.test(src), `check-theme-geometry: ${what} [${ends} line ends]`);
+}
+// review of FR-414: every "spec 035 FR-n (delta d)" pointer in the check names an FR that delta d of spec 035 really holds
+{
+  const s035 = fs.readFileSync(path.join(ROOT, 'specs', '035-theme-foundation', 'spec.md'), 'utf8');
+  const cites = [...geo.matchAll(/spec 035 (FR-\d+),? \(?delta (\d{4}-\d{2}-\d{2})/g)];
+  assert.ok(cites.length >= 3, 'check-theme-geometry: the FR-414 comments cite spec 035 with the FR and its delta');
+  for (const [, fr, day] of cites) {
+    const at = s035.indexOf(`## Changes ${day}`);
+    const next = at < 0 ? -1 : s035.indexOf('\n## ', at + 1);
+    assert.ok(at >= 0 && s035.slice(at, next < 0 ? undefined : next).includes(`**${fr}**`), `check-theme-geometry: spec 035 delta ${day} defines ${fr}`);
+  }
+}
 assert.ok(/const THEMES = \[\['clean', \{ theme: 'clean' \}\], \['dark', CHECK_DARK_QUERY\]\];/.test(fs.readFileSync(path.join(ROOT, 'scripts', 'shots-052-addleft.js'), 'utf8')), 'shots-052-addleft: Clean Office and the dark fixture theme (spec 102 T226)');
 // review of PR #1276 (A): the dark jobs say so (CHECK_EXPECT_DARK=1), so the driver demands the dark fixture whatever its file is called; both job definitions are pinned here
 const par = fs.readFileSync(path.join(ROOT, 'scripts', 'check-parallel.js'), 'utf8');
