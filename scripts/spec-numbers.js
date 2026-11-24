@@ -134,9 +134,15 @@ function builtRedact() {
   }
   return redactTs;
 }
+// A value of a secret-looking NAME is masked only from this length on (a 6-character word such as `branch`, the value of GITHUB_REF_TYPE in Actions, is not a secret and turned
+// the word "branch" into *** in every message); tokens and long secrets are far above it and also have their shapes below.
+const SECRET_MIN_LEN = 8;
+// GitHub's documented non-secret context variables (their names start with GITHUB_ like GITHUB_TOKEN does): never masked by name, so "pull_request" or the repository name stay readable.
+// GITHUB_TOKEN, GITHUB_PAT and the like are not here and stay masked.
+const PUBLIC_CONTEXT = /^GITHUB_(ACTIONS|ACTOR|ACTOR_ID|API_URL|BASE_REF|EVENT_NAME|GRAPHQL_URL|HEAD_REF|JOB|REF|REF_NAME|REF_PROTECTED|REF_TYPE|REPOSITORY|REPOSITORY_ID|REPOSITORY_OWNER|REPOSITORY_OWNER_ID|RETENTION_DAYS|RUN_ATTEMPT|RUN_ID|RUN_NUMBER|SERVER_URL|SHA|TRIGGERING_ACTOR|WORKFLOW|WORKFLOW_REF|WORKFLOW_SHA|WORKSPACE)$/;
 function scrub(text, env = process.env, { useBuilt = true } = {}) {
   let s = String(text);
-  for (const [k, v] of Object.entries(env)) if (v && v.length >= 6 && SECRET_NAME.test(k)) s = s.split(v).join('***');
+  for (const [k, v] of Object.entries(env)) if (v && v.length >= SECRET_MIN_LEN && SECRET_NAME.test(k) && !PUBLIC_CONTEXT.test(k)) s = s.split(v).join('***');
   s = s.replace(/(\w+:\/\/)[^/@\s]+@/g, '$1***@');
   for (const re of TOKEN_SHAPES) s = s.replace(re, (m, g1) => (/^(Bearer|Basic)$/i.test(g1 || '') ? `${g1} ***` : '***'));
   const red = useBuilt && builtRedact();

@@ -7,6 +7,9 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { execFileSync, spawnSync } = require('child_process');
+// Hermetic (the CI environment differs from a laptop): no ambient variable may change what the scripts print. The secret-looking names (the scrub masks their values) and PR_* are removed here;
+// the cases that need one set it themselves.
+for (const k of Object.keys(process.env)) if (/(TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIAL|API[_-]?KEY|PRIVATE|AUTH|^GH_|^GITHUB_|^ANTHROPIC|^OPENAI|^COPILOT|^NPM_|^PR_(NUMBER|HEAD_SHA)$)/i.test(k)) delete process.env[k];
 const modPath = process.env.SN_MODULE ? path.resolve(process.env.SN_MODULE) : path.join(__dirname, 'spec-numbers.js');
 const sn = require(modPath);
 const { plumbCommit, gitRun } = require('./git-index-helper.js');
@@ -116,6 +119,14 @@ for (const t of ['my_ghp_ABCDEF1234567890', '_ghp_ABCDEF1234567890_', '__ghp_ABC
 }
 assert.ok(!sn.scrub('x eyJhbGciOiJI.eyJzdWIiOiIx.abcdef end', {}).includes('eyJhbGci'));
 assert.strictEqual(sn.scrub('has MyValue99 inside', { MY_API_KEY: 'MyValue99', PLAIN: 'zzzzzzzz' }), 'has *** inside');
+// the CI environment must not change a message: short values and GitHub's public context variables are not masked, tokens and long secrets still are
+assert.strictEqual(sn.scrub('a branch named x', { GITHUB_REF_TYPE: 'branch' }), 'a branch named x', 'SCRUB-ctx GITHUB_REF_TYPE=branch does not turn the word branch into ***');
+assert.strictEqual(sn.scrub('event pull_request here', { GITHUB_EVENT_NAME: 'pull_request' }), 'event pull_request here', 'SCRUB-ctx-long a public context variable is never masked by name');
+assert.strictEqual(sn.scrub('a branch named x', { MY_TOKEN: 'branch' }), 'a branch named x', 'SCRUB-floor a value under 8 characters of a secret-looking name is not masked');
+assert.strictEqual(sn.scrub('x tok123456 y', { MY_TOKEN: 'tok123456' }), 'x *** y', 'SCRUB-long a long value of a secret-looking name is masked');
+assert.strictEqual(sn.scrub('x abcdefgh12345678 y', { GITHUB_TOKEN: 'abcdefgh12345678' }), 'x *** y', 'SCRUB-ghtoken GITHUB_TOKEN stays masked');
+assert.strictEqual(sn.scrub('x abcdefgh12345678 y', { GITHUB_REF_NAME_X: 'abcdefgh12345678' }), 'x *** y', 'SCRUB-prefix another GITHUB_ name (not on the public list) stays masked');
+assert.ok(!sn.scrub('x ghp_' + 'A1b2C3d4E5f6G7h8I9j0 y', { GITHUB_REF_TYPE: 'branch' }).includes('ghp_'), 'SCRUB-shape a token shape is masked whatever the environment holds');
 
 // ---- git repos, --no-fetch
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-sn-'));
