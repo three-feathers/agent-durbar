@@ -236,3 +236,13 @@ specs/005-chat-fullscreen-and-agent-strip/
 **Constitution check.** I: spec first (this delta), code after. III: no secret leaves main except to the clipboard on the person's own press, after a confirm when anything was masked; main enforces the confirm; the masks are unchanged; nothing is logged. V (calm UI): the confirm is the existing dialog; no layout change in the chat. Parity: Electron's clipboard on every OS; no shell, no path.
 
 **Tests.** `test:toolargcopy` (unit, fake clipboard, the real removal handlers on a stand-in electron), `test:ipcchannels`, `test:simguard`, `test:toolargs-mask`; PR 2: `check-005-chip-copy` (simulator), `check-toolchip-mask` (updated). Not verified: macOS, Windows, a real session.
+
+## 2026-11-24 delta: long tool arguments say how much more there is (issue #2060 item 3 part A, FR-438)
+
+**Shape.** Two lengths, two places. Up to `MASK_INPUT_MAX` (12,288) the window already holds the whole masked argument (`chipArg`'s `full`), so the window alone counts what its 400-character line leaves out and says so; the rest is the existing open command box behind the chip's existing open and close (no new control: the chip is the button). Over the limit main sends the argument empty (FR-342 main half), so main adds the raw length, a number, to the window's copy of the event in `toolArgCopies.see`, the one function that already compares the raw arguments with the masked copy for the window (FR-411's `argsMasked` is set there). The simulator's event path applies the same rule, so the simulator shows what a real session shows.
+
+**Not built (part B, Q40).** Showing text past 12,288 characters needs main to mask longer text (in overlapping pieces) or a click that asks main for the masked rest: both are owner decisions with a security cost.
+
+**Constitution check.** I: spec first (this delta). III: no mask changes; the cut stays after the mask; the window gets a length, never text; Copy unchanged. V: text 11 px, kept on the chip's one line, height unchanged, checked at 1440x900 and 1280x800 with 15 agents. Parity: no OS code.
+
+**Tests.** `test:toolargcopy` (main's `argsLong`), `check-005-long-args` (simulator driver), `check-toolchip-mask` unchanged (its differential pins the line and the full text). Not verified: macOS, Windows, a real long tool call.
