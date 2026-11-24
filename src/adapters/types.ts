@@ -57,6 +57,11 @@ export interface GenerateImageResult {
 export type WriteGuard = (sessionId: string, paths: string[]) => Promise<void>;
 
 export interface StartOptions {
+  /**
+   * Spec 116 FR-020/FR-021: the office memory folder (real path), READ-ONLY. Empty or absent while the memory is off, refused or not found.
+   * Every adapter gives it to its broker as a read path (reason `in-memory`); never an `additionalDirectories` or `--add-dir` (those may grant writes), never a write root.
+   */
+  readOnlyFolders?: string[];
   /** Folder or .code-workspace file; one session per workspace. */
   workspace: string;
   model?: string;
@@ -188,7 +193,7 @@ export interface PermissionInfo {
 
 /**
  * Spec 003 FR-099: the reason a request ran without a question. `session-grant`: the user's "Approve for this session" rule(s) (`key` is the first,
- * `keys` every rule that allowed it: a write in several folders needs one rule per folder; all can be revoked); `allow-all`: the mode; `in-folder`: a read that Durbar checked to be inside the session's folders; `attachment`: a read of a file the user attached; `app`: set only by an adapter that really
+ * `keys` every rule that allowed it: a write in several folders needs one rule per folder; all can be revoked); `allow-all`: the mode; `in-folder`: a read that Durbar checked to be inside the session's folders; `attachment`: a read of a file the user attached; `in-memory`: a read inside the office memory folder (spec 116 FR-020: read-only, never a write root); `app`: set only by an adapter that really
  * reports the agent app's own decision (`classifier`: Codex auto-review and Copilot assisted approval, FR-109..FR-111; Claude Code reports none, FR-106).
  */
 /** Spec 003 FR-102: most rule keys one `allowedBy` lists. The broker, `eventguard` and the window (`whyallowed.js` `KEYS_MAX`, same number, checked by test:permissions) all use it; more rules are counted in `more`, not dropped silently. */
@@ -198,6 +203,7 @@ export type AllowedBy =
   | { kind: 'allow-all' }
   | { kind: 'in-folder' }
   | { kind: 'attachment' }
+  | { kind: 'in-memory' }
   | { kind: 'app'; source: 'config' | 'hook' | 'classifier' };
 
 /**

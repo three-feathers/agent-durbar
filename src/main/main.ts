@@ -453,7 +453,7 @@ function folderSetupStart(key: string, dirs: readonly string[], appId: string, t
 }
 
 const startOptionsFor = (a: AgentInfo, resumeSessionId?: string) => {
-  const base = { ...startOptionsOf(a, wsKey(a), DEFAULT_MODEL, asEffort(a.effort)), ...mcp.optionsFor(a.id, resumeSessionId ? { agent: a, sessionId: resumeSessionId } : undefined) }; // spec 058 FR-247: a resumed session starts with its saved switches
+  const base = { ...startOptionsOf(a, wsKey(a), DEFAULT_MODEL, asEffort(a.effort), getMemoryOps()?.readRoots() ?? []), ...mcp.optionsFor(a.id, resumeSessionId ? { agent: a, sessionId: resumeSessionId } : undefined) }; // spec 058 FR-247: a resumed session starts with its saved switches
   const appId = router.adapterIdOf(a.id) ?? a.adapterId ?? registry.defaultId;
   const fs61 = folderSetupStart(wsKey(a), a.folders ?? [a.cwd], appId, new Set(Object.keys(base.mcpServers)));
   // spec 087 FR-019 (the organization policy, read in main) and FR-007c (the stored choice); the adapter decides what they mean
@@ -942,8 +942,7 @@ registerTeamsIpc({
 });
 // spec 116 T003: the office memory folder. The window never sends a path: main's own dialog, then `checkMemoryFolder` (`fs.realpathSync.native`), then a token.
 let memoryOps: MemoryOps | undefined;
-registerMemoryIpc({
-  getOps: () => (SIMULATOR || !settingsStore ? undefined : (memoryOps ??= new MemoryOps({
+const getMemoryOps = (): MemoryOps | undefined => (SIMULATOR || !settingsStore ? undefined : (memoryOps ??= new MemoryOps({
     store: () => settingsStore,
     pick: () => pickFolder(dev, 'Choose your office memory folder'),
     flavor: { path, platform: process.platform === 'win32' || process.platform === 'darwin' ? process.platform : 'linux' },
@@ -955,8 +954,8 @@ registerMemoryIpc({
     officeFolders: () => expandOfficeFolders([...agents.values()].flatMap((a) => [a.cwd, ...(a.workspaceFile ? [a.workspaceFile] : [])]).concat(folderStore?.list().map((f) => f.workspace) ?? []), readCodeWorkspaceFolders),
     remote: (real) => memoryGitRemote(fs, { O_RDONLY: fs.constants.O_RDONLY, O_NOFOLLOW: fs.constants.O_NOFOLLOW }, path.join, real),
     changed: () => toRenderer('memory:changed', memoryOps?.status()),
-  }))),
-});
+  })));
+registerMemoryIpc({ getOps: getMemoryOps });
 registerOrgPolicyIpc({ view: () => orgPolicies.view() });
 registerAdaptersIpc({ adaptersList });
 const sandboxOps = registerSandboxIpc({ agents, router, getSettingsStore: () => settingsStore, readyAdapterIds }); // spec 087

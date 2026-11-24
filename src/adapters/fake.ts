@@ -309,6 +309,7 @@ export class FakeAdapter implements AgentAdapter {
         }
       },
     });
+    broker.allowReadPaths(options.readOnlyFolders ?? [], 'in-memory'); // spec 116 FR-020
     this.sessions.set(sid, { broker, workspace: options.workspace, epoch: 0 });
     if (!options.quiet) this.emit(sid, { type: 'status', status: 'idle', intent: `Ready in ${options.workspace}` });
     return sid;

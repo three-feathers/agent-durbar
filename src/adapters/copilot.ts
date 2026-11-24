@@ -936,6 +936,8 @@ export class CopilotAdapter implements AgentAdapter {
         }
       },
     });
+    // spec 116 FR-020/T005 R1: the office memory folder is a read path of the broker, never `additionalDirectories` (the SDK does not say it is read-only)
+    broker.allowReadPaths(options.readOnlyFolders ?? [], 'in-memory');
 
     // spec 087 FR-021a (K15): a shell command asked for while the sandbox is on gets the card's own line (an approved one was seen
     // running outside it on Linux); a copy of the request carries it, the runtime's object is not changed

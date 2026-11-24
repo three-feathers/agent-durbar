@@ -191,6 +191,7 @@
     "test:memoryfolder": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-memoryfolder.js",
     "test:memoryremote": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-memoryremote.js",
     "test:memoryops": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-memoryops.js",
+    "test:memoryroots": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-memoryroots.js",
     "test:railorder": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-railorder.js",
     "test:floornav": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-floornav.js",
     "test:floors": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-floors.js",

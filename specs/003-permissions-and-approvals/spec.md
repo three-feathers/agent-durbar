@@ -122,6 +122,10 @@ For folders I trust I can pick the mode that approves everything without prompts
 
 ## Changes
 
+### 2026-11-24: a read in the office memory (spec 116 T006)
+
+`AllowedBy` has a new kind `in-memory` (FR-099's list: `in-folder`, `attachment`, `in-memory`, `allow-all`, `session-grant`, `app`). `StartOptions.readOnlyFolders` (the office memory folder, real path, empty while the memory is off, refused or not found) is given by every adapter to its broker with `allowReadPaths(paths, 'in-memory')`; a read inside it needs no question in Read-only and Ask first and carries the tag "Read in your office memory" (`whyallowed.js`). The broker keeps those roots apart from the attached files and never looks at them for a write: a write there is denied in Read-only and asked in Ask first, as anywhere else outside the session's folders. Allow all is unchanged. Claude Code also passes the list to `decideTool` and `preToolUseDecision` for reads only. test: `test:memoryroots`, `test:permissions`.
+
 ### 2026-11-02: a removed picture
 
 `docs/screenshots/003-allow-all-menu-1280x800.png` was removed by owner decision with `docs/feature-history.md`, as no driver writes it; the plan's mention stays as written. It is in git at commit 1c75b5bee.

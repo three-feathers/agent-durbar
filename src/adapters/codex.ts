@@ -388,13 +388,14 @@ export class CodexAdapter implements AgentAdapter {
     return codexSpawnPath(file, this.realpath, this.platform);
   }
 
-  private spawnChild(file: string, cwd: string, handlers: { onNotification: (m: string, p: unknown) => void; onRequest: (m: string, p: unknown) => Promise<RequestOutcome>; onExit: (code: number | null, signal: NodeJS.Signals | null) => void }): Child {
+  private spawnChild(file: string, cwd: string, readOnly: readonly string[], handlers: { onNotification: (m: string, p: unknown) => void; onRequest: (m: string, p: unknown) => Promise<RequestOutcome>; onExit: (code: number | null, signal: NodeJS.Signals | null) => void }): Child {
     let done!: () => void;
     const exited = new Promise<void>((r) => (done = r));
     const rpc = createCodexRpc({
       spawn: this.spawnFn,
       file: this.spawnPath(file),
-      args: ['app-server', ...codexProfileArgs(this.installRoots(file))],
+      // spec 116 FR-020/T005 R2: the memory folder is one more read entry in `durbar_ro`, never a workspace root
+      args: ['app-server', ...codexProfileArgs([...this.installRoots(file), ...readOnly])],
       cwd,
       env: this.env,
       onNotification: handlers.onNotification,
@@ -421,7 +422,7 @@ export class CodexAdapter implements AgentAdapter {
   private async probe<T>(fn: (rpc: CodexRpc) => Promise<T>, onNotification: (method: string, params: unknown) => void = () => undefined): Promise<T> {
     const loc = await this.locate();
     if (!loc?.path || isShim(loc.path) || isShim(this.spawnPath(loc.path))) throw new Error('Codex was not found on this computer.');
-    const child = this.spawnChild(loc.path, os.tmpdir(), { onNotification, onRequest: async () => ({ error: { code: -32601, message: 'not handled in a probe' } }), onExit: () => undefined });
+    const child = this.spawnChild(loc.path, os.tmpdir(), [], { onNotification, onRequest: async () => ({ error: { code: -32601, message: 'not handled in a probe' } }), onExit: () => undefined });
     try {
       await child.rpc.request('initialize', { clientInfo: { name: 'agent_durbar', title: 'Agent Durbar', version: this.appVersion }, capabilities: CODEX_INITIALIZE_CAPABILITIES });
       await child.rpc.notify('initialized');
@@ -703,7 +704,7 @@ export class CodexAdapter implements AgentAdapter {
     live.broker = this.makeBroker(live);
 
     const open = (): Child =>
-      this.spawnChild(loc.path, cwd, {
+      this.spawnChild(loc.path, cwd, live.mode === 'allow' ? [] : (live.options.readOnlyFolders ?? []), { // Allow all (danger-full-access) ignores the profile: nothing to add
         onNotification: (method, params) => this.onNotification(live, method, params),
         onRequest: (method, params) => this.onServerRequest(live, method, params),
         onExit: (code, signal) => this.onExit(live, code, signal),
@@ -1473,7 +1474,7 @@ export class CodexAdapter implements AgentAdapter {
   }
 
   private makeBroker(live: Live): PermissionBroker {
-    return new PermissionBroker({
+    const broker = new PermissionBroker({
       roots: live.roots,
       mode: live.mode,
       blockedTools: () => mcpToolBlockList(live.options.disabledMcpTools), // spec 069 FR-063
@@ -1499,6 +1500,8 @@ export class CodexAdapter implements AgentAdapter {
         }
       },
     });
+    broker.allowReadPaths(live.options.readOnlyFolders ?? [], 'in-memory'); // spec 116 FR-020: the profile (below) lets the sandbox read it; the broker tags the read
+    return broker;
   }
 
   /** A server request (approval or question). Read-only is double-locked: the broker denies and `codexReply` declines. Never `acceptForSession`. */

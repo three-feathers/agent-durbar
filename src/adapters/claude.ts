@@ -791,6 +791,8 @@ interface Session {
   planDraft?: string;
   cwd: string;
   roots: string[];
+  /** Spec 116 FR-020: the office memory folder, for reads only (`preToolUseDecision`); never in `roots`, so never an `--add-dir` or a write root. */
+  readRoots: string[];
   options: StartOptions;
   broker: PermissionBroker;
   mapper: ClaudeMapper;
@@ -1096,8 +1098,9 @@ export class ClaudeAdapter implements AgentAdapter {
     const roots = [...new Set([ws.cwd, ...ws.folders])];
     const blocked = mcpToolBlockList(options.disabledMcpTools); // spec 069 FR-063
     const broker = new PermissionBroker({ roots, mode, blockedTools: () => blocked, emit: (e) => this.onBroker(id, e), beforeWrite: (paths) => this.writeGuard?.(id, paths) ?? Promise.resolve() }); // spec 065 FR-001
+    broker.allowReadPaths(options.readOnlyFolders ?? [], 'in-memory'); // spec 116 FR-020: reads only; T005 R3: never `addDirs`
     const mapper = new ClaudeMapper((b) => this.onMapped(id, b), { quiet: true, onDropped: (why) => this.debug?.(`claude: dropped ${why}`) });
-    this.sessions.set(id, { id, cwd: ws.cwd, roots, options: { ...options, permissionMode: mode }, broker, mapper, resumable, capUsd: usdCap(options.maxAiCredits), spentUsd: 0, ...(this.pendingNames.has(id) ? { pendingName: this.pendingNames.get(id), needsRelaunch: false } : {}) });
+    this.sessions.set(id, { id, cwd: ws.cwd, roots, readRoots: broker.memoryReadRoots(), options: { ...options, permissionMode: mode }, broker, mapper, resumable, capUsd: usdCap(options.maxAiCredits), spentUsd: 0, ...(this.pendingNames.has(id) ? { pendingName: this.pendingNames.get(id), needsRelaunch: false } : {}) });
     this.pendingNames.delete(id);
     if (!options.quiet) this.emit(id, { type: 'status', status: 'idle', intent: `Ready in ${ws.cwd}` });
     void this.previewSandbox(id); // spec 087 FR-009: what the first launch will try, before the first message (no process is started)
@@ -1982,7 +1985,7 @@ export class ClaudeAdapter implements AgentAdapter {
     const current = s.broker.getMode();
     const launched = s.launchedMode ?? current;
     if (current === 'read-only' || launched === 'read-only') {
-      const deny = preToolUseDecision('read-only', tool, toolInput, s.roots, undefined, s.options.folderSetup?.rules?.allow);
+      const deny = preToolUseDecision('read-only', tool, toolInput, s.roots, undefined, s.options.folderSetup?.rules?.allow, s.readRoots);
       if (!deny) return {};
       if (current !== 'read-only') deny.hookSpecificOutput.permissionDecisionReason += ' The new permission mode applies from your next message.';
       return { ...deny };

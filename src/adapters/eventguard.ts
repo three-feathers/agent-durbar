@@ -36,7 +36,7 @@ function allowedByProblems(a: unknown, where: string): string[] {
     if (a.noUndo !== undefined && a.noUndo !== true) return [`${where}: session-grant noUndo malformed`];
     return [];
   }
-  if (a.kind === 'allow-all' || a.kind === 'in-folder' || a.kind === 'attachment') return [];
+  if (a.kind === 'allow-all' || a.kind === 'in-folder' || a.kind === 'attachment' || a.kind === 'in-memory') return [];
   if (a.kind === 'app') return oneOf(a.source, ['config', 'hook', 'classifier']) ? [] : [`${where}: app source ${String(a.source)}`];
   return [`${where}.kind is ${String(a.kind)}`];
 }

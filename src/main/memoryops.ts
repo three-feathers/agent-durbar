@@ -115,6 +115,20 @@ export class MemoryOps {
     return { on: false, path, state: notFound.includes(r.reason) ? 'notFound' : 'refused', reason: r.text, keepInGit };
   }
 
+  /**
+   * Spec 116 FR-020/FR-023: the real path of the memory folder for a session start, or none. Empty while the memory is off, refused or not found: T002
+   * runs again now (the stored path is not trusted: the folder may have become a link, moved or been refused since), and any doubt gives none.
+   */
+  readRoots(): string[] {
+    const st = this.deps.store();
+    const folder = st?.memoryFolder;
+    if (!st || folder === undefined || !st.memoryOn) return [];
+    try {
+      const r = this.check(folder);
+      return r.ok ? [r.real] : [];
+    } catch { return []; }
+  }
+
   /** Main's dialog, then T002; a refusal gives no token. */
   async pick(): Promise<MemoryPicked> {
     const mine = ++this.gen;

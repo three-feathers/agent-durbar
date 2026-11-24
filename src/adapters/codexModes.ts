@@ -58,7 +58,7 @@ export const CODEX_RO_FILESYSTEM: Readonly<Record<string, 'read'>> = Object.free
  * no control characters. Anything else is `undefined` (left out: the profile only gets narrower).
  */
 export function codexReadRoot(p: string | undefined): string | undefined {
-  if (!p || /["\u0000-\u001f\u007f]/.test(p)) return undefined;
+  if (!p || typeof p !== 'string' || /["\u0000-\u001f\u007f]/.test(p)) return undefined;
   const win = /^[A-Za-z]:[\\/]/.test(p);
   const api = win ? path.win32 : path.posix;
   if (!api.isAbsolute(p)) return undefined;

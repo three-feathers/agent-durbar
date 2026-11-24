@@ -325,13 +325,25 @@ export class PermissionBroker {
   private mode: BrokerMode;
   /** Files the user attached in this session: reading them is the user's own request. */
   private extraRoots: string[] = [];
+  /** Spec 116 FR-020: the office memory folder, read-only: reads inside it are allowed with the reason `in-memory`; never consulted for a write. */
+  private memoryRoots: string[] = [];
   constructor(private readonly opts: BrokerOptions) {
     this.mode = opts.mode ?? (opts.allow ? 'allow' : opts.ask ? 'ask' : 'read-only');
   }
 
   /** The user attached these files to a message: the runtime may read them even when they are outside the roots. */
-  allowReadPaths(paths: readonly string[]): void {
-    for (const p of paths) if (p && !this.extraRoots.includes(p)) this.extraRoots.push(p);
+  allowReadPaths(paths: readonly string[], reason: 'attachment' | 'in-memory' = 'attachment'): void {
+    const list = reason === 'in-memory' ? this.memoryRoots : this.extraRoots;
+    for (const p of paths) {
+      if (typeof p !== 'string' || !p) continue;
+      if (reason === 'in-memory' && !path.isAbsolute(p) && !path.win32.isAbsolute(p)) continue; // a memory root is a real, absolute path
+      if (!list.includes(p)) list.push(p);
+    }
+  }
+
+  /** The memory read roots this broker accepted (absolute, deduped); Claude Code's hook reads the same list. */
+  memoryReadRoots(): string[] {
+    return [...this.memoryRoots];
   }
 
   /** Spec 003 FR-099: why a read that needs no question was allowed, from what the broker itself checked (undefined = nothing to claim). */
@@ -340,13 +352,14 @@ export class PermissionBroker {
     const roots = this.opts.roots;
     if (roots && roots.length && isInsideRoots(req.path, roots, this.opts.pathCheck)) return { kind: 'in-folder' };
     if (this.extraRoots.length && isInsideRoots(req.path, this.extraRoots, this.opts.pathCheck)) return { kind: 'attachment' };
+    if (this.memoryRoots.length && isInsideRoots(req.path, this.memoryRoots, this.opts.pathCheck)) return { kind: 'in-memory' };
     return undefined;
   }
 
   private readIsOutside(req: PermissionLike): boolean {
     const roots = this.opts.roots;
     if (!roots || !roots.length) return false;
-    return !isInsideRoots(req.path, [...roots, ...this.extraRoots], this.opts.pathCheck);
+    return !isInsideRoots(req.path, [...roots, ...this.extraRoots, ...this.memoryRoots], this.opts.pathCheck);
   }
 
   getMode(): BrokerMode {
