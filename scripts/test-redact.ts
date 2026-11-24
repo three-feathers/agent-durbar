@@ -3,7 +3,7 @@ import * as assert from 'assert';
 import * as fs from 'fs';
 import * as path from 'path';
 import { Worker } from 'worker_threads';
-import { MASK_INPUT_MAX, REDACT_MAX_CHARS, createDebugSink, _uncappedForTest, cut, maskSchemeSecrets, maskTokenShapes, maskTokenShapesUnguarded, maskSecretArgs, maskSecretCommand, maskHomePaths, maskHomePathsOutbound, maskSecretUrl, maskNoteText, maskOutgoing, maskGluedTail, maskSplitTokens, _breakCallsForTest, keepShownBy, _unionMasksForTest, withoutSplit, withoutShell, _shellRefsForTest, _shellPassesForTest, _shapePassesForTest, _runReadsForTest, ESC_RUN_SHELL_SOURCE, withoutLoose, maskLoose, _homeGuardReadsForTest, _homeGuardCharsForTest, _guardEdgeScanForTest, HOME_GUARD_WINDOW_FOR_TEST, _splitWorkForTest, withoutLinkSplit, withoutContinuation, _contWorkForTest, _contScanForTest, _contPassesForTest, redact, redactMarkdown, MARKDOWN_WORK, _markdownPassForTest, shQuote, splitCommand } from '../src/shared/redact';
+import { MASK_INPUT_MAX, REDACT_MAX_CHARS, createDebugSink, _uncappedForTest, cut, maskSchemeSecrets, maskTokenShapes, maskTokenShapesUnguarded, maskSecretArgs, maskSecretCommand, maskHomePaths, maskHomePathsOutbound, TOKEN_PART_BUDGET_FOR_TEST, maskSecretUrl, maskNoteText, maskOutgoing, maskGluedTail, maskSplitTokens, _breakCallsForTest, keepShownBy, _unionMasksForTest, withoutSplit, withoutShell, _shellRefsForTest, _shellPassesForTest, _shapePassesForTest, _runReadsForTest, ESC_RUN_SHELL_SOURCE, withoutLoose, maskLoose, _homeGuardReadsForTest, _homeGuardCharsForTest, _guardEdgeScanForTest, HOME_GUARD_WINDOW_FOR_TEST, _splitWorkForTest, withoutLinkSplit, withoutContinuation, _contWorkForTest, _contScanForTest, _contPassesForTest, redact, redactMarkdown, MARKDOWN_WORK, _markdownPassForTest, shQuote, splitCommand } from '../src/shared/redact';
 
 import { assertLinearShape, assertWithinYardstick, cpuMs } from './redact-growth-lib';
 import './safetext-shared'; // the desk's maskRaw (src/renderer/safetext.js) reads the compiled redact.ts, for the FR-181 differential below
@@ -2060,6 +2060,13 @@ assert.strictEqual(redact('{"a":"https://u:p@h/x","b":"y"}', {}), '{"a":"https:/
   }
   assertLinearShape('FR-435 maskHomePathsOutbound a long run of leads before a cut marker', (x) => { maskHomePathsOutbound(x, []); }, (k) => B.repeat(k) + ' [truncated]', 400_000);
   assertLinearShape('FR-435 maskHomePathsOutbound many cut markers after leads', (x) => { maskHomePathsOutbound(x, []); }, (k) => ('//' + 'a'.repeat(300) + ' [truncated]').repeat(Math.ceil(k / 314)).slice(0, k), 400_000);
+  // the reads of one call are capped: past the cap a place is hidden as before (`~`), never shown unread; under it, the parts show
+  {
+    const many = Array.from({ length: 40 }, (_, i) => B + B + 'fs' + i + B + 'q' + run(100) + B + 'r' + run(100) + B + 'x').join(' ');
+    const o = maskHomePaths(many, []);
+    assert.ok(o.includes(B + B + 'fs0' + B + 'q') && o.includes('~'), 'FR-435 screen: places under the read cap show, the ones past it are hidden as before (~)');
+    assert.ok(!o.includes(B + B + 'fs39' + B), `FR-435 screen: a place past the read cap (${TOKEN_PART_BUDGET_FOR_TEST} characters) is not shown unread`);
+  }
   assertLinearShape('FR-435 maskHomePaths many long share parts', (x) => { maskHomePaths(x, []); }, (k) => (B + B + 'a'.repeat(120) + B + 'b'.repeat(120) + B + 'c'.repeat(120) + ' ').repeat(Math.ceil(k / 364)).slice(0, k), 400_000);
   // differential over a generated corpus: the screen and outbound masks differ only on texts with a UNC path, the outbound mask of the screen's output equals
   // the outbound mask of the text (the screen removes nothing the outbound mask keeps), and nothing else changes

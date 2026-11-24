@@ -2331,14 +2331,25 @@ function shareBeforeCut(s: string): string {
 }
 /** The shortest tail of a share part read for a key shape (no key family is shorter). */
 const KEY_TAIL_MIN = 12;
+/** Characters of tails `tokenParts` may read per call of the home mask; a place past it is hidden as the old rule hid it (`~`), never shown unread. */
+const TOKEN_PART_BUDGET = 131_072;
+export const TOKEN_PART_BUDGET_FOR_TEST = TOKEN_PART_BUDGET;
+let partBudget = 0;
+/** The length of the tails text `tokenParts` builds for a part of `n` characters. */
+const tailsLength = (n: number): number => { const k = n - KEY_TAIL_MIN + 1; return k <= 0 ? 0 : k * n - (k * (k - 1)) / 2 + (k - 1); };
 /**
  * Spec 012 FR-435 (review of PR 2112, finding 3): a place the old share rule matched (`UNC_HOME`, `UNC_FWD_HOME`: server, share and next folder), shown on
  * screen with only a part that holds a key shape hidden. Every tail of a part (from `KEY_TAIL_MIN` characters) is read by the one key-shape mask
  * (`maskTokenShapes`), so a key glued to other letters, which the old rule hid with the whole place, stays hidden; the other parts stay as written.
- * A part is at most 128 characters, so a place costs a bounded read.
+ * The reads of one call are capped (`TOKEN_PART_BUDGET`): a place past the cap becomes `~`, as before this change, so the cost stays linear.
  */
 function tokenParts(m: string): string {
-  return m.split(/(\\+|\/)/).map((part, i) => {
+  const parts = m.split(/(\\+|\/)/);
+  let need = 0;
+  for (let i = 0; i < parts.length; i += 2) need += tailsLength(parts[i].length);
+  if (need > partBudget) return '~';
+  partBudget -= need;
+  return parts.map((part, i) => {
     if (i % 2 === 1 || part.length < KEY_TAIL_MIN) return part;
     const tails: string[] = [];
     for (let k = 0; k + KEY_TAIL_MIN <= part.length; k++) tails.push(part.slice(k));
@@ -2466,7 +2477,7 @@ function homeMaskImpl(text: unknown, homes: readonly (string | undefined)[] | un
     // text that leaves the machine only (FR-435): a UNC path (`\\server\share\user\...`, or doubled as in JSON): where the user name sits is not known,
     // so host, share and the next folder become `~`
     if (shares) s = shareBeforeCut(s.replace(UNC_HOME, '~').replace(UNC_FWD_HOME, '~'));
-    else s = s.replace(UNC_HOME, tokenParts).replace(UNC_FWD_HOME, tokenParts); // on screen: shown whole, a part with a key shape hidden (FR-435)
+    else { partBudget = TOKEN_PART_BUDGET; s = s.replace(UNC_HOME, tokenParts).replace(UNC_FWD_HOME, tokenParts); } // on screen: shown whole, a part with a key shape hidden (FR-435)
     // spec 012 FR-185 (issue #1329): more spellings, each only where it removes nothing `redact` hides in the text (review of PR 1832, F1: a surface that masks
     // the home first must not lose the characters a split token's reading needs, so its head would show)
     for (const re of HOME_MORE) s = homeGuarded(s, re);
