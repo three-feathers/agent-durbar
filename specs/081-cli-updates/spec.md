@@ -356,7 +356,7 @@ When the start check finds a new version, the Settings entry and the card get a 
 
 ### Out of scope
 
-- Updating Durbar itself (spec 076 FR-174 reserves its updater; no updater exists).
+- Updating Durbar itself: spec 118 (Durbar's own update check, built on `main` up to its T010 and not turned on before its T014), governed by spec 076 FR-174 (`updates.mode`, `updates.feedUrl`).
 - Updating the bundled Copilot runtime outside a Durbar release.
 - Installing a specific older version (rollback, pinning). Npm and winget can; Homebrew casks cannot. A later spec, if asked.
 - Turning on or off an app's own auto-updater (Claude Code's `autoUpdates`, `DISABLE_AUTOUPDATER`).
@@ -500,6 +500,10 @@ When the start check finds a new version, the Settings entry and the card get a 
 
 ## Changes
 
+### 2026-11-24: *Out of scope* points to spec 118 for Durbar's own update (spec 118 T013)
+
+- The line *Updating Durbar itself (spec 076 FR-174 reserves its updater; no updater exists)* said the old thing spec 076's FR-174 delta of 2026-11-24 removes. It now points to spec 118, which builds Durbar's own update check (on `main` up to its T010, not turned on before its T014), governed by spec 076 FR-174. Nothing else in this spec changes; its other mentions of `updates.mode` already say it is about Durbar's own updater.
+
 ### 2026-11-02: Linux real check (T040): a vendor "updates are disabled" answer exits 0 (issue #662)
 
 - **Found (`real:` Linux, Claude Code 2.1.316, isolated HOME, no credentials, no model call):** `claude update` with `DISABLE_UPDATES=1` prints "Updates are disabled by your administrator. Contact your IT team to get the latest version." and exits **0**. `claude update` on the latest version prints "Claude Code is up to date (2.1.316)" and exits 0. `npm view <pkg> version --json --no-update-notifier` answered with the version JSON (`real:`). `[KNOWN GAP]` The one-request claim is argued from the command (a single `view`), with no proxy log or trace to count requests.
@@ -558,3 +562,10 @@ The `status:` of the specs-index block used to read (moved here unchanged; the b
 - **The installed app is not affected:** `src/main/ipc/harness.ts` has passed `httpGet` since d408ea78. Only the two scripts (CI/nightly) failed.
 - **FR-043:** every place that builds `HarnessSetup` passes `httpGet`. Node scripts use `nodeDownloadGet` (`makeNodeDownloadGet(https.get)` in `src/main/netget.ts`): same contract as `makeDownloadGet` (one GET, redirect reported and not followed and its body not read on: the request is destroyed, so `downloadScript` still checks every hop against the vendor's hosts; size cap while reading; total time limit; fixed headers) and the same checksum rules downstream. The app never uses it.
 - **Test:** `npm run test:officialinstall` scans `src/` and the non-test `scripts/*.ts` for `new HarnessSetup(` (a new site must be added to its list on purpose and must pass `httpGet`; `test-*.ts` pass fakes on purpose and are skipped) and runs the Node getter against a local server: ok, a 302 with an endless body (request destroyed, socket closed, bytes bounded), exactly `maxBytes` ok and `maxBytes + 1` refused, the cap firing on a stalled body before any timeout, a stalled body hitting the idle timeout, a dripping body hitting the total limit, and every `new HarnessSetup(` in a file checked (not only the first). Mutations caught: `httpGet` removed from `e2e-real.ts`, 3xx followed, `res.resume()` instead of destroy, cap dropped, cap x5, cap checked only after buffering, both timers removed, total timer removed, a second site without `httpGet`.
+
+## Changes 2026-11-23: "Found at" shows the full path of the executable (FR-042, owner decision, tracking issue #2060 item 11, T487)
+
+*Owner decision* (Vikram, 2026-11-23, tracking issue #2060): "For paths, we should show the path ... Let's not use security to make app unusable." **Replaces** the FR-042 sentence that a path under the home folder is `~/…` and a path inside another person's folder (`/Users`, `/home`, `\Users\`) is only the file name.
+
+- **FR-042 amended (2026-11-23)** `[IMPLEMENTED]` `test: test-updatecheck` `sim:` `shots-051-setup`: `displayWhere` returns the found executable's absolute path exactly as written (POSIX, `C:\...` and UNC) and still run through the shared `redact()`, so a folder named after a token is hidden (a backslash after a token hides the glued text too); a relative path is returned as given. `displayPath` (`~` form) is unchanged and still builds the "Found X but cannot run it safely" hint; nothing that leaves the machine takes `where` (the diagnostics and issue-report text are untouched). The card already shows it in a `<code>` with break points and a 200-character bound.
+- **Not verified / `[KNOWN GAP]`:** a real Windows or macOS install (unit cases for Windows paths only).

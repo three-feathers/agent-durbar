@@ -296,4 +296,257 @@ for (const mode of [false, 'noredact', 'throws', 'failed'] as Mode[]) {
   console.log(`test-live-mask fuzz: ${texts} texts (${cut} values cut by markup), ${mainHid} pieces main hides, ${mainHidShown} of them shown, ${newOnlyHidden} pieces hidden only by the toast (over-masking vs main's announcement)`);
 }
 
+// spec 012 FR-197 (issue #1999): the chat's header name, its tooltip, the chat's `aria-label` and the composer's label and placeholder show a session's
+// name only through `liveText`. The page's own definitions, in a context with the masks above; the source checks read a CRLF copy too.
+const HEAD_DEFS = (src: string): string => {
+  const L = src.replace(/\r\n/g, '\n').split('\n'), one = (h: string): string => { const l = L.filter((x) => x.startsWith(h)); assert.strictEqual(l.length, 1, h); return l[0]; };
+  const i = L.findIndex((x) => x.startsWith('function paintPanelTitle(')), j = L.findIndex((x, k) => k > i && x === '}');
+  return [one('const nameShown='), one('const panelTipOf='), one('const panelTitleHTML='), ...L.slice(i, j + 1)].join('\n');
+};
+eq(HEAD_DEFS(app.replace(/\n/g, '\r\n')), HEAD_DEFS(app), 'FR-197 the header definitions read the same from a CRLF copy');
+const headPage = (mode: boolean) => {
+  const dom = new JSDOM('<!doctype html><body><h2 id="panelTitle"><button class="ttl-btn"></button></h2><h2 id="plain"></h2></body>');
+  const ctx = vm.createContext({ window: { DurbarRedact: mode ? shared : undefined, DurbarSafeText: require(path.join(R_DIR, 'safetext.js')) },
+    DurbarCutText: require(path.join(R_DIR, 'cuttext.js')), document: dom.window.document, NO_REDACT: !mode,
+    SN: () => ({ nameTip: (alias: string, title: string) => alias || title || '' }), titleRenameable: (a: { ren?: boolean }) => !!a.ren, ICON: () => '<svg></svg>' });
+  vm.runInContext(['const homeMask=', 'const deskMask=', 'const SHORT=', 'const RED=', 'const STX=', 'const SAFE=', 'const safeExcerpt=', 'const esc=', 'function annHome(', 'function annPart(', 'function liveText('].map(line).join('\n')
+    + '\n' + HEAD_DEFS(app) + '\nthis.nameShown=nameShown;this.panelTipOf=panelTipOf;this.panelTitleHTML=panelTitleHTML;this.paintPanelTitle=paintPanelTitle;', ctx);
+  return { doc: dom.window.document, C: ctx as unknown as { nameShown(a: object): string; panelTipOf(a: object): string; panelTitleHTML(a: object): string; paintPanelTitle(a: object, h: Element): void } };
+};
+{
+  const { doc, C } = headPage(true);
+  for (const [what, nm] of NAMES) {
+    const a = { name: nm, alias: '', title: nm, ren: true };
+    hides(C.nameShown(a), `FR-197 nameShown, ${what}`);
+    hides(C.panelTipOf(a), `FR-197 header tooltip, ${what}`);
+    hides(C.panelTitleHTML(a), `FR-197 header title HTML, ${what}`);
+    hides(C.panelTitleHTML({ ...a, ren: false }), `FR-197 header title HTML (not renameable), ${what}`);
+    const h = doc.getElementById('panelTitle') as HTMLElement; C.paintPanelTitle(a, h); hides(shown(h), `FR-197 paintPanelTitle, ${what}`);
+    const h2 = doc.getElementById('plain') as HTMLElement; C.paintPanelTitle({ ...a, ren: false }, h2); hides(shown(h2), `FR-197 paintPanelTitle (not renameable), ${what}`);
+  }
+  eq(C.nameShown({ name: 'Noor · fix the build' }), 'Noor · fix the build', 'FR-197 a benign name reads as written');
+  eq(C.panelTipOf({ name: 'Noor', alias: 'Noor', ren: true }), 'Noor Click or press F2 to rename.', 'FR-197 a benign tooltip reads as before');
+  eq(headPage(false).C.nameShown({ name: 'Noor ' + GHP }), '[not checked]', 'FR-197 fails closed with no mask module');
+}
+// every site that put a session's name into the header, the chat's label or the composer reads nameShown (source check, LF and CRLF copies)
+// (each check is one line, so the CRLF copy is read as it is, without turning it back into LF: pre-review of PR 2098)
+for (const [form, t] of [['LF', app], ['CRLF', app.replace(/\n/g, '\r\n')]] as const) {
+  ok(t.includes('aria-label="Chat with ${esc(nameShown(a))}"') && t.includes("c.setAttribute('aria-label','Chat with '+nameShown(a))"), `FR-197 the chat's label reads nameShown (${form})`);
+  ok(t.includes('placeholder="Message ${esc(nameShown(a))}…" aria-label="Message ${esc(nameShown(a))}"') && t.includes("mi.setAttribute('aria-label','Message '+nameShown(a))") && t.includes("APW.placeholder(app):'Message '+nameShown(a)"), `FR-197 the composer reads nameShown (${form})`);
+  ok(t.includes('aria-label="${esc(nameShown(a))}"'), `FR-197 the header's label reads nameShown (${form})`);
+  ok(!/(?:Chat with |Message |Rename session )(?:\$\{esc\(a\.name\)\}|'\+a\.name)/.test(t), `FR-197 no header, chat or composer label reads a.name as written (${form})`);
+  // round-3 pre-review of PR 2098: every line that builds one of the sites holds no raw name at all, whatever form a revert takes
+  for (const key of ['id="panelTitle"', 'id="chat" role="log"', 'id="msgInput"', "mi.setAttribute('aria-label','Message '", "coffeeWord()+(left", "it('open','Open chat'", 'm.appendChild(typingIndicator(a))', 'const typingIndicator=', 'const panelTitleHTML=',
+    // round 2 of the review of PR 2098: every other place in the chat panel and its menus that labels a session by name
+    "menuLabel(hasOps?'Actions for ':'Permission mode for '", "menuLabel('Profile for '", "menuLabel('Model and context for '", "menuLabel('Context window of '", "'. Ask '+nameShown(a)+' to try again", "const nm=bar.querySelector('.ab-n');nm.textContent=", 'const rename=()=>{const nm=bar.querySelector', 'id="scToHint"', 'rows=list.map(x=>({id:x.id,name:', ".sub-name').textContent=", "t.className='rp-ini'"]) {
+    const lines = t.split(/\r?\n/).filter((l) => l.includes(key));
+    ok(lines.length >= 1 && lines.every((l) => !/\ba\.name\b/.test(l)), `FR-197 the line that builds ${key.slice(0, 24)} holds no raw name (${form})`);
+  }
+}
+
+// the two repaint paths run with their own code (pre-review of PR 2098): a rename repaints the header, the chat's label and the composer's label; the Autopilot
+// switch repaints the composer's label; neither shows the name as written
+{
+  const block2 = (head: string): string => { const i = LINES.findIndex((x) => x.startsWith(head)); assert.ok(i >= 0, head); const j = LINES.findIndex((x, k) => k > i && x === '}'); return LINES.slice(i, j + 1).join('\n'); };
+  const dom = new JSDOM('<!doctype html><body><h2 id="panelTitle"><button class="ttl-btn"></button></h2><div id="chat"></div><textarea id="msgInput"></textarea><button id="attFile"></button></body>');
+  const doc = dom.window.document;
+  const ctx = vm.createContext({ window: { DurbarRedact: shared, DurbarSafeText: require(path.join(R_DIR, 'safetext.js')) }, DurbarCutText: require(path.join(R_DIR, 'cuttext.js')), document: doc, NO_REDACT: false,
+    SN: () => ({ nameTip: (alias: string, title: string) => alias || title || '', displayName: (alias: string, title: string) => alias || title }), titleRenameable: () => true, ICON: () => '',
+    $: (id: string) => doc.getElementById(id), ui: { selected: 's1' }, fitPlaceholder() {}, answerObs: null, scheduleRender() {}, renderSchedDlg() {},
+    APW: { placeholder: () => 'Autopilot', attachTip: () => '' }, kindWord: () => 'app', capsFor: () => ({ autopilot: { attachments: true } }) });
+  vm.runInContext(['const homeMask=', 'const deskMask=', 'const SHORT=', 'const RED=', 'const STX=', 'const SAFE=', 'const safeExcerpt=', 'const esc=', 'function annHome(', 'function annPart(', 'function liveText('].map(line).join('\n')
+    + '\n' + HEAD_DEFS(app) + '\n' + block2('function repaintName(') + '\n' + block2('function apComposer(') + '\nthis.repaintName=repaintName;this.apComposer=apComposer;', ctx);
+  const C2 = ctx as unknown as { repaintName(a: object): void; apComposer(a: object): void };
+  for (const [what, nm] of NAMES) {
+    const a = { id: 's1', alias: nm, title: nm, info: { autopilot: false, adapterId: 'claude' } };
+    C2.repaintName(a);
+    hides(shown(doc.body), `FR-197 a rename repaints every label masked, ${what}`);
+    (doc.getElementById('msgInput') as HTMLElement).setAttribute('aria-label', 'Autopilot');
+    C2.apComposer(a);
+    hides(doc.getElementById('msgInput')!.getAttribute('aria-label') || '', `FR-197 turning Autopilot off repaints the composer's label masked, ${what}`);
+  }
+  const b = { id: 's1', alias: 'Noor', title: 'Noor', info: { autopilot: false, adapterId: 'claude' } };
+  C2.repaintName(b);
+  eq([doc.getElementById('chat')!.getAttribute('aria-label'), doc.getElementById('msgInput')!.getAttribute('aria-label')], ['Chat with Noor', 'Message Noor'], 'FR-197 a benign rename repaints the labels with the name');
+}
+
+// review of PR 2098: the coffee-break menu (its label and its open item) and the typing indicator of a played turn name the session through the same mask
+{
+  const block3 = (head: string): string => { const i = LINES.findIndex((x) => x.startsWith(head)); assert.ok(i >= 0, head); const j = LINES.findIndex((x, k) => k > i && x === '}'); return LINES.slice(i, j + 1).join('\n'); };
+  const one3 = (h: string): string => { const l = LINES.filter((x) => x.startsWith(h)); assert.strictEqual(l.length, 1, h); return l[0]; };
+  const dom = new JSDOM('<!doctype html><body><button id="anchor"></button></body>');
+  const doc = dom.window.document;
+  const ctx = vm.createContext({ window: { DurbarRedact: shared, DurbarSafeText: require(path.join(R_DIR, 'safetext.js')) }, DurbarCutText: require(path.join(R_DIR, 'cuttext.js')), document: doc, NO_REDACT: false,
+    closeModeMenu() { doc.getElementById('modeMenu')?.remove(); }, byId: (id: string) => AG[id], COFFEE: { retryable: () => true }, BREAKS: { get: () => null }, coffeeLeftWords: () => '', RETRY_TIP: 'Retry',
+    coffeeWord: () => 'coffee break', coffeeNoRetry: () => '', CSS: { escape: (x: string) => x }, cardOf: () => null, focusIn() {}, announce() {}, innerWidth: 1440, innerHeight: 900 });
+  const AG: Record<string, object> = {};
+  vm.runInContext(['const homeMask=', 'const deskMask=', 'const SHORT=', 'const RED=', 'const STX=', 'const SAFE=', 'const safeExcerpt=', 'const esc=', 'function annHome(', 'function annPart(', 'function liveText(', 'const nameShown=', 'const typingIndicator='].map(one3).join('\n')
+    + '\n' + block3('function openCoffeeMenu(') + '\nthis.openCoffeeMenu=openCoffeeMenu;this.typingIndicator=typingIndicator;', ctx);
+  const C3 = ctx as unknown as { openCoffeeMenu(id: string, anchor: Element): void; typingIndicator(a: object): HTMLElement };
+  for (const [what, nm] of NAMES) {
+    AG.c1 = { id: 'c1', name: nm, coffee: true };
+    C3.openCoffeeMenu('c1', doc.getElementById('anchor') as Element);
+    const m = doc.getElementById('modeMenu') as HTMLElement;
+    ok(!!m, `FR-197 the coffee-break menu opens, ${what}`);
+    hides(shown(m), `FR-197 the coffee-break menu's label and items are masked, ${what}`);
+    hides(shown(C3.typingIndicator({ name: nm })), `FR-197 the typing indicator's label is masked, ${what}`);
+  }
+  AG.c1 = { id: 'c1', name: 'Noor', coffee: true };
+  C3.openCoffeeMenu('c1', doc.getElementById('anchor') as Element);
+  eq(doc.getElementById('modeMenu')!.getAttribute('aria-label'), 'Noor: coffee break', 'FR-197 a benign coffee-break menu label reads as written');
+  eq(C3.typingIndicator({ name: 'Noor' }).getAttribute('aria-label'), 'Noor is working', 'FR-197 a benign typing indicator label reads as written');
+  ok(app.includes('m.appendChild(typingIndicator(a));') && !/aria-label',a\.name\+' is working'/.test(app), 'FR-197 a played turn builds its typing indicator through typingIndicator');
+}
+
+// round 2 of the review of PR 2098: the menus and dialogs about one session label it through menuLabel (the permission-mode or actions menu, the profile and
+// model menus, the context-window dialog); run the page's own definition
+{
+  const one4 = (h: string): string => { const l = LINES.filter((x) => x.startsWith(h)); assert.strictEqual(l.length, 1, h); return l[0]; };
+  const ctx = vm.createContext({ window: { DurbarRedact: shared, DurbarSafeText: require(path.join(R_DIR, 'safetext.js')) }, DurbarCutText: require(path.join(R_DIR, 'cuttext.js')), NO_REDACT: false });
+  vm.runInContext(['const homeMask=', 'const deskMask=', 'const SHORT=', 'const RED=', 'const STX=', 'const SAFE=', 'const safeExcerpt=', 'function annHome(', 'function annPart(', 'function liveText(', 'const nameShown=', 'const menuLabel='].map(one4).join('\n') + '\nthis.menuLabel=menuLabel;', ctx);
+  const ML = (ctx as unknown as { menuLabel(p: string, a: object): string }).menuLabel;
+  for (const [what, nm] of NAMES) for (const pre of ['Actions for ', 'Permission mode for ', 'Profile for ', 'Model and context for ', 'Context window of ']) hides(ML(pre, { name: nm }), `FR-197 a session menu's label is masked (${pre.trim()}), ${what}`);
+  eq(ML('Permission mode for ', { name: 'Noor' }), 'Permission mode for Noor', 'FR-197 a benign session menu label reads as written');
+  ok((app.match(/menuLabel\(/g) || []).length >= 5, 'FR-197 the mode, profile and model menus and the context-window dialog use menuLabel');
+}
+
+// round 3 of the review of PR 2098: the schedule dialog's agent hint, repainted when its target is set again, reads nameShown (the page's own line, run)
+{
+  const one5 = (h: string): string => { const l = LINES.filter((x) => x.startsWith(h)); assert.strictEqual(l.length, 1, h); return l[0]; };
+  const hint = LINES.filter((x) => x.includes("$('scToHint').textContent="));
+  eq(hint.length, 1, 'FR-197 one line repaints the schedule hint');
+  const dom = new JSDOM('<!doctype html><body><p id="scToHint"></p></body>');
+  const doc = dom.window.document;
+  const ctx = vm.createContext({ window: { DurbarRedact: shared, DurbarSafeText: require(path.join(R_DIR, 'safetext.js')) }, DurbarCutText: require(path.join(R_DIR, 'cuttext.js')), NO_REDACT: false,
+    $: (id: string) => doc.getElementById(id) });
+  vm.runInContext(['const homeMask=', 'const deskMask=', 'const SHORT=', 'const RED=', 'const STX=', 'const SAFE=', 'const safeExcerpt=', 'function annHome(', 'function annPart(', 'function liveText(', 'const nameShown='].map(one5).join('\n')
+    + '\nthis.paintHint=tgt=>{' + hint[0] + '};', ctx);
+  const paintHint = (ctx as unknown as { paintHint(t: object | null): void }).paintHint;
+  for (const [what, nm] of NAMES) { paintHint({ id: 's1', name: nm }); hides(shown(doc.getElementById('scToHint') as Element), `FR-197 the schedule hint's repaint is masked, ${what}`); }
+  paintHint({ id: 's1', name: 'Noor' });
+  eq([doc.getElementById('scToHint')!.textContent, doc.getElementById('scToHint')!.getAttribute('title')], ['Noor', 'Noor'], 'FR-197 a benign schedule hint reads as written');
+}
+
+// round 3 and round 4 of the review of PR 2098: the sink table. SINK finds every read of a property called `name` in app.js (dot and optional-dot access,
+// bracket access with a quoted name, destructuring in a declaration, a parameter or a loop) and every call of nameShown or menuLabel; each read is counted
+// under its enclosing top-level definition ('after X' for a top-level statement after definition X). The table holds, per definition:
+//   m = masked on the line (the line goes through a mask or a masking sink);
+//   v = masked by a sink a later line passes it to (a toast, an announcement, the caller's mask, the helper card's own mask, a masked strip);
+//   g = a session's name shown as written, by gap class (each class is named, with the same words, in spec 012's FR-197 gap list and in secret-coverage.md);
+//   x = exempt: not a session's name, or a session's name that shows nothing, by a one-word reason (EXEMPT_REASONS).
+// A definition that reads `name` and is not in the table, a count that changes, or a listed definition that is gone fails: a new site must be decided.
+{
+  type Row = { m?: number; v?: number; g?: Record<string, number>; x?: Record<string, number> };
+  const GAP_CLASSES: Record<string, string> = {
+    'chat-header': "the header's helper line", 'message-line': "a message's name line", 'chat-note': 'a chat note that names a session',
+    dialog: 'the dialogs about one session', schedules: "the schedules dialog's list", palette: "the command palette's session entries and the session pickers",
+    desk: "the desk's card and the lounge", places: "the office's places and their visitors", helpers: "a helper's parent session in the helper labels",
+    rows: "the rail's, the list's, the inbox's and the held messages' rows", follow: 'the auto-follow status and notices', views: 'the data handed to other views',
+  };
+  const EXEMPT_REASONS: Record<string, string> = {
+    folder: "a folder's name", floor: "a floor's name", file: "a file's or path's name", attribute: "an HTML attribute's name", theme: "a theme's name", world: "a world's name",
+    crew: "a character set's or character's name", mcp: "an MCP server's name", profile: "a profile's name", model: "a model's name", app: "an agent app's name",
+    service: "a remote-control service's name", template: "a schedule template's name", field: "a form field's name", slash: "a slash command's name",
+    helper: "a sub-agent's name, masked by helperMask where it is shown", label: "Durbar's own words", selector: 'a CSS class in a selector string', cssclass: 'a CSS class name in markup', column: "a list column's key, read through the sort keys",
+    data: 'a session name copied into data that a listed site reads again', rename: 'the rename field, which opens with the name as written (your own edit)',
+    write: 'a write, not a read', compare: 'a comparison', sortkey: 'a sort key', width: 'a text width', cachekey: 'a cache key', comment: 'a comment',
+  };
+  const TABLE: Record<string, Row> = {
+    ownRegister: { x: { crew: 1 } }, floorTag: { x: { floor: 1 } }, costData: { x: { folder: 1 } }, applyTheme: { x: { theme: 1 } },
+    deskTip: { m: 1, g: { desk: 1 }, x: { profile: 1 } }, visitorWords: { g: { places: 2 }, x: { folder: 1, floor: 1 } }, placeTip: { g: { places: 1 } },
+    lobbyInitW: { x: { width: 1 } }, lobbyHTML: { g: { places: 3 } }, postboxHTML: { x: { folder: 1 } }, openPlaceMenu: { g: { places: 1 }, x: { folder: 1, floor: 1 } },
+    openCoffeeMenu: { m: 3 }, faceKey: { x: { cachekey: 1 } }, avatar: { g: { desk: 1 } }, renderFilter: { x: { folder: 1 } }, moreHTML: { g: { helpers: 1 } },
+    helperHTML: { m: 1, g: { helpers: 1 } }, helperWords: { v: 2 }, helperTileHTML: { m: 1, g: { helpers: 1 } }, helperCardHTML: { v: 2, g: { helpers: 1 } },
+    cardHTML: { g: { desk: 2 }, x: { profile: 1, cssclass: 1 } }, renBtn: { g: { desk: 2 } }, renFolderBtn: { x: { folder: 2 } }, unitHTML: { g: { desk: 2 }, x: { profile: 1, cssclass: 1 } },
+    restHTML: { g: { desk: 3 }, x: { profile: 1 } }, shuttersHTML: { g: { desk: 1 }, x: { folder: 3 } }, heldGroups: { x: { data: 1 } }, heldNotice: { g: { rows: 1 } },
+    heldSettingsHTML: { g: { rows: 1 } }, folderOfRoom: { x: { folder: 1 } }, roomSchedChip: { x: { folder: 1 } }, headTip: { x: { folder: 1, floor: 1 } },
+    roomHTML: { x: { folder: 8 } }, syncAttrs: { x: { attribute: 6 } }, roPeople: { x: { crew: 1 } }, roWorlds: { x: { world: 1 } }, realSubs: { v: 1 }, roFloor: { x: { floor: 1 } },
+    realModel: { g: { views: 5 }, x: { folder: 1, profile: 1 } }, realSlips: { g: { views: 6 }, x: { folder: 1, profile: 1 } }, renderOffice: { x: { floor: 2 } },
+    LCOLS: { x: { column: 1 } }, CS_COLS: { x: { column: 1 } }, LVAL: { x: { sortkey: 2 } }, listRow0: { g: { rows: 3 }, x: { folder: 3 } }, renderConvResults: { x: { compare: 1 } }, newAgentMsg: { g: { 'message-line': 1 } },
+    addUserMsg: { x: { file: 2 } }, sendMessage: { m: 1, x: { file: 1 } }, gate: { x: { file: 2 } }, addPicked: { x: { file: 1 } }, addFiles: { x: { file: 3 } },
+    renderAttached: { x: { file: 3 } }, syncChatHeader: { m: 1 }, wireAnswerBar: { m: 4 }, noteCompleted: { m: 1 }, noteFailed: { m: 1 }, markRead: { m: 1 },
+    nameShown: { m: 1 }, menuLabel: { m: 1 }, typingIndicator: { m: 1 }, panelTipOf: { m: 1 }, panelTitleHTML: { m: 1 }, paintPanelTitle: { m: 1 }, cvKey: { x: { attribute: 1 } },
+    openPanel: { m: 7, g: { 'chat-header': 1 }, x: { folder: 3 } }, slashUpdate: { x: { slash: 2 } }, slashPick: { x: { slash: 2 } }, noteRowHTML: { g: { views: 1 } },
+    notesPalItems: { x: { folder: 1 } }, openNotesScreen: { x: { folder: 3 } }, nsRender: { x: { folder: 1 } }, nsPaint: { g: { views: 1 } }, nsExport: { x: { file: 1 } },
+    nsDeleteAll: { x: { folder: 1 } }, mcpSignLinesDrop: { x: { mcp: 1 } }, openCtxMenu: { m: 1 }, 'after openLinkMenu': { x: { folder: 1 } }, reoName: { v: 1, x: { folder: 1 } },
+    reoStepModel: { v: 1, x: { folder: 2 } }, 'after resetOrder': { m: 4, x: { folder: 2 } }, renderRestoreStrip: { v: 1, x: { folder: 1 } }, attentionItems: { g: { views: 1 } },
+    doorRepaint: { m: 1 }, paintInbox: { m: 3, v: 1, g: { rows: 2 }, x: { write: 1, folder: 2 } }, afBackToOffice: { x: { floor: 1 } }, afLeaveChat: { m: 1 },
+    afOnAccepted: { g: { follow: 1 } }, afDeliver: { m: 2 }, afRender: { g: { follow: 2 } }, afGo: { m: 1 }, palAll: { g: { palette: 1 }, x: { folder: 3 } },
+    navSnap: { g: { palette: 1 }, x: { floor: 1, folder: 2 } }, navOpen: { m: 1 }, sendToSeveral: { v: 2, g: { palette: 1, follow: 1 } }, endAllSessions: { v: 1 },
+    mcpLaunchSeen: { v: 1 }, paintMcpStrip: { x: { mcp: 3 } }, 'after openBrowserMenu': { m: 1, g: { views: 1 } }, rideFloor: { x: { floor: 1 } }, renderLift: { x: { floor: 1 } },
+    flFocusTip: { x: { floor: 2 } }, renderIntoFloor: { x: { floor: 1 } }, floorsBodyHTML: { x: { floor: 9, folder: 3 } }, 'after floorCall': { x: { floor: 1 } },
+    floorAction: { x: { floor: 4 } }, addLiveAgent: { x: { data: 6 } }, mcpReLine: { x: { mcp: 10 } }, toolTask: { x: { file: 1 } }, edPaint: { x: { file: 1 } }, edDiff: { x: { file: 1 } },
+    subBlock: { m: 1 }, onSubagent: { m: 1, x: { helper: 5 } }, onTaskTool: { x: { helper: 2 } }, buildSubTranscript: { m: 1 }, ensureTurn: { g: { 'message-line': 1 } },
+    openCapDialog: { m: 1, g: { dialog: 1 } }, showLimit: { m: 2 }, showPlan: { m: 2 }, qMdHTML: { x: { attribute: 1 } }, showQuestion: { m: 1 }, showElicitation: { m: 1, x: { field: 7 } },
+    startCoffee: { m: 1 }, paintCoffeeBar: { m: 1 }, showPerm: { m: 1 }, roAskAfterSwitch: { m: 1 }, ctxRingHTML: { x: { label: 1 } }, updateCtxChip: { x: { comment: 1 } },
+    repaintName: { m: 2, x: { write: 1 } }, brainLoad: { g: { views: 1 } }, brainFeed: { g: { views: 2 } }, brainDoorPaint: { m: 1, v: 2 }, onLiveEvent: { x: { profile: 1, model: 1 } },
+    sendLive: { x: { file: 1 } }, stopLive: { m: 1 }, endLive: { m: 1 }, railRow: { g: { rows: 4 } }, renderStrip: { x: { folder: 3 } }, apComposer: { m: 1 },
+    autopilotFlow: { m: 1, g: { dialog: 1 }, x: { folder: 1 } }, openModeMenu: { m: 1 }, cardOp: { g: { dialog: 2 } }, submitSessionName: { x: { rename: 2 } },
+    renameSessionUi: { x: { rename: 2 } }, changeModeInner: { m: 1, g: { dialog: 2 } }, openFolderMenu: { x: { folder: 3, floor: 2 } }, moveFolderByMenu: { x: { floor: 2, folder: 2 } },
+    modelLabel: { x: { model: 1 } }, fillModelSelect: { x: { model: 1 } }, kindTitle: { x: { app: 1 } }, kindOptions: { x: { app: 1 } }, aboutKinds: { x: { app: 1 } }, pendLabel: { x: { model: 1 } },
+    modelChipHTML: { x: { model: 2 } }, agentChipHTML: { x: { profile: 4 } }, openAgentMenu: { m: 1, x: { profile: 2 } }, applyProfile: { x: { profile: 2 } }, openModelMenu: { m: 1, x: { model: 2 } },
+    chooseModelInner: { g: { dialog: 1 }, x: { model: 3 } }, chooseAutoTierInner: { g: { dialog: 1 } }, sendModelChange: { m: 3, v: 1, x: { model: 3 } }, cancelPendingInner: { m: 1, x: { model: 1 } },
+    onModelEvent: { m: 1, x: { model: 1 } }, onAutoTierFailed: { m: 1 }, compactDialog: { g: { dialog: 1 }, x: { model: 1 } }, svc: { x: { service: 1 } }, remoteItemInner: { x: { service: 1 } },
+    remoteChipHTML: { x: { service: 1 } }, remotePalItems: { g: { palette: 2 }, x: { service: 2 } }, remoteOn: { m: 2, x: { service: 5 } }, remoteOff: { m: 1 },
+    remoteLinkDialog: { g: { dialog: 1 }, x: { service: 3 } }, handoverPalItems: { g: { palette: 1 } }, newSession: { g: { dialog: 2 }, x: { folder: 2, profile: 1 } },
+    reviewHandoff: { g: { dialog: 1 }, x: { folder: 1 } }, schedLine: { g: { schedules: 2 } }, histName: { g: { schedules: 1 } }, renderSchedDlg: { g: { schedules: 1 } },
+    openSchedules: { m: 4, x: { template: 1, folder: 1, data: 5 } }, renderSchedSettings: { x: { folder: 2 } }, 'after HELD_STOP_WHY': { m: 1, g: { 'chat-note': 1 } },
+    renderFolders: { x: { folder: 4 } }, hideFolder: { x: { folder: 1 } }, removeFolder: { x: { folder: 5 } }, submitFolderName: { x: { folder: 2 } }, renameFolder: { x: { folder: 3 } },
+    inlineNameEl: { x: { selector: 1 } }, startSessionEdit: { x: { rename: 2 } }, startFolderEdit: { x: { folder: 2 } }, nameAt: { x: { selector: 1 } }, placeRen: { x: { selector: 1 } },
+    removeSessionUi: { m: 1, g: { dialog: 2 } }, prevRenameArgs: { x: { rename: 2 } }, replayHistory: { g: { 'message-line': 1 }, x: { file: 1 } }, announcePrevious: { x: { folder: 1 } },
+    applyAddResult: { x: { folder: 1 } }, addFloorNote: { m: 1, v: 4, x: { data: 2, floor: 1 } }, NEWFOLDER: { x: { floor: 1 } },
+    'after pendingOpen': { g: { palette: 1, views: 1 }, x: { folder: 3 } }, 'after settleNow': { g: { views: 1 }, x: { crew: 1, folder: 1 } },
+  };
+  const SINK = /\.\s*name\b|\[\s*(['"`])name\1\s*\]|(['"`])name\2(?!\s*:)|\{[^{}]*?(?<![\w$.'"])name\b(?=\s*[,}:=])[^{}]*\}(?=\s*(?:=(?![=>])|\)\s*(?:=>|\{)|\s+of\b))|(?<![\w$.])(?:nameShown|menuLabel)\(/g;
+  const MASKED_LINE = /(?<![\w$.])(?:nameShown|menuLabel|liveText|deskMask|helperMask|maskLabel|announce|toast|toastAction)\(/;
+  const DEF = /^(?:async\s+)?function\s*\*?\s*([\w$]+)|^(?:const|let|var)\s+([\w$]+)/;
+  // the pattern flags each form of a read (fixtures), and not a longer word or a literal key
+  const flags = (src: string): number => (src.match(SINK) || []).length;
+  for (const fx of ['x.name', 'x?.name', "x['name']", 'x["name"]', '`${x.name}`', 'agent.name', 'byId(id).name', 'const {name}=a', 'const {id,name:n}=a', 'let { name } = a',
+    '({name})=>name', 'function f({name}){', 'for(const {name} of list)', "Reflect.get(x,'name')", "const k='name';a[k]", 'nameShown(a)', "menuLabel('Profile for ',a)"])
+    ok(flags(fx) >= 1, `FR-197 sink table: the pattern flags the form ${fx}`);
+  for (const fx of ['a.names', 'a.nameTip(x)', 'getName()', "'names'", 'f({name:1});', "f({'name':1});", 'x.rename'])
+    eq(flags(fx), 0, `FR-197 sink table: the pattern does not flag ${fx}`);
+  for (const [form, t] of [['LF', app], ['CRLF', app.replace(/\n/g, '\r\n')]] as const) {
+    const L = t.split(/\r?\n/);
+    const defOf = (i: number): string => { let top = false; for (let j = i; j >= 0; j--) { const x = L[j]; if (!/^\S/.test(x) || /^(?:\/\*|\*|\/\/|[}\])])/.test(x)) continue; const d = DEF.exec(x); if (d) return (top ? 'after ' : '') + (d[1] || d[2]); top = true; } return '?'; };
+    const found: Record<string, { all: number; onMasked: number }> = {};
+    L.forEach((x, i) => { const c = (x.match(SINK) || []).length; if (!c) return; const k = defOf(i); const f = (found[k] = found[k] || { all: 0, onMasked: 0 }); f.all += c; if (MASKED_LINE.test(x)) f.onMasked += c; });
+    for (const k of Object.keys(found)) ok(k in TABLE, `FR-197 sink table: the name reads in ${k} are listed as masked, a named gap or exempt (${form})`);
+    for (const [k, r] of Object.entries(TABLE)) {
+      const g = Object.entries(r.g || {}), x = Object.entries(r.x || {});
+      for (const [c] of g) ok(c in GAP_CLASSES, `FR-197 sink table: ${k} names a known gap class ${c}`);
+      for (const [c] of x) ok(c in EXEMPT_REASONS && /^[a-z]+$/.test(c), `FR-197 sink table: ${k} gives a known one-word reason ${c}`);
+      const want = (r.m || 0) + (r.v || 0) + [...g, ...x].reduce((s, [, n]) => s + n, 0);
+      eq(found[k] ? found[k].all : 0, want, `FR-197 sink table: ${k} holds ${want} name reads (${form})`);
+      ok(!r.m || (found[k] && found[k].onMasked >= r.m), `FR-197 sink table: the ${r.m || 0} masked reads in ${k} are on lines that go through a mask (${form})`);
+    }
+  }
+  // forms a static scan cannot reach ([KNOWN GAP]; none used in app.js today, held by this table: a new use would have to enter it). Each is named,
+  // with these words, in spec 012's FR-197 delta (round 5 of the review of PR 2098):
+  //   a key built from parts at run time (a computed key such as 'na'+'me');
+  //   a session object's values or entries read as a whole (Object.values, Object.entries);
+  //   a session object turned into text as a whole (JSON.stringify);
+  //   a new caller of a listed raw renderer that passes it a session name from a new place.
+  const STATIC_GAPS = ['a key built from parts at run time', "a session object's values or entries read as a whole", 'a session object turned into text as a whole',
+    'a new caller of a listed raw renderer that passes it a session name from a new place'];
+  {
+    const specTxt = fs.readFileSync(path.join(__dirname, '..', '..', 'specs', '012-claude-codex-adapters', 'spec.md'), 'utf8');
+    for (const g of STATIC_GAPS) ok(specTxt.includes(g), `FR-197 the spec names the form a static scan cannot reach: ${g}`);
+    ok(specTxt.includes('none used today, held by this table: a new use would have to enter it'), 'FR-197 the spec says the unreachable forms are unused today');
+  }
+  // every gap class the table uses is named in both lists, and the two lists name the same classes (round 4: the rail rows had dropped out of the spec's)
+  const listOf = (file: string): string[] => {
+    const txt = fs.readFileSync(path.join(__dirname, '..', '..', 'specs', '012-claude-codex-adapters', file), 'utf8');
+    const all = [...txt.matchAll(/FR-197 gap classes: ([^.|]*)\./g)];
+    eq(all.length, 1, `FR-197 ${file} holds one gap class list`);
+    return all[0][1].split(';').map((c) => c.trim()).filter(Boolean).sort();
+  };
+  const spec = listOf('spec.md'), cov = listOf('secret-coverage.md');
+  eq(spec, cov, 'FR-197 the spec and secret-coverage.md name the same gap classes');
+  eq(spec, Object.values(GAP_CLASSES).sort(), 'FR-197 the gap classes in the spec are the sink table classes');
+  const used = new Set(Object.values(TABLE).flatMap((r) => Object.keys(r.g || {})));
+  eq([...used].sort(), Object.keys(GAP_CLASSES).sort(), 'FR-197 every gap class is used by the sink table');
+}
+
 void stripsByBehaviour().then(() => console.log(`test-live-mask: ${n} asserts passed`), (e) => { console.error(e); process.exit(1); });

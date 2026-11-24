@@ -74,6 +74,14 @@ module.exports = async (ctx) => {
     assert.ok(lg.right <= 1 && lg.decRight <= lg.winW, `${tag}: Decision stays inside the window: ${jsLiteral(lg)}`);
     assert.ok(lg.actW >= 150, `${tag}: Action is not collapsed (${lg.actW}px)`);
     assert.ok(/commit/.test(lg.title), `${tag}: the Action cell has its text as title`);
+    /* owner decision 2026-11-23 (#2060 item 11): the Folder cell shows the full path; a long one is cut in the middle, the title and the accessible name keep all of it */
+    const fp = await js(`(()=>{const s=document.getElementById('screen'),A=window.DurbarActivityTable,e=x=>String(x).replace(/[&<>"']/g,c=>'&#'+c.charCodeAt(0)+';'),full='/home/ana/clients/acme/'+'deep/'.repeat(16)+'app';
+      s.querySelector('table.act').outerHTML=A.tableHtml([{t:new Date().toISOString(),agent:'Ben',folder:'app',path:full,app:'GitHub Copilot',mode:'ask',action:'Run npm test',decision:'allowed-once'},{t:new Date().toISOString(),agent:'Ben',folder:'api',path:'/home/ana/api',app:'GitHub Copilot',mode:'ask',action:'x',decision:'denied'}],e);
+      const c=[...s.querySelectorAll('table.act tbody tr')].map(r=>r.querySelector('.act-p'));
+      return {full,t0:c[0].textContent,title0:c[0].title,aria0:c[0].getAttribute('aria-label'),t1:c[1].textContent};})()`);
+    assert.ok(fp.t0.includes('…') && fp.t0.length <= 60 && fp.t0.startsWith('/home/ana/') && fp.t0.endsWith('/deep/app'), `${tag}: a long path is cut in the middle: ${jsLiteral(fp)}`);
+    assert.ok(fp.title0 === fp.full && fp.aria0 === fp.full, `${tag}: title and accessible name hold the full path`);
+    assert.strictEqual(fp.t1, '/home/ana/api', `${tag}: a short path is shown whole`);
     assert.ok(await H.click('#tabCost'), `${tag}: the Cost tab opens`);
     assert.ok(await H.until(`document.querySelector('#screen .scr-body:not(.scr-wide)')`), `${tag}: other Tools tabs keep the 880px column`);
     assert.ok(await H.js(`document.querySelector('#screen .scr-body').getBoundingClientRect().width<=880`), `${tag}: the Cost body is at most 880px`);

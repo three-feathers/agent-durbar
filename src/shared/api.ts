@@ -1374,6 +1374,8 @@ export interface DurbarApi {
   openWith?(id: string, target: string): Promise<{ ok: boolean; error?: string; edition?: string; note?: string }>;
   /** Spec 063: the git branch and uncommitted changes of the agent's folder (read-only). Optional: older bridges lack it. */
   gitStatus?(id: string): Promise<FolderGitStatus>;
+  /** Spec 005 FR-411: main writes the real argument text of that session's tool call to the clipboard; the answer never holds the text. A value main masked needs `confirmed: true` (else `ask`, nothing written). */
+  copyToolArg?(sessionId: string, callId: string, confirmed?: boolean): Promise<{ ok: true } | { ok: false; reason: 'unknown' | 'too-long' | 'ask' | 'failed' }>;
   /** Spec 085: what the session did since its first message in this run (time, git files and lines, commits), for the card shown when it ends. Optional: older bridges lack it. */
   /** `final: true` says the End follows: main adds the numbers to the day rollup when it happens (spec 085 FR-009). */
   sessionSummary?(id: string, final?: boolean): Promise<SessionSummaryInfo>;

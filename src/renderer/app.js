@@ -86,7 +86,7 @@ function crewPreloadOne(id,pose){
 /* the open chat's header avatar and the inbox rows are drawn once, not by renderAll: when a character falls back, redraw just those avatars (no rebuild, so focus stays) */
 function crewRefreshAvatars(){
   const sel=typeof ui!=='undefined'&&byId(ui.selected), ph=document.querySelector('#panelHead .avatar'); if(sel&&ph)ph.innerHTML=avatar(sel);
-  document.querySelectorAll('.inbox-row[data-id] .ib-av').forEach(av=>{const a=byId(av.closest('.inbox-row').dataset.id);if(a)av.innerHTML=avatar(a);});
+  document.querySelectorAll('.inbox-row[data-id] .ib-av').forEach(av=>{const a=byId(av.closest('.inbox-row').dataset.id);if(a)av.innerHTML=avatar(a,undefined,undefined,32);});
 }
 /* the map was built for another agents array or another Characters value (each crew keeps its own saved map) */
 const crewStale=()=>CREW_FOR!==agents||CREW_CH!==crewChoice();
@@ -646,8 +646,8 @@ function openCoffeeMenu(id,anchor){
   const a=byId(id); if(!a||!a.coffee)return;
   const can=COFFEE.retryable(BREAKS.get(id),a), left=coffeeLeftWords(a);
   const it=(act,label,sub,dis)=>`<button type="button" role="menuitem" data-cact="${act}"${dis?' aria-disabled="true"':''} title="${esc(act==='retry'&&!dis?RETRY_TIP:sub)}"><span class="mt"><b>${esc(label)}</b><small>${esc(sub)}</small></span></button>`;
-  const m=document.createElement('div');m.id='modeMenu';m.className='mode-menu';m.setAttribute('role','menu');m.setAttribute('aria-label',a.name+': '+coffeeWord()+(left?', '+left:''));
-  m.innerHTML=it('open','Open chat','See '+a.name+'’s chat and its coffee-break card')+it('retry','Retry now',can?'Send one message now; if the limit has not reset yet, the agent goes back on its break':coffeeNoRetry(a)||'Not available now',!can);
+  const m=document.createElement('div');m.id='modeMenu';m.className='mode-menu';m.setAttribute('role','menu');m.setAttribute('aria-label',nameShown(a)+': '+coffeeWord()+(left?', '+left:'')); /* FR-197 (review of PR 2098) */
+  m.innerHTML=it('open','Open chat','See '+nameShown(a)+'’s chat and its coffee-break card')+it('retry','Retry now',can?'Send one message now; if the limit has not reset yet, the agent goes back on its break':coffeeNoRetry(a)||'Not available now',!can);
   document.body.appendChild(m);
   const ab=anchor.getBoundingClientRect(),b=m.getBoundingClientRect();
   m.style.left=Math.max(8,Math.min(ab.left,innerWidth-b.width-8))+'px';
@@ -949,24 +949,33 @@ function roFace0(a){
   const ls=E.lightState(isFailing(a)?'failing':isRetrying(a)?'retrying':isCompacting(a)?'compacting':vis(a),{limit:!!a.limit,paused:!!a.paused,asleep:old});
   const pose=(E.SEAT_POSE||{})[ls]||'rest';
   const ok=/^[a-z0-9-]{1,24}$/.test(pp.set)&&/^[a-z0-9-]{1,24}$/.test(pp.world);
-  const file=ok&&person&&/^[a-z0-9-]{1,24}$/.test(person)?'realoffice/sets/'+pp.set+'/'+person+'-'+(v?'rest':pose)+'.webp':''; /* a visit does not change who the agent is: away, the same person at rest */
-  const sm=(packMeta('sets',pp.set)||{}).seat, seatM=sm&&person&&Object.prototype.hasOwnProperty.call(sm,person)?sm[person]:null, crop=seatM&&E.portraitCrop?E.portraitCrop(seatM):null;
-  return {ls,file,seatM,crop,pp,person,v};
+  const pm=packMeta('sets',pp.set)||{}, busts=pm.hd&&pm.hd.busts&&person&&Object.prototype.hasOwnProperty.call(pm.hd.busts,person); /* spec 102 T472: a set's HD busts when it has them */
+  const file=ok&&person&&/^[a-z0-9-]{1,24}$/.test(person)?'realoffice/sets/'+pp.set+'/'+(busts?'hd/':'')+person+'-'+(v?'rest':pose)+(busts?'@4':'')+'.webp':''; /* a visit does not change who the agent is: away, the same person at rest */
+  const sm=busts?pm.hd.busts:pm.seat, seatM=sm&&person&&Object.prototype.hasOwnProperty.call(sm,person)?sm[person]:null, crop=seatM&&E.portraitCrop?E.portraitCrop(seatM):null;
+  const hdT=pack0(pp.set)&&person?roTile(pp.set,person,v?'rest':pose):''; /* spec 102 FR-405 (issue 2055): the HD set's avatar tiles */
+  return {ls,file,seatM,crop,pp,person,v,tile:hdT};
 }
+const pack0=set=>/^[a-z0-9-]{1,24}$/.test(set||'');
+/* spec 102 FR-405: the base path of a person's avatar tile in a pose ('' when the set has none): the file is base + the drawn size in device px + '.webp' */
+function roTile(set,person,pose){const t=((packMeta('sets',set)||{}).hd||{}).tiles;return t&&Array.isArray(t.people)&&t.people.includes(person)&&Array.isArray(t.poses)&&t.poses.includes(pose)&&/^[a-z0-9-]{1,24}$/.test(person)?'realoffice/sets/'+set+'/hd/'+person+'-'+pose+'-t':'';}
+/* the tile for a circle of px CSS px: the exact size, and twice it for a 2x screen; null when the set has no tile of that size (the old crop is drawn) */
+function roTileImg(f,px){const t=f&&f.tile&&((packMeta('sets',f.pp.set)||{}).hd||{}).tiles;if(!t||!px||!t.sizes.includes(px))return null;
+  const two=t.sizes.includes(2*px)?` srcset="${esc(f.tile+px)}.webp 1x, ${esc(f.tile+2*px)}.webp 2x"`:'';
+  return `<span class="ro-face" style="position:relative;display:block;width:100%;height:100%;overflow:hidden;border-radius:50%"><img alt="" draggable="false" src="${esc(f.tile+px)}.webp"${two} style="display:block;width:100%;height:100%;image-rendering:pixelated"></span>`;}
 const roFaceImg=f=>{
   const st=f.crop&&f.seatM?`width:${f.seatM.w/f.crop.s*100}%;left:${-f.crop.x/f.crop.s*100}%;top:${-f.crop.y/f.crop.s*100}%`:'width:100%';
   return `<span class="ro-face" style="position:relative;display:block;width:100%;height:100%;overflow:hidden;border-radius:50%"><img alt="" draggable="false" src="${esc(f.file)}" style="position:absolute;display:block;max-width:none;height:auto;${st}"></span>`;
 };
 /* what picture an agent has right now, as a short key: tests and the redraw compare it (the same for every place that shows the face) */
 function faceKey(a){
-  const f=roFace(a); if(f)return f.file||'initial|'+Array.from(String(a.name||'?'))[0].toUpperCase();
+  const f=roFace(a); if(f)return (f.tile||f.file)||'initial|'+Array.from(String(a.name||'?'))[0].toUpperCase();
   const kit=THEME.sceneKit(); return kit+'|'+(kit==='crew'?crewOf(a):'')+'|'+JSON.stringify(a.look||'');
 }
-function avatar(a,view,ov){
-  if(!ov){const rf=roFace(a);if(rf)return rf.file?roFaceImg(rf):`<span class="ro-face ro-ini" style="display:flex;align-items:center;justify-content:center;width:100%;height:100%;border-radius:50%;font-weight:600;font-size:12px;background:var(--surface-2);color:var(--ink)">${esc(Array.from(String(a.name||'?'))[0].toUpperCase())}</span>`;} /* away: the initial, as the header */
+function avatar(a,view,ov,px){
+  if(!ov){const rf=roFace(a);if(rf)return rf.file?(roTileImg(rf,px)||roFaceImg(rf)):`<span class="ro-face ro-ini" style="display:flex;align-items:center;justify-content:center;width:100%;height:100%;border-radius:50%;font-weight:600;font-size:12px;background:var(--surface-2);color:var(--ink)">${esc(Array.from(String(a.name||'?'))[0].toUpperCase())}</span>`;} /* away: the initial, as the header */
   const k=themedLook(a.look);
   const kit=(ov&&ov.kit)||THEME.sceneKit(), cr=kit==='crew'?(ov&&ov.crew!==undefined?ov.crew:crewOf(a)):'';
-  if(kit!=='office'&&window.DurbarScenes){const v=window.DurbarScenes.avatar(kit,a,{k,T:T_,shade,reduced:REDUCED,art:kitArt(),crew:cr,crewFb:kit==='crew'&&CREW_BAD.has(cr),view});if(v)return v;}
+  if(kit!=='office'&&window.DurbarScenes){const v=window.DurbarScenes.avatar(kit,a,{k,T:T_,shade,reduced:REDUCED,art:kitArt(),crew:cr,crewFb:kit==='crew'&&CREW_BAD.has(cr),view,px,dpr:window.devicePixelRatio||1});if(v)return v;}
   return `<svg viewBox="50 20 48 48" width="100%" height="100%" aria-hidden="true" focusable="false">${k.style==='long'?`<path d="M59.5 44a14.5 14.5 0 0 1 29 0v19q0 4-4 4h-21q-4 0-4-4z" fill="${k.hair}"/>`:''}<path d="M55 99V77q0-14 14-14h10q14 0 14 14v22z" fill="${k.shirt}"/><rect x="70" y="53" width="8" height="10" rx="3" fill="${shade(k.skin,-.08)}"/>${charArt('body')}<circle cx="74" cy="44" r="12.5" fill="${k.skin}"/>${hairFront(k.style,k.hair)}${charArt('head')}<circle cx="71.7" cy="45.4" r="1.35" fill="${T_('--face-dark')}"/><circle cx="79.7" cy="45.4" r="1.35" fill="${T_('--face-dark')}"/><path d="M71 51.6q3 2 6 0" fill="none" stroke="${T_('--mouth')}" stroke-width="1.3" stroke-linecap="round"/></svg>`;
 }
 const PLANT=()=>'<svg class="room-plant" width="26" height="30" viewBox="0 0 26 30" aria-hidden="true" focusable="false">'+THEME.slot('plant')+'</svg>';
@@ -2708,7 +2717,7 @@ async function playTurn(chat,a,turn,opts){
     if(turn.quick){const q=document.createElement('div');q.className='quick';q.setAttribute('role','group');q.setAttribute('aria-label','Quick replies');
       turn.quick.forEach(txt=>{const bt=document.createElement('button');bt.textContent=txt;bt.addEventListener('click',()=>{q.remove();sendMessage(txt,a.id);});q.appendChild(bt);});m.appendChild(q);}
   } else if(opts.inProgress){
-    const t=document.createElement('div');t.className='typing';t.setAttribute('aria-label',a.name+' is working');t.innerHTML='<i></i><i></i><i></i>';m.appendChild(t);
+    m.appendChild(typingIndicator(a));
   }
   stickyScroll(chat);
   return true;
@@ -2891,7 +2900,7 @@ function syncChatHeader(){
   if(!on){if(port0)port0.remove();return;}
   const f=roFace(a), pp=f.pp, v=f.v, ls=f.ls, file=f.file, pack=/^[a-z0-9-]{1,24}$/.test(pp.set)&&/^[a-z0-9-]{1,24}$/.test(pp.world); /* the one picker (issue 1193) */
   const lt=E.lightFor(ls,{still:REDUCED||!MOTION||STILL_HL}), words=E.lampWords(lt);
-  const key=[a.id,ls,words,file,stWord(a),v?v.place:'',helpersOf(a).length,pp.world,pp.set].join('|');
+  const key=[a.id,ls,words,file,f.tile,stWord(a),v?v.place:'',helpersOf(a).length,pp.world,pp.set].join('|');
   /* the header portrait: the person's head and shoulders in a ring that carries the lamp's colour, with the status dot */
   let port=port0; const top=p.querySelector('.ph-top');
   if(top&&(!port||port._k!==key)){
@@ -2899,10 +2908,12 @@ function syncChatHeader(){
     port=document.createElement('span');port.id='roPortrait';port.className='ro-portrait';port.setAttribute('aria-hidden','true');port._k=key;
     port.dataset.lamp=lt.lamp;port.dataset.tint=lt.tint; /* spec 097 FR-236: the ring follows the screen tint */
     port.dataset.face=faceKey(a);
-    if(file&&pack){const clip=document.createElement('span');clip.className='rp-clip';const im=document.createElement('img');im.alt='';im.draggable=false;im.src=file;
+    const tl=roTileImg(f,32);
+    if(tl){const clip=document.createElement('span');clip.className='rp-clip';clip.innerHTML=tl;port.appendChild(clip);} /* spec 102 FR-405: the HD tile, 1:1 */
+    else if(file&&pack){const clip=document.createElement('span');clip.className='rp-clip';const im=document.createElement('img');im.alt='';im.draggable=false;im.src=file;
       if(f.crop&&f.seatM){im.style.width=(f.seatM.w/f.crop.s*100)+'%';im.style.left=(-f.crop.x/f.crop.s*100)+'%';im.style.top=(-f.crop.y/f.crop.s*100)+'%';} /* the face fills the circle: the data of the layout's face box */
       clip.appendChild(im);port.appendChild(clip);}
-    else{const t=document.createElement('b');t.className='rp-ini';t.textContent=Array.from(String(a.name||'?'))[0].toUpperCase();port.appendChild(t);} /* away or no picture: the initial, as the office's disc */
+    else{const t=document.createElement('b');t.className='rp-ini';t.textContent=Array.from(String(nameShown(a)||'?'))[0].toUpperCase();port.appendChild(t);} /* away or no picture: the initial, as the office's disc */
     const d=document.createElement('i');d.className='dot '+({limit:'waiting',asleep:'idle'}[ls]||ls);port.appendChild(d);
     top.insertBefore(port,top.firstChild);
   }
@@ -2920,7 +2931,7 @@ function updatePanelHeader(){
   syncMoreBtn(); /* spec 005 FR-234 (issue 1145): no More button for a menu with no items */
   $('pauseBtn').querySelector('span').textContent=a.paused?'Resume':'Pause';
   syncRunState(); /* spec 005 FR-038: Send or Stop follows the turn */
-  const av=ph.querySelector('.avatar'),fk=faceKey(a); if(av&&av.dataset.face!==fk){av.dataset.face=fk;av.innerHTML=avatar(a);} /* the header's face follows the agent's picture (issue 1193) */
+  const av=ph.querySelector('.avatar'),fk=faceKey(a); if(av&&av.dataset.face!==fk){av.dataset.face=fk;av.innerHTML=avatar(a,undefined,undefined,32);} /* the header's face follows the agent's picture (issue 1193) */
   syncChatHeader(); /* spec 097 FR-106: the portrait and the lamp words follow the header */
   requestAnimationFrame(syncChatHeader); /* once more when the panel has its layout */
 }
@@ -3001,7 +3012,7 @@ function wireAnswerBar(a){
     const q=card.classList.contains('question'), long=text.length>REQ_TEXT_MAX, fit=q&&!long?qFits(card):null;
     bar.innerHTML='<span class="ab-q"><b><span class="ab-n" dir="auto"></span></b> <span></span></span><span class="ab-act"></span>';
     /* spec 052 FR-177: the name is its own one-line span, cut by CSS with an ellipsis and titled with the whole name; the count and the verb stay outside it */
-    const nm=bar.querySelector('.ab-n');nm.textContent=a.name;nm.title=a.name;
+    const nm=bar.querySelector('.ab-n');nm.textContent=nameShown(a);nm.title=nameShown(a);
     const lead=bar.querySelector('b');if(n>1)lead.insertBefore(document.createTextNode('1 of '+n+' \u00b7 '),nm);lead.appendChild(document.createTextNode(q?' asks:':card.classList.contains('limit')?' stopped:':' needs your OK:'));
     const qs=bar.querySelector('.ab-q > span');
     if(fit){if(fit.tag){const tg=document.createElement('span');tg.className='tag';tg.textContent=fit.tag;qs.appendChild(tg);qs.appendChild(document.createTextNode(' '));}qs.appendChild(document.createTextNode(fit.q));}
@@ -3044,7 +3055,7 @@ function wireAnswerBar(a){
     answerPress(src,requestRaw(c))();return true;
   };
   /* spec 052 FR-177: a late title or a rename changes only the name, in place: no repaint, so what you typed in the box and its focus stay */
-  const rename=()=>{const nm=bar.querySelector('.ab-n');if(nm&&!bar.hidden){nm.textContent=a.name;nm.title=a.name;}};
+  const rename=()=>{const nm=bar.querySelector('.ab-n');if(nm&&!bar.hidden){nm.textContent=nameShown(a);nm.title=nameShown(a);}};
   answerObs={m:mo,i:io,answerKey,rename};check();
 }
 /* ---------------- spec 063: the folder chip says the git branch and how many files changed; a click lists them ---------------- */
@@ -3136,14 +3147,22 @@ function focusComposer(){
 }
 /* spec 059 FR-020 item 1 (issue 636): the chat title is a button that renames in place when this session can be renamed; helpers' titles stay plain text */
 const titleRenameable=a=>canRenameSession(a);
-const panelTipOf=a=>{const t=SN().nameTip(a.alias,a.title,a.folderLabel||a.baseName||'')||a.name;return titleRenameable(a)?t+' Click or press F2 to rename.':t;};
-const panelTitleHTML=a=>titleRenameable(a)?`<button type="button" class="ttl-btn" id="panelTitleBtn" aria-label="Rename session ${esc(a.name)}">${esc(a.name)}</button><span class="ttl-pen" aria-hidden="true">${ICON('rename')}</span>`:esc(a.name);
+/* spec 012 FR-197 (issue 1999): the chat's header name, its tooltip, the chat's label and the composer's label show a session's name only through the
+   announcement mask (FR-195's liveText: annPart, '[not checked]' when it cannot be checked); the rename field keeps the name as written (the person's own edit) */
+const nameShown=a=>liveText(a.name);
+/* FR-197 (review of PR 2098): the typing indicator of a played turn names the session through the same mask */
+/* FR-197 (review of PR 2098, round 2): the label of a menu or dialog about one session (the mode, profile and model menus, the context-window dialog) */
+const menuLabel=(prefix,a)=>prefix+nameShown(a);
+const typingIndicator=a=>{const t=document.createElement('div');t.className='typing';t.setAttribute('aria-label',nameShown(a)+' is working');t.innerHTML='<i></i><i></i><i></i>';return t;};
+const panelTipOf=a=>{const t=liveText(SN().nameTip(a.alias,a.title,a.folderLabel||a.baseName||'')||a.name);return titleRenameable(a)?t+' Click or press F2 to rename.':t;};
+const panelTitleHTML=a=>{const n=esc(nameShown(a));return titleRenameable(a)?`<button type="button" class="ttl-btn" id="panelTitleBtn" aria-label="Rename session ${n}">${n}</button><span class="ttl-pen" aria-hidden="true">${ICON('rename')}</span>`:n;};
 /* repaintName: the labels and the text follow a new name; an open field is never touched (it is not in this markup, FR-023 item 1) */
 function paintPanelTitle(a,h){
   h.title=panelTipOf(a);
   const b=h.querySelector('.ttl-btn');
-  if(b){h.setAttribute('aria-label',a.name);b.textContent=a.name;b.setAttribute('aria-label','Rename session '+a.name);}
-  else h.textContent=a.name;
+  const n=nameShown(a);
+  if(b){h.setAttribute('aria-label',n);b.textContent=n;b.setAttribute('aria-label','Rename session '+n);}
+  else h.textContent=n;
 }
 let PANEL_OPENED_AT=0; /* the click guard of FR-020 item 1: the second click of a double-click on a desk lands on the header of the chat it opened */
 const CODE_SVG='<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5.5 4.5L2 8l3.5 3.5M10.5 4.5L14 8l-3.5 3.5M9 3l-2 10"/></svg>'; /* the header's editor button icon */
@@ -3184,7 +3203,7 @@ function openPanel(id,focus){
   const mdlName=a.live&&a.info?modelLabel(a.info):'';
   const subText=a.role+(parent?' · helper of '+parent.name:'');
   p.innerHTML=`${railHTML()}<div class="panel-in">
-   <div class="ph" id="panelHead"><div class="ph-top"><div class="avatar" data-face="${esc(faceKey(a))}">${avatar(a)}</div><div class="ph-id"><h2 id="panelTitle" tabindex="-1" title="${esc(panelTipOf(a))}"${titleRenameable(a)?` aria-label="${esc(a.name)}"`:''}>${panelTitleHTML(a)}</h2><div class="sub" title="${esc(subText)}">${parent?'':chatNoHTML(a)}${!parent&&chatNoOf(a)?'<span class="sr-only">Chat '+chatNoOf(a)+'. </span>':''}${esc(subText)}</div></div>
+   <div class="ph" id="panelHead"><div class="ph-top"><div class="avatar" data-face="${esc(faceKey(a))}">${avatar(a,undefined,undefined,32)}</div><div class="ph-id"><h2 id="panelTitle" tabindex="-1" title="${esc(panelTipOf(a))}"${titleRenameable(a)?` aria-label="${esc(nameShown(a))}"`:''}>${panelTitleHTML(a)}</h2><div class="sub" title="${esc(subText)}">${parent?'':chatNoHTML(a)}${!parent&&chatNoOf(a)?'<span class="sr-only">Chat '+chatNoOf(a)+'. </span>':''}${esc(subText)}</div></div>
       <div class="ph-meta"><span data-f="status"></span><span class="ph-ago" data-f="ago"></span><!-- spec 005 FR-039: the header keeps who and what (status, limit, remote, folder); how the next message runs is under the message box (FR-037) -->${a.live&&!a.parent&&bridge&&bridge.setCap?capChipHTML(liveRoot(a)):''}${canRemote(a)?remoteChipHTML(a):''}<span class="folder" title="${esc(room.path)}"><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" style="flex:none"><path d="M1.8 4.2a1.4 1.4 0 0 1 1.4-1.4h3l1.6 1.8h4.8a1.4 1.4 0 0 1 1.4 1.4v6.2a1.4 1.4 0 0 1-1.4 1.4H3.2a1.4 1.4 0 0 1-1.4-1.4z"/></svg><span class="folder-t">${esc(showPath(room.path))}</span></span>${notesOn(a)?'<button class="nt-count" id="ntCount" type="button" aria-expanded="false" aria-controls="notesDrawer" data-notes-toggle hidden>Notes</button>':''}</div>      <div class="actions"><!-- spec 052 FR-003: two actions in view (FR-139: a third, + New, by owner decision), the rest under More (ids kept; End and Remove last); spec 006 FR-033 (2026-10-21): Previous sessions moved out of the actions, to their own section above the chat -->${a.live&&!a.parent&&bridge.newSession&&anyKindReady()&&!demoOn?`<button class="btn sm" id="newSessHdrBtn" type="button" title="New session in ${esc(room.name)}" aria-label="New session in ${esc(room.name)}">+ New</button>`:''}${a.live?`<button class="btn sm primary" id="vscodeBtn" type="button" aria-haspopup="menu" aria-expanded="false" aria-controls="openWithMenu" title="Open this folder in an editor or the file manager. This does not move the conversation.">${CODE_SVG}Open with<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6l4 4 4-4"/></svg></button><div class="more-menu" id="openWithMenu" role="menu" aria-label="Open with" aria-describedby="owNote" hidden><p role="none" class="ow-note" id="owNote">Opens this folder only. Your conversation stays here.${a.live&&bridge.newSession&&!a.parent&&anyKindReady()&&canHandover(a)?' To hand it to another app, use More, then Continue in another app…':''}</p><div id="owItems" role="none"></div></div>`:`<button class="btn sm primary" id="vscodeBtn" type="button" title="A demo agent: shows the command an editor would be opened with">${CODE_SVG}Open in editor</button>`/* spec 009 FR-019 (review of PR 976): a demo agent has no menu to promise */}
         <button class="btn sm" id="pauseBtn" type="button"><svg viewBox="0 0 16 16" fill="currentColor"><rect x="4" y="3" width="2.8" height="10" rx="1"/><rect x="9.2" y="3" width="2.8" height="10" rx="1"/></svg><span>Pause</span></button>
         <button class="btn sm" id="moreBtn" type="button" aria-haspopup="menu" aria-expanded="false" aria-controls="moreMenu" title="More actions for this agent">More<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6l4 4 4-4"/></svg></button><div class="more-menu" id="moreMenu" role="menu" aria-label="More actions" hidden>${a.live&&!a.parent?`<button class="more-it" role="menuitem" tabindex="-1" id="toolsHdrBtn" type="button" title="Which tools this agent used, how often, and its models and context window"><span class="mt">Tools and usage<small>Tools used, models, context window</small></span></button>`:''}${notesOn(a)?`<button class="more-it" role="menuitem" tabindex="-1" id="notesHdrBtn" type="button" data-notes-toggle aria-keyshortcuts="${esc(ariaKeys(NOTES_KEYS))}" title="Messages and ideas kept for this folder, to put back into the message box"><span class="mt">Notes…<small>Saved messages and ideas · ${esc(keyText(NOTES_KEYS))}</small></span></button>`:''}${a.live&&!a.parent&&bridge.listSchedules&&!demoOn?`<button class="more-it" role="menuitem" tabindex="-1" id="schedHdrBtn" type="button" title="Prompts sent to this folder's agent at a time, every day or at an interval"><span class="mt">Schedules${(()=>{try{const n=schedulesOf(room).filter(s=>!s.done).length;return n?' ('+n+')':'';}catch(e){return '';}})()}<small>Prompts sent at a set time</small></span></button>`:''}${a.live&&bridge.newSession&&!a.parent&&anyKindReady()?`<button class="more-it" role="menuitem" tabindex="-1" id="newSessBtn" type="button" title="Another agent with its own chat in this folder"><span class="mt">+ New session<small>Another agent in this folder</small></span></button>${canHandover(a)?'<button class="more-it" role="menuitem" tabindex="-1" id="handoverBtn" type="button" title="Start a session in another agent app from a summary of this conversation. You review it first."><span class="mt">Continue in another app…<small>Start there from a summary</small></span></button>':''}`:''}${canRemote(a)?`<button class="more-it${a.remote?' on':''}" role="menuitem" tabindex="-1" id="remoteBtn" type="button" title="Follow and steer this session from github.com and GitHub Mobile">${remoteItemInner(a)}</button>`:''}${a.live&&!a.parent&&resumeCmdOf(a)?`<button class="more-it" role="menuitem" tabindex="-1" id="copyResBtn" type="button" title="Copy a command that continues this session in a terminal (end the session here first)"><span class="mt">Copy resume command<small>Continue this session in a terminal</small></span></button>`:''}${canRenameSession(a)?`<button class="more-it" role="menuitem" tabindex="-1" id="renameSessBtn" type="button" title="Give this session a short name"><span class="mt">Rename…<small>A short name for this session</small></span></button>`:''}<div class="more-sep" role="separator"></div>${a.live&&bridge.end&&!a.parent?`<button class="more-it danger" role="menuitem" tabindex="-1" id="endBtn" type="button" title="End this session and free it. Sending a message later resumes it."><span class="mt">End session<small>A later message resumes it</small></span></button>`:''}${a.live&&bridge.removeSession&&!a.parent&&siblingsOf(a).length?`<button class="more-it danger" role="menuitem" tabindex="-1" id="rmSessBtn" type="button" title="End this session and take its card out of the office. The folder's other sessions stay."><span class="mt">Remove from office<small>Ends it; history stays in Previous sessions</small></span></button>`:(a.live&&bridge.removeFolder&&!a.parent&&!demoOn?`<button class="more-it danger" role="menuitem" tabindex="-1" id="rmFolderBtn" type="button" title="Forget ${esc(DurbarCutText.cutText(room.name,30))} in Agent Durbar. Its session ends; nothing on disk is deleted."><span class="mt">Remove folder<small>Forgets the folder; files stay on disk</small></span></button>`:'')}</div></div></div>
@@ -3192,7 +3211,7 @@ function openPanel(id,focus){
     <div class="grants" id="grants" aria-label="Permissions allowed for this session" hidden></div></div>
    ${BP.available(a)?BP.tabsHTML():''}<!-- spec 080 T015 FR-002: Chat | Browser -->
    <div class="prev" id="prev" role="region" aria-label="Previous sessions" hidden>${a.live&&!a.parent?`<div class="prev-bar"><button class="prev-toggle" id="prevBtn" type="button" data-pv="toggle" aria-expanded="false" aria-controls="prevPanel" aria-keyshortcuts="${esc(ariaKeys(PREV_KEYS))}">${ICON('chev')}<span class="prev-l">Previous sessions</span><span class="prev-c" hidden></span><span class="prev-sub"></span></button></div><div class="prev-panel" id="prevPanel" hidden></div>`:''}</div>
-   <div id="chat" role="log" aria-live="off" aria-label="Chat with ${esc(a.name)}" tabindex="0"></div>
+   <div id="chat" role="log" aria-live="off" aria-label="Chat with ${esc(nameShown(a))}" tabindex="0"></div>
    ${notesOn(a)?notesDrawerHTML():''}<!-- spec 083 FR-020: the Notes drawer covers the chat log only -->
    ${BP.available(a)?BP.paneHTML():''}
    <div class="answer-bar coffee-bar" id="coffeeBar" role="region" aria-label="Coffee break" data-surface="coffee-bar" hidden></div>
@@ -3200,7 +3219,7 @@ function openPanel(id,focus){
    <div class="composer"><div class="cgrip" id="composerGrip" role="separator" aria-orientation="horizontal" aria-label="Resize message box" aria-controls="msgInput" tabindex="0" title="Drag to resize the message box. Double-click to let it grow with your text again."></div><div class="att-note" id="attNote" role="alert" hidden></div><div class="attached" id="attached" aria-label="Attachments"></div>
     <p class="nt-notice" id="ntNotice" role="status" hidden></p>
     <div class="inbox">
-     <textarea id="msgInput" rows="1" placeholder="Message ${esc(a.name)}…" aria-label="Message ${esc(a.name)}"></textarea>
+     <textarea id="msgInput" rows="1" placeholder="Message ${esc(nameShown(a))}…" aria-label="Message ${esc(nameShown(a))}"></textarea>
      ${runSlotHTML(a)}</div>
     ${composerToolbarHTML(a,mdlName)}
     <p class="hint">${esc(composerHint(a))}</p></div>
@@ -4321,7 +4340,7 @@ function openCtxMenu(a0,anchor){
   const a=liveRoot(a0); if(!a)return;
   closeCtxMenu();closeModeMenu();closeModelMenu();closeAgentMenu();
   const c=window.DurbarScreens.ctxChip(a), canC=ctxCanCompact(a), busy=busyNow(a);
-  const m=document.createElement('div');m.id='ctxMenu';m.className='mode-menu ctx-sum';m.setAttribute('role','dialog');m.setAttribute('aria-label','Context window of '+a.name);
+  const m=document.createElement('div');m.id='ctxMenu';m.className='mode-menu ctx-sum';m.setAttribute('role','dialog');m.setAttribute('aria-label',menuLabel('Context window of ',a));
   m.innerHTML=ctxSummaryHTML(a)
     +(canC?`<button type="button" id="compactBtn" class="mm-compact"${busy?' aria-disabled="true"':''}><span class="mt"><b>Compact</b><small>${esc(busy?'The agent is busy. Compact when it is idle.':'Summarise to free space. Costs one model call.')}</small></span></button>`:'')
     +`<button type="button" data-act="ctxTools"><span class="mt"><b>Models and context of all agents</b><small>The Tools view</small></span></button>`;
@@ -5032,7 +5051,7 @@ function doorAfterPaint(list){
   const p=$('needsPanel'); if(!p)return;
   const n=list.length;
   $('doorLine').textContent=n?n+' outside your door, oldest first':'Nobody outside your door.';
-  $('doorFaces').innerHTML=list.slice(0,8).map(a=>'<span class="door-face" data-face="'+esc(faceKey(a))+'">'+avatar(a)+'</span>').join('')+(n>8?'<span class="door-more">+'+(n-8)+'</span>':'');
+  $('doorFaces').innerHTML=list.slice(0,8).map(a=>'<span class="door-face" data-face="'+esc(faceKey(a))+'">'+avatar(a,undefined,undefined,24)+'</span>').join('')+(n>8?'<span class="door-more">+'+(n-8)+'</span>':'');
   p.dataset.sig=doorSig(list);
   clearTimeout(DOOR_CLEAR);DOOR_CLEAR=0;
   if(!n&&p.dataset.auto==='1')DOOR_CLEAR=setTimeout(()=>{DOOR_CLEAR=0;if($('needsPanel')&&!needsMeOrder().length)closeDoor(false);},2000); /* Q-NY-13: opened by itself and emptied, All clear for about 2 s */
@@ -5086,7 +5105,7 @@ function openInbox(focusId){
   {const wd=document.documentElement.dataset.world;
     if(officeView()==='real'&&/^[a-z0-9-]{1,24}$/.test(wd||'')){
       const hd=document.createElement('div');hd.className='ib-world';hd.dataset.surface='inbox';hd.setAttribute('aria-hidden','true');
-      hd.innerHTML='<img class="ibw-door" alt="" src="realoffice/worlds/'+wd+'/fx-boss.webp"><span class="ibw-faces">'+needsMeOrder().slice(0,4).map(a=>'<span class="ibw-face" data-face="'+esc(faceKey(a))+'">'+avatar(a)+'</span>').join('')+'</span>';
+      hd.innerHTML='<img class="ibw-door" alt="" src="realoffice/worlds/'+wd+'/fx-boss.webp"><span class="ibw-faces">'+needsMeOrder().slice(0,4).map(a=>'<span class="ibw-face" data-face="'+esc(faceKey(a))+'">'+avatar(a,undefined,undefined,26)+'</span>').join('')+'</span>';
       const dl=d.querySelector('.inbox-dlg');dl.insertBefore(hd,dl.firstChild);
     }}
   document.body.appendChild(d);
@@ -5144,7 +5163,7 @@ function paintInbox(focusIndex){
     const door=DOOR_ON&&!!$('needsPanel'), rq=card?reqOf(card):'', isLimit=!!card&&card.classList.contains('limit'), isCoffee=door&&!!card&&card.classList.contains('coffee'); /* FR-206: the request this row was painted for; FR-207: a limit row has its own amount and no letter key */
     const st=vis(a), q=card&&card.classList.contains('question'), what=card?(q?'asks':card.classList.contains('limit')?'reached its spending limit':card.classList.contains('coffee')?'is on a '+coffeeWord().toLowerCase():'needs your OK'):(st==='error'?'has an error':a.limit?'reached its limit':LABELS[st]||st);
     row.setAttribute('aria-labelledby','ibh'+i);row.dataset.id=a.id;row.dataset.name=a.name;if(door)row.dataset.rq=rq;if(door&&isLimit)row.classList.add('is-limit');
-    row.innerHTML='<div class="ib-av" aria-hidden="true" data-face="'+esc(faceKey(a))+'">'+avatar(a)+'</div><div class="ib-main"><div class="ib-top"><h4 class="ib-h" id="ibh'+i+'" tabindex="-1"><b class="ib-n"></b> <span class="ib-sub"><span class="ib-w"></span> <span class="ib-f"></span> <span class="ib-wait"></span></span></h4></div><p class="ib-t" id="ibt'+i+'"></p><div class="ib-act"></div></div>';
+    row.innerHTML='<div class="ib-av" aria-hidden="true" data-face="'+esc(faceKey(a))+'">'+avatar(a,undefined,undefined,32)+'</div><div class="ib-main"><div class="ib-top"><h4 class="ib-h" id="ibh'+i+'" tabindex="-1"><b class="ib-n"></b> <span class="ib-sub"><span class="ib-w"></span> <span class="ib-f"></span> <span class="ib-wait"></span></span></h4></div><p class="ib-t" id="ibt'+i+'"></p><div class="ib-act"></div></div>';
     row.querySelector('.ib-h b').textContent=a.name;row.querySelector('.ib-h b').title=a.name;row.querySelector('.ib-w').textContent=what;row.querySelector('.ib-f').textContent='· '+roomOf(a).name;row.querySelector('.ib-f').title=roomOf(a).name; /* spec 052 FR-170: the name is its own line, the rest wraps below it */
     {const t=NEED_SINCE.get(a.id);row.querySelector('.ib-wait').textContent=t!=null?'· '+ATT.waitLabel(Date.now()-t):'';} /* FR-061 */
     const text=card?requestText(card):(taskOf(a)||''), long=door&&!!card&&!isLimit&&text.length>REQ_TEXT_MAX; /* FR-199 (Q-NY-11): over FR-060's 480 characters a row only reads the request's start and offers Open */
@@ -6887,7 +6906,7 @@ function subBlock(s,T){
   const v=subBody(s,inn,T.chat);
   v.paint=()=>{
     el.classList.toggle('running',s.status==='running');el.classList.toggle('failed',s.status==='failed');el.classList.toggle('done',s.status==='done');
-    el.querySelector('.sub-name').textContent=s.name;
+    el.querySelector('.sub-name').textContent=helperMask(s.name)||'Sub-agent';
     el.querySelector('.sub-task').textContent=s.status==='running'?safeExcerpt(homeMask(s.task||s.prompt),90):safeExcerpt(homeMask(s.result||s.lastFinal||s.error||s.task),110); /* spec 015 FR-021: home folders on the raw text first */
     el.querySelector('.sub-st').textContent=subStatusText(s);
     el.querySelector('.sub-open').hidden=!s.card;
@@ -7722,7 +7741,7 @@ function roAskAfterSwitch(a,mode,anchor){
   h.row.remove();
   if(!mine||!note)return;
   const l=document.createElement('p');l.className='ro-done';
-  l.textContent='Now in '+MODE_NAME[mode]+'. Ask '+a.name+' to try again: '+(mode==='allow'?'it will run without asking.':'it will wait for your OK.');
+  l.textContent='Now in '+MODE_NAME[mode]+'. Ask '+nameShown(a)+' to try again: '+(mode==='allow'?'it will run without asking.':'it will wait for your OK.');
   note.appendChild(l);
   announce(l.textContent); /* focus moves to the message box, so a screen reader hears the line here (review on PR 622) */
   const mi=$('msgInput');if(mi&&ui.selected&&liveRoot(byId(ui.selected)||a)===a)mi.focus({preventScroll:true});
@@ -7850,7 +7869,7 @@ function applyTitle(a,title){
 function repaintName(a){
   a.name=SN().displayName(a.alias,a.title,a.folderLabel);
   if(a.info)a.info.alias=a.alias;
-  if(ui.selected===a.id){const h=document.getElementById('panelTitle');if(h)paintPanelTitle(a,h);const mi=$('msgInput');if(mi&&!(a.info&&a.info.autopilot)){mi.setAttribute('aria-label','Message '+a.name);fitPlaceholder();}const c=document.getElementById('chat');if(c)c.setAttribute('aria-label','Chat with '+a.name);}
+  if(ui.selected===a.id){const h=document.getElementById('panelTitle');if(h)paintPanelTitle(a,h);const mi=$('msgInput');if(mi&&!(a.info&&a.info.autopilot)){mi.setAttribute('aria-label','Message '+nameShown(a));fitPlaceholder();}const c=document.getElementById('chat');if(c)c.setAttribute('aria-label','Chat with '+nameShown(a));}
   if(ui.selected===a.id&&answerObs&&answerObs.rename)answerObs.rename(); /* spec 052 FR-177: the answer bar names the session */
   scheduleRender();
   if(document.getElementById('schedDlg'))try{renderSchedDlg();}catch(e){}
@@ -7939,7 +7958,7 @@ function brainRailSync(){
 /* the Your door section: the count and who needs you, in the agent rail's own words (railAge, railReq: masked, cut); a row opens the existing Needs you queue there */
 function brainDoorPaint(){
   const l=$('brailDoorL'), n=$('brailDoorN'), r=$('brainRail'); if(!l||!n||!r||!BRAIN_H)return;
-  const list=needsMeOrder(), now=Date.now(), rows=list.map(x=>({id:x.id,name:x.name,age:railAge(x,now),said:railAgeSaid(x,now),req:SHORT(railReq(x),200)}));
+  const list=needsMeOrder(), now=Date.now(), rows=list.map(x=>({id:x.id,name:nameShown(x),age:railAge(x,now),said:railAgeSaid(x,now),req:SHORT(railReq(x),200)}));
   if(n.textContent!==String(list.length))n.textContent=String(list.length);
   const sig=JSON.stringify(rows);
   if(l.dataset.sig!==sig){
@@ -8421,7 +8440,7 @@ function railReq(x){const c=x.live||chats[x.id]?pendingCardOf(x):null;return c?r
 const railFolderLine=x=>{const r=roomOf(x),p=r?pathTip(deskMask(showPath(r.path))):'';return p?'\n'+esc('Folder: '+p):'';};
 function railRow(x,root,now){
   const st=pillSt(x),attn=st==='waiting'||st==='error'||st==='failing'||st==='retrying', sel=x.id===root, tall=needsMe(x); /* spec 052 FR-092: Failing here too; spec 034 FR-018: Retrying */
-  const head=`<span class="sav" data-face="${esc(faceKey(x))}">${avatar(x)}</span>`, name=`<b>${esc(x.name)}${draftHTML(x)}${unreadHTML(x)}${dialogHTML(x)}</b>`;
+  const head=`<span class="sav" data-face="${esc(faceKey(x))}">${avatar(x,undefined,undefined,22)}</span>`, name=`<b>${esc(x.name)}${draftHTML(x)}${unreadHTML(x)}${dialogHTML(x)}</b>`;
   const cls=`sitem st-${st}${attn?' attn':''}${tall?' tall':''}${sel?' sel':''}`, key=`data-sw="${esc(x.id)}" data-key="sw:${esc(x.id)}" aria-current="${sel}"`, who=`${esc(x.name)}${chatNoWords(x)}${draftWords(x)}${unreadWords(x)}`, no=chatNoOf(x)?'C'+chatNoOf(x)+' · ':'';
   if(!tall)return `<button class="${cls}" type="button" ${key} data-tip="${no}${esc(x.name)} · ${esc(stWord(x,true))}: ${esc(taskText(x))}${railFolderLine(x)}" aria-label="${who}, ${esc(stWord(x,true))}. Open chat.">${head}<span class="stx">${name}</span><span class="sst"><span class="dot ${st}"></span><span class="sw">${esc(stWord(x,true))}</span></span></button>`;
   const req=SHORT(railReq(x),200); /* masked first (requestText), then cut: tooltips stay within 300 characters (spec 052 FR-171) */
@@ -8501,7 +8520,7 @@ function apRepaint(a){
 function apComposer(a){
   const t=$('msgInput');if(!t||!APW||!a.info)return;
   const on=!!a.info.autopilot,app=kindWord(a.info.adapterId),c=capsFor(a).autopilot;
-  const lbl=on?APW.placeholder(app):'Message '+a.name;
+  const lbl=on?APW.placeholder(app):'Message '+nameShown(a); /* FR-197 */
   if(t.getAttribute('aria-label')!==lbl){t.setAttribute('aria-label',lbl);fitPlaceholder();}
   const noAtt=on&&!!c&&c.attachments===false;
   ['attFile','attImg'].forEach(id=>{const b=$(id);if(b){b.hidden=noAtt;b.style.display=noAtt?'none':'';}});
@@ -8572,7 +8591,7 @@ function openModeMenu(a0,x,y,anchor,o){ /* o.modesOnly (spec 003 FR-095): the th
   const hasMode=!!bridge.setPermMode&&feat(a,'modes'), hasOps=!!(ops.stop||(ops.end&&bridge.end)||canRen||canRead);
   if(!hasMode&&!hasOps)return false;
   closeModeMenu();
-  const m=document.createElement('div');m.id='modeMenu';m.className='mode-menu';m.setAttribute('role','menu');m.setAttribute('aria-label',(hasOps?'Actions for ':'Permission mode for ')+a.name);
+  const m=document.createElement('div');m.id='modeMenu';m.className='mode-menu';m.setAttribute('role','menu');m.setAttribute('aria-label',menuLabel(hasOps?'Actions for ':'Permission mode for ',a));
   m.innerHTML=(hasMode?['read-only','ask','allow'].filter(k=>feat(a,'modeList',k)).map(k=>{const o=orgMode(a.info.adapterId,k),w=o?o.why:''; /* spec 076 FR-202: blocked: disabled, the reason as its text; advice (FR-201): the words, still selectable */
     const isOn=a.info.permMode===k&&!a.info.autopilot; /* spec 099 FR-056: on Autopilot the check mark is on Autopilot, not on Allow all */
     return `<button type="button" role="menuitemradio" aria-checked="${isOn}" data-mode="${k}" class="mm-${k}${w?(o.refuse?' mm-org':' mm-orgdoubt'):''}"${o&&o.refuse?' aria-disabled="true"':''} title="${esc(w||MODE_HELP[k])}"><span class="mi">${MODE_IC[k]}</span><span class="mt"><b>${MODE_NAME[k]}</b><small>${esc(w||MODE_SHORT[k])}</small></span><span class="ck">${isOn?'✓':''}</span></button>`;}).join('')+(only?'':apMenuItem(a))+(canSbxRestart(a)&&!onCard?`<button type="button" role="menuitem" data-act="sbxRestart" class="mm-sbxrestart"${a.sbxRestarting?' aria-disabled="true"':''} title="${esc(sbxRestartTip(a))}"><span class="mt"><b>Restart without the sandbox</b><small>Keeps this conversation; a new session in Allow all</small></span></button>`:'')+(!only&&bridge.setModel&&a.info?`<button type="button" role="menuitem" data-act="model" class="mm-model"><span class="mt"><b>Model and context…</b><small>${esc(modelLabel(a.info).text)}</small></span></button>`:'')+(!only&&capsFor(a)&&capsFor(a).planMode&&!a0.parent?`<button type="button" role="menuitemcheckbox" aria-checked="${!!a.planNext}" data-act="planNext" class="mm-plan"><span class="mt"><b>Plan first (next message)</b><small>It plans first; you approve before it acts.</small></span><span class="ck">${a.planNext?'✓':''}</span></button>`:'')+(!only&&bridge.folderSetupScan&&window.DurbarFolderSetup&&a.info?`<button type="button" role="menuitem" data-act="foldersetup" class="mm-fsetup"><span class="mt"><b>This folder\u2019s setup…</b><small>${a.info.folderRules?'Its own hooks or allow rules are on':'Hooks, rules and MCP servers in its files'}</small></span></button>`:'')+`<p class="mm-note">Applies from the next request. The session keeps running.</p>`+(sbxWord(a)?`<p class="mm-note mm-sbx"><b>${esc(sbxWord(a))}.</b> ${esc(sbxDetails(a))}</p>`:''):'')+(hasOps?`<div class="mm-sep" role="separator"></div>`+(canRead?`<button type="button" role="menuitem" data-op="read" class="mm-read"><span class="mt"><b>Mark as read</b><small>Clears \u201cNew\u201d without opening the chat</small></span></button>`:'')+(canRen?`<button type="button" role="menuitem" data-op="rename" class="mm-rename" title="Give this session a short name"><span class="mt"><b>Rename…</b><small>A short name for this session</small></span></button>`:'')+(ops.stop?`<button type="button" role="menuitem" data-op="stop" class="mm-stop"${ops.stop.disabled?` aria-disabled="true" aria-describedby="mmStopWhy" title="${esc(ops.stop.reason)}"`:''}><span class="mt"><b>Stop</b><small${ops.stop.disabled?' id="mmStopWhy"':''}>${esc(ops.stop.disabled?ops.stop.reason:'Stops this reply. The agent stays open.')}</small></span></button>`:'')+(ops.end&&bridge.end?`<button type="button" role="menuitem" data-op="end" class="mm-end mm-danger"><span class="mt"><b>End session</b><small>Send a message to pick up where you left off.</small></span></button>`:''):'');
@@ -9095,7 +9114,7 @@ const SOURCE_WORD={repo:'from this folder',user:'your agents',other:''};
 async function openAgentMenu(a0,x,y,anchor){
   const a=liveRoot(a0); if(!a||!bridge.listProfiles)return;
   closeAgentMenu();closeModelMenu();closeModeMenu();
-  const m=document.createElement('div');m.id='agentMenu';m.className='mode-menu model-menu';m.setAttribute('role','menu');m.setAttribute('aria-label','Profile for '+a.name);
+  const m=document.createElement('div');m.id='agentMenu';m.className='mode-menu model-menu';m.setAttribute('role','menu');m.setAttribute('aria-label',menuLabel('Profile for ',a));
   m.innerHTML='<p class="mm-h">Profile</p><p class="mm-why" role="note">Looking for profiles…</p>';document.body.appendChild(m);
   const place=()=>placeMenu(m,x,y,anchor);place(); /* spec 005 FR-037: above a toolbar chip */
   const c=$('agentChip');if(c&&anchor===c)c.setAttribute('aria-expanded','true');
@@ -9186,7 +9205,7 @@ function openModelMenu(a0,x,y,anchor,again){
   if(DM.hasLong(cur))h+=`<button type="button" role="menuitemcheckbox" aria-checked="${tier==='long'}" data-tier="1"${dis} class="mm-tier"><span class="mt"><b>Long context</b><small>${esc(DM.fmtTokens(DM.windowOf(cur,'long')))} window · ${esc(DM.priceLine(cur,'long'))}</small></span><span class="ck">${tier==='long'?'✓':''}</span></button>`;
   if(pend)h+=`<div class="mm-pend" role="status"><span>Next: <b>${esc(pend.name)}</b>${DM.choiceWords(pend.req)?' ('+esc(DM.choiceWords(pend.req))+')':''}, when this reply ends.</span><button type="button" data-cancelq="1">Cancel</button></div>`;
   h+=on?'<p class="mm-note">'+(pend?'Applies when this reply ends':'Applies from the next message')+'; the conversation is kept. Costlier switches ask first, and your spending limit never changes.'+(ctrlOf(a).unverified?' '+esc(UNVERIFIED_WHY):'')+'</p>':'<div class="mm-foot"><button type="button" class="btn" data-newsess="1">New session…</button></div>';
-  const m=document.createElement('div');m.id='modelMenu';m.dataset.kind=kk;m.className='mode-menu model-menu';m.setAttribute('role','menu');m.setAttribute('aria-label','Model and context for '+a.name);
+  const m=document.createElement('div');m.id='modelMenu';m.dataset.kind=kk;m.className='mode-menu model-menu';m.setAttribute('role','menu');m.setAttribute('aria-label',menuLabel('Model and context for ',a));
   m.innerHTML=h;document.body.appendChild(m);
   const {px,py}=placeMenu(m,x,y,anchor); /* spec 005 FR-037: above a toolbar chip */
   m.addEventListener('click',e=>{
@@ -9804,7 +9823,7 @@ function openSchedules(r,from,opts){
     <label class="chk"><input type="radio" name="scKind" value="once"> Once at <input type="datetime-local" id="scAt" value="${local}" aria-label="Date and time"></label></div>
     <div class="sc-days" id="scDays" role="group" aria-label="Days of the week" hidden>${[1,2,3,4,5,6,0].map(n=>`<label class="chk"><input type="checkbox" value="${n}"${n===today?' checked':''}> ${DAY3[n]}</label>`).join('')}</div>
     <div class="sc-opts"><label class="sc-to" id="scToL"${ag?'':' hidden'}><span class="sc-lbl">Send to</span> <select id="scTarget" aria-describedby="scToHint"><option value="">This folder's agent</option><option value="${ag?esc(ag.id):''}">This session</option></select></label>
-     <label id="scCapL" title="Optional. When this schedule's own runs have spent this much, it pauses and says so."${schedCapUnit(folderAg)?'':' hidden'}><span class="sc-lbl">Limit</span> <input type="number" id="scCap" min="0.01" step="0.01" placeholder="none" aria-describedby="scCapU"> <span id="scCapU">${esc(unitWord(schedCapUnit(folderAg)))}</span></label></div><p class="sc-hint" id="scToHint" title="${ag?esc(ag.name):''}" hidden>${ag?esc(ag.name):''}</p></div><p class="sc-tpl-note" id="scCapKeep" hidden></p>
+     <label id="scCapL" title="Optional. When this schedule's own runs have spent this much, it pauses and says so."${schedCapUnit(folderAg)?'':' hidden'}><span class="sc-lbl">Limit</span> <input type="number" id="scCap" min="0.01" step="0.01" placeholder="none" aria-describedby="scCapU"> <span id="scCapU">${esc(unitWord(schedCapUnit(folderAg)))}</span></label></div><p class="sc-hint" id="scToHint" title="${ag?esc(nameShown(ag)):''}" hidden>${ag?esc(nameShown(ag)):''}</p></div><p class="sc-tpl-note" id="scCapKeep" hidden></p>
    <div class="dbtn"><button class="btn" id="scClose" type="button">Close</button><button class="btn" id="scCancel" type="button" hidden>Cancel</button><button class="btn primary" id="scAdd" type="button">Add schedule</button></div></div>`;
   document.body.appendChild(d);
   renderSchedDlg();
@@ -9815,7 +9834,7 @@ function openSchedules(r,from,opts){
   const applyTgt=()=>{
     $('scToL').hidden=!tgt;
     const sel=$('scTarget');sel.options[1].value=tgt?tgt.id:'';
-    $('scToHint').textContent=tgt?tgt.name:'';$('scToHint').title=tgt?tgt.name:'';
+    $('scToHint').textContent=tgt?nameShown(tgt):'';$('scToHint').title=tgt?nameShown(tgt):'';
     $('scToHint').hidden=!sel.value;
   };
   let capUnitNow=schedCapUnit(folderAg); /* a number typed for one unit is never carried to another (5 dollars must not become 5 AI credits) */

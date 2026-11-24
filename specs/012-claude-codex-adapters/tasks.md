@@ -298,3 +298,15 @@ T133 verification (2026-10-25, review on #698): typecheck, build and the offline
 ## Changes 2026-11-23 (masking batch: toasts and the notice strips: issue #1419)
 
 - [x] T457 (2026-11-23, issue #1419) FR-195: `liveMask` in `src/renderer/app.js`, and `liveText`, called by `mountToast`, by `renderRestoreStrip`, `paintCrashStrip`, `renderAwayStrip` and `paintMcpStrip`, and by `afRender` (review of PR 2046); `scripts/test-live-mask.ts` (`npm run test:livemask`, in `scripts/test-suites.txt`); the line in `specs/012-claude-codex-adapters/secret-coverage.md`; the changelog fragment; mutants and a differential fuzz against `main` in the PR.
+
+## Changes 2026-11-23 (security fix: two more contexts in path-like text)
+
+- [x] T492 (2026-11-23, issue #1320) FR-198: `PATH_RUN`, `PATH_HEADS`, `PATH_START`, `PATH_END`, `PATH_HEX_BODY`, `pathSet`, `namedHead`, `notAValue`, `NOT_A_VALUE_SEG`, `SEG_KEY`, `SEG_SHORT`, `NOT_SHORT_SEG`, `NAMED_SEGMENT`, `NAMED_SEGMENT_SHORT`, `MASK_SEGMENT`, `B64_RULE`, `GOOG_RULE` and `_withoutPathContextsForTest` in `src/shared/redact.ts`; `scripts/test-mask-paths.ts` (`npm run test:maskpaths`, in `scripts/test-suites.txt`); the `path*` and `namedSegment*` growth units in `scripts/test-redact-growth.ts`; the line in `specs/012-claude-codex-adapters/secret-coverage.md`; the changelog fragment; mutants in the PR.
+
+## Changes 2026-11-24 (FR-198: the work assert counts instead of timing)
+
+- [x] T508 (2026-11-24) FR-198: the path-dense work assert of `scripts/test-mask-paths.ts` counts where the bounded look-behind is entered (the shipped rule's part up to it, compiled alone) instead of a CPU-time ratio; no change to `src/shared/redact.ts`.
+
+## Changes 2026-11-24 (masking batch: task line over-masking and the chat's header labels: issues #1981, #1999)
+
+- [x] T475 (2026-11-24, issues #1981, #1999, #2060, #2062) FR-196 (owner decisions of 2026-11-23, #2060 items 8 and 9): `SWITCH_FLAG_LEADS`, `SWITCH_VALUES`, `switchFlag`, `switchValue`, `OAUTH_STATE`, `STATE_WORD`, `maskLinkState`, `harmlessState`, `_stateScanForTest` and `_withoutOvermaskNarrowForTest` in `src/shared/redact.ts`; the item 9 pin in `scripts/test-redact.ts`; #2062: the long-run look-behind on the mail provider's key shape in `src/shared/redact.ts`, the `#2062` asserts in `scripts/test-redact-shapes.ts` and the context differential in `scripts/test-overmask.ts`; `scripts/test-overmask.ts` (`npm run test:overmask`, in `scripts/test-suites.txt`). FR-197: `nameShown` in `src/renderer/app.js` (round 3 of the review: also the schedule dialog's hint when its target is set again), the `FR-197` asserts in `scripts/test-live-mask.ts` (round 3: the sink table that fails on a session-name read it does not list; round 4: every read of a property called `name`, an exempt column with one-word reasons, the pattern's fixtures, and the gap classes compared with `secret-coverage.md`; round 5: quoted `name` strings that are not keys, and the forms a static scan cannot reach named); the lines in `specs/012-claude-codex-adapters/secret-coverage.md`; the changelog fragment; mutants in the PR.

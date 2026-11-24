@@ -67,8 +67,8 @@ function realGh(root) {
 
 /** The clash lines for the numbers a PR adds: exactly the rule of `npm run specs:numbers` (its findClashes, reused, FR-031: same file vs
  * origin/main or another head, another spec file of the same kind vs another head, FR-098), never a stricter one of its own. */
-function numberFindings(res) {
-  return sn.findClashes(res).map((c) => ({ level: 'FAIL', text: `number ${c.id} (${printable(c.file)}) is also in ${c.with}` }));
+function numberFindings(clashes) {
+  return clashes.map((c) => ({ level: 'FAIL', text: `number ${c.id} (${sn.safe(c.file)}) is also in ${c.with}` }));
 }
 
 /** Pure: label check. -> { level, text } */
@@ -245,16 +245,19 @@ function preflight(n, deps = {}) {
 
   // 7. numbers
   try {
-    const heads = (gitq(root, ['for-each-ref', '--format=%(refname:strip=3) %(objectname)', 'refs/remotes/origin']) || '').split('\n').filter(Boolean)
-      .map((x) => { const [name, sha] = x.split(' '); return { name, sha }; })
-      .filter((h) => h.name && h.name !== 'HEAD' && h.name !== 'main' && h.name !== branch && !h.name.startsWith('gh-readonly-queue/'))
-      .map((h) => ({ label: `origin/${h.name}`, sha: h.sha, headRef: h.name, sameRepo: true }));
-    const res = sn.collect(root, heads, head, { headRef: branch, baseRef: pr.baseRefName, sameRepo: true });
-    const found = numberFindings(res);
+    // the same list and the same dead-branch rule as `npm run specs:numbers --wide` (FR-031): the heads the remote lists now (git ls-remote; stale remote-tracking refs of deleted branches are not compared; --no-fetch has only the tracked refs) and worktree branches;
+    // a branch whose PR is closed and not merged, at its tip, is skipped when it would clash (its PR state is read with the `gh` of this run)
+    const heads = sn.wideHeads(root, { remote: deps.liveHeads ? deps.liveHeads(root) : deps.fetch !== false ? sn.liveRemoteHeads(root) : sn.trackedRemoteHeads(root), worktrees: sn.worktreeHeads(root), selfRef: branch, prefix: 'origin/', dates: false });
+    const lookup = (name) => { const r = gh(['pr', 'list', `--head=${name}`, '--state', 'all', '--json', 'headRefOid,mergedAt,state,isCrossRepository']); try { if (r.status !== 0) return null; const rows = JSON.parse(r.stdout); return Array.isArray(rows) ? rows : null; } catch { return null; } };
+    const { res, clashes, notes } = sn.resolveWide(root, heads, head, { headRef: branch, baseRef: pr.baseRefName, sameRepo: true }, lookup);
+    for (const t of notes) add('NOTE', t.replace(/^NOTE /, ''));
+    // a head whose base cannot be computed was not compared: fail closed, never ok (a branch pushed between the fetch and the ls-remote)
+    if (res.noBase.length) throw new Error(`no base with origin/main for ${res.noBase.join(', ')}`);
+    const found = numberFindings(clashes);
     const addedIds = [...res.branchAdds.values()].flatMap((s) => [...s]);
     for (const f of found) add(f.level, f.text);
-    if (!found.some((f) => f.level === 'FAIL')) add('ok', `numbers: ${addedIds.length ? addedIds.join(' ') : 'none added'}; checked against origin/main and ${res.prs.length} other remote head(s)`);
-  } catch (e) { add('FAIL', `numbers: not checked (${printable(String(e.message || e).split('\n')[0])})`); }
+    if (!found.some((f) => f.level === 'FAIL')) add('ok', `numbers: ${addedIds.length ? addedIds.join(' ') : 'none added'}; checked against origin/main and ${res.prs.length} other head(s) (remote branches and worktree branches)`);
+  } catch (e) { add('FAIL', `numbers: not checked (${sn.safe(String(e.message || e).split('\n')[0])})`); }
 
   // 8. removed asserts
   const a = assertChanges(gitq(root, ['diff', base, head, '--', 'scripts']) || '');

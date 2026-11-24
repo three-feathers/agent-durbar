@@ -4,7 +4,7 @@ import fs from 'fs';
 import path from 'path';
 
 const R = path.join(__dirname, '..', '..', 'src', 'renderer');
-const { cutText, fitCut, nameTail, fitBatch, growKey } = require(path.join(R, 'cuttext.js')) as { growKey: (it: object, base: string, len: number) => string; fitBatch: (items: unknown[], clear: (i: never) => void, isCut: (i: never) => boolean, mark: (i: never) => void, key?: (i: never) => unknown) => unknown[]; nameTail: (n: unknown) => string; fitCut: (t: string, fits: (x: string) => boolean) => string; cutText: (t: unknown, max: number, o?: { wordBoundary?: boolean; trimPunct?: boolean }) => string };
+const { cutText, midCut, graphemes, fitCut, nameTail, fitBatch, growKey } = require(path.join(R, 'cuttext.js')) as { growKey: (it: object, base: string, len: number) => string; fitBatch: (items: unknown[], clear: (i: never) => void, isCut: (i: never) => boolean, mark: (i: never) => void, key?: (i: never) => unknown) => unknown[]; nameTail: (n: unknown) => string; fitCut: (t: string, fits: (x: string) => boolean) => string; midCut: (t: unknown, max: number, noSeg?: boolean) => string; graphemes: (t: unknown, noSeg?: boolean) => string[]; cutText: (t: unknown, max: number, o?: { wordBoundary?: boolean; trimPunct?: boolean }) => string };
 const len = (s: string) => Array.from(s).length;
 
 // fits: unchanged (whitespace collapsed); exactly max is not cut
@@ -136,6 +136,41 @@ assert.match(fs.readFileSync(path.join(__dirname, '..', '..', 'scripts', 'copy-a
   assert.match(roCss, /\.ro-sc\{[^}]*font-variant-numeric:\s*tabular-nums/, '.ro-sc (the counts and the cost the fit key holds by length) has tabular figures: 11 and 88 are as wide');
   assert.match(ro, /classList\.toggle\('nopath', !!sg\._nop\)/, 'the kept result is put back after el() rewrites the class');
   assert.ok(!/for \(const sg of chrome\.querySelectorAll\('\.ro-sign'\)\) \{\s*if \(!sg\._b/.test(ro), 'fitSigns has no per-sign loop');
+}
+
+// spec 052 FR-071 (2026-11-23): a path is cut in the middle, head and tail kept
+{
+  assert.strictEqual(midCut('/home/a/app', 20), '/home/a/app', 'fits: whole');
+  const m = midCut('/home/ana/clients/acme/deep/deep/deep/app', 20);
+  assert.strictEqual(Array.from(m).length, 20, 'at most max code points');
+  assert.ok(m.startsWith('/home') && m.endsWith('/deep/app') && m.includes('…'), `middle cut: ${m}`);
+  assert.strictEqual(midCut('C:\\Users\\Ana\\clients\\acme\\app', 14), 'C:\\U…\\acme\\app', 'a Windows path');
+  assert.strictEqual(midCut(null, 5), ''); assert.strictEqual(midCut('abc', 0), '');
+  // review of PR 2067 (finding 4): cuts on grapheme boundaries, with Intl.Segmenter and with the fallback; a masked placeholder is one unit
+  for (const noSeg of [false, true]) {
+    const tag = noSeg ? 'fallback' : 'Segmenter';
+    const E = 'e\u0301', FAM = '👨\u200D👩\u200D👧\u200D👦', FLAG = '🇨🇭', SK = '👍🏽', SP = '😀';
+    for (const [name, unit] of [['combining mark', E], ['ZWJ family', FAM], ['flag pair', FLAG], ['skin tone', SK], ['surrogate pair', SP]] as const) {
+      assert.deepStrictEqual(graphemes(unit.repeat(3), noSeg), [unit, unit, unit], `${tag}: ${name} is one grapheme`);
+      for (let max = 3; max <= 14; max++) {
+        const m = midCut('/a/' + unit.repeat(40) + '/z', max, noSeg);
+        const parts = m.split('…');
+        assert.strictEqual(parts.length, 2, `${tag} ${name} ${max}: one ellipsis`);
+        const [h, t] = parts;
+        assert.ok(graphemes(h, noSeg).every((g) => g === unit || /^[\/az]$/.test(g)), `${tag} ${name} ${max}: the head ends on a grapheme: ${JSON.stringify(h)}`);
+        assert.ok(graphemes(t, noSeg).every((g) => g === unit || /^[\/az]$/.test(g)), `${tag} ${name} ${max}: the tail starts on a grapheme (no orphan mark, no leading ZWJ): ${JSON.stringify(t)}`);
+        assert.ok(graphemes(m, noSeg).length <= max, `${tag} ${name} ${max}: at most max graphemes`);
+      }
+    }
+  }
+  assert.strictEqual(Array.from(midCut('😀'.repeat(30), 9)).length, 9, 'surrogate pairs: 9 emoji');
+  {
+    const p = '/home/ana/[redacted]/clients/acme/' + 'x'.repeat(30) + '/[redacted:API_KEY]/app';
+    for (let max = 8; max <= 60; max++) {
+      const m = midCut(p, max);
+      for (const piece of m.split('…')) assert.ok(!/[\[\]]/.test(piece.replace(/\[redacted(:[A-Z_]+)?\]/g, '')), `max ${max}: never inside a placeholder: ${JSON.stringify(piece)}`);
+    }
+  }
 }
 
 console.log('[cuttext] all checks passed');

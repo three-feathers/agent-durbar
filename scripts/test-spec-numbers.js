@@ -7,6 +7,9 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { execFileSync, spawnSync } = require('child_process');
+// Hermetic (the CI environment differs from a laptop): no ambient variable may change what the scripts print. The secret-looking names (the scrub masks their values) and PR_* are removed here;
+// the cases that need one set it themselves.
+for (const k of Object.keys(process.env)) if (/(TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIAL|API[_-]?KEY|PRIVATE|AUTH|^GH_|^GITHUB_|^ANTHROPIC|^OPENAI|^COPILOT|^NPM_|^CI$|^PR_(NUMBER|HEAD_SHA)$)/i.test(k)) delete process.env[k];
 const modPath = process.env.SN_MODULE ? path.resolve(process.env.SN_MODULE) : path.join(__dirname, 'spec-numbers.js');
 const sn = require(modPath);
 const { plumbCommit, gitRun } = require('./git-index-helper.js');
@@ -116,6 +119,34 @@ for (const t of ['my_ghp_ABCDEF1234567890', '_ghp_ABCDEF1234567890_', '__ghp_ABC
 }
 assert.ok(!sn.scrub('x eyJhbGciOiJI.eyJzdWIiOiIx.abcdef end', {}).includes('eyJhbGci'));
 assert.strictEqual(sn.scrub('has MyValue99 inside', { MY_API_KEY: 'MyValue99', PLAIN: 'zzzzzzzz' }), 'has *** inside');
+// the CI environment must not change a message: GitHub's default context variables are never masked by name; every other secret-looking value stays masked, short ones too (main's minimum is 6)
+assert.strictEqual(sn.scrub('a branch named x', { GITHUB_REF_TYPE: 'branch' }), 'a branch named x', 'SCRUB-ctx GITHUB_REF_TYPE=branch does not turn the word branch into ***');
+assert.strictEqual(sn.scrub('event pull_request here', { GITHUB_EVENT_NAME: 'pull_request' }), 'event pull_request here', 'SCRUB-ctx-long a public context variable is never masked by name');
+// every name of GitHub's documented default list (docs.github.com, Variables > Default environment variables, 2026-11-24): never masked, whatever its value
+for (const name of ['GITHUB_ACTION', 'GITHUB_ACTION_PATH', 'GITHUB_ACTION_REPOSITORY', 'GITHUB_ACTIONS', 'GITHUB_ACTOR', 'GITHUB_ACTOR_ID', 'GITHUB_API_URL', 'GITHUB_ARTIFACTS', 'GITHUB_ARTIFACTS_LIST', 'GITHUB_BASE_REF', 'GITHUB_ENV', 'GITHUB_EVENT_NAME', 'GITHUB_EVENT_PATH', 'GITHUB_GRAPHQL_URL', 'GITHUB_HEAD_REF', 'GITHUB_JOB', 'GITHUB_OUTPUT', 'GITHUB_PATH', 'GITHUB_REF', 'GITHUB_REF_NAME', 'GITHUB_REF_PROTECTED', 'GITHUB_REF_TYPE', 'GITHUB_REPOSITORY', 'GITHUB_REPOSITORY_ID', 'GITHUB_REPOSITORY_OWNER', 'GITHUB_REPOSITORY_OWNER_ID', 'GITHUB_RETENTION_DAYS', 'GITHUB_RUN_ATTEMPT', 'GITHUB_RUN_ID', 'GITHUB_RUN_NUMBER', 'GITHUB_SERVER_URL', 'GITHUB_SHA', 'GITHUB_STEP_SUMMARY', 'GITHUB_TRIGGERING_ACTOR', 'GITHUB_WORKFLOW', 'GITHUB_WORKFLOW_REF', 'GITHUB_WORKFLOW_SHA', 'GITHUB_WORKSPACE']) {
+  assert.strictEqual(sn.scrub('v pubvalue1 w', { [name]: 'pubvalue1' }), 'v pubvalue1 w', `SCRUB-ctx-list ${name} is never masked by name`);
+  assert.ok(sn.PUBLIC_CONTEXT_NAMES.includes(name), `SCRUB-ctx-const ${name} is in the constant`);
+}
+// the REAL shapes of the public variables on a runner (a long workspace path, a repository slug, a ref with a slash and digits, a 40-hex sha, a URL, a long event path), with and without the built redact.ts of `npm test`
+{ const real = { GITHUB_WORKSPACE: '/home/runner/work/agent-durbar/agent-durbar', GITHUB_REPOSITORY: 'three-feathers/agent-durbar', GITHUB_REF_NAME: '2084/merge', GITHUB_REF: 'refs/pull/2084/merge', GITHUB_SHA: '0123456789abcdef0123456789abcdef01234567',
+    GITHUB_SERVER_URL: 'https://github.com', GITHUB_EVENT_PATH: '/home/runner/work/_temp/_github_workflow/event.json', GITHUB_WORKFLOW_REF: 'three-feathers/agent-durbar/.github/workflows/ci.yml@refs/pull/2084/merge',
+    GITHUB_EVENT_NAME: 'pull_request', GITHUB_REF_TYPE: 'branch', GITHUB_ACTOR: 'vikramgorla', GITHUB_STEP_SUMMARY: '/home/runner/work/_temp/_runner_file_commands/step_summary_0a1b2c3d-1111-2222-3333-444455556666' };
+  const text = Object.values(real).join(' | ');
+  for (const useBuilt of [true, false]) assert.strictEqual(sn.scrub(text, real, { useBuilt }), text, `SCRUB-real the real shapes of the public variables are printed as they are (useBuilt ${useBuilt})`); }
+assert.strictEqual(sn.PUBLIC_CONTEXT_NAMES.length, 38, 'SCRUB-ctx-count the list is exactly the documented 38 GITHUB_ names');
+assert.ok(!sn.PUBLIC_CONTEXT_NAMES.includes('GITHUB_TOKEN'), 'SCRUB-ctx-token GITHUB_TOKEN is not public');
+assert.strictEqual(sn.scrub('otp 123456 end', { NPM_CONFIG_OTP: '123456', NPM_X: 'zz' }), 'otp *** end', 'SCRUB-floor a 6-digit OTP stays masked (main\'s minimum is 6, not more)');
+assert.strictEqual(sn.scrub('pw s3cr3t end', { DB_PASSWORD: 's3cr3t' }), 'pw *** end', 'SCRUB-floor-pw a 6-character password value stays masked');
+assert.strictEqual(sn.scrub('t abcdefg end', { GITHUB_TOKEN: 'abcdefg' }), 't *** end', 'SCRUB-floor-token a 7-character GITHUB_TOKEN stays masked');
+assert.strictEqual(sn.scrub('x abc12 y', { MY_TOKEN: 'abc12' }), 'x abc12 y', 'SCRUB-min a value under 6 characters is not masked (as on main)');
+assert.strictEqual(sn.scrub('x tok123456 y', { MY_TOKEN: 'tok123456' }), 'x *** y', 'SCRUB-long a long value of a secret-looking name is masked');
+assert.strictEqual(sn.scrub('x abcdefgh12345678 y', { GITHUB_REF_NAME_X: 'abcdefgh12345678' }), 'x *** y', 'SCRUB-prefix another GITHUB_ name (not on the public list) stays masked');
+// text from git or gh is printed through the scrub and safe-print
+assert.ok(!sn.report({ branchAdds: new Map(), prs: [], skipped: [], base: 'abcdefghi' }, [{ file: 'specs/ghp_' + 'A1b2C3d4E5f6G7h8I9j0/tasks.md', id: 'T1', with: 'x' }]).join('\n').includes('ghp_'), 'SCRUB-clash-file a token-shaped path in a clash line is masked');
+assert.strictEqual(sn.scrub('v pubvalue1 w', { GITHUB_ENV: 'pubvalue1' }, { useBuilt: true }), 'v pubvalue1 w', 'SCRUB-built the built redact does not mask a public variable either');
+assert.strictEqual(sn.safe('boom ghp_' + 'A1b2C3d4E5f6G7h8I9j0 and a::error::x'), 'boom *** and a: :error: :x', 'SCRUB-safe a token shape and a workflow command in git text are neutralised');
+assert.ok(sn.wideHeads('.', { remote: [{ name: 'ghp_' + 'A1b2C3d4E5f6G7h8I9j0', sha: 'a'.repeat(40) }], dates: false })[0].label.endsWith('***'), 'SCRUB-label a token-shaped branch name is masked in its label');
+assert.ok(!sn.scrub('x ghp_' + 'A1b2C3d4E5f6G7h8I9j0 y', { GITHUB_REF_TYPE: 'branch' }).includes('ghp_'), 'SCRUB-shape a token shape is masked whatever the environment holds');
 
 // ---- git repos, --no-fetch
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-sn-'));
@@ -379,6 +410,135 @@ try {
     G(x, 'update-ref', 'refs/remotes/pr/1487', tagged);
     r = cli(x); assert.strictEqual(r.status, 1, 'a tagged FR on another open head is a clash: ' + r.stdout + r.stderr);
     assert.match(r.stdout, /specs\/003-c\/spec\.md: FR-243 is also in PR #1487/); assert.match(r.stdout, /specs\/003-c\/spec\.md: Q9 is also in PR #1487/); }
+
+  // ---- --wide (spec 021 FR-085 delta 2026-11-23): remote branches without a PR, worktree branches, dead branches
+  { const sd = repo(); G(sd, 'update-ref', 'refs/remotes/origin/main', 'HEAD');
+    const branchOff = (name, ...nums) => { G(sd, 'checkout', '-q', '-b', name, 'main'); write(sd, 'specs/001-a/tasks.md', T('001', '002', '003', ...nums)); return commit(sd, name); };
+    const nopr = branchOff('nopr', '020'), dead = branchOff('deadpr', '030'), mergedTip = branchOff('mergedbr', '040');
+    G(sd, 'checkout', '-q', '-b', 'quiet', 'main'); write(sd, 'README.md', 'quiet\n'); commit(sd, 'quiet'); // a branch that adds no number: it never clashes, so its PR is never looked up
+    G(sd, 'checkout', '-q', 'main'); G(sd, 'merge', '-q', '--ff-only', 'mergedbr'); G(sd, 'update-ref', 'refs/remotes/origin/main', 'HEAD');
+    const org = path.join(tmp, 'wide-origin.git'); G(tmp, 'init', '-q', '--bare', org);
+    G(sd, 'push', '-q', org, 'main', 'nopr', 'deadpr', 'quiet'); G(sd, 'remote', 'add', 'origin', org);
+    G(org, 'update-ref', 'refs/heads/gh-readonly-queue/main/pr-1-x', nopr); // a merge-queue branch is never a head
+    const wt1 = path.join(tmp, 'wt1'), wt2 = path.join(tmp, 'wt2');
+    G(sd, 'worktree', 'add', '-q', '-b', 'wtone', wt1, 'main'); write(wt1, 'specs/001-a/tasks.md', T('001', '002', '003', '040', '050')); commit(wt1, 'wt one');
+    G(sd, 'worktree', 'add', '-q', '-b', 'wttwo', wt2, 'main'); write(wt2, 'specs/001-a/tasks.md', T('001', '002', '003', '040', '060')); commit(wt2, 'wt two');
+    G(sd, 'checkout', '-q', '-b', 'mine', 'main');
+    write(sd, 'specs/001-a/tasks.md', T('001', '002', '003', '040', '020', '030', '050', '060')); commit(sd, 'mine');
+    const rows = (sha, over = {}) => [{ headRefOid: sha, mergedAt: null, state: 'CLOSED', isCrossRepository: false, ...over }];
+    const state = (over = {}) => (name) => { if (name === 'quiet') throw new Error('WIDE-lookup-clash-only asked about a branch that clashes with nothing'); return name in over ? over[name] : []; };
+    const via = async (argv, deps = {}) => { const out = []; const lg = console.log; console.log = (x) => out.push(String(x)); let code;
+      try { code = await sn.main(['--root', sd, ...argv], {}, { openPrs: async () => [], ...deps }); } finally { console.log = lg; } return { code, out: out.join('\n') }; };
+    // the lists
+    assert.ok(sn.worktreeHeads(sd).some((h) => h.name === 'wtone' && /^[0-9a-f]{40}$/.test(h.sha)), 'worktreeHeads lists a worktree branch with its tip');
+    assert.deepStrictEqual(sn.liveRemoteHeads(sd).map((h) => h.name).sort(), ['deadpr', 'gh-readonly-queue/main/pr-1-x', 'main', 'nopr', 'quiet'], 'liveRemoteHeads reads git ls-remote');
+    const brokenRemote = repo(); G(brokenRemote, 'remote', 'add', 'origin', path.join(tmp, 'does-not-exist.git'));
+    assert.throws(() => sn.liveRemoteHeads(brokenRemote), 'WIDE-lsremote a failing ls-remote throws (exit 2), never an empty list');
+    assert.throws(() => sn.liveRemoteHeads(sd, () => `${nopr}\trefs/heads/nopr\n`), /did not list main/, 'WIDE-lsremote-main an answer without main is not trusted');
+    assert.throws(() => sn.liveRemoteHeads(sd, () => 'garbage\n'), /not a head/, 'WIDE-lsremote-line a line that is not a head throws');
+    assert.throws(() => sn.worktreeHeads(path.join(tmp, 'no-such-repo')), 'WIDE-worktree-throws a failing `git worktree list` throws (exit 2), never an empty list');
+    // pure: what is left out
+    const hh = sn.wideHeads(sd, { remote: [{ name: 'main', sha: nopr }, { name: 'mine', sha: nopr }, { name: 'HEAD', sha: nopr }, { name: 'gh-readonly-queue/main/x', sha: nopr }, { name: 'open1', sha: dead }, { name: 'open2', sha: nopr }, { name: 'free', sha: mergedTip }], worktrees: [{ name: 'free2', sha: mergedTip }, { name: 'wtopen', sha: nopr }], open: [{ sha: dead, headRef: 'x', sameRepo: true }, { sha: '0'.repeat(40), headRef: 'open2', sameRepo: true }, { sha: '1'.repeat(40), headRef: 'wtopen', sameRepo: true }], selfRef: 'mine' });
+    assert.deepStrictEqual(hh.map((h) => h.name), ['free'], 'main, HEAD, this branch, queue branches, open PR heads (by name or tip) and a worktree twin of a remote head are left out');
+    // a fork PR named like one of our branches does not hide it (by name only a PR of this repository counts); by tip any PR counts
+    { const fk = sn.wideHeads(sd, { remote: [{ name: 'nopr', sha: nopr }], worktrees: [{ name: 'wtone', sha: dead }], open: [{ sha: '2'.repeat(40), headRef: 'nopr', sameRepo: false }, { sha: '3'.repeat(40), headRef: 'wtone', sameRepo: false }], selfRef: 'mine', dates: false });
+      assert.deepStrictEqual(fk.map((h) => h.name), ['nopr', 'wtone'], 'WIDE-fork a fork PR of the same name leaves the remote branch and the worktree branch in the list');
+      const own = sn.wideHeads(sd, { remote: [{ name: 'nopr', sha: nopr }], worktrees: [{ name: 'wtone', sha: dead }], open: [{ sha: '2'.repeat(40), headRef: 'nopr', sameRepo: true }, { sha: '3'.repeat(40), headRef: 'wtone', sameRepo: true }], selfRef: 'mine', dates: false });
+      assert.deepStrictEqual(own, [], 'WIDE-own-pr a PR of this repository by that name leaves them out');
+      const bySha = sn.wideHeads(sd, { remote: [{ name: 'nopr', sha: nopr }], open: [{ sha: nopr, headRef: 'other', sameRepo: false }], selfRef: 'mine', dates: false });
+      assert.deepStrictEqual(bySha, [], 'WIDE-fork-sha the tip of any open PR is that PR\'s tip: compared already'); }
+    // main(): the lists that cannot be read are exit 2, never a pass
+    for (const [why, deps, re] of [['ls-remote fails', { remoteHeads: () => { throw new Error('ls-remote broke'); } }, /NOT CHECKED: ls-remote broke/], ['a head was never fetched', { remoteHeads: () => [...sn.liveRemoteHeads(sd), { name: 'ghost', sha: '9'.repeat(40) }] }, /NOT CHECKED: a remote head could not be fetched/], ['worktree list fails', { worktrees: () => { throw new Error('worktree list broke'); } }, /NOT CHECKED: worktree list broke/]]) {
+      const x = await via(['--wide'], { branchState: state(), ...deps });
+      assert.strictEqual(x.code, 2, `WIDE-exit2 ${why}: exit 2: ${x.out}`);
+      assert.match(x.out, re, `WIDE-exit2 ${why}: says NOT CHECKED`);
+      assert.doesNotMatch(x.out, /ok, no clash/);
+    }
+    // through main(): the open PR list's refs reach the wide list (a PR of this repository named nopr hides the branch; a fork PR named nopr does not)
+    { G(org, 'update-ref', 'refs/pull/99/head', G(sd, 'rev-parse', 'quiet'));
+      const pr99 = (extra) => async () => [{ number: 99, sha: G(sd, 'rev-parse', 'quiet'), headRef: 'nopr', baseRef: 'main', ...extra }];
+      const t1 = await via(['--wide'], { branchState: state(), openPrs: pr99({ sameRepo: true }) });
+      assert.doesNotMatch(t1.out, /T020 is also in branch nopr/, 'WIDE-main-own an open PR of this repository named like the branch: it is that PR, compared as PR #99: ' + t1.out);
+      const t2 = await via(['--wide'], { branchState: state(), openPrs: pr99({}) });
+      assert.match(t2.out, /T020 is also in branch nopr/, 'WIDE-main-fork a fork PR named like the branch does not hide it: ' + t2.out); }
+    // 1: remote branch without a PR, worktree branches, a dead branch, live remote list
+    let r = await via(['--wide'], { branchState: state() });
+    assert.strictEqual(r.code, 1, r.out);
+    assert.match(r.out, /T020 is also in branch nopr, tip \d{4}-\d\d-\d\d \(added there too\)/, 'WIDE-remote a remote branch with no PR holds a number: a clash naming the branch and its tip date');
+    assert.match(r.out, /T050 is also in worktree wtone, tip \d{4}-\d\d-\d\d/, 'WIDE-worktree a worktree branch holds a number: a clash');
+    assert.match(r.out, /T060 is also in worktree wttwo/, 'WIDE-worktree-two the second worktree is a clash too');
+    assert.match(r.out, /T030 is also in branch deadpr/, 'a branch whose PR state says live (open or none) holds its numbers');
+    // 2: closed and unmerged at that tip: skipped, NOTE
+    r = await via(['--wide'], { branchState: state({ deadpr: rows(dead) }) });
+    assert.match(r.out, /NOTE skipped branch deadpr, tip \d{4}-\d\d-\d\d: its PR is closed and not merged/, 'WIDE-dead a closed, unmerged PR leaves a NOTE');
+    assert.doesNotMatch(r.out, /T030 is also/, 'WIDE-dead its numbers are free');
+    assert.match(r.out, /T020 is also in branch nopr/, 'the other clashes stay');
+    // 3: the branch moved after its PR closed, a merged PR, a fork PR: counted
+    for (const [why, over] of [['the tip moved on', rows('f'.repeat(40))], ['it was merged', rows(dead, { state: 'MERGED', mergedAt: '2026-11-01T00:00:00Z' })], ['closed with a merge date', rows(dead, { mergedAt: '2026-11-01T00:00:00Z' })], ['an open PR', rows(dead, { state: 'OPEN' })], ['a fork PR of that name', rows(dead, { isCrossRepository: true })], ['no PR', []]]) {
+      r = await via(['--wide'], { branchState: state({ deadpr: over }) });
+      assert.match(r.out, /T030 is also in branch deadpr/, `WIDE-dead-tip ${why}: its numbers are still held`);
+    }
+    // 4: the PR state cannot be read: exit 2, never a pass
+    r = await via(['--wide'], { branchState: state({ nopr: null }) });
+    assert.strictEqual(r.code, 2, 'WIDE-unread an unreadable PR state is exit 2: ' + r.out);
+    assert.match(r.out, /NOT CHECKED: could not read the PR state of branch nopr/);
+    assert.doesNotMatch(r.out, /ok, no clash/);
+    // 5: which list (spec 021 FR-085 delta): a head given = open PR heads only (the CI call: PR_HEAD_SHA and PR_NUMBER in the environment, no --head flag; and the --head form); no head = wide; --wide / --narrow force
+    const noAsk = { branchState: () => { throw new Error('the narrow run must not ask'); }, remoteHeads: () => { throw new Error('the narrow run must not list remote heads'); }, worktrees: () => { throw new Error('the narrow run must not list worktrees'); } };
+    const tip = G(sd, 'rev-parse', 'HEAD');
+    const viaEnv = async (argv, env, deps = {}) => { const out = []; const lg = console.log; console.log = (x) => out.push(String(x)); let code;
+      try { code = await sn.main(['--root', sd, ...argv], env, { openPrs: async () => [], ...deps }); } finally { console.log = lg; } return { code, out: out.join('\n') }; };
+    r = await viaEnv([], { PR_HEAD_SHA: tip, PR_NUMBER: '4242' }, noAsk);
+    assert.strictEqual(r.code, 0, 'WIDE-ci-env the CI call (PR_HEAD_SHA and PR_NUMBER, no --head) compares open PR heads only: ' + r.out);
+    assert.doesNotMatch(r.out, /nopr|wtone|--wide/);
+    r = await viaEnv(['--head', tip], {}, noAsk);
+    assert.strictEqual(r.code, 0, 'WIDE-ci-head the --head form compares open PR heads only: ' + r.out);
+    assert.doesNotMatch(r.out, /nopr|wtone|--wide/);
+    r = await viaEnv([], {}, { branchState: state() });
+    assert.strictEqual(r.code, 1, 'WIDE-default-nohead a run with no head given compares the wide list: ' + r.out);
+    assert.match(r.out, /T020 is also in branch nopr/, 'WIDE-default-nohead the no-head run sees the branch without a PR');
+    // a CI environment without a head and without a flag is exit 2, never a silent list (GITHUB_ACTIONS or CI, each alone); with a head, a flag, or neither variable it runs
+    for (const [why, env] of [['GITHUB_ACTIONS=true', { GITHUB_ACTIONS: 'true' }], ['CI=true', { CI: 'true' }], ['CI=1', { CI: '1' }]]) {
+      r = await viaEnv([], env, noAsk);
+      assert.strictEqual(r.code, 2, `WIDE-ci-nohead ${why} without a head or a flag is exit 2: ` + r.out);
+      assert.match(r.out, /CI call without a head: pass --head or --narrow/, `WIDE-ci-nohead-say ${why} says why`);
+    }
+    r = await viaEnv([], { CI: 'false', GITHUB_ACTIONS: '0' }, { branchState: state() });
+    assert.strictEqual(r.code, 1, 'WIDE-ci-false CI=false and GITHUB_ACTIONS=0 are not CI: the no-head run is wide: ' + r.out);
+    r = await viaEnv(['--narrow'], { GITHUB_ACTIONS: 'true', CI: 'true' }, noAsk);
+    assert.strictEqual(r.code, 0, 'WIDE-ci-narrow --narrow in CI runs the open PR list: ' + r.out);
+    r = await viaEnv(['--wide'], { GITHUB_ACTIONS: 'true' }, { branchState: state() });
+    assert.match(r.out, /T020 is also in branch nopr/, 'WIDE-ci-wide --wide in CI is explicit: it runs the wide list');
+    r = await viaEnv([], { GITHUB_ACTIONS: 'true', PR_HEAD_SHA: tip }, noAsk);
+    assert.strictEqual(r.code, 0, 'WIDE-ci-env-ok the CI call with PR_HEAD_SHA is narrow and passes: ' + r.out);
+    r = await viaEnv(['--narrow'], {}, noAsk);
+    assert.strictEqual(r.code, 0, 'WIDE-narrow-flag --narrow without a head compares open PR heads only: ' + r.out);
+    r = await viaEnv(['--wide', '--head', tip], {}, { branchState: state() });
+    assert.match(r.out, /T020 is also in branch nopr/, 'WIDE-wide-flag-head --wide with --head compares the wide list');
+    r = await viaEnv(['--wide'], { PR_HEAD_SHA: tip }, { branchState: state() });
+    assert.match(r.out, /T020 is also in branch nopr/, 'WIDE-wide-flag-env --wide with PR_HEAD_SHA compares the wide list');
+    r = await viaEnv(['--wide', '--narrow'], {}, noAsk);
+    assert.strictEqual(r.code, 2, 'WIDE-both-flags --wide with --narrow is exit 2: ' + r.out);
+    assert.match(r.out, /--wide and --narrow together/, 'WIDE-both-flags-say it says why (not another failure): ' + r.out);
+    // the checked-out branch of this run is never compared with itself, also when a worktree lists it under another tip
+    r = await viaEnv([], {}, { branchState: state(), worktrees: () => [...sn.worktreeHeads(sd), { name: 'mine', sha: sn.worktreeHeads(sd).find((h) => h.name === 'wtone').sha }] });
+    assert.doesNotMatch(r.out, /worktree mine/, 'WIDE-self-main main() leaves this branch out of the wide list: ' + r.out);
+    // 6: --no-fetch --wide reads the remote-tracking refs, offline
+    G(sd, 'fetch', '-q', 'origin', '+refs/heads/*:refs/remotes/origin/*');
+    r = await via(['--wide', '--no-fetch'], { branchState: state() });
+    assert.match(r.out, /T020 is also in branch nopr/, 'WIDE-nofetch the remote-tracking refs are the list');
+    assert.match(r.out, /--wide: \d+ remote branch\(es\)/);
+    // 7: a branch name is printed through printable (no workflow command)
+    assert.ok(sn.wideHeads(sd, { remote: [{ name: 'a::error::x', sha: nopr }], dates: false })[0].label.includes(': :error: :x'), 'WIDE-print a head name is made printable');
+  }
+  // the CI invocation: one call, with --root and no --head or --wide flag; the head comes from PR_HEAD_SHA in the step's environment; package.json's script is the bare call
+  { const wfText = fs.readFileSync(path.join(__dirname, '..', '.github', 'workflows', 'spec-kit.yml'), 'utf8');
+    const calls = wfText.split(/\r?\n/).filter((l) => /^\s*(?!#).*node base\/scripts\/spec-numbers\.js/.test(l));
+    assert.strictEqual(calls.length, 1, 'WIDE-ci-pin one call of spec-numbers.js in the workflow');
+    assert.doesNotMatch(calls[0], /--wide|--head/, 'WIDE-ci-pin the CI call has no --wide and no --head flag (the head is PR_HEAD_SHA)');
+    assert.match(wfText, /PR_HEAD_SHA: \$\{\{ github\.event\.pull_request\.head\.sha \}\}/, 'WIDE-ci-pin-env the CI step sets PR_HEAD_SHA: that is what makes its list the open PR heads');
+    const pkg = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package.json'), 'utf8'));
+    assert.match(pkg.scripts['specs:numbers'], /^node scripts\/spec-numbers\.js$/, 'WIDE-npm the npm script is the bare call: no head, so the wide list'); }
 
   // the workflow keeps the token away from PR code (mutant: remove any of these and this fails)
   // a Windows checkout has CRLF line ends (core.autocrlf): the shape checks read the workflow with LF only, and a CRLF copy must give the same jobs

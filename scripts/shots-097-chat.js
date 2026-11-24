@@ -59,7 +59,7 @@ module.exports = async (ctx) => {
     await must(`[...document.querySelectorAll('#stage .ro img')].every(i=>i.complete)`, 'the pictures');
     await open('Mira');
     const st = await js(`(()=>{const pi=document.querySelector('.panel-in'),port=document.getElementById('roPortrait'),im=port&&port.querySelector('img');const rl=document.querySelector('#panel>.rail'),br=document.querySelector('#panel>.brail');return {brail:br&&br.getClientRects().length?br.getBoundingClientRect().width:0,col:!!document.querySelector('.ro-col,.rc-stage'),chat:pi.getBoundingClientRect().width,iw:innerWidth,rail:rl?rl.getBoundingClientRect().width:0,
-      port:port&&[port.getBoundingClientRect().width,port.getBoundingClientRect().height],ring:port&&getComputedStyle(port).outlineStyle==='solid',dot:!!(port&&port.querySelector('.dot')),img:!!im,crop:!!(im&&im.style.left&&im.style.top),lamp:(document.querySelector('.ro-lampwords')||{}).textContent,where:[...document.querySelectorAll('.ro-lampwords')].map(e=>e.parentElement.className+'/'+(e.previousElementSibling||{}).className),headH:document.querySelector('.ph').getBoundingClientRect().height}})()`);
+      port:port&&[port.getBoundingClientRect().width,port.getBoundingClientRect().height],ring:port&&getComputedStyle(port).outlineStyle==='solid',dot:!!(port&&port.querySelector('.dot')),img:!!im,crop:!!(im&&((im.style.left&&im.style.top)||/\\/hd\\/p\\d\\d-[a-zA-Z]+-t\\d+l?\\.webp/.test(im.getAttribute('src')||''))),lamp:(document.querySelector('.ro-lampwords')||{}).textContent,where:[...document.querySelectorAll('.ro-lampwords')].map(e=>e.parentElement.className+'/'+(e.previousElementSibling||{}).className),headH:document.querySelector('.ph').getBoundingClientRect().height}})()`);
     assert.strictEqual(st.col, false, `${tag}: no desk-side column`);
     assert.strictEqual(st.rail, 220, `${tag}: the agent rail is on the left (spec 005 FR-190): ${st.rail}`);
     assert.strictEqual(st.brail, 360, `${tag}: Brain view's right rail is open beside the chat, 360 px (spec 106 FR-030, on by default since T426): ${st.brail}`);
@@ -70,7 +70,7 @@ module.exports = async (ctx) => {
     /* a task too long for the line is cut; the lamp words stay whole */
     const cut = await js(`(()=>{const t=document.querySelector('.ph-line .ptask'),w=document.querySelector('.ro-lampwords'),was=t.textContent;t.textContent='A very long task '.repeat(40);const a=t.getBoundingClientRect(),b=w.getBoundingClientRect(),l=t.parentElement.getBoundingClientRect(),r={cut:t.scrollWidth>t.clientWidth,whole:w.scrollWidth<=w.clientWidth+1,inside:b.right<=l.right+1,after:b.left>=a.right-1};t.textContent=was;return r;})()`);
     assert.deepStrictEqual(cut, { cut: true, whole: true, inside: true, after: true }, `${tag}: a long task never hides the lamp words`);
-    assert.ok(st.ring && st.dot && st.img && st.crop, `${tag}: portrait with lamp ring, dot and the cropped person: ${JSON.stringify(st)}`);
+    assert.ok(st.ring && st.dot && st.img && st.crop, `${tag}: portrait with lamp ring, dot and the cropped person (a set with avatar tiles draws its tile, already the face: spec 102 FR-405, T472): ${JSON.stringify(st)}`);
     assert.ok(/^Lamp (warm, steady|on, breathing|bright, amber screen|on, red screen|on, orange screen|low|off)/.test(st.lamp), `${tag}: lamp words in the header: ${st.lamp}`);
     const ct = await js(CONTRAST);
     assert.ok(ct.alpha >= 0.78, `${tag}: the panel surface is at least 78 % opaque (${ct.alpha})`);

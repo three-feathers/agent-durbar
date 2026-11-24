@@ -17,7 +17,7 @@ The graphs, the split and the total are in **The numbers so far** below (generat
 <!-- build-cost-detail:begin (written by `npm run usage:readme`) -->
 ## The numbers so far
 
-**About US$7,520** (API list-price estimate, not billing), tracked since 2026-10-25, as of 2026-11-23 (release `v0.1.28`).
+**About US$8,658** (API list-price estimate, not billing), tracked since 2026-10-25, as of 2026-11-24 (release `v0.1.29`).
 
 ![Cumulative build cost by model over releases (API list-price estimate, not billing)](build-cost.svg)
 
@@ -25,9 +25,9 @@ The graphs, the split and the total are in **The numbers so far** below (generat
 
 Estimated, not measured: US$3,666 of the total, spent before telemetry could count it per day, is spread over 13 days (2026-10-25 to 2026-11-06) by 50% lines changed and 50% merged PRs of each day (git history); the faded, dashed bars are those estimates, the solid bars are measured. Per-model split of an estimated day: the same mix as the original lump (an assumption).
 
-- By model: Opus 5.5 70% (US$5,292), Sonnet 5.5 29% (US$2,183), Fable 5.2 1% (US$39), Haiku 5.5 0% (US$7).
-- By machine or team: linux 90% (US$6,758), ruben-server 7% (US$525), mac 3% (US$236).
-- Not counted yet: work before 2026-10-25, Copilot and Codex, and machines that publish no usage file yet (Paco's server has none yet; the Mac's file ends 2026-11-09 for now; Ruben's server file ends on 2026-11-12, a day that was partial when it was written, and the Linux file ends on 2026-11-23, a partial day (data up to about 02:00 UTC), so those totals may be a little higher).
+- By model: Opus 5.5 68% (US$5,919), Sonnet 5.5 26% (US$2,241), Fable 5.2 6% (US$491), Haiku 5.5 0% (US$8).
+- By machine or team: linux 91% (US$7,896), ruben-server 6% (US$525), mac 3% (US$236).
+- Not counted yet: work before 2026-10-25, Copilot and Codex, and machines that publish no usage file yet (Paco's server has none yet; the Mac's file ends 2026-11-09 for now; Ruben's server file ends on 2026-11-12, a day that was partial when it was written, and the Linux file ends on 2026-11-24, a partial day (data up to about 06:50 UTC), so those totals may be a little higher).
 <!-- build-cost-detail:end -->
 
 ## 1. Point Claude Code at the receiver

@@ -45,15 +45,15 @@ export type StepGlyph = 'read' | 'edit' | 'shell' | 'web' | 'mcp';
 export type StepState = 'running' | 'done' | 'failed';
 export type LobeId = 'frontal' | 'occipital' | 'parietal' | 'cerebellum' | 'temporal' | 'stem' | 'port';
 
-/** FR-011: the seven glyphs. `symbol` is a label for tests and text; the renderer draws shapes (constitution V). */
-export const GLYPHS: Readonly<Record<GlyphId, { word: string; lobe: LobeId; lobeWord: string; place: string; symbol: string }>> = {
-  think: { word: 'Think', lobe: 'frontal', lobeWord: 'front', place: 'front', symbol: '◇' },
-  read: { word: 'Read', lobe: 'occipital', lobeWord: 'back', place: 'back', symbol: '▤' },
-  edit: { word: 'Edit', lobe: 'parietal', lobeWord: 'top', place: 'top', symbol: '✎' },
-  shell: { word: 'Shell', lobe: 'cerebellum', lobeWord: 'cerebellum', place: 'back, low', symbol: '›_' },
-  web: { word: 'Web', lobe: 'temporal', lobeWord: 'low side', place: 'low side', symbol: '◎' },
-  mcp: { word: 'MCP', lobe: 'stem', lobeWord: 'stem', place: 'bottom', symbol: '⏚' },
-  you: { word: 'You', lobe: 'port', lobeWord: 'front port', place: 'front, low', symbol: '●' },
+/** FR-011: the seven glyphs. `symbol` is a label for tests and text; the renderer draws shapes (constitution V). `means`: what the lobe stands for, one plain sentence for its tooltip (FR-136). */
+export const GLYPHS: Readonly<Record<GlyphId, { word: string; lobe: LobeId; lobeWord: string; place: string; symbol: string; means: string }>> = {
+  think: { word: 'Think', lobe: 'frontal', lobeWord: 'front', place: 'front', symbol: '◇', means: 'Thinking between tools: never a tool step.' },
+  read: { word: 'Read', lobe: 'occipital', lobeWord: 'back', place: 'back', symbol: '▤', means: 'Reading, listing or searching files.' },
+  edit: { word: 'Edit', lobe: 'parietal', lobeWord: 'top', place: 'top', symbol: '✎', means: 'Editing, writing or creating files.' },
+  shell: { word: 'Shell', lobe: 'cerebellum', lobeWord: 'cerebellum', place: 'back, low', symbol: '›_', means: 'Running a command, or any other tool.' },
+  web: { word: 'Web', lobe: 'temporal', lobeWord: 'low side', place: 'low side', symbol: '◎', means: 'Fetching a web page or searching the web.' },
+  mcp: { word: 'MCP', lobe: 'stem', lobeWord: 'stem', place: 'bottom', symbol: '⏚', means: 'Calling a tool of an MCP server.' },
+  you: { word: 'You', lobe: 'port', lobeWord: 'front port', place: 'front, low', symbol: '●', means: 'Asking you: a permission or a question.' },
 };
 export const STEP_GLYPHS: readonly StepGlyph[] = ['read', 'edit', 'shell', 'web', 'mcp'];
 

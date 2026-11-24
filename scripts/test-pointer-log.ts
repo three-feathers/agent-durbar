@@ -175,7 +175,7 @@ function dragFocusCase(d: string) {
 function dragFocusHelper(src: string) {
   const m = new Module(path.join(ROOT, 'scripts', 'drag-focus.js'), null);
   m.filename = path.join(ROOT, 'scripts', 'drag-focus.js'); m.paths = Module._nodeModulePaths(path.join(ROOT, 'scripts')); m._compile(src, m.filename);
-  const F = m.exports as { labelFocus: (e: unknown, f: unknown) => Error; focusLine: (t: string, f: unknown) => string };
+  const F = m.exports as { labelFocus: (e: unknown, f: unknown, o?: { what?: string; tail?: string }) => Error; focusLine: (t: string, f: unknown) => string };
   const mk = () => { try { assert.strictEqual(false, true, 'orig message'); } catch (e) { return e as Error; } throw new Error('unreachable'); };
   const plain = new Error('boom'); assert.strictEqual(F.labelFocus(plain, { focusBefore: true, focusAfter: false, events: [{ n: 'blur', t: 5 }] }), plain, 'a non-assertion error comes back as the same object');
   const a = mk(); assert.strictEqual(F.labelFocus(a, { focusBefore: true, focusAfter: true, events: [] }), a, 'focus kept: the same error object');
@@ -185,6 +185,8 @@ function dragFocusHelper(src: string) {
   assert.ok(c.message.includes('the window lost the OS focus during the status-change hold') && c.message.includes('orig message'), 'hasFocus true then false: labelled');
   const n = F.labelFocus(mk(), { focusBefore: false, focusAfter: false, events: [] });
   assert.ok(!n.message.includes('lost the OS focus') && n.message.includes('had no OS focus before') && n.message.includes('orig message') && n instanceof assert.AssertionError, 'false before and after, no blur: not the loss label, only the extra text');
+  const w = F.labelFocus(mk(), { focusBefore: true, focusAfter: false, events: [{ n: 'blur', t: 7 }] }, { what: 'the room-head tip step', tail: 'not a missing tip (issue 2093)' });
+  assert.ok(w.message.includes('lost the OS focus during the room-head tip step (blur at 7 ms)') && w.message.includes('not a missing tip (issue 2093)') && !w.message.includes('status-change hold') && w.message.includes('orig message'), 'the tip step gets its own words');
   const g = F.labelFocus(mk(), { focusBefore: false, focusAfter: true, events: [] }); assert.ok(!g.message.includes('lost the OS focus'), 'no loss label without a blur or a true-to-false');
   assert.ok(F.focusLine('t', { focusBefore: true, focusAfter: false, events: [{ n: 'blur', t: 3 }] }).includes('blur@3ms'), 'the focus line lists the events');
 }

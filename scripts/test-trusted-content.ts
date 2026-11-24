@@ -77,13 +77,22 @@ if (!bash || bash.status !== 0) {
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-trusted-'));
 const bin = path.join(dir, 'bin');
 fs.mkdirSync(bin);
+// the gate wants every required check of .github/ruleset-main.json passed (spec 021 FR-420): the fake check list names all of them, and
+// each gate copy finds the record at <its dir>/../.github
+const RULESET = path.join(ROOT, '.github', 'ruleset-main.json');
+const REQUIRED: string[] = (JSON.parse(fs.readFileSync(RULESET, 'utf8')) as { rules: Array<{ type: string; parameters?: { required_status_checks?: Array<{ context: string }> } }> }).rules
+  .filter((r) => r.type === 'required_status_checks').flatMap((r) => (r.parameters?.required_status_checks ?? []).map((x) => x.context));
+assert.strictEqual(REQUIRED.length, 5, 'the ruleset record names five required checks');
+fs.mkdirSync(path.join(dir, '.github'));
+fs.copyFileSync(RULESET, path.join(dir, '.github', 'ruleset-main.json'));
+fs.writeFileSync(path.join(dir, 'checks.txt'), `CodeQL\tpass\t1m\thttps://github.com/o/r/runs/101\n${REQUIRED.map((n) => `${n}\tpass\t1m\thttps://x\n`).join('')}`);
 fs.writeFileSync(path.join(bin, 'gh'), `#!/bin/bash
 F="${dir}"; prog=.; prev=
 for a in "$@"; do { [ "$prev" = --jq ] || [ "$prev" = -q ]; } && prog=$a; prev=$a; done
 ep=; for a in "$@"; do case $a in repos/*|graphql|user) ep=$a; break;; esac; done
 case "$1 $2" in
   "repo view") echo '{"nameWithOwner":"o/r"}' | jq -r "$prog"; exit;;
-  "pr checks") printf 'CodeQL\\tpass\\t1m\\thttps://github.com/o/r/runs/101\\nBuild\\tpass\\t1m\\thttps://x\\n'; exit;;
+  "pr checks") cat "$F/checks.txt"; exit;;
   "pr view") L='[]'; [ -f "$F/labels.json" ] && L=$(cat "$F/labels.json"); echo '{"mergeable":"MERGEABLE","files":[{"path":"docs/x.md"}],"labels":'"$L"'}' | jq -r "$prog"; exit;;
 esac
 case $ep in
@@ -111,7 +120,7 @@ put('empty', []);
 put('files', [{ filename: 'docs/x.md' }]);
 put('checkruns', { check_runs: [{ name: 'CodeQL', id: 101, app: { slug: 'github-advanced-security' } }] });
 put('threads', { data: { repository: { pullRequest: { reviewThreads: { nodes: [] } } } } });
-const pull = (login: string, head = 'o/r'): object => ({ changed_files: 1, user: { login }, head: { sha: 'a'.repeat(40), repo: { full_name: head } }, base: { repo: { full_name: 'o/r' } } });
+const pull = (login: string, head = 'o/r'): object => ({ changed_files: 1, draft: false, user: { login }, head: { sha: 'a'.repeat(40), repo: { full_name: head } }, base: { repo: { full_name: 'o/r' } } });
 const edits = (nodes: object[]): object => ({ data: { repository: { pullRequest: { comments: { nodes }, reviews: { nodes: [] }, reviewThreads: { nodes: [] } } } } });
 const env = { ...process.env, PATH: `${bin}${path.delimiter}${process.env.PATH}` };
 let gateScript = path.join(ROOT, 'scripts', 'pr-gate.sh');
