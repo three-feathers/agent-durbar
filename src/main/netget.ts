@@ -225,9 +225,20 @@ export function updateSession(sessions: SessionsLike): NetSessionLike {
   return ses;
 }
 
-/** A PAC script that answers `rule` (a PAC answer such as `PROXY host:port; DIRECT`, from `resolveProxy`) for every URL. */
-export const pacFor = (rule: string): string =>
-  'data:application/x-ns-proxy-autoconfig,' + encodeURIComponent(`function FindProxyForURL(url, host) { return ${JSON.stringify(rule)}; }`);
+/** One entry of a PAC answer as Chromium's `resolveProxy` writes it: `DIRECT`, or a scheme and `host:port` (IPv6 in brackets). */
+const PAC_ENTRY = /^(?:DIRECT|(?:PROXY|HTTPS|SOCKS|SOCKS4|SOCKS5|QUIC) (?:[A-Za-z0-9._-]{1,253}|\[[0-9A-Fa-f:.]{2,45}\]):[0-9]{1,5})$/;
+/**
+ * A PAC script that answers `rule` (a PAC answer such as `PROXY host:port; DIRECT`, from `resolveProxy`) for every URL, or
+ * `undefined` when `rule` is not such an answer: only entries of that exact grammar are written into the script, rebuilt from the
+ * parts, so nothing else can become code. The string is also escaped past JSON (`<`, `>`, `/`, U+2028, U+2029).
+ */
+export function pacFor(rule: string): string | undefined {
+  if (typeof rule !== 'string' || rule.length === 0 || rule.length > 4096) return undefined;
+  const entries = rule.split(';').map((e) => e.trim().replace(/\s+/g, ' ')).filter((e) => e.length > 0);
+  if (entries.length === 0 || entries.length > 16 || !entries.every((e) => PAC_ENTRY.test(e))) return undefined;
+  const answer = JSON.stringify(entries.join('; ')).replace(/[<>/\u2028\u2029]/g, (c) => `\\u${c.charCodeAt(0).toString(16).padStart(4, '0')}`);
+  return 'data:application/x-ns-proxy-autoconfig,' + encodeURIComponent(`function FindProxyForURL(url, host) { return ${answer}; }`);
+}
 
 /**
  * Spec 076 FR-155 for the update session: the one place that copies proxy settings from the default session to another session.
@@ -236,9 +247,9 @@ export const pacFor = (rule: string): string =>
  * `setProxy`) and that answer is set on `target`. Certificates need no copy: no session gets a verifier of its own (FR-156, OS store).
  */
 export async function useDefaultSessionProxy(target: NetSessionLike, sessions: SessionsLike, url: string): Promise<void> {
-  const rule = await sessions.defaultSession.resolveProxy(url);
-  if (typeof rule !== 'string' || rule.length === 0 || rule.length > 4096) throw new Error('no proxy answer');
-  await target.setProxy({ mode: 'pac_script', pacScript: pacFor(rule) });
+  const pacScript = pacFor(await sessions.defaultSession.resolveProxy(url));
+  if (pacScript === undefined) throw new Error('no proxy answer');
+  await target.setProxy({ mode: 'pac_script', pacScript });
 }
 
 /**

@@ -74,23 +74,25 @@ async function main(): Promise<void> {
 
   // the proxy helper: the default session's answer for that URL, set on the target as a PAC script
   {
-    const s = sessionsWith(async (u) => (u.includes('api.github.com') ? 'PROXY 10.0.0.1:3128; DIRECT' : 'DIRECT'));
+    const s = sessionsWith(async (u) => (new URL(u).host === 'api.github.com' ? 'PROXY 10.0.0.1:3128; DIRECT' : 'DIRECT'));
     const t = new StubSession('t');
     await useDefaultSessionProxy(t, s, LIST);
     assert.deepStrictEqual(s.def.asked, [LIST], 'the default session is asked for the exact URL');
     assert.deepStrictEqual(t.proxies, [{ mode: 'pac_script', pacScript: pacFor('PROXY 10.0.0.1:3128; DIRECT') }], 'its answer is set on the target');
-    const script = decodeURIComponent(pacFor('PROXY a:1"; x(); "').slice('data:application/x-ns-proxy-autoconfig,'.length));
-    assert.strictEqual(script, 'function FindProxyForURL(url, host) { return "PROXY a:1\\"; x(); \\""; }', 'the answer is quoted with JSON.stringify: never code');
-    for (const bad of ['', 'x'.repeat(4097)]) {
+    const body = (r: string): string | undefined => { const p = pacFor(r); return p === undefined ? undefined : decodeURIComponent(p.slice('data:application/x-ns-proxy-autoconfig,'.length)); };
+    assert.strictEqual(body('PROXY 10.0.0.1:3128;  DIRECT'), 'function FindProxyForURL(url, host) { return "PROXY 10.0.0.1:3128; DIRECT"; }', 'a PAC answer becomes a one-line PAC script');
+    for (const ok of ['DIRECT', 'HTTPS proxy.corp.example:443', 'SOCKS5 [fe80::1]:1080; PROXY p_1.example:80; DIRECT', 'QUIC q.example:443']) assert.ok(pacFor(ok), `accepted: ${ok}`);
+    for (const bad of ['', 'x'.repeat(4097), 'PROXY a:1"; x(); "', 'PROXY a:1</script>', 'PROXY host', 'FTP a:21', 'PROXY a\u2028b:1', 'PROXY a\u2029:1', 'direct', Array(17).fill('DIRECT').join(';'), 'PROXY a b:1']) {
+      assert.strictEqual(pacFor(bad), undefined, `refused (never written into code): ${JSON.stringify(bad).slice(0, 40)}`);
       const t2 = new StubSession('t2');
-      await assert.rejects(useDefaultSessionProxy(t2, sessionsWith(async () => bad), LIST), 'an empty or huge proxy answer is refused');
+      await assert.rejects(useDefaultSessionProxy(t2, sessionsWith(async () => bad), LIST), 'a proxy answer outside the grammar is refused');
       assert.deepStrictEqual(t2.proxies, [], 'and nothing is set');
     }
   }
 
   // a request: the update session (never the default one), the helper before it, no cookie, no credentials
   {
-    const s = sessionsWith(async (u) => `PROXY p.example:8080 ${new URL(u).host}`);
+    const s = sessionsWith(async (u) => `PROXY p-${new URL(u).host}:8080`);
     const n = requests();
     const get = makeUpdateFeedGet(s, n.request);
     assert.deepStrictEqual(await get(LIST, SLUG), { ok: true, kind: 'list', bytes: Buffer.from('[]') }, 'the list is read');
@@ -100,7 +102,7 @@ async function main(): Promise<void> {
     assert.ok(n.reqs.every((r) => r.opts.session === upd), 'every request runs on the update session (default-session mutant dies here)');
     assert.ok(n.reqs.every((r) => r.opts.session !== s.def), 'no request on the default session');
     assert.deepStrictEqual(s.def.asked, [LIST, RAW], 'the default session is asked for each URL, in order (helper-skipped mutant dies here)');
-    assert.deepStrictEqual(upd.proxies.map((p) => p.pacScript), [pacFor('PROXY p.example:8080 api.github.com'), pacFor('PROXY p.example:8080 raw.githubusercontent.com')],
+    assert.deepStrictEqual(upd.proxies.map((p) => p.pacScript), [pacFor('PROXY p-api.github.com:8080'), pacFor('PROXY p-raw.githubusercontent.com:8080')],
       'the default session\'s proxy for each URL is set on the update session before its request');
     for (const r of n.reqs) {
       assert.strictEqual(r.opts.credentials, 'omit', 'credentials omitted');
