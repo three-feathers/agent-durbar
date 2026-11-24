@@ -1310,6 +1310,33 @@ const planMcpSignInRefresh = (i: SignInPlanInput): SignInPlan => {
        #1637); any other name has no known entry (an OAuth server keeps "needs sign-in") */
     const SIM_TOKEN_ENTRIES: Record<string, { vars: string[] }> = { 'team-api': { vars: ['TEAM_API_TOKEN'] }, 'docs-api': { vars: [] }, 'paste-api': { vars: ['k8Jq2LmZ9xPw4RtY7vBn3HcS6dFg1AeU'] } };
     /* mcptoken:end */
+    /* spec 005 FR-411: the simulator's stand-in for main's `toolargcopy.ts` (this file cannot import main code): the raw text of the argument each
+       chip shows (the window's `toolArg` choice), per session and call, so Copy has a real value to write; at most 2,000 calls, the oldest dropped
+       first, as main keeps (without that bound, every tool call the simulator emits stayed here: check-helper-retention saw the heap grow).
+       `masked` stands for main's flag: the `argsMasked` the emitted event carries (the simulator has no main mask in the path) */
+    /* the same pair key as main's `toolCopyKey` (src/main/toolargcopy.ts), copied because this file cannot import main code; test:toolargcopy
+       SIM-KEY checks that the two agree and that every lookup here goes through it */
+    const simToolCopyKey = (sessionId: string, callId: string): string => JSON.stringify([sessionId, callId]);
+    const simToolCopies = new Map<string, { text: string; masked: boolean }>();
+    /* keeps one value, newest last, and drops the oldest past main's 2,000 calls (TOOL_COPY_CALLS_MAX); test:toolargcopy SIM-BOUND runs this line */
+    const simToolCopyKeep = (m: Map<string, { text: string; masked: boolean }>, k: string, v: { text: string; masked: boolean }): void => { m.delete(k); m.set(k, v); for (const old of m.keys()) { if (m.size <= 2000) break; m.delete(old); } };
+    /* for the driver: whether each request was confirmed and its answer word (never the text); `mark` makes a kept value masked, as a newer
+       update main already masked while the window still holds the old hint */
+    const simToolCopyLog: { confirmed: boolean; answer: string }[] = [];
+    (window as unknown as { __durbarSimToolCopy?: unknown }).__durbarSimToolCopy = {
+      calls: simToolCopyLog,
+      mark: (sessionId: string, callId: string): boolean => { const v = simToolCopies.get(simToolCopyKey(sessionId, callId)); if (v) v.masked = true; return !!v; },
+      /* for the driver: the stand-in no longer holds that call, as main after its bounds or a removed session (Copy then answers `unknown`) */
+      forget: (sessionId: string, callId: string): boolean => simToolCopies.delete(simToolCopyKey(sessionId, callId)),
+      size: (): number => simToolCopies.size,
+    };
+    const simToolArgKey = (args: unknown): string | undefined => {
+      if (!args || typeof args !== 'object') return undefined;
+      const o = args as Record<string, unknown>;
+      for (const k of ['path', 'pattern', 'command', 'url', 'query', 'file_path']) if (o[k]) return k;
+      for (const k of Object.keys(o)) if (typeof o[k] === 'string') return k;
+      return undefined;
+    };
     /* spec 005 FR-438: main's rule for the window's copy of a tool call (FR-342 main half, `toolArgCopies.see`), since the simulator's events skip
        main: a text argument longer than the masks take arrives empty, and when the argument the chip shows (the window's `toolArg` choice, on the
        emptied copy) is one of them, `argsLong` carries its length; a caller's own `argsLong` is dropped (main's word only) */
@@ -1322,11 +1349,12 @@ const planMcpSignInRefresh = (i: SignInPlanInput): SignInPlan => {
       let cut = false;
       for (const k of Object.keys(r)) { const v = r[k]; if (typeof v === 'string' && v.length > lim) { out[k] = ''; cut = true; } else out[k] = v; }
       if (!cut) return rest;
-      const key = ['path', 'pattern', 'command', 'url', 'query', 'file_path'].find((k) => out[k]) ?? Object.keys(out).find((k) => typeof out[k] === 'string');
+      const key = simToolArgKey(out);
       const rv = key === undefined ? undefined : r[key];
       return typeof rv === 'string' && out[key as string] === '' && rv.length > lim ? { ...rest, args: out, argsLong: rv.length } : { ...rest, args: out };
     };
     const emit = (e: AgentEvent): void => {
+      if (e.type === 'toolCall' && e.args !== undefined) { const k = simToolArgKey(e.args), v = k === undefined ? undefined : (e.args as Record<string, unknown>)[k]; const id = simToolCopyKey(e.sessionId, e.callId); if (typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean') simToolCopyKeep(simToolCopies, id, { text: String(v), masked: e.argsMasked === true }); else simToolCopies.delete(id); }
       /* like main, which keeps the runtime's list before the window hears of it: the reply a listener asks for at once sees this event (spec 058 FR-094) */
       if (e.type === 'status' && e.status === 'stopped') { const q = sims.find((x) => x.info.id === e.sessionId); if (q) q.mcpHealth = undefined; }
       if (e.type === 'mcp') { const q = sims.find((x) => x.info.id === e.sessionId); if (q) { for (const m of e.servers) if (m.status === 'connected' && q.mcpLive?.some((o) => o.name === m.name && o.status !== 'connected')) q.mcpCalls?.delete(m.name); /* main's McpCallTracker.onServers: back to connected drops the class */ q.mcpLive = e.servers; q.mcpHealth = simHealth(q.mcpHealth, e.servers); if (!selfMcp) { q.mcpReported = e.servers; q.mcpAppOff = new Set(e.servers.filter((m) => m.status === 'disabled' && !q.mcpOff?.has(m.name)).map((m) => m.name)); } } }
@@ -4330,6 +4358,20 @@ const planMcpSignInRefresh = (i: SignInPlanInput): SignInPlan => {
         id === 'sim-2' && target === 'vscodium'
           ? { ok: false, edition: 'VSCodium', error: 'VSCodium is installed, but it cannot open this folder safely (its path has &, which cmd.exe could misread). Rename the folder, or open it from VSCodium itself.' }
           : { ok: true, edition: target === 'folder' ? 'the file manager' : target === 'vscodium' ? 'VSCodium' : 'VS Code', ...(id === 'sim-2' ? { note: 'This folder is a link, so its real folder was opened.' } : {}) },
+      /* spec 005 FR-411: main's `agents:copyToolArg` answers, the page's clipboard standing in for Electron's; never the text */
+      copyToolArg: async (sessionId: string, callId: string, confirmed?: boolean): Promise<{ ok: true } | { ok: false; reason: 'unknown' | 'too-long' | 'ask' | 'failed' }> => {
+        const answer = async (): Promise<{ ok: true } | { ok: false; reason: 'unknown' | 'too-long' | 'ask' | 'failed' }> => {
+          const v = typeof sessionId === 'string' && typeof callId === 'string' ? simToolCopies.get(simToolCopyKey(sessionId, callId)) : undefined;
+          if (v === undefined) return { ok: false, reason: 'unknown' };
+          if (v.text.length > 100000) return { ok: false, reason: 'too-long' };
+          if (v.masked && confirmed !== true) return { ok: false, reason: 'ask' };
+          try { await navigator.clipboard.writeText(v.text); } catch { return { ok: false, reason: 'failed' }; }
+          return { ok: true };
+        };
+        const r = await answer();
+        simToolCopyLog.push({ confirmed: confirmed === true, answer: r.ok ? 'ok' : r.reason });
+        return r;
+      },
       // spec 063 FR-006: a fixed git status per agent (no git repository needed): branch, 0-4 changed files, one non-repository folder
       gitStatus: async (id: string) => {
         const n = Number(String(id).replace(/\D/g, '')) || 0;

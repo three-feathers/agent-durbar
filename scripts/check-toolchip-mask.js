@@ -7,7 +7,8 @@
  * Canaries are invented and built from pieces at run time (no secret-looking literal in this file). Through the simulator's test hook
  * (`__durbarSimEmit`, the path of its own events) the first agent gets tool calls whose argument holds a canary, at a call's start and in a
  * later update that brings the arguments. For each chip: its visible line, its `title`, every `aria-label` inside it, the open chip's command,
- * what Copy copies and the chip's HTML hold no canary (nor a piece of one). In Flat and in Real office, at 1440x900; the corpus part once.
+ * the chip's HTML and the confirm Copy opens hold no canary (nor a piece of one); since spec 005 FR-411 Copy on such a chip asks first and Cancel
+ * copies nothing (check-005-chip-copy drives Copy anyway). In Flat and in Real office, at 1440x900; the corpus part once.
  * Work: the chip's mask runs once per start and once per update that brings arguments, never for an output update (a counter, not a clock).
  * Differential with main: a corpus of about 3,000 harmless commands, paths, searches and URLs, run through the chip's own mask, must show
  * exactly what main shows (main puts the raw argument on the chip: its one-line label cut at 400, the full text cut at 20,000): 0 changes.
@@ -106,9 +107,10 @@ module.exports = async (ctx) => {
   const read = (callId) => js(`(async()=>{const c=window.__durbarSimUi.chipEl(${jsLiteral(ID)},${jsLiteral(callId)});if(!c||!c.isConnected)return null;
       const code=(c.querySelector('code')||{}).textContent||'', pre=(c.querySelector('pre.cmd')||{}).textContent||'';
       const aria=[c,...c.querySelectorAll('*')].map(e=>e.getAttribute('aria-label')||'').join(' | ');
-      let copied='';const b=c.querySelector('.cp-cmd');
-      if(b){const w=navigator.clipboard.writeText;navigator.clipboard.writeText=t=>{copied=String(t);return Promise.resolve();};try{b.click();await new Promise(r=>setTimeout(r,30));}finally{navigator.clipboard.writeText=w;}}
-      return {code,title:c.title,aria,pre,copied,hasCopy:!!b,html:c.outerHTML};})()`);
+      let copied='',asked=false,dlg='';const b=c.querySelector('.cp-cmd');
+      if(b){const w=navigator.clipboard.writeText;navigator.clipboard.writeText=t=>{copied=String(t);return Promise.resolve();};try{b.click();await new Promise(r=>setTimeout(r,30));
+        const d=document.querySelector('#modeDlg [role=alertdialog]');if(d){asked=true;dlg=d.outerHTML;d.querySelector('[data-cancel]').click();await new Promise(r=>setTimeout(r,30));}}finally{navigator.clipboard.writeText=w;}}
+      return {code,title:c.title,aria,pre,copied,asked,dlg,hasCopy:!!b,html:c.outerHTML};})()`);
   const checkChip = async (tag, callId, phase, hides = true, long = false) => {
     const v = await read(callId);
     assert.ok(v, `${tag}: the chip of ${callId} is in the chat`);
@@ -124,7 +126,9 @@ module.exports = async (ctx) => {
     }
     assert.ok(v.hasCopy, `${tag} ${phase}: the open chip has Copy`);
     x = leak(v.copied); assert.ok(!x, `${tag} ${phase}: COPY copies "${x}"`);
-    assert.ok(v.copied && v.copied === v.pre, `${tag} ${phase}: Copy copies the shown (masked) command`);
+    // spec 005 FR-411: Copy on a chip whose argument was masked (or cut) asks first; Cancel copies nothing (check-005-chip-copy drives Copy anyway)
+    assert.ok(v.asked && v.copied === '', `${tag} ${phase}: Copy asks first and Cancel copies nothing (asked ${v.asked}, copied ${v.copied.length} characters)`);
+    x = leak(v.dlg); assert.ok(!x, `${tag} ${phase}: the confirm shows "${x}"`);
     x = leak(v.html); assert.ok(!x, `${tag} ${phase}: HTML holds "${x}"`);
     if (hides) assert.ok(hid(v.code) && /\[redacted\]/.test(v.pre), `${tag} ${phase}: the chip says what it hid: ${v.code.slice(0, 120)}`);
     return v;
