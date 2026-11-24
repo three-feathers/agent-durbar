@@ -272,9 +272,14 @@ for (const t of ['pass' + 'word=keys/server_2026.pem', 'tok' + 'en=server_2026/k
 // each shipped rule up to the look-behind is compiled on its own, and the places it matches are the places the look-behind is entered.
 {
   const fill = (u: string, k: number): string => u.repeat(Math.ceil(k / u.length)).slice(0, k);
-  const gates = R._maskSourcesForTest().filter((src) => src.includes('(?<=\\/)(?=') || src.includes('(?<=\\/)(?<=(?:^|')).map((src) => {
+  const gates = R._maskSourcesForTest().filter((src) => src.includes('(?<=\\/)') && src.includes('(?<=(?:^|')).map((src) => {
     const at = src.indexOf('(?<=\\/)'), lb = src.indexOf('(?<=(?:^|', at);
     ok(at >= 0 && lb > at, 'T508 work: a rule with the path start has a bounded look-behind after its separator test');
+    // review of PR 2095, item 2: nothing runs before the separator test (it opens its alternative of the compiled rule: the character before it is the `|`
+    // that starts the alternative), and only the family-head test stands between it and the look-behind (one look-ahead of plain alternatives, no group or
+    // look-around inside). Read on the compiled RegExp source, so line endings and the TypeScript formatting do not matter.
+    ok(src[at - 1] === '|', 'T508 work: the path start begins with the separator test (nothing runs before it)');
+    ok(/^\(\?<=\\\/\)\(\?=[^()]*\)$/.test(src.slice(at, lb)), 'T508 work: only the family-head test stands between the separator test and the look-behind');
     return new RegExp(src.slice(at, lb), 'g');
   });
   ok(gates.length >= 2, `T508 work: the path start is found in the shipped rules (${gates.length})`);
@@ -283,7 +288,8 @@ for (const t of ['pass' + 'word=keys/server_2026.pem', 'tok' + 'en=server_2026/k
     const t = fill(u, 20_000), heads = (t.match(HEAD) ?? []).length, seps = (t.match(/\//g) ?? []).length;
     for (const g of gates) {
       const entered = (t.match(g) ?? []).length;
-      ok(entered <= heads, `T508 work: path-dense ${k}: the look-behind is entered only at a family head (${entered} entries, ${heads} heads, ${seps} separators)`);
+      // exactly at the family heads (review of PR 2095, item 1: an upper bound alone let a counter that never matches pass)
+      eq(entered, heads, `T508 work: path-dense ${k}: the look-behind is entered exactly at the family heads (${entered} entries, ${heads} heads, ${seps} separators)`);
     }
   }
 }
