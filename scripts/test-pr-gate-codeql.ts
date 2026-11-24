@@ -57,7 +57,7 @@ const fx = path.join(dir, 'fx');
 fs.mkdirSync(bin);
 fs.mkdirSync(fx);
 // fixtures: checks.txt (tab-separated `gh pr checks` lines; absent = the call fails; checks.<n>.txt: what the n-th call prints instead, counted in
-// checks.n; checks.exit0: the call exits 0 whatever it lists, else 1 on a fail line and 8 on a pending line, as gh 2.100.0 does), checkruns.json and checkruns2.json (the head commit's
+// checks.n; checks.late.txt: what call n prints from n = checks.after on, or when n is a multiple of checks.mod; checks.exit0: the call exits 0 whatever it lists, else 1 on a fail line and 8 on a pending line, as gh 2.100.0 does), checkruns.json and checkruns2.json (the head commit's
 // check runs, pages 1 and 2; checkruns.fail: the call fails after its pages), files.json and files2.json (pages 1 and 2 of the PR
 // files API: page 2 only with --paginate, as the real gh; absent = the call fails), pull.json (the PR: changed_files, head sha;
 // pull-later.json: what every read after the first returns, a push while the gate runs; pull-later.fail: those reads fail),
@@ -70,6 +70,7 @@ ep=; for a in "$@"; do case $a in repos/*|graphql|user) ep=$a; break;; esac; don
 case "$1 $2" in
   "repo view") echo '{"nameWithOwner":"o/r"}' | jq -r "$prog"; exit;;
   "pr checks") n=$(( $(cat "$F/checks.n" 2>/dev/null || echo 0) + 1 )); echo $n > "$F/checks.n"; c="$F/checks.txt"; [ -f "$F/checks.$n.txt" ] && c="$F/checks.$n.txt"
+    [ -f "$F/checks.after" ] && [ "$n" -ge "$(cat "$F/checks.after")" ] && c="$F/checks.late.txt"; [ -f "$F/checks.mod" ] && [ $((n % $(cat "$F/checks.mod"))) = 0 ] && c="$F/checks.late.txt"
     [ -f "$c" ] || { echo "fake gh: checks failed" >&2; exit 1; }; cat "$c"; [ -f "$F/checks.exit0" ] && exit 0
     awk -F'\\t' '$2=="fail"{f=1} $2=="pending"{w=1} END{exit f ? 1 : (w ? 8 : 0)}' "$c"; exit;;
   "pr view") echo '{"mergeable":"MERGEABLE","files":[{"path":"package-lock.json"}],"labels":[]}' | jq -r "$prog"; exit;;
@@ -145,7 +146,7 @@ const fixture = (o: { codeql?: string | null; checks?: boolean; files?: File[] |
   set('pull-later.fail', null);
   set('pull.seen', null);
   set('checkruns.fail', null);
-  for (const f of fs.readdirSync(fx)) if (/^checks\.(\d+\.txt|n|exit0)$/.test(f) || f.startsWith('sleep.')) fs.rmSync(path.join(fx, f));
+  for (const f of fs.readdirSync(fx)) if (/^checks\.(\d+\.txt|n|exit0|after|mod|late\.txt)$/.test(f) || f.startsWith('sleep.')) fs.rmSync(path.join(fx, f));
   // the head commit's check runs, "name@slug" or "name@slug#id" (id 101 by default, the run the CodeQL line links): by default one CodeQL
   // run from GitHub's code-scanning app (null: the call fails)
   const runs = (l: string[]): string => JSON.stringify({ check_runs: l.map((x) => { const [name, rest] = x.split('@'); const [slug, id] = rest.split('#'); return { name, id: Number(id ?? 101), app: { slug } }; }) });
@@ -374,6 +375,28 @@ const CASES: Record<string, Case> = {
     assert.ok(!fs.existsSync(path.join(fx, 'sleep.over')) && s.length === 240 && s.every((x) => x === '30'), `${l}: the wait stops at its own bound (240 sleeps of 30 s), got ${s.length} sleeps\n${r.out}`);
     assert.ok(r.code === 1 && r.out.includes('#1 not ready') && /wait-deadline\(/.test(r.out) && /Spec Kit gate=pending/.test(r.out), `${l}: not ready, wait-deadline\n${r.out}`);
   },
+  // the bound in the first loop, the check passed in the verdict's own read: every wait read (one call a round, gh exits 8 so pend is not
+  // asked: 240 rounds, then the read before the bound check, calls 1-241) is pending, call 242 on (the verdict's read and after) all passed
+  'wait-deadline-cleared: --wait at the bound, the check passed only in the verdict read': (g, l) => {
+    fixture({ codeql: 'pass', files: ['src/main/a.ts'] });
+    set('checks.txt', `${OTHER.replace('Spec Kit gate\tpass', 'Spec Kit gate\tpending')}CodeQL\tpass\t0\thttps://github.com/o/r/runs/101\n`);
+    set('checks.late.txt', `${OTHER}CodeQL\tpass\t0\thttps://github.com/o/r/runs/101\n`);
+    set('checks.after', '242');
+    const r = waitRun(g);
+    const s = sleeps();
+    assert.ok(!fs.existsSync(path.join(fx, 'sleep.over')) && s.length === 240 && s.every((x) => x === '30'), `${l}: the wait stops at its own bound (240 sleeps of 30 s), got ${s.length} sleeps\n${r.out}`);
+    assert.ok(r.code === 1 && r.out.includes('#1 not ready') && /wait-deadline\(/.test(r.out) && !/=pending/.test(r.out), `${l}: not ready, wait-deadline though the verdict read is all passed\n${r.out}`);
+  },
+  // the bound after the second look: clear at each first look (gh and pend, 2 calls), pending after each 90 s pause (every 3rd call)
+  'wait-flapping: --wait, clear at each first look and pending after each pause': (g, l) => {
+    fixture({ codeql: 'pass', files: ['src/main/a.ts'] });
+    set('checks.late.txt', `${OTHER}Late check\tpending\t0\thttps://x\nCodeQL\tpass\t0\thttps://github.com/o/r/runs/101\n`);
+    set('checks.mod', '3');
+    const r = waitRun(g);
+    const s = sleeps();
+    assert.ok(!fs.existsSync(path.join(fx, 'sleep.over')) && s.length === 80 && s.every((x) => x === '90'), `${l}: the wait stops at its own bound after the second look (80 pauses of 90 s), got ${s.length} sleeps\n${r.out}`);
+    assert.ok(r.code === 1 && r.out.includes('#1 not ready') && /wait-deadline\(/.test(r.out), `${l}: not ready, wait-deadline\n${r.out}`);
+  },
   // exact names: "<name> part 1/2" and "part 2/2" passed do not stand for "<name>"
   'required-prefix: only "<required name> part 1/2" and "part 2/2" listed, both passed': N({ codeql: 'pass', files: ['src/main/a.ts'] }, /missing:Build and test \(ubuntu-latest\)/, () => set('checks.txt', `${OTHER.replace('Build and test (ubuntu-latest)\tpass\t1m\thttps://x\n', 'Build and test (ubuntu-latest) part 1/2\tpass\t1m\thttps://x\nBuild and test (ubuntu-latest) part 2/2\tpass\t1m\thttps://x\n')}CodeQL\tpass\t0\thttps://github.com/o/r/runs/101\n`)),
   // a pending line while gh exits 0: the gate waits on it (one 30 s round) before the 90 s pause, then reads the passed list
@@ -479,6 +502,8 @@ try {
     ['the wait going on after a failed check', 'until gh pr checks $p >/dev/null 2>&1; [ $? != 8 ] && ! pend; do', 'until gh pr checks $p >/dev/null 2>&1 && ! pend; do', 'wait-failed', 'the failed check ends the wait at once'],
     ['--wait without its bound', 'wait_more() { [ "$waited" -lt 240 ] || { wait_cut=1; return 1; }; }', 'wait_more() { true; }', 'wait-deadline', 'the wait stops at its own bound'],
     ['the wait-deadline reason not added', '[ -n "$wait_cut" ] && bad=', 'false && bad=', 'wait-deadline', 'not ready, wait-deadline'],
+    ['the wait-deadline reason only while a check is pending', '[ -n "$wait_cut" ] && bad=', '[ -n "$wait_cut" ] && pend && bad=', 'wait-deadline-cleared', 'not ready, wait-deadline though the verdict read is all passed'],
+    ['the bound after the second look removed', '  wait_more || break\ndone', 'done', 'wait-flapping', 'the wait stops at its own bound after the second look'],
     ['a required name matched by prefix', `need="$need" awk -F'\\t' '$1==ENVIRON["need"]`, `need="$need" awk -F'\\t' 'index($1,ENVIRON["need"])==1`, 'required-prefix'],
     ['the pending-line test removed from the wait', '[ $? != 8 ] && ! pend; do', '[ $? != 8 ]; do', 'wait-pending-line'],
     ['the second look after the 90 s pause removed', '  pend || break\n', '  break\n', 'wait-second-look'],
