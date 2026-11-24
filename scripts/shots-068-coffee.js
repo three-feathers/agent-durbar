@@ -101,17 +101,25 @@ module.exports = async (ctx) => {
   const install = () => js(`(()=>{const nm=${jsLiteral('Tomas')};window.__tomas=()=>[...document.querySelectorAll('#stage .desk[data-id]')].find(d=>d.innerText.split('\\n').some(l=>l.trim()===nm));
     window.__entry=()=>{const d=window.__tomas();return d?document.querySelector('#stage .place[data-place="coffee"] [data-coffeeid="'+CSS.escape(d.dataset.id)+'"]'):null;};})()`);
   /* FR-415 (2026-11-24): a long chat opened again. `lengthen` puts 45 older messages first in the open chat, so closing it marks them .cvo
-     (spec 005 FR-210); SPARE is a page function: an element's height minus the span of its shown children (elements with their margins, and text), its padding and border (its empty height, px) */
+     (spec 005 FR-210); `emptyHeight` (page code): an element's height minus the span of its shown children (elements with their margins, and text), its padding and border (its empty height, px) */
   const lengthen = () => js(`(()=>{const ci=document.querySelector('#chat > .chat-inner'),f=ci.firstChild;for(let i=0;i<45;i++){const m=document.createElement('div');m.className='msg user';m.textContent='An older message '+(i+1);ci.insertBefore(m,f);}})()`);
   const closeChat = async (w) => { await js(`document.getElementById('backBtn').click()`); assert.ok(await until(`!document.body.classList.contains('panel-open')`, 3000), `${w}: chat closed`); };
-  const SPARE = `(e=>{const s=getComputedStyle(e),px=(c,p)=>parseFloat(c[p])||0;let top=Infinity,bot=-Infinity;
-    for(const c of e.childNodes){let r,mt=0,mb=0;if(c.nodeType===1){if(!c.getClientRects().length)continue;r=c.getBoundingClientRect();const cs=getComputedStyle(c);mt=px(cs,'marginTop');mb=px(cs,'marginBottom');}
-      else if(c.nodeType===3&&c.textContent.trim()){const g=document.createRange();g.selectNodeContents(c);r=g.getBoundingClientRect();}else continue;
-      top=Math.min(top,r.top-mt);bot=Math.max(bot,r.bottom+mb);}
-    const content=bot>top?bot-top:0;
-    return Math.round(e.getBoundingClientRect().height-content-px(s,'paddingTop')-px(s,'paddingBottom')-px(s,'borderTopWidth')-px(s,'borderBottomWidth'));})`;
+  /* runs in the page (spliced as its source): an element's empty height */
+  function emptyHeight(e) {
+    const s = getComputedStyle(e), px = (c, p) => parseFloat(c[p]) || 0;
+    let top = Infinity, bot = -Infinity;
+    for (const c of e.childNodes) {
+      let r, mt = 0, mb = 0;
+      if (c.nodeType === 1) { if (!c.getClientRects().length) continue; r = c.getBoundingClientRect(); const cs = getComputedStyle(c); mt = px(cs, 'marginTop'); mb = px(cs, 'marginBottom'); }
+      else if (c.nodeType === 3 && c.textContent.trim()) { const g = document.createRange(); g.selectNodeContents(c); r = g.getBoundingClientRect(); }
+      else continue;
+      top = Math.min(top, r.top - mt); bot = Math.max(bot, r.bottom + mb);
+    }
+    const content = bot > top ? bot - top : 0;
+    return Math.round(e.getBoundingClientRect().height - content - px(s, 'paddingTop') - px(s, 'paddingBottom') - px(s, 'borderTopWidth') - px(s, 'borderBottomWidth'));
+  }
   /* every coffee card of the open chat (height, empty height, settled), the element above the live one, and the worst empty height from the first card down */
-  const COFFEE_FIT = `(()=>{const spare=${SPARE},ci=document.querySelector('#chat > .chat-inner'),k=[...ci.children],live=ci.querySelector(':scope > .note.perm.coffee:not(.settled)');
+  const COFFEE_FIT = `(()=>{const spare=${emptyHeight.toString()},ci=document.querySelector('#chat > .chat-inner'),k=[...ci.children],live=ci.querySelector(':scope > .note.perm.coffee:not(.settled)');
     const first=k.findIndex(e=>e.matches('.note.perm.coffee'));
     return {cvo:ci.querySelectorAll(':scope > .cvo').length,cards:k.filter(e=>e.matches('.note.perm.coffee')).map(e=>({h:Math.round(e.getBoundingClientRect().height),spare:spare(e),settled:e.classList.contains('settled'),back:/^Back from the coffee break:/.test(e.textContent)})),
       above:live&&live.previousElementSibling?{cls:live.previousElementSibling.className.slice(0,40),spare:spare(live.previousElementSibling)}:null,
@@ -259,7 +267,7 @@ module.exports = async (ctx) => {
     await lengthen();
     await closeChat(w);
     await js(`window.__tomas().click()`);
-    assert.ok(await until(`document.body.classList.contains('panel-open')&&${backCard}`, 8000), `${w}: the long chat opened again on the back card`);
+    assert.ok(await until(`document.body.classList.contains('panel-open')`, 8000) && await until(backCard, 8000), `${w}: the long chat opened again on the back card`);
     await js(`(()=>{const c=document.getElementById('chat');c.scrollTop=c.scrollHeight;})()`);
     await ctx.sleep(400);
     const bf = await js(COFFEE_FIT);
@@ -281,7 +289,7 @@ module.exports = async (ctx) => {
     assert.ok(qo.ok, `${w}: the long chat with the question opened again: ${JSON.stringify(qo.seen)}`);
     await js(`document.querySelector(${jsLiteral(qCard)}).scrollIntoView({block:'center'})`);
     await ctx.sleep(400);
-    const qf = await js(`(()=>{const spare=${SPARE},n=document.querySelector(${jsLiteral(qCard)}),row=n.parentElement,rs=getComputedStyle(row);
+    const qf = await js(`(()=>{const spare=${emptyHeight.toString()},n=document.querySelector(${jsLiteral(qCard)}),row=n.parentElement,rs=getComputedStyle(row);
       return {cvo:document.querySelectorAll('#chat > .chat-inner > .cvo').length,h:Math.round(n.getBoundingClientRect().height),spare:spare(n),inChips:row.classList.contains('chips'),
         w:Math.round(n.getBoundingClientRect().width),row:Math.round(row.getBoundingClientRect().width-(parseFloat(rs.paddingLeft)||0)-(parseFloat(rs.paddingRight)||0))}})()`);
     console.log(`[068] FR-415 question ${w}x${h}: ${JSON.stringify(qf)}`);
