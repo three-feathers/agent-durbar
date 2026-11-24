@@ -246,6 +246,7 @@ test:selfupdate-ipc
 test:selfupdate-source
 test:selfupdate-schedule
 test:selfupdate-settings
+test:selfupdate-session
 test:releases-json
 test:sessionsummary
 test:helpercard

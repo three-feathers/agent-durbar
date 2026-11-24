@@ -26,7 +26,7 @@ export interface SelfUpdateDeps {
   /** `updatePolicy()`, read again before each request and when each answer arrives (FR-005). */
   policy(): SelfPolicy | undefined;
   store(): SelfUpdateStore | undefined;
-  /** `makeFeedGet(electronRequestFactory())`: the only network path. */
+  /** `updateFeedGet()` (`makeFeedGet` on the update session, T507): the only network path. */
   get: FeedGet;
   now(): number;
   timer: FeedTimer;
