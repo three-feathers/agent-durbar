@@ -35,5 +35,7 @@ export function register(deps: TeamsIpcDeps): void {
   // spec 111 T010: the create preview. The arguments are checked inside `TeamOps` (shape and size before any copy); a throw answers the fixed `failed`.
   ipcHandle('teams:createPreview', (e, target: unknown, templateId: unknown) => (!fromApp(e) ? NO : guardAsync(async () => (await preview()?.createPreview(target, templateId)) ?? NO)));
   ipcHandle('teams:previewRow', (e, token: unknown, rowId: unknown, change: unknown) => (!fromApp(e) ? NO : guardAsync(async () => (await preview()?.previewRow(token, rowId, change)) ?? NO)));
+  // spec 111 T011: creates the not-started members; the token and the choices are checked inside `TeamOps.create` (fixed words); a throw answers `failed`
+  ipcHandle('teams:create', (e, token: unknown, choices: unknown) => (!fromApp(e) ? NO : guardAsync(async () => (await preview()?.create(token, choices)) ?? NO)));
   ipcHandle('teams:markMine', (e, templateId: unknown, memberId: unknown, ...extra: unknown[]) => (!fromApp(e) ? NO : guard(() => ops()?.markMine(templateId, memberId, ...extra) ?? NO)));
 }

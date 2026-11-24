@@ -293,6 +293,38 @@ The other 17 cells are the same shared code, in tokens, or a `person`, `fixture`
 
 **Risks.** The value `retro` is stored in users' files once the flag opens (C1, a proposal; main's T227 writes `pixel` today, so T344 changes the code and reads a legacy `pixel` back). The Photo office's look with pixel people is a style choice (FR-208): pictures are looked at, not judged against the Photo style. Uneven pixels stay FR-255's gap (C7). Generated running frames may not hold a person's look: the per-picture approval is the gate, and the fallback stays meanwhile.
 
+## Delta 2026-11-22: vocabulary profiles for `checkSet` (T100, T433, T434, T224; issue #1877)
+
+**Status:** plan only, a proposal for review (spec *Changes 2026-11-22*, last entry). No `src/` change in this PR. OP-14 is open; T100, T433 and T434 do not wait for it.
+
+**Reused (spec 021 FR-031).** `worldpack.ts`: `partProblem` and `pictureHeader` (caps, alpha, size), `readAnchors`, the `world.json` reader with `MANIFEST_BYTES` and `hasDuplicateKeys`, `MANIFEST_FIELDS`, `PART_TABLE`, `validateWorldZip` and `validateWorldFiles` (entry count, name and traversal rules from `worldzip.ts`). `worldmoments.ts`'s `momentCoverage` is not touched. No second rule table: a profile holds names only, the rules and caps stay where they are.
+
+**Shape.**
+- `type SetProfile = { personId, poses, aliases, halfSuffix, extraPerPerson, setFields, anchorFrom }`, every field a closed list or a pattern taken from code; no cap field exists in the type.
+- `USER_SET_PROFILE` (frozen) and `BUILTIN_VOCABULARY` (the superset built-in profiles may pick from, one line per name with its reason) in `worldpack.ts`.
+- `checkSet(files, profile)` returns per person `full` or the missing poses and anchors, and the set's `level`. Built-in profiles are read from `vocabulary.json` next to each pack by a function the contract suite calls; the untrusted entry points have no profile parameter.
+- Worlds (T434) get the same split: `WorldProfile` with fields and files; the user one is today's `MANIFEST_FIELDS` and `PART_TABLE`.
+
+**Order.** T100 (user profile, test first, hostile set) then T433 and T434 in parallel, then spec 117 T017 (with T016's inventory committed in its PR). T224 waits for OP-14 (a).
+
+**Cost.** Code only: 0 AI credits, simulator and `npm test`.
+
+**Risks.** See the Changes entry: a built-in profile must never widen a user zip (no profile parameter on untrusted paths, a refusal test for every built-in-only name, a mutant); a data file next to a pack may trip asset listings (fallback: one table under `src/shared/`); a built-in set cannot be shared as-is (`[KNOWN GAP]` until OP-14 (b)).
+
+## Delta 2026-11-23: the Retro arcade's HD person set (FR-391..FR-408; T466..T473, T501; issue #2055)
+
+**Reused (spec 021 FR-031).** The arcade's person box in `aislesLayout` (`aislePose`, `dFloor`, the place `PW x g`), `metaOf` in `realoffice.js` (the one place world and set numbers meet), the `DURBAR_DOOR` pattern for an off switch (`devEnv` query key, a constant in `app.js`; spec 052 FR-191), `copy-assets.js`'s set copy, `test-realoffice-assets.ts`'s Pillow-backed checks (`frame-hashes.py`, `DURBAR_REQUIRE_PILLOW` in CI's art step) and the Codex image runs already approved for art (memory `codex-image-generation`, spec 102 *Changes 2026-11-13*).
+
+**Shape.** `hdPick(D, scales)` and `hdFrame(hd, pid, pose, g, dpr)` in `realoffice-layout.ts` (the lobby and the arcade use them; never re-exported, as the renderer shares one `exports`), pure; `RealMeta.hdPeople` (the switch hands it over); `set.json` `hd`; `sets/retro/hd/*.webp`; `scripts/check-arcade-hd.py` measures, the limits live in the TS test. The art pipeline (`build4.py`: head step, one palette, native snap per size) stays in the art cache, as the old sets' snap scripts did (`ASSETS.md` names it and its hash).
+
+**Order.** PR 1 (this): spec, engine behind the switch, the pilot art (T466..T469). Then the owner's look (T469), the 12 others in batches (T470), no old art in the arcade behind the switch (T501), his approval (T471), the flip with the full removal (T472). T473 (the cabinets' finish) waits for him.
+
+**Cost.** Codex image runs on the owner's ChatGPT plan, no API credits: 13 (pilot 1), 12 (the samples for the 14:27 decision), 12 (the final pilot's missing poses). The 12 other people: about 4 sheets a person, at most 6. Code: simulator and the touched suites.
+
+**Risks.** Off must be exactly today: guarded by the pinned arcade hash and a byte-for-byte test. A frame wider than its place: refused by the asset test and never drawn. The budget (FR-397) and the faces at 144 px (FR-400) are owner questions at the pilot look.
+
+**T502 (2026-11-24): the first pictures removed.** The arcade and the lobby read `hd.stand` and `hd.placeW` through `standOf` (`realoffice-layout.ts`), next to `seatsOf`. `hdOnly` keeps an HD set from naming an old file. The old-frame path stays for sets without `hd`. The off-switch checks become "every drawn person has its HD frame"; the arcade's equality is checked on 1792 halls against the old `set.json` (spec delta 2026-11-24).
+
 ## Done when
 
 Tasks ticked, `/speckit.converge` run, SC-001..SC-018 read, README *Safety model* lists the new connection, and `real:` rows recorded or left as `[KNOWN GAP]`.

@@ -54,8 +54,8 @@ module.exports = async (ctx) => {
         assert.ok(!q.clipped, `${w}: the question text is clipped: ${q.text.slice(0, 60)}`);
         assert.ok(q.h >= q.lh * 2 - 1 || q.text.length < 200, `${w}: a long question takes several lines (${q.h}px): ${JSON.stringify(q)}`);
       }
-      assert.ok(r.qs.some((q) => q.text.includes('knowing that the second one touches every theme')) && r.qs.some((q) => q.text.endsWith('should stay?')), `${w}: the full question texts are in the card`);
-      assert.ok(r.qs.some((q) => q.text.length > 1100 && q.text.endsWith('write your own plan below.')), `${w}: the 1,117-character question is whole`);
+      assert.ok(r.qs.some((q) => q.text.includes('knowing that the second one touches every theme')) && r.qs.some((q) => q.text.trim().endsWith('should stay?')), `${w}: the full question texts are in the card`);
+      assert.ok(r.qs.some((q) => q.text.length > 1100 && q.text.trim().endsWith('write your own plan below.')), `${w}: the 1,117-character question is whole`);
       await shot(`052-question-options-${w}x${h}.png`);
       // the inbox row: the question text in full, nothing clipped
       await js(`document.activeElement&&document.activeElement.blur()`);

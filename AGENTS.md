@@ -73,6 +73,7 @@ Command names: `CLAUDE.md`, `.github/copilot-instructions.md`; other tools follo
 
 - **Claim** with `scripts/claim.sh <N>` (FR-063): the first assignee owns the issue or reviews the PR; an assigned item is refused, of two racing claims the later backs off. `--release <N> [why]` gives up; a PR's author never holds the review claim. No `taking #N` or `FINAL`.
 - **Priority order** (FR-081), for picking issues, building and reviewing: (1) bugs; (2) parity in existing worlds (the Real office gaps, #1147); (3) the Retro world (spec 102); (4) all new features; (5) other worlds with parity. Security and owner-urgent items may still jump it (FR-039); *Teammates' PRs first* (FR-043) applies within a level.
+- **Delivery speed** (FR-084): claim at once; a teammate's PR gets a first review or written ETA within 2 h of working hours; a claim with neither after 4 h is released by `claim.sh --expire` (T062; until built, ask). At most 3 open PRs per side, spec-only excluded; over that, only land; security and owner-urgent items may exceed, saying so. Unreachable code ships behind a default-off flag, in thin slices; a hold over a day needs its reason on the PR. More: [review-rounds.md](docs/rules/review-rounds.md).
 - **Labels** (FR-045): one type (`bug`, `enhancement`, `task`, `documentation` = user docs, `question`; spec-only PR = `task`), at least one `area:*` from `.github/labels.tsv`, `spec:NNN` per spec. Flags only when true (`status:*`, `needs-owner-approval`, `spec-exempt`, `docs-n/a`, `accessibility`, `incident`); no other families; GitHub's defaults are for closing. `npm run labels:backfill` (dry run, add-only) fills gaps.
 - **One issue = one task** (`Tnnn` in `tasks.md`); unrelated work gets a new issue (review findings on the PR's own change are not unrelated).
 - **Branch `NNN-slug`** in its own worktree; **never check out a PR or branch in your main checkout** (FR-050). **Never push to `main`.**
@@ -117,6 +118,6 @@ Before you open or update a PR, read [docs/rules/docs-sync.md](docs/rules/docs-s
 
 ## Before you finish
 
-Merge condition 2's command, once, at your `checks run at <sha>`; UI changes add simulator screenshots at both sizes.
+Merge condition 2 once; UI changes add simulator screenshots at both sizes.
 
 **Fast checks, same quality** (2026-10-19): build once, run in parallel, never drop checks. Limits: `scripts/run-tests.js`, `scripts/check-parallel.js`; big matrices in CI (spec 008 FR-111).

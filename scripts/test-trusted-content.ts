@@ -18,6 +18,44 @@ const read = (f: string): string => fs.readFileSync(path.join(ROOT, 'scripts', f
 const list = read('trusted-authors.txt').split('\n').map((l) => l.trim()).filter((l) => l && !l.startsWith('#'));
 assert.deepStrictEqual(list, ['vikramgorla', 'fjcabello', 'rubenlupi', 'github-actions[bot]', 'github-advanced-security[bot]'], 'the trusted list');
 
+// ---- one parser (FR-092, #1407): scripts/trusted-authors.js; no second copy in code, and every consumer of it fails closed
+{
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const TA = require(path.join(ROOT, 'scripts', 'trusted-authors.js')) as { trustedAuthors(r: string): Set<string>; parseTrusted(t: string): string[] };
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const CC = require(path.join(ROOT, 'scripts', 'check-trusted-copies.js')) as { copyProblems(t: string, o?: { nameAllowed?: boolean }): string[]; strayCopies(r: string): string[] };
+  assert.deepStrictEqual(Array.from(TA.trustedAuthors(ROOT)), list, 'the loader and the txt file agree (same set, same order)');
+  assert.deepStrictEqual(CC.strayCopies(ROOT), [], 'no second parser or hard-coded list in the repository');
+  // the check itself, each mutant caught by its own case
+  assert.ok(CC.copyProblems("const ok = /^[A-Za-z0-9-]+(\\[bot\\])?$/.test(l);").some((p) => /parser/.test(p)), 'a copied login pattern is refused');
+  assert.ok(CC.copyProblems("const re = '^[A-Za-z0-9-]+(\\\\[bot\\\\])?$';").some((p) => /parser/.test(p)), 'a copied login pattern in a string is refused');
+  assert.ok(CC.copyProblems("const t = fs.readFileSync(path.join(root, 'scripts', 'trusted-authors.txt'), 'utf8');").some((p) => /reads/.test(p)), 'a second reader of the txt file is refused');
+  assert.ok(CC.copyProblems("const T = new Set(['vikramgorla', 'github-actions[bot]']);").some((p) => /hard-codes/.test(p)), 'a hard-coded list is refused');
+  assert.deepStrictEqual(CC.copyProblems("// the list is scripts/trusted-authors.txt, read with readFileSync\n * ['vikramgorla', 'github-actions[bot]']\nconst BOT = 'github-actions[bot]';"), [], 'comments and a lone bot name are not copies');
+  // whole statements, not lines (review of #1535): a list over several lines, a read split over lines, the file name kept in a variable
+  assert.ok(CC.copyProblems("const T = [\n  'vikramgorla',\n  'github-actions[bot]',\n];").some((p) => /hard-codes/.test(p)), 'a hard-coded list over several lines is refused');
+  assert.ok(CC.copyProblems("const t = fs.readFileSync(\n  path.join(root, 'scripts', 'trusted-authors.txt'),\n  'utf8');", { nameAllowed: true }).some((p) => /reads/.test(p)), 'a read split over lines is refused');
+  assert.ok(CC.copyProblems("const P = path.join(root, 'scripts', 'trusted-authors.txt');").some((p) => /names trusted-authors\.txt/.test(p)), 'the quoted file name outside the loader is refused');
+  assert.deepStrictEqual(CC.copyProblems("const P = path.join(root, 'scripts', 'trusted-authors.txt');", { nameAllowed: true }), [], 'the file name is allowed where the allow list says so (prereview-cli.ts installs and permission-checks it)');
+  assert.deepStrictEqual(CC.copyProblems("const A = 'vikramgorla';\nconst B = 'github-actions[bot]';"), [], 'two statements are not one list');
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-copies-')); fs.mkdirSync(path.join(root, 'scripts'));
+  fs.writeFileSync(path.join(root, 'scripts', 'trusted-authors.js'), "const LOGIN_LINE = /^[A-Za-z0-9-]+(\\[bot\\])?$/;");
+  assert.deepStrictEqual(CC.strayCopies(root), [], 'the loader itself is the one allowed parser');
+  fs.writeFileSync(path.join(root, 'scripts', 'copy.ts'), "export const T = ['vikramgorla', 'fjcabello', 'github-actions[bot]'];");
+  assert.deepStrictEqual(CC.strayCopies(root), ['scripts/copy.ts: hard-codes trusted logins'], 'a copy added anywhere in scripts/ is found');
+  fs.rmSync(root, { recursive: true, force: true });
+  // fail closed: a consumer given an empty list or an unreadable one trusts nobody
+  const empty = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-ta-')); fs.mkdirSync(path.join(empty, 'scripts'));
+  fs.writeFileSync(path.join(empty, 'scripts', 'trusted-authors.txt'), '# nobody\n');
+  assert.strictEqual(TA.trustedAuthors(empty).size, 0, 'an empty list is nobody');
+  assert.throws(() => TA.trustedAuthors(path.join(empty, 'missing')), 'an unreadable list throws, never a default list');
+  fs.rmSync(empty, { recursive: true, force: true });
+  // code owners (Paco 2026-11-21 on #1535): every reader of the list and the copy check have the owners of /scripts/prereview-*.ts
+  const owners = new Map(fs.readFileSync(path.join(ROOT, '.github', 'CODEOWNERS'), 'utf8').split('\n').filter((l) => l.trim() && !l.startsWith('#')).map((l) => { const [p, ...o] = l.trim().split(/\s+/); return [p, o.join(' ')] as const; }));
+  assert.strictEqual(owners.get('/scripts/prereview-*.ts'), '@vikramgorla @fjcabello @rubenlupi', 'the pre-review code owners');
+  for (const p of ['trusted-authors.txt', 'trusted-authors.js', 'trusted-lib.sh', 'weekly-test-audit.ts', 'weekly-test-audit.sh', 'check-trusted-copies.js']) assert.strictEqual(owners.get(`/scripts/${p}`), owners.get('/scripts/prereview-*.ts'), `CODEOWNERS: /scripts/${p} has the pre-review owners (FR-092)`);
+}
+
 // ---- static: pr-gate prints no raw body of anyone else; every list it prints goes through the trust defs
 const gate = read('pr-gate.sh');
 assert.ok(gate.includes('trusted-lib.sh'), 'pr-gate.sh sources the trust helpers');
@@ -39,13 +77,22 @@ if (!bash || bash.status !== 0) {
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-trusted-'));
 const bin = path.join(dir, 'bin');
 fs.mkdirSync(bin);
+// the gate wants every required check of .github/ruleset-main.json passed (spec 021 FR-420): the fake check list names all of them, and
+// each gate copy finds the record at <its dir>/../.github
+const RULESET = path.join(ROOT, '.github', 'ruleset-main.json');
+const REQUIRED: string[] = (JSON.parse(fs.readFileSync(RULESET, 'utf8')) as { rules: Array<{ type: string; parameters?: { required_status_checks?: Array<{ context: string }> } }> }).rules
+  .filter((r) => r.type === 'required_status_checks').flatMap((r) => (r.parameters?.required_status_checks ?? []).map((x) => x.context));
+assert.strictEqual(REQUIRED.length, 5, 'the ruleset record names five required checks');
+fs.mkdirSync(path.join(dir, '.github'));
+fs.copyFileSync(RULESET, path.join(dir, '.github', 'ruleset-main.json'));
+fs.writeFileSync(path.join(dir, 'checks.txt'), `CodeQL\tpass\t1m\thttps://github.com/o/r/runs/101\n${REQUIRED.map((n) => `${n}\tpass\t1m\thttps://x\n`).join('')}`);
 fs.writeFileSync(path.join(bin, 'gh'), `#!/bin/bash
 F="${dir}"; prog=.; prev=
 for a in "$@"; do { [ "$prev" = --jq ] || [ "$prev" = -q ]; } && prog=$a; prev=$a; done
 ep=; for a in "$@"; do case $a in repos/*|graphql|user) ep=$a; break;; esac; done
 case "$1 $2" in
   "repo view") echo '{"nameWithOwner":"o/r"}' | jq -r "$prog"; exit;;
-  "pr checks") printf 'CodeQL\\tpass\\t1m\\thttps://github.com/o/r/runs/101\\nBuild\\tpass\\t1m\\thttps://x\\n'; exit;;
+  "pr checks") cat "$F/checks.txt"; exit;;
   "pr view") L='[]'; [ -f "$F/labels.json" ] && L=$(cat "$F/labels.json"); echo '{"mergeable":"MERGEABLE","files":[{"path":"docs/x.md"}],"labels":'"$L"'}' | jq -r "$prog"; exit;;
 esac
 case $ep in
@@ -73,7 +120,7 @@ put('empty', []);
 put('files', [{ filename: 'docs/x.md' }]);
 put('checkruns', { check_runs: [{ name: 'CodeQL', id: 101, app: { slug: 'github-advanced-security' } }] });
 put('threads', { data: { repository: { pullRequest: { reviewThreads: { nodes: [] } } } } });
-const pull = (login: string, head = 'o/r'): object => ({ changed_files: 1, user: { login }, head: { sha: 'a'.repeat(40), repo: { full_name: head } }, base: { repo: { full_name: 'o/r' } } });
+const pull = (login: string, head = 'o/r'): object => ({ changed_files: 1, draft: false, user: { login }, head: { sha: 'a'.repeat(40), repo: { full_name: head } }, base: { repo: { full_name: 'o/r' } } });
 const edits = (nodes: object[]): object => ({ data: { repository: { pullRequest: { comments: { nodes }, reviews: { nodes: [] }, reviewThreads: { nodes: [] } } } } });
 const env = { ...process.env, PATH: `${bin}${path.delimiter}${process.env.PATH}` };
 let gateScript = path.join(ROOT, 'scripts', 'pr-gate.sh');

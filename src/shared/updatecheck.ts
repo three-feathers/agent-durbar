@@ -351,7 +351,8 @@ export const LOOKUPS: Readonly<Record<SetupKind, readonly Lookup[]>> = Object.fr
     { url: 'https://downloads.claude.ai/claude-code-releases/latest', method: 'GET', mode: 'text', maxBytes: 64 },
   ],
 });
-const REDIRECTS = [301, 302, 303, 307, 308];
+/** The redirect statuses (also spec 118 T009, `makeFeedGet`). */
+export const REDIRECTS: readonly number[] = [301, 302, 303, 307, 308];
 
 /** True when a URL is exactly one of the allow-listed lookups (the network layer refuses everything else). */
 export const lookupAllowed = (url: string): boolean => Object.values(LOOKUPS).some((l) => l.some((x) => x.url === url));
@@ -435,7 +436,7 @@ export function announceRule(r: CheckResult, announced: Announced, settingsVisib
 export type UpdatePolicy =
   | { state: 'none' }
   | { state: 'unreadable' }
-  | { state: 'ok'; allowInAppInstall?: unknown; featureAgentAppUpdateCheck?: unknown; updatesMode?: unknown; max?: Partial<Record<SetupKind, string>> };
+  | { state: 'ok'; allowInAppInstall?: unknown; featureAgentAppUpdateCheck?: unknown; updatesMode?: unknown; feedUrl?: unknown; max?: Partial<Record<SetupKind, string>> }; // feedUrl: spec 118 FR-005 (T010)
 
 export interface PolicyView {
   /** The whole check is hidden and nothing is contacted (`features.agentAppUpdateCheck: false`, `updates.mode: "off"`). */

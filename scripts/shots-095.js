@@ -19,7 +19,12 @@
  *   FR-050  a mark has a non-colour cue and readable contrast in Clean Office and Retro; Real office: the same box and results;
  *           reduced motion: the jump's outline without its fade
  *   FR-052  rows never overlap, an excerpt is at most two lines, the list scrolls inside its area
+ *   FR-053  the running sign is a static arc under `prefers-reduced-motion` (emulated) and Motion off, `aria-busy` right in both
  *   1904    `simsearch=listing`: "Listing sessions in N of M folders…" with Stop, never "0 of 0 sessions"; whole words first at the end
+ * Issue #2101 (spec 095 delta 2026-11-24): the three top-bar reads wait for their state (page frames, at most 5 s), never a fixed sleep. Test forcings, never set by a suite entry (UI_SUITE with --only shots-095):
+ *   S095_RAF=900    the page's requestAnimationFrame is 900 ms late: passes with the wait
+ *   S095_SLEEP=1    the old fixed 500 ms sleeps: fails with S095_RAF=900 (a stale mark or an uncovered control read before the refit)
+ *   S095_NEVER=1    a mark the app never clears on #topBtns: fails at the 5 s timeout with the marked elements, the bar's classes, the frames and the time
  * Screenshots: 095-search-{results,jump,searching,listing}-<w>x<h>.png
  */
 const assert = require('assert');
@@ -27,6 +32,8 @@ const path = require('path');
 const { helpers, jsLiteral } = require('./driver-helpers');
 const OUT = process.env.OUT || '/tmp';
 const MOD = process.platform === 'darwin' ? 'meta' : 'control';
+/* test forcing for issue 2101 (see the header; never set by a suite entry): RAF = ms the page's requestAnimationFrame is late; SLEEP = the old fixed 500 ms sleeps; NEVER = a mark the app never clears */
+const RAF = +process.env.S095_RAF || 0, SLEEP = !!process.env.S095_SLEEP, NEVER = !!process.env.S095_NEVER;
 const LOCKED = 'Some saved MCP values are locked; excerpts may show them.';
 
 module.exports = async (ctx) => {
@@ -114,23 +121,37 @@ module.exports = async (ctx) => {
         return {open:w.classList.contains('open'),field:Math.round(f.left)+'-'+Math.round(f.right),out};})()`);
       assert.ok(under.open && under.out.length === 0, `${w}: the open field covers no top-bar control: ${JSON.stringify(under)}`);
       // review of PR 1684: the window is resized while the field is open; the hidden controls follow (fitTopbar re-marks them)
-      const probe = () => js(`(()=>{const f=document.getElementById('convSearch').getBoundingClientRect(),bar=document.querySelector('.topbar'),w=document.getElementById('convSearchWrap'),hit=r=>r.width&&r.left<f.right&&f.left<r.right&&r.top<f.bottom&&f.top<r.bottom;
+      const PROBE = `(()=>{const f=document.getElementById('convSearch').getBoundingClientRect(),bar=document.querySelector('.topbar'),w=document.getElementById('convSearchWrap'),hit=r=>r.width&&r.left<f.right&&f.left<r.right&&r.top<f.bottom&&f.top<r.bottom;
         const uncovered=[],stale=[];for(const c of bar.querySelectorAll('button,select,input,.stats,.brand')){if(w.contains(c)||c.closest('.more-menu'))continue;if(getComputedStyle(c).visibility!=='hidden'&&c.getClientRects().length&&hit(c.getBoundingClientRect()))uncovered.push(c.id||c.className);}
         for(const k of bar.querySelectorAll('.cs-under')){if(!hit(k.getBoundingClientRect()))stale.push(k.id||k.className);}
-        return {open:w.classList.contains('open'),narrow:bar.classList.contains('tb-search'),uncovered,stale};})()`);
+        return {open:w.classList.contains('open'),narrow:bar.classList.contains('tb-search'),uncovered,stale};})()`;
+      const probe = () => js(PROBE);
+      /* issue 2101 (spec 095 delta 2026-11-24): a step that reads a state waits for it: the page's own frames (requestAnimationFrame, with a timer in case frames stop), at most 5 s, then the probe.
+         On the timeout it FAILS and prints what is marked, the bar's refit state and the time: a mark the app really keeps stays red. */
+      const settledProbe = (what) => js(`new Promise((res)=>{const t0=performance.now(),P=()=>(${PROBE}),ok=p=>p.open&&p.uncovered.length===0&&p.stale.length===0;let done=0,frames=0,good=0,last=null;
+        const fin=(settled)=>{done=1;const bar=document.querySelector('.topbar');res({p:last,ms:Math.round(performance.now()-t0),frames,settled,marked:[...bar.querySelectorAll('.cs-under')].map(e=>e.id||e.className),barClass:bar.className});};
+        const tick=(raf)=>{if(done)return;if(raf)frames++;last=P();good=ok(last)?good+1:0;
+          if(frames>=3&&good>=2)return fin(true); /* the refit runs a frame after the size changed: at least three frames and two clean reads in a row, so a read before the refit does not count */
+          if(performance.now()-t0>5000)return fin(false);
+          };
+        const raf=()=>{if(done)return;tick(1);if(!done)requestAnimationFrame(raf);},tim=()=>{if(done)return;tick(0);if(!done)setTimeout(tim,100);}; /* two loops, the second in case frames stop */
+        requestAnimationFrame(raf);tim();})`).then((r) => {
+        assert.ok(r.settled, `${w}: ${what}: the bar did not settle in ${r.ms} ms (${r.frames} frames): ${JSON.stringify({ probe: r.p, marked: r.marked, bar: r.barClass })}`);
+        return r.p;
+      });
       for (const [rw, rh] of [[1900, 900], [1500, 900], [w, h]]) {
-        ctx.win.setContentSize(rw, rh); await ctx.sleep(500);
-        const p = await probe();
+        if (RAF) await js(`window.requestAnimationFrame=(cb)=>setTimeout(()=>cb(performance.now()),${jsLiteral(RAF)});1`); // test forcing (header), never in a suite entry
+        ctx.win.setContentSize(rw, rh);
+        const p = SLEEP ? (await ctx.sleep(500), await probe()) : await settledProbe(`after a resize to ${rw}x${rh}`);
         assert.ok(p.open && p.uncovered.length === 0 && p.stale.length === 0, `${w}: after a resize to ${rw}x${rh} no control is under the open field and none stays hidden: ${JSON.stringify(p)}`);
       }
       // a control that grows while the field is open (a counter, a late font): the bar's observer refits and the marks follow
       await js(`document.querySelector('[aria-label="View"]').style.minWidth='420px'`);
-      await ctx.sleep(500);
-      const grown = await probe();
+      if (NEVER) await js(`(()=>{const e=document.getElementById('topBtns'),mo=new MutationObserver(()=>{if(!e.classList.contains('cs-under'))e.classList.add('cs-under');});mo.observe(e,{attributes:true,attributeFilter:['class']});e.classList.add('cs-under');return 1})()`); // forcing: a mark the app never clears
+      const grown = SLEEP ? (await ctx.sleep(500), await probe()) : await settledProbe('after a control grows');
       await js(`document.querySelector('[aria-label="View"]').style.minWidth=''`);
-      await ctx.sleep(500);
       assert.ok(grown.open && grown.uncovered.length === 0 && grown.stale.length === 0, `${w}: after a control grows no control is under the open field and none stays hidden: ${JSON.stringify(grown)}`);
-      const back = await probe();
+      const back = SLEEP ? (await ctx.sleep(500), await probe()) : await settledProbe('after it shrinks again');
       assert.ok(back.open && back.uncovered.length === 0 && back.stale.length === 0, `${w}: and after it shrinks again: ${JSON.stringify(back)}`);
     }
     await type('re');
@@ -255,9 +276,12 @@ module.exports = async (ctx) => {
     await typeQuery('registry');
     await ok(`/^Searching, \\d+ of \\d+ sessions$/.test((document.querySelector('#list .cs-st')||{}).textContent||'')&&!!document.getElementById('csStop')`, `${w}: "Searching, N of M sessions" with Stop`);
     await ok(`(window.__durbarSimUi?1:1)&&document.querySelector('#list .cs-st').textContent!=='Searching, 0 of 0 sessions'`, `${w}: the progress moves`);
+    // spec 095 FR-053: the running sign is there while it scans and gone at the end
+    await ok(`!!document.querySelector('#list .cs-state.running .cs-spin')&&document.querySelector('#list .cs-wrap').getAttribute('aria-busy')==='true'`, `${w}: the running sign and aria-busy while it scans`);
     await shot('searching', w, h, { prep: 'calm' });
     await js(`document.getElementById('csStop').click()`);
     await ok(`(document.querySelector('#list .cs-notes')||{}).textContent==='Stopped.'&&!document.getElementById('csStop')`, `${w}: Stop says "Stopped."`);
+    await ok(`!document.querySelector('#list .cs-spin')&&!document.querySelector('#list .cs-wrap').hasAttribute('aria-busy')`, `${w}: the sign and aria-busy are gone at the end`);
     assert.strictEqual(await count('__csCancels'), 1, `${w}: Stop cancels main's scan once (review of PR 1240, R3)`);
     await ok(`document.activeElement&&document.activeElement.id==='convSearch'`, `${w}: and the focus goes back to the box`);
 
@@ -405,6 +429,43 @@ module.exports = async (ctx) => {
       await ok(`!!document.querySelector('#chat .bubble.nt-found')`, 'reduced motion: the message is marked');
       const st = await js(`(()=>{const b=document.querySelector('#chat .bubble.nt-found'),cs=getComputedStyle(b);return {anim:cs.animationName,outline:cs.outlineStyle};})()`);
       assert.ok(st.anim === 'none' && st.outline === 'solid', `reduced motion: an outline, no fade: ${JSON.stringify(st)}`);
+    } finally { await dbg.sendCommand('Emulation.setEmulatedMedia', { features: [] }).catch(() => undefined); }
+  }
+  // ---- FR-053: the running sign stays still under reduced motion and with Motion off, and aria-busy stays right (T422) ----
+  {
+    const dbg = ctx.win.webContents.debugger;
+    if (!dbg.isAttached()) dbg.attach('1.3');
+    const sign = () => js(`(()=>{const sp=document.querySelector('#list .cs-state.running .cs-spin'),wr=document.querySelector('#list .cs-wrap');return sp&&wr?{anim:getComputedStyle(sp).animationName,busy:wr.getAttribute('aria-busy'),w:sp.getBoundingClientRect().width,txt:document.querySelector('#list .cs-state.running').textContent.trim()}:null;})()`);
+    const ended = (msg) => ok(`!document.querySelector('#list .cs-spin')&&!document.querySelector('#list .cs-wrap').hasAttribute('aria-busy')`, msg);
+    const stop = async (msg) => { await js(`document.getElementById('csStop').click()`); await ended(msg); };
+    try {
+      // (a) prefers-reduced-motion: reduce
+      await dbg.sendCommand('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'reduce' }] });
+      await H.load({ w: 1280, h: 800, query: { simsearch: 'slow' }, focus: true });
+      await H.calm();
+      assert.ok(await js(`matchMedia('(prefers-reduced-motion: reduce)').matches`), 'FR-053: reduced motion is emulated');
+      await typeQuery('registry');
+      await ok(`!!document.querySelector('#list .cs-state.running .cs-spin')`, 'FR-053 reduced motion: the sign is there while it scans');
+      const r = await sign();
+      assert.ok(r && r.anim === 'none' && r.busy === 'true' && r.w > 0 && r.txt.length > 0, `FR-053 reduced motion: a static arc, aria-busy true, the text stays: ${JSON.stringify(r)}`);
+      await stop('FR-053 reduced motion: the sign and aria-busy go at the end');
+    } finally { await dbg.sendCommand('Emulation.setEmulatedMedia', { features: [] }).catch(() => undefined); }
+    // (b) Settings > Motion off, with the system's motion preference forced to "no preference": clearing the emulation falls back to the
+    // system's own setting, and the Windows runner reports reduced motion by itself (as the jump check above notes), so it is set, not cleared
+    try {
+      await dbg.sendCommand('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'no-preference' }] });
+      await H.load({ w: 1280, h: 800, query: { simsearch: 'slow' }, focus: true });
+      await H.calm();
+      assert.ok(!(await js(`matchMedia('(prefers-reduced-motion: reduce)').matches`)), 'FR-053: the emulated no-preference took effect for the Motion check');
+      await typeQuery('registry');
+      await ok(`!!document.querySelector('#list .cs-state.running .cs-spin')`, 'FR-053: the sign is there while it scans');
+      const on = await sign();
+      assert.ok(on && on.anim === 'bspin' && on.busy === 'true', `FR-053: with Motion on the arc turns: ${JSON.stringify(on)}`);
+      await js(`document.documentElement.setAttribute('data-motion-off','')`);
+      const off = await sign();
+      assert.ok(off && off.anim === 'none' && off.busy === 'true' && off.w > 0 && off.txt.length > 0, `FR-053 Motion off: a static arc, aria-busy true, the text stays: ${JSON.stringify(off)}`);
+      await stop('FR-053 Motion off: the sign and aria-busy go at the end');
+      await js(`document.documentElement.removeAttribute('data-motion-off')`);
     } finally { await dbg.sendCommand('Emulation.setEmulatedMedia', { features: [] }).catch(() => undefined); }
   }
   console.log('[095] search conversations: all checks passed');

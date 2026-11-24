@@ -293,8 +293,10 @@ async function run(ctx, H) {
     await clear();
   };
 
+  const only = process.env.NEEDS_PANEL_ONLY || ''; // one case for a local loop, e.g. 1280x800-flat (issue 1668); unset = every case
   for (const [w, h] of [[1440, 900], [1280, 800]]) {
     for (const view of ['flat', 'real']) {
+      if (only && only !== `${w}x${h}-${view}`) continue;
       const at = `${w}x${h} ${view}`;
       const tag = `${w}x${h}-${view}`;
       // a page that watches every panel that is added, and every answer that reaches the bridge
@@ -456,6 +458,17 @@ async function run(ctx, H) {
       const live = async (i) => quietIds[i];
       const idle = async (id) => { await emit({ sessionId: id, type: 'status', status: 'working', intent: 'Working' }); await emit({ sessionId: id, type: 'output', final: true, text: 'Done.' }); await emit({ sessionId: id, type: 'status', status: 'idle' }); };
       const aeInfo = () => js(`(()=>{const a=document.activeElement,r=a&&a.closest&&a.closest('.inbox-row');return {tag:a?a.tagName:'',head:!!a&&a.classList.contains('ib-h'),row:r?r.dataset.id:'',k:a&&a.dataset?a.dataset.k||'':''}})()`);
+      // spec 052 FR-198 (issue 1668, T534): an answer key goes to the focused row only once THAT row is armed; the press itself is checked
+      const panelState = () => js(`({perm:window.__perm.slice(),hasFocus:document.hasFocus(),ae:document.activeElement&&document.activeElement.className,rows:[...document.querySelectorAll('#needsPanel .inbox-row')].map(r=>({id:r.dataset.id,rq:r.dataset.rq,armed:r.dataset.armed,armIn:Math.round((r._armAt||0)-performance.now()),settled:r.classList.contains('settled'),answering:!!r.dataset.answering}))})`);
+      const pressArmed = async (k, label) => {
+        await js(`window.__focusedRow=()=>{const a=document.activeElement;return (a&&a.closest&&a.closest('#needsPanel .inbox-row'))||null;};true`); // once per page, no interpolation (the jsLiteral lint); answers true, never the function
+        const ok = await until(`(window.__focusedRow()||{dataset:{}}).dataset.armed==='1'`, 5000);
+        assert.ok(ok, `${at}: ${label}: the focused row is armed within 5 s ${JSON.stringify(await panelState())}`);
+        assert.strictEqual(await js(`(window.__focusedRow()||{dataset:{}}).dataset.armed`), '1', `${at}: ${label}: the row the wait saw armed is the focused row`);
+        await js(`window.__atKey=null;document.addEventListener('keydown',()=>{const r=window.__focusedRow();window.__atKey=r?r.dataset.armed:'none';},{capture:true,once:true})`);
+        await key(k, [], { char: 'always' });
+        assert.strictEqual(await js('window.__atKey'), '1', `${at}: ${label}: the row is armed at the key press ${JSON.stringify(await panelState())}`);
+      };
       const clean = async () => { await answerAll(); while (pend.length) { const [id, rid] = pend.pop(); await emit({ type: 'permission', sessionId: id, permission: { requestId: rid, state: 'denied', via: 'stopped' } }); } assert.ok(await until(`Number((document.querySelector('#inboxBtn b')||{}).textContent)===0`, 8000), `${at}: nothing waits again`); await js(`(document.getElementById('inboxClose')||{click(){}}).click()`); await until(`!document.getElementById('needsPanel')`, 4000); await js(`window.__perm=[];window.__ann=[]`); };
       await clean();
 
@@ -542,10 +555,9 @@ async function run(ctx, H) {
           assert.deepStrictEqual(await js('window.__perm.slice()'), [], `${at}: the answer keys wait after the repaint (${n})`);
         };
         const answered = async (what) => {
-          await key('a', [], { char: 'always' });
+          await pressArmed('a', what);
           const got = await until(`window.__perm.length===1`, 3000);
-          const seen = JSON.stringify(await js('window.__perm.slice()'));
-          assert.ok(got, at + ': ' + what + ' ' + seen + ' ' + JSON.stringify(await js(`({focus:document.hasFocus(),ae:document.activeElement&&document.activeElement.className})`)));
+          assert.ok(got, `${at}: ${what}, A answers ${JSON.stringify(await panelState())}`);
           assert.deepStrictEqual(await js('window.__perm.slice()'), [`dm${n}y-` + w + ':true'], `${at}: and it is that row's own request (${n})`);
           await ctx.sleep(1000);
         };
@@ -566,6 +578,25 @@ async function run(ctx, H) {
         await arm();
         await js(`document.activeElement.dispatchEvent(new PointerEvent('pointerdown',{bubbles:true}))`);
         await answered('after a click on the heading, A answers');
+        await clean();
+      }
+
+      // ---- FR-198 (issue 1668, T534): a row placed under the pointer is guarded; the answer key waits for the focused row, never on luck ----
+      {
+        const P = await live(0), Q = await live(1);
+        await perm(P, 'ga1-' + w, 'Run the first, armed');
+        assert.ok(await until(`Number((document.querySelector('#inboxBtn b')||{}).textContent)===1`, 6000), `${at}: one waits (guard step)`);
+        await ensureOpen();
+        assert.ok(await until(`(document.querySelector('#needsPanel .inbox-row[data-id=${jsLiteral(P)}]')||{dataset:{}}).dataset.armed==='1'`, 3000), `${at}: the first row is armed (guard step)`);
+        // the pointer rests where the next row will be placed, so that row is guarded on arrival (FR-198); the first row stays armed
+        await js(`(()=>{const r=document.querySelector('#needsPanel .inbox-row').getBoundingClientRect();document.dispatchEvent(new PointerEvent('pointermove',{clientX:Math.round(r.left+r.width/2),clientY:Math.round(r.bottom+40),bubbles:true}));})()`);
+        await perm(Q, 'ga2-' + w, 'Run the second, placed under the pointer');
+        assert.ok(await until(`!!document.querySelector('#needsPanel .inbox-row[data-id=${jsLiteral(Q)}] .ib-h')`, 4000), `${at}: the second row is placed (guard step)`);
+        await js(`window.__perm=[];document.querySelector('#needsPanel .inbox-row[data-id=${jsLiteral(Q)}] .ib-h').focus()`);
+        await pressArmed('a', 'a row placed under the pointer');
+        assert.ok(await until(`window.__perm.length===1`, 3000), `${at}: a row placed under the pointer, A answers once it is armed ${JSON.stringify(await panelState())}`);
+        assert.deepStrictEqual(await js('window.__perm.slice()'), [`ga2-${w}:true`], `${at}: and it is that row's own request (guard step)`);
+        await ctx.sleep(1000);
         await clean();
       }
 

@@ -66,6 +66,8 @@ const api: DurbarApi = {
   removePlace: (id) => ipcRenderer.invoke('settings:removePlace', id),
   setSeriousMode: (on) => ipcRenderer.invoke('settings:setSeriousMode', on),
   setMotion: (on) => ipcRenderer.invoke('settings:setMotion', on),
+  setBrainView: (on) => ipcRenderer.invoke('settings:setBrainView', on),
+  setBrainMotion: (v) => ipcRenderer.invoke('settings:setBrainMotion', v),
   setStillHighlights: (on) => ipcRenderer.invoke('settings:setStillHighlights', on),
   setAutoFollowWork: (on) => ipcRenderer.invoke('settings:setAutoFollowWork', on),
   setNotifyNeedsMe: (on) => ipcRenderer.invoke('settings:setNotifyNeedsMe', on),
@@ -243,6 +245,7 @@ const api: DurbarApi = {
   openWithTargets: (id) => ipcRenderer.invoke('agents:openWithTargets', id),
   openWith: (id, target) => ipcRenderer.invoke('agents:openWith', id, target),
   gitStatus: (id) => ipcRenderer.invoke('agents:gitStatus', id),
+  copyToolArg: (sessionId, callId, confirmed) => ipcRenderer.invoke('agents:copyToolArg', sessionId, callId, confirmed === true), // spec 005 FR-411: main writes the clipboard; the answer is a result word, never the text
   sessionSummary: (id, final) => ipcRenderer.invoke('agents:sessionSummary', id, final === true),
   onEvent: (cb) => sub('agent:event', cb),
   onAgentAdded: (cb) => sub('agent:added', cb),

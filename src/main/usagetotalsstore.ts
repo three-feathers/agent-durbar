@@ -12,6 +12,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { emptyUsageDoc, normaliseFolderKey, officeTotals, recordUsage, sanitizeUsageDoc } from '../shared/usagedoc';
 import type { UsageNumbers, UsageTotalsDoc } from '../shared/usagedoc';
+import { failText } from './ipcerror';
 
 const MAX_FILE = 2 * 1024 * 1024;
 
@@ -90,7 +91,7 @@ export class UsageTotalsStore {
       this.dirty = false;
       this.lastError = undefined;
     } catch (err) {
-      this.lastError = err instanceof Error ? err.message.slice(0, 160) : 'write failed';
+      this.lastError = failText(err, 'usage totals store', 'write failed').slice(0, 160);
     }
   }
 

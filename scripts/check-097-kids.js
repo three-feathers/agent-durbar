@@ -5,7 +5,7 @@
  *
  *   npm run check:ui -- --only check-097-kids      (builds first)
  *   SHOTS_OUT=<dir>   where its pictures go (097-kids-<n>-<w>x<h>.jpg, in the cave 097-kids-cave-<n>-<w>x<h>.jpg, JPEG quality 60; a temporary folder by default)
- *   KIDS_WORLD=<world>   unset = photo; a world whose world.json has `kids` (today photo, cave); any other value exits 1 naming the valid ones (KIDS_MUTANT=worldfallback restores the silent fallback: test-realoffice-assets must fail). KIDS_WORLD=cave: the Prehistoric cave's painted kids (spec 102 T326, issue #1643; the suite's `check-097-kids cave` entry), behind its flag; default: the Photo office
+ *   KIDS_WORLD=<world>   unset = photo; a world whose world.json has `kids` (today photo, cave, retro; retro: the arcade's pixel kids, spec 102 T327, in the same rows fixture as the cave's, since its aisles have no desk tops); any other value exits 1 naming the valid ones (KIDS_MUTANT=worldfallback restores the silent fallback: test-realoffice-assets must fail). KIDS_WORLD=cave: the Prehistoric cave's painted kids (spec 102 T326, issue #1643; the suite's `check-097-kids cave` entry), behind its flag; default: the Photo office
  *   KIDS_MUTANT=nokids|status|name|overlap|adulthead   no kid is drawn / a status change rebuilds a kid's node / a kid's name is drawn / a kid lies over its plate /
  *     the head row shows an adult at 15 agents (each must fail)
  *   KIDS_MUTANT=nofocus|noring   the focus precheck reads false / the "+K" ring is removed by a style: must fail at `the window does not have focus` /
@@ -61,12 +61,16 @@ module.exports = async (ctx) => {
   const emit = (e) => js(`void window.__durbarSimEmit(Object.assign({timestamp:Date.now()},${jsLiteral(e)}));0`);
   /* spec 102 T326 (#1643): the cave names `circle`, which draws no helper strip and no kids (T175's gap): the plates keep "+N" and dots there. So the cave run first checks what the
      page drew (the circle: no kid group; rows: kids), then switches to a page-only rows fixture (as check-097-helpers), where FR-368..FR-370 hold as in the Photo office */
+  /* spec 102 T327 (#1643): the Retro arcade names `aisles`: cabinets, no desk tops, so no kid stands in it; its helpers are the kids' faces in the head row under the plate (FR-370,
+     check-097-helpers). The kids' pictures and data are still checked here in the same page-only rows fixture as the cave's */
+  const WORLD_ARR = { cave: ['circle', 'rows'], retro: ['aisles'] };
   const caveRows = async (tag) => {
-    if (WORLD !== 'cave') return;
+    if (!WORLD_ARR[WORLD]) return;
     const arr = await js(`document.querySelector('#stage .ro').dataset.arrangement`);
-    assert.ok(['circle', 'rows'].includes(arr), `${tag}: the cave draws circle or rows (${arr})`);
+    assert.ok(WORLD_ARR[WORLD].includes(arr), `${tag}: ${WORLD} draws ${WORLD_ARR[WORLD].join(' or ')} (${arr})`);
     if (arr === 'circle') assert.strictEqual(await js(`document.querySelectorAll('#stage .ro-kids').length`), 0, `${tag}: the circle draws no kids (T175)`);
-    await js(`window.DurbarRealOfficeWorlds.cave.arrangement='rows';0`);
+    if (arr === 'aisles') assert.strictEqual(await js(`document.querySelectorAll('#stage .ro-kids').length`), 0, `${tag}: the aisles draw no kids on a desk top (T327: the head row shows their faces)`);
+    await js(`window.DurbarRealOfficeWorlds[${jsLiteral(WORLD)}].arrangement='rows';0`);
     const id = await js(`window.__durbarSimUi.realLayout().zones[0].desks[0].id`);
     await emit({ sessionId: id, type: 'status', status: 'error', intent: 'x' });
     /* spec 005 FR-245 (issue 1919): an idle after an error leaves the agent in Error until a new turn starts, so the fixture sends `working` (the agent went on) before its idle, as the idle that ends a normal turn */
@@ -193,7 +197,9 @@ module.exports = async (ctx) => {
     await js(`document.activeElement.blur();0`);
 
     /* a status change: no node added or removed, the kid keeps its node, its picture and class change, its place stays (FR-015, FR-184) */
-    const target = fd.kids.find((k) => k.state === 'working') || fd.kids[fd.kids.length - 1];
+    /* a `done` helper keeps the simulator's own "Done" label over a state set by the hook, so its words cannot change: a working kid first, else any kid not done (reached in the
+       arcade's rows fixture at 2 agents, spec 102 T327, where the first desk shows no working kid) */
+    const target = fd.kids.find((k) => k.state === 'working') || fd.kids.find((k) => !['done', 'idle'].includes(k.state)) || fd.kids[fd.kids.length - 1];
     assert.ok(target, `${tag}: a kid to change`);
     await must(`${SIM}.visitsSettled()&&${SIM}.settleNow()`, `${tag}: the office settled`);
     /* a node moved for the new order (waiting and error first, orderedHelpers) is the same node; only a node made or dropped counts */

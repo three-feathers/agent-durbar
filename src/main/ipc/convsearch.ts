@@ -13,9 +13,9 @@ import { randomBytes } from 'crypto';
 import type { WebContents } from 'electron';
 import { fromAppFrame as fromApp, ipcHandle } from '../ipcguard';
 import type { ConvSearchEvent, ConvSearchHit, ConvSearchNotes, ConvSearchStart } from '../../shared/api';
-import { startScan } from '../convsearch';
+import { createEarlyTitles, startScan } from '../convsearch';
 import { unhide } from '../../shared/redact';
-import type { ScanDeps, ScanHit, ScanNotes } from '../convsearch';
+import type { EarlyTitles, PlanSession, ScanBatch, ScanDeps, ScanHit, ScanNotes } from '../convsearch';
 import { createListCache } from '../convscope';
 import type { ListCache, Scope } from '../convscope';
 
@@ -49,7 +49,7 @@ export interface ConvSearchIpcDeps {
   /** True when an agent is open (no agent: nothing to search, no scan starts). */
   hasSessions(): boolean;
   /** The plan and its readers, from main's own state (`buildScope`); `stop` says this search is no longer wanted; `keptLists` is main's own box-session cache (FR-026). */
-  scope(stop: () => boolean, keptLists: ListCache, onListing?: (done: number, total: number) => void): Promise<Scope>;
+  scope(stop: () => boolean, keptLists: ListCache, onListing?: (done: number, total: number) => void, onSessions?: (sessions: readonly PlanSession[], values: (s: PlanSession) => readonly string[]) => void): Promise<Scope>;
   /** Tests: the cache (default: a new one). */
   keptLists?: ListCache;
   /** The masker and the window's fold functions (loaded from the built tree when first needed). */
@@ -137,14 +137,18 @@ export function register(deps: ConvSearchIpcDeps): { cancelAll(): void; dropKept
       if (cancelled) return; // a newer start or a cancel came first: this one never builds a plan (two starts make one scan)
       void (async () => {
         try {
-          const sc = await deps.scope(() => cancelled, keptLists, (d, t) => send('search:batch', { kind: 'listing', searchId: id, done: d, total: t })); // issue 1904: progress while the plan is built
+          const m = deps.matcher();
+          const emit = (b: ScanBatch): void => { if (b.progress.total) last = { ...b.progress }; send('search:batch', { kind: 'batch', searchId: id, hits: b.hits.map(toHit), progress: b.progress, groups: b.groups }); };
+          // spec 095 FR-054: the titles of the sessions the plan has so far are matched and sent at once, before its listings are over
+          let early: EarlyTitles | undefined;
+          const sc = await deps.scope(
+            () => cancelled, keptLists,
+            (d, t) => send('search:batch', { kind: 'listing', searchId: id, done: d, total: t }), // issue 1904: progress while the plan is built
+            (added, values) => { if (cancelled) return; early ??= createEarlyTitles(q.query, { masker: m.masker, search: m.search, values, emit }); early.add(added); },
+          );
           if (cancelled) return;
           extra = { ...sc.notes };
-          const m = deps.matcher();
-          scan = startScan(sc.plan, q.query, {
-            now, yieldNow, sleep, read: sc.read, values: sc.values, masker: m.masker, search: m.search,
-            emit: (b) => { last = { ...b.progress }; send('search:batch', { kind: 'batch', searchId: id, hits: b.hits.map(toHit), progress: b.progress, groups: b.groups }); },
-          });
+          scan = startScan(sc.plan, q.query, { now, yieldNow, sleep, read: sc.read, values: sc.values, masker: m.masker, search: m.search, emit, early });
           const end = await scan.done;
           if (!end.cancelled) done(end.notes, end.progress, end.failed);
         } catch {

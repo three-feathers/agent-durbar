@@ -19,7 +19,10 @@
  *   FR-004         one floor on: no lift.
  *   FR-028         a lift that scrolls (the shaft made short by a style: the simulator has three floors) sums the badges out of view on its edge rows,
  *                  and an edge row scrolls to the nearest badged button and focuses it.
- * Screenshots: 092-lift-{one,all}-<w>x<h>.png
+ *   FR-085         the empty floor shows "<floor>, floor n of m" (one floor screen; in All, the floor under the pointer); lift tooltips carry the number, (you are here) on the current floor only.
+ * Issue #2093 (spec 001 FR-270): after the Tab to a room head the tip shows; a window blur hides it and a window focus brings it back (the keyboard still on the head); nothing focused shows none. A failure of the tip step prints
+ *   the window's focus state and, when the window lost the OS focus, says so. Mutant (edit src/renderer/tooltip.js, `npm run build`, run, `git checkout -- src`): drop its `window.addEventListener('focus',` line => "the tip comes back when the window gets its focus back".
+ * Screenshots: 092-lift-{one,all,hint-one,hint-all}-<w>x<h>.png
  */
 const path = require('path');
 const assert = require('assert');
@@ -27,6 +30,7 @@ const { helpers, jsLiteral } = require('./driver-helpers');
 const OUT = process.env.OUT || '/tmp';
 const SIZES = [[1440, 900], [1280, 800]];
 
+const dragFocus = require('./drag-focus'); // the focus recorder and its label (spec 097 FR-352, issue 1550), reused for the tip step (issue 2093)
 module.exports = async (ctx) => {
   const H = helpers(ctx);
   const { js, until, settle, key } = H;
@@ -42,6 +46,101 @@ module.exports = async (ctx) => {
   const view = () => js(`(()=>{const tags=[...new Set([...document.querySelectorAll('#stage .room-head .floor-tag')].map(t=>t.textContent.trim()))];
     return {tags,desks:[...document.querySelectorAll('#stage .desk[data-id]')].filter(d=>!d.closest('.helpers')).length,empty:!!document.querySelector('#stage .floor-empty'),
       pills:[...document.querySelectorAll('#stats .stat[data-k] b')].reduce((n,b)=>n+(+b.textContent||0),0),floor:localStorage.getItem('durbar.floor'),view:localStorage.getItem('durbar.floorView')};})()`);
+  /* spec 092 FR-085: the hint of the empty floor (the office tooltip, a real mouse move) and the lift tooltip's text */
+  const OWN = 'button,a,input,select,textarea,[title],[data-tip],[role="button"],.room-head,.desk,.helpers,.shutters,.unit,.lobby,.floor-empty,.welcome,.filter-note';
+  const emptySpot = (inRoom) => js(`(()=>{const fl=document.getElementById('floor').getBoundingClientRect(),own=${jsLiteral(OWN)};
+    for(let y=fl.top+6;y<fl.bottom-6;y+=9)for(let x=fl.left+6;x<fl.right-6;x+=9){const e=document.elementFromPoint(x,y);if(!e||e.closest(own)||!e.closest('#floor')||(${jsLiteral(!!inRoom)}&&!e.closest('#stage .room[data-room]')))continue;
+      const rm=e.closest('#stage .room[data-room]');return {x:Math.round(x),y:Math.round(y),floor:rm?rm.querySelector('.floor-tag')?rm.querySelector('.floor-tag').textContent.trim():null:'screen'};}
+    return null;})()`);
+  const hoverHint = async (spot) => {
+    H.wc().sendInputEvent({ type: 'mouseMove', x: 5, y: 5 }); await settle();
+    H.wc().sendInputEvent({ type: 'mouseMove', x: spot.x, y: spot.y });
+    await until(`(()=>{const t=document.getElementById('appTip');return !!t&&!t.hidden&&t.textContent.length>0;})()`, 3000);
+    return js(`document.getElementById('appTip').textContent`);
+  };
+  /* FR-085: where the hint stands. An empty spot of the floor nearest to a point (fractions of #floor), hovered with a real mouse; the tip is inside the window
+     (DurbarTip.MARGIN 8 px) and next to the pointer (not under the whole floor). */
+  const emptyNear = (fx, fy) => js(`(()=>{const fl=document.getElementById('floor').getBoundingClientRect(),own=${jsLiteral(OWN)},tx=fl.left+fl.width*${jsLiteral(fx)},ty=fl.top+fl.height*${jsLiteral(fy)};let best=null;
+    for(let y=fl.top+2;y<fl.bottom-2;y+=5)for(let x=fl.left+2;x<fl.right-2;x+=5){const e=document.elementFromPoint(x,y);if(!e||e.closest(own)||!e.closest('#floor'))continue;
+      const d=(x-tx)**2+(y-ty)**2;if(!best||d<best.d)best={d,x:Math.round(x),y:Math.round(y)};}
+    return best;})()`);
+  const checkPlace = async (tag, fx, fy, what) => {
+    const sp = await emptyNear(fx, fy); assert.ok(sp, `${tag}: an empty spot ${what}`);
+    const text = await hoverHint(sp); assert.ok(NOT_HINT.test(text), `${tag}: the hint ${what}: ${text}`);
+    const r = await js(`(()=>{const b=document.getElementById('appTip').getBoundingClientRect(),de=document.documentElement;return {l:b.left,t:b.top,r:b.right,b:b.bottom,w:de.clientWidth,h:de.clientHeight};})()`);
+    assert.ok(r.l >= 8 - 1 && r.t >= 8 - 1 && r.r <= r.w - 8 + 1 && r.b <= r.h - 8 + 1, `${tag}: the hint ${what} is inside the window with its margin: ${JSON.stringify(r)}`);
+    assert.ok(Math.abs(r.t - sp.y) <= 40 || Math.abs(r.b - sp.y) <= 40, `${tag}: the hint ${what} is next to the pointer vertically (pointer y ${sp.y}): ${JSON.stringify(r)}`);
+    assert.ok(r.l - 40 <= sp.x && sp.x <= r.r + 40, `${tag}: the hint ${what} is next to the pointer horizontally (pointer x ${sp.x}): ${JSON.stringify(r)}`);
+  };
+  /* FR-085: parts with their own tip never show the floor hint. Targets are picked by their own selectors (not by the app's exclusion list). */
+  const NOT_HINT = /, floor \d+ of \d+/;
+  const hoverOn = async (sel) => {
+    const pt = await js(`(()=>{for(const e of document.querySelectorAll(${jsLiteral(sel)})){e.scrollIntoView({block:'nearest'});const r=e.getBoundingClientRect();if(r.width<4||r.height<4)continue;
+      const x=Math.round(r.left+r.width/2),y=Math.round(r.top+r.height/2),t=document.elementFromPoint(x,y);if(t&&e.contains(t))return {x,y};}return null;})()`);
+    assert.ok(pt, `a visible ${sel} to hover`);
+    H.wc().sendInputEvent({ type: 'mouseMove', x: 5, y: 5 }); await settle();
+    H.wc().sendInputEvent({ type: 'mouseMove', x: pt.x, y: pt.y }); await settle();
+    return js(`(()=>{const t=document.getElementById('appTip');return t&&!t.hidden?t.textContent:'';})()`);
+  };
+  /* FR-085: hover only. A real Tab to a desk shows no floor hint and leaves no aria-describedby on the room or the floor; a room head's button keeps its own tip (spec 001 FR-270). */
+  const tabTo = async (sel) => {
+    await js(`document.activeElement&&document.activeElement.blur&&document.activeElement.blur();document.getElementById('floor').scrollTop=0`);
+    for (let k = 0; k < 80; k++) { await H.key('Tab'); if (await js(`!!document.activeElement&&document.activeElement.matches(${jsLiteral(sel)})`)) return true; }
+    return false;
+  };
+  const focusTips = async (tag) => {
+    await js(dragFocus.RECORDER); // blur and focus of the window with times, read back on a failure of the tip step (issue 2093)
+    H.wc().sendInputEvent({ type: 'mouseMove', x: 5, y: 5 }); await settle();
+    assert.ok(await tabTo('#stage .desk[data-id]'), `${tag}: Tab reaches a desk`);
+    await settle();
+    const st = await js(`(()=>{const t=document.getElementById('appTip'),d=document.activeElement;return {tip:t&&!t.hidden?t.textContent:'',room:!!(d.closest('.room')&&d.closest('.room').getAttribute('aria-describedby')),floor:document.getElementById('floor').getAttribute('aria-describedby')||''};})()`);
+    assert.ok(!NOT_HINT.test(st.tip), `${tag}: keyboard focus on a desk shows no floor hint (got ${JSON.stringify(st.tip)})`);
+    assert.ok(!st.room && !st.floor, `${tag}: no aria-describedby on the room or the floor: ${JSON.stringify(st)}`);
+    assert.ok(await tabTo('#stage .room-head button'), `${tag}: Tab reaches a button of a room head`);
+    await settle();
+    const READ = `(()=>{const t=document.getElementById('appTip'),d=document.activeElement,h=d.closest('.room-head');return {tip:t&&!t.hidden?t.textContent:'',want:h?h.dataset.tip:'',hasFocus:document.hasFocus(),ae:d.tagName+'.'+d.className,tipHidden:t?t.hidden:null,events:window.__dragFocusLog||[]};})()`;
+    const hd = await js(READ);
+    try {
+      assert.ok(hd.want && hd.tip === hd.want && !NOT_HINT.test(hd.tip), `${tag}: keyboard focus in a room head keeps its own tip (FR-270): ${JSON.stringify({ tip: hd.tip, want: hd.want })}`);
+    } catch (e) {
+      /* issue 2093: say what the window and the tip were; a lost OS focus is named as an environment problem and the step still fails (no reread) */
+      console.log(`[tip-step] ${tag}: hasFocus=${hd.hasFocus}, active element ${hd.ae}, tip hidden=${hd.tipHidden}, window ${hd.events.map((x) => `${x.n}@${x.t}ms`).join(', ') || 'no blur/focus'}`);
+      throw dragFocus.labelFocus(e, { focusBefore: true, focusAfter: hd.hasFocus, events: hd.events }, { what: 'the room-head tip step', tail: 'not a missing tip (issue 2093)' });
+    }
+    /* issue 2093 (spec 001 FR-270, delta 2026-11-24): the window loses its focus and gets it back while the same room-head button still has the keyboard focus: the tip hides, then comes back */
+    await js(`window.dispatchEvent(new Event('blur'))`);
+    assert.ok(await js(`document.getElementById('appTip').hidden`), `${tag}: the tip hides when the window loses its focus`);
+    await js(`window.dispatchEvent(new Event('focus'))`);
+    const back = await js(READ);
+    assert.ok(back.tip === back.want && back.want, `${tag}: the tip comes back when the window gets its focus back, with the keyboard still on the room head (issue 2093): ${JSON.stringify({ tip: back.tip, want: back.want })}`);
+    /* a control that is not keyboard-focused (nothing focused: the page body) gets no tip from a focus event */
+    await js(`document.activeElement.blur()`);
+    await js(`window.dispatchEvent(new Event('blur'));window.dispatchEvent(new Event('focus'))`);
+    assert.ok(await js(`document.getElementById('appTip').hidden`), `${tag}: a window focus with nothing keyboard-focused shows no tip`);
+    /* review of PR 2096: a POINTER focus gets no tip back either: a real mouse click on a button put in the first room head (a head's own buttons act on click), then the window blurs and focuses */
+    const pt = await js(`(()=>{const h=document.querySelector('#stage .room-head');let b=document.getElementById('ptrBtn');if(!b){b=document.createElement('button');b.id='ptrBtn';b.type='button';b.textContent='x';b.style.cssText='position:relative;z-index:5;min-width:18px;min-height:18px';h.appendChild(b);}
+      b.scrollIntoView({block:'nearest'});const r=b.getBoundingClientRect();return {x:Math.round(r.left+r.width/2),y:Math.round(r.top+r.height/2)};})()`);
+    for (const type of ['mouseMove', 'mouseDown', 'mouseUp']) H.wc().sendInputEvent({ type, x: pt.x, y: pt.y, button: 'left', clickCount: 1 });
+    await settle();
+    const pf = await js(`(()=>{const b=document.getElementById('ptrBtn');return {active:document.activeElement===b,fv:b.matches(':focus-visible')}})()`);
+    assert.ok(pf.active && !pf.fv, `${tag}: the clicked button has the focus but is not :focus-visible: ${JSON.stringify(pf)}`);
+    H.wc().sendInputEvent({ type: 'mouseMove', x: 5, y: 5 }); await settle();
+    await js(`window.dispatchEvent(new Event('blur'));window.dispatchEvent(new Event('focus'))`);
+    assert.ok(await js(`document.getElementById('appTip').hidden`), `${tag}: a pointer focus gets no tip back with the window focus (issue 2093, review of PR 2096)`);
+    await js(`document.getElementById('ptrBtn').remove()`);
+    await js(`document.activeElement.blur()`);
+  };
+  const ownTips = async (tag) => {
+    const inject = () => js(`(()=>{const u=document.querySelector('#stage .units');if(u&&!document.getElementById('titledPart')){const e=document.createElement('span');e.id='titledPart';e.title='own title';e.textContent='titled part of a room';e.style.cssText='display:inline-block;padding:6px';u.appendChild(e);}})()`);
+    await inject();
+    for (const [what, sel] of [['a titled part', '#titledPart'], ['a room head', '#stage .room-head .room-name'], ['a desk', '#stage .desk[data-id]'], ['a button in a room head', '#stage .room-head button'], ['a helper', '#stage .helpers .desk, #stage .helpers .card, #stage .helpers [data-id]'], ['the lobby', '#stage .lobby'], ['a place chip', '#stage .lobby .place.boss, #stage .lobby .place']]) {
+      let t = await hoverOn(sel);
+      /* the All floors view redraws rooms now and then and drops the injected part: draw it again and hover again, until it stood there while the pointer rested on it */
+      for (let k = 0; sel === '#titledPart' && k < 5 && !(await js(`!!document.getElementById('titledPart')`)); k++) { await inject(); t = await hoverOn(sel); }
+      if (sel === '#titledPart') assert.ok(await js(`!!document.getElementById('titledPart')`), `${tag}: the titled part stayed in place while hovered`);
+      assert.ok(!NOT_HINT.test(t), `${tag}: ${what} keeps its own tip, not the floor hint (got ${JSON.stringify(t)})`);
+    }
+  };
   const btn = (id) => `#lift [data-lift="${id}"]`;
   /* announce() keeps only the last text given within 60 ms, and laying out the whole building can take a few hundred ms under xvfb: after a change, wait
      for its announcement before the next one, so each change is heard on its own (a no-op change, quiet=true, only settles) */
@@ -84,18 +183,35 @@ module.exports = async (ctx) => {
     assert.ok(await js(`(()=>{const y=id=>document.querySelector('#lift [data-lift="'+id+'"]').getBoundingClientRect().top;return y('*all')<y('f-personal')&&y('f-personal')<y('f-clienta0')&&y('f-clienta0')<y('ground');})()`), `${tag}: floor 1 is drawn at the bottom (Q-D)`);
     for (const b of L.b) assert.ok(b.w >= 28 && b.h >= 28 && b.font >= 10.5 && b.bfont >= 10.5, `${tag}: button ${b.text} ${b.w}x${b.h}, text ${b.font}px, badge ${b.bfont}px`);
     assert.deepStrictEqual(L.b.slice(1).map((b) => b.name.split(':')[0]), NAMES.map((n, i) => `${n}, floor ${i + 1} of 3`).reverse(), `${tag}: accessible names are unchanged, in the new order`);
-    assert.deepStrictEqual(L.b.slice(1).map((b) => b.title.split('\n')[0]), [...NAMES].reverse(), `${tag}: the tooltip names the floor`);
+    assert.deepStrictEqual(L.b.slice(1).map((b) => b.title.split(', floor ')[0]), [...NAMES].reverse(), `${tag}: the tooltip names the floor`);
     assert.strictEqual(L.b[0].name, 'All floors, 3 floors', `${tag}: All's name`);
     assert.deepStrictEqual(L.b.map((b) => b.cur), [null, null, null, 'true'], `${tag}: aria-current on the floor shown`);
     assert.deepStrictEqual(L.b.map((b) => b.tab), ['-1', '-1', '-1', '0'], `${tag}: one tab stop, on the floor shown (FR-013)`);
+    assert.deepStrictEqual(L.b.slice(1).map((b) => b.title.split('\n')[0]), NAMES.map((n, i) => `${n}, floor ${i + 1} of 3${i === 0 ? ' (you are here)' : ''}`).reverse(), `${tag}: lift tooltips: name, floor n of m, (you are here) on the current floor only (FR-085 b)`);
+    { const sp = await emptySpot(); assert.ok(sp, `${tag}: an empty spot of the floor`);
+      assert.strictEqual(await hoverHint(sp), `${NAMES[0]}, floor 1 of 3`, `${tag}: the empty floor says which floor it is (FR-085 a)`);
+      await shot('hint-one', w, h); }
+    await checkPlace(tag, 0.5, 0.5, 'in the middle of the floor'); await checkPlace(tag, 1, 1, 'near the bottom-right corner');
+    await ownTips(tag + ' one floor'); await focusTips(tag + ' one floor');
     await shot('one', w, h);
+
+    // ---- FR-085: the Real office draws its own storeys: no floor hint on its empty floor ----
+    await reset(w, h, { simfloors: '1', officeview: 'real' });
+    await until(`document.querySelector('#stage .ro-stage, #stage [class*="ro-"]')!==null`, 10000);
+    { const sp = await emptySpot(); assert.ok(sp, `${tag}: an empty spot of the Real office floor`);
+      H.wc().sendInputEvent({ type: 'mouseMove', x: 5, y: 5 }); await settle();
+      H.wc().sendInputEvent({ type: 'mouseMove', x: sp.x, y: sp.y }); await settle();
+      const t = await js(`(()=>{const t=document.getElementById('appTip');return t&&!t.hidden?t.textContent:'';})()`);
+      assert.ok(!NOT_HINT.test(t), `${tag}: no floor hint in the Real office (got ${JSON.stringify(t)})`); }
+    await js(`localStorage.removeItem('durbar.officeview')`);
+    await reset(w, h, { simfloors: '1' });
 
     // ---- FR-014..FR-016, SC-004: badges match the agents that need the user on the other floors ----
     const checkBadges = async (shown, why) => {
       L = await lift();
       const cur = L.b.find((b) => b.cur === 'true');
       for (const b of L.b.slice(1)) {
-        const name = b.title.split('\n')[0], want = name === shown ? 0 : (await expected)[name] || 0;
+        const name = b.title.split(', floor ')[0], want = name === shown ? 0 : (await expected)[name] || 0;
         assert.strictEqual(b.badge, want ? (want > 9 ? '9+' : String(want)) : '', `${tag} ${why}: badge of ${name} (shown ${cur && cur.title.split('\n')[0]})`);
         if (want) assert.ok(/: \d+ /.test(b.name) && b.title.includes('\n'), `${tag} ${why}: ${name}'s name and tooltip carry the words: ${b.name} / ${b.title}`);
       }
@@ -160,6 +276,13 @@ module.exports = async (ctx) => {
     const heads = await js(`(()=>{const top=n=>Math.min(...[...document.querySelectorAll('#stage .room-head .floor-tag')].filter(t=>t.textContent.trim()===n).map(t=>t.getBoundingClientRect().top));return {p:top('Personal'),g:top('Ground floor')};})()`);
     assert.ok(heads.p < heads.g, `${tag}: floor 1 is drawn below the top floor (Q-D): ${JSON.stringify(heads)}`);
     await clickBtn('*all', true); await annEq(['All floors, 3 floors'], `${tag}: choosing the view shown again says nothing`);
+    L = await lift();
+    assert.ok(L.b.every((b) => !/you are here/.test(b.title)), `${tag}: no (you are here) in the All floors view (FR-085 b)`);
+    { const sp = await emptySpot(true); assert.ok(sp && sp.floor && sp.floor !== 'screen', `${tag}: an empty spot of a room in All: ${JSON.stringify(sp)}`);
+      const want = NAMES.indexOf(sp.floor) + 1; assert.ok(want > 0, `${tag}: floor tag ${sp.floor}`);
+      assert.strictEqual(await hoverHint(sp), `${sp.floor}, floor ${want} of 3`, `${tag}: All floors: the hint names the floor under the pointer (FR-085 a)`);
+      await shot('hint-all', w, h); }
+    await ownTips(tag + ' All floors'); await focusTips(tag + ' All floors');
     await shot('all', w, h);
     await js(`document.body.focus()`);
     await key('PageDown'); await key('PageUp'); await key('PageDown');

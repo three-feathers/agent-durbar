@@ -2,13 +2,15 @@
  * Activity log rows (spec 052 FR-071): a local audit trail of permission answers, automatic approvals, mode changes and limit
  * changes. Pure: no Electron, no Node-only imports, so the main store and the tests share it.
  *
- * A row holds names and short summaries only: never a prompt, a reply, file contents, tool output or a full path. Every text
+ * A row holds names and short summaries only: never a prompt, a reply, file contents or tool output. The folder's full path is kept as written (spec 052 FR-071, owner decision 2026-11-23: a path is not a secret), masked like the action. Every text
  * field is cut to a fixed length; the action goes through `redact()` first (the main process masks it with the permission-card mask before that, `src/main/activitymask.ts`).
  */
 import { cut, redact } from './redact';
 
 export const ACTIVITY_MAX_ROWS = 5000;
 export const ACTIVITY_ACTION_MAX = 160;
+/** The most of a folder path a row keeps (cut at the end, after the mask). */
+export const ACTIVITY_PATH_MAX = 400;
 const NAME_MAX = 80;
 /** The most of an action `sanitizeActivityRow` reads before it masks (pre-review of PR 1317: without a bound a stored row of 20 million characters cost seconds). `cut` ends it before the start of a token, never inside one. */
 export const ACTIVITY_ACTION_READ_MAX = 20_000;
@@ -21,8 +23,10 @@ export interface ActivityRow {
   t: string;
   /** The agent's display name (its room). */
   agent: string;
-  /** The folder's base name, never the full path. */
+  /** The folder's base name (the short label; the only folder text of a row stored before 2026-11-23). */
   folder: string;
+  /** The folder's (or workspace file's) full path as written, one line, masked by `redact()`; '' in an older row. */
+  path: string;
   /** The adapter's display name ("GitHub Copilot", ...). */
   app: string;
   /** Permission mode at the time (read-only | ask | allow), or the new mode for a mode change. */
@@ -33,13 +37,18 @@ export interface ActivityRow {
 }
 
 /** The only keys a row may have, in CSV column order. */
-export const ACTIVITY_FIELDS = ['t', 'agent', 'folder', 'app', 'mode', 'action', 'decision'] as const;
+export const ACTIVITY_FIELDS = ['t', 'agent', 'folder', 'path', 'app', 'mode', 'action', 'decision'] as const;
 
 /** One line, no control characters, cut to `n`. */
 function oneLine(v: unknown, n: number): string {
   const s = typeof v === 'string' ? v : v == null ? '' : String(v);
   // eslint-disable-next-line no-control-regex
   return s.replace(/[\u0000-\u001f\u007f]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, n);
+}
+
+/** One line of a folder text: bounded read, the shared mask (`redact()`: a token-shaped segment becomes `[redacted]`, the rest stays as written), then cut to `n`: a cut at `n` first could leave the start of a token. */
+function maskedLine(v: unknown, n: number, env?: Record<string, string | undefined>): string {
+  return oneLine(redact(oneLine(typeof v === 'string' ? cut(v, ACTIVITY_ACTION_READ_MAX) : '', Infinity), env), n);
 }
 
 /** The folder's base name: the part after the last slash or backslash. */
@@ -49,7 +58,7 @@ export function baseName(p: unknown): string {
 }
 
 /**
- * A clean row from anything: unknown keys are dropped, every field is a short string, the folder is a base name, the action is
+ * A clean row from anything: unknown keys are dropped, every field is a short string, the folder is a base name and the path is masked and cut, the action is
  * redacted and cut. Returns undefined when the decision is unknown or the time is not a date.
  */
 export function sanitizeActivityRow(raw: unknown, env?: Record<string, string | undefined>): ActivityRow | undefined {
@@ -61,7 +70,8 @@ export function sanitizeActivityRow(raw: unknown, env?: Record<string, string | 
   return {
     t,
     agent: oneLine(r.agent, NAME_MAX),
-    folder: oneLine(baseName(r.folder), NAME_MAX),
+    folder: maskedLine(baseName(r.folder), NAME_MAX, env), // the base name is masked too (a token-named folder; it was not before 2026-11-23)
+    path: maskedLine(typeof r.path === 'string' ? r.path : '', ACTIVITY_PATH_MAX, env), // as written; mask, then cut (like the action)
     app: oneLine(r.app, NAME_MAX),
     mode: oneLine(r.mode, 16),
     action: oneLine(redact(oneLine(cut(typeof r.action === 'string' ? r.action : r.action == null ? '' : String(r.action), ACTIVITY_ACTION_READ_MAX), Infinity), env), ACTIVITY_ACTION_MAX), // mask, then cut: a cut at 2,000 first could leave the start of a token (spec 012 FR-175); the read is bounded by `cut`, which ends before a token

@@ -9,7 +9,7 @@ import type { AdapterRegistry } from '../../adapters/registry';
 import type { AgentInfo, ResumeResult, VsChatListResult } from '../../shared/api';
 import { VSCODE_CHAT_FORMAT_NOTE, listChats, readChat, vscodeUserDirs } from '../../adapters/vscodeChat';
 import type { ChatFileRef, UserDir } from '../../adapters/vscodeChat';
-import { errText, resumeModeOp } from '../agentops';
+import { resumeModeOp } from '../agentops';
 import type { DevEnv } from '../devhooks';
 import type { FolderStore } from '../folders';
 import type { AgentStateTracker } from '../mcp/agentstate';
@@ -18,10 +18,13 @@ import type { PrevDeps } from '../prevsessions';
 import type { Scheduler } from '../schedules';
 import type { ActivityDecision } from '../../shared/activity';
 import type { AddWorkspace } from './types';
+import { failText } from '../ipcerror';
 
 export interface PreviousIpcDeps {
   /** Spec 080 FR-023: a replaced session's browser view and partition are destroyed. */
   browserGone?(id: string): void;
+  /** Spec 005 FR-411: drop main's kept tool-call values of a session that Resume with replace removes. */
+  forgetToolCopies?(id: string): void;
   /** Spec 059: the rename operation, built in main.ts; it is given the ids open in the office. */
   renameSessionOpFor(openIds: () => ReadonlySet<string>): (id: unknown, sessionId: unknown, name: unknown) => unknown;
   dev: DevEnv;
@@ -101,6 +104,7 @@ export function register(deps: PreviousIpcDeps): void {
         await ad.stop(removedId);
         router.unbind(removedId);
         deps.browserGone?.(removedId); // spec 080 FR-023
+        deps.forgetToolCopies?.(removedId); // spec 005 FR-411
         agents.delete(removedId);
         agentState.remove(removedId);
         scheduler()?.sessionsChanged(); // spec 044 FR-014: a schedule for the replaced session pauses
@@ -108,7 +112,7 @@ export function register(deps: PreviousIpcDeps): void {
       if (prev.title && prev.title !== 'Untitled session') info.title = prev.title; // the list's title (name, else summary) until the runtime sends its own
       return { ok: true, agent: info, removedId, title: prev.title, history, ...(modeWas ? { modeWas } : {}) };
     } catch (err) {
-      return { ok: false, error: errText(err) };
+      return { ok: false, error: failText(err, 'previous sessions') };
     } finally {
       prevSessions.endResume(sessionId);
     }
@@ -124,7 +128,7 @@ export function register(deps: PreviousIpcDeps): void {
       vsChatRefs.set(a.id, new Map(l.sessions.map((r) => [r.summary.key, r])));
       return { ok: true, sessions: l.sessions.map((r) => r.summary), ...marksFor(prevDeps, a, 'vscode', l.sessions.map((r) => r.summary.key)), storesFound: l.storesFound, unreadable: l.unreadable, tooLarge: l.tooLarge, formatNote: VSCODE_CHAT_FORMAT_NOTE };
     } catch (err) {
-      return { ok: false, error: errText(err), ...empty };
+      return { ok: false, error: failText(err, 'previous sessions'), ...empty };
     }
   });
 

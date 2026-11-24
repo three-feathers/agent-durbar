@@ -276,16 +276,18 @@ const jobsOf = (y: string): Record<string, string> => {
   return out;
 };
 const ciJobs = jobsOf(ci);
-// FR-104: no separate "What changed" job, and no job waits for another one in a pull request
-assert.ok(!ciJobs.changes && !/needs:/.test(ci), 'ci.yml: no changes job and no needs (each job decides what to run itself)');
-for (const j of ['build-test', 'office-check']) assert.ok(ciJobs[j] && ciJobs[j].includes('bash .github/scripts/ci-changes.sh') && ciJobs[j].includes('fetch-depth: 2'), `ci.yml ${j} works out what changed inline`);
+// FR-104: no separate "What changed" job, and no job waits for another one in a pull request; the one exception (spec 117 FR-018) is the short
+// "Build and test (<os>)" summary, which waits for the npm test parts (the parts themselves start at once)
+const PARTS = ['test-ubuntu', 'test-windows', 'test-macos'];
+assert.ok(!ciJobs.changes && Object.entries(ciJobs).every(([id, body]) => !/needs:/.test(body) || (id === 'build-test' && body.includes('needs: [test-ubuntu, test-windows, test-macos]'))), 'ci.yml: no changes job, and no needs except the Build and test summary on its parts');
+for (const j of [...PARTS, 'office-check']) assert.ok(ciJobs[j] && ciJobs[j].includes('bash .github/scripts/ci-changes.sh') && ciJobs[j].includes('fetch-depth: 2'), `ci.yml ${j} works out what changed inline`);
 const changesSh = fs.readFileSync(path.join(ROOT, '.github', 'scripts', 'ci-changes.sh'), 'utf8');
 const changes = fs.readFileSync(path.join(ROOT, '.github', 'scripts', 'ci-changes.js'), 'utf8');
 assert.ok(changesSh.includes("git show 'HEAD^1:.github/scripts/ci-changes.js'") && changesSh.includes('node "$tmp/.github/scripts/ci-changes.js" --root .'), 'ci-changes.sh runs the base copy of the one decision, ci-changes.js (FR-191; test:cichanges runs it)');
 assert.ok(changes.includes("['diff', '--name-only', '--no-renames', '-z', 'HEAD^1', 'HEAD']") && changes.includes("env.EVENT_NAME !== 'pull_request'"), 'ci-changes.js: diff of the test merge commit on PRs, everything on other events (test:cichanges runs it)');
 // FR-191: on a pull request the office job's steps (office layout and, since FR-194, package smoke) follow `ui`; Build and test keeps `code`
 assert.ok(!ciJobs['office-check'].includes("outputs.code == 'true'") && ciJobs['office-check'].includes("steps.changes.outputs.ui == 'true'"), 'ci.yml office-check runs its steps only when ui=true');
-assert.ok(ciJobs['build-test'].includes("steps.changes.outputs.code == 'true'") && !ciJobs['build-test'].includes('outputs.ui'), 'ci.yml Build and test still runs on every code change');
+for (const j of PARTS) assert.ok(ciJobs[j].includes("steps.changes.outputs.code == 'true'") && !ciJobs[j].includes('outputs.ui'), `ci.yml ${j} (Build and test parts) still runs on every code change`);
 // the required check names of the main ruleset still report on every pull request
 for (const name of ['name: Build and test (${{ matrix.os }})', 'name: Office layout check (xvfb)']) assert.ok(ci.includes(name), `ci.yml keeps the required check ${name}`);
 // FR-194: packaging is a step of the office job (the old required check "Package smoke (unpacked Linux app)" is gone), runs even when
@@ -316,9 +318,11 @@ for (const f of fs.readdirSync(WF).filter((x) => /\.ya?ml$/.test(x))) {
   if (yaml) assert.doesNotThrow(() => (yaml as { load: (s: string) => unknown }).load(txt), `${f} is not valid YAML`);
 }
 const bt = ciJobs['build-test'];
-for (const os of ['ubuntu-latest', 'windows-latest', 'macos-latest']) assert.ok(bt.includes(`- os: ${os}`), `Build and test reports for ${os}`);
-// FR-106: macOS is a report-only Linux job on pull requests and merge queue entries, the real build and test on every other event
-assert.ok(bt.includes(`runner: \${{ (github.event_name == 'pull_request' || github.event_name == 'merge_group') && 'ubuntu-latest' || 'macos-latest' }}`) && bt.includes(`real: \${{ (github.event_name == 'pull_request' || github.event_name == 'merge_group') && 'no' || 'yes' }}`), 'macOS build and test: Linux report on PR and queue, real macOS otherwise');
+assert.ok(bt.includes('os: [ubuntu-latest, windows-latest, macos-latest]'), 'Build and test reports for ubuntu, windows and macos');
+// FR-106: on pull requests and merge queue entries no macOS part runs and the Linux summary reports for macOS; the real macOS parts run on every other event
+// (spec 117 FR-018; scripts/test-ci-shards.ts runs the summary's script for every result)
+assert.ok(ciJobs['test-macos'].includes("if: ${{ !github.event.pull_request.draft && github.event_name != 'pull_request' && github.event_name != 'merge_group' }}") && ciJobs['test-macos'].includes('runs-on: macos-latest'), 'macOS parts: real macOS, never on PR or queue');
+assert.ok(bt.includes('macOS build and test does not run on pull requests or merge queue entries (spec 008 FR-106') && bt.includes('runs-on: ubuntu-latest'), 'the Linux summary says where macOS runs');
 assert.ok(/^ {2}schedule:/m.test(ci) && /^ {2}push:\r?\n {4}branches: \[main\]/m.test(ci), 'ci.yml runs nightly and on pushes to main (where macOS really runs)');
 // FR-105: one office job runs theme geometry and the whole office layout in parallel parts
 const office = ciJobs['office-check'];
@@ -328,12 +332,13 @@ const wf = fs.readFileSync(path.join(WF, 'ui-platforms.yml'), 'utf8');
 for (const os of ['ubuntu-latest', 'macos-latest', 'windows-latest']) assert.ok(wf.includes(os), `the workflow runs on ${os}`);
 for (const step of ['check-theme-geometry.js', 'check-office-overlap.js', 'check-mac-titlebar.js', 'ui-suite.js']) assert.ok(wf.includes(step), `the workflow runs ${step}`);
 assert.ok(!/part:/.test(wf) && !/OFFICE_SHARD/.test(wf), 'one job per OS: the office layout runs whole, no parts');
-assert.ok(wf.includes(`os: \${{ fromJSON((github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && '["ubuntu-latest","macos-latest","windows-latest"]' || '["ubuntu-latest","windows-latest"]') }}`), 'macOS UI checks only nightly and by hand');
+// spec 117 FR-012 / O2 (T403): Windows UI shards on a pull request only with os_sensitive; the per-event matrix is evaluated in test:uievents
+assert.ok(wf.includes(`os: \${{ fromJSON((github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && '["ubuntu-latest","macos-latest","windows-latest"]' || (github.event_name == 'pull_request' && needs.changes.outputs.os_sensitive == 'false') && '["ubuntu-latest"]' || '["ubuntu-latest","windows-latest"]') }}`), 'macOS UI checks only nightly and by hand; Windows on a PR only when OS-sensitive');
 assert.ok(/^ {2}schedule:/m.test(wf), 'ui-platforms.yml runs nightly');
 // FR-191: a cheap decision job; the shards need it and run only on ui=true; "UI suite complete" passes when ui=false, fails when the decision failed
 {
   const uj = jobsOf(wf);
-  assert.ok(uj.changes && uj.changes.includes('bash .github/scripts/ci-changes.sh') && uj.changes.includes('fetch-depth: 2') && uj.changes.includes('ui: ${{ steps.changes.outputs.ui }}'), 'ui-platforms.yml: a changes job outputs ui');
+  assert.ok(uj.changes && uj.changes.includes('bash .github/scripts/ci-changes.sh') && uj.changes.includes('fetch-depth: 2') && uj.changes.includes('ui: ${{ steps.changes.outputs.ui }}') && uj.changes.includes('os_sensitive: ${{ steps.changes.outputs.os_sensitive }}'), 'ui-platforms.yml: a changes job outputs ui and os_sensitive');
   assert.ok(uj.ui.includes('needs: changes') && uj.ui.includes("if: ${{ !github.event.pull_request.draft && needs.changes.outputs.ui == 'true' }}"), 'the UI shards run only when ui=true');
   const c = uj.complete;
   assert.ok(c.includes('needs: [changes, ui]') && c.includes('CHANGES: ${{ needs.changes.result }}') && c.includes('UI_NEEDED: ${{ needs.changes.outputs.ui }}'), 'UI suite complete reads the decision');
@@ -352,7 +357,9 @@ for (const f of ['ci.yml', 'ui-platforms.yml', 'spec-kit.yml', 'install-check.ym
   assert.ok(/^ {2}pull_request:\r?\n {4}types: \[[^\]]*ready_for_review\]/m.test(y), `${f}: runs again when a draft is marked ready`);
   const jobs = jobsOf(y);
   for (const [id, body] of Object.entries(jobs)) if (!/^ {4}needs:/m.test(body)) assert.ok(/^ {4}if: (.*!github\.event\.pull_request\.draft|github\.event_name == 'workflow_dispatch' && )/m.test(body), `${f} ${id}: skipped on a draft (or never on a PR)`);
-  assert.ok(/group: \$\{\{ github\.workflow \}\}-\$\{\{ github\.event\.pull_request\.number \|\| github\.(run_id|ref) \}\}/.test(y) && /cancel-in-progress: \$\{\{ github\.event_name == 'pull_request' \}\}/.test(y), `${f}: one concurrency group per PR, cancelling only PR runs`);
+  // spec 117 FR-014 / O3 (T010): ui-platforms.yml's main pushes share one cancelling group; its events are evaluated in test:uievents
+  if (f === 'ui-platforms.yml') assert.ok(y.includes("group: ${{ github.workflow }}-${{ github.event_name == 'push' && 'ui-main' || github.event.pull_request.number || github.run_id }}") && y.includes("cancel-in-progress: ${{ github.event_name == 'pull_request' || github.event_name == 'push' }}"), `${f}: one group per PR and one for main pushes, cancelling PR and main-push runs only`);
+  else assert.ok(/group: \$\{\{ github\.workflow \}\}-\$\{\{ github\.event\.pull_request\.number \|\| github\.(run_id|ref) \}\}/.test(y) && /cancel-in-progress: \$\{\{ github\.event_name == 'pull_request' \}\}/.test(y), `${f}: one concurrency group per PR, cancelling only PR runs`);
 }
 // FR-135: the real macOS build and test runs on a pull request only for platform-sensitive paths (GitHub's `paths:` filter), never
 // as a required check (the ruleset keeps the FR-106 stub), and uses no secrets and no pull_request_target
@@ -406,6 +413,34 @@ for (const w of ['CI', 'UI on three OSes', 'Installed app', 'Packaged check', 'I
 assert.ok(office.includes(`CHECK_ALL_THEMES: \${{ (github.event_name == 'pull_request' || github.event_name == 'merge_group') && '0' || '1' }}`) && wf.includes(`CHECK_ALL_THEMES: \${{ github.event_name == 'pull_request' && '0' || '1' }}`), 'every theme on main, nightly and by hand');
 const geo = fs.readFileSync(path.join(ROOT, 'scripts', 'check-theme-geometry.js'), 'utf8');
 assert.ok(/process\.env\.CHECK_ALL_THEMES === '1' \? ALL_THEMES : 'dark'/.test(geo) && /const ALL_THEMES = 'dark,user,pink-studio'/.test(geo), 'check-theme-geometry: the dark fixture by default, all with CHECK_ALL_THEMES=1 (spec 102 T226)');
+// spec 035 FR-414: like with like: a theme with words against Clean Office given the same words (nothing else), the page drawn again in the forced font before measuring
+assert.ok(/extends: 'clean-office', ui: 'clean', scene: 'office', tokens: \{\}, words: p\.words \}/.test(geo) && /const refOf = \(theme\) => \(packs\[`ref:\$\{theme\}`\] \? `ref:\$\{theme\}` : 'clean-office'\);/.test(geo)
+  && /ref\[`\$\{refOf\(theme\)\} \$\{sim\}-\$\{w\}`\]/.test(geo) && /u\.paint\(\); u\.settleNow\(\);/.test(geo), 'check-theme-geometry: a worded theme is compared with Clean Office given its words, drawn again in the forced font (spec 035 FR-414)');
+// review of #2091: the pins cover the calls themselves, not only the helper (PR runs check only the dark fixture, so a lost relayout went red only on main).
+// Line ends are \r?\n as in the pins above: a Windows checkout has CRLF; each pin is also run on an LF and a CRLF copy of the same source.
+const GEO_PINS: Array<[RegExp, string]> = [
+  [/for \(const \[k, p\] of Object\.entries\(packs\)\) \{\r?\n    if \(p\.words && Object\.keys\(p\.words\)\.length\) packs\[`ref:\$\{k\}`\] = /, 'every theme with words gets its words reference (spec 035 FR-414 (a))'],
+  [/if \(!u \|\| typeof u\.paint !== 'function' \|\| typeof u\.settleNow !== 'function'\) throw new Error\(/, 'the relayout throws when the simulator paint hook is missing (spec 035 FR-414 (b))'],
+  [/the simulator never became steady[^\r\n]*\r?\n    await needHooks\(/, 'every page is checked for the paint hook before it is measured, with a clear message (spec 035 FR-414 (b))'],
+  [/throw new Error\(`world \$\{world\}: not shown`\);\r?\n      await needHooks\(/, 'every world page is checked for the paint hook before it is measured (spec 035 FR-414 (b))'],
+  [/typeof window\.__durbarSimUi\.paint==='function'/, 'the driver hook check reads the paint hook (spec 035 FR-414 (b))'],
+  [/document\.head\.appendChild\(st\);\r?\n  \}\r?\n  redraw\(\);[^\r\n]*\r?\n  const out = \{\};/, 'measure lays the page out again in the neutral font before it measures (spec 035 FR-414 (b))'],
+  [/await ctx\.js\(`\(\$\{measure\.toString\(\)\}\)\(null, true\)`\);\r?\n    const more = /, 'the +N more chip is looked for in the neutral font (spec 035 FR-414 (b))'],
+];
+for (const [ends, src] of [['as checked out', geo], ['LF', geo.replace(/\r\n/g, '\n')], ['CRLF', geo.replace(/\r?\n/g, '\r\n')]] as const) {
+  for (const [re, what] of GEO_PINS) assert.ok(re.test(src), `check-theme-geometry: ${what} [${ends} line ends]`);
+}
+// review of FR-414: every "spec 035 FR-n (delta d)" pointer in the check names an FR that delta d of spec 035 really holds
+{
+  const s035 = fs.readFileSync(path.join(ROOT, 'specs', '035-theme-foundation', 'spec.md'), 'utf8');
+  const cites = [...geo.matchAll(/spec 035 (FR-\d+),? \(?delta (\d{4}-\d{2}-\d{2})/g)];
+  assert.ok(cites.length >= 3, 'check-theme-geometry: the FR-414 comments cite spec 035 with the FR and its delta');
+  for (const [, fr, day] of cites) {
+    const at = s035.indexOf(`## Changes ${day}`);
+    const next = at < 0 ? -1 : s035.indexOf('\n## ', at + 1);
+    assert.ok(at >= 0 && s035.slice(at, next < 0 ? undefined : next).includes(`**${fr}**`), `check-theme-geometry: spec 035 delta ${day} defines ${fr}`);
+  }
+}
 assert.ok(/const THEMES = \[\['clean', \{ theme: 'clean' \}\], \['dark', CHECK_DARK_QUERY\]\];/.test(fs.readFileSync(path.join(ROOT, 'scripts', 'shots-052-addleft.js'), 'utf8')), 'shots-052-addleft: Clean Office and the dark fixture theme (spec 102 T226)');
 // review of PR #1276 (A): the dark jobs say so (CHECK_EXPECT_DARK=1), so the driver demands the dark fixture whatever its file is called; both job definitions are pinned here
 const par = fs.readFileSync(path.join(ROOT, 'scripts', 'check-parallel.js'), 'utf8');
@@ -462,6 +497,18 @@ assert.ok(dh.darkProblem({ id: 'check-user', bg: 'rgb(20, 18, 43)' }).includes('
     assert.ok(reads >= 4 && evs.includes('show') && evs.includes('win.focus') && evs.includes('wc.focus'), `needFocus: focus that comes after 3 reads passes, through the focus step (${reads} reads, ${evs.join(',')})`);
     const never = { ...fctx, js: async (c: string) => !c.includes('document.hasFocus()') };
     await assert.rejects(() => dh.helpers(never).needFocus('t 1440x900', { ms: 300 }), /t 1440x900: the window does not have focus \(document\.hasFocus\(\) is false\): bring the app to the front; the machine may have no key window/, 'needFocus: a page without focus fails with the label');
+    // spec 008 (issue #1239): `host: true` also asks the HOST window's focus: a page that reports focus in a window that is not the key window fails with the label (macOS: another app in front); a host focus that comes after 3 reads passes through the focus step; without `host` nothing changes
+    {
+      const evs2: string[] = []; let hostReads = 0;
+      const base = { ...ctx, js: async (c: string) => !c.includes('!!(false)') };
+      const notKey = { ...base, win: { ...ctx.win, show: () => evs2.push('show'), focus: () => evs2.push('win.focus'), isFocused: () => false, webContents: { focus: () => evs2.push('wc.focus'), isFocused: () => false } } };
+      await assert.rejects(() => dh.helpers(notKey).needFocus('t host', { ms: 300, host: true }), /t host: the window is not the key window \(win\.isFocused\(\) is false while document\.hasFocus\(\) is true\)/, 'needFocus host: a page with focus in a window that is not the key window fails with the label');
+      assert.ok(evs2.includes('show') && evs2.includes('win.focus') && evs2.includes('wc.focus'), 'needFocus host: the key window is asked for first (show, focus, webContents.focus)');
+      await dh.helpers(notKey).needFocus('t nohost', { ms: 300 }); // without host: the old behaviour, a page that has the focus passes
+      const late = { ...base, win: { ...ctx.win, show: () => {}, focus: () => {}, isFocused: () => ++hostReads > 3, webContents: { focus: () => {}, isFocused: () => hostReads > 3 } } };
+      await dh.helpers(late).needFocus('t late', { ms: 3000, host: true });
+      assert.ok(hostReads >= 4, `needFocus host: a host focus that comes after 3 reads passes (${hostReads} reads)`);
+    }
     const mut = { ...fctx, js: async (c: string) => !c.includes('!!(false)') };
     await assert.rejects(() => dh.helpers(mut).needFocus('t', { ms: 300, expr: 'false' }), /does not have focus/, 'needFocus: a false reading (the mutant) fails with the label');
   }
@@ -800,17 +847,18 @@ async function retries(): Promise<void> {
   const tmp = fs.mkdtempSync(path.join(require('os').tmpdir(), 'ui-suite-retry-'));
   const summary = path.join(tmp, 'summary.md');
   const env = { ...process.env }, log = console.log, was = process.exitCode;
-  const go = async (results: boolean[], retry: string): Promise<{ code: unknown; out: string; runs: number; sum: string }> => {
+  const go = async (results: boolean[], retry: string): Promise<{ code: unknown; out: string; runs: number; sum: string; before: string[] }> => {
     fs.writeFileSync(summary, '');
     process.env.UI_SUITE_RETRY = retry; process.env.UI_SUITE_JOBS = '1'; process.env.UI_SUITE_OUT = tmp; process.env.GITHUB_STEP_SUMMARY = summary;
     process.exitCode = 0;
     const lines: string[] = []; console.log = (...a: unknown[]) => { lines.push(a.join(' ')); };
     let runs = 0;
+    const before: string[] = []; // spec 008 delta 2026-11-23 (T493): the line printed last when each run starts
     try {
-      await main({ ensure: () => true, argv: ['--only', DRIVERS[0].name], run: async () => { const ok = results[runs++]; return { ok, secs: 0, why: ok ? '' : 'broken', log: '' }; } });
+      await main({ ensure: () => true, argv: ['--only', DRIVERS[0].name], run: async () => { before.push(lines[lines.length - 1] || ''); const ok = results[runs++]; return { ok, secs: 0, why: ok ? '' : 'broken', log: '' }; } });
     } finally { console.log = log; }
     const code = process.exitCode; process.exitCode = was;
-    return { code, out: lines.join('\n'), runs, sum: fs.readFileSync(summary, 'utf8') };
+    return { code, out: lines.join('\n'), runs, sum: fs.readFileSync(summary, 'utf8'), before };
   };
   try {
     const twice = await go([false, false], '1');
@@ -818,6 +866,11 @@ async function retries(): Promise<void> {
     assert.strictEqual(twice.runs, 2, 'one retry, not more');
     assert.ok(!/FLAKY/.test(twice.out + twice.sum), 'failing twice is not FLAKY');
     assert.ok(new RegExp('failed: ' + name).test(twice.out), 'and it is named: ' + twice.out.slice(-200));
+    // a job cut at its limit shows the running driver: its start line is out before it runs, with no result line yet (issue 2070)
+    const esc = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    assert.ok(new RegExp(`^  start ${esc} \\(\\d+ s into the suite\\)$`).test(twice.before[0]), 'the start line is printed before the driver runs: ' + twice.before[0]);
+    assert.ok(new RegExp(`^  start retry ${esc} \\(\\d+ s into the suite\\)$`).test(twice.before[1]), 'and before its retry: ' + twice.before[1]);
+    assert.ok(twice.out.indexOf(`  start ${name} (`) < twice.out.indexOf(`FAIL ${name}`), 'start comes before the result line');
     const once = await go([false, true], '1');
     assert.strictEqual(once.code, 0, 'a pass on retry passes the job');
     assert.ok(/FLAKY \(passed only on retry\)/.test(once.out), 'FLAKY on the final line');
@@ -841,11 +894,12 @@ console.log('ui-suite: check-parallel and ui-suite install Electron once before 
 
 // ---- spec 008 FR-182 (issue 839): --shard i/n takes every n-th driver; n shards are disjoint and together hold every driver ----
 {
-  const { shard, DRIVERS } = require(SUITE) as { shard: (l: unknown[], s?: string, t?: Record<string, number>) => unknown[]; DRIVERS: unknown[] };
+  const { shard, DRIVERS, SHARD1_HEAD_START_SECS } = require(SUITE) as { shard: (l: unknown[], s?: string, t?: Record<string, number>, p?: string) => unknown[]; DRIVERS: unknown[]; SHARD1_HEAD_START_SECS: { darwin: number; other: number } };
   const times = JSON.parse(fs.readFileSync(path.join(ROOT, 'scripts', 'ui-suite-timings.json'), 'utf8')) as Record<string, number>;
-  const names = (DRIVERS as Array<{ name: string }>).map((d) => d.name);
+  // spec 008 delta 2026-11-23 (T493): an entry is a driver's label (a variant such as "check-unread retro") or its name
+  const names = (DRIVERS as Array<{ name: string; label?: string }>).flatMap((d) => [d.name, d.label || d.name]);
   assert.ok(Object.keys(times).filter((k) => !k.startsWith('_')).every((k) => names.includes(k)), 'the timing file names only drivers that exist (refresh it when one is renamed)');
-  const wt = (d: { name: string }): number => times[d.name] ?? 0;
+  const wt = (d: { name: string; label?: string }): number => times[d.label || ''] ?? times[d.name] ?? 0;
   for (const n of [1, 2, 3, 4, 5]) {
     const parts = Array.from({ length: n }, (_, i) => shard(DRIVERS, `${i + 1}/${n}`) as Array<{ name: string }>);
     const all = parts.flat();
@@ -867,6 +921,21 @@ console.log('ui-suite: check-parallel and ui-suite install Electron once before 
     assert.strictEqual(got.flat().length, 3, 'drivers without a timing are all placed once');
     assert.deepStrictEqual(shard(DRIVERS, '1/2', {}), shard(DRIVERS, '1/2', {}), 'no timing file: still deterministic');
   }
+  // spec 008 delta 2026-11-23 (T493): shard 1's head start is per OS (macOS runs the office layout and the Mac title bar there: 586 s measured)
+  {
+    assert.deepStrictEqual(SHARD1_HEAD_START_SECS, { darwin: 600, other: 240 }, 'head start: 600 s on macOS, 240 s elsewhere');
+    const a = { name: 'zz-a' }, b = { name: 'zz-b' }, t = { 'zz-a': 300, 'zz-b': 300 };
+    assert.deepStrictEqual(shard([a, b], '1/2', t, 'linux'), [b], 'linux: shard 1 (240 s ahead) still takes one 300 s driver');
+    assert.deepStrictEqual(shard([a, b], '1/2', t, 'win32'), [b], 'win32: the same 240 s');
+    assert.deepStrictEqual(shard([a, b], '1/2', t, 'darwin'), [], 'darwin: shard 1 (600 s ahead) takes neither');
+    assert.deepStrictEqual(shard([a, b], '2/2', t, 'darwin'), [a, b], 'darwin: both go to shard 2');
+    // a driver's weight is its label's entry first, then its name's
+    const v = { name: 'zz-x', label: 'zz-x retro' }, x = { name: 'zz-x' }, y = { name: 'zz-y' };
+    const tl = { 'zz-x': 10, 'zz-x retro': 1000, 'zz-y': 500 };
+    assert.deepStrictEqual(shard([v, x, y], '2/2', tl, 'linux'), [v], 'the variant weighs its own 1000 s (by its name it would weigh 10)');
+    assert.deepStrictEqual(shard([v, x, y], '1/2', tl, 'linux'), [x, y], 'and the rest share shard 1');
+    assert.deepStrictEqual(shard([v, x, y], '2/2', { 'zz-x': 10, 'zz-y': 500 }, 'linux'), [y], 'without a label entry the variant weighs its name\'s');
+  }
   assert.deepStrictEqual(shard(DRIVERS, undefined), DRIVERS, 'no shard: the whole list');
   for (const bad of ['0/3', '4/3', '3', 'a/b', '1/0']) assert.throws(() => shard(DRIVERS, bad), /--shard wants i\/n/, `"${bad}" is refused`);
   // review on #1257: the workflow's matrix, denominators and excludes agree (plain text; no YAML parser is a dependency)
@@ -878,13 +947,79 @@ console.log('ui-suite: check-parallel and ui-suite install Electron once before 
     assert.ok(m, 'the matrix has a shard list');
     const list = m[1].split(',').map((x) => Number(x.trim()));
     const n = list.length;
-    assert.strictEqual(n, 4, 'Linux and Windows run 4 shards');
+    // spec 008 delta 2026-11-23 (issue 2070): macOS runs 4 shards too (3 were cut at 45 minutes six nights in a row with a third of the drivers never started)
+    assert.strictEqual(n, 4, 'every OS runs 4 shards');
     assert.deepStrictEqual(list, Array.from({ length: n }, (_, i) => i + 1), 'the matrix shard list is exactly 1..n');
-    assert.ok(/UI_SUITE_SHARD: \$\{\{ format\('\{0\}\/\{1\}', matrix\.shard, matrix\.os == 'macos-latest' && 3 \|\| 4\) \}\}/.test(text), 'UI_SUITE_SHARD is i/n with n = 3 on macOS, 4 elsewhere');
-    assert.ok(/name: UI shard \(\$\{\{ matrix\.os \}\} \$\{\{ matrix\.shard \}\}\/\$\{\{ matrix\.os == 'macos-latest' && 3 \|\| 4 \}\}\)/.test(text), 'the job name shows i/n with the same denominators');
+    assert.ok(text.includes(`UI_SUITE_SHARD: \${{ format('{0}/${n}', matrix.shard) }}`), `UI_SUITE_SHARD is i/${n}, the length of the shard list, on every OS`);
+    assert.ok(text.includes(`name: UI shard (\${{ matrix.os }} \${{ matrix.shard }}/${n})`), 'the job name shows i/n with the same denominator');
     assert.ok(/name: ui-shots-\$\{\{ matrix\.os \}\}-\$\{\{ matrix\.shard \}\}/.test(text), 'artifacts are named per shard');
-    const ex = [...text.matchAll(/-\s*\{\s*os:\s*([\w-]+),\s*shard:\s*(\d+)\s*\}/g)].map((x) => `${x[1]}:${x[2]}`);
-    assert.deepStrictEqual(ex, ['macos-latest:4'], 'only macOS skips shard 4 (it runs 3)');
+    assert.ok(!/^\s+exclude:/m.test(text) && !/-\s*\{\s*os:\s*[\w-]+,\s*shard:\s*\d+\s*\}/.test(text), 'no OS skips a shard (macOS no longer runs 3)');
+    // the limits (delta 2026-11-23, review of PR 2071): the macOS limit is the one estimate of scripts/ui-shard-budget.js (measured terms:
+    // head start, driver weights x 0.94 x 1.10 slow night, 1 s per driver, 170 s setup/geometry/upload, npm ci's 720 s of retries, 5 % margin)
+    const lim = text.match(/^ {4}timeout-minutes: \$\{\{ matrix\.os == 'macos-latest' && (\d+) \|\| (\d+) \}\}$/m);
+    assert.ok(lim, 'the shard job limit is "matrix.os == \'macos-latest\' && <macOS> || <others>"');
+    assert.deepStrictEqual([Number(lim[1]), Number(lim[2])], [75, 45], 'macOS shards have 75 minutes, Linux and Windows 45');
+    {
+      const B = require(path.join(ROOT, 'scripts', 'ui-shard-budget.js')) as {
+        macosBudget: (o: { n: number; times: Record<string, number>; limitMin: number; retrySecs: number; drivers?: unknown[] }) => { shards: number[]; worst: number; need: number; allowed: number; ok: boolean };
+        macosLimitMin: (o: { n: number; times: Record<string, number>; retrySecs: number; drivers?: unknown[] }) => number;
+        macosShardSecs: (o: { n: number; times: Record<string, number>; drivers?: unknown[] }) => number[];
+        npmCiRetrySecs: (w: number[]) => number; actionRetryWaits: (t: string) => number[]; untimedWeight: (t: Record<string, number>) => number;
+        parseRetryWaits: (t: string) => { waits: number[]; steps: number };
+        macosLimitCheck: (o: { n: number; times: Record<string, number>; limitMin: number; retrySecs: number; drivers?: unknown[] }) => { ask: number; need: number; allowed: number; headroom: number; problems: string[]; warning: string };
+        CAP_MIN: number; LIMIT_SLACK_MIN: number; WARN_HEADROOM_SECS: number;
+      };
+      const retrySecs = B.npmCiRetrySecs(B.actionRetryWaits(fs.readFileSync(path.join(ROOT, '.github', 'actions', 'npm-ci', 'action.yml'), 'utf8')));
+      assert.strictEqual(retrySecs, 720, 'npm ci retries: waits 30+120+300 s and a 90 s failed try before each');
+      const limitMin = Number(lim[1]);
+      // growth guard (coordinator decision 2026-11-23, review round 2 of PR 2071): the workflow's macOS limit is at least what the estimate asks
+      // for and at most 5 minutes above it; above 80 minutes the answer is another macOS shard; under 120 s of room a warning line, not a failure
+      assert.deepStrictEqual([B.CAP_MIN, B.LIMIT_SLACK_MIN, B.WARN_HEADROOM_SECS], [80, 5, 120], 'cap 80 min, slack 5 min, warning under 120 s');
+      const chk = B.macosLimitCheck({ n, times, limitMin, retrySecs });
+      assert.deepStrictEqual(chk.problems, [], chk.problems.join('; ') + ' (scripts/ui-shard-budget.js, spec 008 delta 2026-11-23)');
+      if (chk.warning) console.log('ui-suite shards: ' + chk.warning);
+      const real = B.macosBudget({ n, times, limitMin, retrySecs });
+      assert.ok(real.ok, `the slowest macOS UI shard: ${real.worst} s + ${retrySecs} s npm ci = ${real.need} s, above ${real.allowed} s`);
+      // red cases on the real timings: the limit below the ask, more than 5 minutes above it, and an ask above the cap
+      assert.ok(B.macosLimitCheck({ n, times, limitMin: chk.ask - 5, retrySecs }).problems.some((x) => /is below the \d+ minutes the estimate asks for/.test(x)), 'a limit below the ask fails');
+      assert.ok(B.macosLimitCheck({ n, times, limitMin: chk.ask + 10, retrySecs }).problems.some((x) => /more than 5 minutes above/.test(x)), 'a limit more than 5 minutes above the ask fails');
+      assert.deepStrictEqual(B.macosLimitCheck({ n, times, limitMin: chk.ask + 5, retrySecs }).problems, [], 'the ask + 5 is still fine');
+      const x140 = Object.fromEntries(Object.entries(times).map(([k, v]) => [k, typeof v === 'number' ? v * 1.4 : v]));
+      const capped = B.macosLimitCheck({ n, times: x140, limitMin: 90, retrySecs });
+      assert.ok(capped.ask > 80 && capped.problems.some((x) => /above the 80-minute cap: add a macOS shard/.test(x)), `an ask above 80 minutes fails with "add a macOS shard" (asked ${capped.ask})`);
+      const tight = B.macosLimitCheck({ n, times, limitMin: chk.ask, retrySecs });
+      assert.ok(tight.headroom < 120 ? /^warning: only -?\d+ s of room/.test(tight.warning) : tight.warning === '', `the warning follows the room (${tight.headroom} s at ${chk.ask} minutes)`);
+      assert.strictEqual(B.macosLimitCheck({ n, times, limitMin: 200, retrySecs }).warning, '', 'no warning with room to spare');
+      // fixture: the warning by hand (need 2732 s; 48 minutes allow 2736 s: 4 s of room)
+      assert.match(B.macosLimitCheck({ n: 2, times: { 'zz-a': 1000, 'zz-b': 100, 'zz-c': 40, 'zz-d': 60 }, limitMin: 48, retrySecs: 720, drivers: [{ name: 'zz-a' }, { name: 'zz-b' }, { name: 'zz-c' }, { name: 'zz-u' }] }).warning, /^warning: only 4 s of room under the 48-minute macOS limit/);
+      // the parser of the npm ci waits is linear (review round 2: the old regex was exponential on a block with no default line): it counts
+      // the lines it looked at, fails closed with its reason, and 240 lines cost at most ten times what 24 cost
+      const noDefault = (k: number): string => '\n  retry-waits:\n' + '      x\n'.repeat(k);
+      const stepsOf = (t: string): number => { try { B.parseRetryWaits(t); } catch (e) { assert.match((e as Error).message, /retry-waits has no default line/); return (e as { steps: number }).steps; } assert.fail('a block with no default line must throw'); };
+      const s24 = stepsOf(noDefault(24)), s240 = stepsOf(noDefault(240));
+      assert.ok(s24 <= 30 && s240 <= 10 * s24, `the parser looks at each line once (24 lines: ${s24} steps, 240 lines: ${s240})`);
+      assert.throws(() => B.parseRetryWaits('inputs:\n  args:\n'), /no retry-waits input/, 'no retry-waits input fails closed');
+      assert.throws(() => B.parseRetryWaits('\n  retry-waits:\n    default: "30 120"\n'), /no default line/, 'a double-quoted default is not guessed');
+      assert.throws(() => B.parseRetryWaits('\n  retry-waits:\n    description: x\n  other:\n    default: \'5\'\n'), /no default line/, 'another input\'s default is never taken for retry-waits');
+      assert.deepStrictEqual(B.parseRetryWaits('x:\r\n  retry-waits:\r\n    description: >-\r\n      text\r\n    default: \'30 120 300\'\r\n').waits, [30, 120, 300], 'CRLF parses');
+      // the reviewer's mutants of PR 2071 must trip the guard: every time x 1.25, and one more driver of 1,500 s
+      const x125 = Object.fromEntries(Object.entries(times).map(([k, v]) => [k, typeof v === 'number' ? v * 1.25 : v]));
+      assert.ok(!B.macosBudget({ n, times: x125, limitMin, retrySecs }).ok, 'guard: every driver 25 % slower trips it');
+      // one more driver of 3,000 s: the split spreads it over the four shards (about 800 s each, above the room); at the 75-minute limit a
+      // 1,500 s driver spreads to about 400 s a shard and may fit (review round 2 of PR 2071 set that room on purpose)
+      const heavy = { name: 'zz-heavy-3000' };
+      assert.ok(!B.macosBudget({ n, times: { ...times, 'zz-heavy-3000': 3000 }, limitMin, retrySecs, drivers: [...(DRIVERS as unknown[]), heavy] }).ok, 'guard: one more driver of 3,000 s trips it');
+      // each term of the sum, by hand (a fixture): shard 1 = [b, c, u]: ((100 + 40 + u 1000) x 0.94 + 600) x 1.1 + 3 x 1 + 170 = 2012;
+      // shard 2 = [a]: 1000 x 0.94 x 1.1 + 1 + 170 = 1205. u is untimed: max(mean 300, 75th percentile 1000) = 1000 (the split itself uses the median, 100).
+      // Dropping any term (the 0.94, the 1.10, the per-driver second, the 170 s, the head start, the untimed weight) changes these numbers.
+      const fx = [{ name: 'zz-a' }, { name: 'zz-b' }, { name: 'zz-c' }, { name: 'zz-u' }], ft = { 'zz-a': 1000, 'zz-b': 100, 'zz-c': 40, 'zz-d': 60 };
+      assert.strictEqual(B.untimedWeight(ft), 1000, 'an untimed driver weighs max(mean, 75th percentile) of the timed ones');
+      assert.deepStrictEqual(B.macosShardSecs({ n: 2, times: ft, drivers: fx }), [2012, 1205], 'the estimate sums every measured term');
+      const fb = B.macosBudget({ n: 2, times: ft, limitMin: 48, retrySecs: 720, drivers: fx });
+      assert.deepStrictEqual([fb.need, fb.allowed, fb.ok], [2732, 2736, true], 'need = slowest shard + npm ci retries; allowed = limit x 0.95');
+      assert.strictEqual(B.macosBudget({ n: 2, times: ft, limitMin: 47, retrySecs: 720, drivers: fx }).ok, false, 'one minute less does not fit');
+      assert.strictEqual(B.macosLimitMin({ n: 2, times: ft, retrySecs: 720, drivers: fx }), 50, 'the limit asked for: 2732 / 0.95 = 48 min, rounded up to 50');
+    }
     // FR-183: one aggregate job, named UI suite complete, needs the shards, fails unless all passed, and runs even when a shard failed
     {
       const at = text.indexOf('  complete:');
@@ -982,7 +1117,7 @@ console.log('ui-suite: check-parallel and ui-suite install Electron once before 
     const suite = require(SUITE) as { main: (o: unknown) => Promise<void>; DRIVERS: { name: string; label?: string; focus?: boolean }[]; sharedDesktop: (p: string, e: Record<string, string>) => boolean };
     const label = (d: { name: string; label?: string }): string => d.label || d.name;
     const flagged = suite.DRIVERS.filter((d) => d.focus).map(label).sort();
-    assert.deepStrictEqual(flagged, ['check-097-drag-cancel', 'check-097-hover-card', 'check-brain-draw', 'shots-097-screens', 'shots-097-screens retro'], 'the focus entries are the ones with a failure on record (#1498, #1408, #1282: check-brain-draw failed its Full-mode assert on windows-latest shard 2/4, both tries); check-097-drag-cancel is focus-sensitive by design: its held drags end on a real OS blur from a neighbour window (issue 1550)');
+    assert.deepStrictEqual(flagged, ['check-001-room-heads', 'check-080-browser-expand', 'check-080-browser-expand photo', 'check-097-drag-cancel', 'check-097-hover-card', 'check-097-kids', 'check-097-kids cave', 'check-097-kids retro', 'check-brain-draw', 'check-browser-tabs', 'check-browser-tabs 1280', 'shots-097-screens', 'shots-097-screens retro'], 'the focus entries are the ones with a failure on record (#1498, #1408, #1282, #1239, #1723: check-097-kids failed its "+K" focus-ring assert with hasFocus false at four windows at once on a Mac and passed alone; check-browser-tabs failed on a Mac with the OS focus elsewhere; check-080-browser-expand (Flat, Photo) failed 2 of 2 at four windows at once on a Mac and passed alone; check-brain-draw failed its Full-mode assert on windows-latest shard 2/4, both tries); check-097-drag-cancel is focus-sensitive by design: its held drags end on a real OS blur from a neighbour window (issue 1550)');
     assert.deepStrictEqual([['darwin', {}], ['win32', {}], ['linux', {}], ['linux', { DISPLAY: ':0' }], ['linux', { DISPLAY: ':0', UI_SUITE_XVFB: '1' }]].map(([p, e]) => suite.sharedDesktop(p as string, e as Record<string, string>)), [true, true, false, true, false], 'windows share a desktop on macOS, Windows and Linux with a display; not under xvfb');
     assert.deepStrictEqual([['1'], ['1.25'], ['1.5'], ['2'], ['x'], ['']].map(([d]) => suite.sharedDesktop('linux', { DISPLAY: ':0', UI_SUITE_DPR: d })), [true, false, false, false, true, true], 'FR-273 (issue 1914): a forced ratio above 1 never runs on the desktop (a small display clamps the window); 1, none and a bad value keep it');
     assert.strictEqual(suite.sharedDesktop('darwin', { UI_SUITE_DPR: '2' }), true, 'FR-273: macOS has no virtual display, the forced ratio runs there');

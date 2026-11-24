@@ -96,6 +96,66 @@ for (const v of [{ w: 1440, h: 900 }, { w: 1280, h: 800 }, { w: 640, h: 480 }]) 
   }
 }
 
+// ---- issue 1989: a redraw (morphHTML copies the new markup's attributes, which carry no aria-describedby) must not leave the shown tooltip unlinked ----
+{
+  const { JSDOM } = require('jsdom') as { JSDOM: new (h: string, o: object) => { window: any } };
+  const dom = new JSDOM('<body><div id="stats"><button class="stat" data-k="idle">x</button></div></body>', { runScripts: 'outside-only' });
+  const w = dom.window;
+  w.eval(fs.readFileSync(path.join(R, 'tooltip.js'), 'utf8'));
+  const tip = w.DurbarTip;
+  const stats = w.document.getElementById('stats');
+  let words = 'Idle · 1 agent idle or paused. Click to show only these.';
+  tip.bind(stats, { selector: '.stat[data-k]', text: () => words });
+  const pill = (): any => w.document.querySelector('.stat');
+  pill().dispatchEvent(new w.Event('pointerover', { bubbles: true }));
+  const t = w.document.getElementById('appTip');
+  ok(t && !t.hidden && pill().getAttribute('aria-describedby') === 'appTip', 'hover: the tooltip is shown and describes the pill');
+  pill().removeAttribute('aria-describedby'); // what syncAttrs does on a redraw with the same words
+  tip.refresh();
+  ok(!t.hidden && pill().getAttribute('aria-describedby') === 'appTip', 'a redraw with the same words keeps the pill described by the shown tooltip (issue 1989)');
+  words = 'Idle · 2 agents idle or paused. Click to show only these.';
+  pill().removeAttribute('aria-describedby');
+  tip.refresh();
+  ok(t.textContent === words && pill().getAttribute('aria-describedby') === 'appTip', 'a redraw with new words is described too');
+  stats.innerHTML = '<button class="stat" data-k="idle">y</button>'; // the pill replaced: the old one is gone with its tooltip
+  tip.refresh();
+  ok(t.hidden && !pill().hasAttribute('aria-describedby'), 'a replaced pill takes the tooltip away and the new one is not described');
+  w.close();
+}
+
+// ---- issue 2093 (review of PR 2096): the window gets its focus back: a keyboard-focused control gets its tip again; a pointer focus, a hover-only bind and nothing focused do not ----
+{
+  const { JSDOM } = require('jsdom') as { JSDOM: new (h: string, o: object) => { window: any } };
+  const dom = new JSDOM('<body><div id="root"><div class="head" id="h"><button id="b">b</button></div><div class="wide" id="floor"><button id="fb">f</button></div></div></body>', { runScripts: 'outside-only' });
+  const w = dom.window;
+  w.eval(fs.readFileSync(path.join(R, 'tooltip.js'), 'utf8'));
+  const tip = w.DurbarTip, doc = w.document, root = doc.getElementById('root');
+  tip.bind(root, { selector: '.head', text: () => 'the head tip' });
+  tip.bind(root, { selector: '.wide', text: () => 'the floor hint', at: 'pointer' });
+  const keyboard = { on: true }; // jsdom has no :focus-visible: the page's own test is faked per focus
+  for (const id of ['b', 'fb']) { const e = doc.getElementById(id), m = e.matches.bind(e); e.matches = (sel: string) => sel === ':focus-visible' ? keyboard.on : m(sel); }
+  const shown = (): string => { const t = doc.getElementById('appTip'); return t && !t.hidden ? t.textContent : ''; };
+  const refocus = (): void => { w.dispatchEvent(new w.Event('blur')); w.dispatchEvent(new w.Event('focus')); };
+  const b = doc.getElementById('b'), fb = doc.getElementById('fb');
+  keyboard.on = true; b.focus();
+  eq(shown(), 'the head tip', 'keyboard focus shows the tip');
+  w.dispatchEvent(new w.Event('blur'));
+  eq(shown(), '', 'the window blur hides it');
+  w.dispatchEvent(new w.Event('focus'));
+  eq(shown(), 'the head tip', 'the window focus brings the keyboard-focused control\'s tip back');
+  b.blur(); refocus();
+  eq(shown(), '', 'nothing focused: the window focus shows no tip');
+  keyboard.on = false; b.focus();
+  eq(shown(), '', 'a pointer focus (not :focus-visible) shows no tip');
+  refocus();
+  eq(shown(), '', 'a pointer focus: blur then window focus shows no tip (the :focus-visible guard)');
+  keyboard.on = true; fb.focus();
+  eq(shown(), '', 'keyboard focus on a hover-only bind (at: pointer) shows no hint');
+  refocus();
+  eq(shown(), '', 'a hover-only bind: blur then window focus shows no hint (find with the keyboard flag)');
+  w.close();
+}
+
 // ---- the page is wired to it ----
 const app = fs.readFileSync(path.join(R, 'app.js'), 'utf8');
 const html = fs.readFileSync(path.join(R, 'index.html'), 'utf8');

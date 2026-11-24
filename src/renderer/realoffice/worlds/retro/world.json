@@ -192,5 +192,301 @@
   720,
   118
  ],
- "welcome": "welcome.webp"
+ "wallSigns": [
+  {
+   "id": "bolt",
+   "x": 200,
+   "y": 10,
+   "w": 15,
+   "h": 23
+  },
+  {
+   "id": "star",
+   "x": 291,
+   "y": 8,
+   "w": 23,
+   "h": 22
+  },
+  {
+   "id": "sign",
+   "x": 407,
+   "y": 10,
+   "w": 23,
+   "h": 17
+  },
+  {
+   "id": "heart",
+   "x": 508,
+   "y": 5,
+   "w": 21,
+   "h": 22
+  }
+ ],
+ "welcome": "welcome.webp",
+ "kids": {
+  "kid1": {
+   "bodyH": 57,
+   "face": [
+    1,
+    0,
+    26,
+    22
+   ],
+   "h": 57,
+   "headTop": 0,
+   "poses": {
+    "working": [
+     30,
+     47
+    ],
+    "thinking": [
+     28,
+     57
+    ],
+    "waiting": [
+     35,
+     51
+    ],
+    "error": [
+     37,
+     57
+    ],
+    "limit": [
+     31,
+     62
+    ],
+    "done": [
+     34,
+     52
+    ],
+    "asleep": [
+     48,
+     31
+    ]
+   },
+   "ref": "thinking",
+   "w": 28,
+   "widest": "asleep"
+  },
+  "kid2": {
+   "bodyH": 57,
+   "face": [
+    0,
+    0,
+    31,
+    23
+   ],
+   "h": 57,
+   "headTop": 0,
+   "poses": {
+    "working": [
+     34,
+     47
+    ],
+    "thinking": [
+     32,
+     57
+    ],
+    "waiting": [
+     35,
+     50
+    ],
+    "error": [
+     41,
+     56
+    ],
+    "limit": [
+     35,
+     64
+    ],
+    "done": [
+     33,
+     48
+    ],
+    "asleep": [
+     43,
+     34
+    ]
+   },
+   "ref": "thinking",
+   "w": 32,
+   "widest": "asleep"
+  },
+  "kid3": {
+   "bodyH": 57,
+   "face": [
+    2,
+    0,
+    24,
+    23
+   ],
+   "h": 57,
+   "headTop": 0,
+   "poses": {
+    "working": [
+     30,
+     46
+    ],
+    "thinking": [
+     28,
+     57
+    ],
+    "waiting": [
+     36,
+     49
+    ],
+    "error": [
+     37,
+     57
+    ],
+    "limit": [
+     30,
+     65
+    ],
+    "done": [
+     34,
+     52
+    ],
+    "asleep": [
+     47,
+     30
+    ]
+   },
+   "ref": "thinking",
+   "w": 28,
+   "widest": "asleep"
+  },
+  "kid4": {
+   "bodyH": 57,
+   "face": [
+    2,
+    0,
+    24,
+    22
+   ],
+   "h": 57,
+   "headTop": 0,
+   "poses": {
+    "working": [
+     30,
+     46
+    ],
+    "thinking": [
+     28,
+     57
+    ],
+    "waiting": [
+     38,
+     49
+    ],
+    "error": [
+     39,
+     58
+    ],
+    "limit": [
+     28,
+     66
+    ],
+    "done": [
+     36,
+     51
+    ],
+    "asleep": [
+     38,
+     32
+    ]
+   },
+   "ref": "thinking",
+   "w": 28,
+   "widest": "error"
+  },
+  "kid5": {
+   "bodyH": 57,
+   "face": [
+    2,
+    0,
+    24,
+    23
+   ],
+   "h": 57,
+   "headTop": 0,
+   "poses": {
+    "working": [
+     31,
+     47
+    ],
+    "thinking": [
+     28,
+     57
+    ],
+    "waiting": [
+     35,
+     50
+    ],
+    "error": [
+     36,
+     58
+    ],
+    "limit": [
+     30,
+     63
+    ],
+    "done": [
+     33,
+     51
+    ],
+    "asleep": [
+     41,
+     32
+    ]
+   },
+   "ref": "thinking",
+   "w": 28,
+   "widest": "asleep"
+  },
+  "kid6": {
+   "bodyH": 57,
+   "face": [
+    1,
+    0,
+    26,
+    22
+   ],
+   "h": 57,
+   "headTop": 0,
+   "poses": {
+    "working": [
+     31,
+     47
+    ],
+    "thinking": [
+     29,
+     57
+    ],
+    "waiting": [
+     37,
+     50
+    ],
+    "error": [
+     39,
+     58
+    ],
+    "limit": [
+     31,
+     64
+    ],
+    "done": [
+     35,
+     51
+    ],
+    "asleep": [
+     38,
+     36
+    ]
+   },
+   "ref": "thinking",
+   "w": 29,
+   "widest": "error"
+  }
+ }
 }

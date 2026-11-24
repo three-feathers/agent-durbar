@@ -54,6 +54,8 @@ export interface ElicitAnswer {
 
 export const MAX_ELICIT_FIELDS = 12;
 export const MAX_ELICIT_TEXT = 2000;
+/** Spec 052 2026-11-20 delta (issue 1934): the form's message only; field titles, help and values keep their own bounds. */
+export const MAX_ELICIT_MESSAGE = 20000;
 const MAX_ENUM = 50;
 const NAME_RE = /^[A-Za-z0-9_.-]{1,64}$/;
 const DROP_RE = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f​⁠﻿‪-‮⁦-⁩]/g;
@@ -64,11 +66,14 @@ const fin = (v: unknown): number | undefined => (typeof v === 'number' && Number
 const len = (v: unknown): number | undefined => (typeof v === 'number' && Number.isInteger(v) && v >= 0 ? Math.min(v, MAX_ELICIT_TEXT) : undefined);
 
 /** One line of text, control and direction characters removed, cut to `max`. */
-export function elicitText(v: unknown, max: number): string | undefined {
+export function elicitText(v: unknown, max: number, wholeWords = false): string | undefined {
   if (typeof v !== 'string') return undefined;
   const s = v.replace(DROP_RE, '').replace(/\s+/g, ' ').trim();
   if (!s) return undefined;
-  return s.length > max ? s.slice(0, max - 1).trimEnd() + '…' : s;
+  if (s.length <= max) return s;
+  let cut = max - 1;
+  if (wholeWords) { const i = s.lastIndexOf(' ', cut); if (i >= Math.floor(max / 2)) cut = i; } // a long message is cut at a space (issue 1934)
+  return s.slice(0, cut).trimEnd() + '…';
 }
 
 /** Does a field look like it holds a secret (by its name, title or description)? */
@@ -166,7 +171,7 @@ export function elicitHttpsUrl(u: unknown): { url: string; host: string } | unde
 
 /** A vendor's request (message, schema or URL) to what the card shows, or why it must be declined. */
 export function parseElicitRequest(input: { message?: unknown; schema?: unknown; mode?: unknown; url?: unknown; source?: unknown }): { ok: true; request: ElicitRequest; dropped: string[] } | { ok: false; reason: string } {
-  const message = elicitText(input.message, 2000) ?? 'An MCP server asks for input.'; // spec 052 FR-160: the card shows it all
+  const message = elicitText(input.message, MAX_ELICIT_MESSAGE, true) ?? 'An MCP server asks for input.'; // spec 052 FR-160: the card shows it all
   const source = elicitText(input.source, 80);
   const base = { message, ...(source ? { source } : {}) };
   if (input.mode === 'url' || (input.url !== undefined && input.schema === undefined)) {

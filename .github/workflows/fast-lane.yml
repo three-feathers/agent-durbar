@@ -1,0 +1,79 @@
+name: Fast lane
+
+# Spec 117 FR-386 (owner order, Vikram 2026-11-22: faster delivery without losing quality). On each pull request, on all three OSes,
+# run ONLY the `npm test` suites the diff touches, so a Windows- or macOS-only failure (CRLF, 8.3 short paths, /private/var realpath)
+# shows in a few minutes instead of at the end of a 14-25 minute Build and test leg, one bug per round. ADVISORY: not a required
+# check, and it decides nothing else; the required jobs in ci.yml still run every suite, and the merge queue runs everything.
+# Which suites: .github/scripts/ci-changes.js `--suites`, the one decision, run as the BASE branch's copy by ci-changes.sh (when the
+# base predates the lane, the PR's own copy picks: the lane only chooses what extra to run, it can skip no check).
+# A separate workflow, not a ci.yml job: ci.yml's jobs are guarded as the required ones (FR-018's suite guard reads every `npm test`
+# there), and a separate file keeps this lane out of their way.
+# Safety (AGENTS.md, fork PR CI): `pull_request` only (never pull_request_target), no secrets, a read-only token, no credential kept
+# in the checkout; nothing from the PR reaches a shell string (the suite names pass through env and are checked against
+# scripts/test-suites.txt by scripts/fast-lane.js, which spawns `node` without a shell).
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+
+concurrency:
+  # one group per pull request: a newer push cancels the older run (spec 117 FR-010)
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  fast:
+    name: Fast lane (${{ matrix.os }})
+    if: ${{ !github.event.pull_request.draft }}
+    runs-on: ${{ matrix.os }}
+    # target under 3 min of work; 30 s for one npm ci retry (a lane that waits out a long outage is no longer fast)
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 2
+          persist-credentials: false
+      - id: changes
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+        run: bash .github/scripts/ci-changes.sh --suites
+      # a base without the lane ignores --suites (no `fast` output): the PR's own copy picks, once
+      - id: own
+        if: steps.changes.outputs.fast != 'yes'
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+        run: node .github/scripts/ci-changes.js --suites
+      - id: pick
+        shell: bash
+        env:
+          FAST: ${{ steps.changes.outputs.fast }}
+          BASE_SUITES: ${{ steps.changes.outputs.suites }}
+          OWN_SUITES: ${{ steps.own.outputs.suites }}
+          CAPPED: ${{ steps.changes.outputs.capped || steps.own.outputs.capped }}
+        run: |
+          if [ "$FAST" = yes ]; then suites="$BASE_SUITES"; else suites="$OWN_SUITES"; fi
+          printf 'suites=%s\n' "$suites" | head -n 1 >> "$GITHUB_OUTPUT"
+          if [ -z "$suites" ] && [ -n "$CAPPED" ]; then echo "No npm test suite picked: the only tests naming the changed files name a folder of more than 40 files, which picks nothing (spec 117 FR-390); the required jobs run everything." >> "$GITHUB_STEP_SUMMARY"
+          elif [ -z "$suites" ]; then echo "No npm test suite is touched by this diff: nothing to run (the required jobs run everything)." >> "$GITHUB_STEP_SUMMARY"; fi
+      - if: steps.pick.outputs.suites != ''
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          cache: npm
+      - if: steps.pick.outputs.suites != ''
+        uses: ./.github/actions/npm-ci
+        with:
+          retry-waits: '30'
+      - if: steps.pick.outputs.suites != ''
+        shell: bash
+        env:
+          FAST_SUITES: ${{ steps.pick.outputs.suites }}
+        run: node scripts/fast-lane.js

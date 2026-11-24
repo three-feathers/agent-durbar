@@ -43,8 +43,8 @@ module.exports = async (ctx) => {
       /* spec 001 FR-039 (2026-10-22): the corner's width and name come from places.js lobbyFit (named from 148 px, never a cut name) */
       if (o.fit.coffee.named) assert.strictEqual(o.name, 'Coffee corner'); else assert.ok(!o.named, `${w} ${n}: icon only where the corner is narrow`);
       assert.ok(/^Coffee corner: /.test(o.label), o.label);
-      /* spec 001 FR-036: visitor entries instead of slots; the other places keep room for two visitors (initials), the corner shows a figure */
-      if (w === 1440) assert.ok(o.fit.caps.initials >= 2, `${w} ${n}: every other tile keeps room for two visitors: ${JSON.stringify(o.fit.caps)}`);
+      /* spec 001 FR-036: visitor entries instead of slots; the other places keep room for one entry and "+N" (a short name takes 54 px, spec 001 delta 2026-11-23), the corner shows a figure */
+      if (w === 1440) assert.ok(o.fit.caps.initials >= 1, `${w} ${n}: every other tile keeps room for a visitor: ${JSON.stringify(o.fit.caps)}`);
       assert.ok(o.cfFigures >= 1, `${w} ${n}: the coffee corner shows at least one visitor, not only "+N"`);
       assert.strictEqual(o.tiles, 9, `${w} ${n}: five places, the Boss, the coffee corner, the Bank and the Postbox`);
       assert.ok(o.inLobby, `${w} ${n}: the tiles fit the lobby`);
@@ -100,6 +100,30 @@ module.exports = async (ctx) => {
   /* page helpers, installed after each load: Tomas's desk and his coffee-corner entry (no raw splices into page code) */
   const install = () => js(`(()=>{const nm=${jsLiteral('Tomas')};window.__tomas=()=>[...document.querySelectorAll('#stage .desk[data-id]')].find(d=>d.innerText.split('\\n').some(l=>l.trim()===nm));
     window.__entry=()=>{const d=window.__tomas();return d?document.querySelector('#stage .place[data-place="coffee"] [data-coffeeid="'+CSS.escape(d.dataset.id)+'"]'):null;};})()`);
+  /* FR-415 (2026-11-24): a long chat opened again. `lengthen` puts 45 older messages first in the open chat, so closing it marks them .cvo
+     (spec 005 FR-210); `emptyHeight` (page code): an element's height minus the span of its shown children (elements with their margins, and text), its padding and border (its empty height, px) */
+  const lengthen = () => js(`(()=>{const ci=document.querySelector('#chat > .chat-inner'),f=ci.firstChild;for(let i=0;i<45;i++){const m=document.createElement('div');m.className='msg user';m.textContent='An older message '+(i+1);ci.insertBefore(m,f);}})()`);
+  const closeChat = async (w) => { await js(`document.getElementById('backBtn').click()`); assert.ok(await until(`!document.body.classList.contains('panel-open')`, 3000), `${w}: chat closed`); };
+  /* runs in the page (spliced as its source): an element's empty height */
+  function emptyHeight(e) {
+    const s = getComputedStyle(e), px = (c, p) => parseFloat(c[p]) || 0;
+    let top = Infinity, bot = -Infinity;
+    for (const c of e.childNodes) {
+      let r, mt = 0, mb = 0;
+      if (c.nodeType === 1) { if (!c.getClientRects().length) continue; r = c.getBoundingClientRect(); const cs = getComputedStyle(c); mt = px(cs, 'marginTop'); mb = px(cs, 'marginBottom'); }
+      else if (c.nodeType === 3 && c.textContent.trim()) { const g = document.createRange(); g.selectNodeContents(c); r = g.getBoundingClientRect(); }
+      else continue;
+      top = Math.min(top, r.top - mt); bot = Math.max(bot, r.bottom + mb);
+    }
+    const content = bot > top ? bot - top : 0;
+    return Math.round(e.getBoundingClientRect().height - content - px(s, 'paddingTop') - px(s, 'paddingBottom') - px(s, 'borderTopWidth') - px(s, 'borderBottomWidth'));
+  }
+  /* every coffee card of the open chat (height, empty height, settled), the element above the live one, and the worst empty height from the first card down */
+  const COFFEE_FIT = `(()=>{const spare=${emptyHeight.toString()},ci=document.querySelector('#chat > .chat-inner'),k=[...ci.children],live=ci.querySelector(':scope > .note.perm.coffee:not(.settled)');
+    const first=k.findIndex(e=>e.matches('.note.perm.coffee'));
+    return {cvo:ci.querySelectorAll(':scope > .cvo').length,cards:k.filter(e=>e.matches('.note.perm.coffee')).map(e=>({h:Math.round(e.getBoundingClientRect().height),spare:spare(e),settled:e.classList.contains('settled'),back:/^Back from the coffee break:/.test(e.textContent)})),
+      above:live&&live.previousElementSibling?{cls:live.previousElementSibling.className.slice(0,40),spare:spare(live.previousElementSibling)}:null,
+      worst:first<0?0:Math.max(...k.slice(first).map(spare))}})()`;
   const resumes = `[...document.querySelectorAll('#chat .msg.user, #chat .user')].map(x=>x.textContent).filter(t=>/The usage limit has reset/.test(t)).length`;
   const byYou = `(document.getElementById('chat').textContent.match(/resumed by you/g)||[]).length`;
   for (const [w, h] of [[1440, 900], [1280, 800]]) {
@@ -206,8 +230,73 @@ module.exports = async (ctx) => {
     await ctx.sleep(1500);
     assert.strictEqual(await js(resumes), 2, `${w}: a double press sends one more resume message, not two`);
     assert.strictEqual(await js(byYou), 2, `${w}: one "resumed by you" note per retry`);
-    await js(`document.getElementById('backBtn').click()`);
+    /* FR-415 (2026-11-24, owner report): a long chat (more than 40 messages, so closing it marks the older ones .cvo, spec 005 FR-210) opened
+       again: every coffee card (on the break and "→ resumed") is as tall as its content, and no message above the live card is an empty box.
+       The old `.note.perm{flex:1 1 100%}` stretched each card to hundreds of pixels there (numbers in the spec's change entry). */
+    assert.ok(await until(`!!document.querySelector('#chat .note.perm.coffee:not(.settled)')`, 8000), `${w}: back on the break after the double press`);
+    await lengthen();
+    await closeChat(w);
+    await js(`window.__tomas().click()`);
+    assert.ok(await until(`document.body.classList.contains('panel-open')&&!!document.querySelector('#chat .note.perm.coffee:not(.settled)')`, 8000), `${w}: the long chat opened again`);
+    await js(`(()=>{const c=document.getElementById('chat');c.scrollTop=c.scrollHeight;})()`);
+    await ctx.sleep(400);
+    const fit = await js(COFFEE_FIT);
+    console.log(`[068] FR-415 ${w}x${h}: ${JSON.stringify(fit)}`);
+    assert.ok(fit.cvo > 0, `${w}: the reopened chat has its older messages marked .cvo (the case FR-415 is about): ${JSON.stringify(fit)}`);
+    assert.ok(fit.cards.length >= 2 && fit.cards.some((c) => c.settled), `${w}: a "→ resumed" card and the live card: ${JSON.stringify(fit.cards)}`);
+    for (const c of fit.cards) assert.ok(c.spare <= 4, `${w}: a coffee card is as tall as its content (${c.h} px, ${c.spare} px empty; at most 4): ${JSON.stringify(fit)}`);
+    assert.ok(fit.above && fit.above.spare <= 24 && fit.worst <= 24, `${w}: no empty box above the live coffee card (at most 24 px empty): ${JSON.stringify(fit)}`);
+    await H.shot(path.join(OUT, `068-coffee-reopened-${w}x${h}.png`), { prep: 'calm' }); // FR-415: the reopened long chat, "→ resumed" and live cards at their text's height
+    await closeChat(w);
     await ctx.sleep(300);
+  }
+  /* FR-415, the `back` phase: a re-hit break asks at the reset, and its card says "Back from the coffee break:" with Resume and Not now.
+     simbreak=30: Retry now right after the hit re-hits (the limit is still on), so at the reset Tomas asks; that card, in a reopened long chat,
+     is as tall as its content too */
+  for (const [w, h] of [[1440, 900], [1280, 800]]) {
+    await H.load({ w, h, query: { sim: '15', simbreak: '30' }, ready: `document.querySelectorAll('#stage .desk[data-id]').length>=15`, settle: false });
+    await install();
+    assert.ok(await until(`!!window.__entry()`, 20000), `${w}: Tomas has an entry in the coffee corner`);
+    await js(`window.__entry().click()`);
+    assert.ok(await until(`!!document.querySelector('#chat .note.perm.coffee:not(.settled) .note-actions button.primary')`, 8000), `${w}: Tomas's chat with the coffee card`);
+    await js(`document.querySelector('#chat .note.perm.coffee:not(.settled) .note-actions button.primary').click()`);
+    assert.ok(await until(`/The resume found the limit still active/.test(document.getElementById('chat').textContent)`, 10000), `${w}: the early Retry now re-hit the limit`);
+    const backCard = `/^Back from the coffee break:/.test((document.querySelector('#chat .note.perm.coffee:not(.settled)')||{}).textContent||'')`;
+    assert.ok(await until(backCard, 45000), `${w}: at the reset the card asks (Back from the coffee break)`);
+    assert.deepStrictEqual(await js(`[...document.querySelectorAll('#chat .note.perm.coffee:not(.settled) .note-actions button')].map(b=>b.textContent)`), ['Resume', 'Not now'], `${w}: the back card's buttons`);
+    await lengthen();
+    await closeChat(w);
+    await js(`window.__tomas().click()`);
+    assert.ok(await until(`document.body.classList.contains('panel-open')`, 8000) && await until(backCard, 8000), `${w}: the long chat opened again on the back card`);
+    await js(`(()=>{const c=document.getElementById('chat');c.scrollTop=c.scrollHeight;})()`);
+    await ctx.sleep(400);
+    const bf = await js(COFFEE_FIT);
+    console.log(`[068] FR-415 back ${w}x${h}: ${JSON.stringify(bf)}`);
+    assert.ok(bf.cvo > 0 && bf.cards.some((c) => c.back && !c.settled), `${w}: a reopened long chat with the back card: ${JSON.stringify(bf)}`);
+    for (const c of bf.cards) assert.ok(c.spare <= 4, `${w}: a coffee card (back phase run) is as tall as its content (${c.h} px, ${c.spare} px empty; at most 4): ${JSON.stringify(bf)}`);
+    assert.ok(bf.above && bf.above.spare <= 24 && bf.worst <= 24, `${w}: no empty box above the back card (at most 24 px empty): ${JSON.stringify(bf)}`);
+    await closeChat(w);
+  }
+  for (const [w, h] of [[1440, 900], [1280, 800]]) {
+    await H.load({ w, h, query: { sim: '15', simquestion: 'compact' }, ready: `document.querySelectorAll('#stage .desk[data-id]').length>=15`, settle: false });
+    /* FR-415, a card in a tool-chip row: a waiting question card (`.note.perm.question`, inside `.chips`, where the full-line rule now lives)
+       in a reopened long chat is as tall as its content and takes the full width of its row */
+    const qPick = `a=>!a.parent&&a.question`, qCard = '#chat .note.perm.question:not(.settled)';
+    assert.ok((await H.openSimAgent(qPick, qCard)).ok, `${w}: a chat with a waiting question opens`);
+    await lengthen();
+    await closeChat(w);
+    const qo = await H.openSimAgent(qPick, qCard);
+    assert.ok(qo.ok, `${w}: the long chat with the question opened again: ${JSON.stringify(qo.seen)}`);
+    await js(`document.querySelector(${jsLiteral(qCard)}).scrollIntoView({block:'center'})`);
+    await ctx.sleep(400);
+    const qf = await js(`(()=>{const spare=${emptyHeight.toString()},n=document.querySelector(${jsLiteral(qCard)}),row=n.parentElement,rs=getComputedStyle(row);
+      return {cvo:document.querySelectorAll('#chat > .chat-inner > .cvo').length,h:Math.round(n.getBoundingClientRect().height),spare:spare(n),inChips:row.classList.contains('chips'),
+        w:Math.round(n.getBoundingClientRect().width),row:Math.round(row.getBoundingClientRect().width-(parseFloat(rs.paddingLeft)||0)-(parseFloat(rs.paddingRight)||0))}})()`);
+    console.log(`[068] FR-415 question ${w}x${h}: ${JSON.stringify(qf)}`);
+    assert.ok(qf.inChips, `${w}: the question card sits in a chip row: ${JSON.stringify(qf)}`); /* the .cvo marks are logged, not required: the question's chat sometimes drops them on reopen (spec 005 FR-213) */
+    assert.ok(qf.spare <= 4, `${w}: the question card is as tall as its content (${qf.h} px, ${qf.spare} px empty; at most 4): ${JSON.stringify(qf)}`);
+    assert.ok(Math.abs(qf.w - qf.row) <= 1, `${w}: the question card takes the full line of its chip row (${qf.w} of ${qf.row} px)`);
+    await closeChat(w);
   }
   console.log('shots-068: coffee break ok');
 };
