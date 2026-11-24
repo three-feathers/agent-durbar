@@ -412,8 +412,8 @@ async function driver(ctx) {
   const userTheme = process.env.OFFICE_USER_THEME ? JSON.parse(fs.readFileSync(process.env.OFFICE_USER_THEME, 'utf8')) : null;
   const wantTheme = userTheme ? userTheme.id : (process.env.OFFICE_THEME || '');
   /* spec 077 FR-070: OFFICE_CHARACTERS=<value> (theme, minimalist, cheeky, prehistoric, pirate, monster, royal, rebels, mine) puts who sits at the desks in the address too; checked like the theme */
-  const wantChars = /^(theme|minimalist|cheeky|prehistoric|pirate|monster|royal|rebels|mine)$/.test(process.env.OFFICE_CHARACTERS || '') ? process.env.OFFICE_CHARACTERS : '';
-  if (process.env.OFFICE_CHARACTERS && !wantChars) throw new Error('OFFICE_CHARACTERS must be theme, minimalist, cheeky, prehistoric, pirate, monster, royal, rebels or mine');
+  const wantChars = /^(theme|minimalist|cheeky|prehistoric|pirate|monster|royal|rebels|mine|pixel)$/.test(process.env.OFFICE_CHARACTERS || '') ? process.env.OFFICE_CHARACTERS : '';
+  if (process.env.OFFICE_CHARACTERS && !wantChars) throw new Error('OFFICE_CHARACTERS must be theme, minimalist, cheeky, prehistoric, pirate, monster, royal, rebels, mine or pixel');
   /* spec 102 T226 (FR-267): OFFICE_WORLD=retro or cave (with OFFICE_VIEW=real) draws the arcade or the cave, the worlds behind a flag, in the address like the theme; only a listed value (spec 097 Changes 2026-11-14) */
   const wantWorld = process.env.OFFICE_WORLD === 'retro' || process.env.OFFICE_WORLD === 'cave' ? process.env.OFFICE_WORLD : '';
   if (process.env.OFFICE_WORLD && !wantWorld) throw new Error('OFFICE_WORLD must be retro or cave');
@@ -441,10 +441,22 @@ async function driver(ctx) {
       const ch = await ctx.js(`window.THEME.characters()`);
       if (ch !== wantChars) throw new Error(`characters ${wantChars} were not applied (on screen: ${ch})`);
       /* Cheeky: the kit drawn must be the crew, and the desk scenes on screen (none when every room is closed) must show it, or the run would measure the theme's own figures */
-      if (wantChars === 'cheeky' || wantChars === 'mine') {
+      if (wantChars === 'cheeky' || wantChars === 'mine' || wantChars === 'pixel') {
         const crewOn = `window.THEME.sceneKit()==='crew'&&(()=>{const sc=[...document.querySelectorAll('#stage svg.scene')].filter(s=>s.getClientRects().length);return !sc.length||sc.some(s=>/\\|crew(\\||$)/.test(s.dataset.sig||''));})()`;
         try { await ctx.waitFor(crewOn, 8000); } catch (e) { /* reported below */ }
         if (!(await ctx.js(crewOn))) throw new Error(`characters ${wantChars}: the desks on screen do not draw the crew kit`);
+      }
+      if (wantChars === 'pixel') { /* spec 102 T472 (review of #2086): Retro pixel's HD heads overlap no other desk and no other head (calm UI: 15 agents, both sizes, light and dark), on top of this check's own rules; OFFICE_MUTANT=pixelbig draws the desk scenes 3x and must fail here */
+        if (process.env.OFFICE_MUTANT === 'pixelbig') await ctx.js(`(()=>{const s=document.createElement('style');s.textContent='#stage .desk svg.scene{transform:scale(3);transform-origin:50% 50%}';document.head.appendChild(s);return 1})()`);
+        const heads = await ctx.js(`(()=>{const out=[];let n=0;const desks=[...document.querySelectorAll('#stage .desk')].filter(d=>d.getClientRects().length).map(d=>({d,r:d.getBoundingClientRect()}));const seen=[];const hit=(a,b)=>a.x<b.right-0.5&&b.left<a.r-0.5&&a.y<b.bottom-0.5&&b.top<a.b-0.5;
+          for(const im of document.querySelectorAll('#stage .desk svg.crew-head image')){if(!im.getClientRects().length)continue;n++;const h=im.closest('svg.crew-head').getBoundingClientRect(),i=im.getBoundingClientRect(),sc=(im.closest('svg.scene')||im.closest('svg')).getBoundingClientRect(),own=im.closest('.desk');
+            const v={x:Math.max(h.left,i.left,sc.left),y:Math.max(h.top,i.top,sc.top),r:Math.min(h.right,i.right,sc.right),b:Math.min(h.bottom,i.bottom,sc.bottom)}; /* the head as drawn: clipped by its own box and its scene */
+            if(!/sets\\/retro\\/hd\\//.test(im.getAttribute('href')||''))out.push('not an HD head: '+im.getAttribute('href'));
+            for(const o of desks)if(o.d!==own&&!o.d.contains(own)&&!own.contains(o.d)&&hit(v,o.r))out.push('a head over another desk: '+JSON.stringify({head:[v.x,v.y,v.r-v.x,v.b-v.y].map(Math.round),desk:[o.r.left,o.r.top,o.r.width,o.r.height].map(Math.round)}));
+            for(const w of seen)if(hit(v,{left:w.x,top:w.y,right:w.r,bottom:w.b}))out.push('two heads overlap');seen.push(v);}
+          return {n,out,scenes:[...document.querySelectorAll('#stage .desk svg.scene')].filter(x=>x.getClientRects().length).length};})()`);
+        if (heads.scenes && !heads.n) throw new Error('characters pixel: desk scenes on screen but no Retro pixel head on a desk'); /* none when every room is closed */
+        if (heads.out.length) throw new Error('characters pixel: ' + heads.out.slice(0, 3).join('; '));
       }
     }
     if (!motionShown) { motionShown = true; console.log('check:office: motion ' + ((await ctx.js(`matchMedia('(prefers-reduced-motion: reduce)').matches`)) ? 'reduced' : 'on')); }
