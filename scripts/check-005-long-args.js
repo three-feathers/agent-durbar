@@ -19,7 +19,8 @@
  *     without; the chat does not scroll sideways.
  *   - review of PR 2119: bad argsLong values (NaN, infinities, fractions, strings, objects, at or under 12,288, past MAX_SAFE_INTEGER) sent to
  *     the chip's own chipArgs and makeChip give no note (LONG-VALID); an argument main's mask makes longer than the window's cap gives a note
- *     whose counts add up to the masked length and a plain count at the end of the open box (CUT-COUNT).
+ *     whose counts add up to the masked length and a plain count at the end of the open box (CUT-COUNT); round 2: a text the window's own
+ *     mask lengthens (box = 400 + N, M = the unread part, CUT-REMASK) and one it masks past 20,000 (M = the masked length past it, CUT-OUT-SHOWN).
  * Screenshots (OUT or the temp folder): 005-long-args-<w>x<h>.png (closed chips) and 005-long-args-open-<w>x<h>.png (the straddling chip open).
  */
 const assert = require('assert');
@@ -144,6 +145,32 @@ module.exports = async (ctx) => {
       assert.strictEqual(400 + more, o.full, `${tag}: the box holds the line and the ${more} more`);
       assert.strictEqual(o.cutLine, `${fmt(cut)} more characters not shown.`, `CUT-COUNT ${tag}: the open box ends with the plain count`);
       assert.ok(o.title.includes(`(${o.note})`), `${tag}: the tooltip says it too`);
+    }
+    // round 2 of the review: the window's own mask changes the length of the part it read (its readings hide every header value): N counts the
+    // window's masked text, M the unread part as received (CUT-REMASK)
+    {
+      const unit = ' -H X-Trace:ab --verbose --silent';
+      let got = 'env'; while (got.length + unit.length <= 13000) got += unit; // as the window receives it, over its cap
+      const b = got.slice(0, 12288 + 1).search(/\s\S*$/), read = got.slice(0, b), unread = got.length - read.length; // chipArg's own cut rule
+      const o = await js(`window.__durbarSimUi.chipNoteOf(${jsLiteral({ tool: 'bash', args: { command: got } })})`);
+      const m = /^([\d,]+) more characters \(([\d,]+) not shown\)$/.exec(o.note);
+      assert.ok(m, `CUT-REMASK ${tag}: the note says what the cap leaves out: ${JSON.stringify(o.note)}`);
+      const more = Number(m[1].replace(/,/g, '')), cut = Number(m[2].replace(/,/g, ''));
+      assert.ok(o.full > read.length && o.full < 20000, `${tag}: the window's mask lengthened the part it read (${read.length} -> ${o.full})`);
+      assert.strictEqual(400 + more, o.full, `CUT-REMASK ${tag}: the box holds the line and the ${more} more`);
+      assert.strictEqual(cut, unread, `CUT-REMASK ${tag}: M is the unread part as received (${unread})`);
+    }
+    // round 2: a text the window reads whole and masks past OUT_SHOWN (the simulator's path): M is the masked length past 20,000 (CUT-OUT-SHOWN)
+    {
+      const unit = ' key=ab';
+      let raw = 'env'; while (raw.length + unit.length <= 12281) raw += unit;
+      const n = (raw.length - 3) / unit.length;
+      const one = await js(`window.__durbarSimUi.chipArg('bash',${jsLiteral('env' + unit)}).full.length`); // one unit, under every cap: its masked length
+      const maskedLen = 3 + n * (one - 3);
+      const o = await js(`window.__durbarSimUi.chipNoteOf(${jsLiteral({ tool: 'bash', args: { command: raw } })})`);
+      assert.ok(maskedLen > 20000, `${tag}: the run masks past 20,000 (${maskedLen})`);
+      assert.strictEqual(o.note, `${fmt(19600)} more characters (${fmt(maskedLen - 20000)} not shown)`, `CUT-OUT-SHOWN ${tag}: the box is full and M is the masked length past 20,000`);
+      assert.strictEqual(o.full, 20000, `${tag}: the box holds 20,000`);
     }
 
     // ---- layout: three fresh chips (short, more, too long) are the newest, so they are shown
