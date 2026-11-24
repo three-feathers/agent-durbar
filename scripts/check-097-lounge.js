@@ -13,6 +13,8 @@
  *     saying "resting in the lounge"; or an agent that is not finished sits there;
  *   - an agent asleep (finished 34 minutes ago) is not in the row with lamp and screen off, "z z" and "asleep in the lounge";
  *   - a seat overlaps a desk's plate, screen, face or sign, or another seat, leaves the floor, or the office scrolls; text is under 10.5 px;
+ *   - (spec 097 FR-439, issue 2076) the card is not as wide with Retro people as with Office people, or the eight widest name and role pairs of the simulator's crew are cut beside
+ *     their names (DejaVu Sans, both worlds, both sizes), or a card meets the next;
  *   - a click on a seat's plate does not open that agent's chat;
  *   - the agent that works again is not back at a full desk, or its person and plate do not ease there (280 to 520 ms), or under reduced
  *     motion anything animates.
@@ -26,6 +28,51 @@ const { helpers, jsLiteral } = require('./driver-helpers');
 const MUTANT = process.env.LOUNGE_MUTANT || '';
 const SIZES = [[1440, 900], [1280, 800]];
 const WORLDS = (process.env.LOUNGE_WORLDS || 'photo,retro').split(',');
+
+
+/* spec 097 FR-439 (issue 2076): the lounge card holds the demo crew's widest names and roles whole, with either people set (Retro people 141 px seat, Office people 130 px before), in the Photo office and the cave,
+   both sizes. Measured in the page, in DejaVu Sans (CI's face, the widest the app meets): each role's box against its text, the name and the line, the card against its neighbours and the floor. */
+const PAIRS = [['Tomas', 'Prompt tuner'], ['Rosa', 'Social snippets'], ['Maya', 'Release notes'], ['Elif', 'Contract parser'], ['Lena', 'Accessibility'], ['Hugo', 'Researcher'], ['Noor', 'Docs writer'], ['Mira', 'Test writer']]; /* the eight widest name + role pairs of the simulator's crew */
+async function cardCheck(ctx, H, must, OUT) {
+  const { js } = H;
+  const SIM = 'window.__durbarSimUi';
+  const SETS = [['pixel', 'Retro people'], ['office', 'Office people']];
+  const rows = [];
+  for (const world of ['photo', 'cave']) for (const [w, h] of SIZES) for (const [chars, setName] of SETS) {
+    const tag = `${world} ${w}x${h} ${setName}`;
+    await H.load({ w, h, query: { officeview: 'real', simfreeze: '1', romotion: '1', ...(world === 'cave' ? { worldflags: 'cave', world: 'cave' } : {}) }, ready: `!!document.querySelector('#stage .ro .ro-plate')&&document.getElementById('stage').dataset.d==='real'`, settle: false });
+    await js(`(()=>{window.THEME.setCharacters(${jsLiteral(chars)});return 1})()`);
+    await must(`${SIM}.visitsSettled()`, `${tag}: no visit about to start or end`);
+    await js(`(()=>{const s=document.createElement('style');s.textContent='#stage .ro,#stage .ro *{font-family:"DejaVu Sans"!important}';document.head.appendChild(s);return 1})()`);
+    /* every main agent but one in each room (the room rule keeps one working, spec 001 FR-051) finished and read: they sit in the lounge row, the widest pairs among them */
+    await js(`(()=>{const P=${jsLiteral(PAIRS)},keep=new Set();let i=0;for(const a of ${SIM}.agents().filter(x=>!x.parent)){if(!keep.has(a.room)){keep.add(a.room);a.state='working';continue;}a.state='done';a.paused=false;a.limit=false;a.lastEventAt=Date.now();if(i<P.length){a.name=P[i][0];a.role=P[i][1];i++;}${SIM}.unread.read(a.id);}${SIM}.crew.renderAll();return 1})()`);
+    await must(`document.querySelectorAll('#stage .ro-plate.lounge').length>=${PAIRS.length}&&[...document.querySelectorAll('#stage .ro img')].every(i=>i.complete)`, `${tag}: the lounge row`);
+    const m = await js(`(()=>{const L=${SIM}.realLayout(),P=${jsLiteral(PAIRS.map((x) => x[1]))},out=[];
+      for(const p of document.querySelectorAll('#stage .ro-plate.lounge')){const r=p.querySelector('.ro-role'),n=p.querySelector('.ro-l1 b'),l=p.querySelector('.ro-l1'),b=p.getBoundingClientRect();
+        out.push({role:r?r.textContent:'',shown:!!r&&!r.hidden&&r.getClientRects().length>0,rw:r?r.clientWidth:0,rs:r?r.scrollWidth:0,nameCut:!!n&&n.scrollWidth>n.clientWidth,lineCut:!!l&&l.scrollWidth>l.clientWidth,pencil:p.classList.contains('has-ren'),x:b.left,r:b.right,y:b.top,bt:b.bottom,fs:r?parseFloat(getComputedStyle(r).fontSize):0});}
+      const f=document.getElementById('stage').getBoundingClientRect();
+      return {seatW:L.lounge?L.lounge.desks[0].slot.w:0,plateW:L.lounge?L.lounge.desks[0].plate.w:0,slots:L.lounge?L.lounge.desks.map(d=>d.slot):[],scroll:L.scroll,floor:{l:f.left,r:f.right},items:out.filter(o=>P.includes(o.role))}})()`);
+    rows.push({ tag, ...m });
+    console.log(`[lounge-card] ${tag}: seat ${m.seatW} px, plate ${m.plateW} px, ${m.slots.length} seats, ${m.items.length} widest pairs`);
+    assert.strictEqual(m.items.length, PAIRS.length, `${tag}: the ${PAIRS.length} widest name and role pairs sit in the lounge: ${m.items.map((i) => i.role)}`);
+    const cut = m.items.filter((i) => !i.shown || i.rs > i.rw);
+    assert.deepStrictEqual(cut.map((i) => `${i.role} ${i.rs}>${i.rw}${i.shown ? '' : ' hidden'}`), [], `${tag}: every role is whole beside its name (scrollWidth within clientWidth)`);
+    assert.deepStrictEqual(m.items.filter((i) => i.nameCut || i.lineCut).map((i) => i.role), [], `${tag}: no name or line is cut`);
+    assert.ok(m.items.every((i) => i.pencil), `${tag}: every card carries the rename pencil (its 22 px are part of the width)`);
+    assert.ok(m.items.every((i) => i.fs >= 10.5), `${tag}: the role is at least 10.5 px`);
+    assert.ok(m.seatW >= 159, `${tag}: the card keeps its least width whatever the art (${m.seatW} px)`);
+    const byX = [...m.items].sort((a, b) => a.y - b.y || a.x - b.x);
+    for (const a of byX) for (const b of byX) if (a !== b && a.y === b.y && a.x < b.x) assert.ok(a.r <= b.x + 0.5, `${tag}: the card of ${a.role} stops before the next card`);
+    assert.strictEqual(m.scroll, false, `${tag}: no scroll`);
+    if (process.env.LOUNGE_CARD_SHOTS) await H.shot(path.join(OUT, `card-${world}-${chars}-${w}x${h}.png`), { prep: 'calm', settle: true });
+  }
+  for (const world of ['photo', 'cave']) for (const [w, h] of SIZES) {
+    const at = rows.filter((r) => r.tag.startsWith(`${world} ${w}x${h}`));
+    assert.strictEqual(new Set(at.map((r) => r.seatW)).size, 1, `${world} ${w}x${h}: the card is as wide with Retro people as with Office people (${at.map((r) => r.seatW)})`);
+  }
+  if (process.env.LOUNGE_CARD_SHOTS) fs.writeFileSync(path.join(OUT, 'card-rows.json'), JSON.stringify(rows, null, 1));
+  console.log(`[lounge-card] ok: ${rows.length} runs, the eight widest pairs whole in every one`);
+}
 
 module.exports = async (ctx) => {
   const OUT = process.env.SHOTS_OUT || fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-097-lounge-'));
@@ -44,6 +91,7 @@ module.exports = async (ctx) => {
     return {plate:pl&&pl.className,label:pl&&pl.getAttribute('aria-label'),text:pl&&pl.textContent,surface:pl&&pl.dataset.surface,screen:sc&&sc.className,table:!!q('.ro-ltable[data-for="'+S+'"]'),desk:!!q('.ro-desk[data-for="'+S+'"]'),
       person:(q('.ro-person[data-for="'+S+'"]')||{dataset:{}}).dataset.pose||null,zz:!!q('.ro-zz'),newTag:!!q('.ro-newtag.on[data-for="'+S+'"]')}})()`);
 
+  if (process.env.LOUNGE_CARD_ONLY) { await cardCheck(ctx, H, must, OUT); return; } /* a developer aid: only the card case */
   if (MUTANT === 'unread') console.log('[lounge] mutant: an unread agent goes to the lounge');
   await H.load({ w: 1440, h: 900, query: q('photo'), ready: REAL, settle: false });
   const OS_REDUCED = await js(`matchMedia('(prefers-reduced-motion: reduce)').matches`);
@@ -144,5 +192,6 @@ module.exports = async (ctx) => {
     assert.strictEqual(await inLounge(S), false, `${tag}: under reduced motion it is back at its desk at once`);
     console.log(`[lounge] ${tag} ok: ${L.lounge.length} in the lounge`);
   }
+  await cardCheck(ctx, H, must, OUT);
   console.log('[lounge] pictures:', shots.join(' '));
 };
