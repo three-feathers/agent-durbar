@@ -302,7 +302,7 @@ Fifteen invented pixel-art people, each with 20 Real office frames: six seated b
 
 None.
 
-## HD set (spec 102 FR-391..FR-406, issue #2055): behind the off switch
+## HD set (spec 102 FR-391..FR-410, issue #2055): drawn everywhere since the flip (T472)
 
 Owner decisions (Vikram, Telegram, 2026-11-23): style B at 13:07 UTC; bigger heads and crisp pixels at 14:27 UTC; "FINE" at 14:59 UTC. Seated busts ship as avatar tiles only (FR-405, coordinator 2026-11-23). Files in `hd/`: `<pid>-<pose>@<s>.webp` (the 14 standing and stool frames, `s` 4, 3, 2, 1: 288, 216, 144 px, and 72 px for the lobby) and `<pid>-<pose>-t<size>.webp` (avatar tiles of `typeA`, `think`, `waveA`, `rest` at 22, 24, 26, 32, 44, 48, 52, 64 px; `-t<size>l.webp`: the light-surface variant without the lit edge, for the people who carry it), and `<pid>-<pose>@4.webp` for the six seated busts (`typeA`, `typeB`, `think`, `waveA`, `waveB`, `rest`, 320 px tall, one canvas a person: the rows worlds and Flat's heads). Drawn everywhere since the flip (spec 102 T472). One pipeline for every picture: `build5.py` (art cache, SHA-256 `f37ceef24eaf6dc8bf26659e6c73fb853a36369d2fe5078fc13de6e345cabb87`): chroma key, connected parts, the head enlarged on the source to about 0.29 of the figure (FR-402; `k` at least 1), one 48-colour palette for every person, every size snapped natively (FR-391), orphan cleanup, one outline colour, a 1-px cyan rim, alpha 0 or 255; every picture is then checked against the repo's secret mask (`maskcheck.js`) and re-encoded losslessly until it passes (#2062). Sheets by `gen2.py`, `gen3.py` and `gen5.py` (art cache, SHA-256 `8b7ae6cb5e71b4abe7eb9b749121b7d07267158db5b66f05e118c7f8d623ae06` for the last), one `codex exec` at a time.
 
