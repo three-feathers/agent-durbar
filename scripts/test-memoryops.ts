@@ -317,6 +317,14 @@ section('relink', async () => {
   const p3 = await s.ops.pick();
   links['/home/ana/link'] = '/home/ana';
   eq(s.ops.apply(p3.ok ? p3.token : '').ok, false, 'repointed to the home folder');
+  // Linux is case-sensitive: two folders that differ only in case are two folders
+  const lk: Record<string, string> = { '/home/ana/link': '/home/ana/Notes' };
+  const l = setup(POSIX, { fsOpts: { links: lk } });
+  l.picks.push('/home/ana/link');
+  const lp = await l.ops.pick();
+  lk['/home/ana/link'] = '/home/ana/notes';
+  eq(l.ops.apply(lp.ok ? lp.token : ''), { ok: false, error: 'refused', reason: 'The folder is not the one you chose (it changed since). Choose it again.' }, 'linux: a repoint that differs only in case is refused with the CHANGED sentence');
+  eq(l.store.writes, [], 'linux: nothing saved');
   // what is saved is the real path the re-check resolved, not the one stored at the pick: on Windows only the case differs
   let disk = 'C:\\Users\\ana\\Notes';
   const winFs = { realpathSync: Object.assign(() => '', { native: (p: string) => (p.toLowerCase().endsWith('\\notes') ? disk : p) }), lstatSync: () => ({ isDirectory: () => true }) };
@@ -431,6 +439,7 @@ section('source', () => {
     { name: 'the token is bound to the unresolved path', from: 'this.live = { token, chosen, real: r.real,', to: 'this.live = { token, chosen, real: chosen,', section: 'relink' },
     { name: 'apply saves the stored path, not the re-check one', from: 'st.setMemory(r.real)', to: 'st.setMemory(e.real)', section: 'relink' },
     { name: 'apply skips the repoint comparison', from: 'if (!this.same(r.real, e.real))', to: 'if (false)', section: 'relink' },
+    { name: 'case folded on every platform', from: "this.deps.flavor.platform === 'linux' ? x : x.toLowerCase()", to: 'x.toLowerCase()', section: 'relink' },
     // the same rules from other sides
     { name: 'a token can be used twice', from: '        this.live = undefined;\n        if (this.now() >= e.expiresAt)', to: '        if (this.now() >= e.expiresAt)', section: 'apply' },
     { name: 'a token never expires', from: 'if (this.now() >= e.expiresAt)', to: 'if (false)', section: 'apply' },
