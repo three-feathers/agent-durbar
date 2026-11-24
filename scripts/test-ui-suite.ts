@@ -416,6 +416,11 @@ assert.ok(/process\.env\.CHECK_ALL_THEMES === '1' \? ALL_THEMES : 'dark'/.test(g
 // spec 035 FR-414: like with like: a theme with words against Clean Office given the same words (nothing else), the page drawn again in the forced font before measuring
 assert.ok(/extends: 'clean-office', ui: 'clean', scene: 'office', tokens: \{\}, words: p\.words \}/.test(geo) && /const refOf = \(theme\) => \(packs\[`ref:\$\{theme\}`\] \? `ref:\$\{theme\}` : 'clean-office'\);/.test(geo)
   && /ref\[`\$\{refOf\(theme\)\} \$\{sim\}-\$\{w\}`\]/.test(geo) && /u\.paint\(\); u\.settleNow\(\);/.test(geo), 'check-theme-geometry: a worded theme is compared with Clean Office given its words, drawn again in the forced font (spec 035 FR-414)');
+// review of #2091: the pins cover the calls themselves, not only the helper (PR runs check only the dark fixture, so a lost relayout went red only on main)
+assert.ok(/for \(const \[k, p\] of Object\.entries\(packs\)\) \{\n    if \(p\.words && Object\.keys\(p\.words\)\.length\) packs\[`ref:\$\{k\}`\] = /.test(geo), 'check-theme-geometry: every theme with words gets its words reference (spec 035 FR-414 (a))');
+assert.ok(/if \(!u \|\| typeof u\.paint !== 'function' \|\| typeof u\.settleNow !== 'function'\) throw new Error\(/.test(geo), 'check-theme-geometry: the relayout throws when the simulator paint hook is missing (spec 035 FR-414 (b))');
+assert.ok(/document\.head\.appendChild\(st\);\n  \}\n  redraw\(\);[^\n]*\n  const out = \{\};/.test(geo), 'check-theme-geometry: measure lays the page out again in the neutral font before it measures (spec 035 FR-414 (b))');
+assert.ok(/await ctx\.js\(`\(\$\{measure\.toString\(\)\}\)\(null, true\)`\);\n    const more = /.test(geo), 'check-theme-geometry: the +N more chip is looked for in the neutral font (spec 035 FR-414 (b))');
 // review of FR-414: every "spec 035 FR-n (delta d)" pointer in the check names an FR that delta d of spec 035 really holds
 {
   const s035 = fs.readFileSync(path.join(ROOT, 'specs', '035-theme-foundation', 'spec.md'), 'utf8');
