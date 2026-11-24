@@ -45,7 +45,7 @@ const THEMES = (process.env.GEOMETRY_THEMES || (process.env.CHECK_ALL_THEMES ===
    their own), keyed by order and class, plus the font size of each text element; the DOM must be the same in every theme.
    `stay`: true leaves the forced font on after measuring (the `+N more` chip is then opened in it), 'off' only takes it away */
 function measure(sel, stay) {
-  /* spec 035 FR-010 (delta 2026-11-23): since spec 001's lobby share by need, the page sizes a lobby place from its name measured in the font it draws.
+  /* spec 035 FR-414 (delta 2026-11-24): since spec 001's lobby share by need, the page sizes a lobby place from its name measured in the font it draws.
      So the page is drawn again in the forced font before measuring, and again in its own fonts after (a theme's display font is its own; its sizes are not) */
   const redraw = () => { const u = window.__durbarSimUi; if (u && u.paint) { u.paint(); u.settleNow(); } if (window.DurbarFit) window.DurbarFit(); };
   let st = document.getElementById('geo-neutral');
@@ -75,7 +75,7 @@ function measure(sel, stay) {
 async function driver(ctx) {
   const H = helpers(ctx); // spec 008 FR-097: shared plumbing
   const packs = Object.fromEntries(Object.entries(FIXTURES).map(([k, f]) => [k, JSON.parse(fs.readFileSync(path.join(ROOT, 'scripts', 'fixtures', 'themes', f), 'utf8'))]));
-  /* spec 035 FR-010 (delta 2026-11-23): a theme's words (spec 036: room and place names) are its own, and since spec 001's lobby share by need a place's
+  /* spec 035 FR-414 (delta 2026-11-24): a theme's words (spec 036: room and place names) are its own, and since spec 001's lobby share by need a place's
      width follows its name. So a theme with words is compared with Clean Office given the SAME words: a user pack that extends Clean Office and sets
      nothing else (no token, no art, the clean UI style). A theme without words is compared with Clean Office itself, as before. */
   for (const [k, p] of Object.entries(packs)) {
@@ -119,7 +119,7 @@ async function driver(ctx) {
     }
     // the theme's real fonts: the office check's own overlap, clipping, header and font-size rules on this layout
     const real = [await ctx.js(`(${pageCheck.toString()})(false, 5)`)];
-    /* the `+N more` chip is looked for and opened in the forced font (spec 035 delta 2026-11-23): which helpers a strip shows follows the font it is drawn in */
+    /* the `+N more` chip is looked for and opened in the forced font (spec 035 FR-414, delta 2026-11-24): which helpers a strip shows follows the font it is drawn in */
     await ctx.js(`(${measure.toString()})(null, true)`);
     const more = await ctx.js(`(()=>{const m=document.querySelector('#stage .more[aria-expanded="false"]');if(!m)return false;m.click();return true})()`);
     let expanded = null;

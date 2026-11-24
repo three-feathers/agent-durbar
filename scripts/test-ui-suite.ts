@@ -416,6 +416,17 @@ assert.ok(/process\.env\.CHECK_ALL_THEMES === '1' \? ALL_THEMES : 'dark'/.test(g
 // spec 035 FR-414: like with like: a theme with words against Clean Office given the same words (nothing else), the page drawn again in the forced font before measuring
 assert.ok(/extends: 'clean-office', ui: 'clean', scene: 'office', tokens: \{\}, words: p\.words \}/.test(geo) && /const refOf = \(theme\) => \(packs\[`ref:\$\{theme\}`\] \? `ref:\$\{theme\}` : 'clean-office'\);/.test(geo)
   && /ref\[`\$\{refOf\(theme\)\} \$\{sim\}-\$\{w\}`\]/.test(geo) && /u\.paint\(\); u\.settleNow\(\);/.test(geo), 'check-theme-geometry: a worded theme is compared with Clean Office given its words, drawn again in the forced font (spec 035 FR-414)');
+// review of FR-414: every "spec 035 FR-n (delta d)" pointer in the check names an FR that delta d of spec 035 really holds
+{
+  const s035 = fs.readFileSync(path.join(ROOT, 'specs', '035-theme-foundation', 'spec.md'), 'utf8');
+  const cites = [...geo.matchAll(/spec 035 (FR-\d+),? \(?delta (\d{4}-\d{2}-\d{2})/g)];
+  assert.ok(cites.length >= 3, 'check-theme-geometry: the FR-414 comments cite spec 035 with the FR and its delta');
+  for (const [, fr, day] of cites) {
+    const at = s035.indexOf(`## Changes ${day}`);
+    const next = at < 0 ? -1 : s035.indexOf('\n## ', at + 1);
+    assert.ok(at >= 0 && s035.slice(at, next < 0 ? undefined : next).includes(`**${fr}**`), `check-theme-geometry: spec 035 delta ${day} defines ${fr}`);
+  }
+}
 assert.ok(/const THEMES = \[\['clean', \{ theme: 'clean' \}\], \['dark', CHECK_DARK_QUERY\]\];/.test(fs.readFileSync(path.join(ROOT, 'scripts', 'shots-052-addleft.js'), 'utf8')), 'shots-052-addleft: Clean Office and the dark fixture theme (spec 102 T226)');
 // review of PR #1276 (A): the dark jobs say so (CHECK_EXPECT_DARK=1), so the driver demands the dark fixture whatever its file is called; both job definitions are pinned here
 const par = fs.readFileSync(path.join(ROOT, 'scripts', 'check-parallel.js'), 'utf8');
