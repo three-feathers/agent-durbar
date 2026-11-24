@@ -311,7 +311,7 @@ const NOT_RUNNING = 'This session is not running. Send a message to start it, th
 const UNKNOWN = 'Unknown agent or server.';
 /** An error text for the window: every address is hidden (the runtime may quote the authorization address), then the usual MCP masks. */
 export function signInErrorText(err: unknown, secrets: readonly string[], fallback: string): string {
-  const s = failText(err, 'mcp sign-in').replace(/\b[a-z][a-z0-9+.-]{1,15}:\/\/\S+/gi, '[address hidden]');
+  const s = failText(err, 'mcp sign-in', '').replace(/\b[a-z][a-z0-9+.-]{1,15}:\/\/\S+/gi, '[address hidden]');
   return maskMcpError(s, secrets)?.trim() || fallback;
 }
 
