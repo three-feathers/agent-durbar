@@ -222,13 +222,13 @@
      the other places are TILE_FLOOR wide (icon and a 22 px "+N" circle between 2 px of padding and the border). A place under PLACE_NAMED shows its icon
      only (its name stays in the tooltip and the label); the Bank does under BANK_NAMED, and the Boss drops the wait from its header under BOSS_WAIT (the wait stays in its tooltip and label). Wide enough windows never reach this: the widths above are unchanged. */
   const SNUG_W=110, SPECIAL_HARD={boss:96,coffee:60,bank:60,post:132}, TILE_FLOOR=28, PLACE_NAMED=56, BANK_NAMED=96, BOSS_WAIT=150;
-  function lobbyFit(aw,places,addButton,post,iw){
+  function lobbyFit(aw,places,addButton,post,iw,extra){
     const I=iw>INIT_W?iw:INIT_W, SW={...SPECIAL_W,boss:[230,Math.max(194,3*I+32)],coffee:[160,Math.max(96,I+40)],bank:[130,Math.max(96,I+40)]}; /* a wider short name (a wide font) widens the minimums that hold three entries, or an entry and "+N" (delta 2026-11-23) */
     const n=Math.max(1,Math.floor(Number(places)||0)), width=Number(aw)>0?Number(aw):800, withPost=post!==false;
     const keys=Object.keys(SW).filter(k=>withPost||k!=='post');
     const gaps=8*(n+keys.length-1)+(addButton?26+8:0), avail=width-gaps;
     const pref=keys.reduce((t,k)=>t+SW[k][0],0), slack=keys.reduce((t,k)=>t+SW[k][0]-SW[k][1],0);
-    const need=Math.max(0,TILE_MIN*n-(avail-pref)), f=slack>0?Math.min(1,need/slack):0;
+    const need=Math.max(0,TILE_MIN*n+(Number(extra)>0?Math.ceil(Number(extra)):0)-(avail-pref)), f=slack>0?Math.min(1,need/slack):0;
     const w={}; keys.forEach(k=>{w[k]=Math.floor(SW[k][0]-f*(SW[k][0]-SW[k][1]));});
     let tile=Math.max(0,(avail-keys.reduce((t,k)=>t+w[k],0))/n);
     if(tile<TILE_FLOOR){ /* issue #737: below about 1000 px the minimums leave the places a sliver; the four shrink on, toward SPECIAL_HARD, until a place holds its icon and one "+N" circle */
