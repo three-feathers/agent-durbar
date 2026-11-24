@@ -94,7 +94,34 @@ async function main(): Promise<void> {
   assert.strictEqual(ok({ kind: 'write', fileName: five[0], paths: five }), false, 'a lookalike folder past the three a label names (the raw key and paths are read)');
   assert.strictEqual(ok({ kind: 'write', fileName: path.join(ws, 'a.txt'), paths: [path.join(ws, 'a.txt'), path.join(ws, 'docs', 'b.txt')] }), true, 'two plain folders: reviewable');
   assert.strictEqual(ok({ kind: 'mcp', serverName: 'gh', toolName: 'crеate_issue' }), false, 'an MCP tool name');
-  assert.strictEqual(ok({ kind: 'shell', fullCommandText: 'echo \u001b]0;x\u0007 hi' }), true, 'control characters shown as markers are not blind');
+  // owner decision (2026-11-24, C5 extended): a card that warns about control or bidi characters is always a card (review round 2 probes)
+  assert.strictEqual(ok({ kind: 'shell', fullCommandText: 'echo \u001b]0;x\u0007 hi' }), false, 'C5: control characters shown as markers: a card');
+  assert.strictEqual(ok({ kind: 'shell', fullCommandText: 'echo safe \u202etxt.exe' }), false, 'C5: a right-to-left override (U+202E): a card');
+  assert.strictEqual(ok({ kind: 'shell', fullCommandText: 'echo \u001b[8mhidden\u001b[0m ok' }), false, 'C5: ESC[8m (concealed text): a card');
+  assert.strictEqual(ok({ kind: 'write', fileName: path.join(ws, 'a.txt'), paths: [path.join(ws, 'a.txt'), path.join(ws, 'b\u200bc.txt')] }), false, 'C5: a zero-width character in a second path only: a card');
+  // review round 2 (mutants N4, N5, N6): the lookalike in ONE input only, the others clean
+  const base = { summary: 'run git status', kind: 'shell', scopeKey: 'shell-exact:git status', scopeLabel: 'run git status', broadScopeKey: 'shell:git', broadScopeLabel: 'run git (any arguments)', paths: [] as string[] };
+  assert.strictEqual(cardReviewable(cc, base), true, 'the clean card is reviewable');
+  assert.strictEqual(cardReviewable(cc, { ...base, scopeKey: 'shell-exact:g\u0456t status' }), false, 'N12 layer: the scope key alone');
+  assert.strictEqual(cardReviewable(cc, { ...base, broadScopeKey: 'shell:g\u0456t' }), false, 'N5: the broad key alone');
+  const wbase = { summary: 'write ' + path.join(ws, 'a.txt'), kind: 'write', scopeKey: 'write:' + ws, scopeLabel: 'write in ' + path.basename(ws) + '/', paths: [path.join(ws, 'a.txt')] };
+  assert.strictEqual(cardReviewable(cc, wbase), true, 'a clean write is reviewable');
+  assert.strictEqual(cardReviewable(cc, { ...wbase, paths: [path.join(ws, 'a.txt'), path.join(ws, 'p\u0430ypal', 'b.txt')] }), false, 'N4: the paths alone');
+  // N6: a lookalike check that fails on one part only (its look is `unchecked`) keeps the card; the same text with a working check is reviewable
+  {
+    const cafe = { ...wbase, paths: [path.join(ws, 'a.txt'), path.join(ws, 'caf\u00e9', 'b.txt')] };
+    assert.strictEqual(cardReviewable(cc, cafe), true, 'N6: a plain accented folder is reviewable with a working check');
+    const lkPath = require.resolve(path.join(LOOKALIKE_DIR, 'lookalike.js'));
+    const entry = require.cache[lkPath]!;
+    const real = entry.exports as { check: (t: string, k: string) => unknown };
+    entry.exports = { ...real, check: (t: string, k: string) => { if (t.includes('caf\u00e9')) throw new Error('stub'); return real.check(t, k); } };
+    try {
+      assert.strictEqual(cardReviewable(cc, cafe), false, 'N6: a part whose lookalike check failed (look unchecked) keeps the card');
+      assert.strictEqual(cardReviewable(cc, wbase), true, 'N6: the stub fails only that part');
+    } finally {
+      entry.exports = real;
+    }
+  }
   assert.strictEqual(cardReviewable(undefined, card({ kind: 'shell', fullCommandText: 'git status' })), false, 'not checked counts as a finding (FR-119)');
   assert.strictEqual(cardReviewable({ reviewable: () => { throw new Error('x'); } }, card({ kind: 'shell', fullCommandText: 'ls' })), false, 'a check that throws counts as a finding');
   assert.strictEqual(cardReviewable({ reviewable: () => 'yes' as never }, card({ kind: 'shell', fullCommandText: 'ls' })), false, 'only true counts');
@@ -281,6 +308,19 @@ async function main(): Promise<void> {
     assert.ok((await ask(r, { kind: 'shell', fullCommandText: 'ls', toolCallId: 'x1', appReview: 'approve' })).card, 'switch off: a runtime `appReview` field approves nothing');
     await r.ad.setAssisted(r.sid, true);
     assert.ok((await ask(r, { kind: 'shell', fullCommandText: 'ls', toolCallId: 'x2', appReview: 'approve', assistedApproval: { recommendation: 'requireApproval' } })).card, 'switch on: only the verdict counts');
+  }
+
+  // review round 2 (mutant N12): the adapter hands the gate the card the broker builds, its scope key and label included
+  {
+    const r = await rig();
+    await r.ad.setAssisted(r.sid, true);
+    const seen: Array<Record<string, unknown>> = [];
+    const realCc = (r.ad as unknown as { cardCheck: { reviewable: (p: Record<string, unknown>, m: unknown) => boolean } }).cardCheck;
+    (r.ad as unknown as { cardCheck: unknown }).cardCheck = { reviewable: (p: Record<string, unknown>, m: unknown) => { seen.push(p); return realCc.reviewable(p, m); } };
+    const req = { kind: 'shell', fullCommandText: 'git status', toolCallId: 'k1', assistedApproval: APPROVE };
+    await r.decide(req);
+    const sc = grantScope(req as never);
+    assert.deepStrictEqual({ scopeKey: seen[0]?.scopeKey, scopeLabel: seen[0]?.scopeLabel, broadScopeKey: seen[0]?.broadScopeKey, summary: seen[0]?.summary }, { scopeKey: sc.key, scopeLabel: sc.label, broadScopeKey: sc.broad?.key, summary: 'run git status' }, 'N12: the gate sees the scope key and label the card gets');
   }
 
   // C5: no lookalike module (a build without it): every judge approve keeps its card

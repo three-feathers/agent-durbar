@@ -194,11 +194,17 @@
     return {sum,scope,broad,key,why};
   }
   /* spec 003 FR-124, FR-132 (C5): may an agent app's reviewer approve this request without a card? Only when the card would show its text (never a blind card:
-     cut, unchecked, concealed) and no part of it, nor the raw scope keys and paths behind it, has lookalike letters or could not be checked. Fail closed. */
+     cut, unchecked, concealed), has no control or bidi character, and no part of it, nor the raw scope keys and paths behind it, has lookalike letters or could
+     not be checked. Fail closed. */
   function reviewable(p,mask){
     try{
       const L=LK();if(!L||typeof L.check!=='function'||!mask||typeof mask.redact!=='function')return false;
       const q=p||{},c=permCard(q,mask);if(BLIND(c.why))return false;
+      /* owner decision (Paco, 2026-11-24): a card that warns about control or bidi characters (a marker like the ESC or U+202E ones) always stays a card, as a lookalike
+         does: the same PCTRL_T the card marks with, on every raw text the card or the grant is made from */
+      const keyParts=k=>k==null?[]:String(k).split('\n'); /* a several-folder write key joins its folder keys with a line break of Durbar's own; the summary holds the request's own breaks */
+      const raws=[q.summary,q.scopeLabel,q.broadScopeLabel,...keyParts(q.scopeKey),...keyParts(q.broadScopeKey),...(Array.isArray(q.paths)?q.paths:[])];
+      if(raws.some(x=>x!=null&&PCTRL_T.test(String(x))))return false;
       const raw=x=>String(x||'').replace(/^[a-z-]+:/,'');
       const extra=[q.scopeKey?permText(raw(q.scopeKey),permKind(String(q.scopeKey)),mask):null,q.broadScopeKey?permText(raw(q.broadScopeKey),permKind(String(q.broadScopeKey)),mask):null,
         Array.isArray(q.paths)&&q.paths.length?permText(q.paths.map(String).join('\n'),'other',mask):null];
