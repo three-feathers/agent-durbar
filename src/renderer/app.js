@@ -648,8 +648,8 @@ function openCoffeeMenu(id,anchor){
   const a=byId(id); if(!a||!a.coffee)return;
   const can=COFFEE.retryable(BREAKS.get(id),a), left=coffeeLeftWords(a);
   const it=(act,label,sub,dis)=>`<button type="button" role="menuitem" data-cact="${act}"${dis?' aria-disabled="true"':''} title="${esc(act==='retry'&&!dis?RETRY_TIP:sub)}"><span class="mt"><b>${esc(label)}</b><small>${esc(sub)}</small></span></button>`;
-  const m=document.createElement('div');m.id='modeMenu';m.className='mode-menu';m.setAttribute('role','menu');m.setAttribute('aria-label',a.name+': '+coffeeWord()+(left?', '+left:''));
-  m.innerHTML=it('open','Open chat','See '+a.name+'’s chat and its coffee-break card')+it('retry','Retry now',can?'Send one message now; if the limit has not reset yet, the agent goes back on its break':coffeeNoRetry(a)||'Not available now',!can);
+  const m=document.createElement('div');m.id='modeMenu';m.className='mode-menu';m.setAttribute('role','menu');m.setAttribute('aria-label',nameShown(a)+': '+coffeeWord()+(left?', '+left:'')); /* FR-197 (review of PR 2098) */
+  m.innerHTML=it('open','Open chat','See '+nameShown(a)+'’s chat and its coffee-break card')+it('retry','Retry now',can?'Send one message now; if the limit has not reset yet, the agent goes back on its break':coffeeNoRetry(a)||'Not available now',!can);
   document.body.appendChild(m);
   const ab=anchor.getBoundingClientRect(),b=m.getBoundingClientRect();
   m.style.left=Math.max(8,Math.min(ab.left,innerWidth-b.width-8))+'px';
@@ -2718,7 +2718,7 @@ async function playTurn(chat,a,turn,opts){
     if(turn.quick){const q=document.createElement('div');q.className='quick';q.setAttribute('role','group');q.setAttribute('aria-label','Quick replies');
       turn.quick.forEach(txt=>{const bt=document.createElement('button');bt.textContent=txt;bt.addEventListener('click',()=>{q.remove();sendMessage(txt,a.id);});q.appendChild(bt);});m.appendChild(q);}
   } else if(opts.inProgress){
-    const t=document.createElement('div');t.className='typing';t.setAttribute('aria-label',a.name+' is working');t.innerHTML='<i></i><i></i><i></i>';m.appendChild(t);
+    m.appendChild(typingIndicator(a));
   }
   stickyScroll(chat);
   return true;
@@ -3151,6 +3151,8 @@ const titleRenameable=a=>canRenameSession(a);
 /* spec 012 FR-197 (issue #1999): the chat's header name, its tooltip, the chat's label and the composer's label show a session's name only through the
    announcement mask (FR-195's liveText: annPart, '[not checked]' when it cannot be checked); the rename field keeps the name as written (the person's own edit) */
 const nameShown=a=>liveText(a.name);
+/* FR-197 (review of PR 2098): the typing indicator of a played turn names the session through the same mask */
+const typingIndicator=a=>{const t=document.createElement('div');t.className='typing';t.setAttribute('aria-label',nameShown(a)+' is working');t.innerHTML='<i></i><i></i><i></i>';return t;};
 const panelTipOf=a=>{const t=liveText(SN().nameTip(a.alias,a.title,a.folderLabel||a.baseName||'')||a.name);return titleRenameable(a)?t+' Click or press F2 to rename.':t;};
 const panelTitleHTML=a=>{const n=esc(nameShown(a));return titleRenameable(a)?`<button type="button" class="ttl-btn" id="panelTitleBtn" aria-label="Rename session ${n}">${n}</button><span class="ttl-pen" aria-hidden="true">${ICON('rename')}</span>`:n;};
 /* repaintName: the labels and the text follow a new name; an open field is never touched (it is not in this markup, FR-023 item 1) */

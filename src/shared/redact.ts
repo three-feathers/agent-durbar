@@ -93,7 +93,7 @@ const PREFIXED = [
   // package registries
   String.raw`npm_[A-Za-z0-9]{36,}|pypi-Ag${dg(W, 50)}|rubygems_[a-f0-9]{48}|CLOJARS_[A-Za-z0-9]{60}|dckr_pat_${dg(W, 20)}`, // npm, PyPI, RubyGems, Clojars, Docker
   // chat and mail (Slack, Discord, Telegram tokens: their own shapes below)
-  String.raw`SG\.${dg('[A-Za-z0-9_.=-]', 40)}|(?<![-_])key-[a-f0-9]{32}${NOT_AFTER}|[a-f0-9]{32}-us[0-9]{1,2}${NOT_AFTER}|xkeysib-[a-f0-9]{64}-[A-Za-z0-9]{16}|(?<![-_])re_[A-Za-z0-9]{8}_[A-Za-z0-9]{24}|[0-9]{15,16}(?:\||%7[Cc])${W}{27,40}${NOT_AFTER}`, // `re_` after `-` or `_` is base64url, as the two-letter rule says (spec 012, issue #2062). SendGrid, Mailgun, Mailchimp, Brevo, Resend, Facebook
+  String.raw`SG\.${dg('[A-Za-z0-9_.=-]', 40)}|(?<![-_])key-[a-f0-9]{32}${NOT_AFTER}|[a-f0-9]{32}-us[0-9]{1,2}${NOT_AFTER}|xkeysib-[a-f0-9]{64}-[A-Za-z0-9]{16}|(?<![A-Za-z0-9_-]{64}[-_])re_[A-Za-z0-9]{8}_[A-Za-z0-9]{24}|[0-9]{15,16}(?:\||%7[Cc])${W}{27,40}${NOT_AFTER}`, // `re_` after `-` or `_` deep in a long base64url run is picture data, not a key (spec 012, issue #2062; review of PR 2098: after a short word it is a key). SendGrid, Mailgun, Mailchimp, Brevo, Resend, Facebook
   // payment
   String.raw`(?:sk|rk)_(?:live|test|prod)_(?=[A-Za-z]{0,128}[0-9])[A-Za-z0-9]{16,}|whsec_[A-Za-z0-9]{24,}|sq0(?:atp|csp)-${dg(W, 22)}|rzp_(?:live|test)_[A-Za-z0-9]{14,}|FLWSECK(?:_TEST)?-[A-Za-z0-9]{12,}(?:-X)?|access-(?:sandbox|development|production)-[a-f0-9-]{36}|shp(?:at|ca|pa|ss)_[A-Fa-f0-9]{32}|pdl_(?:live|sdbx)_${dg('[A-Za-z0-9_]', 20)}|duffel_(?:test|live)_[A-Za-z0-9_=-]{43}`, // Stripe, Square, Razorpay, Flutterwave, Plaid, Shopify, Paddle, Duffel
   // developer tools
@@ -576,6 +576,9 @@ const SWITCH_VALUES = new Set(['yes', 'no', 'true', 'false', 'on', 'off']);
 /** The first word of a long flag that names a display or a negation, not a value (`--show-signature`, `--no-auth`): it takes no next word as its value (`no`: owner decision 2026-11-23, #2060 item 9). */
 const SWITCH_FLAG_LEADS = new Set(['show', 'no']);
 const switchFlag = (name: string): boolean => { if (!narrowOn) return false; const m = /^--([A-Za-z]+)-[A-Za-z]/.exec(name); return !!m && SWITCH_FLAG_LEADS.has(m[1].toLowerCase()); };
+/** FR-196 (review of PR 2098): whether a word reads as a key, by the plain context's value rules: the shared mask hides it as the value of a password (token shapes,
+    the named-value rule with its short values and phrases). The word after a display or negated flag is shown only when this says no. */
+const keyLikeWord = (w: string): boolean => { const u = w.replace(/^(["'])(.*)\1$/, '$2'); const t = 'password=' + u; return u !== '' && maskTokenShapes(t, MASK) !== t; };
 const switchValue = (v: string): boolean => narrowOn && SWITCH_VALUES.has(v.toLowerCase());
 /** FR-196's switch: on in the app; off only inside `_withoutOvermaskNarrowForTest`, which reads as before FR-196 for the differential. */
 let narrowOn = true;
@@ -2067,7 +2070,7 @@ function maskArgs(args0: readonly string[], env: Env, d: number, top = false, ht
   const args = ht ? maskHashtableArgs(args0) : args0; // R12 (not for the words of a text that maskText already read whole: the `;` that ended a member is not in them)
   const rd = (x: string): string => (top ? redact(x, env) : x); // a nested call is redacted by the outer one, over the whole arg
   const out: string[] = [];
-  let pending: 'secret' | 'header' | undefined;
+  let pending: 'secret' | 'header' | 'keylike' | undefined;
   // T067: `sh -c <script>`, `cmd /c <script>`, `powershell -Command <script>` as separate args. A sh script is the one arg after `-c`;
   // cmd and PowerShell join every arg after their flag into the script, so each of those args keeps that shell's escapes: it is
   // unescaped one level and then goes through the rules below with the others (a `-H` before it still counts); shown as it was when
@@ -2107,7 +2110,12 @@ function maskArgs(args0: readonly string[], env: Env, d: number, top = false, ht
       const [a, q] = unquote(a0);
       const W = (x: string): string => (q && (x !== MASK || a === MASK) ? q + x + q : x); // R12: a value already hidden inside its quotes keeps them
       const f = a.startsWith('-') || a.startsWith('/') ? parseFlag(a) : undefined;
+      // FR-196 (review of PR 2098): a key-like word after a display or negated flag stays hidden even when it starts with `-`; any other dash word is read as a flag
+      if (pending === 'keylike' && a.startsWith('-')) { if (keyLikeWord(a)) { push(MASK); pending = undefined; continue; } pending = undefined; }
       if (pending && !LONG_FLAG.test(a) && (pending === 'secret' || !a.startsWith('-'))) {
+        // FR-196 (review of PR 2098, coordinator's decision under the owner's delegation): after a display or negated flag, a word that is not key-like is shown;
+        // a key-like word stays hidden, by the plain context's own value rules (`keyLikeWord`)
+        if (pending === 'keylike') { push(keyLikeWord(a) ? MASK : W(rd(maskText(a, d, env)))); pending = undefined; continue; }
         if (pending === 'header' && HDR_NAME_ONLY.test(a)) { push(W(a)); pending = 'secret'; continue; } // R5: `Name:` then its value as the next arg
         if (SCHEME.test(a.trim()) || (pending === 'header' && schemeHeader(a))) { push(W(a)); pending = 'secret'; continue; } // R11 a/b: the scheme word stays, the next arg is the secret
         if (pending === 'header' && schemeHeader(a, true)) { push(W(maskHeaderValue(a, env, d))); pending = 'secret'; continue; } // R11 after a header flag: any name (FR-012: header values are masked whatever the name)
@@ -2124,7 +2132,7 @@ function maskArgs(args0: readonly string[], env: Env, d: number, top = false, ht
       if (f) {
         const secret = secretFlag(f.name);
         if (f.rest === undefined) {
-          pending = secret && !switchFlag(f.name) ? 'secret' : HEADER_FLAGS.has(f.name.toLowerCase()) ? 'header' : undefined;
+          pending = secret ? (switchFlag(f.name) ? 'keylike' : 'secret') : HEADER_FLAGS.has(f.name.toLowerCase()) ? 'header' : undefined;
           push(W(rd(a)));
         } else if (secret && !(f.sep === '=' && switchValue(f.rest))) { // FR-196: `--password=no` stays (the whole value a switch word)
           if (SCHEME.test(f.rest.trim())) { push(W(a)); pending = 'secret'; continue; } // R11 a: `--auth=Bearer` and then the secret as its own arg
