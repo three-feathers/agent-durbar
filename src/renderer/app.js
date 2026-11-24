@@ -6456,10 +6456,27 @@ function addCopyButtons(el){
 document.addEventListener('click',async e=>{
   const b=e.target.closest('.cp-btn');if(!b)return;
   e.stopPropagation();
+  if(b.classList.contains('cp-cmd')){const ch=b.closest('.chip');if(ch&&ch._cp){copyChipArg(b,ch._cp);return;}} /* spec 005 FR-411: a live call's command, from main */
   const text=b.classList.contains('cp-cmd')?((b.parentElement.querySelector('pre.cmd')||{}).textContent||''):b.classList.contains('cp-code')?((b.parentElement.querySelector('code')||b.parentElement).textContent||'').replace(/(Copy|Copied ✓)$/,''):(b.closest('.bubble')||{})._raw||''; /* spec 052 FR-063: cp-cmd copies a tool call's command */
   try{await navigator.clipboard.writeText(text);copiedLabel(b);}
   catch{toast('Could not copy to the clipboard.',3000).classList.add('err');}
 });
+/* spec 005 FR-411 (issue 2060, item 4): Copy on a live call's chip copies the real argument text, line breaks kept. Main holds it and writes the
+   clipboard (`bridge.copyToolArg`, the session and call ids only); the window never gets the text, and the answer is a result word. When the chip's
+   own mask or main's hid or cut anything (`cp.ask`), the app's confirm (askDialog) asks first and Copy anyway calls main with `confirmed`. Main
+   enforces it too (the hint can be out of date): an unconfirmed request for a value it masked answers `ask`, and the same confirm opens. */
+const CHIP_COPY_FAIL={unknown:'Could not copy: Durbar no longer holds this command (copy it from the chat or the agent app).','too-long':'Could not copy: the command is too long to copy here.'};
+async function copyChipArg(b,cp){
+  const live=()=>b.isConnected?b:((cp.rec&&cp.rec.el&&cp.rec.el.querySelector('.cp-cmd'))||(cp.rec&&cp.rec.el)||b); /* an output update may repaint the chip meanwhile */
+  const asked=async()=>{const r=await askDialog({title:'Copy the real command?',body:'This copy may contain a secret. It is not masked.',buttons:[{label:'Cancel',value:null},{label:'Copy anyway',value:'copy',cls:'primary warn'}],returnFocus:live});return !!r&&r.value==='copy';};
+  const send=async ok=>{try{return bridge&&typeof bridge.copyToolArg==='function'?await bridge.copyToolArg(cp.sid,cp.callId,ok):null;}catch(_){return null;}};
+  const confirmed=!!cp.ask;
+  if(confirmed&&!(await asked()))return;
+  let r=await send(confirmed);
+  if(!confirmed&&r&&r.ok===false&&r.reason==='ask'){if(!(await asked()))return;r=await send(true);} /* main masked it after the window's hint */
+  if(r&&r.ok===true){copiedLabel(live());return;}
+  toast(esc(CHIP_COPY_FAIL[r&&r.reason]||'Could not copy to the clipboard.'),4500).classList.add('err');
+}
 /* spec 052 FR-049: after a copy the button says "Copied ✓" for 1200ms, then "Copy" again */
 function copiedLabel(b){clearTimeout(b._cpT);b.textContent='Copied ✓';b._cpT=setTimeout(()=>{b.textContent='Copy';},1200);}
 function mdFlush(){const l=[...MDQ];MDQ.clear();l.forEach(mdPaint);}
@@ -6589,14 +6606,15 @@ function tIntent(T,txt){
 }
 function tTool(T,e){
   const box=tChips(T);
-  if(e.phase==='start'){const {label,full:cmd}=chipArgs(e);const el=makeChip({tool:e.tool,label,full:cmd,res:'running',state:'run'});addChip(box,el);
+  if(e.phase==='start'){const {label,full:cmd,ask}=chipArgs(e);const el=makeChip({tool:e.tool,label,full:cmd,res:'running',state:'run'});addChip(box,el);
     const c=T.chipEls[e.callId]={el,tool:e.tool,label,cmd,t0:e.timestamp,seen:Date.now(),box,T,state:'run',res:'running',output:'',ms:null,edit:e.edit||null};
+    c.cp={sid:e.sessionId,callId:e.callId,ask,rec:c};el._cp=c.cp; /* spec 005 FR-411: what Copy asks main for (ids only) */
     if(c.edit)edPaint(c);
     tAct(T,e.callId,c);}
   else{const c=T.chipEls[e.callId];if(c){
     /* spec 005 FR-019: an update may bring the whole arguments (a call that started from its streamed arguments) and the edit so far */
     if(e.edit)c.edit=e.edit;
-    if(e.args!==undefined){const {label:l,full:f}=chipArgs(e);if(l)c.label=l;if(f)c.cmd=f;} /* spec 005 FR-342: masked like the start */
+    if(e.args!==undefined){const {label:l,full:f,ask}=chipArgs(e);if(l)c.label=l;if(f)c.cmd=f;if(c.cp)c.cp.ask=ask;} /* spec 005 FR-342: masked like the start; FR-411: main keeps these latest arguments */
     if(e.phase!=='update'||e.output!=null){const full=String(e.output||''),done=e.phase!=='update';
       c.ms=done&&typeof c.t0==='number'&&typeof e.timestamp==='number'?e.timestamp-c.t0:null; /* spec 052 FR-063: duration from the start and end events' times */
       c.res=done?SHORT(full||(e.phase==='complete'?'ok':'failed'),60):'running';c.output=full;c.state=!done?'run':e.phase==='failed'?'failed':'ok';
@@ -6685,6 +6703,7 @@ function mcpNotSent(a,chat,text,fromComposer){
 }
 function chipRepaint(c){
   const el=makeChip({tool:c.tool,label:c.label,full:c.cmd,ms:c.ms,res:c.res,output:c.output,state:c.state});
+  if(c.cp)el._cp=c.cp; /* spec 005 FR-411 */
   el.style.animation='none'; /* a repaint is not a new call: no pop (FR-021, no jank while the arguments stream) */
   if(c.el.classList.contains('open')){el.classList.add('open');el.setAttribute('aria-expanded','true');}
   c.el.replaceWith(el);c.el=el;refreshChips(c.box);
@@ -7145,21 +7164,21 @@ function toolLabel(args){return toolArg(args).replace(/\s+/g,' ').slice(0,400);}
 let CHIP_MASKS=0; /* simulator drivers: how many times chipArg ran (once per start and per update that brings arguments, never per output) */
 function chipArg(tool,raw){
   CHIP_MASKS++;
-  const s0=String(raw==null?'':raw);if(!s0.trim())return {label:'',full:''};
+  const s0=String(raw==null?'':raw);if(!s0.trim())return {label:'',full:'',hid:false};
   const cap=(RED&&Number(RED.MASK_INPUT_MAX))||12288;let s=s0;
-  if(s.length>cap){const b=s.slice(0,cap+1).search(/\s\S*$/);s=b>0?s.slice(0,b):'';if(!s.trim())return {label:'',full:''};}
+  if(s.length>cap){const b=s.slice(0,cap+1).search(/\s\S*$/);s=b>0?s.slice(0,b):'';if(!s.trim())return {label:'',full:'',hid:true};}
   const flat=s.replace(/\s+/g,' '), k=toolKind(tool), m1=STX?STX.maskLabel(s,k,TOOLMASK):'', m2=flat===s?m1:STX?STX.maskLabel(flat,k,TOOLMASK):'';
-  if(!m1||!m2)return {label:'',full:''};
-  const t=flat.trim();if(m1===t&&m2===t)return {label:flat.slice(0,400),full:s.slice(0,OUT_SHOWN)};
-  let m='';try{m=m1===m2?m1:RED.keepShownBy(m1,m2);}catch(e){m='';}if(typeof m!=='string'||!m)return {label:'',full:''};
-  return {label:m.slice(0,400),full:m.slice(0,OUT_SHOWN)};
+  if(!m1||!m2)return {label:'',full:'',hid:true};
+  const t=flat.trim();if(m1===t&&m2===t)return {label:flat.slice(0,400),full:s.slice(0,OUT_SHOWN),hid:s!==s0}; /* spec 005 FR-411: `hid`, something was hidden or cut (Copy then asks first) */
+  let m='';try{m=m1===m2?m1:RED.keepShownBy(m1,m2);}catch(e){m='';}if(typeof m!=='string'||!m)return {label:'',full:'',hid:true};
+  return {label:m.slice(0,400),full:m.slice(0,OUT_SHOWN),hid:true};
 }
 /* a label an adapter already cut (a replayed history item: 300 characters, Codex 200 and "…"; the VS Code transcript: 300 or 200 with "…"): the cut may
    fall inside a secret, whose head the masks no longer know, so a label the adapter cut (exactly 300 characters, or ending in "…") loses its last run
    of non-blanks before it is masked; any other label is masked as it is */
 const cutLabel=(tool,l)=>{let x=String(l==null?'':l);if(x.length===300||(x.length>=150&&x.endsWith('\u2026'))){const b=x.search(/\s\S*$/);x=(b>0?x.slice(0,b):'')+' \u2026';}return chipArg(tool,x).label;};
 /* the chip's label and command for a toolCall event: an edit names its file (main masked the edit, FR-024; masked here again like the task line) */
-const chipArgs=e=>{const a=chipArg(e.tool,toolArg(e.args)),f=editLabel(e);return {label:f?chipArg(e.tool,f).label:a.label,full:a.full};};
+const chipArgs=e=>{const a=chipArg(e.tool,toolArg(e.args)),f=editLabel(e);return {label:f?chipArg(e.tool,f).label:a.label,full:a.full,ask:a.hid||e.argsMasked===true};}; /* spec 005 FR-411: `ask`, Copy asks first (the chip's own mask hid or cut something, or main says its mask changed it) */
 /* ---------------- AI-credit cap: chip, dialog, limit reached (spec 011) ---------------- */
 let APP_SETTINGS={};
 function capChipHTML(a){
