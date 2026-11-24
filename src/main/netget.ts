@@ -227,56 +227,81 @@ export function updateSession(sessions: SessionsLike): NetSessionLike {
 
 /** One entry of a PAC answer as Chromium's `resolveProxy` writes it: `DIRECT`, or a scheme and `host:port` (IPv6 in brackets). */
 const PAC_ENTRY = /^(?:DIRECT|(?:PROXY|HTTPS|SOCKS|SOCKS4|SOCKS5|QUIC) (?:[A-Za-z0-9._-]{1,253}|\[[0-9A-Fa-f:.]{2,45}\]):[0-9]{1,5})$/;
+const PAC_MAX_CHARS = 4096;
+const PAC_MAX_ENTRIES = 16;
+const PAC_DATA = 'data:application/x-ns-proxy-autoconfig,';
+
+/** A JavaScript string literal of `s`: `JSON.stringify`, then `<`, `>`, `/`, U+2028 and U+2029 as `\uXXXX` (safe in any script). */
+export function jsString(s: string): string {
+  return JSON.stringify(s).replace(/[<>/\u2028\u2029]/g, (c) => `\\u${c.charCodeAt(0).toString(16).padStart(4, '0')}`);
+}
+
 /**
  * A PAC script that answers `rule` (a PAC answer such as `PROXY host:port; DIRECT`, from `resolveProxy`) for every URL, or
- * `undefined` when `rule` is not such an answer: only entries of that exact grammar are written into the script, rebuilt from the
- * parts, so nothing else can become code. The string is also escaped past JSON (`<`, `>`, `/`, U+2028, U+2029).
+ * `undefined` when `rule` is not such an answer. Layers, each tested on its own: the size caps, the entry grammar (only entries of
+ * that exact form are written, joined again), the string literal (`jsString`) and the `data:` URL encoding.
  */
 export function pacFor(rule: string): string | undefined {
-  if (typeof rule !== 'string' || rule.length === 0 || rule.length > 4096) return undefined;
+  if (typeof rule !== 'string' || rule.length === 0 || rule.length > PAC_MAX_CHARS) return undefined;
   const entries = rule.split(';').map((e) => e.trim().replace(/\s+/g, ' ')).filter((e) => e.length > 0);
-  if (entries.length === 0 || entries.length > 16 || !entries.every((e) => PAC_ENTRY.test(e))) return undefined;
-  const answer = JSON.stringify(entries.join('; ')).replace(/[<>/\u2028\u2029]/g, (c) => `\\u${c.charCodeAt(0).toString(16).padStart(4, '0')}`);
-  return 'data:application/x-ns-proxy-autoconfig,' + encodeURIComponent(`function FindProxyForURL(url, host) { return ${answer}; }`);
+  if (entries.length === 0 || entries.length > PAC_MAX_ENTRIES || !entries.every((e) => PAC_ENTRY.test(e))) return undefined;
+  return PAC_DATA + encodeURIComponent(`function FindProxyForURL(url, host) { return ${jsString(entries.join('; '))}; }`);
 }
 
 /**
  * Spec 076 FR-155 for the update session: the one place that copies proxy settings from the default session to another session.
  * Electron cannot read a session's proxy settings, and a partition does not follow a `setProxy` made on the default session, so the
  * default session is asked which proxy it uses for this exact URL (system settings, PAC, command-line switches, an organization's
- * `setProxy`) and that answer is set on `target`. Certificates need no copy: no session gets a verifier of its own (FR-156, OS store).
+ * `setProxy`) and that answer is set on `target`, but only while `current()` still says yes (review of PR 2123: an answer that
+ * arrives after its request ended must never change the proxy of the next one). Certificates need no copy: no session gets a
+ * verifier of its own (FR-156, OS store).
  */
-export async function useDefaultSessionProxy(target: NetSessionLike, sessions: SessionsLike, url: string): Promise<void> {
+export async function useDefaultSessionProxy(target: NetSessionLike, sessions: SessionsLike, url: string, current: () => boolean = () => true): Promise<void> {
   const pacScript = pacFor(await sessions.defaultSession.resolveProxy(url));
   if (pacScript === undefined) throw new Error('no proxy answer');
+  if (!current()) return;
   await target.setProxy({ mode: 'pac_script', pacScript });
 }
 
 /**
  * T507: `makeFeedGet` on the update session. Before each request the default session's proxy for that URL is set on it; a refused URL
- * or an aborted signal makes no lookup; a failed lookup is `network`, a lookup still running at the 10 s limit `timeout` (FR-004: the
- * limit covers the lookup and the request together). One update request at a time (a second waits for the first to end), so the
- * proxy set for one URL is never the one another URL's request starts with. Never rejects.
+ * or an aborted signal makes no lookup; a failed lookup is `network`, a lookup still running at the 10 s limit `timeout` (FR-004: one
+ * budget for the lookup and the request together, on the injected clock). One update request at a time (a second waits for the first
+ * to end), so the proxy set for one URL is never the one another URL's request starts with, and a late answer of an ended call sets
+ * nothing. A throw anywhere (such as `fromPartition` before the app is ready) answers `network` and leaves the queue usable. Never rejects.
  */
-export function makeUpdateFeedGet(sessions: SessionsLike, request: SessionRequest, timer: FeedTimer = realTimer, timeoutMs = FEED_TIMEOUT_MS): FeedGet {
+export function makeUpdateFeedGet(sessions: SessionsLike, request: SessionRequest, timer: FeedTimer = realTimer, timeoutMs = FEED_TIMEOUT_MS, now: () => number = Date.now): FeedGet {
   let queue: Promise<unknown> = Promise.resolve();
-  const one = (url: string, slug: string, signal?: AbortSignal): Promise<FeedAnswer> => {
-    if (signal?.aborted) return Promise.resolve({ ok: false, reason: 'aborted' });
-    const started = Date.now();
+  const one = async (url: string, slug: string, signal?: AbortSignal): Promise<FeedAnswer> => {
+    if (signal?.aborted) return { ok: false, reason: 'aborted' };
+    const started = now();
     const ses = updateSession(sessions);
-    return new Promise<FeedAnswer | undefined>((resolve) => {
+    const early = await new Promise<FeedAnswer | undefined>((resolve) => {
+      let ended = false;
       let handle: unknown;
       const onAbort = (): void => end({ ok: false, reason: 'aborted' });
-      const end = (a: FeedAnswer | undefined): void => { timer.clear(handle); signal?.removeEventListener('abort', onAbort); resolve(a); };
+      const end = (a: FeedAnswer | undefined): void => {
+        if (ended) return;
+        ended = true;
+        timer.clear(handle);
+        signal?.removeEventListener('abort', onAbort);
+        resolve(a);
+      };
       handle = timer.set(() => end({ ok: false, reason: 'timeout' }), timeoutMs);
       signal?.addEventListener('abort', onAbort, { once: true });
-      useDefaultSessionProxy(ses, sessions, url).then(() => end(undefined), () => end({ ok: false, reason: 'network' }));
-    }).then((early) => early ?? makeFeedGet((o) => request({ ...o, session: ses }), timer, Math.max(1, timeoutMs - (Date.now() - started)))(url, slug, signal));
+      useDefaultSessionProxy(ses, sessions, url, () => !ended).then(() => end(undefined), () => end({ ok: false, reason: 'network' }));
+    });
+    if (early) return early;
+    const left = timeoutMs - (now() - started);
+    if (left <= 0) return { ok: false, reason: 'timeout' };
+    return makeFeedGet((o) => request({ ...o, session: ses }), timer, left)(url, slug, signal);
   };
+  const safe = (url: string, slug: string, signal?: AbortSignal): Promise<FeedAnswer> =>
+    one(url, slug, signal).catch((): FeedAnswer => ({ ok: false, reason: 'network' }));
   return (url, slug, signal) => {
     if (!feedAllowed(url, slug)) return Promise.resolve({ ok: false, reason: 'not-allowed' });
-    const run = queue.then(() => one(url, slug, signal));
-    queue = run;
+    const run = queue.then(() => safe(url, slug, signal));
+    queue = run.catch(() => undefined);
     return run;
   };
 }

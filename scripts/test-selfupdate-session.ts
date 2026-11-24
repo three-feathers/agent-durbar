@@ -7,7 +7,7 @@ import * as assert from 'assert';
 import { EventEmitter } from 'events';
 import * as fs from 'fs';
 import * as path from 'path';
-import { FIXED_HEADERS, UPDATE_PARTITION, makeUpdateFeedGet, pacFor, updateSession, useDefaultSessionProxy } from '../src/main/netget';
+import { FIXED_HEADERS, UPDATE_PARTITION, jsString, makeUpdateFeedGet, pacFor, updateSession, useDefaultSessionProxy } from '../src/main/netget';
 import type { FeedTimer, NetRequestLike, NetRequestOptions, NetSessionLike, ProxyPac, SessionRequest, SessionsLike } from '../src/main/netget';
 
 const SLUG = 'three-feathers/agent-durbar';
@@ -38,9 +38,10 @@ function sessionsWith(rule?: (url: string) => Promise<string>): SessionsLike & {
 class FakeRes extends EventEmitter { constructor(public statusCode: number, public headers: Record<string, string> = {}) { super(); } }
 class FakeReq extends EventEmitter {
   headers: Record<string, string> = {};
-  constructor(public opts: NetRequestOptions & { session: NetSessionLike }) { super(); }
+  constructor(public opts: NetRequestOptions & { session: NetSessionLike }, private held = false) { super(); }
   setHeader(k: string, v: string): void { this.headers[k] = v; }
   end(): void {
+    if (this.held) return; // never answers: the caller's own timer ends it
     setImmediate(() => {
       const res = new FakeRes(200, { 'content-type': 'application/json; charset=utf-8' });
       this.emit('response', res);
@@ -49,11 +50,28 @@ class FakeReq extends EventEmitter {
   }
   abort(): void { /* nothing */ }
 }
-function requests(): { request: SessionRequest; reqs: FakeReq[] } {
+function requests(held = false): { request: SessionRequest; reqs: FakeReq[] } {
   const reqs: FakeReq[] = [];
-  return { reqs, request: (o) => { const r = new FakeReq(o); reqs.push(r); return r as unknown as NetRequestLike; } };
+  return { reqs, request: (o) => { const r = new FakeReq(o, held); reqs.push(r); return r as unknown as NetRequestLike; } };
 }
-const stripComments = (s: string): string => s.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:'"`])\/\/.*$/gm, '$1');
+// CRLF-safe (Windows checkouts): line ends are normalised before anything is cut
+const stripComments = (s: string): string => s.replace(/\r\n/g, '\n').replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:'"`])\/\/.*$/gm, '$1');
+const ticks = async (n = 8): Promise<void> => { for (let i = 0; i < n; i++) await new Promise((r) => setImmediate(r)); };
+/** A fake clock: `set` arms a callback at now + ms, `advance` moves the clock and fires what is due. */
+function fakeClock(): { timer: FeedTimer; now: () => number; advance(ms: number): void } {
+  let t = 0;
+  let ids = 0;
+  const due: { at: number; cb: () => void; id: number }[] = [];
+  return {
+    now: () => t,
+    timer: { set: (cb, ms) => { ids++; due.push({ at: t + ms, cb, id: ids }); return ids; }, clear: (h) => { const i = due.findIndex((d) => d.id === h); if (i >= 0) due.splice(i, 1); } },
+    advance(ms) { t += ms; for (const d of due.filter((x) => x.at <= t)) { due.splice(due.indexOf(d), 1); d.cb(); } },
+  };
+}
+/** FR-156 guard: a certificate verifier or an app-level certificate-error handler, in any quote style or listener form. */
+const CERT_VERIFY = /\bsetCertificateVerifyProc\b/;
+const APP_CERT_ERROR = /\bapp\s*\??\.\s*(?:on|once|addListener|prependListener|prependOnceListener)\s*\(\s*(['"`])certificate-error\1/;
+const certHook = (src: string): boolean => { const code = stripComments(src); return CERT_VERIFY.test(code) || APP_CERT_ERROR.test(code); };
 
 async function main(): Promise<void> {
   // the session: in memory, cache off, the minimal User-Agent, made once
@@ -82,12 +100,37 @@ async function main(): Promise<void> {
     const body = (r: string): string | undefined => { const p = pacFor(r); return p === undefined ? undefined : decodeURIComponent(p.slice('data:application/x-ns-proxy-autoconfig,'.length)); };
     assert.strictEqual(body('PROXY 10.0.0.1:3128;  DIRECT'), 'function FindProxyForURL(url, host) { return "PROXY 10.0.0.1:3128; DIRECT"; }', 'a PAC answer becomes a one-line PAC script');
     for (const ok of ['DIRECT', 'HTTPS proxy.corp.example:443', 'SOCKS5 [fe80::1]:1080; PROXY p_1.example:80; DIRECT', 'QUIC q.example:443']) assert.ok(pacFor(ok), `accepted: ${ok}`);
-    for (const bad of ['', 'x'.repeat(4097), 'PROXY a:1"; x(); "', 'PROXY a:1</script>', 'PROXY host', 'FTP a:21', 'PROXY a\u2028b:1', 'PROXY a\u2029:1', 'direct', Array(17).fill('DIRECT').join(';'), 'PROXY a b:1']) {
-      assert.strictEqual(pacFor(bad), undefined, `refused (never written into code): ${JSON.stringify(bad).slice(0, 40)}`);
+    for (const bad of ['', 'PROXY a:1"; x(); "', 'PROXY a:1</script>', 'PROXY host', 'FTP a:21', 'PROXY a\u2028b:1', 'PROXY a\u2029:1', 'direct', 'PROXY a b:1']) {
+      assert.strictEqual(pacFor(bad), undefined, `refused (never written into code; loosened-host mutant dies here): ${JSON.stringify(bad).slice(0, 40)}`);
       const t2 = new StubSession('t2');
       await assert.rejects(useDefaultSessionProxy(t2, sessionsWith(async () => bad), LIST), 'a proxy answer outside the grammar is refused');
       assert.deepStrictEqual(t2.proxies, [], 'and nothing is set');
     }
+  }
+
+  // review of PR 2123, item 3c: each layer of the PAC script on its own, each with a hostile answer
+  {
+    // layer 1, the entry grammar: a host with a quote, a backslash, a single quote, a backtick, an angle bracket, a brace or a newline
+    for (const host of ['a"b', 'a\\b', "a'b", 'a`b', 'a<b', 'a}b', 'a\nb', 'a/b', 'a(b)']) {
+      assert.strictEqual(pacFor(`PROXY ${host}:8080; DIRECT`), undefined, `layer grammar: a hostile host is refused: ${JSON.stringify(host)} (loosened-host mutant dies here)`);
+    }
+    // layer 2, the caps: 16 valid entries are accepted, a 17th is refused; valid entries past 4096 characters are refused
+    const host = (i: number): string => `h${i}.` + 'a'.repeat(245);
+    assert.ok(pacFor(Array.from({ length: 16 }, (_, i) => `PROXY h${i}.example:1`).join('; ')), 'layer caps: 16 short entries are accepted');
+    assert.strictEqual(pacFor(Array(17).fill('DIRECT').join('; ')), undefined, 'layer caps: a 17th entry is refused (entry-cap mutant dies here)');
+    const long = Array.from({ length: 16 }, (_, i) => `PROXY ${host(i)}:1`).join('; ');
+    assert.ok(long.length > 4096 && long.split('; ').every((e) => e.length < 260), 'the fixture: valid entries, longer than 4096 in all');
+    assert.strictEqual(pacFor(long), undefined, 'layer caps: an answer longer than 4096 characters is refused (length-cap mutant dies here)');
+    // layer 3, the string literal: jsString quotes and escapes on its own, whatever the grammar lets through
+    const hostile = 'a"b\\c\nd</script>\u2028\u2029`${x}`\'e';
+    assert.ok(jsString('a"b').startsWith('"a\\"') && jsString('a\nb') === '"a\\nb"', 'layer string: quotes and newlines are escaped by JSON.stringify (no-JSON.stringify mutant dies here)');
+    assert.strictEqual(jsString(hostile), '"a\\"b\\\\c\\nd\\u003c\\u002fscript\\u003e\\u2028\\u2029`${x}`\'e"', 'layer string: the exact literal (no-escape mutant dies here)');
+    // eslint-disable-next-line no-new-func
+    assert.strictEqual(new Function(`return ${jsString(hostile)};`)(), hostile, 'layer string: the literal evaluates back to the same text, never code');
+    // layer 4, the data: URL: only encodeURIComponent's characters after the prefix, and it decodes to the exact script
+    const pac = pacFor('SOCKS5 [fe80::1]:1080; DIRECT') ?? '';
+    assert.ok(/^data:application\/x-ns-proxy-autoconfig,[A-Za-z0-9\-_.!~*'()%]+$/.test(pac), 'layer url: the script is percent-encoded (no-encoding mutant dies here)');
+    assert.strictEqual(decodeURIComponent(pac.slice('data:application/x-ns-proxy-autoconfig,'.length)), 'function FindProxyForURL(url, host) { return "SOCKS5 [fe80::1]:1080; DIRECT"; }', 'layer url: it decodes to the exact script');
   }
 
   // a request: the update session (never the default one), the helper before it, no cookie, no credentials
@@ -133,6 +176,60 @@ async function main(): Promise<void> {
       'two update requests at once run one after the other, so the proxy set for one URL never serves the other');
   }
 
+  // review of PR 2123, item 1: a late proxy answer of an ended request never changes the proxy of the next one
+  for (const how of ['timeout', 'abort'] as const) {
+    let release: ((r: string) => void) | undefined;
+    let calls = 0;
+    const s = sessionsWith((u) => { calls++; return calls === 1 ? new Promise<string>((r) => { release = r; }) : Promise.resolve(`PROXY b-${new URL(u).host}:2`); });
+    const clock = fakeClock();
+    const n = requests(true);
+    const get = makeUpdateFeedGet(s, n.request, clock.timer, 10_000, clock.now);
+    const ac = new AbortController();
+    const a = get(LIST, SLUG, ac.signal);
+    await ticks();
+    if (how === 'timeout') clock.advance(10_000); else ac.abort();
+    assert.deepStrictEqual(await a, { ok: false, reason: how === 'timeout' ? 'timeout' : 'aborted' }, `late answer (${how}): the first request ends without its lookup`);
+    void get(RAW, SLUG);
+    await ticks();
+    assert.strictEqual(n.reqs.length, 1, `late answer (${how}): the second request is in flight`);
+    release?.('PROXY a-late.example:1');
+    await ticks();
+    assert.deepStrictEqual(s.parts[0].proxies.map((p) => p.pacScript), [pacFor('PROXY b-raw.githubusercontent.com:2')],
+      `late answer (${how}): only the second request's proxy was set; the first one's late answer set nothing (gate-removed mutant dies here)`);
+  }
+
+  // review of PR 2123, item 2: a throw (fromPartition before the app is ready) answers network and the queue stays usable
+  {
+    const s = sessionsWith();
+    const real = s.fromPartition.bind(s);
+    let first = true;
+    s.fromPartition = (p, o) => { if (first) { first = false; throw new Error('Session can only be received when app is ready'); } return real(p, o); };
+    const n = requests();
+    const get = makeUpdateFeedGet(s, n.request);
+    const one = await get(LIST, SLUG).catch((e: unknown) => ({ rejected: String(e) }));
+    assert.deepStrictEqual(one, { ok: false, reason: 'network' }, 'a throw answers network, never a rejection (no-catch mutant dies here)');
+    const two = await get(RAW, SLUG).catch((e: unknown) => ({ rejected: String(e) }));
+    assert.deepStrictEqual(two, { ok: true, kind: 'releases', bytes: Buffer.from('[]') }, 'the next request still runs (poisoned-queue mutant dies here)');
+  }
+
+  // review of PR 2123, item 3a: one 10 s budget for the lookup and the request together (fake clock)
+  {
+    let release: ((r: string) => void) | undefined;
+    const s = sessionsWith(() => new Promise<string>((r) => { release = r; }));
+    const clock = fakeClock();
+    const n = requests(true);
+    let answer: unknown = 'pending';
+    void makeUpdateFeedGet(s, n.request, clock.timer, 10_000, clock.now)(LIST, SLUG).then((a) => { answer = a; });
+    await ticks();
+    clock.advance(6_000);
+    release?.('DIRECT');
+    await ticks();
+    assert.strictEqual(n.reqs.length, 1, 'budget: a 6 s lookup, then the request starts');
+    clock.advance(6_000);
+    await ticks();
+    assert.deepStrictEqual(answer, { ok: false, reason: 'timeout' }, 'budget: 6 s lookup + 6 s request times out at 10 s (separate-budget mutant dies here)');
+  }
+
   // refusals: no lookup and no request
   {
     const s = sessionsWith();
@@ -172,9 +269,17 @@ async function main(): Promise<void> {
     assert.ok(/get: updateFeedGet\(\)/.test(mainSrc) && !/makeFeedGet\(electronRequestFactory\(\)\)/.test(mainSrc), 'main.ts gives the checker the update session request');
     // FR-156: no session gets a verifier of its own, so the update session verifies exactly like the default one. If one is added, apply it in updateSession too.
     const walk = (d: string): string[] => fs.readdirSync(d, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? walk(path.join(d, e.name)) : e.name.endsWith('.ts') ? [path.join(d, e.name)] : []));
+    // review of PR 2123, item 3b: the guard catches every spelling, and passes the webContents handlers and comments
+    const caught = [
+      'session.defaultSession.setCertificateVerifyProc((r, cb) => cb(0));', 'ses.setCertificateVerifyProc(null);', 'x["setCertificateVerifyProc"](f)',
+      'app.on("certificate-error", h);', "app.once('certificate-error', h);", 'app.addListener(`certificate-error`, h);', "app.prependListener( 'certificate-error' , h);",
+      "app.prependOnceListener('certificate-error', h);", "app?.on('certificate-error', h);", "app\r\n  .on('certificate-error', h);", "/* note */ app.on('certificate-error', h);",
+    ];
+    for (const c of caught) assert.ok(certHook(c), `cert guard catches: ${c} (single-quote-only or on-only mutants die here)`);
+    const passed = ["on(wc, 'certificate-error', h.certificateError as never);", "wc.on('certificate-error', h);", "// app.on('certificate-error', h)", "/* ses.setCertificateVerifyProc(f) */", 'const n = "setCertificateVerifyProcX";'];
+    for (const c of passed) assert.ok(!certHook(c), `cert guard passes: ${c}`);
     for (const f of walk(path.join(root, 'src', 'main'))) {
-      const src = stripComments(fs.readFileSync(f, 'utf8'));
-      assert.ok(!/setCertificateVerifyProc|app\.on\(\s*'certificate-error'/.test(src), `${path.relative(root, f)}: no certificate verifier or app certificate-error handler (else apply it to the update session as well)`);
+      assert.ok(!certHook(fs.readFileSync(f, 'utf8')), `${path.relative(root, f)}: no certificate verifier or app certificate-error handler (else apply it to the update session as well)`);
     }
   }
   console.log('selfupdate-session: all checks passed');
