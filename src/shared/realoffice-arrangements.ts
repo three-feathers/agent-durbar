@@ -1,7 +1,7 @@
 /** Spec 102 FR-227, FR-256 (T202, T203, T205): where the people sit. `rows` is `realLayout`, untouched; `aisles` is the Retro arcade hall:
  *  staggered aisles of cabinets in an integer pixel scale `g`. Pure, no DOM, nothing draws it yet (RA3). The numbers marked "provisional"
  *  come from the mockup and the art by eye and are replaced by measured ones (T201's `faceBox`, T207's frame sizes). */
-import { hdFrame, seatsOf, devStep, lobbyBand, lobbyRange, loungeRows, realLayout, rowGeom, deskStation, shownDesks, signWidth, signMin, signShortMin, CHIP_KINDS, splitLounge, BIG_MAX, helpH, helpCols, helpShown, FACE_U, PW, SR, PAD, ZGAP, STRIP, U_MAX, type DeskBox, type Layout, type RealAgent, type RealMeta, type RealModel, type RealState, type Rect, type ZoneBox, STOREY_GAP, STOREY_TAG_MIN, storeyRuns, storeyTagW, type StoreyBand } from './realoffice-layout';
+import { hdFrame, hdOnly, seatsOf, standOf, devStep, lobbyBand, lobbyRange, loungeRows, realLayout, rowGeom, deskStation, shownDesks, signWidth, signMin, signShortMin, CHIP_KINDS, splitLounge, BIG_MAX, helpH, helpCols, helpShown, FACE_U, PW, SR, PAD, ZGAP, STRIP, U_MAX, type DeskBox, type Layout, type RealAgent, type RealMeta, type RealModel, type RealState, type Rect, type ZoneBox, STOREY_GAP, STOREY_TAG_MIN, storeyRuns, storeyTagW, type StoreyBand } from './realoffice-layout';
 
 export const ARRANGEMENTS = ['rows', 'circle', 'aisles'] as const;
 export type Arrangement = (typeof ARRANGEMENTS)[number];
@@ -134,7 +134,7 @@ export const AISLE_PW_MAX = 48;
 /** the widest picture, in the set's own pixels, that a person can show at a cabinet (every state's frame and its fallbacks); the seat frame ('rest') is not one */
 const usedWidth = (meta: RealMeta): number => {
   let w = 0;
-  for (const st of Object.values(meta.stand || {})) for (const pose of Object.values(AISLE_POSE)) for (const p of [pose, ...(AISLE_FALLBACK[pose] || [])]) if (own(st.poses, p)) { w = Math.max(w, st.poses[p][0]); break; }
+  for (const st of Object.values(standOf(meta))) for (const pose of Object.values(AISLE_POSE)) for (const p of [pose, ...(AISLE_FALLBACK[pose] || [])]) if (own(st.poses, p)) { w = Math.max(w, st.poses[p][0]); break; }
   return w;
 };
 const aisleK = (meta: RealMeta, st: { figH: number }): number => {
@@ -147,7 +147,7 @@ const gridPx = (v: number, k: number): number => k === 1 ? v : Math.max(1, Math.
 function aislePose(meta: RealMeta, pid: string, state: RealState): { pose: string; w: number; h: number } | null {
   const pose = AISLE_POSE[state];
   if (pose === 'rest') { const seat = seatsOf(meta), m = own(seat, pid) ? seat[pid] : null; return m ? { pose, w: m.w, h: m.h } : null; }
-  const st = own(meta.stand, pid) ? meta.stand[pid] : null;
+  const stand = standOf(meta), st = own(stand, pid) ? stand[pid] : null;
   if (!st) return null;
   const k = aisleK(meta, st);
   for (const p of [pose, ...(AISLE_FALLBACK[pose] || [])]) if (p && own(st.poses, p)) return { pose: p, w: gridPx(st.poses[p][0], k), h: gridPx(st.poses[p][1], k) };
@@ -205,7 +205,7 @@ function aisleSeat(meta: RealMeta, a: RealAgent, sx: number, plateY: number, gl:
   return {
     id: a.id, state: a.state as RealState, lounge: true, narrow: false, slot: { x: sx, y: py, w: AISLE_LSEAT * gl, h: ph + AISLE_PLATE_H }, desk: { ...table, full: th }, table,
     plate: { x: sx + gl, y: plateY, w: AISLE_LSEAT * gl - 2 * gl, h: AISLE_PLATE_H }, screen, glass: { x: screen.x + AISLE_LCRT.frame * gl, y: screen.y + AISLE_LCRT.frame * gl, w: AISLE_LCRT.gw * gl, h: AISLE_LCRT.gh * gl },
-    person: fr ? { x: px + Math.floor((36 * gl - pw) / 2 / gl) * gl, y: py, w: pw, h: ph, file: hd ? hd.file : `${a.person}-${fr.pose}.webp`, fileB: null, pose: fr.pose, pid: String(a.person),
+    person: fr && (hd || !hdOnly(meta)) ? { x: px + Math.floor((36 * gl - pw) / 2 / gl) * gl, y: py, w: pw, h: ph, file: hd ? hd.file : `${a.person}-${fr.pose}.webp`, fileB: null, pose: fr.pose, pid: String(a.person),
       vis: hd ? { x: px + Math.floor((36 * gl - pw) / 2 / gl) * gl + hd.face.x, y: py + hd.face.y, w: hd.face.w, h: hd.face.h } : face } : null,
     face, away: null, lamp: { x: sx, y: py, w: AISLE_LSEAT * gl, h: ph + AISLE_PLATE_H }, bubble: null, bang: null, dots: null, call: { x: sx + AISLE_LSEAT * gl - 16, y: plateY + 4 },
   };
@@ -249,7 +249,7 @@ export function aislesLayout(model: RealModel, view: { w: number; h: number }, m
   const k = seats.length;
   const [lobbyMin0, lobbyMax] = lobbyRange(Ho), lobbyMin = lobbyMin0 - AISLE_LANE;
   /* the place beside a cabinet is as wide as the widest standing picture of the set, so a picture centred in it never reaches a cabinet */
-  const PW = Math.min(AISLE_PW_MAX, Math.max(AISLE_PERSON.w, ...Object.values(meta.stand || {}).flatMap((s) => Object.values(s.poses || {}).map((p) => gridPx(p[0], aisleK(meta, s)))))); /* grid px; a set not drawn at the arcade's scale is scaled to it (aisleK) */
+  const PW = Math.min(AISLE_PW_MAX, Math.max(AISLE_PERSON.w, ...Object.values(standOf(meta)).flatMap((s) => Object.values(s.poses || {}).map((p) => gridPx(p[0], aisleK(meta, s)))), (meta.hdPeople && meta.hdPeople.placeW) || 0)); /* spec 102 T502: an HD set keeps the place width of the hall the owner approved (`hd.placeW`) */ /* grid px; a set not drawn at the arcade's scale is scaled to it (aisleK) */
   /* the lobby first: the rows bend only with what is left once it has its height */
   /* FR-248: the lounge's seats take cells after the cabinets, in the hall's own grid (so the plan is never worse than with those agents at cabinets): as many
      cells as the seats need at the narrowest cell a plan can have (a seat is narrower than a cabinet with its player, so 5 seats take 4 cells) */
@@ -340,12 +340,12 @@ export function aislesLayout(model: RealModel, view: { w: number; h: number }, m
         const mirrored = b.face === 'right'; /* the art's side panel is on its right, so it faces left; the other way is the picture mirrored, and its glass and marquee with it */
         const faceS = FACE_GRID * g, gl = { x: b.cab.x + (mirrored ? cab.w - 5 - plan.gw : 5) * g, y: b.cab.y + 18 * g, w: plan.gw * g, h: plan.gh * g };
         const fr = a.person != null && !a.away ? aislePose(meta, String(a.person), a.state as RealState) : null;
-        const hf = fr && meta.hdPeople ? hdFrame(meta.hdPeople, String(a.person), fr.pose, g, meta.dpr || 1) : null, hd = hf && hf.w <= pw ? hf : null; /* FR-392: an HD frame wider than the place is never drawn (the old one is) */
+        const hf = fr && meta.hdPeople ? hdFrame(meta.hdPeople, String(a.person), fr.pose, g, meta.dpr || 1) : null, hd = hf && hf.w <= pw ? hf : null; /* FR-392: an HD frame wider than the place is never drawn; spec 102 T502: an HD person has no other picture, so then none is drawn (the initials) */
         const hp = hd ? hdPlace(hd, { x: px, y: py, w: pw, h: ph }, plateY, mirrored, b.top, b.face === 'right', dFloor) : null; /* FR-401: the person mirrors with the cabinet (`facing`), the badge clear of the face */
         const d: DeskBox = {
           id: a.id, state: a.state as RealState, narrow: false, slot: b.slot, desk: { ...b.cab, full: cabH },
           plate: { x: b.cab.x, y: plateY, w: cabW, h: AISLE_PLATE_H }, screen: { x: gl.x - 4 * g, y: gl.y - 4 * g, w: gl.w + 8 * g, h: gl.h + 8 * g }, glass: gl,
-          person: hd && hp && fr ? { ...hp.box, file: hd.file, fileB: null, pose: fr.pose, pid: String(a.person), vis: hp.vis } : fr ? { x: px + dFloor((pw - fr.w * g) / 2), y: plateY - fr.h * g, w: fr.w * g, h: fr.h * g, file: `${a.person}-${fr.pose}.webp`, fileB: null, pose: fr.pose, pid: String(a.person), vis: { x: px + dFloor((pw - faceS) / 2), y: py, w: faceS, h: faceS } } : null,
+          person: hd && hp && fr ? { ...hp.box, file: hd.file, fileB: null, pose: fr.pose, pid: String(a.person), vis: hp.vis } : fr && !hdOnly(meta) ? { x: px + dFloor((pw - fr.w * g) / 2), y: plateY - fr.h * g, w: fr.w * g, h: fr.h * g, file: `${a.person}-${fr.pose}.webp`, fileB: null, pose: fr.pose, pid: String(a.person), vis: { x: px + dFloor((pw - faceS) / 2), y: py, w: faceS, h: faceS } } : null,
           face: { x: px + dFloor((pw - faceS) / 2), y: py + 4 * g, w: faceS, h: faceS },
           away: a.away ? aisleNote(gl, b.face, g) : null,
           lamp: { x: b.cab.x - 4 * g, y: b.cab.y - 4 * g, w: cabW + 8 * g, h: cabH + 8 * g },

@@ -1,75 +1,15 @@
 #!/usr/bin/env python3 -I
-"""Builds the Retro arcade world pack and the Retro pixel people set (spec 102 FR-250..FR-259, T201, T206, T207).
+"""Builds the Retro arcade world pack (spec 102 FR-250..FR-258, T206; the people set it once built was removed by T502).
 
-  python3 -I scripts/build-arcade-pack.py <interop-dir> [<repo>]       build into src/renderer/realoffice/{worlds,sets}/retro
-  python3 -I scripts/build-arcade-pack.py --world [<repo>]              the world only (no art cache): wall, floor, cabinets, fixtures
+  python3 -I scripts/build-arcade-pack.py --world [<repo>]              the world: wall, floor, cabinets, fixtures, into src/renderer/realoffice/worlds/retro
   python3 -I scripts/build-arcade-pack.py --selftest                    the checks that need no art (a frame off the grid is refused, same bytes twice, the welcome picture)
 
-  <interop-dir>  the art cache's crew/interop folder: final/retro (people r1..r8) and new7/final (r9..r15), 8x frames, and prompts/
-                 (read only; nothing in it is copied except the frames, shrunk to the grid).
-
 What it makes (dev only, not run in CI, output committed and checked by `npm run test:realoffice-assets`):
-  world: wall and floor in a day and a night light (drawn here, a few flat colours, from the mockup's code), three cabinet strips
-         (four bodies in four colours each; level glass, side panel, stepped top: spec 102 FR-258), nine fixtures, a glow strip, a console.
-  set:   15 people x 18 frames (17 built here; each drawn `sit` frame is kept, build-arcade-sleep.py), ONE FILE PIXEL PER GRID PIXEL, lossless (VP8L, no alpha-quality loss), drawn on screen at an integer scale.
-Every picture is lossless WebP; two runs give the same bytes. A frame whose 8x blocks are not uniform is refused (T201), except the
-three listed in RESAMPLED, which are shrunk by a block vote and recorded as such in ASSETS.md. Needs Pillow."""
-import hashlib, io, json, os, re, sys
+  wall and floor in a day and a night light (drawn here, a few flat colours, from the mockup's code), three cabinet strips (four bodies
+  in four colours each; level glass, side panel, stepped top: spec 102 FR-258), nine fixtures, a glow strip, a console.
+Every picture is lossless WebP; two runs give the same bytes. Needs Pillow."""
+import hashlib, io, json, os, sys
 from PIL import Image, ImageDraw
-
-UP = 8                         # the art cache keeps every frame at 8 file pixels per grid pixel
-PEOPLE = list(range(1, 16))    # r1..r15 -> p01..p15
-# frames of the set: file pose name -> source name in the cache (seat = bust with chair, a = standing seen from behind, front = standing facing us)
-SEAT = ['typeA', 'typeB', 'waveA', 'waveB', 'think', 'rest']
-VIEW_A = {'type': 'a-type', 'book': 'a-book', 'knock': 'a-knock', 'letter': 'a-letter', 'counter': 'a-counter'}
-FRONT = {'face-book': 'book', 'face-coffee': 'coffee', 'face-knock': 'knock', 'face-letter': 'letter', 'face-runA': 'runA', 'face-runB': 'runB'}
-# frames that are not on the 8x grid in the cache (T201): shrunk by a block vote; named in ASSETS.md. Any other frame off the grid stops the build.
-RESAMPLED = {'r8-waveA', 'r4-waveA', 'r4-waveB'}
-
-# ---------------------------------------------------------------------------------------------------------------- grid
-def off_grid_blocks(im, ox=0, oy=0):
-    """how many 8x8 blocks of the frame are not one colour (0 = the frame is a true 8x grid)"""
-    w, h = im.size; W, H = (w - ox) // UP, (h - oy) // UP
-    px = im.load(); bad = 0
-    for by in range(H):
-        for bx in range(W):
-            c = px[ox + bx * UP, oy + by * UP]
-            for y in range(UP):
-                for x in range(UP):
-                    if px[ox + bx * UP + x, oy + by * UP + y] != c: bad += 1; break
-                else: continue
-                break
-    return bad
-
-def to_grid(im, name):
-    """the frame shrunk to its grid: one pixel per block. Refuses a frame that is off the grid unless it is in RESAMPLED."""
-    im = im.convert('RGBA'); w, h = im.size
-    if name in RESAMPLED:
-        # block vote over blocks of w/round(w/8) by h/round(h/8): the most common colour of the block, no new colours
-        W, H = round(w / UP), round(h / UP); out = Image.new('RGBA', (W, H)); src = im.load(); dst = out.load()
-        for by in range(H):
-            for bx in range(W):
-                x0, x1 = round(bx * w / W), round((bx + 1) * w / W); y0, y1 = round(by * h / H), round((by + 1) * h / H)
-                cnt = {}
-                for y in range(y0, y1):
-                    for x in range(x0, x1): cnt[src[x, y]] = cnt.get(src[x, y], 0) + 1
-                dst[bx, by] = max(sorted(cnt), key=lambda c: cnt[c])
-        return binary_alpha(out)
-    if w % UP or h % UP: raise SystemExit(f'{name}: {w}x{h} is not a multiple of {UP}: the frame is off the grid (T201)')
-    bad = off_grid_blocks(im)
-    if bad: raise SystemExit(f'{name}: {bad} blocks are not one colour: the frame is off the grid (T201)')
-    out = Image.new('RGBA', (w // UP, h // UP)); src = im.load(); dst = out.load()
-    for y in range(h // UP):
-        for x in range(w // UP): dst[x, y] = src[x * UP, y * UP]
-    return binary_alpha(out)
-
-def binary_alpha(im):
-    px = im.load()
-    for y in range(im.height):
-        for x in range(im.width):
-            r, g, b, a = px[x, y]
-            px[x, y] = (r, g, b, 255) if a >= 128 else (0, 0, 0, 0)
-    return im
 
 def save(im, path):
     """lossless WebP, no metadata, deterministic"""
@@ -456,142 +396,6 @@ def welcome():
     c.im.alpha_composite(edge)
     return c
 
-# ---------------------------------------------------------------------------------------------------------------- people
-def measure(im):
-    """lowest/highest opaque row (share of height) and the centre of the planted feet (share of width)"""
-    px = im.load(); w, h = im.size
-    rows = [y for y in range(h) if any(px[x, y][3] for x in range(w))]
-    top, bot = rows[0], rows[-1]
-    span = max(1, round((bot - top + 1) * .06)); xs = [x for y in range(bot - span + 1, bot + 1) for x in range(w) if px[x, y][3]]
-    return top, bot, (min(xs) + max(xs) + 1) / 2 / w
-
-RUN_RE = re.compile(r'^p\d\d-run[AB]\.webp$')
-
-def drops_file(name, keep_runs=True):
-    """a full build removes the set's built pictures before it writes them again; the drawn ones stay: the asleep `sit` frames and the drawn
-    running frames `pNN-runA/runB` (spec 102 FR-326, T296; `keep_runs=False` is the old rule, the selftest's mutant)"""
-    return name.endswith('.webp') and not name.endswith('-sit.webp') and not (keep_runs and RUN_RE.match(name))
-
-def head_foot(im):
-    """the head's mean x over the top 40% of the figure (file pixels)"""
-    px = im.load(); w, h = im.size
-    rows = [y for y in range(h) if any(px[x, y][3] for x in range(w))]; t, b = rows[0], rows[-1]; lim = t + round(.4 * (b - t + 1))
-    xs = [x + .5 for y in range(t, lim) for x in range(w) if px[x, y][3]]
-    return sum(xs) / len(xs)
-
-def read_runs(repo):
-    """what a full build would lose of the drawn running frames outside the pictures: their ASSETS.md rows per person and the round note (read before the build)"""
-    ap = os.path.join(repo, 'src/renderer/realoffice/sets/retro/ASSETS.md'); txt = open(ap, encoding='utf8').read()
-    rows = {pid: re.findall(r'^- run[AB]: `' + pid + r'-run[AB]\.webp`[^\n]*$', txt, re.M) for pid in ['p%02d' % i for i in range(1, 16)]}
-    m = re.search(r'^\*\*Running frames, round note[^\n]*$', txt, re.M)
-    return dict(rows=rows, note=m.group(0) if m else None)
-
-def keep_runs(repo, snap):
-    """the drawn running frames (`pNN-runA/runB`, spec 102 FR-326, T296) are kept byte for byte (drops_file); this puts back their `stand` entries in set.json
-    (size, feet line, top, and `foot`: the head over the same ground point as the person's `type` frame, since a jogger's planted feet are no anchor) and their
-    files names, ASSETS.md rows and round note"""
-    S = os.path.join(repo, 'src/renderer/realoffice/sets/retro'); jp = os.path.join(S, 'set.json'); meta = json.load(open(jp))
-    for pid, st in meta['stand'].items():
-        if not os.path.exists(os.path.join(S, f'{pid}-runA.webp')): continue
-        ti = Image.open(os.path.join(S, f'{pid}-type.webp')).convert('RGBA'); tf = st['foot']['type'] * ti.width; th = head_foot(ti)
-        for k in ('runA', 'runB'):
-            im = Image.open(os.path.join(S, f'{pid}-{k}.webp')).convert('RGBA'); tp, bt, _ = measure(im)
-            st['poses'][k] = [im.width, im.height]; st['feet'][k] = round((bt + 1) / im.height, 4); st['top'][k] = round(tp / im.height, 4); st['foot'][k] = round((head_foot(im) - (th - tf)) / im.width, 4)
-    with open(jp, 'w') as f: f.write(json.dumps(meta, indent=1, sort_keys=True) + '\n')
-    ap = os.path.join(S, 'ASSETS.md'); txt = open(ap, encoding='utf8').read()
-    txt = txt.replace('each with 18 Real office frames', 'each with 20 Real office frames').replace('five standing seen from behind (`type`, `book`, `knock`, `letter`, `counter`)', 'seven standing seen from behind (`type`, `book`, `knock`, `letter`, `counter`, `runA`, `runB`)')
-    txt = re.sub(r'\n\n\*\*Running frames, round note[^\n]*', '', txt)   # the last person's section runs up to `## Removed`: the note goes back after the rows
-    for pid in meta['stand']:
-        rows = snap['rows'].get(pid) or []
-        if not rows: continue
-        txt = re.sub(r'(### set-' + pid + r'\n\n- files: [^\n]*?)(?: ' + pid + r'-runA\.webp ' + pid + r'-runB\.webp)?\n', lambda m: m.group(1) + ' ' + pid + '-runA.webp ' + pid + '-runB.webp\n', txt, count=1)
-        txt = re.sub(r'\n- run[AB]: `' + pid + r'-run[AB]\.webp`[^\n]*', '', txt)
-        m = re.search(r'### set-' + pid + r'\n.*?(?=\n\n\n### set-|\n\n## |\Z)', txt, re.S)
-        txt = txt[:m.start()] + m.group(0).rstrip('\n') + '\n' + '\n'.join(rows) + txt[m.end():]
-    if snap['note'] and snap['note'] not in txt: txt = txt.replace('\n\n## Removed', '\n\n' + snap['note'] + '\n\n## Removed', 1)
-    with open(ap, 'w', encoding='utf8') as f: f.write(txt)
-
-def keep_sit(repo):
-    """the asleep `sit` frames are drawn (Codex, `scripts/build-arcade-sleep.py`), not built here: a full build keeps the committed files, measures
-    them into set.json, names them in each person's files line and has build-arcade-sleep.py write their ASSETS.md lines"""
-    S = os.path.join(repo, 'src/renderer/realoffice/sets/retro'); jp = os.path.join(S, 'set.json'); meta = json.load(open(jp))
-    for pid, st in meta['stand'].items():
-        f = os.path.join(S, f'{pid}-sit.webp')
-        if not os.path.exists(f): continue
-        im = Image.open(f); tp, bt, fc = measure(im)
-        st['poses']['sit'] = [im.width, im.height]; st['feet']['sit'] = round((bt + 1) / im.height, 4); st['top']['sit'] = round(tp / im.height, 4); st['foot']['sit'] = round(fc, 4)
-    with open(jp, 'w') as f: f.write(json.dumps(meta, indent=1, sort_keys=True) + '\n')
-    ap = os.path.join(S, 'ASSETS.md'); txt = open(ap, encoding='utf8').read()
-    for pid in meta['stand']:
-        txt = re.sub(r'(### set-' + pid + r'\n\n- files: [^\n]*?)(?: ' + pid + r'-sit\.webp)?((?: ' + pid + r'-run[AB]\.webp)*)\n', lambda m: m.group(1) + ' ' + pid + '-sit.webp' + m.group(2) + '\n', txt, count=1)
-    if '- **Seated on a stool**' not in txt: txt = txt.replace('- **Licence:**', '- **Seated on a stool**\n- **Licence:**', 1)
-    with open(ap, 'w', encoding='utf8') as f: f.write(txt)
-    import importlib.util
-    sp = importlib.util.spec_from_file_location('sleep', os.path.join(os.path.dirname(os.path.abspath(__file__)), 'build-arcade-sleep.py')); sl = importlib.util.module_from_spec(sp)
-    argv = sys.argv; sys.argv = argv[:1]; sp.loader.exec_module(sl); sys.argv = argv
-    sl.assets(repo)
-
-def face_box(im):
-    """crown to chin of the head in a front standing frame, found from the width of the figure row by row: the head is the first wide part, the neck is
-    where the width falls back (and the shoulders where it grows again); read once on a contact sheet (T201), not trusted blindly"""
-    px = im.load(); w, h = im.size; wid = []; lo = []; hi = []
-    for y in range(h):
-        xs = [x for x in range(w) if px[x, y][3]]
-        wid.append(len(xs)); lo.append(min(xs) if xs else 0); hi.append(max(xs) if xs else 0)
-    top = next(y for y in range(h) if wid[y])
-    limit = top + round((h - top) * .45); head_end = None
-    peak = max(wid[top:limit])
-    ypk = max(range(top, limit), key=lambda y: wid[y])
-    for y in range(ypk, limit):                              # first row below the widest head row where the width has dropped by a third
-        if wid[y] <= peak * .66: head_end = y; break
-    if head_end is None: head_end = min(limit, top + 24)
-    xs0 = min(lo[y] for y in range(top, head_end) if wid[y]); xs1 = max(hi[y] for y in range(top, head_end) if wid[y]) + 1
-    return [xs0, top, xs1 - xs0, head_end - top]
-
-def build_person(idx, src_final, src_new7):
-    rid = f'r{idx}'; d = src_final if idx <= 8 else src_new7; pid = f'p{idx:02d}'
-    def load(name):
-        p = os.path.join(d, f'{rid}-{name}.png')
-        if not os.path.exists(p): raise SystemExit(f'{rid}: no frame {name}')
-        return to_grid(Image.open(p), f'{rid}-{name}')
-    frames = {}
-    seat = {n: load(n) for n in SEAT}
-    # one canvas for the six seated busts: bottom edge together and the middle of the bottom rows together (they are cut at the desk)
-    cw, chh = max(i.width for i in seat.values()), max(i.height for i in seat.values()); cx = {}
-    for n, im in seat.items():
-        px = im.load(); ys = range(im.height - 6, im.height); xs = [x for y in ys for x in range(im.width) if px[x, y][3]]
-        cx[n] = (min(xs) + max(xs) + 1) / 2
-    ref = max(cx.values()); Wc = cw + int(ref - min(cx.values())) + 2
-    for n, im in seat.items():
-        cv = Image.new('RGBA', (Wc, chh), (0, 0, 0, 0)); cv.alpha_composite(im, (round(ref - cx[n]) + 1, chh - im.height)); frames[n] = cv
-    for k, n in VIEW_A.items(): frames[k] = load(n)
-    for k, n in FRONT.items(): frames[k] = load(n)
-    return pid, frames
-
-def write_set(repo, src_final, src_new7, prompts):
-    S = os.path.join(repo, 'src/renderer/realoffice/sets/retro'); os.makedirs(S, exist_ok=True)
-    for f in os.listdir(S):
-        if drops_file(f): os.remove(os.path.join(S, f))   # the drawn asleep frames stay (keep_sit), so do the drawn running frames (keep_runs)
-    seat, stand, fbox, total, sections = {}, {}, {}, 0, []
-    for idx in PEOPLE:
-        pid, frames = build_person(idx, src_final, src_new7)
-        files = []
-        for pose, im in frames.items():
-            total += save(im, os.path.join(S, f'{pid}-{pose}.webp')); files.append(f'{pid}-{pose}.webp')
-        t = frames['typeA']; top, bot, _ = measure(t)
-        seat[pid] = dict(w=t.width, h=t.height, headTop=top, bodyH=t.height - top, hand=0.88)
-        poses, feet, tops, foot = {}, {}, {}, {}
-        for pose in list(VIEW_A) + list(FRONT):
-            im = frames[pose]; tp, bt, fc = measure(im)
-            poses[pose] = [im.width, im.height]; feet[pose] = round((bt + 1) / im.height, 4); tops[pose] = round(tp / im.height, 4); foot[pose] = round(fc, 4)
-        stand[pid] = dict(figH=frames['letter'].height, poses=poses, feet=feet, top=tops, foot=foot)
-        fbox[pid] = dict(pose='face-book', box=face_box(frames['face-book']))
-        sections.append((pid, idx, files))
-    meta = dict(formatVersion=1, id='retro', name='Retro pixel people', level='full', pixelArt=True, facing='left', seat=seat, stand=stand, faceBox=fbox)
-    with open(os.path.join(S, 'set.json'), 'w') as f: f.write(json.dumps(meta, indent=1, sort_keys=True) + '\n')
-    return meta, sections, total
-
-# ---------------------------------------------------------------------------------------------------------------- world
 def write_world(repo):
     W = os.path.join(repo, 'src/renderer/realoffice/worlds/retro'); os.makedirs(W, exist_ok=True)
     for f in os.listdir(W):
@@ -615,108 +419,7 @@ def write_world(repo):
     with open(os.path.join(W, 'world.json'), 'w') as f: f.write(json.dumps(meta, indent=1, sort_keys=True) + '\n')
     return meta, total
 
-def character_line(prompts, idx):
-    for d in prompts:
-        p = os.path.join(d, f'retro-r{idx}-F.txt')
-        if os.path.exists(p):
-            m = re.search(r'The SAME character as in the attached images in every pose \((.*?)\): same face', open(p).read(), re.S)
-            return m.group(1).strip() if m else 'see the prompt file in the art cache'
-    return 'see the prompt file in the art cache'
-
-def write_notes(repo, meta, sections, prompts):
-    """ASSETS.md of the set and of the world: the first paragraph says what the art is (T201: the cache's notes called it code-drawn and also
-    snapped sheets; it is Codex sheets, snapped), approval is the owner's (097 Q6, 102 Q11)"""
-    S = os.path.join(repo, 'src/renderer/realoffice/sets/retro/ASSETS.md')
-    out = ['# Real office set: Retro pixel people (provenance, spec 097 FR-062..FR-069, spec 102 FR-205, FR-254, T201, T207)', '',
-           'Fifteen invented pixel-art people, each with 18 Real office frames: six seated busts (`typeA`, `typeB`, `waveA`, `waveB`, `think`, `rest`), five standing seen from behind (`type`, `book`, `knock`, `letter`, `counter`), six standing facing us (`face-book`, `face-coffee`, `face-knock`, `face-letter`, `face-runA`, `face-runB`) and one seated asleep on a stool (`sit`, drawn separately: `scripts/build-arcade-sleep.py`). **One file pixel is one grid pixel**: the app draws it at an integer scale with `image-rendering: pixelated`. Only the `.webp` files and `set.json` (as `realoffice/sets/retro/set.js`) ship; this file stays in the repository.', '',
-           '- **Licence:** MIT, like the code and the crew art.',
-           '- **What the art is (corrects the art cache\'s notes, which said "NOT generated by an AI image tool. Drawn by code" and also listed the pictures as `snapped` sheets):** every frame comes from a Codex image-generation sheet (`codex exec`, four sheets per person: `S` seated, `F` front, `A` and `B` from behind), then cut, **snapped to a pixel grid** (resized to a logical size, binary alpha, one 32-colour palette per person, exact 8x nearest-neighbour; the cache\'s `retro_snap.py` for r1..r8 and `new7/process7.py` for r9..r15). The code-drawn people (`retro-code`, `rig.py`) are an earlier, rejected fallback and are not used here.',
-           '- **Shrunk to the grid** by `scripts/build-arcade-pack.py`: each 8x frame becomes one pixel per block and is saved as lossless WebP (`VP8L`). A frame whose blocks are not uniform stops the build. Three frames of the cache were not on the 8x grid (`r4-waveA`, `r4-waveB`, `r8-waveA`, found 2026-11-01) and were shrunk by a block vote instead (no new colour), then looked at; the owner may ask for them to be redrawn.',
-           '- **Seated frames** of a person sit on one canvas (bottoms and the middle of their lowest rows together), so the engine can use one box for them (097 FR-013). `faceBox` (crown to chin, grid pixels, in `face-book`) is read from the width of the figure, row by row, and checked on a contact sheet.',
-           '- **Made by:** Vikram\'s agent (Claude Code), 2026-10-31 to 2026-11-01. **Approved by:** the owner (Vikram), 2026-11-01: the 8 first people earlier and the 7 new ones on 2026-11-01. They are no crew of Paco\'s (097 Q6), so the owner\'s approval is the record (102 Q11).',
-           '- **Fictional people (FR-067, spec 102 FR-209):** This person is fictional and must not resemble any real or famous person; no real person, celebrity, brand, logo or franchise is named.', '', '']
-    for pid, idx, files in sections:
-        out += [f'### set-{pid}', '', f'- files: {" ".join(files)}',
-                f'- source: the Codex sheets `retro-r{idx}-S`, `-F`, `-A`, `-B` (in the art cache, not shipped); seated from S, `face-*` from F, the other standing frames from A',
-                '- tool: Codex image generation (`codex exec`, codex-cli), then the cache\'s snap script (see above)', '- date: 2026-11-01', "- made by: Vikram's agent (Claude Code)",
-                '- approved by: Vikram, 2026-11-01', f'- reference: the character\'s rough placeholder portrait and full-body picture (`refs/retro-r{idx}-*.png` in the art cache), used for who the person is',
-                '- fictional: This person is fictional and must not resemble any real or famous person; no real person, celebrity, brand, logo or franchise is named.',
-                '- likeness-check: Vikram, 2026-11-01 (invented pixel people)',
-                f'- prompt: the four sheet prompts are kept in the art cache (`prompts/retro-r{idx}-S|F|A|B.txt`, about 3 KB each); the character line: {character_line(prompts, idx)}',
-                '- cut: slices of the sheets, snapped to the grid as above, then one pixel per grid pixel as lossless WebP; ' + ('`' + '`, `'.join(sorted(RESAMPLED & {f"r{idx}-{n}" for n in SEAT + list(VIEW_A.values()) + list(FRONT.values())})) + '` shrunk by a block vote' if RESAMPLED & {f"r{idx}-{n}" for n in SEAT + list(VIEW_A.values()) + list(FRONT.values())} else 'no frame resampled'),
-                '- licence: MIT', '']
-    out += ['## Removed', '', 'None.', '']
-    open(S, 'w').write('\n'.join(out))
-    Wn = os.path.join(repo, 'src/renderer/realoffice/worlds/retro/ASSETS.md')
-    w = ['# Real office world: Retro arcade (provenance, spec 097 FR-062..FR-069, spec 102 FR-250..FR-259, T206)', '',
-         'A hall of arcade cabinets, drawn **in code** (`scripts/build-arcade-pack.py`, from the owner-approved mockup\'s drawing, redrawn with level glass), no image-generation run. One file pixel is one grid pixel, lossless WebP; two runs give the same bytes. Only the `.webp` files and `world.json` ship; this file stays in the repository. Nothing draws this world yet (`WORLD_FLAGS.retro` is closed, spec 102 RA3 draws it).', '',
-         '- **Licence:** MIT, like the code.', '- **Fictional:** no real brand, logo, franchise or character is drawn; the cabinets and fixtures are invented shapes.', '',
-         '### room-day', '', '- files: wall.webp floor.webp', '- source: `drawBackdrop` of the mockup (`layouts/mock/arcade.js`), day palette: brick wall with a stepped rim and three floppy disks, a diamond lattice floor tile (24 x 24, repeats), a soft dithered shadow under the wall (6 rows, partly transparent)',
-         '- tool: `scripts/build-arcade-pack.py` (Pillow)', '- date: 2026-11-01', "- made by: Vikram's agent (Claude Code)", '- approved by: Vikram, 2026-11-01 (the mockup\'s look; the rebuilt pictures have not been looked at by him)', '- reference: the mockup', '- prompt: none, drawn in code', '- cut: the wall is 720 x 118 grid pixels, its four neon signs in the middle so a crop at another scale keeps them', '- licence: MIT', '',
-         '### room-night', '', '- files: wall-night.webp floor-night.webp', '- source: as room-day, the night palette: dark navy brick, neon tubes with a dithered halo', '- tool: `scripts/build-arcade-pack.py` (Pillow)', '- date: 2026-11-01', "- made by: Vikram's agent (Claude Code)", '- approved by: Vikram, 2026-11-01 (the mockup\'s look)', '- reference: the mockup', '- prompt: none, drawn in code', '- cut: as room-day; night only, one dark set (owner 2026-11-03, spec 102: no light choice, so no `lightSets`); its `welcome-night` part is not drawn (the world\'s `welcome` part is T206)', '- licence: MIT', '',
-         '### cabinets', '', '- files: monitor.webp monitor-half.webp monitor-narrow.webp', '- source: the mockup\'s cabinet, **redrawn level** (spec 102 FR-258): level front, level glass and marquee (both holes the app fills), a side panel and a stepped top; four bodies with their own silhouettes (upright with a tall side; cocktail table on four legs; racer with a seat shell and a wheel; pinball with a backbox and a flared playfield; spec 102 FR-306, owner 2026-11-03) in four colours per strip, each colour with its own marquee trim and side art, all in one cell size with the glass in one place; screen on the left (the app mirrors it with a static transform). Redrawn with `--world`, 2026-11-03', '- tool: `scripts/build-arcade-pack.py` (Pillow)', '- date: 2026-11-01', "- made by: Vikram's agent (Claude Code)", '- approved by: pending (the owner has not yet looked at the level cabinet, T200)', '- reference: the mockup and `layouts/mock/arcade-level-compare.png` (art cache)', '- prompt: none, drawn in code', '- cut: `monitor.webp` is the big cabinet for 1 to 4 people (glass 75 x 50), `monitor-half.webp` the small one (56 x 32) and `monitor-narrow.webp` a narrower one (44 x 32) for a floor too narrow for the small one with the chat open', '- licence: MIT', '',
-         '### fixtures', '', '- files: ' + ' '.join(f'fx-{f}.webp' for f in FIXTURES), '- source: the mockup\'s nine arcade things: prize counter, cartridge wall, service panel, pinball table, attract-mode cabinet, change machine, coin vault, ticket dispenser, repair bench; drawn at the mockup\'s size (34 to 48 grid pixels tall, a person is 72: spec 102 Q6 asks whether to redraw them taller)', '- tool: `scripts/build-arcade-pack.py` (Pillow)', '- date: 2026-11-01', "- made by: Vikram's agent (Claude Code)", '- approved by: Vikram, 2026-11-01 (the mockup\'s look)', '- reference: the mockup', '- prompt: none, drawn in code', '- cut: every fixture on one canvas as tall as the tallest (48), standing on the bottom row', '- licence: MIT', '',
-         '### glow', '', '- files: glow.webp', '- source: the mockup\'s dithered pool of light, one cell (56 x 15) per state in the app\'s day status colours', '- tool: `scripts/build-arcade-pack.py` (Pillow)', '- date: 2026-11-01', "- made by: Vikram's agent (Claude Code)", '- approved by: pending', '- reference: the mockup', '- prompt: none, drawn in code', '- cut: seven cells: working, thinking, waiting, error, limit, done, idle', '- licence: MIT', '',
-         '### console', '', '- files: desk.webp', '- source: a low console and stool for a person who is asleep (spec 102 FR-259): a **placeholder**, nobody has looked at it', '- tool: `scripts/build-arcade-pack.py` (Pillow)', '- date: 2026-11-01', "- made by: Vikram's agent (Claude Code)", '- approved by: pending', '- reference: none', '- prompt: none, drawn in code', '- cut: 40 x 22 grid pixels', '- licence: MIT', '', '## Removed', '', 'None.', '']
-    open(Wn, 'w').write('\n'.join(w))
-
-def keep_sit_selftest():
-    """keep_sit, with no art cache: the committed set, stripped of what a full build loses (the `sit` numbers in set.json, the note, the files
-    names and the `- sit:` lines in ASSETS.md), comes back byte for byte"""
-    import shutil, tempfile
-    repo = os.path.dirname(os.path.dirname(os.path.abspath(__file__))); rel = 'src/renderer/realoffice/sets/retro'
-    with tempfile.TemporaryDirectory() as t:
-        S = os.path.join(t, rel); shutil.copytree(os.path.join(repo, rel), S)
-        jp, ap = os.path.join(S, 'set.json'), os.path.join(S, 'ASSETS.md'); want_j, want_a = open(jp).read(), open(ap, encoding='utf8').read()
-        snap = read_runs(t)   # a full build runs keep_sit, then keep_runs: the run rows and note go too, and come back after the sit lines
-        meta = json.loads(want_j)
-        for st in meta['stand'].values():
-            for k in ('poses', 'feet', 'top', 'foot'): st[k].pop('sit', None)
-        with open(jp, 'w') as f: f.write(json.dumps(meta, indent=1, sort_keys=True) + '\n')
-        txt = re.sub(r' p\d\d-sit\.webp', '', want_a); txt = re.sub(r' p\d\d-run[AB]\.webp', '', txt); txt = re.sub(r'\n- run[AB]: [^\n]*', '', txt); txt = re.sub(r'\n\n\*\*Running frames, round note[^\n]*', '', txt); txt = re.sub(r'\n- sit: [^\n]*', '', txt); txt = re.sub(r'- \*\*Seated on a stool\*\*[^\n]*\n', '', txt)
-        assert txt != want_a and 'sit' not in json.dumps([s['poses'] for s in meta['stand'].values()]), 'the strip removed nothing'
-        with open(ap, 'w', encoding='utf8') as f: f.write(txt)
-        keep_sit(t); keep_runs(t, snap)
-        assert open(jp).read() == want_j, 'keep_sit: set.json differs from the committed one'
-        assert open(ap, encoding='utf8').read() == want_a, 'keep_sit: ASSETS.md differs from the committed one'
-
-def keep_runs_selftest():
-    """keep_runs, with no art cache: the committed set with what a full build loses of the running frames (the files the old rule deleted, their `stand`
-    entries, `ASSETS.md` rows and files names, the note) comes back byte for byte; a committed run frame that `drops_file` would delete fails it.
-    BUILD_MUTANT=old-delete runs the old rule and must fail at "would be deleted"."""
-    import shutil, tempfile
-    repo = os.path.dirname(os.path.dirname(os.path.abspath(__file__))); rel = 'src/renderer/realoffice/sets/retro'; old = os.environ.get('BUILD_MUTANT') == 'old-delete'
-    with tempfile.TemporaryDirectory() as t:
-        S = os.path.join(t, rel); shutil.copytree(os.path.join(repo, rel), S)
-        jp, ap = os.path.join(S, 'set.json'), os.path.join(S, 'ASSETS.md'); want_j, want_a = open(jp).read(), open(ap, encoding='utf8').read()
-        runs = sorted(f for f in os.listdir(S) if RUN_RE.match(f)); assert len(runs) == 30, f'{len(runs)} committed run frames, not 30'
-        want_f = {f: open(os.path.join(S, f), 'rb').read() for f in runs}; snap = read_runs(t)
-        assert snap['note'] and all(len(v) == 2 for v in snap['rows'].values()), 'read_runs: a person without its two rows, or no note'
-        for f in runs:
-            if drops_file(f, keep_runs=not old): os.remove(os.path.join(S, f))
-        gone = [f for f in runs if not os.path.exists(os.path.join(S, f))]
-        assert not gone, f'a committed run frame would be deleted by a full build: {gone[0]} and {len(gone) - 1} more'
-        meta = json.loads(want_j)
-        for st in meta['stand'].values():
-            for k in ('poses', 'feet', 'top', 'foot'): st[k].pop('runA', None); st[k].pop('runB', None)
-        with open(jp, 'w') as f: f.write(json.dumps(meta, indent=1, sort_keys=True) + '\n')
-        txt = re.sub(r' p\d\d-runA\.webp p\d\d-runB\.webp', '', want_a); txt = re.sub(r'\n- run[AB]: [^\n]*', '', txt); txt = re.sub(r'\n\n\*\*Running frames, round note[^\n]*', '', txt)
-        txt = txt.replace('20 Real office frames', '18 Real office frames').replace('seven standing seen from behind (`type`, `book`, `knock`, `letter`, `counter`, `runA`, `runB`)', 'five standing seen from behind (`type`, `book`, `knock`, `letter`, `counter`)')
-        assert txt != want_a and '"runA"' not in ''.join(json.dumps(s['poses']) for s in meta['stand'].values()), 'the strip removed nothing'
-        with open(ap, 'w', encoding='utf8') as f: f.write(txt)
-        keep_runs(t, snap)
-        assert open(jp).read() == want_j, 'keep_runs: set.json differs from the committed one'
-        assert open(ap, encoding='utf8').read() == want_a, 'keep_runs: ASSETS.md differs from the committed one'
-        assert all(open(os.path.join(S, f), 'rb').read() == want_f[f] for f in runs), 'keep_runs: a run frame differs'
-
 def selftest():
-    # a frame off the grid is refused, a clean one passes, and one file pixel per block comes out
-    good = Image.new('RGBA', (16, 16), (10, 20, 30, 255)); ImageDraw.Draw(good).rectangle([8, 0, 15, 15], fill=(200, 0, 0, 255))
-    out = to_grid(good, 'ok'); assert out.size == (2, 2) and out.getpixel((1, 0))[:3] == (200, 0, 0)
-    bad = good.copy(); bad.putpixel((3, 3), (1, 2, 3, 255))
-    for im, why in ((bad, 'one odd pixel in a block'), (Image.new('RGBA', (17, 16)), 'a width that is no multiple of 8')):
-        try: to_grid(im, 'x-bad'); raise AssertionError('not refused: ' + why)
-        except SystemExit: pass
     w1, w2 = io.BytesIO(), io.BytesIO(); wall(False).im.save(w1, 'WEBP', lossless=True); wall(False).im.save(w2, 'WEBP', lossless=True)
     assert hashlib.sha256(w1.getvalue()).digest() == hashlib.sha256(w2.getvalue()).digest(), 'two runs differ'
     # T206: the first-run picture is 16:10 inside the part's cap, a lossless drawing with no metadata, and two runs give the same bytes
@@ -726,26 +429,20 @@ def selftest():
     assert len(set(welcome().im.convert('RGB').getdata())) > 40, 'welcome: nearly blank'
     c, g = cabinet(56, 32, 0); assert c.w == 73 and c.h == 73 and g['glass'] == [5, 18, 56, 32], g
     assert c.im.getpixel((10, 25))[3] == 0, 'the glass is a hole'
-    keep_sit_selftest()
-    keep_runs_selftest()
     args_selftest()
     print('build-arcade-pack selftest ok')
 
 def parse_args(argv):
     """the command line, checked before anything is read or deleted (#1079 review: `--help` was taken for the art folder and the build
-    deleted the set's pictures). Returns ('selftest',) / ('world', repo) / ('build', interop, repo); anything else exits with the usage."""
+    deleted the set's pictures). Returns ('selftest',) / ('world', repo); anything else exits with the usage. The people set it once built
+    is gone (spec 102 T502): the Retro pixel people are the HD set (`hd/`, built from the art cache's own pipeline, ASSETS.md)."""
     a = list(argv)
-    if any(x.startswith('-') for x in a) and not (a and a[0] in ('--selftest', '--world') and not any(x.startswith('-') for x in a[1:])):
-        raise SystemExit(__doc__)
     if a[:1] == ['--selftest'] and len(a) == 1: return ('selftest',)
     def repo_ok(r):
         if not (os.path.isfile(os.path.join(r, 'package.json')) and os.path.isdir(os.path.join(r, 'src', 'renderer', 'realoffice'))): raise SystemExit(f'not the repository: {r}\n' + __doc__)
         return r
-    if a[:1] == ['--world'] and len(a) <= 2: return ('world', repo_ok(a[1] if len(a) > 1 else os.getcwd()))
-    if len(a) not in (1, 2): raise SystemExit(__doc__)
-    I = a[0].rstrip('/')
-    if not all(os.path.isdir(os.path.join(I, d)) for d in ('final/retro', 'new7/final')): raise SystemExit(f'not the art cache\'s interop folder (no final/retro and new7/final): {I}\n' + __doc__)
-    return ('build', I, repo_ok(a[1] if len(a) > 1 else os.getcwd()))
+    if a[:1] == ['--world'] and len(a) <= 2 and not any(x.startswith('-') for x in a[1:]): return ('world', repo_ok(a[1] if len(a) > 1 else os.getcwd()))
+    raise SystemExit(__doc__)
 
 def args_selftest():
     """a wrong command line exits before it deletes anything: `--help`, an unknown flag, a folder that is not the art cache, a repo that is not one"""
@@ -761,13 +458,4 @@ def args_selftest():
 if __name__ == '__main__':
     cmd = parse_args(sys.argv[1:])
     if cmd[0] == 'selftest': selftest(); sys.exit(0)
-    if cmd[0] == 'world': write_world(cmd[1]); sys.exit(0)
-    _, I, REPO = cmd
-    prompts = [I + '/prompts', I + '/new7/prompts']
-    runs = read_runs(REPO)
-    smeta, sections, stotal = write_set(REPO, I + '/final/retro', I + '/new7/final', prompts)
-    wmeta, wtotal = write_world(REPO)
-    write_notes(REPO, smeta, sections, prompts)
-    keep_sit(REPO)
-    keep_runs(REPO, runs)
-    print(f'set: {len(sections)} people, {stotal} bytes; world: {wtotal} bytes')
+    write_world(cmd[1])

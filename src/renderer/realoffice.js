@@ -764,7 +764,6 @@
     if (!bx._b) bx._b = new Map();
     const shown = open ? subs : subs.slice(0, st.shown), hidden = open ? [] : subs.slice(st.shown);
     const want = [];
-    const seat = meta.seat || {};
     for (const h of shown) {
       let b = bx._b.get(h.id);
       if (!b) {

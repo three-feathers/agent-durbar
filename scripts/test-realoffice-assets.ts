@@ -91,7 +91,7 @@ export function removals(md: string): string[] {
   const out: string[] = [];
   for (const line of m[1].split(/\r?\n/)) {
     if (!line.startsWith('- ')) continue;
-    if (!/removed \d{4}-\d{2}-\d{2}/.test(line) || !/reported by \S/.test(line) || !/replaced by `?[\w.-]+\.webp/.test(line)) out.push('a removal record needs "removed <date>", "reported by <who>" and "replaced by <picture>": ' + line.slice(0, 80));
+    if (!/removed \d{4}-\d{2}-\d{2}/.test(line) || !/reported by \S/.test(line) || !/replaced by `?[\w./@-]+\.webp/.test(line)) out.push('a removal record needs "removed <date>", "reported by <who>" and "replaced by <picture>": ' + line.slice(0, 80));
   }
   return out;
 }
@@ -401,7 +401,7 @@ assert.deepStrictEqual(halfProblems(files, (META as unknown as { px: Record<stri
 if (worldIds.includes('retro')) {
   const w = readPack('worlds', 'retro'), st = readPack('sets', 'retro');
   const wj = w.json as { pixelArt?: boolean; arrangement?: string; defaultSet: string; monitor: Record<string, { cell: number[]; glass: number[] }>; night?: object; lightSets?: string[] };
-  const sj = st.json as { pixelArt?: boolean; seat: Record<string, unknown>; stand: Record<string, { poses: Record<string, number[]> }>; faceBox: Record<string, { pose: string; box: number[] }> };
+  const sj = st.json as { pixelArt?: boolean; seat?: unknown; stand?: unknown; faceBox?: unknown; hd: { people: Record<string, Record<string, Record<string, number[]>>>; stand: Record<string, { figH: number; poses: Record<string, number[]>; feet: Record<string, number>; top: Record<string, number>; foot: Record<string, number> }>; placeW: number } };
   assert.strictEqual(wj.pixelArt, true, 'the arcade is pixel art'); assert.strictEqual(sj.pixelArt, true, 'Retro pixel people are pixel art');
   assert.strictEqual(wj.defaultSet, 'retro'); assert.ok((ARRANGEMENTS as readonly string[]).includes(String(wj.arrangement)), 'its arrangement is one the engine has');
   assert.ok(!wj.lightSets, 'no lightSets: one light, night only (owner 2026-11-03)');
@@ -417,14 +417,24 @@ if (worldIds.includes('retro')) {
     const info = webpInfo(w.files.get(k === 'big' ? 'monitor.webp' : k === 'small' ? 'monitor-half.webp' : 'monitor-narrow.webp') as Buffer);
     assert.deepStrictEqual([info.width, info.height], [cab.w * 16, cab.h], `${k}: four bodies in four colours in a strip`);
   }
-  // the set: 15 people x 18 frames (17 and the seated `sit` of 2026-11-03), no more, no fewer; a person missing a required frame fails (T207)
-  const SEATED = ['typeA', 'typeB', 'waveA', 'waveB', 'think', 'rest'], VIEWA = ['type', 'book', 'knock', 'letter', 'counter'], FACE = ['face-book', 'face-coffee', 'face-knock', 'face-letter', 'face-runA', 'face-runB', 'sit'];
-  assert.strictEqual(st.files.size, 15 * 20, '300 frames (18, plus runA and runB, T296)');
-  for (const pid of Object.keys(sj.seat)) for (const p of [...SEATED, ...VIEWA, ...FACE]) assert.ok(st.files.has(`${pid}-${p}.webp`), `${pid} has ${p}`);
-  assert.strictEqual(Object.keys(sj.seat).length, 15);
-  const heights = Object.entries(sj.faceBox).map(([pid, f]) => { assert.strictEqual(f.pose, 'face-book'); const [x, y, fw, fh] = f.box, [pw, ph] = sj.stand[pid].poses['face-book']; assert.ok(x >= 0 && y >= 0 && x + fw <= pw && y + fh <= ph && fw > 8 && fh > 8, `${pid}: faceBox inside its frame`); return fh; });
-  assert.strictEqual(heights.length, 15, 'a faceBox per person (T201)');
-  assert.ok(Math.min(...heights) >= FACE_GRID, `the smallest measured face (${Math.min(...heights)} grid px) is at least the layout's FACE_GRID (${FACE_GRID}): the layout never promises more than the art has`);
+  /* spec 102 T502: the set is the HD set only. The first pictures (15 people x 20 frames at the top of the folder) and their keys seat, stand and faceBox are removed; the standing
+     numbers the lobby and the arcade read are hd.stand, measured on the 72 px (s 1) HD frames, and hd.placeW keeps the arcade's place width */
+  assert.strictEqual(st.files.size, 0, 'no picture at the top of sets/retro: the first pixel pictures are removed (T502), every frame is in hd/');
+  assert.deepStrictEqual(['seat', 'stand', 'faceBox'].filter((k) => k in sj), [], 'set.json has no seat, stand or faceBox: the HD block carries the numbers (T502)');
+  const HP = sj.hd.people, HS = sj.hd.stand;
+  assert.deepStrictEqual(Object.keys(HS).sort(), Object.keys(HP).sort(), 'hd.stand has every HD person, no more');
+  assert.strictEqual(Object.keys(HS).length, 15);
+  for (const [pid, e] of Object.entries(HS)) {
+    assert.strictEqual(e.figH, 72, `${pid}: hd.stand figH is the 72 px figure (FR-256, the s 1 frame)`);
+    assert.deepStrictEqual(Object.keys(e.poses).sort(), Object.keys(HP[pid]).sort(), `${pid}: hd.stand has a size for every HD frame`);
+    for (const [pose, wh] of Object.entries(e.poses)) {
+      assert.deepStrictEqual(wh, HP[pid][pose]['1'].slice(0, 2), `${pid} ${pose}: hd.stand's size is the s 1 frame's`);
+      assert.ok(e.feet[pose] > 0.9 && e.feet[pose] <= 1 && e.top[pose] >= 0 && e.top[pose] < 0.2 && e.foot[pose] > 0.2 && e.foot[pose] < 0.8, `${pid} ${pose}: feet, top and foot are measured shares`);
+    }
+  }
+  assert.strictEqual(sj.hd.placeW, 46, 'hd.placeW keeps the arcade place width the owner approved (46 grid px; from the HD frames alone it would be 40)');
+  const heights = Object.entries(HP).map(([pid, f]) => { const v = f['face-book']['1']; assert.ok(v[5] > 8, `${pid}: the s 1 face-book face box`); return v[5]; });
+  assert.ok(Math.min(...heights) >= FACE_GRID, `the smallest HD face at s 1 (${Math.min(...heights)} px of the 72 px figure) is at least the layout's FACE_GRID (${FACE_GRID}): the layout never promises more than the art has`);
   assert.ok(Math.min(...heights) * 2 >= FACE_FLOOR, 'at g = 2 the smallest face is at least the 24 px floor (FR-229)');
   /* spec 102 FR-352 (T206): the first-run picture is in the pack, named by world.json, lossless, in the part's size and cap, and is the hall (not a blank) */
   const wel = w.files.get('welcome.webp') as Buffer, welInfo = webpInfo(wel);
@@ -439,7 +449,7 @@ if (worldIds.includes('retro')) {
   const mini = JSON.stringify({ pixelArt: true, seat: {}, stand: { p01: { figH: 72, poses: { book: [32, 71] }, feet: { book: 1 }, top: { book: 0 } } }, fixtures: {}, floorLine: 48, fixtureTop: {} });
   const sec = `### stand-p01\n- files: p01-book.webp\n- source: s\n- tool: t\n- date: 2026-11-01\n- made by: m\n- approved by: Vikram, 2026-11-01\n- reference: none\n- prompt: a person\n- cut: c\n- licence: MIT\n- fictional: This person is fictional and must not resemble any real or famous person; no real person, celebrity, brand, logo or franchise is named.\n- likeness-check: Vikram, 2026-11-01\n\n## Removed\n\nNone.\n`;
   const rel = (p: string[]): string[] => p.filter((x) => !/desk.webp|floor.webp/.test(x));
-  const lossless = st.files.get('p01-face-book.webp') as Buffer, lossy = fs.readFileSync(path.join(RO, 'sets', 'office', 'p01-book.webp'));
+  const lossless = fs.readFileSync(path.join(RO, 'sets', 'retro', 'hd', 'p01-face-book@1.webp')), /* T502: a lossless pixel frame of the set */ lossy = fs.readFileSync(path.join(RO, 'sets', 'office', 'p01-book.webp'));
   assert.deepStrictEqual(rel(problems(new Map([['p01-book.webp', lossless]]), mini, sec)), [], 'a lossless pixel picture passes');
   assert.ok(rel(problems(new Map([['p01-book.webp', lossy]]), mini, sec)).some((x) => /must be lossless/.test(x)), 'red: a lossy picture in a pixel-art pack');
   assert.ok(rel(problems(new Map([['p01-book.webp', lossless]]), mini.replace('"p01":', '"p01":{"figH":72,"poses":{"book":[32,71],"coffee":[30,71]},"feet":{"book":1,"coffee":1},"top":{"book":0,"coffee":0}},"p02":'), sec)).some((x) => /not in the folder/.test(x)), 'red: a person missing a frame it names');
@@ -487,10 +497,15 @@ if (worldIds.includes('retro')) {
       return out;
     };
     const sets = fs.readdirSync(path.join(RO, 'sets')).filter((s) => fs.readdirSync(path.join(RO, 'sets', s)).some((f) => /^p\d\d-[A-Za-z-]+\.webp$/.test(f)));
-    assert.ok(sets.includes('retro') && sets.includes('office'), 'the frame check covers the Retro pixel and the Office people sets: ' + sets.join());
+    assert.ok(sets.includes('office') && !sets.includes('retro'), 'the frame check covers the Office people set; the Retro pixel set has no top-level frames since T502: ' + sets.join());
     for (const s of sets) assert.deepStrictEqual(frameProblems(hashOf(path.join(RO, 'sets', s))), [], `${s}: no frame is a reused or mirrored copy of another (FR-326)`);
-    const retro = path.join(RO, 'sets', 'retro'), tmp = fs.mkdtempSync(path.join(require('os').tmpdir(), 'durbar-frames-'));
+    /* spec 102 T502: the Retro pixel people's frames are the HD ones; their s 1 (72 px) frames, named as a frame of the set, go through the same check */
+    const tmp = fs.mkdtempSync(path.join(require('os').tmpdir(), 'durbar-frames-')), retro = path.join(tmp, 'retro-s1'), hdDir = path.join(RO, 'sets', 'retro', 'hd');
     try {
+      fs.mkdirSync(retro);
+      for (const f of fs.readdirSync(hdDir)) { const m = /^(p\d\d-[A-Za-z-]+)@1\.webp$/.exec(f); if (m) fs.copyFileSync(path.join(hdDir, f), path.join(retro, m[1] + '.webp')); }
+      assert.strictEqual(fs.readdirSync(retro).length, 15 * 14, 'the 210 s 1 HD frames of the Retro pixel set');
+      assert.deepStrictEqual(frameProblems(hashOf(retro)), [], 'retro: no HD frame is a reused or mirrored copy of another (FR-326)');
       const plant = (label: string, edit: (dir: string) => void, expect: RegExp): void => {
         const dir = path.join(tmp, label); fs.mkdirSync(dir);
         for (const f of fs.readdirSync(retro)) if (/^p\d\d-[A-Za-z-]+\.webp$/.test(f)) fs.copyFileSync(path.join(retro, f), path.join(dir, f));

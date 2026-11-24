@@ -50,8 +50,12 @@ export interface RealMeta {
   hdPeople?: HdSet;
 }
 /** spec 102 FR-391: per person, pose and authored scale `s` (file px per grid px): the file's width and height and its face box (x, y, w, h), all in file px */
-export interface HdSet { scales: number[]; people: Record<string, Record<string, Record<string, [number, number, number, number, number, number]>>>; busts?: Record<string, SeatMeta>; loungeW?: number }
+export interface HdSet { scales: number[]; people: Record<string, Record<string, Record<string, [number, number, number, number, number, number]>>>; busts?: Record<string, SeatMeta>; loungeW?: number; stand?: Record<string, StandMeta>; placeW?: number }
 /** spec 102 T472 (owner 2026-11-23 20:11 UTC): the seated people of a set: its HD busts (one size, the largest, drawn as each world scales its people) when it has them, else its `seat` */
+/** spec 102 T502: the standing people of a set: its own `stand`, else its HD block's (measured on the 72 px frames: the grid size of each pose, its feet, crown and foot centre) */
+export const standOf = (meta: Pick<RealMeta, 'stand' | 'hdPeople'>): Record<string, StandMeta> => (meta.stand && Object.keys(meta.stand).length ? meta.stand : (meta.hdPeople && meta.hdPeople.stand) || {});
+/** spec 102 T502: a set whose only people pictures are its HD ones (an `hd` block and no standing numbers of its own: the Retro pixel set since its first pictures were removed): no old file name is ever drawn for its people */
+export const hdOnly = (meta: Pick<RealMeta, 'hdPeople' | 'stand'>): boolean => !!meta.hdPeople && !(meta.stand && Object.keys(meta.stand).length);
 export const seatsOf = (meta: Pick<RealMeta, 'seat' | 'hdPeople'>): Record<string, SeatMeta> => (meta.hdPeople && meta.hdPeople.busts) || meta.seat || {};
 /** the file of a seated pose, in the set's folder: the HD bust (`hd/<pid>-<pose>@4.webp`) or the set's own picture */
 export const seatFile = (meta: Pick<RealMeta, 'hdPeople'>, pid: string, pose: string): string => (meta.hdPeople && meta.hdPeople.busts && roOwnB(meta.hdPeople.busts, pid) ? `hd/${pid}-${pose}@4.webp` : `${pid}-${pose}.webp`);
@@ -375,14 +379,15 @@ function roPack(meta: RealMeta, folders: RealFolder[], W: number, Ho: number, lo
 
 /** FR-024: the standing picture for a visitor at a place (the pose, else its fallback), or null when the person has neither. */
 export function standPose(meta: RealMeta, person: string | null | undefined, place: string, custom: boolean): { pose: string; size: [number, number]; figH: number; feet: number; top: number; foot: number } | null {
-  if (!person || !roOwn(meta.stand, person)) return null;
-  const st = meta.stand[person], want = custom ? 'wait' : (roOwn(FX_POSE, place) ? FX_POSE[place] : 'wait');
+  const stand = standOf(meta);
+  if (!person || !roOwn(stand, person)) return null;
+  const st = stand[person], want = custom ? 'wait' : (roOwn(FX_POSE, place) ? FX_POSE[place] : 'wait');
   for (const p of [want, POSE_FALLBACK[want]]) if (p && roOwn(st.poses, p)) return { pose: p, size: st.poses[p], figH: st.figH, feet: st.feet && roOwn(st.feet, p) ? st.feet[p] : 1, top: st.top && roOwn(st.top, p) ? st.top[p] : 0, foot: st.foot && roOwn(st.foot, p) ? st.foot[p] : 0.5 };
   return null;
 }
 /** a person's standing height (top of the head to the soles) in sheet pixels, from the upright 'letter' pose (else the sheet's figure height) */
 export function standHeight(meta: RealMeta, person: string): number {
-  const st = roOwn(meta.stand, person) ? meta.stand[person] : null;
+  const stand = standOf(meta), st = roOwn(stand, person) ? stand[person] : null;
   if (!st) return 1;
   const h = roOwn(st.poses, 'letter') ? st.poses.letter[1] : st.figH;
   const f = st.feet && roOwn(st.feet, 'letter') ? st.feet.letter : 1, t = st.top && roOwn(st.top, 'letter') ? st.top.letter : 0;
@@ -493,7 +498,7 @@ function roLobby(meta: RealMeta, places: RealPlace[], W: number, Lb: number): { 
     const visitors: VisitorBox[] = compact ? [] : p.visitors.slice(0, al.shown[i]).map((v, j) => {
       const cx = x + fw - 0.3 * vw + vw / 2 + j * al.step;
       const sp = standPose(meta, v.person, p.id, !!p.custom);
-      let fig: VisitorBox['fig'] = null, face: Rect | null = null, shadow: Rect | null = null;
+      let fig: VisitorBox['fig'] = null, face: Rect | null = null, shadow: Rect | null = null, noPic = false;
       let chipY = Math.max(0, frontY - CHIP_GAP - CHIP_H); /* spec 097 FR-024 (issue 2013): a visitor with no figure keeps its chip on the floor strip, never on the band's bottom edge (the folder frame line) */
       if (sp) {
         /* the feet (the picture's lowest opaque row) stand on the front floor plane, in front of the fixture; one scale per person,
@@ -503,7 +508,7 @@ function roLobby(meta: RealMeta, places: RealPlace[], W: number, Lb: number): { 
         const px = (n: number): number => (snap ? snapDevice(n, dpr) : n);
         /* spec 097 FR-191 (2026-11-14, #1743): the side a visitor must face is worked out from where it stands against its fixture (right of the middle faces left); a set drawn the other way is mirrored, its foot centre with it */
         const faces: 'left' | 'right' = cx > x + fw / 2 ? 'left' : 'right', mir = (meta.facing || 'left') !== faces, ft = (f: number): number => (mir ? 1 - f : f);
-        const st = meta.stand[String(v.person)], fb = roOwn(POSE_FRAME_B, sp.pose) && roOwn(st.poses, POSE_FRAME_B[sp.pose]) ? POSE_FRAME_B[sp.pose] : null;
+        const st = standOf(meta)[String(v.person)], fb = roOwn(POSE_FRAME_B, sp.pose) && roOwn(st.poses, POSE_FRAME_B[sp.pose]) ? POSE_FRAME_B[sp.pose] : null;
         /* the two running pictures have their own canvases: each in its own box, the feet on one spot, so changing picture moves no foot */
         const b = fb ? (() => { const w = st.poses[fb][0] * k, h = st.poses[fb][1] * k; return { x: px(cx - ft(st.foot && roOwn(st.foot, fb) ? st.foot[fb] : sp.foot) * w), y: px(frontY - (st.feet && roOwn(st.feet, fb) ? st.feet[fb] : sp.feet) * h), w, h }; })() : null;
         fig = { x: px(cx - ft(sp.foot) * fw2), y: px(frontY - sp.feet * fh2), w: fw2, h: fh2, file: `${v.person}-${sp.pose}.webp`, fileB: fb ? `${v.person}-${fb}.webp` : null, b, pose: sp.pose, feetY: frontY, faces, mir };
@@ -511,7 +516,8 @@ function roLobby(meta: RealMeta, places: RealPlace[], W: number, Lb: number): { 
         const hd4 = (pose: string): { file: string; w: number; h: number } | null => { const f = meta.hdPeople && roOwn(meta.hdPeople.people, String(v.person)) && roOwn(meta.hdPeople.people[String(v.person)], pose) ? meta.hdPeople.people[String(v.person)][pose]['4'] : null; return f ? { file: `hd/${v.person}-${pose}@4.webp`, w: (f[0] * k) / 4, h: (f[1] * k) / 4 } : null; }; /* T472: a world that scales people smoothly draws the 288 frame (s 4 is four times the old grid) */
         const pixelHd = snap && meta.pixelPeople !== false;
         const hv = !meta.hdPeople ? null : pixelHd ? hdFrame(meta.hdPeople, String(v.person), sp.pose, k, dpr) : snap ? null : hd4(sp.pose), hb = hv && fb ? (pixelHd ? hdFrame(meta.hdPeople, String(v.person), fb, k, dpr) : hd4(fb)) : null;
-        if (hv && (!fb || hb)) fig = { ...fig, x: px(cx - hv.w / 2), y: px(frontY - hv.h), w: hv.w, h: hv.h, file: hv.file, fileB: hb ? hb.file : null, b: hb ? { x: px(cx - hb.w / 2), y: px(frontY - hb.h), w: hb.w, h: hb.h } : null };
+        if (!(hv && (!fb || hb)) && hdOnly(meta)) noPic = true; /* spec 102 T502: no old picture to fall back on (the chip and the shadow stay) */
+        else if (hv && (!fb || hb)) fig = { ...fig, x: px(cx - hv.w / 2), y: px(frontY - hv.h), w: hv.w, h: hv.h, file: hv.file, fileB: hb ? hb.file : null, b: hb ? { x: px(cx - hb.w / 2), y: px(frontY - hb.h), w: hb.w, h: hb.h } : null };
         const headY = hv && (!fb || hb) ? fig.y : fig.y + sp.top * fh2;
         face = { x: cx - 0.065 * nearPx, y: headY, w: 0.13 * nearPx, h: 0.13 * nearPx };
         /* a soft elliptical contact shadow on the floor, centred on the foot line, a little wider than the stance */
@@ -520,7 +526,7 @@ function roLobby(meta: RealMeta, places: RealPlace[], W: number, Lb: number): { 
         /* the name chip goes above the head (the strip is too short to hold it under the feet): it never covers the feet or legs */
         chipY = Math.max(0, headY - CHIP_GAP - CHIP_H);
       }
-      return { id: v.id, fig, chip: { x: cx, y: chipY }, face, shadow };
+      return { id: v.id, fig: noPic ? null : fig, chip: { x: cx, y: chipY }, face, shadow };
     });
     return { id: p.id, custom: !!p.custom, art, slot: { x, y: 0, w: al.w[i], h: Lb }, plate: { x: x + 2, y: compact ? Math.round(Lb * 0.4) : Math.max(3, objTop - 19), w: al.w[i] + al.gap - 6 }, /* the plate may use the gap up to the next place */ visitors, more: p.visitors.length - visitors.length,
       light: art ? { x: x - 0.1 * fw, y: Math.max(0, objTop - 0.15 * fh), w: 1.2 * fw, h: floorY - Math.max(0, objTop - 0.15 * fh) } : { x, y: 0, w: al.w[i], h: Lb } };
