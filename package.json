@@ -307,6 +307,7 @@
     "test:theme": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-theme.js",
     "test:theme-tokens": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-theme-tokens.js",
     "test:themegen": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-themegen.js",
+    "test:toolargcopy": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-toolargcopy.js",
     "test:toolargs-mask": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-toolargs-mask.js",
     "test:toolstats": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-toolstats.js",
     "test:tooltip": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-tooltip.js",

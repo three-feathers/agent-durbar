@@ -239,6 +239,7 @@ const api: DurbarApi = {
   openWithTargets: (id) => ipcRenderer.invoke('agents:openWithTargets', id),
   openWith: (id, target) => ipcRenderer.invoke('agents:openWith', id, target),
   gitStatus: (id) => ipcRenderer.invoke('agents:gitStatus', id),
+  copyToolArg: (sessionId, callId, confirmed) => ipcRenderer.invoke('agents:copyToolArg', sessionId, callId, confirmed === true), // spec 005 FR-411: main writes the clipboard; the answer is a result word, never the text
   sessionSummary: (id, final) => ipcRenderer.invoke('agents:sessionSummary', id, final === true),
   onEvent: (cb) => sub('agent:event', cb),
   onAgentAdded: (cb) => sub('agent:added', cb),

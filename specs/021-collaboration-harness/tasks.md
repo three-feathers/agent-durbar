@@ -137,6 +137,10 @@
 
 - [x] T455 (FR-384) `scripts/pr-preflight.js` (and `scripts/pr-preflight.sh`), `npm run pr:preflight -- <N>`: twelve read-only checks of a PR before review; `docs/development.md`, the brief lines in `docs/agent-setup/`; changelog fragment. Test `test:prpreflight` (`scripts/test-pr-preflight.js`): a throwaway repository and fixture `gh` answers, a failing fixture per check, 37 mutants each killed at its own assert (incl. the default trusted list, the specs:numbers rule, net-new shape words) [FR-384]
 
+## 2026-11-23: specs:numbers sees branches without a PR and worktrees (FR-085 delta)
+
+- [x] T511 (FR-085) `scripts/spec-numbers.js`: the wide list (the default of a run with no `--head` and no PR_HEAD_SHA; `--wide` / `--narrow` force a list; CI, which sets PR_HEAD_SHA, keeps open PR heads; package.json unchanged) adds remote heads (`git ls-remote`) and worktree branches, skips the leftover of a closed, unmerged PR as a NOTE, exit 2 when a list or a PR state cannot be read; `scripts/pr-preflight.js` check 7 reuses it; tests in `scripts/test-spec-numbers.js` and `scripts/test-pr-preflight.js` (a clash from a branch without a PR, from two worktrees, a dead branch skipped, a moved tip counted, an unreadable state exit 2, the CI call as CI makes it and the `--head` form stay narrow, the no-head run is wide, both flags); `docs/development.md`; changelog fragment [FR-085]
+
 ## 2026-11-23: delivery speed rule text, FR-087 job limit, no shared append points proposed (FR-383)
 
 - [x] T484 (FR-383 parts 1 and 2; spec 117 O4) `docs/rules/review-rounds.md` *Review-ready* (merge `origin/main` only for a conflict, red CI or a reviewer's ask) and the new *PR size* line, word for word as FR-383; AGENTS.md *PRs* pointer; the PR template's merge line; `docs/review-checklist.md` *Slice size* to about 100 to 300 lines; spec 117 T015 and T023 with it. Check: `npm run rules:check`, `specs:check`, `specs:numbers`, `changelog:check`

@@ -982,7 +982,7 @@ async function main(): Promise<void> {
     "if (autopilotOn()) query.simautopilot = '1';",
     "changed: (a) => toRenderer('agents:autopilot', { id: a.id, autopilot: a.autopilot ?? null }),",
   ]) assert.ok(mainTs.includes(line), `main.ts: ${line}`);
-  assert.ok(mainTs.indexOf('router.setEventGuard(') < mainTs.indexOf("toRenderer('agent:event', toWindowEvent(e, outward))"), 'the guard is set before the window hears anything');
+  assert.ok(mainTs.indexOf('router.setEventGuard(') < mainTs.indexOf("toRenderer('agent:event', toolArgCopies.see(e, toWindowEvent(e, outward)))"), 'the guard is set before the window hears anything');
   const sim = codeOf(fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'main', 'simguard.ts'), 'utf8'));
   assert.ok(!sim.includes('agents:setAutopilot'), 'not on SIM_OPEN_CHANNELS');
   assert.strictEqual(dialogs.length, 0, 'no native box was asked in this file');
