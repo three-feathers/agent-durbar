@@ -2050,15 +2050,25 @@ assert.strictEqual(redact('{"a":"https://u:p@h/x","b":"y"}', {}), '{"a":"https:/
     'home, then redact': (t) => redact(maskHomePathsOutbound(t, []), {}),
   };
   const preexisting: string[] = [];
+  // shown by main's chains too (a part longer than the old rule reads, or a server name the old rule does not read, with a key the secret rules miss there): the
+  // spec's named gap; not caused or changed here
+  const PREEXISTING = new Set([...['bedrock', 'facebook'].map((f) => `a ${f} key in a dashed name as the UNC server`),
+    ...['google api', 'bedrock', 'facebook', 'databricks', 'twilio', 'aws key id'].map((f) => `a ${f} key at the end of a 200-character part`)]);
   for (const [what, t, sec, keep] of SECRET) for (const [m, f] of Object.entries(SCREEN)) {
-    // held to what the same chain with the old home mask hid; a secret that chain shows too is not this change's (counted and printed below)
-    if (SCREEN_OLD[m](t).includes(sec)) { if (m !== 'home') preexisting.push(`${what} (${m})`); continue; }
+    // a secret the old chains show too is not this change's (`PREEXISTING`, pinned: each is still shown by its old chain, so a later fix shows up here); every
+    // other entry is hidden on every chain, absolutely (a weaker secret rule elsewhere fails here, not only against the old chain)
+    if (PREEXISTING.has(what) || (m === 'home' && SCREEN_OLD.home(t).includes(sec))) {
+      if (m !== 'home' && SCREEN_OLD[m](t).includes(sec)) preexisting.push(`${what} (${m})`);
+      assert.ok(!(f(t).includes(sec) && !SCREEN_OLD[m](t).includes(sec)), `FR-435 secret: ${what} hidden wherever the old chain hid it (${m})`);
+      continue;
+    }
     const o = f(t);
     assert.ok(!o.includes(sec), `FR-435 secret: ${what} stays hidden (${m}): ${o}`);
     // a share path with a key keeps the old hiding of its place (fail closed); a link (smb, afp, file) shows the rest
     if (keep && !/^[\\/]{2}/.test(t)) assert.ok(o.includes(keep), `FR-435 secret: ${what}, the rest of the link is shown (${m}): ${o}`);
   }
-  console.log(`FR-435 secret list: ${SECRET.length} entries; shown by the old chains too (not this change's): ${preexisting.length ? preexisting.join('; ') : 'none'}`);
+  assert.deepStrictEqual([...PREEXISTING].filter((w) => !preexisting.some((x) => x.startsWith(w + ' ('))), [], 'FR-435 secret: every pinned old gap is still shown by its old chain (a fix elsewhere updates the list)');
+  console.log(`FR-435 secret list: ${SECRET.length} entries, ${PREEXISTING.size} of them shown by main's chains too (not this change's)`);
   // the plain-name rule, each threshold on both sides (at most 64 characters; a run of 15 shows, a run of 16 keeps the old hiding; dots and dashes break a run,
   // an underscore does not); every part counts, the file name and parts past the next folder included
   const plainOf = (p: string): boolean => maskHomePaths(p, []) === p;
@@ -2074,7 +2084,7 @@ assert.strictEqual(redact('{"a":"https://u:p@h/x","b":"y"}', {}), '{"a":"https:/
   assert.strictEqual(maskHomePaths(B + B + 'fs01' + B + '0123456789abcdef0123456789abcdef01234567' + B + 'x', []), '~', 'FR-435 screen: a hex digest folder keeps the old hiding (the cost of failing closed)');
   // the outbound chains hide them too
   const OUT: Record<string, (t: string) => string> = { 'outbound, redact first': (t) => maskHomePathsOutbound(redact(t, {}), []), 'outbound home, then redact': (t) => redact(maskHomePathsOutbound(t, []), {}) };
-  for (const [what, t, sec] of SECRET) for (const [m, f] of Object.entries(OUT)) if (!preexisting.some((x) => x.startsWith(what + ' ('))) assert.ok(!f(t).includes(sec), `FR-435 secret (outbound): ${what} stays hidden (${m}): ${f(t)}`);
+  for (const [what, t, sec] of SECRET) for (const [m, f] of Object.entries(OUT)) if (!PREEXISTING.has(what)) assert.ok(!f(t).includes(sec), `FR-435 secret (outbound): ${what} stays hidden (${m}): ${f(t)}`);
   // the cut marker (finding 1): the outbound mask hides a share lead cut after its server, in every spelling; the screen mask keeps it
   for (const t of [B + B + 'fs01' + B + ' [truncated]', B + B + 'fs01 [truncated]', B.repeat(4) + 'fs01' + B + B + ' [truncated]', 'spawn ' + B + B + 'fs01.corp.example' + B + ' [truncated]', '//fs01/hom [truncated]']) {
     const o = maskHomePathsOutbound(t, []);
