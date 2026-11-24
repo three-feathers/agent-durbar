@@ -8,8 +8,6 @@ const THEME=window.THEME; /* theme packs (specs 035-040): tokens, words, motion;
 const T_=n=>THEME.token(n);
 const wordOf=k=>THEME.word(k);
 const qs = new URLSearchParams(location.search);
-/* spec 102 FR-399 (issue 2055): the Retro arcade's HD person set, off by default and not in Settings until the owner approves the finished set; ?hdpeople=1 (DURBAR_HD_PEOPLE=1, development runs) turns it on for one run */
-const HD_PEOPLE_ON=qs.get('hdpeople')==='1';
 /* spec 052 FR-176 (issue 638): focus and scroll into view never move the page; innerscroll.js. No bare focus() or scrollIntoView here
    (test:innerscroll checks it): a plain focus() also scrolled html (overflow:hidden), which hid the chat header. */
 const SCROLL=window.DurbarScroll;
@@ -88,7 +86,7 @@ function crewPreloadOne(id,pose){
 /* the open chat's header avatar and the inbox rows are drawn once, not by renderAll: when a character falls back, redraw just those avatars (no rebuild, so focus stays) */
 function crewRefreshAvatars(){
   const sel=typeof ui!=='undefined'&&byId(ui.selected), ph=document.querySelector('#panelHead .avatar'); if(sel&&ph)ph.innerHTML=avatar(sel);
-  document.querySelectorAll('.inbox-row[data-id] .ib-av').forEach(av=>{const a=byId(av.closest('.inbox-row').dataset.id);if(a)av.innerHTML=avatar(a);});
+  document.querySelectorAll('.inbox-row[data-id] .ib-av').forEach(av=>{const a=byId(av.closest('.inbox-row').dataset.id);if(a)av.innerHTML=avatar(a,undefined,undefined,32);});
 }
 /* the map was built for another agents array or another Characters value (each crew keeps its own saved map) */
 const crewStale=()=>CREW_FOR!==agents||CREW_CH!==crewChoice();
@@ -951,24 +949,33 @@ function roFace0(a){
   const ls=E.lightState(isFailing(a)?'failing':isRetrying(a)?'retrying':isCompacting(a)?'compacting':vis(a),{limit:!!a.limit,paused:!!a.paused,asleep:old});
   const pose=(E.SEAT_POSE||{})[ls]||'rest';
   const ok=/^[a-z0-9-]{1,24}$/.test(pp.set)&&/^[a-z0-9-]{1,24}$/.test(pp.world);
-  const file=ok&&person&&/^[a-z0-9-]{1,24}$/.test(person)?'realoffice/sets/'+pp.set+'/'+person+'-'+(v?'rest':pose)+'.webp':''; /* a visit does not change who the agent is: away, the same person at rest */
-  const sm=(packMeta('sets',pp.set)||{}).seat, seatM=sm&&person&&Object.prototype.hasOwnProperty.call(sm,person)?sm[person]:null, crop=seatM&&E.portraitCrop?E.portraitCrop(seatM):null;
-  return {ls,file,seatM,crop,pp,person,v};
+  const pm=packMeta('sets',pp.set)||{}, busts=pm.hd&&pm.hd.busts&&person&&Object.prototype.hasOwnProperty.call(pm.hd.busts,person); /* spec 102 T472: a set's HD busts when it has them */
+  const file=ok&&person&&/^[a-z0-9-]{1,24}$/.test(person)?'realoffice/sets/'+pp.set+'/'+(busts?'hd/':'')+person+'-'+(v?'rest':pose)+(busts?'@4':'')+'.webp':''; /* a visit does not change who the agent is: away, the same person at rest */
+  const sm=busts?pm.hd.busts:pm.seat, seatM=sm&&person&&Object.prototype.hasOwnProperty.call(sm,person)?sm[person]:null, crop=seatM&&E.portraitCrop?E.portraitCrop(seatM):null;
+  const hdT=pack0(pp.set)&&person?roTile(pp.set,person,v?'rest':pose):''; /* spec 102 FR-405 (issue 2055): the HD set's avatar tiles */
+  return {ls,file,seatM,crop,pp,person,v,tile:hdT};
 }
+const pack0=set=>/^[a-z0-9-]{1,24}$/.test(set||'');
+/* spec 102 FR-405: the base path of a person's avatar tile in a pose ('' when the set has none): the file is base + the drawn size in device px + '.webp' */
+function roTile(set,person,pose){const t=((packMeta('sets',set)||{}).hd||{}).tiles;return t&&Array.isArray(t.people)&&t.people.includes(person)&&Array.isArray(t.poses)&&t.poses.includes(pose)&&/^[a-z0-9-]{1,24}$/.test(person)?'realoffice/sets/'+set+'/hd/'+person+'-'+pose+'-t':'';}
+/* the tile for a circle of px CSS px: the exact size, and twice it for a 2x screen; null when the set has no tile of that size (the old crop is drawn) */
+function roTileImg(f,px){const t=f&&f.tile&&((packMeta('sets',f.pp.set)||{}).hd||{}).tiles;if(!t||!px||!t.sizes.includes(px))return null;
+  const two=t.sizes.includes(2*px)?` srcset="${esc(f.tile+px)}.webp 1x, ${esc(f.tile+2*px)}.webp 2x"`:'';
+  return `<span class="ro-face" style="position:relative;display:block;width:100%;height:100%;overflow:hidden;border-radius:50%"><img alt="" draggable="false" src="${esc(f.tile+px)}.webp"${two} style="display:block;width:100%;height:100%;image-rendering:pixelated"></span>`;}
 const roFaceImg=f=>{
   const st=f.crop&&f.seatM?`width:${f.seatM.w/f.crop.s*100}%;left:${-f.crop.x/f.crop.s*100}%;top:${-f.crop.y/f.crop.s*100}%`:'width:100%';
   return `<span class="ro-face" style="position:relative;display:block;width:100%;height:100%;overflow:hidden;border-radius:50%"><img alt="" draggable="false" src="${esc(f.file)}" style="position:absolute;display:block;max-width:none;height:auto;${st}"></span>`;
 };
 /* what picture an agent has right now, as a short key: tests and the redraw compare it (the same for every place that shows the face) */
 function faceKey(a){
-  const f=roFace(a); if(f)return f.file||'initial|'+Array.from(String(a.name||'?'))[0].toUpperCase();
+  const f=roFace(a); if(f)return (f.tile||f.file)||'initial|'+Array.from(String(a.name||'?'))[0].toUpperCase();
   const kit=THEME.sceneKit(); return kit+'|'+(kit==='crew'?crewOf(a):'')+'|'+JSON.stringify(a.look||'');
 }
-function avatar(a,view,ov){
-  if(!ov){const rf=roFace(a);if(rf)return rf.file?roFaceImg(rf):`<span class="ro-face ro-ini" style="display:flex;align-items:center;justify-content:center;width:100%;height:100%;border-radius:50%;font-weight:600;font-size:12px;background:var(--surface-2);color:var(--ink)">${esc(Array.from(String(a.name||'?'))[0].toUpperCase())}</span>`;} /* away: the initial, as the header */
+function avatar(a,view,ov,px){
+  if(!ov){const rf=roFace(a);if(rf)return rf.file?(roTileImg(rf,px)||roFaceImg(rf)):`<span class="ro-face ro-ini" style="display:flex;align-items:center;justify-content:center;width:100%;height:100%;border-radius:50%;font-weight:600;font-size:12px;background:var(--surface-2);color:var(--ink)">${esc(Array.from(String(a.name||'?'))[0].toUpperCase())}</span>`;} /* away: the initial, as the header */
   const k=themedLook(a.look);
   const kit=(ov&&ov.kit)||THEME.sceneKit(), cr=kit==='crew'?(ov&&ov.crew!==undefined?ov.crew:crewOf(a)):'';
-  if(kit!=='office'&&window.DurbarScenes){const v=window.DurbarScenes.avatar(kit,a,{k,T:T_,shade,reduced:REDUCED,art:kitArt(),crew:cr,crewFb:kit==='crew'&&CREW_BAD.has(cr),view});if(v)return v;}
+  if(kit!=='office'&&window.DurbarScenes){const v=window.DurbarScenes.avatar(kit,a,{k,T:T_,shade,reduced:REDUCED,art:kitArt(),crew:cr,crewFb:kit==='crew'&&CREW_BAD.has(cr),view,px,dpr:window.devicePixelRatio||1});if(v)return v;}
   return `<svg viewBox="50 20 48 48" width="100%" height="100%" aria-hidden="true" focusable="false">${k.style==='long'?`<path d="M59.5 44a14.5 14.5 0 0 1 29 0v19q0 4-4 4h-21q-4 0-4-4z" fill="${k.hair}"/>`:''}<path d="M55 99V77q0-14 14-14h10q14 0 14 14v22z" fill="${k.shirt}"/><rect x="70" y="53" width="8" height="10" rx="3" fill="${shade(k.skin,-.08)}"/>${charArt('body')}<circle cx="74" cy="44" r="12.5" fill="${k.skin}"/>${hairFront(k.style,k.hair)}${charArt('head')}<circle cx="71.7" cy="45.4" r="1.35" fill="${T_('--face-dark')}"/><circle cx="79.7" cy="45.4" r="1.35" fill="${T_('--face-dark')}"/><path d="M71 51.6q3 2 6 0" fill="none" stroke="${T_('--mouth')}" stroke-width="1.3" stroke-linecap="round"/></svg>`;
 }
 const PLANT=()=>'<svg class="room-plant" width="26" height="30" viewBox="0 0 26 30" aria-hidden="true" focusable="false">'+THEME.slot('plant')+'</svg>';
@@ -2036,7 +2043,7 @@ function renderReal(stage,floor,aw,ah,model,empty){
   if(stage.dataset.d!=='real'){stage.dataset.d='real';stage.textContent='';}
   layoutKey='';GROW=0;setGrow(stage,0);spreadOffice(stage,false);stagePrev=null;
   const fcs=getComputedStyle(floor), lendPad=(parseFloat(fcs.paddingBottom)||0)+Math.max(0,(parseFloat(fcs.paddingTop)||0)-(floor.classList.contains('has-fnote')?parseFloat(fcs.getPropertyValue('--fnote-keep'))||0:0)); /* what #floor.ro-tight gives up (styles.css) */
-  RO_LAST=window.DurbarRealOffice.render(stage,Object.assign(realModel(model),empty?{empty}:{}),{w:aw,h:ah},{live:liveOn(),still:REDUCED||!MOTION||STILL_HL,hold:roFrozen(),screenOf:realScreen,factsOf:realFacts,world:pp.world,set:pp.set,hd:HD_PEOPLE_ON,remember:rememberOn(), /* FR-071: Settings > Motion (still above) stops the people */
+  RO_LAST=window.DurbarRealOffice.render(stage,Object.assign(realModel(model),empty?{empty}:{}),{w:aw,h:ah},{live:liveOn(),still:REDUCED||!MOTION||STILL_HL,hold:roFrozen(),screenOf:realScreen,factsOf:realFacts,world:pp.world,set:pp.set,remember:rememberOn(), /* FR-071: Settings > Motion (still above) stops the people */
     rand:CREW&&(SIM||!rememberOn())?CREW.seededRand:Math.random,onArt:()=>scheduleRender(),lend:lendPad}); /* spec 102 delta 2026-11-11: the arcade hall may take the floor's padding rather than scroll */
   floor.classList.toggle('ro-tight',!!RO_LAST.lent);
   stage.style.width=aw+'px';stage.style.height=RO_LAST.height+'px';
@@ -2893,7 +2900,7 @@ function syncChatHeader(){
   if(!on){if(port0)port0.remove();return;}
   const f=roFace(a), pp=f.pp, v=f.v, ls=f.ls, file=f.file, pack=/^[a-z0-9-]{1,24}$/.test(pp.set)&&/^[a-z0-9-]{1,24}$/.test(pp.world); /* the one picker (issue 1193) */
   const lt=E.lightFor(ls,{still:REDUCED||!MOTION||STILL_HL}), words=E.lampWords(lt);
-  const key=[a.id,ls,words,file,stWord(a),v?v.place:'',helpersOf(a).length,pp.world,pp.set].join('|');
+  const key=[a.id,ls,words,file,f.tile,stWord(a),v?v.place:'',helpersOf(a).length,pp.world,pp.set].join('|');
   /* the header portrait: the person's head and shoulders in a ring that carries the lamp's colour, with the status dot */
   let port=port0; const top=p.querySelector('.ph-top');
   if(top&&(!port||port._k!==key)){
@@ -2901,7 +2908,9 @@ function syncChatHeader(){
     port=document.createElement('span');port.id='roPortrait';port.className='ro-portrait';port.setAttribute('aria-hidden','true');port._k=key;
     port.dataset.lamp=lt.lamp;port.dataset.tint=lt.tint; /* spec 097 FR-236: the ring follows the screen tint */
     port.dataset.face=faceKey(a);
-    if(file&&pack){const clip=document.createElement('span');clip.className='rp-clip';const im=document.createElement('img');im.alt='';im.draggable=false;im.src=file;
+    const tl=roTileImg(f,32);
+    if(tl){const clip=document.createElement('span');clip.className='rp-clip';clip.innerHTML=tl;port.appendChild(clip);} /* spec 102 FR-405: the HD tile, 1:1 */
+    else if(file&&pack){const clip=document.createElement('span');clip.className='rp-clip';const im=document.createElement('img');im.alt='';im.draggable=false;im.src=file;
       if(f.crop&&f.seatM){im.style.width=(f.seatM.w/f.crop.s*100)+'%';im.style.left=(-f.crop.x/f.crop.s*100)+'%';im.style.top=(-f.crop.y/f.crop.s*100)+'%';} /* the face fills the circle: the data of the layout's face box */
       clip.appendChild(im);port.appendChild(clip);}
     else{const t=document.createElement('b');t.className='rp-ini';t.textContent=Array.from(String(a.name||'?'))[0].toUpperCase();port.appendChild(t);} /* away or no picture: the initial, as the office's disc */
@@ -2922,7 +2931,7 @@ function updatePanelHeader(){
   syncMoreBtn(); /* spec 005 FR-234 (issue 1145): no More button for a menu with no items */
   $('pauseBtn').querySelector('span').textContent=a.paused?'Resume':'Pause';
   syncRunState(); /* spec 005 FR-038: Send or Stop follows the turn */
-  const av=ph.querySelector('.avatar'),fk=faceKey(a); if(av&&av.dataset.face!==fk){av.dataset.face=fk;av.innerHTML=avatar(a);} /* the header's face follows the agent's picture (issue 1193) */
+  const av=ph.querySelector('.avatar'),fk=faceKey(a); if(av&&av.dataset.face!==fk){av.dataset.face=fk;av.innerHTML=avatar(a,undefined,undefined,32);} /* the header's face follows the agent's picture (issue 1193) */
   syncChatHeader(); /* spec 097 FR-106: the portrait and the lamp words follow the header */
   requestAnimationFrame(syncChatHeader); /* once more when the panel has its layout */
 }
@@ -3186,7 +3195,7 @@ function openPanel(id,focus){
   const mdlName=a.live&&a.info?modelLabel(a.info):'';
   const subText=a.role+(parent?' · helper of '+parent.name:'');
   p.innerHTML=`${railHTML()}<div class="panel-in">
-   <div class="ph" id="panelHead"><div class="ph-top"><div class="avatar" data-face="${esc(faceKey(a))}">${avatar(a)}</div><div class="ph-id"><h2 id="panelTitle" tabindex="-1" title="${esc(panelTipOf(a))}"${titleRenameable(a)?` aria-label="${esc(a.name)}"`:''}>${panelTitleHTML(a)}</h2><div class="sub" title="${esc(subText)}">${parent?'':chatNoHTML(a)}${!parent&&chatNoOf(a)?'<span class="sr-only">Chat '+chatNoOf(a)+'. </span>':''}${esc(subText)}</div></div>
+   <div class="ph" id="panelHead"><div class="ph-top"><div class="avatar" data-face="${esc(faceKey(a))}">${avatar(a,undefined,undefined,32)}</div><div class="ph-id"><h2 id="panelTitle" tabindex="-1" title="${esc(panelTipOf(a))}"${titleRenameable(a)?` aria-label="${esc(a.name)}"`:''}>${panelTitleHTML(a)}</h2><div class="sub" title="${esc(subText)}">${parent?'':chatNoHTML(a)}${!parent&&chatNoOf(a)?'<span class="sr-only">Chat '+chatNoOf(a)+'. </span>':''}${esc(subText)}</div></div>
       <div class="ph-meta"><span data-f="status"></span><span class="ph-ago" data-f="ago"></span><!-- spec 005 FR-039: the header keeps who and what (status, limit, remote, folder); how the next message runs is under the message box (FR-037) -->${a.live&&!a.parent&&bridge&&bridge.setCap?capChipHTML(liveRoot(a)):''}${canRemote(a)?remoteChipHTML(a):''}<span class="folder" title="${esc(room.path)}"><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" style="flex:none"><path d="M1.8 4.2a1.4 1.4 0 0 1 1.4-1.4h3l1.6 1.8h4.8a1.4 1.4 0 0 1 1.4 1.4v6.2a1.4 1.4 0 0 1-1.4 1.4H3.2a1.4 1.4 0 0 1-1.4-1.4z"/></svg><span class="folder-t">${esc(showPath(room.path))}</span></span>${notesOn(a)?'<button class="nt-count" id="ntCount" type="button" aria-expanded="false" aria-controls="notesDrawer" data-notes-toggle hidden>Notes</button>':''}</div>      <div class="actions"><!-- spec 052 FR-003: two actions in view (FR-139: a third, + New, by owner decision), the rest under More (ids kept; End and Remove last); spec 006 FR-033 (2026-10-21): Previous sessions moved out of the actions, to their own section above the chat -->${a.live&&!a.parent&&bridge.newSession&&anyKindReady()&&!demoOn?`<button class="btn sm" id="newSessHdrBtn" type="button" title="New session in ${esc(room.name)}" aria-label="New session in ${esc(room.name)}">+ New</button>`:''}${a.live?`<button class="btn sm primary" id="vscodeBtn" type="button" aria-haspopup="menu" aria-expanded="false" aria-controls="openWithMenu" title="Open this folder in an editor or the file manager. This does not move the conversation.">${CODE_SVG}Open with<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6l4 4 4-4"/></svg></button><div class="more-menu" id="openWithMenu" role="menu" aria-label="Open with" aria-describedby="owNote" hidden><p role="none" class="ow-note" id="owNote">Opens this folder only. Your conversation stays here.${a.live&&bridge.newSession&&!a.parent&&anyKindReady()&&canHandover(a)?' To hand it to another app, use More, then Continue in another app…':''}</p><div id="owItems" role="none"></div></div>`:`<button class="btn sm primary" id="vscodeBtn" type="button" title="A demo agent: shows the command an editor would be opened with">${CODE_SVG}Open in editor</button>`/* spec 009 FR-019 (review of PR 976): a demo agent has no menu to promise */}
         <button class="btn sm" id="pauseBtn" type="button"><svg viewBox="0 0 16 16" fill="currentColor"><rect x="4" y="3" width="2.8" height="10" rx="1"/><rect x="9.2" y="3" width="2.8" height="10" rx="1"/></svg><span>Pause</span></button>
         <button class="btn sm" id="moreBtn" type="button" aria-haspopup="menu" aria-expanded="false" aria-controls="moreMenu" title="More actions for this agent">More<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6l4 4 4-4"/></svg></button><div class="more-menu" id="moreMenu" role="menu" aria-label="More actions" hidden>${a.live&&!a.parent?`<button class="more-it" role="menuitem" tabindex="-1" id="toolsHdrBtn" type="button" title="Which tools this agent used, how often, and its models and context window"><span class="mt">Tools and usage<small>Tools used, models, context window</small></span></button>`:''}${notesOn(a)?`<button class="more-it" role="menuitem" tabindex="-1" id="notesHdrBtn" type="button" data-notes-toggle aria-keyshortcuts="${esc(ariaKeys(NOTES_KEYS))}" title="Messages and ideas kept for this folder, to put back into the message box"><span class="mt">Notes…<small>Saved messages and ideas · ${esc(keyText(NOTES_KEYS))}</small></span></button>`:''}${a.live&&!a.parent&&bridge.listSchedules&&!demoOn?`<button class="more-it" role="menuitem" tabindex="-1" id="schedHdrBtn" type="button" title="Prompts sent to this folder's agent at a time, every day or at an interval"><span class="mt">Schedules${(()=>{try{const n=schedulesOf(room).filter(s=>!s.done).length;return n?' ('+n+')':'';}catch(e){return '';}})()}<small>Prompts sent at a set time</small></span></button>`:''}${a.live&&bridge.newSession&&!a.parent&&anyKindReady()?`<button class="more-it" role="menuitem" tabindex="-1" id="newSessBtn" type="button" title="Another agent with its own chat in this folder"><span class="mt">+ New session<small>Another agent in this folder</small></span></button>${canHandover(a)?'<button class="more-it" role="menuitem" tabindex="-1" id="handoverBtn" type="button" title="Start a session in another agent app from a summary of this conversation. You review it first."><span class="mt">Continue in another app…<small>Start there from a summary</small></span></button>':''}`:''}${canRemote(a)?`<button class="more-it${a.remote?' on':''}" role="menuitem" tabindex="-1" id="remoteBtn" type="button" title="Follow and steer this session from github.com and GitHub Mobile">${remoteItemInner(a)}</button>`:''}${a.live&&!a.parent&&resumeCmdOf(a)?`<button class="more-it" role="menuitem" tabindex="-1" id="copyResBtn" type="button" title="Copy a command that continues this session in a terminal (end the session here first)"><span class="mt">Copy resume command<small>Continue this session in a terminal</small></span></button>`:''}${canRenameSession(a)?`<button class="more-it" role="menuitem" tabindex="-1" id="renameSessBtn" type="button" title="Give this session a short name"><span class="mt">Rename…<small>A short name for this session</small></span></button>`:''}<div class="more-sep" role="separator"></div>${a.live&&bridge.end&&!a.parent?`<button class="more-it danger" role="menuitem" tabindex="-1" id="endBtn" type="button" title="End this session and free it. Sending a message later resumes it."><span class="mt">End session<small>A later message resumes it</small></span></button>`:''}${a.live&&bridge.removeSession&&!a.parent&&siblingsOf(a).length?`<button class="more-it danger" role="menuitem" tabindex="-1" id="rmSessBtn" type="button" title="End this session and take its card out of the office. The folder's other sessions stay."><span class="mt">Remove from office<small>Ends it; history stays in Previous sessions</small></span></button>`:(a.live&&bridge.removeFolder&&!a.parent&&!demoOn?`<button class="more-it danger" role="menuitem" tabindex="-1" id="rmFolderBtn" type="button" title="Forget ${esc(DurbarCutText.cutText(room.name,30))} in Agent Durbar. Its session ends; nothing on disk is deleted."><span class="mt">Remove folder<small>Forgets the folder; files stay on disk</small></span></button>`:'')}</div></div></div>
@@ -5034,7 +5043,7 @@ function doorAfterPaint(list){
   const p=$('needsPanel'); if(!p)return;
   const n=list.length;
   $('doorLine').textContent=n?n+' outside your door, oldest first':'Nobody outside your door.';
-  $('doorFaces').innerHTML=list.slice(0,8).map(a=>'<span class="door-face" data-face="'+esc(faceKey(a))+'">'+avatar(a)+'</span>').join('')+(n>8?'<span class="door-more">+'+(n-8)+'</span>':'');
+  $('doorFaces').innerHTML=list.slice(0,8).map(a=>'<span class="door-face" data-face="'+esc(faceKey(a))+'">'+avatar(a,undefined,undefined,24)+'</span>').join('')+(n>8?'<span class="door-more">+'+(n-8)+'</span>':'');
   p.dataset.sig=doorSig(list);
   clearTimeout(DOOR_CLEAR);DOOR_CLEAR=0;
   if(!n&&p.dataset.auto==='1')DOOR_CLEAR=setTimeout(()=>{DOOR_CLEAR=0;if($('needsPanel')&&!needsMeOrder().length)closeDoor(false);},2000); /* Q-NY-13: opened by itself and emptied, All clear for about 2 s */
@@ -5088,7 +5097,7 @@ function openInbox(focusId){
   {const wd=document.documentElement.dataset.world;
     if(officeView()==='real'&&/^[a-z0-9-]{1,24}$/.test(wd||'')){
       const hd=document.createElement('div');hd.className='ib-world';hd.dataset.surface='inbox';hd.setAttribute('aria-hidden','true');
-      hd.innerHTML='<img class="ibw-door" alt="" src="realoffice/worlds/'+wd+'/fx-boss.webp"><span class="ibw-faces">'+needsMeOrder().slice(0,4).map(a=>'<span class="ibw-face" data-face="'+esc(faceKey(a))+'">'+avatar(a)+'</span>').join('')+'</span>';
+      hd.innerHTML='<img class="ibw-door" alt="" src="realoffice/worlds/'+wd+'/fx-boss.webp"><span class="ibw-faces">'+needsMeOrder().slice(0,4).map(a=>'<span class="ibw-face" data-face="'+esc(faceKey(a))+'">'+avatar(a,undefined,undefined,26)+'</span>').join('')+'</span>';
       const dl=d.querySelector('.inbox-dlg');dl.insertBefore(hd,dl.firstChild);
     }}
   document.body.appendChild(d);
@@ -5146,7 +5155,7 @@ function paintInbox(focusIndex){
     const door=DOOR_ON&&!!$('needsPanel'), rq=card?reqOf(card):'', isLimit=!!card&&card.classList.contains('limit'), isCoffee=door&&!!card&&card.classList.contains('coffee'); /* FR-206: the request this row was painted for; FR-207: a limit row has its own amount and no letter key */
     const st=vis(a), q=card&&card.classList.contains('question'), what=card?(q?'asks':card.classList.contains('limit')?'reached its spending limit':card.classList.contains('coffee')?'is on a '+coffeeWord().toLowerCase():'needs your OK'):(st==='error'?'has an error':a.limit?'reached its limit':LABELS[st]||st);
     row.setAttribute('aria-labelledby','ibh'+i);row.dataset.id=a.id;row.dataset.name=a.name;if(door)row.dataset.rq=rq;if(door&&isLimit)row.classList.add('is-limit');
-    row.innerHTML='<div class="ib-av" aria-hidden="true" data-face="'+esc(faceKey(a))+'">'+avatar(a)+'</div><div class="ib-main"><div class="ib-top"><h4 class="ib-h" id="ibh'+i+'" tabindex="-1"><b class="ib-n"></b> <span class="ib-sub"><span class="ib-w"></span> <span class="ib-f"></span> <span class="ib-wait"></span></span></h4></div><p class="ib-t" id="ibt'+i+'"></p><div class="ib-act"></div></div>';
+    row.innerHTML='<div class="ib-av" aria-hidden="true" data-face="'+esc(faceKey(a))+'">'+avatar(a,undefined,undefined,32)+'</div><div class="ib-main"><div class="ib-top"><h4 class="ib-h" id="ibh'+i+'" tabindex="-1"><b class="ib-n"></b> <span class="ib-sub"><span class="ib-w"></span> <span class="ib-f"></span> <span class="ib-wait"></span></span></h4></div><p class="ib-t" id="ibt'+i+'"></p><div class="ib-act"></div></div>';
     row.querySelector('.ib-h b').textContent=a.name;row.querySelector('.ib-h b').title=a.name;row.querySelector('.ib-w').textContent=what;row.querySelector('.ib-f').textContent='· '+roomOf(a).name;row.querySelector('.ib-f').title=roomOf(a).name; /* spec 052 FR-170: the name is its own line, the rest wraps below it */
     {const t=NEED_SINCE.get(a.id);row.querySelector('.ib-wait').textContent=t!=null?'· '+ATT.waitLabel(Date.now()-t):'';} /* FR-061 */
     const text=card?requestText(card):(taskOf(a)||''), long=door&&!!card&&!isLimit&&text.length>REQ_TEXT_MAX; /* FR-199 (Q-NY-11): over FR-060's 480 characters a row only reads the request's start and offers Open */
@@ -8423,7 +8432,7 @@ function railReq(x){const c=x.live||chats[x.id]?pendingCardOf(x):null;return c?r
 const railFolderLine=x=>{const r=roomOf(x),p=r?pathTip(deskMask(showPath(r.path))):'';return p?'\n'+esc('Folder: '+p):'';};
 function railRow(x,root,now){
   const st=pillSt(x),attn=st==='waiting'||st==='error'||st==='failing'||st==='retrying', sel=x.id===root, tall=needsMe(x); /* spec 052 FR-092: Failing here too; spec 034 FR-018: Retrying */
-  const head=`<span class="sav" data-face="${esc(faceKey(x))}">${avatar(x)}</span>`, name=`<b>${esc(x.name)}${draftHTML(x)}${unreadHTML(x)}${dialogHTML(x)}</b>`;
+  const head=`<span class="sav" data-face="${esc(faceKey(x))}">${avatar(x,undefined,undefined,22)}</span>`, name=`<b>${esc(x.name)}${draftHTML(x)}${unreadHTML(x)}${dialogHTML(x)}</b>`;
   const cls=`sitem st-${st}${attn?' attn':''}${tall?' tall':''}${sel?' sel':''}`, key=`data-sw="${esc(x.id)}" data-key="sw:${esc(x.id)}" aria-current="${sel}"`, who=`${esc(x.name)}${chatNoWords(x)}${draftWords(x)}${unreadWords(x)}`, no=chatNoOf(x)?'C'+chatNoOf(x)+' · ':'';
   if(!tall)return `<button class="${cls}" type="button" ${key} data-tip="${no}${esc(x.name)} · ${esc(stWord(x,true))}: ${esc(taskText(x))}${railFolderLine(x)}" aria-label="${who}, ${esc(stWord(x,true))}. Open chat.">${head}<span class="stx">${name}</span><span class="sst"><span class="dot ${st}"></span><span class="sw">${esc(stWord(x,true))}</span></span></button>`;
   const req=SHORT(railReq(x),200); /* masked first (requestText), then cut: tooltips stay within 300 characters (spec 052 FR-171) */

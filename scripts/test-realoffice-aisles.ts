@@ -5,8 +5,8 @@ import * as crypto from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
 import { realLayout, layoutOrFlat, signMin, signWidth, sortDesks, storeyRuns, storeyTagW, STOREY_GAP, STOREY_U_LOSS, type RealFloor, type RealMeta, type RealModel, type RealAgent, type RealState, type Rect, type Layout, type DeskBox } from '../src/shared/realoffice-layout';
-import { screenFit, type HdSet } from '../src/shared/realoffice-layout';
-import { AISLE_SIGN_H, CUE_BOX, hdFrame, hdPick, hdPlace, deviceScales, aisleStatus, aislesLayout, AISLES_DEPTH, placeResting, layoutFor, aisleTabOrder, aisleFace, FACE_FLOOR, AISLE_SIGN_MIN_W, AISLE_PLATE_H, ARRANGEMENTS } from '../src/shared/realoffice-arrangements';
+import { screenFit, hdFrame, hdPick, type HdSet } from '../src/shared/realoffice-layout';
+import { AISLE_SIGN_H, CUE_BOX, hdPlace, deviceScales, aisleStatus, aislesLayout, AISLES_DEPTH, placeResting, layoutFor, aisleTabOrder, aisleFace, FACE_FLOOR, AISLE_SIGN_MIN_W, AISLE_PLATE_H, ARRANGEMENTS } from '../src/shared/realoffice-arrangements';
 
 process.exitCode = 1;
 const ROOT = (() => { let d = __dirname; while (!fs.existsSync(path.join(d, 'package.json'))) d = path.dirname(d); return d; })();
@@ -1194,6 +1194,26 @@ for (const world of ['photo', 'cave']) {
     }
   }
   assert.ok(hdDrawn >= 18, `the HD frames were drawn (${hdDrawn})`);
+  /* FR-406: an HD person never falls back to an old frame at a cabinet: every pose a state can ask for (with its fallbacks) has its HD frame at every authored scale */
+  for (const pid of Object.keys(HD.people)) for (const st of STATES) for (const g of [2, 3, 4]) {
+    const L = aislesLayout({ folders: [{ id: 'f0', agents: [{ id: 'a0', state: st, person: pid, away: null }] }], places: [] }, { w: 1440, h: ROOM.h900 }, { ...META, hdPeople: HD }, SIGNS(1)), d = L.zones[0].desks[0];
+    assert.ok(d.person && d.person.file.startsWith('hd/') && hdFrame(HD, pid, d.person.pose, g), `FR-406: ${pid} ${st}: an HD frame, never the old one (g ${g})`);
+  }
+  /* FR-406 made complete (issue 2055, 2026-11-23): every place the arcade layout draws a person, with the switch on: the cabinet, the lounge stool and the lobby visitor
+     (with its second running frame), every person in each, both sizes, both ratios, never an old file. The avatars are FR-405's tiles (test-realoffice-assets); the helper
+     strip draws the world's kids; the hover card draws no person. Off, the same halls are byte for byte the old ones (the off-equality and the pinned hash above). */
+  let walked = 0;
+  for (const [W, H] of [[1440, ROOM.h900], [1280, ROOM.h800]] as const) for (const dpr of [1, 2]) for (const n of [3, 15]) for (let r = 0; r < 15; r += n === 3 ? 3 : 5) {
+    const m = model(n, n > 4 ? 4 : 1, STATES, n === 3 ? 1 : 3), who = (i: number): string => PEOPLE[(i + r) % 15];
+    m.folders.flatMap((f) => f.agents).forEach((a, i) => { a.person = who(i); a.away = null; if (a.lounge) a.state = i % 2 ? 'done' : 'asleep'; });
+    m.places = m.places.map((p, i) => ({ ...p, visitors: [{ id: 'v' + i, person: who(i + 7) } as never] }));
+    const L = aislesLayout(m, { w: W, h: H }, { ...META, dpr, hdPeople: HD }, SIGNS(m.folders.length)), tag = `${W}x${H} at ${dpr}x, ${n} agents, offset ${r}`;
+    const seats = L.lounge ? L.lounge.desks : [], vis = L.fixtures.flatMap((f) => f.visitors).filter((v) => v.fig);
+    assert.ok(seats.length > 0 && vis.length > 0, `${tag}: the walk reaches a lounge seat and a visitor`);
+    for (const d of [...L.zones.flatMap((z) => z.desks), ...seats]) if (d.person) { walked++; assert.ok(d.person.file.startsWith('hd/'), `FR-406, ${tag}: ${d.lounge ? 'lounge' : 'cabinet'} ${d.person.pid} draws the old ${d.person.file}`); }
+    for (const v of vis) for (const f of [v.fig!.file, v.fig!.fileB]) if (f) { walked++; assert.ok(f.startsWith('hd/'), `FR-406, ${tag}: visitor ${v.id} draws the old ${f}`); }
+  }
+  console.log(`FR-406 walk: ${walked} people drawn, every one an HD file`);
   { /* FR-392 (owner 2026-11-23 14:59 UTC): with 1 or 2 agents `g` is 5 and the 288 frame is drawn 1:1 (80 % of the place): no fourth size is authored */
     const one = aislesLayout(pick(1), { w: 1440, h: ROOM.h900 }, { ...META, hdPeople: HD }, SIGNS(4)), d = one.zones[0].desks[0];
     assert.deepStrictEqual([one.g, d.person!.file.endsWith('@4.webp'), d.person!.h], [5, true, HD.people[d.person!.pid][d.person!.pose]['4'][1]], '1 agent: g 5 draws the 288 frame at 1:1');
@@ -1202,6 +1222,11 @@ for (const world of ['photo', 'cave']) {
   for (const [dev, s, n] of [[2, 2, 1], [3, 3, 1], [4, 4, 1], [5, 4, 1], [6, 3, 2], [8, 4, 2], [2.5, 2, 1], [4.5, 4, 1], [6.25, 3, 2], [1.5, 0, 0]]) {
     const r = hdPick(dev, [4, 3, 2]);
     assert.deepStrictEqual(r ? [r.s, r.n] : [0, 0], [s, n], `hdPick(${dev}): s ${s}, n ${n}`);
+  }
+  /* FR-406 (issue 2055): the lobby's 72 file (s 1) is drawn only where no larger file fits, never blown up in a hall */
+  for (const [dev, s, n] of [[1, 1, 1], [1.5, 1, 1], [2, 2, 1], [5, 4, 1], [7, 3, 2], [8, 4, 2]]) {
+    const r = hdPick(dev, [4, 3, 2, 1]);
+    assert.deepStrictEqual(r ? [r.s, r.n] : [0, 0], [s, n], `hdPick(${dev}) with s 1: s ${s}, n ${n}`);
   }
   /* a frame wider than the place falls back to the old frame (never cut, FR-392) */
   const wide = { scales: [4, 3, 2], people: { p08: Object.fromEntries(['type', 'book', 'knock', 'face-knock', 'face-coffee', 'face-book', 'sit'].map((q) => [q, { 4: [400, 288, 0, 0, 40, 40], 3: [300, 216, 0, 0, 30, 30], 2: [200, 144, 0, 0, 20, 20] }])) } } as unknown as HdSet;

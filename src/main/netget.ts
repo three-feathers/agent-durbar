@@ -115,10 +115,11 @@ export function feedAllowed(url: unknown, slug: unknown): FeedKind | undefined {
 }
 
 /** FR-025: what a failed feed read reports. A closed set of codes: never a URL, header, token, path or the network's own text. */
-export const FEED_FAILURES = ['not-allowed', 'redirect', 'status', 'content-type', 'too-large', 'timeout', 'network'] as const;
+export const FEED_FAILURES = ['not-allowed', 'redirect', 'status', 'content-type', 'too-large', 'timeout', 'network', 'aborted'] as const;
 export type FeedFailure = typeof FEED_FAILURES[number];
 export type FeedAnswer = { ok: true; kind: FeedKind; bytes: Buffer } | { ok: false; reason: FeedFailure };
-export type FeedGet = (url: string, slug: string) => Promise<FeedAnswer>;
+/** `signal` (T010): turning the check off mid-request aborts it and answers `aborted`. */
+export type FeedGet = (url: string, slug: string, signal?: AbortSignal) => Promise<FeedAnswer>;
 export interface FeedTimer { set(cb: () => void, ms: number): unknown; clear(handle: unknown): void }
 /** FR-004: one request, 10 s limit. */
 export const FEED_TIMEOUT_MS = 10_000;
@@ -134,21 +135,25 @@ const realTimer: FeedTimer = { set: (cb, ms) => setTimeout(cb, ms), clear: (h) =
  * the cap (2 MiB list, 256 KiB `releases.json`). Never rejects: every failure is a `FeedFailure` code. Nothing reads the environment.
  */
 export function makeFeedGet(factory: NetRequestFactory, timer: FeedTimer = realTimer, timeoutMs = FEED_TIMEOUT_MS): FeedGet {
-  return (url, slug) =>
+  return (url, slug, signal) =>
     new Promise<FeedAnswer>((resolve) => {
       const kind = feedAllowed(url, slug);
       if (!kind) { resolve({ ok: false, reason: 'not-allowed' }); return; }
+      if (signal?.aborted) { resolve({ ok: false, reason: 'aborted' }); return; } // no request object at all
       let settled = false;
       let req: NetRequestLike | undefined;
+      const onAbort = (): void => done({ ok: false, reason: 'aborted' });
       const done = (a: FeedAnswer): void => {
         if (settled) return;
         settled = true;
         timer.clear(handle);
+        signal?.removeEventListener('abort', onAbort);
         resolve(a);
         try { req?.abort(); } catch { /* already finished */ }
       };
       const fail = (reason: FeedFailure) => (): void => done({ ok: false, reason });
       const handle = timer.set(fail('timeout'), timeoutMs);
+      signal?.addEventListener('abort', onAbort, { once: true });
       try {
         // no-store: Chromium's HTTP cache outlives a restart; a cached 301 or list must never answer a check (review of #2058)
         req = factory({ method: 'GET', url, redirect: 'manual', credentials: 'omit', useSessionCookies: false, cache: 'no-store' });

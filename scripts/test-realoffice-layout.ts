@@ -6,7 +6,7 @@ import * as path from 'path';
 import { placeBox, portraitCrop, PORTRAIT_SIDE, slipAvoid, NOTE_PAPER, NOTE_PAPER_DEFAULT, NOTE_INK, notePaper, screenFit, screenFor, personMotion, zoomRect, realLayout, lobbyWidths, sortDesks, deskOrder, deskBase, assignPeople, standPose, standHeight, POSE_FRAME_B, lobbyRange, PERSON_M, DOOR_M, FRONT_DEPTH, NEAR_SCALE, CHIP_H, U_MIN, U_MAX, U_MAX_BIG, FACE_U, PLATE_H, PLATE_H_ASK, STRIP,
   type RealModel, type RealMeta, type RealAgent, type RealState, type Rect, type Layout } from '../src/shared/realoffice-layout';
 import { signMin, lobbyBand, lobbyScale, visitorScale, snapDevice, devStep, HEAD, HEAD_FACE, HELP_FACE_MIN, HELP_GAP, helpH, helpCols, helpShown, headCrop, helperPerson } from '../src/shared/realoffice-layout';
-import { DOTS_BOX, DOTS_CLEAR } from '../src/shared/realoffice-layout';
+import { DOTS_BOX, DOTS_CLEAR, HEAD_CLEAR, STRIP as STRIP_H } from '../src/shared/realoffice-layout';
 import { layoutFor } from '../src/shared/realoffice-arrangements';
 import { KID_U, KID_CAP, BIG_MAX, kidScale, kidBox, kidPose, kidHeadCrop, kidOf, helperHead, type KidMeta, type DeskBox } from '../src/shared/realoffice-layout';
 import { createHash } from 'crypto';
@@ -550,12 +550,94 @@ assert.ok(Object.values(META.stand).some((s) => Object.values(s.foot as Record<s
     assert.deepStrictEqual([metaOf(wj('retro'), sj('office')).pixelArt, metaOf(wj('retro'), sj('office')).pixelPeople], [true, false], 'FR-323: the arcade keeps its rules with a photo set (097 T247)');
     assert.deepStrictEqual([metaOf(wj('retro'), sj('retro')).pixelArt, metaOf(wj('retro'), sj('retro')).pixelPeople], [true, true], 'the arcade with its own people');
     assert.deepStrictEqual([metaOf(wj('cave'), sj('retro')).pixelArt, metaOf(wj('cave'), sj('retro')).pixelPeople], [false, true], 'the cave with Retro pixel people: the cave rules');
-    { // spec 102 FR-399 (issue #2055): the HD set reaches the layout only with the switch on; off, neither its block nor `hdPeople` is in the numbers
-      const m3 = metaOf as (w: unknown, s: unknown, hd?: boolean) => Record<string, unknown>, rs = sj('retro'), hdSet = rs.hd;
+    { // spec 102 FR-399, T472 (issue #2055): no switch since the flip: a set's HD block always reaches the layout as `hdPeople`, in every world, and the raw `hd` key never does
+      const rs = sj('retro'), hdSet = rs.hd;
       assert.ok(hdSet, 'the Retro pixel set carries its HD block');
-      for (const off of [m3(wj('retro'), sj('retro')), m3(wj('retro'), sj('retro'), false)]) assert.ok(!('hdPeople' in off) && !('hd' in off), 'the switch off: no HD set in the layout\'s numbers');
-      assert.strictEqual(m3(wj('retro'), rs, true).hdPeople, hdSet, 'the switch on: the set\'s HD block is handed over');
-      assert.ok(!('hdPeople' in m3(wj('photo'), sj('office'), true)), 'the switch on with a set without an HD block: nothing');
+      for (const w of ['retro', 'photo', 'cave']) { const m = metaOf(wj(w), rs) as unknown as Record<string, unknown>; assert.ok(m.hdPeople === hdSet && !('hd' in m), `${w} with Retro pixel people: the HD set is handed over`); }
+      assert.ok(!('hdPeople' in (metaOf(wj('photo'), sj('office')) as unknown as Record<string, unknown>)), 'a set without an HD block: nothing');
+    }
+    { // spec 102 T472 (FR-409): the rows worlds with the Retro pixel people draw only the HD set: every desk bust (and its second frame), every lounge seat and every lobby visitor, both sizes, 3 and 15 agents, every person
+      let n = 0;
+      for (const w of ['photo', 'cave']) for (const [W, H] of SIZES) for (const k of [3, 15]) for (let r = 0; r < 15; r += 5) {
+        const m = model(k, k > 4 ? 4 : 1); m.folders.flatMap((f) => f.agents).forEach((a, i) => { a.person = PEOPLE[(i + r) % 15]; if (i === 1) a.lounge = true; });
+        m.places = m.places.map((p, i) => ({ ...p, visitors: [{ id: 'v' + i, person: PEOPLE[(i + r + 7) % 15], needsYou: false }] }));
+        const L = realLayout(m, { w: W, h: H }, metaOf(wj(w), sj('retro')) as unknown as RealMeta) as unknown as { zones: { desks: { person: { file: string; fileB: string | null } | null }[] }[]; lounge?: { desks: { person: { file: string } | null }[] }; fixtures: { visitors: { fig: { file: string; fileB: string | null } | null }[] }[] };
+        const files = [...L.zones.flatMap((z) => z.desks), ...(L.lounge ? L.lounge.desks : [])].flatMap((d) => (d.person ? [d.person.file, (d.person as { fileB?: string | null }).fileB] : [])).concat(L.fixtures.flatMap((f) => f.visitors).flatMap((v) => (v.fig ? [v.fig.file, v.fig.fileB] : []))).filter((f): f is string => !!f);
+        assert.ok(files.length > 0, `${w} ${W}x${H} ${k}: people drawn`);
+        for (const f of files) { n++; assert.ok(/^hd\/p\d\d-[a-zA-Z-]+@4\.webp$/.test(f), `T472: ${w} ${W}x${H}, ${k} agents: ${f} is not an HD file`); }
+      }
+      console.log(`T472 rows walk: ${n} pictures, every one an HD bust or frame`);
+    }
+    { // spec 102 T472 (coordinator's look at F1): no world shrinks for the HD set: the visible figure as tall as the old set's, the lounge card no narrower
+      const TOL = 0.03; /* the figure's height on screen within 3 % of the old set's: the HD busts' seat numbers are fitted to the old figures, rounding stays far below this */
+      const rs = sj('retro') as Record<string, unknown>, oldSet = { ...rs, hd: undefined } as unknown;
+      type L2 = { big?: boolean; zones: { desks: { id: string; glass: Rect; person: { y: number; w: number; h: number; pid: string; pose: string } | null }[] }[]; lounge?: { desks: { id: string; plate: Rect; person: { h: number } | null }[] } };
+      const YIELD = new Set<string>(), SHRINK: Record<string, number> = {};
+      const check = (hdSet: unknown, tag: string): string[] => {
+        const out: string[] = [];
+        for (const w of ['photo', 'cave']) for (const [W, H] of SIZES.slice(0, 2)) for (const k of [3, 15]) for (let r = 0; r < 15; r++) {
+          const m = model(k, k > 4 ? 4 : 1, { away: false }); m.folders.flatMap((f) => f.agents).forEach((a, i) => { a.person = PEOPLE[(i + r) % 15]; if (k > 3 && (i === 1 || i === 2)) a.lounge = true; });
+          const o = realLayout(m, { w: W, h: H }, metaOf(wj(w), oldSet) as unknown as RealMeta) as unknown as L2, n = realLayout(m, { w: W, h: H }, metaOf(wj(w), hdSet) as unknown as RealMeta) as unknown as L2;
+          const od = new Map([...o.zones.flatMap((z) => z.desks), ...(o.lounge ? o.lounge.desks : [])].map((d) => [d.id, d] as const));
+          for (const d of [...n.zones.flatMap((z) => z.desks), ...(n.lounge ? n.lounge.desks : [])]) {
+            const b = od.get(d.id); if (!b || !b.person || !d.person) continue;
+            const dp = d.person as { y: number; w: number; h: number; pid: string; pose: string }, hb = (rs.hd as { busts: Record<string, { w: number; head: Record<string, number[]> }> }).busts[dp.pid], gl = (d as { glass?: Rect }).glass;
+            const limit = (d as unknown as { slot: Rect }).slot.y + STRIP_H, lim = n.big && gl ? Math.max(limit, gl.y + gl.h) : limit; /* the row's sign strip, and at the big level the screen's glass */
+            const yielded = !!hb && !!hb.head[dp.pose] && Math.abs(dp.y + Math.min(...[dp.pose, ({ typeA: 'typeB', waveA: 'waveB' } as Record<string, string>)[dp.pose]].filter((q) => q && hb.head[q]).map((q) => hb.head[q][1])) * (dp.w / hb.w) - lim - HEAD_CLEAR) < 0.5 && dp.h < b.person.h; /* the height rule yields to the gap (FR-409) */
+            if (yielded) { YIELD.add(`${dp.pid} ${n.big ? 'big' : k}`); SHRINK[dp.pid] = Math.max(SHRINK[dp.pid] || 0, 1 - dp.h / b.person.h); }
+            else if (Math.abs(d.person.h / b.person.h - 1) > TOL) out.push(`${tag} ${w} ${W}x${H} ${k}: ${d.id} figure ${d.person.h.toFixed(1)} px, the old set's ${b.person.h.toFixed(1)} px`);
+          }
+          for (const d of n.lounge ? n.lounge.desks : []) { const b = od.get(d.id) as { plate: Rect } | undefined; if (b && d.plate.w < b.plate.w - 0.5) out.push(`${tag} ${w} ${W}x${H} ${k}: lounge card ${d.id} ${d.plate.w.toFixed(1)} px, the old set's ${b.plate.w.toFixed(1)} px`); }
+        }
+        return out;
+      };
+      assert.deepStrictEqual(check(rs, 'HD'), [], 'T472: in the rows worlds the HD figure is as tall as the old one (3 %) and the lounge card no narrower');
+      assert.deepStrictEqual([...YIELD].sort(), ['p04 15', 'p08 15', 'p09 15', 'p09 big', 'p11 15', 'p12 15', 'p12 big', 'p15 15'], 'T472: only these people yield height to the sign strip or the glass (by level)');
+      const SHRINK_MAX: Record<string, number> = { p12: 10.3, p09: 5.9, p04: 0.2, p08: 0.2, p11: 0.2, p15: 0.1 }; /* % smaller than the old figure where the gap wins (measured 2026-11-24) */
+      for (const [pid, v] of Object.entries(SHRINK)) assert.ok(100 * v <= (SHRINK_MAX[pid] || 0) + 0.05, `T472: ${pid} yields ${(100 * v).toFixed(1)} % of its height, over its ${SHRINK_MAX[pid] || 0} %`);
+      const hd = rs.hd as { busts: Record<string, { bodyH: number; headTop: number; h: number }>; loungeW: number };
+      const canvasScaled = { ...rs, hd: { ...hd, busts: Object.fromEntries(Object.entries(hd.busts).map(([k, v]) => [k, { ...v, bodyH: v.h, headTop: 0 }])) } }; /* mutant: scaled on the canvas, not on the figure */
+      assert.ok(check(canvasScaled, 'red').some((x) => / figure /.test(x)), 'red: a set scaled on its canvas (not its figure) draws a smaller person and fails');
+      const narrow = { ...rs, hd: { ...hd, loungeW: 0 } }; /* mutant: the seat follows the HD canvas */
+      assert.ok(check(narrow, 'red').some((x) => /lounge card/.test(x)), 'red: a lounge seat that follows the HD canvas is narrower and fails');
+      console.log('T472 no shrink: figures within 3 % of the old set, lounge cards no narrower, at 3 and 15 agents in the Photo office and the cave');
+    }
+    { // spec 102 T472 (coordinator's look at F1, round 2): the dots and the ask bubble clear an HD head; at the big level the head stays HEAD_CLEAR below the screen's glass
+      type D2 = { id: string; state: string; person: { x: number; y: number; w: number; h: number; pid: string; pose: string; fileB: string | null } | null; dots: { x: number; y: number } | null; bubble: { x: number; y: number } | null; glass: Rect };
+      const rs = sj('retro') as Record<string, unknown>;
+      const marks = (set: Record<string, unknown>, tag: string): { over: string[]; gap: string[]; minGap: number; n: number; small: number; per: Record<string, [number, number]>; big: Record<string, number> } => {
+        const hd = (set.hd as { busts: Record<string, { w: number; h: number; head?: Record<string, number[]> }> }).busts, over: string[] = [], gap: string[] = []; let minGap = Infinity, n = 0, small = 0; const per: Record<string, [number, number]> = { photo: [0, 0], cave: [0, 0] }, big: Record<string, number> = { photo: 0, cave: 0 }; /* per world below the big level: [marks touching a head, marks] */
+        const B: Record<string, string> = { typeA: 'typeB', waveA: 'waveB' };
+        for (const w of ['photo', 'cave']) for (const [W, H] of SIZES.slice(0, 2)) for (const k of [3, 15]) for (const st of ['thinking', 'waiting', 'limit', 'working', 'idle'] as RealState[]) for (let r = 0; r < 15; r++) {
+          const m = model(k, k > 4 ? 4 : 1, { away: false, states: [st] }); m.folders.flatMap((f) => f.agents).forEach((a, i) => { a.person = PEOPLE[(i + r) % 15]; });
+          const L = realLayout(m, { w: W, h: H }, metaOf(wj(w), set) as unknown as RealMeta) as unknown as { big: boolean; zones: { desks: D2[] }[] };
+          for (const d of L.zones.flatMap((z) => z.desks)) {
+            if (!d.person) continue;
+            const b = hd[d.person.pid], kk = d.person.w / b.w, hs = (rs.hd as { busts: Record<string, { head: Record<string, number[]> }> }).busts[d.person.pid].head; /* the measured heads, whatever the set under test carries */
+            const ps = [d.person.pose, ...(d.person.fileB && B[d.person.pose] ? [B[d.person.pose]] : [])].map((p) => hs[p]);
+            const x0 = Math.min(...ps.map((v) => v[0])), x1 = Math.max(...ps.map((v) => v[0] + v[2])), y0 = Math.min(...ps.map((v) => v[1])), y1 = Math.max(...ps.map((v) => v[1] + v[3]));
+            const head: Rect = { x: d.person.x + x0 * kk, y: d.person.y + y0 * kk, w: (x1 - x0) * kk, h: (y1 - y0) * kk };
+            const at = `${tag} ${w} ${W}x${H} ${k} ${st} ${d.person.pid} ${d.person.pose}`;
+            if (d.dots) { n++; if (!L.big) per[w][1]++; else big[w]++; if (inter({ x: d.dots.x, y: d.dots.y, w: DOTS_BOX.w, h: DOTS_BOX.h }, head, 0)) { if (L.big) over.push(`${at}: the dots on the head`); else { small++; per[w][0]++; } } } /* below the big level a head can fill the room from the sign strip to the glass: counted, not yet a rule (owner question) */
+            if (d.bubble) { n++; if (!L.big) per[w][1]++; else big[w]++; if (inter({ x: d.bubble.x, y: d.bubble.y - 24, w: 24, h: 24 }, head, 0)) { if (L.big) over.push(`${at}: the bubble on the head`); else { small++; per[w][0]++; } } }
+            if (L.big && d.glass.y + d.glass.h < head.y + head.h) { const g = head.y - (d.glass.y + d.glass.h); minGap = Math.min(minGap, g); if (g < HEAD_CLEAR - 0.01) gap.push(`${at}: ${g.toFixed(1)} px under the glass`); }
+          }
+        }
+        return { over, gap, minGap, n, small, per, big };
+      };
+      const ok = marks(rs, 'HD');
+      assert.deepStrictEqual(ok.over, [], 'T472: no head-anchored mark on an HD head');
+      assert.deepStrictEqual(ok.gap, [], `T472: at the big level an HD head stays ${HEAD_CLEAR} px under the screen's glass`);
+      const hd0 = rs.hd as { busts: Record<string, Record<string, unknown>> }, noHead = { ...rs, hd: { ...hd0, busts: Object.fromEntries(Object.entries(hd0.busts).map(([k, v]) => [k, { ...v, head: undefined }])) } }; /* mutant: the layout does not know the heads */
+      const red = marks(noHead, 'red');
+      assert.ok(red.over.length > 0, 'red: marks placed without the HD heads land on a head');
+      assert.ok(red.gap.length > 0, 'red: without the HD heads a head reaches the glass');
+      /* [KNOWN GAP] (coordinator, 2026-11-23): below the big level (15 agents) a head can fill the room from the sign strip to the screen. Counted per world over 15 agents at 1440x900 and
+         1280x800, 15 seatings, the thinking dots and the ask bubble (states thinking, waiting, limit): 1350 marks, those whose box meets the measured head box (hd.busts[pid].head) held at a ceiling */
+      const HEAD_TOUCH_MAX = 136;
+      for (const w of ['photo', 'cave']) assert.ok(ok.per[w][1] === 1350 && ok.per[w][0] <= HEAD_TOUCH_MAX, `T472 [KNOWN GAP]: ${w}: ${ok.per[w][0]} of ${ok.per[w][1]} marks at 15 agents touch a head (ceiling ${HEAD_TOUCH_MAX} of 1350)`);
+      assert.ok(red.per.photo[0] > HEAD_TOUCH_MAX && red.per.cave[0] > HEAD_TOUCH_MAX, `red: without the head boxes ${red.per.photo[0]} and ${red.per.cave[0]} marks touch a head, over the ceiling`);
+      console.log(`T472 head marks: ${ok.n} dots and bubbles; at the big level (3 agents) all ${ok.big.photo} (Photo office) and ${ok.big.cave} (cave) clear of the HD heads; at 15 agents ${ok.per.photo[0]} of ${ok.per.photo[1]} (Photo office) and ${ok.per.cave[0]} of ${ok.per.cave[1]} (cave) touch a head (without the head boxes ${red.per.photo[0]} and ${red.per.cave[0]}); smallest head-to-glass gap at the big level ${ok.minGap.toFixed(1)} px (floor ${HEAD_CLEAR})`);
     }
     // T296 (FR-326): the Retro pixel set has its own seen-from-behind running frames, so the Terminal visitor draws `runA`/`runB`, not the `letter` fallback
     const st = sj('retro').stand as Record<string, { poses: Record<string, number[]> }>;
