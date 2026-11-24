@@ -243,6 +243,7 @@ test:selfupdate-notes
 test:selfupdate-installtype
 test:selfupdate-checker
 test:selfupdate-ipc
+test:selfupdate-source
 test:selfupdate-schedule
 test:selfupdate-settings
 test:releases-json
