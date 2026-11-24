@@ -196,6 +196,7 @@
     "test:orgpolicy": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-orgpolicy.js",
     "test:orgwiring": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-orgwiring.js",
     "test:orgwords": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-orgwords.js",
+    "test:overmask": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-overmask.js",
     "test:paneltabs": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-paneltabs.js",
     "test:paritytick": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-parity-tick.js",
     "test:pathdirs": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-pathdirs.js",

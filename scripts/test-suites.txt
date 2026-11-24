@@ -148,6 +148,7 @@ test:logo-assets
 test:autofollow
 test:announcemask
 test:livemask
+test:overmask
 test:maskpaths
 test:openwith
 test:liveact
