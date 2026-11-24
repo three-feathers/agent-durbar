@@ -222,7 +222,7 @@ for (const old of ['remotes', 'branches']) for (const n of [{ t: 'dir' }, { t: '
   for (const f of ['src/shared/memoryfolder.ts', 'src/main/memorygit.ts']) {
     const src = fs.readFileSync(path.join(__dirname, '..', '..', f), 'utf8').replace(/\r\n/g, '\n');
     const imports = [...src.matchAll(/^import [^;]*from '([^']+)'/gm)].map((m) => m[1]).sort();
-    const allowed = f.endsWith('memorygit.ts') ? ['../shared/cappedread', '../shared/memoryfolder'] : ['./redact'];
+    const allowed = f.endsWith('memorygit.ts') ? ['../shared/cappedread', '../shared/memoryfolder'] : ['./homesecrets', './redact'];
     assert.deepStrictEqual(imports, allowed, `${f} imports`);
   }
 }

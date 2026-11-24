@@ -40,9 +40,10 @@ module.exports = async (ctx) => {
     assert.strictEqual(p.rail.key, p.head.key, `${at}: the rail row and the chat header have the same face key`);
     assert.strictEqual(p.rail.key, p.avatar.key, `${at}: the header avatar and the rail row have the same face key`);
     if (p.real) {
-      assert.strictEqual(p.rail.src, p.head.src, `${at}: in Real office the rail row and the chat header show the same picture file`);
+      const base = (f) => String(f || '').replace(/-t\d+l?\.webp$/, '-t'); /* spec 102 FR-405, T472: an avatar tile is the same face at the circle's own size (22 in the rail, 32 in the header) */
+      assert.strictEqual(base(p.rail.src), base(p.head.src), `${at}: in Real office the rail row and the chat header show the same picture (the same tile at its own size)`);
       assert.ok(!p.rail.src || p.rail.src.startsWith('realoffice/'), `${at}: in Real office the rail row shows the Real office picture`);
-      assert.ok(p.rail.src ? p.rail.key === p.rail.src : /^initial\|/.test(p.rail.key), `${at}: the face key is the picture file, or the initial of an agent away from its desk`);
+      assert.ok(p.rail.src ? p.rail.key === base(p.rail.src) || p.rail.key === p.rail.src : /^initial\|/.test(p.rail.key), `${at}: the face key is the picture file, or the initial of an agent away from its desk`);
     } else {
       assert.ok(!p.rail.src.startsWith('realoffice/'), `${at}: the flat office draws no Real office picture`);
       assert.strictEqual(p.rail.sig, p.avatar.sig, `${at}: in the flat office the rail row and the chat header draw the same figure`);

@@ -69,11 +69,14 @@ const TITLE_DROP_RE = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f\u200
  * A session title as the app shows it (spec 002 delta 2026-10-18): one line, control and hidden direction or zero-width
  * characters removed (ZWJ, ZWNJ, LRM, RLM kept), at most `max` characters with an ellipsis; undefined when nothing is left.
  */
-export function cleanSessionTitle(v: unknown, max = 80): string | undefined {
+export function cleanSessionTitle(v: unknown, max = 80, wholeWords = false): string | undefined {
   if (typeof v !== 'string') return undefined;
   const s = v.replace(TITLE_DROP_RE, '').replace(/\s+/g, ' ').trim();
   if (!s) return undefined;
-  return s.length > max ? s.slice(0, max - 1).trimEnd() + '…' : s;
+  if (s.length <= max) return s;
+  let cut = max - 1;
+  if (wholeWords) { const i = s.lastIndexOf(' ', cut); if (i >= Math.floor(max / 2)) cut = i; } // spec 052 (issue 1934): a long question is cut at a space, so a value is not shown half
+  return s.slice(0, cut).trimEnd() + '…';
 }
 
 /** One-line title from a session summary (the first prompt, or the title the runtime generated). */

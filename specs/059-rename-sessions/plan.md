@@ -184,7 +184,7 @@ work is renderer-only, plus tests, drivers, docs and screenshots.
 - `scripts/test-inlinename.ts` (`test:inlinename`, in `npm test`): `keyAction` (Enter, Esc, Tab, F2, composing Enter, keyCode 229),
   `pasteText` (LF, CRLF, CR, TAB, U+2028 left alone), `outcome` (same with extra spaces, empty, spaces only, new), `blurAction`. Mutation
   ideas: drop the `isComposing` test; make `pasteText` delete instead of replace; make `outcome` compare without trim → each must fail.
-- `scripts/test-sessionname.ts` (extend): the template guard covers the new `aria-label`s ("Rename session <name>") with `esc()`.
+- `scripts/test-sessionname.ts` (extend): the template guard covers the new `aria-label`s ("Rename session <name>") with `esc()`; since spec 012 FR-197 (2026-11-24) the title button's label is checked by behaviour (escaped and masked), not by its source.
 - `scripts/check-rename-inline.js` (`npm run check:rename-inline`, added to `DRIVERS` in `scripts/ui-suite.js`), 1440x900 and 1280x800,
   Expert and Simple: every FR-020 surface (header click, F2, Enter on focused title; card pencil and F2 at full and mini density; list row
   pencil and F2; Previous row pencil, hidden row; room header, Folders panel, list Folder cell; closed-room plate F2); every FR-021 item

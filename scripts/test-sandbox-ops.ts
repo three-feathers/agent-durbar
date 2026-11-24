@@ -10,6 +10,7 @@ import * as npath from 'path';
 import { SettingsStore } from '../src/main/settings';
 import { createSandboxOps } from '../src/main/sandboxops';
 import type { AgentAdapter, AgentEvent } from '../src/adapters/types';
+import { ShownError } from '../src/shared/shownerror';
 
 let done = false;
 process.on('exit', (code) => {
@@ -25,12 +26,12 @@ async function main(): Promise<void> {
   const ad = {
     id: 'claude',
     capabilities: { osSandbox: true },
-    continueWithoutSandbox: async (id: string, o: { always?: boolean }) => { calls.push({ id, always: !!o.always }); if (refuse) throw new Error(refuse); },
+    continueWithoutSandbox: async (id: string, o: { always?: boolean }) => { calls.push({ id, always: !!o.always }); if (refuse) throw new ShownError(refuse); },
     sandboxHost: async () => ({ available: false, reason: 'no sandbox here' }),
   } as unknown as AgentAdapter;
   const stored: Array<[unknown, unknown]> = [];
   const store = { setSandboxAlwaysContinue: (a: unknown, on: unknown) => { stored.push([a, on]); return { ok: true, value: on === true }; }, sandboxAlwaysContinue: (a: string) => stored.some((x) => x[0] === a && x[1] === true) };
-  const ops = createSandboxOps({ adapterOf: (id) => (id === 's1' || id === 's2' ? ad : undefined), instance: (a) => { if (a !== 'claude') throw new Error('x'); return ad; }, readyAdapterIds: async () => new Set(['claude', 'codex']), store: () => store });
+  const ops = createSandboxOps({ adapterOf: (id) => (id === 's1' || id === 's2' ? ad : undefined), instance: (a) => { if (a !== 'claude') throw new ShownError('x'); return ad; }, readyAdapterIds: async () => new Set(['claude', 'codex']), store: () => store });
   const note = (id: string, actions: Array<'continue' | 'always'>, refused = false): AgentEvent => ({ type: 'sandbox', sessionId: id, timestamp: 1, sandbox: { state: 'off', covers: ['shell'], verified: false }, notice: { text: 't', actions, ...(refused ? { refused: true } : {}) } });
 
   assert.deepStrictEqual(await ops.continueWithout(false, 's1', {}), { ok: false, error: 'invalid request' }, 'not from Durbar\'s own window');
@@ -139,7 +140,7 @@ async function main(): Promise<void> {
   assert.strictEqual(outwardCalled, 1, 'and still applies outward()');
   const mainSrc = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'main', 'main.ts'), 'utf8');
   const fwd = mainSrc.match(/router\.onEvent\(\(e\) => (?:\{ if \(!mcp\.hidesEvent\(e\)\) )?toRenderer\('agent:event',[^\n]*/g) ?? []; // spec 058 FR-215: a declined elicitation is held back first
-  assert.deepStrictEqual(fwd.map((l) => /toRenderer\('agent:event', toWindowEvent\(e, outward\)\)/.test(l)), [true], 'main.ts forwards adapter events to the window only through toWindowEvent: ' + fwd.join(' | '));
+  assert.deepStrictEqual(fwd.map((l) => /toRenderer\('agent:event', toolArgCopies\.see\(e, toWindowEvent\(e, outward\)\)\)/.test(l)), [true], 'main.ts forwards adapter events to the window only through toWindowEvent (then spec 005 FR-411\'s argsMasked flag): ' + fwd.join(' | '));
   done = true;
   console.log('sandbox ops (spec 087): all checks passed');
 }

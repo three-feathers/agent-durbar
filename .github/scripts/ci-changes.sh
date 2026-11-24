@@ -10,7 +10,7 @@
 # workflow files: CODEOWNERS review of .github/ guards those.
 set -euo pipefail
 out="${GITHUB_OUTPUT:-/dev/stdout}"
-all() { printf 'code=true\nthemes=true\nui=true\nmacos=true\n' >> "$out"; }
+all() { printf 'code=true\nthemes=true\nui=true\nmacos=true\nos_sensitive=true\n' >> "$out"; }
 if [ "${EVENT_NAME:-}" != "pull_request" ]; then
   echo "${EVENT_NAME:-no event}: not a pull request, everything runs."
   all
@@ -28,4 +28,27 @@ if ! git show 'HEAD^1:.github/scripts/ci-changes.js' > "$tmp/.github/scripts/ci-
   all
   exit 0
 fi
-node "$tmp/.github/scripts/ci-changes.js" --root .
+# spec 117 FR-012 (T402) and FR-387, reviews of #2032 and #2039: fail closed and write each decision output EXACTLY ONCE (GitHub does
+# not document which line wins when a name repeats). The base copy writes into a file in the temp folder; each of code, themes, ui,
+# macos, os_sensitive must be written once with exactly `true` or `false`; when any is left out (a base copy that exits 0 silently,
+# or one older than os_sensitive), repeated or written with another value (`FALSE`, `false `, empty), everything runs (all true).
+# Arguments pass through: `--suites` asks for the fast lane's outputs only (spec 117 FR-386, fast-lane.yml, advisory), passed on as written.
+raw="$tmp/decision-output"
+GITHUB_OUTPUT="$raw" node "$tmp/.github/scripts/ci-changes.js" --root . "$@"
+if [ "${1:-}" = "--suites" ]; then
+  if [ -f "$raw" ]; then cat "$raw" >> "$out"; fi
+  exit 0
+fi
+lines=""
+for k in code themes ui macos os_sensitive; do
+  n=0; v=""
+  if [ -f "$raw" ]; then n="$(grep -c "^$k=" "$raw" || true)"; v="$(grep "^$k=" "$raw" | head -n 1 | cut -d= -f2- || true)"; fi
+  if [ "$n" != 1 ] || { [ "$v" != true ] && [ "$v" != false ]; }; then
+    echo "The decision wrote no single exact $k=true|false: everything runs."
+    all
+    exit 0
+  fi
+  lines="$lines$k=$v
+"
+done
+printf '%s' "$lines" >> "$out"

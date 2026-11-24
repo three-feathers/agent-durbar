@@ -5,6 +5,7 @@
  * file (FR-012).
  */
 import { maskTokenShapes, cut } from './redact';
+import { HOME_SECRETS } from './homesecrets';
 
 /** The `path` members used; `path.win32` and `path.posix` both fit. */
 export interface PathFlavor {
@@ -23,13 +24,15 @@ export interface MemoryFolderCtx {
   /** Every office folder (`.code-workspace` folders included), as stored. */
   officeFolders: readonly string[];
   /** `%APPDATA%`, `%LOCALAPPDATA%`, `$XDG_CONFIG_HOME`, `$XDG_DATA_HOME`, when set. */
-  env?: { appData?: string; localAppData?: string; xdgConfigHome?: string; xdgDataHome?: string };
+  env?: { appData?: string; localAppData?: string; xdgConfigHome?: string; xdgDataHome?: string; systemRoot?: string; programData?: string; programFiles?: string; programFilesX86?: string };
+  /** The agent apps' own homes as main reads them (`COPILOT_HOME`, `CLAUDE_CONFIG_DIR`, `CODEX_HOME`, else `~/.copilot`, `~/.claude`, `~/.codex`): refused at, inside or around. */
+  agentHomes?: readonly string[];
   /** `fs.realpathSync.native`; throws when the path cannot be resolved. */
   realpath(p: string): string;
   /** `fs.lstatSync`; throws when the path cannot be read. */
   lstat(p: string): { isDirectory(): boolean };
 }
-export type MemoryRefusal = 'not-absolute' | 'unc' | 'root' | 'home' | 'app-data' | 'agent-folder' | 'office-folder' | 'secret-location' | 'not-folder' | 'unreadable';
+export type MemoryRefusal = 'not-absolute' | 'unc' | 'root' | 'home' | 'app-data' | 'agent-folder' | 'system' | 'office-folder' | 'secret-location' | 'not-folder' | 'unreadable';
 export type MemoryFolderCheck = { ok: true; real: string } | { ok: false; reason: MemoryRefusal; text: string };
 
 const TEXT: Record<MemoryRefusal, string> = {
@@ -39,6 +42,7 @@ const TEXT: Record<MemoryRefusal, string> = {
   home: 'It is your home folder.',
   'app-data': "It is, is inside, or holds Durbar's own data folder.",
   'agent-folder': "It is, is inside, or holds an agent app's own folder (.copilot, .claude, .codex).",
+  system: 'It is, or is inside, a folder of the operating system (for example /proc, /sys, /dev, /etc, /usr, Windows or Program Files).',
   'office-folder': 'It is, is inside, or holds a folder of the office: the agents there would be able to write to it.',
   'secret-location': 'It is, is inside, or holds a folder where programs keep passwords and settings (.ssh, .config, AppData, Library...).',
   'not-folder': 'It is not a folder.',
@@ -46,8 +50,8 @@ const TEXT: Record<MemoryRefusal, string> = {
 };
 const refuse = (reason: MemoryRefusal): MemoryFolderCheck => ({ ok: false, reason, text: TEXT[reason] });
 
-/** Under the home folder, on every OS. */
-const HOME_SECRETS = ['.ssh', '.aws', '.gnupg', '.kube', '.docker', '.config', '.npmrc'];
+/** Under the home folder, on every OS: the shared credential list (`homesecrets.ts`, also the OS sandbox's) and all of `.config`. */
+const SECRET_NAMES: readonly string[] = [...HOME_SECRETS, '.config'];
 const AGENT_APPS = ['.copilot', '.claude', '.codex'];
 
 /** Rule 1 on the text alone: a stream (`:` after the drive), a name ending in a dot or space, UNC (`\\server`), device (`\\?\`, `\\.\`), drive-relative (`C:foo`), rooted with no drive, relative. */
@@ -62,6 +66,14 @@ function badShape(p: string, f: MemoryFlavor): MemoryRefusal | undefined {
     return undefined;
   }
   return f.path.isAbsolute(p) ? undefined : 'not-absolute';
+}
+
+/** FR-004 (decided by the coordinator, 2026-11-24): pseudo and system folders, refused at the path or inside it (judged on the real path). */
+function systemFolders(f: MemoryFlavor, e: NonNullable<MemoryFolderCtx['env']>): string[] {
+  if (f.platform === 'win32') return [e.systemRoot || 'C:\\Windows', e.programData || 'C:\\ProgramData', e.programFiles || 'C:\\Program Files', e.programFilesX86 || 'C:\\Program Files (x86)'];
+  const unix = ['/etc', '/usr', '/bin', '/sbin', '/lib', '/lib32', '/lib64', '/libx32', '/var', '/dev'];
+  if (f.platform === 'darwin') return [...unix, '/System', '/Library', '/private/var', '/private/etc'];
+  return [...unix, '/proc', '/sys', '/run', '/root', '/boot'];
 }
 
 export function checkMemoryFolder(candidate: string, ctx: MemoryFolderCtx, flavor: MemoryFlavor): MemoryFolderCheck {
@@ -100,10 +112,11 @@ export function checkMemoryFolder(candidate: string, ctx: MemoryFolderCtx, flavo
   if (roots.some((r) => key(r) === k)) return refuse('root');
   if (forms(ctx.home).some((h) => key(h) === k)) return refuse('home');
   if (hits([ctx.userData])) return refuse('app-data');
-  if (hits(AGENT_APPS.map((n) => p.join(ctx.home, n)))) return refuse('agent-folder');
+  if (systemFolders(flavor, ctx.env ?? {}).some((x) => forms(x).some((y) => inside(real, y)))) return refuse('system');
+  if (hits([...AGENT_APPS.map((n) => p.join(ctx.home, n)), ...(ctx.agentHomes ?? [])])) return refuse('agent-folder');
   if (hits([...ctx.officeFolders])) return refuse('office-folder');
 
-  const secrets = HOME_SECRETS.map((n) => p.join(ctx.home, n));
+  const secrets = SECRET_NAMES.map((n) => p.join(ctx.home, ...n.split('/')));
   const e = ctx.env ?? {};
   if (flavor.platform === 'win32') secrets.push(p.join(ctx.home, 'AppData'), e.appData ?? '', e.localAppData ?? '');
   if (flavor.platform === 'darwin') secrets.push(p.join(ctx.home, 'Library'));

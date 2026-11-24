@@ -4,7 +4,17 @@
  */
 import assert from 'assert';
 import path from 'path';
-import { checkMemoryFolder, type MemoryFlavor, type MemoryFolderCtx, type MemoryRefusal } from '../src/shared/memoryfolder';
+import fs from 'fs';
+import vm from 'vm';
+import { spawnSync } from 'child_process';
+import type { MemoryFlavor, MemoryFolderCtx, MemoryRefusal } from '../src/shared/memoryfolder';
+
+/** a mutant is the compiled `memoryfolder.js` copied under another name (`MEMORYFOLDER_MODULE`); each must die in the section named on stderr */
+const IS_COPY = process.env.MEMORYFOLDER_MODULE !== undefined;
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const { checkMemoryFolder } = require('../src/shared/' + (process.env.MEMORYFOLDER_MODULE ?? 'memoryfolder')) as typeof import('../src/shared/memoryfolder');
+const sectionsRun: Array<[string, () => void]> = [];
+const section = (name: string, fn: () => void): void => { sectionsRun.push([name, fn]); };
 
 process.exitCode = 1;
 
@@ -135,6 +145,92 @@ assert.ok(al.ok && al.real === '/mnt/disk/real-memory', 'the real path is return
   const r = run(lin, '/' + 'a/'.repeat(100000));
   assert.ok(r.ok || !r.ok);
   assert.ok(Date.now() - t0 < 3000, 'a 200k-character path is handled quickly');
+}
+
+// ---- review of PR 2116: D1 the shared credential list, D2 the agent homes, D3 system folders ----
+section('secrets', () => {
+  const { HOME_SECRETS } = require('../src/shared/homesecrets') as typeof import('../src/shared/homesecrets');
+  const w = world('linux', '/home/ana', '/home/ana/.local/share/Durbar', []);
+  for (const n of ['.azure', '.mozilla', 'snap/firefox', '.var/app', '.password-store', '.pki', '.terraform.d']) {
+    for (const suffix of ['', '/x']) table('D1 ' + n, w, [['/home/ana/' + n + suffix, 'secret-location']]);
+    table('D1 parent', w, [['/home/ana/' + n.split('/')[0], 'secret-location']]); // a parent holds it
+    const ww = world('win32', 'C:\\Users\\ana', 'C:\\Users\\ana\\AppData\\Roaming\\D', []);
+    table('D1 win32 ' + n, ww, [['C:\\Users\\ana\\' + n.split('/').join('\\'), 'secret-location']]);
+  }
+  // every entry of the one list is refused, and the OS sandbox uses the same list
+  for (const n of HOME_SECRETS) table('shared list ' + n, w, [['/home/ana/' + n, ['.claude', '.copilot', '.codex'].includes(n) ? 'agent-folder' : 'secret-location']]);
+  assert.ok(fs.readFileSync(path.join(__dirname, '..', '..', 'src/adapters/sandboxRoots.ts'), 'utf8').includes("from '../shared/homesecrets'"), 'sandboxRoots.ts uses the shared list');
+  assert.ok(!/^import .*adapters/m.test(fs.readFileSync(path.join(__dirname, '..', '..', 'src/shared/memoryfolder.ts'), 'utf8')), 'memoryfolder.ts imports no adapter');
+});
+section('agenthomes', () => {
+  const w = world('linux', '/home/ana', '/home/ana/.local/share/Durbar', []);
+  w.ctx.agentHomes = ['/data/copilot-home', '/data/claude-cfg', '/home/ana/agents/codex'];
+  table('D2', w, [
+    ['/data/copilot-home', 'agent-folder'], ['/data/claude-cfg/projects', 'agent-folder'], ['/home/ana/agents/codex', 'agent-folder'], ['/home/ana/agents', 'agent-folder'], ['/data', 'agent-folder'],
+    ['/data/other', 'ok'], ['/home/ana/agents2', 'ok'],
+  ]);
+  w.links['/home/ana/hopagent'] = '/data/claude-cfg';
+  table('D2 link', w, [['/home/ana/hopagent', 'agent-folder']]);
+  const ww = world('win32', 'C:\\Users\\ana', 'C:\\Users\\ana\\AppData\\Roaming\\D', []);
+  ww.ctx.agentHomes = ['D:\\Agents\\Codex'];
+  table('D2 win32', ww, [['d:\\agents\\codex\\x', 'agent-folder'], ['D:\\Agents', 'agent-folder'], ['D:\\Other', 'ok']]);
+});
+section('system', () => {
+  const lin = world('linux', '/home/ana', '/home/ana/.local/share/Durbar', []);
+  lin.links['/home/ana/toproc'] = '/proc';
+  lin.links['/home/ana/tosys'] = '/sys/kernel';
+  table('D3 linux', lin, [
+    ['/proc', 'system'], ['/proc/self', 'system'], ['/home/ana/toproc', 'system'], ['/home/ana/tosys', 'system'], ['/sys', 'system'], ['/dev', 'system'], ['/dev/shm/x', 'system'], ['/run/user/1000', 'system'],
+    ['/etc', 'system'], ['/etc/x', 'system'], ['/root', 'system'], ['/boot', 'system'], ['/usr/share', 'system'], ['/bin', 'system'], ['/sbin', 'system'], ['/lib', 'system'], ['/lib64/x', 'system'], ['/var', 'system'], ['/var/lib/x', 'system'],
+    ['/mnt/disk/memory', 'ok'], ['/home/ana/notes', 'ok'], ['/devices', 'ok'], ['/usrx', 'ok'], ['/variable', 'ok'], ['/srv/notes', 'ok'], ['/opt/notes', 'ok'],
+  ]);
+  const mac = world('darwin', '/Users/ana', '/Users/ana/Library/Application Support/Durbar', []);
+  mac.links['/var'] = '/private/var';
+  table('D3 darwin', mac, [
+    ['/dev', 'system'], ['/System', 'system'], ['/System/x', 'system'], ['/Library', 'system'], ['/Library/Caches', 'system'], ['/private/var', 'system'], ['/private/var/folders/x', 'system'], ['/private/etc', 'system'], ['/var', 'system'], ['/var/x', 'system'], ['/etc', 'system'], ['/usr/local', 'system'],
+    ['/Users/ana/notes', 'ok'], ['/Volumes/Disk/memory', 'ok'], ['/SYSTEMX', 'ok'], ['/system', 'system'], // the volume is case-insensitive by default: folded
+  ]);
+  const win = world('win32', 'C:\\Users\\ana', 'C:\\Users\\ana\\AppData\\Roaming\\D', []);
+  table('D3 win32 defaults', win, [
+    ['C:\\Windows', 'system'], ['c:\\windows\\system32', 'system'], ['C:\\ProgramData', 'system'], ['C:\\Program Files', 'system'], ['C:\\Program Files\\x', 'system'], ['C:\\Program Files (x86)\\y', 'system'],
+    ['C:\\Users\\ana\\notes', 'ok'], ['D:\\Windows', 'ok'], ['C:\\Program Filesx', 'ok'], ['E:\\memory', 'ok'],
+  ]);
+  const env = world('win32', 'D:\\Users\\ana', 'D:\\Users\\ana\\AppData\\Roaming\\D', [], { systemRoot: 'D:\\WinNT', programData: 'D:\\PD', programFiles: 'D:\\PF', programFilesX86: 'D:\\PF86' });
+  table('D3 win32 from env', env, [['D:\\WinNT\\x', 'system'], ['D:\\PD', 'system'], ['D:\\PF\\a', 'system'], ['D:\\PF86', 'system'], ['D:\\Users\\ana\\notes', 'ok'], ['C:\\Windows', 'system']].slice(0, 5) as Array<[string, MemoryRefusal | 'ok']>);
+  const r = run(lin, '/proc');
+  assert.ok(!r.ok && r.reason === 'system' && /operating system/.test(r.text), 'a fixed sentence');
+});
+
+for (const [name, fn] of sectionsRun) {
+  try { fn(); } catch (e) { console.error(`SECTION ${name} FAILED`); console.error(e instanceof Error ? e.message.slice(0, 300) : 'failed'); process.exit(1); }
+}
+if (!IS_COPY) {
+  const dir = path.join(__dirname, '..', 'src', 'shared');
+  const orig = fs.readFileSync(path.join(dir, 'memoryfolder.js'), 'utf8').replace(/\r\n/g, '\n');
+  const mutants: Array<{ name: string; from: string; to: string; section: string }> = [
+    { name: 'the old local secret list (no shared one)', from: 'const SECRET_NAMES = [...homesecrets_1.HOME_SECRETS, \'.config\'];', to: "const SECRET_NAMES = ['.ssh', '.aws', '.gnupg', '.kube', '.docker', '.config', '.npmrc'];", section: 'secrets' },
+    { name: 'agent homes ignored', from: '...(ctx.agentHomes ?? [])', to: '', section: 'agenthomes' },
+    { name: 'system folders ignored', from: "return refuse('system');", to: 'void 0;', section: 'system' },
+    { name: 'pseudo folders dropped', from: "'/proc', '/sys', '/run', '/root', '/boot'", to: "'/root', '/boot'", section: 'system' },
+    { name: 'windows defaults ignore the env', from: 'e.programFiles ||', to: '', section: 'system' },
+  ];
+  assert.deepStrictEqual(mutants.filter((m) => !orig.includes(m.from)).map((m) => m.name), [], 'mutant anchors not found');
+  let k = 0;
+  for (const m of mutants) {
+    k++;
+    const uniq = `memoryfolder.mutant-${process.pid}-${k}`;
+    const file = path.join(dir, uniq + '.js');
+    try {
+      const mutated = orig.split(m.from).join(m.to);
+      new vm.Script(mutated, { filename: uniq });
+      fs.writeFileSync(file, mutated);
+      const r = spawnSync(process.execPath, [__filename], { env: Object.assign({}, process.env, { MEMORYFOLDER_MODULE: uniq }), encoding: 'utf8', timeout: 120000 });
+      assert.notStrictEqual(r.status, 0, 'mutant NOT killed: ' + m.name);
+      const died = [...r.stderr.matchAll(/SECTION (\w+) FAILED/g)].map((x) => x[1]);
+      assert.ok(died.includes(m.section) || (died.length === 0 && /AssertionError/.test(r.stderr)), `mutant "${m.name}" must die in "${m.section}": ${died.join(',') || r.stderr.slice(0, 200)}`);
+    } finally { fs.rmSync(file, { force: true }); }
+  }
+  console.log(`memoryfolder: ${mutants.length} mutants killed`);
 }
 
 process.exitCode = 0;

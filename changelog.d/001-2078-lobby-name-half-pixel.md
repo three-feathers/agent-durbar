@@ -1,0 +1,1 @@
+- **Lobby place names no longer lose their last letter on macOS** (spec 001): "Software library" was cut to "Software libra…" by half a pixel while the Boss tile had room to spare; the row now gives the places that width, and `check-097-textfit` fails on any cut name while the Boss can give.

@@ -5,7 +5,7 @@
  * It fails (exit 1) when:
  *   - (since the flip, spec 102 T230) a stored choice does not draw the arcade or it is not offered;
  *   - the flag is open and the night room's files (wall-night, floor-night) are not fetched, or the day room's (wall, floor, welcome) are, seen in a session request log (T218, SC-023);
- *   - the flag is open and a file of another world or set is asked for, a picture fails, or the art is not at one integer scale with the nearest pixel (FR-255);
+ *   - the flag is open and a file of another world or set is asked for, a picture fails, or the art is not at one integer scale with the nearest pixel (FR-255; spec 102 FR-392: an HD person is a whole number of device px per file px instead);
  *   - at 3, 4, 8 and 15 agents, 1440x900 and 1280x800: plates, signs, marquees, cues, chips or fixtures overlap, text is under 10.5 px or a marquee under 12 px,
  *     the office scrolls at 15, or Tab does not follow the seats (FR-229, FR-256, SC-022);
  *   - a screen or marquee shows markup from a hostile name or output, a text sits in a mirrored element, anything is skewed, or a text's contrast is under 4.5:1 (FR-257, FR-258);
@@ -46,6 +46,14 @@ const run = async (ctx, reqs) => {
   /* spec 102 T218 (SC-023): a session request log, as in check-097-crews.js: what the page really requests (a file:// page cannot report its own requests).
      The arcade's room is the night pair; the day pair (wall.webp, floor.webp) and welcome.webp must never be fetched. */
   const roomFetched = (name) => [...reqs.values()].filter((e) => new RegExp('/realoffice/worlds/retro/' + name + '\\.webp(\\?|#|$)').test(e.url));
+  /* spec 102 FR-406 made complete (issue 2055): with the HD switch on, no old file of the set's people is asked for or shown anywhere in the arcade (cabinet, lounge stool,
+     lobby visitor, avatars in the rail, the chat header, the inbox and the door; the helper strip draws the world's kids). The request log and every picture on the page */
+  const OLD = /\/realoffice\/sets\/retro\/p\d\d-[^/?#]*\.webp/;
+  const noOld = async (tag) => {
+    const shown = await js(`[...document.querySelectorAll('img,image,source')].flatMap(i=>[i.getAttribute('src'),i.getAttribute('srcset'),i.getAttribute('href')]).filter(Boolean).flatMap(v=>v.split(/,\\s*/)).map(v=>v.trim().split(' ')[0]).map(v=>new URL(v,location.href).href)`);
+    const old = [...[...reqs.values()].map((e) => e.url), ...shown.map((u) => decodeURIComponent(u))].filter((u) => OLD.test(u));
+    assert.deepStrictEqual([...new Set(old)], [], tag + ': FR-406: with the switch on, no old picture of the set\'s people is fetched or shown');
+  };
   const loadArcade = async (w, h, n, query = {}) => {
     reqs.clear();
     await H.load({ w, h, query: { officeview: 'real', ...ARCADE, sim: String(n), ...query }, ready: REAL, settle: false });
@@ -268,6 +276,33 @@ const run = async (ctx, reqs) => {
   }
   };
 
+  /* spec 102 FR-406 made complete (issue 2055): the places a page load does not reach, with the switch on: the hover card (it draws no person; a request it made would show),
+     a chat (the rail and the header portrait) and the inbox; the lounge and a lobby visitor are on the page */
+  const hdWalk = async () => {
+    await loadArcade(1440, 900, 15, { simfreeze: '1' });
+    const reach = await js(`({lounge:document.querySelectorAll('#stage .ro-plate.lounge').length,visitors:document.querySelectorAll('#stage img.ro-visitor').length})`);
+    console.log('[102-arcade] FR-406 walk reaches', JSON.stringify(reach));
+    assert.ok(reach.lounge > 0 && reach.visitors > 0, 'FR-406: the walk reaches a lounge seat and a lobby visitor: ' + JSON.stringify(reach));
+    await noOld('FR-406 walk, 15 agents with the lounge and the lobby');
+    const c = await js(`(()=>{const r=document.querySelector('#stage .ro-plate:not(.lounge)').getBoundingClientRect();return {x:Math.round(r.left+r.width/2),y:Math.round(r.top+r.height/2)}})()`);
+    ctx.win.webContents.sendInputEvent({ type: 'mouseMove', x: c.x, y: c.y });
+    await must(`!!document.getElementById('roZoom')`, 'the hover card', 4000);
+    await noOld('FR-406 walk, the hover card');
+    ctx.win.webContents.sendInputEvent({ type: 'mouseMove', x: 2, y: 2 });
+    const id = await js(`window.__durbarSimUi.agents().filter(a=>!a.parent)[0].id`);
+    await js(`window.__durbarSimUi.crew.openPanel(${jsLiteral(id)})`);
+    await must(`!!document.querySelector('#roPortrait img')&&document.querySelectorAll('#stripList .sav img').length>0`, 'the chat header portrait and the rail\'s faces');
+    await noOld('FR-406 walk, a chat');
+    await js(`document.getElementById('backBtn').click()`);
+    await js(`document.getElementById('inboxBtn').click()`);
+    await must(`!!document.querySelector('#inboxDlg .inbox-dlg')`, 'the inbox');
+    await noOld('FR-406 walk, the inbox');
+    await js(`document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));0`);
+    /* Your door (its own flag, `door=1`): it opens at the start with agents waiting, its faces are the 24 px avatars */
+    await loadArcade(1440, 900, 15, { simfreeze: '1', door: '1' });
+    await must(`document.querySelectorAll('#doorFaces img').length>0`, 'Your door\'s faces', 10000);
+    await noOld('FR-406 walk, Your door');
+    };
   if (process.env.ARCADE_CASES === 'narrow') { /* test only: the wide-font entry runs the narrow cases alone */
     for (const [w, h] of SIZES) await narrowCases(w, h);
     await narrowTail();
@@ -308,14 +343,18 @@ const run = async (ctx, reqs) => {
     for (const f of ['wall', 'floor', 'welcome']) assert.deepStrictEqual(roomFetched(f).map((e) => e.url), [], tag + ': the day room\'s files are never fetched: ' + f + '.webp');
     await must(PICS, 'the pictures, after the room is ready'); /* spec 102 T282: a picture still loading is not a failed one; a failed one is complete with no size */
     assert.deepStrictEqual(await js(`[...document.querySelectorAll('#stage .ro img')].filter(i=>i.complete&&!i.naturalWidth).map(i=>i.getAttribute('src'))`), [], tag + ': every picture loads');
+    await noOld(tag);
     const art = await js(`(()=>{const L=window.__durbarSimUi.realLayout(),g=L.g,ro=document.querySelector('#stage .ro').getBoundingClientRect(),off=[];
-      for(const e of document.querySelectorAll('#stage .ro-person,#stage .ro-cab')){const b=e.getBoundingClientRect(),x=b.left-ro.left,y=b.top-ro.top;if(Math.abs(b.width/g-Math.round(b.width/g))>0.01)off.push(e.className+' w '+b.width);if(e.classList.contains('ro-cab')&&Math.abs(x/g-Math.round(x/g))>0.01)off.push('cab x '+x);}
+      for(const e of document.querySelectorAll('#stage .ro-person,#stage .ro-cab')){const b=e.getBoundingClientRect(),x=b.left-ro.left,y=b.top-ro.top;if((e.getAttribute('src')||'').includes('/hd/')){const n=b.width*devicePixelRatio/e.naturalWidth;if(n<1-0.01||Math.abs(n-Math.round(n))>0.01)off.push('hd person '+e.getAttribute('src')+' '+b.width+' for '+e.naturalWidth);continue;}if(Math.abs(b.width/g-Math.round(b.width/g))>0.01)off.push(e.className+' w '+b.width);if(e.classList.contains('ro-cab')&&Math.abs(x/g-Math.round(x/g))>0.01)off.push('cab x '+x);}
       const px=getComputedStyle(document.querySelector('#stage .ro-person,#stage .ro-visitor')).imageRendering,cab=getComputedStyle(document.querySelector('#stage .ro-cab')).imageRendering;
       return {g,off,px,cab,scroll:!!L.scroll,fh:document.getElementById('floor').scrollHeight-document.getElementById('floor').clientHeight,scan:[...document.querySelectorAll('#stage *')].filter(e=>/skew/.test(e.style.transform||'')||/matrix\\([^)]*\\)/.test(getComputedStyle(e).transform)&&(()=>{const m=getComputedStyle(e).transform.match(/[-\\d.]+/g).map(Number);return Math.abs(m[0]*m[2]+m[1]*m[3])>1e-3;})()).length,mirrorText:[...document.querySelectorAll('#stage .mir')].filter(e=>e.textContent.trim()).length};})()`);
     console.log('[102-arcade]', tag, JSON.stringify({ g: art.g, scroll: art.scroll }));
     const dprNow = await js('devicePixelRatio'); /* FR-255 (T204): an integer at a whole ratio; at 1.25 and 1.5, a whole number of device px (the next one up where it fits, else as it was) */
     assert.ok(art.g >= 2 && (Number.isInteger(art.g) || (!Number.isInteger(dprNow) && Math.abs(art.g * dprNow - Math.round(art.g * dprNow)) < 1e-6)), tag + ': an integer scale (a whole number of device px at 1.25 and 1.5): ' + art.g);
     assert.deepStrictEqual(art.off, [], tag + ': the art on the grid');
+    /* spec 102 FR-405: a seated bust is only ever a face in a small circle in the arcade (the largest avatar is 32 CSS px): never drawn as a bust */
+    const busts = await js(`[...document.querySelectorAll('img')].filter(i=>/-(typeA|typeB|waveA|waveB|think|rest)(-t\\d+)?\\.webp/.test(i.getAttribute('src')||'')).map(i=>{let c=i.parentElement;while(c&&getComputedStyle(c).overflow!=='hidden')c=c.parentElement;const r=(c||i).getBoundingClientRect();return r.width>0?Math.round(Math.max(r.width,r.height)):0;}).filter(w=>w>32)`);
+    assert.deepStrictEqual(busts, [], tag + ': no seated bust is drawn larger than a 32 px avatar');
     /* spec 102 FR-255 (owner 2026-11-04, #1104): the lobby too: every fixture and visitor at a whole scale, on a whole device pixel */
     const lobby = await js(`(()=>{const d=devicePixelRatio,off=[],tol=Number.isInteger(d)?0.01:Math.max(0.01,d/64+0.001);let n=0; /* tol: 0.01 at a whole ratio; at 1.25 and 1.5 the engine keeps a position in 1/64 CSS px, which is up to d/64 device px (T204) */
       for(const i of document.querySelectorAll('#stage img.ro-fx,#stage img.ro-visitor')){if(i.hidden||!i.getClientRects().length||!i.naturalWidth)continue;n++;const b=i.getBoundingClientRect(),s=b.width*d/i.naturalWidth,s2=b.height*d/i.naturalHeight,x=b.left*d;
@@ -636,6 +675,25 @@ const run = async (ctx, reqs) => {
   await must(`document.documentElement.dataset.world===undefined&&document.documentElement.dataset.ui===undefined`, 'the flat office: no world, the theme\'s UI style');
   assert.strictEqual(await js(`document.documentElement.dataset.dark===undefined`), true, 'leaving: the theme\'s light page');
 
+  await hdWalk(); /* spec 102 T472: no switch any more: the walk always runs */
+  /* spec 102 T472 (owner 2026-11-23 20:12 UTC: one set everywhere): no world asks for an old Retro pixel picture: the Photo office and the cave draw the HD busts and the 288 standing
+     frames, the flat office the HD bust crops and the avatar tiles, in a light theme and a dark one */
+  for (const world of ['photo', 'cave']) {
+    reqs.clear();
+    await H.load({ w: 1440, h: 900, query: { officeview: 'real', simfreeze: '1', characters: 'pixel', sim: '15', ...(world === 'cave' ? { world: 'cave', worldflags: 'cave' } : {}) }, ready: REAL, settle: false });
+    await must(PICS, 'the pictures, ' + world);
+    assert.ok(await js(`[...document.querySelectorAll('#stage .ro-person')].some(i=>(i.getAttribute('src')||'').includes('/sets/retro/hd/'))`), world + ': the Retro pixel people drawn from the HD busts');
+    await noOld('T472, ' + world + ' with the Retro pixel people');
+  }
+  const DARK = JSON.parse(fs.readFileSync(path.join(__dirname, 'fixtures', 'themes', 'check-dark.json'), 'utf8')); /* a dark theme: its own light-or-dark avatar background picks the tile (FR-410) */
+  for (const theme of [null, DARK]) {
+    reqs.clear();
+    await H.load({ w: 1440, h: 900, query: { officeview: 'flat', simfreeze: '1', characters: 'pixel', sim: '15' }, ready: `!!document.querySelector('#floor')`, settle: false });
+    if (theme) await js(`window.THEME.setTheme(JSON.parse(${jsLiteral(JSON.stringify(theme))}));0`);
+    await ctx.sleep(1500);
+    assert.ok(await js(`[...document.querySelectorAll('image')].some(i=>(i.getAttribute('href')||'').includes('/sets/retro/hd/'))`), 'the flat office draws the HD heads (' + (theme ? 'dark theme' : 'default theme') + ')');
+    await noOld('T472, the flat office (' + (theme ? 'dark theme' : 'default theme') + ')');
+  }
   console.log('[102-arcade] PASS');
 };
 

@@ -7,8 +7,8 @@ import { ipcHandle } from '../ipcguard';
 import type { AdapterRouter } from '../../adapters/router';
 import { publicSlash } from '../../adapters/slashcommands';
 import type { AgentInfo } from '../../shared/api';
-import { errText } from '../agentops';
 import type { EnsureLive } from './types';
+import { failText } from '../ipcerror';
 
 export interface SlashIpcDeps {
   agents: Map<string, AgentInfo>;
@@ -26,7 +26,7 @@ export function register(deps: SlashIpcDeps): void {
       await ensureLive(a, { quiet: true });
       return { ok: true, entries: publicSlash(await ad.listSlashCommands(a.id)) };
     } catch (err) {
-      return { ok: false, error: errText(err), entries: [] };
+      return { ok: false, error: failText(err, 'slash commands'), entries: [] };
     }
   });
 }

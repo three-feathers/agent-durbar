@@ -82,12 +82,15 @@
   const unhidBoth=(raw,run,bare,fail)=>{try{const s=String(raw==null?'':raw),c=unhide(s);if(c===s)return run(s);const m=run(s);if(m===null||m==='')return m;
     const c2=unhide(m);if(c2===m)return m;const m2=run(c2);return m2===null||m2===bare(c2)?m:m2;}catch(e){return fail;}};
   /* both readings of one text: this PR's (split tokens masked first, unhidBoth) and the one before it (old, unhid), nothing shown that the second hides */
-  const both2=(raw,w,go,src)=>{const s=String(raw==null?'':raw);const h=go(w,unhidBoth);if(h===null||h==='')return h;
+  /* spec 012 FR-189 (issue #1940): a text whose link or image markup splits a token is read with the shared link step first (linkFirst), and nothing the reading
+     without it (w, main's) hides shows (keep): a stretch it masks can end inside a token that a later step of the desk reads whole */
+  const both2=(raw,w,go,src)=>{const s=String(raw==null?'':raw);const wl=linkFirst(src==null?s:src,w);let h=go(wl,unhidBoth);if(h===null||h==='')return h;
+    if(wl!==w){const h1=go(w,unhidBoth);if(h1===null||h1==='')return h1;if(h!==h1&&h.includes('[redacted:'))return null;h=keep(h,h1);} /* a `[redacted:` the text holds reads as a mask to `keep` (plainLz's rule): fail closed */
     /* spec 012 FR-188 (review of PR 1899, independent differential): with an entity or a percent escape in the text, the same reading with the decoded reading off is a
        reference too (its split step as before FR-188; the steps after it can read a decoded mask differently: a hidden character removed glues a keyword to it), so
        nothing it hides shows; the shared withoutDecode, throws without it (callers fail closed) */
     let hd=h;if(DEC_GATE.test(s)){if(!SH||typeof SH.withoutDecode!=='function')throw new Error('no withoutDecode');const h0=SH.withoutDecode(()=>go(splitFirst(src==null?s:src),unhidBoth));if(h0===null||h0==='')return h0;hd=keep(h,h0);}
-    if(w===s&&unhide(s)===s)return hd;const r=old(()=>go(s,unhid));if(r===null||r==='')return r;return keep(hd,r);};
+    if(w===s&&wl===s&&unhide(s)===s)return hd;const r=old(()=>go(s,unhid));if(r===null||r==='')return r;return keep(hd,r);};
   const DEC_GATE=/[&%]/;
   /* spec 012 FR-182 (review of PR 1721, round 4): every desk mask first masks the tokens split by a line break, a mark, a tag, a comment or a hidden character
      (the shared maskSplitTokens, the step redact starts with; nothing else of the text changes), then runs its own steps (unhide, unescape, plain, redact) on that
@@ -123,6 +126,25 @@
   /* the reading as before PR 1721: the shared masks with their split step off (withoutSplit); throws without it */
   const old=fn=>{if(!SH||typeof SH.withoutSplit!=='function')throw new Error('no withoutSplit');return SH.withoutSplit(fn);};
   const splitFirst=raw=>{if(!SH||typeof SH.maskSplitTokens!=='function')throw new Error('no maskSplitTokens');const r=SH.maskSplitTokens(String(raw==null?'':raw));if(typeof r!=='string')throw new Error('mask');return r;};
+  /* spec 012 FR-189 (issue #1940): the text with a token split by link or image markup (any Markdown form, an autolink, an HTML tag) masked first (the shared
+     maskLinkSplitTokens, linear), then the split step; `w` (the split step alone) when it masks nothing. Throws without it or on its failure (callers fail closed) */
+  const linkMasked=raw=>{if(!SH||typeof SH.maskLinkSplitTokens!=='function')throw new Error('no maskLinkSplitTokens');const l=SH.maskLinkSplitTokens(String(raw==null?'':raw));
+    if(typeof l!=='string'||l==='[redaction failed]')throw new Error('mask');return l;};
+  let linkHits=0;
+  const linkFirst=(src,w)=>{const s=String(src==null?'':src),l=linkMasked(s);if(l===s)return w;linkHits++;return splitFirst(l);};
+  /* review of PR 1949, round 1 (F1): a surface during which the link step masked anything is read again with it off (the shared withoutLinkSplit: the desk as
+     before FR-189); when that reading fails closed (null or ''), so does the surface, and otherwise nothing it hides shows (keep). A text that holds an open
+     `[redacted:` (which keep reads as a mask) and reads differently fails closed. Throws without the shared module (callers fail closed) */
+  const linkBoth=(raw,fn)=>{const n0=linkHits,h=fn();if(h==null||h===''||linkHits===n0)return h;
+    if(!SH||typeof SH.withoutLinkSplit!=='function')throw new Error('no withoutLinkSplit');const r=SH.withoutLinkSplit(fn);if(r==null||r==='')return r;if(h===r)return h;
+    if(String(raw==null?'':raw).includes('[redacted:')||h.includes('[redacted:')||r.includes('[redacted:'))return null;return keep(h,r);};
+  /* spec 012 FR-190 (issue #1320): a surface during which the shared continuation reading hid anything (the shared contReadCount moved) is read again with it off
+     (the shared withoutContinuation: the desk as before FR-190); when that reading fails closed (null or ''), so does the surface, and otherwise nothing it hides
+     shows (keep). A text that holds an open `[redacted:` and reads differently fails closed, as linkBoth. Throws without the shared module (callers fail closed) */
+  const contCount=()=>{if(!SH||typeof SH.contReadCount!=='function')throw new Error('no contReadCount');const n=SH.contReadCount();if(typeof n!=='number')throw new Error('count');return n;};
+  const contBoth=(raw,fn)=>{const n0=contCount(),h=fn();if(h==null||h===''||contCount()===n0)return h;
+    if(typeof SH.withoutContinuation!=='function')throw new Error('no withoutContinuation');const r=SH.withoutContinuation(fn);if(r==null||r==='')return r;if(h===r)return h;
+    if(String(raw==null?'':raw).includes('[redacted:')||h.includes('[redacted:')||r.includes('[redacted:'))return null;return keep(h,r);};
   /* spec 012 FR-184 (issue #1543): a line continuation (a backslash, or cmd's caret, before a line break) inside a token is joined by the shell, but plainKeep makes the break a blank
      (`\ `, a literal blank to the shell), and PowerShell's `u{…} escape, whose backtick plainKeep removes as Markdown; a text with one is masked as written first
      (redact reads them), as maskRaw0 does for a backslash */
@@ -164,8 +186,8 @@
     if(h==null||h===''||!SHELL_GATE.test(s)||(shellCount()===n0&&deskShell===d0&&!lineCont(s)))return {v:h,r:h};
     let r;asBefore=true;try{r=noShell(fn);}finally{asBefore=false;}if(r==null||r==='')return {v:r,r};return {v:h===r?h:keep(h,r),r};};
   const shellBoth=(raw,fn)=>shellPair(raw,fn).v;
-  const maskPlain=(raw,redact,codeWord)=>{try{return shellBoth(raw,()=>maskPlain1(raw,redact,codeWord));}catch(e){return null;}};
-  const maskRaw=(raw,redact)=>{try{const m=lz(()=>shellBoth(raw,()=>maskRaw1(raw,redact)));return m==null?'':m;}catch(e){return '';}};
+  const maskPlain=(raw,redact,codeWord)=>{try{return contBoth(raw,()=>linkBoth(raw,()=>shellBoth(raw,()=>maskPlain1(raw,redact,codeWord))));}catch(e){return null;}};
+  const maskRaw=(raw,redact)=>{try{const m=lz(()=>contBoth(raw,()=>linkBoth(raw,()=>shellBoth(raw,()=>maskRaw1(raw,redact)))));return m==null?'':m;}catch(e){return '';}};
   /* raw agent text -> masked, plain, at most n characters (no n: not cut). '' when masking is not possible. */
   const excerpt=(raw,redact,n,codeWord)=>{const p=plainLz(()=>maskPlain(String(raw==null?'':raw),redact,codeWord));if(p===null)return '';return n==null?p:cutter(p,n);};
   /* a tool label masked the way the live readout (LIVEACT) masks it: a command by maskSecretCommand, a URL by maskSecretUrl, anything else by redact.
@@ -204,13 +226,14 @@
       /* round 7: the label as before PR 1721 first; when it is '' (the window's own fail-closed check), the label is '' here too */
       const ref=old(()=>escMask(s,t=>unhid(t,one,c=>c,'')));if(!ref)return '';
       /* round 8: a label with no split token and no hidden character reads the same both ways: the reading as before is the answer (one pass, not two) */
-      const sf=splitFirst(s);if(sf===s&&unhide(s)===s)return ref; /* round 9: the split step on the label once, shared with the reading below */
+      const sf=splitFirst(s);if(sf===s&&unhide(s)===s&&linkMasked(s)===s)return ref; /* round 9: the split step on the label once, shared with the reading below */
       const h=escMask(s,t=>{const go=(x,u)=>u(x,one,c=>c,'');if(t.length>DESK_SPLIT_MAX){const r=old(()=>go(t,unhid));return r==null?'':r;}const m=both2(t,t===s?sf:splitFirst(t),go);return m==null?'':m;});
       return h?keep(h,ref):'';}catch(e){return '';}};
-  const maskLabel=(raw,kind,mask)=>{try{return lz(()=>shellBoth(raw,()=>maskLabel1(raw,kind,mask)));}catch(e){return '';}};
+  const maskLabel=(raw,kind,mask)=>{try{const m=lz(()=>contBoth(raw,()=>linkBoth(raw,()=>shellBoth(raw,()=>maskLabel1(raw,kind,mask)))));return m==null?'':m;}catch(e){return '';}};
   /* spec 012 FR-184 (review of PR 1824, F1): the label and its reading without the shell readings ({text, ref}; ref is text when it was not read again; '' for
      both on a failure). The permission card checks both: a command the reading as before cannot match back to what runs stays lost (as on main) */
-  const maskLabelPair=(raw,kind,mask)=>{try{const p=noLoose(()=>shellPair(raw,()=>maskLabel1(raw,kind,mask)));const t=p.v||'';return t?{text:looseText(t),ref:looseText(p.r||'')}:{text:'',ref:''};}catch(e){return {text:'',ref:''};}};
+  /* review of PR 1949 (F1): the pair's text goes through linkBoth too; its ref is the last reading's (with the link step off when it was read again) */
+  const maskLabelPair=(raw,kind,mask)=>{try{let r0='';const v=noLoose(()=>contBoth(raw,()=>linkBoth(raw,()=>{const q=shellPair(raw,()=>maskLabel1(raw,kind,mask));r0=q.r;return q.v;})));const p={v,r:r0};const t=p.v||'';return t?{text:looseText(t),ref:looseText(p.r||'')}:{text:'',ref:''};}catch(e){return {text:'',ref:''};}};
   /* the wrapper the page uses: fallback words and the "is masking possible" flag */
   function create(o){
     const red=o&&typeof o.redact==='function'?o.redact:null, cut=o&&typeof o.cut==='function'?o.cut:cutter;

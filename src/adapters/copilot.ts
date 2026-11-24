@@ -77,6 +77,7 @@ import type { CopilotHostSupport } from './copilotSandbox';
 import { CREDENTIAL_FOLDER_REFUSAL, leftOutFields, sandboxRoots, splitFolders } from './sandboxRoots';
 import { pathDirs as envPathDirs } from '../shared/pathdirs';
 import type { SandboxHostView, SandboxState } from '../shared/api';
+import { ShownError } from '../shared/shownerror';
 
 const IMAGE_MIME: Record<string, string> = {
   '.png': 'image/png',
@@ -889,8 +890,8 @@ export class CopilotAdapter implements AgentAdapter {
    * malformed id and a session that is open in this adapter; an error from the runtime (for example "not found") is passed on.
    */
   async deleteSession(sessionId: string): Promise<void> {
-    if (!sessionIdOk(this.id, sessionId)) throw new Error('That is not a session id.');
-    if (this.sessions.has(sessionId)) throw new Error('That session is open. End it first.');
+    if (!sessionIdOk(this.id, sessionId)) throw new ShownError('That is not a session id.');
+    if (this.sessions.has(sessionId)) throw new ShownError('That session is open. End it first.');
     await (await this.getClient()).deleteSession(sessionId);
   }
 
@@ -1133,7 +1134,7 @@ export class CopilotAdapter implements AgentAdapter {
         this.mappers.delete(sid);
         await session.disconnect().catch(() => undefined);
         if (hookDir) fs.rmSync(hookDir, { recursive: true, force: true });
-        throw new Error(lineNotCleared(errorText(e)));
+        throw new ShownError(lineNotCleared(errorText(e)));
       }
     }
     if (live87) await this.applySandbox(sid, live87, startModeOf(options), client);
@@ -1163,11 +1164,11 @@ export class CopilotAdapter implements AgentAdapter {
     // spec 099: refusals first, so a refused message leaves everything as it was; read again at the step's start and after its waits
     const refusals = (): SendPlan => {
       const auto = live.auto?.on ? live.auto : undefined;
-      if (auto && message.plan) throw new Error(AUTOPILOT_NO_PLAN);
+      if (auto && message.plan) throw new ShownError(AUTOPILOT_NO_PLAN);
       if (!auto || auto.running) return { startsRun: false, auto, goal: undefined };
-      if (live.turnOpen) throw new Error(AUTOPILOT_WAIT_TURN);
+      if (live.turnOpen) throw new ShownError(AUTOPILOT_WAIT_TURN);
       const goal = goalText(message.text, 'copilot');
-      if (!goal.ok) throw new Error(goalRefusal(goal));
+      if (!goal.ok) throw new ShownError(goalRefusal(goal));
       return { startsRun: true, auto, goal };
     };
     refusals();
@@ -1188,7 +1189,7 @@ export class CopilotAdapter implements AgentAdapter {
     // spec 087 FR-007: the sandbox is not in force: nothing is sent until the person chooses (or, under the policy, ever)
     const hold = live.sandboxHold;
     if (hold && !(this.sandboxContinued.has(sid) && !live.requireOsSandbox)) {
-      if (live.requireOsSandbox || hold.refuse) throw new Error(hold.refuse ? hold.reason : copilotSandboxRefusal(hold.reason));
+      if (live.requireOsSandbox || hold.refuse) throw new ShownError(hold.refuse ? hold.reason : copilotSandboxRefusal(hold.reason));
       live.sandboxNoteOpen = true;
       this.emit(sid, { type: 'sandbox', sandbox: live.sandbox ?? null, notice: { text: copilotSandboxNotice(hold.reason), actions: ['continue'] } });
       this.emit(sid, { type: 'status', status: 'idle', intent: 'Not sent: the OS sandbox could not start' });
@@ -1280,7 +1281,7 @@ export class CopilotAdapter implements AgentAdapter {
   /** Spec 099 FR-059: a runtime call of a queued step, bounded like the turn-on: no answer in time fails with COPILOT_STEP_NO_ANSWER. */
   private bounded<T>(call: Promise<T> | T): Promise<T> {
     return within(Promise.resolve(call), this.autopilotTuning.waitMs ?? CLEAR_WAIT_MS, 'Copilot').catch((e: unknown) => {
-      throw e instanceof Error && /did not answer in time/.test(e.message) ? new Error(COPILOT_STEP_NO_ANSWER) : e;
+      throw e instanceof Error && /did not answer in time/.test(e.message) ? new ShownError(COPILOT_STEP_NO_ANSWER) : e;
     });
   }
 
@@ -1342,11 +1343,11 @@ export class CopilotAdapter implements AgentAdapter {
 
   /** FR-002, FR-022, D9: the refusals of a turn-on, read when it is asked for and again when its step starts. Returns the cap to use. */
   private checkTurnOn(live: Live, settings: AutopilotSettings): number | undefined {
-    if (live.broker.getMode() !== 'allow') throw new Error(AUTOPILOT_NOT_ALLOW);
-    if (live.auto?.running) throw new Error(AUTOPILOT_ONE_RUN);
+    if (live.broker.getMode() !== 'allow') throw new ShownError(AUTOPILOT_NOT_ALLOW);
+    if (live.auto?.running) throw new ShownError(AUTOPILOT_ONE_RUN);
     let cap = settings.cap;
     if (cap !== undefined) {
-      if (!(typeof cap === 'number' && Number.isFinite(cap) && cap > 0)) throw new Error('Invalid credit cap.');
+      if (!(typeof cap === 'number' && Number.isFinite(cap) && cap > 0)) throw new ShownError('Invalid credit cap.');
       cap = Math.max(cap, MIN_CAP); // D9: the runtime's own smallest cap
       this.refuseSpentCap(live, cap);
     }
@@ -1358,8 +1359,8 @@ export class CopilotAdapter implements AgentAdapter {
    * bounded like the other Autopilot waits; a failure or no answer leaves Autopilot off, and a Stop or End before or during it does too.
    */
   private async turnOnStep(sid: string, live: Live, settings: AutopilotSettings, stops: number | undefined): Promise<void> {
-    if (this.sessions.get(sid) !== live || live.ending) throw new Error('The session is not running.');
-    if (live.interrupts !== stops) throw new Error(COPILOT_TURN_ON_STOPPED);
+    if (this.sessions.get(sid) !== live || live.ending) throw new ShownError('The session is not running.');
+    if (live.interrupts !== stops) throw new ShownError(COPILOT_TURN_ON_STOPPED);
     const cap = this.checkTurnOn(live, settings);
     const auto = (live.auto ??= this.newAutopilot(sid, live));
     auto.turnOn({ ...settings, cap });
@@ -1384,7 +1385,7 @@ export class CopilotAdapter implements AgentAdapter {
     if (ended || live.interrupts !== stops || notAllow || !auto.on) {
       auto.settings = undefined;
       forget();
-      throw new Error(ended ? 'The session is not running.' : live.interrupts !== stops ? COPILOT_TURN_ON_STOPPED : notAllow ? AUTOPILOT_NOT_ALLOW : COPILOT_TURN_ON_OFF);
+      throw new ShownError(ended ? 'The session is not running.' : live.interrupts !== stops ? COPILOT_TURN_ON_STOPPED : notAllow ? AUTOPILOT_NOT_ALLOW : COPILOT_TURN_ON_OFF);
     }
     live.planMode = false; // `autopilot` left plan mode, so a run's send has no mode.set after its last check
     live.ownTurnOn = false; // answered and on: its mode change, before or after this, is no news
@@ -1445,7 +1446,7 @@ export class CopilotAdapter implements AgentAdapter {
   /** FR-022: a value at or below what was spent could do nothing. */
   private refuseSpentCap(live: Live, cap: number): void {
     const used = usedCredits(live);
-    if (cap <= used) throw new Error(`A cap of ${cap} AI credits is not above what this session has spent (${Math.round(used * 100) / 100}).`);
+    if (cap <= used) throw new ShownError(`A cap of ${cap} AI credits is not above what this session has spent (${Math.round(used * 100) / 100}).`);
   }
 
   /** FR-022: the lower of the session's cap and the Autopilot cap, for this run. Never touches `live.cap` or `ownCap`. */
@@ -1664,14 +1665,14 @@ export class CopilotAdapter implements AgentAdapter {
    */
   async selectAgentProfile(sessionId: string, id: string | null): Promise<AgentProfile | null> {
     const live = this.sessions.get(sessionId);
-    if (!live) throw new Error('The session is not running.');
+    if (!live) throw new ShownError('The session is not running.');
     if (id === null) {
       await live.session.rpc.agent.deselect();
       this.emit(sessionId, { type: 'agentProfile', profile: null });
       return null;
     }
     const p = (await this.listAgentProfiles(sessionId)).find((x) => x.id === id);
-    if (!p) throw new Error('That agent is not available in this session.');
+    if (!p) throw new ShownError('That agent is not available in this session.');
     await live.session.rpc.agent.select({ name: id });
     this.emit(sessionId, { type: 'agentProfile', profile: p });
     return p;
@@ -1921,10 +1922,10 @@ export class CopilotAdapter implements AgentAdapter {
   /** FR-007a/FR-007c/FR-007d: *Continue without the OS sandbox* for this session; Copilot never offers *Always continue*. */
   async continueWithoutSandbox(sessionId: string, opts: { always?: boolean } = {}): Promise<void> {
     const live = this.mustGet(sessionId);
-    if (live.requireOsSandbox) throw new Error('Your organization requires the OS sandbox in Read-only and Ask first, so Durbar cannot continue without it.');
-    if (opts.always) throw new Error('Always continue is not offered for Copilot: its sandbox can be fixed on this computer.');
-    if (live.sandboxHold?.refuse) throw new Error(live.sandboxHold.reason);
-    if (!live.sandboxHold || !live.sandboxNoteOpen) throw new Error('There is no OS sandbox note to answer for this session.'); // never switch off a working floor
+    if (live.requireOsSandbox) throw new ShownError('Your organization requires the OS sandbox in Read-only and Ask first, so Durbar cannot continue without it.');
+    if (opts.always) throw new ShownError('Always continue is not offered for Copilot: its sandbox can be fixed on this computer.');
+    if (live.sandboxHold?.refuse) throw new ShownError(live.sandboxHold.reason);
+    if (!live.sandboxHold || !live.sandboxNoteOpen) throw new ShownError('There is no OS sandbox note to answer for this session.'); // never switch off a working floor
     live.sandboxNoteOpen = false; // one-shot
     this.sandboxContinued.add(sessionId);
     live.sandboxHold = undefined;
@@ -2008,7 +2009,7 @@ export class CopilotAdapter implements AgentAdapter {
     const live = this.mustGet(sessionId);
     const r = await live.session.rpc.queue.removeAt({ id: queueId });
     this.mapperFor(sessionId).expectUserModel(undefined);
-    if (!r?.removed) throw new Error('Nothing was queued any more: the switch has already been applied or was cancelled.');
+    if (!r?.removed) throw new ShownError('Nothing was queued any more: the switch has already been applied or was cancelled.');
   }
 
   /** Manual compaction (`rpc.history.compact`, one model call = credits). Refused while the session works. `focus` is never logged. */
@@ -2069,16 +2070,16 @@ export class CopilotAdapter implements AgentAdapter {
           const n = Number((d.copilotUsage as { totalNanoAiu?: unknown } | undefined)?.totalNanoAiu);
           if (Number.isFinite(n) && n > 0) nano += n;
         } else if (e.type === 'session.idle' && !e.agentId) finish();
-        else if (e.type === 'session.error' && !e.agentId) finish(new Error(`Copilot could not answer${typeof d.errorType === 'string' ? ` (${d.errorType.slice(0, 60)})` : ''}.`));
+        else if (e.type === 'session.error' && !e.agentId) finish(new ShownError(`Copilot could not answer${typeof d.errorType === 'string' ? ` (${d.errorType.slice(0, 60)})` : ''}.`));
       });
       const timeout = new Promise<never>((_, reject) => {
         timer = setTimeout(() => {
           timedOut = true;
-          reject(new Error('Copilot gave no answer in time.'));
+          reject(new ShownError('Copilot gave no answer in time.'));
         }, this.oneShotTimeoutMs);
       });
       await Promise.race([session.send({ prompt }).then(() => done), timeout]);
-      if (!text) throw new Error('Copilot gave no answer.');
+      if (!text) throw new ShownError('Copilot gave no answer.');
       return { text, ...(nano > 0 ? { nanoAiu: nano } : {}) };
     } finally {
       clearTimeout(timer);
@@ -2100,9 +2101,9 @@ export class CopilotAdapter implements AgentAdapter {
    * the caller keeps a Durbar-only name. The name is never logged.
    */
   async renameSession(sessionId: string, name: string): Promise<void> {
-    if (!sessionIdOk(this.id, sessionId)) throw new Error('That is not a session id.');
+    if (!sessionIdOk(this.id, sessionId)) throw new ShownError('That is not a session id.');
     const bad = copilotNameError(name);
-    if (bad) throw new Error(bad);
+    if (bad) throw new ShownError(bad);
     await this.refreshing?.catch(() => undefined);
     // one lock per session id: a start or resume of the same session waits for a rename in flight, and the other way round
     return this.withSessionLock(sessionId, async () => {
@@ -2117,7 +2118,7 @@ export class CopilotAdapter implements AgentAdapter {
       const client = await this.getClient();
       const meta = await client.getSessionMetadata(sessionId).catch(() => undefined);
       const dir = meta?.context?.workingDirectory;
-      if (!dir) throw new Error('Copilot has no folder stored for that session.');
+      if (!dir) throw new ShownError('Copilot has no folder stored for that session.');
       const session = await client.resumeSession(sessionId, renameResumeConfig(dir) as unknown as ResumeSessionConfig);
       try {
         await session.rpc.name.set({ name });
@@ -2194,7 +2195,7 @@ export class CopilotAdapter implements AgentAdapter {
 
   async setCap(sessionId: string, credits: number | null): Promise<void> {
     const live = this.mustGet(sessionId);
-    if (credits !== null && !(credits > 0 && Number.isFinite(credits))) throw new Error('Invalid credit cap.');
+    if (credits !== null && !(credits > 0 && Number.isFinite(credits))) throw new ShownError('Invalid credit cap.');
     // spec 099 FR-022: during a run this changes the session's own cap; only a lower value applies now, and nothing lifts the Autopilot cap
     const held = live.auto?.running ? live.auto.settings?.cap : undefined;
     if (held !== undefined) {
@@ -2290,7 +2291,7 @@ export class CopilotAdapter implements AgentAdapter {
     }
     // spec 052 FR-234: a request the raise would not lift: the card stays open and the runtime's turn keeps waiting
     const raisedTo = action.kind === 'add' && typeof live.capNow === 'number' ? live.capNow + action.credits : action.kind === 'set' ? action.credits : null;
-    if (raisedTo !== null && raisedTo <= usedCredits(live)) throw new Error(copilotRaiseTooLow(usedCredits(live)));
+    if (raisedTo !== null && raisedTo <= usedCredits(live)) throw new ShownError(copilotRaiseTooLow(usedCredits(live)));
     const response =
       action.kind === 'add' ? { action: 'add' as const, additionalAiCredits: action.credits }
       : action.kind === 'set' ? { action: 'set' as const, maxAiCredits: action.credits }
@@ -2357,7 +2358,7 @@ export class CopilotAdapter implements AgentAdapter {
       while (live.lateCalls?.size && !stale()) {
         const left = end - Date.now();
         const landed = left > 0 && (await this.capped(Promise.all([...live.lateCalls]).then(() => true), left));
-        if (!landed && !stale()) throw new Error(COPILOT_STOP_NO_ANSWER);
+        if (!landed && !stale()) throw new ShownError(COPILOT_STOP_NO_ANSWER);
       }
       if (!stale()) await this.turnEnded(live);
       return !stale();
@@ -2406,7 +2407,7 @@ export class CopilotAdapter implements AgentAdapter {
   /** Spec 052 FR-230: called under the session lock, before anything resumes this id. */
   private async waitLateClose(id: string | undefined): Promise<void> {
     const closing = id ? this.lateCloses.get(id) : undefined;
-    if (closing && !(await this.capped(closing.then(() => true), this.lateWaitMs))) throw new Error(COPILOT_CLOSE_NO_ANSWER);
+    if (closing && !(await this.capped(closing.then(() => true), this.lateWaitMs))) throw new ShownError(COPILOT_CLOSE_NO_ANSWER);
   }
 
   /** How long Stop, End session and Interrupt wait for each runtime call (cancel the pending limit, abort, disconnect) before going on (test hook: set it low). */
@@ -2431,7 +2432,7 @@ export class CopilotAdapter implements AgentAdapter {
    */
   async restartMcpServer(sessionId: string, name: string, opts: { auto?: boolean } = {}): Promise<void> {
     const live = this.sessions.get(sessionId);
-    if (!live) throw new Error('This session is not running. Send a message to start it.');
+    if (!live) throw new ShownError('This session is not running. Send a message to start it.');
     const mcp = live.session.rpc.mcp as unknown as { restartServer?: (p: { serverName: string }) => Promise<void>; enable(p: { serverName: string }): Promise<void>; disable(p: { serverName: string }): Promise<void> };
     if (opts.auto === true) return this.autoReconnect(sessionId, live, name);
     if (typeof mcp.restartServer === 'function') {
@@ -2442,7 +2443,7 @@ export class CopilotAdapter implements AgentAdapter {
         // SDK 1.0.22-1.0.26 always has the generated method (`dist/generated/rpc.js`): an older runtime answers that it does not know it
         // (JSON-RPC -32601, as the SDK's own `connect` check reads it). Only then fall back; any other error is the restart's own.
         // real 2026-10-21: a failed restart reads "Request session.mcp.restartServer failed with message: <the server's reason>"
-        if (!isMethodNotFound(err)) throw new Error(sdkErrorText(err));
+        if (!isMethodNotFound(err)) throw new ShownError(sdkErrorText(err));
       }
     }
     await mcp.disable({ serverName: name });
@@ -2460,17 +2461,17 @@ export class CopilotAdapter implements AgentAdapter {
    */
   private async autoReconnect(sessionId: string, live: { session: { rpc: { mcp: unknown } } }, name: string): Promise<void> {
     const mcp = live.session.rpc.mcp as { restartServer?: (p: { serverName: string }) => Promise<void>; list?: () => Promise<{ servers?: unknown }> };
-    if (typeof mcp.restartServer !== 'function') throw new Error('This Copilot version cannot reconnect one MCP server by itself.');
+    if (typeof mcp.restartServer !== 'function') throw new ShownError('This Copilot version cannot reconnect one MCP server by itself.');
     let failure: unknown;
     try {
       await mcp.restartServer({ serverName: name });
     } catch (err) {
-      if (isMethodNotFound(err)) throw new Error('This Copilot version cannot reconnect one MCP server by itself.');
+      if (isMethodNotFound(err)) throw new ShownError('This Copilot version cannot reconnect one MCP server by itself.');
       failure = err;
     }
     await new Promise<void>((r) => setTimeout(r, this.autoReadDelayMs));
     if (this.sessions.get(sessionId) !== live || typeof mcp.list !== 'function') {
-      if (failure !== undefined) throw new Error(sdkErrorText(failure));
+      if (failure !== undefined) throw new ShownError(sdkErrorText(failure));
       return;
     }
     try {
@@ -2479,7 +2480,7 @@ export class CopilotAdapter implements AgentAdapter {
     } catch {
       /* the earlier report stays; main reads what the session last said */
     }
-    if (failure !== undefined) throw new Error(sdkErrorText(failure));
+    if (failure !== undefined) throw new ShownError(sdkErrorText(failure));
   }
 
   /**
@@ -2494,19 +2495,19 @@ export class CopilotAdapter implements AgentAdapter {
    */
   async startMcpSignIn(sessionId: string, name: string, opts: { again?: boolean } = {}): Promise<McpSignInResult> {
     const live = this.sessions.get(sessionId);
-    if (!live) throw new Error('This session is not running. Send a message to start it, then sign in.');
+    if (!live) throw new ShownError('This session is not running. Send a message to start it, then sign in.');
     const oauth = (live.session.rpc.mcp as unknown as { oauth?: { login?: (p: { serverName: string; clientName: string; callbackSuccessMessage: string; forceReauth?: boolean }) => Promise<{ authorizationUrl?: unknown }> } }).oauth;
-    if (!oauth || typeof oauth.login !== 'function') throw new Error('This Copilot version cannot start a sign-in from Agent Durbar.');
+    if (!oauth || typeof oauth.login !== 'function') throw new ShownError('This Copilot version cannot start a sign-in from Agent Durbar.');
     let r: { authorizationUrl?: unknown } | undefined;
     try {
       r = await oauth.login({ serverName: name, clientName: 'Agent Durbar', callbackSuccessMessage: 'You can close this tab and go back to Agent Durbar.', ...(opts.again === true ? { forceReauth: true } : {}) });
     } catch (err) {
-      if (isMethodNotFound(err)) throw new Error('This Copilot version cannot start a sign-in from Agent Durbar.');
-      throw new Error(sdkErrorText(err));
+      if (isMethodNotFound(err)) throw new ShownError('This Copilot version cannot start a sign-in from Agent Durbar.');
+      throw new ShownError(sdkErrorText(err));
     }
     const url = r?.authorizationUrl;
     if (url === undefined || url === null || url === '') return { kind: 'connected' };
-    if (typeof url !== 'string') throw new Error('Copilot sent a sign-in page that Agent Durbar cannot read.');
+    if (typeof url !== 'string') throw new ShownError('Copilot sent a sign-in page that Agent Durbar cannot read.');
     return { kind: 'browser', url };
   }
 
@@ -2544,19 +2545,19 @@ export class CopilotAdapter implements AgentAdapter {
   /** Spec 069 FR-031: a live `tools/list` through the runtime; it throws when the server is not connected. */
   async listMcpTools(sessionId: string, name: string): Promise<McpToolInfo[]> {
     const live = this.sessions.get(sessionId);
-    if (!live) throw new Error('This session is not running. Send a message to start it.');
+    if (!live) throw new ShownError('This session is not running. Send a message to start it.');
     const mcp = live.session.rpc.mcp as unknown as { listTools?: (p: { serverName: string }) => Promise<{ tools?: unknown }> };
-    if (typeof mcp.listTools !== 'function') throw new Error('This Copilot version cannot list a server\'s tools.');
+    if (typeof mcp.listTools !== 'function') throw new ShownError('This Copilot version cannot list a server\'s tools.');
     // Spec 058 FR-163 (issue #623, real macOS 2026-10-23): a tools/list for a server that is not connected makes the runtime try to
     // connect it again, and each attempt can read its sign-in from the keychain (one more macOS prompt). Only a connected server, or one
     // the runtime has not reported yet, is asked; a failed, needs-sign-in or pending one waits for the user's Restart or Sign in.
     const st = this.mappers.get(sessionId)?.mcpStatusOf(name);
-    if (st !== undefined && st !== 'connected') throw new Error(st === 'pending' ? MCP_STARTING : MCP_NOT_CONNECTED);
+    if (st !== undefined && st !== 'connected') throw new ShownError(st === 'pending' ? MCP_STARTING : MCP_NOT_CONNECTED);
     try {
       const r = await mcp.listTools({ serverName: name });
       return normMcpTools(r?.tools);
     } catch (err) {
-      throw new Error(sdkErrorText(err));
+      throw new ShownError(sdkErrorText(err));
     }
   }
 
@@ -2606,7 +2607,7 @@ export class CopilotAdapter implements AgentAdapter {
 
   private mustGet(sessionId: string): Live {
     const live = this.sessions.get(sessionId);
-    if (!live) throw new Error(`Unknown or stopped session: ${sessionId}`);
+    if (!live) throw new ShownError(`Unknown or stopped session: ${sessionId}`);
     return live;
   }
 

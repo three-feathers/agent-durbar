@@ -30,13 +30,16 @@ assert.ok(!/gh pr checks \$p \|/.test(gate), 'every verdict check uses that one 
 const prLineAt = gate.indexOf('pr_line=$(gh api repos/$R/pulls/$p ');
 const headNowAt = gate.indexOf('head_now=$(gh api repos/$R/pulls/$p --jq .head.sha');
 const verdictAt = gate.indexOf('if [ -n "$bad" ] || [ -z "$codeql_ok" ]');
-for (const [read, what] of [['repos/$R/pulls/$p/files', 'the one file list (src/ check and FR-089, FR-091)'], ['checks_out=$(gh pr checks $p)', 'the check list']]) {
+for (const [read, what] of [['repos/$R/pulls/$p/files', 'the one file list (FR-089, FR-091)'], ['checks_out=$(gh pr checks $p)', 'the check list']]) {
   const at = gate.indexOf(read);
   assert.ok(at > 0 && gate.indexOf(read, at + 1) < 0 && at < headNowAt, `${what} is read once, before the final head read`);
 }
 assert.ok(prLineAt < gate.indexOf('src_files=$(gh api --paginate') && prLineAt < gate.indexOf('only_nocode; then'), 'the file list is read after pr_line');
 assert.ok(!gate.includes('--json files') && !/--jq \.changed_files/.test(gate) && gate.includes('src_total=$pr_total;'), 'changed_files comes from pr_line only (FR-091), no gh pr view file list');
 assert.ok(gate.includes('files=$src_files;'), 'only_nocode reuses the one file list (FR-031)');
+// FR-420: a draft blocks, and the required names come from the ruleset record, never a list in the gate
+assert.ok(gate.includes('$(dirname "$0")/../.github/ruleset-main.json') && !gate.includes("'Build and test (ubuntu-latest)'"), 'the gate reads the required names from .github/ruleset-main.json');
+assert.ok(gate.indexOf('read -r pr_total head_sha pr_base pr_baseref pr_author pr_draft outside_pr') > prLineAt, 'the draft state comes from the one PR read (FR-090)');
 assert.ok(headNowAt > 0 && headNowAt < verdictAt && gate.slice(headNowAt, verdictAt).split('\n').length <= 4, 'the head is read again just before the verdict');
 
 const bash = process.platform === 'win32' ? null : spawnSync('bash', ['-c', 'command -v jq'], { encoding: 'utf8' });
@@ -53,7 +56,8 @@ const bin = path.join(dir, 'bin');
 const fx = path.join(dir, 'fx');
 fs.mkdirSync(bin);
 fs.mkdirSync(fx);
-// fixtures: checks.txt (tab-separated `gh pr checks` lines; absent = the call fails), checkruns.json and checkruns2.json (the head commit's
+// fixtures: checks.txt (tab-separated `gh pr checks` lines; absent = the call fails; checks.<n>.txt: what the n-th call prints instead, counted in
+// checks.n; checks.late.txt: what call n prints from n = checks.after on, or when n is a multiple of checks.mod; checks.exit0: the call exits 0 whatever it lists, else 1 on a fail line and 8 on a pending line, as gh 2.100.0 does), checkruns.json and checkruns2.json (the head commit's
 // check runs, pages 1 and 2; checkruns.fail: the call fails after its pages), files.json and files2.json (pages 1 and 2 of the PR
 // files API: page 2 only with --paginate, as the real gh; absent = the call fails), pull.json (the PR: changed_files, head sha;
 // pull-later.json: what every read after the first returns, a push while the gate runs; pull-later.fail: those reads fail),
@@ -65,7 +69,10 @@ for a in "$@"; do { [ "$prev" = --jq ] || [ "$prev" = -q ]; } && prog=$a; prev=$
 ep=; for a in "$@"; do case $a in repos/*|graphql|user) ep=$a; break;; esac; done
 case "$1 $2" in
   "repo view") echo '{"nameWithOwner":"o/r"}' | jq -r "$prog"; exit;;
-  "pr checks") [ -f "$F/checks.txt" ] || { echo "fake gh: checks failed" >&2; exit 1; }; cat "$F/checks.txt"; exit;;
+  "pr checks") n=$(( $(cat "$F/checks.n" 2>/dev/null || echo 0) + 1 )); echo $n > "$F/checks.n"; c="$F/checks.txt"; [ -f "$F/checks.$n.txt" ] && c="$F/checks.$n.txt"
+    [ -f "$F/checks.after" ] && [ "$n" -ge "$(cat "$F/checks.after")" ] && c="$F/checks.late.txt"; [ -f "$F/checks.mod" ] && [ $((n % $(cat "$F/checks.mod"))) = 0 ] && c="$F/checks.late.txt"
+    [ -f "$c" ] || { echo "fake gh: checks failed" >&2; exit 1; }; cat "$c"; [ -f "$F/checks.exit0" ] && exit 0
+    awk -F'\\t' '$2=="fail"{f=1} $2=="pending"{w=1} END{exit f ? 1 : (w ? 8 : 0)}' "$c"; exit;;
   "pr view") echo '{"mergeable":"MERGEABLE","files":[{"path":"package-lock.json"}],"labels":[]}' | jq -r "$prog"; exit;;
 esac
 case $ep in
@@ -90,7 +97,15 @@ exit 0
 `, { mode: 0o755 });
 const env = { ...process.env, PATH: `${bin}${path.delimiter}${process.env.PATH}` };
 
-const OTHER = 'Build and test (ubuntu-latest)\tpass\t1m\thttps://x\nSpec Kit gate\tpass\t1m\thttps://x\n';
+// the required names of the ruleset record (FR-420); a copy of the file sits where each gate copy looks for it (<gate dir>/../.github)
+const RULESET = path.join(ROOT, '.github', 'ruleset-main.json');
+const REQUIRED: string[] = (JSON.parse(fs.readFileSync(RULESET, 'utf8')) as { rules: Array<{ type: string; parameters?: { required_status_checks?: Array<{ context: string }> } }> }).rules
+  .filter((r) => r.type === 'required_status_checks').flatMap((r) => (r.parameters?.required_status_checks ?? []).map((c) => c.context));
+assert.strictEqual(REQUIRED.length, 5, 'the ruleset record names five required checks');
+const listed = (state: string): string => REQUIRED.map((n) => `${n}\t${state}\t1m\thttps://x\n`).join('');
+const OTHER = listed('pass');
+fs.mkdirSync(path.join(dir, '.github'));
+fs.copyFileSync(RULESET, path.join(dir, '.github', 'ruleset-main.json'));
 const set = (name: string, v: string | null): void => {
   const f = path.join(fx, name);
   if (v === null) fs.rmSync(f, { force: true });
@@ -99,14 +114,14 @@ const set = (name: string, v: string | null): void => {
 type File = string | { filename: string; previous_filename: string };
 const LOCK = { lockfileVersion: 3, packages: { '': { dependencies: { x: '^1.0.0' } }, 'node_modules/x': { version: '1.0.1', resolved: 'https://registry.npmjs.org/x/-/x-1.0.1.tgz', integrity: 'sha512-AAAA' } } };
 const PKG = { name: 'prereview', scripts: { test: 'node test.js' }, dependencies: { x: '^1.0.0' } };
-const fixture = (o: { codeql?: string | null; checks?: boolean; files?: File[] | null; page2?: File[]; changed?: number; contents?: Record<string, unknown>; base?: Record<string, unknown>; baseRef?: string; author?: string; merge?: unknown[] | null; head?: unknown[] | null; main?: unknown[] | null; head2?: unknown[]; main2?: unknown[]; runs?: string[] | null; runs2?: string[]; runId?: string; headSha?: string } = {}): void => {
+const fixture = (o: { codeql?: string | null; checks?: boolean; files?: File[] | null; page2?: File[]; changed?: number; contents?: Record<string, unknown>; base?: Record<string, unknown>; baseRef?: string; author?: string; merge?: unknown[] | null; head?: unknown[] | null; main?: unknown[] | null; head2?: unknown[]; main2?: unknown[]; runs?: string[] | null; runs2?: string[]; runId?: string; headSha?: string; draft?: boolean | null } = {}): void => {
   const codeql = o.codeql === undefined ? 'skipping' : o.codeql;
   set('checks.txt', o.checks === false ? null : OTHER + (codeql === null ? '' : `CodeQL\t${codeql}\t0\t${o.runId ?? 'https://github.com/o/r/runs/101'}\n`));
   const files = o.files ?? ['scripts/prereview/package-lock.json', 'scripts/prereview/package.json'];
   const page = (l: File[]): string => JSON.stringify(l.map((f) => (typeof f === 'string' ? { filename: f } : f)));
   set('files.json', o.files === null ? null : page(files));
   set('files2.json', o.page2 ? page(o.page2) : null);
-  set('pull.json', JSON.stringify({ user: { login: o.author ?? 'dependabot[bot]' }, head: { sha: o.headSha ?? SHA, repo: { full_name: 'o/r' } }, base: { sha: BASE, ref: o.baseRef ?? 'main', repo: { full_name: 'o/r' } }, changed_files: o.changed ?? files.length + (o.page2 ?? []).length }));
+  set('pull.json', JSON.stringify({ user: { login: o.author ?? 'dependabot[bot]' }, head: { sha: o.headSha ?? SHA, repo: { full_name: 'o/r' } }, base: { sha: BASE, ref: o.baseRef ?? 'main', repo: { full_name: 'o/r' } }, changed_files: o.changed ?? files.length + (o.page2 ?? []).length, ...(o.draft === null ? {} : { draft: o.draft ?? false }) }));
   fs.rmSync(path.join(fx, 'contents'), { recursive: true, force: true });
   fs.rmSync(path.join(fx, 'base'), { recursive: true, force: true });
   // the base commit has the same dependency files as the default head, unless a case says otherwise (null: not on the base)
@@ -131,14 +146,30 @@ const fixture = (o: { codeql?: string | null; checks?: boolean; files?: File[] |
   set('pull-later.fail', null);
   set('pull.seen', null);
   set('checkruns.fail', null);
+  for (const f of fs.readdirSync(fx)) if (/^checks\.(\d+\.txt|n|exit0|after|mod|late\.txt)$/.test(f) || f.startsWith('sleep.')) fs.rmSync(path.join(fx, f));
   // the head commit's check runs, "name@slug" or "name@slug#id" (id 101 by default, the run the CodeQL line links): by default one CodeQL
   // run from GitHub's code-scanning app (null: the call fails)
   const runs = (l: string[]): string => JSON.stringify({ check_runs: l.map((x) => { const [name, rest] = x.split('@'); const [slug, id] = rest.split('#'); return { name, id: Number(id ?? 101), app: { slug } }; }) });
   set('checkruns.json', o.runs === null ? null : runs(o.runs ?? ['CodeQL@github-advanced-security', 'Spec Kit gate@github-actions']));
   set('checkruns2.json', o.runs2 ? runs(o.runs2) : null);
 };
+// a fake sleep for --wait (it returns at once), on the PATH only for the cases that pass --wait: it writes its seconds to sleep.log, and after
+// SLEEP_CAP calls (more than the gate's bound of 240 rounds allows) it writes sleep.over and stops the gate, so a gate without the bound fails a
+// case's own count assert instead of hanging until a time limit
+const SLEEP_CAP = 400;
+const waitBin = path.join(dir, 'waitbin');
+fs.mkdirSync(waitBin);
+fs.writeFileSync(path.join(waitBin, 'sleep'), `#!/bin/bash
+echo "$1" >> "${fx}/sleep.log"
+[ "$(wc -l < "${fx}/sleep.log")" -gt ${SLEEP_CAP} ] && { : > "${fx}/sleep.over"; kill -TERM $PPID; exit 1; }
+exit 0
+`, { mode: 0o755 });
+const sleeps = (): string[] => { try { return fs.readFileSync(path.join(fx, 'sleep.log'), 'utf8').split('\n').filter(Boolean); } catch { return []; } };
+const waitRun = (g: string): { code: number | null; out: string } => { gateArgs = ['--wait']; try { return run(g); } finally { gateArgs = []; } };
+let gateArgs: string[] = [];
 const run = (gatePath: string): { code: number | null; out: string } => {
-  const r = spawnSync('bash', [gatePath, '1'], { env, encoding: 'utf8', timeout: 60000 });
+  const wait = gateArgs.includes('--wait');
+  const r = spawnSync('bash', [gatePath, '1', ...gateArgs], { env: wait ? { ...env, PATH: `${waitBin}${path.delimiter}${env.PATH}` } : env, encoding: 'utf8', timeout: wait ? 90000 : 60000 });
   assert.ok(!/fake gh: no fixture/.test(r.stderr), r.stderr);
   return { code: r.status, out: r.stdout + r.stderr };
 };
@@ -155,6 +186,20 @@ const notReady = (gatePath: string, label: string, want: RegExp): void => {
 type Case = (g: string, label: string) => void;
 const R = (o: Parameters<typeof fixture>[0]): Case => (g, l) => { fixture(o); ready(g, l); };
 const N = (o: Parameters<typeof fixture>[0], want: RegExp, after?: () => void): Case => (g, l) => { fixture(o); after?.(); notReady(g, l, want); };
+// a copy of the gate in its own folder, beside a ruleset record of the case's own (null: none; a string: the file's text)
+const gateWith = (g: string, record: unknown): string => {
+  const d = path.join(dir, 'own-ruleset', 'scripts');
+  fs.rmSync(path.join(dir, 'own-ruleset'), { recursive: true, force: true });
+  fs.mkdirSync(d, { recursive: true });
+  for (const f of ['trusted-lib.sh', 'trusted-authors.txt', 'pr-status-note.re', 'pr-gate-answered.awk']) fs.copyFileSync(path.join(SCRIPTS, f), path.join(d, f));
+  fs.copyFileSync(g, path.join(d, 'pr-gate.sh'));
+  if (record !== null) {
+    fs.mkdirSync(path.join(d, '..', '.github'));
+    fs.writeFileSync(path.join(d, '..', '.github', 'ruleset-main.json'), typeof record === 'string' ? record : JSON.stringify(record));
+  }
+  return path.join(d, 'pr-gate.sh');
+};
+const withNames = (extra: unknown[]): object => ({ rules: [{ type: 'pull_request' }, { type: 'required_status_checks', parameters: { required_status_checks: [...REQUIRED.map((context) => ({ context })), ...extra] } }] });
 const noGates = (): void => set('checks.txt', 'CodeQL\tpass\t0\thttps://github.com/o/r/runs/101\n');
 const other = /codeql=skipping\(analysed or unknown files changed\)/;
 const refused = /codeql=skipping\(dependency files refused/;
@@ -280,16 +325,108 @@ const CASES: Record<string, Case> = {
     notReady(g, l, new RegExp(`head-changed\\(read ${SHA} first, c{40} at the end`));
   },
   'head-unread: the final head read fails': N({ codeql: 'pass', files: ['docs/a.md'] }, /head-changed\(read a{40} first, unread at the end/, () => set('pull-later.fail', '')),
-  // the src/ check at the top of the gate (FR-091, #1422): CodeQL passed and the gates absent, so only src/ makes it block
-  'src-page2: src/a.ts on the second page of the file list': N({ codeql: 'pass', files: ['docs/a.md'], page2: ['src/a.ts'] }, /missing:Spec Kit gate/, noGates),
-  'src-rename: a src/*.ts file renamed to a .md': N({ codeql: 'pass', files: [{ filename: 'docs/a.md', previous_filename: 'src/main/a.ts' }] }, /missing:Spec Kit gate/, noGates),
-  'src-docs-only: docs only, the src gates not needed': (g, l) => { fixture({ codeql: 'pass', files: ['docs/a.md'], page2: ['docs/b.md'] }); noGates(); ready(g, l); },
+  // the file list must be read whole (FR-091, #1422); since FR-420 the required checks are wanted on every PR, not only one that changes src/
+  'src-page2: src/a.ts on the second page of the file list, read whole': R({ codeql: 'pass', files: ['docs/a.md'], page2: ['src/a.ts'] }),
+  'src-docs-only: docs only, the required checks absent': N({ codeql: 'pass', files: ['docs/a.md'], page2: ['docs/b.md'] }, /missing:Spec Kit gate/, noGates),
+  // FR-420: a draft is never ready; every required name exactly pass on every PR; the ruleset record must be readable
+  'draft: a green draft': N({ codeql: 'pass', files: ['src/main/a.ts'], draft: true }, /checks=\[ draft\(mark it ready first\)\][^\n]*\na draft: CI runs its jobs only after the ready mark/),
+  'draft-missing: no draft field in the PR read': N({ codeql: 'pass', files: ['src/main/a.ts'], draft: null }, /draft-unread/),
+  'required-skipping: a ready docs-only PR whose required checks are skipping': (g, l) => {
+    fixture({ codeql: 'pass', files: ['docs/a.md'], author: 'vikramgorla' });
+    set('checks.txt', `${listed('skipping')}CodeQL\tpass\t0\thttps://github.com/o/r/runs/101\n`);
+    const r = run(g);
+    assert.ok(r.code === 1 && REQUIRED.every((n) => r.out.includes(`missing:${n}`)), `${l}: not ready, every required name missing\n${r.out}`);
+  },
+  'required-twice: a required name listed passed and skipping': N({ codeql: 'pass', files: ['docs/a.md'] }, /missing:Office layout check \(xvfb\)/, () => set('checks.txt', `${OTHER}Office layout check (xvfb)\tskipping\t0\thttps://x\nCodeQL\tpass\t0\thttps://github.com/o/r/runs/101\n`)),
+  'spec-only: a spec-only PR with the five required checks passed': R({ files: ['specs/021-x/spec.md', 'specs/021-x/tasks.md'], author: 'vikramgorla' }),
+  'ruleset-missing: no ruleset record beside the gate': (g, l) => {
+    fixture({ codeql: 'pass', files: ['src/main/a.ts'] });
+    notReady(gateWith(g, null), `${l}: missing`, /required-unread/);
+    notReady(gateWith(g, { rules: [{ type: 'pull_request' }] }), `${l}: no required names`, /required-unread/);
+    notReady(gateWith(g, '{ not json'), `${l}: unreadable`, /required-unread/);
+  },
+  // a bad entry after the five good names: without the name check it would be dropped (an empty last line) and the gate would say ready
+  'ruleset-bad-name: a required entry without a usable name': (g, l) => {
+    fixture({ codeql: 'pass', files: ['src/main/a.ts'] });
+    for (const [what, bad] of [['no context', {}], ['a null context', { context: null }], ['a number', { context: 7 }], ['an empty name', { context: '' }], ['a tab', { context: 'a\tb' }], ['a line break', { context: 'a\nb' }], ['a carriage return', { context: 'a\r' }]] as Array<[string, unknown]>) {
+      notReady(gateWith(g, withNames([bad])), `${l}: ${what}`, /required-unread/);
+    }
+  },
+  // a backslash in a name is matched as written (awk -v would read "x\ty" as x, a tab, y and never find it)
+  'required-backslash: a required name with a backslash, passed': (g, l) => {
+    fixture({ codeql: 'pass', files: ['src/main/a.ts'] });
+    set('checks.txt', `${OTHER}x\\ty\tpass\t1m\thttps://x\nCodeQL\tpass\t0\thttps://github.com/o/r/runs/101\n`);
+    ready(gateWith(g, withNames([{ context: 'x\\ty' }])), l);
+  },
+  // --wait (gh exits 1 when a check failed, 8 while one is pending): a failed required check ends the wait, and the gate says why
+  'wait-failed: --wait on a PR with a failed check': (g, l) => {
+    fixture({ codeql: 'pass', files: ['src/main/a.ts'] });
+    set('checks.txt', `${OTHER.replace('Spec Kit gate\tpass', 'Spec Kit gate\tfail')}CodeQL\tpass\t0\thttps://github.com/o/r/runs/101\n`);
+    const r = waitRun(g);
+    assert.ok(sleeps().join(' ') === '90' && !r.out.includes('wait-deadline'), `${l}: the failed check ends the wait at once (only the 90 s pause), got ${sleeps().length} sleeps [${sleeps().slice(0, 4).join(' ')}]\n${r.out}`);
+    assert.ok(r.code === 1 && r.out.includes('#1 not ready') && /Spec Kit gate=fail .*missing:Spec Kit gate/.test(r.out), `${l}: not ready\n${r.out}`);
+  },
+  // the bound: a check pending for ever ends the wait after 240 rounds of 30 s (7200 s), and the verdict says so
+  'wait-deadline: --wait on a check that stays pending for ever': (g, l) => {
+    fixture({ codeql: 'pass', files: ['src/main/a.ts'] });
+    set('checks.txt', `${OTHER.replace('Spec Kit gate\tpass', 'Spec Kit gate\tpending')}CodeQL\tpass\t0\thttps://github.com/o/r/runs/101\n`);
+    const r = waitRun(g);
+    const s = sleeps();
+    assert.ok(!fs.existsSync(path.join(fx, 'sleep.over')) && s.length === 240 && s.every((x) => x === '30'), `${l}: the wait stops at its own bound (240 sleeps of 30 s), got ${s.length} sleeps\n${r.out}`);
+    assert.ok(r.code === 1 && r.out.includes('#1 not ready') && /wait-deadline\(/.test(r.out) && /Spec Kit gate=pending/.test(r.out), `${l}: not ready, wait-deadline\n${r.out}`);
+  },
+  // the bound in the first loop, the check passed in the verdict's own read: every wait read (one call a round, gh exits 8 so pend is not
+  // asked: 240 rounds, then the read before the bound check, calls 1-241) is pending, call 242 on (the verdict's read and after) all passed
+  'wait-deadline-cleared: --wait at the bound, the check passed only in the verdict read': (g, l) => {
+    fixture({ codeql: 'pass', files: ['src/main/a.ts'] });
+    set('checks.txt', `${OTHER.replace('Spec Kit gate\tpass', 'Spec Kit gate\tpending')}CodeQL\tpass\t0\thttps://github.com/o/r/runs/101\n`);
+    set('checks.late.txt', `${OTHER}CodeQL\tpass\t0\thttps://github.com/o/r/runs/101\n`);
+    set('checks.after', '242');
+    const r = waitRun(g);
+    const s = sleeps();
+    assert.ok(!fs.existsSync(path.join(fx, 'sleep.over')) && s.length === 240 && s.every((x) => x === '30'), `${l}: the wait stops at its own bound (240 sleeps of 30 s), got ${s.length} sleeps\n${r.out}`);
+    assert.ok(r.code === 1 && r.out.includes('#1 not ready') && /wait-deadline\(/.test(r.out) && !/=pending/.test(r.out), `${l}: not ready, wait-deadline though the verdict read is all passed\n${r.out}`);
+  },
+  // the bound after the second look: clear at each first look (gh and pend, 2 calls), pending after each 90 s pause (every 3rd call)
+  'wait-flapping: --wait, clear at each first look and pending after each pause': (g, l) => {
+    fixture({ codeql: 'pass', files: ['src/main/a.ts'] });
+    set('checks.late.txt', `${OTHER}Late check\tpending\t0\thttps://x\nCodeQL\tpass\t0\thttps://github.com/o/r/runs/101\n`);
+    set('checks.mod', '3');
+    const r = waitRun(g);
+    const s = sleeps();
+    assert.ok(!fs.existsSync(path.join(fx, 'sleep.over')) && s.length === 80 && s.every((x) => x === '90'), `${l}: the wait stops at its own bound after the second look (80 pauses of 90 s), got ${s.length} sleeps\n${r.out}`);
+    assert.ok(r.code === 1 && r.out.includes('#1 not ready') && /wait-deadline\(/.test(r.out), `${l}: not ready, wait-deadline\n${r.out}`);
+  },
+  // exact names: "<name> part 1/2" and "part 2/2" passed do not stand for "<name>"
+  'required-prefix: only "<required name> part 1/2" and "part 2/2" listed, both passed': N({ codeql: 'pass', files: ['src/main/a.ts'] }, /missing:Build and test \(ubuntu-latest\)/, () => set('checks.txt', `${OTHER.replace('Build and test (ubuntu-latest)\tpass\t1m\thttps://x\n', 'Build and test (ubuntu-latest) part 1/2\tpass\t1m\thttps://x\nBuild and test (ubuntu-latest) part 2/2\tpass\t1m\thttps://x\n')}CodeQL\tpass\t0\thttps://github.com/o/r/runs/101\n`)),
+  // a pending line while gh exits 0: the gate waits on it (one 30 s round) before the 90 s pause, then reads the passed list
+  'wait-pending-line: --wait, gh exits 0 but a line says pending': (g, l) => {
+    fixture({ codeql: 'pass', files: ['src/main/a.ts'] });
+    const pending = `${OTHER}CodeQL\tpending\t0\thttps://github.com/o/r/runs/101\n`;
+    set('checks.1.txt', pending);
+    set('checks.2.txt', pending);
+    set('checks.exit0', '');
+    const r = waitRun(g);
+    assert.ok(sleeps().join(' ') === '30 90', `${l}: a 30 s round on the pending line before the 90 s pause, got [${sleeps().join(' ')}]\n${r.out}`);
+    assert.ok(r.code === 0 && r.out.includes('ready to merge'), `${l}: ready\n${r.out}`);
+  },
+  // the second look: a check that shows as pending only after the 90 s pause is waited for, not read as the verdict
+  'wait-second-look: --wait, a check pending only in the look after the 90 s pause': (g, l) => {
+    fixture({ codeql: 'pass', files: ['src/main/a.ts'] });
+    const late = (st: string): string => `${OTHER}Late check\t${st}\t0\thttps://x\nCodeQL\tpass\t0\thttps://github.com/o/r/runs/101\n`;
+    set('checks.txt', late('pass'));
+    set('checks.1.txt', `${OTHER}CodeQL\tpass\t0\thttps://github.com/o/r/runs/101\n`);
+    set('checks.2.txt', `${OTHER}CodeQL\tpass\t0\thttps://github.com/o/r/runs/101\n`);
+    set('checks.3.txt', late('pending'));
+    set('checks.4.txt', late('pending'));
+    const r = waitRun(g);
+    assert.ok(r.code === 0 && r.out.includes('ready to merge'), `${l}: ready (waited for the late check)\n${r.out}`);
+  },
   'src-count: the API lists fewer files than the PR changed': N({ codeql: 'pass', files: ['docs/a.md'], changed: 2 }, /src-check-unreadable/),
   'src-cap: 3000 files, where the files API stops': N({ codeql: 'pass', files: Array.from({ length: 3000 }, (_, i) => `docs/f${i}.md`) }, /src-check-unreadable/),
   'src-error: the file list cannot be read': N({ codeql: 'pass', files: null }, /src-check-unreadable/),
   'src-partial: the file list fails after its first page': N({ codeql: 'pass', files: ['docs/a.md'] }, /src-check-unreadable/, () => set('files.fail', '')),
   'src-empty: the files API lists no file (changed_files 0)': N({ codeql: 'pass', files: [], changed: 0 }, /src-check-unreadable/),
-  'src-ctrl: a file name with a newline counts as src/': N({ codeql: 'pass', files: ['src/a\n.ts'] }, /missing:Spec Kit gate/, noGates),
   'checks-error: the check list cannot be read': N({ checks: false }, /codeql=missing /),
 };
 const runCase = (g: string, name: string): void => {
@@ -304,7 +441,8 @@ try {
   const mdir = path.join(dir, 'mutant');
   fs.mkdirSync(mdir);
   for (const f of ['trusted-lib.sh', 'trusted-authors.txt', 'pr-status-note.re', 'pr-gate-answered.awk']) fs.copyFileSync(path.join(SCRIPTS, f), path.join(mdir, f));
-  const mutants: Array<[string, string, string, string]> = [
+  // an optional fifth field names the assert the mutant must fail at, when a case holds more than one
+  const mutants: Array<[string, string, string, string, string?]> = [
     ['a failing CodeQL treated as skipped', '[ "$codeql" = skipping ] &&', '{ [ "$codeql" = skipping ] || [ "$codeql" = fail ]; } &&', 'codeql-fail'],
     ['a missing CodeQL treated as skipped', '[ "$codeql" = skipping ] &&', '{ [ "$codeql" = skipping ] || [ "$codeql" = missing ]; } &&', 'no-codeql-check'],
     ['the file filter removed', 'nocode "$f" || return 1', 'true', 'skipped-with-src'],
@@ -340,14 +478,12 @@ try {
     ['--paginate removed from the check runs', 'gh api --paginate "repos/$R/commits/', 'gh api "repos/$R/commits/', 'app-second'],
     ['the final head re-check removed', '[ -n "$head_sha" ] && [ "$head_now" = "$head_sha" ] || bad=', 'true || bad=', 'head-moved'],
     ['the final head read error ignored', '--jq .head.sha 2>/dev/null) || head_now=;', '--jq .head.sha 2>/dev/null) || head_now=$head_sha;', 'head-unread'],
-    ['the src/ check without --paginate', 'src_files=$(gh api --paginate', 'src_files=$(gh api', 'src-page2'],
-    ['the src/ check ignoring a rename\'s old path', ', (.previous_filename // empty|"P \\(.)")', '', 'src-rename'],
-    ['the src/ check without the count comparison', ' || [ "$(grep -cE \'^(F |C$)\' <<< "$src_files")" != "$src_total" ]', '', 'src-count'],
-    ['the src/ check without the 3000 cap', ' || [ "$src_total" -ge 3000 ]', '', 'src-cap'],
-    ['the src/ check blocking on nothing', 'if [ "$src_files" = ERR ] || [ -z "$src_files" ] || [ "$(grep -cE \'^(F |C$)\' <<< "$src_files")" != "$src_total" ] || [ "$src_total" -ge 3000 ]; then', 'if false; then', 'src-error'],
-    ['the src/ check accepting a partly read list', `"P \\(.)") end') || src_files=ERR`, `"P \\(.)") end')`, 'src-partial'],
-    ['the src/ check accepting an empty list', ' || [ -z "$src_files" ]', '', 'src-empty'],
-    ['a control-character name not counted as src/', `grep -qE '^([FP] src/|C$)' <<< "$src_files"`, `grep -qE '^([FP] src/)' <<< "$src_files"`, 'src-ctrl'],
+    ['the file list without --paginate', 'src_files=$(gh api --paginate', 'src_files=$(gh api', 'src-page2'],
+    ['the file list without the count comparison', ' || [ "$(grep -cE \'^(F |C$)\' <<< "$src_files")" != "$src_total" ]', '', 'src-count'],
+    ['the file list without the 3000 cap', ' || [ "$src_total" -ge 3000 ]', '', 'src-cap'],
+    ['the file list blocking on nothing', 'if [ "$src_files" = ERR ] || [ -z "$src_files" ] || [ "$(grep -cE \'^(F |C$)\' <<< "$src_files")" != "$src_total" ] || [ "$src_total" -ge 3000 ]; then', 'if false; then', 'src-error'],
+    ['the file list accepting a partly read list', `"P \\(.)") end') || src_files=ERR`, `"P \\(.)") end')`, 'src-partial'],
+    ['the file list accepting an empty list', ' || [ -z "$src_files" ]', '', 'src-empty'],
     ['the merge count read without a number check', '[ -n "$a_merge" ] && ', '', 'alerts-empty'],
     ['the head ref counted whole (main\'s alerts not subtracted)', `grep -cvxF -f <(printf '%s\\n' "$a_base_nums") <<< "$a_head_nums"`, 'grep -c . <<< "$a_head_nums"', 'alert-main-on-head'],
     ['the merge ref left out of the sum', 'alerts=$((a_merge + a_head))', 'alerts=$a_head', 'alert-merge'],
@@ -355,15 +491,33 @@ try {
     ['the head list without --paginate', 'gh api --paginate "repos/$R/code-scanning/alerts?ref=refs/pull/$p/head', 'gh api "repos/$R/code-scanning/alerts?ref=refs/pull/$p/head', 'alert-head-page2'],
     ['a main read error ignored', '|| a_base_nums=ERR;; esac', '|| a_base_nums=;; esac', 'alert-main-unread'],
     ['the main list not checked for numbers', "numlist() { [ -z \"$1\" ] || ! grep -qvE '^[0-9]+$' <<< \"$1\"; }", 'numlist() { true; }', 'alert-main-number'],
+    ['the draft test removed', 'true) bad="$bad draft(mark it ready first)";;', 'true) ;;', 'draft'],
+    ['a missing draft field accepted', `*) bad="$bad draft-unread(the PR's draft state cannot be read)";;`, '*) ;;', 'draft-missing'],
+    ['skipping accepted for a required name', 'if($2!="pass") b=1', 'if($2!="pass" && $2!="skipping") b=1', 'required-skipping'],
+    ['one passed line enough for a required name', 'END{exit !(f && !b)}', 'END{exit !f}', 'required-twice'],
+    ['the required names asked only when src/ changes', 'while IFS= read -r need; do', `grep -qE '^([FP] src/|C$)' <<< "$src_files" && while IFS= read -r need; do`, 'src-docs-only'],
+    ['an unreadable ruleset record accepted (no reason added)', 'bad="$bad required-unread(.github/ruleset-main.json: no required check names)"', ':', 'ruleset-missing'],
+    ['the name check removed', 'if(!n.length||n.some((s)=>typeof s!=="string"||!/^[^\\t\\r\\n]+$/.test(s)))process.exit(1);', 'if(!n.length)process.exit(1);', 'ruleset-bad-name'],
+    ['the required name passed to awk with -v', `need="$need" awk -F'\\t' '$1==ENVIRON["need"]`, `awk -F'\\t' -v n="$need" '$1==n`, 'required-backslash'],
+    ['the wait going on after a failed check', 'until gh pr checks $p >/dev/null 2>&1; [ $? != 8 ] && ! pend; do', 'until gh pr checks $p >/dev/null 2>&1 && ! pend; do', 'wait-failed', 'the failed check ends the wait at once'],
+    ['--wait without its bound', 'wait_more() { [ "$waited" -lt 240 ] || { wait_cut=1; return 1; }; }', 'wait_more() { true; }', 'wait-deadline', 'the wait stops at its own bound'],
+    ['the wait-deadline reason not added', '[ -n "$wait_cut" ] && bad=', 'false && bad=', 'wait-deadline', 'not ready, wait-deadline'],
+    ['the wait-deadline reason only while a check is pending', '[ -n "$wait_cut" ] && bad=', '[ -n "$wait_cut" ] && pend && bad=', 'wait-deadline-cleared', 'not ready, wait-deadline though the verdict read is all passed'],
+    ['the bound after the second look removed', '  wait_more || break\ndone', 'done', 'wait-flapping', 'the wait stops at its own bound after the second look'],
+    ['a required name matched by prefix', `need="$need" awk -F'\\t' '$1==ENVIRON["need"]`, `need="$need" awk -F'\\t' 'index($1,ENVIRON["need"])==1`, 'required-prefix'],
+    ['the pending-line test removed from the wait', '[ $? != 8 ] && ! pend; do', '[ $? != 8 ]; do', 'wait-pending-line'],
+    ['the second look after the 90 s pause removed', '  pend || break\n', '  break\n', 'wait-second-look'],
+    ['the draft line removed', '[ "$pr_draft" = true ] && echo "a draft:', 'false && echo "a draft:', 'draft'],
     ['the base branch name not checked', "case $pr_baseref in ''|*[!A-Za-z0-9._/-]*|*..*) a_base_nums=ERR;;", "case $pr_baseref in 'zzzz') a_base_nums=ERR;;", 'alert-base-ref'],
   ];
-  for (const [name, from, to, caught] of mutants) {
+  for (const [name, from, to, caught, at] of mutants) {
     assert.ok(gate.includes(from), `mutant "${name}": its anchor is in the gate`);
     const m = path.join(mdir, 'pr-gate.sh');
     fs.writeFileSync(m, gate.split(from).join(to), { mode: 0o755 });
     let msg = '';
     try { runCase(m, caught); } catch (e) { msg = (e as Error).message; }
-    assert.ok(msg.startsWith(`CASE ${caught}:`), `mutant "${name}" is caught by CASE ${caught}, got: ${msg.split('\n')[0] || 'no failure'}`);
+    assert.ok(msg.startsWith(`CASE ${caught}:`) && (!at || msg.split('\n')[0].includes(at)), `mutant "${name}" is caught by CASE ${caught}${at ? ` at "${at}"` : ''}, got: ${msg.split('\n')[0] || 'no failure'}`);
+    if (process.env.DURBAR_MUTANT_LOG) console.log(`mutant "${name}": ${msg.split('\n')[0]}`);
   }
 } finally {
   fs.rmSync(dir, { recursive: true, force: true });

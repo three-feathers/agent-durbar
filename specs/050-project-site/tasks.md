@@ -30,3 +30,7 @@
 ## 2026-11-10: site headroom (FR-012 unchanged)
 
 - [x] T031 Opt-in local guard `maxBlockDelta` (8x8 block mean shift) in `scripts/compress-shots.js` with its `test:compressshots` case; re-quantise the site pictures to 192 colours under it (`maxChannel: 40`, `maxBlockDelta: 6`): 58 written, 48 kept; site 8,388,304 B to 8,198,363 B, margin 190,245 B under FR-012's 8 MB; the worst pictures looked at at 4x [FR-012]
+
+## 2026-11-20: site serves 1440x900 only (issue #1169)
+
+- [x] T399 The site build skips 1280x800 pictures (link: text, image: its 1440x900 twin) and `test:site` checks every named picture exists and none is 1280x800, with a mutant [FR-012] (site 8,369,344 B to 6,737,953 B)

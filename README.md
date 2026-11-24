@@ -6,7 +6,7 @@
 
 <p align="center"><em>A calm command center for your AI agents</em></p>
 
-<p align="center"><a href="#build-cost-so-far"><img src="docs/build-cost-badge.svg" alt="Build cost, about US$6,932 at API list prices (estimate, not billing)"></a></p>
+<p align="center"><a href="#build-cost-so-far"><img src="docs/build-cost-badge.svg" alt="Build cost, about US$8,658 at API list prices (estimate, not billing)"></a></p>
 
 When you run many agent sessions across several windows, you end up watching your digital agents instead of working. Agent Durbar puts them in one office and shows you only the ones that need you. It is for anyone who works with agents, not only developers: a room is any folder an agent works in.
 
@@ -16,7 +16,7 @@ When you run many agent sessions across several windows, you end up watching you
 
 **Works with:** GitHub Copilot, Claude Code and OpenAI Codex ([agent apps](docs/harnesses.md)). **Not yet:** signed builds (your OS warns the first time), auto-update, and Windows tried by hand only once; the spending limit is soft ([known limits](docs/limits.md)).
 
-> **Status:** first stable release, latest [`v0.1.26`](https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.26), unsigned. What changed: [CHANGELOG](CHANGELOG.md).
+> **Status:** first stable release, latest [`v0.1.29`](https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.29), unsigned. What changed: [CHANGELOG](CHANGELOG.md).
 
 ## What it does
 
@@ -60,6 +60,8 @@ Every file, the Windows and Mac notes, verifying a download and the requirements
 
 An approval card marks lookalike letters in a host, program or tool name (a Cyrillic letter in a Latin word, a fullwidth form) and names an address's host as the network reads it; it warns and never blocks, with small closed lists rather than the full confusables table ([docs/safety.md](docs/safety.md)).
 
+**Durbar's own update check** (spec 118) is built but **not active**: no request is made until the Update card and its Settings switch ship. Then a packaged build will ask GitHub once a day on its own (and when you press *Check now*, at most once a minute) for the release list of the repository it was built from. The request carries no token, and its own header no version or machine identifier; a proxy on the way still sees Chromium's default User-Agent until that is fixed ([docs/safety.md](docs/safety.md) lists what each side sees).
+
 Usage bills against **your** plans; a per-session spending limit is a soft limit. Details and spending caps: [docs/safety.md](docs/safety.md). Report a problem: [SECURITY.md](SECURITY.md).
 
 ## Quick start
@@ -89,7 +91,7 @@ How we work (spec-driven, with [GitHub Spec Kit](https://github.com/github/spec-
 <!-- build-cost:begin (written by `npm run usage:readme`; method in docs/build-cost.md) -->
 ## Build cost so far
 
-**About US$6,932** at API list prices to build this app with AI agents, as of 2026-11-20 (release [`v0.1.26`](https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.26)): an **API list-price estimate, not billing** of work on 3 machines: one since 2026-10-25, one from 2026-11-07 and one from 2026-11-09, mostly spread over earlier days rather than measured. The rest is not counted yet; the split, the spread of the earlier days and the method: [docs/build-cost.md](docs/build-cost.md).
+**About US$8,658** at API list prices to build this app with AI agents, as of 2026-11-24 (release [`v0.1.29`](https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.29)): an **API list-price estimate, not billing** of work on 3 machines: one since 2026-10-25, one from 2026-11-07 and one from 2026-11-09, 42% spread over earlier days rather than measured. The rest is not counted yet; the split, the spread of the earlier days and the method: [docs/build-cost.md](docs/build-cost.md).
 
 ![Daily build cost by model: measured days solid, estimated (spread) days faded and dashed](docs/build-cost-days.svg)
 <!-- build-cost:end -->

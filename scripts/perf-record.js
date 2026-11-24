@@ -320,6 +320,32 @@ async function recordAll(opts) {
   }
 }
 
+
+/*
+ * Issue #2023: idle CPU is read only once the load tail has ended. After a load the GPU and renderer processes stay busy for about 15 s; a read that
+ * starts inside that tail overstates idle by 2 to 3 times. `cpuSettled` is the rule: the last `n` samples lie within a band (spread at most `abs`
+ * points or `rel` of their median, whichever is larger). `settleCpu` takes samples from `sample()` (a promise of a percent) until the rule holds or
+ * `cap` samples were taken; a capped wait is reported (`settled: false`), never hidden. Pure: the sampler is passed in, so the rule is tested on fake samples.
+ */
+const SETTLE = { n: 3, abs: 0.5, rel: 0.25, stepSec: 3, cap: 20 };
+function cpuSettled(samples, o = SETTLE) {
+  const n = o.n || SETTLE.n;
+  if (!Array.isArray(samples) || samples.length < n) return false;
+  const last = samples.slice(-n);
+  if (!last.every(finite)) return false;
+  const spread = Math.max(...last) - Math.min(...last);
+  return spread <= Math.max(o.abs ?? SETTLE.abs, (o.rel ?? SETTLE.rel) * median(last));
+}
+async function settleCpu(sample, o = SETTLE) {
+  const cap = o.cap || SETTLE.cap;
+  const samples = [];
+  while (samples.length < cap) {
+    samples.push(await sample());
+    if (cpuSettled(samples, o)) return { settled: true, waitedSamples: samples.length, samples };
+  }
+  return { settled: false, waitedSamples: samples.length, samples, note: `CPU did not settle within ${cap} samples (spread over the last ${o.n || SETTLE.n} above the band): the idle read that follows may be in a load tail` };
+}
+
 const LIMITS = [
   'Frames are requestAnimationFrame deltas: they see main-thread work and a late frame, not compositor-only or GPU-process jank, raster time, scrolling done off the main thread, or tearing.',
   'With gpu_compositing disabled_software (Xvfb, a runner) the GPU process CPU is Skia drawing in software: blending, blur and raster are far worse than on a GPU. Only main-thread rows carry over.',
@@ -327,6 +353,7 @@ const LIMITS = [
   'CPU is /proc ticks on Linux (percent of one core); elsewhere Electron percentCPUUsage, whose scale differs by OS. Memory is PSS on Linux and working set elsewhere: compare within one OS only.',
   'Activity is the simulator at simspeed=10, not a real agent; the runs of a case share one launch; the mode-switch rows are taken first, in the fresh profile of that launch, and app start has a launch of its own per run.',
   'A machine under load (load average above its cores; unknown on Windows) is flagged and is not for ratios.',
+  'Idle CPU is read after CPU has settled (3 samples of 3 s within 0.5 points or 25 %, at most 60 s; issue #2023) with the frame loop of the page instruments paused; a wait that hit its cap says so in `settle`.',
 ];
 
-module.exports = { SCHEMA, MODES, SIZES, LIMITS, PHASE_ENV, REQUIRED_METRICS, median, medianOf, runsOf, loadFlag, validateRecord, nonFinite, scrub, scrubDeep, oneLine, parseArgs, buildRecord, writeRecord, runGroup, recordAll };
+module.exports = { SETTLE, cpuSettled, settleCpu, SCHEMA, MODES, SIZES, LIMITS, PHASE_ENV, REQUIRED_METRICS, median, medianOf, runsOf, loadFlag, validateRecord, nonFinite, scrub, scrubDeep, oneLine, parseArgs, buildRecord, writeRecord, runGroup, recordAll };

@@ -353,7 +353,7 @@ section('off', async () => {
     pick: async () => null,
     flavor: { path, platform: process.platform === 'win32' || process.platform === 'darwin' ? process.platform : 'linux' },
     ctx: () => ({
-      home: path.join(base, 'home'), userData: path.join(base, 'userdata'), env: {},
+      home: path.join(base, 'home'), userData: path.join(base, 'userdata'), env: {}, agentHomes: [path.join(base, 'agenthome')],
       realpath: (p: string) => { if (missing.includes(p)) throw new Error('ENOENT'); return links[p] ?? p; },
       lstat: (p: string) => { if (missing.includes(p)) throw new Error('ENOENT'); return { isDirectory: () => true }; },
     } as never),
@@ -374,6 +374,11 @@ section('off', async () => {
   eq(mk([mem]).readRoots(), [], 'the folder became an office folder (refused): nothing, though it is still stored');
   store.folder = path.join(base, 'home');
   eq(ops.readRoots(), [], 'a stored folder that is now refused (the home folder): nothing');
+  fs.mkdirSync(path.join(base, 'agenthome', 'sub'), { recursive: true });
+  store.folder = path.join(base, 'agenthome', 'sub');
+  eq(ops.readRoots(), [], 'a stored folder now inside an agent home (ctx.agentHomes, as pick and apply see it): nothing');
+  store.folder = mem;
+  eq(ops.readRoots(), [mem], 'the same ctx still accepts a fine folder');
   store.folder = 'relative/path';
   eq(ops.readRoots(), [], 'a stored relative path: nothing');
 });

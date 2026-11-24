@@ -1,0 +1,15 @@
+{
+  "schema": 1,
+  "versions": {
+    "0.1.29": {
+      "breaking": false,
+      "notes": "Daily release: fixes and small improvements, including more secrets hidden on screen (written in a path or link). Nothing to do before or after you update; Durbar keeps its data where it did.",
+      "action": ""
+    },
+    "0.1.28": {
+      "breaking": false,
+      "notes": "Daily release: no change in how Durbar works or where it keeps its data.",
+      "action": ""
+    }
+  }
+}

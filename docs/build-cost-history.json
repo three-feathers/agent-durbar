@@ -191,6 +191,50 @@
         "mac": 236.4,
         "ruben-server": 524.93
       }
+    },
+    {
+      "date": "2026-11-22",
+      "version": "v0.1.27",
+      "models": {
+        "claude-opus-5-5": 5071.35,
+        "claude-sonnet-5-5": 2088.52,
+        "claude-haiku-5-5": 6.07
+      },
+      "machines": {
+        "linux": 6404.61,
+        "mac": 236.4,
+        "ruben-server": 524.93
+      }
+    },
+    {
+      "date": "2026-11-23",
+      "version": "v0.1.28",
+      "models": {
+        "claude-opus-5-5": 5291.52,
+        "claude-sonnet-5-5": 2182.67,
+        "claude-haiku-5-5": 6.52,
+        "claude-fable-5-2": 38.83
+      },
+      "machines": {
+        "linux": 6758.21,
+        "mac": 236.4,
+        "ruben-server": 524.93
+      }
+    },
+    {
+      "date": "2026-11-24",
+      "version": "v0.1.29",
+      "models": {
+        "claude-opus-5-5": 5918.57,
+        "claude-sonnet-5-5": 2240.94,
+        "claude-haiku-5-5": 7.6,
+        "claude-fable-5-2": 490.71
+      },
+      "machines": {
+        "linux": 7896.49,
+        "mac": 236.4,
+        "ruben-server": 524.93
+      }
     }
   ]
 }

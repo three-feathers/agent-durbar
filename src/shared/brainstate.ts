@@ -29,6 +29,8 @@ export interface BrainMask {
   decodeTokenForms?(text: string): string;
   /** Spec 012 FR-188: runs `fn` with the decoded reading off (the reading as before FR-188). */
   withoutDecode?<T>(fn: () => T): T;
+  /** Spec 012 FR-190: runs `fn` with the continuation reading off (the reading as before FR-190). */
+  withoutContinuation?<T>(fn: () => T): T;
   /** Spec 012 FR-182/FR-188: `head` with every piece that `ref` (another masked reading of the same text) does not show masked. */
   keepShownBy?(head: string, ref: string): string;
   /**
@@ -43,15 +45,15 @@ export type StepGlyph = 'read' | 'edit' | 'shell' | 'web' | 'mcp';
 export type StepState = 'running' | 'done' | 'failed';
 export type LobeId = 'frontal' | 'occipital' | 'parietal' | 'cerebellum' | 'temporal' | 'stem' | 'port';
 
-/** FR-011: the seven glyphs. `symbol` is a label for tests and text; the renderer draws shapes (constitution V). */
-export const GLYPHS: Readonly<Record<GlyphId, { word: string; lobe: LobeId; lobeWord: string; place: string; symbol: string }>> = {
-  think: { word: 'Think', lobe: 'frontal', lobeWord: 'front', place: 'front', symbol: '◇' },
-  read: { word: 'Read', lobe: 'occipital', lobeWord: 'back', place: 'back', symbol: '▤' },
-  edit: { word: 'Edit', lobe: 'parietal', lobeWord: 'top', place: 'top', symbol: '✎' },
-  shell: { word: 'Shell', lobe: 'cerebellum', lobeWord: 'cerebellum', place: 'back, low', symbol: '›_' },
-  web: { word: 'Web', lobe: 'temporal', lobeWord: 'low side', place: 'low side', symbol: '◎' },
-  mcp: { word: 'MCP', lobe: 'stem', lobeWord: 'stem', place: 'bottom', symbol: '⏚' },
-  you: { word: 'You', lobe: 'port', lobeWord: 'front port', place: 'front, low', symbol: '●' },
+/** FR-011: the seven glyphs. `symbol` is a label for tests and text; the renderer draws shapes (constitution V). `means`: what the lobe stands for, one plain sentence for its tooltip (FR-136). */
+export const GLYPHS: Readonly<Record<GlyphId, { word: string; lobe: LobeId; lobeWord: string; place: string; symbol: string; means: string }>> = {
+  think: { word: 'Think', lobe: 'frontal', lobeWord: 'front', place: 'front', symbol: '◇', means: 'Thinking between tools: never a tool step.' },
+  read: { word: 'Read', lobe: 'occipital', lobeWord: 'back', place: 'back', symbol: '▤', means: 'Reading, listing or searching files.' },
+  edit: { word: 'Edit', lobe: 'parietal', lobeWord: 'top', place: 'top', symbol: '✎', means: 'Editing, writing or creating files.' },
+  shell: { word: 'Shell', lobe: 'cerebellum', lobeWord: 'cerebellum', place: 'back, low', symbol: '›_', means: 'Running a command, or any other tool.' },
+  web: { word: 'Web', lobe: 'temporal', lobeWord: 'low side', place: 'low side', symbol: '◎', means: 'Fetching a web page or searching the web.' },
+  mcp: { word: 'MCP', lobe: 'stem', lobeWord: 'stem', place: 'bottom', symbol: '⏚', means: 'Calling a tool of an MCP server.' },
+  you: { word: 'You', lobe: 'port', lobeWord: 'front port', place: 'front, low', symbol: '●', means: 'Asking you: a permission or a question.' },
 };
 export const STEP_GLYPHS: readonly StepGlyph[] = ['read', 'edit', 'shell', 'web', 'mcp'];
 
@@ -254,6 +256,23 @@ export function programOf(maskedCommand: string): string {
   return w.replace(/[^A-Za-z0-9._+\-[\]]/g, '').slice(0, 24);
 }
 
+/**
+ * Spec 012 FR-190 (review of PR 2001, round 2): a step target of a text with a line break is masked once more with the continuation reading off (as before FR-190)
+ * and shows nothing that reading hides (`keepShownBy`, the brain's own form of the desk's `contBoth`). The target is masked twice (the shared mask, then the brain's
+ * own pass): with the step on, the first mask already hides a value's middle, so the second pass no longer reads mask, middle and its last part as one value
+ * after its name, and that last part stayed readable where the reading as before hid it. Both readings are kept cut as the view cuts them, so the cut target shows
+ * no piece the reading as before leaves out of its own cut either (one that hides more reaches further into the text). `[full, cut]`; without the shared functions
+ * (an older mask), the target as masked.
+ */
+function contKept(mask: BrainMask, raw: string, fn: () => string): [string, string] {
+  const h = fn();
+  if (!h || !/[\r\n]/.test(raw) || typeof mask.withoutContinuation !== 'function' || typeof mask.keepShownBy !== 'function') return [h, cutTo(h, PREVIEW_MAX)];
+  const r = mask.withoutContinuation(fn);
+  if (h === r) return [h, cutTo(h, PREVIEW_MAX)];
+  const full = safe(() => mask.keepShownBy!(h, r));
+  const hc = cutTo(h, PREVIEW_MAX), rc = cutTo(r, PREVIEW_MAX);
+  return [full, cutTo(hc === rc ? hc : safe(() => mask.keepShownBy!(hc, rc)), PREVIEW_MAX)];
+}
 interface Target { targetKind: BrainStep['targetKind']; target: string; program: string; files: BrainFile[] }
 function targetOf(ev: Ev, glyph: GlyphId, mask: BrainMask): Target {
   const none: Target = { targetKind: 'none', target: '', program: '', files: [] };
@@ -270,18 +289,18 @@ function targetOf(ev: Ev, glyph: GlyphId, mask: BrainMask): Target {
   if (glyph === 'shell') {
     const c = asText(pickString(args, CMD_KEYS), mask);
     if (!c) return none;
-    const m = brainMaskText(mask, safe(() => mask.maskSecretCommand(c)));
-    return { targetKind: 'command', target: cutTo(m, PREVIEW_MAX), program: programOf(m), files };
+    const [m, mc] = contKept(mask, c, () => brainMaskText(mask, safe(() => mask.maskSecretCommand(c))));
+    return { targetKind: 'command', target: mc, program: programOf(m), files };
   }
   if (glyph === 'web') {
     const u = asText(pickString(args, URL_KEYS), mask);
-    if (u) return { targetKind: 'url', target: cutTo(brainMaskText(mask, safe(() => mask.maskSecretUrl(u))), PREVIEW_MAX), program: '', files };
+    if (u) return { targetKind: 'url', target: contKept(mask, u, () => brainMaskText(mask, safe(() => mask.maskSecretUrl(u))))[1], program: '', files };
   }
   const p = asText(pickString(args, PATH_KEYS), mask);
   if (p && glyph !== 'web') return { targetKind: 'file', target: cutTo(brainMaskText(mask, p), PREVIEW_MAX), program: '', files };
   const q = asText(pickString(args, QUERY_KEYS), mask);
   // F5: a query or an Other tool's target can hold `password=…` or a flag: the command mask runs on it too
-  if (q) return { targetKind: 'query', target: cutTo(brainMaskText(mask, safe(() => mask.maskSecretCommand(q))), PREVIEW_MAX), program: '', files };
+  if (q) return { targetKind: 'query', target: contKept(mask, q, () => brainMaskText(mask, safe(() => mask.maskSecretCommand(q))))[1], program: '', files };
   return none;
 }
 
@@ -365,7 +384,7 @@ function valueExpected(mask: BrainMask, joined: string): { at: number; head: str
 /* ---------- streamed text: one masked tail per stream ---------- */
 
 /** One stream's masked tail; `key` is the depth of unclosed private key blocks (its pieces are dropped), `carry` a possible start of an END marker. */
-export interface Tail { buf: string; key: number; carry: string; shown?: string; ref?: Tail }
+export interface Tail { buf: string; key: number; carry: string; shown?: string; ref?: Tail; cref?: Tail }
 const freshTail = (): Tail => ({ buf: '', key: 0, carry: '', shown: '' });
 function clearStreams(s: BrainState): void { s.think = freshTail(); s.out = freshTail(); s.inKeyBlock = false; }
 
@@ -585,7 +604,7 @@ function onTool(s: BrainState, ev: Ev, now: number, mask: BrainMask): void {
       helper: typeof ev.agentId === 'string' && ev.agentId !== '', program: g.glyph === 'mcp' ? programOf(server) : tg.program, server, targetKind: tg.targetKind, target: tg.target,
       why: phase === 'start' && !ev.agentId ? lastSentence(s.buf) : '', files: tg.files, costAtStart: s.turnCost,
     };
-    if (phase === 'start' && !ev.agentId) { s.buf = ''; s.think = { ...s.think, buf: '', shown: '', ref: undefined }; s.out = { ...s.out, buf: '', shown: '', ref: undefined }; }
+    if (phase === 'start' && !ev.agentId) { s.buf = ''; s.think = { ...s.think, buf: '', shown: '', ref: undefined, cref: undefined }; s.out = { ...s.out, buf: '', shown: '', ref: undefined, cref: undefined }; }
     turn.steps.push(st);
     if (turn.steps.length > STEP_CAP) { turn.steps.shift(); turn.folded += 1; }
     if (phase !== 'start') countAndRun(s, st, phase === 'failed', late);
@@ -645,16 +664,27 @@ export function brainState(prev: BrainState, ev: unknown, now: number, mask: Bra
         const key = e.type === 'thinking' ? 'think' : 'out';
         const piece = whole ? (e.text as string) : str(e.delta);
         const prev = s[key];
-        let next = streamText(prev, piece, whole, mask);
         // spec 012 FR-188 (review of PR 1899, independent differential): once a stream holds an entity or a percent escape, it is also read with the decoded reading off
         // (as before FR-188; until then both readings are the same, so it starts from this tail), and the views show nothing that reading hides: a token the decoded
         // reading masked early glues the next piece to its mask, and the rules after it can read that differently
-        if (typeof mask.withoutDecode === 'function' && typeof mask.keepShownBy === 'function' && (prev.ref || /[&%]/.test(piece))) {
-          const ref0: Tail = prev.ref ?? { buf: prev.buf, key: prev.key, carry: prev.carry, shown: prev.shown };
+        const decodeKept = (from: Tail): Tail => {
+          const n = streamText(from, piece, whole, mask);
+          if (typeof mask.withoutDecode !== 'function' || typeof mask.keepShownBy !== 'function' || !(from.ref || /[&%]/.test(piece))) return n;
+          const ref0: Tail = from.ref ?? { buf: from.buf, key: from.key, carry: from.carry, shown: from.shown };
           const ref = mask.withoutDecode(() => streamText(ref0, piece, whole, mask));
-          const shownNow = next.shown ?? next.buf;
-          const keptRaw = safe(() => mask.keepShownBy!(shownNow, ref.shown ?? ref.buf));
-          next = { ...next, shown: keptRaw.slice(-BUF_MAX), ref: { buf: ref.buf, key: ref.key, carry: ref.carry, shown: ref.shown } };
+          const keptRaw = safe(() => mask.keepShownBy!(n.shown ?? n.buf, ref.shown ?? ref.buf));
+          return { ...n, shown: keptRaw.slice(-BUF_MAX), ref: { buf: ref.buf, key: ref.key, carry: ref.carry, shown: ref.shown } };
+        };
+        let next = decodeKept(prev);
+        // spec 012 FR-190 (review of PR 2001): the same for the continuation reading: once a stream holds a line break, the whole step above (with its own decoded
+        // reference) is also run with that reading off, from this tail until then, and the views show nothing that reading hides, at every step
+        if (typeof mask.withoutContinuation === 'function' && typeof mask.keepShownBy === 'function' && (prev.cref || /[\r\n]/.test(piece))) {
+          const cref0: Tail = prev.cref ?? { buf: prev.buf, key: prev.key, carry: prev.carry, shown: prev.shown, ref: prev.ref };
+          const cref = mask.withoutContinuation(() => decodeKept(cref0));
+          const keptRaw = safe(() => mask.keepShownBy!(next.shown ?? next.buf, cref.shown ?? cref.buf));
+          // the stream's own text too (a later view of it, and what the next piece is read after), so no part of the state holds what that reading hides
+          const keptBuf = next.buf === cref.buf ? next.buf : safe(() => mask.keepShownBy!(next.buf, cref.buf));
+          next = { ...next, buf: keptBuf.slice(-BUF_MAX), shown: keptRaw.slice(-BUF_MAX), cref: { buf: cref.buf, key: cref.key, carry: cref.carry, shown: cref.shown, ref: cref.ref } };
         }
         s[key] = next;
         s.inKeyBlock = s.think.key > 0 || s.out.key > 0;

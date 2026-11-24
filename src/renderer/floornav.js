@@ -80,6 +80,13 @@
     const on=onList(floors),i=on.findIndex(x=>x.id===id);
     return i<0?null:{n:i+1,m:on.length};
   }
+  /* The hint of a floor (FR-085): "Client A, floor 2 of 3", + " (you are here)" when `here`, + a new line with `words` (the attention words, FR-015). The number is the one on the
+     floor's lift button (place()). '' when fewer than two floors are on or the floor is not on (no lift, nothing to say). */
+  function floorHint(floors,id,here,words){
+    const p=place(floors,id),f=list(floors).find(x=>x.id===id);
+    if(!p||!f||p.m<2)return '';
+    return String(f.name==null?'':f.name)+', floor '+p.n+' of '+p.m+(here?' (you are here)':'')+(words?'\n'+words:'');
+  }
   /* ---- phase 2: the All floors view (FR-031..FR-037) and the lift's badges (FR-014, FR-015, FR-028) ---- */
   /* The view from its stored value (FR-037): 'all' only for exactly the string 'all'; anything else (absent, blocked storage, a bad value) is the
      one-floor default. */
@@ -129,5 +136,5 @@
     }
     return {up:sum.above,down:sum.below};
   }
-  return {screens,nextOn,nearestOn,keyAction,arriveEdge,topDown,storeysTopDown,keyEligible,announceText,place,TEXT_SEL,viewOf,readView,writeView,VIEW_KEY,announceAll,badgeCounts,badgeText,badgeNum,edgeSummary,KINDS};
+  return {screens,nextOn,nearestOn,keyAction,arriveEdge,topDown,storeysTopDown,keyEligible,announceText,place,floorHint,TEXT_SEL,viewOf,readView,writeView,VIEW_KEY,announceAll,badgeCounts,badgeText,badgeNum,edgeSummary,KINDS};
 })());

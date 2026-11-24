@@ -71,6 +71,7 @@ import { AUTOPILOT_ANSWER, goalText, isClaudeContinuation } from './autopilot';
 import type { GoalTextResult } from './autopilot';
 import { AUTOPILOT_NOT_ALLOW, AUTOPILOT_NO_PLAN, AUTOPILOT_ONE_RUN, AUTOPILOT_TEXT_ONLY, AUTOPILOT_WAIT_TURN, AUTOPILOT_WIRED, AutopilotState, CLEAR_WAIT_MS, LINE_CLOSED, LINE_SELF_STARTED, LINE_UNCONFIRMED, capInForce, emitAutoAnswered, goalRefusal, lineNotCleared, within } from './autopilotHost';
 import type { AutopilotTuning } from './autopilotHost';
+import { ShownError } from '../shared/shownerror';
 
 export const CLAUDE_ID = 'claude';
 export const CLAUDE_NAME = 'Claude Code';
@@ -1042,12 +1043,12 @@ export class ClaudeAdapter implements AgentAdapter {
    */
   async selectAgentProfile(sessionId: string, id: string | null, file?: AgentFileRead): Promise<AgentProfile | null> {
     const s = this.sessions.get(sessionId);
-    if (!s) throw new Error('Unknown Claude session.');
-    if (s.resumable) throw new Error('Claude Code sets the agent when a session starts. Start a new session with this agent (+ New session).');
+    if (!s) throw new ShownError('Unknown Claude session.');
+    if (s.resumable) throw new ShownError('Claude Code sets the agent when a session starts. Start a new session with this agent (+ New session).');
     // FR-044: with the confirmed bytes, the session starts with exactly them (no second read of the file)
     // without them, never a folder's agent: it needs main's read and confirmation (a folder file could win a name clash after the list)
     const def = id === null ? undefined : file ? this.agentOfFile(s, id, file) : listClaudeAgents(s.roots, this.deps.configDir).find((d) => d.profile.id === id && d.profile.source !== 'repo');
-    if (id !== null && !def) throw new Error('That agent is not available in this session.');
+    if (id !== null && !def) throw new ShownError('That agent is not available in this session.');
     s.agent = def;
     this.emit(s.id, { type: 'agentProfile', profile: def ? def.profile : null });
     return def ? def.profile : null;
@@ -1071,14 +1072,14 @@ export class ClaudeAdapter implements AgentAdapter {
    * the adapter reports the name as the session's `title`. Durbar never writes the session file.
    */
   async renameSession(sessionId: string, name: string): Promise<void> {
-    if (!claudeNameOk(name)) throw new Error('Claude Code cannot use that name.');
+    if (!claudeNameOk(name)) throw new ShownError('Claude Code cannot use that name.');
     const s = this.sessions.get(sessionId);
     if (s) {
       s.pendingName = name;
       s.needsRelaunch = true;
       return;
     }
-    if (!/^[A-Za-z0-9-]{8,80}$/.test(sessionId)) throw new Error('Unknown Claude session.');
+    if (!/^[A-Za-z0-9-]{8,80}$/.test(sessionId)) throw new ShownError('Unknown Claude session.');
     if (!this.pendingNames.has(sessionId) && this.pendingNames.size >= 50) this.pendingNames.delete(this.pendingNames.keys().next().value as string);
     this.pendingNames.set(sessionId, name);
   }
@@ -1111,13 +1112,13 @@ export class ClaudeAdapter implements AgentAdapter {
     const s = this.mustGet(sessionId);
     // spec 099: refusals first, so a refused message leaves everything as it was
     const auto = s.auto?.on ? s.auto : undefined;
-    if (auto && message.plan) throw new Error(AUTOPILOT_NO_PLAN);
-    if (auto && /^\s*\/goal(\s|$)/i.test(message.text)) throw new Error(CLAUDE_GOAL_TYPED); // FR-058
+    if (auto && message.plan) throw new ShownError(AUTOPILOT_NO_PLAN);
+    if (auto && /^\s*\/goal(\s|$)/i.test(message.text)) throw new ShownError(CLAUDE_GOAL_TYPED); // FR-058
     const startsRun = !!auto && !auto.running;
-    if (startsRun && s.turnOpen) throw new Error(AUTOPILOT_WAIT_TURN);
-    if (startsRun && message.attachments?.length) throw new Error(AUTOPILOT_TEXT_ONLY); // D10
+    if (startsRun && s.turnOpen) throw new ShownError(AUTOPILOT_WAIT_TURN);
+    if (startsRun && message.attachments?.length) throw new ShownError(AUTOPILOT_TEXT_ONLY); // D10
     const goal = startsRun ? goalText(message.text, 'claude') : undefined;
-    if (goal && !goal.ok) throw new Error(goalRefusal(goal));
+    if (goal && !goal.ok) throw new ShownError(goalRefusal(goal));
     // FR-150: at the cap, the message waits for the user's answer to the limit notice (like Copilot's blocked request)
     if (s.limit || this.capReached(s)) {
       this.openLimit(s).held = message;
@@ -1204,13 +1205,13 @@ export class ClaudeAdapter implements AgentAdapter {
   async setAutopilot(sessionId: string, settings: AutopilotSettings | null, reason: AutopilotEnd = 'stopped'): Promise<void> {
     const s = this.mustGet(sessionId);
     if (settings === null) return this.autopilotOff(s, reason);
-    if (s.broker.getMode() !== 'allow') throw new Error(AUTOPILOT_NOT_ALLOW);
-    if (s.auto?.running) throw new Error(AUTOPILOT_ONE_RUN);
-    if (claudeOlderThanGoal((await this.sandboxFactsNow()).version)) throw new Error(`Autopilot needs Claude Code ${CLAUDE_GOAL_MIN_VERSION} or newer.`);
+    if (s.broker.getMode() !== 'allow') throw new ShownError(AUTOPILOT_NOT_ALLOW);
+    if (s.auto?.running) throw new ShownError(AUTOPILOT_ONE_RUN);
+    if (claudeOlderThanGoal((await this.sandboxFactsNow()).version)) throw new ShownError(`Autopilot needs Claude Code ${CLAUDE_GOAL_MIN_VERSION} or newer.`);
     let cap = settings.cap;
     if (cap !== undefined) {
       cap = usdCap(cap);
-      if (cap === undefined) throw new Error('Invalid cost cap.');
+      if (cap === undefined) throw new ShownError('Invalid cost cap.');
       this.refuseSpentCap(s, cap);
     }
     (s.auto ??= this.newAutopilot(s)).turnOn({ ...settings, cap });
@@ -1227,7 +1228,7 @@ export class ClaudeAdapter implements AgentAdapter {
 
   /** FR-022: a value at or below what was spent could do nothing. */
   private refuseSpentCap(s: Session, cap: number): void {
-    if (cap <= s.spentUsd) throw new Error(`A cap of $${cap} is not above what this session has spent ($${Math.round(s.spentUsd * 1e4) / 1e4}).`);
+    if (cap <= s.spentUsd) throw new ShownError(`A cap of $${cap} is not above what this session has spent ($${Math.round(s.spentUsd * 1e4) / 1e4}).`);
   }
 
   private newAutopilot(s: Session): AutopilotState {
@@ -1235,7 +1236,7 @@ export class ClaudeAdapter implements AgentAdapter {
       // FR-050 (`real:` T093): the interrupt, then `/goal clear`; the goal survives an interrupt. A turn that already ended needs no interrupt.
       halt: async () => {
         const t = s.transport;
-        if (!t?.alive) throw new Error('claude is not running');
+        if (!t?.alive) throw new ShownError('claude is not running');
         if (s.turnOpen) await this.interruptTurn(s, t);
         await this.clearGoal(s, t);
       },
@@ -1420,7 +1421,7 @@ export class ClaudeAdapter implements AgentAdapter {
    */
   async setMcpEnabled(sessionId: string, name: string, enabled: boolean): Promise<void> {
     const s = this.sessions.get(sessionId);
-    if (!s) throw new Error('Unknown Claude session.');
+    if (!s) throw new ShownError('Unknown Claude session.');
     const off = new Set(s.options.disabledMcpServers ?? []);
     if (enabled) off.delete(name);
     else off.add(name);
@@ -1449,10 +1450,15 @@ export class ClaudeAdapter implements AgentAdapter {
   async restartMcpServer(sessionId: string, name: string, _opts?: { auto?: boolean }): Promise<void> {
     void _opts; // spec 058 FR-207: the automatic reconnect is this same call (mcp_reconnect only: no sign-in call, nothing switched off)
     const s = this.sessions.get(sessionId);
-    if (!s) throw new Error('This session is not running. Send a message to start it.');
-    if (!s.transport?.alive) throw new Error('Claude Code starts its MCP servers with your next message; there is nothing to restart yet.');
-    if (s.launchedOff?.has(name) || (s.options.disabledMcpServers ?? []).includes(name)) throw new Error('Switch it on first; it starts with your next message.');
-    await s.transport.request({ subtype: 'mcp_reconnect', serverName: name }, 30_000);
+    if (!s) throw new ShownError('This session is not running. Send a message to start it.');
+    if (!s.transport?.alive) throw new ShownError('Claude Code starts its MCP servers with your next message; there is nothing to restart yet.');
+    if (s.launchedOff?.has(name) || (s.options.disabledMcpServers ?? []).includes(name)) throw new ShownError('Switch it on first; it starts with your next message.');
+    try {
+      await s.transport.request({ subtype: 'mcp_reconnect', serverName: name }, 30_000);
+    } catch (e) {
+      // spec 058 FR-012: Claude Code's own reason is shown (masked on the way, spec 045 FR-066)
+      throw new ShownError(`Claude Code could not restart ${name}: ${e instanceof Error ? e.message : String(e)}`);
+    }
     // spec 058 FR-176: a restart is a real change for this server: its FR-060 sign-in mark ends (a sign-in finished outside Durbar shows)
     s.mcpAuthSeen?.delete(name);
     try {
@@ -1474,10 +1480,10 @@ export class ClaudeAdapter implements AgentAdapter {
    */
   async startMcpSignIn(sessionId: string, name: string): Promise<McpSignInResult> {
     const s = this.sessions.get(sessionId);
-    if (!s) throw new Error('This session is not running. Send a message to start it, then sign in.');
+    if (!s) throw new ShownError('This session is not running. Send a message to start it, then sign in.');
     const t = s.transport;
-    if (!t?.alive) throw new Error('Send a message first, then sign in.'); // Q15: no early CLI launch for a sign-in
-    if (s.launchedOff?.has(name) || (s.options.disabledMcpServers ?? []).includes(name)) throw new Error('Switch it on first; it starts with your next message.');
+    if (!t?.alive) throw new ShownError('Send a message first, then sign in.'); // Q15: no early CLI launch for a sign-in
+    if (s.launchedOff?.has(name) || (s.options.disabledMcpServers ?? []).includes(name)) throw new ShownError('Switch it on first; it starts with your next message.');
     const now = this.deps.now ?? (() => performance.now()); // monotonic: a wall-clock jump never stretches or empties ttlMs (review on #635)
     const sent = now();
     let r: Record<string, unknown>;
@@ -1485,11 +1491,11 @@ export class ClaudeAdapter implements AgentAdapter {
       r = await t.request({ subtype: 'mcp_authenticate', serverName: name }, this.deps.signInTimeoutMs ?? CLAUDE_SIGN_IN_TIMEOUT_MS);
     } catch (e) {
       const m = e instanceof Error ? e.message : String(e);
-      if (/timed out/i.test(m) || UNKNOWN_SUBTYPE.test(m)) throw new Error(CLAUDE_NO_SIGN_IN);
-      throw new Error(m); // a refusal ("Server not found", "does not support OAuth authentication", ...): main masks it (FR-067)
+      if (/timed out/i.test(m) || UNKNOWN_SUBTYPE.test(m)) throw new ShownError(CLAUDE_NO_SIGN_IN);
+      throw new ShownError(m); // a refusal ("Server not found", "does not support OAuth authentication", ...): main masks it (FR-067)
     }
     // the CLI was relaunched or ended meanwhile: its listener is gone with it
-    if (this.sessions.get(sessionId) !== s || s.transport !== t || !t.alive) throw new Error('Claude Code restarted during the sign-in. Press Sign in again.');
+    if (this.sessions.get(sessionId) !== s || s.transport !== t || !t.alive) throw new ShownError('Claude Code restarted during the sign-in. Press Sign in again.');
     const url = r?.authUrl;
     if (typeof url === 'string' && url && r.requiresUserAction === true && r.callbackExpected !== false) return { kind: 'browser', url, ttlMs: signInTtlMs(now() - sent) };
     if (r?.requiresUserAction === false && url === undefined) {
@@ -1499,7 +1505,7 @@ export class ClaudeAdapter implements AgentAdapter {
       return { kind: 'connected' };
     }
     // a claude.ai connector (`callbackExpected: false`) or any other shape: not a sign-in Durbar can finish here
-    throw new Error('Claude Code cannot finish this sign-in inside Agent Durbar.');
+    throw new ShownError('Claude Code cannot finish this sign-in inside Agent Durbar.');
   }
 
   /**
@@ -1520,12 +1526,12 @@ export class ClaudeAdapter implements AgentAdapter {
   /** Spec 069 FR-031: the tools of one server, from the CLI's `mcp_status` reply (no extra start: only a running CLI is asked). */
   async listMcpTools(sessionId: string, name: string): Promise<McpToolInfo[]> {
     const s = this.sessions.get(sessionId);
-    if (!s) throw new Error('This session is not running. Send a message to start it.');
-    if (!s.transport?.alive) throw new Error('Claude Code starts its MCP servers with your next message; send one to see the tools.');
+    if (!s) throw new ShownError('This session is not running. Send a message to start it.');
+    if (!s.transport?.alive) throw new ShownError('Claude Code starts its MCP servers with your next message; send one to see the tools.');
     const r = await s.transport.request({ subtype: 'mcp_status' }, 15_000);
     const list: unknown[] = Array.isArray(r?.mcpServers) ? r.mcpServers : [];
     const srv = list.find((x) => !!x && typeof x === 'object' && (x as { name?: unknown }).name === name) as { tools?: unknown; status?: unknown } | undefined;
-    if (!srv) throw new Error(`${name} is not running in this session.`);
+    if (!srv) throw new ShownError(`${name} is not running in this session.`);
     return normMcpTools(srv.tools);
   }
 
@@ -1577,7 +1583,7 @@ export class ClaudeAdapter implements AgentAdapter {
 
   private mustGet(id: string): Session {
     const s = this.sessions.get(id);
-    if (!s) throw new Error('Unknown Claude session.');
+    if (!s) throw new ShownError('Unknown Claude session.');
     return s;
   }
 
@@ -1609,7 +1615,7 @@ export class ClaudeAdapter implements AgentAdapter {
 
   private async launch(s: Session): Promise<ClaudeTransport> {
     const file = await this.deps.claudePath();
-    if (!file) throw new Error('Claude Code is not installed or could not be found. Open Settings > Agent apps and choose Install…, then Sign in… there.');
+    if (!file) throw new ShownError('Claude Code is not installed or could not be found. Open Settings > Agent apps and choose Install…, then Sign in… there.');
     const o = s.options;
     const launch: ClaudeLaunch = {
       mode: s.broker.getMode(),
@@ -1633,7 +1639,7 @@ export class ClaudeAdapter implements AgentAdapter {
     // spec 012 FR-179: content that needs a file flag this Claude Code lacks is never sent on the command line instead (CLI transport
     // only: the SDK transport does not use these files)
     const refusal = this.deps.sdkTransport ? undefined : claudeLaunchFilesRefusal((await this.sandboxFactsNow()).version, launch);
-    if (refusal) throw new Error(refusal);
+    if (refusal) throw new ShownError(refusal);
     const handlers: TransportHandlers = {
       message: (m) => this.onMessage(s, m),
       control: (req) => this.onControl(s, req),
@@ -1788,26 +1794,26 @@ export class ClaudeAdapter implements AgentAdapter {
     const s = this.mustGet(sessionId);
     if (!s.resumable) return { summary: '' }; // nothing said yet: nothing to summarize
     const file = await this.deps.claudePath();
-    if (!file) throw new Error('Claude Code is not installed or could not be found.');
-    if (process.platform === 'win32' && /\.(cmd|bat)$/i.test(file)) throw new Error('A summary needs the native claude.exe, not a .cmd launcher.');
+    if (!file) throw new ShownError('Claude Code is not installed or could not be found.');
+    if (process.platform === 'win32' && /\.(cmd|bat)$/i.test(file)) throw new ShownError('A summary needs the native claude.exe, not a .cmd launcher.');
     const run = this.deps.runOnce ?? execRunOnce;
     const r = await run(file, handoffArgs({ sessionId: s.id, model: s.options.model }), { cwd: s.cwd, env: (this.deps.env ?? (() => process.env))(), timeoutMs: 180_000 });
     const out = parseHandoffOutput(r.stdout);
     if (out.costUsd) this.onMapped(s.id, { type: 'usage', costUsd: out.costUsd, costBasis: 'estimate' }); // counts towards the session's usage and its cap
-    if (!out.summary && r.code !== 0) throw new Error(`Claude could not make a summary (exit ${r.code ?? 'timeout'}).`);
+    if (!out.summary && r.code !== 0) throw new ShownError(`Claude could not make a summary (exit ${r.code ?? 'timeout'}).`);
     return out;
   }
 
   /** Spec 040 FR-015: one prompt in an empty temp folder (first for the AI theme maker, retired in spec 040 FR-031); no session is created or kept. */
   async generateText(prompt: string): Promise<{ text: string; costUsd?: number }> {
     const file = await this.deps.claudePath();
-    if (!file) throw new Error('Claude Code is not installed or could not be found.');
-    if (process.platform === 'win32' && /\.(cmd|bat)$/i.test(file)) throw new Error('This needs the native claude.exe, not a .cmd launcher.');
+    if (!file) throw new ShownError('Claude Code is not installed or could not be found.');
+    if (process.platform === 'win32' && /\.(cmd|bat)$/i.test(file)) throw new ShownError('This needs the native claude.exe, not a .cmd launcher.');
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-gen-'));
     try {
       const r = await (this.deps.runOnce ?? execRunOnce)(file, oneShotArgs(prompt), { cwd: dir, env: (this.deps.env ?? (() => process.env))(), timeoutMs: 180_000 });
       const out = parseHandoffOutput(r.stdout, ONE_SHOT_MAX_CHARS); // not the 8,000-character summary cap: a theme is data (spec 040 FR-024)
-      if (!out.summary) throw new Error(`Claude gave no answer (exit ${r.code ?? 'timeout'}).`);
+      if (!out.summary) throw new ShownError(`Claude gave no answer (exit ${r.code ?? 'timeout'}).`);
       return { text: out.summary, ...(out.costUsd !== undefined ? { costUsd: out.costUsd } : {}) };
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
@@ -1860,7 +1866,7 @@ export class ClaudeAdapter implements AgentAdapter {
   /** FR-150: change (null = remove) the dollar cap; the running CLI gets the new budget with the next message. */
   async setCap(sessionId: string, usd: number | null): Promise<void> {
     const s = this.mustGet(sessionId);
-    if (usd !== null && usdCap(usd) === undefined) throw new Error('Invalid cost cap.');
+    if (usd !== null && usdCap(usd) === undefined) throw new ShownError('Invalid cost cap.');
     s.capUsd = usd === null ? undefined : usdCap(usd);
     s.needsRelaunch = true;
     this.emit(sessionId, { type: 'limit', phase: 'changed', maxAiCredits: s.capUsd ?? null });
@@ -1874,7 +1880,7 @@ export class ClaudeAdapter implements AgentAdapter {
     if (action.kind !== 'cancel') {
       // `add` gives that much more from here: a turn can overshoot the cap (a first turn's cache write, real: $0.06 on a $0.01 cap), so it counts from the higher of cap and spend, rounded up to the cent
       const next = action.kind === 'add' ? usdCap(Math.ceil((Math.max(s.capUsd ?? 0, s.spentUsd) + action.credits) * 100 - 1e-6) / 100) : action.kind === 'set' ? usdCap(action.credits) : undefined;
-      if (action.kind !== 'unset' && next === undefined) throw new Error('Invalid cost cap.');
+      if (action.kind !== 'unset' && next === undefined) throw new ShownError('Invalid cost cap.');
       s.capUsd = next;
       s.needsRelaunch = true;
       this.emit(sessionId, { type: 'limit', phase: 'changed', maxAiCredits: s.capUsd ?? null });
@@ -2135,7 +2141,7 @@ export class ClaudeAdapter implements AgentAdapter {
       const st = claudeSandboxState({ mode, facts, pre });
       if (require) {
         this.setSandbox(s, st);
-        throw new Error(claudeSandboxRefusal(st?.reason ?? pre.reason));
+        throw new ShownError(claudeSandboxRefusal(st?.reason ?? pre.reason));
       }
       if (pre.permanent && s.options.sandboxAlwaysContinue) {
         this.setSandbox(s, st); // FR-007c: the stored choice only skips the note; the pre-check above ran again
@@ -2146,18 +2152,18 @@ export class ClaudeAdapter implements AgentAdapter {
       return false;
     }
     const roots = sandboxRoots(s.roots, this.deps.realpath ?? ((p) => fs.realpathSync.native(p)));
-    if (!roots.length) throw new Error("Durbar could not limit Claude Code's sandbox to this session's folders. Read-only and Ask first need at least one usable folder, so nothing was sent.");
+    if (!roots.length) throw new ShownError("Durbar could not limit Claude Code's sandbox to this session's folders. Read-only and Ask first need at least one usable folder, so nothing was sent.");
     const block = claudeSandboxSettings(mode, roots, this.deps.home ?? homeDirOf(), this.deps.realpath ?? ((p) => fs.realpathSync.native(p)), facts.platform);
     // review round 3 on PR 733: the credential filter runs after the roots check; when it drops the session's OWN folder every sandboxed
     // command would fail there while the chip said Sandboxed, so refuse as FR-015 does (nothing sent, Change mode… offered)
     const own = sandboxRoots([s.cwd], this.deps.realpath ?? ((p) => fs.realpathSync.native(p)))[0];
     if (own === undefined) {
       s.sandboxBlock = undefined; // review round 5: the session's own folder is not usable (a root, "..", a quote, unresolvable): FR-015
-      throw new Error("Durbar could not limit Claude Code's sandbox to this session's own folder. Read-only and Ask first need a usable folder, so nothing was sent.");
+      throw new ShownError("Durbar could not limit Claude Code's sandbox to this session's own folder. Read-only and Ask first need a usable folder, so nothing was sent.");
     }
     if (!block || !block.filesystem.allowRead.includes(own)) {
       s.sandboxBlock = undefined;
-      throw new Error(CREDENTIAL_FOLDER_REFUSAL('Claude Code'));
+      throw new ShownError(CREDENTIAL_FOLDER_REFUSAL('Claude Code'));
     }
     // the other folders: only those the block holds go on as --add-dir; every other one is named with why
     const split = splitFolders(s.roots, s.cwd, block.filesystem.allowRead, this.deps.realpath ?? ((p: string) => fs.realpathSync.native(p)));
@@ -2171,14 +2177,14 @@ export class ClaudeAdapter implements AgentAdapter {
   /** FR-007a/FR-007c/FR-007d: *Continue without the OS sandbox* (this session), optionally *Always continue on this computer*. */
   async continueWithoutSandbox(sessionId: string, opts: { always?: boolean } = {}): Promise<void> {
     const s = this.mustGet(sessionId);
-    if (s.options.requireOsSandbox) throw new Error('Your organization requires the OS sandbox in Read-only and Ask first, so Durbar cannot continue without it.');
+    if (s.options.requireOsSandbox) throw new ShownError('Your organization requires the OS sandbox in Read-only and Ask first, so Durbar cannot continue without it.');
     const note = s.sandboxNote;
-    if (!note?.includes('continue')) throw new Error('There is no OS sandbox note to answer for this session.'); // never switch off a working floor
-    if (opts.always && !note.includes('always')) throw new Error('Always continue was not offered for this session.');
+    if (!note?.includes('continue')) throw new ShownError('There is no OS sandbox note to answer for this session.'); // never switch off a working floor
+    if (opts.always && !note.includes('always')) throw new ShownError('Always continue was not offered for this session.');
     s.sandboxNote = undefined; // one-shot
     const facts = await this.sandboxFactsNow();
     const pre = this.deps.sdkTransport ? SDK_NO_SANDBOX : claudeSandboxPrecheck(facts);
-    if (opts.always && (pre.try || !pre.permanent)) throw new Error("Always continue is offered only where this computer can never run Claude Code's sandbox.");
+    if (opts.always && (pre.try || !pre.permanent)) throw new ShownError("Always continue is offered only where this computer can never run Claude Code's sandbox.");
     this.continuedIds.add(s.id);
     s.sandboxBlock = undefined;
     if (s.transport?.alive && s.launchedMode !== 'allow') s.needsRelaunch = true; // a CLI with the block still running: the next message relaunches

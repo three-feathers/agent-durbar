@@ -239,14 +239,49 @@ async function main(): Promise<void> {
   // Typical: the longest successful run among the last 15 of each workflow (gh run list/view, 2026-11-09), across its matrix.
   // Budget: the job's waits plus one failed npm ci try before each wait (an outage fails a try in about a minute; 1.5 allowed).
   const TYPICAL_MIN: Record<string, number> = {
-    'ci.yml:build-test': 9.8, 'ci.yml:office-check': 5.2, 'ci.yml:theme-shard': 3.0, 'e2e-real.yml:e2e': 2.5, 'install-check.yml:install': 4.4,
-    'installed-app.yml:installed': 10.2, 'macos-pr.yml:macos-test': 8.8, 'mac-titlebar-pr.yml:mac-titlebar': 6, // estimate, no run yet (FR-200)
+    // spec 117 FR-018: npm test in 2 parts per OS (the summary job build-test installs nothing): the longest part measured in #2031's CI runs
+    // (runs 45046540637, 45051166871, 45068796423); macOS is an estimate (its parts run on main pushes only)
+    'ci.yml:test-ubuntu': 11, 'ci.yml:test-windows': 14.1, 'ci.yml:test-macos': 10, 'ci.yml:office-check': 5.2, 'ci.yml:theme-shard': 3.0, 'e2e-real.yml:e2e': 2.5, 'install-check.yml:install': 4.4,
+    'fast-lane.yml:fast': 3, // spec 117 FR-386: the target, no run yet
+    'installed-app.yml:installed': 10.2, 'macos-pr.yml:macos-test': 23.8, /* measured 2026-11-23, spec 117 T078 (was 8.8) */ 'mac-titlebar-pr.yml:mac-titlebar': 6, // estimate, no run yet (FR-200)
     'mcp-oauth-real.yml:check': 1.1, 'packaged-check.yml:check': 1.6,
-    'release.yml:build': 14.4, 'ui-platforms.yml:ui': 22.7, 'world-matrix.yml:subset': 2.1,
+    'release.yml:build': 14.4, 'ui-platforms.yml:ui': 22.7, 'world-matrix.yml:subset': 2.1, // ui: Linux and Windows shards; macOS below
     'world-matrix.yml:weekly': 25, // estimate: no weekly run among the last 40 runs of the workflow
   };
+  // a job whose limit is per OS ("matrix.os == '<os>' && <n> || <m>"): that OS's typical minutes. spec 008 delta 2026-11-23 (issue 2070, review of
+  // PR 2071): a macOS UI shard is the one estimate of scripts/ui-shard-budget.js (its slowest shard at the committed timings and the workflow's
+  // shard count), so this figure grows with the suite instead of staying a written number
+  const uiShardCount = (() => { const m = fs.readFileSync(path.join(wfDir, 'ui-platforms.yml'), 'utf8').replace(/\r\n/g, '\n').match(/^\s+shard:\s*\[([^\]]*)\]\s*$/m); assert.ok(m, 'ui-platforms.yml has a shard list'); return m[1].split(',').length; })();
+  const uiTimes = JSON.parse(fs.readFileSync(path.join(root, 'scripts', 'ui-suite-timings.json'), 'utf8')) as Record<string, number>;
+  const macShards = (require(path.join(root, 'scripts', 'ui-shard-budget.js')) as { macosShardSecs: (o: { n: number; times: Record<string, number> }) => number[] }).macosShardSecs({ n: uiShardCount, times: uiTimes });
+  const TYPICAL_MIN_OS: Record<string, Record<string, number>> = { 'ui-platforms.yml:ui': { 'macos-latest': Math.max(...macShards) / 60 } };
+  // spec 117 T078: the path-filtered macOS job keeps exactly the stop-gap limit (45, as ci.yml build-test) until T025 lowers both
+  const STOPGAP = 45;
+  // The one check: throws unless macos-test has exactly the stop-gap limit as a number. The pin and its mutants both call it.
+  const checkMacosLimit = (text: string): void => {
+    const doc = yaml.load(text.replace(/\r\n/g, '\n')) as { jobs?: Record<string, Job> };
+    const jobs = doc.jobs || {};
+    assert.ok('macos-test' in jobs, 'macos-pr.yml has the job macos-test');
+    assert.strictEqual(jobs['macos-test']['timeout-minutes'], STOPGAP, `macos-pr.yml macos-test timeout-minutes must be the stop-gap number ${STOPGAP}`);
+  };
+  const macosText = fs.readFileSync(path.join(wfDir, 'macos-pr.yml'), 'utf8').replace(/\r\n/g, '\n');
+  checkMacosLimit(macosText);
+  const limitLine = /^(\s+)timeout-minutes: 45$/m;
+  assert.ok(limitLine.test(macosText), 'the limit line is found for the mutants');
+  const mutants: Record<string, string> = {
+    'limit 25': macosText.replace(limitLine, '$1timeout-minutes: 25'),
+    'limit 46': macosText.replace(limitLine, '$1timeout-minutes: 46'),
+    'key removed': macosText.replace(limitLine, '$1# removed'),
+    'quoted number': macosText.replace(limitLine, "$1timeout-minutes: '45'"),
+    'comment only': macosText.replace(limitLine, '$1# timeout-minutes: 45'),
+    'on another job': macosText.replace(limitLine, '$1# moved') + '  other:\n    runs-on: macos-latest\n    timeout-minutes: 45\n',
+  };
+  for (const [name, mutant] of Object.entries(mutants)) {
+    assert.notStrictEqual(mutant, macosText, `mutant ${name} changed the text`);
+    assert.throws(() => checkMacosLimit(mutant), /macos-test/, `mutant ${name} must fail the pin`);
+  }
   const FAILED_TRY_MIN = 1.5;
-  type Job = { 'timeout-minutes'?: number; steps?: { uses?: string; with?: Record<string, string> }[] };
+  type Job = { 'timeout-minutes'?: number | string; steps?: { uses?: string; with?: Record<string, string> }[] };
   const defaultWaits = ((yaml.load(action) as { inputs: Record<string, { default: string }> }).inputs['retry-waits'].default).split(/\s+/).map(Number);
   const budgets: string[] = [];
   for (const f of fs.readdirSync(wfDir).filter((n) => /\.ya?ml$/.test(n))) {
@@ -261,8 +296,16 @@ async function main(): Promise<void> {
         const waits = raw === undefined ? defaultWaits : String(raw).split(/\s+/).map(Number);
         assert.ok(waits.length > 0 && waits.every((w) => Number.isInteger(w) && w >= 0), `${name}: retry-waits are whole seconds`);
         const budget = waits.reduce((a, b) => a + b, 0) / 60 + waits.length * FAILED_TRY_MIN;
-        const limit = Number(job['timeout-minutes']);
-        assert.ok(TYPICAL_MIN[name] + budget <= limit, `${name}: ${TYPICAL_MIN[name]} min of work + ${budget.toFixed(1)} min of npm ci retries is more than timeout-minutes ${limit}`);
+        const rawLimit = job['timeout-minutes'] as unknown;
+        const perOs = typeof rawLimit === 'string' ? /^\$\{\{ matrix\.os == '([\w-]+)' && (\d+) \|\| (\d+) \}\}$/.exec(rawLimit) : null;
+        const limits: Array<[string, number, number]> = perOs
+          ? [[`${name} (${perOs[1]})`, (TYPICAL_MIN_OS[name] || {})[perOs[1]], Number(perOs[2])], [`${name} (other OSes)`, TYPICAL_MIN[name], Number(perOs[3])]]
+          : [[name, TYPICAL_MIN[name], Number(rawLimit)]];
+        if (perOs) assert.ok(Number.isFinite(limits[0][1]), `${name} has a limit for ${perOs[1]}: add its typical minutes to TYPICAL_MIN_OS`);
+        for (const [label, typical, limit] of limits) {
+          assert.ok(Number.isFinite(limit), `${label}: timeout-minutes is a number or "matrix.os == '<os>' && <n> || <m>", got ${JSON.stringify(rawLimit)}`);
+          assert.ok(typical + budget <= limit, `${label}: ${typical} min of work + ${budget.toFixed(1)} min of npm ci retries is more than timeout-minutes ${limit}`);
+        }
         budgets.push(name);
       }
     }

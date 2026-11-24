@@ -7,6 +7,11 @@
 import { readCapped, type CappedFs, type CappedFlags } from '../shared/cappedread';
 import { remoteHosts, MAX_GIT_CONFIG, type RemoteAnswer } from '../shared/memoryfolder';
 
+/** The open flags for `.git/config`: `O_NOFOLLOW` and `O_NONBLOCK` where they exist (a FIFO swapped in after the lstat would block main forever). Main passes `fs.constants`, so a caller cannot forget one. */
+export function memoryGitFlags(c: { O_RDONLY: number; O_NOFOLLOW?: number; O_NONBLOCK?: number }): CappedFlags {
+  return { O_RDONLY: c.O_RDONLY, O_NOFOLLOW: c.O_NOFOLLOW, O_NONBLOCK: c.O_NONBLOCK };
+}
+
 export interface GitProbeFs extends CappedFs {
   lstatSync(p: string): { isDirectory(): boolean; isFile(): boolean; isSymbolicLink(): boolean };
 }

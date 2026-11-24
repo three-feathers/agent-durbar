@@ -438,7 +438,7 @@ const opts: PackOptions = { clean, knownSets: ['office', 'retro'], requireHashes
 const good = validateWorldZip(toStored(goodPack()), opts);
 assert.ok(good.ok, 'the synthetic pack passes: ' + good.reason);
 assert.deepStrictEqual(good.unfinished, [], 'a full pack covers every moment');
-assert.strictEqual(good.coverage.length, 26, 'all 26 registry moments are judged');
+assert.strictEqual(good.coverage.length, 27, 'all 27 registry moments are judged');
 assert.strictEqual(good.contrastIssues, 0);
 assert.ok(good.manifest && good.manifest.id === 'test-world' && good.manifest.lights.lamp === 'flame');
 assert.strictEqual(good.parts.length, PART_NAMES.length, 'every part of the closed list is present and kept');

@@ -760,7 +760,7 @@ interface SimOptions {
   /** Spec 012 FR-130: the first Claude agent (or the first agent) asks a question (page address `simquestion=1`). */
   /** Spec 052 FR-141 (issue #367): the first agent has eight session grants with long names (page address `simgrants=many`). */
   grants?: 'many' | 'stuck'; /* 'stuck': revokes are accepted but never remove anything (a failed revoke) */
-  question?: boolean | 'long' | 'compact'; /* 'long' (spec 052 FR-140): a long question text and long option labels and descriptions (FR-160); 'compact' (FR-162, FR-163): a short question, then six compactions in a row while it waits */
+  question?: boolean | 'long' | 'compact' | 'markdown'; /* 'long' (spec 052 FR-140): a long question text and long option labels and descriptions (FR-160); 'compact' (FR-162, FR-163): a short question, then six compactions in a row while it waits */
   /** Spec 012 FR-151: an MCP server asks one agent for input: a small form (`simelicit=1`) or an https page to open (`simelicit=url`). */
   elicit?: string;
   /** Spec 033: names of floors that start switched off. */
@@ -1345,7 +1345,35 @@ const planMcpSignInRefresh = (i: SignInPlanInput): SignInPlan => {
        #1637); any other name has no known entry (an OAuth server keeps "needs sign-in") */
     const SIM_TOKEN_ENTRIES: Record<string, { vars: string[] }> = { 'team-api': { vars: ['TEAM_API_TOKEN'] }, 'docs-api': { vars: [] }, 'paste-api': { vars: ['k8Jq2LmZ9xPw4RtY7vBn3HcS6dFg1AeU'] } };
     /* mcptoken:end */
+    /* spec 005 FR-411: the simulator's stand-in for main's `toolargcopy.ts` (this file cannot import main code): the raw text of the argument each
+       chip shows (the window's `toolArg` choice), per session and call, so Copy has a real value to write; at most 2,000 calls, the oldest dropped
+       first, as main keeps (without that bound, every tool call the simulator emits stayed here: check-helper-retention saw the heap grow).
+       `masked` stands for main's flag: the `argsMasked` the emitted event carries (the simulator has no main mask in the path) */
+    /* the same pair key as main's `toolCopyKey` (src/main/toolargcopy.ts), copied because this file cannot import main code; test:toolargcopy
+       SIM-KEY checks that the two agree and that every lookup here goes through it */
+    const simToolCopyKey = (sessionId: string, callId: string): string => JSON.stringify([sessionId, callId]);
+    const simToolCopies = new Map<string, { text: string; masked: boolean }>();
+    /* keeps one value, newest last, and drops the oldest past main's 2,000 calls (TOOL_COPY_CALLS_MAX); test:toolargcopy SIM-BOUND runs this line */
+    const simToolCopyKeep = (m: Map<string, { text: string; masked: boolean }>, k: string, v: { text: string; masked: boolean }): void => { m.delete(k); m.set(k, v); for (const old of m.keys()) { if (m.size <= 2000) break; m.delete(old); } };
+    /* for the driver: whether each request was confirmed and its answer word (never the text); `mark` makes a kept value masked, as a newer
+       update main already masked while the window still holds the old hint */
+    const simToolCopyLog: { confirmed: boolean; answer: string }[] = [];
+    (window as unknown as { __durbarSimToolCopy?: unknown }).__durbarSimToolCopy = {
+      calls: simToolCopyLog,
+      mark: (sessionId: string, callId: string): boolean => { const v = simToolCopies.get(simToolCopyKey(sessionId, callId)); if (v) v.masked = true; return !!v; },
+      /* for the driver: the stand-in no longer holds that call, as main after its bounds or a removed session (Copy then answers `unknown`) */
+      forget: (sessionId: string, callId: string): boolean => simToolCopies.delete(simToolCopyKey(sessionId, callId)),
+      size: (): number => simToolCopies.size,
+    };
+    const simToolArgKey = (args: unknown): string | undefined => {
+      if (!args || typeof args !== 'object') return undefined;
+      const o = args as Record<string, unknown>;
+      for (const k of ['path', 'pattern', 'command', 'url', 'query', 'file_path']) if (o[k]) return k;
+      for (const k of Object.keys(o)) if (typeof o[k] === 'string') return k;
+      return undefined;
+    };
     const emit = (e: AgentEvent): void => {
+      if (e.type === 'toolCall' && e.args !== undefined) { const k = simToolArgKey(e.args), v = k === undefined ? undefined : (e.args as Record<string, unknown>)[k]; const id = simToolCopyKey(e.sessionId, e.callId); if (typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean') simToolCopyKeep(simToolCopies, id, { text: String(v), masked: e.argsMasked === true }); else simToolCopies.delete(id); }
       /* like main, which keeps the runtime's list before the window hears of it: the reply a listener asks for at once sees this event (spec 058 FR-094) */
       if (e.type === 'status' && e.status === 'stopped') { const q = sims.find((x) => x.info.id === e.sessionId); if (q) q.mcpHealth = undefined; }
       if (e.type === 'mcp') { const q = sims.find((x) => x.info.id === e.sessionId); if (q) { for (const m of e.servers) if (m.status === 'connected' && q.mcpLive?.some((o) => o.name === m.name && o.status !== 'connected')) q.mcpCalls?.delete(m.name); /* main's McpCallTracker.onServers: back to connected drops the class */ q.mcpLive = e.servers; q.mcpHealth = simHealth(q.mcpHealth, e.servers); if (!selfMcp) { q.mcpReported = e.servers; q.mcpAppOff = new Set(e.servers.filter((m) => m.status === 'disabled' && !q.mcpOff?.has(m.name)).map((m) => m.name)); } } }
@@ -1470,6 +1498,9 @@ const planMcpSignInRefresh = (i: SignInPlanInput): SignInPlan => {
             { label: 'Change everything at once, including the saved preferences and the themes, and fix what breaks afterwards; this is the fastest way to a consistent screen, but every theme, every window size and every platform has to be checked again in the same pull request before anyone can merge it' },
             { label: 'Short' } ] },
           { question: 'Which of the supercalifragilisticexpialidocious_configuration_option_names_that_are_unbroken_strings should stay?', header: 'Options', multiSelect: true, options: [{ label: 'an_option_label_without_any_space_that_is_much_longer_than_the_card_is_wide_in_any_window_size_and_keeps_going_with_more_words_joined_by_underscores_so_it_cannot_break_at_a_space_at_all' }, { label: 'Keep all of them' }] },
+        ] : opts.question === 'markdown' ? [
+          /* spec 052 (2026-11-19 delta, issue #1927, T378): a question written in Markdown (bold, a numbered list, a code span, a link, an arrow, raw HTML) with an invented token built from pieces, which the card masks before it renders */
+          { question: '**Which plan should I follow?**\n\n1. **Small:** change `settings.ts` first -> then the office\n2. **Large:** every theme at once\n3. Read [the notes](https://example.com/notes) and the token ' + 'ghp_' + 'A1b2C3d4E5f6G7h8I9j0K1l2M3n4' + ' stays hidden <b>not bold</b>\n\nTell me which one.', header: 'Plan', multiSelect: false, options: [{ label: 'Small' }, { label: 'Large' }] },
         ] : [
           { question: 'Which colour should the focus ring use?', header: 'Focus ring', multiSelect: false, options: [{ label: 'Sage', description: 'The calm green of the office walls' }, { label: 'Blue', description: 'Matches the links' }] },
           { question: 'Which screens should get it first?', header: 'Screens', multiSelect: true, options: [{ label: 'Office' }, { label: 'Chat' }, { label: 'Settings' }] },
@@ -1500,7 +1531,8 @@ const planMcpSignInRefresh = (i: SignInPlanInput): SignInPlan => {
         ];
         simE = { s, requestId: 'e-' + s.info.id, fields: url ? [] : fields, ...(url ? { url: 'https://auth.example.com/device?code=DURBAR-1234' } : {}) };
         s.state = 'waiting';
-        const message = url ? 'Sign in to the deploy service to continue.' : 'Where should this deploy go?';
+        const md = opts.elicit === 'md'; // spec 052 (2026-11-20 delta, issue #1934, T423): a Markdown message of about 6,000 characters (over the old 2,000 cut) with an invented token built from pieces
+        const message = md ? '**Where should this deploy go?**\n\n1. **Staging:** safe, resets at night\n2. **Production:** needs the ticket in `settings.ts`\n3. Read [the runbook](https://example.com/runbook) and the token ' + 'ghp_' + 'A1b2C3d4E5f6G7h8I9j0K1l2M3n4' + ' stays hidden <b>not bold</b>\n\n' + 'Details of the release, line by line. '.repeat(160) + '\n\nLAST-LINE-OF-THE-MESSAGE' : url ? 'Sign in to the deploy service to continue.' : 'Where should this deploy go?';
         emit({ type: 'question', sessionId: s.info.id, timestamp: now(), phase: 'asked', requestId: simE.requestId, questions: [{ question: message, header: 'deploy-mcp', multiSelect: false, options: [] }],
           elicitation: url
             ? { message, source: 'deploy-mcp', url: simE.url, host: 'auth.example.com' }
@@ -1906,13 +1938,13 @@ const planMcpSignInRefresh = (i: SignInPlanInput): SignInPlan => {
     const simActivity: ActivityRow[] = (() => {
       const t = (minAgo: number): string => new Date(Date.now() - minAgo * 60_000).toISOString();
       return [
-        { t: t(42), agent: 'Ana', folder: 'web-shop', app: 'GitHub Copilot', mode: 'ask', action: 'Edit src/cart.ts', decision: 'allowed-once' },
-        { t: t(37), agent: 'Ana', folder: 'web-shop', app: 'GitHub Copilot', mode: 'ask', action: 'Run npm test', decision: 'allowed-session' },
-        { t: t(31), agent: 'Ana', folder: 'web-shop', app: 'GitHub Copilot', mode: 'ask', action: 'Run npm test', decision: 'auto-session-grant' },
-        { t: t(25), agent: 'Ben', folder: 'api', app: 'GitHub Copilot', mode: 'ask', action: 'Fetch https://example.invalid/docs', decision: 'denied' },
-        { t: t(18), agent: 'Ben', folder: 'api', app: 'GitHub Copilot', mode: 'allow', action: 'Ask first to Allow all', decision: 'mode-change' },
-        { t: t(12), agent: 'Ben', folder: 'api', app: 'GitHub Copilot', mode: 'allow', action: 'Edit server/routes.ts', decision: 'auto-allow-all' },
-        { t: t(6), agent: 'Ben', folder: 'api', app: 'GitHub Copilot', mode: 'allow', action: 'Spending limit set to 300 AI credits', decision: 'limit-change' },
+        { t: t(42), agent: 'Ana', folder: 'web-shop', path: '/home/ana/clients/acme/web-shop', app: 'GitHub Copilot', mode: 'ask', action: 'Edit src/cart.ts', decision: 'allowed-once' },
+        { t: t(37), agent: 'Ana', folder: 'web-shop', path: '/home/ana/clients/acme/web-shop', app: 'GitHub Copilot', mode: 'ask', action: 'Run npm test', decision: 'allowed-session' },
+        { t: t(31), agent: 'Ana', folder: 'web-shop', path: '/home/ana/clients/acme/web-shop', app: 'GitHub Copilot', mode: 'ask', action: 'Run npm test', decision: 'auto-session-grant' },
+        { t: t(25), agent: 'Ben', folder: 'api', path: 'D:\\clients\\acme\\services\\payments\\backend\\api', app: 'GitHub Copilot', mode: 'ask', action: 'Fetch https://example.invalid/docs', decision: 'denied' },
+        { t: t(18), agent: 'Ben', folder: 'api', path: 'D:\\clients\\acme\\services\\payments\\backend\\api', app: 'GitHub Copilot', mode: 'allow', action: 'Ask first to Allow all', decision: 'mode-change' },
+        { t: t(12), agent: 'Ben', folder: 'api', path: 'D:\\clients\\acme\\services\\payments\\backend\\api', app: 'GitHub Copilot', mode: 'allow', action: 'Edit server/routes.ts', decision: 'auto-allow-all' },
+        { t: t(6), agent: 'Ben', folder: 'api', path: 'D:\\clients\\acme\\services\\payments\\backend\\api', app: 'GitHub Copilot', mode: 'allow', action: 'Spending limit set to 300 AI credits', decision: 'limit-change' },
       ] as ActivityRow[];
     })();
     /**
@@ -1973,7 +2005,7 @@ const planMcpSignInRefresh = (i: SignInPlanInput): SignInPlan => {
     /* the driver goes on from a `simaphold` */
     (window as unknown as { __durbarSimApGo?: (id: string) => void }).__durbarSimApGo = (id) => { const f = simApHeld.get(id); simApHeld.delete(id); f?.(); };
     const simLog = (s: SimAgent, decision: ActivityRow['decision'], action: string, mode: string = s.info.permMode): void => {
-      simActivity.push({ t: new Date().toISOString(), agent: s.info.label || s.info.name, folder: s.info.cwd.split(/[\\/]/).pop() || s.info.name, app: SIM_APP[s.info.adapterId ?? 'copilot'] ?? String(s.info.adapterId), mode, action: action.slice(0, 160), decision });
+      simActivity.push({ t: new Date().toISOString(), agent: s.info.label || s.info.name, folder: s.info.cwd.split(/[\\/]/).pop() || s.info.name, path: s.info.cwd, app: SIM_APP[s.info.adapterId ?? 'copilot'] ?? String(s.info.adapterId), mode, action: action.slice(0, 160), decision });
       if (simActivity.length > 5000) simActivity.splice(0, simActivity.length - 5000);
     };
     /** Like the real broker: auto-approve under a session grant, otherwise leave the request pending. */
@@ -2722,6 +2754,7 @@ const planMcpSignInRefresh = (i: SignInPlanInput): SignInPlan => {
     let notifyNeedsMe = false; /* spec 052 FR-059: off in the demo until you turn it on */
     let breakResume: 'auto' | 'ask' = 'auto'; /* spec 068 FR-006 */
     let chatLinksIn: 'session' | 'system' = 'session'; /* spec 080 FR-031 */
+    let brainView = true, brainMotion: 'full' | 'calm' | 'still' = 'full'; /* spec 106 FR-060 (T426): kept for the page */
     const PLACE_CHOICES = ['library', 'software', 'terminal', 'web', 'other', 'desk'];
     /* spec 024 FR-018..FR-020: custom places in memory, with the rules of src/shared/places.ts repeated here (the renderer bundle cannot import
        it; scripts/test-places.ts runs both on the same cases and compares them). */
@@ -2852,10 +2885,12 @@ const planMcpSignInRefresh = (i: SignInPlanInput): SignInPlan => {
       ...simCharacters_,
       usageTotals: async () => ({ ok: true, since: savedSince, office: saved.office, folders: saved.folders }),
       usageResetTotals: async () => { savedSince = new Date().toISOString(); saved = { office: zero, folders: [] }; return { ok: true, since: savedSince, office: zero, folders: [] }; },
-      getSettings: async () => ({ mcpSignInRefresh: simSignIn.on, diagnostics: simDiagnostics, mcpWarnLevels: simMcpLevels, defaultMaxAiCredits: defaultCap, placeMap: { ...placeMap }, customPlaces: customPlaces.map((p) => ({ ...p })), seriousMode, motion, stillHighlights, autoFollowWork, notifyNeedsMe, breakResume, chatLinksIn, ...(simTheme ? { theme: simTheme } : {}), characters: simCharacters, characterPins: simPins(), about: { name: 'Agent Durbar', version: `${(globalThis as unknown as { DurbarAppVersion?: string }).DurbarAppVersion ?? 'dev'} (simulator)`, owner: 'Three Feathers', copyright: 'Copyright (c) 2026 Three Feathers contributors', website: 'https://github.com/three-feathers/agent-durbar', contributors: [{ label: 'vikramgorla', url: 'https://github.com/vikramgorla' }, { label: 'fjcabello', url: 'https://github.com/fjcabello' }, { label: 'rubenlupi', url: 'https://github.com/rubenlupi' }] } /* sample data, real values come from src/shared/about.ts */ }),
+      getSettings: async () => ({ mcpSignInRefresh: simSignIn.on, diagnostics: simDiagnostics, mcpWarnLevels: simMcpLevels, defaultMaxAiCredits: defaultCap, placeMap: { ...placeMap }, customPlaces: customPlaces.map((p) => ({ ...p })), seriousMode, motion, brainView, brainMotion, stillHighlights, autoFollowWork, notifyNeedsMe, breakResume, chatLinksIn, ...(simTheme ? { theme: simTheme } : {}), characters: simCharacters, characterPins: simPins(), about: { name: 'Agent Durbar', version: `${(globalThis as unknown as { DurbarAppVersion?: string }).DurbarAppVersion ?? 'dev'} (simulator)`, owner: 'Three Feathers', copyright: 'Copyright (c) 2026 Three Feathers contributors', website: 'https://github.com/three-feathers/agent-durbar', contributors: [{ label: 'vikramgorla', url: 'https://github.com/vikramgorla' }, { label: 'fjcabello', url: 'https://github.com/fjcabello' }, { label: 'rubenlupi', url: 'https://github.com/rubenlupi' }] } /* sample data, real values come from src/shared/about.ts */ }),
       setDefaultCap: async (c) => { defaultCap = c !== null && c >= 30 ? Math.round(c * 100) / 100 : undefined; return { ok: true, defaultMaxAiCredits: defaultCap }; },
       setSeriousMode: async (on) => { if (typeof on === 'boolean') seriousMode = on; return { ok: true, seriousMode }; },
       setMotion: async (on) => { if (typeof on !== 'boolean') return { ok: false, motion }; motion = on; return { ok: true, motion }; },
+      setBrainView: async (on) => { if (typeof on !== 'boolean') return { ok: false, brainView }; brainView = on; return { ok: true, brainView }; },
+      setBrainMotion: async (v) => { if (v !== 'full' && v !== 'calm' && v !== 'still') return { ok: false, brainMotion }; brainMotion = v; return { ok: true, brainMotion }; },
       setStillHighlights: async (on) => { if (typeof on !== 'boolean') return { ok: false, stillHighlights }; stillHighlights = on; return { ok: true, stillHighlights }; },
       setAutoFollowWork: async (on) => { if (typeof on !== 'boolean') return { ok: false, autoFollowWork }; autoFollowWork = on; return { ok: true, autoFollowWork }; },
       setNotifyNeedsMe: async (on) => { if (typeof on === 'boolean') notifyNeedsMe = on; return { ok: true, notifyNeedsMe }; },
@@ -3540,7 +3575,7 @@ const planMcpSignInRefresh = (i: SignInPlanInput): SignInPlan => {
           ? { id: 'claude', displayName: 'Claude Code', state: 'not-installed', hint: 'Install Claude Code, then choose Check again.', capabilities: { ...copilotCaps, caps: false, mcpToggle: false, remote: false } }
           : { id: 'claude', displayName: 'Claude Code', state: 'ready', version: 'sim', where: '~/.local/bin/claude', capabilities: { ...copilotCaps, caps: false, mcpToggle: false, remote: false } },
         // spec 060 FR-003: found through a version manager's folder (nvm), shown as where it was found
-        simKindsParam === 'ready' ? { id: 'codex', displayName: 'Codex', state: 'ready', version: 'sim', where: '~/.nvm/versions/node/v22.3.0/bin/codex', capabilities: { ...copilotCaps, caps: false, mcpToggle: false, remote: false } } : { id: 'codex', displayName: 'Codex', state: 'too-old', version: '0.9.0', hint: 'Update Codex to 1.0 or newer, then choose Check again.', where: '~/.nvm/versions/node/v22.3.0/bin/codex', capabilities: { ...copilotCaps, imageGen: true, interrupt: false, history: false, permissionModes: ['read-only'], remote: false } },      ] as AdapterInfo[] : []),
+        simKindsParam === 'ready' ? { id: 'codex', displayName: 'Codex', state: 'ready', version: 'sim', where: '/home/ana/.nvm/versions/node/v22.3.0/bin/codex', capabilities: { ...copilotCaps, caps: false, mcpToggle: false, remote: false } } : { id: 'codex', displayName: 'Codex', state: 'too-old', version: '0.9.0', hint: 'Update Codex to 1.0 or newer, then choose Check again.', where: '/home/ana/.nvm/versions/node/v22.3.0/bin/codex', capabilities: { ...copilotCaps, imageGen: true, interrupt: false, history: false, permissionModes: ['read-only'], remote: false } },      ] as AdapterInfo[] : []),
       ...(mixed ? SIM_MIXED_KINDS : []),
     ];
     const notReady = (adapterId: string): string | undefined => {
@@ -4342,6 +4377,20 @@ const planMcpSignInRefresh = (i: SignInPlanInput): SignInPlan => {
         id === 'sim-2' && target === 'vscodium'
           ? { ok: false, edition: 'VSCodium', error: 'VSCodium is installed, but it cannot open this folder safely (its path has &, which cmd.exe could misread). Rename the folder, or open it from VSCodium itself.' }
           : { ok: true, edition: target === 'folder' ? 'the file manager' : target === 'vscodium' ? 'VSCodium' : 'VS Code', ...(id === 'sim-2' ? { note: 'This folder is a link, so its real folder was opened.' } : {}) },
+      /* spec 005 FR-411: main's `agents:copyToolArg` answers, the page's clipboard standing in for Electron's; never the text */
+      copyToolArg: async (sessionId: string, callId: string, confirmed?: boolean): Promise<{ ok: true } | { ok: false; reason: 'unknown' | 'too-long' | 'ask' | 'failed' }> => {
+        const answer = async (): Promise<{ ok: true } | { ok: false; reason: 'unknown' | 'too-long' | 'ask' | 'failed' }> => {
+          const v = typeof sessionId === 'string' && typeof callId === 'string' ? simToolCopies.get(simToolCopyKey(sessionId, callId)) : undefined;
+          if (v === undefined) return { ok: false, reason: 'unknown' };
+          if (v.text.length > 100000) return { ok: false, reason: 'too-long' };
+          if (v.masked && confirmed !== true) return { ok: false, reason: 'ask' };
+          try { await navigator.clipboard.writeText(v.text); } catch { return { ok: false, reason: 'failed' }; }
+          return { ok: true };
+        };
+        const r = await answer();
+        simToolCopyLog.push({ confirmed: confirmed === true, answer: r.ok ? 'ok' : r.reason });
+        return r;
+      },
       // spec 063 FR-006: a fixed git status per agent (no git repository needed): branch, 0-4 changed files, one non-repository folder
       gitStatus: async (id: string) => {
         const n = Number(String(id).replace(/\D/g, '')) || 0;
