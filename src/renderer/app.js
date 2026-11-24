@@ -2914,7 +2914,7 @@ function syncChatHeader(){
     else if(file&&pack){const clip=document.createElement('span');clip.className='rp-clip';const im=document.createElement('img');im.alt='';im.draggable=false;im.src=file;
       if(f.crop&&f.seatM){im.style.width=(f.seatM.w/f.crop.s*100)+'%';im.style.left=(-f.crop.x/f.crop.s*100)+'%';im.style.top=(-f.crop.y/f.crop.s*100)+'%';} /* the face fills the circle: the data of the layout's face box */
       clip.appendChild(im);port.appendChild(clip);}
-    else{const t=document.createElement('b');t.className='rp-ini';t.textContent=Array.from(String(a.name||'?'))[0].toUpperCase();port.appendChild(t);} /* away or no picture: the initial, as the office's disc */
+    else{const t=document.createElement('b');t.className='rp-ini';t.textContent=Array.from(String(nameShown(a)||'?'))[0].toUpperCase();port.appendChild(t);} /* away or no picture: the initial, as the office's disc */
     const d=document.createElement('i');d.className='dot '+({limit:'waiting',asleep:'idle'}[ls]||ls);port.appendChild(d);
     top.insertBefore(port,top.firstChild);
   }
@@ -3013,7 +3013,7 @@ function wireAnswerBar(a){
     const q=card.classList.contains('question'), long=text.length>REQ_TEXT_MAX, fit=q&&!long?qFits(card):null;
     bar.innerHTML='<span class="ab-q"><b><span class="ab-n" dir="auto"></span></b> <span></span></span><span class="ab-act"></span>';
     /* spec 052 FR-177: the name is its own one-line span, cut by CSS with an ellipsis and titled with the whole name; the count and the verb stay outside it */
-    const nm=bar.querySelector('.ab-n');nm.textContent=a.name;nm.title=a.name;
+    const nm=bar.querySelector('.ab-n');nm.textContent=nameShown(a);nm.title=nameShown(a);
     const lead=bar.querySelector('b');if(n>1)lead.insertBefore(document.createTextNode('1 of '+n+' \u00b7 '),nm);lead.appendChild(document.createTextNode(q?' asks:':card.classList.contains('limit')?' stopped:':' needs your OK:'));
     const qs=bar.querySelector('.ab-q > span');
     if(fit){if(fit.tag){const tg=document.createElement('span');tg.className='tag';tg.textContent=fit.tag;qs.appendChild(tg);qs.appendChild(document.createTextNode(' '));}qs.appendChild(document.createTextNode(fit.q));}
@@ -3056,7 +3056,7 @@ function wireAnswerBar(a){
     answerPress(src,requestRaw(c))();return true;
   };
   /* spec 052 FR-177: a late title or a rename changes only the name, in place: no repaint, so what you typed in the box and its focus stay */
-  const rename=()=>{const nm=bar.querySelector('.ab-n');if(nm&&!bar.hidden){nm.textContent=a.name;nm.title=a.name;}};
+  const rename=()=>{const nm=bar.querySelector('.ab-n');if(nm&&!bar.hidden){nm.textContent=nameShown(a);nm.title=nameShown(a);}};
   answerObs={m:mo,i:io,answerKey,rename};check();
 }
 /* ---------------- spec 063: the folder chip says the git branch and how many files changed; a click lists them ---------------- */
@@ -3148,10 +3148,12 @@ function focusComposer(){
 }
 /* spec 059 FR-020 item 1 (issue 636): the chat title is a button that renames in place when this session can be renamed; helpers' titles stay plain text */
 const titleRenameable=a=>canRenameSession(a);
-/* spec 012 FR-197 (issue #1999): the chat's header name, its tooltip, the chat's label and the composer's label show a session's name only through the
+/* spec 012 FR-197 (issue 1999): the chat's header name, its tooltip, the chat's label and the composer's label show a session's name only through the
    announcement mask (FR-195's liveText: annPart, '[not checked]' when it cannot be checked); the rename field keeps the name as written (the person's own edit) */
 const nameShown=a=>liveText(a.name);
 /* FR-197 (review of PR 2098): the typing indicator of a played turn names the session through the same mask */
+/* FR-197 (review of PR 2098, round 2): the label of a menu or dialog about one session (the mode, profile and model menus, the context-window dialog) */
+const menuLabel=(prefix,a)=>prefix+nameShown(a);
 const typingIndicator=a=>{const t=document.createElement('div');t.className='typing';t.setAttribute('aria-label',nameShown(a)+' is working');t.innerHTML='<i></i><i></i><i></i>';return t;};
 const panelTipOf=a=>{const t=liveText(SN().nameTip(a.alias,a.title,a.folderLabel||a.baseName||'')||a.name);return titleRenameable(a)?t+' Click or press F2 to rename.':t;};
 const panelTitleHTML=a=>{const n=esc(nameShown(a));return titleRenameable(a)?`<button type="button" class="ttl-btn" id="panelTitleBtn" aria-label="Rename session ${n}">${n}</button><span class="ttl-pen" aria-hidden="true">${ICON('rename')}</span>`:n;};
@@ -4339,7 +4341,7 @@ function openCtxMenu(a0,anchor){
   const a=liveRoot(a0); if(!a)return;
   closeCtxMenu();closeModeMenu();closeModelMenu();closeAgentMenu();
   const c=window.DurbarScreens.ctxChip(a), canC=ctxCanCompact(a), busy=busyNow(a);
-  const m=document.createElement('div');m.id='ctxMenu';m.className='mode-menu ctx-sum';m.setAttribute('role','dialog');m.setAttribute('aria-label','Context window of '+a.name);
+  const m=document.createElement('div');m.id='ctxMenu';m.className='mode-menu ctx-sum';m.setAttribute('role','dialog');m.setAttribute('aria-label',menuLabel('Context window of ',a));
   m.innerHTML=ctxSummaryHTML(a)
     +(canC?`<button type="button" id="compactBtn" class="mm-compact"${busy?' aria-disabled="true"':''}><span class="mt"><b>Compact</b><small>${esc(busy?'The agent is busy. Compact when it is idle.':'Summarise to free space. Costs one model call.')}</small></span></button>`:'')
     +`<button type="button" data-act="ctxTools"><span class="mt"><b>Models and context of all agents</b><small>The Tools view</small></span></button>`;
@@ -6905,7 +6907,7 @@ function subBlock(s,T){
   const v=subBody(s,inn,T.chat);
   v.paint=()=>{
     el.classList.toggle('running',s.status==='running');el.classList.toggle('failed',s.status==='failed');el.classList.toggle('done',s.status==='done');
-    el.querySelector('.sub-name').textContent=s.name;
+    el.querySelector('.sub-name').textContent=helperMask(s.name)||'Sub-agent';
     el.querySelector('.sub-task').textContent=s.status==='running'?safeExcerpt(homeMask(s.task||s.prompt),90):safeExcerpt(homeMask(s.result||s.lastFinal||s.error||s.task),110); /* spec 015 FR-021: home folders on the raw text first */
     el.querySelector('.sub-st').textContent=subStatusText(s);
     el.querySelector('.sub-open').hidden=!s.card;
@@ -7740,7 +7742,7 @@ function roAskAfterSwitch(a,mode,anchor){
   h.row.remove();
   if(!mine||!note)return;
   const l=document.createElement('p');l.className='ro-done';
-  l.textContent='Now in '+MODE_NAME[mode]+'. Ask '+a.name+' to try again: '+(mode==='allow'?'it will run without asking.':'it will wait for your OK.');
+  l.textContent='Now in '+MODE_NAME[mode]+'. Ask '+nameShown(a)+' to try again: '+(mode==='allow'?'it will run without asking.':'it will wait for your OK.');
   note.appendChild(l);
   announce(l.textContent); /* focus moves to the message box, so a screen reader hears the line here (review on PR 622) */
   const mi=$('msgInput');if(mi&&ui.selected&&liveRoot(byId(ui.selected)||a)===a)mi.focus({preventScroll:true});
@@ -7957,7 +7959,7 @@ function brainRailSync(){
 /* the Your door section: the count and who needs you, in the agent rail's own words (railAge, railReq: masked, cut); a row opens the existing Needs you queue there */
 function brainDoorPaint(){
   const l=$('brailDoorL'), n=$('brailDoorN'), r=$('brainRail'); if(!l||!n||!r||!BRAIN_H)return;
-  const list=needsMeOrder(), now=Date.now(), rows=list.map(x=>({id:x.id,name:x.name,age:railAge(x,now),said:railAgeSaid(x,now),req:SHORT(railReq(x),200)}));
+  const list=needsMeOrder(), now=Date.now(), rows=list.map(x=>({id:x.id,name:nameShown(x),age:railAge(x,now),said:railAgeSaid(x,now),req:SHORT(railReq(x),200)}));
   if(n.textContent!==String(list.length))n.textContent=String(list.length);
   const sig=JSON.stringify(rows);
   if(l.dataset.sig!==sig){
@@ -8590,7 +8592,7 @@ function openModeMenu(a0,x,y,anchor,o){ /* o.modesOnly (spec 003 FR-095): the th
   const hasMode=!!bridge.setPermMode&&feat(a,'modes'), hasOps=!!(ops.stop||(ops.end&&bridge.end)||canRen||canRead);
   if(!hasMode&&!hasOps)return false;
   closeModeMenu();
-  const m=document.createElement('div');m.id='modeMenu';m.className='mode-menu';m.setAttribute('role','menu');m.setAttribute('aria-label',(hasOps?'Actions for ':'Permission mode for ')+a.name);
+  const m=document.createElement('div');m.id='modeMenu';m.className='mode-menu';m.setAttribute('role','menu');m.setAttribute('aria-label',menuLabel(hasOps?'Actions for ':'Permission mode for ',a));
   m.innerHTML=(hasMode?['read-only','ask','allow'].filter(k=>feat(a,'modeList',k)).map(k=>{const o=orgMode(a.info.adapterId,k),w=o?o.why:''; /* spec 076 FR-202: blocked: disabled, the reason as its text; advice (FR-201): the words, still selectable */
     const isOn=a.info.permMode===k&&!a.info.autopilot; /* spec 099 FR-056: on Autopilot the check mark is on Autopilot, not on Allow all */
     return `<button type="button" role="menuitemradio" aria-checked="${isOn}" data-mode="${k}" class="mm-${k}${w?(o.refuse?' mm-org':' mm-orgdoubt'):''}"${o&&o.refuse?' aria-disabled="true"':''} title="${esc(w||MODE_HELP[k])}"><span class="mi">${MODE_IC[k]}</span><span class="mt"><b>${MODE_NAME[k]}</b><small>${esc(w||MODE_SHORT[k])}</small></span><span class="ck">${isOn?'✓':''}</span></button>`;}).join('')+(only?'':apMenuItem(a))+(canSbxRestart(a)&&!onCard?`<button type="button" role="menuitem" data-act="sbxRestart" class="mm-sbxrestart"${a.sbxRestarting?' aria-disabled="true"':''} title="${esc(sbxRestartTip(a))}"><span class="mt"><b>Restart without the sandbox</b><small>Keeps this conversation; a new session in Allow all</small></span></button>`:'')+(!only&&bridge.setModel&&a.info?`<button type="button" role="menuitem" data-act="model" class="mm-model"><span class="mt"><b>Model and context…</b><small>${esc(modelLabel(a.info).text)}</small></span></button>`:'')+(!only&&capsFor(a)&&capsFor(a).planMode&&!a0.parent?`<button type="button" role="menuitemcheckbox" aria-checked="${!!a.planNext}" data-act="planNext" class="mm-plan"><span class="mt"><b>Plan first (next message)</b><small>It plans first; you approve before it acts.</small></span><span class="ck">${a.planNext?'✓':''}</span></button>`:'')+(!only&&bridge.folderSetupScan&&window.DurbarFolderSetup&&a.info?`<button type="button" role="menuitem" data-act="foldersetup" class="mm-fsetup"><span class="mt"><b>This folder\u2019s setup…</b><small>${a.info.folderRules?'Its own hooks or allow rules are on':'Hooks, rules and MCP servers in its files'}</small></span></button>`:'')+`<p class="mm-note">Applies from the next request. The session keeps running.</p>`+(sbxWord(a)?`<p class="mm-note mm-sbx"><b>${esc(sbxWord(a))}.</b> ${esc(sbxDetails(a))}</p>`:''):'')+(hasOps?`<div class="mm-sep" role="separator"></div>`+(canRead?`<button type="button" role="menuitem" data-op="read" class="mm-read"><span class="mt"><b>Mark as read</b><small>Clears \u201cNew\u201d without opening the chat</small></span></button>`:'')+(canRen?`<button type="button" role="menuitem" data-op="rename" class="mm-rename" title="Give this session a short name"><span class="mt"><b>Rename…</b><small>A short name for this session</small></span></button>`:'')+(ops.stop?`<button type="button" role="menuitem" data-op="stop" class="mm-stop"${ops.stop.disabled?` aria-disabled="true" aria-describedby="mmStopWhy" title="${esc(ops.stop.reason)}"`:''}><span class="mt"><b>Stop</b><small${ops.stop.disabled?' id="mmStopWhy"':''}>${esc(ops.stop.disabled?ops.stop.reason:'Stops this reply. The agent stays open.')}</small></span></button>`:'')+(ops.end&&bridge.end?`<button type="button" role="menuitem" data-op="end" class="mm-end mm-danger"><span class="mt"><b>End session</b><small>Send a message to pick up where you left off.</small></span></button>`:''):'');
@@ -9113,7 +9115,7 @@ const SOURCE_WORD={repo:'from this folder',user:'your agents',other:''};
 async function openAgentMenu(a0,x,y,anchor){
   const a=liveRoot(a0); if(!a||!bridge.listProfiles)return;
   closeAgentMenu();closeModelMenu();closeModeMenu();
-  const m=document.createElement('div');m.id='agentMenu';m.className='mode-menu model-menu';m.setAttribute('role','menu');m.setAttribute('aria-label','Profile for '+a.name);
+  const m=document.createElement('div');m.id='agentMenu';m.className='mode-menu model-menu';m.setAttribute('role','menu');m.setAttribute('aria-label',menuLabel('Profile for ',a));
   m.innerHTML='<p class="mm-h">Profile</p><p class="mm-why" role="note">Looking for profiles…</p>';document.body.appendChild(m);
   const place=()=>placeMenu(m,x,y,anchor);place(); /* spec 005 FR-037: above a toolbar chip */
   const c=$('agentChip');if(c&&anchor===c)c.setAttribute('aria-expanded','true');
@@ -9204,7 +9206,7 @@ function openModelMenu(a0,x,y,anchor,again){
   if(DM.hasLong(cur))h+=`<button type="button" role="menuitemcheckbox" aria-checked="${tier==='long'}" data-tier="1"${dis} class="mm-tier"><span class="mt"><b>Long context</b><small>${esc(DM.fmtTokens(DM.windowOf(cur,'long')))} window · ${esc(DM.priceLine(cur,'long'))}</small></span><span class="ck">${tier==='long'?'✓':''}</span></button>`;
   if(pend)h+=`<div class="mm-pend" role="status"><span>Next: <b>${esc(pend.name)}</b>${DM.choiceWords(pend.req)?' ('+esc(DM.choiceWords(pend.req))+')':''}, when this reply ends.</span><button type="button" data-cancelq="1">Cancel</button></div>`;
   h+=on?'<p class="mm-note">'+(pend?'Applies when this reply ends':'Applies from the next message')+'; the conversation is kept. Costlier switches ask first, and your spending limit never changes.'+(ctrlOf(a).unverified?' '+esc(UNVERIFIED_WHY):'')+'</p>':'<div class="mm-foot"><button type="button" class="btn" data-newsess="1">New session…</button></div>';
-  const m=document.createElement('div');m.id='modelMenu';m.dataset.kind=kk;m.className='mode-menu model-menu';m.setAttribute('role','menu');m.setAttribute('aria-label','Model and context for '+a.name);
+  const m=document.createElement('div');m.id='modelMenu';m.dataset.kind=kk;m.className='mode-menu model-menu';m.setAttribute('role','menu');m.setAttribute('aria-label',menuLabel('Model and context for ',a));
   m.innerHTML=h;document.body.appendChild(m);
   const {px,py}=placeMenu(m,x,y,anchor); /* spec 005 FR-037: above a toolbar chip */
   m.addEventListener('click',e=>{
@@ -9822,7 +9824,7 @@ function openSchedules(r,from,opts){
     <label class="chk"><input type="radio" name="scKind" value="once"> Once at <input type="datetime-local" id="scAt" value="${local}" aria-label="Date and time"></label></div>
     <div class="sc-days" id="scDays" role="group" aria-label="Days of the week" hidden>${[1,2,3,4,5,6,0].map(n=>`<label class="chk"><input type="checkbox" value="${n}"${n===today?' checked':''}> ${DAY3[n]}</label>`).join('')}</div>
     <div class="sc-opts"><label class="sc-to" id="scToL"${ag?'':' hidden'}><span class="sc-lbl">Send to</span> <select id="scTarget" aria-describedby="scToHint"><option value="">This folder's agent</option><option value="${ag?esc(ag.id):''}">This session</option></select></label>
-     <label id="scCapL" title="Optional. When this schedule's own runs have spent this much, it pauses and says so."${schedCapUnit(folderAg)?'':' hidden'}><span class="sc-lbl">Limit</span> <input type="number" id="scCap" min="0.01" step="0.01" placeholder="none" aria-describedby="scCapU"> <span id="scCapU">${esc(unitWord(schedCapUnit(folderAg)))}</span></label></div><p class="sc-hint" id="scToHint" title="${ag?esc(ag.name):''}" hidden>${ag?esc(ag.name):''}</p></div><p class="sc-tpl-note" id="scCapKeep" hidden></p>
+     <label id="scCapL" title="Optional. When this schedule's own runs have spent this much, it pauses and says so."${schedCapUnit(folderAg)?'':' hidden'}><span class="sc-lbl">Limit</span> <input type="number" id="scCap" min="0.01" step="0.01" placeholder="none" aria-describedby="scCapU"> <span id="scCapU">${esc(unitWord(schedCapUnit(folderAg)))}</span></label></div><p class="sc-hint" id="scToHint" title="${ag?esc(nameShown(ag)):''}" hidden>${ag?esc(nameShown(ag)):''}</p></div><p class="sc-tpl-note" id="scCapKeep" hidden></p>
    <div class="dbtn"><button class="btn" id="scClose" type="button">Close</button><button class="btn" id="scCancel" type="button" hidden>Cancel</button><button class="btn primary" id="scAdd" type="button">Add schedule</button></div></div>`;
   document.body.appendChild(d);
   renderSchedDlg();

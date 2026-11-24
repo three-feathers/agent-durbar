@@ -578,7 +578,11 @@ const SWITCH_FLAG_LEADS = new Set(['show', 'no']);
 const switchFlag = (name: string): boolean => { if (!narrowOn) return false; const m = /^--([A-Za-z]+)-[A-Za-z]/.exec(name); return !!m && SWITCH_FLAG_LEADS.has(m[1].toLowerCase()); };
 /** FR-196 (review of PR 2098): whether a word reads as a key, by the plain context's value rules: the shared mask hides it as the value of a password (token shapes,
     the named-value rule with its short values and phrases). The word after a display or negated flag is shown only when this says no. */
-const keyLikeWord = (w: string): boolean => { const u = w.replace(/^(["'])(.*)\1$/, '$2'); const t = 'password=' + u; return u !== '' && maskTokenShapes(t, MASK) !== t; };
+const keyLikeAsValue = (u: string): boolean => { const t = 'password=' + u; return u !== '' && maskTokenShapes(t, MASK) !== t; };
+/** Review of PR 2098, round 2: a base64 word may start with `/`, which the plain rule reads as a path. A word of one segment after that slash is read without it too
+    when that segment is long and holds an upper-case letter, a lower-case letter and a digit (a key's shape): a short or one-case folder name stays a path. */
+const slashLedKey = (u: string): boolean => { const r = u.slice(1); return u[0] === '/' && r.length >= 16 && !r.includes('/') && /[A-Z]/.test(r) && /[a-z]/.test(r) && /[0-9]/.test(r) && keyLikeAsValue(r); };
+const keyLikeWord = (w: string): boolean => { const u = w.replace(/^(["'])(.*)\1$/, '$2'); return keyLikeAsValue(u) || slashLedKey(u); };
 const switchValue = (v: string): boolean => narrowOn && SWITCH_VALUES.has(v.toLowerCase());
 /** FR-196's switch: on in the app; off only inside `_withoutOvermaskNarrowForTest`, which reads as before FR-196 for the differential. */
 let narrowOn = true;
