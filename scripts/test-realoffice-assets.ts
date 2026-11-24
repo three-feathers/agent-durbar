@@ -19,7 +19,7 @@ export const CAPS = { person: 80 * 1024, fixture: 120 * 1024, desk: 60 * 1024, f
 /** spec 102 FR-213: all shipped art (every world and every set) at most this many bytes */
 export const SHIPPED_MAX = 30 * 1024 * 1024;
 /** spec 102 FR-393, FR-394, FR-397, FR-403 (issue #2055; owner 2026-11-23 14:59 UTC, FINE): the HD person set's limits */
-export const HD_PALETTE = 96, HD_HUE_DE = 15, HD_ORPHAN_MAX = 0.06, HD_ORPHAN_MAX_72 = 0.12, HD_PERSON_MAX = 450 * 1024, HD_FILE_MAX = 300 * 1024, HD_HEAD = [0.27, 0.36], HD_HEAD_W = 36, HD_TILE_EDGE = 3, HD_TILE_FEAT = 15; /* FR-402: the crown is the top of the hair: a bun, an afro, a quiff or a hood measures taller than 0.31; the face is never enlarged for it */
+export const HD_PALETTE = 96, HD_HUE_DE = 15, HD_ORPHAN_MAX = 0.06, HD_ORPHAN_MAX_72 = 0.12, HD_PERSON_MAX = 450 * 1024, HD_FILE_MAX = 300 * 1024, HD_HEAD = [0.27, 0.36], HD_HEAD_W = 36, HD_TILE_EDGE = 3, HD_TILE_FEAT = 15, HD_BUST_EDGE = 3.25; /* T472: the busts on the Photo office and cave desk walls, measured 3.28:1 at the lowest (2026-11-24) */ /* FR-402: the crown is the top of the hair: a bun, an afro, a quiff or a hood measures taller than 0.31; the face is never enlarged for it */
 export const PERSON_MAX_H = 640;
 const KEYS = ['files', 'source', 'tool', 'date', 'made by', 'approved by', 'reference', 'prompt', 'cut', 'licence'];
 const CLAUSE = /fictional and must not resemble any real or famous person; no real person, celebrity, brand, logo or franchise is named/;
@@ -91,7 +91,7 @@ export function removals(md: string): string[] {
   const out: string[] = [];
   for (const line of m[1].split(/\r?\n/)) {
     if (!line.startsWith('- ')) continue;
-    if (!/removed \d{4}-\d{2}-\d{2}/.test(line) || !/reported by \S/.test(line) || !/replaced by `?[\w.-]+\.webp/.test(line)) out.push('a removal record needs "removed <date>", "reported by <who>" and "replaced by <picture>": ' + line.slice(0, 80));
+    if (!/removed \d{4}-\d{2}-\d{2}/.test(line) || !/reported by \S/.test(line) || !/replaced by `?[\w./@-]+\.webp/.test(line)) out.push('a removal record needs "removed <date>", "reported by <who>" and "replaced by <picture>": ' + line.slice(0, 80));
   }
   return out;
 }
@@ -401,7 +401,7 @@ assert.deepStrictEqual(halfProblems(files, (META as unknown as { px: Record<stri
 if (worldIds.includes('retro')) {
   const w = readPack('worlds', 'retro'), st = readPack('sets', 'retro');
   const wj = w.json as { pixelArt?: boolean; arrangement?: string; defaultSet: string; monitor: Record<string, { cell: number[]; glass: number[] }>; night?: object; lightSets?: string[] };
-  const sj = st.json as { pixelArt?: boolean; seat: Record<string, unknown>; stand: Record<string, { poses: Record<string, number[]> }>; faceBox: Record<string, { pose: string; box: number[] }> };
+  const sj = st.json as { pixelArt?: boolean; seat?: unknown; stand?: unknown; faceBox?: unknown; hd: { people: Record<string, Record<string, Record<string, number[]>>>; stand: Record<string, { figH: number; poses: Record<string, number[]>; feet: Record<string, number>; top: Record<string, number>; foot: Record<string, number> }>; placeW: number } };
   assert.strictEqual(wj.pixelArt, true, 'the arcade is pixel art'); assert.strictEqual(sj.pixelArt, true, 'Retro pixel people are pixel art');
   assert.strictEqual(wj.defaultSet, 'retro'); assert.ok((ARRANGEMENTS as readonly string[]).includes(String(wj.arrangement)), 'its arrangement is one the engine has');
   assert.ok(!wj.lightSets, 'no lightSets: one light, night only (owner 2026-11-03)');
@@ -417,14 +417,46 @@ if (worldIds.includes('retro')) {
     const info = webpInfo(w.files.get(k === 'big' ? 'monitor.webp' : k === 'small' ? 'monitor-half.webp' : 'monitor-narrow.webp') as Buffer);
     assert.deepStrictEqual([info.width, info.height], [cab.w * 16, cab.h], `${k}: four bodies in four colours in a strip`);
   }
-  // the set: 15 people x 18 frames (17 and the seated `sit` of 2026-11-03), no more, no fewer; a person missing a required frame fails (T207)
-  const SEATED = ['typeA', 'typeB', 'waveA', 'waveB', 'think', 'rest'], VIEWA = ['type', 'book', 'knock', 'letter', 'counter'], FACE = ['face-book', 'face-coffee', 'face-knock', 'face-letter', 'face-runA', 'face-runB', 'sit'];
-  assert.strictEqual(st.files.size, 15 * 20, '300 frames (18, plus runA and runB, T296)');
-  for (const pid of Object.keys(sj.seat)) for (const p of [...SEATED, ...VIEWA, ...FACE]) assert.ok(st.files.has(`${pid}-${p}.webp`), `${pid} has ${p}`);
-  assert.strictEqual(Object.keys(sj.seat).length, 15);
-  const heights = Object.entries(sj.faceBox).map(([pid, f]) => { assert.strictEqual(f.pose, 'face-book'); const [x, y, fw, fh] = f.box, [pw, ph] = sj.stand[pid].poses['face-book']; assert.ok(x >= 0 && y >= 0 && x + fw <= pw && y + fh <= ph && fw > 8 && fh > 8, `${pid}: faceBox inside its frame`); return fh; });
-  assert.strictEqual(heights.length, 15, 'a faceBox per person (T201)');
-  assert.ok(Math.min(...heights) >= FACE_GRID, `the smallest measured face (${Math.min(...heights)} grid px) is at least the layout's FACE_GRID (${FACE_GRID}): the layout never promises more than the art has`);
+  /* spec 102 T502: the set is the HD set only. The first pictures (15 people x 20 frames at the top of the folder) and their keys seat, stand and faceBox are removed; the standing
+     numbers the lobby and the arcade read are hd.stand, measured on the 72 px (s 1) HD frames, and hd.placeW keeps the arcade's place width */
+  assert.strictEqual(st.files.size, 0, 'no picture at the top of sets/retro: the first pixel pictures are removed (T502), every frame is in hd/');
+  assert.deepStrictEqual(['seat', 'stand', 'faceBox'].filter((k) => k in sj), [], 'set.json has no seat, stand or faceBox: the HD block carries the numbers (T502)');
+  const HP = sj.hd.people, HS = sj.hd.stand;
+  assert.deepStrictEqual(Object.keys(HS).sort(), Object.keys(HP).sort(), 'hd.stand has every HD person, no more');
+  assert.strictEqual(Object.keys(HS).length, 15);
+  for (const [pid, e] of Object.entries(HS)) {
+    assert.strictEqual(e.figH, 72, `${pid}: hd.stand figH is the 72 px figure (FR-256, the s 1 frame)`);
+    assert.deepStrictEqual(Object.keys(e.poses).sort(), Object.keys(HP[pid]).sort(), `${pid}: hd.stand has a size for every HD frame`);
+    for (const [pose, wh] of Object.entries(e.poses)) {
+      assert.deepStrictEqual(wh, HP[pid][pose]['1'].slice(0, 2), `${pid} ${pose}: hd.stand's size is the s 1 frame's`);
+      assert.ok(e.feet[pose] > 0.9 && e.feet[pose] <= 1 && e.top[pose] >= 0 && e.top[pose] < 0.2 && e.foot[pose] > 0.2 && e.foot[pose] < 0.8, `${pid} ${pose}: feet, top and foot are measured shares`);
+    }
+  }
+  /* review of #2106: hd.stand's `top` and `feet` are the pixels' (the generator that measured them is gone): the first opaque row and the row under the last one of each s 1 frame, as shares of
+     its height, to 4 places. Needs Pillow (as the frame checks below): skipped with a message, a failure where DURBAR_REQUIRE_PILLOW is set. */
+  const standRowsProblems = (stand: typeof HS, rows: Record<string, [number, number]>): string[] => Object.entries(stand).flatMap(([pid, e]) => Object.keys(e.poses).flatMap((pose) => {
+    const r = rows[`${pid}-${pose}`], want = r ? [Math.round(r[0] * 1e4) / 1e4, Math.round(r[1] * 1e4) / 1e4] : null;
+    return !want ? [`${pid} ${pose}: no s 1 frame measured`] : want[0] !== e.top[pose] || want[1] !== e.feet[pose] ? [`${pid} ${pose}: hd.stand top/feet ${e.top[pose]}/${e.feet[pose]}, the pixels ${want[0]}/${want[1]}`] : [];
+  }));
+  const pil = spawnSync('python3', ['-I', '-c', 'import PIL'], { encoding: 'utf8' });
+  if (pil.error || pil.status !== 0) {
+    if (process.env.DURBAR_REQUIRE_PILLOW) assert.fail('python3 with Pillow is required here (DURBAR_REQUIRE_PILLOW) and is missing: hd.stand cannot be tied to the pixels');
+    console.log('hd.stand pixel check skipped: needs python3 with Pillow (not on this machine)');
+  } else {
+    const hdd = path.join(RO, 'sets', 'retro', 'hd'), files = Object.entries(HS).flatMap(([pid, e]) => Object.keys(e.poses).map((pose) => path.join(hdd, `${pid}-${pose}@1.webp`)));
+    const py = 'import sys, json\nfrom PIL import Image\nfor f in sys.argv[1:]:\n  im = Image.open(f).convert("RGBA"); b = im.getchannel("A").getbbox()\n  print(json.dumps([f, b[1] / im.height, b[3] / im.height]))';
+    const r = spawnSync('python3', ['-I', '-c', py, ...files], { encoding: 'utf8', maxBuffer: 4 * 1024 * 1024 });
+    assert.strictEqual(r.status, 0, 'measuring the s 1 frames: ' + r.stderr);
+    const rows: Record<string, [number, number]> = {};
+    for (const l of r.stdout.trim().split('\n')) { const [f, t, b] = JSON.parse(l) as [string, number, number]; rows[path.basename(f).replace(/@1\.webp$/, '')] = [t, b]; }
+    assert.strictEqual(Object.keys(rows).length, 210, 'the 210 s 1 frames measured');
+    assert.deepStrictEqual(standRowsProblems(HS, rows), [], 'hd.stand top and feet are the s 1 frames\' opaque rows');
+    const off = JSON.parse(JSON.stringify(HS)) as typeof HS; off.p03.top.knock += 1 / 72;
+    assert.ok(standRowsProblems(off, rows).some((x) => /^p03 knock: hd\.stand top\/feet/.test(x)), 'red: a frame\'s top one pixel off is caught');
+  }
+  assert.strictEqual(sj.hd.placeW, 46, 'hd.placeW keeps the arcade place width the owner approved (46 grid px; from the HD frames alone it would be 40)');
+  const heights = Object.entries(HP).map(([pid, f]) => { const v = f['face-book']['1']; assert.ok(v[5] > 8, `${pid}: the s 1 face-book face box`); return v[5]; });
+  assert.ok(Math.min(...heights) >= FACE_GRID, `the smallest HD face at s 1 (${Math.min(...heights)} px of the 72 px figure) is at least the layout's FACE_GRID (${FACE_GRID}): the layout never promises more than the art has`);
   assert.ok(Math.min(...heights) * 2 >= FACE_FLOOR, 'at g = 2 the smallest face is at least the 24 px floor (FR-229)');
   /* spec 102 FR-352 (T206): the first-run picture is in the pack, named by world.json, lossless, in the part's size and cap, and is the hall (not a blank) */
   const wel = w.files.get('welcome.webp') as Buffer, welInfo = webpInfo(wel);
@@ -439,7 +471,7 @@ if (worldIds.includes('retro')) {
   const mini = JSON.stringify({ pixelArt: true, seat: {}, stand: { p01: { figH: 72, poses: { book: [32, 71] }, feet: { book: 1 }, top: { book: 0 } } }, fixtures: {}, floorLine: 48, fixtureTop: {} });
   const sec = `### stand-p01\n- files: p01-book.webp\n- source: s\n- tool: t\n- date: 2026-11-01\n- made by: m\n- approved by: Vikram, 2026-11-01\n- reference: none\n- prompt: a person\n- cut: c\n- licence: MIT\n- fictional: This person is fictional and must not resemble any real or famous person; no real person, celebrity, brand, logo or franchise is named.\n- likeness-check: Vikram, 2026-11-01\n\n## Removed\n\nNone.\n`;
   const rel = (p: string[]): string[] => p.filter((x) => !/desk.webp|floor.webp/.test(x));
-  const lossless = st.files.get('p01-face-book.webp') as Buffer, lossy = fs.readFileSync(path.join(RO, 'sets', 'office', 'p01-book.webp'));
+  const lossless = fs.readFileSync(path.join(RO, 'sets', 'retro', 'hd', 'p01-face-book@1.webp')), /* T502: a lossless pixel frame of the set */ lossy = fs.readFileSync(path.join(RO, 'sets', 'office', 'p01-book.webp'));
   assert.deepStrictEqual(rel(problems(new Map([['p01-book.webp', lossless]]), mini, sec)), [], 'a lossless pixel picture passes');
   assert.ok(rel(problems(new Map([['p01-book.webp', lossy]]), mini, sec)).some((x) => /must be lossless/.test(x)), 'red: a lossy picture in a pixel-art pack');
   assert.ok(rel(problems(new Map([['p01-book.webp', lossless]]), mini.replace('"p01":', '"p01":{"figH":72,"poses":{"book":[32,71],"coffee":[30,71]},"feet":{"book":1,"coffee":1},"top":{"book":0,"coffee":0}},"p02":'), sec)).some((x) => /not in the folder/.test(x)), 'red: a person missing a frame it names');
@@ -487,10 +519,15 @@ if (worldIds.includes('retro')) {
       return out;
     };
     const sets = fs.readdirSync(path.join(RO, 'sets')).filter((s) => fs.readdirSync(path.join(RO, 'sets', s)).some((f) => /^p\d\d-[A-Za-z-]+\.webp$/.test(f)));
-    assert.ok(sets.includes('retro') && sets.includes('office'), 'the frame check covers the Retro pixel and the Office people sets: ' + sets.join());
+    assert.ok(sets.includes('office') && !sets.includes('retro'), 'the frame check covers the Office people set; the Retro pixel set has no top-level frames since T502: ' + sets.join());
     for (const s of sets) assert.deepStrictEqual(frameProblems(hashOf(path.join(RO, 'sets', s))), [], `${s}: no frame is a reused or mirrored copy of another (FR-326)`);
-    const retro = path.join(RO, 'sets', 'retro'), tmp = fs.mkdtempSync(path.join(require('os').tmpdir(), 'durbar-frames-'));
+    /* spec 102 T502: the Retro pixel people's frames are the HD ones; their s 1 (72 px) frames, named as a frame of the set, go through the same check */
+    const tmp = fs.mkdtempSync(path.join(require('os').tmpdir(), 'durbar-frames-')), retro = path.join(tmp, 'retro-s1'), hdDir = path.join(RO, 'sets', 'retro', 'hd');
     try {
+      fs.mkdirSync(retro);
+      for (const f of fs.readdirSync(hdDir)) { const m = /^(p\d\d-[A-Za-z-]+)@1\.webp$/.exec(f); if (m) fs.copyFileSync(path.join(hdDir, f), path.join(retro, m[1] + '.webp')); }
+      assert.strictEqual(fs.readdirSync(retro).length, 15 * 14, 'the 210 s 1 HD frames of the Retro pixel set');
+      assert.deepStrictEqual(frameProblems(hashOf(retro)), [], 'retro: no HD frame is a reused or mirrored copy of another (FR-326)');
       const plant = (label: string, edit: (dir: string) => void, expect: RegExp): void => {
         const dir = path.join(tmp, label); fs.mkdirSync(dir);
         for (const f of fs.readdirSync(retro)) if (/^p\d\d-[A-Za-z-]+\.webp$/.test(f)) fs.copyFileSync(path.join(retro, f), path.join(dir, f));
@@ -552,7 +589,7 @@ if (worldIds.includes('retro')) {
 
 // ---- spec 102 FR-391..FR-398 (issue #2055): the HD person set (sets/retro/hd/, `set.json` `hd`): every frame named, its size, lossless, inside its place; one palette, no speckle, the budget ----
 {
-  const dir = path.join(RO, 'sets', 'retro', 'hd'), sj = JSON.parse(fs.readFileSync(path.join(RO, 'sets', 'retro', 'set.json'), 'utf8')) as { hd: { scales: number[]; people: Record<string, Record<string, Record<string, number[]>>>; tiles?: { sizes: number[]; poses: string[]; people: string[] }; ref?: Record<string, number[][]>; k?: Record<string, Record<string, number>> } };
+  const dir = path.join(RO, 'sets', 'retro', 'hd'), sj = JSON.parse(fs.readFileSync(path.join(RO, 'sets', 'retro', 'set.json'), 'utf8')) as { hd: { scales: number[]; people: Record<string, Record<string, Record<string, number[]>>>; tiles?: { sizes: number[]; poses: string[]; people: string[]; light?: string[] }; busts?: Record<string, { w: number; h: number; headTop: number; bodyH: number; hand: number }>; ref?: Record<string, number[][]>; k?: Record<string, Record<string, number>> } };
   /* FR-405: the six seated busts ship only as avatar tiles; the 14 standing and stool frames at four sizes (FR-406: s 1 for the lobby) */
   const POSES = ['type', 'book', 'knock', 'letter', 'counter', 'runA', 'runB', 'face-book', 'face-coffee', 'face-knock', 'face-letter', 'face-runA', 'face-runB', 'sit'];
   const SEAT = new Set<string>(), tallest = (p: string): number => (SEAT.has(p) ? 80 : p === 'sit' ? 72 : 72); /* grid px: a seated bust's canvas, a standing figure (FR-256) */
@@ -581,6 +618,22 @@ if (worldIds.includes('retro')) {
     const f = `${pid}-${pose}-t${S}.webp`, b = fs.readFileSync(path.join(dir, f)), info = webpInfo(b);
     tileNames.add(f); bytes += b.length;
     assert.deepStrictEqual([info.width, info.height, info.chunks.filter((c) => c !== 'VP8X').join()], [S, S, 'VP8L'], `${f}: ${S} x ${S}, lossless`);
+    if ((T.light || []).includes(pid)) { /* spec 102 T472 (FR-410): the light-surface variant of a lit-edge person, the same size */
+      const fl = `${pid}-${pose}-t${S}l.webp`, bl = fs.readFileSync(path.join(dir, fl)), il = webpInfo(bl);
+      tileNames.add(fl); bytes += bl.length;
+      assert.deepStrictEqual([il.width, il.height, il.chunks.filter((c) => c !== 'VP8X').join()], [S, S, 'VP8L'], `${fl}: ${S} x ${S}, lossless`);
+    }
+  }
+  /* spec 102 T472 (FR-409): the six seated busts of every person, one size (s 4), on one canvas per person, whose seat numbers set.json gives */
+  const BUSTS = ['typeA', 'typeB', 'think', 'waveA', 'waveB', 'rest'], bustNames = new Set<string>();
+  assert.deepStrictEqual(Object.keys(sj.hd.busts || {}).sort(), Object.keys(sj.hd.people).sort(), 'FR-409: every HD person has busts');
+  for (const [pid, b] of Object.entries(sj.hd.busts || {})) {
+    assert.ok(b.h === 320 && b.w > 0 && b.w <= 320 && b.headTop >= 0 && b.bodyH === b.h - b.headTop && b.hand > 0 && b.hand < 1, `FR-409: ${pid}: the bust canvas and its seat numbers`);
+    for (const pose of BUSTS) {
+      const f = `${pid}-${pose}@4.webp`, bf = fs.readFileSync(path.join(dir, f)), i = webpInfo(bf);
+      tileNames.add(f); bustNames.add(f); bytes += bf.length;
+      assert.deepStrictEqual([i.width, i.height, i.chunks.filter((c) => c !== 'VP8X').join()], [b.w, b.h, 'VP8L'], `${f}: the person's bust canvas, lossless`);
+    }
   }
   assert.deepStrictEqual(fs.readdirSync(dir).sort(), [...named, ...tileNames].sort(), 'hd/ holds exactly the frames and tiles set.json names');
   const amd = fs.readFileSync(path.join(RO, 'sets', 'retro', 'ASSETS.md'), 'utf8').replace(/\r\n/g, '\n');
@@ -603,7 +656,7 @@ if (worldIds.includes('retro')) {
     console.log('HD palette and speckle check skipped: needs python3 with Pillow (not on this machine)');
   } else {
     const tool = path.join(ROOT, 'scripts', 'check-arcade-hd.py');
-    type Row = { name: string; opaque: number; alphas: number[]; orphans: number; lone: number; edge: number; head: [number, number]; tile: [number, number | null] | null; top: number[][] | null };
+    type Row = { name: string; opaque: number; alphas: number[]; orphans: number; lone: number; edge: number; head: [number, number]; tile: [number, number | null] | null; bust: [number, number] | null; top: number[][] | null };
     const measure = (files: string[]): { rows: Row[]; palette: number; rgba: number } => {
       const r = spawnSync('python3', ['-I', tool, ...files], { encoding: 'utf8', maxBuffer: 16 * 1024 * 1024 });
       assert.strictEqual(r.status, 0, 'check-arcade-hd.py: ' + r.stderr);
@@ -618,7 +671,7 @@ if (worldIds.includes('retro')) {
       outline: (m: M): string[] => m.rows.filter((r) => r.edge !== 1).map((r) => `${r.name}: ${r.edge} outline colours`),
       speckle: (m: M): string[] => m.rows.filter((r) => r.orphans / r.opaque > (/@1\.webp$/.test(r.name) ? HD_ORPHAN_MAX_72 : HD_ORPHAN_MAX) || r.lone > 0) /* FR-406: at 72 px an eye or a button is one pixel, so the lobby's s 1 frames allow 12 % (the old 72 px frames: 29 % median, 52 % worst) */.map((r) => `${r.name}: ${r.orphans} orphans of ${r.opaque} (${((100 * r.orphans) / r.opaque).toFixed(2)} %), ${r.lone} lone`),
     };
-    const files = [...named].sort().map((f) => path.join(dir, f)), all = measure(files);
+    const files = [...named, ...bustNames].sort().map((f) => path.join(dir, f)), all = measure(files); /* T472: the busts follow the frames' rules too */
     for (const [rule, f] of Object.entries(crisp)) assert.deepStrictEqual(f(all), [], `FR-403: the ${rule} rule holds on every HD frame`);
     /* FR-405: the tiles share the palette and the alpha rule (their edge is a cut through the body, so the one-outline rule is for whole figures) */
     const tl = measure([...files, ...[...tileNames].sort().map((f) => path.join(dir, f))]);
@@ -656,6 +709,43 @@ if (worldIds.includes('retro')) {
       { /* FR-407 red case: the lit edge taken off every tile at 22 px: the darkest of them is no longer legible */
         const planted = T.people.flatMap((p) => T.poses.map((q) => { const f = path.join(tmp, `norim-${p}-${q}-t22.webp`); assert.strictEqual(spawnSync('python3', ['-I', tool, '--norim', path.join(dir, `${p}-${q}-t22.webp`), f], { encoding: 'utf8' }).status, 0, 'the planted tile (--norim) is written'); return f; }));
         assert.ok(legible(measure(planted).rows).length >= 1, 'red (--norim): without the lit edge the darkest person\'s avatar is not legible');
+      }
+      { /* T472 (coordinator's decision): a bust carries no rim; on both desk walls its edge reads at least HD_BUST_EDGE; red: the rim put back */
+        const busts = all.rows.filter((r) => r.bust);
+        assert.ok(busts.length === 90, `T472: 90 busts measured (${busts.length})`);
+        assert.deepStrictEqual(busts.filter((r) => r.bust![0] > 0).map((r) => `${r.name}: ${r.bust![0]} rim pixels`), [], 'T472: no bust carries the rim');
+        const lowest = Math.min(...busts.map((r) => r.bust![1]));
+        assert.ok(lowest >= HD_BUST_EDGE, `T472: every bust's edge at least ${HD_BUST_EDGE}:1 on the Photo office's and the cave's desk walls (lowest ${lowest}:1)`);
+        console.log(`HD busts: no rim, edge on the desk walls at least ${lowest}:1 (floor ${HD_BUST_EDGE})`);
+        const planted = path.join(tmp, 'p09-think@4.webp');
+        assert.strictEqual(spawnSync('python3', ['-I', tool, '--rim', path.join(dir, 'p09-think@4.webp'), planted], { encoding: 'utf8' }).status, 0, 'the planted bust (--rim) is written');
+        assert.ok(measure([planted]).rows[0].bust![0] > 0, 'red (--rim): a bust with the rim put back fails');
+      }
+      { /* T472 (FR-410, review of #2086): the variant crew.js picks (FR-407's measure on the avatar background, set.json hd.tiles.edge) meets 3:1 on every background the app ships
+           (each theme's --avatar-bg) and on mid-greys; red: the old lightness cut (relative luminance over 0.5) on a mid-grey */
+        const src = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'theme.js'), 'utf8') + fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'styles.css'), 'utf8');
+        const shipped = [...new Set([...src.matchAll(/--avatar-bg['"]?\s*[:,]\s*['"]?(#[0-9a-fA-F]{6})/g)].map((m) => m[1].toLowerCase()))];
+        assert.ok(shipped.length >= 5, `T472: the shipped avatar backgrounds are found (${shipped.join(' ')})`);
+        const MID = ['#808080', '#909090', '#a0a0a0', '#7a6f62', '#6b7a8f'];
+        const choose = (bgs: string[], cut: boolean): Record<string, { worst: [number, string]; fails: number; first: string[] }> => { const r = spawnSync('python3', ['-I', tool, '--tilechoice', path.join(RO, 'sets', 'retro', 'set.json'), dir, ...(cut ? ['--cut'] : []), ...bgs], { encoding: 'utf8', maxBuffer: 16 * 1024 * 1024 }); assert.strictEqual(r.status, 0, 'check-arcade-hd.py --tilechoice: ' + r.stderr); return JSON.parse(r.stdout.trim().split('\n').pop() as string); };
+        const got = choose([...shipped, ...MID], false);
+        assert.deepStrictEqual(Object.entries(got).filter(([, v]) => v.fails > 0).map(([bg, v]) => `${bg}: ${v.fails} tiles under 3:1 (${v.first.join(', ')})`), [], 'T472: on every shipped avatar background and the mid-greys the chosen tiles read at 3:1');
+        console.log(`HD tile choice: ${shipped.length} shipped backgrounds and ${MID.length} mid-tones, the lowest edge ${Math.min(...Object.values(got).map((v) => v.worst[0]))}:1`);
+        const cut = choose(['#808080'], true)['#808080']; console.log(`HD tile choice, red: the lightness cut on #808080 leaves ${cut.fails} tiles under 3:1`);
+        assert.ok(cut.fails > 0, 'red: the lightness cut gives a mid-grey background the lit-edge tiles, which do not read there');
+      }
+      { /* T472 (coordinator's look at F1): every frame's face box holds its whole head (hair, hood, a cap, a raised hand at head height), so FR-401's badge, which keeps clear of the face box, keeps clear of the head; red: the boxes cut 10 px lower */
+        const heads = (setPath: string): string[] => { const r = spawnSync('python3', ['-I', tool, '--heads', setPath, dir], { encoding: 'utf8', maxBuffer: 16 * 1024 * 1024 }); assert.strictEqual(r.status, 0, 'check-arcade-hd.py --heads: ' + r.stderr); return JSON.parse(r.stdout).heads; };
+        assert.deepStrictEqual(heads(path.join(RO, 'sets', 'retro', 'set.json')), [], 'T472: every HD frame\'s face box, and every bust\'s head box, holds its head');
+        const low = JSON.parse(fs.readFileSync(path.join(RO, 'sets', 'retro', 'set.json'), 'utf8'));
+        for (const poses of Object.values(low.hd.people) as Array<Record<string, Record<string, number[]>>>) for (const sc of Object.values(poses)) for (const v of Object.values(sc)) { v[3] += 10; v[5] = Math.max(1, v[5] - 10); }
+        for (const b of Object.values(low.hd.busts) as Array<{ head: Record<string, number[]> }>) for (const v of Object.values(b.head)) { v[1] += 10; v[3] = Math.max(1, v[3] - 10); }
+        fs.writeFileSync(path.join(tmp, 'low-set.json'), JSON.stringify(low));
+        assert.ok(heads(path.join(tmp, 'low-set.json')).length > 0, 'red: face boxes cut below the hair fail the head rule');
+      }
+      { /* T472 (FR-410) red case: a lit-edge tile drawn on a light surface: copied as its own light variant, the light backgrounds cannot read it */
+        const planted = (T.light || []).map((p) => { const f = path.join(tmp, `lit-${p}-typeA-t22l.webp`); fs.copyFileSync(path.join(dir, `${p}-typeA-t22.webp`), f); return f; });
+        assert.ok(planted.length > 0 && legible(measure(planted).rows).length >= 1, 'red (lit edge on a light surface): a lit-edge tile is not legible on Flat\'s light avatar background');
       }
       for (const [plant, rule] of [['--speckle', 'speckle'], ['--alpha', 'alpha'], ['--colour', 'palette'], ['--edge', 'outline']] as const) {
         const planted = path.join(tmp, `p08-type@4${plant}.webp`);

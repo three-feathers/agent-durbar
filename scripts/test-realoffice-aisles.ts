@@ -5,15 +5,18 @@ import * as crypto from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
 import { realLayout, layoutOrFlat, signMin, signWidth, sortDesks, storeyRuns, storeyTagW, STOREY_GAP, STOREY_U_LOSS, type RealFloor, type RealMeta, type RealModel, type RealAgent, type RealState, type Rect, type Layout, type DeskBox } from '../src/shared/realoffice-layout';
-import { screenFit, hdFrame, hdPick, type HdSet } from '../src/shared/realoffice-layout';
+import { screenFit, hdFrame, hdPick, seatsOf, standOf, lobbyBand, type HdSet } from '../src/shared/realoffice-layout';
 import { AISLE_SIGN_H, CUE_BOX, hdPlace, deviceScales, aisleStatus, aislesLayout, AISLES_DEPTH, placeResting, layoutFor, aisleTabOrder, aisleFace, FACE_FLOOR, AISLE_SIGN_MIN_W, AISLE_PLATE_H, ARRANGEMENTS } from '../src/shared/realoffice-arrangements';
 
 process.exitCode = 1;
 const ROOT = (() => { let d = __dirname; while (!fs.existsSync(path.join(d, 'package.json'))) d = path.dirname(d); return d; })();
 const RO = path.join(ROOT, 'src', 'renderer', 'realoffice');
-const readJson = (...p: string[]): Record<string, unknown> => JSON.parse(fs.readFileSync(path.join(RO, ...p), 'utf8'));
-const META = { ...readJson('worlds', 'retro', 'world.json'), ...readJson('sets', 'retro', 'set.json') } as unknown as RealMeta; // the arcade's own people: the place beside a cabinet is measured on them
-const PEOPLE = Object.keys(META.seat).sort();
+/* spec 102 T502: a set with an HD block carries it as the renderer hands it over (`metaOf`: `hdPeople`); the Retro pixel set has no `stand` or `seat` of its own any more */
+const readJson = (...p: string[]): Record<string, unknown> => { const j = JSON.parse(fs.readFileSync(path.join(RO, ...p), 'utf8')); if (p[0] === 'sets' && j.hd && !j.hdPeople) j.hdPeople = j.hd; return j; };
+const RS = readJson('sets', 'retro', 'set.json') as unknown as { hd: HdSet };
+/* the arcade's own people, as the renderer hands them over (`metaOf`: the set's `hd` block as `hdPeople`): since spec 102 T502 the set has no `stand` or `seat` of its own, its standing numbers are `hd.stand` */
+const META = { ...readJson('worlds', 'retro', 'world.json'), ...RS } as unknown as RealMeta;
+const PEOPLE = Object.keys(RS.hd.people).sort();
 const STATES: RealState[] = ['working', 'thinking', 'waiting', 'error', 'limit', 'done', 'idle', 'asleep'];
 function model(n: number, f: number, states: RealState[] = STATES, lounge = 0): RealModel {
   const folders = Array.from({ length: f }, (_, i) => ({ id: 'f' + i, agents: [] as RealAgent[] }));
@@ -284,7 +287,7 @@ assert.deepStrictEqual([aisleStatus('idle', false).cue, aisleStatus('asleep', fa
 {
   const L = aislesLayout(model(8, 1, ['asleep']), { w: 1440, h: 848 }, META);
   const people = L.zones.flatMap((z) => z.desks).map((d) => d.person).filter(Boolean) as { pose: string; file: string }[];
-  assert.ok(people.length > 0 && people.every((p) => p.pose === 'sit' && /-sit\.webp$/.test(p.file)), 'asleep sits: ' + people.map((p) => p.pose).join(','));
+  assert.ok(people.length > 0 && people.every((p) => p.pose === 'sit' && /-sit(@[1-4])?\.webp$/.test(p.file)), 'asleep sits: ' + people.map((p) => p.pose).join(','));
 }
 
 // ---- owner, 2026-11-03: the lobby is no smaller at 1280x800 than at 1440x900 (the notice strip shown or not), so its people are the same size
@@ -534,7 +537,61 @@ console.log(`floor covered with 4 or fewer: ${covs.join('; ')}`);
   for (const [W, H] of [[1440, 848], [1280, 748]]) for (const n of [4, 12, 15]) h.update(JSON.stringify(aislesLayout(model(n, 4, STATES, n > 4 ? 3 : 0), { w: W, h: H }, META, SIGNS(4))));
   const got = h.digest('hex');
   console.log(`arcade, Retro pixel people layout hash ${got}`);
-  assert.strictEqual(got, '7c469f199d1ea68917bf09721a2bf96362a5b18a6a40c91d6cada1e5c3cf2349', 'the Retro pixel set lays out differently than before the crews were wired');
+  /* re-pinned by spec 102 T502 (2026-11-24): the set's old pictures and their numbers are gone, so META carries the HD set as the renderer hands it over (`hdPeople`); the hash is now
+     that of the arcade as shipped since the flip (T472). Old (the switch-off hall of the old pictures): 7c469f199d1ea68917bf09721a2bf96362a5b18a6a40c91d6cada1e5c3cf2349 */
+  assert.strictEqual(got, '96499daf120667dfbddcd5ad7d04fc2110c903f9ec75103e637ad82203361963', 'the Retro pixel set lays out differently than before the crews were wired');
+}
+
+/* spec 102 T502 (review of #2106): the arcade does not move. A digest per hall, from the shipped data, for a sample: 1, 3, 8 and 15 agents (every state, two in the lounge from 8, three
+   lobby visitors), the measured rooms and the 1408/1248 floors, ratio 1 and 2. The digests were taken on the T502 data, which drew the same 1792 halls as the set before T502 (the one-off
+   comparison in the spec delta of 2026-11-24); a moved hall is named here. AISLES_DIGESTS=print prints the list to re-take on purpose. */
+{
+  const hallOf = (n: number, W: number, H: number, dpr: number): Layout => {
+    const m = model(n, Math.min(4, n), STATES, n >= 8 ? 2 : 0);
+    m.places[0].visitors.push({ id: 'v0', person: PEOPLE[3], needsYou: false } as never); m.places[2].visitors.push({ id: 'v1', person: PEOPLE[8], needsYou: true } as never); m.places[6].visitors.push({ id: 'v2', person: PEOPLE[12], needsYou: false } as never);
+    return aislesLayout(m, { w: W, h: H }, { ...META, dpr }, SIGNS(Math.min(4, n)));
+  };
+  const got: Record<string, string> = {};
+  for (const n of [1, 3, 8, 15]) for (const [W, H] of [[1440, ROOM.h900], [1280, ROOM.h800], [1408, ROOM.h900], [1248, ROOM.h800]]) for (const dpr of [1, 2]) got[`${n}@${W}x${H}r${dpr}`] = crypto.createHash('sha256').update(JSON.stringify(hallOf(n, W, H, dpr))).digest('hex').slice(0, 16);
+  if (process.env.AISLES_DIGESTS === 'print') console.log(JSON.stringify(got, null, 1));
+  const PINNED: Record<string, string> = {
+    '1@1440x797r1': '78f5ef2cd9161cbb',
+    '1@1440x797r2': '026df6d711f75d47',
+    '1@1280x697r1': 'f9d23c4b0bd83a0c',
+    '1@1280x697r2': 'e1f4a4e983245caf',
+    '1@1408x797r1': 'e9fd99d3cb6d6030',
+    '1@1408x797r2': 'ec0116d6e86035b7',
+    '1@1248x697r1': '58c6dedea33dcc59',
+    '1@1248x697r2': 'aa47139105eb5e8d',
+    '3@1440x797r1': 'de510c665ecc1214',
+    '3@1440x797r2': '49f7d543a778aad8',
+    '3@1280x697r1': 'f70eda27ca183831',
+    '3@1280x697r2': 'df3fca203e40bd75',
+    '3@1408x797r1': '6c6024410198d4d9',
+    '3@1408x797r2': 'fd2c42e46e03615c',
+    '3@1248x697r1': 'b829c458e281ea1d',
+    '3@1248x697r2': 'd72b36b8d2327d40',
+    '8@1440x797r1': 'd4f261eeed07b34b',
+    '8@1440x797r2': '99f1588b5954c160',
+    '8@1280x697r1': 'bc02f5b7abc9a202',
+    '8@1280x697r2': 'b95cbf34cfd638af',
+    '8@1408x797r1': '0ce987323d78cb3d',
+    '8@1408x797r2': '72da281e9e14a1e2',
+    '8@1248x697r1': '8bb879141b9caa09',
+    '8@1248x697r2': 'db4672a9683dc1b0',
+    '15@1440x797r1': 'fb82d782860eebf8',
+    '15@1440x797r2': 'e2321ed3910b4d82',
+    '15@1280x697r1': '7486e344ed02497d',
+    '15@1280x697r2': '1de1172d39f33431',
+    '15@1408x797r1': 'ceffb3ec4fbd9480',
+    '15@1408x797r2': 'e6e09504c7884e2e',
+    '15@1248x697r1': '39581647f348c005',
+    '15@1248x697r2': 'da8b22d657ac2413',
+  };
+  const moved = Object.keys(got).filter((k) => got[k] !== PINNED[k]);
+  assert.strictEqual(Object.keys(PINNED).length, 32, 'the 32 pinned halls');
+  assert.deepStrictEqual(moved, [], `the arcade moved in ${moved.length} of 32 halls: ${moved.join(', ')}`);
+  console.log('arcade halls: 32 of 32 digests unchanged');
 }
 
 /* spec 097 FR-335, T247: the width cap, checked directly (the cut check above has about 6 grid px of slack). For a set that is not pixel art, the widest frame a person can show at a cabinet,
@@ -903,7 +960,7 @@ console.log(`floor covered with 4 or fewer: ${covs.join('; ')}`);
 // no row more, no scroll, no helper strip lost, the unit u at most STOREY_U_LOSS smaller; otherwise the floors share rows and an upright rule and the tag mark each storey. Measured on 15 agents at both sizes.
 for (const world of ['photo', 'cave']) {
   const WM = { ...readJson('worlds', world, 'world.json'), ...readJson('sets', world === 'cave' ? 'retro' : 'office', 'set.json') } as unknown as RealMeta;
-  const WP = Object.keys(WM.seat).sort();
+  const WP = Object.keys(seatsOf(WM)).sort();
   const FLS: RealFloor[] = [{ id: 'g', name: 'Ground floor', n: 1 }, { id: 'c', name: 'Client A', n: 2 }, { id: 'p', name: 'Personal', n: 3 }, { id: 'd', name: 'Fourth', n: 4 }];
   /* states: working only, or a mix with people waiting at their desks (raised hand) and thinking (dots); helpers: every agent has one */
   const MIX: RealState[] = ['working', 'waiting', 'thinking', 'working', 'limit', 'working', 'thinking', 'waiting'];
@@ -1129,7 +1186,9 @@ for (const world of ['photo', 'cave']) {
       assert.ok(g >= (L1.g as number) - 1e-9, `${label}: g ${g} never below ${L1.g}, the layout without a ratio`);
       if (TABLE[d + ' ' + FLN[i]]) assert.ok(Math.abs(g - TABLE[d + ' ' + FLN[i]][n - 1]) < 1e-9, `${label}: g ${g}, measured ${TABLE[d + ' ' + FLN[i]][n - 1]}`);
       if (!wholeDev(g, d)) unevenNow.push(n);
-      if (d === 1 || d === 2) assert.strictEqual(JSON.stringify(L), JSON.stringify(L1), `${label}: byte-identical to the layout without a ratio`);
+      /* spec 102 T502 (re-pinned): the HD people pick their file per ratio (FR-392), so the hall without its people is byte-identical; before T502 the old pictures made the whole layout identical */
+      const hall = (x: unknown): string => JSON.stringify(x, (k, v) => (k === 'person' || k === 'cue' ? undefined : v));
+      if (d === 1 || d === 2) assert.strictEqual(hall(L), hall(L1), `${label}: byte-identical to the layout without a ratio (the people aside: their HD file is chosen per ratio, FR-392)`);
       const p = problems(L, W, n, wholeDev(g, d) ? d : 1); assert.deepStrictEqual(p, [], `${label}: ${p.join('; ')}`);
       if (wholeDev(g, d) && d !== 1 && d !== 2) for (const dk of L.zones.flatMap((z) => z.desks)) { /* #1884 review: the person and the face are centred in whole device px too */
         for (const [nm, v] of [['person x', dk.person?.x], ['person vis x', dk.person?.vis?.x], ['face x', dk.face?.x]] as [string, number | undefined][]) if (v !== undefined) assert.ok(wholeDev(v, d), `${label}: ${nm} ${v} of ${dk.id} on a whole device px`);
@@ -1169,22 +1228,17 @@ for (const world of ['photo', 'cave']) {
 {
   const HD = (META as unknown as { hd?: HdSet }).hd;
   assert.ok(HD && Object.keys(HD.people).length >= 3, 'set.json carries the HD set (the pilot: p08, p12, p04)');
-  const bare = { ...META } as Record<string, unknown>; delete bare.hd;
   const cases2: Array<[number, number, number, number]> = [[3, 1440, ROOM.h900, 1], [3, 1280, ROOM.h800, 1], [15, 1440, ROOM.h900, 1], [15, 1280, ROOM.h800, 1], [3, 1440, ROOM.h900, 2], [3, 1440, ROOM.h900, 1.25], [15, 1280, ROOM.h800, 1.5]];
   const pick = (n: number): RealModel => { const m = model(n, n > 4 ? 4 : 1); const ps = ['p08', 'p12', 'p04']; m.folders.flatMap((f) => f.agents).forEach((a, i) => { a.away = null; if (i < 3) a.person = ps[i]; }); return m; };
   let hdDrawn = 0;
   for (const [n, W, H, dpr] of cases2) {
-    const off = aislesLayout(pick(n), { w: W, h: H }, { ...META, dpr }, SIGNS(4)), tag = `${n} agents at ${W}x${H}, ratio ${dpr}`;
-    assert.strictEqual(JSON.stringify(off), JSON.stringify(aislesLayout(pick(n), { w: W, h: H }, { ...bare, dpr } as unknown as RealMeta, SIGNS(4))), `${tag}: off, the set's hd block changes nothing`);
-    assert.ok(off.zones.flatMap((z) => z.desks).every((d) => !d.person || !d.person.file.startsWith('hd/')), `${tag}: off, only the old frames`);
+    const tag = `${n} agents at ${W}x${H}, ratio ${dpr}`; /* spec 102 T502: no switch-off hall any more (the old pictures and their numbers are gone): the pinned hash holds the plan */
     const on = aislesLayout(pick(n), { w: W, h: H }, { ...META, dpr, hdPeople: HD }, SIGNS(4)), g = on.g as number;
     assert.deepStrictEqual(problems(on, W, n, dpr), [], `${tag}: on, the hall has no problem`);
-    assert.deepStrictEqual([on.g, on.height, on.zones.map((z) => z.box)], [off.g, off.height, off.zones.map((z) => z.box)], `${tag}: on, the same plan`);
-    const od = new Map(off.zones.flatMap((z) => z.desks).map((d) => [d.id, d] as const));
     for (const d of on.zones.flatMap((z) => z.desks)) {
       if (!d.person) continue;
-      const p = d.person, o = od.get(d.id)!.person, hf = hdFrame(HD, p.pid, p.pose, g, dpr);
-      if (!hf) { assert.deepStrictEqual(p, o, `${tag}: ${d.id} without an HD frame is unchanged`); continue; }
+      const p = d.person, hf = hdFrame(HD, p.pid, p.pose, g, dpr);
+      assert.ok(hf, `${tag}: ${d.id} has its HD frame (FR-406: no other picture exists)`); if (!hf) continue;
       hdDrawn++;
       assert.strictEqual(p.file, hf.file, `${tag}: ${d.id} draws its HD frame`);
       for (const v of [p.x, p.y, p.w, p.h]) assert.ok(Math.abs(v * dpr - Math.round(v * dpr)) < 1e-6, `${tag}: ${d.id} on whole device px (${v})`);
@@ -1228,10 +1282,24 @@ for (const world of ['photo', 'cave']) {
     const r = hdPick(dev, [4, 3, 2, 1]);
     assert.deepStrictEqual(r ? [r.s, r.n] : [0, 0], [s, n], `hdPick(${dev}) with s 1: s ${s}, n ${n}`);
   }
-  /* a frame wider than the place falls back to the old frame (never cut, FR-392) */
-  const wide = { scales: [4, 3, 2], people: { p08: Object.fromEntries(['type', 'book', 'knock', 'face-knock', 'face-coffee', 'face-book', 'sit'].map((q) => [q, { 4: [400, 288, 0, 0, 40, 40], 3: [300, 216, 0, 0, 30, 30], 2: [200, 144, 0, 0, 20, 20] }])) } } as unknown as HdSet;
+  /* a frame wider than the place is never drawn (never cut, FR-392); since spec 102 T502 there is no old frame to fall back on: the person shows no picture (the initials), the plan unchanged */
+  const wide = { ...HD, people: { ...HD.people, p08: Object.fromEntries(['type', 'book', 'knock', 'face-knock', 'face-coffee', 'face-book', 'sit'].map((q) => [q, { 4: [400, 288, 0, 0, 40, 40], 3: [300, 216, 0, 0, 30, 30], 2: [200, 144, 0, 0, 20, 20] }])) } } as unknown as HdSet; /* p08's frames too wide for any place, the others real */
   const w3 = aislesLayout(pick(3), { w: 1440, h: ROOM.h900 }, { ...META, hdPeople: wide }, SIGNS(4)), o3 = aislesLayout(pick(3), { w: 1440, h: ROOM.h900 }, META, SIGNS(4));
-  assert.strictEqual(JSON.stringify(w3), JSON.stringify(o3), 'an HD frame wider than its place is not drawn: the old frame stays');
+  const p08 = (L: Layout): DeskBox | undefined => L.zones.flatMap((z) => z.desks).find((d) => d.person ? d.person.pid === 'p08' : false) || L.zones.flatMap((z) => z.desks).find((d) => !d.person);
+  assert.ok(w3.g === o3.g && w3.height === o3.height && !w3.zones.flatMap((z) => z.desks).some((d) => d.person && d.person.pid === 'p08') && w3.zones.flatMap((z) => z.desks).filter((d) => d.person).length === 2 && w3.zones.flatMap((z) => z.desks).every((d) => !d.person || d.person.file.startsWith('hd/')) && !!p08(o3),
+    'an HD frame wider than its place is not drawn and no old file is named: the person shows no picture, the plan is the same');
+  /* spec 102 T502: the same at a lounge stool and for a lobby visitor: an HD person whose frame cannot be drawn shows no picture, never an old file name (none exists) */
+  {
+    const lm = pick(3); lm.folders[0].agents.forEach((a, i) => { a.person = 'p08'; if (i > 0) { a.lounge = true; a.state = 'asleep'; } });
+    const lw = aislesLayout(lm, { w: 1440, h: ROOM.h900 }, { ...META, hdPeople: wide }, SIGNS(4)), lr = aislesLayout(lm, { w: 1440, h: ROOM.h900 }, META, SIGNS(4));
+    const seatsW = lw.lounge ? lw.lounge.desks : [], seatsR = lr.lounge ? lr.lounge.desks : [];
+    assert.ok(seatsR.length > 0 && seatsR.every((d) => !!d.person && d.person.file.startsWith('hd/')) && seatsW.length === seatsR.length && seatsW.every((d) => !d.person),
+      `a lounge stool whose HD frame is too wide shows no picture and names no old file (${seatsW.map((d) => (d.person ? d.person.file : '-')).join()})`);
+    const band = (hd: HdSet) => lobbyBand({ ...META, hdPeople: hd, dpr: 1 } as RealMeta, [{ id: Object.keys(META.fixtures || {})[0], visitors: [{ id: 'v0', person: 'p08', needsYou: false }] }] as never, 1408, 170).fixtures.flatMap((f) => f.visitors);
+    const noP08 = { ...HD, people: Object.fromEntries(Object.entries(HD.people).filter(([pid]) => pid !== 'p08')) } as HdSet, vOk = band(HD), vGone = band(noP08);
+    assert.ok(vOk.length === 1 && !!vOk[0].fig && vOk[0].fig.file.startsWith('hd/'), 'a lobby visitor draws its HD frame');
+    assert.ok(vGone.length === 1 && !vGone[0].fig && !!vGone[0].chip, 'a lobby visitor without an HD frame shows no picture (its name chip stays) and names no old file');
+  }
   /* FR-401 (review of #2056): the status badge never covers an HD face. At a cabinet, every state x the pilot people x both sides at g 4, 3 and 2; then every one of the 20 frames
      of each pilot person at each scale, both ways round, in a real place of that scale. The badge (CUE_BOX, centred on cue.x) is clear of the face, inside the place, under the sign strip */
   const badge = (c: { x: number; y: number }): Rect => ({ x: c.x - CUE_BOX.w / 2, y: c.y, w: CUE_BOX.w, h: CUE_BOX.h });
@@ -1271,7 +1339,7 @@ for (const world of ['photo', 'cave']) {
   }
   assert.ok(badges >= 300, `the badge was checked (${badges})`);
   assert.ok(above >= 10, `FR-401: the badge stands above the head where the floor is free (${above} of the hall's badges)`);
-  console.log(`arcade HD people: ${hdDrawn} HD frames placed, off = unchanged in ${cases2.length} halls, ${badges} badges clear of the face, ${above} above the head`);
+  console.log(`arcade HD people: ${hdDrawn} HD frames placed, ${badges} badges clear of the face, ${above} above the head`);
 }
 
 console.log(`aisles tests passed (${cases} layouts)`);

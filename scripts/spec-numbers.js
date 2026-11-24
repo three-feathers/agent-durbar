@@ -27,7 +27,17 @@
  * of secret-looking variables; plus src/shared/redact.ts when the build is there) before it is shown, and only the first line of a failure
  * is printed. Everything from a PR (paths) goes through scripts/safe-print.js (no `::` or `##[` workflow command, no newline).
  *
- *   node scripts/spec-numbers.js [--no-fetch] [--exclude N] [--head SHA] [--root D]     --no-fetch: use the refs already there (refs/remotes/pr/*)
+ * The list is chosen by the arguments, not by package.json: with NO head given (no `--head`, no PR_HEAD_SHA: the local `npm run specs:numbers`) it is the
+ * wide list; with `--head` or PR_HEAD_SHA set (the CI call: `--root pr` and PR_HEAD_SHA, PR_NUMBER in the environment) it is the open PR heads only. `--wide`
+ * forces the wide list and `--narrow` the open PR list, with or without a head; both together is exit 2. (A machine that has PR_HEAD_SHA set gets the
+ * open PR list unless it passes `--wide`.) With GITHUB_ACTIONS or CI set and no head, no --wide and no --narrow the run is exit 2 (a CI job that forgot its head).
+ * Wide (spec 021 FR-085 delta 2026-11-23): besides the open PR heads, also the remote branches that have no open PR
+ * (`git ls-remote --heads origin`, names as argv, never in a shell string) and the branches checked out in this machine's worktrees
+ * (`git worktree list --porcelain`). A head whose PR is closed and not merged, at that very tip, is skipped and printed as a NOTE (read with
+ * `gh pr list --head=<name> --state all --json headRefOid,mergedAt,state,isCrossRepository`: head ref names, shas and merged state, never a title), asked only for a
+ * branch that would clash. Not read = exit 2.
+ *
+ *   node scripts/spec-numbers.js [--wide | --narrow] [--no-fetch] [--exclude N] [--head SHA] [--root D]     --no-fetch: use the refs already there (refs/remotes/pr/*, refs/remotes/origin/*)
  */
 'use strict';
 const fs = require('fs');
@@ -124,15 +134,27 @@ function builtRedact() {
   }
   return redactTs;
 }
+// GitHub's default environment variables that are paths, names, numbers, URLs or flags, never secrets (docs.github.com, Actions > Reference > Variables,
+// "Default environment variables", read 2026-11-24, which says none of them holds a token). Their NAMES start with GITHUB_ like GITHUB_TOKEN's, so SECRET_NAME matches them:
+// in Actions GITHUB_REF_TYPE is `branch`, and masking its value turned the word "branch" into *** in every message. Exempt by name, nothing else: GITHUB_TOKEN is NOT here.
+const PUBLIC_CONTEXT_NAMES = ['GITHUB_ACTION', 'GITHUB_ACTION_PATH', 'GITHUB_ACTION_REPOSITORY', 'GITHUB_ACTIONS', 'GITHUB_ACTOR', 'GITHUB_ACTOR_ID', 'GITHUB_API_URL', 'GITHUB_ARTIFACTS', 'GITHUB_ARTIFACTS_LIST',
+  'GITHUB_BASE_REF', 'GITHUB_ENV', 'GITHUB_EVENT_NAME', 'GITHUB_EVENT_PATH', 'GITHUB_GRAPHQL_URL', 'GITHUB_HEAD_REF', 'GITHUB_JOB', 'GITHUB_OUTPUT', 'GITHUB_PATH', 'GITHUB_REF', 'GITHUB_REF_NAME', 'GITHUB_REF_PROTECTED',
+  'GITHUB_REF_TYPE', 'GITHUB_REPOSITORY', 'GITHUB_REPOSITORY_ID', 'GITHUB_REPOSITORY_OWNER', 'GITHUB_REPOSITORY_OWNER_ID', 'GITHUB_RETENTION_DAYS', 'GITHUB_RUN_ATTEMPT', 'GITHUB_RUN_ID', 'GITHUB_RUN_NUMBER',
+  'GITHUB_SERVER_URL', 'GITHUB_SHA', 'GITHUB_STEP_SUMMARY', 'GITHUB_TRIGGERING_ACTOR', 'GITHUB_WORKFLOW', 'GITHUB_WORKFLOW_REF', 'GITHUB_WORKFLOW_SHA', 'GITHUB_WORKSPACE'];
+const PUBLIC_CONTEXT = new Set(PUBLIC_CONTEXT_NAMES);
 function scrub(text, env = process.env, { useBuilt = true } = {}) {
   let s = String(text);
-  for (const [k, v] of Object.entries(env)) if (v && v.length >= 6 && SECRET_NAME.test(k)) s = s.split(v).join('***');
+  for (const [k, v] of Object.entries(env)) if (v && v.length >= 6 && SECRET_NAME.test(k) && !PUBLIC_CONTEXT.has(k)) s = s.split(v).join('***');
   s = s.replace(/(\w+:\/\/)[^/@\s]+@/g, '$1***@');
   for (const re of TOKEN_SHAPES) s = s.replace(re, (m, g1) => (/^(Bearer|Basic)$/i.test(g1 || '') ? `${g1} ***` : '***'));
   const red = useBuilt && builtRedact();
-  if (red) { try { s = red(s, env); } catch { /* the floor above already ran */ } }
+  // src/shared/redact.ts masks env values by name and by length itself (a 20+ character value without a blank, such as a workspace path): GitHub's default context variables are taken out of the env it gets,
+  // or the built run (CI's `npm test`) masks a repository slug or a path that the run above left alone
+  if (red) { try { s = red(s, Object.fromEntries(Object.entries(env).filter(([k]) => !PUBLIC_CONTEXT.has(k)))); } catch { /* the floor above already ran */ } }
   return s;
 }
+/** Text from git or gh (a branch name, a path, an error line) for output: the token scrub, then safe-print. */
+const safe = (t) => printable(scrub(String(t)));
 const firstLine = (e) => printable(scrub(String((e && (e.stderr || e.message)) || e).trim().split('\n')[0]).slice(0, 300));
 
 // ---------- git ----------
@@ -191,12 +213,38 @@ function checkDuplicates(found, baselineText) {
 const baselineOf = (found) => `# Spec numbers defined more than once in one file, as they were when scripts/spec-numbers.js --dups was added (issue #1553).\n# file id count. A new duplicate fails; fixing one means lowering or removing its line (--write-baseline). Never raise a count.\n${[...found].sort((a, b) => a.file.localeCompare(b.file) || a.id.localeCompare(b.id, undefined, { numeric: true })).map((f) => `${f.file} ${f.id} ${f.lines.length}`).join('\n')}\n`;
 
 
+/** The text of several files at several revisions in ONE git call (`git cat-file --batch`; one process per file was 1,000 calls on a 90-branch run).
+ * pairs: [{ rev, file }] -> [text]; a file missing at that revision is ''; any other failure THROWS, as `show` does. A path with a line break goes through `show`. */
+function showMany(root, pairs) {
+  const ok = pairs.map((p) => !/[\r\n]/.test(p.file) && !/[\r\n]/.test(p.rev));
+  const out = pairs.map(() => '');
+  const idx = pairs.map((_, i) => i).filter((i) => ok[i]);
+  if (idx.length) {
+    const buf = run(root, 'git', ['cat-file', '--batch'], { input: idx.map((i) => `${pairs[i].rev}:${pairs[i].file}\n`).join(''), encoding: null, stdio: ['pipe', 'pipe', 'pipe'] });
+    let pos = 0;
+    for (const i of idx) {
+      const nl = buf.indexOf(10, pos);
+      if (nl < 0) throw new Error('git cat-file gave a short answer');
+      const header = buf.toString('utf8', pos, nl);
+      pos = nl + 1;
+      if (/ missing$/.test(header)) continue;
+      const m = header.match(/^[0-9a-f]{40,64} (\w+) (\d+)$/);
+      if (!m || m[1] !== 'blob') throw new Error('git cat-file gave an unexpected header');
+      const size = Number(m[2]);
+      out[i] = buf.toString('utf8', pos, pos + size);
+      pos += size + 1;
+    }
+  }
+  pairs.forEach((p, i) => { if (!ok[i]) out[i] = show(root, p.rev, p.file); });
+  return out;
+}
 function addsOf(root, base, head, files) {
   const m = new Map();
-  for (const f of files) {
-    const a = added(definitionsAt(root, base, f), definitionsAt(root, head, f));
+  const texts = showMany(root, files.flatMap((f) => [{ rev: base, file: f }, { rev: head, file: f }]));
+  files.forEach((f, i) => {
+    const a = added(parseDefinitions(texts[2 * i], kindOf(f)), parseDefinitions(texts[2 * i + 1], kindOf(f)));
     if (a.size) m.set(f, a);
-  }
+  });
   return m;
 }
 
@@ -252,7 +300,8 @@ function collect(root, heads, headRev = 'HEAD', self = null) {
     const pbase = gitq(root, ['merge-base', h.sha, inStack ? headRev : 'origin/main']);
     if (!pbase) { noBase.push(h.label); continue; }
     // that head's OWN spec files, not only this branch's (issue #1935: a number taken in another spec is the same clash)
-    prs.push({ label: h.label, adds: addsOf(root, pbase, h.sha, [...new Set([...files, ...specFilesChanged(root, pbase, h.sha)])]) });
+    // only a file the head changed can hold an addition (the same text at both ends adds nothing), so the branch's own files are not read again for every head
+    prs.push({ label: h.label, adds: addsOf(root, pbase, h.sha, specFilesChanged(root, pbase, h.sha)) });
   }
   const fresh = new Set();
   for (const f of new Set([...files, ...prs.flatMap((p) => [...p.adds.keys()])])) if (show(root, 'origin/main', f) === '') fresh.add(f);
@@ -323,13 +372,82 @@ function headsFromRefs(root) {
   return out.split('\n').filter(Boolean).map((l) => { const [n, sha] = l.split(' '); return { label: `PR #${n}`, sha, number: n }; });
 }
 
-function report({ branchAdds, prs, skipped, noBase = [], base }, clashes) {
+// ---------- the wide list: branches without an open PR, and worktrees (spec 021 FR-085 delta 2026-11-23) ----------
+const QUEUE_PREFIX = 'gh-readonly-queue/';
+/** [{ name, sha }] of the heads on the remote, live. Throws when it cannot be read (exit 2, never an empty list that reads as "nothing there"). */
+function liveRemoteHeads(root, runCmd = run) {
+  const out = runCmd(root, 'git', ['ls-remote', '--heads', 'origin']);
+  const heads = out.split('\n').filter(Boolean).map((l) => { const m = l.match(/^([0-9a-f]{40})\trefs\/heads\/(.+)$/); if (!m) throw new Error('git ls-remote gave a line that is not a head'); return { sha: m[1], name: m[2] }; });
+  if (!heads.some((h) => h.name === 'main')) throw new Error('git ls-remote did not list main');
+  return heads;
+}
+/** One fetch of every head, then each sha must be here; throws when not. */
+function fetchRemoteHeads(root, heads) {
+  run(root, 'git', ['fetch', '--quiet', '--no-tags', '--no-write-fetch-head', 'origin', '+refs/heads/*:refs/remotes/origin/*']);
+  for (const h of heads) { try { run(root, 'git', ['cat-file', '-e', `${h.sha}^{commit}`]); } catch { throw new Error('a remote head could not be fetched'); } }
+}
+/** The same list from the refs already here (--no-fetch, and pr-preflight, which fetched them). */
+function trackedRemoteHeads(root) {
+  return (gitq(root, ['for-each-ref', '--format=%(refname:strip=3) %(objectname)', 'refs/remotes/origin']) || '').split('\n').filter(Boolean).map((x) => { const [name, sha] = x.split(' '); return { name, sha }; });
+}
+/** [{ name, sha }]: the branches checked out in this repository's worktrees (their local tips). Throws when git cannot list them. */
+function worktreeHeads(root) {
+  const out = [];
+  for (const block of run(root, 'git', ['worktree', 'list', '--porcelain']).split(/\n\n+/)) {
+    const sha = (block.match(/^HEAD ([0-9a-f]{40})$/m) || [])[1], ref = (block.match(/^branch refs\/heads\/(.+)$/m) || [])[1];
+    if (sha && ref) out.push({ name: ref, sha });
+  }
+  return out;
+}
+/** Pure but for the date: the heads to compare besides the open PR heads. remote, worktrees: [{ name, sha }]; open: [{ sha, headRef, sameRepo }] (the open PR heads, compared already);
+ * selfRef: this branch's name. Left out: HEAD, main, this branch, merge-queue branches, an open PR's head (by tip; by name only when that PR is from this repository: a fork's branch name is the outsider's choice and must not hide ours), a worktree branch that is a remote head
+ * (same tip) or has an open PR. opts.prefix: label start (default `branch `); opts.dates: add `, tip YYYY-MM-DD` (git's committer date). */
+function wideHeads(root, { remote = [], worktrees = [], open = [], selfRef, prefix = 'branch ', dates = true }) {
+  const openNames = new Set(open.filter((o) => o.sameRepo === true).map((o) => o.headRef).filter(Boolean)), openShas = new Set(open.map((o) => o.sha));
+  const skip = (h) => !h.name || h.name === 'HEAD' || h.name === 'main' || h.name === selfRef || h.name.startsWith(QUEUE_PREFIX);
+  // the tip dates of every candidate in one call (one process per head was 0.7 s on 90 heads)
+  const day = new Map();
+  if (dates) for (const l of (gitq(root, ['log', '--no-walk=unsorted', '--format=%H %cs', ...new Set([...remote, ...worktrees].map((h) => h.sha))]) || '').split('\n')) { const [sha, d] = l.split(' '); if (d) day.set(sha, d); }
+  const label = (kind, h) => `${kind}${safe(h.name)}${dates ? `, tip ${day.get(h.sha) || '?'}` : ''}`;
+  const out = remote.filter((h) => !skip(h) && !openNames.has(h.name) && !openShas.has(h.sha))
+    .map((h) => ({ label: label(prefix, h), sha: h.sha, name: h.name, headRef: h.name, sameRepo: true, wide: true }));
+  for (const h of worktrees) {
+    if (skip(h) || openNames.has(h.name) || openShas.has(h.sha) || remote.some((r) => r.sha === h.sha)) continue;
+    out.push({ label: label('worktree ', h), sha: h.sha, name: h.name, headRef: h.name, sameRepo: true, wide: true });
+  }
+  return out;
+}
+/** The PR state of a branch by `gh` (sync): [{ headRefOid, mergedAt, state, isCrossRepository }] or null when it cannot be read. */
+function ghBranchState(root) {
+  return (name) => {
+    try { const rows = JSON.parse(run(root, 'gh', ['pr', 'list', `--head=${name}`, '--state', 'all', '--json', 'headRefOid,mergedAt,state,isCrossRepository'], { timeout: 60000 })); return Array.isArray(rows) ? rows : null; } catch { return null; }
+  };
+}
+/** collect + findClashes, and then a second look at each wide head that clashes: its PR (lookup(name) -> rows or null) is closed and not merged
+ * at that tip -> the head is left out and named in notes. A lookup that fails THROWS (exit 2): a clash is never dropped without knowing. */
+function resolveWide(root, heads, headRev, self, lookup) {
+  const res = collect(root, heads, headRev, self); // once: findClashes is pure on res, so a dead branch is dropped from res.prs and the clashes are found again
+  let clashes = findClashes(res);
+  const notes = [];
+  const gone = new Set();
+  for (const h of heads.filter((x) => x.wide && clashes.some((c) => c.with.startsWith(`${x.label} (added there too`)))) {
+    const rows = lookup(h.name);
+    if (!rows) throw new Error(`could not read the PR state of branch ${h.name} (gh pr list failed; it is needed to tell a dead branch from a live one)`);
+    if (rows.some((p) => p.state === 'CLOSED' && !p.mergedAt && p.isCrossRepository === false && p.headRefOid === h.sha)) { gone.add(h.label); notes.push(`NOTE skipped ${h.label}: its PR is closed and not merged, so its numbers are free`); }
+  }
+  if (gone.size) { res.prs = res.prs.filter((p) => !gone.has(p.label)); clashes = findClashes(res); }
+  return { res, clashes, notes };
+}
+
+function report({ branchAdds, prs, skipped, noBase = [], base }, clashes, notes = [], wideCount = null) {
   const lines = [];
   const n = [...branchAdds.values()].reduce((a, s) => a + s.size, 0);
-  lines.push(`specs:numbers: ${n} number(s) added since ${base.slice(0, 9)}, checked against origin/main and ${prs.length} other open PR head(s)${skipped.length ? ` (${skipped.length} skipped: already in this branch or merged)` : ''}`);
+  lines.push(`specs:numbers: ${n} number(s) added since ${base.slice(0, 9)}, checked against origin/main and ${prs.length} other ${wideCount === null ? 'open PR ' : ''}head(s)${skipped.length ? ` (${skipped.length} skipped: already in this branch or merged)` : ''}`);
+  if (wideCount !== null) lines.push(`specs:numbers: --wide: ${wideCount} remote branch(es) without an open PR and worktree branch(es) were in the list too`);
+  for (const t of notes) lines.push(`specs:numbers: ${t}`);
   if (noBase.length) lines.push(`specs:numbers: WARN not compared (no common history with origin/main): ${noBase.join(', ')}`);
   if (!clashes.length) { lines.push('specs:numbers: ok, no clash'); return lines; }
-  for (const c of clashes) lines.push(`  CLASH ${printable(c.file)}: ${c.id} is also in ${c.with}`);
+  for (const c of clashes) lines.push(`  CLASH ${safe(c.file)}: ${c.id} is also in ${c.with}`);
   lines.push('Fix: take the next free number in that file (check origin/main and the open PR heads again), renumber your lines and every mention, then re-run.');
   return lines;
 }
@@ -351,6 +469,12 @@ async function main(argv, env, deps = {}) {
   const root = argOf(argv, '--root') ? path.resolve(argOf(argv, '--root')) : path.join(__dirname, '..');
   if (argv.includes('--dups') || argv.includes('--write-baseline')) return dupsMain(argv, root);
   const noFetch = argv.includes('--no-fetch');
+  if (argv.includes('--wide') && argv.includes('--narrow')) { say('specs:numbers: NOT CHECKED: --wide and --narrow together; pass one'); return 2; }
+  // no head given at all (the local `npm run specs:numbers`): the wide list; a head given by --head or PR_HEAD_SHA (the CI call): open PR heads only; --wide / --narrow decide either way
+  const headGiven = !!(argOf(argv, '--head') || env.PR_HEAD_SHA);
+  const inCi = ['GITHUB_ACTIONS', 'CI'].some((k) => env[k] && !/^(false|0)$/i.test(env[k]));
+  if (inCi && !headGiven && !argv.includes('--wide') && !argv.includes('--narrow')) { say('specs:numbers: NOT CHECKED: CI call without a head: pass --head or --narrow (a CI job must never change its list silently)'); return 2; }
+  const wide = argv.includes('--wide') || (!argv.includes('--narrow') && !headGiven);
   const exclude = String(argOf(argv, '--exclude') || env.PR_NUMBER || '');
   const headRev = String(argOf(argv, '--head') || env.PR_HEAD_SHA || 'HEAD');
   if (headRev !== 'HEAD' && !/^[0-9a-f]{40}$/i.test(headRev)) { say('specs:numbers: NOT CHECKED: --head / PR_HEAD_SHA must be a full 40-character commit sha'); return 2; }
@@ -364,19 +488,26 @@ async function main(argv, env, deps = {}) {
   let heads = headsFromRefs(root).filter((h) => h.number !== exclude);
   if (prList) { const open = new Set(prList.map((p) => String(p.number))); heads = heads.filter((h) => open.has(h.number)); }
   if (!heads.length && !noFetch) say('specs:numbers: WARN no PR heads found; only origin/main was compared');
-  let res;
+  let res, clashes, notes = [], wideCount = null;
   // the branch's own PR (from the list) or, on a local run, the checked-out branch: its refs tell which open PRs are stacked with it
   const own = prList && prList.find((p) => String(p.number) === exclude);
   const refOf = new Map((prList || []).map((p) => [String(p.number), p]));
   heads = heads.map((h) => ({ ...h, headRef: (refOf.get(h.number) || {}).headRef, baseRef: (refOf.get(h.number) || {}).baseRef, sameRepo: (refOf.get(h.number) || {}).sameRepo }));
   const self = own ? { headRef: own.headRef, baseRef: own.baseRef, sameRepo: own.sameRepo } : { headRef: gitq(root, ['symbolic-ref', '--short', '-q', 'HEAD']) || undefined, sameRepo: true };
-  try { res = collect(root, heads, headRev, self); } catch (e) { say(`specs:numbers: NOT CHECKED: ${firstLine(e)}`); return 2; }
-  const clashes = findClashes(res);
-  say(report(res, clashes).join('\n'));
+  try {
+    if (wide) {
+      const remote = noFetch ? trackedRemoteHeads(root) : (deps.remoteHeads || liveRemoteHeads)(root);
+      if (!noFetch) fetchRemoteHeads(root, remote);
+      const extra = wideHeads(root, { remote, worktrees: (deps.worktrees || worktreeHeads)(root), open: heads.map((h) => ({ sha: h.sha, headRef: h.headRef, sameRepo: h.sameRepo })), selfRef: self.headRef });
+      wideCount = extra.length;
+      ({ res, clashes, notes } = resolveWide(root, heads.concat(extra), headRev, self, deps.branchState || ghBranchState(root)));
+    } else { res = collect(root, heads, headRev, self); clashes = findClashes(res); }
+  } catch (e) { say(`specs:numbers: NOT CHECKED: ${firstLine(e)}`); return 2; }
+  say(report(res, clashes, notes, wideCount).join('\n'));
   return clashes.length ? 1 : 0;
 }
 
-module.exports = { stackRelated, openPrs, GH_LIMIT, parseDefinitions, definitionCounts, definitionLines, scanDuplicates, checkDuplicates, added, findClashes, scrub, collect, report, restOpenPrs, main, show, SPEC_FILE_RE };
+module.exports = { PUBLIC_CONTEXT_NAMES, safe, wideHeads, resolveWide, liveRemoteHeads, trackedRemoteHeads, worktreeHeads, ghBranchState, stackRelated, openPrs, GH_LIMIT, parseDefinitions, definitionCounts, definitionLines, scanDuplicates, checkDuplicates, added, findClashes, scrub, collect, report, restOpenPrs, main, show, SPEC_FILE_RE };
 
 if (require.main === module) {
   main(process.argv.slice(2), process.env).then((c) => process.exit(c), (e) => { emit(`specs:numbers: NOT CHECKED: ${firstLine(e)}`); process.exit(2); });

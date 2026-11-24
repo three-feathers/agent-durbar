@@ -1,1 +1,0 @@
-- **Fast lane keeps to a few minutes** (spec 117): the advisory fast lane leaves slow suites and anything past a time budget to the full test job, stops after 5 minutes with a note instead of failing at the 10-minute limit, and no longer picks every test that names a big shared folder.

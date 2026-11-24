@@ -5,7 +5,7 @@
     python3 scripts/build-character-groups.py --selftest
 
 A set's group picture is made only from that set's own shipped pictures (`src/renderer/realoffice/sets/<id>/<person>-rest.webp`, the seated
-resting pose): a head-and-shoulders square of each person, cut from `set.json`'s `seat` numbers, laid out in rows, the last row centred,
+resting pose; for a set with only HD people, its HD seated bust `hd/<person>-rest@4.webp` and `hd.busts`, spec 102 T502): a head-and-shoulders square of each person, cut from `set.json`'s `seat` numbers, laid out in rows, the last row centred,
 people in sorted id order. Never new art, no network, no randomness: the same pictures give the same bytes. Pillow only (WebP, no EXIF, XMP
 or ICC chunk), like `build-kid-pack.py`. Each picture is at most MAX_BYTES (64 KB, FR-303): the script lowers the WebP quality step by step,
 then the tile size, and fails (never drops a person, never writes an oversized file) when nothing fits.
@@ -32,6 +32,7 @@ TORSO_SETS = ('office',)       # sets whose seated picture shows the body down t
 ASPECT = 1.6                   # the group's width : height the rows aim at (a card's picture is wider than tall)
 FACE_MIN_PX = 24               # FR-303's floor: a face is at least this many pixels in a tile (the app's own face height, FACE_U of the body, as `headCrop` takes it)
 
+HD_K = 4                       # spec 102 T502: an HD bust is authored at scale 4 of the 80 px grid
 MUTANT = os.environ.get('CG_MUTANT', '')   # test-character-groups.js runs the selftest with one of these set; each must fail it
 
 
@@ -123,11 +124,15 @@ def build_group(set_id, sets_dir=SETS):
     from PIL import Image
     d = os.path.join(sets_dir, set_id)
     with open(os.path.join(d, 'set.json'), encoding='utf8') as f: meta = json.load(f)
-    seat = meta['seat']
+    # spec 102 T502: a set whose people are only its HD set (no `seat` of its own: the Retro pixel set) is cut from its HD seated busts, `hd/<person>-rest@4.webp`, with `hd.busts`
+    hd = 'seat' not in meta and isinstance(meta.get('hd'), dict) and meta['hd'].get('busts')
+    seat = {k: dict(v) for k, v in meta['hd']['busts'].items()} if hd else meta['seat']
+    rest = (lambda pid: os.path.join('hd', pid + '-rest@4.webp')) if hd else (lambda pid: pid + '-rest.webp')
     pics = {}
     for pid in seat:
-        with Image.open(os.path.join(d, pid + '-rest.webp')) as im: pics[pid] = im.convert('RGBA')
-        seat[pid] = to_pixels(seat[pid], pics[pid].size, '%s/%s-rest.webp' % (set_id, pid))
+        with Image.open(os.path.join(d, rest(pid))) as im: pics[pid] = im.convert('RGBA')
+        if hd: pics[pid] = pics[pid].resize((round(pics[pid].width / HD_K), round(pics[pid].height / HD_K)), Image.NEAREST)  # the s 4 bust at the set's own grid (80 px, the size the first pictures had), its own colours: a whole bust in its cell, never a cut face
+        seat[pid] = to_pixels(seat[pid], pics[pid].size, '%s/%s' % (set_id, rest(pid)))
     pixel, torso = bool(meta.get('pixelArt')), set_id in TORSO_SETS
     for pid in seat:
         if face_px(seat[pid], TILE_MIN, torso) < FACE_MIN_PX - 0.01: raise SystemExit('%s/%s: a face would be under the floor at the smallest tile' % (set_id, pid))

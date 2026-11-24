@@ -39,3 +39,7 @@ All in one PR (spec 021 FR-068), built after T053 of spec 021 (the same PR).
 - [x] T087 Changelog fragment saying what went and where saved choices went. Test: `npm run changelog:check` [FR-017]
 - [x] T088 Spec statuses, notes and pointers in 037, 039, 036; "all 6 themes" wording in 070 updated (017's goes with its deprecation in the doors PR). Test: `npm run specs:check` [FR-020]
 - [ ] T089 Retro Pixel removed, in one PR with spec 102 T115 and T122 (spec 102 T230), not before: theme and `pixel` kit code, `retro` style rules the arcade does not use, tests, drivers, docs, screenshots, changelog fragment, spec 038 `superseded`. The migration is spec 102 T227; coverage moves first by spec 102 T226. Test: `test:theme`, `test:userthemes`, a stored `retro` moves once with no notice; `test-site` [FR-019]
+
+## Changes 2026-11-24: theme geometry compares like with like (issue #2075)
+
+- [x] T505 `scripts/check-theme-geometry.js`: a theme with words is compared with Clean Office given the same words, and the page is drawn again in the neutral font before measuring (the `+N more` chip opened in it). Test: `test:uisuite` pin with a mutant; `CHECK_ALL_THEMES=1 node scripts/check-theme-geometry.js` 49 of 49 on Linux (DejaVu and Noto); four CSS red cases and two check mutants fail at the geometry assert [FR-414]

@@ -57,6 +57,7 @@ test:brainstate
 test:brainloop
 test:brainsurface
 test:toolargs-mask
+test:toolargcopy
 test:toolusage
 test:usagestore
 test:about
@@ -147,6 +148,8 @@ test:logo-assets
 test:autofollow
 test:announcemask
 test:livemask
+test:overmask
+test:maskpaths
 test:openwith
 test:liveact
 test:lookalike
@@ -158,6 +161,7 @@ test:teams-editor
 test:teams-ui
 test:teamsipc
 test:teamops
+test:teamcreate
 test:names
 test:renameadapters
 test:sessionname

@@ -7,7 +7,7 @@ import type { FolderSetupStart } from '../shared/foldersetup';
 import type { McpServerSpec } from '../shared/mcp';
 import { copilotDir, copilotServerNames } from './mcpfiles'; // spec 061 FR-015: the explainer switches Copilot's own servers off
 import { parseEffort } from '../shared/effort';
-import { app, BrowserWindow, dialog, Menu, powerMonitor, protocol, screen, shell } from 'electron';
+import { app, BrowserWindow, clipboard, dialog, Menu, powerMonitor, protocol, screen, shell } from 'electron';
 import { register as registerActivityIpc } from './ipc/activity';
 import { register as registerAdaptersIpc } from './ipc/adapters';
 import { register as registerAgentsIpc } from './ipc/agents';
@@ -42,7 +42,8 @@ import { nativeConfirm } from './nativeconfirm';
 import { register as registerNotesIpc } from './ipc/notes';
 import { register as registerTeamsIpc } from './ipc/teams';
 import { TeamsIpcOps } from './teamsipc';
-import { TeamOps, resolveTargetFrom } from './teamops';
+import { TeamOps, pathExists, resolveTargetFrom } from './teamops';
+import type { LazyMemberSpec } from './teamops';
 import { TeamTemplateStore } from './teamstore';
 import { NotesOps, notesConfirmText } from './notesops';
 import { NotesStore } from './notesstore';
@@ -55,6 +56,8 @@ import { register as registerSchedulesIpc } from './ipc/schedules';
 import { register as registerSettingsIpc } from './ipc/settings';
 import { register as registerThemesIpc } from './ipc/themes';
 import { register as registerUsageIpc } from './ipc/usage';
+import { register as registerToolCopyIpc } from './ipc/toolcopy';
+import { createToolArgCopies } from './toolargcopy';
 import { randomUUID } from 'crypto';
 import * as fs from 'fs';
 import * as os from 'os';
@@ -321,7 +324,9 @@ const autopilotOps = createAutopilotOps({
 });
 router.setEventGuard(bothGuards(eventShape, autopilotOps.accepts)); // spec 099 FR-082, T095 with spec 010 FR-035: both checks, the shape first, before any listener, so nothing uses or forwards a bad one
 router.onEvent((e) => autopilotOps.onEvent(e));
-router.onEvent((e) => { if (!mcp.hidesEvent(e)) toRenderer('agent:event', toWindowEvent(e, outward)); }); // spec 087 (review rounds 7-8): the sandbox event cleaned too; spec 058 FR-215: an elicitation main declined is not shown
+/** Spec 005 FR-411: the raw text of the argument each chip shows, for Copy (main writes the clipboard; the window gets only `argsMasked`). */
+const toolArgCopies = createToolArgCopies({ write: (t) => clipboard.writeText(t) });
+router.onEvent((e) => { if (!mcp.hidesEvent(e)) toRenderer('agent:event', toolArgCopies.see(e, toWindowEvent(e, outward))); }); // spec 005 FR-411: `argsMasked` on the window's copy only (the debug log's is unchanged); spec 087 (review rounds 7-8): the sandbox event cleaned too; spec 058 FR-215: an elicitation main declined is not shown
 // Spec 087 FR-011: the OS sandbox state is kept on the agent's info (cleaned: own known fields, reason masked and cut), so a reloaded
 // window gets it from agents:list; never saved
 router.onEvent((e) => {
@@ -565,6 +570,24 @@ async function addMany(paths: string[], permMode: PermMode, opts: SessionOptions
   return { ok: errors.length === 0, agents: added, error: errors.join('; ') || undefined, ...(warnings.length ? { warnings } : {}), ...(existing.length ? { existing } : {}) };
 }
 
+/**
+ * A not-started agent, the one path of a restored session and of a team member (spec 111 T011, FR-034): `infoFor(..., { lazy: true })`.
+ * It builds the agent's data and NOTHING else: no adapter start (`ensureLive` does that at the first message), no message, no credit.
+ */
+function lazyInfo(workspace: string, mode: PermMode, id: string, model: string, effort: string | undefined, kind: string, extra: Partial<AgentInfo>): AgentInfo {
+  return infoFor(workspace, mode, id, model, effort, { lazy: true, floor: folderStore?.floorOfFolder(workspace), ...extra }, router.instance(kind));
+}
+
+/** spec 111 T011: one team member as a not-started agent in the room `spec.key`, with the room's label, default agent and Auto tier as a restored one has. Nothing is put in the office here. */
+function addLazyMember(spec: LazyMemberSpec): AgentInfo {
+  const saved = folderStore?.get(spec.key);
+  const info = lazyInfo(spec.key, spec.mode, randomUUID(), spec.model || DEFAULT_MODEL, spec.effort, spec.app, { hidden: saved?.hidden, maxAiCredits: spec.cap, alias: spec.name });
+  if (saved?.label) info.label = saved.label;
+  if (saved?.defaultAgent) info.defaultAgent = saved.defaultAgent;
+  if (saved?.autoTier) info.autoTier = saved.autoTier;
+  return info;
+}
+
 /** Folders remembered from earlier runs come back as "not started" agents: nothing runs until the first message. */
 function restoreFolders(): void {
   if (!folderStore) return;
@@ -580,7 +603,7 @@ function restoreFolders(): void {
         // last mode wins over the folder's (several sessions of one folder may be in different modes), and the chat says which it was.
         const sm = modeForSession(f, [ls?.id], f.permMode);
         const rm = restoreMode(sm.mode);
-        const info = infoFor(f.workspace, rm.mode, ls?.id ?? randomUUID(), f.model || DEFAULT_MODEL, f.effort, { lazy: true, tier: f.contextTier, hidden: f.hidden, floor: folderStore.floorOfFolder(f.workspace), permRestored: rm.restored || undefined, permFrom: ls ? (sm.fromSession ? 'session' : 'folder') : undefined, maxAiCredits: router.instance(kind).capabilities?.capUnit === 'usd' ? undefined : f.maxAiCredits ?? settingsStore?.defaultMaxAiCredits }, router.instance(kind));
+        const info = lazyInfo(f.workspace, rm.mode, ls?.id ?? randomUUID(), f.model || DEFAULT_MODEL, f.effort, kind, { tier: f.contextTier, hidden: f.hidden, permRestored: rm.restored || undefined, permFrom: ls ? (sm.fromSession ? 'session' : 'folder') : undefined, maxAiCredits: router.instance(kind).capabilities?.capUnit === 'usd' ? undefined : f.maxAiCredits ?? settingsStore?.defaultMaxAiCredits });
         if (ls) info.resumeLast = true;
         if (f.label) info.label = f.label;
         if (f.defaultAgent) info.defaultAgent = f.defaultAgent;
@@ -836,6 +859,7 @@ const renameSessionOpFor = (openIds: () => ReadonlySet<string>) => renameOp({
 // Stores created in whenReady, and state that changes, are passed as getters so a handler reads them when it runs.
 const remoteOps = registerRemoteIpc({ agents, router, toRenderer, getWin: () => win, logActivity, autopilotOn: (id) => autopilotOps.engaged(id) });
 registerHeldMigIpc({ held: () => heldBefore, router });
+registerToolCopyIpc({ copies: toolArgCopies }); // spec 005 FR-411
 registerAppIpc({
   getSinceAway: () => (sinceAway ? { ...sinceAway, briefing: summaryDays?.recent() } : null), // spec 085 FR-009: yesterday's and today's ended sessions, numbers only
   clearSinceAway: () => { sinceAway = null; },
@@ -853,9 +877,9 @@ const browser = registerBrowserIpc({ agents, getWin: () => win, toRenderer, simu
 const browserGone = (id: string): void => void browser.destroy(id).catch(() => undefined);
 /** Spec 043 FR-041: which profile file changes each session has seen (shared by ipc/agents.ts and ipc/profiles.ts). */
 const profileFreshness = createProfileFreshness();
-registerAgentsIpc({ browserGone, autopilot: autopilotOps, agents, router, agentState, opsDeps, remoteOps, mcpGate: (id) => mcp.signInRefresh.beforeSend(id), mcpStopWait: (id) => mcp.signInRefresh.stopWait(id), mcpBusy: (id) => chatBusy(id), mcpForget: (id) => mcp.signInRefresh.forget(id), mcpStopped: (id) => mcp.signInRefresh.noteStop(id), mcpSecrets: (id) => mcp.secretValuesFor(id), logMcp: (a, action) => logActivity(a, 'mcp-restart', action), getScheduler: () => scheduler, getCheckpointStore: () => checkpointStore, profileFreshness, vsChatRefs, continued, wsKey, asEffort, addMany, addWorkspace, sendOp, ensureLive, readyAdapterIds, forgetOpenSession, maskHistory, forgetSandboxNote: (id) => sandboxOps.forget(id), getSummaryDays: () => summaryDays }); // spec 087: sandboxOps is set below, before any IPC call
+registerAgentsIpc({ browserGone, autopilot: autopilotOps, agents, router, agentState, opsDeps, remoteOps, mcpGate: (id) => mcp.signInRefresh.beforeSend(id), mcpStopWait: (id) => mcp.signInRefresh.stopWait(id), mcpBusy: (id) => chatBusy(id), mcpForget: (id) => mcp.signInRefresh.forget(id), mcpStopped: (id) => mcp.signInRefresh.noteStop(id), mcpSecrets: (id) => mcp.secretValuesFor(id), logMcp: (a, action) => logActivity(a, 'mcp-restart', action), getScheduler: () => scheduler, getCheckpointStore: () => checkpointStore, profileFreshness, vsChatRefs, continued, wsKey, asEffort, addMany, addWorkspace, sendOp, ensureLive, readyAdapterIds, forgetOpenSession, maskHistory, forgetSandboxNote: (id) => sandboxOps.forget(id), forgetToolCopies: (id) => toolArgCopies.forget(id), getSummaryDays: () => summaryDays }); // spec 087: sandboxOps is set below, before any IPC call
 registerAttachmentsIpc({ dev, pickedFiles, getStageDir, sizeOf });
-registerPreviousIpc({ browserGone, sessionsChanged: () => convSearch.dropKept(), folderListed: (key) => convSearch.dropKept(key), renameSessionOpFor, dev, agents, router, registry, agentState, getFolderStore: () => folderStore, getScheduler: () => scheduler, wsKey, resumeIdFor, forgetOpenSession, logActivity, addWorkspace, vsChatRefs, maskHistory });
+registerPreviousIpc({ browserGone, sessionsChanged: () => convSearch.dropKept(), folderListed: (key) => convSearch.dropKept(key), renameSessionOpFor, dev, agents, router, registry, agentState, getFolderStore: () => folderStore, getScheduler: () => scheduler, wsKey, resumeIdFor, forgetOpenSession, logActivity, addWorkspace, vsChatRefs, maskHistory, forgetToolCopies: (id) => toolArgCopies.forget(id) }); // spec 005 FR-411: Resume with replace forgets the replaced session's values
 // spec 095 (T022): the conversation search. Scope from main's own agents and folder store; MCP values without a keychain prompt (as
 // NotesOps); one cross-scan gate for what starts a Codex process; the matcher is the window's own file, loaded when first needed
 const convGate = createReadGate<unknown>();
@@ -926,7 +950,7 @@ registerNotesIpc({ getOps: () => notesOps }); // spec 083
 let teamsOps: TeamsIpcOps | undefined;
 let teamStore: TeamTemplateStore | undefined;
 const getTeamStore = (): TeamTemplateStore => (teamStore ??= new TeamTemplateStore(path.join(app.getPath('userData'), 'team-templates.json')));
-// spec 111 T010: the create preview. The room key stays in main (never a path for the window); the team record that counts a room's members comes with T011 (0 until then)
+// spec 111 T010: the create preview. The room key stays in main (never a path for the window); the team record counts a room's members (T011)
 let teamOps: TeamOps | undefined;
 const modelIpc = registerModelIpc({ agents, router, registry, getFolderStore: () => folderStore, wsKey, orgModel: (adapterId, model) => orgPolicies.model(adapterId, model) });
 registerTeamsIpc({
@@ -937,8 +961,19 @@ registerTeamsIpc({
     models: (id) => modelIpc.modelsOf(id),
     defaultCapAiu: () => settingsStore?.defaultMaxAiCredits,
     // the key is the add flows' key (`resolveWorkspaceCwd`, `findAdded`); the saved limit is the folder store's, as the normal add path reads it
+    // T011: the not-started members, the one write (record and names), then the office; a team member is never started here
+    create: {
+      room: (key) => { const f = folderStore?.get(key); return { count: f?.team?.members.length ?? 0, savedCap: f?.maxAiCredits, team: f?.team, known: f !== undefined, sessionNames: f?.sessionNames?.map((x) => ({ ...x })) }; },
+      exists: pathExists,
+      build: addLazyMember,
+      commit: (key, team, infos) => !!folderStore && folderStore.setTeamRecord(key, team, infos.map((i) => ({ src: i.adapterId ?? DEFAULT_ADAPTER, id: i.id, name: i.alias ?? '' }))),
+      place: (info) => { router.bind(info.id, info.adapterId ?? DEFAULT_ADAPTER); agents.set(info.id, info); },
+      announce: (info) => toRenderer('agent:added', info),
+      rollback: (key, previous, previousNames, removeRoom) => !!folderStore && folderStore.restoreTeamRecord(key, previous, previousNames, removeRoom),
+      unplace: (id) => { agents.delete(id); agentState.remove(id); router.unbind(id); },
+    },
     resolveTarget: (t) => resolveTargetFrom(t, {
-      agents: () => agents.values(), wsKey, resolveCwd: resolveWorkspaceCwd, savedCap: (key) => folderStore?.get(key)?.maxAiCredits,
+      agents: () => agents.values(), wsKey, resolveCwd: resolveWorkspaceCwd, savedCap: (key) => folderStore?.get(key)?.maxAiCredits, teamCount: (key) => folderStore?.get(key)?.team?.members.length ?? 0,
       pick: async () => {
         if (dev.DURBAR_PICK) { const first = dev.DURBAR_PICK.split(path.delimiter)[0]; return first || null; } // the dev hook of ipc/themes.ts: path.delimiter keeps C:\ paths whole
         const r = await dialog.showOpenDialog({ title: 'Choose the folder for the team', properties: ['openDirectory'] });
@@ -952,7 +987,7 @@ registerSelfUpdateIpc({ getSelfUpdater: () => selfUpdater }); // spec 118 FR-024
 registerAdaptersIpc({ adaptersList });
 const sandboxOps = registerSandboxIpc({ agents, router, getSettingsStore: () => settingsStore, readyAdapterIds }); // spec 087
 router.onEvent((e) => sandboxOps.onEvent(e)); // spec 087 FR-007a: Continue only answers a note main forwarded
-registerFoldersIpc({ browserGone, agents, router, agentState, getFolderStore: () => folderStore, getScheduler: () => scheduler, vsChatRefs, wsKey, forgetSandboxNote: (id) => sandboxOps.forget(id), getNotesOps: () => notesOps });
+registerFoldersIpc({ browserGone, agents, router, agentState, getFolderStore: () => folderStore, getScheduler: () => scheduler, vsChatRefs, wsKey, forgetSandboxNote: (id) => sandboxOps.forget(id), forgetToolCopies: (id) => toolArgCopies.forget(id), getNotesOps: () => notesOps });
 registerFloorsIpc({ agents, getFolderStore: () => folderStore, wsKey });
 /* Spec 061: a folder's own agent setup (scan, decide, explain), window-only (FR-013); the pure handler bodies are unit-tested. */
 registerFolderSetupIpc({
@@ -1074,7 +1109,6 @@ function createWindow(): void {
     if (simClock.query) query.simclock = simClock.query; // spec 001 FR-084: a pinned page clock for screenshots
   }
   if (dev.DURBAR_DOOR === '1') query.door = '1'; // spec 052 FR-191: Your door (the Needs you panel) is behind a flag until the owner's look
-  if (dev.DURBAR_HD_PEOPLE === '1') query.hdpeople = '1'; // spec 102 FR-399: the Retro arcade's HD person set, off by default until the owner approves the finished set
   if (dev.DURBAR_BRAIN === '1' || dev.DURBAR_BRAIN === '0') query.brain = dev.DURBAR_BRAIN; // spec 106 T426: a run override of Settings > Brain view (development runs only), never saved
   win.on('focus', () => win?.flashFrame(false)); // spec 052 FR-059: the taskbar flash stops when you come back
   {
