@@ -4,7 +4,7 @@
 group: 046
 title: Remove masking as app functionality (proposal, 2026-11-24): the screen shows what the agent sent; Durbar keeps agent text out of its own logs, saved state and anything that leaves the machine by structure, not by masking; options A, B, C, inventory, the principle III clarification and a staged deletion plan
 status: draft
-note: proposal only; nothing changes until all three owners agree in writing; Q42-Q44 open
+note: proposal only; nothing changes until all three owners agree in writing; Q42-Q45 open; facts checked by Paco's side (review of PR 2121)
 -->
 
 **Feature Branch**: `120-remove-masking` (spec, plan and tasks only).
@@ -35,7 +35,7 @@ Paco's bot suggested a middle option (mask only where text leaves the machine, f
 |---|---|---|
 | **A. Keep as is** | Every surface keeps masking; the daily masking batch goes on (spec 012, spec 119's probe harness still to build). | The largest cost in review: 30 of 404 merged PRs in 14 days were masking, but they took 100 of 942 owner-account reviews and 66 of 372 change requests (section 2.3). `redact.ts` alone is 3,681 lines and grows each batch. Every new screen that shows agent text needs a mask and a sink-table row (spec 012 FR-197). Masking is best effort by its own docs: it never promised to catch every secret. |
 | **B. Mask only where text leaves the machine** | Freeze on-screen masking (no new work), keep masks on logs, diagnostics, exports, notes and messages to agents. | Keeps `redact.ts` and its heavy review for the outbound sinks. Most outbound sinks hold little or no agent text once section 3's design is done, so B keeps the expensive part to guard a small surface. Screens would still mask (frozen), so the over-masking bugs of #2060 stay. |
-| **C. Remove masking as app functionality** (the owner's stated preference) | The screen shows what the agent app sent. Durbar keeps agent text out of its own logs, saved state and anything that leaves the machine **by not putting it there**, and says so in one honest line. Messages the person sends are theirs. | One principle III clarification (section 4). About 4,650 lines of masking code in `src/` and about 11,600 lines of dedicated tests go, in stages (section 5). A person who shares their screen shows what is on it. The five places in section 3.2 that write agent text today without a user action must be changed **first** (stage 1). |
+| **C. Remove masking as app functionality** (the owner's stated preference) | The screen shows what the agent app sent. Durbar keeps agent text out of its own logs, saved state and anything that leaves the machine **by not putting it there**, and says so in one honest line. Messages the person sends are theirs. | One principle III clarification (section 4). About 4,650 lines of masking code in `src/` and about 11,600 lines of dedicated tests go, in stages (section 5). A person who shares their screen shows what is on it. The five places in section 3.2 that write agent text today without a user action must be changed **first** (stage 1); the Undo copies are the owners' question Q45. |
 
 This spec writes out C in full, because it is the owner's preference and the one with a design to check. A and B need no new design.
 
@@ -70,7 +70,7 @@ Method: `ls scripts | grep -i -E 'redact|mask|secret|safetext'` plus `scripts/fi
 
 ### 2.3 Review cost, last 14 days
 
-Method: merges on `origin/main`'s first-parent line since 2026-11-10 (`git log --merges --first-parent`): 407 PR merges. A PR counts as masking when its title says mask, redact, secret or token shape, or its diff touches a masking file or test (`redact.ts`, `mcpmask.ts`, `convmask.ts`, `activitymask.ts`, `safetext.js`, `scripts/test-redact*`, `test-live-mask*`, `test-mask*`, specs 119 and 012's coverage list). That gave 32; two were taken out by reading the title (#1282 brain view, #1637 an MCP status code). Reviews: `gh pr list --state merged --search "merged:>=2026-11-10"` (404 PRs; the 3-PR difference is the time zone of the cut), counting reviews by the three owners' accounts (which the agents use).
+Method: merges on `origin/main`'s first-parent line up to `e9a712197` with a committer date from 2026-11-10 00:00 CET (`git log --merges --first-parent --since`): 407 PR merges (403 from 00:00 UTC; Paco's side counted 381 locally, cause of the difference not found). A PR counts as masking when its title says mask, redact, secret or token shape, or its diff touches a masking file or test (`redact.ts`, `mcpmask.ts`, `convmask.ts`, `activitymask.ts`, `safetext.js`, `scripts/test-redact*`, `test-live-mask*`, `test-mask*`, specs 119 and 012's coverage list). That gave 32 (19 by title alone, as Paco's side also counted); two were taken out by reading the title (#1282 brain view, #1637 an MCP status code). Reviews: `gh pr list --state merged --search "merged:>=2026-11-10"` (404 PRs; the 3-PR difference is the time zone of the cut), counting reviews by the three owners' accounts (which the agents use).
 
 | | PRs | Reviews | Change requests |
 |---|---|---|---|
@@ -102,70 +102,100 @@ Principle III says "Agent Durbar never reads, stores, logs or transmits tokens o
 
 ### 3.2 Does the code hold the owner's reading? (checked 2026-11-24)
 
-Method: every `console.*` call in `src/main`, `src/adapters`, `src/shared`, `src/preload` (17), every `writeFileSync`/`appendFileSync`/`writeFile` in `src/main` and `src/adapters` (36), the network helpers (`netget.ts` and its callers), the clipboard writers, the OS notification and the Durbar MCP read tools; each read at the line. `read:` for what a site writes at run time; nothing was run.
+Method: every `console.*` call in `src/main`, `src/adapters`, `src/shared`, `src/preload` (17), every `writeFileSync`/`appendFileSync`/`writeFile` in `src/main` and `src/adapters` (36), every producer of an activity row (`logActivity` and the `log` callbacks wired to it), the saved fields of `schedules.json`, the network callers, the clipboard writers, the OS notification and the Durbar MCP read tools; each read at the line. `read:` for what a site writes at run time; nothing was run. Paco's side's fact check (review of #2121, 2026-11-24) found E5 and the Undo copies, which the first draft missed.
 
-**Mostly yes. Five places write agent-derived text without a user action today, all masked; they are the only places C must change before any mask goes:**
+**Mostly yes. Five places write agent-derived text without a user action today, all masked; they are the only places C must change before any mask goes (stage 1). One more, the Undo copies, has never been masked and is the owners' question Q45.**
 
 | # | Sink | What it holds today | Masked today | After stage 1 |
 |---|---|---|---|---|
-| E1 | **Activity log file** `activity.json` in userData (`src/main/main.ts:384-386` `logActivity`, `src/shared/activity.ts:77`, written by `src/main/activitystore.ts:98`), up to 5,000 rows, kept across runs | each permission answer's **action**: the request text (a command line, a tool name with its arguments, a URL), first 160 characters; the folder path | yes (`maskActivityAction`) | the row keeps time, agent, folder, app, mode, decision and the **kind** plus the **program or tool name** only (FR-443); the full text stays in memory for this run (Q42) |
-| E2 | **stderr lines** (`src/main/ipcerror.ts:19` `failText`; `src/main/main.ts:1264`) | the stack and message of any error caught behind a window request, which can be an agent app's or SDK's own error text with paths; a save error's message | yes (`redact`) | a fixed place name, the error's class name and its code (`ENOENT`, an exit code), never its message (FR-444). Not a file Durbar writes, but a desktop launcher or the OS may keep stderr (`read:`, not checked per OS) |
-| E3 | **`DURBAR_LOG` debug log** (`src/main/main.ts:424-427`, sink `src/shared/redact.ts:2454`), developer and test only (a packaged build ignores it unless `DURBAR_DEV=1`) | every normalized event (replies, tool arguments and output) and the adapters' debug lines, with the agent app's last stderr lines (`src/adapters/claude.ts:2058`, `src/adapters/codex.ts:1770`) | yes, once at the sink | event kind, ids, lengths, phase and codes only; no text field, no stderr text (FR-445) |
-| E4 | **Durbar MCP read tools** (`src/main/mcp/readtools.ts:191-203`, `src/main/mcpglobal.ts:65-67`): sent to a connected agent app while the person has the Durbar MCP server on | each MCP server's `command`, `args` and `url` (spec 041 FR-010) | yes (`mcpmask`) | name, transport, on/off and health only (FR-446); spec 041 FR-012 already keeps out chat text, env and header values |
-| E5 | **Notes kept from an agent reply** (`src/main/notesstore.ts:371`), and the project notes file (`src/main/notesfile.ts:105`) | what the person saved with *Save to notes*; the project file when the person turned its switch on | yes (`maskNoteText`) | a user action, so not an exception: stored as saved (FR-447); the project file switch says it writes into the project, which may be pushed |
+| E1 | **Activity log file** `activity.json` in userData (`src/main/main.ts:384-386` `logActivity`, `src/shared/activity.ts:77`, written by `src/main/activitystore.ts:98`), up to 5,000 rows, kept across runs | permission rows: the request text (a command line, a tool name with its arguments, a URL), first 160 characters; loop rows: the agent's pace reason (E5); every row: the folder path | yes (`maskActivityAction`) | per row kind, FR-443 |
+| E2 | **stderr lines** (`src/main/ipcerror.ts:19` `failText`; `src/main/main.ts:1264`; `src/main/main.ts:1321` `DRIVER FAILED`, test drivers only) | the stack and message of any error caught behind a window request, which can be an agent app's or SDK's own error text with paths; a save error's message; a test driver's failure stack | yes (`redact`) | FR-444. Not a file Durbar writes, but a desktop launcher or the OS may keep stderr (`read:`, not checked per OS) |
+| E3 | **`DURBAR_LOG` debug log** (`src/main/main.ts:424-427`, sink `src/shared/redact.ts:2454`), developer and test only (a packaged build ignores it unless `DURBAR_DEV=1`) | every normalized event (replies, tool arguments and output) and the adapters' debug lines, with the agent app's last stderr lines (`src/adapters/claude.ts:2058`, `src/adapters/codex.ts:1770`) | yes, once at the sink | FR-445 |
+| E4 | **Durbar MCP read tools** (`src/main/mcp/readtools.ts:191-203`, `src/main/mcpglobal.ts:65-67`): sent to a connected agent app while the person has the Durbar MCP server on | each MCP server's `command`, `args` and `url` (spec 041 FR-010) | yes (`mcpmask`) | FR-446 |
+| E5 | **The loop pace reason** (spec 072): `cleanReason` (`src/shared/looppace.ts:36-39`) takes the agent's own reason from its `loop: next N min` or `loop: stop` line, 120 characters | saved in `schedules.json` as `loop.lastAsk.reason` (`src/main/schedules.ts:50,211,757`) and inside `loop.ended.text` ("Stopped by the agent: ...", `schedules.ts:641-654,752`); copied into `activity.json` loop rows (`src/main/main.ts:713-716`, `src/main/loopwiring.ts:84-97`) | yes (`redact`) | FR-453 |
 
-**Not exceptions** (checked at the line): OS notifications carry only the kind of answer needed, never the request (`src/renderer/app.js:4859`); the crash marker holds session ids (`crashmarker.ts`); the away summary holds counts (`summarydays.ts`, `daily.ts`); usage stores hold numbers; held prompts, schedules, team briefs and session names are the person's own text, kept or sent because the person asked; the other 13 stderr lines are fixed words, field names, an adapter id or a file's base name; the network helpers fetch installers and release lists and send no agent text (`netget.ts` callers, `read:`).
+| | Sink | Why it is not an exception |
+|---|---|---|
+| N1 | **Notes** kept from an agent reply (`src/main/notesstore.ts:371`) and the project notes file (`src/main/notesfile.ts:105`) | a user action (*Save to notes*; the project switch says it writes into the project, which may be pushed): stored as saved (FR-447). Masked today (`maskNoteText`) |
+| U1 | **Undo copies**: `checkpoints/` in userData holds copies of files an agent edits (`src/main/checkpoints.ts:193,302`), private, bounded, emptied when the store starts (`checkpoints.ts:9-10`), so a crash leaves them until the next start | never masked; file contents on disk without a per-file action: **Q45** |
 
-**Unchanged by C** (no mask there today, so nothing to replace): `checkpoints/` in userData holds copies of the files an agent edits, for Undo, while the app runs; it is emptied at the next start (`src/main/checkpoints.ts:9-10`). It is file content on disk without a per-file action. Section 6 names it.
+**Not exceptions** (checked at the line): OS notifications carry the agent's name and fixed words, never the request (`src/renderer/app.js:4859`); the window title holds a count; the crash marker holds session ids (`crashmarker.ts`); the away summary holds counts (`summarydays.ts`, `daily.ts`); usage stores hold numbers; held prompts, scheduled prompts, team briefs and session names are the person's own text (the loop pace reason in `schedules.json` is the agent's: E5); the other stderr lines are fixed words, field names, an adapter id or a file's base name. Network: the update checker and self-update read release lists and files, agent app setup downloads installers, MCP sign-in talks to a server's sign-in pages, and the session browser (spec 080) loads the pages the person opens; none of these puts agent text into a request Durbar makes (`read:` at the callers, not traced per request).
 
 ### 3.3 Every sink after C
 
 | Sink | Agent text in it after C | Kind |
 |---|---|---|
 | The screen (every window surface) | everything the agent app sent | display, not a log |
-| `activity.json` | none: kind, program or tool name, decision, ids (E1) | saved state |
+| `activity.json` | none: per row kind, FR-443 | saved state |
+| `schedules.json` | none: the pace minutes and source, fixed end words (E5) | saved state |
 | stderr | none: place, class name, code (E2) | log |
 | `DURBAR_LOG` | none: kinds, ids, lengths, codes (E3) | developer log |
 | Durbar MCP read tools | none: names, transport, state (E4) | sent to a local agent app |
+| Undo copies | copies of edited files, pending Q45 | saved state, emptied at the next start |
 | Notes store, project notes file | what the person saved | user action |
 | Activity export, notes export | what the person sees in the log or notes | user action, asks for a file |
 | *Copy* on a tool chip, a message, an MCP error (*Copy diagnostics*) | what the person sees, as the agent sent it | user action |
 | Messages and briefs sent to an agent app | what the person typed | user action (`maskOutgoing` goes, FR-448) |
 | OS notifications, crash marker, usage, away summary | none (as today) | saved state |
-| Network calls | none (as today) | |
+| Durbar's own network requests | none (as today, section 3.2) | |
 
 There is no chat channel, issue-report form or telemetry in the app (`git grep` for chat services, `issues/new` and report links in `src/`: none).
 
 ### 3.4 Requirements (apply only after the owners' written yes)
 
 - **FR-441** The window shows agent text as the agent app sent it, with invisible and control characters still made visible (spoofing guard, kept). No surface masks secret-shaped text.
-- **FR-442** Durbar writes no agent text (replies, thinking, tool arguments or output, commands, URLs, file contents, an agent app's error text) to its own logs, saved state or anything that leaves the machine, except by an explicit user action (a Copy button, an export, *Save to notes*, sending a message, a switch that says what it writes).
-- **FR-443** The activity log row stores the kind, the program or tool name (the first word of a command, the tool's name), the decision, the mode, agent, folder, app and time; never the full request text. The window may show the full text of this run's rows from memory. An older row's stored action text is cleared on the first read after the change (no migration that keeps it).
-- **FR-444** A main-process log line names a fixed place, an error class name and a code, never an error message, stack text or path from an agent app or the system.
+- **FR-442** Durbar writes no agent text (replies, thinking, tool arguments or output, commands, URLs, file contents, an agent app's error text, the agent's pace reason) to its own logs, saved state or anything that leaves the machine, except (a) by an explicit user action (a Copy button, an export, *Save to notes*, sending a message, a switch that says what it writes) and (b) the Undo copies of edited files, pending Q45.
+- **FR-443** The activity log, per row kind (`ACTIVITY_DECISIONS`, `src/shared/activity.ts:18`; producers read at each call):
+  - permission rows (`allowed-once`, `allowed-session`, `denied`, `auto-allow-all`, `auto-session-grant`; `main.ts:394`): the request kind and the program or tool name only (the first word of a command, a tool's name, a URL's host), never the request text;
+  - `loop-pass`, `loop-end` (`loopwiring.ts:86-97`): Durbar's fixed words and numbers; never the agent's reason (E5); `loop-start`, `loop-skip`, `loop-hold`: fixed words and numbers, as today;
+  - `mode-change` (`agentops.ts:76`, `ipc/previous.ts:92`), `limit-change` (`agentops.ts:109`), `remote-on`/`remote-off` (`ipc/remote.ts:41`), `autopilot-on`/`-end`/`-off` (`autopilotops.ts:190,335,463`), `session-deleted` (`prevsessions.ts:162`): Durbar's fixed words, mode names, numbers, an app name, a short session id; kept as today;
+  - `mcp-restart` (`main.ts:240`, `mcpsigninrefresh.ts:762,1093`): fixed words and the MCP server's configured name; kept as today;
+  - every row keeps time, agent, folder, app and mode. The window may show this run's full request text from memory (Q42). An older row's stored action text is rewritten to the new form on the first read after the change.
+- **FR-444** A main-process log line names a fixed place, an error class name and a code, never an error message, stack text or path from an agent app or the system. One named exception: a test driver's own failure (`DURBAR_DRIVER`, never in a packaged build without `DURBAR_DEV=1`) prints the driver's stack, which CI needs; drivers run on simulated agents only.
 - **FR-445** The `DURBAR_LOG` debug log records event kinds, ids, phases, lengths and codes, never a text field, argument, output or stderr text.
 - **FR-446** The Durbar MCP read tools return an MCP server's name, transport, on/off and health, never its command, arguments or URL.
 - **FR-447** Notes, exports and Copy hold what the person sees, unmasked; each is a user action. The project notes switch says that the file goes into the project folder and may be pushed with it.
 - **FR-448** Text the person sends to an agent app (a message, a team brief, a hook explanation request) is not masked or blocked. Spec 084's send check becomes moot.
-- **FR-449** Values Durbar itself holds that are secret by their field (an MCP extra's environment or header value the person entered) are never sent to the window, a log or another agent: the window gets "set" or "not set". This is structure, not text masking, and it stays.
-- **FR-450** **The planted-marker test** (`npm test`, simulator only, 0 credits): a unique invented value, made at run time with a random body (never a committed shape), is put into every kind of agent output the simulator makes (reply, thinking, tool arguments and output, a command, a URL, an MCP error, an agent app's error and stderr, a question, a note saved by hand). The test asserts the value appears in no file under the profile folder (activity log, stores, crash marker), no `DURBAR_LOG` line, no stderr line, no Durbar MCP read reply, and appears on screen where the agent sent it. Copy and export paths are checked to hold exactly what is shown.
+- **FR-449** Values Durbar itself holds that are secret by their field (an MCP server's environment or header value the person entered) are never sent to the window, a log or another agent: the window gets "set" or "not set". This is structure, not text masking, and it stays.
+- **FR-450** **The planted-marker tests** (`npm test`, 0 credits). A unique invented value, made at run time with a random body (never a committed shape), is fed in as each kind of agent output: reply, thinking, tool name, tool arguments, tool output, a command, a URL, an agent-chosen session title, a loop pace line (`next` and `stop` reasons), a question, a permission summary, an MCP error, an agent app's error and its stderr. **Each sink has its own test and its own mutant**: a mutant that writes the marker into that sink must make the run fail at that sink's own named assert (not at a shared one). Where each sink is reached, because the window simulator (`DURBAR_SIM`) never reaches main and the scheduler does not start under it (`main.ts:1275`):
+
+  | Sink | Test kind |
+  |---|---|
+  | `activity.json`, every row kind | unit test: each producer (`logActivity` with a permission event, `loopActivity`, the mode, limit, remote, Autopilot, session and MCP restart lines) into an `ActivityStore` on a temp folder; the file read back |
+  | `schedules.json` (E5) | unit test: `SchedulesStore` and `loopwiring` with a fake clock, pace lines carrying the marker; the file read back |
+  | stderr (E2) | unit test: `failText` and the save-error path with a captured `console`; an agent-app error object carrying the marker |
+  | `DURBAR_LOG` (E3) | unit test: the debug sink fed events of every kind; the file read back |
+  | adapters' stderr tails (E3) | unit test with a **fake transport**: the Claude and Codex exit handlers run on a fake child whose stderr carries the marker; the debug lines captured |
+  | Durbar MCP read tools (E4) | unit test: `readtools` with fake deps whose MCP server configs carry the marker |
+  | crash marker, usage, away summary | unit test: each store's file after a run whose events carry the marker |
+  | the screen, Copy, exports | window driver under `DURBAR_SIM`: the marker is shown where the agent sent it; Copy and export hold exactly what is shown |
+  | end to end through main | `DURBAR_SIM_MAIN` with `FakeAdapter` (`src/main/mcp/simmain.ts`), where its events reach the router; `[KNOWN GAP]` not checked which sinks it reaches, so it adds to the unit tests and never replaces them |
+
 - **FR-451** docs/safety.md says in one line: **"The screen shows what the agent sent; do not share your screen with secrets on it."** and lists, without "masked", what Durbar keeps and what it never writes.
+- **FR-453** The loop's saved state keeps the pace minutes and its source (`agent`, `default`, `clamped`) and Durbar's fixed end words ("Stopped by the agent"), never the agent's reason; the window may show this run's reason from memory.
 
 ## 4. The constitution III amendment (proposed text; the constitution file is not edited in this PR)
 
-Principle III's text never names masking: masking was how agents read "never reads, logs or transmits tokens" for the screen. So C needs a **clarification**, not a redefinition. Proposed: add one bullet after "Agent Durbar never reads, stores, logs or transmits tokens or credentials...", whose words stay as they are, "No telemetry" included:
+Principle III's text never names masking: masking was how agents read "never reads, logs or transmits tokens" for the screen. Two sentences of principle III are **already untrue today**, with or without masking:
 
-> - **Amendment 4 (proposed, 2026-11-24, owner):** the window shows agent output as the agent app sent it; Durbar does not search it for secrets and does not mask it. Durbar does not put agent output (replies, tool arguments and output, commands, file contents, an agent app's error text) into its logs, saved state, diagnostics or anything that leaves the machine, except by an explicit user action (a Copy button, an export, saving a note, sending a message). What the person sends to an agent app is theirs. Why: the agent apps and models own secret handling in their output; Durbar's part is not to keep or forward it.
+1. **"Saved state (folder list) holds paths and choices only."** Saved state also holds text the person asked Durbar to keep (scheduled and held prompts, notes, team briefs, session names), the activity log, and the agent's loop pace reason (E5).
+2. **"Agent Durbar never ... stores ... tokens or credentials."** Durbar keeps the secret values a person types in for an MCP server (environment and header values), encrypted with the OS secret store and not written at all without it (`src/main/mcpstore.ts`), and its own MCP connection key in a private file (`src/main/mcp/auth.ts`).
 
-**Version: 1.2.0 to 1.3.0, MINOR.** Not MAJOR: no principle is removed and no existing rule's words change. Not PATCH: it adds a checkable rule (FR-442, enforced by FR-450's test) and changes stored behaviour (FR-443). Made with `/speckit.constitution` in its own PR after the owners' yes, with the Sync Impact Report (stage 0).
+Proposed: replace the sentence "Saved state (folder list) holds paths and choices only." and add one bullet after "Agent Durbar never reads, stores, logs or transmits tokens or credentials...", whose other words stay, "No telemetry" included:
+
+> - Saved state holds paths, choices and the text the person asked Durbar to keep (prompts, notes, briefs, names). The only secrets Durbar keeps are the values a person enters for an MCP server, kept only encrypted by the operating system's secret store, and its own local connection key in a private file. Sign-in to the agent apps stays with the vendor runtime.
+> - **Amendment 4 (proposed, 2026-11-24, owner):** the window shows agent output as the agent app sent it; Durbar does not search it for secrets and does not mask it. Durbar does not put agent output (replies, tool arguments and output, commands, file contents, an agent app's error text, the agent's pace reason) into its logs, saved state, diagnostics or anything that leaves the machine, except by an explicit user action (a Copy button, an export, saving a note, sending a message, a switch that says what it writes) and except the Undo copies of edited files (pending Q45). What the person sends to an agent app is theirs. Why: the agent apps and models own secret handling in their output; Durbar's part is not to keep or forward it.
+
+**Version: 1.2.0 to 1.3.0, MINOR**, as proposed: no principle is removed; the rewording of the two sentences describes what Durbar already does and the owners already approved (MCP secrets in spec 019 and 058, the connection key in spec 041), and the new bullet adds a checkable rule (FR-442, FR-450). Not PATCH: it adds a rule and changes stored behaviour (FR-443, FR-453). If the owners read the rewording of "never stores tokens" as a redefinition, it is MAJOR (2.0.0): their call. Made with `/speckit.constitution` in its own PR after the owners' yes, with the Sync Impact Report (stage 0).
 
 **The two published advisories are not about masking** (relayed by Paco's bot, an owner's agent, 2026-11-24; the fix PRs read at their merge commits). Both are patched in 0.1.15 and both fixes are structural:
 
-- **GHSA-9w5g-g9x5-5pq4**: how Claude Code's `CLAUDE.md` imports were handled; fixed by #1383 (`src/adapters/claude.ts`, tests in `scripts/test-claude-adapter.ts`).
-- **GHSA-5h28-qhj8-q5m9**: the agent-file confirmation trusted the file on disk rather than the bytes the person was shown; fixed by #1416 (`selectProfile` in `src/main/ipc/profiles.ts`, `hashAgentFile` in `src/main/agenttrust.ts`, `src/adapters/claudeAgents.ts`; tests in `scripts/test-agentconfirm.ts`, `scripts/test-agentprofiles.ts`, `scripts/test-claude-adapter.ts`, `scripts/test-adapter-contract.ts`).
+- **GHSA-9w5g-g9x5-5pq4**: how Claude Code's `CLAUDE.md` imports were handled; fixed by #1383: `claudeMdPrompt` with `claudeMdNodeIo` and `notPath` in `src/adapters/claude.ts`; tests in `scripts/test-claude-adapter.ts`.
+- **GHSA-5h28-qhj8-q5m9**: the agent-file confirmation trusted the file on disk rather than the bytes the person was shown; fixed by #1416: the `agents:selectProfile` handler in `src/main/ipc/profiles.ts`; `readAgentFile`, `hashAgentFile`, `shownSha` and `AgentTrustStore` in `src/main/agenttrust.ts`; `claudeAgentOfBytes`, `listClaudeAgents`, `claudeAgentDirs` in `src/adapters/claudeAgents.ts`; `linkedInProject`, `linkedBelow` in `src/shared/linkedfolders.ts`; the confirmation paths in `src/renderer/app.js`, `src/renderer/sim.ts`, `src/adapters/claude.ts`, `src/adapters/copilot.ts`, `src/adapters/types.ts`, `src/shared/api.ts`, `src/main/simguard.ts`. New suite `scripts/test-agentconfirm.ts`; also changed `scripts/test-claude-adapter.ts`, `scripts/test-adapter-contract.ts`.
 
 Neither fix calls a mask (`git grep` for `redact` or `mask` in `agenttrust.ts`, `claudeAgents.ts`, `test-agentconfirm.ts`, `test-agentprofiles.ts`: none), so option C needs nothing from them except **keeping both fixes** (FR-452).
 
-- **FR-452** No removal stage changes the two advisory fixes (#1383, #1416): their code paths stay, and their tests stay and stay green in every stage PR; a stage that edits `test-claude-adapter.ts` (it has two masking mentions) changes only its masking asserts. Each stage PR says it ran those suites.
+- **FR-452** No removal stage changes the functions named above for #1383 and #1416, except to remove a mask call next to them (none today); a stage that edits `app.js`, `sim.ts`, `claude.ts` or `copilot.ts` names the fix lines it did not touch. `test-agentconfirm.ts`, `test-adapter-contract.ts`, `test-claude-adapter.ts` (its #1383 and #1416 asserts; a stage changes only its two masking mentions) and `test-agentprofiles.ts` (older, covers `hashAgentFile`) stay and stay green; each stage PR says it ran them.
 
 ## 5. The staged plan (each stage one small PR, in order; none starts before the written yes)
 
@@ -174,7 +204,7 @@ Line counts: `wc -l` of the files a stage deletes, plus the call lines of sectio
 | Stage | What | Lines changed (estimate) |
 |---|---|---|
 | 0 | Owners' rule line: no new masking work, no daily masking batch, spec 119 paused; the constitution amendment PR | ~30 |
-| 1 | E1 to E4 carry no agent text (FR-443..FR-446); FR-449; **the planted-marker test (FR-450)** | ~600 (about 350 new test lines, 250 changed) |
+| 1 | E1 to E5 carry no agent text (FR-443..FR-446, FR-453); FR-449; **the planted-marker tests, one per sink with its mutant (FR-450)**; Q45's answer | ~800 (about 500 new test lines, 300 changed) |
 | 2 | Window masks go: `safetext.js` (260), the renderer call sites (~25 call lines, ~400 mention lines), the FR-197 sink table `test-live-mask.ts` (552), the window drivers `check-done-desk-mask.js`, `check-toolchip-mask.js`, `check-console-mask.js`, `check-question-header-mask.js` (710), `test-safetext*.ts` and corpora (603), `test-announce-mask.ts` (260) | ~2,800 deleted |
 | 3 | Main-side shown-text masks go: `convmask.ts` (227), `mcpmask.ts` (440), `activitymask.ts` (41), ~90 call lines in main, MCP, notes, brain view, adapters; `test-convmask.ts`, `test-mcp-errormask.ts`, `test-toolargs-mask.ts`, `test-mask-paths.ts`, `test-notesmask.ts`, `test-overmask.ts` (1,568); asserts in the 85 mixed test files | ~2,600 |
 | 4 | `redact.ts` (3,681) goes; the kept helpers move to a small text module; `test-redact*.ts`, growth and held libraries, `redact-main-ref.ts`, `test-maskoutgoing*.ts`, `sandbox-real-mask.ts` (7,934) | ~11,600 deleted |
@@ -188,7 +218,7 @@ Line counts: `wc -l` of the files a stage deletes, plus the call lines of sectio
 - **Copying a secret into a note.** If an agent prints a secret and the person saves or copies it, the note, the export or the clipboard holds it. Notes stay in userData (0600) unless the project switch is on.
 - **Third-party logs.** The agent apps, the models' vendors and the OS keep their own logs and histories; Durbar never controlled them and does not now.
 - **Managed or shared machines.** On a machine others can watch or administer, the screen shows more than before. An agent app's own organization policy (spec 076) is unchanged; Durbar adds no lock of its own.
-- **The checkpoint folder** holds copies of edited files while the app runs, and after a crash until the next start (not masked today either).
+- **The Undo copies** (`checkpoints/`) hold copies of edited files while the app runs, and after a crash until the next start (never masked): Q45.
 - **stderr** may be kept by a desktop launcher or the OS; after stage 1 it holds no agent text, but older runs' lines stay where the OS put them.
 - **What Durbar still does not do** (principle III's other bullets stay): it does not store sign-ins (the vendor runtime does), has no telemetry, starts read-only, spawns no shell with user text, validates IPC in main, and parses untrusted files with caps.
 - `[KNOWN GAP]` Not verified: what each OS does with stderr of a desktop-launched app; any run of the app (this is a reading of the code at `e9a712197`).
@@ -198,6 +228,7 @@ Line counts: `wc -l` of the files a stage deletes, plus the call lines of sectio
 - **Q42** The activity log today keeps the command or tool request (first 160 characters, masked) across restarts. Under C it would keep only the program or tool name and the decision, and show the full request only for this run. Is that right, or should the full request be kept as it is today (it is local saved state, so FR-442 would need an exception)?
 - **Q43** May *Copy diagnostics* or *Copy details* include the agent app's own error text, as shown on screen, when the person presses it? (This spec says yes: it is the person's action and copies what they see.)
 - **Q44** Who tells existing users, and how: a changelog line plus the docs/safety.md line in the release that ships stage 2, or also a one-time note in the app?
+- **Q45** Undo keeps copies of the files an agent edits (`checkpoints/` in userData: private, bounded, emptied at the next start, so a crash leaves them until then). Either (a) keep them as a **named exception** in FR-442 and the amendment ("copies for Undo, local, emptied at the next start, a feature the person sees"): no code cost, Undo works as today; or (b) Undo keeps only **hashes and paths**: no file content on disk, but Undo can then only tell that a file changed, not put it back, so spec 065's Undo is lost (or would need git, which spec 065 avoids). Which one?
 
 ## 7. What is not decided
 

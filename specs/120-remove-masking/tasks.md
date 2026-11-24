@@ -1,24 +1,25 @@
 # Tasks: 120 Remove masking as app functionality (proposal)
 
-**Input**: [spec.md](spec.md), [plan.md](plan.md). **No task starts until the three owners agree to option C in writing.** One PR per stage, in order; tests first; 0 AI credits. Numbers T545..T575, FR-441..FR-460 and Q42..Q44 were reserved for this spec by the coordinator on 2026-11-24 and checked with `npm run specs:numbers` against `origin/main` and the open PR heads.
+**Input**: [spec.md](spec.md), [plan.md](plan.md). **No task starts until the three owners agree to option C in writing.** One PR per stage, in order; tests first; 0 AI credits. Numbers T545..T575, FR-441..FR-460 and Q42..Q45 were reserved for this spec by the coordinator on 2026-11-24 and checked with `npm run specs:numbers` against `origin/main` and the open PR heads.
 
 ## Stage 0: decision (owners)
 
 - [ ] T545 The three owners' written decision (A, B or C) recorded under `## Changes` with the date and where each said it; on A or B this spec is marked `superseded`. [section 7]
 - [ ] T546 Owners' rule line: no new masking work, no daily masking batch, spec 119 paused (a one-line `AGENTS.md` change by the owners, naming the rule it replaces, FR-063). [section 5 stage 0]
-- [ ] T547 Each stage PR (1 to 5) keeps the two advisory fixes (#1383 for GHSA-9w5g, #1416 for GHSA-5h28) untouched and runs `scripts/test-agentconfirm.ts`, `scripts/test-agentprofiles.ts`, `scripts/test-adapter-contract.ts` and `scripts/test-claude-adapter.ts` green; a stage that edits `test-claude-adapter.ts` changes only its masking asserts. [FR-452]
+- [ ] T547 Each stage PR (1 to 5) keeps the two advisory fixes untouched (#1383: `claudeMdPrompt`, `claudeMdNodeIo`, `notPath`; #1416: `agents:selectProfile`, `readAgentFile`, `hashAgentFile`, `shownSha`, `AgentTrustStore`, `claudeAgentOfBytes`, `listClaudeAgents`, `claudeAgentDirs`, `linkedInProject`, `linkedBelow` and the confirmation paths) and runs `test-agentconfirm.ts`, `test-adapter-contract.ts`, `test-claude-adapter.ts` and `test-agentprofiles.ts` green; a stage that edits `test-claude-adapter.ts` changes only its masking asserts. [FR-452]
 - [ ] T548 Constitution amendment PR with `/speckit.constitution` (principle III, version 1.2.0 to 1.3.0, Sync Impact Report), text of spec section 4. [section 4]
-- [ ] T549 Answers to Q42, Q43, Q44 written into the spec. [section 6]
+- [ ] T549 Answers to Q42, Q43, Q44 and Q45 written into the spec; FR-442 and the amendment follow Q45. [section 6]
 
 ## Stage 1: no agent text in logs, saved state or outbound sinks (depends on stage 0)
 
-- [ ] T550 Planted-marker test first: `scripts/test-planted-marker.ts` (simulator, main-side stores with an injected folder, stderr captured, a `DURBAR_LOG` file in a temp folder, Durbar MCP read replies) with a run-time random marker in every kind of agent output; a mutant (the debug sink without its mask) must fail it. [FR-450]
-- [ ] T551 Window side of the marker test: one driver asserts the marker is shown where the agent sent it and that Copy and export hold exactly what is shown. [FR-441, FR-447, FR-450]
-- [ ] T552 Activity row stores kind, program or tool name and decision, not the request text; this run's full text from memory; old rows' action text cleared on read; `test-activity.ts` updated. [FR-443]
-- [ ] T553 `failText` and the other main log lines: place, class name, code only. [FR-444]
+- [ ] T550 Planted-marker unit tests first, one per main-side sink with its own mutant (a mutant that writes the marker into that sink fails at that sink's own assert): `activity.json` for every row kind, `schedules.json`, stderr (`failText`, the save error), the `DURBAR_LOG` sink, the crash marker, usage and away-summary stores, the Durbar MCP read tools; marker kinds of FR-450 including tool name, session title and the loop pace line. [FR-450]
+- [ ] T551 Fake-transport test of the Claude and Codex exit handlers (stderr carrying the marker, debug lines captured); window driver under `DURBAR_SIM` for the screen, Copy and export; a `DURBAR_SIM_MAIN` pass where it reaches, listed as extra. [FR-441, FR-447, FR-450]
+- [ ] T552 Activity rows per kind as FR-443 lists (permission rows: kind and program or tool name; loop rows without the agent's reason; the other kinds as today); this run's full text from memory; old rows rewritten on read; `test-activity.ts` updated. [FR-443]
+- [ ] T553 `failText` and the other main log lines: place, class name, code only; the test driver's own failure stack is the named exception. [FR-444]
 - [ ] T554 `DURBAR_LOG` records kinds, ids, phases, lengths and codes; adapters' debug lines lose stderr text. [FR-445]
 - [ ] T555 Durbar MCP read tools return name, transport, on/off and health of MCP servers; spec 041 delta. [FR-446]
 - [ ] T556 Values Durbar holds by field (MCP extras' environment and header values) reach no window, log or agent: "set" or "not set"; tests. [FR-449]
+- [ ] T557 Loop pace reason: `schedules.json` keeps minutes, source and fixed end words, never the agent's reason; the window shows this run's reason from memory. [FR-453]
 
 ## Stage 2: window masks (depends on stage 1)
 
