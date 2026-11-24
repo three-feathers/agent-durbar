@@ -48,6 +48,7 @@
     "test:autopilot-claude": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-autopilot-claude.js",
     "test:autopilot-codex": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-autopilot-codex.js",
     "test:autopilot-copilot": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-autopilot-copilot.js",
+    "test:assisted-copilot": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-assisted-copilot.js",
     "test:autopilot-ipc": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-autopilot-ipc.js",
     "test:autopilot-reach": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-autopilot-reach.js",
     "test:autopilot-window": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-autopilot-window.js",

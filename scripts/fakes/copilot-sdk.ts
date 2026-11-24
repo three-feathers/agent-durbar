@@ -3,7 +3,9 @@
  * that uses the fake client through the protected `getClient()` seam. No runtime process, no Copilot account, no credits.
  * `FakeSession.send` replays a recorded turn (`turnScript`) through the session handler.
  */
+import * as path from 'path';
 import { CopilotAdapter } from '../../src/adapters/copilot';
+import { loadLookalike } from '../../src/adapters/copilotAssisted';
 import type { AutopilotTuning } from '../../src/adapters/autopilotHost';
 
 export type ScriptEvent = { type: string; data: unknown; agentId?: string | null };
@@ -129,10 +131,34 @@ export class FakeSession {
       enable: async (a: unknown) => { this.calls.push({ name: 'remote.enable', args: [a] }); if (this.remoteFail) throw new Error(this.remoteFail); return this.remoteAnswer; },
       disable: async () => { this.calls.push({ name: 'remote.disable', args: [] }); if (this.remoteFail) throw new Error(this.remoteFail); },
     } as Record<string, unknown> | undefined,
+    permissions: {
+      setMode: async (a: unknown) => {
+        const asked = (a as { mode?: string }).mode;
+        this.permCalls.push({ name: 'setMode', mode: asked });
+        if (this.permHangs) return new Promise<unknown>(() => undefined);
+        if (this.permSetFail) throw new Error(this.permSetFail);
+        const next = this.permAnswer ?? asked ?? 'manual';
+        const previousMode = this.permMode;
+        this.permMode = next;
+        if (next !== previousMode) this.fire('session.permissions_changed', { mode: next, previousMode });
+        return { success: next === asked, mode: next };
+      },
+      getMode: async () => { this.permCalls.push({ name: 'getMode' }); return { mode: this.permMode }; },
+    } as Record<string, unknown> | undefined,
     visibility: {
       get: async () => { this.calls.push({ name: 'visibility.get', args: [] }); if (this.visibilityFail) throw new Error(this.visibilityFail); return this.visibilityAnswer; },
     } as Record<string, unknown> | undefined,
   };
+  /**
+   * Spec 003 FR-123, FR-128: the runtime's permission mode, as `rpc.permissions` keeps it (`session.permissions_changed` after a change).
+   * `permAnswer`: the mode `setMode` answers instead of the asked one (a policy block); `permSetFail` rejects; `permHangs` never settles.
+   * Calls go to `permCalls`, not `calls`. A test deletes `rpc.permissions` to act as an older runtime.
+   */
+  permMode = 'manual';
+  permAnswer?: string;
+  permSetFail = '';
+  permHangs = false;
+  permCalls: Array<{ name: string; mode?: string }> = [];
   remoteAnswer: unknown = { url: 'https://github.com/o/r/tasks/1', remoteSteerable: true };
   remoteFail = '';
   /** `rpc.name.set` rejects with this message (spec 059). */
@@ -161,6 +187,8 @@ export class FakeClient {
   nameSetFail = '';
   /** Spec 099: the mode a resumed session comes back in; `modeSetFailOnResume` makes its `mode.set` reject; `modeSilentOnResume`: no `session.mode_changed` after it. */
   resumeMode = 'interactive';
+  /** Spec 003 FR-128: the permission mode a resumed session comes back in. */
+  resumePermMode = 'manual';
   modeSetFailOnResume = '';
   modeSilentOnResume = false;
   private track(s: FakeSession): FakeSession {
@@ -185,6 +213,7 @@ export class FakeClient {
     this.resumed.push({ id, config });
     this.last = this.track(new FakeSession(id, config));
     this.last.mode = this.resumeMode;
+    this.last.permMode = this.resumePermMode;
     this.last.modeSetFail = this.modeSetFailOnResume;
     this.last.modeSilent = this.modeSilentOnResume;
     return this.last;
@@ -261,8 +290,10 @@ export class FakeClient {
   }
 }
 
+/** Spec 003 FR-124 (C5): the tests run from `dist-scripts/`, so the adapter's lookalike check is loaded from the source tree's renderer folder. */
+export const LOOKALIKE_DIR = path.join(__dirname, '..', '..', '..', 'src', 'renderer');
 export class FakeCopilot extends CopilotAdapter {
-  constructor(public fake: FakeClient, oneShotTimeoutMs?: number, autopilotTuning?: AutopilotTuning) { super(); if (oneShotTimeoutMs !== undefined) this.oneShotTimeoutMs = oneShotTimeoutMs; if (autopilotTuning) this.autopilotTuning = autopilotTuning; }
+  constructor(public fake: FakeClient, oneShotTimeoutMs?: number, autopilotTuning?: AutopilotTuning) { super(); if (oneShotTimeoutMs !== undefined) this.oneShotTimeoutMs = oneShotTimeoutMs; if (autopilotTuning) this.autopilotTuning = autopilotTuning; this.lookalike = loadLookalike(LOOKALIKE_DIR); }
   protected async getClient(): Promise<never> { return this.fake as never; }
 }
 

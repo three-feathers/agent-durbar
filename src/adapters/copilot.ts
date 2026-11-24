@@ -5,7 +5,7 @@ import type { CopilotManagedClient } from './copilotOrgPolicy';
 import type { OrgPolicy } from '../shared/orgpolicy';
 import { isAuthError, markAuthError, signInFromError } from './autherrors';
 import { randomUUID } from 'crypto';
-import { CopilotClient, RuntimeConnection } from '@github/copilot-sdk';
+import { CopilotClient, RuntimeConnection, createAttributedPermissionResult } from '@github/copilot-sdk';
 import { MAX_ANSWER, parseQuestions, SkipNotes } from './questions';
 import type { SkipReason } from './questions';
 import { answerElicitation, cancelElicitations, declineElicitation, runElicitation, type ElicitWaiter } from './elicitation';
@@ -14,6 +14,8 @@ import type { GoalTextResult } from './autopilot';
 import { AUTOPILOT_NOT_ALLOW, AUTOPILOT_NO_PLAN, AUTOPILOT_ONE_RUN, AUTOPILOT_WAIT_TURN, AUTOPILOT_WIRED, AutopilotState, CLEAR_WAIT_MS, LINE_CAP_NOT_RESTORED, LINE_CLOSED, LINE_SELF_STARTED, LINE_UNCONFIRMED, capInForce, emitAutoAnswered, goalRefusal, lineNotCleared, within } from './autopilotHost';
 import type { AutopilotTuning } from './autopilotHost';
 import { MIN_CAP } from '../shared/credits';
+import { copilotReview, loadLookalike, lookalikeClean } from './copilotAssisted';
+import type { CopilotPermMode, LookalikeModule } from './copilotAssisted';
 import type { ElicitAnswer } from '../shared/elicit';
 import type { CopilotSession, MCPServerConfig, ModelInfo, PermissionRequest, PermissionRequestResult, ResumeSessionConfig, SessionConfig, SessionEvent } from '@github/copilot-sdk';
 import type {
@@ -44,7 +46,7 @@ import type { EventBody, RawEvent } from './map';
 import { autoTierToSend, compactResultFrom, managedAutoTierFrom, modelConfig, modelOptionFrom, runtimeHasAutoTiers, runtimeMessage, sdkTier, switchResultFrom, withAutoTiers } from './copilotmodel';
 import type { ManagedAutoTier } from '../shared/modelswitch';
 import type { ModelOption, RawModelInfo, RawSwitchResult } from './copilotmodel';
-import { PermissionBroker, isInsideRoots, mcpToolBlockList, startModeOf } from './permissions';
+import { PermissionBroker, isInsideRoots, mcpToolBlockList, startModeOf, summarize } from './permissions';
 import type { BrokerEvent, PermissionLike } from './permissions';
 import { resolveWorkspaceCwd } from './workspace';
 import type { AgentProfile, PlanAnswer, SlashCommand, SlashExpansion } from './types';
@@ -165,6 +167,10 @@ interface Live {
   sandboxApplying?: Promise<void>;
   /** Spec 099: the Autopilot state of this main session (FR-008: never a helper's). */
   auto?: AutopilotState;
+  /** Spec 003 FR-123: the runtime answered `assisted` to Durbar's `permissions.setMode`: the judge's `approve` may be used (FR-124). In memory only (FR-129). */
+  assisted?: boolean;
+  /** Spec 003 FR-127, FR-128: the runtime permission mode Durbar last asked for; a change to anything else is not Durbar's. */
+  assistedAsk?: CopilotPermMode;
   /** Spec 099 FR-022: the session's own cap (`a.maxAiCredits`), apart from the Autopilot cap in force in `capNow`. */
   ownCap?: number | null;
   /** Spec 099 FR-022: the Autopilot cap Durbar sent: its `session_limits_changed` is not the session's own, so main never saves it for the folder. */
@@ -323,6 +329,7 @@ export const COPILOT_CAPABILITIES: AdapterCapabilities = Object.freeze({
   deleteSession: true, // spec 006 FR-028: CopilotClient.deleteSession (read: SDK 1.0.22-1.0.26 client.d.ts; never run on a real session)
   oneShot: true, // spec 040 FR-015: a throw-away SDK session with no tools and no MCP, deleted after (real 2026-10-20: no tool ran, nothing left on disk)
   autopilot: Object.freeze({ capUnit: 'aiu', attachments: true, planApproval: true, verified: false, capMin: MIN_CAP }), // spec 099 FR-001: fakes only until T094; nothing in main or the window reads it before T030, T033
+  assistedApproval: Object.freeze({ verified: false }), // spec 003 FR-121: rpc.permissions.setMode assisted (@experimental; read: SDK 1.0.24 / runtime 1.0.101; fakes only until T056, so real sessions do not show the switch, C8)
 });
 
 /** Spec 059 FR-007: Copilot's own name rule is stricter than Durbar's: no double quotes, at most 100 UTF-16 units, no control characters (SDK `types.d.ts`, `SessionConfig.name`). */
@@ -628,6 +635,9 @@ export class CopilotAdapter implements AgentAdapter {
         live.sandboxFloor = undefined; // spec 087 FR-022d: the resumed session has no floor until applySandbox sends one (Allow all sends none)
         live.lowerOutstanding = undefined; // spec 087 FR-022c (review on PR #833): a lowering sent to the old runtime is not waited for; its answer is ignored
         await this.clearOnResume(sid, live, wasAuto.has(sid)); // spec 099 FR-053: before anything is sent; a failure ends the session below
+        const wasAssisted = !!live.assisted;
+        await this.resetRuntimeMode(live); // spec 003 FR-128, FR-129: the resumed runtime is Durbar's `manual`; the reviewer is not turned on again
+        if (wasAssisted) this.emit(sid, { type: 'assisted' });
         await this.applySandbox(sid, live, live.broker.getMode(), client); // spec 087: the floor again on the new runtime, before any send
         for (const [name, on] of live.mcpToggles ?? []) {
           await (on ? session.rpc.mcp.enable({ serverName: name }) : session.rpc.mcp.disable({ serverName: name })).catch(() => undefined);
@@ -940,9 +950,17 @@ export class CopilotAdapter implements AgentAdapter {
 
     // spec 087 FR-021a (K15): a shell command asked for while the sandbox is on gets the card's own line (an approved one was seen
     // running outside it on Linux); a copy of the request carries it, the runtime's object is not changed
-    const onPermissionRequest = async (req: PermissionRequest): Promise<PermissionRequestResult> => {
-      const note = String((req as { kind?: unknown }).kind) === 'shell' && this.sessions.get(sid)?.sandbox?.state === 'on';
-      return broker.request((note ? { ...req, sandboxNote: COPILOT_SANDBOX_NOTE_COMMAND } : req) as unknown as PermissionLike);
+    const onPermissionRequest = async (req: PermissionRequest, invocation?: { promptRequest?: unknown }): Promise<PermissionRequestResult> => {
+      const live = this.sessions.get(sid);
+      const note = String((req as { kind?: unknown }).kind) === 'shell' && live?.sandbox?.state === 'on';
+      // spec 003 FR-124: the judge's verdict, normalized here; a copy of the request carries it (a field of the runtime's own by these names is dropped)
+      const r = copilotReview(!!live?.assisted && broker.getMode() === 'ask', req, invocation?.promptRequest);
+      const like: PermissionLike = { ...(req as unknown as PermissionLike), appReview: undefined, appReviewNote: r.note, ...(note ? { sandboxNote: COPILOT_SANDBOX_NOTE_COMMAND } : {}) };
+      if (r.approve && lookalikeClean(this.lookalike, summarize(like), String(like.kind))) like.appReview = 'approve'; // C5: a finding, or a check that could not run, keeps the card
+      const d = await broker.request(like);
+      // FR-125: a judge-based approval says who decided, so `permission.completed` reports it; a card the user answered goes back as before
+      if (d.kind === 'approve-once' && d.by === 'app-review') return createAttributedPermissionResult({ kind: 'approve-once' } as PermissionRequestResult, { outcome: 'auto_approved', source: 'assisted_approval', surface: 'sdk' }) as unknown as PermissionRequestResult;
+      return (d.kind === 'approve-once' ? { kind: 'approve-once' } : d) as PermissionRequestResult;
     };
 
     // spec 066 FR-003: the runtime's plan (plan mode) waits for the user's answer; approve continues interactively (never autopilot)
@@ -1095,6 +1113,7 @@ export class CopilotAdapter implements AgentAdapter {
         if (ev.type === 'session.idle') live.stoppedAtLimit = false;
         else if (ev.type === 'session.error' && !ev.agentId && (ev.data as { errorType?: unknown }).errorType === 'query') return; // spec 052 FR-233
       }
+      if (live && (ev.type === 'session.permissions_changed' || ev.type === 'session.managed_settings_enforced')) this.assistedEvent(sid, live, ev); // spec 003 FR-127
       const hidden = live ? this.autopilotEvent(sid, live, ev) : false;
       if (!hidden) this.map(sid, ev);
       if (live) this.trackCap(sid, live, ev);
@@ -1135,6 +1154,7 @@ export class CopilotAdapter implements AgentAdapter {
         throw new ShownError(lineNotCleared(errorText(e)));
       }
     }
+    if (live87) await this.resetRuntimeMode(live87); // spec 003 FR-128: before anything is sent, created or resumed
     if (live87) await this.applySandbox(sid, live87, startModeOf(options), client);
     return sid;
   }
@@ -1749,6 +1769,111 @@ export class CopilotAdapter implements AgentAdapter {
     if (live.sandbox?.untilNewSession) this.setSandbox(sid, live, null);
   }
 
+  /* ---------------- spec 003 FR-120..FR-133: Copilot's assisted approvals inside Ask first ---------------- */
+
+  /** FR-124 (C5): spec 097's lookalike check, loaded once from the build's renderer folder; missing = every request keeps its card. */
+  protected lookalike: LookalikeModule | undefined = loadLookalike();
+
+  /** The runtime's `permissions` RPC group, or undefined (an older runtime has none: FR-123). */
+  private permsRpc(live: Live): { setMode?: (p: { mode: CopilotPermMode }) => Promise<unknown>; getMode?: () => Promise<unknown> } | undefined {
+    const p = (live.session.rpc as unknown as { permissions?: unknown }).permissions;
+    return p && typeof p === 'object' ? (p as { setMode?: (p: { mode: CopilotPermMode }) => Promise<unknown>; getMode?: () => Promise<unknown> }) : undefined;
+  }
+
+  /** FR-123, FR-126: the switch off now (Durbar stops using verdicts at once), then the runtime back to `manual`, bounded; a failure is a debug code only. */
+  private assistedManual(live: Live): Promise<void> {
+    live.assisted = false;
+    live.assistedAsk = 'manual';
+    const p = this.permsRpc(live);
+    if (typeof p?.setMode !== 'function') return Promise.resolve();
+    return this.bounded(Promise.resolve().then(() => p.setMode!({ mode: 'manual' }))).then(
+      () => undefined,
+      () => this.debug?.('assisted: manual-not-confirmed'),
+    );
+  }
+
+  /**
+   * FR-121, FR-123: the reviewer on (runtime `assisted`) or off (`manual`) for a live session in Ask first. On counts only when the runtime's
+   * answer says `assisted`; any other answer is the organization's block (FR-127); a missing, failed or late call leaves it off and is not
+   * retried. `assistedApprovalModel` and judge instructions are never sent (C2, C3); never `setApproveAll` or the runtime's `allow-all`.
+   */
+  async setAssisted(sessionId: string, on: boolean): Promise<{ on: boolean; reason?: 'policy' | 'unsupported' | 'not-ask' }> {
+    const live = this.sessions.get(sessionId);
+    if (!live) return { on: false, reason: 'not-ask' };
+    if (!on) {
+      await this.assistedManual(live);
+      return { on: false };
+    }
+    if (live.broker.getMode() !== 'ask' || live.auto?.on || live.auto?.running) return { on: false, reason: 'not-ask' };
+    if (live.assisted) return { on: true };
+    const p = this.permsRpc(live);
+    if (typeof p?.setMode !== 'function') return { on: false, reason: 'unsupported' };
+    live.assistedAsk = 'assisted';
+    let mode: unknown;
+    try {
+      const r = await this.bounded(Promise.resolve().then(() => p.setMode!({ mode: 'assisted' })));
+      mode = r && typeof r === 'object' ? (r as { mode?: unknown }).mode : undefined;
+    } catch {
+      this.debug?.('assisted: set-failed');
+      void this.assistedManual(live); // a late answer may still have switched it: back to manual (not a retry of the turn-on)
+      return { on: false, reason: 'unsupported' };
+    }
+    // a switch away from Ask first, an End, or a fallback while it was asked: what Durbar did meanwhile wins
+    if (this.sessions.get(sessionId) !== live || live.broker.getMode() !== 'ask' || live.assistedAsk !== 'assisted') {
+      void this.assistedManual(live);
+      return { on: false, reason: 'not-ask' };
+    }
+    if (mode === 'assisted') {
+      live.assisted = true;
+      return { on: true };
+    }
+    void this.assistedManual(live);
+    return { on: false, reason: 'policy' };
+  }
+
+  /** FR-128: after create and resume, the runtime's permission mode is Durbar's (`manual`; the switch is always off then, FR-129). Bounded; a code only in the debug log. */
+  private async resetRuntimeMode(live: Live): Promise<void> {
+    live.assisted = false;
+    live.assistedAsk = 'manual';
+    const p = this.permsRpc(live);
+    if (typeof p?.getMode !== 'function') return;
+    try {
+      const r = await this.bounded(Promise.resolve().then(() => p.getMode!()));
+      const mode = typeof r === 'string' ? r : r && typeof r === 'object' ? (r as { mode?: unknown }).mode : undefined;
+      if (mode === 'manual') return;
+      this.debug?.('assisted: runtime-mode-reset');
+      await this.assistedManual(live);
+    } catch {
+      this.debug?.('assisted: get-mode-failed');
+    }
+  }
+
+  /**
+   * FR-127: a live fallback (`permissions_changed` Durbar did not ask for, or `managed_settings_enforced` for assisted approval) turns the
+   * switch off and says the fixed sentence once; the runtime's own text is never read. A change to a mode Durbar never asked for is set back.
+   */
+  private assistedEvent(sid: string, live: Live, ev: SessionEvent): void {
+    if (ev.agentId) return;
+    const d = (ev as { data?: unknown }).data as Record<string, unknown> | undefined;
+    const wanted = !!live.assisted || live.assistedAsk === 'assisted';
+    if (ev.type === 'session.permissions_changed') {
+      const mode = d?.mode;
+      if (mode === live.assistedAsk) return;
+      if (wanted && mode === 'manual') return this.assistedFellBack(sid, live);
+      // a mode Durbar never asked for (`allow-all`, or `assisted` while the switch is off): back to `manual`, and the switch is off
+      this.debug?.('assisted: runtime-mode-unasked');
+      const was = !!live.assisted;
+      void this.assistedManual(live);
+      if (was) this.emit(sid, { type: 'assisted' });
+    } else if (ev.type === 'session.managed_settings_enforced' && d?.escalation === 'assisted_approval' && wanted) this.assistedFellBack(sid, live);
+  }
+
+  private assistedFellBack(sid: string, live: Live): void {
+    live.assisted = false;
+    live.assistedAsk = 'manual';
+    this.emit(sid, { type: 'assisted', reason: 'policy' });
+  }
+
   /**
    * Change the permission mode of a live session without restarting it: the broker reads the mode on every request.
    * Optionally clears the session grants, approves what is pending now (Allow all) or denies it (Read-only).
@@ -1758,6 +1883,8 @@ export class CopilotAdapter implements AgentAdapter {
     if (!live) return { pending: 0 };
     // spec 099 FR-051: main ends Autopilot first (T030); here too, so no path leaves it on outside Allow all (FR-002)
     if (mode !== 'allow' && (live.auto?.on || live.auto?.running)) void this.autopilotOff(sessionId, live, 'stopped');
+    // spec 003 FR-126: every switch away from Ask first turns the app's reviewer off first (the runtime back to `manual`); never restored
+    if (mode !== 'ask' && (live.broker.getMode() === 'ask' || live.assisted)) void this.assistedManual(live);
     live.broker.setMode(mode);
     // spec 087 FR-013: the new floor through options.update at the switch (to Allow all a floor in force is lowered, FR-022c)
     this.chainSandbox(sessionId, live, mode);
