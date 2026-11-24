@@ -6,7 +6,7 @@ import { historyOf } from '../../adapters/router';
 import type { AddResult, AgentInfo, PickedFile, ResumeResult, SessionOptions } from '../../shared/api';
 import { parseAmount, parseCapIn } from '../../shared/credits';
 import { revokeCallFor, revokeGrantFor } from '../../adapters/permissions';
-import { endSessionOp, sessionOptsOf, setCapOp, setModeOp, stopTurnOp, validMode } from '../agentops';
+import { endSessionOp, sessionOptsOf, setCapOp, setModeAssistedOp, stopTurnOp, validMode } from '../agentops';
 import type { OpsDeps } from '../agentops';
 import { folderGitStatus } from '../gitstatus';
 import type { GitStatus } from '../gitstatus';
@@ -207,7 +207,7 @@ export function register(deps: AgentsIpcDeps): void {
     if (!fromApp(e)) return { ok: false, error: 'invalid request' };
     // spec 054 FR-011: Allow all and remote control never together (anyone steering on GitHub could run commands unasked)
     if (mode === 'allow' && typeof id === 'string' && remoteOps.has(id)) return { ok: false, error: 'Stop remote control first: Allow all and remote control from GitHub are never on together.' };
-    return setModeOp(opsDeps, id, mode, opts);
+    return setModeAssistedOp(opsDeps, id, mode, opts); // spec 003 FR-122: `opts.assisted` (the app's reviewer) in the same call; from the app window only (above)
   });
   // One-way from the window: the pause button (spec 041 T014). Unknown ids and non-boolean values are ignored.
   ipcOn('agents:setPaused', (_e, id: unknown, paused: unknown) => {

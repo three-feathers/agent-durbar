@@ -121,6 +121,7 @@ import { folderKeyOf, folderNameOf } from '../shared/usagedoc';
 import { agentLabel } from '../shared/toolusage';
 import { autopilotTestGate, devEnv, devWarning } from './devhooks';
 import { AUTOPILOT_WIRED } from '../adapters/autopilotHost';
+import { ASSISTED_OFF_ROW, ASSISTED_POLICY_LINE } from '../adapters/assistedLines';
 import { bothGuards, createAutopilotOps, windowAdapters } from './autopilotops';
 import { folderFingerprint } from './gitstatus';
 import { isSimBlocked, sealChildProcess, simDetectorFor, simGuardDescriptors, simulatorCount, simulatorOn } from './simguard';
@@ -326,6 +327,19 @@ router.onEvent((e) => autopilotOps.onEvent(e));
 /** Spec 005 FR-411: the raw text of the argument each chip shows, for Copy (main writes the clipboard; the window gets only `argsMasked`). */
 const toolArgCopies = createToolArgCopies({ write: (t) => clipboard.writeText(t) });
 router.onEvent((e) => { if (!mcp.hidesEvent(e)) toRenderer('agent:event', toolArgCopies.see(e, toWindowEvent(e, outward))); }); // spec 005 FR-411: `argsMasked` on the window's copy only (the debug log's is unchanged); spec 087 (review rounds 7-8): the sandbox event cleaned too; spec 058 FR-215: an elicitation main declined is not shown
+// Spec 003 FR-127, FR-129: the app's reviewer went off without the user asking (policy or fallback), or the session ended: main's state follows,
+// and a policy fallback gets its one activity row (the fixed sentence, never the runtime's text). The window says it from the same event.
+router.onEvent((e) => {
+  if (e.agentId) return;
+  const a = agents.get(e.sessionId);
+  if (!a) return;
+  if (e.type === 'status' && e.status === 'stopped') a.assisted = undefined;
+  if (e.type !== 'assisted' || e.assisted) return;
+  const was = !!a.assisted;
+  a.assisted = undefined;
+  if (e.reason === 'policy') logActivity(a, 'mode-change', ASSISTED_POLICY_LINE);
+  else if (was) logActivity(a, 'mode-change', ASSISTED_OFF_ROW);
+});
 // Spec 087 FR-011: the OS sandbox state is kept on the agent's info (cleaned: own known fields, reason masked and cut), so a reloaded
 // window gets it from agents:list; never saved
 router.onEvent((e) => {
@@ -705,7 +719,7 @@ const scheduleDeps = (file: string): SchedulerDeps => ({
 });
 
 // The handler bodies that refuse a setting a live session cannot take live in agentops.ts (spec 012 FR-054); `store` is read when a handler runs.
-const opsDeps: OpsDeps = { agents, router, get store() { return folderStore; }, wsKey, sessionKey: (a) => resumeIdFor(a.id), log: (a, decision, action) => logActivity(a, decision, action), orgRefusal: (a, mode) => orgPolicies.refusalNow(appIdOf(a.id), { mode }), endAutopilot: (a) => autopilotOps.endForMode(a), autopilotStopSeen: (id) => autopilotOps.stopSeen(id) };
+const opsDeps: OpsDeps = { agents, router, get store() { return folderStore; }, wsKey, sessionKey: (a) => resumeIdFor(a.id), log: (a, decision, action) => logActivity(a, decision, action), orgRefusal: (a, mode) => orgPolicies.refusalNow(appIdOf(a.id), { mode }), orgAssistedRefusal: (a) => orgPolicies.refusalNow(appIdOf(a.id), { assisted: true }), remoteOn: (id) => remoteOps.engaged(id), endAutopilot: (a) => autopilotOps.endForMode(a), autopilotStopSeen: (id) => autopilotOps.stopSeen(id) };
 
 /* DURBAR_THEME (spec 040 FR-008): a theme for this run only, never saved; a pick in Settings replaces it and is saved as usual. */
 let runTheme: string | undefined;
