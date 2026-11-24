@@ -196,7 +196,8 @@ export function problems(text: string, releaseText: string = GATED_RELEASE): str
   for (const r of [RUNS[3], RUNS[4]]) if (!same(shards(ls, r), LINUX_WINDOWS8)) bad.push(`a main push (os_sensitive=${r.os}) does not run Linux and Windows, 4 shards each`);
   for (const r of [RUNS[5], RUNS[6], RUNS[7], RUNS[8]]) {
     const all = shards(ls, r);
-    if (all.length !== 11 || !all.includes('macos-latest 3') || !all.includes('windows-latest 4')) bad.push(`${r.event} (os_sensitive=${r.os ?? 'missing'}) does not run the full three-OS matrix`);
+    // spec 008 delta 2026-11-23: macOS runs 4 shards too, so schedule and dispatch get 3 x 4 = 12 shard jobs
+    if (all.length !== 12 || !all.includes('macos-latest 4') || !all.includes('windows-latest 4')) bad.push(`${r.event} (os_sensitive=${r.os ?? 'missing'}) does not run the full three-OS matrix`);
   }
   if (!/^\s+os_sensitive:\s*\$\{\{\s*steps\.changes\.outputs\.os_sensitive\s*\}\}\s*$/m.test((block(ls, 'changes', 2) || []).join('\n'))) bad.push('the decision job does not pass os_sensitive on');
   // (b) concurrency per event

@@ -1,7 +1,7 @@
 /** Spec 102 FR-227, FR-256 (T202, T203, T205): where the people sit. `rows` is `realLayout`, untouched; `aisles` is the Retro arcade hall:
  *  staggered aisles of cabinets in an integer pixel scale `g`. Pure, no DOM, nothing draws it yet (RA3). The numbers marked "provisional"
  *  come from the mockup and the art by eye and are replaced by measured ones (T201's `faceBox`, T207's frame sizes). */
-import { type HdSet, devStep, lobbyBand, lobbyRange, loungeRows, realLayout, rowGeom, deskStation, shownDesks, signWidth, signMin, signShortMin, CHIP_KINDS, splitLounge, BIG_MAX, helpH, helpCols, helpShown, FACE_U, PW, SR, PAD, ZGAP, STRIP, U_MAX, type DeskBox, type Layout, type RealAgent, type RealMeta, type RealModel, type RealState, type Rect, type ZoneBox, STOREY_GAP, STOREY_TAG_MIN, storeyRuns, storeyTagW, type StoreyBand } from './realoffice-layout';
+import { hdFrame, seatsOf, devStep, lobbyBand, lobbyRange, loungeRows, realLayout, rowGeom, deskStation, shownDesks, signWidth, signMin, signShortMin, CHIP_KINDS, splitLounge, BIG_MAX, helpH, helpCols, helpShown, FACE_U, PW, SR, PAD, ZGAP, STRIP, U_MAX, type DeskBox, type Layout, type RealAgent, type RealMeta, type RealModel, type RealState, type Rect, type ZoneBox, STOREY_GAP, STOREY_TAG_MIN, storeyRuns, storeyTagW, type StoreyBand } from './realoffice-layout';
 
 export const ARRANGEMENTS = ['rows', 'circle', 'aisles'] as const;
 export type Arrangement = (typeof ARRANGEMENTS)[number];
@@ -146,7 +146,7 @@ const gridPx = (v: number, k: number): number => k === 1 ? v : Math.max(1, Math.
 /** the frame a person shows at a cabinet and its size in grid pixels, or null when the set has neither (then the initials, FR-065) */
 function aislePose(meta: RealMeta, pid: string, state: RealState): { pose: string; w: number; h: number } | null {
   const pose = AISLE_POSE[state];
-  if (pose === 'rest') { const m = own(meta.seat, pid) ? meta.seat[pid] : null; return m ? { pose, w: m.w, h: m.h } : null; }
+  if (pose === 'rest') { const seat = seatsOf(meta), m = own(seat, pid) ? seat[pid] : null; return m ? { pose, w: m.w, h: m.h } : null; }
   const st = own(meta.stand, pid) ? meta.stand[pid] : null;
   if (!st) return null;
   const k = aisleK(meta, st);
@@ -154,21 +154,6 @@ function aislePose(meta: RealMeta, pid: string, state: RealState): { pose: strin
   return null;
 }
 
-/** spec 102 FR-392: the authored scale `s` and the whole number `n` of device px per file px for `dev` device px per grid px: the largest s x n not over `dev`
- *  (a tie takes the larger s, the finer art); null when no authored scale fits (the old frame is drawn) */
-export function hdPick(dev: number, scales: ReadonlyArray<number>): { s: number; n: number } | null {
-  let best: { s: number; n: number } | null = null;
-  for (const s of scales) { const n = Math.floor(dev / s + 1e-6); if (n >= 1 && (!best || s * n > best.s * best.n || (s * n === best.s * best.n && s > best.s))) best = { s, n }; }
-  return best;
-}
-/** spec 102 FR-391, FR-392: the HD frame of `pid` in `pose` at grid scale `g` and ratio `dpr`, in CSS px (whole device px), with its face box; null without one (the old frame is drawn) */
-export function hdFrame(hd: HdSet | undefined, pid: string, pose: string, g: number, dpr = 1): { file: string; w: number; h: number; face: Rect } | null {
-  const fr = hd && own(hd.people, pid) && own(hd.people[pid], pose) ? hd.people[pid][pose] : null;
-  const pk = fr ? hdPick(g * dpr, hd!.scales.filter((s) => own(fr, String(s)))) : null;
-  if (!fr || !pk) return null;
-  const [w, h, fx, fy, fw, fh] = fr[String(pk.s)], k = (v: number): number => (v * pk.n) / dpr;
-  return { file: `hd/${pid}-${pose}@${pk.s}.webp`, w: k(w), h: k(h), face: { x: k(fx), y: k(fy), w: k(fw), h: k(fh) } };
-}
 /** the status badge (`.ro-cue`, retro world.css: 12 px monospace, at most 3 characters, 4 px padding, 16 px line: 29.6 x 16), the box the layout keeps clear for it; `x` is its centre */
 export const CUE_BOX = { w: 32, h: 16 } as const;
 /** spec 102 FR-401 (review of #2056): an HD person in its place (`place`, feet on `plateY`), drawn mirrored when `mirrored`: the picture box, the face box as drawn, and the status
@@ -211,7 +196,8 @@ export const AISLE_LCRT = { gw: 24, gh: 16, frame: 3 } as const, AISLE_LSEAT = 3
 function aisleSeat(meta: RealMeta, a: RealAgent, sx: number, plateY: number, gl: number): DeskBox {
   const fr = a.person != null ? aislePose(meta, String(a.person), 'asleep') : null; /* the stool frame ('sit'), the pose an asleep player had at a cabinet */
   const desk = meta.desk || [40, 22], tw = desk[0] * gl, th = desk[1] * gl;
-  const pw = fr ? fr.w * gl : 34 * gl, ph = fr ? fr.h * gl : 60 * gl, px = sx + 2 * gl, py = plateY - ph;
+  const hf = fr && meta.hdPeople ? hdFrame(meta.hdPeople, String(a.person), fr.pose, gl, meta.dpr || 1) : null, hd = hf && hf.w <= 36 * gl ? hf : null; /* spec 102 FR-406: the HD stool frame behind the switch */
+  const pw = hd ? hd.w : fr ? fr.w * gl : 34 * gl, ph = hd ? hd.h : fr ? fr.h * gl : 60 * gl, px = sx + 2 * gl, py = plateY - ph;
   const table = { x: px + 36 * gl + 2 * gl, y: plateY - th, w: tw, h: th };
   const cw = (AISLE_LCRT.gw + 2 * AISLE_LCRT.frame) * gl, ch = (AISLE_LCRT.gh + 2 * AISLE_LCRT.frame) * gl;
   const screen = { x: table.x + Math.round((tw - cw) / 2 / gl) * gl, y: table.y - ch + gl, w: cw, h: ch };
@@ -219,7 +205,8 @@ function aisleSeat(meta: RealMeta, a: RealAgent, sx: number, plateY: number, gl:
   return {
     id: a.id, state: a.state as RealState, lounge: true, narrow: false, slot: { x: sx, y: py, w: AISLE_LSEAT * gl, h: ph + AISLE_PLATE_H }, desk: { ...table, full: th }, table,
     plate: { x: sx + gl, y: plateY, w: AISLE_LSEAT * gl - 2 * gl, h: AISLE_PLATE_H }, screen, glass: { x: screen.x + AISLE_LCRT.frame * gl, y: screen.y + AISLE_LCRT.frame * gl, w: AISLE_LCRT.gw * gl, h: AISLE_LCRT.gh * gl },
-    person: fr ? { x: px + Math.floor((36 * gl - pw) / 2 / gl) * gl, y: py, w: pw, h: ph, file: `${a.person}-${fr.pose}.webp`, fileB: null, pose: fr.pose, pid: String(a.person), vis: face } : null,
+    person: fr ? { x: px + Math.floor((36 * gl - pw) / 2 / gl) * gl, y: py, w: pw, h: ph, file: hd ? hd.file : `${a.person}-${fr.pose}.webp`, fileB: null, pose: fr.pose, pid: String(a.person),
+      vis: hd ? { x: px + Math.floor((36 * gl - pw) / 2 / gl) * gl + hd.face.x, y: py + hd.face.y, w: hd.face.w, h: hd.face.h } : face } : null,
     face, away: null, lamp: { x: sx, y: py, w: AISLE_LSEAT * gl, h: ph + AISLE_PLATE_H }, bubble: null, bang: null, dots: null, call: { x: sx + AISLE_LSEAT * gl - 16, y: plateY + 4 },
   };
 }

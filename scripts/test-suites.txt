@@ -147,6 +147,7 @@ test:logo-assets
 test:autofollow
 test:announcemask
 test:livemask
+test:maskpaths
 test:openwith
 test:liveact
 test:lookalike
@@ -237,6 +238,8 @@ test:selfupdate-feed
 test:selfupdate-feedget
 test:selfupdate-notes
 test:selfupdate-installtype
+test:selfupdate-checker
+test:selfupdate-ipc
 test:selfupdate-schedule
 test:selfupdate-settings
 test:releases-json

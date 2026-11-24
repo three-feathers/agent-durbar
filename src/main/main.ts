@@ -126,6 +126,11 @@ import childProcess = require('child_process');
 import { initSimGuard, simRefusedChannels } from './ipcguard';
 import { OrgPolicyCache } from './orgpolicy';
 import { register as registerOrgPolicyIpc } from './ipc/orgpolicy';
+import { register as registerSelfUpdateIpc } from './ipc/selfupdate';
+import { SelfUpdater, realSelfUpdateTimer } from './selfupdate';
+import { loadUpdateSource } from './updatesource';
+import { updatePolicy } from './updatepolicy';
+import { electronRequestFactory, makeFeedGet } from './netget';
 import { markSignedOut, withSignIn } from './authcheck';
 import type { SignInAnswer } from './authcheck';
 import { SettingsStore } from './settings';
@@ -170,6 +175,8 @@ let folderSetupStore: FolderSetupStore | undefined; // spec 061
 let folderStore: FolderStore | undefined;
 /** Global settings (default credit cap, spec 011), created when the app is ready. */
 let settingsStore: SettingsStore | undefined;
+/** Spec 118 T010: Durbar's own update check, created with the settings store. */
+let selfUpdater: SelfUpdater | undefined;
 /** Global MCP servers (spec 019), created when the app is ready (needs userData and safeStorage). */
 let mcpStore: McpStore | undefined;
 let mcpCostStore: McpCostStore | undefined;
@@ -941,6 +948,7 @@ registerTeamsIpc({
   }))),
 });
 registerOrgPolicyIpc({ view: () => orgPolicies.view() });
+registerSelfUpdateIpc({ getSelfUpdater: () => selfUpdater }); // spec 118 FR-024: version-only channels
 registerAdaptersIpc({ adaptersList });
 const sandboxOps = registerSandboxIpc({ agents, router, getSettingsStore: () => settingsStore, readyAdapterIds }); // spec 087
 router.onEvent((e) => sandboxOps.onEvent(e)); // spec 087 FR-007a: Continue only answers a note main forwarded
@@ -1066,7 +1074,6 @@ function createWindow(): void {
     if (simClock.query) query.simclock = simClock.query; // spec 001 FR-084: a pinned page clock for screenshots
   }
   if (dev.DURBAR_DOOR === '1') query.door = '1'; // spec 052 FR-191: Your door (the Needs you panel) is behind a flag until the owner's look
-  if (dev.DURBAR_HD_PEOPLE === '1') query.hdpeople = '1'; // spec 102 FR-399: the Retro arcade's HD person set, off by default until the owner approves the finished set
   if (dev.DURBAR_BRAIN === '1' || dev.DURBAR_BRAIN === '0') query.brain = dev.DURBAR_BRAIN; // spec 106 T426: a run override of Settings > Brain view (development runs only), never saved
   win.on('focus', () => win?.flashFrame(false)); // spec 052 FR-059: the taskbar flash stops when you come back
   {
@@ -1155,6 +1162,9 @@ app.whenReady().then(() => {
   folderStore = new FolderStore(path.join(app.getPath('userData'), 'durbar-folders.json'));
   settingsStore = new SettingsStore(path.join(app.getPath('userData'), 'durbar-settings.json'));
   settingsStore.load();
+  // spec 118 FR-004: packaged builds only, never the simulator; the request only through makeFeedGet (FR-007), the policy read each time (FR-005).
+  // NOT started until T014 (the Update card and the Settings switch): nothing calls selfUpdater's start here, so no request is made.
+  selfUpdater = new SelfUpdater({ packaged: app.isPackaged, simulator: SIMULATOR, source: loadUpdateSource(), running: app.getVersion(), policy: updatePolicy, store: () => settingsStore, get: makeFeedGet(electronRequestFactory()), now: Date.now, timer: realSelfUpdateTimer });
   /* Dev/test theme seed (spec 036 FR-005): DURBAR_THEME=<id> makes the office open on that theme for the per-theme checks; invalid ids fall back in the renderer. */
   if (dev.DURBAR_THEME) runTheme = parseThemeId(dev.DURBAR_THEME);
   mcpStore = new McpStore(path.join(app.getPath('userData'), 'durbar-mcp.json'), safeStorageCodec);

@@ -119,23 +119,24 @@
      (a throwaway script: the head top, the neck and the alpha channel) and corrected by hand on a contact sheet where the hair is tall (spiky p05, buns p06 and p13, afro p03, pigtails p10). Office people's crops
      are drawn since T391; the working crop of Office people is a bowed head (typeA): it shows the crown and the lowered face, the eyes and the mouth are in the crop for all 15 (contact sheet, T391), so typeA stays. test:crew keeps every crop square and inside its picture; each crop starts at the head's own top, never above the picture's alpha box (checked once by the script, not in the test: no WebP decoder in the tests). */
   const HEAD_FRAME = { working: 'typeA', waiting: 'waveA', resting: 'rest' };
+  /* spec 102 T472: Retro pixel's crops are measured on its HD busts (320 px tall, `hd/<p>-<frame>@4.webp`): a square on the face box, 1.25 times its larger side, clamped to the picture */
   const HEADS = {
     retro: {
-    p01: { pic: [80, 79], working: [12, 2, 52], waiting: [14, 2, 52], resting: [14, 4, 52] },
-    p02: { pic: [79, 80], working: [10, 2, 52], waiting: [10, 2, 52], resting: [12, 3, 52] },
-    p03: { pic: [78, 79], working: [10, 4, 52], waiting: [9, 4, 52], resting: [12, 4, 52] },
-    p04: { pic: [80, 80], working: [10, 3, 52], waiting: [11, 3, 52], resting: [14, 4, 52] },
-    p05: { pic: [64, 78], working: [2, 6, 52], waiting: [6, 6, 52], resting: [4, 6, 52] },
-    p06: { pic: [65, 79], working: [2, 4, 52], waiting: [4, 4, 52], resting: [2, 4, 52] },
-    p07: { pic: [72, 80], working: [10, 0, 52], waiting: [10, 4, 52], resting: [10, 4, 52] },
-    p08: { pic: [78, 80], working: [11, 3, 52], waiting: [10, 3, 52], resting: [13, 3, 52] },
-    p09: { pic: [87, 86], working: [14, 8, 56], waiting: [12, 8, 56], resting: [16, 9, 56] },
-    p10: { pic: [66, 79], working: [1, 1, 56], waiting: [6, 1, 56], resting: [2, 3, 56] },
-    p11: { pic: [83, 80], working: [12, 3, 52], waiting: [10, 3, 52], resting: [12, 3, 52] },
-    p12: { pic: [88, 89], working: [14, 12, 58], waiting: [13, 12, 58], resting: [15, 13, 58] },
-    p13: { pic: [61, 79], working: [0, 8, 54], waiting: [4, 8, 54], resting: [0, 8, 54] },
-    p14: { pic: [80, 79], working: [13, 2, 52], waiting: [12, 2, 52], resting: [14, 3, 52] },
-    p15: { pic: [71, 81], working: [5, 3, 52], waiting: [8, 3, 52], resting: [8, 5, 52] },
+    p01: { pic: [270, 320], working: [2, 0, 244], waiting: [0, 0, 266], resting: [0, 0, 248] },
+    p02: { pic: [280, 320], working: [18, 0, 225], waiting: [16, 0, 229], resting: [16, 0, 228] },
+    p03: { pic: [247, 320], working: [0, 0, 247], waiting: [0, 0, 247], resting: [0, 0, 247] },
+    p04: { pic: [255, 320], working: [33, 0, 182], waiting: [38, 0, 172], resting: [39, 0, 171] },
+    p05: { pic: [256, 320], working: [8, 0, 209], waiting: [8, 0, 208], resting: [26, 0, 171] },
+    p06: { pic: [224, 320], working: [8, 0, 178], waiting: [9, 0, 179], resting: [9, 0, 178] },
+    p07: { pic: [258, 320], working: [38, 0, 166], waiting: [30, 0, 181], resting: [25, 0, 189] },
+    p08: { pic: [287, 320], working: [46, 0, 178], waiting: [56, 0, 156], resting: [46, 0, 179] },
+    p09: { pic: [278, 320], working: [42, 0, 188], waiting: [51, 0, 170], resting: [42, 0, 188] },
+    p10: { pic: [283, 320], working: [27, 0, 238], waiting: [21, 0, 250], resting: [0, 0, 283] },
+    p11: { pic: [252, 320], working: [20, 0, 200], waiting: [28, 0, 184], resting: [39, 0, 162] },
+    p12: { pic: [299, 320], working: [62, 0, 156], waiting: [70, 0, 139], resting: [20, 0, 240] },
+    p13: { pic: [222, 320], working: [4, 0, 208], waiting: [1, 0, 214], resting: [8, 0, 202] },
+    p14: { pic: [246, 320], working: [0, 0, 234], waiting: [38, 0, 156], resting: [12, 0, 208] },
+    p15: { pic: [265, 320], working: [34, 0, 184], waiting: [26, 0, 202], resting: [28, 0, 198] },
     },
     office: {
     p01: { pic: [457, 618], working: [118, 112, 228], waiting: [145, 111, 210], resting: [128, 132, 210] },
@@ -156,7 +157,17 @@
     },
   };
   /* the Characters values Flat draws as heads, the set each names, the id prefix (both sets name their people p01..p15, so `retro-p01` and `office-p01`; no clash in FACE, OWN or a stored crew) and the scaling: Retro pixel is nearest (sharp), Office people are photos (smooth) */
-  const FLAT_SETS = { pixel: { set: 'retro', prefix: 'retro-', sharp: true }, office: { set: 'office', prefix: 'office-', sharp: false } };
+  const FLAT_SETS = { pixel: { set: 'retro', prefix: 'retro-', sharp: true, hd: true }, office: { set: 'office', prefix: 'office-', sharp: false } };
+  /* spec 102 T472 (owner 2026-11-23 20:12 UTC: one set everywhere): Retro pixel's heads are crops of its HD busts (`hd/<p>-<frame>@4.webp`, `HEADS.retro` measured on them), and a round
+     avatar of a size the set has a tile for draws that tile 1:1 (FR-405): `TILE_SIZES` in CSS px and twice them. `TILE_EDGE` (from set.json `hd.tiles.edge`, the same numbers: test:crew):
+     per person the median relative luminance of the tiles' outline ring and of the ring inside it, then the same for the `l` variant (the people with the lit edge: the face with its dark
+     outline). On the theme's own avatar background the variant whose edge contrast (FR-407's measure) is higher is drawn, whatever the background's lightness. */
+  const TILE_SIZES = [22, 24, 26, 32, 44, 48, 52, 64];
+  const TILE_EDGE = {'p01': [0.6324, 0.0575, 0.006, 0.0575], 'p02': [0.6324, 0.4467, 0.006, 0.4467], 'p03': [0.6324, 0.023, 0.006, 0.023], 'p04': [0.6324, 0.1553, 0.006, 0.1553], 'p05': [0.6324, 0.0844, 0.006, 0.0844], 'p06': [0.6324, 0.0322, 0.006, 0.0322], 'p07': [0.006, 0.5594], 'p08': [0.6324, 0.085, 0.006, 0.085], 'p09': [0.006, 0.5626], 'p10': [0.6324, 0.0575, 0.006, 0.0575], 'p11': [0.6324, 0.0125, 0.006, 0.0125], 'p12': [0.006, 0.4632], 'p13': [0.6324, 0.1776, 0.006, 0.1776], 'p14': [0.6324, 0.1794, 0.006, 0.1794], 'p15': [0.006, 0.3888]};
+  const relLum = (hex) => { const m = /^#([0-9a-f]{6})$/i.exec(String(hex || '').trim()); if (!m) return null; const c = [0, 2, 4].map((i) => { const v = parseInt(m[1].slice(i, i + 2), 16) / 255; return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); }); return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]; };
+  const ratio = (a, b) => (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
+  /* '' or 'l': the variant of `key`'s tiles that reads better on a background of relative luminance `bg` (null: unknown, the default) */
+  const tileVariant = (key, bg) => { const e = TILE_EDGE[key]; if (!e || e.length < 4 || bg === null) return ''; const c = (r, i) => Math.max(ratio(r, bg), ratio(i, bg)); return c(e[2], e[3]) > c(e[0], e[1]) ? 'l' : ''; };
   const FLAT_IDS = {};
   for (const [choice, f] of Object.entries(FLAT_SETS)) FLAT_IDS[choice] = Object.keys(HEADS[f.set]).map((k) => f.prefix + k);
   /* where a head is drawn in the 200x124 stage: a square above the desk top (y 86), left of the monitor (x 112); the round avatars and the lounge seat show the same square */
@@ -170,6 +181,14 @@
   function head(id, pose) {
     const o = flatOf(id); if (!o || !has(HEAD_FRAME, pose)) return null;
     return { href: file(id, pose), pic: o.heads.pic, crop: o.heads[pose], box: HEAD_BOX, sharp: !!o.f.sharp };
+  }
+  /* T472: a round avatar `px` CSS px across at ratio `dpr` on the avatar background `bg` (#rrggbb): the tile of that many device px (else of `px`), the variant that reads better there, or null (the head crop is drawn) */
+  function tile(id, pose, px, dpr, bg) {
+    const o = flatOf(id); if (!o || !o.f.hd || !has(HEAD_FRAME, pose) || !(px > 0)) return null;
+    const dev = Math.round(px * (dpr || 1)), S = TILE_SIZES.includes(dev) ? dev : TILE_SIZES.includes(px) ? px : 0;
+    if (!S) return null;
+    const l = tileVariant(o.key, relLum(bg));
+    return { href: 'realoffice/sets/' + o.f.set + '/hd/' + o.key + '-' + HEAD_FRAME[pose] + '-t' + S + l + '.webp', pic: [S, S], crop: [0, 0, S], box: HEAD_BOX, sharp: true };
   }
   const k = BOX.w / PIC;
   /* a face box or the avatar's crop, in stage units: [x, y, w, h]; null for an unknown picture */
@@ -192,7 +211,7 @@
   }
   /* the pose for a status: working and thinking type, waiting and error need the person, the rest rests */
   const poseFor = (st) => (st === 'working' || st === 'thinking' || st === 'avatar') ? 'working' : (st === 'waiting' || st === 'error') ? 'waiting' : 'resting';
-  const file = (id, pose) => { if (OWN.has(id)) return OWN.get(id).urls[pose]; const fl = flatOf(id); if (fl && has(HEAD_FRAME, pose)) return 'realoffice/sets/' + fl.f.set + '/' + fl.key + '-' + HEAD_FRAME[pose] + '.webp'; const c = CREW_OF.get(id); return 'crew/art/' + (c && c !== LEGACY_CREW ? c + '-' : '') + id + '-' + pose + '.webp'; };
+  const file = (id, pose) => { if (OWN.has(id)) return OWN.get(id).urls[pose]; const fl = flatOf(id); if (fl && has(HEAD_FRAME, pose)) return 'realoffice/sets/' + fl.f.set + '/' + (fl.f.hd ? 'hd/' : '') + fl.key + '-' + HEAD_FRAME[pose] + (fl.f.hd ? '@4' : '') + '.webp'; const c = CREW_OF.get(id); return 'crew/art/' + (c && c !== LEGACY_CREW ? c + '-' : '') + id + '-' + pose + '.webp'; };
   const files = (ids) => (ids || IDS).reduce((a, id) => a.concat(POSES.map((p) => file(id, p))), []);
   /* FR-055: a character can be drawn when it is known and none of its pictures failed to load (`bad`: a Set of character ids) */
   const usable = (id, bad) => typeof id === 'string' && (ALL_IDS.includes(id) || OWN.has(id) || !!flatOf(id)) && !(bad && bad.has && bad.has(id));
@@ -334,5 +353,5 @@
     if (row) return on(row, flags) ? 'full' : 'closed';
     return crewName(c) ? 'heads' : 'default';
   }
-  return { registerOwn, ownName, ownRev, viewBoxAt, folderKey, pinKey, pinCrew, WORLD_FLAGS, WORLDS, REAL_SETS, PIXEL_CHARACTERS, offeredWorlds, parseWorld, peopleFor, levelFor, CREWS, PREHISTORIC_IDS, PIRATE_IDS, MONSTER_IDS, ROYAL_IDS, REBELS_IDS, ALL_IDS, idsFor, storeKey, POSES, BOX, PX_PER_UNIT, FACE, FACE_W, FACE_H, FACE_CROP, HEADS, HEAD_FRAME, HEAD_BOX, FLAT_SETS, FLAT_IDS, head, faceBox, viewBox, poseFor, file, files, usable, IDS, MAX_ENTRIES, MAX_ID, seeded, seededRand, pickCharacter, assignCrew, pruneCrew, loadCrew };
+  return { registerOwn, ownName, ownRev, viewBoxAt, folderKey, pinKey, pinCrew, WORLD_FLAGS, WORLDS, REAL_SETS, PIXEL_CHARACTERS, offeredWorlds, parseWorld, peopleFor, levelFor, CREWS, PREHISTORIC_IDS, PIRATE_IDS, MONSTER_IDS, ROYAL_IDS, REBELS_IDS, ALL_IDS, idsFor, storeKey, POSES, BOX, PX_PER_UNIT, FACE, FACE_W, FACE_H, FACE_CROP, HEADS, HEAD_FRAME, HEAD_BOX, FLAT_SETS, FLAT_IDS, TILE_SIZES, TILE_EDGE, tileVariant, relLum, head, tile, faceBox, viewBox, poseFor, file, files, usable, IDS, MAX_ENTRIES, MAX_ID, seeded, seededRand, pickCharacter, assignCrew, pruneCrew, loadCrew };
 })());
