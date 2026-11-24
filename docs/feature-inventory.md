@@ -50,6 +50,7 @@ One row per thing a user can do or see. [features.md](features.md) stays the use
 | Auto-follow work (Settings, off by default): back to the office after a send, the agent's chat when it finishes or needs you; a full-screen notice with a 3 s countdown and Stay before each automatic move; Previous and Next over the attention queue | works | works, the same notice in the Photo office, the cave and the arcade | none (owner decision, #1404) | 052 | driver:check-auto-follow driver:check-052-follow-notice |
 | Needs-you inbox | works | works | planned+built (inbox) | 052 | test:attention read:src/renderer/app.js |
 | Modes Read-only, Ask first, Allow all; switch any time | works | works | none (owner decision, #1404) | 003 018 | test:permissions driver:shots-018 |
+| Copilot's reviewer inside Ask first (assisted approvals): the mode menu switch, *Ask first + review* chip, fixed verdict lines; simulator only until the real check | works (simulator; real Copilot sessions do not show it yet) | works, the same chat mode menu (not driven in the Real office, #2105) | none (owner decision, #1404) | 003 | test:permissions test:assisted-copilot driver:check-003-assisted |
 | Plan first | works | works | none (owner decision, #1404) | 066 | test:planmode |
 | Slash suggestions | works | works | none (owner decision, #1404) | 073 | test:slashcommands |
 | Send to several sessions | works | works | none (owner decision, #1404) | 064 | driver:shots-064-send-several test:sessionname |
