@@ -442,3 +442,8 @@ Order: T327 (the owner's picture gate) before any code PR; T328, T329 (art, #164
 
 - [x] T440 [US2] Refs #2012, #2013 (spec delta 2026-11-22): `stagger()` writes the whole name back in its last resort; `POSE_FALLBACK` `counter` -> `coffee`, `type` -> `letter`; a figure-less visitor's chip keeps off the band's edge (`roLobby`). Test: `test:realoffice-layout`, `scripts/check-097-textfit.js` (`ui-suite.js`); mutants killed (no write-back, no fallback with the old `chipY`); `[KNOWN GAP]` docs pictures not retaken: #2019 Also `fitSigns()` (CI, 2026-11-23): a cut sign name drops its path. `.ro-sc` has tabular figures (the fit key holds counts by length).
 
+
+## 2026-11-24: the lounge card has a least width that does not depend on the art (issue #2076; FR-439)
+
+- [ ] T541 [US2] Refs #2076 (spec delta 2026-11-24, FR-439): `loungeSeat(meta, cardMin)` returns `w = max(art width, cardMin)` and the art's own width `aw`; `realLayout` passes `LOUNGE_CARD_MIN` (159 px = `LOUNGE_ROW` 117 + `LOUNGE_CHROME` 38 + 4), the arcade passes none; the small desk is placed from `aw`. Test: `test:realoffice-layout` (every set, both worlds, both sizes: one width, the plate holds the widest pair, the art in place, the arcade's 141 px; the old derivation is the mutant).
+- [ ] T542 [US2] Refs #2076: `check-097-lounge`'s card case: both people sets, the Photo office and the cave, both sizes, the eight widest name and role pairs whole beside their names, equal card width across the sets, no overlap. Mutants (the old derivation, the pencil's 22 px dropped, a minimum of 141 px, a plate wider than its seat, a seat wider with the wider art) each die at their own assert.
