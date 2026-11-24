@@ -363,4 +363,32 @@ for (const [form, t] of [['LF', app], ['CRLF', app.replace(/\n/g, '\r\n')]] as c
   eq([doc.getElementById('chat')!.getAttribute('aria-label'), doc.getElementById('msgInput')!.getAttribute('aria-label')], ['Chat with Noor', 'Message Noor'], 'FR-197 a benign rename repaints the labels with the name');
 }
 
+// review of PR 2098: the coffee-break menu (its label and its open item) and the typing indicator of a played turn name the session through the same mask
+{
+  const block3 = (head: string): string => { const i = LINES.findIndex((x) => x.startsWith(head)); assert.ok(i >= 0, head); const j = LINES.findIndex((x, k) => k > i && x === '}'); return LINES.slice(i, j + 1).join('\n'); };
+  const one3 = (h: string): string => { const l = LINES.filter((x) => x.startsWith(h)); assert.strictEqual(l.length, 1, h); return l[0]; };
+  const dom = new JSDOM('<!doctype html><body><button id="anchor"></button></body>');
+  const doc = dom.window.document;
+  const ctx = vm.createContext({ window: { DurbarRedact: shared, DurbarSafeText: require(path.join(R_DIR, 'safetext.js')) }, DurbarCutText: require(path.join(R_DIR, 'cuttext.js')), document: doc, NO_REDACT: false,
+    closeModeMenu() { doc.getElementById('modeMenu')?.remove(); }, byId: (id: string) => AG[id], COFFEE: { retryable: () => true }, BREAKS: { get: () => null }, coffeeLeftWords: () => '', RETRY_TIP: 'Retry',
+    coffeeWord: () => 'coffee break', coffeeNoRetry: () => '', CSS: { escape: (x: string) => x }, cardOf: () => null, focusIn() {}, announce() {}, innerWidth: 1440, innerHeight: 900 });
+  const AG: Record<string, object> = {};
+  vm.runInContext(['const homeMask=', 'const deskMask=', 'const SHORT=', 'const RED=', 'const STX=', 'const SAFE=', 'const safeExcerpt=', 'const esc=', 'function annHome(', 'function annPart(', 'function liveText(', 'const nameShown=', 'const typingIndicator='].map(one3).join('\n')
+    + '\n' + block3('function openCoffeeMenu(') + '\nthis.openCoffeeMenu=openCoffeeMenu;this.typingIndicator=typingIndicator;', ctx);
+  const C3 = ctx as unknown as { openCoffeeMenu(id: string, anchor: Element): void; typingIndicator(a: object): HTMLElement };
+  for (const [what, nm] of NAMES) {
+    AG.c1 = { id: 'c1', name: nm, coffee: true };
+    C3.openCoffeeMenu('c1', doc.getElementById('anchor') as Element);
+    const m = doc.getElementById('modeMenu') as HTMLElement;
+    ok(!!m, `FR-197 the coffee-break menu opens, ${what}`);
+    hides(shown(m), `FR-197 the coffee-break menu's label and items are masked, ${what}`);
+    hides(shown(C3.typingIndicator({ name: nm })), `FR-197 the typing indicator's label is masked, ${what}`);
+  }
+  AG.c1 = { id: 'c1', name: 'Noor', coffee: true };
+  C3.openCoffeeMenu('c1', doc.getElementById('anchor') as Element);
+  eq(doc.getElementById('modeMenu')!.getAttribute('aria-label'), 'Noor: coffee break', 'FR-197 a benign coffee-break menu label reads as written');
+  eq(C3.typingIndicator({ name: 'Noor' }).getAttribute('aria-label'), 'Noor is working', 'FR-197 a benign typing indicator label reads as written');
+  ok(app.includes('m.appendChild(typingIndicator(a));') && !/aria-label',a\.name\+' is working'/.test(app), 'FR-197 a played turn builds its typing indicator through typingIndicator');
+}
+
 void stripsByBehaviour().then(() => console.log(`test-live-mask: ${n} asserts passed`), (e) => { console.error(e); process.exit(1); });

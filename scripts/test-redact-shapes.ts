@@ -875,7 +875,13 @@ for (const t of [B64RUN + '/' + 'EA' + 'AA' + an(70) + '/' + B64RUN, 'ab+' + 'EA
     assert.ok(!maskBareTokenShapes(t, '[R]').includes(key.slice(3)), `#2062: a Resend key is still masked ${ctx} (bare)`);
     assert.ok(!redact(t, {}).includes(key.slice(3)), `#2062: a Resend key is still masked ${ctx} (redact)`);
   }
-  // not a key after `-` or `_`: base64url holds that run by chance (the two-letter rule)
-  for (const lead of ['-', '_']) assert.strictEqual(maskBareTokenShapes('x' + lead + key, '[R]'), 'x' + lead + key, `#2062: re_ after ${lead} is base64url, not a key`);
+  // not a key after `-` or `_` deep in a long base64url run: picture data holds that run by chance (the two-letter rule)
+  const b64u = an(70);
+  for (const lead of ['-', '_']) assert.strictEqual(maskBareTokenShapes(b64u + lead + key, '[R]'), b64u + lead + key, `#2062: re_ after ${lead} in a long base64url run is data, not a key`);
+  // review of PR 2098: after a short word joined by `-` or `_` it is a key (a name glued before it), on the bare mask and on `redact`
+  for (const lead of ['-', '_']) for (const word of ['x', 'MY_RESEND', 'api' + lead + 'key']) {
+    assert.ok(!maskBareTokenShapes(word + lead + key, '[R]').includes(key.slice(3)), `#2062: a key glued after a short word and ${lead} is masked (bare)`);
+    assert.ok(!redact(word + lead + key, {}).includes(key.slice(3)), `#2062: a key glued after a short word and ${lead} is masked (redact)`);
+  }
 }
 console.log(`redact shapes: all checks passed (${count} samples, ${STAYS.length} that stay)`);

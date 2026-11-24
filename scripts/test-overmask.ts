@@ -40,9 +40,16 @@ const gh = ['gh', 'p_'].join('') + 'A1b2C3d4'.repeat(4) + 'E5f6';
 
 // class (a): a long flag whose first word is `show` or `no` takes no next word as its value (`no`: owner decision 2026-11-23, #2060 item 9)
 shown('git log --show-signature -3', 'FR-196 a: --show-signature then a count');
-shown('git log --show-signature HEAD~3', 'FR-196 a: --show-signature then a revision');
+shown('git log --show-signature HEAD', 'FR-196 a: --show-signature then a revision word');
+// review of PR 2098 (coordinator's decision under the owner's delegation): a key-like word after such a flag stays hidden, by the plain context's value rules
+for (const [what, w] of [['long hex', '0a1b2c3d4e'.repeat(4)], ['mixed case with digits', 'aB3dE6gH9jK2mN5pQ8sT'], ['a short value with a digit', 'Pa' + '55w0rd'], ['a revision with a digit', 'HEAD~3']]) {
+  for (const f of ['--show-' + tok, '--no-auth']) {
+    const t = `tool ${f} ${w}`;
+    ok(!R.maskSecretCommand(t).includes(w) && !R.maskSecretArgs(t.split(' ')).join(' ').includes(w), `FR-196 a stays: ${what} after a display or negated flag is hidden`);
+  }
+}
 shown(`gh auth status --show-${tok} -h example.test`, 'FR-196 a: --show-<name> then a host flag');
-shown('tool --no-auth build4x7q', 'FR-196 a (owner decision 2026-11-23, #2060 item 9): a negated flag takes no value');
+shown('tool --no-auth build', 'FR-196 a (owner decision 2026-11-23, #2060 item 9): a negated flag takes no value');
 shown('git log --no-show-signature -n 5', 'FR-196 a: --no-show-signature then a short flag');
 shown('claude --no-session-persistence -p hi', 'FR-196 a: a negated flag then the next flag');
 hidden(`tool --no-${tok}=build4x7q`, 'build4x7q', 'FR-196 a stays: the = form of a negated flag hides its value');
@@ -138,7 +145,8 @@ for (let i = 0; i < 400; i++) {
   const f = SECRET_FLAGS[rnd(SECRET_FLAGS.length)];
   corpus.push({ cls: 'secret', t: f.endsWith('=') ? `tool ${f}${v}` : `tool ${f} ${v}` });
   corpus.push({ cls: 'secret', t: `${SECRET_NAMES[rnd(SECRET_NAMES.length)]}=${v} make` });
-  corpus.push({ cls: 'a', t: `git log --${['show', 'Show', 'SHOW', 'no', 'No'][rnd(5)]}-${['signature', 'token', 'auth', 'password'][rnd(4)]} ${['-3', '-n', 'HEAD~2', 'main', 'src'][rnd(5)]}` });
+  corpus.push({ cls: 'a', t: `git log --${['show', 'Show', 'SHOW', 'no', 'No'][rnd(5)]}-${['signature', 'token', 'auth', 'password'][rnd(4)]} ${['-3', '-n', 'HEAD', 'main', 'src'][rnd(5)]}` });
+  corpus.push({ cls: 'secret', t: `git log --${['show', 'no'][rnd(2)]}-${['signature', 'auth'][rnd(2)]} ${[from(HEX, 16 + rnd(25)), from(B64U, 16 + rnd(40)), from(LOW, 3 + rnd(8)) + from(DIG, 1 + rnd(3))][rnd(3)]}` });
   corpus.push({ cls: 'b', t: `curl https://api.example.test/r?${['state', 'State', 'STATE'][rnd(3)]}=${from(LOW, 1 + rnd(7))}&page=2` });
   const w = from(LOW, 1 + rnd(7)), c = codeShaped();
   corpus.push({ cls: 'secret', t: rnd(2) ? `curl https://api.example.test/cb?code=${c}&state=${w}` : `curl https://api.example.test/cb?state=${w}&code=${c}` });
@@ -149,7 +157,7 @@ for (const { cls, t } of corpus) {
   total[cls]++;
   const a = all(t), b = off(() => all(t));
   if (JSON.stringify(a) !== JSON.stringify(b)) {
-    changed[cls]++;
+    changed[cls]++; if (cls === 'secret' && process.env.OVERMASK_DEBUG) console.log('SECRET CHANGE', JSON.stringify(t), JSON.stringify(a.cmd), JSON.stringify(b.cmd));
     // a change only ever shows: what FR-196 on shows is the text as written on the command surfaces
     // a change only shows: every piece the step-off reading shows is shown with the step on too, on every surface
     for (const k of Object.keys(a)) ok(onlyShows(b[k], a[k]), `FR-196 differential: a change only shows text (${cls}, ${k})`);
@@ -167,7 +175,7 @@ eq(Object.values(changed).reduce((x, y) => x + y, 0), CLASSES.reduce((x, c) => x
   const REF = /re_[A-Za-z0-9]{8}_[A-Za-z0-9]{24}/;
   const AN = LOW + UP + DIG;
   const ctx: Record<string, (k: string) => string> = { start: (k) => k, space: (k) => 'use ' + k, quote: (k) => `"${k}"`, eq: (k) => 'RESEND_KEY=' + k, colon: (k) => 'resend: ' + k,
-    line: (k) => 'a\n' + k, paren: (k) => '(' + k + ')', comma: (k) => 'a,' + k, slash: (k) => 'x/' + k, plus: (k) => 'x+' + k, dot: (k) => 'x.' + k, dash: (k) => 'x-' + k, underscore: (k) => 'x_' + k };
+    line: (k) => 'a\n' + k, paren: (k) => '(' + k + ')', comma: (k) => 'a,' + k, slash: (k) => 'x/' + k, plus: (k) => 'x+' + k, dot: (k) => 'x.' + k, dash: (k) => 'x-' + k, underscore: (k) => 'x_' + k, dashLong: (k) => from(AN + '-_', 70) + '-' + k, underscoreLong: (k) => from(AN + '-_', 70) + '_' + k };
   const shownRe: Record<string, number> = {}, totalRe: Record<string, number> = {};
   for (let i = 0; i < 300; i++) {
     const key = 're_' + from(AN, 8) + '_' + from(AN, 24);
@@ -179,9 +187,11 @@ eq(Object.values(changed).reduce((x, y) => x + y, 0), CLASSES.reduce((x, c) => x
     }
   }
   console.log(`test-overmask #2062: shown per context ${JSON.stringify(shownRe)} of ${JSON.stringify(totalRe)}`);
-  const LISTED = ['dash', 'underscore'];
-  for (const c of LISTED) eq(shownRe[c], totalRe[c], `#2062 differential: every key after ${c === 'dash' ? '-' : '_'} reads as base64url (shown)`);
-  eq(Object.values(shownRe).reduce((x, y) => x + y, 0), LISTED.reduce((x, c) => x + (shownRe[c] || 0), 0), '#2062 differential: no key is shown outside the - and _ class (the total equals their sum)');
+  // review of PR 2098: only deep in a long base64url run is the key read as picture data; after a short word joined by `-` or `_` it is hidden
+  const LISTED = ['dashLong', 'underscoreLong'];
+  for (const c of LISTED) eq(shownRe[c], totalRe[c], `#2062 differential: every key after ${c === 'dashLong' ? '-' : '_'} in a long base64url run reads as data (shown)`);
+  for (const c of ['dash', 'underscore']) eq(shownRe[c] || 0, 0, `#2062 differential: a key after a short word and ${c === 'dash' ? '-' : '_'} is hidden`);
+  eq(Object.values(shownRe).reduce((x, y) => x + y, 0), LISTED.reduce((x, c) => x + (shownRe[c] || 0), 0), '#2062 differential: no key is shown outside the long-run classes (the total equals their sum)');
 }
 
 console.log(`test-overmask: ${n} asserts passed`);
