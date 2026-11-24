@@ -90,6 +90,8 @@ shown(`tool --pass${'word'}=no`, 'FR-196 c: --password=no');
 shown(`${pw}=YES make`, 'FR-196 c: any case');
 // the separators the switch values are read after: an equals sign glued to the name, or a flag's own equals sign; a spaced equals sign or a colon reads as before
 for (const t of [`${pw} =no make`, `tool --pass${'word'}:no`]) for (const [k, v] of Object.entries(all(t))) eq(v, off(() => all(t))[k], `FR-196 c: another separator reads as before: ${t.replace(pw, 'NAME')} (${k})`);
+// one argument that holds a spaced equals sign (a quoted word) reads as before too
+eq(R.maskSecretArgs([`${pw} =no`]), off(() => R.maskSecretArgs([`${pw} =no`])), 'FR-196 c: another separator reads as before: a spaced equals sign inside one argument');
 for (const v of ['nope', 'no1', 'yesterday', 'offline', 'truex', '"no"', 'no-way', 'on2', 'Off9x']) hidden(`${pw}=${v} make`, `=${v}`, `FR-196 c stays: ${v} is not a whole switch word`);
 hidden(`tool --pass${'word'}=nope`, 'nope', 'FR-196 c stays: --password=nope');
 
