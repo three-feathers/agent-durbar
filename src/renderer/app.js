@@ -1099,11 +1099,9 @@ const PERM_GRANT=' Allow for this session covers exactly what was asked, the hid
 const permWhy=(...xs)=>{const w=xs.filter(x=>x&&x.hidden).map(x=>x.why||'secret');return w.includes('cut')?'cut':w.includes('unchecked')?'unchecked':w.includes('concealed')?'concealed':w.includes('secret')?'secret':w.length?'control':'';};
 const permBlind=w=>w==='unchecked'||w==='concealed'||w==='cut'; /* neutral words only: no Allow, Deny stays */
 /* spec 003 FR-118 (issue 1300): what a session grant covers, from its raw key, not the 28-character label: the exact command, the host as the network reads it, server/tool (the label when it says the same) */
-const grantText=(key,label)=>{const k=String(key||''),l=String(label||'');let m;
-  if((m=/^shell-exact:([\s\S]+)$/.exec(k)))return 'run '+m[1];
-  if((m=/^url:([\s\S]+)$/.exec(k)))return 'fetch '+m[1];
-  if((m=/^mcp:([\s\S]+)$/.exec(k)))return l&&l.replace(' \u203a ','/')===m[1]?l:m[1];
-  return l;};
+const grantText=(key,label)=>window.DurbarLiveAct&&window.DurbarLiveAct.grantText?window.DurbarLiveAct.grantText(key,label):String(label||''); /* one copy, in liveact.js (spec 003 FR-124 shares it with the adapters' review gate) */
+/* spec 003 FR-118, FR-124: a card's words through the one helper the adapters' review gate also reads (liveact.js permCard); no module: every part unchecked */
+const permCardOf=p=>{if(window.DurbarLiveAct&&window.DurbarLiveAct.permCard)return window.DurbarLiveAct.permCard(p,LIVE_MASK||{});const u={text:'request',hidden:true,why:'unchecked'};return {sum:u,scope:u,broad:u,key:p&&p.scopeKey?u:null};};
 /* spec 003 FR-117..FR-119: lookalike letters. hasLook: a shownPerm result with a finding (shown or in a hidden part); lookLine: the card's one plain line for some of them, or '' */
 const hasLook=x=>!!(x&&x.look&&(x.look.n>0||x.look.inHidden));
 const LOOK_UNCHECKED='Durbar could not check this request for lookalike letters.';
@@ -7668,12 +7666,12 @@ function showPerm(a,p){
   const n=document.createElement('div');n.className='note perm';n.setAttribute('role','group');n.setAttribute('aria-label','Permission request');
   n.innerHTML='<b>Needs your OK:</b> <span class="psum"></span><span class="pstate"></span>';
   const ps=n.querySelector('.psum');
-  const sumS=shownPerm(p.summary,p.kind), scopeS=shownPerm(p.scopeLabel||p.kind||'this',p.kind), broadS=shownPerm(p.broadScopeLabel||p.kind,p.kind); /* spec 097 FR-318: only the shown words; the request id, scope keys and the answer stay raw */
+  const pc=permCardOf(p), sumS=pc.sum, scopeS=pc.scope, broadS=pc.broad; /* spec 097 FR-318: only the shown words; the request id, scope keys and the answer stay raw */
   ps.textContent=sumS.text;
   if(p.state==='pending'&&typeof p.diff==='string'&&p.diff)n.appendChild(diffBlock(p.diff)); /* spec 052 FR-063 */
   if(p.state==='pending'&&typeof p.sandboxNote==='string'&&p.sandboxNote){const sn=document.createElement('p');sn.className='psbx';sn.textContent=safeMask(p.sandboxNote.slice(0,300));n.appendChild(sn);} /* spec 087 FR-021: its own line, never cut */
   if(p.state==='pending'){const sh=typeof DurbarGrantLabel!=='undefined'?DurbarGrantLabel.scopeHint(Object.assign({},p,{scopeLabel:p.scopeLabel?scopeS.text:p.scopeLabel,broadScopeLabel:p.broadScopeLabel?broadS.text:p.broadScopeLabel})):'';if(sh){const sp=document.createElement('p');sp.className='pscope';sp.textContent=safeMask(sh);n.appendChild(sp);}} /* spec 003 FR-108: how far "for this session" reaches, in words */
-  const keyS=p.scopeKey?shownPerm(grantText(p.scopeKey,p.scopeLabel),String(p.scopeKey)):null; /* spec 003 FR-118: the session button names exactly what it grants */
+  const keyS=pc.key; /* spec 003 FR-118: the session button names exactly what it grants */
   const hwhy=permWhy(sumS,scopeS,broadS,keyS), hgrant=hwhy&&!permBlind(hwhy)&&(p.scopeKey||p.broadScopeKey)?PERM_GRANT:'';
   if(p.state==='pending'&&hwhy){const hp=document.createElement('p');hp.className='pscope phid';hp.textContent=PERM_WHY[hwhy]+hgrant;n.appendChild(hp);} /* also a card with no grant (a bare tool name): the line says what is hidden */ /* spec 097 FR-318: what a grant covers stays truthful when a part is hidden */
   const look=p.state==='pending'&&!permBlind(hwhy)?lookLine(sumS,keyS||scopeS,broadS):''; /* spec 003 FR-118: a blind card shows no text, so no lookalike line; the whole key, not the cut label (a token cut in it is no longer a token the mask knows: fix round 2) */

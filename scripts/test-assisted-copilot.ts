@@ -11,7 +11,8 @@ import type { FakeSession } from './fakes/copilot-sdk';
 import { COPILOT_CAPABILITIES } from '../src/adapters/copilot';
 import { CLAUDE_CAPABILITIES, CLAUDE_SDK_CAPABILITIES } from '../src/adapters/claude';
 import { CODEX_CAPABILITIES } from '../src/adapters/codex';
-import { copilotReview, loadLookalike, lookalikeClean, managedHumanRequired } from '../src/adapters/copilotAssisted';
+import { cardReviewable, copilotReview, loadCardCheck, managedHumanRequired } from '../src/adapters/copilotAssisted';
+import { grantScope, summarize } from '../src/adapters/permissions';
 import { eventProblems } from '../src/adapters/eventguard';
 import type { AgentEvent } from '../src/adapters/types';
 
@@ -75,16 +76,28 @@ async function main(): Promise<void> {
   assert.strictEqual(managedHumanRequired({}, { kind: 'mcp', managedApprovalRequired: true }), true, 'a prompt marker always counts');
   for (const k of ['commands', 'read', 'write', 'url', 'workflow']) assert.strictEqual(managedHumanRequired({ managedApprovalRequired: true }, { kind: k, managedApprovalRequired: false }), false, k);
   assert.deepStrictEqual(copilotReview(true, { assistedApproval: APPROVE, managedApprovalRequired: true }, undefined), { approve: false }, 'FR-124: a managed marker keeps the card');
-  // FR-124 (C5): the lookalike gate
-  const lk = loadLookalike(LOOKALIKE_DIR);
-  assert.ok(lk, 'the lookalike module loads from the renderer folder');
-  assert.strictEqual(loadLookalike(path.join(ws, 'nothing-here')), undefined, 'missing: undefined (every request keeps its card)');
-  assert.strictEqual(lookalikeClean(lk, 'run git status', 'shell'), true);
-  assert.strictEqual(lookalikeClean(lk, 'run g\u0456t status', 'shell'), false, 'a Cyrillic letter in the program name');
-  assert.strictEqual(lookalikeClean(lk, 'fetch https://xn--pple-43d.example/', 'url'), false, 'a punycode host');
-  assert.strictEqual(lookalikeClean(undefined, 'run git status', 'shell'), false, 'not checked counts as a finding (FR-119)');
-  assert.strictEqual(lookalikeClean({ check: () => { throw new Error('x'); } }, 'run ls', 'shell'), false, 'a check that throws counts as a finding');
-  assert.strictEqual(lookalikeClean({ check: () => ({ findings: 'none' } as never) }, 'run ls', 'shell'), false, 'a malformed answer counts as a finding');
+  // FR-124 (C5): the gate reads the card the window would draw (liveact.js permCard), every word of it
+  const cc = loadCardCheck(LOOKALIKE_DIR);
+  assert.ok(cc, 'the card helper loads from the renderer folder');
+  assert.strictEqual(loadCardCheck(path.join(ws, 'nothing-here')), undefined, 'missing: undefined (every request keeps its card)');
+  const card = (req: Record<string, unknown>) => { const sc = grantScope(req as never); const ps = ((req.paths as string[] | undefined) ?? [req.fileName as string]).filter(Boolean); return { summary: summarize(req as never), kind: String(req.kind), scopeKey: sc.key, scopeLabel: sc.label, ...(sc.broad ? { broadScopeKey: sc.broad.key, broadScopeLabel: sc.broad.label } : {}), paths: ps }; };
+  const ok = (req: Record<string, unknown>) => cardReviewable(cc, card(req));
+  assert.strictEqual(ok({ kind: 'shell', fullCommandText: 'git status' }), true);
+  assert.strictEqual(ok({ kind: 'shell', fullCommandText: 'gіt status' }), false, 'a Cyrillic letter in the program name');
+  assert.strictEqual(ok({ kind: 'url', url: 'https://xn--pple-43d.example/' }), false, 'a punycode host');
+  // review of PR (finding 2a, probe P1): a command longer than the card shows is a blind card: never judge-approved, even with the letter past 10000 characters
+  assert.strictEqual(ok({ kind: 'shell', fullCommandText: 'echo ' + 'a '.repeat(5200) + '; gіt push --force' }), false, 'P1: a cut (blind) card is never judge-approved');
+  assert.strictEqual(ok({ kind: 'shell', fullCommandText: 'echo ' + 'a '.repeat(5200) }), false, 'P1: a cut card, even with no finding');
+  // finding 2b, probe P4: the scope words and keys too, not only the summary: a write's second path under a Cyrillic-a folder
+  assert.strictEqual(ok({ kind: 'write', fileName: path.join(ws, 'a.txt'), paths: [path.join(ws, 'a.txt'), path.join(ws, 'pаypal', 'b.txt')] }), false, 'P4: a second path in a lookalike folder');
+  const five = ['a', 'b', 'c', 'd', 'pаypal'].map((d) => path.join(ws, d, 'x.txt'));
+  assert.strictEqual(ok({ kind: 'write', fileName: five[0], paths: five }), false, 'a lookalike folder past the three a label names (the raw key and paths are read)');
+  assert.strictEqual(ok({ kind: 'write', fileName: path.join(ws, 'a.txt'), paths: [path.join(ws, 'a.txt'), path.join(ws, 'docs', 'b.txt')] }), true, 'two plain folders: reviewable');
+  assert.strictEqual(ok({ kind: 'mcp', serverName: 'gh', toolName: 'crеate_issue' }), false, 'an MCP tool name');
+  assert.strictEqual(ok({ kind: 'shell', fullCommandText: 'echo \u001b]0;x\u0007 hi' }), true, 'control characters shown as markers are not blind');
+  assert.strictEqual(cardReviewable(undefined, card({ kind: 'shell', fullCommandText: 'git status' })), false, 'not checked counts as a finding (FR-119)');
+  assert.strictEqual(cardReviewable({ reviewable: () => { throw new Error('x'); } }, card({ kind: 'shell', fullCommandText: 'ls' })), false, 'a check that throws counts as a finding');
+  assert.strictEqual(cardReviewable({ reviewable: () => 'yes' as never }, card({ kind: 'shell', fullCommandText: 'ls' })), false, 'only true counts');
 
   // FR-128: at start the runtime's mode is read; `manual` is left alone
   {
@@ -117,6 +130,9 @@ async function main(): Promise<void> {
     // FR-132 (C5): lookalike letters in the program name keep the card
     const lka = await ask(r, { kind: 'shell', fullCommandText: 'g\u0456t push --force', toolCallId: 'l1', assistedApproval: APPROVE });
     assert.ok(lka.card, 'FR-132: a judge approve on a request with a Cyrillic letter in the program name gives a pending card');
+    // review findings 2a and 2b through the adapter (probes P1, P4): a cut command and a write's second path in a lookalike folder keep their cards
+    assert.ok((await ask(r, { kind: 'shell', fullCommandText: 'echo ' + 'a '.repeat(5200) + '; g\u0456t push --force', toolCallId: 'P1', assistedApproval: APPROVE })).card, 'P1: a long command with a lookalike past 10000 characters gets a card');
+    assert.ok((await ask(r, { kind: 'write', fileName: path.join(ws, 'a.txt'), paths: [path.join(ws, 'a.txt'), path.join(ws, 'p\u0430ypal', 'b.txt')], toolCallId: 'P4', assistedApproval: APPROVE })).card, 'P4: a second path under a Cyrillic-a folder gets a card');
     // a read outside the folders keeps its card (C5)
     assert.ok((await ask(r, { kind: 'read', path: path.join(os.tmpdir(), 'elsewhere-' + process.pid, 'secret.txt'), toolCallId: 'o1', assistedApproval: APPROVE })).card, 'C5: an outside read keeps its card');
     valid(r);
@@ -232,6 +248,33 @@ async function main(): Promise<void> {
     assert.ok(await ad2.start({ workspace: ws, permissionMode: 'ask', quiet: true }), 'an older runtime starts');
   }
 
+  // review finding 3 (probe P2): a getMode that throws, or none beside a setMode, still sets the runtime to manual before the start returns
+  for (const how of ['throws', 'missing', 'late'] as const) {
+    const client = new FakeClient();
+    const orig = client.createSession.bind(client);
+    client.createSession = async (cfg) => {
+      const s = await orig(cfg);
+      s.permMode = 'allow-all';
+      const perms = s.rpc.permissions as Record<string, unknown>;
+      if (how === 'throws') perms.getMode = async () => { throw new Error('x'); };
+      else if (how === 'missing') delete perms.getMode;
+      else perms.getMode = () => new Promise(() => undefined);
+      return s;
+    };
+    const r = await rig({ client });
+    assert.strictEqual(r.s.permMode, 'manual', `P2 (${how}): the runtime is set to manual anyway`);
+    assert.deepStrictEqual(r.s.permCalls.filter((c) => c.name === 'setMode'), [{ name: 'setMode', mode: 'manual' }], `P2 (${how}): one bounded manual reset`);
+  }
+
+  // review finding 1 (C8, defence in depth): the adapter itself refuses a turn-on while `assistedApproval.verified` is false
+  {
+    const r = await rig();
+    (r.ad as unknown as { assistedUnverifiedOk: boolean }).assistedUnverifiedOk = false;
+    assert.deepStrictEqual(await r.ad.setAssisted(r.sid, true), { on: false, reason: 'unsupported' }, 'C8: not verified: the adapter refuses');
+    assert.ok(!r.s.permCalls.some((c) => c.mode === 'assisted'), 'C8: nothing asked of the runtime');
+    assert.deepStrictEqual(await r.ad.setAssisted(r.sid, false), { on: false }, 'off still works');
+  }
+
   // a request field of the runtime's own named `appReview` is never believed (the adapter builds the broker's fields itself)
   {
     const r = await rig();
@@ -243,7 +286,7 @@ async function main(): Promise<void> {
   // C5: no lookalike module (a build without it): every judge approve keeps its card
   {
     const r = await rig();
-    (r.ad as unknown as { lookalike: unknown }).lookalike = undefined;
+    (r.ad as unknown as { cardCheck: unknown }).cardCheck = undefined;
     await r.ad.setAssisted(r.sid, true);
     assert.ok((await ask(r, { kind: 'shell', fullCommandText: 'git status', toolCallId: 'u1', assistedApproval: APPROVE })).card, 'C5, FR-119: a request that could not be checked keeps its card');
   }

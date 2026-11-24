@@ -3,9 +3,10 @@
  * that uses the fake client through the protected `getClient()` seam. No runtime process, no Copilot account, no credits.
  * `FakeSession.send` replays a recorded turn (`turnScript`) through the session handler.
  */
+import '../safetext-shared'; // the source tree's safetext.js gets the compiled hidden-character module (the card check reads through it)
 import * as path from 'path';
 import { CopilotAdapter } from '../../src/adapters/copilot';
-import { loadLookalike } from '../../src/adapters/copilotAssisted';
+import { loadCardCheck } from '../../src/adapters/copilotAssisted';
 import type { AutopilotTuning } from '../../src/adapters/autopilotHost';
 
 export type ScriptEvent = { type: string; data: unknown; agentId?: string | null };
@@ -290,10 +291,10 @@ export class FakeClient {
   }
 }
 
-/** Spec 003 FR-124 (C5): the tests run from `dist-scripts/`, so the adapter's lookalike check is loaded from the source tree's renderer folder. */
+/** Spec 003 FR-124 (C5): the tests run from `dist-scripts/`, so the adapter's card check (liveact.js, with lookalike.js) is loaded from the source tree's renderer folder; tests may turn the reviewer on before `verified` (C8). */
 export const LOOKALIKE_DIR = path.join(__dirname, '..', '..', '..', 'src', 'renderer');
 export class FakeCopilot extends CopilotAdapter {
-  constructor(public fake: FakeClient, oneShotTimeoutMs?: number, autopilotTuning?: AutopilotTuning) { super(); if (oneShotTimeoutMs !== undefined) this.oneShotTimeoutMs = oneShotTimeoutMs; if (autopilotTuning) this.autopilotTuning = autopilotTuning; this.lookalike = loadLookalike(LOOKALIKE_DIR); }
+  constructor(public fake: FakeClient, oneShotTimeoutMs?: number, autopilotTuning?: AutopilotTuning) { super(); if (oneShotTimeoutMs !== undefined) this.oneShotTimeoutMs = oneShotTimeoutMs; if (autopilotTuning) this.autopilotTuning = autopilotTuning; this.cardCheck = loadCardCheck(LOOKALIKE_DIR); this.assistedUnverifiedOk = true; }
   protected async getClient(): Promise<never> { return this.fake as never; }
 }
 

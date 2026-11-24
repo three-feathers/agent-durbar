@@ -5,6 +5,7 @@
  * `read:` `@github/copilot-sdk` 1.0.24 / runtime 1.0.101 (`session-events.d.ts` `PermissionAssistedApproval`, `types.d.ts`); nothing run.
  */
 import * as path from 'path';
+import { maskHomePaths, maskSecretCommand, maskSecretUrl, redact } from '../shared/redact';
 
 /** The runtime's permission modes (`session.rpc.permissions.setMode`); Durbar only ever asks for `manual` or `assisted`, never `allow-all`. */
 export type CopilotPermMode = 'manual' | 'assisted';
@@ -43,34 +44,37 @@ export function copilotReview(on: boolean, raw: unknown, prompt: unknown): { app
   return { approve: false };
 }
 
-/** Spec 097's lookalike module (`src/renderer/lookalike.js`, UMD): the part this file uses. */
-export interface LookalikeModule {
-  check(text: string, kind: string): { findings: unknown[]; hosts: unknown[] };
-  hostOdd?(h: unknown): boolean;
+/** The card helper of `src/renderer/liveact.js` (UMD; it loads `lookalike.js` and `safetext.js` beside it): the part this file uses. */
+export interface CardCheckModule {
+  reviewable(p: Record<string, unknown>, mask: Record<string, (t: string) => string>): boolean;
 }
 
 /**
- * FR-124 (C5): the lookalike module, loaded once from the build's renderer folder (`dist/renderer/lookalike.js`, copied by copy-assets.js).
- * Not there, or it throws: `undefined`, and every request counts as not checked (it keeps its card). `dir` is for tests.
+ * FR-124 (C5): the window's own card helper (`liveact.js`), loaded once from the build's renderer folder (`dist/renderer`, copied by
+ * copy-assets.js), so the gate reads the card's words exactly as the window shows them. Not there, or it throws: `undefined`, and every
+ * request keeps its card. `dir` is for tests.
  */
-export function loadLookalike(dir: string = path.join(__dirname, '..', 'renderer')): LookalikeModule | undefined {
+export function loadCardCheck(dir: string = path.join(__dirname, '..', 'renderer')): CardCheckModule | undefined {
   try {
-    const m = require(path.join(dir, 'lookalike.js')) as Partial<LookalikeModule>; // eslint-disable-line @typescript-eslint/no-require-imports
-    return m && typeof m.check === 'function' ? (m as LookalikeModule) : undefined;
+    const m = require(path.join(dir, 'liveact.js')) as Partial<CardCheckModule>; // eslint-disable-line @typescript-eslint/no-require-imports
+    return m && typeof m.reviewable === 'function' ? (m as CardCheckModule) : undefined;
   } catch {
     return undefined;
   }
 }
 
-/** FR-124 (C5): true only when the card's text was checked and has no lookalike letters and no host that reads differently; a failed check is false. */
-export function lookalikeClean(lk: LookalikeModule | undefined, text: string, permKind: string): boolean {
-  if (!lk) return false;
-  const kind = permKind === 'shell' ? 'shell' : permKind === 'mcp' || permKind === 'custom-tool' ? 'tool' : 'other';
+/** The masks the window's card uses (`LIVE_MASK` in app.js), from the same shared module. */
+const CARD_MASK: Record<string, (t: string) => string> = { redact: (t) => redact(t), cmd: (t) => maskSecretCommand(t), url: (t) => maskSecretUrl(t), home: (t) => maskHomePaths(t) };
+
+/**
+ * FR-124, FR-132 (C5): may the reviewer approve this request without a card? Only when the card the window would draw shows its text (not cut,
+ * unchecked or concealed) and none of its words (summary, scope label, broad label, the session button's text from the key), nor the raw
+ * keys and paths behind them, has lookalike letters or could not be checked. No module, or a throw: false (a card).
+ */
+export function cardReviewable(mod: CardCheckModule | undefined, card: { summary: string; kind: string; scopeKey?: string; scopeLabel?: string; broadScopeKey?: string; broadScopeLabel?: string; paths?: string[] }): boolean {
+  if (!mod) return false;
   try {
-    const r = lk.check(text, kind);
-    if (!r || !Array.isArray(r.findings) || !Array.isArray(r.hosts)) return false;
-    if (r.findings.length) return false;
-    return !(typeof lk.hostOdd === 'function' && r.hosts.some((h) => lk.hostOdd!(h)));
+    return mod.reviewable(card as unknown as Record<string, unknown>, CARD_MASK) === true;
   } catch {
     return false;
   }

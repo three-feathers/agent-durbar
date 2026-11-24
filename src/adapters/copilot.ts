@@ -14,8 +14,8 @@ import type { GoalTextResult } from './autopilot';
 import { AUTOPILOT_NOT_ALLOW, AUTOPILOT_NO_PLAN, AUTOPILOT_ONE_RUN, AUTOPILOT_WAIT_TURN, AUTOPILOT_WIRED, AutopilotState, CLEAR_WAIT_MS, LINE_CAP_NOT_RESTORED, LINE_CLOSED, LINE_SELF_STARTED, LINE_UNCONFIRMED, capInForce, emitAutoAnswered, goalRefusal, lineNotCleared, within } from './autopilotHost';
 import type { AutopilotTuning } from './autopilotHost';
 import { MIN_CAP } from '../shared/credits';
-import { copilotReview, loadLookalike, lookalikeClean } from './copilotAssisted';
-import type { CopilotPermMode, LookalikeModule } from './copilotAssisted';
+import { cardReviewable, copilotReview, loadCardCheck } from './copilotAssisted';
+import type { CardCheckModule, CopilotPermMode } from './copilotAssisted';
 import type { ElicitAnswer } from '../shared/elicit';
 import type { CopilotSession, MCPServerConfig, ModelInfo, PermissionRequest, PermissionRequestResult, ResumeSessionConfig, SessionConfig, SessionEvent } from '@github/copilot-sdk';
 import type {
@@ -46,7 +46,7 @@ import type { EventBody, RawEvent } from './map';
 import { autoTierToSend, compactResultFrom, managedAutoTierFrom, modelConfig, modelOptionFrom, runtimeHasAutoTiers, runtimeMessage, sdkTier, switchResultFrom, withAutoTiers } from './copilotmodel';
 import type { ManagedAutoTier } from '../shared/modelswitch';
 import type { ModelOption, RawModelInfo, RawSwitchResult } from './copilotmodel';
-import { PermissionBroker, isInsideRoots, mcpToolBlockList, startModeOf, summarize } from './permissions';
+import { PermissionBroker, grantScope, isInsideRoots, mcpToolBlockList, startModeOf, summarize } from './permissions';
 import type { BrokerEvent, PermissionLike } from './permissions';
 import { resolveWorkspaceCwd } from './workspace';
 import type { AgentProfile, PlanAnswer, SlashCommand, SlashExpansion } from './types';
@@ -956,7 +956,7 @@ export class CopilotAdapter implements AgentAdapter {
       // spec 003 FR-124: the judge's verdict, normalized here; a copy of the request carries it (a field of the runtime's own by these names is dropped)
       const r = copilotReview(!!live?.assisted && broker.getMode() === 'ask', req, invocation?.promptRequest);
       const like: PermissionLike = { ...(req as unknown as PermissionLike), appReview: undefined, appReviewNote: r.note, ...(note ? { sandboxNote: COPILOT_SANDBOX_NOTE_COMMAND } : {}) };
-      if (r.approve && lookalikeClean(this.lookalike, summarize(like), String(like.kind))) like.appReview = 'approve'; // C5: a finding, or a check that could not run, keeps the card
+      if (r.approve && this.reviewable(like)) like.appReview = 'approve'; // C5: a blind card, a finding, or a check that could not run, keeps the card
       const d = await broker.request(like);
       // FR-125: a judge-based approval says who decided, so `permission.completed` reports it; a card the user answered goes back as before
       if (d.kind === 'approve-once' && d.by === 'app-review') return createAttributedPermissionResult({ kind: 'approve-once' } as PermissionRequestResult, { outcome: 'auto_approved', source: 'assisted_approval', surface: 'sdk' }) as unknown as PermissionRequestResult;
@@ -1771,8 +1771,17 @@ export class CopilotAdapter implements AgentAdapter {
 
   /* ---------------- spec 003 FR-120..FR-133: Copilot's assisted approvals inside Ask first ---------------- */
 
-  /** FR-124 (C5): spec 097's lookalike check, loaded once from the build's renderer folder; missing = every request keeps its card. */
-  protected lookalike: LookalikeModule | undefined = loadLookalike();
+  /** FR-124 (C5): the window's card helper (liveact.js), loaded once from the build's renderer folder; missing = every request keeps its card. */
+  protected cardCheck: CardCheckModule | undefined = loadCardCheck();
+  /** C8: tests on the fake SDK may turn the reviewer on before `assistedApproval.verified` is true; the app never sets this. */
+  protected assistedUnverifiedOk = false;
+
+  /** FR-124 (C5): the card this request would get (as the broker builds it), checked with the window's own rule. */
+  private reviewable(like: PermissionLike): boolean {
+    const sc = grantScope(like);
+    const paths = (like.paths?.length ? like.paths : [like.fileName ?? like.path]).filter((x): x is string => typeof x === 'string' && !!x);
+    return cardReviewable(this.cardCheck, { summary: summarize(like), kind: String(like.kind), scopeKey: sc.key, scopeLabel: sc.label, ...(sc.broad ? { broadScopeKey: sc.broad.key, broadScopeLabel: sc.broad.label } : {}), paths });
+  }
 
   /** The runtime's `permissions` RPC group, or undefined (an older runtime has none: FR-123). */
   private permsRpc(live: Live): { setMode?: (p: { mode: CopilotPermMode }) => Promise<unknown>; getMode?: () => Promise<unknown> } | undefined {
@@ -1804,6 +1813,7 @@ export class CopilotAdapter implements AgentAdapter {
       await this.assistedManual(live);
       return { on: false };
     }
+    if (this.capabilities.assistedApproval?.verified !== true && !this.assistedUnverifiedOk) return { on: false, reason: 'unsupported' }; // C8, defence in depth (main refuses first)
     if (live.broker.getMode() !== 'ask' || live.auto?.on || live.auto?.running) return { on: false, reason: 'not-ask' };
     if (live.assisted) return { on: true };
     const p = this.permsRpc(live);
@@ -1836,16 +1846,19 @@ export class CopilotAdapter implements AgentAdapter {
     live.assisted = false;
     live.assistedAsk = 'manual';
     const p = this.permsRpc(live);
-    if (typeof p?.getMode !== 'function') return;
+    if (typeof p?.setMode !== 'function') return; // an older runtime with no permission modes: nothing to reset
+    let mode: unknown;
     try {
-      const r = await this.bounded(Promise.resolve().then(() => p.getMode!()));
-      const mode = typeof r === 'string' ? r : r && typeof r === 'object' ? (r as { mode?: unknown }).mode : undefined;
-      if (mode === 'manual') return;
-      this.debug?.('assisted: runtime-mode-reset');
-      await this.assistedManual(live);
+      if (typeof p.getMode === 'function') {
+        const r = await this.bounded(Promise.resolve().then(() => p.getMode!()));
+        mode = typeof r === 'string' ? r : r && typeof r === 'object' ? (r as { mode?: unknown }).mode : undefined;
+      }
     } catch {
-      this.debug?.('assisted: get-mode-failed');
+      this.debug?.('assisted: get-mode-failed'); // not known: set it anyway (below)
     }
+    if (mode === 'manual') return;
+    this.debug?.('assisted: runtime-mode-reset');
+    await this.assistedManual(live);
   }
 
   /**
