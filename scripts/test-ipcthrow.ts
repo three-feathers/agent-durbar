@@ -205,6 +205,9 @@ async function main(): Promise<void> {
       (s) => `failed\t${s}\u0000 more`,
       (s) => `<b>${s}</b>`,
       (s) => `${'pad '.repeat(80)}${s}`,
+      // the two path contexts that were the shared mask's limits when this differential was written, fixed by spec 012 FR-198 (T492): now zero-visible here
+      (s) => `open '/srv/x/${s}'`,
+      (s) => `open 'C:\\srv\\${s}\\a.txt'`,
     ];
     /** The last characters of the secret itself, as `test-redact-shapes.ts` reads them (a URL credential's host is not secret). */
     const bodyOf = (x: string): string => x.replace(/@host\.example.*$|\/getMe$| https:\/\/h$|" h$|[\\"}]+$/, '').slice(-8);
@@ -221,18 +224,11 @@ async function main(): Promise<void> {
         }
       }
     }
-    // [KNOWN GAP] of the shared mask, not of this change (reported for the masking batch): a token written as a path segment right after `/` is not
-    // hidden for some families (a path-segment rule keeps paths readable). Pinned, so a change either way is seen here.
-    const afterSlash = Object.entries(FAMILIES).flatMap(([family, samples]) => samples.filter((x) => failText(new Error(`open '/srv/x/${x}'`), 'differential').includes(bodyOf(x))).map(() => family));
-    assert.ok(afterSlash.length <= 18, `the known after-slash limit does not grow (${afterSlash.length}: ${[...new Set(afterSlash)].join(', ')})`);
-    // [KNOWN GAP] of the shared mask, the same: a named value with a backslash glued after it (`C:\srv\password=<value>\a.txt`) is not hidden
-    const gluedSlash = FAMILIES.named.filter((x) => failText(new Error(`open 'C:\\srv\\${x}\\a.txt'`), 'differential').includes(bodyOf(x)));
-    assert.ok(gluedSlash.length <= 12, `the known glued-backslash limit does not grow (${gluedSlash.length} named values)`);
     delete process.env[envName];
     const leaked = Object.entries(visible).filter(([, n]) => n > 0);
     assert.deepStrictEqual(leaked, [], `the differential: no secret of any family is visible (per family: ${JSON.stringify(Object.fromEntries(leaked))})`);
     const expected = Object.values(families).reduce((n, v) => n + v.length, 0) * CONTEXTS.length;
-    assert.ok(total === expected && Object.keys(families).length >= 40 && total >= 1500, `the differential ran every family in every context (${Object.keys(families).length} families, ${total} messages)`);
+    assert.ok(total === expected && Object.keys(families).length >= 40 && total >= 2200, `the differential ran every family in every context (${Object.keys(families).length} families, ${total} messages)`);
     console.log(`test:ipcthrow differential: ${Object.keys(families).length} families, ${total} error messages, 0 secrets visible`);
 
     // 8. the scans (review of #1980, items 1, 2, 7). A line may be exempt only with an honest marker: `FR-066: read, not shown` (a classification,
