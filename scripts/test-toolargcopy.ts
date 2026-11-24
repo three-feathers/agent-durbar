@@ -227,12 +227,27 @@ ok('ID-SHAPE ids holding a NUL, a newline or other characters outside the shape 
   assert.deepStrictEqual(writes, [], 'ID-SHAPE nothing written');
 });
 ok('KEY-UNAMBIGUOUS two different pairs of ids never share a key, whatever they hold', () => {
+  // the characters the id shapes refuse (NUL, comma, quote, backslash) and, review of PR 2099 round 2, the ones they allow and a naive join
+  // would use as a separator (':', '.', '-', '_'): 'a:b' + 'c' against 'a' + 'b:c', and the same for each
   const pairs: [string, string][] = [['A\u0000x', 'y'], ['A', 'x\u0000y'], ['A', 'xy'], ['Ax', 'y'], ['A,', 'x'], ['A', ',x'], ['A"', 'x'], ['A', '"x'], ['A\\', 'x'], ['A', '\\x']];
+  for (const sep of [':', '.', '-', '_']) pairs.push([`a${sep}b`, 'c'], ['a', `b${sep}c`], [`a${sep}b${sep}`, 'c'], ['a', `${sep}b${sep}c`], [`a${sep}`, `b${sep}c`]);
   const keys = new Map<string, string>();
   for (const [a, b] of pairs) {
     const k = toolCopyKey(a, b);
     assert.ok(!keys.has(k), `KEY-UNAMBIGUOUS ${JSON.stringify([a, b])} and ${keys.get(k)} share a key`);
     keys.set(k, JSON.stringify([a, b]));
+  }
+});
+ok('STORE-BOTH two pairs a naive join would merge are kept apart: each Copy writes its own value, in both orders', () => {
+  for (const sep of [':', '.', '-', '_']) {
+    const one: [string, string] = [`a${sep}b`, 'c'], two: [string, string] = ['a', `b${sep}c`];
+    for (const order of [[one, two], [two, one]]) {
+      const { writes, store } = fake();
+      for (const [sid, cid] of order) { const e = idEv(sid, cid, `value of ${sid}|${cid}`); store.see(e, outward(e)); }
+      assert.strictEqual(store.size().calls, 2, `STORE-BOTH '${sep}': both pairs are kept (${JSON.stringify(order)})`);
+      for (const [sid, cid] of order) assert.deepStrictEqual(store.copy(sid, cid, true), { ok: true }, `STORE-BOTH '${sep}': ${sid} / ${cid} still held`);
+      assert.deepStrictEqual(writes, order.map(([sid, cid]) => `value of ${sid}|${cid}`), `STORE-BOTH '${sep}': each Copy writes its own value`);
+    }
   }
 });
 ok('STORED-IDS a lookup answers only the value stored for exactly these ids', () => {
