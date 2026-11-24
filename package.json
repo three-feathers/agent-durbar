@@ -298,6 +298,7 @@
     "test:stillhighlights": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-stillhighlights.js",
     "test:subretire": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-subretire.js",
     "test:supplychain": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-supplychain.js",
+    "test:teamcreate": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-teamcreate.js",
     "test:teamops": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-teamops.js",
     "test:teams-editor": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-teams-editor.js",
     "test:teams-ui": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-teams-ui.js",

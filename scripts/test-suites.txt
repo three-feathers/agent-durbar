@@ -161,6 +161,7 @@ test:teams-editor
 test:teams-ui
 test:teamsipc
 test:teamops
+test:teamcreate
 test:names
 test:renameadapters
 test:sessionname
