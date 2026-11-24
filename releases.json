@@ -1,6 +1,11 @@
 {
   "schema": 1,
   "versions": {
+    "0.1.29": {
+      "breaking": false,
+      "notes": "Daily release: no change in how Durbar works or where it keeps its data.",
+      "action": ""
+    },
     "0.1.28": {
       "breaking": false,
       "notes": "Daily release: no change in how Durbar works or where it keeps its data.",
