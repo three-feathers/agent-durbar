@@ -155,7 +155,9 @@ async function main(): Promise<void> {
     assert.ok(logged.length === before + 3 && logged.slice(before).every((l) => l.includes('[ipc] test failed') && !l.includes(token)), 'failText logs one masked main line per error');
     assert.strictEqual(failText(new Error(''), 'test', 'Could not start it.'), 'Could not start it.', "failText: an Error with no message gives the caller's fixed fallback");
     assert.strictEqual(failText(new Error(' \n\t '), 'test'), IPC_FAILED, 'failText: a blank message gives IPC_FAILED');
-    assert.strictEqual(failText(Object.defineProperty(new Error('x'), 'message', { get: () => { throw new Error(token); } }), 'test'), IPC_FAILED, 'failText: a message that cannot be read gives IPC_FAILED');
+    let unreadable: string | undefined;
+    assert.doesNotThrow(() => { unreadable = failText(Object.defineProperty(new Error('x'), 'message', { get: () => { throw new Error(token); } }), 'test'); }, 'failText: a message that cannot be read does not throw');
+    assert.strictEqual(unreadable, IPC_FAILED, 'failText: a message that cannot be read gives IPC_FAILED');
     assert.strictEqual(failText(new Error(`[redaction failed] ${where}`), 'test'), IPC_FAILED, 'failText: fail closed: when the mask reports a failure, the fixed text');
     assert.ok(logged[before].includes(marker), "failText's log line carries the real error");
     assert.strictEqual(failText(new ShownError('That session is open. End it first.'), 'test', 'x'), 'That session is open. End it first.', 'failText: a ShownError keeps its words');
@@ -174,7 +176,16 @@ async function main(): Promise<void> {
     const more = /… (\d+) more characters$/.exec(long);
     assert.ok(more && long.length <= 400 + 30, `${OWNER}: a 5,000-character message is cut at 400 characters with the count (got ${long.length} characters)`);
     assert.strictEqual(long.length - more![0].length + Number(more![1]), ('could not parse the answer: ' + 'word '.repeat(1000)).trim().length, 'the count is exactly the characters left out');
-    const huge = failText(new Error('x '.repeat(30_000)), 'test');
+    // the read limit: the mask never reads more than 20,000 characters of a message (the shared module's export, wrapped for this one call)
+    const redactMod = require('../src/shared/redact') as { redact: (t: unknown, env?: unknown) => string };
+    const realRedact = redactMod.redact;
+    let longestRead = 0;
+    redactMod.redact = (t: unknown, env?: unknown): string => { longestRead = Math.max(longestRead, typeof t === 'string' ? t.length : 0); return realRedact(t, env); };
+    let huge: string;
+    const { shownText } = require('../src/main/ipcerror') as typeof import('../src/main/ipcerror');
+    try { shownText('x '.repeat(30_000)); } finally { redactMod.redact = realRedact; }
+    assert.ok(longestRead > 0 && longestRead <= 20_000, `a message over the read limit: the window's mask reads at most 20,000 characters of it (read ${longestRead}; main's log line has its own limit)`);
+    huge = failText(new Error('x '.repeat(30_000)), 'test');
     assert.ok(/… \d+ more characters$/.test(huge) && huge.length <= 430, 'a message over the read limit is cut with the count too');
     const framed = failText(new Error('the tool failed: exit 2\n    at run (/build/agent/src/main/x.ts:10:5)\n    at async Promise.all (index 0)\n    at node:internal/process/task_queues:95:5\n    at new Thing (<anonymous>)'), 'test');
     assert.ok(framed.startsWith('the tool failed: exit 2') && !framed.includes('/build/') && !framed.includes('task_queues') && !framed.includes('Promise.all') && !framed.includes('anonymous'), `stack frames inside a message never reach the window (got ${JSON.stringify(framed)})`);
