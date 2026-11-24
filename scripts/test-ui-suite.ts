@@ -413,6 +413,34 @@ for (const w of ['CI', 'UI on three OSes', 'Installed app', 'Packaged check', 'I
 assert.ok(office.includes(`CHECK_ALL_THEMES: \${{ (github.event_name == 'pull_request' || github.event_name == 'merge_group') && '0' || '1' }}`) && wf.includes(`CHECK_ALL_THEMES: \${{ github.event_name == 'pull_request' && '0' || '1' }}`), 'every theme on main, nightly and by hand');
 const geo = fs.readFileSync(path.join(ROOT, 'scripts', 'check-theme-geometry.js'), 'utf8');
 assert.ok(/process\.env\.CHECK_ALL_THEMES === '1' \? ALL_THEMES : 'dark'/.test(geo) && /const ALL_THEMES = 'dark,user,pink-studio'/.test(geo), 'check-theme-geometry: the dark fixture by default, all with CHECK_ALL_THEMES=1 (spec 102 T226)');
+// spec 035 FR-414: like with like: a theme with words against Clean Office given the same words (nothing else), the page drawn again in the forced font before measuring
+assert.ok(/extends: 'clean-office', ui: 'clean', scene: 'office', tokens: \{\}, words: p\.words \}/.test(geo) && /const refOf = \(theme\) => \(packs\[`ref:\$\{theme\}`\] \? `ref:\$\{theme\}` : 'clean-office'\);/.test(geo)
+  && /ref\[`\$\{refOf\(theme\)\} \$\{sim\}-\$\{w\}`\]/.test(geo) && /u\.paint\(\); u\.settleNow\(\);/.test(geo), 'check-theme-geometry: a worded theme is compared with Clean Office given its words, drawn again in the forced font (spec 035 FR-414)');
+// review of #2091: the pins cover the calls themselves, not only the helper (PR runs check only the dark fixture, so a lost relayout went red only on main).
+// Line ends are \r?\n as in the pins above: a Windows checkout has CRLF; each pin is also run on an LF and a CRLF copy of the same source.
+const GEO_PINS: Array<[RegExp, string]> = [
+  [/for \(const \[k, p\] of Object\.entries\(packs\)\) \{\r?\n    if \(p\.words && Object\.keys\(p\.words\)\.length\) packs\[`ref:\$\{k\}`\] = /, 'every theme with words gets its words reference (spec 035 FR-414 (a))'],
+  [/if \(!u \|\| typeof u\.paint !== 'function' \|\| typeof u\.settleNow !== 'function'\) throw new Error\(/, 'the relayout throws when the simulator paint hook is missing (spec 035 FR-414 (b))'],
+  [/the simulator never became steady[^\r\n]*\r?\n    await needHooks\(/, 'every page is checked for the paint hook before it is measured, with a clear message (spec 035 FR-414 (b))'],
+  [/throw new Error\(`world \$\{world\}: not shown`\);\r?\n      await needHooks\(/, 'every world page is checked for the paint hook before it is measured (spec 035 FR-414 (b))'],
+  [/typeof window\.__durbarSimUi\.paint==='function'/, 'the driver hook check reads the paint hook (spec 035 FR-414 (b))'],
+  [/document\.head\.appendChild\(st\);\r?\n  \}\r?\n  redraw\(\);[^\r\n]*\r?\n  const out = \{\};/, 'measure lays the page out again in the neutral font before it measures (spec 035 FR-414 (b))'],
+  [/await ctx\.js\(`\(\$\{measure\.toString\(\)\}\)\(null, true\)`\);\r?\n    const more = /, 'the +N more chip is looked for in the neutral font (spec 035 FR-414 (b))'],
+];
+for (const [ends, src] of [['as checked out', geo], ['LF', geo.replace(/\r\n/g, '\n')], ['CRLF', geo.replace(/\r?\n/g, '\r\n')]] as const) {
+  for (const [re, what] of GEO_PINS) assert.ok(re.test(src), `check-theme-geometry: ${what} [${ends} line ends]`);
+}
+// review of FR-414: every "spec 035 FR-n (delta d)" pointer in the check names an FR that delta d of spec 035 really holds
+{
+  const s035 = fs.readFileSync(path.join(ROOT, 'specs', '035-theme-foundation', 'spec.md'), 'utf8');
+  const cites = [...geo.matchAll(/spec 035 (FR-\d+),? \(?delta (\d{4}-\d{2}-\d{2})/g)];
+  assert.ok(cites.length >= 3, 'check-theme-geometry: the FR-414 comments cite spec 035 with the FR and its delta');
+  for (const [, fr, day] of cites) {
+    const at = s035.indexOf(`## Changes ${day}`);
+    const next = at < 0 ? -1 : s035.indexOf('\n## ', at + 1);
+    assert.ok(at >= 0 && s035.slice(at, next < 0 ? undefined : next).includes(`**${fr}**`), `check-theme-geometry: spec 035 delta ${day} defines ${fr}`);
+  }
+}
 assert.ok(/const THEMES = \[\['clean', \{ theme: 'clean' \}\], \['dark', CHECK_DARK_QUERY\]\];/.test(fs.readFileSync(path.join(ROOT, 'scripts', 'shots-052-addleft.js'), 'utf8')), 'shots-052-addleft: Clean Office and the dark fixture theme (spec 102 T226)');
 // review of PR #1276 (A): the dark jobs say so (CHECK_EXPECT_DARK=1), so the driver demands the dark fixture whatever its file is called; both job definitions are pinned here
 const par = fs.readFileSync(path.join(ROOT, 'scripts', 'check-parallel.js'), 'utf8');
@@ -819,17 +847,18 @@ async function retries(): Promise<void> {
   const tmp = fs.mkdtempSync(path.join(require('os').tmpdir(), 'ui-suite-retry-'));
   const summary = path.join(tmp, 'summary.md');
   const env = { ...process.env }, log = console.log, was = process.exitCode;
-  const go = async (results: boolean[], retry: string): Promise<{ code: unknown; out: string; runs: number; sum: string }> => {
+  const go = async (results: boolean[], retry: string): Promise<{ code: unknown; out: string; runs: number; sum: string; before: string[] }> => {
     fs.writeFileSync(summary, '');
     process.env.UI_SUITE_RETRY = retry; process.env.UI_SUITE_JOBS = '1'; process.env.UI_SUITE_OUT = tmp; process.env.GITHUB_STEP_SUMMARY = summary;
     process.exitCode = 0;
     const lines: string[] = []; console.log = (...a: unknown[]) => { lines.push(a.join(' ')); };
     let runs = 0;
+    const before: string[] = []; // spec 008 delta 2026-11-23 (T493): the line printed last when each run starts
     try {
-      await main({ ensure: () => true, argv: ['--only', DRIVERS[0].name], run: async () => { const ok = results[runs++]; return { ok, secs: 0, why: ok ? '' : 'broken', log: '' }; } });
+      await main({ ensure: () => true, argv: ['--only', DRIVERS[0].name], run: async () => { before.push(lines[lines.length - 1] || ''); const ok = results[runs++]; return { ok, secs: 0, why: ok ? '' : 'broken', log: '' }; } });
     } finally { console.log = log; }
     const code = process.exitCode; process.exitCode = was;
-    return { code, out: lines.join('\n'), runs, sum: fs.readFileSync(summary, 'utf8') };
+    return { code, out: lines.join('\n'), runs, sum: fs.readFileSync(summary, 'utf8'), before };
   };
   try {
     const twice = await go([false, false], '1');
@@ -837,6 +866,11 @@ async function retries(): Promise<void> {
     assert.strictEqual(twice.runs, 2, 'one retry, not more');
     assert.ok(!/FLAKY/.test(twice.out + twice.sum), 'failing twice is not FLAKY');
     assert.ok(new RegExp('failed: ' + name).test(twice.out), 'and it is named: ' + twice.out.slice(-200));
+    // a job cut at its limit shows the running driver: its start line is out before it runs, with no result line yet (issue 2070)
+    const esc = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    assert.ok(new RegExp(`^  start ${esc} \\(\\d+ s into the suite\\)$`).test(twice.before[0]), 'the start line is printed before the driver runs: ' + twice.before[0]);
+    assert.ok(new RegExp(`^  start retry ${esc} \\(\\d+ s into the suite\\)$`).test(twice.before[1]), 'and before its retry: ' + twice.before[1]);
+    assert.ok(twice.out.indexOf(`  start ${name} (`) < twice.out.indexOf(`FAIL ${name}`), 'start comes before the result line');
     const once = await go([false, true], '1');
     assert.strictEqual(once.code, 0, 'a pass on retry passes the job');
     assert.ok(/FLAKY \(passed only on retry\)/.test(once.out), 'FLAKY on the final line');
@@ -860,11 +894,12 @@ console.log('ui-suite: check-parallel and ui-suite install Electron once before 
 
 // ---- spec 008 FR-182 (issue 839): --shard i/n takes every n-th driver; n shards are disjoint and together hold every driver ----
 {
-  const { shard, DRIVERS } = require(SUITE) as { shard: (l: unknown[], s?: string, t?: Record<string, number>) => unknown[]; DRIVERS: unknown[] };
+  const { shard, DRIVERS, SHARD1_HEAD_START_SECS } = require(SUITE) as { shard: (l: unknown[], s?: string, t?: Record<string, number>, p?: string) => unknown[]; DRIVERS: unknown[]; SHARD1_HEAD_START_SECS: { darwin: number; other: number } };
   const times = JSON.parse(fs.readFileSync(path.join(ROOT, 'scripts', 'ui-suite-timings.json'), 'utf8')) as Record<string, number>;
-  const names = (DRIVERS as Array<{ name: string }>).map((d) => d.name);
+  // spec 008 delta 2026-11-23 (T493): an entry is a driver's label (a variant such as "check-unread retro") or its name
+  const names = (DRIVERS as Array<{ name: string; label?: string }>).flatMap((d) => [d.name, d.label || d.name]);
   assert.ok(Object.keys(times).filter((k) => !k.startsWith('_')).every((k) => names.includes(k)), 'the timing file names only drivers that exist (refresh it when one is renamed)');
-  const wt = (d: { name: string }): number => times[d.name] ?? 0;
+  const wt = (d: { name: string; label?: string }): number => times[d.label || ''] ?? times[d.name] ?? 0;
   for (const n of [1, 2, 3, 4, 5]) {
     const parts = Array.from({ length: n }, (_, i) => shard(DRIVERS, `${i + 1}/${n}`) as Array<{ name: string }>);
     const all = parts.flat();
@@ -886,6 +921,21 @@ console.log('ui-suite: check-parallel and ui-suite install Electron once before 
     assert.strictEqual(got.flat().length, 3, 'drivers without a timing are all placed once');
     assert.deepStrictEqual(shard(DRIVERS, '1/2', {}), shard(DRIVERS, '1/2', {}), 'no timing file: still deterministic');
   }
+  // spec 008 delta 2026-11-23 (T493): shard 1's head start is per OS (macOS runs the office layout and the Mac title bar there: 586 s measured)
+  {
+    assert.deepStrictEqual(SHARD1_HEAD_START_SECS, { darwin: 600, other: 240 }, 'head start: 600 s on macOS, 240 s elsewhere');
+    const a = { name: 'zz-a' }, b = { name: 'zz-b' }, t = { 'zz-a': 300, 'zz-b': 300 };
+    assert.deepStrictEqual(shard([a, b], '1/2', t, 'linux'), [b], 'linux: shard 1 (240 s ahead) still takes one 300 s driver');
+    assert.deepStrictEqual(shard([a, b], '1/2', t, 'win32'), [b], 'win32: the same 240 s');
+    assert.deepStrictEqual(shard([a, b], '1/2', t, 'darwin'), [], 'darwin: shard 1 (600 s ahead) takes neither');
+    assert.deepStrictEqual(shard([a, b], '2/2', t, 'darwin'), [a, b], 'darwin: both go to shard 2');
+    // a driver's weight is its label's entry first, then its name's
+    const v = { name: 'zz-x', label: 'zz-x retro' }, x = { name: 'zz-x' }, y = { name: 'zz-y' };
+    const tl = { 'zz-x': 10, 'zz-x retro': 1000, 'zz-y': 500 };
+    assert.deepStrictEqual(shard([v, x, y], '2/2', tl, 'linux'), [v], 'the variant weighs its own 1000 s (by its name it would weigh 10)');
+    assert.deepStrictEqual(shard([v, x, y], '1/2', tl, 'linux'), [x, y], 'and the rest share shard 1');
+    assert.deepStrictEqual(shard([v, x, y], '2/2', { 'zz-x': 10, 'zz-y': 500 }, 'linux'), [y], 'without a label entry the variant weighs its name\'s');
+  }
   assert.deepStrictEqual(shard(DRIVERS, undefined), DRIVERS, 'no shard: the whole list');
   for (const bad of ['0/3', '4/3', '3', 'a/b', '1/0']) assert.throws(() => shard(DRIVERS, bad), /--shard wants i\/n/, `"${bad}" is refused`);
   // review on #1257: the workflow's matrix, denominators and excludes agree (plain text; no YAML parser is a dependency)
@@ -897,13 +947,79 @@ console.log('ui-suite: check-parallel and ui-suite install Electron once before 
     assert.ok(m, 'the matrix has a shard list');
     const list = m[1].split(',').map((x) => Number(x.trim()));
     const n = list.length;
-    assert.strictEqual(n, 4, 'Linux and Windows run 4 shards');
+    // spec 008 delta 2026-11-23 (issue 2070): macOS runs 4 shards too (3 were cut at 45 minutes six nights in a row with a third of the drivers never started)
+    assert.strictEqual(n, 4, 'every OS runs 4 shards');
     assert.deepStrictEqual(list, Array.from({ length: n }, (_, i) => i + 1), 'the matrix shard list is exactly 1..n');
-    assert.ok(/UI_SUITE_SHARD: \$\{\{ format\('\{0\}\/\{1\}', matrix\.shard, matrix\.os == 'macos-latest' && 3 \|\| 4\) \}\}/.test(text), 'UI_SUITE_SHARD is i/n with n = 3 on macOS, 4 elsewhere');
-    assert.ok(/name: UI shard \(\$\{\{ matrix\.os \}\} \$\{\{ matrix\.shard \}\}\/\$\{\{ matrix\.os == 'macos-latest' && 3 \|\| 4 \}\}\)/.test(text), 'the job name shows i/n with the same denominators');
+    assert.ok(text.includes(`UI_SUITE_SHARD: \${{ format('{0}/${n}', matrix.shard) }}`), `UI_SUITE_SHARD is i/${n}, the length of the shard list, on every OS`);
+    assert.ok(text.includes(`name: UI shard (\${{ matrix.os }} \${{ matrix.shard }}/${n})`), 'the job name shows i/n with the same denominator');
     assert.ok(/name: ui-shots-\$\{\{ matrix\.os \}\}-\$\{\{ matrix\.shard \}\}/.test(text), 'artifacts are named per shard');
-    const ex = [...text.matchAll(/-\s*\{\s*os:\s*([\w-]+),\s*shard:\s*(\d+)\s*\}/g)].map((x) => `${x[1]}:${x[2]}`);
-    assert.deepStrictEqual(ex, ['macos-latest:4'], 'only macOS skips shard 4 (it runs 3)');
+    assert.ok(!/^\s+exclude:/m.test(text) && !/-\s*\{\s*os:\s*[\w-]+,\s*shard:\s*\d+\s*\}/.test(text), 'no OS skips a shard (macOS no longer runs 3)');
+    // the limits (delta 2026-11-23, review of PR 2071): the macOS limit is the one estimate of scripts/ui-shard-budget.js (measured terms:
+    // head start, driver weights x 0.94 x 1.10 slow night, 1 s per driver, 170 s setup/geometry/upload, npm ci's 720 s of retries, 5 % margin)
+    const lim = text.match(/^ {4}timeout-minutes: \$\{\{ matrix\.os == 'macos-latest' && (\d+) \|\| (\d+) \}\}$/m);
+    assert.ok(lim, 'the shard job limit is "matrix.os == \'macos-latest\' && <macOS> || <others>"');
+    assert.deepStrictEqual([Number(lim[1]), Number(lim[2])], [75, 45], 'macOS shards have 75 minutes, Linux and Windows 45');
+    {
+      const B = require(path.join(ROOT, 'scripts', 'ui-shard-budget.js')) as {
+        macosBudget: (o: { n: number; times: Record<string, number>; limitMin: number; retrySecs: number; drivers?: unknown[] }) => { shards: number[]; worst: number; need: number; allowed: number; ok: boolean };
+        macosLimitMin: (o: { n: number; times: Record<string, number>; retrySecs: number; drivers?: unknown[] }) => number;
+        macosShardSecs: (o: { n: number; times: Record<string, number>; drivers?: unknown[] }) => number[];
+        npmCiRetrySecs: (w: number[]) => number; actionRetryWaits: (t: string) => number[]; untimedWeight: (t: Record<string, number>) => number;
+        parseRetryWaits: (t: string) => { waits: number[]; steps: number };
+        macosLimitCheck: (o: { n: number; times: Record<string, number>; limitMin: number; retrySecs: number; drivers?: unknown[] }) => { ask: number; need: number; allowed: number; headroom: number; problems: string[]; warning: string };
+        CAP_MIN: number; LIMIT_SLACK_MIN: number; WARN_HEADROOM_SECS: number;
+      };
+      const retrySecs = B.npmCiRetrySecs(B.actionRetryWaits(fs.readFileSync(path.join(ROOT, '.github', 'actions', 'npm-ci', 'action.yml'), 'utf8')));
+      assert.strictEqual(retrySecs, 720, 'npm ci retries: waits 30+120+300 s and a 90 s failed try before each');
+      const limitMin = Number(lim[1]);
+      // growth guard (coordinator decision 2026-11-23, review round 2 of PR 2071): the workflow's macOS limit is at least what the estimate asks
+      // for and at most 5 minutes above it; above 80 minutes the answer is another macOS shard; under 120 s of room a warning line, not a failure
+      assert.deepStrictEqual([B.CAP_MIN, B.LIMIT_SLACK_MIN, B.WARN_HEADROOM_SECS], [80, 5, 120], 'cap 80 min, slack 5 min, warning under 120 s');
+      const chk = B.macosLimitCheck({ n, times, limitMin, retrySecs });
+      assert.deepStrictEqual(chk.problems, [], chk.problems.join('; ') + ' (scripts/ui-shard-budget.js, spec 008 delta 2026-11-23)');
+      if (chk.warning) console.log('ui-suite shards: ' + chk.warning);
+      const real = B.macosBudget({ n, times, limitMin, retrySecs });
+      assert.ok(real.ok, `the slowest macOS UI shard: ${real.worst} s + ${retrySecs} s npm ci = ${real.need} s, above ${real.allowed} s`);
+      // red cases on the real timings: the limit below the ask, more than 5 minutes above it, and an ask above the cap
+      assert.ok(B.macosLimitCheck({ n, times, limitMin: chk.ask - 5, retrySecs }).problems.some((x) => /is below the \d+ minutes the estimate asks for/.test(x)), 'a limit below the ask fails');
+      assert.ok(B.macosLimitCheck({ n, times, limitMin: chk.ask + 10, retrySecs }).problems.some((x) => /more than 5 minutes above/.test(x)), 'a limit more than 5 minutes above the ask fails');
+      assert.deepStrictEqual(B.macosLimitCheck({ n, times, limitMin: chk.ask + 5, retrySecs }).problems, [], 'the ask + 5 is still fine');
+      const x140 = Object.fromEntries(Object.entries(times).map(([k, v]) => [k, typeof v === 'number' ? v * 1.4 : v]));
+      const capped = B.macosLimitCheck({ n, times: x140, limitMin: 90, retrySecs });
+      assert.ok(capped.ask > 80 && capped.problems.some((x) => /above the 80-minute cap: add a macOS shard/.test(x)), `an ask above 80 minutes fails with "add a macOS shard" (asked ${capped.ask})`);
+      const tight = B.macosLimitCheck({ n, times, limitMin: chk.ask, retrySecs });
+      assert.ok(tight.headroom < 120 ? /^warning: only -?\d+ s of room/.test(tight.warning) : tight.warning === '', `the warning follows the room (${tight.headroom} s at ${chk.ask} minutes)`);
+      assert.strictEqual(B.macosLimitCheck({ n, times, limitMin: 200, retrySecs }).warning, '', 'no warning with room to spare');
+      // fixture: the warning by hand (need 2732 s; 48 minutes allow 2736 s: 4 s of room)
+      assert.match(B.macosLimitCheck({ n: 2, times: { 'zz-a': 1000, 'zz-b': 100, 'zz-c': 40, 'zz-d': 60 }, limitMin: 48, retrySecs: 720, drivers: [{ name: 'zz-a' }, { name: 'zz-b' }, { name: 'zz-c' }, { name: 'zz-u' }] }).warning, /^warning: only 4 s of room under the 48-minute macOS limit/);
+      // the parser of the npm ci waits is linear (review round 2: the old regex was exponential on a block with no default line): it counts
+      // the lines it looked at, fails closed with its reason, and 240 lines cost at most ten times what 24 cost
+      const noDefault = (k: number): string => '\n  retry-waits:\n' + '      x\n'.repeat(k);
+      const stepsOf = (t: string): number => { try { B.parseRetryWaits(t); } catch (e) { assert.match((e as Error).message, /retry-waits has no default line/); return (e as { steps: number }).steps; } assert.fail('a block with no default line must throw'); };
+      const s24 = stepsOf(noDefault(24)), s240 = stepsOf(noDefault(240));
+      assert.ok(s24 <= 30 && s240 <= 10 * s24, `the parser looks at each line once (24 lines: ${s24} steps, 240 lines: ${s240})`);
+      assert.throws(() => B.parseRetryWaits('inputs:\n  args:\n'), /no retry-waits input/, 'no retry-waits input fails closed');
+      assert.throws(() => B.parseRetryWaits('\n  retry-waits:\n    default: "30 120"\n'), /no default line/, 'a double-quoted default is not guessed');
+      assert.throws(() => B.parseRetryWaits('\n  retry-waits:\n    description: x\n  other:\n    default: \'5\'\n'), /no default line/, 'another input\'s default is never taken for retry-waits');
+      assert.deepStrictEqual(B.parseRetryWaits('x:\r\n  retry-waits:\r\n    description: >-\r\n      text\r\n    default: \'30 120 300\'\r\n').waits, [30, 120, 300], 'CRLF parses');
+      // the reviewer's mutants of PR 2071 must trip the guard: every time x 1.25, and one more driver of 1,500 s
+      const x125 = Object.fromEntries(Object.entries(times).map(([k, v]) => [k, typeof v === 'number' ? v * 1.25 : v]));
+      assert.ok(!B.macosBudget({ n, times: x125, limitMin, retrySecs }).ok, 'guard: every driver 25 % slower trips it');
+      // one more driver of 3,000 s: the split spreads it over the four shards (about 800 s each, above the room); at the 75-minute limit a
+      // 1,500 s driver spreads to about 400 s a shard and may fit (review round 2 of PR 2071 set that room on purpose)
+      const heavy = { name: 'zz-heavy-3000' };
+      assert.ok(!B.macosBudget({ n, times: { ...times, 'zz-heavy-3000': 3000 }, limitMin, retrySecs, drivers: [...(DRIVERS as unknown[]), heavy] }).ok, 'guard: one more driver of 3,000 s trips it');
+      // each term of the sum, by hand (a fixture): shard 1 = [b, c, u]: ((100 + 40 + u 1000) x 0.94 + 600) x 1.1 + 3 x 1 + 170 = 2012;
+      // shard 2 = [a]: 1000 x 0.94 x 1.1 + 1 + 170 = 1205. u is untimed: max(mean 300, 75th percentile 1000) = 1000 (the split itself uses the median, 100).
+      // Dropping any term (the 0.94, the 1.10, the per-driver second, the 170 s, the head start, the untimed weight) changes these numbers.
+      const fx = [{ name: 'zz-a' }, { name: 'zz-b' }, { name: 'zz-c' }, { name: 'zz-u' }], ft = { 'zz-a': 1000, 'zz-b': 100, 'zz-c': 40, 'zz-d': 60 };
+      assert.strictEqual(B.untimedWeight(ft), 1000, 'an untimed driver weighs max(mean, 75th percentile) of the timed ones');
+      assert.deepStrictEqual(B.macosShardSecs({ n: 2, times: ft, drivers: fx }), [2012, 1205], 'the estimate sums every measured term');
+      const fb = B.macosBudget({ n: 2, times: ft, limitMin: 48, retrySecs: 720, drivers: fx });
+      assert.deepStrictEqual([fb.need, fb.allowed, fb.ok], [2732, 2736, true], 'need = slowest shard + npm ci retries; allowed = limit x 0.95');
+      assert.strictEqual(B.macosBudget({ n: 2, times: ft, limitMin: 47, retrySecs: 720, drivers: fx }).ok, false, 'one minute less does not fit');
+      assert.strictEqual(B.macosLimitMin({ n: 2, times: ft, retrySecs: 720, drivers: fx }), 50, 'the limit asked for: 2732 / 0.95 = 48 min, rounded up to 50');
+    }
     // FR-183: one aggregate job, named UI suite complete, needs the shards, fails unless all passed, and runs even when a shard failed
     {
       const at = text.indexOf('  complete:');

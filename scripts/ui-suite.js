@@ -221,6 +221,7 @@ const DRIVERS = [
   { name: 'measure-102-dpr' }, // spec 102 T204: the arcade floor's art scale in device pixels at the ratio UI_SUITE_DPR gives
   { name: 'shots-102-arcade' }, // spec 102 RA3: the Retro arcade behind its flag: only its files, cabinets, marquee, no overlap at 3, 4, 8 and 15 at both sizes
   { name: 'shots-102-arcade', label: 'shots-102-arcade wide font', env: { ARCADE_FONT: 'wide', ARCADE_CASES: 'narrow' } }, // spec 102 FR-312 (round 5 of #1599, issue #1574): the narrow plate's cases alone (ARCADE_CASES=narrow) in a font wider than macOS's (Verdana, else DejaVu Sans; the run fails if neither is installed), so the geometry is not tuned to one font
+  { name: 'shots-102-arcade', label: 'shots-102-arcade hd', env: { DURBAR_HD_PEOPLE: '1', ARCADE_CASES: 'hd' } }, // spec 102 FR-406 (review of #2074): the HD person set behind its switch: no old person file fetched or shown in the arcade (size cases and the walk)
   { name: 'shots-097-moments' }, // spec 097 FR-118..FR-129: the nine world moments (first run, empty office, asleep at the desk, walk, inbox, limit, elicitation, coffee, jumps) in the Photo office and the cave
   { name: 'shots-097-moments', label: 'shots-097-moments cave', env: { MOMENTS_WORLDS: 'cave' } }, // the same nine moments in the Prehistoric cave (its flag is the simulator's page address)
   { name: 'shots-097-moments', label: 'shots-097-moments retro', env: { MOMENTS_WORLDS: 'retro' } }, // spec 102 FR-264: the same nine moments in the Retro arcade (its flag is the simulator's page address)
@@ -355,19 +356,23 @@ function unknownOnly(only, drivers = DRIVERS, notInSuite = NOT_IN_SUITE) {
 function timings() {
   try { return JSON.parse(fs.readFileSync(path.join(__dirname, 'ui-suite-timings.json'), 'utf8')); } catch { return {}; }
 }
-/** Seconds the office layout and the Mac title bar (run in shard 1 only, ui-platforms.yml) are assumed to cost, so shard 1 gets fewer drivers. */
-const SHARD1_HEAD_START_SECS = 240;
+/** Seconds the office layout (and on macOS the Mac title bar), run in shard 1 only (ui-platforms.yml), are assumed to cost, so shard 1 gets fewer
+ *  drivers. Spec 008 delta 2026-11-23 (T493): on macOS the two steps took up to 586 s in the nightly runs of 2026-11-18..23 (office
+ *  293..377 s, title bar 170..209 s), not 240, so shard 1 got about 350 s too much; darwin has its own figure. */
+const SHARD1_HEAD_START_SECS = { darwin: 600, other: 240 };
+const headStart = (platform) => (platform === 'darwin' ? SHARD1_HEAD_START_SECS.darwin : SHARD1_HEAD_START_SECS.other);
 
 /** Spec 008 FR-182 (issue #839), FR-183: shard `i/n` (1-based) is a greedy split by recorded duration: drivers from the slowest down, each to the
- *  shard with the least time so far (ties: the lower shard, then the suite's order), shard 1 starting with SHARD1_HEAD_START_SECS (scripts/time-shard.js). Each shard
- *  runs its drivers in the suite's order. n shards are disjoint and together hold every driver of `list`; the result depends only on `list`
- *  and the committed timing file. No spec: the whole list. */
-function shard(list, spec, times = timings()) {
+ *  shard with the least time so far (ties: the lower shard, then the suite's order), shard 1 starting with the platform's SHARD1_HEAD_START_SECS (scripts/time-shard.js). Each shard
+ *  runs its drivers in the suite's order. n shards are disjoint and together hold every driver of `list`; the result depends only on `list`,
+ *  the committed timing file and the platform. A driver's time is its label's entry (a variant such as "check-unread retro"), else its name's,
+ *  else the median (spec 008 delta 2026-11-23, T493). No spec: the whole list. */
+function shard(list, spec, times = timings(), platform = process.platform) {
   if (spec === undefined || spec === '') return list;
   const { i, n } = parseShardSpec(spec, 'ui-suite');
   const median = medianOf(times);
-  const w = (d) => { const v = times[d.name]; return Number.isFinite(v) ? v : median; };
-  return timeParts(list, n, w, n > 1 ? [SHARD1_HEAD_START_SECS] : [])[i - 1];
+  const w = (d) => { const v = [times[d.label], times[d.name]].find(Number.isFinite); return v === undefined ? median : v; };
+  return timeParts(list, n, w, n > 1 ? [headStart(platform)] : [])[i - 1];
 }
 
 /** Spec 008 FR-210: do the drivers' windows share one desktop, and so one OS window focus? True on macOS, Windows and Linux with a display;
@@ -517,6 +522,9 @@ async function main({ ensure = ensureElectron, run = runOne, argv, shared = shar
   const jobs = Math.max(1, Math.min(6, Number(process.env.UI_SUITE_JOBS || 2) || 2));
   const failed = [];
   const started = Date.now();
+  /* spec 008 FR-182 delta 2026-11-23 (T493): a line before each driver starts, so a job cut at its time limit shows which drivers were running
+     (a start line with no result line) and which never started (no start line); the nightly macOS shards were cut six runs in a row with no word of either */
+  const startLine = (d, what = 'start') => console.log(`  ${what} ${d.label || d.name} (${Math.round((Date.now() - started) / 1000)} s into the suite)`);
   // spec 008 FR-210 (issue #1498): an entry with `focus: true` waits on the real OS window focus, which a neighbour's window takes away on a shared
   // desktop: the others run `jobs` at a time first, then those entries one at a time with no other window open
   let queue = shared ? todo.filter((d) => !d.focus) : todo;
@@ -525,6 +533,7 @@ async function main({ ensure = ensureElectron, run = runOne, argv, shared = shar
   const worker = async () => {
     while (next < queue.length) {
       const d = queue[next++];
+      startLine(d);
       const r = await run(d, outDir);
       console.log(`  ${r.ok ? 'ok  ' : 'FAIL'} ${(d.label || d.name).padEnd(26)} ${String(r.secs).padStart(4)} s${r.ok ? '' : '  ' + r.why.trim().slice(0, 300)}`);
       /* spec 008 FR-190: a wait that timed out (`[waits] ...` from driver-helpers) shows even when the driver passed: a wait that is always spent costs its whole limit every run */
@@ -543,6 +552,7 @@ async function main({ ensure = ensureElectron, run = runOne, argv, shared = shar
   if (process.env.UI_SUITE_RETRY === '1' && failed.length) {
     for (const label of [...failed]) {
       const d = todo.find((x) => (x.label || x.name) === label);
+      startLine(d, 'start retry');
       const r = await run(d, outDir);
       console.log(`  ${r.ok ? 'FLAKY (passed on retry)' : 'FAIL again'} ${label}${r.ok ? '' : '  ' + r.why.trim().slice(0, 300)}`);
       if (r.ok) { failed.splice(failed.indexOf(label), 1); flaky.push(label); }
@@ -554,5 +564,5 @@ async function main({ ensure = ensureElectron, run = runOne, argv, shared = shar
   if (failed.length) process.exitCode = 1;
 }
 
-module.exports = { dprOk, xvfbScreenArgs, launchCommand, sharedDesktop, syntaxErrors, main, runOne, killTree, guardTree, shard, unknownOnly, DRIVERS, NOT_IN_SUITE }; // runOne: also spec 001 FR-082 (scripts/shots-docs.js)
+module.exports = { dprOk, xvfbScreenArgs, launchCommand, sharedDesktop, syntaxErrors, main, runOne, killTree, guardTree, shard, SHARD1_HEAD_START_SECS, unknownOnly, DRIVERS, NOT_IN_SUITE }; // runOne: also spec 001 FR-082 (scripts/shots-docs.js)
 if (require.main === module) main().catch((e) => { console.error('ui-suite:', e.message); process.exitCode = 1; });

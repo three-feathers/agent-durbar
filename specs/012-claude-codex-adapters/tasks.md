@@ -298,3 +298,11 @@ T133 verification (2026-10-25, review on #698): typecheck, build and the offline
 ## Changes 2026-11-23 (masking batch: toasts and the notice strips: issue #1419)
 
 - [x] T457 (2026-11-23, issue #1419) FR-195: `liveMask` in `src/renderer/app.js`, and `liveText`, called by `mountToast`, by `renderRestoreStrip`, `paintCrashStrip`, `renderAwayStrip` and `paintMcpStrip`, and by `afRender` (review of PR 2046); `scripts/test-live-mask.ts` (`npm run test:livemask`, in `scripts/test-suites.txt`); the line in `specs/012-claude-codex-adapters/secret-coverage.md`; the changelog fragment; mutants and a differential fuzz against `main` in the PR.
+
+## Changes 2026-11-23 (security fix: two more contexts in path-like text)
+
+- [x] T492 (2026-11-23, issue #1320) FR-198: `PATH_RUN`, `PATH_HEADS`, `PATH_START`, `PATH_END`, `PATH_HEX_BODY`, `pathSet`, `namedHead`, `notAValue`, `NOT_A_VALUE_SEG`, `SEG_KEY`, `SEG_SHORT`, `NOT_SHORT_SEG`, `NAMED_SEGMENT`, `NAMED_SEGMENT_SHORT`, `MASK_SEGMENT`, `B64_RULE`, `GOOG_RULE` and `_withoutPathContextsForTest` in `src/shared/redact.ts`; `scripts/test-mask-paths.ts` (`npm run test:maskpaths`, in `scripts/test-suites.txt`); the `path*` and `namedSegment*` growth units in `scripts/test-redact-growth.ts`; the line in `specs/012-claude-codex-adapters/secret-coverage.md`; the changelog fragment; mutants in the PR.
+
+## Changes 2026-11-24 (FR-198: the work assert counts instead of timing)
+
+- [x] T508 (2026-11-24) FR-198: the path-dense work assert of `scripts/test-mask-paths.ts` counts where the bounded look-behind is entered (the shipped rule's part up to it, compiled alone) instead of a CPU-time ratio; no change to `src/shared/redact.ts`.
