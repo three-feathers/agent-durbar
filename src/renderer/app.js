@@ -2655,18 +2655,22 @@ const CHIPS_SHOWN=6;
    events' times) and up to OUT_SHOWN characters of output in a scrollable block, with "Show all" for the rest. The closed line stays one line. */
 const OUT_SHOWN=20000, OUT_KEEP=1000000;
 const fmtDur=ms=>ms<1000?Math.round(ms)+' ms':ms<60000?(ms/1000).toFixed(1)+' s':Math.floor(ms/60000)+' min '+Math.round(ms%60000/1000)+' s';
-function makeChip({tool,kind,label,res,state,output,full,ms}){
+/* spec 005 FR-438: the note after the line: how many characters of the masked argument the line leaves out (the chip itself opens the rest, in
+   its open command box), or, for an argument main sent empty, its length; text only, never a second button inside the chip's button */
+const chipNote=(more,long,cmd)=>long>0?'Arguments too long to show ('+long.toLocaleString('en-US')+' characters)':more>0&&cmd?more.toLocaleString('en-US')+' more character'+(more===1?'':'s'):'';
+function makeChip({tool,kind,label,res,state,output,full,ms,more:argMore,long:argLong}){
   const k=kind||toolKind(tool), name=TOOLNAME[tool]||shownTool(tool);
   const el=document.createElement('div');
   el.className='chip'+(state==='failed'||state==='fail'?' fail':state==='run'?' run':'');
   el.setAttribute('role','button');el.tabIndex=0;el.setAttribute('aria-expanded','false');
-  el.title=name+': '+label+(res?' ('+res+')':'');
   const out=output==null?'':String(output).slice(0,OUT_KEEP), detail=out&&out!==res?out:'', cmd=full&&String(full).trim()?String(full):'';
+  const note=chipNote(Number(argMore)||0,label?0:Number(argLong)||0,cmd);
+  el.title=name+': '+(label&&note?label+' \u2026 ('+note+')':label||note)+(res?' ('+res+')':'');
   const dur=typeof ms==='number'&&Number.isFinite(ms)&&ms>0?fmtDur(ms):'';
   if(detail)el.classList.add('has-detail');
   if(cmd)el.classList.add('has-cmd');
   const more=detail.length>OUT_SHOWN;
-  el.innerHTML=`${ICON(k)||ICON('tool')}<b>${esc(name)}</b><code>${esc(label)}</code>${res?`<span class="res">${el.className.includes('fail')?'Failed: ':''}${esc(res)}</span>`:''}${cmd||dur||detail?`<span class="xbody">${cmd?`<span class="cmdbox"><pre class="cmd">${esc(cmd)}</pre><button type="button" class="cp-btn cp-cmd" aria-label="Copy the command" title="Copy the command">Copy</button></span>`:''}${dur||(state==='failed'&&res)?`<span class="xmeta">${state==='failed'?'Failed':'Done'}${dur?' · took '+esc(dur):''}</span>`:''}${detail?`<pre class="detail">${esc(more?detail.slice(0,OUT_SHOWN):detail)}</pre>${more?`<button type="button" class="xall">Show all (${detail.length.toLocaleString('en-US')} characters)</button>`:''}`:''}</span>`:''}`;
+  el.innerHTML=`${ICON(k)||ICON('tool')}<b>${esc(name)}</b><code>${esc(label)}</code>${note?`<span class="argmore">${esc(note)}</span>`:''}${res?`<span class="res">${el.className.includes('fail')?'Failed: ':''}${esc(res)}</span>`:''}${cmd||dur||detail?`<span class="xbody">${cmd?`<span class="cmdbox"><pre class="cmd">${esc(cmd)}</pre><button type="button" class="cp-btn cp-cmd" aria-label="Copy the command" title="Copy the command">Copy</button></span>`:''}${dur||(state==='failed'&&res)?`<span class="xmeta">${state==='failed'?'Failed':'Done'}${dur?' · took '+esc(dur):''}</span>`:''}${detail?`<pre class="detail">${esc(more?detail.slice(0,OUT_SHOWN):detail)}</pre>${more?`<button type="button" class="xall">Show all (${detail.length.toLocaleString('en-US')} characters)</button>`:''}`:''}</span>`:''}`;
   if(more)el._out=detail;
   return el;
 }
@@ -6589,14 +6593,14 @@ function tIntent(T,txt){
 }
 function tTool(T,e){
   const box=tChips(T);
-  if(e.phase==='start'){const {label,full:cmd}=chipArgs(e);const el=makeChip({tool:e.tool,label,full:cmd,res:'running',state:'run'});addChip(box,el);
-    const c=T.chipEls[e.callId]={el,tool:e.tool,label,cmd,t0:e.timestamp,seen:Date.now(),box,T,state:'run',res:'running',output:'',ms:null,edit:e.edit||null};
+  if(e.phase==='start'){const {label,full:cmd,more,long}=chipArgs(e);const el=makeChip({tool:e.tool,label,full:cmd,more,long,res:'running',state:'run'});addChip(box,el);
+    const c=T.chipEls[e.callId]={el,tool:e.tool,label,cmd,more,long,t0:e.timestamp,seen:Date.now(),box,T,state:'run',res:'running',output:'',ms:null,edit:e.edit||null};
     if(c.edit)edPaint(c);
     tAct(T,e.callId,c);}
   else{const c=T.chipEls[e.callId];if(c){
     /* spec 005 FR-019: an update may bring the whole arguments (a call that started from its streamed arguments) and the edit so far */
     if(e.edit)c.edit=e.edit;
-    if(e.args!==undefined){const {label:l,full:f}=chipArgs(e);if(l)c.label=l;if(f)c.cmd=f;} /* spec 005 FR-342: masked like the start */
+    if(e.args!==undefined){const {label:l,full:f,more:mo,long:lg}=chipArgs(e);if(l){c.label=l;c.more=mo;c.long=0;}if(f)c.cmd=f;if(lg){c.label='';c.cmd='';c.more=0;c.long=lg;}} /* spec 005 FR-342: masked like the start; FR-438: an over-limit argument replaces the old one by its length */
     if(e.phase!=='update'||e.output!=null){const full=String(e.output||''),done=e.phase!=='update';
       c.ms=done&&typeof c.t0==='number'&&typeof e.timestamp==='number'?e.timestamp-c.t0:null; /* spec 052 FR-063: duration from the start and end events' times */
       c.res=done?SHORT(full||(e.phase==='complete'?'ok':'failed'),60):'running';c.output=full;c.state=!done?'run':e.phase==='failed'?'failed':'ok';
@@ -6684,7 +6688,7 @@ function mcpNotSent(a,chat,text,fromComposer){
   scheduleRender();
 }
 function chipRepaint(c){
-  const el=makeChip({tool:c.tool,label:c.label,full:c.cmd,ms:c.ms,res:c.res,output:c.output,state:c.state});
+  const el=makeChip({tool:c.tool,label:c.label,full:c.cmd,more:c.more,long:c.long,ms:c.ms,res:c.res,output:c.output,state:c.state});
   el.style.animation='none'; /* a repaint is not a new call: no pop (FR-021, no jank while the arguments stream) */
   if(c.el.classList.contains('open')){el.classList.add('open');el.setAttribute('aria-expanded','true');}
   c.el.replaceWith(el);c.el=el;refreshChips(c.box);
@@ -7150,16 +7154,18 @@ function chipArg(tool,raw){
   if(s.length>cap){const b=s.slice(0,cap+1).search(/\s\S*$/);s=b>0?s.slice(0,b):'';if(!s.trim())return {label:'',full:''};}
   const flat=s.replace(/\s+/g,' '), k=toolKind(tool), m1=STX?STX.maskLabel(s,k,TOOLMASK):'', m2=flat===s?m1:STX?STX.maskLabel(flat,k,TOOLMASK):'';
   if(!m1||!m2)return {label:'',full:''};
-  const t=flat.trim();if(m1===t&&m2===t)return {label:flat.slice(0,400),full:s.slice(0,OUT_SHOWN)};
+  const t=flat.trim();if(m1===t&&m2===t)return {label:flat.slice(0,400),full:s.slice(0,OUT_SHOWN),more:Math.max(0,flat.length-400)};
   let m='';try{m=m1===m2?m1:RED.keepShownBy(m1,m2);}catch(e){m='';}if(typeof m!=='string'||!m)return {label:'',full:''};
-  return {label:m.slice(0,400),full:m.slice(0,OUT_SHOWN)};
+  return {label:m.slice(0,400),full:m.slice(0,OUT_SHOWN),more:Math.max(0,m.length-400)}; /* spec 005 FR-438: more = the masked one-line text past the line's 400, counted after the mask */
 }
 /* a label an adapter already cut (a replayed history item: 300 characters, Codex 200 and "…"; the VS Code transcript: 300 or 200 with "…"): the cut may
    fall inside a secret, whose head the masks no longer know, so a label the adapter cut (exactly 300 characters, or ending in "…") loses its last run
    of non-blanks before it is masked; any other label is masked as it is */
 const cutLabel=(tool,l)=>{let x=String(l==null?'':l);if(x.length===300||(x.length>=150&&x.endsWith('\u2026'))){const b=x.search(/\s\S*$/);x=(b>0?x.slice(0,b):'')+' \u2026';}return chipArg(tool,x).label;};
 /* the chip's label and command for a toolCall event: an edit names its file (main masked the edit, FR-024; masked here again like the task line) */
-const chipArgs=e=>{const a=chipArg(e.tool,toolArg(e.args)),f=editLabel(e);return {label:f?chipArg(e.tool,f).label:a.label,full:a.full};};
+/* spec 005 FR-438: `more` (the line leaves out that many characters of the masked argument; not for an edit's file label) and `long` (main sent the
+   argument empty because the masks do not take its length: main's `argsLong`, a number only) */
+const chipArgs=e=>{const a=chipArg(e.tool,toolArg(e.args)),f=editLabel(e),n=e.argsLong,lg=typeof n==='number'&&Number.isSafeInteger(n)&&n>0?n:0;return {label:f?chipArg(e.tool,f).label:a.label,full:a.full,more:f?0:a.more||0,long:f||a.label?0:lg};};
 /* ---------------- AI-credit cap: chip, dialog, limit reached (spec 011) ---------------- */
 let APP_SETTINGS={};
 function capChipHTML(a){

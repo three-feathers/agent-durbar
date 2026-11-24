@@ -14,7 +14,8 @@
  * FORGET-REPLACE, END-KEEPS). PR 1 of 2: no window code calls the channel yet (NO-CALLER-YET, a guard against an accidental caller;
  * T504 replaces it with CALLERS). Review of PR 2099: the argument is chosen on the masked copy (PICK-MASKED); ids of the app's shapes when
  * storing and copying (ID-STORE, ID-SHAPE); no read across sessions (KEY-UNAMBIGUOUS, STORED-IDS, CROSS-SESSION, PROTO-IDS); eviction
- * stops on an empty map (GUARD-EMPTY, BUDGET-ONE); a model fuzz with small bounds (FUZZ).
+ * stops on an empty map (GUARD-EMPTY, BUDGET-ONE); a model fuzz with small bounds (FUZZ). Spec 005 FR-438 (T539): an argument main sent empty
+ * because the masks do not take its length gets its length as `argsLong`, a number only (LONG-PRESENT, LONG-SET, LONG-EDGE, LONG-ONLY-EMPTIED, LONG-ADAPTER).
  */
 import * as assert from 'assert';
 import * as fs from 'fs';
@@ -345,6 +346,61 @@ ok('ADAPTER an adapter\'s own argsMasked never reaches the window; other events 
   const nothing = ev({ n: 1 });
   assert.strictEqual((store.see(nothing, outward(nothing)) as Ev).argsMasked, true, 'nothing a chip can copy: ask first (fail safe)');
   assert.deepStrictEqual(store.copy('s1', 'c1'), { ok: false, reason: 'unknown' });
+});
+
+// ---- spec 005 FR-438 (T539): an argument main sent empty because the masks do not take its length gets its length, a number only
+ok('LONG an over-limit argument arrives empty with its length; at or under the limit, none', () => {
+  const { store } = fake();
+  const words = (k: number): string => { let s = 'echo'; while (s.length < k) s += ' word' + (s.length % 97); return s.slice(0, k); };
+  const blob = (k: number): string => 'echo ' + 'a'.repeat(k - 5);
+  for (const k of [400, 401, 12287, 12288, 12289, 13000, 20000, 24577, 100000, 100001]) {
+    for (const [kind, make] of [['words', words], ['blob', blob]] as const) {
+      const raw = make(k);
+      const e = ev({ command: raw }, { callId: `c-${kind}-${k}` });
+      const win = store.see(e, outward(e)) as Ev;
+      const got = (win.args as Record<string, unknown>).command as string;
+      if (k > 12288) {
+        assert.ok(!JSON.stringify(win).includes(raw.slice(0, 200)), `LONG-SET ${kind} ${k}: no text of an over-limit argument reaches the window`);
+        assert.strictEqual(got, '', `LONG-SET ${kind} ${k}: main sends it empty`);
+        assert.ok(typeof win.argsLong === 'number', `LONG-PRESENT ${kind} ${k}: main says the argument was too long`);
+        assert.strictEqual(win.argsLong, k, `LONG-SET ${kind} ${k}: argsLong is the argument's length`);
+      } else {
+        assert.strictEqual(got, raw, `LONG-EDGE ${kind} ${k}: at or under the limit the argument arrives`);
+        assert.ok(!('argsLong' in win), `LONG-EDGE ${kind} ${k}: no argsLong at or under the limit`);
+      }
+      assert.ok(!('argsLong' in outward(e)), `LONG-SET ${kind} ${k}: the debug log's copy (outward) has no argsLong`);
+    }
+  }
+});
+
+ok('LONG-ONLY-EMPTIED only the argument the chip shows, and only when main emptied it', () => {
+  const { store } = fake();
+  const long = 'echo ' + 'b'.repeat(20000);
+  const cases: [unknown, number | undefined][] = [
+    [{ command: long, description: 'Encode the fixture' }, 20005], // the chip picks the emptied command (the first text value)
+    [{ path: long, command: 'ls' }, undefined], // the chip shows `ls` (PICK-MASKED): nothing to say
+    [{ description: 'Encode the fixture', command: long }, undefined], // the chip shows the description
+    [{ command: 'ls', note: long }, undefined],
+    [{ command: '' }, undefined], // empty as sent, not emptied by main
+    [{ command: ['echo', long] }, undefined], // a word list: not a text argument
+  ];
+  cases.forEach(([args, want], i) => {
+    const e = ev(args, { callId: `o${i}` });
+    const win = store.see(e, outward(e)) as Ev;
+    assert.strictEqual(win.argsLong, want, `LONG-ONLY-EMPTIED ${JSON.stringify(args).slice(0, 60)}: argsLong ${String(want)}`);
+  });
+});
+
+ok('LONG-ADAPTER an adapter\'s own argsLong never reaches the window', () => {
+  const { store } = fake();
+  const forged = ev(undefined, { phase: 'complete', output: 'ok', argsLong: 99999 } as Partial<Ev>);
+  assert.ok(!('argsLong' in store.see(forged, forged)), 'LONG-ADAPTER dropped on an event without arguments');
+  const short = { ...ev({ command: 'ls' }), argsLong: 99999 } as Ev;
+  assert.ok(!('argsLong' in store.see(short, outward(short))), 'LONG-ADAPTER dropped on an argument main did not empty');
+  const lie = { ...ev({ command: 'x'.repeat(13000) }), argsLong: 5 } as Ev;
+  assert.strictEqual((store.see(lie, outward(lie)) as Ev).argsLong, 13000, 'LONG-ADAPTER main\'s count replaces it');
+  const bad = { ...ev(undefined, { callId: 'bad id' }), argsLong: 7 } as Ev;
+  assert.ok(!('argsLong' in store.see(bad, bad)), 'LONG-ADAPTER dropped on an event main does not keep');
 });
 
 ok('IPC the channel checks the owner frame and answers the store\'s result, never the text', () => {

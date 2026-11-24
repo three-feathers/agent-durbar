@@ -69,6 +69,7 @@ const DRIVERS = [
   { name: 'check-001-room-heads', focus: true }, // spec 001 FR-270, FR-271 (issue #1905): 16 folders whose names start alike: a cut name keeps its end, the whole head (and the Real office sign) says its folder on hover and on keyboard focus, masked
   { name: 'check-001-room-heads', label: 'check-001-room-heads retro', env: { DRIVER_WORLD: 'retro' } }, // spec 001 FR-270..FR-272 (issue #1905): the same checks in the Retro arcade (its signs have more room: see the driver's note)
   { name: 'check-005-rail-sort' }, // spec 005 FR-341 (issue #1961): the rail's Sort menu: five choices, order inside folders, keyboard, remembered, heights unchanged, 180 px
+  { name: 'check-005-long-args' }, // spec 005 FR-438 (issue #2060 item 3): a long tool argument's chip says how many more characters (masked, cut after the mask), an over-limit one names its length; keyboard, both sizes
   { name: 'check-005-rail-folder' }, // spec 005 FR-340 (issue #1905): the rail's group heads and rows give their folder (masked) on hover and focus; equal names show their parent; 220 and 180 px
   { name: 'check-001-add-go' }, // spec 001 FR-272 (issue #1905): after an add the office goes to the new room and marks it for 3 s; Show; still under reduced motion; another floor; the Real office sign
   { name: 'check-001-add-go', label: 'check-001-add-go retro', env: { DRIVER_WORLD: 'retro' } }, // spec 001 FR-270..FR-272 (issue #1905): the same checks in the Retro arcade (its signs have more room: see the driver's note)
