@@ -1,1 +1,1 @@
-- **The arcade's world-card preview shows the HD people** (spec 102 T502): the small preview picture of the Retro arcade world was retaken and now shows the new HD Retro pixel people instead of the first pictures. The cave preview shows the cave's current layout.
+- **Retro pixel people in the Retro arcade's preview** (spec 102 T502): the small preview picture on the Retro arcade's card was retaken and now shows the new HD Retro pixel people instead of the first pictures. The cave's preview shows its current layout.
