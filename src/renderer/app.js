@@ -9835,7 +9835,7 @@ function openSchedules(r,from,opts){
   const applyTgt=()=>{
     $('scToL').hidden=!tgt;
     const sel=$('scTarget');sel.options[1].value=tgt?tgt.id:'';
-    $('scToHint').textContent=tgt?tgt.name:'';$('scToHint').title=tgt?tgt.name:'';
+    $('scToHint').textContent=tgt?nameShown(tgt):'';$('scToHint').title=tgt?nameShown(tgt):'';
     $('scToHint').hidden=!sel.value;
   };
   let capUnitNow=schedCapUnit(folderAg); /* a number typed for one unit is never carried to another (5 dollars must not become 5 AI credits) */
