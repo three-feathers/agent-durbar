@@ -42,8 +42,9 @@ import { nativeConfirm } from './nativeconfirm';
 import { register as registerNotesIpc } from './ipc/notes';
 import { register as registerTeamsIpc } from './ipc/teams';
 import { register as registerMemoryIpc } from './ipc/memory';
+import { defaultProfileEnv } from './profilefiles';
 import { MemoryOps, nodeMemoryCtx, expandOfficeFolders } from './memoryops';
-import { memoryGitRemote } from './memorygit';
+import { memoryGitRemote, memoryGitFlags } from './memorygit';
 import { pickFolder } from './pickfolder';
 import { TeamsIpcOps } from './teamsipc';
 import { TeamOps, pathExists, resolveTargetFrom } from './teamops';
@@ -82,6 +83,7 @@ import type { AgentAdapter, AgentEvent } from '../adapters/types';
 import type { AdapterInfo } from '../shared/adapters';
 import { startOptionsOf } from './startopts';
 import { resolveWorkspaceCwd, readCodeWorkspaceFolders } from '../adapters/workspace';
+import { copilotHomeDir } from '../adapters/slashcommands';
 import { findAdded } from './addkey';
 import { MAX_ATTACH_BYTES, MAX_ATTACH_FILES, fmtSize, kindOfFile, sweepStaleStageDirs, sweepStaleTempDirs } from '../shared/attachments';
 import { ACCOUNT_TEMP_PREFIXES } from '../shared/account';
@@ -995,11 +997,13 @@ registerMemoryIpc({
     flavor: { path, platform: process.platform === 'win32' || process.platform === 'darwin' ? process.platform : 'linux' },
     ctx: () => nodeMemoryCtx(fs, {
       home: os.homedir(), userData: app.getPath('userData'),
-      env: { appData: process.env.APPDATA, localAppData: process.env.LOCALAPPDATA, xdgConfigHome: process.env.XDG_CONFIG_HOME, xdgDataHome: process.env.XDG_DATA_HOME },
+      env: { appData: process.env.APPDATA, localAppData: process.env.LOCALAPPDATA, xdgConfigHome: process.env.XDG_CONFIG_HOME, xdgDataHome: process.env.XDG_DATA_HOME, systemRoot: process.env.SystemRoot, programData: process.env.ProgramData, programFiles: process.env.ProgramFiles, programFilesX86: (({ 'ProgramFiles(x86)': v }) => v)(process.env) },
+      // the agent apps' own homes, read as the rest of Durbar reads them (`copilotHomeDir`, `defaultProfileEnv`, `CODEX_HOME`)
+      agentHomes: [copilotHomeDir(process.env, os.homedir()), defaultProfileEnv(process.env, os.homedir()).claudeConfigDir, process.env.CODEX_HOME || path.join(os.homedir(), '.codex')],
     }),
     // every workspace member, not only the first folder; an unreadable workspace file refuses the link
     officeFolders: () => expandOfficeFolders([...agents.values()].flatMap((a) => [a.cwd, ...(a.workspaceFile ? [a.workspaceFile] : [])]).concat(folderStore?.list().map((f) => f.workspace) ?? []), readCodeWorkspaceFolders),
-    remote: (real) => memoryGitRemote(fs, { O_RDONLY: fs.constants.O_RDONLY, O_NOFOLLOW: fs.constants.O_NOFOLLOW }, path.join, real),
+    remote: (real) => memoryGitRemote(fs, memoryGitFlags(fs.constants), path.join, real),
     changed: () => toRenderer('memory:changed', memoryOps?.status()),
   }))),
 });

@@ -42,11 +42,18 @@ export function nodeMemoryCtx(fs: MemoryFsLike, base: Omit<MemoryFolderCtx, 'rea
  * `readCodeWorkspaceFolders`): the first folder is only the session's cwd. A workspace file that cannot be read THROWS (fail closed: the memory
  * folder cannot be judged, so it is refused, never accepted).
  */
+/** A workspace file that could not be read; the refusal names it (paths are shown, owner decision of 2026-11-23). */
+export class WorkspaceUnreadable extends Error {
+  constructor(readonly file: string) { super('workspace unreadable'); }
+}
+
 export function expandOfficeFolders(entries: readonly string[], read: (file: string) => string[]): string[] {
   const out: string[] = [];
   for (const e of entries) {
     out.push(e);
-    if (/\.code-workspace$/i.test(e)) out.push(...read(e));
+    if (/\.code-workspace$/i.test(e)) {
+      try { out.push(...read(e)); } catch { throw new WorkspaceUnreadable(e); }
+    }
   }
   return out;
 }
@@ -69,7 +76,7 @@ export interface MemoryOpsDeps {
 }
 
 const CHANGED = 'The folder is not the one you chose (it changed since). Choose it again.';
-const WS_UNREADABLE = 'An office workspace file could not be read, so the folder cannot be checked.';
+const wsUnreadable = (file: unknown): string => `The workspace file ${typeof file === 'string' ? file.slice(0, 300) : ''} could not be read, so the folder cannot be checked.`;
 const BAD: MemoryFail = { ok: false, error: 'invalid' };
 const FAILED: MemoryFail = { ok: false, error: 'failed' };
 
@@ -83,7 +90,7 @@ export class MemoryOps {
   /** T002 with the office folders of this moment; an unreadable workspace file refuses (fixed words) */
   private check(candidate: string): MemoryFolderCheck {
     let office: string[];
-    try { office = this.deps.officeFolders(); } catch { return { ok: false, reason: 'office-folder', text: WS_UNREADABLE }; }
+    try { office = this.deps.officeFolders(); } catch (e) { return { ok: false, reason: 'office-folder', text: wsUnreadable((e as { file?: unknown } | null)?.file) }; }
     return checkMemoryFolder(candidate, { ...this.deps.ctx(), officeFolders: office }, this.deps.flavor);
   }
 

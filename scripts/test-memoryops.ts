@@ -147,6 +147,20 @@ section('status', () => {
 
 // ---------------------------------------------------------------------------------------------------------------------------------- pick
 section('pick', async () => {
+  // D6: with no injected generator the token comes from crypto.randomBytes(16)
+  {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const crypto = require('crypto') as { randomBytes: (n: number) => Buffer };
+    const real = crypto.randomBytes; const asked: number[] = [];
+    crypto.randomBytes = ((n: number) => { asked.push(n); return Buffer.alloc(n, 0xab); }) as typeof real;
+    try {
+      const fx = fakeFs();
+      const o = new MemoryOps({ store: () => new FakeStore(), flavor: POSIX, pick: async () => NOTES, ctx: () => nodeMemoryCtx(fx, { home: '/home/ana', userData: '/u' }), officeFolders: () => [] });
+      const t = await o.pick();
+      eq(t.ok && t.token, 'ab'.repeat(16), 'the default token is the 16 bytes crypto.randomBytes gave');
+      eq(asked, [16], 'asked for exactly 16 random bytes');
+    } finally { crypto.randomBytes = real; }
+  }
   const s = setup();
   s.picks.push(NOTES);
   const p = await s.ops.pick();
@@ -253,6 +267,7 @@ section('workspace', async () => {
   s.picks.push(NOTES);
   const r = await s.ops.pick();
   ok(r.ok === false && r.error === 'refused' && /could not be read/.test((r as { reason: string }).reason) && !/unreadable|Error/.test((r as { reason: string }).reason), 'an unreadable workspace refuses (fail closed)');
+  ok((r as { reason: string }).reason.includes('/work/all.code-workspace'), 'the refusal names the workspace file (paths are shown, owner decision of 2026-11-23)');
   // upper-case extension
   const u = setup(); u.office.push('/work/ALL.CODE-WORKSPACE'); u.ws['/work/ALL.CODE-WORKSPACE'] = ['/work/a', '/work/b'];
   u.picks.push('/work/b'); eq((await u.ops.pick()).ok, false, 'the extension is not case-sensitive');
@@ -265,7 +280,7 @@ section('workspace', async () => {
   eq(a.ops.status().state, 'refused', 'status: refused');
   // the helper alone
   eq(expandOfficeFolders(['/a', '/w.code-workspace'], () => ['/x', '/y']), ['/a', '/w.code-workspace', '/x', '/y'], 'expand keeps the entry and adds every member');
-  assert.throws(() => expandOfficeFolders(['/w.code-workspace'], () => { throw new Error('x'); }), /x/);
+  assert.throws(() => expandOfficeFolders(['/w.code-workspace'], () => { throw new Error('x'); }), /workspace unreadable/);
 });
 
 // ---------------------------------------------------------------------------------------------------------------------------------- remote
@@ -400,6 +415,15 @@ section('source', () => {
   ok(!/realpath\s*:\s*fs\.realpathSync[^.]/.test(rd('src/main/main.ts')), 'main.ts never hands the JS realpathSync over');
   eq([...ops.matchAll(/^import [^;]*from '([^']+)'/gm)].map((m) => m[1]).sort(), ['../shared/api', '../shared/memoryfolder', '../shared/memoryfolder', 'crypto'], 'memoryops.ts imports: no fs, no Electron, no shell');
   ok(!/child_process|\bspawn|\bexec\(|writeFile|unlink|rmSync|rmdir|mkdir|readFile|readdir/.test(code), 'memoryops.ts writes and removes nothing');
+  ok(/\?\? \(\(\) => randomBytes\(16\)\.toString\('hex'\)\)\)\(\)/.test(code) && /import \{ randomBytes \} from 'crypto'/.test(ops), 'the default token is crypto.randomBytes(16), never Math.random');
+  ok(!/Math\.random/.test(code), 'memoryops.ts has no Math.random');
+  // D4: `.git/config` is opened without blocking, whatever main passes
+  const git = rd('src/main/memorygit.ts');
+  ok(/O_NONBLOCK: c\.O_NONBLOCK/.test(git) && /O_NOFOLLOW: c\.O_NOFOLLOW/.test(git), 'memoryGitFlags carries O_NOFOLLOW and O_NONBLOCK');
+  ok(/memoryGitRemote\(fs, memoryGitFlags\(fs\.constants\), path\.join, real\)/.test(rd('src/main/main.ts')), 'main.ts opens .git/config with memoryGitFlags(fs.constants)');
+  const { memoryGitFlags } = require('../src/main/memorygit') as typeof import('../src/main/memorygit');
+  eq(memoryGitFlags({ O_RDONLY: 0, O_NOFOLLOW: 4, O_NONBLOCK: 8 }), { O_RDONLY: 0, O_NOFOLLOW: 4, O_NONBLOCK: 8 }, 'flags kept');
+  eq(memoryGitFlags(fs.constants).O_NONBLOCK, fs.constants.O_NONBLOCK, 'real constants kept');
   const ipc = rd('src/main/ipc/memory.ts');
   for (const c of ['status', 'pick', 'apply', 'setOn', 'stop']) ok(new RegExp(`ipcHandle\\('memory:${c}', \\(e[,)][^\\n]*!fromApp\\(e\\)`).test(ipc), `memory:${c} is window only through ipcHandle`);
   ok(!/ipcMain|webContents\.ipc/.test(ipc), 'no raw ipcMain');
@@ -434,12 +458,13 @@ section('source', () => {
     { name: 'apply without the re-check', from: 'r = this.check(e.chosen);', to: 'r = { ok: true, real: e.real };', section: 'recheck' },
     // review round 1
     { name: 'only the first workspace folder is used', from: 'out.push(...read(e));', to: 'out.push(read(e)[0]);', section: 'workspace' },
-    { name: 'an unreadable workspace is ignored', from: "catch {\n            return { ok: false, reason: 'office-folder', text: WS_UNREADABLE };\n        }", to: 'catch {\n            office = [];\n        }', section: 'workspace' },
+    { name: 'an unreadable workspace is ignored', from: "catch (e) {\n            return { ok: false, reason: 'office-folder', text: wsUnreadable(e?.file) };\n        }", to: 'catch (e) {\n            office = [];\n        }', section: 'workspace' },
     { name: 'pick drops the remote', from: ', remote };', to: ' };', section: 'remote' },
     { name: 'the token is bound to the unresolved path', from: 'this.live = { token, chosen, real: r.real,', to: 'this.live = { token, chosen, real: chosen,', section: 'relink' },
     { name: 'apply saves the stored path, not the re-check one', from: 'st.setMemory(r.real)', to: 'st.setMemory(e.real)', section: 'relink' },
     { name: 'apply skips the repoint comparison', from: 'if (!this.same(r.real, e.real))', to: 'if (false)', section: 'relink' },
     { name: 'case folded on every platform', from: "this.deps.flavor.platform === 'linux' ? x : x.toLowerCase()", to: 'x.toLowerCase()', section: 'relink' },
+    { name: 'the default token is not from randomBytes', from: "(0, crypto_1.randomBytes)(16).toString('hex')", to: "Math.random().toString(16).slice(2).padEnd(32, '0')", section: 'pick' },
     // the same rules from other sides
     { name: 'a token can be used twice', from: '        this.live = undefined;\n        if (this.now() >= e.expiresAt)', to: '        if (this.now() >= e.expiresAt)', section: 'apply' },
     { name: 'a token never expires', from: 'if (this.now() >= e.expiresAt)', to: 'if (false)', section: 'apply' },
