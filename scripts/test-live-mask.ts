@@ -335,6 +335,11 @@ for (const [form, t] of [['LF', app], ['CRLF', app.replace(/\n/g, '\r\n')]] as c
   ok(t.includes('placeholder="Message ${esc(nameShown(a))}…" aria-label="Message ${esc(nameShown(a))}"') && t.includes("mi.setAttribute('aria-label','Message '+nameShown(a))") && t.includes("APW.placeholder(app):'Message '+nameShown(a)"), `FR-197 the composer reads nameShown (${form})`);
   ok(t.includes('aria-label="${esc(nameShown(a))}"'), `FR-197 the header's label reads nameShown (${form})`);
   ok(!/(?:Chat with |Message |Rename session )(?:\$\{esc\(a\.name\)\}|'\+a\.name)/.test(t), `FR-197 no header, chat or composer label reads a.name as written (${form})`);
+  // round-3 pre-review of PR 2098: every line that builds one of the sites holds no raw name at all, whatever form a revert takes
+  for (const key of ['id="panelTitle"', 'id="chat" role="log"', 'id="msgInput"', "mi.setAttribute('aria-label','Message '", "coffeeWord()+(left", "it('open','Open chat'", 'm.appendChild(typingIndicator(a))', 'const typingIndicator=', 'const panelTitleHTML=']) {
+    const lines = t.split(/\r?\n/).filter((l) => l.includes(key));
+    ok(lines.length >= 1 && lines.every((l) => !/\ba\.name\b/.test(l)), `FR-197 the line that builds ${key.slice(0, 24)} holds no raw name (${form})`);
+  }
 }
 
 // the two repaint paths run with their own code (pre-review of PR 2098): a rename repaints the header, the chat's label and the composer's label; the Autopilot

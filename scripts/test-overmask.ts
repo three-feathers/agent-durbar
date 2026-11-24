@@ -77,6 +77,13 @@ hiddenEvery('open https://example.test/cb?state=open&code=zq9x', 'state=open', '
 hiddenEvery('open https://example.test/cb?state=open#code=zq9x', 'state=open', 'FR-196 b stays: a code in the fragment');
 hidden('open https://example.test/cb?redirect=x%26state%3Dopen%26code%3Dzq9x', '%3Dopen', 'FR-196 b stays: an encoded callback');
 hiddenEvery('?CODE=abc&State=def', 'State=def', 'FR-196 b stays: the name in any case next to a code (test-redact any case)');
+// round-3 pre-review of PR 2098: a code name escaped three and eight times is still a code name (the decode reads up to eight levels)
+{
+  for (const k of [3, 8]) {
+    let name = '%63'; for (let i = 1; i < k; i++) name = name.replace('%', '%25');
+    hiddenEvery(`open https://example.test/cb?${name}ode=zq9x&state=open`, 'state=open', `FR-196 b stays: a state word next to a code name escaped ${k} times`);
+  }
+}
 // pre-review of PR 2098: a code name written with percent escapes is a code name (the URL rule decodes it, so the state check must too)
 hiddenEvery('open https://example.test/cb?%63ode=zq9x&state=open', 'state=open', 'FR-196 b stays: a state word next to a percent-escaped code name');
 hiddenEvery('open https://example.test/cb?state=open&%2563ode=zq9x', 'state=open', 'FR-196 b stays: a state word next to a twice-escaped code name');
@@ -95,6 +102,14 @@ shown('ssh -o PasswordAuthentication=no host', 'FR-196 c: an ssh option set to n
 shown(`${pw}=false npm test`, 'FR-196 c: NAME=false');
 shown(`tool --pass${'word'}=no`, 'FR-196 c: --password=no');
 shown(`${pw}=YES make`, 'FR-196 c: any case');
+// round-3 pre-review of PR 2098: a key-like word that starts with a dash after such a flag stays hidden; a plain word there still passes through the
+// shared rules with the caller's known values (an environment value is hidden wherever it stands)
+for (const f of ['--show-' + tok, '--no-auth']) {
+  const w = '-' + 'aB3dE6gH9jK2mN5pQ8sT';
+  ok(!R.maskSecretCommand(`tool ${f} ${w}`).includes(w.slice(1)) && !R.maskSecretArgs(['tool', f, w]).join(' ').includes(w.slice(1)), `FR-196 a stays: a key-like word starting with a dash after ${f.slice(0, 6)}… is hidden`);
+  const envVal = 'zqxwvutsrqpo';
+  ok(!R.maskSecretArgs(['tool', f, envVal], { [pw + '_X']: envVal }).join(' ').includes(envVal), `FR-196 a: a plain word after ${f.slice(0, 6)}… still passes the known-value rule`);
+}
 // the separators the switch values are read after: an equals sign glued to the name, or a flag's own equals sign; a spaced equals sign or a colon reads as before
 for (const t of [`${pw} =no make`, `tool --pass${'word'}:no`]) for (const [k, v] of Object.entries(all(t))) eq(v, off(() => all(t))[k], `FR-196 c: another separator reads as before: ${t.replace(pw, 'NAME')} (${k})`);
 // one argument that holds a spaced equals sign (a quoted word) reads as before too
@@ -158,7 +173,6 @@ for (const { cls, t } of corpus) {
   const a = all(t), b = off(() => all(t));
   if (JSON.stringify(a) !== JSON.stringify(b)) {
     changed[cls]++; if (cls === 'secret' && process.env.OVERMASK_DEBUG) console.log('SECRET CHANGE', JSON.stringify(t), JSON.stringify(a.cmd), JSON.stringify(b.cmd));
-    // a change only ever shows: what FR-196 on shows is the text as written on the command surfaces
     // a change only shows: every piece the step-off reading shows is shown with the step on too, on every surface
     for (const k of Object.keys(a)) ok(onlyShows(b[k], a[k]), `FR-196 differential: a change only shows text (${cls}, ${k})`);
   }
@@ -168,9 +182,10 @@ eq(changed.secret, 0, 'FR-196 differential: no code-shaped or secret-flag value 
 for (const c of CLASSES) ok(changed[c] > 0 && changed[c] === total[c], `FR-196 differential: every text of class ${c} changes`);
 eq(Object.values(changed).reduce((x, y) => x + y, 0), CLASSES.reduce((x, c) => x + changed[c], 0), 'FR-196 differential: the total equals the sum of the listed classes');
 
-// issue #2062: a Resend-shaped key (`re_<8>_<24>`) after `-` or `_` is base64url, not a key; anywhere else it is masked as before. Counted against the shape as
-// written before the fix (the reference below), on the bare mask and on `redact`, per context class: only the `-` and `_` class may change. A key glued
-// after a letter or digit is not a key on `main` either (#1329, unchanged; checked locally against `main`'s compiled file: only the `-` and `_` contexts differ)
+// issue #2062 (review of PR 2098: long runs only): a Resend-shaped key (`re_<8>_<24>`) after `-` or `_` deep in a long base64url run is picture data, not a key;
+// after a short word joined by `-` or `_`, and anywhere else, it is masked as before. Counted against the shape as written before the fix (the reference
+// below), on the bare mask and on `redact`, per context class: only the two long-run classes may change. A key glued after a letter or digit is not a key
+// on `main` either (#1329, unchanged), so it is left out.
 {
   const REF = /re_[A-Za-z0-9]{8}_[A-Za-z0-9]{24}/;
   const AN = LOW + UP + DIG;
