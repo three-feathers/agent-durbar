@@ -417,12 +417,20 @@ assert.ok(/process\.env\.CHECK_ALL_THEMES === '1' \? ALL_THEMES : 'dark'/.test(g
 // spec 035 FR-414: like with like: a theme with words against Clean Office given the same words (nothing else), the page drawn again in the forced font before measuring
 assert.ok(/extends: 'clean-office', ui: 'clean', scene: 'office', tokens: \{\}, words: p\.words \}/.test(geo) && /const refOf = \(theme\) => \(packs\[`ref:\$\{theme\}`\] \? `ref:\$\{theme\}` : 'clean-office'\);/.test(geo)
   && /ref\[`\$\{refOf\(theme\)\} \$\{sim\}-\$\{w\}`\]/.test(geo) && /u\.paint\(\); u\.settleNow\(\);/.test(geo), 'check-theme-geometry: a worded theme is compared with Clean Office given its words, drawn again in the forced font (spec 035 FR-414)');
-// review of #2091: the pins cover the calls themselves, not only the helper (PR runs check only the dark fixture, so a lost relayout went red only on main)
-assert.ok(/for \(const \[k, p\] of Object\.entries\(packs\)\) \{\n    if \(p\.words && Object\.keys\(p\.words\)\.length\) packs\[`ref:\$\{k\}`\] = /.test(geo), 'check-theme-geometry: every theme with words gets its words reference (spec 035 FR-414 (a))');
-assert.ok(/if \(!u \|\| typeof u\.paint !== 'function' \|\| typeof u\.settleNow !== 'function'\) throw new Error\(/.test(geo), 'check-theme-geometry: the relayout throws when the simulator paint hook is missing (spec 035 FR-414 (b))');
-assert.ok(/the simulator never became steady[^\n]*\n    await needHooks\(/.test(geo) && /throw new Error\(`world \$\{world\}: not shown`\);\n      await needHooks\(/.test(geo) && /typeof window\.__durbarSimUi\.paint==='function'/.test(geo), 'check-theme-geometry: every page is checked for the paint hook before it is measured, with a clear message (spec 035 FR-414 (b))');
-assert.ok(/document\.head\.appendChild\(st\);\n  \}\n  redraw\(\);[^\n]*\n  const out = \{\};/.test(geo), 'check-theme-geometry: measure lays the page out again in the neutral font before it measures (spec 035 FR-414 (b))');
-assert.ok(/await ctx\.js\(`\(\$\{measure\.toString\(\)\}\)\(null, true\)`\);\n    const more = /.test(geo), 'check-theme-geometry: the +N more chip is looked for in the neutral font (spec 035 FR-414 (b))');
+// review of #2091: the pins cover the calls themselves, not only the helper (PR runs check only the dark fixture, so a lost relayout went red only on main).
+// Line ends are \r?\n as in the pins above: a Windows checkout has CRLF; each pin is also run on an LF and a CRLF copy of the same source.
+const GEO_PINS: Array<[RegExp, string]> = [
+  [/for \(const \[k, p\] of Object\.entries\(packs\)\) \{\r?\n    if \(p\.words && Object\.keys\(p\.words\)\.length\) packs\[`ref:\$\{k\}`\] = /, 'every theme with words gets its words reference (spec 035 FR-414 (a))'],
+  [/if \(!u \|\| typeof u\.paint !== 'function' \|\| typeof u\.settleNow !== 'function'\) throw new Error\(/, 'the relayout throws when the simulator paint hook is missing (spec 035 FR-414 (b))'],
+  [/the simulator never became steady[^\r\n]*\r?\n    await needHooks\(/, 'every page is checked for the paint hook before it is measured, with a clear message (spec 035 FR-414 (b))'],
+  [/throw new Error\(`world \$\{world\}: not shown`\);\r?\n      await needHooks\(/, 'every world page is checked for the paint hook before it is measured (spec 035 FR-414 (b))'],
+  [/typeof window\.__durbarSimUi\.paint==='function'/, 'the driver hook check reads the paint hook (spec 035 FR-414 (b))'],
+  [/document\.head\.appendChild\(st\);\r?\n  \}\r?\n  redraw\(\);[^\r\n]*\r?\n  const out = \{\};/, 'measure lays the page out again in the neutral font before it measures (spec 035 FR-414 (b))'],
+  [/await ctx\.js\(`\(\$\{measure\.toString\(\)\}\)\(null, true\)`\);\r?\n    const more = /, 'the +N more chip is looked for in the neutral font (spec 035 FR-414 (b))'],
+];
+for (const [ends, src] of [['as checked out', geo], ['LF', geo.replace(/\r\n/g, '\n')], ['CRLF', geo.replace(/\r?\n/g, '\r\n')]] as const) {
+  for (const [re, what] of GEO_PINS) assert.ok(re.test(src), `check-theme-geometry: ${what} [${ends} line ends]`);
+}
 // review of FR-414: every "spec 035 FR-n (delta d)" pointer in the check names an FR that delta d of spec 035 really holds
 {
   const s035 = fs.readFileSync(path.join(ROOT, 'specs', '035-theme-foundation', 'spec.md'), 'utf8');
