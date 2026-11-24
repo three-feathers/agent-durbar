@@ -11,7 +11,7 @@
  * a masked value without `confirmed === true` answers `ask` and writes nothing (ASK-MAIN); `forget` drops a removed session's values (STALE)
  * and is wired where main forgets a removed session (FORGET-WIRE). Review round 2: every path that removes or replaces a session (Remove
  * session, Remove folder, Resume with replace) forgets its values on the real handlers, and End keeps them (FORGET-REMOVE, FORGET-FOLDER,
- * FORGET-REPLACE, END-KEEPS). PR 1 of 2: no window code calls the channel yet (INERT; T504 flips it).
+ * FORGET-REPLACE, END-KEEPS). T504 (the window side) flipped PR 1's INERT pin: the chip's Copy is the one caller (CALLERS).
  */
 import * as assert from 'assert';
 import * as fs from 'fs';
@@ -203,19 +203,22 @@ ok('IPC the channel checks the owner frame and answers the store\'s result, neve
   assert.ok(!keep, 'NO-LOG the store has no log call');
 });
 
-// ---- PR 1 of 2 (the main side): nothing in the window calls the channel yet, so Copy on a chip still copies the masked text it shows
-// (FR-342 as on main). T504 (PR 2, the window side) adds the one caller and the simulator's stand-in, and flips this assert.
-ok('INERT no window code calls copyToolArg until T504', () => {
+// ---- T504 (PR 2, the window side) flipped the INERT pin of PR 1: the window calls the channel in exactly one place, the chip's Copy
+// (`copyChipArg` in app.js), and the simulator's stand-in in sim.ts answers for main; no other window file names it
+ok('CALLERS the window calls copyToolArg only from the chip\'s Copy; the simulator\'s stand-in answers for main', () => {
   const callers: string[] = [];
   const walk = (dir: string): void => {
     for (const d of fs.readdirSync(dir, { withFileTypes: true })) {
       const f = path.join(dir, d.name);
       if (d.isDirectory()) walk(f);
-      else if (/\.(js|ts|html)$/.test(d.name) && fs.readFileSync(f, 'utf8').includes('copyToolArg')) callers.push(path.relative(ROOT, f));
+      else if (/\.(js|ts|html)$/.test(d.name) && fs.readFileSync(f, 'utf8').includes('copyToolArg')) callers.push(path.relative(ROOT, f).split(path.sep).join('/'));
     }
   };
   walk(path.join(ROOT, 'src', 'renderer'));
-  assert.deepStrictEqual(callers, [], 'INERT the window names copyToolArg nowhere (T504 adds the chip\'s Copy and the simulator\'s stand-in)');
+  assert.deepStrictEqual(callers.sort(), ['src/renderer/app.js', 'src/renderer/sim.ts'], 'CALLERS only app.js and the simulator name copyToolArg');
+  const app = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'app.js'), 'utf8');
+  assert.deepStrictEqual(app.match(/bridge\.copyToolArg\(/g), ['bridge.copyToolArg('], 'CALLERS app.js sends the request in one place (copyChipArg)');
+  assert.ok(/bridge\.copyToolArg\(cp\.sid,cp\.callId,ok\)/.test(app), 'CALLERS the request carries the session id, the call id and the confirm only');
 });
 
 // ---- every path that removes or replaces a session forgets its values; End keeps them (the chat and its chips stay on screen). The real
