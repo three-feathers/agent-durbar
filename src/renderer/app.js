@@ -2665,7 +2665,7 @@ function makeChip({tool,kind,label,res,state,output,full,ms,more:argMore,long:ar
   el.setAttribute('role','button');el.tabIndex=0;el.setAttribute('aria-expanded','false');
   const out=output==null?'':String(output).slice(0,OUT_KEEP), detail=out&&out!==res?out:'', cmd=full&&String(full).trim()?String(full):'';
   const note=chipNote(Number(argMore)||0,label?0:Number(argLong)||0,cmd);
-  el.title=name+': '+(label&&note?label+' \u2026 ('+note+')':label||note)+(res?' ('+res+')':'');
+  el.title=name+': '+label+(label&&note?' \u2026 ('+note+')':note)+(res?' ('+res+')':'');
   const dur=typeof ms==='number'&&Number.isFinite(ms)&&ms>0?fmtDur(ms):'';
   if(detail)el.classList.add('has-detail');
   if(cmd)el.classList.add('has-cmd');
