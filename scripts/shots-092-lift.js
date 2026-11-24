@@ -117,6 +117,18 @@ module.exports = async (ctx) => {
     await js(`document.activeElement.blur()`);
     await js(`window.dispatchEvent(new Event('blur'));window.dispatchEvent(new Event('focus'))`);
     assert.ok(await js(`document.getElementById('appTip').hidden`), `${tag}: a window focus with nothing keyboard-focused shows no tip`);
+    /* review of PR 2096: a POINTER focus gets no tip back either: a real mouse click on a button put in the first room head (a head's own buttons act on click), then the window blurs and focuses */
+    const pt = await js(`(()=>{const h=document.querySelector('#stage .room-head');let b=document.getElementById('ptrBtn');if(!b){b=document.createElement('button');b.id='ptrBtn';b.type='button';b.textContent='x';b.style.cssText='position:relative;z-index:5;min-width:18px;min-height:18px';h.appendChild(b);}
+      b.scrollIntoView({block:'nearest'});const r=b.getBoundingClientRect();return {x:Math.round(r.left+r.width/2),y:Math.round(r.top+r.height/2)};})()`);
+    for (const type of ['mouseMove', 'mouseDown', 'mouseUp']) H.wc().sendInputEvent({ type, x: pt.x, y: pt.y, button: 'left', clickCount: 1 });
+    await settle();
+    const pf = await js(`(()=>{const b=document.getElementById('ptrBtn');return {active:document.activeElement===b,fv:b.matches(':focus-visible')}})()`);
+    assert.ok(pf.active && !pf.fv, `${tag}: the clicked button has the focus but is not :focus-visible: ${JSON.stringify(pf)}`);
+    H.wc().sendInputEvent({ type: 'mouseMove', x: 5, y: 5 }); await settle();
+    await js(`window.dispatchEvent(new Event('blur'));window.dispatchEvent(new Event('focus'))`);
+    assert.ok(await js(`document.getElementById('appTip').hidden`), `${tag}: a pointer focus gets no tip back with the window focus (issue 2093, review of PR 2096)`);
+    await js(`document.getElementById('ptrBtn').remove()`);
+    await js(`document.activeElement.blur()`);
   };
   const ownTips = async (tag) => {
     const inject = () => js(`(()=>{const u=document.querySelector('#stage .units');if(u&&!document.getElementById('titledPart')){const e=document.createElement('span');e.id='titledPart';e.title='own title';e.textContent='titled part of a room';e.style.cssText='display:inline-block;padding:6px';u.appendChild(e);}})()`);
