@@ -1,1 +1,0 @@
-- **Self-update groundwork, part two** (spec 118): each build now records which GitHub repository it follows for updates (a fork's build follows the fork), and a new `releases.json` file says per release whether it changes how Durbar works. Both are checked strictly and tested offline; nothing reaches the network yet and nothing changes for you.
