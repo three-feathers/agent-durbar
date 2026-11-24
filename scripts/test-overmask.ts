@@ -70,12 +70,26 @@ hiddenEvery('open https://example.test/cb?state=open&code=zq9x', 'state=open', '
 hiddenEvery('open https://example.test/cb?state=open#code=zq9x', 'state=open', 'FR-196 b stays: a code in the fragment');
 hidden('open https://example.test/cb?redirect=x%26state%3Dopen%26code%3Dzq9x', '%3Dopen', 'FR-196 b stays: an encoded callback');
 hiddenEvery('?CODE=abc&State=def', 'State=def', 'FR-196 b stays: the name in any case next to a code (test-redact any case)');
+// pre-review of PR 2098: a code name written with percent escapes is a code name (the URL rule decodes it, so the state check must too)
+hiddenEvery('open https://example.test/cb?%63ode=zq9x&state=open', 'state=open', 'FR-196 b stays: a state word next to a percent-escaped code name');
+hiddenEvery('open https://example.test/cb?state=open&%2563ode=zq9x', 'state=open', 'FR-196 b stays: a state word next to a twice-escaped code name');
+hiddenEvery('open https://example.test/cb?%63ode=python', 'python', 'FR-196 b stays: a percent-escaped code name hides its value');
+// the link is the run around the state word: a code in a different link next to it changes nothing, and that link's own state stays hidden
+{
+  const t = 'see https://example.test/r?state=open and https://example.test/cb?code=zq9x&state=done';
+  for (const [k, v] of Object.entries(all(t))) {
+    if (k === 'taskFetch') continue; // the fetch kind reads one URL, not a sentence
+    ok(v.includes('r?state=open') && !v.includes('state=done'), `FR-196 b: the state check reads its own link only (${k})`);
+  }
+}
 
 // class (c): a switch word as the whole value of a secret name
 shown('ssh -o PasswordAuthentication=no host', 'FR-196 c: an ssh option set to no');
 shown(`${pw}=false npm test`, 'FR-196 c: NAME=false');
 shown(`tool --pass${'word'}=no`, 'FR-196 c: --password=no');
 shown(`${pw}=YES make`, 'FR-196 c: any case');
+// the separators the switch values are read after: an equals sign glued to the name, or a flag's own equals sign; a spaced equals sign or a colon reads as before
+for (const t of [`${pw} =no make`, `tool --pass${'word'}:no`]) for (const [k, v] of Object.entries(all(t))) eq(v, off(() => all(t))[k], `FR-196 c: another separator reads as before: ${t.replace(pw, 'NAME')} (${k})`);
 for (const v of ['nope', 'no1', 'yesterday', 'offline', 'truex', '"no"', 'no-way', 'on2', 'Off9x']) hidden(`${pw}=${v} make`, `=${v}`, `FR-196 c stays: ${v} is not a whole switch word`);
 hidden(`tool --pass${'word'}=nope`, 'nope', 'FR-196 c stays: --password=nope');
 
@@ -91,6 +105,11 @@ for (const k of [100, 2000]) {
 }
 
 // differential: FR-196 on vs off (as main), counted per class; nothing outside the listed classes may change
+/** Whether `on` is `off` with some of its masks shown: every piece `off` shows stands in `on`, in order, and only a mask of `off` may stand for other text. */
+const onlyShows = (off: string, on: string): boolean => {
+  const parts = off.split(H).map((x) => x.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+  return new RegExp('^' + parts.join('[\\s\\S]*?') + '$').test(on);
+};
 let seed = 20261124;
 const rnd = (k: number): number => { seed = (Math.imul(seed, 1103515245) + 12345) & 0x7fffffff; return seed % k; };
 const from = (a: string, len: number): string => { let s = ''; for (let i = 0; i < len; i++) s += a[rnd(a.length)]; return s; };
@@ -130,7 +149,8 @@ for (const { cls, t } of corpus) {
   if (JSON.stringify(a) !== JSON.stringify(b)) {
     changed[cls]++;
     // a change only ever shows: what FR-196 on shows is the text as written on the command surfaces
-    ok(a.cmd === t || a.cmd.length >= b.cmd.length, `FR-196 differential: a change only shows text (${cls})`);
+    // a change only shows: every piece the step-off reading shows is shown with the step on too, on every surface
+    for (const k of Object.keys(a)) ok(onlyShows(b[k], a[k]), `FR-196 differential: a change only shows text (${cls}, ${k})`);
   }
 }
 console.log(`test-overmask differential: changed per class ${JSON.stringify(changed)} of ${JSON.stringify(total)}`);

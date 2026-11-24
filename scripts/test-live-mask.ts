@@ -329,12 +329,38 @@ const headPage = (mode: boolean) => {
   eq(headPage(false).C.nameShown({ name: 'Noor ' + GHP }), '[not checked]', 'FR-197 fails closed with no mask module');
 }
 // every site that put a session's name into the header, the chat's label or the composer reads nameShown (source check, LF and CRLF copies)
-for (const [form, src] of [['LF', app], ['CRLF', app.replace(/\n/g, '\r\n')]] as const) {
-  const t = src.replace(/\r\n/g, '\n');
+// (each check is one line, so the CRLF copy is read as it is, without turning it back into LF: pre-review of PR 2098)
+for (const [form, t] of [['LF', app], ['CRLF', app.replace(/\n/g, '\r\n')]] as const) {
   ok(t.includes('aria-label="Chat with ${esc(nameShown(a))}"') && t.includes("c.setAttribute('aria-label','Chat with '+nameShown(a))"), `FR-197 the chat's label reads nameShown (${form})`);
   ok(t.includes('placeholder="Message ${esc(nameShown(a))}…" aria-label="Message ${esc(nameShown(a))}"') && t.includes("mi.setAttribute('aria-label','Message '+nameShown(a))") && t.includes("APW.placeholder(app):'Message '+nameShown(a)"), `FR-197 the composer reads nameShown (${form})`);
   ok(t.includes('aria-label="${esc(nameShown(a))}"'), `FR-197 the header's label reads nameShown (${form})`);
   ok(!/(?:Chat with |Message |Rename session )(?:\$\{esc\(a\.name\)\}|'\+a\.name)/.test(t), `FR-197 no header, chat or composer label reads a.name as written (${form})`);
+}
+
+// the two repaint paths run with their own code (pre-review of PR 2098): a rename repaints the header, the chat's label and the composer's label; the Autopilot
+// switch repaints the composer's label; neither shows the name as written
+{
+  const block2 = (head: string): string => { const i = LINES.findIndex((x) => x.startsWith(head)); assert.ok(i >= 0, head); const j = LINES.findIndex((x, k) => k > i && x === '}'); return LINES.slice(i, j + 1).join('\n'); };
+  const dom = new JSDOM('<!doctype html><body><h2 id="panelTitle"><button class="ttl-btn"></button></h2><div id="chat"></div><textarea id="msgInput"></textarea><button id="attFile"></button></body>');
+  const doc = dom.window.document;
+  const ctx = vm.createContext({ window: { DurbarRedact: shared, DurbarSafeText: require(path.join(R_DIR, 'safetext.js')) }, DurbarCutText: require(path.join(R_DIR, 'cuttext.js')), document: doc, NO_REDACT: false,
+    SN: () => ({ nameTip: (alias: string, title: string) => alias || title || '', displayName: (alias: string, title: string) => alias || title }), titleRenameable: () => true, ICON: () => '',
+    $: (id: string) => doc.getElementById(id), ui: { selected: 's1' }, fitPlaceholder() {}, answerObs: null, scheduleRender() {}, renderSchedDlg() {},
+    APW: { placeholder: () => 'Autopilot', attachTip: () => '' }, kindWord: () => 'app', capsFor: () => ({ autopilot: { attachments: true } }) });
+  vm.runInContext(['const homeMask=', 'const deskMask=', 'const SHORT=', 'const RED=', 'const STX=', 'const SAFE=', 'const safeExcerpt=', 'const esc=', 'function annHome(', 'function annPart(', 'function liveText('].map(line).join('\n')
+    + '\n' + HEAD_DEFS(app) + '\n' + block2('function repaintName(') + '\n' + block2('function apComposer(') + '\nthis.repaintName=repaintName;this.apComposer=apComposer;', ctx);
+  const C2 = ctx as unknown as { repaintName(a: object): void; apComposer(a: object): void };
+  for (const [what, nm] of NAMES) {
+    const a = { id: 's1', alias: nm, title: nm, info: { autopilot: false, adapterId: 'claude' } };
+    C2.repaintName(a);
+    hides(shown(doc.body), `FR-197 a rename repaints every label masked, ${what}`);
+    (doc.getElementById('msgInput') as HTMLElement).setAttribute('aria-label', 'Autopilot');
+    C2.apComposer(a);
+    hides(doc.getElementById('msgInput')!.getAttribute('aria-label') || '', `FR-197 turning Autopilot off repaints the composer's label masked, ${what}`);
+  }
+  const b = { id: 's1', alias: 'Noor', title: 'Noor', info: { autopilot: false, adapterId: 'claude' } };
+  C2.repaintName(b);
+  eq([doc.getElementById('chat')!.getAttribute('aria-label'), doc.getElementById('msgInput')!.getAttribute('aria-label')], ['Chat with Noor', 'Message Noor'], 'FR-197 a benign rename repaints the labels with the name');
 }
 
 void stripsByBehaviour().then(() => console.log(`test-live-mask: ${n} asserts passed`), (e) => { console.error(e); process.exit(1); });
