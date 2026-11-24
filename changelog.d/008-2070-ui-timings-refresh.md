@@ -1,0 +1,1 @@
+- **UI check shards are balanced from fresh timings** (spec 008): the recorded seconds per check that split the UI suite into shards are refreshed from six nightly runs and now have an entry for every check and every variant of one (56 had none), so each shard is cut by its checks' own times. Not yet seen on a run.
