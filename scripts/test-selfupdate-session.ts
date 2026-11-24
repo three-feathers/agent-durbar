@@ -120,6 +120,17 @@ async function main(): Promise<void> {
     assert.deepStrictEqual(order, ['lookup', 'request'], 'lookup first, then the request');
   }
 
+  // one update request at a time: the second lookup starts only after the first request ended
+  {
+    const order: string[] = [];
+    const s = sessionsWith(async (u) => { order.push('lookup ' + new URL(u).host); return 'DIRECT'; });
+    const n = requests();
+    const get = makeUpdateFeedGet(s, (o) => { order.push('request ' + new URL(o.url).host); const r = n.request(o); r.on('response', () => order.push('answer ' + new URL(o.url).host)); return r; });
+    await Promise.all([get(LIST, SLUG), get(RAW, SLUG)]);
+    assert.deepStrictEqual(order, ['lookup api.github.com', 'request api.github.com', 'answer api.github.com', 'lookup raw.githubusercontent.com', 'request raw.githubusercontent.com', 'answer raw.githubusercontent.com'],
+      'two update requests at once run one after the other, so the proxy set for one URL never serves the other');
+  }
+
   // refusals: no lookup and no request
   {
     const s = sessionsWith();

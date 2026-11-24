@@ -244,21 +244,29 @@ export async function useDefaultSessionProxy(target: NetSessionLike, sessions: S
 /**
  * T507: `makeFeedGet` on the update session. Before each request the default session's proxy for that URL is set on it; a refused URL
  * or an aborted signal makes no lookup; a failed lookup is `network`, a lookup still running at the 10 s limit `timeout` (FR-004: the
- * limit covers the lookup and the request together). Never rejects.
+ * limit covers the lookup and the request together). One update request at a time (a second waits for the first to end), so the
+ * proxy set for one URL is never the one another URL's request starts with. Never rejects.
  */
 export function makeUpdateFeedGet(sessions: SessionsLike, request: SessionRequest, timer: FeedTimer = realTimer, timeoutMs = FEED_TIMEOUT_MS): FeedGet {
-  return (url, slug, signal) => {
-    if (!feedAllowed(url, slug)) return Promise.resolve({ ok: false, reason: 'not-allowed' });
+  let queue: Promise<unknown> = Promise.resolve();
+  const one = (url: string, slug: string, signal?: AbortSignal): Promise<FeedAnswer> => {
     if (signal?.aborted) return Promise.resolve({ ok: false, reason: 'aborted' });
     const started = Date.now();
     const ses = updateSession(sessions);
     return new Promise<FeedAnswer | undefined>((resolve) => {
-      const handle = timer.set(() => resolve({ ok: false, reason: 'timeout' }), timeoutMs);
-      const onAbort = (): void => resolve({ ok: false, reason: 'aborted' });
+      let handle: unknown;
+      const onAbort = (): void => end({ ok: false, reason: 'aborted' });
+      const end = (a: FeedAnswer | undefined): void => { timer.clear(handle); signal?.removeEventListener('abort', onAbort); resolve(a); };
+      handle = timer.set(() => end({ ok: false, reason: 'timeout' }), timeoutMs);
       signal?.addEventListener('abort', onAbort, { once: true });
-      useDefaultSessionProxy(ses, sessions, url).then(() => resolve(undefined), () => resolve({ ok: false, reason: 'network' }))
-        .finally(() => { timer.clear(handle); signal?.removeEventListener('abort', onAbort); });
+      useDefaultSessionProxy(ses, sessions, url).then(() => end(undefined), () => end({ ok: false, reason: 'network' }));
     }).then((early) => early ?? makeFeedGet((o) => request({ ...o, session: ses }), timer, Math.max(1, timeoutMs - (Date.now() - started)))(url, slug, signal));
+  };
+  return (url, slug, signal) => {
+    if (!feedAllowed(url, slug)) return Promise.resolve({ ok: false, reason: 'not-allowed' });
+    const run = queue.then(() => one(url, slug, signal));
+    queue = run;
+    return run;
   };
 }
 
