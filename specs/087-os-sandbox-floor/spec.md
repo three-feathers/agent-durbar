@@ -374,6 +374,11 @@ PR ([#728 comment](https://github.com/three-feathers/agent-durbar/pull/728#issue
 
 ## Changes
 
+### 2026-11-24: six more credential folders, one shared list (FR-031 of spec 021; review of PR 2116, spec 116 FR-004)
+
+- `HOME_SECRETS` moved to `src/shared/homesecrets.ts` (no imports) and `sandboxRoots.ts` re-exports it, so the OS sandbox and spec 116's memory-folder check use one list. It gains `~/.mozilla`, `~/snap/firefox`, `~/.var/app`, `~/.password-store`, `~/.pki` and `~/.terraform.d`.
+- Effect: an agent in the OS sandbox can no longer read or write those six (Claude `denyRead`/`denyWrite`, Copilot `deniedPaths`). `test:` `scripts/test-sandbox-floor.ts` asserts the six are in the list.
+
 ### 2026-11-11: the Copilot runtime's private TMPDIR leaves room for Unix sockets (FR-024, issue #1173)
 
 *Cause* (`read:` v0.1.9 and `main`, the issue): FR-023 makes the folder with `mkdtemp` under `os.tmpdir()`. On macOS that root is long (`/var/folders/xx/<28 chars>/T`, 49 bytes), so `TMPDIR` is about 68 bytes; MCP servers inherit it, and Playwright MCP puts its sockets at `$TMPDIR/pw-<hash>/<domain>/<name>.sock` and refuses when the path passes `sun_path` (104 bytes on macOS, 108 on Linux). Seen on a Mac with a real session (v0.1.9); v0.1.8 worked.
@@ -962,7 +967,7 @@ your shell tool: touch sandbox-probe.txt ...".
   the probe cases in `test-claude-sandbox.ts` and `test-copilot-sandbox.ts`.
 - **A session folder that is the home folder or a parent of it** (allowed with a warning, spec 006 FR-016): Claude's block always denies
   the credential folders (`HOME_SECRETS`, `src/adapters/sandboxRoots.ts`: `~/.ssh`, `~/.aws`, `~/.config/gh`, `~/.gnupg`, `~/.netrc`,
-  `~/.npmrc`, `~/.git-credentials`, `~/.docker`, `~/.kube`, `~/.azure`, `~/.config/gcloud`, `~/.claude`, `~/.copilot`, `~/.codex`) in
+  `~/.npmrc`, `~/.git-credentials`, `~/.docker`, `~/.kube`, `~/.azure`, `~/.config/gcloud`, `~/.claude`, `~/.copilot`, `~/.codex`, and from 2026-11-24 `~/.mozilla`, `~/snap/firefox`, `~/.var/app`, `~/.password-store`, `~/.pki`, `~/.terraform.d`) in
   `denyRead` and `denyWrite`; for reads the narrower rule wins (`read:` https://code.claude.com/docs/en/sandboxing.md, 2026-10-25: "When
   read rules overlap, the rule with the narrower path applies", and a deny "holds inside a wider allow"). Writes: the docs list
   `denyWrite` entries under "Denied within allowed" (research R2); `[KNOWN GAP]` K13 and K2: not run on a real session. Round 2: the docs
