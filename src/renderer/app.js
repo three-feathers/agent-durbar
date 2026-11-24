@@ -511,18 +511,20 @@ function lobbyShares(all,fit,iw){
   const ls=parseFloat(cs.letterSpacing)||0, up=cs.textTransform==='uppercase';
   const font=c=>c.fontStyle+' '+c.fontWeight+' '+c.fontSize+' '+c.fontFamily;
   const items=rest.map(p=>{const ids=placeVisitors(p.id), t=up?placeLabel(p.id).toUpperCase():placeLabel(p.id);
-    LOBBY_CTX.font=font(cs); let need=frame+LOBBY_CTX.measureText(t).width+ls*Array.from(t).length;
+    LOBBY_CTX.font=font(cs); let need=frame+LOBBY_CTX.measureText(t).width+ls*Array.from(t).length+1; /* +1: the canvas measures the name a fraction under what the page lays out (99.4 against 99.5 for "Software library" on macOS, issue 2078) */
     if(ids.length){LOBBY_CTX.font=font(cp);need+=7+LOBBY_CTX.measureText(String(ids.length)).width;
       const {mode,slots}=D.chipsFor(fit.caps,ids.length), sp=mode==='initials'?D.initialSpots(fit.tile,ids.length,20,iw):D.layoutSpots(ids.length,slots);
       need=Math.max(need,D.chipsNeed(mode,sp.shown,sp.more,iw));} /* a busy tile gives back what its name and its entries do not use */
     return {id:p.id,need,give:true};});
   const w=D.lobbyShare(fit.tile,items);
-  return w?Object.fromEntries(items.map((i,k)=>[i.id,w[k]])):null;
+  return {map:w?Object.fromEntries(items.map((i,k)=>[i.id,w[k]])):null, short:w?items.reduce((t,i,k)=>t+Math.max(0,Math.ceil(i.need)-w[k]),0):0}; /* short: px a name still lacks, for the fixed tiles to give (issue 2078) */
 }
 function lobbyHTML(aw){
   if(!lobbyOn())return '';
-  const D=window.DurbarPlaces, all=lobbyPlaces(), add=canAddPlace(), iw=lobbyInitW(), fit=D.lobbyFit(aw,D.allPlaces(CUSTOM).length,add,postShown(),iw);
-  const share=fit.tileNamed?lobbyShares(all,fit,iw):null;
+  const D=window.DurbarPlaces, all=lobbyPlaces(), add=canAddPlace(), iw=lobbyInitW(), np=D.allPlaces(CUSTOM).length, ps=postShown();
+  let fit=D.lobbyFit(aw,np,add,ps,iw), sh=fit.tileNamed?lobbyShares(all,fit,iw):null;
+  if(sh&&sh.short>0){const f2=D.lobbyFit(aw,np,add,ps,iw,sh.short), s2=f2.tileNamed?lobbyShares(all,f2,iw):null; if(s2&&s2.short<sh.short){fit=f2;sh=s2;}} /* issue 2078: a name still short of its width asks the fixed tiles to give, down to their minimums */
+  const share=sh&&sh.map;
   const own={[D.BOSS]:fit.boss,[D.COFFEE]:fit.coffee,[D.BANK]:fit.bank,[D.POSTBOX]:fit.post}; /* FR-039: the fixed tiles' own widths */
   return `<section class="lobby" data-key="lobby"${iw>54?` style="--iw:${iw}px"`:''} aria-label="${esc(wordOf('lobby-label'))}">${all.map(p=>{
     const box=own[p.id]||null, cf=p.id===D.COFFEE, boss=p.id===D.BOSS, bank=p.id===D.BANK;
