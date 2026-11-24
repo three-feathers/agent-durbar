@@ -20,6 +20,8 @@
  *   FR-028         a lift that scrolls (the shaft made short by a style: the simulator has three floors) sums the badges out of view on its edge rows,
  *                  and an edge row scrolls to the nearest badged button and focuses it.
  *   FR-085         the empty floor shows "<floor>, floor n of m" (one floor screen; in All, the floor under the pointer); lift tooltips carry the number, (you are here) on the current floor only.
+ * Issue #2093 (spec 001 FR-270): after the Tab to a room head the tip shows; a window blur hides it and a window focus brings it back (the keyboard still on the head); nothing focused shows none. A failure of the tip step prints
+ *   the window's focus state and, when the window lost the OS focus, says so. Mutant (edit src/renderer/tooltip.js, `npm run build`, run, `git checkout -- src`): drop its `window.addEventListener('focus',` line => "the tip comes back when the window gets its focus back".
  * Screenshots: 092-lift-{one,all,hint-one,hint-all}-<w>x<h>.png
  */
 const path = require('path');
@@ -28,6 +30,7 @@ const { helpers, jsLiteral } = require('./driver-helpers');
 const OUT = process.env.OUT || '/tmp';
 const SIZES = [[1440, 900], [1280, 800]];
 
+const dragFocus = require('./drag-focus'); // the focus recorder and its label (spec 097 FR-352, issue 1550), reused for the tip step (issue 2093)
 module.exports = async (ctx) => {
   const H = helpers(ctx);
   const { js, until, settle, key } = H;
@@ -86,6 +89,7 @@ module.exports = async (ctx) => {
     return false;
   };
   const focusTips = async (tag) => {
+    await js(dragFocus.RECORDER); // blur and focus of the window with times, read back on a failure of the tip step (issue 2093)
     H.wc().sendInputEvent({ type: 'mouseMove', x: 5, y: 5 }); await settle();
     assert.ok(await tabTo('#stage .desk[data-id]'), `${tag}: Tab reaches a desk`);
     await settle();
@@ -94,9 +98,25 @@ module.exports = async (ctx) => {
     assert.ok(!st.room && !st.floor, `${tag}: no aria-describedby on the room or the floor: ${JSON.stringify(st)}`);
     assert.ok(await tabTo('#stage .room-head button'), `${tag}: Tab reaches a button of a room head`);
     await settle();
-    const hd = await js(`(()=>{const t=document.getElementById('appTip'),h=document.activeElement.closest('.room-head');return {tip:t&&!t.hidden?t.textContent:'',want:h?h.dataset.tip:''};})()`);
-    assert.ok(hd.want && hd.tip === hd.want && !NOT_HINT.test(hd.tip), `${tag}: keyboard focus in a room head keeps its own tip (FR-270): ${JSON.stringify(hd)}`);
+    const READ = `(()=>{const t=document.getElementById('appTip'),d=document.activeElement,h=d.closest('.room-head');return {tip:t&&!t.hidden?t.textContent:'',want:h?h.dataset.tip:'',hasFocus:document.hasFocus(),ae:d.tagName+'.'+d.className,tipHidden:t?t.hidden:null,events:window.__dragFocusLog||[]};})()`;
+    const hd = await js(READ);
+    try {
+      assert.ok(hd.want && hd.tip === hd.want && !NOT_HINT.test(hd.tip), `${tag}: keyboard focus in a room head keeps its own tip (FR-270): ${JSON.stringify({ tip: hd.tip, want: hd.want })}`);
+    } catch (e) {
+      /* issue 2093: say what the window and the tip were; a lost OS focus is named as an environment problem and the step still fails (no reread) */
+      console.log(`[tip-step] ${tag}: hasFocus=${hd.hasFocus}, active element ${hd.ae}, tip hidden=${hd.tipHidden}, window ${hd.events.map((x) => `${x.n}@${x.t}ms`).join(', ') || 'no blur/focus'}`);
+      throw dragFocus.labelFocus(e, { focusBefore: true, focusAfter: hd.hasFocus, events: hd.events }, { what: 'the room-head tip step', tail: 'not a missing tip (issue 2093)' });
+    }
+    /* issue 2093 (spec 001 FR-270, delta 2026-11-24): the window loses its focus and gets it back while the same room-head button still has the keyboard focus: the tip hides, then comes back */
+    await js(`window.dispatchEvent(new Event('blur'))`);
+    assert.ok(await js(`document.getElementById('appTip').hidden`), `${tag}: the tip hides when the window loses its focus`);
+    await js(`window.dispatchEvent(new Event('focus'))`);
+    const back = await js(READ);
+    assert.ok(back.tip === back.want && back.want, `${tag}: the tip comes back when the window gets its focus back, with the keyboard still on the room head (issue 2093): ${JSON.stringify({ tip: back.tip, want: back.want })}`);
+    /* a control that is not keyboard-focused (nothing focused: the page body) gets no tip from a focus event */
     await js(`document.activeElement.blur()`);
+    await js(`window.dispatchEvent(new Event('blur'));window.dispatchEvent(new Event('focus'))`);
+    assert.ok(await js(`document.getElementById('appTip').hidden`), `${tag}: a window focus with nothing keyboard-focused shows no tip`);
   };
   const ownTips = async (tag) => {
     const inject = () => js(`(()=>{const u=document.querySelector('#stage .units');if(u&&!document.getElementById('titledPart')){const e=document.createElement('span');e.id='titledPart';e.title='own title';e.textContent='titled part of a room';e.style.cssText='display:inline-block;padding:6px';u.appendChild(e);}})()`);
