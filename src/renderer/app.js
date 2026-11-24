@@ -1009,8 +1009,8 @@ function errCopy(t){
     const no=()=>{const f=toast('Could not copy the details.',3000);f.dataset.noCopy='1';f.classList.add('err');};
     if(!text||text==='[not checked]'){no();return;}
     let v='';try{v=String(await api.version())||'';}catch(e){v='';}
-    const os={win32:'Windows',darwin:'macOS',linux:'Linux'}[api.platform]||'';
-    try{await navigator.clipboard.writeText(text+'\nAgent Durbar'+(v?' '+v:'')+(os?' on '+os:''));b.textContent='Copied';}catch(e){no();}
+    const os={win32:'Windows',darwin:'macOS',linux:'Linux'}[ownPlatform()]||'';
+    try{await navigator.clipboard.writeText(text+'\nAgent Durbar'+(v?' '+v:'')+(os?' on '+os:''));copiedLabel(b,'Copy details');}catch(e){no();}
   };
 }
 /* spec 052 FR-047: a button that awaits a bridge call shows it is busy: disabled + aria-busy, same width, the given label, and a 12px spinner
@@ -6473,7 +6473,7 @@ document.addEventListener('click',async e=>{
   catch{toast('Could not copy to the clipboard.',3000).classList.add('err');}
 });
 /* spec 052 FR-049: after a copy the button says "Copied ✓" for 1200ms, then "Copy" again */
-function copiedLabel(b){clearTimeout(b._cpT);b.textContent='Copied ✓';b._cpT=setTimeout(()=>{b.textContent='Copy';},1200);}
+function copiedLabel(b,label){clearTimeout(b._cpT);b.textContent='Copied ✓';b._cpT=setTimeout(()=>{b.textContent=label||'Copy';},1200);} /* spec 045 FR-067: Copy details comes back to its own label */
 function mdFlush(){const l=[...MDQ];MDQ.clear();l.forEach(mdPaint);}
 let mdRaf=0;
 function mdSet(el,raw,now){

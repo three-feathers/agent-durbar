@@ -54,7 +54,8 @@ module.exports = async (ctx) => {
 
     await clipboard.writeText('before');
     await js(`document.querySelector('#toasts .toast.err .toast-act').click();0`);
-    assert.ok(await until(`(document.querySelector('#toasts .toast.err .toast-act')||{}).textContent==='Copied'`, 4000), `${w}: the button says Copied`);
+    assert.ok(await until(`(document.querySelector('#toasts .toast.err .toast-act')||{}).textContent==='Copied ✓'`, 4000), `${w}: the button says Copied ✓ (spec 052 FR-049, copiedLabel)`);
+    assert.ok(await until(`(document.querySelector('#toasts .toast.err .toast-act')||{}).textContent==='Copy details'`, 4000), `${w}: and then its own label again`);
     const copied = String(await clipboard.readText()).replace(/\r\n/g, '\n'); // Windows writes CRLF
     const [first, second] = copied.split('\n');
     assert.strictEqual(first, t.text.replace(/\s+/g, ' ').trim(), `${w}: the copy is the text as shown: ${JSON.stringify(copied)}`);
