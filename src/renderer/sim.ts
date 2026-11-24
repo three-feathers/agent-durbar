@@ -245,7 +245,7 @@ function simMemoryApi(qs: URLSearchParams): Pick<DurbarApi, 'memoryStatus' | 'me
     memoryPick: async () => {
       if (qs.get('simmemory') === 'refused') return { ok: false, error: 'refused', reason: 'It is your home folder.', path: '~' };
       live = 'sim' + Math.random().toString(16).slice(2).padEnd(29, '0').slice(0, 29);
-      return { ok: true, token: live, expiresAt: Date.now() + 600_000, path: FOLDER };
+      return { ok: true, token: live, expiresAt: Date.now() + 600_000, path: FOLDER, remote: qs.get('simmemory') === 'remote' ? { kind: 'remote', hosts: ['host.example.invalid'], rewritten: false } : { kind: 'none' } };
     },
     memoryApply: async (token) => {
       if (live === undefined || token !== live) return { ok: false, error: 'invalid' };

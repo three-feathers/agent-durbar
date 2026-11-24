@@ -14,12 +14,12 @@ import path from 'path';
 import vm from 'vm';
 import { spawnSync } from 'child_process';
 import { SettingsStore } from '../src/main/settings';
-import type { MemoryFolderCtx, MemoryFlavor } from '../src/shared/memoryfolder';
+import type { MemoryFlavor, RemoteAnswer } from '../src/shared/memoryfolder';
 
 const MODNAME = process.env.MEMORYOPS_MODULE ?? 'memoryops';
 const IS_COPY = process.env.MEMORYOPS_MODULE !== undefined;
 // eslint-disable-next-line @typescript-eslint/no-var-requires
-const { MemoryOps, nodeMemoryCtx, TOKEN_MS } = require('../src/main/' + MODNAME) as typeof import('../src/main/memoryops');
+const { MemoryOps, nodeMemoryCtx, expandOfficeFolders, TOKEN_MS } = require('../src/main/' + MODNAME) as typeof import('../src/main/memoryops');
 
 let n = 0;
 const eq = <T>(a: T, b: T, m: string): void => { n++; assert.deepStrictEqual(a, b, m); };
@@ -30,6 +30,7 @@ const WIN: MemoryFlavor = { path: path.win32, platform: 'win32' };
 
 /** a fake file system that records every call */
 function fakeFs(opts: { notDir?: string[]; missing?: string[]; links?: Record<string, string> } = {}) {
+  // `links` is read at each call, so a test can repoint a link
   const log: string[] = [];
   const target = (p: string): string => opts.links?.[p] ?? p;
   return {
@@ -52,7 +53,7 @@ class FakeStore {
   setMemory(f: string | undefined) { if (this.failSave) return false; this.writes.push(f); this.folder = f; this.on = f !== undefined; return true; }
   setMemoryOn(v: unknown) { if (typeof v !== 'boolean' || this.failSave) return false; this.on = v; return true; }
 }
-interface Setup { ops: InstanceType<typeof MemoryOps>; store: FakeStore; fsx: ReturnType<typeof fakeFs>; office: string[]; clock: { t: number }; picks: Array<string | null>; changed: number[] }
+interface Setup { ws: Record<string, string[] | 'unreadable'>; remoteCalls: string[]; remoteAnswer: RemoteAnswer; ops: InstanceType<typeof MemoryOps>; store: FakeStore; fsx: ReturnType<typeof fakeFs>; office: string[]; clock: { t: number }; picks: Array<string | null>; changed: number[] }
 function setup(flavor: MemoryFlavor = POSIX, o: { fsOpts?: Parameters<typeof fakeFs>[0] } = {}): Setup {
   const fsx = fakeFs(o.fsOpts);
   const store = new FakeStore();
@@ -60,16 +61,21 @@ function setup(flavor: MemoryFlavor = POSIX, o: { fsOpts?: Parameters<typeof fak
   const clock = { t: 1_000_000 };
   const picks: Array<string | null> = [];
   const changed: number[] = [];
+  const ws: Record<string, string[] | 'unreadable'> = {};
+  const remoteCalls: string[] = [];
+  const out = { remoteAnswer: { kind: 'none' } as RemoteAnswer };
   let k = 0;
   const base = { home: flavor === POSIX ? '/home/ana' : 'C:\\Users\\ana', userData: flavor === POSIX ? '/home/ana/.config/durbar-x' : 'C:\\Users\\ana\\AppData\\Roaming\\durbar-x' };
   const ops = new MemoryOps({
     store: () => store, flavor, now: () => clock.t,
     pick: async () => (picks.length ? picks.shift()! : null),
-    ctx: () => nodeMemoryCtx(fsx, { ...base, officeFolders: office } as Omit<MemoryFolderCtx, 'realpath' | 'lstat'>),
+    ctx: () => nodeMemoryCtx(fsx, base),
+    officeFolders: () => expandOfficeFolders(office, (f) => { const m = ws[f]; if (!Array.isArray(m)) throw new Error('unreadable'); return m; }),
+    remote: (real) => { remoteCalls.push(real); return out.remoteAnswer; },
     changed: () => changed.push(1),
     newToken: () => 'ab' + (++k).toString(16).padStart(30, '0'),
   });
-  return { ops, store, fsx, office, clock, picks, changed };
+  return { ws, remoteCalls, get remoteAnswer() { return out.remoteAnswer; }, set remoteAnswer(v: RemoteAnswer) { out.remoteAnswer = v; }, ops, store, fsx, office, clock, picks, changed };
 }
 const NOTES = '/home/ana/notes';
 
@@ -149,7 +155,7 @@ section('pick', async () => {
   eq(s.store.writes, [], 'a pick saves nothing');
   eq(s.ops.pick.length, 0, 'pick takes no argument: the window sends no path');
   eq(await s.ops.pick(), { ok: false, error: 'cancelled' }, 'cancelled');
-  const bad = new MemoryOps({ store: () => s.store, flavor: POSIX, pick: async () => { throw new Error('/secret/path boom'); }, ctx: () => nodeMemoryCtx(s.fsx, { home: '/home/ana', userData: '/u', officeFolders: [] }) });
+  const bad = new MemoryOps({ store: () => s.store, flavor: POSIX, pick: async () => { throw new Error('/secret/path boom'); }, ctx: () => nodeMemoryCtx(s.fsx, { home: '/home/ana', userData: '/u' }), officeFolders: () => [] });
   eq(await bad.pick(), { ok: false, error: 'failed' }, 'a dialog that throws: fixed words');
   s.picks.push('/home/ana');
   const r = await s.ops.pick();
@@ -163,7 +169,7 @@ section('pick', async () => {
   // a newer pick wins over a slower older dialog
   const slow: Setup = setup();
   const waiting: Array<(v: string) => void> = [];
-  const ops2 = new MemoryOps({ store: () => slow.store, flavor: POSIX, now: () => 1, ctx: () => nodeMemoryCtx(slow.fsx, { home: '/home/ana', userData: '/u', officeFolders: [] }),
+  const ops2 = new MemoryOps({ store: () => slow.store, flavor: POSIX, now: () => 1, ctx: () => nodeMemoryCtx(slow.fsx, { home: '/home/ana', userData: '/u' }), officeFolders: () => [],
     pick: () => new Promise<string | null>((res) => { waiting.push(res); }) });
   const first = ops2.pick();
   const second = ops2.pick();
@@ -233,6 +239,95 @@ section('recheck', async () => {
   eq(o.store.on, false, 'stays off');
 });
 
+// ---------------------------------------------------------------------------------------------------------------------------------- workspace
+section('workspace', async () => {
+  // a member that is not the first is an office folder too (plan rule 4)
+  const s = setup();
+  s.office.push('/work/all.code-workspace');
+  s.ws['/work/all.code-workspace'] = ['/work/first', '/work/second', '/work/third'];
+  for (const member of ['/work/second', '/work/third/inner', '/work/first']) { s.picks.push(member); eq((await s.ops.pick()).ok, false, 'a workspace member is refused: ' + member); }
+  s.picks.push('/work'); eq((await s.ops.pick()).ok, false, 'a folder that holds the workspace members is refused');
+  s.picks.push(NOTES); eq((await s.ops.pick()).ok, true, 'an unrelated folder is allowed');
+  // a workspace that cannot be read refuses, with fixed words
+  s.ws['/work/all.code-workspace'] = 'unreadable';
+  s.picks.push(NOTES);
+  const r = await s.ops.pick();
+  ok(r.ok === false && r.error === 'refused' && /could not be read/.test((r as { reason: string }).reason) && !/unreadable|Error/.test((r as { reason: string }).reason), 'an unreadable workspace refuses (fail closed)');
+  // upper-case extension
+  const u = setup(); u.office.push('/work/ALL.CODE-WORKSPACE'); u.ws['/work/ALL.CODE-WORKSPACE'] = ['/work/a', '/work/b'];
+  u.picks.push('/work/b'); eq((await u.ops.pick()).ok, false, 'the extension is not case-sensitive');
+  // the same on apply and on status
+  const a = setup(); a.picks.push(NOTES); const pa = await a.ops.pick();
+  a.office.push('/w.code-workspace'); a.ws['/w.code-workspace'] = 'unreadable';
+  eq(a.ops.apply(pa.ok ? pa.token : '').ok, false, 'apply refuses when a workspace cannot be read');
+  eq(a.store.writes, [], 'nothing saved');
+  a.store.folder = NOTES; a.store.on = true;
+  eq(a.ops.status().state, 'refused', 'status: refused');
+  // the helper alone
+  eq(expandOfficeFolders(['/a', '/w.code-workspace'], () => ['/x', '/y']), ['/a', '/w.code-workspace', '/x', '/y'], 'expand keeps the entry and adds every member');
+  assert.throws(() => expandOfficeFolders(['/w.code-workspace'], () => { throw new Error('x'); }), /x/);
+});
+
+// ---------------------------------------------------------------------------------------------------------------------------------- remote
+section('remote', async () => {
+  const s = setup();
+  s.remoteAnswer = { kind: 'remote', hosts: ['host.example.invalid'], rewritten: false };
+  s.picks.push(NOTES);
+  const p = await s.ops.pick();
+  eq(p.ok && p.remote, { kind: 'remote', hosts: ['host.example.invalid'], rewritten: false }, 'the answer is given as it is');
+  eq(s.remoteCalls, [NOTES], 'asked on the real path');
+  s.remoteAnswer = { kind: 'unknown' }; s.picks.push(NOTES);
+  eq((await s.ops.pick()).ok && ((await Promise.resolve(0)), true), true, 'unknown is fine');
+  s.remoteAnswer = { kind: 'none' }; s.picks.push(NOTES);
+  const q = await s.ops.pick();
+  eq(q.ok && q.remote, { kind: 'none' }, 'none');
+  // a refused pick never asks
+  const n0 = s.remoteCalls.length; s.picks.push('/home/ana'); await s.ops.pick();
+  eq(s.remoteCalls.length, n0, 'a refused folder is not read for a remote');
+  // the reader throws: could not check, never none
+  const t = new MemoryOps({ store: () => s.store, flavor: POSIX, pick: async () => NOTES, ctx: () => nodeMemoryCtx(s.fsx, { home: '/home/ana', userData: '/u' }), officeFolders: () => [], remote: () => { throw new Error('boom'); } });
+  const tp = await t.pick();
+  eq(tp.ok && tp.remote, { kind: 'unknown' }, 'a throwing reader answers unknown');
+  const none = new MemoryOps({ store: () => s.store, flavor: POSIX, pick: async () => NOTES, ctx: () => nodeMemoryCtx(s.fsx, { home: '/home/ana', userData: '/u' }), officeFolders: () => [] });
+  const np = await none.pick();
+  eq(np.ok && np.remote, { kind: 'unknown' }, 'no reader: unknown, not none');
+});
+
+// ---------------------------------------------------------------------------------------------------------------------------------- relink
+section('relink', async () => {
+  // the picked path is a link; the person confirms its real path; it is repointed before apply
+  const links: Record<string, string> = { '/home/ana/link': '/home/ana/target-a' };
+  const s = setup(POSIX, { fsOpts: { links } });
+  s.picks.push('/home/ana/link');
+  const p = await s.ops.pick();
+  eq(p.ok && p.path, '~/target-a', 'the real path is what is shown and confirmed');
+  // unchanged: saved is the real path, not the link
+  eq(s.ops.apply(p.ok ? p.token : '').ok, true, 'an unchanged link applies');
+  eq(s.store.writes, ['/home/ana/target-a'], 'the real path is saved, never the link');
+  // repointed: refused, nothing saved
+  s.picks.push('/home/ana/link');
+  const p2 = await s.ops.pick();
+  links['/home/ana/link'] = '/home/ana/target-b';
+  const r = s.ops.apply(p2.ok ? p2.token : '');
+  eq(r.ok, false, 'a link repointed since the pick is refused');
+  eq(s.store.writes, ['/home/ana/target-a'], 'nothing new saved');
+  eq(s.ops.apply(p2.ok ? p2.token : ''), { ok: false, error: 'invalid' }, 'the token is spent');
+  // repointed to a refused place: refused too (the check and the comparison both)
+  links['/home/ana/link'] = '/home/ana/target-a'; s.picks.push('/home/ana/link');
+  const p3 = await s.ops.pick();
+  links['/home/ana/link'] = '/home/ana';
+  eq(s.ops.apply(p3.ok ? p3.token : '').ok, false, 'repointed to the home folder');
+  // what is saved is the real path the re-check resolved, not the one stored at the pick: on Windows only the case differs
+  let disk = 'C:\\Users\\ana\\Notes';
+  const winFs = { realpathSync: Object.assign(() => '', { native: (p: string) => (p.toLowerCase().endsWith('\\notes') ? disk : p) }), lstatSync: () => ({ isDirectory: () => true }) };
+  const wstore = new FakeStore();
+  const wops = new MemoryOps({ store: () => wstore, flavor: WIN, pick: async () => 'C:\\Users\\ana\\notes', ctx: () => nodeMemoryCtx(winFs, { home: 'C:\\Users\\ana', userData: 'C:\\Users\\ana\\AppData\\Roaming\\x' }), officeFolders: () => [] });
+  const wp = await wops.pick();
+  disk = 'C:\\Users\\ana\\notes';
+  eq(wops.apply(wp.ok ? wp.token : '').ok, true, 'a case change on Windows is the same folder');
+  eq(wstore.writes, ['C:\\Users\\ana\\notes'], 'the fresh real path from the re-check is saved');
+});
+
 // ---------------------------------------------------------------------------------------------------------------------------------- seton
 section('seton', () => {
   const s = setup();
@@ -262,7 +357,7 @@ section('stop', async () => {
   ok(s.changed.length >= 2, 'the window is told');
   s.store.failSave = true;
   eq(s.ops.stop(), { ok: false, error: 'failed' }, 'a save that fails says failed');
-  const none = new MemoryOps({ store: () => undefined, flavor: POSIX, pick: async () => null, ctx: () => nodeMemoryCtx(s.fsx, { home: '/h', userData: '/u', officeFolders: [] }) });
+  const none = new MemoryOps({ store: () => undefined, flavor: POSIX, pick: async () => null, ctx: () => nodeMemoryCtx(s.fsx, { home: '/h', userData: '/u' }), officeFolders: () => [] });
   eq(none.stop().ok, false, 'no store'); eq(none.status().state, 'off', 'no store: off'); eq(none.setOn(true).ok, false, 'no store: setOn');
 });
 
@@ -292,6 +387,7 @@ section('source', () => {
   const ops = rd('src/main/memoryops.ts');
   const code = ops.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
   ok(/\.realpathSync\.native\(/.test(code) && !/realpathSync\(/.test(code.replace(/realpathSync\.native\(/g, '')), 'memoryops.ts uses fs.realpathSync.native only');
+  ok(/officeFolders: \(\) => expandOfficeFolders\([^\n]*readCodeWorkspaceFolders\)/.test(rd('src/main/main.ts')), 'main.ts expands every workspace through readCodeWorkspaceFolders');
   ok(/nodeMemoryCtx\(\s*fs,/.test(rd('src/main/main.ts')), 'main.ts builds the ctx through nodeMemoryCtx(fs, ...), so realpathSync.native');
   ok(!/realpath\s*:\s*fs\.realpathSync[^.]/.test(rd('src/main/main.ts')), 'main.ts never hands the JS realpathSync over');
   eq([...ops.matchAll(/^import [^;]*from '([^']+)'/gm)].map((m) => m[1]).sort(), ['../shared/api', '../shared/memoryfolder', '../shared/memoryfolder', 'crypto'], 'memoryops.ts imports: no fs, no Electron, no shell');
@@ -327,7 +423,14 @@ section('source', () => {
   const mutants: { name: string; from: string; to: string; section: string }[] = [
     // the two the task names
     { name: 'a path is accepted from the window', from: '    apply(token) {\n', to: "    apply(token) {\n        if (typeof token === 'string' && token.startsWith('/')) this.live = { token, real: token, expiresAt: Infinity };\n", section: 'apply' },
-    { name: 'apply without the re-check', from: 'r = (0, memoryfolder_1.checkMemoryFolder)(e.real, this.deps.ctx(), this.deps.flavor);', to: 'r = { ok: true, real: e.real };', section: 'recheck' },
+    { name: 'apply without the re-check', from: 'r = this.check(e.chosen);', to: 'r = { ok: true, real: e.real };', section: 'recheck' },
+    // review round 1
+    { name: 'only the first workspace folder is used', from: 'out.push(...read(e));', to: 'out.push(read(e)[0]);', section: 'workspace' },
+    { name: 'an unreadable workspace is ignored', from: "catch {\n            return { ok: false, reason: 'office-folder', text: WS_UNREADABLE };\n        }", to: 'catch {\n            office = [];\n        }', section: 'workspace' },
+    { name: 'pick drops the remote', from: ', remote };', to: ' };', section: 'remote' },
+    { name: 'the token is bound to the unresolved path', from: 'this.live = { token, chosen, real: r.real,', to: 'this.live = { token, chosen, real: chosen,', section: 'relink' },
+    { name: 'apply saves the stored path, not the re-check one', from: 'st.setMemory(r.real)', to: 'st.setMemory(e.real)', section: 'relink' },
+    { name: 'apply skips the repoint comparison', from: 'if (!this.same(r.real, e.real))', to: 'if (false)', section: 'relink' },
     // the same rules from other sides
     { name: 'a token can be used twice', from: '        this.live = undefined;\n        if (this.now() >= e.expiresAt)', to: '        if (this.now() >= e.expiresAt)', section: 'apply' },
     { name: 'a token never expires', from: 'if (this.now() >= e.expiresAt)', to: 'if (false)', section: 'apply' },

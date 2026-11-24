@@ -42,7 +42,8 @@ import { nativeConfirm } from './nativeconfirm';
 import { register as registerNotesIpc } from './ipc/notes';
 import { register as registerTeamsIpc } from './ipc/teams';
 import { register as registerMemoryIpc } from './ipc/memory';
-import { MemoryOps, nodeMemoryCtx } from './memoryops';
+import { MemoryOps, nodeMemoryCtx, expandOfficeFolders } from './memoryops';
+import { memoryGitRemote } from './memorygit';
 import { pickFolder } from './pickfolder';
 import { TeamsIpcOps } from './teamsipc';
 import { TeamOps, resolveTargetFrom } from './teamops';
@@ -77,7 +78,7 @@ import { adapterOf } from './folders';
 import type { AgentAdapter, AgentEvent } from '../adapters/types';
 import type { AdapterInfo } from '../shared/adapters';
 import { startOptionsOf } from './startopts';
-import { resolveWorkspaceCwd } from '../adapters/workspace';
+import { resolveWorkspaceCwd, readCodeWorkspaceFolders } from '../adapters/workspace';
 import { findAdded } from './addkey';
 import { MAX_ATTACH_BYTES, MAX_ATTACH_FILES, fmtSize, kindOfFile, sweepStaleStageDirs, sweepStaleTempDirs } from '../shared/attachments';
 import { ACCOUNT_TEMP_PREFIXES } from '../shared/account';
@@ -948,9 +949,11 @@ registerMemoryIpc({
     flavor: { path, platform: process.platform === 'win32' || process.platform === 'darwin' ? process.platform : 'linux' },
     ctx: () => nodeMemoryCtx(fs, {
       home: os.homedir(), userData: app.getPath('userData'),
-      officeFolders: [...agents.values()].flatMap((a) => [a.cwd, ...(a.workspaceFile ? [a.workspaceFile] : [])]).concat(folderStore?.list().map((f) => f.workspace) ?? []),
       env: { appData: process.env.APPDATA, localAppData: process.env.LOCALAPPDATA, xdgConfigHome: process.env.XDG_CONFIG_HOME, xdgDataHome: process.env.XDG_DATA_HOME },
     }),
+    // every workspace member, not only the first folder; an unreadable workspace file refuses the link
+    officeFolders: () => expandOfficeFolders([...agents.values()].flatMap((a) => [a.cwd, ...(a.workspaceFile ? [a.workspaceFile] : [])]).concat(folderStore?.list().map((f) => f.workspace) ?? []), readCodeWorkspaceFolders),
+    remote: (real) => memoryGitRemote(fs, { O_RDONLY: fs.constants.O_RDONLY, O_NOFOLLOW: fs.constants.O_NOFOLLOW }, path.join, real),
     changed: () => toRenderer('memory:changed', memoryOps?.status()),
   }))),
 });

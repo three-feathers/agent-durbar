@@ -13,7 +13,7 @@
  */
 import { randomBytes } from 'crypto';
 import { checkMemoryFolder } from '../shared/memoryfolder';
-import type { MemoryFlavor, MemoryFolderCtx, MemoryRefusal } from '../shared/memoryfolder';
+import type { MemoryFlavor, MemoryFolderCtx, MemoryFolderCheck, MemoryRefusal, RemoteAnswer } from '../shared/memoryfolder';
 import type { MemoryApplied, MemoryFail, MemoryPicked, MemoryResult, MemoryStatus } from '../shared/api';
 
 /** how long a pick's token lives */
@@ -33,16 +33,34 @@ export interface MemoryFsLike {
   lstatSync(p: string): { isDirectory(): boolean };
 }
 /** `ctx.realpath` is `fs.realpathSync.native`, never the JS `realpathSync` (it keeps Windows 8.3 short names, so `PROGRA~1` would not match a denylist entry; T003). */
-export function nodeMemoryCtx(fs: MemoryFsLike, base: Omit<MemoryFolderCtx, 'realpath' | 'lstat'>): MemoryFolderCtx {
+export function nodeMemoryCtx(fs: MemoryFsLike, base: Omit<MemoryFolderCtx, 'realpath' | 'lstat' | 'officeFolders'>): Omit<MemoryFolderCtx, 'officeFolders'> {
   return { ...base, realpath: (p) => fs.realpathSync.native(p), lstat: (p) => fs.lstatSync(p) };
+}
+
+/**
+ * Every office folder for rule 4, each `.code-workspace` entry (open or saved) expanded to ALL its member folders through `read` (main passes
+ * `readCodeWorkspaceFolders`): the first folder is only the session's cwd. A workspace file that cannot be read THROWS (fail closed: the memory
+ * folder cannot be judged, so it is refused, never accepted).
+ */
+export function expandOfficeFolders(entries: readonly string[], read: (file: string) => string[]): string[] {
+  const out: string[] = [];
+  for (const e of entries) {
+    out.push(e);
+    if (/\.code-workspace$/i.test(e)) out.push(...read(e));
+  }
+  return out;
 }
 
 export interface MemoryOpsDeps {
   store(): MemoryStoreLike | undefined;
   /** the folder dialog: the chosen path, or null when cancelled (main's `pickFolder`) */
   pick(): Promise<string | null>;
-  /** built at each call: the office folders change */
-  ctx(): MemoryFolderCtx;
+  /** built at each call */
+  ctx(): Omit<MemoryFolderCtx, 'officeFolders'>;
+  /** built at each call: the office folders change; every workspace member included (`expandOfficeFolders`); throws when a workspace file cannot be read */
+  officeFolders(): string[];
+  /** `memoryGitRemote` on a real path (T004): the answer goes to the window as it is */
+  remote?(real: string): RemoteAnswer;
   flavor: MemoryFlavor;
   /** after a change, for the push `memory:changed` */
   changed?(): void;
@@ -50,15 +68,24 @@ export interface MemoryOpsDeps {
   newToken?: () => string;
 }
 
+const CHANGED = 'The folder is not the one you chose (it changed since). Choose it again.';
+const WS_UNREADABLE = 'An office workspace file could not be read, so the folder cannot be checked.';
 const BAD: MemoryFail = { ok: false, error: 'invalid' };
 const FAILED: MemoryFail = { ok: false, error: 'failed' };
 
 export class MemoryOps {
-  private live: { token: string; real: string; expiresAt: number } | undefined;
+  private live: { token: string; chosen: string; real: string; expiresAt: number } | undefined;
   /** counts every `pick`: a slower, older dialog must not replace a newer one */
   private gen = 0;
   constructor(private readonly deps: MemoryOpsDeps) {}
   private now(): number { return (this.deps.now ?? Date.now)(); }
+
+  /** T002 with the office folders of this moment; an unreadable workspace file refuses (fixed words) */
+  private check(candidate: string): MemoryFolderCheck {
+    let office: string[];
+    try { office = this.deps.officeFolders(); } catch { return { ok: false, reason: 'office-folder', text: WS_UNREADABLE }; }
+    return checkMemoryFolder(candidate, { ...this.deps.ctx(), officeFolders: office }, this.deps.flavor);
+  }
 
   /** `~` for the home folder (case folded where the platform folds); anything else as it is */
   private shown(real: string): string {
@@ -69,6 +96,11 @@ export class MemoryOps {
     return h && fold(real).startsWith(fold(h) + f.path.sep) ? '~' + real.slice(h.length) : real;
   }
 
+  private same(a: string, b: string): boolean {
+    const fold = (x: string): string => (this.deps.flavor.platform === 'linux' ? x : x.toLowerCase());
+    return fold(a) === fold(b);
+  }
+
   status(): MemoryStatus {
     const st = this.deps.store();
     const folder = st?.memoryFolder;
@@ -77,7 +109,7 @@ export class MemoryOps {
     const path = this.shown(folder);
     if (!st.memoryOn) return { on: false, path, state: 'off', keepInGit }; // off: the folder is not looked at (FR-001)
     let r;
-    try { r = checkMemoryFolder(folder, this.deps.ctx(), this.deps.flavor); } catch { return { on: false, path, state: 'refused', reason: 'It could not be checked.', keepInGit }; }
+    try { r = this.check(folder); } catch { return { on: false, path, state: 'refused', reason: 'It could not be checked.', keepInGit }; }
     if (r.ok) return { on: true, path, state: 'on', keepInGit };
     const notFound: MemoryRefusal[] = ['unreadable', 'not-folder'];
     return { on: false, path, state: notFound.includes(r.reason) ? 'notFound' : 'refused', reason: r.text, keepInGit };
@@ -91,11 +123,13 @@ export class MemoryOps {
     if (!chosen) return { ok: false, error: 'cancelled' };
     if (mine !== this.gen) return { ok: false, error: 'cancelled' }; // a newer pick won
     let r;
-    try { r = checkMemoryFolder(chosen, this.deps.ctx(), this.deps.flavor); } catch { return { ok: false, error: 'failed' }; }
+    try { r = this.check(chosen); } catch { return { ok: false, error: 'failed' }; }
     if (!r.ok) { this.live = undefined; return { ok: false, error: 'refused', reason: r.text, path: this.shown(chosen) }; }
     const token = (this.deps.newToken ?? (() => randomBytes(16).toString('hex')))();
-    this.live = { token, real: r.real, expiresAt: this.now() + TOKEN_MS };
-    return { ok: true, token, expiresAt: this.live.expiresAt, path: this.shown(r.real) };
+    this.live = { token, chosen, real: r.real, expiresAt: this.now() + TOKEN_MS };
+    let remote: RemoteAnswer = { kind: 'unknown' };
+    try { if (this.deps.remote) remote = this.deps.remote(r.real); } catch { remote = { kind: 'unknown' }; }
+    return { ok: true, token, expiresAt: this.live.expiresAt, path: this.shown(r.real), remote };
   }
 
   /** The token is taken once. The check runs again before anything is saved. */
@@ -107,8 +141,10 @@ export class MemoryOps {
     const st = this.deps.store();
     if (!st) return FAILED;
     let r;
-    try { r = checkMemoryFolder(e.real, this.deps.ctx(), this.deps.flavor); } catch { return FAILED; }
+    try { r = this.check(e.chosen); } catch { return FAILED; }
     if (!r.ok) return { ok: false, error: 'refused', reason: r.text };
+    // the picked path is resolved again: a link repointed since the person confirmed must not slip in (FR-002); what is saved is this fresh real path
+    if (!this.same(r.real, e.real)) return { ok: false, error: 'refused', reason: CHANGED };
     if (!st.setMemory(r.real)) return FAILED;
     this.deps.changed?.();
     return { ok: true, path: this.shown(r.real) };
@@ -121,7 +157,7 @@ export class MemoryOps {
       const folder = st.memoryFolder;
       if (folder === undefined) return { ok: false, error: 'noFolder' };
       let r;
-      try { r = checkMemoryFolder(folder, this.deps.ctx(), this.deps.flavor); } catch { return FAILED; }
+      try { r = this.check(folder); } catch { return FAILED; }
       if (!r.ok) return { ok: false, error: 'refused', reason: r.text };
     }
     if (!st.setMemoryOn(v)) return FAILED;

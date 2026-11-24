@@ -198,6 +198,7 @@ export interface CustomPlaceResult {
   placeMap: Record<string, string>;
 }
 
+import type { RemoteAnswer } from './memoryfolder';
 /** Spec 116 FR-001, FR-002, FR-004: the office memory, as main answers. Fixed words; `path` is shown with `~`; the window never sends a path. */
 export interface MemoryStatus {
   on: boolean;
@@ -208,7 +209,7 @@ export interface MemoryStatus {
   keepInGit: boolean;
 }
 export type MemoryPicked =
-  | { ok: true; token: string; expiresAt: number; path: string }
+  | { ok: true; token: string; expiresAt: number; path: string; remote: RemoteAnswer }
   | { ok: false; error: 'cancelled' | 'failed' }
   | { ok: false; error: 'refused'; reason: string; path: string };
 export type MemoryFail = { ok: false; error: 'invalid' | 'noFolder' | 'failed' } | { ok: false; error: 'refused'; reason: string };
