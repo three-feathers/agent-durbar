@@ -53,3 +53,17 @@
   - Fix round 4 of T042..T046: program names matched unquoted (quotes, backslashes, `$'...'`, line continuations), shell keywords and groups skipped at a command's start, `#` comments; the quoted-host forms `ssh $'<host>'` and `ssh "u"@<host>` recorded as a known gap. Each with a test and a mutant.
   - Fix round 5 of T042..T046: `$(...)` and backticks inside double quotes are read as commands (in single quotes or escaped they stay text). Test and mutant.
   - Fix round 6 of T042..T046 (review of PR #1334, 2026-11-09): Latin + Greek tests in names, paths and hosts (mutant: Greek dropped from the not-with-Latin set); combining marks in a bare shell host (`DOTTED` takes `\p{M}`; combining and precomposed tests; linear up to 50000 characters); `scxMemo` and `scMemo` capped at 4096 with a test (mutants: either never cleared); simulator pictures of the warning card at 1440x900 and 1280x800, linked from the spec only (the site budget). Retro and Real office worlds not verified.
+
+## 2026-11-24: Copilot's assisted approvals inside Ask first (issue #2105, FR-120..FR-133)
+
+Waits for the owner's answers to Q1..Q8 of the spec delta. One task per issue; tests first in each.
+
+- [ ] T048 [FR-121, FR-133] `AdapterCapabilities.assistedApproval?` and optional `AgentAdapter.setAssisted?`; `AgentInfo.assisted?`; `eventguard` accepts only `{on:true}`; Claude Code and Codex leave it unset (test: capabilities and eventguard).
+- [ ] T049 [FR-124, FR-132] Broker: `PermissionLike.appReview`, the branch after session grants, approve once, `auto` event with `app/classifier`, `Decision.by`; tests for every row of the order, Read-only and outside reads ignoring a verdict, nothing remembered, write guard still called (`scripts/test-permissions.ts`).
+- [ ] T050 [FR-123, FR-125, FR-128] Copilot adapter: `setAssisted` via `permissions.setMode` in `bounded()`, believes only the returned `mode`; the verdict and managed marker normalized into `appReview`; attributed result; `getMode` reset after create and resume; fake-session tests incl. an old runtime with no RPC.
+- [ ] T051 [FR-127] Copilot fallbacks: `permissions_changed` not asked for and `managed_settings_enforced` (`assisted_approval`) turn it off, one fixed note and log row; runtime text never shown; tests in `scripts/test-events.ts`.
+- [ ] T052 [FR-122, FR-126] `setModeOp` `opts.assisted` validation, refusal for adapters without the capability, outside Ask first and with remote control; Read-only, Allow all and Autopilot turn it off first; one `mode-change` row (`scripts/test-agentops.ts`).
+- [ ] T053 [FR-127] Organization policy: `disableAssistedPermissionsMode` from the raw layer in `copilotOrgPolicyFromResolve`, `orgRefusal`/`orgMode` for the switch; tests in `scripts/test-orgpolicy.ts`.
+- [ ] T054 [FR-120, FR-130, FR-131] Window: the menu item (Ask first only), chip word, help line with the cost sentence, fixed verdict lines on pending cards; simulator verdicts and policy fallback; driver in `scripts/ui-suite.js` at 1440x900 and 1280x800.
+- [ ] T055 [FR-120..FR-133] Docs and converge: README *Safety model*, `docs/safety.md`, changelog fragment, `docs/agent-apps.md` facts, spec index; mutation checks listed in the plan.
+- [ ] T056 [FR-131, `real:` (a)..(c)] Real check, only with the owner's written OK and the stated cost: one tiny Ask first prompt on Copilot with the switch on; record whether `onPermissionRequest` is called for a judge-approved call, the usage and the resume behaviour; set `verified` from the result.
