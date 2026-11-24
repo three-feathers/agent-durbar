@@ -1,5 +1,5 @@
 /*
- * Spec 045 FR-066 as changed and FR-067 (owner decision 2026-11-23, issue #2060 item 1): an error toast shows the real error text, masked, as
+ * Spec 045 FR-066 as changed and FR-434 (owner decision 2026-11-23, issue #2060 item 1): an error toast shows the real error text, masked, as
  * text, with a Copy details button. The simulator's bridge answers an Open with failure exactly as main now answers it: main's own built
  * `failText` (dist/main/ipcerror.js) on an EACCES whose path holds markup and whose message holds an invented token. Simulator only (no AI
  * credits, no agent app). At 1440x900 and 1280x800.

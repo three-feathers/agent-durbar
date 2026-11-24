@@ -999,7 +999,7 @@ function mountToast(t){liveMask(t,[t.classList.contains('with-act')&&t.firstElem
   if(window.ResizeObserver){if(!toastRO)toastRO=new ResizeObserver(placeToasts);toastRO.disconnect();for(const e of [document.querySelector('#panel .composer'),$('answerBar'),$('panel')])if(e)toastRO.observe(e);} /* the composer grows with a long message, the answer bar appears and goes */}
 window.addEventListener('resize',placeToasts);
 function toast(html,ms){const t=document.createElement('div');t.className='toast';t.innerHTML=html;mountToast(t);holdTimer(t,ms||3200,()=>{t.style.transition='opacity .3s';t.style.opacity='0';setTimeout(()=>t.remove(),320)});Promise.resolve().then(()=>{if(t.classList.contains('err')&&!t.dataset.noCopy)errCopy(t);});return t;}
-/* spec 045 FR-067 (owner decision 2026-11-23): an error toast (a toast marked err) gets Copy details: the text as shown, masked once more, and the app version and OS.
+/* spec 045 FR-434 (owner decision 2026-11-23): an error toast (a toast marked err) gets Copy details: the text as shown, masked once more, and the app version and OS.
    The window never has the raw error, so it can never copy it; a text the mask cannot check copies nothing. */
 function errCopy(t){
   const s=document.createElement('span');while(t.firstChild)s.appendChild(t.firstChild);t.appendChild(s);t.classList.add('with-act');
@@ -6473,7 +6473,7 @@ document.addEventListener('click',async e=>{
   catch{toast('Could not copy to the clipboard.',3000).classList.add('err');}
 });
 /* spec 052 FR-049: after a copy the button says "Copied ✓" for 1200ms, then "Copy" again */
-function copiedLabel(b,label){clearTimeout(b._cpT);b.textContent='Copied ✓';b._cpT=setTimeout(()=>{b.textContent=label||'Copy';},1200);} /* spec 045 FR-067: Copy details comes back to its own label */
+function copiedLabel(b,label){clearTimeout(b._cpT);b.textContent='Copied ✓';b._cpT=setTimeout(()=>{b.textContent=label||'Copy';},1200);} /* spec 045 FR-434: Copy details comes back to its own label */
 function mdFlush(){const l=[...MDQ];MDQ.clear();l.forEach(mdPaint);}
 let mdRaf=0;
 function mdSet(el,raw,now){
