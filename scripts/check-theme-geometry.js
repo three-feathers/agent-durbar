@@ -81,6 +81,12 @@ function measure(sel, stay) {
 
 async function driver(ctx) {
   const H = helpers(ctx); // spec 008 FR-097: shared plumbing
+  /* spec 035 FR-414 (b): measure lays each page out again through the simulator's paint hook. A page without it stops the run here,
+     with this message (an error thrown inside the page reaches the driver only as "Script failed to execute") */
+  const needHooks = async (label) => {
+    const has = await ctx.js(`!!(window.__durbarSimUi&&typeof window.__durbarSimUi.paint==='function'&&typeof window.__durbarSimUi.settleNow==='function')`);
+    if (!has) throw new Error(`${label}: the simulator hooks paint and settleNow are missing (__durbarSimUi), so the page cannot be laid out again in the neutral font (spec 035 FR-414)`);
+  };
   const packs = Object.fromEntries(Object.entries(FIXTURES).map(([k, f]) => [k, JSON.parse(fs.readFileSync(path.join(ROOT, 'scripts', 'fixtures', 'themes', f), 'utf8'))]));
   /* spec 035 FR-414 (delta 2026-11-24): a theme's words (spec 036: room and place names) are its own, and since spec 001's lobby share by need a place's
      width follows its name. So a theme with words is compared with Clean Office given the SAME words: a user pack that extends Clean Office and sets
@@ -109,6 +115,7 @@ async function driver(ctx) {
        script and the saved totals are read, and it draws a queued frame at once. Each capture is a fresh page, so nothing is left
        expanded from an earlier one. A wait that times out fails the run instead of measuring a page that is not ready. */
     if (!(await ctx.waitFor(`window.__durbarSimUi&&window.__durbarSimUi.settleNow()`, 8000))) throw new Error(`${theme} sim${sim}-${w}x${h}: the simulator never became steady (agents listed, scripts replayed, totals read)`);
+    await needHooks(`${theme} sim${sim}-${w}x${h}`);
     // agents go to the lobby after about 600 ms (instant with reduced motion): wait until somebody is there
     // (spec 068: not the coffee corner, where an agent on a break stands at once; spec 008 FR-113: on a steady simulator)
     if (!(await ctx.waitFor(`window.__durbarSimUi&&window.__durbarSimUi.settleNow()&&!!document.querySelector('.place.busy:not([data-place="coffee"]):not([data-place="boss"]):not([data-place="bank"])')`, 8000))) throw new Error(`${theme} sim${sim}-${w}x${h}: nobody reached a place in the lobby`);
@@ -172,6 +179,7 @@ async function driver(ctx) {
     const surfaces = async (world, w, h) => {
       await H.load({ w, h, query: { sim: '15', simfreeze: '1', officeview: 'real', worldflags: 'retro', world }, ready: 'fit', settle: false });
       if (!(await ctx.waitFor(`window.__durbarSimUi&&window.__durbarSimUi.settleNow()&&document.documentElement.dataset.world===${jsLiteral(world)}`, 8000))) throw new Error(`world ${world}: not shown`);
+      await needHooks(`world ${world}`);
       await ctx.js(`document.fonts.ready.then(()=>true)`);
       ctx.win.webContents.sendInputEvent({ type: 'mouseMove', x: 0, y: 0 });
       const read = async (sel) => { let a = await ctx.js(`(${measure.toString()})(${jsLiteral(sel)})`); for (let i = 0; i < 10; i++) { await ctx.sleep(300); const b = await ctx.js(`(${measure.toString()})(${jsLiteral(sel)})`); if (JSON.stringify(a) === JSON.stringify(b)) break; a = b; } return a; };
