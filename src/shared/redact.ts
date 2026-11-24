@@ -2308,6 +2308,26 @@ const UNC_HOME = new RegExp(String.raw`(?<![A-Za-z0-9_.~:\\/-])\\{2,}${UNC_SEG}$
 // cannot be told from a NetBIOS server by its shape, so `//cdn/profile/pic.png` or `//HOME/users` outside those attributes is masked: over-masking, the safe side.
 const FWD_SEG = String.raw`[^\\/\s"'<>|:;,*?()]{1,128}`;
 const UNC_FWD_HOME = new RegExp(String.raw`(?<![A-Za-z0-9_.~:\\/-])(?<!(?:src|href|srcset)\s*=\s*["']?|url\(\s*["']?)\/\/(?!localhost(?![^\\/\s"'<>|:;,*?().]))[^\\/\s"'<>|:;,*?().]{1,128}\/(?:homes?|users?|profiles?)\$?(?![^\\/\s"'<>|:;,*?()])(?:\/(?:[^\\/\r\n"'<>|:;,*?()]{1,128}(?=\\|\/(?!\/))|${FWD_SEG}))?`, 'gi');
+/** Spec 012 FR-435 (review of PR 2112, finding 1): outbound only, a share lead and what follows it up to the cut marker of `cut` (a cut that ended inside a share
+    path, after its server and before its share, which `UNC_HOME` no longer reads), so no cut position leaves the server. */
+const SHARE_BEFORE_CUT = /(?<![A-Za-z0-9_.~:\\/-])(?:\\{2,}|\/\/)[^\s"'<>|]{0,384}(?= \[truncated\])/g;
+/** The shortest tail of a share part read for a key shape (no key family is shorter). */
+const KEY_TAIL_MIN = 12;
+/**
+ * Spec 012 FR-435 (review of PR 2112, finding 3): a place the old share rule matched (`UNC_HOME`, `UNC_FWD_HOME`: server, share and next folder), shown on
+ * screen with only a part that holds a key shape hidden. Every tail of a part (from `KEY_TAIL_MIN` characters) is read by the one key-shape mask
+ * (`maskTokenShapes`), so a key glued to other letters, which the old rule hid with the whole place, stays hidden; the other parts stay as written.
+ * A part is at most 128 characters, so a place costs a bounded read.
+ */
+function tokenParts(m: string): string {
+  return m.split(/(\\+|\/)/).map((part, i) => {
+    if (i % 2 === 1 || part.length < KEY_TAIL_MIN) return part;
+    const tails: string[] = [];
+    for (let k = 0; k + KEY_TAIL_MIN <= part.length; k++) tails.push(part.slice(k));
+    const t = tails.join(' ');
+    return maskTokenShapes(t, MASK) === t ? part : MASK;
+  }).join('');
+}
 /** `~name/` or `~name\`: the home folder of the user `name` (POSIX shells), only in a path: the rest of the word holds another separator or a file
     name's dot (`~alice/src/x`, `~alice/.ssh`, `~alice/notes.md`), so `~5/10`, Markdown `~text~` and prose like `the ~half/whole split` stay (review of PR 1832, F2). */
 const HOME_TILDE = /(?<![A-Za-z0-9_.~-])~[A-Za-z_][A-Za-z0-9_.-]{0,31}(?=[\\/][^\s"'<>|\\/]{0,256}(?:[\\/]|\.[A-Za-z0-9]))/g;
@@ -2400,7 +2420,8 @@ function homeGuarded(s: string, re: RegExp): string {
  * (`HOME`, `USERPROFILE` of this process by default). A user name with spaces is covered when a separator follows it.
  * Spec 012 FR-435 (owner decision 2026-11-23, issue #2060 item 2): a network share path (`\\server\share\folder\file`, `//server/homes/user/x`,
  * `smb://`, `file://`) is shown whole on the person's own screen; only `maskHomePathsOutbound` (text that leaves the machine) hides its host,
- * share and next folder. Secrets inside a share path are left to `redact` and the URL masks, as before. Bounded; never throws.
+ * share and next folder. On screen, a part of those three that holds a key shape is hidden (`tokenParts`: a key glued to letters, which the old rule
+ * hid with the whole place); other secrets are left to `redact` and the URL masks, as before. Bounded; never throws.
  */
 export function maskHomePaths(text: unknown, homes?: readonly (string | undefined)[]): string {
   return homeMaskImpl(text, homes, false);
@@ -2408,7 +2429,8 @@ export function maskHomePaths(text: unknown, homes?: readonly (string | undefine
 /**
  * `maskHomePaths` for text that leaves the machine (spec 012 FR-435; today the MCP *Copy diagnostics* text for an issue report): as on the screen, and
  * a UNC path (`\\server\share\user`, with any run of two or more `\`; with `//` only on a bare host and a home-share name, `//server/homes/user`,
- * never in a `src=`, `href=` or `url(`) loses its host, share and next folder to `~`. Bounded; never throws.
+ * never in a `src=`, `href=` or `url(`) loses its host, share and next folder to `~`, and a share lead cut by `cut` loses what follows it up to the
+ * marker (`SHARE_BEFORE_CUT`). Text copied to the clipboard goes through it too (`copyErrorText` in `screens.js`). Bounded; never throws.
  */
 export function maskHomePathsOutbound(text: unknown, homes?: readonly (string | undefined)[]): string {
   return homeMaskImpl(text, homes, true);
@@ -2425,7 +2447,8 @@ function homeMaskImpl(text: unknown, homes: readonly (string | undefined)[] | un
     s = s.replace(/(?<![A-Za-z0-9_.~-])(?:\/(?:home|Users)\/|[A-Za-z]:(?:\\{1,2}|\/)Users(?:\\{1,2}|\/))(?:[^\\/\r\n"'<>|:;,*?]{1,128}(?=[\\/])|[^\\/\s"'<>|:;,*?]{1,128})/g, '~');
     // text that leaves the machine only (FR-435): a UNC path (`\\server\share\user\...`, or doubled as in JSON): where the user name sits is not known,
     // so host, share and the next folder become `~`
-    if (shares) s = s.replace(UNC_HOME, '~').replace(UNC_FWD_HOME, '~');
+    if (shares) s = s.replace(UNC_HOME, '~').replace(UNC_FWD_HOME, '~').replace(SHARE_BEFORE_CUT, '~');
+    else s = s.replace(UNC_HOME, tokenParts).replace(UNC_FWD_HOME, tokenParts); // on screen: shown whole, a part with a key shape hidden (FR-435)
     // spec 012 FR-185 (issue #1329): more spellings, each only where it removes nothing `redact` hides in the text (review of PR 1832, F1: a surface that masks
     // the home first must not lose the characters a split token's reading needs, so its head would show)
     for (const re of HOME_MORE) s = homeGuarded(s, re);

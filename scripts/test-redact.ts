@@ -2029,12 +2029,36 @@ assert.strictEqual(redact('{"a":"https://u:p@h/x","b":"y"}', {}), '{"a":"https:/
     ['a base64-family key as an smb folder', 'smb://fs01/projects/' + GKEY + '/x.txt', GKEY.slice(4, 16), 'smb://fs01/projects/'],
     ['a token in a file link\'s query', 'file://fs01/projects/x.txt?access_token=' + run(24), run(24), 'file://fs01/projects/x.txt?access_token='],
   ];
+  // review of PR 2112, finding 3: a key glued to letters inside the server, the share or the next folder (which the old rule hid with the whole place, and no key
+  // rule reads on its own): five key families, each as the share, the next folder, a home share's folder and the server; the rest of the path is shown
+  const hexr = (k: number): string => run(k, '0a1b2c3d4e5f6a7b8c9d');
+  const FAMILIES: [string, string][] = [['google api', GKEY], ['bedrock', 'AB' + 'SK' + run(120) + '=='], ['facebook', 'EA' + 'AC' + run(120)], ['databricks', 'da' + 'pi' + hexr(32)], ['twilio', 'S' + 'K' + hexr(32)]];
+  for (const [fam, k] of FAMILIES) SECRET.push(
+    [`a ${fam} key glued to letters as the UNC share`, B + B + 'fs01' + B + 'y' + k + B + 'x.txt', k.slice(4, 16), B + B + 'fs01' + B],
+    [`a ${fam} key glued to letters as the UNC next folder`, B + B + 'fs01' + B + 'projects' + B + 'y' + k + B + 'x.txt', k.slice(4, 16), B + B + 'fs01' + B + 'projects' + B],
+    [`a ${fam} key glued to letters in a forward-slash home share`, '//fs01/homes/y' + k + '/x.txt', k.slice(4, 16), '//fs01/homes/'],
+    [`a ${fam} key glued to letters as the UNC server`, B + B + 'y' + k + B + 'projects' + B + 'x.txt', k.slice(4, 16), B + 'projects' + B + 'x.txt'],
+  );
   for (const [what, t, sec, keep] of SECRET) for (const [m, f] of Object.entries(SCREEN)) {
-    if (m === 'home') continue; // the home mask alone hides no secret (it never did on these forms; a screen surface always runs a secret mask too)
+    if (m === 'home' && !/glued/.test(what)) continue; // the home mask alone hides no secret on these forms (a screen surface always runs a secret mask too)
     const o = f(t);
     assert.ok(!o.includes(sec), `FR-435 secret: ${what} stays hidden (${m}): ${o}`);
-    assert.ok(o.includes(keep), `FR-435 secret: ${what}, the rest of the path is shown (${m}): ${o}`);
+    // over-masking kept: redact after the home mask folds what follows a hidden server into the mask (its rule for a value glued to a mask, FR-187)
+    if (!(/glued to letters as the UNC server/.test(what) && m === 'home, then redact')) assert.ok(o.includes(keep), `FR-435 secret: ${what}, the rest of the path is shown (${m}): ${o}`);
   }
+  // the outbound chains hide them too
+  const OUT: Record<string, (t: string) => string> = { 'outbound, redact first': (t) => maskHomePathsOutbound(redact(t, {}), []), 'outbound home, then redact': (t) => redact(maskHomePathsOutbound(t, []), {}) };
+  for (const [what, t, sec] of SECRET) for (const [m, f] of Object.entries(OUT)) assert.ok(!f(t).includes(sec), `FR-435 secret (outbound): ${what} stays hidden (${m}): ${f(t)}`);
+  // a part with no key shape is never hidden on screen (near misses: a hex digest folder, words, a long name)
+  for (const p of [B + B + 'fs01' + B + '0123456789abcdef0123456789abcdef01234567' + B + 'x', B + B + 'fs01' + B + 'Quarterly Reports Archive 2019' + B + 'x', '//fs01/homes/Alexandra-Example-Longname/x'])
+    assert.strictEqual(maskHomePaths(p, []), p, `FR-435 screen: a share part with no key shape is shown: ${p}`);
+  // the cut marker (finding 1): the outbound mask hides a share lead cut after its server, in every spelling; the screen mask keeps it
+  for (const t of [B + B + 'fs01' + B + ' [truncated]', B + B + 'fs01 [truncated]', B.repeat(4) + 'fs01' + B + B + ' [truncated]', 'spawn ' + B + B + 'fs01.corp.example' + B + ' [truncated]', '//fs01/hom [truncated]']) {
+    const o = maskHomePathsOutbound(t, []);
+    assert.ok(!/fs01/.test(o) && o.endsWith('~ [truncated]'), `FR-435 outbound: a share lead before the cut marker loses its server: ${JSON.stringify(t)} -> ${JSON.stringify(o)}`);
+    assert.strictEqual(maskHomePaths(t, []), t, `FR-435 screen: a share lead before the cut marker is shown: ${JSON.stringify(t)}`);
+  }
+  assertLinearShape('FR-435 maskHomePaths many long share parts', (x) => { maskHomePaths(x, []); }, (k) => (B + B + 'a'.repeat(120) + B + 'b'.repeat(120) + B + 'c'.repeat(120) + ' ').repeat(Math.ceil(k / 364)).slice(0, k), 400_000);
   // differential over a generated corpus: the screen and outbound masks differ only on texts with a UNC path, the outbound mask of the screen's output equals
   // the outbound mask of the text (the screen removes nothing the outbound mask keeps), and nothing else changes
   {
@@ -2055,6 +2079,44 @@ assert.strictEqual(redact('{"a":"https://u:p@h/x","b":"y"}', {}), '{"a":"https:/
     assert.strictEqual(notOutbound, 0, 'FR-435 differential: the outbound mask of the screen\'s output equals the outbound mask of the text');
     assert.ok(differ > 500, `FR-435 differential: the corpus exercises the UNC forms (${differ} of ${texts})`);
     console.log(`FR-435 differential: ${differ} of ${texts} texts read differently on screen and outbound, each with a UNC path`);
+  }
+  // review of PR 2112, finding 4: secret-bearing shares in the corpus, and the FULL screen chains (secret masks and the home mask, as the window composes them)
+  // against the old chains (the outbound home mask in the place of the screen one: main's home mask on text with no cut marker): no 4-character piece of a
+  // secret that the old chain hid is shown by the new one. Fixed seed, no timing.
+  {
+    let seed = 0x2112;
+    const rnd = (k: number): number => { seed = (seed * 1103515245 + 12345) >>> 0; return seed % k; };
+    const pick = <T,>(a: readonly T[]): T => a[rnd(a.length)];
+    const PLAIN = [...SHARES.map(([, p]) => p), '/home/zedq/a.txt', 'C:' + B + 'Users' + B + 'zedq' + B + 'x', 'src/app.js', 'https://h.example/p?q=1', 'done.', 'git log -n 5'];
+    const SEC: [string, string][] = SECRET.map(([, t, sec]) => [t, sec]); // text, the secret it holds
+    for (const [, k] of FAMILIES) { SEC.push([B + B + 'nas' + B + 'team' + B + 'q' + k, k]); SEC.push(['//nas/users/z' + k + '/a', k]); }
+    SEC.push([GHP, GHP], ['password=' + PW, PW]);
+    const chain = (home: (t: string) => string): Record<string, (t: string) => string> => ({
+      'redact, then home': (t) => home(redact(t, {})), 'redact, home, key shapes': (t) => maskTokenShapes(home(redact(t, {})), '[redacted]'),
+      'home, then redact': (t) => redact(home(t), {}), 'url, then home': (t) => home(maskSecretUrl(t, {})),
+    });
+    const NEW = chain((t) => maskHomePaths(t, [])), OLD = chain((t) => maskHomePathsOutbound(t, []));
+    let texts = 0, hidOld = 0, shownNew = 0, withSecret = 0;
+    const shown: string[] = [];
+    for (let i = 0; i < 3000; i++) {
+      const parts: string[] = [], secs: string[] = [];
+      for (let j = 0, k = 1 + rnd(5); j < k; j++) { if (rnd(2) === 0) { const [t, sec] = pick(SEC); parts.push(t); secs.push(sec); } else parts.push(pick(PLAIN)); }
+      const t = parts.join(pick([' ', '\n', ', ']));
+      const plain = parts.filter((p) => !SEC.some(([x]) => x === p)).join(' ');
+      texts++; if (secs.length) withSecret++;
+      for (const m of Object.keys(NEW)) {
+        const o = OLD[m](t), n = NEW[m](t);
+        for (const sec of secs) for (let q = 0; q + 4 <= sec.length; q++) {
+          const pc = sec.slice(q, q + 4);
+          if (plain.includes(pc) || o.includes(pc)) continue;
+          hidOld++;
+          if (n.includes(pc)) { shownNew++; if (shown.length < 3) shown.push(`${m}: ${pc} in ${JSON.stringify(t).slice(0, 160)}`); }
+        }
+      }
+    }
+    assert.strictEqual(shownNew, 0, `FR-435 differential with secrets: pieces the old chain hid and the new chain shows = 0 (${texts} texts, ${hidOld} pieces hidden by the old chains) ${shown.join(' | ')}`);
+    assert.ok(withSecret > 2000 && hidOld > 100000, `FR-435 differential with secrets: the corpus exercises secret pieces (${withSecret} texts with a secret, ${hidOld} pieces)`);
+    console.log(`FR-435 differential with secrets: ${texts} texts (${withSecret} with a secret), 4 chains, ${hidOld} secret pieces the old chains hide, ${shownNew} of them shown by the new chains`);
   }
 }
 
