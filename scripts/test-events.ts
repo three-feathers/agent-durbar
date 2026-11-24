@@ -413,4 +413,14 @@ const run = (events: RawEvent[]): EventBody[] => {
     { toolCallId: 'tc1', decisionSource: 'assisted_approval', result: 'approved' },
   ]) assert.deepStrictEqual(pc(bad), [], JSON.stringify(bad));
 }
+
+// spec 003 FR-121, FR-133 (T048): the `assisted` event carries nothing but `{ on: true }` (or nothing: off) and the closed `policy` word on a turn-off
+{
+  const base = { type: 'assisted', sessionId: 's1', timestamp: 1 };
+  assert.deepStrictEqual(eventProblems({ ...base }), [], 'off');
+  assert.deepStrictEqual(eventProblems({ ...base, reason: 'policy' }), [], 'off by policy');
+  assert.deepStrictEqual(eventProblems({ ...base, assisted: { on: true } }), [], 'on');
+  for (const bad of [{ assisted: { on: false } }, { assisted: true }, { assisted: { on: true, model: 'gpt-5.5' } }, { assisted: { on: 'yes' } }, { assisted: null }, { assisted: [] }, { reason: 'runtime said so' }, { assisted: { on: true }, reason: 'policy' }, { agentId: 'h1' }])
+    assert.ok(eventProblems({ ...base, ...bad }).length > 0, `eventguard refuses ${JSON.stringify(bad)}`);
+}
 console.log('event mapping tests passed');

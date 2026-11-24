@@ -13,7 +13,7 @@ const optStr = (v: unknown): boolean => v === undefined || typeof v === 'string'
 const optNum = (v: unknown): boolean => v === undefined || (typeof v === 'number' && Number.isFinite(v) && v >= 0);
 const oneOf = (v: unknown, xs: readonly string[]): boolean => typeof v === 'string' && xs.includes(v);
 
-export const EVENT_TYPES = ['user', 'question', 'agentProfile', 'status', 'permission', 'grants', 'thinking', 'output', 'toolCall', 'subagent', 'usage', 'context', 'model', 'compaction', 'mcp', 'limit', 'usageLimit', 'retry', 'title', 'agentSchedule', 'remote', 'plan', 'sandbox', 'autopilot'] as const;
+export const EVENT_TYPES = ['user', 'question', 'agentProfile', 'status', 'permission', 'grants', 'thinking', 'output', 'toolCall', 'subagent', 'usage', 'context', 'model', 'compaction', 'mcp', 'limit', 'usageLimit', 'retry', 'title', 'agentSchedule', 'remote', 'plan', 'sandbox', 'autopilot', 'assisted'] as const;
 const RETRY_REASONS = ['rate-limit', 'overloaded', 'server', 'network', 'timeout', 'auth', 'other'] as const;
 const STATUSES = ['idle', 'working', 'needs-permission', 'error', 'stopped'] as const;
 /** Spec 058 FR-180: the values of `McpServerStatus.signInEnd`. */
@@ -50,6 +50,10 @@ function permissionProblems(p: unknown, where: string): string[] {
   if (!str(p.summary)) out.push(`${where}.summary missing`);
   if (!oneOf(p.state, ['pending', 'approved', 'denied'])) out.push(`${where}.state is ${String(p.state)}`);
   if (p.allowedBy !== undefined) out.push(...allowedByProblems(p.allowedBy, `${where}.allowedBy`));
+  if (p.via !== undefined && !oneOf(p.via, ['user', 'session', 'stopped', 'policy', 'quiet', 'app-review'])) out.push(`${where}.via is ${String(p.via)}`);
+  // spec 003 FR-124, FR-130: a judge approval carries the app tag and is approved; the reviewer's closed word rides on a pending card only
+  if (p.via === 'app-review' && (p.state !== 'approved' || !isObj(p.allowedBy) || p.allowedBy.kind !== 'app' || p.allowedBy.source !== 'classifier')) out.push(`${where}.via app-review without an approved app classifier tag`);
+  if (p.review !== undefined && (!oneOf(p.review, ['declined', 'never', 'undecided']) || p.state !== 'pending')) out.push(`${where}.review ${String(p.review)} on state ${String(p.state)}`);
   return out;
 }
 
@@ -203,6 +207,11 @@ export function eventProblems(e: unknown): string[] {
       break;
     case 'autopilot':
       out.push(...autopilotProblems(e));
+      break;
+    case 'assisted': // spec 003 FR-121, FR-133: only `{ on: true }` (one key) or nothing; `policy` only on a turn-off
+      if (e.agentId !== undefined) out.push('assisted.agentId: a helper has no reviewer switch');
+      if (e.assisted !== undefined && !(isObj(e.assisted) && e.assisted.on === true && Object.keys(e.assisted).length === 1)) out.push('assisted.assisted is not { on: true }');
+      if (e.reason !== undefined && (e.reason !== 'policy' || e.assisted !== undefined)) out.push(`assisted.reason ${String(e.reason)}`);
       break;
     case 'plan':
       if (!oneOf(e.phase, ['proposed', 'resolved'])) out.push(`plan.phase ${String(e.phase)}`);

@@ -163,8 +163,11 @@ export interface PermissionInfo {
   /** Shell only: the wider "any arguments of <command>" scope the user may pick instead (never the default). */
   broadScopeKey?: string;
   broadScopeLabel?: string;
-  /** Who decided: the user, an earlier "Approve for this session" grant, the session being stopped, or Allow all (`policy`: no card is shown, spec 052 FR-071). */
-  via?: 'user' | 'session' | 'stopped' | 'policy' | 'quiet';
+  /**
+   * Who decided: the user, an earlier "Approve for this session" grant, the session being stopped, or Allow all (`policy`: no card is shown, spec 052 FR-071).
+   * `app-review` (spec 003 FR-124): Durbar's broker approved it once because the agent app's own reviewer recommended it in Ask first; no card, one log row.
+   */
+  via?: 'user' | 'session' | 'stopped' | 'policy' | 'quiet' | 'app-review';
   /**
    * Spec 003 FR-099 (issue #605): why this request ran without asking, only from what Durbar itself decided. Absent when the user
    * answered it. Display only: nothing reads it back to approve anything. `quiet` events carry it for a read and are never shown as
@@ -184,6 +187,12 @@ export interface PermissionInfo {
    * Codex's Ask first says an approved command or file change may run outside its sandbox. Display text only.
    */
   sandboxNote?: string;
+  /**
+   * Spec 003 FR-130: on a pending card in Ask first with the app's reviewer on, why the reviewer did not approve it, as a closed word the
+   * window turns into fixed text (`declined`: it did not approve; `never`: the app never auto-approves this kind; `undecided`: it could not
+   * decide). Never the reviewer's own text.
+   */
+  review?: 'declined' | 'never' | 'undecided';
 }
 
 /**
@@ -598,6 +607,17 @@ export interface RemoteEvent extends BaseEvent {
   url?: string;
 }
 
+/**
+ * Spec 003 FR-127: the app's reviewer (assisted approvals) was turned off without the user asking: the organization's policy blocks it, or the
+ * runtime fell back to manual approval. The session goes on in plain Ask first. No vendor text: the window and the log say a fixed sentence.
+ */
+export interface AssistedEvent extends BaseEvent {
+  type: 'assisted';
+  /** Absent: off. Only `{ on: true }` otherwise (eventguard). */
+  assisted?: { on: true };
+  reason?: 'policy';
+}
+
 /** Spec 066 FR-002: a plan the agent proposes (plan first), and its end. */
 export interface PlanEvent extends BaseEvent {
   type: 'plan';
@@ -648,6 +668,7 @@ export interface AutopilotEvent extends BaseEvent {
 export type PlanAnswer = { kind: 'approve' } | { kind: 'reject' } | { kind: 'revise'; feedback: string };
 
 export type AgentEvent =
+  | AssistedEvent
   | AutopilotEvent
   | SandboxEvent
   | PlanEvent
@@ -804,6 +825,12 @@ export interface AgentAdapter {
    * `reason` is why it ends (default `stopped`). Optional (`capabilities.autopilot`). Never saved, never a default; only main's confirmed path calls it.
    */
   setAutopilot?(sessionId: string, settings: AutopilotSettings | null, reason?: AutopilotEnd): Promise<void>;
+  /**
+   * Spec 003 FR-121, FR-123: the agent app's reviewer on or off for a live session in Ask first; resolves with what the app really applied
+   * (`on` only when the app said so). `reason`: `policy` (the organization blocks it), `unsupported` (the app has no such call, failed or
+   * did not answer), `not-ask` (the session is not in Ask first, or not live). Optional (`capabilities.assistedApproval`). Never saved.
+   */
+  setAssisted?(sessionId: string, on: boolean): Promise<{ on: boolean; reason?: 'policy' | 'unsupported' | 'not-ask' }>;
   /**
    * Spec 059 FR-007: store the user's name for a session in the agent app. Optional (`capabilities.renameSession`). `sessionId` is the
    * vendor's own id (also of a stored session that is not live). `name` already passed Durbar's name rule. Throws when the app refuses
