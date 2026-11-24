@@ -2058,6 +2058,8 @@ assert.strictEqual(redact('{"a":"https://u:p@h/x","b":"y"}', {}), '{"a":"https:/
     assert.ok(!/fs01/.test(o) && o.endsWith('~ [truncated]'), `FR-435 outbound: a share lead before the cut marker loses its server: ${JSON.stringify(t)} -> ${JSON.stringify(o)}`);
     assert.strictEqual(maskHomePaths(t, []), t, `FR-435 screen: a share lead before the cut marker is shown: ${JSON.stringify(t)}`);
   }
+  assertLinearShape('FR-435 maskHomePathsOutbound a long run of leads before a cut marker', (x) => { maskHomePathsOutbound(x, []); }, (k) => B.repeat(k) + ' [truncated]', 400_000);
+  assertLinearShape('FR-435 maskHomePathsOutbound many cut markers after leads', (x) => { maskHomePathsOutbound(x, []); }, (k) => ('//' + 'a'.repeat(300) + ' [truncated]').repeat(Math.ceil(k / 314)).slice(0, k), 400_000);
   assertLinearShape('FR-435 maskHomePaths many long share parts', (x) => { maskHomePaths(x, []); }, (k) => (B + B + 'a'.repeat(120) + B + 'b'.repeat(120) + B + 'c'.repeat(120) + ' ').repeat(Math.ceil(k / 364)).slice(0, k), 400_000);
   // differential over a generated corpus: the screen and outbound masks differ only on texts with a UNC path, the outbound mask of the screen's output equals
   // the outbound mask of the text (the screen removes nothing the outbound mask keeps), and nothing else changes

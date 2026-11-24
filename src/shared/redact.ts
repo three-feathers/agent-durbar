@@ -2309,8 +2309,26 @@ const UNC_HOME = new RegExp(String.raw`(?<![A-Za-z0-9_.~:\\/-])\\{2,}${UNC_SEG}$
 const FWD_SEG = String.raw`[^\\/\s"'<>|:;,*?()]{1,128}`;
 const UNC_FWD_HOME = new RegExp(String.raw`(?<![A-Za-z0-9_.~:\\/-])(?<!(?:src|href|srcset)\s*=\s*["']?|url\(\s*["']?)\/\/(?!localhost(?![^\\/\s"'<>|:;,*?().]))[^\\/\s"'<>|:;,*?().]{1,128}\/(?:homes?|users?|profiles?)\$?(?![^\\/\s"'<>|:;,*?()])(?:\/(?:[^\\/\r\n"'<>|:;,*?()]{1,128}(?=\\|\/(?!\/))|${FWD_SEG}))?`, 'gi');
 /** Spec 012 FR-435 (review of PR 2112, finding 1): outbound only, a share lead and what follows it up to the cut marker of `cut` (a cut that ended inside a share
-    path, after its server and before its share, which `UNC_HOME` no longer reads), so no cut position leaves the server. */
-const SHARE_BEFORE_CUT = /(?<![A-Za-z0-9_.~:\\/-])(?:\\{2,}|\/\/)[^\s"'<>|]{0,384}(?= \[truncated\])/g;
+    path, after its server and before its share, which `UNC_HOME` no longer reads) becomes `~`, so no cut position leaves the server. Read back from each marker,
+    at most `CUT_LEAD_BACK` characters of one word, so the cost is linear in the text (a regex anchored at every lead was quadratic on a long run of leads). */
+const CUT_LEAD_BACK = 384;
+const CUT_LEAD_CH = /[^\s"'<>|]/;
+const LEAD_GLUE = /[A-Za-z0-9_.~:\\/-]/;
+function shareBeforeCut(s: string): string {
+  if (!s.includes(TRUNCATED)) return s;
+  let out = '';
+  let at = 0;
+  for (let i = s.indexOf(TRUNCATED); i >= 0; i = s.indexOf(TRUNCATED, i + TRUNCATED.length)) {
+    let j = i;
+    const stop = Math.max(at, i - CUT_LEAD_BACK);
+    while (j > stop && CUT_LEAD_CH.test(s[j - 1])) j--;
+    for (let p = j; p + 1 < i; p++) {
+      const c = s[p];
+      if ((c === '\\' || c === '/') && s[p + 1] === c && (p === 0 || !LEAD_GLUE.test(s[p - 1]))) { out += s.slice(at, p) + '~'; at = i; break; }
+    }
+  }
+  return out + s.slice(at);
+}
 /** The shortest tail of a share part read for a key shape (no key family is shorter). */
 const KEY_TAIL_MIN = 12;
 /**
@@ -2430,7 +2448,7 @@ export function maskHomePaths(text: unknown, homes?: readonly (string | undefine
  * `maskHomePaths` for text that leaves the machine (spec 012 FR-435; today the MCP *Copy diagnostics* text for an issue report): as on the screen, and
  * a UNC path (`\\server\share\user`, with any run of two or more `\`; with `//` only on a bare host and a home-share name, `//server/homes/user`,
  * never in a `src=`, `href=` or `url(`) loses its host, share and next folder to `~`, and a share lead cut by `cut` loses what follows it up to the
- * marker (`SHARE_BEFORE_CUT`). Text copied to the clipboard goes through it too (`copyErrorText` in `screens.js`). Bounded; never throws.
+ * marker (`shareBeforeCut`). Text copied to the clipboard goes through it too (`copyErrorText` in `screens.js`). Bounded; never throws.
  */
 export function maskHomePathsOutbound(text: unknown, homes?: readonly (string | undefined)[]): string {
   return homeMaskImpl(text, homes, true);
@@ -2447,7 +2465,7 @@ function homeMaskImpl(text: unknown, homes: readonly (string | undefined)[] | un
     s = s.replace(/(?<![A-Za-z0-9_.~-])(?:\/(?:home|Users)\/|[A-Za-z]:(?:\\{1,2}|\/)Users(?:\\{1,2}|\/))(?:[^\\/\r\n"'<>|:;,*?]{1,128}(?=[\\/])|[^\\/\s"'<>|:;,*?]{1,128})/g, '~');
     // text that leaves the machine only (FR-435): a UNC path (`\\server\share\user\...`, or doubled as in JSON): where the user name sits is not known,
     // so host, share and the next folder become `~`
-    if (shares) s = s.replace(UNC_HOME, '~').replace(UNC_FWD_HOME, '~').replace(SHARE_BEFORE_CUT, '~');
+    if (shares) s = shareBeforeCut(s.replace(UNC_HOME, '~').replace(UNC_FWD_HOME, '~'));
     else s = s.replace(UNC_HOME, tokenParts).replace(UNC_FWD_HOME, tokenParts); // on screen: shown whole, a part with a key shape hidden (FR-435)
     // spec 012 FR-185 (issue #1329): more spellings, each only where it removes nothing `redact` hides in the text (review of PR 1832, F1: a surface that masks
     // the home first must not lose the characters a split token's reading needs, so its head would show)
