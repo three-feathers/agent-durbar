@@ -459,13 +459,13 @@ async function run(ctx, H) {
       const idle = async (id) => { await emit({ sessionId: id, type: 'status', status: 'working', intent: 'Working' }); await emit({ sessionId: id, type: 'output', final: true, text: 'Done.' }); await emit({ sessionId: id, type: 'status', status: 'idle' }); };
       const aeInfo = () => js(`(()=>{const a=document.activeElement,r=a&&a.closest&&a.closest('.inbox-row');return {tag:a?a.tagName:'',head:!!a&&a.classList.contains('ib-h'),row:r?r.dataset.id:'',k:a&&a.dataset?a.dataset.k||'':''}})()`);
       // spec 052 FR-198 (issue 1668, T534): an answer key goes to the focused row only once THAT row is armed; the press itself is checked
-      const FOCUSED_ROW = `(document.activeElement&&document.activeElement.closest&&document.activeElement.closest('#needsPanel .inbox-row'))`;
       const panelState = () => js(`({perm:window.__perm.slice(),hasFocus:document.hasFocus(),ae:document.activeElement&&document.activeElement.className,rows:[...document.querySelectorAll('#needsPanel .inbox-row')].map(r=>({id:r.dataset.id,rq:r.dataset.rq,armed:r.dataset.armed,armIn:Math.round((r._armAt||0)-performance.now()),settled:r.classList.contains('settled'),answering:!!r.dataset.answering}))})`);
       const pressArmed = async (k, label) => {
-        const ok = await until(`(${FOCUSED_ROW}||{dataset:{}}).dataset.armed==='1'`, 5000);
+        await js(`window.__focusedRow=()=>{const a=document.activeElement;return (a&&a.closest&&a.closest('#needsPanel .inbox-row'))||null;};true`); // once per page, no interpolation (the jsLiteral lint); answers true, never the function
+        const ok = await until(`(window.__focusedRow()||{dataset:{}}).dataset.armed==='1'`, 5000);
         assert.ok(ok, `${at}: ${label}: the focused row is armed within 5 s ${JSON.stringify(await panelState())}`);
-        assert.strictEqual(await js(`(${FOCUSED_ROW}||{dataset:{}}).dataset.armed`), '1', `${at}: ${label}: the row the wait saw armed is the focused row`);
-        await js(`window.__atKey=null;document.addEventListener('keydown',()=>{const r=${FOCUSED_ROW};window.__atKey=r?r.dataset.armed:'none';},{capture:true,once:true})`);
+        assert.strictEqual(await js(`(window.__focusedRow()||{dataset:{}}).dataset.armed`), '1', `${at}: ${label}: the row the wait saw armed is the focused row`);
+        await js(`window.__atKey=null;document.addEventListener('keydown',()=>{const r=window.__focusedRow();window.__atKey=r?r.dataset.armed:'none';},{capture:true,once:true})`);
         await key(k, [], { char: 'always' });
         assert.strictEqual(await js('window.__atKey'), '1', `${at}: ${label}: the row is armed at the key press ${JSON.stringify(await panelState())}`);
       };
