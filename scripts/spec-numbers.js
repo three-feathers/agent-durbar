@@ -30,7 +30,7 @@
  * The list is chosen by the arguments, not by package.json: with NO head given (no `--head`, no PR_HEAD_SHA: the local `npm run specs:numbers`) it is the
  * wide list; with `--head` or PR_HEAD_SHA set (the CI call: `--root pr` and PR_HEAD_SHA, PR_NUMBER in the environment) it is the open PR heads only. `--wide`
  * forces the wide list and `--narrow` the open PR list, with or without a head; both together is exit 2. (A machine that has PR_HEAD_SHA set gets the
- * open PR list unless it passes `--wide`.)
+ * open PR list unless it passes `--wide`.) With GITHUB_ACTIONS or CI set and no head, no --wide and no --narrow the run is exit 2 (a CI job that forgot its head).
  * Wide (spec 021 FR-085 delta 2026-11-23): besides the open PR heads, also the remote branches that have no open PR
  * (`git ls-remote --heads origin`, names as argv, never in a shell string) and the branches checked out in this machine's worktrees
  * (`git worktree list --porcelain`). A head whose PR is closed and not merged, at that very tip, is skipped and printed as a NOTE (read with
@@ -466,6 +466,8 @@ async function main(argv, env, deps = {}) {
   if (argv.includes('--wide') && argv.includes('--narrow')) { say('specs:numbers: NOT CHECKED: --wide and --narrow together; pass one'); return 2; }
   // no head given at all (the local `npm run specs:numbers`): the wide list; a head given by --head or PR_HEAD_SHA (the CI call): open PR heads only; --wide / --narrow decide either way
   const headGiven = !!(argOf(argv, '--head') || env.PR_HEAD_SHA);
+  const inCi = ['GITHUB_ACTIONS', 'CI'].some((k) => env[k] && !/^(false|0)$/i.test(env[k]));
+  if (inCi && !headGiven && !argv.includes('--wide') && !argv.includes('--narrow')) { say('specs:numbers: NOT CHECKED: CI call without a head: pass --head or --narrow (a CI job must never change its list silently)'); return 2; }
   const wide = argv.includes('--wide') || (!argv.includes('--narrow') && !headGiven);
   const exclude = String(argOf(argv, '--exclude') || env.PR_NUMBER || '');
   const headRev = String(argOf(argv, '--head') || env.PR_HEAD_SHA || 'HEAD');

@@ -9,7 +9,7 @@ const path = require('path');
 const { execFileSync, spawnSync } = require('child_process');
 // Hermetic (the CI environment differs from a laptop): no ambient variable may change what the scripts print. The secret-looking names (the scrub masks their values) and PR_* are removed here;
 // the cases that need one set it themselves.
-for (const k of Object.keys(process.env)) if (/(TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIAL|API[_-]?KEY|PRIVATE|AUTH|^GH_|^GITHUB_|^ANTHROPIC|^OPENAI|^COPILOT|^NPM_|^PR_(NUMBER|HEAD_SHA)$)/i.test(k)) delete process.env[k];
+for (const k of Object.keys(process.env)) if (/(TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIAL|API[_-]?KEY|PRIVATE|AUTH|^GH_|^GITHUB_|^ANTHROPIC|^OPENAI|^COPILOT|^NPM_|^CI$|^PR_(NUMBER|HEAD_SHA)$)/i.test(k)) delete process.env[k];
 const modPath = process.env.SN_MODULE ? path.resolve(process.env.SN_MODULE) : path.join(__dirname, 'spec-numbers.js');
 const sn = require(modPath);
 const { plumbCommit, gitRun } = require('./git-index-helper.js');
@@ -477,6 +477,20 @@ try {
     r = await viaEnv([], {}, { branchState: state() });
     assert.strictEqual(r.code, 1, 'WIDE-default-nohead a run with no head given compares the wide list: ' + r.out);
     assert.match(r.out, /T020 is also in branch nopr/, 'WIDE-default-nohead the no-head run sees the branch without a PR');
+    // a CI environment without a head and without a flag is exit 2, never a silent list (GITHUB_ACTIONS or CI, each alone); with a head, a flag, or neither variable it runs
+    for (const [why, env] of [['GITHUB_ACTIONS=true', { GITHUB_ACTIONS: 'true' }], ['CI=true', { CI: 'true' }], ['CI=1', { CI: '1' }]]) {
+      r = await viaEnv([], env, noAsk);
+      assert.strictEqual(r.code, 2, `WIDE-ci-nohead ${why} without a head or a flag is exit 2: ` + r.out);
+      assert.match(r.out, /CI call without a head: pass --head or --narrow/, `WIDE-ci-nohead-say ${why} says why`);
+    }
+    r = await viaEnv([], { CI: 'false', GITHUB_ACTIONS: '0' }, { branchState: state() });
+    assert.strictEqual(r.code, 1, 'WIDE-ci-false CI=false and GITHUB_ACTIONS=0 are not CI: the no-head run is wide: ' + r.out);
+    r = await viaEnv(['--narrow'], { GITHUB_ACTIONS: 'true', CI: 'true' }, noAsk);
+    assert.strictEqual(r.code, 0, 'WIDE-ci-narrow --narrow in CI runs the open PR list: ' + r.out);
+    r = await viaEnv(['--wide'], { GITHUB_ACTIONS: 'true' }, { branchState: state() });
+    assert.match(r.out, /T020 is also in branch nopr/, 'WIDE-ci-wide --wide in CI is explicit: it runs the wide list');
+    r = await viaEnv([], { GITHUB_ACTIONS: 'true', PR_HEAD_SHA: tip }, noAsk);
+    assert.strictEqual(r.code, 0, 'WIDE-ci-env-ok the CI call with PR_HEAD_SHA is narrow and passes: ' + r.out);
     r = await viaEnv(['--narrow'], {}, noAsk);
     assert.strictEqual(r.code, 0, 'WIDE-narrow-flag --narrow without a head compares open PR heads only: ' + r.out);
     r = await viaEnv(['--wide', '--head', tip], {}, { branchState: state() });

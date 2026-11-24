@@ -199,6 +199,12 @@ const has = (list, re) => list.some((t) => re.test(t));
   assert.ok(has(dead.notes, /^skipped origin\/002-other: its PR is closed and not merged/), 'PP-numbers-dead-note it is named as a NOTE: ' + dead.text);
   assert.ok(has(run({ head: mineN, branch: '001-mine', branchState: closedAtTip('e'.repeat(40)) }).fails, /T501/), 'PP-numbers-dead-tip a closed PR at another tip is a live branch');
   assert.ok(has(run({ head: mineN, branch: '001-mine', branchState: () => ({ status: 1, stdout: '' }) }).fails, /numbers: not checked \(could not read the PR state of branch 002-other/), 'PP-numbers-unread an unreadable PR state is a FAIL, not a pass');
+  // a head with no base with origin/main was not compared: a FAIL, never ok (a branch pushed between the fetch and the ls-remote)
+  { mk([], { 'specs/001-a/tasks.md': '# A\n- [ ] T380 one\n' }, 'orphan', { ref: 'refs/remotes/origin/003-orphan' });
+    const o = run({ head: good, branch: '001-good' });
+    assert.ok(has(o.fails, /numbers: not checked \(no base with origin\/main for origin\/003-orphan/), 'PP-numbers-nobase a head with no base is a FAIL, not ok: ' + o.text);
+    assert.ok(!has(o.lines.map((l) => l.text), /^numbers: FR-500/), 'PP-numbers-nobase-ok no ok line for numbers when a head was not compared');
+    G(['update-ref', '-d', 'refs/remotes/origin/003-orphan']); }
   // the ok line counts remote branches and worktree branches, and says so
   assert.ok(has(run({ head: good, branch: '001-good' }).lines.map((l) => l.text), /numbers: FR-500 T500; checked against origin\/main and \d+ other head\(s\) \(remote branches and worktree branches\)/), 'PP-numbers-wording the ok line does not call worktree branches remote heads');
   // fetch mode compares the heads the remote lists NOW: a remote-tracking ref of a deleted branch is not compared

@@ -251,6 +251,8 @@ function preflight(n, deps = {}) {
     const lookup = (name) => { const r = gh(['pr', 'list', `--head=${name}`, '--state', 'all', '--json', 'headRefOid,mergedAt,state,isCrossRepository']); try { if (r.status !== 0) return null; const rows = JSON.parse(r.stdout); return Array.isArray(rows) ? rows : null; } catch { return null; } };
     const { res, clashes, notes } = sn.resolveWide(root, heads, head, { headRef: branch, baseRef: pr.baseRefName, sameRepo: true }, lookup);
     for (const t of notes) add('NOTE', t.replace(/^NOTE /, ''));
+    // a head whose base cannot be computed was not compared: fail closed, never ok (a branch pushed between the fetch and the ls-remote)
+    if (res.noBase.length) throw new Error(`no base with origin/main for ${res.noBase.join(', ')}`);
     const found = numberFindings(clashes);
     const addedIds = [...res.branchAdds.values()].flatMap((s) => [...s]);
     for (const f of found) add(f.level, f.text);
