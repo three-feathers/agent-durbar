@@ -8,6 +8,9 @@
  * it is REMOVABLE only when ALL hold; anything else is "needs a look" or "finished but dirty" and is never deleted:
  *   - it is on a branch (not detached, not locked, not bare), its directory exists, and no other registered worktree and no `.git` at ANY depth
  *     (node_modules aside) lives inside it;
+ *   - no other registered worktree has a top-level link (symlink, or a junction on Windows; `node_modules` is the usual one: agents share one
+ *     `npm ci` that way) that resolves into it, dangling or not (issue #2063): removing it would break that worktree. It is kept as "linked from <path>";
+ *     once the dependant is removed, the next run frees it;
  *   - no merge, rebase, cherry-pick, revert or bisect is in progress (MERGE_HEAD, REBASE_HEAD, rebase-merge, rebase-apply, CHERRY_PICK_HEAD,
  *     REVERT_HEAD, sequencer, BISECT_LOG; found with `git rev-parse --git-path`);
  *   - the branch has a PR in THIS repository (not a fork) whose head commit is the worktree's HEAD or a descendant of it (the branch name alone
@@ -178,6 +181,8 @@ function classify(wt, ctx) {
   if (!fs.existsSync(wt.path)) return { verdict: 'look', why: 'directory missing (git worktree prune clears the record)' };
   const inner = (ctx.all || []).find((o) => o.path !== wt.path && inside(o.path, wt.path));
   if (inner) return { verdict: 'look', why: 'contains worktree ' + inner.path };
+  const linked = linkedFrom(wt, ctx.all || []);
+  if (linked) return { verdict: 'look', why: 'linked from ' + linked + ' (its link would dangle)' };
   const nested = findNestedGit(wt.path);
   if (nested) return { verdict: 'look', why: 'contains a nested .git: ' + nested };
   // one git call answers for every marker: one line per --git-path, in order
@@ -216,6 +221,28 @@ function classify(wt, ctx) {
     return { verdict: 'look', why: 'closed PR and the branch is not on origin' };
   }
   return { verdict: 'removable', why: 'PR ' + state.toLowerCase() + ', clean, nothing unpushed' };
+}
+
+/**
+ * The first top-level link of another registered worktree that points into wt (issue #2063), as 'path (name)', or null. Symlinks and Windows
+ * junctions both show as links to lstat; a dangling link counts through its readlink text. Cheap: one readdir per sibling, no git, no network.
+ */
+function linkedFrom(wt, all) {
+  for (const o of all) {
+    if (o.path === wt.path) continue;
+    let entries;
+    try { entries = fs.readdirSync(o.path, { withFileTypes: true }); } catch { continue; }
+    for (const e of entries) {
+      if (!e.isSymbolicLink()) continue;
+      const p = path.join(o.path, e.name);
+      let target;
+      try { target = fs.realpathSync.native(p); } catch {
+        try { target = path.resolve(o.path, fs.readlinkSync(p)); } catch { continue; }
+      }
+      if (inside(target, wt.path)) return o.path + ' (' + e.name + ')';
+    }
+  }
+  return null;
 }
 
 function isLink(p) { try { return fs.lstatSync(p).isSymbolicLink(); } catch { return false; } }
