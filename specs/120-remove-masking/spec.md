@@ -158,7 +158,14 @@ Principle III's text never names masking: masking was how agents read "never rea
 
 **Version: 1.2.0 to 1.3.0, MINOR.** Not MAJOR: no principle is removed and no existing rule's words change. Not PATCH: it adds a checkable rule (FR-442, enforced by FR-450's test) and changes stored behaviour (FR-443). Made with `/speckit.constitution` in its own PR after the owners' yes, with the Sync Impact Report (stage 0).
 
-**The two published advisories (GHSA-9w5g, GHSA-5h28).** `[KNOWN GAP]` Their text is not in the repository (`git grep`, `CHANGELOG.md`, `changelog.d/`, `docs/`, commit messages: no match), and this draft did not read them on GitHub. Rule for the owners' check (T547): for each advisory, if its fix was a mask, stage 1 must replace it with a structural fix (the text is not written, sent or shown where the advisory said it leaked) before stage 2 starts; if its fix was not a mask, it is untouched. Each stage PR names both advisories and says it keeps them fixed.
+**The two published advisories are not about masking** (relayed by Paco's bot, an owner's agent, 2026-11-24; the fix PRs read at their merge commits). Both are patched in 0.1.15 and both fixes are structural:
+
+- **GHSA-9w5g-g9x5-5pq4**: how Claude Code's `CLAUDE.md` imports were handled; fixed by #1383 (`src/adapters/claude.ts`, tests in `scripts/test-claude-adapter.ts`).
+- **GHSA-5h28-qhj8-q5m9**: the agent-file confirmation trusted the file on disk rather than the bytes the person was shown; fixed by #1416 (`selectProfile` in `src/main/ipc/profiles.ts`, `hashAgentFile` in `src/main/agenttrust.ts`, `src/adapters/claudeAgents.ts`; tests in `scripts/test-agentconfirm.ts`, `scripts/test-agentprofiles.ts`, `scripts/test-claude-adapter.ts`, `scripts/test-adapter-contract.ts`).
+
+Neither fix calls a mask (`git grep` for `redact` or `mask` in `agenttrust.ts`, `claudeAgents.ts`, `test-agentconfirm.ts`, `test-agentprofiles.ts`: none), so option C needs nothing from them except **keeping both fixes** (FR-452).
+
+- **FR-452** No removal stage changes the two advisory fixes (#1383, #1416): their code paths stay, and their tests stay and stay green in every stage PR; a stage that edits `test-claude-adapter.ts` (it has two masking mentions) changes only its masking asserts. Each stage PR says it ran those suites.
 
 ## 5. The staged plan (each stage one small PR, in order; none starts before the written yes)
 
@@ -167,13 +174,13 @@ Line counts: `wc -l` of the files a stage deletes, plus the call lines of sectio
 | Stage | What | Lines changed (estimate) |
 |---|---|---|
 | 0 | Owners' rule line: no new masking work, no daily masking batch, spec 119 paused; the constitution amendment PR | ~30 |
-| 1 | E1 to E4 carry no agent text (FR-443..FR-446); FR-449; **the planted-marker test (FR-450)**; advisories checked | ~600 (about 350 new test lines, 250 changed) |
+| 1 | E1 to E4 carry no agent text (FR-443..FR-446); FR-449; **the planted-marker test (FR-450)** | ~600 (about 350 new test lines, 250 changed) |
 | 2 | Window masks go: `safetext.js` (260), the renderer call sites (~25 call lines, ~400 mention lines), the FR-197 sink table `test-live-mask.ts` (552), the window drivers `check-done-desk-mask.js`, `check-toolchip-mask.js`, `check-console-mask.js`, `check-question-header-mask.js` (710), `test-safetext*.ts` and corpora (603), `test-announce-mask.ts` (260) | ~2,800 deleted |
 | 3 | Main-side shown-text masks go: `convmask.ts` (227), `mcpmask.ts` (440), `activitymask.ts` (41), ~90 call lines in main, MCP, notes, brain view, adapters; `test-convmask.ts`, `test-mcp-errormask.ts`, `test-toolargs-mask.ts`, `test-mask-paths.ts`, `test-notesmask.ts`, `test-overmask.ts` (1,568); asserts in the 85 mixed test files | ~2,600 |
 | 4 | `redact.ts` (3,681) goes; the kept helpers move to a small text module; `test-redact*.ts`, growth and held libraries, `redact-main-ref.ts`, `test-maskoutgoing*.ts`, `sandbox-real-mask.ts` (7,934) | ~11,600 deleted |
 | 5 | Docs and spec status: dated deltas in specs 012, 041, 052, 084, 105 (and 005, 045, 058, 083, 119, which also name the mask), docs/safety.md (FR-451), docs/features.md (14 masking lines), README (1), docs/agent-notes.md (8), changelog fragment telling users | ~200 |
 
-**Tests that must stay after every stage:** the planted-marker test (FR-450); the invisible-character tests (`unhide`); the environment-hygiene tests (`secretFlag`, `envVarName`); spec 041 FR-012's read-tool tests; FR-449's "set / not set" tests.
+**Tests that must stay after every stage:** the planted-marker test (FR-450); the advisory fixes' tests (`test-agentconfirm.ts`, `test-agentprofiles.ts`, `test-adapter-contract.ts`, and the #1383 and #1416 asserts of `test-claude-adapter.ts`, FR-452); the invisible-character tests (`unhide`); the environment-hygiene tests (`secretFlag`, `envVarName`); spec 041 FR-012's read-tool tests; FR-449's "set / not set" tests.
 
 ## 6. Risks and honest limits
 
@@ -184,7 +191,7 @@ Line counts: `wc -l` of the files a stage deletes, plus the call lines of sectio
 - **The checkpoint folder** holds copies of edited files while the app runs, and after a crash until the next start (not masked today either).
 - **stderr** may be kept by a desktop launcher or the OS; after stage 1 it holds no agent text, but older runs' lines stay where the OS put them.
 - **What Durbar still does not do** (principle III's other bullets stay): it does not store sign-ins (the vendor runtime does), has no telemetry, starts read-only, spawns no shell with user text, validates IPC in main, and parses untrusted files with caps.
-- `[KNOWN GAP]` Not verified: the advisories' fixes; what each OS does with stderr of a desktop-launched app; any run of the app (this is a reading of the code at `e9a712197`).
+- `[KNOWN GAP]` Not verified: what each OS does with stderr of a desktop-launched app; any run of the app (this is a reading of the code at `e9a712197`).
 
 ### Open questions for the owners (plain words)
 

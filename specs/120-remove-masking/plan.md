@@ -27,7 +27,7 @@ First make every place that keeps or sends agent text carry none (stage 1: the a
 | V Calm UI | Nothing new on screen; fewer `[redacted]` words. |
 | VI Parity | No path or shell change; the marker test runs in `npm test` on all three OSes. |
 | VII Quality gates | The marker test is written first in stage 1 and must fail on today's `DURBAR_LOG` debug log run without its mask (a planted mutant), then pass after the change. |
-| VIII Honest limits | The advisories' fixes, OS handling of stderr and screen sharing are written as limits (spec section 6). |
+| VIII Honest limits | OS handling of stderr and screen sharing are written as limits (spec section 6). The two published advisories are not about masking; their structural fixes and tests stay (FR-452). |
 
 ## Design decisions
 

@@ -6,7 +6,7 @@
 
 - [ ] T545 The three owners' written decision (A, B or C) recorded under `## Changes` with the date and where each said it; on A or B this spec is marked `superseded`. [section 7]
 - [ ] T546 Owners' rule line: no new masking work, no daily masking batch, spec 119 paused (a one-line `AGENTS.md` change by the owners, naming the rule it replaces, FR-063). [section 5 stage 0]
-- [ ] T547 The owners check GHSA-9w5g and GHSA-5h28: for each, whether its fix was a mask; a masked fix gets a structural replacement task in stage 1. [section 4]
+- [ ] T547 Each stage PR (1 to 5) keeps the two advisory fixes (#1383 for GHSA-9w5g, #1416 for GHSA-5h28) untouched and runs `scripts/test-agentconfirm.ts`, `scripts/test-agentprofiles.ts`, `scripts/test-adapter-contract.ts` and `scripts/test-claude-adapter.ts` green; a stage that edits `test-claude-adapter.ts` changes only its masking asserts. [FR-452]
 - [ ] T548 Constitution amendment PR with `/speckit.constitution` (principle III, version 1.2.0 to 1.3.0, Sync Impact Report), text of spec section 4. [section 4]
 - [ ] T549 Answers to Q42, Q43, Q44 written into the spec. [section 6]
 
@@ -19,7 +19,6 @@
 - [ ] T554 `DURBAR_LOG` records kinds, ids, phases, lengths and codes; adapters' debug lines lose stderr text. [FR-445]
 - [ ] T555 Durbar MCP read tools return name, transport, on/off and health of MCP servers; spec 041 delta. [FR-446]
 - [ ] T556 Values Durbar holds by field (MCP extras' environment and header values) reach no window, log or agent: "set" or "not set"; tests. [FR-449]
-- [ ] T557 Any structural replacement T547 found. [section 4]
 
 ## Stage 2: window masks (depends on stage 1)
 
