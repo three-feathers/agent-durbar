@@ -684,6 +684,19 @@ if (worldIds.includes('retro')) {
         assert.strictEqual(spawnSync('python3', ['-I', tool, '--rim', path.join(dir, 'p09-think@4.webp'), planted], { encoding: 'utf8' }).status, 0, 'the planted bust (--rim) is written');
         assert.ok(measure([planted]).rows[0].bust![0] > 0, 'red (--rim): a bust with the rim put back fails');
       }
+      { /* T472 (FR-410, review of #2086): the variant crew.js picks (FR-407's measure on the avatar background, set.json hd.tiles.edge) meets 3:1 on every background the app ships
+           (each theme's --avatar-bg) and on mid-greys; red: the old lightness cut (relative luminance over 0.5) on a mid-grey */
+        const src = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'theme.js'), 'utf8') + fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'styles.css'), 'utf8');
+        const shipped = [...new Set([...src.matchAll(/--avatar-bg['"]?\s*[:,]\s*['"]?(#[0-9a-fA-F]{6})/g)].map((m) => m[1].toLowerCase()))];
+        assert.ok(shipped.length >= 5, `T472: the shipped avatar backgrounds are found (${shipped.join(' ')})`);
+        const MID = ['#808080', '#909090', '#a0a0a0', '#7a6f62', '#6b7a8f'];
+        const choose = (bgs: string[], cut: boolean): Record<string, { worst: [number, string]; fails: number; first: string[] }> => { const r = spawnSync('python3', ['-I', tool, '--tilechoice', path.join(RO, 'sets', 'retro', 'set.json'), dir, ...(cut ? ['--cut'] : []), ...bgs], { encoding: 'utf8', maxBuffer: 16 * 1024 * 1024 }); assert.strictEqual(r.status, 0, 'check-arcade-hd.py --tilechoice: ' + r.stderr); return JSON.parse(r.stdout.trim().split('\n').pop() as string); };
+        const got = choose([...shipped, ...MID], false);
+        assert.deepStrictEqual(Object.entries(got).filter(([, v]) => v.fails > 0).map(([bg, v]) => `${bg}: ${v.fails} tiles under 3:1 (${v.first.join(', ')})`), [], 'T472: on every shipped avatar background and the mid-greys the chosen tiles read at 3:1');
+        console.log(`HD tile choice: ${shipped.length} shipped backgrounds and ${MID.length} mid-tones, the lowest edge ${Math.min(...Object.values(got).map((v) => v.worst[0]))}:1`);
+        const cut = choose(['#808080'], true)['#808080']; console.log(`HD tile choice, red: the lightness cut on #808080 leaves ${cut.fails} tiles under 3:1`);
+        assert.ok(cut.fails > 0, 'red: the lightness cut gives a mid-grey background the lit-edge tiles, which do not read there');
+      }
       { /* T472 (coordinator's look at F1): every frame's face box holds its whole head (hair, hood, a cap, a raised hand at head height), so FR-401's badge, which keeps clear of the face box, keeps clear of the head; red: the boxes cut 10 px lower */
         const heads = (setPath: string): string[] => { const r = spawnSync('python3', ['-I', tool, '--heads', setPath, dir], { encoding: 'utf8', maxBuffer: 16 * 1024 * 1024 }); assert.strictEqual(r.status, 0, 'check-arcade-hd.py --heads: ' + r.stderr); return JSON.parse(r.stdout).heads; };
         assert.deepStrictEqual(heads(path.join(RO, 'sets', 'retro', 'set.json')), [], 'T472: every HD frame\'s face box, and every bust\'s head box, holds its head');

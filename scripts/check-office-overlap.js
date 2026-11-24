@@ -412,8 +412,8 @@ async function driver(ctx) {
   const userTheme = process.env.OFFICE_USER_THEME ? JSON.parse(fs.readFileSync(process.env.OFFICE_USER_THEME, 'utf8')) : null;
   const wantTheme = userTheme ? userTheme.id : (process.env.OFFICE_THEME || '');
   /* spec 077 FR-070: OFFICE_CHARACTERS=<value> (theme, minimalist, cheeky, prehistoric, pirate, monster, royal, rebels, mine) puts who sits at the desks in the address too; checked like the theme */
-  const wantChars = /^(theme|minimalist|cheeky|prehistoric|pirate|monster|royal|rebels|mine)$/.test(process.env.OFFICE_CHARACTERS || '') ? process.env.OFFICE_CHARACTERS : '';
-  if (process.env.OFFICE_CHARACTERS && !wantChars) throw new Error('OFFICE_CHARACTERS must be theme, minimalist, cheeky, prehistoric, pirate, monster, royal, rebels or mine');
+  const wantChars = /^(theme|minimalist|cheeky|prehistoric|pirate|monster|royal|rebels|mine|pixel)$/.test(process.env.OFFICE_CHARACTERS || '') ? process.env.OFFICE_CHARACTERS : '';
+  if (process.env.OFFICE_CHARACTERS && !wantChars) throw new Error('OFFICE_CHARACTERS must be theme, minimalist, cheeky, prehistoric, pirate, monster, royal, rebels, mine or pixel');
   /* spec 102 T226 (FR-267): OFFICE_WORLD=retro or cave (with OFFICE_VIEW=real) draws the arcade or the cave, the worlds behind a flag, in the address like the theme; only a listed value (spec 097 Changes 2026-11-14) */
   const wantWorld = process.env.OFFICE_WORLD === 'retro' || process.env.OFFICE_WORLD === 'cave' ? process.env.OFFICE_WORLD : '';
   if (process.env.OFFICE_WORLD && !wantWorld) throw new Error('OFFICE_WORLD must be retro or cave');
@@ -441,10 +441,16 @@ async function driver(ctx) {
       const ch = await ctx.js(`window.THEME.characters()`);
       if (ch !== wantChars) throw new Error(`characters ${wantChars} were not applied (on screen: ${ch})`);
       /* Cheeky: the kit drawn must be the crew, and the desk scenes on screen (none when every room is closed) must show it, or the run would measure the theme's own figures */
-      if (wantChars === 'cheeky' || wantChars === 'mine') {
+      if (wantChars === 'cheeky' || wantChars === 'mine' || wantChars === 'pixel') {
         const crewOn = `window.THEME.sceneKit()==='crew'&&(()=>{const sc=[...document.querySelectorAll('#stage svg.scene')].filter(s=>s.getClientRects().length);return !sc.length||sc.some(s=>/\\|crew(\\||$)/.test(s.dataset.sig||''));})()`;
         try { await ctx.waitFor(crewOn, 8000); } catch (e) { /* reported below */ }
         if (!(await ctx.js(crewOn))) throw new Error(`characters ${wantChars}: the desks on screen do not draw the crew kit`);
+      }
+      if (wantChars === 'pixel') { /* spec 102 T472 (review of #2086): Retro pixel's HD heads stay inside their desk (calm UI: 15 agents, both sizes, light and dark); OFFICE_MUTANT=pixelbig blows them up 3x and must fail here */
+        if (process.env.OFFICE_MUTANT === 'pixelbig') await ctx.js(`(()=>{const s=document.createElement('style');s.textContent='#stage svg.scene,#stage svg.crew-head{overflow:visible!important}#stage svg.crew-head image{transform:scale(3);transform-origin:50% 50%}';document.head.appendChild(s);return 1})()`);
+        const heads = await ctx.js(`(()=>{const out=[];let n=0;for(const im of document.querySelectorAll('#stage .desk svg.crew-head image')){if(!im.getClientRects().length)continue;n++;const h=im.closest('svg.crew-head').getBoundingClientRect(),i=im.getBoundingClientRect(),d=im.closest('.desk').getBoundingClientRect();const v={x:Math.max(h.left,i.left),y:Math.max(h.top,i.top),r:Math.min(h.right,i.right),b:Math.min(h.bottom,i.bottom)};if(!/sets\\/retro\\/hd\\//.test(im.getAttribute('href')||''))out.push('not an HD head: '+im.getAttribute('href'));else if(i.width>h.width*1.5||v.x<d.left-0.5||v.y<d.top-0.5||v.r>d.right+0.5||v.b>d.bottom+0.5)out.push('a head leaves its desk: '+JSON.stringify({head:[i.left,i.top,i.width,i.height].map(Math.round),desk:[d.left,d.top,d.width,d.height].map(Math.round)}));}return {n,out};})()`);
+        if (!heads.n) throw new Error('characters pixel: no Retro pixel head on a desk');
+        if (heads.out.length) throw new Error('characters pixel: ' + heads.out.slice(0, 3).join('; '));
       }
     }
     if (!motionShown) { motionShown = true; console.log('check:office: motion ' + ((await ctx.js(`matchMedia('(prefers-reduced-motion: reduce)').matches`)) ? 'reduced' : 'on')); }

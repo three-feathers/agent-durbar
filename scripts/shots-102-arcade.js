@@ -689,7 +689,7 @@ const run = async (ctx, reqs) => {
   for (const theme of [null, DARK]) {
     reqs.clear();
     await H.load({ w: 1440, h: 900, query: { officeview: 'flat', simfreeze: '1', characters: 'pixel', sim: '15' }, ready: `!!document.querySelector('#floor')`, settle: false });
-    if (theme) await js(`window.THEME.setTheme(${JSON.stringify(theme)});0`);
+    if (theme) await js(`window.THEME.setTheme(JSON.parse(${jsLiteral(JSON.stringify(theme))}));0`);
     await ctx.sleep(1500);
     assert.ok(await js(`[...document.querySelectorAll('image')].some(i=>(i.getAttribute('href')||'').includes('/sets/retro/hd/'))`), 'the flat office draws the HD heads (' + (theme ? 'dark theme' : 'default theme') + ')');
     await noOld('T472, the flat office (' + (theme ? 'dark theme' : 'default theme') + ')');

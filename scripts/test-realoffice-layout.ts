@@ -572,7 +572,7 @@ assert.ok(Object.values(META.stand).some((s) => Object.values(s.foot as Record<s
       const TOL = 0.03; /* the figure's height on screen within 3 % of the old set's: the HD busts' seat numbers are fitted to the old figures, rounding stays far below this */
       const rs = sj('retro') as Record<string, unknown>, oldSet = { ...rs, hd: undefined } as unknown;
       type L2 = { big?: boolean; zones: { desks: { id: string; glass: Rect; person: { y: number; w: number; h: number; pid: string; pose: string } | null }[] }[]; lounge?: { desks: { id: string; plate: Rect; person: { h: number } | null }[] } };
-      const YIELD = new Set<string>();
+      const YIELD = new Set<string>(), SHRINK: Record<string, number> = {};
       const check = (hdSet: unknown, tag: string): string[] => {
         const out: string[] = [];
         for (const w of ['photo', 'cave']) for (const [W, H] of SIZES.slice(0, 2)) for (const k of [3, 15]) for (let r = 0; r < 15; r++) {
@@ -584,7 +584,7 @@ assert.ok(Object.values(META.stand).some((s) => Object.values(s.foot as Record<s
             const dp = d.person as { y: number; w: number; h: number; pid: string; pose: string }, hb = (rs.hd as { busts: Record<string, { w: number; head: Record<string, number[]> }> }).busts[dp.pid], gl = (d as { glass?: Rect }).glass;
             const limit = (d as unknown as { slot: Rect }).slot.y + STRIP_H, lim = n.big && gl ? Math.max(limit, gl.y + gl.h) : limit; /* the row's sign strip, and at the big level the screen's glass */
             const yielded = !!hb && !!hb.head[dp.pose] && Math.abs(dp.y + Math.min(...[dp.pose, ({ typeA: 'typeB', waveA: 'waveB' } as Record<string, string>)[dp.pose]].filter((q) => q && hb.head[q]).map((q) => hb.head[q][1])) * (dp.w / hb.w) - lim - HEAD_CLEAR) < 0.5 && dp.h < b.person.h; /* the height rule yields to the gap (FR-409) */
-            if (yielded) YIELD.add(`${dp.pid} ${n.big ? 'big' : k}`);
+            if (yielded) { YIELD.add(`${dp.pid} ${n.big ? 'big' : k}`); SHRINK[dp.pid] = Math.max(SHRINK[dp.pid] || 0, 1 - dp.h / b.person.h); }
             else if (Math.abs(d.person.h / b.person.h - 1) > TOL) out.push(`${tag} ${w} ${W}x${H} ${k}: ${d.id} figure ${d.person.h.toFixed(1)} px, the old set's ${b.person.h.toFixed(1)} px`);
           }
           for (const d of n.lounge ? n.lounge.desks : []) { const b = od.get(d.id) as { plate: Rect } | undefined; if (b && d.plate.w < b.plate.w - 0.5) out.push(`${tag} ${w} ${W}x${H} ${k}: lounge card ${d.id} ${d.plate.w.toFixed(1)} px, the old set's ${b.plate.w.toFixed(1)} px`); }
@@ -593,6 +593,8 @@ assert.ok(Object.values(META.stand).some((s) => Object.values(s.foot as Record<s
       };
       assert.deepStrictEqual(check(rs, 'HD'), [], 'T472: in the rows worlds the HD figure is as tall as the old one (3 %) and the lounge card no narrower');
       assert.deepStrictEqual([...YIELD].sort(), ['p04 15', 'p08 15', 'p09 15', 'p09 big', 'p11 15', 'p12 15', 'p12 big', 'p15 15'], 'T472: only these people yield height to the sign strip or the glass (by level)');
+      const SHRINK_MAX: Record<string, number> = { p12: 10.3, p09: 5.9, p04: 0.2, p08: 0.2, p11: 0.2, p15: 0.1 }; /* % smaller than the old figure where the gap wins (measured 2026-11-24) */
+      for (const [pid, v] of Object.entries(SHRINK)) assert.ok(100 * v <= (SHRINK_MAX[pid] || 0) + 0.05, `T472: ${pid} yields ${(100 * v).toFixed(1)} % of its height, over its ${SHRINK_MAX[pid] || 0} %`);
       const hd = rs.hd as { busts: Record<string, { bodyH: number; headTop: number; h: number }>; loungeW: number };
       const canvasScaled = { ...rs, hd: { ...hd, busts: Object.fromEntries(Object.entries(hd.busts).map(([k, v]) => [k, { ...v, bodyH: v.h, headTop: 0 }])) } }; /* mutant: scaled on the canvas, not on the figure */
       assert.ok(check(canvasScaled, 'red').some((x) => / figure /.test(x)), 'red: a set scaled on its canvas (not its figure) draws a smaller person and fails');
@@ -603,8 +605,8 @@ assert.ok(Object.values(META.stand).some((s) => Object.values(s.foot as Record<s
     { // spec 102 T472 (coordinator's look at F1, round 2): the dots and the ask bubble clear an HD head; at the big level the head stays HEAD_CLEAR below the screen's glass
       type D2 = { id: string; state: string; person: { x: number; y: number; w: number; h: number; pid: string; pose: string; fileB: string | null } | null; dots: { x: number; y: number } | null; bubble: { x: number; y: number } | null; glass: Rect };
       const rs = sj('retro') as Record<string, unknown>;
-      const marks = (set: Record<string, unknown>, tag: string): { over: string[]; gap: string[]; minGap: number; n: number; small: number } => {
-        const hd = (set.hd as { busts: Record<string, { w: number; h: number; head?: Record<string, number[]> }> }).busts, over: string[] = [], gap: string[] = []; let minGap = Infinity, n = 0, small = 0;
+      const marks = (set: Record<string, unknown>, tag: string): { over: string[]; gap: string[]; minGap: number; n: number; small: number; per: Record<string, [number, number]>; big: Record<string, number> } => {
+        const hd = (set.hd as { busts: Record<string, { w: number; h: number; head?: Record<string, number[]> }> }).busts, over: string[] = [], gap: string[] = []; let minGap = Infinity, n = 0, small = 0; const per: Record<string, [number, number]> = { photo: [0, 0], cave: [0, 0] }, big: Record<string, number> = { photo: 0, cave: 0 }; /* per world below the big level: [marks touching a head, marks] */
         const B: Record<string, string> = { typeA: 'typeB', waveA: 'waveB' };
         for (const w of ['photo', 'cave']) for (const [W, H] of SIZES.slice(0, 2)) for (const k of [3, 15]) for (const st of ['thinking', 'waiting', 'limit', 'working', 'idle'] as RealState[]) for (let r = 0; r < 15; r++) {
           const m = model(k, k > 4 ? 4 : 1, { away: false, states: [st] }); m.folders.flatMap((f) => f.agents).forEach((a, i) => { a.person = PEOPLE[(i + r) % 15]; });
@@ -616,12 +618,12 @@ assert.ok(Object.values(META.stand).some((s) => Object.values(s.foot as Record<s
             const x0 = Math.min(...ps.map((v) => v[0])), x1 = Math.max(...ps.map((v) => v[0] + v[2])), y0 = Math.min(...ps.map((v) => v[1])), y1 = Math.max(...ps.map((v) => v[1] + v[3]));
             const head: Rect = { x: d.person.x + x0 * kk, y: d.person.y + y0 * kk, w: (x1 - x0) * kk, h: (y1 - y0) * kk };
             const at = `${tag} ${w} ${W}x${H} ${k} ${st} ${d.person.pid} ${d.person.pose}`;
-            if (d.dots) { n++; if (inter({ x: d.dots.x, y: d.dots.y, w: DOTS_BOX.w, h: DOTS_BOX.h }, head, 0)) { if (L.big) over.push(`${at}: the dots on the head`); else small++; } } /* below the big level a head can fill the room from the sign strip to the glass: counted, not yet a rule (owner question) */
-            if (d.bubble) { n++; if (inter({ x: d.bubble.x, y: d.bubble.y - 24, w: 24, h: 24 }, head, 0)) { if (L.big) over.push(`${at}: the bubble on the head`); else small++; } }
+            if (d.dots) { n++; if (!L.big) per[w][1]++; else big[w]++; if (inter({ x: d.dots.x, y: d.dots.y, w: DOTS_BOX.w, h: DOTS_BOX.h }, head, 0)) { if (L.big) over.push(`${at}: the dots on the head`); else { small++; per[w][0]++; } } } /* below the big level a head can fill the room from the sign strip to the glass: counted, not yet a rule (owner question) */
+            if (d.bubble) { n++; if (!L.big) per[w][1]++; else big[w]++; if (inter({ x: d.bubble.x, y: d.bubble.y - 24, w: 24, h: 24 }, head, 0)) { if (L.big) over.push(`${at}: the bubble on the head`); else { small++; per[w][0]++; } } }
             if (L.big && d.glass.y + d.glass.h < head.y + head.h) { const g = head.y - (d.glass.y + d.glass.h); minGap = Math.min(minGap, g); if (g < HEAD_CLEAR - 0.01) gap.push(`${at}: ${g.toFixed(1)} px under the glass`); }
           }
         }
-        return { over, gap, minGap, n, small };
+        return { over, gap, minGap, n, small, per, big };
       };
       const ok = marks(rs, 'HD');
       assert.deepStrictEqual(ok.over, [], 'T472: no head-anchored mark on an HD head');
@@ -630,8 +632,12 @@ assert.ok(Object.values(META.stand).some((s) => Object.values(s.foot as Record<s
       const red = marks(noHead, 'red');
       assert.ok(red.over.length > 0, 'red: marks placed without the HD heads land on a head');
       assert.ok(red.gap.length > 0, 'red: without the HD heads a head reaches the glass');
-      assert.ok(ok.small < red.small, `T472: below the big level fewer marks touch a head than without the HD heads (${ok.small} against ${red.small})`);
-      console.log(`T472 head marks: ${ok.n} dots and bubbles, every one at the big level clear of the HD heads, ${ok.small} below it touching a head (without the heads ${red.small}); smallest head-to-glass gap at the big level ${ok.minGap.toFixed(1)} px (floor ${HEAD_CLEAR})`);
+      /* [KNOWN GAP] (coordinator, 2026-11-23): below the big level (15 agents) a head can fill the room from the sign strip to the screen. Counted per world over 15 agents at 1440x900 and
+         1280x800, 15 seatings, the thinking dots and the ask bubble (states thinking, waiting, limit): 1350 marks, those whose box meets the measured head box (hd.busts[pid].head) held at a ceiling */
+      const HEAD_TOUCH_MAX = 136;
+      for (const w of ['photo', 'cave']) assert.ok(ok.per[w][1] === 1350 && ok.per[w][0] <= HEAD_TOUCH_MAX, `T472 [KNOWN GAP]: ${w}: ${ok.per[w][0]} of ${ok.per[w][1]} marks at 15 agents touch a head (ceiling ${HEAD_TOUCH_MAX} of 1350)`);
+      assert.ok(red.per.photo[0] > HEAD_TOUCH_MAX && red.per.cave[0] > HEAD_TOUCH_MAX, `red: without the head boxes ${red.per.photo[0]} and ${red.per.cave[0]} marks touch a head, over the ceiling`);
+      console.log(`T472 head marks: ${ok.n} dots and bubbles; at the big level (3 agents) all ${ok.big.photo} (Photo office) and ${ok.big.cave} (cave) clear of the HD heads; at 15 agents ${ok.per.photo[0]} of ${ok.per.photo[1]} (Photo office) and ${ok.per.cave[0]} of ${ok.per.cave[1]} (cave) touch a head (without the head boxes ${red.per.photo[0]} and ${red.per.cave[0]}); smallest head-to-glass gap at the big level ${ok.minGap.toFixed(1)} px (floor ${HEAD_CLEAR})`);
     }
     // T296 (FR-326): the Retro pixel set has its own seen-from-behind running frames, so the Terminal visitor draws `runA`/`runB`, not the `letter` fallback
     const st = sj('retro').stand as Record<string, { poses: Record<string, number[]> }>;

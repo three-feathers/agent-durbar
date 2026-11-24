@@ -182,6 +182,22 @@ if sys.argv[1:2] in (['--speckle'], ['--alpha'], ['--colour'], ['--edge'], ['--n
     im.save(sys.argv[3], 'WEBP', lossless=True, exact=True)
     sys.exit(0)
 
+if sys.argv[1:2] == ['--tilechoice']:   # spec 102 T472 (FR-410): for each background (argv[4:], #rrggbb), the tile variant crew.js picks from set.json hd.tiles.edge (`--cut`: the old lightness cut instead) and every chosen tile's edge on it
+    sj = json.load(open(sys.argv[2]))['hd']['tiles']; d = sys.argv[3]; bgs = [a for a in sys.argv[4:] if a.startswith('#')]; cut = '--cut' in sys.argv; res = {}
+    for bg in bgs:
+        rgb = tuple(int(bg[i:i + 2], 16) for i in (1, 3, 5)); L = rel_lum(rgb); worst = (99, ''); fails = []
+        for pid in sj['people']:
+            e = sj['edge'][pid]; c = lambda r, i: max((max(r, L) + 0.05) / (min(r, L) + 0.05), (max(i, L) + 0.05) / (min(i, L) + 0.05))
+            light = len(e) == 4 and ((L > 0.5) if cut else c(e[2], e[3]) > c(e[0], e[1]))
+            for pose in sj['poses']:
+                for S in sj['sizes']:
+                    f = os.path.join(d, f'{pid}-{pose}-t{S}{"l" if light else ""}.webp'); im = Image.open(f).convert('RGBA'); w, h = im.size
+                    v = legibility([q[:3] for q in im.getdata()], [q[3] > 0 for q in im.getdata()], w, h, (rgb,))[0]
+                    if v < worst[0]: worst = (v, os.path.basename(f))
+                    if v < 3: fails.append(os.path.basename(f))
+        res[bg] = {'worst': worst, 'fails': len(fails), 'first': fails[:3]}
+    print(json.dumps(res)); sys.exit(0)
+
 if sys.argv[1:2] == ['--heads']:   # spec 102 T472: for each frame `set.json` names (argv[2]; its pictures in argv[3] or the `hd` folder beside it), the opaque pixels from its top down to its face box's bottom must lie inside the face box (the head, hair and hood included)
     sj = json.load(open(sys.argv[2]))['hd']; d = sys.argv[3] if len(sys.argv) > 3 else os.path.join(os.path.dirname(sys.argv[2]), 'hd'); bad = []
     for pid, poses in sorted(sj['people'].items()):

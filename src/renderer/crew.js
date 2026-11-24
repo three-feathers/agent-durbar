@@ -159,10 +159,15 @@
   /* the Characters values Flat draws as heads, the set each names, the id prefix (both sets name their people p01..p15, so `retro-p01` and `office-p01`; no clash in FACE, OWN or a stored crew) and the scaling: Retro pixel is nearest (sharp), Office people are photos (smooth) */
   const FLAT_SETS = { pixel: { set: 'retro', prefix: 'retro-', sharp: true, hd: true }, office: { set: 'office', prefix: 'office-', sharp: false } };
   /* spec 102 T472 (owner 2026-11-23 20:12 UTC: one set everywhere): Retro pixel's heads are crops of its HD busts (`hd/<p>-<frame>@4.webp`, `HEADS.retro` measured on them), and a round
-     avatar of a size the set has a tile for draws that tile 1:1 (FR-405): `TILE_SIZES` in CSS px and twice them; `TILE_LIGHT`: the people whose tiles carry the lit edge, which a light
-     surface does not show, so a light avatar background draws their `l` tile (the same face, the dark outline kept; FR-407 measured on each surface) */
+     avatar of a size the set has a tile for draws that tile 1:1 (FR-405): `TILE_SIZES` in CSS px and twice them. `TILE_EDGE` (from set.json `hd.tiles.edge`, the same numbers: test:crew):
+     per person the median relative luminance of the tiles' outline ring and of the ring inside it, then the same for the `l` variant (the people with the lit edge: the face with its dark
+     outline). On the theme's own avatar background the variant whose edge contrast (FR-407's measure) is higher is drawn, whatever the background's lightness. */
   const TILE_SIZES = [22, 24, 26, 32, 44, 48, 52, 64];
-  const TILE_LIGHT = new Set(['p01', 'p02', 'p03', 'p04', 'p05', 'p06', 'p08', 'p10', 'p11', 'p13', 'p14']);
+  const TILE_EDGE = {'p01': [0.6324, 0.0575, 0.006, 0.0575], 'p02': [0.6324, 0.4467, 0.006, 0.4467], 'p03': [0.6324, 0.023, 0.006, 0.023], 'p04': [0.6324, 0.1553, 0.006, 0.1553], 'p05': [0.6324, 0.0844, 0.006, 0.0844], 'p06': [0.6324, 0.0322, 0.006, 0.0322], 'p07': [0.006, 0.5594], 'p08': [0.6324, 0.085, 0.006, 0.085], 'p09': [0.006, 0.5626], 'p10': [0.6324, 0.0575, 0.006, 0.0575], 'p11': [0.6324, 0.0125, 0.006, 0.0125], 'p12': [0.006, 0.4632], 'p13': [0.6324, 0.1776, 0.006, 0.1776], 'p14': [0.6324, 0.1794, 0.006, 0.1794], 'p15': [0.006, 0.3888]};
+  const relLum = (hex) => { const m = /^#([0-9a-f]{6})$/i.exec(String(hex || '').trim()); if (!m) return null; const c = [0, 2, 4].map((i) => { const v = parseInt(m[1].slice(i, i + 2), 16) / 255; return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); }); return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]; };
+  const ratio = (a, b) => (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
+  /* '' or 'l': the variant of `key`'s tiles that reads better on a background of relative luminance `bg` (null: unknown, the default) */
+  const tileVariant = (key, bg) => { const e = TILE_EDGE[key]; if (!e || e.length < 4 || bg === null) return ''; const c = (r, i) => Math.max(ratio(r, bg), ratio(i, bg)); return c(e[2], e[3]) > c(e[0], e[1]) ? 'l' : ''; };
   const FLAT_IDS = {};
   for (const [choice, f] of Object.entries(FLAT_SETS)) FLAT_IDS[choice] = Object.keys(HEADS[f.set]).map((k) => f.prefix + k);
   /* where a head is drawn in the 200x124 stage: a square above the desk top (y 86), left of the monitor (x 112); the round avatars and the lounge seat show the same square */
@@ -177,12 +182,12 @@
     const o = flatOf(id); if (!o || !has(HEAD_FRAME, pose)) return null;
     return { href: file(id, pose), pic: o.heads.pic, crop: o.heads[pose], box: HEAD_BOX, sharp: !!o.f.sharp };
   }
-  /* T472: a round avatar `px` CSS px across at ratio `dpr` on a `light` or dark background: the tile of that many device px (else of `px`), or null (the head crop is drawn) */
-  function tile(id, pose, px, dpr, light) {
+  /* T472: a round avatar `px` CSS px across at ratio `dpr` on the avatar background `bg` (#rrggbb): the tile of that many device px (else of `px`), the variant that reads better there, or null (the head crop is drawn) */
+  function tile(id, pose, px, dpr, bg) {
     const o = flatOf(id); if (!o || !o.f.hd || !has(HEAD_FRAME, pose) || !(px > 0)) return null;
     const dev = Math.round(px * (dpr || 1)), S = TILE_SIZES.includes(dev) ? dev : TILE_SIZES.includes(px) ? px : 0;
     if (!S) return null;
-    const l = light && TILE_LIGHT.has(o.key) ? 'l' : '';
+    const l = tileVariant(o.key, relLum(bg));
     return { href: 'realoffice/sets/' + o.f.set + '/hd/' + o.key + '-' + HEAD_FRAME[pose] + '-t' + S + l + '.webp', pic: [S, S], crop: [0, 0, S], box: HEAD_BOX, sharp: true };
   }
   const k = BOX.w / PIC;
@@ -348,5 +353,5 @@
     if (row) return on(row, flags) ? 'full' : 'closed';
     return crewName(c) ? 'heads' : 'default';
   }
-  return { registerOwn, ownName, ownRev, viewBoxAt, folderKey, pinKey, pinCrew, WORLD_FLAGS, WORLDS, REAL_SETS, PIXEL_CHARACTERS, offeredWorlds, parseWorld, peopleFor, levelFor, CREWS, PREHISTORIC_IDS, PIRATE_IDS, MONSTER_IDS, ROYAL_IDS, REBELS_IDS, ALL_IDS, idsFor, storeKey, POSES, BOX, PX_PER_UNIT, FACE, FACE_W, FACE_H, FACE_CROP, HEADS, HEAD_FRAME, HEAD_BOX, FLAT_SETS, FLAT_IDS, TILE_SIZES, TILE_LIGHT, head, tile, faceBox, viewBox, poseFor, file, files, usable, IDS, MAX_ENTRIES, MAX_ID, seeded, seededRand, pickCharacter, assignCrew, pruneCrew, loadCrew };
+  return { registerOwn, ownName, ownRev, viewBoxAt, folderKey, pinKey, pinCrew, WORLD_FLAGS, WORLDS, REAL_SETS, PIXEL_CHARACTERS, offeredWorlds, parseWorld, peopleFor, levelFor, CREWS, PREHISTORIC_IDS, PIRATE_IDS, MONSTER_IDS, ROYAL_IDS, REBELS_IDS, ALL_IDS, idsFor, storeKey, POSES, BOX, PX_PER_UNIT, FACE, FACE_W, FACE_H, FACE_CROP, HEADS, HEAD_FRAME, HEAD_BOX, FLAT_SETS, FLAT_IDS, TILE_SIZES, TILE_EDGE, tileVariant, relLum, head, tile, faceBox, viewBox, poseFor, file, files, usable, IDS, MAX_ENTRIES, MAX_ID, seeded, seededRand, pickCharacter, assignCrew, pruneCrew, loadCrew };
 })());
