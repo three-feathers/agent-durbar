@@ -356,7 +356,7 @@ When the start check finds a new version, the Settings entry and the card get a 
 
 ### Out of scope
 
-- Updating Durbar itself (spec 076 FR-174 reserves its updater; no updater exists).
+- Updating Durbar itself: spec 118 (Durbar's own update check, built on `main` up to its T010 and not turned on before its T014), governed by spec 076 FR-174 (`updates.mode`, `updates.feedUrl`).
 - Updating the bundled Copilot runtime outside a Durbar release.
 - Installing a specific older version (rollback, pinning). Npm and winget can; Homebrew casks cannot. A later spec, if asked.
 - Turning on or off an app's own auto-updater (Claude Code's `autoUpdates`, `DISABLE_AUTOUPDATER`).
@@ -499,6 +499,10 @@ When the start check finds a new version, the Settings entry and the card get a 
 - **`features.agentAppUpdateCheck: false` and `updates.mode: "off"`** hide the check entirely (076 FR-158); `allowInAppInstall: false` keeps the read-only button (FR-022). T036 updates 076 FR-174.
 
 ## Changes
+
+### 2026-11-24: *Out of scope* points to spec 118 for Durbar's own update (spec 118 T013)
+
+- The line *Updating Durbar itself (spec 076 FR-174 reserves its updater; no updater exists)* said the old thing spec 076's FR-174 delta of 2026-11-24 removes. It now points to spec 118, which builds Durbar's own update check (on `main` up to its T010, not turned on before its T014), governed by spec 076 FR-174. Nothing else in this spec changes; its other mentions of `updates.mode` already say it is about Durbar's own updater.
 
 ### 2026-11-02: Linux real check (T040): a vendor "updates are disabled" answer exits 0 (issue #662)
 
