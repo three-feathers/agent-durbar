@@ -608,6 +608,14 @@ section('folders', async () => {
     const secret = 'ghp' + '_' + 'A1b2C3d4'.repeat(5);
     const masked = parseTeamRecord(badRec({ brief: 'use ' + secret + ' now' }));
     ok(!JSON.stringify(masked ?? '').includes(secret), 'a token in the brief never comes back as it was');
+    // the session ids of a member are checked when READ: a path, an id that starts with `-` and a repeat are dropped, the good ones stay in order
+    const sess = parseTeamRecord(badRec({ sessions: [{ id: '../x' }, { id: '-a' }, { id: 'ok1' }, { id: 'ok1', briefSent: true }, { id: 'a b' }, { id: 5 }, { id: 'ok2', briefSent: true }] }));
+    eq(sess?.members[0].sessions, [{ id: 'ok1' }, { id: 'ok2', briefSent: true }], 'read: `../x`, `-a`, a space, a number and a repeated id are dropped');
+    // the template names of the record are cleaned when READ: a bidi control or a token never comes back as it was
+    const tok = 'team ' + secret;
+    const tn = parseTeamRecord({ ...badRec({}), templates: ['Fine', 'Ev\u202Eil', tok, 'Fine'] })!.templates;
+    ok(tn.includes('Fine') && tn.filter((x) => x === 'Fine').length === 1, 'read: a good template name stays, once');
+    ok(!tn.some((x) => /[\u202A-\u202E\u2066-\u2069]/.test(x) || x.includes(secret)), 'read: a bidi-control name and a token-shaped name come back cleaned or dropped');
     eq(new FolderStore(path.join(dir, 'tok.json')).setTeamRecord(ws, badRec({ brief: 'use ' + secret + ' now' })), false, 'a record whose brief would be masked is refused whole');
     // restoreTeamRecord: the record from before, the names of the batch dropped, a created room removed
     const sr = new FolderStore(path.join(dir, 'restore.json')); sr.load();
@@ -794,6 +802,9 @@ section('main', () => {
   ok(/rollback: \(key, previous, previousNames, removeRoom\) => !!folderStore && folderStore\.restoreTeamRecord\(key, previous, previousNames, removeRoom\),/.test(create), 'rollback hands the record, the names and the flag to restoreTeamRecord in its own order');
   ok(/restoreTeamRecord\(workspace: string, previous: unknown, previousNames: unknown, removeRoom: boolean\)/.test(fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'main', 'folders.ts'), 'utf8')), 'restoreTeamRecord takes (key, previous, previousNames, removeRoom), the order main.ts calls it in');
   ok(/commit: \(key, team, infos\) => !!folderStore && folderStore\.setTeamRecord\(key, team, infos\.map\(\(i\) => \(\{ src: i\.adapterId \?\? DEFAULT_ADAPTER, id: i\.id, name: i\.alias \?\? '' \}\)\)\),/.test(create), 'commit writes each member as { src: its adapter (default when none), id, name: its alias or empty }');
+  ok(/place: \(info\) => \{ router\.bind\(info\.id, info\.adapterId \?\? DEFAULT_ADAPTER\); agents\.set\(info\.id, info\); \},/.test(create), 'place binds the agent to its app, then puts it in the office');
+  ok(/unplace: \(id\) => \{ agents\.delete\(id\); agentState\.remove\(id\); router\.unbind\(id\); \},/.test(create), 'unplace removes the agent from the office, its state and the router (no ghost after a failed place)');
+  ok(/announce: \(info\) => toRenderer\('agent:added', info\),/.test(create), 'announce tells the window with agent:added');
   const target = src.slice(src.indexOf('resolveTarget: (t)'), src.indexOf('pick: async', src.indexOf('resolveTarget: (t)')));
   ok(/teamCount: \(key\) => folderStore\?\.get\(key\)\?\.team\?\.members\.length \?\? 0,/.test(target), 'resolveTarget counts the target room\'s members from the saved record');
 });
@@ -872,6 +883,9 @@ section('main', () => {
     { name: 'a non-boolean sendBrief is read as true', from: "if (typeof o.sendBrief !== 'boolean')\n        return undefined;", to: 'if (false)\n        return undefined;', section: 'folders', file: 'folders' },
     { name: 'a restore does not put the older names back', from: 'cur.sessionNames = parseSessionNames(previousNames);', to: 'cur.sessionNames = (cur.sessionNames ?? []).filter((x) => !/^agent-/.test(x.id));', section: 'realstore', file: 'folders' },
     { name: 'a restore keeps the new record', from: 'if (prev)\n            cur.team = prev;\n        else\n            delete cur.team;', to: '', section: 'folders', file: 'folders' },
+    { name: 'a session id is not checked when read', from: "exports.SESSION_NAME_ID.test(x.id) && !sessions.some", to: 'true && !sessions.some', section: 'folders', file: 'folders' },
+    { name: 'a repeated session id is kept', from: ' && !sessions.some((y) => y.id === x.id))', to: ')', section: 'folders', file: 'folders' },
+    { name: 'a template name of the record is not cleaned when read', from: 'const n = (0, names_1.cleanDisplayName)(t, 60);', to: 'const n = typeof t === \'string\' ? t : undefined;', section: 'folders', file: 'folders' },
     { name: 'a restore leaves the created room', from: 'if (removeRoom && !prev)', to: 'if (false)', section: 'folders', file: 'folders' },
   ] as never;
   const base = (m: { file?: string }): string => (m.file === 'folders' ? origFold : origOps);
