@@ -136,8 +136,8 @@ body.has-bridge #liveBar{display:flex}
 .note.signin .signin-details{margin-top:6px;font-size:11px;color:var(--muted)}
 .note.signin .signin-details pre{white-space:pre-wrap;word-break:break-word;margin:4px 0 0;font-size:11px}
 .note .btn{margin:0}
-.note.perm{flex:1 1 100%;max-width:100%;align-self:stretch}
-.chips>.note.perm{box-sizing:border-box}
+.note.perm{max-width:100%;align-self:stretch}
+.chips>.note.perm{box-sizing:border-box;flex:1 1 100%} /* a full line of the wrapping chip row only: in the message column a 100% basis is a height and stretched the card (spec 068 FR-415) */
 .note.perm.settled{background:var(--note);border-color:var(--line)}
 .note.perm.settled.denied{background:var(--bad-bg);border-color:var(--tone-bad-line)}
 /* questions from the agent (spec 012 FR-130) */
