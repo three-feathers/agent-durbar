@@ -52,7 +52,7 @@ const DRIVERS = [
   { name: 'check-settings-nav' }, // spec 052 FR-226 (T219): the Settings section list: built from the headings, jump, aria-current follows the scroll, keys, every world, reduced motion, narrow row
   { name: 'check-settings-nav', label: 'check-settings-nav retro', env: { DRIVER_WORLD: 'retro' } }, // spec 102 T321 (issue #1399): the Settings section list over the arcade (its Real office row only)
   { name: 'check-069-toggle-scroll' }, // spec 069 FR-069 (issue #1624): a Settings switch that repaints the page keeps the scroll, the focus and the open Advanced block
-  { name: 'check-error-text', focus: true }, // spec 045 FR-066/FR-434 (owner decision 2026-11-23): an error toast shows the real error, masked, as text, with Copy details
+  { name: 'check-error-text' }, // spec 045 FR-066/FR-434 (owner decision 2026-11-23): an error toast shows the real error, masked, as text, with Copy details
   { name: 'check-settings-save' }, // spec 011 FR-012 (issue #1023): a Settings row whose save fails returns to the value in force and says so
   { name: 'check-rail' }, // spec 005 FR-190, FR-194, FR-216 and 052 FR-215: the agent rail's List view: fit, order, two heights, folders that collapse, Your door, Mac drag areas
   { name: 'check-rail-resize' }, // spec 005 FR-236 (issue #1223): the agent rail's width: drag, keys, double-click reset, remembered, clamped when the window shrinks, both sizes
