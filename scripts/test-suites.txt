@@ -184,6 +184,7 @@ test:realoffice-assets
 test:roomorder
 test:memoryfolder
 test:memoryremote
+test:memoryops
 test:railorder
 test:composersize
 test:innerscroll

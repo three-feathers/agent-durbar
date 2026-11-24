@@ -1,6 +1,6 @@
 /**
  * App settings kept as one small JSON file in userData (spec 011 FR-012): the global default AI-credit cap and the app's own choices.
- * No tokens, no content. One path: spec 093 FR-006's `newFolderParent` (where the last new folder was created; a path, never a
+ * No tokens, no content. Two paths: spec 116 FR-001's `memoryFolder` (the office memory folder, checked in main), and spec 093 FR-006's `newFolderParent` (where the last new folder was created; a path, never a
  * token). Tolerant read, atomic write, failures swallowed (like FolderStore).
  */
 import * as fs from 'fs';
@@ -99,6 +99,46 @@ export class SettingsStore {
   acceptBrowserNote(): boolean {
     this.commit({ ...this.s, browserNoteAccepted: true }, 'browserNoteAccepted');
     return true;
+  }
+
+  /** Spec 116 FR-001: the office memory folder (a real path main checked), or none. A bad stored value reads as none. */
+  get memoryFolder(): string | undefined {
+    return parseNewFolderParent(this.s.memoryFolder);
+  }
+  /** Off unless the file says exactly `true` and a folder is stored. */
+  get memoryOn(): boolean {
+    return this.s.memoryOn === true && this.memoryFolder !== undefined;
+  }
+  get memoryKeepInGit(): boolean {
+    return this.s.memoryKeepInGit === true;
+  }
+  /** Links a folder (already checked by `checkMemoryFolder`) and turns the memory on, in one write; `undefined` clears both (Stop using). Clearing is the safe direction: in force for this run even when it cannot be saved. Returns whether it reached disk. */
+  setMemory(folder: string | undefined): boolean {
+    const next: AppSettings = { ...this.s };
+    delete next.memoryFolder;
+    delete next.memoryOn;
+    if (folder !== undefined) {
+      const f = parseNewFolderParent(folder);
+      if (!f) return false;
+      next.memoryFolder = f;
+      next.memoryOn = true;
+    }
+    return this.commit(next, folder === undefined ? 'memoryOn' : undefined);
+  }
+  /** Only a boolean changes it; on needs a stored folder. Off is the safe direction (kept for this run when it cannot be saved). */
+  setMemoryOn(v: unknown): boolean {
+    if (typeof v !== 'boolean' || (v && this.memoryFolder === undefined)) return false;
+    const next: AppSettings = { ...this.s };
+    if (v) next.memoryOn = true;
+    else delete next.memoryOn;
+    return this.commit(next, v ? undefined : 'memoryOn');
+  }
+  setMemoryKeepInGit(v: unknown): boolean {
+    if (typeof v !== 'boolean') return false;
+    const next: AppSettings = { ...this.s };
+    if (v) next.memoryKeepInGit = true;
+    else delete next.memoryKeepInGit;
+    return this.commit(next);
   }
 
   /** Spec 080 FR-031: where a chat link opens on a plain click; the session browser unless the user chose the system browser. */
