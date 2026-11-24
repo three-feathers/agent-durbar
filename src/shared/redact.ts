@@ -587,18 +587,26 @@ let narrowOn = true;
 const OAUTH_STATE = /((?:[?&#;]|%(?:3[Ff]|26|23|3[Bb]))[Ss][Tt][Aa][Tt][Ee](?:=|%3[Dd]))([^&;#\s"'\\<>]+)/g;
 const STATE_WORD = /^[a-z]{1,7}$/;
 const LINK_CODE = /(?:[?&#;]|%(?:3[Ff]|26|23|3[Bb]))[Cc][Oo][Dd][Ee](?:=|%3[Dd])/;
+/** Whether a link holds a code parameter, as written or with its percent escapes undone (up to 8 times: a name the URL rule decodes is a name here too; pre-review of PR 2098). */
+const hasCodeParam = (run: string): boolean => {
+  if (LINK_CODE.test(run)) return true;
+  let t = run;
+  for (let k = 0; k < 8 && t.includes('%'); k++) { const d = t.replace(/%([0-9A-Fa-f]{2})/g, (_m: string, h: string) => String.fromCharCode(parseInt(h, 16))); if (d === t) break; t = d; if (LINK_CODE.test(t)) return true; }
+  return false;
+};
 const LINK_STOP = /[\s"'<>]/;
 let stateScan = 0;
-/** Characters the link scan of `maskOAuthState` read since the last call (the growth check of FR-196). */
+/** Characters the link scan of `maskLinkState` read since the last call (the growth check of FR-196). */
 export const _stateScanForTest = (): number => { const n = stateScan; stateScan = 0; return n; };
-function maskOAuthState(text: string, mask: string): string {
+// named for what it reads (a link's state parameter), not for a credential: a callee named like one made the static analysis read its output, the masked text, as a password everywhere it is later hashed for an id (review of PR 2098)
+function maskLinkState(text: string, mask: string): string {
   // matches come left to right and runs do not overlap (each ends at a stop character), so the last run is kept and a scan never goes back past it: linear
   let ra = -1, rb = -1, rc = false, scanned = 0;
   const linkHasCode = (at: number): boolean => {
     if (at >= ra && at < rb) return rc;
     let a = at; while (a > scanned && !LINK_STOP.test(text[a - 1])) { a--; stateScan++; }
     let b = at; while (b < text.length && !LINK_STOP.test(text[b])) { b++; stateScan++; }
-    ra = a; rb = b; scanned = b; rc = LINK_CODE.test(text.slice(a, b)); return rc;
+    ra = a; rb = b; scanned = b; rc = hasCodeParam(text.slice(a, b)); return rc;
   };
   return text.replace(OAUTH_STATE, (m: string, keep: string, v: string, at: number) => (narrowOn && STATE_WORD.test(v) && !linkHasCode(at) ? m : keep + mask));
 }
@@ -717,7 +725,7 @@ function maskShapes(text: string, mask: string, guard: boolean): string {
   // A function, so `$&` or `$1` in the mask stays literal; group 1, when a pattern has one, is what names the secret and stays.
   const replaced = (m: RegExp[]): void => { for (const p of m) out = out.replace(p, (_m: string, keep?: unknown) => (typeof keep === 'string' ? keep : '') + mask); };
   replaced(HELD_PATTERNS);
-  out = maskOAuthState(out, mask); // the last rule of `HELD_PATTERNS` before FR-196, in the same place
+  out = maskLinkState(out, mask); // the last rule of `HELD_PATTERNS` before FR-196, in the same place
   out = maskList(out, mask, guard, HELD_SHAPES);
   replaced(PATTERNS);
   out = maskCookies(out, mask);
@@ -1176,7 +1184,7 @@ const HEADER_FLAGS = new Set(['-h', '--header', '--headers', '--http-header']);
 
 /**
  * Does a flag, header, query or `NAME=` name look secret (spec 041 FR-053)? Case-insensitive, after percent-decoding and splitting on
- * `-`, `_`, `.` and camelCase boundaries (`privateKey` is `private`, `key`). Over-masking is accepted (`--no-auth`, `--session-name`).
+ * `-`, `_`, `.` and camelCase boundaries (`privateKey` is `private`, `key`). Over-masking is accepted (`--session-name`); a negated long flag takes no next word as its value (spec 012 FR-196).
  */
 export function secretFlag(flag: string): boolean {
   let n = String(flag ?? '').replace(/^(?:-+|\/)/, '').slice(0, 256);
@@ -2268,7 +2276,7 @@ const oauthParam = (name: string): boolean => {
 };
 
 /** FR-196 (#2060 item 8): a `state` (the name percent-decoded, any case) whose value is a `STATE_WORD`. A link that holds a `code` parameter is left to
-    `redact`, which the URL rules end with: `maskOAuthState` hides the state there (one test of the link, not two). */
+    `redact`, which the URL rules end with: `maskLinkState` hides the state there (one test of the link, not two). */
 const harmlessState = (name: string, v: string): boolean => {
   if (!narrowOn || !STATE_WORD.test(v)) return false;
   let n = name; if (n.includes('%')) { try { n = decodeURIComponent(n); } catch { return false; } }
