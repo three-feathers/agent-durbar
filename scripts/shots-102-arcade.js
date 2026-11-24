@@ -48,9 +48,8 @@ const run = async (ctx, reqs) => {
   const roomFetched = (name) => [...reqs.values()].filter((e) => new RegExp('/realoffice/worlds/retro/' + name + '\\.webp(\\?|#|$)').test(e.url));
   /* spec 102 FR-406 made complete (issue 2055): with the HD switch on, no old file of the set's people is asked for or shown anywhere in the arcade (cabinet, lounge stool,
      lobby visitor, avatars in the rail, the chat header, the inbox and the door; the helper strip draws the world's kids). The request log and every picture on the page */
-  const HD_ON = process.env.DURBAR_HD_PEOPLE === '1', OLD = /\/realoffice\/sets\/retro\/p\d\d-[^/?#]*\.webp/;
+  const OLD = /\/realoffice\/sets\/retro\/p\d\d-[^/?#]*\.webp/;
   const noOld = async (tag) => {
-    if (!HD_ON) return;
     const shown = await js(`[...document.querySelectorAll('img,image,source')].flatMap(i=>[i.getAttribute('src'),i.getAttribute('srcset'),i.getAttribute('href')]).filter(Boolean).flatMap(v=>v.split(/,\\s*/)).map(v=>v.trim().split(' ')[0]).map(v=>new URL(v,location.href).href)`);
     const old = [...[...reqs.values()].map((e) => e.url), ...shown.map((u) => decodeURIComponent(u))].filter((u) => OLD.test(u));
     assert.deepStrictEqual([...new Set(old)], [], tag + ': FR-406: with the switch on, no old picture of the set\'s people is fetched or shown');
@@ -304,15 +303,6 @@ const run = async (ctx, reqs) => {
     await must(`document.querySelectorAll('#doorFaces img').length>0`, 'Your door\'s faces', 10000);
     await noOld('FR-406 walk, Your door');
     };
-  /* review of #2074 (Paco, item 1): CI runs the "no old file" check: the `hd` entry of ui-suite turns the switch on and runs the size cases (3 and 15 agents at both sizes) and the walk alone */
-  if (process.env.ARCADE_CASES === 'hd') {
-    assert.ok(HD_ON, 'ARCADE_CASES=hd needs the HD switch (DURBAR_HD_PEOPLE=1)');
-    for (const [w, h] of SIZES) for (const n of [3, 15]) { await loadArcade(w, h, n, { simfreeze: '1' }); await must(PICS, 'the pictures'); await noOld(`${n} agents at ${w}x${h}`); }
-    await hdWalk();
-    console.log('[102-arcade] ran the HD cases only (ARCADE_CASES=hd): 3 and 15 agents at ' + SIZES.map(([w, h]) => w + 'x' + h).join(', ') + ', the hover card, a chat, the inbox, Your door: no old person file fetched or shown');
-    return;
-  }
-
   if (process.env.ARCADE_CASES === 'narrow') { /* test only: the wide-font entry runs the narrow cases alone */
     for (const [w, h] of SIZES) await narrowCases(w, h);
     await narrowTail();
@@ -685,7 +675,25 @@ const run = async (ctx, reqs) => {
   await must(`document.documentElement.dataset.world===undefined&&document.documentElement.dataset.ui===undefined`, 'the flat office: no world, the theme\'s UI style');
   assert.strictEqual(await js(`document.documentElement.dataset.dark===undefined`), true, 'leaving: the theme\'s light page');
 
-  if (HD_ON) await hdWalk();
+  await hdWalk(); /* spec 102 T472: no switch any more: the walk always runs */
+  /* spec 102 T472 (owner 2026-11-23 20:12 UTC: one set everywhere): no world asks for an old Retro pixel picture: the Photo office and the cave draw the HD busts and the 288 standing
+     frames, the flat office the HD bust crops and the avatar tiles, in a light theme and a dark one */
+  for (const world of ['photo', 'cave']) {
+    reqs.clear();
+    await H.load({ w: 1440, h: 900, query: { officeview: 'real', simfreeze: '1', characters: 'pixel', sim: '15', ...(world === 'cave' ? { world: 'cave', worldflags: 'cave' } : {}) }, ready: REAL, settle: false });
+    await must(PICS, 'the pictures, ' + world);
+    assert.ok(await js(`[...document.querySelectorAll('#stage .ro-person')].some(i=>(i.getAttribute('src')||'').includes('/sets/retro/hd/'))`), world + ': the Retro pixel people drawn from the HD busts');
+    await noOld('T472, ' + world + ' with the Retro pixel people');
+  }
+  const DARK = JSON.parse(fs.readFileSync(path.join(__dirname, 'fixtures', 'themes', 'check-dark.json'), 'utf8')); /* a dark theme: its own light-or-dark avatar background picks the tile (FR-410) */
+  for (const theme of [null, DARK]) {
+    reqs.clear();
+    await H.load({ w: 1440, h: 900, query: { officeview: 'flat', simfreeze: '1', characters: 'pixel', sim: '15' }, ready: `!!document.querySelector('#floor')`, settle: false });
+    if (theme) await js(`window.THEME.setTheme(JSON.parse(${jsLiteral(JSON.stringify(theme))}));0`);
+    await ctx.sleep(1500);
+    assert.ok(await js(`[...document.querySelectorAll('image')].some(i=>(i.getAttribute('href')||'').includes('/sets/retro/hd/'))`), 'the flat office draws the HD heads (' + (theme ? 'dark theme' : 'default theme') + ')');
+    await noOld('T472, the flat office (' + (theme ? 'dark theme' : 'default theme') + ')');
+  }
   console.log('[102-arcade] PASS');
 };
 
