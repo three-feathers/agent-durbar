@@ -2618,6 +2618,6 @@ All sets keep FR-204's caps: no frame over 80 KB (largest 54 KB, Office), none o
 - Not looked at on a real 1.25 or 1.5 screen (the rule is tested, the look is not).
 - macOS and Windows not run; no real session.
 - Flat's heads and other worlds' `rows` draw the old frames until the flip (T472).
-  - 2026-11-24 (T502): the Characters preview `previews/retro.webp` still drew the first pictures after the flip. It is retaken with `npm run shots:docs -- --only shots-102-previews` and now shows the HD people. The driver writes all four previews: `cave.webp` shows the current cave layout, while `plain.webp` and `photo.webp` change by bytes only.
+  - 2026-11-24 (T502): the arcade's world-card preview `previews/retro.webp` still drew the first pictures after the flip. It is retaken with `npm run shots:docs -- --only shots-102-previews` and now shows the HD people. The driver writes all four previews: `cave.webp` shows the current cave layout, while `plain.webp` and `photo.webp` change by bytes only.
 
 **Numbers** (`npm run specs:numbers`, `origin/main` and the open PR heads, 2026-11-23): FR-391..FR-408, T466..T473, T501; no Q.
