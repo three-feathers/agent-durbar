@@ -390,7 +390,44 @@ function parseCase() {
   assert.deepStrictEqual(mod.ignoredData(['dist/a.js', 'x.tsbuildinfo', '.env', 'notes/out/x.md', 'release/s.p12', 'dist/.env.local', 'dist/k.pem', 'out/a/b.js', 'a/x.tsbuildinfo', '']), ['.env', 'notes/out/x.md', 'release/s.p12', 'dist/.env.local', 'dist/k.pem', 'a/x.tsbuildinfo'], 'ignored: only non-rebuildable ignored entries are data');
 }
 
+/** Fail-closed link cases (review of #2124), on plain folders: no git, so they run on every OS. */
+function linkCases(modPath) {
+  const mod = require(modPath);
+  const base = fs.mkdtempSync(path.join(tmp, 'lk-'));
+  const mk = (...p) => { const d = path.join(base, ...p); fs.mkdirSync(d, { recursive: true }); return d; };
+  const wtDir = mk('a'); const other = mk('b');
+  const row = (dir) => ({ path: dir, branch: 'x', head: '0', detached: false, locked: false, bare: false });
+  const look = (wt, ctx) => mod.classify(wt, { prState: () => 'MERGED', ...ctx });
+  // an unreadable sibling: its links were not all seen, so the worktree is kept (injected read, every OS)
+  const stub = (d, o) => { if (path.resolve(d) === other) { const e = new Error('denied'); e.code = 'EACCES'; throw e; } return fs.readdirSync(d, o); };
+  let r = look(row(wtDir), { all: [row(wtDir), row(other)], readdir: stub });
+  assert.ok(r.verdict === 'look' && /cannot read .*b to check its links \(EACCES\)/.test(r.why), 'an unreadable sibling folder keeps the worktree (fail closed): ' + JSON.stringify(r));
+  // a missing sibling is skipped (it is "directory missing" on its own row)
+  r = look(row(wtDir), { all: [row(wtDir), row(path.join(base, 'gone'))], readdir: stub });
+  assert.ok(!/cannot read|linked from/.test(r.why), 'a missing sibling is not a reason to keep the worktree: ' + JSON.stringify(r));
+  // the same with a real folder made unreadable (POSIX, not root: root reads everything)
+  if (process.platform !== 'win32' && !(process.getuid && process.getuid() === 0)) {
+    fs.chmodSync(other, 0);
+    try { r = look(row(wtDir), { all: [row(wtDir), row(other)] }); } finally { fs.chmodSync(other, 0o755); }
+    assert.ok(r.verdict === 'look' && /cannot read .*b to check its links/.test(r.why), 'an unreadable sibling folder (chmod 000) keeps the worktree (fail closed): ' + JSON.stringify(r));
+  }
+  // a dangling link whose text goes through a symlinked prefix to a missing path inside the worktree is counted (POSIX: a junction to a missing target is not made on Windows)
+  if (process.platform !== 'win32') {
+    const real = mk('real'); const wt2 = mk('real', 'wt');
+    fs.symlinkSync(real, path.join(base, 'sym'), 'dir');
+    const o2 = mk('c');
+    fs.symlinkSync(path.join(base, 'sym', 'wt', 'missing'), path.join(o2, 'dangling'));
+    r = look(row(wt2), { all: [row(wt2), row(o2)] });
+    assert.ok(r.verdict === 'look' && /linked from .*c \(dangling\)/.test(r.why), 'a dangling link through a symlinked prefix (the link text names the worktree by the symlinked path) keeps the worktree: ' + JSON.stringify(r));
+    fs.rmSync(path.join(o2, 'dangling'));
+    fs.symlinkSync(path.join(base, 'nowhere', 'x'), path.join(o2, 'dangling'));
+    r = look(row(wt2), { all: [row(wt2), row(o2)] });
+    assert.ok(!/linked from/.test(r.why), 'a dangling link to a missing path outside every worktree keeps nothing: ' + JSON.stringify(r));
+  }
+}
+
 check(SRC, 'real');
+linkCases(SRC);
 const T_REAL = Date.now() - T0;
 tmpList();
 parseCase();
@@ -442,6 +479,8 @@ const MUTANTS = [
   ['progress-merge-head', "['MERGE_HEAD', ", '[', /merge in progress|MERGE_HEAD in progress|an in-progress operation/],
   ['root-from-cwd', "newWorktreeRoot(mainPath) + path.sep", "newWorktreeRoot(here) + path.sep", /root/],
   ['link-check-dropped', 'if (linked) return', 'if (false) return', /node_modules links into is kept/],
+  ['unreadable-sibling-skipped', "return 'cannot read ' + o.path + ' to check its links (' + String((e && e.code) || e) + ')';", 'continue;', /unreadable sibling/],
+  ['prefix-not-resolved', 'target = nearestReal(', 'target = path.resolve(', /symlinked prefix/],
   ['nested-worktree', 'if (inner) return', 'if (false) return', /holding another worktree/],
   ['nested-git', 'if (nested) return', 'if (false) return', /nested \.git/],
   ['markers-length-unchecked', "if (gpLines.length !== IN_PROGRESS.length || gpLines.some((l) => l.trim() === '')) return", 'if (false) return', /fail closed/],
@@ -474,6 +513,7 @@ let own = 0;
 let n = 0;
 for (const [name, from, to, expect] of MUTANTS) {
   assert.ok(src.includes(from), 'mutant ' + name + ': the text to change is gone from the script');
+  if (name === 'prefix-not-resolved' && process.platform === 'win32') continue; // its fixture needs a link to a missing target (POSIX)
   const mp = path.join(tmp, 'mutant-' + name + '.js');
   fs.writeFileSync(mp, src.replace(from, () => to));
   let died = null;
@@ -484,6 +524,7 @@ for (const [name, from, to, expect] of MUTANTS) {
       const p = path.join(dir, 'tmp.AbCdEf'); fs.mkdirSync(p);
       const old = (Date.now() - 5 * 24 * 3600 * 1000) / 1000; fs.utimesSync(p, old, old);
       assert.deepStrictEqual(m.staleTmp([dir], Date.now(), []).map((f) => path.basename(f.path)), [], 'tmp: only old durbar-ui-shots-* and durbar-site-* directories are listed');
+    } else if (name === 'unreadable-sibling-skipped' || name === 'prefix-not-resolved') { linkCases(mp);
     } else if (name === 'rebuildable-empty') {
       const m = require(mp);
       assert.deepStrictEqual(m.ignoredData('!! node_modules/\n'), [], 'ignored: only non-rebuildable ignored entries are data');
