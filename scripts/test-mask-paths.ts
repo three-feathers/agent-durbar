@@ -267,16 +267,24 @@ for (const t of ['pass' + 'word=keys/server_2026.pem', 'tok' + 'en=server_2026/k
   eq(locNew, 0, 'T492 rule: a path after a location-saying name reads as before (0 newly hidden)');
 }
 
-// 6. work on path-dense text (review of PR 2072, item 5): the family heads are checked before the bounded look-behind, so the head costs at most 8 times
-// the reading without the path boundaries on adversarial path-dense text (CPU time, the best of three runs; typical text is near 1x)
+// 6. work on path-dense text (review of PR 2072, item 5; T508): the family heads are checked before the bounded look-behind, so the look-behind is entered
+// only where a separator is followed by a family head, not at every separator. Counted, not timed (a CPU-time ratio went red on a shared runner): the part of
+// each shipped rule up to the look-behind is compiled on its own, and the places it matches are the places the look-behind is entered.
 {
-  const cpu = (f: () => void): number => { let best = Infinity; for (let i = 0; i < 3; i++) { const c = process.cpuUsage(); f(); const d = process.cpuUsage(c); best = Math.min(best, d.user + d.system); } return best; };
   const fill = (u: string, k: number): string => u.repeat(Math.ceil(k / u.length)).slice(0, k);
-  for (const [k, u] of Object.entries({ slashes: 'a/', heads: '/AI' + 'za', refresh: '1/' + '/0', longRuns: '/' + 'abcdefgh'.repeat(16) + 'a', named: 'pass' + 'word=aB3dE6gH9jK2/' })) {
-    const t = fill(u, 200_000);
-    const r1 = cpu(() => R.redact(t, {})) / Math.max(1, cpu(() => off(() => R.redact(t, {}))));
-    const r2 = cpu(() => R.maskBareTokenShapes(t, '[s]')) / Math.max(1, cpu(() => off(() => R.maskBareTokenShapes(t, '[s]'))));
-    ok(r1 <= 8 && r2 <= 8, `T492 work: path-dense ${k} costs at most 8 times the reading without the path boundaries (redact ${r1.toFixed(1)}x, bare ${r2.toFixed(1)}x)`);
+  const gates = R._maskSourcesForTest().filter((src) => src.includes('(?<=\\/)(?=') || src.includes('(?<=\\/)(?<=(?:^|')).map((src) => {
+    const at = src.indexOf('(?<=\\/)'), lb = src.indexOf('(?<=(?:^|', at);
+    ok(at >= 0 && lb > at, 'T508 work: a rule with the path start has a bounded look-behind after its separator test');
+    return new RegExp(src.slice(at, lb), 'g');
+  });
+  ok(gates.length >= 2, `T508 work: the path start is found in the shipped rules (${gates.length})`);
+  const HEAD = /\/(?=AB|AI|LT|4b|da|AK|cm|SK|ey|EA|AA|1\/|oy|ci|AT|GO)/g;
+  for (const [k, u] of Object.entries({ slashes: 'a/', deepPath: '/srv/x/a.txt ', heads: '/AI' + 'za', mixed: 'a/AI' + 'za/b/' })) {
+    const t = fill(u, 20_000), heads = (t.match(HEAD) ?? []).length, seps = (t.match(/\//g) ?? []).length;
+    for (const g of gates) {
+      const entered = (t.match(g) ?? []).length;
+      ok(entered <= heads, `T508 work: path-dense ${k}: the look-behind is entered only at a family head (${entered} entries, ${heads} heads, ${seps} separators)`);
+    }
   }
 }
 
