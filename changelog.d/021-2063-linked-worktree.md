@@ -1,1 +1,0 @@
-- **`npm run worktrees:clean` no longer removes a worktree that another worktree's `node_modules` links into** (spec 021): the worktree is listed as "NEEDS A LOOK: linked from <worktree> (node_modules)" and kept, so a shared `npm ci` is not left dangling; it goes on the next run, after the dependant is removed.

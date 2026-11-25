@@ -1,1 +1,0 @@
-- **Lounge name cards keep their roles whole** (spec 097 FR-439): in the Photo office and the cave a finished agent's seat in the lounge row has a least width of its own (159 px), so a role such as "Prompt tuner" or "Release notes" is no longer cut beside the name, and it is the same with Retro people and Office people. A row holds a seat or two fewer. The arcade does not change.
