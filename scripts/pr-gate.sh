@@ -7,6 +7,8 @@
 # waiting and goes on to its verdict, which blocks with wait-deadline (a check is still pending: a job without a runner, a workflow stuck waiting).
 # Blocks (prints why, exits 1) on:
 #   - a draft PR, or one whose draft state cannot be read (spec 021 FR-420);
+#   - stale-gate (FR-425): after `git fetch origin main`, one of the gate's own files (GATE_FILES in trusted-lib.sh) differs from origin/main's copy, or
+#     the fetch failed, or this is no git checkout: run the gate from a checkout at origin/main (a PR branch that edits the gate refuses itself);
 #   - a required check that is not exactly pass, on every PR: the names are the required_status_checks of .github/ruleset-main.json, read with
 #     Node; a missing, empty or unreadable list blocks (FR-420). Every line of a required name must be pass; skipping counts only for other checks;
 #   - a check that is not pass/skipping, or CodeQL not passed; a CodeQL check GitHub skipped on a PR that changes no analysed file counts as
@@ -52,6 +54,12 @@ done
 checks_out=$(gh pr checks $p)
 bad=$(printf '%s\n' "$checks_out" | awk -F'\t' 'NF && $2!="pass" && $2!="skipping"{print $1"="$2}' | tr '\n' ' ')
 [ -n "$wait_cut" ] && bad="$bad wait-deadline(a check still pending after about 2 h of --wait: a human looks why)"
+# FR-425: the gate's own files must equal origin/main's (a stale or edited gate does not decide; the fetch, then git compares blobs, no bypass)
+stale=$(gate_stale $GATE_FILES); case $? in
+  0) [ -z "$stale" ] || bad="$bad stale-gate($(echo $stale): run the gate from a checkout at origin/main)";;
+  2) bad="$bad stale-gate(git fetch origin main failed: the gate files cannot be compared; run the gate from a checkout at origin/main with network)";;
+  *) bad="$bad stale-gate(not a git checkout: run the gate from a checkout at origin/main)";;
+esac
 # GitHub computes mergeability lazily: UNKNOWN means "ask again shortly"
 for _ in 1 2 3 4 5 6; do mergeable=$(gh pr view $p --json mergeable -q .mergeable); [ "$mergeable" = UNKNOWN ] || break; sleep 10; done
 [ "$mergeable" = MERGEABLE ] || bad="$bad mergeable=$mergeable(merge main first)"

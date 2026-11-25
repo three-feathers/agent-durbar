@@ -96,6 +96,10 @@ case " $* " in *" --paginate "*) [ -f "$F/\${f}2.json" ] && { jq -r "$prog" < "$
 exit 0
 `, { mode: 0o755 });
 const env = { ...process.env, PATH: `${bin}${path.delimiter}${process.env.PATH}` };
+// FR-425: the gate compares its own files with origin/main's through `git`; a fake git (scripts/fake-git.js) answers, so no case reaches the real repository.
+// A case sets gitEnv (FAKE_GIT_DIFF, FAKE_GIT_FETCH_RC, FAKE_GIT_NOREPO, FAKE_GIT_LOG: see that file); runCase clears it first.
+fs.writeFileSync(path.join(bin, 'git'), `#!/bin/bash\nexec node "${path.join(SCRIPTS, 'fake-git.js')}" "$@"\n`, { mode: 0o755 });
+let gitEnv: Record<string, string> = {};
 
 // the required names of the ruleset record (FR-420); a copy of the file sits where each gate copy looks for it (<gate dir>/../.github)
 const RULESET = path.join(ROOT, '.github', 'ruleset-main.json');
@@ -169,7 +173,7 @@ const waitRun = (g: string): { code: number | null; out: string } => { gateArgs 
 let gateArgs: string[] = [];
 const run = (gatePath: string): { code: number | null; out: string } => {
   const wait = gateArgs.includes('--wait');
-  const r = spawnSync('bash', [gatePath, '1', ...gateArgs], { env: wait ? { ...env, PATH: `${waitBin}${path.delimiter}${env.PATH}` } : env, encoding: 'utf8', timeout: wait ? 90000 : 60000 });
+  const r = spawnSync('bash', [gatePath, '1', ...gateArgs], { env: { ...(wait ? { ...env, PATH: `${waitBin}${path.delimiter}${env.PATH}` } : env), ...gitEnv }, encoding: 'utf8', timeout: wait ? 90000 : 60000 });
   assert.ok(!/fake gh: no fixture/.test(r.stderr), r.stderr);
   return { code: r.status, out: r.stdout + r.stderr };
 };
@@ -427,9 +431,31 @@ const CASES: Record<string, Case> = {
   'src-error: the file list cannot be read': N({ codeql: 'pass', files: null }, /src-check-unreadable/),
   'src-partial: the file list fails after its first page': N({ codeql: 'pass', files: ['docs/a.md'] }, /src-check-unreadable/, () => set('files.fail', '')),
   'src-empty: the files API lists no file (changed_files 0)': N({ codeql: 'pass', files: [], changed: 0 }, /src-check-unreadable/),
+  // FR-425: the gate's own files must equal origin/main's; a fetch that fails, or a folder that is no checkout, blocks too
+  'stale-gate: gate files that differ from origin/main': N({ codeql: 'pass', files: ['src/main/a.ts'] }, /stale-gate\(scripts\/pr-gate\.sh scripts\/trusted-authors\.txt: run the gate from a checkout at origin\/main\)/, () => { gitEnv = { FAKE_GIT_DIFF: 'scripts/trusted-authors.txt scripts/pr-gate.sh' }; }),
+  'stale-each: every gate input is compared': (g, l) => {
+    for (const f of ['scripts/pr-gate.sh', 'scripts/trusted-lib.sh', 'scripts/trusted-authors.txt', 'scripts/pr-gate-answered.awk', 'scripts/pr-status-note.re', '.github/ruleset-main.json']) {
+      fixture({ codeql: 'pass', files: ['src/main/a.ts'] });
+      gitEnv = { FAKE_GIT_DIFF: f };
+      notReady(g, `${l} (${f})`, new RegExp(`stale-gate\\(${f.replace(/[.]/g, '\\.')}: run the gate`));
+    }
+  },
+  'stale-missing: a gate file that origin/main lacks': N({ codeql: 'pass', files: ['src/main/a.ts'] }, /stale-gate\(scripts\/pr-status-note\.re: run the gate/, () => { gitEnv = { FAKE_GIT_MISSING: 'scripts/pr-status-note.re' }; }),
+  'stale-fetch: the fetch of origin main fails': N({ codeql: 'pass', files: ['src/main/a.ts'] }, /stale-gate\(git fetch origin main failed: the gate files cannot be compared/, () => { gitEnv = { FAKE_GIT_FETCH_RC: '1' }; }),
+  'stale-norepo: the folder is no git checkout': N({ codeql: 'pass', files: ['src/main/a.ts'] }, /stale-gate\(not a git checkout/, () => { gitEnv = { FAKE_GIT_NOREPO: '1' }; }),
+  'stale-equal: equal files pass, after one fetch of origin main': (g, l) => {
+    const log = path.join(fx, 'git.log');
+    fs.rmSync(log, { force: true });
+    gitEnv = { FAKE_GIT_LOG: log };
+    fixture({ codeql: 'pass', files: ['src/main/a.ts'] });
+    ready(g, l);
+    const calls = fs.readFileSync(log, 'utf8').split('\n').filter((c) => /fetch/.test(c));
+    assert.ok(calls.length === 1 && /fetch -q origin main$/.test(calls[0]), `${l}: one fetch of origin main, got ${JSON.stringify(calls)}`);
+  },
   'checks-error: the check list cannot be read': N({ checks: false }, /codeql=missing /),
 };
 const runCase = (g: string, name: string): void => {
+  gitEnv = {};
   const k = Object.keys(CASES).find((c) => c.startsWith(`${name}:`));
   assert.ok(k, `no case ${name}`);
   CASES[k as string](g, `CASE ${k}`);
@@ -507,6 +533,9 @@ try {
     ['a required name matched by prefix', `need="$need" awk -F'\\t' '$1==ENVIRON["need"]`, `need="$need" awk -F'\\t' 'index($1,ENVIRON["need"])==1`, 'required-prefix'],
     ['the pending-line test removed from the wait', '[ $? != 8 ] && ! pend; do', '[ $? != 8 ]; do', 'wait-pending-line'],
     ['the second look after the 90 s pause removed', '  pend || break\n', '  break\n', 'wait-second-look'],
+    ['the stale compare skipped', 'stale=$(gate_stale $GATE_FILES); case $? in', 'stale=; case 0 in', 'stale-gate'],
+    ['a failed fetch ignored', '  2) bad="$bad stale-gate(git fetch origin main failed', '  2) : "$bad stale-gate(git fetch origin main failed', 'stale-fetch'],
+    ['a folder with no checkout accepted', '  *) bad="$bad stale-gate(not a git checkout', '  *) : "$bad stale-gate(not a git checkout', 'stale-norepo'],
     ['the draft line removed', '[ "$pr_draft" = true ] && echo "a draft:', 'false && echo "a draft:', 'draft'],
     ['the base branch name not checked', "case $pr_baseref in ''|*[!A-Za-z0-9._/-]*|*..*) a_base_nums=ERR;;", "case $pr_baseref in 'zzzz') a_base_nums=ERR;;", 'alert-base-ref'],
   ];
@@ -518,6 +547,23 @@ try {
     try { runCase(m, caught); } catch (e) { msg = (e as Error).message; }
     assert.ok(msg.startsWith(`CASE ${caught}:`) && (!at || msg.split('\n')[0].includes(at)), `mutant "${name}" is caught by CASE ${caught}${at ? ` at "${at}"` : ''}, got: ${msg.split('\n')[0] || 'no failure'}`);
     if (process.env.DURBAR_MUTANT_LOG) console.log(`mutant "${name}": ${msg.split('\n')[0]}`);
+  }
+  // the same, for the compare itself, which lives in trusted-lib.sh: the mutated lib sits beside the unchanged gate copy, then is put back
+  const lib = fs.readFileSync(path.join(SCRIPTS, 'trusted-lib.sh'), 'utf8');
+  fs.copyFileSync(path.join(SCRIPTS, 'pr-gate.sh'), path.join(mdir, 'pr-gate.sh'));
+  const libMutants: Array<[string, string, string, string]> = [
+    ['HEAD compared instead of the file on disk', 'have=$(git -C "$_trusted_root" hash-object -- "$f" 2>/dev/null)', 'have=$(git -C "$_trusted_root" rev-parse --verify -q "HEAD:$f" 2>/dev/null)', 'stale-gate'],
+    ['the fetch skipped', 'git -C "$_trusted_root" fetch -q origin main >/dev/null 2>&1 || return 2', 'true', 'stale-fetch'],
+    ['a file missing on origin/main counted equal', '|| { echo "$f"; continue; }\n    have=', '|| continue\n    have=', 'stale-missing'],
+    ['one gate input left out of the compare', 'scripts/pr-status-note.re .github/ruleset-main.json"', 'scripts/pr-status-note.re"', 'stale-each'],
+  ];
+  for (const [name, from, to, caught] of libMutants) {
+    assert.ok(lib.includes(from), `lib mutant "${name}": its anchor is in trusted-lib.sh`);
+    fs.writeFileSync(path.join(mdir, 'trusted-lib.sh'), lib.split(from).join(to));
+    let msg = '';
+    try { runCase(path.join(mdir, 'pr-gate.sh'), caught); } catch (e) { msg = (e as Error).message; }
+    assert.ok(msg.startsWith(`CASE ${caught}:`), `lib mutant "${name}" is caught by CASE ${caught}, got: ${msg.split('\n')[0] || 'no failure'}`);
+    if (process.env.DURBAR_MUTANT_LOG) console.log(`lib mutant "${name}": ${msg.split('\n')[0]}`);
   }
 } finally {
   fs.rmSync(dir, { recursive: true, force: true });
