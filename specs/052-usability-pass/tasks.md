@@ -497,3 +497,6 @@
 
 ## 2026-11-23: the activity log shows full paths (issue #2060 item 11)
 - [x] T487 (delta 2026-11-23, tracking issue #2060 item 11) specs 052, 060, 081: the owner decision; `src/shared/activity.ts` (`path` field, `redact`), `src/main/main.ts` (`logActivity`), `src/renderer/cuttext.js` (`midCut`), `src/renderer/activitytable.js`, `src/adapters/detect.ts` (`displayWhere`), `src/renderer/sim.ts`, tests `test-activity`, `test-updatecheck`, `test-cuttext`, `check-activity-table`, `shots-051-setup` [FR-071, FR-042]
+
+## 2026-11-25: check-answer-safety waits for the limit step's labels (issue #1770)
+- [x] T594 (delta 2026-11-25, issue #1770) `scripts/check-answer-safety.js` FR-210 (B): the step waits up to 5 s for the bar's labels to equal `['Show in chat']` before its one assert, and the diagnostic gains the bar's own change log (the page records every hidden-flag and child change with a timestamp); mutants `latepaint` (passes) and `latepaint-blind` (dies at `only "Show in chat" []`). Test driver only. Refs #1770 (cause unproven)
