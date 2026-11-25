@@ -913,6 +913,8 @@ export interface SelfUpdateWindowView {
   state: 'none' | 'up-to-date' | 'newer' | 'update' | 'failed';
   target?: string; versions?: string[]; breaking?: 'breaking' | 'unknown' | 'no'; gap?: boolean; notice?: 'show' | 'snoozed' | 'skipped';
   reason?: string;
+  /** When a snooze ends (review of PR 2128, item 6: the About line names the days left). */
+  snoozeUntil?: number;
   /** Only on `selfupdate:changed`: the version to toast, once (FR-463). */
   announce?: string;
 }
@@ -1173,10 +1175,10 @@ export interface DurbarApi {
   selfUpdateGet?(): Promise<SelfUpdateWindowView>;
   selfUpdateCheck?(): Promise<SelfUpdateWindowView>;
   selfUpdateSetDaily?(on: boolean): Promise<{ ok: boolean; update: SelfUpdateWindowView }>;
-  selfUpdateSnooze?(version: string): Promise<{ ok: boolean; update: SelfUpdateWindowView }>;
-  selfUpdateSkip?(version: string): Promise<{ ok: boolean; update: SelfUpdateWindowView }>;
+  selfUpdateSnooze?(version: string): Promise<{ ok: boolean; reason?: 'policy-off'; update: SelfUpdateWindowView }>;
+  selfUpdateSkip?(version: string): Promise<{ ok: boolean; reason?: 'policy-off'; update: SelfUpdateWindowView }>;
   selfUpdateNotes?(): Promise<SelfUpdateWindowNotes>;
-  selfUpdateOpenPage?(version: string): Promise<{ ok: boolean }>;
+  selfUpdateOpenPage?(version: string): Promise<{ ok: boolean; reason?: 'policy-off' }>;
   onSelfUpdate?(cb: (v: SelfUpdateWindowView) => void): () => void;
   /** Spec 058 FR-213: *Refresh MCP sign-ins automatically*. */
   setMcpSignInRefresh?(on: boolean): Promise<{ ok: boolean; mcpSignInRefresh?: boolean }>;

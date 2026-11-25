@@ -21,12 +21,18 @@
   const BY={'built-in':'built in',you:'changed by you',organization:'set by your organization'};
   /* FR-006, in plain words (also in docs/safety.md and the README) */
   const SENDS='A check is one request to api.github.com for the release list of the repository above, and, when there is an update, '+
-    'one for that release\'s releases.json from raw.githubusercontent.com. It sends no version number, account or machine identifier. '+
+    'one for that release\'s releases.json from raw.githubusercontent.com. It sends no version number of your copy of Durbar, and no account or machine identifier. '+
     'GitHub sees your IP address, the time and which repository you follow. Switched off, nothing is sent unless you press Check now.';
   const UNKNOWN_TEXT='This release does not say whether it changes how Durbar works; read its notes before you update.';
   const MAJOR_TEXT='This update may change how Durbar works (a new major version, or a new minor version before 1.0). Read the notes below before you update.';
   const NO_DOWNLOAD='Durbar does not download or install updates yet: open the release page and download the installer for your system there.';
 
+  /* review of PR 2128, item 6: the snooze says its days, as the dialog's "Remind me in 7 days" does */
+  function reminderText(until,now){
+    if(!(typeof until==='number'&&until>now))return 'Reminder snoozed';
+    const d=Math.ceil((until-now)/86400000);
+    return 'Reminder in '+d+(d===1?' day':' days');
+  }
   function reasonText(code){return REASON[code]||'the answer could not be read';}
   function ago(ms){
     if(!(typeof ms==='number'&&ms>=0))return 'just now';
@@ -43,7 +49,7 @@
     if(v.checking)return 'Checking…';
     const at=typeof v.checkedAt==='number'?' · checked '+ago((now||Date.now())-v.checkedAt):'';
     if(v.state==='update'&&v.target){
-      const tail=v.notice==='skipped'?' (skipped)':v.notice==='snoozed'?' (reminder in a few days)':'';
+      const tail=v.notice==='skipped'?' (skipped)':v.notice==='snoozed'?' · '+reminderText(v.snoozeUntil,now||Date.now()):'';
       return 'Update available: v'+v.target+tail+at;
     }
     if(v.state==='up-to-date')return 'Up to date · v'+v.running+at;
@@ -182,5 +188,5 @@
     }catch(e){/* main refused (the feed changed meanwhile): the next view says what is true */}
     return res.value;
   }
-  return {reasonText,ago,stateText,sourceText,menuLine,releasesWord,SENDS,UNKNOWN_TEXT,init,fillAbout,openDialog,view:()=>V};
+  return {reminderText,reasonText,ago,stateText,sourceText,menuLine,releasesWord,SENDS,UNKNOWN_TEXT,init,fillAbout,openDialog,view:()=>V};
 })());

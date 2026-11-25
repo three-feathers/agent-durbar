@@ -9,9 +9,9 @@ import * as assert from 'assert';
 import { EventEmitter } from 'events';
 import * as fs from 'fs';
 import * as path from 'path';
-import { selfUpdateHandlers, wireSelfUpdateResume, SELFUPDATE_REFUSED } from '../src/main/selfupdate';
+import { selfUpdateHandlers, wireSelfUpdateResume, MANUAL_GAP_MS, SELFUPDATE_REFUSED } from '../src/main/selfupdate';
 import type { SelfUpdateView } from '../src/main/selfupdate';
-import { DAY_MS } from '../src/shared/selfupdate';
+import { DAY_MS, notesText } from '../src/shared/selfupdate';
 import { announceOnce } from '../src/shared/updatecheck';
 import { feedBytes, fire, guardExit, ok, rel, rig, settle, standard, LIST, RAW29, RELEASES_OK, SLUG, T0 } from './selfupdate-rig';
 import type { Rig } from './selfupdate-rig';
@@ -221,11 +221,87 @@ async function main(): Promise<void> {
     assert.deepStrictEqual(named, ['renderer/sim.ts'], 'FR-464: only the window simulator names its canned update feed (main and the preload never read it)');
   }
 
+  // ---- review of PR 2128 ---------------------------------------------------------------------------------------------------------------
+  {
+    // item 1: at most one request START a minute for Check now, whatever became of it (aborted, hanging or answered "aborted")
+    const hang = rig({ settings: { updates: { selfCheck: false } } });
+    const hh = selfUpdateHandlers(() => hang.u);
+    for (let k = 0; k < 50; k++) { void hh.check(); await settle(); hh.setDailyCheck(false); hang.clock.t += 100; }
+    assert.strictEqual(lists(hang), 1, 'PR 2128 item 1: 50 rounds of Check now then off in 5 s start one request');
+    const flip = rig({ settings: { updates: { selfCheck: false } } });
+    const hf = selfUpdateHandlers(() => flip.u);
+    flip.u.start();
+    for (let k = 0; k < 50; k++) { hf.setDailyCheck(true); await settle(); hf.setDailyCheck(false); flip.clock.t += 100; }
+    assert.strictEqual(lists(flip), 1, 'PR 2128 item 1: 50 rounds of on then off in 5 s start one request');
+    const quick = rig({ settings: { updates: { selfCheck: false } }, script: () => ({ ok: false, reason: 'aborted' }) });
+    for (let k = 0; k < 50; k++) { await quick.u.checkNow(); quick.clock.t += 100; }
+    assert.strictEqual(lists(quick), 1, 'PR 2128 item 1: a request that ends aborted at once still counts: 50 Check now presses in 5 s start one');
+    quick.clock.t += MANUAL_GAP_MS;
+    await quick.u.checkNow();
+    assert.strictEqual(lists(quick), 2, 'PR 2128 item 1: a minute after the last start, Check now asks again');
+
+    // item 2: a Check now that joins a running daily check never toasts
+    const seen: SelfUpdateView[] = [];
+    const j = rig({ changed: (v) => { seen.push(v); } });
+    j.u.start(); await settle();
+    assert.strictEqual(j.calls.length, 1, 'item 2: the daily check is in flight');
+    const pressed = j.u.checkNow(); await settle();
+    assert.strictEqual(j.calls.length, 1, 'item 2: Check now joins it (no second request)');
+    j.calls[0].answer(ok(feedBytes())); await settle(); await settle();
+    j.calls[1]?.answer({ ok: true, kind: 'releases', bytes: RELEASES_OK }); await pressed; await settle();
+    assert.strictEqual(j.u.view().target, '0.1.29', 'item 2: the joined check found the update');
+    assert.ok(seen.every((v) => (v as { announce?: string }).announce === undefined), 'PR 2128 item 2: a Check now that joined a daily check shows no toast');
+    assert.strictEqual(j.store.updates.announced, '0.1.29', 'item 2: the version still counts as announced (the card said it)');
+
+    // item 3: updates off (or an unreadable policy): snooze, skip and the release page answer the plain result; nothing saved or opened
+    for (const pol of [{ state: 'ok', updatesMode: 'off' }, { state: 'unreadable' }] as const) {
+      const opened: string[] = [];
+      const p = rig({ script: standard, openExternal: (u) => { opened.push(u); } });
+      const hp = selfUpdateHandlers(() => p.u);
+      await hp.check();
+      p.policy.p = pol;
+      const before = fs.readFileSync(p.file, 'utf8');
+      const tryIt = (f: () => unknown): Promise<{ ok: boolean; reason?: string }> => Promise.resolve().then(f).then((x) => x as { ok: boolean; reason?: string }, (e: Error) => ({ ok: false, reason: 'refused: ' + e.message }));
+      const sn = await tryIt(() => hp.snooze('0.1.29'));
+      assert.deepStrictEqual([sn.ok, sn.reason], [false, 'policy-off'], `PR 2128 item 3: snooze with ${pol.state} ${'updatesMode' in pol ? 'off' : ''} answers policy-off`);
+      const sk = await tryIt(() => hp.skip('0.1.29'));
+      assert.deepStrictEqual([sk.ok, sk.reason], [false, 'policy-off'], `PR 2128 item 3: skip with ${pol.state} answers policy-off`);
+      assert.deepStrictEqual(await tryIt(() => hp.openReleasePage('0.1.29')), { ok: false, reason: 'policy-off' }, `PR 2128 item 3: the release page with ${pol.state} answers policy-off`);
+      assert.strictEqual(fs.readFileSync(p.file, 'utf8'), before, 'PR 2128 item 3: nothing saved under the policy');
+      assert.deepStrictEqual(opened, [], 'PR 2128 item 3: nothing opened under the policy');
+      await refused(() => hp.snooze({ v: 1 }), 'snooze(an object) under the policy (the shape is checked first)');
+    }
+
+    // item 4: lone surrogates never reach the window (contactlinks.ts wellFormed in notesText)
+    const hi = String.fromCharCode(0xd83d), lo = String.fromCharCode(0xde00);
+    const wf = (t: string): boolean => !/[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]/.test(t);
+    for (const body of [hi + 'start', 'end' + lo, 'mid' + hi + 'x' + lo + 'y', lo + hi, 'pair \ud83d\ude00 ok']) {
+      const t = notesText(body).text;
+      assert.ok(wf(t), `PR 2128 item 4: no lone surrogate survives the notes cleaning (${JSON.stringify(body)})`);
+    }
+    assert.strictEqual(notesText('pair \ud83d\ude00 ok').text, 'pair \ud83d\ude00 ok', 'item 4: a valid pair is kept');
+    const sur = rig({ script: (u) => (u === LIST ? ok(Buffer.from(JSON.stringify([rel(SLUG, '0.1.29', hi + 'Title line' + lo + '\nbody ' + hi), rel(SLUG, '0.1.28'), rel(SLUG, '0.1.27')]))) : u === RAW29 ? { ok: true, kind: 'releases', bytes: RELEASES_OK } : undefined) });
+    await sur.u.checkNow();
+    assert.ok(wf(sur.u.notes().releases[0].text), 'PR 2128 item 4: the dialog text from main has no lone surrogate (title line, ends)');
+
+    // item 5a: `updates.announced` is read only as one strict version (capped digits), anything else is absent
+    for (const bad of [['0.1.29'], 'x'.repeat(1_000_000), '1234567890.0.0', '0.1.029', 'v0.1.29', 12, null, { v: '0.1.29' }]) {
+      const r = rig({ settings: { updates: { announced: bad } } });
+      assert.strictEqual(r.store.updates.announced, undefined, `PR 2128 item 5a: announced ${JSON.stringify(bad).slice(0, 30)} is not read`);
+    }
+    assert.strictEqual(rig({ settings: { updates: { announced: '0.1.29' } } }).store.updates.announced, '0.1.29', 'item 5a: a strict version is read');
+
+    // item 5b: nothing checks before start(): the switch turned on first makes no request and arms no timer
+    const early = rig({ script: standard });
+    selfUpdateHandlers(() => early.u).setDailyCheck(true); early.u.refresh(); await settle();
+    assert.strictEqual(early.calls.length + early.timers.size, 0, 'PR 2128 item 5b: before start, turning the switch on makes no request and arms no timer');
+  }
+
   // ---- FR-464, SC-004: the window's helpers (selfupdatecard.js): the menu line, the words, and no markup path anywhere in the file ----------
   {
     const file = path.join(__dirname, '..', '..', 'src', 'renderer', 'selfupdatecard.js');
     // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const W = require(file) as { menuLine(v: unknown): string; stateText(v: unknown, now?: number): string; sourceText(v: unknown): string; reasonText(c: unknown): string };
+    const W = require(file) as { reminderText(u: unknown, n: number): string; menuLine(v: unknown): string; stateText(v: unknown, now?: number): string; sourceText(v: unknown): string; reasonText(c: unknown): string };
     const upd = { shown: true, state: 'update', target: '0.1.31', notice: 'show', running: '0.1.29', checkedAt: T0 - 2 * 3_600_000 };
     assert.strictEqual(W.menuLine(upd), 'Update available: v0.1.31', 'FR-464: the More menu line while an update is shown');
     assert.strictEqual(W.menuLine({ ...upd, notice: 'snoozed' }), '', 'FR-016: no menu line while snoozed');
@@ -235,6 +311,8 @@ async function main(): Promise<void> {
     assert.strictEqual(W.stateText(upd, T0), 'Update available: v0.1.31 · checked 2 h ago', 'FR-011: the update line with the time of the check');
     assert.strictEqual(W.stateText({ ...upd, state: 'up-to-date', target: undefined }, T0), 'Up to date · v0.1.29 · checked 2 h ago', 'FR-011: the up-to-date line');
     assert.strictEqual(W.stateText({ ...upd, state: 'failed', reason: 'timeout' }, T0), 'Could not check: GitHub did not answer within 10 seconds · checked 2 h ago', 'FR-011: a failure in words');
+    assert.strictEqual(W.stateText({ ...upd, notice: 'snoozed', snoozeUntil: T0 + 7 * DAY_MS }, T0), 'Update available: v0.1.31 · Reminder in 7 days · checked 2 h ago', 'PR 2128 item 6: the About line names the days, as the dialog does');
+    assert.strictEqual(W.stateText({ ...upd, notice: 'snoozed', snoozeUntil: T0 + 3_600_000 }, T0), 'Update available: v0.1.31 · Reminder in 1 day · checked 2 h ago', 'item 6: the days left, rounded up');
     assert.strictEqual(W.reasonText('<b>x</b>'), 'the answer could not be read', 'FR-025: an unknown code never shows its own text');
     assert.strictEqual(W.sourceText({ source: SLUG, sourceBy: 'you' }), `Updates from ${SLUG} (changed by you)`, 'FR-002: the source line says who chose it');
     const src = fs.readFileSync(file, 'utf8');

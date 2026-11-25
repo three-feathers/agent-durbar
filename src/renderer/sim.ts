@@ -3676,7 +3676,7 @@ const planMcpSignInRefresh = (i: SignInPlanInput): SignInPlan => {
     type SelfView = import('../shared/api').SelfUpdateWindowView;
     type SelfNotes = import('../shared/api').SelfUpdateWindowNotes;
     const simSelfMode = simQuery.get('simselfupd') ?? '';
-    const simSelf = { daily: true, checking: false, notice: 'show' as 'show' | 'snoozed' | 'skipped', at: Date.now() - 2 * 3600_000, opened: [] as string[] };
+    const simSelf = { daily: true, checking: false, until: 0, notice: 'show' as 'show' | 'snoozed' | 'skipped', at: Date.now() - 2 * 3600_000, opened: [] as string[] };
     const simSelfCb: Array<(v: SelfView) => void> = [];
     const SIM_SELF_HOSTILE = 'Fixed the floor picker.\n<img src=x onerror="window.__suXss=1"><script>window.__suXss=2</script>\n[click me](javascript:window.__suXss=3) and <b>bold</b> stay as text.'; // a payload that only sets a flag, so a failure cannot hang the driver
     // the running version is the app's own (appversion.js), so the About line and the dialog agree; the canned releases sit just above it
@@ -3701,7 +3701,7 @@ const planMcpSignInRefresh = (i: SignInPlanInput): SignInPlan => {
       if (!simSelfMode) return { ...base, source: undefined, sourceBy: undefined, origin: undefined, checkedAt: undefined };
       if (simSelfMode === 'failed') return { ...base, state: 'failed', reason: 'timeout' };
       if (!f.target) return { ...base, state: 'up-to-date', latest: SV.run };
-      return { ...base, state: 'update', latest: f.target, target: f.target, versions: f.versions, breaking: f.breaking, gap: false, notice: simSelf.notice, ...(announce ? { announce } : {}) };
+      return { ...base, state: 'update', latest: f.target, target: f.target, versions: f.versions, breaking: f.breaking, gap: false, notice: simSelf.notice, ...(simSelf.notice === 'snoozed' ? { snoozeUntil: simSelf.until } : {}), ...(announce ? { announce } : {}) };
     };
     const simSelfEmit = (announce?: string): void => simSelfCb.forEach((cb) => cb(simSelfView(announce)));
     const simSelfIn = (v: unknown): boolean => typeof v === 'string' && simSelfFeed().versions.includes(v);
@@ -3715,7 +3715,7 @@ const planMcpSignInRefresh = (i: SignInPlanInput): SignInPlan => {
         return simSelfView(); // Check now: the card is the announcement, no toast (FR-463)
       },
       selfUpdateSetDaily: async (on) => { simSelf.daily = on === true; return { ok: true, update: simSelfView() }; },
-      selfUpdateSnooze: async (v) => { if (!simSelfIn(v)) throw new Error('Agent Durbar refused this update request.'); simSelf.notice = 'snoozed'; return { ok: true, update: simSelfView() }; },
+      selfUpdateSnooze: async (v) => { if (!simSelfIn(v)) throw new Error('Agent Durbar refused this update request.'); simSelf.notice = 'snoozed'; simSelf.until = Date.now() + 7 * 86400_000; return { ok: true, update: simSelfView() }; },
       selfUpdateSkip: async (v) => { if (!simSelfIn(v)) throw new Error('Agent Durbar refused this update request.'); simSelf.notice = 'skipped'; return { ok: true, update: simSelfView() }; },
       selfUpdateNotes: async () => {
         const f = simSelfFeed();

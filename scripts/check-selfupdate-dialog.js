@@ -77,6 +77,17 @@ module.exports = async (ctx) => {
     await H.key('Escape'); await until(`!document.getElementById('modeDlg')`);
     assert.strictEqual(await js(`document.activeElement&&document.activeElement.id`), 'topMoreBtn', 'Escape closes, the focus goes back to the More button');
     assert.strictEqual(await js(menuShown), true, 'Close keeps the menu line');
+    // PR 2128 item 5c: while the update is shown (not snoozed), count the "is available" toasts (toast elements whose text says it) before and
+    // after Check now in Settings > About: exactly equal (the start-up toast is cleared first, so a timeout cannot change the count)
+    const toastCount = `[...document.querySelectorAll('#toasts .toast')].filter(t=>/is available/.test(t.textContent)).length`;
+    await js(`document.getElementById('settingsBtn').click()`); await until(`!!document.getElementById('suCheck')`); await settle();
+    await H.clearToasts();
+    const toastsBefore = await js(toastCount);
+    assert.strictEqual(toastsBefore, 0, 'no toast before Check now');
+    await js(`document.getElementById('suCheck').click()`);
+    await until(`document.getElementById('suCheck')&&!document.getElementById('suCheck').disabled&&document.getElementById('suCheck').textContent==='Check now'`);
+    await settle();
+    assert.strictEqual(await js(toastCount), toastsBefore, 'FR-463 (PR 2128 item 5c): Check now adds no toast (the count of "is available" toasts is the same before and after)');
 
     // ---- SC-004: a hostile body shows as text: no element from it, no handler ran; Skip takes the line away
     await H.load({ w, h, query: { simselfupd: 'hostile' }, ready: 'fit' });
@@ -131,11 +142,11 @@ module.exports = async (ctx) => {
     // ---- Settings > About: state, source, switch, Check now, what a check sends
     await js(`document.getElementById('settingsBtn').click()`); await until(`!!document.getElementById('suState')`); await settle();
     const a = await js(`({st:document.getElementById('suState').textContent,src:document.getElementById('suSource').textContent,sw:document.getElementById('suDaily').getAttribute('aria-checked'),swl:document.getElementById('suSwL').textContent,named:document.getElementById('suDaily').getAttribute('aria-labelledby'),check:!!document.getElementById('suCheck'),open:!!document.getElementById('suOpen'),sends:document.getElementById('suSends').textContent,live:document.getElementById('suState').getAttribute('role')})`);
- assert.match(a.st, new RegExp(`^Update available: v${re(V.minor)} \\(reminder in a few days\\) · checked 2 h ago$`), 'FR-016: About still shows a snoozed update, with the time of the check');
+ assert.match(a.st, new RegExp(`^Update available: v${re(V.minor)} · Reminder in 7 days · checked 2 h ago$`), 'FR-016: About still shows a snoozed update, with the time of the check');
     assert.strictEqual(a.src, 'Updates from three-feathers/agent-durbar (built in)', 'FR-002');
     assert.ok(a.sw === 'true' && a.swl === 'Check for Durbar updates once a day' && a.named === 'suSwL', 'FR-462: the switch is on by default and named');
     assert.ok(a.check && a.open, 'Check now and See what is new');
-    assert.match(a.sends, /one request to api\.github\.com[\s\S]*no version number, account or machine identifier[\s\S]*IP address, the time and which repository[\s\S]*nothing is sent unless you press Check now/, 'FR-006 in plain words');
+    assert.match(a.sends, /one request to api\.github\.com[\s\S]*no version number of your copy of Durbar, and no account or machine identifier[\s\S]*IP address, the time and which repository[\s\S]*nothing is sent unless you press Check now/, 'FR-006 in plain words');
     assert.strictEqual(a.live, 'status', 'the state line is announced when it changes');
     assert.ok((await minFont('#selfUpdBlock')) >= 10.5, 'About text at least 10.5 px');
     await js(`document.getElementById('aboutH').scrollIntoView({block:'start'})`); await settle();
@@ -145,7 +156,6 @@ module.exports = async (ctx) => {
     await js(`document.getElementById('suCheck').click()`);
     await until(`document.getElementById('suCheck')&&!document.getElementById('suCheck').disabled&&document.getElementById('suCheck').textContent==='Check now'`);
     assert.match(await js(`document.getElementById('suState').textContent`), /checked just now/, 'Check now updates the time');
-    assert.strictEqual(await js(`[...document.querySelectorAll('#toasts .toast')].filter(t=>/is available/.test(t.textContent)).length<=1`), true, 'FR-463: Check now adds no toast');
   }
   console.log('[118] PASS');
 };

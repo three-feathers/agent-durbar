@@ -49,6 +49,8 @@ export interface SelfUpdateView {
   checkedAt?: number; latest?: string;
   state: 'none' | 'up-to-date' | 'newer' | 'update' | 'failed';
   target?: string; versions?: string[]; breaking?: Breaking; gap?: boolean; notice?: 'show' | 'snoozed' | 'skipped'; reason?: SelfUpdateReason;
+  /** Review of PR 2128, item 6: when a snooze ends, so the About line names the days left. */
+  snoozeUntil?: number;
 }
 interface Result { at: number; slug: string; failed?: SelfUpdateReason; feed?: Feed; target?: string; versions?: string[]; newer?: boolean; breaking?: Breaking; gap?: boolean; marks?: ReadonlyMap<string, ReleaseNote> }
 /** T014 (FR-464, FR-010): the dialog's text, already cleaned and capped in main (`dialogNotes`, `notesText`); the window shows it with `textContent`. */
@@ -74,6 +76,10 @@ export class SelfUpdater {
   private moved = false;
   /** T014 (FR-463): the version a finished daily check announces, sent with the next `changed`. */
   private announce: string | undefined;
+  /** Review of PR 2128, item 2: a *Check now* joined the running check, so that check is a manual one (never a toast). */
+  private manualJoin = false;
+  /** Review of PR 2128, item 1: when the last request to a source STARTED (finished, failed or aborted alike), in memory only. */
+  private attempt: { at: number; slug: string } | undefined;
 
   constructor(private readonly d: SelfUpdateDeps) {}
 
@@ -90,6 +96,23 @@ export class SelfUpdater {
     return this.result !== undefined && this.result.slug === this.slug() ? this.result : undefined;
   }
 
+  /** Review of PR 2128, item 1: the time left before another request to the source in force may start (`MANUAL_GAP_MS` from the last START). */
+  private gapLeft(): number {
+    const a = this.attempt;
+    const now = this.d.now();
+    if (!a || a.slug !== this.slug() || now < a.at) return 0;
+    return Math.max(0, MANUAL_GAP_MS - (now - a.at));
+  }
+  /** A running check that has not been aborted (a call joins it, no new request). */
+  private joinable(): boolean {
+    return this.inflight !== undefined && this.abort?.signal.aborted !== true;
+  }
+  /** Review of PR 2128, item 3 (FR-005): the organization turned updates off, or its policy cannot be read. */
+  policyOff(): boolean {
+    const pv = selfPolicyView(this.d.policy());
+    return pv.hidden || pv.blocked;
+  }
+
   /** After the office is shown and the start-up detection is done (main.ts, with spec 081's start check). */
   start(): void {
     this.started = true;
@@ -103,8 +126,14 @@ export class SelfUpdater {
     if (!this.started) return;
     const c = cadenceDue(this.input());
     if (c.waitMs === undefined) return;
-    if (c.due) void this.run(false);
-    this.handle = this.d.timer.set(() => { this.handle = undefined; this.refresh(); }, c.waitMs);
+    let wait = c.waitMs;
+    if (c.due) {
+      // review of PR 2128, item 1: a request started under a minute ago (even one aborted at once) holds the next one back; the timer comes back then
+      const left = this.joinable() ? 0 : this.gapLeft();
+      if (left > 0) wait = left;
+      else void this.run(false);
+    }
+    this.handle = this.d.timer.set(() => { this.handle = undefined; this.refresh(); }, wait);
   }
 
   /** The Settings switch (its channel comes with the switch, T014). Off aborts a running check and disarms the timer. */
@@ -121,7 +150,10 @@ export class SelfUpdater {
     const i = this.input();
     const r = this.current();
     const recent = r !== undefined && i.now >= r.at && i.now - r.at < MANUAL_GAP_MS;
-    if (manualCheckAllowed(i) && (this.inflight || !recent)) {
+    const join = this.joinable();
+    // review of PR 2128, item 1: at most one request START a minute, whatever became of the last one (an aborted check counts too)
+    if (manualCheckAllowed(i) && (join || (!recent && this.gapLeft() === 0))) {
+      if (join) this.manualJoin = true; // item 2: the joined check is now a manual one (no toast)
       await this.run(true);
       this.refresh();
     }
@@ -131,7 +163,7 @@ export class SelfUpdater {
   private run(manual: boolean): Promise<void> {
     if (this.inflight && !this.abort?.signal.aborted) return this.inflight; // an aborted check is never joined: a fresh one starts
     const p: Promise<void> = this.check(manual).finally(() => {
-      if (this.inflight === p) { this.inflight = undefined; this.abort = undefined; }
+      if (this.inflight === p) { this.inflight = undefined; this.abort = undefined; this.manualJoin = false; }
       if (this.moved) { this.moved = false; this.refresh(); }
       const announce = this.announce;
       this.announce = undefined;
@@ -145,7 +177,8 @@ export class SelfUpdater {
     const allowed = (): boolean => (manual ? manualCheckAllowed : selfCheckOn)(this.input());
     const slug = this.slug();
     const url = feedUrl(slug);
-    if (!slug || !url || !allowed()) return;
+    if (!slug || !url || !allowed() || this.gapLeft() > 0) return; // the start gap, asked once more where the request is made
+    this.attempt = { at: this.d.now(), slug };
     const ac = new AbortController();
     this.abort = ac;
     const moved = (): boolean => this.slug() !== slug && (this.moved = true);
@@ -182,13 +215,14 @@ export class SelfUpdater {
     if (!r.target || !store) return;
     const u = store.updates;
     if (snoozeState(at, r.target, u.snooze, u.skip) !== 'show') return;
-    const a = announceOnce(r.target, u.announced, manual);
+    const a = announceOnce(r.target, u.announced, manual || this.manualJoin);
     // a version the strict settings rule refuses (leading zeros) is never toasted: it could not be kept, so it would come again each day
     if (a.save !== undefined && parseUpdatesPatch({ announced: a.save }) && store.setUpdates({ announced: a.save }) && a.toast) this.announce = a.save;
   }
 
   /** Is `v` exactly a version of main's last validated feed (FR-024)? */
   hasVersion(v: string): boolean {
+    if (this.policyOff()) return false; // review of PR 2128, item 3: no feed version counts while the policy turns updates off
     return this.current()?.feed?.releases.some((r) => r.version === v) === true; // the feed of the source in force only (review of PR 2073)
   }
 
@@ -280,7 +314,7 @@ export class SelfUpdater {
 
   /** T014 (FR-024): `version` is one of the kept feed (the handler checked it); only that release's validated `html_url` is opened. */
   async openReleasePage(version: string): Promise<{ ok: boolean }> {
-    const rel = this.current()?.feed?.releases.find((x) => x.version === version);
+    const rel = this.policyOff() ? undefined : this.current()?.feed?.releases.find((x) => x.version === version);
     if (!rel || !this.d.openExternal) return { ok: false };
     try { await this.d.openExternal(rel.htmlUrl); return { ok: true }; } catch { return { ok: false }; }
   }
@@ -299,7 +333,10 @@ export class SelfUpdater {
     const latest = r?.feed ? r.feed.releases[0]?.version : u.lastCheck?.latest;
     if (latest !== undefined) v.latest = latest;
     if (r?.failed) { v.state = 'failed'; v.reason = r.failed; }
-    else if (r?.target) Object.assign(v, { state: 'update', target: r.target, versions: r.versions, breaking: r.breaking, gap: r.gap, notice: snoozeState(i.now, r.target, u.snooze, u.skip) });
+    else if (r?.target) {
+      const notice = snoozeState(i.now, r.target, u.snooze, u.skip);
+      Object.assign(v, { state: 'update', target: r.target, versions: r.versions, breaking: r.breaking, gap: r.gap, notice, ...(notice === 'snoozed' && u.snooze ? { snoozeUntil: u.snooze.until } : {}) });
+    }
     else if (r) v.state = r.newer ? 'newer' : 'up-to-date';
     return v;
   }
@@ -325,16 +362,24 @@ export function selfUpdateHandlers(checker: () => SelfUpdater | undefined) {
     const c = checker();
     return c && a.length === 0 ? c : refuse();
   };
-  const version = (a: unknown[]): [SelfUpdater, string] => {
+  // a version's shape only (exactly one string of at most 64 characters); the feed check comes after the policy check
+  const shape = (a: unknown[]): [SelfUpdater, string] => {
     const c = checker();
     const v = a[0];
-    return c && a.length === 1 && typeof v === 'string' && v.length <= MAX_VERSION_LENGTH && c.hasVersion(v) ? [c, v] : refuse();
+    return c && a.length === 1 && typeof v === 'string' && v.length <= MAX_VERSION_LENGTH ? [c, v] : refuse();
   };
+  const version = (a: unknown[]): [SelfUpdater, string] => {
+    const [c, v] = shape(a);
+    return c.hasVersion(v) ? [c, v] : refuse();
+  };
+  // review of PR 2128, item 3 (FR-005): with updates off by policy, snooze, skip and the release page answer this plain result: nothing saved or opened
+  const off = (a: unknown[]): SelfUpdater | undefined => { const [c] = shape(a); return c.policyOff() ? c : undefined; };
+  const offAnswer = (c: SelfUpdater) => ({ ok: false, reason: 'policy-off' as const, update: c.view() });
   return {
     get: (...a: unknown[]) => none(a).view(),
     check: (...a: unknown[]) => none(a).checkNow(),
-    snooze: (...a: unknown[]) => { const [c, v] = version(a); return c.snooze(v); },
-    skip: (...a: unknown[]) => { const [c, v] = version(a); return c.skip(v); },
+    snooze: (...a: unknown[]) => { const o = off(a); if (o) return offAnswer(o); const [c, v] = version(a); return c.snooze(v); },
+    skip: (...a: unknown[]) => { const o = off(a); if (o) return offAnswer(o); const [c, v] = version(a); return c.skip(v); },
     // the ONE free-text channel (T011): capped, then only the parsed pair goes on; refused text is never echoed (the fixed text)
     setSource: (...a: unknown[]) => {
       const c = checker();
@@ -352,7 +397,7 @@ export function selfUpdateHandlers(checker: () => SelfUpdater | undefined) {
       return { ok: c.setSelfCheck(on), update: c.view() };
     },
     notes: (...a: unknown[]) => none(a).notes(),
-    openReleasePage: (...a: unknown[]) => { const [c, v] = version(a); return c.openReleasePage(v); },
+    openReleasePage: (...a: unknown[]) => { if (off(a)) return { ok: false, reason: 'policy-off' as const }; const [c, v] = version(a); return c.openReleasePage(v); },
   };
 }
 

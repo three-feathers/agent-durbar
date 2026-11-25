@@ -5,6 +5,7 @@
  * fails closed: a value that is not exactly what is expected is dropped, never repaired.
  */
 import { cut, maskHomePaths, redact, unhide } from './redact';
+import { wellFormed } from './contactlinks';
 import { parseVersionField } from './versionfield';
 
 // ---------------------------------------------------------------------------------------------------------------------
@@ -222,7 +223,8 @@ function clipBytes(s: string, max: number): string {
 export function notesText(body: unknown, max = NOTE_MAX): { text: string; clipped: boolean } {
   if (typeof body !== 'string') return { text: '', clipped: false };
   if (body.length > MAX_BODY_BYTES || utf8Bytes(body) > MAX_BODY_BYTES) return { text: '', clipped: true };
-  const s = maskHomePaths(redact(unhide(body.replace(/\r\n?/g, '\n'))));
+  // review of PR 2128, item 4: a lone surrogate becomes U+FFFD first (contactlinks.ts `wellFormed`, the existing cleaner), so no half pair reaches the window
+  const s = maskHomePaths(redact(unhide(wellFormed(body).replace(/\r\n?/g, '\n'))));
   if (utf8Bytes(s) <= max) return { text: s, clipped: false };
   return { text: clipBytes(s, max), clipped: true };
 }
