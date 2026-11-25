@@ -385,16 +385,16 @@ try {
     'stale-list': (t, g, l) => { const r = t({ FAKE_GIT_DIFF: 'scripts/trusted-authors.txt' }, g, l); assert.ok(r.status === 1 && /gh-trusted\.sh: stale: scripts\/trusted-authors\.txt differs from origin\/main/.test(r.out) && !r.out.includes('title:'), `stale list refuses and shows nothing:\n${r.out}`); },
     'stale-lib': (t, g, l) => { const r = t({ FAKE_GIT_DIFF: 'scripts/trusted-lib.sh' }, g, l); assert.ok(r.status === 1 && /gh-trusted\.sh: stale: scripts\/trusted-lib\.sh differs from origin\/main/.test(r.out), `stale lib refuses:\n${r.out}`); },
     'equal': (t, g, l) => { const r = t({}, g, l); assert.ok(r.status === 0 && r.out.includes('title: T'), `equal files read the item:\n${r.out}`); },
-    'fetch-note': (t, g, l) => { const r = t({ FAKE_GIT_FETCH_RC: '1' }, g, l); assert.ok(r.status === 0 && /NOTE gh-trusted\.sh: git fetch origin main failed; the trust list was not compared/.test(r.out) && r.out.includes('title: T'), `a failed fetch is a note and the item is read:\n${r.out}`); },
+    'fetch-refuses': (t, g, l) => { const r = t({ FAKE_GIT_FETCH_RC: '1' }, g, l); assert.ok(r.status === 1 && /gh-trusted\.sh: stale: git fetch origin main failed, the trust list cannot be compared/.test(r.out) && !r.out.includes('title:'), `failed fetch refuses and shows nothing:\n${r.out}`); },
     'installed-copy': (t, g, l) => { const r = t({ FAKE_GIT_NOREPO: '1', FAKE_GIT_DIFF: 'scripts/trusted-authors.txt' }, g, l); assert.ok(r.status === 0 && !/stale/.test(r.out) && r.out.includes('title: T'), `a copy with no checkout is not checked:\n${r.out}`); },
   };
   for (const fn of Object.values(CASES6)) fn(trusted);
-  const CASES6_TEXT: Record<string, string> = { 'stale-list': 'stale list refuses and shows nothing', 'stale-lib': 'stale lib refuses', 'fetch-note': 'a failed fetch is a note and the item is read' };
+  const CASES6_TEXT: Record<string, string> = { 'stale-list': 'stale list refuses and shows nothing', 'stale-lib': 'stale lib refuses', 'fetch-refuses': 'failed fetch refuses and shows nothing' };
   const m6: Array<[string, string, string, string, string]> = [
     ['the compare skipped', 'stale=$(gate_stale scripts/trusted-authors.txt scripts/trusted-lib.sh)', 'stale=$(true)', 'stale-list', 'gh'],
     ['the filter file left out', 'gate_stale scripts/trusted-authors.txt scripts/trusted-lib.sh)', 'gate_stale scripts/trusted-authors.txt)', 'stale-lib', 'gh'],
     ['the refusal made a note', '(the trust list may have changed)" >&2; exit 1; fi', '(the trust list may have changed)" >&2; fi', 'stale-list', 'gh'],
-    ['a failed fetch refused', '[ "$gt" = 2 ] && echo "NOTE gh-trusted.sh: git fetch origin main failed; the trust list was not compared" >&2', '[ "$gt" = 2 ] && exit 1', 'fetch-note', 'gh'],
+    ['a failed fetch made a note again', 'if [ "$gt" = 2 ]; then echo "gh-trusted.sh: stale: git fetch origin main failed, the trust list cannot be compared: run it from a checkout at origin/main with network" >&2; exit 1; fi', 'if [ "$gt" = 2 ]; then echo "NOTE gh-trusted.sh: fetch failed" >&2; fi', 'fetch-refuses', 'gh'],
     ['HEAD compared instead of the file on disk', 'have=$(git -C "$_trusted_root" hash-object -- "$f" 2>/dev/null)', 'have=$(git -C "$_trusted_root" rev-parse --verify -q "HEAD:$f" 2>/dev/null)', 'stale-list', 'lib'],
   ];
   for (const [name, from, to, caught, where] of m6) {
