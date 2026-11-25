@@ -70,7 +70,7 @@ Decided in the delta's Clarifications C1..C8 (2026-11-24). One task per issue; t
 
 ## 2026-11-25: review of PR #2122 (spec delta of the same date)
 
-- [ ] T057 [spec 012 FR-197] Merge `origin/main`; `assistedToggle: { m: 1 }` in the sink table of `scripts/test-live-mask.ts`.
+- [x] T057 [spec 012 FR-197] Merge `origin/main`; `assistedToggle: { m: 1 }` in the sink table of `scripts/test-live-mask.ts`.
 - [ ] T058 [FR-129] `assistedOnEvent` in `src/main/agentops.ts`, called from `main.ts`: `stopped` clears `AgentInfo.assisted`, a later turn-on calls the adapter; FR-127's rows; tests in `scripts/test-agentops.ts`; mutant: the clear on `stopped` dropped.
 - [ ] T059 [FR-131] The "model, not a security boundary" sentence in the switch's help line, `docs/safety.md`, README and the changelog fragment.
 - [ ] T060 [FR-120] `modeNameOf` says **Ask first + review** while the switch is on (composer hint); the four pictures retaken at 1440x900 and 1280x800.

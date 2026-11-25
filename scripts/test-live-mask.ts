@@ -465,7 +465,7 @@ for (const [form, t] of [['LF', app], ['CRLF', app.replace(/\n/g, '\r\n')]] as c
     LCOLS: { x: { column: 1 } }, CS_COLS: { x: { column: 1 } }, LVAL: { x: { sortkey: 2 } }, listRow0: { g: { rows: 3 }, x: { folder: 3 } }, renderConvResults: { x: { compare: 1 } }, newAgentMsg: { g: { 'message-line': 1 } },
     addUserMsg: { x: { file: 2 } }, sendMessage: { m: 1, x: { file: 1 } }, gate: { x: { file: 2 } }, addPicked: { x: { file: 1 } }, addFiles: { x: { file: 3 } },
     renderAttached: { x: { file: 3 } }, syncChatHeader: { m: 1 }, wireAnswerBar: { m: 4 }, noteCompleted: { m: 1 }, noteFailed: { m: 1 }, markRead: { m: 1 },
-    nameShown: { m: 1 }, menuLabel: { m: 1 }, typingIndicator: { m: 1 }, panelTipOf: { m: 1 }, panelTitleHTML: { m: 1 }, paintPanelTitle: { m: 1 }, cvKey: { x: { attribute: 1 } },
+    nameShown: { m: 1 }, menuLabel: { m: 1 }, assistedToggle: { m: 1 }, typingIndicator: { m: 1 }, panelTipOf: { m: 1 }, panelTitleHTML: { m: 1 }, paintPanelTitle: { m: 1 }, cvKey: { x: { attribute: 1 } },
     openPanel: { m: 7, g: { 'chat-header': 1 }, x: { folder: 3 } }, slashUpdate: { x: { slash: 2 } }, slashPick: { x: { slash: 2 } }, noteRowHTML: { g: { views: 1 } },
     notesPalItems: { x: { folder: 1 } }, openNotesScreen: { x: { folder: 3 } }, nsRender: { x: { folder: 1 } }, nsPaint: { g: { views: 1 } }, nsExport: { x: { file: 1 } },
     nsDeleteAll: { x: { folder: 1 } }, mcpSignLinesDrop: { x: { mcp: 1 } }, openCtxMenu: { m: 1 }, 'after openLinkMenu': { x: { folder: 1 } }, reoName: { v: 1, x: { folder: 1 } },
