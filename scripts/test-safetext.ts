@@ -260,7 +260,7 @@ eq(T.ready, true, 'redact: ready');
   eq(crypto.createHash('sha256').update(refText, 'utf8').digest('hex'), '4a1856a6ff14310d9354e7c2e3cae0f1aa6eef742f75c73330c9d46e79191a27', '#1593 differential: the frozen copy is unchanged');
   ok(!refText.includes('BOTH_WORK'), '#1593 differential: the frozen copy is not the head');
   // spec 012 FR-470: main's copy loses one separator of a network path's lead; a piece of the head's output is read with that one change undone (the only difference allowed)
-  const oneLead = (p: string): string => p.replace(/(?<![^\s"'`(\[<=:,;|>])\\\\(?=[A-Za-z0-9$.?]|[^\x00-\x7f]|$)/g, '\\');
+  const oneLead = (p: string): string => p.replace(/(?<![^\s"'`(\[<=:,;|>])\\\\(?=[A-Za-z0-9.?]|[^\x00-\x7f]|$)/g, '\\');
   const R0 = require(refFile) as typeof S & { useShared(m: unknown): boolean; create: typeof S.create };
   R0.useShared(require('../src/shared/redact'));
   const RT = R0.create({ redact: red, cut: cutText });
