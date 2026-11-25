@@ -10,6 +10,9 @@
  * from AGENTS.md as `](docs/rules/<name>.md)`, so no task file is orphaned or read as guidance; AGENTS.md plus `docs/rules/`
  * together stay under TOTAL_CAP.
  *
+ * FR-423 (2026-11-25): `scripts/harness-refs.js` adds the reference checks to the same run: dead paths and section pointers,
+ * invisible characters, unknown labels and conflict markers in the rule files and the files that point at them.
+ *
  * Words are counted like `wc -w`: runs of non-whitespace. Plain Node, no shell, no network; paths with path.join.
  *
  *   node scripts/rules-check.js            check this repository, print each file's words and budget
@@ -18,6 +21,7 @@
 'use strict';
 const fs = require('fs');
 const path = require('path');
+const refs = require('./harness-refs.js');
 
 // file (relative to the repository root, forward slashes) -> maximum words; set 2026-10-29 at about 10% above the slimmed files
 // docs/rules/* set 2026-11-04 (FR-082) at about 10% above the split files; AGENTS.md lowered from 3000 to the core cap
@@ -111,12 +115,13 @@ function main(argv) {
   const i = argv.indexOf('--root');
   const root = i >= 0 && argv[i + 1] ? path.resolve(argv[i + 1]) : path.join(__dirname, '..');
   const { rows, problems } = check(root);
+  problems.push(...refs.check(root, BUDGETS));
   for (const r of rows) console.log(`${r.ok ? 'ok  ' : 'OVER'} ${String(r.words ?? '-').padStart(5)} / ${String(r.budget).padStart(5)}  ${r.file}`);
   if (problems.length) {
     for (const p of problems) console.error(`rules:check: ${p}`);
     return 1;
   }
-  console.log('rules:check: every rule file is within its word budget; every docs/rules file is linked from AGENTS.md');
+  console.log('rules:check: every rule file is within its word budget; every docs/rules file is linked from AGENTS.md; no dead path or pointer, invisible character, unknown label or conflict marker');
   return 0;
 }
 
