@@ -3,6 +3,7 @@
 test:safetext
 test:safetext-links
 test:safetext-links-labels
+test:settings-store
 test:settingsnav
 test:rendersyntax
 test:perfrecord
@@ -309,5 +310,6 @@ test:dangersites
 test:specnumbers
 test:worktreesclean
 test:prpreflight
+test:prready
 test:pencilpark
 test:arcade-wall-signs
