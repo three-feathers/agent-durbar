@@ -557,6 +557,7 @@ try {
   for (const [name, from, to, caught, at] of mutants) {
     assert.ok(gate.includes(from), `mutant "${name}": its anchor is in the gate`);
     const m = path.join(mdir, 'pr-gate.sh');
+    assert.notStrictEqual(gate.split(from).join(to), gate, `mutation did not apply: ${name}`);
     fs.writeFileSync(m, gate.split(from).join(to), { mode: 0o755 });
     let msg = '';
     try { runCase(m, caught); } catch (e) { msg = (e as Error).message; }
@@ -577,6 +578,7 @@ try {
   ];
   for (const [name, from, to, caught] of libMutants) {
     assert.ok(lib.includes(from), `lib mutant "${name}": its anchor is in trusted-lib.sh`);
+    assert.notStrictEqual(lib.split(from).join(to), lib, `mutation did not apply: lib mutant ${name}`);
     fs.writeFileSync(path.join(mdir, 'trusted-lib.sh'), lib.split(from).join(to));
     let msg = '';
     try { runCase(path.join(mdir, 'pr-gate.sh'), caught); } catch (e) { msg = (e as Error).message; }

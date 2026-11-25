@@ -195,6 +195,7 @@ for (const fn of Object.values(noteCases)) fn();
   for (const [name, from, to, caught, at] of mutants) {
     assert.ok(src.includes(from), `mutant "${name}": its anchor is in claim.sh`);
     script = path.join(mdir, 'claim.sh');
+    assert.notStrictEqual(src.split(from).join(to), src, `mutation did not apply: ${name}`);
     fs.writeFileSync(script, src.split(from).join(to), { mode: 0o755 });
     let msg = '';
     try { noteCases[caught](); } catch (e) { msg = (e as Error).message; }

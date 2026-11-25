@@ -414,6 +414,7 @@ try {
     const src = where === 'gh' ? ghSrc : libSrc;
     assert.ok(src.includes(from), `mutant "${name}": its anchor is in ${where === 'gh' ? 'gh-trusted.sh' : 'trusted-lib.sh'}`);
     const mutated = src.split(from).join(to);
+    assert.notStrictEqual(mutated, src, `mutation did not apply: ${name}`);
     let msg = '';
     try { if (where === 'gh') CASES6[caught](trusted, mutated); else CASES6[caught](trusted, ghSrc, mutated); } catch (e) { msg = (e as Error).message; }
     assert.ok(msg !== '', `gh-trusted mutant "${name}" survived case ${caught}`);

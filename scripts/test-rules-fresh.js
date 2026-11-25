@@ -60,6 +60,7 @@ const sha12 = (sha) => sha.slice(0, 12);
 // every behaviour, in order, against one copy of the script; a failing assert names the behaviour (the mutants below are matched on that text)
 function scenarios(script) {
   { // a hostile file name (bidi, zero-width, ESC, a workflow command) through the printing code itself, from a list: no file is created, so this runs on every OS
+    delete require.cache[require.resolve(script)]; // every mutant is a new file text at the same path: never the first one loaded
     const out = require(script).lines([{ file: 'docs/rules/b\u202e\u200b\u001bx::error::y.md', sha: 'abcdef012345' }]).join('\n');
     assert.ok(!/[\u202e\u200b\u001b]|::/.test(out) && out.includes('docs/rules/b\\u202e\\u200b\\u001bx: :error: :y.md: abcdef012345'), `stale: file names are printed escaped, got ${JSON.stringify(out)}`);
   }
@@ -171,6 +172,7 @@ try {
     assert.ok(SRC.includes(from), `mutant "${name}": its anchor is in rules-fresh.js`);
     const m = path.join(mroot, 'rules-fresh.js');
     let src = SRC.split(from).join(to);
+    assert.notStrictEqual(src, SRC, `mutation did not apply: ${name}`);
     if (also) {
       assert.ok(src.includes(also[0]), `mutant "${name}": its second anchor is in rules-fresh.js`);
       src = src.split(also[0]).join(also[1]);
@@ -189,6 +191,7 @@ try {
     assert.ok(LIB.includes(from), 'mutant: the explicit refspec is in trusted-lib.sh');
     let msg = '';
     try { libScenario(LIB.split(from).join('fetch -q origin main >/dev/null')); } catch (e) { msg = String(e.message || e); }
+    assert.notStrictEqual(LIB.split(from).join('fetch -q origin main >/dev/null'), LIB, 'mutation did not apply: lib mutant (plain fetch)');
     assert.ok(msg.startsWith('narrowed refspec: gate_stale names the changed file'), `lib mutant (plain fetch) must die at "narrowed refspec: gate_stale names the changed file", got: ${msg.split('\n')[0] || 'it survived'}`);
   }
   { // FR-425: the stale-gate compare must not depend on autocrlf: every gate input is pinned to LF by .gitattributes
