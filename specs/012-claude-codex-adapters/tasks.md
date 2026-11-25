@@ -313,4 +313,4 @@ T133 verification (2026-10-25, review on #698): typecheck, build and the offline
 
 ## Changes 2026-11-25 (network path lead on Markdown surfaces: issue #2113)
 
-- [ ] T591 (2026-11-25, issue #2113) FR-470: `unesc` in `src/renderer/safetext.js` keeps the doubled lead of a Windows network path; the `#2113` asserts in `scripts/test-safetext.ts`, `scripts/test-liveact.ts` (desk readout and monitor) and `scripts/test-helpercard.ts`.
+- [x] T591 (2026-11-25, issue #2113) FR-470: `unesc` in `src/renderer/safetext.js` keeps the doubled lead of a Windows network path; the `#2113` asserts in `scripts/test-safetext.ts`, `scripts/test-liveact.ts` (desk readout and monitor) and `scripts/test-helpercard.ts`.
