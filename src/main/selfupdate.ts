@@ -297,7 +297,7 @@ export class SelfUpdater {
   notes(): SelfUpdateNotes {
     const v = this.view();
     const r = this.current();
-    if (v.state !== 'update' || !r?.feed || !r.versions) return { running: this.d.running, releases: [], marks: [] };
+    if (this.policyOff() || v.state !== 'update' || !r?.feed || !r.versions) return { running: this.d.running, releases: [], marks: [] };
     const versions = r.versions;
     const rels = r.feed.releases.filter((x) => versions.includes(x.version));
     const texts = dialogNotes(rels);
@@ -327,7 +327,10 @@ export class SelfUpdater {
     const u = this.d.store()?.updates ?? {};
     const r = this.current();
     const v: SelfUpdateView = { ...base, shown: true, origin: this.d.source.origin };
-    if (!pv.blocked) { v.source = this.slug(); v.sourceBy = pv.feedSlug ? 'organization' : u.source !== undefined ? 'you' : 'built-in'; }
+    // review of PR 2128, round 2 (FR-005): a policy that blocks the check (a feedUrl that is no github.com repository) offers no update and no
+    // result: the dialog, toast and About never show an action that the policy would refuse (the same test as `policyOff`, `selfPolicyView`)
+    if (pv.blocked) return v;
+    v.source = this.slug(); v.sourceBy = pv.feedSlug ? 'organization' : u.source !== undefined ? 'you' : 'built-in';
     const checkedAt = r?.at ?? u.lastCheck?.at;
     if (checkedAt !== undefined) v.checkedAt = checkedAt;
     const latest = r?.feed ? r.feed.releases[0]?.version : u.lastCheck?.latest;

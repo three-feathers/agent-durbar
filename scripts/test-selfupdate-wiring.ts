@@ -12,6 +12,7 @@ import * as path from 'path';
 import { selfUpdateHandlers, wireSelfUpdateResume, MANUAL_GAP_MS, SELFUPDATE_REFUSED } from '../src/main/selfupdate';
 import type { SelfUpdateView } from '../src/main/selfupdate';
 import { DAY_MS, notesText } from '../src/shared/selfupdate';
+import type { SelfPolicy } from '../src/shared/selfupdate';
 import { announceOnce } from '../src/shared/updatecheck';
 import { feedBytes, fire, guardExit, ok, rel, rig, settle, standard, LIST, RAW29, RELEASES_OK, SLUG, T0 } from './selfupdate-rig';
 import type { Rig } from './selfupdate-rig';
@@ -253,20 +254,53 @@ async function main(): Promise<void> {
     assert.ok(seen.every((v) => (v as { announce?: string }).announce === undefined), 'PR 2128 item 2: a Check now that joined a daily check shows no toast');
     assert.strictEqual(j.store.updates.announced, '0.1.29', 'item 2: the version still counts as announced (the card said it)');
 
+    // round 2, item 2: the joined flag is reset when the check ends: a LATER daily check that finds an update still toasts
+    {
+      const later: SelfUpdateView[] = [];
+      const jr = rig({ changed: (v) => { later.push(v); } });
+      jr.u.start(); await settle();
+      const joined = jr.u.checkNow(); await settle();
+      jr.calls[0].answer(ok(feedBytes())); await settle(); await settle();
+      jr.calls[1]?.answer({ ok: true, kind: 'releases', bytes: RELEASES_OK }); await joined; await settle();
+      assert.strictEqual(later.filter((v) => (v as { announce?: string }).announce !== undefined).length, 0, 'round 2: the joined check showed no toast');
+      // a newer version appears and the next daily check (24 h later) finds it
+      jr.store.setUpdates({ announced: '0.1.28' });
+      jr.clock.t += DAY_MS;
+      const n0 = later.length;
+      const [timer] = [...jr.timers.values()];
+      assert.ok(timer, 'round 2: the daily timer is armed after the joined check');
+      timer.cb(); await settle();
+      const c = jr.calls[jr.calls.length - 1];
+      c.answer(ok(feedBytes())); await settle(); await settle();
+      jr.calls[jr.calls.length - 1].answer({ ok: true, kind: 'releases', bytes: RELEASES_OK }); await settle(); await settle();
+      assert.strictEqual(later.slice(n0).filter((v) => (v as { announce?: string }).announce === '0.1.29').length, 1, 'PR 2128 round 2: a later daily check that finds an update still toasts once (manualJoin was reset)');
+    }
+
     // item 3: updates off (or an unreadable policy): snooze, skip and the release page answer the plain result; nothing saved or opened
-    for (const pol of [{ state: 'ok', updatesMode: 'off' }, { state: 'unreadable' }] as const) {
+    const blocking: [string, SelfPolicy | undefined][] = [
+      ['updatesMode off', { state: 'ok', updatesMode: 'off' }], ['an unreadable policy', { state: 'unreadable' }], ['no policy', undefined],
+      ['an unknown updatesMode', { state: 'ok', updatesMode: 'later' } as unknown as SelfPolicy],
+      ['a feedUrl that is no github.com repository', { state: 'ok', feedUrl: 'https://example.com/a/b' }],
+    ];
+    for (const [what, pol] of blocking) {
       const opened: string[] = [];
       const p = rig({ script: standard, openExternal: (u) => { opened.push(u); } });
       const hp = selfUpdateHandlers(() => p.u);
       await hp.check();
+      assert.strictEqual(p.u.view().state, 'update', 'round 2: before the policy blocks, the update shows');
       p.policy.p = pol;
+      assert.notStrictEqual(p.u.view().state, 'update', `PR 2128 round 2: with ${what} the view reports no update`);
+      assert.strictEqual(p.u.view().target, undefined, `PR 2128 round 2: with ${what} the view names no target`);
+      assert.deepStrictEqual(p.u.notes().releases, [], `PR 2128 round 2: with ${what} the dialog text is refused (empty)`);
+      assert.strictEqual(p.u.notes().target, undefined, `PR 2128 round 2: with ${what} the dialog names no target`);
+      assert.deepStrictEqual((await hp.notes() as { releases: unknown[] }).releases, [], `PR 2128 round 2: notes over the channel with ${what} is empty`);
       const before = fs.readFileSync(p.file, 'utf8');
       const tryIt = (f: () => unknown): Promise<{ ok: boolean; reason?: string }> => Promise.resolve().then(f).then((x) => x as { ok: boolean; reason?: string }, (e: Error) => ({ ok: false, reason: 'refused: ' + e.message }));
       const sn = await tryIt(() => hp.snooze('0.1.29'));
-      assert.deepStrictEqual([sn.ok, sn.reason], [false, 'policy-off'], `PR 2128 item 3: snooze with ${pol.state} ${'updatesMode' in pol ? 'off' : ''} answers policy-off`);
+      assert.deepStrictEqual([sn.ok, sn.reason], [false, 'policy-off'], `PR 2128 item 3: snooze with ${what} answers policy-off`);
       const sk = await tryIt(() => hp.skip('0.1.29'));
-      assert.deepStrictEqual([sk.ok, sk.reason], [false, 'policy-off'], `PR 2128 item 3: skip with ${pol.state} answers policy-off`);
-      assert.deepStrictEqual(await tryIt(() => hp.openReleasePage('0.1.29')), { ok: false, reason: 'policy-off' }, `PR 2128 item 3: the release page with ${pol.state} answers policy-off`);
+      assert.deepStrictEqual([sk.ok, sk.reason], [false, 'policy-off'], `PR 2128 item 3: skip with ${what} answers policy-off`);
+      assert.deepStrictEqual(await tryIt(() => hp.openReleasePage('0.1.29')), { ok: false, reason: 'policy-off' }, `PR 2128 item 3: the release page with ${what} answers policy-off`);
       assert.strictEqual(fs.readFileSync(p.file, 'utf8'), before, 'PR 2128 item 3: nothing saved under the policy');
       assert.deepStrictEqual(opened, [], 'PR 2128 item 3: nothing opened under the policy');
       await refused(() => hp.snooze({ v: 1 }), 'snooze(an object) under the policy (the shape is checked first)');
@@ -312,6 +346,7 @@ async function main(): Promise<void> {
     assert.strictEqual(W.stateText({ ...upd, state: 'up-to-date', target: undefined }, T0), 'Up to date · v0.1.29 · checked 2 h ago', 'FR-011: the up-to-date line');
     assert.strictEqual(W.stateText({ ...upd, state: 'failed', reason: 'timeout' }, T0), 'Could not check: GitHub did not answer within 10 seconds · checked 2 h ago', 'FR-011: a failure in words');
     assert.strictEqual(W.stateText({ ...upd, notice: 'snoozed', snoozeUntil: T0 + 7 * DAY_MS }, T0), 'Update available: v0.1.31 · Reminder in 7 days · checked 2 h ago', 'PR 2128 item 6: the About line names the days, as the dialog does');
+    assert.strictEqual(W.stateText({ ...upd, state: 'none', blocked: true, target: undefined }, T0), 'Updates are not available: the update address set by your organization cannot be used.', 'PR 2128 round 2: a blocked policy says so in the About line, no update is offered');
     assert.strictEqual(W.stateText({ ...upd, notice: 'snoozed', snoozeUntil: T0 + 3_600_000 }, T0), 'Update available: v0.1.31 · Reminder in 1 day · checked 2 h ago', 'item 6: the days left, rounded up');
     assert.strictEqual(W.reasonText('<b>x</b>'), 'the answer could not be read', 'FR-025: an unknown code never shows its own text');
     assert.strictEqual(W.sourceText({ source: SLUG, sourceBy: 'you' }), `Updates from ${SLUG} (changed by you)`, 'FR-002: the source line says who chose it');

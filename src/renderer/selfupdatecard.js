@@ -47,6 +47,7 @@
   function stateText(v,now){
     if(!v)return '';
     if(v.checking)return 'Checking…';
+    if(v.blocked)return 'Updates are not available: the update address set by your organization cannot be used.';
     const at=typeof v.checkedAt==='number'?' · checked '+ago((now||Date.now())-v.checkedAt):'';
     if(v.state==='update'&&v.target){
       const tail=v.notice==='skipped'?' (skipped)':v.notice==='snoozed'?' · '+reminderText(v.snoozeUntil,now||Date.now()):'';
