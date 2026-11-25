@@ -416,7 +416,8 @@ const simCleanQuery = (q: unknown): { ok: true; query: string; cut: boolean } | 
  * session every 400 ms, for the "Searching, N of M sessions" state; `simsearch=locked`: the end state says saved MCP values were locked;
  * `simsearch=older`: each open session also has a message its chat does not show, for "That message is older than the chat shows".
  * `simsearch=listing` (issue 1904): the plan is built first, one folder every 400 ms (`listing` events), then the scan.
- * `simsearch=delayed`: the start answers after 700 ms, for a query that changes while it is pending.
+ * `simsearch=delayed`: the start is HELD until the driver releases it (`window.__durbarSimSearchGo(afterMs)`; `__durbarSimSearchHeld()` counts the starts held), for a query that changes while it is pending;
+ * a held start answers by itself after 30 s (a hang backstop only). Issue 2144: it was a fixed 700 ms, which a slow runner could outrun. Both hooks exist only in this mode, in the simulator.
  */
 function simConvSearchApi(qs: URLSearchParams, scope: () => SimConvSession[]): Pick<DurbarApi, 'convSearchStart' | 'convSearchCancel' | 'convSearchClear' | 'onConvSearch'> {
   type Search = { fold(s: unknown): string; terms(q: string): string[]; locate(t: unknown, q: string): Array<{ start: number; end: number; term: number }>; bestTiers(t: unknown, q: string): number[]; anchorKey(t: unknown): string };
@@ -426,6 +427,13 @@ function simConvSearchApi(qs: URLSearchParams, scope: () => SimConvSession[]): P
     try { const m = r && typeof r.maskNoteText === 'function' ? r.maskNoteText(t).text : undefined; return typeof m === 'string' ? m : undefined; } catch { return undefined; }
   };
   const slow = qs.get('simsearch') === 'slow';
+  const delayed = qs.get('simsearch') === 'delayed';
+  const held: Array<() => void> = [];
+  if (delayed) {
+    const hooks = window as unknown as { __durbarSimSearchHeld?: () => number; __durbarSimSearchGo?: (afterMs?: number) => void };
+    hooks.__durbarSimSearchHeld = () => held.length;
+    hooks.__durbarSimSearchGo = (afterMs = 0) => { const go = (): void => { for (const f of held.splice(0)) f(); }; if (afterMs > 0) setTimeout(go, afterMs); else go(); };
+  }
   const subs: Array<(e: ConvSearchEvent) => void> = [];
   let live: { id: string; timer?: ReturnType<typeof setTimeout> } | undefined;
   const stop = (): void => { if (live?.timer !== undefined) clearTimeout(live.timer); live = undefined; };
@@ -464,7 +472,7 @@ function simConvSearchApi(qs: URLSearchParams, scope: () => SimConvSession[]): P
   };
   return {
     convSearchStart: async (query) => {
-      if (qs.get('simsearch') === 'delayed') await new Promise((r) => setTimeout(r, 700)); // review of PR 1240 (R2): a start that answers late
+      if (delayed) await new Promise<void>((r) => { held.push(r); setTimeout(r, 30_000); }); // review of PR 1240 (R2): a start that answers late; held until the driver says so (issue 2144), 30 s at most
       stop();
       const q = simCleanQuery(query);
       if (!q.ok) return q.code === 'short' ? { ok: false, code: 'short', error: 'Type at least 3 characters.' } : { ok: false, code: 'invalid', error: 'That is not a search.' };
