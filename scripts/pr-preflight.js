@@ -309,4 +309,4 @@ if (require.main === module) {
   process.exit(code);
 }
 
-module.exports = { preflight, format, labelFinding, assertChanges, shapeHits, scriptChanges, sizeFinding, checksFinding, numberFindings, AI_LINE, SHAPE_WORDS };
+module.exports = { preflight, format, labelFinding, assertChanges, shapeHits, linesByFile, scriptChanges, sizeFinding, checksFinding, numberFindings, AI_LINE, SHAPE_WORDS };
