@@ -12,7 +12,7 @@ Requirements, downloads, verifying a download, the first-run steps for each syst
 - Usage bills against **your** plans. Several agents in parallel can use credits quickly; see [Costs and caps](safety.md#costs-and-caps).
 - Optional: VS Code, VS Code Insiders or VSCodium, for *Open with*.
 
-**Download** the build for your system from the [Releases page](https://github.com/three-feathers/agent-durbar/releases). Check it against `SHA256SUMS.txt`. There is no auto-update: download a newer release to update.
+**Download** the build for your system from the [Releases page](https://github.com/three-feathers/agent-durbar/releases). Check it against `SHA256SUMS.txt`. Durbar does not install updates itself: download a newer release to update (see *Updates* below).
 
 | System | File |
 | --- | --- |
@@ -20,6 +20,17 @@ Requirements, downloads, verifying a download, the first-run steps for each syst
 | macOS, Intel | `Agent-Durbar-<version>-x64.dmg` (or `.zip`) |
 | Windows 10/11, x64 | `Agent-Durbar-Setup-<version>.exe` or `Agent-Durbar-<version>-portable.exe` |
 | Linux, x64 | `Agent-Durbar-<version>-x86_64.AppImage` |
+
+### Updates
+
+An installed build of Durbar (not a dev run, not the simulator) **tells you when a newer release exists** ([spec 118](../specs/118-self-update/spec.md)). Once a day on its own, and when you press *Check now* in **Settings > About** (at most once a minute), it asks GitHub for the release list of the repository it was built from; a fork's build asks the fork. A newer stable release shows one toast (once per version), a line in the top bar's **⋯** menu and the *Updates* block of Settings > About. **See what is new** opens a dialog with every release in between, newest first, its notes as plain text; when one of them changes how Durbar works (its `releases.json` entry says *breaking*, the version jumps, or the release does not say), a **Breaking changes** card comes first and *Open the release page* waits until you tick *I have read the breaking changes*. *Remind me in 7 days* hides the toast and the menu line for a week (Settings still shows it); *Skip this version* hides that version until a newer one.
+
+- **Nothing downloads or installs by itself.** The dialog opens the release page; you download and install the new version there, as above. A download from inside Durbar, checked against the release's checksum list, comes later (spec 118 T017).
+- **Switch it off** with *Check for Durbar updates once a day* in Settings > About: then nothing is sent unless you press *Check now*. It is on by default; a build made by hand outside a release workflow has it off. An organization can turn it off (`updates.mode: "off"`) or pin the repository (`updates.feedUrl`).
+- What a check sends and who sees what: [docs/safety.md](safety.md) (*Durbar's own update check*).
+- Pictures (simulator): [the toast and the ⋯ menu line](screenshots/118-update-toast-1440x900.png), [the Update dialog](screenshots/118-update-dialog-1280x800.png), [the Updates block in Settings > About](screenshots/118-update-about-1280x800.png).
+- `[KNOWN GAP]` not yet written here: the checksum limit of the coming download, the macOS *Open Anyway* step for an installer Durbar downloaded, and the notes for forks (version numbers, the `releases.json` entry per release); they come with the download (spec 118 T016, second part). Checked in the simulator and in offline tests only; no installed build has run a real check yet.
+
 
 **Verify a download.** From the next release on, every file on the Releases page (and `SHA256SUMS.txt`) carries a build provenance attestation made by this repository's release workflow. With the GitHub CLI (`gh`): `gh attestation verify <file> --repo three-feathers/agent-durbar`. It succeeds only for a file built by that workflow in this repository. Then compare the file's SHA-256 with its line in `SHA256SUMS.txt` (`sha256sum -c --ignore-missing SHA256SUMS.txt` on Linux, `shasum -a 256 -c --ignore-missing SHA256SUMS.txt` on macOS, `Get-FileHash` on Windows). Releases before that have only the checksums. This proves where a file was built, not that the app is free of bugs; the builds are still unsigned (below).
 

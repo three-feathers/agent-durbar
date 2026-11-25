@@ -64,3 +64,21 @@ I: spec, plan and task first, in the same PR. III: no secret in the repo, logs o
 - `preflight(n, { gh, root, fetch, trusted })` takes `gh` as a function, so the test drives it with fixture answers and a throwaway repository (`git commit-tree` with a temporary index, no working tree), offline.
 - Merge-only: `git merge-tree --write-tree --name-only` gives the plain merge's tree and the conflicted paths; `git diff --name-only` against the merge commit names what changed beyond it.
 - **Constitution:** I (spec first, this PR); III (no PR text in a shell, nothing of the body printed, read-only); IV (no credits: `gh` reads only); VI (Node, no POSIX path or shell).
+
+## Delta: delivery speed rule text and the no-shared-append-points proposal (FR-383, 2026-11-23)
+
+- **Only decided words land:** *Review-ready* and *PR size* in `docs/rules/review-rounds.md` (three owners, records on #2029), spec 117 O4's line word for word (three owners, records on #1995), the FR-087 job-limit case in the `durbar-ci-rerun` skill (Vikram, #1983). No other rule sentence is reworded or trimmed; the budgets hold (AGENTS.md 1,999 of 2,000, `review-rounds.md` 679 of 680, total 3,522 of 3,525).
+- **D1 order, if decided:** readers before writers. T448 and T451 change nothing for anyone and may land before the answer; T486 (fold, CI half, AGENTS.md step 1) only after the three owners' yes and after FR-086's CI half (T071). Reuse: `changelog.js`'s name rule and fold pattern, `scripts/fragments.js`, `spec-numbers.js`'s definition parser, the `durbar-fold` skill; one assemble function serves `specs:view` and `specs:fold`.
+- **Constitution:** I (spec, plan and tasks first in this PR); III (no secret; the planned CI half needs no token and prints PR paths through `safe-print.js`); IV (no credits); VI (plain Node, LF reads, lower-case names, code-unit sort); VIII (gaps written as `[KNOWN GAP]`).
+
+## 2026-11-25: `npm run pr:ready` (FR-422)
+
+- `scripts/pr-ready.js`: a list of guards, each a function of one context (`run(cmd, args)`, the changed files, the merge-base); the runner is injectable, so `scripts/test-pr-ready.ts` drives it without a repository, and real git only in three cases. Mutants drop one guard line each and read the test's own `PR-READY-<guard>` tags.
+- Reuse (FR-031): `pr-preflight.js` exports `shapeHits`, `AI_LINE`, `linesByFile`; the checks themselves are the existing scripts, called by the Node binary with a fixed argv, so no `npm` shim and no shell (Windows).
+- **Constitution:** I (spec first, this PR); III (no PR text in a shell, a commit message matched and never printed); IV (no credits: git and node only); VI (Node, `path.join`, no shell).
+
+## 2026-11-25: reference checks in `rules:check` (FR-423)
+
+- `scripts/harness-refs.js` exports `check(root, budgets)` and returns problem lines; `scripts/rules-check.js` appends them in `main()`, so the word-budget fixtures stay unchanged. Plain Node, `path.join`, lines split on `\r?\n` only; missing files are skipped (the budget check reports them). The pointer scope is the set of files whose change already runs `npm test` (adversarial check of the harness plan), because the docs-only CI skip would let a dead pointer in another `docs/` file merge green and break `main` later.
+- Reuse (FR-031): `markersIn` of `scripts/specs-index.js`, the budget table and rule-file list of `rules-check.js`, `.github/labels.tsv`; tests extend `scripts/test-rules-check.js`, whose mutants rewrite a copy of the checker and must make the fixture's own assert text fail.
+- **Constitution:** I (spec first, this PR); III (reads repository text only, prints paths and line numbers, never the matched text beyond a section or label name); IV (no credits: Node only); VI (Node, no shell, no POSIX-only path, CRLF-safe); VIII (a limit is written: the scope above, the check reads rule text and never edits it).

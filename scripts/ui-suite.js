@@ -6,7 +6,8 @@
  *   node scripts/ui-suite.js --only shots-017,shots-033
  *   node scripts/ui-suite.js --shard 2/3                  shard 2 of 3, balanced by recorded duration (UI_SUITE_SHARD=2/3 too; spec 008 FR-182, FR-183)
  *   UI_SUITE_OUT=<folder>                 where every screenshot goes (default: a new temp folder, printed at the end)
- *   UI_SUITE_XVFB=1                       Linux: run under xvfb-run even when a display is set (always so with UI_SUITE_DPR above 1: a desktop smaller than the window times the ratio clamps the window, FR-273)
+ *   UI_SUITE_XVFB=1                       Linux: run under xvfb-run (the default, also when a display is set; always so with UI_SUITE_DPR above 1: a desktop smaller than the window times the ratio clamps the window, FR-273)
+ *   UI_SUITE_DESKTOP=1                    Linux with a display: watch the drivers on your own desktop (FR-465); expect failures when it is smaller than 1920x1080 or has no pointer
  *   UI_SUITE_DPR=<1..4, or 1.25, 1.5>     force the device scale factor (2 = a Retina screen, 1.25 and 1.5 = a Windows laptop at 125 % and 150 %) for every driver
  *   UI_SUITE_XVFB_SCREEN=WxHxD            Linux/xvfb: replace the screen (default 1920x1100 times the density, depth 24; a malformed value is ignored; spec 008 FR-213)
  *   UI_SUITE_JOBS=<n>                     drivers at once (default 2; each has its own profile and, on Linux, its own xvfb display);
@@ -69,6 +70,7 @@ const DRIVERS = [
   { name: 'check-001-room-heads', focus: true }, // spec 001 FR-270, FR-271 (issue #1905): 16 folders whose names start alike: a cut name keeps its end, the whole head (and the Real office sign) says its folder on hover and on keyboard focus, masked
   { name: 'check-001-room-heads', label: 'check-001-room-heads retro', env: { DRIVER_WORLD: 'retro' } }, // spec 001 FR-270..FR-272 (issue #1905): the same checks in the Retro arcade (its signs have more room: see the driver's note)
   { name: 'check-005-rail-sort' }, // spec 005 FR-341 (issue #1961): the rail's Sort menu: five choices, order inside folders, keyboard, remembered, heights unchanged, 180 px
+  { name: 'check-005-long-args' }, // spec 005 FR-438 (issue #2060 item 3): a long tool argument's chip says how many more characters (masked, cut after the mask), an over-limit one names its length; keyboard, both sizes
   { name: 'check-005-rail-folder' }, // spec 005 FR-340 (issue #1905): the rail's group heads and rows give their folder (masked) on hover and focus; equal names show their parent; 220 and 180 px
   { name: 'check-001-add-go' }, // spec 001 FR-272 (issue #1905): after an add the office goes to the new room and marks it for 3 s; Show; still under reduced motion; another floor; the Real office sign
   { name: 'check-001-add-go', label: 'check-001-add-go retro', env: { DRIVER_WORLD: 'retro' } }, // spec 001 FR-270..FR-272 (issue #1905): the same checks in the Retro arcade (its signs have more room: see the driver's note)
@@ -84,6 +86,7 @@ const DRIVERS = [
   // has PowerShell; winget,brew,npm there hid the PowerShell route and failed the check)
   { name: 'shots-051-setup', env: { DURBAR_SIM_MANAGERS: process.platform === 'win32' ? 'powershell,winget,npm' : 'winget,brew,npm' } },
   { name: 'shots-081-updates' }, // spec 081: agent-app update check and update, canned results, no network
+  { name: 'check-selfupdate-dialog' }, // spec 118 T015: Durbar's own update toast, More menu line, dialog (SC-004 hostile body, breaking tick gate, snooze, skip) and About block; canned feed, no network
   { name: 'shots-011-quota' }, // spec 011 FR-086..FR-092 (issue #690): account limits per app: fixtures, stale, failed, hostile, suggestion, the one timer
   { name: 'shots-051-account' }, // spec 051 FR-013: the signed-in account line, the picker tooltips and About agent apps (a fake identity)
   { name: 'shots-051-setup', label: 'shots-051-setup win32', env: { DURBAR_SIM_MANAGERS: 'powershell,winget,npm', DURBAR_SIM_PLATFORM: 'win32' } }, // spec 060 FR-011/FR-012: Windows' routes (PowerShell installer, winget, npm) and Run beside each command, on every OS
@@ -159,7 +162,8 @@ const DRIVERS = [
   { name: 'shots-069-harmonize' }, // spec 069 part 2: copy servers between the agent apps' lists
   { name: 'shots-069-mcp-tools' }, // spec 069 part 3: tools on expand, Remove in the agent dialog (058's state words and Details stay)
   { name: 'shots-059-long-url' }, // spec 059 FR-019: a long unbroken name stays in its card, the inbox and the Schedules rows
-  { name: 'check-mcp-row-width' }, // spec 058 delta 2026-11-12 (#1622): a failed server's row keeps a readable text column; the buttons wrap below it
+  { name: 'check-mcp-row-width' }, // spec 058 delta 2026-11-12 (#1622): a failed server's row keeps a readable text column; the buttons wrap below it; FR-436: a row with a long Renewed state too, light and dark
+  { name: 'check-052-zoom-dialogs' }, // spec 052 delta 2026-11-25 (#2115): a wide dialog fits a 320 px page at 640x700 with 200% zoom
   { name: 'check-activity-table' }, // spec 052 FR-071 delta 2026-10-21 (#474): Tools > Activity renders its rows
   { name: 'check-codex-file-card' }, // spec 052 FR-172: a Codex write card names the files and shows the change
   { name: 'check-theme-art' }, // spec 040 FR-023: a picked theme's characters and gadgets on desks, walkers, places and chips
@@ -260,6 +264,7 @@ const DRIVERS = [
   { name: 'check-102-arcade-postbox' }, // spec 102 T318 (issue #1399): the Postbox in the arcade: a lobby plate with the arcade's word, the missed runs, a click opens Settings > Schedules
   { name: 'check-102-arcade-limit-remove' }, // spec 102 T395 (issue #1954): the arcade's limit pill offers Remove limit (the Real and Photo office slip's button), one line, pressing it removes the limit
   { name: 'check-done-desk-mask' }, // spec 041 FR-065: no token of a done reply on the office floor
+  { name: 'check-005-chip-copy' }, // spec 005 FR-411 (issue #2060 item 4): Copy on a chip with a masked word asks first (Cancel, Escape, Copy anyway: the real multi-line text), a plain chip copies at once; both sizes, light and dark
   { name: 'check-toolchip-mask' }, // spec 005 FR-342 (issue #1974): a tool chip's argument masked (line, title, command, Copy), start and update, Flat and Real office; harmless corpus as on main
   // spec 052 FR-171: wrapping, sizes, box widths, field weight, dark contrast. Two drivers that run at once (issue #738: one took ~650 s
   // against the 600 s limit); the light part also has the built-in themes' contrast, the dark part the tones and the stylesheet check
@@ -314,6 +319,7 @@ const NOT_IN_SUITE = {
   'shots-024-custom': 'passes alone with DURBAR_SIM_PLACES=3 but takes about 89 s (custom places: seeding, Add / Edit dialog, Settings, rename, delete at both sizes); too long for the suite today. Run it by hand: DURBAR_SIM_PLACES=3 as its header says',
   'check-rename': 'npm run check:rename, about 140 s (spec 059, issue #372: rename a session, every kind and level, both sizes); check-rename-inline in DRIVERS covers the in-place rename on every surface',
   'check-office-overlap': 'run by `npm run check:office` and by check-parallel.js (the Office layout job and its Real office and arcade variants, OFFICE_VIEW/OFFICE_WORLD): it needs those environment variables and measures every layout, so it is not a one-driver suite entry (spec 102 issue #1632 added a tooltip assert)',
+  'check-118-update-session': 'not a window driver: a bare Electron main process (no app window, no simulator) with a recording proxy, Linux only, proving spec 118 T507 (the update session); run by hand through el.sh as its header says',
   'check-perf': 'npm run check:perf measures frame times and DOM growth under load; its limits depend on the machine, so it is a local check, not a gate on shared runners',
 };
 
@@ -380,7 +386,41 @@ function shard(list, spec, times = timings(), platform = process.platform) {
 function sharedDesktop(platform = process.platform, env = process.env) {
   /* FR-273 (issue 1914): a forced ratio above 1 needs a screen as big as the window times the ratio; a desktop smaller than that clamps the window (830x584 CSS px at 2x on a 1660x1216 display), so those runs use xvfb's own screen (FR-213) */
   const forced = dprOk(env.UI_SUITE_DPR) && Number(env.UI_SUITE_DPR) > 1;
-  return platform !== 'linux' || (!!env.DISPLAY && env.UI_SUITE_XVFB !== '1' && !forced);
+  /* FR-465 (issues 1930, 2118): on Linux the drivers run under xvfb unless UI_SUITE_DESKTOP=1 asks for the desktop (a display set is not a request: an xrdp desktop of 1920x867 clamps the 1920x1080 window and has no pointer, so hover:none shows every pencil); UI_SUITE_XVFB=1 still wins */
+  if (platform === 'linux') return !!env.DISPLAY && env.UI_SUITE_DESKTOP === '1' && env.UI_SUITE_XVFB !== '1' && !forced;
+  return true;
+}
+
+/** FR-465: the one warning line when drivers run on a Linux desktop (UI_SUITE_DESKTOP=1): its size against the biggest driver window (1920x1080), or that the size is unknown; '' when it is big enough or the run is not on a Linux desktop. `size` is `{w, h}` or null (read by `desktopSize`). Pure. */
+const BIGGEST_WINDOW = { w: 1920, h: 1080 };
+function desktopNote(platform, shared, size) {
+  if (platform !== 'linux' || !shared) return '';
+  const tail = 'drivers that park the pointer need a pointer (this display may have none), so a failure there is not a product bug; leave UI_SUITE_DESKTOP unset to use xvfb';
+  if (!size) return `ui-suite: UI_SUITE_DESKTOP=1: the desktop size is unknown; the biggest driver window is ${BIGGEST_WINDOW.w}x${BIGGEST_WINDOW.h} and a smaller desktop clamps it; ${tail}`;
+  if (size.w < BIGGEST_WINDOW.w || size.h < BIGGEST_WINDOW.h) return `ui-suite: UI_SUITE_DESKTOP=1: the desktop is ${size.w}x${size.h}, smaller than the biggest driver window ${BIGGEST_WINDOW.w}x${BIGGEST_WINDOW.h}, which it clamps; ${tail}`;
+  return `ui-suite: UI_SUITE_DESKTOP=1: the desktop is ${size.w}x${size.h}; ${tail}`;
+}
+
+/** FR-465 (review of #2137): the one stop when xvfb is chosen on Linux and `xvfb-run` cannot be found (before, a display without it used the desktop; now every driver would fail with a bare ENOENT). '' when there is nothing to say (not Linux, a desktop run, or found). `lookup()` is injected: true when xvfb-run starts; the default is `xvfbRunFound`. */
+const XVFB_MISSING = 'xvfb-run was not found: install xvfb, or set UI_SUITE_DESKTOP=1';
+function xvfbProblem(platform, shared, lookup = xvfbRunFound) {
+  if (platform !== 'linux' || shared) return '';
+  return lookup() ? '' : XVFB_MISSING;
+}
+
+/** FR-465: whether `xvfb-run` starts (a PATH lookup by spawn, no shell); only a missing binary (ENOENT) counts as not found. */
+function xvfbRunFound(env = process.env) {
+  const r = spawnSync('xvfb-run', ['--help'], { env, stdio: 'ignore', timeout: 10000, windowsHide: true, shell: false });
+  return !(r.error && r.error.code === 'ENOENT');
+}
+
+/** FR-465: the size of the X display from `xdpyinfo` (no shell), or null when it cannot be told. */
+function desktopSize(env = process.env) {
+  try {
+    const r = spawnSync('xdpyinfo', [], { env, encoding: 'utf8', timeout: 5000, windowsHide: true, shell: false });
+    const m = String(r.stdout || '').match(/dimensions:\s+(\d+)x(\d+) pixels/);
+    return m ? { w: Number(m[1]), h: Number(m[2]) } : null;
+  } catch { return null; }
 }
 
 /** Spec 008 FR-112: syntax errors in the given files, from `node --check` (no shell, nothing run). [] when all parse. */
@@ -491,7 +531,7 @@ function runOne(d, outDir, { launch, build = launch ? () => '' : buildProblem } 
 }
 
 /** `ensure`, `run` and `argv` are for tests (scripts/test-ui-suite.ts); the defaults install Electron and start the real drivers. */
-async function main({ ensure = ensureElectron, run = runOne, argv, shared = sharedDesktop(), build = buildProblem } = {}) {
+async function main({ ensure = ensureElectron, run = runOne, argv, shared = sharedDesktop(), build = buildProblem, xvfbFound = xvfbRunFound } = {}) {
   const a = args(argv);
   // a bare `--shard` (no value) is refused, never "every driver"; only an empty UI_SUITE_SHARD env value means the whole list (FR-182, review on #1257)
   if (a.shardGiven && !a.shard) throw new Error('ui-suite: --shard wants a value i/n (1 <= i <= n), got none');
@@ -513,10 +553,14 @@ async function main({ ensure = ensureElectron, run = runOne, argv, shared = shar
   // FR-211: a missing build fails in seconds with its path, before Electron is fetched or started
   const noBuild = build();
   if (noBuild) throw new Error(`${noBuild}; no driver was started`);
+  // FR-465: xvfb is the default on Linux; without xvfb-run stop here, with the way out, before any driver starts
+  const noXvfb = xvfbProblem(process.platform, shared, xvfbFound);
+  if (noXvfb) throw new Error(noXvfb);
   // FR-114: install Electron once before the drivers start in parallel (two first runs racing on the same binary fail, PR #546)
   if (!ensure()) throw new Error('the Electron binary is not installed and could not be fetched (see above); no driver was started');
   const outDir = process.env.UI_SUITE_OUT ? path.resolve(process.env.UI_SUITE_OUT) : fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-ui-shots-'));
   fs.mkdirSync(outDir, { recursive: true });
+  { const note = desktopNote(process.platform, shared, process.platform === 'linux' && shared ? desktopSize() : null); if (note) console.log(note); }
   console.log(`ui-suite: ${todo.length} drivers on ${process.platform}${sh ? ` (shard ${sh})` : ''}, screenshots in ${outDir}`);
   // fast checks (owner rule): in parallel, never fewer checks; each driver has its own profile and window (own xvfb display on Linux)
   const jobs = Math.max(1, Math.min(6, Number(process.env.UI_SUITE_JOBS || 2) || 2));
@@ -564,5 +608,5 @@ async function main({ ensure = ensureElectron, run = runOne, argv, shared = shar
   if (failed.length) process.exitCode = 1;
 }
 
-module.exports = { dprOk, xvfbScreenArgs, launchCommand, sharedDesktop, syntaxErrors, main, runOne, killTree, guardTree, shard, SHARD1_HEAD_START_SECS, unknownOnly, DRIVERS, NOT_IN_SUITE }; // runOne: also spec 001 FR-082 (scripts/shots-docs.js)
+module.exports = { dprOk, xvfbScreenArgs, launchCommand, sharedDesktop, desktopNote, desktopSize, xvfbProblem, XVFB_MISSING, syntaxErrors, main, runOne, killTree, guardTree, shard, SHARD1_HEAD_START_SECS, unknownOnly, DRIVERS, NOT_IN_SUITE }; // runOne: also spec 001 FR-082 (scripts/shots-docs.js)
 if (require.main === module) main().catch((e) => { console.error('ui-suite:', e.message); process.exitCode = 1; });

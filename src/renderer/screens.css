@@ -30,8 +30,8 @@ body.screen-open .workspace{display:none}
 .srvs{list-style:none;margin:8px 0 0;padding:0;display:flex;flex-direction:column;gap:8px}
 .srv{display:flex;flex-wrap:wrap;align-items:center;gap:12px;padding:10px 12px;border:1px solid var(--line);border-radius:12px;background:var(--surface-2)}
 .srv.amb{background:var(--tone-neutral-faint)}
-.srv-main{flex:1;min-width:0;display:flex;flex-direction:column;gap:4px}
-.srv:has(.srv-why,.srv-hint,.srv-det) .srv-main{flex-basis:240px} /* spec 058 FR-231 (#1622): a row with a reason, help or details text keeps 240px for it; the buttons wrap below when they do not fit beside it. A row with only a name and a state stays on one line */
+.srv-main{flex:1 1 12em;min-width:0;display:flex;flex-direction:column;gap:4px} /* spec 058 FR-436: the text column is never squeezed under 12em by the buttons (they wrap below it): 12em holds the longest unbroken state piece ("· Renewed <date> <time>") and about 20 characters of the name a line. A basis of 0 let the buttons take the row and the name and state broke a letter a line */
+.srv:has(.srv-why,.srv-hint,.srv-det) .srv-main{flex-basis:240px} /* spec 058 FR-231 (#1622): a row with a reason, help or details text keeps 240px for it; the buttons wrap below when they do not fit beside it. A row with only a name and a state stays on one line while its buttons fit beside 12em of text (FR-436) */
 .srv-top{display:flex;align-items:center;gap:6px;flex-wrap:wrap;min-width:0}
 .srv-name{font-size:13px}
 .srv-cmd{font:11px/1.35 var(--font-mono);color:var(--ink-2);overflow-wrap:anywhere;white-space:pre-wrap}
@@ -47,11 +47,12 @@ body.screen-open .workspace{display:none}
 .swt.on i{transform:translateX(16px);background:var(--surface)}
 .swt:disabled{opacity:1;border-style:dashed;background:var(--surface-2);cursor:not-allowed} /* spec 052 FR-052: readable, not faded */
 .swt:disabled i{box-shadow:0 0 0 1px var(--line-ctl)}
-.mst{display:inline-flex;align-items:center;gap:5px;font-size:11px;color:var(--ink-2)}
+.mst{display:inline-flex;flex-wrap:wrap;align-items:center;gap:0 5px;max-width:100%;font-size:11px;color:var(--ink-2)} /* spec 058 FR-436: a piece that does not fit goes under the word whole, never one letter a line */
 .mst-ic{flex:none}
 .mst.connected .mst-ic{color:var(--c-done)} .mst.failed .mst-ic,.mst.needs-auth .mst-ic{color:var(--c-error)} .mst.pending .mst-ic{color:var(--c-thinking)} .mst.disabled .mst-ic,.mst.stopped .mst-ic{color:var(--muted)} .mst.unknown{color:var(--muted)}
 .mst-w{font-weight:500}
-.mst-call{font-weight:400;overflow-wrap:anywhere}
+.mst-call{font-weight:400;overflow-wrap:break-word}
+.mst-renew{white-space:nowrap} /* spec 058 FR-436: "Renewed <date> <time>" is one piece */
 .srv-hint{display:block;font-size:11px;color:var(--ink-2);overflow-wrap:anywhere}
 .srv-hint.srv-org,.srv-hint.srv-miss,.mcp-tlist .srv-org{color:var(--tone-warn-ink)} /* spec 076 FR-202: blocked by the agent app's organization policy; spec 058 FR-198: a command Agent Durbar did not find */
 .mcp-org code{color:var(--muted)}
@@ -64,15 +65,16 @@ body.screen-open .workspace{display:none}
 .srv-btns .srv-detbtn{margin-top:0}
 .srv-det{display:flex;align-items:flex-start;gap:8px;margin-top:4px}
 /* spec 058 FR-069: the needs-sign-in block under a row's hint */
-.srv-sign{flex:1 0 100%;display:flex;flex-direction:column;gap:6px;margin-top:2px}
+.srv-sign{flex:1 0 100%;min-width:0;display:flex;flex-direction:column;gap:6px;margin-top:2px}
 .srv-sgl{display:block;font-size:11px;color:var(--ink);overflow-wrap:anywhere}
 .srv-sgl.mut{color:var(--muted)}
 .srv-sgl.srv-warn{color:var(--tone-warn-ink);font-weight:600}
 .srv-sgact{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.srv-sgact .btn{max-width:100%;height:auto;min-height:var(--btn-sm-h);white-space:normal;text-align:left} /* spec 052 FR-471: a long label breaks into lines inside a narrow dialog */
 .srv-steps{flex:1;min-width:0;margin:0;padding:6px 8px;border:1px solid var(--line);border-radius:8px;background:var(--surface);font-size:11px;line-height:1.45;color:var(--ink);overflow-wrap:anywhere}
 .srv-steps code{font:11px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;padding:0 3px;border-radius:4px;background:var(--surface-2)}
 .srv-err{flex:1;min-width:0;margin:0;max-height:96px;overflow:auto;padding:6px 8px;border:1px solid var(--line);border-radius:8px;background:var(--surface);font:11px/1.4 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;white-space:pre-wrap;overflow-wrap:anywhere;color:var(--ink)}
-.srv-name{min-width:0;max-width:100%;overflow-wrap:anywhere}
+.srv-name{min-width:0;max-width:100%;overflow-wrap:break-word} /* spec 058 FR-436: breaks at the name's own word ends (hyphens); inside a word only when one word is wider than the row */
 .mst i{width:8px;height:8px;border-radius:50%;background:var(--gray)}
 .mst.connected i{background:var(--c-done)} .mst.failed i,.mst.needs-auth i{background:var(--c-error)} .mst.pending i{background:var(--c-thinking)} .mst.disabled i{background:transparent;border:2px solid var(--c-idle)}
 .mst.none{color:var(--muted)}
@@ -85,6 +87,9 @@ body.screen-open .workspace{display:none}
 /* issue #544 (second report: after a switch toggle the last row's switch drew over Done): the footer is its own opaque layer above the scroller, so no row control can paint over it, whatever the body repaints. The import and folder-setup dialogs are `.dlg.wide.imp` and share these rules */
 .dlg.wide>.dbtn,.dlg.wide>.derr:not([hidden]){position:relative;z-index:2}
 .dlg.wide>.dbtn{background:var(--surface);box-shadow:0 -6px 6px -6px color-mix(in srgb,var(--ink) 18%,transparent)}
+/* spec 058 FR-437 (owner 2026-11-24, "we have wider space, let's not squeeze"): the chat's MCP servers dialog is spec 052's L width (a table of servers), so a server's name, state and buttons sit on one row; it adapts down with the window as every dialog does. Running text in it keeps the reading measure */
+.dlg.wide.mcp-dlg{width:min(var(--dlg-w-l),calc(100vw - 32px))}
+.dlg.mcp-dlg :is(.dsub,.srv-hint,.srv-why,.srv-sgl,.srv-steps,.mcp-tdesc){max-width:var(--measure)}
 .dlg .dbody{display:flex;flex-direction:column;gap:var(--dlg-gap);min-height:0}
 .dlg .derr{margin:0;font-size:var(--t3-size);color:var(--tone-bad-ink);background:var(--tone-bad-bg);border:1px solid var(--tone-bad-line);border-radius:10px;padding:6px 10px}
 .dlg .derr[hidden]{display:none}
@@ -339,6 +344,7 @@ body.has-bridge #topBtns{display:flex}
 .scr-row-l{font-size:var(--t4-size);font-weight:600;color:var(--ink-2)}
 .mcp-rsess{display:flex;align-items:center;gap:6px 10px;flex-wrap:wrap;margin:10px 0 2px}
 .mcp-rsess .dsub{margin:0;flex:1 1 260px}
+.mcp-rsess .btn{max-width:100%;height:auto;min-height:var(--btn-sm-h);white-space:normal;text-align:left} /* spec 052 (2026-11-25): the button breaks into lines instead of running past a 320px page's dialog */
 .mcp-refresh{display:flex;align-items:center;gap:6px 10px;flex-wrap:wrap;margin:10px 0 6px}
 .mcp-refresh .dsub{margin:0;flex:1 1 260px}
 /* spec 061: "This folder brings its own agent setup" (the import list's look; each item in full) */
@@ -369,9 +375,10 @@ body.has-bridge #topBtns{display:flex}
 .dlg.fs .fs-confirm input{flex:none;width:16px;height:16px;margin:2px 0 0}
 .dlg.fs .fs-confirm>span{flex:1;min-width:0}
 /* spec 069: the add form's scope choice, the agent app ticks and the per-file review */
+.dlg fieldset{min-width:0} /* spec 052 (2026-11-25): a fieldset is as wide as its widest line by default (min-inline-size: min-content); in a dialog it shrinks with the dialog and its lines wrap */
 .mscope{border:1px solid var(--line);border-radius:8px;padding:8px 12px 10px;margin:0 0 10px;display:flex;flex-direction:column;gap:6px}
 .mscope legend{font-weight:650;padding:0 4px}
-.mscope label,.gapps label,.gsec label{display:flex;flex-direction:row;align-items:baseline;gap:6px;font-weight:500;font-size:12.5px;color:var(--ink-2)}
+.mscope label,.gapps label,.gsec label{display:flex;flex-direction:row;align-items:baseline;gap:6px;overflow-wrap:anywhere;font-weight:500;font-size:12.5px;color:var(--ink-2)}
 .mscope label>small,.gapps label>small,.gsec label>small{display:inline}
 .mscope input[type=radio],.mscope input[type=checkbox],.dlg .gapps input{flex:none;margin:0;width:auto}
 .mscope small,.gapps small,.gsec small{color:var(--muted)}
@@ -509,7 +516,6 @@ body.has-bridge #topBtns{display:flex}
 .lv-who{font-size:12px;min-width:0;overflow-wrap:anywhere}
 .lv-act{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:2px}
 .scr-adv>summary #advMcpAtt[hidden]{display:none}
-#hsDlg .dbtn{flex-wrap:wrap} /* spec 081: the open-sessions dialog has three buttons; they wrap instead of being cut off at the left */
 /* spec 083 T034a: the folder's Notes screen (the rows are the drawer's .nt-row) */
 .ns-tools{display:flex;align-items:center;gap:8px;margin:0 0 10px}
 .ns-tools .nt-find{margin:0;height:var(--h-ctl,30px);font-size:13px}
@@ -618,3 +624,15 @@ html[data-motion-off] .wpic img{transition:none;transform:none!important}
 /* spec 052 FR-138 (2026-11-11): on a Mac, outside full screen, a screen over a chat keeps the traffic-light room: the two rules above have an id in them and beat the Mac rule in styles.css, so the Mac rule is repeated here with the same weight and the room first. A notice strip above is the first row, so the head then keeps the plain value. Under 760px --sn-pad is already 24px, so the same two rules cover the row layout. */
 html[data-platform="darwin"]:not([data-fullscreen]) body.panel-open.screen-open #screen:has(.scr-nav) .scr-head{--tl-room:78px;padding-left:max(var(--tl-room),var(--sn-pad))}
 html[data-platform="darwin"]:not([data-fullscreen]) body.panel-open.screen-open .notice-strip:not([hidden]) ~ #screen:has(.scr-nav) .scr-head{padding-left:var(--sn-pad)}
+/* spec 118 FR-464: Durbar's own update block (Settings > About) and the Update dialog. Tokens only; all text at least 11px. */
+.su-block{margin-top:var(--s-2)}
+.su-swrow{display:flex;align-items:center;gap:var(--s-2)}
+.su-dlg .su-src,.su-dlg .su-gap{margin:0 0 var(--s-1)}
+.su-brk{border:1px solid var(--tone-warn-line);background:var(--warn-bg);color:var(--tone-warn-ink);border-radius:var(--r-md);padding:var(--s-2);margin:var(--s-1) 0 var(--s-2)}
+.su-brk-h{margin:0 0 var(--s-1);font-size:var(--t3-size)}
+.su-brk-t{margin:0;font-size:var(--t4-size);line-height:var(--t3-lh);overflow-wrap:anywhere}
+.su-tick{margin-top:var(--s-1)}
+.su-rels{max-height:min(36vh,300px);overflow:auto;border:1px solid var(--line);border-radius:var(--r-sm);padding:var(--s-1) var(--s-2)}
+.su-rels:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
+.su-rel summary{cursor:pointer;font-size:var(--t4-size);font-weight:var(--t4-weight);padding:var(--s-1) 0}
+.su-notes{white-space:pre-wrap;overflow-wrap:anywhere;font-size:var(--t4-size);color:var(--ink-2);line-height:var(--t3-lh);margin:0 0 var(--s-1)}

@@ -3,6 +3,7 @@
 test:safetext
 test:safetext-links
 test:safetext-links-labels
+test:settings-store
 test:settingsnav
 test:rendersyntax
 test:perfrecord
@@ -149,6 +150,7 @@ test:logo-assets
 test:autofollow
 test:announcemask
 test:livemask
+test:overmask
 test:maskpaths
 test:openwith
 test:liveact
@@ -161,6 +163,7 @@ test:teams-editor
 test:teams-ui
 test:teamsipc
 test:teamops
+test:teamcreate
 test:names
 test:renameadapters
 test:sessionname
@@ -242,8 +245,11 @@ test:selfupdate-notes
 test:selfupdate-installtype
 test:selfupdate-checker
 test:selfupdate-ipc
+test:selfupdate-source
 test:selfupdate-schedule
 test:selfupdate-settings
+test:selfupdate-session
+test:selfupdate-wiring
 test:releases-json
 test:sessionsummary
 test:helpercard
@@ -306,5 +312,6 @@ test:dangersites
 test:specnumbers
 test:worktreesclean
 test:prpreflight
+test:prready
 test:pencilpark
 test:arcade-wall-signs

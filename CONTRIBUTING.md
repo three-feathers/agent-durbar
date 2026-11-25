@@ -47,7 +47,7 @@ Agent Durbar is spec-driven with [GitHub Spec Kit](https://github.com/github/spe
 - **Change to something already built (001-010):** edit the owning `specs/NNN-name/` instead of creating a new one; keep its `[IMPLEMENTED]` / `[KNOWN GAP]` marks honest.
 - **Bug fix:** a *spec delta*. Add a dated entry under `## Changes` in the owning `spec.md` (what was wrong, what is now required, the acceptance scenario that would have caught it), tick or add the task, then fix. A fix that reveals a missing requirement adds the requirement.
 - **No behavior change** (typo, comment, formatting, dependency bump, CI-only fix, revert): the exemption below. "It is small" is not a reason.
-- **Needs approval** (anything that costs money or acts outside the repo, for example code-signing certificates in spec 014): mark the spec `needs-approval`; nobody buys, signs up or publishes before the maintainer says yes.
+- **Needs approval** (anything that costs money or acts outside the repo, for example code-signing certificates in spec 014): mark the spec `needs-owner-approval`; nobody buys, signs up or publishes before the maintainer says yes.
 - Install the CLI once with `uv tool install specify-cli` (see the Spec Kit docs). The commands are already in the repo (`.github/prompts/speckit.*.prompt.md`, `.specify/`), so Copilot Chat in VS Code offers them without running `specify init`. The helper scripts are `sh`; on Windows use WSL or git-bash, or run `specify init --here --script ps`.
 - The slash commands are not magic: if you cannot run them, follow the templates in `.specify/templates/` by hand. The artifacts are what matter.
 
@@ -60,7 +60,7 @@ Exemption, only when there is no behavior change, either:
 - a line `Spec-Exempt: <reason>` in the pull request description (4+ characters, not inside an HTML comment; the PR template ships it commented out), or
 - the label `spec-exempt` (any label starting with that, such as `Spec-Exempt: dependency bump`), which a maintainer applies; then save the description once (or push), because a label change alone no longer re-runs the gate (spec 008 FR-109).
 
-The gate checks **presence, not quality**: it cannot tell a good spec from a one-line stub, and it does not look at changes outside `src/` (`scripts/`, build config, workflows). Reviewers use the checklist in the pull request template. The gate runs on pull requests only; a direct push to `main` is not checked, so push through pull requests, and the maintainer can make *Spec Kit gate* a required status check in the branch protection settings.
+The gate checks **presence, not quality**: it cannot tell a good spec from a one-line stub, and it does not look at changes outside `src/` (`scripts/`, build config, workflows). Reviewers use the checklist in the pull request template. The gate runs on pull requests only; a direct push to `main` is not checked, so push through pull requests, and *Spec Kit gate* is a required status check of the `main` ruleset.
 
 ## Upgrading the Copilot SDK
 

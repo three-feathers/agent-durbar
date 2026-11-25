@@ -103,6 +103,12 @@ function setBlock(text, meta) {
 
 /* Conflict markers left in any Markdown file under specs/ (spec 025 FR-018): always an error, strict marker or not. "=======" alone is a Markdown heading underline, so it is not looked for. */
 const CONFLICT_RE = /^(<<<<<<<|\|\|\|\|\|\|\||>>>>>>>)( |$)/;
+/* The marker lines of one text: [{ line, text }] (also used by scripts/harness-refs.js for the rule files, FR-031). */
+function markersIn(text) {
+  const out = [];
+  String(text).split(/\r?\n/).forEach((l, i) => { if (CONFLICT_RE.test(l)) out.push({ line: i + 1, text: l.slice(0, 7) }); });
+  return out;
+}
 function conflictMarkers(root = ROOT) {
   const found = [];
   const walk = (dir) => {
@@ -110,9 +116,7 @@ function conflictMarkers(root = ROOT) {
       const p = path.join(dir, e.name);
       if (e.isDirectory()) walk(p);
       else if (e.isFile() && e.name.endsWith('.md')) {
-        read(p).split(/\r?\n/).forEach((l, i) => {
-          if (CONFLICT_RE.test(l)) found.push(`${path.relative(root, p).split(path.sep).join('/')}:${i + 1}: a conflict marker was left in (${l.slice(0, 7)})`);
-        });
+        for (const m of markersIn(read(p))) found.push(`${path.relative(root, p).split(path.sep).join('/')}:${m.line}: a conflict marker was left in (${m.text})`);
       }
     }
   };
@@ -250,7 +254,7 @@ function importIndex(root = ROOT, { write = true } = {}) {
   return { readme: out.join('\n'), specs: rows.size, errors };
 }
 
-module.exports = { RETIRED, STATUSES, NOTE_MAX, parseBlock, setBlock, valueErrors, readSpecs, generate, check, conflictMarkers, addBlock, groupId, importIndex };
+module.exports = { RETIRED, STATUSES, NOTE_MAX, parseBlock, setBlock, valueErrors, readSpecs, generate, check, conflictMarkers, markersIn, addBlock, groupId, importIndex };
 
 if (require.main === module) {
   const args = process.argv.slice(2);

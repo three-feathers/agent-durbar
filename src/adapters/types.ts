@@ -274,6 +274,8 @@ export interface ToolCallEvent extends BaseEvent {
   mcpCall?: 'policy';
   /** Spec 005 FR-411: set by main (never by an adapter) on the window's copy of an event with `args`: whether main's masking changed the argument the chip shows. A yes/no only. */
   argsMasked?: boolean;
+  /** Spec 005 FR-438: set by main (never by an adapter) on the window's copy of an event with `args` when main sent the argument the chip shows empty because it is longer than the masks take (`MASK_INPUT_MAX`): that argument's length in characters. A number only, never text. */
+  argsLong?: number;
 }
 
 export interface SubagentEvent extends BaseEvent {

@@ -416,7 +416,8 @@ const simCleanQuery = (q: unknown): { ok: true; query: string; cut: boolean } | 
  * session every 400 ms, for the "Searching, N of M sessions" state; `simsearch=locked`: the end state says saved MCP values were locked;
  * `simsearch=older`: each open session also has a message its chat does not show, for "That message is older than the chat shows".
  * `simsearch=listing` (issue 1904): the plan is built first, one folder every 400 ms (`listing` events), then the scan.
- * `simsearch=delayed`: the start answers after 700 ms, for a query that changes while it is pending.
+ * `simsearch=delayed`: the start is HELD until the driver releases it (`window.__durbarSimSearchGo(afterMs)`; `__durbarSimSearchHeld()` counts the starts held), for a query that changes while it is pending;
+ * a held start answers by itself after 30 s (a hang backstop only). Issue 2144: it was a fixed 700 ms, which a slow runner could outrun. Both hooks exist only in this mode, in the simulator.
  */
 function simConvSearchApi(qs: URLSearchParams, scope: () => SimConvSession[]): Pick<DurbarApi, 'convSearchStart' | 'convSearchCancel' | 'convSearchClear' | 'onConvSearch'> {
   type Search = { fold(s: unknown): string; terms(q: string): string[]; locate(t: unknown, q: string): Array<{ start: number; end: number; term: number }>; bestTiers(t: unknown, q: string): number[]; anchorKey(t: unknown): string };
@@ -426,6 +427,13 @@ function simConvSearchApi(qs: URLSearchParams, scope: () => SimConvSession[]): P
     try { const m = r && typeof r.maskNoteText === 'function' ? r.maskNoteText(t).text : undefined; return typeof m === 'string' ? m : undefined; } catch { return undefined; }
   };
   const slow = qs.get('simsearch') === 'slow';
+  const delayed = qs.get('simsearch') === 'delayed';
+  const held: Array<() => void> = [];
+  if (delayed) {
+    const hooks = window as unknown as { __durbarSimSearchHeld?: () => number; __durbarSimSearchGo?: (afterMs?: number) => void };
+    hooks.__durbarSimSearchHeld = () => held.length;
+    hooks.__durbarSimSearchGo = (afterMs = 0) => { const go = (): void => { for (const f of held.splice(0)) f(); }; if (afterMs > 0) setTimeout(go, afterMs); else go(); };
+  }
   const subs: Array<(e: ConvSearchEvent) => void> = [];
   let live: { id: string; timer?: ReturnType<typeof setTimeout> } | undefined;
   const stop = (): void => { if (live?.timer !== undefined) clearTimeout(live.timer); live = undefined; };
@@ -464,7 +472,7 @@ function simConvSearchApi(qs: URLSearchParams, scope: () => SimConvSession[]): P
   };
   return {
     convSearchStart: async (query) => {
-      if (qs.get('simsearch') === 'delayed') await new Promise((r) => setTimeout(r, 700)); // review of PR 1240 (R2): a start that answers late
+      if (delayed) await new Promise<void>((r) => { held.push(r); setTimeout(r, 30_000); }); // review of PR 1240 (R2): a start that answers late; held until the driver says so (issue 2144), 30 s at most
       stop();
       const q = simCleanQuery(query);
       if (!q.ok) return q.code === 'short' ? { ok: false, code: 'short', error: 'Type at least 3 characters.' } : { ok: false, code: 'invalid', error: 'That is not a search.' };
@@ -1321,7 +1329,51 @@ const planMcpSignInRefresh = (i: SignInPlanInput): SignInPlan => {
        #1637); any other name has no known entry (an OAuth server keeps "needs sign-in") */
     const SIM_TOKEN_ENTRIES: Record<string, { vars: string[] }> = { 'team-api': { vars: ['TEAM_API_TOKEN'] }, 'docs-api': { vars: [] }, 'paste-api': { vars: ['k8Jq2LmZ9xPw4RtY7vBn3HcS6dFg1AeU'] } };
     /* mcptoken:end */
+    /* spec 005 FR-411: the simulator's stand-in for main's `toolargcopy.ts` (this file cannot import main code): the raw text of the argument each
+       chip shows (the window's `toolArg` choice), per session and call, so Copy has a real value to write; at most 2,000 calls, the oldest dropped
+       first, as main keeps (without that bound, every tool call the simulator emits stayed here: check-helper-retention saw the heap grow).
+       `masked` stands for main's flag: the `argsMasked` the emitted event carries (the simulator has no main mask in the path) */
+    /* the same pair key as main's `toolCopyKey` (src/main/toolargcopy.ts), copied because this file cannot import main code; test:toolargcopy
+       SIM-KEY checks that the two agree and that every lookup here goes through it */
+    const simToolCopyKey = (sessionId: string, callId: string): string => JSON.stringify([sessionId, callId]);
+    const simToolCopies = new Map<string, { text: string; masked: boolean }>();
+    /* keeps one value, newest last, and drops the oldest past main's 2,000 calls (TOOL_COPY_CALLS_MAX); test:toolargcopy SIM-BOUND runs this line */
+    const simToolCopyKeep = (m: Map<string, { text: string; masked: boolean }>, k: string, v: { text: string; masked: boolean }): void => { m.delete(k); m.set(k, v); for (const old of m.keys()) { if (m.size <= 2000) break; m.delete(old); } };
+    /* for the driver: whether each request was confirmed and its answer word (never the text); `mark` makes a kept value masked, as a newer
+       update main already masked while the window still holds the old hint */
+    const simToolCopyLog: { confirmed: boolean; answer: string }[] = [];
+    (window as unknown as { __durbarSimToolCopy?: unknown }).__durbarSimToolCopy = {
+      calls: simToolCopyLog,
+      mark: (sessionId: string, callId: string): boolean => { const v = simToolCopies.get(simToolCopyKey(sessionId, callId)); if (v) v.masked = true; return !!v; },
+      /* for the driver: the stand-in no longer holds that call, as main after its bounds or a removed session (Copy then answers `unknown`) */
+      forget: (sessionId: string, callId: string): boolean => simToolCopies.delete(simToolCopyKey(sessionId, callId)),
+      size: (): number => simToolCopies.size,
+    };
+    const simToolArgKey = (args: unknown): string | undefined => {
+      if (!args || typeof args !== 'object') return undefined;
+      const o = args as Record<string, unknown>;
+      for (const k of ['path', 'pattern', 'command', 'url', 'query', 'file_path']) if (o[k]) return k;
+      for (const k of Object.keys(o)) if (typeof o[k] === 'string') return k;
+      return undefined;
+    };
+    /* spec 005 FR-438: main's rule for the window's copy of a tool call (FR-342 main half, `toolArgCopies.see`), since the simulator's events skip
+       main: a text argument longer than the masks take arrives empty, and when the argument the chip shows (the window's `toolArg` choice, on the
+       emptied copy) is one of them, `argsLong` carries its length; a caller's own `argsLong` is dropped (main's word only) */
+    const simLongArgs = (e: Extract<AgentEvent, { type: 'toolCall' }>): AgentEvent => {
+      const { argsLong: _drop, ...rest } = e;
+      const raw = rest.args;
+      if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return rest;
+      const lim = Number((window as unknown as { DurbarRedact?: { MASK_INPUT_MAX?: number } }).DurbarRedact?.MASK_INPUT_MAX) || 12288;
+      const r = raw as Record<string, unknown>, out: Record<string, unknown> = {};
+      let cut = false;
+      for (const k of Object.keys(r)) { const v = r[k]; if (typeof v === 'string' && v.length > lim) { out[k] = ''; cut = true; } else out[k] = v; }
+      if (!cut) return rest;
+      const key = simToolArgKey(out);
+      const rv = key === undefined ? undefined : r[key];
+      return typeof rv === 'string' && out[key as string] === '' && rv.length > lim ? { ...rest, args: out, argsLong: rv.length } : { ...rest, args: out };
+    };
     const emit = (e: AgentEvent): void => {
+      if (e.type === 'toolCall' && e.args !== undefined) { const k = simToolArgKey(e.args), v = k === undefined ? undefined : (e.args as Record<string, unknown>)[k]; const id = simToolCopyKey(e.sessionId, e.callId); if (typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean') simToolCopyKeep(simToolCopies, id, { text: String(v), masked: e.argsMasked === true }); else simToolCopies.delete(id); }
       /* like main, which keeps the runtime's list before the window hears of it: the reply a listener asks for at once sees this event (spec 058 FR-094) */
       if (e.type === 'status' && e.status === 'stopped') { const q = sims.find((x) => x.info.id === e.sessionId); if (q) q.mcpHealth = undefined; }
       if (e.type === 'mcp') { const q = sims.find((x) => x.info.id === e.sessionId); if (q) { for (const m of e.servers) if (m.status === 'connected' && q.mcpLive?.some((o) => o.name === m.name && o.status !== 'connected')) q.mcpCalls?.delete(m.name); /* main's McpCallTracker.onServers: back to connected drops the class */ q.mcpLive = e.servers; q.mcpHealth = simHealth(q.mcpHealth, e.servers); if (!selfMcp) { q.mcpReported = e.servers; q.mcpAppOff = new Set(e.servers.filter((m) => m.status === 'disabled' && !q.mcpOff?.has(m.name)).map((m) => m.name)); } } }
@@ -1333,6 +1385,7 @@ const planMcpSignInRefresh = (i: SignInPlanInput): SignInPlan => {
       }
       if (e.type === 'status' && e.status === 'stopped') { const q = sims.find((x) => x.info.id === e.sessionId); if (q) q.mcpCalls = undefined; }
       if (e.type === 'toolCall' && e.phase === 'failed' && e.mcpServer && simCallClass(e.output) === 'policy') e = { ...e, mcpCall: 'policy' }; // FR-193: like maskMcpEvent, the word only
+      if (e.type === 'toolCall') e = simLongArgs(e); // spec 005 FR-438: like main, an over-limit argument arrives empty with its length
       listeners.forEach((l) => l(e));
       simSchedHook?.(e);
       if (e.type === 'status' && !e.agentId && (e.status === 'idle' || e.status === 'error' || e.status === 'stopped')) simSignIn?.last.set(e.sessionId, simSignIn.mono()); // spec 058 FR-205: the last response
@@ -3652,6 +3705,70 @@ const planMcpSignInRefresh = (i: SignInPlanInput): SignInPlan => {
       ? [{ manager: 'official', own: 'claude', owner: true, display: 'claude update', note: 'Installs into your home folder; no administrator rights needed.' }, { manager: 'official', bin: 'bash', script: {}, display: 'https://claude.ai/install.sh (downloaded, then run with bash)' }]
       : kind === 'codex' ? [{ manager: 'npm', owner: true, pinned: '1.0.2', display: 'npm install -g @openai/codex@1.0.2 --no-update-notifier' }, { manager: 'official', bin: 'bash', script: {}, display: 'https://chatgpt.com/codex/install.sh (downloaded, then run with bash)' }]
       : [{ manager: 'brew', owner: true, display: 'brew upgrade --cask copilot-cli --greedy', note: 'May ask for administrator rights.' }]);
+    /*
+     * Spec 118 T014 (FR-464, FR-020 in part): Durbar's own update check in the simulator: a canned feed chosen by the page address
+     * `simselfupd=update|breaking|hostile|uptodate|failed`; without it nothing is shown (main's checker never runs under DURBAR_SIM and main never
+     * reads this address). No network: the answers are made up here, already in the shape main's cleaning gives (plain text; the hostile body
+     * keeps its markup as text, which is what SC-004 checks in the window). With a mode, the page acts as if the daily check had just found it:
+     * one toast after a moment (once per page), the More menu line and the About block.
+     */
+    type SelfView = import('../shared/api').SelfUpdateWindowView;
+    type SelfNotes = import('../shared/api').SelfUpdateWindowNotes;
+    const simSelfMode = simQuery.get('simselfupd') ?? '';
+    const simSelf = { daily: true, checking: false, until: 0, notice: 'show' as 'show' | 'snoozed' | 'skipped', at: Date.now() - 2 * 3600_000, opened: [] as string[] };
+    const simSelfCb: Array<(v: SelfView) => void> = [];
+    const SIM_SELF_HOSTILE = 'Fixed the floor picker.\n<img src=x onerror="window.__suXss=1"><script>window.__suXss=2</script>\n[click me](javascript:window.__suXss=3) and <b>bold</b> stay as text.'; // a payload that only sets a flag, so a failure cannot hang the driver
+    // the running version is the app's own (appversion.js), so the About line and the dialog agree; the canned releases sit just above it
+    const simSelfRun = (() => { const m = /^(\d+)\.(\d+)\.(\d+)/.exec(String((window as unknown as { DurbarAppVersion?: string }).DurbarAppVersion ?? '')); return m ? [Number(m[1]), Number(m[2]), Number(m[3])] : [0, 1, 29]; })();
+    const SV = { run: simSelfRun.join('.'), p1: `${simSelfRun[0]}.${simSelfRun[1]}.${simSelfRun[2] + 1}`, p2: `${simSelfRun[0]}.${simSelfRun[1]}.${simSelfRun[2] + 2}`, minor: simSelfRun[0] === 0 ? `0.${simSelfRun[1] + 1}.0` : `${simSelfRun[0] + 1}.0.0` };
+    const simSelfFeed = (): { target?: string; versions: string[]; breaking: 'breaking' | 'unknown' | 'no'; notes: SelfNotes['releases']; marks: SelfNotes['marks'] } => {
+      if (simSelfMode === 'breaking') return {
+        target: SV.minor, versions: [SV.minor, SV.p1], breaking: 'breaking',
+        notes: [{ version: SV.minor, date: '2026-11-24', text: 'Floors are now called levels.\nSettings > Floors moved to Settings > Office.', clipped: false }, { version: SV.p1, date: '2026-11-21', text: 'Calmer toasts.\nFixed a crash when a folder was renamed.', clipped: false }],
+        marks: [{ version: SV.minor, notes: 'Floors are renamed to levels; saved floor names move over by themselves.', action: 'Check your level names after the update.' }],
+      };
+      if (simSelfMode === 'update' || simSelfMode === 'hostile') return {
+        target: SV.p2, versions: [SV.p2, SV.p1], breaking: 'no',
+        notes: [{ version: SV.p2, date: '2026-11-24', text: simSelfMode === 'hostile' ? SIM_SELF_HOSTILE : 'Calmer toasts.\nThe Settings window opens faster.\nFixed a crash when a folder was renamed.', clipped: simSelfMode === 'hostile' }, { version: SV.p1, date: '2026-11-23', text: 'A new About block in Settings.', clipped: false }],
+        marks: [],
+      };
+      return { versions: [], breaking: 'no', notes: [], marks: [] };
+    };
+    const simSelfView = (announce?: string): SelfView => {
+      const f = simSelfFeed();
+      const base: SelfView = { shown: !!simSelfMode, blocked: false, canCheck: !!simSelfMode, dailyCheck: simSelf.daily, checking: simSelf.checking, running: SV.run, source: 'three-feathers/agent-durbar', sourceBy: 'built-in', origin: 'ci', checkedAt: simSelf.at, state: 'none' };
+      if (!simSelfMode) return { ...base, source: undefined, sourceBy: undefined, origin: undefined, checkedAt: undefined };
+      if (simSelfMode === 'failed') return { ...base, state: 'failed', reason: 'timeout' };
+      if (!f.target) return { ...base, state: 'up-to-date', latest: SV.run };
+      return { ...base, state: 'update', latest: f.target, target: f.target, versions: f.versions, breaking: f.breaking, gap: false, notice: simSelf.notice, ...(simSelf.notice === 'snoozed' ? { snoozeUntil: simSelf.until } : {}), ...(announce ? { announce } : {}) };
+    };
+    const simSelfEmit = (announce?: string): void => simSelfCb.forEach((cb) => cb(simSelfView(announce)));
+    const simSelfIn = (v: unknown): boolean => typeof v === 'string' && simSelfFeed().versions.includes(v);
+    const selfApi: Partial<DurbarApi> = {
+      selfUpdateGet: async () => simSelfView(),
+      selfUpdateCheck: async () => {
+        if (!simSelfMode) return simSelfView();
+        simSelf.checking = true; simSelfEmit();
+        await new Promise((r) => setTimeout(r, 400));
+        simSelf.checking = false; simSelf.at = Date.now();
+        return simSelfView(); // Check now: the card is the announcement, no toast (FR-463)
+      },
+      selfUpdateSetDaily: async (on) => { simSelf.daily = on === true; return { ok: true, update: simSelfView() }; },
+      selfUpdateSnooze: async (v) => { if (!simSelfIn(v)) throw new Error('Agent Durbar refused this update request.'); simSelf.notice = 'snoozed'; simSelf.until = Date.now() + 7 * 86400_000; return { ok: true, update: simSelfView() }; },
+      selfUpdateSkip: async (v) => { if (!simSelfIn(v)) throw new Error('Agent Durbar refused this update request.'); simSelf.notice = 'skipped'; return { ok: true, update: simSelfView() }; },
+      selfUpdateNotes: async () => {
+        const f = simSelfFeed();
+        if (!f.target) return { running: SV.run, releases: [], marks: [] };
+        return { running: SV.run, target: f.target, breaking: f.breaking, gap: false, source: 'three-feathers/agent-durbar', sourceBy: 'built-in', releases: f.notes, marks: f.marks };
+      },
+      // the driver reads which version a press asked to open; nothing opens in the simulator
+      selfUpdateOpenPage: async (v) => { if (!simSelfIn(v)) throw new Error('Agent Durbar refused this update request.'); simSelf.opened.push(String(v)); (window as unknown as { __simSelfOpened?: string[] }).__simSelfOpened = simSelf.opened; return { ok: true }; },
+      onSelfUpdate: (cb) => {
+        simSelfCb.push(cb);
+        if (simSelfMode && simSelfFeed().target && simSelfCb.length === 1) setTimeout(() => simSelfEmit(simSelfFeed().target), 700); // the daily check "found" it: one toast
+        return () => { const i = simSelfCb.indexOf(cb); if (i >= 0) simSelfCb.splice(i, 1); };
+      },
+    };
     const api: DurbarApi = {
       ...floorApi,
       ...mcpApi,
@@ -3786,6 +3903,7 @@ const planMcpSignInRefresh = (i: SignInPlanInput): SignInPlan => {
       onHarnessUpdates: (cb) => { simUpdCb.push(cb); if (simUpdStart && simUpdCb.length === 1) setTimeout(() => simUpdEmit({ app: 'codex', version: '1.0.2', name: 'the Codex CLI' }), 600); return () => { const i = simUpdCb.indexOf(cb); if (i >= 0) simUpdCb.splice(i, 1); }; },
       harnessVisible: async () => true,
       setCheckUpdatesAtStart: async (on) => { simStartCheck.on = on !== false; return { ok: true, checkUpdatesAtStart: simStartCheck.on }; },
+      ...selfApi, // spec 118 T014: Durbar's own update check, canned
       harnessOpenPage: async () => ({ ok: true }),
       harnessOpenSignIn: async () => ({ ok: true }),
       onHarnessProgress: (cb) => { simHarness.progress.push(cb); return () => { simHarness.progress = simHarness.progress.filter((x) => x !== cb); }; },
@@ -4363,6 +4481,20 @@ const planMcpSignInRefresh = (i: SignInPlanInput): SignInPlan => {
         id === 'sim-2' && target === 'vscodium'
           ? { ok: false, edition: 'VSCodium', error: 'VSCodium is installed, but it cannot open this folder safely (its path has &, which cmd.exe could misread). Rename the folder, or open it from VSCodium itself.' }
           : { ok: true, edition: target === 'folder' ? 'the file manager' : target === 'vscodium' ? 'VSCodium' : 'VS Code', ...(id === 'sim-2' ? { note: 'This folder is a link, so its real folder was opened.' } : {}) },
+      /* spec 005 FR-411: main's `agents:copyToolArg` answers, the page's clipboard standing in for Electron's; never the text */
+      copyToolArg: async (sessionId: string, callId: string, confirmed?: boolean): Promise<{ ok: true } | { ok: false; reason: 'unknown' | 'too-long' | 'ask' | 'failed' }> => {
+        const answer = async (): Promise<{ ok: true } | { ok: false; reason: 'unknown' | 'too-long' | 'ask' | 'failed' }> => {
+          const v = typeof sessionId === 'string' && typeof callId === 'string' ? simToolCopies.get(simToolCopyKey(sessionId, callId)) : undefined;
+          if (v === undefined) return { ok: false, reason: 'unknown' };
+          if (v.text.length > 100000) return { ok: false, reason: 'too-long' };
+          if (v.masked && confirmed !== true) return { ok: false, reason: 'ask' };
+          try { await navigator.clipboard.writeText(v.text); } catch { return { ok: false, reason: 'failed' }; }
+          return { ok: true };
+        };
+        const r = await answer();
+        simToolCopyLog.push({ confirmed: confirmed === true, answer: r.ok ? 'ok' : r.reason });
+        return r;
+      },
       // spec 063 FR-006: a fixed git status per agent (no git repository needed): branch, 0-4 changed files, one non-repository folder
       gitStatus: async (id: string) => {
         const n = Number(String(id).replace(/\D/g, '')) || 0;

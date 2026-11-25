@@ -107,6 +107,16 @@ function fixture(name, only) {
   add('diff-upstream', { push: 'other' });
   add('no-upstream', { push: 'plain' });
   add('flip');
+  // issue #2063: link-user's node_modules (and a second top-level link) point into link-target / link-target2; a link into the main checkout points nowhere near a worktree.
+  // A directory link on every OS: a junction on Windows (no privilege needed), a plain symlink elsewhere.
+  const lt = add('link-target'); const lt2 = add('link-target2'); const lu = add('link-user');
+  if (want('link-user')) {
+    write(path.join(lt, 'node_modules', 'x', 'i.js'), '1\n'); write(path.join(lt2, 'shared', 'f.txt'), '1\n');
+    const linkDir = (to, at) => fs.symlinkSync(to, at, process.platform === 'win32' ? 'junction' : 'dir');
+    linkDir(path.join(lt, 'node_modules'), path.join(lu, 'node_modules'));
+    linkDir(path.join(lt2, 'shared'), path.join(lu, 'shared-cache'));
+    linkDir(main, path.join(lu, 'main-link'));
+  }
   if (pending.length) g(main, 'push', '-u', 'origin', ...pending);
   if (want('closed-gone')) g(main, 'update-ref', '-d', 'refs/remotes/origin/closed-gone'); // branches deleted on origin after the merge
   if (want('squashed')) g(main, 'update-ref', '-d', 'refs/remotes/origin/squashed');
@@ -115,7 +125,7 @@ function fixture(name, only) {
   return { base, main, wts };
 }
 
-const STATES = { 'open-pr': 'OPEN', 'unknown-pr': 'UNKNOWN', 'no-pr': 'NONE', inner: 'OPEN', 'closed-gone': 'CLOSED', main: 'MERGED' };
+const STATES = { 'link-user': 'OPEN', 'open-pr': 'OPEN', 'unknown-pr': 'UNKNOWN', 'no-pr': 'NONE', inner: 'OPEN', 'closed-gone': 'CLOSED', main: 'MERGED' };
 const prState = (b) => (typeof b !== 'string' ? 'MERGED' : STATES[b] || 'MERGED'); // a detached HEAD has no branch: a careless script would see MERGED
 
 // One answer line per --git-path name, the way git gives them.
@@ -164,6 +174,10 @@ function check(modPath, tag, o) {
   is('locked', 'look', /locked/, 'a locked worktree needs a look');
   is('ignored-env', 'dirty', /ignored file.*\.env/, 'an ignored .env is data, listed dirty');
   is('ignored-build', 'removable', null, 'ignored node_modules and dist are rebuildable');
+  is('link-target', 'look', /linked from .*link-user.* \(node_modules\)/, 'a worktree that another worktree\'s node_modules links into is kept, with the dependant named (#2063)');
+  is('link-target2', 'look', /linked from .*link-user.* \(shared-cache\)/, 'any top-level link into a worktree keeps it, not only node_modules (#2063)');
+  is('link-user', 'look', /open/, 'the worktree that holds the links is judged on its own PR');
+  is('merged-clean', 'removable', null, 'a link into the main checkout does not keep another worktree (#2063)');
   is('outer', 'look', /contains worktree/, 'a worktree holding another worktree needs a look');
   is('outer2', 'look', /nested \.git/, 'a worktree holding a nested .git needs a look');
   is('mid-merge', 'look', /MERGE_HEAD/, 'a merge in progress needs a look');
@@ -376,7 +390,44 @@ function parseCase() {
   assert.deepStrictEqual(mod.ignoredData(['dist/a.js', 'x.tsbuildinfo', '.env', 'notes/out/x.md', 'release/s.p12', 'dist/.env.local', 'dist/k.pem', 'out/a/b.js', 'a/x.tsbuildinfo', '']), ['.env', 'notes/out/x.md', 'release/s.p12', 'dist/.env.local', 'dist/k.pem', 'a/x.tsbuildinfo'], 'ignored: only non-rebuildable ignored entries are data');
 }
 
+/** Fail-closed link cases (review of #2124), on plain folders: no git, so they run on every OS. */
+function linkCases(modPath) {
+  const mod = require(modPath);
+  const base = fs.mkdtempSync(path.join(tmp, 'lk-'));
+  const mk = (...p) => { const d = path.join(base, ...p); fs.mkdirSync(d, { recursive: true }); return d; };
+  const wtDir = mk('a'); const other = mk('b');
+  const row = (dir) => ({ path: dir, branch: 'x', head: '0', detached: false, locked: false, bare: false });
+  const look = (wt, ctx) => mod.classify(wt, { prState: () => 'MERGED', ...ctx });
+  // an unreadable sibling: its links were not all seen, so the worktree is kept (injected read, every OS)
+  const stub = (d, o) => { if (path.resolve(d) === other) { const e = new Error('denied'); e.code = 'EACCES'; throw e; } return fs.readdirSync(d, o); };
+  let r = look(row(wtDir), { all: [row(wtDir), row(other)], readdir: stub });
+  assert.ok(r.verdict === 'look' && /cannot read .*b to check its links \(EACCES\)/.test(r.why), 'an unreadable sibling folder keeps the worktree (fail closed): ' + JSON.stringify(r));
+  // a missing sibling is skipped (it is "directory missing" on its own row)
+  r = look(row(wtDir), { all: [row(wtDir), row(path.join(base, 'gone'))], readdir: stub });
+  assert.ok(!/cannot read|linked from/.test(r.why), 'a missing sibling is not a reason to keep the worktree: ' + JSON.stringify(r));
+  // the same with a real folder made unreadable (POSIX, not root: root reads everything)
+  if (process.platform !== 'win32' && !(process.getuid && process.getuid() === 0)) {
+    fs.chmodSync(other, 0);
+    try { r = look(row(wtDir), { all: [row(wtDir), row(other)] }); } finally { fs.chmodSync(other, 0o755); }
+    assert.ok(r.verdict === 'look' && /cannot read .*b to check its links/.test(r.why), 'an unreadable sibling folder (chmod 000) keeps the worktree (fail closed): ' + JSON.stringify(r));
+  }
+  // a dangling link whose text goes through a symlinked prefix to a missing path inside the worktree is counted (POSIX: a junction to a missing target is not made on Windows)
+  if (process.platform !== 'win32') {
+    const real = mk('real'); const wt2 = mk('real', 'wt');
+    fs.symlinkSync(real, path.join(base, 'sym'), 'dir');
+    const o2 = mk('c');
+    fs.symlinkSync(path.join(base, 'sym', 'wt', 'missing'), path.join(o2, 'dangling'));
+    r = look(row(wt2), { all: [row(wt2), row(o2)] });
+    assert.ok(r.verdict === 'look' && /linked from .*c \(dangling\)/.test(r.why), 'a dangling link through a symlinked prefix (the link text names the worktree by the symlinked path) keeps the worktree: ' + JSON.stringify(r));
+    fs.rmSync(path.join(o2, 'dangling'));
+    fs.symlinkSync(path.join(base, 'nowhere', 'x'), path.join(o2, 'dangling'));
+    r = look(row(wt2), { all: [row(wt2), row(o2)] });
+    assert.ok(!/linked from/.test(r.why), 'a dangling link to a missing path outside every worktree keeps nothing: ' + JSON.stringify(r));
+  }
+}
+
 check(SRC, 'real');
+linkCases(SRC);
 const T_REAL = Date.now() - T0;
 tmpList();
 parseCase();
@@ -427,6 +478,9 @@ const MUTANTS = [
   ['progress-rebase-apply', "'rebase-apply', 'sequencer']", "'sequencer']", /rebase-apply in progress/],
   ['progress-merge-head', "['MERGE_HEAD', ", '[', /merge in progress|MERGE_HEAD in progress|an in-progress operation/],
   ['root-from-cwd', "newWorktreeRoot(mainPath) + path.sep", "newWorktreeRoot(here) + path.sep", /root/],
+  ['link-check-dropped', 'if (linked) return', 'if (false) return', /node_modules links into is kept/],
+  ['unreadable-sibling-skipped', "return 'cannot read ' + o.path + ' to check its links (' + String((e && e.code) || e) + ')';", 'continue;', /unreadable sibling/],
+  ['prefix-not-resolved', 'target = nearestReal(', 'target = path.resolve(', /symlinked prefix/],
   ['nested-worktree', 'if (inner) return', 'if (false) return', /holding another worktree/],
   ['nested-git', 'if (nested) return', 'if (false) return', /nested \.git/],
   ['markers-length-unchecked', "if (gpLines.length !== IN_PROGRESS.length || gpLines.some((l) => l.trim() === '')) return", 'if (false) return', /fail closed/],
@@ -451,7 +505,7 @@ const ONLY = {
   'main-in-loop': ['merged-clean', 'main'], 'open-dropped': ['open-pr'], 'none-dropped': ['no-pr'],
   'ignored-data-allowed': ['ignored-env', 'ignored-deep', 'ignored-release', 'ignored-secret'], 'ignored-listing-dropped': ['ignored-env'],
   'allow-any-depth': ['ignored-deep'], 'allow-release': ['ignored-release'], 'secret-in-dist': ['ignored-secret'], 'rebuildable-empty': ['ignored-build'],
-  'nested-depth-capped': ['deep-repo'], 'nested-worktree': ['outer', 'inner'], 'nested-git': ['outer2'], 'in-progress-dropped': ['mid-merge'],
+  'nested-depth-capped': ['deep-repo'], 'nested-worktree': ['outer', 'inner'], 'link-check-dropped': ['link-target', 'link-target2'], 'nested-git': ['outer2'], 'in-progress-dropped': ['mid-merge'],
   'upstream-dropped': ['diff-upstream', 'no-upstream', 'other-remote'], 'upstream-name-dropped': ['diff-upstream'], 'other-remote-ok': ['other-remote'],
 };
 const shared = fixture('shared');
@@ -459,6 +513,7 @@ let own = 0;
 let n = 0;
 for (const [name, from, to, expect] of MUTANTS) {
   assert.ok(src.includes(from), 'mutant ' + name + ': the text to change is gone from the script');
+  if (name === 'prefix-not-resolved' && process.platform === 'win32') continue; // its fixture needs a link to a missing target (POSIX)
   const mp = path.join(tmp, 'mutant-' + name + '.js');
   fs.writeFileSync(mp, src.replace(from, () => to));
   let died = null;
@@ -469,6 +524,7 @@ for (const [name, from, to, expect] of MUTANTS) {
       const p = path.join(dir, 'tmp.AbCdEf'); fs.mkdirSync(p);
       const old = (Date.now() - 5 * 24 * 3600 * 1000) / 1000; fs.utimesSync(p, old, old);
       assert.deepStrictEqual(m.staleTmp([dir], Date.now(), []).map((f) => path.basename(f.path)), [], 'tmp: only old durbar-ui-shots-* and durbar-site-* directories are listed');
+    } else if (name === 'unreadable-sibling-skipped' || name === 'prefix-not-resolved') { linkCases(mp);
     } else if (name === 'rebuildable-empty') {
       const m = require(mp);
       assert.deepStrictEqual(m.ignoredData('!! node_modules/\n'), [], 'ignored: only non-rebuildable ignored entries are data');
