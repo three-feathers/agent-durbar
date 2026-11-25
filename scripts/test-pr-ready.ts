@@ -16,11 +16,11 @@ const modPath = process.env.PR_READY_MODULE ? path.resolve(process.env.PR_READY_
 interface Res { lines: string[]; ok: boolean; head: string }
 interface Run { (cmd: string, args: string[]): { status: number; out: string } }
 // eslint-disable-next-line @typescript-eslint/no-require-imports
-const pr = require(modPath) as { ready: (o: { root?: string; run: Run; security?: boolean }) => Res; crlfCuts: (d: string) => string[]; BASE: string };
+const pr = require(modPath) as { ready: (o: { root?: string; run: Run; security?: boolean; exempt?: boolean }) => Res; crlfCuts: (d: string) => string[]; BASE: string };
 
 const HEAD = 'a'.repeat(40);
-interface Fx { failAt?: string; out?: string; files: string[]; publicDiff: string; srcDiff: string; sigs: string[]; msgs: string[]; dirty: string; fetchFails: boolean }
-const fx = (o: Partial<Fx> = {}): Fx => ({ files: ['specs/021-collaboration-harness/spec.md'], publicDiff: '', srcDiff: '', sigs: [`${'b'.repeat(40)} G`], msgs: [`${'b'.repeat(40)}\nA plain message\n`], dirty: '', fetchFails: false, ...o });
+interface Fx { failAt?: string; out?: string; files: string[]; publicDiff: string; srcDiff: string; sigs: string[]; msgs: string[]; dirty: string; fetchFails: boolean; branch: string | null; folders: string[]; catMissing: boolean }
+const fx = (o: Partial<Fx> = {}): Fx => ({ files: ['specs/021-collaboration-harness/spec.md'], publicDiff: '', srcDiff: '', sigs: [`${'b'.repeat(40)} G`], msgs: [`${'b'.repeat(40)}\nA plain message\n`], dirty: '', fetchFails: false, branch: '021-collaboration-harness', folders: ['021-collaboration-harness'], catMissing: false, ...o });
 /** The injected runner: answers by the command's argv; records every call as a label. failAt = the label that exits 1 with `out`. */
 function runner(f: Fx, calls: string[]): Run {
   const label = (cmd: string, a: string[]): string => {
@@ -37,6 +37,9 @@ function runner(f: Fx, calls: string[]): Run {
     if (l === 'git fetch') return { status: f.fetchFails ? 1 : 0, out: '' };
     if (l === 'git rev-parse') return { status: 0, out: `${HEAD}\n` };
     if (l === 'git merge-base') return { status: 0, out: `${'c'.repeat(40)}\n` };
+    if (l === 'git symbolic-ref') return f.branch === null ? { status: 1, out: '' } : { status: 0, out: `${f.branch}\n` };
+    if (l === 'git ls-tree') return { status: 0, out: f.folders.join('\n') };
+    if (l === 'git cat-file') return { status: f.catMissing ? 1 : 0, out: '' };
     if (l === 'git status') return { status: 0, out: f.dirty };
     if (l === 'git log') return { status: 0, out: a.includes('-z') ? f.msgs.join('\0') : f.sigs.join('\n') };
     if (l === 'git diff --check') return { status: 0, out: '' };
@@ -47,7 +50,7 @@ function runner(f: Fx, calls: string[]): Run {
     return { status: 0, out: '' };
   };
 }
-const go = (f: Fx, security = false): { res: Res; calls: string[] } => { const calls: string[] = []; return { res: pr.ready({ root: ROOT, run: runner(f, calls), security }), calls }; };
+const go = (f: Fx, security = false, exempt = false): { res: Res; calls: string[] } => { const calls: string[] = []; return { res: pr.ready({ root: ROOT, run: runner(f, calls), security, exempt }), calls }; };
 const SCRIPTS = ['spec-numbers', 'fragments --check', 'specs-index --check', 'spec-numbers --dups', 'rules-check', 'changelog check'];
 
 // 1. all pass: ready: yes with the head; nothing conditional ran
@@ -74,7 +77,7 @@ const SCRIPTS = ['spec-numbers', 'fragments --check', 'specs-index --check', 'sp
   assert.ok(w2.res.lines.some((l) => /^skip \(\d+\) crlf/.test(l)), 'PR-READY-crlf: skipped when nothing under scripts/ or src/ changed');
 }
 // 2. each guard fails alone: its own line, ready: no, and nothing after it runs
-const table: { id: string; n: number; f: () => Fx; call: string }[] = [
+const table: { id: string; n: number; f: () => Fx; call: string; has?: string }[] = [
   { id: 'numbers', n: 1, f: () => fx({ failAt: 'spec-numbers', out: 'specs:numbers: FR-999 clashes with #1' }), call: 'spec-numbers' },
   { id: 'numbers', n: 1, f: () => fx({ fetchFails: true }), call: 'git fetch' },
   { id: 'fragments', n: 2, f: () => fx({ failAt: 'fragments --check', out: 'package.json: "test:x" must sort before "test:a"' }), call: 'fragments --check' },
@@ -82,14 +85,18 @@ const table: { id: string; n: number; f: () => Fx; call: string }[] = [
   { id: 'specs', n: 3, f: () => fx({ failAt: 'spec-numbers --dups', out: 'FAIL FR-1 defined twice' }), call: 'spec-numbers --dups' },
   { id: 'rules', n: 4, f: () => fx({ failAt: 'rules-check', out: 'rules: AGENTS.md over budget' }), call: 'rules-check' },
   { id: 'changelog', n: 5, f: () => fx({ failAt: 'changelog check', out: 'changelog: fragment missing' }), call: 'changelog check' },
-  { id: 'theme-tokens', n: 6, f: () => fx({ files: ['src/renderer/app.js'], failAt: 'test-theme-tokens', out: 'FAIL "#2056" in an app.js comment' }), call: 'test-theme-tokens' },
+  { id: 'theme-tokens', n: 6, f: () => fx({ files: ['src/renderer/app.js', 'specs/021-collaboration-harness/tasks.md'], failAt: 'test-theme-tokens', out: 'FAIL "#2056" in an app.js comment' }), call: 'test-theme-tokens' },
   { id: 'public-text', n: 7, f: () => fx({ publicDiff: 'diff --git a/docs/x.md b/docs/x.md\n--- a/docs/x.md\n+++ b/docs/x.md\n@@ -1 +1 @@\n+the Bearer header\n' }), call: 'git diff' },
   { id: 'drivers', n: 8, f: () => fx({ files: ['scripts/check-x.js'], failAt: 'test-ui-suite', out: 'FAIL raw ${} in page code' }), call: 'test-ui-suite' },
   { id: 'git', n: 10, f: () => fx({ dirty: ' M src/a.ts\n' }), call: 'git status' },
   { id: 'git', n: 10, f: () => fx({ failAt: 'git diff --check', out: 'a.md:3: trailing whitespace.' }), call: 'git diff --check' },
-  { id: 'git', n: 10, f: () => fx({ sigs: [`${'d'.repeat(40)} N`] }), call: 'git log' },
   { id: 'git', n: 10, f: () => fx({ msgs: [`${'d'.repeat(40)}\nfix\n\nCo-Authored-By: Claude <noreply@anthropic.com>\n`] }), call: 'git log' },
   { id: 'git', n: 10, f: () => fx({ msgs: [`${'d'.repeat(40)}\nfix\n\n\u{1F916} Generated with [Claude Code](https://claude.com/claude-code)\n`] }), call: 'git log' },
+  ...['N', 'B', 'X', 'Y', 'R', 'E'].map((L) => ({ id: `sig-${L}`, n: 10, f: () => fx({ sigs: [`${'d'.repeat(40)} ${L}`] }), call: 'git log', has: `"${L}"` })),
+  { id: 'branch', n: 11, f: () => fx({ branch: '051-credit-caps', folders: ['011-credit-caps', '051-other'], files: ['specs/011-credit-caps/spec.md'] }), call: 'git ls-tree', has: 'the diff touches specs/011-credit-caps/ only: name the branch 011-' },
+  { id: 'branch-nofolder', n: 11, f: () => fx({ branch: '051-credit-caps', folders: ['011-credit-caps'], files: ['specs/011-credit-caps/spec.md'] }), call: 'git ls-tree', has: 'no folder specs/051-*/' },
+  { id: 'branch-nospec', n: 11, f: () => fx({ branch: '011-credit-caps', folders: ['011-credit-caps'], files: ['src/main/x.ts'] }), call: 'git ls-tree', has: 'nothing in specs/011-credit-caps/' },
+  { id: 'branch-noplan', n: 11, f: () => fx({ branch: '011-credit-caps', folders: ['011-credit-caps'], files: ['src/main/x.ts', 'specs/011-credit-caps/spec.md'], catMissing: true }), call: 'git cat-file', has: 'is missing' },
 ];
 for (const t of table) {
   const { res, calls } = go(t.f(), t.id === 'public-text');
@@ -97,9 +104,30 @@ for (const t of table) {
   assert.strictEqual(res.ok, false, `PR-READY-${t.id}: (${t.n}) fails alone -> not ready (${t.call})`);
   assert.strictEqual(fails.length, 1, `PR-READY-${t.id}: exactly one failing line (${t.call})`);
   assert.ok(fails[0].startsWith(`FAIL (${t.n}) `), `PR-READY-${t.id}: the line names guard ${t.n}: ${fails[0]}`);
+  if (t.has) assert.ok(fails[0].includes(t.has), `PR-READY-${t.id}: the line says ${t.has}: ${fails[0]}`);
   assert.strictEqual(res.lines[res.lines.length - 1], 'ready: no', `PR-READY-${t.id}: ends with ready: no`);
   assert.ok(!res.lines.some((l) => l.startsWith('head ') || l.startsWith('ready: yes')), `PR-READY-${t.id}: no head, no yes`);
   if (t.id === 'git' && t.n === 10 && t.call === 'git log') assert.ok(!/noreply|anthropic|claude\.com|Claude </i.test(res.lines.join("\n")), 'PR-READY-git: the trailer text is matched, never printed');
+}
+// 2b. what passes: G and U (U with its note), a matching branch, the not-NNN-slug and detached cases (a note or a skip), --exempt
+{
+  const g = go(fx({ sigs: [`${'e'.repeat(40)} G`] }));
+  assert.ok(g.res.ok && !g.res.lines.some((l) => /allowed-signers/.test(l)), 'PR-READY-sig-G: G passes without a note');
+  const u = go(fx({ sigs: [`${'e'.repeat(40)} U`] }));
+  assert.ok(u.res.ok, 'PR-READY-sig-U: U passes (a good signature, the key is not listed locally)');
+  assert.ok(u.res.lines.some((l) => /NOTE git: signature good, key not in the local allowed-signers file/.test(l)), 'PR-READY-sig-U: U prints its note');
+  const m = go(fx({ branch: '011-credit-caps', folders: ['011-credit-caps'], files: ['src/main/x.ts', 'specs/011-credit-caps/tasks.md', 'docs/a.md'] }));
+  assert.ok(m.res.ok && m.res.lines.some((l) => /branch 011 matches specs\/011-credit-caps\//.test(l)), `PR-READY-branch: a matching branch passes and names the folder: ${m.res.lines.join(' | ')}`);
+  const x = go(fx({ branch: 'fix-thing', files: ['src/main/x.ts'] }));
+  assert.ok(x.res.ok && x.res.lines.some((l) => /NOTE branch "fix-thing" is not NNN-slug/.test(l)), 'PR-READY-branch: a name that is not NNN-slug is a NOTE (the exemption is not visible offline)');
+  const d = go(fx({ branch: null, files: ['src/main/x.ts'] }));
+  assert.ok(d.res.ok && d.res.lines.some((l) => /^skip \(\d+\) branch: detached HEAD/.test(l)), 'PR-READY-branch: a detached HEAD is skipped with a note');
+  const mn = go(fx({ branch: 'main', files: ['src/main/x.ts'] }));
+  assert.ok(mn.res.ok && mn.res.lines.some((l) => /^skip \(\d+\) branch: on main/.test(l)), 'PR-READY-branch: main is skipped');
+  const e = go(fx({ branch: '011-credit-caps', folders: ['011-credit-caps'], files: ['src/main/x.ts'] }), false, true);
+  assert.ok(e.res.ok && e.res.lines.some((l) => /NOTE branch: this change touches src\/ but nothing in specs\/011-credit-caps\//.test(l)), 'PR-READY-branch-exempt: --exempt makes the missing spec change a NOTE');
+  const ms = go(fx({ branch: '051-credit-caps', folders: ['011-credit-caps', '051-other'], files: ['specs/011-credit-caps/spec.md'] }), false, true);
+  assert.ok(!ms.res.ok, 'PR-READY-branch-mismatch: a wrong branch number fails even with --exempt');
 }
 // 3. the order and the stop: a failure at guard 3 runs 1 and 2 only
 {
@@ -157,7 +185,7 @@ for (const t of table) {
       return { status: r.status === null ? -1 : r.status, out: `${r.stdout}${r.stderr}` };
     };
     let r = pr.ready({ root: tmp, run });
-    assert.ok(!r.ok && r.lines.some((l) => /^FAIL \(10\) git: commit [0-9a-f]{9} is not SSH-signed/.test(l)), `PR-READY-git: a real unsigned commit stops guard 10: ${r.lines.join(' | ')}`);
+    assert.ok(!r.ok && r.lines.some((l) => /^FAIL \(10\) git: commit [0-9a-f]{9} has signature status "N"/.test(l)), `PR-READY-git: a real unsigned commit stops guard 10: ${r.lines.join(' | ')}`);
     assert.strictEqual(r.head, G('rev-parse', 'HEAD').trim(), 'PR-READY-git: the head is the repository head');
     fs.writeFileSync(path.join(tmp, 'a.txt'), 'one\ntwo\nthree  \n');
     r = pr.ready({ root: tmp, run });
@@ -184,11 +212,14 @@ if (!process.env.PR_READY_MODULE) {
   const abs = (t: string): string => t.split("require('./").join(`require('${path.join(ROOT, 'scripts').replace(/\\/g, '/')}/`);
   const dropLine = (id: string) => (t: string): string => t.split('\n').filter((l) => !l.startsWith(`  ['${id}',`)).join('\n');
   const mutants: { name: string; tag: string; mut: (t: string) => string }[] = [
-    ...['numbers', 'fragments', 'specs', 'rules', 'changelog', 'theme-tokens', 'public-text', 'drivers', 'crlf', 'git'].map((id) => ({ name: `drop-${id}`, tag: `PR-READY-${id}`, mut: dropLine(id) })),
+    ...['numbers', 'fragments', 'specs', 'rules', 'changelog', 'theme-tokens', 'public-text', 'drivers', 'crlf', 'git', 'branch'].map((id) => ({ name: `drop-${id}`, tag: `PR-READY-${id}`, mut: dropLine(id) })),
     { name: 'cond6-always', tag: 'PR-READY-cond6', mut: (t) => t.replace('ctx.files.some((f) => APP_FILES.includes(f))', 'true') },
     { name: 'cond8-always', tag: 'PR-READY-cond8', mut: (t) => t.replace('ctx.files.some((f) => DRIVER_RE.test(f))', 'true') },
     { name: 'no-stop', tag: 'PR-READY-stop', mut: (t) => t.replace('if (ctx.stopped) return;', '') },
-    { name: 'signed-any', tag: 'PR-READY-git', mut: (t) => t.replace("if (sig !== 'G')", "if (false)") },
+    { name: 'sig-accept-N', tag: 'PR-READY-sig-N', mut: (t) => t.replace("const OK_SIG = ['G', 'U'];", "const OK_SIG = ['G', 'U', 'N'];") },
+    { name: 'sig-reject-U', tag: 'PR-READY-sig-U', mut: (t) => t.replace("const OK_SIG = ['G', 'U'];", "const OK_SIG = ['G'];") },
+    { name: 'sig-accept-any', tag: 'PR-READY-sig-', mut: (t) => t.replace('if (!OK_SIG.includes(sig)) return', 'if (false) return') },
+    { name: 'branch-any-folder', tag: 'PR-READY-branch', mut: (t) => t.replace(" && f.split('/')[1].startsWith(`${nnn}-`)", '') },
   ];
   const tag = (m: { mut: (t: string) => string }): string => m.mut(real);
   for (const m of mutants) {

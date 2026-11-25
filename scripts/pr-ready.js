@@ -16,16 +16,19 @@
  *                      labels). A hit blocks only with --security (the PR is area:security, as in pr-preflight check 9); else it is a NOTE
  *   8  driver lint     test:uisuite, only when a scripts/ driver changed (check-*.js, shots-*.js, driver-helpers.js, ui-suite.js)
  *   9  CRLF warning    a NOTE (never a block) when an added test line cuts text out of a source file with a bare \n (rule 18)
- *   10 git hygiene     no uncommitted tracked change, `git diff --check`, every commit since origin/main SSH-signed (%G? G), no AI
+ *   10 git hygiene     no uncommitted tracked change, `git diff --check`, every commit since origin/main with a good signature (%G? G, or
+ *                      U: good signature, key not in the local allowed-signers file, a NOTE; N B X Y R E block, the letter shown), no AI
  *                      trailer in any message (preflight's AI_LINE; the message is matched, never printed)
- *   11 prints the head sha and `ready: yes` only when 1 to 10 passed; otherwise `ready: no`.
+ *   11 branch          the rule of .github/scripts/spec-gate.sh, ported (it needs bash, jq, perl and the PR event): branch NNN-slug and, when
+ *                      src/ or specs/ changed, specs/NNN-*\/ exists, is touched (and holds spec, plan, tasks when src/ changed)
+ *   12 prints the head sha and `ready: yes` only when 1 to 11 passed; otherwise `ready: no`.
  *
  * It NEVER marks anything ready, never pushes, never comments; the only network is the fetch (and gh's read in guard 1). Every command is
  * a fixed argv without a shell (the Node binary runs the scripts, so it also works on Windows); nothing from the repo goes into a command
  * line. Output from a failing command is shown as ONE line through scripts/safe-print.js. The full `npm test` is NOT part of it.
  * Exit 0 ready, 1 not ready, 2 wrong usage.
  *
- *   node scripts/pr-ready.js [--security] [--root DIR]
+ *   node scripts/pr-ready.js [--security] [--exempt] [--root DIR]     --exempt: the PR will carry Spec-Exempt (guard 11 notes, not blocks, src/ without a spec change)
  */
 'use strict';
 const fs = require('fs');
@@ -52,6 +55,9 @@ function realRun(root) {
   };
 }
 
+// %G? letters: G and U are a good signature (U: the key is not in this machine's gpg.ssh.allowedSignersFile); the rest block
+const OK_SIG = ['G', 'U'];
+const SIG_WHY = { N: 'no signature', B: 'bad signature', X: 'expired signature', Y: 'signed with an expired key', R: 'signed with a revoked key', E: 'cannot be checked (missing key or tool problem)' };
 const NODE = process.execPath;
 const lineOf = (out) => {
   const rows = String(out).split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
@@ -123,15 +129,49 @@ function guardGit(ctx) {
   }
   const lg = ctx.run('git', ['log', '--format=%H %G?', `${BASE}..HEAD`]);
   if (lg.status !== 0) return fail(`git: log failed: ${lineOf(lg.out)}`);
+  const unlisted = [];
   for (const row of lg.out.split(/\r?\n/).filter(Boolean)) {
     const [sha, sig] = row.split(' ');
-    if (sig !== 'G') return fail(`git: commit ${printable(String(sha).slice(0, 9))} is not SSH-signed and verified (%G? is "${printable(sig || '')}")`);
+    if (!OK_SIG.includes(sig)) return fail(`git: commit ${printable(String(sha).slice(0, 9))} has signature status "${printable(sig || '')}": ${SIG_WHY[sig] || 'not a good signature'}`);
+    if (sig === 'U') unlisted.push(String(sha).slice(0, 9));
   }
   const msgs = ctx.run('git', ['log', '-z', '--format=%H%n%B', `${BASE}..HEAD`]);
   for (const m of msgs.out.split('\0').filter((x) => x.trim())) {
     if (pp.AI_LINE.test(m)) return fail(`git: commit ${printable(m.slice(0, 9))} has an AI trailer or "Generated with" line (spec 021 FR-061)`);
   }
-  return pass('git: clean tree, no whitespace error, every commit signed, no AI trailer');
+  return pass('git: clean tree, no whitespace error, every commit signed, no AI trailer', unlisted.length ? [`NOTE git: signature good, key not in the local allowed-signers file (%G? U): ${unlisted.length} commit(s)`] : []);
+}
+
+// .github/scripts/spec-gate.sh, ported: its checks 1 (branch NNN-slug) and 2 (src/ needs specs/NNN-*/). The exemption (a Spec-Exempt line or a
+// label) is not visible offline: a branch that is not NNN-slug is a NOTE, and --exempt turns the "src/ without a spec change" failure into one.
+const BRANCH_RE = /^([0-9]{3})-[a-z0-9][a-z0-9-]*$/;
+function guardBranch(ctx) {
+  const b = ctx.run('git', ['symbolic-ref', '--short', '-q', 'HEAD']);
+  const name = b.status === 0 ? b.out.trim() : '';
+  if (!name) return { skip: 'detached HEAD, the branch rule is not checked (the gate reads the PR branch)' };
+  if (name === 'main') return { skip: 'on main' };
+  const shown = printable(name);
+  const m = name.match(BRANCH_RE);
+  if (!m) return pass(`branch: "${shown}" is not NNN-slug`, [`NOTE branch "${shown}" is not NNN-slug: the Spec Kit gate fails it unless the PR is exempt (not visible offline); a branch rename closes its PR`]);
+  const nnn = m[1];
+  const src = ctx.files.some((f) => f.startsWith('src/'));
+  const specFiles = ctx.files.filter((f) => f.startsWith('specs/'));
+  if (!src && !specFiles.length) return pass(`branch: ${shown} (no src/ or specs/ change)`);
+  const inFolder = (f) => f.startsWith('specs/') && f.split('/')[1].startsWith(`${nnn}-`);
+  const lt = ctx.run('git', ['ls-tree', '--name-only', 'HEAD:specs']);
+  const folder = lt.status === 0 ? lt.out.split(/\r?\n/).find((x) => x.startsWith(`${nnn}-`)) : undefined;
+  if (!folder) return fail(`branch: no folder specs/${nnn}-*/ exists for branch ${shown}: create it with /speckit-specify, then plan and tasks`);
+  if (src) {
+    for (const f of ['spec.md', 'plan.md', 'tasks.md']) {
+      if (ctx.run('git', ['cat-file', '-e', `HEAD:specs/${folder}/${f}`]).status !== 0) return fail(`branch: specs/${printable(folder)}/${f} is missing (spec, plan and tasks must all exist before code)`);
+    }
+  }
+  if (specFiles.some(inFolder)) return pass(`branch ${nnn} matches specs/${printable(folder)}/ (the diff touches ${[...new Set(specFiles.map((f) => f.split('/')[1]))].map((x) => `specs/${printable(x)}/`).join(', ')})`);
+  const others = [...new Set(specFiles.map((f) => f.split('/')[1]).filter((x) => /^[0-9]{3}-/.test(x)))];
+  if (others.length) return fail(`branch ${nnn} (${shown}); the diff touches ${others.map((x) => `specs/${printable(x)}/`).join(' and ')} only: name the branch ${others[0].slice(0, 3)}-... (a rename closes the PR: open it under the right name)`);
+  if (!src) return pass(`branch: ${shown} (specs/ change outside any spec folder)`);
+  const text = `branch: this change touches src/ but nothing in specs/${printable(folder)}/ (the spec of branch ${shown}): tick the task in tasks.md, add the spec delta, or fix the branch number`;
+  return ctx.exempt ? pass(`branch: ${shown}`, [`NOTE ${text} (--exempt: the PR carries Spec-Exempt)`]) : fail(text);
 }
 
 // one guard per line: the test's mutants drop a line by its id
@@ -146,12 +186,13 @@ const GUARDS = [
   ['drivers', guardDrivers],
   ['crlf', guardCrlf],
   ['git', guardGit],
+  ['branch', guardBranch],
 ];
 
 /** Runs the guards in order; stops at the first failure. -> { lines, ok, head } */
-function ready({ root = path.join(__dirname, '..'), run = realRun(root), security = false } = {}) {
+function ready({ root = path.join(__dirname, '..'), run = realRun(root), security = false, exempt = false } = {}) {
   const lines = [];
-  const ctx = { root, run, security, files: [], mergeBase: BASE };
+  const ctx = { root, run, security, exempt, files: [], mergeBase: BASE };
   const verdict = (ok) => ({ lines, ok, head: ctx.head });
   const head = run('git', ['rev-parse', 'HEAD']);
   ctx.head = head.status === 0 ? head.out.trim() : '';
@@ -179,15 +220,15 @@ function ready({ root = path.join(__dirname, '..'), run = realRun(root), securit
 
 if (require.main === module) {
   const argv = process.argv.slice(2);
-  const known = ['--security', '--root'];
+  const known = ['--security', '--exempt', '--root'];
   const ri = argv.indexOf('--root');
   if (argv.some((a, i) => !known.includes(a) && argv[i - 1] !== '--root') || (ri >= 0 && !argv[ri + 1])) {
-    console.log('usage: node scripts/pr-ready.js [--security] [--root DIR]');
+    console.log('usage: node scripts/pr-ready.js [--security] [--exempt] [--root DIR]');
     process.exit(2);
   }
   const root = ri >= 0 ? path.resolve(argv[ri + 1]) : path.join(__dirname, '..');
   const t0 = Date.now();
-  const res = ready({ root, security: argv.includes('--security') });
+  const res = ready({ root, security: argv.includes('--security'), exempt: argv.includes('--exempt') });
   for (const l of res.lines) console.log(l);
   console.log(`(${((Date.now() - t0) / 1000).toFixed(1)} s)`);
   process.exit(res.ok ? 0 : 1);
