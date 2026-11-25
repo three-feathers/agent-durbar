@@ -1,1 +1,0 @@
-- **The coffee-break card in a chat is only as tall as its text** (spec 068): in a long chat opened again, the card that says an agent's usage is used up, and the earlier card above it, were each several hundred pixels tall and mostly empty; the sign-in card in the chat had the same rule. Checked in the simulator at 1440x900 and 1280x800, light and dark.
