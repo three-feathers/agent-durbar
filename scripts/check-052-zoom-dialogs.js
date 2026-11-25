@@ -2,7 +2,7 @@
  * Check for spec 052 (delta 2026-11-25, issue #2115): at the smallest window (640x700) zoomed to 200 %, the page is 320 px wide. Every wide dialog
  * still fits it: the dialog is inside the window, nothing in it sticks out past its box, its body does not scroll sideways, and its footer buttons
  * wrap onto more rows with every one whole (the "Settings" button of the MCP servers dialog was cut at the left, and the body scrolled 1 px sideways).
- * The page behind a dialog is not asserted: the office does not fit 320 px (a known gap in the spec delta). Simulator only (no AI credits).
+ * Also the folder setup, Import from VS Code, Trust and global-file review dialogs (issue #2140 part 1). The page behind a dialog is not asserted: the office does not fit 320 px (a known gap in the spec delta). Simulator only (no AI credits).
  *
  *   npm run check:ui -- --only check-052-zoom-dialogs
  *   OUT=<folder>  (optional) saves 052-zoom-dialog-<name>.png
@@ -65,7 +65,25 @@ module.exports = async (ctx) => {
     await js(`(()=>{const e=document.getElementById('wideFont2115');if(e)e.remove();return 1})()`);
     if (!MEASURE) assertFits(w, `${tag} in a wide font`);
   };
-  const closeDlg = () => js(`(()=>{const o=document.getElementById('scrDlg');if(!o)return 0;const b=o.querySelector('.dbtn [data-cancel]')||[...o.querySelectorAll('.dbtn .btn')].pop();if(b)b.click();return 1})()`);
+  /* closes the dialog with its Cancel, else its first footer button (the folder setup dialog has no Cancel: "Turn all off" only records an answer in the simulator) */
+  const closeDlg = async () => {
+    await js(`(()=>{const o=document.getElementById('scrDlg');if(!o)return 0;const b=o.querySelector('.dbtn [data-cancel]')||o.querySelector('.dbtn .btn');if(b)b.click();return 1})()`);
+    await until(`!document.getElementById('scrDlg')`);
+  };
+  const CHECKED = [];
+  const checkDialog = async (name, tag) => {
+    await zoomIn(tag);
+    await check(name, tag);
+    CHECKED.push(name);
+    ctx.win.webContents.setZoomFactor(1);
+    await closeDlg();
+  };
+  const openFolderExtras = async (tag) => {
+    await H.load({ w: 640, h: 700, ready: 'fit', focus: true });
+    await H.settle();
+    await js(`window.DurbarScreens.folderMcp(${jsLiteral('~/work/mcp-swiss')},'mcp-swiss')`);
+    assert.ok(await until(`!!document.getElementById('mcpAdd')`), `${tag}: the folder extras screen opened`);
+  };
 
   /* 1. the chat's MCP servers dialog (the widest footer: Settings, Folder extras..., Done), with the restart-session button showing */
   let tag = '640x700 zoom 2 MCP servers dialog';
@@ -80,6 +98,7 @@ module.exports = async (ctx) => {
   assert.ok(await until(`!!document.querySelector('#agMcp li.srv')&&!!document.getElementById('mcpRestartSess')`), `${tag}: the dialog shows its rows and the restart-session button`);
   await zoomIn(tag);
   await check('mcp-servers', tag);
+  CHECKED.push('mcp-servers');
   ctx.win.webContents.setZoomFactor(1);
   await closeDlg();
 
@@ -92,10 +111,41 @@ module.exports = async (ctx) => {
   await js(`document.getElementById('mcpAdd').click()`);
   assert.ok(await until(`!!document.querySelector('#scrDlg .mscope')`), `${tag}: the add form opened`);
   await js(`document.querySelector('#scrDlg [name=mScope][value=global]').click()`);
-  await zoomIn(tag);
-  await check('add-server', tag);
-  ctx.win.webContents.setZoomFactor(1);
-  await closeDlg();
+  await checkDialog('add-server', tag);
+
+  /* 2b. issue 2140 part 1: the other wide dialogs get the same five asserts. The folder's own agent setup (the simulator's simfoldersetup page address opens it by itself) */
+  tag = '640x700 zoom 2 folder setup dialog';
+  await H.load({ w: 640, h: 700, query: { simfoldersetup: '1' }, settle: false });
+  assert.ok(await until(`!!document.querySelector('#scrDlg .dlg.fs [data-fs]')`), `${tag}: the dialog opened with its items`);
+  await checkDialog('folder-setup', tag);
+
+  /* Import from VS Code (the simulator's fake .vscode/mcp.json: six servers, one blocked, one already named, notes and secret chips) */
+  tag = '640x700 zoom 2 Import from VS Code dialog';
+  await openFolderExtras(tag);
+  await js(`document.getElementById('mcpImportVs').click()`);
+  assert.ok(await until(`document.querySelectorAll('#scrDlg #impList .imp-row').length>=5`), `${tag}: the import list opened`);
+  await js(`document.querySelector('#scrDlg [data-all="1"]').click()`);
+  await checkDialog('import-vscode', tag);
+
+  /* Trust (an extra that is off and not yet trusted: turning it on asks first) */
+  tag = '640x700 zoom 2 Trust dialog';
+  await openFolderExtras(tag);
+  await js(`document.querySelector('#stage li.srv[data-name="docs-search"] [data-act="toggle"], li.srv[data-name="docs-search"] [data-act="toggle"]').click()`);
+  assert.ok(await until(`/^Trust /.test((document.getElementById('scrDlgT')||{}).textContent||'')&&!!document.querySelector('#scrDlg .trustcmd')`), `${tag}: the trust question opened`);
+  await checkDialog('trust', tag);
+
+  /* the review of the agent apps' own files (a global server, one conflicting name so the "Now:" and "Replace it" lines show) */
+  tag = '640x700 zoom 2 global-file review dialog';
+  await openFolderExtras(tag);
+  await js(`document.getElementById('mcpAdd').click()`);
+  assert.ok(await until(`!!document.querySelector('#scrDlg .mscope')`), `${tag}: the add form opened`);
+  await js(`(()=>{const q=k=>document.querySelector('#scrDlg '+k);q('[name=mScope][value=global]').click();q('#mName').value='github';q('#mType').value='stdio';q('#mType').dispatchEvent(new Event('change'));q('#mCmd').value='npx';q('#mArgs').value='-y\\n@example/a-very-long-package-name-for-the-global-file-review';return 1})()`);
+  await js(`[...document.querySelectorAll('#scrDlg .dbtn .btn')].find(b=>b.classList.contains('primary')).click()`);
+  assert.ok(await until(`/^Review: add/.test((document.getElementById('scrDlgT')||{}).textContent||'')&&document.querySelectorAll('#scrDlg .gpv').length>0`), `${tag}: the review opened`);
+  await checkDialog('global-review', tag);
+
+  /* a guard that the list holds every wide dialog of the issue (a dropped case would leave a dialog unchecked) */
+  assert.deepStrictEqual(CHECKED, ['mcp-servers', 'add-server', 'folder-setup', 'import-vscode', 'trust', 'global-review'], 'every wide dialog (issue 2140 part 1) is opened at 320 px');
 
   /* 3. the same footers at 1440x900 and 1280x800 */
   const footer = (root) => js(`(()=>{const o=document.getElementById(${jsLiteral(root)}),d=o&&o.querySelector('.dlg'),f=d&&d.querySelector('.dbtn');if(!f)return null;const D=d.getBoundingClientRect();
