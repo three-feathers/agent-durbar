@@ -86,6 +86,7 @@ const DRIVERS = [
   // has PowerShell; winget,brew,npm there hid the PowerShell route and failed the check)
   { name: 'shots-051-setup', env: { DURBAR_SIM_MANAGERS: process.platform === 'win32' ? 'powershell,winget,npm' : 'winget,brew,npm' } },
   { name: 'shots-081-updates' }, // spec 081: agent-app update check and update, canned results, no network
+  { name: 'check-selfupdate-dialog' }, // spec 118 T015: Durbar's own update toast, More menu line, dialog (SC-004 hostile body, breaking tick gate, snooze, skip) and About block; canned feed, no network
   { name: 'shots-011-quota' }, // spec 011 FR-086..FR-092 (issue #690): account limits per app: fixtures, stale, failed, hostile, suggestion, the one timer
   { name: 'shots-051-account' }, // spec 051 FR-013: the signed-in account line, the picker tooltips and About agent apps (a fake identity)
   { name: 'shots-051-setup', label: 'shots-051-setup win32', env: { DURBAR_SIM_MANAGERS: 'powershell,winget,npm', DURBAR_SIM_PLATFORM: 'win32' } }, // spec 060 FR-011/FR-012: Windows' routes (PowerShell installer, winget, npm) and Run beside each command, on every OS

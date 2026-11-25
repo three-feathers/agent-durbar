@@ -130,7 +130,7 @@ import { initSimGuard, simRefusedChannels } from './ipcguard';
 import { OrgPolicyCache } from './orgpolicy';
 import { register as registerOrgPolicyIpc } from './ipc/orgpolicy';
 import { register as registerSelfUpdateIpc } from './ipc/selfupdate';
-import { SelfUpdater, realSelfUpdateTimer } from './selfupdate';
+import { SelfUpdater, realSelfUpdateTimer, wireSelfUpdateResume } from './selfupdate';
 import { loadUpdateSource } from './updatesource';
 import { updatePolicy } from './updatepolicy';
 import { updateFeedGet } from './netget';
@@ -1149,7 +1149,8 @@ function createWindow(): void {
   // review on #721: a reload (or a crash) of the window drops any open-sessions dialog, so a lock waiting for its answer is released
   win.webContents.on('did-start-navigation', (d) => { if (d.isMainFrame && !d.isSameDocument) harnessIpc.releaseAsking(); });
   win.webContents.on('render-process-gone', () => harnessIpc.releaseAsking());
-  win.webContents.once('did-finish-load', () => { void adaptersList(false).then(() => harnessIpc.checker.scheduleStart()).catch(() => undefined); });
+  // spec 118 FR-462 (T014): Durbar's own daily check starts in the same chain, after the office is shown and detection has finished (a failed detection does not stop it)
+  win.webContents.once('did-finish-load', () => { void adaptersList(false).then(() => harnessIpc.checker.scheduleStart()).catch(() => undefined).then(() => selfUpdater?.start()); });
   void win.loadFile(INDEX_HTML, { query });
   // Dev: DURBAR_SHOT=/tmp/out.png [DURBAR_SHOT_SIZE=1280x800] [DURBAR_SHOT_CLICK=sim-1] saves a screenshot and quits.
   const shot = dev.DURBAR_SHOT;
@@ -1198,8 +1199,9 @@ app.whenReady().then(() => {
   settingsStore = new SettingsStore(path.join(app.getPath('userData'), 'durbar-settings.json'));
   settingsStore.load();
   // spec 118 FR-004: packaged builds only, never the simulator; the request only through makeFeedGet on the update session (FR-007, T507: updateFeedGet), the policy read each time (FR-005).
-  // NOT started until T014 (the Update card and the Settings switch): nothing calls selfUpdater's start here, so no request is made.
-  selfUpdater = new SelfUpdater({ packaged: app.isPackaged, simulator: SIMULATOR, source: loadUpdateSource(), running: app.getVersion(), policy: updatePolicy, store: () => settingsStore, get: updateFeedGet(), now: Date.now, timer: realSelfUpdateTimer, confirm: (o) => nativeConfirm(win, o) });
+  // T014 (FR-462): started after the window's first load (below, after spec 081's start check); the window hears of each finished check; the release page only from main's feed.
+  selfUpdater = new SelfUpdater({ packaged: app.isPackaged, simulator: SIMULATOR, source: loadUpdateSource(), running: app.getVersion(), policy: updatePolicy, store: () => settingsStore, get: updateFeedGet(), now: Date.now, timer: realSelfUpdateTimer, confirm: (o) => nativeConfirm(win, o), changed: (v) => toRenderer('selfupdate:changed', v), openExternal: (url) => shell.openExternal(url) });
+  wireSelfUpdateResume(powerMonitor, () => selfUpdater); // spec 118 FR-462 (review of PR 2073): a wake from sleep looks again, so a clock jump past 24 h does not wait
   /* Dev/test theme seed (spec 036 FR-005): DURBAR_THEME=<id> makes the office open on that theme for the per-theme checks; invalid ids fall back in the renderer. */
   if (dev.DURBAR_THEME) runTheme = parseThemeId(dev.DURBAR_THEME);
   mcpStore = new McpStore(path.join(app.getPath('userData'), 'durbar-mcp.json'), safeStorageCodec);

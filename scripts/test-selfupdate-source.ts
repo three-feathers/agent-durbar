@@ -165,7 +165,7 @@ async function main(): Promise<void> {
     const fs2 = source({ failSave: true });
     const kept = (await fs2.h.check()) as SelfUpdateView;
     const u = await fs2.set(RAVI);
-    assert.deepStrictEqual([u.ok, u.reason, fs2.store.updates.source, fs2.patches.length], [false, 'unsaved', undefined, 2], 'review 4: a failed save answers unsaved and is rolled back (the old source stays)');
+    assert.deepStrictEqual([u.ok, u.reason, fs2.store.updates.source, fs2.patches.length], [false, 'unsaved', undefined, 3], 'review 4: a failed save answers unsaved and is rolled back (the old source stays; the check wrote lastCheck and, T014, announced)');
     assert.deepStrictEqual([u.update.source, u.update.target, u.update.state], [SLUG, kept.target, kept.state], 'review 4: the kept feed and result are untouched');
     assert.strictEqual((await fs2.set(RAVI)).reason, 'unsaved', 'review 4: the next change is not busy');
   }

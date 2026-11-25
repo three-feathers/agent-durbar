@@ -525,7 +525,8 @@
     const aboutSec=ab?`<section class="scr-sec" aria-labelledby="aboutH"><h3 id="aboutH">About</h3>
         <p class="scr-note"><b>${esc(ab.name)}</b> ${esc(ab.version)} · by <b>${esc(ab.owner)}</b></p>
         <p class="scr-note small" id="aboutCredits">Contributors: ${ab.contributors.map(c=>esc(c.label)).join(', ')}</p>
-        <p class="scr-note small">${esc(ab.copyright)} · MIT License</p></section>`:'';
+        <p class="scr-note small">${esc(ab.copyright)} · MIT License</p>
+        <div class="su-block" id="selfUpdBlock" hidden></div></section>`:''; /* spec 118 FR-464: filled by selfupdatecard.js with DOM calls only (no feed text in this template) */
     /* spec 051: Settings > Agent apps (install, update, sign in) */
     let hsSec='',acctAgain=false;
     if(window.DurbarHarnesses&&window.DurbarHarnesses.available()&&X.bridge.listAdapters){
@@ -578,6 +579,7 @@
         <details class="scr-more"><summary>More</summary><p class="scr-note small"><b>Folder extras…</b> in an agent's MCP menu opens the same list. Extras apply only to agents in that folder and are never shared with other folders. Switching one on shows its exact command first, and asks again if the command changes.</p></details>
       </section></details>${aboutSec}</div></div></div>`;
     if(keep)keep.back();
+    if(window.DurbarSelfUpdate&&$('selfUpdBlock'))window.DurbarSelfUpdate.fillAbout($('selfUpdBlock')); /* spec 118 FR-464: the Updates block of About */
     if(window.DurbarHarnesses&&window.DurbarHarnesses.shown)window.DurbarHarnesses.shown(!!hsSec); /* spec 081 FR-016: the card is the announcement while it is on screen */
     if(hsSec)window.DurbarHarnesses.loadAccounts(acctAgain); /* spec 051 FR-014: the account lines fill in after the paint (Codex takes about 2 s) */
     if(orgSec){(async()=>{ /* FR-208: a failed read is "unknown", never "no policy"; an empty view hides the section */

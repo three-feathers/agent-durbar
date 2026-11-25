@@ -622,3 +622,15 @@ html[data-motion-off] .wpic img{transition:none;transform:none!important}
 /* spec 052 FR-138 (2026-11-11): on a Mac, outside full screen, a screen over a chat keeps the traffic-light room: the two rules above have an id in them and beat the Mac rule in styles.css, so the Mac rule is repeated here with the same weight and the room first. A notice strip above is the first row, so the head then keeps the plain value. Under 760px --sn-pad is already 24px, so the same two rules cover the row layout. */
 html[data-platform="darwin"]:not([data-fullscreen]) body.panel-open.screen-open #screen:has(.scr-nav) .scr-head{--tl-room:78px;padding-left:max(var(--tl-room),var(--sn-pad))}
 html[data-platform="darwin"]:not([data-fullscreen]) body.panel-open.screen-open .notice-strip:not([hidden]) ~ #screen:has(.scr-nav) .scr-head{padding-left:var(--sn-pad)}
+/* spec 118 FR-464: Durbar's own update block (Settings > About) and the Update dialog. Tokens only; all text at least 11px. */
+.su-block{margin-top:var(--s-2)}
+.su-swrow{display:flex;align-items:center;gap:var(--s-2)}
+.su-dlg .su-src,.su-dlg .su-gap{margin:0 0 var(--s-1)}
+.su-brk{border:1px solid var(--tone-warn-line);background:var(--warn-bg);color:var(--tone-warn-ink);border-radius:var(--r-md);padding:var(--s-2);margin:var(--s-1) 0 var(--s-2)}
+.su-brk-h{margin:0 0 var(--s-1);font-size:var(--t3-size)}
+.su-brk-t{margin:0;font-size:var(--t4-size);line-height:var(--t3-lh);overflow-wrap:anywhere}
+.su-tick{margin-top:var(--s-1)}
+.su-rels{max-height:min(36vh,300px);overflow:auto;border:1px solid var(--line);border-radius:var(--r-sm);padding:var(--s-1) var(--s-2)}
+.su-rels:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
+.su-rel summary{cursor:pointer;font-size:var(--t4-size);font-weight:var(--t4-weight);padding:var(--s-1) 0}
+.su-notes{white-space:pre-wrap;overflow-wrap:anywhere;font-size:var(--t4-size);color:var(--ink-2);line-height:var(--t3-lh);margin:0 0 var(--s-1)}

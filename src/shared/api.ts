@@ -905,6 +905,26 @@ export interface UpdatesView {
   announce?: { app: string; version: string; name: string };
 }
 
+/** Spec 118 T014 (FR-024, FR-464): Durbar's own update state as main shows it to the window: versions, booleans, times, the source slug and closed codes. */
+export interface SelfUpdateWindowView {
+  shown: boolean; blocked: boolean; canCheck: boolean; dailyCheck: boolean; checking: boolean; running: string;
+  source?: string; sourceBy?: 'built-in' | 'organization' | 'you'; origin?: 'env' | 'ci' | 'local';
+  checkedAt?: number; latest?: string;
+  state: 'none' | 'up-to-date' | 'newer' | 'update' | 'failed';
+  target?: string; versions?: string[]; breaking?: 'breaking' | 'unknown' | 'no'; gap?: boolean; notice?: 'show' | 'snoozed' | 'skipped';
+  reason?: string;
+  /** When a snooze ends (review of PR 2128, item 6: the About line names the days left). */
+  snoozeUntil?: number;
+  /** Only on `selfupdate:changed`: the version to toast, once (FR-463). */
+  announce?: string;
+}
+/** Spec 118 T014 (FR-010, FR-464): the dialog's text, cleaned and capped in main; shown with textContent only. */
+export interface SelfUpdateWindowNotes {
+  running: string; target?: string; breaking?: 'breaking' | 'unknown' | 'no'; gap?: boolean; source?: string; sourceBy?: 'built-in' | 'organization' | 'you';
+  releases: { version: string; date: string; text: string; clipped: boolean }[];
+  marks: { version: string; notes: string; action: string }[];
+}
+
 /**
  * Spec 095 FR-031, FR-033 (search conversations): what main sends the window about a scan. Masked text, ids main already knows, a folder's
  * display name, times and mark offsets only: never a path, a transcript or raw text. `kind` tells `search:batch` from `search:done`.
@@ -1151,6 +1171,15 @@ export interface DurbarApi {
   /** Spec 081 FR-016: whether Settings > Agent apps is on screen (then the card is the announcement and no toast is shown). */
   harnessVisible?(on: boolean): Promise<boolean>;
   setCheckUpdatesAtStart?(on: boolean): Promise<{ ok: boolean; checkUpdatesAtStart?: boolean }>;
+  /* Spec 118 T014 (FR-024, FR-462..FR-464): Durbar's own update check. Version strings, one boolean or nothing: main decides every URL and source. */
+  selfUpdateGet?(): Promise<SelfUpdateWindowView>;
+  selfUpdateCheck?(): Promise<SelfUpdateWindowView>;
+  selfUpdateSetDaily?(on: boolean): Promise<{ ok: boolean; update: SelfUpdateWindowView }>;
+  selfUpdateSnooze?(version: string): Promise<{ ok: boolean; reason?: 'policy-off'; update: SelfUpdateWindowView }>;
+  selfUpdateSkip?(version: string): Promise<{ ok: boolean; reason?: 'policy-off'; update: SelfUpdateWindowView }>;
+  selfUpdateNotes?(): Promise<SelfUpdateWindowNotes>;
+  selfUpdateOpenPage?(version: string): Promise<{ ok: boolean; reason?: 'policy-off' }>;
+  onSelfUpdate?(cb: (v: SelfUpdateWindowView) => void): () => void;
   /** Spec 058 FR-213: *Refresh MCP sign-ins automatically*. */
   setMcpSignInRefresh?(on: boolean): Promise<{ ok: boolean; mcpSignInRefresh?: boolean }>;
   /** Spec 058 FR-227: Settings > Diagnostics (off by default). */
