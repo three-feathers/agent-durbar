@@ -41,9 +41,14 @@ function fresh(root) {
   const names = git(root, ['diff', '--name-only', '-z', base, 'origin/main', '--', ...FRESH_PATHS]).split('\0').filter(Boolean);
   const files = names.map((file) => {
     const sha = git(root, ['log', '-1', '--format=%H', `${base}..origin/main`, '--', file]).split(/\r?\n/)[0].trim();
-    return { file: clean(file), sha: /^[0-9a-f]{40,64}$/.test(sha) ? sha.slice(0, 12) : '?' };
+    return { file, sha: /^[0-9a-f]{40,64}$/.test(sha) ? sha.slice(0, 12) : '?' };
   });
   return { files };
+}
+
+// the printed lines for a list of { file, sha }: pure, so a test can feed it a hostile name on any OS (Windows cannot create such a file)
+function lines(files) {
+  return files.map((f) => `${clean(f.file)}: ${f.sha}`);
 }
 
 function main(argv) {
@@ -60,10 +65,10 @@ function main(argv) {
     console.log('rules: fresh');
     return 0;
   }
-  for (const f of r.files) console.log(`${f.file}: ${f.sha}`);
-  console.log(`rules: stale, read: ${r.files.map((f) => f.file).join(', ')}`);
+  for (const l of lines(r.files)) console.log(l);
+  console.log(`rules: stale, read: ${r.files.map((f) => clean(f.file)).join(', ')}`);
   return 1;
 }
 
-module.exports = { fresh };
+module.exports = { fresh, lines };
 if (require.main === module) process.exitCode = main(process.argv.slice(2));

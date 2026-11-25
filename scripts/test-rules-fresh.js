@@ -59,6 +59,10 @@ const sha12 = (sha) => sha.slice(0, 12);
 
 // every behaviour, in order, against one copy of the script; a failing assert names the behaviour (the mutants below are matched on that text)
 function scenarios(script) {
+  { // a hostile file name (bidi, zero-width, ESC, a workflow command) through the printing code itself, from a list: no file is created, so this runs on every OS
+    const out = require(script).lines([{ file: 'docs/rules/b\u202e\u200b\u001bx::error::y.md', sha: 'abcdef012345' }]).join('\n');
+    assert.ok(!/[\u202e\u200b\u001b]|::/.test(out) && out.includes('docs/rules/b\\u202e\\u200b\\u001bx: :error: :y.md: abcdef012345'), `stale: file names are printed escaped, got ${JSON.stringify(out)}`);
+  }
   { // nothing changed on main: fresh
     const w = world();
     const r = run(script, w.checkout);
@@ -80,7 +84,7 @@ function scenarios(script) {
     const r = run(script, w.checkout);
     assert.strictEqual(r.code, 1, `stale: exit code ${r.code}: ${r.err}`);
     assert.ok(!/IGNORE|::error|pwned|Tighten|Move a rule|BODYLINE|secret-looking|\u001b|\u200b/.test(r.out), `stale: no commit subject or body is ever printed, got ${JSON.stringify(r.out)}`);
-    assert.ok(!/\u202e/.test(r.out), `stale: file names are printed escaped, got ${JSON.stringify(r.out)}`);
+    assert.ok(!/\u202e/.test(r.out), `stale: file names are printed escaped (a real file, where the OS can create it), got ${JSON.stringify(r.out)}`);
     const l = lines(r.out);
     assert.ok(/^rules: stale, read: .*AGENTS\.md/.test(l[l.length - 1]), `stale: summary line is last and lists the files, got ${l[l.length - 1]}`);
     const want = [`AGENTS.md: ${sha12(s1)}`, ...['.claude/agents/x.md', '.claude/skills/durbar-y/SKILL.md', '.github/copilot-instructions.md', '.specify/memory/constitution.md', 'CLAUDE.md', 'docs/rules/a.md', 'docs/rules/new.md'].map((f) => `${f}: ${sha12(s2)}`)];
@@ -155,8 +159,8 @@ try {
     ['the constitution left out', "const { FRESH_PATHS } = require('./rules-check.js');", "const FRESH_PATHS = require('./rules-check.js').FRESH_PATHS.filter((p) => !p.includes('constitution'));", 'stale: every changed rule file is named once'],
     ['the Copilot instructions left out', "const { FRESH_PATHS } = require('./rules-check.js');", "const FRESH_PATHS = require('./rules-check.js').FRESH_PATHS.filter((p) => !p.includes('copilot'));", 'stale: every changed rule file is named once'],
     ['every changed file listed, rule or not', "'--', ...FRESH_PATHS]", "'--']", 'stale: every changed rule file is named once'],
-    ['the commit subject printed', 'console.log(`${f.file}: ${f.sha}`)', "console.log(`${f.file}: ${f.sha} ${require('child_process').execFileSync('git', ['-C', root, 'log', '-1', '--format=%s', 'origin/main', '--', f.file], { encoding: 'utf8' }).trim()}`)", 'stale: no commit subject or body is ever printed'],
-    ['a file name printed raw', 'file: clean(file)', 'file', win ? 'stale: every changed rule file is named once' : 'stale: file names are printed escaped'],
+    ['the commit subject printed', 'for (const l of lines(r.files)) console.log(l);', "for (const l of lines(r.files)) console.log(`${l} ${execFileSync('git', ['-C', root, 'log', '-1', '--format=%s', 'origin/main'], { encoding: 'utf8' }).trim()}`);", 'stale: no commit subject or body is ever printed'],
+    ['a file name printed raw', '${clean(f.file)}: ${f.sha}', '${f.file}: ${f.sha}', 'stale: file names are printed escaped'],
     ['exit 0 when stale', '  return 1;\n}', '  return 0;\n}', 'stale: exit code 0'],
     ['the summary line dropped', 'console.log(`rules: stale, read:', 'void (`rules: stale, read:', 'stale: summary line is last'],
   ];
