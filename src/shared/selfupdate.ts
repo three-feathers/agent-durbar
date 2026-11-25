@@ -341,7 +341,7 @@ export function parseUpdatesSettings(v: unknown): SelfUpdateSettings | undefined
   const selfCheck = own(v, 'selfCheck');
   if (typeof selfCheck === 'boolean') out.selfCheck = selfCheck;
   const source = own(v, 'source');
-  if (typeof source === 'string' && parseRepoSlug(source) === source) out.source = source;
+  if (typeof source === 'string' && parseRepoSlug(source) === source && redact(source) === source) out.source = source; // a pair the mask changes (token-shaped) is absent
   const snooze = own(v, 'snooze');
   const [sv, su] = isObj(snooze) ? [own(snooze, 'version'), own(snooze, 'until')] : [];
   if (stableVersion(sv) && time(su)) out.snooze = { version: sv, until: su };

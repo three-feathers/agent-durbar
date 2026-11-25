@@ -69,6 +69,7 @@ const DRIVERS = [
   { name: 'check-001-room-heads', focus: true }, // spec 001 FR-270, FR-271 (issue #1905): 16 folders whose names start alike: a cut name keeps its end, the whole head (and the Real office sign) says its folder on hover and on keyboard focus, masked
   { name: 'check-001-room-heads', label: 'check-001-room-heads retro', env: { DRIVER_WORLD: 'retro' } }, // spec 001 FR-270..FR-272 (issue #1905): the same checks in the Retro arcade (its signs have more room: see the driver's note)
   { name: 'check-005-rail-sort' }, // spec 005 FR-341 (issue #1961): the rail's Sort menu: five choices, order inside folders, keyboard, remembered, heights unchanged, 180 px
+  { name: 'check-005-long-args' }, // spec 005 FR-438 (issue #2060 item 3): a long tool argument's chip says how many more characters (masked, cut after the mask), an over-limit one names its length; keyboard, both sizes
   { name: 'check-005-rail-folder' }, // spec 005 FR-340 (issue #1905): the rail's group heads and rows give their folder (masked) on hover and focus; equal names show their parent; 220 and 180 px
   { name: 'check-001-add-go' }, // spec 001 FR-272 (issue #1905): after an add the office goes to the new room and marks it for 3 s; Show; still under reduced motion; another floor; the Real office sign
   { name: 'check-001-add-go', label: 'check-001-add-go retro', env: { DRIVER_WORLD: 'retro' } }, // spec 001 FR-270..FR-272 (issue #1905): the same checks in the Retro arcade (its signs have more room: see the driver's note)
@@ -159,7 +160,7 @@ const DRIVERS = [
   { name: 'shots-069-harmonize' }, // spec 069 part 2: copy servers between the agent apps' lists
   { name: 'shots-069-mcp-tools' }, // spec 069 part 3: tools on expand, Remove in the agent dialog (058's state words and Details stay)
   { name: 'shots-059-long-url' }, // spec 059 FR-019: a long unbroken name stays in its card, the inbox and the Schedules rows
-  { name: 'check-mcp-row-width' }, // spec 058 delta 2026-11-12 (#1622): a failed server's row keeps a readable text column; the buttons wrap below it
+  { name: 'check-mcp-row-width' }, // spec 058 delta 2026-11-12 (#1622): a failed server's row keeps a readable text column; the buttons wrap below it; FR-436: a row with a long Renewed state too, light and dark
   { name: 'check-activity-table' }, // spec 052 FR-071 delta 2026-10-21 (#474): Tools > Activity renders its rows
   { name: 'check-codex-file-card' }, // spec 052 FR-172: a Codex write card names the files and shows the change
   { name: 'check-theme-art' }, // spec 040 FR-023: a picked theme's characters and gadgets on desks, walkers, places and chips
@@ -260,6 +261,7 @@ const DRIVERS = [
   { name: 'check-102-arcade-postbox' }, // spec 102 T318 (issue #1399): the Postbox in the arcade: a lobby plate with the arcade's word, the missed runs, a click opens Settings > Schedules
   { name: 'check-102-arcade-limit-remove' }, // spec 102 T395 (issue #1954): the arcade's limit pill offers Remove limit (the Real and Photo office slip's button), one line, pressing it removes the limit
   { name: 'check-done-desk-mask' }, // spec 041 FR-065: no token of a done reply on the office floor
+  { name: 'check-005-chip-copy' }, // spec 005 FR-411 (issue #2060 item 4): Copy on a chip with a masked word asks first (Cancel, Escape, Copy anyway: the real multi-line text), a plain chip copies at once; both sizes, light and dark
   { name: 'check-toolchip-mask' }, // spec 005 FR-342 (issue #1974): a tool chip's argument masked (line, title, command, Copy), start and update, Flat and Real office; harmless corpus as on main
   // spec 052 FR-171: wrapping, sizes, box widths, field weight, dark contrast. Two drivers that run at once (issue #738: one took ~650 s
   // against the 600 s limit); the light part also has the built-in themes' contrast, the dark part the tones and the stylesheet check
@@ -313,6 +315,7 @@ const NOT_IN_SUITE = {
   'shots-024-custom': 'passes alone with DURBAR_SIM_PLACES=3 but takes about 89 s (custom places: seeding, Add / Edit dialog, Settings, rename, delete at both sizes); too long for the suite today. Run it by hand: DURBAR_SIM_PLACES=3 as its header says',
   'check-rename': 'npm run check:rename, about 140 s (spec 059, issue #372: rename a session, every kind and level, both sizes); check-rename-inline in DRIVERS covers the in-place rename on every surface',
   'check-office-overlap': 'run by `npm run check:office` and by check-parallel.js (the Office layout job and its Real office and arcade variants, OFFICE_VIEW/OFFICE_WORLD): it needs those environment variables and measures every layout, so it is not a one-driver suite entry (spec 102 issue #1632 added a tooltip assert)',
+  'check-118-update-session': 'not a window driver: a bare Electron main process (no app window, no simulator) with a recording proxy, Linux only, proving spec 118 T507 (the update session); run by hand through el.sh as its header says',
   'check-perf': 'npm run check:perf measures frame times and DOM growth under load; its limits depend on the machine, so it is a local check, not a gate on shared runners',
 };
 

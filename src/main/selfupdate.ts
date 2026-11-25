@@ -5,7 +5,8 @@
  * of the version-only IPC channels (`ipc/selfupdate.ts` wires them; main.ts does not start the checker before T014). No Electron import:
  * `scripts/test-selfupdate-checker.ts` and `scripts/test-selfupdate-ipc.ts` run it.
  */
-import { cadenceDue, decodeUtf8Strict, feedUrl, isBreaking, manualCheckAllowed, parseReleasesJson, pickTarget, releasesJsonUrl, selfCheckOn, selfPolicyView, snoozeState, validateFeed, parseUpdatesPatch, SNOOZE_MS } from '../shared/selfupdate';
+import { cadenceDue, decodeUtf8Strict, feedUrl, isBreaking, manualCheckAllowed, parseReleasesJson, pickTarget, releasesJsonUrl, selfCheckOn, selfPolicyView, snoozeState, validateFeed, parseUpdatesPatch, parseRepoSlug, sameRepo, SNOOZE_MS } from '../shared/selfupdate';
+import { redact } from '../shared/redact';
 import type { Breaking, CadenceInput, Feed, ReleaseMarks, SelfPolicy, SelfUpdateSettings, SourceOrigin, UpdateSource } from '../shared/selfupdate';
 import { MAX_VERSION_LENGTH } from '../shared/versionfield';
 import { ShownError } from '../shared/shownerror';
@@ -25,10 +26,12 @@ export interface SelfUpdateDeps {
   /** `updatePolicy()`, read again before each request and when each answer arrives (FR-005). */
   policy(): SelfPolicy | undefined;
   store(): SelfUpdateStore | undefined;
-  /** `makeFeedGet(electronRequestFactory())`: the only network path. */
+  /** `updateFeedGet()` (`makeFeedGet` on the update session, T507): the only network path. */
   get: FeedGet;
   now(): number;
   timer: FeedTimer;
+  /** T011: the native confirmation (`nativeConfirm` with the window); without it no source change is saved. */
+  confirm?(o: { message: string; detail: string; ok: string }): Promise<boolean>;
 }
 
 /** What the window may see as a failure: a closed set (FR-025). `aborted` never reaches it. */
@@ -36,7 +39,7 @@ export type SelfUpdateReason = Exclude<FeedFailure, 'aborted'> | 'feed-invalid';
 /** Versions, booleans, times, the source slug and closed codes only (FR-024): no URL, path, header or feed text. */
 export interface SelfUpdateView {
   shown: boolean; blocked: boolean; canCheck: boolean; dailyCheck: boolean; checking: boolean; running: string;
-  source?: string; sourceBy?: 'built-in' | 'organization'; origin?: SourceOrigin;
+  source?: string; sourceBy?: 'built-in' | 'organization' | 'you'; origin?: SourceOrigin;
   checkedAt?: number; latest?: string;
   state: 'none' | 'up-to-date' | 'newer' | 'update' | 'failed';
   target?: string; versions?: string[]; breaking?: Breaking; gap?: boolean; notice?: 'show' | 'snoozed' | 'skipped'; reason?: SelfUpdateReason;
@@ -63,8 +66,9 @@ export class SelfUpdater {
     const u = this.d.store()?.updates ?? {};
     return { now: this.d.now(), packaged: this.d.packaged, simulator: this.d.simulator, origin: this.d.source?.origin, selfCheck: u.selfCheck, policy: this.d.policy(), lastCheckAt: this.current()?.at ?? u.lastCheck?.at };
   }
+  /** FR-002, FR-003, FR-005: the organization's `feedUrl`, else the person's override (T011), else the built-in source. */
   private slug(): string | undefined {
-    return selfPolicyView(this.d.policy()).feedSlug ?? this.d.source?.slug;
+    return selfPolicyView(this.d.policy()).feedSlug ?? (this.d.source ? this.d.store()?.updates.source : undefined) ?? this.d.source?.slug;
   }
   /** The kept result, only for the source in force now: another repository's result is never shown under this name. */
   private current(): Result | undefined {
@@ -173,6 +177,63 @@ export class SelfUpdater {
     return { ok, update: this.view() };
   }
 
+  private sourcing = false;
+
+  /**
+   * T011 (FR-003): `slug` is already the parsed pair (the handler parsed the text). Locked, not allowed or the same source: a closed code and
+   * no request. Then the new source's list is read first (a failed read changes nothing), then the native confirmation; only a yes saves.
+   */
+  async setSource(slug: string): Promise<{ ok: boolean; reason?: SourceRefusal; update: SelfUpdateView }> {
+    const answer = (ok: boolean, reason?: SourceRefusal) => ({ ok, ...(reason ? { reason } : {}), update: this.view() });
+    // asked before the read, again after it (no dialog when it would be refused) and again after the dialog, right before the save
+    const blocked = (): SourceRefusal | undefined => {
+      const i = this.input();
+      if (selfPolicyView(i.policy).feedSlug) return 'locked';
+      return !manualCheckAllowed(i) || !this.d.source || !this.d.confirm ? 'not-allowed' : undefined;
+    };
+    const first = blocked();
+    if (first) return answer(false, first);
+    if (sameRepo(slug, this.slug())) return answer(true);
+    if (this.sourcing) return answer(false, 'busy');
+    this.sourcing = true;
+    try {
+      const url = feedUrl(slug);
+      const r = url ? await this.d.get(url, slug) : { ok: false as const, reason: 'not-allowed' as const };
+      if (!r.ok) return answer(false, r.reason === 'aborted' ? 'network' : r.reason);
+      const text = decodeUtf8Strict(r.bytes);
+      let json: unknown;
+      try { json = text === undefined ? undefined : JSON.parse(text); } catch { json = undefined; }
+      const feed = validateFeed(json, slug);
+      if (!feed || (feed.releases.length === 0 && (feed.dropped.length > 0 || feed.unplaced))) return answer(false, 'feed-invalid');
+      const afterRead = blocked();
+      if (afterRead || !this.d.source || !this.d.confirm) return answer(false, afterRead ?? 'not-allowed');
+      const builtIn = this.d.source.slug;
+      let yes: boolean;
+      try {
+        yes = await this.d.confirm({
+          message: `Get Durbar updates from ${slug}?`,
+          detail: `Updates will then come from a repository you chose. Updates from ${slug} are made by whoever controls that GitHub repository, not by the makers of this build (${builtIn}). Durbar can only check that a download matches that repository's own list. Only switch to a repository you trust.`,
+          ok: 'Use this source',
+        });
+      } catch { return answer(false, 'dialog-failed'); } // a dialog that fails is no yes
+      if (!yes) return answer(false, 'declined');
+      const afterDialog = blocked();
+      if (afterDialog) return answer(false, afterDialog);
+      const saved = this.d.store()?.setUpdates({ source: slug, lastCheck: undefined }) ?? false;
+      this.refresh();
+      return answer(saved, saved ? undefined : 'unsaved');
+    } finally {
+      this.sourcing = false;
+    }
+  }
+
+  /** T011: back to the built-in source, without a read; the kept result of the override is dropped with it. */
+  useBuiltInSource(): { ok: boolean; update: SelfUpdateView } {
+    const ok = this.d.store()?.updates.source === undefined || (this.d.store()?.setUpdates({ source: undefined, lastCheck: undefined }) ?? false);
+    this.refresh();
+    return { ok, update: this.view() };
+  }
+
   view(): SelfUpdateView {
     const i = this.input();
     const pv = selfPolicyView(i.policy);
@@ -181,7 +242,7 @@ export class SelfUpdater {
     const u = this.d.store()?.updates ?? {};
     const r = this.current();
     const v: SelfUpdateView = { ...base, shown: true, origin: this.d.source.origin };
-    if (!pv.blocked) { v.source = this.slug(); v.sourceBy = pv.feedSlug ? 'organization' : 'built-in'; }
+    if (!pv.blocked) { v.source = this.slug(); v.sourceBy = pv.feedSlug ? 'organization' : u.source !== undefined ? 'you' : 'built-in'; }
     const checkedAt = r?.at ?? u.lastCheck?.at;
     if (checkedAt !== undefined) v.checkedAt = checkedAt;
     const latest = r?.feed ? r.feed.releases[0]?.version : u.lastCheck?.latest;
@@ -193,12 +254,17 @@ export class SelfUpdater {
   }
 }
 
+/** T011: what a refused source change answers: closed codes, never the text that was sent. */
+export type SourceRefusal = 'locked' | 'not-allowed' | 'busy' | 'declined' | 'dialog-failed' | 'unsaved' | SelfUpdateReason;
+/** T011: the free text of `setSource` is capped before it is parsed. */
+export const SOURCE_TEXT_MAX = 200;
+
 /** The one refusal text of every forged call (FR-024): no echo of what was sent. */
 export const SELFUPDATE_REFUSED = 'Agent Durbar refused this update request.';
 const refuse = (): never => { throw new ShownError(SELFUPDATE_REFUSED); };
 
 /**
- * FR-024: the handlers of `selfupdate:get`, `check`, `snooze(version)`, `skip(version)`. A channel that takes nothing refuses any argument; a
+ * FR-024: the handlers of `selfupdate:get`, `check`, `snooze(version)`, `skip(version)`, `setSource(text)`, `useBuiltInSource`. A channel that takes nothing refuses any argument; a
  * version channel takes exactly one string of at most 64 characters equal to a version of main's last validated feed. Nothing is read from
  * an argument before its type is checked, so a getter never runs.
  */
@@ -217,5 +283,14 @@ export function selfUpdateHandlers(checker: () => SelfUpdater | undefined) {
     check: (...a: unknown[]) => none(a).checkNow(),
     snooze: (...a: unknown[]) => { const [c, v] = version(a); return c.snooze(v); },
     skip: (...a: unknown[]) => { const [c, v] = version(a); return c.skip(v); },
+    // the ONE free-text channel (T011): capped, then only the parsed pair goes on; refused text is never echoed (the fixed text)
+    setSource: (...a: unknown[]) => {
+      const c = checker();
+      const v = a[0];
+      const slug = c && a.length === 1 && typeof v === 'string' && v.length <= SOURCE_TEXT_MAX ? parseRepoSlug(v) : undefined;
+      // a pair the shared mask would change (token-shaped) is refused like text that does not parse: no request, nothing shown or saved
+      return slug && c && redact(slug) === slug ? c.setSource(slug) : refuse();
+    },
+    useBuiltInSource: (...a: unknown[]) => none(a).useBuiltInSource(),
   };
 }

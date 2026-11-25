@@ -50,8 +50,12 @@ export interface RealMeta {
   hdPeople?: HdSet;
 }
 /** spec 102 FR-391: per person, pose and authored scale `s` (file px per grid px): the file's width and height and its face box (x, y, w, h), all in file px */
-export interface HdSet { scales: number[]; people: Record<string, Record<string, Record<string, [number, number, number, number, number, number]>>>; busts?: Record<string, SeatMeta>; loungeW?: number }
+export interface HdSet { scales: number[]; people: Record<string, Record<string, Record<string, [number, number, number, number, number, number]>>>; busts?: Record<string, SeatMeta>; loungeW?: number; stand?: Record<string, StandMeta>; placeW?: number }
 /** spec 102 T472 (owner 2026-11-23 20:11 UTC): the seated people of a set: its HD busts (one size, the largest, drawn as each world scales its people) when it has them, else its `seat` */
+/** spec 102 T502: the standing people of a set: its own `stand`, else its HD block's (measured on the 72 px frames: the grid size of each pose, its feet, crown and foot centre) */
+export const standOf = (meta: Pick<RealMeta, 'stand' | 'hdPeople'>): Record<string, StandMeta> => (meta.stand && Object.keys(meta.stand).length ? meta.stand : (meta.hdPeople && meta.hdPeople.stand) || {});
+/** spec 102 T502: a set whose only people pictures are its HD ones (an `hd` block and no standing numbers of its own: the Retro pixel set since its first pictures were removed): no old file name is ever drawn for its people */
+export const hdOnly = (meta: Pick<RealMeta, 'hdPeople' | 'stand'>): boolean => !!meta.hdPeople && !(meta.stand && Object.keys(meta.stand).length);
 export const seatsOf = (meta: Pick<RealMeta, 'seat' | 'hdPeople'>): Record<string, SeatMeta> => (meta.hdPeople && meta.hdPeople.busts) || meta.seat || {};
 /** the file of a seated pose, in the set's folder: the HD bust (`hd/<pid>-<pose>@4.webp`) or the set's own picture */
 export const seatFile = (meta: Pick<RealMeta, 'hdPeople'>, pid: string, pose: string): string => (meta.hdPeople && meta.hdPeople.busts && roOwnB(meta.hdPeople.busts, pid) ? `hd/${pid}-${pose}@4.webp` : `${pid}-${pose}.webp`);
@@ -375,14 +379,15 @@ function roPack(meta: RealMeta, folders: RealFolder[], W: number, Ho: number, lo
 
 /** FR-024: the standing picture for a visitor at a place (the pose, else its fallback), or null when the person has neither. */
 export function standPose(meta: RealMeta, person: string | null | undefined, place: string, custom: boolean): { pose: string; size: [number, number]; figH: number; feet: number; top: number; foot: number } | null {
-  if (!person || !roOwn(meta.stand, person)) return null;
-  const st = meta.stand[person], want = custom ? 'wait' : (roOwn(FX_POSE, place) ? FX_POSE[place] : 'wait');
+  const stand = standOf(meta);
+  if (!person || !roOwn(stand, person)) return null;
+  const st = stand[person], want = custom ? 'wait' : (roOwn(FX_POSE, place) ? FX_POSE[place] : 'wait');
   for (const p of [want, POSE_FALLBACK[want]]) if (p && roOwn(st.poses, p)) return { pose: p, size: st.poses[p], figH: st.figH, feet: st.feet && roOwn(st.feet, p) ? st.feet[p] : 1, top: st.top && roOwn(st.top, p) ? st.top[p] : 0, foot: st.foot && roOwn(st.foot, p) ? st.foot[p] : 0.5 };
   return null;
 }
 /** a person's standing height (top of the head to the soles) in sheet pixels, from the upright 'letter' pose (else the sheet's figure height) */
 export function standHeight(meta: RealMeta, person: string): number {
-  const st = roOwn(meta.stand, person) ? meta.stand[person] : null;
+  const stand = standOf(meta), st = roOwn(stand, person) ? stand[person] : null;
   if (!st) return 1;
   const h = roOwn(st.poses, 'letter') ? st.poses.letter[1] : st.figH;
   const f = st.feet && roOwn(st.feet, 'letter') ? st.feet.letter : 1, t = st.top && roOwn(st.top, 'letter') ? st.top.letter : 0;
@@ -493,7 +498,7 @@ function roLobby(meta: RealMeta, places: RealPlace[], W: number, Lb: number): { 
     const visitors: VisitorBox[] = compact ? [] : p.visitors.slice(0, al.shown[i]).map((v, j) => {
       const cx = x + fw - 0.3 * vw + vw / 2 + j * al.step;
       const sp = standPose(meta, v.person, p.id, !!p.custom);
-      let fig: VisitorBox['fig'] = null, face: Rect | null = null, shadow: Rect | null = null;
+      let fig: VisitorBox['fig'] = null, face: Rect | null = null, shadow: Rect | null = null, noPic = false;
       let chipY = Math.max(0, frontY - CHIP_GAP - CHIP_H); /* spec 097 FR-024 (issue 2013): a visitor with no figure keeps its chip on the floor strip, never on the band's bottom edge (the folder frame line) */
       if (sp) {
         /* the feet (the picture's lowest opaque row) stand on the front floor plane, in front of the fixture; one scale per person,
@@ -503,7 +508,7 @@ function roLobby(meta: RealMeta, places: RealPlace[], W: number, Lb: number): { 
         const px = (n: number): number => (snap ? snapDevice(n, dpr) : n);
         /* spec 097 FR-191 (2026-11-14, #1743): the side a visitor must face is worked out from where it stands against its fixture (right of the middle faces left); a set drawn the other way is mirrored, its foot centre with it */
         const faces: 'left' | 'right' = cx > x + fw / 2 ? 'left' : 'right', mir = (meta.facing || 'left') !== faces, ft = (f: number): number => (mir ? 1 - f : f);
-        const st = meta.stand[String(v.person)], fb = roOwn(POSE_FRAME_B, sp.pose) && roOwn(st.poses, POSE_FRAME_B[sp.pose]) ? POSE_FRAME_B[sp.pose] : null;
+        const st = standOf(meta)[String(v.person)], fb = roOwn(POSE_FRAME_B, sp.pose) && roOwn(st.poses, POSE_FRAME_B[sp.pose]) ? POSE_FRAME_B[sp.pose] : null;
         /* the two running pictures have their own canvases: each in its own box, the feet on one spot, so changing picture moves no foot */
         const b = fb ? (() => { const w = st.poses[fb][0] * k, h = st.poses[fb][1] * k; return { x: px(cx - ft(st.foot && roOwn(st.foot, fb) ? st.foot[fb] : sp.foot) * w), y: px(frontY - (st.feet && roOwn(st.feet, fb) ? st.feet[fb] : sp.feet) * h), w, h }; })() : null;
         fig = { x: px(cx - ft(sp.foot) * fw2), y: px(frontY - sp.feet * fh2), w: fw2, h: fh2, file: `${v.person}-${sp.pose}.webp`, fileB: fb ? `${v.person}-${fb}.webp` : null, b, pose: sp.pose, feetY: frontY, faces, mir };
@@ -511,7 +516,8 @@ function roLobby(meta: RealMeta, places: RealPlace[], W: number, Lb: number): { 
         const hd4 = (pose: string): { file: string; w: number; h: number } | null => { const f = meta.hdPeople && roOwn(meta.hdPeople.people, String(v.person)) && roOwn(meta.hdPeople.people[String(v.person)], pose) ? meta.hdPeople.people[String(v.person)][pose]['4'] : null; return f ? { file: `hd/${v.person}-${pose}@4.webp`, w: (f[0] * k) / 4, h: (f[1] * k) / 4 } : null; }; /* T472: a world that scales people smoothly draws the 288 frame (s 4 is four times the old grid) */
         const pixelHd = snap && meta.pixelPeople !== false;
         const hv = !meta.hdPeople ? null : pixelHd ? hdFrame(meta.hdPeople, String(v.person), sp.pose, k, dpr) : snap ? null : hd4(sp.pose), hb = hv && fb ? (pixelHd ? hdFrame(meta.hdPeople, String(v.person), fb, k, dpr) : hd4(fb)) : null;
-        if (hv && (!fb || hb)) fig = { ...fig, x: px(cx - hv.w / 2), y: px(frontY - hv.h), w: hv.w, h: hv.h, file: hv.file, fileB: hb ? hb.file : null, b: hb ? { x: px(cx - hb.w / 2), y: px(frontY - hb.h), w: hb.w, h: hb.h } : null };
+        if (!(hv && (!fb || hb)) && hdOnly(meta)) noPic = true; /* spec 102 T502: no old picture to fall back on (the chip and the shadow stay) */
+        else if (hv && (!fb || hb)) fig = { ...fig, x: px(cx - hv.w / 2), y: px(frontY - hv.h), w: hv.w, h: hv.h, file: hv.file, fileB: hb ? hb.file : null, b: hb ? { x: px(cx - hb.w / 2), y: px(frontY - hb.h), w: hb.w, h: hb.h } : null };
         const headY = hv && (!fb || hb) ? fig.y : fig.y + sp.top * fh2;
         face = { x: cx - 0.065 * nearPx, y: headY, w: 0.13 * nearPx, h: 0.13 * nearPx };
         /* a soft elliptical contact shadow on the floor, centred on the foot line, a little wider than the stance */
@@ -520,7 +526,7 @@ function roLobby(meta: RealMeta, places: RealPlace[], W: number, Lb: number): { 
         /* the name chip goes above the head (the strip is too short to hold it under the feet): it never covers the feet or legs */
         chipY = Math.max(0, headY - CHIP_GAP - CHIP_H);
       }
-      return { id: v.id, fig, chip: { x: cx, y: chipY }, face, shadow };
+      return { id: v.id, fig: noPic ? null : fig, chip: { x: cx, y: chipY }, face, shadow };
     });
     return { id: p.id, custom: !!p.custom, art, slot: { x, y: 0, w: al.w[i], h: Lb }, plate: { x: x + 2, y: compact ? Math.round(Lb * 0.4) : Math.max(3, objTop - 19), w: al.w[i] + al.gap - 6 }, /* the plate may use the gap up to the next place */ visitors, more: p.visitors.length - visitors.length,
       light: art ? { x: x - 0.1 * fw, y: Math.max(0, objTop - 0.15 * fh), w: 1.2 * fw, h: floorY - Math.max(0, objTop - 0.15 * fh) } : { x, y: 0, w: al.w[i], h: Lb } };
@@ -643,7 +649,7 @@ export function realLayout(model: RealModel, viewport: { w: number; h: number },
   /* spec 097 FR-104 (T113): a world that draws storeys (`meta.storeys`) marks each floor of the All floors view with a tag and a rule, the shared rule `storeyRuns` as the arcade */
   let runs = meta.storeys ? storeyRuns(folders) : null;
   const [lobbyMin, lobbyMax] = lobbyRange(H0);
-  const LR = lounge.length ? loungeRows(meta, lounge, W, 0) : null, R = LR ? LR.h : 0, Ho = Math.max(200, H0 - R);
+  const LR = lounge.length ? loungeRows(meta, lounge, W, 0, LOUNGE_CARD_MIN) : null, R = LR ? LR.h : 0, Ho = Math.max(200, H0 - R);
   const zones: ZoneBox[] = [];
   let u = U_MIN, big = false, used = 0, fits = true, rows: Row[] = [], helpRows = 0, forced = false;
   if (folders.length) {
@@ -802,7 +808,7 @@ export function realLayout(model: RealModel, viewport: { w: number; h: number },
       return { id: rn.floor.id, name: rn.floor.name, n: rn.floor.n, box: { x: x0, y: y0, w: Math.max(...zs.map((z) => z.box.x + z.box.w)) - x0, h: Math.max(...zs.map((z) => z.box.y + z.box.h)) - y0 }, tag: tags.get(i)!, slab: i ? slabs.get(i) ?? null : null };
     });
   }
-  if (LR) lay.lounge = loungeRows(meta, lounge, W, height - R).row;
+  if (LR) lay.lounge = loungeRows(meta, lounge, W, height - R, LOUNGE_CARD_MIN).row;
   return lay;
 }
 
@@ -820,16 +826,23 @@ export function splitLounge(model: RealModel): { desks: RealFolder[]; lounge: Re
 /** FR-247 (owner 2026-11-06, issue #1220): a lounge seat in the `rows` worlds. LOUNGE_U: the seated person's body height (a face of FACE_U x 84 = 25 px, over FR-229's 24);
  *  LOUNGE_SHOW: the share of the seated picture above the plate (the plate stands in front of the lap, as a desk does); LOUNGE_TABLE: the small desk's width in units */
 export const LOUNGE_U = 84, LOUNGE_SHOW = 0.68, LOUNGE_TABLE = 0.62, LOUNGE_GAP = 6, LOUNGE_PAD = 6;
-/** FR-247: the seat width and the row height, from every person of the set (not only the ones seated now), so a seat never changes size with who sits there */
-export function loungeSeat(meta: RealMeta): { w: number; h: number; above: number; pw: number } {
+/** spec 097 FR-439 (issue 2076): the lounge card's own least width in the rows worlds, the same with every people set. LOUNGE_ROW: the widest name, its 5 px gap and its role of the demo crew's words
+ *  (the simulator's 15 agents; "Tomas" + "Prompt tuner" is the widest pair), the name at 12 px bold and the role at 10.5 px, in DejaVu Sans (CI's face, the widest the app meets): 116.8, taken as 117 px;
+ *  LOUNGE_CHROME: what the plate keeps besides the line: the padding 7 + 7 and the border 1 + 1 of `.ro-plate`, and the 22 px the rename pencil keeps (`.ro-plate.has-ren .ro-l1>b`); the seat is the plate
+ *  and 2 px each side. 117 + 38 + 4 = 159: a role that fits beside its name with one set fits with every set. */
+export const LOUNGE_ROW = 117, LOUNGE_CHROME = 16 + 22, LOUNGE_CARD_MIN = LOUNGE_ROW + LOUNGE_CHROME + 4;
+/** FR-247: the seat width and the row height, from every person of the set (not only the ones seated now), so a seat never changes size with who sits there.
+ *  `cardMin` (FR-439): the card's least width, 0 where the plate shows no role (the arcade); `w` is then no narrower, `aw` is the width the art itself takes (the person and the small desk keep their place at the seat's left) */
+export function loungeSeat(meta: RealMeta, cardMin = 0): { w: number; aw: number; h: number; above: number; pw: number } {
   const seats = Object.values(seatsOf(meta));
   const pw = Math.max(0.8 * LOUNGE_U, ...seats.map((m) => (m.w / m.bodyH) * LOUNGE_U), ((meta.hdPeople && meta.hdPeople.loungeW) || 0) * LOUNGE_U), /* spec 102 T472: an HD set keeps the seat width its old pictures gave (`loungeW`, in body heights), so a role that fitted still fits */ ph = Math.max(1.2 * LOUNGE_U, ...seats.map((m) => (m.h / m.bodyH) * LOUNGE_U));
   const above = Math.ceil(ph * LOUNGE_SHOW);
-  return { w: Math.ceil(0.86 * pw + LOUNGE_TABLE * LOUNGE_U + LOUNGE_GAP), h: LOUNGE_PAD + above + PLATE_H_ASK + LOUNGE_PAD, above, pw };
+  const aw = Math.ceil(0.86 * pw + LOUNGE_TABLE * LOUNGE_U + LOUNGE_GAP);
+  return { w: Math.max(aw, cardMin), aw, h: LOUNGE_PAD + above + PLATE_H_ASK + LOUNGE_PAD, above, pw };
 }
 /** FR-247: the lounge row(s) of `agents` across a floor `W` wide, its top at `top`: seats of one width, centred, as many rows as it takes. `h` is the whole height. */
-export function loungeRows(meta: RealMeta, agents: readonly RealAgent[], W: number, top: number): { h: number; row: { box: Rect; desks: DeskBox[] } } {
-  const S = loungeSeat(meta), per = Math.max(1, Math.floor((W - 2 * PAD) / S.w)), n = agents.length, rows = Math.ceil(n / per);
+export function loungeRows(meta: RealMeta, agents: readonly RealAgent[], W: number, top: number, cardMin = 0): { h: number; row: { box: Rect; desks: DeskBox[] } } {
+  const S = loungeSeat(meta, cardMin), per = Math.max(1, Math.floor((W - 2 * PAD) / S.w)), n = agents.length, rows = Math.ceil(n / per);
   const deskAR = meta.desk ? meta.desk[1] / meta.desk[0] : 0.38, tw = LOUNGE_TABLE * LOUNGE_U, th = tw * deskAR;
   const desks = agents.map((a, i): DeskBox => {
     const r = Math.floor(i / per), inRow = Math.min(per, n - r * per), x0 = (W - inRow * S.w) / 2, sx = x0 + (i - r * per) * S.w, y = top + r * S.h;
@@ -842,7 +855,7 @@ export function loungeRows(meta: RealMeta, agents: readonly RealAgent[], W: numb
       face = { x: px - FACE_U * LOUNGE_U * 0.4, y: headY, w: FACE_U * LOUNGE_U * 0.8, h: FACE_U * LOUNGE_U };
     } else face = { x: px - FACE_U * LOUNGE_U * 0.4, y: plateY - 0.62 * LOUNGE_U, w: FACE_U * LOUNGE_U * 0.8, h: FACE_U * LOUNGE_U }; /* no picture: the initials go where the face would be (FR-065) */
     /* the small desk stands on the floor behind the plate's top edge; the monitor on it, its foot on the desktop */
-    const table = { x: sx + S.w - LOUNGE_GAP - tw, y: plateY + 2 - th, w: tw, h: th };
+    const table = { x: sx + S.aw - LOUNGE_GAP - tw, y: plateY + 2 - th, w: tw, h: th };
     const sw = 0.92 * tw, sh = sw * 0.6, neck = 6, foot = table.y + 0.14 * th;
     const screen = { x: table.x + (tw - sw) / 2, y: foot - neck - sh, w: sw, h: sh + neck + 4 };
     const glass = { x: screen.x + 3, y: screen.y + 3, w: sw - 6, h: sh - 6 };

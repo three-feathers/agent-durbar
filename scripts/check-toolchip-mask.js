@@ -7,12 +7,13 @@
  * Canaries are invented and built from pieces at run time (no secret-looking literal in this file). Through the simulator's test hook
  * (`__durbarSimEmit`, the path of its own events) the first agent gets tool calls whose argument holds a canary, at a call's start and in a
  * later update that brings the arguments. For each chip: its visible line, its `title`, every `aria-label` inside it, the open chip's command,
- * what Copy copies and the chip's HTML hold no canary (nor a piece of one). In Flat and in Real office, at 1440x900; the corpus part once.
+ * the chip's HTML and the confirm Copy opens hold no canary (nor a piece of one); since spec 005 FR-411 Copy on such a chip asks first and Cancel
+ * copies nothing (check-005-chip-copy drives Copy anyway). In Flat and in Real office, at 1440x900; the corpus part once.
  * Work: the chip's mask runs once per start and once per update that brings arguments, never for an output update (a counter, not a clock).
  * Differential with main: a corpus of about 3,000 harmless commands, paths, searches and URLs, run through the chip's own mask, must show
  * exactly what main shows (main puts the raw argument on the chip: its one-line label cut at 400, the full text cut at 20,000): 0 changes.
  * Near misses are pinned both ways (NEAR_SAME as on main, NEAR_HIDDEN hidden as on the task line). An argument longer than the masks take
- * (12,288 characters) is shown up to the last blank before that length. No redact module (`noredact=1`): the chip shows the tool name only, never the argument. A miss prints DRIVER FAILED.
+ * (12,288 characters) arrives empty, as main sends it, and the chip names its length only (spec 005 FR-438; the simulator applies main's rule). No redact module (`noredact=1`): the chip shows the tool name only, never the argument. A miss prints DRIVER FAILED.
  */
 const assert = require('assert');
 const { helpers, jsLiteral } = require('./driver-helpers');
@@ -30,7 +31,7 @@ const CASES = [
   { id: 'url', tool: 'web_fetch', args: { url: j('https://ana:', URLPW, '@db.example.test/admin?x=1') } },
   { id: 'urlcmd', tool: 'bash', args: { command: j('git clone https://ana:', URLPW, '@git.example.test/acme/app.git') } },
   { id: 'lines', tool: 'bash', args: { command: j('cd app &&\n  curl -H "Authorization', ': Bearer ', BEARER, '" \\\n  https://api.example.test/') } },  { id: 'cut', tool: 'bash', args: { command: j('echo ', 'ab '.repeat(131), TOK, ' done') } }, // the token across the label's 400 cut: masked before the cut
-  { id: 'long', tool: 'bash', args: { command: j('echo ', 'ab '.repeat(4200), TOK) }, hides: false }, // past the masks' input limit: the part shown ends before it
+  { id: 'long', tool: 'bash', args: { command: j('echo ', 'ab '.repeat(4200), TOK) }, hides: false, long: true }, // past the masks' input limit: like main, the simulator sends it empty with its length (spec 005 FR-438); the window's own cut is checked on chipArg below
 ];
 /* a value broken by a line continuation or a line break (the task line reads the flat form): each break kind, two shapes */
 const CA = j('Hx9', 'Kq2'), CB = j('Lm7', 'Np4Rs');
@@ -106,10 +107,11 @@ module.exports = async (ctx) => {
   const read = (callId) => js(`(async()=>{const c=window.__durbarSimUi.chipEl(${jsLiteral(ID)},${jsLiteral(callId)});if(!c||!c.isConnected)return null;
       const code=(c.querySelector('code')||{}).textContent||'', pre=(c.querySelector('pre.cmd')||{}).textContent||'';
       const aria=[c,...c.querySelectorAll('*')].map(e=>e.getAttribute('aria-label')||'').join(' | ');
-      let copied='';const b=c.querySelector('.cp-cmd');
-      if(b){const w=navigator.clipboard.writeText;navigator.clipboard.writeText=t=>{copied=String(t);return Promise.resolve();};try{b.click();await new Promise(r=>setTimeout(r,30));}finally{navigator.clipboard.writeText=w;}}
-      return {code,title:c.title,aria,pre,copied,hasCopy:!!b,html:c.outerHTML};})()`);
-  const checkChip = async (tag, callId, phase, hides = true) => {
+      let copied='',asked=false,dlg='';const b=c.querySelector('.cp-cmd');
+      if(b){const w=navigator.clipboard.writeText;navigator.clipboard.writeText=t=>{copied=String(t);return Promise.resolve();};try{b.click();await new Promise(r=>setTimeout(r,30));
+        const d=document.querySelector('#modeDlg [role=alertdialog]');if(d){asked=true;dlg=d.outerHTML;d.querySelector('[data-cancel]').click();await new Promise(r=>setTimeout(r,30));}}finally{navigator.clipboard.writeText=w;}}
+      return {code,title:c.title,aria,pre,copied,asked,dlg,hasCopy:!!b,html:c.outerHTML};})()`);
+  const checkChip = async (tag, callId, phase, hides = true, long = false) => {
     const v = await read(callId);
     assert.ok(v, `${tag}: the chip of ${callId} is in the chat`);
     let x;
@@ -117,9 +119,16 @@ module.exports = async (ctx) => {
     x = leak(v.title); assert.ok(!x, `${tag} ${phase}: TITLE shows "${x}"`);
     x = leak(v.aria); assert.ok(!x, `${tag} ${phase}: ARIA-LABEL shows "${x}"`);
     x = leak(v.pre); assert.ok(!x, `${tag} ${phase}: COMMAND shows "${x}"`);
+    if (long) { // spec 005 FR-438: arrives empty; the chip names its length, shows none of it and has no open command
+      x = leak(v.html); assert.ok(!x, `${tag} ${phase}: HTML holds "${x}"`);
+      assert.ok(v.code === '' && !v.hasCopy && /Arguments too long to show \([\d,]+ characters\)/.test(v.title), `${tag} ${phase}: an over-limit argument is named, not shown: ${JSON.stringify(v.title)}`);
+      return v;
+    }
     assert.ok(v.hasCopy, `${tag} ${phase}: the open chip has Copy`);
     x = leak(v.copied); assert.ok(!x, `${tag} ${phase}: COPY copies "${x}"`);
-    assert.ok(v.copied && v.copied === v.pre, `${tag} ${phase}: Copy copies the shown (masked) command`);
+    // spec 005 FR-411: Copy on a chip whose argument was masked (or cut) asks first; Cancel copies nothing (check-005-chip-copy drives Copy anyway)
+    assert.ok(v.asked && v.copied === '', `${tag} ${phase}: Copy asks first and Cancel copies nothing (asked ${v.asked}, copied ${v.copied.length} characters)`);
+    x = leak(v.dlg); assert.ok(!x, `${tag} ${phase}: the confirm shows "${x}"`);
     x = leak(v.html); assert.ok(!x, `${tag} ${phase}: HTML holds "${x}"`);
     if (hides) assert.ok(hid(v.code) && /\[redacted\]/.test(v.pre), `${tag} ${phase}: the chip says what it hid: ${v.code.slice(0, 120)}`);
     return v;
@@ -138,7 +147,7 @@ module.exports = async (ctx) => {
       const cs = `${world}-${c.id}-s`;
             await emit({ type: 'toolCall', sessionId: id, callId: cs, tool: c.tool, phase: 'start', args: c.args });
       assert.ok(await until(`!!window.__durbarSimUi.chipEl(${jsLiteral(ID)},${jsLiteral(cs)})`, 5000), `${world}: chip ${cs}`);
-      await checkChip(world, cs, 'start ' + c.id, c.hides !== false);
+      await checkChip(world, cs, 'start ' + c.id, c.hides !== false, !!c.long);
       // update: the call starts with a harmless argument, a later update brings the whole arguments (spec 005 FR-019)
       const cu = `${world}-${c.id}-u`;
       const n0 = await js(`window.__durbarSimUi.chipMasks()`);
@@ -151,7 +160,7 @@ module.exports = async (ctx) => {
       const n1 = await js(`window.__durbarSimUi.chipMasks()`);
       // work counter: the start masks once, the update with arguments once; 20 output updates and the end add nothing (an edit masks its file too)
       assert.ok(n1 - n0 <= 2, `${world} ${c.id}: WORK the chip's mask ran ${n1 - n0} times for one start, one argument update and 21 output events (at most 2)`);
-      await checkChip(world, cu, 'update ' + c.id, c.hides !== false);
+      await checkChip(world, cu, 'update ' + c.id, c.hides !== false, !!c.long);
     }
     // the masked text is the task line's (the same mask): a chip never shows more than the header's task line for the same call
     console.log(`[toolchip-mask] ${world}: ${CASES.length * 2} chips masked (start and update)`);

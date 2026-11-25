@@ -39,7 +39,9 @@ async function main(): Promise<void> {
       await refused(() => h[name](), `${name}() with no argument`);
       await refused(() => h[name]('0.1.29', 'x'), `${name} with an extra argument`);
     }
-    for (const name of ['get', 'check'] as const) {
+    // version only (T010): setSource is the ONE free-text channel (T011); every other channel refuses a slug, a URL and a path
+    for (const name of ['snooze', 'skip'] as const) for (const text of [SLUG, `https://github.com/${SLUG}`, '../x']) await refused(() => h[name](text), `version only: ${name} refuses free text (${text})`);
+    for (const name of ['get', 'check', 'useBuiltInSource'] as const) {
       for (const [arg, what] of forged) await refused(() => h[name](arg), `${name}(${what})`);
     }
     assert.strictEqual(gets, 0, 'FR-024: a getter on a forged argument is never run');
@@ -66,8 +68,8 @@ async function main(): Promise<void> {
     // the IPC module wires exactly these four channels to these handlers, through ipcHandle
     const src = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'main', 'ipc', 'selfupdate.ts'), 'utf8').replace(/\r\n/g, '\n');
     const regs = [...src.matchAll(/ipcHandle\('([^']+)', \(_e, \.\.\.a: unknown\[\]\) => h\.(\w+)\(\.\.\.a\)\);/g)].map((m) => `${m[1]}=${m[2]}`);
-    assert.deepStrictEqual(regs, ['selfupdate:get=get', 'selfupdate:check=check', 'selfupdate:snooze=snooze', 'selfupdate:skip=skip'], 'FR-024: four channels, each to its own handler, every argument passed to the validator');
-    assert.strictEqual((src.match(/ipcHandle\(/g) ?? []).length, 4, 'FR-024: no other channel in the module');
+    assert.deepStrictEqual(regs, ['selfupdate:get=get', 'selfupdate:check=check', 'selfupdate:snooze=snooze', 'selfupdate:skip=skip', 'selfupdate:setSource=setSource', 'selfupdate:useBuiltInSource=useBuiltInSource'], 'FR-024: six channels, each to its own handler, every argument passed to the validator');
+    assert.strictEqual((src.match(/ipcHandle\(/g) ?? []).length, 6, 'FR-024: no other channel in the module');
   }
 
   // ---- not active until T014: nothing in the window can call the channels, and main.ts never starts the checker ----------
@@ -88,7 +90,7 @@ async function main(): Promise<void> {
       'registerSelfUpdateIpc({ getSelfUpdater: () => selfUpdater });',
       'selfUpdater = new SelfUpdater({ ... });',
     ], 'inert: main.ts names the checker only on its three known lines (declaration, channel registration, creation)');
-    assert.ok(/^\s*selfUpdater = new SelfUpdater\(\{ packaged: app\.isPackaged, simulator: SIMULATOR, source: loadUpdateSource\(\), running: app\.getVersion\(\), policy: updatePolicy, store: \(\) => settingsStore, get: makeFeedGet\(electronRequestFactory\(\)\), now: Date\.now, timer: realSelfUpdateTimer \}\);$/m.test(mainSrc), 'inert: the creation line is exactly the known one');
+    assert.ok(/^\s*selfUpdater = new SelfUpdater\(\{ packaged: app\.isPackaged, simulator: SIMULATOR, source: loadUpdateSource\(\), running: app\.getVersion\(\), policy: updatePolicy, store: \(\) => settingsStore, get: updateFeedGet\(\), now: Date\.now, timer: realSelfUpdateTimer, confirm: \(o\) => nativeConfirm\(win, o\) \}\);$/m.test(mainSrc), 'inert: the creation line is exactly the known one (T011 adds only the confirm part, T507 the update session in get)');
 
     // review of PR 2082, item 2: every ipcRenderer call in the preloads names a literal channel; no passthrough of a channel from the page
     for (const f of fs.readdirSync(path.join(root, 'src', 'preload')).filter((x) => x.endsWith('.ts'))) {

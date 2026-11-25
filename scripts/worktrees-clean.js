@@ -8,6 +8,9 @@
  * it is REMOVABLE only when ALL hold; anything else is "needs a look" or "finished but dirty" and is never deleted:
  *   - it is on a branch (not detached, not locked, not bare), its directory exists, and no other registered worktree and no `.git` at ANY depth
  *     (node_modules aside) lives inside it;
+ *   - no other registered worktree has a top-level link (symlink, or a junction on Windows; `node_modules` is the usual one: agents share one
+ *     `npm ci` that way) that resolves into it, dangling or not (issue #2063): removing it would break that worktree. It is kept as "linked from <path>";
+ *     once the dependant is removed, the next run frees it. A sibling folder (or link) that cannot be read keeps it too: its links were not all seen;
  *   - no merge, rebase, cherry-pick, revert or bisect is in progress (MERGE_HEAD, REBASE_HEAD, rebase-merge, rebase-apply, CHERRY_PICK_HEAD,
  *     REVERT_HEAD, sequencer, BISECT_LOG; found with `git rev-parse --git-path`);
  *   - the branch has a PR in THIS repository (not a fork) whose head commit is the worktree's HEAD or a descendant of it (the branch name alone
@@ -178,6 +181,8 @@ function classify(wt, ctx) {
   if (!fs.existsSync(wt.path)) return { verdict: 'look', why: 'directory missing (git worktree prune clears the record)' };
   const inner = (ctx.all || []).find((o) => o.path !== wt.path && inside(o.path, wt.path));
   if (inner) return { verdict: 'look', why: 'contains worktree ' + inner.path };
+  const linked = linkedFrom(wt, ctx.all || [], ctx.readdir);
+  if (linked) return { verdict: 'look', why: linked };
   const nested = findNestedGit(wt.path);
   if (nested) return { verdict: 'look', why: 'contains a nested .git: ' + nested };
   // one git call answers for every marker: one line per --git-path, in order
@@ -216,6 +221,45 @@ function classify(wt, ctx) {
     return { verdict: 'look', why: 'closed PR and the branch is not on origin' };
   }
   return { verdict: 'removable', why: 'PR ' + state.toLowerCase() + ', clean, nothing unpushed' };
+}
+
+/** realpath of a path that may not exist: the nearest existing ancestor is resolved (/tmp on macOS, /home on Fedora Atomic are links) and the missing rest appended. */
+function nearestReal(p) {
+  let cur = path.resolve(p);
+  const rest = [];
+  for (;;) {
+    try { return path.join(fs.realpathSync.native(cur), ...rest.reverse()); } catch {
+      const up = path.dirname(cur);
+      if (up === cur) return path.resolve(p);
+      rest.push(path.basename(cur));
+      cur = up;
+    }
+  }
+}
+
+/**
+ * The reason a worktree is kept because of another worktree's top-level links (issue #2063), or null when none points into it. A link is a symlink or a
+ * Windows junction (both show as links to lstat); a dangling link counts through its link text, resolved through its nearest existing ancestor. Fail closed:
+ * a sibling folder that exists but cannot be read, or a link whose text cannot be read, keeps the worktree (its links could not all be seen).
+ * Cheap: one readdir per sibling, no git, no network. readdir is injectable for the test.
+ */
+function linkedFrom(wt, all, readdir) {
+  const rd = readdir || fs.readdirSync;
+  for (const o of all) {
+    if (o.path === wt.path || !fs.existsSync(o.path)) continue; // a missing sibling is "directory missing" on its own row
+    let entries;
+    try { entries = rd(o.path, { withFileTypes: true }); } catch (e) { return 'cannot read ' + o.path + ' to check its links (' + String((e && e.code) || e) + ')'; }
+    for (const e of entries) {
+      if (!e.isSymbolicLink()) continue;
+      const p = path.join(o.path, e.name);
+      let target;
+      try { target = fs.realpathSync.native(p); } catch {
+        try { target = nearestReal(path.resolve(o.path, fs.readlinkSync(p))); } catch { return 'cannot read the link ' + p + ' to see where it points'; }
+      }
+      if (inside(target, wt.path)) return 'linked from ' + o.path + ' (' + e.name + ') (its link would dangle)';
+    }
+  }
+  return null;
 }
 
 function isLink(p) { try { return fs.lstatSync(p).isSymbolicLink(); } catch { return false; } }

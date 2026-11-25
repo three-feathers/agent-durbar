@@ -1,141 +1,4 @@
 {
- "faceBox": {
-  "p01": {
-   "box": [
-    0,
-    0,
-    32,
-    23
-   ],
-   "pose": "face-book"
-  },
-  "p02": {
-   "box": [
-    0,
-    0,
-    34,
-    24
-   ],
-   "pose": "face-book"
-  },
-  "p03": {
-   "box": [
-    0,
-    0,
-    34,
-    26
-   ],
-   "pose": "face-book"
-  },
-  "p04": {
-   "box": [
-    0,
-    0,
-    36,
-    29
-   ],
-   "pose": "face-book"
-  },
-  "p05": {
-   "box": [
-    0,
-    0,
-    30,
-    29
-   ],
-   "pose": "face-book"
-  },
-  "p06": {
-   "box": [
-    0,
-    0,
-    29,
-    28
-   ],
-   "pose": "face-book"
-  },
-  "p07": {
-   "box": [
-    1,
-    0,
-    34,
-    24
-   ],
-   "pose": "face-book"
-  },
-  "p08": {
-   "box": [
-    3,
-    0,
-    29,
-    24
-   ],
-   "pose": "face-book"
-  },
-  "p09": {
-   "box": [
-    0,
-    0,
-    34,
-    24
-   ],
-   "pose": "face-book"
-  },
-  "p10": {
-   "box": [
-    0,
-    0,
-    41,
-    19
-   ],
-   "pose": "face-book"
-  },
-  "p11": {
-   "box": [
-    0,
-    0,
-    32,
-    24
-   ],
-   "pose": "face-book"
-  },
-  "p12": {
-   "box": [
-    5,
-    0,
-    32,
-    24
-   ],
-   "pose": "face-book"
-  },
-  "p13": {
-   "box": [
-    0,
-    0,
-    22,
-    25
-   ],
-   "pose": "face-book"
-  },
-  "p14": {
-   "box": [
-    0,
-    0,
-    29,
-    24
-   ],
-   "pose": "face-book"
-  },
-  "p15": {
-   "box": [
-    0,
-    0,
-    30,
-    22
-   ],
-   "pose": "face-book"
-  }
- },
  "facing": "right",
  "formatVersion": 1,
  "hd": {
@@ -8084,6 +7947,7 @@
     }
    }
   },
+  "placeW": 46,
   "ref": {
    "p01": [
     [
@@ -8337,6 +8201,1643 @@
    2,
    1
   ],
+  "stand": {
+   "p01": {
+    "feet": {
+     "book": 1.0,
+     "counter": 1.0,
+     "face-book": 1.0,
+     "face-coffee": 1.0,
+     "face-knock": 1.0,
+     "face-letter": 1.0,
+     "face-runA": 1.0,
+     "face-runB": 1.0,
+     "knock": 1.0,
+     "letter": 1.0,
+     "runA": 1.0,
+     "runB": 1.0,
+     "sit": 1.0,
+     "type": 1.0
+    },
+    "figH": 72,
+    "foot": {
+     "book": 0.4107,
+     "counter": 0.3594,
+     "face-book": 0.52,
+     "face-coffee": 0.5,
+     "face-knock": 0.4423,
+     "face-letter": 0.375,
+     "face-runA": 0.4671,
+     "face-runB": 0.4869,
+     "knock": 0.4074,
+     "letter": 0.3485,
+     "runA": 0.6335,
+     "runB": 0.5674,
+     "sit": 0.5,
+     "type": 0.3833
+    },
+    "poses": {
+     "book": [
+      28,
+      72
+     ],
+     "counter": [
+      32,
+      72
+     ],
+     "face-book": [
+      25,
+      72
+     ],
+     "face-coffee": [
+      26,
+      72
+     ],
+     "face-knock": [
+      26,
+      72
+     ],
+     "face-letter": [
+      32,
+      72
+     ],
+     "face-runA": [
+      26,
+      72
+     ],
+     "face-runB": [
+      25,
+      71
+     ],
+     "knock": [
+      27,
+      72
+     ],
+     "letter": [
+      33,
+      72
+     ],
+     "runA": [
+      34,
+      72
+     ],
+     "runB": [
+      35,
+      72
+     ],
+     "sit": [
+      26,
+      65
+     ],
+     "type": [
+      30,
+      72
+     ]
+    },
+    "top": {
+     "book": 0.0,
+     "counter": 0.0,
+     "face-book": 0.0,
+     "face-coffee": 0.0,
+     "face-knock": 0.0,
+     "face-letter": 0.0,
+     "face-runA": 0.0,
+     "face-runB": 0.0,
+     "knock": 0.0,
+     "letter": 0.0,
+     "runA": 0.0,
+     "runB": 0.0,
+     "sit": 0.0,
+     "type": 0.0
+    }
+   },
+   "p02": {
+    "feet": {
+     "book": 1.0,
+     "counter": 1.0,
+     "face-book": 1.0,
+     "face-coffee": 1.0,
+     "face-knock": 1.0,
+     "face-letter": 1.0,
+     "face-runA": 1.0,
+     "face-runB": 1.0,
+     "knock": 1.0,
+     "letter": 1.0,
+     "runA": 1.0,
+     "runB": 1.0,
+     "sit": 1.0,
+     "type": 1.0
+    },
+    "figH": 72,
+    "foot": {
+     "book": 0.375,
+     "counter": 0.3387,
+     "face-book": 0.5192,
+     "face-coffee": 0.5,
+     "face-knock": 0.4423,
+     "face-letter": 0.4,
+     "face-runA": 0.4614,
+     "face-runB": 0.4565,
+     "knock": 0.4038,
+     "letter": 0.3387,
+     "runA": 0.588,
+     "runB": 0.5687,
+     "sit": 0.5,
+     "type": 0.3387
+    },
+    "poses": {
+     "book": [
+      28,
+      72
+     ],
+     "counter": [
+      31,
+      72
+     ],
+     "face-book": [
+      26,
+      72
+     ],
+     "face-coffee": [
+      24,
+      72
+     ],
+     "face-knock": [
+      26,
+      72
+     ],
+     "face-letter": [
+      30,
+      72
+     ],
+     "face-runA": [
+      25,
+      72
+     ],
+     "face-runB": [
+      23,
+      72
+     ],
+     "knock": [
+      26,
+      72
+     ],
+     "letter": [
+      31,
+      72
+     ],
+     "runA": [
+      31,
+      70
+     ],
+     "runB": [
+      33,
+      70
+     ],
+     "sit": [
+      26,
+      63
+     ],
+     "type": [
+      31,
+      72
+     ]
+    },
+    "top": {
+     "book": 0.0,
+     "counter": 0.0,
+     "face-book": 0.0,
+     "face-coffee": 0.0,
+     "face-knock": 0.0,
+     "face-letter": 0.0,
+     "face-runA": 0.0,
+     "face-runB": 0.0,
+     "knock": 0.0,
+     "letter": 0.0,
+     "runA": 0.0,
+     "runB": 0.0,
+     "sit": 0.0,
+     "type": 0.0
+    }
+   },
+   "p03": {
+    "feet": {
+     "book": 1.0,
+     "counter": 1.0,
+     "face-book": 1.0,
+     "face-coffee": 1.0,
+     "face-knock": 1.0,
+     "face-letter": 1.0,
+     "face-runA": 1.0,
+     "face-runB": 1.0,
+     "knock": 1.0,
+     "letter": 1.0,
+     "runA": 1.0,
+     "runB": 1.0,
+     "sit": 1.0,
+     "type": 1.0
+    },
+    "figH": 72,
+    "foot": {
+     "book": 0.4032,
+     "counter": 0.3243,
+     "face-book": 0.5741,
+     "face-coffee": 0.5179,
+     "face-knock": 0.4833,
+     "face-letter": 0.3816,
+     "face-runA": 0.4868,
+     "face-runB": 0.4825,
+     "knock": 0.4138,
+     "letter": 0.3429,
+     "runA": 0.6383,
+     "runB": 0.5758,
+     "sit": 0.4821,
+     "type": 0.375
+    },
+    "poses": {
+     "book": [
+      31,
+      72
+     ],
+     "counter": [
+      37,
+      72
+     ],
+     "face-book": [
+      27,
+      72
+     ],
+     "face-coffee": [
+      28,
+      72
+     ],
+     "face-knock": [
+      30,
+      72
+     ],
+     "face-letter": [
+      38,
+      72
+     ],
+     "face-runA": [
+      27,
+      71
+     ],
+     "face-runB": [
+      27,
+      71
+     ],
+     "knock": [
+      29,
+      72
+     ],
+     "letter": [
+      35,
+      72
+     ],
+     "runA": [
+      36,
+      71
+     ],
+     "runB": [
+      34,
+      71
+     ],
+     "sit": [
+      28,
+      63
+     ],
+     "type": [
+      32,
+      72
+     ]
+    },
+    "top": {
+     "book": 0.0,
+     "counter": 0.0,
+     "face-book": 0.0,
+     "face-coffee": 0.0,
+     "face-knock": 0.0,
+     "face-letter": 0.0,
+     "face-runA": 0.0,
+     "face-runB": 0.0,
+     "knock": 0.0,
+     "letter": 0.0,
+     "runA": 0.0,
+     "runB": 0.0,
+     "sit": 0.0,
+     "type": 0.0
+    }
+   },
+   "p04": {
+    "feet": {
+     "book": 1.0,
+     "counter": 1.0,
+     "face-book": 1.0,
+     "face-coffee": 1.0,
+     "face-knock": 1.0,
+     "face-letter": 1.0,
+     "face-runA": 1.0,
+     "face-runB": 1.0,
+     "knock": 1.0,
+     "letter": 1.0,
+     "runA": 1.0,
+     "runB": 1.0,
+     "sit": 1.0,
+     "type": 1.0
+    },
+    "figH": 72,
+    "foot": {
+     "book": 0.4583,
+     "counter": 0.3667,
+     "face-book": 0.5,
+     "face-coffee": 0.4808,
+     "face-knock": 0.48,
+     "face-letter": 0.463,
+     "face-runA": 0.4768,
+     "face-runB": 0.5364,
+     "knock": 0.4792,
+     "letter": 0.3833,
+     "runA": 0.5806,
+     "runB": 0.5587,
+     "sit": 0.5625,
+     "type": 0.3929
+    },
+    "poses": {
+     "book": [
+      24,
+      72
+     ],
+     "counter": [
+      30,
+      72
+     ],
+     "face-book": [
+      23,
+      72
+     ],
+     "face-coffee": [
+      26,
+      71
+     ],
+     "face-knock": [
+      25,
+      72
+     ],
+     "face-letter": [
+      27,
+      71
+     ],
+     "face-runA": [
+      24,
+      72
+     ],
+     "face-runB": [
+      22,
+      72
+     ],
+     "knock": [
+      24,
+      72
+     ],
+     "letter": [
+      30,
+      72
+     ],
+     "runA": [
+      33,
+      70
+     ],
+     "runB": [
+      31,
+      70
+     ],
+     "sit": [
+      24,
+      65
+     ],
+     "type": [
+      28,
+      72
+     ]
+    },
+    "top": {
+     "book": 0.0,
+     "counter": 0.0,
+     "face-book": 0.0,
+     "face-coffee": 0.0,
+     "face-knock": 0.0,
+     "face-letter": 0.0,
+     "face-runA": 0.0,
+     "face-runB": 0.0,
+     "knock": 0.0,
+     "letter": 0.0,
+     "runA": 0.0,
+     "runB": 0.0,
+     "sit": 0.0,
+     "type": 0.0
+    }
+   },
+   "p05": {
+    "feet": {
+     "book": 1.0,
+     "counter": 1.0,
+     "face-book": 1.0,
+     "face-coffee": 1.0,
+     "face-knock": 1.0,
+     "face-letter": 1.0,
+     "face-runA": 1.0,
+     "face-runB": 1.0,
+     "knock": 1.0,
+     "letter": 1.0,
+     "runA": 1.0,
+     "runB": 1.0,
+     "sit": 1.0,
+     "type": 1.0
+    },
+    "figH": 72,
+    "foot": {
+     "book": 0.3929,
+     "counter": 0.2727,
+     "face-book": 0.5,
+     "face-coffee": 0.46,
+     "face-knock": 0.4615,
+     "face-letter": 0.3594,
+     "face-runA": 0.4951,
+     "face-runB": 0.5126,
+     "knock": 0.4074,
+     "letter": 0.2969,
+     "runA": 0.6094,
+     "runB": 0.5414,
+     "sit": 0.5,
+     "type": 0.371
+    },
+    "poses": {
+     "book": [
+      28,
+      72
+     ],
+     "counter": [
+      33,
+      72
+     ],
+     "face-book": [
+      25,
+      72
+     ],
+     "face-coffee": [
+      25,
+      72
+     ],
+     "face-knock": [
+      26,
+      72
+     ],
+     "face-letter": [
+      32,
+      71
+     ],
+     "face-runA": [
+      27,
+      72
+     ],
+     "face-runB": [
+      26,
+      71
+     ],
+     "knock": [
+      27,
+      72
+     ],
+     "letter": [
+      32,
+      72
+     ],
+     "runA": [
+      35,
+      69
+     ],
+     "runB": [
+      32,
+      71
+     ],
+     "sit": [
+      29,
+      65
+     ],
+     "type": [
+      31,
+      72
+     ]
+    },
+    "top": {
+     "book": 0.0,
+     "counter": 0.0,
+     "face-book": 0.0,
+     "face-coffee": 0.0,
+     "face-knock": 0.0,
+     "face-letter": 0.0,
+     "face-runA": 0.0,
+     "face-runB": 0.0,
+     "knock": 0.0,
+     "letter": 0.0,
+     "runA": 0.0,
+     "runB": 0.0,
+     "sit": 0.0,
+     "type": 0.0
+    }
+   },
+   "p06": {
+    "feet": {
+     "book": 1.0,
+     "counter": 1.0,
+     "face-book": 1.0,
+     "face-coffee": 1.0,
+     "face-knock": 1.0,
+     "face-letter": 1.0,
+     "face-runA": 1.0,
+     "face-runB": 1.0,
+     "knock": 1.0,
+     "letter": 1.0,
+     "runA": 1.0,
+     "runB": 1.0,
+     "sit": 1.0,
+     "type": 1.0
+    },
+    "figH": 72,
+    "foot": {
+     "book": 0.4167,
+     "counter": 0.3167,
+     "face-book": 0.5682,
+     "face-coffee": 0.5435,
+     "face-knock": 0.5,
+     "face-letter": 0.431,
+     "face-runA": 0.4626,
+     "face-runB": 0.4482,
+     "knock": 0.4348,
+     "letter": 0.3276,
+     "runA": 0.5812,
+     "runB": 0.5323,
+     "sit": 0.5238,
+     "type": 0.3704
+    },
+    "poses": {
+     "book": [
+      24,
+      72
+     ],
+     "counter": [
+      30,
+      72
+     ],
+     "face-book": [
+      22,
+      71
+     ],
+     "face-coffee": [
+      23,
+      71
+     ],
+     "face-knock": [
+      23,
+      71
+     ],
+     "face-letter": [
+      29,
+      71
+     ],
+     "face-runA": [
+      22,
+      72
+     ],
+     "face-runB": [
+      24,
+      72
+     ],
+     "knock": [
+      23,
+      72
+     ],
+     "letter": [
+      29,
+      72
+     ],
+     "runA": [
+      30,
+      72
+     ],
+     "runB": [
+      27,
+      71
+     ],
+     "sit": [
+      21,
+      62
+     ],
+     "type": [
+      27,
+      72
+     ]
+    },
+    "top": {
+     "book": 0.0,
+     "counter": 0.0,
+     "face-book": 0.0,
+     "face-coffee": 0.0,
+     "face-knock": 0.0,
+     "face-letter": 0.0,
+     "face-runA": 0.0,
+     "face-runB": 0.0,
+     "knock": 0.0,
+     "letter": 0.0,
+     "runA": 0.0,
+     "runB": 0.0,
+     "sit": 0.0,
+     "type": 0.0
+    }
+   },
+   "p07": {
+    "feet": {
+     "book": 1.0,
+     "counter": 1.0,
+     "face-book": 1.0,
+     "face-coffee": 1.0,
+     "face-knock": 1.0,
+     "face-letter": 1.0,
+     "face-runA": 1.0,
+     "face-runB": 1.0,
+     "knock": 1.0,
+     "letter": 1.0,
+     "runA": 1.0,
+     "runB": 1.0,
+     "sit": 1.0,
+     "type": 1.0
+    },
+    "figH": 72,
+    "foot": {
+     "book": 0.4667,
+     "counter": 0.3676,
+     "face-book": 0.52,
+     "face-coffee": 0.52,
+     "face-knock": 0.5,
+     "face-letter": 0.4032,
+     "face-runA": 0.4488,
+     "face-runB": 0.4701,
+     "knock": 0.4464,
+     "letter": 0.3939,
+     "runA": 0.5614,
+     "runB": 0.5288,
+     "sit": 0.5208,
+     "type": 0.4
+    },
+    "poses": {
+     "book": [
+      30,
+      72
+     ],
+     "counter": [
+      34,
+      72
+     ],
+     "face-book": [
+      25,
+      72
+     ],
+     "face-coffee": [
+      25,
+      72
+     ],
+     "face-knock": [
+      26,
+      72
+     ],
+     "face-letter": [
+      31,
+      72
+     ],
+     "face-runA": [
+      25,
+      71
+     ],
+     "face-runB": [
+      25,
+      72
+     ],
+     "knock": [
+      28,
+      72
+     ],
+     "letter": [
+      33,
+      72
+     ],
+     "runA": [
+      33,
+      70
+     ],
+     "runB": [
+      29,
+      70
+     ],
+     "sit": [
+      24,
+      66
+     ],
+     "type": [
+      30,
+      72
+     ]
+    },
+    "top": {
+     "book": 0.0,
+     "counter": 0.0,
+     "face-book": 0.0,
+     "face-coffee": 0.0,
+     "face-knock": 0.0,
+     "face-letter": 0.0,
+     "face-runA": 0.0,
+     "face-runB": 0.0,
+     "knock": 0.0,
+     "letter": 0.0,
+     "runA": 0.0,
+     "runB": 0.0,
+     "sit": 0.0,
+     "type": 0.0
+    }
+   },
+   "p08": {
+    "feet": {
+     "book": 1.0,
+     "counter": 1.0,
+     "face-book": 1.0,
+     "face-coffee": 1.0,
+     "face-knock": 1.0,
+     "face-letter": 1.0,
+     "face-runA": 1.0,
+     "face-runB": 1.0,
+     "knock": 1.0,
+     "letter": 1.0,
+     "runA": 1.0,
+     "runB": 1.0,
+     "sit": 1.0,
+     "type": 1.0
+    },
+    "figH": 72,
+    "foot": {
+     "book": 0.4565,
+     "counter": 0.3793,
+     "face-book": 0.5,
+     "face-coffee": 0.4792,
+     "face-knock": 0.5,
+     "face-letter": 0.3281,
+     "face-runA": 0.5152,
+     "face-runB": 0.5263,
+     "knock": 0.4375,
+     "letter": 0.3793,
+     "runA": 0.6574,
+     "runB": 0.6133,
+     "sit": 0.5,
+     "type": 0.42
+    },
+    "poses": {
+     "book": [
+      23,
+      71
+     ],
+     "counter": [
+      29,
+      72
+     ],
+     "face-book": [
+      21,
+      72
+     ],
+     "face-coffee": [
+      24,
+      72
+     ],
+     "face-knock": [
+      23,
+      72
+     ],
+     "face-letter": [
+      32,
+      72
+     ],
+     "face-runA": [
+      28,
+      71
+     ],
+     "face-runB": [
+      26,
+      71
+     ],
+     "knock": [
+      24,
+      72
+     ],
+     "letter": [
+      29,
+      72
+     ],
+     "runA": [
+      33,
+      71
+     ],
+     "runB": [
+      34,
+      69
+     ],
+     "sit": [
+      25,
+      62
+     ],
+     "type": [
+      25,
+      72
+     ]
+    },
+    "top": {
+     "book": 0.0,
+     "counter": 0.0,
+     "face-book": 0.0,
+     "face-coffee": 0.0,
+     "face-knock": 0.0,
+     "face-letter": 0.0,
+     "face-runA": 0.0,
+     "face-runB": 0.0,
+     "knock": 0.0,
+     "letter": 0.0,
+     "runA": 0.0,
+     "runB": 0.0,
+     "sit": 0.0,
+     "type": 0.0
+    }
+   },
+   "p09": {
+    "feet": {
+     "book": 1.0,
+     "counter": 1.0,
+     "face-book": 1.0,
+     "face-coffee": 1.0,
+     "face-knock": 1.0,
+     "face-letter": 1.0,
+     "face-runA": 1.0,
+     "face-runB": 1.0,
+     "knock": 1.0,
+     "letter": 1.0,
+     "runA": 1.0,
+     "runB": 1.0,
+     "sit": 1.0,
+     "type": 1.0
+    },
+    "figH": 72,
+    "foot": {
+     "book": 0.3594,
+     "counter": 0.3676,
+     "face-book": 0.54,
+     "face-coffee": 0.54,
+     "face-knock": 0.5,
+     "face-letter": 0.4032,
+     "face-runA": 0.4537,
+     "face-runB": 0.4564,
+     "knock": 0.3906,
+     "letter": 0.3472,
+     "runA": 0.585,
+     "runB": 0.5239,
+     "sit": 0.5,
+     "type": 0.3788
+    },
+    "poses": {
+     "book": [
+      32,
+      72
+     ],
+     "counter": [
+      34,
+      72
+     ],
+     "face-book": [
+      25,
+      72
+     ],
+     "face-coffee": [
+      25,
+      72
+     ],
+     "face-knock": [
+      27,
+      72
+     ],
+     "face-letter": [
+      31,
+      72
+     ],
+     "face-runA": [
+      27,
+      72
+     ],
+     "face-runB": [
+      26,
+      72
+     ],
+     "knock": [
+      32,
+      72
+     ],
+     "letter": [
+      36,
+      72
+     ],
+     "runA": [
+      38,
+      72
+     ],
+     "runB": [
+      32,
+      72
+     ],
+     "sit": [
+      27,
+      65
+     ],
+     "type": [
+      33,
+      72
+     ]
+    },
+    "top": {
+     "book": 0.0,
+     "counter": 0.0,
+     "face-book": 0.0,
+     "face-coffee": 0.0,
+     "face-knock": 0.0,
+     "face-letter": 0.0,
+     "face-runA": 0.0,
+     "face-runB": 0.0,
+     "knock": 0.0,
+     "letter": 0.0,
+     "runA": 0.0,
+     "runB": 0.0,
+     "sit": 0.0,
+     "type": 0.0
+    }
+   },
+   "p10": {
+    "feet": {
+     "book": 1.0,
+     "counter": 1.0,
+     "face-book": 1.0,
+     "face-coffee": 1.0,
+     "face-knock": 1.0,
+     "face-letter": 1.0,
+     "face-runA": 1.0,
+     "face-runB": 1.0,
+     "knock": 1.0,
+     "letter": 1.0,
+     "runA": 1.0,
+     "runB": 1.0,
+     "sit": 1.0,
+     "type": 1.0
+    },
+    "figH": 72,
+    "foot": {
+     "book": 0.4677,
+     "counter": 0.4118,
+     "face-book": 0.6,
+     "face-coffee": 0.5385,
+     "face-knock": 0.5185,
+     "face-letter": 0.4,
+     "face-runA": 0.481,
+     "face-runB": 0.5159,
+     "knock": 0.4828,
+     "letter": 0.4,
+     "runA": 0.5862,
+     "runB": 0.5189,
+     "sit": 0.5192,
+     "type": 0.4375
+    },
+    "poses": {
+     "book": [
+      31,
+      72
+     ],
+     "counter": [
+      34,
+      72
+     ],
+     "face-book": [
+      25,
+      72
+     ],
+     "face-coffee": [
+      26,
+      72
+     ],
+     "face-knock": [
+      27,
+      72
+     ],
+     "face-letter": [
+      35,
+      72
+     ],
+     "face-runA": [
+      26,
+      72
+     ],
+     "face-runB": [
+      25,
+      72
+     ],
+     "knock": [
+      29,
+      72
+     ],
+     "letter": [
+      35,
+      72
+     ],
+     "runA": [
+      33,
+      71
+     ],
+     "runB": [
+      34,
+      71
+     ],
+     "sit": [
+      26,
+      68
+     ],
+     "type": [
+      32,
+      72
+     ]
+    },
+    "top": {
+     "book": 0.0,
+     "counter": 0.0,
+     "face-book": 0.0,
+     "face-coffee": 0.0,
+     "face-knock": 0.0,
+     "face-letter": 0.0,
+     "face-runA": 0.0,
+     "face-runB": 0.0,
+     "knock": 0.0,
+     "letter": 0.0,
+     "runA": 0.0,
+     "runB": 0.0,
+     "sit": 0.0,
+     "type": 0.0
+    }
+   },
+   "p11": {
+    "feet": {
+     "book": 1.0,
+     "counter": 1.0,
+     "face-book": 1.0,
+     "face-coffee": 1.0,
+     "face-knock": 1.0,
+     "face-letter": 1.0,
+     "face-runA": 1.0,
+     "face-runB": 1.0,
+     "knock": 1.0,
+     "letter": 1.0,
+     "runA": 1.0,
+     "runB": 1.0,
+     "sit": 1.0,
+     "type": 1.0
+    },
+    "figH": 72,
+    "foot": {
+     "book": 0.4219,
+     "counter": 0.3553,
+     "face-book": 0.5625,
+     "face-coffee": 0.52,
+     "face-knock": 0.5417,
+     "face-letter": 0.4194,
+     "face-runA": 0.5013,
+     "face-runB": 0.5001,
+     "knock": 0.4219,
+     "letter": 0.3649,
+     "runA": 0.5284,
+     "runB": 0.5555,
+     "sit": 0.5217,
+     "type": 0.3971
+    },
+    "poses": {
+     "book": [
+      32,
+      72
+     ],
+     "counter": [
+      38,
+      72
+     ],
+     "face-book": [
+      24,
+      71
+     ],
+     "face-coffee": [
+      25,
+      72
+     ],
+     "face-knock": [
+      24,
+      71
+     ],
+     "face-letter": [
+      31,
+      71
+     ],
+     "face-runA": [
+      24,
+      71
+     ],
+     "face-runB": [
+      24,
+      71
+     ],
+     "knock": [
+      32,
+      72
+     ],
+     "letter": [
+      37,
+      72
+     ],
+     "runA": [
+      36,
+      71
+     ],
+     "runB": [
+      39,
+      72
+     ],
+     "sit": [
+      23,
+      65
+     ],
+     "type": [
+      34,
+      72
+     ]
+    },
+    "top": {
+     "book": 0.0,
+     "counter": 0.0,
+     "face-book": 0.0,
+     "face-coffee": 0.0,
+     "face-knock": 0.0,
+     "face-letter": 0.0,
+     "face-runA": 0.0,
+     "face-runB": 0.0,
+     "knock": 0.0,
+     "letter": 0.0,
+     "runA": 0.0,
+     "runB": 0.0,
+     "sit": 0.0,
+     "type": 0.0
+    }
+   },
+   "p12": {
+    "feet": {
+     "book": 1.0,
+     "counter": 1.0,
+     "face-book": 1.0,
+     "face-coffee": 1.0,
+     "face-knock": 1.0,
+     "face-letter": 1.0,
+     "face-runA": 1.0,
+     "face-runB": 1.0,
+     "knock": 1.0,
+     "letter": 1.0,
+     "runA": 1.0,
+     "runB": 1.0,
+     "sit": 1.0,
+     "type": 1.0
+    },
+    "figH": 72,
+    "foot": {
+     "book": 0.463,
+     "counter": 0.3919,
+     "face-book": 0.5345,
+     "face-coffee": 0.5484,
+     "face-knock": 0.5323,
+     "face-letter": 0.4474,
+     "face-runA": 0.5174,
+     "face-runB": 0.4845,
+     "knock": 0.4844,
+     "letter": 0.4054,
+     "runA": 0.6104,
+     "runB": 0.5643,
+     "sit": 0.5172,
+     "type": 0.4194
+    },
+    "poses": {
+     "book": [
+      27,
+      69
+     ],
+     "counter": [
+      37,
+      72
+     ],
+     "face-book": [
+      29,
+      72
+     ],
+     "face-coffee": [
+      31,
+      72
+     ],
+     "face-knock": [
+      31,
+      71
+     ],
+     "face-letter": [
+      38,
+      72
+     ],
+     "face-runA": [
+      32,
+      72
+     ],
+     "face-runB": [
+      29,
+      72
+     ],
+     "knock": [
+      32,
+      72
+     ],
+     "letter": [
+      37,
+      72
+     ],
+     "runA": [
+      40,
+      70
+     ],
+     "runB": [
+      37,
+      71
+     ],
+     "sit": [
+      29,
+      62
+     ],
+     "type": [
+      31,
+      71
+     ]
+    },
+    "top": {
+     "book": 0.0,
+     "counter": 0.0,
+     "face-book": 0.0,
+     "face-coffee": 0.0,
+     "face-knock": 0.0,
+     "face-letter": 0.0,
+     "face-runA": 0.0,
+     "face-runB": 0.0,
+     "knock": 0.0,
+     "letter": 0.0,
+     "runA": 0.0,
+     "runB": 0.0,
+     "sit": 0.0,
+     "type": 0.0
+    }
+   },
+   "p13": {
+    "feet": {
+     "book": 1.0,
+     "counter": 1.0,
+     "face-book": 1.0,
+     "face-coffee": 1.0,
+     "face-knock": 1.0,
+     "face-letter": 1.0,
+     "face-runA": 1.0,
+     "face-runB": 1.0,
+     "knock": 1.0,
+     "letter": 1.0,
+     "runA": 1.0,
+     "runB": 1.0,
+     "sit": 1.0,
+     "type": 1.0
+    },
+    "figH": 72,
+    "foot": {
+     "book": 0.4348,
+     "counter": 0.3654,
+     "face-book": 0.5263,
+     "face-coffee": 0.5,
+     "face-knock": 0.5278,
+     "face-letter": 0.3654,
+     "face-runA": 0.4648,
+     "face-runB": 0.4633,
+     "knock": 0.4348,
+     "letter": 0.3571,
+     "runA": 0.6276,
+     "runB": 0.6264,
+     "sit": 0.5833,
+     "type": 0.3846
+    },
+    "poses": {
+     "book": [
+      23,
+      72
+     ],
+     "counter": [
+      26,
+      72
+     ],
+     "face-book": [
+      19,
+      72
+     ],
+     "face-coffee": [
+      20,
+      72
+     ],
+     "face-knock": [
+      18,
+      72
+     ],
+     "face-letter": [
+      26,
+      72
+     ],
+     "face-runA": [
+      20,
+      72
+     ],
+     "face-runB": [
+      20,
+      72
+     ],
+     "knock": [
+      23,
+      72
+     ],
+     "letter": [
+      28,
+      72
+     ],
+     "runA": [
+      29,
+      71
+     ],
+     "runB": [
+      29,
+      71
+     ],
+     "sit": [
+      24,
+      64
+     ],
+     "type": [
+      26,
+      72
+     ]
+    },
+    "top": {
+     "book": 0.0,
+     "counter": 0.0,
+     "face-book": 0.0,
+     "face-coffee": 0.0,
+     "face-knock": 0.0,
+     "face-letter": 0.0,
+     "face-runA": 0.0,
+     "face-runB": 0.0,
+     "knock": 0.0,
+     "letter": 0.0,
+     "runA": 0.0,
+     "runB": 0.0,
+     "sit": 0.0,
+     "type": 0.0
+    }
+   },
+   "p14": {
+    "feet": {
+     "book": 1.0,
+     "counter": 1.0,
+     "face-book": 1.0,
+     "face-coffee": 1.0,
+     "face-knock": 1.0,
+     "face-letter": 1.0,
+     "face-runA": 1.0,
+     "face-runB": 1.0,
+     "knock": 1.0,
+     "letter": 1.0,
+     "runA": 1.0,
+     "runB": 1.0,
+     "sit": 1.0,
+     "type": 1.0
+    },
+    "figH": 72,
+    "foot": {
+     "book": 0.4464,
+     "counter": 0.3788,
+     "face-book": 0.56,
+     "face-coffee": 0.5385,
+     "face-knock": 0.5,
+     "face-letter": 0.4118,
+     "face-runA": 0.4928,
+     "face-runB": 0.486,
+     "knock": 0.4821,
+     "letter": 0.3788,
+     "runA": 0.5851,
+     "runB": 0.577,
+     "sit": 0.537,
+     "type": 0.4483
+    },
+    "poses": {
+     "book": [
+      28,
+      72
+     ],
+     "counter": [
+      33,
+      72
+     ],
+     "face-book": [
+      25,
+      72
+     ],
+     "face-coffee": [
+      26,
+      72
+     ],
+     "face-knock": [
+      28,
+      72
+     ],
+     "face-letter": [
+      34,
+      72
+     ],
+     "face-runA": [
+      25,
+      72
+     ],
+     "face-runB": [
+      28,
+      72
+     ],
+     "knock": [
+      28,
+      72
+     ],
+     "letter": [
+      33,
+      72
+     ],
+     "runA": [
+      32,
+      72
+     ],
+     "runB": [
+      32,
+      72
+     ],
+     "sit": [
+      27,
+      62
+     ],
+     "type": [
+      29,
+      72
+     ]
+    },
+    "top": {
+     "book": 0.0,
+     "counter": 0.0,
+     "face-book": 0.0,
+     "face-coffee": 0.0,
+     "face-knock": 0.0,
+     "face-letter": 0.0,
+     "face-runA": 0.0,
+     "face-runB": 0.0,
+     "knock": 0.0,
+     "letter": 0.0,
+     "runA": 0.0,
+     "runB": 0.0,
+     "sit": 0.0,
+     "type": 0.0
+    }
+   },
+   "p15": {
+    "feet": {
+     "book": 1.0,
+     "counter": 1.0,
+     "face-book": 1.0,
+     "face-coffee": 1.0,
+     "face-knock": 1.0,
+     "face-letter": 1.0,
+     "face-runA": 1.0,
+     "face-runB": 1.0,
+     "knock": 1.0,
+     "letter": 1.0,
+     "runA": 1.0,
+     "runB": 1.0,
+     "sit": 1.0,
+     "type": 1.0
+    },
+    "figH": 72,
+    "foot": {
+     "book": 0.4444,
+     "counter": 0.3387,
+     "face-book": 0.5217,
+     "face-coffee": 0.5,
+     "face-knock": 0.4231,
+     "face-letter": 0.3448,
+     "face-runA": 0.495,
+     "face-runB": 0.5077,
+     "knock": 0.4423,
+     "letter": 0.371,
+     "runA": 0.629,
+     "runB": 0.5794,
+     "sit": 0.5,
+     "type": 0.4194
+    },
+    "poses": {
+     "book": [
+      27,
+      72
+     ],
+     "counter": [
+      31,
+      72
+     ],
+     "face-book": [
+      23,
+      71
+     ],
+     "face-coffee": [
+      25,
+      72
+     ],
+     "face-knock": [
+      26,
+      71
+     ],
+     "face-letter": [
+      29,
+      71
+     ],
+     "face-runA": [
+      23,
+      71
+     ],
+     "face-runB": [
+      22,
+      72
+     ],
+     "knock": [
+      26,
+      72
+     ],
+     "letter": [
+      31,
+      72
+     ],
+     "runA": [
+      30,
+      71
+     ],
+     "runB": [
+      32,
+      71
+     ],
+     "sit": [
+      26,
+      60
+     ],
+     "type": [
+      31,
+      72
+     ]
+    },
+    "top": {
+     "book": 0.0,
+     "counter": 0.0,
+     "face-book": 0.0,
+     "face-coffee": 0.0,
+     "face-knock": 0.0,
+     "face-letter": 0.0,
+     "face-runA": 0.0,
+     "face-runB": 0.0,
+     "knock": 0.0,
+     "letter": 0.0,
+     "runA": 0.0,
+     "runB": 0.0,
+     "sit": 0.0,
+     "type": 0.0
+    }
+   }
+  },
   "tiles": {
    "edge": {
     "p01": [
@@ -8473,1749 +9974,5 @@
  "id": "retro",
  "level": "full",
  "name": "Retro pixel people",
- "pixelArt": true,
- "seat": {
-  "p01": {
-   "bodyH": 77,
-   "h": 79,
-   "hand": 0.88,
-   "headTop": 2,
-   "w": 80
-  },
-  "p02": {
-   "bodyH": 78,
-   "h": 80,
-   "hand": 0.88,
-   "headTop": 2,
-   "w": 79
-  },
-  "p03": {
-   "bodyH": 79,
-   "h": 79,
-   "hand": 0.88,
-   "headTop": 0,
-   "w": 78
-  },
-  "p04": {
-   "bodyH": 77,
-   "h": 80,
-   "hand": 0.88,
-   "headTop": 3,
-   "w": 80
-  },
-  "p05": {
-   "bodyH": 78,
-   "h": 78,
-   "hand": 0.88,
-   "headTop": 0,
-   "w": 64
-  },
-  "p06": {
-   "bodyH": 77,
-   "h": 79,
-   "hand": 0.88,
-   "headTop": 2,
-   "w": 65
-  },
-  "p07": {
-   "bodyH": 80,
-   "h": 80,
-   "hand": 0.88,
-   "headTop": 0,
-   "w": 72
-  },
-  "p08": {
-   "bodyH": 77,
-   "h": 80,
-   "hand": 0.88,
-   "headTop": 3,
-   "w": 78
-  },
-  "p09": {
-   "bodyH": 78,
-   "h": 86,
-   "hand": 0.88,
-   "headTop": 8,
-   "w": 87
-  },
-  "p10": {
-   "bodyH": 78,
-   "h": 79,
-   "hand": 0.88,
-   "headTop": 1,
-   "w": 66
-  },
-  "p11": {
-   "bodyH": 77,
-   "h": 80,
-   "hand": 0.88,
-   "headTop": 3,
-   "w": 83
-  },
-  "p12": {
-   "bodyH": 77,
-   "h": 89,
-   "hand": 0.88,
-   "headTop": 12,
-   "w": 88
-  },
-  "p13": {
-   "bodyH": 79,
-   "h": 79,
-   "hand": 0.88,
-   "headTop": 0,
-   "w": 61
-  },
-  "p14": {
-   "bodyH": 77,
-   "h": 79,
-   "hand": 0.88,
-   "headTop": 2,
-   "w": 80
-  },
-  "p15": {
-   "bodyH": 78,
-   "h": 81,
-   "hand": 0.88,
-   "headTop": 3,
-   "w": 71
-  }
- },
- "stand": {
-  "p01": {
-   "feet": {
-    "book": 1.0,
-    "counter": 1.0,
-    "face-book": 1.0,
-    "face-coffee": 1.0,
-    "face-knock": 1.0,
-    "face-letter": 1.0,
-    "face-runA": 1.0,
-    "face-runB": 1.0,
-    "knock": 1.0,
-    "letter": 1.0,
-    "runA": 1.0,
-    "runB": 1.0,
-    "sit": 0.9833,
-    "type": 1.0
-   },
-   "figH": 72,
-   "foot": {
-    "book": 0.4595,
-    "counter": 0.4189,
-    "face-book": 0.5312,
-    "face-coffee": 0.6061,
-    "face-knock": 0.6143,
-    "face-letter": 0.5645,
-    "face-runA": 0.5429,
-    "face-runB": 0.5571,
-    "knock": 0.4444,
-    "letter": 0.3846,
-    "runA": 0.5337,
-    "runB": 0.5167,
-    "sit": 0.4706,
-    "type": 0.4412
-   },
-   "poses": {
-    "book": [
-     37,
-     72
-    ],
-    "counter": [
-     37,
-     72
-    ],
-    "face-book": [
-     32,
-     71
-    ],
-    "face-coffee": [
-     33,
-     71
-    ],
-    "face-knock": [
-     35,
-     71
-    ],
-    "face-letter": [
-     31,
-     71
-    ],
-    "face-runA": [
-     35,
-     71
-    ],
-    "face-runB": [
-     35,
-     71
-    ],
-    "knock": [
-     36,
-     72
-    ],
-    "letter": [
-     39,
-     72
-    ],
-    "runA": [
-     37,
-     72
-    ],
-    "runB": [
-     36,
-     72
-    ],
-    "sit": [
-     34,
-     60
-    ],
-    "type": [
-     34,
-     72
-    ]
-   },
-   "top": {
-    "book": 0.0,
-    "counter": 0.0,
-    "face-book": 0.0,
-    "face-coffee": 0.0,
-    "face-knock": 0.0,
-    "face-letter": 0.0,
-    "face-runA": 0.0,
-    "face-runB": 0.0,
-    "knock": 0.0,
-    "letter": 0.0,
-    "runA": 0.0,
-    "runB": 0.0,
-    "sit": 0.0167,
-    "type": 0.0
-   }
-  },
-  "p02": {
-   "feet": {
-    "book": 1.0,
-    "counter": 1.0,
-    "face-book": 1.0,
-    "face-coffee": 1.0,
-    "face-knock": 1.0,
-    "face-letter": 1.0,
-    "face-runA": 1.0,
-    "face-runB": 1.0,
-    "knock": 1.0,
-    "letter": 1.0,
-    "runA": 1.0,
-    "runB": 1.0,
-    "sit": 0.9833,
-    "type": 1.0
-   },
-   "figH": 72,
-   "foot": {
-    "book": 0.4595,
-    "counter": 0.4615,
-    "face-book": 0.5147,
-    "face-coffee": 0.5441,
-    "face-knock": 0.5417,
-    "face-letter": 0.5526,
-    "face-runA": 0.5735,
-    "face-runB": 0.3382,
-    "knock": 0.5143,
-    "letter": 0.4419,
-    "runA": 0.543,
-    "runB": 0.5781,
-    "sit": 0.5,
-    "type": 0.5
-   },
-   "poses": {
-    "book": [
-     37,
-     72
-    ],
-    "counter": [
-     39,
-     72
-    ],
-    "face-book": [
-     34,
-     71
-    ],
-    "face-coffee": [
-     34,
-     71
-    ],
-    "face-knock": [
-     36,
-     71
-    ],
-    "face-letter": [
-     38,
-     71
-    ],
-    "face-runA": [
-     34,
-     71
-    ],
-    "face-runB": [
-     34,
-     71
-    ],
-    "knock": [
-     35,
-     72
-    ],
-    "letter": [
-     43,
-     72
-    ],
-    "runA": [
-     37,
-     72
-    ],
-    "runB": [
-     37,
-     72
-    ],
-    "sit": [
-     40,
-     60
-    ],
-    "type": [
-     36,
-     72
-    ]
-   },
-   "top": {
-    "book": 0.0,
-    "counter": 0.0,
-    "face-book": 0.0,
-    "face-coffee": 0.0,
-    "face-knock": 0.0,
-    "face-letter": 0.0,
-    "face-runA": 0.0,
-    "face-runB": 0.0,
-    "knock": 0.0,
-    "letter": 0.0,
-    "runA": 0.0,
-    "runB": 0.0,
-    "sit": 0.0167,
-    "type": 0.0
-   }
-  },
-  "p03": {
-   "feet": {
-    "book": 1.0,
-    "counter": 1.0,
-    "face-book": 1.0,
-    "face-coffee": 1.0,
-    "face-knock": 1.0,
-    "face-letter": 1.0,
-    "face-runA": 1.0,
-    "face-runB": 1.0,
-    "knock": 1.0,
-    "letter": 1.0,
-    "runA": 1.0,
-    "runB": 1.0,
-    "sit": 0.9833,
-    "type": 1.0
-   },
-   "figH": 72,
-   "foot": {
-    "book": 0.3684,
-    "counter": 0.4444,
-    "face-book": 0.5441,
-    "face-coffee": 0.5143,
-    "face-knock": 0.6053,
-    "face-letter": 0.5541,
-    "face-runA": 0.5,
-    "face-runB": 0.5,
-    "knock": 0.4429,
-    "letter": 0.3452,
-    "runA": 0.462,
-    "runB": 0.4694,
-    "sit": 0.4872,
-    "type": 0.4265
-   },
-   "poses": {
-    "book": [
-     38,
-     72
-    ],
-    "counter": [
-     36,
-     72
-    ],
-    "face-book": [
-     34,
-     71
-    ],
-    "face-coffee": [
-     35,
-     71
-    ],
-    "face-knock": [
-     38,
-     71
-    ],
-    "face-letter": [
-     37,
-     71
-    ],
-    "face-runA": [
-     36,
-     71
-    ],
-    "face-runB": [
-     34,
-     71
-    ],
-    "knock": [
-     35,
-     72
-    ],
-    "letter": [
-     42,
-     72
-    ],
-    "runA": [
-     42,
-     72
-    ],
-    "runB": [
-     34,
-     72
-    ],
-    "sit": [
-     39,
-     60
-    ],
-    "type": [
-     34,
-     72
-    ]
-   },
-   "top": {
-    "book": 0.0,
-    "counter": 0.0,
-    "face-book": 0.0,
-    "face-coffee": 0.0,
-    "face-knock": 0.0,
-    "face-letter": 0.0,
-    "face-runA": 0.0,
-    "face-runB": 0.0,
-    "knock": 0.0,
-    "letter": 0.0,
-    "runA": 0.0,
-    "runB": 0.0,
-    "sit": 0.0167,
-    "type": 0.0
-   }
-  },
-  "p04": {
-   "feet": {
-    "book": 1.0,
-    "counter": 1.0,
-    "face-book": 1.0,
-    "face-coffee": 1.0,
-    "face-knock": 1.0,
-    "face-letter": 1.0,
-    "face-runA": 1.0,
-    "face-runB": 1.0,
-    "knock": 1.0,
-    "letter": 1.0,
-    "runA": 1.0,
-    "runB": 1.0,
-    "sit": 0.9833,
-    "type": 1.0
-   },
-   "figH": 71,
-   "foot": {
-    "book": 0.4429,
-    "counter": 0.4189,
-    "face-book": 0.4722,
-    "face-coffee": 0.4559,
-    "face-knock": 0.4583,
-    "face-letter": 0.5256,
-    "face-runA": 0.5,
-    "face-runB": 0.4857,
-    "knock": 0.5,
-    "letter": 0.4146,
-    "runA": 0.4923,
-    "runB": 0.4931,
-    "sit": 0.3906,
-    "type": 0.4306
-   },
-   "poses": {
-    "book": [
-     35,
-     71
-    ],
-    "counter": [
-     37,
-     71
-    ],
-    "face-book": [
-     36,
-     71
-    ],
-    "face-coffee": [
-     34,
-     71
-    ],
-    "face-knock": [
-     36,
-     71
-    ],
-    "face-letter": [
-     39,
-     72
-    ],
-    "face-runA": [
-     37,
-     72
-    ],
-    "face-runB": [
-     35,
-     71
-    ],
-    "knock": [
-     34,
-     71
-    ],
-    "letter": [
-     41,
-     71
-    ],
-    "runA": [
-     31,
-     72
-    ],
-    "runB": [
-     31,
-     72
-    ],
-    "sit": [
-     32,
-     60
-    ],
-    "type": [
-     36,
-     71
-    ]
-   },
-   "top": {
-    "book": 0.0,
-    "counter": 0.0,
-    "face-book": 0.0,
-    "face-coffee": 0.0,
-    "face-knock": 0.0,
-    "face-letter": 0.0,
-    "face-runA": 0.0,
-    "face-runB": 0.0,
-    "knock": 0.0,
-    "letter": 0.0,
-    "runA": 0.0,
-    "runB": 0.0,
-    "sit": 0.0167,
-    "type": 0.0
-   }
-  },
-  "p05": {
-   "feet": {
-    "book": 1.0,
-    "counter": 1.0,
-    "face-book": 1.0,
-    "face-coffee": 1.0,
-    "face-knock": 1.0,
-    "face-letter": 1.0,
-    "face-runA": 1.0,
-    "face-runB": 1.0,
-    "knock": 1.0,
-    "letter": 1.0,
-    "runA": 1.0,
-    "runB": 1.0,
-    "sit": 0.9833,
-    "type": 1.0
-   },
-   "figH": 71,
-   "foot": {
-    "book": 0.3788,
-    "counter": 0.375,
-    "face-book": 0.4833,
-    "face-coffee": 0.5,
-    "face-knock": 0.5676,
-    "face-letter": 0.5526,
-    "face-runA": 0.5909,
-    "face-runB": 0.6714,
-    "knock": 0.4194,
-    "letter": 0.3553,
-    "runA": 0.4945,
-    "runB": 0.5098,
-    "sit": 0.4643,
-    "type": 0.3906
-   },
-   "poses": {
-    "book": [
-     33,
-     72
-    ],
-    "counter": [
-     32,
-     71
-    ],
-    "face-book": [
-     30,
-     71
-    ],
-    "face-coffee": [
-     31,
-     72
-    ],
-    "face-knock": [
-     37,
-     71
-    ],
-    "face-letter": [
-     38,
-     70
-    ],
-    "face-runA": [
-     33,
-     70
-    ],
-    "face-runB": [
-     35,
-     70
-    ],
-    "knock": [
-     31,
-     72
-    ],
-    "letter": [
-     38,
-     71
-    ],
-    "runA": [
-     31,
-     72
-    ],
-    "runB": [
-     30,
-     72
-    ],
-    "sit": [
-     28,
-     60
-    ],
-    "type": [
-     32,
-     71
-    ]
-   },
-   "top": {
-    "book": 0.0,
-    "counter": 0.0,
-    "face-book": 0.0,
-    "face-coffee": 0.0,
-    "face-knock": 0.0,
-    "face-letter": 0.0,
-    "face-runA": 0.0,
-    "face-runB": 0.0,
-    "knock": 0.0,
-    "letter": 0.0,
-    "runA": 0.0,
-    "runB": 0.0139,
-    "sit": 0.0167,
-    "type": 0.0
-   }
-  },
-  "p06": {
-   "feet": {
-    "book": 1.0,
-    "counter": 1.0,
-    "face-book": 1.0,
-    "face-coffee": 1.0,
-    "face-knock": 1.0,
-    "face-letter": 1.0,
-    "face-runA": 1.0,
-    "face-runB": 1.0,
-    "knock": 1.0,
-    "letter": 1.0,
-    "runA": 1.0,
-    "runB": 1.0,
-    "sit": 0.9833,
-    "type": 1.0
-   },
-   "figH": 72,
-   "foot": {
-    "book": 0.3611,
-    "counter": 0.4412,
-    "face-book": 0.5172,
-    "face-coffee": 0.5172,
-    "face-knock": 0.5758,
-    "face-letter": 0.5179,
-    "face-runA": 0.6207,
-    "face-runB": 0.4821,
-    "knock": 0.4848,
-    "letter": 0.3718,
-    "runA": 0.5126,
-    "runB": 0.5303,
-    "sit": 0.4038,
-    "type": 0.4412
-   },
-   "poses": {
-    "book": [
-     36,
-     71
-    ],
-    "counter": [
-     34,
-     71
-    ],
-    "face-book": [
-     29,
-     71
-    ],
-    "face-coffee": [
-     29,
-     71
-    ],
-    "face-knock": [
-     33,
-     71
-    ],
-    "face-letter": [
-     28,
-     71
-    ],
-    "face-runA": [
-     29,
-     71
-    ],
-    "face-runB": [
-     28,
-     71
-    ],
-    "knock": [
-     33,
-     72
-    ],
-    "letter": [
-     39,
-     72
-    ],
-    "runA": [
-     34,
-     72
-    ],
-    "runB": [
-     33,
-     72
-    ],
-    "sit": [
-     26,
-     60
-    ],
-    "type": [
-     34,
-     72
-    ]
-   },
-   "top": {
-    "book": 0.0,
-    "counter": 0.0,
-    "face-book": 0.0,
-    "face-coffee": 0.0,
-    "face-knock": 0.0,
-    "face-letter": 0.0,
-    "face-runA": 0.0,
-    "face-runB": 0.0,
-    "knock": 0.0,
-    "letter": 0.0,
-    "runA": 0.0,
-    "runB": 0.0,
-    "sit": 0.0167,
-    "type": 0.0
-   }
-  },
-  "p07": {
-   "feet": {
-    "book": 1.0,
-    "counter": 1.0,
-    "face-book": 1.0,
-    "face-coffee": 1.0,
-    "face-knock": 1.0,
-    "face-letter": 1.0,
-    "face-runA": 1.0,
-    "face-runB": 1.0,
-    "knock": 1.0,
-    "letter": 1.0,
-    "runA": 1.0,
-    "runB": 1.0,
-    "sit": 0.9833,
-    "type": 1.0
-   },
-   "figH": 72,
-   "foot": {
-    "book": 0.4143,
-    "counter": 0.4571,
-    "face-book": 0.4865,
-    "face-coffee": 0.5,
-    "face-knock": 0.5132,
-    "face-letter": 0.5,
-    "face-runA": 0.5263,
-    "face-runB": 0.5694,
-    "knock": 0.4844,
-    "letter": 0.3625,
-    "runA": 0.4867,
-    "runB": 0.4834,
-    "sit": 0.5256,
-    "type": 0.4375
-   },
-   "poses": {
-    "book": [
-     35,
-     72
-    ],
-    "counter": [
-     35,
-     72
-    ],
-    "face-book": [
-     37,
-     71
-    ],
-    "face-coffee": [
-     38,
-     71
-    ],
-    "face-knock": [
-     38,
-     71
-    ],
-    "face-letter": [
-     37,
-     71
-    ],
-    "face-runA": [
-     38,
-     71
-    ],
-    "face-runB": [
-     36,
-     71
-    ],
-    "knock": [
-     32,
-     72
-    ],
-    "letter": [
-     40,
-     72
-    ],
-    "runA": [
-     31,
-     72
-    ],
-    "runB": [
-     32,
-     72
-    ],
-    "sit": [
-     39,
-     60
-    ],
-    "type": [
-     32,
-     72
-    ]
-   },
-   "top": {
-    "book": 0.0,
-    "counter": 0.0,
-    "face-book": 0.0,
-    "face-coffee": 0.0,
-    "face-knock": 0.0,
-    "face-letter": 0.0,
-    "face-runA": 0.0,
-    "face-runB": 0.0,
-    "knock": 0.0,
-    "letter": 0.0,
-    "runA": 0.0,
-    "runB": 0.0,
-    "sit": 0.0167,
-    "type": 0.0
-   }
-  },
-  "p08": {
-   "feet": {
-    "book": 1.0,
-    "counter": 1.0,
-    "face-book": 1.0,
-    "face-coffee": 1.0,
-    "face-knock": 1.0,
-    "face-letter": 1.0,
-    "face-runA": 1.0,
-    "face-runB": 1.0,
-    "knock": 1.0,
-    "letter": 1.0,
-    "runA": 1.0,
-    "runB": 1.0,
-    "sit": 0.9833,
-    "type": 1.0
-   },
-   "figH": 71,
-   "foot": {
-    "book": 0.3871,
-    "counter": 0.3594,
-    "face-book": 0.5147,
-    "face-coffee": 0.5882,
-    "face-knock": 0.6026,
-    "face-letter": 0.5323,
-    "face-runA": 0.6143,
-    "face-runB": 0.5625,
-    "knock": 0.4118,
-    "letter": 0.3421,
-    "runA": 0.5001,
-    "runB": 0.4646,
-    "sit": 0.5132,
-    "type": 0.3485
-   },
-   "poses": {
-    "book": [
-     31,
-     71
-    ],
-    "counter": [
-     32,
-     71
-    ],
-    "face-book": [
-     34,
-     71
-    ],
-    "face-coffee": [
-     34,
-     71
-    ],
-    "face-knock": [
-     39,
-     71
-    ],
-    "face-letter": [
-     31,
-     70
-    ],
-    "face-runA": [
-     35,
-     71
-    ],
-    "face-runB": [
-     32,
-     71
-    ],
-    "knock": [
-     34,
-     71
-    ],
-    "letter": [
-     38,
-     71
-    ],
-    "runA": [
-     39,
-     72
-    ],
-    "runB": [
-     35,
-     72
-    ],
-    "sit": [
-     38,
-     60
-    ],
-    "type": [
-     33,
-     71
-    ]
-   },
-   "top": {
-    "book": 0.0,
-    "counter": 0.0,
-    "face-book": 0.0,
-    "face-coffee": 0.0,
-    "face-knock": 0.0,
-    "face-letter": 0.0,
-    "face-runA": 0.0,
-    "face-runB": 0.0,
-    "knock": 0.0,
-    "letter": 0.0,
-    "runA": 0.0,
-    "runB": 0.0139,
-    "sit": 0.0167,
-    "type": 0.0
-   }
-  },
-  "p09": {
-   "feet": {
-    "book": 1.0,
-    "counter": 1.0,
-    "face-book": 1.0,
-    "face-coffee": 1.0,
-    "face-knock": 1.0,
-    "face-letter": 1.0,
-    "face-runA": 1.0,
-    "face-runB": 1.0,
-    "knock": 1.0,
-    "letter": 1.0,
-    "runA": 1.0,
-    "runB": 1.0,
-    "sit": 0.9833,
-    "type": 1.0
-   },
-   "figH": 71,
-   "foot": {
-    "book": 0.4306,
-    "counter": 0.473,
-    "face-book": 0.5294,
-    "face-coffee": 0.5441,
-    "face-knock": 0.5556,
-    "face-letter": 0.4848,
-    "face-runA": 0.4714,
-    "face-runB": 0.3636,
-    "knock": 0.4571,
-    "letter": 0.4103,
-    "runA": 0.5497,
-    "runB": 0.5648,
-    "sit": 0.4138,
-    "type": 0.4583
-   },
-   "poses": {
-    "book": [
-     36,
-     72
-    ],
-    "counter": [
-     37,
-     71
-    ],
-    "face-book": [
-     34,
-     71
-    ],
-    "face-coffee": [
-     34,
-     71
-    ],
-    "face-knock": [
-     36,
-     71
-    ],
-    "face-letter": [
-     33,
-     71
-    ],
-    "face-runA": [
-     35,
-     71
-    ],
-    "face-runB": [
-     33,
-     71
-    ],
-    "knock": [
-     35,
-     71
-    ],
-    "letter": [
-     39,
-     71
-    ],
-    "runA": [
-     37,
-     72
-    ],
-    "runB": [
-     34,
-     72
-    ],
-    "sit": [
-     29,
-     60
-    ],
-    "type": [
-     36,
-     71
-    ]
-   },
-   "top": {
-    "book": 0.0,
-    "counter": 0.0,
-    "face-book": 0.0,
-    "face-coffee": 0.0,
-    "face-knock": 0.0,
-    "face-letter": 0.0,
-    "face-runA": 0.0,
-    "face-runB": 0.0,
-    "knock": 0.0,
-    "letter": 0.0,
-    "runA": 0.0,
-    "runB": 0.0,
-    "sit": 0.0167,
-    "type": 0.0
-   }
-  },
-  "p10": {
-   "feet": {
-    "book": 1.0,
-    "counter": 1.0,
-    "face-book": 1.0,
-    "face-coffee": 1.0,
-    "face-knock": 1.0,
-    "face-letter": 1.0,
-    "face-runA": 1.0,
-    "face-runB": 1.0,
-    "knock": 1.0,
-    "letter": 1.0,
-    "runA": 1.0,
-    "runB": 1.0,
-    "sit": 1.0,
-    "type": 1.0
-   },
-   "figH": 72,
-   "foot": {
-    "book": 0.4342,
-    "counter": 0.4079,
-    "face-book": 0.5,
-    "face-coffee": 0.4868,
-    "face-knock": 0.4487,
-    "face-letter": 0.4615,
-    "face-runA": 0.4028,
-    "face-runB": 0.5857,
-    "knock": 0.4459,
-    "letter": 0.3864,
-    "runA": 0.5129,
-    "runB": 0.5089,
-    "sit": 0.45,
-    "type": 0.4714
-   },
-   "poses": {
-    "book": [
-     38,
-     72
-    ],
-    "counter": [
-     38,
-     72
-    ],
-    "face-book": [
-     41,
-     71
-    ],
-    "face-coffee": [
-     38,
-     71
-    ],
-    "face-knock": [
-     39,
-     71
-    ],
-    "face-letter": [
-     39,
-     71
-    ],
-    "face-runA": [
-     36,
-     70
-    ],
-    "face-runB": [
-     35,
-     70
-    ],
-    "knock": [
-     37,
-     72
-    ],
-    "letter": [
-     44,
-     72
-    ],
-    "runA": [
-     34,
-     72
-    ],
-    "runB": [
-     34,
-     72
-    ],
-    "sit": [
-     40,
-     47
-    ],
-    "type": [
-     35,
-     72
-    ]
-   },
-   "top": {
-    "book": 0.0,
-    "counter": 0.0,
-    "face-book": 0.0,
-    "face-coffee": 0.0,
-    "face-knock": 0.0,
-    "face-letter": 0.0,
-    "face-runA": 0.0,
-    "face-runB": 0.0,
-    "knock": 0.0,
-    "letter": 0.0,
-    "runA": 0.0,
-    "runB": 0.0,
-    "sit": 0.0213,
-    "type": 0.0
-   }
-  },
-  "p11": {
-   "feet": {
-    "book": 1.0,
-    "counter": 1.0,
-    "face-book": 1.0,
-    "face-coffee": 1.0,
-    "face-knock": 1.0,
-    "face-letter": 1.0,
-    "face-runA": 1.0,
-    "face-runB": 1.0,
-    "knock": 1.0,
-    "letter": 1.0,
-    "runA": 1.0,
-    "runB": 1.0,
-    "sit": 0.9833,
-    "type": 1.0
-   },
-   "figH": 71,
-   "foot": {
-    "book": 0.375,
-    "counter": 0.3857,
-    "face-book": 0.4394,
-    "face-coffee": 0.5147,
-    "face-knock": 0.5854,
-    "face-letter": 0.5,
-    "face-runA": 0.5972,
-    "face-runB": 0.5571,
-    "knock": 0.3939,
-    "letter": 0.3049,
-    "runA": 0.4454,
-    "runB": 0.4598,
-    "sit": 0.3906,
-    "type": 0.4219
-   },
-   "poses": {
-    "book": [
-     36,
-     71
-    ],
-    "counter": [
-     35,
-     71
-    ],
-    "face-book": [
-     33,
-     71
-    ],
-    "face-coffee": [
-     34,
-     71
-    ],
-    "face-knock": [
-     41,
-     71
-    ],
-    "face-letter": [
-     31,
-     71
-    ],
-    "face-runA": [
-     36,
-     72
-    ],
-    "face-runB": [
-     35,
-     71
-    ],
-    "knock": [
-     33,
-     71
-    ],
-    "letter": [
-     41,
-     71
-    ],
-    "runA": [
-     32,
-     72
-    ],
-    "runB": [
-     31,
-     72
-    ],
-    "sit": [
-     32,
-     60
-    ],
-    "type": [
-     32,
-     71
-    ]
-   },
-   "top": {
-    "book": 0.0,
-    "counter": 0.0,
-    "face-book": 0.0,
-    "face-coffee": 0.0,
-    "face-knock": 0.0,
-    "face-letter": 0.0,
-    "face-runA": 0.0,
-    "face-runB": 0.0,
-    "knock": 0.0,
-    "letter": 0.0,
-    "runA": 0.0,
-    "runB": 0.0,
-    "sit": 0.0167,
-    "type": 0.0
-   }
-  },
-  "p12": {
-   "feet": {
-    "book": 1.0,
-    "counter": 1.0,
-    "face-book": 1.0,
-    "face-coffee": 1.0,
-    "face-knock": 1.0,
-    "face-letter": 1.0,
-    "face-runA": 1.0,
-    "face-runB": 1.0,
-    "knock": 1.0,
-    "letter": 1.0,
-    "runA": 1.0,
-    "runB": 1.0,
-    "sit": 0.9833,
-    "type": 1.0
-   },
-   "figH": 72,
-   "foot": {
-    "book": 0.3649,
-    "counter": 0.359,
-    "face-book": 0.4878,
-    "face-coffee": 0.4767,
-    "face-knock": 0.4884,
-    "face-letter": 0.4878,
-    "face-runA": 0.6098,
-    "face-runB": 0.65,
-    "knock": 0.3784,
-    "letter": 0.3478,
-    "runA": 0.4835,
-    "runB": 0.4822,
-    "sit": 0.3906,
-    "type": 0.3649
-   },
-   "poses": {
-    "book": [
-     37,
-     71
-    ],
-    "counter": [
-     39,
-     72
-    ],
-    "face-book": [
-     41,
-     71
-    ],
-    "face-coffee": [
-     43,
-     72
-    ],
-    "face-knock": [
-     43,
-     72
-    ],
-    "face-letter": [
-     41,
-     72
-    ],
-    "face-runA": [
-     41,
-     72
-    ],
-    "face-runB": [
-     40,
-     72
-    ],
-    "knock": [
-     37,
-     72
-    ],
-    "letter": [
-     46,
-     72
-    ],
-    "runA": [
-     39,
-     72
-    ],
-    "runB": [
-     38,
-     72
-    ],
-    "sit": [
-     32,
-     60
-    ],
-    "type": [
-     37,
-     72
-    ]
-   },
-   "top": {
-    "book": 0.0,
-    "counter": 0.0,
-    "face-book": 0.0,
-    "face-coffee": 0.0,
-    "face-knock": 0.0,
-    "face-letter": 0.0,
-    "face-runA": 0.0,
-    "face-runB": 0.0,
-    "knock": 0.0,
-    "letter": 0.0,
-    "runA": 0.0,
-    "runB": 0.0,
-    "sit": 0.0167,
-    "type": 0.0
-   }
-  },
-  "p13": {
-   "feet": {
-    "book": 1.0,
-    "counter": 1.0,
-    "face-book": 1.0,
-    "face-coffee": 1.0,
-    "face-knock": 1.0,
-    "face-letter": 1.0,
-    "face-runA": 1.0,
-    "face-runB": 1.0,
-    "knock": 1.0,
-    "letter": 1.0,
-    "runA": 1.0,
-    "runB": 1.0,
-    "sit": 0.9833,
-    "type": 1.0
-   },
-   "figH": 71,
-   "foot": {
-    "book": 0.3519,
-    "counter": 0.3393,
-    "face-book": 0.5455,
-    "face-coffee": 0.5962,
-    "face-knock": 0.5645,
-    "face-letter": 0.4545,
-    "face-runA": 0.5,
-    "face-runB": 0.5769,
-    "knock": 0.3654,
-    "letter": 0.3065,
-    "runA": 0.492,
-    "runB": 0.489,
-    "sit": 0.4853,
-    "type": 0.3519
-   },
-   "poses": {
-    "book": [
-     27,
-     71
-    ],
-    "counter": [
-     28,
-     71
-    ],
-    "face-book": [
-     22,
-     71
-    ],
-    "face-coffee": [
-     26,
-     71
-    ],
-    "face-knock": [
-     31,
-     71
-    ],
-    "face-letter": [
-     22,
-     71
-    ],
-    "face-runA": [
-     28,
-     71
-    ],
-    "face-runB": [
-     26,
-     71
-    ],
-    "knock": [
-     26,
-     71
-    ],
-    "letter": [
-     31,
-     71
-    ],
-    "runA": [
-     35,
-     72
-    ],
-    "runB": [
-     33,
-     72
-    ],
-    "sit": [
-     34,
-     60
-    ],
-    "type": [
-     27,
-     71
-    ]
-   },
-   "top": {
-    "book": 0.0,
-    "counter": 0.0,
-    "face-book": 0.0,
-    "face-coffee": 0.0,
-    "face-knock": 0.0,
-    "face-letter": 0.0,
-    "face-runA": 0.0,
-    "face-runB": 0.0,
-    "knock": 0.0,
-    "letter": 0.0,
-    "runA": 0.0,
-    "runB": 0.0,
-    "sit": 0.0167,
-    "type": 0.0
-   }
-  },
-  "p14": {
-   "feet": {
-    "book": 1.0,
-    "counter": 1.0,
-    "face-book": 1.0,
-    "face-coffee": 1.0,
-    "face-knock": 1.0,
-    "face-letter": 1.0,
-    "face-runA": 1.0,
-    "face-runB": 1.0,
-    "knock": 1.0,
-    "letter": 1.0,
-    "runA": 1.0,
-    "runB": 1.0,
-    "sit": 0.9833,
-    "type": 1.0
-   },
-   "figH": 72,
-   "foot": {
-    "book": 0.3837,
-    "counter": 0.4474,
-    "face-book": 0.5,
-    "face-coffee": 0.5167,
-    "face-knock": 0.5286,
-    "face-letter": 0.5571,
-    "face-runA": 0.5938,
-    "face-runB": 0.4032,
-    "knock": 0.4474,
-    "letter": 0.4205,
-    "runA": 0.4836,
-    "runB": 0.473,
-    "sit": 0.4677,
-    "type": 0.4286
-   },
-   "poses": {
-    "book": [
-     43,
-     72
-    ],
-    "counter": [
-     38,
-     72
-    ],
-    "face-book": [
-     29,
-     71
-    ],
-    "face-coffee": [
-     30,
-     71
-    ],
-    "face-knock": [
-     35,
-     71
-    ],
-    "face-letter": [
-     35,
-     71
-    ],
-    "face-runA": [
-     32,
-     72
-    ],
-    "face-runB": [
-     31,
-     71
-    ],
-    "knock": [
-     38,
-     72
-    ],
-    "letter": [
-     44,
-     72
-    ],
-    "runA": [
-     46,
-     72
-    ],
-    "runB": [
-     33,
-     72
-    ],
-    "sit": [
-     31,
-     60
-    ],
-    "type": [
-     42,
-     72
-    ]
-   },
-   "top": {
-    "book": 0.0,
-    "counter": 0.0,
-    "face-book": 0.0,
-    "face-coffee": 0.0,
-    "face-knock": 0.0,
-    "face-letter": 0.0,
-    "face-runA": 0.0,
-    "face-runB": 0.0,
-    "knock": 0.0,
-    "letter": 0.0,
-    "runA": 0.0139,
-    "runB": 0.0,
-    "sit": 0.0167,
-    "type": 0.0
-   }
-  },
-  "p15": {
-   "feet": {
-    "book": 1.0,
-    "counter": 1.0,
-    "face-book": 1.0,
-    "face-coffee": 1.0,
-    "face-knock": 1.0,
-    "face-letter": 1.0,
-    "face-runA": 1.0,
-    "face-runB": 1.0,
-    "knock": 1.0,
-    "letter": 1.0,
-    "runA": 1.0,
-    "runB": 1.0,
-    "sit": 0.9833,
-    "type": 1.0
-   },
-   "figH": 72,
-   "foot": {
-    "book": 0.4118,
-    "counter": 0.3784,
-    "face-book": 0.5167,
-    "face-coffee": 0.5167,
-    "face-knock": 0.5571,
-    "face-letter": 0.5167,
-    "face-runA": 0.55,
-    "face-runB": 0.4833,
-    "knock": 0.4394,
-    "letter": 0.3553,
-    "runA": 0.5377,
-    "runB": 0.5304,
-    "sit": 0.4868,
-    "type": 0.4394
-   },
-   "poses": {
-    "book": [
-     34,
-     72
-    ],
-    "counter": [
-     37,
-     72
-    ],
-    "face-book": [
-     30,
-     71
-    ],
-    "face-coffee": [
-     30,
-     71
-    ],
-    "face-knock": [
-     35,
-     71
-    ],
-    "face-letter": [
-     30,
-     71
-    ],
-    "face-runA": [
-     30,
-     71
-    ],
-    "face-runB": [
-     30,
-     71
-    ],
-    "knock": [
-     33,
-     72
-    ],
-    "letter": [
-     38,
-     72
-    ],
-    "runA": [
-     33,
-     72
-    ],
-    "runB": [
-     33,
-     72
-    ],
-    "sit": [
-     38,
-     60
-    ],
-    "type": [
-     33,
-     72
-    ]
-   },
-   "top": {
-    "book": 0.0,
-    "counter": 0.0,
-    "face-book": 0.0,
-    "face-coffee": 0.0,
-    "face-knock": 0.0,
-    "face-letter": 0.0,
-    "face-runA": 0.0,
-    "face-runB": 0.0,
-    "knock": 0.0,
-    "letter": 0.0,
-    "runA": 0.0,
-    "runB": 0.0139,
-    "sit": 0.0,
-    "type": 0.0
-   }
-  }
- }
+ "pixelArt": true
 }

@@ -1847,7 +1847,8 @@
       if(rr&&rr.ok)offAtOpen.clear(); /* the restarted session has the off list as it is now */
       await repaint();
     };
-    const d0=dialog({title:'MCP servers for '+a.name,wide:true,html:body(st),buttons:[{label:'Settings',value:'settings'},{label:'Folder extras…',value:'folder'},{label:'Done',value:'ok',cls:'primary'}],
+    const d0=dialog({title:'MCP servers for '+a.name,wide:true,cls:'mcp-dlg',html:body(st), /* spec 058 FR-437: its own width (mcp-dlg), wider than the other wide dialogs */
+      buttons:[{label:'Settings',value:'settings'},{label:'Folder extras…',value:'folder'},{label:'Done',value:'ok',cls:'primary'}],
       onOpen:d=>{dlg=d.querySelector('.dlg');dlg._ov=d;
         /* spec 100 FR-022: from the warning line: the heaviest server's switch has the focus; nothing is switched */
         if(o&&o.focusServer)setTimeout(()=>{const row=(st.servers||[]).find(y=>mc.serverOf({servers:[o.focusServer]},y)),b=row&&[...d.querySelectorAll('.dbody button.swt')].find(x=>x.dataset.n===row.name);if(b)focusIn(b);},0);

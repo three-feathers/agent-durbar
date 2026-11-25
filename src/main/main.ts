@@ -42,7 +42,8 @@ import { nativeConfirm } from './nativeconfirm';
 import { register as registerNotesIpc } from './ipc/notes';
 import { register as registerTeamsIpc } from './ipc/teams';
 import { TeamsIpcOps } from './teamsipc';
-import { TeamOps, resolveTargetFrom } from './teamops';
+import { TeamOps, pathExists, resolveTargetFrom } from './teamops';
+import type { LazyMemberSpec } from './teamops';
 import { TeamTemplateStore } from './teamstore';
 import { NotesOps, notesConfirmText } from './notesops';
 import { NotesStore } from './notesstore';
@@ -132,7 +133,7 @@ import { register as registerSelfUpdateIpc } from './ipc/selfupdate';
 import { SelfUpdater, realSelfUpdateTimer } from './selfupdate';
 import { loadUpdateSource } from './updatesource';
 import { updatePolicy } from './updatepolicy';
-import { electronRequestFactory, makeFeedGet } from './netget';
+import { updateFeedGet } from './netget';
 import { markSignedOut, withSignIn } from './authcheck';
 import type { SignInAnswer } from './authcheck';
 import { SettingsStore } from './settings';
@@ -569,6 +570,24 @@ async function addMany(paths: string[], permMode: PermMode, opts: SessionOptions
   return { ok: errors.length === 0, agents: added, error: errors.join('; ') || undefined, ...(warnings.length ? { warnings } : {}), ...(existing.length ? { existing } : {}) };
 }
 
+/**
+ * A not-started agent, the one path of a restored session and of a team member (spec 111 T011, FR-034): `infoFor(..., { lazy: true })`.
+ * It builds the agent's data and NOTHING else: no adapter start (`ensureLive` does that at the first message), no message, no credit.
+ */
+function lazyInfo(workspace: string, mode: PermMode, id: string, model: string, effort: string | undefined, kind: string, extra: Partial<AgentInfo>): AgentInfo {
+  return infoFor(workspace, mode, id, model, effort, { lazy: true, floor: folderStore?.floorOfFolder(workspace), ...extra }, router.instance(kind));
+}
+
+/** spec 111 T011: one team member as a not-started agent in the room `spec.key`, with the room's label, default agent and Auto tier as a restored one has. Nothing is put in the office here. */
+function addLazyMember(spec: LazyMemberSpec): AgentInfo {
+  const saved = folderStore?.get(spec.key);
+  const info = lazyInfo(spec.key, spec.mode, randomUUID(), spec.model || DEFAULT_MODEL, spec.effort, spec.app, { hidden: saved?.hidden, maxAiCredits: spec.cap, alias: spec.name });
+  if (saved?.label) info.label = saved.label;
+  if (saved?.defaultAgent) info.defaultAgent = saved.defaultAgent;
+  if (saved?.autoTier) info.autoTier = saved.autoTier;
+  return info;
+}
+
 /** Folders remembered from earlier runs come back as "not started" agents: nothing runs until the first message. */
 function restoreFolders(): void {
   if (!folderStore) return;
@@ -584,7 +603,7 @@ function restoreFolders(): void {
         // last mode wins over the folder's (several sessions of one folder may be in different modes), and the chat says which it was.
         const sm = modeForSession(f, [ls?.id], f.permMode);
         const rm = restoreMode(sm.mode);
-        const info = infoFor(f.workspace, rm.mode, ls?.id ?? randomUUID(), f.model || DEFAULT_MODEL, f.effort, { lazy: true, tier: f.contextTier, hidden: f.hidden, floor: folderStore.floorOfFolder(f.workspace), permRestored: rm.restored || undefined, permFrom: ls ? (sm.fromSession ? 'session' : 'folder') : undefined, maxAiCredits: router.instance(kind).capabilities?.capUnit === 'usd' ? undefined : f.maxAiCredits ?? settingsStore?.defaultMaxAiCredits }, router.instance(kind));
+        const info = lazyInfo(f.workspace, rm.mode, ls?.id ?? randomUUID(), f.model || DEFAULT_MODEL, f.effort, kind, { tier: f.contextTier, hidden: f.hidden, permRestored: rm.restored || undefined, permFrom: ls ? (sm.fromSession ? 'session' : 'folder') : undefined, maxAiCredits: router.instance(kind).capabilities?.capUnit === 'usd' ? undefined : f.maxAiCredits ?? settingsStore?.defaultMaxAiCredits });
         if (ls) info.resumeLast = true;
         if (f.label) info.label = f.label;
         if (f.defaultAgent) info.defaultAgent = f.defaultAgent;
@@ -931,7 +950,7 @@ registerNotesIpc({ getOps: () => notesOps }); // spec 083
 let teamsOps: TeamsIpcOps | undefined;
 let teamStore: TeamTemplateStore | undefined;
 const getTeamStore = (): TeamTemplateStore => (teamStore ??= new TeamTemplateStore(path.join(app.getPath('userData'), 'team-templates.json')));
-// spec 111 T010: the create preview. The room key stays in main (never a path for the window); the team record that counts a room's members comes with T011 (0 until then)
+// spec 111 T010: the create preview. The room key stays in main (never a path for the window); the team record counts a room's members (T011)
 let teamOps: TeamOps | undefined;
 const modelIpc = registerModelIpc({ agents, router, registry, getFolderStore: () => folderStore, wsKey, orgModel: (adapterId, model) => orgPolicies.model(adapterId, model) });
 registerTeamsIpc({
@@ -942,8 +961,19 @@ registerTeamsIpc({
     models: (id) => modelIpc.modelsOf(id),
     defaultCapAiu: () => settingsStore?.defaultMaxAiCredits,
     // the key is the add flows' key (`resolveWorkspaceCwd`, `findAdded`); the saved limit is the folder store's, as the normal add path reads it
+    // T011: the not-started members, the one write (record and names), then the office; a team member is never started here
+    create: {
+      room: (key) => { const f = folderStore?.get(key); return { count: f?.team?.members.length ?? 0, savedCap: f?.maxAiCredits, team: f?.team, known: f !== undefined, sessionNames: f?.sessionNames?.map((x) => ({ ...x })) }; },
+      exists: pathExists,
+      build: addLazyMember,
+      commit: (key, team, infos) => !!folderStore && folderStore.setTeamRecord(key, team, infos.map((i) => ({ src: i.adapterId ?? DEFAULT_ADAPTER, id: i.id, name: i.alias ?? '' }))),
+      place: (info) => { router.bind(info.id, info.adapterId ?? DEFAULT_ADAPTER); agents.set(info.id, info); },
+      announce: (info) => toRenderer('agent:added', info),
+      rollback: (key, previous, previousNames, removeRoom) => !!folderStore && folderStore.restoreTeamRecord(key, previous, previousNames, removeRoom),
+      unplace: (id) => { agents.delete(id); agentState.remove(id); router.unbind(id); },
+    },
     resolveTarget: (t) => resolveTargetFrom(t, {
-      agents: () => agents.values(), wsKey, resolveCwd: resolveWorkspaceCwd, savedCap: (key) => folderStore?.get(key)?.maxAiCredits,
+      agents: () => agents.values(), wsKey, resolveCwd: resolveWorkspaceCwd, savedCap: (key) => folderStore?.get(key)?.maxAiCredits, teamCount: (key) => folderStore?.get(key)?.team?.members.length ?? 0,
       pick: async () => {
         if (dev.DURBAR_PICK) { const first = dev.DURBAR_PICK.split(path.delimiter)[0]; return first || null; } // the dev hook of ipc/themes.ts: path.delimiter keeps C:\ paths whole
         const r = await dialog.showOpenDialog({ title: 'Choose the folder for the team', properties: ['openDirectory'] });
@@ -1167,9 +1197,9 @@ app.whenReady().then(() => {
   folderStore = new FolderStore(path.join(app.getPath('userData'), 'durbar-folders.json'));
   settingsStore = new SettingsStore(path.join(app.getPath('userData'), 'durbar-settings.json'));
   settingsStore.load();
-  // spec 118 FR-004: packaged builds only, never the simulator; the request only through makeFeedGet (FR-007), the policy read each time (FR-005).
+  // spec 118 FR-004: packaged builds only, never the simulator; the request only through makeFeedGet on the update session (FR-007, T507: updateFeedGet), the policy read each time (FR-005).
   // NOT started until T014 (the Update card and the Settings switch): nothing calls selfUpdater's start here, so no request is made.
-  selfUpdater = new SelfUpdater({ packaged: app.isPackaged, simulator: SIMULATOR, source: loadUpdateSource(), running: app.getVersion(), policy: updatePolicy, store: () => settingsStore, get: makeFeedGet(electronRequestFactory()), now: Date.now, timer: realSelfUpdateTimer });
+  selfUpdater = new SelfUpdater({ packaged: app.isPackaged, simulator: SIMULATOR, source: loadUpdateSource(), running: app.getVersion(), policy: updatePolicy, store: () => settingsStore, get: updateFeedGet(), now: Date.now, timer: realSelfUpdateTimer, confirm: (o) => nativeConfirm(win, o) });
   /* Dev/test theme seed (spec 036 FR-005): DURBAR_THEME=<id> makes the office open on that theme for the per-theme checks; invalid ids fall back in the renderer. */
   if (dev.DURBAR_THEME) runTheme = parseThemeId(dev.DURBAR_THEME);
   mcpStore = new McpStore(path.join(app.getPath('userData'), 'durbar-mcp.json'), safeStorageCodec);

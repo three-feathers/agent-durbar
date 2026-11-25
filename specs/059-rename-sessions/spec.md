@@ -423,7 +423,7 @@ FR-020..FR-027: built 2026-10-24 on the simulator (T070..T078): `[IMPLEMENTED]` 
 
 - **FR-020** `[IMPLEMENTED]` **Where a name is renamed in place, and how it starts.**
   1. **Chat header** (`#panelTitle`, main sessions that `canRenameSession` allows): the heading keeps the name as its text and its
-     accessible name (`aria-label` = the display name); inside it the name is a button (`aria-label` "Rename session <name>"). A single
+     accessible name (`aria-label` = the display name, masked since spec 012 FR-197); inside it the name is a button (`aria-label` "Rename session <name>"). A single
      click on it, or F2 / Enter while the heading or the button has focus, starts the edit. A decorative pencil (`aria-hidden`) shows on
      hover and focus as the cue. Tooltip: the FR-003 tip followed by " Click or press F2 to rename." (a data tooltip, at most 300 characters,
      spec 052 FR-168). A click whose `detail` is above 1, or that comes within 400 ms after the chat opened, does not start an edit (the

@@ -324,6 +324,7 @@ const bodyOf = (text: string | Buffer, status = 200) => (r: FakeReq) => { const 
     assert.deepStrictEqual(got, { latest: want });
     const r = n.reqs[0];
     assert.deepStrictEqual([r.opts.method, r.opts.redirect, r.opts.credentials, r.opts.useSessionCookies], ['HEAD', 'manual', 'omit', false]);
+    assert.strictEqual(r.opts.cache, 'no-store', 'FR-466: no HTTP cache: a kept redirect or body never answers a version lookup');
     assert.deepStrictEqual(r.headers, { 'User-Agent': 'AgentDurbar', 'Accept': '*/*', 'Accept-Language': 'en' }, 'FR-017: fixed headers; Accept-Language fixed, never the user\'s locale');
     assert.strictEqual(r.followed, false, 'the redirect is read from the event, never followed');
     assert.strictEqual(r.aborted, true, 'and the request is aborted, so no body is fetched');
@@ -350,6 +351,7 @@ const bodyOf = (text: string | Buffer, status = 200) => (r: FakeReq) => { const 
     const n = netWith((r) => bodyOf(r.opts.url.endsWith('/stable') ? fx('claude-channel-stable') : fx('claude-channel-latest') + '\n')(r));
     assert.deepStrictEqual(await lookupLatest('claude', makeLookupGet(n.factory)), { latest: '2.1.309', stable: '2.1.308' });
     assert.deepStrictEqual(n.reqs.map((r) => r.opts.method), ['GET', 'GET']);
+    assert.deepStrictEqual(n.reqs.map((r) => r.opts.cache), ['no-store', 'no-store'], 'FR-466: both channel files bypass the HTTP cache');
     await assert.rejects(lookupLatest('claude', makeLookupGet(netWith(bodyOf('1'.repeat(65))).factory)), /unexpected answer/, 'an oversized body is refused, not cut');
     await assert.rejects(lookupLatest('claude', makeLookupGet(netWith(bodyOf('<html>no</html>')).factory)), /unexpected answer/);
     await assert.rejects(lookupLatest('claude', makeLookupGet(netWith(bodyOf('2.1.308', 404)).factory)), /unexpected answer/);

@@ -323,6 +323,8 @@ The other 17 cells are the same shared code, in tokens, or a `person`, `fixture`
 
 **Risks.** Off must be exactly today: guarded by the pinned arcade hash and a byte-for-byte test. A frame wider than its place: refused by the asset test and never drawn. The budget (FR-397) and the faces at 144 px (FR-400) are owner questions at the pilot look.
 
+**T502 (2026-11-24): the first pictures removed.** The arcade and the lobby read `hd.stand` and `hd.placeW` through `standOf` (`realoffice-layout.ts`), next to `seatsOf`. `hdOnly` keeps an HD set from naming an old file. The old-frame path stays for sets without `hd`. The off-switch checks become "every drawn person has its HD frame"; the arcade's equality is checked on 1792 halls against the old `set.json` (spec delta 2026-11-24).
+
 ## Done when
 
 Tasks ticked, `/speckit.converge` run, SC-001..SC-018 read, README *Safety model* lists the new connection, and `real:` rows recorded or left as `[KNOWN GAP]`.

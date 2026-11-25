@@ -108,6 +108,12 @@ Four reviewers worked from 17 simulator screenshots: the office at 1440x900 and 
 
 ## Changes
 
+### 2026-11-24: the Needs you panel driver presses an answer key only on an armed row (FR-198, T196, T197; issue #1668, T534)
+
+- **Found** (issue #1668, three CI sightings on unrelated PRs): `check-needs-panel` sometimes saw `A answers []` with focus on the row's heading. A local loop (20 runs, 60 presses) and a forced run showed why: the driver's `answered` step pressed `A` 18 to 182 ms after the focused row's rise guard ran out, and a press inside the guard is dropped by design (FR-198, 400 ms after the panel opened, `src/renderer/app.js` `run`). A driver race, not an app bug; the app is unchanged.
+- **The driver** now waits (at most 5 s) for the focused row's `data-armed` to be `"1"` before it presses an answer key, checks that the row it waited for is the focused one, and asserts that the row is armed at the key press; on failure it prints the panel's state (the answers seen, `document.hasFocus()`, the focused element, every row with its guard). A new step places a row under the pointer (guarded, FR-198) and answers it through the same wait, so a press that does not wait fails every time, not by timing luck; door2's existing step 6a keeps pinning that a press inside the guard answers nothing.
+- **Q39, open question for the owners:** a press dropped by the rise guard gives no feedback at all; nothing changes until the owners decide.
+
 ### 2026-11-13: a screen header fits a narrow window (FR-138, bug, issue #1635)
 
 *Bug* (simulator with the macOS title bar emulation, also on `main`; not seen on a real Mac): over a chat, in a window 640 to 760 px wide (640 is the app's `minWidth`), the Tools header is wider than the window: at 700 px the Close button's right edge is at x=860 (Cost view 871, Activity view 928), at 760 px the same, so Close cannot be reached by the mouse. Cause (read): `.scr-head` (`screens.css`) is a one-row flex box without wrap, and its children (period buttons, agent select, tab strip, Close) do not shrink (`.seg button` is `white-space:nowrap`).

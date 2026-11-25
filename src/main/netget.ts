@@ -72,7 +72,8 @@ export function makeLookupGet(factory: NetRequestFactory): LookupGet {
       };
       const timer = setTimeout(() => done(() => reject(new Error('timed out'))), timeoutMs);
       try {
-        req = factory({ method, url, redirect: 'manual', credentials: 'omit', useSessionCookies: false });
+        // no-store (FR-466): Chromium's HTTP cache outlives a restart; a kept 3xx or body must never answer a version check
+        req = factory({ method, url, redirect: 'manual', credentials: 'omit', useSessionCookies: false, cache: 'no-store' });
       } catch (e) {
         done(() => reject(e instanceof Error ? e : new Error(String(e)))); // FR-066: read, not shown (re-thrown)
         return;
@@ -184,6 +185,133 @@ export function makeFeedGet(factory: NetRequestFactory, timer: FeedTimer = realT
       req.on('error', fail('network'));
       req.end();
     });
+}
+
+/**
+ * Spec 118 T507 (FR-006; spec 076 FR-155, FR-156): update requests run in their own session, never the default one. In memory (no
+ * `persist:`), Chromium's HTTP cache off, and the session's User-Agent is FR-006's `AgentDurbar`: Chromium writes the session's
+ * User-Agent on a proxy's connect line, which the request header does not change (`real:` Electron 44.9.1, Linux, 2026-11-24).
+ */
+export const UPDATE_PARTITION = 'durbar-update';
+export interface ProxyPac { mode: 'pac_script'; pacScript: string }
+/** The part of Electron's `Session` the update requests use. */
+export interface NetSessionLike {
+  resolveProxy(url: string): Promise<string>;
+  setProxy(config: ProxyPac): Promise<void>;
+  setUserAgent(userAgent: string, acceptLanguages?: string): void;
+  setSpellCheckerEnabled(enable: boolean): void;
+  setSpellCheckerLanguages(languages: string[]): void;
+}
+/** The part of Electron's `session` module the update requests use. */
+export interface SessionsLike {
+  readonly defaultSession: NetSessionLike;
+  fromPartition(partition: string, options: { cache: boolean }): NetSessionLike;
+}
+/** `net.request` with an explicit session. */
+export type SessionRequest = (o: NetRequestOptions & { session: NetSessionLike }) => NetRequestLike;
+
+const updateSessions = new WeakMap<SessionsLike, NetSessionLike>();
+/** The update session, made once per `session` module (the real one: once per run), the first time an update request is made. */
+export function updateSession(sessions: SessionsLike): NetSessionLike {
+  let ses = updateSessions.get(sessions);
+  if (!ses) {
+    ses = sessions.fromPartition(UPDATE_PARTITION, { cache: false });
+    // a new session fetches a Hunspell dictionary from a third party (redirector.gvt1.com) at once; turning the spell checker off does
+    // not stop that fetch, an empty language list does (`real:` Electron 44.9.1, Linux, 2026-11-24): no request but the update's own
+    ses.setSpellCheckerLanguages([]);
+    ses.setSpellCheckerEnabled(false);
+    ses.setUserAgent(UA, 'en');
+    updateSessions.set(sessions, ses);
+  }
+  return ses;
+}
+
+/** One entry of a PAC answer as Chromium's `resolveProxy` writes it: `DIRECT`, or a scheme and `host:port` (IPv6 in brackets). */
+const PAC_ENTRY = /^(?:DIRECT|(?:PROXY|HTTPS|SOCKS|SOCKS4|SOCKS5|QUIC) (?:[A-Za-z0-9._-]{1,253}|\[[0-9A-Fa-f:.]{2,45}\]):[0-9]{1,5})$/;
+const PAC_MAX_CHARS = 4096;
+const PAC_MAX_ENTRIES = 16;
+const PAC_DATA = 'data:application/x-ns-proxy-autoconfig,';
+
+/** A JavaScript string literal of `s`: `JSON.stringify`, then `<`, `>`, `/`, U+2028 and U+2029 as `\uXXXX` (safe in any script). */
+export function jsString(s: string): string {
+  return JSON.stringify(s).replace(/[<>/\u2028\u2029]/g, (c) => `\\u${c.charCodeAt(0).toString(16).padStart(4, '0')}`);
+}
+
+/**
+ * A PAC script that answers `rule` (a PAC answer such as `PROXY host:port; DIRECT`, from `resolveProxy`) for every URL, or
+ * `undefined` when `rule` is not such an answer. Layers, each tested on its own: the size caps, the entry grammar (only entries of
+ * that exact form are written, joined again), the string literal (`jsString`) and the `data:` URL encoding.
+ */
+export function pacFor(rule: string): string | undefined {
+  if (typeof rule !== 'string' || rule.length === 0 || rule.length > PAC_MAX_CHARS) return undefined;
+  const entries = rule.split(';').map((e) => e.trim().replace(/\s+/g, ' ')).filter((e) => e.length > 0);
+  if (entries.length === 0 || entries.length > PAC_MAX_ENTRIES || !entries.every((e) => PAC_ENTRY.test(e))) return undefined;
+  return PAC_DATA + encodeURIComponent(`function FindProxyForURL(url, host) { return ${jsString(entries.join('; '))}; }`);
+}
+
+/**
+ * Spec 076 FR-155 for the update session: the one place that copies proxy settings from the default session to another session.
+ * Electron cannot read a session's proxy settings, and a partition does not follow a `setProxy` made on the default session, so the
+ * default session is asked which proxy it uses for this exact URL (system settings, PAC, command-line switches, an organization's
+ * `setProxy`) and that answer is set on `target`, but only while `current()` still says yes (review of PR 2123: an answer that
+ * arrives after its request ended must never change the proxy of the next one). Certificates need no copy: no session gets a
+ * verifier of its own (FR-156, OS store).
+ */
+export async function useDefaultSessionProxy(target: NetSessionLike, sessions: SessionsLike, url: string, current: () => boolean = () => true): Promise<void> {
+  const pacScript = pacFor(await sessions.defaultSession.resolveProxy(url));
+  if (pacScript === undefined) throw new Error('no proxy answer');
+  if (!current()) return;
+  await target.setProxy({ mode: 'pac_script', pacScript });
+}
+
+/**
+ * T507: `makeFeedGet` on the update session. Before each request the default session's proxy for that URL is set on it; a refused URL
+ * or an aborted signal makes no lookup; a failed lookup is `network`, a lookup still running at the 10 s limit `timeout` (FR-004: one
+ * budget for the lookup and the request together, on the injected clock). One update request at a time (a second waits for the first
+ * to end), so the proxy set for one URL is never the one another URL's request starts with, and a late answer of an ended call sets
+ * nothing. A throw anywhere (such as `fromPartition` before the app is ready) answers `network` and leaves the queue usable. Never rejects.
+ */
+export function makeUpdateFeedGet(sessions: SessionsLike, request: SessionRequest, timer: FeedTimer = realTimer, timeoutMs = FEED_TIMEOUT_MS, now: () => number = Date.now): FeedGet {
+  let queue: Promise<unknown> = Promise.resolve();
+  const one = async (url: string, slug: string, signal?: AbortSignal): Promise<FeedAnswer> => {
+    if (signal?.aborted) return { ok: false, reason: 'aborted' };
+    const started = now();
+    const ses = updateSession(sessions);
+    const early = await new Promise<FeedAnswer | undefined>((resolve) => {
+      let ended = false;
+      let handle: unknown;
+      const onAbort = (): void => end({ ok: false, reason: 'aborted' });
+      const end = (a: FeedAnswer | undefined): void => {
+        if (ended) return;
+        ended = true;
+        timer.clear(handle);
+        signal?.removeEventListener('abort', onAbort);
+        resolve(a);
+      };
+      handle = timer.set(() => end({ ok: false, reason: 'timeout' }), timeoutMs);
+      signal?.addEventListener('abort', onAbort, { once: true });
+      useDefaultSessionProxy(ses, sessions, url, () => !ended).then(() => end(undefined), () => end({ ok: false, reason: 'network' }));
+    });
+    if (early) return early;
+    const left = timeoutMs - (now() - started);
+    if (left <= 0) return { ok: false, reason: 'timeout' };
+    return makeFeedGet((o) => request({ ...o, session: ses }), timer, left)(url, slug, signal);
+  };
+  const safe = (url: string, slug: string, signal?: AbortSignal): Promise<FeedAnswer> =>
+    one(url, slug, signal).catch((): FeedAnswer => ({ ok: false, reason: 'network' }));
+  return (url, slug, signal) => {
+    if (!feedAllowed(url, slug)) return Promise.resolve({ ok: false, reason: 'not-allowed' });
+    const run = queue.then(() => safe(url, slug, signal));
+    queue = run.catch(() => undefined);
+    return run;
+  };
+}
+
+/** The real update request: `net.request` on `updateSession()`. Electron is loaded when it is called, so tests can import this file. */
+export function updateFeedGet(): FeedGet {
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const { net, session } = require('electron') as typeof import('electron');
+  return makeUpdateFeedGet(session as unknown as SessionsLike, (o) => net.request(o as never) as unknown as NetRequestLike);
 }
 
 /**

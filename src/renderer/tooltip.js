@@ -116,6 +116,8 @@
     },true);
     window.addEventListener('scroll',()=>{if(cur)hide();},true);
     window.addEventListener('blur',()=>{hov=foc=dismissed=null;hide();});
+    /* spec 001 FR-270 (delta 2026-11-24, issue 2093): the window gets its focus back while a control that gives a tip under keyboard focus still has it: the tip comes back (the same rule as focusin; nothing for a pointer focus, which is not :focus-visible) */
+    window.addEventListener('focus',()=>{const a=document.activeElement,f=a&&find(a,true); if(!f||!focusVisible(a))return; foc=f; update();});
     window.addEventListener('resize',()=>{if(cur)hide();});
   }
   /* `text(el)` returns the tooltip text for an element that matches `selector` inside `rootEl` ('' for none) */

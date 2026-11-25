@@ -11,10 +11,11 @@
  * a masked value without `confirmed === true` answers `ask` and writes nothing (ASK-MAIN); `forget` drops a removed session's values (STALE)
  * and is wired where main forgets a removed session (FORGET-WIRE). Review round 2: every path that removes or replaces a session (Remove
  * session, Remove folder, Resume with replace) forgets its values on the real handlers, and End keeps them (FORGET-REMOVE, FORGET-FOLDER,
- * FORGET-REPLACE, END-KEEPS). PR 1 of 2: no window code calls the channel yet (NO-CALLER-YET, a guard against an accidental caller;
- * T504 replaces it with CALLERS). Review of PR 2099: the argument is chosen on the masked copy (PICK-MASKED); ids of the app's shapes when
+ * FORGET-REPLACE, END-KEEPS). T504 (the window side) replaced PR 1's NO-CALLER-YET guard with the strong form: the chip's Copy is the
+ * one caller (CALLERS). Review of PR 2099: the argument is chosen on the masked copy (PICK-MASKED); ids of the app's shapes when
  * storing and copying (ID-STORE, ID-SHAPE); no read across sessions (KEY-UNAMBIGUOUS, STORED-IDS, CROSS-SESSION, PROTO-IDS); eviction
- * stops on an empty map (GUARD-EMPTY, BUDGET-ONE); a model fuzz with small bounds (FUZZ).
+ * stops on an empty map (GUARD-EMPTY, BUDGET-ONE); a model fuzz with small bounds (FUZZ). Spec 005 FR-438 (T539): an argument main sent empty
+ * because the masks do not take its length gets its length as `argsLong`, a number only (LONG-PRESENT, LONG-SET, LONG-EDGE, LONG-ONLY-EMPTIED, LONG-ADAPTER).
  */
 import * as assert from 'assert';
 import * as fs from 'fs';
@@ -250,6 +251,20 @@ ok('STORE-BOTH two pairs a naive join would merge are kept apart: each Copy writ
     }
   }
 });
+ok('SIM-KEY the simulator\'s stand-in builds its keys exactly like main, and every lookup there goes through that one helper', () => {
+  const sim = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'sim.ts'), 'utf8');
+  const m = /^\s*const simToolCopyKey = \(sessionId: string, callId: string\): string => ([^\n]*);$/m.exec(sim);
+  assert.ok(m, 'SIM-KEY sim.ts defines simToolCopyKey on one line');
+  const simKey = new Function('sessionId', 'callId', `return (${m[1]});`) as (a: string, b: string) => string;
+  const pairs: [string, string][] = [['A\u0000x', 'y'], ['A', 'x\u0000y'], ['s1', 'c1'], ['a:b', 'c'], ['a', 'b:c'], ['sim-2', 'cc-m'], ['__proto__', 'constructor']];
+  for (const [a, b] of pairs) assert.strictEqual(simKey(a, b), toolCopyKey(a, b), `SIM-KEY the stand-in and main agree on ${JSON.stringify([a, b])}`);
+  assert.notStrictEqual(simKey('A\u0000x', 'y'), simKey('A', 'x\u0000y'), 'SIM-KEY a pair a NUL-join would confuse stays apart in the stand-in');
+  const uses = sim.match(/simToolCopies\.(?:get|set|delete)\(([^,)]*(?:\([^)]*\))?)/g) || [];
+  assert.ok(uses.length >= 4, `SIM-KEY the stand-in's lookups found (${uses.length})`);
+  for (const u of uses) assert.ok(/simToolCopies\.(?:get|set|delete)\((?:simToolCopyKey\(|id\b)/.test(u), `SIM-KEY every lookup uses simToolCopyKey: ${u}`);
+  assert.ok(/const id = simToolCopyKey\(e\.sessionId, e\.callId\);/.test(sim), 'SIM-KEY the emitted event\'s key comes from simToolCopyKey');
+  assert.ok(!/simToolCop[^\n]*'\\u0000'/.test(sim), 'SIM-KEY no NUL-joined key is left in the stand-in');
+});
 ok('STORED-IDS a lookup answers only the value stored for exactly these ids', () => {
   const v = (sid: string, callId: string): Kept => ({ sid, callId, text: 'x', masked: false });
   const m = new Map<string, Kept>([[toolCopyKey('A', 'x'), v('B', 'x')], [toolCopyKey('C', 'y'), v('C', 'z')], [toolCopyKey('D', 'w'), v('D', 'w')]]);
@@ -347,6 +362,61 @@ ok('ADAPTER an adapter\'s own argsMasked never reaches the window; other events 
   assert.deepStrictEqual(store.copy('s1', 'c1'), { ok: false, reason: 'unknown' });
 });
 
+// ---- spec 005 FR-438 (T539): an argument main sent empty because the masks do not take its length gets its length, a number only
+ok('LONG an over-limit argument arrives empty with its length; at or under the limit, none', () => {
+  const { store } = fake();
+  const words = (k: number): string => { let s = 'echo'; while (s.length < k) s += ' word' + (s.length % 97); return s.slice(0, k); };
+  const blob = (k: number): string => 'echo ' + 'a'.repeat(k - 5);
+  for (const k of [400, 401, 12287, 12288, 12289, 13000, 20000, 24577, 100000, 100001]) {
+    for (const [kind, make] of [['words', words], ['blob', blob]] as const) {
+      const raw = make(k);
+      const e = ev({ command: raw }, { callId: `c-${kind}-${k}` });
+      const win = store.see(e, outward(e)) as Ev;
+      const got = (win.args as Record<string, unknown>).command as string;
+      if (k > 12288) {
+        assert.ok(!JSON.stringify(win).includes(raw.slice(0, 200)), `LONG-SET ${kind} ${k}: no text of an over-limit argument reaches the window`);
+        assert.strictEqual(got, '', `LONG-SET ${kind} ${k}: main sends it empty`);
+        assert.ok(typeof win.argsLong === 'number', `LONG-PRESENT ${kind} ${k}: main says the argument was too long`);
+        assert.strictEqual(win.argsLong, k, `LONG-SET ${kind} ${k}: argsLong is the argument's length`);
+      } else {
+        assert.strictEqual(got, raw, `LONG-EDGE ${kind} ${k}: at or under the limit the argument arrives`);
+        assert.ok(!('argsLong' in win), `LONG-EDGE ${kind} ${k}: no argsLong at or under the limit`);
+      }
+      assert.ok(!('argsLong' in outward(e)), `LONG-SET ${kind} ${k}: the debug log's copy (outward) has no argsLong`);
+    }
+  }
+});
+
+ok('LONG-ONLY-EMPTIED only the argument the chip shows, and only when main emptied it', () => {
+  const { store } = fake();
+  const long = 'echo ' + 'b'.repeat(20000);
+  const cases: [unknown, number | undefined][] = [
+    [{ command: long, description: 'Encode the fixture' }, 20005], // the chip picks the emptied command (the first text value)
+    [{ path: long, command: 'ls' }, undefined], // the chip shows `ls` (PICK-MASKED): nothing to say
+    [{ description: 'Encode the fixture', command: long }, undefined], // the chip shows the description
+    [{ command: 'ls', note: long }, undefined],
+    [{ command: '' }, undefined], // empty as sent, not emptied by main
+    [{ command: ['echo', long] }, undefined], // a word list: not a text argument
+  ];
+  cases.forEach(([args, want], i) => {
+    const e = ev(args, { callId: `o${i}` });
+    const win = store.see(e, outward(e)) as Ev;
+    assert.strictEqual(win.argsLong, want, `LONG-ONLY-EMPTIED ${JSON.stringify(args).slice(0, 60)}: argsLong ${String(want)}`);
+  });
+});
+
+ok('LONG-ADAPTER an adapter\'s own argsLong never reaches the window', () => {
+  const { store } = fake();
+  const forged = ev(undefined, { phase: 'complete', output: 'ok', argsLong: 99999 } as Partial<Ev>);
+  assert.ok(!('argsLong' in store.see(forged, forged)), 'LONG-ADAPTER dropped on an event without arguments');
+  const short = { ...ev({ command: 'ls' }), argsLong: 99999 } as Ev;
+  assert.ok(!('argsLong' in store.see(short, outward(short))), 'LONG-ADAPTER dropped on an argument main did not empty');
+  const lie = { ...ev({ command: 'x'.repeat(13000) }), argsLong: 5 } as Ev;
+  assert.strictEqual((store.see(lie, outward(lie)) as Ev).argsLong, 13000, 'LONG-ADAPTER main\'s count replaces it');
+  const bad = { ...ev(undefined, { callId: 'bad id' }), argsLong: 7 } as Ev;
+  assert.ok(!('argsLong' in store.see(bad, bad)), 'LONG-ADAPTER dropped on an event main does not keep');
+});
+
 ok('IPC the channel checks the owner frame and answers the store\'s result, never the text', () => {
   const src = fs.readFileSync(path.join(ROOT, 'src', 'main', 'ipc', 'toolcopy.ts'), 'utf8');
   assert.ok(/ipcHandle\('agents:copyToolArg', \(e, sessionId: unknown, callId: unknown, confirmed: unknown\): ToolCopyResult => \{\s*if \(!fromApp\(e\)\) return \{ ok: false, reason: 'unknown' \};\s*return deps\.copies\.copy\(sessionId, callId, confirmed === true\);/.test(src), 'IPC-BODY the handler is the owner check and the store\'s answer');
@@ -360,21 +430,44 @@ ok('IPC the channel checks the owner frame and answers the store\'s result, neve
   assert.ok(!keep, 'NO-LOG the store has no log call');
 });
 
-// ---- PR 1 of 2 (the main side): no code in the window calls the channel in this PR, so Copy on a chip still copies the masked text it
-// shows (FR-342 as on main). The preload exposes the channel; main enforces the owner frame, the ids and the ask rule whoever calls it.
-// This is a guard against an ACCIDENTAL caller only, not a security boundary (a name built at run time passes it). T504 (PR 2) replaces
-// it with the strong form, CALLERS: exactly one call site, carrying only the two ids and the confirm.
-ok('NO-CALLER-YET no window file names copyToolArg in this PR (a guard against an accidental caller, not a boundary)', () => {
-  const callers: string[] = [];
+// ---- T504 (PR 2, the window side) replaced PR 1's NO-CALLER-YET guard with the strong form: the window calls the channel in exactly one
+// place, the chip's Copy (`copyChipArg` in app.js), and the simulator's stand-in in sim.ts answers for main; no other window file names it.
+// Still not a security boundary (main enforces the owner frame, the ids and the ask rule): it pins the one intended caller.
+ok('CALLERS the window names copyToolArg only in the chip\'s Copy and the simulator\'s stand-in, a known number of times (a guard, not a boundary)', () => {
+  // every mention of the channel's name per file under src/renderer, comments stripped: block comments (/* ... */) and lines whose first
+  // non-blank characters are //; the name inside a string or a property counts. A name built at run time ('copy' + 'ToolArg') is not seen
+  // here: check-005-chip-copy counts the stand-in's requests per click (none before any click, exactly one per Copy) for that.
+  const mentions: Record<string, number> = {};
   const walk = (dir: string): void => {
     for (const d of fs.readdirSync(dir, { withFileTypes: true })) {
       const f = path.join(dir, d.name);
       if (d.isDirectory()) walk(f);
-      else if (/\.(js|ts|html)$/.test(d.name) && fs.readFileSync(f, 'utf8').includes('copyToolArg')) callers.push(path.relative(ROOT, f));
+      else if (/\.(js|ts|html)$/.test(d.name)) {
+        const code = fs.readFileSync(f, 'utf8').replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/[^\n]*$/gm, '');
+        const n = (code.match(/copyToolArg/g) || []).length;
+        if (n) mentions[path.relative(ROOT, f).split(path.sep).join('/')] = n;
+      }
     }
   };
   walk(path.join(ROOT, 'src', 'renderer'));
-  assert.deepStrictEqual(callers, [], 'NO-CALLER-YET the window names copyToolArg nowhere yet (T504 adds the chip\'s Copy and the simulator\'s stand-in)');
+  assert.deepStrictEqual(mentions, { 'src/renderer/app.js': 2, 'src/renderer/sim.ts': 1 }, `CALLERS the name's mentions per file (app.js: the guard and the call; sim.ts: the stand-in): ${JSON.stringify(mentions)}`);
+  const app = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'app.js'), 'utf8');
+  assert.ok(/typeof bridge\.copyToolArg==='function'\?await bridge\.copyToolArg\(cp\.sid,cp\.callId,ok\)/.test(app), 'CALLERS the one call carries the session id, the call id and the confirm only');
+});
+
+ok('SIM-BOUND the stand-in keeps at most 2,000 calls like main, the oldest dropped first (an unbounded map grew the page heap)', () => {
+  const sim = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'sim.ts'), 'utf8');
+  const m = /^\s*const simToolCopyKeep = \(m: [^)]*\): void => (\{[^\n]*\});$/m.exec(sim);
+  assert.ok(m, 'SIM-BOUND sim.ts defines simToolCopyKeep on one line');
+  const keep = new Function('m', 'k', 'v', m[1]) as (m: Map<string, unknown>, k: string, v: unknown) => void;
+  const map = new Map<string, unknown>();
+  for (let i = 0; i < 2500; i++) keep(map, 'k' + i, { text: 'v' + i, masked: false });
+  assert.strictEqual(map.size, TOOL_COPY_CALLS_MAX, `SIM-BOUND the stand-in holds main's bound (${map.size})`);
+  assert.ok(!map.has('k0') && !map.has('k499') && map.has('k500') && map.has('k2499'), 'SIM-BOUND the oldest went first');
+  keep(map, 'k500', { text: 'again', masked: false });
+  keep(map, 'new', { text: 'n', masked: false });
+  assert.ok(map.has('k500') && !map.has('k501'), 'SIM-BOUND a value seen again counts as the newest');
+  assert.ok(/simToolCopyKeep\(simToolCopies, id, /.test(sim) && !/simToolCopies\.set\(/.test(sim), 'SIM-BOUND every value goes in through simToolCopyKeep');
 });
 
 // ---- every path that removes or replaces a session forgets its values; End keeps them (the chat and its chips stay on screen). The real
