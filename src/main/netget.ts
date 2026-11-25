@@ -72,7 +72,8 @@ export function makeLookupGet(factory: NetRequestFactory): LookupGet {
       };
       const timer = setTimeout(() => done(() => reject(new Error('timed out'))), timeoutMs);
       try {
-        req = factory({ method, url, redirect: 'manual', credentials: 'omit', useSessionCookies: false });
+        // no-store (FR-466): Chromium's HTTP cache outlives a restart; a kept 3xx or body must never answer a version check
+        req = factory({ method, url, redirect: 'manual', credentials: 'omit', useSessionCookies: false, cache: 'no-store' });
       } catch (e) {
         done(() => reject(e instanceof Error ? e : new Error(String(e)))); // FR-066: read, not shown (re-thrown)
         return;
