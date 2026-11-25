@@ -65,6 +65,7 @@ const DOC_SHOTS = [
   { name: 'shots-051-setup', files: ['051-harnesses-1440x900.png'] },
   { label: 'shots-051-setup win32', name: 'shots-051-setup', files: ['051-install-manual-win32-1440x900.png'] },
   { name: 'shots-081-updates', files: ['081-updates-avail-1440x900.png'] },
+  { name: 'check-selfupdate-dialog', files: ['118-update-toast-1440x900.png', '118-update-breaking-1440x900.png', '118-update-dialog-1280x800.png', '118-update-about-1280x800.png'] }, // spec 118 T015: Durbar's own update toast, menu line, dialogs and About block
   { name: 'shots-052-ux', files: ['052-office-1440x900.png'] },
   { name: 'check-settings-nav', files: ['052-settings-nav-1440x900.png'] }, // spec 052 FR-226: the Settings section list (the 1280x800 twin is not linked: the site's 8 MB budget)
   { name: 'check-auto-follow', files: ['052-auto-follow-queue-1440x900.png', '052-auto-follow-queue-1280x800.png'] },

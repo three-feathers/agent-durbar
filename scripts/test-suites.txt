@@ -248,6 +248,7 @@ test:selfupdate-source
 test:selfupdate-schedule
 test:selfupdate-settings
 test:selfupdate-session
+test:selfupdate-wiring
 test:releases-json
 test:sessionsummary
 test:helpercard

@@ -3674,6 +3674,70 @@ const planMcpSignInRefresh = (i: SignInPlanInput): SignInPlan => {
       ? [{ manager: 'official', own: 'claude', owner: true, display: 'claude update', note: 'Installs into your home folder; no administrator rights needed.' }, { manager: 'official', bin: 'bash', script: {}, display: 'https://claude.ai/install.sh (downloaded, then run with bash)' }]
       : kind === 'codex' ? [{ manager: 'npm', owner: true, pinned: '1.0.2', display: 'npm install -g @openai/codex@1.0.2 --no-update-notifier' }, { manager: 'official', bin: 'bash', script: {}, display: 'https://chatgpt.com/codex/install.sh (downloaded, then run with bash)' }]
       : [{ manager: 'brew', owner: true, display: 'brew upgrade --cask copilot-cli --greedy', note: 'May ask for administrator rights.' }]);
+    /*
+     * Spec 118 T014 (FR-464, FR-020 in part): Durbar's own update check in the simulator: a canned feed chosen by the page address
+     * `simselfupd=update|breaking|hostile|uptodate|failed`; without it nothing is shown (main's checker never runs under DURBAR_SIM and main never
+     * reads this address). No network: the answers are made up here, already in the shape main's cleaning gives (plain text; the hostile body
+     * keeps its markup as text, which is what SC-004 checks in the window). With a mode, the page acts as if the daily check had just found it:
+     * one toast after a moment (once per page), the More menu line and the About block.
+     */
+    type SelfView = import('../shared/api').SelfUpdateWindowView;
+    type SelfNotes = import('../shared/api').SelfUpdateWindowNotes;
+    const simSelfMode = simQuery.get('simselfupd') ?? '';
+    const simSelf = { daily: true, checking: false, until: 0, notice: 'show' as 'show' | 'snoozed' | 'skipped', at: Date.now() - 2 * 3600_000, opened: [] as string[] };
+    const simSelfCb: Array<(v: SelfView) => void> = [];
+    const SIM_SELF_HOSTILE = 'Fixed the floor picker.\n<img src=x onerror="window.__suXss=1"><script>window.__suXss=2</script>\n[click me](javascript:window.__suXss=3) and <b>bold</b> stay as text.'; // a payload that only sets a flag, so a failure cannot hang the driver
+    // the running version is the app's own (appversion.js), so the About line and the dialog agree; the canned releases sit just above it
+    const simSelfRun = (() => { const m = /^(\d+)\.(\d+)\.(\d+)/.exec(String((window as unknown as { DurbarAppVersion?: string }).DurbarAppVersion ?? '')); return m ? [Number(m[1]), Number(m[2]), Number(m[3])] : [0, 1, 29]; })();
+    const SV = { run: simSelfRun.join('.'), p1: `${simSelfRun[0]}.${simSelfRun[1]}.${simSelfRun[2] + 1}`, p2: `${simSelfRun[0]}.${simSelfRun[1]}.${simSelfRun[2] + 2}`, minor: simSelfRun[0] === 0 ? `0.${simSelfRun[1] + 1}.0` : `${simSelfRun[0] + 1}.0.0` };
+    const simSelfFeed = (): { target?: string; versions: string[]; breaking: 'breaking' | 'unknown' | 'no'; notes: SelfNotes['releases']; marks: SelfNotes['marks'] } => {
+      if (simSelfMode === 'breaking') return {
+        target: SV.minor, versions: [SV.minor, SV.p1], breaking: 'breaking',
+        notes: [{ version: SV.minor, date: '2026-11-24', text: 'Floors are now called levels.\nSettings > Floors moved to Settings > Office.', clipped: false }, { version: SV.p1, date: '2026-11-21', text: 'Calmer toasts.\nFixed a crash when a folder was renamed.', clipped: false }],
+        marks: [{ version: SV.minor, notes: 'Floors are renamed to levels; saved floor names move over by themselves.', action: 'Check your level names after the update.' }],
+      };
+      if (simSelfMode === 'update' || simSelfMode === 'hostile') return {
+        target: SV.p2, versions: [SV.p2, SV.p1], breaking: 'no',
+        notes: [{ version: SV.p2, date: '2026-11-24', text: simSelfMode === 'hostile' ? SIM_SELF_HOSTILE : 'Calmer toasts.\nThe Settings window opens faster.\nFixed a crash when a folder was renamed.', clipped: simSelfMode === 'hostile' }, { version: SV.p1, date: '2026-11-23', text: 'A new About block in Settings.', clipped: false }],
+        marks: [],
+      };
+      return { versions: [], breaking: 'no', notes: [], marks: [] };
+    };
+    const simSelfView = (announce?: string): SelfView => {
+      const f = simSelfFeed();
+      const base: SelfView = { shown: !!simSelfMode, blocked: false, canCheck: !!simSelfMode, dailyCheck: simSelf.daily, checking: simSelf.checking, running: SV.run, source: 'three-feathers/agent-durbar', sourceBy: 'built-in', origin: 'ci', checkedAt: simSelf.at, state: 'none' };
+      if (!simSelfMode) return { ...base, source: undefined, sourceBy: undefined, origin: undefined, checkedAt: undefined };
+      if (simSelfMode === 'failed') return { ...base, state: 'failed', reason: 'timeout' };
+      if (!f.target) return { ...base, state: 'up-to-date', latest: SV.run };
+      return { ...base, state: 'update', latest: f.target, target: f.target, versions: f.versions, breaking: f.breaking, gap: false, notice: simSelf.notice, ...(simSelf.notice === 'snoozed' ? { snoozeUntil: simSelf.until } : {}), ...(announce ? { announce } : {}) };
+    };
+    const simSelfEmit = (announce?: string): void => simSelfCb.forEach((cb) => cb(simSelfView(announce)));
+    const simSelfIn = (v: unknown): boolean => typeof v === 'string' && simSelfFeed().versions.includes(v);
+    const selfApi: Partial<DurbarApi> = {
+      selfUpdateGet: async () => simSelfView(),
+      selfUpdateCheck: async () => {
+        if (!simSelfMode) return simSelfView();
+        simSelf.checking = true; simSelfEmit();
+        await new Promise((r) => setTimeout(r, 400));
+        simSelf.checking = false; simSelf.at = Date.now();
+        return simSelfView(); // Check now: the card is the announcement, no toast (FR-463)
+      },
+      selfUpdateSetDaily: async (on) => { simSelf.daily = on === true; return { ok: true, update: simSelfView() }; },
+      selfUpdateSnooze: async (v) => { if (!simSelfIn(v)) throw new Error('Agent Durbar refused this update request.'); simSelf.notice = 'snoozed'; simSelf.until = Date.now() + 7 * 86400_000; return { ok: true, update: simSelfView() }; },
+      selfUpdateSkip: async (v) => { if (!simSelfIn(v)) throw new Error('Agent Durbar refused this update request.'); simSelf.notice = 'skipped'; return { ok: true, update: simSelfView() }; },
+      selfUpdateNotes: async () => {
+        const f = simSelfFeed();
+        if (!f.target) return { running: SV.run, releases: [], marks: [] };
+        return { running: SV.run, target: f.target, breaking: f.breaking, gap: false, source: 'three-feathers/agent-durbar', sourceBy: 'built-in', releases: f.notes, marks: f.marks };
+      },
+      // the driver reads which version a press asked to open; nothing opens in the simulator
+      selfUpdateOpenPage: async (v) => { if (!simSelfIn(v)) throw new Error('Agent Durbar refused this update request.'); simSelf.opened.push(String(v)); (window as unknown as { __simSelfOpened?: string[] }).__simSelfOpened = simSelf.opened; return { ok: true }; },
+      onSelfUpdate: (cb) => {
+        simSelfCb.push(cb);
+        if (simSelfMode && simSelfFeed().target && simSelfCb.length === 1) setTimeout(() => simSelfEmit(simSelfFeed().target), 700); // the daily check "found" it: one toast
+        return () => { const i = simSelfCb.indexOf(cb); if (i >= 0) simSelfCb.splice(i, 1); };
+      },
+    };
     const api: DurbarApi = {
       ...floorApi,
       ...mcpApi,
@@ -3808,6 +3872,7 @@ const planMcpSignInRefresh = (i: SignInPlanInput): SignInPlan => {
       onHarnessUpdates: (cb) => { simUpdCb.push(cb); if (simUpdStart && simUpdCb.length === 1) setTimeout(() => simUpdEmit({ app: 'codex', version: '1.0.2', name: 'the Codex CLI' }), 600); return () => { const i = simUpdCb.indexOf(cb); if (i >= 0) simUpdCb.splice(i, 1); }; },
       harnessVisible: async () => true,
       setCheckUpdatesAtStart: async (on) => { simStartCheck.on = on !== false; return { ok: true, checkUpdatesAtStart: simStartCheck.on }; },
+      ...selfApi, // spec 118 T014: Durbar's own update check, canned
       harnessOpenPage: async () => ({ ok: true }),
       harnessOpenSignIn: async () => ({ ok: true }),
       onHarnessProgress: (cb) => { simHarness.progress.push(cb); return () => { simHarness.progress = simHarness.progress.filter((x) => x !== cb); }; },
