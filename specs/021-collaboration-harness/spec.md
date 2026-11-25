@@ -944,4 +944,3 @@ No new FR: FR-100 already lists what makes a worktree REMOVABLE; this adds one c
   - Test: stubbed rows per letter (signed N passes with the note, also with CRLF text; unsigned N, a body line, an unreadable raw commit fail; B X Y R E fail even with a header and do not read the raw commit; the stderr line is skipped) and one real case with `ssh-keygen` (skipped with a note when the tool is missing): the signed commit passes with the note, the unsigned one fails (10). Mutants: the header lookup always present dies at `PR-READY-sig-N` (the unsigned N stays a failure), N always failing dies at `PR-READY-sig-N-signed`.
   - Existing capability considered (FR-031): the `%G?` table and runner of guard 10 (extended, nothing copied). No new FR; one rule in, one rule out (FR-063): no rule sentence changes.
   - **Not verified:** Windows and macOS runs (no POSIX-only call: `git` through argv only); GitHub's own verification of the commit.
-
