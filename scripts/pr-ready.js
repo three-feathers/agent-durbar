@@ -102,7 +102,7 @@ function crlfCuts(diff) {
   const out = [];
   for (const { where, added } of pp.linesByFile(diff)) {
     if (!TEST_FILE_RE.test(where) || !/readFileSync/.test(added)) continue;
-    if (added.split(/\r?\n/).some((l) => CUT_CALL.test(l) && BARE_LF.test(l))) out.push(where);
+    if (added.split(/\r?\n/).some((l) => CUT_CALL.test(l) && BARE_LF.test(l) && !/\.(split|join)\(/.test(l))) out.push(where);
   }
   return out;
 }
