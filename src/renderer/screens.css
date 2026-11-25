@@ -343,6 +343,7 @@ body.has-bridge #topBtns{display:flex}
 .scr-row-l{font-size:var(--t4-size);font-weight:600;color:var(--ink-2)}
 .mcp-rsess{display:flex;align-items:center;gap:6px 10px;flex-wrap:wrap;margin:10px 0 2px}
 .mcp-rsess .dsub{margin:0;flex:1 1 260px}
+.mcp-rsess .btn{max-width:100%;height:auto;min-height:var(--btn-sm-h);white-space:normal;text-align:left} /* spec 052 (2026-11-25): the button breaks into lines instead of running past a 320px page's dialog */
 .mcp-refresh{display:flex;align-items:center;gap:6px 10px;flex-wrap:wrap;margin:10px 0 6px}
 .mcp-refresh .dsub{margin:0;flex:1 1 260px}
 /* spec 061: "This folder brings its own agent setup" (the import list's look; each item in full) */
@@ -373,6 +374,7 @@ body.has-bridge #topBtns{display:flex}
 .dlg.fs .fs-confirm input{flex:none;width:16px;height:16px;margin:2px 0 0}
 .dlg.fs .fs-confirm>span{flex:1;min-width:0}
 /* spec 069: the add form's scope choice, the agent app ticks and the per-file review */
+.dlg fieldset{min-width:0} /* spec 052 (2026-11-25): a fieldset is as wide as its widest line by default (min-inline-size: min-content); in a dialog it shrinks with the dialog and its lines wrap */
 .mscope{border:1px solid var(--line);border-radius:8px;padding:8px 12px 10px;margin:0 0 10px;display:flex;flex-direction:column;gap:6px}
 .mscope legend{font-weight:650;padding:0 4px}
 .mscope label,.gapps label,.gsec label{display:flex;flex-direction:row;align-items:baseline;gap:6px;font-weight:500;font-size:12.5px;color:var(--ink-2)}
@@ -513,7 +515,6 @@ body.has-bridge #topBtns{display:flex}
 .lv-who{font-size:12px;min-width:0;overflow-wrap:anywhere}
 .lv-act{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:2px}
 .scr-adv>summary #advMcpAtt[hidden]{display:none}
-#hsDlg .dbtn{flex-wrap:wrap} /* spec 081: the open-sessions dialog has three buttons; they wrap instead of being cut off at the left */
 /* spec 083 T034a: the folder's Notes screen (the rows are the drawer's .nt-row) */
 .ns-tools{display:flex;align-items:center;gap:8px;margin:0 0 10px}
 .ns-tools .nt-find{margin:0;height:var(--h-ctl,30px);font-size:13px}
