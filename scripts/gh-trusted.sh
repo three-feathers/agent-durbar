@@ -14,9 +14,11 @@ case $n in ''|*[!0-9]*) echo "usage: scripts/gh-trusted.sh <issue or PR number> 
 case $mode in ''|--pr-text) ;; *) echo "usage: scripts/gh-trusted.sh <issue or PR number> [--pr-text]" >&2; exit 2;; esac
 . "$(dirname "$0")/trusted-lib.sh" || exit 2
 # FR-425: a login removed on main must not be shown from an old list: the trust list and the filter must equal origin/main's. A failed fetch refuses
-# too (a stale list could still trust a removed login). An installed copy (no git checkout, the pre-review bot's folder) is not checked here.
-stale=$(gate_stale scripts/trusted-authors.txt scripts/trusted-lib.sh); gt=$?
+# too, and so does a git that fails in a folder that has a .git (a stale list could still trust a removed login). Only a folder with no .git at all (an
+# installed copy, the pre-review bot's folder) is not checked here. The script compares itself too.
+stale=$(gate_stale scripts/trusted-authors.txt scripts/trusted-lib.sh scripts/gh-trusted.sh); gt=$?
 if [ "$gt" = 2 ]; then echo "gh-trusted.sh: stale: git fetch origin main failed, the trust list cannot be compared: run it from a checkout at origin/main with network" >&2; exit 1; fi
+if [ "$gt" = 4 ]; then echo "gh-trusted.sh: stale: git fails in this checkout (dubious ownership, no git, a broken .git?), the trust list cannot be compared: run it from a checkout at origin/main" >&2; exit 1; fi
 if [ -n "$stale" ]; then echo "gh-trusted.sh: stale: $(echo $stale) differs from origin/main: run it from a checkout at origin/main (the trust list may have changed)" >&2; exit 1; fi
 if [ -n "$repo_arg" ]; then R=$repo_arg; else R=$(gh repo view --json nameWithOwner -q .nameWithOwner) || exit 1; fi
 OWNER=${R%%/*}; NAME=${R##*/}

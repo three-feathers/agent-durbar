@@ -98,6 +98,8 @@ exit 0
 const env = { ...process.env, PATH: `${bin}${path.delimiter}${process.env.PATH}` };
 // FR-425: the gate compares its own files with origin/main's through `git`; a fake git (scripts/fake-git.js) answers, so no case reaches the real repository.
 // A case sets gitEnv (FAKE_GIT_DIFF, FAKE_GIT_FETCH_RC, FAKE_GIT_NOREPO, FAKE_GIT_LOG: see that file); runCase clears it first.
+// the gate copies sit in folders that need a `.git` entry, or the gate takes them for installed copies (no checkout) and blocks (FR-425): one marker per copy root
+fs.mkdirSync(path.join(dir, '.git'));
 fs.writeFileSync(path.join(bin, 'git'), `#!/bin/bash\nexec node "${path.join(SCRIPTS, 'fake-git.js')}" "$@"\n`, { mode: 0o755 });
 let gitEnv: Record<string, string> = {};
 
@@ -195,6 +197,7 @@ const gateWith = (g: string, record: unknown): string => {
   const d = path.join(dir, 'own-ruleset', 'scripts');
   fs.rmSync(path.join(dir, 'own-ruleset'), { recursive: true, force: true });
   fs.mkdirSync(d, { recursive: true });
+  fs.mkdirSync(path.join(d, '..', '.git'));
   for (const f of ['trusted-lib.sh', 'trusted-authors.txt', 'pr-status-note.re', 'pr-gate-answered.awk']) fs.copyFileSync(path.join(SCRIPTS, f), path.join(d, f));
   fs.copyFileSync(g, path.join(d, 'pr-gate.sh'));
   if (record !== null) {
@@ -442,7 +445,17 @@ const CASES: Record<string, Case> = {
   },
   'stale-missing: a gate file that origin/main lacks': N({ codeql: 'pass', files: ['src/main/a.ts'] }, /stale-gate\(scripts\/pr-status-note\.re: run the gate/, () => { gitEnv = { FAKE_GIT_MISSING: 'scripts/pr-status-note.re' }; }),
   'stale-fetch: the fetch of origin main fails': N({ codeql: 'pass', files: ['src/main/a.ts'] }, /stale-gate\(git fetch origin main failed: the gate files cannot be compared/, () => { gitEnv = { FAKE_GIT_FETCH_RC: '1' }; }),
-  'stale-norepo: the folder is no git checkout': N({ codeql: 'pass', files: ['src/main/a.ts'] }, /stale-gate\(not a git checkout/, () => { gitEnv = { FAKE_GIT_NOREPO: '1' }; }),
+  'stale-norepo: the folder has no .git at all': (g, l) => {
+    // a copy of the gate in a folder with no `.git` entry (an installed copy): blocked as no checkout
+    const d = path.join(dir, 'nogit', 'scripts');
+    fs.rmSync(path.join(dir, 'nogit'), { recursive: true, force: true });
+    fs.mkdirSync(d, { recursive: true });
+    for (const f of ['trusted-lib.sh', 'trusted-authors.txt', 'pr-status-note.re', 'pr-gate-answered.awk']) fs.copyFileSync(path.join(SCRIPTS, f), path.join(d, f));
+    fs.copyFileSync(g, path.join(d, 'pr-gate.sh'));
+    fixture({ codeql: 'pass', files: ['src/main/a.ts'] });
+    notReady(path.join(d, 'pr-gate.sh'), l, /stale-gate\(not a git checkout/);
+  },
+  'stale-gitfails: git fails in a folder that has a .git': N({ codeql: 'pass', files: ['src/main/a.ts'] }, /stale-gate\(git fails in this checkout, dubious ownership or no git\?/, () => { gitEnv = { FAKE_GIT_NOREPO: '1' }; }),
   'stale-equal: equal files pass, after one fetch of origin main': (g, l) => {
     const log = path.join(fx, 'git.log');
     fs.rmSync(log, { force: true });
@@ -450,7 +463,7 @@ const CASES: Record<string, Case> = {
     fixture({ codeql: 'pass', files: ['src/main/a.ts'] });
     ready(g, l);
     const calls = fs.readFileSync(log, 'utf8').split('\n').filter((c) => /fetch/.test(c));
-    assert.ok(calls.length === 1 && /fetch -q origin main$/.test(calls[0]), `${l}: one fetch of origin main, got ${JSON.stringify(calls)}`);
+    assert.ok(calls.length === 1 && /fetch -q origin \+refs\/heads\/main:refs\/remotes\/origin\/main$/.test(calls[0]), `${l}: one fetch of origin main with the explicit refspec, got ${JSON.stringify(calls)}`);
   },
   'checks-error: the check list cannot be read': N({ checks: false }, /codeql=missing /),
 };
@@ -535,7 +548,8 @@ try {
     ['the second look after the 90 s pause removed', '  pend || break\n', '  break\n', 'wait-second-look'],
     ['the stale compare skipped', 'stale=$(gate_stale $GATE_FILES); case $? in', 'stale=; case 0 in', 'stale-gate'],
     ['a failed fetch ignored', '  2) bad="$bad stale-gate(git fetch origin main failed', '  2) : "$bad stale-gate(git fetch origin main failed', 'stale-fetch'],
-    ['a folder with no checkout accepted', '  *) bad="$bad stale-gate(not a git checkout', '  *) : "$bad stale-gate(not a git checkout', 'stale-norepo'],
+    ['a folder with no checkout accepted', '  3) bad="$bad stale-gate(not a git checkout', '  3) : "$bad stale-gate(not a git checkout', 'stale-norepo'],
+    ['a git failure in a checkout accepted', '  *) bad="$bad stale-gate(git fails in this checkout', '  *) : "$bad stale-gate(git fails in this checkout', 'stale-gitfails'],
     ['the draft line removed', '[ "$pr_draft" = true ] && echo "a draft:', 'false && echo "a draft:', 'draft'],
     ['the base branch name not checked', "case $pr_baseref in ''|*[!A-Za-z0-9._/-]*|*..*) a_base_nums=ERR;;", "case $pr_baseref in 'zzzz') a_base_nums=ERR;;", 'alert-base-ref'],
   ];
@@ -553,7 +567,10 @@ try {
   fs.copyFileSync(path.join(SCRIPTS, 'pr-gate.sh'), path.join(mdir, 'pr-gate.sh'));
   const libMutants: Array<[string, string, string, string]> = [
     ['HEAD compared instead of the file on disk', 'have=$(git -C "$_trusted_root" hash-object -- "$f" 2>/dev/null)', 'have=$(git -C "$_trusted_root" rev-parse --verify -q "HEAD:$f" 2>/dev/null)', 'stale-gate'],
-    ['the fetch skipped', 'git -C "$_trusted_root" fetch -q origin main >/dev/null 2>&1 || return 2', 'true', 'stale-fetch'],
+    ['the fetch skipped', 'git -C "$_trusted_root" fetch -q origin +refs/heads/main:refs/remotes/origin/main >/dev/null 2>&1 || return 2', 'true', 'stale-fetch'],
+    ['a git failure in a checkout read as an installed copy', 'rev-parse --is-inside-work-tree >/dev/null 2>&1 || return 4', 'rev-parse --is-inside-work-tree >/dev/null 2>&1 || return 3', 'stale-gitfails'],
+    ['the .git test removed', '[ -e "$_trusted_root/.git" ] || return 3\n', '', 'stale-norepo'],
+    ['a plain fetch of origin main', 'fetch -q origin +refs/heads/main:refs/remotes/origin/main >/dev/null', 'fetch -q origin main >/dev/null', 'stale-equal'],
     ['a file missing on origin/main counted equal', '|| { echo "$f"; continue; }\n    have=', '|| continue\n    have=', 'stale-missing'],
     ['one gate input left out of the compare', 'scripts/pr-status-note.re .github/ruleset-main.json"', 'scripts/pr-status-note.re"', 'stale-each'],
   ];

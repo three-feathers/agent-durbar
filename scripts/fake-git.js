@@ -24,6 +24,7 @@ if (cmd === 'rev-parse' && rest[0] === '--is-inside-work-tree') {
   if (process.env.FAKE_GIT_NOREPO === '1') fail(128, 'not a git repository');
   console.log('true');
 } else if (cmd === 'fetch') {
+  if (rest.join(' ') !== '-q origin +refs/heads/main:refs/remotes/origin/main') fail(99, `unexpected fetch: ${rest.join(' ')}`); // the explicit refspec only
   const rc = Number(process.env.FAKE_GIT_FETCH_RC || 0);
   if (rc) fail(rc, 'could not read from remote repository');
 } else if (cmd === 'rev-parse' && rest[0] === '--verify' && rest[1] === '-q' && /^(origin\/main|HEAD):/.test(rest[2] || '')) {
@@ -35,8 +36,8 @@ if (cmd === 'rev-parse' && rest[0] === '--is-inside-work-tree') {
   console.log('3'.repeat(40));
 } else if (cmd === 'diff' && rest[0] === '--name-only' && rest[1] === '-z') {
   process.stdout.write((process.env.FAKE_GIT_CHANGED || '').split('\n').filter(Boolean).map((f) => `${f}\0`).join(''));
-} else if (cmd === 'log' && rest[0] === '-1' && rest[1] === '--format=%s') {
-  console.log(`change of ${rest[rest.length - 1]}`);
+} else if (cmd === 'log' && rest[0] === '-1' && rest[1] === '--format=%H') {
+  console.log('4'.repeat(40)); // the commit that last changed the file
 } else {
   fail(99, `unexpected call: ${argv.join(' ')}`);
 }

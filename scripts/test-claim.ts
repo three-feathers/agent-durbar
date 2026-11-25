@@ -172,7 +172,7 @@ const noteCases: Record<string, () => void> = {
     gitEnv = { FAKE_GIT_CHANGED: 'AGENTS.md\ndocs/rules/review-rounds.md' };
     const { r, st } = run({}, '7');
     assert.ok(r.status === 0 && st.assignees.join() === 'vikramgorla', `stale checkout still claims: ${String(r.stderr)}`);
-    assert.ok(/claim\.sh: NOTE the rule files may be stale/.test(String(r.stderr)) && /AGENTS\.md: change of AGENTS\.md/.test(String(r.stderr)) && /rules: stale, read: AGENTS\.md, docs\/rules\/review-rounds\.md/.test(String(r.stderr)), `stale checkout: the note names the files: ${String(r.stderr)}`);
+    assert.ok(/claim\.sh: NOTE the rule files may be stale/.test(String(r.stderr)) && /AGENTS\.md: 444444444444/.test(String(r.stderr)) && /rules: stale, read: AGENTS\.md, docs\/rules\/review-rounds\.md/.test(String(r.stderr)), `stale checkout: the note names the files: ${String(r.stderr)}`);
   },
   'unfetched: note, still claims': () => {
     gitEnv = { FAKE_GIT_FETCH_RC: '1' };
