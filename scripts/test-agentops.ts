@@ -5,9 +5,9 @@ import * as os from 'os';
 import { FakeAdapter } from '../src/adapters/fake';
 import { ALL_OPTIONAL as ALL } from './test-adapter-contract';
 import { MAX_ANSWER } from '../src/shared/answerlimits';
-import { answerQuestionOp, restorable, resumeModeOp, sendWithSlash, setCapOp, setMcpOp, setModeAssistedOp, setModeOp, stopTurnOp } from '../src/main/agentops';
-import { ASSISTED_NOT_ASK, ASSISTED_NOT_RUNNING, ASSISTED_POLICY_LINE, ASSISTED_REMOTE, ASSISTED_UNSUPPORTED_LINE, ASSISTED_UNVERIFIED, NO_ASSISTED } from '../src/adapters/assistedLines';
-import type { AgentAdapter } from '../src/adapters/types';
+import { answerQuestionOp, assistedOnEvent, restorable, resumeModeOp, sendWithSlash, setCapOp, setMcpOp, setModeAssistedOp, setModeOp, stopTurnOp } from '../src/main/agentops';
+import { ASSISTED_NOT_ASK, ASSISTED_NOT_RUNNING, ASSISTED_OFF_ROW, ASSISTED_POLICY_LINE, ASSISTED_REMOTE, ASSISTED_UNSUPPORTED_LINE, ASSISTED_UNVERIFIED, NO_ASSISTED } from '../src/adapters/assistedLines';
+import type { AgentAdapter, AgentEvent } from '../src/adapters/types';
 import type { AgentMessage } from '../src/adapters/types';
 import type { OpsDeps } from '../src/main/agentops';
 import type { SavedFolder } from '../src/main/folders';
@@ -368,6 +368,33 @@ async function main(): Promise<void> {
     assert.deepStrictEqual(rows.slice(), ['mode-change:Ask first + review to Ask first'], 'FR-122: one row back');
     await setModeAssistedOp(d, 'c', 'ask', { assisted: false });
     assert.strictEqual(rows.length, 1, 'off when off: no row');
+    // 2026-11-25 (T058, FR-129): the end of the session clears main's state, so a later turn-on asks the adapter again
+    const ev = (x: Record<string, unknown>): AgentEvent => ({ sessionId: 'c', ts: 1, ...x }) as unknown as AgentEvent;
+    await setModeAssistedOp(d, 'c', 'ask', { assisted: true });
+    assert.deepStrictEqual(a.assisted, { on: true });
+    rows.length = 0; asked.length = 0;
+    assistedOnEvent(d, ev({ type: 'status', status: 'stopped', agentId: 'helper-1' }));
+    assert.deepStrictEqual(a.assisted, { on: true }, 'T058: a helper that stops changes nothing');
+    assistedOnEvent(d, ev({ type: 'status', status: 'idle' }));
+    assistedOnEvent(d, ev({ type: 'status', status: 'stopped', sessionId: 'u' }));
+    assert.deepStrictEqual(a.assisted, { on: true }, 'T058: another status or another session changes nothing');
+    assistedOnEvent(d, ev({ type: 'status', status: 'stopped' }));
+    assert.strictEqual(a.assisted, undefined, 'T058: stopped clears main\'s reviewer state');
+    assert.deepStrictEqual(rows.slice(), [], 'T058: the end of a session writes no row');
+    assert.deepStrictEqual(await setModeAssistedOp(d, 'c', 'ask', { assisted: true }), { ok: true, mode: 'ask', pending: 0, assisted: true }, 'T058: on again after the end');
+    assert.deepStrictEqual(asked.slice(), [['assisted', true]], 'T058: a turn-on after the end asks the adapter (not the early "already on")');
+    // FR-127: an off the user did not ask for: the policy line always, the plain off row only when it was on; an on event changes nothing
+    rows.length = 0;
+    assistedOnEvent(d, ev({ type: 'assisted', assisted: { on: true } }));
+    assert.deepStrictEqual(a.assisted, { on: true }, 'FR-127: an on event changes nothing');
+    assistedOnEvent(d, ev({ type: 'assisted' }));
+    assert.strictEqual(a.assisted, undefined, 'FR-127: a fallback clears it');
+    assert.deepStrictEqual(rows.slice(), ['mode-change:' + ASSISTED_OFF_ROW], 'FR-127: one off row while it was on');
+    assistedOnEvent(d, ev({ type: 'assisted' }));
+    assert.strictEqual(rows.length, 1, 'FR-127: no off row when it was already off');
+    assistedOnEvent(d, ev({ type: 'assisted', reason: 'policy' }));
+    assert.deepStrictEqual(rows.slice(1), ['mode-change:' + ASSISTED_POLICY_LINE], 'FR-127: the policy line always, also when it was off');
+    assistedOnEvent(d, ev({ type: 'assisted', sessionId: 'nope' }));
   }
   console.log('agentops: ok');
 }

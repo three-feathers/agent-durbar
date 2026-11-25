@@ -3,7 +3,7 @@
  * (spec 012 FR-054). Moved verbatim from `main.ts` and `mcpipc.ts` so they can be tested: no Electron, no file system.
  */
 import type { AdapterRouter } from '../adapters/router';
-import type { AgentAdapter, AgentMessage, StartOptions } from '../adapters/types';
+import type { AgentAdapter, AgentEvent, AgentMessage, StartOptions } from '../adapters/types';
 import { LINE_UNCONFIRMED } from '../adapters/autopilotHost';
 import { ASSISTED_NOT_ASK, ASSISTED_NOT_RUNNING, ASSISTED_OFF_ROW, ASSISTED_ON_ROW, ASSISTED_POLICY_LINE, ASSISTED_REMOTE, ASSISTED_UNSUPPORTED_LINE, ASSISTED_UNVERIFIED, NO_ASSISTED } from '../adapters/assistedLines';
 import { interruptOf, refusesLive, setCapOf, setMcpEnabledOf, setPermModeOf } from '../adapters/router';
@@ -127,6 +127,23 @@ export async function setModeAssistedOp(d: OpsDeps, id: unknown, mode: unknown, 
   a.assisted = { on: true };
   d.log?.(a, 'mode-change', ASSISTED_ON_ROW);
   return { ok: true, mode: 'ask', pending: 0, assisted: true };
+}
+
+/**
+ * Spec 003 FR-127, FR-129 (2026-11-25): main's state follows the app's reviewer when it goes off without the user asking (policy or
+ * fallback) or the session ends; a policy fallback gets its one activity row (the fixed sentence, never the runtime's text). A helper's
+ * event changes nothing. Without the `stopped` clear the chip, remote control and a later turn-on would still see it on after End.
+ */
+export function assistedOnEvent(d: Pick<OpsDeps, 'agents' | 'log'>, e: AgentEvent): void {
+  if (e.agentId) return;
+  const a = d.agents.get(e.sessionId);
+  if (!a) return;
+  if (e.type === 'status' && e.status === 'stopped') a.assisted = undefined;
+  if (e.type !== 'assisted' || e.assisted) return;
+  const was = !!a.assisted;
+  a.assisted = undefined;
+  if (e.reason === 'policy') d.log?.(a, 'mode-change', ASSISTED_POLICY_LINE);
+  else if (was) d.log?.(a, 'mode-change', ASSISTED_OFF_ROW);
 }
 
 /**

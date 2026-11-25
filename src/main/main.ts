@@ -71,7 +71,7 @@ import { missingChecker } from './mcpcmdcheck';
 import { mergeLoginPath, nodeLoginPathDeps, readLoginShellPath } from './loginpath';
 import { renameOp, titleSyncOf } from './sessionnames';
 import { adapterForAdd, createRouter, previousSessionsOf } from '../adapters/router';
-import { endSessionOp, mcpNudgeOp, restorable, scheduledSendOp, sendWithSlash, startGuardOp, stopTurnOp, validMode } from './agentops';
+import { assistedOnEvent, endSessionOp, mcpNudgeOp, restorable, scheduledSendOp, sendWithSlash, startGuardOp, stopTurnOp, validMode } from './agentops';
 import type { OpsDeps, StartGuardDeps } from './agentops';
 import { adapterOf } from './folders';
 import type { AgentAdapter, AgentEvent } from '../adapters/types';
@@ -122,7 +122,6 @@ import { folderKeyOf, folderNameOf } from '../shared/usagedoc';
 import { agentLabel } from '../shared/toolusage';
 import { autopilotTestGate, devEnv, devWarning } from './devhooks';
 import { AUTOPILOT_WIRED } from '../adapters/autopilotHost';
-import { ASSISTED_OFF_ROW, ASSISTED_POLICY_LINE } from '../adapters/assistedLines';
 import { bothGuards, createAutopilotOps, windowAdapters } from './autopilotops';
 import { folderFingerprint } from './gitstatus';
 import { isSimBlocked, sealChildProcess, simDetectorFor, simGuardDescriptors, simulatorCount, simulatorOn } from './simguard';
@@ -328,19 +327,7 @@ router.onEvent((e) => autopilotOps.onEvent(e));
 /** Spec 005 FR-411: the raw text of the argument each chip shows, for Copy (main writes the clipboard; the window gets only `argsMasked`). */
 const toolArgCopies = createToolArgCopies({ write: (t) => clipboard.writeText(t) });
 router.onEvent((e) => { if (!mcp.hidesEvent(e)) toRenderer('agent:event', toolArgCopies.see(e, toWindowEvent(e, outward))); }); // spec 005 FR-411: `argsMasked` on the window's copy only (the debug log's is unchanged); spec 087 (review rounds 7-8): the sandbox event cleaned too; spec 058 FR-215: an elicitation main declined is not shown
-// Spec 003 FR-127, FR-129: the app's reviewer went off without the user asking (policy or fallback), or the session ended: main's state follows,
-// and a policy fallback gets its one activity row (the fixed sentence, never the runtime's text). The window says it from the same event.
-router.onEvent((e) => {
-  if (e.agentId) return;
-  const a = agents.get(e.sessionId);
-  if (!a) return;
-  if (e.type === 'status' && e.status === 'stopped') a.assisted = undefined;
-  if (e.type !== 'assisted' || e.assisted) return;
-  const was = !!a.assisted;
-  a.assisted = undefined;
-  if (e.reason === 'policy') logActivity(a, 'mode-change', ASSISTED_POLICY_LINE);
-  else if (was) logActivity(a, 'mode-change', ASSISTED_OFF_ROW);
-});
+router.onEvent((e) => assistedOnEvent({ agents, log: (a, decision, action) => logActivity(a, decision, action) }, e)); // spec 003 FR-127, FR-129: main's reviewer state follows a fallback or the end of the session (tested in agentops)
 // Spec 087 FR-011: the OS sandbox state is kept on the agent's info (cleaned: own known fields, reason masked and cut), so a reloaded
 // window gets it from agents:list; never saved
 router.onEvent((e) => {
