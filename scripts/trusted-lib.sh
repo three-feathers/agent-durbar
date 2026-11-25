@@ -20,3 +20,23 @@ def shown_body: if (.user.login | trusted) and ((.html_url // \"\") | edited_out
 "
 }
 trust_defs
+# FR-425 (harness series S4): a gate run from a stale checkout must not decide. `gate_stale <file>...` fetches origin main, then prints each
+# repo-relative file whose content on disk differs from origin/main's copy (a file origin/main lacks, or this checkout lacks, differs too).
+# Fixed argument lists, no shell on any outside string; `git hash-object` applies the checkout's line-ending filter, so a CRLF checkout
+# compares equal. The fetch names its refspec (`+refs/heads/main:refs/remotes/origin/main`): a plain `fetch origin main` leaves origin/main old when
+# remote.origin.fetch does not cover main. Returns 0 when it compared, 2 when the fetch failed, 3 when the folder has no `.git` at all (an installed copy,
+# the pre-review bot's folder), 4 when it has a `.git` but git fails there (dubious ownership, no git, a broken worktree pointer): never "not a checkout".
+GATE_FILES="scripts/pr-gate.sh scripts/trusted-lib.sh scripts/trusted-authors.txt scripts/pr-gate-answered.awk scripts/pr-status-note.re .github/ruleset-main.json"
+_trusted_root=$(cd "$_trusted_here/.." && pwd)
+gate_stale() {
+  local f want have
+  [ -e "$_trusted_root/.git" ] || return 3
+  git -C "$_trusted_root" rev-parse --is-inside-work-tree >/dev/null 2>&1 || return 4
+  git -C "$_trusted_root" fetch -q origin +refs/heads/main:refs/remotes/origin/main >/dev/null 2>&1 || return 2
+  for f in "$@"; do
+    want=$(git -C "$_trusted_root" rev-parse --verify -q "origin/main:$f" 2>/dev/null) || { echo "$f"; continue; }
+    have=$(git -C "$_trusted_root" hash-object -- "$f" 2>/dev/null) || { echo "$f"; continue; }
+    [ "$want" = "$have" ] || echo "$f"
+  done
+  return 0
+}

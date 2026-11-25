@@ -370,6 +370,7 @@
     "specs:index": "node scripts/specs-index.js",
     "specs:check": "node scripts/specs-index.js --check && node scripts/spec-numbers.js --dups",
     "rules:check": "node scripts/rules-check.js",
+    "rules:fresh": "node scripts/rules-fresh.js",
     "releases:check": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/releases-check.js",
     "ci:stats": "node scripts/ci-stats.js",
     "groups:build": "python3 -I scripts/build-character-groups.py --write",

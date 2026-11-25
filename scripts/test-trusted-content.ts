@@ -111,6 +111,10 @@ esac
 jq -r "$prog" < "$F/$f.json"
 `, { mode: 0o755 });
 
+// FR-425: the gate and gh-trusted.sh compare their files with origin/main's through `git`; a fake git (scripts/fake-git.js) answers, so no case
+// reaches the real repository or the network
+fs.writeFileSync(path.join(bin, 'git'), `#!/bin/bash\nexec node "${path.join(ROOT, 'scripts', 'fake-git.js')}" "$@"\n`, { mode: 0o755 });
+fs.mkdirSync(path.join(dir, '.git')); // the gate copies below sit in this folder: a `.git` entry makes it a checkout, not an installed copy (FR-425)
 const put = (name: string, v: unknown): void => fs.writeFileSync(path.join(dir, `${name}.json`), JSON.stringify(v));
 const url = (id: string): string => `https://github.com/o/r/pull/1#${id}`;
 const c = (login: string, body: string, t: string, id: string): object => ({ user: { login }, body, created_at: t, html_url: url(id) });
@@ -364,6 +368,58 @@ try {
   for (const bad of ['../x', 'a/b/c', '/x', 'x/', 'a b/c', '']) assert.strictEqual(spawnSync('bash', [path.join(ROOT, 'scripts', 'gh-trusted.sh'), '1', '--pr-text', '--repo', bad], { env, encoding: 'utf8' }).status, 2, `--repo ${bad} refused`);
   put('prtext', ptext('vikramgorla', null)); assert.ok(spawnSync('bash', [path.join(ROOT, 'scripts', 'gh-trusted.sh'), '1', '--pr-text', '--repo', 'o/r'], { env, encoding: 'utf8' }).stdout.includes('title: TITLE'), '--repo names the repository itself');
   assert.strictEqual(spawnSync('bash', [path.join(ROOT, 'scripts', 'gh-trusted.sh'), '1', '--other'], { env, encoding: 'utf8' }).status, 2, 'an unknown mode is refused');
+  // 6. FR-425: gh-trusted.sh refuses when the trust list or the filter differs from origin/main's (a login removed on main must not be shown from an old list);
+  // a failed fetch is a note, an installed copy with no checkout is not checked
+  put('item', { data: { repository: { issueOrPullRequest: { __typename: 'Issue', url: 'https://github.com/o/r/issues/1', title: 'T', body: 'B', state: 'OPEN', author: actor('vikramgorla'), editor: null, comments: { totalCount: 0, nodes: [] } } } } });
+  const ghDir = path.join(dir, 'gt', 'scripts');
+  fs.mkdirSync(ghDir, { recursive: true });
+  const ghGit = path.join(dir, 'gt', '.git'); // the copy's folder is a checkout (it has a .git entry), except in the installed-copy case
+  fs.mkdirSync(ghGit);
+  const ghSrc = fs.readFileSync(path.join(ROOT, 'scripts', 'gh-trusted.sh'), 'utf8').replace(/\r\n/g, '\n');
+  const libSrc = fs.readFileSync(path.join(ROOT, 'scripts', 'trusted-lib.sh'), 'utf8').replace(/\r\n/g, '\n');
+  fs.copyFileSync(path.join(ROOT, 'scripts', 'trusted-authors.txt'), path.join(ghDir, 'trusted-authors.txt'));
+  const trusted = (gitEnv: Record<string, string>, ghText = ghSrc, lib = libSrc): { status: number | null; out: string } => {
+    fs.writeFileSync(path.join(ghDir, 'gh-trusted.sh'), ghText, { mode: 0o755 });
+    fs.writeFileSync(path.join(ghDir, 'trusted-lib.sh'), lib);
+    const r = spawnSync('bash', [path.join(ghDir, 'gh-trusted.sh'), '1'], { env: { ...env, ...gitEnv }, encoding: 'utf8', timeout: 60000 });
+    return { status: r.status, out: r.stdout + r.stderr };
+  };
+  const CASES6: Record<string, (t: typeof trusted, g?: string, l?: string) => void> = {
+    'stale-self': (t, g, l) => { const r = t({ FAKE_GIT_DIFF: 'scripts/gh-trusted.sh' }, g, l); assert.ok(r.status === 1 && /gh-trusted\.sh: stale: scripts\/gh-trusted\.sh differs from origin\/main/.test(r.out) && !r.out.includes('title:'), `a stale gh-trusted.sh refuses and shows nothing:\n${r.out}`); },
+    'git-fails': (t, g, l) => {
+      // a folder that has a .git entry where git fails (dubious ownership, no git, a broken worktree pointer) is a checkout, never an installed copy
+      const r = t({ FAKE_GIT_NOREPO: '1' }, g, l);
+      assert.ok(r.status === 1 && /gh-trusted\.sh: stale: git fails in this checkout/.test(r.out) && !r.out.includes('title:'), `a git failure in a checkout refuses and shows nothing:\n${r.out}`);
+    },
+    'stale-list': (t, g, l) => { const r = t({ FAKE_GIT_DIFF: 'scripts/trusted-authors.txt' }, g, l); assert.ok(r.status === 1 && /gh-trusted\.sh: stale: scripts\/trusted-authors\.txt differs from origin\/main/.test(r.out) && !r.out.includes('title:'), `stale list refuses and shows nothing:\n${r.out}`); },
+    'stale-lib': (t, g, l) => { const r = t({ FAKE_GIT_DIFF: 'scripts/trusted-lib.sh' }, g, l); assert.ok(r.status === 1 && /gh-trusted\.sh: stale: scripts\/trusted-lib\.sh differs from origin\/main/.test(r.out), `stale lib refuses:\n${r.out}`); },
+    'equal': (t, g, l) => { const r = t({}, g, l); assert.ok(r.status === 0 && r.out.includes('title: T'), `equal files read the item:\n${r.out}`); },
+    'fetch-refuses': (t, g, l) => { const r = t({ FAKE_GIT_FETCH_RC: '1' }, g, l); assert.ok(r.status === 1 && /gh-trusted\.sh: stale: git fetch origin main failed, the trust list cannot be compared/.test(r.out) && !r.out.includes('title:'), `failed fetch refuses and shows nothing:\n${r.out}`); },
+    'installed-copy': (t, g, l) => { fs.rmSync(ghGit, { recursive: true, force: true }); let r; try { r = t({ FAKE_GIT_NOREPO: '1', FAKE_GIT_DIFF: 'scripts/trusted-authors.txt' }, g, l); } finally { fs.mkdirSync(ghGit); } assert.ok(r.status === 0 && !/stale/.test(r.out) && r.out.includes('title: T'), `a copy with no checkout is not checked:\n${r.out}`); },
+  };
+  for (const fn of Object.values(CASES6)) fn(trusted);
+  const CASES6_TEXT: Record<string, string> = { 'stale-list': 'stale list refuses and shows nothing', 'stale-lib': 'stale lib refuses', 'fetch-refuses': 'failed fetch refuses and shows nothing', 'stale-self': 'a stale gh-trusted.sh refuses and shows nothing', 'git-fails': 'a git failure in a checkout refuses and shows nothing', 'installed-copy': 'a copy with no checkout is not checked' };
+  const m6: Array<[string, string, string, string, string]> = [
+    ['the compare skipped', 'stale=$(gate_stale scripts/trusted-authors.txt scripts/trusted-lib.sh scripts/gh-trusted.sh)', 'stale=$(true)', 'stale-list', 'gh'],
+    ['the filter file left out', 'gate_stale scripts/trusted-authors.txt scripts/trusted-lib.sh scripts/gh-trusted.sh)', 'gate_stale scripts/trusted-authors.txt scripts/gh-trusted.sh)', 'stale-lib', 'gh'],
+    ['the script left out of its own compare', 'gate_stale scripts/trusted-authors.txt scripts/trusted-lib.sh scripts/gh-trusted.sh)', 'gate_stale scripts/trusted-authors.txt scripts/trusted-lib.sh)', 'stale-self', 'gh'],
+    ['a git failure in a checkout read as no refusal', 'if [ "$gt" = 4 ]; then echo "gh-trusted.sh: stale: git fails in this checkout', 'if [ "$gt" = 9 ]; then echo "gh-trusted.sh: stale: git fails in this checkout', 'git-fails', 'gh'],
+    ['the .git test removed (an installed copy gets compared)', '[ -e "$_trusted_root/.git" ] || return 3\n', '', 'installed-copy', 'lib'],
+    ['a git failure in a checkout read as an installed copy', 'rev-parse --is-inside-work-tree >/dev/null 2>&1 || return 4', 'rev-parse --is-inside-work-tree >/dev/null 2>&1 || return 3', 'git-fails', 'lib'],
+    ['the refusal made a note', '(the trust list may have changed)" >&2; exit 1; fi', '(the trust list may have changed)" >&2; fi', 'stale-list', 'gh'],
+    ['a failed fetch made a note again', 'if [ "$gt" = 2 ]; then echo "gh-trusted.sh: stale: git fetch origin main failed, the trust list cannot be compared: run it from a checkout at origin/main with network" >&2; exit 1; fi', 'if [ "$gt" = 2 ]; then echo "NOTE gh-trusted.sh: fetch failed" >&2; fi', 'fetch-refuses', 'gh'],
+    ['HEAD compared instead of the file on disk', 'have=$(git -C "$_trusted_root" hash-object -- "$f" 2>/dev/null)', 'have=$(git -C "$_trusted_root" rev-parse --verify -q "HEAD:$f" 2>/dev/null)', 'stale-list', 'lib'],
+  ];
+  for (const [name, from, to, caught, where] of m6) {
+    const src = where === 'gh' ? ghSrc : libSrc;
+    assert.ok(src.includes(from), `mutant "${name}": its anchor is in ${where === 'gh' ? 'gh-trusted.sh' : 'trusted-lib.sh'}`);
+    const mutated = src.split(from).join(to);
+    assert.notStrictEqual(mutated, src, `mutation did not apply: ${name}`);
+    let msg = '';
+    try { if (where === 'gh') CASES6[caught](trusted, mutated); else CASES6[caught](trusted, ghSrc, mutated); } catch (e) { msg = (e as Error).message; }
+    assert.ok(msg !== '', `gh-trusted mutant "${name}" survived case ${caught}`);
+    assert.ok(msg.startsWith(CASES6_TEXT[caught]), `gh-trusted mutant "${name}" must fail at "${CASES6_TEXT[caught]}", got: ${msg.split('\n')[0]}`);
+  }
 } finally {
   fs.rmSync(dir, { recursive: true, force: true });
 }
