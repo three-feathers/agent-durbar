@@ -62,6 +62,8 @@ function ruleFiles(root) {
   }
   return ['AGENTS.md', ...names.map((f) => `${RULES_DIR}/${f}`)];
 }
+// every regex metacharacter and the backslash itself, so a file name is matched literally (CodeQL js/incomplete-sanitization)
+const escapeRegExp = (s) => String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 const norm = (s) => s.toLowerCase().replace(/[^a-z0-9 ]+/g, ' ').replace(/\s+/g, ' ').trim();
 
 function unticked(root) {
@@ -116,7 +118,7 @@ function sectionsOf(text) {
 function checkPointers(root, files, rules, problems) {
   const heads = new Map();
   for (const r of rules) heads.set(r, sectionsOf(read(root, r) || ''));
-  const names = rules.map((r) => r.replace(/^docs\/rules\//, '')).map((n) => n.replace(/[.]/g, '\\.'));
+  const names = rules.map((r) => r.replace(/^docs\/rules\//, '')).map(escapeRegExp);
   const mention = new RegExp(`(?:docs/rules/)?(?:${names.join('|')})`, 'g');
   for (const f of files) {
     const t = read(root, f);
@@ -198,7 +200,7 @@ function check(root, budgets = {}) {
   return problems;
 }
 
-module.exports = { LABEL_ALLOW, INVISIBLE, check, sectionsOf };
+module.exports = { escapeRegExp, LABEL_ALLOW, INVISIBLE, check, sectionsOf };
 if (require.main === module) {
   const i = process.argv.indexOf('--root');
   const root = i >= 0 && process.argv[i + 1] ? path.resolve(process.argv[i + 1]) : path.join(__dirname, '..');

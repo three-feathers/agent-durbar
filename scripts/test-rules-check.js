@@ -185,6 +185,23 @@ try {
     assert.ok(Array.isArray(m), `${name}: mutant crashed`);
     assert.strictEqual(m.filter((p) => re.test(p)).length, 0, `${name}: mutant survived, the check still reported it`);
   }
+  { // a rule file name with regex metacharacters is matched literally: `a+b(1).md` is not `aab1.md` or "ab"
+    const odd = { 'docs/rules/a+b(1).md': RULE };
+    const hit = ask(hr, hrepo({ ...odd, 'docs/guide.md': 'a+b(1).md says *Nope* here.\n' }));
+    assert.strictEqual(hit.length, 1, `metacharacter file name not matched literally: [${hit.join(' | ')}]`);
+    assert.match(hit[0], /^docs\/guide\.md:1: pointer \*Nope\*/);
+    assert.deepStrictEqual(ask(hr, hrepo({ ...odd, 'docs/guide.md': 'aab1.md says *Nope* here.\n' })), [], 'a look-alike name must not match');
+    const mut = /String\(s\)\.replace\(\/\[\.\*\+\?\^\$\{\}\(\)\|\[\\\]\\\\\]\/g, '\\\\\$&'\)/;
+    assert.ok(mut.test(hsrc), 'escape mutant pattern no longer matches harness-refs.js');
+    let died = false;
+    try {
+      const bad = ask(load(hsrc.replace(mut, 'String(s)')), hrepo({ ...odd, 'docs/guide.md': 'a+b(1).md says *Nope* here.\n' }));
+      died = bad.length !== 1;
+    } catch {
+      died = true; // an invalid pattern is the mutant failing at the escape, which is also its kill
+    }
+    assert.ok(died, 'escape mutant survived: a metacharacter file name was still matched literally');
+  }
   { // an unticked task on the line keeps a planned path from failing; a ticked one does not
     const spec = (box) => ({ 'specs/001-x/tasks.md': `- [${box}] T061 later\n`, 'AGENTS.md': 'plans `scripts/fuzz/` (T061).\n' });
     assert.deepStrictEqual(ask(hr, hrepo(spec(' '))), []);
