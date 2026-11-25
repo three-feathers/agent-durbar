@@ -13,12 +13,33 @@
  *      first text is one code block, and when a waiting card's answer bar appears under the chat and makes it shorter;
  *   5. closing the chat disconnects the box observer (the disconnects of #chat's observers are counted);
  *      all of it again with a classic scrollbar (15 px, injected style), where the collapsed chat would lose the scrollbar's width.
- * Waits are conditions or counts of frames, never a fixed sleep. A miss prints DRIVER FAILED.
+ *   6. issue #1586 (checked in a real window on a Mac, 0 px everywhere): the message box grown by six lines of real input (insertText) while following, and a reply that
+ *      starts with a list, each at under 3 px with the measured px in the assert text.
+ * Mutants (FOLLOW_MUTANT=, a patched copy of dist, each dies at its own assert): `box` (the box observer does nothing) dies at "the message box grown"; `mdflush` (no mdFlush()
+ * first in stickyFlush) dies at "a reply that starts with a list". Waits are conditions or counts of frames, never a fixed sleep. A miss prints DRIVER FAILED.
  */
 const assert = require('assert');
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
 const { helpers, jsLiteral } = require('./driver-helpers');
+const MUTANT = process.env.FOLLOW_MUTANT || '';
+const PATCH = {
+  box: ['chatBoxRO=new ResizeObserver(()=>{const h=chatEl.clientHeight;', 'chatBoxRO=new ResizeObserver(()=>{return;const h=chatEl.clientHeight;'],
+  mdflush: ['function stickyFlush(){stickyRaf=0;mdFlush();', 'function stickyFlush(){stickyRaf=0;'],
+};
 
 module.exports = async (ctx) => {
+  let INDEX;
+  if (MUTANT) {
+    assert.ok(PATCH[MUTANT], `FOLLOW_MUTANT is box or mdflush, not ${MUTANT}`);
+    const copy = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-follow-'));
+    fs.cpSync(path.join(__dirname, '..', 'dist'), copy, { recursive: true });
+    const f = path.join(copy, 'renderer', 'app.js'); const src = fs.readFileSync(f, 'utf8').replace(/\r\n/g, '\n'); const [from, to] = PATCH[MUTANT];
+    assert.strictEqual(src.split(from).length - 1, 1, `the ${MUTANT} mutant finds its line in app.js once`);
+    fs.writeFileSync(f, src.replace(from, () => to));
+    INDEX = path.join(copy, 'renderer', 'index.html');
+  }
   const H = helpers(ctx);
   const { js, until } = H;
   const ID = 'sim-1';
@@ -44,7 +65,7 @@ module.exports = async (ctx) => {
 
   for (const [w, h, sb] of [[1440, 900, false], [1280, 800, false], [1440, 900, true], [1280, 800, true]]) {
     const tag = `${w}x${h}${sb ? ' classic scrollbar' : ''}`;
-    await H.load({ w, h, ready: 'fit', focus: true });
+    await H.load({ w, h, ready: 'fit', focus: true, ...(INDEX ? { index: INDEX } : {}) });
     /* a classic scrollbar (Windows, Linux, macOS "always show"; FR-235) takes 15 px that overflow:hidden on the collapsed chat would give back */
     if (sb) await js(`(()=>{const st=document.createElement('style');st.textContent='#chat::-webkit-scrollbar{width:15px;background:#ddd}#chat::-webkit-scrollbar-thumb{background:#888}';document.head.append(st);})()`);
     /* count the disconnects of the observers of #chat (the box observer is made in openPanel, so the wrappers go in first) */
@@ -80,6 +101,27 @@ module.exports = async (ctx) => {
     assert.ok(await until(`/· [1-9]\\d*s$/.test(document.querySelector('#chat .typing .t-l').textContent)`, 10000), `${tag}: FR-243 the typing row's timer ran`); await frames(3); /* the 1 s timer has written the typing row's label */
     s = await st();
     assert.ok(s.gap < NEAR && s.pin === '1', `${tag}: FR-243 still at the end after the typing row's 1 s timer (an empty label grew the row by about 9 px): ${JSON.stringify(s)}`);
+    /* issue #1586, item 4: the message box grows by six lines of real input while following; waiting for the box to grow is a STATE, then the follow (the observer on #chat) must have moved the chat */
+    const boxH = () => js(`document.getElementById('msgInput').offsetHeight`);
+    const h0 = await boxH();
+    assert.ok(await js(`(()=>{const t=document.getElementById('msgInput');t.focus();return document.activeElement===t})()`), `${tag}: the message box has the focus`);
+    H.wc().insertText('one\ntwo\nthree\nfour\nfive\nsix');
+    assert.ok(await until(`document.getElementById('msgInput').offsetHeight>${jsLiteral(h0 + 40)}`), `${tag}: the message box grew with six lines (was ${h0} px)`);
+    await frames(3);
+    s = await st();
+    assert.ok(s.gap < NEAR && s.pin === '1', `${tag}: #1586 the message box grown by six lines (${h0} to ${await boxH()} px) keeps the chat at the end, gap ${s.gap} px (no follow of the box: 87 px on a Mac 2026-11-25, 69 px in the 2026-11-11 delta): ${JSON.stringify(s)}`);
+    await js(`(()=>{const t=document.getElementById('msgInput');t.value='';t.dispatchEvent(new Event('input',{bubbles:true}));})()`);
+    assert.ok(await until(`document.getElementById('msgInput').offsetHeight<=${jsLiteral(h0 + 4)}`), `${tag}: the message box is back to one line`);
+    await frames(3);
+    s = await st();
+    assert.ok(s.gap < NEAR && s.pin === '1', `${tag}: #1586 the message box shrunk again keeps the chat at the end, gap ${s.gap} px: ${JSON.stringify(s)}`);
+    /* issue #1586, item 2: a turn whose first text is a list */
+    await emit({ type: 'output', delta: '', final: true, text: 'done' }); await emit({ type: 'status', status: 'idle' }); await frames(5);
+    await emit({ type: 'status', status: 'working', intent: 'Working' });
+    await emit({ type: 'output', delta: '- first the checks run\n- then the files are compared\n- then the report is written\n  - with a nested line\n  - and another\n1. one\n2. two\n3. three\n\n' }); /* the turn's first and only text is a list */
+    await frames(10);
+    s = await st();
+    assert.ok(s.gap < NEAR && s.pin === '1', `${tag}: #1586 a reply that starts with a list is followed to its end, gap ${s.gap} px: ${JSON.stringify(s)}`);
     await emit({ type: 'output', delta: '', final: true, text: 'done' }); await emit({ type: 'status', status: 'idle' }); await frames(5);
     await emit({ type: 'status', status: 'working', intent: 'Working' });
     await emit({ type: 'output', delta: 'Here is the change:\n\n```js\nfunction add(a, b) {\n  return a + b;\n}\nconsole.log(add(1, 2));\n```\n\n' }); /* the turn's first and only text: nothing asks for a follow after it */
