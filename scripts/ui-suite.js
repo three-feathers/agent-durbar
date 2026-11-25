@@ -398,6 +398,19 @@ function desktopNote(platform, shared, size) {
   return `ui-suite: UI_SUITE_DESKTOP=1: the desktop is ${size.w}x${size.h}; ${tail}`;
 }
 
+/** FR-465 (review of #2137): the one stop when xvfb is chosen on Linux and `xvfb-run` cannot be found (before, a display without it used the desktop; now every driver would fail with a bare ENOENT). '' when there is nothing to say (not Linux, a desktop run, or found). `lookup()` is injected: true when xvfb-run starts; the default is `xvfbRunFound`. */
+const XVFB_MISSING = 'xvfb-run was not found: install xvfb, or set UI_SUITE_DESKTOP=1';
+function xvfbProblem(platform, shared, lookup = xvfbRunFound) {
+  if (platform !== 'linux' || shared) return '';
+  return lookup() ? '' : XVFB_MISSING;
+}
+
+/** FR-465: whether `xvfb-run` starts (a PATH lookup by spawn, no shell); only a missing binary (ENOENT) counts as not found. */
+function xvfbRunFound(env = process.env) {
+  const r = spawnSync('xvfb-run', ['--help'], { env, stdio: 'ignore', timeout: 10000, windowsHide: true, shell: false });
+  return !(r.error && r.error.code === 'ENOENT');
+}
+
 /** FR-465: the size of the X display from `xdpyinfo` (no shell), or null when it cannot be told. */
 function desktopSize(env = process.env) {
   try {
@@ -515,7 +528,7 @@ function runOne(d, outDir, { launch, build = launch ? () => '' : buildProblem } 
 }
 
 /** `ensure`, `run` and `argv` are for tests (scripts/test-ui-suite.ts); the defaults install Electron and start the real drivers. */
-async function main({ ensure = ensureElectron, run = runOne, argv, shared = sharedDesktop(), build = buildProblem } = {}) {
+async function main({ ensure = ensureElectron, run = runOne, argv, shared = sharedDesktop(), build = buildProblem, xvfbFound = xvfbRunFound } = {}) {
   const a = args(argv);
   // a bare `--shard` (no value) is refused, never "every driver"; only an empty UI_SUITE_SHARD env value means the whole list (FR-182, review on #1257)
   if (a.shardGiven && !a.shard) throw new Error('ui-suite: --shard wants a value i/n (1 <= i <= n), got none');
@@ -537,6 +550,9 @@ async function main({ ensure = ensureElectron, run = runOne, argv, shared = shar
   // FR-211: a missing build fails in seconds with its path, before Electron is fetched or started
   const noBuild = build();
   if (noBuild) throw new Error(`${noBuild}; no driver was started`);
+  // FR-465: xvfb is the default on Linux; without xvfb-run stop here, with the way out, before any driver starts
+  const noXvfb = xvfbProblem(process.platform, shared, xvfbFound);
+  if (noXvfb) throw new Error(noXvfb);
   // FR-114: install Electron once before the drivers start in parallel (two first runs racing on the same binary fail, PR #546)
   if (!ensure()) throw new Error('the Electron binary is not installed and could not be fetched (see above); no driver was started');
   const outDir = process.env.UI_SUITE_OUT ? path.resolve(process.env.UI_SUITE_OUT) : fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-ui-shots-'));
@@ -589,5 +605,5 @@ async function main({ ensure = ensureElectron, run = runOne, argv, shared = shar
   if (failed.length) process.exitCode = 1;
 }
 
-module.exports = { dprOk, xvfbScreenArgs, launchCommand, sharedDesktop, desktopNote, desktopSize, syntaxErrors, main, runOne, killTree, guardTree, shard, SHARD1_HEAD_START_SECS, unknownOnly, DRIVERS, NOT_IN_SUITE }; // runOne: also spec 001 FR-082 (scripts/shots-docs.js)
+module.exports = { dprOk, xvfbScreenArgs, launchCommand, sharedDesktop, desktopNote, desktopSize, xvfbProblem, XVFB_MISSING, syntaxErrors, main, runOne, killTree, guardTree, shard, SHARD1_HEAD_START_SECS, unknownOnly, DRIVERS, NOT_IN_SUITE }; // runOne: also spec 001 FR-082 (scripts/shots-docs.js)
 if (require.main === module) main().catch((e) => { console.error('ui-suite:', e.message); process.exitCode = 1; });

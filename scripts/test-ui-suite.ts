@@ -1141,6 +1141,37 @@ console.log('ui-suite: check-parallel and ui-suite install Electron once before 
       assert.notStrictEqual(old, m[0], 'FR-465: the old-default mutant found its line to change');
       assert.throws(() => defaultAssert(build(old)), /FR-465: Linux with a display set and no UI_SUITE_DESKTOP runs under xvfb/, 'FR-465: the old default dies at the default\'s own assert');
     }
+    {
+      /* FR-465 (review of #2137): xvfb chosen on Linux and no xvfb-run: one plain stop before any driver; the lookup is injected */
+      const ui = suite as unknown as { xvfbProblem: (p: string, s: boolean, l: () => boolean) => string; XVFB_MISSING: string; main: (o: unknown) => Promise<void> };
+      const MSG = 'xvfb-run was not found: install xvfb, or set UI_SUITE_DESKTOP=1';
+      let looked = 0;
+      const fails = (): boolean => { looked++; return false; }, finds = (): boolean => { looked++; return true; };
+      const problems = (): string[] => [ui.xvfbProblem('linux', false, fails), ui.xvfbProblem('linux', false, finds), ui.xvfbProblem('linux', true, fails), ui.xvfbProblem('darwin', false, fails), ui.xvfbProblem('win32', false, fails)];
+      const expected = [MSG, '', '', '', ''];
+      assert.deepStrictEqual(problems(), expected, 'FR-465: xvfb-run missing stops with the plain line on Linux under xvfb; found, a desktop run, macOS and Windows say nothing');
+      assert.strictEqual(looked, 2, 'FR-465: the lookup runs only on Linux under xvfb (no check on macOS, Windows or a desktop run)');
+      const ran: string[] = [];
+      const go = (found: () => boolean, shared: boolean): Promise<void> => ui.main({ build: () => '', ensure: () => true, run: async (d: { name: string }) => { ran.push(d.name); return { ok: true, secs: 0, why: '', log: '' }; }, argv: ['--only', 'check-office-fill'], shared, xvfbFound: found });
+      if (process.platform === 'linux') {
+        await assert.rejects(() => go(fails, false), new RegExp('^Error: ' + MSG + '$'), 'FR-465: main stops with exactly the plain line');
+        assert.deepStrictEqual(ran, [], 'FR-465: no driver started');
+      }
+      const quiet = console.log; console.log = (): void => undefined;
+      try { await go(finds, process.platform !== 'linux'); await go(fails, true); } finally { console.log = quiet; }
+      assert.deepStrictEqual(ran, ['check-office-fill', 'check-office-fill'], 'FR-465: with xvfb-run found, or a desktop run, the driver starts');
+      /* mutants (source copies, \r?\n): the check dropped, and the message changed, each die at their own assert */
+      const src2 = fs.readFileSync(SUITE, 'utf8');
+      const mm = /const XVFB_MISSING[\s\S]*?\r?\nfunction xvfbProblem\([\s\S]*?\r?\n\}\r?\n/.exec(src2);
+      assert.ok(mm, 'FR-465: xvfbProblem is found in scripts/ui-suite.js');
+      const make = (t: string): ((p: string, s: boolean, l: () => boolean) => string) => new Function(t + '\nreturn xvfbProblem;')() as (p: string, s: boolean, l: () => boolean) => string;
+      const check = (f: (p: string, s: boolean, l: () => boolean) => string): void => assert.strictEqual(f('linux', false, fails), MSG, 'FR-465: xvfb-run missing stops with the plain line');
+      check(make(mm[0]));
+      const dropped = mm[0].replace("return lookup() ? '' : XVFB_MISSING;", "return '';");
+      const reworded = mm[0].replace("xvfb-run was not found: install xvfb, or", "xvfb-run is missing: install xvfb or");
+      assert.ok(dropped !== mm[0] && reworded !== mm[0], 'FR-465: the xvfb mutants found their lines to change');
+      for (const m of [dropped, reworded]) assert.throws(() => check(make(m)), /FR-465: xvfb-run missing stops with the plain line/, 'FR-465: the xvfb mutant dies at its own assert');
+    }
     assert.strictEqual(suite.sharedDesktop('darwin', { UI_SUITE_DPR: '2' }), true, 'FR-273: macOS has no virtual display, the forced ratio runs there');
     const only = ['shots-097-screens', 'check-097-hover-card', 'shots-017', 'shots-018', 'shots-033', 'check-office-fill'].join(',');
     const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'ui-suite-focus-'));
