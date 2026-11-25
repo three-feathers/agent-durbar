@@ -289,9 +289,15 @@ section('arguments', async () => {
   const big: Record<string, number> = {};
   for (let i = 0; i < 200_000; i++) big['k' + i] = i;
   const w3 = world([tpl([mem(1)])]);
+  // The property is the work, not the clock (issue #1853): a Proxy counts every own-property read, and the check must stop after about LIMITS.members + 1 of the 200,000.
+  // A wall-clock limit only stays as a hang backstop (30 s: it cannot fail on a slow machine, it ends a loop that never returns).
+  let reads = 0;
+  const counted = new Proxy(big, { getOwnPropertyDescriptor(t, k) { reads++; return Reflect.getOwnPropertyDescriptor(t, k); }, get(t, k) { reads++; return Reflect.get(t, k); } });
   const t0 = Date.now();
-  const e3 = isFail(await created(w3, { rows: big }));
-  ok(e3.code === 'invalid' && Date.now() - t0 < 1500, 'a huge rows object is refused quickly');
+  const e3 = isFail(await created(w3, { rows: counted }));
+  ok(e3.code === 'invalid', 'a huge rows object is refused');
+  ok(reads <= 4 * LIMITS.members, `a huge rows object is judged by count: ${reads} property reads for 200,000 keys (at most ${4 * LIMITS.members})`);
+  ok(Date.now() - t0 < 30_000, 'a huge rows object is refused (hang backstop 30 s)');
   // a valid limit, then the same limit as text
   const w4 = world([tpl([mem(1)])]);
   isOk(await created(w4, { rows: { [hexId(1)]: { cap: { unit: 'aiu', amount: '45.5' } } } }));
@@ -649,9 +655,15 @@ section('folders', async () => {
     const odd = parseTeamRecord({ templates: [], members: [{ ...teamOf(1, 'x').members[0], mode: 'autopilot', app: 'Bad App', cap: { unit: 'aiu', amount: -1 } }, { ...teamOf(1, 'x').members[0], mode: 'autopilot', memberId: hexId(5) }] })!;
     eq([odd.members.length, odd.members[0].mode, odd.members[0].cap], [1, 'read-only', undefined], 'a bad app drops the member; an odd mode reads as read-only');
     // a huge file with a team is parsed quickly
+    // The property is the work, not the clock (issue #1853): at most 64 entries of the members list are looked at, counted through a Proxy; a wall-clock limit stays only as a 30 s hang backstop.
+    const many = Array.from({ length: 30_000 }, (_, i) => teamOf(1, 'x', i + 1).members[0]);
+    let looked = 0;
+    const counted = new Proxy(many, { get(t, k) { if (typeof k === 'string' && /^\d+$/.test(k)) looked++; return Reflect.get(t, k); } });
     const t0 = Date.now();
-    parseSavedFolders(JSON.stringify({ folders: [{ workspace: ws, permMode: 'ask', team: { templates: [], members: Array.from({ length: 30_000 }, (_, i) => teamOf(1, 'x', i + 1).members[0]) } }] }));
-    ok(Date.now() - t0 < 10_000, 'a record with 30,000 members is read quickly (only 8 kept)');
+    const bigRec = parseTeamRecord({ templates: [], members: counted })!;
+    ok(bigRec.members.length === 8 && looked <= 64, `a record with 30,000 members: 8 kept, ${looked} of the 30,000 entries looked at (at most 64)`);
+    parseSavedFolders(JSON.stringify({ folders: [{ workspace: ws, permMode: 'ask', team: { templates: [], members: many } }] }));
+    ok(Date.now() - t0 < 30_000, 'a record with 30,000 members is read (hang backstop 30 s)');
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
 
@@ -827,6 +839,8 @@ section('main', () => {
     return lf.split(m.from).join(m.to);
   };
   const mutants: { name: string; from: string; to: string; section: string; file?: 'folders' }[] = [
+    { name: 'the members list is not cut before it is read', from: 'o.members.slice(0, 64)', to: 'o.members.slice()', section: 'folders', file: 'folders' },
+    { name: 'the rows object is counted by reading every key', from: '(0, teamsipc_1.moreKeysThan)(rowsIn, teamtemplate_1.LIMITS.members)', to: 'Object.keys(rowsIn).length > teamtemplate_1.LIMITS.members', section: 'arguments' },
     { name: 'the entry\'s own choices are trusted instead of the call\'s', from: 'const appChanged = app !== m.app;', to: 'const appChanged = app !== m.app; { const c0 = e.choices.get(String(m.memberId)); if (c0) { rc.app = c0.app; rc.model = c0.model; } }', section: 'choices' },
     { name: 'the snapshot is not compared', from: '(0, util_1.isDeepStrictEqual)(now, t)', to: 'true', section: 'snapshot' },
     { name: 'an adapter is started', from: 'const infos = picked.map((x) => dep.build({ ...x.spec, key: e.key }));', to: 'const infos = picked.map((x) => dep.build({ ...x.spec, key: e.key })); dep.adapterOf(picked[0].spec.app).start();', section: 'nothing' },
