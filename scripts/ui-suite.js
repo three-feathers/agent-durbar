@@ -86,6 +86,7 @@ const DRIVERS = [
   // has PowerShell; winget,brew,npm there hid the PowerShell route and failed the check)
   { name: 'shots-051-setup', env: { DURBAR_SIM_MANAGERS: process.platform === 'win32' ? 'powershell,winget,npm' : 'winget,brew,npm' } },
   { name: 'shots-081-updates' }, // spec 081: agent-app update check and update, canned results, no network
+  { name: 'check-selfupdate-dialog' }, // spec 118 T015: Durbar's own update toast, More menu line, dialog (SC-004 hostile body, breaking tick gate, snooze, skip) and About block; canned feed, no network
   { name: 'shots-011-quota' }, // spec 011 FR-086..FR-092 (issue #690): account limits per app: fixtures, stale, failed, hostile, suggestion, the one timer
   { name: 'shots-051-account' }, // spec 051 FR-013: the signed-in account line, the picker tooltips and About agent apps (a fake identity)
   { name: 'shots-051-setup', label: 'shots-051-setup win32', env: { DURBAR_SIM_MANAGERS: 'powershell,winget,npm', DURBAR_SIM_PLATFORM: 'win32' } }, // spec 060 FR-011/FR-012: Windows' routes (PowerShell installer, winget, npm) and Run beside each command, on every OS
@@ -162,6 +163,7 @@ const DRIVERS = [
   { name: 'shots-069-mcp-tools' }, // spec 069 part 3: tools on expand, Remove in the agent dialog (058's state words and Details stay)
   { name: 'shots-059-long-url' }, // spec 059 FR-019: a long unbroken name stays in its card, the inbox and the Schedules rows
   { name: 'check-mcp-row-width' }, // spec 058 delta 2026-11-12 (#1622): a failed server's row keeps a readable text column; the buttons wrap below it; FR-436: a row with a long Renewed state too, light and dark
+  { name: 'check-052-zoom-dialogs' }, // spec 052 delta 2026-11-25 (#2115): a wide dialog fits a 320 px page at 640x700 with 200% zoom
   { name: 'check-activity-table' }, // spec 052 FR-071 delta 2026-10-21 (#474): Tools > Activity renders its rows
   { name: 'check-codex-file-card' }, // spec 052 FR-172: a Codex write card names the files and shows the change
   { name: 'check-theme-art' }, // spec 040 FR-023: a picked theme's characters and gadgets on desks, walkers, places and chips

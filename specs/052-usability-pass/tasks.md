@@ -500,3 +500,6 @@
 
 ## 2026-11-25: check-answer-safety waits for the limit step's labels (issue #1770)
 - [x] T594 (delta 2026-11-25, issue #1770) `scripts/check-answer-safety.js` FR-210 (B): the step waits up to 5 s for the bar's labels to equal `['Show in chat']` before its one assert, and the diagnostic gains the bar's own change log (the page records every hidden-flag and child change with a timestamp); mutants `latepaint` (passes) and `latepaint-blind` (dies at `only "Show in chat" []`). Test driver only. Refs #1770 (cause unproven)
+
+## 2026-11-25: a wide dialog fits a 320 px page (issue #2115)
+- [x] T592 (delta 2026-11-25, issue #2115) spec 052: the decision (a dialog always fits; the page behind is a known gap), FR-471; `src/renderer/styles.css` (`.dlg .dbtn` wraps; `.dlg.l .dbtn` removed), `src/renderer/screens.css` (`.dlg fieldset`, `.mcp-rsess .btn`, `#hsDlg .dbtn` removed), `scripts/check-052-zoom-dialogs.js` + `scripts/ui-suite.js`, changelog fragment [FR-471] Second delta 2026-11-25 (PR 2139 CI red): `screens.css` (`overflow-wrap` on the radio labels, `.srv-sign`, `.srv-sgact .btn`), `check-052-zoom-dialogs.js` (wide-font case, font-independent footer row assert).

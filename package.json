@@ -281,6 +281,7 @@
     "test:selfupdate-session": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-selfupdate-session.js",
     "test:selfupdate-settings": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-selfupdate-settings.js",
     "test:selfupdate-source": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-selfupdate-source.js",
+    "test:selfupdate-wiring": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-selfupdate-wiring.js",
     "test:serial": "node scripts/run-tests.js --serial",
     "test:sessionname": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-sessionname.js",
     "test:sessionnames": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-sessionnames.js",

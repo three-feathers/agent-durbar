@@ -130,3 +130,8 @@ The renderer only: `src/renderer/app.js`, `screens.js`, `index.html`, `styles.cs
 - **Page (`app.js`).** `afOnCompleted()` calls `seen` instead of `arrive` when `chatShownNow(id)` (reused, spec 005 FR-171); the notice to the office moves only if the agent is still followed.
 - **Tests.** `test-autofollow` FR-242 block with mutants; `check-052-follow-notice` waits for the move with a MutationObserver and counts notices, then `stays()` 1 s with no notice and no chat; the strip is not "waiting to open" after the completion in the shown chat.
 - **Constitution.** I: nothing answered; fewer automatic moves. V: no layout change. VI: renderer only. VIII: the `[KNOWN GAP]` in the spec.
+
+## 2026-11-25: a wide dialog fits a 320 px page (FR-471, issue #2115, T592)
+
+- **CSS only (`styles.css`, `screens.css`).** One wrap rule for every dialog footer (`.dlg .dbtn`) replaces the two per-dialog ones; `.dlg fieldset{min-width:0}`; `.mcp-rsess .btn` breaks lines. Reuses the dialog shell (`dialog()` in `screens.js`) and the zoom approach of `check-mcp-row-width` (`setZoomFactor`); no new dialog, token or IPC.
+- **Test.** `check-052-zoom-dialogs` measures the open dialog at 640x700 and zoom 2 (page, dialog, body, footer buttons) and asserts properties, not pixels, so CI's fonts do not matter. Constitution: V (calm UI: no layout change at normal widths), VIII (the page-behind gap is written).

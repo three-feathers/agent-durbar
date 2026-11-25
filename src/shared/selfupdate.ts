@@ -5,6 +5,7 @@
  * fails closed: a value that is not exactly what is expected is dropped, never repaired.
  */
 import { cut, maskHomePaths, redact, unhide } from './redact';
+import { wellFormed } from './contactlinks';
 import { parseVersionField } from './versionfield';
 
 // ---------------------------------------------------------------------------------------------------------------------
@@ -222,7 +223,8 @@ function clipBytes(s: string, max: number): string {
 export function notesText(body: unknown, max = NOTE_MAX): { text: string; clipped: boolean } {
   if (typeof body !== 'string') return { text: '', clipped: false };
   if (body.length > MAX_BODY_BYTES || utf8Bytes(body) > MAX_BODY_BYTES) return { text: '', clipped: true };
-  const s = maskHomePaths(redact(unhide(body.replace(/\r\n?/g, '\n'))));
+  // review of PR 2128, item 4: a lone surrogate becomes U+FFFD first (contactlinks.ts `wellFormed`, the existing cleaner), so no half pair reaches the window
+  const s = maskHomePaths(redact(unhide(wellFormed(body).replace(/\r\n?/g, '\n'))));
   if (utf8Bytes(s) <= max) return { text: s, clipped: false };
   return { text: clipBytes(s, max), clipped: true };
 }
@@ -322,7 +324,7 @@ export function snoozeState(now: number, version: string, snooze: unknown, skip?
 }
 
 /** FR-021 (T010): the `updates` object of the settings file, each key only in its exact shape. */
-export interface SelfUpdateSettings { selfCheck?: boolean; source?: string; snooze?: { version: string; until: number }; skip?: string; lastCheck?: { at: number; latest?: string } }
+export interface SelfUpdateSettings { selfCheck?: boolean; source?: string; snooze?: { version: string; until: number }; skip?: string; lastCheck?: { at: number; latest?: string }; announced?: string }
 
 /** An own enumerable data property: plain data, as JSON makes it (a getter, a hidden or an inherited property is not). */
 const plainData = (d: PropertyDescriptor | undefined): d is PropertyDescriptor => d !== undefined && 'value' in d && d.enumerable === true;
@@ -350,10 +352,12 @@ export function parseUpdatesSettings(v: unknown): SelfUpdateSettings | undefined
   const last = own(v, 'lastCheck');
   const [at, latest] = isObj(last) ? [own(last, 'at'), own(last, 'latest')] : [];
   if (time(at)) out.lastCheck = stableVersion(latest) ? { at, latest } : { at };
+  const announced = own(v, 'announced'); // T014 (FR-463): the newest version a toast was shown for
+  if (stableVersion(announced)) out.announced = announced;
   return Object.keys(out).length ? out : undefined;
 }
 
-const UPDATE_KEYS: readonly string[] = ['selfCheck', 'source', 'snooze', 'skip', 'lastCheck'];
+const UPDATE_KEYS: readonly string[] = ['selfCheck', 'source', 'snooze', 'skip', 'lastCheck', 'announced'];
 /** Only own string-keyed enumerable data properties, each named in `allowed` (no symbol, no accessor, no hidden key); a throwing proxy is refused.
  * So the keys checked here are exactly `Object.keys(o)`, the list the value loop walks (review of PR 2064, round 2). */
 const onlyDataKeys = (o: object, allowed: readonly string[]): boolean => {
@@ -363,7 +367,7 @@ const onlyDataKeys = (o: object, allowed: readonly string[]): boolean => {
 };
 
 /**
- * FR-021, for a write (review of PR 2064): the patch is checked BEFORE any merge. Every key must be one of the five, as an own data property;
+ * FR-021, for a write (review of PR 2064): the patch is checked BEFORE any merge. Every key must be one of the six, as an own data property;
  * its value is `undefined` (remove that key) or passes the read rule exactly (a nested object with no extra or dropped part). Any failure
  * refuses the whole patch (undefined), so a bad value can never erase a stored one.
  */

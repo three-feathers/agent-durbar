@@ -69,7 +69,7 @@ for (const [sample, found] of [["const { openExternal } = shell;", 1], ["shell['
     'src/main/ipc/questions.ts': 1, // agents:openElicitationUrl (MCP elicitation pages, often OAuth)
     'src/main/ipc/remote.ts': 1, // remote control (spec 054)
     'src/main/ipc/harness.ts': 2, // official pages and setup sign-in (spec 051)
-    'src/main/main.ts': 2, // openRepo, and the MCP sign-in openUrl (spec 058 FR-065)
+    'src/main/main.ts': 3, // openRepo, the MCP sign-in openUrl (spec 058 FR-065), and spec 118 FR-462's release page (only the validated html_url of main's own feed)
     'src/main/ipc/browser.ts': 1, // the session browser's own dependency: Open in system browser and the mail click
   };
   const walk = (d: string): string[] => fs.readdirSync(d, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? walk(path.join(d, e.name)) : /\.(ts|js)$/.test(e.name) ? [path.join(d, e.name)] : []));
