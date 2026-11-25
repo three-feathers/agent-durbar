@@ -500,3 +500,4 @@
 
 ## 2026-11-25: a wide dialog fits a 320 px page (issue #2115)
 - [x] T592 (delta 2026-11-25, issue #2115) spec 052: the decision (a dialog always fits; the page behind is a known gap), FR-471; `src/renderer/styles.css` (`.dlg .dbtn` wraps; `.dlg.l .dbtn` removed), `src/renderer/screens.css` (`.dlg fieldset`, `.mcp-rsess .btn`, `#hsDlg .dbtn` removed), `scripts/check-052-zoom-dialogs.js` + `scripts/ui-suite.js`, changelog fragment [FR-471]
+- [x] T592 (second delta 2026-11-25, PR 2139 CI red) `src/renderer/screens.css` (`overflow-wrap` on the radio labels, `.srv-sign`, `.srv-sgact .btn`), `scripts/check-052-zoom-dialogs.js` (wide-font case, font-independent footer row assert) [FR-471]
