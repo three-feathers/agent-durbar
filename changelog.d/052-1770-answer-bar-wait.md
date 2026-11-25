@@ -1,0 +1,1 @@
+- **Team tools: the answer-bar check waits for its button list** (spec 052 FR-210, issue #1770): the limit step of `check-answer-safety` waits up to 5 s for the bar's labels instead of reading them once, and a failure prints the bar's last changes with timestamps. Test driver only; the cause of the one natural failure is not proven.
