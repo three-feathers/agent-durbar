@@ -6,7 +6,7 @@
  *
  *   npm run check:ui -- --only check-052-zoom-dialogs
  *   OUT=<folder>  (optional) saves 052-zoom-dialog-<name>.png
- *   MEASURE=1     prints the measures and does not assert
+ *   MEASURE=1     (also the footer rows of the normal sizes) prints the measures and does not assert
  */
 const assert = require('assert');
 const path = require('path');
@@ -14,6 +14,16 @@ const { helpers, jsLiteral } = require('./driver-helpers');
 const OUT = process.env.OUT || require('os').tmpdir();
 const MEASURE = !!process.env.MEASURE;
 const ZOOM = 2;
+/* Normal sizes (spec 052 FR-471, review of PR 2139): the one footer rule `.dlg .dbtn{flex-wrap:wrap}` covers every dialog, so at 1440x900 and 1280x800 the footers
+   of the dialogs that had their own wrap rule (the + Folder choice: spec 093; the open-sessions dialog: spec 081) and of the MCP servers dialog are what they were
+   before it: the buttons in the same order and on the same number of rows (`rows`; the five-button choice has always wrapped to two rows at these sizes, the other two have one),
+   each whole and inside its dialog. The values below were measured on main's CSS before the change (with its two per-dialog wrap rules) and on the new CSS: identical. */
+const NORMAL_SIZES = [[1440, 900], [1280, 800]];
+const FOOTERS = {
+  choice: { buttons: ['Add existing folder\u2026', 'Clone a repository\u2026', 'New repository\u2026', 'Empty folder\u2026', 'Cancel'], rows: 1 },
+  sessions: { buttons: ['Cancel', 'Update when they end', 'End 2 sessions and update'], rows: 2 },
+  mcp: { buttons: ['Settings', 'Folder extras\u2026', 'Done'], rows: 1 },
+};
 
 module.exports = async (ctx) => {
   const H = helpers(ctx);
@@ -74,5 +84,54 @@ module.exports = async (ctx) => {
   await check('add-server', tag);
   ctx.win.webContents.setZoomFactor(1);
   await closeDlg();
+
+  /* 3. the same footers at 1440x900 and 1280x800 */
+  const footer = (root) => js(`(()=>{const o=document.getElementById(${jsLiteral(root)}),d=o&&o.querySelector('.dlg'),f=d&&d.querySelector('.dbtn');if(!f)return null;const D=d.getBoundingClientRect();
+    const b=[...f.querySelectorAll('button')].filter(x=>x.getClientRects().length);
+    return {buttons:b.map(x=>x.textContent.trim()),rows:new Set(b.map(x=>Math.round(x.getBoundingClientRect().top))).size,
+      whole:f.scrollWidth<=f.clientWidth&&b.every(x=>{const r=x.getBoundingClientRect();return r.left>=D.left-0.5&&r.right<=D.right+0.5}),dlgW:Math.round(D.width)}})()`);
+  const checkFooter = async (kind, root, tag) => {
+    const m = await footer(root);
+    if (MEASURE) console.log(`[2115] ${tag} ${JSON.stringify(m)}`);
+    if (MEASURE) return;
+    const want = FOOTERS[kind];
+    assert.ok(m, `${tag}: the dialog is open ${root}`);
+    assert.deepStrictEqual(m.buttons, want.buttons, `${tag}: the footer buttons and their order are unchanged ${JSON.stringify(m)}`);
+    assert.strictEqual(m.rows, want.rows, `${tag}: the footer is on ${want.rows} row(s) as before the one wrap rule ${JSON.stringify(m)}`);
+    assert.ok(m.whole, `${tag}: every footer button is whole, inside the dialog ${JSON.stringify(m)}`);
+  };
+  for (const [w, h] of NORMAL_SIZES) {
+    const at = `${w}x${h}`;
+    await H.load({ w, h, ready: 'fit' });
+    await H.calm();
+    await js(`document.getElementById('addFolder').click()`);
+    assert.ok(await until(`!!document.querySelector('#modeDlg .dbtn button')`), `${at}: the + Folder choice opened`);
+    await checkFooter('choice', 'modeDlg', `${at} + Folder choice`);
+    await H.shot(path.join(OUT, `052-footer-choice-${at}.png`), { prep: 'mouse', tag: '052' });
+    await js(`(()=>{const b=document.querySelector('#modeDlg .dbtn [data-cancel]')||[...document.querySelectorAll('#modeDlg .dbtn button')].pop();b.click()})()`);
+
+    await H.load({ w, h, query: { simkinds: '1', simupd: 'avail', simsessions: '2' }, ready: 'fit' });
+    await js(`document.getElementById('settingsBtn').click()`);
+    assert.ok(await until(`document.querySelectorAll('.hs-card').length===3`), `${at}: Settings opened`);
+    await js(`document.querySelector('[data-hs="checkall"]').click()`);
+    assert.ok(await until(`/Update available/.test(document.querySelector('.hs-card[data-kind="claude"] .hs-upd').textContent)`), `${at}: the check found an update`);
+    await js(`document.querySelector('.hs-card[data-kind="claude"] [data-hs="update"]').click()`);
+    assert.ok(await until(`!!document.querySelector('#hsDlg .hs-plan')`), `${at}: the update plan opened`);
+    await js(`[...document.querySelectorAll('#hsDlg .btn')].find(x=>x.textContent.trim()==='Update').click()`);
+    assert.ok(await until(`/2 Claude Code sessions are open/.test((document.getElementById('hsDlgT')||{}).textContent||'')`), `${at}: the open-sessions dialog opened`);
+    await checkFooter('sessions', 'hsDlg', `${at} open sessions`);
+    await H.shot(path.join(OUT, `052-footer-sessions-${at}.png`), { prep: 'mouse', tag: '052' });
+
+    await H.load({ w, h, ready: 'fit', focus: true, query: { simmcpauth: 'again' } });
+    await H.settle();
+    const id = (await js(`window.__durbarSimUi.agents().filter(a=>a.live&&!a.parent&&(!a.info||!a.info.adapterId||a.info.adapterId==='copilot')).map(a=>a.id)`))[0];
+    await js(`document.querySelector(${jsLiteral(`#stage .desk[data-id="${id}"]`)}).click()`);
+    assert.ok(await until(`document.body.classList.contains('panel-open')&&!!document.getElementById('mcpBtn')`), `${at}: the chat opened with its MCP chip`);
+    await js(`window.__durbarSimEmit({type:'mcp',sessionId:${jsLiteral(id)},timestamp:Date.now(),servers:[{name:'team-wiki',status:'connected',transport:'http',source:'user'}]})`);
+    await js(`document.getElementById('mcpBtn').click()`);
+    assert.ok(await until(`!!document.querySelector('#agMcp li.srv')`), `${at}: the MCP dialog opened`);
+    await checkFooter('mcp', 'scrDlg', `${at} MCP servers`);
+    await H.shot(path.join(OUT, `052-footer-mcp-${at}.png`), { prep: 'mouse', tag: '052' });
+  }
   console.log('[052] zoomed dialogs PASS');
 };
