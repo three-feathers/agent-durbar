@@ -19,6 +19,8 @@
  *                                   `only "Show in chat"` with the diagnostic printed and the token masked (else: `the 1770 diagnostic did not print`)
  *   ANSWER_SAFETY_MUTANT=follow     the chat follows its end after the bar showed (the race of issue 1770: card back in view, bar hidden and emptied): must fail at
  *                                   `only "Show in chat"` with `bar hidden=true` in the diagnostic
+ *   ANSWER_SAFETY_MUTANT=latepaint  the bar's buttons go and come back 800 ms later (the page's own timer): the step waits for them and PASSES
+ *   ANSWER_SAFETY_MUTANT=latepaint-blind   the same with the old single read, no wait: must fail at `only "Show in chat" []`
  *   ANSWER_SAFETY_MUTANT=noredact   the same with redact.js not loaded: the HTML is withheld, so it must fail at `the 1770 diagnostic did not print`
  *   ANSWER_SAFETY_MUTANT=diagthrow  the bar emptied and the diagnostic's page read throws: must still fail at `only "Show in chat"`, ending ` [1770 diagnostic failed]`
  *   ANSWER_SAFETY_MUTANT=diagthrow-nocatch   the same with the catch rethrowing (the guard removed): fails with the thrown error, not that label (killed)
@@ -175,10 +177,16 @@ module.exports = async (ctx) => {
 
     // ---- FR-210 (B): a limit card out of view: the bar has no amount to send, only "Show in chat" ----
     await fresh();
+    await js(`(()=>{const b=document.getElementById('answerBar');window.__barLog=[];if(!b)return 0;const t0=performance.now();const note=()=>{window.__barLog.push(Math.round(performance.now()-t0)+'ms hidden='+b.hidden+' buttons='+b.querySelectorAll('button').length);if(window.__barLog.length>40)window.__barLog.shift()};new MutationObserver(note).observe(b,{attributes:true,childList:true,subtree:true});return 1})()`);
     await limit('lb-' + w);
     await barUp(); /* issue 1770: the card painted and two frames settled before the chat is scrolled away (the chat's auto-follow hides the bar and empties it when it comes after) */
     if (MUTANT === 'follow') await js(`(()=>{const c=document.getElementById('chat');c.scrollTop=c.scrollHeight;c.dispatchEvent(new Event('scroll'));return new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(()=>r(1))))})()`);
     if (EMPTY) await js(`(()=>{const b=document.getElementById('answerBar');b.querySelectorAll('button').forEach(x=>x.remove());const s=document.createElement('span');s.className='mut-1770';s.textContent=${jsLiteral(PLANTED)};b.append(s);return 1})()`);
+    /* the deterministic case: the bar's buttons go and come back 800 ms later by the page's own timer (a late second paint); the wait must ride it out, the blind read of
+       before (mutant latepaint-blind) must fail at the assertion below */
+    if (MUTANT.startsWith('latepaint')) await js(`(()=>{const b=document.getElementById('answerBar');const keep=b.innerHTML;b.innerHTML='';setTimeout(()=>{b.innerHTML=keep;b.querySelectorAll('button').forEach(x=>{x.type='button'})},800);return 1})()`);
+    /* issue 1770: the labels are waited for (5 s, the page's own word), not read once straight after the bar showed; the bar's own changes are logged by the page for the diagnostic */
+    if (MUTANT !== 'latepaint-blind') await until(`JSON.stringify([...document.querySelectorAll('#answerBar button')].map(b=>b.textContent))===${jsLiteral(JSON.stringify(['Show in chat']))}`, 5000);
     const limitLabels = await barLabels();
     let diag = '';
     if (JSON.stringify(limitLabels) !== JSON.stringify(['Show in chat'])) {
@@ -187,15 +195,17 @@ module.exports = async (ctx) => {
       try {
         const st = await js(`(async()=>{if(window.__diagThrow)throw new Error('diagthrow mutant');const b=document.getElementById('answerBar');const now={hidden:b?b.hidden:null,html:b?b.outerHTML:'no #answerBar'};
         await new Promise(r=>{const t=setTimeout(r,250);requestAnimationFrame(()=>{clearTimeout(t);r()})});
+        const log=(window.__barLog||[]).slice(-12);
         const cards=[...document.querySelectorAll('#chat .note.perm, #chat .note.limit, #chat .note.question, #chat .note.plan')];
-        return Object.assign(now,{later:b?[...b.querySelectorAll('button')].map(x=>x.textContent):[],n:cards.length,
+        return Object.assign(now,{log,later:b?[...b.querySelectorAll('button')].map(x=>x.textContent):[],n:cards.length,
           cards:cards.slice(0,8).map(c=>({cls:String(c.className),data:Object.entries(c.dataset).map(([k,v])=>k+'='+v).join(' '),text:(c.textContent||'').replace(/\\s+/g,' ').trim()}))})})()`);
         /* public CI logs: every page value is masked (redact, then cut) and left out when redact.js did not load; the flag and the count only as such */
         const hidden = st.hidden === true ? 'true' : st.hidden === false ? 'false' : 'null';
         const html = masked(st.html, 1500);
         const cards = (Array.isArray(st.cards) ? st.cards : []).map((c) => { const k = masked(c.cls, 80), t = masked(c.data + ' | ' + c.text, 160); return (k === null ? '[class withheld]' : k) + (t === null ? ' [text withheld: redact.js did not load]' : ' ' + t); });
         const later = (Array.isArray(st.later) ? st.later : []).map((x) => { const m = masked(x, 40); return m === null ? '[withheld]' : m; });
-        diag = ` [1770 diagnostic] bar hidden=${hidden}; labels a frame later ${JSON.stringify(later)}; bar ${html === null ? '[html withheld: redact.js did not load]' : html}; cards (${Number(st.n) || 0}): ${cards.length ? cards.join(' || ') : 'none'}`;
+        const log = (Array.isArray(st.log) ? st.log : []).map((x) => masked(String(x), 60) || '?').join(', ');
+        diag = ` [1770 diagnostic] bar hidden=${hidden}; labels a frame later ${JSON.stringify(later)}; bar changes (last 12) [${log}]; bar ${html === null ? '[html withheld: redact.js did not load]' : html}; cards (${Number(st.n) || 0}): ${cards.length ? cards.join(' || ') : 'none'}`;
       } catch (e) {
         if (MUTANT === 'diagthrow-nocatch') throw e; /* the mutant: the guard removed */
         diag = ' [1770 diagnostic failed]'; /* fixed text, no error text: the original assertion below is still what fails */
