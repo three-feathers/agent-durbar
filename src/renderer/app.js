@@ -10770,7 +10770,10 @@ if(bridge){
       const UPD_NAME={claude:'Claude Code',codex:'Codex',copilot:'The GitHub Copilot CLI'};
       real.onHarnessUpdates(v=>{window.DurbarHarnesses.setUpdates(v);const a=v&&v.announce;if(a&&typeof a.version==='string'&&UPD_NAME[a.app])toast(esc(UPD_NAME[a.app]+' '+a.version)+' is available. Open Settings > Agent apps to update.',6000);});
       real.harnessUpdates().then(v=>window.DurbarHarnesses.setUpdates(v),()=>undefined);
-    }}
+    }
+    /* spec 118 FR-462..FR-464: Durbar's own update check runs in main; the window shows the More menu line, the About block and one toast per version (main says when) */
+    if(real&&real.selfUpdateGet&&window.DurbarSelfUpdate)window.DurbarSelfUpdate.init({bridge:real,askDialog,onAnnounce:v=>toastAction(esc('Agent Durbar v'+v+' is available.'),'See what is new',()=>{void window.DurbarSelfUpdate.openDialog();},10000)});
+  }
   $('schedTopBtn').onclick=openSchedulesView; /* spec 044 FR-030 */
   /* spec 052 FR-083: Settings… (⌘,) in the macOS app menu. The real window's preload carries it, also under the simulator. */
   {const real=window.agentDurbar;if(real&&real.onMenuSettings)real.onMenuSettings(()=>window.DurbarScreens.openSettings());

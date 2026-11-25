@@ -226,7 +226,8 @@ async function main(): Promise<void> {
     const st1 = recorder(s1.store);
     (s1.u as unknown as { d: SelfUpdateDeps }).d.store = () => st1;
     await s1.u.checkNow();
-    assert.deepStrictEqual(patches, [{ lastCheck: { at: T0, latest: '0.1.29' } }], 'review 3: a successful check writes exactly { lastCheck }');
+    // T014 (FR-463): then exactly { announced } when it finds a version not announced before (a patch of its own: nothing else rides along)
+    assert.deepStrictEqual(patches, [{ lastCheck: { at: T0, latest: '0.1.29' } }, { announced: '0.1.29' }], 'review 3: a successful check writes exactly { lastCheck } (and, T014, exactly { announced } for a new version)');
     assert.strictEqual(s1.store.updates.selfCheck, false, 'review 3: the switch stays off after a check');
     patches.length = 0;
     s1.clock.t += MANUAL_GAP_MS;

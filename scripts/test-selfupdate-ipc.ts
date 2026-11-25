@@ -1,7 +1,8 @@
 /**
- * Spec 118 T010 (FR-016, FR-024): the four version-only IPC channels of Durbar's own update check (`selfUpdateHandlers` in
- * `src/main/selfupdate.ts`, wired by `src/main/ipc/selfupdate.ts`), forged arguments on every channel, and the inert wiring until T014
- * (the preload names no channel, main.ts never starts the checker). `npm run test:selfupdate-ipc`. No Electron, no network (`selfupdate-rig.ts`).
+ * Spec 118 T010 (FR-016, FR-024): the IPC channels of Durbar's own update check (`selfUpdateHandlers` in `src/main/selfupdate.ts`, wired by
+ * `src/main/ipc/selfupdate.ts`), forged arguments on every channel, and since T014 (FR-462) the active wiring: the preload names exactly the
+ * window's eight calls, main.ts starts the checker once after the first load and refreshes it on a wake, on five known lines (until T014 this
+ * block pinned the opposite: no start, no refresh, no event, three lines, no preload name). `npm run test:selfupdate-ipc`. No Electron, no network.
  */
 import * as assert from 'assert';
 import * as fs from 'fs';
@@ -68,29 +69,37 @@ async function main(): Promise<void> {
     // the IPC module wires exactly these four channels to these handlers, through ipcHandle
     const src = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'main', 'ipc', 'selfupdate.ts'), 'utf8').replace(/\r\n/g, '\n');
     const regs = [...src.matchAll(/ipcHandle\('([^']+)', \(_e, \.\.\.a: unknown\[\]\) => h\.(\w+)\(\.\.\.a\)\);/g)].map((m) => `${m[1]}=${m[2]}`);
-    assert.deepStrictEqual(regs, ['selfupdate:get=get', 'selfupdate:check=check', 'selfupdate:snooze=snooze', 'selfupdate:skip=skip', 'selfupdate:setSource=setSource', 'selfupdate:useBuiltInSource=useBuiltInSource'], 'FR-024: six channels, each to its own handler, every argument passed to the validator');
-    assert.strictEqual((src.match(/ipcHandle\(/g) ?? []).length, 6, 'FR-024: no other channel in the module');
+    assert.deepStrictEqual(regs, ['selfupdate:get=get', 'selfupdate:check=check', 'selfupdate:snooze=snooze', 'selfupdate:skip=skip', 'selfupdate:setSource=setSource', 'selfupdate:useBuiltInSource=useBuiltInSource', 'selfupdate:setDailyCheck=setDailyCheck', 'selfupdate:notes=notes', 'selfupdate:openReleasePage=openReleasePage'], 'FR-024: nine channels, each to its own handler, every argument passed to the validator');
+    assert.strictEqual((src.match(/ipcHandle\(/g) ?? []).length, 9, 'FR-024: no other channel in the module');
   }
 
-  // ---- not active until T014: nothing in the window can call the channels, and main.ts never starts the checker ----------
+  // ---- T014 (FR-462): active. Until T014 this block pinned the inert wiring (the preload named no channel; main.ts named the checker on three
+  // lines and never with start, refresh or an event). It now pins the switched behaviour: the window's eight calls, one start after the first
+  // load, the resume hook, never Check now, and nothing else naming the checker.
   {
     const root = path.join(__dirname, '..', '..');
-    assert.deepStrictEqual([...preloadChannels().all].filter((c) => c.startsWith('selfupdate:')), [], 'inert: the preload calls no selfupdate channel (the window API comes with T014)');
-    assert.ok(!/selfupdate/i.test(stripComments(fs.readFileSync(path.join(root, 'src', 'preload', 'preload.ts'), 'utf8'))), 'inert: the preload names no selfupdate channel in any form');
+    assert.deepStrictEqual([...preloadChannels().all].filter((c) => c.startsWith('selfupdate:')).sort(), ['selfupdate:check', 'selfupdate:get', 'selfupdate:notes', 'selfupdate:openReleasePage', 'selfupdate:setDailyCheck', 'selfupdate:skip', 'selfupdate:snooze'],
+      'FR-462: the preload calls exactly the seven channels the window uses (setSource and useBuiltInSource wait for the source form, T577)');
+    const preSrc = stripComments(fs.readFileSync(path.join(root, 'src', 'preload', 'preload.ts'), 'utf8').replace(/\r\n/g, '\n'));
+    assert.deepStrictEqual([...preSrc.matchAll(/'(selfupdate:[A-Za-z]+)'/g)].map((m) => m[1]).sort(), ['selfupdate:changed', 'selfupdate:check', 'selfupdate:get', 'selfupdate:notes', 'selfupdate:openReleasePage', 'selfupdate:setDailyCheck', 'selfupdate:skip', 'selfupdate:snooze'],
+      'FR-462: the preload names exactly the eight selfupdate channels of the window (seven calls and the changed event)');
+    assert.ok(/selfUpdateSetDaily: \(on\) => ipcRenderer\.invoke\('selfupdate:setDailyCheck', on === true\)/.test(preSrc), 'FR-462: the preload sends the switch as a boolean only');
     const mainSrc = stripComments(fs.readFileSync(path.join(root, 'src', 'main', 'main.ts'), 'utf8').replace(/\r\n/g, '\n'));
-    assert.ok(/selfUpdater = new SelfUpdater\(/.test(mainSrc) && /registerSelfUpdateIpc\(/.test(mainSrc), 'inert: main.ts creates the checker and registers its channels');
-    // T014 flips this assert when it adds the start call together with the visible switch and card
-    // review of PR 2082, item 1: nothing but these lines may name the checker in main.ts (T014 adds its start call and changes this list)
     const uses = mainSrc.split('\n').filter((l) => /\bselfUpdater\b/.test(l)).map((l) => l.trim());
-    assert.ok(!uses.some((l) => /\bstart\b/.test(l)), 'inert: main.ts does not start the checker before T014 (no request in a packaged build)');
-    assert.ok(!uses.some((l) => /\bcheckNow\b/.test(l)), 'inert: main.ts never calls Check now (no request in a packaged build)');
-    assert.ok(!uses.some((l) => /\b(refresh|setSelfCheck|on|once|addListener)\b/.test(l)), 'inert: main.ts hooks the checker to no event or refresh');
-    assert.deepStrictEqual(uses.map((l) => l.replace(/\(\{ packaged: .*\}\);$/, '({ ... });')), [
+    assert.strictEqual(uses.filter((l) => /\bselfUpdater\?\.start\(\)/.test(l)).length, 1, 'FR-462: main.ts starts the checker exactly once');
+    assert.ok(/win\.webContents\.once\('did-finish-load', \(\) => \{ void adaptersList\(false\)\.then\(\(\) => harnessIpc\.checker\.scheduleStart\(\)\)\.catch\(\(\) => undefined\)\.then\(\(\) => selfUpdater\?\.start\(\)\); \}\);/.test(mainSrc),
+      'FR-462: the start is in the first-load chain, after the office is shown and spec 081\'s start detection (a failed detection does not stop it)');
+    assert.ok(!uses.some((l) => /\bcheckNow\b/.test(l)), 'FR-462: main.ts never presses Check now');
+    assert.ok(/^\s*wireSelfUpdateResume\(powerMonitor, \(\) => selfUpdater\);/m.test(mainSrc), 'FR-462: a wake from sleep refreshes the checker (powerMonitor resume)');
+    assert.deepStrictEqual(uses.map((l) => l.replace(/\(\{ packaged: .*\}\);$/, '({ ... });').replace(/;\s*$/, ';')), [
       'let selfUpdater: SelfUpdater | undefined;',
       'registerSelfUpdateIpc({ getSelfUpdater: () => selfUpdater });',
+      "win.webContents.once('did-finish-load', () => { void adaptersList(false).then(() => harnessIpc.checker.scheduleStart()).catch(() => undefined).then(() => selfUpdater?.start()); });",
       'selfUpdater = new SelfUpdater({ ... });',
-    ], 'inert: main.ts names the checker only on its three known lines (declaration, channel registration, creation)');
-    assert.ok(/^\s*selfUpdater = new SelfUpdater\(\{ packaged: app\.isPackaged, simulator: SIMULATOR, source: loadUpdateSource\(\), running: app\.getVersion\(\), policy: updatePolicy, store: \(\) => settingsStore, get: updateFeedGet\(\), now: Date\.now, timer: realSelfUpdateTimer, confirm: \(o\) => nativeConfirm\(win, o\) \}\);$/m.test(mainSrc), 'inert: the creation line is exactly the known one (T011 adds only the confirm part, T507 the update session in get)');
+      'wireSelfUpdateResume(powerMonitor, () => selfUpdater);',
+    ], 'FR-462: main.ts names the checker only on its five known lines (declaration, channels, start, creation, resume hook)');
+    assert.ok(/^\s*selfUpdater = new SelfUpdater\(\{ packaged: app\.isPackaged, simulator: SIMULATOR, source: loadUpdateSource\(\), running: app\.getVersion\(\), policy: updatePolicy, store: \(\) => settingsStore, get: updateFeedGet\(\), now: Date\.now, timer: realSelfUpdateTimer, confirm: \(o\) => nativeConfirm\(win, o\), changed: \(v\) => toRenderer\('selfupdate:changed', v\), openExternal: \(url\) => shell\.openExternal\(url\) \}\);$/m.test(mainSrc),
+      'the creation line is exactly the known one (T011 the confirm part, T507 the update session in get, T014 changed and openExternal)');
 
     // review of PR 2082, item 2: every ipcRenderer call in the preloads names a literal channel; no passthrough of a channel from the page
     for (const f of fs.readdirSync(path.join(root, 'src', 'preload')).filter((x) => x.endsWith('.ts'))) {

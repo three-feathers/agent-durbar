@@ -1,7 +1,7 @@
 /**
- * Spec 118 FR-024 (T010, T011): Durbar's own update check, six channels through the IPC guard (all version-only but `setSource`, T011's one free-text channel). Every argument goes to the
- * validating handler of `selfUpdateHandlers` (`../selfupdate.ts`), which refuses a forged one with one fixed text. The other channels
- * of FR-024 come with their tasks (T014, T017, T018); the window API in the preload comes with the card (T014).
+ * Spec 118 FR-024 (T010, T011, T014): Durbar's own update check, nine channels through the IPC guard (version-only or no argument, but `setSource`,
+ * T011's one free-text channel, and `setDailyCheck`, T014's one boolean channel). Every argument goes to the validating handler of
+ * `selfUpdateHandlers` (`../selfupdate.ts`), which refuses a forged one with one fixed text. The download channels come with T017 and T018.
  */
 import { ipcHandle } from '../ipcguard';
 import { selfUpdateHandlers } from '../selfupdate';
@@ -20,4 +20,7 @@ export function register(deps: SelfUpdateIpcDeps): void {
   ipcHandle('selfupdate:skip', (_e, ...a: unknown[]) => h.skip(...a));
   ipcHandle('selfupdate:setSource', (_e, ...a: unknown[]) => h.setSource(...a));
   ipcHandle('selfupdate:useBuiltInSource', (_e, ...a: unknown[]) => h.useBuiltInSource(...a));
+  ipcHandle('selfupdate:setDailyCheck', (_e, ...a: unknown[]) => h.setDailyCheck(...a));
+  ipcHandle('selfupdate:notes', (_e, ...a: unknown[]) => h.notes(...a));
+  ipcHandle('selfupdate:openReleasePage', (_e, ...a: unknown[]) => h.openReleasePage(...a));
 }
