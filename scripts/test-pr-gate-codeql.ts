@@ -437,7 +437,7 @@ const CASES: Record<string, Case> = {
     for (const f of ['scripts/pr-gate.sh', 'scripts/trusted-lib.sh', 'scripts/trusted-authors.txt', 'scripts/pr-gate-answered.awk', 'scripts/pr-status-note.re', '.github/ruleset-main.json']) {
       fixture({ codeql: 'pass', files: ['src/main/a.ts'] });
       gitEnv = { FAKE_GIT_DIFF: f };
-      notReady(g, `${l} (${f})`, new RegExp(`stale-gate\\(${f.replace(/[.]/g, '\\.')}: run the gate`));
+      notReady(g, `${l} (${f})`, new RegExp(`stale-gate\\(${f.replace(/[\\^$.*+?()[\]{}|]/g, '\\$&')}: run the gate`));
     }
   },
   'stale-missing: a gate file that origin/main lacks': N({ codeql: 'pass', files: ['src/main/a.ts'] }, /stale-gate\(scripts\/pr-status-note\.re: run the gate/, () => { gitEnv = { FAKE_GIT_MISSING: 'scripts/pr-status-note.re' }; }),
