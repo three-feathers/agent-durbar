@@ -8,6 +8,7 @@ import * as fs from 'fs';
 import { selfUpdateHandlers, SELFUPDATE_REFUSED, SOURCE_TEXT_MAX } from '../src/main/selfupdate';
 import type { SelfUpdateStore, SelfUpdateView } from '../src/main/selfupdate';
 import type { FeedAnswer } from '../src/main/netget';
+import { MANUAL_GAP_MS } from '../src/main/selfupdate';
 import { feedBytes, guardExit, ok, rig, standard, LIST, NO, SLUG } from './selfupdate-rig';
 
 const exit = guardExit('selfupdate-source');
@@ -79,6 +80,7 @@ async function main(): Promise<void> {
     const before = await yes.h.check();
     assert.strictEqual((before as SelfUpdateView).target, '0.1.29', 'source: the built-in source has an update kept');
     yes.patches.length = 0;
+    yes.clock.t += MANUAL_GAP_MS; // T596: the check above started a request; the change reads a minute later
     const y = await yes.set(RAVI);
     assert.deepStrictEqual(yes.patches, [{ source: RAVI, lastCheck: undefined }], 'FR-003: a yes saves exactly the source and drops the last check');
     assert.deepStrictEqual([y.ok, y.update.source, y.update.sourceBy], [true, RAVI, 'you'], 'FR-002: the view says the source was changed by you');
@@ -158,16 +160,60 @@ async function main(): Promise<void> {
     const th = source({ confirm: async () => { if (throws) { throws = false; throw new Error('no window'); } return true; } });
     const f = await th.set(RAVI);
     assert.deepStrictEqual([f.ok, f.reason, th.patches.length], [false, 'dialog-failed', 0], 'review 3: a throwing dialog saves nothing and says so');
+    th.clock.t += MANUAL_GAP_MS; // T596
     const g = await th.set(RAVI);
     assert.deepStrictEqual([g.ok, th.asked.length, th.store.updates.source], [true, 2, RAVI], 'review 3: the next change reaches the dialog and saves (the busy flag was cleared)');
 
     // (4) a failed save: rolled back, answers unsaved, the kept feed and result untouched, the busy flag cleared
     const fs2 = source({ failSave: true });
     const kept = (await fs2.h.check()) as SelfUpdateView;
+    fs2.clock.t += MANUAL_GAP_MS; // T596
     const u = await fs2.set(RAVI);
     assert.deepStrictEqual([u.ok, u.reason, fs2.store.updates.source, fs2.patches.length], [false, 'unsaved', undefined, 3], 'review 4: a failed save answers unsaved and is rolled back (the old source stays; the check wrote lastCheck and, T014, announced)');
     assert.deepStrictEqual([u.update.source, u.update.target, u.update.state], [SLUG, kept.target, kept.state], 'review 4: the kept feed and result are untouched');
+    fs2.clock.t += MANUAL_GAP_MS; // T596
     assert.strictEqual((await fs2.set(RAVI)).reason, 'unsaved', 'review 4: the next change is not busy');
+  }
+
+  // ---- T596 (#2138): a source change starts a request at most once a minute, the gap shared with Check now and the daily check ----
+  {
+    const reqs = (r: { calls: { url: string }[] }): number => r.calls.length;
+    // a loop of setSource with a request nobody answers: one request, not twenty (the busy flag alone cannot hold: the hanging read keeps it, so also a slow-answering one below)
+    const hang = source({ ravi: null });
+    const loop = [hang.set(RAVI)];
+    await new Promise((x) => setImmediate(x));
+    for (let i = 0; i < 19; i++) loop.push(hang.set(i % 2 ? RAVI : 'other/repo'));
+    assert.strictEqual(reqs(hang), 1, 'T596: 20 setSource calls with a hanging request make 1 request');
+    hang.calls[0].answer(NO);
+    await loop[0];
+    // answered requests: the gap, not the busy flag, holds the next one back
+    const fast = source({ yes: false });
+    for (let i = 0; i < 20; i++) {
+      const a = await fast.set(i % 2 ? 'other/repo' : RAVI);
+      assert.strictEqual(a.reason, i === 0 ? 'declined' : 'busy', `T596: setSource call ${i} inside the minute: ${i === 0 ? 'the first reads and asks' : 'busy, no request'}`);
+    }
+    assert.strictEqual(reqs(fast), 1, 'T596: 20 answered setSource calls inside a minute make 1 request');
+    assert.deepStrictEqual([fast.store.updates.source, fast.patches.length], [undefined, 0], 'T596: a skipped call changes nothing');
+    fast.clock.t += MANUAL_GAP_MS;
+    assert.strictEqual((await fast.set(RAVI)).reason, 'declined', 'T596: after the minute the next change reads again');
+    assert.strictEqual(reqs(fast), 2, 'T596: one request after the minute');
+    // the gap is shared: setSource alternating with Check now and with the daily switch
+    const mix = source({ yes: false });
+    for (let i = 0; i < 6; i++) {
+      await mix.set(RAVI);
+      await mix.h.check();
+      mix.h.setDailyCheck(i % 2 === 0);
+      mix.h.setDailyCheck(true);
+    }
+    assert.strictEqual(reqs(mix), 1, 'T596: setSource alternating with Check now and setDailyCheck makes 1 request a minute');
+    const other = source({ yes: false });
+    await other.h.check();
+    assert.strictEqual((await other.set(RAVI)).reason, 'busy', 'T596: a Check now that just started holds back a source change');
+    assert.deepStrictEqual(other.calls.map((c) => c.url).filter((u) => u === LIST || u === RAVI_LIST), [LIST], 'T596: and the new source is not read (Check now read its list, and its note file)');
+    // a confirmed change still applies and the new source is read at once
+    const yes = source();
+    assert.ok((await yes.set(RAVI)).ok && yes.store.updates.source === RAVI, 'T596: a yes inside no gap saves the source');
+    assert.ok(yes.calls.some((c) => c.slug === RAVI && c.url === RAVI_LIST), 'T596: the chosen source is read');
   }
 
   exit.done();

@@ -97,10 +97,11 @@ export class SelfUpdater {
   }
 
   /** Review of PR 2128, item 1: the time left before another request to the source in force may start (`MANUAL_GAP_MS` from the last START). */
-  private gapLeft(): number {
+  private gapLeft(anySource = false): number {
     const a = this.attempt;
     const now = this.d.now();
-    if (!a || a.slug !== this.slug() || now < a.at) return 0;
+    // T596 (#2138): `setSource` asks with `anySource`: its read is for another repository, so the time counts whatever source it was recorded under
+    if (!a || (!anySource && a.slug !== this.slug()) || now < a.at) return 0;
     return Math.max(0, MANUAL_GAP_MS - (now - a.at));
   }
   /** A running check that has not been aborted (a call joins it, no new request). */
@@ -254,6 +255,10 @@ export class SelfUpdater {
     if (first) return answer(false, first);
     if (sameRepo(slug, this.slug())) return answer(true);
     if (this.sourcing) return answer(false, 'busy');
+    // T596 (#2138): the read-first request is a request START like Check now's: the same `attempt` and `MANUAL_GAP_MS`. A call inside the minute gets
+    // `busy` (as one while a read runs), no request, nothing changed; recorded under the source in force, so Check now and the daily check wait too.
+    if (this.gapLeft(true) > 0) return answer(false, 'busy');
+    this.attempt = { at: this.d.now(), slug: this.slug() ?? slug };
     this.sourcing = true;
     try {
       const url = feedUrl(slug);
