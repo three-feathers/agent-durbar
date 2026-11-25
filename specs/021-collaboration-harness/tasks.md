@@ -153,6 +153,7 @@
 
 - [x] T512 (FR-422) `scripts/pr-ready.js` (11 guards: signatures G and U pass, the others block; branch NNN against the spec folder, review of #2133 and #2131, #2136) and `scripts/test-pr-ready.ts` (table of injected runners, order and stop, conditional guards, CRLF, one case per `%G?` letter, the branch guard (match, mismatch, no spec change), real-git cases, mutants), `pr:ready` and `test:prready` in `package.json`, the suite in `scripts/test-suites.txt`, `linesByFile` exported from `scripts/pr-preflight.js`
 - [x] T513 (FR-422) one line each in `docs/agent-notes.md` (run `pr:ready` before the ready mark) and the spec 021 delta; no `durbar-*` skill names the ready mark, so none is edited
+- [x] T597 (FR-422, issue #2146) guard 10 of `scripts/pr-ready.js` reads the raw commit (`git cat-file commit`) for `%G?` N: a `gpgsig` header is a NOTE, no header still blocks; the git stderr line about the allowed-signers file is skipped; stubbed cases per letter, a real `ssh-keygen` case and two mutants in `scripts/test-pr-ready.ts`; spec 021 delta 2026-11-25
 
 ## 2026-11-25: `rules:check` reference checks (FR-423)
 

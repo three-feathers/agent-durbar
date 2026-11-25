@@ -19,8 +19,8 @@ interface Run { (cmd: string, args: string[]): { status: number; out: string } }
 const pr = require(modPath) as { ready: (o: { root?: string; run: Run; security?: boolean; exempt?: boolean }) => Res; crlfCuts: (d: string) => string[]; BASE: string };
 
 const HEAD = 'a'.repeat(40);
-interface Fx { failAt?: string; out?: string; files: string[]; publicDiff: string; srcDiff: string; sigs: string[]; msgs: string[]; dirty: string; fetchFails: boolean; branch: string | null; folders: string[]; catMissing: boolean }
-const fx = (o: Partial<Fx> = {}): Fx => ({ files: ['specs/021-collaboration-harness/spec.md'], publicDiff: '', srcDiff: '', sigs: [`${'b'.repeat(40)} G`], msgs: [`${'b'.repeat(40)}\nA plain message\n`], dirty: '', fetchFails: false, branch: '021-collaboration-harness', folders: ['021-collaboration-harness'], catMissing: false, ...o });
+interface Fx { failAt?: string; out?: string; files: string[]; publicDiff: string; srcDiff: string; sigs: string[]; msgs: string[]; dirty: string; fetchFails: boolean; branch: string | null; folders: string[]; catMissing: boolean; raw: string }
+const fx = (o: Partial<Fx> = {}): Fx => ({ files: ['specs/021-collaboration-harness/spec.md'], publicDiff: '', srcDiff: '', sigs: [`${'b'.repeat(40)} G`], msgs: [`${'b'.repeat(40)}\nA plain message\n`], dirty: '', fetchFails: false, branch: '021-collaboration-harness', folders: ['021-collaboration-harness'], catMissing: false, raw: 'tree x\nauthor a\n\nplain\n', ...o });
 /** The injected runner: answers by the command's argv; records every call as a label. failAt = the label that exits 1 with `out`. */
 function runner(f: Fx, calls: string[]): Run {
   const label = (cmd: string, a: string[]): string => {
@@ -39,6 +39,7 @@ function runner(f: Fx, calls: string[]): Run {
     if (l === 'git merge-base') return { status: 0, out: `${'c'.repeat(40)}\n` };
     if (l === 'git symbolic-ref') return f.branch === null ? { status: 1, out: '' } : { status: 0, out: `${f.branch}\n` };
     if (l === 'git ls-tree') return { status: 0, out: f.folders.join('\n') };
+    if (l === 'git cat-file' && a[1] === 'commit') return { status: 0, out: f.raw };
     if (l === 'git cat-file') return { status: f.catMissing ? 1 : 0, out: '' };
     if (l === 'git status') return { status: 0, out: f.dirty };
     if (l === 'git log') return { status: 0, out: a.includes('-z') ? f.msgs.join('\0') : f.sigs.join('\n') };
@@ -50,7 +51,7 @@ function runner(f: Fx, calls: string[]): Run {
     return { status: 0, out: '' };
   };
 }
-const go = (f: Fx, security = false, exempt = false): { res: Res; calls: string[] } => { const calls: string[] = []; return { res: pr.ready({ root: ROOT, run: runner(f, calls), security, exempt }), calls }; };
+const go = (f: Fx, security = false, exempt = false): { res: Res; calls: string[]; args: string[][] } => { const calls: string[] = []; const args: string[][] = []; const inner = runner(f, calls); const run: Run = (c, a) => { args.push(a); return inner(c, a); }; return { res: pr.ready({ root: ROOT, run, security, exempt }), calls, args }; };
 const SCRIPTS = ['spec-numbers', 'fragments --check', 'specs-index --check', 'spec-numbers --dups', 'rules-check', 'changelog check'];
 
 // 1. all pass: ready: yes with the head; nothing conditional ran
@@ -116,6 +117,38 @@ for (const t of table) {
   const u = go(fx({ sigs: [`${'e'.repeat(40)} U`] }));
   assert.ok(u.res.ok, 'PR-READY-sig-U: U passes (a good signature, the key is not listed locally)');
   assert.ok(u.res.lines.some((l) => /NOTE git: signature good, key not in the local allowed-signers file/.test(l)), 'PR-READY-sig-U: U prints its note');
+  // N: a signed commit that this machine cannot check (SSH, no allowed-signers file) has a gpgsig header in the raw commit; an unsigned one has none
+  const sigRaw = (h: string): string => `tree x\nauthor a\n${h}\n\nmessage\n`;
+  const sN = go(fx({ sigs: [`${'e'.repeat(40)} N`], raw: sigRaw('gpgsig -----BEGIN SSH SIGNATURE-----\n U2lnbmF0dXJl\n -----END SSH SIGNATURE-----') }));
+  assert.ok(sN.res.ok, `PR-READY-sig-N-signed: signed N passes with a note: ${sN.res.lines.join(' | ')}`);
+  assert.ok(sN.res.lines.some((l) => /NOTE git: signature present, cannot be checked here \(no allowed-signers file\): GitHub shows whether it is verified/.test(l)), 'PR-READY-sig-N-signed: signed N prints its note');
+  assert.ok(sN.calls.includes('git cat-file'), 'PR-READY-sig-N-signed: the raw commit was read');
+  const sCrlf = go(fx({ sigs: [`${'e'.repeat(40)} N`], raw: sigRaw('gpgsig -----BEGIN SSH SIGNATURE-----\r\n U2lnbmF0dXJl\r\n -----END SSH SIGNATURE-----').replace(/\n/g, '\r\n') }));
+  assert.ok(sCrlf.res.ok, 'PR-READY-sig-N-signed: a CRLF commit text is read like an LF one');
+  const sErr = go(fx({ sigs: ['error: gpg.ssh.allowedSignersFile needs to be configured and exist for ssh signature verification', `${'e'.repeat(40)} N`], raw: sigRaw('gpgsig x') }));
+  assert.ok(sErr.res.ok, `PR-READY-sig-N-signed: git's stderr line about the allowed-signers file is not a commit row: ${sErr.res.lines.join(' | ')}`);
+  // a row that is not `<hex id> <letter>` never reaches cat-file and fails guard 10
+  for (const bad of ['-x N', 'zzz N', `${'e'.repeat(39)} N`, `${'e'.repeat(41)} N`, `${'E'.repeat(40)} N`, '--output=x N']) {
+    const b = go(fx({ sigs: [bad], raw: sigRaw('gpgsig x') }));
+    assert.ok(!b.res.ok && b.res.lines.some((l) => /^FAIL \(10\) git: unexpected git output line: /.test(l)), `PR-READY-sig-hex: row "${bad}" fails with unexpected git output line: ${b.res.lines.join(' | ')}`);
+    assert.ok(!b.calls.includes('git cat-file'), `PR-READY-sig-hex: row "${bad}" never reaches cat-file`);
+  }
+  const long = go(fx({ sigs: ['q'.repeat(200)] }));
+  assert.ok(long.res.lines.some((l) => /unexpected git output line: q{60}$/.test(l)), 'PR-READY-sig-hex: the printed line is cut to 60 characters');
+  const h64 = go(fx({ sigs: [`${'e'.repeat(64)} N`], raw: sigRaw('gpgsig x') }));
+  assert.ok(h64.res.ok && h64.calls.includes('git cat-file'), 'PR-READY-sig-hex: a 64-hex id (sha256 repository) still works');
+  const eo = go(fx({ sigs: [`${'e'.repeat(40)} N`], raw: sigRaw('gpgsig x') }));
+  assert.ok(eo.res.ok && eo.args.some((a) => a.join(' ') === `cat-file commit --end-of-options ${'e'.repeat(40)}`), 'PR-READY-sig-hex: cat-file gets --end-of-options before the id');
+  const uN = go(fx({ sigs: [`${'e'.repeat(40)} N`] }));
+  assert.ok(!uN.res.ok && uN.res.lines.some((l) => /^FAIL \(10\) git: commit [0-9a-f]{9} has signature status "N": no signature/.test(l)), 'PR-READY-sig-N-unsigned: unsigned N still fails (10)');
+  const bodyN = go(fx({ sigs: [`${'e'.repeat(40)} N`], raw: 'tree x\nauthor a\n\ngpgsig in the message body\n' }));
+  assert.ok(!bodyN.res.ok, 'PR-READY-sig-N-unsigned: a gpgsig line in the message body (after the blank line) is not a header: unsigned N still fails (10)');
+  const failRaw = go(fx({ sigs: [`${'e'.repeat(40)} N`], failAt: 'git cat-file', out: 'fatal' }));
+  assert.ok(!failRaw.res.ok, 'PR-READY-sig-N-unsigned: raw commit unreadable: N still fails (10)');
+  for (const L of ['B', 'X', 'Y', 'R', 'E']) {
+    const o = go(fx({ sigs: [`${'e'.repeat(40)} ${L}`], raw: sigRaw('gpgsig x') }));
+    assert.ok(!o.res.ok && !o.calls.includes('git cat-file'), `PR-READY-sig-${L}: ${L} fails even with a gpgsig header (only N reads the raw commit)`);
+  }
   const m = go(fx({ branch: '011-credit-caps', folders: ['011-credit-caps'], files: ['src/main/x.ts', 'specs/011-credit-caps/tasks.md', 'docs/a.md'] }));
   assert.ok(m.res.ok && m.res.lines.some((l) => /branch 011 matches specs\/011-credit-caps\//.test(l)), `PR-READY-branch: a matching branch passes and names the folder: ${m.res.lines.join(' | ')}`);
   const x = go(fx({ branch: 'fix-thing', files: ['src/main/x.ts'] }));
@@ -195,6 +228,49 @@ for (const t of table) {
     assert.ok(r.lines.some((l) => /^FAIL \(10\) git diff --check: /.test(l)), `PR-READY-git: a real trailing space is found by git diff --check: ${r.lines.join(' | ')}`);
   } finally { fs.rmSync(tmp, { recursive: true, force: true }); }
 }
+// 7b. real git, a real SSH key, NO allowed-signers file: %G? is N for both commits; only the signed one has a gpgsig header
+{
+  const kg = spawnSync('ssh-keygen', ['-V'], { encoding: 'utf8' });
+  if (kg.error) console.log('  skip PR-READY-real-ssh: ssh-keygen is not on this machine (the stubbed cases above still run)');
+  else {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'pr-ready-ssh-'));
+    try {
+      const empty = path.join(tmp, 'gitconfig'); fs.writeFileSync(empty, '');
+      const key = path.join(tmp, 'k');
+      const k = spawnSync('ssh-keygen', ['-q', '-t', 'ed25519', '-N', '', '-f', key], { encoding: 'utf8' });
+      if (k.status !== 0) console.log(`  skip PR-READY-real-ssh: ssh-keygen could not make a key (${(k.stderr || '').slice(0, 80)})`);
+      else {
+        const repo = path.join(tmp, 'r'); fs.mkdirSync(repo);
+        const env = { ...process.env, GIT_CONFIG_GLOBAL: empty, GIT_CONFIG_NOSYSTEM: '1', GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@example.com', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@example.com' };
+        const run: Run = (cmd, args) => {
+          if (cmd !== 'git') return { status: 0, out: '' };
+          if (args[0] === 'fetch') return { status: 0, out: '' };
+          const r = spawnSync('git', args, { cwd: repo, env, encoding: 'utf8' });
+          return { status: r.status === null ? -1 : r.status, out: `${r.stdout}${r.stderr}` };
+        };
+        const G = (...a: string[]): string => { const r = spawnSync('git', a, { cwd: repo, env, encoding: 'utf8' }); assert.strictEqual(r.status, 0, `git ${a[0]}: ${r.stderr}`); return r.stdout; };
+        const signed = ['-c', 'gpg.format=ssh', '-c', `user.signingkey=${key}.pub`, '-c', 'commit.gpgsign=true'];
+        G('init', '-q', '-b', 'main');
+        G('-c', 'commit.gpgsign=false', 'commit', '-q', '--allow-empty', '-m', 'base');
+        G('update-ref', 'refs/remotes/origin/main', 'HEAD');
+        G('checkout', '-q', '-b', 'feature');
+        G(...signed, 'commit', '-q', '--allow-empty', '-m', 'signed');
+        const sha = G('rev-parse', 'HEAD').trim();
+        assert.strictEqual(G('log', '-1', '--format=%G?').trim(), 'N', 'PR-READY-real-ssh: git prints N for the signed commit (no allowed-signers file)');
+        assert.ok(/^gpgsig /m.test(G('cat-file', 'commit', sha)), 'PR-READY-real-ssh: the signed commit has a gpgsig header');
+        let r = pr.ready({ root: repo, run });
+        assert.ok(!r.lines.some((l) => /^FAIL \(10\)/.test(l)), `PR-READY-real-ssh: a really signed commit passes guard 10: ${r.lines.join(' | ')}`);
+        assert.ok(r.lines.some((l) => /NOTE git: signature present, cannot be checked here/.test(l)), 'PR-READY-real-ssh: and prints its note');
+        G('-c', 'commit.gpgsign=false', 'commit', '-q', '--allow-empty', '-m', 'unsigned');
+        const usha = G('rev-parse', 'HEAD').trim();
+        assert.strictEqual(G('log', '-1', '--format=%G?').trim(), 'N', 'PR-READY-real-ssh: git prints N for the unsigned commit too');
+        assert.ok(!/^gpgsig/m.test(G('cat-file', 'commit', usha)), 'PR-READY-real-ssh: the unsigned commit has no gpgsig header');
+        r = pr.ready({ root: repo, run });
+        assert.ok(r.lines.some((l) => /^FAIL \(10\) git: commit [0-9a-f]{9} has signature status "N"/.test(l)), `PR-READY-sig-N-unsigned: a real unsigned commit still fails (10): ${r.lines.join(' | ')}`);
+      }
+    } finally { fs.rmSync(tmp, { recursive: true, force: true }); }
+  }
+}
 // 8. no shell, no network: the module spawns with fixed argv and never calls anything but git, node and gh through them
 {
   const src = fs.readFileSync(modPath, 'utf8');
@@ -218,6 +294,9 @@ if (!process.env.PR_READY_MODULE) {
     { name: 'no-stop', tag: 'PR-READY-stop', mut: (t) => t.replace('if (ctx.stopped) return;', '') },
     { name: 'sig-accept-N', tag: 'PR-READY-sig-N', mut: (t) => t.replace("const OK_SIG = ['G', 'U'];", "const OK_SIG = ['G', 'U', 'N'];") },
     { name: 'sig-reject-U', tag: 'PR-READY-sig-U', mut: (t) => t.replace("const OK_SIG = ['G', 'U'];", "const OK_SIG = ['G'];") },
+    { name: 'sig-N-always-fails', tag: 'PR-READY-sig-N-signed', mut: (t) => t.replace("if (raw.status === 0 && hasSigHeader(raw.out))", 'if (false)') },
+    { name: 'sig-N-header-always', tag: 'PR-READY-sig-N', mut: (t) => t.replace("if (raw.status === 0 && hasSigHeader(raw.out))", 'if (true)') },
+    { name: 'sig-hex-check-dropped', tag: 'PR-READY-sig-hex', mut: (t) => t.replace("if (!/^(?:[0-9a-f]{40}|[0-9a-f]{64}) \\S$/.test(row)) return", 'if (false) return') },
     { name: 'sig-accept-any', tag: 'PR-READY-sig-', mut: (t) => t.replace('if (!OK_SIG.includes(sig)) return', 'if (false) return') },
     { name: 'branch-any-folder', tag: 'PR-READY-branch', mut: (t) => t.replace(" && f.split('/')[1].startsWith(`${nnn}-`)", '') },
   ];
