@@ -1157,8 +1157,9 @@ console.log('ui-suite: check-parallel and ui-suite install Electron once before 
         await assert.rejects(() => go(fails, false), new RegExp('^Error: ' + MSG + '$'), 'FR-465: main stops with exactly the plain line');
         assert.deepStrictEqual(ran, [], 'FR-465: no driver started');
       }
-      const quiet = console.log; console.log = (): void => undefined;
-      try { await go(finds, process.platform !== 'linux'); await go(fails, true); } finally { console.log = quiet; }
+      const quiet = console.log, outWas = process.env.UI_SUITE_OUT, outTmp = fs.mkdtempSync(path.join(os.tmpdir(), 'ui-suite-xvfb-')); /* main makes its screenshot folder: a folder of ours, removed below */
+      console.log = (): void => undefined; process.env.UI_SUITE_OUT = outTmp;
+      try { await go(finds, process.platform !== 'linux'); await go(fails, true); } finally { console.log = quiet; if (outWas === undefined) delete process.env.UI_SUITE_OUT; else process.env.UI_SUITE_OUT = outWas; fs.rmSync(outTmp, { recursive: true, force: true }); }
       assert.deepStrictEqual(ran, ['check-office-fill', 'check-office-fill'], 'FR-465: with xvfb-run found, or a desktop run, the driver starts');
       /* mutants (source copies, \r?\n): the check dropped, and the message changed, each die at their own assert */
       const src2 = fs.readFileSync(SUITE, 'utf8');
