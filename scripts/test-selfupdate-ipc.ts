@@ -90,7 +90,7 @@ async function main(): Promise<void> {
       'registerSelfUpdateIpc({ getSelfUpdater: () => selfUpdater });',
       'selfUpdater = new SelfUpdater({ ... });',
     ], 'inert: main.ts names the checker only on its three known lines (declaration, channel registration, creation)');
-    assert.ok(/^\s*selfUpdater = new SelfUpdater\(\{ packaged: app\.isPackaged, simulator: SIMULATOR, source: loadUpdateSource\(\), running: app\.getVersion\(\), policy: updatePolicy, store: \(\) => settingsStore, get: makeFeedGet\(electronRequestFactory\(\)\), now: Date\.now, timer: realSelfUpdateTimer, confirm: \(o\) => nativeConfirm\(win, o\) \}\);$/m.test(mainSrc), 'inert: the creation line is exactly the known one (T011 adds only the confirm part)');
+    assert.ok(/^\s*selfUpdater = new SelfUpdater\(\{ packaged: app\.isPackaged, simulator: SIMULATOR, source: loadUpdateSource\(\), running: app\.getVersion\(\), policy: updatePolicy, store: \(\) => settingsStore, get: updateFeedGet\(\), now: Date\.now, timer: realSelfUpdateTimer, confirm: \(o\) => nativeConfirm\(win, o\) \}\);$/m.test(mainSrc), 'inert: the creation line is exactly the known one (T011 adds only the confirm part, T507 the update session in get)');
 
     // review of PR 2082, item 2: every ipcRenderer call in the preloads names a literal channel; no passthrough of a channel from the page
     for (const f of fs.readdirSync(path.join(root, 'src', 'preload')).filter((x) => x.endsWith('.ts'))) {

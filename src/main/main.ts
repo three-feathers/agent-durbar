@@ -133,7 +133,7 @@ import { register as registerSelfUpdateIpc } from './ipc/selfupdate';
 import { SelfUpdater, realSelfUpdateTimer } from './selfupdate';
 import { loadUpdateSource } from './updatesource';
 import { updatePolicy } from './updatepolicy';
-import { electronRequestFactory, makeFeedGet } from './netget';
+import { updateFeedGet } from './netget';
 import { markSignedOut, withSignIn } from './authcheck';
 import type { SignInAnswer } from './authcheck';
 import { SettingsStore } from './settings';
@@ -1197,9 +1197,9 @@ app.whenReady().then(() => {
   folderStore = new FolderStore(path.join(app.getPath('userData'), 'durbar-folders.json'));
   settingsStore = new SettingsStore(path.join(app.getPath('userData'), 'durbar-settings.json'));
   settingsStore.load();
-  // spec 118 FR-004: packaged builds only, never the simulator; the request only through makeFeedGet (FR-007), the policy read each time (FR-005).
+  // spec 118 FR-004: packaged builds only, never the simulator; the request only through makeFeedGet on the update session (FR-007, T507: updateFeedGet), the policy read each time (FR-005).
   // NOT started until T014 (the Update card and the Settings switch): nothing calls selfUpdater's start here, so no request is made.
-  selfUpdater = new SelfUpdater({ packaged: app.isPackaged, simulator: SIMULATOR, source: loadUpdateSource(), running: app.getVersion(), policy: updatePolicy, store: () => settingsStore, get: makeFeedGet(electronRequestFactory()), now: Date.now, timer: realSelfUpdateTimer, confirm: (o) => nativeConfirm(win, o) });
+  selfUpdater = new SelfUpdater({ packaged: app.isPackaged, simulator: SIMULATOR, source: loadUpdateSource(), running: app.getVersion(), policy: updatePolicy, store: () => settingsStore, get: updateFeedGet(), now: Date.now, timer: realSelfUpdateTimer, confirm: (o) => nativeConfirm(win, o) });
   /* Dev/test theme seed (spec 036 FR-005): DURBAR_THEME=<id> makes the office open on that theme for the per-theme checks; invalid ids fall back in the renderer. */
   if (dev.DURBAR_THEME) runTheme = parseThemeId(dev.DURBAR_THEME);
   mcpStore = new McpStore(path.join(app.getPath('userData'), 'durbar-mcp.json'), safeStorageCodec);
