@@ -2,7 +2,7 @@
 
 Pitfalls agents on this repo learned the hard way. Rules live in [AGENTS.md](../AGENTS.md); the review checklist is [review-checklist.md](review-checklist.md); checked facts about Copilot, Claude Code, Codex and `git` are in [agent-apps.md](agent-apps.md). This file is guidance and never overrides AGENTS.md.
 
-Each entry: **what** (bold), why, how to apply, evidence (`real:`, `read:`, `test:`, `sim:`, a PR or issue), at most three lines. Add one in the PR where you learned it; fix or delete one that turns out wrong; delete one a script or test now enforces. **Never** secrets, tokens, personal data or chat contents. Push: `npm run specs:numbers`; pictures over 300 KB fail `npm test`/CI `spec-numbers`.
+Each entry: **what** (bold), why, how to apply, evidence (`real:`, `read:`, `test:`, `sim:`, a PR or issue), at most three lines. Add one in the PR where you learned it; fix or delete one that turns out wrong; delete one a script or test now enforces. **Never** secrets, tokens, personal data or chat contents. Ready mark: `npm run pr:ready`; pictures over 300 KB fail `npm test`/CI `spec-numbers`.
 
 ## Shell, git and processes
 
@@ -75,8 +75,8 @@ Each entry: **what** (bold), why, how to apply, evidence (`real:`, `read:`, `tes
 - **`\s` inside a page-code template literal is `s`**: write `\\s`, `\\n`, `\\d`, and print the tested text in the message. Match time-left text as a range (spec 068 T021).
 - **`webContents.executeJavaScript` waits for a returned promise**: end a line that opens a dialog with `void ...;0`. `H.calm()` hides `#toasts` for the rest of the run: use `H.clearToasts()` when you check a toast (spec 080).
 - **`H.shot(..., {blur: true})` moves the focus**: a later Escape goes to the page and closes the chat. Shoot without `blur` or after the keys; re-appending a focused node drops focus (`focus({preventScroll:true})`) (spec 005 T085).
-- **Hover-only controls in pictures**: a `DISPLAY` without a pointer reports `hover:none` (run drivers with `UI_SUITE_XVFB=1`, `shots:docs` with `env -u DISPLAY`); the xvfb pointer rests mid-window, so `H.shot` with `prep: 'calm'` parks it at (1, 1) (`keepHover` to keep it). Look at each picture (PRs 631, 735).
-- **A page check that changes the page puts it back**: `pageCheck` used to leave `body.ren-show` on and every picture showed rename pencils (PR 631).
+- **Hover-only controls in pictures**: a `DISPLAY` without pointer reports `hover:none` (Linux drivers use xvfb; `UI_SUITE_DESKTOP=1` uses yours (small or pointer-less fails); `shots:docs`: `env -u DISPLAY`); the xvfb pointer rests mid-window, so `H.shot` with `prep: 'calm'` parks it at (1, 1) (`keepHover` keeps). Look at each picture (PRs 631, 735).
+- **A page check that changes the page puts it back**: `pageCheck` left `body.ren-show` on, so pictures showed pencils (PR 631).
 - **Do not wait for a short animation and its end state in one poll**: set a `MutationObserver` flag before triggering, then wait for the end state; read reduced motion from `matchMedia`, not an env flag (#511).
 - **Reduced motion takes other code paths**: the Windows runner reports it by itself. Reproduce with `--force-prefers-reduced-motion`; when an animation's end does work, the instant branch must too (spec 001 FR-051).
 - **A hover or focus driver on a Mac needs the window active and one mouse move at a time**: back-to-back `sendInputEvent` moves merge (no `pointerout`/`pointerover`): wait for `:hover` after each; `:focus-visible` needs `document.hasFocus()`: call `win.show(); win.focus(); wc.focus()` until true. A user dark theme sets `--card-waiting` and `--card-error` too, or `theme.js` pulls `--ink` toward grey (spec 001 FR-187, `real:` Mac, 2026-10-29).

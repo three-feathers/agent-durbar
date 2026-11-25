@@ -1118,8 +1118,61 @@ console.log('ui-suite: check-parallel and ui-suite install Electron once before 
     const label = (d: { name: string; label?: string }): string => d.label || d.name;
     const flagged = suite.DRIVERS.filter((d) => d.focus).map(label).sort();
     assert.deepStrictEqual(flagged, ['check-001-room-heads', 'check-080-browser-expand', 'check-080-browser-expand photo', 'check-097-drag-cancel', 'check-097-hover-card', 'check-097-kids', 'check-097-kids cave', 'check-097-kids retro', 'check-brain-draw', 'check-browser-tabs', 'check-browser-tabs 1280', 'shots-097-screens', 'shots-097-screens retro'], 'the focus entries are the ones with a failure on record (#1498, #1408, #1282, #1239, #1723: check-097-kids failed its "+K" focus-ring assert with hasFocus false at four windows at once on a Mac and passed alone; check-browser-tabs failed on a Mac with the OS focus elsewhere; check-080-browser-expand (Flat, Photo) failed 2 of 2 at four windows at once on a Mac and passed alone; check-brain-draw failed its Full-mode assert on windows-latest shard 2/4, both tries); check-097-drag-cancel is focus-sensitive by design: its held drags end on a real OS blur from a neighbour window (issue 1550)');
-    assert.deepStrictEqual([['darwin', {}], ['win32', {}], ['linux', {}], ['linux', { DISPLAY: ':0' }], ['linux', { DISPLAY: ':0', UI_SUITE_XVFB: '1' }]].map(([p, e]) => suite.sharedDesktop(p as string, e as Record<string, string>)), [true, true, false, true, false], 'windows share a desktop on macOS, Windows and Linux with a display; not under xvfb');
-    assert.deepStrictEqual([['1'], ['1.25'], ['1.5'], ['2'], ['x'], ['']].map(([d]) => suite.sharedDesktop('linux', { DISPLAY: ':0', UI_SUITE_DPR: d })), [true, false, false, false, true, true], 'FR-273 (issue 1914): a forced ratio above 1 never runs on the desktop (a small display clamps the window); 1, none and a bad value keep it');
+    assert.deepStrictEqual([['darwin', {}], ['win32', {}], ['linux', {}], ['linux', { DISPLAY: ':0' }], ['linux', { DISPLAY: ':0', UI_SUITE_DESKTOP: '1' }], ['linux', { UI_SUITE_DESKTOP: '1' }], ['linux', { DISPLAY: ':0', UI_SUITE_DESKTOP: '1', UI_SUITE_XVFB: '1' }], ['darwin', { DISPLAY: ':0' }], ['win32', { UI_SUITE_XVFB: '1' }]].map(([p, e]) => suite.sharedDesktop(p as string, e as Record<string, string>)), [true, true, false, false, true, false, false, true, true], 'FR-465 (issues 1930, 2118): Linux runs under xvfb by default, also with a display set; only UI_SUITE_DESKTOP=1 with a display uses the desktop (UI_SUITE_XVFB=1 still wins); macOS and Windows always share the desktop');
+    assert.deepStrictEqual([['1'], ['1.25'], ['1.5'], ['2'], ['x'], ['']].map(([d]) => suite.sharedDesktop('linux', { DISPLAY: ':0', UI_SUITE_DESKTOP: '1', UI_SUITE_DPR: d })), [true, false, false, false, true, true], 'FR-273 (issue 1914): a forced ratio above 1 never runs on the desktop (a small display clamps the window); 1, none and a bad value keep the opt-in desktop');
+    {
+      const note = (suite as unknown as { desktopNote: (p: string, s: boolean, z: { w: number; h: number } | null) => string }).desktopNote;
+      assert.strictEqual(note('linux', false, { w: 800, h: 600 }), '', 'FR-465: no line under xvfb');
+      assert.strictEqual(note('darwin', true, { w: 800, h: 600 }), '', 'FR-465: no line on macOS or Windows');
+      assert.strictEqual(note('linux', true, { w: 1920, h: 1080 }).includes('smaller'), false, 'FR-465: a 1920x1080 desktop is not called small');
+      const small = note('linux', true, { w: 1920, h: 867 });
+      assert.ok(small.includes('1920x867') && small.includes('smaller than the biggest driver window 1920x1080') && small.includes('park the pointer need a pointer') && small.includes('not a product bug') && !small.includes('\n'), `FR-465: one plain line for a small desktop: ${small}`);
+      assert.ok(note('linux', true, null).includes('size is unknown') && note('linux', true, null).includes('not a product bug'), 'FR-465: a desktop whose size cannot be told says so');
+    }
+    {
+      /* mutant (FR-465): the old default back (a display set means the desktop) must die at the default's own assert; the source is read with \r?\n (a CRLF checkout) */
+      const src = fs.readFileSync(SUITE, 'utf8');
+      const m = /function sharedDesktop\([\s\S]*?\r?\n\}\r?\n/.exec(src);
+      assert.ok(m, 'FR-465: sharedDesktop is found in scripts/ui-suite.js');
+      const build = (text: string): ((p: string, e: Record<string, string>) => boolean) => new Function('dprOk', text + '\nreturn sharedDesktop;')((suite as unknown as { dprOk: unknown }).dprOk) as (p: string, e: Record<string, string>) => boolean;
+      const defaultAssert = (f: (p: string, e: Record<string, string>) => boolean): void => assert.strictEqual(f('linux', { DISPLAY: ':0' }), false, 'FR-465: Linux with a display set and no UI_SUITE_DESKTOP runs under xvfb');
+      defaultAssert(build(m[0]));
+      const old = m[0].replace("env.UI_SUITE_DESKTOP === '1' && ", '');
+      assert.notStrictEqual(old, m[0], 'FR-465: the old-default mutant found its line to change');
+      assert.throws(() => defaultAssert(build(old)), /FR-465: Linux with a display set and no UI_SUITE_DESKTOP runs under xvfb/, 'FR-465: the old default dies at the default\'s own assert');
+    }
+    {
+      /* FR-465 (review of #2137): xvfb chosen on Linux and no xvfb-run: one plain stop before any driver; the lookup is injected */
+      const ui = suite as unknown as { xvfbProblem: (p: string, s: boolean, l: () => boolean) => string; XVFB_MISSING: string; main: (o: unknown) => Promise<void> };
+      const MSG = 'xvfb-run was not found: install xvfb, or set UI_SUITE_DESKTOP=1';
+      let looked = 0;
+      const fails = (): boolean => { looked++; return false; }, finds = (): boolean => { looked++; return true; };
+      const problems = (): string[] => [ui.xvfbProblem('linux', false, fails), ui.xvfbProblem('linux', false, finds), ui.xvfbProblem('linux', true, fails), ui.xvfbProblem('darwin', false, fails), ui.xvfbProblem('win32', false, fails)];
+      const expected = [MSG, '', '', '', ''];
+      assert.deepStrictEqual(problems(), expected, 'FR-465: xvfb-run missing stops with the plain line on Linux under xvfb; found, a desktop run, macOS and Windows say nothing');
+      assert.strictEqual(looked, 2, 'FR-465: the lookup runs only on Linux under xvfb (no check on macOS, Windows or a desktop run)');
+      const ran: string[] = [];
+      const go = (found: () => boolean, shared: boolean): Promise<void> => ui.main({ build: () => '', ensure: () => true, run: async (d: { name: string }) => { ran.push(d.name); return { ok: true, secs: 0, why: '', log: '' }; }, argv: ['--only', 'check-office-fill'], shared, xvfbFound: found });
+      if (process.platform === 'linux') {
+        await assert.rejects(() => go(fails, false), new RegExp('^Error: ' + MSG + '$'), 'FR-465: main stops with exactly the plain line');
+        assert.deepStrictEqual(ran, [], 'FR-465: no driver started');
+      }
+      const quiet = console.log, outWas = process.env.UI_SUITE_OUT, outTmp = fs.mkdtempSync(path.join(os.tmpdir(), 'ui-suite-xvfb-')); /* main makes its screenshot folder: a folder of ours, removed below */
+      console.log = (): void => undefined; process.env.UI_SUITE_OUT = outTmp;
+      try { await go(finds, process.platform !== 'linux'); await go(fails, true); } finally { console.log = quiet; if (outWas === undefined) delete process.env.UI_SUITE_OUT; else process.env.UI_SUITE_OUT = outWas; fs.rmSync(outTmp, { recursive: true, force: true }); }
+      assert.deepStrictEqual(ran, ['check-office-fill', 'check-office-fill'], 'FR-465: with xvfb-run found, or a desktop run, the driver starts');
+      /* mutants (source copies, \r?\n): the check dropped, and the message changed, each die at their own assert */
+      const src2 = fs.readFileSync(SUITE, 'utf8');
+      const mm = /const XVFB_MISSING[\s\S]*?\r?\nfunction xvfbProblem\([\s\S]*?\r?\n\}\r?\n/.exec(src2);
+      assert.ok(mm, 'FR-465: xvfbProblem is found in scripts/ui-suite.js');
+      const make = (t: string): ((p: string, s: boolean, l: () => boolean) => string) => new Function(t + '\nreturn xvfbProblem;')() as (p: string, s: boolean, l: () => boolean) => string;
+      const check = (f: (p: string, s: boolean, l: () => boolean) => string): void => assert.strictEqual(f('linux', false, fails), MSG, 'FR-465: xvfb-run missing stops with the plain line');
+      check(make(mm[0]));
+      const dropped = mm[0].replace("return lookup() ? '' : XVFB_MISSING;", "return '';");
+      const reworded = mm[0].replace("xvfb-run was not found: install xvfb, or", "xvfb-run is missing: install xvfb or");
+      assert.ok(dropped !== mm[0] && reworded !== mm[0], 'FR-465: the xvfb mutants found their lines to change');
+      for (const m of [dropped, reworded]) assert.throws(() => check(make(m)), /FR-465: xvfb-run missing stops with the plain line/, 'FR-465: the xvfb mutant dies at its own assert');
+    }
     assert.strictEqual(suite.sharedDesktop('darwin', { UI_SUITE_DPR: '2' }), true, 'FR-273: macOS has no virtual display, the forced ratio runs there');
     const only = ['shots-097-screens', 'check-097-hover-card', 'shots-017', 'shots-018', 'shots-033', 'check-office-fill'].join(',');
     const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'ui-suite-focus-'));
