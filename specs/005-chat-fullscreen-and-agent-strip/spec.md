@@ -107,6 +107,23 @@ Header actions: **Stop** (interrupt the turn; the agent stays ready), **End sess
 
 ## Changes
 
+
+### 2026-11-25: FR-243 checked in a real window on a Mac, and two more cases in `check-browser-follow` (issue #1586, T600; no FR: FR-243 is what is checked, unchanged; my call under Vikram's 00:28 UTC delegation, 2026-11-15)
+
+**Checked** (Apple M4, macOS, a real visible Electron window with the real GPU, driven by the simulator: no real session, no credits; `main` at `ecd750c68`; `check-browser-follow` with a log of the real px gap before each "at the end" assert; both sizes, and the driver's injected 15 px classic scrollbar): the gap `scrollHeight - scrollTop - clientHeight` is **0 px** in every case of the issue's six items.
+
+| # | Issue item | Real window, Mac | Asserted by |
+|---|---|---|---|
+| 1 | a streaming turn within 2 px of the end, also at the typing row's 1 s timer | 0 px (after two streamed blocks, 10 frames later, new text, after the timer) | `check-browser-follow` (under 3 px) |
+| 2 | a reply whose first text is a code block or a list | 0 px (code block; list: new case) | code block: existing; list: this change |
+| 3 | a question card scrolls out and the answer bar appears | 0 px (`clientHeight` shrinks) | existing |
+| 4 | the message box grown by several lines | box 36 to 123 px, chat 485 px (385 at 1280x800), 0 px; 0 px after it shrinks again | **this change** |
+| 5 | Chat, Browser, Chat | at the end 0 px and still 0 after 10 frames; a scrolled-up chat keeps its `scrollTop` exactly | existing |
+| 6 | a classic scrollbar | injected 15 px scrollbar: 0 px at both sizes; native classic scrollbars: the same driver passes on ubuntu and windows in the 2026-11-25 nightly (run 45617000799) | existing, with the injected scrollbar |
+
+- **Two cases added** (`scripts/check-browser-follow.js`, both sizes and both scrollbars): the message box grown by six lines of real input (`insertText`; waiting for the box to grow is a state wait, then the gap under 3 px with the measured px in the assert text, and again after the box is emptied), and a turn whose first text is a list (bullets, a nested list, a numbered list). Mutants (`FOLLOW_MUTANT=`, a patched copy of dist): `box` (the box observer does nothing) dies at `the message box grown by six lines (36 to 123 px) keeps the chat at the end, gap 87 px` (the 2026-11-11 delta measured 69 px on `main` before the fix; 87 px here); `mdflush` (no `mdFlush()` first in `stickyFlush`) dies at `a reply that starts with a list is followed to its end, gap 74 px`. No app code distinguishes a list from a code block: both are the same follow after the Markdown paint, which is why one mutant covers both.
+- **Not checked** (`[KNOWN GAP]`, needs credits): a real agent's streaming cadence (real token pacing and network jitter); the native macOS "always show scrollbars" setting (a system setting; the injected scrollbar and the Windows and Linux runs stand in). No app change.
+
 ### 2026-11-24 (second entry): a tool chip with long arguments says how much more there is, and one over the masks' limit says why it is empty (issue #2060 item 3, part A, FR-438, T539, T540, Q40)
 
 *Owner decision* (Vikram, 2026-11-23, issue #2060, item 3 of the twelve approved): *a tool call with very long arguments shows blank: show the first part, masked, with "N more characters" and a click for the rest.* Security must not make the app unusable; only secrets stay masked. *Split decided by the coordinator* under the owner's standing delegation (2026-11-24): part A is built here; part B (text past the masks' limit) is an owner question (Q40), not built.
