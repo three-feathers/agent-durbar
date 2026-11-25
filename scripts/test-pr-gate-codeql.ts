@@ -549,7 +549,7 @@ try {
     if (process.env.DURBAR_MUTANT_LOG) console.log(`mutant "${name}": ${msg.split('\n')[0]}`);
   }
   // the same, for the compare itself, which lives in trusted-lib.sh: the mutated lib sits beside the unchanged gate copy, then is put back
-  const lib = fs.readFileSync(path.join(SCRIPTS, 'trusted-lib.sh'), 'utf8');
+  const lib = fs.readFileSync(path.join(SCRIPTS, 'trusted-lib.sh'), 'utf8').replace(/\r\n/g, '\n');
   fs.copyFileSync(path.join(SCRIPTS, 'pr-gate.sh'), path.join(mdir, 'pr-gate.sh'));
   const libMutants: Array<[string, string, string, string]> = [
     ['HEAD compared instead of the file on disk', 'have=$(git -C "$_trusted_root" hash-object -- "$f" 2>/dev/null)', 'have=$(git -C "$_trusted_root" rev-parse --verify -q "HEAD:$f" 2>/dev/null)', 'stale-gate'],

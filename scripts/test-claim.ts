@@ -185,7 +185,7 @@ for (const fn of Object.values(noteCases)) fn();
   const mdir = path.join(tmp, 'mut', 'scripts');
   fs.mkdirSync(mdir, { recursive: true });
   for (const f of ['rules-fresh.js', 'rules-check.js', 'harness-refs.js', 'specs-index.js']) fs.copyFileSync(path.join(ROOT, 'scripts', f), path.join(mdir, f));
-  const src = fs.readFileSync(SCRIPT, 'utf8');
+  const src = fs.readFileSync(SCRIPT, 'utf8').replace(/\r\n/g, '\n');
   const mutants: Array<[string, string, string, string, string]> = [
     ['the note dropped', 'echo "claim.sh: NOTE the rule files may be stale; read them before you work: $fresh" >&2', ':', 'stale: note names the files, still claims', 'stale checkout: the note names the files'],
     ['a stale checkout refused', 'echo "claim.sh: NOTE the rule files may be stale; read them before you work: $fresh" >&2', 'echo "claim.sh: stale: $fresh" >&2; exit 1', 'stale: note names the files, still claims', 'stale checkout still claims'],

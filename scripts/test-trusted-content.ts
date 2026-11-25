@@ -372,8 +372,8 @@ try {
   put('item', { data: { repository: { issueOrPullRequest: { __typename: 'Issue', url: 'https://github.com/o/r/issues/1', title: 'T', body: 'B', state: 'OPEN', author: actor('vikramgorla'), editor: null, comments: { totalCount: 0, nodes: [] } } } } });
   const ghDir = path.join(dir, 'gt', 'scripts');
   fs.mkdirSync(ghDir, { recursive: true });
-  const ghSrc = fs.readFileSync(path.join(ROOT, 'scripts', 'gh-trusted.sh'), 'utf8');
-  const libSrc = fs.readFileSync(path.join(ROOT, 'scripts', 'trusted-lib.sh'), 'utf8');
+  const ghSrc = fs.readFileSync(path.join(ROOT, 'scripts', 'gh-trusted.sh'), 'utf8').replace(/\r\n/g, '\n');
+  const libSrc = fs.readFileSync(path.join(ROOT, 'scripts', 'trusted-lib.sh'), 'utf8').replace(/\r\n/g, '\n');
   fs.copyFileSync(path.join(ROOT, 'scripts', 'trusted-authors.txt'), path.join(ghDir, 'trusted-authors.txt'));
   const trusted = (gitEnv: Record<string, string>, ghText = ghSrc, lib = libSrc): { status: number | null; out: string } => {
     fs.writeFileSync(path.join(ghDir, 'gh-trusted.sh'), ghText, { mode: 0o755 });
