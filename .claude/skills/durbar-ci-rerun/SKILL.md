@@ -16,7 +16,8 @@ A checklist, not rule text. The rules: spec 021 FR-036 and [docs/rules/review-ro
 
 3. The permission to rerun is spec 021 FR-087 (owner decision, 2026-11-09); it covers only these causes, each quoted from the failing step's log:
    - a 5xx (such as 504) on a download from github.com: the Electron zip (spec 008 FR-188), the CodeQL bundle, an Actions cache restore;
-   - a runner lost or the job cancelled, with the log saying so.
+   - a runner lost or the job cancelled, with the log saying so;
+   - a job cut at its own time limit (`timeout-minutes`; the log says it exceeded the maximum execution time): once per head, with the evidence comment and a note on the limit's issue (#1983 for the Windows `npm test` leg); a second cut on the same head is fixed at the cause, not rerun (spec 021 FR-087 delta 2026-11-23);
    - a `release.yml` run whose only failed job is the UI gate, once the tagged commit's UI run is green (a by-hand run on the tag); never re-run a `main` push UI run (spec 021 FR-087 delta 2026-11-22).
    Then `gh run rerun <run-id> --failed`.
 4. Anything else (any assert, any test failure, a timeout inside a test, a driver step, a spec gate) is not rerun until its cause is found and fixed (AGENTS.md merge condition 5). Calling it a flake needs evidence: it fails on `main` too, or across several local runs.

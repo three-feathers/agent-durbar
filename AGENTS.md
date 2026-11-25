@@ -78,7 +78,7 @@ Command names: `CLAUDE.md`, `.github/copilot-instructions.md`; other tools follo
 - **One issue = one task** (`Tnnn` in `tasks.md`); unrelated work gets a new issue (review findings on the PR's own change are not unrelated).
 - **Branch `NNN-slug`** in its own worktree; **never check out a PR or branch in your main checkout** (FR-050). **Never push to `main`.**
 - **Numbers** (FR-048c): check `main`, remote branches and open PRs before taking a spec, FR or task number; the PR names them. `npm run specs:numbers` does it for FR, T, Q: run it before every push.
-- **PRs** say `Closes #N`, fill the template (spec link, *Agent used*, what you did not verify), stay small. Stuck: `status:blocked` plus what you need.
+- **PRs** say `Closes #N`, fill the template (spec link, *Agent used*, what you did not verify), stay small ([size](docs/rules/review-rounds.md)). Stuck: `status:blocked` plus what you need.
 
 ### Commit identity and signed commits
 
