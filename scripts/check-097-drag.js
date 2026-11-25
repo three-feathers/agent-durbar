@@ -8,6 +8,10 @@
  *   DRAG_MUTANT=menu    the place menu's Move earlier / later is swallowed (must fail)
  *   DRAG_MUTANT=away    the dragged desk's agent is sent to a place just before the status-change drag, as a late visit render did in CI (must fail:
  *                       "the drag started before the status change")
+ *   DRAG_MUTANT=single  the mid-drag wait is ONE read (issue #2132): dies in the "late moves" step at "the page did not reach the state"
+ *   DRAG_MUTANT=short   the wait lasts 1 ms: dies the same way
+ *   DRAG_MUTANT=weak    the wait accepts one loose plate instead of two: dies in the "late moves" step at "the plate and its neighbours follow the pointer (read after the wait)"
+ *   DRAG_WAIT_MS=<ms>   the longest wait (default 5000)
  *   Source mutants (threshold 6 px -> 0, Esc not cancelling, the drop not reaching reoApply, a room drag allowed in the arcade, the arcade swap going to the wrong
  *   neighbour, a fixed place moving, a fixed place's menu with Move items, the grab cursor removed, saveOrder returning before bridge.setOrder): each was applied
  *   to src/renderer, built, run under this driver and reverted; the failing assert of each is in the table in the PR #1394 comment "mutants run at ..." (2026-11-09).
@@ -37,6 +41,12 @@ const MUTANT = process.env.DRAG_MUTANT || '';
 const SIZES = [[1440, 900], [1280, 800]];
 const OUT = process.env.SHOTS_OUT || require('os').tmpdir();
 const WORLDS = (process.env.DRAG_WORLDS || 'photo,cave,retro').split(',');
+/* Issue #2132: the page gets the injected moves a frame or more after the driver sent them (on the hosted macOS runner only 2 of 8 had arrived when the state was read once), so a state
+   that follows the pointer is WAITED for, up to WAIT_MS, never read once. A timeout fails with the state printed. The property asserted is unchanged. */
+const WAIT_MS = MUTANT === 'short' ? 1 : Number(process.env.DRAG_WAIT_MS) || 5000;
+const HOLD_MS = 400; // the "late moves" step: the last moves are sent this long after the driver went on
+const LOOSE_MIN = MUTANT === 'weak' ? 1 : 2;
+const LOOSE_EXPR = `[...document.querySelectorAll('#stage .ro-plate,#stage .ro-sign')].filter(e=>e.style.transform||e.classList.contains('reo-lift')).length`;
 
 module.exports = async (ctx) => {
   const H = helpers(ctx);
@@ -59,13 +69,32 @@ module.exports = async (ctx) => {
     await settled();
   };
   const mouse = (type, p, extra = {}) => wc().sendInputEvent({ type, x: Math.round(p.x), y: Math.round(p.y), button: 'left', clickCount: 1, ...extra });
-  /** press at `a`, move to `b` in steps (call `mid` with the button down), Escape first with `cancel`, release */
-  const drag = async (a, b, { mid, cancel, steps = 8 } = {}) => {
+  /** press at `a`, move to `b` in steps (call `mid` with the button down), Escape first with `cancel`, release. `hold`: the LAST `hold` moves are sent HOLD_MS later on timers of
+      their own (the page gets them after `mid` started: the late-arrival case of issue #2132), and are all delivered before Escape and the release. */
+  const sent = { moves: 0, last: null };
+  const drag = async (a, b, { mid, cancel, steps = 8, hold = 0 } = {}) => {
+    sent.moves = 0; sent.last = null;
     mouse('mouseMove', a); await ctx.sleep(30); mouse('mouseDown', a);
-    for (let i = 1; i <= steps; i++) { mouse('mouseMove', { x: a.x + ((b.x - a.x) * i) / steps, y: a.y + ((b.y - a.y) * i) / steps }, { modifiers: ['leftButtonDown'] }); await ctx.sleep(25); }
+    const late = [];
+    for (let i = 1; i <= steps; i++) {
+      const p = { x: a.x + ((b.x - a.x) * i) / steps, y: a.y + ((b.y - a.y) * i) / steps };
+      const send = () => { mouse('mouseMove', p, { modifiers: ['leftButtonDown'] }); sent.moves++; sent.last = [Math.round(p.x), Math.round(p.y)]; };
+      if (i > steps - hold) late.push(new Promise((res) => setTimeout(() => { send(); res(); }, HOLD_MS + (i - (steps - hold)) * 25)));
+      else { send(); await ctx.sleep(25); }
+    }
     if (mid) await mid();
+    await Promise.all(late);
     if (cancel) { await key('Escape', [], { char: 'never' }); await ctx.sleep(40); }
     mouse('mouseUp', b); await ctx.sleep(80);
+  };
+  /** Wait (the page's state, polled) until `expr` holds, at most WAIT_MS; on a timeout print what the page saw and fail. */
+  const DIAG = `(()=>{const L=window.__ptrLog,E=(L&&L.ev)||[],last=E[E.length-1];return {lifted:document.body.classList.contains('reo-dragging'),loose:[...document.querySelectorAll('#stage .ro-plate,#stage .ro-sign')].filter(e=>e.style.transform||e.classList.contains('reo-lift')).map(e=>String(e.dataset.id||e.dataset.folder||e.className).slice(0,18)),moves:E.filter(e=>e.type==='pointermove').length,events:E.length,last:last?[last.type,last.x,last.y,Math.round(last.at-L.t0)]:null,now:L?Math.round(performance.now()-L.t0):null}})()`;
+  const settleDrag = async (expr, what) => {
+    const t0 = Date.now();
+    if (await until(expr, MUTANT === 'single' ? -1 : WAIT_MS)) return;
+    const d = await js(DIAG);
+    console.log(`[drag-wait] ${what}: not reached after ${Date.now() - t0} ms (limit ${MUTANT === 'single' ? 'one read' : WAIT_MS + ' ms'}); the driver sent ${sent.moves} moves, the last at ${JSON.stringify(sent.last)}; the page saw ${d.moves} pointermoves of ${d.events} events, the last ${JSON.stringify(d.last)} at ${d.now} ms of the step; lifted ${d.lifted}; loose ${JSON.stringify(d.loose)}`);
+    assert.fail(`${what}: the page did not reach the state (waited ${Date.now() - t0} ms, ${sent.moves} moves sent, ${d.moves} seen)`);
   };
   const center = (sel) => js(`(()=>{const e=document.querySelector(${jsLiteral(sel)});if(!e)return null;const b=e.getBoundingClientRect();return {x:b.left+b.width/2,y:b.top+b.height/2}})()`);
   const grab = (sel) => js(`(()=>{const e=document.querySelector(${jsLiteral(sel)});if(!e)return null;const b=e.getBoundingClientRect();return {x:b.left+Math.min(14,b.width/2),y:b.top+b.height/2}})()`);
@@ -79,7 +108,7 @@ module.exports = async (ctx) => {
   const roomOf = (id) => js(`window.__durbarSimUi.agents().find(a=>a.id===${jsLiteral(id)}).room`);
   const signsInOrder = () => js(`[...document.querySelectorAll('#stage .ro-sign')].filter(s=>s.querySelector('.ro-sc')).map(s=>({id:s.dataset.folder,x:s.getBoundingClientRect().left,y:s.getBoundingClientRect().top})).sort((a,b)=>Math.abs(a.y-b.y)>4?a.y-b.y:a.x-b.x).map(s=>s.id)`);
   const lifted = () => js(`document.body.classList.contains('reo-dragging')`);
-  const loose = () => js(`[...document.querySelectorAll('#stage .ro-plate,#stage .ro-sign')].filter(e=>e.style.transform||e.classList.contains('reo-lift')).length`);
+  const loose = () => js(LOOSE_EXPR);
   const panelOpen = () => js(`document.body.classList.contains('panel-open')`);
   const checks = async (tag) => {
     assert.strictEqual(await js(`document.getElementById('stage').dataset.fit`), 'ok', `${tag}: the office fits, no scroll`);
@@ -135,21 +164,44 @@ module.exports = async (ctx) => {
     await must(`!document.body.classList.contains('panel-open')`, `${tag}: the chat closes`);
 
     /* ---- Escape in the middle of a drag cancels: nothing lifted, nothing moved, nothing written ---- */
+    const afterEscape = async (what) => {
+      await settleDrag(`!document.body.classList.contains('reo-dragging')`, `${what}: Escape ends the drag`);
+      assert.strictEqual(await lifted(), false, `${what}: Escape ends the drag`);
+      await settleDrag(`(${LOOSE_EXPR})===0`, `${what}: nothing stays lifted or shifted`);
+      assert.strictEqual(await loose(), 0, `${what}: and nothing stays lifted or shifted`);
+      assert.deepStrictEqual(await orderOf(A), O, `${what}: the order is as it was`);
+      assert.deepStrictEqual(await saved(), before, `${what}: and nothing was written`);
+      assert.strictEqual(await panelOpen(), false, `${what}: and no chat opened`);
+    };
     const before = await saved();
     await H.pointerStep('check-097-drag', `${tag} escape mid-drag`, async () => {
-      await drag(await grab(plateSel(O[k])), await center(plateSel(O[k + 1])), { cancel: true, mid: async () => { assert.strictEqual(await lifted(), true, `${tag}: the drag is on mid-way`); assert.ok(await loose() >= 2, `${tag}: the plate and its neighbours follow the pointer`); } });
+      await drag(await grab(plateSel(O[k])), await center(plateSel(O[k + 1])), { cancel: true, mid: async () => {
+        await settleDrag(`document.body.classList.contains('reo-dragging')`, `${tag}: the drag is on mid-way`);
+        assert.strictEqual(await lifted(), true, `${tag}: the drag is on mid-way`);
+        await settleDrag(`(${LOOSE_EXPR})>=${LOOSE_MIN}`, `${tag}: the plate and its neighbours follow the pointer`);
+        assert.ok(await loose() >= 2, `${tag}: the plate and its neighbours follow the pointer`);
+      } });
     });
-    assert.strictEqual(await lifted(), false, `${tag}: Escape ends the drag`);
-    assert.strictEqual(await loose(), 0, `${tag}: and nothing stays lifted or shifted`);
-    assert.deepStrictEqual(await orderOf(A), O, `${tag}: the order is as it was`);
-    assert.deepStrictEqual(await saved(), before, `${tag}: and nothing was written`);
-    assert.strictEqual(await panelOpen(), false, `${tag}: and no chat opened`);
+    await afterEscape(tag);
+
+    /* ---- the same with the last moves held back (issue #2132): the page gets 7 of the 8 moves HOLD_MS after `mid` started; a state that follows the pointer is waited for ---- */
+    if (world === 'photo') {
+      await H.pointerStep('check-097-drag', `${tag} late moves`, async () => {
+        await drag(await grab(plateSel(O[k])), await center(plateSel(O[k + 1])), { cancel: true, hold: 7, mid: async () => {
+          await settleDrag(`document.body.classList.contains('reo-dragging')`, `${tag} late moves: the drag is on mid-way`);
+          await settleDrag(`(${LOOSE_EXPR})>=${LOOSE_MIN}`, `${tag} late moves: the plate and its neighbours follow the pointer`);
+          assert.ok(await loose() >= 2, `${tag} late moves: the plate and its neighbours follow the pointer (read after the wait)`);
+        } });
+      });
+      await afterEscape(`${tag} late moves`);
+    }
 
     /* ---- the drag: the first plate onto the second (the arcade: onto its neighbouring cabinet); shot mid-drag ---- */
     await js(`document.getElementById('srAnnounce').textContent=''`);
     await H.pointerStep('check-097-drag', `${tag} drag`, async () => {
       await drag(await grab(plateSel(O[k])), await center(plateSel(O[k + 1])), {
         mid: async () => {
+          await settleDrag(`(${LOOSE_EXPR})>=${LOOSE_MIN}`, `${tag}: the plate is lifted and the others slide`);
           assert.ok(await loose() >= 2, `${tag}: the plate is lifted and the others slide`);
           if (world === 'photo') require('fs').writeFileSync(path.join(OUT, `097-drag-crop-${w}x${h}.json`), JSON.stringify(await js(`(()=>{const r=[...document.querySelectorAll('#stage .ro-plate[data-id],#stage .ro-sign[data-folder=${jsLiteral(A)}]')].filter(e=>e.classList.contains('ro-sign')||${jsLiteral(O)}.includes(e.dataset.id)).map(e=>e.getBoundingClientRect());return {x:Math.min(...r.map(b=>b.left))-24,y:Math.min(...r.map(b=>b.top))-150,r:Math.max(...r.map(b=>b.right))+24,b:Math.max(...r.map(b=>b.bottom))+40}})()`)));
           if (world === 'photo') await H.shot(path.join(OUT, `097-drag-${w}x${h}.png`), { tag: '097-drag', what: `mid-drag ${w}x${h}`, prep: 'none', settle: false });
@@ -184,6 +236,7 @@ module.exports = async (ctx) => {
       await js(dragFocus.RECORDER);
       await drag(await grab(plateSel(O2[k2])), await center(plateSel(O2[k2 + 1])), {
         mid: async () => {
+          await until(`document.body.classList.contains('reo-dragging')`, MUTANT === 'single' ? -1 : WAIT_MS); // the drag may not have reached the page yet; a drag that never starts fails just below, with the away desks
           const on = await lifted(), awayNow = on ? [] : await js(`window.__durbarSimUi.awayIds()`);
           assert.strictEqual(on, true, `${tag}: the drag started before the status change (dragging ${O2[k2]}; away now: ${awayNow})`);
           /* diagnostic only (scripts/drag-focus.js): hasFocus before and after the hold; the recorder was installed before the drag started */

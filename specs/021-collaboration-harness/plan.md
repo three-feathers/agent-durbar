@@ -64,3 +64,9 @@ I: spec, plan and task first, in the same PR. III: no secret in the repo, logs o
 - `preflight(n, { gh, root, fetch, trusted })` takes `gh` as a function, so the test drives it with fixture answers and a throwaway repository (`git commit-tree` with a temporary index, no working tree), offline.
 - Merge-only: `git merge-tree --write-tree --name-only` gives the plain merge's tree and the conflicted paths; `git diff --name-only` against the merge commit names what changed beyond it.
 - **Constitution:** I (spec first, this PR); III (no PR text in a shell, nothing of the body printed, read-only); IV (no credits: `gh` reads only); VI (Node, no POSIX path or shell).
+
+## 2026-11-25: `npm run pr:ready` (FR-422)
+
+- `scripts/pr-ready.js`: a list of guards, each a function of one context (`run(cmd, args)`, the changed files, the merge-base); the runner is injectable, so `scripts/test-pr-ready.ts` drives it without a repository, and real git only in three cases. Mutants drop one guard line each and read the test's own `PR-READY-<guard>` tags.
+- Reuse (FR-031): `pr-preflight.js` exports `shapeHits`, `AI_LINE`, `linesByFile`; the checks themselves are the existing scripts, called by the Node binary with a fixed argv, so no `npm` shim and no shell (Windows).
+- **Constitution:** I (spec first, this PR); III (no PR text in a shell, a commit message matched and never printed); IV (no credits: git and node only); VI (Node, `path.join`, no shell).
