@@ -17,7 +17,7 @@
  *   8  driver lint     test:uisuite, only when a scripts/ driver changed (check-*.js, shots-*.js, driver-helpers.js, ui-suite.js)
  *   9  CRLF warning    a NOTE (never a block) when an added test line cuts text out of a source file with a bare \n (rule 18)
  *   10 git hygiene     no uncommitted tracked change, `git diff --check`, every commit since origin/main with a good signature (%G? G, or
- *                      U: good signature, key not in the local allowed-signers file, a NOTE; N B X Y R E block, the letter shown), no AI
+ *                      U: good signature, key not in the local allowed-signers file, a NOTE; N with a gpgsig header in the raw commit: signed, not checkable here, a NOTE; N without it, B X Y R E block, the letter shown), no AI
  *                      trailer in any message (preflight's AI_LINE; the message is matched, never printed)
  *   11 branch          the rule of .github/scripts/spec-gate.sh, ported (it needs bash, jq, perl and the PR event): branch NNN-slug and, when
  *                      src/ or specs/ changed, specs/NNN-*\/ exists, is touched (and holds spec, plan, tasks when src/ changed)
@@ -58,6 +58,14 @@ function realRun(root) {
 // %G? letters: G and U are a good signature (U: the key is not in this machine's gpg.ssh.allowedSignersFile); the rest block
 const OK_SIG = ['G', 'U'];
 const SIG_WHY = { N: 'no signature', B: 'bad signature', X: 'expired signature', Y: 'signed with an expired key', R: 'signed with a revoked key', E: 'cannot be checked (missing key or tool problem)' };
+/** True when the raw commit text has a gpgsig header (SSH signatures too): the headers end at the first blank line, split on \r?\n. */
+function hasSigHeader(raw) {
+  for (const l of String(raw).split(/\r?\n/)) {
+    if (l === '') return false;
+    if (/^gpgsig(-sha256)? /.test(l)) return true;
+  }
+  return false;
+}
 const NODE = process.execPath;
 const lineOf = (out) => {
   const rows = String(out).split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
@@ -130,8 +138,16 @@ function guardGit(ctx) {
   const lg = ctx.run('git', ['log', '--format=%H %G?', `${BASE}..HEAD`]);
   if (lg.status !== 0) return fail(`git: log failed: ${lineOf(lg.out)}`);
   const unlisted = [];
+  const unchecked = [];
   for (const row of lg.out.split(/\r?\n/).filter(Boolean)) {
+    // with no allowed-signers file, git also prints this stderr line per signed commit (the runner joins stdout and stderr): not a commit row
+    if (/^error: gpg\.ssh\.allowedSignersFile needs to be configured/.test(row)) continue;
     const [sha, sig] = row.split(' ');
+    // N: git prints it for an unsigned commit AND for a signed one it cannot check (an SSH signature, no allowed-signers file): the raw header tells them apart
+    if (sig === 'N') {
+      const raw = ctx.run('git', ['cat-file', 'commit', String(sha)]);
+      if (raw.status === 0 && hasSigHeader(raw.out)) { unchecked.push(String(sha).slice(0, 9)); continue; }
+    }
     if (!OK_SIG.includes(sig)) return fail(`git: commit ${printable(String(sha).slice(0, 9))} has signature status "${printable(sig || '')}": ${SIG_WHY[sig] || 'not a good signature'}`);
     if (sig === 'U') unlisted.push(String(sha).slice(0, 9));
   }
@@ -139,7 +155,10 @@ function guardGit(ctx) {
   for (const m of msgs.out.split('\0').filter((x) => x.trim())) {
     if (pp.AI_LINE.test(m)) return fail(`git: commit ${printable(m.slice(0, 9))} has an AI trailer or "Generated with" line (spec 021 FR-061)`);
   }
-  return pass('git: clean tree, no whitespace error, every commit signed, no AI trailer', unlisted.length ? [`NOTE git: signature good, key not in the local allowed-signers file (%G? U): ${unlisted.length} commit(s)`] : []);
+  return pass('git: clean tree, no whitespace error, every commit signed, no AI trailer', [
+    ...(unlisted.length ? [`NOTE git: signature good, key not in the local allowed-signers file (%G? U): ${unlisted.length} commit(s)`] : []),
+    ...(unchecked.length ? [`NOTE git: signature present, cannot be checked here (no allowed-signers file): GitHub shows whether it is verified (%G? N with a gpgsig header): ${unchecked.length} commit(s)`] : []),
+  ]);
 }
 
 // .github/scripts/spec-gate.sh, ported: its checks 1 (branch NNN-slug) and 2 (src/ needs specs/NNN-*/). The exemption (a Spec-Exempt line or a

@@ -1,0 +1,1 @@
+- **`npm run pr:ready` no longer stops on a signed commit it cannot check** (spec 021): on a machine with no allowed-signers file git reports a correctly SSH-signed commit as unsigned (`N`); the guard now looks at the raw commit, passes a commit that has a signature with a note, and still blocks a really unsigned one.
