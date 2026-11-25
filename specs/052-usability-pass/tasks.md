@@ -497,3 +497,6 @@
 
 ## 2026-11-23: the activity log shows full paths (issue #2060 item 11)
 - [x] T487 (delta 2026-11-23, tracking issue #2060 item 11) specs 052, 060, 081: the owner decision; `src/shared/activity.ts` (`path` field, `redact`), `src/main/main.ts` (`logActivity`), `src/renderer/cuttext.js` (`midCut`), `src/renderer/activitytable.js`, `src/adapters/detect.ts` (`displayWhere`), `src/renderer/sim.ts`, tests `test-activity`, `test-updatecheck`, `test-cuttext`, `check-activity-table`, `shots-051-setup` [FR-071, FR-042]
+
+## 2026-11-25: a wide dialog fits a 320 px page (issue #2115)
+- [x] T592 (delta 2026-11-25, issue #2115) spec 052: the decision (a dialog always fits; the page behind is a known gap), FR-471; `src/renderer/styles.css` (`.dlg .dbtn` wraps; `.dlg.l .dbtn` removed), `src/renderer/screens.css` (`.dlg fieldset`, `.mcp-rsess .btn`, `#hsDlg .dbtn` removed), `scripts/check-052-zoom-dialogs.js` + `scripts/ui-suite.js`, changelog fragment [FR-471]
