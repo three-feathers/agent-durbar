@@ -67,3 +67,10 @@ Decided in the delta's Clarifications C1..C8 (2026-11-24). One task per issue; t
 - [x] T054 [FR-120, FR-130, FR-131] Window: the menu item (Ask first only), chip word, help line with the cost sentence, fixed verdict lines on pending cards; simulator verdicts and policy fallback; the switch hidden on real Copilot while `verified` is false (C8); driver in `scripts/ui-suite.js` at 1440x900 and 1280x800.
 - [x] T055 [FR-120..FR-133] Docs and converge: README *Safety model*, `docs/safety.md`, changelog fragment, spec index; mutation checks listed in the plan. The SDK facts are in this spec delta's *What the SDK says*, not `docs/agent-apps.md` (that file holds checked facts and is at its word budget; these are `read:` only until T056).
 - [ ] T056 [FR-131, `real:` (a)..(c)] Real check, only with the owner's written OK and the stated cost: one tiny Ask first prompt on Copilot with the switch on; record whether `onPermissionRequest` is called for a judge-approved call, the usage and the resume behaviour; set `verified` from the result.
+
+## 2026-11-25: review of PR #2122 (spec delta of the same date)
+
+- [ ] T057 [spec 012 FR-197] Merge `origin/main`; `assistedToggle: { m: 1 }` in the sink table of `scripts/test-live-mask.ts`.
+- [ ] T058 [FR-129] `assistedOnEvent` in `src/main/agentops.ts`, called from `main.ts`: `stopped` clears `AgentInfo.assisted`, a later turn-on calls the adapter; FR-127's rows; tests in `scripts/test-agentops.ts`; mutant: the clear on `stopped` dropped.
+- [ ] T059 [FR-131] The "model, not a security boundary" sentence in the switch's help line, `docs/safety.md`, README and the changelog fragment.
+- [ ] T060 [FR-120] `modeNameOf` says **Ask first + review** while the switch is on (composer hint); the four pictures retaken at 1440x900 and 1280x800.
