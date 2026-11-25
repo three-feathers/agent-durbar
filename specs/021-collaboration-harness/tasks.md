@@ -158,3 +158,8 @@
 ## 2026-11-25: `rules:check` reference checks (FR-423)
 
 - [x] T514 (FR-423) `scripts/harness-refs.js` (path, pointer, invisible, label, marker checks; one problem line per finding, file and line), called by `scripts/rules-check.js`; `markersIn` extracted from `conflictMarkers` in `scripts/specs-index.js`; tests in `scripts/test-rules-check.js` (a failing fixture and a mutant per check, the unticked-task pass, the `;` sentence stop, a CRLF case, the CLI); the six dead pointers, the raw U+2028, `needs-approval` and the stale `loops.md` lines fixed outside the rule files; `docs/development.md` names the checks; changelog fragment [FR-423]
+
+## 2026-11-25: `rules:fresh` and the stale gate (FR-424, FR-425)
+
+- [ ] T515 (FR-424) `scripts/rules-fresh.js` and `npm run rules:fresh`; `FRESH_PATHS` exported by `scripts/rules-check.js`; `scripts/test-rules-fresh.js` (throwaway repositories: fresh, own edit, stale, merged, no fetch, CRLF; ten mutants), chained into `npm run test:rules`; `docs/development.md` line; changelog fragment
+- [ ] T516 (FR-425) `gate_stale` and `GATE_FILES` in `scripts/trusted-lib.sh`; `stale-gate` in `scripts/pr-gate.sh`; the refusal in `scripts/gh-trusted.sh`; the NOTE in `scripts/claim.sh`; `scripts/fake-git.js` (the one fake `git`) in `scripts/test-pr-gate-codeql.ts`, `scripts/test-trusted-content.ts` and `scripts/test-claim.ts`, with cases and mutants per behaviour
