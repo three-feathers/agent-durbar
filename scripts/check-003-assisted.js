@@ -67,6 +67,7 @@ module.exports = async (ctx) => {
     assert.ok(it.text.startsWith(LABEL), `${w}: C4: its words: ${it.text}`);
     assert.match(it.title, /model call on your Copilot account \(gpt-5\.5 by default\) and may use AI credits/, `${w}: FR-131: the cost sentence`);
     assert.match(it.text, /may use AI credits/, `${w}: FR-131: the cost in its visible line`);
+    assert.ok(it.title.includes("Copilot's reviewer is a model, not a security boundary: text the agent has read can mislead it, so turn it on only in folders and with content you trust."), `${w}: FR-131 (2026-11-25): the honest line in its help`);
     assert.deepStrictEqual(await small('#modeMenu'), [], `${w}: no text under 10.5px in the menu`);
     assert.ok(await inView('#modeMenu [data-act="assisted"]'), `${w}: the switch is inside the window`);
     const order = await js(`[...document.querySelectorAll('#modeMenu [data-mode],#modeMenu [data-act]')].map(b=>b.dataset.mode||b.dataset.act).join(',')`);
@@ -74,6 +75,7 @@ module.exports = async (ctx) => {
     await H.shot(path.join(OUT, `003-assisted-menu-${w}x${h}.png`), { prep: 'calm', keepHover: true, tag: '003', what: `menu ${w}x${h}` });
     await H.click('#modeMenu [data-act="assisted"]');
     await must(`((document.getElementById('modeChip')||{}).innerText||'').includes('Ask first + review')`, `${w}: C4: the chip reads Ask first + review`);
+    assert.match(await H.text('#panel .hint'), / · Ask first \+ review$/, `${w}: FR-120 (2026-11-25): the composer hint says the chip's word`);
     assert.strictEqual(await js(`window.__durbarSimUi.agents().find(a=>a.id===${jsLiteral(id)}).info.assisted.on`), true, 'main\'s answer is on');
     await H.clearToasts();
     // FR-133: verdict 1 approve: the edit runs, no card; the next one (requireApproval) is a card with its fixed line (FR-130)
@@ -99,6 +101,7 @@ module.exports = async (ctx) => {
     await H.click('#modeMenu [data-mode="ask"]');
     await must(`/Ask first/.test((document.getElementById('modeChip')||{}).innerText||'')`, `${w}: back in Ask first`);
     assert.ok(/^Ask first/.test(await chip()) && !/review/.test(await chip()), `${w}: FR-126: not restored: ${await chip()}`);
+    assert.match(await H.text('#panel .hint'), / · Ask first$/, `${w}: FR-120: and the hint says plain Ask first`);
     assert.strictEqual(await js(`!!window.__durbarSimUi.agents().find(a=>a.id===${jsLiteral(id)}).info.assisted`), false);
   }
 
