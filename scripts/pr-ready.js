@@ -142,10 +142,12 @@ function guardGit(ctx) {
   for (const row of lg.out.split(/\r?\n/).filter(Boolean)) {
     // with no allowed-signers file, git also prints this stderr line per signed commit (the runner joins stdout and stderr): not a commit row
     if (/^error: gpg\.ssh\.allowedSignersFile needs to be configured/.test(row)) continue;
+    // any other row must be `<40 or 64 hex> <letter>`: a different line (stderr text, '-x N') never reaches cat-file as an option or a revision
+    if (!/^(?:[0-9a-f]{40}|[0-9a-f]{64}) \S$/.test(row)) return fail(`git: unexpected git output line: ${printable(row.slice(0, 60))}`);
     const [sha, sig] = row.split(' ');
     // N: git prints it for an unsigned commit AND for a signed one it cannot check (an SSH signature, no allowed-signers file): the raw header tells them apart
     if (sig === 'N') {
-      const raw = ctx.run('git', ['cat-file', 'commit', String(sha)]);
+      const raw = ctx.run('git', ['cat-file', 'commit', '--end-of-options', String(sha)]);
       if (raw.status === 0 && hasSigHeader(raw.out)) { unchecked.push(String(sha).slice(0, 9)); continue; }
     }
     if (!OK_SIG.includes(sig)) return fail(`git: commit ${printable(String(sha).slice(0, 9))} has signature status "${printable(sig || '')}": ${SIG_WHY[sig] || 'not a good signature'}`);

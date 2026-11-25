@@ -51,7 +51,7 @@ function runner(f: Fx, calls: string[]): Run {
     return { status: 0, out: '' };
   };
 }
-const go = (f: Fx, security = false, exempt = false): { res: Res; calls: string[] } => { const calls: string[] = []; return { res: pr.ready({ root: ROOT, run: runner(f, calls), security, exempt }), calls }; };
+const go = (f: Fx, security = false, exempt = false): { res: Res; calls: string[]; args: string[][] } => { const calls: string[] = []; const args: string[][] = []; const inner = runner(f, calls); const run: Run = (c, a) => { args.push(a); return inner(c, a); }; return { res: pr.ready({ root: ROOT, run, security, exempt }), calls, args }; };
 const SCRIPTS = ['spec-numbers', 'fragments --check', 'specs-index --check', 'spec-numbers --dups', 'rules-check', 'changelog check'];
 
 // 1. all pass: ready: yes with the head; nothing conditional ran
@@ -127,6 +127,18 @@ for (const t of table) {
   assert.ok(sCrlf.res.ok, 'PR-READY-sig-N-signed: a CRLF commit text is read like an LF one');
   const sErr = go(fx({ sigs: ['error: gpg.ssh.allowedSignersFile needs to be configured and exist for ssh signature verification', `${'e'.repeat(40)} N`], raw: sigRaw('gpgsig x') }));
   assert.ok(sErr.res.ok, `PR-READY-sig-N-signed: git's stderr line about the allowed-signers file is not a commit row: ${sErr.res.lines.join(' | ')}`);
+  // a row that is not `<hex id> <letter>` never reaches cat-file and fails guard 10
+  for (const bad of ['-x N', 'zzz N', `${'e'.repeat(39)} N`, `${'e'.repeat(41)} N`, `${'E'.repeat(40)} N`, '--output=x N']) {
+    const b = go(fx({ sigs: [bad], raw: sigRaw('gpgsig x') }));
+    assert.ok(!b.res.ok && b.res.lines.some((l) => /^FAIL \(10\) git: unexpected git output line: /.test(l)), `PR-READY-sig-hex: row "${bad}" fails with unexpected git output line: ${b.res.lines.join(' | ')}`);
+    assert.ok(!b.calls.includes('git cat-file'), `PR-READY-sig-hex: row "${bad}" never reaches cat-file`);
+  }
+  const long = go(fx({ sigs: ['q'.repeat(200)] }));
+  assert.ok(long.res.lines.some((l) => /unexpected git output line: q{60}$/.test(l)), 'PR-READY-sig-hex: the printed line is cut to 60 characters');
+  const h64 = go(fx({ sigs: [`${'e'.repeat(64)} N`], raw: sigRaw('gpgsig x') }));
+  assert.ok(h64.res.ok && h64.calls.includes('git cat-file'), 'PR-READY-sig-hex: a 64-hex id (sha256 repository) still works');
+  const eo = go(fx({ sigs: [`${'e'.repeat(40)} N`], raw: sigRaw('gpgsig x') }));
+  assert.ok(eo.res.ok && eo.args.some((a) => a.join(' ') === `cat-file commit --end-of-options ${'e'.repeat(40)}`), 'PR-READY-sig-hex: cat-file gets --end-of-options before the id');
   const uN = go(fx({ sigs: [`${'e'.repeat(40)} N`] }));
   assert.ok(!uN.res.ok && uN.res.lines.some((l) => /^FAIL \(10\) git: commit [0-9a-f]{9} has signature status "N": no signature/.test(l)), 'PR-READY-sig-N-unsigned: unsigned N still fails (10)');
   const bodyN = go(fx({ sigs: [`${'e'.repeat(40)} N`], raw: 'tree x\nauthor a\n\ngpgsig in the message body\n' }));
@@ -284,6 +296,7 @@ if (!process.env.PR_READY_MODULE) {
     { name: 'sig-reject-U', tag: 'PR-READY-sig-U', mut: (t) => t.replace("const OK_SIG = ['G', 'U'];", "const OK_SIG = ['G'];") },
     { name: 'sig-N-always-fails', tag: 'PR-READY-sig-N-signed', mut: (t) => t.replace("if (raw.status === 0 && hasSigHeader(raw.out))", 'if (false)') },
     { name: 'sig-N-header-always', tag: 'PR-READY-sig-N', mut: (t) => t.replace("if (raw.status === 0 && hasSigHeader(raw.out))", 'if (true)') },
+    { name: 'sig-hex-check-dropped', tag: 'PR-READY-sig-hex', mut: (t) => t.replace("if (!/^(?:[0-9a-f]{40}|[0-9a-f]{64}) \\S$/.test(row)) return", 'if (false) return') },
     { name: 'sig-accept-any', tag: 'PR-READY-sig-', mut: (t) => t.replace('if (!OK_SIG.includes(sig)) return', 'if (false) return') },
     { name: 'branch-any-folder', tag: 'PR-READY-branch', mut: (t) => t.replace(" && f.split('/')[1].startsWith(`${nnn}-`)", '') },
   ];
