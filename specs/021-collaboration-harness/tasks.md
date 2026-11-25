@@ -161,5 +161,5 @@
 
 ## 2026-11-25: `rules:fresh` and the stale gate (FR-424, FR-425)
 
-- [x] T515 (FR-424) `scripts/rules-fresh.js` and `npm run rules:fresh`; `FRESH_PATHS` exported by `scripts/rules-check.js`; `scripts/test-rules-fresh.js` (throwaway repositories: fresh, own edit, stale, merged, no fetch, CRLF; ten mutants), chained into `npm run test:rules`; `docs/development.md` line; changelog fragment
+- [x] T515 (FR-424) `scripts/rules-fresh.js` and `npm run rules:fresh`; `FRESH_PATHS` exported by `scripts/rules-check.js`; `scripts/test-rules-fresh.js` (throwaway repositories: fresh, own edit, stale, merged, no fetch, CRLF; ten mutants), run at the end of `scripts/test-rules-check.js`, so by `npm run test:rules`; `docs/development.md` line; changelog fragment
 - [x] T516 (FR-425) `gate_stale` and `GATE_FILES` in `scripts/trusted-lib.sh`; `stale-gate` in `scripts/pr-gate.sh`; the refusal in `scripts/gh-trusted.sh`; the NOTE in `scripts/claim.sh`; `scripts/fake-git.js` (the one fake `git`) in `scripts/test-pr-gate-codeql.ts`, `scripts/test-trusted-content.ts` and `scripts/test-claim.ts`, with cases and mutants per behaviour

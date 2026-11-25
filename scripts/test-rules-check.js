@@ -233,3 +233,4 @@ try {
 
 console.log('test-rules-check: all tests passed');
 process.exitCode = 0;
+require('./test-rules-fresh.js'); // FR-424: `rules:fresh`'s tests ride on this suite (no new package.json script); a failed assert there throws
