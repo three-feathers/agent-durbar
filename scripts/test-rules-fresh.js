@@ -140,6 +140,31 @@ try {
     }
     assert.ok(msg.startsWith(at), `mutant "${name}" must die at "${at}", got: ${msg.split('\n')[0] || 'it survived'}`);
   }
+  { // FR-425: the stale-gate compare must not depend on autocrlf: every gate input is pinned to LF by .gitattributes
+    const GATE = ['scripts/pr-gate.sh', 'scripts/trusted-lib.sh', 'scripts/trusted-authors.txt', 'scripts/pr-gate-answered.awk', 'scripts/pr-status-note.re', '.github/ruleset-main.json'];
+    const root = path.join(__dirname, '..');
+    const quiet = { ...process.env, GIT_CONFIG_NOSYSTEM: '1' };
+    const eol = (cwd, f) => String(spawnSync('git', ['-C', cwd, 'check-attr', 'eol', '--', f], { encoding: 'utf8', env: quiet }).stdout).trim();
+    const assertPinned = (cwd) => { for (const f of GATE) assert.ok(/: eol: lf$/.test(eol(cwd, f)), `gate input pinned to LF: ${f}`); };
+    const inRepo = spawnSync('git', ['-C', root, 'rev-parse', '--is-inside-work-tree'], { encoding: 'utf8' }).status === 0;
+    if (!inRepo) console.log('test-rules-fresh: not a git checkout, the .gitattributes pins are not checked here');
+    else {
+      assertPinned(root);
+      const attrs = fs.readFileSync(path.join(root, '.gitattributes'), 'utf8').replace(/\r\n/g, '\n').split('\n');
+      const drop = [['scripts/*.sh text eol=lf', 'scripts/pr-gate.sh'], ['scripts/trusted-authors.txt text eol=lf', 'scripts/trusted-authors.txt'], ['scripts/pr-gate-answered.awk text eol=lf', 'scripts/pr-gate-answered.awk'], ['scripts/pr-status-note.re text eol=lf', 'scripts/pr-status-note.re'], ['.github/ruleset-main.json text eol=lf', '.github/ruleset-main.json']];
+      for (const [line, file] of drop) {
+        assert.ok(attrs.includes(line), `mutant: .gitattributes has the line ${line}`);
+        const m = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-attrs-'));
+        made.push(m);
+        execFileSync('git', ['-C', m, 'init', '-q'], { env: quiet });
+        fs.writeFileSync(path.join(m, '.gitattributes'), attrs.filter((l) => l !== line).join('\n'));
+        let msg = '';
+        try { assertPinned(m); } catch (e) { msg = String(e.message); }
+        assert.ok(msg.startsWith('gate input pinned to LF: '), `mutant dropping "${line}" must die at "gate input pinned to LF: ${file}", got: ${msg || 'it survived'}`);
+        assert.ok(msg.endsWith(file), `mutant dropping "${line}" must name ${file}, got: ${msg}`);
+      }
+    }
+  }
 } finally {
   for (const d of made) fs.rmSync(d, { recursive: true, force: true });
 }
