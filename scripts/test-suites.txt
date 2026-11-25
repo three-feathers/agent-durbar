@@ -310,5 +310,6 @@ test:dangersites
 test:specnumbers
 test:worktreesclean
 test:prpreflight
+test:prready
 test:pencilpark
 test:arcade-wall-signs
