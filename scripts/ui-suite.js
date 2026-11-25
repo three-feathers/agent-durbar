@@ -6,7 +6,8 @@
  *   node scripts/ui-suite.js --only shots-017,shots-033
  *   node scripts/ui-suite.js --shard 2/3                  shard 2 of 3, balanced by recorded duration (UI_SUITE_SHARD=2/3 too; spec 008 FR-182, FR-183)
  *   UI_SUITE_OUT=<folder>                 where every screenshot goes (default: a new temp folder, printed at the end)
- *   UI_SUITE_XVFB=1                       Linux: run under xvfb-run even when a display is set (always so with UI_SUITE_DPR above 1: a desktop smaller than the window times the ratio clamps the window, FR-273)
+ *   UI_SUITE_XVFB=1                       Linux: run under xvfb-run (the default, also when a display is set; always so with UI_SUITE_DPR above 1: a desktop smaller than the window times the ratio clamps the window, FR-273)
+ *   UI_SUITE_DESKTOP=1                    Linux with a display: watch the drivers on your own desktop (FR-465); expect failures when it is smaller than 1920x1080 or has no pointer
  *   UI_SUITE_DPR=<1..4, or 1.25, 1.5>     force the device scale factor (2 = a Retina screen, 1.25 and 1.5 = a Windows laptop at 125 % and 150 %) for every driver
  *   UI_SUITE_XVFB_SCREEN=WxHxD            Linux/xvfb: replace the screen (default 1920x1100 times the density, depth 24; a malformed value is ignored; spec 008 FR-213)
  *   UI_SUITE_JOBS=<n>                     drivers at once (default 2; each has its own profile and, on Linux, its own xvfb display);
@@ -382,7 +383,28 @@ function shard(list, spec, times = timings(), platform = process.platform) {
 function sharedDesktop(platform = process.platform, env = process.env) {
   /* FR-273 (issue 1914): a forced ratio above 1 needs a screen as big as the window times the ratio; a desktop smaller than that clamps the window (830x584 CSS px at 2x on a 1660x1216 display), so those runs use xvfb's own screen (FR-213) */
   const forced = dprOk(env.UI_SUITE_DPR) && Number(env.UI_SUITE_DPR) > 1;
-  return platform !== 'linux' || (!!env.DISPLAY && env.UI_SUITE_XVFB !== '1' && !forced);
+  /* FR-465 (issues 1930, 2118): on Linux the drivers run under xvfb unless UI_SUITE_DESKTOP=1 asks for the desktop (a display set is not a request: an xrdp desktop of 1920x867 clamps the 1920x1080 window and has no pointer, so hover:none shows every pencil); UI_SUITE_XVFB=1 still wins */
+  if (platform === 'linux') return !!env.DISPLAY && env.UI_SUITE_DESKTOP === '1' && env.UI_SUITE_XVFB !== '1' && !forced;
+  return true;
+}
+
+/** FR-465: the one warning line when drivers run on a Linux desktop (UI_SUITE_DESKTOP=1): its size against the biggest driver window (1920x1080), or that the size is unknown; '' when it is big enough or the run is not on a Linux desktop. `size` is `{w, h}` or null (read by `desktopSize`). Pure. */
+const BIGGEST_WINDOW = { w: 1920, h: 1080 };
+function desktopNote(platform, shared, size) {
+  if (platform !== 'linux' || !shared) return '';
+  const tail = 'drivers that park the pointer need a pointer (this display may have none), so a failure there is not a product bug; leave UI_SUITE_DESKTOP unset to use xvfb';
+  if (!size) return `ui-suite: UI_SUITE_DESKTOP=1: the desktop size is unknown; the biggest driver window is ${BIGGEST_WINDOW.w}x${BIGGEST_WINDOW.h} and a smaller desktop clamps it; ${tail}`;
+  if (size.w < BIGGEST_WINDOW.w || size.h < BIGGEST_WINDOW.h) return `ui-suite: UI_SUITE_DESKTOP=1: the desktop is ${size.w}x${size.h}, smaller than the biggest driver window ${BIGGEST_WINDOW.w}x${BIGGEST_WINDOW.h}, which it clamps; ${tail}`;
+  return `ui-suite: UI_SUITE_DESKTOP=1: the desktop is ${size.w}x${size.h}; ${tail}`;
+}
+
+/** FR-465: the size of the X display from `xdpyinfo` (no shell), or null when it cannot be told. */
+function desktopSize(env = process.env) {
+  try {
+    const r = spawnSync('xdpyinfo', [], { env, encoding: 'utf8', timeout: 5000, windowsHide: true, shell: false });
+    const m = String(r.stdout || '').match(/dimensions:\s+(\d+)x(\d+) pixels/);
+    return m ? { w: Number(m[1]), h: Number(m[2]) } : null;
+  } catch { return null; }
 }
 
 /** Spec 008 FR-112: syntax errors in the given files, from `node --check` (no shell, nothing run). [] when all parse. */
@@ -519,6 +541,7 @@ async function main({ ensure = ensureElectron, run = runOne, argv, shared = shar
   if (!ensure()) throw new Error('the Electron binary is not installed and could not be fetched (see above); no driver was started');
   const outDir = process.env.UI_SUITE_OUT ? path.resolve(process.env.UI_SUITE_OUT) : fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-ui-shots-'));
   fs.mkdirSync(outDir, { recursive: true });
+  { const note = desktopNote(process.platform, shared, process.platform === 'linux' && shared ? desktopSize() : null); if (note) console.log(note); }
   console.log(`ui-suite: ${todo.length} drivers on ${process.platform}${sh ? ` (shard ${sh})` : ''}, screenshots in ${outDir}`);
   // fast checks (owner rule): in parallel, never fewer checks; each driver has its own profile and window (own xvfb display on Linux)
   const jobs = Math.max(1, Math.min(6, Number(process.env.UI_SUITE_JOBS || 2) || 2));
@@ -566,5 +589,5 @@ async function main({ ensure = ensureElectron, run = runOne, argv, shared = shar
   if (failed.length) process.exitCode = 1;
 }
 
-module.exports = { dprOk, xvfbScreenArgs, launchCommand, sharedDesktop, syntaxErrors, main, runOne, killTree, guardTree, shard, SHARD1_HEAD_START_SECS, unknownOnly, DRIVERS, NOT_IN_SUITE }; // runOne: also spec 001 FR-082 (scripts/shots-docs.js)
+module.exports = { dprOk, xvfbScreenArgs, launchCommand, sharedDesktop, desktopNote, desktopSize, syntaxErrors, main, runOne, killTree, guardTree, shard, SHARD1_HEAD_START_SECS, unknownOnly, DRIVERS, NOT_IN_SUITE }; // runOne: also spec 001 FR-082 (scripts/shots-docs.js)
 if (require.main === module) main().catch((e) => { console.error('ui-suite:', e.message); process.exitCode = 1; });
