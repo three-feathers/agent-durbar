@@ -17,7 +17,7 @@ import type { CustomPlace, PlaceError, PlaceMap } from '../shared/places';
 import { migrateLegacyTheme, parseCharacters } from '../shared/characters';
 import { migrateRemovedTheme } from '../shared/themes';
 import type { CharacterChoice } from '../shared/characters';
-import { MAX_CHARACTER_PINS } from '../shared/charrules';
+import { CHARACTER_ID_RE, isFolderKey, MAX_CHARACTER_PINS } from '../shared/charrules';
 import { parseUpdatesPatch, parseUpdatesSettings } from '../shared/selfupdate';
 import type { SelfUpdateSettings } from '../shared/selfupdate';
 
@@ -119,14 +119,14 @@ export class SettingsStore {
 
   /** Spec 100 FR-020: the MCP warning levels. */
   get mcpWarnLevels(): McpWarnLevels {
-    return this.s.mcpWarnLevels ?? mcpWarnDefaults();
+    return { ...(this.s.mcpWarnLevels ?? mcpWarnDefaults()) }; // a copy, never the stored object (issue #2066, item 1)
   }
 
   /** Whole percents from 5 to 90, warn below strong. Refused or not written: `ok` false and the value stays as it was. Returns what is in force. */
   setMcpWarnLevels(v: unknown): { ok: boolean; levels: McpWarnLevels } {
     const levels = parseWarnLevels(v);
     if (!levels) return { ok: false, levels: this.mcpWarnLevels };
-    if (this.commit({ ...this.s, mcpWarnLevels: levels })) return { ok: true, levels };
+    if (this.commit({ ...this.s, mcpWarnLevels: levels })) return { ok: true, levels: this.mcpWarnLevels };
     return { ok: false, levels: this.mcpWarnLevels };
   }
 
@@ -264,10 +264,10 @@ export class SettingsStore {
     return this.s.autopilotLimit;
   }
 
-  setAutopilotLimit(v: number): void {
-    if (!Number.isInteger(v) || v < 1 || v > 1000) return;
-    this.s = { ...this.s, autopilotLimit: v };
-    this.save();
+  /** A value outside 1..1000 writes nothing. A write that fails puts memory back to what it was (issue #2066, item 2; `commit`); true when it reached the file. */
+  setAutopilotLimit(v: number): boolean {
+    if (!Number.isInteger(v) || v < 1 || v > 1000) return false;
+    return this.commit({ ...this.s, autopilotLimit: v });
   }
 
   /** OS notifications when an agent needs you (spec 052 FR-059): on by default; only `false` is written. */
@@ -416,8 +416,9 @@ export class SettingsStore {
     return Object.fromEntries(Object.entries(this.s.characterPins ?? {}).filter(([, id]) => ids.includes(id)));
   }
 
-  /** Spec 096 FR-033: set or (with `null`) clear one pin, at most 500. The caller checked the key and the id. False when it could not be kept. */
+  /** Spec 096 FR-033: set or (with `null`) clear one pin, at most 500. The key and the id are checked here too, before anything is merged (issue #2066, item 3: `parseCharacterPins` would drop a bad one on the next read, so it must never be written). False when refused or when it could not be kept. */
   setCharacterPin(key: string, id: string | null): boolean {
+    if (!isFolderKey(key) || (id !== null && !(typeof id === 'string' && CHARACTER_ID_RE.test(id)))) return false;
     const pins: Record<string, string> = Object.fromEntries(Object.entries(this.s.characterPins ?? {}));
     if (id === null) delete pins[key];
     else {

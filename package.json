@@ -286,6 +286,7 @@
     "test:sessionnames": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-sessionnames.js",
     "test:sessionsearch": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-sessionsearch.js",
     "test:sessionsummary": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-sessionsummary.js",
+    "test:settings-store": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-settings-store.js",
     "test:settingsnav": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-settings-nav.js",
     "test:shutters": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-shutters.js",
     "test:simclock": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-simclock.js",

@@ -1128,6 +1128,17 @@ Found at the v0.1.23 fold: the site build failed on three folded bullets (two na
   - `[KNOWN GAP]` only the first five bullets of a release reach the landing page, but every fragment bullet is checked (its place among the release's bullets is not known before the fold); a bullet is stricter than the site needs by that much.
   - Numbers checked 2026-11-17 with `npm run specs:numbers`: FR-272 and T186 are free.
 
+### 2026-11-25: two wall-clock limits that the part 3 grep missed are replaced by a count (T583; issue #1853, part 4; Mac lane, my call under Vikram's 00:28 UTC delegation, 2026-11-15)
+
+Part 3's grep looked for `Date.now() - t < N`; a variable named `t0` escaped it. Re-grepped on main at `56607e620` for `(Date.now()|performance.now()) - <name>` in `scripts/test-*` and read every `<` in an assert that names a time: two wall-clock limits are left, both in `scripts/test-teamcreate.ts`; everything else is CPU time with a wide measured margin or a 10x backstop (below). No new FR (FR-087 covers rerun practice; this is test-only).
+
+- **Delta 2026-11-25** `test:` (`scripts/test-teamcreate.ts`):
+  1. 200,000 `rows` keys "refused quickly" (`< 1500` ms wall) now counts the work: the rows object is wrapped in a Proxy that counts own-property reads; the check must stop after at most `4 * LIMITS.members` (32) of them (measured 18 on macOS); a 30 s wall limit stays as a hang backstop only. Mutant `the rows object is counted by reading every key` (`Object.keys(rowsIn).length > LIMITS.members` in the compiled `teamops.js`) dies in section `arguments` at `a huge rows object is judged by count: 200000 property reads for 200,000 keys (at most 32)`.
+  2. A team record with 30,000 members "read quickly" (`< 10_000` ms wall) now counts the entries looked at: `parseTeamRecord` of a Proxy array must read at most 64 of the 30,000 (measured exactly 64) and keep 8; the wall limit becomes a 30 s hang backstop. Mutant `the members list is not cut before it is read` (`o.members.slice()` in `folders.js`) dies in section `folders` at `a record with 30,000 members: 8 kept, 30000 of the 30,000 entries looked at (at most 64)`.
+- Checked and left (no change): the CPU-time limits are absolute with a wide margin, measured on macOS 2026-11-25: `test-mcp-tools` read tools `< 200` ms (1.9 ms, least of 5 rounds), `test-redact` 14c `< 100` ms (0.1 ms), `test-convsearch-corpus` longest real slice `< 250` ms (2.4 ms), `test-detect`, `test-browserurl`; `test-fast-lane.ts:213` (`< 15000` ms after a 1500 ms deadline) and `test-notesstore.ts` (30 s backstop, T189) are 10x or more backstops. CPU-time RATIOS (`test-helpercard`, `test-redact-growth`, `test-browserurl` linearity) are another class (issue #2097) and are not touched here.
+- `[KNOWN GAP]` Windows and Linux not run (CI runs them); no failure of these two asserts was seen in the last 60 failed CI runs (read 2026-11-25: the failures there are the macOS part abandoned, `npm ci`, the office layout check, `test:livemask` and `test:mcpwords`), so this closes the class, not a live flake.
+- Numbers checked 2026-11-25 with `npm run specs:numbers`: T583 is reserved for this lane.
+
 ### 2026-11-19: the last fixed wall-clock `<` limits in test asserts are replaced (T370; issue #1853, part 3, same class as #1850)
 
 Parts 1 and 2 (T189, T190) left three wall-clock `<` asserts, found by grepping `scripts/test-*.{ts,js}` for `Date.now() - t < N` on main at `b3fbc5eb5` (the issue's list was longer; the rest were done by T189 and T190 or are CPU time already).

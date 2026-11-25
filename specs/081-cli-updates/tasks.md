@@ -213,3 +213,4 @@ Revised on 2026-10-24 after Paco's review of #663. Q3, Q6 and Q7 were answered o
 - [x] T044 FR-042: `pathWithToolDir` for the npm check, the npm update and sign-in runs (only from a trusted folder), the 127/ENOENT message, button names, `displayWhere` (tests in `scripts/test-updatecheck.ts`).
 - [x] T045 FR-043: `httpGet` in `scripts/e2e-real.ts` and `scripts/install-check.ts` (`nodeDownloadGet`), test in `scripts/test-officialinstall.ts` (fixes the nightly "No network layer" failure).
 - [x] T046 FR-190, FR-191 (#1081): `brew outdated` exit 1 with readable JSON is an update; a failed check carries a masked, capped `detail` shown on the card (tests in `scripts/test-updatecheck.ts`). Not verified on macOS; a Mac check is pending.
+- [x] T582 FR-466 (issue #2059): `makeLookupGet` passes `cache: 'no-store'`, so no lookup is answered from Chromium's HTTP cache (`test:` factory-options assert in `scripts/test-updatecheck.ts`; mutant: option removed).

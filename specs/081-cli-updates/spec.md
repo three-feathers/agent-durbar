@@ -500,6 +500,10 @@ When the start check finds a new version, the Settings entry and the card get a 
 
 ## Changes
 
+### 2026-11-25: a version lookup is never answered from Chromium's HTTP cache (FR-466, T582, issue #2059)
+
+- **FR-466** `[IMPLEMENTED]` `test: test-updatecheck`: **Before:** `makeLookupGet` (FR-026) built its request with `method`, `url`, `redirect: 'manual'`, `credentials: 'omit'` and `useSessionCookies: false` and no `cache` option, so the default session's HTTP cache applied. Chromium's cache outlives a restart, so a 3xx or a body it kept (the Codex and Copilot `releases/latest` redirect, the Claude channel files) could answer a later check with no request reaching the server: a person could be told an old version is the newest for hours, or a check could keep failing after the server changed its answer. **Now:** the lookup passes `cache: 'no-store'` (Electron 44.9.1's `ClientRequestConstructorOptions.cache`, the same option `makeFeedGet` has set since spec 118 T009), so every lookup reaches the server and its answer is not written to the cache. Nothing else changes: the allow-list, caps, headers, limits and the redirect handling of FR-026 stay as they are, and spec 118's update session (`updateSession`, T507) is not touched. The install-script download (`makeDownloadGet`) is a separate request and is not changed by this delta. `test:` the factory-options assert in `scripts/test-updatecheck.ts` (mutant: option removed, dies at its own assert). `[KNOWN GAP]` no real request to a vendor host was made; Windows and macOS not run.
+
 ### 2026-11-24: *Out of scope* points to spec 118 for Durbar's own update (spec 118 T013)
 
 - The line *Updating Durbar itself (spec 076 FR-174 reserves its updater; no updater exists)* said the old thing spec 076's FR-174 delta of 2026-11-24 removes. It now points to spec 118, which builds Durbar's own update check (on `main` up to its T010, not turned on before its T014), governed by spec 076 FR-174. Nothing else in this spec changes; its other mentions of `updates.mode` already say it is about Durbar's own updater.

@@ -3,6 +3,7 @@
 test:safetext
 test:safetext-links
 test:safetext-links-labels
+test:settings-store
 test:settingsnav
 test:rendersyntax
 test:perfrecord
