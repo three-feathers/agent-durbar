@@ -450,7 +450,8 @@ const CASES: Record<string, Case> = {
     const d = path.join(dir, 'nogit', 'scripts');
     fs.rmSync(path.join(dir, 'nogit'), { recursive: true, force: true });
     fs.mkdirSync(d, { recursive: true });
-    for (const f of ['trusted-lib.sh', 'trusted-authors.txt', 'pr-status-note.re', 'pr-gate-answered.awk']) fs.copyFileSync(path.join(SCRIPTS, f), path.join(d, f));
+    for (const f of ['trusted-authors.txt', 'pr-status-note.re', 'pr-gate-answered.awk']) fs.copyFileSync(path.join(SCRIPTS, f), path.join(d, f));
+    fs.copyFileSync(path.join(path.dirname(g), 'trusted-lib.sh'), path.join(d, 'trusted-lib.sh')); // the lib that sits beside the gate under test (a lib mutant is one)
     fs.copyFileSync(g, path.join(d, 'pr-gate.sh'));
     fixture({ codeql: 'pass', files: ['src/main/a.ts'] });
     notReady(path.join(d, 'pr-gate.sh'), l, /stale-gate\(not a git checkout/);
