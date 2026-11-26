@@ -16,6 +16,9 @@
 #   - a CodeQL check that is not exactly one check run from the github-advanced-security app, the run its line links (spec 021 FR-090, #1425);
 #   - a head commit that changed while the gate ran (read with the PR, read again before the verdict; FR-090): the file lists follow the live head;
 #   - a PR GitHub cannot merge (conflicts): GitHub then runs only CodeQL, so the other checks look absent rather than red;
+#   - gate-read-failed(<read>) (FR-427): a read the verdict rests on (the labels, the owner-hold, review and comment lists, the review threads, the outside-edit list,
+#     the repository and user, the check list when empty) failed, or answered with a GraphQL `errors` member or output that is no list or number: the gate refuses
+#     instead of reading it as "nothing to report"; an empty but valid answer still passes. Every such read goes through rd() below;
 #   - a PR whose file list (paginated files API, renames' old paths too, count equal to changed_files, under 3000) is unreadable or incomplete (spec 021 FR-091, #1422);
 #   - an open code-scanning alert on the PR's merge ref, or on its head ref when the PR's base branch does not hold it too (FR-099, #1868: the head ref's
 #     analysis also lists main's alerts); a bot line comment can be carried forward after its alert is fixed;
@@ -40,7 +43,15 @@
 # human"; it still counts as an ask (a human reads it), and an outsider's status-note-shaped comment is not skipped as a note.
 p=$1; R=$(gh repo view --json nameWithOwner -q .nameWithOwner); OWNER=${R%%/*}; NAME=${R##*/}; ME=$(gh api user -q .login)
 case $p in ''|*[!0-9]*) echo "usage: scripts/pr-gate.sh <PR number> [--wait]"; exit 2;; esac
+# FR-427: no repository or user means every later read is aimed at nothing: refuse at once, exactly as a failed fetch refuses (FR-425)
+[ -n "$R" ] && [ -n "$ME" ] || { echo "#$p not ready: checks=[gate-read-failed(repo-or-user: gh repo view or gh api user failed, is gh signed in?)]"; exit 1; }
 . "$(dirname "$0")/trusted-lib.sh" || exit 2
+# FR-427: rd <var> <read name> <gh args>: runs gh, puts its output in $var; a failed call (a GitHub error, malformed output for --jq, a GraphQL `errors`
+# member caught by GUARD) leaves $var empty and adds gate-read-failed(<name>) to $bad, so the verdict refuses; an empty answer of a call that succeeded is
+# no failure. GATE_READ names the read for the test's fake gh only (gh ignores it). GUARD is the text of gh-trusted.sh's GUARD (S5, FR-426), one pattern
+# for "a GraphQL response is no answer" (scripts/test-pr-gate-codeql.ts compares the two); a read-name list is in the spec 021 FR-427 delta.
+GUARD='(if (.errors // null) != null or (.data // null) == null then error("unexpected GitHub response") else . end) | '
+rd() { local _v=$1 _n=$2 _o; shift 2; if _o=$(GATE_READ=$_n gh "$@"); then printf -v "$_v" '%s' "$_o"; else printf -v "$_v" ''; bad="$bad gate-read-failed($_n)"; fi; }
 pend() { gh pr checks $p 2>/dev/null | awk -F'\t' '$2=="pending"' | grep -q .; }
 waited=0; wait_cut=
 wait_more() { [ "$waited" -lt 240 ] || { wait_cut=1; return 1; }; }
@@ -52,7 +63,9 @@ while [ "$2" = "--wait" ]; do
 done
 # the check list is read once, before the PR's head sha (FR-090): a push in between gives the CodeQL line another run than the head's
 checks_out=$(gh pr checks $p)
+checks_empty=; [ -n "$checks_out" ] || checks_empty=1
 bad=$(printf '%s\n' "$checks_out" | awk -F'\t' 'NF && $2!="pass" && $2!="skipping"{print $1"="$2}' | tr '\n' ' ')
+[ -n "$checks_empty" ] && bad="$bad gate-read-failed(checks: gh pr checks printed nothing)"
 [ -n "$wait_cut" ] && bad="$bad wait-deadline(a check still pending after about 2 h of --wait: a human looks why)"
 # FR-425: the gate's own files must equal origin/main's (a stale or edited gate does not decide; the fetch, then git compares blobs, no bypass)
 stale=$(gate_stale $GATE_FILES); case $? in
@@ -93,13 +106,17 @@ else
   done <<< "$required"
 fi
 # owner hold (FR-079): labels, then the owners' latest hold-or-lift comment; only its date and link are printed, never its text
-for l in $(gh pr view $p --json labels -q '.labels[].name'); do case $l in status:blocked|needs-owner-approval) bad="$bad owner-hold(label $l: not mergeable until an owner removes it)";; esac; done
+rd labels labels pr view $p --json labels -q '.labels[].name'
+for l in $labels; do case $l in status:blocked|needs-owner-approval) bad="$bad owner-hold(label $l: not mergeable until an owner removes it)";; esac; done
 OWNERS_RE=$(grep -v '^[[:space:]]*#' "$(dirname "$0")/trusted-authors.txt" | tr -d '\r' | grep -E '^[A-Za-z0-9-]+$' | tr 'A-Z' 'a-z' | paste -sd'|' -)
 # FR-083: the phrases match as whole words (\b), so "the condition holds" is no "on hold"
 # FR-080: words in a closed fenced block, in a quoted line (starts with ">") or in an inline code span are quotes, not the owner's own words
 PROSE='gsub("```(.|\n)*?```";"") | gsub("(^|\n)[ \t]*>[^\n]*";"\n") | gsub("`[^`\n]*`";"")'
 HOLD_KIND="select((.user.login // \"\")|ascii_downcase|test(\"^($OWNERS_RE)\$\")) | ((.body // \"\") | $PROSE | if test(\"\\\\b(hold lifted|off hold)\\\\b\";\"i\") then \"lift\" elif test(\"\\\\b(on hold|owner hold|do not merge|don['\u2019]t merge)\\\\b\";\"i\") then \"hold\" else empty end) as \$k"
-hold=$( { gh api --paginate repos/$R/issues/$p/comments --jq ".[]|$HOLD_KIND|\"\(.created_at)\t\(.html_url)\t\(\$k)\""; gh api --paginate repos/$R/pulls/$p/reviews --jq ".[]|$HOLD_KIND|\"\(.submitted_at)\t\(.html_url)\t\(\$k)\""; gh api --paginate repos/$R/pulls/$p/comments --jq ".[]|$HOLD_KIND|\"\(.created_at)\t\(.html_url)\t\(\$k)\""; } | sort | tail -1)
+rd hold_c hold-comments api --paginate repos/$R/issues/$p/comments --jq ".[]|$HOLD_KIND|\"\(.created_at)\t\(.html_url)\t\(\$k)\""
+rd hold_r hold-reviews api --paginate repos/$R/pulls/$p/reviews --jq ".[]|$HOLD_KIND|\"\(.submitted_at)\t\(.html_url)\t\(\$k)\""
+rd hold_l hold-line-comments api --paginate repos/$R/pulls/$p/comments --jq ".[]|$HOLD_KIND|\"\(.created_at)\t\(.html_url)\t\(\$k)\""
+hold=$(printf '%s\n%s\n%s\n' "$hold_c" "$hold_r" "$hold_l" | sort | tail -1)
 case $hold in *"	hold") bad="$bad owner-hold(owner comment of $(echo "$hold" | cut -f1): $(echo "$hold" | cut -f2); read it, wait for a written lift)";; esac
 codeql=$(printf '%s\n' "$checks_out" | awk -F'\t' '$1=="CodeQL"{print $2}')
 codeql_ok=; [ "$codeql" = pass ] && codeql_ok=passed; [ -n "$codeql" ] || codeql=missing
@@ -190,18 +207,27 @@ if [ -n "$a_merge" ] && [ "$a_base_nums" != ERR ] && [ "$a_head_nums" != ERR ] &
 else alerts="unread(code-scanning API)"; fi
 # --paginate everywhere below: the REST lists return 30 items a page, and a long PR has more (spec 021 FR-055). --jq runs per page,
 # so the latest review per person is picked in the shell, across pages, not with jq's group_by
-changes=$(gh api --paginate repos/$R/pulls/$p/reviews --jq '.[]|select(.state!="COMMENTED" and .state!="PENDING")|"\(.user.login)\t\(.submitted_at)\t\(.state)"' | sort -k1,1 -k2,2 | awk -F'\t' -v me="$ME" '{last[$1]=$3} END{for(u in last) if(last[u]=="CHANGES_REQUESTED" && u!=me) printf "%s%s", (n++?",":""), u}')
-threads=$(gh api graphql -f query="query{repository(owner:\"$OWNER\",name:\"$NAME\"){pullRequest(number:$p){reviewThreads(first:100){nodes{isResolved isOutdated comments(first:1){nodes{author{__typename login}}}}}}}}" --jq '[.data.repository.pullRequest.reviewThreads.nodes[]|select(.isResolved==false and .isOutdated==false)]|length')
+rd ch_raw reviews-changes api --paginate repos/$R/pulls/$p/reviews --jq '.[]|select(.state!="COMMENTED" and .state!="PENDING")|"\(.user.login)\t\(.submitted_at)\t\(.state)"'
+changes=$(printf '%s\n' "$ch_raw" | sort -k1,1 -k2,2 | awk -F'\t' -v me="$ME" '{last[$1]=$3} END{for(u in last) if(last[u]=="CHANGES_REQUESTED" && u!=me) printf "%s%s", (n++?",":""), u}')
+rd threads review-threads api graphql -f query="query{repository(owner:\"$OWNER\",name:\"$NAME\"){pullRequest(number:$p){reviewThreads(first:100){nodes{isResolved isOutdated comments(first:1){nodes{author{__typename login}}}}}}}}" --jq "$GUARD [.data.repository.pullRequest.reviewThreads.nodes[]|select(.isResolved==false and .isOutdated==false)]|length"
+isnum "$threads" || { case $bad in *"gate-read-failed(review-threads)"*) ;; *) bad="$bad gate-read-failed(review-threads: no count)";; esac; threads=unread; }
 # comments whose latest edit was by an outside account: their text is hidden below and they block (a human checks the edit)
-outside_edits=$(gh api graphql -f query="query{repository(owner:\"$OWNER\",name:\"$NAME\"){pullRequest(number:$p){comments(last:100){nodes{url editor{__typename login}}} reviews(last:100){nodes{url editor{__typename login}}} reviewThreads(last:100){nodes{comments(last:100){nodes{url editor{__typename login}}}}}}}}" --jq "$JQ_TRUST .data.repository.pullRequest|(.comments.nodes[], .reviews.nodes[], .reviewThreads.nodes[].comments.nodes[])|select(.editor != null and (.editor|who|trusted|not))|\"\(.url) edited by \(.editor|who)\"")
+rd outside_edits outside-edits api graphql -f query="query{repository(owner:\"$OWNER\",name:\"$NAME\"){pullRequest(number:$p){comments(last:100){nodes{url editor{__typename login}}} reviews(last:100){nodes{url editor{__typename login}}} reviewThreads(last:100){nodes{comments(last:100){nodes{url editor{__typename login}}}}}}}}" --jq "$JQ_TRUST $GUARD .data.repository.pullRequest|(.comments.nodes[], .reviews.nodes[], .reviewThreads.nodes[].comments.nodes[])|select(.editor != null and (.editor|who|trusted|not))|\"\(.url) edited by \(.editor|who)\""
 EDITED_URLS=$(printf '%s\n' "$outside_edits" | awk '{print $1}'); trust_defs
 # status notes (docs/rules/review-rounds.md, Test once): exact "reviewing at <sha>" / "checks run at <sha>: ..." comments are not asks and not answers
 NOTE_RE=$(sed 's/\\/\\\\/g' "$(dirname "$0")/pr-status-note.re")
 NOTE="(.body|test(\"$NOTE_RE\"))"
-mine=$( { gh api --paginate repos/$R/issues/$p/comments --jq ".[]|select(.user.login==\"$ME\" and ($NOTE|not))|.created_at"; gh api --paginate repos/$R/pulls/$p/reviews --jq ".[]|select(.user.login==\"$ME\")|.submitted_at"; gh api --paginate repos/$R/pulls/$p/comments --jq ".[]|select(.user.login==\"$ME\")|.created_at"; } | sort | tail -1)
-newer=$( { gh api --paginate repos/$R/issues/$p/comments --jq "$JQ_TRUST .[]|select(.user.login!=\"$ME\" and ((.user.login|test(\"\\\\[bot\\\\]\$\")|not) or .user.login==\"durbar-samikshak[bot]\") and (((.user.login|trusted) and $NOTE)|not))|\"\(.created_at) comment \(.user.login): \(shown_body)\""; gh api --paginate repos/$R/pulls/$p/reviews --jq "$JQ_TRUST .[]|select(.user.login!=\"$ME\" and .body!=\"\" and (.state!=\"APPROVED\" or (.user.login|trusted|not) or (.user.login|test(\"\\\\[bot\\\\]\$\"))))|\"\(.submitted_at) review(\(.state)) \(.user.login): \(shown_body)\""; gh api --paginate repos/$R/pulls/$p/comments --jq "$JQ_TRUST .[]|select(.user.login!=\"$ME\" and ((.user.login|test(\"\\\\[bot\\\\]\$\")|not) or .user.login==\"durbar-samikshak[bot]\"))|\"\(.created_at) line \(.user.login) \(.path): \(shown_body)\""; } | sort | awk -v m="$mine" '$1>m')
+rd mine_c mine-comments api --paginate repos/$R/issues/$p/comments --jq ".[]|select(.user.login==\"$ME\" and ($NOTE|not))|.created_at"
+rd mine_r mine-reviews api --paginate repos/$R/pulls/$p/reviews --jq ".[]|select(.user.login==\"$ME\")|.submitted_at"
+rd mine_l mine-line-comments api --paginate repos/$R/pulls/$p/comments --jq ".[]|select(.user.login==\"$ME\")|.created_at"
+mine=$(printf '%s\n%s\n%s\n' "$mine_c" "$mine_r" "$mine_l" | sort | tail -1)
+rd newer_c newer-comments api --paginate repos/$R/issues/$p/comments --jq "$JQ_TRUST .[]|select(.user.login!=\"$ME\" and ((.user.login|test(\"\\\\[bot\\\\]\$\")|not) or .user.login==\"durbar-samikshak[bot]\") and (((.user.login|trusted) and $NOTE)|not))|\"\(.created_at) comment \(.user.login): \(shown_body)\""
+rd newer_r newer-reviews api --paginate repos/$R/pulls/$p/reviews --jq "$JQ_TRUST .[]|select(.user.login!=\"$ME\" and .body!=\"\" and (.state!=\"APPROVED\" or (.user.login|trusted|not) or (.user.login|test(\"\\\\[bot\\\\]\$\"))))|\"\(.submitted_at) review(\(.state)) \(.user.login): \(shown_body)\""
+rd newer_l newer-line-comments api --paginate repos/$R/pulls/$p/comments --jq "$JQ_TRUST .[]|select(.user.login!=\"$ME\" and ((.user.login|test(\"\\\\[bot\\\\]\$\")|not) or .user.login==\"durbar-samikshak[bot]\"))|\"\(.created_at) line \(.user.login) \(.path): \(shown_body)\""
+newer=$(printf '%s\n%s\n%s\n' "$newer_c" "$newer_r" "$newer_l" | sort | awk -v m="$mine" '$1>m')
 # FR-097 (#1910): an ask by a trusted reviewer R is answered when R's latest review is an APPROVED one later than the ask (scripts/pr-gate-answered.awk)
-rev_tsv=$(gh api --paginate repos/$R/pulls/$p/reviews --jq "$JQ_TRUST .[]|select(.state!=\"COMMENTED\" and .state!=\"PENDING\" and (.user.login|trusted) and (.user.login|test(\"\\\\[bot\\\\]\$\")|not))|\"\(.user.login)\t\(.submitted_at)\t\(.state)\"" | sort -k1,1 -k2,2)
+rd rev_raw reviews-trusted api --paginate repos/$R/pulls/$p/reviews --jq "$JQ_TRUST .[]|select(.state!=\"COMMENTED\" and .state!=\"PENDING\" and (.user.login|trusted) and (.user.login|test(\"\\\\[bot\\\\]\$\")|not))|\"\(.user.login)\t\(.submitted_at)\t\(.state)\""
+rev_tsv=$(printf '%s\n' "$rev_raw" | sort -k1,1 -k2,2)
 newer=$(printf '%s\n' "$newer" | awk -f "$(dirname "$0")/pr-gate-answered.awk" <(printf '%s\n' "$rev_tsv") -)
 notes=$( { gh api --paginate repos/$R/issues/$p/comments --jq "$JQ_TRUST .[]|select($NOTE and (.user.login|trusted))|\"\(.created_at) \(.user.login): \(.body|gsub(\"^\\\\s+\";\"\")|split(\"\\n\")[0])\""; } | sort)
 # approvals (spec 021, 2026-10-29 delta, issue #883): a trusted reviewer's latest review being APPROVED is printed on its own line and its
