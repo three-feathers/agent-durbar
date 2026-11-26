@@ -1209,7 +1209,7 @@ console.log('ui-suite: check-parallel and ui-suite install Electron once before 
     }
     assert.ok(/focus: true/.test(fs.readFileSync(SUITE, 'utf8')), 'ui-suite.js carries the flag');
   }
-  // spec 008 delta 2026-11-27 (issue #1623, T603): a passing driver's `[evidence]` lines are printed (capped, made printable) and every driver's log is written to <out>/logs/
+  // spec 008 delta 2026-11-26 (issue #1623, T603): a passing driver's `[evidence]` lines are printed (capped, made printable) and every driver's log is written to <out>/logs/
   {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     const suite = require(SUITE) as { main: (o: object) => Promise<void>; EVIDENCE_MAX: number; EVIDENCE_WIDTH: number; LOG_LINE_MAX: number; LOG_FILE_MAX: number; driverLogText: (l: string) => string };

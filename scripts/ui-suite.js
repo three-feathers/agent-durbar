@@ -532,7 +532,7 @@ function runOne(d, outDir, { launch, build = launch ? () => '' : buildProblem } 
   });
 }
 
-/* Spec 008 delta 2026-11-27 (issue #1623, T603): what a PASSING driver shows. A passing run printed one `ok` line, so CI could not show what a driver measured (the `motion:` line of
+/* Spec 008 delta 2026-11-26 (issue #1623, T603): what a PASSING driver shows. A passing run printed one `ok` line, so CI could not show what a driver measured (the `motion:` line of
    check-097-pencil-ease: did the Windows runner report prefers-reduced-motion?). (A) lines a driver marks `[evidence]` are printed after its `ok` line, at most EVIDENCE_MAX per driver, each cut to
    EVIDENCE_WIDTH characters after `printable` (scripts/safe-print.js: a control character or a `::` workflow command in a driver line can never reach the CI log); (C) every driver's collected log
    is written, failing drivers included, to <out>/logs/<label>.log (each line printable and cut to LOG_LINE_MAX, the file to its last LOG_FILE_MAX characters): the folder is inside `ui-shots`, which

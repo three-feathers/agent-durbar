@@ -1129,7 +1129,7 @@ Found at the v0.1.23 fold: the site build failed on three folded bullets (two na
   - `[KNOWN GAP]` only the first five bullets of a release reach the landing page, but every fragment bullet is checked (its place among the release's bullets is not known before the fold); a bullet is stricter than the site needs by that much.
   - Numbers checked 2026-11-17 with `npm run specs:numbers`: FR-272 and T186 are free.
 
-### 2026-11-27: a passing driver's evidence lines are printed, and every driver's log is a file in the artifact (FR-190 amended; T603; issue #1623; no new FR; my call under Vikram's 00:28 UTC delegation, 2026-11-15)
+### 2026-11-26: a passing driver's evidence lines are printed, and every driver's log is a file in the artifact (FR-190 amended; T603; issue #1623; no new FR; my call under Vikram's 00:28 UTC delegation, 2026-11-15)
 
 **Why.** `ui-suite.js` printed one `ok <name> <secs> s` line for a passing driver (and up to four `[waits]` lines, FR-190), so a CI log could not show what a driver measured: the `motion:` line of `check-097-pencil-ease` says whether the runner reports `prefers-reduced-motion` and how many plates ease, and the Windows log had only `ok check-097-pencil-ease`. Where the output went: `runOne` collected a driver's stdout and stderr in memory (the last 200 KB) and `main` printed it only for a failing driver (the last 25 lines).
 
