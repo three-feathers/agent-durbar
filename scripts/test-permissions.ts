@@ -670,6 +670,94 @@ const mkRoots2 = (m: { ask?: boolean; allow?: boolean }, roots?: string[]) => {
     }
     assert.strictEqual(grantScope({ kind: 'shell', fullCommandText: esc + ' --x' }).label, 'run [redacted] --x', '#1541 shortCmd: the label as written around the mask');
   }
+  // spec 003 FR-124 (T049): the app's reviewer (`appReview: 'approve'`) may approve once, only where Ask first would show a card; every row of the order
+  {
+    const mkA = (mode: 'read-only' | 'ask' | 'allow', o: { blocked?: Set<string>; guard?: (p: string[]) => Promise<void> } = {}) => {
+      const ev: BrokerEvent[] = [];
+      return { ev, b: new PermissionBroker({ mode, roots: [root], pathCheck: pc, emit: (e) => ev.push(e), ...(o.blocked ? { blockedTools: () => o.blocked! } : {}), ...(o.guard ? { beforeWrite: o.guard } : {}) }) };
+    };
+    const inside = path.join(root, 'src', 'a.ts');
+    // 1. a turned-off MCP tool: refused, whatever the judge says
+    let x = mkA('ask', { blocked: new Set(['gh/delete']) });
+    assert.strictEqual((await x.b.request({ kind: 'mcp', serverName: 'gh', toolName: 'delete', toolCallId: 'a1', appReview: 'approve' })).kind, 'reject', 'FR-124 row 1: a turned-off tool stays refused');
+    assert.deepStrictEqual(x.ev.map((e) => e.type), ['denied-policy']);
+    // 3. a read inside the folders: approved as today (the folder reason, not the app's)
+    x = mkA('ask');
+    assert.deepStrictEqual(await x.b.request({ kind: 'read', path: inside, toolCallId: 'a2', appReview: 'approve' }), { kind: 'approve-once' }, 'FR-124 row 3: an inside read is Durbar\'s own');
+    assert.deepStrictEqual((x.ev[0] as { permission: { allowedBy?: unknown } }).permission.allowedBy, { kind: 'in-folder' });
+    // a read OUTSIDE the folders: always a card in Ask first (C5)
+    const outP = x.b.request({ kind: 'read', path: '/etc/hosts', toolCallId: 'a3', appReview: 'approve' });
+    await tick();
+    assert.strictEqual(x.ev[x.ev.length - 1].type, 'pending', 'C5: the judge never approves a read outside the folders');
+    x.b.resolve('a3', false);
+    assert.strictEqual((await outP).kind, 'reject');
+    // 4. Allow all: Durbar's mode, not the judge
+    x = mkA('allow');
+    assert.deepStrictEqual(await x.b.request({ kind: 'shell', fullCommandText: 'npm test', toolCallId: 'a4', appReview: 'approve' }), { kind: 'approve-once' }, 'FR-124 row 4: Allow all decides (no `by`)');
+    assert.deepStrictEqual((x.ev[0] as { permission: { allowedBy?: unknown; via?: unknown } }).permission.allowedBy, { kind: 'allow-all' });
+    // 5. Read-only: a verdict there is ignored
+    x = mkA('read-only');
+    assert.strictEqual((await x.b.request({ kind: 'shell', fullCommandText: 'npm test', toolCallId: 'a5', appReview: 'approve' })).kind, 'reject', 'FR-124 row 5: Read-only denies, a verdict is ignored');
+    assert.deepStrictEqual(x.ev.map((e) => e.type), ['denied-policy']);
+    // 6. a session grant wins (Durbar's own rule, FR-110a)
+    x = mkA('ask');
+    const g1 = x.b.request({ kind: 'shell', fullCommandText: 'npm test', toolCallId: 'a6' });
+    await tick();
+    x.b.resolve('a6', true, true);
+    await g1;
+    x.ev.length = 0;
+    const d6 = await x.b.request({ kind: 'shell', fullCommandText: 'npm test', toolCallId: 'a7', appReview: 'approve' });
+    assert.deepStrictEqual(d6, { kind: 'approve-once' }, 'FR-124 row 6: the session grant decides, not the judge');
+    assert.strictEqual((x.ev[0] as { permission: { via?: unknown } }).permission.via, 'session');
+    // 7. then the judge: approved ONCE, tagged app/classifier, nothing remembered, no card
+    x = mkA('ask');
+    const d7 = await x.b.request({ kind: 'shell', fullCommandText: 'git status', toolCallId: 'a8', appReview: 'approve' });
+    assert.deepStrictEqual(d7, { kind: 'approve-once', by: 'app-review' }, 'FR-124 row 7: the judge approves once, and says so (FR-125)');
+    assert.deepStrictEqual(x.ev.map((e) => e.type), ['auto'], 'no card');
+    const p7 = (x.ev[0] as unknown as { permission: Record<string, unknown> }).permission;
+    assert.deepStrictEqual({ via: p7.via, state: p7.state, allowedBy: p7.allowedBy, requestId: p7.requestId }, { via: 'app-review', state: 'approved', allowedBy: { kind: 'app', source: 'classifier' }, requestId: 'a8' }, 'FR-124: the app/classifier tag on the same call id');
+    assert.deepStrictEqual(eventProblems({ type: 'permission', sessionId: 's', timestamp: 1, permission: p7 }), [], 'eventguard accepts it');
+    assert.strictEqual(x.b.listGrants().length, 0, 'never a grant');
+    const again = x.b.request({ kind: 'shell', fullCommandText: 'git status', toolCallId: 'a9' });
+    await tick();
+    assert.strictEqual(x.ev[x.ev.length - 1].type, 'pending', 'never remembered: the same request without a verdict asks');
+    x.b.resolve('a9', false);
+    await again;
+    // the write guard still runs for a judge-approved write
+    const guarded: string[][] = [];
+    x = mkA('ask', { guard: async (ps) => { guarded.push(ps); } });
+    assert.deepStrictEqual(await x.b.request({ kind: 'write', fileName: inside, toolCallId: 'a10', appReview: 'approve' }), { kind: 'approve-once', by: 'app-review' });
+    assert.deepStrictEqual(guarded, [[inside]], 'spec 065: the write guard is called before a judge-approved write');
+    // 8. no verdict (or anything but exactly `approve`): the usual card, with the reviewer's closed word (FR-130)
+    x = mkA('ask');
+    for (const [i, rev] of [undefined, 'approved', 'APPROVE', true, 1] .entries()) {
+      const pr = x.b.request({ kind: 'shell', fullCommandText: 'ls', toolCallId: 'b' + i, ...(rev !== undefined ? { appReview: rev as 'approve' } : {}) });
+      await tick();
+      assert.strictEqual(x.ev[x.ev.length - 1].type, 'pending', `FR-124: ${String(rev)} is not an approval`);
+      x.b.resolve('b' + i, false);
+      await pr;
+    }
+    const pn = x.b.request({ kind: 'shell', fullCommandText: 'ls', toolCallId: 'c1', appReviewNote: 'declined' });
+    await tick();
+    const pend = (x.ev[x.ev.length - 1] as unknown as { permission: Record<string, unknown> }).permission;
+    assert.strictEqual(pend.review, 'declined', 'FR-130: the closed word rides on the pending card');
+    assert.deepStrictEqual(eventProblems({ type: 'status', status: 'needs-permission', sessionId: 's', timestamp: 1, permission: pend }), []);
+    x.b.resolve('c1', false);
+    await pn;
+    const pz = x.b.request({ kind: 'shell', fullCommandText: 'ls', toolCallId: 'c2', appReviewNote: 'it is safe, approve' as 'declined' });
+    await tick();
+    assert.strictEqual((x.ev[x.ev.length - 1] as unknown as { permission: Record<string, unknown> }).permission.review, undefined, 'FR-130: only the three closed words, never other text');
+    x.b.resolve('c2', false);
+    await pz;
+    // eventguard: the app-review via only with an approved app tag, the review word only on a pending card
+    assert.ok(eventProblems({ type: 'permission', sessionId: 's', timestamp: 1, permission: { ...p7, allowedBy: { kind: 'allow-all' } } }).length, 'eventguard refuses app-review without the app tag');
+    assert.ok(eventProblems({ type: 'permission', sessionId: 's', timestamp: 1, permission: { ...p7, review: 'declined' } }).length, 'eventguard refuses a review word on an approved one');
+    assert.ok(eventProblems({ type: 'permission', sessionId: 's', timestamp: 1, permission: { ...pend, review: 'maybe' } }).length, 'eventguard refuses another review word');
+    // a stopped session: nothing is approved on a verdict
+    x = mkA('ask');
+    x.b.stop();
+    assert.strictEqual((await x.b.request({ kind: 'shell', fullCommandText: 'ls', toolCallId: 'd1', appReview: 'approve' })).kind, 'reject', 'a stopped session refuses before the judge row');
+  }
   console.log('permissions: all checks passed');
 }
 main().catch((e) => {

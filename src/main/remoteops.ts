@@ -6,6 +6,7 @@ import type { AgentAdapter } from '../adapters/types';
 import { allowedRemoteUrl, cleanRemoteError } from '../shared/remote';
 import type { RemoteState } from '../shared/remote';
 import { failText } from './ipcerror';
+import { ASSISTED_REMOTE } from '../adapters/assistedLines';
 
 export interface RemoteOpsDeps {
   /** The agent exists in this window's office. */
@@ -22,6 +23,8 @@ export interface RemoteOpsDeps {
   record?(id: string, on: boolean): void;
   /** Spec 099 FR-007: the session is on Autopilot, or being turned on. Its own check, so that a later change to Autopilot's state cannot open this. */
   autopilotOn?(id: string): boolean;
+  /** Spec 003 FR-126 (C6): the agent app's reviewer (assisted approvals) is on for this session. */
+  assistedOn?(id: string): boolean;
 }
 
 export const NOT_ON_AUTOPILOT = 'Remote control is off on Autopilot: anyone who can steer this session remotely could make it run commands without asking you. Stop Autopilot and switch to Ask first, then turn it on.';
@@ -35,7 +38,7 @@ export function createRemoteOps(deps: RemoteOpsDeps) {
   const state = new Map<string, RemoteState>();
   /** Spec 099 FR-007: asked or being turned on, not yet in `state`; Autopilot's own check after its dialog looks here. */
   const turningOn = new Map<string, number>();
-  const raised = (id: string): string | undefined => (deps.autopilotOn?.(id) ? NOT_ON_AUTOPILOT : deps.modeOf?.(id) === 'allow' ? NOT_IN_ALLOW_ALL : undefined);
+  const raised = (id: string): string | undefined => (deps.autopilotOn?.(id) ? NOT_ON_AUTOPILOT : deps.modeOf?.(id) === 'allow' ? NOT_IN_ALLOW_ALL : deps.assistedOn?.(id) ? ASSISTED_REMOTE : undefined);
   return {
     async setRemote(id: unknown, on: unknown): Promise<RemoteState> {
       if (typeof id !== 'string' || !id || id.length > 200 || !deps.known(id) || typeof on !== 'boolean') return { ok: false, error: 'unknown agent' };

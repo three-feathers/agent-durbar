@@ -2237,6 +2237,7 @@ h2,h3,h4{text-wrap:balance}
 .modeic.mode-autopilot{color:var(--red-ink)}
 .mode-menu .mm-autopilot .mi{color:var(--red-ink)}
 .mm-autopilot{border-top:1px solid var(--line)}
+.mm-assisted{border-top:1px solid var(--line)} /* spec 003 FR-120: the reviewer switch under the modes */
 .ap-noatt{display:inline-grid;place-items:center;opacity:.4;cursor:help}
 .note.ap-line{font-size:var(--t4-size);color:var(--ink-2);background:none;border:0;padding:0;box-shadow:none}
 .note.ap-end{display:flex;flex-wrap:wrap;align-items:baseline;gap:var(--s-1);border-left:3px solid var(--tone-info-line)}

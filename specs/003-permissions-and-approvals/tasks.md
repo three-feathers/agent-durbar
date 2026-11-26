@@ -53,3 +53,24 @@
   - Fix round 4 of T042..T046: program names matched unquoted (quotes, backslashes, `$'...'`, line continuations), shell keywords and groups skipped at a command's start, `#` comments; the quoted-host forms `ssh $'<host>'` and `ssh "u"@<host>` recorded as a known gap. Each with a test and a mutant.
   - Fix round 5 of T042..T046: `$(...)` and backticks inside double quotes are read as commands (in single quotes or escaped they stay text). Test and mutant.
   - Fix round 6 of T042..T046 (review of PR #1334, 2026-11-09): Latin + Greek tests in names, paths and hosts (mutant: Greek dropped from the not-with-Latin set); combining marks in a bare shell host (`DOTTED` takes `\p{M}`; combining and precomposed tests; linear up to 50000 characters); `scxMemo` and `scMemo` capped at 4096 with a test (mutants: either never cleared); simulator pictures of the warning card at 1440x900 and 1280x800, linked from the spec only (the site budget). Retro and Real office worlds not verified.
+
+## 2026-11-24: Copilot's assisted approvals inside Ask first (issue #2105, FR-120..FR-133)
+
+Decided in the delta's Clarifications C1..C8 (2026-11-24). One task per issue; tests first in each. T056 waits for the owner's separate OK.
+
+- [x] T048 [FR-121, FR-133] `AdapterCapabilities.assistedApproval?` and optional `AgentAdapter.setAssisted?`; `AgentInfo.assisted?`; `eventguard` accepts only `{on:true}`; Claude Code and Codex leave it unset (test: capabilities and eventguard).
+- [x] T049 [FR-124, FR-132] Broker: `PermissionLike.appReview`, the branch after session grants, approve once, `auto` event with `app/classifier`, `Decision.by`; the lookalike gate in the adapter (a finding or a failed check gives no `appReview`, C5); tests for every row of the order, Read-only and outside reads ignoring a verdict, a lookalike request getting a card, nothing remembered, write guard still called (`scripts/test-permissions.ts`).
+- [x] T050 [FR-123, FR-125, FR-128] Copilot adapter: `setAssisted` via `permissions.setMode` in `bounded()`, believes only the returned `mode`; the verdict and managed marker normalized into `appReview`; attributed result; `getMode` reset after create and resume; fake-session tests incl. an old runtime with no RPC.
+- [x] T051 [FR-127] Copilot fallbacks: `permissions_changed` not asked for and `managed_settings_enforced` (`assisted_approval`) turn it off, one fixed note and log row; runtime text never shown; tests in `scripts/test-events.ts`.
+- [x] T052 [FR-122, FR-126] `setModeOp` `opts.assisted` validation, refusal for adapters without the capability, outside Ask first and with remote control; Read-only, Allow all and Autopilot turn it off first; one `mode-change` row (`scripts/test-agentops.ts`).
+- [x] T053 [FR-127] Organization policy: `disableAssistedPermissionsMode` from the raw layer in `copilotOrgPolicyFromResolve`, `orgRefusal`/`orgMode` for the switch; tests in `scripts/test-orgpolicy.ts`.
+- [x] T054 [FR-120, FR-130, FR-131] Window: the menu item (Ask first only), chip word, help line with the cost sentence, fixed verdict lines on pending cards; simulator verdicts and policy fallback; the switch hidden on real Copilot while `verified` is false (C8); driver in `scripts/ui-suite.js` at 1440x900 and 1280x800.
+- [x] T055 [FR-120..FR-133] Docs and converge: README *Safety model*, `docs/safety.md`, changelog fragment, spec index; mutation checks listed in the plan. The SDK facts are in this spec delta's *What the SDK says*, not `docs/agent-apps.md` (that file holds checked facts and is at its word budget; these are `read:` only until T056).
+- [ ] T056 [FR-131, `real:` (a)..(c)] Real check, only with the owner's written OK and the stated cost: one tiny Ask first prompt on Copilot with the switch on; record whether `onPermissionRequest` is called for a judge-approved call, the usage and the resume behaviour; set `verified` from the result.
+
+## 2026-11-25: review of PR #2122 (spec delta of the same date)
+
+- [x] T057 [spec 012 FR-197] Merge `origin/main`; `assistedToggle: { m: 1 }` in the sink table of `scripts/test-live-mask.ts`.
+- [x] T058 [FR-129] `assistedOnEvent` in `src/main/agentops.ts`, called from `main.ts`: `stopped` clears `AgentInfo.assisted`, a later turn-on calls the adapter; FR-127's rows; tests in `scripts/test-agentops.ts`; mutant: the clear on `stopped` dropped.
+- [x] T059 [FR-131] The "model, not a security boundary" sentence as a visible line under the switch (its `aria-describedby`; the `title` stays under 120 characters), `docs/safety.md`, README and the changelog fragment.
+- [x] T060 [FR-120] `modeNameOf` says **Ask first + review** while the switch is on (composer hint); the four pictures retaken at 1440x900 and 1280x800.

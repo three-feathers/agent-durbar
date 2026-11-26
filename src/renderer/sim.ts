@@ -759,6 +759,8 @@ interface SimOptions {
 /** A grant scope as the broker builds it: key and chip label. */
 type SimScope = { key: string; label: string };
 interface SimAgent {
+  /** Spec 003 FR-133: how many requests the simulated reviewer has looked at since its turn-on (picks the next fixed verdict). */
+  asN?: number;
   /** Spec 099 FR-080: the simulated Autopilot run. */
   apRun?: { runId: string; n: number; limit: number; timer: number };
   info: AgentInfo;
@@ -916,6 +918,15 @@ const SIM_AUTOPILOT = simApQs?.get('simautopilot') === '1';
 const simApCap = (id: string): { capUnit: 'aiu' | 'usd' | 'tokens'; attachments: boolean; planApproval: boolean; verified: boolean; capMin?: number } | undefined =>
   id === 'copilot' ? { capUnit: 'aiu', attachments: true, planApproval: true, verified: false, capMin: 30 } : id === 'claude' ? { capUnit: 'usd', attachments: false, planApproval: true, verified: false } : id === 'codex' ? { capUnit: 'tokens', attachments: false, planApproval: false, verified: false } : undefined;
 const SIM_ORG = typeof location !== 'undefined' && new URLSearchParams(location.search).get('simorgpolicy') === '1';
+/**
+ * Spec 003 FR-133: Copilot's reviewer (assisted approvals) in the simulator, always offered for its Copilot agents. With it on, each request
+ * gets the next fixed verdict (approve, requireApproval, excluded, error, again). `?simassisted=policy`: the first request after the turn-on
+ * falls back (the organization's policy, a live fallback); `?simassisted=blocked`: the policy blocks the switch (shown disabled, refused).
+ */
+const SIM_ASSISTED = typeof location !== 'undefined' ? new URLSearchParams(location.search).get('simassisted') : null;
+const SIM_AS_VERDICTS = ['approve', 'requireApproval', 'excluded', 'error'] as const;
+const SIM_AS_WORD: Record<string, 'declined' | 'never' | 'undecided'> = { requireApproval: 'declined', excluded: 'never', error: 'undecided' };
+const SIM_AS_POLICY = "Your organization turned off Copilot's assisted approvals. This session stays in Ask first.";
 /** Spec 087 FR-022c (review on PR #833): `?simsbxlower=refuse`: the app refuses to lower a Copilot floor at the switch to Allow all (the floor is kept, the window toasts). */
 const SIM_LOWER_REFUSE = typeof location !== 'undefined' && new URLSearchParams(location.search).get('simsbxlower') === 'refuse';
 const simOrgText = (app: string): string => `Blocked by your organization's ${app} policy`;
@@ -2022,12 +2033,31 @@ const planMcpSignInRefresh = (i: SignInPlanInput): SignInPlan => {
         simLog(s, 'auto-session-grant', summary);
         return true;
       }
+      // spec 003 FR-124, FR-133: with the reviewer on, the next fixed verdict; `approve` approves once (no card), the others give the card its closed word
+      let review: 'declined' | 'never' | 'undecided' | undefined;
+      if (!force && s.info.assisted && s.info.permMode === 'ask') {
+        if (SIM_ASSISTED === 'policy') { // a live fallback: off, one note (the window's) and one row, then a plain card
+          s.info.assisted = undefined;
+          simLog(s, 'mode-change', SIM_AS_POLICY);
+          emit({ type: 'assisted', sessionId: sid(s), timestamp: now(), reason: 'policy' } as AgentEvent);
+        } else {
+          const v = SIM_AS_VERDICTS[(s.asN ?? 0) % SIM_AS_VERDICTS.length];
+          s.asN = (s.asN ?? 0) + 1;
+          if (v === 'approve') {
+            emit({ type: 'permission', sessionId: sid(s), timestamp: now(), permission: { requestId: callId, kind, summary, state: 'approved', via: 'app-review', allowedBy: { kind: 'app', source: 'classifier' } } });
+            simLog(s, 'auto-app-review', summary);
+            s.editCall = callId;
+            return true;
+          }
+          review = SIM_AS_WORD[v];
+        }
+      }
       s.perm = { ...base, file, cont, ...(sc.folders ? { folders: sc.folders } : {}) };
       s.state = 'waiting';
       // spec 087 FR-021: a Codex approval card in Ask first says what approving may mean for its sandbox (its own line, as codexPermission)
       const sbxApp = s.info.adapterId ?? 'copilot';
       const sbxNote = sbxApp === 'codex' ? (kind === 'shell' ? 'If you approve, Codex may run this outside its sandbox.' : 'If you approve, Codex writes this outside its read-only sandbox.') : sbxApp === 'copilot' && kind === 'shell' && s.info.permMode === 'ask' && s.info.sandbox?.state === 'on' ? 'If you approve, this can also write in Copilot’s temp folder (a private one Durbar gives it), not only this folder.' : undefined; // FR-021a (K15)
-      emit({ type: 'status', sessionId: sid(s), timestamp: now() - (opts.waitOld ? 120_000 : 0), status: 'needs-permission', intent, permission: { ...base, state: 'pending', ...(diff ? { diff } : {}), ...(sbxNote ? { sandboxNote: sbxNote } : {}) } });
+      emit({ type: 'status', sessionId: sid(s), timestamp: now() - (opts.waitOld ? 120_000 : 0), status: 'needs-permission', intent, permission: { ...base, state: 'pending', ...(diff ? { diff } : {}), ...(sbxNote ? { sandboxNote: sbxNote } : {}), ...(review ? { review } : {}) } });
       return false;
     }
     function editTool(s: SimAgent, file: string, ok: boolean): void {
@@ -3331,6 +3361,7 @@ const planMcpSignInRefresh = (i: SignInPlanInput): SignInPlan => {
           simRemote.delete(id);
           return { ok: true, on: false };
         }
+        if (s.info.assisted) return { ok: false, error: 'Stop remote control first: assisted approvals and remote control from GitHub are never on together.' }; // spec 003 FR-126 (C6)
         // spec 054 FR-060: a link on the kind's own service (made up; the real shapes are in the spec)
         const claudeKind = k.remoteService?.host === 'claude.ai';
         const url = claudeKind ? 'https://claude.ai/code/session_sim' + (sims.indexOf(s) + 1) : 'https://github.com/three-feathers/agent-durbar/sessions/sim-' + (sims.indexOf(s) + 1);
@@ -3558,7 +3589,7 @@ const planMcpSignInRefresh = (i: SignInPlanInput): SignInPlan => {
     /* spec 096: `simimagegen=0`: Codex ready but with no `imageGen`, which is every real app today */
     const simAdapters = (): AdapterInfo[] => simAdapterList().map(signInState).map((k) => (SIM_AUTOPILOT && simApCap(k.id) ? { ...k, capabilities: { ...k.capabilities, autopilot: simApCap(k.id) } } : k)).map((a) => (a.id === 'codex' && simQuery.get('simimagegen') === '0' ? { ...a, capabilities: { ...a.capabilities, imageGen: false } } : a));
     const simAdapterList = (): AdapterInfo[] => [
-      { id: 'copilot', displayName: 'Copilot', state: 'ready', version: 'sim', capabilities: { ...copilotCaps } },
+      { id: 'copilot', displayName: 'Copilot', state: 'ready', version: 'sim', capabilities: { ...copilotCaps, assistedApproval: { verified: false } } }, // spec 003 FR-121: not verified, as the real adapter; the simulator shows it anyway (C8)
       ...(simKinds ? [
         simKindsParam === 'solo' && !simInstalled.has('claude')
           ? { id: 'claude', displayName: 'Claude Code', state: 'not-installed', hint: 'Install Claude Code, then choose Check again.', capabilities: { ...copilotCaps, caps: false, mcpToggle: false, remote: false } }
@@ -4182,6 +4213,7 @@ const planMcpSignInRefresh = (i: SignInPlanInput): SignInPlan => {
       },
       /* spec 076 FR-205/FR-207: main's view of the canned policy (no values) */
       orgPolicyView: async (): Promise<Record<string, import('../shared/orgpolicy').OrgPolicyAppView>> => {
+        if (SIM_ASSISTED === 'blocked') return { copilot: { app: 'Copilot', found: true, unreadable: false, paths: ['the Copilot runtime (managed settings)'], problems: [], modes: {}, assisted: { why: "Your organization turned off Copilot's assisted approvals", refuse: true }, counts: { modelAllow: null, modelDeny: 0, mcpAllow: null, mcpDeny: 0, toolDeny: 0 } } }; // spec 003 FR-127
         if (!SIM_ORG) return {};
         const one = (app: string, file: string, doubt = false): import('../shared/orgpolicy').OrgPolicyAppView => ({ app, found: true, unreadable: doubt, paths: [file], problems: doubt ? [file + ': allowed_sandbox_modes could not be read'] : [], modes: { allow: { why: doubt ? simOrgDoubtText(app) : simOrgText(app), refuse: !doubt } }, counts: { modelAllow: null, modelDeny: app === 'Claude Code' ? 1 : 0, mcpAllow: null, mcpDeny: app === 'Copilot' ? 1 : 0, toolDeny: app === 'Claude Code' ? 1 : 0 } });
         return { copilot: one('Copilot', '/etc/github-copilot/managed-settings.json'), claude: one('Claude Code', '/etc/claude-code/managed-settings.json'), codex: one('Codex', '/etc/codex/requirements.toml', true) };
@@ -4273,6 +4305,22 @@ const planMcpSignInRefresh = (i: SignInPlanInput): SignInPlan => {
         if (crashProbe.on) crashProbe.modeSets++;
         const s = sims.find((x) => x.info.id === id);
         if (!s) return { ok: false, error: 'unknown agent' };
+        if (typeof o?.assisted === 'boolean') { // spec 003 FR-122: the reviewer switch, refused and logged as main's setModeAssistedOp does
+          if ((s.info.adapterId ?? 'copilot') !== 'copilot') return { ok: false, error: 'This agent app has no assisted approvals.' };
+          if (!o.assisted) {
+            const was = !!s.info.assisted;
+            s.info.assisted = undefined;
+            if (was) simLog(s, 'mode-change', 'Ask first + review to Ask first');
+            return { ok: true, mode: s.info.permMode, pending: 0, assisted: false };
+          }
+          if (mode !== 'ask' || s.info.permMode !== 'ask' || s.info.autopilot) return { ok: false, error: "Copilot's reviewer works in Ask first only. Switch to Ask first, then turn it on." };
+          if (simRemote.has(id)) return { ok: false, error: 'Stop remote control first: assisted approvals and remote control from GitHub are never on together.' };
+          if (SIM_ASSISTED === 'blocked') return { ok: false, error: SIM_AS_POLICY };
+          if (!s.info.assisted) simLog(s, 'mode-change', 'Ask first to Ask first + review');
+          s.info.assisted = { on: true };
+          s.asN = 0;
+          return { ok: true, mode: 'ask', pending: 0, assisted: true };
+        }
         if (s.info.autopilot) { // spec 099 FR-051: ends first
           if (s.apRun) simApEnd(s, 'stopped');
           else s.info.autopilot = undefined;
@@ -4280,7 +4328,9 @@ const planMcpSignInRefresh = (i: SignInPlanInput): SignInPlan => {
         const org = simOrgMode(s.info.adapterId, mode); // spec 076 FR-203, as main refuses it
         if (org) return { ok: false, error: org + ': pick another permission mode.' };
         const MW: Record<string, string> = { 'read-only': 'Read-only', ask: 'Ask first', allow: 'Allow all' };
-        simLog(s, 'mode-change', `${MW[s.info.permMode] ?? s.info.permMode} to ${MW[mode] ?? mode}`, mode);
+        const wasReview = !!s.info.assisted && mode !== 'ask'; // spec 003 FR-126: off with every switch away from Ask first
+        if (mode !== 'ask') s.info.assisted = undefined;
+        simLog(s, 'mode-change', `${MW[s.info.permMode] ?? s.info.permMode}${wasReview ? ' + review' : ''} to ${MW[mode] ?? mode}`, mode);
         s.info.permMode = mode;
         s.info.permRestored = undefined;
         s.info.permFrom = undefined;

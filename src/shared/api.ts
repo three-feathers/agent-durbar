@@ -68,6 +68,8 @@ export interface AgentInfo {
   permRestored?: boolean;
   /** Spec 099 FR-002: this session is on Autopilot (Allow all plus a goal loop). Main memory only: never saved, never restored (FR-005). */
   autopilot?: { limit: number; cap?: number; hours?: number; run?: { continuation: number; startedAt: number } };
+  /** Spec 003 FR-121: Ask first with the agent app's reviewer on (*Ask first + review*). Main memory only: never saved, never restored (FR-129). */
+  assisted?: { on: true };
   /**
    * Spec 003 (2026-10-21): where the mode of a session that came back (restart or Previous sessions) was taken from, so the chat
    * can say it: `session` = the mode last chosen for this very session; `folder` = the folder's saved mode (nothing remembered for
@@ -1043,7 +1045,7 @@ export interface DurbarApi {
   /** Open an http(s) link in the system browser (anything else is refused in the main process). */
   openExternal?(url: string): Promise<{ ok: boolean }>;
   /** Change the permission mode of agent `id` now (applies to the next request). `clearGrants`: forget "Approve for this session"; `approvePending`: approve what is waiting. */
-  setPermMode?(id: string, mode: PermMode, opts?: { clearGrants?: boolean; approvePending?: boolean }): Promise<{ ok: boolean; error?: string; mode?: PermMode; pending?: number }>;
+  setPermMode?(id: string, mode: PermMode, opts?: { clearGrants?: boolean; approvePending?: boolean; assisted?: boolean }): Promise<{ ok: boolean; error?: string; mode?: PermMode; pending?: number; assisted?: boolean }>;
   /** Spec 087 FR-007a/FR-007c: *Continue without the OS sandbox* for this session (`always`: on this computer, where offered). Nothing is sent. */
   sandboxContinue?(id: string, opts?: { always?: boolean }): Promise<{ ok: boolean; error?: string; alwaysSaved?: false }>;
   /** Spec 087 FR-012: per ready agent app, whether its OS sandbox can run here (Settings > Agent apps). */

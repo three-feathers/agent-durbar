@@ -4,7 +4,7 @@
  * starters' and setters' refusals with the window's words, and builds the values-free view for the window. Only `blocked` and `fatal`
  * verdicts are refused; `doubt` is advice (FR-201). Never throws; never logs a policy's contents.
  */
-import { emptyOrgPolicy, mcpVerdict, modelVerdict, modeVerdict, orgPolicyView, toolVerdict, wholeOrgPolicy } from '../shared/orgpolicy';
+import { assistedVerdict, emptyOrgPolicy, mcpVerdict, modelVerdict, modeVerdict, orgPolicyView, toolVerdict, wholeOrgPolicy } from '../shared/orgpolicy';
 import type { OrgMcpServer, OrgPolicy, OrgPolicyAppView, OrgVerdict } from '../shared/orgpolicy';
 
 export const ORG_POLICY_TTL_MS = 60_000;
@@ -21,6 +21,8 @@ export interface OrgPolicySource {
 export interface OrgAsk {
   mode?: string;
   model?: string;
+  /** Spec 003 FR-127: the app's reviewer switch (assisted approvals) is being turned on. */
+  assisted?: boolean;
 }
 
 export class OrgPolicyCache {
@@ -75,6 +77,8 @@ export class OrgPolicyCache {
     if (m?.refuse) return `${m.why}: pick another permission mode.`;
     const md = ask.model !== undefined ? modelVerdict(p, ask.model) : undefined;
     if (md?.refuse) return `${md.why}: pick another model.`;
+    const as = ask.assisted === true ? assistedVerdict(p) : undefined;
+    if (as?.refuse) return `${as.why}. This session stays in Ask first.`;
     return undefined;
   }
 
