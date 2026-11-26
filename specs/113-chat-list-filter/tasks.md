@@ -51,7 +51,7 @@
 
 ## P6: Recent order (FR-040..FR-045). Built before P1 (owner, 2026-11-26)
 
-- [ ] T031 `DurbarRail.recent(items)` in `src/renderer/railorder.js` with unit tests (FR-041), mutant "order by agent time" fails.
+- [x] T031 `DurbarRail.recent(items)` in `src/renderer/railorder.js` with unit tests (FR-041), mutant "order by agent time" fails.
 - [ ] T032 `youAt` stamped on your sends; load/save helper for `durbar.railYouAt` (cap 500, unknown ids, bad JSON), only with `railRemember()` and not in demo; a failed send does not stamp; a future value reads as now; checks that a session resumed by `wake` keeps its `a.id` (and a restored one after a restart), and records the result in FR-042 (FR-042).
 - [ ] T033 The Folders | Recent control (`.seg`, its own row; under "Your door" until P2 adds the field above it, 2026-11-26), the sort button disabled in *Recent*; fit measured at 180 px, 1440x900 and 1280x800 and `check-rail`'s scroll limit measured again; order kept in `durbar.railOrder` (FR-040, FR-044).
 - [ ] T034 `renderStrip` paints the flat Recent list with the folder name per row, `parent/name` for same-name folders, every new text through `safeMask` before `esc()` (FR-043); the filter applies; folds untouched.
