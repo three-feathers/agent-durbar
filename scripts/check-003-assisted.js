@@ -67,7 +67,12 @@ module.exports = async (ctx) => {
     assert.ok(it.text.startsWith(LABEL), `${w}: C4: its words: ${it.text}`);
     assert.match(it.title, /model call on your Copilot account \(gpt-5\.5 by default\) and may use AI credits/, `${w}: FR-131: the cost sentence`);
     assert.match(it.text, /may use AI credits/, `${w}: FR-131: the cost in its visible line`);
-    assert.ok(it.title.includes("Copilot's reviewer is a model, not a security boundary: text the agent has read can mislead it, so turn it on only in folders and with content you trust."), `${w}: FR-131 (2026-11-25): the honest line in its help`);
+    assert.ok(it.title.length <= 120, `${w}: a static tooltip of at most 120 characters: ${it.title.length}`);
+    const HONEST = "Copilot's reviewer is a model, not a security boundary: text the agent has read can mislead it, so turn it on only in folders and with content you trust.";
+    const note = await js(`(()=>{const b=document.querySelector('#modeMenu [data-act="assisted"]'),id=b&&b.getAttribute('aria-describedby'),n=id&&document.getElementById(id);if(!n)return null;const r=n.getBoundingClientRect(),cs=getComputedStyle(n);return {text:n.textContent,shown:r.width>0&&r.height>0&&cs.visibility!=='hidden'&&cs.display!=='none',inMenu:!!n.closest('#modeMenu')};})()`);
+    assert.ok(note && note.text === HONEST, `${w}: FR-131 (2026-11-25): the honest line is the switch's description: ${note && note.text}`);
+    assert.ok(note.shown && note.inMenu, `${w}: FR-131: the honest line is visible in the menu`);
+    assert.ok(await inView('#modeMenu #asNote'), `${w}: the honest line is inside the window`);
     assert.deepStrictEqual(await small('#modeMenu'), [], `${w}: no text under 10.5px in the menu`);
     assert.ok(await inView('#modeMenu [data-act="assisted"]'), `${w}: the switch is inside the window`);
     const order = await js(`[...document.querySelectorAll('#modeMenu [data-mode],#modeMenu [data-act]')].map(b=>b.dataset.mode||b.dataset.act).join(',')`);
