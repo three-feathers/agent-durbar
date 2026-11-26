@@ -212,6 +212,8 @@ export const BIG_ROWS = 8;
 /** FR-024: visitors' activity pose per place, and the fallback when a person has no picture for it. */
 export const FX_POSE: Record<string, string> = { library: 'book', software: 'book', terminal: 'runA', web: 'type', boss: 'knock', coffee: 'counter', bank: 'counter', postbox: 'letter', other: 'type' };
 export const POSE_FALLBACK: Record<string, string> = { wait: 'letter', runA: 'letter', counter: 'coffee', type: 'letter' }; /* spec 097 FR-024 (issue 2013): a set without the counter or the typing pose (Prehistoric has `coffee` and `letter`) still stands its visitor at the Bank, the coffee corner, the Web and Other tools */
+/** Spec 097 FR-024 (issue 2042): the Bank wants `counter`, and a set without it (seven of the eight: only Office people draw it) must not hand its visitor the coffee corner's cup: the Bank tries `counter`, then `letter` (a note handed over the counter), then `book`, then `coffee`. The coffee corner and every other place keep `POSE_FALLBACK`. */
+export const PLACE_POSES: Record<string, string[]> = { bank: ['counter', 'letter', 'book', 'coffee'] };
 /** FR-070: the second frame of each two-frame pose. Owner 2026-10-31 ("make a real running pose", replacing the treadmill): the
  *  Terminal visitor jogs in place, runA and runB. */
 export const POSE_FRAME_B: Record<string, string> = { typeA: 'typeB', waveA: 'waveB', runA: 'runB' };
@@ -382,7 +384,7 @@ export function standPose(meta: RealMeta, person: string | null | undefined, pla
   const stand = standOf(meta);
   if (!person || !roOwn(stand, person)) return null;
   const st = stand[person], want = custom ? 'wait' : (roOwn(FX_POSE, place) ? FX_POSE[place] : 'wait');
-  for (const p of [want, POSE_FALLBACK[want]]) if (p && roOwn(st.poses, p)) return { pose: p, size: st.poses[p], figH: st.figH, feet: st.feet && roOwn(st.feet, p) ? st.feet[p] : 1, top: st.top && roOwn(st.top, p) ? st.top[p] : 0, foot: st.foot && roOwn(st.foot, p) ? st.foot[p] : 0.5 };
+  for (const p of !custom && roOwn(PLACE_POSES, place) ? PLACE_POSES[place] : [want, POSE_FALLBACK[want]]) if (p && roOwn(st.poses, p)) return { pose: p, size: st.poses[p], figH: st.figH, feet: st.feet && roOwn(st.feet, p) ? st.feet[p] : 1, top: st.top && roOwn(st.top, p) ? st.top[p] : 0, foot: st.foot && roOwn(st.foot, p) ? st.foot[p] : 0.5 };
   return null;
 }
 /** a person's standing height (top of the head to the soles) in sheet pixels, from the upright 'letter' pose (else the sheet's figure height) */
