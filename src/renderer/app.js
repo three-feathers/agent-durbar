@@ -8616,6 +8616,7 @@ function showAutoQuestion(a,e){
    it approves nothing itself; the words are fixed (never the reviewer's text) ---------------- */
 const AS_MODE='assisted'; /* its menu class is built from it as the modes' are (spec 070 FR-054) */
 const AS_POLICY="Your organization turned off Copilot's assisted approvals. This session stays in Ask first.";
+const AS_HONEST='A model, not a security boundary: use only with trusted content.'; /* FR-131 (2026-11-25): the visible line under the switch */
 const AS_REMOTE='Stop remote control first: assisted approvals and remote control from GitHub are never on together.';
 const AS_REVIEW={declined:"Copilot's reviewer did not approve this.",never:'Copilot never auto-approves this kind.',undecided:"Copilot's reviewer could not decide."}; /* FR-130 (C4) */
 const asCap=a=>{const c=capsFor(a).assistedApproval;return c&&typeof c==='object'?c:null;};
@@ -8626,12 +8627,12 @@ const orgAssisted=kind=>{const v=ORG[kind||defaultKind()||'copilot'],x=v&&v.assi
 function asMenuItem(a){if(!asOffered(a)||a.info.permMode!=='ask'||a.info.autopilot)return '';
   const app=kindWord(a.info.adapterId),o=orgAssisted(a.info.adapterId),on=asOn(a);
   const why=on?'':o&&o.refuse?o.why+'.':a.remote?AS_REMOTE:''; /* FR-127, FR-126: disabled with the reason; turning off is always possible */
-  /* FR-131 (C7): the cost sentence, no number; and, said plainly (constitution III, 2026-11-25), what the reviewer is not */
-  const help='Each review is a model call on your '+app+' account (gpt-5.5 by default) and may use AI credits.'; /* a static tooltip: at most 120 characters (check-ui-text) */
-  /* constitution III (2026-11-25, review round 6): said in a visible line under the switch, read by keyboard and screen-reader users through aria-describedby */
-  const honest=app+"'s reviewer is a model, not a security boundary: use it only with content you trust."; /* one or two lines of the menu: a 4-line note made the card menu taller than a 1280x800 window (check:office) */
-  const small=why||(o?o.why:'Each review is a model call on your '+app+' account; it may use AI credits.');
-  return `<button type="button" role="menuitemcheckbox" aria-checked="${on}" data-act="assisted" class="mm-${AS_MODE}${why?' mm-org':''}"${why?' aria-disabled="true"':''} aria-describedby="asNote" title="${esc(why||help)}"><span class="mt"><b>${esc('Let '+app+"'s reviewer approve safe requests")}</b><small>${esc(small)}</small></span><span class="ck">${on?'\u2713':''}</span></button><p role="none" class="mm-note mm-as-note" id="asNote">${esc(honest)}</p>`;}
+  /* FR-131 (C7): the cost sentence in the title (a static tooltip: at most 120 characters, check-ui-text); an organization's doubt there too, as the mode items do */
+  const help=o?o.why:'Each review is a model call on your '+app+' account (gpt-5.5 by default) and may use AI credits.';
+  /* constitution III (2026-11-25, review rounds 6-8): what the reviewer is not, as the switch's own hint line (its aria-describedby); one short
+     sentence, so the card's mode menu still fits a 1280x800 window (check:office, sim-2) */
+  const small=why||AS_HONEST;
+  return `<button type="button" role="menuitemcheckbox" aria-checked="${on}" data-act="assisted" class="mm-${AS_MODE}${why?' mm-org':''}"${why?' aria-disabled="true"':''} aria-describedby="asNote" title="${esc(why||help)}"><span class="mt"><b>${esc('Let '+app+"'s reviewer approve safe requests")}</b><small id="asNote">${esc(small)}</small></span><span class="ck">${on?'\u2713':''}</span></button>`;}
 /* FR-122: one call to main (agents:setMode with opts.assisted); main's answer is what the chip shows */
 async function assistedToggle(a,anchor){
   if(!a||a.asAsking||!bridge.setPermMode)return;
