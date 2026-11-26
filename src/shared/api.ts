@@ -207,6 +207,8 @@ export interface AppSettingsView {
   about?: AboutView;
   /** Settings in force for this run only because the file could not be written (issue 1023), e.g. `defaultMaxAiCredits`. */
   unsaved?: string[];
+  /** Spec 113 FR-045: when this run of Durbar started (ms since the epoch); the rail's Recent order splits "not used since start" at it. */
+  startedAt?: number;
   /** Default cap (AIU) applied to new sessions; unset = none. */
   defaultMaxAiCredits?: number;
   /** Places in the office (spec 024): MCP server name -> place id or `desk`; unmapped servers use the built-in rules. */

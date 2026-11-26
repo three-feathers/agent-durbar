@@ -197,6 +197,8 @@ let appState: AppStateStore | undefined;
 let summaryDays: SummaryDays | undefined; // spec 085 FR-009
 /** Spec 052 FR-089: what happened while the app was closed, built once at start; null after the card is dismissed. */
 let sinceAway: SinceAway | null = null;
+/** Spec 113 FR-045: when this run of Durbar started (ms), set when the app is ready; `settings:get` carries it so the rail's Recent order survives a window reload. */
+let appStartedAt: number | undefined;
 /** Spec 006 FR-038..FR-046 (#606): the running marker (never under the simulator) and the sessions the last run left mid-turn. */
 let crashMarker: CrashMarker | undefined;
 let interrupted: { items: Interrupted[]; missing: number } | null = null;
@@ -902,7 +904,7 @@ registerSchedulesIpc({ getScheduler: () => scheduler, getFolderStore: () => fold
 registerUsageIpc({ agents, getUsageStore: () => usageStore, getUsageTotalsStore: () => usageTotalsStore, usageLabel });
 const newFolderIpc = registerNewFolderIpc({ addMany, getSettingsStore: () => settingsStore, asEffort, toRenderer }); // spec 093: create a folder from + Folder (clone, new repository, empty folder)
 const charactersIpc = registerCharactersIpc({ dev, registry, router, getSettingsStore: () => settingsStore, openFolderKeys: () => [...agents.values()].map((a) => folderKeyOf(a)) }); // spec 096: the AI character maker and My characters
-registerSettingsIpc({ getSettingsStore: () => settingsStore, getRunTheme: () => runTheme, clearRunTheme: () => { runTheme = undefined; }, characterIds: () => charactersIpc.ids() });
+registerSettingsIpc({ getSettingsStore: () => settingsStore, getStartedAt: () => appStartedAt, getRunTheme: () => runTheme, clearRunTheme: () => { runTheme = undefined; }, characterIds: () => charactersIpc.ids() });
 registerThemesIpc({ dev });
 const harnessIpc = registerHarnessIpc({
   dev, registry, router, remoteOps, toRenderer, getWin: () => win, adaptersList,
@@ -1236,6 +1238,7 @@ app.whenReady().then(() => {
   summaryDays = new SummaryDays(path.join(app.getPath('userData'), 'durbar-summary-days.json'));
   summaryDays.load();
   const startedAt = Date.now();
+  appStartedAt = startedAt;
   const quitAt = appState.quitAt;
   appState.setQuitAt(undefined); // spec 052 FR-089: a crash leaves no quit time, so it never shows a wrong "away" time
   activityStore = new ActivityStore(path.join(app.getPath('userData'), 'activity.json'));
