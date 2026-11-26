@@ -3,7 +3,7 @@
 import * as assert from 'assert';
 import * as fs from 'fs';
 import * as path from 'path';
-import { placeBox, portraitCrop, PORTRAIT_SIDE, slipAvoid, NOTE_PAPER, NOTE_PAPER_DEFAULT, NOTE_INK, notePaper, screenFit, screenFor, personMotion, zoomRect, realLayout, lobbyWidths, sortDesks, deskOrder, deskBase, assignPeople, standPose, standHeight, POSE_FRAME_B, lobbyRange, PERSON_M, DOOR_M, FRONT_DEPTH, NEAR_SCALE, CHIP_H, U_MIN, U_MAX, U_MAX_BIG, FACE_U, PLATE_H, PLATE_H_ASK, STRIP,
+import { FX_POSE, placeBox, portraitCrop, PORTRAIT_SIDE, slipAvoid, NOTE_PAPER, NOTE_PAPER_DEFAULT, NOTE_INK, notePaper, screenFit, screenFor, personMotion, zoomRect, realLayout, lobbyWidths, sortDesks, deskOrder, deskBase, assignPeople, standPose, standHeight, POSE_FRAME_B, lobbyRange, PERSON_M, DOOR_M, FRONT_DEPTH, NEAR_SCALE, CHIP_H, U_MIN, U_MAX, U_MAX_BIG, FACE_U, PLATE_H, PLATE_H_ASK, STRIP,
   type RealModel, type RealMeta, type RealAgent, type RealState, type Rect, type Layout } from '../src/shared/realoffice-layout';
 import { signMin, lobbyBand, lobbyScale, visitorScale, snapDevice, devStep, HEAD, HEAD_FACE, HELP_FACE_MIN, HELP_GAP, helpH, helpCols, helpShown, headCrop, helperPerson } from '../src/shared/realoffice-layout';
 import { DOTS_BOX, DOTS_CLEAR, HEAD_CLEAR, STRIP as STRIP_H, seatsOf, standOf, type HdSet } from '../src/shared/realoffice-layout';
@@ -358,6 +358,44 @@ assert.ok(Object.values(META.stand).some((s) => Object.values(s.foot as Record<s
 // ---- FR-024, FR-191: stand poses and fallbacks ----
 {
   for (const [place, pose] of Object.entries({ library: 'book', software: 'book', terminal: 'runA', web: 'type', boss: 'knock', coffee: 'counter', bank: 'counter', postbox: 'letter', other: 'type' })) assert.strictEqual(standPose(META, 'p01', place, false)!.pose, pose, `${place}: ${pose}`);
+  /* issue #2042, the contract: EVERY place of FX_POSE, for a set that has `counter` (META: Office people) and for one that lacks it (Prehistoric: `coffee` and `letter`, no `counter`, `type`): the pose each place resolves to. A change in any place's result fails here;
+     the same table runs against mutated copies of the compiled module (below), each of which must die at its own assert. */
+  const poseTable = (sp: typeof standPose, fx: Record<string, string>): void => {
+    const prehistoricSet = JSON.parse(JSON.stringify(META)) as RealMeta;
+    for (const pid of Object.keys(prehistoricSet.stand)) { const ps = prehistoricSet.stand[pid].poses; for (const p of ['counter', 'type', 'typeA', 'typeB']) delete ps[p]; ps.coffee = ps.letter; }
+    const expectOffice: Record<string, string> = { library: 'book', software: 'book', terminal: 'runA', web: 'type', boss: 'knock', coffee: 'counter', bank: 'counter', postbox: 'letter', other: 'type' };
+    const expectPrehistoric: Record<string, string> = { library: 'book', software: 'book', terminal: 'runA', web: 'letter', boss: 'knock', coffee: 'coffee', bank: 'letter', postbox: 'letter', other: 'letter' };
+    assert.deepStrictEqual(Object.keys(fx).sort(), Object.keys(expectOffice).sort(), 'the table lists every place of FX_POSE');
+    for (const place of Object.keys(fx)) {
+      assert.strictEqual(sp(META, 'p01', place, false)!.pose, expectOffice[place], `a set with the counter pose (Office people): ${place} resolves to ${expectOffice[place]}`);
+      assert.strictEqual(sp(prehistoricSet, 'p01', place, false)!.pose, expectPrehistoric[place], `a set without the counter pose (Prehistoric): ${place} resolves to ${expectPrehistoric[place]} (the Bank holds the letter, never the coffee corner's cup)`);
+    }
+    const bookOnly = JSON.parse(JSON.stringify(prehistoricSet)) as RealMeta; for (const pid of Object.keys(bookOnly.stand)) delete bookOnly.stand[pid].poses.letter;
+    assert.strictEqual(sp(bookOnly, 'p01', 'bank', false)!.pose, 'book', 'the Bank without counter and letter: the book');
+    const coffeeOnly = JSON.parse(JSON.stringify(bookOnly)) as RealMeta; for (const pid of Object.keys(coffeeOnly.stand)) delete coffeeOnly.stand[pid].poses.book;
+    assert.strictEqual(sp(coffeeOnly, 'p01', 'bank', false)!.pose, 'coffee', 'the Bank with only the coffee pose: the coffee (a visitor is never lost)');
+    assert.strictEqual(sp(prehistoricSet, 'p01', 'c-abc', true)!.pose, 'letter', 'a custom place is not the Bank: wait, else letter');
+  };
+  poseTable(standPose, FX_POSE);
+  {
+    const compiled = path.join(__dirname, '..', 'src', 'shared', 'realoffice-layout.js');
+    const lf = fs.readFileSync(compiled, 'utf8').replace(/\r\n/g, '\n');
+    const mutants: Array<[string, string, string, RegExp]> = [
+      ['the Bank falls back to the coffee again', "bank: ['counter', 'letter', 'book', 'coffee']", "bank: ['counter', 'coffee']", /Prehistoric\): bank resolves to letter/],
+      ['the Bank skips the letter', "bank: ['counter', 'letter', 'book', 'coffee']", "bank: ['counter', 'book', 'coffee']", /Prehistoric\): bank resolves to letter/],
+      ['the coffee corner changed', "counter: 'coffee'", "counter: 'letter'", /Prehistoric\): coffee resolves to coffee/],
+      ['the place list is dropped', "exports.PLACE_POSES = { bank: ['counter', 'letter', 'book', 'coffee'] };", "exports.PLACE_POSES = {};", /Prehistoric\): bank resolves to letter/],
+    ];
+    mutants.forEach(([name, from, to, expect], k) => {
+      assert.ok(lf.includes(from), `mutant "${name}": its text is in the compiled module`);
+      const mp = path.join(path.dirname(compiled), `realoffice-layout.mutant-${process.pid}-${k}.js`);
+      fs.writeFileSync(mp, lf.split(from).join(to));
+      let died: Error | undefined;
+      try { const m = require(mp) as { standPose: typeof standPose; FX_POSE: Record<string, string> }; poseTable(m.standPose, m.FX_POSE); } catch (e) { died = e as Error; } finally { fs.rmSync(mp, { force: true }); }
+      assert.ok(died, `mutant "${name}" survived`);
+      assert.ok(expect.test(String(died.message)), `mutant "${name}" died at the wrong assert: ${String(died.message).split(/\r?\n/)[0]}`);
+    });
+  }
   assert.strictEqual(standPose(META, 'p01', 'c-abc', true)!.pose, 'letter', 'a custom place: wait, else letter');
   const noBook = JSON.parse(JSON.stringify(META)) as RealMeta; delete noBook.stand.p01.poses.book;
   assert.strictEqual(standPose(noBook, 'p01', 'library', false), null, 'a pose with no fallback and no picture: no figure (the initials disc stays)');
@@ -367,9 +405,10 @@ assert.ok(Object.values(META.stand).some((s) => Object.values(s.foot as Record<s
 // ---- spec 097 FR-024 (issue #2013): a set with only the coffee and letter poses (Prehistoric) stands its Bank, coffee corner, Web and Other tools visitors; one with no pose at all keeps its chip off the frame line ----
 {
   const few = JSON.parse(JSON.stringify(META)) as RealMeta; for (const pid of Object.keys(few.stand)) for (const p of ['counter', 'type', 'typeA', 'typeB']) delete few.stand[pid].poses[p];
-  assert.strictEqual(standPose(few, 'p01', 'bank', false), null, 'no counter picture and no coffee one: no figure');
+  const bare = JSON.parse(JSON.stringify(few)) as RealMeta; for (const pid of Object.keys(bare.stand)) for (const p of ['coffee', 'letter', 'book']) delete bare.stand[pid].poses[p];
+  assert.strictEqual(standPose(bare, 'p01', 'bank', false), null, 'no counter, letter, book or coffee picture: no figure');
   const prehistoric = JSON.parse(JSON.stringify(few)) as RealMeta; for (const pid of Object.keys(prehistoric.stand)) prehistoric.stand[pid].poses.coffee = prehistoric.stand[pid].poses.letter;
-  assert.strictEqual(standPose(prehistoric, 'p01', 'bank', false)?.pose, 'coffee', 'a set with `coffee` and no `counter`: Omar stands at the Bank in the coffee pose (the cave lost him, #2013)');
+  assert.strictEqual(standPose(prehistoric, 'p01', 'bank', false)?.pose, 'letter', 'a set with `coffee` and `letter` and no `counter`: Omar stands at the Bank with the letter, not the cup (#2013 kept him, #2042)');
   assert.strictEqual(standPose(prehistoric, 'p01', 'coffee', false)?.pose, 'coffee', 'the coffee corner too');
   assert.strictEqual(standPose(prehistoric, 'p01', 'web', false)?.pose, 'letter', 'Web: letter when there is no typing picture');
   for (const [W, H] of SIZES) {
