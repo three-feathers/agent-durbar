@@ -176,6 +176,10 @@
 
 - [x] T517 (FR-426) `scripts/gh-trusted.sh --list issues|prs [--state] [--label] [--repo]` (outside rows are `outside: <url>`, trusted rows show the title as a JSON string, a GraphQL Bot read as `<slug>[bot]`, output through `scripts/safe-print.js`, which gains a stdin command; `safe-print.js` added to the files `gh-trusted.sh` compares and to `GATE_FILES` in `scripts/trusted-lib.sh`); sections 7 and 8 of `scripts/test-trusted-content.ts` (thirty-four mutants and a stale-printer case in section 6); `gh_read` in `scripts/gh-trusted.sh` (a GraphQL error response is never shown: an allowlist of our own tagged lines, gh's exit status and stderr); title-rename actors checked in `--list`, `<N>` and `--pr-text`; labels as a JSON array; `scripts/safe-print.js` pinned to LF in `.gitattributes` and in the pin test of `scripts/test-rules-fresh.js`; one line in `docs/agent-notes.md` (shorter than before); changelog fragment.
 
+## 2026-11-26: `gh-trusted.sh <N>` and `--pr-text` print through `safe-print.js` (FR-428)
+
+- [x] T519 (FR-428, issue #2160) `print_text` in `scripts/gh-trusted.sh` (read mode and `--pr-text` pipe `gh_read`'s output through `scripts/safe-print.js --text`); `printable(text, keepTab)` and the `--text` flag in `scripts/safe-print.js`; `safe-print.js` in `INSTALL_FILES` and the code-trust list of `scripts/prereview-cli.ts` (tests in `scripts/test-prereview.ts`); section 8 cases `read-printed`, `pr-printed`, `ci-printed`, `c1-printed` and six mutants in `scripts/test-trusted-content.ts`; changelog fragment.
+
 ## 2026-11-26: the gate never decides on a failed read (FR-427)
 
 - [x] T518 (FR-427, issue #2159) `rd` in `scripts/pr-gate.sh` and the fourteen reads on it (labels, three owner-hold lists, reviews for change requests, review threads, outside edits, my three lists, the three ask lists, trusted reviews), the `repo-or-user` and empty `checks` refusals; the fake `gh` of `scripts/test-pr-gate-codeql.ts` with a per-read failure mode, one case per read and mode, the in-order read list, the shared `GUARD` text, twenty-one mutants; changelog fragment.

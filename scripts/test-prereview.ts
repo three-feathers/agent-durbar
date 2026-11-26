@@ -594,7 +594,8 @@ async function checkCli(): Promise<void> {
   // the code root the operator trusts: a copy with sound permissions (a developer's checkout may be group-writable, which the bot refuses by design)
   const codeRoot = mk('coderoot'); fs.mkdirSync(path.join(codeRoot, 'scripts'), { recursive: true }); fs.chmodSync(path.join(codeRoot, 'scripts'), 0o755);
   assert.ok(cli.INSTALL_FILES.some(([src]) => src === 'scripts/trusted-authors.js'), 'the installed copy carries the loader (FR-092)');
-  for (const f of ['trusted-authors.txt', 'trusted-authors.js', 'trusted-lib.sh', 'gh-trusted.sh']) { fs.copyFileSync(path.join(ROOT, 'scripts', f), path.join(codeRoot, 'scripts', f)); fs.chmodSync(path.join(codeRoot, 'scripts', f), f.endsWith('.sh') ? 0o755 : 0o644); }
+  assert.ok(cli.INSTALL_FILES.some(([src]) => src === 'scripts/safe-print.js'), 'the installed copy carries the printer that gh-trusted.sh --pr-text runs (FR-428)');
+  for (const f of ['trusted-authors.txt', 'trusted-authors.js', 'trusted-lib.sh', 'gh-trusted.sh', 'safe-print.js']) { fs.copyFileSync(path.join(ROOT, 'scripts', f), path.join(codeRoot, 'scripts', f)); fs.chmodSync(path.join(codeRoot, 'scripts', f), f.endsWith('.sh') ? 0o755 : 0o644); }
   const env = { PATH: `${bin}${path.delimiter}${process.env.PATH}`, HOME: tmp, PREREVIEW_BASE: base, PREREVIEW_SAME_ACCOUNT: '1' };
   const out: string[] = []; const err: string[] = [];
   const dep = (over: Partial<cli.CliDeps> = {}, ex: run.Exec = run.nodeExec): cli.CliDeps => ({ stat: testStat, exec: ex, env, now: () => new Date(), randomHex: (n: number) => 'ab'.repeat(n), root: codeRoot, nodeBin: process.execPath, entry: path.join(ROOT, 'scripts', 'prereview', 'cli.mts'), me: process.getuid!(), isTTY: false, readLine: async () => '', stdin: async () => '', out: (s) => out.push(s), err: (s) => err.push(s), ...over });
@@ -688,7 +689,7 @@ async function checkCli(): Promise<void> {
     err.length = 0; assert.strictEqual(await cli.main(['7'], dep({ stat: fakeStat((q) => (q === fs.realpathSync(path.dirname(codeRoot)) ? { uid: me + 1000 } : {})) })), 1); assert.ok(/swapped/.test(err.join('')) && /owned by a user/.test(err.join('')), err.join(''));
     assert.strictEqual(fs.readFileSync(calls, 'utf8').trim(), '', 'nothing was run: no gh call, no script');
     // a folder or a file group- or world-writable
-    for (const rel of ['', 'scripts', 'scripts/trusted-authors.txt', 'scripts/gh-trusted.sh', 'scripts/trusted-lib.sh']) {
+    for (const rel of ['', 'scripts', 'scripts/trusted-authors.txt', 'scripts/gh-trusted.sh', 'scripts/trusted-lib.sh', 'scripts/safe-print.js']) {
       const f = path.join(codeRoot, rel); const keep = fs.statSync(f).mode & 0o7777; fs.chmodSync(f, keep | 0o020);
       err.length = 0; assert.strictEqual(await cli.main(['7'], dep()), 1, `group-writable ${rel || 'the root'}`); assert.ok(/writable by group or others/.test(err.join('')), err.join('')); assert.strictEqual(fs.readFileSync(calls, 'utf8').trim(), '');
       fs.chmodSync(f, keep | 0o002); assert.strictEqual(await cli.main(['7'], dep()), 1, `world-writable ${rel || 'the root'}`); fs.chmodSync(f, keep);

@@ -97,6 +97,11 @@ I: spec, plan and task first, in the same PR. III: no secret in the repo, logs o
 - Reuse (FR-031): `trusted-lib.sh`, `safe-print.js`, `gate_stale`, the existing fake `gh` and fake `git`. One name is added to `GATE_FILES` (an owner path, minimal change, said in the PR).
 - **Constitution:** I (spec first, this PR); III (the whole point: an outsider's text is never printed, only its link; no secret read); IV (no credits: `gh` reads and Node only); VI (bash only where the script already is, node for the printer, LF-pinned, line-ending-normalised mutants); VIII (limits written: 50 items, a fixture for the fork case, no Windows run).
 
+## 2026-11-26: `gh-trusted.sh <N>` and `--pr-text` print through `safe-print.js` (FR-428)
+
+- Both modes capture `gh_read`'s output (so the tag allowlist still decides first and a failed read prints nothing) and pipe it through `node scripts/safe-print.js --text`; `printable(text, keepTab)` gains one optional argument and the stdin command one flag. No second escaper. The pre-review bot's installed copy gets `safe-print.js` too (`INSTALL_FILES` and its code-trust list). Tests extend sections 7 and 8 of `scripts/test-trusted-content.ts`.
+- **Constitution:** I (spec first, this PR); III (the point of the change: a trusted account's control characters never reach a terminal or an agent's context raw; no secret read or printed); IV (no credits: fake `gh` and Node only); VI (Node and bash only where the scripts already are, LF-normalised mutants, a fresh `node` per print); VIII (limits written in FR-428).
+
 ## 2026-11-26: the gate never decides on a failed read (FR-427)
 
 - One helper, not fourteen guards: `rd <var> <name> <gh args>` in `scripts/pr-gate.sh` runs `gh` with `GATE_READ=<name>`, stores the output, and on a failed call adds `gate-read-failed(<name>)` to `bad`; the GraphQL reads carry `GUARD` (the `errors` / no-`data` refusal of `gh_read`, `scripts/gh-trusted.sh`, FR-426; the same text, a test compares them). The pipelines `gh ... | sort` hid the failed call, so each list is read into a variable first and sorted after. Filters are unchanged. Empty and valid is not a failure. Reads that already refuse under their own reason are not touched.
