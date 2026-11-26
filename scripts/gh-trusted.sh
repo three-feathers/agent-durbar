@@ -6,23 +6,68 @@
 # Reads the first 100 of each list and says so when there are more. Needs `gh` (signed in) and bash. Read-only.
 # scripts/gh-trusted.sh <N> --pr-text (spec 103 FR-005): only the title and the body of a PR, with the same filter; no comment, review or
 # line comment is even requested, so an independent reader (the pre-review bot) cannot start from them.
-n=$1
-mode=${2:-}
+# scripts/gh-trusted.sh --list issues|prs [--state open|closed|merged|all] [--label NAME] [--repo owner/name] (spec 021 FR-426): one row per item
+# (the 50 most recently updated). A row with a trusted author AND latest editor shows number, state, draft, author, labels, updated date and the
+# title; any other row is only "outside: <url>" (no title, no login, no branch name). `app/<slug>` (gh's --json author form) reads as `<slug>[bot]`.
+# The listing goes through scripts/safe-print.js (controls, bidi and "::" made harmless). --state and --label are checked against fixed patterns and
+# travel as GraphQL variables, never in a shell string or in the query text.
 repo_arg=
-if [ "${3:-}" = --repo ]; then repo_arg=${4:-}; [[ $repo_arg =~ ^[A-Za-z0-9_-][A-Za-z0-9._-]*/[A-Za-z0-9_-][A-Za-z0-9._-]*$ ]] || { echo "usage: --repo owner/name" >&2; exit 2; }; fi
-case $n in ''|*[!0-9]*) echo "usage: scripts/gh-trusted.sh <issue or PR number> [--pr-text]" >&2; exit 2;; esac
-case $mode in ''|--pr-text) ;; *) echo "usage: scripts/gh-trusted.sh <issue or PR number> [--pr-text]" >&2; exit 2;; esac
+repo_set=
+list=
+state=open
+label=
+usage_list() { echo "usage: scripts/gh-trusted.sh --list issues|prs [--state open|closed|merged|all] [--label NAME] [--repo owner/name]" >&2; exit 2; }
+if [ "${1:-}" = --list ]; then
+  list=${2:-}; shift 2 2>/dev/null || usage_list
+  case $list in issues|prs) ;; *) usage_list;; esac
+  while [ $# -gt 0 ]; do
+    case $1 in
+      --state) state=${2:-}; shift 2 2>/dev/null || usage_list;;
+      --label) label=${2:-}; shift 2 2>/dev/null || usage_list;;
+      --repo) repo_arg=${2:-}; repo_set=1; shift 2 2>/dev/null || usage_list;;
+      *) usage_list;;
+    esac
+  done
+  case $state in open|closed|all) ;; merged) [ "$list" = prs ] || usage_list;; *) usage_list;; esac
+  [ -z "$label" ] || [[ $label =~ ^[A-Za-z0-9][A-Za-z0-9\ :._/-]{0,49}$ ]] || { echo "gh-trusted.sh: --label must be a plain label name" >&2; exit 2; }
+  n=0; mode=
+else
+  n=$1
+  mode=${2:-}
+  if [ "${3:-}" = --repo ]; then repo_arg=${4:-}; repo_set=1; fi
+  case $n in ''|*[!0-9]*) echo "usage: scripts/gh-trusted.sh <issue or PR number> [--pr-text]" >&2; exit 2;; esac
+  case $mode in ''|--pr-text) ;; *) echo "usage: scripts/gh-trusted.sh <issue or PR number> [--pr-text]" >&2; exit 2;; esac
+fi
+if [ -n "$repo_set" ]; then [[ $repo_arg =~ ^[A-Za-z0-9_-][A-Za-z0-9._-]*/[A-Za-z0-9_-][A-Za-z0-9._-]*$ ]] || { echo "usage: --repo owner/name" >&2; exit 2; }; fi
 . "$(dirname "$0")/trusted-lib.sh" || exit 2
 # FR-425: a login removed on main must not be shown from an old list: the trust list and the filter must equal origin/main's. A failed fetch refuses
 # too, and so does a git that fails in a folder that has a .git (a stale list could still trust a removed login). Only a folder with no .git at all (an
 # installed copy, the pre-review bot's folder) is not checked here. The script compares itself too.
-stale=$(gate_stale scripts/trusted-authors.txt scripts/trusted-lib.sh scripts/gh-trusted.sh); gt=$?
+stale=$(gate_stale scripts/trusted-authors.txt scripts/trusted-lib.sh scripts/gh-trusted.sh scripts/safe-print.js); gt=$?
 if [ "$gt" = 2 ]; then echo "gh-trusted.sh: stale: git fetch origin main failed, the trust list cannot be compared: run it from a checkout at origin/main with network" >&2; exit 1; fi
 if [ "$gt" = 4 ]; then echo "gh-trusted.sh: stale: git fails in this checkout (dubious ownership, no git, a broken .git?), the trust list cannot be compared: run it from a checkout at origin/main" >&2; exit 1; fi
 if [ -n "$stale" ]; then echo "gh-trusted.sh: stale: $(echo $stale) differs from origin/main: run it from a checkout at origin/main (the trust list may have changed)" >&2; exit 1; fi
 if [ -n "$repo_arg" ]; then R=$repo_arg; else R=$(gh repo view --json nameWithOwner -q .nameWithOwner) || exit 1; fi
 OWNER=${R%%/*}; NAME=${R##*/}
 A='author{__typename login} editor{__typename login}'
+if [ -n "$list" ]; then
+  command -v node >/dev/null 2>&1 || { echo "gh-trusted.sh: --list needs node (scripts/safe-print.js prints the rows)" >&2; exit 1; }
+  if [ "$list" = issues ]; then key=issues; kind=issue; ST='IssueState'; X=''; else key=pullRequests; kind=PR; ST='PullRequestState'; X='isDraft isCrossRepository'; fi
+  QL="query(\$states:[$ST!],\$labels:[String!]){repository(owner:\"$OWNER\",name:\"$NAME\"){$key(first:50,states:\$states,labels:\$labels,orderBy:{field:UPDATED_AT,direction:DESC}){totalCount nodes{number url state updatedAt title $X $A labels(first:20){nodes{name}}}}}}"
+  # login: who, with gh's `app/<slug>` read as `<slug>[bot]`; the title is printed as a JSON string (no raw newline), only when author and latest editor are trusted
+  JQL="$JQ_TRUST
+def lg: if . != null and ((.login // \"\") | startswith(\"app/\")) then .login[4:] + \"[bot]\" else who end;
+def ok: (.author|lg|trusted) and (.editor == null or (.editor|lg|trusted)) and ((.isCrossRepository // false) | not);
+.data.repository.$key as \$l
+| (\$l.nodes[] | if ok then \"#\(.number) $kind \(.state)\(if .isDraft == true then \" draft\" else \"\" end) by \(.author|lg) labels=\([.labels.nodes[].name] | join(\",\")) updated \(.updatedAt[0:10]) title: \(.title | tojson)\" else \"outside: \(.url)\" end),
+  (if \$l.totalCount > 50 then \"--- \(\$l.totalCount) items: only the 50 most recently updated are listed\" else empty end)"
+  args=(-f query="$QL")
+  [ "$state" = all ] || args+=(-f "states[]=$(echo "$state" | tr a-z A-Z)")
+  [ -z "$label" ] || args+=(-f "labels[]=$label")
+  out=$(gh api graphql "${args[@]}" --jq "$JQL") || exit 1
+  printf '%s\n' "$out" | node "$(dirname "$0")/safe-print.js"
+  exit
+fi
 if [ "$mode" = --pr-text ]; then
   QT="query{repository(owner:\"$OWNER\",name:\"$NAME\"){pullRequest(number:$n){url title body isCrossRepository $A}}}"
   JQT="$JQ_TRUST

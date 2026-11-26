@@ -25,3 +25,6 @@ function emit(text, write = console.log) {
 }
 
 module.exports = { printable, emit };
+
+// FR-426: `node scripts/safe-print.js` prints its standard input through `emit` (scripts/gh-trusted.sh --list pipes its rows here)
+if (require.main === module) emit(require('fs').readFileSync(0, 'utf8').replace(/\r?\n$/, ''));

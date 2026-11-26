@@ -26,7 +26,7 @@ trust_defs
 # compares equal. The fetch names its refspec (`+refs/heads/main:refs/remotes/origin/main`): a plain `fetch origin main` leaves origin/main old when
 # remote.origin.fetch does not cover main. Returns 0 when it compared, 2 when the fetch failed, 3 when the folder has no `.git` at all (an installed copy,
 # the pre-review bot's folder), 4 when it has a `.git` but git fails there (dubious ownership, no git, a broken worktree pointer): never "not a checkout".
-GATE_FILES="scripts/pr-gate.sh scripts/trusted-lib.sh scripts/trusted-authors.txt scripts/pr-gate-answered.awk scripts/pr-status-note.re .github/ruleset-main.json"
+GATE_FILES="scripts/pr-gate.sh scripts/trusted-lib.sh scripts/trusted-authors.txt scripts/pr-gate-answered.awk scripts/pr-status-note.re .github/ruleset-main.json scripts/safe-print.js"
 _trusted_root=$(cd "$_trusted_here/.." && pwd)
 gate_stale() {
   local f want have
