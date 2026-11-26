@@ -54,16 +54,30 @@ A='author{__typename login} editor{__typename login}'
 # (a null actor is not), and more renames than the 20 read hide the title (an unseen older rename could be an outsider's). pageInfo, not totalCount:
 # totalCount counts the whole timeline, whatever itemTypes says
 TL='timelineItems(itemTypes:[RENAMED_TITLE_EVENT],last:20){pageInfo{hasPreviousPage} nodes{... on RenamedTitleEvent{actor{__typename login}}}}'
-RENAMED_OK='def renamed_ok: (.timelineItems | . != null and (.pageInfo.hasPreviousPage == false) and ((.nodes | type) == "array") and (.nodes | all(.actor | who | trusted)));'
-RENAMED_MSG='title hidden: it was renamed by someone outside the trusted list'
-# FR-426 (round 2): on a GraphQL error `gh api graphql --jq` skips the filter and prints the raw {"data","errors"} response to standard output, which
-# would be outside text, unfiltered. So the response is captured, never shown by gh: a failed call, or a captured text that starts with `{` (our programs
-# print `#N ...`, `title: ...`, `outside ...` or `no ...` first), prints nothing from it. gh's own stderr is dropped too (a server message can quote a login).
+# rename_state: "outside" (an untrusted or deleted actor was seen), "unreadable" (the list is missing or malformed), "more" (more than the 20 read: an older
+# rename could not be seen), else "ok". Each hidden title says only which of the three it is, and never names the actor.
+RENAMED_OK='def rename_state: (.timelineItems) as $t | if $t == null or (($t.nodes|type) != "array") or (($t.pageInfo.hasPreviousPage|type) != "boolean") then "unreadable" elif ($t.nodes | any(.actor | who | trusted | not)) then "outside" elif $t.pageInfo.hasPreviousPage then "more" else "ok" end;
+def renamed_ok: rename_state == "ok";
+def rename_msg: if rename_state == "outside" then "title hidden: it was renamed by someone outside the trusted list" elif rename_state == "unreadable" then "title hidden: its rename history could not be read" else "title hidden: it has more renames than were read" end;'
+# FR-426 (rounds 2 and 3): on a GraphQL error `gh api graphql --jq` skips the filter and prints the raw {"data","errors"} response to standard output, which
+# would be outside text, unfiltered. So gh never prints to us: the response is captured, a failed call prints nothing from it, gh's stderr is dropped (a
+# server message can quote a login), and only an ALLOWLIST of our own shapes is let through: every line our jq program prints starts with TAGP, a random tag
+# of this run that no GitHub text can know, and a captured text with any line that lacks it (a BOM, a leading space, `[`, `null`, a truncated or raw JSON
+# body) prints nothing at all. The program itself refuses (error, so gh exits non-zero) a response with an `errors` member or without `data`.
+TAGP="GT$RANDOM$RANDOM$RANDOM$$"
+GUARD='(if (.errors // null) != null or (.data // null) == null then error("unexpected GitHub response") else . end) | '
+WRAP='| split("\n")[] | "'$TAGP' " + .'
 gh_read() {
-  local out
+  local out line res=
   out=$(gh api graphql "$@" 2>/dev/null) || { echo "gh-trusted.sh: the GitHub query failed; nothing from its response is shown (is gh signed in? gh auth status)" >&2; return 1; }
-  case $out in '{'*) echo "gh-trusted.sh: GitHub answered with an unfiltered response; nothing from it is shown" >&2; return 1;; esac
-  printf '%s\n' "$out"
+  [ -n "$out" ] || return 0
+  while IFS= read -r line; do
+    case $line in
+      "$TAGP "*) res+="${line#"$TAGP "}"$'\n';;
+      *) echo "gh-trusted.sh: unexpected output from GitHub's response; nothing from it is shown" >&2; return 1;;
+    esac
+  done <<< "$out"
+  printf '%s' "$res"
 }
 if [ -n "$list" ]; then
   command -v node >/dev/null 2>&1 || { echo "gh-trusted.sh: --list needs node (scripts/safe-print.js prints the rows)" >&2; exit 1; }
@@ -73,9 +87,9 @@ if [ -n "$list" ]; then
   JQL="$JQ_TRUST
 $RENAMED_OK
 def ok: (.author|who|trusted) and (.editor == null or (.editor|who|trusted)) and renamed_ok and ((.isCrossRepository // false) | not);
-.data.repository.$key as \$l
+$GUARD.data.repository.$key as \$l
 | (\$l.nodes[] | if ok then \"#\(.number) $kind \(.state)\(if .isDraft == true then \" draft\" else \"\" end) by \(.author|who) labels=\([.labels.nodes[].name] | tojson) updated \(.updatedAt[0:10]) title: \(.title | tojson)\" else \"outside: \(.url)\" end),
-  (if \$l.totalCount > 50 then \"--- \(\$l.totalCount) items: only the 50 most recently updated are listed\" else empty end)"
+  (if \$l.totalCount > 50 then \"--- \(\$l.totalCount) items: only the 50 most recently updated are listed\" else empty end) $WRAP"
   args=(-f query="$QL")
   [ "$state" = all ] || args+=(-f "states[]=$(echo "$state" | tr a-z A-Z)")
   [ -z "$label" ] || args+=(-f "labels[]=$label")
@@ -88,10 +102,10 @@ if [ "$mode" = --pr-text ]; then
   JQT="$JQ_TRUST
 $RENAMED_OK
 def ok: (.author|who|trusted) and (.editor == null or (.editor|who|trusted)) and (.isCrossRepository | not);
-.data.repository.pullRequest
+$GUARD.data.repository.pullRequest
 | if . == null then \"no PR #$n\"
-  elif ok then (if renamed_ok then \"title: \(.title)\" else \"$RENAMED_MSG\" end), \"--- body\", (.body // \"\")
-  else \"outside PR text by \(.author|who): not shown, for a human: \(.url)\" end"
+  elif ok then (if renamed_ok then \"title: \(.title)\" else rename_msg end), \"--- body\", (.body // \"\")
+  else \"outside PR text by \(.author|who): not shown, for a human: \(.url)\" end $WRAP"
   gh_read -f query="$QT" --jq "$JQT"
   exit
 fi
@@ -105,15 +119,15 @@ JQ="$JQ_TRUST
 $RENAMED_OK
 def ok: (.author|who|trusted) and (.editor == null or (.editor|who|trusted));
 def text(\$what): if ok then (.body // \"\") else \"outside \(\$what) by \(.author|who)\(if .editor != null and (.editor|who) != (.author|who) then \", last edited by \(.editor|who)\" else \"\" end): not shown, for a human: \(.url)\" end;
-.data.repository.issueOrPullRequest
+$GUARD.data.repository.issueOrPullRequest
 | if . == null then \"no issue or PR #$n\" else
   \"#$n \(.__typename) \(.state) by \(.author|who)\(if .isCrossRepository then \" (from a fork: outside PR, a human decides)\" else \"\" end) \(.url)\",
-  (if ok and renamed_ok then \"title: \(.title)\" elif ok then \"$RENAMED_MSG\" else \"title: not shown (outside author or editor)\" end),
+  (if ok and renamed_ok then \"title: \(.title)\" elif ok then rename_msg else \"title: not shown (outside author or editor)\" end),
   \"--- body\", text(\"body\"),
   ([(.comments.nodes[] | {t: .createdAt, h: \"comment by \(.author|who)\", x: text(\"comment\")}),
     (.reviews.nodes[]? | select(.body != \"\") | {t: .submittedAt, h: \"review (\(.state)) by \(.author|who)\", x: text(\"review\")}),
     (.reviewThreads.nodes[]? | .path as \$p | .comments.nodes[] | {t: .createdAt, h: \"line comment by \(.author|who) on \(\$p)\", x: text(\"line comment\")})]
    | sort_by(.t)[] | \"--- \(.t) \(.h)\", .x),
   ([.comments.totalCount, (.reviews.totalCount // 0), (.reviewThreads.totalCount // 0)] | if max > 100 then \"--- more than 100 items: only the first 100 of each list are shown\" else empty end)
-  end"
+  end $WRAP"
 gh_read -f query="$Q" --jq "$JQ"
