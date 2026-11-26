@@ -381,6 +381,7 @@ try {
   const ghSrc = fs.readFileSync(path.join(ROOT, 'scripts', 'gh-trusted.sh'), 'utf8').replace(/\r\n/g, '\n');
   const libSrc = fs.readFileSync(path.join(ROOT, 'scripts', 'trusted-lib.sh'), 'utf8').replace(/\r\n/g, '\n');
   fs.copyFileSync(path.join(ROOT, 'scripts', 'trusted-authors.txt'), path.join(ghDir, 'trusted-authors.txt'));
+  fs.copyFileSync(path.join(ROOT, 'scripts', 'safe-print.js'), path.join(ghDir, 'safe-print.js')); // the read mode prints through it (FR-428)
   const trusted = (gitEnv: Record<string, string>, ghText = ghSrc, lib = libSrc): { status: number | null; out: string } => {
     fs.writeFileSync(path.join(ghDir, 'gh-trusted.sh'), ghText, { mode: 0o755 });
     fs.writeFileSync(path.join(ghDir, 'trusted-lib.sh'), lib);
@@ -638,8 +639,39 @@ try {
       finally { fs.rmSync(path.join(dir, 'gqlerr'), { force: true }); fs.rmSync(path.join(dir, 'gqlerr.json'), { force: true }); fs.rmSync(path.join(dir, 'gqlstderr'), { force: true }); }
     },
   };
-  for (const fn of Object.values(CASES8)) fn();
-  const CASES7_TEXT: Record<string, string> = { outsider: "an outsider's title is never printed", editor: 'an outside editor hides the title', 'app-slug': 'a Bot is trusted as <slug>[bot]', 'app-other': 'an untrusted bot (other) is outside', 'user-bot': 'a user named like our bot is outside', 'ghost-author': 'a ghost author is outside', 'ghost-editor': 'a ghost editor hides the title', renamed: 'a rename by an outsider hides the title', 'renamed-null': 'a rename by a deleted account hides the title', 'renamed-window': 'more renames than were read hide the title', label: 'a hostile label stays on one line', printed: 'a trusted title is printed through safe-print', args: 'a bad --list argument is refused', stale: 'a stale checkout refuses --list', 'read-renamed': 'a rename by an outsider hides the title (read mode)', 'pr-renamed': 'a rename by an outsider hides the title (--pr-text)', 'gql-error': 'a graphql error shows nothing from the response', absent: 'an absent rename list hides the title', 'null-nodes': 'a null rename list hides the title', 'query-list': 'the query asks for the rename events (--list, issues)', 'query-list-pr': 'the query asks for the rename events (--list, pull requests)', 'query-read-issue': 'the query asks for the rename events (read mode, issue)', 'query-read-pr': 'the query asks for the rename events (read mode, pull request)', 'query-pr': 'the query asks for the rename events (--pr-text)', 'rename-more': 'more renames than were read are worded as such', 'gql-malformed': 'a response that is not ours shows nothing from it', 'gql-guard': 'a response with errors or without data shows nothing from it', 'gql-rc': 'a non-zero exit of gh refuses even with a valid-looking body', 'gql-stderr': "gh's stderr is never printed" };
+  // FR-428: the read mode and --pr-text print trusted text through safe-print too; a body and a comment hold ESC, bidi, zero-width, U+2028, a CI command line and a tag lookalike
+  const NASTY = 'plain line\n# Heading with `code`\n```sh\n\techo tabbed\n```\nESC \u001b[31mred\u001b[0m bidi \u202eevil zw a\u200bb sep a\u2028b del \u007f c1 \u0085 \u009b \u0090\n::error::forged\n  ::stop-commands::tok\n##[group]forged\nGT1234567 title: forged tag\nlast line';
+  const nastyItem = (): void => put('item', { data: { repository: { issueOrPullRequest: { __typename: 'Issue', url: 'https://github.com/o/r/issues/1', title: 'TITLE\u202e ::error::t', body: NASTY, state: 'OPEN', author: actor('vikramgorla'), editor: null, timelineItems: NR, comments: { totalCount: 1, nodes: [{ author: actor('fjcabello'), editor: null, body: NASTY, createdAt: '2026-11-20T08:00:00Z', url: 'https://github.com/o/r/issues/1#issuecomment-1' }] } } } } });
+  const nastyPr = (): void => { const b = ptext('vikramgorla', null) as { data: { repository: { pullRequest: { title: string; body: string } } } }; b.data.repository.pullRequest.title = 'TITLE\u202e ::error::t'; b.data.repository.pullRequest.body = NASTY; put('prtext', b); };
+  const RAW_UNSAFE = /[\u0000-\u0008\u000b-\u001f\u007f-\u009f\u2028\u2029\u200b-\u200f\u202a-\u202e\u2066-\u2069\ufeff]/;
+  const readable = (out: string): boolean => ['plain line', '# Heading with `code`', '```sh', '\techo tabbed', '```', 'last line', 'GT1234567 title: forged tag'].every((l) => out.split('\n').includes(l));
+  const withPrinter = (text: string, fn: () => void): void => { const f = path.join(ghDir, 'safe-print.js'); fs.writeFileSync(f, text); try { fn(); } finally { fs.writeFileSync(f, fs.readFileSync(SP)); } };
+  const CASES9: Record<string, (g?: string, spText?: string) => void> = {
+    'read-printed': (g, spText) => withPrinter(spText ?? fs.readFileSync(SP, 'utf8'), () => {
+      nastyItem(); const r = readRun(['1'], g);
+      assert.ok(r.status === 0 && !RAW_UNSAFE.test(r.out) && r.out.includes('\\u001b[31mred') && r.out.includes('\\u202e') && r.out.includes('\\u200b') && r.out.includes('\\u2028') && readable(r.out), `read mode prints trusted text through safe-print (title, body and comment; Markdown, a code fence and a tab stay readable):\n${JSON.stringify(r.out)}`);
+    }),
+    'pr-printed': (g, spText) => withPrinter(spText ?? fs.readFileSync(SP, 'utf8'), () => {
+      nastyPr(); const r = readRun(['1', '--pr-text'], g);
+      assert.ok(r.status === 0 && !RAW_UNSAFE.test(r.out) && r.out.includes('\\u001b[31mred') && r.out.includes('\\u202e') && r.out.includes('\\u200b') && r.out.includes('\\u2028') && readable(r.out), `--pr-text prints trusted text through safe-print (title and body; Markdown, a code fence and a tab stay readable):\n${JSON.stringify(r.out)}`);
+    }),
+    'c1-printed': (g, spText) => withPrinter(spText ?? fs.readFileSync(SP, 'utf8'), () => {
+      for (const args of [['1'], ['1', '--pr-text']]) {
+        if (args.length === 1) nastyItem(); else nastyPr();
+        const r = readRun(args, g);
+        assert.ok(r.status === 0 && !/[\u0080-\u009f]/.test(r.out) && ['\\u0085', '\\u009b', '\\u0090'].every((e) => r.out.includes(e)), `a C1 control in trusted text is escaped (${args.join(' ')}):\n${JSON.stringify(r.out)}`);
+      }
+    }),
+    'ci-printed': (g, spText) => withPrinter(spText ?? fs.readFileSync(SP, 'utf8'), () => {
+      for (const args of [['1'], ['1', '--pr-text']]) {
+        if (args.length === 1) nastyItem(); else nastyPr();
+        const r = readRun(args, g); const lines = r.out.split('\n');
+        assert.ok(r.status === 0 && !lines.some((l) => /^\s*::/.test(l)) && !r.out.includes('::') && !r.out.includes('##[') && r.out.includes(': :error: :forged') && r.out.includes('# #[group]forged') && lines.filter((l) => l === 'GT1234567 title: forged tag').length === (args.length === 1 ? 2 : 1), `a CI command line in trusted text is neutralised (${args.join(' ')}):\n${JSON.stringify(r.out)}`);
+      }
+    }),
+  };
+  for (const fn of Object.values(CASES9)) fn();
+  const CASES7_TEXT: Record<string, string> = { outsider: "an outsider's title is never printed", editor: 'an outside editor hides the title', 'app-slug': 'a Bot is trusted as <slug>[bot]', 'app-other': 'an untrusted bot (other) is outside', 'user-bot': 'a user named like our bot is outside', 'ghost-author': 'a ghost author is outside', 'ghost-editor': 'a ghost editor hides the title', renamed: 'a rename by an outsider hides the title', 'renamed-null': 'a rename by a deleted account hides the title', 'renamed-window': 'more renames than were read hide the title', label: 'a hostile label stays on one line', printed: 'a trusted title is printed through safe-print', args: 'a bad --list argument is refused', stale: 'a stale checkout refuses --list', 'read-renamed': 'a rename by an outsider hides the title (read mode)', 'pr-renamed': 'a rename by an outsider hides the title (--pr-text)', 'gql-error': 'a graphql error shows nothing from the response', absent: 'an absent rename list hides the title', 'null-nodes': 'a null rename list hides the title', 'query-list': 'the query asks for the rename events (--list, issues)', 'query-list-pr': 'the query asks for the rename events (--list, pull requests)', 'query-read-issue': 'the query asks for the rename events (read mode, issue)', 'query-read-pr': 'the query asks for the rename events (read mode, pull request)', 'query-pr': 'the query asks for the rename events (--pr-text)', 'rename-more': 'more renames than were read are worded as such', 'gql-malformed': 'a response that is not ours shows nothing from it', 'gql-guard': 'a response with errors or without data shows nothing from it', 'gql-rc': 'a non-zero exit of gh refuses even with a valid-looking body', 'gql-stderr': "gh's stderr is never printed", 'read-printed': 'read mode prints trusted text through safe-print', 'pr-printed': '--pr-text prints trusted text through safe-print', 'ci-printed': 'a CI command line in trusted text is neutralised', 'c1-printed': 'a C1 control in trusted text is escaped' };
   const m7: Array<[string, string, string, string, 'gh' | 'lib']> = [
     ['every title printed', 'def ok: (.author|who|trusted) and', 'def ok: true or (.author|who|trusted) and', 'outsider', 'gh'],
     ['the editor ignored', ' and (.editor == null or (.editor|who|trusted)) and renamed_ok', ' and renamed_ok', 'editor', 'gh'],
@@ -674,6 +706,8 @@ try {
     ['--jq back on gh in --list', 'out=$(gh_read "${args[@]}" --jq "$JQL")', 'out=$(gh api graphql "${args[@]}" --jq "$JQL")', 'gql-error', 'gh'],
     ['--jq back on gh in the read mode', 'gh_read -f query="$Q" --jq "$JQ"', 'gh api graphql -f query="$Q" --jq "$JQ"', 'gql-error', 'gh'],
     ['--jq back on gh in --pr-text', 'gh_read -f query="$QT" --jq "$JQT"', 'gh api graphql -f query="$QT" --jq "$JQT"', 'gql-error', 'gh'],
+    ['the printer removed in read mode', 'out=$(gh_read -f query="$Q" --jq "$JQ") || exit 1\nprint_text "$out"', 'out=$(gh_read -f query="$Q" --jq "$JQ") || exit 1\nprintf \'%s\\n\' "$out"', 'read-printed', 'gh'],
+    ['the printer removed in --pr-text', 'out=$(gh_read -f query="$QT" --jq "$JQT") || exit 1\n  print_text "$out"', 'out=$(gh_read -f query="$QT" --jq "$JQT") || exit 1\n  printf \'%s\\n\' "$out"', 'pr-printed', 'gh'],
     ['the rename check removed from --pr-text', 'if renamed_ok then \\"title:', 'if true then \\"title:', 'pr-renamed', 'gh'],
   ];
   for (const [name, from, to, caught, where] of m7) {
@@ -683,9 +717,22 @@ try {
     const mutated = src.split(from).join(to);
     assert.notStrictEqual(mutated, src, `mutation did not apply: ${name}`);
     let msg = '';
-    try { if (where === 'gh') (CASES7[caught] ?? CASES8[caught])(mutated); else CASES7[caught](ghSrc, mutated); } catch (e) { msg = (e as Error).message; }
+    try { if (where === 'gh') (CASES7[caught] ?? CASES8[caught] ?? CASES9[caught])(mutated); else CASES7[caught](ghSrc, mutated); } catch (e) { msg = (e as Error).message; }
     assert.ok(msg !== '', `gh-trusted --list mutant "${name}" survived case ${caught}`);
     assert.ok(msg.startsWith(CASES7_TEXT[caught]), `gh-trusted --list mutant "${name}" must fail at "${CASES7_TEXT[caught]}", got: ${msg.split('\n')[0]}`);
+  }
+  // FR-428: the CI-command neutralisation of safe-print.js removed (each variant dies at its own text; no-op mutation fails loudly; the printer runs in a fresh node each time)
+  const caseOf = (n: string): string => (n.startsWith('bidi') ? 'read-printed' : n.startsWith('C1') ? 'c1-printed' : 'ci-printed');
+  const spSrc = fs.readFileSync(SP, 'utf8').replace(/\r\n/g, '\n');
+  for (const [name, from, to] of [['"::" no longer broken', ".replace(/:(?=:)/g, ': ')", ''], ['"##[" no longer broken', ".replace(/#(?=#(?:vso)?\\[)/g, '# ')", ''], ['C1 range dropped', '\\\\u007f-\\\\u009f', '\\\\u007f'], ['bidi and zero-width no longer escaped', '\\\\u200b-\\\\u200f\\\\u202a-\\\\u202e', '']] as Array<[string, string, string]>) {
+    assert.ok(spSrc.includes(from), `mutant "${name}": its anchor is in safe-print.js`);
+    const mutated = spSrc.split(from).join(to);
+    assert.notStrictEqual(mutated, spSrc, `mutation did not apply: ${name}`);
+    let msg = '';
+    try { CASES9[caseOf(name)](ghSrc, mutated); } catch (e) { msg = (e as Error).message; }
+    assert.ok(msg !== '', `safe-print mutant "${name}" survived`);
+    const want = CASES7_TEXT[caseOf(name)];
+    assert.ok(msg.startsWith(want), `safe-print mutant "${name}" must fail at "${want}", got: ${msg.split('\n')[0]}`);
   }
 } finally {
   fs.rmSync(dir, { recursive: true, force: true });

@@ -9,7 +9,7 @@
 # scripts/gh-trusted.sh --list issues|prs [--state open|closed|merged|all] [--label NAME] [--repo owner/name] (spec 021 FR-426): one row per item
 # (the 50 most recently updated). A row with a trusted author AND latest editor shows number, state, draft, author, labels, updated date and the
 # title; any other row is only "outside: <url>" (no title, no login, no branch name). A GraphQL Bot with login `<slug>` reads as `<slug>[bot]` (`gh ... --json author` shows it as `app/<slug>`).
-# The listing goes through scripts/safe-print.js (controls, bidi and "::" made harmless). --state and --label are checked against fixed patterns and
+# The listing, the read mode and --pr-text go through scripts/safe-print.js (controls, bidi and "::" made harmless; FR-428). --state and --label are checked against fixed patterns and
 # travel as GraphQL variables, never in a shell string or in the query text.
 repo_arg=
 repo_set=
@@ -79,6 +79,12 @@ gh_read() {
   done <<< "$out"
   printf '%s' "$res"
 }
+# FR-428: the read mode and --pr-text print a trusted author's text, and that text can hold terminal controls, bidi, zero-width marks or a CI command line:
+# every line goes through scripts/safe-print.js (--text keeps tabs) after the tag check, so only our own tagged lines are ever printed
+print_text() {
+  command -v node >/dev/null 2>&1 || { echo "gh-trusted.sh: node is needed (scripts/safe-print.js prints the text)" >&2; return 1; }
+  [ -z "$1" ] || printf '%s\n' "$1" | node "$(dirname "$0")/safe-print.js" --text
+}
 if [ -n "$list" ]; then
   command -v node >/dev/null 2>&1 || { echo "gh-trusted.sh: --list needs node (scripts/safe-print.js prints the rows)" >&2; exit 1; }
   if [ "$list" = issues ]; then key=issues; kind=issue; ST='IssueState'; X=''; else key=pullRequests; kind=PR; ST='PullRequestState'; X='isDraft isCrossRepository'; fi
@@ -106,7 +112,8 @@ $GUARD.data.repository.pullRequest
 | if . == null then \"no PR #$n\"
   elif ok then (if renamed_ok then \"title: \(.title)\" else rename_msg end), \"--- body\", (.body // \"\")
   else \"outside PR text by \(.author|who): not shown, for a human: \(.url)\" end $WRAP"
-  gh_read -f query="$QT" --jq "$JQT"
+  out=$(gh_read -f query="$QT" --jq "$JQT") || exit 1
+  print_text "$out"
   exit
 fi
 Q="query{repository(owner:\"$OWNER\",name:\"$NAME\"){issueOrPullRequest(number:$n){__typename
@@ -130,4 +137,5 @@ $GUARD.data.repository.issueOrPullRequest
    | sort_by(.t)[] | \"--- \(.t) \(.h)\", .x),
   ([.comments.totalCount, (.reviews.totalCount // 0), (.reviewThreads.totalCount // 0)] | if max > 100 then \"--- more than 100 items: only the first 100 of each list are shown\" else empty end)
   end $WRAP"
-gh_read -f query="$Q" --jq "$JQ"
+out=$(gh_read -f query="$Q" --jq "$JQ") || exit 1
+print_text "$out"
