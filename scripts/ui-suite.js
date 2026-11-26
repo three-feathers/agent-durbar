@@ -56,6 +56,7 @@ const DRIVERS = [
   { name: 'check-settings-save' }, // spec 011 FR-012 (issue #1023): a Settings row whose save fails returns to the value in force and says so
   { name: 'check-rail' }, // spec 005 FR-190, FR-194, FR-216 and 052 FR-215: the agent rail's List view: fit, order, two heights, folders that collapse, Your door, Mac drag areas
   { name: 'check-rail-resize' }, // spec 005 FR-236 (issue #1223): the agent rail's width: drag, keys, double-click reset, remembered, clamped when the window shrinks, both sizes
+  { name: 'check-rail-recent' }, // spec 113 P6 (FR-040..FR-045): the rail's Folders | Recent order: the control, the flat list with the folder per row, your sends moving rows, the folded "not used since start" group, the stores, both sizes and 180px
   { name: 'check-unread' }, // spec 001 FR-170..FR-177, spec 005 FR-176/FR-177 (issue #691): a finished agent's reply stays marked New until its chat is shown
   { name: 'check-unread', label: 'check-unread retro', env: { DRIVER_WORLD: 'retro' } }, // spec 102 T319 (issue #1399): the New mark and the still highlights in the arcade (its Real office step)
   { name: 'check-001-lights' }, // spec 001 FR-230, FR-231: Open office's screens tinted by status as Real office's, no card glow or waiting halo, every kit, both sizes
