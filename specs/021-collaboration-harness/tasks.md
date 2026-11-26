@@ -178,4 +178,4 @@
 
 ## 2026-11-26: `gh-trusted.sh <N>` and `--pr-text` print through `safe-print.js` (FR-428)
 
-- [x] T519 (FR-428, issue #2160) `print_text` in `scripts/gh-trusted.sh` (read mode and `--pr-text` pipe `gh_read`'s output through `scripts/safe-print.js --text`); `printable(text, keepTab)` and the `--text` flag in `scripts/safe-print.js`; `safe-print.js` in `INSTALL_FILES` and the code-trust list of `scripts/prereview-cli.ts` (tests in `scripts/test-prereview.ts`); section 8 cases `read-printed`, `pr-printed`, `ci-printed` and five mutants in `scripts/test-trusted-content.ts`; changelog fragment.
+- [x] T519 (FR-428, issue #2160) `print_text` in `scripts/gh-trusted.sh` (read mode and `--pr-text` pipe `gh_read`'s output through `scripts/safe-print.js --text`); `printable(text, keepTab)` and the `--text` flag in `scripts/safe-print.js`; `safe-print.js` in `INSTALL_FILES` and the code-trust list of `scripts/prereview-cli.ts` (tests in `scripts/test-prereview.ts`); section 8 cases `read-printed`, `pr-printed`, `ci-printed`, `c1-printed` and six mutants in `scripts/test-trusted-content.ts`; changelog fragment.
