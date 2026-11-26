@@ -2769,6 +2769,7 @@ async function sendMessage(text,forId){
   addUserMsg(chat,text||'(attachment)',attached.slice());
   attached=[];renderAttached();
   const input=$('msgInput');if(input){input.value='';autoGrow();}
+  railStampYou(a.id); /* spec 113 FR-042: the demo's own send (memory only, never stored) */
   const prev=a.state; chat.busy=true; setSend();
   if(!a.paused){a.state='thinking';a.label=null;renderAll();}
   const f=(a.files&&a.files[0])||'src/';
@@ -4501,6 +4502,8 @@ document.addEventListener('click',e=>{
   const mo=e.target.closest('[data-more]'); if(mo){const id=mo.dataset.more;ui.expanded[id]=!ui.expanded[id];renderAll();return;}
   const cm=e.target.closest('.chips-more'); if(cm){const box=cm.parentNode;box.dataset.exp=box.dataset.exp==='1'?'0':'1';refreshChips(box);return;}
   const chip=e.target.closest('#chat .chip:not(.att-chip)'); if(chip){if(e.target.closest('.xbody'))return;const o=chip.classList.toggle('open');chip.setAttribute('aria-expanded',String(o));return;} /* spec 052 FR-063: the open body (Copy, Show all, selecting text) keeps it open */
+  const ro=e.target.closest('[data-rorder]'); if(ro){if(ro.dataset.rorder!==railOrder())setRailOrder(ro.dataset.rorder);return;} /* spec 113 FR-040 */
+  const ri=e.target.closest('[data-rgidle]'); if(ri){if(e.detail<2)toggleIdle();return;} /* FR-045: the folded group's heading, as a folder's */
   const rg=e.target.closest('[data-rgfold]'); if(rg){if(e.detail<2)toggleFold(rg.dataset.rgfold);return;} /* spec 005 FR-216: a click, Enter or Space toggles a folder; the second click of a double click is dropped, so a double click toggles it once and never opens a chat */
   const sw=e.target.closest('[data-sw]'); if(sw){if(e.detail>=2)return; /* spec 005 FR-216: the second click of a double click never opens a chat (a heading's first click can move another row under the pointer) */openPanel(sw.dataset.sw,true);return;} /* spec 074 FR-019: mouse or keyboard */
   if(e.target.closest('[data-costview]')){window.DurbarScreens.openTools(null,'cost');return;}
@@ -8175,6 +8178,7 @@ async function sendLive(text,forId,opts){
   const afShown=opts&&opts.several&&'afShown' in opts?opts.afShown:afPanelId(); /* spec 052 FR-183: what you were looking at when you sent (a Send to several: before the first send) */
   const r=await bridge.send(a.id,text||'Please look at the attached file(s).',atts.map(x=>({path:x.path,name:x.name,kind:x.kind})),planFirst?{plan:true}:undefined);
   if(r&&r.notSent){mcpNotSent(a,chat,text,fromComposer);return;} /* spec 058 FR-208: Stop during the MCP sign-in wait: nothing was sent */
+  if(RAIL.stampable(r,opts))railStampYou(a.id); /* spec 113 FR-042: an accepted send you typed moves the row to the top of Recent (not a failed one, not a coffee-break resume) */
   if(r.ok&&!(opts&&opts.coffee))afOnAccepted(a,afShown,!!(opts&&opts.several)); /* spec 052 FR-183: accepted by the agent app; a break resuming by itself is not the person's send */
   if(!r.ok){closeTurn(a);const n=addNote(chat,'Send failed: '+esc((r.error&&safeMask(r.error))||'unknown error'),true); /* spec 041 FR-065 (delta 2026-10-23): the app's error is masked (shown whole, not cut); no mask: a neutral word */modeRefusalAction(a,n,r.error);setState(a,'error',null,'Send failed: '+safeExcerpt(r.error,100,'unknown error'));}
   else if(r.slash)addNote(chat,'Sent the text of <code>'+esc(DurbarCutText.cutText(safeMask(r.slash),160))+'</code> (the agent app does not load it in Durbar’s sessions).'+(r.slashNote?' '+esc(DurbarCutText.cutText(safeMask(r.slashNote),200)):'')); /* spec 073 FR-005; slashNote: masked, then cut (FR-013) */
@@ -8434,7 +8438,7 @@ function closeRailSortMenu(back){
 function railSortOutside(e){const m=document.getElementById('railSortMenu');if(m&&!m.contains(e.target)&&!e.target.closest('#railSortBtn'))closeRailSortMenu(false);}
 /* the existing popup pattern of the chat's profile and model menus (role=menu, menuitemradio, placeMenu); one choice is checked */
 function openRailSortMenu(){
-  const b=$('railSortBtn');if(!b)return;
+  const b=$('railSortBtn');if(!b||b.disabled)return;
   closeRailSortMenu(false);closeCtxMenu();closeModeMenu();closeModelMenu();closeAgentMenu();
   const cur=railSort(),m=document.createElement('div');m.id='railSortMenu';m.className='mode-menu model-menu';m.setAttribute('role','menu');m.setAttribute('aria-label','Sort conversations');
   m.innerHTML=RAIL.SORTS.map(([k,t])=>`<button type="button" role="menuitemradio" aria-checked="${k===cur}" data-rsort="${k}"><span class="mt"><b>${esc(t)}</b></span></button>`).join('');
@@ -8448,6 +8452,56 @@ function openRailSortMenu(){
     else if(e.key==='Escape'||e.key==='Tab'){e.preventDefault();e.stopPropagation();closeRailSortMenu(true);}});
   focusIn(m.querySelector('[aria-checked="true"]')||m.querySelector('button'));
 }
+/* spec 113 P6 (FR-040..FR-045): the rail's Recent order. The order choice, the times you sent a message (`youAt`, ids and times only, never text) and the fold
+   of the "not used since Durbar started" group are kept like the collapsed folders: railRemember() only, never in the demo; without it they last for this window */
+let RAIL_ORDER=null, RAIL_YOUAT=null, RAIL_YOUAT_SAVED, RAIL_IDLE_OPEN=null;
+const RAIL_PAGE_T0=Date.now();
+function railOrder(){
+  if(RAIL_ORDER===null){RAIL_ORDER='folders';if(!demoOn&&railRemember()){try{RAIL_ORDER=RAIL.loadOrder(localStorage.getItem(RAIL.ORDER_KEY));}catch(e){RAIL_ORDER='folders';}}}
+  return RAIL_ORDER;
+}
+function setRailOrder(k){
+  RAIL_ORDER=RAIL.loadOrder(k);
+  if(!demoOn&&railRemember()){try{if(RAIL_ORDER==='folders')localStorage.removeItem(RAIL.ORDER_KEY);else localStorage.setItem(RAIL.ORDER_KEY,RAIL_ORDER);}catch(e){/* storage off: kept for this run */}}
+  railOrderPaint(); renderStrip();
+  announce(RAIL_ORDER==='recent'?'Recent order: your last messages first':'Folders order');
+}
+/* the control and the sort button follow the choice (the sort applies to Folders only: in Recent it is disabled, spec 113 delta 2026-11-26) */
+function railOrderPaint(){
+  const rec=railOrder()==='recent';
+  document.querySelectorAll('[data-rorder]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.rorder===(rec?'recent':'folders'))));
+  const sb=$('railSortBtn');if(sb){sb.disabled=rec;sb.title=rec?RAIL_SORT_OFF:'Sort conversations: '+RAIL.sortLabel(railSort());}
+}
+const RAIL_SORT_OFF='Sort applies to the Folders order; Recent has its own order';
+function railYouAt(){
+  if(RAIL_YOUAT===null){RAIL_YOUAT={};if(!demoOn&&railRemember()){try{RAIL_YOUAT=RAIL.loadYouAt(localStorage.getItem(RAIL.YOUAT_KEY),Date.now());}catch(e){RAIL_YOUAT={};}}}
+  return RAIL_YOUAT;
+}
+/* FR-042: called when the app accepted a message you typed (RAIL.stampable); the id is the root session's (a.id, as durbar.chatNo) */
+function railStampYou(id){
+  RAIL_YOUAT=RAIL.stampYouAt(railYouAt(),id,Date.now());
+  if(!demoOn&&railRemember()){
+    try{const v=RAIL.youAtJSON(RAIL_YOUAT,agents.filter(x=>!x.parent).map(x=>x.id),agentsListed);
+      if(v!==RAIL_YOUAT_SAVED){RAIL_YOUAT_SAVED=v;if(v===null)localStorage.removeItem(RAIL.YOUAT_KEY);else localStorage.setItem(RAIL.YOUAT_KEY,v);}}catch(e){/* storage off: kept for this run */}
+  }
+  if($('stripList'))renderStrip();
+}
+const railStartedAt=()=>APP_SETTINGS&&typeof APP_SETTINGS.startedAt==='number'?APP_SETTINGS.startedAt:RAIL_PAGE_T0; /* FR-045: main's start time through getSettings(), so a window reload does not reset it */
+function railIdleOpen(){
+  if(RAIL_IDLE_OPEN===null){RAIL_IDLE_OPEN=false;if(!demoOn&&railRemember()){try{RAIL_IDLE_OPEN=RAIL.loadIdleOpen(localStorage.getItem(RAIL.IDLE_KEY));}catch(e){RAIL_IDLE_OPEN=false;}}}
+  return RAIL_IDLE_OPEN;
+}
+function toggleIdle(){
+  RAIL_IDLE_OPEN=!railIdleOpen();
+  if(!demoOn&&railRemember()){try{if(RAIL_IDLE_OPEN)localStorage.setItem(RAIL.IDLE_KEY,'1');else localStorage.removeItem(RAIL.IDLE_KEY);}catch(e){/* storage off */}}
+  renderStrip();
+}
+function railRecent(root){
+  needsMeOrder();
+  const rank=new Map(roomsInOrder().map((r,i)=>[r.id,i])), you=railYouAt();
+  const list=agents.filter(x=>!x.parent&&roomShown(roomOf(x)));
+  return RAIL.recent(list.map((x,i)=>({id:x.id,rank:rank.get(x.room),needs:needsMe(x),since:NEED_SINCE.get(x.id),prio:prio(x),i,youAt:you[x.id]})),railStartedAt(),root||undefined);
+}
 function railGroups(){
   needsMeOrder(); /* NEED_SINCE for whoever needs you now */
   const rank=new Map(roomsInOrder().map((r,i)=>[r.id,i]));
@@ -8457,8 +8511,9 @@ function railGroups(){
 }
 function railHTML(){
   const ib=$('inboxBtn');
-  return `<nav class="rail" aria-label="Agents"><h2 class="sr-only">Agents</h2><div class="rail-top"><button class="btn back" id="backBtn" type="button" title="Back to the office (Esc)">${ICON('back')}<span>Office</span></button><button class="btn sm" id="railSortBtn" type="button" aria-haspopup="menu" aria-expanded="false" aria-label="Sort conversations: ${esc(RAIL.sortLabel(railSort()))}" title="Sort conversations: ${esc(RAIL.sortLabel(railSort()))}">Sort<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6l4 4 4-4"/></svg></button><!-- spec 005 FR-190: R2 (T127) puts the Plan | List switch here, R3 (T116) the collapse button --></div>
+  return `<nav class="rail" aria-label="Agents"><h2 class="sr-only">Agents</h2><div class="rail-top"><button class="btn back" id="backBtn" type="button" title="Back to the office (Esc)">${ICON('back')}<span>Office</span></button><button class="btn sm" id="railSortBtn" type="button" aria-haspopup="menu" aria-expanded="false" aria-label="Sort conversations: ${esc(RAIL.sortLabel(railSort()))}"${railOrder()==='recent'?' disabled':''} title="${railOrder()==='recent'?RAIL_SORT_OFF:'Sort conversations: '+esc(RAIL.sortLabel(railSort()))}">Sort<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6l4 4 4-4"/></svg></button><!-- spec 005 FR-190: R2 (T127) puts the Plan | List switch here, R3 (T116) the collapse button --></div>
    <div class="rail-door"><button class="btn sm" id="railDoor" type="button" aria-haspopup="dialog" title="${esc(ib?ib.title:'Needs you')}"${ib&&ib.getAttribute('aria-keyshortcuts')?` aria-keyshortcuts="${esc(ib.getAttribute('aria-keyshortcuts'))}"`:''}>${ALERT_ICON}<span>Your door</span><b>0</b></button><!-- spec 052 FR-219: the red lock goes beside it (T223) --></div>
+   <div class="rail-order"><div class="seg" role="group" aria-label="Order">${[['folders','Folders'],['recent','Recent']].map(([k,t])=>`<button type="button" data-rorder="${k}" aria-pressed="${railOrder()===k}"${k==='recent'?' title="Your last messages first, whatever the folder"':''}>${t}</button>`).join('')}</div></div>
    <div class="rail-list" id="stripList"></div><div class="rgrip" id="railGrip" role="separator" aria-orientation="vertical" aria-label="Resize the agent list" aria-controls="stripList" tabindex="0" title="Drag to resize the agent list. Double-click to go back to the default width."></div></nav>`;
 }
 /* "Waiting 3 min" (ATT.waitLabel, as the inbox and the Boss say it), or "Error · 3 min"; text only, never a size (052 FR-061) */
@@ -8470,12 +8525,25 @@ function railAgeSaid(x,now){const t=NEED_SINCE.get(x.id);return vis(x)==='waitin
 function railReq(x){const c=x.live||chats[x.id]?pendingCardOf(x):null;return c?requestText(c):taskText(x);} /* never builds a demo chat just to look (as attentionItems) */
 /* spec 005 FR-340 (issue 1905): a rail row's tooltip names the folder (its path masked, home as ~), on a second line; a group head's gives name and path */
 const railFolderLine=x=>{const r=roomOf(x),p=r?pathTip(deskMask(showPath(r.path))):'';return p?'\n'+esc('Folder: '+p):'';};
-function railRow(x,root,now){
+/* spec 113 FR-043: a Recent row shows its folder (the headings are gone): the name cut with DurbarCutText.nameTail (so its tail stays), and the nearest parent
+   that tells two same-name folders apart, in front ("parent/name"; cut with a plain ellipsis). Name, parent, path: through the one mask, then esc */
+function railRecFolder(x,pn){
+  const r=roomOf(x); if(!r)return {html:'',said:''};
+  const nm=deskMask(r.name||''), par=pn.has(r.id)?deskMask(pn.get(r.id)):'', full=pathTip(deskMask(showPath(r.path)));
+  return {html:`<span class="sfold">${par?`<span class="sfp">${esc(par)}/</span>`:''}<span class="sfn">${nameHTML(nm)}</span></span>`,said:esc('Folder: '+(full||nm)+'. ')};
+}
+function railRow(x,root,now,rc){
   const st=pillSt(x),attn=st==='waiting'||st==='error'||st==='failing'||st==='retrying', sel=x.id===root, tall=needsMe(x); /* spec 052 FR-092: Failing here too; spec 034 FR-018: Retrying */
   const head=`<span class="sav" data-face="${esc(faceKey(x))}">${avatar(x,undefined,undefined,22)}</span>`, name=`<b>${esc(x.name)}${draftHTML(x)}${unreadHTML(x)}${dialogHTML(x)}</b>`;
   const cls=`sitem st-${st}${attn?' attn':''}${tall?' tall':''}${sel?' sel':''}`, key=`data-sw="${esc(x.id)}" data-key="sw:${esc(x.id)}" aria-current="${sel}"`, who=`${esc(x.name)}${chatNoWords(x)}${draftWords(x)}${unreadWords(x)}`, no=chatNoOf(x)?'C'+chatNoOf(x)+' · ':'';
+  const yat=rc?railYouAt()[x.id]:undefined;
+  if(!tall&&rc){ /* Recent: two lines, the folder (and, once you have written to it, the age of that) under the name */
+    const age=typeof yat==='number'?`<span class="sago" data-at="${yat}">${esc(ACT.agoShort(Math.max(0,now-yat)))}</span>`:'', said=typeof yat==='number'?esc('You wrote '+ACT.agoLong(Math.max(0,now-yat))+'. '):'';
+    return `<button class="${cls} rec" type="button" ${key} data-tip="${no}${esc(x.name)} · ${esc(stWord(x,true))}: ${esc(taskText(x))}${railFolderLine(x)}" aria-label="${who}, ${esc(stWord(x,true))}. ${rc.said}${said}Open chat.">${head}<span class="stx"><span class="stop">${name}<span class="sst"><span class="dot ${st}"></span><span class="sw">${esc(stWord(x,true))}</span></span></span><span class="sfl">${rc.html}${age}</span></span></button>`;
+  }
   if(!tall)return `<button class="${cls}" type="button" ${key} data-tip="${no}${esc(x.name)} · ${esc(stWord(x,true))}: ${esc(taskText(x))}${railFolderLine(x)}" aria-label="${who}, ${esc(stWord(x,true))}. Open chat.">${head}<span class="stx">${name}</span><span class="sst"><span class="dot ${st}"></span><span class="sw">${esc(stWord(x,true))}</span></span></button>`;
   const req=SHORT(railReq(x),200); /* masked first (requestText), then cut: tooltips stay within 300 characters (spec 052 FR-171) */
+  if(rc)return `<button class="${cls} rec" type="button" ${key} data-tip="${no}${esc(x.name)} · ${esc(railAge(x,now))}: ${esc(req)}${railFolderLine(x)}" aria-label="${who}, ${esc(railAgeSaid(x,now))}: ${esc(req)}. ${rc.said}Open chat.">${head}<span class="stx"><span class="stop">${name}<span class="sage">${esc(railAge(x,now))}</span></span><span class="sfl">${rc.html}</span><span class="sreq">${esc(req)}</span></span></button>`; /* a row that needs you shows its wait age only, never a second age */
   return `<button class="${cls}" type="button" ${key} data-tip="${no}${esc(x.name)} · ${esc(railAge(x,now))}: ${esc(req)}${railFolderLine(x)}" aria-label="${who}, ${esc(railAgeSaid(x,now))}: ${esc(req)}. Open chat.">${head}<span class="stx"><span class="stop">${name}<span class="sage">${esc(railAge(x,now))}</span></span><span class="sreq">${esc(req)}</span></span></button>`;
 }
 function renderRailDoor(){
@@ -8486,14 +8554,31 @@ function renderRailDoor(){
   if(brainOn())brainDoorPaint(); /* spec 106 T006: the right rail's Your door section counts the same */
 }
 let railTick=0;
+/* spec 113 FR-041, FR-043, FR-045: Recent is one flat list (no folder headings): who needs you, your latest sends, the open chat's row, then the folded
+   "Not used since Durbar started" group */
+function railRecentHTML(root,now){
+  const m=railRecent(root), ids=[...m.head,...(m.open?[m.open]:[]),...m.idle];
+  const rooms=[...new Set(ids.map(id=>byId(id)).filter(Boolean).map(x=>x.room))].map(id=>ROOMS.find(r=>r.id===id)).filter(Boolean);
+  const pn=RAIL.parentNames(rooms,3); /* FR-043: same-name folders told apart, at most three parents */
+  return withFaceMemo(()=>{
+    const row=id=>railRow(byId(id),root,now,railRecFolder(byId(id),pn));
+    let h=m.head.map(row).join('')+(m.open?row(m.open):'');
+    if(m.idle.length){
+      const shut=!railIdleOpen(), n=m.idle.length, t='Not used since Durbar started';
+      h+=`<div class="rgrp" data-key="rg:idle"><h3 class="rg-hd"><button class="rg-h" type="button" data-rgidle aria-expanded="${!shut}" aria-controls="rgRowsIdle" data-tip="${esc(t+' ('+n+')')}" aria-label="${esc(t)}: ${n} ${n===1?'session':'sessions'}">${ICON('chev')}<span class="rg-n">${esc(t)}</span><span class="rg-c" aria-hidden="true">${n}</span></button></h3><div class="rg-rows" id="rgRowsIdle"${shut?' hidden':''}>${m.idle.map(row).join('')}</div></div>`;
+    }
+    return h;
+  });
+}
 function renderStrip(){
   const box=$('stripList'); if(!box)return;
   const cur=byId(ui.selected), root=cur?(cur.parent||cur.id):null, folds=railFolds(), now=Date.now();
   renderRailDoor();
   /* spec 005 FR-216: a moved folder is re-inserted by morphHTML, which drops the focus; the focused row or heading gets it back by key */
-  const fa=document.activeElement, fk=fa&&box.contains(fa)?(fa.dataset.sw!=null?'[data-sw="'+CSS.escape(fa.dataset.sw)+'"]':fa.dataset.rgfold!=null?'[data-rgfold="'+CSS.escape(fa.dataset.rgfold)+'"]':null):null;
-  const groups=railGroups(), pn=RAIL.parentNames(groups.map(g=>ROOMS.find(x=>x.id===g.room)).filter(Boolean)); /* FR-340: equal names told apart */
-  const rows=withFaceMemo(()=>groups.map((g,gi)=>{
+  const fa=document.activeElement, fk=fa&&box.contains(fa)?(fa.dataset.sw!=null?'[data-sw="'+CSS.escape(fa.dataset.sw)+'"]':fa.dataset.rgfold!=null?'[data-rgfold="'+CSS.escape(fa.dataset.rgfold)+'"]':fa.dataset.rgidle!=null?'[data-rgidle]':null):null;
+  const rec=railOrder()==='recent';
+  const groups=rec?[]:railGroups(), pn=RAIL.parentNames(groups.map(g=>ROOMS.find(x=>x.id===g.room)).filter(Boolean)); /* FR-340: equal names told apart */
+  const rows=rec?railRecentHTML(root,now):withFaceMemo(()=>groups.map((g,gi)=>{
     const r=ROOMS.find(x=>x.id===g.room); if(!r)return '';
     const shut=folds.has(r.path), n=g.ids.length, here=!!root&&g.ids.includes(root), par=pn.has(r.id)?deskMask(pn.get(r.id)):'';
     const need=shut&&g.needN?`<span class="rg-need" title="${g.needN} ${g.needN===1?'needs':'need'} you">${ALERT_ICON}${g.needN}</span>`:'';
@@ -8502,7 +8587,7 @@ function renderStrip(){
   morphHTML(box,rows);
   if(fk&&!box.contains(document.activeElement)){const n=box.querySelector(fk);if(n&&n.getClientRects().length)n.focus({preventScroll:true});}
   /* 052 FR-061: the ages tick as text only, every 30 s while the rail is shown */
-  if(!railTick)railTick=setInterval(()=>{if(!$('stripList')){clearInterval(railTick);railTick=0;return;}const t=Date.now();document.querySelectorAll('#stripList .sitem.tall[data-sw]').forEach(el=>{const x=byId(el.dataset.sw),s=el.querySelector('.sage');if(x&&s){const v=railAge(x,t);if(s.textContent!==v)s.textContent=v;}});},30000);
+  if(!railTick)railTick=setInterval(()=>{if(!$('stripList')){clearInterval(railTick);railTick=0;return;}const t=Date.now();document.querySelectorAll('#stripList .sitem.tall[data-sw]').forEach(el=>{const x=byId(el.dataset.sw),s=el.querySelector('.sage');if(x&&s){const v=railAge(x,t);if(s.textContent!==v)s.textContent=v;}});document.querySelectorAll('#stripList .sago[data-at]').forEach(s=>{const v=ACT.agoShort(Math.max(0,t-Number(s.dataset.at)));if(s.textContent!==v)s.textContent=v;});},30000);
 }
 
 
@@ -10862,7 +10947,7 @@ if(bridge){
     }).catch(()=>apply());}else apply();
   };
   if(bridge.getOrder)bridge.getOrder().then(d=>{ORDER=RO.sanitize(d);scheduleRender();}).catch(()=>{}); /* issue 677: a failed or corrupt read keeps the automatic order */
-  if(bridge.getSettings)bridge.getSettings().then(v=>{APP_SETTINGS=v||{};PLACE_MAP=(v&&v.placeMap)||{};CUSTOM=(v&&Array.isArray(v.customPlaces))?v.customPlaces:[];SERIOUS=!!(v&&v.seriousMode);markSerious();STILL_HL=!!(v&&v.stillHighlights);markStillHl();MOTION=!(v&&v.motion===false);markMotion();setAutoFollowOn(!!(v&&v.autoFollowWork===true));NOTIFY=!!(v&&v.notifyNeedsMe!==false);BREAK_RESUME=v&&v.breakResume==='ask'?'ask':'auto';CHAT_LINKS=v&&v.chatLinksIn==='system'?'system':'session';BRAIN_SET=!(v&&v.brainView===false);BRAIN_MOTION_SET=v&&(v.brainMotion==='calm'||v.brainMotion==='still')?v.brainMotion:'full';brainMotionSync();brainRailSync();themeBoot(v);}).catch(()=>{});
+  if(bridge.getSettings)bridge.getSettings().then(v=>{APP_SETTINGS=v||{};if(railOrder()==='recent')scheduleRender();PLACE_MAP=(v&&v.placeMap)||{};CUSTOM=(v&&Array.isArray(v.customPlaces))?v.customPlaces:[];SERIOUS=!!(v&&v.seriousMode);markSerious();STILL_HL=!!(v&&v.stillHighlights);markStillHl();MOTION=!(v&&v.motion===false);markMotion();setAutoFollowOn(!!(v&&v.autoFollowWork===true));NOTIFY=!!(v&&v.notifyNeedsMe!==false);BREAK_RESUME=v&&v.breakResume==='ask'?'ask':'auto';CHAT_LINKS=v&&v.chatLinksIn==='system'?'system':'session';BRAIN_SET=!(v&&v.brainView===false);BRAIN_MOTION_SET=v&&(v.brainMotion==='calm'||v.brainMotion==='still')?v.brainMotion:'full';brainMotionSync();brainRailSync();themeBoot(v);}).catch(()=>{});
   setInterval(()=>{if(VISITS.tick())scheduleRender();},250);
   setInterval(coffeeTick,SIM_BREAK?1000:5000); /* spec 068: resume, ask or remind when a break is due */
   agents=LIVE.agents; ROOMS=LIVE.rooms;

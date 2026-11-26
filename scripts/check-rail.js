@@ -6,7 +6,7 @@
  *
  * At 1440x900 and 1280x800, 15 agents, with a chat open:
  *   - fit: the rail is a 220px column on the left, full height under the notice bar; no strip; the chat header starts at the rail's top; all
- *     15 main agents are rows, the same list as the office; no page overflow; the rail scrolls at most 34px at 1280 and not at 1440 (FR-195);
+ *     15 main agents are rows, the same list as the office; no page overflow; the rail scrolls at most 62px at 1280 (34px before spec 113's Folders | Recent row, +28px) and not at 1440 (FR-195);
  *     every text in the rail at least 10.5px; the measured chat column is printed (RAIL lines).
  *   - order (FR-194): folders with someone needing you first, then the office's room order; inside a folder whoever needs you first; after a
  *     request arrives in a quiet folder it moves up, and after it is answered it goes back.
@@ -94,13 +94,13 @@ module.exports = async (ctx) => {
     assert.strictEqual(fit.rows, officeN, `${tag}: every main agent is a row (${fit.rows} of ${officeN})`);
     assert.ok(!fit.over && !fit.railOver, `${tag}: no page or rail overflow`);
     assert.strictEqual(fit.small, 0, `${tag}: rail text at least 10.5px`);
-    assert.ok(fit.scroll <= (w === 1280 ? 34 : 0), `${tag}: the rail scrolls ${fit.scroll}px (at most ${w === 1280 ? 34 : 0})`);
-    // the same without the notice bar (052 FR-218 removes it): the rail does not scroll at either size
+    assert.ok(fit.scroll <= (w === 1280 ? 62 : 0), `${tag}: the rail scrolls ${fit.scroll}px (at most ${w === 1280 ? 62 : 0}: 34 before the order row of spec 113, plus its 28)`);
+    // the same without the notice bar (052 FR-218 removes it): the rail does not scroll at 1440; at 1280 it scrolls at most the order row's overshoot (spec 113 FR-040)
     // one synchronous task: hide the bars, lay out, measure, show them again (layout is read synchronously, nothing repaints in between)
     const bare = await js(`(()=>{const ns=[...document.querySelectorAll('.notice-strip')].filter(n=>!n.hidden);ns.forEach(n=>{n.hidden=true;});const l=document.getElementById('stripList');const o={top:document.querySelector('#panel>.rail').getBoundingClientRect().top,scroll:l.scrollHeight-l.clientHeight,log:Math.round(document.getElementById('chat').getBoundingClientRect().height)};ns.forEach(n=>{n.hidden=false;});return o;})()`);
     assert.strictEqual(bare.top, 0, `${tag}: with the notice bar hidden the rail starts at the top`);
     console.log(`RAIL_NOTICE ${tag} without the notice bar: ${JSON.stringify(bare)}`);
-    assert.strictEqual(bare.scroll, 0, `${tag}: without the notice bar the rail does not scroll`);
+    assert.ok(bare.scroll <= (w === 1280 ? 22 : 0), `${tag}: without the notice bar the rail scrolls ${bare.scroll}px (at most ${w === 1280 ? 22 : 0}: none before the order row of spec 113, plus its 28 less the bar's room)`);
 
     // ---- order (FR-194) ----
     const roomOrder = await js(`[...document.querySelectorAll('#stage .room[data-key^="room:"]')].map(r=>r.dataset.key.slice(5))`);

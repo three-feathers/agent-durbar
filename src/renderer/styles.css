@@ -875,6 +875,10 @@ body.panel-open #panel{flex-direction:row}
 .rail-door .btn svg{flex:none;width:14px;height:14px}
 .rail-door .btn b{margin-left:auto;font-variant-numeric:tabular-nums}
 .rail-door .btn.attn{background:var(--card-waiting);border-color:var(--card-waiting-line);color:var(--ink)}
+/* spec 113 FR-040: the Folders | Recent control, its own row under Your door (the .seg control; text over the 10.5px floor) */
+.rail-order{flex:none;padding:0 var(--s-2) var(--s-1)}
+.rail-order .seg{width:100%}
+.rail-order .seg button{flex:1;min-width:0;height:22px;padding:0 6px;font-size:var(--t4-size)}
 .rail-list{flex:1;min-height:0;margin-right:6px;display:flex;flex-direction:column;gap:var(--s-1);overflow-x:hidden;overflow-y:auto;padding:var(--s-1) var(--s-1) var(--s-2);scrollbar-width:thin}
 .rgrp{flex:none;display:flex;flex-direction:column;min-width:0}
 .rg-hd{margin:0;font:inherit}
@@ -911,6 +915,19 @@ body.panel-open #panel{flex-direction:row}
 .stop{display:flex;align-items:baseline;gap:6px;min-width:0}
 .stop b{flex:1}
 .sage{flex:none;font-size:var(--t5-size);line-height:16px;font-weight:600;color:var(--ink);white-space:nowrap;font-variant-numeric:tabular-nums}
+/* spec 113 FR-043, FR-045: a Recent row has its folder under the name (two lines, 36px; 66px when it needs you); the name keeps its tail, the parent gives way first */
+.sitem.rec{height:36px}
+.sitem.rec.tall{height:66px}
+.sfl{display:flex;align-items:baseline;gap:6px;min-width:0;font-size:var(--t5-size);line-height:14px;color:var(--muted)}
+.sitem.rec .stop{line-height:16px}
+.sfold{display:flex;flex:1 1 auto;min-width:0}
+.sfp{flex:0 100000 auto;min-width:3ch;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sfn{flex:0 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sfn:has(>.rn-t){display:flex}
+.sfn>.rn-h{flex:0 1000000 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sfn>.rn-t{flex:0 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sago{flex:none;margin-left:auto;font-variant-numeric:tabular-nums;white-space:nowrap}
+.rail-top #railSortBtn:disabled{opacity:.5;cursor:default}
 .sreq{font-size:var(--t5-size);line-height:15px;color:var(--ink);overflow:hidden;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow-wrap:anywhere;max-height:30px}
 @media (prefers-reduced-motion:reduce){.rg-h .chev{transition:none}}
 .ph{padding:8px 16px}
