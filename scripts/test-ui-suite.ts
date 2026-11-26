@@ -1209,5 +1209,87 @@ console.log('ui-suite: check-parallel and ui-suite install Electron once before 
     }
     assert.ok(/focus: true/.test(fs.readFileSync(SUITE, 'utf8')), 'ui-suite.js carries the flag');
   }
+  // spec 008 delta 2026-11-26 (issue #1623, T603): a passing driver's `[evidence]` lines are printed (capped, made printable) and every driver's log is written to <out>/logs/
+  {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const suite = require(SUITE) as { main: (o: object) => Promise<void>; EVIDENCE_MAX: number; EVIDENCE_WIDTH: number; LOG_LINE_MAX: number; LOG_FILE_MAX: number; driverLogText: (l: string) => string };
+    const evOut = fs.mkdtempSync(path.join(require('os').tmpdir(), 'ui-suite-evidence-'));
+    const prevOut = process.env.UI_SUITE_OUT;
+    process.env.UI_SUITE_OUT = evOut;
+    const target = names[1].split(' ')[0];
+    const hostile = '[evidence] hostile \u001b[31m::error::boom ##[add-mask]x \u2028end';
+    const evidence = Array.from({ length: 10 }, (_, i) => `[evidence] line ${i + 1}` + 'x'.repeat(i === 0 ? 400 : 0));
+    const logText = ['plain line that is not evidence', hostile, ...evidence, '[waits] timed out after 5 ms: a'].join('\n');
+    const runWith = (ok: boolean, log: string) => async () => ({ ok, secs: 1, why: ok ? '' : 'DRIVER FAILED boom', log });
+    const lines: string[] = [];
+    const realLog = console.log;
+    const printed = async (ok: boolean, log: string): Promise<string[]> => {
+      lines.length = 0;
+      console.log = (...a: unknown[]) => { lines.push(a.join(' ')); };
+      const exit0 = process.exitCode;
+      try { await suite.main({ build: () => '', argv: ['--only', target], ensure: () => true, run: runWith(ok, log) }); } catch { /* a failing driver ends the run with an error: the lines are read */ } finally { console.log = realLog; process.exitCode = exit0; } /* a failing driver sets the exit code: this test's own result is not it */
+      return lines.slice();
+    };
+    try {
+      const ok = await printed(true, logText);
+      const ev = ok.filter((l) => l.startsWith('      [evidence]'));
+      assert.strictEqual(ev.length, suite.EVIDENCE_MAX, `evidence: a passing driver prints at most ${suite.EVIDENCE_MAX} evidence lines (printed ${ev.length})`);
+      assert.ok(!ok.some((l) => l.includes('plain line that is not evidence')), 'evidence: a line that is not marked is not printed');
+      assert.ok(!ev.some((l) => l.includes('line 9') || l.includes('line 10')) && ev.some((l) => l.includes('line 7')), 'evidence: the ninth evidence line is dropped, the earlier ones kept in order');
+      const h = ev.find((l) => l.includes('hostile')) || '';
+      assert.ok(h && !h.includes('\u001b') && !h.includes('\u2028') && !/::error::/.test(h) && !h.includes('##[') && h.includes('\\u001b'), `evidence: a hostile line prints escaped, with no ESC, no ::error:: and no ##[ (${JSON.stringify(h)})`);
+      const long = ev.find((l) => l.includes('line 1x')) || '';
+      assert.ok(long.length > 0 && long.length - 6 <= suite.EVIDENCE_WIDTH, `evidence: a long line is cut to ${suite.EVIDENCE_WIDTH} characters (${long.length - 6})`);
+      assert.ok(ok.some((l) => l.includes('[waits] timed out after 5 ms')), 'evidence: the [waits] lines still print for a passing driver');
+      const file = path.join(evOut, 'logs', target + '.log');
+      assert.ok(fs.existsSync(file), `logs: the passing driver's log is written to logs/${target}.log`);
+      const body = fs.readFileSync(file, 'utf8');
+      assert.ok(body.includes('plain line that is not evidence') && body.includes('line 10') && !body.includes('\u001b') && !/::error::/.test(body), 'logs: the file holds every line of the driver, printable');
+      assert.ok(Math.max(...body.split('\n').map((l) => l.length)) <= suite.LOG_LINE_MAX, `logs: no line is longer than ${suite.LOG_LINE_MAX} characters`);
+      const big = suite.driverLogText(('y'.repeat(1500) + '\n').repeat(400) + 'LAST LINE');
+      assert.ok(big.length <= suite.LOG_FILE_MAX + 200 && big.endsWith('LAST LINE') && big.startsWith('[ui-suite] log cut'), `logs: a log over ${suite.LOG_FILE_MAX} characters keeps its end and says it was cut (${big.length})`);
+      const failed = await printed(false, logText);
+      assert.ok(!failed.some((l) => l.startsWith('      [evidence]')), 'evidence: a failing driver prints no evidence lines (its last 25 lines, as before)');
+      assert.ok(failed.some((l) => l.startsWith('      | ') && l.includes('[waits] timed out')) && failed.some((l) => l.includes('FAIL') && l.includes('DRIVER FAILED boom')), 'a failing driver still prints its FAIL line and its last lines');
+      assert.ok(fs.existsSync(file) && fs.readFileSync(file, 'utf8') === body, 'logs: the failing driver\'s log is written too (the same file name, its own text)');
+      // mutants of the runner: the filter prefix, the cap, the printer and the file each removed must fail the cases above
+      const srcText = fs.readFileSync(SUITE, 'utf8').replace(/\r\n/g, '\n');
+      const muts: Array<[string, string, string, RegExp]> = [
+        ['the evidence prefix removed', "l.startsWith(prefix)", "false", /at most 8 evidence lines \(printed 0\)/],
+        ['the evidence cap removed', ".slice(0, max).map((l) => printable(l)", ".map((l) => printable(l)", /at most 8 evidence lines \(printed 11\)/],
+        ['the evidence printer removed', "for (const l of evidenceLines(r.log)) console.log('      ' + l);", "", /at most 8 evidence lines \(printed 0\)/],
+        ['printable removed from the evidence', ".map((l) => printable(l).slice(0, width))", ".map((l) => l.slice(0, width))", /a hostile line prints escaped/],
+        ['the log file not written', "writeDriverLog(outDir, d.label || d.name, r.log);", "", /the passing driver's log is written/],
+      ];
+      for (const [name, from, to, expect] of muts) {
+        assert.ok(srcText.includes(from), `mutant "${name}": its text is in ui-suite.js`);
+        const mutated = srcText.split(from).join(to);
+        assert.notStrictEqual(mutated, srcText, `mutation did not apply: ${name}`);
+        const mp = path.join(path.dirname(SUITE), `ui-suite.mutant-${process.pid}.js`);
+        fs.writeFileSync(mp, mutated);
+        let died: Error | undefined;
+        try {
+          delete require.cache[require.resolve(mp)];
+          const m = require(mp) as typeof suite;
+          lines.length = 0;
+          console.log = (...a: unknown[]) => { lines.push(a.join(' ')); };
+          try { await m.main({ build: () => '', argv: ['--only', target], ensure: () => true, run: runWith(true, logText) }); } finally { console.log = realLog; }
+          const e2 = lines.filter((l) => l.startsWith('      [evidence]'));
+          assert.strictEqual(e2.length, suite.EVIDENCE_MAX, `evidence: a passing driver prints at most ${suite.EVIDENCE_MAX} evidence lines (printed ${e2.length})`);
+          const hh = e2.find((l) => l.includes('hostile')) || '';
+          assert.ok(hh && !hh.includes('\u001b') && !/::error::/.test(hh), `evidence: a hostile line prints escaped (${JSON.stringify(hh)})`);
+          fs.rmSync(path.join(evOut, 'logs'), { recursive: true, force: true });
+          await m.main({ build: () => '', argv: ['--only', target], ensure: () => true, run: runWith(true, logText) }).catch(() => undefined);
+          assert.ok(fs.existsSync(path.join(evOut, 'logs', target + '.log')), "logs: the passing driver's log is written");
+        } catch (e) { died = e as Error; } finally { fs.rmSync(mp, { force: true }); console.log = realLog; }
+        assert.ok(died, `mutant "${name}" survived`);
+        assert.ok(expect.test(String(died.message)), `mutant "${name}" died at the wrong assert: ${String(died.message).split(/\r?\n/)[0]}`);
+      }
+    } finally {
+      console.log = realLog;
+      if (prevOut === undefined) delete process.env.UI_SUITE_OUT; else process.env.UI_SUITE_OUT = prevOut;
+      fs.rmSync(evOut, { recursive: true, force: true });
+    }
+  }
   console.log('ui-suite signals: ok');
 })().catch((e) => { console.error(e); process.exitCode = 1; });
