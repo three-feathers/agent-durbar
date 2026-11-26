@@ -526,7 +526,7 @@ try {
   const CASES8: Record<string, (g?: string) => void> = {
     'read-renamed': (g) => {
       itemWith(renamedBy(actor('mallory'))); let r = readRun(['1'], g);
-      assert.ok(r.status === 0 && !r.out.includes('PLANTED40') && r.out.includes('https://github.com/o/r/issues/1') && r.out.includes('by vikramgorla'), `a rename by an outsider hides the title (read mode):\n${r.out}`);
+      assert.ok(r.status === 0 && !r.out.includes('PLANTED40') && r.out.split(/\s+/).includes('https://github.com/o/r/issues/1') && r.out.includes('by vikramgorla'), `a rename by an outsider hides the title (read mode):\n${r.out}`);
       itemWith(renamedBy(null)); r = readRun(['1'], g); assert.ok(!r.out.includes('PLANTED40'), `a rename by a deleted account hides the title (read mode):\n${r.out}`);
       itemWith(renamedBy(actor('fjcabello'))); r = readRun(['1'], g); assert.ok(r.out.includes('title: PLANTED40 renamed'), `a rename by a teammate keeps the title (read mode):\n${r.out}`);
     },
