@@ -8223,7 +8223,7 @@ function showSandboxNotice(a,nt){
   announce(safeMask(nt.text));
 }
 async function continueWithoutSandbox(a,note,btn,always){
-  const app=kindWord(a.info&&a.info.adapterId),mode=MODE_NAME[a.info&&a.info.permMode]||'this mode';
+  const app=kindWord(a.info&&a.info.adapterId),mode=modeNameOf(a.info)||'this mode'; /* spec 003 (2026-11-25, review of PR 2122): the chip's word, 'Ask first + review' while the reviewer is on */
   const ok=await askDialog({title:always?'Always continue without the OS sandbox?':'Continue without the OS sandbox?',
     body:always?app+' runs without its OS sandbox in every session on this computer. Durbar’s own checks still apply, and it still tries the sandbox at each start. You can undo this in Settings > Agent apps.':app+' runs without its OS sandbox for this session. Durbar’s own checks still apply ('+mode+'). Nothing is sent now: send your message again.',
     returnFocus:btn,buttons:[{label:'Cancel',value:null},{label:always?'Always continue':'Continue without the sandbox',value:'ok',cls:'primary warn'}]});
