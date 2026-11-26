@@ -86,7 +86,7 @@ module.exports = async (ctx) => {
     console.log(`[106-dock] ${tag}: lobe word contrast ${JSON.stringify(li.cr)}`);
     assert.deepStrictEqual(li.lit, [litWord], `the lit word is ${litWord} in ${tag}`);
     assert.strictEqual(li.lines, 'Lines: the last 24 steps, newest brightest', `the lines line in ${tag}`);
-    if (BLUR) { ctx.win.blur(); assert.ok(await H.until('!document.hasFocus()', 3000), `${tag}: the window is blurred, so the page reports no focus (the setup of the focus step: ${await js('document.hasFocus()')})`); }
+    if (BLUR) { ctx.win.blur(); const blurred = await H.until('!document.hasFocus()', 3000); const hf = await js('document.hasFocus()'); assert.ok(blurred, tag + ': the window is blurred, so the page reports no focus (the setup of the focus step: hasFocus ' + hf + ')'); }
     if (MUTANT !== 'nofocus') await H.needFocus(`${tag}: before the Shell word is focused`); /* the real focus, by state: show(), focus(), then until document.hasFocus(); not the emulation, which keeps the page "focused" for the rest of the run and so hides the blur above */
     await js(`document.querySelector('#brainRail .bv-lab[data-g=shell]').focus()`);
     const t1 = await tipOf();
