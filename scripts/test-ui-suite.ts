@@ -1226,7 +1226,8 @@ console.log('ui-suite: check-parallel and ui-suite install Electron once before 
     const printed = async (ok: boolean, log: string): Promise<string[]> => {
       lines.length = 0;
       console.log = (...a: unknown[]) => { lines.push(a.join(' ')); };
-      try { await suite.main({ build: () => '', argv: ['--only', target], ensure: () => true, run: runWith(ok, log) }); } catch { /* a failing driver ends the run with an error: the lines are read */ } finally { console.log = realLog; }
+      const exit0 = process.exitCode;
+      try { await suite.main({ build: () => '', argv: ['--only', target], ensure: () => true, run: runWith(ok, log) }); } catch { /* a failing driver ends the run with an error: the lines are read */ } finally { console.log = realLog; process.exitCode = exit0; } /* a failing driver sets the exit code: this test's own result is not it */
       return lines.slice();
     };
     try {
