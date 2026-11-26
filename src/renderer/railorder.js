@@ -4,6 +4,7 @@
    room order, whether the session needs you (`needsMe`), since when (`NEED_SINCE`, ms), its `prio` and its creation order. Folders with
    someone needing you come first, oldest wait first, then the office's room order; inside a folder those needing you first, oldest first,
    then `prio`, then creation order. group(items, sort) takes FR-341's choice (see SORTS below). Time never reorders anything: only `needs` and `since`, which change with a status, do.
+   recent / loadYouAt / stampYouAt / youAtJSON / stampable (spec 113 P6): the Recent order and the times you sent a message (below).
    loadFolds / foldsJSON: the collapsed folders, kept by path (the key the app already stores for the view, durbar.ui's `ws`). A corrupt,
    oversized or wrong-typed value loads as "nothing collapsed", never an error. */
 (function(root, api){
@@ -99,8 +100,8 @@
   /* spec 005 FR-340 (issue 1905): folders whose display names are equal (case folded) are told apart on screen by the nearest parent folder that
      differs: `rooms` is [{id,name,path}] (the path as the app shows it, home as ~); the result is a Map id -> label for the folders that share their
      name with another, nothing for a unique one. One parent first ("acme"), then two ("clients/acme") while the labels still collide; when the
-     parents are all equal too (renamed folders), the folder's own last segment. Never throws, never reads more than MAX_PATH characters of a path. */
-  function parentNames(rooms){
+     parents are all equal too (renamed folders), the folder's own last segment. Never throws, never reads more than MAX_PATH characters of a path. `maxDepth` (optional; Recent's rows use 3, spec 113 FR-043) caps the parents shown: past it, the folder's own last segment. */
+  function parentNames(rooms,maxDepth){
     const by=new Map(), out=new Map();
     for(const r of Array.isArray(rooms)?rooms:[]){
       if(!r||typeof r.id!=='string')continue;
@@ -112,7 +113,7 @@
       if(g.length<2)continue;
       const most=Math.max(...g.map(x=>x.up.length));
       let lab=null;
-      for(let d=1;d<=Math.max(1,most);d++){
+      for(let d=1;d<=Math.min(Math.max(1,most),num(maxDepth)&&maxDepth>=1?maxDepth:Infinity);d++){
         const l=g.map(x=>x.up.slice(-d).join('/'));
         if(new Set(l).size===g.length){lab=l;break;}
       }
@@ -121,5 +122,56 @@
     }
     return out;
   }
-  return {FOLD_KEY,BORN_KEY,MAX_BORN,loadBorn,stampBorn,bornJSON,SORT_KEY,DEFAULT_SORT,SORTS,sortLabel,loadSort,MAX_FOLDS,MAX_PATH,group,loadFolds,foldsJSON,parentNames};
+  /* spec 113 P6 (FR-041, FR-042, FR-044, FR-045): the Recent order. `youAt` is the last time you sent a message to a session (ms); the stores hold ids and
+     times only, never text. loadYouAt: an object of string ids (up to 200 characters) and finite positive times, at most MAX_YOUAT entries; anything else
+     (bad JSON, a wrong type, one bad entry, too many entries, a value over MAX_RAW characters) loads as an empty map, never an error; a time later than
+     `now` (the clock moved back) reads as now. stampYouAt adds one id at `now` and keeps the MAX_YOUAT newest. youAtJSON is the value to store: only ids
+     still listed (before the list has loaded, `listed` false, every saved id is kept), or null to remove the key. */
+  const YOUAT_KEY='durbar.railYouAt', ORDER_KEY='durbar.railOrder', IDLE_KEY='durbar.railIdleOpen', MAX_YOUAT=500, MAX_RAW=100000;
+  function loadYouAt(raw,now){
+    let o=raw;
+    if(typeof raw==='string'){if(raw.length>MAX_RAW)return {};try{o=JSON.parse(raw);}catch(e){return {};}}
+    if(!o||typeof o!=='object'||Array.isArray(o))return {};
+    const ents=Object.entries(o); if(ents.length>MAX_YOUAT)return {};
+    const out={}, top=num(now)?now:Infinity;
+    for(const [id,t] of ents){if(!id||id.length>200||!num(t)||t<=0)return {};out[id]=Math.min(t,top);}
+    return out;
+  }
+  function stampYouAt(map,id,now){
+    const out=Object.assign({},map||{});
+    if(typeof id!=='string'||!id||id.length>200||!num(now)||now<=0)return out;
+    delete out[id]; out[id]=now; /* the newest entry is last */
+    const ents=Object.entries(out); if(ents.length<=MAX_YOUAT)return out;
+    ents.reverse().sort((a,b)=>b[1]-a[1]); /* newest inserted first, then by time (stable): of equal times the later stamp stays */
+    return Object.fromEntries(ents.slice(0,MAX_YOUAT));
+  }
+  function youAtJSON(map,ids,listed){
+    const keep=new Set(ids||[]), out={}; let n=0;
+    for(const [id,t] of Object.entries(map||{})){if(n>=MAX_YOUAT)break;if(num(t)&&(listed===false||keep.has(id))){out[id]=t;n++;}}
+    return n?JSON.stringify(out):null;
+  }
+  /* a send the person typed that the app accepted stamps `youAt`: not a failed or refused one, not a send that went nowhere (`notSent`), not a coffee-break resume */
+  function stampable(res,opts){return !!res&&res.ok===true&&res.notSent!==true&&!(opts&&opts.coffee);}
+  const isOrder=v=>v==='folders'||v==='recent';
+  function loadOrder(raw){return isOrder(raw)?raw:'folders';}
+  function loadIdleOpen(raw){return raw==='1';}
+  /* FR-041, FR-045: the flat list. Each item is {id, rank, needs, since, prio, i, youAt}: `rank` the folder's place in the office's room order. Returns
+     {head, open, idle} (ids): `head` is who needs you (FR-194's order: oldest wait first, then the office's order), then the rows you sent to since
+     `startedAt`, newest first, ties in the office's order; `idle` is the rest that does not need you: your older sends (newest first), then the never-sent
+     rows by fixed keys only (folder rank, prio, creation order: a neighbour's status change never moves them). Agent time never reorders anything. `openId`
+     (the open chat's row) never sits in `idle`: it is returned as `open`, to be shown after `head`. No `startedAt` (not a number): only an unstamped row is idle. */
+  function recent(items,startedAt,openId){
+    const list=(Array.isArray(items)?items:[]).filter(x=>x&&typeof x.id==='string');
+    const office=(p,q)=>(num(p.rank)?p.rank:1e9)-(num(q.rank)?q.rank:1e9)||(p.prio||0)-(q.prio||0)||(p.i||0)-(q.i||0);
+    const you=x=>num(x.youAt)?x.youAt:-Infinity;
+    const byYou=(p,q)=>{const a=you(p),b=you(q);return a===b?office(p,q):a>b?-1:1;};
+    const needs=list.filter(x=>x.needs).sort((p,q)=>{const a=num(p.since)?p.since:Infinity,b=num(q.since)?q.since:Infinity;return a===b?office(p,q):a<b?-1:1;});
+    const rest=list.filter(x=>!x.needs);
+    const fresh=x=>num(x.youAt)&&(!num(startedAt)||x.youAt>=startedAt);
+    const head=needs.concat(rest.filter(fresh).sort(byYou)), idle=rest.filter(x=>!fresh(x)).sort(byYou);
+    let open=null;
+    if(typeof openId==='string'){const k=idle.findIndex(x=>x.id===openId);if(k>=0){open=openId;idle.splice(k,1);}}
+    return {head:head.map(x=>x.id),open,idle:idle.map(x=>x.id)};
+  }
+  return {YOUAT_KEY,ORDER_KEY,IDLE_KEY,MAX_YOUAT,loadYouAt,stampYouAt,youAtJSON,stampable,loadOrder,loadIdleOpen,recent,FOLD_KEY,BORN_KEY,MAX_BORN,loadBorn,stampBorn,bornJSON,SORT_KEY,DEFAULT_SORT,SORTS,sortLabel,loadSort,MAX_FOLDS,MAX_PATH,group,loadFolds,foldsJSON,parentNames};
 })());
