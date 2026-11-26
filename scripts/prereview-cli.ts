@@ -109,7 +109,7 @@ const ghEnv = (env: Record<string, string | undefined>): Record<string, string> 
 
 /** Operator side: refuse first (FR-004), then fetch the filtered PR text (FR-005). Returns what the runner stage needs, or the refusal line. */
 export async function gate(d: CliDeps, a: Args): Promise<{ ok: true; sha: string; url: string; prText: string | null } | { ok: false; why: string }> {
-  const tp = codeTrustProblems(d, d.root, ['scripts/trusted-authors.txt', 'scripts/trusted-authors.js', 'scripts/trusted-lib.sh', 'scripts/gh-trusted.sh']);
+  const tp = codeTrustProblems(d, d.root, ['scripts/trusted-authors.txt', 'scripts/trusted-authors.js', 'scripts/trusted-lib.sh', 'scripts/gh-trusted.sh', 'scripts/safe-print.js']);
   if (tp.length) return { ok: false, why: HUMAN(`refusing to run code or a trust list that someone else could have swapped: ${tp.join('; ')}`) };
   const [owner, name] = REPO_SLUG.split('/');
   const q = await d.exec('gh', ['api', 'graphql', '-f', `query=${GATE_QUERY(owner, name, a.pr)}`], { env: ghEnv(d.env), timeoutMs: 60_000 });
@@ -283,7 +283,7 @@ async function postStage(d: CliDeps, a: Args): Promise<number> {
 /** Copies the reviewed code of `main` (clean checkout, HEAD == origin/main) to dest, then installs the pinned dependencies there. */
 export const INSTALL_FILES: Array<[string, string]> = [
   ['scripts/prereview-core.ts', 'scripts/prereview-core.ts'], ['scripts/prereview-run.ts', 'scripts/prereview-run.ts'], ['scripts/prereview-cli.ts', 'scripts/prereview-cli.ts'], ['scripts/prereview-post.ts', 'scripts/prereview-post.ts'],
-  ['src/shared/redact.ts', 'src/shared/redact.ts'], ['scripts/trusted-authors.txt', 'scripts/trusted-authors.txt'], ['scripts/trusted-authors.js', 'scripts/trusted-authors.js'], ['scripts/trusted-lib.sh', 'scripts/trusted-lib.sh'], ['scripts/gh-trusted.sh', 'scripts/gh-trusted.sh'],
+  ['src/shared/redact.ts', 'src/shared/redact.ts'], ['scripts/trusted-authors.txt', 'scripts/trusted-authors.txt'], ['scripts/trusted-authors.js', 'scripts/trusted-authors.js'], ['scripts/trusted-lib.sh', 'scripts/trusted-lib.sh'], ['scripts/gh-trusted.sh', 'scripts/gh-trusted.sh'], ['scripts/safe-print.js', 'scripts/safe-print.js'],
   ['docs/review-checklist.md', 'docs/review-checklist.md'],
   ['scripts/prereview/package.json', 'scripts/prereview/package.json'], ['scripts/prereview/package-lock.json', 'scripts/prereview/package-lock.json'], ['scripts/prereview/cli.mts', 'scripts/prereview/cli.mts'],
   ['scripts/prereview/prompts/system.md', 'prompts/system.md'], ['scripts/prereview/prompts/reach.md', 'prompts/reach.md'], ['scripts/prereview/prompts/evidence.md', 'prompts/evidence.md'],
