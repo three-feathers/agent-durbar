@@ -1,1 +1,1 @@
-- **A safe list of issues and PRs for agents**: `scripts/gh-trusted.sh --list` shows a title only for the three owners and our own bots; every other item is just its link. `app/github-actions` is read as `github-actions[bot]`.
+- **A safe list of issues and PRs for agents**: `scripts/gh-trusted.sh --list` shows a title only for the three owners and our own bots; every other item is just its link. A title renamed by anyone else is hidden too, in the single-item read as well.

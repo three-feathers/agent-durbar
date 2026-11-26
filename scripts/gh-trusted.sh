@@ -8,7 +8,7 @@
 # line comment is even requested, so an independent reader (the pre-review bot) cannot start from them.
 # scripts/gh-trusted.sh --list issues|prs [--state open|closed|merged|all] [--label NAME] [--repo owner/name] (spec 021 FR-426): one row per item
 # (the 50 most recently updated). A row with a trusted author AND latest editor shows number, state, draft, author, labels, updated date and the
-# title; any other row is only "outside: <url>" (no title, no login, no branch name). `app/<slug>` (gh's --json author form) reads as `<slug>[bot]`.
+# title; any other row is only "outside: <url>" (no title, no login, no branch name). A GraphQL Bot with login `<slug>` reads as `<slug>[bot]` (`gh ... --json author` shows it as `app/<slug>`).
 # The listing goes through scripts/safe-print.js (controls, bidi and "::" made harmless). --state and --label are checked against fixed patterns and
 # travel as GraphQL variables, never in a shell string or in the query text.
 repo_arg=
@@ -50,16 +50,21 @@ if [ -n "$stale" ]; then echo "gh-trusted.sh: stale: $(echo $stale) differs from
 if [ -n "$repo_arg" ]; then R=$repo_arg; else R=$(gh repo view --json nameWithOwner -q .nameWithOwner) || exit 1; fi
 OWNER=${R%%/*}; NAME=${R##*/}
 A='author{__typename login} editor{__typename login}'
+# FR-426: a title is text too, and a rename (RenamedTitleEvent) is an edit that `editor` (body edits) does not show: every rename actor must be trusted
+# (a null actor is not), and more renames than the 20 read hide the title (an unseen older rename could be an outsider's). pageInfo, not totalCount:
+# totalCount counts the whole timeline, whatever itemTypes says
+TL='timelineItems(itemTypes:[RENAMED_TITLE_EVENT],last:20){pageInfo{hasPreviousPage} nodes{... on RenamedTitleEvent{actor{__typename login}}}}'
+RENAMED_OK='def renamed_ok: (.timelineItems != null) and (.timelineItems.pageInfo.hasPreviousPage == false) and (.timelineItems.nodes | all(.actor | who | trusted));'
 if [ -n "$list" ]; then
   command -v node >/dev/null 2>&1 || { echo "gh-trusted.sh: --list needs node (scripts/safe-print.js prints the rows)" >&2; exit 1; }
   if [ "$list" = issues ]; then key=issues; kind=issue; ST='IssueState'; X=''; else key=pullRequests; kind=PR; ST='PullRequestState'; X='isDraft isCrossRepository'; fi
-  QL="query(\$states:[$ST!],\$labels:[String!]){repository(owner:\"$OWNER\",name:\"$NAME\"){$key(first:50,states:\$states,labels:\$labels,orderBy:{field:UPDATED_AT,direction:DESC}){totalCount nodes{number url state updatedAt title $X $A labels(first:20){nodes{name}}}}}}"
-  # login: who, with gh's `app/<slug>` read as `<slug>[bot]`; the title is printed as a JSON string (no raw newline), only when author and latest editor are trusted
+  QL="query(\$states:[$ST!],\$labels:[String!]){repository(owner:\"$OWNER\",name:\"$NAME\"){$key(first:50,states:\$states,labels:\$labels,orderBy:{field:UPDATED_AT,direction:DESC}){totalCount nodes{number url state updatedAt title $X $A $TL labels(first:20){nodes{name}}}}}}"
+  # `who` (trusted-lib.sh) reads a GraphQL Bot as `<slug>[bot]`, the form trusted-authors.txt lists; labels and title are printed as a JSON string (no raw newline), only when author and latest editor are trusted
   JQL="$JQ_TRUST
-def lg: if . != null and ((.login // \"\") | startswith(\"app/\")) then .login[4:] + \"[bot]\" else who end;
-def ok: (.author|lg|trusted) and (.editor == null or (.editor|lg|trusted)) and ((.isCrossRepository // false) | not);
+$RENAMED_OK
+def ok: (.author|who|trusted) and (.editor == null or (.editor|who|trusted)) and renamed_ok and ((.isCrossRepository // false) | not);
 .data.repository.$key as \$l
-| (\$l.nodes[] | if ok then \"#\(.number) $kind \(.state)\(if .isDraft == true then \" draft\" else \"\" end) by \(.author|lg) labels=\([.labels.nodes[].name] | join(\",\")) updated \(.updatedAt[0:10]) title: \(.title | tojson)\" else \"outside: \(.url)\" end),
+| (\$l.nodes[] | if ok then \"#\(.number) $kind \(.state)\(if .isDraft == true then \" draft\" else \"\" end) by \(.author|who) labels=\([.labels.nodes[].name] | tojson) updated \(.updatedAt[0:10]) title: \(.title | tojson)\" else \"outside: \(.url)\" end),
   (if \$l.totalCount > 50 then \"--- \(\$l.totalCount) items: only the 50 most recently updated are listed\" else empty end)"
   args=(-f query="$QL")
   [ "$state" = all ] || args+=(-f "states[]=$(echo "$state" | tr a-z A-Z)")
@@ -69,29 +74,31 @@ def ok: (.author|lg|trusted) and (.editor == null or (.editor|lg|trusted)) and (
   exit
 fi
 if [ "$mode" = --pr-text ]; then
-  QT="query{repository(owner:\"$OWNER\",name:\"$NAME\"){pullRequest(number:$n){url title body isCrossRepository $A}}}"
+  QT="query{repository(owner:\"$OWNER\",name:\"$NAME\"){pullRequest(number:$n){url title body isCrossRepository $A $TL}}}"
   JQT="$JQ_TRUST
+$RENAMED_OK
 def ok: (.author|who|trusted) and (.editor == null or (.editor|who|trusted)) and (.isCrossRepository | not);
 .data.repository.pullRequest
 | if . == null then \"no PR #$n\"
-  elif ok then \"title: \(.title)\", \"--- body\", (.body // \"\")
+  elif ok then (if renamed_ok then \"title: \(.title)\" else \"title: not shown (renamed by an outside account)\" end), \"--- body\", (.body // \"\")
   else \"outside PR text by \(.author|who): not shown, for a human: \(.url)\" end"
   gh api graphql -f query="$QT" --jq "$JQT"
   exit
 fi
 Q="query{repository(owner:\"$OWNER\",name:\"$NAME\"){issueOrPullRequest(number:$n){__typename
- ... on Issue{url title body state $A comments(first:100){totalCount nodes{url body createdAt $A}}}
- ... on PullRequest{url title body state isCrossRepository $A comments(first:100){totalCount nodes{url body createdAt $A}}
+ ... on Issue{url title body state $A $TL comments(first:100){totalCount nodes{url body createdAt $A}}}
+ ... on PullRequest{url title body state isCrossRepository $A $TL comments(first:100){totalCount nodes{url body createdAt $A}}
    reviews(first:100){totalCount nodes{url body state submittedAt $A}}
    reviewThreads(first:100){totalCount nodes{path comments(first:100){totalCount nodes{url body createdAt $A}}}}}}}}"
 # ok: author and latest editor trusted; the title and body of the item are text too (a dependabot body is upstream text: hidden)
 JQ="$JQ_TRUST
+$RENAMED_OK
 def ok: (.author|who|trusted) and (.editor == null or (.editor|who|trusted));
 def text(\$what): if ok then (.body // \"\") else \"outside \(\$what) by \(.author|who)\(if .editor != null and (.editor|who) != (.author|who) then \", last edited by \(.editor|who)\" else \"\" end): not shown, for a human: \(.url)\" end;
 .data.repository.issueOrPullRequest
 | if . == null then \"no issue or PR #$n\" else
   \"#$n \(.__typename) \(.state) by \(.author|who)\(if .isCrossRepository then \" (from a fork: outside PR, a human decides)\" else \"\" end) \(.url)\",
-  (if ok then \"title: \(.title)\" else \"title: not shown (outside author or editor)\" end),
+  (if ok and renamed_ok then \"title: \(.title)\" else \"title: not shown (outside author, editor or renamer)\" end),
   \"--- body\", text(\"body\"),
   ([(.comments.nodes[] | {t: .createdAt, h: \"comment by \(.author|who)\", x: text(\"comment\")}),
     (.reviews.nodes[]? | select(.body != \"\") | {t: .submittedAt, h: \"review (\(.state)) by \(.author|who)\", x: text(\"review\")}),
