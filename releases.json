@@ -1,6 +1,11 @@
 {
   "schema": 1,
   "versions": {
+    "0.1.31": {
+      "breaking": false,
+      "notes": "Daily release: Durbar now tells you once when a new version is out, with what is new, and dialogs fit the smallest window at 200% zoom. Nothing to do before or after you update; Durbar keeps its data where it did.",
+      "action": ""
+    },
     "0.1.30": {
       "breaking": false,
       "notes": "Daily release: fixes and small improvements, including more secrets hidden in a chat's header and a Copy button that copies the command as the agent ran it. Nothing to do before or after you update; Durbar keeps its data where it did.",
