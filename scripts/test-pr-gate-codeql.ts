@@ -437,7 +437,7 @@ const CASES: Record<string, Case> = {
   // FR-425: the gate's own files must equal origin/main's; a fetch that fails, or a folder that is no checkout, blocks too
   'stale-gate: gate files that differ from origin/main': N({ codeql: 'pass', files: ['src/main/a.ts'] }, /stale-gate\(scripts\/pr-gate\.sh scripts\/trusted-authors\.txt: run the gate from a checkout at origin\/main\)/, () => { gitEnv = { FAKE_GIT_DIFF: 'scripts/trusted-authors.txt scripts/pr-gate.sh' }; }),
   'stale-each: every gate input is compared': (g, l) => {
-    for (const f of ['scripts/pr-gate.sh', 'scripts/trusted-lib.sh', 'scripts/trusted-authors.txt', 'scripts/pr-gate-answered.awk', 'scripts/pr-status-note.re', '.github/ruleset-main.json']) {
+    for (const f of ['scripts/pr-gate.sh', 'scripts/trusted-lib.sh', 'scripts/trusted-authors.txt', 'scripts/pr-gate-answered.awk', 'scripts/pr-status-note.re', '.github/ruleset-main.json', 'scripts/safe-print.js']) {
       fixture({ codeql: 'pass', files: ['src/main/a.ts'] });
       gitEnv = { FAKE_GIT_DIFF: f };
       notReady(g, `${l} (${f})`, new RegExp(`stale-gate\\(${f.replace(/[\\^$.*+?()[\]{}|]/g, '\\$&')}: run the gate`));
@@ -574,7 +574,7 @@ try {
     ['the .git test removed', '[ -e "$_trusted_root/.git" ] || return 3\n', '', 'stale-norepo'],
     ['a plain fetch of origin main', 'fetch -q origin +refs/heads/main:refs/remotes/origin/main >/dev/null', 'fetch -q origin main >/dev/null', 'stale-equal'],
     ['a file missing on origin/main counted equal', '|| { echo "$f"; continue; }\n    have=', '|| continue\n    have=', 'stale-missing'],
-    ['one gate input left out of the compare', 'scripts/pr-status-note.re .github/ruleset-main.json"', 'scripts/pr-status-note.re"', 'stale-each'],
+    ['one gate input left out of the compare', 'scripts/pr-status-note.re .github/ruleset-main.json scripts/safe-print.js"', 'scripts/pr-status-note.re scripts/safe-print.js"', 'stale-each'],
   ];
   for (const [name, from, to, caught] of libMutants) {
     assert.ok(lib.includes(from), `lib mutant "${name}": its anchor is in trusted-lib.sh`);

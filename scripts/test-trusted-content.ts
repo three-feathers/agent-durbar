@@ -506,7 +506,7 @@ try {
   ];
   for (const [name, from, to, caught] of m7) {
     // the jq programs sit inside a bash double-quoted string, so the file spells their quotes `\"`: an anchor may be written either way
-    const esc = (t: string): string => t.replace(/"/g, '\\"');
+    const esc = (t: string): string => t.replace(/[\\"]/g, '\\$&');
     const raw = ghSrc.includes(from);
     assert.ok(raw || ghSrc.includes(esc(from)), `mutant "${name}": its anchor is in gh-trusted.sh`);
     const mutated = ghSrc.split(raw ? from : esc(from)).join(raw ? to : esc(to));
