@@ -246,6 +246,7 @@ module.exports = async (ctx) => {
     const mo = await js(`(()=>({reduce:matchMedia('(prefers-reduced-motion: reduce)').matches,motionOff:document.documentElement.hasAttribute('data-motion-off'),hidden:document.hidden,focus:document.hasFocus()}))()`);
     const motionLine = `matchMedia(prefers-reduced-motion: reduce) ${mo.reduce}, Settings > Motion off ${mo.motionOff}, document hidden ${mo.hidden}, focused ${mo.focus}`;
     log(tag, `motion: ${motionLine}; ${easing} of ${n} plates easing at the start`);
+    console.log(`[evidence] 097-pencil-ease ${tag} motion: ${motionLine}; ${easing} of ${n} plates easing at the start`); /* issue #1623: ui-suite prints this line for a passing driver (the CI log shows the runner's media value) */
     /* the driver emulates no-preference before and after the load: a page that still reports reduce means the emulation did not apply (a runner where the debugger override fails): a failure, never a skip */
     assert.ok(!mo.reduce || ASKED_REDUCE, `${tag}: emulated no-preference but the page reports reduce: the emulation did not apply (${motionLine}; ${easing} of ${n} plates easing at the start)`);
     if (easing === 0 && mo.reduce) {
