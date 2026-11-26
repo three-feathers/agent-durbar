@@ -22,6 +22,7 @@
 
  *     freshease  a pencil made while its plate eases is not held (`const mv = plEase || (fresh ? easeOf(pl) : null)` -> `plEase || null`, a patched copy of dist; the run fails loudly if the text did not change):
  *                "a pencil made while its plate eases is held at opacity 0 until the ease ends"
+ *     skipall    the 3-frame rule skipped as if no plate that eases were in view: fails "with every plate in view and on the screen, some plate that eases is in view, so the 3-frame rule has a plate to catch" at the first size
  *     pin        the pointer back on a working plate after parking (it did not leave): fails "the hover card closed after the pointer left"; with PENCIL_EASE_SCREEN smaller than the
  *                window it is the labelled "skipped: the pointer-dependent checks ... need the window inside the screen" instead
  *     hover      the pointer left on a working plate before the end frame: "no hover card is open over the plates in the end frame"
@@ -239,6 +240,7 @@ module.exports = async (ctx) => {
         if((f?op!=='1':Number(op)>=0.05)&&S.bad.length<12)S.bad.push(Math.round(performance.now()-t0)+' ms '+(p.dataset.peMark||b.dataset.ren)+(f?' (focused)':'')+' opacity '+op+' [plate '+p.getAnimations().filter(a=>!a.animationName).map(a=>Math.round(a.startTime)+'/'+Math.round(a.currentTime)+'/'+a.effect.getTiming().duration+'/'+a.playState).join(',')+' pencil '+b.getAnimations().map(a=>(a.animationName||a.transitionProperty||'waapi')+':'+Math.round(a.startTime)+'/'+Math.round(a.currentTime)+'/'+Math.round(a.effect.getTiming().duration)+'/'+a.playState).join(',')+' cls '+p.className+']');}
         S.samples++;if(performance.now()-t0<900)requestAnimationFrame(step);else S.done=true;};
       step();
+      window.__peMovers=[...document.querySelectorAll('#stage .ro-plate[data-pe-mark]')].filter(p=>${EASE_OF}(p)).map(p=>p.dataset.peMark); /* which plates ease at the start (marks), for the painted frame rule */
       return [...document.querySelectorAll('#stage .ro-plate')].filter(p=>${EASE_OF}(p)).length})()`);
     /* the motion state, always printed: the product draws no ease under the OS's reduced motion (read once at load) or Settings > Motion off */
     const mo = await js(`(()=>({reduce:matchMedia('(prefers-reduced-motion: reduce)').matches,motionOff:document.documentElement.hasAttribute('data-motion-off'),hidden:document.hidden,focus:document.hasFocus()}))()`);
@@ -309,6 +311,11 @@ module.exports = async (ctx) => {
         off:[...document.querySelectorAll('#stage .ro-plate[data-pe-mark]')].filter(p=>{const r=p.getBoundingClientRect();return ox+r.right>sw||oy+r.bottom>sh||r.bottom>innerHeight||r.right>innerWidth||r.top<0||r.left<0}).map(p=>p.dataset.peMark)}})()`);
     log(tag, `screen ${scr.screen.join('x')} device px, window content ${scr.win.join('x')} device px at ${scr.at.join(',')}; ${scr.off.length} of ${n} plates off the screen${scr.off.length ? ' (' + scr.off.join(',') + ')' : ''}`);
     const off = new Set(scr.off);
+    /* a plate that eases and is in the window's view and on the screen can be caught on its way by a frame; when every plate that eases is outside (the one-room arcade in the 976x658 window a Windows runner's 1024x768 screen
+       leaves: 4 plates ease and none is in view), the 3-frame rule has nothing to catch and is skipped, printed, never passed (issue #1627, run 45834429844); with no plate off the screen (the Mac, a screen as big as the window) the skip is never taken, and a driver asserts it */
+    const movers = await js(`window.__peMovers||[]`);
+    const visibleMovers = MUTANT === 'skipall' ? [] : movers.filter((i) => !off.has(i));
+    if (!off.size) assert.ok(visibleMovers.length > 0, `${tag}: with every plate in view and on the screen, some plate that eases is in view, so the 3-frame rule has a plate to catch (${movers.length} plates ease: ${movers.join(',')})`);
     let endImg = null, end = null, tries = 0;
     for (const until = Date.now() + 3000; ;) {
       await js(`new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(()=>r(1))))`);
@@ -357,7 +364,8 @@ module.exports = async (ctx) => {
          in the log, never passed; the opacity reads below do not depend on the capture and still fail a pencil shown while its plate eases */
       const gaps = frames.slice(1).map((f, i) => f.t - frames[i].t).sort((a, b) => a - b), gap = gaps.length ? gaps[gaps.length >> 1] : SPAN;
       const early = frames.filter((f) => f.t <= 200).length; /* some frames, but sparse (a burst of slow captures at DPR 1: 1 mid-move frame of 5, Linux/Xvfb): too slow too; none at all (the late mutant: the capture did not run in time) is a failure, slow or not */
-      if (caught.length < MIN_CAUGHT && early > 0 && (gap > 40 || early < 2 * MIN_CAUGHT)) log(tag, `skipped: capture too slow (${caught.length} frames mid-move and ${early} frames in the first 200 ms, ${frames.length} in ${SPAN} ms, a capture every ${gap} ms): the painted check saw few frames; the opacity reads still apply`);
+      if (!visibleMovers.length) log(tag, `skipped: the 3-frame rule (${movers.length} plates ease at the start: ${movers.join(',')}; every one is outside the window's view or off the X screen: ${[...off].join(',')}); the opacity reads still apply`);
+      else if (caught.length < MIN_CAUGHT && early > 0 && (gap > 40 || early < 2 * MIN_CAUGHT)) log(tag, `skipped: capture too slow (${caught.length} frames mid-move and ${early} frames in the first 200 ms, ${frames.length} in ${SPAN} ms, a capture every ${gap} ms): the painted check saw few frames; the opacity reads still apply`);
       else assert.ok(caught.length >= MIN_CAUGHT, `${tag}: ${MIN_CAUGHT} or more frames caught the plates on their way in the first 200 ms (got ${caught.length}; frames at ${frames.map((f) => f.t).join(',')} ms): too few means the captures are slower than the ease on this machine, so nothing was tested; not a pass`);
       /* in every frame: no pencil's painted icon over its own plate's painted name, role or status (the focused one may be: FR-365's known gap) */
       const bad = [];
