@@ -1,1 +1,0 @@
-- **A test that checks a theme's art on the walkers no longer fails on a late frame** (internal): `check-theme-art` waits for each walker to be settled inside the window before it counts pixels, and says which box and state it saw when it fails. No change to the app.
