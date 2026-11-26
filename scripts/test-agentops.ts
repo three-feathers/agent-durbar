@@ -5,7 +5,9 @@ import * as os from 'os';
 import { FakeAdapter } from '../src/adapters/fake';
 import { ALL_OPTIONAL as ALL } from './test-adapter-contract';
 import { MAX_ANSWER } from '../src/shared/answerlimits';
-import { answerQuestionOp, restorable, resumeModeOp, sendWithSlash, setCapOp, setMcpOp, setModeOp, stopTurnOp } from '../src/main/agentops';
+import { answerQuestionOp, assistedOnEvent, restorable, resumeModeOp, sendWithSlash, setCapOp, setMcpOp, setModeAssistedOp, setModeOp, stopTurnOp } from '../src/main/agentops';
+import { ASSISTED_NOT_ASK, ASSISTED_NOT_RUNNING, ASSISTED_OFF_ROW, ASSISTED_POLICY_LINE, ASSISTED_REMOTE, ASSISTED_UNSUPPORTED_LINE, ASSISTED_UNVERIFIED, NO_ASSISTED } from '../src/adapters/assistedLines';
+import type { AgentAdapter, AgentEvent } from '../src/adapters/types';
 import type { AgentMessage } from '../src/adapters/types';
 import type { OpsDeps } from '../src/main/agentops';
 import type { SavedFolder } from '../src/main/folders';
@@ -215,7 +217,7 @@ async function main(): Promise<void> {
     const ok = ad(async (id, t) => (asked.push(`${id}:${t}`), t.startsWith('/review') ? { text: 'EXPANDED body', where: '.claude/commands/review.md' } : undefined));
     assert.deepStrictEqual(await sendWithSlash(ok, 's1', { text: '/review 42', attachments: att, plan: true }), { slash: '.claude/commands/review.md' }, 'f: where comes back');
     assert.deepStrictEqual(sent.pop(), { text: 'EXPANDED body', attachments: att, plan: true }, 'f: the expanded text reaches send, with the attachments and plan');
-    assert.deepStrictEqual(asked, ['s1:/review 42'], 'f: the adapter is asked with the agent id and the typed text');
+    assert.deepStrictEqual(asked.slice(), ['s1:/review 42'], 'f: the adapter is asked with the agent id and the typed text');
     assert.deepStrictEqual(await sendWithSlash(ok, 's1', { text: 'hi' }), {}, 'f: no expansion, no slash');
     assert.deepStrictEqual(sent.pop(), { text: 'hi' }, 'f: the typed text is sent');
     const bad = ad(async () => { throw new ShownError('disk gone'); });
@@ -264,6 +266,135 @@ async function main(): Promise<void> {
     assert.ok(/shared\/answerlimits\.js/.test(fsx.readFileSync(path.join(process.cwd(), 'src', 'renderer', 'index.html'), 'utf8')), 'g: the limit is loaded in the page');
     assert.strictEqual(answerQuestionOp(d, 'nope', 'r', { q: 'a' }).ok, false);
     assert.strictEqual(answerQuestionOp(d, 'g1', 'r'.repeat(201), { q: 'a' }).ok, false);
+  }
+  // spec 003 FR-122, FR-126, FR-127 (T052): `opts.assisted` through the same `agents:setMode` call
+  {
+    const agents = new Map<string, AgentInfo>();
+    const asked: Array<[string, unknown]> = [];
+    let answer: { on: boolean; reason?: 'policy' | 'unsupported' | 'not-ask' } = { on: true };
+    let live = true;
+    let verified = true;
+    const stub = (withCap: boolean): AgentAdapter => ({
+      capabilities: withCap ? { assistedApproval: { verified } } : {},
+      isLive: () => live,
+      setPermMode: (_id: string, m: string) => { asked.push(['mode', m]); return { pending: 0 }; },
+      setAssisted: async (_id: string, on: boolean) => { asked.push(['assisted', on]); return on ? answer : { on: false }; },
+    }) as unknown as AgentAdapter;
+    const copilot = stub(true);
+    const by = new Map<string, AgentAdapter>();
+    const mkA = (id: string, ad: AgentAdapter, mode: PermMode = 'ask'): AgentInfo => { const a = { id, name: id, cwd: WS + '-' + id, folders: [], permMode: mode, adapterId: 'copilot' } as AgentInfo; agents.set(id, a); by.set(id, ad); return a; };
+    const rows: string[] = [];
+    let remote = false;
+    let org: string | undefined;
+    const d: OpsDeps = { agents, router: { forAgent: (id) => by.get(id) }, wsKey: (a) => a.cwd, log: (_a, decision, action) => rows.push(`${decision}:${action}`), remoteOn: () => remote, orgAssistedRefusal: () => org };
+    const a = mkA('c', copilot);
+    // not a boolean: ignored, a plain mode change
+    assert.deepStrictEqual(await setModeAssistedOp(d, 'c', 'ask', { assisted: 'yes' }), { ok: true, mode: 'ask', pending: 0 }, 'T052: a non-boolean assisted is ignored');
+    assert.deepStrictEqual(asked.slice(), [['mode', 'ask']], 'T052: nothing asked of the reviewer');
+    asked.length = 0; rows.length = 0;
+    assert.deepStrictEqual(await setModeAssistedOp(d, 'nope', 'ask', { assisted: true }), { ok: false, error: 'unknown agent' });
+    // on: the adapter's answer, one row, AgentInfo.assisted is only {on:true}
+    assert.deepStrictEqual(await setModeAssistedOp(d, 'c', 'ask', { assisted: true }), { ok: true, mode: 'ask', pending: 0, assisted: true }, 'T052: on');
+    assert.deepStrictEqual(a.assisted, { on: true });
+    assert.deepStrictEqual(rows.slice(), ['mode-change:Ask first to Ask first + review'], 'FR-122: one mode-change row');
+    assert.deepStrictEqual(await setModeAssistedOp(d, 'c', 'ask', { assisted: true }), { ok: true, mode: 'ask', pending: 0, assisted: true }, 'on again: nothing new');
+    assert.strictEqual(rows.length, 1);
+    // FR-126: a switch to Read-only turns it off (the adapter does the runtime) and the row says so; never restored on the way back
+    assert.ok(setModeOp(d, 'c', 'read-only', {}).ok);
+    assert.strictEqual(a.assisted, undefined, 'FR-126: Read-only turns it off');
+    assert.strictEqual(rows[rows.length - 1], 'mode-change:Ask first + review to Read-only');
+    assert.ok(setModeOp(d, 'c', 'ask', {}).ok);
+    assert.strictEqual(a.assisted, undefined, 'FR-126: not restored on the way back');
+    for (const m of ['allow', 'read-only'] as const) {
+      a.permMode = 'ask'; a.assisted = { on: true };
+      assert.ok(setModeOp(d, 'c', m, {}).ok);
+      assert.strictEqual(a.assisted, undefined, `FR-126: ${m} turns it off`);
+    }
+    // outside Ask first, on Autopilot, with remote control, under the policy, not live, without the capability: refused, nothing asked
+    asked.length = 0; rows.length = 0;
+    a.permMode = 'allow';
+    assert.deepStrictEqual(await setModeAssistedOp(d, 'c', 'allow', { assisted: true }), { ok: false, error: ASSISTED_NOT_ASK }, 'FR-120: Ask first only');
+    assert.deepStrictEqual(await setModeAssistedOp(d, 'c', 'ask', { assisted: true }), { ok: false, error: ASSISTED_NOT_ASK }, 'not a mode change and a turn-on in one');
+    a.permMode = 'ask';
+    a.autopilot = { limit: 5 };
+    assert.deepStrictEqual(await setModeAssistedOp(d, 'c', 'ask', { assisted: true }), { ok: false, error: ASSISTED_NOT_ASK }, 'FR-126: never on Autopilot');
+    a.autopilot = undefined;
+    remote = true;
+    assert.deepStrictEqual(await setModeAssistedOp(d, 'c', 'ask', { assisted: true }), { ok: false, error: ASSISTED_REMOTE }, 'FR-126 (C6): never with remote control');
+    remote = false;
+    org = 'Your organization turned off Copilot\'s assisted approvals. This session stays in Ask first.';
+    assert.deepStrictEqual(await setModeAssistedOp(d, 'c', 'ask', { assisted: true }), { ok: false, error: org }, 'FR-127: the policy refuses it first');
+    org = undefined;
+    live = false;
+    assert.deepStrictEqual(await setModeAssistedOp(d, 'c', 'ask', { assisted: true }), { ok: false, error: ASSISTED_NOT_RUNNING }, 'a session that is not running');
+    live = true;
+    // review finding 1 (C8): main refuses a turn-on while the app's capability is not verified (a real Copilot session today); off still works
+    verified = false;
+    const unv = stub(true);
+    const u = mkA('u', unv);
+    assert.deepStrictEqual(await setModeAssistedOp(d, 'u', 'ask', { assisted: true }), { ok: false, error: ASSISTED_UNVERIFIED }, 'C8: not verified: refused in main');
+    assert.strictEqual(u.assisted, undefined);
+    assert.deepStrictEqual(await setModeAssistedOp(d, 'u', 'ask', { assisted: false }), { ok: true, mode: 'ask', pending: 0, assisted: false }, 'C8: off is always allowed');
+    verified = true;
+    asked.length = 0;
+    mkA('cl', stub(false));
+    assert.deepStrictEqual(await setModeAssistedOp(d, 'cl', 'ask', { assisted: true }), { ok: false, error: NO_ASSISTED }, 'FR-121: Claude Code and Codex: not supported');
+    assert.deepStrictEqual(asked.slice(), [], 'nothing was asked of an adapter');
+    assert.deepStrictEqual(rows.slice(), [], 'and nothing logged');
+    // the adapter's answer is believed: policy, unsupported, not-ask; a throw is unsupported
+    for (const [ans, err] of [[{ on: false, reason: 'policy' }, ASSISTED_POLICY_LINE], [{ on: false, reason: 'unsupported' }, ASSISTED_UNSUPPORTED_LINE], [{ on: false, reason: 'not-ask' }, ASSISTED_NOT_ASK], [{ on: false }, ASSISTED_UNSUPPORTED_LINE]] as const) {
+      answer = ans as typeof answer;
+      assert.deepStrictEqual(await setModeAssistedOp(d, 'c', 'ask', { assisted: true }), { ok: false, error: err, assisted: false }, `FR-123: ${JSON.stringify(ans)}`);
+      assert.strictEqual(a.assisted, undefined);
+    }
+    by.set('c', { ...copilot, setAssisted: async () => { throw new Error('rpc boom'); } } as AgentAdapter);
+    assert.deepStrictEqual(await setModeAssistedOp(d, 'c', 'ask', { assisted: true }), { ok: false, error: ASSISTED_UNSUPPORTED_LINE, assisted: false }, 'a throw: off, the fixed line (not the error text)');
+    by.set('c', copilot);
+    // a mode change while the adapter was asked wins: off again
+    answer = { on: true };
+    asked.length = 0;
+    const slow = { ...copilot, setAssisted: async (id: string, on: boolean) => { asked.push(['assisted', on]); if (on) a.permMode = 'read-only'; return on ? { on: true } : { on: false }; } } as AgentAdapter;
+    by.set('c', slow);
+    assert.deepStrictEqual(await setModeAssistedOp(d, 'c', 'ask', { assisted: true }), { ok: false, error: ASSISTED_NOT_ASK }, 'a switch during the call wins');
+    assert.deepStrictEqual(asked.slice(), [['assisted', true], ['assisted', false]], 'and the reviewer goes off again');
+    assert.strictEqual(a.assisted, undefined);
+    by.set('c', copilot);
+    a.permMode = 'ask';
+    // off: always allowed, one row only when it was on
+    await setModeAssistedOp(d, 'c', 'ask', { assisted: true });
+    rows.length = 0;
+    assert.deepStrictEqual(await setModeAssistedOp(d, 'c', 'ask', { assisted: false }), { ok: true, mode: 'ask', pending: 0, assisted: false });
+    assert.strictEqual(a.assisted, undefined);
+    assert.deepStrictEqual(rows.slice(), ['mode-change:Ask first + review to Ask first'], 'FR-122: one row back');
+    await setModeAssistedOp(d, 'c', 'ask', { assisted: false });
+    assert.strictEqual(rows.length, 1, 'off when off: no row');
+    // 2026-11-25 (T058, FR-129): the end of the session clears main's state, so a later turn-on asks the adapter again
+    const ev = (x: Record<string, unknown>): AgentEvent => ({ sessionId: 'c', ts: 1, ...x }) as unknown as AgentEvent;
+    await setModeAssistedOp(d, 'c', 'ask', { assisted: true });
+    assert.deepStrictEqual(a.assisted, { on: true });
+    rows.length = 0; asked.length = 0;
+    assistedOnEvent(d, ev({ type: 'status', status: 'stopped', agentId: 'helper-1' }));
+    assert.deepStrictEqual(a.assisted, { on: true }, 'T058: a helper that stops changes nothing');
+    assistedOnEvent(d, ev({ type: 'status', status: 'idle' }));
+    assistedOnEvent(d, ev({ type: 'status', status: 'stopped', sessionId: 'u' }));
+    assert.deepStrictEqual(a.assisted, { on: true }, 'T058: another status or another session changes nothing');
+    assistedOnEvent(d, ev({ type: 'status', status: 'stopped' }));
+    assert.strictEqual(a.assisted, undefined, 'T058: stopped clears main\'s reviewer state');
+    assert.deepStrictEqual(rows.slice(), [], 'T058: the end of a session writes no row');
+    assert.deepStrictEqual(await setModeAssistedOp(d, 'c', 'ask', { assisted: true }), { ok: true, mode: 'ask', pending: 0, assisted: true }, 'T058: on again after the end');
+    assert.deepStrictEqual(asked.slice(), [['assisted', true]], 'T058: a turn-on after the end asks the adapter (not the early "already on")');
+    // FR-127: an off the user did not ask for: the policy line always, the plain off row only when it was on; an on event changes nothing
+    rows.length = 0;
+    assistedOnEvent(d, ev({ type: 'assisted', assisted: { on: true } }));
+    assert.deepStrictEqual(a.assisted, { on: true }, 'FR-127: an on event changes nothing');
+    assistedOnEvent(d, ev({ type: 'assisted' }));
+    assert.strictEqual(a.assisted, undefined, 'FR-127: a fallback clears it');
+    assert.deepStrictEqual(rows.slice(), ['mode-change:' + ASSISTED_OFF_ROW], 'FR-127: one off row while it was on');
+    assistedOnEvent(d, ev({ type: 'assisted' }));
+    assert.strictEqual(rows.length, 1, 'FR-127: no off row when it was already off');
+    assistedOnEvent(d, ev({ type: 'assisted', reason: 'policy' }));
+    assert.deepStrictEqual(rows.slice(1), ['mode-change:' + ASSISTED_POLICY_LINE], 'FR-127: the policy line always, also when it was off');
+    assistedOnEvent(d, ev({ type: 'assisted', sessionId: 'nope' }));
   }
   console.log('agentops: ok');
 }

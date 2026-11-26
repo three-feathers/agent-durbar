@@ -39,6 +39,7 @@
     "test:agentprofiles": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-agentprofiles.js",
     "test:announcemask": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-announce-mask.js",
     "test:arcade-wall-signs": "node scripts/test-arcade-wall-signs.js",
+    "test:assisted-copilot": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-assisted-copilot.js",
     "test:attachments": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-attachments.js",
     "test:attention": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-attention.js",
     "test:authcheck": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-authcheck.js",

@@ -174,6 +174,44 @@
     if(!b||!b.text||raw==null||(b.hidden&&(b.why==='unchecked'||b.why==='concealed'||b.why==='cut')))return b; /* a blind card shows no text, so no lookalike line (FR-118) */
     return permLook(b,raw,k);
   }
+  /* spec 003 FR-118 (issue 1300): what a session grant covers, from its raw key, not the 28-character label: the exact command, the host as the network reads it,
+     server/tool (the label when it says the same). The window's card and the adapters' review gate (FR-124) both use it. */
+  function grantText(key,label){const k=String(key||''),l=String(label||'');let m;
+    if((m=/^shell-exact:([\s\S]+)$/.exec(k)))return 'run '+m[1];
+    if((m=/^url:([\s\S]+)$/.exec(k)))return 'fetch '+m[1];
+    if((m=/^mcp:([\s\S]+)$/.exec(k)))return l&&l.replace(' › ','/')===m[1]?l:m[1];
+    return l;}
+  /* a request's kind, or a grant key's prefix, as the card's text kind */
+  const permKind=k=>k==='shell'||/^shell(-exact)?:/.test(k)?'shell':k==='mcp'||k==='custom-tool'||/^(mcp|custom-tool):/.test(k)?'tool':'other';
+  const BLIND=w=>w==='unchecked'||w==='concealed'||w==='cut';
+  /* spec 097 FR-318, spec 003 FR-118: a permission card's words as the window shows them: the summary, the scope label, the broad label and the session button's
+     text from the raw key; `why` is the strongest reason a part is hidden ('' when none), as the card's line says it */
+  function permCard(p,mask){
+    const q=p||{},k=permKind(String(q.kind||'')),sum=permText(q.summary,k,mask),scope=permText(q.scopeLabel||q.kind||'this',k,mask),broad=permText(q.broadScopeLabel||q.kind,k,mask);
+    const key=q.scopeKey?permText(grantText(q.scopeKey,q.scopeLabel),permKind(String(q.scopeKey)),mask):null;
+    const w=[sum,scope,broad,key].filter(x=>x&&x.hidden).map(x=>x.why||'secret');
+    const why=w.includes('cut')?'cut':w.includes('unchecked')?'unchecked':w.includes('concealed')?'concealed':w.includes('secret')?'secret':w.length?'control':'';
+    return {sum,scope,broad,key,why};
+  }
+  /* spec 003 FR-124, FR-132 (C5): may an agent app's reviewer approve this request without a card? Only when the card would show its text (never a blind card:
+     cut, unchecked, concealed), has no control or bidi character, and no part of it, nor the raw scope keys and paths behind it, has lookalike letters or could
+     not be checked. Fail closed. */
+  function reviewable(p,mask){
+    try{
+      const L=LK();if(!L||typeof L.check!=='function'||!mask||typeof mask.redact!=='function')return false;
+      const q=p||{},c=permCard(q,mask);if(BLIND(c.why))return false;
+      /* owner decision (Paco, 2026-11-24): a card that warns about control or bidi characters (a marker like the ESC or U+202E ones) always stays a card, as a lookalike
+         does: the same PCTRL_T the card marks with, on every raw text the card or the grant is made from */
+      const keyParts=k=>k==null?[]:String(k).split('\n'); /* a several-folder write key joins its folder keys with a line break of Durbar's own; the summary holds the request's own breaks */
+      const raws=[q.summary,q.scopeLabel,q.broadScopeLabel,...keyParts(q.scopeKey),...keyParts(q.broadScopeKey),...(Array.isArray(q.paths)?q.paths:[])];
+      if(raws.some(x=>x!=null&&PCTRL_T.test(String(x))))return false;
+      const raw=x=>String(x||'').replace(/^[a-z-]+:/,'');
+      const extra=[q.scopeKey?permText(raw(q.scopeKey),permKind(String(q.scopeKey)),mask):null,q.broadScopeKey?permText(raw(q.broadScopeKey),permKind(String(q.broadScopeKey)),mask):null,
+        Array.isArray(q.paths)&&q.paths.length?permText(q.paths.map(String).join('\n'),'other',mask):null];
+      for(const x of [c.sum,c.scope,c.broad,c.key,...extra]){if(!x)continue;if(x.hidden&&BLIND(x.why))return false;const l=x.look;if(l&&(l.n>0||l.inHidden||l.unchecked||(Array.isArray(l.hosts)&&l.hosts.length)))return false;} /* a lookalike line of any kind (a host named as the network reads it too) means a card */
+      return true;
+    }catch(e){return false;}
+  }
   /* A tool start as a verb phrase. kind: read | edit | run | search | tool (the chat's toolKind); label: the chat's toolLabel. */
   function phrase(o,mask){
     const m=mask||{}, cl=x=>m.redact?clearIn(x,m.redact):stripAnsi(x); /* control codes out first, the way the monitor line does (a token split by an escape must be whole for the mask) */
@@ -321,5 +359,5 @@
     };
   }
   const KIND_WORD={think:'Thinking',tool:'Working',reply:'Replying'};
-  return {create,phrase,toolName,permText,lastSentences,plain,excerpt,stripAnsi,KIND_WORD,PAINT_MS,LINE_MAX,PANEL_MAX,STREAM_MAX,SCREEN_LINES,SCREEN_CHARS};
+  return {create,phrase,toolName,permText,permCard,reviewable,grantText,permKind,lastSentences,plain,excerpt,stripAnsi,KIND_WORD,PAINT_MS,LINE_MAX,PANEL_MAX,STREAM_MAX,SCREEN_LINES,SCREEN_CHARS};
 })());

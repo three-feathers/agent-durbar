@@ -107,6 +107,12 @@ export interface AdapterCapabilities {
    * `capUnit` is the unit of the optional spend cap (`null`: none possible); `attachments`: the Autopilot send takes attachments (D10);
    * `planApproval`: the plan card may offer Autopilot (FR-060); `verified`: true only after a real run is recorded in the spec.
    */
+  /**
+   * Spec 003 FR-121: `setAssisted()` exists: in Ask first the app's own reviewer may recommend approving a request, which Durbar's broker
+   * then approves once (FR-124). Missing = never offered. `verified`: true only after the real check (T056) is recorded; until then a real
+   * session does not show the switch (C8), the simulator does.
+   */
+  readonly assistedApproval?: Readonly<{ verified: boolean }>;
   readonly autopilot?: Readonly<{ capUnit: 'aiu' | 'usd' | 'tokens' | null; attachments: boolean; planApproval: boolean; verified: boolean; /** The app's smallest spend cap, in `capUnit`: a lower one is raised to it, and the window says so (the app's own fact, not main's or the window's). */ capMin?: number }>;
 }
 

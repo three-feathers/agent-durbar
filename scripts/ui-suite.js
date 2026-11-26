@@ -293,6 +293,7 @@ const DRIVERS = [
   { name: 'check-mode-refusal' }, // spec 012 FR-087: Codex refusing Read-only / Ask first (simsendfail=sandbox) (~14 s)
   { name: 'check-autopilot', label: 'check-autopilot default' }, // spec 099: the default build: nothing offers Autopilot
   { name: 'check-autopilot', env: { DURBAR_AUTOPILOT_TEST: '1' } }, // spec 099 T037: the test-only gate: menu, form, chip, every end reason, hostile text, both sizes
+  { name: 'check-003-assisted' }, // spec 003 T054: Copilot's reviewer (assisted approvals) in the mode menu of Ask first, the chip, the fixed verdict lines, Read-only turning it off, the policy fallback and block, both sizes
   { name: 'check-plan-mode' }, // spec 066: Plan first (next message), the chip, the plan card with Approve / Revise / Reject (~18 s)
   { name: 'shots-006-continue' }, // spec 006 FR-021: a folder continues its last session after a restart (~12 s)
   { name: 'shots-006-remove' }, // spec 006 FR-022: removing a folder is easy to find, Cancel keeps it (~26 s)
