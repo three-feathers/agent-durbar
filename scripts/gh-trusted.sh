@@ -54,7 +54,17 @@ A='author{__typename login} editor{__typename login}'
 # (a null actor is not), and more renames than the 20 read hide the title (an unseen older rename could be an outsider's). pageInfo, not totalCount:
 # totalCount counts the whole timeline, whatever itemTypes says
 TL='timelineItems(itemTypes:[RENAMED_TITLE_EVENT],last:20){pageInfo{hasPreviousPage} nodes{... on RenamedTitleEvent{actor{__typename login}}}}'
-RENAMED_OK='def renamed_ok: (.timelineItems != null) and (.timelineItems.pageInfo.hasPreviousPage == false) and (.timelineItems.nodes | all(.actor | who | trusted));'
+RENAMED_OK='def renamed_ok: (.timelineItems | . != null and (.pageInfo.hasPreviousPage == false) and ((.nodes | type) == "array") and (.nodes | all(.actor | who | trusted)));'
+RENAMED_MSG='title hidden: it was renamed by someone outside the trusted list'
+# FR-426 (round 2): on a GraphQL error `gh api graphql --jq` skips the filter and prints the raw {"data","errors"} response to standard output, which
+# would be outside text, unfiltered. So the response is captured, never shown by gh: a failed call, or a captured text that starts with `{` (our programs
+# print `#N ...`, `title: ...`, `outside ...` or `no ...` first), prints nothing from it. gh's own stderr is dropped too (a server message can quote a login).
+gh_read() {
+  local out
+  out=$(gh api graphql "$@" 2>/dev/null) || { echo "gh-trusted.sh: the GitHub query failed; nothing from its response is shown (is gh signed in? gh auth status)" >&2; return 1; }
+  case $out in '{'*) echo "gh-trusted.sh: GitHub answered with an unfiltered response; nothing from it is shown" >&2; return 1;; esac
+  printf '%s\n' "$out"
+}
 if [ -n "$list" ]; then
   command -v node >/dev/null 2>&1 || { echo "gh-trusted.sh: --list needs node (scripts/safe-print.js prints the rows)" >&2; exit 1; }
   if [ "$list" = issues ]; then key=issues; kind=issue; ST='IssueState'; X=''; else key=pullRequests; kind=PR; ST='PullRequestState'; X='isDraft isCrossRepository'; fi
@@ -69,7 +79,7 @@ def ok: (.author|who|trusted) and (.editor == null or (.editor|who|trusted)) and
   args=(-f query="$QL")
   [ "$state" = all ] || args+=(-f "states[]=$(echo "$state" | tr a-z A-Z)")
   [ -z "$label" ] || args+=(-f "labels[]=$label")
-  out=$(gh api graphql "${args[@]}" --jq "$JQL") || exit 1
+  out=$(gh_read "${args[@]}" --jq "$JQL") || exit 1
   printf '%s\n' "$out" | node "$(dirname "$0")/safe-print.js"
   exit
 fi
@@ -80,9 +90,9 @@ $RENAMED_OK
 def ok: (.author|who|trusted) and (.editor == null or (.editor|who|trusted)) and (.isCrossRepository | not);
 .data.repository.pullRequest
 | if . == null then \"no PR #$n\"
-  elif ok then (if renamed_ok then \"title: \(.title)\" else \"title: not shown (renamed by an outside account)\" end), \"--- body\", (.body // \"\")
+  elif ok then (if renamed_ok then \"title: \(.title)\" else \"$RENAMED_MSG\" end), \"--- body\", (.body // \"\")
   else \"outside PR text by \(.author|who): not shown, for a human: \(.url)\" end"
-  gh api graphql -f query="$QT" --jq "$JQT"
+  gh_read -f query="$QT" --jq "$JQT"
   exit
 fi
 Q="query{repository(owner:\"$OWNER\",name:\"$NAME\"){issueOrPullRequest(number:$n){__typename
@@ -98,7 +108,7 @@ def text(\$what): if ok then (.body // \"\") else \"outside \(\$what) by \(.auth
 .data.repository.issueOrPullRequest
 | if . == null then \"no issue or PR #$n\" else
   \"#$n \(.__typename) \(.state) by \(.author|who)\(if .isCrossRepository then \" (from a fork: outside PR, a human decides)\" else \"\" end) \(.url)\",
-  (if ok and renamed_ok then \"title: \(.title)\" else \"title: not shown (outside author, editor or renamer)\" end),
+  (if ok and renamed_ok then \"title: \(.title)\" elif ok then \"$RENAMED_MSG\" else \"title: not shown (outside author or editor)\" end),
   \"--- body\", text(\"body\"),
   ([(.comments.nodes[] | {t: .createdAt, h: \"comment by \(.author|who)\", x: text(\"comment\")}),
     (.reviews.nodes[]? | select(.body != \"\") | {t: .submittedAt, h: \"review (\(.state)) by \(.author|who)\", x: text(\"review\")}),
@@ -106,4 +116,4 @@ def text(\$what): if ok then (.body // \"\") else \"outside \(\$what) by \(.auth
    | sort_by(.t)[] | \"--- \(.t) \(.h)\", .x),
   ([.comments.totalCount, (.reviews.totalCount // 0), (.reviewThreads.totalCount // 0)] | if max > 100 then \"--- more than 100 items: only the first 100 of each list are shown\" else empty end)
   end"
-gh api graphql -f query="$Q" --jq "$JQ"
+gh_read -f query="$Q" --jq "$JQ"
