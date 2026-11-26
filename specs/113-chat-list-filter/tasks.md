@@ -49,13 +49,13 @@
 - [ ] T028 `npm run typecheck && npm run build && npm test` once at the final `checks run at <sha>`.
 - [ ] T029 `/speckit.converge`: FR tags (`[IMPLEMENTED]` with `test:`/`sim:`, or `[KNOWN GAP]`), specs-index status, tasks ticked.
 
-## P6: Recent order (FR-040..FR-045)
+## P6: Recent order (FR-040..FR-045). Built before P1 (owner, 2026-11-26)
 
 - [ ] T031 `DurbarRail.recent(items)` in `src/renderer/railorder.js` with unit tests (FR-041), mutant "order by agent time" fails.
 - [ ] T032 `youAt` stamped on your sends; load/save helper for `durbar.railYouAt` (cap 500, unknown ids, bad JSON), only with `railRemember()` and not in demo; a failed send does not stamp; a future value reads as now; checks that a session resumed by `wake` keeps its `a.id` (and a restored one after a restart), and records the result in FR-042 (FR-042).
-- [ ] T033 The Folders | Recent control (`.seg`, its own row under the field) in the filter row; fit measured at 180 px, 1440x900 and 1280x800 and `check-rail`'s scroll limit measured again; order kept in `durbar.railOrder` (FR-040, FR-044).
+- [ ] T033 The Folders | Recent control (`.seg`, its own row; under "Your door" until P2 adds the field above it, 2026-11-26), the sort button disabled in *Recent*; fit measured at 180 px, 1440x900 and 1280x800 and `check-rail`'s scroll limit measured again; order kept in `durbar.railOrder` (FR-040, FR-044).
 - [ ] T034 `renderStrip` paints the flat Recent list with the folder name per row, `parent/name` for same-name folders, every new text through `safeMask` before `esc()` (FR-043); the filter applies; folds untouched.
-- [ ] T035 Driver cases in `check-rail-filter` for FR-040..FR-045 and SC-005 (including keyboard-only fold and unfold of the group), both sizes, every world, `railstore=1`.
+- [ ] T035 Driver cases in `scripts/check-rail-recent.js` (P6 is built before P1, 2026-11-26; `check-rail-filter` does not exist yet) for FR-040..FR-045 and SC-005 (including keyboard-only fold and unfold of the group), both sizes, `railstore=1`; the cases that need the filter (FR-044 first sentence, FR-045's filter clauses) move to P2's PR.
 - [ ] T036 Screenshots `113-rail-recent-{1440x900,1280x800}.png`; docs rows (feature inventory, features.md, changelog fragment) extended.
 - [ ] T038 The "Not used since Durbar started" folded group and the per-row age in Recent; main's `startedAt` (`main.ts:1183`, not exposed today) added as a field of `AppSettingsView`, the answer of `getSettings()` (no new channel, not `sinceAway()`), the preload and `src/shared/api.ts` types, `test:ipcchannels` unchanged (FR-045); unit cases (`test:railorder`) and the `check-rail-filter` cases of T035 for FR-045.
 - [ ] T039 Spec 005 pointer delta in the P6 PR: FR-194's "a row moves only when a status changes, never with time" says that in *Recent* your own send also moves a row (spec 113 FR-041).
