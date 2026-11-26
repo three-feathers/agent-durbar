@@ -393,7 +393,7 @@ assert.ok(Object.values(META.stand).some((s) => Object.values(s.foot as Record<s
       let died: Error | undefined;
       try { const m = require(mp) as { standPose: typeof standPose; FX_POSE: Record<string, string> }; poseTable(m.standPose, m.FX_POSE); } catch (e) { died = e as Error; } finally { fs.rmSync(mp, { force: true }); }
       assert.ok(died, `mutant "${name}" survived`);
-      assert.ok(expect.test(String(died.message)), `mutant "${name}" died at the wrong assert: ${String(died.message).split('\n')[0]}`);
+      assert.ok(expect.test(String(died.message)), `mutant "${name}" died at the wrong assert: ${String(died.message).split(/\r?\n/)[0]}`);
     });
   }
   assert.strictEqual(standPose(META, 'p01', 'c-abc', true)!.pose, 'letter', 'a custom place: wait, else letter');
