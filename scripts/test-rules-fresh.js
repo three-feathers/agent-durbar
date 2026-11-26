@@ -195,7 +195,7 @@ try {
     assert.ok(msg.startsWith('narrowed refspec: gate_stale names the changed file'), `lib mutant (plain fetch) must die at "narrowed refspec: gate_stale names the changed file", got: ${msg.split('\n')[0] || 'it survived'}`);
   }
   { // FR-425: the stale-gate compare must not depend on autocrlf: every gate input is pinned to LF by .gitattributes
-    const GATE = ['scripts/gh-trusted.sh', 'scripts/pr-gate.sh', 'scripts/trusted-lib.sh', 'scripts/trusted-authors.txt', 'scripts/pr-gate-answered.awk', 'scripts/pr-status-note.re', '.github/ruleset-main.json'];
+    const GATE = ['scripts/gh-trusted.sh', 'scripts/pr-gate.sh', 'scripts/trusted-lib.sh', 'scripts/trusted-authors.txt', 'scripts/pr-gate-answered.awk', 'scripts/pr-status-note.re', '.github/ruleset-main.json', 'scripts/safe-print.js'];
     const root = path.join(__dirname, '..');
     const quiet = { ...process.env, GIT_CONFIG_NOSYSTEM: '1' };
     const eol = (cwd, f) => String(spawnSync('git', ['-C', cwd, 'check-attr', 'eol', '--', f], { encoding: 'utf8', env: quiet }).stdout).trim();
@@ -205,7 +205,7 @@ try {
     else {
       assertPinned(root);
       const attrs = fs.readFileSync(path.join(root, '.gitattributes'), 'utf8').replace(/\r\n/g, '\n').split('\n');
-      const drop = [['scripts/*.sh text eol=lf', 'scripts/gh-trusted.sh'], ['scripts/trusted-authors.txt text eol=lf', 'scripts/trusted-authors.txt'], ['scripts/pr-gate-answered.awk text eol=lf', 'scripts/pr-gate-answered.awk'], ['scripts/pr-status-note.re text eol=lf', 'scripts/pr-status-note.re'], ['.github/ruleset-main.json text eol=lf', '.github/ruleset-main.json']];
+      const drop = [['scripts/*.sh text eol=lf', 'scripts/gh-trusted.sh'], ['scripts/trusted-authors.txt text eol=lf', 'scripts/trusted-authors.txt'], ['scripts/pr-gate-answered.awk text eol=lf', 'scripts/pr-gate-answered.awk'], ['scripts/pr-status-note.re text eol=lf', 'scripts/pr-status-note.re'], ['.github/ruleset-main.json text eol=lf', '.github/ruleset-main.json'], ['scripts/safe-print.js text eol=lf', 'scripts/safe-print.js']];
       for (const [line, file] of drop) {
         assert.ok(attrs.includes(line), `mutant: .gitattributes has the line ${line}`);
         const m = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-attrs-'));

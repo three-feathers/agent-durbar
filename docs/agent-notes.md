@@ -46,7 +46,7 @@ Each entry: **what** (bold), why, how to apply, evidence (`real:`, `read:`, `tes
 
 ## CI, review and merge
 
-- **GitHub logins differ by API**: GraphQL gives a bot without `[bot]` (`github-actions`, `__typename: "Bot"`), REST with it; `gh pr view --json author` says `app/dependabot`, and `gh pr list` and `gh issue list` show the Actions bot as `app/github-actions` (2026-11-02): the same account as `github-actions[bot]`. The latest editor is GraphQL `editor` only. `who` in `scripts/trusted-lib.sh` handles it (FR-060, `test-trusted-content.ts`).
+- **GitHub logins differ by API**: GraphQL gives a bot without `[bot]` (`github-actions`), REST with it, and `gh ... --json author` as `app/<slug>` (`app/github-actions` is `github-actions[bot]`); list with `scripts/gh-trusted.sh --list`, never raw `gh pr list`. The latest editor is GraphQL `editor` only (FR-060, FR-426).
 - **Wait until every check has settled**: some workflows add checks later, so "none pending" right after a push can be a false green. Wait ~90 s quiet; require the CodeQL check itself (2026-10-20).
 - **Bot line comments and alerts drift apart**: GitHub keeps a CodeQL line comment after the alert is fixed, and an empty alert list can hide a fresh comment. Gate on `code-scanning/alerts?ref=refs/pull/<N>/merge` and `/head`, compare a comment's `commit_id` with the head, read `alerts/<n>/instances` (PR #388).
 - **Every push dismisses approvals and `main` moves fast**: batch docs-only edits into one push, ask for re-approval only once CI is green on the new head (PRs #369, #377).
