@@ -60,9 +60,9 @@ assert.deepStrictEqual(list, ['vikramgorla', 'fjcabello', 'rubenlupi', 'github-a
 const gate = read('pr-gate.sh');
 assert.ok(gate.includes('trusted-lib.sh'), 'pr-gate.sh sources the trust helpers');
 assert.ok(!gate.includes('.body[0:'), 'pr-gate.sh prints a comment body only through shown_body');
-const newer = gate.split('\n').find((l) => l.startsWith('newer=$('))!;
-assert.strictEqual((newer.match(/--jq "\$JQ_TRUST /g) || []).length, 3, 'all three comment lists use the trust defs');
-assert.strictEqual((newer.match(/\\\(shown_body\)/g) || []).length, 3, 'all three print shown_body');
+const newer = gate.split('\n').filter((l) => l.startsWith('rd newer_')); // FR-427: each list is one rd() read
+assert.strictEqual(newer.filter((l) => l.includes('--jq "$JQ_TRUST ')).length, 3, 'all three comment lists use the trust defs');
+assert.strictEqual((newer.join('\n').match(/\\\(shown_body\)/g) || []).length, 3, 'all three print shown_body');
 assert.ok(/select\(\$NOTE and \(\.user\.login\|trusted\)\)/.test(gate), 'only a trusted author\'s status note is printed as a note');
 assert.ok(/case \$p in ''\|\*\[!0-9\]\*\)/.test(gate), 'the PR number must be digits (it goes into a query)');
 

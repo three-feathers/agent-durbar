@@ -179,3 +179,8 @@
 ## 2026-11-26: `gh-trusted.sh <N>` and `--pr-text` print through `safe-print.js` (FR-428)
 
 - [x] T519 (FR-428, issue #2160) `print_text` in `scripts/gh-trusted.sh` (read mode and `--pr-text` pipe `gh_read`'s output through `scripts/safe-print.js --text`); `printable(text, keepTab)` and the `--text` flag in `scripts/safe-print.js`; `safe-print.js` in `INSTALL_FILES` and the code-trust list of `scripts/prereview-cli.ts` (tests in `scripts/test-prereview.ts`); section 8 cases `read-printed`, `pr-printed`, `ci-printed`, `c1-printed` and six mutants in `scripts/test-trusted-content.ts`; changelog fragment.
+
+## 2026-11-26: the gate never decides on a failed read (FR-427)
+
+- [x] T518 (FR-427, issue #2159) `rd` in `scripts/pr-gate.sh` and the fourteen reads on it (labels, three owner-hold lists, reviews for change requests, review threads, outside edits, my three lists, the three ask lists, trusted reviews), the 100-item limit of the two GraphQL reads (`totalCount`, `pageInfo`, `TRUNCATED`), the `repo-or-user` and empty `checks` refusals; the fake `gh` of `scripts/test-pr-gate-codeql.ts` with a per-read failure mode, one case per read and mode, the in-order read list, the shared `GUARD` text, twenty-eight mutants; changelog fragment.
+- **Constitution:** I (spec first, this PR); III (a failed read never opens the gate; no outside text is printed: only the read's name); IV (no credits: fixtures only); VI (bash only where the gate already is, `printf -v` is bash 3.1+, mutants and extraction safe for either line ending); VIII (limits written in the spec).
