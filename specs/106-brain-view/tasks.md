@@ -55,3 +55,4 @@
 - [ ] T024 Real screen-reader run (NVDA on Windows, VoiceOver on macOS) of the dock, *Stop…* and the turn map, asked of the machines' owners [FR-130]
 - [ ] T025 Frame times on a real integrated GPU in Electron with `check:perf --record`, against FR-101 [FR-131]
 - [ ] T026 Per adapter: read paths and a failing test run's `phase`, from recorded fixtures first; a real session only with the owner's OK and its cost stated [FR-132, FR-133]
+- [x] T604 Issue 2166 (2026-11-26 *Changes*): `scripts/check-brain-dock.js`: the window is blurred before each Shell focus step, the driver asks for the real focus by state (`needFocus`) and asserts the tooltip; mutant `nofocus` dies at the Windows runs' assert text; no app change.
