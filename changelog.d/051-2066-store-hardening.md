@@ -1,1 +1,0 @@
-- **Three settings-store places are safer** (spec 011): the MCP warning levels are handed out as a copy, a failed write of the Autopilot turn limit no longer leaves the window ahead of the settings file, and a character pin with a malformed folder key or id is refused before it is written.

@@ -1,1 +1,0 @@
-- **`npm run rules:check` also catches dead paths and section pointers, invisible characters, unknown labels and conflict markers** (spec 021 FR-423): one line per finding with file and line; six dead pointers in `docs/agent-setup/` and a wrong label in `CONTRIBUTING.md` are fixed.

@@ -1425,19 +1425,19 @@
     "2026-11-25": {
       "models": {
         "claude-opus-5-5": {
-          "input": 134,
-          "output": 23287,
-          "cacheRead": 6615852,
-          "cacheCreation": 165894,
-          "costUsd": 2.618916399999999,
+          "input": 652,
+          "output": 215643,
+          "cacheRead": 84809991,
+          "cacheCreation": 1073876,
+          "costUsd": 26.646846200000006,
           "bySource": {
             "main": {
               "tokens": 0,
               "costUsd": 0
             },
             "subagent": {
-              "tokens": 6805167,
-              "costUsd": 2.618916399999999
+              "tokens": 86100162,
+              "costUsd": 26.646846200000006
             },
             "auxiliary": {
               "tokens": 0,
@@ -1450,11 +1450,11 @@
           }
         },
         "claude-haiku-5-5": {
-          "input": 95388,
-          "output": 3936,
+          "input": 2239215,
+          "output": 122298,
           "cacheRead": 0,
           "cacheCreation": 0,
-          "costUsd": 0.011506800000000001,
+          "costUsd": 0.28507049999999995,
           "bySource": {
             "main": {
               "tokens": 0,
@@ -1465,8 +1465,8 @@
               "costUsd": 0
             },
             "auxiliary": {
-              "tokens": 99324,
-              "costUsd": 0.011506800000000001
+              "tokens": 2361513,
+              "costUsd": 0.28507049999999995
             },
             "other": {
               "tokens": 0,
@@ -1475,23 +1475,102 @@
           }
         },
         "claude-sonnet-5-5": {
-          "input": 96,
-          "output": 14864,
-          "cacheRead": 24783866,
-          "cacheCreation": 31319,
-          "costUsd": 2.7524946,
+          "input": 6868,
+          "output": 963765,
+          "cacheRead": 474056964,
+          "cacheCreation": 10159522,
+          "costUsd": 83.41066440000006,
           "bySource": {
             "main": {
-              "tokens": 24830145,
-              "costUsd": 2.7524946
+              "tokens": 250487874,
+              "costUsd": 30.07386570000001
+            },
+            "subagent": {
+              "tokens": 233767767,
+              "costUsd": 53.15174209999996
+            },
+            "auxiliary": {
+              "tokens": 931478,
+              "costUsd": 0.1850566
+            },
+            "other": {
+              "tokens": 0,
+              "costUsd": 0
+            }
+          }
+        }
+      }
+    },
+    "2026-11-26": {
+      "models": {
+        "claude-sonnet-5-5": {
+          "input": 242,
+          "output": 66246,
+          "cacheRead": 35762522,
+          "cacheCreation": 193506,
+          "costUsd": 4.815334199999999,
+          "bySource": {
+            "main": {
+              "tokens": 31990803,
+              "costUsd": 3.7759614
+            },
+            "subagent": {
+              "tokens": 4031713,
+              "costUsd": 1.0393728000000004
+            },
+            "auxiliary": {
+              "tokens": 0,
+              "costUsd": 0
+            },
+            "other": {
+              "tokens": 0,
+              "costUsd": 0
+            }
+          }
+        },
+        "claude-opus-5-5": {
+          "input": 210,
+          "output": 36330,
+          "cacheRead": 11903447,
+          "cacheCreation": 434259,
+          "costUsd": 5.279424399999998,
+          "bySource": {
+            "main": {
+              "tokens": 0,
+              "costUsd": 0
+            },
+            "subagent": {
+              "tokens": 12374246,
+              "costUsd": 5.279424399999998
+            },
+            "auxiliary": {
+              "tokens": 0,
+              "costUsd": 0
+            },
+            "other": {
+              "tokens": 0,
+              "costUsd": 0
+            }
+          }
+        },
+        "claude-haiku-5-5": {
+          "input": 170976,
+          "output": 7742,
+          "cacheRead": 0,
+          "cacheCreation": 0,
+          "costUsd": 0.0209686,
+          "bySource": {
+            "main": {
+              "tokens": 0,
+              "costUsd": 0
             },
             "subagent": {
               "tokens": 0,
               "costUsd": 0
             },
             "auxiliary": {
-              "tokens": 0,
-              "costUsd": 0
+              "tokens": 178718,
+              "costUsd": 0.0209686
             },
             "other": {
               "tokens": 0,

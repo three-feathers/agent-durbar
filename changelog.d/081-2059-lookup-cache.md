@@ -1,1 +1,0 @@
-- **Agent-app version check** (spec 081 FR-466): a version lookup no longer shows an old version from the cache; every check asks the vendor's server again.
