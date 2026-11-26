@@ -24,6 +24,7 @@
  */
 const path = require('path');
 const fs = require('fs');
+const { printable } = require('./safe-print');
 const os = require('os');
 const { spawn, spawnSync } = require('child_process');
 const { ensureElectron, buildProblem } = require('./ensure-electron');
@@ -531,6 +532,30 @@ function runOne(d, outDir, { launch, build = launch ? () => '' : buildProblem } 
   });
 }
 
+/* Spec 008 delta 2026-11-27 (issue #1623, T603): what a PASSING driver shows. A passing run printed one `ok` line, so CI could not show what a driver measured (the `motion:` line of
+   check-097-pencil-ease: did the Windows runner report prefers-reduced-motion?). (A) lines a driver marks `[evidence]` are printed after its `ok` line, at most EVIDENCE_MAX per driver, each cut to
+   EVIDENCE_WIDTH characters after `printable` (scripts/safe-print.js: a control character or a `::` workflow command in a driver line can never reach the CI log); (C) every driver's collected log
+   is written, failing drivers included, to <out>/logs/<label>.log (each line printable and cut to LOG_LINE_MAX, the file to its last LOG_FILE_MAX characters): the folder is inside `ui-shots`, which
+   ui-platforms.yml uploads with `if: always()` (14 days). The lines are the driver's own output, as a failing driver's last 25 lines already are in the CI log. */
+const EVIDENCE = '[evidence]', EVIDENCE_MAX = 8, EVIDENCE_WIDTH = 240, LOG_LINE_MAX = 2000, LOG_FILE_MAX = 200_000;
+function evidenceLines(log, prefix = EVIDENCE, max = EVIDENCE_MAX, width = EVIDENCE_WIDTH) {
+  return String(log || '').split(/\r?\n/).filter((l) => l.startsWith(prefix)).slice(0, max).map((l) => printable(l).slice(0, width));
+}
+function driverLogText(log) {
+  const text = String(log || '').split(/\r?\n/).map((l) => printable(l).slice(0, LOG_LINE_MAX)).join('\n');
+  return text.length > LOG_FILE_MAX ? `[ui-suite] log cut: the last ${LOG_FILE_MAX} characters of ${text.length}\n${text.slice(-LOG_FILE_MAX)}` : text;
+}
+/** Best effort: a log that cannot be written never fails a run. Returns the file's path, or null. */
+function writeDriverLog(outDir, label, log) {
+  try {
+    const dir = path.join(outDir, 'logs');
+    fs.mkdirSync(dir, { recursive: true });
+    const file = path.join(dir, String(label).replace(/[^A-Za-z0-9._-]+/g, '_').slice(0, 120) + '.log');
+    fs.writeFileSync(file, driverLogText(log));
+    return file;
+  } catch { return null; }
+}
+
 /** `ensure`, `run` and `argv` are for tests (scripts/test-ui-suite.ts); the defaults install Electron and start the real drivers. */
 async function main({ ensure = ensureElectron, run = runOne, argv, shared = sharedDesktop(), build = buildProblem, xvfbFound = xvfbRunFound } = {}) {
   const a = args(argv);
@@ -582,7 +607,9 @@ async function main({ ensure = ensureElectron, run = runOne, argv, shared = shar
       const r = await run(d, outDir);
       console.log(`  ${r.ok ? 'ok  ' : 'FAIL'} ${(d.label || d.name).padEnd(26)} ${String(r.secs).padStart(4)} s${r.ok ? '' : '  ' + r.why.trim().slice(0, 300)}`);
       /* spec 008 FR-190: a wait that timed out (`[waits] ...` from driver-helpers) shows even when the driver passed: a wait that is always spent costs its whole limit every run */
-      if (r.ok) for (const l of [...new Set(String(r.log || '').split(/\r?\n/).filter((x) => x.startsWith('[waits]')).map((x) => x.slice(0, 200)))].slice(0, 4)) console.log('      ' + l);
+      if (r.ok) for (const l of [...new Set(String(r.log || '').split(/\r?\n/).filter((x) => x.startsWith('[waits]')).map((x) => printable(x).slice(0, 200)))].slice(0, 4)) console.log('      ' + l);
+      if (r.ok) for (const l of evidenceLines(r.log)) console.log('      ' + l); /* issue #1623: the lines a passing driver marked as evidence */
+      writeDriverLog(outDir, d.label || d.name, r.log);
       if (!r.ok) {
         failed.push(d.label || d.name);
         console.log(r.log.split(/\r?\n/).filter((l) => l.trim()).slice(-25).map((l) => '      | ' + l.slice(0, 240)).join('\n'));
@@ -600,6 +627,7 @@ async function main({ ensure = ensureElectron, run = runOne, argv, shared = shar
       startLine(d, 'start retry');
       const r = await run(d, outDir);
       console.log(`  ${r.ok ? 'FLAKY (passed on retry)' : 'FAIL again'} ${label}${r.ok ? '' : '  ' + r.why.trim().slice(0, 300)}`);
+      writeDriverLog(outDir, label + ' retry', r.log);
       if (r.ok) { failed.splice(failed.indexOf(label), 1); flaky.push(label); }
     }
   }
@@ -609,5 +637,5 @@ async function main({ ensure = ensureElectron, run = runOne, argv, shared = shar
   if (failed.length) process.exitCode = 1;
 }
 
-module.exports = { dprOk, xvfbScreenArgs, launchCommand, sharedDesktop, desktopNote, desktopSize, xvfbProblem, XVFB_MISSING, syntaxErrors, main, runOne, killTree, guardTree, shard, SHARD1_HEAD_START_SECS, unknownOnly, DRIVERS, NOT_IN_SUITE }; // runOne: also spec 001 FR-082 (scripts/shots-docs.js)
+module.exports = { dprOk, xvfbScreenArgs, launchCommand, sharedDesktop, desktopNote, desktopSize, xvfbProblem, XVFB_MISSING, syntaxErrors, main, runOne, killTree, guardTree, shard, SHARD1_HEAD_START_SECS, unknownOnly, DRIVERS, NOT_IN_SUITE, evidenceLines, driverLogText, writeDriverLog, EVIDENCE_MAX, EVIDENCE_WIDTH, LOG_LINE_MAX, LOG_FILE_MAX }; // runOne: also spec 001 FR-082 (scripts/shots-docs.js)
 if (require.main === module) main().catch((e) => { console.error('ui-suite:', e.message); process.exitCode = 1; });
