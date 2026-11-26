@@ -68,10 +68,11 @@ module.exports = async (ctx) => {
     assert.match(it.title, /model call on your Copilot account \(gpt-5\.5 by default\) and may use AI credits/, `${w}: FR-131: the cost sentence`);
     assert.match(it.text, /may use AI credits/, `${w}: FR-131: the cost in its visible line`);
     assert.ok(it.title.length <= 120, `${w}: a static tooltip of at most 120 characters: ${it.title.length}`);
-    const HONEST = "Copilot's reviewer is a model, not a security boundary: text the agent has read can mislead it, so turn it on only in folders and with content you trust.";
-    const note = await js(`(()=>{const b=document.querySelector('#modeMenu [data-act="assisted"]'),id=b&&b.getAttribute('aria-describedby'),n=id&&document.getElementById(id);if(!n)return null;const r=n.getBoundingClientRect(),cs=getComputedStyle(n);return {text:n.textContent,shown:r.width>0&&r.height>0&&cs.visibility!=='hidden'&&cs.display!=='none',inMenu:!!n.closest('#modeMenu')};})()`);
+    const HONEST = "Copilot's reviewer is a model, not a security boundary: use it only with content you trust.";
+    const note = await js(`(()=>{const b=document.querySelector('#modeMenu [data-act="assisted"]'),id=b&&b.getAttribute('aria-describedby'),n=id&&document.getElementById(id);if(!n)return null;const r=n.getBoundingClientRect(),cs=getComputedStyle(n);const lh=parseFloat(getComputedStyle(n).lineHeight)||parseFloat(getComputedStyle(n).fontSize)*1.4;return {lines:Math.round(r.height/lh),text:n.textContent,shown:r.width>0&&r.height>0&&cs.visibility!=='hidden'&&cs.display!=='none',inMenu:!!n.closest('#modeMenu')};})()`);
     assert.ok(note && note.text === HONEST, `${w}: FR-131 (2026-11-25): the honest line is the switch's description: ${note && note.text}`);
     assert.ok(note.shown && note.inMenu, `${w}: FR-131: the honest line is visible in the menu`);
+    assert.ok(note.lines >= 1 && note.lines <= 2, `${w}: the honest line is one or two lines of the menu (a taller note pushed the card menu out of a 1280x800 window): ${note.lines}`);
     assert.ok(await inView('#modeMenu #asNote'), `${w}: the honest line is inside the window`);
     assert.deepStrictEqual(await small('#modeMenu'), [], `${w}: no text under 10.5px in the menu`);
     assert.ok(await inView('#modeMenu [data-act="assisted"]'), `${w}: the switch is inside the window`);
