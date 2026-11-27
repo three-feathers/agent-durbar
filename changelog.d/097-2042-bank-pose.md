@@ -1,1 +1,0 @@
-- **A visitor at the Bank no longer holds a coffee cup in seven of the eight worlds' people sets** (spec 097): only Office people had a counter pose, so the Cheeky, Minimalist, Monster, Pirate, Prehistoric, Rebels and Royal visitors drank from the coffee corner's cup at the Bank; they now hold out a letter.
