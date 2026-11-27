@@ -6,6 +6,7 @@
 import * as path from 'path';
 import { LEFT_OUT_MAX } from '../shared/sandbox';
 import { redact } from '../shared/redact';
+import { HOME_SECRETS } from '../shared/homesecrets';
 
 /** Normalised absolute root and its compare key, or undefined when it must be dropped. Windows-form paths use `path.win32`, others `path.posix`. */
 export function normalizeRoot(r0: string): { path: string; key: string } | undefined {
@@ -69,7 +70,7 @@ export function sandboxRoots(roots: readonly unknown[] | undefined | null, realp
  * write, also when the session folder is the home folder or a parent of it (Durbar allows that with a warning, spec 006 FR-016). Relative
  * to the home folder. Claude Code: `denyRead`/`denyWrite` entries (`~/…`); Copilot: `deniedPaths` where the host reports `denied_paths`.
  */
-export const HOME_SECRETS: readonly string[] = Object.freeze(['.ssh', '.aws', '.config/gh', '.gnupg', '.netrc', '.npmrc', '.git-credentials', '.docker', '.kube', '.azure', '.config/gcloud', '.claude', '.copilot', '.codex']);
+export { HOME_SECRETS };
 
 /** Compare key of a normalised path: case-insensitive for Windows-form paths and on macOS and Windows (constitution VI). */
 const keyOf = (p: string, platform: string): string => (/^[A-Za-z]:[\\/]/.test(p) || p.startsWith('\\\\') || platform === 'win32' || platform === 'darwin' ? p.toLowerCase() : p);

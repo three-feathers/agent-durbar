@@ -227,6 +227,41 @@ function simTeamsApi(qs: URLSearchParams): Pick<DurbarApi, 'teamsList' | 'teamsP
     },
   };
 }
+/**
+ * Spec 116 T003: the simulator's office memory, in memory only (no disk, no dialog, no path from the page). The one "folder" is a temp-folder
+ * name; `memoryPick` always offers it with a fake token built at run time; `memoryApply` takes that token once; `memoryStop` clears the state.
+ * The words are the real ones (`checkMemoryFolder`'s refusals): a page address `simmemory=refused` makes the pick answer a refusal.
+ */
+function simMemoryApi(qs: URLSearchParams): Pick<DurbarApi, 'memoryStatus' | 'memoryPick' | 'memoryApply' | 'memorySetOn' | 'memoryStop' | 'onMemoryChanged'> {
+  const FOLDER = '/tmp/durbar-sim-memory';
+  let folder: string | undefined;
+  let on = false;
+  let live: string | undefined;
+  const subs: Array<(v: import('../shared/api').MemoryStatus) => void> = [];
+  const status = (): import('../shared/api').MemoryStatus => (folder === undefined ? { on: false, state: 'off', keepInGit: false } : { on, path: folder, state: on ? 'on' : 'off', keepInGit: false });
+  const push = (): void => { for (const cb of [...subs]) cb(status()); };
+  return {
+    memoryStatus: async () => status(),
+    memoryPick: async () => {
+      if (qs.get('simmemory') === 'refused') return { ok: false, error: 'refused', reason: 'It is your home folder.', path: '~' };
+      live = 'sim' + Math.random().toString(16).slice(2).padEnd(29, '0').slice(0, 29);
+      return { ok: true, token: live, expiresAt: Date.now() + 600_000, path: FOLDER, remote: qs.get('simmemory') === 'remote' ? { kind: 'remote', hosts: ['host.example.invalid'], rewritten: false } : { kind: 'none' } };
+    },
+    memoryApply: async (token) => {
+      if (live === undefined || token !== live) return { ok: false, error: 'invalid' };
+      live = undefined; folder = FOLDER; on = true; push();
+      return { ok: true, path: FOLDER };
+    },
+    memorySetOn: async (v) => {
+      if (typeof v !== 'boolean') return { ok: false, error: 'invalid' };
+      if (v && folder === undefined) return { ok: false, error: 'noFolder' };
+      on = v; push();
+      return { ok: true };
+    },
+    memoryStop: async () => { folder = undefined; on = false; live = undefined; push(); return { ok: true }; },
+    onMemoryChanged: (cb) => { subs.push(cb); return () => { const i = subs.indexOf(cb); if (i >= 0) subs.splice(i, 1); }; },
+  };
+}
 type SimNote = import('../shared/notes').Note;
 type SimNotesWrote = import('../shared/notes').NotesWrote;
 type SimNotesView = import('../shared/notes').NotesView;
@@ -2986,6 +3021,7 @@ const planMcpSignInRefresh = (i: SignInPlanInput): SignInPlan => {
       },
       ...simNotesCalls, // spec 083 FR-060
       ...simTeamsApi(simQuery), // spec 111 T007: team templates in memory
+      ...simMemoryApi(simQuery), // spec 116 T003: office memory, in memory only
       ...simConvSearchCalls, // spec 095 T025
       listProfiles: async (id) => {
         const s = sims.find((x) => x.info.id === id);

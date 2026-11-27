@@ -11,6 +11,7 @@ import { COPILOT_SANDBOX_NOTE_COMMAND, copilotHostSupport, copilotPathReadDirs, 
 import { CODEX_SANDBOX_NOTE_COMMAND, CODEX_SANDBOX_NOTE_FILE, codexModeSettings, codexPermission, codexSandboxState } from '../src/adapters/codexModes';
 import { HOME_SECRETS, leftOutFields, normalizeRoot, sandboxRoots, splitFolders } from '../src/adapters/sandboxRoots';
 import * as os from 'os';
+for (const n of ['.mozilla', 'snap/firefox', '.var/app', '.password-store', '.pki', '.terraform.d']) assert.ok(HOME_SECRETS.includes(n), `HOME_SECRETS holds ${n} (spec 087 delta of 2026-11-24)`);
 import { cleanSandboxState, outwardSandboxEvent, sandboxReason } from '../src/shared/sandbox';
 import { requireOsSandbox, requireOsSandboxFrom } from '../src/main/sandboxpolicy';
 import { machinePolicyDir, nodePolicyFs, readMachinePolicy, POLICY_MAX_BYTES } from '../src/main/policyfile';
