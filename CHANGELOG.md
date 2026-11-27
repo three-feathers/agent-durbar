@@ -2,11 +2,19 @@
 
 Agent Durbar `v0.1.0` is the first stable release. Builds are unsigned and not notarized (see "Honest limits" in the README for where each OS has been run). Each entry names the spec that describes the behavior and how it was checked.
 
-## Unreleased (on `main`, after the v0.1.31 tag)
+## Unreleased (on `main`, after the v0.1.32 tag)
 
 Not released yet: each change is a file in [`changelog.d/`](changelog.d/) until the next release folds them in (`npm run changelog:preview` lists them).
 
 <!-- changelog.d: fragments only; a bullet here fails npm run changelog:check -->
+
+## v0.1.32 ([release](https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.32), 2026-11-27)
+
+- **The merge gate refuses when one of its reads fails** (spec 021): `scripts/pr-gate.sh` used to read a failed list of labels, owner holds, reviews, comments or outside edits as "nothing to report" and could pass; it now prints `gate-read-failed(<read>)` and exits 1. An empty list that was read fine still passes.
+- **Copilot's reviewer inside Ask first** (spec 003): a per-session option in the mode menu, *Let Copilot's reviewer approve safe requests* (off by default, never saved), lets Copilot's assisted-approval reviewer approve a request once where Ask first would ask; Durbar's own rules decide first, reads outside the folders, requests managed policy reserves for a person and requests with lookalike letters always get a card, and the chip reads *Ask first + review*. The switch says what the reviewer is: *A model, not a security boundary: use only with trusted content.* Read-only, Allow all, Autopilot and remote control turn it off or refuse it; an organization policy shows it disabled. Built and tested on the simulator and a fake Copilot runtime only: real Copilot sessions do not show it until a real check is recorded.
+- **A safe list of issues and PRs for agents**: `scripts/gh-trusted.sh --list` shows a title only for the three owners and our own bots; every other item is just its link. A title renamed by anyone else is hidden too, in the single-item read as well. A GitHub error response is never shown (it used to print the raw reply, outside text included).
+- **Trusted text is printed safely**: `scripts/gh-trusted.sh <N>` and `--pr-text` now escape terminal control characters, bidi and zero-width marks and CI command lines (`::error::`, `##[`) in a trusted author's title, body and comments, as `--list` already did. Markdown and line breaks stay readable.
+- **A visitor at the Bank no longer holds a coffee cup in seven of the eight worlds' people sets** (spec 097): only Office people had a counter pose, so the Cheeky, Minimalist, Monster, Pirate, Prehistoric, Rebels and Royal visitors drank from the coffee corner's cup at the Bank; they now hold out a letter.
 
 ## v0.1.31 ([release](https://github.com/three-feathers/agent-durbar/releases/tag/v0.1.31), 2026-11-26)
 

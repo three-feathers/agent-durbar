@@ -1,1 +1,0 @@
-- **The merge gate refuses when one of its reads fails** (spec 021): `scripts/pr-gate.sh` used to read a failed list of labels, owner holds, reviews, comments or outside edits as "nothing to report" and could pass; it now prints `gate-read-failed(<read>)` and exits 1. An empty list that was read fine still passes.

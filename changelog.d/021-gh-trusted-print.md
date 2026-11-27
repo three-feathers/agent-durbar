@@ -1,1 +1,0 @@
-- **Trusted text is printed safely**: `scripts/gh-trusted.sh <N>` and `--pr-text` now escape terminal control characters, bidi and zero-width marks and CI command lines (`::error::`, `##[`) in a trusted author's title, body and comments, as `--list` already did. Markdown and line breaks stay readable.
