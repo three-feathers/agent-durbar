@@ -6,5 +6,5 @@
 export const HOME_SECRETS: readonly string[] = Object.freeze([
   '.ssh', '.aws', '.config/gh', '.gnupg', '.netrc', '.npmrc', '.git-credentials', '.docker', '.kube', '.azure', '.config/gcloud', '.claude', '.copilot', '.codex',
   // spec 116 FR-004 (review of PR 2116): browser profiles and password stores
-  '.mozilla', 'snap/firefox', '.var/app', '.password-store', '.pki', '.terraform.d',
+  '.mozilla', 'snap/firefox', '.var/app', '.password-store', '.pki', '.terraform.d', 'snap/chromium', '.thunderbird',
 ]);

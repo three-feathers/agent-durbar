@@ -13,6 +13,8 @@
  */
 import { randomBytes } from 'crypto';
 import { checkMemoryFolder } from '../shared/memoryfolder';
+import { readCapped } from '../shared/cappedread';
+import type { CappedFs, CappedFlags } from '../shared/cappedread';
 import type { MemoryFlavor, MemoryFolderCtx, MemoryFolderCheck, MemoryRefusal, RemoteAnswer } from '../shared/memoryfolder';
 import type { MemoryApplied, MemoryFail, MemoryPicked, MemoryResult, MemoryStatus } from '../shared/api';
 
@@ -51,11 +53,36 @@ export function expandOfficeFolders(entries: readonly string[], read: (file: str
   const out: string[] = [];
   for (const e of entries) {
     out.push(e);
-    if (/\.code-workspace$/i.test(e)) {
+    if (isWorkspaceFile(e)) {
       try { out.push(...read(e)); } catch { throw new WorkspaceUnreadable(e); }
     }
   }
   return out;
+}
+const isWorkspaceFile = (e: string): boolean => /\.code-workspace$/i.test(e);
+
+/**
+ * The office folders for rule 4 (spec 116 round 4, P2): an OPEN agent contributes the folders it actually runs with (`folders`, never re-read from its
+ * file: an edited file must not make a live write root pickable) and its workspace file; a SAVED folder with no live agent is expanded from its file.
+ * `liveKeys` are the saved-folder keys of the open agents (`workspaceFile ?? cwd`). An unreadable workspace file throws `WorkspaceUnreadable`.
+ */
+export function collectOfficeFolders(live: ReadonlyArray<{ key: string; folders: readonly string[]; workspaceFile?: string }>, saved: readonly string[], read: (file: string) => string[]): string[] {
+  const out: string[] = [];
+  const open = new Set<string>();
+  for (const a of live) { open.add(a.key); out.push(...a.folders); if (a.workspaceFile) out.push(a.workspaceFile); }
+  out.push(...expandOfficeFolders(saved.filter((s) => !open.has(s)), read));
+  return out;
+}
+
+/** 1 MB: a `.code-workspace` file is a few lines (P1: never read a bigger one, and never open a FIFO). */
+export const MAX_WORKSPACE_BYTES = 1024 * 1024;
+/** The reader of a workspace file for `expandOfficeFolders`: the one capped, non-blocking, no-follow read (`readCapped`, the flags of `memoryGitFlags`); any failure throws. */
+export function cappedWorkspaceReader(fs: CappedFs, k: CappedFlags, parse: (text: string, file: string) => string[]): (file: string) => string[] {
+  return (file) => {
+    const r = readCapped(fs, k, file, MAX_WORKSPACE_BYTES);
+    if (!r.ok) throw new Error('workspace unreadable');
+    return parse(r.buf.toString('utf8'), file);
+  };
 }
 
 export interface MemoryOpsDeps {
@@ -177,6 +204,7 @@ export class MemoryOps {
     const st = this.deps.store();
     if (!st) return FAILED;
     this.live = undefined;
+    this.gen++; // a pick dialog still open answers cancelled
     const saved = st.setMemory(undefined);
     this.deps.changed?.(); // cleared for this run even when the file could not be written
     return saved ? { ok: true } : FAILED;

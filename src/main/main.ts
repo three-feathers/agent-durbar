@@ -43,7 +43,7 @@ import { register as registerNotesIpc } from './ipc/notes';
 import { register as registerTeamsIpc } from './ipc/teams';
 import { register as registerMemoryIpc } from './ipc/memory';
 import { defaultProfileEnv } from './profilefiles';
-import { MemoryOps, nodeMemoryCtx, expandOfficeFolders } from './memoryops';
+import { MemoryOps, nodeMemoryCtx, collectOfficeFolders, cappedWorkspaceReader } from './memoryops';
 import { memoryGitRemote, memoryGitFlags } from './memorygit';
 import { pickFolder } from './pickfolder';
 import { TeamsIpcOps } from './teamsipc';
@@ -82,7 +82,7 @@ import { adapterOf } from './folders';
 import type { AgentAdapter, AgentEvent } from '../adapters/types';
 import type { AdapterInfo } from '../shared/adapters';
 import { startOptionsOf } from './startopts';
-import { resolveWorkspaceCwd, readCodeWorkspaceFolders } from '../adapters/workspace';
+import { resolveWorkspaceCwd, codeWorkspaceFoldersFromText } from '../adapters/workspace';
 import { copilotHomeDir } from '../adapters/slashcommands';
 import { findAdded } from './addkey';
 import { MAX_ATTACH_BYTES, MAX_ATTACH_FILES, fmtSize, kindOfFile, sweepStaleStageDirs, sweepStaleTempDirs } from '../shared/attachments';
@@ -1002,7 +1002,7 @@ registerMemoryIpc({
       agentHomes: [copilotHomeDir(process.env, os.homedir()), defaultProfileEnv(process.env, os.homedir()).claudeConfigDir, process.env.CODEX_HOME || path.join(os.homedir(), '.codex')],
     }),
     // every workspace member, not only the first folder; an unreadable workspace file refuses the link
-    officeFolders: () => expandOfficeFolders([...agents.values()].flatMap((a) => [a.cwd, ...(a.workspaceFile ? [a.workspaceFile] : [])]).concat(folderStore?.list().map((f) => f.workspace) ?? []), readCodeWorkspaceFolders),
+    officeFolders: () => collectOfficeFolders([...agents.values()].map((a) => ({ key: wsKey(a), folders: rootsOf(a), workspaceFile: a.workspaceFile })), folderStore?.list().map((f) => f.workspace) ?? [], cappedWorkspaceReader(fs, memoryGitFlags(fs.constants), codeWorkspaceFoldersFromText)),
     remote: (real) => memoryGitRemote(fs, memoryGitFlags(fs.constants), path.join, real),
     changed: () => toRenderer('memory:changed', memoryOps?.status()),
   }))),
