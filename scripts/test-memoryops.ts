@@ -19,7 +19,7 @@ import type { MemoryFlavor, RemoteAnswer } from '../src/shared/memoryfolder';
 const MODNAME = process.env.MEMORYOPS_MODULE ?? 'memoryops';
 const IS_COPY = process.env.MEMORYOPS_MODULE !== undefined;
 // eslint-disable-next-line @typescript-eslint/no-var-requires
-const { MemoryOps, nodeMemoryCtx, expandOfficeFolders, TOKEN_MS } = require('../src/main/' + MODNAME) as typeof import('../src/main/memoryops');
+const { MemoryOps, nodeMemoryCtx, expandOfficeFolders, collectOfficeFolders, cappedWorkspaceReader, MAX_WORKSPACE_BYTES, TOKEN_MS } = require('../src/main/' + MODNAME) as typeof import('../src/main/memoryops');
 
 let n = 0;
 const eq = <T>(a: T, b: T, m: string): void => { n++; assert.deepStrictEqual(a, b, m); };
@@ -351,6 +351,66 @@ section('relink', async () => {
   eq(wstore.writes, ['C:\\Users\\ana\\notes'], 'the fresh real path from the re-check is saved');
 });
 
+// ---------------------------------------------------------------------------------------------------------------------------------- liveoffice
+section('liveoffice', async () => {
+  // P2: an OPEN agent's folders are the ones it runs with, never re-read from its (possibly edited) file; a saved folder with no live agent is read
+  const reads: string[] = [];
+  const read = (f: string): string[] => { reads.push(f); return f === '/w/live.code-workspace' ? ['/w/a', '/w/evil'] : ['/w/s1', '/w/s2']; };
+  const out = collectOfficeFolders([{ key: '/w/live.code-workspace', folders: ['/w/a'], workspaceFile: '/w/live.code-workspace' }, { key: '/p/plain', folders: ['/p/plain'] }],
+    ['/w/live.code-workspace', '/p/plain', '/w/saved.code-workspace'], read);
+  ok(out.includes('/w/a') && out.includes('/w/live.code-workspace') && out.includes('/p/plain'), 'the live folders and files are in');
+  ok(!out.includes('/w/evil'), 'an edited file does not add a member to a live workspace');
+  eq(reads, ['/w/saved.code-workspace'], 'only the saved folder with no live agent is read');
+  ok(out.includes('/w/s1') && out.includes('/w/s2'), 'a saved workspace is expanded from its file');
+  assert.throws(() => collectOfficeFolders([], ['/w/bad.code-workspace'], () => { throw new Error('x'); }), /workspace unreadable/);
+  // end to end: the live second member is refused even though the file changed
+  const s = setup();
+  s.ops = new MemoryOps({ store: () => s.store, flavor: POSIX, now: () => 1, pick: async () => '/w/b', ctx: () => nodeMemoryCtx(s.fsx, { home: '/home/ana', userData: '/u' }),
+    officeFolders: () => collectOfficeFolders([{ key: '/w/l.code-workspace', folders: ['/w/a', '/w/b'], workspaceFile: '/w/l.code-workspace' }], ['/w/l.code-workspace'], () => ['/w/a']) });
+  eq((await s.ops.pick()).ok, false, 'a live write root is refused although the file now lists only the first folder');
+});
+
+// ---------------------------------------------------------------------------------------------------------------------------------- wsread
+section('wsread', () => {
+  const flags = { O_RDONLY: 0, O_NOFOLLOW: 4, O_NONBLOCK: 8 };
+  const mk = (data: string | 'fifo', opened: number[] = []) => ({
+    openSync: (_f: string, fl: number) => { opened.push(fl); return 5; },
+    fstatSync: () => ({ isFile: () => data !== 'fifo', size: data === 'fifo' ? 0 : Buffer.byteLength(data), nlink: 1 }),
+    readSync: (_fd: number, buf: Buffer, off: number, len: number, pos: number) => { const b = Buffer.from(data === 'fifo' ? '' : data); const c = Math.min(len, Math.max(0, b.length - pos)); b.copy(buf, off, pos, pos + c); return c; },
+    closeSync: () => undefined,
+  });
+  const parse = (t: string): string[] => (JSON.parse(t) as { folders: Array<{ path: string }> }).folders.map((f) => f.path);
+  const good = JSON.stringify({ folders: [{ path: '/w/a' }, { path: '/w/b' }] });
+  const opened: number[] = [];
+  eq(cappedWorkspaceReader(mk(good, opened), flags, parse)('/w/x.code-workspace'), ['/w/a', '/w/b'], 'a normal file');
+  eq(opened, [12], 'opened O_RDONLY | O_NOFOLLOW | O_NONBLOCK');
+  assert.throws(() => cappedWorkspaceReader(mk('fifo'), flags, parse)('/w/x.code-workspace'), /workspace unreadable/, 'a FIFO is refused without a read');
+  const pad = (n: number): string => good + ' '.repeat(n - Buffer.byteLength(good));
+  eq(cappedWorkspaceReader(mk(pad(MAX_WORKSPACE_BYTES)), flags, parse)('/w/x.code-workspace').length, 2, 'exactly 1 MB is read');
+  assert.throws(() => cappedWorkspaceReader(mk(pad(MAX_WORKSPACE_BYTES + 1)), flags, parse)('/w/x.code-workspace'), /workspace unreadable/, 'over 1 MB is refused');
+  assert.throws(() => cappedWorkspaceReader(mk('{not json'), flags, parse)('/w/x.code-workspace'), (e: Error) => !/not json/.test(e.message) || true, 'a bad file throws');
+  eq(MAX_WORKSPACE_BYTES, 1024 * 1024, 'the cap is 1 MB');
+  // through the refusal: the file is named
+  assert.throws(() => expandOfficeFolders(['/w/x.code-workspace'], cappedWorkspaceReader(mk('fifo'), flags, parse)), (e: Error & { file?: string }) => e.file === '/w/x.code-workspace', 'the refusal names the file');
+  const rd = fs.readFileSync(path.join(__dirname, '..', '..', 'src/main/main.ts'), 'utf8');
+  ok(/cappedWorkspaceReader\(fs, memoryGitFlags\(fs\.constants\), codeWorkspaceFoldersFromText\)/.test(rd), 'main.ts reads workspace files through the capped reader, with memoryGitFlags');
+  ok(!/readCodeWorkspaceFolders/.test(rd.slice(rd.indexOf('registerMemoryIpc({'), rd.indexOf('registerOrgPolicyIpc'))), 'the memory wiring never calls the plain readFileSync reader');
+});
+
+// ---------------------------------------------------------------------------------------------------------------------------------- stoppick
+section('stoppick', async () => {
+  // P5: stop cancels a pick whose dialog is still open
+  const s = setup();
+  let release: (v: string | null) => void = () => undefined;
+  const o = new MemoryOps({ store: () => s.store, flavor: POSIX, now: () => 1, ctx: () => nodeMemoryCtx(s.fsx, { home: '/home/ana', userData: '/u' }), officeFolders: () => [], newToken: () => 'ab'.repeat(16),
+    pick: () => new Promise<string | null>((res) => { release = res; }) });
+  const pending = o.pick();
+  eq(o.stop().ok, true, 'stop while the dialog is open');
+  release(NOTES);
+  eq(await pending, { ok: false, error: 'cancelled' }, 'the dialog answered after stop: no token');
+  eq(o.apply('ab'.repeat(16)).ok, false, 'no token was made');
+});
+
 // ---------------------------------------------------------------------------------------------------------------------------------- seton
 section('seton', () => {
   const s = setup();
@@ -410,10 +470,10 @@ section('source', () => {
   const ops = rd('src/main/memoryops.ts');
   const code = ops.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
   ok(/\.realpathSync\.native\(/.test(code) && !/realpathSync\(/.test(code.replace(/realpathSync\.native\(/g, '')), 'memoryops.ts uses fs.realpathSync.native only');
-  ok(/officeFolders: \(\) => expandOfficeFolders\([^\n]*readCodeWorkspaceFolders\)/.test(rd('src/main/main.ts')), 'main.ts expands every workspace through readCodeWorkspaceFolders');
+  ok(/officeFolders: \(\) => collectOfficeFolders\(/.test(rd('src/main/main.ts')), 'main.ts builds the office folders with collectOfficeFolders (live agents from their own folders)');
   ok(/nodeMemoryCtx\(\s*fs,/.test(rd('src/main/main.ts')), 'main.ts builds the ctx through nodeMemoryCtx(fs, ...), so realpathSync.native');
   ok(!/realpath\s*:\s*fs\.realpathSync[^.]/.test(rd('src/main/main.ts')), 'main.ts never hands the JS realpathSync over');
-  eq([...ops.matchAll(/^import [^;]*from '([^']+)'/gm)].map((m) => m[1]).sort(), ['../shared/api', '../shared/memoryfolder', '../shared/memoryfolder', 'crypto'], 'memoryops.ts imports: no fs, no Electron, no shell');
+  eq([...ops.matchAll(/^import [^;]*from '([^']+)'/gm)].map((m) => m[1]).sort(), ['../shared/api', '../shared/cappedread', '../shared/cappedread', '../shared/memoryfolder', '../shared/memoryfolder', 'crypto'], 'memoryops.ts imports: no fs, no Electron, no shell');
   ok(!/child_process|\bspawn|\bexec\(|writeFile|unlink|rmSync|rmdir|mkdir|readFile|readdir/.test(code), 'memoryops.ts writes and removes nothing');
   ok(/\?\? \(\(\) => randomBytes\(16\)\.toString\('hex'\)\)\)\(\)/.test(code) && /import \{ randomBytes \} from 'crypto'/.test(ops), 'the default token is crypto.randomBytes(16), never Math.random');
   ok(!/Math\.random/.test(code), 'memoryops.ts has no Math.random');
@@ -424,6 +484,12 @@ section('source', () => {
   const { memoryGitFlags } = require('../src/main/memorygit') as typeof import('../src/main/memorygit');
   eq(memoryGitFlags({ O_RDONLY: 0, O_NOFOLLOW: 4, O_NONBLOCK: 8 }), { O_RDONLY: 0, O_NOFOLLOW: 4, O_NONBLOCK: 8 }, 'flags kept');
   eq(memoryGitFlags(fs.constants).O_NONBLOCK, fs.constants.O_NONBLOCK, 'real constants kept');
+  // FR-001: nothing of the memory runs at start or while off: `status` returns before any check, and main only creates the ops when a channel asks
+  const st = ops.slice(ops.indexOf('  status(): MemoryStatus {'), ops.indexOf('  /** Main\'s dialog, then T002'));
+  ok(st.indexOf('if (!st.memoryOn)') > 0 && st.indexOf('if (!st.memoryOn)') < st.indexOf('this.check('), 'status returns while off before it checks the folder');
+  const mainSrc = rd('src/main/main.ts');
+  const regStart = mainSrc.indexOf('registerMemoryIpc({');
+  ok(regStart > 0 && !mainSrc.slice(0, regStart).includes('memoryOps.') && !mainSrc.slice(mainSrc.indexOf('registerOrgPolicyIpc')).includes('memoryOps.'), 'main.ts uses memoryOps only inside its own wiring');
   const ipc = rd('src/main/ipc/memory.ts');
   for (const c of ['status', 'pick', 'apply', 'setOn', 'stop']) ok(new RegExp(`ipcHandle\\('memory:${c}', \\(e[,)][^\\n]*!fromApp\\(e\\)`).test(ipc), `memory:${c} is window only through ipcHandle`);
   ok(!/ipcMain|webContents\.ipc/.test(ipc), 'no raw ipcMain');
@@ -465,6 +531,9 @@ section('source', () => {
     { name: 'apply skips the repoint comparison', from: 'if (!this.same(r.real, e.real))', to: 'if (false)', section: 'relink' },
     { name: 'case folded on every platform', from: "this.deps.flavor.platform === 'linux' ? x : x.toLowerCase()", to: 'x.toLowerCase()', section: 'relink' },
     { name: 'the default token is not from randomBytes', from: "(0, crypto_1.randomBytes)(16).toString('hex')", to: "Math.random().toString(16).slice(2).padEnd(32, '0')", section: 'pick' },
+    { name: 'a live agent is expanded from its file again', from: 'saved.filter((s) => !open.has(s))', to: 'saved', section: 'liveoffice' },
+    { name: 'the workspace file is read uncapped', from: 'file, exports.MAX_WORKSPACE_BYTES)', to: 'file, Infinity)', section: 'wsread' },
+    { name: 'stop leaves an open pick alive', from: '        this.gen++; // a pick dialog still open answers cancelled\n', to: '', section: 'stoppick' },
     // the same rules from other sides
     { name: 'a token can be used twice', from: '        this.live = undefined;\n        if (this.now() >= e.expiresAt)', to: '        if (this.now() >= e.expiresAt)', section: 'apply' },
     { name: 'a token never expires', from: 'if (this.now() >= e.expiresAt)', to: 'if (false)', section: 'apply' },
@@ -473,8 +542,8 @@ section('source', () => {
     { name: 'a refused pick still gives a token', from: "if (!r.ok) {\n            this.live = undefined;\n            return { ok: false, error: 'refused'", to: "if (false) {\n            this.live = undefined;\n            return { ok: false, error: 'refused'", section: 'pick' },
     { name: 'status looks at the folder while off', from: "if (!st.memoryOn)\n            return { on: false, path, state: 'off', keepInGit };", to: '', section: 'status' },
     { name: 'setOn(true) does not re-check', from: 'if (v) {\n            const folder = st.memoryFolder;', to: 'if (false) {\n            const folder = st.memoryFolder;', section: 'recheck' },
-    { name: 'stop checks the folder', from: '        this.live = undefined;\n        const saved = st.setMemory(undefined);', to: '        this.live = undefined;\n        this.deps.ctx().lstat("/x");\n        const saved = st.setMemory(undefined);', section: 'stop' },
-    { name: 'stop leaves a pending token', from: '        this.live = undefined;\n        const saved = st.setMemory(undefined);', to: '        const saved = st.setMemory(undefined);', section: 'stop' },
+    { name: 'stop checks the folder', from: '        const saved = st.setMemory(undefined);', to: '        this.deps.ctx().lstat("/x");\n        const saved = st.setMemory(undefined);', section: 'stop' },
+    { name: 'stop leaves a pending token', from: '        this.live = undefined;\n        this.gen++;', to: '        this.gen++;', section: 'stop' },
   ];
   const lf = orig.replace(/\r\n/g, '\n');
   assert.deepStrictEqual(mutants.filter((m) => !lf.includes(m.from)).map((m) => m.name), [], 'mutant anchors not found');

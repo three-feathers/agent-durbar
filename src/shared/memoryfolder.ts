@@ -68,14 +68,21 @@ function badShape(p: string, f: MemoryFlavor): MemoryRefusal | undefined {
   return f.path.isAbsolute(p) ? undefined : 'not-absolute';
 }
 
-/** FR-004 (decided by the coordinator, 2026-11-24): pseudo and system folders, refused at the path or inside it (judged on the real path). */
-function systemFolders(f: MemoryFlavor, e: NonNullable<MemoryFolderCtx['env']>): string[] {
-  if (f.platform === 'win32') return [e.systemRoot || 'C:\\Windows', e.programData || 'C:\\ProgramData', e.programFiles || 'C:\\Program Files', e.programFilesX86 || 'C:\\Program Files (x86)'];
-  const unix = ['/etc', '/usr', '/bin', '/sbin', '/lib', '/lib32', '/lib64', '/libx32', '/dev'];
-  if (f.platform === 'darwin') return [...unix, '/var', '/System', '/Library', '/private/var', '/private/etc'];
-  // Linux: not the whole of /var and /run (Silverblue has /home -> /var/home; USB sticks mount under /run/media): only the system parts
-  return [...unix, '/proc', '/sys', '/root', '/boot', '/run/user', '/run/secrets', '/run/credentials', '/run/systemd',
-    '/var/lib', '/var/log', '/var/cache', '/var/spool', '/var/db', '/var/run', '/var/tmp', '/var/mail'];
+/**
+ * FR-004 (decided by the coordinator, 2026-11-24, 2026-11-27, 2026-11-28): system and pseudo folders. The candidate is already a real path, so the
+ * entries are compared LITERALLY (a symlinked twin such as `/var/run` -> `/run`, `/bin` -> `/usr/bin` is listed itself). A folder that IS, is INSIDE
+ * or HOLDS an entry is refused. `home: true` marks an entry a home folder can sit under (`/root`, the `/var/*` parts: service homes): inside the real
+ * home those are skipped. `except` is accepted inside an entry (`/run/media`: USB sticks).
+ */
+interface SystemEntry { p: string; home?: boolean; except?: string }
+function systemFolders(f: MemoryFlavor, e: NonNullable<MemoryFolderCtx['env']>): SystemEntry[] {
+  const L = (...ps: string[]): SystemEntry[] => ps.map((p) => ({ p }));
+  if (f.platform === 'win32') return L(e.systemRoot || 'C:\\Windows', e.programData || 'C:\\ProgramData', e.programFiles || 'C:\\Program Files', e.programFilesX86 || 'C:\\Program Files (x86)');
+  const unix = L('/etc', '/usr', '/bin', '/sbin', '/lib', '/lib32', '/lib64', '/libx32', '/dev');
+  if (f.platform === 'darwin') return [...unix, ...L('/var', '/tmp', '/private/tmp', '/System', '/Library', '/private/var', '/private/etc')];
+  // Linux: not the whole of /var (Silverblue has /home -> /var/home): its system parts; all of /run but /run/media (USB sticks)
+  return [...unix, ...L('/proc', '/sys', '/boot', '/tmp'), { p: '/run', except: '/run/media' },
+    { p: '/root', home: true }, ...['lib', 'log', 'cache', 'spool', 'db', 'run', 'tmp', 'mail', 'backups'].map((n) => ({ p: '/var/' + n, home: true }))];
 }
 
 export function checkMemoryFolder(candidate: string, ctx: MemoryFolderCtx, flavor: MemoryFlavor): MemoryFolderCheck {
@@ -114,9 +121,26 @@ export function checkMemoryFolder(candidate: string, ctx: MemoryFolderCtx, flavo
   if (roots.some((r) => key(r) === k)) return refuse('root');
   if (forms(ctx.home).some((h) => key(h) === k)) return refuse('home');
   if (hits([ctx.userData])) return refuse('app-data');
-  // inside the REAL home the system rule does not apply (/home -> /var/home, or Durbar running as root); the other rules below still do
-  const inHome = forms(ctx.home).some((h) => inside(real, h));
-  if (!inHome && systemFolders(flavor, ctx.env ?? {}).some((x) => forms(x).some((y) => inside(real, y)))) return refuse('system');
+  // a home can sit under `/root` or a `/var/*` part (service homes, Durbar as root): inside the REAL home those are skipped; every other entry always counts,
+  // and a file-system root is under none of them (HOME=/). The other rules below still apply inside home.
+  // The skip needs the REAL home (the last form) to sit under `/home`, `/Users`, `/var/home` or an entry marked `home` (strictly), or to be `/root` itself:
+  // HOME=/etc, HOME=/usr or a home that links there never switches the rule off.
+  const sysList = systemFolders(flavor, ctx.env ?? {});
+  const realHome = forms(ctx.home).slice(-1)[0];
+  const homeBases = ['/home', '/Users', '/var/home', ...sysList.filter((x) => x.home).map((x) => x.p)];
+  const inHome = realHome !== undefined
+    && (key(realHome) === key('/root') || homeBases.some((b) => key(realHome) !== key(b) && inside(realHome, b)))
+    && inside(real, realHome);
+  // string compares on the normalised keys (the candidate may be 200k characters: no `relative` per entry)
+  const kReal = key(real);
+  const under = (ka: string, kb: string): boolean => ka === kb || ka.startsWith(kb.endsWith(p.sep) ? kb : kb + p.sep);
+  const sysHit = (x: SystemEntry): boolean => {
+    if (badShape(x.p, flavor) || (inHome && x.home)) return false;
+    if (x.except && under(kReal, key(x.except))) return false;
+    const kx = key(x.p);
+    return under(kReal, kx) || under(kx, kReal);
+  };
+  if (sysList.some(sysHit)) return refuse('system');
   if (hits([...AGENT_APPS.map((n) => p.join(ctx.home, n)), ...(ctx.agentHomes ?? [])])) return refuse('agent-folder');
   if (hits([...ctx.officeFolders])) return refuse('office-folder');
 

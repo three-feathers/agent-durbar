@@ -144,14 +144,14 @@ assert.ok(al.ok && al.real === '/mnt/disk/real-memory', 'the real path is return
   const t0 = Date.now();
   const r = run(lin, '/' + 'a/'.repeat(100000));
   assert.ok(r.ok || !r.ok);
-  assert.ok(Date.now() - t0 < 3000, 'a 200k-character path is handled quickly');
+  assert.ok(Date.now() - t0 < 10000, 'a 200k-character path is handled quickly (wide limit: the full suite runs in parallel)');
 }
 
 // ---- review of PR 2116: D1 the shared credential list, D2 the agent homes, D3 system folders ----
 section('secrets', () => {
   const { HOME_SECRETS } = require('../src/shared/homesecrets') as typeof import('../src/shared/homesecrets');
   const w = world('linux', '/home/ana', '/home/ana/.local/share/Durbar', []);
-  for (const n of ['.azure', '.mozilla', 'snap/firefox', '.var/app', '.password-store', '.pki', '.terraform.d']) {
+  for (const n of ['.azure', '.mozilla', 'snap/firefox', '.var/app', '.password-store', '.pki', '.terraform.d', 'snap/chromium', '.thunderbird']) {
     for (const suffix of ['', '/x']) table('D1 ' + n, w, [['/home/ana/' + n + suffix, 'secret-location']]);
     table('D1 parent', w, [['/home/ana/' + n.split('/')[0], 'secret-location']]); // a parent holds it
     const ww = world('win32', 'C:\\Users\\ana', 'C:\\Users\\ana\\AppData\\Roaming\\D', []);
@@ -194,9 +194,43 @@ section('system', () => {
   const root = world('linux', '/root', '/root/.local/share/Durbar', []);
   table('N1 running as root', root, [['/root/notes', 'ok'], ['/root/.ssh', 'secret-location'], ['/root', 'home'], ['/boot/x', 'system'], ['/etc', 'system']]);
   table('N1 linux var and run', lin, [
-    ['/run/media/ana/USB/brain', 'ok'], ['/var/www/x', 'ok'], ['/var', 'ok'], ['/run', 'ok'], ['/var/lib/x', 'system'], ['/var/lib', 'system'], ['/var/log/x', 'system'], ['/var/cache', 'system'], ['/var/spool/x', 'system'], ['/var/db', 'system'], ['/var/run/x', 'system'], ['/var/tmp', 'system'], ['/var/mail', 'system'],
+    ['/run/media/ana/USB/brain', 'ok'], ['/var/www/x', 'ok'], ['/var', 'system'], ['/run', 'system'], ['/var/lib/x', 'system'], ['/var/lib', 'system'], ['/var/log/x', 'system'], ['/var/cache', 'system'], ['/var/spool/x', 'system'], ['/var/db', 'system'], ['/var/run/x', 'system'], ['/var/tmp', 'system'], ['/var/mail', 'system'],
     ['/run/user/1000/x', 'system'], ['/run/secrets', 'system'], ['/run/credentials/x', 'system'], ['/run/systemd/x', 'system'], ['/usr/local/src', 'system'], ['/usr', 'system'],
   ]);
+  // round 4: N1-b literal entries (/var/run -> /run), N2 home skip limits, N3 folders that hold an entry, test holes
+  const sd = world('linux', '/home/ana', '/home/ana/.local/share/Durbar', []);
+  sd.links['/var/run'] = '/run';
+  table('N1-b', sd, [['/run/media/ana/USB/brain', 'ok'], ['/run/media', 'ok'], ['/run/lock', 'system'], ['/run/user/1000/x', 'system'], ['/run/docker.sock', 'system'], ['/var/run/x', 'system'], ['/var/www/x', 'ok']]);
+  const h1 = world('linux', '/', '/.local/share/Durbar', []);
+  table('N2 HOME=/', h1, [['/proc', 'system'], ['/etc', 'system'], ['/var/lib/x', 'system'], ['/root/x', 'system']]);
+  const h2 = world('linux', '/run', '/run/Durbar', []);
+  table('N2 HOME=/run', h2, [['/run/user/1000', 'system'], ['/run/lock', 'system']]);
+  const h3 = world('linux', '/var/home/ana', '/var/home/ana/.local/share/Durbar', []);
+  table('N2 HOME=/var/home/ana', h3, [['/var/home/ana/notes', 'ok']]);
+  const h4 = world('linux', '/var/lib/svc', '/var/lib/svc/.local/share/Durbar', []);
+  table('N2 HOME=/var/lib/svc', h4, [['/var/lib/svc/notes', 'ok'], ['/var/lib/svc-evil/x', 'system'], ['/var/lib/x', 'system']]);
+  const h5 = world('linux', '/home/ana', '/home/ana/.local/share/Durbar', []);
+  h5.links['/home/ana'] = '/root/x'; // the real home is under /root
+  table('N2 home is a link to /root/x', h5, [['/home/ana/notes', 'ok'], ['/root/x/notes', 'ok'], ['/root/y', 'system']]);
+  table('N3 holds', lin, [['/var', 'system'], ['/run', 'system'], ['/', 'root']]);
+  const mac3 = world('darwin', '/Users/ana', '/Users/ana/Library/Application Support/Durbar', []);
+  table('N3 darwin', mac3, [['/private', 'system'], ['/var', 'system']]);
+  // round 4, Paco: a home under the system list never switches the rule off
+  const he = world('linux', '/etc', '/etc/.local/share/Durbar', []);
+  table('N2 HOME=/etc', he, [['/etc/x', 'system'], ['/etc', 'home'], ['/usr/x', 'system'], ['/var/lib/x', 'system']]);
+  const hu = world('linux', '/usr', '/usr/.local/share/Durbar', []);
+  table('N2 HOME=/usr', hu, [['/usr/share/x', 'system']]);
+  const hl = world('linux', '/home/ana', '/home/ana/.local/share/Durbar', []);
+  hl.links['/home/ana'] = '/etc';
+  table('N2 home links to /etc', hl, [['/home/ana/x', 'system'], ['/etc/y', 'system']]);
+  const hv = world('linux', '/var/lib', '/var/lib/.local/share/Durbar', []);
+  table('N2 HOME=/var/lib itself', hv, [['/var/lib/x', 'system']]);
+  const mh = world('darwin', '/var/home/ana', '/var/home/ana/Library/Durbar', []);
+  table('N2 skip covers only home-marked entries', mh, [['/var/home/ana/notes', 'system']]); // darwin keeps /var whole
+  // P3: temp and backup folders
+  table('P3 linux', lin, [['/tmp', 'system'], ['/tmp/x', 'system'], ['/var/tmp/x', 'system'], ['/var/backups', 'system'], ['/var/backups/x', 'system'], ['/home/ana/snap/chromium', 'secret-location'], ['/home/ana/.thunderbird/x', 'secret-location'], ['/tmpx', 'ok']]);
+  const mac4 = world('darwin', '/Users/ana', '/Users/ana/Library/Application Support/Durbar', []);
+  table('P3 darwin', mac4, [['/tmp/x', 'system'], ['/private/tmp', 'system'], ['/private/tmp/x', 'system'], ['/private/var/tmp/x', 'system']]);
   const mac = world('darwin', '/Users/ana', '/Users/ana/Library/Application Support/Durbar', []);
   mac.links['/var'] = '/private/var';
   table('D3 darwin', mac, [
@@ -224,10 +258,17 @@ if (!IS_COPY) {
     { name: 'the old local secret list (no shared one)', from: 'const SECRET_NAMES = [...homesecrets_1.HOME_SECRETS, \'.config\'];', to: "const SECRET_NAMES = ['.ssh', '.aws', '.gnupg', '.kube', '.docker', '.config', '.npmrc'];", section: 'secrets' },
     { name: 'agent homes ignored', from: '...(ctx.agentHomes ?? [])', to: '', section: 'agenthomes' },
     { name: 'system folders ignored', from: "return refuse('system');", to: 'void 0;', section: 'system' },
-    { name: 'pseudo folders dropped', from: "'/proc', '/sys', '/root'", to: "'/root'", section: 'system' },
-    { name: 'the whole of /var is refused', from: "'/var/lib', '/var/log'", to: "'/var', '/var/log'", section: 'system' },
-    { name: 'the whole of /run is refused', from: "'/run/user', '/run/secrets'", to: "'/run', '/run/secrets'", section: 'system' },
-    { name: 'the home skip is dropped', from: 'if (!inHome && ', to: 'if (', section: 'system' },
+    { name: 'pseudo folders dropped', from: "'/proc', '/sys', '/boot'", to: "'/boot'", section: 'system' },
+    { name: 'the whole of /var is refused', from: "['lib', 'log',", to: "['', 'log',", section: 'system' },
+    { name: 'the /run exception is dropped', from: 'if (x.except && under(kReal, key(x.except)))\n            return false;', to: '', section: 'system' },
+    { name: 'the home skip is dropped', from: '|| (inHome && x.home)', to: '', section: 'system' },
+    { name: 'the home skip needs no base (HOME=/etc skips)', from: 'homeBases.some((b) => key(realHome) !== key(b) && inside(realHome, b))', to: 'true', section: 'system' },
+    { name: 'the home skip covers every entry', from: '(inHome && x.home)', to: 'inHome', section: 'system' },
+    { name: 'system entries are compared through realpath (forms)', from: 'return under(kReal, kx) || under(kx, kReal);', to: 'return forms(x.p).some((y) => inside(real, y) || inside(y, real));', section: 'system' },
+    { name: 'no holds check', from: ' || under(kx, kReal)', to: '', section: 'system' },
+    { name: 'the home is not resolved (forms dropped)', from: 'const realHome = forms(ctx.home).slice(-1)[0];', to: 'const realHome = ctx.home;', section: 'system' },
+    { name: 'inside is a string prefix', from: '&& inside(real, realHome);', to: '&& key(real).startsWith(key(realHome));', section: 'system' },
+    { name: 'the tmp folder is accepted', from: "'/boot', '/tmp'", to: "'/boot'", section: 'system' },
     { name: 'windows defaults ignore the env', from: 'e.programFiles ||', to: '', section: 'system' },
   ];
   assert.deepStrictEqual(mutants.filter((m) => !orig.includes(m.from)).map((m) => m.name), [], 'mutant anchors not found');

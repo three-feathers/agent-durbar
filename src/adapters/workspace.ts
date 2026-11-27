@@ -28,14 +28,19 @@ function parseJsonc(text: string): unknown {
   return JSON.parse(out.replace(/,(\s*[}\]])/g, '$1'));
 }
 
-/** Folders listed in a .code-workspace file, as absolute paths (relative ones resolve against the file). */
-export function readCodeWorkspaceFolders(file: string): string[] {
-  const doc = parseJsonc(fs.readFileSync(file, 'utf8')) as { folders?: { path?: string }[] };
+/** Folders listed in the text of a .code-workspace file, as absolute paths (relative ones resolve against the file). */
+export function codeWorkspaceFoldersFromText(text: string, file: string): string[] {
+  const doc = parseJsonc(text) as { folders?: { path?: string }[] };
   const base = path.dirname(path.resolve(file));
   return (doc.folders ?? [])
     .map((f) => f.path)
     .filter((p): p is string => typeof p === 'string' && p.length > 0)
     .map((p) => path.resolve(base, p));
+}
+
+/** Folders listed in a .code-workspace file, as absolute paths (relative ones resolve against the file). */
+export function readCodeWorkspaceFolders(file: string): string[] {
+  return codeWorkspaceFoldersFromText(fs.readFileSync(file, 'utf8'), file);
 }
 
 /**

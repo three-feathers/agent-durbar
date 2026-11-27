@@ -378,7 +378,7 @@ PR ([#728 comment](https://github.com/three-feathers/agent-durbar/pull/728#issue
 
 - `HOME_SECRETS` moved to `src/shared/homesecrets.ts` (no imports) and `sandboxRoots.ts` re-exports it, so the OS sandbox and spec 116's memory-folder check use one list. It gains `~/.mozilla`, `~/snap/firefox`, `~/.var/app`, `~/.password-store`, `~/.pki` and `~/.terraform.d`.
 - Effect: an agent in the OS sandbox can no longer read or write those six (Claude `denyRead`/`denyWrite`, Copilot `deniedPaths`). `test:` `scripts/test-sandbox-floor.ts` asserts the six are in the list.
-- What an agent in the OS sandbox now loses, same policy as `~/.azure` and `~/.config/gcloud`: `~/.pki` (so `~/.pki/nssdb`: Chromium-based tools may log NSS errors and client certificates fail), `~/.terraform.d` (the plugin cache and credentials file), `~/.var/app` and `~/snap/firefox` (launching Flatpak or snap apps), `~/.mozilla` (Firefox profiles) and `~/.password-store`.
+- What an agent in the OS sandbox now loses, same policy as `~/.azure` and `~/.config/gcloud`: `~/.pki` (so `~/.pki/nssdb`: Chromium-based tools may log NSS errors and client certificates fail), `~/.terraform.d` (the plugin cache and credentials file), `~/.var/app` and `~/snap/firefox` (launching Flatpak or snap apps), `~/.mozilla` (Firefox profiles) and `~/.password-store`. Also from 2026-11-28 (spec 116 review): `~/snap/chromium` and `~/.thunderbird` (Chromium snap and Thunderbird profiles: mail and saved passwords); an agent in the sandbox cannot launch those apps' data either.
 
 ### 2026-11-11: the Copilot runtime's private TMPDIR leaves room for Unix sockets (FR-024, issue #1173)
 
@@ -968,7 +968,7 @@ your shell tool: touch sandbox-probe.txt ...".
   the probe cases in `test-claude-sandbox.ts` and `test-copilot-sandbox.ts`.
 - **A session folder that is the home folder or a parent of it** (allowed with a warning, spec 006 FR-016): Claude's block always denies
   the credential folders (`HOME_SECRETS`, `src/adapters/sandboxRoots.ts`: `~/.ssh`, `~/.aws`, `~/.config/gh`, `~/.gnupg`, `~/.netrc`,
-  `~/.npmrc`, `~/.git-credentials`, `~/.docker`, `~/.kube`, `~/.azure`, `~/.config/gcloud`, `~/.claude`, `~/.copilot`, `~/.codex`, and from 2026-11-24 `~/.mozilla`, `~/snap/firefox`, `~/.var/app`, `~/.password-store`, `~/.pki`, `~/.terraform.d`) in
+  `~/.npmrc`, `~/.git-credentials`, `~/.docker`, `~/.kube`, `~/.azure`, `~/.config/gcloud`, `~/.claude`, `~/.copilot`, `~/.codex`, and from 2026-11-24 `~/.mozilla`, `~/snap/firefox`, `~/.var/app`, `~/.password-store`, `~/.pki`, `~/.terraform.d`, `~/snap/chromium`, `~/.thunderbird`) in
   `denyRead` and `denyWrite`; for reads the narrower rule wins (`read:` https://code.claude.com/docs/en/sandboxing.md, 2026-10-25: "When
   read rules overlap, the rule with the narrower path applies", and a deny "holds inside a wider allow"). Writes: the docs list
   `denyWrite` entries under "Denied within allowed" (research R2); `[KNOWN GAP]` K13 and K2: not run on a real session. Round 2: the docs
