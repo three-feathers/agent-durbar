@@ -69,7 +69,7 @@ function badShape(p: string, f: MemoryFlavor): MemoryRefusal | undefined {
 }
 
 /**
- * FR-004 (decided by the coordinator, 2026-11-24, 2026-11-27, 2026-11-28): system and pseudo folders. The candidate is already a real path, so the
+ * FR-004 (decided by the coordinator, 2026-11-24, 2026-11-27): system and pseudo folders. The candidate is already a real path, so the
  * entries are compared LITERALLY (a symlinked twin such as `/var/run` -> `/run`, `/bin` -> `/usr/bin` is listed itself). A folder that IS, is INSIDE
  * or HOLDS an entry is refused. `home: true` marks an entry a home folder can sit under (`/root`, the `/var/*` parts: service homes): inside the real
  * home those are skipped. `except` is accepted inside an entry (`/run/media`: USB sticks).
