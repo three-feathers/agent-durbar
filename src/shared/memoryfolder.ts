@@ -71,9 +71,11 @@ function badShape(p: string, f: MemoryFlavor): MemoryRefusal | undefined {
 /** FR-004 (decided by the coordinator, 2026-11-24): pseudo and system folders, refused at the path or inside it (judged on the real path). */
 function systemFolders(f: MemoryFlavor, e: NonNullable<MemoryFolderCtx['env']>): string[] {
   if (f.platform === 'win32') return [e.systemRoot || 'C:\\Windows', e.programData || 'C:\\ProgramData', e.programFiles || 'C:\\Program Files', e.programFilesX86 || 'C:\\Program Files (x86)'];
-  const unix = ['/etc', '/usr', '/bin', '/sbin', '/lib', '/lib32', '/lib64', '/libx32', '/var', '/dev'];
-  if (f.platform === 'darwin') return [...unix, '/System', '/Library', '/private/var', '/private/etc'];
-  return [...unix, '/proc', '/sys', '/run', '/root', '/boot'];
+  const unix = ['/etc', '/usr', '/bin', '/sbin', '/lib', '/lib32', '/lib64', '/libx32', '/dev'];
+  if (f.platform === 'darwin') return [...unix, '/var', '/System', '/Library', '/private/var', '/private/etc'];
+  // Linux: not the whole of /var and /run (Silverblue has /home -> /var/home; USB sticks mount under /run/media): only the system parts
+  return [...unix, '/proc', '/sys', '/root', '/boot', '/run/user', '/run/secrets', '/run/credentials', '/run/systemd',
+    '/var/lib', '/var/log', '/var/cache', '/var/spool', '/var/db', '/var/run', '/var/tmp', '/var/mail'];
 }
 
 export function checkMemoryFolder(candidate: string, ctx: MemoryFolderCtx, flavor: MemoryFlavor): MemoryFolderCheck {
@@ -112,7 +114,9 @@ export function checkMemoryFolder(candidate: string, ctx: MemoryFolderCtx, flavo
   if (roots.some((r) => key(r) === k)) return refuse('root');
   if (forms(ctx.home).some((h) => key(h) === k)) return refuse('home');
   if (hits([ctx.userData])) return refuse('app-data');
-  if (systemFolders(flavor, ctx.env ?? {}).some((x) => forms(x).some((y) => inside(real, y)))) return refuse('system');
+  // inside the REAL home the system rule does not apply (/home -> /var/home, or Durbar running as root); the other rules below still do
+  const inHome = forms(ctx.home).some((h) => inside(real, h));
+  if (!inHome && systemFolders(flavor, ctx.env ?? {}).some((x) => forms(x).some((y) => inside(real, y)))) return refuse('system');
   if (hits([...AGENT_APPS.map((n) => p.join(ctx.home, n)), ...(ctx.agentHomes ?? [])])) return refuse('agent-folder');
   if (hits([...ctx.officeFolders])) return refuse('office-folder');
 
