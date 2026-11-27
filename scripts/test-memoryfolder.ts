@@ -181,8 +181,21 @@ section('system', () => {
   lin.links['/home/ana/tosys'] = '/sys/kernel';
   table('D3 linux', lin, [
     ['/proc', 'system'], ['/proc/self', 'system'], ['/home/ana/toproc', 'system'], ['/home/ana/tosys', 'system'], ['/sys', 'system'], ['/dev', 'system'], ['/dev/shm/x', 'system'], ['/run/user/1000', 'system'],
-    ['/etc', 'system'], ['/etc/x', 'system'], ['/root', 'system'], ['/boot', 'system'], ['/usr/share', 'system'], ['/bin', 'system'], ['/sbin', 'system'], ['/lib', 'system'], ['/lib64/x', 'system'], ['/var', 'system'], ['/var/lib/x', 'system'],
+    ['/etc', 'system'], ['/etc/x', 'system'], ['/root', 'system'], ['/boot', 'system'], ['/usr/share', 'system'], ['/bin', 'system'], ['/sbin', 'system'], ['/lib', 'system'], ['/lib64/x', 'system'], ['/var/lib/x', 'system'],
     ['/mnt/disk/memory', 'ok'], ['/home/ana/notes', 'ok'], ['/devices', 'ok'], ['/usrx', 'ok'], ['/variable', 'ok'], ['/srv/notes', 'ok'], ['/opt/notes', 'ok'],
+  ]);
+  // N1: /var and /run are not refused whole
+  const lin2 = world('linux', '/home/ana', '/home/ana/.local/share/Durbar', []);
+  lin2.links['/home'] = '/var/home'; // Silverblue: the real home is /var/home/ana
+  lin2.links['/home/ana'] = '/var/home/ana';
+  table('N1 silverblue /home link', lin2, [['/home/ana/notes', 'ok'], ['/var/home/ana/notes', 'ok'], ['/home/ana/.ssh', 'secret-location'], ['/var/lib/x', 'system'], ['/var/home/other', 'ok']]);
+  const sb = world('linux', '/var/home/ana', '/var/home/ana/.local/share/Durbar', []);
+  table('N1 HOME=/var/home/ana', sb, [['/var/home/ana/notes', 'ok'], ['/var/home/ana/.ssh/x', 'secret-location'], ['/var/home/ana/.local/share/Durbar/x', 'app-data'], ['/var/www/x', 'ok'], ['/var/lib/x', 'system']]);
+  const root = world('linux', '/root', '/root/.local/share/Durbar', []);
+  table('N1 running as root', root, [['/root/notes', 'ok'], ['/root/.ssh', 'secret-location'], ['/root', 'home'], ['/boot/x', 'system'], ['/etc', 'system']]);
+  table('N1 linux var and run', lin, [
+    ['/run/media/ana/USB/brain', 'ok'], ['/var/www/x', 'ok'], ['/var', 'ok'], ['/run', 'ok'], ['/var/lib/x', 'system'], ['/var/lib', 'system'], ['/var/log/x', 'system'], ['/var/cache', 'system'], ['/var/spool/x', 'system'], ['/var/db', 'system'], ['/var/run/x', 'system'], ['/var/tmp', 'system'], ['/var/mail', 'system'],
+    ['/run/user/1000/x', 'system'], ['/run/secrets', 'system'], ['/run/credentials/x', 'system'], ['/run/systemd/x', 'system'], ['/usr/local/src', 'system'], ['/usr', 'system'],
   ]);
   const mac = world('darwin', '/Users/ana', '/Users/ana/Library/Application Support/Durbar', []);
   mac.links['/var'] = '/private/var';
@@ -211,7 +224,10 @@ if (!IS_COPY) {
     { name: 'the old local secret list (no shared one)', from: 'const SECRET_NAMES = [...homesecrets_1.HOME_SECRETS, \'.config\'];', to: "const SECRET_NAMES = ['.ssh', '.aws', '.gnupg', '.kube', '.docker', '.config', '.npmrc'];", section: 'secrets' },
     { name: 'agent homes ignored', from: '...(ctx.agentHomes ?? [])', to: '', section: 'agenthomes' },
     { name: 'system folders ignored', from: "return refuse('system');", to: 'void 0;', section: 'system' },
-    { name: 'pseudo folders dropped', from: "'/proc', '/sys', '/run', '/root', '/boot'", to: "'/root', '/boot'", section: 'system' },
+    { name: 'pseudo folders dropped', from: "'/proc', '/sys', '/root'", to: "'/root'", section: 'system' },
+    { name: 'the whole of /var is refused', from: "'/var/lib', '/var/log'", to: "'/var', '/var/log'", section: 'system' },
+    { name: 'the whole of /run is refused', from: "'/run/user', '/run/secrets'", to: "'/run', '/run/secrets'", section: 'system' },
+    { name: 'the home skip is dropped', from: 'if (!inHome && ', to: 'if (', section: 'system' },
     { name: 'windows defaults ignore the env', from: 'e.programFiles ||', to: '', section: 'system' },
   ];
   assert.deepStrictEqual(mutants.filter((m) => !orig.includes(m.from)).map((m) => m.name), [], 'mutant anchors not found');

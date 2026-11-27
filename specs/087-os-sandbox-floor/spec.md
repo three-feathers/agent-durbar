@@ -378,6 +378,7 @@ PR ([#728 comment](https://github.com/three-feathers/agent-durbar/pull/728#issue
 
 - `HOME_SECRETS` moved to `src/shared/homesecrets.ts` (no imports) and `sandboxRoots.ts` re-exports it, so the OS sandbox and spec 116's memory-folder check use one list. It gains `~/.mozilla`, `~/snap/firefox`, `~/.var/app`, `~/.password-store`, `~/.pki` and `~/.terraform.d`.
 - Effect: an agent in the OS sandbox can no longer read or write those six (Claude `denyRead`/`denyWrite`, Copilot `deniedPaths`). `test:` `scripts/test-sandbox-floor.ts` asserts the six are in the list.
+- What an agent in the OS sandbox now loses, same policy as `~/.azure` and `~/.config/gcloud`: `~/.pki` (so `~/.pki/nssdb`: Chromium-based tools may log NSS errors and client certificates fail), `~/.terraform.d` (the plugin cache and credentials file), `~/.var/app` and `~/snap/firefox` (launching Flatpak or snap apps), `~/.mozilla` (Firefox profiles) and `~/.password-store`.
 
 ### 2026-11-11: the Copilot runtime's private TMPDIR leaves room for Unix sockets (FR-024, issue #1173)
 
