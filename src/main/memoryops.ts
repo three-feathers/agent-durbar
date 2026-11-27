@@ -84,7 +84,8 @@ export const MAX_WORKSPACE_BYTES = 1024 * 1024;
  * when it appears) and does NOT block every pick; any other failure (a FIFO, too big, no access, bad JSON) throws and refuses, naming the file.
  */
 export function cappedWorkspaceReader(fs: CappedFs, k: CappedFlags, parse: (text: string, file: string) => string[], realpath: (p: string) => string): (file: string) => string[] {
-  const hardLinksOk: CappedFs = { ...fs, openSync: (f, fl) => fs.openSync(f, fl), fstatSync: (fd) => ({ ...fs.fstatSync(fd), nlink: 1 }) };
+  // never spread a real fs.Stats: `isFile` lives on its prototype (a spread loses it and every real file would be refused)
+  const hardLinksOk: CappedFs = { ...fs, openSync: (f, fl) => fs.openSync(f, fl), fstatSync: (fd) => { const st = fs.fstatSync(fd); return { isFile: () => st.isFile(), size: st.size, nlink: 1 }; } };
   return (file) => {
     let real: string;
     try { real = realpath(file); } catch (e) {

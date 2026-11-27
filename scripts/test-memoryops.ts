@@ -379,6 +379,7 @@ section('wsread', () => {
     readSync: (_fd: number, buf: Buffer, off: number, len: number, pos: number) => { const b = Buffer.from(data === 'fifo' ? '' : data); const c = Math.min(len, Math.max(0, b.length - pos)); b.copy(buf, off, pos, pos + c); return c; },
     closeSync: () => undefined,
   });
+  const named = <T>(name: string, fn: () => T): T => { try { return fn(); } catch (e) { throw new Error(`${name}: the reader threw: ${e instanceof Error ? e.message : 'error'}`); } };
   const cw = (f: ReturnType<typeof mk>, real: (p: string) => string = (p) => p) => cappedWorkspaceReader(f, flags, parse, real);
   const parse = (t: string): string[] => (JSON.parse(t) as { folders: Array<{ path: string }> }).folders.map((f) => f.path);
   const good = JSON.stringify({ folders: [{ path: '/w/a' }, { path: '/w/b' }] });
@@ -403,17 +404,53 @@ section('wsread', () => {
   assert.throws(() => cw(counting('fifo'), link)('/w/link.code-workspace'), /workspace unreadable/, 'a symlink to a FIFO fails');
   assert.throws(() => cw(counting('{}', 300 * 1024 * 1024), link)('/w/link.code-workspace'), /workspace unreadable/, 'a symlink to a 300 MB sparse file fails');
   eq(reads, 0, 'both failed before any byte was read');
-  eq(cw({ ...mk(good), fstatSync: () => ({ isFile: () => true, size: Buffer.byteLength(good), nlink: 3 }) }, link)('/w/link.code-workspace'), ['/w/a', '/w/b'], 'a hard link (nlink 3) is read: following it only adds folders to the refusal list');
-  eq(cw(mk(good), () => { throw Object.assign(new Error('x'), { code: 'ENOENT' }); })('/w/gone.code-workspace'), [], 'a dangling link or a missing file adds no folder and does not block every pick');
-  eq(cw({ ...mk(good), openSync: () => { throw Object.assign(new Error('x'), { code: 'ENOENT' }); } })('/w/raced.code-workspace'), [], 'a file that vanishes between the resolve and the open adds no folder');
+  eq(named('a hard link (nlink 3) is read: following it only adds folders to the refusal list', () => cw({ ...mk(good), fstatSync: () => ({ isFile: () => true, size: Buffer.byteLength(good), nlink: 3 }) }, link)('/w/link.code-workspace')), ['/w/a', '/w/b'], 'a hard link (nlink 3) is read: following it only adds folders to the refusal list');
+  eq(named('a dangling link or a missing file adds no folder and does not block every pick', () => cw(mk(good), () => { throw Object.assign(new Error('x'), { code: 'ENOENT' }); })('/w/gone.code-workspace')), [], 'a dangling link or a missing file adds no folder and does not block every pick');
+  eq(named('a file that vanishes between the resolve and the open adds no folder', () => cw({ ...mk(good), openSync: () => { throw Object.assign(new Error('x'), { code: 'ENOENT' }); } })('/w/raced.code-workspace')), [], 'a file that vanishes between the resolve and the open adds no folder');
   assert.throws(() => cw(mk(good), () => { throw Object.assign(new Error('x'), { code: 'EACCES' }); })('/w/x.code-workspace'), /workspace unreadable/, 'any other realpath failure refuses');
-  eq(expandOfficeFolders(['/w/gone.code-workspace', '/w/a'], cw(mk(good), () => { throw Object.assign(new Error('x'), { code: 'ENOENT' }); })), ['/w/gone.code-workspace', '/w/a'], 'a gone workspace does not stop the others');
+  eq(named('a gone workspace does not stop the others', () => expandOfficeFolders(['/w/gone.code-workspace', '/w/a'], cw(mk(good), () => { throw Object.assign(new Error('x'), { code: 'ENOENT' }); }))), ['/w/gone.code-workspace', '/w/a'], 'a gone workspace does not stop the others');
   eq(MAX_WORKSPACE_BYTES, 1024 * 1024, 'the cap is 1 MB');
   // through the refusal: the file is named
   assert.throws(() => expandOfficeFolders(['/w/x.code-workspace'], cw(mk('fifo'))), (e: Error & { file?: string }) => e.file === '/w/x.code-workspace', 'the refusal names the file');
   const rd = fs.readFileSync(path.join(__dirname, '..', '..', 'src/main/main.ts'), 'utf8');
   ok(/cappedWorkspaceReader\(fs, memoryGitFlags\(fs\.constants\), codeWorkspaceFoldersFromText, \(p\) => fs\.realpathSync\.native\(p\)\)/.test(rd), 'main.ts reads workspace files through the capped reader, with memoryGitFlags');
   ok(!/readCodeWorkspaceFolders/.test(rd.slice(rd.indexOf('registerMemoryIpc({'), rd.indexOf('registerOrgPolicyIpc'))), 'the memory wiring never calls the plain readFileSync reader');
+});
+
+// ---------------------------------------------------------------------------------------------------------------------------------- realws
+section('realws', () => {
+  // the REAL file system (a real fs.Stats keeps `isFile` on its prototype: a spread of it loses it)
+  const { memoryGitFlags } = require('../src/main/memorygit') as typeof import('../src/main/memorygit');
+  const { codeWorkspaceFoldersFromText } = require('../src/adapters/workspace') as typeof import('../src/adapters/workspace');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-memws-'));
+  try {
+    const rd = cappedWorkspaceReader(fs, memoryGitFlags(fs.constants), codeWorkspaceFoldersFromText, (p) => fs.realpathSync.native(p));
+    const file = path.join(dir, 'real.code-workspace');
+    fs.writeFileSync(file, JSON.stringify({ folders: [{ path: 'a' }, { path: 'b' }] }));
+    const want = [path.join(dir, 'a'), path.join(dir, 'b')];
+    eq(rd(file), want, 'a regular .code-workspace on the real file system');
+    const sym = path.join(dir, 'sym.code-workspace');
+    let linked = false;
+    try { fs.symlinkSync(file, sym); linked = true; } catch { console.log('realws: symlinks not allowed here, skipped'); }
+    if (linked) eq(rd(sym), want, 'a symlink to it (read through its resolved path)');
+    const hard = path.join(dir, 'hard.code-workspace');
+    fs.linkSync(file, hard);
+    eq(rd(hard), want, 'a hard link to it');
+    eq(rd(path.join(dir, 'missing.code-workspace')), [], 'a missing file adds nothing');
+    if (process.platform === 'win32') console.log('realws: FIFO case skipped on win32 (no mkfifo)');
+    else {
+      const fifo = path.join(dir, 'fifo');
+      const mk = spawnSync('mkfifo', [fifo]);
+      if (mk.status !== 0) console.log('realws: mkfifo not available, FIFO case skipped');
+      else {
+        const link = path.join(dir, 'fifolink.code-workspace');
+        fs.symlinkSync(fifo, link);
+        const t0 = Date.now();
+        assert.throws(() => rd(link), /workspace unreadable/, 'a FIFO behind a symlink is refused');
+        ok(Date.now() - t0 < 5000, 'and fast, it never blocks');
+      }
+    }
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
 
 // ---------------------------------------------------------------------------------------------------------------------------------- stoppick
@@ -550,8 +587,9 @@ section('source', () => {
     { name: 'apply skips the repoint comparison', from: 'if (!this.same(r.real, e.real))', to: 'if (false)', section: 'relink' },
     { name: 'case folded on every platform', from: "this.deps.flavor.platform === 'linux' ? x : x.toLowerCase()", to: 'x.toLowerCase()', section: 'relink' },
     { name: 'the default token is not from randomBytes', from: "(0, crypto_1.randomBytes)(16).toString('hex')", to: "Math.random().toString(16).slice(2).padEnd(32, '0')", section: 'pick' },
+    { name: 'the stat is spread (isFile lost on a real fs.Stats)', from: 'fstatSync: (fd) => { const st = fs.fstatSync(fd); return { isFile: () => st.isFile(), size: st.size, nlink: 1 }; }', to: 'fstatSync: (fd) => ({ ...fs.fstatSync(fd), nlink: 1 })', section: 'realws' },
     { name: 'the workspace file is read without resolving its link', from: 'readCapped)(hardLinksOk, k, real,', to: 'readCapped)(hardLinksOk, k, file,', section: 'wsread' },
-    { name: 'a hard-linked workspace file is refused', from: 'nlink: 1 })', to: 'nlink: fs.fstatSync(fd).nlink })', section: 'wsread' },
+    { name: 'a hard-linked workspace file is refused', from: 'size: st.size, nlink: 1 }', to: 'size: st.size, nlink: st.nlink }', section: 'wsread' },
     { name: 'a missing workspace file blocks every pick', from: "if (e?.code === 'ENOENT')\n                return []; // missing or dangling", to: "if (false)\n                return [];", section: 'wsread' },
     { name: 'a missing file after the open blocks every pick', from: "if (r.code === 'missing')\n                return [];", to: "if (false)\n                return [];", section: 'wsread' },
     { name: 'a realpath failure other than missing is ignored', from: "throw new Error('workspace unreadable');\n        }\n        const r =", to: "return [];\n        }\n        const r =", section: 'wsread' },
