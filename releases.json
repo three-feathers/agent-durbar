@@ -1,6 +1,11 @@
 {
   "schema": 1,
   "versions": {
+    "0.1.32": {
+      "breaking": false,
+      "notes": "Daily release: visitors at the Bank hold a letter instead of a coffee cup in seven worlds, and an Ask first option for Copilot's reviewer is built (shown only in the simulator until checked on real sessions). Nothing to do before or after you update; Durbar keeps its data where it did.",
+      "action": ""
+    },
     "0.1.31": {
       "breaking": false,
       "notes": "Daily release: Durbar now tells you once when a new version is out, with what is new, and dialogs fit the smallest window at 200% zoom. Nothing to do before or after you update; Durbar keeps its data where it did.",
