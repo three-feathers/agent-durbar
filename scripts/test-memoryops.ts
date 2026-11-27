@@ -379,21 +379,40 @@ section('wsread', () => {
     readSync: (_fd: number, buf: Buffer, off: number, len: number, pos: number) => { const b = Buffer.from(data === 'fifo' ? '' : data); const c = Math.min(len, Math.max(0, b.length - pos)); b.copy(buf, off, pos, pos + c); return c; },
     closeSync: () => undefined,
   });
+  const cw = (f: ReturnType<typeof mk>, real: (p: string) => string = (p) => p) => cappedWorkspaceReader(f, flags, parse, real);
   const parse = (t: string): string[] => (JSON.parse(t) as { folders: Array<{ path: string }> }).folders.map((f) => f.path);
   const good = JSON.stringify({ folders: [{ path: '/w/a' }, { path: '/w/b' }] });
   const opened: number[] = [];
-  eq(cappedWorkspaceReader(mk(good, opened), flags, parse)('/w/x.code-workspace'), ['/w/a', '/w/b'], 'a normal file');
+  eq(cw(mk(good, opened))('/w/x.code-workspace'), ['/w/a', '/w/b'], 'a normal file');
   eq(opened, [12], 'opened O_RDONLY | O_NOFOLLOW | O_NONBLOCK');
-  assert.throws(() => cappedWorkspaceReader(mk('fifo'), flags, parse)('/w/x.code-workspace'), /workspace unreadable/, 'a FIFO is refused without a read');
+  assert.throws(() => cw(mk('fifo'))('/w/x.code-workspace'), /workspace unreadable/, 'a FIFO is refused without a read');
   const pad = (n: number): string => good + ' '.repeat(n - Buffer.byteLength(good));
-  eq(cappedWorkspaceReader(mk(pad(MAX_WORKSPACE_BYTES)), flags, parse)('/w/x.code-workspace').length, 2, 'exactly 1 MB is read');
-  assert.throws(() => cappedWorkspaceReader(mk(pad(MAX_WORKSPACE_BYTES + 1)), flags, parse)('/w/x.code-workspace'), /workspace unreadable/, 'over 1 MB is refused');
-  assert.throws(() => cappedWorkspaceReader(mk('{not json'), flags, parse)('/w/x.code-workspace'), (e: Error) => !/not json/.test(e.message) || true, 'a bad file throws');
+  eq(cw(mk(pad(MAX_WORKSPACE_BYTES)))('/w/x.code-workspace').length, 2, 'exactly 1 MB is read');
+  assert.throws(() => cw(mk(pad(MAX_WORKSPACE_BYTES + 1)))('/w/x.code-workspace'), /workspace unreadable/, 'over 1 MB is refused');
+  assert.throws(() => cw(mk('{not json'))('/w/x.code-workspace'), (e: Error) => !/not json/.test(e.message) || true, 'a bad file throws');
+  // round 5: a symlinked workspace file is common; the resolved path is the one read (still capped, non-blocking, no-follow)
+  const link = (p: string): string => (p === '/w/link.code-workspace' ? '/w/real.code-workspace' : p);
+  const o2: number[] = [];
+  const base = mk(good, o2);
+  const seen: string[] = [];
+  const f2 = { ...base, openSync: (f: string, fl: number) => { seen.push(f); return base.openSync(f, fl); } };
+  eq(cw(f2, link)('/w/link.code-workspace'), ['/w/a', '/w/b'], 'a symlink to a good workspace file is read');
+  eq(seen, ['/w/real.code-workspace'], 'the resolved path is the one opened');
+  let reads = 0;
+  const counting = (data: string | 'fifo', size?: number) => { const m = mk(data); return { ...m, fstatSync: () => ({ ...m.fstatSync(), ...(size === undefined ? {} : { size }) }), readSync: (...a: Parameters<typeof m.readSync>) => { reads++; return m.readSync(...a); } }; };
+  assert.throws(() => cw(counting('fifo'), link)('/w/link.code-workspace'), /workspace unreadable/, 'a symlink to a FIFO fails');
+  assert.throws(() => cw(counting('{}', 300 * 1024 * 1024), link)('/w/link.code-workspace'), /workspace unreadable/, 'a symlink to a 300 MB sparse file fails');
+  eq(reads, 0, 'both failed before any byte was read');
+  eq(cw({ ...mk(good), fstatSync: () => ({ isFile: () => true, size: Buffer.byteLength(good), nlink: 3 }) }, link)('/w/link.code-workspace'), ['/w/a', '/w/b'], 'a hard link (nlink 3) is read: following it only adds folders to the refusal list');
+  eq(cw(mk(good), () => { throw Object.assign(new Error('x'), { code: 'ENOENT' }); })('/w/gone.code-workspace'), [], 'a dangling link or a missing file adds no folder and does not block every pick');
+  eq(cw({ ...mk(good), openSync: () => { throw Object.assign(new Error('x'), { code: 'ENOENT' }); } })('/w/raced.code-workspace'), [], 'a file that vanishes between the resolve and the open adds no folder');
+  assert.throws(() => cw(mk(good), () => { throw Object.assign(new Error('x'), { code: 'EACCES' }); })('/w/x.code-workspace'), /workspace unreadable/, 'any other realpath failure refuses');
+  eq(expandOfficeFolders(['/w/gone.code-workspace', '/w/a'], cw(mk(good), () => { throw Object.assign(new Error('x'), { code: 'ENOENT' }); })), ['/w/gone.code-workspace', '/w/a'], 'a gone workspace does not stop the others');
   eq(MAX_WORKSPACE_BYTES, 1024 * 1024, 'the cap is 1 MB');
   // through the refusal: the file is named
-  assert.throws(() => expandOfficeFolders(['/w/x.code-workspace'], cappedWorkspaceReader(mk('fifo'), flags, parse)), (e: Error & { file?: string }) => e.file === '/w/x.code-workspace', 'the refusal names the file');
+  assert.throws(() => expandOfficeFolders(['/w/x.code-workspace'], cw(mk('fifo'))), (e: Error & { file?: string }) => e.file === '/w/x.code-workspace', 'the refusal names the file');
   const rd = fs.readFileSync(path.join(__dirname, '..', '..', 'src/main/main.ts'), 'utf8');
-  ok(/cappedWorkspaceReader\(fs, memoryGitFlags\(fs\.constants\), codeWorkspaceFoldersFromText\)/.test(rd), 'main.ts reads workspace files through the capped reader, with memoryGitFlags');
+  ok(/cappedWorkspaceReader\(fs, memoryGitFlags\(fs\.constants\), codeWorkspaceFoldersFromText, \(p\) => fs\.realpathSync\.native\(p\)\)/.test(rd), 'main.ts reads workspace files through the capped reader, with memoryGitFlags');
   ok(!/readCodeWorkspaceFolders/.test(rd.slice(rd.indexOf('registerMemoryIpc({'), rd.indexOf('registerOrgPolicyIpc'))), 'the memory wiring never calls the plain readFileSync reader');
 });
 
@@ -531,8 +550,13 @@ section('source', () => {
     { name: 'apply skips the repoint comparison', from: 'if (!this.same(r.real, e.real))', to: 'if (false)', section: 'relink' },
     { name: 'case folded on every platform', from: "this.deps.flavor.platform === 'linux' ? x : x.toLowerCase()", to: 'x.toLowerCase()', section: 'relink' },
     { name: 'the default token is not from randomBytes', from: "(0, crypto_1.randomBytes)(16).toString('hex')", to: "Math.random().toString(16).slice(2).padEnd(32, '0')", section: 'pick' },
+    { name: 'the workspace file is read without resolving its link', from: 'readCapped)(hardLinksOk, k, real,', to: 'readCapped)(hardLinksOk, k, file,', section: 'wsread' },
+    { name: 'a hard-linked workspace file is refused', from: 'nlink: 1 })', to: 'nlink: fs.fstatSync(fd).nlink })', section: 'wsread' },
+    { name: 'a missing workspace file blocks every pick', from: "if (e?.code === 'ENOENT')\n                return []; // missing or dangling", to: "if (false)\n                return [];", section: 'wsread' },
+    { name: 'a missing file after the open blocks every pick', from: "if (r.code === 'missing')\n                return [];", to: "if (false)\n                return [];", section: 'wsread' },
+    { name: 'a realpath failure other than missing is ignored', from: "throw new Error('workspace unreadable');\n        }\n        const r =", to: "return [];\n        }\n        const r =", section: 'wsread' },
     { name: 'a live agent is expanded from its file again', from: 'saved.filter((s) => !open.has(s))', to: 'saved', section: 'liveoffice' },
-    { name: 'the workspace file is read uncapped', from: 'file, exports.MAX_WORKSPACE_BYTES)', to: 'file, Infinity)', section: 'wsread' },
+    { name: 'the workspace file is read uncapped', from: 'real, exports.MAX_WORKSPACE_BYTES)', to: 'real, Infinity)', section: 'wsread' },
     { name: 'stop leaves an open pick alive', from: '        this.gen++; // a pick dialog still open answers cancelled\n', to: '', section: 'stoppick' },
     // the same rules from other sides
     { name: 'a token can be used twice', from: '        this.live = undefined;\n        if (this.now() >= e.expiresAt)', to: '        if (this.now() >= e.expiresAt)', section: 'apply' },

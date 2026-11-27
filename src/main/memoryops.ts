@@ -76,11 +76,26 @@ export function collectOfficeFolders(live: ReadonlyArray<{ key: string; folders:
 
 /** 1 MB: a `.code-workspace` file is a few lines (P1: never read a bigger one, and never open a FIFO). */
 export const MAX_WORKSPACE_BYTES = 1024 * 1024;
-/** The reader of a workspace file for `expandOfficeFolders`: the one capped, non-blocking, no-follow read (`readCapped`, the flags of `memoryGitFlags`); any failure throws. */
-export function cappedWorkspaceReader(fs: CappedFs, k: CappedFlags, parse: (text: string, file: string) => string[]): (file: string) => string[] {
+/**
+ * The reader of a workspace file for `expandOfficeFolders`: the file's `realpath` is resolved first (a symlinked `.code-workspace` is common) and that
+ * path goes through the one capped, non-blocking, no-follow read (`readCapped`, the flags of `memoryGitFlags`): a FIFO or a huge file behind a link still
+ * fails fast. Decisions (spec 116 round 5): a hard link is read (`readCapped` refuses `nlink > 1`; following one only adds folders to the refusal list, so
+ * the check is switched off here by reporting one link); a file that does not exist, or a dangling link, adds no folder (nothing to protect; it is read again
+ * when it appears) and does NOT block every pick; any other failure (a FIFO, too big, no access, bad JSON) throws and refuses, naming the file.
+ */
+export function cappedWorkspaceReader(fs: CappedFs, k: CappedFlags, parse: (text: string, file: string) => string[], realpath: (p: string) => string): (file: string) => string[] {
+  const hardLinksOk: CappedFs = { ...fs, openSync: (f, fl) => fs.openSync(f, fl), fstatSync: (fd) => ({ ...fs.fstatSync(fd), nlink: 1 }) };
   return (file) => {
-    const r = readCapped(fs, k, file, MAX_WORKSPACE_BYTES);
-    if (!r.ok) throw new Error('workspace unreadable');
+    let real: string;
+    try { real = realpath(file); } catch (e) {
+      if ((e as { code?: unknown } | null)?.code === 'ENOENT') return []; // missing or dangling
+      throw new Error('workspace unreadable');
+    }
+    const r = readCapped(hardLinksOk, k, real, MAX_WORKSPACE_BYTES);
+    if (!r.ok) {
+      if (r.code === 'missing') return [];
+      throw new Error('workspace unreadable');
+    }
     return parse(r.buf.toString('utf8'), file);
   };
 }
