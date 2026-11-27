@@ -1001,7 +1001,7 @@ const getMemoryOps = (): MemoryOps | undefined => (SIMULATOR || !settingsStore ?
       agentHomes: [copilotHomeDir(process.env, os.homedir()), defaultProfileEnv(process.env, os.homedir()).claudeConfigDir, process.env.CODEX_HOME || path.join(os.homedir(), '.codex')],
     }),
     // every workspace member, not only the first folder; an unreadable workspace file refuses the link
-    officeFolders: () => collectOfficeFolders([...agents.values()].map((a) => ({ key: wsKey(a), folders: rootsOf(a), workspaceFile: a.workspaceFile })), folderStore?.list().map((f) => f.workspace) ?? [], cappedWorkspaceReader(fs, memoryGitFlags(fs.constants), codeWorkspaceFoldersFromText)),
+    officeFolders: () => collectOfficeFolders([...agents.values()].map((a) => ({ key: wsKey(a), folders: rootsOf(a), workspaceFile: a.workspaceFile })), folderStore?.list().map((f) => f.workspace) ?? [], cappedWorkspaceReader(fs, memoryGitFlags(fs.constants), codeWorkspaceFoldersFromText, (p) => fs.realpathSync.native(p))),
     remote: (real) => memoryGitRemote(fs, memoryGitFlags(fs.constants), path.join, real),
     changed: () => toRenderer('memory:changed', memoryOps?.status()),
   })));
