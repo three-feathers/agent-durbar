@@ -56,7 +56,7 @@
       case 'attachment':
         return {kind:'attachment',pill:'Allowed: attached file',sentence:'Allowed: you attached this file to a message, so the agent may read it.'};
       case 'in-memory':
-        return {kind:'in-memory',pill:'Allowed: office memory',sentence:'Read in your office memory: the agent may read this file in your memory folder. It can never write there.'};
+        return {kind:'in-memory',pill:'Allowed: office memory',sentence:'Read in your office memory: the agent may read this file in your memory folder. Memory folders get read permission only, so a write there still asks you under the normal write rules.'};
       case 'app':{
         if(typeof by.source!=='string'||!Object.prototype.hasOwnProperty.call(APP,by.source))return null;
         return {kind:'app',pill:'Allowed: agent app '+APP[by.source],sentence:'Allowed by '+APP_WORDS[by.source]+'. Durbar does not own this rule: change it in the agent app.'};

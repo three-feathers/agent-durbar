@@ -87,6 +87,8 @@ interface Target {
   /** every pending question, answered "no" (so a request waiting for the user settles) */
   denyPending(sid: string): void;
   events: AgentEvent[];
+  /** a write the way THIS adapter builds it (Claude Code `permissionLikeOf`: path + fileName; Codex `codexPermission`: fileName + paths; others fileName) */
+  write?(p: string): Record<string, unknown>;
 }
 
 /** what one request came to: `read:<allowedBy kind>`, `denied`, `asked` (pending, waits for the user) or `approved` */
@@ -108,7 +110,7 @@ async function outcome(t: Target, sid: string, req: Record<string, unknown>): Pr
 
 let ctr = 0;
 const read = (p: string): Record<string, unknown> => ({ kind: 'read', path: p, toolCallId: 'r' + ++ctr });
-const write = (p: string): Record<string, unknown> => ({ kind: 'write', fileName: p, toolCallId: 'w' + ++ctr });
+const write = (t: Target, p: string): Record<string, unknown> => ({ ...(t.write ? t.write(p) : { kind: 'write', fileName: p }), toolCallId: 'w' + ++ctr });
 
 // ---------- the four targets ----------
 function fakeTarget(): Target {
@@ -174,6 +176,7 @@ function claudeTarget(): Target & { ad: ClaudeAdapter; sp: ReturnType<typeof fak
   return {
     ad, sp, session, events,
     start: (mode, readOnlyFolders) => ad.start({ workspace: proj, permissionMode: mode, quiet: true, ...(readOnlyFolders ? { readOnlyFolders } : {}) }),
+    write: (p) => ({ kind: 'write', toolName: 'Write', path: p, fileName: p }),
     request: (sid, req) => session(sid).broker.request(req as never),
     denyPending: (sid) => { session(sid).broker.denyPendingByUser(); },
   };
@@ -187,6 +190,7 @@ function codexTarget(): Target & { server: FakeCodexServer } {
   const brokerOf = (sid: string) => (ad as unknown as { sessions: Map<string, { broker: PermissionBroker }> }).sessions.get(sid)!.broker;
   return {
     server, events,
+    write: (p) => ({ kind: 'write', fileName: p, paths: [p] }),
     start: (mode, readOnlyFolders) => ad.start({ workspace: proj, permissionMode: mode, quiet: true, ...(readOnlyFolders ? { readOnlyFolders } : {}) }),
     request: (sid, req) => brokerOf(sid).request(req as never),
     denyPending: (sid) => { brokerOf(sid).denyPendingByUser(); },
@@ -202,8 +206,8 @@ async function matrix(make: () => Target, label: string): Promise<void> {
     eq(await outcome(t, sid, read(IN)), 'read:in-memory', `${label} ${mode}: a read inside the memory folder is approved and tagged in-memory`);
     eq(await outcome(t, sid, read(NEW_IN)), 'read:in-memory', `${label} ${mode}: a read of a path not there yet, inside the folder, is the same`);
     eq(await outcome(t, sid, read(path.join(proj, 'a.ts'))), 'read:in-folder', `${label} ${mode}: a read in the project folder keeps its own reason`);
-    eq(await outcome(t, sid, write(IN)), mode === 'ask' ? 'asked' : 'denied', `${label} ${mode}: a write inside the memory folder is ${mode === 'ask' ? 'asked' : 'denied'}`);
-    eq(await outcome(t, sid, write(NEW_IN)), mode === 'ask' ? 'asked' : 'denied', `${label} ${mode}: so is a new file there`);
+    eq(await outcome(t, sid, write(t, IN)), mode === 'ask' ? 'asked' : 'denied', `${label} ${mode}: a write inside the memory folder is ${mode === 'ask' ? 'asked' : 'denied'}`);
+    eq(await outcome(t, sid, write(t, NEW_IN)), mode === 'ask' ? 'asked' : 'denied', `${label} ${mode}: so is a new file there`);
     const outRead = mode === 'ask' ? 'asked' : 'denied';
     eq(await outcome(t, sid, read(OUT)), outRead, `${label} ${mode}: a read outside everything is ${outRead}`);
     eq(await outcome(t, sid, read(SIBLING)), outRead, `${label} ${mode}: a sibling folder that only shares the name prefix is outside`);
@@ -214,7 +218,7 @@ async function matrix(make: () => Target, label: string): Promise<void> {
     const t = make();
     const sid = await t.start('allow', withMem ? [mem] : undefined);
     eq(await outcome(t, sid, read(IN)), 'read:allow-all', `${label} allow (memory ${withMem ? 'on' : 'off'}): a read says Allow all, as before`);
-    eq((await t.request(sid, write(IN))).kind, 'approve-once', `${label} allow: a write is approved by the mode, as before`);
+    eq((await t.request(sid, write(t, IN))).kind, 'approve-once', `${label} allow: a write is approved by the mode, as before`);
   }
   // memory OFF: nothing is added
   for (const mode of ['read-only', 'ask'] as const) {
@@ -344,6 +348,7 @@ section('startopts', async () => {
 });
 
 section('off', async () => {
+  const VB = '/work/example.invalid'; const vMem = VB + '/mem'; const vSib = VB + '/mem-other';
   // MemoryOps.readRoots: empty while off, refused, not found; re-checked, never the stored path
   const store = { folder: undefined as string | undefined, on: false, keep: false, get memoryFolder() { return this.folder; }, get memoryOn() { return this.on && this.folder !== undefined; }, get memoryKeepInGit() { return this.keep; }, setMemory: () => true, setMemoryOn: () => true };
   const links: Record<string, string> = {};
@@ -351,9 +356,9 @@ section('off', async () => {
   const mk = (office: string[] = []): MemoryOps => new MemoryOps({
     store: () => store as never,
     pick: async () => null,
-    flavor: { path, platform: process.platform === 'win32' || process.platform === 'darwin' ? process.platform : 'linux' },
+    flavor: { path: path.posix, platform: 'linux' }, // invented POSIX paths: pure logic, the same on every OS
     ctx: () => ({
-      home: path.join(base, 'home'), userData: path.join(base, 'userdata'), env: {}, agentHomes: [path.join(base, 'agenthome')],
+      home: path.posix.join(VB, 'home'), userData: path.posix.join(VB, 'userdata'), env: {}, agentHomes: [path.posix.join(VB, 'agenthome')],
       realpath: (p: string) => { if (missing.includes(p)) throw new Error('ENOENT'); return links[p] ?? p; },
       lstat: (p: string) => { if (missing.includes(p)) throw new Error('ENOENT'); return { isDirectory: () => true }; },
     } as never),
@@ -361,24 +366,23 @@ section('off', async () => {
   });
   const ops = mk();
   eq(ops.readRoots(), [], 'no folder stored: nothing');
-  store.folder = mem; store.on = false;
+  store.folder = vMem; store.on = false;
   eq(ops.readRoots(), [], 'a folder stored but the memory off: nothing');
   store.on = true;
-  eq(ops.readRoots(), [mem], 'on and fine: the real path');
-  links[mem] = memSibling;
-  eq(ops.readRoots(), [memSibling], 'a link repointed since: the NEW real path, T002 runs again');
-  delete links[mem];
-  missing.push(mem);
+  eq(ops.readRoots(), [vMem], 'on and fine: the real path');
+  links[vMem] = vSib;
+  eq(ops.readRoots(), [vSib], 'a link repointed since: the NEW real path, T002 runs again');
+  delete links[vMem];
+  missing.push(vMem);
   eq(ops.readRoots(), [], 'the folder is gone (not found): nothing');
   missing.length = 0;
-  eq(mk([mem]).readRoots(), [], 'the folder became an office folder (refused): nothing, though it is still stored');
-  store.folder = path.join(base, 'home');
+  eq(mk([vMem]).readRoots(), [], 'the folder became an office folder (refused): nothing, though it is still stored');
+  store.folder = path.posix.join(VB, 'home');
   eq(ops.readRoots(), [], 'a stored folder that is now refused (the home folder): nothing');
-  fs.mkdirSync(path.join(base, 'agenthome', 'sub'), { recursive: true });
-  store.folder = path.join(base, 'agenthome', 'sub');
+    store.folder = path.posix.join(VB, 'agenthome', 'sub');
   eq(ops.readRoots(), [], 'a stored folder now inside an agent home (ctx.agentHomes, as pick and apply see it): nothing');
-  store.folder = mem;
-  eq(ops.readRoots(), [mem], 'the same ctx still accepts a fine folder');
+  store.folder = vMem;
+  eq(ops.readRoots(), [vMem], 'the same ctx still accepts a fine folder');
   store.folder = 'relative/path';
   eq(ops.readRoots(), [], 'a stored relative path: nothing');
 });
@@ -421,6 +425,8 @@ section('sources', async () => {
     M('src/adapters/claudeModes.js', 'Claude Code read roots are used for writes', '!writeIsInsideRoots(toolName, input, roots, pathCheck)', '!writeIsInsideRoots(toolName, input, [...(roots ?? []), ...(readRoots ?? [])], pathCheck)', 'claude'),
     M('src/adapters/codex.js', 'Codex runtimeWorkspaceRoots widened with the folder', 'const roots = (0, codexModes_1.codexWorkspaceRoots)([cwd, ...folders], this.realpath);', 'const roots = (0, codexModes_1.codexWorkspaceRoots)([cwd, ...folders, ...(options.readOnlyFolders ?? [])], this.realpath);', 'codex'),
     M('src/main/memoryops.js', 'roots are given while the memory is off', '|| !st.memoryOn)\n            return [];', ')\n            return [];', 'off'),
+    // M1: a memory root that also allows writes (a write path of any adapter's shape inside it is approved)
+    M('src/adapters/permissions.js', 'M1: a memory root also allows writes', '        const scope = grantScope(req, this.opts.pathCheck?.flavor);', "        if (this.memoryRoots.some((r) => [req.fileName, req.path, ...(req.paths ?? [])].some((q) => typeof q === 'string' && q.startsWith(r))))\n            return this.approveWrite(req);\n        const scope = grantScope(req, this.opts.pathCheck?.flavor);", 'claude'),
     // Copilot, T005 R1
     M('src/adapters/copilot.js', 'Copilot additionalDirectories is set to the folder', 'workingDirectory: cwd,', 'workingDirectory: cwd, additionalDirectories: options.readOnlyFolders,', 'copilot'),
     // the other sides of the same rules
