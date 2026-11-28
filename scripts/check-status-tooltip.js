@@ -57,7 +57,10 @@ module.exports = async (ctx) => {
   const focusWin = (what) => H.needFocus(what, process.env.STATUSTIP_NO_WINDOW_FOCUS ? { expr: 'false' } : {});
   // issue 2167: on a Windows shard three drivers share one desktop and a neighbour's window takes the OS focus while the pointer rests on a pill. The window is blurred on purpose at that point (TOOLTIP_BLUR=0 turns that off) and the page is asserted to report no focus; the step then asks for the real focus by state
   const BLUR = process.env.TOOLTIP_BLUR !== '0';
-  const blurFirst = async (tag, step) => { if (BLUR) assert.ok(await H.loseFocus(), tag + ': the window is blurred, so the page reports no focus (the setup of the ' + step + ' step)'); };
+  const blurFirst = async (tag, step) => {
+    if (BLUR) await H.forceBlur('check-status-tooltip', tag, step + ' step'); /* H.forceBlur: fails named on Linux and macOS, prints a skip line on Windows (it keeps the focus on blur()) and the step goes on */
+    if (BLUR) await H.needFocus(tag + ': before the ' + step + ' step'); /* the real focus back by state, as the plain run has it */
+  };
   const osRetry = async (what, fn) => {
     for (let i = 0; ; i++) {
       await focusWin(what); await osWatch();
