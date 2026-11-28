@@ -23,6 +23,8 @@
  *     freshease  a pencil made while its plate eases is not held (`const mv = plEase || (fresh ? easeOf(pl) : null)` -> `plEase || null`, a patched copy of dist; the run fails loudly if the text did not change):
  *                "a pencil made while its plate eases is held at opacity 0 until the ease ends"
  *     skipall    the 3-frame rule skipped as if no plate that eases were in view: fails "with every plate in view and on the screen, some plate that eases is in view, so the 3-frame rule has a plate to catch" at the first size
+ *     firstonly  the hold of a pencil made while two plate eases overlap is the first ease only (`hideWhile(rb, [mv], null)`): dies in the two-ease and three-ease cases at the same text
+ *     norecheck  the hold does not look at the plate again after the eases it started with end: dies in the three-ease case (a third ease, begun meanwhile) at the same text
  *     pin        the pointer back on a working plate after parking (it did not leave): fails "the hover card closed after the pointer left"; with PENCIL_EASE_SCREEN smaller than the
  *                window it is the labelled "skipped: the pointer-dependent checks ... need the window inside the screen" instead
  *     hover      the pointer left on a working plate before the end frame: "no hover card is open over the plates in the end frame"
@@ -153,13 +155,19 @@ const rd = (o) => o && [o.x, o.y, o.r, o.b].map((n) => Math.round(n));
 
 module.exports = async (ctx) => {
   let INDEX;
-  if (MUTANT === 'freshease') { /* a patched copy of dist: the loud guard first (a CRLF checkout, or a moved line, must not leave the mutant a no-op) */
+  /* a patched copy of dist, each mutant of realoffice.js with a loud guard first (a CRLF checkout, or a moved line, must not leave a mutant a no-op) */
+  const PATCH = {
+    freshease: ['const mv = plEase || (fresh ? easeOf(pl) : null);', 'const mv = plEase || null;'],
+    firstonly: ['hideWhile(rb, [mv, ...easesOf(pl)], pl);', 'hideWhile(rb, [mv], null);'],
+    norecheck: ['const more = round < HOLD_ROUNDS && plate ? easesOf(plate) : [];', 'const more = [];'],
+  };
+  if (PATCH[MUTANT]) {
     const copy = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-pe-'));
     fs.cpSync(path.join(__dirname, '..', 'dist'), copy, { recursive: true });
     const f = path.join(copy, 'renderer', 'realoffice.js'); const src = fs.readFileSync(f, 'utf8').replace(/\r\n/g, '\n');
-    const from = 'const mv = plEase || (fresh ? easeOf(pl) : null);', to = 'const mv = plEase || null;';
-    assert.strictEqual(src.split(from).length - 1, 1, 'the freshease mutant finds its line in realoffice.js once');
-    const out = src.replace(from, () => to); assert.notStrictEqual(out, src, 'mutation did not apply: realoffice.js is unchanged');
+    const [from, to] = PATCH[MUTANT];
+    assert.strictEqual(src.split(from).length - 1, 1, `the ${MUTANT} mutant finds its line in realoffice.js once`);
+    const out = src.replace(from, () => to); assert.notStrictEqual(out, src, `mutation did not apply: ${MUTANT}: realoffice.js is unchanged`);
     fs.writeFileSync(f, out);
     INDEX = path.join(copy, 'renderer', 'index.html');
   }
@@ -430,23 +438,38 @@ module.exports = async (ctx) => {
     await js(`(()=>{const a=${SIM}.agents().find(x=>x.id===${jsLiteral(who)});a.state='working';a.lastEventAt=Date.now();${SIM}.crew.renderAll();return 1})()`);
     await js(`(()=>{const a=document.activeElement;if(a&&a.blur)a.blur();return 1})()`);
     await must(STILL, `${tag}: still after the focus case`, 5000);
-    /* a pencil made while its plate eases (issue #1627): the agent stops being renameable (the draw removes its pencil) and is renameable again while the plate's ease still runs, so the draw makes the
-       pencil again; FR-365: it is held at opacity 0 for the rest of the ease and shown after it (every frame sampled; a still frame is never a pass: the case must find the plate easing) */
-    const mk = await js(`(()=>{const a=${SIM}.agents().find(x=>x.id===${jsLiteral(who)});a.state='waiting';a.lastEventAt=Date.now();${SIM}.crew.renderAll();
-      const k=${jsLiteral(who)},at=()=>document.querySelector('#stage .ren.ro-ren[data-ren="'+k+'"]'),had=!!at(),live0=a.live;
-      a.live=false;${SIM}.crew.renderAll();const gone=!at();a.live=live0;${SIM}.crew.renderAll();const nb=at();
-      if(!nb||!gone||!had||!${EASE_OF}(nb.previousElementSibling))return {k,had,gone,made:!!nb,plateEasing:!!(nb&&${EASE_OF}(nb.previousElementSibling))};
-      const M=window.__peM={max:0,n:0,done:false,final:null},p=nb.previousElementSibling,t0=performance.now();let end=0;
-      const step=()=>{const now=performance.now(),o=Number(getComputedStyle(nb).opacity);M.n++;if(${EASE_OF}(p)){if(o>M.max)M.max=o;}else if(!end)end=now;
-        if((end&&now-end>300)||now-t0>3000){M.done=true;M.final=o}else requestAnimationFrame(step)};
-      step();return {k,had,gone,made:true,plateEasing:true}})()`);
-    assert.ok(mk.had && mk.gone && mk.made && mk.plateEasing, `${tag}: a pencil is made again while its plate eases (${JSON.stringify(mk)})`);
-    await must(`!!(window.__peM||{}).done`, `${tag}: the made pencil sampled to 300 ms past its plate's ease`, 6000);
-    const M = await js(`window.__peM`);
-    log(tag, `pencil made mid-ease: ${M.n} frames, highest opacity while the plate eased ${M.max}, after ${M.final}`);
-    assert.ok(M.max < 0.05, `${tag}: a pencil made while its plate eases is held at opacity 0 until the ease ends (highest ${M.max} in ${M.n} frames)`);
-    assert.ok(M.final >= 0.99, `${tag}: and it is shown once the ease is over (opacity ${M.final})`);
-    await must(STILL, `${tag}: still after the made pencil's ease`, 5000);
+    /* a pencil made while its plate eases (issue #1627; nightly 45996240743, #2174): the agent stops being renameable (the draw removes its pencil) and is renameable again, so the draw makes the pencil
+       again; FR-365: it is held at opacity 0 as long as ANY ease of its plate runs and shown after the last one ends (every frame sampled; the case must find the plate easing, a still plate never passes).
+       Cases: one ease; two that overlap (a second move 120 and 200 ms after the first: on a slow runner each draw takes ~100 ms and the hold, which ended with the first ease, showed the pencil while the
+       second still moved); three (an ease begun by something other than a draw, while the first two run: the hold looks at its plate again once they end). */
+    const madeCases = [['one ease', 0, false], ['two eases 120 ms apart', 120, false], ['two eases 200 ms apart', 200, false], ['three eases', 120, true]];
+    for (const [what, gap, third] of madeCases) {
+      await js(`(()=>{const a=${SIM}.agents().find(x=>x.id===${jsLiteral(who)});a.state='working';a.lastEventAt=Date.now();${SIM}.crew.renderAll();return 1})()`); /* the case starts from the desk's own place, still */
+      await must(STILL, `${tag}: still before the case ${what}`, 8000);
+      const mk = await js(`(async()=>{const a=${SIM}.agents().find(x=>x.id===${jsLiteral(who)});
+        const k=${jsLiteral(who)},at=()=>document.querySelector('#stage .ren.ro-ren[data-ren="'+k+'"]'),had=!!at(),live0=a.live;
+        a.state='waiting';a.lastEventAt=Date.now();${SIM}.crew.renderAll();
+        if(${jsLiteral(gap)}>0){await new Promise(r=>setTimeout(r,${jsLiteral(gap)}));a.state='working';a.lastEventAt=Date.now();${SIM}.crew.renderAll();}
+        a.live=false;${SIM}.crew.renderAll();const gone=!at();a.live=live0;${SIM}.crew.renderAll();const nb=at();
+        const pl=nb&&nb.previousElementSibling,runs=()=>pl?pl.getAnimations().filter(n=>!n.animationName&&n.playState==='running'&&n.effect&&n.effect.getKeyframes().some(f=>f.translate||f.scale)):[];
+        const n0=runs().length;
+        if(!nb||!gone||!had||!n0||(${jsLiteral(gap)}>0&&n0<2))return {k,had,gone,made:!!nb,running:n0};
+        if(${jsLiteral(third)})setTimeout(()=>{if(pl.isConnected)pl.animate([{translate:'28px 0'},{translate:'0 0'}],{duration:600,easing:'ease-out'})},400); /* an ease no draw made, begun late so it outlasts the first two */
+        const geo=()=>({win:[innerWidth,innerHeight],screen:[screen.width,screen.height],at:[screenX,screenY],dpr:devicePixelRatio}),fr=[];
+        const M=window.__peM={max:0,n:0,done:false,final:null,frames:fr,geo:geo()},t0=performance.now();let end=0;
+        const step=()=>{const now=performance.now(),o=Number(getComputedStyle(nb).opacity),e=runs();M.n++;if(e.length){if(o>M.max)M.max=o;}else if(!end)end=now;
+          if(fr.length<80)fr.push([Math.round(now-t0),Math.round(o*100)/100,e.map(x=>Math.round(x.startTime||0)+'/'+Math.round(x.effect.getTiming().duration)+'/'+Math.round(x.currentTime||0)).join(' '),nb._hide?'hold':'-']);
+          if((end&&now-end>300)||now-t0>4000){M.done=true;M.final=o}else requestAnimationFrame(step)};
+        step();return {k,had,gone,made:true,running:n0}})()`);
+      assert.ok(mk.had && mk.gone && mk.made && mk.running >= 1 && (gap === 0 || mk.running >= 2), `${tag}: ${what}: a pencil is made again while its plate eases, with ${gap ? 'two' : 'one'} running (${JSON.stringify(mk)})`);
+      await must(`!!(window.__peM||{}).done`, `${tag}: ${what}: the made pencil sampled to 300 ms past its plate's last ease`, 8000);
+      const M = await js(`window.__peM`);
+      log(tag, `pencil made mid-ease, ${what}: ${M.n} frames, highest opacity while a plate ease ran ${M.max}, after ${M.final}`);
+      const diag = () => `window ${M.geo.win.join('x')} on a ${M.geo.screen.join('x')} screen at ${M.geo.at.join(',')}, dpr ${M.geo.dpr}; frames [ms opacity 'start/duration/currentTime of each running ease' hold]: ${M.frames.map((f) => f.join(' ')).join(' | ')}`.slice(0, 1400);
+      assert.ok(M.max < 0.05, `${tag}: a pencil made while its plate eases is held at opacity 0 until the ease ends (${what}: highest ${M.max} in ${M.n} frames; ${diag()})`);
+      assert.ok(M.final >= 0.99, `${tag}: and it is shown once the last ease is over (${what}: opacity ${M.final})`);
+      await must(STILL, `${tag}: still after the made pencil's eases (${what})`, 8000);
+    }
     log(tag, 'status changes:', blinks.join('; '));
     assert.ok(blinks.every((b) => / 0 of a still plate$/.test(b)) && /^thinking: 0 plates eased, 0 pencils hidden/.test(blinks[0]), `${tag}: a status change hides only the pencils of plates that move (${blinks.join('; ')})`);
     log(tag, 'ok');
