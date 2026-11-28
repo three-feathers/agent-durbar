@@ -65,17 +65,28 @@
      keeps its name and Tab place); it fades in at its own spot when the ease ends. Under reduced motion nothing eases, so nothing hides. A pencil that
      has the focus is not hidden (its focus ring stays; it may be drawn displaced for the ease, a known gap). */
   const REN_IN = 120;
-  function hideWhile(e, ease) {
+  const HOLD_MAX = 3200; /* ms: the longest a hold lasts (an ease is at most 520 ms; a few of them in a row) */
+  const HOLD_ROUNDS = 6; /* issue #1627 (nightly 45996240743): a hold looks again at its plate at most this many times after the eases it started with end (each ease is at most 520 ms): a pencil is shown within about 3 s at the latest, never hidden for good */
+  /* held until EVERY running ease of the plate has ended (their `finished`; a cancelled one rejects, `allSettled` absorbs it), then once more for an ease that began meanwhile; a pencil made while two eases
+     overlap was held through the first only and showed while the second still moved (measured: 120 to 220 ms) */
+  function hideWhile(e, eases, plate) {
     if (e._hide) e._hide.cancel();
     if (!e._hf) { e._hf = true; e.addEventListener('focus', () => { if (e._hide) { e._hide.cancel(); e._hide = null; } }); } /* focused while hidden: shown at once, and no fade from 0 when the ease ends (`show` stops at its guard) */
-    /* held until the plate's own ease ends (its `finished`), not for a time of its own: a plate's ease can start a frame after the pencil's hold
+    /* held until the plate's own eases end (their `finished`), not for a time of its own: a plate's ease can start a frame after the pencil's hold
        (measured in the cave, 17 ms), and a timed hold then ended while the plate still moved (review of PR 1555) */
     const h = e._hide = e.animate([{ opacity: 0 }, { opacity: 0 }], { duration: Infinity });
     const show = () => { if (e._hide !== h) return; h.cancel(); e._hide = e.animate([{ opacity: 0 }], { duration: REN_IN, easing: 'linear' }); }; /* one keyframe: it ends on the CSS opacity (hover, focus, ren-show) */
-    ease.finished.then(show, show);
+    const wait = (list, round) => Promise.allSettled([...new Set(list)].map((a) => a.finished)).then(() => {
+      if (e._hide !== h) return;
+      const more = round < HOLD_ROUNDS && plate ? easesOf(plate) : [];
+      if (more.length) wait(more, round + 1); else show();
+    });
+    wait(eases, 0);
+    setTimeout(show, HOLD_MAX); /* the latest: an ease that never ends cannot keep a pencil hidden (`show` stops at its guard when the hold has ended or been replaced) */
   }
-  /* the plate's ease still under way (a move on translate or scale), for a pencil made while it runs */
-  const easeOf = (el) => el.getAnimations ? el.getAnimations().find((n) => !n.animationName && n.playState === 'running' && n.effect && n.effect.getKeyframes().some((f) => f.translate || f.scale)) || null : null;
+  /* the plate's eases still under way (moves on translate or scale), for a pencil made while they run: all of them, the oldest first */
+  const easesOf = (el) => el.getAnimations ? el.getAnimations().filter((n) => !n.animationName && n.playState === 'running' && n.effect && Number.isFinite(n.effect.getComputedTiming().endTime) && n.effect.getKeyframes().some((f) => f.translate || f.scale)) : [];
+  const easeOf = (el) => easesOf(el)[0] || null;
   const initials = (name) => String(name || '?').trim().split(/\s+/).slice(0, 2).map((w) => Array.from(w)[0] || '').join('').toUpperCase() || '?';
 
   /* the keyed layers: one Map per layer, elements reused by key; unseen keys are removed at the end of a render */
@@ -580,7 +591,7 @@
           if (!rb.firstChild && model.renIcon) rb.innerHTML = model.renIcon; /* the app's own icon markup (trusted, as alertIcon) */
           const fresh = !rb._ren; rb._ren = true;
           const mv = plEase || (fresh ? easeOf(pl) : null); /* FR-365: a pencil made (or come back) while its plate eases waits for the rest of it */
-          if (mv && rb !== document.activeElement) hideWhile(rb, mv); /* FR-365 */
+          if (mv && rb !== document.activeElement) hideWhile(rb, [mv, ...easesOf(pl)], pl); /* FR-365: held through every running ease of the plate */
         }
         /* spec 097 FR-306..FR-309 (issue #1139): the helpers' head figures under the plate, right after it and its pencil in the Tab order; a lounge seat and the fallback (no room: the plate keeps +N; the arcade at 1280x800) have no strip box, so no strip */
         if (d.strip && a.subs && a.subs.length) helperStrip(chrome, d, a, k, who, ids, meta);

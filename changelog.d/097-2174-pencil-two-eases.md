@@ -1,0 +1,1 @@
+- **A rename pencil no longer shows over a plate that is still moving after two quick moves** (spec 097): a pencil made while two plate eases overlapped was shown when the first ended; it now waits for every running ease of its plate.
