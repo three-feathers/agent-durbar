@@ -306,3 +306,4 @@ Numbers taken: T167..T183. Each phase one small PR, after #950 and #959 land (#9
 
 ## 2026-11-28: `check-status-tooltip` and a window that loses the focus (issue #2167)
 - [x] T609 Issue 2167 (2026-11-28 *Changes*): `scripts/check-status-tooltip.js`: `hover` leaves a pill the pointer rests on first, the pointer step runs in `osRetry`, the window is blurred (`H.forceBlur`) with the pointer on the pill before the first hover and before the pointer step; `TOOLTIP_BLUR=0` plain run; mutant `TOOLTIP_MUTANT=noreenter` dies at the Windows run's assert text; no app change.
+- [x] T613 Issue 2167 and 2048 (2026-11-28 *Changes*): `scripts/check-001-room-heads.js`: before the keyboard step the window is blurred (`H.forceBlur`) and the focus is asked for by state (`H.needFocus`); `ROOMHEADS_BLUR=0` plain run; mutant `ROOMHEADS_MUTANT=nofocus` dies at `keyboard focus on a head's control shows its tooltip`; `test:force-blur` scans the driver; no app change.
