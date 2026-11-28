@@ -4,7 +4,7 @@
  * (the keyboard step).
  *
  *   npm run check:ui -- --only check-001-room-heads
- *   ROOMHEADS_BLUR=0 turns off the window blur forced before the keyboard step; ROOMHEADS_MUTANT=nofocus does not ask for the focus there -> "keyboard focus on a head's control shows its tooltip"
+ *   ROOMHEADS_BLUR=0 turns off the window blur forced before the keyboard step; ROOMHEADS_MUTANT=noaskfocus does not ask for the focus there -> "keyboard focus on a head's control shows its tooltip" (unlike HEADS_MUTANT=nofocus, which patches the page so focus never reaches the tooltip, this one only changes what the driver does)
  *   HEADS_MUTANT=title|onepiece|nofocus|raw|sign   the old behaviour put back in the page (each must fail, at its own label):
  *     title     no `data-tip`, the old native title on the name only          -> "no native title on the name (one tooltip, not two)"
  *     onepiece  the name is one piece again (cut at the end)                  -> "a cut name keeps its tail whole"
@@ -29,9 +29,9 @@ const path = require('path');
 const { helpers, jsLiteral } = require('./driver-helpers');
 
 const MUTANT = process.env.HEADS_MUTANT || '';
-/* issue 2167 and 2048: on a Windows shard three drivers share one desktop and a neighbour's window takes the OS focus between the load and the keyboard step (the Retro entry runs with the others; the Open office entry runs alone). The window is blurred on purpose before the keyboard step (ROOMHEADS_BLUR=0 turns that off) and the step asks for the focus by state; ROOMHEADS_MUTANT=nofocus does not ask (must fail at the keyboard label). */
+/* issue 2167 and 2048: on a Windows shard three drivers share one desktop and a neighbour's window takes the OS focus between the load and the keyboard step (the Retro entry runs with the others; the Open office entry runs alone). The window is blurred on purpose before the keyboard step (ROOMHEADS_BLUR=0 turns that off) and the step asks for the focus by state; ROOMHEADS_MUTANT=noaskfocus does not ask (must fail at the keyboard label). */
 const BLUR = process.env.ROOMHEADS_BLUR !== '0';
-const FOCUS_MUTANT = process.env.ROOMHEADS_MUTANT === 'nofocus';
+const FOCUS_MUTANT = process.env.ROOMHEADS_MUTANT === 'noaskfocus';
 const SIZES = [[1440, 900], [1280, 800]];
 const Q = { sim: '16', simrooms: 'solo', simnames: 'alike', simfreeze: '1' };
 
