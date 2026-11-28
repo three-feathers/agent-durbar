@@ -1,6 +1,10 @@
 /** Unit test for the permission broker (no Copilot session, no AI credits): `npm run test:permissions`. */
 import * as assert from 'assert';
 import * as path from 'path';
+import * as fs from 'fs';
+import * as os from 'os';
+import * as vm from 'vm';
+import * as ts from 'typescript';
 import { PermissionBroker, cleanGrantKey, grantScope, revokeGrantFor, revokeCallFor, CALLS_MAX, CALL_KEYS_MAX, isInsideRoots } from '../src/adapters/permissions';
 import type { BrokerEvent } from '../src/adapters/permissions';
 import { eventProblems, REQUEST_ID_MAX } from '../src/adapters/eventguard';
@@ -217,6 +221,89 @@ async function main(): Promise<void> {
   assert.ok(isInsideRoots(path.join(other, 'x'), [root, other], pc), 'second workspace folder');
   assert.ok(isInsideRoots('C:\\Work\\Proj\\a.ts', ['c:\\work\\proj'], { flavor: path.win32, caseInsensitive: true, realpath: (x) => x }), 'Windows: case-insensitive');
   assert.ok(!isInsideRoots('D:\\Work\\Proj\\a.ts', ['C:\\Work\\Proj'], { flavor: path.win32, caseInsensitive: true, realpath: (x) => x }), 'Windows: other drive is outside');
+
+  // spec 003 FR-319: the default resolver is the native one (long Windows form), for the path and for every root.
+  // PERMISSIONS_MUTANT=jsRealpath runs the same asserts on the source with the JS `fs.realpathSync` back (they must fail here).
+  {
+    let inside = isInsideRoots;
+    const MUT: Record<string, [string, string]> = {
+      jsRealpath: ['return fs.realpathSync.native(x);', 'return fs.realpathSync(x);'],
+      noFallback: ['return fs.realpathSync(x);', 'throw e;'],
+      posixFold: ["opts.caseInsensitive ?? process.platform === 'win32'", 'opts.caseInsensitive ?? true'],
+    };
+    const mut = process.env.PERMISSIONS_MUTANT || '';
+    if (mut) {
+      assert.ok(MUT[mut], `unknown mutant ${mut}`);
+      const file = path.join(__dirname, '..', '..', 'src', 'adapters', 'permissions.ts');
+      const [from, to] = MUT[mut];
+      let src = fs.readFileSync(file, 'utf8');
+      if (src.split(from).length !== 2) { console.error(`MUTATION DID NOT APPLY: ${mut} anchor not found exactly once`); process.exit(99); }
+      src = src.split(from).join(to);
+      const js = ts.transpileModule(src, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 } }).outputText;
+      const m = { exports: {} as { isInsideRoots: typeof isInsideRoots } };
+      const req = (n: string): unknown => require(n.startsWith('.') ? path.join(__dirname, '..', 'src', 'adapters', n) : n);
+      vm.runInNewContext(js, { module: m, exports: m.exports, require: req, process, console, Buffer, URL });
+      inside = m.exports.isInsideRoots;
+    }
+    const real = fs.realpathSync as unknown as { native: (p: string) => string };
+    const savedNative = real.native, seen: string[] = [];
+    real.native = (x: string): string => { seen.push(x); return x.replace('SHORT~1', 'LongName'); };
+    try {
+      assert.ok(inside(path.resolve('/w/SHORT~1/a.txt'), [path.resolve('/w/LongName')]), 'FR-319 default resolver: a short-form path inside a long-form root is inside');
+      assert.ok(seen.length >= 2, 'FR-319 default resolver: the native one ran for the path and for the root');
+    } finally {
+      real.native = savedNative;
+    }
+    // default case rule: only Windows folds case, so on Linux and macOS `/Work/a` is not inside `/work`
+    if (process.platform !== 'win32') assert.ok(!inside('/Work/a', ['/work'], { flavor: path.posix, realpath: (x) => x }), 'default case rule: posix does not fold case');
+  }
+
+  // spec 003 FR-319: a native failure that is not "missing" falls back to the JS resolver (a link out of the root stays outside).
+  {
+    const mut = process.env.PERMISSIONS_MUTANT || '';
+    const mutIn = mut === 'noFallback' ? (() => {
+      const file = path.join(__dirname, '..', '..', 'src', 'adapters', 'permissions.ts');
+      const src = fs.readFileSync(file, 'utf8').split('return fs.realpathSync(x);').join('throw e;');
+      const js = ts.transpileModule(src, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 } }).outputText;
+      const m = { exports: {} as { isInsideRoots: typeof isInsideRoots } };
+      vm.runInNewContext(js, { module: m, exports: m.exports, require: (n: string): unknown => require(n.startsWith('.') ? path.join(__dirname, '..', 'src', 'adapters', n) : n), process, console, Buffer, URL });
+      return m.exports.isInsideRoots;
+    })() : isInsideRoots;
+    const tmp = fs.mkdtempSync(path.join(fs.realpathSync(require('os').tmpdir()), 'durbar-fr319-'));
+    const real = fs.realpathSync as unknown as { native: (p: string) => string };
+    const savedNative = real.native;
+    try {
+      const proj = path.join(tmp, 'proj'), secret = path.join(tmp, 'secret');
+      fs.mkdirSync(proj); fs.mkdirSync(secret); fs.writeFileSync(path.join(secret, 's.txt'), 'x');
+      let linked = true;
+      try { fs.symlinkSync(secret, path.join(proj, 'out'), 'dir'); } catch { linked = false; console.log('permissions: SKIP native-failure link check (symlinks cannot be made here)'); }
+      real.native = (x: string): string => { throw Object.assign(new Error('EISDIR: illegal operation on a directory'), { code: 'EISDIR', path: x }); };
+      if (linked) assert.ok(!mutIn(path.join(proj, 'out', 's.txt'), [proj]), 'FR-319 fallback: a link out of the root stays outside when native fails with EISDIR');
+      assert.ok(mutIn(path.join(proj, 'a.txt'), [proj]), 'FR-319 fallback: a plain path inside is inside when native fails with EISDIR');
+      real.native = (x: string): string => { throw Object.assign(new Error('ENOENT'), { code: 'ENOENT', path: x }); };
+      assert.ok(mutIn(path.join(proj, 'new', 'missing.txt'), [proj]), 'FR-319 fallback: ENOENT still walks up (a missing file under the root is inside)');
+    } finally {
+      real.native = savedNative;
+      fs.rmSync(tmp, { recursive: true, force: true });
+    }
+  }
+
+  // spec 003 FR-319, Windows only: a real folder reached through the short 8.3 form of the temp dir.
+  if (process.platform !== 'win32') console.log('permissions: SKIP Windows short-name check (not win32)');
+  else if (!/~\d/.test(os.tmpdir())) console.log(`permissions: SKIP Windows short-name check (os.tmpdir() has no 8.3 segment)`);
+  else {
+    const name = `durbar-fr319-${process.pid}-${Date.now()}`;
+    const dir = path.join(os.tmpdir(), name);
+    fs.mkdirSync(dir);
+    try {
+      const longRoot = fs.realpathSync.native(dir);
+      console.log(`permissions: Windows short-name check RAN: short form ${dir}, long form ${longRoot}`);
+      assert.ok(isInsideRoots(path.join(dir, 'a.txt'), [longRoot]), 'Windows: the short-form path is inside the long-form root');
+      assert.ok(isInsideRoots(path.join(dir, 'new', 'a.txt'), [longRoot]), 'Windows: a missing file under it too');
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  }
 
   const mkRoots = (mode: 'read-only' | 'ask' | 'allow') => {
     const ev: BrokerEvent[] = [];
