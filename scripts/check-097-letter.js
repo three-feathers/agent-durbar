@@ -85,7 +85,7 @@ module.exports = async (ctx) => {
   const SETTLE_FRAMES = 60; // about a second of unchanged frames
   const MUTANT = process.env.LETTER_MUTANT; // 'firstplate': the old wait (the first plate's left and top twice, 400 ms apart): it dies at the respace case
   const RESPACE = process.env.LETTER_RESPACE === '1'; // the red case: 700 ms after the spacer the floor loses 14 px (a late relayout spreads the row again); the old wait has fired by then, a state wait has not
-  const evidence = async () => `; layout changes seen (last 10, ms since the page was watched): ${JSON.stringify(await js(`window.__ps?window.__ps.log:null`))}`;
+  const evidence = async () => { const log = await js(`window.__ps?window.__ps.log:null`); return `; layout changes seen (last 10, ms since the page was watched): ${JSON.stringify(log)}`; };
 
   /* the whole check of one letter: where it starts, where it ends, its chip, its pixels; `scrolled`: #floor is scrolled when the run fires (no pictures then) */
   const flight = async (w, h, scrolled) => {
