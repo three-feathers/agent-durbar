@@ -14,13 +14,16 @@ const MUTANTS: Record<string, [string, string]> = {
   winCase: ["s.replace(/\\\\/g,'/').toLowerCase():s", "s.replace(/\\\\/g,'/'):s"],
   noAllowAll: ["<p class=\"scr-note\">${esc(WORDS.allowAll)}</p>", ''],
   refusedNoReason: ["'Refused: '+(st.reason||'this folder cannot be used')+' ('+where+') The memory is off.'", "'Refused. The memory is off.'"],
-  noAsk: ["if(want&&!(await ask(shortPath(st.path,home()),null))){busy=false;paint();return;}", ''],
+  noAsk: ["if(want&&!(await ask(shortPath(st.path,home()),null))){busy=false;paint('memSw');return;}", ''],
+  shownTrue: ['function shown(){return !!(X&&X.sim);}', 'function shown(){return true;}'],
+  refusedPickDialog: ["if(pk.ok===false){say(failText(pk));busy=false;paint('memChoose');return;}", ''],
 };
 const mutant = process.env.MEMORY_UI_MUTANT || '';
 let src = fs.readFileSync(FILE, 'utf8');
 if (mutant) {
   assert.ok(MUTANTS[mutant], `unknown mutant ${mutant}`);
-  assert.ok(src.includes(MUTANTS[mutant][0]), `mutant ${mutant}: anchor not found`);
+  const hits = src.split(MUTANTS[mutant][0]).length - 1;
+  if (hits !== 1) { console.error(`MUTATION DID NOT APPLY: ${mutant} anchor found ${hits} times, needs exactly 1`); process.exit(99); }
   src = src.split(MUTANTS[mutant][0]).join(MUTANTS[mutant][1]);
 }
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -95,16 +98,16 @@ function fakeBox(): { box: unknown; els: Record<string, El>; html: () => string 
   return { box, els, html: () => html };
 }
 const flush = (): Promise<void> => new Promise((r) => setTimeout(r, 0));
-async function run(status: unknown, remote: unknown, answer: string | null) {
+async function run(status: unknown, remote: unknown, answer: string | null, pick?: unknown) {
   const asked: Array<{ title: string; buttons: Array<{ label: string }>; lines: string[]; body: string }> = [];
   const calls: string[] = [];
   const f = fakeBox();
   M.init({
-    sim: true, announce: () => undefined, home: () => '/home/ana',
+    sim: true, esc: (t: string) => String(t).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c] as string), announce: () => undefined, home: () => '/home/ana',
     askDialog: async (o: { title: string; buttons: Array<{ label: string }>; lines: string[]; body: string }) => { asked.push(o); return { value: answer }; },
     bridge: {
       memoryStatus: async () => status, onMemoryChanged: () => () => undefined,
-      memoryPick: async () => ({ ok: true, token: 't', expiresAt: 1, path: '/home/ana/notes/brain', remote }),
+      memoryPick: async () => pick || ({ ok: true, token: 't', expiresAt: 1, path: '/home/ana/notes/brain', remote }),
       memoryApply: async () => { calls.push('apply'); return { ok: true, path: '~/notes/brain' }; },
       memorySetOn: async (v: boolean) => { calls.push('setOn:' + v); return { ok: true }; },
       memoryStop: async () => { calls.push('stop'); return { ok: true }; },
@@ -148,6 +151,13 @@ async function run(status: unknown, remote: unknown, answer: string | null) {
   r.els.memSw.onclick!(); await flush(); await flush(); await flush(); eq(r.asked.length, 0, 'turning off does not ask'); ok(r.calls.includes('setOn:false'), 'setOn(false)');
   r = await run({ on: true, path: '~/notes/brain', state: 'on', keepInGit: false }, null, null);
   r.els.memStop.onclick!(); await flush(); await flush(); ok(r.calls.includes('stop'), 'Stop using calls memoryStop');
+  // a refused pick shows the reason and never opens the dialog
+  r = await run({ on: false, state: 'off', keepInGit: false }, null, 'ok', { ok: false, error: 'refused', reason: 'It is your home folder.', path: '~' });
+  r.els.memChoose.onclick!(); await flush(); await flush(); await flush();
+  eq(r.asked.length, 0, 'a refused pick opens no dialog'); ok(/Refused: It is your home folder\./.test(r.els.memNotice.textContent), 'a refused pick shows the reason'); ok(!r.calls.includes('apply'), 'nothing applied');
+  // the simulator gate
+  M.init({ bridge: {}, sim: false, esc: String }); ok(!M.shown(), 'not shown without the simulator');
+  M.init(null); ok(!M.shown(), 'not shown before init');
   // a path with markup is text, never HTML
   r = await run({ on: false, path: '~/<img src=x onerror=y>', state: 'off', keepInGit: false }, null, null);
   ok(!r.html().includes('<img'), 'the path is set as text');

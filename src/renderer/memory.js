@@ -17,7 +17,6 @@
     intro:'A folder of your own notes that every agent can read. Durbar never runs git, pushes or pulls.',
   };
   const HOST_CUT=64;
-  const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
   /* FR-002: the path as `~` when it is under the home folder. Main already answers `~` paths; this is for a path that comes back whole (the simulator, a
      refusal) when the caller knows the home folder. Windows: the drive letter and the separators are told apart from POSIX by the home path itself; the
@@ -73,6 +72,8 @@
 
   let X=null;
   function init(ctx){X=ctx;}
+  /* the page's own escaper, as teams.js takes it from app.js (FR-031) */
+  const esc=s=>X.esc(s);
   /* only under the simulator until the memory note (T009) and the docs (T010) land: a folder nobody tells the agents about would be half a feature */
   function shown(){return !!(X&&X.sim);}
 
@@ -90,7 +91,7 @@
       box.innerHTML=`<p class="scr-note">${esc(WORDS.intro)}</p>
         <p class="scr-note mem-path" id="memPath"><b>Folder</b> ${has?`<code id="memPathText"></code>`:'<span>none chosen</span>'}</p>
         <div class="scr-tools"><button class="btn" type="button" id="memChoose"${busy?' disabled':''}>Choose folder…</button><button class="btn" type="button" id="memStop"${has&&!busy?'':' disabled'} aria-label="Stop using this memory folder">Stop using</button>
-          <span class="swrow" style="display:flex;align-items:center;gap:10px"><b>Use office memory</b> <small>(off: new sessions get nothing)</small><button class="swt${on?' on':''}" type="button" id="memSw" role="switch" aria-checked="${on?'true':'false'}" aria-label="Use office memory"${canSwitch?'':' disabled'}><i></i></button></span></div>
+          <span class="swrow" style="display:flex;align-items:center;gap:10px"><b>Use office memory</b><button class="swt${on?' on':''}" type="button" id="memSw" role="switch" aria-checked="${on?'true':'false'}" aria-label="Use office memory"${canSwitch?'':' disabled'}><i></i></button></span></div>
         <p class="scr-note ${line.cls}" id="memStatus" role="status"></p>
         <p class="scr-note small" id="memNotice" role="status"></p>
         <p class="scr-note">${esc(WORDS.restart)}</p>
