@@ -300,10 +300,10 @@ async function main(): Promise<void> {
           const winRows = process.platform === 'win32';
           assert.strictEqual(inside(p1, [proj]), winRows, `FR-320 unresolved-1: ${winRows ? 'inside on Windows' : 'outside'}`);
           assert.strictEqual(readIsInsideRoots('Read', toolIn(p1), [proj]), winRows, 'FR-320 unresolved-1: a read (Claude) follows the same rule');
-          // unresolved-19: a missing part, then a part that climbs back over a link
+          // unresolved-19
           if (winRows) console.log('permissions: SKIP FR-320 unresolved-19 rows (the OS reads such paths as text on Windows; this code answers outside, a safe superset)');
           else {
-            const q1 = [proj, 'nodir', '..', 'unresolved-1', '..', 'pwned.txt'].join(path.sep);
+            const q1 = [proj, 'nodir', '..', 'unresolved-1', '..', 'x19.txt'].join(path.sep);
             const q2 = [proj, 'a', 'b', '..', '..', 'unresolved-1', '..', 'x'].join(path.sep);
             for (const q of [q1, q2]) {
               assert.ok(!inside(q, [proj]), 'FR-320 unresolved-19: outside');
