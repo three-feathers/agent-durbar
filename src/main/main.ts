@@ -43,6 +43,8 @@ import { register as registerNotesIpc } from './ipc/notes';
 import { register as registerTeamsIpc } from './ipc/teams';
 import { register as registerMemoryIpc } from './ipc/memory';
 import { defaultProfileEnv } from './profilefiles';
+import { MemoryNote, StartRoots } from './memorynote';
+import { NoteSentStore, fingerprint } from './notesent';
 import { MemoryOps, OfficeMap, nodeMemoryCtx, collectOfficeFolders, cappedWorkspaceReader } from './memoryops';
 import { memoryGitRemote, memoryGitFlags } from './memorygit';
 import { pickFolder } from './pickfolder';
@@ -76,7 +78,7 @@ import { missingChecker } from './mcpcmdcheck';
 import { mergeLoginPath, nodeLoginPathDeps, readLoginShellPath } from './loginpath';
 import { renameOp, titleSyncOf } from './sessionnames';
 import { adapterForAdd, createRouter, previousSessionsOf } from '../adapters/router';
-import { assistedOnEvent, endSessionOp, mcpNudgeOp, restorable, scheduledSendOp, sendWithSlash, startGuardOp, stopTurnOp, validMode } from './agentops';
+import { assistedOnEvent, endSessionOp, mcpNudgeOp, restorable, scheduledSendOp, sendWithMemoryNote, startGuardOp, stopTurnOp, validMode } from './agentops';
 import type { OpsDeps, StartGuardDeps } from './agentops';
 import { adapterOf } from './folders';
 import type { AgentAdapter, AgentEvent } from '../adapters/types';
@@ -474,8 +476,11 @@ function folderSetupStart(key: string, dirs: readonly string[], appId: string, t
 /** spec 116 F1: the folders of a session that is not in `agents` yet (the start runs before `agents.set`), as `officeFolders` lists a live one. */
 const startingFolders = (a: AgentInfo): string[] => collectOfficeFolders([{ key: wsKey(a), folders: rootsOf(a), workspaceFile: a.workspaceFile }], [], cappedWorkspaceReader(fs, memoryGitFlags(fs.constants), codeWorkspaceFoldersFromText, (p) => fs.realpathSync.native(p)));
 
+/** Spec 116 T009: the memory folder(s) each session was STARTED with (its `readOnlyFolders`); the note names the live folder only while it is still this one. */
+const noteStartRoots = new StartRoots();
 const startOptionsFor = (a: AgentInfo, resumeSessionId?: string) => {
   const base = { ...startOptionsOf(a, wsKey(a), DEFAULT_MODEL, asEffort(a.effort), getMemoryOps()?.readRoots(startingFolders(a)) ?? []), ...mcp.optionsFor(a.id, resumeSessionId ? { agent: a, sessionId: resumeSessionId } : undefined) }; // spec 058 FR-247: a resumed session starts with its saved switches
+  noteStartRoots.ask(a, base.readOnlyFolders); // spec 116 T009: the folders this start asks the adapter to read (the note names only this one)
   const appId = router.adapterIdOf(a.id) ?? a.adapterId ?? registry.defaultId;
   const fs61 = folderSetupStart(wsKey(a), a.folders ?? [a.cwd], appId, new Set(Object.keys(base.mcpServers)));
   // spec 087 FR-019 (the organization policy, read in main) and FR-007c (the stored choice); the adapter decides what they mean
@@ -504,6 +509,7 @@ async function addWorkspace(
   // spec 076 FR-203: the guard checks the mode and model of exactly these options and only then starts the adapter; a refusal throws
   // before the start (nothing started, nothing written), and advice is shown as a toast once the session has started (`agents:orgNote`)
   const { result: id } = await startGuardOp(orgGuard, ad, { ...startOptionsFor(draft, opts.resumeSessionId), resumeSessionId: opts.resumeSessionId });
+  noteStartRoots.begin(id, draft); // spec 116 T009: what `startOptionsFor` asked for this start
   router.bind(id, adapterId);
   const saved = folderStore?.get(wsKey(draft));
   const info: AgentInfo = { ...draft, id, hidden: saved?.hidden, label: saved?.label, defaultAgent: saved?.defaultAgent };
@@ -540,6 +546,7 @@ async function ensureLive(a: AgentInfo, opts: { quiet?: boolean } = {}): Promise
         continued.set(a.id, { resumed: resume, title: prev?.title });
       }
       await startGuardOp(orgGuard, ad, { ...startOptionsFor(a), ...(resume ? { resumeSessionId: a.id } : { sessionId: a.id }), quiet: opts.quiet ?? true }); // spec 076 FR-203
+      noteStartRoots.begin(a.id, a);
       a.lazy = false;
       a.resumeLast = undefined;
     })();
@@ -645,7 +652,7 @@ router.onEvent((e) => {
   if (s) toRenderer('agents:checkpoint', { id: e.sessionId, ...s });
 });
 
-async function sendOp(id: string, text: string, attachments: PickedFile[], ad: AgentAdapter, plan = false): Promise<{ ok: boolean; error?: string; slash?: string; slashNote?: string }> {
+async function sendOp(id: string, text: string, attachments: PickedFile[], ad: AgentAdapter, plan = false, first?: { noteId: unknown }): Promise<{ ok: boolean; error?: string; slash?: string; slashNote?: string; memoryNote?: string }> {
   const safe = (Array.isArray(attachments) ? attachments : []).filter((a) => pickedFiles.has(a.path));
   // Caps are enforced here too, not only in the UI.
   if (safe.length > MAX_ATTACH_FILES) return { ok: false, error: `Up to ${MAX_ATTACH_FILES} attachments per message (got ${safe.length}).` };
@@ -659,14 +666,19 @@ async function sendOp(id: string, text: string, attachments: PickedFile[], ad: A
     checkpoints().beginTurn(id, rootsOf(agents.get(id) as AgentInfo)); // spec 065 FR-002: a send starts a turn (scheduled prompts too)
     // spec 073 FR-005: a leading `/name` of a folder or user entry is sent as that entry's text (the apps do not load them in Durbar's
     // sessions); built-ins and anything else go as typed. Scheduled prompts come through here too.
-    const { slash, slashNote } = await sendWithSlash(ad, id, {
+    // spec 116 T009: the memory note, only on the person's first typed message of this session id (`first`, set by `agents:send` for the window's own typed
+    // send) and only the text the person was shown (`take`); added after the expansion, written as sent only after the send succeeded
+    const msg = {
       text: String(text),
       attachments: safe.map((a) => ({ path: a.path, kind: kindOfFile(a.path) })), // FR-009: checked again here, the renderer's kind is not trusted
       ...(plan ? { plan: true } : {}),
-    });
+    };
+    const note = first ? getMemoryNote()?.take(id, first.noteId) : undefined; // after the message is built: a throw above leaves no claim held
+    const { slash, slashNote, memoryNote } = await sendWithMemoryNote(ad, id, msg, note);
     for (const a of safe) pickedFiles.delete(a.path); // spec 004 FR-015: a sent file must be picked again to be sent again
     noteLastSession(agents.get(id));
-    return slash ? { ok: true, slash, ...(slashNote ? { slashNote } : {}) } : { ok: true };
+    const mem = memoryNote ? { memoryNote } : {};
+    return slash ? { ok: true, slash, ...(slashNote ? { slashNote } : {}), ...mem } : { ok: true, ...mem };
   } catch (err) {
     return { ok: false, error: failText(err, '"agents:send"') };
   }
@@ -1009,7 +1021,17 @@ const getMemoryOps = (): MemoryOps | undefined => (SIMULATOR || !settingsStore ?
     remote: (real) => memoryGitRemote(fs, memoryGitFlags(fs.constants), path.join, real),
     changed: () => toRenderer('memory:changed', memoryOps?.status()),
   })));
-registerMemoryIpc({ getOps: getMemoryOps });
+// spec 116 T009 (FR-022): the memory note for a session's first typed message (`src/main/memorynote.ts`); sent-state in userData (`memory-note-sent.json`)
+let memoryNote: MemoryNote | undefined;
+let noteSent: NoteSentStore | undefined;
+const getMemoryNote = (): MemoryNote | undefined => (SIMULATOR || !getMemoryOps() ? undefined : (memoryNote ??= new MemoryNote({
+  roots: (id) => getMemoryOps()?.readRoots(startingFolders(agents.get(id) as AgentInfo)) ?? [],
+  startRoots: (id) => noteStartRoots.of(id),
+  names: (dir) => fs.readdirSync(dir), // ONE readdir of the top level: names only, no file is opened (FR-050)
+  keyOf: (id, folder) => { const app = appIdOf(id); return app ? fingerprint(app, resumeIdFor(id), folder) : undefined; }, // the memory folder is part of the key
+  sent: (noteSent ??= new NoteSentStore(path.join(app.getPath('userData'), 'memory-note-sent.json'))),
+})));
+registerMemoryIpc({ getOps: getMemoryOps, notePreview: (id) => (agents.has(id) ? getMemoryNote()?.preview(id) : undefined) });
 registerOrgPolicyIpc({ view: () => orgPolicies.view() });
 registerSelfUpdateIpc({ getSelfUpdater: () => selfUpdater }); // spec 118 FR-024: version-only channels
 registerAdaptersIpc({ adaptersList });

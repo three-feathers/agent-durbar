@@ -204,6 +204,7 @@ test:roomorder
 test:memoryfolder
 test:memoryremote
 test:memoryops
+test:memory-note
 test:memory-ui
 test:memoryroots
 test:railorder

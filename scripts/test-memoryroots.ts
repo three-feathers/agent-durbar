@@ -428,6 +428,8 @@ section('sources', async () => {
   ok(!/addDirs[^\n]*(readRoots|readOnlyFolders)/.test(claude), 'claude.ts never mixes the read list into addDirs');
   const main = rd('src/main/main.ts');
   ok(/startOptionsOf\([^\n]*readRoots\(startingFolders\(a\)\)/.test(main), 'main fills readOnlyFolders from the memory ops, naming the folders of the session being started (F1)');
+  // mutant "F1 pin: main asks readRoots() with no starting folders": the pin must fail on it
+  ok(!/startOptionsOf\([^\n]*readRoots\(startingFolders\(a\)\)/.test(main.replace('readRoots(startingFolders(a))', 'readRoots()')), 'F1 pin mutant: the pin fails when main drops the starting folders');
 });
 
 (async () => {

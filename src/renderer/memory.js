@@ -16,6 +16,8 @@
     restart:'Running sessions keep it until they restart. Turning the memory off or choosing another folder changes new sessions only.',
     intro:'A folder of your own notes that every agent can read. Durbar never runs git, pushes or pulls.',
   };
+  /* T009 (FR-022): the two words of the memory note. The text itself is main's (`src/main/memorynote.ts`) and is shown exactly as it came, with textContent. */
+  const NOTE_WORDS={preview:'Sent with your next message: memory note',sent:'Memory note sent',lead:'This is what the agent reads first:'};
   const HOST_CUT=64;
 
   /* Text from main or from a folder's own name, made safe to show: the shared hidden-character definition (`unhide`, src/shared/redact.ts, passed in
@@ -149,5 +151,53 @@
     return {repaint:paint};
   }
 
-  return {WORDS,statusLine,remoteLine,confirmParts,failText,init,shown,mount};
+  /* T009: text from main (the note, the path in it) made safe to show with the shared `unhide` (the T007 rule above): hidden and direction characters out, line
+     breaks kept (the note is several lines). FAILS CLOSED: no `unhide`, or one that throws, shows nothing. Returns null for nothing to show. */
+  function safeText(t){
+    let u=null;
+    const raw=String(t==null?'':t);
+    try{u=X&&typeof X.unhide==='function'?X.unhide(raw):null;}catch(e){u=null;}
+    return typeof u==='string'&&u!==''&&u===raw?u:null; /* fails closed: a text that `unhide` would change (hidden or direction characters) is not shown cleaned, it is not shown */
+  }
+  /* T009: a closed <details> holding the exact text (textContent, never HTML), under a plain line that says what it is. Returns the element, or null. */
+  function noteDetails(doc,summary,text,cls){
+    const t=safeText(text);if(t===null)return null;
+    const d=doc.createElement('details');d.className=cls;
+    const s=doc.createElement('summary');s.textContent=summary;
+    const p=doc.createElement('p');p.className='mem-note-lead';p.textContent=NOTE_WORDS.lead;
+    const pre=doc.createElement('pre');pre.className='mem-note-text';pre.textContent=t;
+    d.appendChild(s);d.appendChild(p);d.appendChild(pre);return d;
+  }
+  /* T009 US1.2: the preview above the composer. `p` is main's {id,text} or anything else (nothing to send: the box is empty and hidden). Only under the simulator's gate. */
+  function paintNotePreview(host,p){
+    if(!host)return null;
+    host.textContent='';
+    const ok=shown()&&p&&typeof p==='object'&&typeof p.id==='string'&&typeof p.text==='string'&&p.text!=='';
+    const d=ok?noteDetails(host.ownerDocument,NOTE_WORDS.preview,p.text,'nt-notice mem-note-box'):null;
+    if(!d){host.hidden=true;delete host.dataset.noteId;return null;}
+    host.dataset.noteId=p.id;host.hidden=false;host.appendChild(d);
+    return p.id;
+  }
+  /* T009 US1.2: the line above the person's bubble; `text` is what main says it sent */
+  function sentLine(doc,text){
+    if(!shown()||typeof text!=='string'||text==='')return null;
+    const t=safeText(text);if(t===null)return null;
+    /* collapsed by default: one line, a button (Enter and Space work, aria-expanded says the state) that opens the exact text */
+    const box=doc.createElement('div');box.className='note mem-note-sent';
+    const btn=doc.createElement('button');btn.type='button';btn.className='mem-note-toggle';btn.setAttribute('aria-expanded','false');
+    const chev=doc.createElement('span');chev.setAttribute('aria-hidden','true');chev.className='mem-note-chev';chev.textContent='\u25b8 '; /* decorative: the state is aria-expanded */
+    const lab=doc.createElement('span');lab.textContent=NOTE_WORDS.sent;btn.appendChild(chev);btn.appendChild(lab);
+    const body=doc.createElement('div');body.className='mem-note-body';body.hidden=true;
+    const p=doc.createElement('p');p.className='mem-note-lead';p.textContent=NOTE_WORDS.lead;
+    const pre=doc.createElement('pre');pre.className='mem-note-text';pre.textContent=t;
+    body.appendChild(p);body.appendChild(pre);
+    btn.addEventListener('click',()=>{const open=btn.getAttribute('aria-expanded')!=='true';btn.setAttribute('aria-expanded',String(open));body.hidden=!open;chev.textContent=open?'\u25be ':'\u25b8 ';});
+    box.appendChild(btn);box.appendChild(body);return box;
+  }
+  /* T009: a chat reloaded from the agent app's history: the note's text is not kept (the app stores it, Durbar shows only that it went) */
+  function sentLineBare(doc){
+    if(!shown())return null;
+    const d=doc.createElement('div');d.className='note mem-note-sent bare';d.textContent=NOTE_WORDS.sent;return d;
+  }
+  return {WORDS,NOTE_WORDS,paintNotePreview,sentLine,sentLineBare,statusLine,remoteLine,confirmParts,failText,init,shown,mount};
 })());

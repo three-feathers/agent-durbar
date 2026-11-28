@@ -274,6 +274,10 @@ Proposed defaults, 2026-11-10. Ruben's approval on #1306 covers the scope. **Q1,
 
 ## Changes
 
+### 2026-11-28: the shared first-message builder is built by spec 116 T009 (decided by the senior developer under the coordinator's brief; Ruben may overrule)
+
+T013 is neither built nor in review, so spec 116 T009 builds `firstMessageChain(parts, deps)` (`src/main/firstmessage.ts`: nonce, mask, join; spec 116 *Changes* 2026-11-28 has its API). **Only `firstMessageChain` is shared today.** T013 builds `briefBlock(member)` as one more part on it (FR-036's nonce and mask rules) and generalises `MemoryNote` and `sendWithMemoryNote` (`src/main/memorynote.ts`, `src/main/agentops.ts`) into one preview for the whole chain with one claim per record; until then the memory note has its own preview, claim and sent record. Order in the chain (spec 116 Q10 a): general rules, floor rules, memory note, role brief.
+
 ### 2026-11-23: T011 follow-up (wiring checks, text, a known gap; decided by the coordinator under Ruben's delegation)
 
 - **Wiring is checked**: the `main` section of `test:teamcreate` now reads `main.ts` for the parts that need Electron: `room()` takes `count` from `f.team.members.length` (the cap of 8, FR-043), `rollback` passes `(key, previous, previousNames, removeRoom)` to `restoreTeamRecord` in that order (and the method's own signature is checked), `resolveTarget` counts with `teamCount` from the saved record, and `commit` writes `{ src, id, name }` per member (`src` the adapter or the default, `name` the alias or empty). Four hand-made mutants (count 0, swapped arguments, no `teamCount`, swapped `src`/`name`) each fail the test.

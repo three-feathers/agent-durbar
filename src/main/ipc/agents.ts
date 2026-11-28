@@ -113,7 +113,9 @@ export function register(deps: AgentsIpcDeps): void {
       agentState.noteNotSent(id);
       return { ok: false, notSent: true, error: 'Not sent: you stopped it while MCP sign-ins were reconnecting.' };
     }
-    const r = await sendOp(id, text, attachments, ad, plan);
+    // spec 116 T009: the memory note rides only on a message the person typed in Durbar's own window (`typed`), with the id of the preview they saw
+    const typed = fromApp(e) && !!opts && typeof opts === 'object' && (opts as { typed?: unknown }).typed === true;
+    const r = await sendOp(id, text, attachments, ad, plan, typed ? { noteId: (opts as { noteId?: unknown }).noteId } : undefined);
     if (!r.ok) agentState.noteSendFailed(id); // and Error when the send fails (app.js sendLive)
     return r;
   });

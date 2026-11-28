@@ -6,6 +6,7 @@
  */
 import * as path from 'path';
 import { isObj } from '../shared/guards';
+import { userMessageText, splitMemoryNote } from '../shared/memorynote';
 
 /** Spec 012 FR-183: longest tool name an agent event or a history tool item may carry; a longer one is left out (the event gate refuses it, `eventguard.ts`). */
 export const TOOL_NAME_MAX = 256;
@@ -103,7 +104,7 @@ export function previousSessionsFor(
     const modifiedTime = toMs(m.modifiedTime) || toMs(m.startTime);
     out.push({
       id: m.sessionId,
-      title: cleanSessionTitle(m.name, 120) ?? cleanTitle(m.summary), // a saved name (for example /rename) wins over the summary
+      title: cleanSessionTitle(m.name, 120) ?? cleanTitle(userMessageText(m.summary)), // spec 116 T009: the summary is the first prompt: the memory note is not a title; a saved name (for example /rename) wins over the summary
       startTime: toMs(m.startTime) || modifiedTime,
       modifiedTime,
       branch: typeof m.context?.branch === 'string' ? m.context.branch : undefined,
@@ -115,7 +116,7 @@ export function previousSessionsFor(
 /* ------------------------------------------------------------------ history replay ------------------------------------------------------------------ */
 
 export type HistoryItem =
-  | { type: 'user'; text: string; attachments?: { name: string; kind: 'file' | 'image' }[]; ts?: number }
+  | { type: 'user'; text: string; attachments?: { name: string; kind: 'file' | 'image' }[]; ts?: number; /** the first message carried the memory note (spec 116 T009); `text` is the person's own */ note?: true }
   | { type: 'output'; text: string; ts?: number }
   | { type: 'tool'; callId: string; tool: string; label: string; output?: string; failed?: boolean; ts?: number };
 
@@ -180,7 +181,8 @@ export function eventsToHistory(events: readonly unknown[], limits: Partial<Hist
             })
           : [];
         if (!text && !atts.length) break;
-        items.push({ type: 'user', text: cut(text, lim.maxTextChars), attachments: atts.length ? atts : undefined, ts: tsOf(raw) });
+        const sp = splitMemoryNote(text); // spec 116 T009: a user message that starts with a complete note frame: the person's own text; the note shows as a line
+        items.push({ type: 'user', text: cut(sp.text, lim.maxTextChars), attachments: atts.length ? atts : undefined, ts: tsOf(raw), ...(sp.note ? { note: true as const } : {}) });
         break;
       }
       case 'assistant.message': {
