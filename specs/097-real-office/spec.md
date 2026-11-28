@@ -335,7 +335,7 @@ Each has a recommendation (Q6 is for Paco, the crew owner). The build waits for 
 
 ## Changes
 
-### 2026-11-28: check-097-hover-card (retro entry) keeps the window blurred through its blur step (issue #2167; T612; no FR; no app change; driver `check-097-hover-card`, `scripts/ui-suite.js`)
+### 2026-11-28: check-097-hover-card (retro entry) keeps the window blurred through its blur step (issue #2167; T614; no FR; no app change; driver `check-097-hover-card`, `scripts/ui-suite.js`)
 
 **Failure:** the retro entry failed once on its first try on Windows CI with `1440x900: a card is open on a window without the focus` and passed on the retry. **Cause (inferred from the text and a Linux reproduction):** the FR-330 blur step blurs the window (`H.loseFocus()`, unchanged: it passes on the Windows shards), opens a card, and asserts the page reports no focus. On a shared desktop the OS can hand the focus back to the window while the card is open (a neighbour driver ends and its window closes), so `hasFocus()` is true again and the assert tests the environment. The non-retro entry has `focus: true` (runs alone); the retro one had not.
 
