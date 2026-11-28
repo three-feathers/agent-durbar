@@ -454,18 +454,22 @@ module.exports = async (ctx) => {
         const pl=nb&&nb.previousElementSibling,runs=()=>pl?pl.getAnimations().filter(n=>!n.animationName&&n.playState==='running'&&n.effect&&n.effect.getKeyframes().some(f=>f.translate||f.scale)):[];
         const n0=runs().length;
         if(!nb||!gone||!had||!n0||(${jsLiteral(gap)}>0&&n0<2))return {k,had,gone,made:!!nb,running:n0};
-        if(${jsLiteral(third)})setTimeout(()=>{if(pl.isConnected)pl.animate([{translate:'28px 0'},{translate:'0 0'}],{duration:600,easing:'ease-out'})},400); /* an ease no draw made, begun late so it outlasts the first two */
         const geo=()=>({win:[innerWidth,innerHeight],screen:[screen.width,screen.height],at:[screenX,screenY],dpr:devicePixelRatio}),fr=[];
-        const M=window.__peM={max:0,n:0,done:false,final:null,frames:fr,geo:geo()},t0=performance.now();let end=0;
-        const step=()=>{const now=performance.now(),o=Number(getComputedStyle(nb).opacity),e=runs();M.n++;if(e.length){if(o>M.max)M.max=o;}else if(!end)end=now;
+        const M=window.__peM={max:0,n:0,done:false,final:null,frames:fr,geo:geo(),third:${jsLiteral(third)}?{at:null,running:0,left:null}:null},t0=performance.now();let end=0;
+        const step=()=>{const now=performance.now(),o=Number(getComputedStyle(nb).opacity),e=runs();M.n++;if(e.length){end=0;if(o>M.max)M.max=o;}else if(!end)end=now;
           if(fr.length<80)fr.push([Math.round(now-t0),Math.round(o*100)/100,e.map(x=>Math.round(x.startTime||0)+'/'+Math.round(x.effect.getTiming().duration)+'/'+Math.round(x.currentTime||0)).join(' '),nb._hide?'hold':'-']);
+          const T=M.third;if(T&&T.at===null&&e.length&&pl.isConnected){const left=Math.max(...e.map(x=>x.effect.getComputedTiming().endTime-(x.currentTime||0)));
+            if(left<=Math.max(...e.map(x=>x.effect.getTiming().duration))/2){T.at=Math.round(now-t0);T.running=e.length;T.left=Math.round(left);pl.animate([{translate:'28px 0'},{translate:'0 0'}],{duration:600,easing:'ease-out'})}}
           if((end&&now-end>300)||now-t0>4000){M.done=true;M.final=o}else requestAnimationFrame(step)};
         step();return {k,had,gone,made:true,running:n0}})()`);
       assert.ok(mk.had && mk.gone && mk.made && mk.running >= 1 && (gap === 0 || mk.running >= 2), `${tag}: ${what}: a pencil is made again while its plate eases, with ${gap ? 'two' : 'one'} running (${JSON.stringify(mk)})`);
       await must(`!!(window.__peM||{}).done`, `${tag}: ${what}: the made pencil sampled to 300 ms past its plate's last ease`, 8000);
       const M = await js(`window.__peM`);
-      log(tag, `pencil made mid-ease, ${what}: ${M.n} frames, highest opacity while a plate ease ran ${M.max}, after ${M.final}`);
+      log(tag, `pencil made mid-ease, ${what}: ${M.n} frames, highest opacity while a plate ease ran ${M.max}, after ${M.final}${M.third ? `; the third ease begun at ${M.third.at} ms with ${M.third.running} running, ${M.third.left} ms of them left` : ''}`);
       const diag = () => `window ${M.geo.win.join('x')} on a ${M.geo.screen.join('x')} screen at ${M.geo.at.join(',')}, dpr ${M.geo.dpr}; frames [ms opacity 'start/duration/currentTime of each running ease' hold]: ${M.frames.map((f) => f.join(' ')).join(' | ')}`.slice(0, 1400);
+      /* the case's premise: the third ease begins while the plate's own eases still run (the hold's second look must find it); it is begun by state, when they are half over, never at a fixed time: a plate's ease is 280 to 520 ms by its distance, so
+         a fixed 400 ms began it after the last one had ended in a 976x658 window (356 ms eases, CI of the merge of T605 on Windows), where the pencil is rightly shown */
+      if (M.third) assert.ok(M.third.at !== null && M.third.running >= 1, `${tag}: ${what}: the third ease is begun while the plate's own eases still run (${JSON.stringify(M.third)}; ${diag()})`);
       assert.ok(M.max < 0.05, `${tag}: a pencil made while its plate eases is held at opacity 0 until the ease ends (${what}: highest ${M.max} in ${M.n} frames; ${diag()})`);
       assert.ok(M.final >= 0.99, `${tag}: and it is shown once the last ease is over (${what}: opacity ${M.final})`);
       await must(STILL, `${tag}: still after the made pencil's eases (${what})`, 8000);
