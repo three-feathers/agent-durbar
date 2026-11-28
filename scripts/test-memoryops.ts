@@ -729,7 +729,7 @@ section('source', () => {
   const sim = rd('src/renderer/sim.ts');
   const fn = sim.slice(sim.indexOf('function simMemoryApi'), sim.indexOf("type SimNote = "));
   ok(fn.length > 500 && !/require\(|from 'fs'|localStorage|fetch\(/.test(fn), 'the simulator fakes touch no disk');
-  ok(/\/tmp\/durbar-sim-memory/.test(fn), 'the simulator names a temp folder only');
+  ok(/'~\/notes\/brain'/.test(fn) && !/\/tmp\/durbar/.test(fn), 'the simulator names an example path only');
   ok(/memoryPick: async \(\) =>/.test(fn), 'the simulated pick takes no path');
 });
 
