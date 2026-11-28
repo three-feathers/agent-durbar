@@ -17,9 +17,14 @@ import { SettingsStore } from '../src/main/settings';
 import type { MemoryFlavor, RemoteAnswer } from '../src/shared/memoryfolder';
 
 const MODNAME = process.env.MEMORYOPS_MODULE ?? 'memoryops';
-const IS_COPY = process.env.MEMORYOPS_MODULE !== undefined;
+const FOLDERS_NAME = process.env.FOLDERS_MODULE ?? 'folders';
+const IS_COPY = process.env.MEMORYOPS_MODULE !== undefined || process.env.FOLDERS_MODULE !== undefined;
 // eslint-disable-next-line @typescript-eslint/no-var-requires
-const { MemoryOps, nodeMemoryCtx, expandOfficeFolders, collectOfficeFolders, cappedWorkspaceReader, MAX_WORKSPACE_BYTES, TOKEN_MS } = require('../src/main/' + MODNAME) as typeof import('../src/main/memoryops');
+const { MemoryOps, OfficeMap, nodeMemoryCtx, expandOfficeFolders, collectOfficeFolders, cappedWorkspaceReader, MAX_WORKSPACE_BYTES, TOKEN_MS } = require('../src/main/' + MODNAME) as typeof import('../src/main/memoryops');
+
+// the real FolderStore (or a mutated copy of it, FOLDERS_MODULE)
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const { FolderStore } = require('../src/main/' + FOLDERS_NAME) as typeof import('../src/main/folders');
 
 let n = 0;
 const eq = <T>(a: T, b: T, m: string): void => { n++; assert.deepStrictEqual(a, b, m); };
@@ -55,7 +60,7 @@ class FakeStore {
   setMemory(f: string | undefined) { if (this.failSave) return false; this.writes.push(f); this.folder = f; this.on = f !== undefined; return true; }
   setMemoryOn(v: unknown) { if (typeof v !== 'boolean' || this.failSave) return false; this.on = v; return true; }
 }
-interface Setup { ws: Record<string, string[] | 'unreadable'>; remoteCalls: string[]; remoteAnswer: RemoteAnswer; ops: InstanceType<typeof MemoryOps>; store: FakeStore; fsx: ReturnType<typeof fakeFs>; office: string[]; clock: { t: number }; picks: Array<string | null>; changed: number[] }
+interface Setup { ws: Record<string, string[] | 'unreadable'>; remoteCalls: string[]; remoteAnswer: RemoteAnswer; ops: InstanceType<typeof MemoryOps>; store: FakeStore; fsx: ReturnType<typeof fakeFs>; office: string[]; boom: { ctxThrows: boolean }; clock: { t: number }; picks: Array<string | null>; changed: number[] }
 function setup(flavor: MemoryFlavor = POSIX, o: { fsOpts?: Parameters<typeof fakeFs>[0] } = {}): Setup {
   const fsx = fakeFs(o.fsOpts);
   const store = new FakeStore();
@@ -65,19 +70,19 @@ function setup(flavor: MemoryFlavor = POSIX, o: { fsOpts?: Parameters<typeof fak
   const changed: number[] = [];
   const ws: Record<string, string[] | 'unreadable'> = {};
   const remoteCalls: string[] = [];
-  const out = { remoteAnswer: { kind: 'none' } as RemoteAnswer };
+  const out = { remoteAnswer: { kind: 'none' } as RemoteAnswer, ctxThrows: false };
   let k = 0;
   const base = { home: flavor === POSIX ? '/home/ana' : 'C:\\Users\\ana', userData: flavor === POSIX ? '/home/ana/.config/durbar-x' : 'C:\\Users\\ana\\AppData\\Roaming\\durbar-x' };
   const ops = new MemoryOps({
     store: () => store, flavor, now: () => clock.t,
     pick: async () => (picks.length ? picks.shift()! : null),
-    ctx: () => nodeMemoryCtx(fsx, base),
+    ctx: () => { if (out.ctxThrows) throw new Error('ctx boom'); return nodeMemoryCtx(fsx, base); },
     officeFolders: () => expandOfficeFolders(office, (f) => { const m = ws[f]; if (!Array.isArray(m)) throw new Error('unreadable'); return m; }),
     remote: (real) => { remoteCalls.push(real); return out.remoteAnswer; },
     changed: () => changed.push(1),
     newToken: () => 'ab' + (++k).toString(16).padStart(30, '0'),
   });
-  return { ws, remoteCalls, get remoteAnswer() { return out.remoteAnswer; }, set remoteAnswer(v: RemoteAnswer) { out.remoteAnswer = v; }, ops, store, fsx, office, clock, picks, changed };
+  return { ws, remoteCalls, get remoteAnswer() { return out.remoteAnswer; }, set remoteAnswer(v: RemoteAnswer) { out.remoteAnswer = v; }, ops, store, fsx, office, boom: out, clock, picks, changed };
 }
 const NOTES = '/home/ana/notes';
 
@@ -480,6 +485,189 @@ section('seton', () => {
   eq(s.ops.setOn(true), { ok: false, error: 'failed' }, 'a save that fails says failed');
 });
 
+// ---------------------------------------------------------------------------------------------------------------------------------- officeadd
+section('officeadd', async () => {
+  // T008: the office is an OfficeMap; adding a folder re-checks the memory folder (FR-004 rule 4)
+  const mk = () => {
+    const s = setup();
+    const agents = new OfficeMap<string, string>(() => s.ops.recheck());
+    const add = (id: string, folder: string): void => { s.office.push(folder); agents.set(id, folder); };
+    s.store.folder = NOTES; s.store.on = true;
+    return { s, agents, add };
+  };
+  for (const [what, folder] of [['inside the memory folder', NOTES + '/sub'], ['around the memory folder', '/home/ana']] as const) {
+    const { s, agents, add } = mk();
+    eq(s.ops.status().state, 'on', what + ': on first');
+    eq(named('readRoots before', () => s.ops.readRoots()), [NOTES], what + ': root before');
+    const pushed = s.changed.length;
+    add('a1', folder);
+    eq(agents.get('a1'), folder, what + ': the folder is still added');
+    eq(s.changed.length - pushed, 1, what + ': memory:changed pushed exactly once');
+    const st = s.ops.status();
+    eq(st.state, 'refused', what + ': state refused');
+    ok(st.state === 'refused' && (st.reason ?? '').endsWith('The folder: ' + folder.replace('/home/ana/', '~/')), what + ': the reason names the folder');
+    eq(s.ops.readRoots(), [], what + ': new sessions get no root');
+    eq(s.store.on, true, what + ': nothing stored: on stays as set');
+    eq(s.store.writes.length, 0, what + ': no setting was written');
+    add('a2', '/work/example.invalid/other');
+    eq(s.changed.length - pushed, 1, what + ': a second add changing nothing pushes nothing');
+    // the clash goes away: the memory comes back, once
+    s.office.length = 0; s.office.push('/work/example.invalid/other');
+    agents.delete('a1');
+    eq(s.changed.length - pushed, 2, what + ': the clash gone is pushed once');
+    eq(s.ops.status().state, 'on', what + ': on again');
+  }
+  { // an unrelated folder: no change, no push
+    const { s, agents, add } = mk();
+    s.ops.status();
+    const pushed = s.changed.length;
+    add('a1', '/work/example.invalid/proj');
+    eq(agents.has('a1'), true, 'unrelated: added');
+    eq(s.changed.length, pushed, 'unrelated: no push');
+    eq(s.ops.readRoots(), [NOTES], 'unrelated: root kept');
+  }
+  { // no baseline (the window never read it): a clean add pushes nothing, a clash pushes
+    const { s, add } = mk();
+    add('a1', '/work/example.invalid/proj');
+    eq(s.changed.length, 0, 'no baseline, clean: no push');
+    add('a2', NOTES);
+    eq(s.changed.length, 1, 'no baseline, clash: pushed');
+  }
+  { // memory off or unlinked: nothing to turn off, no folder looked at
+    const { s, add } = mk();
+    s.store.on = false;
+    const log = s.fsx.log.length;
+    add('a1', NOTES);
+    eq(s.changed.length, 0, 'off: no push');
+    eq(s.fsx.log.length, log, 'off: the folder is not looked at (FR-001)');
+    s.store.folder = undefined;
+    add('a2', NOTES);
+    eq(s.changed.length, 0, 'unlinked: no push');
+  }
+  { // an unreadable workspace file added to the office refuses and is named
+    const { s, add } = mk();
+    s.ops.status();
+    s.ws['/work/example.invalid/x.code-workspace'] = 'unreadable';
+    add('a1', '/work/example.invalid/x.code-workspace');
+    const st = s.ops.status();
+    eq(st.state, 'refused', 'unreadable workspace: refused');
+    ok(st.state === 'refused' && (st.reason ?? '').includes('x.code-workspace'), 'unreadable workspace: named');
+  }
+  { // T008 round 3: a throwing ctx() during the re-check is told, once, as refused (never a stale "On")
+    const { s, add } = mk();
+    eq(s.ops.status().state, 'on', 'ctx throw: on first');
+    const pushed = s.changed.length;
+    s.boom.ctxThrows = true;
+    add('a1', '/work/example.invalid/proj');
+    eq(s.changed.length - pushed, 1, 'ctx throw: pushed once');
+    add('a2', '/work/example.invalid/proj2');
+    eq(s.changed.length - pushed, 1, 'ctx throw: not pushed again while it lasts');
+    const st = s.ops.status();
+    ok(st.state === 'refused' && st.reason === 'It could not be checked.', 'ctx throw: refused, "It could not be checked."');
+    s.boom.ctxThrows = false;
+    add('a3', '/work/example.invalid/proj3');
+    eq(s.changed.length - pushed, 2, 'ctx throw: back on is pushed');
+    eq(s.ops.status().state, 'on', 'ctx throw: on again');
+  }
+  { // a throwing onChange or recheck never breaks the add
+    const m = new OfficeMap<string, string>(() => { throw new Error('boom'); });
+    m.set('a', 'b');
+    eq(m.get('a'), 'b', 'a throwing hook still adds');
+    const none = new MemoryOps({ store: () => { throw new Error('x'); }, flavor: POSIX, pick: async () => null, ctx: () => nodeMemoryCtx(fakeFs(), { home: '/h', userData: '/u' }), officeFolders: () => [] });
+    none.recheck();
+    ok(true, 'recheck never throws');
+  }
+  { // race: a folder added while the pick dialog is open; apply re-checks and refuses
+    const { s, add } = mk();
+    s.store.folder = undefined; s.store.on = false;
+    s.picks.push(NOTES);
+    const p = await s.ops.pick();
+    ok(p.ok, 'pick ok');
+    add('a1', NOTES + '/sub');
+    const r = s.ops.apply(p.ok ? p.token : '');
+    eq(r.ok, false, 'a folder added after the pick refuses the apply');
+    eq(s.store.writes.length, 0, 'nothing saved');
+  }
+  { // race: stop / setOn between rechecks are synchronous and leave one coherent state
+    const { s, add } = mk();
+    s.ops.status();
+    add('a1', NOTES + '/sub');
+    eq(s.ops.status().state, 'refused', 'refused');
+    eq(s.ops.setOn(true).ok, false, 'turning on while the clash lasts is refused');
+    eq(s.ops.setOn(false).ok, true, 'turning off');
+    const pushed = s.changed.length;
+    add('a2', '/work/example.invalid/p2');
+    eq(s.changed.length, pushed, 'off: later adds push nothing');
+    eq(s.ops.stop().ok, true, 'stop');
+    add('a3', NOTES);
+    eq(s.ops.status().state, 'off', 'unlinked stays off');
+  }
+  { // clear() is a removal too
+    const { s, agents, add } = mk();
+    s.ops.status();
+    const pushed = s.changed.length;
+    add('a1', NOTES + '/sub');
+    eq(s.changed.length - pushed, 1, 'clear: the clash is pushed');
+    s.office.length = 0;
+    agents.clear();
+    eq(agents.size, 0, 'clear: emptied');
+    eq(s.changed.length - pushed, 2, 'clear: the clash gone is pushed');
+    agents.clear();
+    eq(s.changed.length - pushed, 2, 'clear: an empty map notifies nothing');
+  }
+  { // the saved list (FolderStore) is part of the office: every change to it re-checks, in the real order of a removal
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-memfs-'));
+    try {
+      const s = setup();
+      s.store.folder = NOTES; s.store.on = true;
+      const fstore = new FolderStore(path.join(tmp, 'folders.json'));
+      const agents = new OfficeMap<string, string>(() => s.ops.recheck());
+      fstore.onListChange = () => s.ops.recheck();
+      // what main's officeFolders does: the live agents plus the saved rooms, read at each check (the fake ops read `s.office`)
+      const sync = (): void => { s.office.length = 0; s.office.push(...new Set([...agents.values(), ...fstore.list().map((f) => f.workspace)])); };
+      const read = s.ops.recheck.bind(s.ops);
+      s.ops.recheck = () => { sync(); read(); };
+      const room = NOTES + '/sub';
+      eq(s.ops.status().state, 'on', 'saved: on first');
+      const base = s.changed.length;
+      fstore.upsert({ workspace: room, permMode: 'read-only' });
+      eq(s.changed.length - base, 1, 'saved: a saved room that clashes is pushed by the store');
+      sync(); eq(s.ops.status().state, 'refused', 'saved: refused while the room is saved');
+      agents.set('a1', room);
+      eq(s.changed.length - base, 1, 'saved: the agent for the saved room changes nothing');
+      // the real order of folders:remove: the agent leaves first (the room is still saved, still a clash), then the store removal clears it
+      agents.delete('a1');
+      eq(s.changed.length - base, 1, 'saved: the agent leaving while the room is still saved pushes nothing');
+      fstore.remove(room);
+      eq(s.changed.length - base, 2, 'saved: the store removal pushes the memory back');
+      sync(); eq(s.ops.status().state, 'on', 'saved: on again');
+      // a saved room added without any place (setTeamRecord alone) pushes the refusal; the rollback pushes it back
+      const rec = { templates: ['T'], members: [{ memberId: 'a'.repeat(32), name: 'M', role: 'r', sendBrief: true, app: 'copilot', mode: 'read-only' as const, sessions: [{ id: 'old-0' }] }] };
+      const b2 = s.changed.length;
+      ok(fstore.setTeamRecord(room, rec), 'a team record created the room');
+      eq(s.changed.length - b2, 1, 'saved: a room added by setTeamRecord is pushed without any place');
+      ok(fstore.restoreTeamRecord(room, undefined, [], true), 'the rollback ran');
+      eq(fstore.list().length, 0, 'the rollback removed the room');
+      eq(s.changed.length - b2, 2, 'saved: the rollback that drops the room pushes the memory back');
+      // load() re-reads the file and says so
+      let loaded = 0;
+      const fresh = new FolderStore(path.join(tmp, 'folders.json'));
+      fresh.onListChange = () => { loaded++; };
+      fresh.load();
+      eq(loaded, 1, 'saved: load notifies');
+      // a hook that throws never breaks a list change
+      const thrower = new FolderStore(path.join(tmp, 'other.json'));
+      thrower.onListChange = () => { throw new Error('boom'); };
+      thrower.upsert({ workspace: path.join(tmp, 'x'), permMode: 'read-only' });
+      eq(thrower.list().length, 1, 'saved: a throwing list hook still saves');
+    } finally { fs.rmSync(tmp, { recursive: true, force: true }); }
+  }
+  // main.ts uses the one hook
+  const main = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'main', 'main.ts'), 'utf8');
+  ok(/const agents = new OfficeMap<string, AgentInfo>\(\(\) => getMemoryOps\(\)\?\.recheck\(\)\)/.test(main), 'main.ts: the agents map is the OfficeMap that re-checks');
+  ok(/folderStore\.onListChange = \(\) => getMemoryOps\(\)\?\.recheck\(\)/.test(main), 'main.ts: the saved list re-checks too');
+});
+
 // ---------------------------------------------------------------------------------------------------------------------------------- stop
 section('stop', async () => {
   const s = setup();
@@ -569,13 +757,14 @@ section('source', () => {
   if (failed > 0) { console.error(`memoryops: ${failed} section(s) failed`); process.exit(1); }
   if (IS_COPY) { console.log(`memoryops (copy): ${n} checks passed`); return; }
   const dir = path.join(__dirname, '..', 'src', 'main');
-  const orig = fs.readFileSync(path.join(dir, 'memoryops.js'), 'utf8');
+  const origs = { memoryops: fs.readFileSync(path.join(dir, 'memoryops.js'), 'utf8'), folders: fs.readFileSync(path.join(dir, 'folders.js'), 'utf8') };
+  const srcOf = (m: { file?: 'folders' }): string => origs[m.file ?? 'memoryops'];
   const mutate = (text: string, m: { name: string; from: string; to: string }): string => {
     const lf = text.replace(/\r\n/g, '\n');
     assert.ok(lf.includes(m.from), 'mutant anchor not found: ' + m.name);
     return lf.split(m.from).join(m.to);
   };
-  const mutants: { name: string; from: string; to: string; section: string }[] = [
+  const mutants: { name: string; from: string; to: string; section: string; file?: 'folders' }[] = [
     // the two the task names
     { name: 'a path is accepted from the window', from: '    apply(token) {\n', to: "    apply(token) {\n        if (typeof token === 'string' && token.startsWith('/')) this.live = { token, real: token, expiresAt: Infinity };\n", section: 'apply' },
     { name: 'apply without the re-check', from: 'r = this.check(e.chosen);', to: 'r = { ok: true, real: e.real };', section: 'recheck' },
@@ -606,12 +795,23 @@ section('source', () => {
     { name: 'status looks at the folder while off', from: "if (!st.memoryOn)\n            return { on: false, path, state: 'off', keepInGit };", to: '', section: 'status' },
     { name: 'setOn(true) does not re-check', from: 'if (v) {\n            const folder = st.memoryFolder;', to: 'if (false) {\n            const folder = st.memoryFolder;', section: 'recheck' },
     { name: 'stop checks the folder', from: '        const saved = st.setMemory(undefined);', to: '        this.deps.ctx().lstat("/x");\n        const saved = st.setMemory(undefined);', section: 'stop' },
+    // T008
+    { name: 'the re-check is skipped when an office folder is added', from: 'set(k, v) { super.set(k, v); this.notify();', to: 'set(k, v) { super.set(k, v);', section: 'officeadd' },
+    { name: 'memory:changed is not pushed by the re-check', from: '            this.seen = key;\n            this.deps.changed?.();', to: '            this.seen = key;', section: 'officeadd' },
+    { name: 'the added folder is refused instead of added', from: 'set(k, v) { super.set(k, v); this.notify();', to: 'set(k, v) { this.notify();', section: 'officeadd' },
+    { name: 're-check ignores a thrown error', from: 'try {\n            path = this.shown(folder);\n        }\n        catch {\n            path = folder;\n        }', to: 'path = this.shown(folder);', section: 'officeadd' },
+    { name: 'clear() does not notify', from: 'clear() { const n = this.size; super.clear(); if (n > 0)\n        this.notify(); }', to: 'clear() { super.clear(); }', section: 'officeadd' },
+    { name: 'the saved list hook is dropped from remove', from: '        this.save();\n        this.listChanged();\n        return true;', to: '        this.save();\n        return true;', section: 'officeadd', file: 'folders' },
+    { name: 'the saved list hook is dropped from the team rollback', from: 'if (this.folders !== before.folders)\n                this.listChanged();', to: '', section: 'officeadd', file: 'folders' },
+    { name: 'the saved list hook is dropped from setTeamRecord', from: 'if (created)\n                this.listChanged();', to: '', section: 'officeadd', file: 'folders' },
+    { name: 'the saved list hook is dropped from upsert', from: 'if (!cur)\n            this.listChanged();', to: '', section: 'officeadd', file: 'folders' },
+    { name: 'the saved list hook is dropped from load', from: '        this.listChanged();\n        return this.list();', to: '        return this.list();', section: 'officeadd', file: 'folders' },
     { name: 'stop leaves a pending token', from: '        this.live = undefined;\n        this.gen++;', to: '        this.gen++;', section: 'stop' },
   ];
-  const lf = orig.replace(/\r\n/g, '\n');
-  assert.deepStrictEqual(mutants.filter((m) => !lf.includes(m.from)).map((m) => m.name), [], 'mutant anchors not found');
-  for (const m of mutants) assert.strictEqual(lf.split(m.from).length - 1, 1, 'the anchor of "' + m.name + '" matches exactly once');
-  for (const m of mutants) ok(mutate(lf.replace(/\n/g, '\r\n'), m).length > 0, 'the anchor of "' + m.name + '" is found in a CRLF source');
+  const lfOf = (m: { file?: 'folders' }): string => srcOf(m).replace(/\r\n/g, '\n');
+  assert.deepStrictEqual(mutants.filter((m) => !lfOf(m).includes(m.from)).map((m) => m.name), [], 'mutant anchors not found');
+  for (const m of mutants) assert.strictEqual(lfOf(m).split(m.from).length - 1, 1, 'the anchor of "' + m.name + '" matches exactly once');
+  for (const m of mutants) ok(mutate(lfOf(m).replace(/\n/g, '\r\n'), m).length > 0, 'the anchor of "' + m.name + '" is found in a CRLF source');
   assert.throws(() => mutate('no such text', mutants[0]), /mutant anchor not found: /, 'a missing anchor says so');
   let killed = 0;
   let k = 0;
@@ -620,10 +820,10 @@ section('source', () => {
     const uniq = `memoryops.mutant-${process.pid}-${k}`;
     const file = path.join(dir, uniq + '.js');
     try {
-      const mutated = mutate(orig, m);
+      const mutated = mutate(srcOf(m), m);
       try { new vm.Script(mutated, { filename: uniq }); } catch (e) { assert.fail('mutant is not valid JavaScript (' + m.name + '): ' + (e as Error).message); }
       fs.writeFileSync(file, mutated);
-      const r = spawnSync(process.execPath, [__filename], { env: Object.assign({}, process.env, { MEMORYOPS_MODULE: uniq }), encoding: 'utf8', timeout: 120000 });
+      const r = spawnSync(process.execPath, [__filename], { env: Object.assign({}, process.env, m.file === 'folders' ? { FOLDERS_MODULE: uniq } : { MEMORYOPS_MODULE: uniq }), encoding: 'utf8', timeout: 120000 });
       assert.notStrictEqual(r.status, 0, 'mutant NOT killed: ' + m.name);
       const died = [...r.stderr.matchAll(/SECTION (\w+) FAILED/g)].map((x) => x[1]);
       assert.ok(died.includes(m.section), `mutant "${m.name}" must die in section "${m.section}", it died in: ${died.join(',') || r.stderr.slice(0, 200)}`);

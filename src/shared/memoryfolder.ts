@@ -33,7 +33,7 @@ export interface MemoryFolderCtx {
   lstat(p: string): { isDirectory(): boolean };
 }
 export type MemoryRefusal = 'not-absolute' | 'unc' | 'root' | 'home' | 'app-data' | 'agent-folder' | 'system' | 'office-folder' | 'secret-location' | 'not-folder' | 'unreadable';
-export type MemoryFolderCheck = { ok: true; real: string } | { ok: false; reason: MemoryRefusal; text: string };
+export type MemoryFolderCheck = { ok: true; real: string } | { ok: false; reason: MemoryRefusal; text: string; /** `office-folder` only: the office folder (as given) that clashes (T008: Settings names it) */ clash?: string };
 
 const TEXT: Record<MemoryRefusal, string> = {
   'not-absolute': 'This is not a full folder path.',
@@ -142,7 +142,8 @@ export function checkMemoryFolder(candidate: string, ctx: MemoryFolderCtx, flavo
   };
   if (sysList.some(sysHit)) return refuse('system');
   if (hits([...AGENT_APPS.map((n) => p.join(ctx.home, n)), ...(ctx.agentHomes ?? [])])) return refuse('agent-folder');
-  if (hits([...ctx.officeFolders])) return refuse('office-folder');
+  const clash = ctx.officeFolders.find((x) => hits([x]));
+  if (clash !== undefined) return { ok: false, reason: 'office-folder', text: TEXT['office-folder'], clash };
 
   const secrets = SECRET_NAMES.map((n) => p.join(ctx.home, ...n.split('/')));
   const e = ctx.env ?? {};

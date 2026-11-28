@@ -113,7 +113,7 @@ module.exports = async (ctx) => {
     await must(`document.body.classList.contains('panel-open')&&!!document.querySelector('.inbox textarea')`, 'the chat and its message box');
     await H.settle();
     if (MUTANT === 'halo') await js(`(()=>{const s=document.createElement('style');s.textContent='html[data-world="retro"] .inbox textarea:focus-visible{box-shadow:0 0 0 5px #ff004d!important}';document.head.appendChild(s);return 1})()`);
-    if (BLUR) assert.ok(await H.loseFocus(), tag + ': the window is blurred, so the page reports no focus (the setup of the message box step)'); /* H.loseFocus: releases any emulation first, then blur() and until no focus */
+    if (BLUR) await H.forceBlur('check-102-arcade-labels', tag, 'message box step'); /* H.forceBlur (loseFocus: releases any emulation first, then blur() and until no focus): where the OS refuses the blur (Windows) it prints a skip line and goes on */
     if (MUTANT !== 'nofocus') await H.needFocus(`${tag}: before the message box is focused`); /* the real focus, by state; not the emulation, which keeps the page "focused" whatever the window does and so hides the blur above */
     await js(`document.querySelector('.inbox textarea').focus();0`);
     await must(`document.activeElement===document.querySelector('.inbox textarea')&&document.querySelector('.inbox textarea').matches(':focus-visible')`, 'the message box focused');
