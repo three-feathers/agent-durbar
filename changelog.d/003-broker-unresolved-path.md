@@ -1,0 +1,1 @@
+- **Fixed: the permission broker counts a path it cannot fully resolve as outside the folder** (spec 003 FR-320, #2183): it is asked or denied instead of allowed, including a dangling link inside the folder. A plain new file inside still counts as inside. Unit tests with real temp folders and mutants.
