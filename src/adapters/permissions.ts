@@ -196,28 +196,61 @@ export function brokerRealpath(x: string): string {
   }
 }
 
-/** Real path of `p`; when it does not exist yet, the real path of its nearest existing ancestor plus the rest. */
-function realOrNearest(p: string, o: Required<Pick<PathCheckOptions, 'flavor' | 'realpath'>>): string {
+const MAX_WALK = 64;
+const MAX_LINKS = 40;
+
+/** Join without collapsing anything: the OS resolves the path itself (spec 003 FR-320). */
+function rawJoin(base: string, p: string, pm: PathCheckOptions['flavor'] & object): string {
+  return pm.isAbsolute(p) ? p : base.replace(/[\\/]+$/, '') + pm.sep + p;
+}
+
+const codeOf = (e: unknown): string | undefined => (e as NodeJS.ErrnoException | undefined)?.code;
+const isMissing = (e: unknown): boolean => codeOf(e) === 'ENOENT' || codeOf(e) === 'ENOTDIR';
+
+/**
+ * Real path of `p`, or `undefined` when it cannot be resolved (the caller counts that as outside, fail closed; spec 003 FR-320).
+ * `p` is the raw string: the resolver sees it as written. Only a missing tail under the longest resolved prefix is kept as text
+ * (and collapsed against that real prefix); a part that exists as a link but does not resolve is followed by its target; any
+ * failure other than "missing", a link loop, or a path deeper than the cap is `undefined`.
+ */
+function realOrNearest(p: string, o: Required<Pick<PathCheckOptions, 'flavor' | 'realpath'>>): string | undefined {
   const pm = o.flavor;
   let cur = p;
-  const rest: string[] = [];
-  for (let i = 0; i < 64; i++) {
+  let rest: string[] = [];
+  let links = 0;
+  let steps = 0;
+  for (;;) {
     try {
       const real = o.realpath(cur);
-      return rest.length ? pm.resolve(real, ...rest.reverse()) : real;
-    } catch {
-      const up = pm.dirname(cur);
-      if (up === cur) break;
-      rest.push(cur.slice(up.length).replace(/^[\\/]+/, ''));
-      cur = up;
+      return pm.resolve(real, ...rest);
+    } catch (e) {
+      if (!isMissing(e)) return undefined;
     }
+    const up = pm.dirname(cur);
+    let target: string | undefined;
+    try {
+      if (fs.lstatSync(cur).isSymbolicLink()) {
+        if (++links > MAX_LINKS) return undefined;
+        const t = fs.readlinkSync(cur);
+        target = pm.isAbsolute(t) ? t : up.replace(/[\\/]+$/, '') + pm.sep + t;
+      }
+    } catch (e) {
+      if (!isMissing(e)) return undefined;
+    }
+    if (target !== undefined) {
+      cur = target;
+      steps = 0;
+      continue;
+    }
+    if (up === cur || ++steps > MAX_WALK) return undefined;
+    rest = [cur.slice(up.length).replace(/^[\\/]+/, ''), ...rest];
+    cur = up;
   }
-  return p;
 }
 
 /**
- * Is `p` inside one of `roots`? Relative paths resolve against the first root; `..` is collapsed and symlinks are resolved
- * (a link inside a root that points outside counts as outside). A missing or empty path is outside.
+ * Is `p` inside one of `roots`? Relative paths resolve against the first root; symlinks are resolved
+ * (a link inside a root that points outside counts as outside). A missing or empty path, or one whose real location cannot be resolved, is outside.
  */
 export function isInsideRoots(p: string | undefined, roots: readonly string[], opts: PathCheckOptions = {}): boolean {
   if (!p || !roots.length) return false;
@@ -227,9 +260,13 @@ export function isInsideRoots(p: string | undefined, roots: readonly string[], o
   const ci = opts.caseInsensitive ?? process.platform === 'win32';
   const o = { flavor, realpath };
   const norm = (x: string): string => (ci ? x.toLowerCase() : x);
-  const target = norm(realOrNearest(flavor.resolve(roots[0], p), o));
+  const real = realOrNearest(rawJoin(flavor.resolve(roots[0]), p, flavor), o);
+  if (real === undefined) return false;
+  const target = norm(real);
   return roots.some((r) => {
-    const root = norm(realOrNearest(flavor.resolve(r), o));
+    const resolved = realOrNearest(flavor.isAbsolute(r) ? r : flavor.resolve(r), o);
+    if (resolved === undefined) return false;
+    const root = norm(resolved);
     const rel = flavor.relative(root, target);
     return rel === '' || (rel !== '..' && !rel.startsWith('..' + flavor.sep) && !flavor.isAbsolute(rel));
   });

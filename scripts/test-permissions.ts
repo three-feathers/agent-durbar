@@ -6,6 +6,7 @@ import * as os from 'os';
 import * as vm from 'vm';
 import * as ts from 'typescript';
 import { PermissionBroker, cleanGrantKey, grantScope, revokeGrantFor, revokeCallFor, CALLS_MAX, CALL_KEYS_MAX, isInsideRoots } from '../src/adapters/permissions';
+import { readIsInsideRoots, writeIsInsideRoots } from '../src/adapters/claudeModes';
 import type { BrokerEvent } from '../src/adapters/permissions';
 import { eventProblems, REQUEST_ID_MAX } from '../src/adapters/eventguard';
 import { ALLOWED_BY_KEYS_MAX } from '../src/adapters/types';
@@ -206,7 +207,7 @@ async function main(): Promise<void> {
   const realpath = (x: string): string => {
     for (const [from, to] of Object.entries(links)) if (x === from || x.startsWith(from + path.sep)) return to + x.slice(from.length);
     if (x.startsWith(path.resolve('/w')) || x.startsWith(path.resolve('/etc')) || x.startsWith(path.resolve('/tmp'))) return x;
-    throw new Error('ENOENT');
+    throw Object.assign(new Error('ENOENT'), { code: 'ENOENT' });
   };
   const pc = { realpath };
   assert.ok(isInsideRoots(path.join(root, 'a/b.ts'), [root], pc));
@@ -230,6 +231,11 @@ async function main(): Promise<void> {
       jsRealpath: ['return fs.realpathSync.native(x);', 'return fs.realpathSync(x);'],
       noFallback: ['return fs.realpathSync(x);', 'throw e;'],
       posixFold: ["opts.caseInsensitive ?? process.platform === 'win32'", 'opts.caseInsensitive ?? true'],
+      // spec 003 FR-320 mutants (neutral names): each must die at a named assert below
+      unresolvedA: ['rawJoin(flavor.resolve(roots[0]), p, flavor)', 'flavor.resolve(roots[0], p)'],
+      unresolvedB: ["codeOf(e) === 'ENOENT' || codeOf(e) === 'ENOTDIR';", 'true;'],
+      unresolvedC: ['if (up === cur || ++steps > MAX_WALK) return undefined;', 'if (up === cur) return undefined; if (++steps > MAX_WALK) return p;'],
+      unresolvedD: ['if (fs.lstatSync(cur).isSymbolicLink()) {', 'if (false as boolean && fs.lstatSync(cur).isSymbolicLink()) {'],
     };
     const mut = process.env.PERMISSIONS_MUTANT || '';
     if (mut) {
@@ -256,6 +262,75 @@ async function main(): Promise<void> {
     }
     // default case rule: only Windows folds case, so on Linux and macOS `/Work/a` is not inside `/work`
     if (process.platform !== 'win32') assert.ok(!inside('/Work/a', ['/work'], { flavor: path.posix, realpath: (x) => x }), 'default case rule: posix does not fold case');
+
+    // spec 003 FR-320: a path whose real location cannot be resolved counts as outside; only a missing tail under a resolved folder is text.
+    {
+      const tmp = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), 'durbar-fr320-'));
+      try {
+        const proj = path.join(tmp, 'proj'), away = path.join(tmp, 'away'), awaySub = path.join(away, 'sub');
+        fs.mkdirSync(proj); fs.mkdirSync(awaySub, { recursive: true });
+        fs.writeFileSync(path.join(away, 'secret.txt'), 'x');
+        fs.mkdirSync(path.join(proj, 'dir1'));
+        const mk = (target: string, name: string, type: 'dir' | 'file' = 'dir'): boolean => {
+          try { fs.symlinkSync(target, path.join(proj, name), type); return true; } catch { return false; }
+        };
+        const linked = mk(awaySub, 'unresolved-1');
+        if (!linked) console.log('permissions: SKIP FR-320 link checks (symlinks cannot be made here)');
+        else {
+          const toolIn = (file: string) => ({ file_path: file });
+          // unresolved-1: a path written through a link
+          const p1 = path.join(proj, 'unresolved-1') + path.sep + '..' + path.sep + 'secret.txt';
+          assert.ok(!inside(p1, [proj]), 'FR-320 unresolved-1: outside');
+          assert.ok(!readIsInsideRoots('Read', toolIn(p1), [proj]), 'FR-320 unresolved-1: a read is outside (Claude)');
+          // unresolved-2: a link whose target is missing
+          mk(path.join(away, 'nothing-here'), 'unresolved-2');
+          const p2 = path.join(proj, 'unresolved-2', 'new.txt');
+          assert.ok(!inside(p2, [proj]), 'FR-320 unresolved-2: outside');
+          assert.ok(!inside(path.join(proj, 'unresolved-2'), [proj]), 'FR-320 unresolved-2: the link itself is outside');
+          assert.ok(!readIsInsideRoots('Read', toolIn(p2), [proj]), 'FR-320 unresolved-2: a read is outside (Claude)');
+          assert.ok(!writeIsInsideRoots('Write', toolIn(p2), [proj]), 'FR-320 unresolved-2: a write is outside (Claude)');
+          // unresolved-3: the missing target is a name inside the root
+          mk(path.join(proj, 'later'), 'unresolved-3');
+          assert.ok(inside(path.join(proj, 'unresolved-3', 'new.txt'), [proj]), 'FR-320 unresolved-3: missing target inside the folder is inside');
+          assert.ok(writeIsInsideRoots('Write', toolIn(path.join(proj, 'unresolved-3', 'new.txt')), [proj]), 'FR-320 unresolved-3: a write is inside (Claude)');
+          // unresolved-4: a chain of two links, the last one missing
+          mk(path.join(proj, 'unresolved-5'), 'unresolved-4');
+          mk(path.join(away, 'nothing-there'), 'unresolved-5');
+          assert.ok(!inside(path.join(proj, 'unresolved-4', 'f.txt'), [proj]), 'FR-320 unresolved-4: chain ending outside is outside');
+          // unresolved-6: a loop
+          mk(path.join(proj, 'unresolved-7'), 'unresolved-6');
+          mk(path.join(proj, 'unresolved-6'), 'unresolved-7');
+          assert.ok(!inside(path.join(proj, 'unresolved-6', 'f.txt'), [proj]), 'FR-320 unresolved-6: a loop is outside and ends');
+          // a relative link target is read against the link's folder
+          try { fs.symlinkSync('../away/nothing-rel', path.join(proj, 'unresolved-8'), 'dir'); } catch { /* skipped above */ }
+          assert.ok(!inside(path.join(proj, 'unresolved-8', 'f.txt'), [proj]), 'FR-320 unresolved-8: a relative missing target outside is outside');
+          // regression: a link inside pointing inside
+          fs.mkdirSync(path.join(proj, 'real-dir')); mk(path.join(proj, 'real-dir'), 'fine-link');
+          assert.ok(inside(path.join(proj, 'fine-link', 'a.txt'), [proj]), 'FR-320 regression: a link inside pointing inside is inside');
+          assert.ok(inside([proj, 'fine-link', '..', 'dir1', 'a.txt'].join(path.sep), [proj]), 'FR-320 regression: resolved inside, the rest stays inside');
+        }
+        // regressions without links
+        assert.ok(inside(path.join(proj, 'new', 'deep', 'er', 'file.txt'), [proj]), 'FR-320 regression: a plain new file deep inside is inside');
+        assert.ok(inside([proj, 'dir1', '..', 'x.txt'].join(path.sep), [proj]), 'FR-320 regression: a path that stays inside is inside');
+        assert.ok(inside([proj, 'missing', '..', 'x.txt'].join(path.sep), [proj]), 'FR-320 regression: missing tail collapsed inside');
+        assert.ok(!inside([proj, 'missing', '..', '..', 'away', 'secret.txt'].join(path.sep), [proj]), 'FR-320 regression: missing tail that leaves the folder is outside');
+        assert.ok(!inside([proj, '..', 'away', 'secret.txt'].join(path.sep), [proj]), 'FR-320 regression: a path that leaves the folder is outside');
+        assert.ok(inside(path.join(tmp, 'not-yet', 'f.txt'), [path.join(tmp, 'not-yet')]), 'FR-320 regression: a root that does not exist yet still matches its own files');
+        // unresolved-9: a resolver that fails for a reason other than "missing"
+        for (const [n, code] of [['1', 'EACCES'], ['2', 'ELOOP']]) {
+          const stub = (x: string): string => { if (x.includes('unresolved-9')) throw Object.assign(new Error(code), { code }); return x; };
+          assert.ok(!inside(path.join(proj, 'unresolved-9', 'f.txt'), [proj], { realpath: stub }), `FR-320 unresolved-9 (resolver failure ${n}): outside`);
+          assert.ok(inside(path.join(proj, 'f.txt'), [proj], { realpath: stub }), 'FR-320 unresolved-9: other paths unaffected');
+          assert.ok(!inside(path.join(proj, 'f.txt'), [path.join(proj, 'unresolved-9')], { realpath: stub }), 'FR-320 unresolved-9: a root that cannot be resolved matches nothing');
+        }
+        // unresolved-10: a missing tail beyond the walk cap
+        const deep = path.join(proj, ...Array.from({ length: 80 }, (_, i) => `d${i}`), 'f.txt');
+        assert.ok(!inside(deep, [proj]), 'FR-320 unresolved-10: a missing path deeper than the cap is outside');
+        assert.ok(inside(path.join(proj, ...Array.from({ length: 30 }, (_, i) => `d${i}`), 'f.txt'), [proj]), 'FR-320 regression: a moderately deep new file is inside');
+      } finally {
+        fs.rmSync(tmp, { recursive: true, force: true });
+      }
+    }
   }
 
   // spec 003 FR-319: a native failure that is not "missing" falls back to the JS resolver (a link out of the root stays outside).
@@ -280,7 +355,7 @@ async function main(): Promise<void> {
       real.native = (x: string): string => { throw Object.assign(new Error('EISDIR: illegal operation on a directory'), { code: 'EISDIR', path: x }); };
       if (linked) assert.ok(!mutIn(path.join(proj, 'out', 's.txt'), [proj]), 'FR-319 fallback: a link out of the root stays outside when native fails with EISDIR');
       assert.ok(mutIn(path.join(proj, 'a.txt'), [proj]), 'FR-319 fallback: a plain path inside is inside when native fails with EISDIR');
-      real.native = (x: string): string => { throw Object.assign(new Error('ENOENT'), { code: 'ENOENT', path: x }); };
+      real.native = (x: string): string => { if (!x.includes('missing') && !x.endsWith(path.sep + 'new')) return savedNative(x); throw Object.assign(new Error('ENOENT'), { code: 'ENOENT', path: x }); };
       assert.ok(mutIn(path.join(proj, 'new', 'missing.txt'), [proj]), 'FR-319 fallback: ENOENT still walks up (a missing file under the root is inside)');
     } finally {
       real.native = savedNative;
