@@ -43,7 +43,7 @@ import { register as registerNotesIpc } from './ipc/notes';
 import { register as registerTeamsIpc } from './ipc/teams';
 import { register as registerMemoryIpc } from './ipc/memory';
 import { defaultProfileEnv } from './profilefiles';
-import { MemoryOps, nodeMemoryCtx, collectOfficeFolders, cappedWorkspaceReader } from './memoryops';
+import { MemoryOps, OfficeMap, nodeMemoryCtx, collectOfficeFolders, cappedWorkspaceReader } from './memoryops';
 import { memoryGitRemote, memoryGitFlags } from './memorygit';
 import { pickFolder } from './pickfolder';
 import { TeamsIpcOps } from './teamsipc';
@@ -230,7 +230,7 @@ router.setEventGuard(eventShape); // spec 010 FR-035: every event checked before
 const orgPolicies = new OrgPolicyCache({ ids: () => registry.list().map((d) => d.id), adapter: (id) => (registry.has(id) ? router.instance(id) : undefined) });
 /** Spec 076 FR-203: the start guard's deps; advice is shown once the session has started (a toast in the window). */
 const orgGuard: StartGuardDeps = { refusal: (id, ask) => orgPolicies.refusal(id, ask), advice: (id, ask) => orgPolicies.advice(id, ask), onNote: (text, id) => toRenderer('agents:orgNote', { id, text }) };
-const agents = new Map<string, AgentInfo>();
+const agents = new OfficeMap<string, AgentInfo>(() => getMemoryOps()?.recheck()); // spec 116 T008: the one hook for "an office folder was added or removed"
 /** Spec 069: the agent apps' own user-level MCP lists (read live; written only after the window's per-file confirmation). */
 const globalLists = new GlobalLists(() => globalFiles({ CLAUDE_CONFIG_DIR: process.env.CLAUDE_CONFIG_DIR, CODEX_HOME: process.env.CODEX_HOME, ...dev }, os.homedir()));
 const appIdOf = (id: string): string | undefined => router.adapterIdOf(id) ?? agents.get(id)?.adapterId;
@@ -1224,6 +1224,7 @@ app.whenReady().then(() => {
   });
   Menu.setApplicationMenu(menu ? Menu.buildFromTemplate(menu) : null);
   folderStore = new FolderStore(path.join(app.getPath('userData'), 'durbar-folders.json'));
+  folderStore.onListChange = () => getMemoryOps()?.recheck(); // spec 116 T008: a saved room added or removed re-checks the memory folder too
   settingsStore = new SettingsStore(path.join(app.getPath('userData'), 'durbar-settings.json'));
   settingsStore.load();
   // spec 118 FR-004: packaged builds only, never the simulator; the request only through makeFeedGet on the update session (FR-007, T507: updateFeedGet), the policy read each time (FR-005).
