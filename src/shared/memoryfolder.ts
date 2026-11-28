@@ -36,17 +36,17 @@ export type MemoryRefusal = 'not-absolute' | 'unc' | 'root' | 'home' | 'app-data
 export type MemoryFolderCheck = { ok: true; real: string } | { ok: false; reason: MemoryRefusal; text: string };
 
 const TEXT: Record<MemoryRefusal, string> = {
-  'not-absolute': 'It is not a full folder path.',
+  'not-absolute': 'This is not a full folder path.',
   unc: 'Network and device paths (\\\\server\\share, \\\\?\\) are not supported yet.',
-  root: 'It is a drive or file-system root.',
-  home: 'It is your home folder.',
-  'app-data': "It is, is inside, or holds Durbar's own data folder.",
-  'agent-folder': "It is, is inside, or holds an agent app's own folder (.copilot, .claude, .codex).",
-  system: 'It is, or is inside, a folder of the operating system (for example /proc, /sys, /dev, /etc, /usr, Windows or Program Files).',
-  'office-folder': 'It is, is inside, or holds a folder of the office: the agents there would be able to write to it.',
-  'secret-location': 'It is, is inside, or holds a folder where programs keep passwords and settings (.ssh, .config, AppData, Library...).',
-  'not-folder': 'It is not a folder.',
-  unreadable: 'It cannot be read.',
+  root: 'This is the root of a drive or of the file system.',
+  home: 'This is your home folder.',
+  'app-data': "This folder is, contains or sits inside Durbar's own data folder.",
+  'agent-folder': "This folder is, contains or sits inside an agent app's own folder (.copilot, .claude or .codex).",
+  system: 'This folder belongs to the operating system (for example /proc, /sys, /dev, /etc, /usr, Windows or Program Files).',
+  'office-folder': 'This folder is, contains or sits inside a folder of your office, so the agents there could write to it.',
+  'secret-location': 'This folder is, contains or sits inside a place where programs keep passwords and settings (.ssh, .config, AppData, Library and similar).',
+  'not-folder': 'This is not a folder.',
+  unreadable: 'This folder cannot be read.',
 };
 const refuse = (reason: MemoryRefusal): MemoryFolderCheck => ({ ok: false, reason, text: TEXT[reason] });
 
