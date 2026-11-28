@@ -192,8 +192,8 @@ export function brokerRealpath(x: string): string {
   } catch (e) {
     const code = (e as NodeJS.ErrnoException | undefined)?.code;
     if (code === 'ENOENT' || code === 'ENOTDIR') throw e;
-    // no fallback where the JS resolver would read the path differently from the native one (fail closed; spec 003 FR-320)
-    if (process.platform !== 'win32' && x.split(/[\\/]/).includes('..')) throw e;
+    // the JS resolver reads a path differently from the OS: it is the fallback on Windows only, elsewhere the path counts as outside (spec 003 FR-320)
+    if (process.platform !== 'win32') throw e;
     return fs.realpathSync(x);
   }
 }
@@ -231,13 +231,14 @@ function realOrNearest(p: string, o: Required<Pick<PathCheckOptions, 'flavor' | 
     const up = pm.dirname(cur);
     let target: string | undefined;
     // a trailing separator makes the OS follow the link: look at the link itself (a bare root stays as it is)
-    const bare = cur.replace(/[\\/]+$/, '');
+    const sepEnd = pm.sep === '\\' ? /[\\/]+$/ : /\/+$/;
+    const bare = cur.replace(sepEnd, '');
     const linkPath = bare === '' || /^[A-Za-z]:$/.test(bare) ? cur : bare;
     try {
       if (fs.lstatSync(linkPath).isSymbolicLink()) {
         if (++links > MAX_LINKS) return undefined;
         const t = fs.readlinkSync(linkPath);
-        target = pm.isAbsolute(t) ? t : pm.dirname(linkPath).replace(/[\\/]+$/, '') + pm.sep + t;
+        target = pm.isAbsolute(t) ? t : pm.dirname(linkPath).replace(sepEnd, '') + pm.sep + t;
       }
     } catch (e) {
       if (!isMissing(e)) return undefined;
@@ -248,7 +249,7 @@ function realOrNearest(p: string, o: Required<Pick<PathCheckOptions, 'flavor' | 
       continue;
     }
     if (up === cur || ++steps > MAX_WALK) return undefined;
-    rest = [cur.slice(up.length).replace(/^[\\/]+/, ''), ...rest];
+    rest = [cur.slice(up.length).replace(pm.sep === '\\' ? /^[\\/]+/ : /^\/+/, ''), ...rest];
     cur = up;
   }
 }

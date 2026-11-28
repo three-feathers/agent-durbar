@@ -8,6 +8,13 @@ import * as ts from 'typescript';
 import { PermissionBroker, cleanGrantKey, grantScope, revokeGrantFor, revokeCallFor, CALLS_MAX, CALL_KEYS_MAX, isInsideRoots } from '../src/adapters/permissions';
 import { readIsInsideRoots, writeIsInsideRoots } from '../src/adapters/claudeModes';
 import type { BrokerEvent } from '../src/adapters/permissions';
+
+/** Run `fn` with `process.platform` set to `p` (to exercise the Windows-only branch on this machine). */
+function withPlatform(p: string, fn: () => void): void {
+  const d = Object.getOwnPropertyDescriptor(process, 'platform') as PropertyDescriptor;
+  Object.defineProperty(process, 'platform', { value: p, configurable: true });
+  try { fn(); } finally { Object.defineProperty(process, 'platform', d); }
+}
 import { eventProblems, REQUEST_ID_MAX } from '../src/adapters/eventguard';
 import { ALLOWED_BY_KEYS_MAX } from '../src/adapters/types';
 import { codexPermission } from '../src/adapters/codexModes';
@@ -236,7 +243,8 @@ async function main(): Promise<void> {
       unresolvedA: ['rawJoin(flavor.resolve(roots[0]), p, flavor)', 'flavor.resolve(roots[0], p)'],
       unresolvedB: ["codeOf(e) === 'ENOENT' || codeOf(e) === 'ENOTDIR';", 'true;'],
       unresolvedC: ['if (up === cur || ++steps > MAX_WALK) return undefined;', 'if (up === cur) return undefined; if (++steps > MAX_WALK) return p;'],
-      unresolvedE: ["process.platform !== 'win32' && x.split(", "false && x.split("],
+      unresolvedE: ["if (process.platform !== 'win32') throw e;", 'if (false) throw e;'],
+      unresolvedJ: ["const sepEnd = pm.sep === '\\\\' ? /[\\\\/]+$/ : /\\/+$/;", 'const sepEnd = /[\\\\/]+$/;'],
       unresolvedF: ['const MAX_LINKS = 40;', 'const MAX_LINKS = 4000;'],
       unresolvedG: ['      steps = 0;\n', '\n'],
       unresolvedH: ["codeOf(e) === 'ENOENT' || codeOf(e) === 'ENOTDIR';", "codeOf(e) === 'ENOENT';"],
@@ -328,17 +336,25 @@ async function main(): Promise<void> {
           };
           assert.ok(!inside(path.join(proj, 'chain-0'), [proj], { realpath: noFollow }), 'FR-320 unresolved-12: a long chain of links is outside');
           assert.ok(inside(path.join(proj, 'short-0'), [proj], { realpath: noFollow }), 'FR-320 unresolved-12: a short chain ending inside is inside');
-          // the default resolver failing for a reason other than "missing"
+          // the default resolver failing for a reason other than "missing": outside, except where the JS resolver is the fallback (Windows only, simulated)
+          fs.symlinkSync('unresolved-1/../secret.txt', path.join(proj, 'unresolved-17'), 'file');
           if (process.platform !== 'win32') {
             const nat = fs.realpathSync as unknown as { native: (p: string) => string };
             const savedNat = nat.native;
             nat.native = (x: string): string => { throw Object.assign(new Error('failure'), { code: 'EINVAL', path: x }); };
             try {
               assert.ok(!inside(p1, [proj]), 'FR-320 unresolved-13: a failing default resolver gives outside');
-              assert.ok(inside(path.join(proj, 'dir1', 'a.txt'), [proj]), 'FR-320 unresolved-13: the fallback still serves a plain path');
+              assert.ok(!inside(path.join(proj, 'dir1', 'a.txt'), [proj]), 'FR-320 unresolved-13: a plain path is outside when the default resolver fails (no fallback)');
+              assert.ok(!inside(path.join(proj, 'unresolved-17'), [proj]), 'FR-320 unresolved-13: a link whose own text reads differently is outside');
+              withPlatform('win32', () => assert.ok(inside(path.join(proj, 'dir1', 'a.txt'), [proj], { caseInsensitive: false }), 'FR-320 unresolved-13: the fallback serves a plain path where it is the fallback'));
             } finally {
               nat.native = savedNat;
             }
+          }
+          // a name ending in a backslash is an ordinary name on this platform
+          if (path.sep === '/') {
+            fs.symlinkSync(proj, path.join(away, 'unresolved-18'), 'dir');
+            assert.ok(!inside(path.join(away, 'unresolved-18\\'), [proj]), 'FR-320 unresolved-18: a new name beside a link into the folder is outside');
           }
           // regression: a link inside pointing inside
           fs.mkdirSync(path.join(proj, 'real-dir')); mk(path.join(proj, 'real-dir'), 'fine-link');
@@ -364,7 +380,7 @@ async function main(): Promise<void> {
         }
         // unresolved-10: a missing tail beyond the walk cap
         const deep = path.join(proj, ...Array.from({ length: 80 }, (_, i) => `d${i}`), 'f.txt');
-        assert.ok(!inside(deep, [proj]), 'FR-320 unresolved-10: a missing path deeper than the cap is outside');
+        assert.ok(!inside(deep, [proj]), 'FR-320 unresolved-10: a very deep missing path is outside');
         assert.ok(inside(path.join(proj, ...Array.from({ length: 30 }, (_, i) => `d${i}`), 'f.txt'), [proj]), 'FR-320 regression: a moderately deep new file is inside');
       } finally {
         fs.rmSync(tmp, { recursive: true, force: true });
@@ -372,7 +388,7 @@ async function main(): Promise<void> {
     }
   }
 
-  // spec 003 FR-319: a native failure that is not "missing" falls back to the JS resolver (a link out of the root stays outside).
+  // spec 003 FR-319: on Windows only, a native failure that is not "missing" falls back to the JS resolver (a link out of the root stays outside); elsewhere it counts as outside.
   {
     const mut = process.env.PERMISSIONS_MUTANT || '';
     const mutIn = mut === 'noFallback' ? (() => {
@@ -393,7 +409,11 @@ async function main(): Promise<void> {
       try { fs.symlinkSync(secret, path.join(proj, 'out'), 'dir'); } catch { linked = false; console.log('permissions: SKIP native-failure link check (symlinks cannot be made here)'); }
       real.native = (x: string): string => { throw Object.assign(new Error('EISDIR: illegal operation on a directory'), { code: 'EISDIR', path: x }); };
       if (linked) assert.ok(!mutIn(path.join(proj, 'out', 's.txt'), [proj]), 'FR-319 fallback: a link out of the root stays outside when native fails with EISDIR');
-      assert.ok(mutIn(path.join(proj, 'a.txt'), [proj]), 'FR-319 fallback: a plain path inside is inside when native fails with EISDIR');
+      assert.ok(!mutIn(path.join(proj, 'a.txt'), [proj]), 'FR-319: outside Windows a native failure counts as outside, no fallback');
+      withPlatform('win32', () => {
+        assert.ok(mutIn(path.join(proj, 'a.txt'), [proj], { caseInsensitive: false }), 'FR-319 fallback: on Windows a plain path inside is inside when native fails with EISDIR');
+        if (linked) assert.ok(!mutIn(path.join(proj, 'out', 's.txt'), [proj], { caseInsensitive: false }), 'FR-319 fallback: on Windows a link out of the root stays outside');
+      });
       real.native = (x: string): string => { if (!x.includes('missing') && !x.endsWith(path.sep + 'new')) return savedNative(x); throw Object.assign(new Error('ENOENT'), { code: 'ENOENT', path: x }); };
       assert.ok(mutIn(path.join(proj, 'new', 'missing.txt'), [proj]), 'FR-319 fallback: ENOENT still walks up (a missing file under the root is inside)');
     } finally {
