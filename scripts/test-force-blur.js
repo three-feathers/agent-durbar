@@ -82,7 +82,7 @@ function scan(name, src) { /* the forceBlur call is its own statement (never ret
     const src = mutate(name, real.replace(/\r?\n/g, '\r\n'), re, to);
     await assert.rejects(() => battery(load(src)), (e) => died.test(e.message), `mutant "${name}" must die at a named assert`);
   }
-  for (const f of ['check-102-arcade-labels.js', 'shots-097-moments.js', 'check-brain-dock.js']) {
+  for (const f of ['check-102-arcade-labels.js', 'shots-097-moments.js', 'check-brain-dock.js', 'check-status-tooltip.js']) {
     const src = fs.readFileSync(path.join(__dirname, f), 'utf8');
     scan(f, src);
     scan(f + ' (CRLF)', src.replace(/\r?\n/g, '\r\n'));
