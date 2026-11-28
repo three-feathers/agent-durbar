@@ -458,7 +458,7 @@ The sweep asked whether the prompt about folders restored in Allow all should as
 - **The sandbox dialog too (round 5, Vikram's side).** *Continue without the OS sandbox* names the mode through `modeNameOf`, so it also says **Ask first + review** while the reviewer is on (`app.js` `continueWithoutSandbox`). read: a start or resume turns the reviewer off, so this dialog rarely shows it; no driver reaches a mid-session sandbox failure (`[KNOWN GAP]` for a driver case).
 - **Tests on main's base (spec 012 FR-197).** `assistedToggle`'s name read (a `toast(` line) is listed in `scripts/test-live-mask.ts`'s sink table as masked, after merging `origin/main`.
 
-### 2026-11-28: the broker resolves paths in the long Windows form (issue #2172, FR-319, T061)
+### 2026-11-28: the broker resolves paths in the long Windows form (issue #2172, FR-319, T610)
 
 **Why.** `isInsideRoots` (`src/adapters/permissions.ts`) resolved paths with the JS `fs.realpathSync`, which keeps Windows 8.3 short names (`RUNNER~1`), while the roots it compares against (Codex roots, spec 116 memory roots, `canonicalKey` in `src/main/addkey.ts`) come from `fs.realpathSync.native`, which gives the long form. On Windows a read inside a root, written in short form, could then count as outside. It failed closed (asked or denied, never a write allowed), was seen only in a test (#2171 CI, windows-latest), and must be fixed before spec 116's Windows real check (T030..T032). Decided by the coordinator under Ruben's delegation; timing agreed in the team chat on 2026-11-28.
 
