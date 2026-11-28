@@ -124,10 +124,19 @@ const NAMES: [string, string][] = [
   ['a Linux home folder', '/home/' + USER + '/repo'],
   ['a macOS home folder', '/Users/' + USER + '/repo'],
   ['a Windows home folder', 'C:\\Users\\' + USER + '\\repo'],
-  ['a UNC home folder', '\\\\host\\share\\' + USER + '\\repo'],
+  // spec 012 FR-435 (issue #2060 item 2): a network share path is shown whole on screen; one with a token for a folder stays hostile
+  ['a UNC path with a token folder', '\\\\host\\share\\' + GHP + '\\repo'],
   ['a Markdown-escaped token', P('gh', 'p\\_') + BODY],
   ['a home folder with a zero-width space', '/ho\u200bme/' + USER + '/repo'],
   ['a home user name with an escape', '/home/zq\\_' + USER + '/repo'],
+];
+// spec 012 FR-435 (issue #2060 item 2): network share paths, made-up servers only; each is shown whole on screen
+const B = '\\';
+const SHARES: [string, string][] = [
+  ['a UNC path', B + B + 'fs01' + B + 'projects' + B + 'teamA' + B + 'notes.txt'], ['a UNC home share', B + B + 'fs01' + B + 'homes' + B + USER + B + 'notes.txt'],
+  ['a UNC admin share', B + B + 'fs01' + B + 'c$' + B + 'logs' + B + 'app.log'], ['a UNC path on a dotted host', B + B + 'fs01.corp.example' + B + 'data' + B + 'q3' + B + 'r.xlsx'],
+  ['a forward-slash home share', '//fs01/homes/' + USER + '/notes.txt'], ['an smb link', 'smb://fs01/projects/teamA/notes.txt'],
+  ['a file link with a host', 'file://fs01/projects/teamA/notes.txt'], ['a macOS mount', '/Volumes/projects/teamA/notes.txt'],
 ];
 const NEEDLES = [GHP, BODY.slice(0, 12), SK.slice(8, 20), USER, P('gh', 'p_A1b2')];
 const hides = (s: string, what: string): void => { for (const x of NEEDLES) ok(!s.includes(x), `${what}: no piece ${x.slice(0, 4)}… is shown`); };
@@ -158,6 +167,14 @@ for (const [what, nm] of NAMES) {
   const html = 'Theme <b>Night shift</b> removed. Run <code>git log \\*.md</code> again, echo \\\\$(id).';
   const t = pg.toast(html);
   eq(t.innerHTML, html, 'FR-195 a benign toast is kept as written, markup and backslashes included');
+}
+// 3b. spec 012 FR-435 (issue #2060 item 2): a network share path is shown whole on screen (server, share, folders and file name), in a toast, a strip
+// and the chat's header name; a token in it stays hidden (the hostile names above hold a UNC path with a token folder). Made-up servers only.
+{
+  for (const [what, p] of SHARES) {
+    ok((pg.toast('Saved in <b>' + escH(p) + '</b>.').textContent || '') === 'Saved in ' + p + '.', `FR-435 toast: ${what} is shown whole`);
+    ok(shown(pg.restore(p)).includes(p), `FR-435 restore strip: ${what} is shown whole`);
+  }
 }
 // 4. a value split across markup: the joined reading hides it (union with the per-node reading)
 {
@@ -325,6 +342,7 @@ const headPage = (mode: boolean) => {
     const h2 = doc.getElementById('plain') as HTMLElement; C.paintPanelTitle({ ...a, ren: false }, h2); hides(shown(h2), `FR-197 paintPanelTitle (not renameable), ${what}`);
   }
   eq(C.nameShown({ name: 'Noor · fix the build' }), 'Noor · fix the build', 'FR-197 a benign name reads as written');
+  for (const [what, p] of SHARES) eq(C.nameShown({ name: 'Noor ' + p }), 'Noor ' + p, `FR-435 nameShown: ${what} is shown whole`);
   eq(C.panelTipOf({ name: 'Noor', alias: 'Noor', ren: true }), 'Noor Click or press F2 to rename.', 'FR-197 a benign tooltip reads as before');
   eq(headPage(false).C.nameShown({ name: 'Noor ' + GHP }), '[not checked]', 'FR-197 fails closed with no mask module');
 }

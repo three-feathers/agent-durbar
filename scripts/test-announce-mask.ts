@@ -76,7 +76,8 @@ const NAMES: [string, string][] = [
   ['a Linux home folder', '/home/' + USER + '/repo'],
   ['a macOS home folder', '/Users/' + USER + '/repo'],
   ['a Windows home folder', 'C:\\Users\\' + USER + '\\repo'],
-  ['a UNC home folder', '\\\\host\\share\\' + USER + '\\repo'],
+  // spec 012 FR-435 (issue #2060 item 2): a network share path is said whole; one with a token for a folder stays hostile
+  ['a UNC path with a token folder', '\\\\host\\share\\' + GHP + '\\repo'],
   ['a Markdown-escaped token', 'ghp\\_' + GHP.slice(4)],
   // hidden characters inside a home folder (review of PR 1484): the home mask also reads the copy without them
   ['a Linux home folder with a zero-width space in "home"', '/ho\u200bme/' + USER + '/repo'],
@@ -169,7 +170,9 @@ eq(P.say(['Ada', ' needs your OK: ', 'cat /home/zq\\_' + USER + '/a']), 'Ada nee
 eq(P.say(['Ada', ' needs your OK: ', 'cat /home/' + USER + '/a \\> b']), 'Ada needs your OK: cat ~/a \\> b', 'a home folder without an escape in it is masked, the command kept as written');
 eq(P.say('C:\\Users\\' + USER + '\\repo finished.'), '~\\repo finished.', 'a Windows home folder (backslashes, no escape) is masked as before');
 const unc = String(P.say('\\\\host\\share\\' + USER + '\\repo finished.'));
-ok(unc !== '[redacted]' && unc.endsWith('repo finished.') && !unc.includes(USER), `a UNC home folder (a doubled backslash, which the escape copy undoes) is masked as before, not hidden whole: ${unc}`);
+eq(unc, '\\\\host\\share\\' + USER + '\\repo finished.', 'FR-435: a UNC path (a doubled backslash, which the escape copy undoes) is said whole, server, share and folders included');
+for (const p of ['//fs01/homes/' + USER + '/notes.txt', 'smb://fs01/projects/teamA/notes.txt', '\\\\fs01.corp.example\\data\\q3\\r.xlsx'])
+  eq(P.say(['Ada', ' needs your OK: ', 'open ' + p]), 'Ada needs your OK: open ' + p, `FR-435: a request with a network share path is said whole: ${p}`);
 
 // 3c. through the card (review of PR 1484, finding 1): the queue and answer-bar lines read requestRaw, the card's own words before any mask,
 // so the command said is the one on the card; requestText (the bar and the inbox) is the desk-masked copy, which undoes escapes

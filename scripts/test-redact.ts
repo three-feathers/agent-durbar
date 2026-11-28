@@ -3,7 +3,7 @@ import * as assert from 'assert';
 import * as fs from 'fs';
 import * as path from 'path';
 import { Worker } from 'worker_threads';
-import { MASK_INPUT_MAX, REDACT_MAX_CHARS, createDebugSink, _uncappedForTest, cut, maskSchemeSecrets, maskTokenShapes, maskTokenShapesUnguarded, maskSecretArgs, maskSecretCommand, maskHomePaths, maskSecretUrl, maskNoteText, maskOutgoing, maskGluedTail, maskSplitTokens, _breakCallsForTest, keepShownBy, _unionMasksForTest, withoutSplit, withoutShell, _shellRefsForTest, _shellPassesForTest, _shapePassesForTest, _runReadsForTest, ESC_RUN_SHELL_SOURCE, withoutLoose, maskLoose, _homeGuardReadsForTest, _homeGuardCharsForTest, _guardEdgeScanForTest, HOME_GUARD_WINDOW_FOR_TEST, _splitWorkForTest, withoutLinkSplit, withoutContinuation, _contWorkForTest, _contScanForTest, _contPassesForTest, redact, redactMarkdown, MARKDOWN_WORK, _markdownPassForTest, shQuote, splitCommand } from '../src/shared/redact';
+import { MASK_INPUT_MAX, REDACT_MAX_CHARS, createDebugSink, _uncappedForTest, cut, maskSchemeSecrets, maskTokenShapes, maskTokenShapesUnguarded, maskSecretArgs, maskSecretCommand, maskHomePaths, maskHomePathsOutbound, maskSecretUrl, maskNoteText, maskOutgoing, maskGluedTail, maskSplitTokens, _breakCallsForTest, keepShownBy, _unionMasksForTest, withoutSplit, withoutShell, _shellRefsForTest, _shellPassesForTest, _shapePassesForTest, _runReadsForTest, ESC_RUN_SHELL_SOURCE, withoutLoose, maskLoose, _homeGuardReadsForTest, _homeGuardCharsForTest, _guardEdgeScanForTest, HOME_GUARD_WINDOW_FOR_TEST, _splitWorkForTest, withoutLinkSplit, withoutContinuation, _contWorkForTest, _contScanForTest, _contPassesForTest, redact, redactMarkdown, MARKDOWN_WORK, _markdownPassForTest, shQuote, splitCommand } from '../src/shared/redact';
 
 import { assertLinearShape, assertWithinYardstick, cpuMs } from './redact-growth-lib';
 import './safetext-shared'; // the desk's maskRaw (src/renderer/safetext.js) reads the compiled redact.ts, for the FR-181 differential below
@@ -1916,6 +1916,7 @@ assert.strictEqual(redact('{"a":"https://u:p@h/x","b":"y"}', {}), '{"a":"https:/
 // Review on PR #630 (spec 058 FR-093): home folders to `~`, OAuth query values, a bearer token in any case
 {
   const h = (t: string, homes?: string[]) => maskHomePaths(t, homes ?? []);
+  const ho = (t: string, homes?: string[]) => maskHomePathsOutbound(t, homes ?? []);
   assert.strictEqual(h('spawn /home/vikram/.local/bin/x ENOENT'), 'spawn ~/.local/bin/x ENOENT');
   assert.strictEqual(h('/Users/ana/x and /Users/ana'), '~/x and ~');
   assert.strictEqual(h('C:\\Users\\vikram\\AppData\\npx.cmd'), '~\\AppData\\npx.cmd');
@@ -1926,45 +1927,239 @@ assert.strictEqual(redact('{"a":"https://u:p@h/x","b":"y"}', {}), '{"a":"https:/
   assert.strictEqual(h('x /opt/me/proj and /opt/me', ['/opt/me']), 'x ~/proj and ~', 'a given home folder');
   assert.strictEqual(h('/opt/meow/x', ['/opt/me']), '/opt/meow/x', 'only a whole folder name');
   assert.strictEqual(h('/x', ['/']), '/x', 'a too-short home is ignored');
-  // UNC paths (review of PR 1272): host, share and the next folder
-  assert.strictEqual(h('open \\\\fs1.example.invalid\\share\\alexexample\\proj\\a.txt now'), 'open ~\\proj\\a.txt now', 'UNC');
-  assert.strictEqual(h('{"p":"\\\\\\\\fs1\\\\share\\\\alexexample\\\\x"}'), '{"p":"~\\\\x"}', 'UNC, JSON-escaped');
-  assert.strictEqual(h('\\\\fs1\\share\\Alex Example\\x'), '~\\x', 'UNC, a user name with a space');
-  assert.strictEqual(h('\\\\fs1\\alexexample'), '~', 'UNC, only host and share');
-  assert.strictEqual(h('C:\\\\work\\a\\b and D:\\x\\y\\z'), 'C:\\\\work\\a\\b and D:\\x\\y\\z', 'a doubled drive path is not a UNC path');
-  assert.strictEqual(h('~\\proj\\.github\\a.txt'), '~\\proj\\.github\\a.txt', 'a masked Windows path stays as it is');
+  // UNC paths (review of PR 1272): host, share and the next folder, in text that leaves the machine (spec 012 FR-435: `maskHomePathsOutbound`; the screen's block is `FR-435` below)
+  assert.strictEqual(ho('open \\\\fs1.example.invalid\\share\\alexexample\\proj\\a.txt now'), 'open ~\\proj\\a.txt now', 'UNC');
+  assert.strictEqual(ho('{"p":"\\\\\\\\fs1\\\\share\\\\alexexample\\\\x"}'), '{"p":"~\\\\x"}', 'UNC, JSON-escaped');
+  assert.strictEqual(ho('\\\\fs1\\share\\Alex Example\\x'), '~\\x', 'UNC, a user name with a space');
+  assert.strictEqual(ho('\\\\fs1\\alexexample'), '~', 'UNC, only host and share');
+  assert.strictEqual(ho('C:\\\\work\\a\\b and D:\\x\\y\\z'), 'C:\\\\work\\a\\b and D:\\x\\y\\z', 'a doubled drive path is not a UNC path');
+  assert.strictEqual(ho('~\\proj\\.github\\a.txt'), '~\\proj\\.github\\a.txt', 'a masked Windows path stays as it is');
   // spec 097 FR-311 delta 2026-11-08 (review of PR #1322): any run of two or more `\` (an odd count, as a Markdown escape leaves it) and `//`
-  for (const n of [2, 3, 4, 5, 6, 8]) assert.strictEqual(h('x ' + '\\'.repeat(n) + 'fs01\\homes\\zed_q\\notes'), 'x ~\\notes', 'UNC with ' + n + ' backslashes');
-  assert.strictEqual(h('see //fs01/homes/zed_q/notes now'), 'see ~/notes now', 'UNC with forward slashes');
-  assert.strictEqual(h('"//fs01/Homes"'), '"~"', 'forward-slash UNC, only host and a home share');
-  assert.strictEqual(h('x //nas/users$/Zed Q/a and //fs1/PROFILES/zq'), 'x ~/a and ~', 'forward-slash UNC: users$, any case, a name with a space');
-  assert.strictEqual(h('//fs01/homes/u/x and //fs01/Users/u/y and "//srv/home/bob" (see //srv/home/bob)'), '~/x and ~/y and "~" (see ~)', 'forward-slash UNC on a bare host; a closing paren stays');
-  assert.strictEqual(h('\\\\fs01.corp\\homes\\u\\x'), '~\\x', 'the backslash form keeps an FQDN host masked');
+  for (const n of [2, 3, 4, 5, 6, 8]) assert.strictEqual(ho('x ' + '\\'.repeat(n) + 'fs01\\homes\\zed_q\\notes'), 'x ~\\notes', 'UNC with ' + n + ' backslashes');
+  assert.strictEqual(ho('see //fs01/homes/zed_q/notes now'), 'see ~/notes now', 'UNC with forward slashes');
+  assert.strictEqual(ho('"//fs01/Homes"'), '"~"', 'forward-slash UNC, only host and a home share');
+  assert.strictEqual(ho('x //nas/users$/Zed Q/a and //fs1/PROFILES/zq'), 'x ~/a and ~', 'forward-slash UNC: users$, any case, a name with a space');
+  assert.strictEqual(ho('//fs01/homes/u/x and //fs01/Users/u/y and "//srv/home/bob" (see //srv/home/bob)'), '~/x and ~/y and "~" (see ~)', 'forward-slash UNC on a bare host; a closing paren stays');
+  assert.strictEqual(ho('\\\\fs01.corp\\homes\\u\\x'), '~\\x', 'the backslash form keeps an FQDN host masked');
   // third review of PR #1322: a web URL is not a UNC path (a dotted host, localhost, or after src=, href=, srcset=, url()
   for (const t of ['src="//api.example.com/users/42/avatar.png"', '<img src="//gravatar.com/users/abc">', '//www.example.com/home', '//localhost/home/index.html',
     'url(//fonts.example/home/x.woff)', 'url("//cdn/home/x.woff")', "href='//mysite/profiles/settings'", 'src=//cdn/profile/pic.png', 'srcset="//img/users/a.png 2x"',
     '//fs01.corp.example/homes/u'])
-    assert.strictEqual(h(t), t, 'a web URL, not a home on a share: ' + t);
+    assert.strictEqual(ho(t), t, 'a web URL, not a home on a share: ' + t);
   // a bare host outside those attributes cannot be told from a NetBIOS server: masked (the safe side, [KNOWN GAP] in spec 097); no `)` is eaten
-  assert.strictEqual(h('"//cdn/profile/pic.png" //mysite/profiles/settings //HOME/users (//cdn/home/x)'), '"~" ~ ~ (~)', 'bare hosts are masked as shares (host, share and the next folder)');
+  assert.strictEqual(ho('"//cdn/profile/pic.png" //mysite/profiles/settings //HOME/users (//cdn/home/x)'), '"~" ~ ~ (~)', 'bare hosts are masked as shares (host, share and the next folder)');
   // second review of PR #1322: `//` is not a UNC path unless the share is a home share
   for (const t of ['//cdn.example.com/lib/app.js', 'src="//cdn.example.com/x.js"', '//TODO/fix/this', 'a //b/c', '//fs01/zed_q/notes', '//fs01/homesick/zed_q', '//fs01/myusers/zed_q'])
-    assert.strictEqual(h(t), t, 'not a home on a share: ' + t);
-  assert.strictEqual(h('https://fs01.example.invalid/homes/zed_q/x and file:///srv/a/b'), 'https://fs01.example.invalid/homes/zed_q/x and file:///srv/a/b', 'a URL is not a UNC path');
-  assert.strictEqual(h('a//b/c/d and // note/x'), 'a//b/c/d and // note/x', '`//` after a letter, or before a space, is not a UNC path');
-  assert.strictEqual(h('\\\\\\fs01\\homes'), '~', 'three backslashes, only host and share');
+    assert.strictEqual(ho(t), t, 'not a home on a share: ' + t);
+  assert.strictEqual(ho('https://fs01.example.invalid/homes/zed_q/x and file:///srv/a/b'), 'https://fs01.example.invalid/homes/zed_q/x and file:///srv/a/b', 'a URL is not a UNC path');
+  assert.strictEqual(ho('a//b/c/d and // note/x'), 'a//b/c/d and // note/x', '`//` after a letter, or before a space, is not a UNC path');
+  assert.strictEqual(ho('\\\\\\fs01\\homes'), '~', 'three backslashes, only host and share');
   const t0 = Date.now();
   maskHomePaths('/home/' + 'a'.repeat(1_000_000), []);
   maskHomePaths('/home/a '.repeat(100_000), []);
   maskHomePaths('\\\\a\\b\\'.repeat(100_000), []);
   maskHomePaths('\\'.repeat(1_000_000) + 'x', []);
   maskHomePaths('//a/'.repeat(200_000), []);
+  maskHomePathsOutbound('\\\\a\\b\\'.repeat(100_000), []);
+  maskHomePathsOutbound('\\'.repeat(1_000_000) + 'x', []);
+  maskHomePathsOutbound('//a/'.repeat(200_000), []);
   assert.ok(Date.now() - t0 < 1500, 'bounded on hostile input');
   const u = maskSecretUrl('https://x.test/cb?code=AbC123&state=xyz9&Code=Q1&id_token=i.d.t&refresh_token=rr&ok=1#access_token=at1');
   for (const v of ['AbC123', 'xyz9', 'Q1', 'i.d.t', 'rr', 'at1']) assert.ok(!u.includes(v), 'OAuth value masked: ' + v + ' in ' + u);
   assert.ok(u.includes('ok=1'));
   assert.deepStrictEqual(maskSecretArgs(['--code', 'abc', '--state', 'x']), ['--code', 'abc', '--state', 'x'], 'flags are unchanged by the OAuth rule (it is URL-only)');
   for (const b of ['bearer abcdefgh12345678', 'BEARER abcdefgh12345678', 'Bearer abcdefgh12345678']) assert.ok(!redact(b).includes('abcdefgh12345678'), b);
+}
+
+// spec 012 FR-435 (issue #2060 item 2, owner decision 2026-11-23): a network share path is shown whole on screen (`maskHomePaths`), server, share,
+// folders and file name; text that leaves the machine keeps its masking (`maskHomePathsOutbound`, the asserts above); secrets inside a share path stay
+// hidden by `redact` and the URL masks, as before. Made-up servers and values only.
+{
+  const B = '\\';
+  const SHARES: [string, string][] = [
+    ['a UNC path', B + B + 'fs01' + B + 'projects' + B + 'teamA' + B + 'notes.txt'],
+    ['a UNC path, share only', B + B + 'fs01' + B + 'projects'],
+    ['a UNC path, JSON-doubled', B.repeat(4) + 'fs01' + B + B + 'projects' + B + B + 'teamA' + B + B + 'notes.txt'],
+    ['a UNC admin share', B + B + 'fs01' + B + 'c$' + B + 'logs' + B + 'app.log'],
+    ['a UNC path on a dotted host', B + B + 'fs01.corp.example' + B + 'data' + B + 'q3' + B + 'report.xlsx'],
+    ['a UNC path on an IP host', B + B + '10.0.0.5' + B + 'data' + B + 'x.txt'],
+    ['a UNC home share', B + B + 'fs01' + B + 'homes' + B + 'zedq' + B + 'notes.txt'],
+    ['a UNC path with a space', B + B + 'fs01' + B + 'team docs' + B + 'Alex Example' + B + 'plan.md'],
+    ['a UNC path with mixed separators', B + B + 'fs01/data/sub/x.txt'],
+    ['a UNC path after a Markdown escape (three backslashes)', B.repeat(3) + 'fs01' + B + 'homes' + B + 'zedq'],
+    ['a long UNC path', B + B + '?' + B + 'UNC' + B + 'fs01' + B + 'data' + B + 'x.txt'],
+    ['a forward-slash home share', '//fs01/homes/zedq/notes.txt'],
+    ['a forward-slash share', '//fs01/projects/teamA/notes.txt'],
+    ['a file link with a host', 'file://fs01/projects/teamA/notes.txt'],
+    ['a file link with four slashes', 'file:////fs01/projects/teamA/notes.txt'],
+    ['an smb link', 'smb://fs01/projects/teamA/notes.txt'],
+    ['an afp link', 'afp://fs01/projects/teamA/notes.txt'],
+    ['a macOS mount', '/Volumes/projects/teamA/notes.txt'],
+    ['a Linux GVFS mount', '/run/user/1000/gvfs/smb-share:server=fs01,share=projects/teamA/notes.txt'],
+  ];
+  const SCREEN: Record<string, (t: string) => string> = {
+    home: (t) => maskHomePaths(t, []), 'redact, then home': (t) => maskHomePaths(redact(t, {}), []), 'url, then home': (t) => maskHomePaths(maskSecretUrl(t, {}), []),
+    'home, then redact': (t) => redact(maskHomePaths(t, []), {}),
+  };
+  for (const [what, p] of SHARES) for (const ctx of ['', 'Opened ', '"']) {
+    const t = ctx === '"' ? '"' + p + '"' : ctx ? ctx + p + ' for reading' : p;
+    for (const [m, f] of Object.entries(SCREEN)) assert.strictEqual(f(t), t, `FR-435 screen: ${what} is shown whole (${m}${ctx ? ', in ' + (ctx === '"' ? 'quotes' : 'prose') : ''})`);
+  }
+  // the outbound mask hides what it hid before (a UNC path's host, share and next folder); the forms it never read stay as written there too
+  for (const [what, p] of SHARES) {
+    const o = maskHomePathsOutbound(p, []);
+    if (/^\\{2,}(?!\?)|^\/\/fs01\/homes/.test(p)) assert.ok(!o.includes('fs01') && !o.includes('10.0.0.5') && o.includes('~'), `FR-435 outbound: ${what} loses its host and share: ${o}`);
+    else assert.strictEqual(o, p, `FR-435 outbound: ${what} is not a form the outbound mask reads, as before`);
+  }
+  // home folders still become `~` on screen, also next to a share path (item 6 is its own change)
+  assert.strictEqual(maskHomePaths('copy /home/zedq/a.txt to ' + B + B + 'fs01' + B + 'projects' + B + 'a.txt', []), 'copy ~/a.txt to ' + B + B + 'fs01' + B + 'projects' + B + 'a.txt', 'FR-435 screen: a home folder next to a share path is still ~');
+  assert.strictEqual(maskHomePaths('C:' + B + 'Users' + B + 'zedq' + B + 'x and //fs01/homes/zedq/y', []), '~' + B + 'x and //fs01/homes/zedq/y', 'FR-435 screen: a Windows home folder is still ~, the share path whole');
+  // secrets inside a share path: hidden on every screen chain, the rest of the path shown
+  const run = (k: number, chars = 'aB3dE6gH9jK2mN5pQ8sT1vW4yZ7'): string => { let s = ''; while (s.length < k) s += chars; return s.slice(0, k); };
+  const GHP = 'gh' + 'p_' + run(36);
+  const GKEY = 'AI' + 'za' + run(35);
+  const PW = 'Hunter' + '2pass9';
+  const SECRET: [string, string, string, string][] = [ // what, text, the secret piece, a piece of the path that stays
+    ['a user and password in an smb link', 'smb://alex:' + PW + '@fs01/projects/x.txt', PW, '@fs01/projects/x.txt'],
+    ['a user and password in an afp link', 'afp://alex:' + PW + '@fs01/projects/x.txt', PW, '@fs01/projects/x.txt'],
+    ['a GitHub token as a UNC folder', B + B + 'fs01' + B + 'projects' + B + GHP + B + 'x.txt', GHP.slice(4, 16), B + B + 'fs01' + B + 'projects' + B],
+    ['a base64-family key as a UNC folder', B + B + 'fs01' + B + 'projects' + B + GKEY + B + 'x.txt', GKEY.slice(4, 16), B + B + 'fs01' + B + 'projects' + B],
+    ['a GitHub token as the UNC server', B + B + GHP + B + 'projects' + B + 'x.txt', GHP.slice(4, 16), B + B], // the token rule takes the rest of the run, as before
+    ['a base64-family key as a forward-slash folder', '//fs01/homes/' + GKEY + '/x.txt', GKEY.slice(4, 16), '//fs01/homes/'],
+    ['a base64-family key as an smb folder', 'smb://fs01/projects/' + GKEY + '/x.txt', GKEY.slice(4, 16), 'smb://fs01/projects/'],
+    ['a token in a file link\'s query', 'file://fs01/projects/x.txt?access_token=' + run(24), run(24), 'file://fs01/projects/x.txt?access_token='],
+  ];
+  // review of PR 2112, finding 3 and round 2 (fail closed): a share path is shown whole only when every part looks like a plain name (at most 64 characters, no
+  // unbroken run of 16 or more letters, digits or underscores); a path with a key in any part keeps the old hiding (`~` for its server, share and next folder).
+  // Five key families and a 20-character key, with letters glued before or after, as the share, the next folder, a home share's folder and the server, and at
+  // the end of a 200-character part; keys of 16 to 40 characters in one run
+  const hexr = (k: number): string => run(k, '0a1b2c3d4e5f6a7b8c9d');
+  const FAMILIES: [string, string][] = [['google api', GKEY], ['bedrock', 'AB' + 'SK' + run(120) + '=='], ['facebook', 'EA' + 'AC' + run(120)], ['databricks', 'da' + 'pi' + hexr(32)],
+    ['twilio', 'S' + 'K' + hexr(32)], ['aws key id', 'AK' + 'IA' + 'AB3DE6GH2JK7MN5P']];
+  const GLUES: [string, (k: string) => string][] = [['glued before', (k) => 'y' + k], ['glued after', (k) => k + 'zz'], ['in a dashed name', (k) => 'rep-' + k + '-v2']];
+  for (const [fam, k] of FAMILIES) for (const [gl, g] of GLUES) SECRET.push(
+    [`a ${fam} key ${gl} as the UNC share`, B + B + 'fs01' + B + g(k) + B + 'x.txt', k.slice(4, 16), ''],
+    [`a ${fam} key ${gl} as the UNC next folder`, B + B + 'fs01' + B + 'projects' + B + g(k) + B + 'x.txt', k.slice(4, 16), ''],
+    [`a ${fam} key ${gl} in a forward-slash home share`, '//fs01/homes/' + g(k) + '/x.txt', k.slice(4, 16), ''],
+    [`a ${fam} key ${gl} as the UNC server`, B + B + g(k) + B + 'projects' + B + 'x.txt', k.slice(4, 16), ''],
+  );
+  for (const [fam, k] of FAMILIES) SECRET.push([`a ${fam} key at the end of a 200-character part`, B + B + 'fs01' + B + 'projects' + B + 'w'.repeat(200 - k.length) + k + B + 'x.txt', k.slice(4, 16), '']);
+  for (let n = 16; n <= 40; n += 4) SECRET.push([`a ${n}-character key in one run as the UNC share`, B + B + 'fs01' + B + run(n) + B + 'x.txt', run(n).slice(0, 12), '']);
+  const SCREEN_OLD: Record<string, (t: string) => string> = {
+    home: (t) => maskHomePathsOutbound(t, []), 'redact, then home': (t) => maskHomePathsOutbound(redact(t, {}), []), 'url, then home': (t) => maskHomePathsOutbound(maskSecretUrl(t, {}), []),
+    'home, then redact': (t) => redact(maskHomePathsOutbound(t, []), {}),
+  };
+  const preexisting: string[] = [];
+  // shown by main's chains too (a part longer than the old rule reads, or a server name the old rule does not read, with a key the secret rules miss there): the
+  // spec's named gap; not caused or changed here
+  const PREEXISTING = new Set([...['bedrock', 'facebook'].map((f) => `a ${f} key in a dashed name as the UNC server`),
+    ...['google api', 'bedrock', 'facebook', 'databricks', 'twilio', 'aws key id'].map((f) => `a ${f} key at the end of a 200-character part`)]);
+  for (const [what, t, sec, keep] of SECRET) for (const [m, f] of Object.entries(SCREEN)) {
+    // a secret the old chains show too is not this change's (`PREEXISTING`, pinned: each is still shown by its old chain, so a later fix shows up here); every
+    // other entry is hidden on every chain, absolutely (a weaker secret rule elsewhere fails here, not only against the old chain)
+    if (PREEXISTING.has(what) || (m === 'home' && SCREEN_OLD.home(t).includes(sec))) {
+      if (m !== 'home' && SCREEN_OLD[m](t).includes(sec)) preexisting.push(`${what} (${m})`);
+      assert.ok(!(f(t).includes(sec) && !SCREEN_OLD[m](t).includes(sec)), `FR-435 secret: ${what} hidden wherever the old chain hid it (${m})`);
+      continue;
+    }
+    const o = f(t);
+    assert.ok(!o.includes(sec), `FR-435 secret: ${what} stays hidden (${m}): ${o}`);
+    // a share path with a key keeps the old hiding of its place (fail closed); a link (smb, afp, file) shows the rest
+    if (keep && !/^[\\/]{2}/.test(t)) assert.ok(o.includes(keep), `FR-435 secret: ${what}, the rest of the link is shown (${m}): ${o}`);
+  }
+  assert.deepStrictEqual([...PREEXISTING].filter((w) => !preexisting.some((x) => x.startsWith(w + ' ('))), [], 'FR-435 secret: every pinned old gap is still shown by its old chain (a fix elsewhere updates the list)');
+  console.log(`FR-435 secret list: ${SECRET.length} entries, ${PREEXISTING.size} of them shown by main's chains too (not this change's)`);
+  // the plain-name rule, each threshold on both sides (at most 64 characters; a run of 15 shows, a run of 16 keeps the old hiding; dots and dashes break a run,
+  // an underscore does not); every part counts, the file name and parts past the next folder included
+  const plainOf = (p: string): boolean => maskHomePaths(p, []) === p;
+  for (const p of [B + B + 'fs01' + B + 'projects' + B + 'Q4-budget-2026' + B + 'notes.txt', B + B + 'fs01' + B + 'team_alpha' + B + '2026-11-24 minutes.docx', '//fs01/homes/zedq/Q3 plan.md',
+    B + B + 'fs01' + B + 'Quarterly Reports Archive 2019' + B + 'x', '//fs01/homes/Alexandra-Example-Longname/x', B + B + 'fs01' + B + 'a' + run(14) + B + 'x'])
+    assert.ok(plainOf(p), `FR-435 screen: a share path of plain names is shown whole: ${p}`);
+  assert.ok(plainOf(B + B + 'fs01' + B + 'p' + B + 'x-'.repeat(32)), 'FR-435 screen: a part of 64 characters is plain');
+  assert.strictEqual(maskHomePaths(B + B + 'fs01' + B + 'p' + B + 'x-'.repeat(32) + 'y', []), '~', 'FR-435 screen: a part of 65 characters keeps the old hiding');
+  assert.ok(plainOf(B + B + 'fs01' + B + 'p' + B + run(15) + '.txt'), 'FR-435 screen: a run of 15 letters and digits is plain');
+  assert.strictEqual(maskHomePaths(B + B + 'fs01' + B + 'p' + B + run(16) + '.txt', []), '~', 'FR-435 screen: a run of 16 letters and digits keeps the old hiding');
+  assert.strictEqual(maskHomePaths(B + B + 'fs01' + B + 'p' + B + 'team_alpha_beta_x', []), '~', 'FR-435 screen: an underscore does not break a run (17 characters with underscores keep the old hiding)');
+  assert.strictEqual(maskHomePaths(B + B + 'fs01' + B + 'p' + B + 'q' + B + 'deep' + B + run(20) + B + 'f.txt', []), '~' + B + 'deep' + B + run(20) + B + 'f.txt', 'FR-435 screen: a long run past the next folder keeps the old hiding of the place');
+  assert.strictEqual(maskHomePaths(B + B + 'fs01' + B + '0123456789abcdef0123456789abcdef01234567' + B + 'x', []), '~', 'FR-435 screen: a hex digest folder keeps the old hiding (the cost of failing closed)');
+  // the outbound chains hide them too
+  const OUT: Record<string, (t: string) => string> = { 'outbound, redact first': (t) => maskHomePathsOutbound(redact(t, {}), []), 'outbound home, then redact': (t) => redact(maskHomePathsOutbound(t, []), {}) };
+  for (const [what, t, sec] of SECRET) for (const [m, f] of Object.entries(OUT)) if (!PREEXISTING.has(what)) assert.ok(!f(t).includes(sec), `FR-435 secret (outbound): ${what} stays hidden (${m}): ${f(t)}`);
+  // the cut marker (finding 1): the outbound mask hides a share lead cut after its server, in every spelling; the screen mask keeps it
+  for (const t of [B + B + 'fs01' + B + ' [truncated]', B + B + 'fs01 [truncated]', B.repeat(4) + 'fs01' + B + B + ' [truncated]', 'spawn ' + B + B + 'fs01.corp.example' + B + ' [truncated]', '//fs01/hom [truncated]']) {
+    const o = maskHomePathsOutbound(t, []);
+    assert.ok(!/fs01/.test(o) && o.endsWith('~ [truncated]'), `FR-435 outbound: a share lead before the cut marker loses its server: ${JSON.stringify(t)} -> ${JSON.stringify(o)}`);
+    assert.strictEqual(maskHomePaths(t, []), t, `FR-435 screen: a share lead before the cut marker is shown: ${JSON.stringify(t)}`);
+  }
+  assertLinearShape('FR-435 maskHomePathsOutbound a long run of leads before a cut marker', (x) => { maskHomePathsOutbound(x, []); }, (k) => B.repeat(k) + ' [truncated]', 400_000);
+  assertLinearShape('FR-435 maskHomePathsOutbound many cut markers after leads', (x) => { maskHomePathsOutbound(x, []); }, (k) => ('//' + 'a'.repeat(300) + ' [truncated]').repeat(Math.ceil(k / 314)).slice(0, k), 400_000);
+  assertLinearShape('FR-435 maskHomePaths many long share parts', (x) => { maskHomePaths(x, []); }, (k) => (B + B + 'a'.repeat(120) + B + 'b'.repeat(120) + B + 'c'.repeat(120) + ' ').repeat(Math.ceil(k / 364)).slice(0, k), 400_000);
+  assertLinearShape('FR-435 maskHomePaths many plain share paths', (x) => { maskHomePaths(x, []); }, (k) => (B + B + 'fs01' + B + 'team-a' + B + 'Q4-budget' + B + 'x' + B + 'y' + B + 'notes.txt ').repeat(Math.ceil(k / 40)).slice(0, k), 400_000);
+  assertLinearShape('FR-435 maskHomePaths one share path with many parts', (x) => { maskHomePaths(x, []); }, (k) => (B + B + 'fs01' + B + 'a' + (B + 'ab').repeat(Math.ceil(k / 3))).slice(0, k), 400_000);
+  // differential over a generated corpus: the screen and outbound masks differ only on texts with a UNC path, the outbound mask of the screen's output equals
+  // the outbound mask of the text (the screen removes nothing the outbound mask keeps), and nothing else changes
+  {
+    let seed = 0x2060;
+    const rnd = (k: number): number => { seed = (seed * 1103515245 + 12345) >>> 0; return seed % k; };
+    const pick = <T,>(a: readonly T[]): T => a[rnd(a.length)];
+    const PIECES = [...SHARES.map(([, p]) => p), '/home/zedq/a.txt', 'C:' + B + 'Users' + B + 'zedq' + B + 'x', '/Users/zedq', 'src/app.js', 'https://h.example/p?q=1', 'done.', 'git log -n 5', '~zedq/src/x', GHP, 'password=' + PW];
+    let texts = 0, differ = 0, differNoUnc = 0, notOutbound = 0;
+    for (let i = 0; i < 2000; i++) {
+      const parts: string[] = []; for (let j = 0, k = 1 + rnd(5); j < k; j++) parts.push(pick(PIECES));
+      const t = parts.join(pick([' ', '\n', ', ']));
+      const s = maskHomePaths(t, []), o = maskHomePathsOutbound(t, []);
+      texts++;
+      if (s !== o) { differ++; if (!/\\{2,}|\/\/fs01\/homes/.test(t)) differNoUnc++; }
+      // a `~` the screen left for a place right before the next share lead stops the old rule's look-behind for that lead (the old rule replaced all places in
+      // one pass over the text as written), so the check also reads them apart
+      if (maskHomePathsOutbound(s, []) !== o && maskHomePathsOutbound(s.replace(/~(?=[\\/]{2})/g, '~\u0000'), []).replace(/\u0000/g, '') !== o) notOutbound++;
+    }
+    assert.strictEqual(differNoUnc, 0, `FR-435 differential: the screen and outbound masks differ only on texts with a UNC path (${differ} of ${texts} differ)`);
+    assert.strictEqual(notOutbound, 0, 'FR-435 differential: the outbound mask of the screen\'s output equals the outbound mask of the text');
+    assert.ok(differ > 500, `FR-435 differential: the corpus exercises the UNC forms (${differ} of ${texts})`);
+    console.log(`FR-435 differential: ${differ} of ${texts} texts read differently on screen and outbound, each with a UNC path`);
+  }
+  // review of PR 2112, finding 4: secret-bearing shares in the corpus, and the FULL screen chains (secret masks and the home mask, as the window composes them)
+  // against the old chains (the outbound home mask in the place of the screen one: main's home mask on text with no cut marker): no 4-character piece of a
+  // secret that the old chain hid is shown by the new one. Fixed seed, no timing.
+  {
+    let seed = 0x2112;
+    const rnd = (k: number): number => { seed = (seed * 1103515245 + 12345) >>> 0; return seed % k; };
+    const pick = <T,>(a: readonly T[]): T => a[rnd(a.length)];
+    const PLAIN = [...SHARES.map(([, p]) => p), '/home/zedq/a.txt', 'C:' + B + 'Users' + B + 'zedq' + B + 'x', 'src/app.js', 'https://h.example/p?q=1', 'done.', 'git log -n 5'];
+    const SEC: [string, string][] = SECRET.map(([, t, sec]) => [t, sec]); // text, the secret it holds
+    for (const [, k] of FAMILIES) for (const [, g] of GLUES) {
+      SEC.push([B + B + 'nas' + B + 'team' + B + g(k), k], ['//nas/users/' + g(k) + '/a', k], [B + B + g(k) + B + 'team' + B + 'a', k]);
+      SEC.push([B + B + 'nas' + B + 'team' + B + 'w'.repeat(200) + g(k) + B + 'a', k], [B + B + 'nas' + B + 'team' + B + 'q' + B + g(k) + B + 'a', k]);
+    }
+    SEC.push([GHP, GHP], ['password=' + PW, PW]);
+    const chain = (home: (t: string) => string): Record<string, (t: string) => string> => ({
+      'redact, then home': (t) => home(redact(t, {})), 'redact, home, key shapes': (t) => maskTokenShapes(home(redact(t, {})), '[redacted]'),
+      'home, then redact': (t) => redact(home(t), {}), 'url, then home': (t) => home(maskSecretUrl(t, {})),
+    });
+    const NEW = chain((t) => maskHomePaths(t, [])), OLD = chain((t) => maskHomePathsOutbound(t, []));
+    let texts = 0, hidOld = 0, shownNew = 0, withSecret = 0;
+    const shown: string[] = [];
+    for (let i = 0; i < 3000; i++) {
+      const parts: string[] = [], secs: string[] = [];
+      for (let j = 0, k = 1 + rnd(5); j < k; j++) { if (rnd(2) === 0) { const [t, sec] = pick(SEC); parts.push(t); secs.push(sec); } else parts.push(pick(PLAIN)); }
+      const t = parts.join(pick([' ', '\n', ', ']));
+      const plain = parts.filter((p) => !SEC.some(([x]) => x === p)).join(' ');
+      texts++; if (secs.length) withSecret++;
+      for (const m of Object.keys(NEW)) {
+        const o = OLD[m](t), n = NEW[m](t);
+        for (const sec of secs) for (let q = 0; q + 4 <= sec.length; q++) {
+          const pc = sec.slice(q, q + 4);
+          if (plain.includes(pc) || o.includes(pc)) continue;
+          hidOld++;
+          if (n.includes(pc)) { shownNew++; if (shown.length < 3) shown.push(`${m}: ${pc} in ${JSON.stringify(t).slice(0, 160)}`); }
+        }
+      }
+    }
+    assert.strictEqual(shownNew, 0, `FR-435 differential with secrets: pieces the old chain hid and the new chain shows = 0 (${texts} texts, ${hidOld} pieces hidden by the old chains) ${shown.join(' | ')}`);
+    assert.ok(withSecret > 2000 && hidOld > 100000, `FR-435 differential with secrets: the corpus exercises secret pieces (${withSecret} texts with a secret, ${hidOld} pieces)`);
+    console.log(`FR-435 differential with secrets: ${texts} texts (${withSecret} with a secret), 4 chains, ${hidOld} secret pieces the old chains hide, ${shownNew} of them shown by the new chains`);
+  }
 }
 
 // ---- spec 058 (security review on #635): OAuth query values in redact() itself, so the debug sink masks a CLI's stderr line ----

@@ -83,14 +83,15 @@ module.exports = async (ctx) => {
   assert.ok(v6.status === 'failed' && v6.error === 'Stopped with its session' && v6.block === 'failed' && v6.cardState === 'error', `background helper: the session stopped and it still runs ${JSON.stringify(v6)}`);
   const v7 = await view(P + ':fg');
   assert.ok(v7.status === 'done', `the session stop changed a finished helper ${JSON.stringify(v7)}`);
-  /* 4. spec 015 FR-021 (issue 1330): a hostile helper name and task (fake token, macOS, Windows and UNC homes) show nowhere: the flat
+  /* 4. spec 015 FR-021 (issue 1330): a hostile helper name and task (fake token, also as a UNC folder; macOS and Windows homes) show nowhere: the flat
      tile (name, tooltip, aria-label), the chat block, the Sub-agent activity panel (title, task line, error line) and the chat header */
   const P3 = await js(`(window.__durbarSimUi.agents().filter(a=>!a.parent&&a.live)[2]||{}).id||''`);
   assert.ok(P3, 'a third agent');
   const TOK = 'ghp_' + 'Zq9Xw8Vu7Ts6Rq5Po4Nm3Lk2Ji1Hg0Fe9Dc8';
-  const HNAME = 'Scan \\\\fs01\\homes\\zedq\\notes and /Users/zedq/proj';
-  const HTASK = 'Use ' + TOK + ' in \\\\fs01\\homes\\zedq\\notes, C:\\Users\\Jürgen Smith\\proj, \\\\fs01\\homes\\Ölçü\\notes, ' + JSON.stringify('C:\\Users\\Jürgen\\proj') + ', C:\\Users\\zedq\\proj and /Users/zoë/a.txt';
-  const LEAKS = [TOK.slice(4), 'zedq', 'fs01', 'Jürgen', 'Smith', 'Ölçü', 'zoë'];
+  /* spec 012 FR-435: a network share path is shown whole on screen, so the UNC paths carry a token for a folder */
+  const HNAME = 'Scan \\\\fs01\\homes\\' + TOK + '\\notes and /Users/zedq/proj';
+  const HTASK = 'Use ' + TOK + ' in \\\\fs01\\homes\\' + TOK + '\\notes, C:\\Users\\Jürgen Smith\\proj, C:\\Users\\Ölçü\\notes, ' + JSON.stringify('C:\\Users\\Jürgen\\proj') + ', C:\\Users\\zedq\\proj and /Users/zoë/a.txt';
+  const LEAKS = [TOK.slice(4), 'zedq', 'Jürgen', 'Smith', 'Ölçü', 'zoë'];
   await emit({ sessionId: P3, type: 'toolCall', callId: 'leak', tool: 'task', phase: 'start', args: { description: HTASK, prompt: 'Look around and report' } });
   await emit({ sessionId: P3, type: 'subagent', subagentId: 'leak', phase: 'started', name: HNAME, task: HTASK });
   const hid = P3 + ':leak', tile = `#stage .helper[data-id="${hid}"]`;

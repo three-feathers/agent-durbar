@@ -3,7 +3,9 @@ import * as assert from 'assert';
 import { assertCutFirst } from './hang-backstop';
 import * as path from 'path';
 import { maskMcpError } from '../src/main/mcpmask';
-import { maskHomePaths, maskSecretUrl, redact } from '../src/shared/redact';
+import * as fs from 'fs';
+import * as shared from '../src/shared/redact';
+import { maskHomePathsOutbound, maskSecretUrl, redact } from '../src/shared/redact';
 
 interface Words {
   signInPressNote: (name: unknown, row: unknown, err?: unknown, live?: boolean) => string;
@@ -280,7 +282,7 @@ assertCutFirst('hintFor reads only the first 2000 characters of the error text',
 // ---- Review on PR #630: home paths, OAuth values, any-case bearer, mask before cut, bidi marks, 401 is not a crash ----
 {
   const TOKEN = 'ghp_' + 'Q7m2Kx9Lp4Rt8Vw1Yz6Bn3Cd5Fg0Hj2Mk4Ns';
-  const pageMask = (t: string) => maskHomePaths(maskSecretUrl(t)); // what screens.js passes (DurbarRedact)
+  const pageMask = (t: string) => maskHomePathsOutbound(maskSecretUrl(t)); // what screens.js passes (DurbarRedact; spec 012 FR-435: the outbound home mask)
   // item 9: an error that was NOT masked in main (the simulator's path): diagnostics still mask it, field by field
   const raw = W.diagnostics({ server: 's', entry: { status: 'failed', error: `boom ${TOKEN} end` } }, redact);
   assert.ok(raw && !raw.includes(TOKEN) && !raw.includes(TOKEN.slice(4, 16)), 'an unmasked token in the error is masked by the copy itself');
@@ -291,6 +293,82 @@ assertCutFirst('hintFor reads only the first 2000 characters of the error text',
   assert.match(String(home), /spawn ~\/\.local\/bin\/markitdown-mcp ENOENT; ~\\AppData\\npx\.cmd is not recognized; ~\/x/);
   const d2 = W.diagnostics({ server: 'm', entry: { status: 'failed', error: 'spawn /home/alice/bin/x ENOENT', transport: 'C:\\Users\\Bob Smith\\t' } }, pageMask);
   assert.ok(!/alice|Bob|Smith/.test(d2), 'the page mask replaces them too: ' + d2);
+  // spec 012 FR-435 (issue #2060 item 2): the diagnostics text leaves the machine (an issue report), so it keeps the share path masking the screen dropped.
+  // `copyDiagnostics`'s own mask line from screens.js, run with the compiled shared mask: a UNC server, share and next folder are not in the copy
+  // The source is read with either line end (a Windows checkout has CRLF): every cut below runs on an LF and a CRLF copy (brief rule 18)
+  const SCREENS_SRC = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'renderer', 'screens.js'), 'utf8').replace(/\r\n/g, '\n');
+  const SCREENS_COPIES: [string, string][] = [['LF', SCREENS_SRC], ['CRLF', SCREENS_SRC.replace(/\n/g, '\r\n')]];
+  /** `copyDiagnostics`'s mask line, cut out of a copy of screens.js (either line end). */
+  const diagMaskLine = (scr: string): string => (scr.slice(scr.indexOf('async function copyDiagnostics(')).match(/^[ \t]*const mask=[^\r\n]*/m) || [''])[0];
+  /** `copyErrorText`, cut out of a copy of screens.js (either line end): from its head to the first line that is its closing brace. */
+  const cutCopyErrorText = (scr: string): string => {
+    const at = scr.indexOf('function copyErrorText(');
+    const end = /\r?\n {2}\}\r?\n/.exec(scr.slice(at));
+    return at < 0 || !end ? '' : scr.slice(at, at + end.index + end[0].length);
+  };
+  for (const [le, scr] of SCREENS_COPIES) {
+    const line = diagMaskLine(scr);
+    assert.ok(line.includes('maskSecretUrl') && !line.includes('\r'), `FR-435 copyDiagnostics has its mask line (${le} copy): ` + line.trim().slice(0, 80));
+    const m = new Function('R', line + '\nreturn mask;')(shared) as ((t: string) => string) | null;
+    assert.ok(typeof m === 'function', `FR-435 copyDiagnostics builds a mask from the shared module (${le} copy)`);
+    const src = cutCopyErrorText(scr);
+    let whole = false;
+    try { whole = typeof new Function('window', 'X', 'copyText', src + '\nreturn copyErrorText;')({}, {}, () => undefined) === 'function'; } catch { /* not cut out whole */ }
+    assert.ok(whole, `FR-435 copyErrorText is cut out whole (${le} copy)`);
+  }
+  {
+    const line = diagMaskLine(SCREENS_SRC);
+    const mask = new Function('R', line + '\nreturn mask;')(shared) as ((t: string) => string) | null;
+    const B = '\\';
+    for (const p of [B + B + 'fs01' + B + 'homes' + B + 'zedq' + B + 'mcp.log', '//fs01/homes/zedq/mcp.log']) {
+      const d = W.diagnostics({ server: 's', entry: { status: 'failed', error: 'spawn ' + p + ' ENOENT' } }, mask);
+      assert.ok(d && !/fs01|homes|zedq/.test(d) && d.includes('mcp.log ENOENT'), 'FR-435 the diagnostics copy hides a share path\'s host, share and next folder: ' + d.split('\n').pop());
+    }
+    assert.strictEqual(shared.maskHomePaths(B + B + 'fs01' + B + 'homes' + B + 'zedq' + B + 'mcp.log'), B + B + 'fs01' + B + 'homes' + B + 'zedq' + B + 'mcp.log', 'FR-435 (control) the screen mask shows it whole');
+    // review of PR 2112, finding 1: main masks an MCP error with the screen mask and then cuts it at 300 characters, so the cut can end inside a share path.
+    // Every cut position (the share starting 0 to 300 characters before the cut), several share shapes: no server and no user name in the diagnostics copy.
+    const SH: [string, RegExp][] = [
+      [B + B + 'fs01' + B + 'homes' + B + 'zedq' + B + 'mcp.log', /fs01|zedq/], [B.repeat(4) + 'fs01' + B + B + 'homes' + B + B + 'zedq' + B + B + 'mcp.log', /fs01|zedq/],
+      [B + B + 'fs01.corp.example' + B + 'homes' + B + 'zedq' + B + 'x.log', /fs01|corp|zedq/], [B + B + '10.0.0.5' + B + 'homes' + B + 'zedq' + B + 'x.log', /10\.0\.0|zedq/],
+      [B + B + 'fs01' + B + 'c$' + B + 'zedq' + B + 'app.log', /fs01|zedq/], ['//fs01/homes/zedq/mcp.log', /fs01|zedq/],
+    ];
+    let positions = 0;
+    const leaks: string[] = [];
+    for (const [p, bad] of SH) for (let o = 0; o <= 300; o++) {
+      const err = ('w '.repeat(160)).slice(0, o).replace(/w$/, ' ') + p + ' end' + ' z'.repeat(200); // the share starts after a blank
+      const mainSide = maskMcpError(err) as string; // what main hands the window (screen mask, then the cut)
+      const d = W.diagnostics({ server: 's', entry: { status: 'failed', error: mainSide } }, mask);
+      positions++;
+      if (!d || bad.test(d)) leaks.push(o + ': ' + d.split('\n').pop());
+    }
+    assert.deepStrictEqual(leaks.slice(0, 3), [], `FR-435 the diagnostics copy after main's cut shows no server or user name at any cut position (${positions} positions, ${leaks.length} leak)`);
+    assert.ok(maskMcpError(('w '.repeat(160)).slice(0, 290) + SH[0][0] + ' end' + ' z'.repeat(200))!.includes(B + B + 'fs01'), 'FR-435 (control) main\'s cut can end inside a share path, after its server');
+  }
+  // review of PR 2112, finding 2: both Copy error text buttons copy through `copyErrorText` (screens.js), which keeps the outbound mask; it is run from the page's
+  // source with the compiled shared mask, and fails closed (nothing copied) without it
+  for (const [le, scr] of SCREENS_COPIES) {
+    const src = cutCopyErrorText(scr);
+    const run = (R: unknown, t: string): { copied: string[]; toasts: string[] } => {
+      const copied: string[] = [], toasts: string[] = [];
+      const X = { toast: (m: string) => { toasts.push(m); return { classList: { add() {} } }; } };
+      new Function('window', 'X', 'copyText', src + '\nreturn copyErrorText;')({ DurbarRedact: R }, X, (x: string) => { copied.push(x); return Promise.resolve(); })(t);
+      return { copied, toasts };
+    };
+    const B = '\\';
+    const e1 = 'spawn ' + B + B + 'fs01' + B + 'homes' + B + 'zedq' + B + 'bin' + B + 'mcp.exe ENOENT';
+    const r1 = run(shared, e1);
+    assert.strictEqual(r1.copied.length, 1, `FR-435 copyErrorText copies once (${le} copy)`);
+    assert.ok(!/fs01|homes|zedq/.test(r1.copied[0]) && r1.copied[0] === 'spawn ~' + B + 'bin' + B + 'mcp.exe ENOENT', `FR-435 Copy error text keeps the outbound mask (no server, share or user name on the clipboard; ${le} copy): ` + r1.copied[0]);
+    assert.strictEqual(run(shared, 'connection refused').copied[0], 'connection refused', `FR-435 Copy error text copies a plain error as it is (${le} copy)`);
+    const r2 = run({ redact: shared.redact }, e1);
+    assert.ok(r2.copied.length === 0 && /nothing was copied/.test(r2.toasts[0] || ''), `FR-435 Copy error text copies nothing without the outbound mask (${le} copy)`);
+    const r3 = run({ maskHomePathsOutbound: () => '[redaction failed]' }, e1);
+    assert.ok(r3.copied.length === 0, `FR-435 Copy error text copies nothing when the mask failed (${le} copy)`);
+    // both buttons call it, and no copy of an error goes around it
+    assert.ok(/data-lvcopy\]'\)\)\{void copyErrorText\(c\.entry\.error\|\|''\)/.test(scr), `FR-435 the live rows' Copy error text calls copyErrorText (${le} copy)`);
+    assert.ok(/data-copy\]'\);\s*if\(cb\)\{const sv=[^}]*void copyErrorText\(sv&&sv\.error\|\|''\)/.test(scr), `FR-435 the MCP dialog's Copy error text calls copyErrorText (${le} copy)`);
+    assert.ok(!/copyText\([^)]*\.error\b/.test(scr), `FR-435 no copyText of an error text outside copyErrorText (${le} copy)`);
+  }
   // item 3: OAuth code/state/id_token/refresh_token and a lowercase bearer
   const oauth = maskMcpError('callback https://x.test/cb?code=AbC123xyz&state=st4te99&ok=1#id_token=abc.def&refresh_token=r3fr3sh timeout; bearer abcdefgh12345678');
   for (const v of ['AbC123xyz', 'st4te99', 'abc.def', 'r3fr3sh', 'abcdefgh12345678']) assert.ok(oauth && !oauth.includes(v), 'masked: ' + v + ' in ' + oauth);

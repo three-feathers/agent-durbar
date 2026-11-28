@@ -1899,9 +1899,9 @@ function realMood(mo){return {body:mo.body,siren:mo.trouble==='ambulance'||mo.tr
 /* spec 097 FR-306, FR-307 (issue 1139): a desk's helpers for the Real office head figures, in orderedHelpers' order. The name is only in the accessible name and the tooltip (the flat tile's words: helperTileHTML), masked */
 /* spec 015 FR-021 (issue 1330): the one mask of a helper's (sub-agent's) name and task, for every surface that shows them (the Sub-agent
    activity panel's title, task line and error, the chat block, the flat helper tile and its tooltip and aria-label, the expanded helper card).
-   Home folders become ~ (redact.ts maskHomePaths) on the RAW text first, THEN the desk mask (DurbarSafeText), never the other way: the desk
-   mask undoes Markdown escapes (`\\` -> `\`), so a UNC home `\\server\share\user` would reach maskHomePaths as `\server\share\user` and the
-   user name would show. No redact module: homeMask keeps the text and deskMask gives '' (fail closed). */
+   Home folders become ~ (redact.ts maskHomePaths) on the RAW text first, THEN the desk mask (DurbarSafeText): the desk mask undoes Markdown
+   escapes (`\\` -> `\`), so the home mask reads the text as written. A network share path is shown whole on screen (spec 012 FR-435), though the
+   desk mask shows a doubled backslash as one. No redact module: homeMask keeps the text and deskMask gives '' (fail closed). */
 const homeMask=t=>{const R=window.DurbarRedact;if(!R||typeof R.maskHomePaths!=='function')return t;const h=R.maskHomePaths(t);return typeof h==='string'?h:'';};
 const helperMask=t=>deskMask(homeMask(t));
 /* spec 097 FR-311 (review of PR 1322): the head figures use the one helper mask above (home folders first, on the raw text), then the Markdown marks are made plain

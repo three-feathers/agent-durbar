@@ -269,7 +269,7 @@
     const row=live&&live.agg.servers.find(x=>x.name===n), c=row&&row.chats.find(x=>x.id===id);
     if(!c)return;
     if(e.target.closest('button[data-lvdet]')){if(liveDet.has(k))liveDet.delete(k);else liveDet.add(k);await repaintLive(false);return;}
-    if(e.target.closest('button[data-lvcopy]')){void copyText(c.entry.error||'','Copied the error text.');return;}
+    if(e.target.closest('button[data-lvcopy]')){void copyErrorText(c.entry.error||'');return;}
     const m=X.mcpSession?X.mcpSession(id):null;
     if(e.target.closest('button[data-lvdiag]')){const rp=live.replies.get(id)||{};void copyDiagnostics(n,c.entry,rp.app||(m&&m.o.appName),m&&m.o.appVersion);return;}
     if(e.target.closest('button[data-lvrs]')){
@@ -1476,11 +1476,20 @@
   /* FR-093: built from the reply only and passed through the shared redact() again (DurbarRedact); nothing is copied if that fails */
   async function copyDiagnostics(server,x,app,appVersion){
     const W=window.DurbarMcpWords, R=window.DurbarRedact;
-    /* the shared masking main uses (redact.ts): URL parts and OAuth values, token shapes, env values, then home folders to `~` */
-    const mask=R&&typeof R.redact==='function'&&typeof R.maskSecretUrl==='function'&&typeof R.maskHomePaths==='function'?(t=>R.maskHomePaths(R.maskSecretUrl(t))):null;
+    /* the shared masking main uses (redact.ts): URL parts and OAuth values, token shapes, env values, then home folders to `~`; text for an issue report
+       leaves the machine, so a network share path loses its host, share and next folder too (spec 012 FR-435: maskHomePathsOutbound) */
+    const mask=R&&typeof R.redact==='function'&&typeof R.maskSecretUrl==='function'&&typeof R.maskHomePathsOutbound==='function'?(t=>R.maskHomePathsOutbound(R.maskSecretUrl(t))):null;
     const text=W&&W.diagnostics?W.diagnostics({server,entry:x,app,appVersion},mask):'';
     if(!text){X.toast('Could not mask the diagnostics, so nothing was copied.',4200).classList.add('err');return;}
     await copyText(text,'Copied the diagnostics of '+esc(server)+' (masked).');
+  }
+  /* spec 012 FR-435 (review of PR 2112): Copy error text puts text on the clipboard, which leaves the screen, so it keeps the outbound mask (a share path's
+     host, share and next folder become ~, as main's error mask did before): a copied error must not carry the user name. Nothing is copied if that fails */
+  function copyErrorText(t){
+    const R=window.DurbarRedact;
+    const s=R&&typeof R.maskHomePathsOutbound==='function'?R.maskHomePathsOutbound(String(t||'')):null;
+    if(typeof s!=='string'||s.includes('[redaction failed]')){X.toast('Could not mask the error text, so nothing was copied.',4200).classList.add('err');return Promise.resolve();}
+    return copyText(s,'Copied the error text.');
   }
   const btnRow=(a,b)=>a||b?`<div class="srv-btns">${a}${b}</div>`:'';
   /* Spec 058 FR-021/FR-031 and FR-022/FR-023/FR-027: one server's Restart and Restart session with these servers, shared by a chat's MCP
@@ -1882,7 +1891,7 @@
         const db=e.target.closest('button[data-det]');
         if(db){const n=db.dataset.det;if(openDet.has(n))openDet.delete(n);else openDet.add(n);void repaint();return;}
         const cb=e.target.closest('button[data-copy]');
-        if(cb){const sv=st.servers.find(x=>x.name===cb.dataset.copy);void copyText(sv&&sv.error||'','Copied the error text.');return;}
+        if(cb){const sv=st.servers.find(x=>x.name===cb.dataset.copy);void copyErrorText(sv&&sv.error||'');return;}
         const dg=e.target.closest('button[data-diag]');
         if(dg){const sv=st.servers.find(x=>x.name===dg.dataset.diag);if(sv)void copyDiagnostics(sv.name,sv,st.app||o&&o.appName,o&&o.appVersion);return;}
         const rf=e.target.closest('#mcpRefresh');if(rf){if(rf.getAttribute('aria-disabled')!=='true')void refresh(true);return;}

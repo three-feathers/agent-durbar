@@ -11,6 +11,15 @@ const GH = 'ghp_' + 'A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8';
 const SESSION = 'zq-hunter2-session-value';
 const BEARER = 'Bearer abcdef1234567890XYZ';
 
+// spec 012 FR-435 (review of PR 2112, finding 5): main's MCP mask is the screen version: a share path reaches the window whole, a key part in it hidden
+{
+  const B = '\\';
+  const share = 'spawn ' + B + B + 'fs01' + B + 'homes' + B + 'zedq' + B + 'bin' + B + 'mcp.exe ENOENT';
+  assert.strictEqual(maskMcpError(share), share, 'FR-435 maskMcpError keeps a share path whole (server, share, folders)');
+  const out = maskMcpError('spawn ' + B + B + 'fs01' + B + 'homes' + B + GH + B + 'mcp.exe ENOENT') as string;
+  assert.ok(!out.includes(GH.slice(4, 16)) && out.endsWith('mcp.exe ENOENT'), 'FR-435 maskMcpError hides a key folder inside a share path (the place keeps the old hiding): ' + out);
+}
+
 // planted secrets are gone
 {
   const planted = [
