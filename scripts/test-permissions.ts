@@ -266,6 +266,8 @@ async function main(): Promise<void> {
       unresolvedH: ["codeOf(e) === 'ENOENT' || codeOf(e) === 'ENOTDIR';", "codeOf(e) === 'ENOENT';"],
       unresolvedI: ['const linkPath = bare === \'\' ||', 'const linkPath = true ? cur : bare === \'\' ||'],
       unresolvedL: ["if (pm.sep === '\\\\' && !/^[\\\\/]{2}/.test(p)", "if (false && !/^[\\\\/]{2}/.test(p)"],
+      unresolvedM: [' || /^[A-Za-z]:(?![\\\\/])/.test(p))', ')'],
+      unresolvedN: ['!/^[\\\\/]{2}/.test(p) && (', '('],
       unresolvedK: ["if (rest.includes('..')) return undefined;", ''],
       unresolvedD: ['if (fs.lstatSync(linkPath).isSymbolicLink()) {', 'if (false as boolean && fs.lstatSync(linkPath).isSymbolicLink()) {'],
     };
@@ -300,6 +302,15 @@ async function main(): Promise<void> {
     assert.ok(inside('/tmp/attached.png', ['/tmp/attached.png'], w), 'win32 shape 1: a drive-less path equal to a drive-less allowed path is inside');
     assert.ok(inside('/tmp/attached.png', ['C:\\tmp\\attached.png'], w), 'win32 shape 1: a drive-less path resolves against the root drive');
     assert.ok(!inside('/tmp/other.png', ['/tmp/attached.png'], w), 'win32 shape 1: another file is outside');
+    const id = { flavor: path.win32, caseInsensitive: true, realpath: (x: string): string => x };
+    assert.ok(!inside('C:x', ['D:\\proj'], id), 'win32 shape 3: a path with a drive letter only is read on that drive, outside another root');
+    assert.ok(inside('C:x', ['C:\\proj'], id), 'win32 shape 3: and inside a root on that drive');
+    const seen: string[] = [];
+    const rec = { ...id, realpath: (x: string): string => { seen.push(x); return x; } };
+    const unc: string = '\\\\srv\\share\\a.txt', ns: string = '\\\\?\\D:\\proj\\..\\x';
+    assert.ok(inside(unc, ['\\\\srv\\share'], rec) && seen[0] === unc, 'win32 shape 4: a network path goes to the resolver as it is');
+    seen.length = 0;
+    assert.ok(!inside(ns, ['D:\\proj'], rec) && seen[0] === ns, 'win32 shape 4: a prefixed path goes to the resolver as it is, not collapsed');
     assert.ok(inside('C:\\Users\\RUNNER~1\\Temp\\a.png', ['C:\\Users\\runneradmin\\Temp\\a.png'], w), 'win32 shape 2: a short-name temp path is inside its long-form root');
     assert.ok(inside('C:\\Users\\RUNNER~1\\Temp\\new\\a.png', ['C:\\Users\\runneradmin\\Temp'], w), 'win32 shape 2: a missing file under it is inside');
   }
