@@ -189,15 +189,19 @@ async function main(): Promise<void> {
 
   // ---- review of PR 2073 -------------------------------------------------------------------------------------------
   {
-    // (1) off and on in the same tick: the aborted check is not joined; a fresh one starts and its result is stored
+    // (1) off and on in the same tick: the aborted check is not joined; a fresh one starts (review of PR 2128, item 1: once the minute since the
+    // aborted request's START has passed, so a switch loop cannot send a request each time) and its result is stored: no day is skipped
     const r = rig();
     r.u.start(); await settle();
     r.u.setSelfCheck(false);
     r.u.setSelfCheck(true);
     await settle();
-    assert.strictEqual(r.calls.filter((c) => c.url === LIST).length, 2, 'review 1: off and on in the same tick starts a fresh request (the aborted one is not joined)');
-    assert.ok(r.calls[0].signal?.aborted && !r.calls[1].signal?.aborted, 'review 1: the first request is aborted, the fresh one is not');
+    assert.strictEqual(r.calls.filter((c) => c.url === LIST).length, 1, 'review 1 (PR 2128 item 1): off and on in the same tick sends no second request within the minute');
+    assert.deepStrictEqual([...r.timers.values()].map((t) => t.ms), [MANUAL_GAP_MS], 'review 1: the timer comes back when the minute is over (not in 24 h)');
     r.calls[0].answer({ ok: false, reason: 'aborted' });
+    await fire(r);
+    assert.strictEqual(r.calls.filter((c) => c.url === LIST).length, 2, 'review 1: after the minute a fresh request starts (the aborted one is not joined)');
+    assert.ok(r.calls[0].signal?.aborted && !r.calls[1].signal?.aborted, 'review 1: the first request is aborted, the fresh one is not');
     r.calls[1].answer(ok(feedBytes())); await settle(); await settle();
     r.calls[2]?.answer(NO); await settle(); await settle();
     assert.strictEqual(r.u.view().target, '0.1.29', 'review 1: the fresh check result is stored');
@@ -226,7 +230,8 @@ async function main(): Promise<void> {
     const st1 = recorder(s1.store);
     (s1.u as unknown as { d: SelfUpdateDeps }).d.store = () => st1;
     await s1.u.checkNow();
-    assert.deepStrictEqual(patches, [{ lastCheck: { at: T0, latest: '0.1.29' } }], 'review 3: a successful check writes exactly { lastCheck }');
+    // T014 (FR-463): then exactly { announced } when it finds a version not announced before (a patch of its own: nothing else rides along)
+    assert.deepStrictEqual(patches, [{ lastCheck: { at: T0, latest: '0.1.29' } }, { announced: '0.1.29' }], 'review 3: a successful check writes exactly { lastCheck } (and, T014, exactly { announced } for a new version)');
     assert.strictEqual(s1.store.updates.selfCheck, false, 'review 3: the switch stays off after a check');
     patches.length = 0;
     s1.clock.t += MANUAL_GAP_MS;
@@ -246,6 +251,7 @@ async function main(): Promise<void> {
     a.calls[0].answer(ok(feedBytes())); await settle();
     assert.deepStrictEqual([(await pending).state, a.store.updates.lastCheck], ['none', undefined], 'review 4: an aborted Check now stores nothing, even when its answer arrives');
     const n0 = a.calls.length;
+    a.clock.t += MANUAL_GAP_MS; // review of PR 2128, item 1: the aborted request's start counts; the next one may start a minute later
     const next = a.u.checkNow(); await settle();
     a.calls[n0].answer(ok(feedBytes()));
     assert.strictEqual((await next).target, '0.1.29', 'review 4: the next Check now works');

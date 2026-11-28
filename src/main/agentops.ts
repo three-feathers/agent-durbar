@@ -3,8 +3,9 @@
  * (spec 012 FR-054). Moved verbatim from `main.ts` and `mcpipc.ts` so they can be tested: no Electron, no file system.
  */
 import type { AdapterRouter } from '../adapters/router';
-import type { AgentAdapter, AgentMessage, StartOptions } from '../adapters/types';
+import type { AgentAdapter, AgentEvent, AgentMessage, StartOptions } from '../adapters/types';
 import { LINE_UNCONFIRMED } from '../adapters/autopilotHost';
+import { ASSISTED_NOT_ASK, ASSISTED_NOT_RUNNING, ASSISTED_OFF_ROW, ASSISTED_ON_ROW, ASSISTED_POLICY_LINE, ASSISTED_REMOTE, ASSISTED_UNSUPPORTED_LINE, ASSISTED_UNVERIFIED, NO_ASSISTED } from '../adapters/assistedLines';
 import { interruptOf, refusesLive, setCapOf, setMcpEnabledOf, setPermModeOf } from '../adapters/router';
 import { parseAmount, parseCapIn } from '../shared/credits';
 import { answerTooLong, MAX_ANSWER, readAnswerPayload } from '../adapters/questions';
@@ -31,6 +32,10 @@ export interface OpsDeps {
   endAutopilot?(a: AgentInfo): void;
   /** Spec 099 FR-050: Stop: main's Autopilot state comes down before anything is awaited; the adapter's interrupt is the run's stop order. */
   autopilotStopSeen?(id: string): void;
+  /** Spec 003 FR-127: why the agent app's own organization policy refuses its reviewer switch (assisted approvals), or undefined. */
+  orgAssistedRefusal?(a: AgentInfo): string | undefined;
+  /** Spec 003 FR-126 (C6): remote control is on or being turned on for this session. */
+  remoteOn?(id: string): boolean;
 }
 
 const MODE_WORDS: Record<PermMode, string> = { 'read-only': 'Read-only', ask: 'Ask first', allow: 'Allow all' };
@@ -67,14 +72,78 @@ export function setModeOp(d: OpsDeps, id: unknown, mode: unknown, opts: unknown)
   // A live session that cannot switch keeps its old mode: say so and save nothing (constitution III, spec 012 FR-050). Not live: it applies at the next start.
   if (refusesLive(ad, a.id, r.applied)) return { ok: false, error: NO_LIVE_SETTING };
   const was = a.permMode;
+  const wasReview = !!a.assisted && m !== 'ask'; // spec 003 FR-126: the adapter turned its reviewer off with the switch; never restored
+  if (m !== 'ask') a.assisted = undefined;
   a.permMode = m;
   a.permRestored = undefined; // a fresh choice, no longer "restored"
   a.permFrom = undefined;
   d.store?.setPermMode(d.wsKey(a), m); // the folder's mode: new sessions and sessions with nothing remembered
   d.store?.setSessionMode(d.wsKey(a), d.sessionKey?.(a) ?? a.id, m); // this session's own mode (spec 003, 2026-10-21)
   const extra = [o.clearGrants === true ? 'session permissions cleared' : '', o.approvePending === true && m === 'allow' ? 'waiting requests approved' : ''].filter(Boolean).join(', ');
-  d.log?.(a, 'mode-change', `${MODE_WORDS[validMode(was)]} to ${MODE_WORDS[m]}${extra ? ` (${extra})` : ''}`);
+  d.log?.(a, 'mode-change', `${MODE_WORDS[validMode(was)]}${wasReview ? ' + review' : ''} to ${MODE_WORDS[m]}${extra ? ` (${extra})` : ''}`);
   return { ok: true, mode: m, pending: r.pending };
+}
+
+/**
+ * `agents:setMode` with `opts.assisted` (spec 003 FR-122): the agent app's reviewer on or off in the same call; any other `opts.assisted`
+ * than a boolean is ignored (a plain mode change). On only for a live session already in Ask first, not on Autopilot, never with remote
+ * control (C6), not when the organization's policy blocks it (FR-127), and only when the adapter says the app applied it (FR-123).
+ * One `mode-change` row each way. Never saved (FR-129).
+ */
+export async function setModeAssistedOp(d: OpsDeps, id: unknown, mode: unknown, opts: unknown): Promise<{ ok: boolean; error?: string; mode?: PermMode; pending?: number; assisted?: boolean }> {
+  const o = (opts && typeof opts === 'object' ? opts : {}) as Record<string, unknown>;
+  if (typeof o.assisted !== 'boolean') return setModeOp(d, id, mode, opts);
+  const a = typeof id === 'string' ? d.agents.get(id) : undefined;
+  const ad = a ? d.router.forAgent(a.id) : undefined;
+  if (!a || !ad) return { ok: false, error: 'unknown agent' };
+  if (typeof ad.setAssisted !== 'function' || !ad.capabilities?.assistedApproval) return { ok: false, error: NO_ASSISTED };
+  if (!o.assisted) {
+    const was = !!a.assisted;
+    a.assisted = undefined; // off at once in main, whatever the app answers: nothing more is approved on a verdict
+    if (ad.isLive(a.id)) await Promise.resolve().then(() => ad.setAssisted!(a.id, false)).catch(() => undefined);
+    if (was) d.log?.(a, 'mode-change', ASSISTED_OFF_ROW);
+    return { ok: true, mode: a.permMode, pending: 0, assisted: false };
+  }
+  if (ad.capabilities.assistedApproval.verified !== true) return { ok: false, error: ASSISTED_UNVERIFIED }; // C8: a real session only after the real check (the simulator answers in the window)
+  if (validMode(mode) !== 'ask' || a.permMode !== 'ask' || a.autopilot) return { ok: false, error: ASSISTED_NOT_ASK };
+  if (d.remoteOn?.(a.id)) return { ok: false, error: ASSISTED_REMOTE };
+  const no = d.orgAssistedRefusal?.(a);
+  if (no) return { ok: false, error: no };
+  if (!ad.isLive(a.id)) return { ok: false, error: ASSISTED_NOT_RUNNING };
+  if (a.assisted) return { ok: true, mode: 'ask', pending: 0, assisted: true };
+  let r: { on: boolean; reason?: string };
+  try {
+    r = await ad.setAssisted(a.id, true);
+  } catch {
+    r = { on: false, reason: 'unsupported' };
+  }
+  // after the await: a mode switch, Autopilot, remote control or a removal meanwhile wins, and the app's reviewer goes off again
+  const changed = d.agents.get(a.id) !== a || a.permMode !== 'ask' || !!a.autopilot || !!d.remoteOn?.(a.id);
+  if (r?.on === true && changed) {
+    await Promise.resolve().then(() => ad.setAssisted!(a.id, false)).catch(() => undefined);
+    return { ok: false, error: d.remoteOn?.(a.id) ? ASSISTED_REMOTE : ASSISTED_NOT_ASK };
+  }
+  if (r?.on !== true) return { ok: false, error: r?.reason === 'policy' ? ASSISTED_POLICY_LINE : r?.reason === 'not-ask' ? ASSISTED_NOT_ASK : ASSISTED_UNSUPPORTED_LINE, assisted: false };
+  a.assisted = { on: true };
+  d.log?.(a, 'mode-change', ASSISTED_ON_ROW);
+  return { ok: true, mode: 'ask', pending: 0, assisted: true };
+}
+
+/**
+ * Spec 003 FR-127, FR-129 (2026-11-25): main's state follows the app's reviewer when it goes off without the user asking (policy or
+ * fallback) or the session ends; a policy fallback gets its one activity row (the fixed sentence, never the runtime's text). A helper's
+ * event changes nothing. Without the `stopped` clear the chip, remote control and a later turn-on would still see it on after End.
+ */
+export function assistedOnEvent(d: Pick<OpsDeps, 'agents' | 'log'>, e: AgentEvent): void {
+  if (e.agentId) return;
+  const a = d.agents.get(e.sessionId);
+  if (!a) return;
+  if (e.type === 'status' && e.status === 'stopped') a.assisted = undefined;
+  if (e.type !== 'assisted' || e.assisted) return;
+  const was = !!a.assisted;
+  a.assisted = undefined;
+  if (e.reason === 'policy') d.log?.(a, 'mode-change', ASSISTED_POLICY_LINE);
+  else if (was) d.log?.(a, 'mode-change', ASSISTED_OFF_ROW);
 }
 
 /**

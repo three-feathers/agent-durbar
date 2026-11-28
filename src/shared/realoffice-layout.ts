@@ -212,6 +212,8 @@ export const BIG_ROWS = 8;
 /** FR-024: visitors' activity pose per place, and the fallback when a person has no picture for it. */
 export const FX_POSE: Record<string, string> = { library: 'book', software: 'book', terminal: 'runA', web: 'type', boss: 'knock', coffee: 'counter', bank: 'counter', postbox: 'letter', other: 'type' };
 export const POSE_FALLBACK: Record<string, string> = { wait: 'letter', runA: 'letter', counter: 'coffee', type: 'letter' }; /* spec 097 FR-024 (issue 2013): a set without the counter or the typing pose (Prehistoric has `coffee` and `letter`) still stands its visitor at the Bank, the coffee corner, the Web and Other tools */
+/** Spec 097 FR-024 (issue 2042): the Bank wants `counter`, and a set without it (seven of the eight: only Office people draw it) must not hand its visitor the coffee corner's cup: the Bank tries `counter`, then `letter` (a note handed over the counter), then `book`, then `coffee`. The coffee corner and every other place keep `POSE_FALLBACK`. */
+export const PLACE_POSES: Record<string, string[]> = { bank: ['counter', 'letter', 'book', 'coffee'] };
 /** FR-070: the second frame of each two-frame pose. Owner 2026-10-31 ("make a real running pose", replacing the treadmill): the
  *  Terminal visitor jogs in place, runA and runB. */
 export const POSE_FRAME_B: Record<string, string> = { typeA: 'typeB', waveA: 'waveB', runA: 'runB' };
@@ -382,7 +384,7 @@ export function standPose(meta: RealMeta, person: string | null | undefined, pla
   const stand = standOf(meta);
   if (!person || !roOwn(stand, person)) return null;
   const st = stand[person], want = custom ? 'wait' : (roOwn(FX_POSE, place) ? FX_POSE[place] : 'wait');
-  for (const p of [want, POSE_FALLBACK[want]]) if (p && roOwn(st.poses, p)) return { pose: p, size: st.poses[p], figH: st.figH, feet: st.feet && roOwn(st.feet, p) ? st.feet[p] : 1, top: st.top && roOwn(st.top, p) ? st.top[p] : 0, foot: st.foot && roOwn(st.foot, p) ? st.foot[p] : 0.5 };
+  for (const p of !custom && roOwn(PLACE_POSES, place) ? PLACE_POSES[place] : [want, POSE_FALLBACK[want]]) if (p && roOwn(st.poses, p)) return { pose: p, size: st.poses[p], figH: st.figH, feet: st.feet && roOwn(st.feet, p) ? st.feet[p] : 1, top: st.top && roOwn(st.top, p) ? st.top[p] : 0, foot: st.foot && roOwn(st.foot, p) ? st.foot[p] : 0.5 };
   return null;
 }
 /** a person's standing height (top of the head to the soles) in sheet pixels, from the upright 'letter' pose (else the sheet's figure height) */
@@ -649,7 +651,7 @@ export function realLayout(model: RealModel, viewport: { w: number; h: number },
   /* spec 097 FR-104 (T113): a world that draws storeys (`meta.storeys`) marks each floor of the All floors view with a tag and a rule, the shared rule `storeyRuns` as the arcade */
   let runs = meta.storeys ? storeyRuns(folders) : null;
   const [lobbyMin, lobbyMax] = lobbyRange(H0);
-  const LR = lounge.length ? loungeRows(meta, lounge, W, 0) : null, R = LR ? LR.h : 0, Ho = Math.max(200, H0 - R);
+  const LR = lounge.length ? loungeRows(meta, lounge, W, 0, LOUNGE_CARD_MIN) : null, R = LR ? LR.h : 0, Ho = Math.max(200, H0 - R);
   const zones: ZoneBox[] = [];
   let u = U_MIN, big = false, used = 0, fits = true, rows: Row[] = [], helpRows = 0, forced = false;
   if (folders.length) {
@@ -808,7 +810,7 @@ export function realLayout(model: RealModel, viewport: { w: number; h: number },
       return { id: rn.floor.id, name: rn.floor.name, n: rn.floor.n, box: { x: x0, y: y0, w: Math.max(...zs.map((z) => z.box.x + z.box.w)) - x0, h: Math.max(...zs.map((z) => z.box.y + z.box.h)) - y0 }, tag: tags.get(i)!, slab: i ? slabs.get(i) ?? null : null };
     });
   }
-  if (LR) lay.lounge = loungeRows(meta, lounge, W, height - R).row;
+  if (LR) lay.lounge = loungeRows(meta, lounge, W, height - R, LOUNGE_CARD_MIN).row;
   return lay;
 }
 
@@ -826,16 +828,23 @@ export function splitLounge(model: RealModel): { desks: RealFolder[]; lounge: Re
 /** FR-247 (owner 2026-11-06, issue #1220): a lounge seat in the `rows` worlds. LOUNGE_U: the seated person's body height (a face of FACE_U x 84 = 25 px, over FR-229's 24);
  *  LOUNGE_SHOW: the share of the seated picture above the plate (the plate stands in front of the lap, as a desk does); LOUNGE_TABLE: the small desk's width in units */
 export const LOUNGE_U = 84, LOUNGE_SHOW = 0.68, LOUNGE_TABLE = 0.62, LOUNGE_GAP = 6, LOUNGE_PAD = 6;
-/** FR-247: the seat width and the row height, from every person of the set (not only the ones seated now), so a seat never changes size with who sits there */
-export function loungeSeat(meta: RealMeta): { w: number; h: number; above: number; pw: number } {
+/** spec 097 FR-439 (issue 2076): the lounge card's own least width in the rows worlds, the same with every people set. LOUNGE_ROW: the widest name, its 5 px gap and its role of the demo crew's words
+ *  (the simulator's 15 agents; "Tomas" + "Prompt tuner" is the widest pair), the name at 12 px bold and the role at 10.5 px, in DejaVu Sans (CI's face, the widest the app meets): 116.8, taken as 117 px;
+ *  LOUNGE_CHROME: what the plate keeps besides the line: the padding 7 + 7 and the border 1 + 1 of `.ro-plate`, and the 22 px the rename pencil keeps (`.ro-plate.has-ren .ro-l1>b`); the seat is the plate
+ *  and 2 px each side. 117 + 38 + 4 = 159: a role that fits beside its name with one set fits with every set. */
+export const LOUNGE_ROW = 117, LOUNGE_CHROME = 16 + 22, LOUNGE_CARD_MIN = LOUNGE_ROW + LOUNGE_CHROME + 4;
+/** FR-247: the seat width and the row height, from every person of the set (not only the ones seated now), so a seat never changes size with who sits there.
+ *  `cardMin` (FR-439): the card's least width, 0 where the plate shows no role (the arcade); `w` is then no narrower, `aw` is the width the art itself takes (the person and the small desk keep their place at the seat's left) */
+export function loungeSeat(meta: RealMeta, cardMin = 0): { w: number; aw: number; h: number; above: number; pw: number } {
   const seats = Object.values(seatsOf(meta));
   const pw = Math.max(0.8 * LOUNGE_U, ...seats.map((m) => (m.w / m.bodyH) * LOUNGE_U), ((meta.hdPeople && meta.hdPeople.loungeW) || 0) * LOUNGE_U), /* spec 102 T472: an HD set keeps the seat width its old pictures gave (`loungeW`, in body heights), so a role that fitted still fits */ ph = Math.max(1.2 * LOUNGE_U, ...seats.map((m) => (m.h / m.bodyH) * LOUNGE_U));
   const above = Math.ceil(ph * LOUNGE_SHOW);
-  return { w: Math.ceil(0.86 * pw + LOUNGE_TABLE * LOUNGE_U + LOUNGE_GAP), h: LOUNGE_PAD + above + PLATE_H_ASK + LOUNGE_PAD, above, pw };
+  const aw = Math.ceil(0.86 * pw + LOUNGE_TABLE * LOUNGE_U + LOUNGE_GAP);
+  return { w: Math.max(aw, cardMin), aw, h: LOUNGE_PAD + above + PLATE_H_ASK + LOUNGE_PAD, above, pw };
 }
 /** FR-247: the lounge row(s) of `agents` across a floor `W` wide, its top at `top`: seats of one width, centred, as many rows as it takes. `h` is the whole height. */
-export function loungeRows(meta: RealMeta, agents: readonly RealAgent[], W: number, top: number): { h: number; row: { box: Rect; desks: DeskBox[] } } {
-  const S = loungeSeat(meta), per = Math.max(1, Math.floor((W - 2 * PAD) / S.w)), n = agents.length, rows = Math.ceil(n / per);
+export function loungeRows(meta: RealMeta, agents: readonly RealAgent[], W: number, top: number, cardMin = 0): { h: number; row: { box: Rect; desks: DeskBox[] } } {
+  const S = loungeSeat(meta, cardMin), per = Math.max(1, Math.floor((W - 2 * PAD) / S.w)), n = agents.length, rows = Math.ceil(n / per);
   const deskAR = meta.desk ? meta.desk[1] / meta.desk[0] : 0.38, tw = LOUNGE_TABLE * LOUNGE_U, th = tw * deskAR;
   const desks = agents.map((a, i): DeskBox => {
     const r = Math.floor(i / per), inRow = Math.min(per, n - r * per), x0 = (W - inRow * S.w) / 2, sx = x0 + (i - r * per) * S.w, y = top + r * S.h;
@@ -848,7 +857,7 @@ export function loungeRows(meta: RealMeta, agents: readonly RealAgent[], W: numb
       face = { x: px - FACE_U * LOUNGE_U * 0.4, y: headY, w: FACE_U * LOUNGE_U * 0.8, h: FACE_U * LOUNGE_U };
     } else face = { x: px - FACE_U * LOUNGE_U * 0.4, y: plateY - 0.62 * LOUNGE_U, w: FACE_U * LOUNGE_U * 0.8, h: FACE_U * LOUNGE_U }; /* no picture: the initials go where the face would be (FR-065) */
     /* the small desk stands on the floor behind the plate's top edge; the monitor on it, its foot on the desktop */
-    const table = { x: sx + S.w - LOUNGE_GAP - tw, y: plateY + 2 - th, w: tw, h: th };
+    const table = { x: sx + S.aw - LOUNGE_GAP - tw, y: plateY + 2 - th, w: tw, h: th };
     const sw = 0.92 * tw, sh = sw * 0.6, neck = 6, foot = table.y + 0.14 * th;
     const screen = { x: table.x + (tw - sw) / 2, y: foot - neck - sh, w: sw, h: sh + neck + 4 };
     const glass = { x: screen.x + 3, y: screen.y + 3, w: sw - 6, h: sh - 6 };

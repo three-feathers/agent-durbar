@@ -3,6 +3,7 @@
 test:safetext
 test:safetext-links
 test:safetext-links-labels
+test:settings-store
 test:settingsnav
 test:rendersyntax
 test:perfrecord
@@ -114,6 +115,7 @@ test:account
 test:autherrors
 test:autopilot
 test:autopilot-copilot
+test:assisted-copilot
 test:autopilot-claude
 test:autopilot-codex
 test:autopilot-reach
@@ -247,8 +249,11 @@ test:selfupdate-notes
 test:selfupdate-installtype
 test:selfupdate-checker
 test:selfupdate-ipc
+test:selfupdate-source
 test:selfupdate-schedule
 test:selfupdate-settings
+test:selfupdate-session
+test:selfupdate-wiring
 test:releases-json
 test:sessionsummary
 test:helpercard
@@ -311,5 +316,6 @@ test:dangersites
 test:specnumbers
 test:worktreesclean
 test:prpreflight
+test:prready
 test:pencilpark
 test:arcade-wall-signs

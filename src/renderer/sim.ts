@@ -451,7 +451,8 @@ const simCleanQuery = (q: unknown): { ok: true; query: string; cut: boolean } | 
  * session every 400 ms, for the "Searching, N of M sessions" state; `simsearch=locked`: the end state says saved MCP values were locked;
  * `simsearch=older`: each open session also has a message its chat does not show, for "That message is older than the chat shows".
  * `simsearch=listing` (issue 1904): the plan is built first, one folder every 400 ms (`listing` events), then the scan.
- * `simsearch=delayed`: the start answers after 700 ms, for a query that changes while it is pending.
+ * `simsearch=delayed`: the start is HELD until the driver releases it (`window.__durbarSimSearchGo(afterMs)`; `__durbarSimSearchHeld()` counts the starts held), for a query that changes while it is pending;
+ * a held start answers by itself after 30 s (a hang backstop only). Issue 2144: it was a fixed 700 ms, which a slow runner could outrun. Both hooks exist only in this mode, in the simulator.
  */
 function simConvSearchApi(qs: URLSearchParams, scope: () => SimConvSession[]): Pick<DurbarApi, 'convSearchStart' | 'convSearchCancel' | 'convSearchClear' | 'onConvSearch'> {
   type Search = { fold(s: unknown): string; terms(q: string): string[]; locate(t: unknown, q: string): Array<{ start: number; end: number; term: number }>; bestTiers(t: unknown, q: string): number[]; anchorKey(t: unknown): string };
@@ -461,6 +462,13 @@ function simConvSearchApi(qs: URLSearchParams, scope: () => SimConvSession[]): P
     try { const m = r && typeof r.maskNoteText === 'function' ? r.maskNoteText(t).text : undefined; return typeof m === 'string' ? m : undefined; } catch { return undefined; }
   };
   const slow = qs.get('simsearch') === 'slow';
+  const delayed = qs.get('simsearch') === 'delayed';
+  const held: Array<() => void> = [];
+  if (delayed) {
+    const hooks = window as unknown as { __durbarSimSearchHeld?: () => number; __durbarSimSearchGo?: (afterMs?: number) => void };
+    hooks.__durbarSimSearchHeld = () => held.length;
+    hooks.__durbarSimSearchGo = (afterMs = 0) => { const go = (): void => { for (const f of held.splice(0)) f(); }; if (afterMs > 0) setTimeout(go, afterMs); else go(); };
+  }
   const subs: Array<(e: ConvSearchEvent) => void> = [];
   let live: { id: string; timer?: ReturnType<typeof setTimeout> } | undefined;
   const stop = (): void => { if (live?.timer !== undefined) clearTimeout(live.timer); live = undefined; };
@@ -499,7 +507,7 @@ function simConvSearchApi(qs: URLSearchParams, scope: () => SimConvSession[]): P
   };
   return {
     convSearchStart: async (query) => {
-      if (qs.get('simsearch') === 'delayed') await new Promise((r) => setTimeout(r, 700)); // review of PR 1240 (R2): a start that answers late
+      if (delayed) await new Promise<void>((r) => { held.push(r); setTimeout(r, 30_000); }); // review of PR 1240 (R2): a start that answers late; held until the driver says so (issue 2144), 30 s at most
       stop();
       const q = simCleanQuery(query);
       if (!q.ok) return q.code === 'short' ? { ok: false, code: 'short', error: 'Type at least 3 characters.' } : { ok: false, code: 'invalid', error: 'That is not a search.' };
@@ -786,6 +794,8 @@ interface SimOptions {
 /** A grant scope as the broker builds it: key and chip label. */
 type SimScope = { key: string; label: string };
 interface SimAgent {
+  /** Spec 003 FR-133: how many requests the simulated reviewer has looked at since its turn-on (picks the next fixed verdict). */
+  asN?: number;
   /** Spec 099 FR-080: the simulated Autopilot run. */
   apRun?: { runId: string; n: number; limit: number; timer: number };
   info: AgentInfo;
@@ -943,6 +953,15 @@ const SIM_AUTOPILOT = simApQs?.get('simautopilot') === '1';
 const simApCap = (id: string): { capUnit: 'aiu' | 'usd' | 'tokens'; attachments: boolean; planApproval: boolean; verified: boolean; capMin?: number } | undefined =>
   id === 'copilot' ? { capUnit: 'aiu', attachments: true, planApproval: true, verified: false, capMin: 30 } : id === 'claude' ? { capUnit: 'usd', attachments: false, planApproval: true, verified: false } : id === 'codex' ? { capUnit: 'tokens', attachments: false, planApproval: false, verified: false } : undefined;
 const SIM_ORG = typeof location !== 'undefined' && new URLSearchParams(location.search).get('simorgpolicy') === '1';
+/**
+ * Spec 003 FR-133: Copilot's reviewer (assisted approvals) in the simulator, always offered for its Copilot agents. With it on, each request
+ * gets the next fixed verdict (approve, requireApproval, excluded, error, again). `?simassisted=policy`: the first request after the turn-on
+ * falls back (the organization's policy, a live fallback); `?simassisted=blocked`: the policy blocks the switch (shown disabled, refused).
+ */
+const SIM_ASSISTED = typeof location !== 'undefined' ? new URLSearchParams(location.search).get('simassisted') : null;
+const SIM_AS_VERDICTS = ['approve', 'requireApproval', 'excluded', 'error'] as const;
+const SIM_AS_WORD: Record<string, 'declined' | 'never' | 'undecided'> = { requireApproval: 'declined', excluded: 'never', error: 'undecided' };
+const SIM_AS_POLICY = "Your organization turned off Copilot's assisted approvals. This session stays in Ask first.";
 /** Spec 087 FR-022c (review on PR #833): `?simsbxlower=refuse`: the app refuses to lower a Copilot floor at the switch to Allow all (the floor is kept, the window toasts). */
 const SIM_LOWER_REFUSE = typeof location !== 'undefined' && new URLSearchParams(location.search).get('simsbxlower') === 'refuse';
 const simOrgText = (app: string): string => `Blocked by your organization's ${app} policy`;
@@ -1372,6 +1391,22 @@ const planMcpSignInRefresh = (i: SignInPlanInput): SignInPlan => {
       for (const k of Object.keys(o)) if (typeof o[k] === 'string') return k;
       return undefined;
     };
+    /* spec 005 FR-438: main's rule for the window's copy of a tool call (FR-342 main half, `toolArgCopies.see`), since the simulator's events skip
+       main: a text argument longer than the masks take arrives empty, and when the argument the chip shows (the window's `toolArg` choice, on the
+       emptied copy) is one of them, `argsLong` carries its length; a caller's own `argsLong` is dropped (main's word only) */
+    const simLongArgs = (e: Extract<AgentEvent, { type: 'toolCall' }>): AgentEvent => {
+      const { argsLong: _drop, ...rest } = e;
+      const raw = rest.args;
+      if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return rest;
+      const lim = Number((window as unknown as { DurbarRedact?: { MASK_INPUT_MAX?: number } }).DurbarRedact?.MASK_INPUT_MAX) || 12288;
+      const r = raw as Record<string, unknown>, out: Record<string, unknown> = {};
+      let cut = false;
+      for (const k of Object.keys(r)) { const v = r[k]; if (typeof v === 'string' && v.length > lim) { out[k] = ''; cut = true; } else out[k] = v; }
+      if (!cut) return rest;
+      const key = simToolArgKey(out);
+      const rv = key === undefined ? undefined : r[key];
+      return typeof rv === 'string' && out[key as string] === '' && rv.length > lim ? { ...rest, args: out, argsLong: rv.length } : { ...rest, args: out };
+    };
     const emit = (e: AgentEvent): void => {
       if (e.type === 'toolCall' && e.args !== undefined) { const k = simToolArgKey(e.args), v = k === undefined ? undefined : (e.args as Record<string, unknown>)[k]; const id = simToolCopyKey(e.sessionId, e.callId); if (typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean') simToolCopyKeep(simToolCopies, id, { text: String(v), masked: e.argsMasked === true }); else simToolCopies.delete(id); }
       /* like main, which keeps the runtime's list before the window hears of it: the reply a listener asks for at once sees this event (spec 058 FR-094) */
@@ -1385,6 +1420,7 @@ const planMcpSignInRefresh = (i: SignInPlanInput): SignInPlan => {
       }
       if (e.type === 'status' && e.status === 'stopped') { const q = sims.find((x) => x.info.id === e.sessionId); if (q) q.mcpCalls = undefined; }
       if (e.type === 'toolCall' && e.phase === 'failed' && e.mcpServer && simCallClass(e.output) === 'policy') e = { ...e, mcpCall: 'policy' }; // FR-193: like maskMcpEvent, the word only
+      if (e.type === 'toolCall') e = simLongArgs(e); // spec 005 FR-438: like main, an over-limit argument arrives empty with its length
       listeners.forEach((l) => l(e));
       simSchedHook?.(e);
       if (e.type === 'status' && !e.agentId && (e.status === 'idle' || e.status === 'error' || e.status === 'stopped')) simSignIn?.last.set(e.sessionId, simSignIn.mono()); // spec 058 FR-205: the last response
@@ -2032,12 +2068,31 @@ const planMcpSignInRefresh = (i: SignInPlanInput): SignInPlan => {
         simLog(s, 'auto-session-grant', summary);
         return true;
       }
+      // spec 003 FR-124, FR-133: with the reviewer on, the next fixed verdict; `approve` approves once (no card), the others give the card its closed word
+      let review: 'declined' | 'never' | 'undecided' | undefined;
+      if (!force && s.info.assisted && s.info.permMode === 'ask') {
+        if (SIM_ASSISTED === 'policy') { // a live fallback: off, one note (the window's) and one row, then a plain card
+          s.info.assisted = undefined;
+          simLog(s, 'mode-change', SIM_AS_POLICY);
+          emit({ type: 'assisted', sessionId: sid(s), timestamp: now(), reason: 'policy' } as AgentEvent);
+        } else {
+          const v = SIM_AS_VERDICTS[(s.asN ?? 0) % SIM_AS_VERDICTS.length];
+          s.asN = (s.asN ?? 0) + 1;
+          if (v === 'approve') {
+            emit({ type: 'permission', sessionId: sid(s), timestamp: now(), permission: { requestId: callId, kind, summary, state: 'approved', via: 'app-review', allowedBy: { kind: 'app', source: 'classifier' } } });
+            simLog(s, 'auto-app-review', summary);
+            s.editCall = callId;
+            return true;
+          }
+          review = SIM_AS_WORD[v];
+        }
+      }
       s.perm = { ...base, file, cont, ...(sc.folders ? { folders: sc.folders } : {}) };
       s.state = 'waiting';
       // spec 087 FR-021: a Codex approval card in Ask first says what approving may mean for its sandbox (its own line, as codexPermission)
       const sbxApp = s.info.adapterId ?? 'copilot';
       const sbxNote = sbxApp === 'codex' ? (kind === 'shell' ? 'If you approve, Codex may run this outside its sandbox.' : 'If you approve, Codex writes this outside its read-only sandbox.') : sbxApp === 'copilot' && kind === 'shell' && s.info.permMode === 'ask' && s.info.sandbox?.state === 'on' ? 'If you approve, this can also write in Copilot’s temp folder (a private one Durbar gives it), not only this folder.' : undefined; // FR-021a (K15)
-      emit({ type: 'status', sessionId: sid(s), timestamp: now() - (opts.waitOld ? 120_000 : 0), status: 'needs-permission', intent, permission: { ...base, state: 'pending', ...(diff ? { diff } : {}), ...(sbxNote ? { sandboxNote: sbxNote } : {}) } });
+      emit({ type: 'status', sessionId: sid(s), timestamp: now() - (opts.waitOld ? 120_000 : 0), status: 'needs-permission', intent, permission: { ...base, state: 'pending', ...(diff ? { diff } : {}), ...(sbxNote ? { sandboxNote: sbxNote } : {}), ...(review ? { review } : {}) } });
       return false;
     }
     function editTool(s: SimAgent, file: string, ok: boolean): void {
@@ -3342,6 +3397,7 @@ const planMcpSignInRefresh = (i: SignInPlanInput): SignInPlan => {
           simRemote.delete(id);
           return { ok: true, on: false };
         }
+        if (s.info.assisted) return { ok: false, error: 'Stop remote control first: assisted approvals and remote control from GitHub are never on together.' }; // spec 003 FR-126 (C6)
         // spec 054 FR-060: a link on the kind's own service (made up; the real shapes are in the spec)
         const claudeKind = k.remoteService?.host === 'claude.ai';
         const url = claudeKind ? 'https://claude.ai/code/session_sim' + (sims.indexOf(s) + 1) : 'https://github.com/three-feathers/agent-durbar/sessions/sim-' + (sims.indexOf(s) + 1);
@@ -3569,7 +3625,7 @@ const planMcpSignInRefresh = (i: SignInPlanInput): SignInPlan => {
     /* spec 096: `simimagegen=0`: Codex ready but with no `imageGen`, which is every real app today */
     const simAdapters = (): AdapterInfo[] => simAdapterList().map(signInState).map((k) => (SIM_AUTOPILOT && simApCap(k.id) ? { ...k, capabilities: { ...k.capabilities, autopilot: simApCap(k.id) } } : k)).map((a) => (a.id === 'codex' && simQuery.get('simimagegen') === '0' ? { ...a, capabilities: { ...a.capabilities, imageGen: false } } : a));
     const simAdapterList = (): AdapterInfo[] => [
-      { id: 'copilot', displayName: 'Copilot', state: 'ready', version: 'sim', capabilities: { ...copilotCaps } },
+      { id: 'copilot', displayName: 'Copilot', state: 'ready', version: 'sim', capabilities: { ...copilotCaps, assistedApproval: { verified: false } } }, // spec 003 FR-121: not verified, as the real adapter; the simulator shows it anyway (C8)
       ...(simKinds ? [
         simKindsParam === 'solo' && !simInstalled.has('claude')
           ? { id: 'claude', displayName: 'Claude Code', state: 'not-installed', hint: 'Install Claude Code, then choose Check again.', capabilities: { ...copilotCaps, caps: false, mcpToggle: false, remote: false } }
@@ -3685,6 +3741,70 @@ const planMcpSignInRefresh = (i: SignInPlanInput): SignInPlan => {
       ? [{ manager: 'official', own: 'claude', owner: true, display: 'claude update', note: 'Installs into your home folder; no administrator rights needed.' }, { manager: 'official', bin: 'bash', script: {}, display: 'https://claude.ai/install.sh (downloaded, then run with bash)' }]
       : kind === 'codex' ? [{ manager: 'npm', owner: true, pinned: '1.0.2', display: 'npm install -g @openai/codex@1.0.2 --no-update-notifier' }, { manager: 'official', bin: 'bash', script: {}, display: 'https://chatgpt.com/codex/install.sh (downloaded, then run with bash)' }]
       : [{ manager: 'brew', owner: true, display: 'brew upgrade --cask copilot-cli --greedy', note: 'May ask for administrator rights.' }]);
+    /*
+     * Spec 118 T014 (FR-464, FR-020 in part): Durbar's own update check in the simulator: a canned feed chosen by the page address
+     * `simselfupd=update|breaking|hostile|uptodate|failed`; without it nothing is shown (main's checker never runs under DURBAR_SIM and main never
+     * reads this address). No network: the answers are made up here, already in the shape main's cleaning gives (plain text; the hostile body
+     * keeps its markup as text, which is what SC-004 checks in the window). With a mode, the page acts as if the daily check had just found it:
+     * one toast after a moment (once per page), the More menu line and the About block.
+     */
+    type SelfView = import('../shared/api').SelfUpdateWindowView;
+    type SelfNotes = import('../shared/api').SelfUpdateWindowNotes;
+    const simSelfMode = simQuery.get('simselfupd') ?? '';
+    const simSelf = { daily: true, checking: false, until: 0, notice: 'show' as 'show' | 'snoozed' | 'skipped', at: Date.now() - 2 * 3600_000, opened: [] as string[] };
+    const simSelfCb: Array<(v: SelfView) => void> = [];
+    const SIM_SELF_HOSTILE = 'Fixed the floor picker.\n<img src=x onerror="window.__suXss=1"><script>window.__suXss=2</script>\n[click me](javascript:window.__suXss=3) and <b>bold</b> stay as text.'; // a payload that only sets a flag, so a failure cannot hang the driver
+    // the running version is the app's own (appversion.js), so the About line and the dialog agree; the canned releases sit just above it
+    const simSelfRun = (() => { const m = /^(\d+)\.(\d+)\.(\d+)/.exec(String((window as unknown as { DurbarAppVersion?: string }).DurbarAppVersion ?? '')); return m ? [Number(m[1]), Number(m[2]), Number(m[3])] : [0, 1, 29]; })();
+    const SV = { run: simSelfRun.join('.'), p1: `${simSelfRun[0]}.${simSelfRun[1]}.${simSelfRun[2] + 1}`, p2: `${simSelfRun[0]}.${simSelfRun[1]}.${simSelfRun[2] + 2}`, minor: simSelfRun[0] === 0 ? `0.${simSelfRun[1] + 1}.0` : `${simSelfRun[0] + 1}.0.0` };
+    const simSelfFeed = (): { target?: string; versions: string[]; breaking: 'breaking' | 'unknown' | 'no'; notes: SelfNotes['releases']; marks: SelfNotes['marks'] } => {
+      if (simSelfMode === 'breaking') return {
+        target: SV.minor, versions: [SV.minor, SV.p1], breaking: 'breaking',
+        notes: [{ version: SV.minor, date: '2026-11-24', text: 'Floors are now called levels.\nSettings > Floors moved to Settings > Office.', clipped: false }, { version: SV.p1, date: '2026-11-21', text: 'Calmer toasts.\nFixed a crash when a folder was renamed.', clipped: false }],
+        marks: [{ version: SV.minor, notes: 'Floors are renamed to levels; saved floor names move over by themselves.', action: 'Check your level names after the update.' }],
+      };
+      if (simSelfMode === 'update' || simSelfMode === 'hostile') return {
+        target: SV.p2, versions: [SV.p2, SV.p1], breaking: 'no',
+        notes: [{ version: SV.p2, date: '2026-11-24', text: simSelfMode === 'hostile' ? SIM_SELF_HOSTILE : 'Calmer toasts.\nThe Settings window opens faster.\nFixed a crash when a folder was renamed.', clipped: simSelfMode === 'hostile' }, { version: SV.p1, date: '2026-11-23', text: 'A new About block in Settings.', clipped: false }],
+        marks: [],
+      };
+      return { versions: [], breaking: 'no', notes: [], marks: [] };
+    };
+    const simSelfView = (announce?: string): SelfView => {
+      const f = simSelfFeed();
+      const base: SelfView = { shown: !!simSelfMode, blocked: false, canCheck: !!simSelfMode, dailyCheck: simSelf.daily, checking: simSelf.checking, running: SV.run, source: 'three-feathers/agent-durbar', sourceBy: 'built-in', origin: 'ci', checkedAt: simSelf.at, state: 'none' };
+      if (!simSelfMode) return { ...base, source: undefined, sourceBy: undefined, origin: undefined, checkedAt: undefined };
+      if (simSelfMode === 'failed') return { ...base, state: 'failed', reason: 'timeout' };
+      if (!f.target) return { ...base, state: 'up-to-date', latest: SV.run };
+      return { ...base, state: 'update', latest: f.target, target: f.target, versions: f.versions, breaking: f.breaking, gap: false, notice: simSelf.notice, ...(simSelf.notice === 'snoozed' ? { snoozeUntil: simSelf.until } : {}), ...(announce ? { announce } : {}) };
+    };
+    const simSelfEmit = (announce?: string): void => simSelfCb.forEach((cb) => cb(simSelfView(announce)));
+    const simSelfIn = (v: unknown): boolean => typeof v === 'string' && simSelfFeed().versions.includes(v);
+    const selfApi: Partial<DurbarApi> = {
+      selfUpdateGet: async () => simSelfView(),
+      selfUpdateCheck: async () => {
+        if (!simSelfMode) return simSelfView();
+        simSelf.checking = true; simSelfEmit();
+        await new Promise((r) => setTimeout(r, 400));
+        simSelf.checking = false; simSelf.at = Date.now();
+        return simSelfView(); // Check now: the card is the announcement, no toast (FR-463)
+      },
+      selfUpdateSetDaily: async (on) => { simSelf.daily = on === true; return { ok: true, update: simSelfView() }; },
+      selfUpdateSnooze: async (v) => { if (!simSelfIn(v)) throw new Error('Agent Durbar refused this update request.'); simSelf.notice = 'snoozed'; simSelf.until = Date.now() + 7 * 86400_000; return { ok: true, update: simSelfView() }; },
+      selfUpdateSkip: async (v) => { if (!simSelfIn(v)) throw new Error('Agent Durbar refused this update request.'); simSelf.notice = 'skipped'; return { ok: true, update: simSelfView() }; },
+      selfUpdateNotes: async () => {
+        const f = simSelfFeed();
+        if (!f.target) return { running: SV.run, releases: [], marks: [] };
+        return { running: SV.run, target: f.target, breaking: f.breaking, gap: false, source: 'three-feathers/agent-durbar', sourceBy: 'built-in', releases: f.notes, marks: f.marks };
+      },
+      // the driver reads which version a press asked to open; nothing opens in the simulator
+      selfUpdateOpenPage: async (v) => { if (!simSelfIn(v)) throw new Error('Agent Durbar refused this update request.'); simSelf.opened.push(String(v)); (window as unknown as { __simSelfOpened?: string[] }).__simSelfOpened = simSelf.opened; return { ok: true }; },
+      onSelfUpdate: (cb) => {
+        simSelfCb.push(cb);
+        if (simSelfMode && simSelfFeed().target && simSelfCb.length === 1) setTimeout(() => simSelfEmit(simSelfFeed().target), 700); // the daily check "found" it: one toast
+        return () => { const i = simSelfCb.indexOf(cb); if (i >= 0) simSelfCb.splice(i, 1); };
+      },
+    };
     const api: DurbarApi = {
       ...floorApi,
       ...mcpApi,
@@ -3819,6 +3939,7 @@ const planMcpSignInRefresh = (i: SignInPlanInput): SignInPlan => {
       onHarnessUpdates: (cb) => { simUpdCb.push(cb); if (simUpdStart && simUpdCb.length === 1) setTimeout(() => simUpdEmit({ app: 'codex', version: '1.0.2', name: 'the Codex CLI' }), 600); return () => { const i = simUpdCb.indexOf(cb); if (i >= 0) simUpdCb.splice(i, 1); }; },
       harnessVisible: async () => true,
       setCheckUpdatesAtStart: async (on) => { simStartCheck.on = on !== false; return { ok: true, checkUpdatesAtStart: simStartCheck.on }; },
+      ...selfApi, // spec 118 T014: Durbar's own update check, canned
       harnessOpenPage: async () => ({ ok: true }),
       harnessOpenSignIn: async () => ({ ok: true }),
       onHarnessProgress: (cb) => { simHarness.progress.push(cb); return () => { simHarness.progress = simHarness.progress.filter((x) => x !== cb); }; },
@@ -4128,6 +4249,7 @@ const planMcpSignInRefresh = (i: SignInPlanInput): SignInPlan => {
       },
       /* spec 076 FR-205/FR-207: main's view of the canned policy (no values) */
       orgPolicyView: async (): Promise<Record<string, import('../shared/orgpolicy').OrgPolicyAppView>> => {
+        if (SIM_ASSISTED === 'blocked') return { copilot: { app: 'Copilot', found: true, unreadable: false, paths: ['the Copilot runtime (managed settings)'], problems: [], modes: {}, assisted: { why: "Your organization turned off Copilot's assisted approvals", refuse: true }, counts: { modelAllow: null, modelDeny: 0, mcpAllow: null, mcpDeny: 0, toolDeny: 0 } } }; // spec 003 FR-127
         if (!SIM_ORG) return {};
         const one = (app: string, file: string, doubt = false): import('../shared/orgpolicy').OrgPolicyAppView => ({ app, found: true, unreadable: doubt, paths: [file], problems: doubt ? [file + ': allowed_sandbox_modes could not be read'] : [], modes: { allow: { why: doubt ? simOrgDoubtText(app) : simOrgText(app), refuse: !doubt } }, counts: { modelAllow: null, modelDeny: app === 'Claude Code' ? 1 : 0, mcpAllow: null, mcpDeny: app === 'Copilot' ? 1 : 0, toolDeny: app === 'Claude Code' ? 1 : 0 } });
         return { copilot: one('Copilot', '/etc/github-copilot/managed-settings.json'), claude: one('Claude Code', '/etc/claude-code/managed-settings.json'), codex: one('Codex', '/etc/codex/requirements.toml', true) };
@@ -4219,6 +4341,22 @@ const planMcpSignInRefresh = (i: SignInPlanInput): SignInPlan => {
         if (crashProbe.on) crashProbe.modeSets++;
         const s = sims.find((x) => x.info.id === id);
         if (!s) return { ok: false, error: 'unknown agent' };
+        if (typeof o?.assisted === 'boolean') { // spec 003 FR-122: the reviewer switch, refused and logged as main's setModeAssistedOp does
+          if ((s.info.adapterId ?? 'copilot') !== 'copilot') return { ok: false, error: 'This agent app has no assisted approvals.' };
+          if (!o.assisted) {
+            const was = !!s.info.assisted;
+            s.info.assisted = undefined;
+            if (was) simLog(s, 'mode-change', 'Ask first + review to Ask first');
+            return { ok: true, mode: s.info.permMode, pending: 0, assisted: false };
+          }
+          if (mode !== 'ask' || s.info.permMode !== 'ask' || s.info.autopilot) return { ok: false, error: "Copilot's reviewer works in Ask first only. Switch to Ask first, then turn it on." };
+          if (simRemote.has(id)) return { ok: false, error: 'Stop remote control first: assisted approvals and remote control from GitHub are never on together.' };
+          if (SIM_ASSISTED === 'blocked') return { ok: false, error: SIM_AS_POLICY };
+          if (!s.info.assisted) simLog(s, 'mode-change', 'Ask first to Ask first + review');
+          s.info.assisted = { on: true };
+          s.asN = 0;
+          return { ok: true, mode: 'ask', pending: 0, assisted: true };
+        }
         if (s.info.autopilot) { // spec 099 FR-051: ends first
           if (s.apRun) simApEnd(s, 'stopped');
           else s.info.autopilot = undefined;
@@ -4226,7 +4364,9 @@ const planMcpSignInRefresh = (i: SignInPlanInput): SignInPlan => {
         const org = simOrgMode(s.info.adapterId, mode); // spec 076 FR-203, as main refuses it
         if (org) return { ok: false, error: org + ': pick another permission mode.' };
         const MW: Record<string, string> = { 'read-only': 'Read-only', ask: 'Ask first', allow: 'Allow all' };
-        simLog(s, 'mode-change', `${MW[s.info.permMode] ?? s.info.permMode} to ${MW[mode] ?? mode}`, mode);
+        const wasReview = !!s.info.assisted && mode !== 'ask'; // spec 003 FR-126: off with every switch away from Ask first
+        if (mode !== 'ask') s.info.assisted = undefined;
+        simLog(s, 'mode-change', `${MW[s.info.permMode] ?? s.info.permMode}${wasReview ? ' + review' : ''} to ${MW[mode] ?? mode}`, mode);
         s.info.permMode = mode;
         s.info.permRestored = undefined;
         s.info.permFrom = undefined;

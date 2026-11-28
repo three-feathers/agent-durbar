@@ -10,7 +10,7 @@
  *   PENCIL_MUTANT=paint                   the pencil 2 px lower: its icon clear, its painted chip on the status line (must fail "the pencil's painted box")
  *   PENCIL_MUTANT=shown                   every pencil always shown (must fail "the pencils are hidden until a plate is hovered or focused")
  *   SHOTS_OUT=<dir>                        also saves 097-plate-pencil-<world>-<w>x<h>.png with every pencil shown (before the geometry asserts, so a failing build has its picture)
- *   UI_SUITE_XVFB=1 locally: a DISPLAY without a pointer reports hover:none, which shows every pencil (docs/agent-notes.md)
+ *   UI_SUITE_DESKTOP=1 locally: a desktop without a pointer reports hover:none, which shows every pencil; the suite's default on Linux is xvfb (spec 008 FR-465)
  *
  * At 1440x900 and 1280x800 in Real office, in the Photo office, the cave, the arcade and the one-room arcade, it fails (exit 1) when:
  *   - a plate of a session that may be renamed has no pencil right after it, or a pencil has no plate, or a plate is followed by another's pencil;

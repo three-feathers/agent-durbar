@@ -1,1 +1,0 @@
-- **Number check sees more branches** (spec 021): `npm run specs:numbers` and the PR preflight now also compare pushed branches that have no pull request and the branches in your other worktrees, and skip the leftover of a closed, unmerged pull request. A list it cannot read stops the check instead of passing. Developer tooling only.

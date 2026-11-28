@@ -7,7 +7,7 @@
 # assignees again, and if someone else appeared meanwhile, the assignment event that is later (timeline `assigned`, then event id) backs
 # off. On a PR the author's own assignment is ignored (the author is never the reviewer claim). It unassigns only itself. Another person's assignment or label is never removed. Exit 0 claimed (or already yours), 1 refused or
 # lost, 2 usage or a `gh` failure (rate limit, no access): then check `gh issue view N` and run --release if you hold a claim you do not want.
-# Uses `gh api` with `--jq` (no jq needed), no shell on user text, bash (Git Bash on Windows). Reads and writes only issue N.
+# Uses `gh api` with `--jq` (no jq needed), no shell on user text, bash (Git Bash on Windows) and Node (the rules-fresh.js note, FR-425). Reads and writes only issue N.
 usage() { echo "usage: scripts/claim.sh <issue or PR number> | scripts/claim.sh --release <N> [reason]" >&2; exit 2; }
 release=0
 if [ "$1" = "--release" ]; then release=1; shift; fi
@@ -19,6 +19,8 @@ reason=$*
 LABEL=status:claimed
 API="repos/{owner}/{repo}/issues/$n"
 die() { echo "claim.sh: $*" >&2; exit 2; }
+# FR-425: a claim from a checkout that is behind main on the rule files still goes through, with a note naming them (a refused claim delays a review)
+fresh=$(node "$(dirname "$0")/rules-fresh.js" 2>&1) || echo "claim.sh: NOTE the rule files may be stale; read them before you work: $fresh" >&2
 me=$(gh api user --jq .login) && [ -n "$me" ] || die "cannot read your GitHub login (gh signed in?)"
 case $me in *[!A-Za-z0-9-]*) die "unexpected login";; esac
 # kind on line 1 (pr or issue), then the assignees on line 2

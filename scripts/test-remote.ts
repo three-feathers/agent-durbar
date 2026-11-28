@@ -9,6 +9,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { allowedRemoteUrl, cleanRemoteError } from '../src/shared/remote';
 import { createRemoteOps, NO_REMOTE, NOT_IN_ALLOW_ALL, NOT_RUNNING } from '../src/main/remoteops';
+import { ASSISTED_REMOTE } from '../src/adapters/assistedLines';
 import { HeldBeforeUpdate, loadHeld, saveHeld } from '../src/main/doormigrate';
 import { FakeClient, FakeCopilot } from './fakes/copilot-sdk';
 import type { FakeSession } from './fakes/copilot-sdk';
@@ -249,6 +250,9 @@ async function main(): Promise<void> {
     mode = 'allow';
     assert.deepStrictEqual(await ops.setRemote('a', true), { ok: false, error: NOT_IN_ALLOW_ALL }, 'refused in Allow all');
     mode = 'ask';
+    // spec 003 FR-126 (C6): never together with the app's reviewer (assisted approvals): refused before the confirmation and the adapter
+    const opsR = createRemoteOps({ known: () => true, adapterOf: () => ad, open: async () => undefined, modeOf: () => 'ask', confirm: async () => true, assistedOn: () => true });
+    assert.deepStrictEqual(await opsR.setRemote('a', true), { ok: false, error: ASSISTED_REMOTE }, 'spec 003 C6: refused while the reviewer is on');
     assert.deepStrictEqual(await ops.setRemote('a', true), { ok: false, cancelled: true, error: 'Cancelled.' }, 'the native No stops it');
     assert.deepStrictEqual(calls, [], 'nothing reached the adapter before consent');
     yes = true;

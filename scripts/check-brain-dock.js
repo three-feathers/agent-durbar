@@ -19,6 +19,10 @@
  *     the current step's (bold, framed in the caption chip's colour), a word animates, the lines line does not name the trail's cap, or focus, hover, the arrow keys
  *     and Esc do not show, move and close the tooltip with the lobe's sentence and its count, inside the picture; a word is under 4.5:1 on its chip (over the dock and over
  *     its own lobe's colour) or the lit frame under 3:1 on the dock, from the resolved colours; compact and roomy.
+ * Issue #2166: the step that focuses the Shell word (and its arrow-key and Esc follow-ups) is the one that failed on every Windows UI run's first try: a neighbour's window had the OS focus, `focus()` then fires no
+ * focus event and the tooltip never opens. The window is blurred before each such step (`BRAIN_DOCK_BLUR=0` turns that off, for the plain runs), the page is asserted to report no focus, and the driver asks for
+ * the focus by state (`needFocus`) before it focuses the word. Mutant: BRAIN_DOCK_MUTANT=nofocus (the driver does not ask for the focus; a patched run, nothing else changes) dies at "focus on Shell: its tooltip
+ * inside the picture with the turn's count in <tag>: null".
  * Screenshots (looked at by the author): <SHOTS_OUT>/106-dock-<world>-<state>-<w>x<h>.png
  */
 const os = require('os');
@@ -27,6 +31,8 @@ const path = require('path');
 const assert = require('assert');
 const { helpers, jsLiteral } = require('./driver-helpers');
 
+const BLUR = process.env.BRAIN_DOCK_BLUR !== '0'; /* issue #2166: the Windows condition, forced on every machine */
+const MUTANT = process.env.BRAIN_DOCK_MUTANT || '';
 const OUT = process.env.SHOTS_OUT || fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-106-dock-'));
 const SIZES = [[1440, 900], [1280, 800]];
 const CANARY = 'ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789ab';
@@ -80,6 +86,8 @@ module.exports = async (ctx) => {
     console.log(`[106-dock] ${tag}: lobe word contrast ${JSON.stringify(li.cr)}`);
     assert.deepStrictEqual(li.lit, [litWord], `the lit word is ${litWord} in ${tag}`);
     assert.strictEqual(li.lines, 'Lines: the last 24 steps, newest brightest', `the lines line in ${tag}`);
+    if (BLUR) { ctx.win.blur(); const blurred = await H.until('!document.hasFocus()', 3000); const hf = await js('document.hasFocus()'); assert.ok(blurred, tag + ': the window is blurred, so the page reports no focus (the setup of the focus step: hasFocus ' + hf + ')'); }
+    if (MUTANT !== 'nofocus') await H.needFocus(`${tag}: before the Shell word is focused`); /* the real focus, by state: show(), focus(), then until document.hasFocus(); not the emulation, which keeps the page "focused" for the rest of the run and so hides the blur above */
     await js(`document.querySelector('#brainRail .bv-lab[data-g=shell]').focus()`);
     const t1 = await tipOf();
     const n1 = t1 && /^Shell: back, low\. Running a command, or any other tool\. (No|\d+) steps? this turn\.$/.exec(t1.text);

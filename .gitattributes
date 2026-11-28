@@ -11,3 +11,11 @@ scripts/fixtures/*-main-ref.* text eol=lf
 
 # spec 102 T502 (review of PR 2106): the old seat numbers are hash-pinned; LF on every OS
 scripts/fixtures/retro-old-seat.json text eol=lf
+
+# gate inputs: LF on every OS so the stale-gate compare does not depend on autocrlf (spec 021 FR-425)
+scripts/*.sh text eol=lf
+scripts/trusted-authors.txt text eol=lf
+scripts/pr-gate-answered.awk text eol=lf
+scripts/pr-status-note.re text eol=lf
+scripts/safe-print.js text eol=lf
+.github/ruleset-main.json text eol=lf

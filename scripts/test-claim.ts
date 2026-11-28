@@ -47,6 +47,10 @@ save();
 if (out) console.log(out);
 `;
 fs.writeFileSync(path.join(tmp, 'fake-gh.js'), FAKE);
+// FR-425: claim.sh asks `scripts/rules-fresh.js` which rule files changed on main; a fake git (scripts/fake-git.js) answers, so no run reaches the real repository
+fs.writeFileSync(path.join(bin, 'git'), `#!/bin/bash\nexec node "${path.join(ROOT, 'scripts', 'fake-git.js')}" "$@"\n`, { mode: 0o755 });
+let gitEnv: Record<string, string> = {};
+let script = SCRIPT;
 fs.writeFileSync(path.join(bin, 'gh'), `#!/bin/bash\nexec node "${path.join(tmp, 'fake-gh.js')}" "$@"\n`, { mode: 0o755 });
 
 interface State { me: string; kind: string; author?: string; assignees: string[]; labels: string[]; events: { t: string; id: number; login: string }[]; comments: string[]; log: string[]; id: number; tick: number; race?: { login: string; when: string }; fail?: string }
@@ -55,7 +59,7 @@ function run(over: Partial<State>, ...argv: string[]): { r: ReturnType<typeof sp
   const f = path.join(tmp, `state${k++}.json`);
   const st: State = { me: 'vikramgorla', kind: 'issue', assignees: [], labels: [], events: [], comments: [], log: [], id: 100, tick: 0, ...over };
   fs.writeFileSync(f, JSON.stringify(st));
-  const r = spawnSync('bash', [SCRIPT, ...argv], { encoding: 'utf8', env: { ...process.env, PATH: `${bin}${path.delimiter}${process.env.PATH}`, FAKE_STATE: f } });
+  const r = spawnSync('bash', [script, ...argv], { encoding: 'utf8', env: { ...process.env, PATH: `${bin}${path.delimiter}${process.env.PATH}`, FAKE_STATE: f, ...gitEnv } });
   return { r, st: JSON.parse(fs.readFileSync(f, 'utf8')) };
 }
 const deletes = (st: State): string[] => st.log.filter((l) => l.includes('DELETE'));
@@ -160,5 +164,43 @@ assert.strictEqual(run({ fail: '/assignees' }, '7').r.status, 2);
   assert.strictEqual(r.status, 0);
   assert.deepStrictEqual(st.assignees, ['fjcabello']);
   assert.deepStrictEqual(st.labels, ['status:claimed']);
+}
+// FR-425: a checkout behind main on the rule files still claims, with a note that names them; a fresh one prints no note
+const noteCases: Record<string, () => void> = {
+  'fresh: no note': () => { gitEnv = {}; const { r, st } = run({}, '7'); assert.ok(r.status === 0 && !/NOTE/.test(String(r.stderr)) && st.assignees.length === 1, `fresh checkout: no note, claimed: ${String(r.stderr)}`); },
+  'stale: note names the files, still claims': () => {
+    gitEnv = { FAKE_GIT_CHANGED: 'AGENTS.md\ndocs/rules/review-rounds.md' };
+    const { r, st } = run({}, '7');
+    assert.ok(r.status === 0 && st.assignees.join() === 'vikramgorla', `stale checkout still claims: ${String(r.stderr)}`);
+    assert.ok(/claim\.sh: NOTE the rule files may be stale/.test(String(r.stderr)) && /AGENTS\.md: 444444444444/.test(String(r.stderr)) && /rules: stale, read: AGENTS\.md, docs\/rules\/review-rounds\.md/.test(String(r.stderr)), `stale checkout: the note names the files: ${String(r.stderr)}`);
+  },
+  'unfetched: note, still claims': () => {
+    gitEnv = { FAKE_GIT_FETCH_RC: '1' };
+    const { r, st } = run({}, '7');
+    assert.ok(r.status === 0 && st.assignees.length === 1 && /NOTE the rule files may be stale[^]*cannot fetch origin main/.test(String(r.stderr)), `failed fetch: a note, still claims: ${String(r.stderr)}`);
+  },
+};
+for (const fn of Object.values(noteCases)) fn();
+{ // mutants: a copy of claim.sh beside rules-fresh.js and what it loads; each must fail the case named
+  const mdir = path.join(tmp, 'mut', 'scripts');
+  fs.mkdirSync(mdir, { recursive: true });
+  for (const f of ['rules-fresh.js', 'rules-check.js', 'harness-refs.js', 'specs-index.js']) fs.copyFileSync(path.join(ROOT, 'scripts', f), path.join(mdir, f));
+  const src = fs.readFileSync(SCRIPT, 'utf8').replace(/\r\n/g, '\n');
+  const mutants: Array<[string, string, string, string, string]> = [
+    ['the note dropped', 'echo "claim.sh: NOTE the rule files may be stale; read them before you work: $fresh" >&2', ':', 'stale: note names the files, still claims', 'stale checkout: the note names the files'],
+    ['a stale checkout refused', 'echo "claim.sh: NOTE the rule files may be stale; read them before you work: $fresh" >&2', 'echo "claim.sh: stale: $fresh" >&2; exit 1', 'stale: note names the files, still claims', 'stale checkout still claims'],
+    ['a failed fetch passes silently', 'rules-fresh.js" 2>&1) ||', 'rules-fresh.js" 2>&1) || [ $? = 2 ] ||', 'unfetched: note, still claims', 'failed fetch: a note, still claims'],
+    ['a note on a fresh checkout', 'rules-fresh.js" 2>&1) ||', 'rules-fresh.js" 2>&1; false) ||', 'fresh: no note', 'fresh checkout: no note'],
+  ];
+  for (const [name, from, to, caught, at] of mutants) {
+    assert.ok(src.includes(from), `mutant "${name}": its anchor is in claim.sh`);
+    script = path.join(mdir, 'claim.sh');
+    assert.notStrictEqual(src.split(from).join(to), src, `mutation did not apply: ${name}`);
+    fs.writeFileSync(script, src.split(from).join(to), { mode: 0o755 });
+    let msg = '';
+    try { noteCases[caught](); } catch (e) { msg = (e as Error).message; }
+    assert.ok(msg.startsWith(at), `claim mutant "${name}" must fail at "${at}", got: ${msg.split('\n')[0] || 'it survived'}`);
+  }
+  script = SCRIPT;
 }
 console.log('claim tests passed');

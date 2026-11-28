@@ -97,6 +97,15 @@ const api: DurbarApi = {
   harnessRun: (kind, op, planIndex, gate) => ipcRenderer.invoke('harness:run', kind, op, planIndex, gate),
   harnessUpdates: (what, app) => ipcRenderer.invoke('harness:updates', what === 'check' ? 'check' : undefined, typeof app === 'string' ? app : undefined),
   onHarnessUpdates: (cb) => sub('harness:updatesChanged', cb),
+  // spec 118 T014 (FR-024): Durbar's own update check; a version string, one boolean or nothing (main validates every argument again)
+  selfUpdateGet: () => ipcRenderer.invoke('selfupdate:get'),
+  selfUpdateCheck: () => ipcRenderer.invoke('selfupdate:check'),
+  selfUpdateSetDaily: (on) => ipcRenderer.invoke('selfupdate:setDailyCheck', on === true),
+  selfUpdateSnooze: (version) => ipcRenderer.invoke('selfupdate:snooze', String(version)),
+  selfUpdateSkip: (version) => ipcRenderer.invoke('selfupdate:skip', String(version)),
+  selfUpdateNotes: () => ipcRenderer.invoke('selfupdate:notes'),
+  selfUpdateOpenPage: (version) => ipcRenderer.invoke('selfupdate:openReleasePage', String(version)),
+  onSelfUpdate: (cb) => sub('selfupdate:changed', cb),
   harnessVisible: (on) => ipcRenderer.invoke('harness:visible', on === true),
   setCheckUpdatesAtStart: (on) => ipcRenderer.invoke('settings:setCheckUpdatesAtStart', on),
   setDiagnostics: (on) => ipcRenderer.invoke('settings:setDiagnostics', on), // spec 058 FR-227

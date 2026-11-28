@@ -19,6 +19,9 @@
  *
  *   npm run check:ui -- --only check-theme-art            (builds first)
  *   SHOTS_OUT=<folder>                 screenshots (default: theme-art-shots in the OS temp folder)
+ *   THEME_ART_MUTANT=stale             a walker's pixels are read at the box the survey took, not at its box now (spec 040 T593): dies in the
+ *                                      "late walk" step at "shows the pack's pink on screen (... pixels 0)"
+ *   THEME_ART_MUTANT=short             the wait for a walker to settle lasts 1 ms: dies in the same step at the same text (the walker is still walking)
  */
 const fs = require('fs');
 const os = require('os');
@@ -26,6 +29,7 @@ const path = require('path');
 const assert = require('assert');
 const { helpers, jsLiteral } = require('./driver-helpers');
 
+const MUTANT = process.env.THEME_ART_MUTANT || '';
 const PACK = JSON.parse(fs.readFileSync(path.join(__dirname, 'fixtures', 'themes', 'pink-studio.json'), 'utf8'));
 /* the pack's pinks (robe #e0218a, chair --chair #c2185b, headband), also when an idle desk is drawn at .7 opacity over its card;
    Clean Office has no such colour (its reds and skins fail the blue test) */
@@ -54,7 +58,7 @@ function survey(shirts) {
     theme: window.THEME.current().id,
     desks: deskScenes.map((s) => ({ shirt: wears(s), cup: has(s, 'gadget-cup'), laptop: has(s, 'gadget-laptop'), idle: /^(still\|)?idle\|/.test(s.dataset.sig || ''), robe: has(s, 'char-robe'), collar: has(s, 'char-collar'), hat: has(s, 'char-headwear'), hatOver: hatOver(s), deskArt: has(s, 'desk-art'), monitor: has(s, 'monitor-art'), anyArt: !!s.querySelector('.art-slot') })),
     mainBoxes: mainScenes.map((s) => ({ box: box(s), st: (/^(\w+)\|/.exec(s.dataset.sig || '') || [])[1] })),
-    walkers: q('.walker').map((w) => ({ shirt: wears(w), robe: has(w, 'char-robe'), hat: has(w, 'char-headwear'), hatOver: hatOver(w), anyArt: !!w.querySelector('.art-slot'), box: box(w.querySelector('svg') || w) })),
+    walkers: q('.walker').map((w) => ({ agent: w.dataset.agent, shirt: wears(w), robe: has(w, 'char-robe'), hat: has(w, 'char-headwear'), hatOver: hatOver(w), anyArt: !!w.querySelector('.art-slot'), box: box(w.querySelector('svg') || w) })),
     places: q('#stage .place [data-slot^="place-"]').map((e) => e.getAttribute('data-slot')),
     lobbyArt: q('#stage .lobby-art[data-slot="lobby-art"]').length,
     /* spec 040 FR-030 (#903): the art band is behind the tiles and the + button (positioned, with a higher z-index), and its scale is the same in x and y (circles stay round) */
@@ -97,6 +101,30 @@ module.exports = async (ctx) => {
     }
     return n;
   };
+  /* a walker's pixels (spec 040 T593): its box is read NOW and again a frame later; it counts only when the figure is not walking, is the same box twice
+     and lies inside the window (the survey's box can be stale by the time its capture comes: 18 desks are captured first). The reads repeat until `ms`
+     is out; the result says what was seen last, for the failing message. */
+  const walkerPink = async (agent, min, surveyBox, ms = 6000) => {
+    const read = () => H.js(`(() => {
+      const w = document.querySelector(${jsLiteral(`.walker[data-agent="${agent}"]`)});
+      if (!w) return null;
+      const r = (w.querySelector('svg') || w).getBoundingClientRect();
+      return { box: [r.left, r.top, r.width, r.height].map(Math.round), walking: w.classList.contains('walking'), win: [innerWidth, innerHeight] };
+    })()`);
+    const limit = Date.now() + (MUTANT === 'short' ? 1 : ms);
+    let st = null, n = 0;
+    do {
+      const first = await read();
+      await H.js(`new Promise((r)=>requestAnimationFrame(()=>requestAnimationFrame(()=>r(true))))`);
+      st = await read();
+      const inside = !!st && st.box[0] >= 0 && st.box[1] >= 0 && st.box[0] + st.box[2] <= st.win[0] && st.box[1] + st.box[3] <= st.win[1];
+      if (first && st && !st.walking && inside && JSON.stringify(first.box) === JSON.stringify(st.box)) {
+        n = await countAtLeast(MUTANT === 'stale' ? surveyBox : st.box, PINK, min);
+        if (n >= min) return { ok: true, n, st };
+      }
+    } while (Date.now() < limit);
+    return { ok: false, n, st };
+  };
   const pick = async (id) => {
     await H.js(`document.getElementById('settingsBtn').click()`);
     assert.ok(await H.until(`!!document.querySelector(${jsLiteral(`#thList [data-theme="${id}"]`)})`, 6000), `${id} is listed in Settings`);
@@ -118,7 +146,7 @@ module.exports = async (ctx) => {
     await H.load({ w, h, query: { usertheme: JSON.stringify(PACK) }, ready: 'fit', settle: false });
     await H.office(15);
     assert.ok(await H.until(`!!document.querySelector('.walker')`, 6000), `${tag}: agents walk to the lobby`);
-    await H.until(`!document.querySelector('.walker.walking')`, 6000);
+    assert.ok(await H.settleWalk(6000), `${tag}: the walkers have landed before the Clean Office survey`);
     const before = await H.js(`(${survey.toString()})(${jsLiteral(SHIRTS)})`);
     assert.strictEqual(before.theme, 'clean-office');
     assert.ok(before.desks.every((d) => !d.anyArt), `${tag}: Clean Office draws no theme art`);
@@ -151,7 +179,24 @@ module.exports = async (ctx) => {
     for (const [i, wk] of s.walkers.entries()) {
       assert.ok(wk.robe && wk.hat, `${tag}: walker ${i} wears the pack's robe and headwear`);
       assert.ok(wk.hatOver, `${tag}: walker ${i} wears the headwear over the head and the hair`);
-      assert.ok(await countAtLeast(wk.box, PINK, 2) >= 2, `${tag}: walker ${i} shows the pack's pink on screen`);
+      const seen = await walkerPink(wk.agent, 2, wk.box);
+      assert.ok(seen.ok, `${tag}: walker ${i} shows the pack's pink on screen (survey box ${JSON.stringify(wk.box)}, last read ${JSON.stringify(seen.st)}, pixels ${seen.n})`);
+    }
+    /* a walker that moves after the survey (T593): the last one is carried 300 px sideways (inside the window) by the page's own timers (a 900 ms walk, the class kept 100 ms
+       longer), as a late render moves a figure in CI; its pixels must be read at the box it has when it stops, not at the survey's box */
+    if (s.walkers.length) {
+      const last = s.walkers[s.walkers.length - 1];
+      await H.js(`(() => {
+        const w = document.querySelector(${jsLiteral(`.walker[data-agent="${last.agent}"]`)}), t = w.style.transform, x = new DOMMatrix(getComputedStyle(w).transform), r = w.getBoundingClientRect();
+        window.__walkBack = () => { w.style.transition = 'none'; w.style.transform = t; };
+        w.classList.add('walking'); w.style.transition = 'transform 900ms linear'; w.style.transform = 'translate(' + (x.m41 + (r.right + 320 <= innerWidth ? 300 : -300)) + 'px,' + x.m42 + 'px)';
+        setTimeout(() => w.classList.remove('walking'), 1000);
+        return true;
+      })()`);
+      const late = await walkerPink(last.agent, 2, last.box);
+      assert.ok(late.ok, `${tag}: late walk: the last walker shows the pack's pink on screen after it moved (survey box ${JSON.stringify(last.box)}, last read ${JSON.stringify(late.st)}, pixels ${late.n})`);
+      assert.ok(late.st && late.st.box[0] !== last.box[0], `${tag}: late walk: the walker really moved (${JSON.stringify(late.st)})`);
+      await H.js(`window.__walkBack()`);
     }
     for (const p of ['place-library', 'place-terminal', 'place-web']) assert.ok(s.places.includes(p), `${tag}: the lobby draws the pack's ${p} icon`);
     assert.strictEqual(s.lobbyArt, 1, `${tag}: the lobby draws the pack's lobby art`);

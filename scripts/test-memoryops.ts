@@ -23,6 +23,8 @@ const { MemoryOps, nodeMemoryCtx, expandOfficeFolders, collectOfficeFolders, cap
 
 let n = 0;
 const eq = <T>(a: T, b: T, m: string): void => { n++; assert.deepStrictEqual(a, b, m); };
+// a reader throw must fail at the named assert, not at the reader's own message
+const named = <T>(name: string, fn: () => T): T => { try { return fn(); } catch (e) { throw new Error(`${name}: the reader threw: ${e instanceof Error ? e.message : 'error'}`); } };
 const ok = (c: unknown, m: string): void => { n++; assert.ok(c, m); };
 
 const POSIX: MemoryFlavor = { path: path.posix, platform: 'linux' };
@@ -379,7 +381,6 @@ section('wsread', () => {
     readSync: (_fd: number, buf: Buffer, off: number, len: number, pos: number) => { const b = Buffer.from(data === 'fifo' ? '' : data); const c = Math.min(len, Math.max(0, b.length - pos)); b.copy(buf, off, pos, pos + c); return c; },
     closeSync: () => undefined,
   });
-  const named = <T>(name: string, fn: () => T): T => { try { return fn(); } catch (e) { throw new Error(`${name}: the reader threw: ${e instanceof Error ? e.message : 'error'}`); } };
   const cw = (f: ReturnType<typeof mk>, real: (p: string) => string = (p) => p) => cappedWorkspaceReader(f, flags, parse, real);
   const parse = (t: string): string[] => (JSON.parse(t) as { folders: Array<{ path: string }> }).folders.map((f) => f.path);
   const good = JSON.stringify({ folders: [{ path: '/w/a' }, { path: '/w/b' }] });
@@ -428,14 +429,14 @@ section('realws', () => {
     const file = path.join(dir, 'real.code-workspace');
     fs.writeFileSync(file, JSON.stringify({ folders: [{ path: 'a' }, { path: 'b' }] }));
     const want = [path.join(dir, 'a'), path.join(dir, 'b')];
-    eq(rd(file), want, 'a regular .code-workspace on the real file system');
+    eq(named('a regular .code-workspace on the real file system', () => rd(file)), want, 'a regular .code-workspace on the real file system');
     const sym = path.join(dir, 'sym.code-workspace');
     let linked = false;
     try { fs.symlinkSync(file, sym); linked = true; } catch { console.log('realws: symlinks not allowed here, skipped'); }
-    if (linked) eq(rd(sym), want, 'a symlink to it (read through its resolved path)');
+    if (linked) eq(named('a symlink to it (read through its resolved path)', () => rd(sym)), want, 'a symlink to it (read through its resolved path)');
     const hard = path.join(dir, 'hard.code-workspace');
     fs.linkSync(file, hard);
-    eq(rd(hard), want, 'a hard link to it');
+    eq(named('a hard link to it', () => rd(hard)), want, 'a hard link to it');
     eq(rd(path.join(dir, 'missing.code-workspace')), [], 'a missing file adds nothing');
     if (process.platform === 'win32') console.log('realws: FIFO case skipped on win32 (no mkfifo)');
     else {

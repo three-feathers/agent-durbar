@@ -35,9 +35,19 @@ export interface PermissionLike {
   cardSummary?: string;
   /** Spec 087 FR-021: the card's own line about the OS sandbox (see `PermissionInfo.sandboxNote`). */
   sandboxNote?: string;
+  /**
+   * Spec 003 FR-124: the agent app's own reviewer recommends approving this request. Set only by an adapter, only with its switch on, a
+   * verdict of exactly `approve`, no managed-human marker and no lookalike finding (or failed check). The broker approves it once, and only
+   * where Ask first would otherwise show a card.
+   */
+  appReview?: 'approve';
+  /** Spec 003 FR-130: why the reviewer did not approve it (`PermissionInfo.review`), for the pending card only. */
+  appReviewNote?: 'declined' | 'never' | 'undecided';
 }
 
-export type Decision = { kind: 'approve-once' } | { kind: 'reject'; feedback: string };
+/** `by: 'app-review'` (spec 003 FR-125): approved once on the agent app's reviewer's recommendation, so the adapter can say who decided. */
+export type Decision = { kind: 'approve-once'; by?: 'app-review' } | { kind: 'reject'; feedback: string };
+const REVIEW_NOTES: ReadonlySet<unknown> = new Set(['declined', 'never', 'undecided']);
 
 /** Short human summary of a permission request (for the needs-permission card). */
 export function summarize(req: PermissionLike): string {
@@ -466,7 +476,15 @@ export class PermissionBroker {
       this.opts.emit({ type: 'resolved', permission: { ...base, state: 'approved', via: 'session', allowedBy: { kind: 'session-grant', key: keys[0], label, keys: keys.slice(0, ALLOWED_BY_KEYS_MAX), ...(tooMany ? { noUndo: true } : {}), ...(keys.length > ALLOWED_BY_KEYS_MAX ? { more: keys.length - ALLOWED_BY_KEYS_MAX } : {}) } } });
       return this.approveWrite(req);
     }
-    const info: PermissionInfo = { ...base, state: 'pending', ...(typeof req.diff === 'string' && req.diff ? { diff: req.diff } : {}), ...(typeof req.sandboxNote === 'string' && req.sandboxNote ? { sandboxNote: req.sandboxNote.slice(0, 300) } : {}) }; // spec 052 FR-063: the diff rides on the pending request only; spec 087 FR-021: so does the sandbox line
+    // spec 003 FR-124: only now, where Ask first would show a card, may the app's reviewer approve, once: nothing is remembered, the write
+    // guard still runs, and a read outside the session's folders always gets its card (C5)
+    if (req.appReview === 'approve' && !outsideRead) {
+      this.opts.emit({ type: 'auto', permission: { requestId, kind, summary, state: 'approved', via: 'app-review', allowedBy: { kind: 'app', source: 'classifier' } } });
+      const d = await this.approveWrite(req);
+      return d.kind === 'approve-once' ? { kind: 'approve-once', by: 'app-review' } : d;
+    }
+    const review = REVIEW_NOTES.has(req.appReviewNote) ? { review: req.appReviewNote } : {};
+    const info: PermissionInfo = { ...base, state: 'pending', ...(typeof req.diff === 'string' && req.diff ? { diff: req.diff } : {}), ...(typeof req.sandboxNote === 'string' && req.sandboxNote ? { sandboxNote: req.sandboxNote.slice(0, 300) } : {}), ...review }; // spec 052 FR-063: the diff rides on the pending request only; spec 087 FR-021: so does the sandbox line; spec 003 FR-130: so does the reviewer's closed word
     this.opts.emit({ type: 'pending', permission: info });
     const r = await new Promise<Answer>((resolve) => this.pending.set(requestId, { info, resolve }));
     this.pending.delete(requestId);

@@ -102,6 +102,14 @@ export function copilotOrgPolicyFromResolve(r: unknown): OrgPolicy | undefined {
   }
   const settings = ownValue(resolved, 'settings');
   if (isPlainObject(settings)) mcpLists(out, settings, 'the Copilot runtime', false);
+  // spec 003 FR-127: no resolved flag for assisted approvals, only the raw `permissions` layer: the merged settings, the permissions context,
+  // or any channel's document; `true` anywhere blocks the switch (deny wins, as for Allow all)
+  const layers = ownValue(r, 'layers');
+  const perms = [ownValue(settings, 'permissions'), ownValue(ownValue(resolved, 'permissionsContext'), 'permissions'), ...(Array.isArray(layers) ? layers.slice(0, ORG_LIMITS.files).map((l) => ownValue(ownValue(l, 'settings'), 'permissions')) : [])];
+  if (perms.some((p) => ownValue(p, 'disableAssistedPermissionsMode') === true)) {
+    out.found = true;
+    out.assisted = 'blocked';
+  } else if (ownValue(resolved, 'failClosed') === true) out.assisted = 'doubt';
   out.unreadable = out.problems.length > 0;
   return boundOrgPolicy(out);
 }
@@ -123,6 +131,14 @@ export function parseCopilotOrgPolicy(o: Record<string, unknown>, p: string): Or
         out.modes.allow = 'doubt';
       }
     }
+    if (isPlainObject(perm.v) && hasOwn(perm.v, 'disableAssistedPermissionsMode')) { // spec 003 FR-127
+      const v = unwrap(ownValue(perm.v, 'disableAssistedPermissionsMode'));
+      if (v.v === true) out.assisted = v.overridable || perm.overridable ? 'doubt' : 'blocked';
+      else if (v.v !== false) {
+        out.problems.push(`${p}: permissions.disableAssistedPermissionsMode could not be read`);
+        out.assisted = 'doubt';
+      }
+    } else if (!isPlainObject(perm.v)) out.assisted = 'doubt';
   }
   mcpLists(out, o, p, true);
   out.unreadable = out.problems.length > 0;

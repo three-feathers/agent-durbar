@@ -1118,8 +1118,61 @@ console.log('ui-suite: check-parallel and ui-suite install Electron once before 
     const label = (d: { name: string; label?: string }): string => d.label || d.name;
     const flagged = suite.DRIVERS.filter((d) => d.focus).map(label).sort();
     assert.deepStrictEqual(flagged, ['check-001-room-heads', 'check-080-browser-expand', 'check-080-browser-expand photo', 'check-097-drag-cancel', 'check-097-hover-card', 'check-097-kids', 'check-097-kids cave', 'check-097-kids retro', 'check-brain-draw', 'check-browser-tabs', 'check-browser-tabs 1280', 'shots-097-screens', 'shots-097-screens retro'], 'the focus entries are the ones with a failure on record (#1498, #1408, #1282, #1239, #1723: check-097-kids failed its "+K" focus-ring assert with hasFocus false at four windows at once on a Mac and passed alone; check-browser-tabs failed on a Mac with the OS focus elsewhere; check-080-browser-expand (Flat, Photo) failed 2 of 2 at four windows at once on a Mac and passed alone; check-brain-draw failed its Full-mode assert on windows-latest shard 2/4, both tries); check-097-drag-cancel is focus-sensitive by design: its held drags end on a real OS blur from a neighbour window (issue 1550)');
-    assert.deepStrictEqual([['darwin', {}], ['win32', {}], ['linux', {}], ['linux', { DISPLAY: ':0' }], ['linux', { DISPLAY: ':0', UI_SUITE_XVFB: '1' }]].map(([p, e]) => suite.sharedDesktop(p as string, e as Record<string, string>)), [true, true, false, true, false], 'windows share a desktop on macOS, Windows and Linux with a display; not under xvfb');
-    assert.deepStrictEqual([['1'], ['1.25'], ['1.5'], ['2'], ['x'], ['']].map(([d]) => suite.sharedDesktop('linux', { DISPLAY: ':0', UI_SUITE_DPR: d })), [true, false, false, false, true, true], 'FR-273 (issue 1914): a forced ratio above 1 never runs on the desktop (a small display clamps the window); 1, none and a bad value keep it');
+    assert.deepStrictEqual([['darwin', {}], ['win32', {}], ['linux', {}], ['linux', { DISPLAY: ':0' }], ['linux', { DISPLAY: ':0', UI_SUITE_DESKTOP: '1' }], ['linux', { UI_SUITE_DESKTOP: '1' }], ['linux', { DISPLAY: ':0', UI_SUITE_DESKTOP: '1', UI_SUITE_XVFB: '1' }], ['darwin', { DISPLAY: ':0' }], ['win32', { UI_SUITE_XVFB: '1' }]].map(([p, e]) => suite.sharedDesktop(p as string, e as Record<string, string>)), [true, true, false, false, true, false, false, true, true], 'FR-465 (issues 1930, 2118): Linux runs under xvfb by default, also with a display set; only UI_SUITE_DESKTOP=1 with a display uses the desktop (UI_SUITE_XVFB=1 still wins); macOS and Windows always share the desktop');
+    assert.deepStrictEqual([['1'], ['1.25'], ['1.5'], ['2'], ['x'], ['']].map(([d]) => suite.sharedDesktop('linux', { DISPLAY: ':0', UI_SUITE_DESKTOP: '1', UI_SUITE_DPR: d })), [true, false, false, false, true, true], 'FR-273 (issue 1914): a forced ratio above 1 never runs on the desktop (a small display clamps the window); 1, none and a bad value keep the opt-in desktop');
+    {
+      const note = (suite as unknown as { desktopNote: (p: string, s: boolean, z: { w: number; h: number } | null) => string }).desktopNote;
+      assert.strictEqual(note('linux', false, { w: 800, h: 600 }), '', 'FR-465: no line under xvfb');
+      assert.strictEqual(note('darwin', true, { w: 800, h: 600 }), '', 'FR-465: no line on macOS or Windows');
+      assert.strictEqual(note('linux', true, { w: 1920, h: 1080 }).includes('smaller'), false, 'FR-465: a 1920x1080 desktop is not called small');
+      const small = note('linux', true, { w: 1920, h: 867 });
+      assert.ok(small.includes('1920x867') && small.includes('smaller than the biggest driver window 1920x1080') && small.includes('park the pointer need a pointer') && small.includes('not a product bug') && !small.includes('\n'), `FR-465: one plain line for a small desktop: ${small}`);
+      assert.ok(note('linux', true, null).includes('size is unknown') && note('linux', true, null).includes('not a product bug'), 'FR-465: a desktop whose size cannot be told says so');
+    }
+    {
+      /* mutant (FR-465): the old default back (a display set means the desktop) must die at the default's own assert; the source is read with \r?\n (a CRLF checkout) */
+      const src = fs.readFileSync(SUITE, 'utf8');
+      const m = /function sharedDesktop\([\s\S]*?\r?\n\}\r?\n/.exec(src);
+      assert.ok(m, 'FR-465: sharedDesktop is found in scripts/ui-suite.js');
+      const build = (text: string): ((p: string, e: Record<string, string>) => boolean) => new Function('dprOk', text + '\nreturn sharedDesktop;')((suite as unknown as { dprOk: unknown }).dprOk) as (p: string, e: Record<string, string>) => boolean;
+      const defaultAssert = (f: (p: string, e: Record<string, string>) => boolean): void => assert.strictEqual(f('linux', { DISPLAY: ':0' }), false, 'FR-465: Linux with a display set and no UI_SUITE_DESKTOP runs under xvfb');
+      defaultAssert(build(m[0]));
+      const old = m[0].replace("env.UI_SUITE_DESKTOP === '1' && ", '');
+      assert.notStrictEqual(old, m[0], 'FR-465: the old-default mutant found its line to change');
+      assert.throws(() => defaultAssert(build(old)), /FR-465: Linux with a display set and no UI_SUITE_DESKTOP runs under xvfb/, 'FR-465: the old default dies at the default\'s own assert');
+    }
+    {
+      /* FR-465 (review of #2137): xvfb chosen on Linux and no xvfb-run: one plain stop before any driver; the lookup is injected */
+      const ui = suite as unknown as { xvfbProblem: (p: string, s: boolean, l: () => boolean) => string; XVFB_MISSING: string; main: (o: unknown) => Promise<void> };
+      const MSG = 'xvfb-run was not found: install xvfb, or set UI_SUITE_DESKTOP=1';
+      let looked = 0;
+      const fails = (): boolean => { looked++; return false; }, finds = (): boolean => { looked++; return true; };
+      const problems = (): string[] => [ui.xvfbProblem('linux', false, fails), ui.xvfbProblem('linux', false, finds), ui.xvfbProblem('linux', true, fails), ui.xvfbProblem('darwin', false, fails), ui.xvfbProblem('win32', false, fails)];
+      const expected = [MSG, '', '', '', ''];
+      assert.deepStrictEqual(problems(), expected, 'FR-465: xvfb-run missing stops with the plain line on Linux under xvfb; found, a desktop run, macOS and Windows say nothing');
+      assert.strictEqual(looked, 2, 'FR-465: the lookup runs only on Linux under xvfb (no check on macOS, Windows or a desktop run)');
+      const ran: string[] = [];
+      const go = (found: () => boolean, shared: boolean): Promise<void> => ui.main({ build: () => '', ensure: () => true, run: async (d: { name: string }) => { ran.push(d.name); return { ok: true, secs: 0, why: '', log: '' }; }, argv: ['--only', 'check-office-fill'], shared, xvfbFound: found });
+      if (process.platform === 'linux') {
+        await assert.rejects(() => go(fails, false), new RegExp('^Error: ' + MSG + '$'), 'FR-465: main stops with exactly the plain line');
+        assert.deepStrictEqual(ran, [], 'FR-465: no driver started');
+      }
+      const quiet = console.log, outWas = process.env.UI_SUITE_OUT, outTmp = fs.mkdtempSync(path.join(os.tmpdir(), 'ui-suite-xvfb-')); /* main makes its screenshot folder: a folder of ours, removed below */
+      console.log = (): void => undefined; process.env.UI_SUITE_OUT = outTmp;
+      try { await go(finds, process.platform !== 'linux'); await go(fails, true); } finally { console.log = quiet; if (outWas === undefined) delete process.env.UI_SUITE_OUT; else process.env.UI_SUITE_OUT = outWas; fs.rmSync(outTmp, { recursive: true, force: true }); }
+      assert.deepStrictEqual(ran, ['check-office-fill', 'check-office-fill'], 'FR-465: with xvfb-run found, or a desktop run, the driver starts');
+      /* mutants (source copies, \r?\n): the check dropped, and the message changed, each die at their own assert */
+      const src2 = fs.readFileSync(SUITE, 'utf8');
+      const mm = /const XVFB_MISSING[\s\S]*?\r?\nfunction xvfbProblem\([\s\S]*?\r?\n\}\r?\n/.exec(src2);
+      assert.ok(mm, 'FR-465: xvfbProblem is found in scripts/ui-suite.js');
+      const make = (t: string): ((p: string, s: boolean, l: () => boolean) => string) => new Function(t + '\nreturn xvfbProblem;')() as (p: string, s: boolean, l: () => boolean) => string;
+      const check = (f: (p: string, s: boolean, l: () => boolean) => string): void => assert.strictEqual(f('linux', false, fails), MSG, 'FR-465: xvfb-run missing stops with the plain line');
+      check(make(mm[0]));
+      const dropped = mm[0].replace("return lookup() ? '' : XVFB_MISSING;", "return '';");
+      const reworded = mm[0].replace("xvfb-run was not found: install xvfb, or", "xvfb-run is missing: install xvfb or");
+      assert.ok(dropped !== mm[0] && reworded !== mm[0], 'FR-465: the xvfb mutants found their lines to change');
+      for (const m of [dropped, reworded]) assert.throws(() => check(make(m)), /FR-465: xvfb-run missing stops with the plain line/, 'FR-465: the xvfb mutant dies at its own assert');
+    }
     assert.strictEqual(suite.sharedDesktop('darwin', { UI_SUITE_DPR: '2' }), true, 'FR-273: macOS has no virtual display, the forced ratio runs there');
     const only = ['shots-097-screens', 'check-097-hover-card', 'shots-017', 'shots-018', 'shots-033', 'check-office-fill'].join(',');
     const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'ui-suite-focus-'));
@@ -1155,6 +1208,88 @@ console.log('ui-suite: check-parallel and ui-suite install Electron once before 
       fs.rmSync(tmp, { recursive: true, force: true });
     }
     assert.ok(/focus: true/.test(fs.readFileSync(SUITE, 'utf8')), 'ui-suite.js carries the flag');
+  }
+  // spec 008 delta 2026-11-26 (issue #1623, T603): a passing driver's `[evidence]` lines are printed (capped, made printable) and every driver's log is written to <out>/logs/
+  {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const suite = require(SUITE) as { main: (o: object) => Promise<void>; EVIDENCE_MAX: number; EVIDENCE_WIDTH: number; LOG_LINE_MAX: number; LOG_FILE_MAX: number; driverLogText: (l: string) => string };
+    const evOut = fs.mkdtempSync(path.join(require('os').tmpdir(), 'ui-suite-evidence-'));
+    const prevOut = process.env.UI_SUITE_OUT;
+    process.env.UI_SUITE_OUT = evOut;
+    const target = names[1].split(' ')[0];
+    const hostile = '[evidence] hostile \u001b[31m::error::boom ##[add-mask]x \u2028end';
+    const evidence = Array.from({ length: 10 }, (_, i) => `[evidence] line ${i + 1}` + 'x'.repeat(i === 0 ? 400 : 0));
+    const logText = ['plain line that is not evidence', hostile, ...evidence, '[waits] timed out after 5 ms: a'].join('\n');
+    const runWith = (ok: boolean, log: string) => async () => ({ ok, secs: 1, why: ok ? '' : 'DRIVER FAILED boom', log });
+    const lines: string[] = [];
+    const realLog = console.log;
+    const printed = async (ok: boolean, log: string): Promise<string[]> => {
+      lines.length = 0;
+      console.log = (...a: unknown[]) => { lines.push(a.join(' ')); };
+      const exit0 = process.exitCode;
+      try { await suite.main({ build: () => '', argv: ['--only', target], ensure: () => true, run: runWith(ok, log) }); } catch { /* a failing driver ends the run with an error: the lines are read */ } finally { console.log = realLog; process.exitCode = exit0; } /* a failing driver sets the exit code: this test's own result is not it */
+      return lines.slice();
+    };
+    try {
+      const ok = await printed(true, logText);
+      const ev = ok.filter((l) => l.startsWith('      [evidence]'));
+      assert.strictEqual(ev.length, suite.EVIDENCE_MAX, `evidence: a passing driver prints at most ${suite.EVIDENCE_MAX} evidence lines (printed ${ev.length})`);
+      assert.ok(!ok.some((l) => l.includes('plain line that is not evidence')), 'evidence: a line that is not marked is not printed');
+      assert.ok(!ev.some((l) => l.includes('line 9') || l.includes('line 10')) && ev.some((l) => l.includes('line 7')), 'evidence: the ninth evidence line is dropped, the earlier ones kept in order');
+      const h = ev.find((l) => l.includes('hostile')) || '';
+      assert.ok(h && !h.includes('\u001b') && !h.includes('\u2028') && !/::error::/.test(h) && !h.includes('##[') && h.includes('\\u001b'), `evidence: a hostile line prints escaped, with no ESC, no ::error:: and no ##[ (${JSON.stringify(h)})`);
+      const long = ev.find((l) => l.includes('line 1x')) || '';
+      assert.ok(long.length > 0 && long.length - 6 <= suite.EVIDENCE_WIDTH, `evidence: a long line is cut to ${suite.EVIDENCE_WIDTH} characters (${long.length - 6})`);
+      assert.ok(ok.some((l) => l.includes('[waits] timed out after 5 ms')), 'evidence: the [waits] lines still print for a passing driver');
+      const file = path.join(evOut, 'logs', target + '.log');
+      assert.ok(fs.existsSync(file), `logs: the passing driver's log is written to logs/${target}.log`);
+      const body = fs.readFileSync(file, 'utf8');
+      assert.ok(body.includes('plain line that is not evidence') && body.includes('line 10') && !body.includes('\u001b') && !/::error::/.test(body), 'logs: the file holds every line of the driver, printable');
+      assert.ok(Math.max(...body.split('\n').map((l) => l.length)) <= suite.LOG_LINE_MAX, `logs: no line is longer than ${suite.LOG_LINE_MAX} characters`);
+      const big = suite.driverLogText(('y'.repeat(1500) + '\n').repeat(400) + 'LAST LINE');
+      assert.ok(big.length <= suite.LOG_FILE_MAX + 200 && big.endsWith('LAST LINE') && big.startsWith('[ui-suite] log cut'), `logs: a log over ${suite.LOG_FILE_MAX} characters keeps its end and says it was cut (${big.length})`);
+      const failed = await printed(false, logText);
+      assert.ok(!failed.some((l) => l.startsWith('      [evidence]')), 'evidence: a failing driver prints no evidence lines (its last 25 lines, as before)');
+      assert.ok(failed.some((l) => l.startsWith('      | ') && l.includes('[waits] timed out')) && failed.some((l) => l.includes('FAIL') && l.includes('DRIVER FAILED boom')), 'a failing driver still prints its FAIL line and its last lines');
+      assert.ok(fs.existsSync(file) && fs.readFileSync(file, 'utf8') === body, 'logs: the failing driver\'s log is written too (the same file name, its own text)');
+      // mutants of the runner: the filter prefix, the cap, the printer and the file each removed must fail the cases above
+      const srcText = fs.readFileSync(SUITE, 'utf8').replace(/\r\n/g, '\n');
+      const muts: Array<[string, string, string, RegExp]> = [
+        ['the evidence prefix removed', "l.startsWith(prefix)", "false", /at most 8 evidence lines \(printed 0\)/],
+        ['the evidence cap removed', ".slice(0, max).map((l) => printable(l)", ".map((l) => printable(l)", /at most 8 evidence lines \(printed 11\)/],
+        ['the evidence printer removed', "for (const l of evidenceLines(r.log)) console.log('      ' + l);", "", /at most 8 evidence lines \(printed 0\)/],
+        ['printable removed from the evidence', ".map((l) => printable(l).slice(0, width))", ".map((l) => l.slice(0, width))", /a hostile line prints escaped/],
+        ['the log file not written', "writeDriverLog(outDir, d.label || d.name, r.log);", "", /the passing driver's log is written/],
+      ];
+      for (const [name, from, to, expect] of muts) {
+        assert.ok(srcText.includes(from), `mutant "${name}": its text is in ui-suite.js`);
+        const mutated = srcText.split(from).join(to);
+        assert.notStrictEqual(mutated, srcText, `mutation did not apply: ${name}`);
+        const mp = path.join(path.dirname(SUITE), `ui-suite.mutant-${process.pid}.js`);
+        fs.writeFileSync(mp, mutated);
+        let died: Error | undefined;
+        try {
+          delete require.cache[require.resolve(mp)];
+          const m = require(mp) as typeof suite;
+          lines.length = 0;
+          console.log = (...a: unknown[]) => { lines.push(a.join(' ')); };
+          try { await m.main({ build: () => '', argv: ['--only', target], ensure: () => true, run: runWith(true, logText) }); } finally { console.log = realLog; }
+          const e2 = lines.filter((l) => l.startsWith('      [evidence]'));
+          assert.strictEqual(e2.length, suite.EVIDENCE_MAX, `evidence: a passing driver prints at most ${suite.EVIDENCE_MAX} evidence lines (printed ${e2.length})`);
+          const hh = e2.find((l) => l.includes('hostile')) || '';
+          assert.ok(hh && !hh.includes('\u001b') && !/::error::/.test(hh), `evidence: a hostile line prints escaped (${JSON.stringify(hh)})`);
+          fs.rmSync(path.join(evOut, 'logs'), { recursive: true, force: true });
+          await m.main({ build: () => '', argv: ['--only', target], ensure: () => true, run: runWith(true, logText) }).catch(() => undefined);
+          assert.ok(fs.existsSync(path.join(evOut, 'logs', target + '.log')), "logs: the passing driver's log is written");
+        } catch (e) { died = e as Error; } finally { fs.rmSync(mp, { force: true }); console.log = realLog; }
+        assert.ok(died, `mutant "${name}" survived`);
+        assert.ok(expect.test(String(died.message)), `mutant "${name}" died at the wrong assert: ${String(died.message).split(/\r?\n/)[0]}`);
+      }
+    } finally {
+      console.log = realLog;
+      if (prevOut === undefined) delete process.env.UI_SUITE_OUT; else process.env.UI_SUITE_OUT = prevOut;
+      fs.rmSync(evOut, { recursive: true, force: true });
+    }
   }
   console.log('ui-suite signals: ok');
 })().catch((e) => { console.error(e); process.exitCode = 1; });
