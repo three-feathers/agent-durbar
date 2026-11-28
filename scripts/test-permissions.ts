@@ -226,12 +226,18 @@ async function main(): Promise<void> {
   // PERMISSIONS_MUTANT=jsRealpath runs the same asserts on the source with the JS `fs.realpathSync` back (they must fail here).
   {
     let inside = isInsideRoots;
-    if (process.env.PERMISSIONS_MUTANT === 'jsRealpath') {
+    const MUT: Record<string, [string, string]> = {
+      jsRealpath: ['return fs.realpathSync.native(x);', 'return fs.realpathSync(x);'],
+      noFallback: ['return fs.realpathSync(x);', 'throw e;'],
+    };
+    const mut = process.env.PERMISSIONS_MUTANT || '';
+    if (mut) {
+      assert.ok(MUT[mut], `unknown mutant ${mut}`);
       const file = path.join(__dirname, '..', '..', 'src', 'adapters', 'permissions.ts');
-      const from = '(x: string) => fs.realpathSync.native(x)';
+      const [from, to] = MUT[mut];
       let src = fs.readFileSync(file, 'utf8');
-      if (src.split(from).length !== 2) { console.error('MUTATION DID NOT APPLY: jsRealpath anchor not found exactly once'); process.exit(99); }
-      src = src.split(from).join('(x: string) => fs.realpathSync(x)');
+      if (src.split(from).length !== 2) { console.error(`MUTATION DID NOT APPLY: ${mut} anchor not found exactly once`); process.exit(99); }
+      src = src.split(from).join(to);
       const js = ts.transpileModule(src, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 } }).outputText;
       const m = { exports: {} as { isInsideRoots: typeof isInsideRoots } };
       const req = (n: string): unknown => require(n.startsWith('.') ? path.join(__dirname, '..', 'src', 'adapters', n) : n);
@@ -246,6 +252,36 @@ async function main(): Promise<void> {
       assert.ok(seen.length >= 2, 'FR-319 default resolver: the native one ran for the path and for the root');
     } finally {
       real.native = savedNative;
+    }
+  }
+
+  // spec 003 FR-319: a native failure that is not "missing" falls back to the JS resolver (a link out of the root stays outside).
+  {
+    const mut = process.env.PERMISSIONS_MUTANT || '';
+    const mutIn = mut === 'noFallback' ? (() => {
+      const file = path.join(__dirname, '..', '..', 'src', 'adapters', 'permissions.ts');
+      const src = fs.readFileSync(file, 'utf8').split('return fs.realpathSync(x);').join('throw e;');
+      const js = ts.transpileModule(src, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 } }).outputText;
+      const m = { exports: {} as { isInsideRoots: typeof isInsideRoots } };
+      vm.runInNewContext(js, { module: m, exports: m.exports, require: (n: string): unknown => require(n.startsWith('.') ? path.join(__dirname, '..', 'src', 'adapters', n) : n), process, console, Buffer, URL });
+      return m.exports.isInsideRoots;
+    })() : isInsideRoots;
+    const tmp = fs.mkdtempSync(path.join(fs.realpathSync(require('os').tmpdir()), 'durbar-fr319-'));
+    const real = fs.realpathSync as unknown as { native: (p: string) => string };
+    const savedNative = real.native;
+    try {
+      const proj = path.join(tmp, 'proj'), secret = path.join(tmp, 'secret');
+      fs.mkdirSync(proj); fs.mkdirSync(secret); fs.writeFileSync(path.join(secret, 's.txt'), 'x');
+      let linked = true;
+      try { fs.symlinkSync(secret, path.join(proj, 'out'), 'dir'); } catch { linked = false; console.log('permissions: SKIP native-failure link check (symlinks cannot be made here)'); }
+      real.native = (x: string): string => { throw Object.assign(new Error('EISDIR: illegal operation on a directory'), { code: 'EISDIR', path: x }); };
+      if (linked) assert.ok(!mutIn(path.join(proj, 'out', 's.txt'), [proj]), 'FR-319 fallback: a link out of the root stays outside when native fails with EISDIR');
+      assert.ok(mutIn(path.join(proj, 'a.txt'), [proj]), 'FR-319 fallback: a plain path inside is inside when native fails with EISDIR');
+      real.native = (x: string): string => { throw Object.assign(new Error('ENOENT'), { code: 'ENOENT', path: x }); };
+      assert.ok(mutIn(path.join(proj, 'new', 'missing.txt'), [proj]), 'FR-319 fallback: ENOENT still walks up (a missing file under the root is inside)');
+    } finally {
+      real.native = savedNative;
+      fs.rmSync(tmp, { recursive: true, force: true });
     }
   }
 
