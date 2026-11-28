@@ -59,9 +59,10 @@ const MUTANTS: Record<string, Mut> = {
   genericTitleStrips: { kind: 'js', mod: 'adapters/history', from: "const s = v.replace(TITLE_DROP_RE", to: "const s = (0, memorynote_1.firstMessageText)(v).replace(TITLE_DROP_RE", section: 'strip' },
   everyUserMessageStripped: { kind: 'js', mod: 'adapters/history', from: 'const sp = seenUser ?', to: 'const sp = false ?', section: 'strip' },
   unhideCleanedShown: { kind: 'src', file: 'src/renderer/memory.js', from: "&&u!==''&&u===raw?u:null;", to: "&&u!==''?u:null;", section: 'ui' },
-  codexKeepsNote: { kind: 'src', file: 'src/adapters/codexHistory.ts', from: 'const sp = splitMemoryNote(text); all.push', to: 'const sp = { text, note: false, cutShort: false }; all.push', section: 'strip' },
+  codexKeepsNote: { kind: 'src', file: 'src/adapters/codexHistory.ts', from: ': splitMemoryNote(text); seenUser = true; all.push', to: ': { text, note: false, cutShort: false }; seenUser = true; all.push', section: 'strip' },
   stripNeedsSameNonce: { kind: 'js', mod: 'shared/memorynote', from: "t.indexOf('\\n' + close)", to: "t.search(/\\n\\[End of memory note [0-9a-f]+\\]/)", section: 'strip' },
-  uiHtml: { kind: 'src', file: 'src/renderer/memory.js', from: 'pre.textContent=t;', to: 'pre.innerHTML=t;', section: 'ui' },
+  uiHtml: { kind: 'src', file: 'src/renderer/memory.js', from: 'pre.textContent=t;\n    d.appendChild', to: 'pre.innerHTML=t;\n    d.appendChild', section: 'ui' },
+  uiHtmlSent: { kind: 'src', file: 'src/renderer/memory.js', from: 'pre.textContent=t;\n    body.appendChild', to: 'pre.innerHTML=t;\n    body.appendChild', section: 'ui' },
 };
 const mutantName = process.env.MEMNOTE_MUTANT || '';
 const M = mutantName ? MUTANTS[mutantName] : undefined;
@@ -608,10 +609,12 @@ section('ui', () => {
   }
   const line = on.sentLine(doc, TEXT);
   ok(line && /note/.test(line.className), 'a sent line');
+  if (!line) throw new Error('no sent line');
   const btn = line.children[0]; const body = line.children[1];
   eq(btn.tag, 'button', 'the toggle is a button (keyboard and screen reader reachable)'); eq(btn.type, 'button', 'a plain button, never a submit');
   eq(btn.textContent, 'Memory note sent', 'one line of words'); eq(btn.getAttribute('aria-expanded'), 'false', 'collapsed by default after the send'); eq(body.hidden, true, 'the text is not shown until it is opened');
   eq(body.children[0].textContent, 'This is what the agent reads first:', 'the lead line is inside'); eq(body.children[1].textContent, TEXT, 'it holds the exact text, byte for byte');
+  ok(!body.children[1].innerHTMLSet, 'the sent text is set as text, never as HTML');
   btn.click(); eq(btn.getAttribute('aria-expanded'), 'true', 'a click opens it'); eq(body.hidden, false, 'and shows the text');
   btn.click(); eq(btn.getAttribute('aria-expanded'), 'false', 'a second click closes it'); eq(body.hidden, true, 'and hides it');
   eq(on.sentLine(doc, ''), null, 'no text, no line'); eq(on.sentLine(doc, 5), null, 'not a string, no line');
