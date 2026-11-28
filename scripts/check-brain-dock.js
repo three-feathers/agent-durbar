@@ -20,7 +20,7 @@
  *     and Esc do not show, move and close the tooltip with the lobe's sentence and its count, inside the picture; a word is under 4.5:1 on its chip (over the dock and over
  *     its own lobe's colour) or the lit frame under 3:1 on the dock, from the resolved colours; compact and roomy.
  * Issue #2166: the step that focuses the Shell word (and its arrow-key and Esc follow-ups) is the one that failed on every Windows UI run's first try: a neighbour's window had the OS focus, `focus()` then fires no
- * focus event and the tooltip never opens. The window is blurred before each such step (`BRAIN_DOCK_BLUR=0` turns that off, for the plain runs), the page is asserted to report no focus, and the driver asks for
+ * focus event and the tooltip never opens. The window is blurred before each such step (`BRAIN_DOCK_BLUR=0` turns that off, for the plain runs), the page is asserted to report no focus (`H.forceBlur`: on Windows, where a window keeps the focus on blur(), a printed skip line instead), and the driver asks for
  * the focus by state (`needFocus`) before it focuses the word. Mutant: BRAIN_DOCK_MUTANT=nofocus (the driver does not ask for the focus; a patched run, nothing else changes) dies at "focus on Shell: its tooltip
  * inside the picture with the turn's count in <tag>: null".
  * Screenshots (looked at by the author): <SHOTS_OUT>/106-dock-<world>-<state>-<w>x<h>.png
@@ -86,7 +86,7 @@ module.exports = async (ctx) => {
     console.log(`[106-dock] ${tag}: lobe word contrast ${JSON.stringify(li.cr)}`);
     assert.deepStrictEqual(li.lit, [litWord], `the lit word is ${litWord} in ${tag}`);
     assert.strictEqual(li.lines, 'Lines: the last 24 steps, newest brightest', `the lines line in ${tag}`);
-    if (BLUR) { ctx.win.blur(); const blurred = await H.until('!document.hasFocus()', 3000); const hf = await js('document.hasFocus()'); assert.ok(blurred, tag + ': the window is blurred, so the page reports no focus (the setup of the focus step: hasFocus ' + hf + ')'); }
+    if (BLUR) await H.forceBlur('check-brain-dock', tag, 'focus step'); /* H.forceBlur: ends any emulation, blurs, waits for no focus; fails named on Linux and macOS, prints a skip line on Windows (it keeps the focus on blur()) and the step goes on */
     if (MUTANT !== 'nofocus') await H.needFocus(`${tag}: before the Shell word is focused`); /* the real focus, by state: show(), focus(), then until document.hasFocus(); not the emulation, which keeps the page "focused" for the rest of the run and so hides the blur above */
     await js(`document.querySelector('#brainRail .bv-lab[data-g=shell]').focus()`);
     const t1 = await tipOf();

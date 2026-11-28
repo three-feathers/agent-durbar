@@ -133,6 +133,7 @@
     "test:floors": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-floors.js",
     "test:folders": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-folders.js",
     "test:foldersetup": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-foldersetup.js",
+    "test:force-blur": "node scripts/test-force-blur.js",
     "test:fragments": "node scripts/test-fragments.js && node scripts/fragments.js --check",
     "test:gitstatus": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-gitstatus.js",
     "test:globals": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-renderer-globals.js",
