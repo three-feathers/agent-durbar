@@ -2760,9 +2760,17 @@ const GENERIC_THINK=[
  'Reading the request and checking which files it touches. I will keep the change small and run the existing tests before reporting back.',
  'This is within the current scope. I will look at the related code first, then make the smallest edit that does what you asked.',
  'Understood. Before changing anything I want to see how this is used elsewhere in the project so I do not break a caller.'];
-async function sendMessage(text,forId){
+/* spec 116 T009 (FR-022): the memory note for a session's first typed message. The preview comes from main (`memory:notePreview`) and its id goes back with the send, so main sends exactly what was shown. */
+let memNoteFor=null;
+function refreshMemNote(a){
+  const M=window.DurbarMemory,host=$('memNote'); memNoteFor=null;
+  if(!host||!M||!M.shown()||!a||!a.live||!bridge.memoryNotePreview){if(host){host.hidden=true;host.textContent='';delete host.dataset.noteId;}return;}
+  const my=a.id;
+  Promise.resolve().then(()=>bridge.memoryNotePreview(my)).catch(()=>null).then(r=>{if(ui.selected!==my||$('memNote')!==host)return;if(M.paintNotePreview(host,r))memNoteFor=my;});
+}
+async function sendMessage(text,forId,typed){
   const a=byId(forId||ui.selected); if(!a)return;
-  if(a.live)return sendLive(text,forId); const chat=getChat(a);
+  if(a.live)return sendLive(text,forId,typed?{typed:true}:undefined); const chat=getChat(a);
   text=(text||'').trim(); if(!text&&!attached.length)return;
   if(chat.busy){toast('Hold on, '+esc(a.name)+' is still replying.');return;}
   const files=attached.map(x=>x.name);
@@ -3222,12 +3230,14 @@ function openPanel(id,focus){
    <div class="answer-bar" id="answerBar" role="region" aria-label="Waiting for your answer" hidden></div>
    <div class="composer"><div class="cgrip" id="composerGrip" role="separator" aria-orientation="horizontal" aria-label="Resize message box" aria-controls="msgInput" tabindex="0" title="Drag to resize the message box. Double-click to let it grow with your text again."></div><div class="att-note" id="attNote" role="alert" hidden></div><div class="attached" id="attached" aria-label="Attachments"></div>
     <p class="nt-notice" id="ntNotice" role="status" hidden></p>
+    <div class="mem-note" id="memNote" data-surface="memory-note" hidden></div>
     <div class="inbox">
      <textarea id="msgInput" rows="1" placeholder="Message ${esc(nameShown(a))}…" aria-label="Message ${esc(nameShown(a))}"></textarea>
      ${runSlotHTML(a)}</div>
     ${composerToolbarHTML(a,mdlName)}
     <p class="hint">${esc(composerHint(a))}</p></div>
    <div class="drop-ov" id="dropOv" aria-hidden="true"><div>Drop to attach<small>Up to 5 files, 10 MB each. Images: PNG, JPEG, GIF, WebP, BMP.</small></div></div></div>`;
+  refreshMemNote(a); /* spec 116 T009: the memory note preview (simulator only until T010) */
   BP.mount(a); /* spec 080 T015: wires the tabs and the browser bar; the same session keeps its tab, another starts on Chat */
   syncSeen(); /* spec 005 FR-176: the chat is shown now, so a reply not read yet is read (not when the Browser tab is in front) */
   renderStrip(); const sl=$('stripList'); if(sl)sl.scrollTop=stripScroll;
@@ -3296,8 +3306,8 @@ function openPanel(id,focus){
   fitPlaceholder();if(window.ResizeObserver){if(phRO)phRO.disconnect();else phRO=new ResizeObserver(fitPlaceholder);phRO.observe(input);}
   input.addEventListener('input',autoGrow);
   initSlash(a,input); /* spec 073: the "/" list; its keydown runs first, so Enter / Tab / Esc pick or close while it is open */
-  input.addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();if(e.repeat)return; /* spec 052 FR-208: a held Enter (from an answer that moved focus here) sends nothing */sendMessage(input.value);}});
-  $('sendBtn').onclick=()=>{if($('sendBtn').getAttribute('aria-disabled')!=='true')sendMessage(input.value);};
+  input.addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();if(e.repeat)return; /* spec 052 FR-208: a held Enter (from an answer that moved focus here) sends nothing */sendMessage(input.value,undefined,true);}});
+  $('sendBtn').onclick=()=>{if($('sendBtn').getAttribute('aria-disabled')!=='true')sendMessage(input.value,undefined,true);};
   setSend(); wireToolbar(); /* spec 005 FR-037..FR-040 */
   wireComposerGrip(); /* spec 005 FR-044..FR-048 */
   wireRailGrip(); /* spec 005 FR-236 */
@@ -8163,7 +8173,8 @@ async function sendLive(text,forId,opts){
   if(a.coffee&&!(opts&&opts.coffee))endCoffee(a,'you sent a message'); /* spec 068 FR-009: a message ends the coffee break */
   a.sent=true;
   const chat=liveChat(a);
-  addUserMsg(chat,text||'(attachment)',atts);
+  const userMsg=addUserMsg(chat,text||'(attachment)',atts);
+  const noteId=opts&&opts.typed===true&&fromComposer&&memNoteFor===a.id&&$('memNote')?$('memNote').dataset.noteId:undefined; /* T009: the preview the person saw */
   if(fromComposer){attached=[];renderAttached();attNotice([]);
     const input=$('msgInput');if(input){input.value='';autoGrow();}}
   if(LIVEACT)LIVEACT.clear(a.id); /* spec 001 FR-028: a new message starts a fresh readout */
@@ -8173,7 +8184,10 @@ async function sendLive(text,forId,opts){
   if(a.planNext){a.planNext=false;renderAttached();}
   if(planFirst)addNote(chat,'Asked for a plan first: nothing changes until you approve it.');
   const afShown=opts&&opts.several&&'afShown' in opts?opts.afShown:afPanelId(); /* spec 052 FR-183: what you were looking at when you sent (a Send to several: before the first send) */
-  const r=await bridge.send(a.id,text||'Please look at the attached file(s).',atts.map(x=>({path:x.path,name:x.name,kind:x.kind})),planFirst?{plan:true}:undefined);
+  const sendOpts=Object.assign({},planFirst?{plan:true}:null,noteId?{typed:true,noteId}:null);
+  const r=await bridge.send(a.id,text||'Please look at the attached file(s).',atts.map(x=>({path:x.path,name:x.name,kind:x.kind})),Object.keys(sendOpts).length?sendOpts:undefined);
+  if(r&&r.ok&&r.memoryNote&&window.DurbarMemory){const ln=window.DurbarMemory.sentLine(document,r.memoryNote);if(ln&&userMsg&&userMsg.parentNode)userMsg.parentNode.insertBefore(ln,userMsg);} /* T009: the line above the bubble opens the exact text */
+  if(noteId)refreshMemNote(a);
   if(r&&r.notSent){mcpNotSent(a,chat,text,fromComposer);return;} /* spec 058 FR-208: Stop during the MCP sign-in wait: nothing was sent */
   if(r.ok&&!(opts&&opts.coffee))afOnAccepted(a,afShown,!!(opts&&opts.several)); /* spec 052 FR-183: accepted by the agent app; a break resuming by itself is not the person's send */
   if(!r.ok){closeTurn(a);const n=addNote(chat,'Send failed: '+esc((r.error&&safeMask(r.error))||'unknown error'),true); /* spec 041 FR-065 (delta 2026-10-23): the app's error is masked (shown whole, not cut); no mask: a neutral word */modeRefusalAction(a,n,r.error);setState(a,'error',null,'Send failed: '+safeExcerpt(r.error,100,'unknown error'));}
@@ -8704,6 +8718,7 @@ if(window.DurbarProfileEditor)window.DurbarProfileEditor.init({bridge,askDialog,
 /* spec 111 T008: Settings > Team templates (teams.js) uses the same bridge, dialog, toast and announcer */
 /* spec 111 T009: the member editor reads the page's own app, model, permission and character helpers, at the time it opens (KINDS and the model lists load later than this line) */
 if(window.DurbarMemory)window.DurbarMemory.init({bridge,sim:!!SIM,askDialog,esc:s=>esc(s),unhide:t=>window.DurbarRedact.unhide(t),announce:(t)=>announce(t)}); /* spec 116 T007 */
+if(window.DurbarMemory&&bridge.onMemoryChanged)bridge.onMemoryChanged(()=>{const a=byId(ui.selected);if(a)refreshMemNote(a);}); /* spec 116 T009: a changed memory changes the note */
 if(window.DurbarTeams)window.DurbarTeams.init({bridge,sim:!!SIM,askDialog,toast:(...x)=>toast(...x),esc:s=>esc(s),announce:(t)=>announce(t),
   editorEnv:()=>({kinds:()=>KINDS?DMK().kindChoices(KINDS):[],kindCaps:id=>kindCaps(id),shows:(c,f)=>DMK().shows(c,f),ensureModels:k=>ensureModels(k),modelsFor:k=>modelsFor(k),
     fillModelSelect:(sel,cur,k)=>fillModelSelect(sel,cur,k),fillEffortSelect:(sel,m,cur,off,k)=>fillEffortSelect(sel,m,cur,off,k),fillPerm:(sel,c,k)=>fillPermSelect(sel,c,k),

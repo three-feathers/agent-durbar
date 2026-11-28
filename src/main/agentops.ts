@@ -274,13 +274,36 @@ export async function sendWithSlash(
   ad: Pick<AgentAdapter, 'send' | 'expandSlashCommand'>,
   id: string,
   msg: AgentMessage,
-): Promise<{ slash?: string; slashNote?: string }> {
+  /** Spec 116 T009 / spec 111 FR-036: a framed block that goes in front of the text AFTER the expansion; none on a `/command` that goes as typed. */
+  prefix?: string,
+): Promise<{ slash?: string; slashNote?: string; prefixed?: true }> {
   const text = String(msg.text ?? '');
   const slash = ad.expandSlashCommand ? await ad.expandSlashCommand(id, text).catch(() => undefined) : undefined;
   const expanded = slash && !slash.asTyped ? slash : undefined; // asTyped: over the size cap, the line goes as typed (review on #615)
-  await ad.send(id, { ...msg, text: expanded ? expanded.text : text });
-  if (slash?.asTyped) return slash.note ? { slashNote: slash.note } : {};
-  return expanded ? { slash: expanded.where, ...(expanded.note ? { slashNote: expanded.note } : {}) } : {};
+  const body = expanded ? expanded.text : text;
+  const carries = !!prefix && (!!expanded || !/^\s*\//.test(text)); // a command that goes as typed (a built-in, a failed or capped expansion) carries nothing
+  await ad.send(id, { ...msg, text: carries ? `${prefix}\n\n${body}` : body });
+  const mark = carries ? { prefixed: true as const } : {};
+  if (slash?.asTyped) return { ...(slash.note ? { slashNote: slash.note } : {}), ...mark };
+  return expanded ? { slash: expanded.where, ...(expanded.note ? { slashNote: expanded.note } : {}), ...mark } : mark;
+}
+
+/**
+ * Spec 116 T009: `sendWithSlash` with the memory note of `MemoryNote.take` (claimed, not yet recorded). The note goes after the expansion and is
+ * recorded as sent only when the app took the message AND the text really carried it; a send that throws, or a `/command` that went as typed,
+ * releases the claim (the note waits for the next message). `memoryNote` is the exact text that went in front.
+ */
+export async function sendWithMemoryNote(
+  ad: Pick<AgentAdapter, 'send' | 'expandSlashCommand'>,
+  id: string,
+  msg: AgentMessage,
+  note: { text: string; commit(): void; release(): void } | undefined,
+): Promise<{ slash?: string; slashNote?: string; memoryNote?: string }> {
+  let r: { slash?: string; slashNote?: string; prefixed?: true };
+  try { r = await sendWithSlash(ad, id, msg, note?.text); } catch (e) { note?.release(); throw e; }
+  if (note) { if (r.prefixed) note.commit(); else note.release(); }
+  const { prefixed, ...rest } = r;
+  return prefixed && note ? { ...rest, memoryNote: note.text } : rest;
 }
 
 /** What `startGuardOp` asks about the agent app's own organization policy (spec 076 FR-203): `OrgPolicyCache` fits. */

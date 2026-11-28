@@ -16,6 +16,8 @@
     restart:'Running sessions keep it until they restart. Turning the memory off or choosing another folder changes new sessions only.',
     intro:'A folder of your own notes that every agent can read. Durbar never runs git, pushes or pulls.',
   };
+  /* T009 (FR-022): the two words of the memory note. The text itself is main's (`src/main/memorynote.ts`) and is shown exactly as it came, with textContent. */
+  const NOTE_WORDS={preview:'Sent with your next message: memory note',sent:'Memory note sent'};
   const HOST_CUT=64;
 
   /* Text from main or from a folder's own name, made safe to show: the shared hidden-character definition (`unhide`, src/shared/redact.ts, passed in
@@ -149,5 +151,27 @@
     return {repaint:paint};
   }
 
-  return {WORDS,statusLine,remoteLine,confirmParts,failText,init,shown,mount};
+  /* T009: a closed <details> holding the exact text (textContent, never HTML). Returns the element. */
+  function noteDetails(doc,summary,text,cls){
+    const d=doc.createElement('details');d.className=cls;
+    const s=doc.createElement('summary');s.textContent=summary;
+    const pre=doc.createElement('pre');pre.className='mem-note-text';pre.textContent=String(text);
+    d.appendChild(s);d.appendChild(pre);return d;
+  }
+  /* T009 US1.2: the preview above the composer. `p` is main's {id,text} or anything else (nothing to send: the box is empty and hidden). Only under the simulator's gate. */
+  function paintNotePreview(host,p){
+    if(!host)return null;
+    host.textContent='';
+    const ok=shown()&&p&&typeof p==='object'&&typeof p.id==='string'&&typeof p.text==='string'&&p.text!=='';
+    if(!ok){host.hidden=true;delete host.dataset.noteId;return null;}
+    host.dataset.noteId=p.id;host.hidden=false;
+    host.appendChild(noteDetails(host.ownerDocument,NOTE_WORDS.preview,p.text,'mem-note-box'));
+    return p.id;
+  }
+  /* T009 US1.2: the line above the person's bubble; `text` is what main says it sent */
+  function sentLine(doc,text){
+    if(!shown()||typeof text!=='string'||text==='')return null;
+    return noteDetails(doc,NOTE_WORDS.sent,text,'note mem-note-sent');
+  }
+  return {WORDS,NOTE_WORDS,paintNotePreview,sentLine,statusLine,remoteLine,confirmParts,failText,init,shown,mount};
 })());

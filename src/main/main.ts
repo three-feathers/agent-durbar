@@ -43,6 +43,8 @@ import { register as registerNotesIpc } from './ipc/notes';
 import { register as registerTeamsIpc } from './ipc/teams';
 import { register as registerMemoryIpc } from './ipc/memory';
 import { defaultProfileEnv } from './profilefiles';
+import { MemoryNote } from './memorynote';
+import { NoteSentStore, fingerprint } from './notesent';
 import { MemoryOps, nodeMemoryCtx, collectOfficeFolders, cappedWorkspaceReader } from './memoryops';
 import { memoryGitRemote, memoryGitFlags } from './memorygit';
 import { pickFolder } from './pickfolder';
@@ -76,7 +78,7 @@ import { missingChecker } from './mcpcmdcheck';
 import { mergeLoginPath, nodeLoginPathDeps, readLoginShellPath } from './loginpath';
 import { renameOp, titleSyncOf } from './sessionnames';
 import { adapterForAdd, createRouter, previousSessionsOf } from '../adapters/router';
-import { assistedOnEvent, endSessionOp, mcpNudgeOp, restorable, scheduledSendOp, sendWithSlash, startGuardOp, stopTurnOp, validMode } from './agentops';
+import { assistedOnEvent, endSessionOp, mcpNudgeOp, restorable, scheduledSendOp, sendWithMemoryNote, startGuardOp, stopTurnOp, validMode } from './agentops';
 import type { OpsDeps, StartGuardDeps } from './agentops';
 import { adapterOf } from './folders';
 import type { AgentAdapter, AgentEvent } from '../adapters/types';
@@ -645,7 +647,7 @@ router.onEvent((e) => {
   if (s) toRenderer('agents:checkpoint', { id: e.sessionId, ...s });
 });
 
-async function sendOp(id: string, text: string, attachments: PickedFile[], ad: AgentAdapter, plan = false): Promise<{ ok: boolean; error?: string; slash?: string; slashNote?: string }> {
+async function sendOp(id: string, text: string, attachments: PickedFile[], ad: AgentAdapter, plan = false, first?: { noteId: unknown }): Promise<{ ok: boolean; error?: string; slash?: string; slashNote?: string; memoryNote?: string }> {
   const safe = (Array.isArray(attachments) ? attachments : []).filter((a) => pickedFiles.has(a.path));
   // Caps are enforced here too, not only in the UI.
   if (safe.length > MAX_ATTACH_FILES) return { ok: false, error: `Up to ${MAX_ATTACH_FILES} attachments per message (got ${safe.length}).` };
@@ -659,14 +661,18 @@ async function sendOp(id: string, text: string, attachments: PickedFile[], ad: A
     checkpoints().beginTurn(id, rootsOf(agents.get(id) as AgentInfo)); // spec 065 FR-002: a send starts a turn (scheduled prompts too)
     // spec 073 FR-005: a leading `/name` of a folder or user entry is sent as that entry's text (the apps do not load them in Durbar's
     // sessions); built-ins and anything else go as typed. Scheduled prompts come through here too.
-    const { slash, slashNote } = await sendWithSlash(ad, id, {
+    // spec 116 T009: the memory note, only on the person's first typed message of this session id (`first`, set by `agents:send` for the window's own typed
+    // send) and only the text the person was shown (`take`); added after the expansion, written as sent only after the send succeeded
+    const note = first ? getMemoryNote()?.take(id, first.noteId) : undefined;
+    const { slash, slashNote, memoryNote } = await sendWithMemoryNote(ad, id, {
       text: String(text),
       attachments: safe.map((a) => ({ path: a.path, kind: kindOfFile(a.path) })), // FR-009: checked again here, the renderer's kind is not trusted
       ...(plan ? { plan: true } : {}),
-    });
+    }, note);
     for (const a of safe) pickedFiles.delete(a.path); // spec 004 FR-015: a sent file must be picked again to be sent again
     noteLastSession(agents.get(id));
-    return slash ? { ok: true, slash, ...(slashNote ? { slashNote } : {}) } : { ok: true };
+    const mem = memoryNote ? { memoryNote } : {};
+    return slash ? { ok: true, slash, ...(slashNote ? { slashNote } : {}), ...mem } : { ok: true, ...mem };
   } catch (err) {
     return { ok: false, error: failText(err, '"agents:send"') };
   }
@@ -1009,7 +1015,16 @@ const getMemoryOps = (): MemoryOps | undefined => (SIMULATOR || !settingsStore ?
     remote: (real) => memoryGitRemote(fs, memoryGitFlags(fs.constants), path.join, real),
     changed: () => toRenderer('memory:changed', memoryOps?.status()),
   })));
-registerMemoryIpc({ getOps: getMemoryOps });
+// spec 116 T009 (FR-022): the memory note for a session's first typed message (`src/main/memorynote.ts`); sent-state in userData (`memory-note-sent.json`)
+let memoryNote: MemoryNote | undefined;
+let noteSent: NoteSentStore | undefined;
+const getMemoryNote = (): MemoryNote | undefined => (SIMULATOR || !getMemoryOps() ? undefined : (memoryNote ??= new MemoryNote({
+  roots: (id) => getMemoryOps()?.readRoots(startingFolders(agents.get(id) as AgentInfo)) ?? [],
+  names: (dir) => fs.readdirSync(dir), // ONE readdir of the top level: names only, no file is opened (FR-050)
+  keyOf: (id) => { const app = appIdOf(id); return app ? fingerprint(app, resumeIdFor(id)) : undefined; },
+  sent: (noteSent ??= new NoteSentStore(path.join(app.getPath('userData'), 'memory-note-sent.json'))),
+})));
+registerMemoryIpc({ getOps: getMemoryOps, notePreview: (id) => (agents.has(id) ? getMemoryNote()?.preview(id) : undefined) });
 registerOrgPolicyIpc({ view: () => orgPolicies.view() });
 registerSelfUpdateIpc({ getSelfUpdater: () => selfUpdater }); // spec 118 FR-024: version-only channels
 registerAdaptersIpc({ adaptersList });

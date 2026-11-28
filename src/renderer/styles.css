@@ -2352,3 +2352,10 @@ html[data-flat-look]:not([data-ui]):not([data-world]){
 }
 html[data-flat-look]:not([data-ui]):not([data-world])[data-density="compact"] :is(#panel,#screen,.dlg,.dlg-ov,.more-menu,.mode-menu,#topMoreMenu){--h-ctl:24px; --h-chip:24px}
 
+/* spec 116 T009: the memory note above the composer and the "Memory note sent" line above the bubble: a closed disclosure holding the exact text */
+.mem-note{margin:0 0 8px}
+.mem-note[hidden]{display:none}
+.mem-note-box,.mem-note-sent{font-size:12px;line-height:1.4;color:var(--ink-2)}
+.mem-note-box{padding:6px 10px;border-radius:9px;background:var(--surface-2);border:1px solid var(--line)}
+.mem-note-box>summary,.mem-note-sent>summary{cursor:pointer}
+.mem-note-text{margin:6px 0 0;max-height:180px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;font:inherit;font-size:12px;user-select:text}
