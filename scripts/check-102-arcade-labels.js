@@ -22,6 +22,9 @@
  *                     halo   gives the textarea its focus halo back                 (dies at "one outline")
  *                     cutname   cuts one name to two letters and an ellipsis        (dies at "no wall label is cut")
  *                     hidesign  paints the wall's top rows over, so the signs are not drawn (dies at "the wall keeps its signs")
+ * Issue #2167: the message box step failed its first try on the Windows UI shards ("timed out waiting for the message box focused"): a neighbour's window had the OS focus, so `focus()` set no
+ * focus-visible state. The window is blurred before that step (ARCADE_LABELS_BLUR=0 turns that off), the page is asserted to report no focus, and the driver asks for the focus by state
+ * (`needFocus`). ARCADE_LABELS_MUTANT=nofocus (the driver does not ask: a code path, no text patched) dies at "timed out waiting for the message box focused".
  * Screenshots: <SHOTS_OUT>/102-arcade-labels-<w>x<h>.png and ...-chat-<w>x<h>.png.
  */
 const os = require('os');
@@ -32,6 +35,7 @@ const { helpers, jsLiteral } = require('./driver-helpers');
 
 const OUT = process.env.SHOTS_OUT || fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-102-labels-'));
 const MUTANT = process.env.ARCADE_LABELS_MUTANT || '';
+const BLUR = process.env.ARCADE_LABELS_BLUR !== '0'; /* issue #2167: the Windows condition (a neighbour's window has the OS focus), forced on every machine */
 const ONLY = process.env.LABELS_ONLY || ''; /* `labels`, `heads` (the labels without the wall's pixels) or `chat`: one part, to see each defect red on its own (the suite runs all) */
 const SIZES = [[1440, 900], [1280, 800]];
 const hit = (a, b) => a.x0 + 0.5 < b.x1 && b.x0 + 0.5 < a.x1 && a.y0 + 0.5 < b.y1 && b.y0 + 0.5 < a.y1;
@@ -109,6 +113,8 @@ module.exports = async (ctx) => {
     await must(`document.body.classList.contains('panel-open')&&!!document.querySelector('.inbox textarea')`, 'the chat and its message box');
     await H.settle();
     if (MUTANT === 'halo') await js(`(()=>{const s=document.createElement('style');s.textContent='html[data-world="retro"] .inbox textarea:focus-visible{box-shadow:0 0 0 5px #ff004d!important}';document.head.appendChild(s);return 1})()`);
+    if (BLUR) assert.ok(await H.loseFocus(), tag + ': the window is blurred, so the page reports no focus (the setup of the message box step)'); /* H.loseFocus: releases any emulation first, then blur() and until no focus */
+    if (MUTANT !== 'nofocus') await H.needFocus(`${tag}: before the message box is focused`); /* the real focus, by state; not the emulation, which keeps the page "focused" whatever the window does and so hides the blur above */
     await js(`document.querySelector('.inbox textarea').focus();0`);
     await must(`document.activeElement===document.querySelector('.inbox textarea')&&document.querySelector('.inbox textarea').matches(':focus-visible')`, 'the message box focused');
     const rings = await js(`(()=>{const ring=(e)=>{const s=getComputedStyle(e);return (s.outlineStyle!=='none'&&parseFloat(s.outlineWidth)>0?'outline '+s.outlineWidth+' '+s.outlineColor:'')+(s.boxShadow!=='none'?' shadow '+s.boxShadow:'')};

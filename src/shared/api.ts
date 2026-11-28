@@ -200,6 +200,24 @@ export interface CustomPlaceResult {
   placeMap: Record<string, string>;
 }
 
+import type { RemoteAnswer } from './memoryfolder';
+/** Spec 116 FR-001, FR-002, FR-004: the office memory, as main answers. Fixed words; `path` is shown with `~`; the window never sends a path. */
+export interface MemoryStatus {
+  on: boolean;
+  path?: string;
+  state: 'on' | 'off' | 'notFound' | 'refused';
+  /** a fixed sentence of `checkMemoryFolder` */
+  reason?: string;
+  keepInGit: boolean;
+}
+export type MemoryPicked =
+  | { ok: true; token: string; expiresAt: number; path: string; remote: RemoteAnswer }
+  | { ok: false; error: 'cancelled' | 'failed' }
+  | { ok: false; error: 'refused'; reason: string; path: string };
+export type MemoryFail = { ok: false; error: 'invalid' | 'noFolder' | 'failed' } | { ok: false; error: 'refused'; reason: string };
+export type MemoryApplied = { ok: true; path: string } | MemoryFail;
+export type MemoryResult = { ok: true } | MemoryFail;
+
 export interface AppSettingsView {
   /** Spec 100 FR-020: when the MCP warning shows. */
   mcpWarnLevels?: McpWarnLevels;
@@ -1379,6 +1397,13 @@ export interface DurbarApi {
   notesExport?(id: string): Promise<NotesExport>;
   /** A folder's notes changed (another chat, another process): refetch the open folder's notes when the fingerprint is its own. */
   onNotesChanged?(cb: (v: { fingerprint: string }) => void): () => void;
+  /** Spec 116 T003: Settings > Office memory. `memoryPick` opens main's own folder dialog and answers a 10-minute token; `memoryApply(token)` re-checks and saves; `memoryStop` clears the setting and touches no file. */
+  memoryStatus?(): Promise<MemoryStatus>;
+  memoryPick?(): Promise<MemoryPicked>;
+  memoryApply?(token: string): Promise<MemoryApplied>;
+  memorySetOn?(on: boolean): Promise<MemoryResult>;
+  memoryStop?(): Promise<MemoryResult>;
+  onMemoryChanged?(cb: (v: MemoryStatus) => void): () => void;
   /**
    * Spec 111 T007 (FR-010, FR-023, FR-100): the person's team templates, window only; main checks every argument and keeps `memberId` and `briefFrom` itself.
    * `teamsPut`: no `id` creates (always `own`, no `memberId` or `briefFrom` allowed), an `id` updates (a member keeps its brief mark by `memberId`).

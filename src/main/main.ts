@@ -41,6 +41,11 @@ import { register as registerSlashIpc } from './ipc/slash';
 import { nativeConfirm } from './nativeconfirm';
 import { register as registerNotesIpc } from './ipc/notes';
 import { register as registerTeamsIpc } from './ipc/teams';
+import { register as registerMemoryIpc } from './ipc/memory';
+import { defaultProfileEnv } from './profilefiles';
+import { MemoryOps, nodeMemoryCtx, collectOfficeFolders, cappedWorkspaceReader } from './memoryops';
+import { memoryGitRemote, memoryGitFlags } from './memorygit';
+import { pickFolder } from './pickfolder';
 import { TeamsIpcOps } from './teamsipc';
 import { TeamOps, pathExists, resolveTargetFrom } from './teamops';
 import type { LazyMemberSpec } from './teamops';
@@ -77,7 +82,8 @@ import { adapterOf } from './folders';
 import type { AgentAdapter, AgentEvent } from '../adapters/types';
 import type { AdapterInfo } from '../shared/adapters';
 import { startOptionsOf } from './startopts';
-import { resolveWorkspaceCwd } from '../adapters/workspace';
+import { resolveWorkspaceCwd, codeWorkspaceFoldersFromText } from '../adapters/workspace';
+import { copilotHomeDir } from '../adapters/slashcommands';
 import { findAdded } from './addkey';
 import { MAX_ATTACH_BYTES, MAX_ATTACH_FILES, fmtSize, kindOfFile, sweepStaleStageDirs, sweepStaleTempDirs } from '../shared/attachments';
 import { ACCOUNT_TEMP_PREFIXES } from '../shared/account';
@@ -465,8 +471,11 @@ function folderSetupStart(key: string, dirs: readonly string[], appId: string, t
   return { mcpServers: ap.mcpServers, ...(any ? { folderSetup: { hooks: ap.hooks, rules: ap.rules } } : {}), ...(hasFolderRules(ap) ? { rules: true as const } : {}) };
 }
 
+/** spec 116 F1: the folders of a session that is not in `agents` yet (the start runs before `agents.set`), as `officeFolders` lists a live one. */
+const startingFolders = (a: AgentInfo): string[] => collectOfficeFolders([{ key: wsKey(a), folders: rootsOf(a), workspaceFile: a.workspaceFile }], [], cappedWorkspaceReader(fs, memoryGitFlags(fs.constants), codeWorkspaceFoldersFromText, (p) => fs.realpathSync.native(p)));
+
 const startOptionsFor = (a: AgentInfo, resumeSessionId?: string) => {
-  const base = { ...startOptionsOf(a, wsKey(a), DEFAULT_MODEL, asEffort(a.effort)), ...mcp.optionsFor(a.id, resumeSessionId ? { agent: a, sessionId: resumeSessionId } : undefined) }; // spec 058 FR-247: a resumed session starts with its saved switches
+  const base = { ...startOptionsOf(a, wsKey(a), DEFAULT_MODEL, asEffort(a.effort), getMemoryOps()?.readRoots(startingFolders(a)) ?? []), ...mcp.optionsFor(a.id, resumeSessionId ? { agent: a, sessionId: resumeSessionId } : undefined) }; // spec 058 FR-247: a resumed session starts with its saved switches
   const appId = router.adapterIdOf(a.id) ?? a.adapterId ?? registry.defaultId;
   const fs61 = folderSetupStart(wsKey(a), a.folders ?? [a.cwd], appId, new Set(Object.keys(base.mcpServers)));
   // spec 087 FR-019 (the organization policy, read in main) and FR-007c (the stored choice); the adapter decides what they mean
@@ -983,6 +992,24 @@ registerTeamsIpc({
     }),
   }))),
 });
+// spec 116 T003: the office memory folder. The window never sends a path: main's own dialog, then `checkMemoryFolder` (`fs.realpathSync.native`), then a token.
+let memoryOps: MemoryOps | undefined;
+const getMemoryOps = (): MemoryOps | undefined => (SIMULATOR || !settingsStore ? undefined : (memoryOps ??= new MemoryOps({
+    store: () => settingsStore,
+    pick: () => pickFolder(dev, 'Choose your office memory folder'),
+    flavor: { path, platform: process.platform === 'win32' || process.platform === 'darwin' ? process.platform : 'linux' },
+    ctx: () => nodeMemoryCtx(fs, {
+      home: os.homedir(), userData: app.getPath('userData'),
+      env: { appData: process.env.APPDATA, localAppData: process.env.LOCALAPPDATA, xdgConfigHome: process.env.XDG_CONFIG_HOME, xdgDataHome: process.env.XDG_DATA_HOME, systemRoot: process.env.SystemRoot, programData: process.env.ProgramData, programFiles: process.env.ProgramFiles, programFilesX86: (({ 'ProgramFiles(x86)': v }) => v)(process.env) },
+      // the agent apps' own homes, read as the rest of Durbar reads them (`copilotHomeDir`, `defaultProfileEnv`, `CODEX_HOME`)
+      agentHomes: [copilotHomeDir(process.env, os.homedir()), defaultProfileEnv(process.env, os.homedir()).claudeConfigDir, process.env.CODEX_HOME || path.join(os.homedir(), '.codex')],
+    }),
+    // every workspace member, not only the first folder; an unreadable workspace file refuses the link
+    officeFolders: () => collectOfficeFolders([...agents.values()].map((a) => ({ key: wsKey(a), folders: rootsOf(a), workspaceFile: a.workspaceFile })), folderStore?.list().map((f) => f.workspace) ?? [], cappedWorkspaceReader(fs, memoryGitFlags(fs.constants), codeWorkspaceFoldersFromText, (p) => fs.realpathSync.native(p))),
+    remote: (real) => memoryGitRemote(fs, memoryGitFlags(fs.constants), path.join, real),
+    changed: () => toRenderer('memory:changed', memoryOps?.status()),
+  })));
+registerMemoryIpc({ getOps: getMemoryOps });
 registerOrgPolicyIpc({ view: () => orgPolicies.view() });
 registerSelfUpdateIpc({ getSelfUpdater: () => selfUpdater }); // spec 118 FR-024: version-only channels
 registerAdaptersIpc({ adaptersList });

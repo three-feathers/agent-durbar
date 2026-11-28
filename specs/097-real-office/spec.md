@@ -335,6 +335,16 @@ Each has a recommendation (Q6 is for Paco, the crew owner). The build waits for 
 
 ## Changes
 
+### 2026-11-28: `shots-097-moments retro` asks for the window focus before the Answer and Skip ring steps (issue #2167; T606; no FR; no app change)
+
+**Found counting first-try failures on the Windows UI shards** (issue #2167): `retro 1440x900: Answer shows a keyboard focus ring (solid, 2px or more, 3:1 on the card): {"on":false,"style":"none","width":3,"ring":1.22...}` failed the first try and passed on the suite's retry. **Cause:** the question-card cell loaded the arcade page without the focus and called `.focus()` on Answer and Skip, then read the resolved outline. On a Windows runner three drivers share one desktop and a neighbour's window takes the OS focus, so `:focus-visible` does not match. The product is right (with the focus the ring shows). Driver only.
+
+- **Reproduced on Linux (xvfb, DejaVu fonts) before the fix** with `ctx.win.blur()` before the ring step: the same assert text, the same ring value.
+- **Fix (driver only):** the cell's load asks for the focus (`focus: true`, like the driver's other focus cells) and, just before the ring loop, the driver asks for the real focus by state (`needFocus`: `show()`, `focus()`, then until `document.hasFocus()`, failing with a named message otherwise). Not the focus emulation (`focusPage({ emulate: 'first' })`): it keeps the page "focused" whatever the window does and would hide the blur set up on purpose.
+- **A deterministic red case on every machine:** the window is blurred (`H.loseFocus()`: ends any focus emulation left on, blurs, waits for no focus) before the ring step, the driver asserts the page then reports no focus (the setup is valid), asks for the focus and checks the ring. `MOMENTS_BLUR=0` turns the forced blur off (the plain run).
+- **Mutant** `MOMENTS_MUTANT=nofocus` (the driver does not ask for the focus; a code path of the driver, so there is no text to patch and no CRLF case): dies at `Answer shows a keyboard focus ring (solid, 2px or more, 3:1 on the card)`, the text of the Windows run.
+- `[KNOWN GAP]` Windows itself (the condition is forced on Linux; the proof is the retry count of the Windows shards after the merge).
+
 ### 2026-11-19: check-097-order step 6 chooses its pair from one read (issue #1922, T376)
 
 **Flake** (run 44573877826, PR #1916 head `c05e9ebe8`, ubuntu UI shard 4/4, once): "two free desks of one room, the later in the list shown after the earlier, no away desk between" failed in the arcade. The step's facts (states, rooms, away) and the shown order were two separate page reads, so the simulator could send a desk away or re-sort between them. **Change (test only, no product behaviour)**: the facts and the shown order are read in one call (one moment); if no pair is left, the pair is made again (the same pin: two desks told idle, waited until at their desks) up to 3 times, printing why each time; the failure prints every desk's room, state, away flag, the shown order and the list. What the step asserts is unchanged: two free desks of one room, the later in the list shown after the earlier, no away desk between, then Alt+Left must put the later before the earlier. No wall-clock assert. Mutants: `ORDER_MUTANT=unpin6` still dies at "the two desks are free".

@@ -11,7 +11,7 @@ export interface StartSource {
   maxAiCredits?: number;
 }
 
-export function startOptionsOf(a: StartSource, workspace: string, defaultModel: string, reasoningEffort: StartOptions['reasoningEffort']): StartOptions {
+export function startOptionsOf(a: StartSource, workspace: string, defaultModel: string, reasoningEffort: StartOptions['reasoningEffort'], readOnlyFolders: readonly string[] = []): StartOptions {
   const model = a.model ?? defaultModel;
   return {
     workspace,
@@ -23,5 +23,7 @@ export function startOptionsOf(a: StartSource, workspace: string, defaultModel: 
     autoTier: model === 'auto' ? a.autoTier : undefined,
     permissionMode: a.permMode,
     maxAiCredits: a.maxAiCredits,
+    // spec 116 FR-020: the office memory folder (read-only), already re-checked by `MemoryOps.readRoots()`; absent while the memory is off
+    ...(readOnlyFolders.length ? { readOnlyFolders: [...readOnlyFolders] } : {}),
   };
 }
