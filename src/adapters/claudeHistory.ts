@@ -10,7 +10,7 @@ import * as path from 'path';
 import { DEFAULT_HISTORY_LIMITS, TOOL_NAME_MAX, cleanSessionTitle, cut, sameDir, toolLabel } from './history';
 import type { HistoryItem, HistoryLimits, HistoryResult, PreviousSession } from './history';
 import { isObj } from '../shared/guards';
-import { splitMemoryNote } from '../shared/memorynote';
+import { firstMessageText, splitMemoryNote } from '../shared/memorynote';
 import { isClaudeContinuation } from './autopilot';
 
 export const HEAD_BYTES = 256 * 1024;
@@ -62,7 +62,7 @@ export function parseSessionHead(text: string): ClaudeSessionHead {
     if (h.cwd === undefined && typeof o.cwd === 'string') h.cwd = o.cwd;
     if (h.startTime === undefined) h.startTime = tsOf(o);
     if (h.branch === undefined && typeof o.gitBranch === 'string' && o.gitBranch && o.gitBranch !== 'HEAD') h.branch = o.gitBranch; // `HEAD`: not a git folder (or detached)
-    if (h.title === undefined) h.title = typedPrompt(o);
+    if (h.title === undefined) h.title = firstMessageText(typedPrompt(o)); // spec 116 T009: the first prompt, without the memory note
   }
   const title = cleanSessionTitle(named, 120) ?? cleanSessionTitle(h.title, 120);
   return { ...h, title };
@@ -93,6 +93,7 @@ export function claudeHistoryBuilder(limits: Partial<HistoryLimits> = {}, dropGo
   const lim = { ...DEFAULT_HISTORY_LIMITS, ...limits };
   const items: HistoryItem[] = [];
   const toolIdx = new Map<string, number>();
+  let seenUser = false; // spec 116 T009: only the first typed prompt can carry the memory note
   const take = (o: Record<string, unknown>): void => {
     if (o.isSidechain === true || !isObj(o.message)) return;
     const content = o.message.content;
@@ -100,7 +101,8 @@ export function claudeHistoryBuilder(limits: Partial<HistoryLimits> = {}, dropGo
       const p = typedPrompt(o);
       if (dropGoalClear && p === '/goal clear') return; // spec 099 FR-053: Durbar's own clear, never a person's message; off in the default build (spec *Changes*)
       if (p) {
-        const sp = splitMemoryNote(p); // spec 116 T009
+        const sp = seenUser ? { text: p, note: false, cutShort: false } : splitMemoryNote(p); // spec 116 T009
+        seenUser = true;
         items.push({ type: 'user', text: cut(sp.text, lim.maxTextChars), ts: tsOf(o), ...(sp.note || sp.cutShort ? { note: true as const } : {}) });
         return;
       }

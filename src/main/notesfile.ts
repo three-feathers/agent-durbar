@@ -121,6 +121,7 @@ export class NotesFile {
 
   private ci(): boolean { return this.platform === 'win32' || this.platform === 'darwin'; }
   private same(a: string, b: string): boolean { return this.ci() ? a.toLowerCase() === b.toLowerCase() : a === b; }
+  // Identity resolver on purpose: `p` and `root` both come from `this.fs.realpathSync` here, so they are already the same form (spec 003 FR-319).
   private inside(root: string, p: string): boolean { return isInsideRoots(p, [root], { realpath: (x) => x, caseInsensitive: this.ci() }); }
 
   /**

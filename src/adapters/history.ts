@@ -6,7 +6,7 @@
  */
 import * as path from 'path';
 import { isObj } from '../shared/guards';
-import { splitMemoryNote } from '../shared/memorynote';
+import { firstMessageText, splitMemoryNote } from '../shared/memorynote';
 
 /** Spec 012 FR-183: longest tool name an agent event or a history tool item may carry; a longer one is left out (the event gate refuses it, `eventguard.ts`). */
 export const TOOL_NAME_MAX = 256;
@@ -72,9 +72,7 @@ const TITLE_DROP_RE = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f\u200
  */
 export function cleanSessionTitle(v: unknown, max = 80, wholeWords = false): string | undefined {
   if (typeof v !== 'string') return undefined;
-  const sp = splitMemoryNote(v); // spec 116 T009: the memory note is not the person's title; a frame the app cut short leaves no title
-  if (sp.cutShort) return undefined;
-  const s = sp.text.replace(TITLE_DROP_RE, '').replace(/\s+/g, ' ').trim();
+  const s = v.replace(TITLE_DROP_RE, '').replace(/\s+/g, ' ').trim();
   if (!s) return undefined;
   if (s.length <= max) return s;
   let cut = max - 1;
@@ -106,7 +104,7 @@ export function previousSessionsFor(
     const modifiedTime = toMs(m.modifiedTime) || toMs(m.startTime);
     out.push({
       id: m.sessionId,
-      title: cleanSessionTitle(m.name, 120) ?? cleanTitle(m.summary), // a saved name (for example /rename) wins over the summary
+      title: cleanSessionTitle(m.name, 120) ?? cleanTitle(firstMessageText(m.summary)), // spec 116 T009: the summary is the first prompt: the memory note is not a title; a saved name (for example /rename) wins over the summary
       startTime: toMs(m.startTime) || modifiedTime,
       modifiedTime,
       branch: typeof m.context?.branch === 'string' ? m.context.branch : undefined,
@@ -167,6 +165,7 @@ export function eventsToHistory(events: readonly unknown[], limits: Partial<Hist
   const lim = { ...DEFAULT_HISTORY_LIMITS, ...limits };
   const items: HistoryItem[] = [];
   const toolIdx = new Map<string, number>();
+  let seenUser = false; // spec 116 T009: only the first user message can carry the memory note
   for (const raw of Array.isArray(events) ? events : []) {
     if (!isObj(raw) || typeof raw.type !== 'string' || !isObj(raw.data)) continue;
     if (raw.agentId || raw.ephemeral === true) continue; // sub-agent chatter / transient events
@@ -183,7 +182,8 @@ export function eventsToHistory(events: readonly unknown[], limits: Partial<Hist
             })
           : [];
         if (!text && !atts.length) break;
-        const sp = splitMemoryNote(text); // spec 116 T009: the person's own text; the note shows as a line
+        const sp = seenUser ? { text, note: false, cutShort: false } : splitMemoryNote(text); // spec 116 T009: the first message: the person's own text; the note shows as a line
+        seenUser = true;
         items.push({ type: 'user', text: cut(sp.text, lim.maxTextChars), attachments: atts.length ? atts : undefined, ts: tsOf(raw), ...(sp.note || sp.cutShort ? { note: true as const } : {}) });
         break;
       }

@@ -155,8 +155,9 @@
      breaks kept (the note is several lines). FAILS CLOSED: no `unhide`, or one that throws, shows nothing. Returns null for nothing to show. */
   function safeText(t){
     let u=null;
-    try{u=X&&typeof X.unhide==='function'?X.unhide(String(t==null?'':t)):null;}catch(e){u=null;}
-    return typeof u==='string'&&u!==''?u:null;
+    const raw=String(t==null?'':t);
+    try{u=X&&typeof X.unhide==='function'?X.unhide(raw):null;}catch(e){u=null;}
+    return typeof u==='string'&&u!==''&&u===raw?u:null; /* fails closed: a text that `unhide` would change (hidden or direction characters) is not shown cleaned, it is not shown */
   }
   /* T009: a closed <details> holding the exact text (textContent, never HTML), under a plain line that says what it is. Returns the element, or null. */
   function noteDetails(doc,summary,text,cls){
@@ -180,7 +181,16 @@
   /* T009 US1.2: the line above the person's bubble; `text` is what main says it sent */
   function sentLine(doc,text){
     if(!shown()||typeof text!=='string'||text==='')return null;
-    return noteDetails(doc,NOTE_WORDS.sent,text,'note mem-note-sent');
+    const t=safeText(text);if(t===null)return null;
+    /* collapsed by default: one line, a button (Enter and Space work, aria-expanded says the state) that opens the exact text */
+    const box=doc.createElement('div');box.className='note mem-note-sent';
+    const btn=doc.createElement('button');btn.type='button';btn.className='mem-note-toggle';btn.setAttribute('aria-expanded','false');btn.textContent=NOTE_WORDS.sent;
+    const body=doc.createElement('div');body.className='mem-note-body';body.hidden=true;
+    const p=doc.createElement('p');p.className='mem-note-lead';p.textContent=NOTE_WORDS.lead;
+    const pre=doc.createElement('pre');pre.className='mem-note-text';pre.textContent=t;
+    body.appendChild(p);body.appendChild(pre);
+    btn.addEventListener('click',()=>{const open=btn.getAttribute('aria-expanded')!=='true';btn.setAttribute('aria-expanded',String(open));body.hidden=!open;});
+    box.appendChild(btn);box.appendChild(body);return box;
   }
   /* T009: a chat reloaded from the agent app's history: the note's text is not kept (the app stores it, Durbar shows only that it went) */
   function sentLineBare(doc){

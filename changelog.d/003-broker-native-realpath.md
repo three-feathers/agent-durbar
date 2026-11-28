@@ -1,0 +1,1 @@
+- **Windows: folders written with a short name** (spec 003 FR-319): reads inside a session folder given in the short 8.3 form (for example `RUNNER~1`) are no longer asked about or denied in Read-only. Unit test with a stub resolver and a mutant; the real Windows check runs on a Windows machine only.

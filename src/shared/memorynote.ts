@@ -43,3 +43,14 @@ export function splitMemoryNote(raw: unknown): NoteSplit {
   if (i < 0) return { text: '', note: false, cutShort: true };
   return { text: t.slice(i + 1 + close.length).replace(/^\s*\n/, '').replace(/^\n+/, ''), note: true, cutShort: false };
 }
+
+/**
+ * Spec 116 T009: for the person's FIRST stored message only (a session title, preview or summary the agent app derived from it): the text without the note
+ * frame, '' for a frame the app cut short, a non-string as it is. Never for text that is not the person's first message (agent questions, options, schedule
+ * prompts, names): a frame-looking line there is the sender's text and is shown as it is.
+ */
+export function firstMessageText<T>(v: T): T | string {
+  if (typeof v !== 'string') return v;
+  const sp = splitMemoryNote(v);
+  return sp.cutShort ? '' : sp.text;
+}

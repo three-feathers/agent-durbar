@@ -55,7 +55,10 @@ const MUTANTS: Record<string, Mut> = {
   folderOutOfKey: { kind: 'js', mod: 'main/notesent', from: "folder === '' ? '' : ':' + folder", to: "''", section: 'restart' },
   folderNotGivenToKey: { kind: 'js', mod: 'main/memorynote', from: 'this.d.keyOf(agentId, dir)', to: "this.d.keyOf(agentId, '')", section: 'once' },
   mainKeyIgnoresFolder: { kind: 'src', file: 'src/main/main.ts', from: 'fingerprint(app, resumeIdFor(id), folder)', to: 'fingerprint(app, resumeIdFor(id))', section: 'wiring' },
-  titleKeepsNote: { kind: 'js', mod: 'adapters/history', from: 'const sp = (0, memorynote_1.splitMemoryNote)(v);', to: 'const sp = { text: v, note: false, cutShort: false };', section: 'strip' },
+  titleKeepsNote: { kind: 'js', mod: 'adapters/history', from: 'cleanTitle((0, memorynote_1.firstMessageText)(m.summary))', to: 'cleanTitle(m.summary)', section: 'strip' },
+  genericTitleStrips: { kind: 'js', mod: 'adapters/history', from: "const s = v.replace(TITLE_DROP_RE", to: "const s = (0, memorynote_1.firstMessageText)(v).replace(TITLE_DROP_RE", section: 'strip' },
+  everyUserMessageStripped: { kind: 'js', mod: 'adapters/history', from: 'const sp = seenUser ?', to: 'const sp = false ?', section: 'strip' },
+  unhideCleanedShown: { kind: 'src', file: 'src/renderer/memory.js', from: "&&u!==''&&u===raw?u:null;", to: "&&u!==''?u:null;", section: 'ui' },
   codexKeepsNote: { kind: 'src', file: 'src/adapters/codexHistory.ts', from: 'const sp = splitMemoryNote(text); all.push', to: 'const sp = { text, note: false, cutShort: false }; all.push', section: 'strip' },
   stripNeedsSameNonce: { kind: 'js', mod: 'shared/memorynote', from: "t.indexOf('\\n' + close)", to: "t.search(/\\n\\[End of memory note [0-9a-f]+\\]/)", section: 'strip' },
   uiHtml: { kind: 'src', file: 'src/renderer/memory.js', from: 'pre.textContent=t;', to: 'pre.innerHTML=t;', section: 'ui' },
@@ -428,10 +431,17 @@ section('strip', () => {
   eq(shared.splitMemoryNote(PRE.replace(/\[End of memory note [0-9a-f]+\]/, '[End of memory note ffffffffffffffff]') + '\n\nx').cutShort, true, 'a closing line with another nonce does not close it');
   eq(shared.splitMemoryNote('say [Memory note 0123456789abcdef from Agent Durbar. hi').note, false, 'a frame in the middle of a text is the person text');
   eq(shared.splitMemoryNote(PRE).text, '', 'a note with no text after it leaves nothing');
-  eq(hist.cleanSessionTitle(full, 120), 'please read the notes', 'the title is the person text, not the note');
-  eq(hist.cleanSessionTitle(PRE.slice(0, 100), 120), undefined, 'a title cut inside the frame is no title (never the nonce)');
-  eq(hist.cleanTitle(PRE.slice(0, 100)), 'Untitled session', 'and shows as Untitled session');
-  ok(!/Memory note/.test(hist.cleanTitle(full)), 'no note words in a title');
+  // the strip is for the person's FIRST stored message only; every other text that goes through cleanSessionTitle is shown as it is
+  ok(hist.cleanSessionTitle(full, 600)?.includes('Memory note'), 'an agent question, option, schedule prompt or name that starts with a frame-looking line is shown unchanged (not hidden)');
+  ok(hist.cleanSessionTitle(PRE.slice(0, 100), 120)?.includes('Memory note'), 'a cut frame-looking name is kept too');
+  const meta = (summary: string): unknown[] => [{ sessionId: 's1', modifiedTime: 1, summary, context: { workingDirectory: '/example.invalid/p' } }];
+  eq(hist.previousSessionsFor(meta(full) as never, '/example.invalid/p')[0].title, 'please read the notes', 'the session title (the first prompt) is the person text, not the note');
+  eq(hist.previousSessionsFor(meta(PRE.slice(0, 100)) as never, '/example.invalid/p')[0].title, 'Untitled session', 'a summary cut inside the frame is Untitled session (never the nonce)');
+  ok(!/Memory note/.test(hist.previousSessionsFor(meta(full) as never, '/example.invalid/p')[0].title), 'no note words in a title');
+  const ev = (text: string): unknown => ({ type: 'user.message', data: { content: text, source: 'user' } });
+  const hh = hist.eventsToHistory([ev(full), ev(full)]);
+  eq([hh.items[0].text, (hh.items[0] as { note?: boolean }).note], ['please read the notes', true], 'the first user message is stripped and marked');
+  ok(hh.items[1].text === full && (hh.items[1] as { note?: boolean }).note === undefined, 'a later user message that looks like a frame is the person own text: shown as typed');
   for (const f of ['src/adapters/history.ts', 'src/adapters/claudeHistory.ts', 'src/adapters/codexHistory.ts']) ok(source(f).includes('splitMemoryNote('), f + ' takes the note off the restored first message');
   const app = source('src/renderer/app.js');
   ok(app.includes("if(it.note&&window.DurbarMemory){const nl=window.DurbarMemory.sentLineBare(document)"), 'a reloaded chat shows the plain Memory note sent line');
@@ -567,6 +577,11 @@ class El {
   get textContent(): string { return this._t + this.children.map((c) => c.textContent).join(''); }
   set innerHTML(v: string) { this.innerHTMLSet = true; this._t = v; }
   appendChild(c: El): El { this.children.push(c); return c; }
+  type = ''; attrs: Record<string, string> = {}; handlers: Array<() => void> = [];
+  setAttribute(k: string, v: string): void { this.attrs[k] = v; }
+  getAttribute(k: string): string | null { return k in this.attrs ? this.attrs[k] : null; }
+  addEventListener(_e: string, f: () => void): void { this.handlers.push(f); }
+  click(): void { for (const f of this.handlers) f(); }
 }
 class Doc { createElement(t: string): El { return new El(t, this); } }
 section('ui', () => {
@@ -584,7 +599,7 @@ section('ui', () => {
   eq(d.children[1].textContent, 'This is what the agent reads first:', 'a plain line says what it is, above the note');
   eq(d.children[2].textContent, TEXT, 'the box holds the exact text, byte for byte, as text (not HTML)');
   ok(!d.children[2].innerHTMLSet, 'never innerHTML');
-  { const hh = doc.createElement('div'); const HOST = 'x\u202ey\u200bz\nline2'; on.paintNotePreview(hh, { id: 'h', text: HOST }); eq(hh.children[0].children[2].textContent, 'xyz\nline2', 'hidden and direction characters are taken out of the shown text, line breaks stay'); }
+  { const hh = doc.createElement('div'); const HOST = 'x\u202ey\u200bz\nline2'; eq(on.paintNotePreview(hh, { id: 'h', text: HOST }), null, 'a text that unhide would change is not shown at all (not shown cleaned)'); ok(hh.hidden === true && hh.children.length === 0, 'the box stays empty and hidden'); eq(on.sentLine(doc, HOST), null, 'and no sent line either'); const okText = 'line1\nline2 plain'; ok(on.paintNotePreview(hh, { id: 'h2', text: okText }) === 'h2' && hh.children[0].children[2].textContent === okText, 'a clean text with line breaks is shown as it is'); }
   { const hh = doc.createElement('div'); const bare = make(true); bare.init({ bridge: {}, sim: true, esc: (s: string) => s }); eq(bare.paintNotePreview(hh, { id: 'h', text: TEXT }), null, 'no unhide: nothing is shown (fails closed)'); eq(hh.hidden, true, 'and the box is hidden'); eq(bare.sentLine(doc, TEXT), null, 'and no sent line'); }
   { const bl = on.sentLineBare(doc); ok(bl && bl.textContent === 'Memory note sent' && /bare/.test(bl.className), 'the plain line for a reloaded chat'); }
   for (const bad of [null, undefined, 5, {}, { id: 'a' }, { id: 'a', text: '' }, { id: 1, text: 'x' }, { ok: true, none: true }]) {
@@ -592,7 +607,13 @@ section('ui', () => {
     ok(host.hidden === true && host.children.length === 0 && host.dataset.noteId === undefined, 'nothing to send: the box is empty and hidden: ' + JSON.stringify(bad));
   }
   const line = on.sentLine(doc, TEXT);
-  ok(line && line.children[0].textContent === 'Memory note sent' && line.children[2].textContent === TEXT && /note/.test(line.className), 'the sent line opens the exact text');
+  ok(line && /note/.test(line.className), 'a sent line');
+  const btn = line.children[0]; const body = line.children[1];
+  eq(btn.tag, 'button', 'the toggle is a button (keyboard and screen reader reachable)'); eq(btn.type, 'button', 'a plain button, never a submit');
+  eq(btn.textContent, 'Memory note sent', 'one line of words'); eq(btn.getAttribute('aria-expanded'), 'false', 'collapsed by default after the send'); eq(body.hidden, true, 'the text is not shown until it is opened');
+  eq(body.children[0].textContent, 'This is what the agent reads first:', 'the lead line is inside'); eq(body.children[1].textContent, TEXT, 'it holds the exact text, byte for byte');
+  btn.click(); eq(btn.getAttribute('aria-expanded'), 'true', 'a click opens it'); eq(body.hidden, false, 'and shows the text');
+  btn.click(); eq(btn.getAttribute('aria-expanded'), 'false', 'a second click closes it'); eq(body.hidden, true, 'and hides it');
   eq(on.sentLine(doc, ''), null, 'no text, no line'); eq(on.sentLine(doc, 5), null, 'not a string, no line');
   // the gate: outside the simulator (until T010) nothing is painted or shown
   const off = make(false);
