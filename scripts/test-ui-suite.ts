@@ -1199,7 +1199,7 @@ console.log('ui-suite: check-parallel and ui-suite install Electron once before 
       assert.deepStrictEqual([...a.ran].sort(), ['check-097-hover-card', 'check-097-hover-card retro', 'check-office-fill', 'shots-017','shots-018', 'shots-033', 'shots-097-screens', 'shots-097-screens retro'], 'on a shared desktop every selected entry runs once');
       assert.deepStrictEqual(a.focusNextToOther, [], 'a focus entry ran next to another window');
       assert.ok(a.peakOthers >= 2, `the other entries still run in parallel (peak ${a.peakOthers})`);
-      assert.deepStrictEqual(a.ran.slice(-3).sort(), ['check-097-hover-card', 'shots-097-screens', 'shots-097-screens retro'], 'the focus entries run last, alone');
+      assert.deepStrictEqual(a.ran.slice(-4).sort(), ['check-097-hover-card', 'check-097-hover-card retro', 'shots-097-screens', 'shots-097-screens retro'], 'the focus entries run last, alone');
       const b = await play(false);
       assert.ok(b.peak >= 3 && b.focusNextToOther.length > 0, 'with a display per driver (xvfb) the focus entries are scheduled as before');
     } finally {
