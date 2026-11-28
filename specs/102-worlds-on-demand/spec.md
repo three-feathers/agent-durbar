@@ -2664,3 +2664,14 @@ After the flip (T472) nothing drew the first Retro pixel pictures. The owner's r
 `[KNOWN GAP]`: Linux only, simulator only, no real session. The rows-world visitor change has not been shown to the owner.
 
 **Numbers:** T502 only; no new FR or Q.
+
+## Changes 2026-11-28: `check-102-arcade-labels` asks for the window focus before it focuses the message box (issue #2167; T607; no FR; no app change)
+
+Of the focus-sensitive drivers listed in issue #2167, this one "never asks for the focus": its last step focuses the open chat's textarea and waits for `document.activeElement` and `:focus-visible`, and on a Windows UI shard (three drivers on one desktop, a neighbour's window takes the OS focus: `focusPage` in `scripts/driver-helpers.js`) it failed its first try twice in five runs with `timed out waiting for the message box focused`, then passed on the retry. In a page without the focus `focus()` sets no `:focus-visible` state. The product is right.
+
+- **Reproduced on Linux (xvfb, DejaVu fonts) before the fix:** with the window blurred (`ctx.win.blur()`: the page reports `document.hasFocus() === false`, so the blur works under xvfb and no CDP emulation was needed) and the driver not asking for the focus, the same assert text at the same step.
+- **Fix (driver only):** before the message box is focused the window is blurred on purpose (`ARCADE_LABELS_BLUR=0` turns that off), the driver asserts the page reports no focus (the setup is valid), then asks for the real focus by state (`needFocus`). Not `focusPage({ emulate: 'first' })`: it keeps the page "focused" whatever the window does and would hide the blur. The page load needs no `focus: true`: the only focus-dependent step is this one.
+- **Mutant** `ARCADE_LABELS_MUTANT=nofocus` (the driver does not ask for the focus; a code path of the driver, so there is no text to patch and no CRLF case) dies at `timed out waiting for the message box focused`, the Windows runs' text.
+- `[KNOWN GAP]` Windows itself (the condition is forced on Linux; the proof is the retry count of the Windows shards after the merge).
+
+**Numbers:** T607 only; no new FR or Q.
