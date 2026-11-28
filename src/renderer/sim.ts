@@ -235,7 +235,7 @@ function simTeamsApi(qs: URLSearchParams): Pick<DurbarApi, 'teamsList' | 'teamsP
 function simMemoryApi(qs: URLSearchParams): Pick<DurbarApi, 'memoryStatus' | 'memoryPick' | 'memoryApply' | 'memorySetOn' | 'memoryStop' | 'onMemoryChanged'> {
   const FOLDER = '~/notes/brain';
   // page address `simmemory=on|notfound|refusedstate` seeds the saved folder (Settings shows each state; T007's driver); `refused` and `remote` shape the pick
-  const seed = qs.get('simmemory');
+  let seed = qs.get('simmemory'); // a seeded state ends at the first Choose + confirm or Stop (a live action is the truth from then on)
   let folder: string | undefined = seed === 'on' || seed === 'notfound' || seed === 'refusedstate' ? FOLDER : undefined;
   let on = seed === 'on';
   let live: string | undefined;
@@ -243,20 +243,20 @@ function simMemoryApi(qs: URLSearchParams): Pick<DurbarApi, 'memoryStatus' | 'me
   const status = (): import('../shared/api').MemoryStatus => {
     if (folder === undefined) return { on: false, state: 'off', keepInGit: false };
     if (seed === 'notfound') return { on: false, path: folder, state: 'notFound', keepInGit: false };
-    if (seed === 'refusedstate') return { on: false, path: folder, state: 'refused', reason: 'It is, is inside, or holds a folder of the office: the agents there would be able to write to it.', keepInGit: false };
+    if (seed === 'refusedstate') return { on: false, path: folder, state: 'refused', reason: 'This folder is, contains or sits inside a folder of your office, so the agents there could write to it.', keepInGit: false };
     return { on, path: folder, state: on ? 'on' : 'off', keepInGit: false };
   };
   const push = (): void => { for (const cb of [...subs]) cb(status()); };
   return {
     memoryStatus: async () => status(),
     memoryPick: async () => {
-      if (qs.get('simmemory') === 'refused') return { ok: false, error: 'refused', reason: 'It is your home folder.', path: '~' };
+      if (qs.get('simmemory') === 'refused') return { ok: false, error: 'refused', reason: 'This is your home folder.', path: '~' };
       live = 'sim' + Math.random().toString(16).slice(2).padEnd(29, '0').slice(0, 29);
       return { ok: true, token: live, expiresAt: Date.now() + 600_000, path: FOLDER, remote: qs.get('simmemory') === 'remote' ? { kind: 'remote', hosts: ['host.example.invalid'], rewritten: false } : { kind: 'none' } };
     },
     memoryApply: async (token) => {
       if (live === undefined || token !== live) return { ok: false, error: 'invalid' };
-      live = undefined; folder = FOLDER; on = true; push();
+      live = undefined; folder = FOLDER; on = true; seed = null; push();
       return { ok: true, path: FOLDER };
     },
     memorySetOn: async (v) => {
@@ -265,7 +265,7 @@ function simMemoryApi(qs: URLSearchParams): Pick<DurbarApi, 'memoryStatus' | 'me
       on = v; push();
       return { ok: true };
     },
-    memoryStop: async () => { folder = undefined; on = false; live = undefined; push(); return { ok: true }; },
+    memoryStop: async () => { folder = undefined; on = false; live = undefined; seed = null; push(); return { ok: true }; },
     onMemoryChanged: (cb) => { subs.push(cb); return () => { const i = subs.indexOf(cb); if (i >= 0) subs.splice(i, 1); }; },
   };
 }

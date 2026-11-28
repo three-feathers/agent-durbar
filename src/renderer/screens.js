@@ -442,7 +442,7 @@
     const teamsSec=window.DurbarTeams&&window.DurbarTeams.shown()&&X.bridge.teamsList?`<section class="scr-sec" aria-labelledby="tmH"><h3 id="tmH">Team templates</h3>
         <p class="scr-note">A template is a saved team: its members, roles and settings. <b>Use…</b> adds that team to a folder. Starting a team does not start any member.</p>
         <div id="teamsBox"></div></section>`:'';
-    /* spec 116 T007 (FR-002): Settings > Office memory, painted by memory.js into #memBox; only under the simulator until the memory note (T009) and the docs (T010) land */
+    /* spec 116 T007 (FR-002): Settings > Office memory, painted by memory.js into #memBox; only under the simulator until T008 (the overlap re-check), T009 (the memory note) and T010 (the docs) have all landed */
     const memSec=window.DurbarMemory&&window.DurbarMemory.shown()&&X.bridge.memoryStatus?`<section class="scr-sec" aria-labelledby="memH"><h3 id="memH" tabindex="-1">Office memory</h3>
         <div id="memBox"></div></section>`:'';
     /* Schedules (spec 044 FR-011): every folder's schedules, painted by app.js into #schedSet */

@@ -47,6 +47,7 @@ body.screen-open .workspace{display:none}
 .swt.on i{transform:translateX(16px);background:var(--surface)}
 .swt:disabled{opacity:1;border-style:dashed;background:var(--surface-2);cursor:not-allowed} /* spec 052 FR-052: readable, not faded */
 .swt:disabled i{box-shadow:0 0 0 1px var(--line-ctl)}
+html[data-world="retro"] .swt:not(.on){border-color:var(--line-ctl)} /* spec 116 T007 review (Vikram): the Retro off switch's edge was 2.15:1 against the card (--line-2); the control-edge token is the 3:1 one the inputs use */
 .mst{display:inline-flex;flex-wrap:wrap;align-items:center;gap:0 5px;max-width:100%;font-size:11px;color:var(--ink-2)} /* spec 058 FR-436: a piece that does not fit goes under the word whole, never one letter a line */
 .mst-ic{flex:none}
 .mst.connected .mst-ic{color:var(--c-done)} .mst.failed .mst-ic,.mst.needs-auth .mst-ic{color:var(--c-error)} .mst.pending .mst-ic{color:var(--c-thinking)} .mst.disabled .mst-ic,.mst.stopped .mst-ic{color:var(--muted)} .mst.unknown{color:var(--muted)}

@@ -45,8 +45,16 @@ module.exports = async (ctx) => {
       const shot = (state) => H.shot(path.join(OUT, `116-settings-${tag.replace('%S', state)}.png`), { prep: 'calm', blur: false, delay: 300 });
       // none: the default (off, no folder)
       await open(w, h, { ...base }, world);
+      // the gate (Paco's review of PR 2173): with DurbarMemory.shown() false (no simulator flag) Settings has no Office memory section and no nav entry
+      await js(`window.DurbarMemory.init({bridge:window.__durbarSimUi.bridge(),sim:false,esc:s=>String(s),unhide:s=>String(s),askDialog:async()=>({value:null}),announce:()=>{}});document.getElementById('settingsBtn').click();true`);
+      assert.ok(await until(`!!document.querySelector('#scrNav')`), 'the gate: Settings repainted');
+      await js(`(()=>{const c=[...document.querySelectorAll('button')].find(b=>/^Close$/.test(b.textContent));if(c)c.click();document.getElementById('settingsBtn').click();return true})()`);
+      assert.ok(await until(`!!document.querySelector('#scrNav')`), 'the gate: Settings open again');
+      assert.ok(await js(`!document.getElementById('memBox')&&![...document.querySelectorAll('#scrNav a,#scrNav button')].some(x=>/Office memory/.test(x.textContent))`), `${world} ${w}: with shown() false there is no Office memory section`);
+      await open(w, h, { ...base }, world);
       assert.ok(await js(`[...document.querySelectorAll('#scrNav a,#scrNav button')].some(x=>/Office memory/.test(x.textContent))`), `${world} ${w}: in the Settings list`);
       assert.ok(/^Not set up/.test(await memText('#memStatus')), 'none: not set up');
+      assert.ok(/Folder: none chosen/.test(await memText('#memPath')), 'the label reads "Folder: none chosen"');
       assert.ok(await js(`document.getElementById('memStop').disabled&&document.getElementById('memSw').disabled`), 'none: Stop and the switch are disabled');
       const box = await memText('#memBox');
       for (const s of ['An agent in Allow all can also change files in your memory folder.', 'Running sessions keep it until they restart', 'Read-only stays read-only', 'Choose folder…', 'Stop using']) assert.ok(box.includes(s), `${world} ${w}: the section says "${s}"`);
@@ -91,7 +99,17 @@ module.exports = async (ctx) => {
         assert.ok(re.test(await memText('#memStatus')), `${world} ${w} ${seed}: ${await memText('#memStatus')}`);
         if (seed === 'refusedstate') assert.ok(await js(`document.getElementById('memSw').disabled`), 'refused: the switch is disabled');
         await shot(seed);
+        if (seed !== 'on') { // a seeded state ends at the first live action: Choose + confirm says On, not the seed again
+          await js(`document.getElementById('memChoose').focus();true`); await H.key('Enter');
+          assert.ok(await until(`!!document.getElementById('modeDlg')`)); await H.key('Tab'); await H.key('Enter');
+          assert.ok(await until(`/^On\\./.test(document.getElementById('memStatus').textContent)`), `${world} ${w} ${seed}: after Choose and confirm the status is On, not the seed`);
+        }
       }
+      // the off switch's edge against its card (WCAG 1.4.11, 3:1): Retro asserted (the fix of this review), every world printed
+      await open(w, h, { ...base }, world);
+      const cr = await js(`(()=>{const c=document.createElement('canvas').getContext('2d');const rgb=s=>{c.fillStyle='#000';c.fillStyle=s;c.fillRect(0,0,1,1);const d=c.getImageData(0,0,1,1).data;return [d[0],d[1],d[2]];};const L=a=>{const f=v=>{v/=255;return v<=0.03928?v/12.92:Math.pow((v+0.055)/1.055,2.4)};return 0.2126*f(a[0])+0.7152*f(a[1])+0.0722*f(a[2]);};const k=(a,b)=>{const x=L(a),y=L(b);return (Math.max(x,y)+0.05)/(Math.min(x,y)+0.05);};const sw=document.getElementById('memSw');let card=sw.parentElement;while(card&&/rgba\\(0, 0, 0, 0\\)|transparent/.test(getComputedStyle(card).backgroundColor))card=card.parentElement;return {edge:k(rgb(getComputedStyle(sw).borderTopColor),rgb(getComputedStyle(card).backgroundColor)),knob:k(rgb(getComputedStyle(sw.querySelector('i')).backgroundColor),rgb(getComputedStyle(sw).backgroundColor))};})()`);
+      console.log(`[116] off switch ${world} ${w}x${h}: edge vs card ${cr.edge.toFixed(2)}:1, knob vs track ${cr.knob.toFixed(2)}:1`);
+      if (world === 'retro') assert.ok(cr.edge >= 3 && cr.knob >= 3, `retro: the off switch needs 3:1 (edge ${cr.edge}, knob ${cr.knob})`);
       // a remote: the line is in the confirmation
       await open(w, h, { ...base, simmemory: 'remote' }, world);
       await js(`document.getElementById('memChoose').focus();true`); await H.key('Enter');
@@ -103,7 +121,7 @@ module.exports = async (ctx) => {
       // a refused pick says why
       await open(w, h, { ...base, simmemory: 'refused' }, world);
       await js(`document.getElementById('memChoose').focus();true`); await H.key('Enter');
-      assert.ok(await until(`/Refused: It is your home folder\\./.test(document.getElementById('memNotice').textContent)`), 'a refused pick names the reason');
+      assert.ok(await until(`/Refused: This is your home folder\\./.test(document.getElementById('memNotice').textContent)`), 'a refused pick names the reason');
       await shot('refusedpick');
     }
     console.log(`[116] settings PASS ${world}`);
