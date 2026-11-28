@@ -7,7 +7,7 @@
  *
  * For each world (Photo office; the Prehistoric cave behind its flag) at 1440x900 and 1280x800 it checks the moments listed in MOMENTS below
  * (each states what it asserts) and writes <SHOTS_OUT>/<world>-<moment>-<w>x<h>.png. Driver waits use until(); nothing sleeps for a fixed time.
- * Developer aids: MOMENTS_CPU_SLOW=<2..20> slows the page's CPU for the whole run, like a loaded runner (issue #1753); MOMENTS_MUTANT=notes-nowait reads the post-its before the crowd is drawn (must fail).
+ * Developer aids: MOMENTS_CPU_SLOW=<2..20> slows the page's CPU for the whole run, like a loaded runner (issue #1753); MOMENTS_BLUR=0 turns off the blur before the Answer and Skip ring steps; MOMENTS_MUTANT=nofocus does not ask for the focus after that blur (must fail at the ring assert); MOMENTS_MUTANT=notes-nowait reads the post-its before the crowd is drawn (must fail).
  */
 const os = require('os');
 const fs = require('fs');
@@ -21,6 +21,7 @@ const RESUMES = `resumes ${AT_CLOCK}`;
 const SIZES = [[1440, 900], [1280, 800]];
 const WORLDS = (process.env.MOMENTS_WORLDS || 'photo').split(',');
 const ONLY = (process.env.MOMENTS_ONLY || '').split(',').filter(Boolean);
+const BLUR_RING = process.env.MOMENTS_BLUR !== '0'; /* issue #2167: the Windows condition (a window without the OS focus) before the Answer and Skip ring steps, forced on every machine */
 
 /* in-page contrast helpers for the cells step: Pa parses a computed colour (with alpha), Lm is its luminance, over lays it on a background, bgOf stacks the backgrounds up to the root, rat is the WCAG ratio */
 const CX = String.raw`const Pa=(s)=>{const m=/rgba?\(([^)]+)\)/.exec(s||'');if(!m)return[0,0,0,0];const v=m[1].split(/[ ,\/]+/).filter(Boolean).map(Number);return[v[0]||0,v[1]||0,v[2]||0,v.length>3?v[3]:1]};const Lm=(a)=>{const f=(x)=>{x/=255;return x<=0.03928?x/12.92:Math.pow((x+0.055)/1.055,2.4)};return 0.2126*f(a[0])+0.7152*f(a[1])+0.0722*f(a[2])};const over=(f,b)=>[f[0]*f[3]+b[0]*(1-f[3]),f[1]*f[3]+b[1]*(1-f[3]),f[2]*f[3]+b[2]*(1-f[3]),1];const bgOf=(e,root)=>{const L=[];for(let n=e;n;n=n.parentElement){const c=Pa(getComputedStyle(n).backgroundColor);if(c[3]>0)L.push(c);if(c[3]>=1||n===root)break}let b=[0,0,0,1];for(const c of L.reverse())b=over(c,b);return b};const phc=(o)=>{const k=getComputedStyle(o,'::placeholder');const c=Pa(k.color);c[3]*=parseFloat(k.opacity);return c};const rat=(a,b)=>{const x=Lm(a),y=Lm(b);return (Math.max(x,y)+0.05)/(Math.min(x,y)+0.05)};`;
@@ -642,7 +643,7 @@ module.exports = async (ctx) => {
       assert.ok(OS_REDUCED ? cs.anim === 'none' : (cs.anim === 'arc-chat-on' && /^steps\(/.test(cs.steps)), `${tag}: chat-open: the chat switches on in hard steps (none under reduced motion): ${JSON.stringify(cs)}`);
       await shot(world, 'cell-chatshell', w, h);
       /* 102 T223: the chat of the simulator's first Claude agent (Ada) holds the simulator's question card (the question-card cell); Kenji sits on another floor with floors on, so this page has one floor */
-      await H.load({ w, h, query: q(world, { sim: '15', simquestion: '1' }), ready: REAL, settle: false });
+      await H.load({ w, h, query: q(world, { sim: '15', simquestion: '1' }), ready: REAL, settle: false, focus: true });
       await must(PICS, 'the pictures');
       await js('window.__cx=(()=>{' + CX + 'return {Pa,Lm,over,bgOf,rat,phc}})();0');
       /* the simulator's question comes from its first Claude agent (its first agent when there is none), a little after the first draw */
@@ -658,6 +659,9 @@ module.exports = async (ctx) => {
       assert.ok(qc.ph >= 4.5, `${tag}: the Other answer placeholder reads at 4.5:1 on its field: ${JSON.stringify(qc)}`);
       await shot(world, 'cell-question', w, h);
       /* the keyboard ring of Answer and Skip (the base :focus-visible rule): a solid outline of 2px or more that shows at 3:1 against the card, each with its picture */
+      /* issue #2167: on a Windows shard three drivers share one desktop and a neighbour's window takes the OS focus, so `.focus()` fires no focus event and :focus-visible does not match. The window is blurred on purpose here (MOMENTS_BLUR=0 turns that off), the page is asserted to report no focus (the setup is valid), and the driver asks for the real focus by state (needFocus), not the emulation, which would keep the page "focused". MOMENTS_MUTANT=nofocus skips the ask: it must die at the ring assert. */
+      if (BLUR_RING) { ctx.win.blur(); const blurred = await H.until('!document.hasFocus()', 3000); const hf = await js('document.hasFocus()'); assert.ok(blurred, tag + ': the window is blurred, so the page reports no focus (the setup of the ring step: hasFocus ' + hf + ')'); }
+      if (process.env.MOMENTS_MUTANT !== 'nofocus') await H.needFocus(`${tag}: before the Answer and Skip ring steps`);
       for (const label of ['Answer', 'Skip']) {
         const fr = await js(`(()=>{const {Pa,Lm,over,bgOf,rat,phc}=window.__cx;const c=document.querySelector('#chat .note.question:not(.settled)');const b=[...c.querySelectorAll(':scope > .note-actions .btn')].find(x=>x.textContent.trim()===${jsLiteral(label)});if(!b)return null;b.focus();const k=getComputedStyle(b);return {on:document.activeElement===b&&b.matches(':focus-visible'),style:k.outlineStyle,width:parseFloat(k.outlineWidth),ring:rat(over(Pa(k.outlineColor),bgOf(c,c)),bgOf(c,c))}})()`);
         assert.ok(fr && fr.on && fr.style === 'solid' && fr.width >= 2 && fr.ring >= 3, `${tag}: ${label} shows a keyboard focus ring (solid, 2px or more, 3:1 on the card): ${JSON.stringify(fr)}`);
