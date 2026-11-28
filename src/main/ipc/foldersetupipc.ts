@@ -98,7 +98,7 @@ export async function explain(deps: FolderSetupDeps, keyIn: unknown, idIn: unkno
     const cost = costText(r);
     return cost ? { ...out, cost } : out;
   } catch (e) {
-    return { ok: false, error: failText(e, 'folder setup explain', 'No AI explanation: something unexpected went wrong.').slice(0, 200), by: ex.name };
+    return { ok: false, error: `No AI explanation: ${failText(e, 'folder setup explain', 'something unexpected went wrong.')}`.slice(0, 200), by: ex.name };
   }
 }
 

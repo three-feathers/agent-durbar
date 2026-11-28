@@ -243,7 +243,8 @@ process.exitCode = 1; // a promise that never settles must not pass (checklist);
     assert.match(src, /'agents:openInVSCode', \(e, id: unknown\) => \(fromApp\(e\) \? openInFirstEditor\(ownedOf\(id\), owDeps\(\)\)/, 'the channel takes the guarded path');
   }
   { const res = await openWith({ cwd: dir }, 'folder', mk(NONE(), rec(), { openPath: async () => 'Failed to open path' })); assert.deepStrictEqual([res.ok, res.error], [false, 'Failed to open path']); }
-  { const res = await openWith({ cwd: dir }, 'folder', mk(NONE(), rec(), { openPath: async () => { throw new Error('boom'); } })); assert.deepStrictEqual([res.ok, res.error], [false, IPC_FAILED], 'an unexpected throw of the opener gives the fixed text (spec 045 FR-066)'); }
+  { const res = await openWith({ cwd: dir }, 'folder', mk(NONE(), rec(), { openPath: async () => { throw new Error('boom'); } })); assert.deepStrictEqual([res.ok, res.error], [false, 'boom'], 'owner decision 2026-11-23 (#2060 item 1): a throw of the opener gives its own words (spec 045 FR-066 as changed)'); }
+  { const res = await openWith({ cwd: dir }, 'folder', mk(NONE(), rec(), { openPath: async () => { throw new Error(''); } })); assert.deepStrictEqual([res.ok, res.error], [false, IPC_FAILED], 'a throw with no words still gives the fixed text (spec 045 FR-066)'); }
 
   // ---- review of #976 (2026-11-03): guards each with a test that fails when the guard goes ----
   // the NUL guard answers itself (without it the real lstat throws and the answer is "no longer exists"; a made-up path would pass)

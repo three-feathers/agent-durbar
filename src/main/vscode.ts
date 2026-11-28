@@ -149,7 +149,7 @@ export function spawnPlan(plan: LaunchPlan, spawnFn: typeof spawn = spawn, platf
       windowsVerbatimArguments: platform === 'win32' && plan.verbatim === true,
     });
     child.once('error', (err: NodeJS.ErrnoException) =>
-      resolve({ ok: false, error: err.code === 'ENOENT' ? `Could not start ${plan.edition ?? 'VS Code'} (${plan.via})` : failText(err, 'VS Code', `Could not start ${plan.edition ?? 'VS Code'}.`) }),
+      resolve({ ok: false, error: err.code === 'ENOENT' ? `Could not start ${plan.edition ?? 'VS Code'} (${plan.via})` : `Could not start ${plan.edition ?? 'VS Code'}: ${failText(err, 'VS Code', 'something unexpected went wrong')}` }),
     );
     child.once('spawn', () => {
       child.unref();

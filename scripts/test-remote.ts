@@ -234,8 +234,10 @@ async function main(): Promise<void> {
     assert.deepStrictEqual(await ops.setRemote('a1', true), { ok: false, error: 'boom line' });
     const throwing = { capabilities: { remote: true }, isLive: () => true, setRemote: async () => { throw new Error('kaboom'); } } as unknown as AgentAdapter;
     const ops2 = createRemoteOps({ known: () => true, adapterOf: () => throwing, open: async () => undefined });
-    // spec 045 FR-066: an unexpected throw gives the fixed text; the adapter's own words (a ShownError) are kept
-    assert.deepStrictEqual(await ops2.setRemote('z', true), { ok: false, error: IPC_FAILED });
+    // spec 045 FR-066 as changed 2026-11-23 (owner decision, #2060 item 1): a throw gives its own words, masked; with none, the fixed text
+    assert.deepStrictEqual(await ops2.setRemote('z', true), { ok: false, error: 'kaboom' });
+    const silent = { capabilities: { remote: true }, isLive: () => true, setRemote: async () => { throw new Error(''); } } as unknown as AgentAdapter;
+    assert.deepStrictEqual(await createRemoteOps({ known: () => true, adapterOf: () => silent, open: async () => undefined }).setRemote('z', true), { ok: false, error: IPC_FAILED });
     const shown = { capabilities: { remote: true }, isLive: () => true, setRemote: async () => { throw new ShownError('Send a message first.'); } } as unknown as AgentAdapter;
     const ops3 = createRemoteOps({ known: () => true, adapterOf: () => shown, open: async () => undefined });
     assert.deepStrictEqual(await ops3.setRemote('z', true), { ok: false, error: 'Send a message first.' });
