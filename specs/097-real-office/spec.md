@@ -341,7 +341,7 @@ Each has a recommendation (Q6 is for Paco, the crew owner). The build waits for 
 
 - **Reproduced on Linux (xvfb, DejaVu fonts) before the fix** with `ctx.win.blur()` before the ring step: the same assert text, the same ring value.
 - **Fix (driver only):** the cell's load asks for the focus (`focus: true`, like the driver's other focus cells) and, just before the ring loop, the driver asks for the real focus by state (`needFocus`: `show()`, `focus()`, then until `document.hasFocus()`, failing with a named message otherwise). Not the focus emulation (`focusPage({ emulate: 'first' })`): it keeps the page "focused" whatever the window does and would hide the blur set up on purpose.
-- **A deterministic red case on every machine:** the window is blurred (`ctx.win.blur()`) before the ring step, the driver asserts the page then reports no focus (the setup is valid), asks for the focus and checks the ring. `MOMENTS_BLUR=0` turns the forced blur off (the plain run).
+- **A deterministic red case on every machine:** the window is blurred (`H.loseFocus()`: ends any focus emulation left on, blurs, waits for no focus) before the ring step, the driver asserts the page then reports no focus (the setup is valid), asks for the focus and checks the ring. `MOMENTS_BLUR=0` turns the forced blur off (the plain run).
 - **Mutant** `MOMENTS_MUTANT=nofocus` (the driver does not ask for the focus; a code path of the driver, so there is no text to patch and no CRLF case): dies at `Answer shows a keyboard focus ring (solid, 2px or more, 3:1 on the card)`, the text of the Windows run.
 - `[KNOWN GAP]` Windows itself (the condition is forced on Linux; the proof is the retry count of the Windows shards after the merge).
 
