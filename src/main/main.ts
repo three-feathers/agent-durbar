@@ -476,6 +476,8 @@ function folderSetupStart(key: string, dirs: readonly string[], appId: string, t
 /** spec 116 F1: the folders of a session that is not in `agents` yet (the start runs before `agents.set`), as `officeFolders` lists a live one. */
 const startingFolders = (a: AgentInfo): string[] => collectOfficeFolders([{ key: wsKey(a), folders: rootsOf(a), workspaceFile: a.workspaceFile }], [], cappedWorkspaceReader(fs, memoryGitFlags(fs.constants), codeWorkspaceFoldersFromText, (p) => fs.realpathSync.native(p)));
 
+/** Spec 116 T009: the memory folder(s) each session was STARTED with (its `readOnlyFolders`); the note names the live folder only while it is still this one. */
+const memoryStartRoots = new Map<string, readonly string[]>();
 const startOptionsFor = (a: AgentInfo, resumeSessionId?: string) => {
   const base = { ...startOptionsOf(a, wsKey(a), DEFAULT_MODEL, asEffort(a.effort), getMemoryOps()?.readRoots(startingFolders(a)) ?? []), ...mcp.optionsFor(a.id, resumeSessionId ? { agent: a, sessionId: resumeSessionId } : undefined) }; // spec 058 FR-247: a resumed session starts with its saved switches
   const appId = router.adapterIdOf(a.id) ?? a.adapterId ?? registry.defaultId;
@@ -505,7 +507,9 @@ async function addWorkspace(
   draft.maxAiCredits = startCap(ad.capabilities?.capUnit, opts.maxAiCredits, folderStore?.get(wsKey(draft))?.maxAiCredits, settingsStore?.defaultMaxAiCredits);
   // spec 076 FR-203: the guard checks the mode and model of exactly these options and only then starts the adapter; a refusal throws
   // before the start (nothing started, nothing written), and advice is shown as a toast once the session has started (`agents:orgNote`)
-  const { result: id } = await startGuardOp(orgGuard, ad, { ...startOptionsFor(draft, opts.resumeSessionId), resumeSessionId: opts.resumeSessionId });
+  const startOpts = { ...startOptionsFor(draft, opts.resumeSessionId), resumeSessionId: opts.resumeSessionId };
+  const { result: id } = await startGuardOp(orgGuard, ad, startOpts);
+  memoryStartRoots.set(id, startOpts.readOnlyFolders ?? []);
   router.bind(id, adapterId);
   const saved = folderStore?.get(wsKey(draft));
   const info: AgentInfo = { ...draft, id, hidden: saved?.hidden, label: saved?.label, defaultAgent: saved?.defaultAgent };
@@ -541,7 +545,9 @@ async function ensureLive(a: AgentInfo, opts: { quiet?: boolean } = {}): Promise
         resume = !!prev;
         continued.set(a.id, { resumed: resume, title: prev?.title });
       }
-      await startGuardOp(orgGuard, ad, { ...startOptionsFor(a), ...(resume ? { resumeSessionId: a.id } : { sessionId: a.id }), quiet: opts.quiet ?? true }); // spec 076 FR-203
+      const so = { ...startOptionsFor(a), ...(resume ? { resumeSessionId: a.id } : { sessionId: a.id }), quiet: opts.quiet ?? true };
+      await startGuardOp(orgGuard, ad, so); // spec 076 FR-203
+      memoryStartRoots.set(a.id, so.readOnlyFolders ?? []);
       a.lazy = false;
       a.resumeLast = undefined;
     })();
@@ -663,12 +669,13 @@ async function sendOp(id: string, text: string, attachments: PickedFile[], ad: A
     // sessions); built-ins and anything else go as typed. Scheduled prompts come through here too.
     // spec 116 T009: the memory note, only on the person's first typed message of this session id (`first`, set by `agents:send` for the window's own typed
     // send) and only the text the person was shown (`take`); added after the expansion, written as sent only after the send succeeded
-    const note = first ? getMemoryNote()?.take(id, first.noteId) : undefined;
-    const { slash, slashNote, memoryNote } = await sendWithMemoryNote(ad, id, {
+    const msg = {
       text: String(text),
       attachments: safe.map((a) => ({ path: a.path, kind: kindOfFile(a.path) })), // FR-009: checked again here, the renderer's kind is not trusted
       ...(plan ? { plan: true } : {}),
-    }, note);
+    };
+    const note = first ? getMemoryNote()?.take(id, first.noteId) : undefined; // after the message is built: a throw above leaves no claim held
+    const { slash, slashNote, memoryNote } = await sendWithMemoryNote(ad, id, msg, note);
     for (const a of safe) pickedFiles.delete(a.path); // spec 004 FR-015: a sent file must be picked again to be sent again
     noteLastSession(agents.get(id));
     const mem = memoryNote ? { memoryNote } : {};
@@ -1020,6 +1027,7 @@ let memoryNote: MemoryNote | undefined;
 let noteSent: NoteSentStore | undefined;
 const getMemoryNote = (): MemoryNote | undefined => (SIMULATOR || !getMemoryOps() ? undefined : (memoryNote ??= new MemoryNote({
   roots: (id) => getMemoryOps()?.readRoots(startingFolders(agents.get(id) as AgentInfo)) ?? [],
+  startRoots: (id) => memoryStartRoots.get(id) ?? [],
   names: (dir) => fs.readdirSync(dir), // ONE readdir of the top level: names only, no file is opened (FR-050)
   keyOf: (id) => { const app = appIdOf(id); return app ? fingerprint(app, resumeIdFor(id)) : undefined; },
   sent: (noteSent ??= new NoteSentStore(path.join(app.getPath('userData'), 'memory-note-sent.json'))),

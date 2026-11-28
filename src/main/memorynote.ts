@@ -13,6 +13,8 @@ import { drawNonce, firstMessageChain } from './firstmessage';
 export interface MemoryNoteDeps {
   /** `MemoryOps.readRoots()`: the real path of the folder while the memory is on and T002 passes now, else none */
   roots(agentId: string): string[];
+  /** the memory folder(s) this session was STARTED with: the note names the live folder only while it is still the same one */
+  startRoots(agentId: string): readonly string[];
   /** ONE `readdir` of the folder's top level, names only */
   names(dir: string): string[];
   /** the session's record key (`fingerprint(app id, resume id)`), or undefined when it cannot be told */
@@ -33,11 +35,14 @@ export class MemoryNote {
   private build(agentId: string, nonce: string): string | undefined {
     try {
       const dir = this.d.roots(agentId)[0];
+      if (typeof dir === 'string' && this.d.startRoots(agentId)[0] !== dir) return undefined; // a session started before the memory was on, or with another folder, cannot read this one
       if (typeof dir !== 'string' || !dir || unhide(dir) !== dir || /[\u0000-\u001f\u007f]/.test(dir)) return undefined;
       let names: string[] = [];
       try { names = this.d.names(dir); } catch { names = []; } // a folder that cannot be listed still gets its note, without an entry line
-      const chain = firstMessageChain([{ id: 'memory', open: noteOpen, body: noteBody(dir, entryNameOf(names)), close: noteClose }], { nonces: [nonce] });
-      return chain?.text;
+      const part = { id: 'memory', open: noteOpen, body: noteBody(dir, entryNameOf(names)), close: noteClose };
+      const chain = firstMessageChain([part], { nonces: [nonce] });
+      // masking must not touch the note: a token-shaped folder name would be rewritten and the note would name a folder that does not exist (fail closed)
+      return chain && chain.text === [part.open(nonce), part.body, part.close(nonce)].join('\n') ? chain.text : undefined;
     } catch { return undefined; }
   }
 

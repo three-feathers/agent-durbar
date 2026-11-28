@@ -5,7 +5,7 @@
  *  - the person's first typed message goes; a "Memory note sent" line sits right above the bubble and opens the same text, byte for byte;
  *  - the second message carries none, and no preview is shown again;
  *  - text >= 10.5px, no sideways overflow in the composer.
- * Shots: docs/screenshots-style names 116-note-<state>-<w>x<h>.png in OUT. Prints "[116] note PASS". Linux with xvfb-run (never display :99):
+ * Worlds: Flat and Real office in one run; the Retro world with DRIVER_WORLD=retro (`officeview=real`). Shots: 116-note-[<world>-]<state>-<w>x<h>.png in OUT (Flat has no world word). Prints "[116] note PASS". Linux with xvfb-run (never display :99):
  *
  *   npm run build
  *   OUT=$PWD/test-results/116-note DURBAR_USER_DATA=$(mktemp -d) DURBAR_SIM=15 DURBAR_SIM_FREEZE=1 \
@@ -21,18 +21,23 @@ module.exports = async (ctx) => {
   fs.mkdirSync(OUT, { recursive: true });
   const H = helpers(ctx);
   const { js, until } = H;
-  const openAgent = () => js(`(()=>{const d=[...document.querySelectorAll('#stage .desk[data-id]')].find(x=>!/needs your|asks you|waiting/i.test(x.innerText));if(d)d.click();return d?d.dataset.id:''})()`);
+  const retro = process.env.DRIVER_WORLD === 'retro';
+  const worlds = retro ? [['retro', { officeview: 'real' }]] : [['flat', {}], ['real', { officeview: 'real' }]];
+  const readyReal = `!!document.querySelector('#stage .ro .ro-plate')&&document.getElementById('stage').dataset.d==='real'`;
+  const readyRetro = `!!document.querySelector('#stage .ro[data-world="retro"]')`;
+  const opts = (world) => (world === 'real' ? { ready: readyReal, settle: false } : world === 'retro' ? { ready: readyRetro, settle: false } : {});
+  const openAgent = (world) => world !== 'flat' ? js(`(()=>{const d=[...document.querySelectorAll('#stage .ro .ro-plate[data-id]')].find(x=>!/needs your|asks you|waiting/i.test(x.innerText));if(d)d.click();return d?d.dataset.id:''})()`) : js(`(()=>{const d=[...document.querySelectorAll('#stage .desk[data-id]')].find(x=>!/needs your|asks you|waiting/i.test(x.innerText));if(d)d.click();return d?d.dataset.id:''})()`);
   const type = (t) => js(`(()=>{const i=document.getElementById('msgInput');i.value=${jsLiteral(t)};i.dispatchEvent(new Event('input',{bubbles:true}));document.getElementById('sendBtn').click();})()`);
-  for (const [w, h] of [[1440, 900], [1280, 800]]) {
-    const shot = (state) => H.shot(path.join(OUT, `116-note-${state}-${w}x${h}.png`), { prep: 'calm', blur: false, delay: 300 });
+  for (const [world, base] of worlds) for (const [w, h] of [[1440, 900], [1280, 800]]) {
+    const shot = (state) => H.shot(path.join(OUT, `116-note-${world === 'flat' ? '' : world + '-'}${state}-${w}x${h}.png`), { prep: 'calm', blur: false, delay: 300 });
     // off (the default): no preview
-    await H.load({ w, h, query: {} });
-    await openAgent();
+    await H.load({ w, h, query: { ...base }, ...opts(world) });
+    await openAgent(world);
     assert.ok(await until(`document.body.classList.contains('panel-open')&&!!document.getElementById('msgInput')`), 'the chat is open');
     assert.ok(await js(`document.getElementById('memNote').hidden===true&&document.getElementById('memNote').children.length===0`), `${w}: memory off: no note in the composer`);
     // on: the preview
-    await H.load({ w, h, query: { simmemory: 'on' } });
-    await openAgent();
+    await H.load({ w, h, query: { ...base, simmemory: 'on' }, ...opts(world) });
+    await openAgent(world);
     assert.ok(await until(`!!document.querySelector('#memNote:not([hidden]) details summary')`), `${w}: the preview is in the composer`);
     assert.strictEqual(await js(`document.querySelector('#memNote summary').textContent`), 'Sent with your next message: memory note');
     const text = await js(`document.querySelector('#memNote pre').textContent`);
@@ -60,5 +65,5 @@ module.exports = async (ctx) => {
     assert.strictEqual(await js(`document.querySelectorAll('#chat .mem-note-sent').length`), 1, 'one note line only');
     assert.ok(await js(`document.getElementById('memNote').hidden===true`), 'no preview again');
   }
-  console.log('[116] note PASS');
+  console.log('[116] note PASS ' + worlds.map((x) => x[0]).join(','));
 };
