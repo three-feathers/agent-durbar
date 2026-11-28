@@ -229,6 +229,7 @@ async function main(): Promise<void> {
     const MUT: Record<string, [string, string]> = {
       jsRealpath: ['return fs.realpathSync.native(x);', 'return fs.realpathSync(x);'],
       noFallback: ['return fs.realpathSync(x);', 'throw e;'],
+      posixFold: ["opts.caseInsensitive ?? process.platform === 'win32'", 'opts.caseInsensitive ?? true'],
     };
     const mut = process.env.PERMISSIONS_MUTANT || '';
     if (mut) {
@@ -253,6 +254,8 @@ async function main(): Promise<void> {
     } finally {
       real.native = savedNative;
     }
+    // default case rule: only Windows folds case, so on Linux and macOS `/Work/a` is not inside `/work`
+    if (process.platform !== 'win32') assert.ok(!inside('/Work/a', ['/work'], { flavor: path.posix, realpath: (x) => x }), 'default case rule: posix does not fold case');
   }
 
   // spec 003 FR-319: a native failure that is not "missing" falls back to the JS resolver (a link out of the root stays outside).
@@ -294,6 +297,7 @@ async function main(): Promise<void> {
     fs.mkdirSync(dir);
     try {
       const longRoot = fs.realpathSync.native(dir);
+      console.log(`permissions: Windows short-name check RAN: short form ${dir}, long form ${longRoot}`);
       assert.ok(isInsideRoots(path.join(dir, 'a.txt'), [longRoot]), 'Windows: the short-form path is inside the long-form root');
       assert.ok(isInsideRoots(path.join(dir, 'new', 'a.txt'), [longRoot]), 'Windows: a missing file under it too');
     } finally {
