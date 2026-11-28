@@ -23,6 +23,9 @@
  *   - `no letter when the plate is off screen` / `... the Postbox is off screen` / `... the desk is off screen in the flat office` (1440x900; the last two in the Photo run only), and
  *     `a letter when the plate is partly on screen`: with the plates (or the Postbox, or the flat desks) moved out of the window before the run fires, a letter flies anyway;
  *     with the plates half outside the floor, none flies.
+ *   Scrolled case, by state (issue 2190, T615): it fires once every `.ro-plate` rect, the floor's clientWidth and scrollTop read alike for 60 frames in a row (not the first plate's left and top twice). A failure at the plate prints the last 10 layout changes.
+ *   LETTER_RESPACE=1: the red case, 700 ms after the spacer the floor gets 14 px more right padding (a late relayout spreads the row again, after the old wait's reads); LETTER_MUTANT=firstplate: the old wait, which fires too soon there and fails at
+ *   `the letter reaches the plate (1280x800 scrolled)`; the state wait passes both.
  *   Source mutants (run by hand, the dist copy, never `check:ui`, which builds first and copies src over dist): `npm run build`, edit dist/renderer/app.js, run
  *   `UI_SUITE_XVFB=1 node scripts/ui-suite.js --only check-097-letter`, then `npm run build` again. Each fails at the label named:
  *     1. in flyLetter delete `, #stage .ro-lplate[data-post]` and `, #stage .ro-plate[data-id="${CSS.escape(String(agentId))}"]` (the flat lookup): `the letter flies in the Photo office at 1440x900`;
@@ -71,17 +74,33 @@ module.exports = async (ctx) => {
   const park = () => H.wc().sendInputEvent({ type: 'mouseMove', x: 1, y: 1 }); // a virtual display's pointer rests mid-window and opens a hover card over the plate
   const loadReal = async (w, h) => { await H.load({ w, h, query: { officeview: 'real', sim: '15', simsched: '1', simschedfire: '300' }, ready: realReady, readyMs: 30000, settle: false }); assert.ok(await js(`!!document.querySelector('#stage .ro')`), `${w}x${h}: a Real office is drawn`); park(); assert.ok(await js(watch), 'the page could not be watched'); };
 
+  /* issue 2190 (T615): what the layout does, by state. Every frame the page reads the rect (left, top, width) of EVERY plate, the floor's clientWidth and scrollTop; `same` counts the frames in a row that
+     read alike, `log` keeps the last 10 changes (time, the target plate's centre, floor clientWidth, scrollTop) for the failure message. The old wait read the first plate's left and top twice, and that plate
+     is the row's left-most one: a row that is spread again never moved it (CI run 46167303068: the letter ended 13.7 px left of the plate's settled centre). */
+  const sampler = `(()=>{const S=window.__ps={same:0,log:[],sig:'',t0:performance.now()};const f=()=>{const fl=document.getElementById('floor'),ps=[...document.querySelectorAll('#stage .ro-plate[data-id]')],
+      sig=ps.map(q=>{const r=q.getBoundingClientRect();return r.left.toFixed(1)+'/'+r.top.toFixed(1)+'/'+r.width.toFixed(1)}).join(' ')+' cw'+fl.clientWidth+' st'+fl.scrollTop;
+      if(sig===S.sig)S.same++;else{S.sig=sig;S.same=0;const q=ps.find(x=>window.__lt&&x.dataset.id===window.__lt.for)||ps[0],r=q&&q.getBoundingClientRect();
+        S.log.push(Math.round(performance.now()-S.t0)+'ms plate['+(r?(r.left+r.width/2).toFixed(1)+','+(r.top+r.height/2).toFixed(1):'none')+'] cw'+fl.clientWidth+' st'+fl.scrollTop);if(S.log.length>10)S.log.shift();}
+      requestAnimationFrame(f)};requestAnimationFrame(f);return true})()`;
+  const SETTLE_FRAMES = 60; // about a second of unchanged frames
+  const MUTANT = process.env.LETTER_MUTANT; // 'firstplate': the old wait (the first plate's left and top twice, 400 ms apart): it dies at the respace case
+  const RESPACE = process.env.LETTER_RESPACE === '1'; // the red case: 700 ms after the spacer the floor loses 14 px (a late relayout spreads the row again); the old wait has fired by then, a state wait has not
+  const evidence = async () => `; layout changes seen (last 10, ms since the page was watched): ${JSON.stringify(await js(`window.__ps?window.__ps.log:null`))}`;
+
   /* the whole check of one letter: where it starts, where it ends, its chip, its pixels; `scrolled`: #floor is scrolled when the run fires (no pictures then) */
   const flight = async (w, h, scrolled) => {
     const tag = scrolled ? `${w}x${h} scrolled` : `${w}x${h}`;
     await loadReal(w, h);
+    await js(sampler);
     if (scrolled) {
       await js(`(()=>{const f=document.getElementById('floor');f.classList.add('scrolls');const sp=document.createElement('div');sp.id='letter-spacer';sp.style.cssText='height:2000px;width:1px';f.appendChild(sp);f.scrollTop=40;})()`);
       assert.ok(await js(`document.getElementById('floor').scrollTop>0`), `the letter flies with the floor scrolled (${tag}): the floor did not scroll`);
-      /* the scrollbar narrows the floor and the office lays out again: fire only once a plate stands still (two reads 400 ms apart) */
-      let prev = '';
-      assert.ok(await until(`(()=>{const p=document.querySelector('#stage .ro-plate[data-id]');return !!p&&document.getElementById('floor').scrollTop>0})()`, 3000), `the letter flies with the floor scrolled (${tag}): the floor scrolled back`);
-      for (let k = 0; k < 10; k++) { const now = await js(`(()=>{const r=document.querySelector('#stage .ro-plate[data-id]').getBoundingClientRect();return r.left+','+r.top})()`); if (now === prev) break; prev = now; await ctx.sleep(400); }
+      if (RESPACE) await js(`setTimeout(()=>{const f=document.getElementById('floor');f.style.paddingRight=(parseFloat(getComputedStyle(f).paddingRight)+14)+'px'},700)`);
+      /* the scrollbar narrows the floor and the office lays out again: fire only once the layout stands still (every plate's rect, the floor's width and scroll unchanged for ${SETTLE_FRAMES} frames) */
+      if (MUTANT === 'firstplate') { /* the old wait: only the first plate's left and top, twice 400 ms apart */
+        let prev = '';
+        for (let k = 0; k < 10; k++) { const now = await js(`(()=>{const r=document.querySelector('#stage .ro-plate[data-id]').getBoundingClientRect();return r.left+','+r.top})()`); if (now === prev) break; prev = now; await ctx.sleep(400); }
+      } else assert.ok(await until(`window.__ps.same>=${jsLiteral(SETTLE_FRAMES)}&&document.getElementById('floor').scrollTop>0`, 6000), `the letter flies with the floor scrolled (${tag}): the layout never stood still, or the floor scrolled back${await evidence()}`);
     }
     await fire(`the letter flies in the ${WORLD} at ${tag}`);
     assert.ok(await until(`${ran}>=1`, 5000), `the letter flies in the ${WORLD} at ${tag}: the run never fired`);
@@ -107,7 +126,7 @@ module.exports = async (ctx) => {
     assert.ok(lt.connected, `the letter is removed once it lands (${tag}): the letter was not there to read`);
     assert.ok(Math.abs(lt.first.x - lt.post.x) <= 4 && Math.abs(lt.first.y - lt.post.y) <= 4, `the letter starts at the Postbox (${tag}): first frame ${JSON.stringify(lt.first)}, Postbox centre ${JSON.stringify(lt.post)}`);
     assert.ok(lt.last.l >= lt.plate.l && lt.last.r <= lt.plate.r && lt.last.t >= lt.plate.t && lt.last.b <= lt.plate.b, `the letter reaches the plate (${tag}): ${JSON.stringify(lt.last)} not inside ${JSON.stringify(lt.plate)}`);
-    assert.ok(Math.abs(lt.last.x - lt.plate.x) <= 2 && Math.abs(lt.last.y - lt.plate.y) <= 2, `the letter reaches the plate (${tag}): its centre ${JSON.stringify([lt.last.x, lt.last.y])} is more than 2 px from the plate's centre ${JSON.stringify([lt.plate.x, lt.plate.y])}`);
+    assert.ok(Math.abs(lt.last.x - lt.plate.x) <= 2 && Math.abs(lt.last.y - lt.plate.y) <= 2, `the letter reaches the plate (${tag}): its centre ${JSON.stringify([lt.last.x, lt.last.y])} is more than 2 px from the plate's centre ${JSON.stringify([lt.plate.x, lt.plate.y])}${await evidence()}`);
     assert.ok(lt.real, `the letter is the Real office's (${tag}): no .real class`);
     const arcade = KEY === 'retro';
     assert.ok(lt.last.w >= 16 && lt.last.h >= 12 && lt.bg !== 'rgba(0, 0, 0, 0)' && (arcade ? lt.shadow === 'none' && /^solid 1px$/.test(lt.outline) : lt.shadow !== 'none'),
