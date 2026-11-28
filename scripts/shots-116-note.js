@@ -26,9 +26,12 @@ module.exports = async (ctx) => {
   const readyReal = `!!document.querySelector('#stage .ro .ro-plate')&&document.getElementById('stage').dataset.d==='real'`;
   const readyRetro = `!!document.querySelector('#stage .ro[data-world="retro"]')`;
   const opts = (world) => (world === 'real' ? { ready: readyReal, settle: false } : world === 'retro' ? { ready: readyRetro, settle: false } : {});
+  // scroll the opened note to the top of the chat, then a little back: the chat's "Previous sessions" bar is sticky and would hide the note's top edge and its focus ring
+  const SCROLL_NOTE = `(()=>{const e=document.querySelector('#chat .mem-note-sent');e.scrollIntoView({block:'start'});const c=document.getElementById('chat');c.scrollTop=Math.max(0,c.scrollTop-56);})()`;
   const openAgent = (world) => world !== 'flat' ? js(`(()=>{const d=[...document.querySelectorAll('#stage .ro .ro-plate[data-id]')].find(x=>!/needs your|asks you|waiting/i.test(x.innerText));if(d)d.click();return d?d.dataset.id:''})()`) : js(`(()=>{const d=[...document.querySelectorAll('#stage .desk[data-id]')].find(x=>!/needs your|asks you|waiting/i.test(x.innerText));if(d)d.click();return d?d.dataset.id:''})()`);
   const type = (t) => js(`(()=>{const i=document.getElementById('msgInput');i.value=${jsLiteral(t)};i.dispatchEvent(new Event('input',{bubbles:true}));document.getElementById('sendBtn').click();})()`);
   for (const [world, base] of worlds) for (const [w, h] of [[1440, 900], [1280, 800]]) {
+    const shotNow = (state) => H.shot(path.join(OUT, `116-note-${world === 'flat' ? '' : world + '-'}${state}-${w}x${h}.png`), { prep: 'mouse', blur: false, delay: 0 }); // no calm wait: the chat sticks to the bottom while the simulator's reply streams
     const shot = (state) => H.shot(path.join(OUT, `116-note-${world === 'flat' ? '' : world + '-'}${state}-${w}x${h}.png`), { prep: 'calm', blur: false, delay: 300 });
     // off (the default): no preview
     await H.load({ w, h, query: { ...base }, ...opts(world) });
@@ -65,8 +68,8 @@ module.exports = async (ctx) => {
     assert.strictEqual(await js(`document.querySelector('#chat .mem-note-sent pre').textContent`), text, 'the line opens the exact text that was previewed');
     assert.ok(await js(`document.querySelector('#chat .mem-note-sent').nextElementSibling.classList.contains('msg')&&document.querySelector('#chat .mem-note-sent').nextElementSibling.classList.contains('user')`), 'the line is right above the bubble');
     assert.ok(await until(`document.getElementById('memNote').hidden===true`), 'the preview is gone after the send');
-    await js(`document.querySelector('#chat .mem-note-sent').scrollIntoView({block:'center'});true`);
-    await shot('sent');
+    await js(`${SCROLL_NOTE};true`); // the whole opened note, with the focus ring of its button (Enter was pressed on it), is in the picture
+    await shotNow('sent');
     // the second message carries none
     await type('And one more thing');
     assert.ok(await until(`[...document.querySelectorAll('#chat .msg.user .bubble')].some(b=>b.textContent==='And one more thing')`), 'the second message is in the chat');
@@ -78,15 +81,16 @@ module.exports = async (ctx) => {
       const want = 'Follow-up question number ' + (i + 1) + ':';
       assert.ok(await until(`[...document.querySelectorAll('#chat .msg.user .bubble')].some(b=>b.textContent.startsWith(${jsLiteral(want)}))`), 'follow-up ' + (i + 1) + ' is in the chat');
     }
-    await js(`(()=>{const n=document.querySelector('#chat .mem-note-sent');n.querySelector('button').setAttribute('aria-expanded','true');n.querySelector('.mem-note-body').hidden=false;n.querySelector('.mem-note-chev').textContent='\u25be ';n.scrollIntoView({block:'start'});return true})()`);
+    await js(`(()=>{const n=document.querySelector('#chat .mem-note-sent');n.querySelector('button').setAttribute('aria-expanded','true');n.querySelector('.mem-note-body').hidden=false;n.querySelector('.mem-note-chev').textContent='\u25be ';n.scrollIntoView({block:'start'});document.getElementById('chat').scrollTop-=56;return true})()`);
     await H.settle();
-    // the opened note sits at the top of a long chat: the person's first message must start inside the chat viewport, not below its edge. The note's text has its own
-    // scroll (max 120px), so the block stays short; the check is the bubble's TOP plus one line, not its bottom, because the chat height changes with the platform's fonts and DPI (Windows CI). The scroll to the note and the measure happen in ONE page call: the simulator's replies keep arriving and the chat sticks to the bottom, so a scroll made earlier can be undone before a slower machine measures (the Windows failure).
-    const geo = await js(`(()=>{const e=document.querySelector('#chat .mem-note-sent');e.scrollIntoView({block:'start'});const c=document.getElementById('chat').getBoundingClientRect();const er=e.getBoundingClientRect();const b=e.nextElementSibling.querySelector('.bubble').getBoundingClientRect();return {chatTop:c.top,chatBottom:c.bottom,noteTop:er.top,noteBottom:er.bottom,bubbleTop:b.top,bubbleBottom:b.bottom}})()`);
+    // the opened note sits at the top of a long chat: the person's first message must start inside the chat viewport, not below its edge. The opened note shows its whole text (no inner scroll);
+    // the check is the bubble's TOP plus one line, not its bottom, because the chat height changes with the platform's fonts and DPI (Windows CI). The scroll to the note and the measure happen in ONE page call: the simulator's replies keep arriving and the chat sticks to the bottom, so a scroll made earlier can be undone before a slower machine measures (the Windows failure).
+    const geo = await js(`(()=>{const e=document.querySelector('#chat .mem-note-sent');e.scrollIntoView({block:'start'});document.getElementById('chat').scrollTop-=56;const c=document.getElementById('chat').getBoundingClientRect();const er=e.getBoundingClientRect();const b=e.nextElementSibling.querySelector('.bubble').getBoundingClientRect();return {chatTop:c.top,chatBottom:c.bottom,noteTop:er.top,noteBottom:er.bottom,bubbleTop:b.top,bubbleBottom:b.bottom}})()`);
     console.log('[116] long chat geometry', world, w, JSON.stringify(geo));
     assert.ok(geo.noteTop >= geo.chatTop - 1 && geo.bubbleTop >= geo.chatTop && geo.bubbleTop + 24 <= geo.chatBottom, `${world} ${w}: with the note open at the top of a long chat, the person's first message is still in view (${JSON.stringify(geo)})`);
     assert.ok(await js(`document.querySelector('#chat .mem-note-sent .mem-note-lead').textContent==='This is what the agent reads first:'`), 'the opened line says what it is');
-    await shot('long');
+    await js(`${SCROLL_NOTE};true`);
+    await shotNow('long');
   }
   console.log('[116] note PASS ' + worlds.map((x) => x[0]).join(','));
 };

@@ -2344,7 +2344,7 @@ body.strips-yield.strips-open .notice-strip:not(#stripBar):not([hidden]){display
 
 /* spec 116 T009: the memory note above the composer and the "Memory note sent" line above the bubble: a closed disclosure holding the exact text (the box reuses .nt-notice, the line .note) */
 .mem-note[hidden]{display:none}
-.mem-note-text{max-height:120px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;font:inherit;user-select:text}
+.mem-note-text{white-space:pre-wrap;overflow-wrap:anywhere;font:inherit;user-select:text}
 .mem-note-toggle{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:pointer;text-decoration:underline}
 
 
