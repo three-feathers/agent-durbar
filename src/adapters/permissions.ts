@@ -211,9 +211,7 @@ const isMissing = (e: unknown): boolean => codeOf(e) === 'ENOENT' || codeOf(e) =
 
 /**
  * Real path of `p`, or `undefined` when it cannot be resolved (the caller counts that as outside, fail closed; spec 003 FR-320).
- * `p` is the raw string: the resolver sees it as written. Only a missing tail under the longest resolved prefix is kept as text
- * (and collapsed against that real prefix); a part that exists as a link but does not resolve is followed by its target; any
- * failure other than "missing", a link loop, or a path deeper than the cap is `undefined`.
+ * Only a missing tail under a resolved folder stays inside; anything else that cannot be resolved is `undefined`.
  */
 function realOrNearest(p: string, o: Required<Pick<PathCheckOptions, 'flavor' | 'realpath'>>): string | undefined {
   const pm = o.flavor;

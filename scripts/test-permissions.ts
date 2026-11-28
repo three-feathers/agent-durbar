@@ -285,7 +285,7 @@ async function main(): Promise<void> {
       try {
         const proj = path.join(tmp, 'proj'), away = path.join(tmp, 'away'), awaySub = path.join(away, 'sub');
         fs.mkdirSync(proj); fs.mkdirSync(awaySub, { recursive: true });
-        fs.writeFileSync(path.join(away, 'secret.txt'), 'x');
+        fs.writeFileSync(path.join(away, 'y.txt'), 'x');
         fs.mkdirSync(path.join(proj, 'dir1'));
         const mk = (target: string, name: string, type: 'dir' | 'file' = 'dir'): boolean => {
           try { fs.symlinkSync(target, path.join(proj, name), type); return true; } catch { return false; }
@@ -295,7 +295,7 @@ async function main(): Promise<void> {
         else {
           const toolIn = (file: string) => ({ file_path: file });
           // unresolved-1
-          const p1 = path.join(proj, 'unresolved-1') + path.sep + '..' + path.sep + 'secret.txt';
+          const p1 = path.join(proj, 'unresolved-1') + path.sep + '..' + path.sep + 'y.txt';
           // on Windows the OS itself reads this path as text first, so the true answer there is inside (not outside)
           const winRows = process.platform === 'win32';
           assert.strictEqual(inside(p1, [proj]), winRows, `FR-320 unresolved-1: ${winRows ? 'inside on Windows' : 'outside'}`);
@@ -351,7 +351,7 @@ async function main(): Promise<void> {
           assert.ok(!inside(path.join(proj, 'chain-0'), [proj], { realpath: noFollow }), 'FR-320 unresolved-12: a long chain of links is outside');
           assert.ok(inside(path.join(proj, 'short-0'), [proj], { realpath: noFollow }), 'FR-320 unresolved-12: a short chain ending inside is inside');
           // the default resolver failing for a reason other than "missing": outside, except where the JS resolver is the fallback (Windows only, simulated)
-          fs.symlinkSync('unresolved-1/../secret.txt', path.join(proj, 'unresolved-17'), 'file');
+          fs.symlinkSync('unresolved-1/../y.txt', path.join(proj, 'unresolved-17'), 'file');
           if (process.platform !== 'win32') {
             const nat = fs.realpathSync as unknown as { native: (p: string) => string };
             const savedNat = nat.native;
@@ -381,10 +381,11 @@ async function main(): Promise<void> {
         // regressions without links
         assert.ok(inside(path.join(proj, 'new', 'deep', 'er', 'file.txt'), [proj]), 'FR-320 regression: a plain new file deep inside is inside');
         assert.ok(inside([proj, 'dir1', '..', 'x.txt'].join(path.sep), [proj]), 'FR-320 regression: a path that stays inside is inside');
-        assert.ok(!inside([proj, 'missing', '..', 'x.txt'].join(path.sep), [proj]), 'FR-320 unresolved-20: a remaining path that would climb back is outside (also on Windows: the safe side)');
+        /* on win32 the OS reads such a path as text before the file system sees it, so inside is the true answer there */
+        assert.strictEqual(inside([proj, 'missing', '..', 'x.txt'].join(path.sep), [proj]), process.platform === 'win32', 'FR-320 unresolved-20: outside, except on win32 where the OS reads it as text (inside is the true answer)');
         assert.ok(inside(path.join(proj, 'missing', 'x.txt'), [proj]), 'FR-320 regression: a plain missing tail is inside');
-        assert.ok(!inside([proj, 'missing', '..', '..', 'away', 'secret.txt'].join(path.sep), [proj]), 'FR-320 regression: missing tail that leaves the folder is outside');
-        assert.ok(!inside([proj, '..', 'away', 'secret.txt'].join(path.sep), [proj]), 'FR-320 regression: a path that leaves the folder is outside');
+        assert.ok(!inside([proj, 'missing', '..', '..', 'away', 'y.txt'].join(path.sep), [proj]), 'FR-320 regression: missing tail that leaves the folder is outside');
+        assert.ok(!inside([proj, '..', 'away', 'y.txt'].join(path.sep), [proj]), 'FR-320 regression: a path that leaves the folder is outside');
         assert.ok(inside(path.join(tmp, 'not-yet', 'f.txt'), [path.join(tmp, 'not-yet')]), 'FR-320 regression: a root that does not exist yet still matches its own files');
         // unresolved-9: a resolver that fails for a reason other than "missing"
         for (const [n, code] of [['1', 'EACCES'], ['2', 'ELOOP']]) {
@@ -393,7 +394,7 @@ async function main(): Promise<void> {
           assert.ok(inside(path.join(proj, 'f.txt'), [proj], { realpath: stub }), 'FR-320 unresolved-9: other paths unaffected');
           assert.ok(!inside(path.join(proj, 'f.txt'), [path.join(proj, 'unresolved-9')], { realpath: stub }), 'FR-320 unresolved-9: a root that cannot be resolved matches nothing');
         }
-        // unresolved-10: a missing tail beyond the walk cap
+        // unresolved-10
         const deep = path.join(proj, ...Array.from({ length: 80 }, (_, i) => `d${i}`), 'f.txt');
         assert.ok(!inside(deep, [proj]), 'FR-320 unresolved-10: a very deep missing path is outside');
         assert.ok(inside(path.join(proj, ...Array.from({ length: 30 }, (_, i) => `d${i}`), 'f.txt'), [proj]), 'FR-320 regression: a moderately deep new file is inside');
