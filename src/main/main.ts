@@ -481,9 +481,8 @@ const memoryStartRoots = new Map<string, readonly string[]>();
 /** the `readOnlyFolders` `startOptionsFor` last asked for each draft or agent object (weak: gone with the object) */
 const memoryRootsAsked = new WeakMap<AgentInfo, readonly string[]>();
 const startOptionsFor = (a: AgentInfo, resumeSessionId?: string) => {
-  const memRoots = getMemoryOps()?.readRoots(startingFolders(a)) ?? [];
-  memoryRootsAsked.set(a, memRoots);
-  const base = { ...startOptionsOf(a, wsKey(a), DEFAULT_MODEL, asEffort(a.effort), memRoots), ...mcp.optionsFor(a.id, resumeSessionId ? { agent: a, sessionId: resumeSessionId } : undefined) }; // spec 058 FR-247: a resumed session starts with its saved switches
+  const base = { ...startOptionsOf(a, wsKey(a), DEFAULT_MODEL, asEffort(a.effort), getMemoryOps()?.readRoots(startingFolders(a)) ?? []), ...mcp.optionsFor(a.id, resumeSessionId ? { agent: a, sessionId: resumeSessionId } : undefined) }; // spec 058 FR-247: a resumed session starts with its saved switches
+  memoryRootsAsked.set(a, base.readOnlyFolders ?? []); // spec 116 T009: the folders this start asks the adapter to read (the note names only this one)
   const appId = router.adapterIdOf(a.id) ?? a.adapterId ?? registry.defaultId;
   const fs61 = folderSetupStart(wsKey(a), a.folders ?? [a.cwd], appId, new Set(Object.keys(base.mcpServers)));
   // spec 087 FR-019 (the organization policy, read in main) and FR-007c (the stored choice); the adapter decides what they mean

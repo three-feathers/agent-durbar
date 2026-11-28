@@ -23,7 +23,7 @@ void (0 as unknown as [MemoryNote, NoteSentStore, Chain, typeof entryNameOf]);
 
 const ROOT = path.join(__dirname, '..', '..');
 const COMPILED = path.join(__dirname, '..', 'src');
-type Mut = { kind: 'js'; mod: string; from: string; to: string; section: string } | { kind: 'src'; file: string; from: string; to: string; section: string };
+type Mut = ({ kind: 'js'; mod: string; from: string; to: string; section: string } | { kind: 'src'; file: string; from: string; to: string; section: string }) & { posixOnly?: true };
 const MUTANTS: Record<string, Mut> = {
   scheduledCarriesNote: { kind: 'js', mod: 'main/agentops', from: 'await ad.send(a.id, { text: prompt });', to: "await ad.send(a.id, { text: '[Memory note 0123456789abcdef x] ' + prompt });", section: 'paths' },
   sentTwice: { kind: 'js', mod: 'main/memorynote', from: 'this.d.sent.commit(k);', to: '', section: 'once' },
@@ -45,21 +45,26 @@ const MUTANTS: Record<string, Mut> = {
   rendererHandoverCarries: { kind: 'src', file: 'src/renderer/app.js', from: 'opts&&opts.typed===true&&fromComposer&&memNoteFor===a.id', to: 'memNoteFor===a.id', section: 'wiring' },
   mainReadsAFile: { kind: 'src', file: 'src/main/main.ts', from: 'names: (dir) => fs.readdirSync(dir),', to: "names: (dir) => [fs.readFileSync(path.join(dir, 'README.md'), 'utf8')],", section: 'wiring' },
   uiGateRemoved: { kind: 'src', file: 'src/renderer/memory.js', from: 'const ok=shown()&&p&&', to: 'const ok=p&&', section: 'ui' },
-  readerFollowsLinks: { kind: 'js', mod: 'main/notesent', from: '(0, memorygit_1.memoryGitFlags)(this.fs.constants)', to: '{ O_RDONLY: 0 }', section: 'links' },
+  readerFollowsLinks: { kind: 'js', mod: 'main/notesent', from: '(0, memorygit_1.memoryGitFlags)(this.fs.constants)', to: '{ O_RDONLY: 0 }', posixOnly: true, section: 'links' },
   capRemoved: { kind: 'js', mod: 'main/notesent', from: 'file, exports.MAX_FILE)', to: 'file, Infinity)', section: 'restart' },
   hexFilterRemoved: { kind: 'js', mod: 'main/notesent', from: "typeof x === 'string' && /^[0-9a-f]{32}$/.test(x)", to: "typeof x === 'string'", section: 'restart' },
-  writeNotExclusive: { kind: 'js', mod: 'main/notesent', from: ' | c.O_EXCL', to: '', section: 'tmpplant' },
-  writeNoLinkGuards: { kind: 'js', mod: 'main/notesent', from: ' | c.O_EXCL | (c.O_NOFOLLOW ?? 0)', to: '', section: 'tmpplant' },
-  writeModeWide: { kind: 'js', mod: 'main/notesent', from: '0o600); // exclusive', to: '0o644); // exclusive', section: 'mode' },
-  tmpNameFixed: { kind: 'js', mod: 'main/notesent', from: '(0, crypto_1.randomBytes)(8).toString(\'hex\'))', to: '\'0123456789abcdef\')', section: 'tmpplant' },
+  writeNotExclusive: { kind: 'js', mod: 'main/notesent', from: ' | c.O_EXCL', to: '', posixOnly: true, section: 'tmpplant' },
+  writeNoLinkGuards: { kind: 'js', mod: 'main/notesent', from: ' | c.O_EXCL | (c.O_NOFOLLOW ?? 0)', to: '', posixOnly: true, section: 'tmpplant' },
+  writeModeWide: { kind: 'js', mod: 'main/notesent', from: '0o600); // exclusive', to: '0o644); // exclusive', posixOnly: true, section: 'mode' },
+  tmpNameFixed: { kind: 'js', mod: 'main/notesent', from: '(0, crypto_1.randomBytes)(8).toString(\'hex\'))', to: '\'0123456789abcdef\')', posixOnly: true, section: 'tmpplant' },
   folderOutOfKey: { kind: 'js', mod: 'main/notesent', from: "folder === '' ? '' : ':' + folder", to: "''", section: 'restart' },
   folderNotGivenToKey: { kind: 'js', mod: 'main/memorynote', from: 'this.d.keyOf(agentId, dir)', to: "this.d.keyOf(agentId, '')", section: 'once' },
   mainKeyIgnoresFolder: { kind: 'src', file: 'src/main/main.ts', from: 'fingerprint(app, resumeIdFor(id), folder)', to: 'fingerprint(app, resumeIdFor(id))', section: 'wiring' },
-  titleKeepsNote: { kind: 'js', mod: 'adapters/history', from: 'cleanTitle((0, memorynote_1.firstMessageText)(m.summary))', to: 'cleanTitle(m.summary)', section: 'strip' },
-  genericTitleStrips: { kind: 'js', mod: 'adapters/history', from: "const s = v.replace(TITLE_DROP_RE", to: "const s = (0, memorynote_1.firstMessageText)(v).replace(TITLE_DROP_RE", section: 'strip' },
-  everyUserMessageStripped: { kind: 'js', mod: 'adapters/history', from: 'const sp = seenUser ?', to: 'const sp = false ?', section: 'strip' },
   unhideCleanedShown: { kind: 'src', file: 'src/renderer/memory.js', from: "&&u!==''&&u===raw?u:null;", to: "&&u!==''?u:null;", section: 'ui' },
-  codexKeepsNote: { kind: 'src', file: 'src/adapters/codexHistory.ts', from: ': splitMemoryNote(text); seenUser = true; all.push', to: ': { text, note: false, cutShort: false }; seenUser = true; all.push', section: 'strip' },
+  titleKeepsNote: { kind: 'js', mod: 'adapters/history', from: 'cleanTitle((0, memorynote_1.userMessageText)(m.summary))', to: 'cleanTitle(m.summary)', section: 'strip' },
+  genericTitleStrips: { kind: 'js', mod: 'adapters/history', from: "const s = v.replace(TITLE_DROP_RE", to: "const s = (0, memorynote_1.userMessageText)(v).replace(TITLE_DROP_RE", section: 'strip' },
+  laterUserMessageKept: { kind: 'js', mod: 'adapters/history', from: 'const sp = (0, memorynote_1.splitMemoryNote)(text);', to: "const sp = items.some((x) => x.type === 'user') ? { text, note: false, cutShort: false } : (0, memorynote_1.splitMemoryNote)(text);", section: 'strip' },
+  claudeMessageKeepsNote: { kind: 'js', mod: 'adapters/claudeHistory', from: 'const sp = (0, memorynote_1.splitMemoryNote)(p);', to: 'const sp = { text: p, note: false, cutShort: false };', section: 'strip' },
+  claudeTitleKeepsNote: { kind: 'js', mod: 'adapters/claudeHistory', from: 'h.title = (0, memorynote_1.userMessageText)(typedPrompt(o));', to: 'h.title = typedPrompt(o);', section: 'strip' },
+  codexMessageKeepsNote: { kind: 'js', mod: 'adapters/codexHistory', from: 'const sp = (0, memorynote_1.splitMemoryNote)(text);', to: 'const sp = { text, note: false, cutShort: false };', section: 'strip' },
+  codexTitleKeepsNote: { kind: 'js', mod: 'adapters/codexHistory', from: '(0, memorynote_1.userMessageText)(t.preview)', to: 't.preview', section: 'strip' },
+  cutShortBlanked: { kind: 'js', mod: 'shared/memorynote', from: 'return { text: t, note: false, cutShort: true };', to: "return { text: '', note: false, cutShort: true };", section: 'strip' },
+  chevronNotDecorative: { kind: 'src', file: 'src/renderer/memory.js', from: "chev.setAttribute('aria-hidden','true');", to: '', section: 'ui' },
   stripNeedsSameNonce: { kind: 'js', mod: 'shared/memorynote', from: "t.indexOf('\\n' + close)", to: "t.search(/\\n\\[End of memory note [0-9a-f]+\\]/)", section: 'strip' },
   uiHtml: { kind: 'src', file: 'src/renderer/memory.js', from: 'pre.textContent=t;\n    d.appendChild', to: 'pre.innerHTML=t;\n    d.appendChild', section: 'ui' },
   uiHtmlSent: { kind: 'src', file: 'src/renderer/memory.js', from: 'pre.textContent=t;\n    body.appendChild', to: 'pre.innerHTML=t;\n    body.appendChild', section: 'ui' },
@@ -424,26 +429,48 @@ section('mode', () => {
 // ---------- the memory note leaves the agent app's title and history ----------
 section('strip', () => {
   const hist = load('adapters/history');
+  const claude = load('adapters/claudeHistory');
+  const codex = load('adapters/codexHistory');
   const PRE = chain.firstMessageChain([{ id: 'memory', open: shared.noteOpen, body: shared.noteBody('/example.invalid/brain', 'README.md'), close: shared.noteClose }]).text;
   const full = PRE + '\n\nplease read the notes';
+  const cut = PRE.slice(0, 120);
   eq(shared.splitMemoryNote(full), { text: 'please read the notes', note: true, cutShort: false }, 'the frame comes off, the person text stays');
   eq(shared.splitMemoryNote('please read the notes'), { text: 'please read the notes', note: false, cutShort: false }, 'a text with no frame is returned as it is');
-  eq(shared.splitMemoryNote(PRE.slice(0, 120)), { text: '', note: false, cutShort: true }, 'a frame cut short is dropped, never shown');
-  eq(shared.splitMemoryNote(PRE.replace(/\[End of memory note [0-9a-f]+\]/, '[End of memory note ffffffffffffffff]') + '\n\nx').cutShort, true, 'a closing line with another nonce does not close it');
+  eq(shared.splitMemoryNote(cut), { text: cut, note: false, cutShort: true }, 'a frame cut short is returned as stored, never blanked');
+  const wrongClose = PRE.replace(/\[End of memory note [0-9a-f]+\]/, '[End of memory note ffffffffffffffff]') + '\n\nx';
+  eq(shared.splitMemoryNote(wrongClose), { text: wrongClose, note: false, cutShort: true }, 'a closing line with another nonce does not close it: text as stored');
   eq(shared.splitMemoryNote('say [Memory note 0123456789abcdef from Agent Durbar. hi').note, false, 'a frame in the middle of a text is the person text');
   eq(shared.splitMemoryNote(PRE).text, '', 'a note with no text after it leaves nothing');
-  // the strip is for the person's FIRST stored message only; every other text that goes through cleanSessionTitle is shown as it is
+  // only USER-role text is stripped; names, agent questions, options and schedule prompts that go through cleanSessionTitle are shown as they are
   ok(hist.cleanSessionTitle(full, 600)?.includes('Memory note'), 'an agent question, option, schedule prompt or name that starts with a frame-looking line is shown unchanged (not hidden)');
-  ok(hist.cleanSessionTitle(PRE.slice(0, 100), 120)?.includes('Memory note'), 'a cut frame-looking name is kept too');
+  ok(hist.cleanSessionTitle(cut, 120)?.includes('Memory note'), 'a cut frame-looking name is kept too');
+  // Copilot: the summary (a prompt) and every user message
   const meta = (summary: string): unknown[] => [{ sessionId: 's1', modifiedTime: 1, summary, context: { workingDirectory: '/example.invalid/p' } }];
-  eq(hist.previousSessionsFor(meta(full) as never, '/example.invalid/p')[0].title, 'please read the notes', 'the session title (the first prompt) is the person text, not the note');
-  eq(hist.previousSessionsFor(meta(PRE.slice(0, 100)) as never, '/example.invalid/p')[0].title, 'Untitled session', 'a summary cut inside the frame is Untitled session (never the nonce)');
-  ok(!/Memory note/.test(hist.previousSessionsFor(meta(full) as never, '/example.invalid/p')[0].title), 'no note words in a title');
+  eq(hist.previousSessionsFor(meta(full) as never, '/example.invalid/p')[0].title, 'please read the notes', 'copilot: the session title is the person text, not the note');
+  ok(/Memory note/.test(hist.previousSessionsFor(meta(cut) as never, '/example.invalid/p')[0].title), 'copilot: a summary cut inside the frame is shown as stored (not blanked)');
   const ev = (text: string): unknown => ({ type: 'user.message', data: { content: text, source: 'user' } });
-  const hh = hist.eventsToHistory([ev(full), ev(full)]);
-  eq([hh.items[0].text, (hh.items[0] as { note?: boolean }).note], ['please read the notes', true], 'the first user message is stripped and marked');
-  ok(hh.items[1].text === full && (hh.items[1] as { note?: boolean }).note === undefined, 'a later user message that looks like a frame is the person own text: shown as typed');
-  for (const f of ['src/adapters/history.ts', 'src/adapters/claudeHistory.ts', 'src/adapters/codexHistory.ts']) ok(source(f).includes('splitMemoryNote('), f + ' takes the note off the restored first message');
+  const hh = hist.eventsToHistory([ev('hello'), ev(full), ev(full)]);
+  eq(hh.items.map((i: { text: string }) => i.text), ['hello', 'please read the notes', 'please read the notes'], 'copilot: a frame at the start of ANY user message is taken off');
+  eq(hh.items.map((i: { note?: boolean }) => i.note), [undefined, true, true], 'and marked');
+  // Claude Code, through the real reader on a fixture session file
+  const jl = (o: unknown): string => JSON.stringify(o);
+  const user = (text: string): string => jl({ type: 'user', message: { role: 'user', content: text }, cwd: '/example.invalid/p', timestamp: '2026-11-28T10:00:00Z' });
+  const asst = (text: string): string => jl({ type: 'assistant', message: { role: 'assistant', content: [{ type: 'text', text }] }, timestamp: '2026-11-28T10:00:05Z' });
+  const cfile = [user('hello'), asst(full), user(full), asst('ok'), user(full)].join('\n');
+  const ch = claude.claudeHistoryFromText(cfile);
+  eq(ch.items.map((i: { type: string; text?: string }) => [i.type, i.text]), [['user', 'hello'], ['output', full], ['user', 'please read the notes'], ['output', 'ok'], ['user', 'please read the notes']], 'claude: user messages lose the frame at any position; the agent text with a frame-looking line is untouched');
+  eq(ch.items.filter((i: { type: string }) => i.type === 'user').map((i: { note?: boolean }) => i.note), [undefined, true, true], 'claude: and the notes are marked');
+  eq(claude.parseSessionHead(user(full)).title, 'please read the notes', 'claude: the session title is the person text');
+  ok(/Memory note/.test(claude.parseSessionHead(user(cut)).title ?? ''), 'claude: a title the app cut inside the frame is shown as stored');
+  // Codex, through the real reader on a fixture thread
+  const um = (text: string): unknown => ({ type: 'userMessage', content: [{ type: 'text', text }] });
+  const thread = { turns: [{ items: [um('hello'), { type: 'agentMessage', text: full }, um(full), um(full)] }] };
+  const xh = codex.codexHistory(thread);
+  eq(xh.items.map((i: { type: string; text?: string }) => [i.type, i.text]), [['user', 'hello'], ['output', full], ['user', 'please read the notes'], ['user', 'please read the notes']], 'codex: user messages lose the frame at any position; agent text is untouched');
+  eq(xh.items.filter((i: { type: string }) => i.type === 'user').map((i: { note?: boolean }) => i.note), [undefined, true, true], 'codex: and the notes are marked');
+  const list = (preview: string): unknown => [{ id: '019a0000-0000-7000-8000-000000000001', cwd: '/example.invalid/p', preview, updatedAt: 1 }];
+  eq(codex.codexPreviousSessions(list(full), '/example.invalid/p')[0].title, 'please read the notes', 'codex: the thread preview is the person text');
+  ok(/Memory note/.test(codex.codexPreviousSessions(list(cut), '/example.invalid/p')[0].title), 'codex: a preview cut inside the frame is shown as stored');
   const app = source('src/renderer/app.js');
   ok(app.includes("if(it.note&&window.DurbarMemory){const nl=window.DurbarMemory.sentLineBare(document)"), 'a reloaded chat shows the plain Memory note sent line');
   ok(source('src/adapters/history.ts').includes('note?: true'), 'history items can say the note went');
@@ -612,10 +639,10 @@ section('ui', () => {
   if (!line) throw new Error('no sent line');
   const btn = line.children[0]; const body = line.children[1];
   eq(btn.tag, 'button', 'the toggle is a button (keyboard and screen reader reachable)'); eq(btn.type, 'button', 'a plain button, never a submit');
-  eq(btn.textContent, 'Memory note sent', 'one line of words'); eq(btn.getAttribute('aria-expanded'), 'false', 'collapsed by default after the send'); eq(body.hidden, true, 'the text is not shown until it is opened');
+  eq(btn.children[1].textContent, 'Memory note sent', 'one line of words'); eq([btn.children[0].getAttribute('aria-hidden'), btn.children[0].textContent], ['true', '\u25b8 '], 'a decorative chevron points right while collapsed'); eq(btn.getAttribute('aria-expanded'), 'false', 'collapsed by default after the send'); eq(body.hidden, true, 'the text is not shown until it is opened');
   eq(body.children[0].textContent, 'This is what the agent reads first:', 'the lead line is inside'); eq(body.children[1].textContent, TEXT, 'it holds the exact text, byte for byte');
   ok(!body.children[1].innerHTMLSet, 'the sent text is set as text, never as HTML');
-  btn.click(); eq(btn.getAttribute('aria-expanded'), 'true', 'a click opens it'); eq(body.hidden, false, 'and shows the text');
+  btn.click(); eq(btn.getAttribute('aria-expanded'), 'true', 'a click opens it'); eq(btn.children[0].textContent, '\u25be ', 'the chevron points down'); eq(body.hidden, false, 'and shows the text');
   btn.click(); eq(btn.getAttribute('aria-expanded'), 'false', 'a second click closes it'); eq(body.hidden, true, 'and hides it');
   eq(on.sentLine(doc, ''), null, 'no text, no line'); eq(on.sentLine(doc, 5), null, 'not a string, no line');
   // the gate: outside the simulator (until T010) nothing is painted or shown
@@ -642,7 +669,9 @@ section('ui', () => {
   if (M) { console.error('MUTANT NOT KILLED: ' + mutantName); process.exit(0); }
   const names = Object.keys(MUTANTS);
   let killed = 0;
+  let skipped = 0;
   for (const name of names) {
+    if ((MUTANTS[name] as { posixOnly?: true }).posixOnly && !posix) { console.log(`memory-note: mutant ${name} SKIPPED: its section needs POSIX (links, FIFO, modes) and is skipped on ${process.platform}`); skipped++; continue; }
     const r = spawnSync(process.execPath, [__filename], { env: Object.assign({}, process.env, { MEMNOTE_MUTANT: name }), encoding: 'utf8', timeout: 120000 });
     assert.notStrictEqual(r.status, 99, `mutant did not apply: ${name}: ${r.stderr.slice(0, 200)}`);
     assert.notStrictEqual(r.status, 0, 'mutant NOT killed: ' + name);
@@ -650,6 +679,6 @@ section('ui', () => {
     assert.ok(died.includes((MUTANTS[name] as { section: string }).section), `mutant "${name}" must die in section "${(MUTANTS[name] as { section: string }).section}", it died in: ${died.join(',') || r.stderr.slice(0, 200)}`);
     killed++;
   }
-  assert.strictEqual(killed, names.length);
-  console.log(`memory-note: ${checks} checks passed, ${killed} mutants killed`);
+  assert.strictEqual(killed + skipped, names.length);
+  console.log(`memory-note: ${checks} checks passed, ${killed} mutants killed${skipped ? `, ${skipped} skipped (POSIX only)` : ''}`);
 })().catch((e) => { console.error(e); process.exit(1); });

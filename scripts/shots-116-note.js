@@ -54,12 +54,14 @@ module.exports = async (ctx) => {
     // the first typed message
     await type('Please read the notes and tell me what you find');
     assert.ok(await until(`!!document.querySelector('#chat .mem-note-sent')`), `${w}: the Memory note sent line appears`);
-    assert.strictEqual(await js(`document.querySelector('#chat .mem-note-sent button.mem-note-toggle').textContent`), 'Memory note sent');
+    assert.strictEqual(await js(`document.querySelector('#chat .mem-note-sent button.mem-note-toggle span:last-child').textContent`), 'Memory note sent');
+    assert.ok(await js(`(()=>{const c=document.querySelector('#chat .mem-note-sent .mem-note-chev');return c.getAttribute('aria-hidden')==='true'&&c.textContent.trim()==='\u25b8'})()`), 'a decorative chevron points right while collapsed');
     assert.ok(await js(`document.querySelector('#chat .mem-note-sent button').getAttribute('aria-expanded')==='false'&&document.querySelector('#chat .mem-note-sent .mem-note-body').hidden===true`), 'collapsed by default after the send: one line');
     await shot('sent-collapsed');
     await js(`document.querySelector('#chat .mem-note-sent button').focus();true`);
     await H.key('Enter'); // Enter on the focused button opens it (keyboard only)
     assert.ok(await until(`document.querySelector('#chat .mem-note-sent button').getAttribute('aria-expanded')==='true'`), 'Enter opens the note');
+    assert.ok(await js(`document.querySelector('#chat .mem-note-sent .mem-note-chev').textContent.trim()==='\u25be'`), 'and the chevron points down');
     assert.strictEqual(await js(`document.querySelector('#chat .mem-note-sent pre').textContent`), text, 'the line opens the exact text that was previewed');
     assert.ok(await js(`document.querySelector('#chat .mem-note-sent').nextElementSibling.classList.contains('msg')&&document.querySelector('#chat .mem-note-sent').nextElementSibling.classList.contains('user')`), 'the line is right above the bubble');
     assert.ok(await until(`document.getElementById('memNote').hidden===true`), 'the preview is gone after the send');
@@ -76,7 +78,7 @@ module.exports = async (ctx) => {
       const want = 'Follow-up question number ' + (i + 1) + ':';
       assert.ok(await until(`[...document.querySelectorAll('#chat .msg.user .bubble')].some(b=>b.textContent.startsWith(${jsLiteral(want)}))`), 'follow-up ' + (i + 1) + ' is in the chat');
     }
-    await js(`(()=>{const n=document.querySelector('#chat .mem-note-sent');n.querySelector('button').setAttribute('aria-expanded','true');n.querySelector('.mem-note-body').hidden=false;n.scrollIntoView({block:'start'});return true})()`);
+    await js(`(()=>{const n=document.querySelector('#chat .mem-note-sent');n.querySelector('button').setAttribute('aria-expanded','true');n.querySelector('.mem-note-body').hidden=false;n.querySelector('.mem-note-chev').textContent='\u25be ';n.scrollIntoView({block:'start'});return true})()`);
     await H.settle();
     assert.ok(await js(`(()=>{const c=document.getElementById('chat').getBoundingClientRect();const e=document.querySelector('#chat .mem-note-sent');const b=e.nextElementSibling.querySelector('.bubble').getBoundingClientRect();return b.top>=c.top&&b.bottom<=c.bottom+1&&e.getBoundingClientRect().top>=c.top-1})()`), `${world} ${w}: with the note open at the top of a long chat, the person's first message is still in view`);
     assert.ok(await js(`document.querySelector('#chat .mem-note-sent .mem-note-lead').textContent==='This is what the agent reads first:'`), 'the opened line says what it is');

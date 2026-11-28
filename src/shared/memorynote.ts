@@ -26,13 +26,13 @@ export interface NoteSplit {
   text: string;
   /** a whole frame was found and removed */
   note: boolean;
-  /** the frame opens but never closes (a title the agent app cut short): nothing of it can be told apart from the note */
+  /** the frame opens but never closes (a title the agent app cut short): the text is returned as stored, never blanked */
   cutShort: boolean;
 }
 /**
  * Spec 116 T009: takes the memory note frame off the start of a first message the agent app stored (its session title, its history). Adapter-neutral and
  * pure: the frame is `noteOpen(nonce)` ... `noteClose(nonce)` with the same nonce, then a blank line. A text that does not start with the opening line is
- * returned as it is. A frame with no matching closing line is `cutShort` and its text is dropped (the note's words are not the person's).
+ * returned as it is. A frame with no matching closing line is `cutShort`: the text is returned as stored (never blanked).
  */
 export function splitMemoryNote(raw: unknown): NoteSplit {
   const t = typeof raw === 'string' ? raw : '';
@@ -40,17 +40,17 @@ export function splitMemoryNote(raw: unknown): NoteSplit {
   if (!m) return { text: t, note: false, cutShort: false };
   const close = noteClose(m[1]);
   const i = t.indexOf('\n' + close);
-  if (i < 0) return { text: '', note: false, cutShort: true };
+  if (i < 0) return { text: t, note: false, cutShort: true };
   return { text: t.slice(i + 1 + close.length).replace(/^\s*\n/, '').replace(/^\n+/, ''), note: true, cutShort: false };
 }
 
 /**
- * Spec 116 T009: for the person's FIRST stored message only (a session title, preview or summary the agent app derived from it): the text without the note
- * frame, '' for a frame the app cut short, a non-string as it is. Never for text that is not the person's first message (agent questions, options, schedule
- * prompts, names): a frame-looking line there is the sender's text and is shown as it is.
+ * Spec 116 T009: for USER-role text the agent app stored (a session title, preview or summary derived from a prompt, a user message in history): the text
+ * without a COMPLETE note frame at its start (opening line and the closing line with the same code). A cut-short frame, a non-string and anything else are
+ * returned as stored. Never for agent-role text or names (agent questions, options, schedule prompts, profile names): a frame-looking line there is the
+ * sender's text and is shown as it is.
  */
-export function firstMessageText<T>(v: T): T | string {
+export function userMessageText<T>(v: T): T | string {
   if (typeof v !== 'string') return v;
-  const sp = splitMemoryNote(v);
-  return sp.cutShort ? '' : sp.text;
+  return splitMemoryNote(v).text;
 }

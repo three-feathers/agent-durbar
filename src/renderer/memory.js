@@ -184,12 +184,14 @@
     const t=safeText(text);if(t===null)return null;
     /* collapsed by default: one line, a button (Enter and Space work, aria-expanded says the state) that opens the exact text */
     const box=doc.createElement('div');box.className='note mem-note-sent';
-    const btn=doc.createElement('button');btn.type='button';btn.className='mem-note-toggle';btn.setAttribute('aria-expanded','false');btn.textContent=NOTE_WORDS.sent;
+    const btn=doc.createElement('button');btn.type='button';btn.className='mem-note-toggle';btn.setAttribute('aria-expanded','false');
+    const chev=doc.createElement('span');chev.setAttribute('aria-hidden','true');chev.className='mem-note-chev';chev.textContent='\u25b8 '; /* decorative: the state is aria-expanded */
+    const lab=doc.createElement('span');lab.textContent=NOTE_WORDS.sent;btn.appendChild(chev);btn.appendChild(lab);
     const body=doc.createElement('div');body.className='mem-note-body';body.hidden=true;
     const p=doc.createElement('p');p.className='mem-note-lead';p.textContent=NOTE_WORDS.lead;
     const pre=doc.createElement('pre');pre.className='mem-note-text';pre.textContent=t;
     body.appendChild(p);body.appendChild(pre);
-    btn.addEventListener('click',()=>{const open=btn.getAttribute('aria-expanded')!=='true';btn.setAttribute('aria-expanded',String(open));body.hidden=!open;});
+    btn.addEventListener('click',()=>{const open=btn.getAttribute('aria-expanded')!=='true';btn.setAttribute('aria-expanded',String(open));body.hidden=!open;chev.textContent=open?'\u25be ':'\u25b8 ';});
     box.appendChild(btn);box.appendChild(body);return box;
   }
   /* T009: a chat reloaded from the agent app's history: the note's text is not kept (the app stores it, Durbar shows only that it went) */
