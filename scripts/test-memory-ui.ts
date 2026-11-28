@@ -27,6 +27,7 @@ const MUTANTS: Record<string, [Which, string, string]> = {
   toggleNoGuard: ['memory', 'if(busy||!st||!st.path)return;', 'if(!st||!st.path)return;'],
   noUnhide: ['memory', "u=X&&typeof X.unhide==='function'?X.unhide(String(t==null?'':t)):null;", "u=String(t==null?'':t);"],
   noClearNotice: ['memory', "notice='';if(X.announce)X.announce(statusLine(v).text);", "if(X.announce)X.announce(statusLine(v).text);"],
+  noReasonCompare: ['memory', '||was.reason!==v.reason', ''],
   noAnnouncePush: ['memory', 'X.announce(statusLine(v).text);}', '0;}'],
   listenerLeak: ['memory', 'if(stopListening){stopListening();stopListening=null;}', ''],
   gateRemoved: ['screens', 'window.DurbarMemory&&window.DurbarMemory.shown()&&X.bridge.memoryStatus?', 'window.DurbarMemory&&X.bridge.memoryStatus?'],
@@ -217,6 +218,14 @@ async function run(status: unknown, remote: unknown, answer: string | null, pick
     ok(/^Refused:/.test(r.els.memStatus.textContent), 'the status line shows the push');
     push({ on: false, path: '~/notes/brain', state: 'refused', reason: 'This is your home folder.', keepInGit: false });
     eq(r.rec.announced.length, n0 + 1, 'the same state again is not announced'); }
+  // refused for reason A, then refused for reason B: both pushes are announced and the notice stays empty
+  r = await run({ on: false, path: '~/notes/brain', state: 'refused', reason: 'Reason A.', keepInGit: false }, null, null);
+  { const n0 = r.rec.announced.length, push = [...r.rec.listeners][0];
+    push({ on: false, path: '~/notes/brain', state: 'refused', reason: 'Reason B.', keepInGit: false });
+    push({ on: false, path: '~/notes/brain', state: 'refused', reason: 'Reason C.', keepInGit: false });
+    eq(r.rec.announced.length, n0 + 2, 'a changed reason is announced each time');
+    ok(/Reason B\./.test(r.rec.announced[n0]) && /Reason C\./.test(r.rec.announced[n0 + 1]), 'each announcement carries its own reason');
+    eq(r.els.memNotice.textContent, '', 'the notice stays empty after a reason change'); }
   // one listener, however many times Settings is opened
   r = await run({ on: false, state: 'off', keepInGit: false }, null, null);
   for (let i = 0; i < 11; i++) { M.mount(r.box); await flush(); }
