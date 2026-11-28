@@ -101,6 +101,19 @@ export function cappedWorkspaceReader(fs: CappedFs, k: CappedFlags, parse: (text
   };
 }
 
+/**
+ * The one hook of T008: the office's agents live in one Map, and every add (new session, add folder, add workspace file, restore at start, a team
+ * member) and every removal goes through its `set` and `delete`, so `onChange` (main: `memoryOps.recheck()`) runs after each. It runs after the change
+ * and never throws into the caller.
+ */
+export class OfficeMap<K, V> extends Map<K, V> {
+  constructor(private readonly onChange: () => void) { super(); }
+  override set(k: K, v: V): this { super.set(k, v); this.notify(); return this; }
+  override delete(k: K): boolean { const r = super.delete(k); if (r) this.notify(); return r; }
+  override clear(): void { const n = this.size; super.clear(); if (n > 0) this.notify(); }
+  private notify(): void { try { this.onChange(); } catch { /* the office change already happened */ } }
+}
+
 export interface MemoryOpsDeps {
   store(): MemoryStoreLike | undefined;
   /** the folder dialog: the chosen path, or null when cancelled (main's `pickFolder`) */
@@ -127,6 +140,8 @@ export class MemoryOps {
   private live: { token: string; chosen: string; real: string; expiresAt: number } | undefined;
   /** counts every `pick`: a slower, older dialog must not replace a newer one */
   private gen = 0;
+  /** what the window last saw (a `status` read or a push): `recheck` pushes only a difference */
+  private seen: string | undefined;
   constructor(private readonly deps: MemoryOpsDeps) {}
   private now(): number { return (this.deps.now ?? Date.now)(); }
 
@@ -146,23 +161,35 @@ export class MemoryOps {
     return h && fold(real).startsWith(fold(h) + f.path.sep) ? '~' + real.slice(h.length) : real;
   }
 
+  /** the refusal's sentence, with the clashing office folder named when there is one (T008; paths are shown) */
+  private said(r: { text: string; clash?: string }): string {
+    return r.clash === undefined ? r.text : `${r.text} The folder: ${this.shown(r.clash.slice(0, 300))}`;
+  }
+
   private same(a: string, b: string): boolean {
     const fold = (x: string): string => (this.deps.flavor.platform === 'linux' ? x : x.toLowerCase());
     return fold(a) === fold(b);
   }
 
   status(): MemoryStatus {
+    const r = this.statusNow();
+    this.seen = JSON.stringify(r);
+    return r;
+  }
+
+  private statusNow(): MemoryStatus {
     const st = this.deps.store();
     const folder = st?.memoryFolder;
     const keepInGit = st?.memoryKeepInGit === true;
     if (!st || folder === undefined) return { on: false, state: 'off', keepInGit };
-    const path = this.shown(folder);
+    let path: string;
+    try { path = this.shown(folder); } catch { path = folder; } // a throwing `ctx()` must not escape: the status says it could not be checked (T008 round 3)
     if (!st.memoryOn) return { on: false, path, state: 'off', keepInGit }; // off: the folder is not looked at (FR-001)
     let r;
     try { r = this.check(folder); } catch { return { on: false, path, state: 'refused', reason: 'It could not be checked.', keepInGit }; }
     if (r.ok) return { on: true, path, state: 'on', keepInGit };
     const notFound: MemoryRefusal[] = ['unreadable', 'not-folder'];
-    return { on: false, path, state: notFound.includes(r.reason) ? 'notFound' : 'refused', reason: r.text, keepInGit };
+    return { on: false, path, state: notFound.includes(r.reason) ? 'notFound' : 'refused', reason: this.said(r), keepInGit };
   }
 
   /**
@@ -211,7 +238,7 @@ export class MemoryOps {
     // the picked path is resolved again: a link repointed since the person confirmed must not slip in (FR-002); what is saved is this fresh real path
     if (!this.same(r.real, e.real)) return { ok: false, error: 'refused', reason: CHANGED };
     if (!st.setMemory(r.real)) return FAILED;
-    this.deps.changed?.();
+    this.emit();
     return { ok: true, path: this.shown(r.real) };
   }
 
@@ -226,8 +253,35 @@ export class MemoryOps {
       if (!r.ok) return { ok: false, error: 'refused', reason: r.text };
     }
     if (!st.setMemoryOn(v)) return FAILED;
-    this.deps.changed?.();
+    this.emit();
     return { ok: true };
+  }
+
+  private emit(): void {
+    this.status(); // what the window is about to be told is what it has seen
+    this.deps.changed?.();
+  }
+
+  /**
+   * T008 (FR-004): an office folder was added, removed or changed. The check of rule 4 runs again on the memory folder as it is now; when the
+   * answer differs from what the window last saw (a new clash turns the memory off as `state: refused`, naming the folder; a clash that went away
+   * brings it back), `changed` pushes once. Nothing is stored: the stored folder and `on` stay as the person set them, so `on` is not rewritten behind
+   * her back and no file is touched; `readRoots` runs the same check at every session start, so new sessions get no root while the clash lasts and
+   * running sessions keep the roots they started with until they restart (US1.5). With no baseline yet (the window never read it) only a refusal is
+   * pushed. Never throws: a failure here must not break adding a folder.
+   */
+  recheck(): void {
+    try {
+      const st = this.deps.store();
+      if (!st || st.memoryFolder === undefined || !st.memoryOn) return; // off or no folder: nothing to turn off, and no folder is looked at (FR-001)
+      const before = this.seen;
+      const now = this.statusNow();
+      const key = JSON.stringify(now);
+      if (key === before) return;
+      if (before === undefined && now.state === 'on') { this.seen = key; return; }
+      this.seen = key;
+      this.deps.changed?.();
+    } catch { /* adding a folder never fails because of the memory */ }
   }
 
   /** Only the settings: no file is read, written or removed. */
@@ -237,7 +291,7 @@ export class MemoryOps {
     this.live = undefined;
     this.gen++; // a pick dialog still open answers cancelled
     const saved = st.setMemory(undefined);
-    this.deps.changed?.(); // cleared for this run even when the file could not be written
+    this.emit(); // cleared for this run even when the file could not be written
     return saved ? { ok: true } : FAILED;
   }
 }
