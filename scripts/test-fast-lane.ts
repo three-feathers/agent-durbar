@@ -286,7 +286,8 @@ function problems(text: string): string[] {
   if (!/^permissions:\n {2}contents: read\n(?! )/m.test(code) || /write/.test(code)) bad.push('token is not read-only');
   if (!/persist-credentials: false/.test(code)) bad.push('checkout keeps its credential');
   if (!/group: \$\{\{ github\.workflow \}\}-\$\{\{ github\.event\.pull_request\.number \|\| github\.run_id \}\}/.test(code) || !/cancel-in-progress: \$\{\{ github\.event_name == 'pull_request' \}\}/.test(code)) bad.push('no PR-number concurrency group that cancels');
-  if (!/os: \[ubuntu-latest, windows-latest, macos-latest\]/.test(code)) bad.push('not on the three OSes');
+  // spec 008 delta 2026-11-23 (spec 117 O1): Linux and Windows only, no macOS runner on a pull request
+  if (!/os: \[ubuntu-latest, windows-latest\]\n/.test(code) || /macos/.test(code)) bad.push('not on exactly Linux and Windows');
   if (!/run: bash \.github\/scripts\/ci-changes\.sh --suites\n/.test(code)) bad.push('the base copy of the one decision does not pick');
   if (runLines(code).some((l) => l.includes('${{'))) bad.push('a value from the PR in a shell string');
   if (!/FAST_SUITES: \$\{\{ steps\.pick\.outputs\.suites \}\}\n\s+run: node scripts\/fast-lane\.js\n/.test(code)) bad.push('the suites do not reach the runner through env');
@@ -296,7 +297,7 @@ function problems(text: string): string[] {
   if (!m || Number(m[1]) > 10) bad.push('no timeout of at most 10 minutes');
   return bad;
 }
-assert.deepStrictEqual(problems(wf), [], 'fast-lane.yml: advisory, three OSes, safe for fork PRs');
+assert.deepStrictEqual(problems(wf), [], 'fast-lane.yml: advisory, Linux and Windows, safe for fork PRs');
 // Windows checks files out with CRLF (review of #2032): the same check on a CRLF copy, normalised first, passes; without the
 // normalisation it does not, so the normalisation is what makes it pass there
 const crlf = (t: string) => norm(t).replace(/\n/g, '\r\n');
@@ -310,7 +311,8 @@ const mutants: [string, string, string][] = [
   ['write permission', swap('permissions:\n  contents: read\n', 'permissions:\n  contents: write\n'), 'token is not read-only'],
   ['credential kept', swap('          persist-credentials: false\n', ''), 'checkout keeps its credential'],
   ['no cancel', swap("cancel-in-progress: ${{ github.event_name == 'pull_request' }}", 'cancel-in-progress: false'), 'no PR-number concurrency group that cancels'],
-  ['Windows dropped', swap('os: [ubuntu-latest, windows-latest, macos-latest]', 'os: [ubuntu-latest, macos-latest]'), 'not on the three OSes'],
+  ['Windows dropped', swap('os: [ubuntu-latest, windows-latest]', 'os: [ubuntu-latest]'), 'not on exactly Linux and Windows'],
+  ['macOS back in the matrix', swap('os: [ubuntu-latest, windows-latest]', 'os: [ubuntu-latest, windows-latest, macos-latest]'), 'not on exactly Linux and Windows'],
   ["the PR's copy decides", swap('run: bash .github/scripts/ci-changes.sh --suites\n', 'run: node .github/scripts/ci-changes.js --suites\n'), 'the base copy of the one decision does not pick'],
   ['suites in the shell string', swap('run: node scripts/fast-lane.js\n', 'run: node scripts/fast-lane.js ${{ steps.pick.outputs.suites }}\n'), 'a value from the PR in a shell string'],
   ['continue-on-error', swap('        run: node scripts/fast-lane.js\n', '        continue-on-error: true\n        run: node scripts/fast-lane.js\n'), 'continue-on-error hides a red lane'],

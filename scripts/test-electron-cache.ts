@@ -255,7 +255,8 @@ async function main(): Promise<void> {
   const uiTimes = JSON.parse(fs.readFileSync(path.join(root, 'scripts', 'ui-suite-timings.json'), 'utf8')) as Record<string, number>;
   const macShards = (require(path.join(root, 'scripts', 'ui-shard-budget.js')) as { macosShardSecs: (o: { n: number; times: Record<string, number> }) => number[] }).macosShardSecs({ n: uiShardCount, times: uiTimes });
   const TYPICAL_MIN_OS: Record<string, Record<string, number>> = { 'ui-platforms.yml:ui': { 'macos-latest': Math.max(...macShards) / 60 } };
-  // spec 117 T078: the path-filtered macOS job keeps exactly the stop-gap limit (45, as ci.yml build-test) until T025 lowers both
+  // spec 117 T078: macos-pr.yml keeps exactly the stop-gap limit (45); since the O1 macOS row (2026-11-23) it runs by hand only and
+  // keeps 45 for that run (T079 obsolete, T025 lowers ci.yml only)
   const STOPGAP = 45;
   // The one check: throws unless macos-test has exactly the stop-gap limit as a number. The pin and its mutants both call it.
   const checkMacosLimit = (text: string): void => {

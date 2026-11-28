@@ -1,65 +1,31 @@
 name: macOS on pull requests
 
-# Spec 008 FR-135 (owner decision 2026-10-29, retro #854 B8, spec 021 FR-063/T048). Pull request CI runs only a Linux stub for the
-# required check "Build and test (macos-latest)" (FR-106), and 31 of the 36 failed runs on main since 2026-10-26 were the macOS
-# `npm test`. This workflow runs the real macOS build and test on a pull request, but only when the PR touches files whose
-# behaviour differs between operating systems (processes, paths, sockets, shell scripts, dependencies, packaging). GitHub's own
-# `paths:` filter decides, so no job waits for another and a PR that does not match starts nothing (no macOS minutes).
-# It is not a required check (the ruleset is unchanged): when it runs, read it in `gh pr checks` like any other.
-# Spec 008 FR-191 (owner decision 2026-11-08): `package.json` and the lock match the filter on every release's version bump, which
-# changes nothing macOS can see. The job's first step asks ci-changes.js (the one decision) and skips the rest when the PR is only
-# docs and a version-only bump. A step, not a separate Linux job: this runs rarely, and a decision job on every run would cost more
-# Linux minutes than the macOS minutes it saves.
+# Spec 008 FR-135 (2026-10-29) ran the real macOS build and test on pull requests that touched OS-sensitive paths. REVERSED by the
+# spec 008 delta 2026-11-23 (owner decision, spec 117 O1): it caught 0 of 241 failures Linux had missed, took 17 to 24 minutes, and
+# GitHub's hosted macOS capacity cancelled jobs before they started. No macOS runner runs on a pull request any more
+# (scripts/test-ci-macos-off-prs.ts). This file stays for a by-hand run on a branch whose change may break only on a Mac:
+# `gh workflow run macos-pr.yml --ref <branch>`; it always runs the whole build and test. macOS still runs on every `main` push and
+# nightly (ci.yml, FR-106). The workflow and job names are kept so `npm run ci:stats` still matches the older runs.
 on:
-  pull_request:
-    types: [opened, synchronize, reopened, ready_for_review]
-    paths:
-      - 'src/main/**'
-      - 'src/adapters/**'
-      - 'src/shared/**'
-      - 'src/preload/**'
-      - 'scripts/fakes/**'
-      - 'scripts/run-tests.js'
-      - 'scripts/test-*'
-      - 'scripts/*.sh'
-      - 'package.json'
-      - 'package-lock.json'
-      - 'tsconfig*.json'
-      - 'build/**'
-      - '.github/workflows/macos-pr.yml'
+  workflow_dispatch:
 
 permissions:
   contents: read
 
-concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
-
 jobs:
   macos-test:
     name: macOS build and test (path-filtered)
-    if: ${{ !github.event.pull_request.draft }}
     runs-on: macos-latest
     # spec 008 FR-195: was 20; up to 9 min of work plus up to about 12 min of npm ci retries in an Electron download outage
-    # spec 117 T025 stop-gap (T078): was 25; the job was cut at the limit with no assert failing (#1983, #2002, 8 of 12 runs over 20 min); the split (T079) replaces this
+    # spec 117 T078: was 25; the job was cut at the limit with no assert failing (8 of 12 runs over 20 min); kept for by-hand runs (T079 obsolete)
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          fetch-depth: 2
-      - id: changes
-        env:
-          EVENT_NAME: ${{ github.event_name }}
-        run: bash .github/scripts/ci-changes.sh
-      - if: steps.changes.outputs.macos == 'true'
-        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22
           cache: npm
-      - if: steps.changes.outputs.macos == 'true'
-        uses: ./.github/actions/npm-ci
+      - uses: ./.github/actions/npm-ci
       # spec 008 FR-193: build runs the same tsc as typecheck
-      - if: steps.changes.outputs.macos == 'true'
-        run: npm run build
-      - if: steps.changes.outputs.macos == 'true'
-        run: npm test
+      - run: npm run build
+      - run: npm test

@@ -4,7 +4,7 @@
 group: 046
 title: Delivery speed 2 (owner 2026-11-22): measured CI and review cost per PR; lighter review profile for UI/feature PRs (never for masking, IPC, secrets, permissions, user files); Linux-first CI by diff on top of 021 FR-084 / 008 T130; Windows npm test split (#1983); world packs with one contract suite; bigger feature slices
 status: draft
-note: merged: spec, T002, T003, T011, T022, P8 fast lane, T012 split, T045 gate; O2, O3 (three owners yes 2026-11-23) in #2039; O1, O4 open
+note: merged: spec, T002, T003, T011, T022, P8 fast lane, T012 split, T045 gate; O2, O3 in #2039; O1 macOS: stop (T479..T481); O1 rest, O4 open
 -->
 
 **Feature Branch**: `117-delivery-speed-2` (spec, plan, tasks only); build branches `117-pN-slug`, one per rollout step
@@ -282,7 +282,11 @@ Adding or changing a world touches its pack folder and its own small test; the c
 | CodeQL (javascript-typescript, actions) | no | p50 9.7 min on `main`; `[KNOWN GAP]` PR success rate not measured | add as required after 7 days of FR-001 show its PR runs reliable | add |
 | Spec numbers and picture budget (Spec Kit workflow) | no | p50 0.5 min | add as required | add (as "specs checks") |
 | UI suite complete (UI on three OSes) | no | 70 % of runner time | stay not required (FR-012 makes it cheaper first) | not required unless the change touches what it tests |
-| macOS build and test (path-filtered, 008 FR-135) | no, but runs on matching PRs | p50 15.0 min; caught 0 of 241 Linux missed | stop it on PRs; macOS stays on every `main` push and nightly. **This reverses spec 008 FR-135** (owner decision 2026-10-29) and needs its own written yes and a spec 008 delta | **keep** (FR-135 stays) |
+| macOS build and test (path-filtered, 008 FR-135) | no, but runs on matching PRs | p50 15.0 min; caught 0 of 241 Linux missed | stop it on PRs; macOS stays on every `main` push and nightly. **This reverses spec 008 FR-135** (owner decision 2026-10-29) and needs its own written yes and a spec 008 delta | was **keep**; **decided 2026-11-23: stop** (see below) |
+
+**The macOS row, decided 2026-11-23**: stop the macOS jobs on pull requests. Vikram: stop (team chat 2026-11-23 16:09 UTC, on #1995: "macOS - 1 as Ruben proposed considering data on how many did it catch (0), go"); Ruben: stop (2026-11-23 13:23 UTC); Paco: keep (2026-11-22), "until macOS tests run in the merge queue or nightly"; that condition is met (macOS build and test runs nightly and on every `main` push, 008 FR-106). His answer to the new decision was asked on 2026-11-23.
+
+Paco's answer: *pending* (the coordinator records it here, with date and channel, before T479..T481 merge). No ruleset line changes: the path-filtered jobs were never required. Spec 008 delta 2026-11-23; built by T479..T481.
 
 Every change in this table is applied by an owner (repo settings) after the written yes (T021); an agent changes no ruleset.
 
@@ -334,6 +338,13 @@ The coordinator's suggested first step (concurrency groups and `cancel-in-progre
 - 021 FR-084 (#1247) lands as drafted; if it changes, P2 and P5 follow the merged text.
 
 ## Changes
+
+### 2026-11-23: no macOS runner on pull requests (O1 macOS row; spec 008 delta 2026-11-23 reverses 008 FR-135 and FR-200)
+
+- *macOS build and test (path-filtered)* (`macos-pr.yml`) and *Mac title bar (path-filtered)* (`mac-titlebar-pr.yml`) run by hand only (`workflow_dispatch`); `ci-changes.js` loses its `macos` output (only `macos-pr.yml` read it; a by-hand run always runs everything).
+- **FR-386, amended**: the fast lane runs on Linux and Windows; its macOS leg is gone (macOS stays on `main` pushes and nightly, 008 FR-106).
+- Guard `test:ci-macos-off-prs` (T480): no job of any workflow reaches a macOS runner on `pull_request` or `merge_group`; a shape it cannot read fails.
+- Tasks: T079 (split `macos-pr.yml`) is obsolete; T025 keeps only `ci.yml` (the `macos-pr.yml` limit stays 45 for by-hand runs, `test:electroncache`); T021's macOS line is done by T479..T481 (no ruleset change).
 
 ### 2026-11-22: FR-018 split brought forward (owner order, Vikram, 2026-11-22: "raise delivery speed 5-10x without losing quality; act now")
 

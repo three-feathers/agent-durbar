@@ -136,6 +136,7 @@ test:cichanges
 test:ciossensitive
 test:uievents
 test:workflowconcurrency
+test:ci-macos-off-prs
 test:fastlane
 test:pathdirs
 test:officialinstall

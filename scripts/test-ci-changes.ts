@@ -1,6 +1,6 @@
 /**
  * Unit test (spec 008 FR-104, FR-191): .github/scripts/ci-changes.js, the one decision of which CI parts a pull request needs.
- * Feeds changed-file lists against this checkout (base files are faked in memory) and asserts code / themes / ui / macos.
+ * Feeds changed-file lists against this checkout (base files are faked in memory) and asserts code / themes / ui (no `macos` since the spec 008 delta 2026-11-23).
  * No git, no network, no Electron.
  */
 import * as assert from 'assert';
@@ -11,7 +11,7 @@ const ROOT = path.join(__dirname, '..', '..');
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const cc = require(path.join(ROOT, '.github', 'scripts', 'ci-changes.js')) as {
   fastSuites: (files: string[], io: Io) => string[];
-  decide: (files: string[], io: Io) => { code: boolean; themes: boolean; ui: boolean; macos: boolean };
+  decide: (files: string[], io: Io) => { code: boolean; themes: boolean; ui: boolean };
   npmTargets: (line: string) => { names: string[]; opaque: boolean };
   gitIo: (root: string) => Io;
 };
@@ -83,12 +83,11 @@ assert.strictEqual(ui(['scripts/new-data.json'], io({ 'scripts/new-data.json': '
   assert.strictEqual(ui(['package.json'], io({}, { 'package.json': JSON.stringify(pkgDep) })), true, 'a package.json dependency change is UI');
   assert.strictEqual(ui(['package.json'], io({}, { 'package.json': '{ not json' })), true, 'an unparsable base package.json counts (fail open)');
   assert.strictEqual(ui(['package.json'], io({ 'package.json': '{ broken' }, { 'package.json': '{ broken' })), true, 'base and head both unparsable count (fail open), never "equal"');
-  // a new or changed report / test npm script is not UI; build, pack:dir and lifecycle hooks are; macOS (npm test) counts every script
+  // a new or changed report / test npm script is not UI; build, pack:dir and lifecycle hooks are
   const withScript = (scripts: Record<string, string>) => io({}, { 'package.json': JSON.stringify({ ...bumped(pkg), scripts }) });
   const { 'test:cichanges': _drop, ...fewer } = pkg.scripts as Record<string, string>;
   void _drop;
   assert.strictEqual(ui(['package.json'], withScript(fewer)), false, 'adding an npm test script (with a bump) is not UI');
-  assert.strictEqual(cc.decide(['package.json'], withScript(fewer)).macos, true, 'adding an npm test script runs macOS (it runs npm test)');
   assert.strictEqual(ui(['package.json'], withScript({ ...pkg.scripts, 'usage:report': 'node scripts/usage-x.js' })), false, 'removing a report npm script is not UI');
   assert.strictEqual(ui(['package.json'], withScript({ ...pkg.scripts, build: pkg.scripts.build + ' && node x.js' })), true, 'a change to the build script is UI');
   assert.strictEqual(ui(['package.json'], withScript({ ...pkg.scripts, 'pack:dir': 'electron-builder --dir' })), true, 'a change to pack:dir is UI');
@@ -278,20 +277,16 @@ assert.strictEqual(ui(['scripts/a\u00f1o.js'], io({ 'scripts/a\u00f1o.js': 'modu
 
 // code / themes keep FR-104 and FR-031 as they were
 const d = (files: string[], x: Io = io()) => cc.decide(files, x);
-assert.deepStrictEqual(d(['docs/zz-none.md', 'specs/999-none/tasks.md']), { code: false, themes: false, ui: false, macos: false }, 'docs only: nothing runs');
+assert.deepStrictEqual(d(['docs/zz-none.md', 'specs/999-none/tasks.md']), { code: false, themes: false, ui: false }, 'docs only: nothing runs (and no `macos` key: no macOS job on a pull request, spec 008 delta 2026-11-23)');
 assert.strictEqual(d(['scripts/usage-lib.js']).code, true, 'a script change still builds and tests (code=true)');
 assert.strictEqual(d(['package.json'], versionBump).code, true, 'a version bump still builds and tests (unit tests read the version)');
 assert.strictEqual(d(['src/renderer/styles.css']).themes, true, 'a renderer change runs theme geometry');
 assert.strictEqual(d(['src/main/main.ts']).themes, false, 'a main-process change does not');
-// macos: only docs and a version-only bump skip the macOS pull-request job
-assert.strictEqual(d(['package.json', 'package-lock.json', 'CHANGELOG.md', 'changelog.d/x.md'], versionBump).macos, false, 'a release bump skips the macOS PR job');
-assert.strictEqual(d(['package.json', 'src/main/main.ts'], versionBump).macos, true, 'a bump with code runs it');
-assert.strictEqual(d(['scripts/test-usage.js']).macos, true, 'a test script runs it (unit tests are what it checks)');
 
 // ---- spec 117 FR-387 (and review of #2032): the docs-only skip FAILS CLOSED. Only a plain path on the small allow list that no suite
 // names may take it; every live file under src/, scripts/ and .github/, rule text, the site's code, README, LICENSE, case tricks, odd
 // paths, an empty diff and a missing suite list run everything. Each part has a fixture here and a mutant below that dies at its assert.
-type Decision = { code: boolean; themes: boolean; ui: boolean; macos: boolean };
+type Decision = { code: boolean; themes: boolean; ui: boolean };
 type Cc = { decide: (files: string[], io: Io) => Decision; DOCS: { test(f: string): boolean } };
 // a tiny tree: two suites, one names docs/named.md and LICENSE (bare word at the root), one names the docs/zzfolder folder
 const fakeFiles: Record<string, string> = {
@@ -477,7 +472,7 @@ assert.strictEqual(cc.decide(['docs/zz-none.md', 'specs/999-none/spec.md'], io()
     execFileSync(process.execPath, [path.join(repo, '.github', 'scripts', 'ci-changes.js'), ...args], { cwd: repo, env: { ...process.env, EVENT_NAME: ev, GITHUB_OUTPUT: outFile }, stdio: 'ignore', shell: false });
     return fs.readFileSync(outFile, 'utf8');
   };
-  assert.strictEqual(run('pull_request'), 'code=false\nthemes=false\nui=false\nmacos=false\nos_sensitive=false\n', 'pull_request: the diff of HEAD^1..HEAD decides (docs only: nothing)');
+  assert.strictEqual(run('pull_request'), 'code=false\nthemes=false\nui=false\nos_sensitive=false\n', 'pull_request: the diff of HEAD^1..HEAD decides (docs only: nothing)');
   // spec 117 FR-386: --suites writes only the fast lane's two outputs (a docs change no suite names: none picked)
   assert.strictEqual(run('pull_request', ['--suites']), 'fast=yes\nsuites=\n', '--suites: only fast and suites');
   // a changed step file picks its suite on a pull request, and nothing on any other event (review of #2032: the lane is PR-only)
@@ -510,8 +505,8 @@ assert.strictEqual(cc.decide(['docs/zz-none.md', 'specs/999-none/spec.md'], io()
       assert.strictEqual(fs.readFileSync(outFile, 'utf8'), 'fast=yes\nsuites=\ncapped=1\n', 'the wrapper (base copy) writes capped=1 too');
     }
   }
-  for (const ev of ['push', 'merge_group', 'schedule', 'workflow_dispatch', '']) assert.strictEqual(run(ev), 'code=true\nthemes=true\nui=true\nmacos=true\nos_sensitive=true\n', `${ev || 'no event'}: everything runs`);
-  const ALL = 'code=true\nthemes=true\nui=true\nmacos=true\nos_sensitive=true\n';
+  for (const ev of ['push', 'merge_group', 'schedule', 'workflow_dispatch', '']) assert.strictEqual(run(ev), 'code=true\nthemes=true\nui=true\nos_sensitive=true\n', `${ev || 'no event'}: everything runs`);
+  const ALL = 'code=true\nthemes=true\nui=true\nos_sensitive=true\n';
   // finding 3: a file name with a newline and `::` is printed escaped, so it cannot start a workflow command (POSIX: Windows forbids the name)
   if (process.platform !== 'win32') {
     fs.writeFileSync(path.join(repo, 'scripts', 'x\n::warning::injected ##[error]y.txt'), 'x');
@@ -532,14 +527,14 @@ assert.strictEqual(cc.decide(['docs/zz-none.md', 'specs/999-none/spec.md'], io()
     // a tooling script the closure does not name, present at head: the base copy, run with --root on the checkout, says ui=false
     fs.writeFileSync(path.join(repo, 'scripts', 'tool.js'), 'module.exports = 1;\n');
     git('add', '-A'); git('commit', '-q', '-m', 'a tooling script');
-    assert.strictEqual(bash(repo, 'pull_request'), 'code=true\nthemes=false\nui=false\nmacos=true\nos_sensitive=true\n', 'the wrapper decides on the PR checkout (--root): a tooling script is not UI');
+    assert.strictEqual(bash(repo, 'pull_request'), 'code=true\nthemes=false\nui=false\nos_sensitive=true\n', 'the wrapper decides on the PR checkout (--root): a tooling script is not UI');
     assert.strictEqual(bash(repo, 'pull_request', ['--suites']), 'fast=yes\nsuites=\n', 'the wrapper passes --suites to the base copy (spec 117 FR-386)');
     // a committed .ci-changes-base/ is cleared first: its package.json saying "type":"module" would make the copied decision fail
     fs.mkdirSync(path.join(repo, '.ci-changes-base'));
     fs.writeFileSync(path.join(repo, '.ci-changes-base', 'package.json'), '{"type":"module"}\n');
     git('add', '-A'); git('commit', '-q', '-m', 'a planted base folder');
-    assert.strictEqual(bash(repo, 'pull_request'), 'code=true\nthemes=false\nui=true\nmacos=true\nos_sensitive=true\n', 'a committed .ci-changes-base/ is cleared before the base copy runs');
-    const broken = "require('fs').appendFileSync(process.env.GITHUB_OUTPUT, 'code=true\\nthemes=false\\nui=false\\nmacos=false\\n');\n";
+    assert.strictEqual(bash(repo, 'pull_request'), 'code=true\nthemes=false\nui=true\nos_sensitive=true\n', 'a committed .ci-changes-base/ is cleared before the base copy runs');
+    const broken = "require('fs').appendFileSync(process.env.GITHUB_OUTPUT, 'code=true\\nthemes=false\\nui=false\\n');\n";
     fs.mkdirSync(path.join(repo, 'src'), { recursive: true });
     fs.writeFileSync(path.join(repo, 'src', 'app.js'), 'x');
     fs.writeFileSync(path.join(repo, '.github', 'scripts', 'ci-changes.js'), broken);
@@ -569,13 +564,13 @@ assert.strictEqual(cc.decide(['docs/zz-none.md', 'specs/999-none/spec.md'], io()
     const out = (lines: string) => `require('fs').appendFileSync(process.env.GITHUB_OUTPUT, ${JSON.stringify(lines)});\n`;
     const BASES: [string, string][] = [
       ['writes nothing', 'process.exit(0);\n'],
-      ['writes code= empty', out('code=\nthemes=false\nui=false\nmacos=false\n')],
-      ['writes code=maybe', out('code=maybe\nthemes=false\nui=false\nmacos=false\n')],
-      ['writes two code lines', out('code=false\ncode=true\nthemes=false\nui=false\nmacos=false\n')],
+      ['writes code= empty', out('code=\nthemes=false\nui=false\n')],
+      ['writes code=maybe', out('code=maybe\nthemes=false\nui=false\n')],
+      ['writes two code lines', out('code=false\ncode=true\nthemes=false\nui=false\n')],
       // spec 117 FR-012 (review of #2039): every decision name, os_sensitive too, exactly once and exact; else everything runs
-      ['writes no os_sensitive (a base older than it)', out('code=false\nthemes=false\nui=false\nmacos=false\n')],
-      ['writes os_sensitive=FALSE', out('code=false\nthemes=false\nui=false\nmacos=false\nos_sensitive=FALSE\n')],
-      ['writes two os_sensitive lines', out('code=false\nthemes=false\nui=false\nmacos=false\nos_sensitive=false\nos_sensitive=false\n')],
+      ['writes no os_sensitive (a base older than it)', out('code=false\nthemes=false\nui=false\n')],
+      ['writes os_sensitive=FALSE', out('code=false\nthemes=false\nui=false\nos_sensitive=FALSE\n')],
+      ['writes two os_sensitive lines', out('code=false\nthemes=false\nui=false\nos_sensitive=false\nos_sensitive=false\n')],
     ];
     /** The wrapper's output with this base decision (committed as HEAD^1) and a docs commit on top. */
     const withBase = (js: string, wrapper: string) => {
@@ -587,9 +582,11 @@ assert.strictEqual(cc.decide(['docs/zz-none.md', 'specs/999-none/spec.md'], io()
       return bash(silent, 'pull_request');
     };
     for (const [name, js] of BASES) assert.strictEqual(withBase(js, sh), ALL, `a base decision that ${name}: the wrapper writes everything runs`);
-    assert.strictEqual(withBase(out('code=false\nthemes=false\nui=false\nmacos=false\nos_sensitive=false\n'), sh), 'code=false\nthemes=false\nui=false\nmacos=false\nos_sensitive=false\n', 'a valid decision passes through, each name once');
+    assert.strictEqual(withBase(out('code=false\nthemes=false\nui=false\nos_sensitive=false\n'), sh), 'code=false\nthemes=false\nui=false\nos_sensitive=false\n', 'a valid decision passes through, each name once');
+    // a base copy from before the spec 008 delta 2026-11-23 still writes macos=: the wrapper passes the four names on and drops it
+    assert.strictEqual(withBase(out('code=false\nthemes=false\nui=false\nmacos=false\nos_sensitive=false\n'), sh), 'code=false\nthemes=false\nui=false\nos_sensitive=false\n', 'an older base that writes macos= still passes through, without macos');
     const cond = `  if [ "$n" != 1 ] || { [ "$v" != true ] && [ "$v" != false ]; }; then\n`;
-    const guard = /\nlines=""\nfor k in code themes ui macos os_sensitive; do\n[\s\S]*?\ndone\nprintf '%s' "\$lines" >> "\$out"\n/;
+    const guard = /\nlines=""\nfor k in code themes ui os_sensitive; do\n[\s\S]*?\ndone\nprintf '%s' "\$lines" >> "\$out"\n/;
     /** The wrapper's anchors are found in this text, after `normalise`. */
     const anchored = (raw: string, normalise: (t: string) => string = toLf) => { const t = normalise(raw); return t.includes(cond) && guard.test(t); };
     assert.ok(anchored(shRaw), 'mutant anchors: the wrapper guard and its exact-value condition');

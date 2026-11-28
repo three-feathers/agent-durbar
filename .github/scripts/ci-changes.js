@@ -18,8 +18,7 @@
  *                 (ui-platforms.yml), the office layout job and package smoke run. False for tooling, report and unit-test
  *                 scripts, docs, other workflows, a version-only bump of package.json / package-lock.json and a package.json
  *                 change only to npm scripts the UI run cannot reach (not build, pack:dir or a lifecycle hook).
- *   macos=true    the path-filtered macOS build and test (macos-pr.yml) has work: false only when every change is docs or a
- *                 version-only bump (FR-191)
+ *   (no `macos` output since the spec 008 delta 2026-11-23: no macOS job runs on a pull request; macos-pr.yml runs by hand, whole)
  *   os_sensitive=true  the diff can behave differently on Windows: ui-platforms.yml runs its Windows UI shards on the pull request
  *                 (spec 117 FR-012, O2); false only when the diff is not empty and every path is on the OS-neutral list (fails
  *                 closed: osSensitive below). ci-changes.sh writes each name once, and everything runs when
@@ -57,7 +56,7 @@ const DOCS_DENY = /^docs\/(rules|agent-setup|site)\//i; // root files need no en
 // a plain git path: no backslash, no `.` or `..` or empty segment, no leading or trailing blank, no control character, not absolute
 const PLAIN_PATH = (f) => typeof f === 'string' && f !== '' && f === f.trim() && !/[\\\u0000-\u001f\u007f]/.test(f) && f.split('/').every((seg) => seg !== '' && seg !== '.' && seg !== '..');
 const DOCS = { test: (f) => PLAIN_PATH(f) && DOCS_ALLOW.test(f) && !DOCS_DENY.test(f) };
-// for `ui` and `macos` only (FR-191, unchanged): documentation and Markdown outside the always-UI folders do not start the UI suite, even when
+// for `ui` only (FR-191, unchanged): documentation and Markdown outside the always-UI folders do not start the UI suite, even when
 // they run Build and test (a suite reads them)
 const UI_DOCS = /^(docs\/|specs\/|changelog\.d\/)|\.md$|^LICENSE$/;
 const THEMES = /^(src\/renderer\/|scripts\/check-office-overlap\.js|scripts\/check-theme-geometry\.js|scripts\/check-parallel\.js|scripts\/fixtures\/themes\/|\.github\/workflows\/ci\.yml|\.github\/scripts\/ci-changes\.(sh|js))/;
@@ -385,9 +384,7 @@ function decide(files, io) {
     const closure = uiClosure(io);
     ui = list.some((f) => uiPath(f, io, closure));
   }
-  // macos (FR-191, unchanged): only docs and a version-only bump skip the path-filtered macOS job, which code still gates elsewhere
-  const macos = list.some((f) => !UI_DOCS.test(f) && !(PKG.includes(f) && versionOnly(f, io)));
-  return { code, themes, ui, macos };
+  return { code, themes, ui };
 }
 
 // ---- spec 117 FR-386: the fast lane (fast-lane.yml, advisory, never a required check). `--suites` writes `fast=yes` and
@@ -532,7 +529,7 @@ function main(env = process.env, argv = process.argv.slice(2)) {
   }
   let r;
   if (env.EVENT_NAME !== 'pull_request') {
-    r = { code: true, themes: true, ui: true, macos: true, os_sensitive: true };
+    r = { code: true, themes: true, ui: true, os_sensitive: true };
     console.log(`${env.EVENT_NAME || 'no event'}: not a pull request, everything runs.`);
   } else {
     // --root <checkout>: the workflow runs the base copy of this file from a temp folder on the PR's checkout
@@ -542,10 +539,9 @@ function main(env = process.env, argv = process.argv.slice(2)) {
     r = { ...decide(files, tree), os_sensitive: osSensitive(files, tree) };
     if (!r.code) console.log('Docs, specs and Markdown only: build, test and office checks are skipped (the job passes).');
     else if (!r.ui) console.log('Nothing the app, its build or the UI drivers use changed: the UI suite, office layout and package smoke are skipped (spec 008 FR-191).');
-    if (r.code && !r.macos) console.log('Docs and a version-only package bump: the macOS pull-request build and test is skipped (spec 008 FR-191).');
     if (r.ui && !r.os_sensitive) console.log('No OS-sensitive path changed: the Windows UI shards are skipped on this pull request (spec 117 FR-012).');
   }
-  for (const k of ['code', 'themes', 'ui', 'macos', 'os_sensitive']) out(k, r[k]);
+  for (const k of ['code', 'themes', 'ui', 'os_sensitive']) out(k, r[k]);
 }
 
 module.exports = { FOLDER_MAX, decide, uiClosure, versionOnly, gitIo, npmTargets, reachedNpm, workflowCommands, fastSuites, suiteNames, stepSources, DOCS, osSensitive };
