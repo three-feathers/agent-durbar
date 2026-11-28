@@ -80,7 +80,11 @@ module.exports = async (ctx) => {
     }
     await js(`(()=>{const n=document.querySelector('#chat .mem-note-sent');n.querySelector('button').setAttribute('aria-expanded','true');n.querySelector('.mem-note-body').hidden=false;n.querySelector('.mem-note-chev').textContent='\u25be ';n.scrollIntoView({block:'start'});return true})()`);
     await H.settle();
-    assert.ok(await js(`(()=>{const c=document.getElementById('chat').getBoundingClientRect();const e=document.querySelector('#chat .mem-note-sent');const b=e.nextElementSibling.querySelector('.bubble').getBoundingClientRect();return b.top>=c.top&&b.bottom<=c.bottom+1&&e.getBoundingClientRect().top>=c.top-1})()`), `${world} ${w}: with the note open at the top of a long chat, the person's first message is still in view`);
+    // the opened note sits at the top of a long chat: the person's first message must start inside the chat viewport, not below its edge. The note's text has its own
+    // scroll (max 120px), so the block stays short; the check is the bubble's TOP plus one line, not its bottom, because the chat height changes with the platform's fonts and DPI (Windows CI). The scroll to the note and the measure happen in ONE page call: the simulator's replies keep arriving and the chat sticks to the bottom, so a scroll made earlier can be undone before a slower machine measures (the Windows failure).
+    const geo = await js(`(()=>{const e=document.querySelector('#chat .mem-note-sent');e.scrollIntoView({block:'start'});const c=document.getElementById('chat').getBoundingClientRect();const er=e.getBoundingClientRect();const b=e.nextElementSibling.querySelector('.bubble').getBoundingClientRect();return {chatTop:c.top,chatBottom:c.bottom,noteTop:er.top,noteBottom:er.bottom,bubbleTop:b.top,bubbleBottom:b.bottom}})()`);
+    console.log('[116] long chat geometry', world, w, JSON.stringify(geo));
+    assert.ok(geo.noteTop >= geo.chatTop - 1 && geo.bubbleTop >= geo.chatTop && geo.bubbleTop + 24 <= geo.chatBottom, `${world} ${w}: with the note open at the top of a long chat, the person's first message is still in view (${JSON.stringify(geo)})`);
     assert.ok(await js(`document.querySelector('#chat .mem-note-sent .mem-note-lead').textContent==='This is what the agent reads first:'`), 'the opened line says what it is');
     await shot('long');
   }
