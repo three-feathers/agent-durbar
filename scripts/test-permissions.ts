@@ -1,5 +1,5 @@
 /** Unit test for the permission broker (no Copilot session, no AI credits): `npm run test:permissions`. */
-import * as assert from 'assert';
+import * as nodeAssert from 'assert';
 import * as path from 'path';
 import * as fs from 'fs';
 import * as os from 'os';
@@ -8,6 +8,22 @@ import * as ts from 'typescript';
 import { PermissionBroker, cleanGrantKey, grantScope, revokeGrantFor, revokeCallFor, CALLS_MAX, CALL_KEYS_MAX, isInsideRoots } from '../src/adapters/permissions';
 import { readIsInsideRoots, writeIsInsideRoots } from '../src/adapters/claudeModes';
 import type { BrokerEvent } from '../src/adapters/permissions';
+
+// On Windows (or with PERMISSIONS_COLLECT=1) a failing assert is collected and all are printed together at the end, exit 1; elsewhere the first failure aborts.
+const collected: string[] = [];
+const collecting = process.platform === 'win32' || process.env.PERMISSIONS_COLLECT === '1';
+const assert: typeof nodeAssert = collecting
+  ? (() => {
+    const wrapped: Record<string, unknown> = {};
+    for (const k of ['ok', 'strictEqual', 'deepStrictEqual', 'equal', 'notStrictEqual', 'match']) {
+      const orig = (nodeAssert as unknown as Record<string, (...a: unknown[]) => void>)[k];
+      wrapped[k] = (...a: unknown[]): void => {
+        try { orig(...a); } catch (e) { collected.push(`${k}: ${String((e as Error).message).split('\n')[0]}`); }
+      };
+    }
+    return Object.assign({}, nodeAssert, wrapped) as unknown as typeof nodeAssert;
+  })()
+  : nodeAssert;
 
 /** Run `fn` with `process.platform` set to `p` (to exercise the Windows-only branch on this machine). */
 function withPlatform(p: string, fn: () => void): void {
@@ -249,6 +265,7 @@ async function main(): Promise<void> {
       unresolvedG: ['      steps = 0;\n', '\n'],
       unresolvedH: ["codeOf(e) === 'ENOENT' || codeOf(e) === 'ENOTDIR';", "codeOf(e) === 'ENOENT';"],
       unresolvedI: ['const linkPath = bare === \'\' ||', 'const linkPath = true ? cur : bare === \'\' ||'],
+      unresolvedL: ["if (pm.sep === '\\\\' && !/^[\\\\/]{2}/.test(p)", "if (false && !/^[\\\\/]{2}/.test(p)"],
       unresolvedK: ["if (rest.includes('..')) return undefined;", ''],
       unresolvedD: ['if (fs.lstatSync(linkPath).isSymbolicLink()) {', 'if (false as boolean && fs.lstatSync(linkPath).isSymbolicLink()) {'],
     };
@@ -277,6 +294,15 @@ async function main(): Promise<void> {
     }
     assert.ok(inside('/Users/x/PROJ/a', ['/users/x/proj'], { flavor: path.posix, caseInsensitive: true, realpath: (x) => x }), 'posix with caseInsensitive folds case');
     // default case rule: only Windows folds case, so on Linux and macOS `/Work/a` is not inside `/work`
+  {
+    // Windows shapes (simulated with the win32 flavor): a path with no drive belongs to the root's drive; a short-name temp path matches its long-form root
+    const w = { flavor: path.win32, caseInsensitive: true, realpath: (x: string): string => { if (!/^([A-Za-z]:)?\\/.test(x)) throw Object.assign(new Error('missing'), { code: 'ENOENT' }); return x.replace('RUNNER~1', 'runneradmin'); } };
+    assert.ok(inside('/tmp/attached.png', ['/tmp/attached.png'], w), 'win32 shape 1: a drive-less path equal to a drive-less allowed path is inside');
+    assert.ok(inside('/tmp/attached.png', ['C:\\tmp\\attached.png'], w), 'win32 shape 1: a drive-less path resolves against the root drive');
+    assert.ok(!inside('/tmp/other.png', ['/tmp/attached.png'], w), 'win32 shape 1: another file is outside');
+    assert.ok(inside('C:\\Users\\RUNNER~1\\Temp\\a.png', ['C:\\Users\\runneradmin\\Temp\\a.png'], w), 'win32 shape 2: a short-name temp path is inside its long-form root');
+    assert.ok(inside('C:\\Users\\RUNNER~1\\Temp\\new\\a.png', ['C:\\Users\\runneradmin\\Temp'], w), 'win32 shape 2: a missing file under it is inside');
+  }
     if (process.platform !== 'win32') assert.ok(!inside('/Work/a', ['/work'], { flavor: path.posix, realpath: (x) => x }), 'default case rule: posix does not fold case');
 
     // spec 003 FR-320: a path whose real location cannot be resolved counts as outside; only a missing tail under a resolved folder is text.
@@ -994,6 +1020,10 @@ const mkRoots2 = (m: { ask?: boolean; allow?: boolean }, roots?: string[]) => {
     x = mkA('ask');
     x.b.stop();
     assert.strictEqual((await x.b.request({ kind: 'shell', fullCommandText: 'ls', toolCallId: 'd1', appReview: 'approve' })).kind, 'reject', 'a stopped session refuses before the judge row');
+  }
+  if (collected.length) {
+    console.error(`permissions: ${collected.length} failing check(s):\n  ` + collected.join('\n  '));
+    process.exit(1);
   }
   console.log('permissions: all checks passed');
 }

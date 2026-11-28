@@ -203,6 +203,8 @@ const MAX_LINKS = 40;
 
 /** Join without collapsing anything: the OS resolves the path itself (spec 003 FR-320). */
 function rawJoin(base: string, p: string, pm: PathCheckOptions['flavor'] & object): string {
+  // Windows: a path with no drive (`\tmp\a`, `C:a`) belongs to the drive or folder of `base`; the OS reads it as text, so resolving it here loses nothing
+  if (pm.sep === '\\' && !/^[\\/]{2}/.test(p) && (/^[\\/]/.test(p) || /^[A-Za-z]:(?![\\/])/.test(p))) return pm.resolve(base, p);
   return pm.isAbsolute(p) ? p : base.replace(/[\\/]+$/, '') + pm.sep + p;
 }
 
@@ -269,7 +271,7 @@ export function isInsideRoots(p: string | undefined, roots: readonly string[], o
   if (real === undefined) return false;
   const target = norm(real);
   return roots.some((r) => {
-    const resolved = realOrNearest(flavor.isAbsolute(r) ? r : flavor.resolve(r), o);
+    const resolved = realOrNearest(rawJoin(flavor.resolve('.'), r, flavor), o);
     if (resolved === undefined) return false;
     const root = norm(resolved);
     const rel = flavor.relative(root, target);
