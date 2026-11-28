@@ -446,7 +446,8 @@ module.exports = async (ctx) => {
     for (const [what, gap, third] of madeCases) {
       await js(`(()=>{const a=${SIM}.agents().find(x=>x.id===${jsLiteral(who)});a.state='working';a.lastEventAt=Date.now();${SIM}.crew.renderAll();return 1})()`); /* the case starts from the desk's own place, still */
       await must(STILL, `${tag}: still before the case ${what}`, 8000);
-      const mk = await js(`(async()=>{const a=${SIM}.agents().find(x=>x.id===${jsLiteral(who)});const k=${jsLiteral(who)},at=()=>document.querySelector('#stage .ren.ro-ren[data-ren="'+k+'"]'),had=!!at(),live0=a.live;
+      const mk = await js(`(async()=>{const a=${SIM}.agents().find(x=>x.id===${jsLiteral(who)});
+        const k=${jsLiteral(who)},at=()=>document.querySelector('#stage .ren.ro-ren[data-ren="'+k+'"]'),had=!!at(),live0=a.live;
         a.state='waiting';a.lastEventAt=Date.now();${SIM}.crew.renderAll();
         if(${jsLiteral(gap)}>0){await new Promise(r=>setTimeout(r,${jsLiteral(gap)}));a.state='working';a.lastEventAt=Date.now();${SIM}.crew.renderAll();}
         a.live=false;${SIM}.crew.renderAll();const gone=!at();a.live=live0;${SIM}.crew.renderAll();const nb=at();
