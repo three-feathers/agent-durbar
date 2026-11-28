@@ -8,6 +8,8 @@ import type { MemoryOps } from '../memoryops';
 
 export interface MemoryIpcDeps {
   getOps(): MemoryOps | undefined;
+  /** spec 116 T009: the memory note the composer shows for a session (`MemoryNote.preview`), or none */
+  notePreview?(agentId: string): { id: string; text: string } | undefined;
 }
 
 const NO = { ok: false as const, error: 'failed' as const };
@@ -21,5 +23,6 @@ export function register(deps: MemoryIpcDeps): void {
   ipcHandle('memory:pick', (e) => (!fromApp(e) ? NO : guard(async () => (await ops()?.pick()) ?? NO)));
   ipcHandle('memory:apply', (e, token: unknown) => (!fromApp(e) ? NO : guard(() => ops()?.apply(token) ?? NO)));
   ipcHandle('memory:setOn', (e, on: unknown) => (!fromApp(e) ? NO : guard(() => ops()?.setOn(on) ?? NO)));
+  ipcHandle('memory:notePreview', (e, agentId: unknown) => (!fromApp(e) ? NO : guard(() => (typeof agentId === 'string' ? deps.notePreview?.(agentId) : undefined) ?? { ok: true, none: true })));
   ipcHandle('memory:stop', (e) => (!fromApp(e) ? NO : guard(() => ops()?.stop() ?? NO)));
 }

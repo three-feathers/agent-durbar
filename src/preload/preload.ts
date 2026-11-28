@@ -173,6 +173,7 @@ const api: DurbarApi = {
   memoryApply: (token) => ipcRenderer.invoke('memory:apply', token),
   memorySetOn: (on) => ipcRenderer.invoke('memory:setOn', on),
   memoryStop: () => ipcRenderer.invoke('memory:stop'),
+  memoryNotePreview: (agentId) => ipcRenderer.invoke('memory:notePreview', agentId), // spec 116 T009
   onMemoryChanged: (cb) => sub('memory:changed', cb),
   teamsList: () => ipcRenderer.invoke('teams:list'), // spec 111 T007: team templates
   teamsPut: (template) => ipcRenderer.invoke('teams:put', template),

@@ -1377,7 +1377,8 @@ export interface DurbarApi {
   /** `slash` (spec 073 FR-005): the message started with a folder or user entry and its text was sent; the value says where it came from.
    *  `slashNote` (a VS Code prompt file): the settings not applied and the variables left as written. */
   /** `notSent` (spec 058 FR-208): Stop ended the MCP sign-in wait before the message went: nothing was sent. */
-  send(id: string, text: string, attachments: PickedFile[], opts?: { plan?: boolean }): Promise<{ ok: boolean; error?: string; slash?: string; slashNote?: string; notSent?: boolean }>;
+  /** `typed` + `noteId` (spec 116 T009): the person's own typed message and the id of the memory note preview shown for it; `memoryNote` is the exact text that went in front of it. */
+  send(id: string, text: string, attachments: PickedFile[], opts?: { plan?: boolean; typed?: boolean; noteId?: string }): Promise<{ ok: boolean; error?: string; slash?: string; slashNote?: string; notSent?: boolean; memoryNote?: string }>;
   /** Spec 073 FR-010: the "/" entries of the agent's app in its folder (folder, user, app). */
   slashCommands?(id: string): Promise<{ ok: boolean; error?: string; entries: SlashCommandInfo[] }>;
   /**
@@ -1403,6 +1404,8 @@ export interface DurbarApi {
   memoryApply?(token: string): Promise<MemoryApplied>;
   memorySetOn?(on: boolean): Promise<MemoryResult>;
   memoryStop?(): Promise<MemoryResult>;
+  /** Spec 116 T009: the memory note shown above the composer for a session's first typed message (`{ id, text }`), or `{ ok: true, none: true }`. */
+  memoryNotePreview?(agentId: string): Promise<{ id: string; text: string } | { ok: boolean; none?: true }>;
   onMemoryChanged?(cb: (v: MemoryStatus) => void): () => void;
   /**
    * Spec 111 T007 (FR-010, FR-023, FR-100): the person's team templates, window only; main checks every argument and keeps `memberId` and `briefFrom` itself.

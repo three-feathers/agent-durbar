@@ -7,6 +7,7 @@ import type { HistoryItem, HistoryLimits, HistoryResult, PreviousSession } from 
 import { cleanSessionTitle, cleanTitle, sameDir } from './history';
 import type { ModelOption } from '../shared/modelswitch';
 import { isObj, nonEmptyStr as str } from '../shared/guards';
+import { userMessageText, splitMemoryNote } from '../shared/memorynote';
 
 /** Codex sends seconds since the epoch; Durbar uses milliseconds. */
 const ms = (v: unknown): number => (typeof v === 'number' && Number.isFinite(v) && v > 0 ? (v < 1e12 ? Math.round(v * 1000) : Math.round(v)) : 0);
@@ -37,7 +38,7 @@ export function codexPreviousSessions(
     const git = isObj(t.gitInfo) ? t.gitInfo : undefined;
     out.push({
       id,
-      title: cleanSessionTitle(t.name, 120) ?? cleanTitle(t.preview),
+      title: cleanSessionTitle(t.name, 120) ?? cleanTitle(userMessageText(t.preview)),
       startTime: ms(t.createdAt) || modifiedTime,
       modifiedTime,
       branch: git && str(git.branch) && git.branch !== 'HEAD' ? (git.branch as string) : undefined,
@@ -67,7 +68,7 @@ export function codexHistory(thread: unknown, limits: Partial<HistoryLimits> = {
       if (!isObj(it)) continue;
       if (it.type === 'userMessage') {
         const text = textOf(it.content);
-        if (text) all.push({ type: 'user', text: cap(text, maxText) });
+        if (text) { const sp = splitMemoryNote(text); all.push({ type: 'user', text: cap(sp.text, maxText), ...(sp.note ? { note: true as const } : {}) }); } // spec 116 T009
       } else if (it.type === 'agentMessage') {
         const text = typeof it.text === 'string' ? it.text.trim() : '';
         if (text) all.push({ type: 'output', text: cap(text, maxText) });

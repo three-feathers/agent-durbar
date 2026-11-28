@@ -125,7 +125,7 @@ const FROM_APP = [
   'schedules:remove', 'schedules:runNow', 'schedules:runs', 'schedules:save',
   'search:cancel', 'search:clear', 'search:start', // spec 095 FR-033: the conversation search reads the text of every session
   'teams:create', 'teams:createPreview', 'teams:delete', 'teams:duplicate', 'teams:list', 'teams:markMine', 'teams:previewRow', 'teams:put', // spec 111 T007, T010 (the create preview), T011 (create): the person's team templates (briefs), window only; never open to the simulator
-  'memory:apply', 'memory:pick', 'memory:setOn', 'memory:status', 'memory:stop', // spec 116 T003: the office memory folder; window only, never open to the simulator
+  'memory:apply', 'memory:notePreview', 'memory:pick', 'memory:setOn', 'memory:status', 'memory:stop', // spec 116 T003: the office memory folder; window only, never open to the simulator
   'schedules:restartLoop', 'schedules:stopLoop', // spec 072 FR-007, FR-008 (T007): Stop loop and Start again
 ];
 assert.strictEqual(new Set(FROM_APP).size, FROM_APP.length, 'no channel twice in the list');
