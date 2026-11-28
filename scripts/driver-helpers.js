@@ -245,7 +245,7 @@ function helpers(ctx) {
    * `Emulation.setFocusEmulationEnabled`), which makes `hasFocus()` true whatever the OS does and so hides every real blur: the caller owns that
    * and ends it with `releaseFocus()` (try/finally) before any step that tests a focus loss. Nothing turns it on by itself, `H.key` included.
    * `loseFocus()` releases, blurs the window and returns whether the page reports no focus, for a driver that tests a blur (assert its result).
-   * `forceBlur(driver, tag, step)` is `loseFocus()` for a driver's forced-blur red case: true when honoured, else it prints a `[focus]` line and returns false (Windows keeps the focus on `blur()`).
+   * `forceBlur(driver, tag, step)` is `loseFocus()` for a driver's forced-blur red case: true when honoured; a refusal fails (Linux, macOS) or, on Windows only (it keeps the focus on `blur()`), prints a `[focus]` line and returns false.
    * Every wait ends as soon as the condition holds. `webContents.isFocused()` is the host's view and stays real.
    */
   const emulating = new WeakSet();
@@ -310,12 +310,14 @@ function helpers(ctx) {
     }
   };
   const loseFocus = async () => { await releaseFocus(); try { ctx.win.blur(); } catch { /* gone */ } return w.until('!document.hasFocus()', 4000); };
-  /** The forced blur of a driver's red case (the Windows condition of a window without the OS focus): returns true when the OS honoured it (the page reports no focus, the setup is valid). A Windows window cannot be made to give up
-   *  the OS focus when nothing else takes it, so there `blur()` leaves `document.hasFocus()` true: the driver then PRINTS one line (driver, tag, step) and goes on: the skip removes the SETUP assert only, the caller still asks for the focus by state and runs the product's asserts; a silent skip is not allowed. */
-  const forceBlur = async (driver, tag, step) => {
+  /** The forced blur of a driver's red case (the Windows condition of a window without the OS focus): true when the OS honoured it (the page reports no focus, the setup is valid). On Linux and macOS a refused blur is a broken
+   *  setup and FAILS here, named. Only on Windows, where a window cannot be made to give up the OS focus when nothing else takes it (`blur()` leaves `document.hasFocus()` true), it PRINTS one `[focus]` line (driver, tag, step)
+   *  and returns false: the skip removes the SETUP assert only, the caller still asks for the focus by state and runs the product's asserts; a silent skip is not allowed. `platform` is a hook for the cheap test. */
+  const forceBlur = async (driver, tag, step, platform = process.platform) => {
     if (await loseFocus()) return true;
+    if (platform !== 'win32') require('assert').fail(`${tag}: the window is blurred, so the page reports no focus (the setup of the ${step})`);
     console.log(`[focus] ${driver} ${tag} (${step}): this OS did not release the window focus on blur(): the forced-blur setup is skipped here (the real condition is the neighbour window of a shared desktop)`);
-    return false;
+    return false; /* refused */
   };
   /** Give another web contents (a Browser tab's view) the real focus and wait until it reports it; false when it never does. */
   const focusWc = async (target, ms = 3000) => {

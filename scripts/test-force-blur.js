@@ -1,15 +1,29 @@
 /*
- * Spec 097 (issue #2167, T611): H.forceBlur of scripts/driver-helpers.js, with no Electron. A stub window stands for the two OS behaviours:
- * one honours blur() (Linux, macOS: the page then reports no focus), one does not (Windows: a window cannot give up the OS focus when nothing
- * else takes it, so hasFocus() stays true). Honoured: true, nothing printed. Refused: false, ONE `[focus]` line naming the driver, the tag and
- * the step, no throw. The two drivers that use it must not return early on a refused blur (the skip removes the setup assert only): the source
- * scan below reads both (CRLF-safe) and a mutant copy with an early return must fail at the named assert.
+ * Spec 097 (issue #2167, T611): H.forceBlur of scripts/driver-helpers.js, with no Electron. A stub window stands for the OS behaviours: one honours
+ * blur() (the page then reports no focus), one does not (a Windows window cannot give up the OS focus when nothing else takes it: hasFocus() stays
+ * true). The helper takes the platform as a hook, so both branches run on any machine:
+ *   honoured, any platform: true, nothing printed;  refused on win32: false, ONE `[focus]` line naming driver, tag and step, no throw;
+ *   refused on linux or darwin: a hard assert with the named setup text (a broken blur must not go green there).
+ * The REAL helper source is mutated in memory (a module copy compiled from the mutated text, no require cache involved; each text mutation matches
+ * \r?\n, fails loudly with "mutation did not apply: <name>"): the platform gate removed, the printed line removed, the return value flipped; each must
+ * die at a named assert of the battery. The two drivers must not return early on a refused blur: a CRLF-safe source scan, and a mutant copy with an
+ * early return that dies at "does not end the step early".
  */
 const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
-const { helpers } = require('./driver-helpers');
+const Module = require('module');
 
+const HELPERS = path.join(__dirname, 'driver-helpers.js');
+const SETUP = (step) => `the window is blurred, so the page reports no focus (the setup of the ${step})`;
+
+function load(src) { /* a module copy from `src`, resolved like driver-helpers.js itself (relative requires keep working) */
+  const m = new Module(HELPERS, module);
+  m.filename = HELPERS;
+  m.paths = Module._nodeModulePaths(__dirname);
+  m._compile(src, HELPERS);
+  return m.exports;
+}
 function stub(honour) {
   let focused = true;
   const win = { webContents: {}, blur() { if (honour) focused = false; }, show() { focused = true; }, focus() { focused = true; } };
@@ -18,7 +32,34 @@ function stub(honour) {
 async function capture(fn) {
   const lines = [], log = console.log;
   console.log = (...a) => { lines.push(a.join(' ')); };
-  try { return { value: await fn(), lines }; } finally { console.log = log; }
+  try { return { value: await fn(), error: null, lines }; } catch (error) { return { value: undefined, error, lines }; } finally { console.log = log; }
+}
+const LINE = '[focus] drv tag (the step): this OS did not release the window focus on blur(): the forced-blur setup is skipped here (the real condition is the neighbour window of a shared desktop)';
+
+async function battery(H) { /* every row has a name: a mutant dies at one of them */
+  for (const platform of ['win32', 'linux', 'darwin']) {
+    const r = await capture(() => H.helpers(stub(true)).forceBlur('drv', 'tag', 'the step', platform));
+    assert.strictEqual(r.error, null, `honoured blur on ${platform}: no throw`);
+    assert.strictEqual(r.value, true, `honoured blur on ${platform}: true`);
+    assert.deepStrictEqual(r.lines.filter((l) => /^\[focus\]/.test(l)), [], `honoured blur on ${platform}: no skip line`);
+  }
+  const w = await capture(() => H.helpers(stub(false)).forceBlur('drv', 'tag', 'the step', 'win32'));
+  assert.strictEqual(w.error, null, 'refused blur on win32: no throw');
+  assert.strictEqual(w.value, false, 'refused blur on win32: false');
+  const skip = w.lines.filter((l) => /^\[focus\]/.test(l));
+  assert.strictEqual(skip.length, 1, 'refused blur on win32: exactly one [focus] line');
+  assert.strictEqual(skip[0], LINE, 'refused blur on win32: the line names the driver, the tag and the step');
+  for (const platform of ['linux', 'darwin']) {
+    const r = await capture(() => H.helpers(stub(false)).forceBlur('drv', 'tag', 'the step', platform));
+    assert.ok(r.error && r.error.message === `tag: ${SETUP('the step')}`, `refused blur on ${platform}: a hard assert with the named setup text`);
+    assert.deepStrictEqual(r.lines.filter((l) => /^\[focus\]/.test(l)), [], `refused blur on ${platform}: nothing skipped`);
+  }
+}
+
+function mutate(name, src, re, to) {
+  const out = src.replace(re, to);
+  assert.notStrictEqual(out, src, `mutation did not apply: ${name}`);
+  return out;
 }
 function scan(name, src) { /* the forceBlur call is its own statement (never returned, never negated) and needFocus follows it */
   const L = src.split(/\r?\n/);
@@ -29,24 +70,23 @@ function scan(name, src) { /* the forceBlur call is its own statement (never ret
 }
 
 (async () => {
-  const ok = await capture(() => helpers(stub(true)).forceBlur('drv', 'tag', 'the step'));
-  assert.strictEqual(ok.value, true, 'a blur the OS honours: true');
-  assert.deepStrictEqual(ok.lines.filter((l) => /^\[focus\]/.test(l)), [], 'a honoured blur prints no skip line');
-  const no = await capture(() => helpers(stub(false)).forceBlur('drv', 'tag', 'the step'));
-  assert.strictEqual(no.value, false, 'a refused blur: false, and no throw');
-  const sk = no.lines.filter((l) => /^\[focus\]/.test(l));
-  assert.strictEqual(sk.length, 1, 'a refused blur prints exactly one [focus] line');
-  assert.strictEqual(sk[0], '[focus] drv tag (the step): this OS did not release the window focus on blur(): the forced-blur setup is skipped here (the real condition is the neighbour window of a shared desktop)', 'the skip line names the driver, the tag and the step');
-  // mutant: a helper that throws on a refused blur (the first fix) must die at the named assert
-  const throwing = async (H) => { if (!(await H.forceBlur('drv', 'tag', 'the step'))) throw new Error('refused blur threw'); };
-  await assert.rejects(() => capture(() => throwing(helpers(stub(false)))), /refused blur threw/, 'mutant: a driver that fails on a refused blur dies');
+  const real = fs.readFileSync(HELPERS, 'utf8');
+  await battery(load(real));
+  await battery(load(real.replace(/\r?\n/g, '\r\n'))); /* a CRLF checkout */
+  const mutants = {
+    'platform gate removed (the skip everywhere)': [/platform !== 'win32'/, 'false', /refused blur on (linux|darwin): a hard assert/],
+    'printed line removed': [/console\.log\(`\[focus\]/, '(() => {})(`[focus]', /exactly one \[focus\] line/],
+    'return value flipped': [/return false; \/\* refused \*\//, 'return true; /* refused */', /refused blur on win32: false/],
+  };
+  for (const [name, [re, to, died]] of Object.entries(mutants)) {
+    const src = mutate(name, real.replace(/\r?\n/g, '\r\n'), re, to);
+    await assert.rejects(() => battery(load(src)), (e) => died.test(e.message), `mutant "${name}" must die at a named assert`);
+  }
   for (const f of ['check-102-arcade-labels.js', 'shots-097-moments.js']) {
     const src = fs.readFileSync(path.join(__dirname, f), 'utf8');
     scan(f, src);
-    const crlf = src.replace(/\r?\n/g, '\r\n');
-    scan(f + ' (CRLF)', crlf);
-    const mut = src.replace(/(\r?\n)(\s*)if \((BLUR|BLUR_RING)\) await H\.forceBlur\(/, '$1$2if (!(await H.forceBlur(') .replace(/H\.forceBlur\(([^\n]*?)\); \/\*/, 'H.forceBlur($1))) return; /*');
-    assert.notStrictEqual(mut, src, `mutation did not apply: ${f}`);
+    scan(f + ' (CRLF)', src.replace(/\r?\n/g, '\r\n'));
+    const mut = mutate('early return on a refused blur: ' + f, src, /if \((BLUR|BLUR_RING)\) await H\.forceBlur\(([^\r\n]*?)\); \/\*/, 'if ($1) { if (!(await H.forceBlur($2))) return; } /*');
     assert.throws(() => scan(f + ' mutant', mut), /does not end the step early/, `mutant: an early return on a refused blur dies in ${f}`);
   }
   console.log('test-force-blur: ok');
